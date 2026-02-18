@@ -305,6 +305,8 @@ function initRecibos() {
 async function initAgendaMedica() {
   const hoy = new Date().toISOString().slice(0,10);
   $('agendaMedicaFecha').value = hoy;
+  updateAgendaFechaDisplay();
+  $('agendaMedicaFecha').addEventListener('change', updateAgendaFechaDisplay);
   const consultorios = await apiFetch('/api/consultorios').then(r=>r.json()).catch(()=>[]);
   const sel = $('agendaMedicaConsultorio');
   sel.innerHTML = '<option value="">Seleccionar consultorio</option>';
@@ -315,6 +317,10 @@ async function initAgendaMedica() {
     $('crearTurnoMedica').addEventListener('click', crearTurnoMedica);
     $('nuevoPacienteNombreMedica').addEventListener('input', debounceBuscarPacientesMedica);
   }
+  // poblar opciones de hora y mostrar quien programa
+  populateTurnoHoras('nuevoTurnoHoraMedica', '07:00', '18:00', 20);
+  const prog = $('nuevoTurnoProgramadoPor');
+  if (prog) prog.textContent = (currentUser && (currentUser.nombre || currentUser.usuario)) || '-';
   const nuevoTurnoSection = $('agendaNuevoTurnoSection');
   const doctorAcciones = $('agendaDoctorAcciones');
   if (nuevoTurnoSection) nuevoTurnoSection.style.display = (isElectro() || isDoctor()) ? 'none' : '';
@@ -339,6 +345,47 @@ async function initAgendaMedica() {
     }
   }
   await cargarTurnosMedica();
+}
+
+function updateAgendaFechaDisplay(){
+  const v = $('agendaMedicaFecha')?.value;
+  const el = $('agendaMedicaFechaDisplay');
+  if (!el) return;
+  if (!v) { el.textContent = ''; return; }
+  el.textContent = formatDateSpanish(v);
+}
+
+function formatDateSpanish(dateStr){
+  try{
+    const d = new Date(dateStr + 'T00:00:00');
+    const dias = ['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
+    const meses = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+    const diaSemana = dias[d.getDay()];
+    const dia = d.getDate();
+    const mes = meses[d.getMonth()];
+    const anio = d.getFullYear();
+    return `${diaSemana} ${dia} DE ${mes.toUpperCase()} DE ${anio}`.toUpperCase();
+  }catch(e){ return dateStr; }
+}
+
+function populateTurnoHoras(selectId, from='07:00', to='18:00', stepMinutes=20){
+  const sel = document.getElementById(selectId);
+  if (!sel) return;
+  sel.innerHTML = '';
+  const [fh, fm] = from.split(':').map(Number);
+  const [th, tm] = to.split(':').map(Number);
+  let start = fh*60 + fm;
+  const end = th*60 + tm;
+  while (start <= end) {
+    const hh = String(Math.floor(start/60)).padStart(2,'0');
+    const mm = String(start%60).padStart(2,'0');
+    const val = `${hh}:${mm}`;
+    const o = document.createElement('option');
+    o.value = val;
+    o.textContent = val;
+    sel.appendChild(o);
+    start += stepMinutes;
+  }
 }
 
 function startAgendaMedicaAutoRefresh() {
@@ -409,7 +456,7 @@ function renderTurnoRowMedica(tbody, t) {
 
   const puedeEliminar = isAdmin() || isRecepcion();
   const accionesCell = puedeEliminar
-    ? `<button class="btn-estado-small" data-delete="${t.id}">Eliminar</button>`
+    ? `<button class="btn-estado-small" data-edit="${t.id}" title="Editar">✎</button> <button class="btn-estado-small" data-delete="${t.id}">Eliminar</button>`
     : '-';
   tr.innerHTML = `
     <td style="padding:8px;border:1px solid #ddd">${t.numero_turno}</td>
@@ -419,9 +466,11 @@ function renderTurnoRowMedica(tbody, t) {
     <td style="padding:8px;border:1px solid #ddd">${estadoCell}</td>
     <td style="padding:8px;border:1px solid #ddd">${accionesCell}</td>
   `;
-  // Selección de fila para panel de edición
+  // Abrir panel de edición SOLO desde botón 'editar' (lapiz) para admin/recepcion
   if (isAdmin() || isRecepcion()) {
-    tr.addEventListener('click', () => {
+    const btnEdit = tr.querySelector('[data-edit]');
+    btnEdit?.addEventListener('click', (e) => {
+      e.stopPropagation();
       seleccionarTurnoMedica(tr, t);
     });
   }
@@ -588,7 +637,12 @@ async function crearTurnoMedica() {
   const doc = $('nuevoPacienteDocMedica').value.trim();
   const fecha = $('agendaMedicaFecha').value;
   const consultorioId = $('agendaMedicaConsultorio').value;
-  if (!nombre || !fecha || !consultorioId) { showToast('Completa paciente, fecha y consultorio', 'error'); return; }
+  const hora = $('nuevoTurnoHoraMedica')?.value || '';
+  const telefono = $('nuevoPacienteTelefonoMedica')?.value || '';
+  const tipoConsulta = $('nuevoTurnoTipoMedica')?.value || '';
+  const notas = $('nuevoTurnoNotasMedica')?.value || '';
+  const oportunidad = $('nuevoTurnoOportunidadMedica')?.value || '';
+  if (!nombre || !fecha || !consultorioId || !hora) { showToast('Completa paciente, fecha, consultorio y hora', 'error'); return; }
   let pacienteId;
   const opt = document.querySelector(`#pacientesListMedica option[value="${nombre}"]`);
   if (opt && opt.dataset.id) pacienteId = parseInt(opt.dataset.id, 10);
@@ -599,7 +653,19 @@ async function crearTurnoMedica() {
     pacienteId = data.id;
   }
   try {
-    const body = { paciente_id: pacienteId, consultorio_id: parseInt(consultorioId,10), fecha, entidad: $('nuevoTurnoEntidadMedica').value, prioridad: parseInt($('nuevoTurnoPrioridadMedica').value,10) };
+    const body = {
+      paciente_id: pacienteId,
+      consultorio_id: parseInt(consultorioId,10),
+      fecha,
+      hora_inicio: hora,
+      entidad: $('nuevoTurnoEntidadMedica').value,
+      prioridad: parseInt($('nuevoTurnoPrioridadMedica').value,10),
+      telefono: telefono || null,
+      tipo_consulta: tipoConsulta || null,
+      notas: notas || null,
+      oportunidad: oportunidad ? parseInt(oportunidad,10) : null,
+      programado_por: (currentUser && (currentUser.nombre || currentUser.usuario)) || null
+    };
     const res = await apiFetch('/api/turnos', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
     const data = await res.json();
     if (data.ok) { showToast('Turno creado', 'success'); $('nuevoPacienteNombreMedica').value=''; $('nuevoPacienteDocMedica').value=''; cargarTurnosMedica(); }

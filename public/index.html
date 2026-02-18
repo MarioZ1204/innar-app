@@ -243,6 +243,9 @@
               <div class="col"><label>Consultorio</label><select id="agendaMedicaConsultorio"><option value="">Seleccionar consultorio</option></select></div>
               <div class="col" style="display:flex;align-items:flex-end"><button id="cargarTurnosMedica" style="width:100%">Cargar Turnos</button></div>
             </div>
+            <div style="text-align:center;margin-top:8px">
+              <div id="agendaMedicaFechaDisplay" style="font-size:18px;font-weight:700;color:#111;text-transform:uppercase"></div>
+            </div>
           </section>
           <!-- Botones para Doctor: Llamar siguiente / Marcar atendido -->
           <section class="card no-print" id="agendaDoctorAcciones" style="display:none;background:#f0f9ff;border-left:4px solid #0369a1">
@@ -276,6 +279,16 @@
               <div class="col"><label>Prioridad</label><select id="nuevoTurnoPrioridadMedica"><option value="2">Normal</option><option value="1">Prioritario</option></select></div>
               <div class="col" style="display:flex;align-items:flex-end"><button id="crearTurnoMedica" style="width:100%">Crear Turno</button></div>
             </div>
+            <div class="row" style="margin-top:12px">
+              <div class="col"><label>Hora</label><select id="nuevoTurnoHoraMedica"></select></div>
+              <div class="col"><label>Teléfono</label><input id="nuevoPacienteTelefonoMedica" type="tel" placeholder="Teléfono" /></div>
+              <div class="col"><label>Tipo de consulta</label><select id="nuevoTurnoTipoMedica"><option value="">Seleccionar</option><option>Consulta General</option><option>Control</option><option>Urgencia</option><option>Electrodiagnóstico</option><option>Otro</option></select></div>
+              <div class="col"><label>Oportunidad (n°)</label><input id="nuevoTurnoOportunidadMedica" type="number" min="0" step="1" /></div>
+            </div>
+            <div class="row" style="margin-top:8px">
+              <div class="col" style="width:100%"><label>Notas</label><textarea id="nuevoTurnoNotasMedica" rows="2" placeholder="Observaciones, preparación, info relevante..."></textarea></div>
+            </div>
+            <div style="margin-top:8px;text-align:right;font-size:0.95rem;color:#444">Programado por: <span id="nuevoTurnoProgramadoPor">-</span></div>
           </section>
           <section class="card">
             <h3>Turnos del Día</h3>
