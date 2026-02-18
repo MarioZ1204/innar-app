@@ -1,0 +1,429 @@
+<!-- public/index.html -->
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Instituto Neurociencias</title>
+  <link rel="icon" type="image/png" href="icon.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- ========== PANTALLA DE LOGIN ========== -->
+  <div id="view-login" class="view-login hidden">
+    <div class="login-box">
+      <div class="login-header">
+        <img src="logo.png" alt="Logo Instituto Neurociencias" class="login-logo" />
+        <h1>Instituto Neurociencias</h1>
+        <p>Ingresa tus credenciales para continuar</p>
+      </div>
+      <form id="formLogin" class="login-form">
+        <div class="form-group">
+          <label for="loginUsuario">Usuario</label>
+          <input id="loginUsuario" type="text" placeholder="Usuario" autocomplete="username" required />
+        </div>
+        <div class="form-group">
+          <label for="loginPassword">Contraseña</label>
+          <input id="loginPassword" type="password" placeholder="Contraseña" autocomplete="current-password" required />
+        </div>
+        <div id="loginError" class="login-error hidden"></div>
+        <button type="submit" id="btnLogin" class="btn-login">Iniciar sesión</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ========== MENÚ PRINCIPAL ========== -->
+  <div id="view-menu" class="view-menu hidden">
+    <header class="menu-header">
+      <img src="logo.png" alt="Logo" class="menu-logo" />
+      <div class="menu-user">
+        <span id="menuUserName"></span>
+        <button id="btnLogout" class="btn-logout">Cerrar sesión</button>
+      </div>
+    </header>
+    <div class="menu-content">
+      <h2>¿Qué deseas hacer?</h2>
+      <div class="menu-cards" id="menuCardsContainer">
+        <button class="menu-card" data-module="recibos" data-rol="admin recepcion">
+          <span class="menu-card-icon">📄</span>
+          <span class="menu-card-title">Recibos</span>
+          <span class="menu-card-desc">Crear recibos, ver historial y reportes</span>
+        </button>
+        <button class="menu-card" data-module="agenda-medica" data-rol="admin recepcion electro doctor">
+          <span class="menu-card-icon">📅</span>
+          <span class="menu-card-title">Agenda Médica</span>
+          <span class="menu-card-desc">Citas y turnos por consultorio</span>
+        </button>
+        <button class="menu-card" data-module="electro" data-rol="admin recepcion electro doctor">
+          <span class="menu-card-icon">⚡</span>
+          <span class="menu-card-title">Agenda Electrodiagnóstico</span>
+          <span class="menu-card-desc">Agenda de los 4 equipos de electrodiagnóstico</span>
+        </button>
+        <button class="menu-card" data-module="usuarios" data-rol="admin">
+          <span class="menu-card-icon">👥</span>
+          <span class="menu-card-title">Usuarios</span>
+          <span class="menu-card-desc">Gestionar usuarios y roles</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== MÓDULO RECIBOS ========== -->
+  <div id="view-recibos" class="view-module hidden">
+    <div class="main-layout">
+      <div class="sidebar no-print">
+        <button class="btn-volver" id="btnVolverRecibos">← Volver al menú</button>
+        <div style="margin-bottom:24px;text-align:center">
+          <img src="logo.png" alt="Logo" style="height:70px;width:auto;object-fit:contain" />
+        </div>
+        <button class="sidebar-btn active" data-page="crear">Crear Recibo</button>
+        <button class="sidebar-btn" data-page="recibos">Ver Recibos</button>
+        <button class="sidebar-btn" data-page="reportes">Reportes</button>
+        <button class="sidebar-btn" data-page="servicios" data-rol-recibos="admin">Gestionar Servicios</button>
+      </div>
+      <div class="main-content">
+        <div class="container" id="recibos-container">
+          <!-- PÁGINA: CREAR RECIBO -->
+          <div class="page active" id="page-crear">
+            <header>
+              <div><img src="logo1.png" alt="Logo" style="height:80px;object-fit:contain;display:block;margin:0 auto;" /></div>
+            </header>
+            <section id="statsSection" class="card no-print" style="background-color:#f0f9ff;border-left:4px solid #8AA6A1">
+              <div style="display:flex;justify-content:space-around;align-items:center">
+                <div style="text-align:center">
+                  <div style="font-size:24px;font-weight:bold;color:#0369a1" id="statsRecibosHoy">0</div>
+                  <div style="font-size:12px;color:#666">Recibos hoy</div>
+                </div>
+                <div style="text-align:center">
+                  <div style="font-size:24px;font-weight:bold;color:#10b981" id="statsTotalHoy">$ 0.00</div>
+                  <div style="font-size:12px;color:#666">Total del día</div>
+                </div>
+              </div>
+            </section>
+            <section class="card form-area">
+              <div class="row">
+                <div class="col"><label>Nombre Cliente</label><input id="cliente" placeholder="Nombre" /></div>
+                <div class="col"><label>Documento Cliente</label><input id="docCliente" type="text" inputmode="numeric" placeholder="Documento" /></div>
+              </div>
+              <div class="row">
+                <div class="col">
+                  <label>Entidad</label>
+                  <select id="entidad">
+                    <option value="">Seleccionar entidad</option>
+                    <option value="Protegemos">Protegemos</option>
+                    <option value="Global Salud">Global Salud</option>
+                    <option value="Particular">Particular</option>
+                    <option value="Medica Preferencial">Medica Preferencial</option>
+                    <option value="Multiservicios">Multiservicios</option>
+                    <option value="Medica Estar Bien">Medica Estar Bien</option>
+                    <option value="Previred">Previred</option>
+                    <option value="Prevenir Descuentos">Prevenir Descuentos</option>
+                    <option value="Clical Medica">Clical Medica</option>
+                    <option value="Medicina Para Todos">Medicina Para Todos</option>
+                    <option value="Otra">Otra</option>
+                  </select>
+                </div>
+                <div class="col" id="entidadOtraContainer" style="display:none">
+                  <label>Especificar entidad</label>
+                  <input id="entidadOtra" type="text" placeholder="Escribir entidad" />
+                </div>
+              </div>
+              <div style="margin-top:10px">
+                <label>Conceptos</label>
+                <table id="itemsTable">
+                  <thead><tr><th>Descripción</th><th>Valor</th><th></th></tr></thead>
+                  <tbody></tbody>
+                </table>
+                <div style="margin-top:8px"><button id="addItem">+ Agregar ítem manual</button></div>
+              </div>
+              <div class="row" style="margin-top:12px">
+                <div class="col"><label>Observaciones</label><textarea id="observ" rows="2" placeholder="Opcional"></textarea></div>
+                <div style="width:220px">
+                  <label>Número de recibo</label><input id="numero" readonly />
+                  <label>Fecha</label><input id="fecha" type="date" />
+                </div>
+              </div>
+              <div class="actions"><button id="generate">Generar recibo</button></div>
+            </section>
+            <section id="receiptPreview" class="card">
+              <div id="previewContent">
+                <div class="receipt-header">
+                  <div><strong>Instituto Neurociencias</strong><br/><small>Carrera 34 #13 - 80 · 305-356-0651</small></div>
+                  <div style="text-align:right">
+                    <div>Recibo Nº <strong id="r_num">0001</strong></div>
+                    <div id="r_fecha">Fecha</div>
+                  </div>
+                </div>
+                <hr/>
+                <div>
+                  <div><strong>Cliente:</strong> <span id="r_cliente"></span></div>
+                  <div><strong>Documento:</strong> <span id="r_doc"></span></div>
+                </div>
+                <table id="r_table">
+                  <thead><tr><th>Descripción</th><th>Precio</th></tr></thead>
+                  <tbody></tbody>
+                </table>
+                <div style="text-align:right;margin-top:8px">
+                  <div>Subtotal: <strong id="r_subtotal">0.00</strong></div>
+                  <div>IVA: <strong id="r_iva">0.00</strong></div>
+                  <div style="font-size:1.1rem">Total: <strong id="r_total">0.00</strong></div>
+                </div>
+                <div style="margin-top:8px"><strong>Observaciones:</strong> <span id="r_observ"></span></div>
+              </div>
+              <div class="actions no-print" style="margin-top:12px">
+                <button id="print">Generar PDF</button>
+                <button id="downloadPDF" class="secondary">Descargar PDF anterior</button>
+              </div>
+            </section>
+          </div>
+          <!-- PÁGINA: VER RECIBOS -->
+          <div class="page" id="page-recibos">
+            <header><h2>Recibos Guardados</h2></header>
+            <section id="savedList" class="card no-print">
+              <div id="savedItems"></div>
+              <button id="resetAll" class="secondary" style="margin-top:12px;width:100%;background:#dc2626;display:none">Eliminar todos los recibos</button>
+            </section>
+          </div>
+          <!-- PÁGINA: REPORTES -->
+          <div class="page" id="page-reportes">
+            <header><h2>Generar Reportes</h2></header>
+            <section id="reportSection" class="card no-print">
+              <div class="row">
+                <div class="col">
+                  <label>Reporte Diario</label>
+                  <div style="display:flex;gap:8px">
+                    <input id="reportDiaFecha" type="date" />
+                    <button id="reportDiaBtn" style="flex:1">Generar PDF</button>
+                  </div>
+                </div>
+                <div class="col">
+                  <label>Reporte Mensual</label>
+                  <div style="display:flex;gap:8px">
+                    <input id="reportMesFecha" type="month" />
+                    <button id="reportMesBtn" style="flex:1">Generar PDF</button>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+          <!-- PÁGINA: SERVICIOS -->
+          <div class="page" id="page-servicios">
+            <header><h2>Gestionar Servicios</h2></header>
+            <section class="card no-print">
+              <h3>Servicios Actuales</h3>
+              <div id="serviciosList" style="margin-bottom:16px;max-height:400px;overflow-y:auto;border:1px solid #e5e7eb;padding:8px;border-radius:6px"></div>
+              <h3 style="margin-top:20px">Agregar Nuevo Servicio</h3>
+              <div style="display:flex;gap:8px;margin-bottom:12px">
+                <input id="newServicioNombre" type="text" placeholder="Nombre del servicio" />
+                <button id="addServicio">Agregar</button>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== MÓDULO AGENDA MÉDICA (vista principal) ========== -->
+  <div id="view-agenda-medica" class="view-module hidden">
+    <div class="main-layout">
+      <div class="sidebar">
+        <button class="btn-volver" id="btnVolverAgenda">← Volver al menú</button>
+        <div style="margin-bottom:24px;text-align:center">
+          <img src="logo.png" alt="Logo" style="height:70px;width:auto;object-fit:contain" />
+        </div>
+        <h2 style="color:white;margin-bottom:16px">Agenda Médica</h2>
+      </div>
+      <div class="main-content">
+        <div class="container">
+          <header><h2>Agenda de Turnos</h2></header>
+          <section class="card no-print">
+            <div class="row" style="margin-bottom:16px">
+              <div class="col"><label>Fecha</label><input id="agendaMedicaFecha" type="date" /></div>
+              <div class="col"><label>Consultorio</label><select id="agendaMedicaConsultorio"><option value="">Seleccionar consultorio</option></select></div>
+              <div class="col" style="display:flex;align-items:flex-end"><button id="cargarTurnosMedica" style="width:100%">Cargar Turnos</button></div>
+            </div>
+          </section>
+          <!-- Botones para Doctor: Llamar siguiente / Marcar atendido -->
+          <section class="card no-print" id="agendaDoctorAcciones" style="display:none;background:#f0f9ff;border-left:4px solid #0369a1">
+            <h3>Acciones Rápidas</h3>
+            <div style="display:flex;gap:16px;flex-wrap:wrap">
+              <button id="btnLlamarSiguiente" class="btn-llamar">📢 Llamar siguiente paciente</button>
+              <button id="btnMarcarAtendido" class="btn-marcar">✓ Marcar como atendido</button>
+            </div>
+          </section>
+          <section class="card no-print" id="agendaNuevoTurnoSection">
+            <h3>Nuevo Turno</h3>
+            <div class="row" id="agendaNuevoTurnoRow">
+              <div class="col"><label>Paciente</label><input id="nuevoPacienteNombreMedica" type="text" placeholder="Buscar o crear paciente..." list="pacientesListMedica" /><datalist id="pacientesListMedica"></datalist></div>
+              <div class="col"><label>Documento</label><input id="nuevoPacienteDocMedica" type="text" placeholder="Documento" /></div>
+              <div class="col">
+                <label>Entidad</label>
+                <select id="nuevoTurnoEntidadMedica">
+                  <option value="">Seleccionar</option>
+                  <option value="Protegemos">Protegemos</option>
+                  <option value="Global Salud">Global Salud</option>
+                  <option value="Particular">Particular</option>
+                  <option value="Medica Preferencial">Medica Preferencial</option>
+                  <option value="Multiservicios">Multiservicios</option>
+                  <option value="Medica Estar Bien">Medica Estar Bien</option>
+                  <option value="Previred">Previred</option>
+                  <option value="Prevenir Descuentos">Prevenir Descuentos</option>
+                  <option value="Clical Medica">Clical Medica</option>
+                  <option value="Medicina Para Todos">Medicina Para Todos</option>
+                </select>
+              </div>
+              <div class="col"><label>Prioridad</label><select id="nuevoTurnoPrioridadMedica"><option value="2">Normal</option><option value="1">Prioritario</option></select></div>
+              <div class="col" style="display:flex;align-items:flex-end"><button id="crearTurnoMedica" style="width:100%">Crear Turno</button></div>
+            </div>
+          </section>
+          <section class="card">
+            <h3>Turnos del Día</h3>
+            <div id="turnosListMedica" style="overflow-x:auto">
+              <table id="turnosTableMedica" style="width:100%;border-collapse:collapse">
+                <thead>
+                  <tr style="background:#f0f0f0">
+                    <th style="padding:8px;border:1px solid #ddd">Turno</th>
+                    <th style="padding:8px;border:1px solid #ddd">Paciente</th>
+                    <th style="padding:8px;border:1px solid #ddd">Documento</th>
+                    <th style="padding:8px;border:1px solid #ddd">Entidad</th>
+                    <th style="padding:8px;border:1px solid #ddd">Estado</th>
+                    <th style="padding:8px;border:1px solid #ddd">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody id="turnosTableBodyMedica">
+                  <tr><td colspan="6" style="padding:20px;text-align:center;color:#999">Selecciona fecha y consultorio para ver los turnos</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal edición de paciente/turno (Agenda Médica) -->
+  <div id="agendaEditPacienteSection" class="modal-overlay hidden">
+    <div class="modal-box">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <h3 style="margin:0;font-size:1rem">Editar paciente / turno</h3>
+        <button id="btnCerrarEditPaciente" class="btn-estado-small" style="background:#6b7280;color:white">✕</button>
+      </div>
+      <div id="agendaEditInfo" style="font-size:0.9rem;color:#4b5563;margin-bottom:8px">
+        Ningún paciente seleccionado.
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <div>
+          <label>Nombre del paciente</label>
+          <input id="editPacienteNombreMedica" type="text" placeholder="Nombre para llamar al paciente" />
+        </div>
+        <div>
+          <label>Número de turno</label>
+          <input id="editTurnoNumeroMedica" type="number" min="1" step="1" />
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
+          <button id="btnGuardarNombreMedica">Guardar nombre</button>
+          <button id="btnGuardarTurnoNumeroMedica" class="secondary">Guardar número</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== MÓDULO USUARIOS (solo admin) ========== -->
+  <div id="view-usuarios" class="view-module hidden">
+    <div class="main-layout">
+      <div class="sidebar">
+        <button class="btn-volver" id="btnVolverUsuarios">← Volver al menú</button>
+        <div style="margin-bottom:24px;text-align:center">
+          <img src="logo.png" alt="Logo" style="height:70px;width:auto;object-fit:contain" />
+        </div>
+        <h2 style="color:white;margin-bottom:16px">Usuarios</h2>
+      </div>
+      <div class="main-content">
+        <div class="container">
+          <header><h2>Gestión de Usuarios</h2></header>
+          <section class="card no-print" id="usuariosNuevoSection">
+            <h3>Nuevo Usuario</h3>
+            <div class="row">
+              <div class="col"><label>Usuario</label><input id="newUserUsuario" type="text" placeholder="Usuario" /></div>
+              <div class="col"><label>Contraseña</label><input id="newUserPassword" type="password" placeholder="Contraseña" /></div>
+              <div class="col"><label>Nombre</label><input id="newUserName" type="text" placeholder="Nombre completo" /></div>
+              <div class="col"><label>Rol</label><select id="newUserRol"><option value="recepcion">Recepción</option><option value="electro">Electrodiagnóstico</option><option value="doctor">Doctor</option><option value="admin">Administrador</option></select></div>
+              <div class="col" style="display:flex;align-items:flex-end"><button id="crearUsuario" style="width:100%">Crear Usuario</button></div>
+            </div>
+          </section>
+          <section class="card">
+            <h3>Usuarios Existentes</h3>
+            <div id="usuariosList" style="overflow-x:auto">
+              <table id="usuariosTable" style="width:100%;border-collapse:collapse">
+                <thead><tr style="background:#f0f0f0"><th style="padding:8px;border:1px solid #ddd">Usuario</th><th style="padding:8px;border:1px solid #ddd">Nombre</th><th style="padding:8px;border:1px solid #ddd">Rol</th><th style="padding:8px;border:1px solid #ddd">Estado</th><th style="padding:8px;border:1px solid #ddd">Acciones</th></tr></thead>
+                <tbody id="usuariosTableBody"></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== MÓDULO AGENDA ELECTRODIAGNÓSTICO ========== -->
+  <div id="view-electro" class="view-module hidden">
+    <div class="main-layout">
+      <div class="sidebar">
+        <button class="btn-volver" id="btnVolverElectro">← Volver al menú</button>
+        <div style="margin-bottom:24px;text-align:center">
+          <img src="logo.png" alt="Logo" style="height:70px;width:auto;object-fit:contain" />
+        </div>
+        <h2 style="color:white;margin-bottom:16px">Agenda Electrodiagnóstico</h2>
+        <p style="color:rgba(255,255,255,0.9);font-size:0.9rem">4 equipos disponibles</p>
+      </div>
+      <div class="main-content">
+        <div class="container">
+          <header><h2>Agenda de Equipos de Electrodiagnóstico</h2></header>
+          <section class="card no-print">
+            <div class="row" style="margin-bottom:16px">
+              <div class="col"><label>Fecha</label><input id="electroFecha" type="date" /></div>
+              <div class="col"><label>Equipo</label><select id="electroEquipo"><option value="">Seleccionar equipo</option></select></div>
+              <div class="col" style="display:flex;align-items:flex-end"><button id="cargarCitasElectro" style="width:100%">Cargar Agenda</button></div>
+            </div>
+          </section>
+          <section class="card no-print" id="electroNuevaCitaSection">
+            <h3>Nueva Cita</h3>
+            <div class="row" id="electroNuevaCitaRow">
+              <div class="col"><label>Paciente</label><input id="nuevoPacienteElectro" type="text" placeholder="Buscar o crear paciente..." list="pacientesListElectro" /><datalist id="pacientesListElectro"></datalist></div>
+              <div class="col"><label>Documento</label><input id="nuevoPacienteDocElectro" type="text" placeholder="Documento" /></div>
+              <div class="col"><label>Hora inicio</label><input id="electroHoraInicio" type="time" /></div>
+              <div class="col"><label>Hora fin</label><input id="electroHoraFin" type="time" /></div>
+              <div class="col"><label>Estudio</label><input id="electroEstudio" type="text" placeholder="Ej: EEG, Polisomnografía" /></div>
+              <div class="col" style="display:flex;align-items:flex-end"><button id="crearCitaElectro" style="width:100%">Crear Cita</button></div>
+            </div>
+          </section>
+          <section class="card">
+            <h3>Citas del Día</h3>
+            <div id="citasElectroList" style="overflow-x:auto">
+              <table id="citasElectroTable" style="width:100%;border-collapse:collapse">
+                <thead>
+                  <tr style="background:#f0f0f0">
+                    <th style="padding:8px;border:1px solid #ddd">Hora</th>
+                    <th style="padding:8px;border:1px solid #ddd">Paciente</th>
+                    <th style="padding:8px;border:1px solid #ddd">Documento</th>
+                    <th style="padding:8px;border:1px solid #ddd">Estudio</th>
+                    <th style="padding:8px;border:1px solid #ddd">Estado</th>
+                    <th style="padding:8px;border:1px solid #ddd" id="electroEditadoTh">Editado por</th>
+                    <th style="padding:8px;border:1px solid #ddd">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody id="citasElectroBody">
+                  <tr><td colspan="7" style="padding:20px;text-align:center;color:#999">Selecciona fecha y equipo para ver las citas</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

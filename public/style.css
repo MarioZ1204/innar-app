@@ -1,0 +1,148 @@
+/* public/style.css */
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif; margin:0; padding:0; background:#f0f4f8; color:#1f2937 }
+
+/* Login */
+.view-login { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #8AA6A1 0%, #6b9590 50%, #4a7a75 100%); padding: 20px; }
+.view-login.hidden { display: none !important; }
+.login-box { background: white; padding: 40px; border-radius: 16px; box-shadow: 0 10px 40px rgba(0,0,0,0.2); max-width: 400px; width: 100%; }
+.login-header { text-align: center; margin-bottom: 28px; }
+.login-logo { height: 80px; width: auto; object-fit: contain; margin-bottom: 16px; }
+.login-header h1 { font-size: 1.4rem; color: #1f2937; margin: 0 0 8px 0; }
+.login-header p { color: #6b7280; font-size: 0.95rem; margin: 0; }
+.login-form .form-group { margin-bottom: 18px; }
+.login-form label { display: block; font-size: 0.9rem; font-weight: 600; margin-bottom: 6px; color: #374151; }
+.login-form input { width: 100%; padding: 12px 14px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 1rem; }
+.login-form input:focus { outline: none; border-color: #8AA6A1; box-shadow: 0 0 0 3px rgba(138,166,161,0.2); }
+.btn-login { width: 100%; padding: 14px; background: #8AA6A1; color: white; border: none; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; margin-top: 8px; transition: all 0.2s; }
+.btn-login:hover { background: #7a9691; transform: translateY(-1px); }
+.login-error { margin-top: 12px; padding: 10px; background: #fef2f2; color: #dc2626; border-radius: 6px; font-size: 0.9rem; }
+.login-error.hidden { display: none !important; }
+
+/* Menú principal */
+.view-menu { min-height: 100vh; background: linear-gradient(180deg, #f0f4f8 0%, #e5e9ec 100%); }
+.view-menu.hidden { display: none !important; }
+.menu-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 24px; background: white; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+.menu-logo { height: 50px; width: auto; }
+.menu-user { display: flex; align-items: center; gap: 16px; }
+.menu-user span { color: #374151; font-weight: 500; }
+.btn-logout { padding: 8px 16px; background: #6b7280; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 0.9rem; transition: all 0.2s; }
+.btn-logout:hover { background: #4b5563; }
+.menu-content { max-width: 900px; margin: 0 auto; padding: 48px 24px; }
+.menu-content h2 { font-size: 1.5rem; color: #1f2937; margin: 0 0 32px 0; text-align: center; }
+.menu-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 24px; }
+.menu-card { background: white; border: 2px solid #e5e7eb; border-radius: 12px; padding: 28px; cursor: pointer; text-align: center; transition: all 0.2s; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.menu-card:hover { border-color: #8AA6A1; box-shadow: 0 8px 24px rgba(138,166,161,0.25); transform: translateY(-4px); }
+.menu-card-icon { font-size: 2.5rem; }
+.menu-card-title { font-size: 1.2rem; font-weight: 700; color: #1f2937; }
+.menu-card-desc { font-size: 0.9rem; color: #6b7280; }
+
+/* Módulos (Recibos, Agenda, Electro) */
+.view-module { min-height: 100vh; }
+.view-module.hidden { display: none !important; }
+.btn-volver { width: 100%; padding: 10px; margin-bottom: 16px; background: #4b5563; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 0.9rem; text-align: left; transition: all 0.2s; }
+.btn-volver:hover { background: #374151; }
+.main-layout { display:flex; height:100vh }
+.sidebar { width:250px; background:#8AA6A1; color:white; padding:20px; overflow-y:auto; box-shadow:2px 0 8px rgba(0,0,0,0.1) }
+.sidebar h2 { margin-top:0; margin-bottom:24px; font-size:1.3rem; color:white }
+.sidebar-btn { display:block; width:100%; padding:12px 16px; margin-bottom:8px; background:#374151; border:none; color:white; border-radius:6px; cursor:pointer; text-align:left; font-size:0.95rem; transition:all 0.2s }
+.sidebar-btn:hover { background:#4b5563 }
+.sidebar-btn.active { background:#6b9590; font-weight:600 }
+.main-content { flex:1; overflow-y:auto; padding:20px }
+.container { max-width:1100px; margin:0 auto }
+header { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; padding-bottom:12px; border-bottom:2px solid #e5e7eb; flex-wrap:wrap; gap:20px }
+h1 { font-size:1.35rem; margin:0; font-weight:700; color:#8AA6A1 }
+h3 { margin:0 0 12px 0; font-size:1.15rem; color:#1f2937 }
+.card { background:#fff; padding:16px; border-radius:10px; box-shadow:0 1px 3px rgba(0,0,0,.1); margin-bottom:16px }
+label { display:block; font-size:.9rem; font-weight:600; margin:8px 0 4px 0; color:#374151 }
+input, select, textarea { width:100%; padding:10px; border:1px solid #d1d5db; border-radius:6px; font-size:.95rem; font-family:inherit; transition:all 0.2s }
+input:focus, select:focus, textarea:focus { outline:none; border-color:#8AA6A1; box-shadow:0 0 0 3px rgba(138,166,161,0.1) }
+.row { display:flex; gap:12px; margin-bottom:8px; flex-wrap:wrap }
+.col { flex:1; min-width:200px }
+table { width:100%; border-collapse:collapse; margin-top:8px; font-size:.95rem }
+th { background-color:#f3f4f6; font-weight:600; color:#374151 }
+th, td { padding:10px; border-bottom:1px solid #e5e7eb; text-align:left }
+tbody tr:hover { background-color:#f9fafb }
+.item-sub { font-weight:600; color:#8AA6A1 }
+.item-desc { width:100%; padding:8px; border:1px solid #d1d5db; border-radius:4px; font-size:.95rem; }
+.item-desc-input { padding:8px; border:1px solid #d1d5db; border-radius:4px; font-size:.95rem; }
+.actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px }
+button { padding:10px 16px; border-radius:6px; border:0; background:#8AA6A1; color:#fff; cursor:pointer; font-weight:600; font-size:.95rem; transition:all 0.2s }
+button:hover { background:#7a9390; transform:translateY(-2px); box-shadow:0 4px 12px rgba(138,166,161,0.3) }
+button:active { transform:translateY(0) }
+button.secondary { background:#6b7280 }
+button.secondary:hover { background:#4b5563 }
+button.remove { padding:6px 10px; font-size:.85rem; width:100%; }
+.hidden { display:none !important }
+.receipt-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px }
+.servicio-item { display:flex; justify-content:space-between; align-items:center; padding:8px; border:1px solid #e5e7eb; border-radius:4px; margin-bottom:6px; background:#f9fafb }
+.servicio-item span { flex:1 }
+.servicio-item button { padding:4px 8px; font-size:0.85rem; background:#dc2626; margin-left:8px }
+#receiptPreview { background:#fff; border:2px solid #e5e7eb }
+.page { display:none }
+.page.active { display:block }
+
+/* Responsive */
+@media (max-width:768px) {
+  .main-layout { flex-direction:column }
+  .sidebar { width:100%; padding:12px }
+  .main-content { padding:12px }
+  header { flex-direction:column; align-items:flex-start; gap:12px }
+  .row { flex-direction:column }
+  .col { min-width:100% }
+  .actions { flex-direction:column }
+  button { width:100% }
+  table { font-size:.85rem }
+  th, td { padding:8px }
+  .receipt-header { flex-direction:column }
+}
+
+@media print {
+  .no-print, .hidden, .form-area, .sidebar, .main-layout { display:none !important }
+  body { background:#fff; padding:0; margin:0 }
+  .container { max-width:100% }
+  .card { box-shadow:none; border-radius:0; margin-bottom:0 }
+  .card.hidden { page-break-after:auto !important; margin-bottom:0 !important }
+  #receiptPreview { border:none; page-break-after:avoid }
+  #savedList { display:none !important; page-break-after:avoid !important }
+}
+
+/* Estilos para estados de turnos (como en Google Sheets) */
+.turno-row.estado-PROGRAMADO { background-color: #ffffff; }
+.turno-row.estado-EN_SALA { background-color: #F2DCC9; }
+.turno-row.estado-EN_ATENCION { background-color: #E6E6E6; }
+.turno-row.estado-ATENDIDO { background-color: #d1fae5; }
+.turno-row.estado-CANCELADO,
+.turno-row.estado-NO_ASISTIO { background-color: #F2DCE7; }
+.turno-row.estado-REPROGRAMADO { background-color: #BDE3F2; }
+.turno-row.estado-ABOGADO { background-color: #97BF7A; }
+
+.btn-estado { padding: 4px 8px; font-size: 0.85rem; margin: 2px; border-radius: 4px; }
+.btn-estado-small { padding: 2px 6px; font-size: 0.75rem; }
+.btn-llamar { padding: 12px 24px; background: #0369a1; color: white; border: none; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+.btn-llamar:hover { background: #0284c7; transform: translateY(-1px); }
+.btn-marcar { padding: 12px 24px; background: #059669; color: white; border: none; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+.btn-marcar:hover { background: #10b981; transform: translateY(-1px); }
+
+.turno-row.turno-selected { outline: 2px solid #8AA6A1; background-color: #e0f2fe; }
+
+/* Modal genérico */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+.modal-overlay.hidden { display: none !important; }
+.modal-box {
+  background: #fff;
+  padding: 16px;
+  border-radius: 10px;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+  max-width: 420px;
+  width: 100%;
+}

@@ -1,0 +1,47 @@
+{
+  "name": "recibos-app",
+  "version": "1.0.0",
+  "description": "Aplicación para generar y gestionar recibos de venta",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "build": "pkg . --target win --compress Brotli",
+    "build:all": "pkg . --target win,macos,linux --compress Brotli",
+    "obfuscate": "node scripts/obfuscate-frontend.js",
+    "restore-source": "node scripts/restore-source.js"
+  },
+  "keywords": [
+    "recibos",
+    "facturas",
+    "pdf"
+  ],
+  "author": "",
+  "license": "ISC",
+  "bin": "server.js",
+  "pkg": {
+    "assets": [
+      "public/**/*"
+    ],
+    "targets": [
+      "win-x64"
+    ],
+    "outputPath": "."
+  },
+  "dependencies": {
+    "bcrypt": "^5.1.1",
+    "better-sqlite3": "^12.6.2",
+    "better-sqlite3-session-store": "^0.1.0",
+    "cors": "^2.8.5",
+    "express": "^5.2.1",
+    "express-session": "^1.19.0",
+    "puppeteer": "^24.35.0"
+  },
+  "devDependencies": {
+    "javascript-obfuscator": "^4.1.1",
+    "pkg": "^5.8.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
