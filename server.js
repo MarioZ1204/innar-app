@@ -16,16 +16,38 @@ app.use(cors({
 }));
 app.use(bodyParser.json({ limit: '5mb' }));
 
+// Middleware para cerrar sesión por inactividad (60 minutos)
+app.use((req, res, next) => {
+  try {
+    if (req.session) {
+      const INACTIVITY_MS = 60 * 60 * 1000; // 60 minutos
+      const now = Date.now();
+      if (req.session.lastActivity && (now - req.session.lastActivity) > INACTIVITY_MS) {
+        // destruir sesión por inactividad
+        req.session.destroy(() => {});
+      } else {
+        req.session.lastActivity = now;
+      }
+    }
+  } catch (e) {
+    console.error('session middleware error', e.message);
+  }
+  next();
+});
+
 // Configurar sesiones
 app.use(session({
   secret: 'innar-clinica-secret-key-change-in-production',
   resave: false,
   saveUninitialized: false,
+  rolling: true,
   cookie: { 
     secure: false, // true si usas HTTPS
     maxAge: 24 * 60 * 60 * 1000 // 24 horas
   }
 }));
+// activar rolling session para actualizar cookie en cada respuesta
+app.set('trust proxy', 1);
 
 // Páginas wrapper para reportes (muestran favicon en la pestaña y el PDF en iframe)
 app.get('/reportes/diario/vista', (req, res) => {
@@ -136,10 +158,24 @@ CREATE TABLE IF NOT EXISTS consultorios (
   activo INTEGER DEFAULT 1
 )`);
 
+// Tabla para programacion de agenda por doctor
+db.exec(`
+CREATE TABLE IF NOT EXISTS doctor_agenda (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  doctor_id INTEGER NOT NULL,
+  fecha TEXT NOT NULL,
+  hora_inicio TEXT NOT NULL,
+  hora_fin TEXT,
+  disponible INTEGER DEFAULT 1,
+  creado_en TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (doctor_id) REFERENCES usuarios(id)
+)
+`);
+
 db.exec(`
 CREATE TABLE IF NOT EXISTS turnos (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  numero_turno INTEGER NOT NULL,
+  numero_turno INTEGER,
   paciente_id INTEGER NOT NULL,
   consultorio_id INTEGER NOT NULL,
   entidad TEXT,
@@ -154,6 +190,59 @@ CREATE TABLE IF NOT EXISTS turnos (
   FOREIGN KEY (consultorio_id) REFERENCES consultorios(id)
 )`);
 
+
+// Migraciones: agregar columnas nuevas si la BD antigua no las tiene
+try {
+  db.prepare('SELECT tipo_consulta FROM turnos LIMIT 1').get();
+} catch (e) {
+  try {
+    db.exec('ALTER TABLE turnos ADD COLUMN tipo_consulta TEXT');
+    db.exec('ALTER TABLE turnos ADD COLUMN telefono TEXT');
+    db.exec('ALTER TABLE turnos ADD COLUMN programado_por TEXT');
+    db.exec('ALTER TABLE turnos ADD COLUMN oportunidad INTEGER');
+    console.log('✅ Columnas tipo_consulta/telefono/programado_por/oportunidad agregadas a turnos');
+  } catch (e2) { /* ya existen o no se puede */ }
+}
+// Migración: permitir numero_turno NULL en instalaciones antiguas (recrear tabla si tiene NOT NULL)
+try {
+  const cols = db.prepare("PRAGMA table_info(turnos)").all();
+  const numCol = cols.find(c => c.name === 'numero_turno');
+  if (numCol && numCol.notnull === 1) {
+    console.log('⚠️ Actualizando esquema de turnos para permitir numero_turno NULL');
+    db.exec('BEGIN TRANSACTION');
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS turnos_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        numero_turno INTEGER,
+        paciente_id INTEGER NOT NULL,
+        consultorio_id INTEGER NOT NULL,
+        entidad TEXT,
+        prioridad INTEGER DEFAULT 2,
+        estado TEXT NOT NULL DEFAULT 'PROGRAMADO',
+        fecha TEXT NOT NULL,
+        hora_programada TEXT,
+        hora_llamado TEXT,
+        observaciones TEXT,
+        tipo_consulta TEXT,
+        telefono TEXT,
+        programado_por TEXT,
+        oportunidad INTEGER,
+        creado_en TEXT DEFAULT (datetime('now'))
+      )
+    `);
+    db.exec(`
+      INSERT INTO turnos_new (id, numero_turno, paciente_id, consultorio_id, entidad, prioridad, estado, fecha, hora_programada, hora_llamado, observaciones, tipo_consulta, telefono, programado_por, oportunidad, creado_en)
+      SELECT id, numero_turno, paciente_id, consultorio_id, entidad, prioridad, estado, fecha, hora_programada, hora_llamado, observaciones, tipo_consulta, telefono, programado_por, oportunidad, creado_en FROM turnos
+    `);
+    db.exec('DROP TABLE turnos');
+    db.exec('ALTER TABLE turnos_new RENAME TO turnos');
+    db.exec('COMMIT');
+    console.log('✅ Migración de numero_turno realizada');
+  }
+} catch (e) {
+  try { db.exec('ROLLBACK'); } catch(_){}
+  console.error('Error migrando numero_turno:', e.message);
+}
 // Tablas para Agenda Electrodiagnóstico (4 equipos)
 db.exec(`
 CREATE TABLE IF NOT EXISTS equipos_electro (
@@ -587,6 +676,63 @@ app.get('/api/consultorios', (req, res) => {
   }
 });
 
+// Listar medicos (usuarios con rol 'doctor') — accesible a recepcion y doctores
+app.get('/api/medicos', requireAuth, (req, res) => {
+  try {
+    const medicos = db.prepare("SELECT id, nombre, usuario FROM usuarios WHERE rol = 'doctor' AND activo = 1 ORDER BY nombre ASC").all();
+    res.json(medicos);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Obtener agenda de un doctor
+app.get('/api/doctor-agenda', requireAuth, (req, res) => {
+  const doctorId = parseInt(req.query.doctor_id, 10);
+  if (!doctorId) return res.status(400).json({ error: 'doctor_id es obligatorio' });
+  try {
+    const rows = db.prepare('SELECT id, doctor_id, fecha, hora_inicio, hora_fin, disponible FROM doctor_agenda WHERE doctor_id = ? ORDER BY fecha ASC, hora_inicio ASC').all(doctorId);
+    res.json(rows);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Crear/actualizar agenda de doctor (reemplaza la agenda del doctor)
+app.post('/api/doctor-agenda', requireAuth, (req, res) => {
+  const { doctor_id, slots } = req.body || {};
+  if (!Array.isArray(slots)) return res.status(400).json({ error: 'slots debe ser un arreglo' });
+  // Permitir que el doctor suba su propia agenda o admin
+  const actorId = req.session.usuarioId;
+  const isAdminUser = req.session.rol === 'admin';
+  const isDoctorUser = req.session.rol === 'doctor';
+  const targetDoctorId = parseInt(doctor_id || actorId, 10);
+  if (!targetDoctorId) return res.status(400).json({ error: 'doctor_id inválido' });
+  if (!isAdminUser && !isDoctorUser) return res.status(403).json({ error: 'Solo médicos o administradores pueden subir agenda' });
+  if (isDoctorUser && targetDoctorId !== actorId) return res.status(403).json({ error: 'Médicos solo pueden modificar su propia agenda' });
+
+  try {
+    const tx = db.transaction((slotsArr) => {
+      db.prepare('DELETE FROM doctor_agenda WHERE doctor_id = ?').run(targetDoctorId);
+      const insert = db.prepare('INSERT INTO doctor_agenda (doctor_id, fecha, hora_inicio, hora_fin, disponible) VALUES (?, ?, ?, ?, ?)');
+      for (const s of slotsArr) {
+        const fecha = s.fecha;
+        const hi = s.hora_inicio;
+        const hf = s.hora_fin || null;
+        const disp = s.disponible ? 1 : 0;
+        insert.run(targetDoctorId, fecha, hi, hf, disp);
+      }
+    });
+    tx(slots);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ============================================
 // ENDPOINTS DE TURNOS (AGENDA)
 // ============================================
@@ -609,7 +755,10 @@ app.get('/api/turnos', (req, res) => {
       JOIN pacientes p ON p.id = t.paciente_id
       JOIN consultorios c ON c.id = t.consultorio_id
       WHERE t.fecha = ? AND t.consultorio_id = ?
-      ORDER BY t.numero_turno ASC, t.id ASC
+      ORDER BY CASE WHEN t.hora_programada IS NULL OR t.hora_programada = '' THEN 1 ELSE 0 END,
+               t.hora_programada ASC,
+               t.numero_turno ASC,
+               t.id ASC
     `).all(fecha, consultorio_id);
     res.json(turnos);
   } catch (e) {
@@ -620,35 +769,31 @@ app.get('/api/turnos', (req, res) => {
 
 // Crear turno
 app.post('/api/turnos', (req, res) => {
-  const { paciente_id, consultorio_id, entidad, prioridad = 2, fecha, hora_programada } = req.body || {};
+  const { paciente_id, consultorio_id, entidad, prioridad = 2, fecha, hora_programada, observaciones, tipo_consulta, telefono, oportunidad, programado_por } = req.body || {};
 
   if (!paciente_id || !consultorio_id || !fecha) {
     return res.status(400).json({ error: 'paciente_id, consultorio_id y fecha son obligatorios' });
   }
 
   try {
-    // Obtener siguiente numero_turno
-    const row = db.prepare(
-      'SELECT MAX(numero_turno) AS maxNum FROM turnos WHERE fecha = ? AND consultorio_id = ?'
-    ).get(fecha, consultorio_id);
-    const siguiente = (row?.maxNum || 0) + 1;
-
+    // Crear turno como PROGRAMADO sin número (numero_turno NULL)
     const stmt = db.prepare(`
-      INSERT INTO turnos (numero_turno, paciente_id, consultorio_id, entidad, prioridad, estado, fecha, hora_programada)
-      VALUES (?, ?, ?, ?, ?, '', ?, ?)
+      INSERT INTO turnos (numero_turno, paciente_id, consultorio_id, entidad, prioridad, estado, fecha, hora_programada, observaciones, tipo_consulta, telefono, oportunidad, programado_por)
+      VALUES (NULL, ?, ?, ?, ?, 'PROGRAMADO', ?, ?, ?, ?, ?, ?, ?)
     `);
     const result = stmt.run(
-      siguiente,
       paciente_id,
       consultorio_id,
       entidad || '',
       prioridad,
       fecha,
-      hora_programada || null
+      hora_programada || null,
+      observaciones || null,
+      tipo_consulta || null,
+      phoneOrNull(telefono),
+      opportunityOrNull(oportunidad),
+      programado_por || null
     );
-
-    // Recompactar cola después de crear
-    recompactarCola(fecha, consultorio_id);
 
     res.json({ ok: true, id: result.lastInsertRowid });
   } catch (e) {
@@ -656,6 +801,18 @@ app.post('/api/turnos', (req, res) => {
     res.status(500).json({ error: e.message });
   }
 });
+
+// Helpers para sanitizar algunos campos
+function phoneOrNull(v) {
+  if (v === undefined || v === null) return null;
+  const s = String(v).trim();
+  return s === '' ? null : s;
+}
+function opportunityOrNull(v) {
+  if (v === undefined || v === null) return null;
+  const n = parseInt(v, 10);
+  return isNaN(n) ? null : n;
+}
 
 // Cambiar estado de un turno (con recompactación automática)
 app.patch('/api/turnos/:id/estado', (req, res) => {
@@ -677,16 +834,25 @@ app.patch('/api/turnos/:id/estado', (req, res) => {
     }
 
     // Actualizar estado y hora_llamado si pasa a EN_ATENCION
-    const stmt = db.prepare(`
-      UPDATE turnos 
-      SET estado = ?, 
-          hora_llamado = CASE WHEN ? = 'EN_ATENCION' THEN datetime('now') ELSE hora_llamado END
-      WHERE id = ?
-    `);
-    stmt.run(estado, estado, id);
+    // Si se marca EN_SALA y el turno no tiene número, asignar el siguiente número
+    if (estado === 'EN_SALA') {
+      // calcular siguiente número entre los que ya están EN_SALA
+      const row = db.prepare("SELECT COALESCE(MAX(numero_turno), 0) AS maxNum FROM turnos WHERE fecha = ? AND consultorio_id = ? AND estado = 'EN_SALA'").get(turno.fecha, turno.consultorio_id);
+      const siguiente = (row?.maxNum || 0) + 1;
+      db.prepare(`UPDATE turnos SET estado = ?, numero_turno = ?, hora_llamado = hora_llamado WHERE id = ?`).run(estado, siguiente, id);
+    } else {
+      // En otros casos solo actualizar estado y hora_llamado si pasa a EN_ATENCION
+      const stmt = db.prepare(`
+        UPDATE turnos 
+        SET estado = ?, 
+            hora_llamado = CASE WHEN ? = 'EN_ATENCION' THEN datetime('now') ELSE hora_llamado END
+        WHERE id = ?
+      `);
+      stmt.run(estado, estado, id);
+    }
 
-    // Si el turno pasa a ATENDIDO/CANCELADO/NO_ASISTIO, recompactar cola
-    if (['ATENDIDO', 'CANCELADO', 'NO_ASISTIO'].includes(estado)) {
+    // Si el turno deja la cola (ATENDIDO/CANCELADO/NO_ASISTIO) o cambia desde EN_SALA, recompactar
+    if (['ATENDIDO', 'CANCELADO', 'NO_ASISTIO'].includes(estado) || turno.estado === 'EN_SALA') {
       recompactarCola(turno.fecha, turno.consultorio_id);
     }
 
@@ -749,7 +915,27 @@ app.patch('/api/turnos/:id/numero', requireAuth, requireRole(['admin', 'recepcio
 
     if (nuevoNumero < 1) nuevoNumero = 1;
 
-    db.prepare('UPDATE turnos SET numero_turno = ? WHERE id = ?').run(nuevoNumero, id);
+    // Ajustar otros turnos para mantener la secuencia:
+    const fecha = turno.fecha;
+    const consultorioId = turno.consultorio_id;
+    const oldNum = turno.numero_turno || 0;
+
+    const tx = db.transaction(() => {
+      if (nuevoNumero === oldNum) {
+        // nada que hacer
+      } else if (nuevoNumero < oldNum) {
+        // mover hacia arriba: incrementar en 1 los turnos con numero >= nuevoNumero y < oldNum
+        db.prepare(`UPDATE turnos SET numero_turno = numero_turno + 1 WHERE fecha = ? AND consultorio_id = ? AND estado = 'EN_SALA' AND numero_turno >= ? AND id != ?`).run(fecha, consultorioId, nuevoNumero, id);
+        db.prepare('UPDATE turnos SET numero_turno = ? WHERE id = ?').run(nuevoNumero, id);
+      } else { // nuevoNumero > oldNum
+        // mover hacia abajo: decrementar en 1 los turnos con numero > oldNum y <= nuevoNumero
+        db.prepare(`UPDATE turnos SET numero_turno = numero_turno - 1 WHERE fecha = ? AND consultorio_id = ? AND estado = 'EN_SALA' AND numero_turno > ? AND numero_turno <= ? AND id != ?`).run(fecha, consultorioId, oldNum, nuevoNumero, id);
+        db.prepare('UPDATE turnos SET numero_turno = ? WHERE id = ?').run(nuevoNumero, id);
+      }
+    });
+    tx();
+
+    // Normalizar secuencia por si hay inconsistencias
     recompactarCola(turno.fecha, turno.consultorio_id);
 
     res.json({ ok: true });

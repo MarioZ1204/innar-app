@@ -7,6 +7,18 @@
   <title>Instituto Neurociencias</title>
   <link rel="icon" type="image/png" href="icon.png">
   <link rel="stylesheet" href="style.css">
+  <style>
+    @keyframes moveUp {
+      0% { transform: translateY(8px); opacity: 0.0; }
+      60% { transform: translateY(-6px); opacity: 0.95; }
+      100% { transform: translateY(0); opacity: 1; }
+    }
+    .animate-up {
+      animation: moveUp 700ms ease forwards;
+      background: linear-gradient(90deg, rgba(255,249,196,0.9), rgba(255,255,255,0.0));
+    }
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body>
   <!-- ========== PANTALLA DE LOGIN ========== -->
@@ -52,7 +64,7 @@
         <button class="menu-card" data-module="agenda-medica" data-rol="admin recepcion electro doctor">
           <span class="menu-card-icon">📅</span>
           <span class="menu-card-title">Agenda Médica</span>
-          <span class="menu-card-desc">Citas y turnos por consultorio</span>
+          <span class="menu-card-desc">Citas por consultorio</span>
         </button>
         <button class="menu-card" data-module="electro" data-rol="admin recepcion electro doctor">
           <span class="menu-card-icon">⚡</span>
@@ -236,12 +248,12 @@
       </div>
       <div class="main-content">
         <div class="container">
-          <header><h2>Agenda de Turnos</h2></header>
+          <header><h2>Agenda de Citas</h2></header>
           <section class="card no-print">
             <div class="row" style="margin-bottom:16px">
               <div class="col"><label>Fecha</label><input id="agendaMedicaFecha" type="date" /></div>
               <div class="col"><label>Consultorio</label><select id="agendaMedicaConsultorio"><option value="">Seleccionar consultorio</option></select></div>
-              <div class="col" style="display:flex;align-items:flex-end"><button id="cargarTurnosMedica" style="width:100%">Cargar Turnos</button></div>
+              <div class="col" style="display:flex;align-items:flex-end"><button id="cargarTurnosMedica" style="width:100%">Cargar Citas</button></div>
             </div>
             <div style="text-align:center;margin-top:8px">
               <div id="agendaMedicaFechaDisplay" style="font-size:18px;font-weight:700;color:#111;text-transform:uppercase"></div>
@@ -256,10 +268,10 @@
             </div>
           </section>
           <section class="card no-print" id="agendaNuevoTurnoSection">
-            <h3>Nuevo Turno</h3>
+            <h3>Nueva Cita</h3>
             <div class="row" id="agendaNuevoTurnoRow">
-              <div class="col"><label>Paciente</label><input id="nuevoPacienteNombreMedica" type="text" placeholder="Buscar o crear paciente..." list="pacientesListMedica" /><datalist id="pacientesListMedica"></datalist></div>
               <div class="col"><label>Documento</label><input id="nuevoPacienteDocMedica" type="text" placeholder="Documento" /></div>
+              <div class="col"><label>Paciente</label><input id="nuevoPacienteNombreMedica" type="text" placeholder="Buscar o crear paciente..." list="pacientesListMedica" /><datalist id="pacientesListMedica"></datalist></div>
               <div class="col">
                 <label>Entidad</label>
                 <select id="nuevoTurnoEntidadMedica">
@@ -277,7 +289,6 @@
                 </select>
               </div>
               <div class="col"><label>Prioridad</label><select id="nuevoTurnoPrioridadMedica"><option value="2">Normal</option><option value="1">Prioritario</option></select></div>
-              <div class="col" style="display:flex;align-items:flex-end"><button id="crearTurnoMedica" style="width:100%">Crear Turno</button></div>
             </div>
             <div class="row" style="margin-top:12px">
               <div class="col"><label>Hora</label><select id="nuevoTurnoHoraMedica"></select></div>
@@ -289,26 +300,47 @@
               <div class="col" style="width:100%"><label>Notas</label><textarea id="nuevoTurnoNotasMedica" rows="2" placeholder="Observaciones, preparación, info relevante..."></textarea></div>
             </div>
             <div style="margin-top:8px;text-align:right;font-size:0.95rem;color:#444">Programado por: <span id="nuevoTurnoProgramadoPor">-</span></div>
+            <div style="margin-top:12px;text-align:right"><button id="crearTurnoMedica" style="width:220px">Crear Cita</button></div>
           </section>
           <section class="card">
-            <h3>Turnos del Día</h3>
+            <h3>Citas del Día</h3>
             <div id="turnosListMedica" style="overflow-x:auto">
               <table id="turnosTableMedica" style="width:100%;border-collapse:collapse">
                 <thead>
                   <tr style="background:#f0f0f0">
-                    <th style="padding:8px;border:1px solid #ddd">Turno</th>
+                    <th style="padding:8px;border:1px solid #ddd">Cita</th>
+                    <th style="padding:8px;border:1px solid #ddd" class="col-hora">Hora</th>
                     <th style="padding:8px;border:1px solid #ddd">Paciente</th>
+                    <th style="padding:8px;border:1px solid #ddd">Tipo consulta</th>
                     <th style="padding:8px;border:1px solid #ddd">Documento</th>
                     <th style="padding:8px;border:1px solid #ddd">Entidad</th>
                     <th style="padding:8px;border:1px solid #ddd">Estado</th>
+                    <th style="padding:8px;border:1px solid #ddd">Notas</th>
                     <th style="padding:8px;border:1px solid #ddd">Acciones</th>
                   </tr>
                 </thead>
                 <tbody id="turnosTableBodyMedica">
-                  <tr><td colspan="6" style="padding:20px;text-align:center;color:#999">Selecciona fecha y consultorio para ver los turnos</td></tr>
+                  <tr><td colspan="9" style="padding:20px;text-align:center;color:#999">Selecciona fecha y consultorio para ver las citas</td></tr>
                 </tbody>
               </table>
             </div>
+          </section>
+          <!-- Programar Agenda (solo doctores) -->
+          <section class="card" id="agendaProgramarSection" style="display:none">
+            <h3>Programar Agenda (subir Excel)</h3>
+            <p>Sube un archivo Excel con columnas: <strong>fecha</strong> (YYYY-MM-DD), <strong>hora_inicio</strong> (HH:MM), <strong>hora_fin</strong> (HH:MM opcional), <strong>disponible</strong> (1/0 o Sí/No)</p>
+            <input id="agendaProgramarFile" type="file" accept=".xlsx,.xls,.csv" />
+            <div style="margin-top:8px"><button id="agendaProgramarUpload" disabled>Subir agenda</button></div>
+            <div id="agendaProgramarPreview" style="margin-top:12px;overflow:auto"></div>
+          </section>
+          <!-- Ver agenda de médicos (recepción) -->
+          <section class="card" id="agendaVerMedicosSection" style="display:none">
+            <h3>Ver Agenda de Médicos</h3>
+            <div style="display:flex;gap:8px;align-items:center">
+              <label>Seleccionar médico</label>
+              <select id="agendaDoctorSelect"></select>
+            </div>
+            <div id="agendaDoctorSchedule" style="margin-top:12px;overflow:auto"></div>
           </section>
         </div>
       </div>
@@ -316,10 +348,10 @@
   </div>
 
   <!-- Modal edición de paciente/turno (Agenda Médica) -->
-  <div id="agendaEditPacienteSection" class="modal-overlay hidden">
+    <div id="agendaEditPacienteSection" class="modal-overlay hidden">
     <div class="modal-box">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-        <h3 style="margin:0;font-size:1rem">Editar paciente / turno</h3>
+        <h3 style="margin:0;font-size:1rem">Editar paciente / cita</h3>
         <button id="btnCerrarEditPaciente" class="btn-estado-small" style="background:#6b7280;color:white">✕</button>
       </div>
       <div id="agendaEditInfo" style="font-size:0.9rem;color:#4b5563;margin-bottom:8px">
@@ -330,13 +362,8 @@
           <label>Nombre del paciente</label>
           <input id="editPacienteNombreMedica" type="text" placeholder="Nombre para llamar al paciente" />
         </div>
-        <div>
-          <label>Número de turno</label>
-          <input id="editTurnoNumeroMedica" type="number" min="1" step="1" />
-        </div>
         <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
           <button id="btnGuardarNombreMedica">Guardar nombre</button>
-          <button id="btnGuardarTurnoNumeroMedica" class="secondary">Guardar número</button>
         </div>
       </div>
     </div>
