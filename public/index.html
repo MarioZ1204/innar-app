@@ -245,103 +245,113 @@
           <img src="logo.png" alt="Logo" style="height:70px;width:auto;object-fit:contain" />
         </div>
         <h2 style="color:white;margin-bottom:16px">Agenda Médica</h2>
+        <button class="sidebar-btn agenda-page-btn active" data-page="citas">Ver Citas</button>
+        <button class="sidebar-btn agenda-page-btn" data-page="programar" id="btnAgendaProgramar" style="display:none">Programar Agenda</button>
       </div>
       <div class="main-content">
         <div class="container">
-          <header><h2>Agenda de Citas</h2></header>
-          <section class="card no-print">
-            <div class="row" style="margin-bottom:16px">
-              <div class="col"><label>Fecha</label><input id="agendaMedicaFecha" type="date" /></div>
-              <div class="col"><label>Consultorio</label><select id="agendaMedicaConsultorio"><option value="">Seleccionar consultorio</option></select></div>
-              <div class="col" style="display:flex;align-items:flex-end"><button id="cargarTurnosMedica" style="width:100%">Cargar Citas</button></div>
-            </div>
-            <div style="text-align:center;margin-top:8px">
-              <div id="agendaMedicaFechaDisplay" style="font-size:18px;font-weight:700;color:#111;text-transform:uppercase"></div>
-            </div>
-          </section>
-          <!-- Botones para Doctor: Llamar siguiente / Marcar atendido -->
-          <section class="card no-print" id="agendaDoctorAcciones" style="display:none;background:#f0f9ff;border-left:4px solid #0369a1">
-            <h3>Acciones Rápidas</h3>
-            <div style="display:flex;gap:16px;flex-wrap:wrap">
-              <button id="btnLlamarSiguiente" class="btn-llamar">📢 Llamar siguiente paciente</button>
-              <button id="btnMarcarAtendido" class="btn-marcar">✓ Marcar como atendido</button>
-            </div>
-          </section>
-          <section class="card no-print" id="agendaNuevoTurnoSection">
-            <h3>Nueva Cita</h3>
-            <div class="row" id="agendaNuevoTurnoRow">
-              <div class="col"><label>Documento</label><input id="nuevoPacienteDocMedica" type="text" placeholder="Documento" /></div>
-              <div class="col"><label>Paciente</label><input id="nuevoPacienteNombreMedica" type="text" placeholder="Buscar o crear paciente..." list="pacientesListMedica" /><datalist id="pacientesListMedica"></datalist></div>
-              <div class="col">
-                <label>Entidad</label>
-                <select id="nuevoTurnoEntidadMedica">
-                  <option value="">Seleccionar</option>
-                  <option value="Protegemos">Protegemos</option>
-                  <option value="Global Salud">Global Salud</option>
-                  <option value="Particular">Particular</option>
-                  <option value="Medica Preferencial">Medica Preferencial</option>
-                  <option value="Multiservicios">Multiservicios</option>
-                  <option value="Medica Estar Bien">Medica Estar Bien</option>
-                  <option value="Previred">Previred</option>
-                  <option value="Prevenir Descuentos">Prevenir Descuentos</option>
-                  <option value="Clical Medica">Clical Medica</option>
-                  <option value="Medicina Para Todos">Medicina Para Todos</option>
-                </select>
+          <!-- PÁGINA: VER CITAS -->
+          <div class="agenda-page active" data-agenda-page="citas">
+            <header><h2>Agenda de Citas</h2></header>
+            <section class="card no-print">
+              <div class="row" style="margin-bottom:16px">
+                <div class="col"><label>Fecha</label><input id="agendaMedicaFecha" type="date" /></div>
+                <div class="col"><label>Consultorio</label><select id="agendaMedicaConsultorio"><option value="">Seleccionar consultorio</option></select></div>
+                <div class="col" style="display:flex;align-items:flex-end"><button id="cargarTurnosMedica" style="width:100%">Cargar Citas</button></div>
               </div>
-              <div class="col"><label>Prioridad</label><select id="nuevoTurnoPrioridadMedica"><option value="2">Normal</option><option value="1">Prioritario</option></select></div>
-            </div>
-            <div class="row" style="margin-top:12px">
-              <div class="col"><label>Hora</label><select id="nuevoTurnoHoraMedica"></select></div>
-              <div class="col"><label>Teléfono</label><input id="nuevoPacienteTelefonoMedica" type="tel" placeholder="Teléfono" /></div>
-              <div class="col"><label>Tipo de consulta</label><select id="nuevoTurnoTipoMedica"><option value="">Seleccionar</option><option>Consulta General</option><option>Control</option><option>Urgencia</option><option>Electrodiagnóstico</option><option>Otro</option></select></div>
-              <div class="col"><label>Oportunidad (n°)</label><input id="nuevoTurnoOportunidadMedica" type="number" min="0" step="1" /></div>
-            </div>
-            <div class="row" style="margin-top:8px">
-              <div class="col" style="width:100%"><label>Notas</label><textarea id="nuevoTurnoNotasMedica" rows="2" placeholder="Observaciones, preparación, info relevante..."></textarea></div>
-            </div>
-            <div style="margin-top:8px;text-align:right;font-size:0.95rem;color:#444">Programado por: <span id="nuevoTurnoProgramadoPor">-</span></div>
-            <div style="margin-top:12px;text-align:right"><button id="crearTurnoMedica" style="width:220px">Crear Cita</button></div>
-          </section>
-          <section class="card">
-            <h3>Citas del Día</h3>
-            <div id="turnosListMedica" style="overflow-x:auto">
-              <table id="turnosTableMedica" style="width:100%;border-collapse:collapse">
-                <thead>
-                  <tr style="background:#f0f0f0">
-                    <th style="padding:8px;border:1px solid #ddd">Cita</th>
-                    <th style="padding:8px;border:1px solid #ddd" class="col-hora">Hora</th>
-                    <th style="padding:8px;border:1px solid #ddd">Paciente</th>
-                    <th style="padding:8px;border:1px solid #ddd">Tipo consulta</th>
-                    <th style="padding:8px;border:1px solid #ddd">Documento</th>
-                    <th style="padding:8px;border:1px solid #ddd">Entidad</th>
-                    <th style="padding:8px;border:1px solid #ddd">Estado</th>
-                    <th style="padding:8px;border:1px solid #ddd">Notas</th>
-                    <th style="padding:8px;border:1px solid #ddd">Acciones</th>
-                  </tr>
-                </thead>
-                <tbody id="turnosTableBodyMedica">
-                  <tr><td colspan="9" style="padding:20px;text-align:center;color:#999">Selecciona fecha y consultorio para ver las citas</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </section>
-          <!-- Programar Agenda (solo doctores) -->
-          <section class="card" id="agendaProgramarSection" style="display:none">
-            <h3>Programar Agenda (subir Excel)</h3>
-            <p>Sube un archivo Excel con columnas: <strong>fecha</strong> (YYYY-MM-DD), <strong>hora_inicio</strong> (HH:MM), <strong>hora_fin</strong> (HH:MM opcional), <strong>disponible</strong> (1/0 o Sí/No)</p>
-            <input id="agendaProgramarFile" type="file" accept=".xlsx,.xls,.csv" />
-            <div style="margin-top:8px"><button id="agendaProgramarUpload" disabled>Subir agenda</button></div>
-            <div id="agendaProgramarPreview" style="margin-top:12px;overflow:auto"></div>
-          </section>
-          <!-- Ver agenda de médicos (recepción) -->
-          <section class="card" id="agendaVerMedicosSection" style="display:none">
-            <h3>Ver Agenda de Médicos</h3>
-            <div style="display:flex;gap:8px;align-items:center">
-              <label>Seleccionar médico</label>
-              <select id="agendaDoctorSelect"></select>
-            </div>
-            <div id="agendaDoctorSchedule" style="margin-top:12px;overflow:auto"></div>
-          </section>
+              <div style="text-align:center;margin-top:8px">
+                <div id="agendaMedicaFechaDisplay" style="font-size:18px;font-weight:700;color:#111;text-transform:uppercase"></div>
+              </div>
+            </section>
+            <!-- Botones para Doctor: Llamar siguiente / Marcar atendido -->
+            <section class="card no-print" id="agendaDoctorAcciones" style="display:none;background:#f0f9ff;border-left:4px solid #0369a1">
+              <h3>Acciones Rápidas</h3>
+              <div style="display:flex;gap:16px;flex-wrap:wrap">
+                <button id="btnLlamarSiguiente" class="btn-llamar">📢 Llamar siguiente paciente</button>
+                <button id="btnMarcarAtendido" class="btn-marcar">✓ Marcar como atendido</button>
+              </div>
+            </section>
+            <section class="card no-print" id="agendaNuevoTurnoSection">
+              <h3>Nueva Cita</h3>
+              <div class="row" id="agendaNuevoTurnoRow">
+                <div class="col"><label>Documento</label><input id="nuevoPacienteDocMedica" type="text" placeholder="Documento" /></div>
+                <div class="col"><label>Paciente</label><input id="nuevoPacienteNombreMedica" type="text" placeholder="Buscar o crear paciente..." list="pacientesListMedica" /><datalist id="pacientesListMedica"></datalist></div>
+                <div class="col">
+                  <label>Entidad</label>
+                  <select id="nuevoTurnoEntidadMedica">
+                    <option value="">Seleccionar</option>
+                    <option value="Protegemos">Protegemos</option>
+                    <option value="Global Salud">Global Salud</option>
+                    <option value="Particular">Particular</option>
+                    <option value="Medica Preferencial">Medica Preferencial</option>
+                    <option value="Multiservicios">Multiservicios</option>
+                    <option value="Medica Estar Bien">Medica Estar Bien</option>
+                    <option value="Previred">Previred</option>
+                    <option value="Prevenir Descuentos">Prevenir Descuentos</option>
+                    <option value="Clical Medica">Clical Medica</option>
+                    <option value="Medicina Para Todos">Medicina Para Todos</option>
+                  </select>
+                </div>
+                <div class="col"><label>Prioridad</label><select id="nuevoTurnoPrioridadMedica"><option value="2">Normal</option><option value="1">Prioritario</option></select></div>
+              </div>
+              <div class="row" style="margin-top:12px">
+                <div class="col"><label>Hora</label><select id="nuevoTurnoHoraMedica"></select></div>
+                <div class="col"><label>Teléfono</label><input id="nuevoPacienteTelefonoMedica" type="tel" placeholder="Teléfono" /></div>
+                <div class="col"><label>Tipo de consulta</label><select id="nuevoTurnoTipoMedica"><option value="">Seleccionar</option><option>Consulta General</option><option>Control</option><option>Urgencia</option><option>Electrodiagnóstico</option><option>Otro</option></select></div>
+                <div class="col"><label>Oportunidad (n°)</label><input id="nuevoTurnoOportunidadMedica" type="number" min="0" step="1" /></div>
+              </div>
+              <div class="row" style="margin-top:8px">
+                <div class="col" style="width:100%"><label>Notas</label><textarea id="nuevoTurnoNotasMedica" rows="2" placeholder="Observaciones, preparación, info relevante..."></textarea></div>
+              </div>
+              <div style="margin-top:8px;text-align:right;font-size:0.95rem;color:#444">Programado por: <span id="nuevoTurnoProgramadoPor">-</span></div>
+              <div style="margin-top:12px;text-align:right"><button id="crearTurnoMedica" style="width:220px">Crear Cita</button></div>
+            </section>
+            <section class="card">
+              <h3>Citas del Día</h3>
+              <div id="turnosListMedica" style="overflow-x:auto">
+                <table id="turnosTableMedica" style="width:100%;border-collapse:collapse">
+                  <thead>
+                    <tr style="background:#f0f0f0">
+                      <th style="padding:8px;border:1px solid #ddd">Cita</th>
+                      <th style="padding:8px;border:1px solid #ddd" class="col-hora">Hora</th>
+                      <th style="padding:8px;border:1px solid #ddd">Paciente</th>
+                      <th style="padding:8px;border:1px solid #ddd">Tipo consulta</th>
+                      <th style="padding:8px;border:1px solid #ddd">Documento</th>
+                      <th style="padding:8px;border:1px solid #ddd">Entidad</th>
+                      <th style="padding:8px;border:1px solid #ddd">Estado</th>
+                      <th style="padding:8px;border:1px solid #ddd">Notas</th>
+                      <th style="padding:8px;border:1px solid #ddd">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody id="turnosTableBodyMedica">
+                    <tr><td colspan="9" style="padding:20px;text-align:center;color:#999">Selecciona fecha y consultorio para ver las citas</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+          
+          <!-- PÁGINA: PROGRAMAR AGENDA -->
+          <div class="agenda-page" data-agenda-page="programar">
+            <header><h2 id="agendaTitleHeader">Programar Agenda</h2></header>
+            <!-- Subir agenda (solo doctores) -->
+            <section class="card" id="agendaProgramarSection" style="display:none">
+              <h3>Subir Archivo de Agenda</h3>
+              <p>Sube cualquier archivo con tu disponibilidad de horarios (Excel, CSV, PDF, etc.)</p>
+              <input id="agendaProgramarFile" type="file" />
+              <div style="margin-top:8px"><button id="agendaProgramarUpload" disabled>Subir archivo</button></div>
+              <div id="agendaProgramarPreview" style="margin-top:12px;overflow:auto"></div>
+            </section>
+            <!-- Ver agenda de médicos (recepción) -->
+            <section class="card" id="agendaVerMedicosSection" style="display:none">
+              <h3>Agenda Programada de Médicos</h3>
+              <div style="margin-bottom:16px">
+                <label>Seleccionar médico:</label>
+                <select id="agendaDoctorSelect" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:.95rem;margin-top:4px"></select>
+              </div>
+              <div id="agendaDoctorSchedule" style="overflow:auto"></div>
+            </section>
+          </div>
         </div>
       </div>
     </div>

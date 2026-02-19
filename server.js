@@ -8,13 +8,30 @@ const fs = require('fs');
 const path = require('path');
 const session = require('express-session');
 const bcrypt = require('bcrypt');
+const multer = require('multer');
 
 const app = express();
 app.use(cors({
   origin: true,
   credentials: true
 }));
-app.use(bodyParser.json({ limit: '5mb' }));
+app.use(bodyParser.json({ limit: '50mb' }));
+app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
+
+// Configurar multer para uploads de archivos
+const uploadDir = path.join(__dirname, 'public', 'uploads');
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, uploadDir),
+    filename: (req, file, cb) => {
+      const safeName = `${Date.now()}-${file.originalname.replace(/[^a-zA-Z0-9.\-_]/g,'_')}`;
+      cb(null, safeName);
+    }
+  }),
+  limits: { fileSize: 100 * 1024 * 1024 } // 100MB max
+});
 
 // Middleware para cerrar sesión por inactividad (60 minutos)
 app.use((req, res, next) => {
@@ -110,8 +127,7 @@ const logoPath = getLogoPath();
 if(logoPath && fs.existsSync(logoPath)) {
   try {
     const logoBuffer = fs.readFileSync(logoPath);
-    logoBase64 = logoBuffer.toString('base64');
-    console.log('✅ Logo cargado correctamente');
+    logoBase64 = logoBuffer.toString('base64')
   } catch(e) {
     console.warn('⚠️ Error cargando logo:', e.message);
   }
@@ -167,6 +183,18 @@ CREATE TABLE IF NOT EXISTS doctor_agenda (
   hora_inicio TEXT NOT NULL,
   hora_fin TEXT,
   disponible INTEGER DEFAULT 1,
+  creado_en TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (doctor_id) REFERENCES usuarios(id)
+)
+`);
+
+db.exec(`
+CREATE TABLE IF NOT EXISTS doctor_agenda_files (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  doctor_id INTEGER NOT NULL,
+  filename TEXT NOT NULL,
+  url TEXT NOT NULL,
+  uploaded_by INTEGER,
   creado_en TEXT DEFAULT (datetime('now')),
   FOREIGN KEY (doctor_id) REFERENCES usuarios(id)
 )
@@ -730,6 +758,64 @@ app.post('/api/doctor-agenda', requireAuth, (req, res) => {
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: e.message });
+  }
+});
+
+// Upload agenda file using multipart/form-data
+app.post('/api/doctor-agenda/upload', requireAuth, upload.single('file'), (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No se recibió archivo' });
+    }
+    
+    const doctor_id = req.body.doctor_id || req.session.usuarioId;
+    const url = `/uploads/${req.file.filename}`;
+    
+    // Guardar metadatos en la BD
+    const stmt = db.prepare('INSERT INTO doctor_agenda_files (doctor_id, filename, url, uploaded_by) VALUES (?, ?, ?, ?)');
+    const result = stmt.run(doctor_id, req.file.originalname, url, req.session.usuarioId || null);
+    
+    res.json({ ok: true, id: result.lastInsertRowid, url });
+  } catch (e) { 
+    console.error(e); 
+    res.status(500).json({ error: e.message }); 
+  }
+});
+
+app.get('/api/doctor-agenda-files', requireAuth, (req, res) => {
+  const doctorId = parseInt(req.query.doctor_id, 10);
+  if (!doctorId) return res.status(400).json({ error: 'doctor_id es obligatorio' });
+  try {
+    const rows = db.prepare('SELECT id, doctor_id, filename, url, uploaded_by, creado_en FROM doctor_agenda_files WHERE doctor_id = ? ORDER BY creado_en DESC').all(doctorId);
+    res.json(rows);
+  } catch (e) { console.error(e); res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/doctor-agenda-files/:id', requireAuth, (req, res) => {
+  const fileId = parseInt(req.params.id, 10);
+  if (!fileId) return res.status(400).json({ error: 'id es obligatorio' });
+  try {
+    // Obtener el archivo para verificar permisos y obtener la URL
+    const file = db.prepare('SELECT id, doctor_id, url FROM doctor_agenda_files WHERE id = ?').get(fileId);
+    if (!file) return res.status(404).json({ error: 'Archivo no encontrado' });
+    
+    // Verificar que el usuario sea el doctor o admin
+    const isDoctorOwner = req.session.rol === 'doctor' && req.session.usuarioId === file.doctor_id;
+    const isAdmin = req.session.rol === 'admin';
+    if (!isDoctorOwner && !isAdmin) return res.status(403).json({ error: 'No tienes permiso para eliminar este archivo' });
+    
+    // Eliminar archivo del sistema de archivos
+    const filePath = path.join(__dirname, 'public', file.url);
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+    
+    // Eliminar registro de la BD
+    db.prepare('DELETE FROM doctor_agenda_files WHERE id = ?').run(fileId);
+    res.json({ ok: true });
+  } catch (e) { 
+    console.error(e); 
+    res.status(500).json({ error: e.message }); 
   }
 });
 
@@ -1559,10 +1645,7 @@ const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => {
   console.log('');
   console.log('═══════════════════════════════════════════');
-  console.log('✅ APLICACIÓN INICIADA CORRECTAMENTE');
-  console.log('═══════════════════════════════════════════');
-  console.log(`🌐 URL: http://localhost:${PORT}`);
-  console.log('📌 Cierra esta ventana para detener');
+  console.log('  APLICACIÓN INICIADA CORRECTAMENTE');
   console.log('═══════════════════════════════════════════');
   console.log('');
 });

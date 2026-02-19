@@ -2,10 +2,12 @@
 const $ = id => document.getElementById(id);
 const lsKey = 'recibos_sencillo_v1';
 const lsKeyServicios = 'servicios_list_v1';
+const lsKeyCurrentModule = 'current_module_v1';
 let lastReciboId = null;
 
 // Usuario actual (rol: admin, recepcion, electro, doctor)
 let currentUser = null;
+let currentModule = null;
 
 // Intervalo de auto-refresh para Agenda Médica
 let agendaMedicaInterval = null;
@@ -50,9 +52,16 @@ async function checkSession() {
     const data = await res.json();
     if (data.autenticado) {
       currentUser = data.usuario;
-      showView('view-menu');
       $('menuUserName').textContent = currentUser?.nombre || currentUser?.usuario || 'Usuario';
       updateMenuByRole();
+      // Restaurar módulo anterior si existe
+      const savedModule = localStorage.getItem(lsKeyCurrentModule);
+      if (savedModule) {
+        goToModule(savedModule);
+      } else {
+        showView('view-menu');
+        history.pushState({view: 'menu'}, '', '#menu');
+      }
       return true;
     }
   } catch (e) { console.error(e); }
@@ -77,6 +86,7 @@ async function doLogin(usuario, password) {
       $('menuUserName').textContent = currentUser?.nombre || currentUser?.usuario || 'Usuario';
       updateMenuByRole();
       setupMenuHandlers();
+      history.pushState({view: 'menu'}, '', '#menu');
       return true;
     }
     $('loginError').textContent = data.error || 'Error al iniciar sesión';
@@ -93,12 +103,18 @@ async function doLogout() {
   try {
     await apiFetch('/api/logout', { method: 'POST' });
   } catch (e) {}
+  localStorage.removeItem(lsKeyCurrentModule);
+  currentModule = null;
   showView('view-login');
+  history.pushState({view: 'login'}, '', '#login');
 }
 
 let initRecibosDone = false, initAgendaDone = false, initElectroDone = false, initUsuariosDone = false;
 function goToModule(moduleId) {
   showView(`view-${moduleId}`);
+  currentModule = moduleId;
+  localStorage.setItem(lsKeyCurrentModule, moduleId);
+  history.pushState({view: moduleId}, '', `#${moduleId}`);
   if (moduleId === 'recibos') { if (!initRecibosDone) initRecibos(); else cargarLista(); }
   if (moduleId === 'agenda-medica') { 
     if (!initAgendaDone) initAgendaMedica(); 
@@ -113,7 +129,10 @@ function goToModule(moduleId) {
 
 function goToMenu() {
   showView('view-menu');
+  currentModule = null;
+  localStorage.removeItem(lsKeyCurrentModule);
   stopAgendaMedicaAutoRefresh();
+  history.pushState({view: 'menu'}, '', '#menu');
 }
 
 function setupMenuHandlers() {
@@ -127,6 +146,19 @@ function setupMenuHandlers() {
   $('btnVolverAgenda').addEventListener('click', goToMenu);
   $('btnVolverElectro').addEventListener('click', goToMenu);
   if ($('btnVolverUsuarios')) $('btnVolverUsuarios').addEventListener('click', goToMenu);
+  // Manejar botón atrás del navegador (solo una vez)
+  if (!window._popstateSetup) {
+    window._popstateSetup = true;
+    window.addEventListener('popstate', (e) => {
+      if (!currentUser) return;
+      const state = e.state || {};
+      if (state.view === 'menu') {
+        goToMenu();
+      } else if (state.view) {
+        goToModule(state.view);
+      }
+    });
+  }
   // Sidebar recibos
   document.querySelectorAll('#view-recibos .sidebar-btn').forEach(btn => {
     btn.addEventListener('click', function() {
@@ -333,13 +365,60 @@ async function initAgendaMedica() {
     if (thHora && !originalHoraTHHtml) originalHoraTHHtml = thHora.outerHTML;
   } catch (e) {}
   adjustColumnsForRole();
-  // Mostrar sección de programar agenda si es doctor
+  
+  // === PAGE NAVIGATION (Citas / Programar Agenda) ===
+  // Mostrar/ocultar botón "Programar Agenda" según rol
+  const btnProgramar = document.querySelector('[data-page="programar"]');
+  if (btnProgramar) {
+    btnProgramar.style.display = (isDoctor() || isRecepcion()) ? '' : 'none';
+  }
+  
+  // Pre-inicializar handlers si es DOCTOR o RECEPCION para que estén listos cuando abran "Programar Agenda"
+  if (isDoctor() && !window._agendaProgramarHandlersSetup) {
+    setupAgendaProgramarHandlers();
+    window._agendaProgramarHandlersSetup = true;
+  }
+  if (isRecepcion() && !window._agendaVerMedicosSetup) {
+    setupAgendaVerMedicos();
+    window._agendaVerMedicosSetup = true;
+  }
+  
+  // Sidebar button listeners para cambio de página
+  document.querySelectorAll('.agenda-page-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+      const page = this.dataset.page;
+      // marcar botón como activo
+      document.querySelectorAll('.agenda-page-btn').forEach(b => b.classList.remove('active'));
+      this.classList.add('active');
+      // cambiar página visible
+      document.querySelectorAll('.agenda-page').forEach(p => p.classList.remove('active'));
+      const pgEl = document.querySelector(`.agenda-page[data-agenda-page="${page}"]`);
+      if (pgEl) pgEl.classList.add('active');
+      
+      // mostrar/ocultar secciones dentro de página según rol
+      if (page === 'programar') {
+        const titleHeader = document.getElementById('agendaTitleHeader');
+        if (titleHeader) titleHeader.textContent = isDoctor() ? 'Programar Agenda' : 'Agenda Programada';
+        const progSection = $('agendaProgramarSection');
+        const verMedicosSection = $('agendaVerMedicosSection');
+        if (progSection) progSection.style.display = isDoctor() ? '' : 'none';
+        if (verMedicosSection) verMedicosSection.style.display = isRecepcion() ? '' : 'none';
+      }
+    });
+  });
+  
+  // Mostrar página inicial de citas (ya tienen clase active en HTML)
+  // pero asegurar que el botón de citas tenga clase active
+  document.querySelectorAll('.agenda-page-btn').forEach(b => b.classList.remove('active'));
+  const citasBtn = document.querySelector('.agenda-page-btn[data-page="citas"]');
+  if (citasBtn) citasBtn.classList.add('active');
+  
+  // Ocultar inicialmente las secciones de programar agenda
   const progSection = $('agendaProgramarSection');
-  if (progSection) progSection.style.display = isDoctor() ? '' : 'none';
   const verMedicosSection = $('agendaVerMedicosSection');
-  if (verMedicosSection) verMedicosSection.style.display = isRecepcion() ? '' : 'none';
-  if (isDoctor()) setupAgendaProgramarHandlers();
-  if (isRecepcion()) setupAgendaVerMedicos();
+  if (progSection) progSection.style.display = 'none';
+  if (verMedicosSection) verMedicosSection.style.display = 'none';
+  
   const nuevoTurnoSection = $('agendaNuevoTurnoSection');
   const doctorAcciones = $('agendaDoctorAcciones');
   if (nuevoTurnoSection) nuevoTurnoSection.style.display = (isElectro() || isDoctor()) ? 'none' : '';
@@ -433,50 +512,356 @@ function setupAgendaProgramarHandlers() {
   const fileInput = $('agendaProgramarFile');
   const uploadBtn = $('agendaProgramarUpload');
   const preview = $('agendaProgramarPreview');
-  let parsedSlots = [];
   if (!fileInput) return;
-  fileInput.addEventListener('change', async (e) => {
+  
+  fileInput.addEventListener('change', (e) => {
     const f = e.target.files[0];
-    if (!f) return;
-    const data = await f.arrayBuffer();
-    let workbook;
-    try {
-      workbook = XLSX.read(data, { type: 'array', cellDates: true });
-    } catch (err) {
-      showToast('Error leyendo archivo Excel', 'error');
-      return;
+    uploadBtn.disabled = !f;
+    if (f) {
+      preview.innerHTML = `<div style="padding:12px;background:#e0f2fe;border-radius:6px;color:#0369a1">
+        <strong>Archivo seleccionado:</strong> ${escapeHtml(f.name)}
+        <br><small>Tamaño: ${(f.size / 1024).toFixed(2)} KB</small>
+      </div>`;
+    } else {
+      preview.innerHTML = '';
     }
-    const sheetName = workbook.SheetNames[0];
-    const sheet = workbook.Sheets[sheetName];
-    const rows = XLSX.utils.sheet_to_json(sheet, { defval: null, raw: false });
-    parsedSlots = rows.map(r => {
-      const fecha = (r.fecha || r.date || r.Fecha || r.Date || '').toString();
-      const hi = (r.hora_inicio || r.hora || r.start || r.Hora || '').toString();
-      const hf = (r.hora_fin || r.end || r.horaFin || '').toString();
-      const disp = (r.disponible || r.available || r.Disponible || '').toString();
-      const available = ['1','true','sí','si','yes'].includes(disp.toString().toLowerCase()) || disp==='1';
-      return { fecha: fecha, hora_inicio: hi, hora_fin: hf || null, disponible: available };
-    }).filter(s => s.fecha && s.hora_inicio);
-    // render preview
-    preview.innerHTML = '';
-    if (!parsedSlots.length) { preview.innerHTML = '<div>No se detectaron filas válidas</div>'; uploadBtn.disabled = true; return; }
-    const tbl = document.createElement('table'); tbl.style.width='100%'; tbl.style.borderCollapse='collapse';
-    const thead = document.createElement('thead'); thead.innerHTML = '<tr><th>Fecha</th><th>Hora inicio</th><th>Hora fin</th><th>Disponible</th></tr>';
-    tbl.appendChild(thead);
-    const tb = document.createElement('tbody');
-    parsedSlots.forEach(s => { const tr = document.createElement('tr'); tr.innerHTML = `<td style="padding:6px;border:1px solid #ddd">${escapeHtml(s.fecha)}</td><td style="padding:6px;border:1px solid #ddd">${escapeHtml(s.hora_inicio)}</td><td style="padding:6px;border:1px solid #ddd">${escapeHtml(s.hora_fin||'')}</td><td style="padding:6px;border:1px solid #ddd">${s.disponible? 'Sí':'No'}</td>`; tb.appendChild(tr); });
-    tbl.appendChild(tb); preview.appendChild(tbl); uploadBtn.disabled = false;
   });
+  
   uploadBtn?.addEventListener('click', async () => {
-    if (!confirm('¿Subir agenda y reemplazar la existente?')) return;
+    if (!confirm('¿Subir este archivo?')) return;
     try {
-      const doctorId = currentUser?.id;
-      const res = await apiFetch('/api/doctor-agenda', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ doctor_id: doctorId, slots: parsedSlots }) });
+      const f = fileInput.files[0];
+      if (!f) { showToast('Selecciona un archivo', 'error'); return; }
+      
+      // Validar tamaño máximo (50MB)
+      const maxSize = 50 * 1024 * 1024;
+      if (f.size > maxSize) {
+        showToast('El archivo es demasiado grande. Máximo 50MB.', 'error');
+        return;
+      }
+      
+      uploadBtn.disabled = true;
+      uploadBtn.textContent = 'Subiendo...';
+      
+      // Usar FormData para enviar el archivo directamente
+      const formData = new FormData();
+      formData.append('file', f);
+      formData.append('doctor_id', currentUser?.id);
+      
+      const res = await fetch('/api/doctor-agenda/upload', {
+        method: 'POST',
+        credentials: 'include',
+        body: formData
+        // NO enviar Content-Type: multipart/form-data, dejar que el navegador lo establezca automáticamente
+      });
+      
       const data = await res.json();
-      if (data.ok) { showToast('Agenda subida', 'success'); parsedSlots = []; $('agendaProgramarPreview').innerHTML=''; $('agendaProgramarUpload').disabled = true; }
+      
+      if (data.ok) { 
+        showToast('Archivo subido correctamente', 'success'); 
+        fileInput.value = '';
+        preview.innerHTML = '<div style="padding:12px;background:#d1fae5;border-radius:6px;color:#059669">✓ Archivo subido exitosamente</div>';
+        setTimeout(() => { preview.innerHTML = ''; }, 3000);
+        // Recargar lista de archivos
+        setTimeout(() => loadDoctorFiles(), 500);
+      }
       else showToast(data.error||'Error', 'error');
-    } catch (e) { showToast('Error subiendo agenda', 'error'); }
+      
+      uploadBtn.disabled = false;
+      uploadBtn.textContent = 'Subir archivo';
+    } catch (e) { 
+      showToast('Error subiendo archivo: ' + e.message, 'error');
+      console.error('Error detalles:', e);
+      uploadBtn.disabled = false;
+      uploadBtn.textContent = 'Subir archivo';
+    }
   });
+  
+  // Cargar archivos del doctor actual
+  setTimeout(() => loadDoctorFiles(), 500);
+}
+
+function loadDoctorFiles() {
+  apiFetch(`/api/doctor-agenda-files?doctor_id=${currentUser?.id}`)
+    .then(r => r.json())
+    .then(files => {
+      const preview = $('agendaProgramarPreview');
+      // Limpiar preview antes de agregar nuevos elementos
+      preview.innerHTML = '';
+      
+      if (!files || files.length === 0) {
+        const div = document.createElement('div');
+        div.innerHTML = '<div style="padding:12px;color:#999;margin-top:16px;border-top:2px solid #e5e7eb;margin-top:16px;padding-top:16px">No hay archivos subidos aún</div>';
+        preview.appendChild(div);
+        return;
+      }
+      const filesSection = document.createElement('div');
+      filesSection.style.marginTop = '20px';
+      filesSection.style.paddingTop = '16px';
+      filesSection.style.borderTop = '2px solid #e5e7eb';
+      
+      const title = document.createElement('h4');
+      title.textContent = 'Archivos Subidos';
+      title.style.margin = '0 0 12px 0';
+      filesSection.appendChild(title);
+      
+      const ul = document.createElement('ul');
+      ul.style.margin = '0';
+      ul.style.paddingLeft = '20px';
+      files.forEach(f => {
+        const li = document.createElement('li');
+        li.style.marginBottom = '8px';
+        li.style.display = 'flex';
+        li.style.justifyContent = 'space-between';
+        li.style.alignItems = 'center';
+        li.style.padding = '8px';
+        li.style.background = '#f9fafb';
+        li.style.borderRadius = '4px';
+        
+        const link = document.createElement('a');
+        link.href = f.url;
+        link.target = '_blank';
+        link.textContent = f.filename;
+        link.style.color = '#0369a1';
+        link.style.textDecoration = 'underline';
+        link.style.flex = '1';
+        
+        const buttonsContainer = document.createElement('div');
+        buttonsContainer.style.display = 'flex';
+        buttonsContainer.style.gap = '8px';
+        buttonsContainer.style.marginLeft = '8px';
+        
+        // Botón Ver para archivos Excel
+        const isExcel = /\.(xlsx?|xls)$/i.test(f.filename);
+        if (isExcel) {
+          const btnView = document.createElement('button');
+          btnView.textContent = 'Ver';
+          btnView.style.padding = '4px 12px';
+          btnView.style.fontSize = '0.85rem';
+          btnView.style.background = '#0369a1';
+          btnView.style.color = 'white';
+          btnView.style.border = 'none';
+          btnView.style.borderRadius = '4px';
+          btnView.style.cursor = 'pointer';
+          btnView.addEventListener('click', async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            try {
+              const response = await fetch(f.url);
+              const arrayBuffer = await response.arrayBuffer();
+              const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+              showExcelViewer(workbook, f.filename);
+            } catch (err) {
+              showToast('Error al leer el archivo Excel', 'error');
+              console.error(err);
+            }
+          });
+          buttonsContainer.appendChild(btnView);
+        }
+        
+        const btnDelete = document.createElement('button');
+        btnDelete.textContent = 'Eliminar';
+        btnDelete.style.padding = '4px 12px';
+        btnDelete.style.fontSize = '0.85rem';
+        btnDelete.style.background = '#dc2626';
+        btnDelete.style.color = 'white';
+        btnDelete.style.border = 'none';
+        btnDelete.style.borderRadius = '4px';
+        btnDelete.style.cursor = 'pointer';
+        btnDelete.addEventListener('click', async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (!confirm('¿Eliminar este archivo?')) return;
+          try {
+            const res = await apiFetch(`/api/doctor-agenda-files/${f.id}`, { method: 'DELETE' });
+            const data = await res.json();
+            if (data.ok) {
+              showToast('Archivo eliminado', 'success');
+              loadDoctorFiles();
+            } else {
+              showToast(data.error || 'Error', 'error');
+            }
+          } catch (e) {
+            showToast('Error eliminando archivo', 'error');
+          }
+        });
+        
+        li.appendChild(link);
+        buttonsContainer.appendChild(btnDelete);
+        li.appendChild(buttonsContainer);
+        ul.appendChild(li);
+      });
+      filesSection.appendChild(ul);
+      preview.appendChild(filesSection);
+    })
+    .catch(e => console.error(e));
+}
+
+function showExcelViewer(workbook, filename) {
+  // Crear modal
+  const modal = document.createElement('div');
+  modal.style.position = 'fixed';
+  modal.style.top = '0';
+  modal.style.left = '0';
+  modal.style.right = '0';
+  modal.style.bottom = '0';
+  modal.style.background = 'rgba(0,0,0,0.5)';
+  modal.style.zIndex = '9999';
+  modal.style.display = 'flex';
+  modal.style.alignItems = 'center';
+  modal.style.justifyContent = 'center';
+  
+  const container = document.createElement('div');
+  container.style.background = 'white';
+  container.style.borderRadius = '8px';
+  container.style.maxWidth = '90vw';
+  container.style.maxHeight = '85vh';
+  container.style.overflow = 'auto';
+  container.style.padding = '20px';
+  
+  // Header con título y botón cerrar
+  const header = document.createElement('div');
+  header.style.display = 'flex';
+  header.style.justifyContent = 'space-between';
+  header.style.alignItems = 'center';
+  header.style.marginBottom = '16px';
+  header.style.borderBottom = '2px solid #e5e7eb';
+  header.style.paddingBottom = '12px';
+  
+  const titlePart = document.createElement('div');
+  
+  const title = document.createElement('h3');
+  title.textContent = filename;
+  title.style.margin = '0 0 8px 0';
+  title.style.fontSize = '1.1rem';
+  title.style.fontWeight = 'bold';
+  titlePart.appendChild(title);
+  
+  // Selector de hojas
+  const sheetNames = workbook.SheetNames;
+  if (sheetNames.length > 1) {
+    const sheetSelector = document.createElement('div');
+    sheetSelector.style.display = 'flex';
+    sheetSelector.style.gap = '8px';
+    sheetSelector.style.flexWrap = 'wrap';
+    
+    sheetNames.forEach((sheetName, idx) => {
+      const btn = document.createElement('button');
+      btn.textContent = sheetName;
+      btn.style.padding = '6px 12px';
+      btn.style.fontSize = '0.85rem';
+      btn.style.border = '1px solid #d1d5db';
+      btn.style.background = idx === 0 ? '#0369a1' : '#f3f4f6';
+      btn.style.color = idx === 0 ? 'white' : '#4b5563';
+      btn.style.borderRadius = '4px';
+      btn.style.cursor = 'pointer';
+      btn.id = `sheet-btn-${idx}`;
+      
+      btn.addEventListener('click', () => {
+        // Actualizar tabla
+        const tableContainer = document.getElementById('excel-table-container');
+        tableContainer.innerHTML = '';
+        renderSheet(workbook, sheetName, tableContainer);
+        
+        // Actualizar botones
+        document.querySelectorAll('[id^="sheet-btn-"]').forEach(b => {
+          b.style.background = '#f3f4f6';
+          b.style.color = '#4b5563';
+        });
+        btn.style.background = '#0369a1';
+        btn.style.color = 'white';
+      });
+      sheetSelector.appendChild(btn);
+    });
+    titlePart.appendChild(sheetSelector);
+  }
+  
+  header.appendChild(titlePart);
+  
+  const btnClose = document.createElement('button');
+  btnClose.textContent = '✕';
+  btnClose.style.fontSize = '1.5rem';
+  btnClose.style.background = 'none';
+  btnClose.style.border = 'none';
+  btnClose.style.cursor = 'pointer';
+  btnClose.style.color = '#6b7280';
+  btnClose.addEventListener('click', () => {
+    modal.remove();
+  });
+  header.appendChild(btnClose);
+  
+  container.appendChild(header);
+  
+  // Contenedor de tabla
+  const tableContainer = document.createElement('div');
+  tableContainer.id = 'excel-table-container';
+  tableContainer.style.overflowX = 'auto';
+  
+  // Renderizar primera hoja
+  renderSheet(workbook, sheetNames[0], tableContainer);
+  
+  container.appendChild(tableContainer);
+  modal.appendChild(container);
+  document.body.appendChild(modal);
+  
+  // Cerrar con ESC
+  const handleEsc = (e) => {
+    if (e.key === 'Escape') {
+      modal.remove();
+      document.removeEventListener('keydown', handleEsc);
+    }
+  };
+  document.addEventListener('keydown', handleEsc);
+}
+
+function renderSheet(workbook, sheetName, container) {
+  const worksheet = workbook.Sheets[sheetName];
+  
+  // Usar sheet_to_html para renderizar la tabla exactamente como en Excel
+  const html = XLSX.utils.sheet_to_html(worksheet);
+  
+  if (!html) {
+    container.innerHTML = '<p style="color:#999;padding:20px">La hoja está vacía</p>';
+    return;
+  }
+  
+  // Crear un div para el HTML
+  const div = document.createElement('div');
+  div.style.overflow = 'auto';
+  
+  // Insertar el HTML
+  div.innerHTML = html;
+  
+  // Mejorar estilos de la tabla generada
+  const table = div.querySelector('table');
+  if (table) {
+    table.style.borderCollapse = 'collapse';
+    table.style.fontSize = '0.9rem';
+    table.style.border = '1px solid #d1d5db';
+    
+    // Mejorar estilos de todas las celdas
+    const tableCells = table.querySelectorAll('td, th');
+    tableCells.forEach(cell => {
+      cell.style.padding = '8px';
+      cell.style.border = '1px solid #d1d5db';
+      cell.style.textAlign = 'left';
+    });
+    
+    // Header mejorado
+    const headers = table.querySelectorAll('th');
+    headers.forEach(header => {
+      header.style.background = '#f3f4f6';
+      header.style.fontWeight = 'bold';
+    });
+    
+    // Alternancia de colores en filas
+    const rows = table.querySelectorAll('tbody tr');
+    rows.forEach((row, idx) => {
+      row.style.background = idx % 2 === 0 ? '#f9fafb' : 'white';
+    });
+  }
+  
+  container.appendChild(div);
 }
 
 function setupAgendaVerMedicos() {
@@ -488,17 +873,135 @@ function setupAgendaVerMedicos() {
     sel.innerHTML = '<option value="">Seleccionar médico</option>';
     list.forEach(m => { const o = document.createElement('option'); o.value = m.id; o.textContent = m.nombre || m.usuario; sel.appendChild(o); });
   }).catch(()=>{ sel.innerHTML = '<option value="">Error cargando</option>'; });
+  
   sel.addEventListener('change', async (e)=>{
-    const id = e.target.value; if (!id) { cont.innerHTML=''; return; }
+    const id = e.target.value; 
+    if (!id) { cont.innerHTML=''; return; }
+    cont.innerHTML = '<div style="padding:12px;color:#666">Cargando...</div>';
+    
     try {
-      const res = await apiFetch(`/api/doctor-agenda?doctor_id=${id}`);
-      const rows = await res.json();
-      if (!rows.length) { cont.innerHTML = '<div>No hay programación</div>'; return; }
-      const tbl = document.createElement('table'); tbl.style.width='100%'; tbl.style.borderCollapse='collapse'; tbl.innerHTML = '<thead><tr><th>Fecha</th><th>Inicio</th><th>Fin</th><th>Disponible</th></tr></thead>';
-      const tb = document.createElement('tbody');
-      rows.forEach(r => { const tr = document.createElement('tr'); tr.innerHTML = `<td style="padding:6px;border:1px solid #ddd">${escapeHtml(r.fecha)}</td><td style="padding:6px;border:1px solid #ddd">${escapeHtml(r.hora_inicio)}</td><td style="padding:6px;border:1px solid #ddd">${escapeHtml(r.hora_fin||'')}</td><td style="padding:6px;border:1px solid #ddd">${r.disponible? 'Sí':'No'}</td>`; tb.appendChild(tr); });
-      tbl.appendChild(tb); cont.innerHTML=''; cont.appendChild(tbl);
-    } catch (e) { cont.innerHTML = '<div>Error cargando agenda</div>'; }
+      // Obtener slots de agenda disponibles
+      const resSlots = await apiFetch(`/api/doctor-agenda?doctor_id=${id}`);
+      const slots = await resSlots.json();
+      
+      // Obtener archivos subidos
+      const resFiles = await apiFetch(`/api/doctor-agenda-files?doctor_id=${id}`);
+      const files = await resFiles.json();
+      
+      cont.innerHTML = '';
+      
+      // Mostrar slots si existen
+      if (slots && slots.length > 0) {
+        const tbl = document.createElement('table'); 
+        tbl.style.width = '100%'; 
+        tbl.style.borderCollapse = 'collapse';
+        tbl.style.marginBottom = '20px';
+        tbl.innerHTML = '<thead><tr style="background:#f3f4f6"><th style="padding:8px;border:1px solid #ddd">Fecha</th><th style="padding:8px;border:1px solid #ddd">Inicio</th><th style="padding:8px;border:1px solid #ddd">Fin</th><th style="padding:8px;border:1px solid #ddd">Disponible</th></tr></thead>';
+        const tb = document.createElement('tbody');
+        slots.forEach(r => { 
+          const tr = document.createElement('tr'); 
+          tr.innerHTML = `<td style="padding:8px;border:1px solid #ddd">${escapeHtml(r.fecha)}</td><td style="padding:8px;border:1px solid #ddd">${escapeHtml(r.hora_inicio)}</td><td style="padding:8px;border:1px solid #ddd">${escapeHtml(r.hora_fin||'')}</td><td style="padding:8px;border:1px solid #ddd">${r.disponible? 'Sí':'No'}</td>`; 
+          tb.appendChild(tr); 
+        });
+        tbl.appendChild(tb);
+        cont.appendChild(tbl);
+      } else {
+        const noSlots = document.createElement('div');
+        noSlots.style.padding = '12px';
+        noSlots.style.color = '#999';
+        noSlots.textContent = 'No hay programación de disponibilidad';
+        cont.appendChild(noSlots);
+      }
+      
+      // Mostrar archivos subidos (solo para recepción)
+      const filesSection = document.createElement('div');
+      filesSection.style.marginTop = '16px';
+      filesSection.style.paddingTop = '16px';
+      filesSection.style.borderTop = '2px solid #e5e7eb';
+      
+      const filesTitle = document.createElement('h4');
+      filesTitle.textContent = 'Archivos de Agenda';
+      filesTitle.style.margin = '0 0 12px 0';
+      filesTitle.style.color = '#374151';
+      filesSection.appendChild(filesTitle);
+      
+      if (!files || files.length === 0) {
+        const noFiles = document.createElement('div');
+        noFiles.style.color = '#999';
+        noFiles.textContent = 'No hay archivos subidos';
+        filesSection.appendChild(noFiles);
+      } else {
+        const ul = document.createElement('ul');
+        ul.style.margin = '0';
+        ul.style.paddingLeft = '20px';
+        files.forEach(f => { 
+          const li = document.createElement('li');
+          li.style.marginBottom = '8px';
+          li.style.display = 'flex';
+          li.style.justifyContent = 'space-between';
+          li.style.alignItems = 'center';
+          li.style.padding = '8px';
+          li.style.background = '#f9fafb';
+          li.style.borderRadius = '4px';
+          
+          const linkContainer = document.createElement('div');
+          linkContainer.style.flex = '1';
+          
+          const link = document.createElement('a');
+          link.href = f.url;
+          link.target = '_blank';
+          link.textContent = f.filename;
+          link.style.color = '#0369a1';
+          link.style.textDecoration = 'underline';
+          linkContainer.appendChild(link);
+          
+          const meta = document.createElement('small');
+          meta.textContent = ` (${f.creado_en || 'Sin fecha'})`;
+          meta.style.color = '#999';
+          meta.style.marginLeft = '8px';
+          linkContainer.appendChild(meta);
+          
+          li.appendChild(linkContainer);
+          
+          // Botón Ver para Excel
+          const isExcel = /\.(xlsx?|xls)$/i.test(f.filename);
+          if (isExcel) {
+            const btnView = document.createElement('button');
+            btnView.textContent = 'Ver';
+            btnView.style.padding = '4px 12px';
+            btnView.style.fontSize = '0.85rem';
+            btnView.style.background = '#0369a1';
+            btnView.style.color = 'white';
+            btnView.style.border = 'none';
+            btnView.style.borderRadius = '4px';
+            btnView.style.cursor = 'pointer';
+            btnView.style.marginLeft = '8px';
+            btnView.addEventListener('click', async (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              try {
+                const response = await fetch(f.url);
+                const arrayBuffer = await response.arrayBuffer();
+                const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+                showExcelViewer(workbook, f.filename);
+              } catch (err) {
+                showToast('Error al leer el archivo Excel', 'error');
+                console.error(err);
+              }
+            });
+            li.appendChild(btnView);
+          }
+          
+          ul.appendChild(li); 
+        });
+        filesSection.appendChild(ul);
+      }
+      cont.appendChild(filesSection);
+      
+    } catch (e) { 
+      cont.innerHTML = '<div style="color:#dc2626;padding:12px">Error cargando datos: ' + escapeHtml(e.message) + '</div>'; 
+      console.error(e);
+    }
   });
 }
 
