@@ -1,6 +1,8 @@
 // server.js
 require('dotenv').config();
 const express = require('express');
+const https = require('https');
+const http = require('http');
 const db = require('./db-mysql');  // ← MySQL Pool en lugar de SQLite
 const bodyParser = require('body-parser');
 const cors = require('cors');
@@ -256,6 +258,61 @@ app.get('/api/sesion', async (req, res) => {
     }
   } else {
     res.json({ autenticado: false });
+  }
+});
+
+// Cambiar contraseña (cualquier usuario autenticado)
+app.post('/api/cambiar-contrasena', requireAuth, async (req, res) => {
+  const { contrasenaActual, nuevaContrasena, confirmarContrasena } = req.body || {};
+  
+  if (!contrasenaActual || !nuevaContrasena || !confirmarContrasena) {
+    return res.status(400).json({ error: 'Se requieren contraseña actual, nueva contraseña y confirmación' });
+  }
+
+  if (nuevaContrasena !== confirmarContrasena) {
+    return res.status(400).json({ error: 'Las contraseñas no coinciden' });
+  }
+
+  if (nuevaContrasena.length < 6) {
+    return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres' });
+  }
+
+  try {
+    // Obtener usuario actual
+    const users = await db.query(
+      'SELECT * FROM usuarios WHERE id = ?',
+      [req.session.usuarioId]
+    );
+
+    if (users.length === 0) {
+      return res.status(404).json({ error: 'Usuario no encontrado' });
+    }
+
+    const user = users[0];
+
+    // Verificar contraseña actual
+    if (!bcrypt.compareSync(contrasenaActual, user.password_hash)) {
+      return res.status(401).json({ error: 'La contraseña actual es incorrecta' });
+    }
+
+    // Verificar que la nueva contraseña sea diferente
+    if (bcrypt.compareSync(nuevaContrasena, user.password_hash)) {
+      return res.status(400).json({ error: 'La nueva contraseña debe ser diferente a la actual' });
+    }
+
+    // Hash de la nueva contraseña
+    const nuevoHash = bcrypt.hashSync(nuevaContrasena, 10);
+
+    // Actualizar contraseña
+    await db.execute(
+      'UPDATE usuarios SET password_hash = ? WHERE id = ?',
+      [nuevoHash, req.session.usuarioId]
+    );
+
+    res.json({ ok: true, mensaje: 'Contraseña cambiadaexitosamente' });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
   }
 });
 
@@ -1487,27 +1544,89 @@ const PORT = process.env.PORT || 3000;
     await db.initPool();
     console.log('✓ Pool MySQL inicializado');
     
-    const server = app.listen(PORT, () => {
-      console.log('');
-      console.log('═══════════════════════════════════════════');
-      console.log('  APLICACIÓN INICIADA CORRECTAMENTE');
-      console.log('═══════════════════════════════════════════');
-      console.log(`  🌐 http://localhost:${PORT}`);
-      console.log('═══════════════════════════════════════════');
-      console.log('');
-    });
+    // Configuración HTTPS
+    const certPath = path.join(__dirname, 'server.crt');
+    const keyPath = path.join(__dirname, 'server.key');
+    let httpsServer;
 
-    // Manejo de errores
-    server.on('error', (error) => {
-  if (error.code === 'EADDRINUSE') {
-    console.error(`\n❌ Puerto ${PORT} ya está en uso.\n`);
-    console.log(`Intenta con otro puerto:`);
-    console.log(`set PORT=3001 && node server.js\n`);
-    process.exit(1);
-  } else {
-    throw error;
-  }
-    });
+    if (fs.existsSync(certPath) && fs.existsSync(keyPath)) {
+      // Usar HTTPS con certificado
+      const options = {
+        cert: fs.readFileSync(certPath),
+        key: fs.readFileSync(keyPath)
+      };
+
+      // Añadir headers de seguridad
+      app.use((req, res, next) => {
+        res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        res.setHeader('X-Frame-Options', 'DENY');
+        res.setHeader('X-XSS-Protection', '1; mode=block');
+        res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+        next();
+      });
+
+      httpsServer = https.createServer(options, app);
+
+      // Crear servidor HTTP que redirige a HTTPS
+      const httpApp = express();
+      httpApp.use((req, res) => {
+        res.redirect(`https://localhost:${PORT}${req.url}`);
+      });
+      
+      const httpServer = http.createServer(httpApp);
+      const httpPort = 3001;
+      
+      httpServer.listen(httpPort, () => {
+        console.log(`✓ Servidor HTTP escuchando en puerto ${httpPort} (redirigiendo a HTTPS)`);
+      });
+
+      httpsServer.listen(PORT, () => {
+        console.log('');
+        console.log('═══════════════════════════════════════════');
+        console.log('  APLICACIÓN INICIADA CORRECTAMENTE');
+        console.log('═══════════════════════════════════════════');
+        console.log(`  🔒 https://localhost:${PORT}`);
+        console.log(`  ℹ️  HTTP redirige automáticamente a HTTPS`);
+        console.log('═══════════════════════════════════════════');
+        console.log('');
+      });
+
+      // Manejo de errores
+      httpsServer.on('error', (error) => {
+        if (error.code === 'EADDRINUSE') {
+          console.error(`\n❌ Puerto ${PORT} ya está en uso.\n`);
+          console.log(`Intenta con otro puerto:`);
+          console.log(`set PORT=3002 && node server.js\n`);
+          process.exit(1);
+        } else {
+          throw error;
+        }
+      });
+    } else {
+      // Sin HTTPS (desarrollo local)
+      console.warn('⚠️  Certificados SSL no encontrados. Usando HTTP (no seguro)');
+      const server = app.listen(PORT, () => {
+        console.log('');
+        console.log('═══════════════════════════════════════════');
+        console.log('  APLICACIÓN INICIADA CORRECTAMENTE');
+        console.log('═══════════════════════════════════════════');
+        console.log(`  🌐 http://localhost:${PORT}`);
+        console.log('═══════════════════════════════════════════');
+        console.log('');
+      });
+
+      server.on('error', (error) => {
+        if (error.code === 'EADDRINUSE') {
+          console.error(`\n❌ Puerto ${PORT} ya está en uso.\n`);
+          console.log(`Intenta con otro puerto:`);
+          console.log(`set PORT=3001 && node server.js\n`);
+          process.exit(1);
+        } else {
+          throw error;
+        }
+      });
+    }
   } catch (error) {
     console.error('❌ Error iniciando servidor:', error.message);
     process.exit(1);

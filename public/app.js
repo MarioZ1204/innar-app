@@ -17,6 +17,7 @@ let originalHoraTHHtml = null;
 let originalAccionesTHHtml = null;
 let lastAnimatedTurnoId = null;
 let lastAnimatedAt = 0;
+let lastTurnoNumber1Id = null; // Guardar cuál fue el último turno con número 1
 
 // Fetch con credenciales para sesión
 function apiFetch(url, opts = {}) {
@@ -152,6 +153,7 @@ function setupMenuHandlers() {
   if (window._menuHandlersSetup) return;
   window._menuHandlersSetup = true;
   $('btnLogout').addEventListener('click', doLogout);
+  $('btnCambiarContrasena').addEventListener('click', openCambiarContrasenaModal);
   document.querySelectorAll('.menu-card').forEach(card => {
     card.addEventListener('click', () => {
       // Si es RECEPCION y hace clic en AGENDA MÉDICA, mostrar selección de doctor
@@ -1165,10 +1167,13 @@ async function cargarTurnosMedica() {
     }
     // Detectar si hay nuevo primer paciente con numero 1 para animar
     const firstWithNum1 = turnos.find(t => t.numero_turno === 1);
-    let animateTargetId = (firstWithNum1 && firstWithNum1.id) ? firstWithNum1.id : null;
-    // Evitar animar repetidamente el mismo turno en refrescos rápidos
-    if (animateTargetId && lastAnimatedTurnoId === animateTargetId && (Date.now() - lastAnimatedAt) < 4000) {
-      animateTargetId = null;
+    let animateTargetId = null;
+    
+    // Solo animar si el turno con número 1 es DIFERENTE al anterior
+    // (es decir, un paciente que no tenía número 1 ahora tiene número 1)
+    if (firstWithNum1 && firstWithNum1.id !== lastTurnoNumber1Id) {
+      animateTargetId = firstWithNum1.id;
+      lastTurnoNumber1Id = firstWithNum1.id; // Recordar el nuevo paciente con número 1
     }
 
     tbody.innerHTML = '';
@@ -1244,8 +1249,6 @@ function renderTurnoRowMedica(tbody, t, animateTargetId) {
       `;
       if (animateTargetId && t.id === animateTargetId) {
         tr.classList.add('animate-up');
-        lastAnimatedTurnoId = t.id;
-        lastAnimatedAt = Date.now();
         setTimeout(() => tr.classList.remove('animate-up'), 900);
       }
     } else {
@@ -2173,6 +2176,86 @@ async function generarReporteMensual(){
     console.error(e);
   }
 }
+
+// ============================================
+// CAMBIAR CONTRASEÑA
+// ============================================
+function openCambiarContrasenaModal() {
+  const modal = $('modalCambiarContrasena');
+  if (modal) {
+    modal.classList.remove('hidden');
+    $('formCambiarContrasena').reset();
+    $('cambiarContrasenaError').classList.add('hidden');
+  }
+}
+
+function closeCambiarContrasenaModal() {
+  const modal = $('modalCambiarContrasena');
+  if (modal) {
+    modal.classList.add('hidden');
+    $('formCambiarContrasena').reset();
+  }
+}
+
+// Event listener para el formulario de cambiar contraseña
+document.addEventListener('DOMContentLoaded', () => {
+  const form = $('formCambiarContrasena');
+  if (form) {
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      const contrasenaActual = $('contrasenaActual').value;
+      const nuevaContrasena = $('nuevaContrasena').value;
+      const confirmarContrasena = $('confirmarContrasena').value;
+      const errorDiv = $('cambiarContrasenaError');
+
+      if (!contrasenaActual || !nuevaContrasena || !confirmarContrasena) {
+        errorDiv.textContent = 'Todos los campos son obligatorios';
+        errorDiv.classList.remove('hidden');
+        return;
+      }
+
+      if (nuevaContrasena !== confirmarContrasena) {
+        errorDiv.textContent = 'Las contraseñas no coinciden';
+        errorDiv.classList.remove('hidden');
+        return;
+      }
+
+      if (nuevaContrasena.length < 6) {
+        errorDiv.textContent = 'La contraseña debe tener al menos 6 caracteres';
+        errorDiv.classList.remove('hidden');
+        return;
+      }
+
+      try {
+        const res = await apiFetch('/api/cambiar-contrasena', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contrasenaActual,
+            nuevaContrasena,
+            confirmarContrasena
+          })
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          errorDiv.textContent = data.error || 'Error al cambiar contraseña';
+          errorDiv.classList.remove('hidden');
+          return;
+        }
+
+        showToast('Contraseña cambiadaexitosamente', 'success');
+        closeCambiarContrasenaModal();
+      } catch (error) {
+        errorDiv.textContent = 'Error en la solicitud';
+        errorDiv.classList.remove('hidden');
+        console.error(error);
+      }
+    });
+  }
+});
 
 // cargar inicial
 async function cargar(){
