@@ -424,7 +424,22 @@ app.post('/api/turnos/marcar-atendido', requireAuth, async (req, res) => {
       return res.status(404).json({ error: 'No hay turno en atención actualmente' });
     }
     
-    await db.execute('UPDATE turnos SET estado = ? WHERE id = ?', ['ATENDIDO', turno_id]);
+    // Marcar como ATENDIDO y limpiar el número de turno
+    await db.execute('UPDATE turnos SET estado = ?, numero_turno = NULL WHERE id = ?', ['ATENDIDO', turno_id]);
+    
+    // Reasignar números de turno a los pacientes EN_SALA del mismo doctor ese día
+    // Obtener todos los turnos EN_SALA ordenados por numero_turno
+    const enSalaList = await db.query(
+      `SELECT id FROM turnos WHERE fecha = ? AND doctor_id = ? AND estado = 'EN_SALA' ORDER BY numero_turno ASC, id ASC`,
+      [turno.fecha, turno.doctor_id]
+    );
+    
+    // Reasignar números 1, 2, 3, etc.
+    for (let i = 0; i < enSalaList.length; i++) {
+      const nuevoNumero = i + 1;
+      await db.execute('UPDATE turnos SET numero_turno = ? WHERE id = ?', [nuevoNumero, enSalaList[i].id]);
+    }
+    
     res.json({ ok: true });
   } catch (e) {
     console.error(e);
@@ -787,9 +802,11 @@ app.get('/api/turnos/get-next-number', requireAuth, async (req, res) => {
 
 app.patch('/api/turnos/:id/numero', requireAuth, requireRole(['admin', 'recepcion']), async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  const { numero } = req.body || {};
-  if (!id || typeof numero !== 'number') {
-    return res.status(400).json({ error: 'id y numero (entero) son obligatorios' });
+  const { numero, delta } = req.body || {};
+  
+  // Debe enviar BIEN numero O delta, no ambos
+  if (!id || (!numero && typeof delta !== 'number')) {
+    return res.status(400).json({ error: 'Debe enviar numero o delta' });
   }
 
   try {
@@ -799,14 +816,55 @@ app.patch('/api/turnos/:id/numero', requireAuth, requireRole(['admin', 'recepcio
       return res.status(404).json({ error: 'Turno no encontrado' });
     }
     
-    // No reordenar si ya está ATENDIDO
-    if (turno.estado === 'ATENDIDO') {
-      return res.status(400).json({ error: 'No se puede reordenar un turno ya atendido' });
+    // CASO 1: Asignar número específico (cuando pasa a EN_SALA)
+    if (typeof numero === 'number') {
+      if (numero <= 0) {
+        return res.status(400).json({ error: 'Número debe ser mayor a 0' });
+      }
+      await db.execute('UPDATE turnos SET numero_turno = ? WHERE id = ?', [numero, id]);
+      return res.json({ ok: true });
     }
 
-    // Actualizar número de turno
-    await db.execute('UPDATE turnos SET numero_turno = ? WHERE id = ?', [numero, id]);
-    res.json({ ok: true });
+    // CASO 2: Cambiar prioridad con delta (flechas arriba/abajo)
+    if (typeof delta === 'number') {
+      if ([-1, 1].indexOf(delta) === -1) {
+        return res.status(400).json({ error: 'delta debe ser -1 o 1' });
+      }
+
+      // No reordenar si ya está ATENDIDO o EN_ATENCION
+      if (turno.estado === 'ATENDIDO' || turno.estado === 'EN_ATENCION') {
+        return res.status(400).json({ error: 'No se puede reordenar un turno en atención o ya atendido' });
+      }
+
+      // Si no tiene número de turno, no puede cambiar prioridad
+      if (!turno.numero_turno) {
+        return res.status(400).json({ error: 'El turno no tiene número asignado aún' });
+      }
+
+      const nuevoNumero = turno.numero_turno + delta;
+
+      // Si intenta subir el primero o bajar el último, denegar
+      if (nuevoNumero <= 0) {
+        return res.status(400).json({ error: 'No se puede subir más la prioridad' });
+      }
+
+      // Buscar si existe un turno con el nuevo número
+      const turnoIntercambio = await db.query(
+        `SELECT * FROM turnos WHERE numero_turno = ? AND fecha = ? AND doctor_id = ? AND estado IN ('EN_SALA', 'PENDIENTE')`,
+        [nuevoNumero, turno.fecha, turno.doctor_id]
+      );
+
+      if (turnoIntercambio.length === 0) {
+        return res.status(400).json({ error: 'No hay turno para intercambiar' });
+      }
+
+      // Intercambiar números: usar número temporal para evitar conflictos
+      await db.execute('UPDATE turnos SET numero_turno = -1 WHERE id = ?', [id]);
+      await db.execute('UPDATE turnos SET numero_turno = ? WHERE id = ?', [turno.numero_turno, turnoIntercambio[0].id]);
+      await db.execute('UPDATE turnos SET numero_turno = ? WHERE id = ?', [nuevoNumero, id]);
+
+      return res.json({ ok: true });
+    }
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: e.message });
