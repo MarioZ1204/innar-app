@@ -6,6 +6,9 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
+    "init-db": "node init-db.js",
+    "migrate": "node migrate.js",
+    "migrate-estados": "node migrate-estados.js",
     "build": "pkg . --target win --compress Brotli",
     "build:all": "pkg . --target win,macos,linux --compress Brotli",
     "obfuscate": "node scripts/obfuscate-frontend.js",

@@ -1,6 +1,7 @@
 // server.js
+require('dotenv').config();
 const express = require('express');
-const Database = require('better-sqlite3');
+const db = require('./db-mysql');  // ← MySQL Pool en lugar de SQLite
 const bodyParser = require('body-parser');
 const cors = require('cors');
 const puppeteer = require('puppeteer');
@@ -133,215 +134,8 @@ if(logoPath && fs.existsSync(logoPath)) {
   }
 }
 
-const db = new Database('./database.db');
-
-db.exec(`
-CREATE TABLE IF NOT EXISTS recibos (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  numero TEXT,
-  cliente TEXT,
-  fecha TEXT,
-  total REAL,
-  data TEXT
-)`);
-
-// TABLAS PARA AGENDA Y LOGIN
-db.exec(`
-CREATE TABLE IF NOT EXISTS usuarios (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  usuario TEXT UNIQUE NOT NULL,
-  password_hash TEXT NOT NULL,
-  nombre TEXT,
-  rol TEXT DEFAULT 'secretaria',
-  activo INTEGER DEFAULT 1
-)`);
-
-db.exec(`
-CREATE TABLE IF NOT EXISTS pacientes (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  nombre TEXT NOT NULL,
-  documento TEXT,
-  telefono TEXT,
-  email TEXT,
-  creado_en TEXT DEFAULT (datetime('now'))
-)`);
-
-db.exec(`
-CREATE TABLE IF NOT EXISTS consultorios (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  nombre TEXT NOT NULL UNIQUE,
-  descripcion TEXT,
-  activo INTEGER DEFAULT 1
-)`);
-
-// Tabla para programacion de agenda por doctor
-db.exec(`
-CREATE TABLE IF NOT EXISTS doctor_agenda (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  doctor_id INTEGER NOT NULL,
-  fecha TEXT NOT NULL,
-  hora_inicio TEXT NOT NULL,
-  hora_fin TEXT,
-  disponible INTEGER DEFAULT 1,
-  creado_en TEXT DEFAULT (datetime('now')),
-  FOREIGN KEY (doctor_id) REFERENCES usuarios(id)
-)
-`);
-
-db.exec(`
-CREATE TABLE IF NOT EXISTS doctor_agenda_files (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  doctor_id INTEGER NOT NULL,
-  filename TEXT NOT NULL,
-  url TEXT NOT NULL,
-  uploaded_by INTEGER,
-  creado_en TEXT DEFAULT (datetime('now')),
-  FOREIGN KEY (doctor_id) REFERENCES usuarios(id)
-)
-`);
-
-db.exec(`
-CREATE TABLE IF NOT EXISTS turnos (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  numero_turno INTEGER,
-  paciente_id INTEGER NOT NULL,
-  consultorio_id INTEGER NOT NULL,
-  entidad TEXT,
-  prioridad INTEGER DEFAULT 2,
-  estado TEXT NOT NULL DEFAULT 'PROGRAMADO',
-  fecha TEXT NOT NULL,
-  hora_programada TEXT,
-  hora_llamado TEXT,
-  observaciones TEXT,
-  creado_en TEXT DEFAULT (datetime('now')),
-  FOREIGN KEY (paciente_id) REFERENCES pacientes(id),
-  FOREIGN KEY (consultorio_id) REFERENCES consultorios(id)
-)`);
-
-
-// Migraciones: agregar columnas nuevas si la BD antigua no las tiene
-try {
-  db.prepare('SELECT tipo_consulta FROM turnos LIMIT 1').get();
-} catch (e) {
-  try {
-    db.exec('ALTER TABLE turnos ADD COLUMN tipo_consulta TEXT');
-    db.exec('ALTER TABLE turnos ADD COLUMN telefono TEXT');
-    db.exec('ALTER TABLE turnos ADD COLUMN programado_por TEXT');
-    db.exec('ALTER TABLE turnos ADD COLUMN oportunidad INTEGER');
-    console.log('✅ Columnas tipo_consulta/telefono/programado_por/oportunidad agregadas a turnos');
-  } catch (e2) { /* ya existen o no se puede */ }
-}
-// Migración: permitir numero_turno NULL en instalaciones antiguas (recrear tabla si tiene NOT NULL)
-try {
-  const cols = db.prepare("PRAGMA table_info(turnos)").all();
-  const numCol = cols.find(c => c.name === 'numero_turno');
-  if (numCol && numCol.notnull === 1) {
-    console.log('⚠️ Actualizando esquema de turnos para permitir numero_turno NULL');
-    db.exec('BEGIN TRANSACTION');
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS turnos_new (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        numero_turno INTEGER,
-        paciente_id INTEGER NOT NULL,
-        consultorio_id INTEGER NOT NULL,
-        entidad TEXT,
-        prioridad INTEGER DEFAULT 2,
-        estado TEXT NOT NULL DEFAULT 'PROGRAMADO',
-        fecha TEXT NOT NULL,
-        hora_programada TEXT,
-        hora_llamado TEXT,
-        observaciones TEXT,
-        tipo_consulta TEXT,
-        telefono TEXT,
-        programado_por TEXT,
-        oportunidad INTEGER,
-        creado_en TEXT DEFAULT (datetime('now'))
-      )
-    `);
-    db.exec(`
-      INSERT INTO turnos_new (id, numero_turno, paciente_id, consultorio_id, entidad, prioridad, estado, fecha, hora_programada, hora_llamado, observaciones, tipo_consulta, telefono, programado_por, oportunidad, creado_en)
-      SELECT id, numero_turno, paciente_id, consultorio_id, entidad, prioridad, estado, fecha, hora_programada, hora_llamado, observaciones, tipo_consulta, telefono, programado_por, oportunidad, creado_en FROM turnos
-    `);
-    db.exec('DROP TABLE turnos');
-    db.exec('ALTER TABLE turnos_new RENAME TO turnos');
-    db.exec('COMMIT');
-    console.log('✅ Migración de numero_turno realizada');
-  }
-} catch (e) {
-  try { db.exec('ROLLBACK'); } catch(_){}
-  console.error('Error migrando numero_turno:', e.message);
-}
-// Tablas para Agenda Electrodiagnóstico (4 equipos)
-db.exec(`
-CREATE TABLE IF NOT EXISTS equipos_electro (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  nombre TEXT NOT NULL UNIQUE,
-  descripcion TEXT,
-  activo INTEGER DEFAULT 1
-)`);
-
-db.exec(`
-CREATE TABLE IF NOT EXISTS citas_electro (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  equipo_id INTEGER NOT NULL,
-  paciente_id INTEGER NOT NULL,
-  fecha TEXT NOT NULL,
-  hora_inicio TEXT NOT NULL,
-  hora_fin TEXT,
-  estudio TEXT,
-  observaciones TEXT,
-  estado TEXT NOT NULL DEFAULT 'PROGRAMADO',
-  editado_por_nombre TEXT,
-  editado_en TEXT,
-  creado_en TEXT DEFAULT (datetime('now')),
-  FOREIGN KEY (equipo_id) REFERENCES equipos_electro(id),
-  FOREIGN KEY (paciente_id) REFERENCES pacientes(id)
-)`);
-// Migración: agregar columnas editado_por si no existen (para BD antiguas)
-try {
-  db.prepare('SELECT editado_por_nombre FROM citas_electro LIMIT 1').get();
-} catch (e) {
-  try {
-    db.exec('ALTER TABLE citas_electro ADD COLUMN editado_por_nombre TEXT');
-    db.exec('ALTER TABLE citas_electro ADD COLUMN editado_en TEXT');
-    console.log('✅ Columnas editado_por agregadas a citas_electro');
-  } catch (e2) { /* ya existen */ }
-}
-
-// Crear usuarios por defecto si no existen
-const usersDefault = [
-  { usuario: 'admin', password: 'admin123', nombre: 'Administrador', rol: 'admin' },
-  { usuario: 'recepcion', password: 'recepcion123', nombre: 'Recepción', rol: 'recepcion' },
-  { usuario: 'electro', password: 'electro123', nombre: 'Electrodiagnóstico', rol: 'electro' },
-  { usuario: 'doctor', password: 'doctor123', nombre: 'Doctor', rol: 'doctor' },
-];
-usersDefault.forEach(u => {
-  const exists = db.prepare('SELECT id FROM usuarios WHERE usuario = ?').get(u.usuario);
-  if (!exists) {
-    const hash = bcrypt.hashSync(u.password, 10);
-    db.prepare('INSERT INTO usuarios (usuario, password_hash, nombre, rol) VALUES (?, ?, ?, ?)')
-      .run(u.usuario, hash, u.nombre, u.rol);
-    console.log(`✅ Usuario ${u.rol} creado (usuario: ${u.usuario}, password: ${u.password})`);
-  }
-});
-
-// Crear consultorios por defecto si no existen
-const consultoriosExisten = db.prepare('SELECT COUNT(*) as count FROM consultorios').get();
-if (consultoriosExisten.count === 0) {
-  db.prepare('INSERT INTO consultorios (nombre, descripcion) VALUES (?, ?)').run('204', 'Consultorio 204');
-  db.prepare('INSERT INTO consultorios (nombre, descripcion) VALUES (?, ?)').run('205', 'Consultorio 205');
-  console.log('✅ Consultorios por defecto creados');
-}
-
-// Crear 4 equipos de electrodiagnóstico por defecto si no existen
-const equiposExisten = db.prepare('SELECT COUNT(*) as count FROM equipos_electro').get();
-if (equiposExisten.count === 0) {
-  db.prepare('INSERT INTO equipos_electro (nombre, descripcion) VALUES (?, ?)').run('Equipo 1', 'Electrodiagnóstico 1');
-  db.prepare('INSERT INTO equipos_electro (nombre, descripcion) VALUES (?, ?)').run('Equipo 2', 'Electrodiagnóstico 2');
-  db.prepare('INSERT INTO equipos_electro (nombre, descripcion) VALUES (?, ?)').run('Equipo 3', 'Electrodiagnóstico 3');
-  db.prepare('INSERT INTO equipos_electro (nombre, descripcion) VALUES (?, ?)').run('Equipo 4', 'Electrodiagnóstico 4');
-  console.log('✅ Equipos de electrodiagnóstico creados (4 equipos)');
-}
+// Las tablas de MySQL se inicializan con npm run init-db
+// No es necesario db.exec() aquí
 
 // Opciones para Puppeteer (Chrome/Edge del sistema si existe)
 function getPuppeteerLaunchOptions() {
@@ -368,26 +162,6 @@ function getPuppeteerLaunchOptions() {
 function parseReciboId(id) {
   const n = parseInt(id, 10);
   return Number.isInteger(n) && n > 0 ? n : null;
-}
-
-// Función para recompactar la cola de turnos (solo pacientes EN_SALA)
-function recompactarCola(fecha, consultorioId) {
-  const turnos = db.prepare(`
-    SELECT id FROM turnos 
-    WHERE fecha = ? AND consultorio_id = ? 
-    AND estado = 'EN_SALA'
-    ORDER BY numero_turno ASC, id ASC
-  `).all(fecha, consultorioId);
-
-  const update = db.prepare('UPDATE turnos SET numero_turno = ? WHERE id = ?');
-  let n = 1;
-  const tx = db.transaction(() => {
-    for (const t of turnos) {
-      update.run(n, t.id);
-      n++;
-    }
-  });
-  tx();
 }
 
 // Middleware de autenticación
@@ -421,22 +195,31 @@ function requireRole(roles) {
 // ============================================
 
 // Login
-app.post('/api/login', (req, res) => {
+app.post('/api/login', async (req, res) => {
   const { usuario, password } = req.body || {};
   if (!usuario || !password) {
     return res.status(400).json({ error: 'Usuario y contraseña requeridos' });
   }
 
   try {
-    const user = db.prepare('SELECT * FROM usuarios WHERE usuario = ? AND activo = 1').get(usuario);
-    if (!user) {
+    // Buscar usuario en MySQL
+    const users = await db.query(
+      'SELECT * FROM usuarios WHERE usuario = ? AND activo = 1',
+      [usuario]
+    );
+    
+    if (users.length === 0) {
       return res.status(401).json({ error: 'Usuario o contraseña incorrectos' });
     }
 
+    const user = users[0];
+
+    // Verificar contraseña
     if (!bcrypt.compareSync(password, user.password_hash)) {
       return res.status(401).json({ error: 'Usuario o contraseña incorrectos' });
     }
 
+    // Guardar en sesión
     req.session.usuarioId = user.id;
     req.session.usuario = user.usuario;
     req.session.rol = user.rol;
@@ -458,10 +241,19 @@ app.post('/api/logout', (req, res) => {
 });
 
 // Verificar sesión actual
-app.get('/api/sesion', (req, res) => {
+app.get('/api/sesion', async (req, res) => {
   if (req.session && req.session.usuarioId) {
-    const user = db.prepare('SELECT id, usuario, nombre, rol FROM usuarios WHERE id = ?').get(req.session.usuarioId);
-    res.json({ autenticado: true, usuario: user });
+    try {
+      const users = await db.query(
+        'SELECT id, usuario, nombre, rol FROM usuarios WHERE id = ?',
+        [req.session.usuarioId]
+      );
+      const user = users.length > 0 ? users[0] : null;
+      res.json({ autenticado: true, usuario: user });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: e.message });
+    }
   } else {
     res.json({ autenticado: false });
   }
@@ -470,9 +262,11 @@ app.get('/api/sesion', (req, res) => {
 // ============================================
 // ENDPOINTS DE USUARIOS (solo admin)
 // ============================================
-app.get('/api/usuarios', requireAuth, requireAdmin, (req, res) => {
+app.get('/api/usuarios', requireAuth, requireAdmin, async (req, res) => {
   try {
-    const usuarios = db.prepare('SELECT id, usuario, nombre, rol, activo FROM usuarios ORDER BY usuario ASC').all();
+    const usuarios = await db.query(
+      'SELECT id, usuario, nombre, rol, activo FROM usuarios ORDER BY usuario ASC'
+    );
     res.json(usuarios);
   } catch (e) {
     console.error(e);
@@ -480,7 +274,7 @@ app.get('/api/usuarios', requireAuth, requireAdmin, (req, res) => {
   }
 });
 
-app.post('/api/usuarios', requireAuth, requireAdmin, (req, res) => {
+app.post('/api/usuarios', requireAuth, requireAdmin, async (req, res) => {
   const { usuario, password, nombre, rol } = req.body || {};
   if (!usuario || !password || !nombre || !rol) {
     return res.status(400).json({ error: 'usuario, password, nombre y rol son obligatorios' });
@@ -491,9 +285,11 @@ app.post('/api/usuarios', requireAuth, requireAdmin, (req, res) => {
   }
   try {
     const hash = bcrypt.hashSync(password, 10);
-    const result = db.prepare('INSERT INTO usuarios (usuario, password_hash, nombre, rol) VALUES (?, ?, ?, ?)')
-      .run(usuario, hash, nombre, rol);
-    res.json({ ok: true, id: result.lastInsertRowid });
+    const result = await db.execute(
+      'INSERT INTO usuarios (usuario, password_hash, nombre, rol) VALUES (?, ?, ?, ?)',
+      [usuario, hash, nombre, rol]
+    );
+    res.json({ ok: true, id: result.insertId });
   } catch (e) {
     if (e.message && e.message.includes('UNIQUE')) {
       return res.status(400).json({ error: 'El usuario ya existe' });
@@ -503,12 +299,13 @@ app.post('/api/usuarios', requireAuth, requireAdmin, (req, res) => {
   }
 });
 
-app.patch('/api/usuarios/:id', requireAuth, requireAdmin, (req, res) => {
+app.patch('/api/usuarios/:id', requireAuth, requireAdmin, async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const { usuario, password, nombre, rol, activo } = req.body || {};
   if (!id) return res.status(400).json({ error: 'ID inválido' });
   try {
-    const user = db.prepare('SELECT * FROM usuarios WHERE id = ?').get(id);
+    const users = await db.query('SELECT * FROM usuarios WHERE id = ?', [id]);
+    const user = users.length > 0 ? users[0] : null;
     if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
     const updates = [];
     const params = [];
@@ -526,7 +323,7 @@ app.patch('/api/usuarios/:id', requireAuth, requireAdmin, (req, res) => {
     }
     if (updates.length === 0) return res.status(400).json({ error: 'Nada que actualizar' });
     params.push(id);
-    db.prepare(`UPDATE usuarios SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+    await db.execute(`UPDATE usuarios SET ${updates.join(', ')} WHERE id = ?`, params);
     res.json({ ok: true });
   } catch (e) {
     if (e.message && e.message.includes('UNIQUE')) {
@@ -537,15 +334,15 @@ app.patch('/api/usuarios/:id', requireAuth, requireAdmin, (req, res) => {
   }
 });
 
-app.delete('/api/usuarios/:id', requireAuth, requireAdmin, (req, res) => {
+app.delete('/api/usuarios/:id', requireAuth, requireAdmin, async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (!id) return res.status(400).json({ error: 'ID inválido' });
   if (id === req.session.usuarioId) {
     return res.status(400).json({ error: 'No puedes eliminar tu propio usuario' });
   }
   try {
-    const result = db.prepare('DELETE FROM usuarios WHERE id = ?').run(id);
-    if (result.changes === 0) return res.status(404).json({ error: 'Usuario no encontrado' });
+    const result = await db.execute('DELETE FROM usuarios WHERE id = ?', [id]);
+    if (result.affectedRows === 0) return res.status(404).json({ error: 'Usuario no encontrado' });
     res.json({ ok: true });
   } catch (e) {
     console.error(e);
@@ -556,63 +353,78 @@ app.delete('/api/usuarios/:id', requireAuth, requireAdmin, (req, res) => {
 // ============================================
 // ENDPOINTS DOCTOR: Llamar siguiente / Marcar atendido
 // ============================================
-app.post('/api/turnos/llamar-siguiente', requireAuth, (req, res) => {
-  const { fecha, consultorio_id } = req.body || {};
-  if (!fecha || !consultorio_id) {
-    return res.status(400).json({ error: 'fecha y consultorio_id son obligatorios' });
+app.post('/api/turnos/llamar-siguiente', requireAuth, async (req, res) => {
+  const { fecha, doctor_id } = req.body || {};
+  if (!fecha || !doctor_id) {
+    return res.status(400).json({ error: 'fecha y doctor_id son obligatorios' });
   }
   try {
-    const turno = db.prepare(`
+    // Primero verificar si ya hay un paciente EN_ATENCION
+    const enAtencion = await db.query(`
       SELECT * FROM turnos 
-      WHERE fecha = ? AND consultorio_id = ? AND estado = 'EN_SALA' AND numero_turno IS NOT NULL
-      ORDER BY numero_turno ASC, id ASC LIMIT 1
-    `).get(fecha, consultorio_id);
+      WHERE fecha = ? AND doctor_id = ? AND estado = 'EN_ATENCION'
+      LIMIT 1
+    `, [fecha, doctor_id]);
+    
+    // Si hay un paciente EN_ATENCION, devolver el mismo
+    if (enAtencion.length > 0) {
+      console.log(`[DEBUG] Ya hay paciente EN_ATENCION:`, enAtencion[0].paciente_nombre);
+      return res.json({ ok: true, turno: enAtencion[0] });
+    }
+    
+    // Si no hay EN_ATENCION, buscar el siguiente EN_SALA
+    const turnos = await db.query(`
+      SELECT * FROM turnos 
+      WHERE fecha = ? AND doctor_id = ? AND estado = 'EN_SALA' AND numero_turno IS NOT NULL
+      ORDER BY numero_turno ASC LIMIT 1
+    `, [fecha, doctor_id]);
+    
+    console.log(`[DEBUG] Turnos EN_SALA para doctor ${doctor_id}:`, turnos.length, turnos);
+    
+    const turno = turnos.length > 0 ? turnos[0] : null;
     if (!turno) {
       return res.status(404).json({ error: 'No hay más pacientes en espera' });
     }
-    // Pasar a EN_ATENCION, \"sacar\" de la cola (numero_turno = 0 para respetar NOT NULL)
-    db.prepare(`
+
+    // Cambiar estado a EN_ATENCION (solo el primero)
+    await db.execute(`
       UPDATE turnos 
-      SET estado = 'EN_ATENCION', hora_llamado = datetime('now'), numero_turno = 0 
+      SET estado = 'EN_ATENCION'
       WHERE id = ?
-    `).run(turno.id);
+    `, [turno.id]);
 
-    // Recompactar cola de EN_SALA para que el siguiente pase a turno 1
-    recompactarCola(fecha, consultorio_id);
-
-    const updated = db.prepare(`
-      SELECT t.*, 
-             p.nombre AS paciente_nombre, 
-             p.documento AS paciente_documento,
-             c.nombre AS consultorio_nombre
-      FROM turnos t 
-      JOIN pacientes p ON p.id = t.paciente_id 
-      JOIN consultorios c ON c.id = t.consultorio_id
-      WHERE t.id = ?
-    `).get(turno.id);
-    res.json({ ok: true, turno: updated });
+    const updated = await db.query(`SELECT * FROM turnos WHERE id = ?`, [turno.id]);
+    res.json({ ok: true, turno: updated[0] });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: e.message });
   }
 });
 
-app.post('/api/turnos/marcar-atendido', requireAuth, (req, res) => {
-  const { fecha, consultorio_id } = req.body || {};
-  if (!fecha || !consultorio_id) {
-    return res.status(400).json({ error: 'fecha y consultorio_id son obligatorios' });
+// Helper para obtener el siguiente número de turno
+async function getNextTurnoNumber(fecha, doctor_id) {
+  const result = await db.query(`
+    SELECT MAX(CAST(numero_turno AS UNSIGNED)) as max_num FROM turnos 
+    WHERE fecha = ? AND doctor_id = ? AND numero_turno IS NOT NULL
+  `, [fecha, doctor_id]);
+  const maxNum = result[0]?.max_num || 0;
+  return maxNum + 1;
+}
+
+app.post('/api/turnos/marcar-atendido', requireAuth, async (req, res) => {
+  const { turno_id } = req.body || {};
+  if (!turno_id) {
+    return res.status(400).json({ error: 'turno_id es obligatorio' });
   }
   try {
-    const turno = db.prepare(`
-      SELECT * FROM turnos 
-      WHERE fecha = ? AND consultorio_id = ? AND estado = 'EN_ATENCION'
-      ORDER BY numero_turno ASC, id ASC LIMIT 1
-    `).get(fecha, consultorio_id);
+    const turnos = await db.query(`SELECT * FROM turnos WHERE id = ? AND estado = 'EN_ATENCION'`, [turno_id]);
+    const turno = turnos.length > 0 ? turnos[0] : null;
+    
     if (!turno) {
-      return res.status(404).json({ error: 'No hay paciente en atención actualmente' });
+      return res.status(404).json({ error: 'No hay turno en atención actualmente' });
     }
-    db.prepare('UPDATE turnos SET estado = ? WHERE id = ?').run('ATENDIDO', turno.id);
-    recompactarCola(fecha, consultorio_id);
+    
+    await db.execute('UPDATE turnos SET estado = ? WHERE id = ?', ['ATENDIDO', turno_id]);
     res.json({ ok: true });
   } catch (e) {
     console.error(e);
@@ -625,19 +437,19 @@ app.post('/api/turnos/marcar-atendido', requireAuth, (req, res) => {
 // ============================================
 
 // Listar pacientes (con búsqueda opcional)
-app.get('/api/pacientes', (req, res) => {
+app.get('/api/pacientes', async (req, res) => {
   const { buscar } = req.query;
   try {
     let pacientes;
     if (buscar) {
-      pacientes = db.prepare(`
+      pacientes = await db.query(`
         SELECT * FROM pacientes 
         WHERE nombre LIKE ? OR documento LIKE ?
         ORDER BY nombre ASC
         LIMIT 50
-      `).all(`%${buscar}%`, `%${buscar}%`);
+      `, [`%${buscar}%`, `%${buscar}%`]);
     } else {
-      pacientes = db.prepare('SELECT * FROM pacientes ORDER BY nombre ASC LIMIT 100').all();
+      pacientes = await db.query('SELECT * FROM pacientes ORDER BY nombre ASC LIMIT 100');
     }
     res.json(pacientes);
   } catch (e) {
@@ -647,7 +459,7 @@ app.get('/api/pacientes', (req, res) => {
 });
 
 // Actualizar paciente (nombre, documento, etc.)
-app.patch('/api/pacientes/:id', requireAuth, requireRole(['admin', 'recepcion']), (req, res) => {
+app.patch('/api/pacientes/:id', requireAuth, requireRole(['admin', 'recepcion']), async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (!id) return res.status(400).json({ error: 'ID inválido' });
   const { nombre, documento, telefono, email } = req.body || {};
@@ -655,7 +467,8 @@ app.patch('/api/pacientes/:id', requireAuth, requireRole(['admin', 'recepcion'])
     return res.status(400).json({ error: 'Nada que actualizar' });
   }
   try {
-    const pac = db.prepare('SELECT * FROM pacientes WHERE id = ?').get(id);
+    const pacs = await db.query('SELECT * FROM pacientes WHERE id = ?', [id]);
+    const pac = pacs.length > 0 ? pacs[0] : null;
     if (!pac) return res.status(404).json({ error: 'Paciente no encontrado' });
     const updates = [];
     const params = [];
@@ -664,7 +477,7 @@ app.patch('/api/pacientes/:id', requireAuth, requireRole(['admin', 'recepcion'])
     if (telefono !== undefined) { updates.push('telefono = ?'); params.push(telefono); }
     if (email !== undefined) { updates.push('email = ?'); params.push(email); }
     params.push(id);
-    db.prepare(`UPDATE pacientes SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+    await db.execute(`UPDATE pacientes SET ${updates.join(', ')} WHERE id = ?`, params);
     res.json({ ok: true });
   } catch (e) {
     console.error(e);
@@ -673,16 +486,18 @@ app.patch('/api/pacientes/:id', requireAuth, requireRole(['admin', 'recepcion'])
 });
 
 // Crear paciente
-app.post('/api/pacientes', (req, res) => {
+app.post('/api/pacientes', async (req, res) => {
   const { nombre, documento, telefono, email } = req.body || {};
   if (!nombre) {
     return res.status(400).json({ error: 'Nombre es obligatorio' });
   }
 
   try {
-    const stmt = db.prepare('INSERT INTO pacientes (nombre, documento, telefono, email) VALUES (?, ?, ?, ?)');
-    const result = stmt.run(nombre, documento || null, telefono || null, email || null);
-    res.json({ ok: true, id: result.lastInsertRowid });
+    const result = await db.execute(
+      'INSERT INTO pacientes (nombre, documento, telefono, email) VALUES (?, ?, ?, ?)',
+      [nombre, documento || null, telefono || null, email || null]
+    );
+    res.json({ ok: true, id: result.insertId });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: e.message });
@@ -694,9 +509,9 @@ app.post('/api/pacientes', (req, res) => {
 // ============================================
 
 // Listar consultorios
-app.get('/api/consultorios', (req, res) => {
+app.get('/api/consultorios', async (req, res) => {
   try {
-    const consultorios = db.prepare('SELECT * FROM consultorios WHERE activo = 1 ORDER BY nombre ASC').all();
+    const consultorios = await db.query('SELECT * FROM consultorios WHERE activo = 1 ORDER BY nombre ASC');
     res.json(consultorios);
   } catch (e) {
     console.error(e);
@@ -705,9 +520,9 @@ app.get('/api/consultorios', (req, res) => {
 });
 
 // Listar medicos (usuarios con rol 'doctor') — accesible a recepcion y doctores
-app.get('/api/medicos', requireAuth, (req, res) => {
+app.get('/api/medicos', requireAuth, async (req, res) => {
   try {
-    const medicos = db.prepare("SELECT id, nombre, usuario FROM usuarios WHERE rol = 'doctor' AND activo = 1 ORDER BY nombre ASC").all();
+    const medicos = await db.query("SELECT id, nombre, usuario FROM usuarios WHERE rol = 'doctor' AND activo = 1 ORDER BY nombre ASC");
     res.json(medicos);
   } catch (e) {
     console.error(e);
@@ -716,11 +531,11 @@ app.get('/api/medicos', requireAuth, (req, res) => {
 });
 
 // Obtener agenda de un doctor
-app.get('/api/doctor-agenda', requireAuth, (req, res) => {
+app.get('/api/doctor-agenda', requireAuth, async (req, res) => {
   const doctorId = parseInt(req.query.doctor_id, 10);
   if (!doctorId) return res.status(400).json({ error: 'doctor_id es obligatorio' });
   try {
-    const rows = db.prepare('SELECT id, doctor_id, fecha, hora_inicio, hora_fin, disponible FROM doctor_agenda WHERE doctor_id = ? ORDER BY fecha ASC, hora_inicio ASC').all(doctorId);
+    const rows = await db.query('SELECT id, doctor_id, fecha, hora_inicio, hora_fin, disponible FROM doctor_agenda WHERE doctor_id = ? ORDER BY fecha ASC, hora_inicio ASC', [doctorId]);
     res.json(rows);
   } catch (e) {
     console.error(e);
@@ -729,7 +544,7 @@ app.get('/api/doctor-agenda', requireAuth, (req, res) => {
 });
 
 // Crear/actualizar agenda de doctor (reemplaza la agenda del doctor)
-app.post('/api/doctor-agenda', requireAuth, (req, res) => {
+app.post('/api/doctor-agenda', requireAuth, async (req, res) => {
   const { doctor_id, slots } = req.body || {};
   if (!Array.isArray(slots)) return res.status(400).json({ error: 'slots debe ser un arreglo' });
   // Permitir que el doctor suba su propia agenda o admin
@@ -742,18 +557,20 @@ app.post('/api/doctor-agenda', requireAuth, (req, res) => {
   if (isDoctorUser && targetDoctorId !== actorId) return res.status(403).json({ error: 'Médicos solo pueden modificar su propia agenda' });
 
   try {
-    const tx = db.transaction((slotsArr) => {
-      db.prepare('DELETE FROM doctor_agenda WHERE doctor_id = ?').run(targetDoctorId);
-      const insert = db.prepare('INSERT INTO doctor_agenda (doctor_id, fecha, hora_inicio, hora_fin, disponible) VALUES (?, ?, ?, ?, ?)');
-      for (const s of slotsArr) {
-        const fecha = s.fecha;
-        const hi = s.hora_inicio;
-        const hf = s.hora_fin || null;
-        const disp = s.disponible ? 1 : 0;
-        insert.run(targetDoctorId, fecha, hi, hf, disp);
-      }
-    });
-    tx(slots);
+    // Eliminar agenda anterior
+    await db.execute('DELETE FROM doctor_agenda WHERE doctor_id = ?', [targetDoctorId]);
+    
+    // Insertar nuevos slots
+    for (const s of slots) {
+      const fecha = s.fecha;
+      const hi = s.hora_inicio;
+      const hf = s.hora_fin || null;
+      const disp = s.disponible ? 1 : 0;
+      await db.execute(
+        'INSERT INTO doctor_agenda (doctor_id, fecha, hora_inicio, hora_fin, disponible) VALUES (?, ?, ?, ?, ?)',
+        [targetDoctorId, fecha, hi, hf, disp]
+      );
+    }
     res.json({ ok: true });
   } catch (e) {
     console.error(e);
@@ -762,7 +579,7 @@ app.post('/api/doctor-agenda', requireAuth, (req, res) => {
 });
 
 // Upload agenda file using multipart/form-data
-app.post('/api/doctor-agenda/upload', requireAuth, upload.single('file'), (req, res) => {
+app.post('/api/doctor-agenda/upload', requireAuth, upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No se recibió archivo' });
@@ -772,31 +589,34 @@ app.post('/api/doctor-agenda/upload', requireAuth, upload.single('file'), (req, 
     const url = `/uploads/${req.file.filename}`;
     
     // Guardar metadatos en la BD
-    const stmt = db.prepare('INSERT INTO doctor_agenda_files (doctor_id, filename, url, uploaded_by) VALUES (?, ?, ?, ?)');
-    const result = stmt.run(doctor_id, req.file.originalname, url, req.session.usuarioId || null);
+    const result = await db.execute(
+      'INSERT INTO doctor_agenda_files (doctor_id, filename, url, uploaded_by) VALUES (?, ?, ?, ?)',
+      [doctor_id, req.file.originalname, url, req.session.usuarioId || null]
+    );
     
-    res.json({ ok: true, id: result.lastInsertRowid, url });
+    res.json({ ok: true, id: result.insertId, url });
   } catch (e) { 
     console.error(e); 
     res.status(500).json({ error: e.message }); 
   }
 });
 
-app.get('/api/doctor-agenda-files', requireAuth, (req, res) => {
+app.get('/api/doctor-agenda-files', requireAuth, async (req, res) => {
   const doctorId = parseInt(req.query.doctor_id, 10);
   if (!doctorId) return res.status(400).json({ error: 'doctor_id es obligatorio' });
   try {
-    const rows = db.prepare('SELECT id, doctor_id, filename, url, uploaded_by, creado_en FROM doctor_agenda_files WHERE doctor_id = ? ORDER BY creado_en DESC').all(doctorId);
+    const rows = await db.query('SELECT id, doctor_id, filename, url, uploaded_by, creado_en FROM doctor_agenda_files WHERE doctor_id = ? ORDER BY creado_en DESC', [doctorId]);
     res.json(rows);
   } catch (e) { console.error(e); res.status(500).json({ error: e.message }); }
 });
 
-app.delete('/api/doctor-agenda-files/:id', requireAuth, (req, res) => {
+app.delete('/api/doctor-agenda-files/:id', requireAuth, async (req, res) => {
   const fileId = parseInt(req.params.id, 10);
   if (!fileId) return res.status(400).json({ error: 'id es obligatorio' });
   try {
     // Obtener el archivo para verificar permisos y obtener la URL
-    const file = db.prepare('SELECT id, doctor_id, url FROM doctor_agenda_files WHERE id = ?').get(fileId);
+    const files = await db.query('SELECT id, doctor_id, url FROM doctor_agenda_files WHERE id = ?', [fileId]);
+    const file = files.length > 0 ? files[0] : null;
     if (!file) return res.status(404).json({ error: 'Archivo no encontrado' });
     
     // Verificar que el usuario sea el doctor o admin
@@ -811,7 +631,7 @@ app.delete('/api/doctor-agenda-files/:id', requireAuth, (req, res) => {
     }
     
     // Eliminar registro de la BD
-    db.prepare('DELETE FROM doctor_agenda_files WHERE id = ?').run(fileId);
+    await db.execute('DELETE FROM doctor_agenda_files WHERE id = ?', [fileId]);
     res.json({ ok: true });
   } catch (e) { 
     console.error(e); 
@@ -824,28 +644,29 @@ app.delete('/api/doctor-agenda-files/:id', requireAuth, (req, res) => {
 // ============================================
 
 // Listar turnos por fecha y consultorio
-app.get('/api/turnos', (req, res) => {
-  const { fecha, consultorio_id } = req.query;
-  if (!fecha || !consultorio_id) {
-    return res.status(400).json({ error: 'fecha y consultorio_id son obligatorios' });
+app.get('/api/turnos', async (req, res) => {
+  const { fecha, doctor_id } = req.query;
+  if (!fecha) {
+    return res.status(400).json({ error: 'fecha es obligatoria' });
   }
 
   try {
-    const turnos = db.prepare(`
-      SELECT t.*, 
-             p.nombre AS paciente_nombre, 
-             p.documento AS paciente_documento,
-             p.telefono AS paciente_telefono,
-             c.nombre AS consultorio_nombre
-      FROM turnos t
-      JOIN pacientes p ON p.id = t.paciente_id
-      JOIN consultorios c ON c.id = t.consultorio_id
-      WHERE t.fecha = ? AND t.consultorio_id = ?
-      ORDER BY CASE WHEN t.hora_programada IS NULL OR t.hora_programada = '' THEN 1 ELSE 0 END,
-               t.hora_programada ASC,
-               t.numero_turno ASC,
-               t.id ASC
-    `).all(fecha, consultorio_id);
+    const query = doctor_id 
+      ? `SELECT * FROM turnos 
+         WHERE fecha = ? AND doctor_id = ?
+         ORDER BY CASE WHEN hora IS NULL OR hora = '' THEN 1 ELSE 0 END,
+                  hora ASC,
+                  numero_turno ASC,
+                  id ASC`
+      : `SELECT * FROM turnos 
+         WHERE fecha = ?
+         ORDER BY CASE WHEN hora IS NULL OR hora = '' THEN 1 ELSE 0 END,
+                  hora ASC,
+                  numero_turno ASC,
+                  id ASC`;
+    
+    const params = doctor_id ? [fecha, doctor_id] : [fecha];
+    const turnos = await db.query(query, params);
     res.json(turnos);
   } catch (e) {
     console.error(e);
@@ -854,54 +675,45 @@ app.get('/api/turnos', (req, res) => {
 });
 
 // Crear turno
-app.post('/api/turnos', (req, res) => {
-  const { paciente_id, consultorio_id, entidad, prioridad = 2, fecha, hora_programada, observaciones, tipo_consulta, telefono, oportunidad, programado_por } = req.body || {};
+app.post('/api/turnos', async (req, res) => {
+  const { doctor_id, paciente_nombre, paciente_documento, paciente_telefono, fecha, hora, tipo_consulta, entidad, notas, oportunidad, programado_por } = req.body || {};
 
-  if (!paciente_id || !consultorio_id || !fecha) {
-    return res.status(400).json({ error: 'paciente_id, consultorio_id y fecha son obligatorios' });
+  if (!doctor_id || !paciente_nombre || !fecha || !hora) {
+    return res.status(400).json({ error: 'doctor_id, paciente_nombre, fecha y hora son obligatorios' });
   }
 
   try {
-    // Crear turno como PROGRAMADO sin número (numero_turno NULL)
-    const stmt = db.prepare(`
-      INSERT INTO turnos (numero_turno, paciente_id, consultorio_id, entidad, prioridad, estado, fecha, hora_programada, observaciones, tipo_consulta, telefono, oportunidad, programado_por)
-      VALUES (NULL, ?, ?, ?, ?, 'PROGRAMADO', ?, ?, ?, ?, ?, ?, ?)
-    `);
-    const result = stmt.run(
-      paciente_id,
-      consultorio_id,
-      entidad || '',
-      prioridad,
+    console.log(`[DEBUG] Creando turno:`, { doctor_id, paciente_nombre, fecha, hora, tipo_consulta, entidad });
+    
+    // Crear turno como PENDIENTE sin número (numero_turno NULL)
+    const result = await db.execute(`
+      INSERT INTO turnos (numero_turno, doctor_id, paciente_nombre, paciente_documento, paciente_telefono, estado, fecha, hora, tipo_consulta, entidad, notas, oportunidad, programado_por)
+      VALUES (NULL, ?, ?, ?, ?, 'PENDIENTE', ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      doctor_id,
+      paciente_nombre,
+      paciente_documento || null,
+      paciente_telefono || null,
       fecha,
-      hora_programada || null,
-      observaciones || null,
+      hora,
       tipo_consulta || null,
-      phoneOrNull(telefono),
-      opportunityOrNull(oportunidad),
+      entidad || null,
+      notas || null,
+      oportunidad ? parseInt(oportunidad, 10) : null,
       programado_por || null
-    );
+    ]);
 
-    res.json({ ok: true, id: result.lastInsertRowid });
+    console.log(`[DEBUG] Turno creado con ID:`, result.insertId);
+
+    res.json({ ok: true, id: result.insertId });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: e.message });
   }
 });
 
-// Helpers para sanitizar algunos campos
-function phoneOrNull(v) {
-  if (v === undefined || v === null) return null;
-  const s = String(v).trim();
-  return s === '' ? null : s;
-}
-function opportunityOrNull(v) {
-  if (v === undefined || v === null) return null;
-  const n = parseInt(v, 10);
-  return isNaN(n) ? null : n;
-}
-
-// Cambiar estado de un turno (con recompactación automática)
-app.patch('/api/turnos/:id/estado', (req, res) => {
+// Cambiar estado de un turno
+app.patch('/api/turnos/:id/estado', async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const { estado } = req.body || {};
   if (!id || !estado) {
@@ -909,7 +721,8 @@ app.patch('/api/turnos/:id/estado', (req, res) => {
   }
 
   try {
-    const turno = db.prepare('SELECT * FROM turnos WHERE id = ?').get(id);
+    const turnos = await db.query('SELECT * FROM turnos WHERE id = ?', [id]);
+    const turno = turnos.length > 0 ? turnos[0] : null;
     if (!turno) {
       return res.status(404).json({ error: 'Turno no encontrado' });
     }
@@ -919,28 +732,8 @@ app.patch('/api/turnos/:id/estado', (req, res) => {
       return res.status(400).json({ error: 'No se puede modificar un turno ya atendido' });
     }
 
-    // Actualizar estado y hora_llamado si pasa a EN_ATENCION
-    // Si se marca EN_SALA y el turno no tiene número, asignar el siguiente número
-    if (estado === 'EN_SALA') {
-      // calcular siguiente número entre los que ya están EN_SALA
-      const row = db.prepare("SELECT COALESCE(MAX(numero_turno), 0) AS maxNum FROM turnos WHERE fecha = ? AND consultorio_id = ? AND estado = 'EN_SALA'").get(turno.fecha, turno.consultorio_id);
-      const siguiente = (row?.maxNum || 0) + 1;
-      db.prepare(`UPDATE turnos SET estado = ?, numero_turno = ?, hora_llamado = hora_llamado WHERE id = ?`).run(estado, siguiente, id);
-    } else {
-      // En otros casos solo actualizar estado y hora_llamado si pasa a EN_ATENCION
-      const stmt = db.prepare(`
-        UPDATE turnos 
-        SET estado = ?, 
-            hora_llamado = CASE WHEN ? = 'EN_ATENCION' THEN datetime('now') ELSE hora_llamado END
-        WHERE id = ?
-      `);
-      stmt.run(estado, estado, id);
-    }
-
-    // Si el turno deja la cola (ATENDIDO/CANCELADO/NO_ASISTIO) o cambia desde EN_SALA, recompactar
-    if (['ATENDIDO', 'CANCELADO', 'NO_ASISTIO'].includes(estado) || turno.estado === 'EN_SALA') {
-      recompactarCola(turno.fecha, turno.consultorio_id);
-    }
+    // Actualizar estado
+    await db.execute('UPDATE turnos SET estado = ? WHERE id = ?', [estado, id]);
 
     res.json({ ok: true });
   } catch (e) {
@@ -950,21 +743,20 @@ app.patch('/api/turnos/:id/estado', (req, res) => {
 });
 
 // Eliminar turno
-app.delete('/api/turnos/:id', (req, res) => {
+app.delete('/api/turnos/:id', async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (!id) {
     return res.status(400).json({ error: 'ID inválido' });
   }
 
   try {
-    const turno = db.prepare('SELECT * FROM turnos WHERE id = ?').get(id);
+    const turnos = await db.query('SELECT * FROM turnos WHERE id = ?', [id]);
+    const turno = turnos.length > 0 ? turnos[0] : null;
     if (!turno) {
       return res.status(404).json({ error: 'Turno no encontrado' });
     }
 
-    db.prepare('DELETE FROM turnos WHERE id = ?').run(id);
-    recompactarCola(turno.fecha, turno.consultorio_id);
-
+    const result = await db.execute('DELETE FROM turnos WHERE id = ?', [id]);
     res.json({ ok: true });
   } catch (e) {
     console.error(e);
@@ -973,57 +765,47 @@ app.delete('/api/turnos/:id', (req, res) => {
 });
 
 // Reordenar número de turno (mover arriba/abajo en la cola)
-app.patch('/api/turnos/:id/numero', requireAuth, requireRole(['admin', 'recepcion']), (req, res) => {
+// Obtener siguiente número de turno disponible
+app.get('/api/turnos/get-next-number', requireAuth, async (req, res) => {
+  const { fecha, doctor_id } = req.query;
+  if (!fecha || !doctor_id) {
+    return res.status(400).json({ error: 'fecha y doctor_id son obligatorios' });
+  }
+  try {
+    const result = await db.query(`
+      SELECT MAX(CAST(numero_turno AS UNSIGNED)) as max_num FROM turnos 
+      WHERE fecha = ? AND doctor_id = ? AND numero_turno IS NOT NULL
+    `, [fecha, doctor_id]);
+    
+    const maxNum = result[0]?.max_num || 0;
+    res.json({ numero: maxNum + 1 });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.patch('/api/turnos/:id/numero', requireAuth, requireRole(['admin', 'recepcion']), async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  const { delta, numero } = req.body || {};
-  if (!id) {
-    return res.status(400).json({ error: 'id es obligatorio' });
+  const { numero } = req.body || {};
+  if (!id || typeof numero !== 'number') {
+    return res.status(400).json({ error: 'id y numero (entero) son obligatorios' });
   }
 
   try {
-    const turno = db.prepare('SELECT * FROM turnos WHERE id = ?').get(id);
+    const turnos = await db.query('SELECT * FROM turnos WHERE id = ?', [id]);
+    const turno = turnos.length > 0 ? turnos[0] : null;
     if (!turno) {
       return res.status(404).json({ error: 'Turno no encontrado' });
     }
+    
     // No reordenar si ya está ATENDIDO
     if (turno.estado === 'ATENDIDO') {
       return res.status(400).json({ error: 'No se puede reordenar un turno ya atendido' });
     }
 
-    let nuevoNumero;
-    if (Number.isInteger(numero)) {
-      nuevoNumero = numero;
-    } else if (Number.isInteger(delta)) {
-      nuevoNumero = (turno.numero_turno || 1) + delta;
-    } else {
-      return res.status(400).json({ error: 'Se requiere delta o numero (entero)' });
-    }
-
-    if (nuevoNumero < 1) nuevoNumero = 1;
-
-    // Ajustar otros turnos para mantener la secuencia:
-    const fecha = turno.fecha;
-    const consultorioId = turno.consultorio_id;
-    const oldNum = turno.numero_turno || 0;
-
-    const tx = db.transaction(() => {
-      if (nuevoNumero === oldNum) {
-        // nada que hacer
-      } else if (nuevoNumero < oldNum) {
-        // mover hacia arriba: incrementar en 1 los turnos con numero >= nuevoNumero y < oldNum
-        db.prepare(`UPDATE turnos SET numero_turno = numero_turno + 1 WHERE fecha = ? AND consultorio_id = ? AND estado = 'EN_SALA' AND numero_turno >= ? AND id != ?`).run(fecha, consultorioId, nuevoNumero, id);
-        db.prepare('UPDATE turnos SET numero_turno = ? WHERE id = ?').run(nuevoNumero, id);
-      } else { // nuevoNumero > oldNum
-        // mover hacia abajo: decrementar en 1 los turnos con numero > oldNum y <= nuevoNumero
-        db.prepare(`UPDATE turnos SET numero_turno = numero_turno - 1 WHERE fecha = ? AND consultorio_id = ? AND estado = 'EN_SALA' AND numero_turno > ? AND numero_turno <= ? AND id != ?`).run(fecha, consultorioId, oldNum, nuevoNumero, id);
-        db.prepare('UPDATE turnos SET numero_turno = ? WHERE id = ?').run(nuevoNumero, id);
-      }
-    });
-    tx();
-
-    // Normalizar secuencia por si hay inconsistencias
-    recompactarCola(turno.fecha, turno.consultorio_id);
-
+    // Actualizar número de turno
+    await db.execute('UPDATE turnos SET numero_turno = ? WHERE id = ?', [numero, id]);
     res.json({ ok: true });
   } catch (e) {
     console.error(e);
@@ -1036,9 +818,9 @@ app.patch('/api/turnos/:id/numero', requireAuth, requireRole(['admin', 'recepcio
 // ============================================
 
 // Listar equipos de electrodiagnóstico
-app.get('/api/equipos-electro', (req, res) => {
+app.get('/api/equipos-electro', async (req, res) => {
   try {
-    const equipos = db.prepare('SELECT * FROM equipos_electro WHERE activo = 1 ORDER BY nombre ASC').all();
+    const equipos = await db.query('SELECT * FROM equipos_electro WHERE activo = 1 ORDER BY nombre ASC');
     res.json(equipos);
   } catch (e) {
     console.error(e);
@@ -1047,14 +829,14 @@ app.get('/api/equipos-electro', (req, res) => {
 });
 
 // Listar citas electro por fecha y equipo
-app.get('/api/citas-electro', (req, res) => {
+app.get('/api/citas-electro', async (req, res) => {
   const { fecha, equipo_id } = req.query;
   if (!fecha || !equipo_id) {
     return res.status(400).json({ error: 'fecha y equipo_id son obligatorios' });
   }
 
   try {
-    const citas = db.prepare(`
+    const citas = await db.query(`
       SELECT c.*, 
              p.nombre AS paciente_nombre, 
              p.documento AS paciente_documento,
@@ -1064,7 +846,7 @@ app.get('/api/citas-electro', (req, res) => {
       JOIN equipos_electro e ON e.id = c.equipo_id
       WHERE c.fecha = ? AND c.equipo_id = ?
       ORDER BY c.hora_inicio ASC, c.id ASC
-    `).all(fecha, equipo_id);
+    `, [fecha, equipo_id]);
     res.json(citas);
   } catch (e) {
     console.error(e);
@@ -1073,7 +855,7 @@ app.get('/api/citas-electro', (req, res) => {
 });
 
 // Crear cita electrodiagnóstico
-app.post('/api/citas-electro', (req, res) => {
+app.post('/api/citas-electro', async (req, res) => {
   const { equipo_id, paciente_id, fecha, hora_inicio, hora_fin, estudio, observaciones } = req.body || {};
 
   if (!equipo_id || !paciente_id || !fecha || !hora_inicio) {
@@ -1081,11 +863,10 @@ app.post('/api/citas-electro', (req, res) => {
   }
 
   try {
-    const stmt = db.prepare(`
+    const result = await db.execute(`
       INSERT INTO citas_electro (equipo_id, paciente_id, fecha, hora_inicio, hora_fin, estudio, observaciones, estado)
       VALUES (?, ?, ?, ?, ?, ?, ?, 'PROGRAMADO')
-    `);
-    const result = stmt.run(
+    `, [
       equipo_id,
       paciente_id,
       fecha,
@@ -1093,8 +874,8 @@ app.post('/api/citas-electro', (req, res) => {
       hora_fin || null,
       estudio || null,
       observaciones || null
-    );
-    res.json({ ok: true, id: result.lastInsertRowid });
+    ]);
+    res.json({ ok: true, id: result.insertId });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: e.message });
@@ -1102,7 +883,7 @@ app.post('/api/citas-electro', (req, res) => {
 });
 
 // Actualizar estado de cita electro (registra quién editó)
-app.patch('/api/citas-electro/:id/estado', requireAuth, (req, res) => {
+app.patch('/api/citas-electro/:id/estado', requireAuth, async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const { estado } = req.body || {};
   if (!id || !estado) {
@@ -1110,20 +891,22 @@ app.patch('/api/citas-electro/:id/estado', requireAuth, (req, res) => {
   }
 
   try {
-    const cita = db.prepare('SELECT * FROM citas_electro WHERE id = ?').get(id);
+    const citas = await db.query('SELECT * FROM citas_electro WHERE id = ?', [id]);
+    const cita = citas.length > 0 ? citas[0] : null;
     if (!cita) {
       return res.status(404).json({ error: 'Cita no encontrada' });
     }
 
     const userName = req.session.usuario || 'Usuario';
-    const user = db.prepare('SELECT nombre FROM usuarios WHERE id = ?').get(req.session.usuarioId);
+    const users = await db.query('SELECT nombre FROM usuarios WHERE id = ?', [req.session.usuarioId]);
+    const user = users.length > 0 ? users[0] : null;
     const editadoPor = (user && user.nombre) ? user.nombre : userName;
 
-    db.prepare(`
+    await db.execute(`
       UPDATE citas_electro 
-      SET estado = ?, editado_por_nombre = ?, editado_en = datetime('now')
+      SET estado = ?, editado_por_nombre = ?, editado_en = NOW()
       WHERE id = ?
-    `).run(estado, editadoPor, id);
+    `, [estado, editadoPor, id]);
     res.json({ ok: true });
   } catch (e) {
     console.error(e);
@@ -1132,19 +915,20 @@ app.patch('/api/citas-electro/:id/estado', requireAuth, (req, res) => {
 });
 
 // Eliminar cita electro
-app.delete('/api/citas-electro/:id', (req, res) => {
+app.delete('/api/citas-electro/:id', async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (!id) {
     return res.status(400).json({ error: 'ID inválido' });
   }
 
   try {
-    const cita = db.prepare('SELECT * FROM citas_electro WHERE id = ?').get(id);
+    const citas = await db.query('SELECT * FROM citas_electro WHERE id = ?', [id]);
+    const cita = citas.length > 0 ? citas[0] : null;
     if (!cita) {
       return res.status(404).json({ error: 'Cita no encontrada' });
     }
 
-    db.prepare('DELETE FROM citas_electro WHERE id = ?').run(id);
+    await db.execute('DELETE FROM citas_electro WHERE id = ?', [id]);
     res.json({ ok: true });
   } catch (e) {
     console.error(e);
@@ -1157,7 +941,7 @@ app.delete('/api/citas-electro/:id', (req, res) => {
 // ============================================
 
 // Guardar recibo
-app.post('/api/recibos', (req, res) => {
+app.post('/api/recibos', async (req, res) => {
   const body = req.body;
   if (!body || typeof body !== 'object') {
     return res.status(400).json({ error: 'Cuerpo de la petición inválido' });
@@ -1167,21 +951,20 @@ app.post('/api/recibos', (req, res) => {
     return res.status(400).json({ error: 'Faltan campos requeridos: numero, cliente, fecha, total, data' });
   }
   try {
-    const stmt = db.prepare(
-      'INSERT INTO recibos (numero, cliente, fecha, total, data) VALUES (?,?,?,?,?)'
+    const result = await db.execute(
+      'INSERT INTO recibos (numero, cliente, fecha, total, data) VALUES (?,?,?,?,?)',
+      [numero, cliente, fecha, total, JSON.stringify(data)]
     );
-    const result = stmt.run(numero, cliente, fecha, total, JSON.stringify(data));
-    res.json({ ok: true, id: result.lastInsertRowid });
+    res.json({ ok: true, id: result.insertId });
   } catch(err) {
     res.status(500).json({ error: err.message });
   }
 });
 
 // Listar recibos
-app.get('/api/recibos', (req, res) => {
+app.get('/api/recibos', async (req, res) => {
   try {
-    const stmt = db.prepare('SELECT * FROM recibos ORDER BY id DESC');
-    const rows = stmt.all();
+    const rows = await db.query('SELECT * FROM recibos ORDER BY id DESC');
     res.json(rows || []);
   } catch(err) {
     res.status(500).json({ error: err.message });
@@ -1189,9 +972,9 @@ app.get('/api/recibos', (req, res) => {
 });
 
 // Resetear/limpiar todos los recibos (solo admin)
-app.delete('/api/recibos/reset', requireAuth, requireAdmin, (req, res) => {
+app.delete('/api/recibos/reset', requireAuth, requireAdmin, async (req, res) => {
   try {
-    db.prepare('DELETE FROM recibos').run();
+    await db.execute('DELETE FROM recibos');
     res.json({ ok: true, message: 'Todos los recibos han sido eliminados' });
   } catch(err) {
     res.status(500).json({ error: err.message });
@@ -1199,12 +982,12 @@ app.delete('/api/recibos/reset', requireAuth, requireAdmin, (req, res) => {
 });
 
 // Eliminar recibo individual (solo admin)
-app.delete('/api/recibos/:id', requireAuth, requireAdmin, (req, res) => {
+app.delete('/api/recibos/:id', requireAuth, requireAdmin, async (req, res) => {
   const id = parseReciboId(req.params.id);
   if (id === null) return res.status(400).json({ error: 'ID de recibo inválido' });
   try {
-    const result = db.prepare('DELETE FROM recibos WHERE id=?').run(id);
-    if (result.changes === 0) return res.status(404).json({ error: 'No encontrado' });
+    const result = await db.execute('DELETE FROM recibos WHERE id=?', [id]);
+    if (result.affectedRows === 0) return res.status(404).json({ error: 'No encontrado' });
     res.json({ ok: true });
   } catch(err) {
     res.status(500).json({ error: err.message });
@@ -1212,12 +995,12 @@ app.delete('/api/recibos/:id', requireAuth, requireAdmin, (req, res) => {
 });
 
 // Obtener recibo (por id)
-app.get('/api/recibos/:id', (req, res) => {
+app.get('/api/recibos/:id', async (req, res) => {
   const id = parseReciboId(req.params.id);
   if (id === null) return res.status(400).json({ error: 'ID de recibo inválido' });
   try {
-    const stmt = db.prepare('SELECT * FROM recibos WHERE id=?');
-    const row = stmt.get(id);
+    const rows = await db.query('SELECT * FROM recibos WHERE id=?', [id]);
+    const row = rows.length > 0 ? rows[0] : null;
     if (!row) return res.status(404).json({ error: 'No encontrado' });
     try {
       row.data = JSON.parse(row.data);
@@ -1235,8 +1018,8 @@ app.get('/api/recibos/:id/pdf', async (req, res) => {
   const id = parseReciboId(req.params.id);
   if (id === null) return res.status(400).json({ error: 'ID de recibo inválido' });
   try {
-    const stmt = db.prepare('SELECT * FROM recibos WHERE id=?');
-    const row = stmt.get(id);
+    const rows = await db.query('SELECT * FROM recibos WHERE id=?', [id]);
+    const row = rows.length > 0 ? rows[0] : null;
     if (!row) return res.status(404).json({ error: 'No encontrado' });
 
     let data;
@@ -1419,8 +1202,7 @@ app.get('/api/reportes/diario', async (req, res) => {
     const fecha = req.query.fecha;
     if(!fecha) return res.status(400).json({ error: 'Fecha requerida' });
     
-    const stmt = db.prepare('SELECT * FROM recibos WHERE fecha=? ORDER BY id DESC');
-    const recibos = stmt.all(fecha);
+    const recibos = await db.query('SELECT * FROM recibos WHERE fecha=? ORDER BY id DESC', [fecha]);
     const total = recibos.reduce((sum, r) => sum + (Number(r.total) || 0), 0);
     // Extraer doc del JSON data de cada recibo (la tabla no tiene columna doc)
     const recibosConDoc = recibos.map(r => {
@@ -1529,8 +1311,7 @@ app.get('/api/reportes/mensual', async (req, res) => {
     proximoMes.setMonth(proximoMes.getMonth() + 1);
     const fechaFin = proximoMes.toISOString().slice(0, 10);
     
-    const stmt = db.prepare('SELECT * FROM recibos WHERE fecha BETWEEN ? AND ? ORDER BY fecha DESC');
-    const recibos = stmt.all(fechaInicio, fechaFin);
+    const recibos = await db.query('SELECT * FROM recibos WHERE fecha BETWEEN ? AND ? ORDER BY fecha DESC', [fechaInicio, fechaFin]);
     const total = recibos.reduce((sum, r) => sum + (Number(r.total) || 0), 0);
     // Extraer doc del JSON data de cada recibo
     const recibosConDoc = recibos.map(r => {
@@ -1642,16 +1423,24 @@ function escapeHtml(str) {
 
 const PORT = process.env.PORT || 3000;
 
-const server = app.listen(PORT, () => {
-  console.log('');
-  console.log('═══════════════════════════════════════════');
-  console.log('  APLICACIÓN INICIADA CORRECTAMENTE');
-  console.log('═══════════════════════════════════════════');
-  console.log('');
-});
+// Inicializar pool MySQL y luego iniciar servidor
+(async () => {
+  try {
+    await db.initPool();
+    console.log('✓ Pool MySQL inicializado');
+    
+    const server = app.listen(PORT, () => {
+      console.log('');
+      console.log('═══════════════════════════════════════════');
+      console.log('  APLICACIÓN INICIADA CORRECTAMENTE');
+      console.log('═══════════════════════════════════════════');
+      console.log(`  🌐 http://localhost:${PORT}`);
+      console.log('═══════════════════════════════════════════');
+      console.log('');
+    });
 
-// Manejo de errores
-server.on('error', (error) => {
+    // Manejo de errores
+    server.on('error', (error) => {
   if (error.code === 'EADDRINUSE') {
     console.error(`\n❌ Puerto ${PORT} ya está en uso.\n`);
     console.log(`Intenta con otro puerto:`);
@@ -1660,7 +1449,12 @@ server.on('error', (error) => {
   } else {
     throw error;
   }
-});
+    });
+  } catch (error) {
+    console.error('❌ Error iniciando servidor:', error.message);
+    process.exit(1);
+  }
+})();
 
 // Manejo de excepciones no capturadas
 process.on('uncaughtException', (error) => {
