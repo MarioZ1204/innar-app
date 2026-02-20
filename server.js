@@ -142,7 +142,8 @@ if(logoPath && fs.existsSync(logoPath)) {
 // Opciones para Puppeteer (Chrome/Edge del sistema si existe)
 function getPuppeteerLaunchOptions() {
   const launchOptions = {
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+    dumpio: false
   };
   const chromePaths = [
     'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
@@ -153,7 +154,6 @@ function getPuppeteerLaunchOptions() {
   for (const chromePath of chromePaths) {
     if (fs.existsSync(chromePath)) {
       launchOptions.executablePath = chromePath;
-      console.log('✅ Chrome/Edge encontrado:', chromePath);
       break;
     }
   }
@@ -1697,7 +1697,6 @@ const PORT = process.env.PORT || 3000;
 (async () => {
   try {
     await db.initPool();
-    console.log('✓ Pool MySQL inicializado');
     
     // Configuración HTTPS
     const certPath = path.join(__dirname, 'server.crt');
@@ -1732,19 +1731,10 @@ const PORT = process.env.PORT || 3000;
       const httpServer = http.createServer(httpApp);
       const httpPort = 3001;
       
-      httpServer.listen(httpPort, () => {
-        console.log(`✓ Servidor HTTP escuchando en puerto ${httpPort} (redirigiendo a HTTPS)`);
-      });
+      httpServer.listen(httpPort, () => {});
 
       httpsServer.listen(PORT, () => {
-        console.log('');
-        console.log('═══════════════════════════════════════════');
-        console.log('  APLICACIÓN INICIADA CORRECTAMENTE');
-        console.log('═══════════════════════════════════════════');
-        console.log(`  🔒 https://localhost:${PORT}`);
-        console.log(`  ℹ️  HTTP redirige automáticamente a HTTPS`);
-        console.log('═══════════════════════════════════════════');
-        console.log('');
+        console.log('OK');
       });
 
       // Manejo de errores
@@ -1760,15 +1750,8 @@ const PORT = process.env.PORT || 3000;
       });
     } else {
       // Sin HTTPS (desarrollo local)
-      console.warn('⚠️  Certificados SSL no encontrados. Usando HTTP (no seguro)');
       const server = app.listen(PORT, () => {
-        console.log('');
-        console.log('═══════════════════════════════════════════');
-        console.log('  APLICACIÓN INICIADA CORRECTAMENTE');
-        console.log('═══════════════════════════════════════════');
-        console.log(`  🌐 http://localhost:${PORT}`);
-        console.log('═══════════════════════════════════════════');
-        console.log('');
+        console.log('OK');
       });
 
       server.on('error', (error) => {
