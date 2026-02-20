@@ -57,6 +57,7 @@ async function checkSession() {
     if (data.autenticado) {
       currentUser = data.usuario;
       $('menuUserName').textContent = currentUser?.nombre || currentUser?.usuario || 'Usuario';
+      sessionStorage.setItem('nombre_usuario', currentUser?.nombre || '');
       updateMenuByRole();
       // Restaurar módulo anterior si existe
       const savedModule = localStorage.getItem(lsKeyCurrentModule);
@@ -93,6 +94,7 @@ async function doLogin(usuario, password) {
       $('loginError').textContent = '';
       showView('view-menu');
       $('menuUserName').textContent = currentUser?.nombre || currentUser?.usuario || 'Usuario';
+      sessionStorage.setItem('nombre_usuario', currentUser?.nombre || '');
       updateMenuByRole();
       setupMenuHandlers();
       history.pushState({view: 'menu'}, '', '#menu');
@@ -297,6 +299,35 @@ function showToast(msg, type = 'info') {
   setTimeout(() => toast.remove(), 3000);
 }
 
+// Reproducir número de consultorio por voz
+function speakConsultorio(numero) {
+  // Cancelar cualquier síntesis de voz anterior
+  window.speechSynthesis.cancel();
+  
+  // Crear mensaje a sintetizar
+  const texto = `Consultorio número ${numero}`;
+  const utterance = new SpeechSynthesisUtterance(texto);
+  
+  // Configurar voz en español (si está disponible)
+  utterance.lang = 'es-ES';
+  utterance.rate = 1;
+  utterance.pitch = 1;
+  utterance.volume = 1;
+  
+  // Al terminar la síntesis, mostrar un toast
+  utterance.onend = () => {
+    showToast(`Consultorio ${numero} anunciado`, 'success');
+  };
+  
+  utterance.onerror = (event) => {
+    console.error('Error en síntesis de voz:', event.error);
+    showToast('Error al reproducir audio', 'error');
+  };
+  
+  // Reproducir
+  window.speechSynthesis.speak(utterance);
+}
+
 // init
 document.addEventListener('DOMContentLoaded', async ()=>{
   // Verificar sesión al cargar
@@ -403,21 +434,26 @@ async function initAgendaMedica() {
   updateAgendaFechaDisplay();
   $('agendaMedicaFecha').addEventListener('change', updateAgendaFechaDisplay);
   
-  // Cargar lista de doctores en lugar de consultorios
+  // Cargar lista de médicos
   const medicos = await apiFetch('/api/medicos').then(r=>r.json()).catch(()=>[]);
-  const sel = $('agendaMedicaConsultorio');
-  sel.innerHTML = '<option value="">Seleccionar médico</option>';
-  medicos.forEach(m => { const o = document.createElement('option'); o.value = m.id; o.textContent = m.nombre; sel.appendChild(o); });
   
-  // Pre-seleccionar médico si hay uno seleccionado (RECEPCIONISTA)
+  // Mostrar médico seleccionado
   if (selectedDoctorId) {
-    sel.value = selectedDoctorId;
+    const medico = medicos.find(m => m.id == selectedDoctorId);
+    if (medico) {
+      $('agendaMedicaDoctorDisplay').textContent = medico.nombre;
+    } else {
+      $('agendaMedicaDoctorDisplay').textContent = '-';
+    }
   } else if (isDoctor()) {
-    // Si es un DOCTOR, seleccionar su propio ID
-    sel.value = currentUser?.id || '';
+    // Si es un DOCTOR, mostrar su propio nombre
+    $('agendaMedicaDoctorDisplay').textContent = currentUser?.nombre || currentUser?.usuario || '-';
   } else if (medicos.length) {
-    // Otros roles: seleccionar el primero
-    sel.value = medicos[0].id;
+    // Otros roles: mostrar el primero disponible
+    selectedDoctorId = medicos[0].id;
+    $('agendaMedicaDoctorDisplay').textContent = medicos[0].nombre;
+  } else {
+    $('agendaMedicaDoctorDisplay').textContent = '-';
   }
   
   $('cargarTurnosMedica').addEventListener('click', cargarTurnosMedica);
@@ -1151,7 +1187,8 @@ async function buscarPacientesMedica() {
 
 async function cargarTurnosMedica() {
   const fecha = $('agendaMedicaFecha').value;
-  const doctorId = $('agendaMedicaConsultorio').value;
+  // Usar selectedDoctorId (establecido al seleccionar doctor) o el ID del doctor logging si es doctor
+  const doctorId = selectedDoctorId || (isDoctor() ? currentUser?.id : null);
   if (!fecha || !doctorId) { showToast('Selecciona fecha y médico', 'error'); return; }
   try {
     const res = await apiFetch(`/api/turnos?fecha=${fecha}&doctor_id=${doctorId}`);
@@ -1309,7 +1346,7 @@ function renderTurnoRowMedica(tbody, t, animateTargetId) {
         if (nuevoEstado === 'EN_SALA' && !t.numero_turno) {
           // Primero asignar número
           const fecha = $('agendaMedicaFecha').value;
-          const doctorId = $('agendaMedicaConsultorio').value;
+          const doctorId = selectedDoctorId || (isDoctor() ? currentUser?.id : null);
           const nextNumRes = await apiFetch(`/api/turnos/get-next-number?fecha=${fecha}&doctor_id=${doctorId}`);
           const nextNumData = await nextNumRes.json();
           const nextNum = nextNumData.numero || 1;
@@ -1339,18 +1376,26 @@ function renderTurnoRowMedica(tbody, t, animateTargetId) {
 
 async function llamarSiguientePaciente() {
   const fecha = $('agendaMedicaFecha').value;
-  const doctorId = $('agendaMedicaConsultorio').value;
+  const doctorId = selectedDoctorId || (isDoctor() ? currentUser?.id : null);
   if (!fecha || !doctorId) { showToast('Selecciona fecha y médico', 'error'); return; }
   try {
     const res = await apiFetch('/api/turnos/llamar-siguiente', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({fecha, doctor_id:doctorId}) });
     const data = await res.json();
     if (data.ok) { 
       const nombre = data.turno.paciente_nombre || '';
+      const consultorio = data.turno.numero_consultorio;
       showToast('Paciente llamado: ' + nombre, 'success'); 
       // Alerta por voz solo en la sesión del doctor
       if (isDoctor() && 'speechSynthesis' in window) {
-        const texto = `Paciente ${nombre}, por favor pasar a consultorio`;
+        let texto = `Paciente ${nombre}`;
+        if (consultorio) {
+          texto += `, por favor pasar a consultorio número ${consultorio}`;
+        } else {
+          texto += ', por favor pasar a consultorio';
+        }
         const utter = new SpeechSynthesisUtterance(texto);
+        utter.lang = 'es-ES';
+        utter.rate = 1;
         window.speechSynthesis.speak(utter);
       }
       cargarTurnosMedica(); 
@@ -1362,7 +1407,7 @@ async function llamarSiguientePaciente() {
 
 async function marcarAtendido() {
   const fecha = $('agendaMedicaFecha').value;
-  const doctorId = $('agendaMedicaConsultorio').value;
+  const doctorId = selectedDoctorId || (isDoctor() ? currentUser?.id : null);
   
   try {
     // Buscar el turno en atención
@@ -1493,7 +1538,8 @@ async function crearTurnoMedica() {
   const nombre = $('nuevoPacienteNombreMedica').value.trim();
   const doc = $('nuevoPacienteDocMedica').value.trim();
   const fecha = $('agendaMedicaFecha').value;
-  const doctorId = $('agendaMedicaConsultorio').value;
+  // Usar selectedDoctorId en lugar del combobox
+  const doctorId = selectedDoctorId || (isDoctor() ? currentUser?.id : null);
   const hora = $('nuevoTurnoHoraMedica')?.value || '';
   const telefono = $('nuevoPacienteTelefonoMedica')?.value || '';
   const tipoConsulta = $('nuevoTurnoTipoMedica')?.value || '';
@@ -1641,6 +1687,16 @@ async function crearCitaElectro() {
 // ========== GESTIÓN DE USUARIOS (solo admin) ==========
 async function initUsuarios() {
   $('crearUsuario').addEventListener('click', crearUsuario);
+  // Mostrar/ocultar consultorio según rol
+  $('newUserRol').addEventListener('change', function() {
+    const consultorioCol = $('consultorioCol');
+    if (this.value === 'doctor') {
+      consultorioCol.style.display = '';
+    } else {
+      consultorioCol.style.display = 'none';
+      $('newUserConsultorio').value = '';
+    }
+  });
   await cargarUsuarios();
 }
 
@@ -1651,7 +1707,7 @@ async function cargarUsuarios() {
     const usuarios = await res.json();
     const tbody = $('usuariosTableBody');
     tbody.innerHTML = '';
-    if (!usuarios.length) tbody.innerHTML = '<tr><td colspan="5" style="padding:20px;text-align:center;color:#999">No hay usuarios</td></tr>';
+    if (!usuarios.length) tbody.innerHTML = '<tr><td colspan="6" style="padding:20px;text-align:center;color:#999">No hay usuarios</td></tr>';
     else usuarios.forEach(u => {
       const tr = document.createElement('tr');
       const rolLabels = { admin: 'Administrador', recepcion: 'Recepción', electro: 'Electrodiagnóstico', doctor: 'Doctor' };
@@ -1659,13 +1715,16 @@ async function cargarUsuarios() {
         <td style="padding:8px;border:1px solid #ddd">${escapeHtml(u.usuario)}</td>
         <td style="padding:8px;border:1px solid #ddd">${escapeHtml(u.nombre||'')}</td>
         <td style="padding:8px;border:1px solid #ddd">${rolLabels[u.rol]||u.rol}</td>
+        <td style="padding:8px;border:1px solid #ddd">${u.numero_consultorio ? u.numero_consultorio : '-'}</td>
         <td style="padding:8px;border:1px solid #ddd">${u.activo ? 'Activo' : 'Inactivo'}</td>
         <td style="padding:8px;border:1px solid #ddd">
           <button class="btn-estado-small" data-edit="${u.id}">Editar</button>
+          ${u.numero_consultorio ? `<button class="btn-estado-small" data-speak="${u.numero_consultorio}" style="background:#059669;margin-left:4px" title="Reproducir número de consultorio">🔊 ${u.numero_consultorio}</button>` : ''}
           ${currentUser?.id !== u.id ? `<button class="btn-estado-small" data-del="${u.id}" style="background:#dc2626;margin-left:4px">Eliminar</button>` : ''}
         </td>
       `;
       tr.querySelector('[data-edit]')?.addEventListener('click', () => editarUsuario(u));
+      tr.querySelector('[data-speak]')?.addEventListener('click', (e) => speakConsultorio(e.target.dataset.speak));
       tr.querySelector('[data-del]')?.addEventListener('click', async (e) => {
         if (!confirm('¿Eliminar este usuario?')) return;
         try {
@@ -1680,20 +1739,115 @@ async function cargarUsuarios() {
   } catch (e) { showToast('Error cargando usuarios', 'error'); }
 }
 
+// Variable global para guardar el usuario siendo editado
+let usuarioEnEdicion = null;
+
+// Abrir modal de edición de usuario
 function editarUsuario(u) {
-  const nombre = prompt('Nombre:', u.nombre || '');
-  if (nombre === null) return;
-  const rol = prompt('Rol (admin, recepcion, electro, doctor):', u.rol || '');
-  if (rol === null) return;
+  usuarioEnEdicion = u;
+  $('editUsu').value = u.usuario;
+  $('editNombre').value = u.nombre || '';
+  $('editRol').value = u.rol || 'recepcion';
+  $('editPassword').value = '';
+  $('editarUsuarioError').classList.add('hidden');
+  
+  // Mostrar/ocultar consultorio según rol
+  mostrarConsultorioEdicion(u.rol);
+  $('editConsultorio').value = u.numero_consultorio || '';
+  
+  // Cambiar rol automáticamente muestra/oculta consultorio
+  $('editRol').addEventListener('change', function() {
+    mostrarConsultorioEdicion(this.value);
+  });
+  
+  $('modalEditarUsuario').classList.remove('hidden');
+  $('formEditarUsuario').onsubmit = guardarCambiosUsuario;
+}
+
+function mostrarConsultorioEdicion(rol) {
+  const col = $('editConsultorioCol');
+  if (rol === 'doctor') {
+    col.style.display = '';
+  } else {
+    col.style.display = 'none';
+    $('editConsultorio').value = '';
+  }
+}
+
+function closeEditarUsuarioModal() {
+  usuarioEnEdicion = null;
+  $('modalEditarUsuario').classList.add('hidden');
+}
+
+async function guardarCambiosUsuario(e) {
+  e.preventDefault();
+  if (!usuarioEnEdicion) return;
+  
+  const nombre = $('editNombre').value.trim();
+  const rol = $('editRol').value;
+  const password = $('editPassword').value;
+  const rol_actual = usuarioEnEdicion.rol;
+  
+  if (!nombre) {
+    mostrarErrorEdicion('El nombre es requerido');
+    return;
+  }
+  
   const rolesValidos = ['admin','recepcion','electro','doctor'];
-  if (!rolesValidos.includes(rol)) { showToast('Rol inválido', 'error'); return; }
-  const password = prompt('Nueva contraseña (dejar vacío para no cambiar):', '');
-  const body = { nombre: nombre.trim(), rol };
-  if (password && password.trim()) body.password = password;
-  apiFetch(`/api/usuarios/${u.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-    .then(r => r.json())
-    .then(d => { if (d.ok) { showToast('Usuario actualizado', 'success'); cargarUsuarios(); } else showToast(d.error||'Error', 'error'); })
-    .catch(() => showToast('Error', 'error'));
+  if (!rolesValidos.includes(rol)) {
+    mostrarErrorEdicion('Rol inválido');
+    return;
+  }
+  
+  const body = { nombre, rol };
+  
+  // Si el nuevo rol es doctor, pedir el número de consultorio
+  if (rol === 'doctor') {
+    const consultorio = $('editConsultorio').value.trim();
+    if (!consultorio) {
+      mostrarErrorEdicion('Consultorio es requerido para DOCTOR');
+      return;
+    }
+    const numero = parseInt(consultorio, 10);
+    if (isNaN(numero) || numero < 1) {
+      mostrarErrorEdicion('Consultorio debe ser un número válido');
+      return;
+    }
+    body.numero_consultorio = numero;
+  } else if (rol_actual === 'doctor') {
+    // Si cambia de doctor a otro rol, limpiar consultorio
+    body.numero_consultorio = null;
+  }
+  
+  if (password && password.trim()) {
+    body.password = password;
+  }
+  
+  try {
+    const res = await apiFetch(`/api/usuarios/${usuarioEnEdicion.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    
+    if (data.ok) {
+      showToast('Usuario actualizado', 'success');
+      closeEditarUsuarioModal();
+      cargarUsuarios();
+    } else {
+      mostrarErrorEdicion(data.error || 'Error al actualizar');
+    }
+  } catch (error) {
+    console.error('Error editando usuario:', error);
+    mostrarErrorEdicion('Error al actualizar usuario');
+  }
+}
+
+function mostrarErrorEdicion(msg) {
+  const err = $('editarUsuarioError');
+  err.textContent = msg;
+  err.classList.remove('hidden');
 }
 
 async function crearUsuario() {
@@ -1701,11 +1855,44 @@ async function crearUsuario() {
   const password = $('newUserPassword').value;
   const nombre = $('newUserName').value.trim();
   const rol = $('newUserRol').value;
-  if (!usuario || !password || !nombre || !rol) { showToast('Completa todos los campos', 'error'); return; }
+  let numero_consultorio = null;
+  
+  if (!usuario || !password || !nombre || !rol) { 
+    showToast('Completa todos los campos', 'error'); 
+    return; 
+  }
+  
+  if (rol === 'doctor') {
+    const consultorioValue = $('newUserConsultorio').value.trim();
+    if (!consultorioValue) {
+      showToast('El número de consultorio es obligatorio para DOCTOR', 'error');
+      return;
+    }
+    numero_consultorio = parseInt(consultorioValue, 10);
+    if (isNaN(numero_consultorio) || numero_consultorio < 1) {
+      showToast('El número de consultorio debe ser un número válido', 'error');
+      return;
+    }
+  }
+  
   try {
-    const res = await apiFetch('/api/usuarios', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ usuario, password, nombre, rol }) });
+    const body = { usuario, password, nombre, rol };
+    if (numero_consultorio) body.numero_consultorio = numero_consultorio;
+    
+    const res = await apiFetch('/api/usuarios', { 
+      method: 'POST', 
+      headers: { 'Content-Type': 'application/json' }, 
+      body: JSON.stringify(body) 
+    });
     const data = await res.json();
-    if (data.ok) { showToast('Usuario creado', 'success'); $('newUserUsuario').value=''; $('newUserPassword').value=''; $('newUserName').value=''; cargarUsuarios(); }
+    if (data.ok) { 
+      showToast('Usuario creado', 'success'); 
+      $('newUserUsuario').value=''; 
+      $('newUserPassword').value=''; 
+      $('newUserName').value=''; 
+      $('newUserConsultorio').value='';
+      cargarUsuarios(); 
+    }
     else showToast(data.error||'Error', 'error');
   } catch (e) { showToast('Error', 'error'); }
 }
@@ -1727,12 +1914,39 @@ function addRow(desc='', price=0){
     <option value="custom">Personalizado...</option>
   </select>`;
   
+  const formattedPrice = price && price > 0 ? String(price).replace(/\B(?=(\d{3})+(?!\d))/g, ',') : '';
+  
   tr.innerHTML = `
     <td>${descSelect}</td>
-    <td><input class="item-price" type="number" min="0" step="0.01" placeholder="0" value="${price === 0 ? '' : price}"/></td>
+    <td><input class="item-price" type="text" placeholder="0" value="${formattedPrice}"/></td>
     <td><button class="remove" type="button">✕</button></td>
   `;
   tbody.appendChild(tr);
+  
+  // Event listener para el input de precio con formateo de miles
+  const priceInput = tr.querySelector('.item-price');
+  priceInput.addEventListener('input', function(){
+    // Remover caracteres que no sean dígitos o punto decimal
+    let value = this.value.replace(/[^\d.]/g, '');
+    
+    // Asegurar solo un punto decimal
+    const parts = value.split('.');
+    if(parts.length > 2) {
+      value = parts[0] + '.' + parts.slice(1).join('');
+    }
+    
+    // Limitar a 2 decimales
+    if(parts[1] && parts[1].length > 2) {
+      value = parts[0] + '.' + parts[1].substring(0, 2);
+    }
+    
+    // Formatear con separador de miles
+    const [integerPart, decimalPart] = value.split('.');
+    const formatted = integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    this.value = decimalPart ? formatted + '.' + decimalPart : formatted;
+    
+    recalc();
+  });
   
   // Event listener para el select de descripción
   const descSelect_el = tr.querySelector('.item-desc');
@@ -1751,7 +1965,6 @@ function addRow(desc='', price=0){
   });
   
   tr.querySelector('.remove').addEventListener('click', ()=>{ tr.remove(); recalc(); });
-  tr.querySelectorAll('.item-price').forEach(inp=>inp.addEventListener('input', ()=>{ recalc(); }));
 }
 
 function initItemsTable(){
@@ -1764,7 +1977,9 @@ function recalc(){
   const rows = document.querySelectorAll('#itemsTable tbody tr');
   let subtotal = 0;
   rows.forEach(r=>{
-    const price = Number(r.querySelector('.item-price').value || 0);
+    const priceValue = r.querySelector('.item-price').value || '0';
+    // Remover comas antes de convertir a número
+    const price = Number(priceValue.replace(/,/g, ''));
     subtotal += price;
   });
   // por simplicidad IVA fijo 0% (ajusta si necesitas)
@@ -1814,9 +2029,10 @@ function collectFormData(){
   document.querySelectorAll('#itemsTable tbody tr').forEach(r=>{
     // Si hay input personalizado, usar su valor; si no, usar el select
     const descEl = r.querySelector('.item-desc-custom') || r.querySelector('.item-desc');
+    const priceValue = r.querySelector('.item-price').value || '0';
     items.push({
       desc: descEl.value,
-      price: Number(r.querySelector('.item-price').value || 0)
+      price: Number(priceValue.replace(/,/g, ''))
     });
   });
   // Extraer solo los números del textContent (remover $ y comas)
@@ -1849,7 +2065,8 @@ function generatePreview(){
     // Si hay input personalizado, usar su valor; si no, usar el select
     const descEl = r.querySelector('.item-desc-custom') || r.querySelector('.item-desc');
     const desc = descEl.value;
-    const price = Number(r.querySelector('.item-price').value || 0);
+    const priceValue = r.querySelector('.item-price').value || '0';
+    const price = Number(priceValue.replace(/,/g, ''));
     const tr = document.createElement('tr');
     tr.innerHTML = `<td>${escapeHtml(desc)}</td><td style="text-align:right">${escapeHtml(formatMoney(price))}</td>`;
     tbody.appendChild(tr);
@@ -1906,7 +2123,8 @@ function validarFormulario(){
     // Si hay input personalizado, usar su valor; si no, usar el select
     const descEl = r.querySelector('.item-desc-custom') || r.querySelector('.item-desc');
     const desc = descEl.value.trim();
-    const price = Number(r.querySelector('.item-price').value || 0);
+    const priceValue = r.querySelector('.item-price').value || '0';
+    const price = Number(priceValue.replace(/,/g, ''));
     if(desc && price > 0) {
       hayItemValido = true;
     }
@@ -1935,6 +2153,9 @@ async function saveToDatabase(){
       showToast('✓ Recibo guardado', 'success');
       resetFormulario();
       cargarLista();
+      // Actualizar stats después de guardar
+      updateSavedCount();
+      nextNumber();
     } else {
       showToast('Error guardando: ' + (json.error || 'desconocido'), 'error');
     }
@@ -2033,38 +2254,53 @@ async function cargarLista(){
   try {
     const res = await apiFetch('/api/recibos');
     const recibos = await res.json();
-    const cont = document.getElementById('savedItems');
+    const tbody = document.getElementById('savedItems');
     updateStats(recibos);
     
-    if(cont){
-      cont.innerHTML = '';
+    if(tbody){
+      tbody.innerHTML = '';
       if(!recibos.length) {
-        cont.innerHTML = '<div style="padding:12px;text-align:center;color:#999">No hay recibos guardados</div>';
+        tbody.innerHTML = '<tr><td colspan="5" style="padding:12px;text-align:center;color:#999">No hay recibos guardados</td></tr>';
       } else {
-        recibos.forEach(r=>{
-          const d = document.createElement('div');
-          d.style.borderTop = '1px solid #eee';
-          d.style.padding = '12px 0';
+        recibos.forEach((r, idx) => {
+          const tr = document.createElement('tr');
+          tr.style.borderBottom = '1px solid #e5e7eb';
+          if (idx % 2 === 0) {
+            tr.style.backgroundColor = '#f9fafb';
+          }
+          
+          // Formatear fecha a YYYY-MM-DD
+          let fechaFormato = r.fecha || '-';
+          if (r.fecha) {
+            if (typeof r.fecha === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(r.fecha)) {
+              fechaFormato = r.fecha;
+            } else {
+              const d = new Date(r.fecha);
+              if (!isNaN(d.getTime())) {
+                fechaFormato = d.toISOString().split('T')[0];
+              }
+            }
+          }
+          
           const deleteBtn = canDeleteRecibos() 
-            ? `<button class="delete" data-id="${r.id}" style="font-size:0.85rem;padding:6px 10px;background:#ef4444;color:white;border:0;border-radius:6px;cursor:pointer">✕</button>`
+            ? `<button class="delete" data-id="${r.id}" style="font-size:0.85rem;padding:6px 10px;background:#ef4444;color:white;border:0;border-radius:6px;cursor:pointer;margin-left:6px">✕ Eliminar</button>`
             : '';
-          d.innerHTML = `
-            <div style="display:flex;justify-content:space-between;align-items:center">
-              <div>
-                <div><strong>Recibo ${escapeHtml(r.numero)}</strong> — ${escapeHtml(r.fecha)}</div>
-                <div style="font-size:0.9rem;color:#666;margin-top:2px"><em>${escapeHtml(r.cliente)}</em> — $${escapeHtml(Number(r.total).toFixed(2))}</div>
-              </div>
-              <div style="display:flex;gap:6px">
-                <a href="/api/recibos/${r.id}/pdf" target="_blank" style="padding:6px 10px;background:#10b981;color:white;border:0;border-radius:6px;cursor:pointer;font-size:0.85rem;text-decoration:none;display:inline-block">PDF</a>
-                ${deleteBtn}
-              </div>
-            </div>
+          
+          tr.innerHTML = `
+            <td style="padding:12px;border:1px solid #e5e7eb;color:#374151">${escapeHtml(r.numero || '-')}</td>
+            <td style="padding:12px;border:1px solid #e5e7eb;color:#374151">${escapeHtml(r.cliente || '-')}</td>
+            <td style="padding:12px;border:1px solid #e5e7eb;color:#374151">${escapeHtml(fechaFormato)}</td>
+            <td style="padding:12px;border:1px solid #e5e7eb;color:#374151;text-align:right;font-weight:500">$${escapeHtml(Number(r.total || 0).toFixed(2))}</td>
+            <td style="padding:12px;border:1px solid #e5e7eb;text-align:center;white-space:nowrap">
+              <a href="/api/recibos/${r.id}/pdf" target="_blank" style="padding:6px 10px;background:#10b981;color:white;border:0;border-radius:6px;cursor:pointer;font-size:0.85rem;text-decoration:none;display:inline-block">📄 PDF</a>
+              ${deleteBtn}
+            </td>
           `;
-          cont.appendChild(d);
+          tbody.appendChild(tr);
         });
         
         // listeners delete con protección de contraseña
-        cont.querySelectorAll('.delete').forEach(b => b.addEventListener('click', async (e)=>{
+        tbody.querySelectorAll('.delete').forEach(b => b.addEventListener('click', async (e)=>{
           const password = prompt('Ingresa la contraseña para eliminar el recibo:');
           if(!password) return;
           if(password !== '1NN4R') {
@@ -2094,20 +2330,49 @@ async function cargarLista(){
 }
 
 function updateSavedCount(n) {
-  if(typeof n === 'undefined') {
-    // intentar desde servidor
-    apiFetch('/api/recibos').then(r=>r.json()).then(arr=> {
-      updateStats(arr);
-    }).catch(()=> {
-      updateStats([]);
-    });
-  }
+  // Siempre cargar desde el servidor
+  console.log('[DEBUG] updateSavedCount iniciado');
+  apiFetch('/api/recibos').then(r=>r.json()).then(arr=> {
+    console.log('[DEBUG] Recibos cargados desde servidor:', arr);
+    updateStats(arr);
+  }).catch((err)=> {
+    console.error('[DEBUG] Error cargando recibos:', err);
+    updateStats([]);
+  });
 }
 
 function updateStats(recibos) {
+  console.log('[DEBUG] updateStats llamado con recibos:', recibos);
+  
   const hoy = new Date().toISOString().slice(0, 10);
-  const recibosHoy = recibos.filter(r => r.fecha === hoy);
+  console.log('[DEBUG] Fecha de hoy:', hoy);
+  
+  // Normalizar fechas a formato YYYY-MM-DD para comparación
+  const recibosHoy = recibos.filter(r => {
+    let fechaFormato = r.fecha;
+    
+    // Si es un string y ya está en YYYY-MM-DD, úsalo directamente
+    if (typeof fechaFormato === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(fechaFormato)) {
+      console.log('[DEBUG] Recibo', r.id, 'fecha ya en formato correcto:', fechaFormato, '===', hoy, '?', fechaFormato === hoy);
+      return fechaFormato === hoy;
+    }
+    
+    // Si no, intenta convertir
+    if (fechaFormato) {
+      const d = new Date(fechaFormato);
+      if (!isNaN(d.getTime())) {
+        fechaFormato = d.toISOString().split('T')[0];
+        console.log('[DEBUG] Recibo', r.id, 'fecha convertida:', fechaFormato, '===', hoy, '?', fechaFormato === hoy);
+        return fechaFormato === hoy;
+      }
+    }
+    
+    return false;
+  });
+  
   const totalHoy = recibosHoy.reduce((sum, r) => sum + (Number(r.total) || 0), 0);
+  
+  console.log('[DEBUG] Recibos de hoy:', recibosHoy.length, 'Total:', totalHoy);
   
   $('statsRecibosHoy').textContent = recibosHoy.length;
   $('statsTotalHoy').textContent = '$ ' + totalHoy.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
@@ -2178,7 +2443,7 @@ async function generarReporteMensual(){
 }
 
 // ============================================
-// CAMBIAR CONTRASEÑA
+// GESTIONAR CUENTA
 // ============================================
 function openCambiarContrasenaModal() {
   const modal = $('modalCambiarContrasena');
@@ -2186,6 +2451,14 @@ function openCambiarContrasenaModal() {
     modal.classList.remove('hidden');
     $('formCambiarContrasena').reset();
     $('cambiarContrasenaError').classList.add('hidden');
+    
+    // Cargar nombre actual
+    const nombreSpan = $('menuUserName');
+    if (nombreSpan) {
+      const nombreCompleto = nombreSpan.textContent.split(' ').pop(); // Obtener del menú
+      // Mejor aún, hacer una búsqueda del nombre en sesión
+      $('cuentaNombreActual').value = sessionStorage.getItem('nombre_usuario') || '';
+    }
   }
 }
 
@@ -2197,56 +2470,90 @@ function closeCambiarContrasenaModal() {
   }
 }
 
-// Event listener para el formulario de cambiar contraseña
+// Event listener para el formulario de gestionar cuenta
 document.addEventListener('DOMContentLoaded', () => {
   const form = $('formCambiarContrasena');
   if (form) {
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       
+      const nombre = $('cuentaNombreActual').value.trim();
       const contrasenaActual = $('contrasenaActual').value;
       const nuevaContrasena = $('nuevaContrasena').value;
       const confirmarContrasena = $('confirmarContrasena').value;
       const errorDiv = $('cambiarContrasenaError');
 
-      if (!contrasenaActual || !nuevaContrasena || !confirmarContrasena) {
-        errorDiv.textContent = 'Todos los campos son obligatorios';
+      // Validar que al menos nombre o contraseña sea proporcionado
+      if (!nombre && !nuevaContrasena) {
+        errorDiv.textContent = 'Debe cambiar al menos su nombre o contraseña';
         errorDiv.classList.remove('hidden');
         return;
       }
 
-      if (nuevaContrasena !== confirmarContrasena) {
-        errorDiv.textContent = 'Las contraseñas no coinciden';
-        errorDiv.classList.remove('hidden');
-        return;
-      }
+      // Si va a cambiar contraseña, validar los campos
+      if (nuevaContrasena) {
+        if (!contrasenaActual) {
+          errorDiv.textContent = 'Se requiere tu contraseña actual para cambiar la contraseña';
+          errorDiv.classList.remove('hidden');
+          return;
+        }
 
-      if (nuevaContrasena.length < 6) {
-        errorDiv.textContent = 'La contraseña debe tener al menos 6 caracteres';
-        errorDiv.classList.remove('hidden');
-        return;
+        if (!confirmarContrasena) {
+          errorDiv.textContent = 'Debe confirmar la nueva contraseña';
+          errorDiv.classList.remove('hidden');
+          return;
+        }
+
+        if (nuevaContrasena !== confirmarContrasena) {
+          errorDiv.textContent = 'Las contraseñas no coinciden';
+          errorDiv.classList.remove('hidden');
+          return;
+        }
+
+        if (nuevaContrasena.length < 6) {
+          errorDiv.textContent = 'La contraseña debe tener al menos 6 caracteres';
+          errorDiv.classList.remove('hidden');
+          return;
+        }
       }
 
       try {
+        const body = {
+          nombre: nombre || null
+        };
+
+        // Solo incluir contraseña si está siendo cambiada
+        if (nuevaContrasena) {
+          body.contrasenaActual = contrasenaActual;
+          body.nuevaContrasena = nuevaContrasena;
+          body.confirmarContrasena = confirmarContrasena;
+        }
+
         const res = await apiFetch('/api/cambiar-contrasena', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contrasenaActual,
-            nuevaContrasena,
-            confirmarContrasena
-          })
+          body: JSON.stringify(body)
         });
 
         const data = await res.json();
 
         if (!res.ok) {
-          errorDiv.textContent = data.error || 'Error al cambiar contraseña';
+          errorDiv.textContent = data.error || 'Error al actualizar cuenta';
           errorDiv.classList.remove('hidden');
           return;
         }
 
-        showToast('Contraseña cambiadaexitosamente', 'success');
+        showToast(data.mensaje, 'success');
+        
+        // Actualizar nombre en sesión y menú
+        if (data.nombre) {
+          sessionStorage.setItem('nombre_usuario', data.nombre);
+          const menuUserName = $('menuUserName');
+          if (menuUserName) {
+            menuUserName.textContent = `${data.nombre}`;
+          }
+        }
+        
         closeCambiarContrasenaModal();
       } catch (error) {
         errorDiv.textContent = 'Error en la solicitud';

@@ -89,9 +89,76 @@ button.remove { padding:6px 10px; font-size:.85rem; width:100%; }
 .agenda-page.active { display:block }
 
 /* Responsive */
-@media (max-width:768px) {
+
+/* Móviles pequeños (320px - 480px) */
+@media (max-width:480px) {
+  body { font-size: 14px; }
+  .view-login { padding: 16px; }
+  .login-box { padding: 24px 16px; }
+  .login-header h1 { font-size: 1.2rem; }
+  .login-header p { font-size: 0.85rem; }
+  .login-form input { padding: 10px 12px; font-size: 16px; }
+  .btn-login { padding: 12px; font-size: 0.95rem; }
+  
+  .menu-header { padding: 12px 16px; }
+  .menu-logo { height: 40px; }
+  .menu-user span { font-size: 0.9rem; }
+  .btn-logout { padding: 6px 12px; font-size: 0.85rem; }
+  .menu-content { padding: 24px 16px; }
+  .menu-content h2 { font-size: 1.2rem; margin-bottom: 20px; }
+  .menu-cards { grid-template-columns: 1fr; gap: 16px; }
+  .menu-card { padding: 20px; }
+  .menu-card-icon { font-size: 2rem; }
+  .menu-card-title { font-size: 1rem; }
+  .menu-card-desc { font-size: 0.8rem; }
+  
   .main-layout { flex-direction:column }
-  .sidebar { width:100%; padding:12px }
+  .sidebar { width:100%; padding:12px; }
+  .sidebar h2 { font-size: 1.1rem; margin-bottom: 16px; }
+  .sidebar-btn { padding: 10px 12px; font-size: 0.9rem; }
+  .main-content { padding: 12px; }
+  
+  header { flex-direction:column; align-items:stretch; gap:8px; margin-bottom:12px; }
+  h1 { font-size: 1.1rem; }
+  h3 { font-size: 1rem; }
+  
+  .card { padding: 12px; margin-bottom: 12px; }
+  .row { gap: 8px; }
+  .col { min-width:100%; }
+  
+  input, select, textarea { padding: 8px; font-size: 16px; }
+  label { font-size: 0.85rem; }
+  
+  table { font-size: 0.8rem; }
+  th, td { padding: 6px; }
+  
+  .actions { flex-direction:column; gap: 6px; }
+  button { width: 100%; padding: 10px; font-size: 0.9rem; }
+  
+  .receipt-header { flex-direction:column; }
+  .menu-user { gap: 12px; }
+  
+  .agenda-page-btn { padding: 8px 12px; font-size: 0.85rem; margin-right: 6px; }
+  .modal-box { padding: 12px; max-width: 95vw; }
+  
+  .btn-estado { padding: 2px 6px; font-size: 0.75rem; }
+  .btn-llamar, .btn-marcar { padding: 10px 16px; font-size: 0.9rem; }
+}
+
+/* Tablets pequeños (481px - 768px) */
+@media (max-width:768px) and (min-width:481px) {
+  body { font-size: 15px; }
+  .login-box { padding: 32px 24px; }
+  .login-header h1 { font-size: 1.3rem; }
+  
+  .menu-content { padding: 32px 20px; }
+  .menu-content h2 { font-size: 1.3rem; margin-bottom: 24px; }
+  .menu-cards { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; }
+  .menu-card { padding: 24px; }
+  .menu-card-icon { font-size: 2.2rem; }
+  
+  .main-layout { flex-direction:column }
+  .sidebar { width:100%; padding:12px; }
   .main-content { padding:12px }
   header { flex-direction:column; align-items:flex-start; gap:12px }
   .row { flex-direction:column }
@@ -101,6 +168,64 @@ button.remove { padding:6px 10px; font-size:.85rem; width:100%; }
   table { font-size:.85rem }
   th, td { padding:8px }
   .receipt-header { flex-direction:column }
+  
+  .agenda-page-btn { padding: 9px 14px; font-size: 0.9rem; }
+}
+
+/* Tablets medianos y grandes (769px - 1024px) */
+@media (min-width:769px) and (max-width:1024px) {
+  .menu-cards { grid-template-columns: repeat(2, 1fr); }
+  .main-layout { flex-direction: row; }
+  .sidebar { width: 200px; padding: 16px; }
+  .sidebar h2 { font-size: 1.2rem; }
+  .main-content { padding: 16px; }
+  
+  .col { min-width: 150px; }
+  table { font-size: 0.9rem; }
+  th, td { padding: 9px; }
+  
+  .modal-box { max-width: 500px; }
+}
+
+/* Desktops estándar (1025px - 1280px) */
+@media (min-width:1025px) and (max-width:1280px) {
+  .menu-cards { grid-template-columns: repeat(3, 1fr); }
+  .sidebar { width: 240px; }
+  .col { min-width: 180px; }
+}
+
+/* Desktops grandes (1281px+) */
+@media (min-width:1281px) {
+  .menu-cards { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+  .sidebar { width: 260px; }
+  .col { min-width: 200px; }
+}
+
+/* Mejoras generales de accesibilidad móvil */
+@media (max-width:768px) {
+  /* Aumentar área táctil de botones */
+  button, input[type="button"], input[type="submit"] {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  
+  /* Ajustar modales para móviles */
+  .modal-box {
+    max-width: 95vw;
+    padding: 14px;
+  }
+  
+  /* Mejorar legibilidad en pantallas pequeñas */
+  body {
+    line-height: 1.6;
+  }
+  
+  /* Optimizar tablas para móviles */
+  table {
+    display: block;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
 }
 
 @media print {

@@ -263,18 +263,36 @@ app.get('/api/sesion', async (req, res) => {
 
 // Cambiar contraseña (cualquier usuario autenticado)
 app.post('/api/cambiar-contrasena', requireAuth, async (req, res) => {
-  const { contrasenaActual, nuevaContrasena, confirmarContrasena } = req.body || {};
+  const { 
+    nombre, 
+    contrasenaActual, 
+    nuevaContrasena, 
+    confirmarContrasena 
+  } = req.body || {};
   
-  if (!contrasenaActual || !nuevaContrasena || !confirmarContrasena) {
-    return res.status(400).json({ error: 'Se requieren contraseña actual, nueva contraseña y confirmación' });
+  // Validar que al menos nombre o contraseña sea proporcionado
+  if (!nombre && !nuevaContrasena) {
+    return res.status(400).json({ error: 'Debe proporcionar al menos nombre o contraseña nueva' });
   }
 
-  if (nuevaContrasena !== confirmarContrasena) {
-    return res.status(400).json({ error: 'Las contraseñas no coinciden' });
-  }
+  // Si va a cambiar contraseña, validar los campos
+  if (nuevaContrasena) {
+    if (!contrasenaActual || !confirmarContrasena) {
+      return res.status(400).json({ error: 'Se requieren contraseña actual y confirmación' });
+    }
 
-  if (nuevaContrasena.length < 6) {
-    return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres' });
+    if (nuevaContrasena !== confirmarContrasena) {
+      return res.status(400).json({ error: 'Las contraseñas no coinciden' });
+    }
+
+    if (nuevaContrasena.length < 6) {
+      return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres' });
+    }
+
+    // Validar nombre si es proporcionado
+    if (nombre && nombre.trim().length === 0) {
+      return res.status(400).json({ error: 'El nombre no puede estar vacío' });
+    }
   }
 
   try {
@@ -290,26 +308,54 @@ app.post('/api/cambiar-contrasena', requireAuth, async (req, res) => {
 
     const user = users[0];
 
-    // Verificar contraseña actual
-    if (!bcrypt.compareSync(contrasenaActual, user.password_hash)) {
-      return res.status(401).json({ error: 'La contraseña actual es incorrecta' });
+    // Si va a cambiar contraseña, verificar la actual
+    if (nuevaContrasena) {
+      if (!bcrypt.compareSync(contrasenaActual, user.password_hash)) {
+        return res.status(401).json({ error: 'La contraseña actual es incorrecta' });
+      }
+
+      if (bcrypt.compareSync(nuevaContrasena, user.password_hash)) {
+        return res.status(400).json({ error: 'La nueva contraseña debe ser diferente a la actual' });
+      }
     }
 
-    // Verificar que la nueva contraseña sea diferente
-    if (bcrypt.compareSync(nuevaContrasena, user.password_hash)) {
-      return res.status(400).json({ error: 'La nueva contraseña debe ser diferente a la actual' });
+    // Preparar actualización
+    const updates = [];
+    const params = [];
+
+    if (nombre) {
+      updates.push('nombre = ?');
+      params.push(nombre.trim());
     }
 
-    // Hash de la nueva contraseña
-    const nuevoHash = bcrypt.hashSync(nuevaContrasena, 10);
+    if (nuevaContrasena) {
+      const nuevoHash = bcrypt.hashSync(nuevaContrasena, 10);
+      updates.push('password_hash = ?');
+      params.push(nuevoHash);
+    }
 
-    // Actualizar contraseña
+    params.push(req.session.usuarioId);
+
+    // Ejecutar actualización
     await db.execute(
-      'UPDATE usuarios SET password_hash = ? WHERE id = ?',
-      [nuevoHash, req.session.usuarioId]
+      `UPDATE usuarios SET ${updates.join(', ')} WHERE id = ?`,
+      params
     );
 
-    res.json({ ok: true, mensaje: 'Contraseña cambiadaexitosamente' });
+    // Si cambió nombre, actualizar en sesión
+    if (nombre) {
+      req.session.nombre = nombre.trim();
+    }
+
+    const mensaje = [];
+    if (nombre) mensaje.push('nombre');
+    if (nuevaContrasena) mensaje.push('contraseña');
+    
+    res.json({ 
+      ok: true, 
+      mensaje: `Tu ${mensaje.join(' y ')} ${mensaje.length > 1 ? 'fueron actualizados' : 'fue actualizado'} correctamente`,
+      nombre: nombre
+    });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: e.message });
@@ -332,7 +378,7 @@ app.get('/api/usuarios', requireAuth, requireAdmin, async (req, res) => {
 });
 
 app.post('/api/usuarios', requireAuth, requireAdmin, async (req, res) => {
-  const { usuario, password, nombre, rol } = req.body || {};
+  const { usuario, password, nombre, rol, numero_consultorio } = req.body || {};
   if (!usuario || !password || !nombre || !rol) {
     return res.status(400).json({ error: 'usuario, password, nombre y rol son obligatorios' });
   }
@@ -340,11 +386,19 @@ app.post('/api/usuarios', requireAuth, requireAdmin, async (req, res) => {
   if (!rolesValidos.includes(rol)) {
     return res.status(400).json({ error: 'Rol inválido. Use: admin, recepcion, electro, doctor' });
   }
+  let consultorioFinal = null;
+  if (rol === 'doctor') {
+    const numConsultorio = parseInt(numero_consultorio, 10);
+    if (isNaN(numConsultorio) || numConsultorio < 1) {
+      return res.status(400).json({ error: 'Número de consultorio debe ser un número válido' });
+    }
+    consultorioFinal = numConsultorio;
+  }
   try {
     const hash = bcrypt.hashSync(password, 10);
     const result = await db.execute(
-      'INSERT INTO usuarios (usuario, password_hash, nombre, rol) VALUES (?, ?, ?, ?)',
-      [usuario, hash, nombre, rol]
+      'INSERT INTO usuarios (usuario, password_hash, nombre, rol, numero_consultorio) VALUES (?, ?, ?, ?, ?)',
+      [usuario, hash, nombre, rol, consultorioFinal]
     );
     res.json({ ok: true, id: result.insertId });
   } catch (e) {
@@ -358,14 +412,19 @@ app.post('/api/usuarios', requireAuth, requireAdmin, async (req, res) => {
 
 app.patch('/api/usuarios/:id', requireAuth, requireAdmin, async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  const { usuario, password, nombre, rol, activo } = req.body || {};
+  const { usuario, password, nombre, rol, activo, numero_consultorio } = req.body || {};
   if (!id) return res.status(400).json({ error: 'ID inválido' });
   try {
     const users = await db.query('SELECT * FROM usuarios WHERE id = ?', [id]);
     const user = users.length > 0 ? users[0] : null;
     if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+    
     const updates = [];
     const params = [];
+    
+    // Determinar el nuevo rol (si se actualiza) o mantener el actual
+    const nuevoRol = rol !== undefined ? rol : user.rol;
+    
     if (usuario !== undefined) { updates.push('usuario = ?'); params.push(usuario); }
     if (nombre !== undefined) { updates.push('nombre = ?'); params.push(nombre); }
     if (rol !== undefined) {
@@ -373,11 +432,34 @@ app.patch('/api/usuarios/:id', requireAuth, requireAdmin, async (req, res) => {
       if (!rolesValidos.includes(rol)) return res.status(400).json({ error: 'Rol inválido' });
       updates.push('rol = ?'); params.push(rol);
     }
+    
+    // Manejar numero_consultorio
+    if (numero_consultorio !== undefined) {
+      let consultorioFinal = null;
+      if (numero_consultorio !== null) {
+        const num = parseInt(numero_consultorio, 10);
+        if (isNaN(num) || num < 1) {
+          return res.status(400).json({ error: 'Número de consultorio debe ser un número válido' });
+        }
+        consultorioFinal = num;
+      }
+      updates.push('numero_consultorio = ?');
+      params.push(consultorioFinal);
+    } else if (rol === 'doctor' && user.rol !== 'doctor') {
+      // Si cambia A doctor pero no especifica consultorio, pedir que lo haga
+      return res.status(400).json({ error: 'Número de consultorio es obligatorio para DOCTOR' });
+    } else if (rol !== 'doctor' && user.rol === 'doctor') {
+      // Si cambia DE doctor A otro rol, limpiar consultorio
+      updates.push('numero_consultorio = ?');
+      params.push(null);
+    }
+    
     if (activo !== undefined) { updates.push('activo = ?'); params.push(activo ? 1 : 0); }
     if (password && password.trim()) {
       updates.push('password_hash = ?');
       params.push(bcrypt.hashSync(password, 10));
     }
+    
     if (updates.length === 0) return res.status(400).json({ error: 'Nada que actualizar' });
     params.push(id);
     await db.execute(`UPDATE usuarios SET ${updates.join(', ')} WHERE id = ?`, params);
@@ -416,6 +498,10 @@ app.post('/api/turnos/llamar-siguiente', requireAuth, async (req, res) => {
     return res.status(400).json({ error: 'fecha y doctor_id son obligatorios' });
   }
   try {
+    // Obtener info del doctor incluyendo numero_consultorio
+    const doctor = await db.query(`SELECT numero_consultorio FROM usuarios WHERE id = ?`, [doctor_id]);
+    const numeroConsultorio = doctor.length > 0 ? doctor[0].numero_consultorio : null;
+    
     // Primero verificar si ya hay un paciente EN_ATENCION
     const enAtencion = await db.query(`
       SELECT * FROM turnos 
@@ -423,10 +509,11 @@ app.post('/api/turnos/llamar-siguiente', requireAuth, async (req, res) => {
       LIMIT 1
     `, [fecha, doctor_id]);
     
-    // Si hay un paciente EN_ATENCION, devolver el mismo
+    // Si hay un paciente EN_ATENCION, devolver el mismo con numero_consultorio
     if (enAtencion.length > 0) {
       console.log(`[DEBUG] Ya hay paciente EN_ATENCION:`, enAtencion[0].paciente_nombre);
-      return res.json({ ok: true, turno: enAtencion[0] });
+      const turnoConConsultorio = { ...enAtencion[0], numero_consultorio: numeroConsultorio };
+      return res.json({ ok: true, turno: turnoConConsultorio });
     }
     
     // Si no hay EN_ATENCION, buscar el siguiente EN_SALA
@@ -451,7 +538,8 @@ app.post('/api/turnos/llamar-siguiente', requireAuth, async (req, res) => {
     `, [turno.id]);
 
     const updated = await db.query(`SELECT * FROM turnos WHERE id = ?`, [turno.id]);
-    res.json({ ok: true, turno: updated[0] });
+    const turnoConConsultorio = { ...updated[0], numero_consultorio: numeroConsultorio };
+    res.json({ ok: true, turno: turnoConConsultorio });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: e.message });
@@ -1061,17 +1149,28 @@ app.post('/api/recibos', async (req, res) => {
   if (!body || typeof body !== 'object') {
     return res.status(400).json({ error: 'Cuerpo de la petición inválido' });
   }
+  
   const { numero, cliente, fecha, total, data } = body;
-  if (numero == null || cliente == null || fecha == null || total == null || data == null) {
-    return res.status(400).json({ error: 'Faltan campos requeridos: numero, cliente, fecha, total, data' });
+  
+  // Validar que al menos el total exista
+  if (total == null) {
+    return res.status(400).json({ error: 'Se requiere el campo total' });
   }
+  
   try {
     const result = await db.execute(
-      'INSERT INTO recibos (numero, cliente, fecha, total, data) VALUES (?,?,?,?,?)',
-      [numero, cliente, fecha, total, JSON.stringify(data)]
+      'INSERT INTO recibos (numero, cliente, fecha, total, data) VALUES (?, ?, ?, ?, ?)',
+      [
+        numero || null,
+        cliente || null,
+        fecha || null,
+        total || 0,
+        data ? JSON.stringify(data) : null
+      ]
     );
     res.json({ ok: true, id: result.insertId });
   } catch(err) {
+    console.error('[RECIBOS] Error guardando recibo:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -1227,7 +1326,7 @@ app.get('/api/recibos/:id/pdf', async (req, res) => {
           </div>
           <div class="header-receipt">
             <div class="receipt-number">Recibo Nº ${row.numero}</div>
-            <div class="receipt-date">Fecha: ${row.fecha}</div>
+            <div class="receipt-date">Fecha: ${typeof row.fecha === 'string' ? row.fecha : new Date(row.fecha).toISOString().split('T')[0]}</div>
           </div>
         </div>
 
@@ -1319,14 +1418,40 @@ app.get('/api/reportes/diario', async (req, res) => {
     
     const recibos = await db.query('SELECT * FROM recibos WHERE fecha=? ORDER BY id DESC', [fecha]);
     const total = recibos.reduce((sum, r) => sum + (Number(r.total) || 0), 0);
-    // Extraer doc del JSON data de cada recibo (la tabla no tiene columna doc)
+    // Extraer doc y servicios del JSON data de cada recibo
     const recibosConDoc = recibos.map(r => {
       let doc = '-';
+      let servicios = '-';
+      let fechaFormato = '-';
+      
+      // Formatear fecha a YYYY-MM-DD
+      if (r.fecha) {
+        let fechaStr = typeof r.fecha === 'string' ? r.fecha : String(r.fecha);
+        
+        // Si ya está en formato YYYY-MM-DD, usarlo directamente
+        if (/^\d{4}-\d{2}-\d{2}$/.test(fechaStr)) {
+          fechaFormato = fechaStr;
+        } else {
+          // Intentar parsear como Date
+          try {
+            const d = new Date(fechaStr);
+            if (!isNaN(d.getTime())) {
+              fechaFormato = d.toISOString().split('T')[0];
+            }
+          } catch (e) {
+            // Si falla, dejar como '-'
+          }
+        }
+      }
+      
       try {
         const d = typeof r.data === 'string' ? JSON.parse(r.data) : r.data;
         if (d && d.doc != null) doc = String(d.doc);
+        if (d && d.items && Array.isArray(d.items)) {
+          servicios = d.items.map(item => item.desc || '').filter(s => s).join(', ') || '-';
+        }
       } catch (e) { /* ignorar */ }
-      return { ...r, doc };
+      return { ...r, doc, servicios, fechaFormato };
     });
 
     const logoBase64Data = logoBase64;
@@ -1343,8 +1468,8 @@ app.get('/api/reportes/diario', async (req, res) => {
           .content { position:relative; z-index:1; }
           h1 { text-align:center; color:#8AA6A1; font-size:16px; margin:8px 0; }
           .logo-corner { position:absolute; top:0; right:0; width:70px; height:70px; object-fit:contain; object-position:top right; display:block; z-index:2; }
-          table { width:100%; border-collapse:collapse; margin:12px 0; font-size:11px; }
-          th, td { border:1px solid #ddd; padding:6px 8px; text-align:left; font-size:11px; }
+          table { width:100%; border-collapse:collapse; margin:12px 0; font-size:10px; }
+          th, td { border:1px solid #ddd; padding:4px 6px; text-align:left; font-size:10px; }
           th { background-color:#f0f0f0; font-weight:bold; }
           .total { font-weight:bold; font-size:14px; }
           .summary { background-color:#f9f9f9; padding:12px; margin:12px 0; border-left:4px solid #8AA6A1; }
@@ -1359,7 +1484,7 @@ app.get('/api/reportes/diario', async (req, res) => {
         <div class="content">
           <h1>Reporte Diario</h1>
           <div class="summary">
-            <p><strong>Fecha:</strong> ${fecha}</p>
+            <p><strong>Fecha:</strong> ${fecha.includes('-') ? fecha : new Date(fecha).toISOString().split('T')[0]}</p>
             <p><strong>Total de recibos:</strong> ${recibos.length}</p>
             <p class="total"><strong>Total dinero:</strong> $ ${total.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}</p>
           </div>
@@ -1370,6 +1495,7 @@ app.get('/api/reportes/diario', async (req, res) => {
                 <th>Recibo Nº</th>
                 <th>Documento</th>
                 <th>Cliente</th>
+                <th>Servicios</th>
                 <th>Total</th>
               </tr>
             </thead>
@@ -1379,6 +1505,7 @@ app.get('/api/reportes/diario', async (req, res) => {
                   <td>${escapeHtml(r.numero)}</td>
                   <td>${escapeHtml(r.doc)}</td>
                   <td>${escapeHtml(r.cliente)}</td>
+                  <td>${escapeHtml(r.servicios)}</td>
                   <td>$ ${Number(r.total).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}</td>
                 </tr>`;
               }).join('')}
@@ -1428,14 +1555,40 @@ app.get('/api/reportes/mensual', async (req, res) => {
     
     const recibos = await db.query('SELECT * FROM recibos WHERE fecha BETWEEN ? AND ? ORDER BY fecha DESC', [fechaInicio, fechaFin]);
     const total = recibos.reduce((sum, r) => sum + (Number(r.total) || 0), 0);
-    // Extraer doc del JSON data de cada recibo
+    // Extraer doc y servicios del JSON data de cada recibo
     const recibosConDoc = recibos.map(r => {
       let doc = '-';
+      let servicios = '-';
+      let fechaFormato = '-';
+      
+      // Formatear fecha a YYYY-MM-DD
+      if (r.fecha) {
+        let fechaStr = typeof r.fecha === 'string' ? r.fecha : String(r.fecha);
+        
+        // Si ya está en formato YYYY-MM-DD, usarlo directamente
+        if (/^\d{4}-\d{2}-\d{2}$/.test(fechaStr)) {
+          fechaFormato = fechaStr;
+        } else {
+          // Intentar parsear como Date
+          try {
+            const d = new Date(fechaStr);
+            if (!isNaN(d.getTime())) {
+              fechaFormato = d.toISOString().split('T')[0];
+            }
+          } catch (e) {
+            // Si falla, dejar como '-'
+          }
+        }
+      }
+      
       try {
         const d = typeof r.data === 'string' ? JSON.parse(r.data) : r.data;
         if (d && d.doc != null) doc = String(d.doc);
+        if (d && d.items && Array.isArray(d.items)) {
+          servicios = d.items.map(item => item.desc || '').filter(s => s).join(', ') || '-';
+        }
       } catch (e) { /* ignorar */ }
-      return { ...r, doc };
+      return { ...r, doc, servicios, fechaFormato };
     });
 
     const logoBase64Data = logoBase64;
@@ -1452,8 +1605,8 @@ app.get('/api/reportes/mensual', async (req, res) => {
           .content { position:relative; z-index:1; }
           h1 { text-align:center; color:#8AA6A1; font-size:16px; margin:8px 0; }
           .logo-corner { position:absolute; top:0; right:0; width:70px; height:70px; object-fit:contain; object-position:top right; display:block; z-index:2; }
-          table { width:100%; border-collapse:collapse; margin:12px 0; font-size:11px; }
-          th, td { border:1px solid #ddd; padding:6px 8px; text-align:left; font-size:11px; }
+          table { width:100%; border-collapse:collapse; margin:12px 0; font-size:10px; }
+          th, td { border:1px solid #ddd; padding:4px 6px; text-align:left; font-size:10px; }
           th { background-color:#f0f0f0; font-weight:bold; }
           .total { font-weight:bold; font-size:14px; }
           .summary { background-color:#f9f9f9; padding:12px; margin:12px 0; border-left:4px solid #8AA6A1; }
@@ -1480,16 +1633,18 @@ app.get('/api/reportes/mensual', async (req, res) => {
                 <th>Recibo Nº</th>
                 <th>Documento</th>
                 <th>Cliente</th>
+                <th>Servicios</th>
                 <th>Total</th>
               </tr>
             </thead>
             <tbody>
               ${recibosConDoc.map(r => {
                 return `<tr>
-                  <td>${escapeHtml(r.fecha)}</td>
+                  <td>${escapeHtml(r.fechaFormato)}</td>
                   <td>${escapeHtml(r.numero)}</td>
                   <td>${escapeHtml(r.doc)}</td>
                   <td>${escapeHtml(r.cliente)}</td>
+                  <td>${escapeHtml(r.servicios)}</td>
                   <td>$ ${Number(r.total).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}</td>
                 </tr>`;
               }).join('')}
