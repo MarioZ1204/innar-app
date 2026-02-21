@@ -41,7 +41,8 @@
     "express-session": "^1.19.0",
     "multer": "^2.0.2",
     "mysql2": "^3.17.3",
-    "puppeteer": "^24.35.0"
+    "puppeteer": "^24.35.0",
+    "socket.io": "^4.8.3"
   },
   "devDependencies": {
     "javascript-obfuscator": "^4.1.1",

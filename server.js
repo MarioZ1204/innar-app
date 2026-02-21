@@ -3,6 +3,7 @@ require('dotenv').config();
 const express = require('express');
 const https = require('https');
 const http = require('http');
+const socketIo = require('socket.io');
 const db = require('./db-mysql');  // ← MySQL Pool en lugar de SQLite
 const bodyParser = require('body-parser');
 const cors = require('cors');
@@ -1168,6 +1169,11 @@ app.post('/api/recibos', async (req, res) => {
         data ? JSON.stringify(data) : null
       ]
     );
+    // Emitir actualización a través de WebSocket
+    if (app.io) {
+      app.io.emit('recibo:actualizar-lista');
+      app.io.emit('stats:actualizar');
+    }
     res.json({ ok: true, id: result.insertId });
   } catch(err) {
     console.error('[RECIBOS] Error guardando recibo:', err.message);
@@ -1701,7 +1707,7 @@ const PORT = process.env.PORT || 3000;
     // Configuración HTTPS
     const certPath = path.join(__dirname, 'server.crt');
     const keyPath = path.join(__dirname, 'server.key');
-    let httpsServer;
+    let httpServer;
 
     if (fs.existsSync(certPath) && fs.existsSync(keyPath)) {
       // Usar HTTPS con certificado
@@ -1720,7 +1726,7 @@ const PORT = process.env.PORT || 3000;
         next();
       });
 
-      httpsServer = https.createServer(options, app);
+      httpServer = https.createServer(options, app);
 
       // Crear servidor HTTP que redirige a HTTPS
       const httpApp = express();
@@ -1728,43 +1734,112 @@ const PORT = process.env.PORT || 3000;
         res.redirect(`https://localhost:${PORT}${req.url}`);
       });
       
-      const httpServer = http.createServer(httpApp);
+      const redirectServer = http.createServer(httpApp);
       const httpPort = 3001;
       
-      httpServer.listen(httpPort, () => {});
-
-      httpsServer.listen(PORT, () => {
-        console.log('OK');
-      });
-
-      // Manejo de errores
-      httpsServer.on('error', (error) => {
-        if (error.code === 'EADDRINUSE') {
-          console.error(`\n❌ Puerto ${PORT} ya está en uso.\n`);
-          console.log(`Intenta con otro puerto:`);
-          console.log(`set PORT=3002 && node server.js\n`);
-          process.exit(1);
-        } else {
-          throw error;
-        }
-      });
+      redirectServer.listen(httpPort, () => {});
     } else {
       // Sin HTTPS (desarrollo local)
-      const server = app.listen(PORT, () => {
-        console.log('OK');
+      httpServer = http.createServer(app);
+    }
+
+    // Configurar Socket.IO en el servidor HTTP
+    const io = socketIo(httpServer, {
+      cors: {
+        origin: true,
+        credentials: true
+      }
+    });
+
+    // Almacenar instancia de io en app para usar en rutas
+    app.io = io;
+
+    // Manejar conexiones de WebSocket
+    io.on('connection', (socket) => {
+      // Evento: Nuevo recibo creado
+      socket.on('recibo:crear', (data) => {
+        io.emit('recibo:actualizar-lista');
+        io.emit('stats:actualizar');
       });
 
-      server.on('error', (error) => {
-        if (error.code === 'EADDRINUSE') {
-          console.error(`\n❌ Puerto ${PORT} ya está en uso.\n`);
-          console.log(`Intenta con otro puerto:`);
-          console.log(`set PORT=3001 && node server.js\n`);
-          process.exit(1);
-        } else {
-          throw error;
-        }
+      // Evento: Recibo eliminado
+      socket.on('recibo:eliminar', (data) => {
+        io.emit('recibo:actualizar-lista');
+        io.emit('stats:actualizar');
       });
-    }
+
+      // Evento: Nueva cita en agenda médica
+      socket.on('cita:crear', (data) => {
+        io.emit('agenda:actualizar-consultorio', data.consultorio);
+        io.emit('agenda:actualizar-lista');
+      });
+
+      // Evento: Cita cancelada/actualizada
+      socket.on('cita:actualizar', (data) => {
+        io.emit('agenda:actualizar-consultorio', data.consultorio);
+        io.emit('agenda:actualizar-lista');
+      });
+
+      // Evento: Cita atendida
+      socket.on('cita:atender', (data) => {
+        io.emit('agenda:actualizar-consultorio', data.consultorio);
+        io.emit('agenda:actualizar-lista');
+        io.emit('voz:anunciar-siguiente', data);
+      });
+
+      // Evento: Nuevo turno en electrodiagnóstico
+      socket.on('electro:crear-turno', (data) => {
+        io.emit('electro:actualizar-equipo', data.equipo);
+        io.emit('electro:actualizar-lista');
+      });
+
+      // Evento: Turno completado
+      socket.on('electro:completar-turno', (data) => {
+        io.emit('electro:actualizar-equipo', data.equipo);
+        io.emit('electro:actualizar-lista');
+      });
+
+      // Evento: Nuevo usuario creado
+      socket.on('usuario:crear', (data) => {
+        io.emit('usuario:actualizar-lista');
+      });
+
+      // Evento: Usuario actualizado
+      socket.on('usuario:actualizar', (data) => {
+        io.emit('usuario:actualizar-lista');
+      });
+
+      // Evento: Usuario eliminado
+      socket.on('usuario:eliminar', (data) => {
+        io.emit('usuario:actualizar-lista');
+      });
+
+      // Evento: Solicitar estadísticas
+      socket.on('stats:solicitar', () => {
+        // El cliente recibirá stats:actualizar
+        io.emit('stats:actualizar');
+      });
+
+      socket.on('disconnect', () => {
+        // Usuario desconectado
+      });
+    });
+
+    httpServer.listen(PORT, () => {
+      console.log('OK');
+    });
+
+    // Manejo de errores
+    httpServer.on('error', (error) => {
+      if (error.code === 'EADDRINUSE') {
+        console.error(`\n❌ Puerto ${PORT} ya está en uso.\n`);
+        console.log(`Intenta con otro puerto:`);
+        console.log(`set PORT=3001 && node server.js\n`);
+        process.exit(1);
+      } else {
+        throw error;
+      }
+    });
   } catch (error) {
     console.error('❌ Error iniciando servidor:', error.message);
     process.exit(1);

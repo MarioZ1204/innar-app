@@ -19,6 +19,7 @@
     }
   </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="/socket.io/socket.io.js"></script>
 </head>
 <body>
   <!-- ========== PANTALLA DE LOGIN ========== -->
@@ -58,22 +59,22 @@
       <h2>¿Qué deseas hacer?</h2>
       <div class="menu-cards" id="menuCardsContainer">
         <button class="menu-card" data-module="recibos" data-rol="admin recepcion">
-          <span class="menu-card-icon">📄</span>
+          <span class="menu-card-icon"><img src="iconrecibos.png" alt="Recibos" class="icon-img" /></span>
           <span class="menu-card-title">Recibos</span>
           <span class="menu-card-desc">Crear recibos, ver historial y reportes</span>
         </button>
         <button class="menu-card" data-module="agenda-medica" data-rol="admin recepcion electro doctor">
-          <span class="menu-card-icon">📅</span>
+          <span class="menu-card-icon"><img src="iconagenda.png" alt="Agenda Médica" class="icon-img" /></span>
           <span class="menu-card-title">Agenda Médica</span>
           <span class="menu-card-desc">Citas por consultorio</span>
         </button>
         <button class="menu-card" data-module="electro" data-rol="admin recepcion electro doctor">
-          <span class="menu-card-icon">⚡</span>
+          <span class="menu-card-icon"><img src="iconelectro.png" alt="Electrodiagnóstico" class="icon-img" /></span>
           <span class="menu-card-title">Agenda Electrodiagnóstico</span>
           <span class="menu-card-desc">Agenda de los 4 equipos de electrodiagnóstico</span>
         </button>
         <button class="menu-card" data-module="usuarios" data-rol="admin">
-          <span class="menu-card-icon">👥</span>
+          <span class="menu-card-icon"><img src="iconuser.png" alt="Usuarios" class="icon-img" /></span>
           <span class="menu-card-title">Usuarios</span>
           <span class="menu-card-desc">Gestionar usuarios y roles</span>
         </button>
@@ -591,6 +592,19 @@
     </div>
   </div>
 
+  <!-- ========== FOOTER ========== -->
+  <footer class="app-footer">
+    <div class="footer-content">
+      <p>&copy; <span id="currentYear"></span> ®Instituto Neurociencias de Nariño S.A.S. Todos los derechos reservados.</p>
+      <p>Desarrollado por: <span style="font-weight:600">Coordinación Área de Sistemas</span></p>
+    </div>
+  </footer>
+
   <script src="app.js"></script>
+  <script src="socket-client.js"></script>
+  <script>
+    // Establecer año actual en footer
+    document.getElementById('currentYear').textContent = new Date().getFullYear();
+  </script>
 </body>
 </html>

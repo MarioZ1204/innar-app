@@ -59,10 +59,10 @@ async function checkSession() {
       $('menuUserName').textContent = currentUser?.nombre || currentUser?.usuario || 'Usuario';
       sessionStorage.setItem('nombre_usuario', currentUser?.nombre || '');
       updateMenuByRole();
-      // Restaurar módulo anterior si existe
-      const savedModule = localStorage.getItem(lsKeyCurrentModule);
+      // Restaurar módulo anterior si existe (sessionStorage = solo esta pestaña)
+      const savedModule = sessionStorage.getItem(lsKeyCurrentModule);
       // Restaurar doctor seleccionado si existe (para RECEPCIONISTA)
-      const savedDoctor = localStorage.getItem(lsKeySelectedDoctor);
+      const savedDoctor = sessionStorage.getItem(lsKeySelectedDoctor);
       if (savedDoctor) {
         selectedDoctorId = parseInt(savedDoctor);
       }
@@ -96,6 +96,7 @@ async function doLogin(usuario, password) {
       $('menuUserName').textContent = currentUser?.nombre || currentUser?.usuario || 'Usuario';
       sessionStorage.setItem('nombre_usuario', currentUser?.nombre || '');
       updateMenuByRole();
+      initSocket();
       setupMenuHandlers();
       history.pushState({view: 'menu'}, '', '#menu');
       return true;
@@ -114,7 +115,9 @@ async function doLogout() {
   try {
     await apiFetch('/api/logout', { method: 'POST' });
   } catch (e) {}
-  localStorage.removeItem(lsKeyCurrentModule);
+  closeSocket();
+  sessionStorage.removeItem(lsKeyCurrentModule);
+  sessionStorage.removeItem(lsKeySelectedDoctor);
   currentModule = null;
   showView('view-login');
   history.pushState({view: 'login'}, '', '#login');
@@ -124,7 +127,7 @@ let initRecibosDone = false, initAgendaDone = false, initElectroDone = false, in
 function goToModule(moduleId) {
   showView(`view-${moduleId}`);
   currentModule = moduleId;
-  localStorage.setItem(lsKeyCurrentModule, moduleId);
+  sessionStorage.setItem(lsKeyCurrentModule, moduleId);
   history.pushState({view: moduleId}, '', `#${moduleId}`);
   if (moduleId === 'recibos') { if (!initRecibosDone) initRecibos(); else cargarLista(); }
   if (moduleId === 'agenda-medica') { 
@@ -141,13 +144,13 @@ function goToModule(moduleId) {
 function goToMenu() {
   showView('view-menu');
   currentModule = null;
-  localStorage.removeItem(lsKeyCurrentModule);
+  sessionStorage.removeItem(lsKeyCurrentModule);
   stopAgendaMedicaAutoRefresh();
   // Resetear flags de inicialización para permitir reinicialización
   initAgendaDone = false;
   // Limpiar selectedDoctorId cuando se vuelve al menú
   selectedDoctorId = null;
-  localStorage.removeItem(lsKeySelectedDoctor);
+  sessionStorage.removeItem(lsKeySelectedDoctor);
   history.pushState({view: 'menu'}, '', '#menu');
 }
 
@@ -378,7 +381,7 @@ async function showDoctorSelectionModal() {
 
 function selectDoctor(doctorId, doctorName) {
   selectedDoctorId = doctorId;
-  localStorage.setItem(lsKeySelectedDoctor, doctorId);
+  sessionStorage.setItem(lsKeySelectedDoctor, doctorId);
   closeDoctorSelectionModal();
   goToModule('agenda-medica');
 }
