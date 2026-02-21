@@ -91,7 +91,8 @@ async function doLogin(usuario, password) {
     if (data.ok) {
       currentUser = data.usuario;
       $('loginError').classList.add('hidden');
-      $('loginError').textContent = '';
+      $('loginErrorText').textContent = '';
+      $('loginErrorRetry').textContent = '';
       showView('view-menu');
       $('menuUserName').textContent = currentUser?.nombre || currentUser?.usuario || 'Usuario';
       sessionStorage.setItem('nombre_usuario', currentUser?.nombre || '');
@@ -101,11 +102,29 @@ async function doLogin(usuario, password) {
       history.pushState({view: 'menu'}, '', '#menu');
       return true;
     }
-    $('loginError').textContent = data.error || 'Error al iniciar sesión';
+    
+    // Mostrar error de login
+    const errorText = $('loginErrorText');
+    const errorRetry = $('loginErrorRetry');
+    errorText.textContent = data.error || 'Error al iniciar sesión';
+    
+    // Si está bloqueado por rate limiting
+    if (res.status === 429 && data.bloqueado_hasta) {
+      const tiempoBloqueoSegundos = data.bloqueado_hasta;
+      const tiempoBloqueoMs = tiempoBloqueoSegundos * 1000; // Convertir de segundos a milisegundos
+      const ahora = Date.now();
+      const minutos = Math.ceil((tiempoBloqueoMs - ahora) / 60000);
+      errorRetry.innerHTML = `<strong>🔒 Cuenta bloqueada</strong><br/>Intenta de nuevo en ${Math.max(minutos, 1)} minuto${Math.max(minutos, 1) !== 1 ? 's' : ''}`;
+      errorRetry.style.marginTop = '8px';
+    } else if (res.status === 401) {
+      errorRetry.textContent = '';
+    }
+    
     $('loginError').classList.remove('hidden');
     return false;
   } catch (e) {
-    $('loginError').textContent = 'Error de conexión';
+    $('loginErrorText').textContent = 'Error de conexión';
+    $('loginErrorRetry').textContent = '';
     $('loginError').classList.remove('hidden');
     return false;
   }
@@ -336,7 +355,32 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   // Verificar sesión al cargar
   const autenticado = await checkSession();
   if (!autenticado) {
-    // Login form
+    // Setup login form
+    const passwordInput = $('loginPassword');
+    const toggleBtn = $('togglePassword');
+    const capsWarning = $('capsLockWarning');
+    
+    // Toggle mostrar/ocultar contraseña
+    if (toggleBtn) {
+      toggleBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        const type = passwordInput.type === 'password' ? 'text' : 'password';
+        passwordInput.type = type;
+        toggleBtn.textContent = type === 'password' ? '👁️' : '👁️‍🗨️';
+      });
+    }
+    
+    // Detector de Caps Lock
+    if (passwordInput && capsWarning) {
+      passwordInput.addEventListener('keypress', (e) => {
+        const esMayuscula = e.shiftKey === !e.key.match(/[a-z]/);
+        if (e.key.match(/[a-zA-Z]/)) {
+          capsWarning.style.display = esMayuscula ? 'block' : 'none';
+        }
+      });
+    }
+    
+    // Login form submit
     $('formLogin').addEventListener('submit', async (e) => {
       e.preventDefault();
       const usuario = $('loginUsuario').value.trim();
@@ -1702,6 +1746,51 @@ async function crearCitaElectro() {
 // ========== GESTIÓN DE USUARIOS (solo admin) ==========
 async function initUsuarios() {
   $('crearUsuario').addEventListener('click', crearUsuario);
+  
+  // Validador de contraseña en tiempo real
+  const passwordInput = $('newUserPassword');
+  const strengthBar = $('passwordStrengthBar');
+  const strengthFill = $('passwordStrengthFill');
+  const strengthText = $('passwordStrengthText');
+  const requirements = $('passwordRequirements');
+  
+  if (passwordInput) {
+    passwordInput.addEventListener('input', function() {
+      const validation = validatePasswordStrength(this.value);
+      
+      if (this.value.length > 0) {
+        // Mostrar elementos
+        strengthBar.style.display = 'block';
+        strengthText.style.display = 'block';
+        requirements.style.display = 'block';
+        
+        // Actualizar barra de fortaleza
+        strengthFill.style.width = validation.score + '%';
+        strengthFill.style.backgroundColor = validation.strength.color;
+        strengthText.textContent = `${validation.strength.icon} ${validation.strength.level} (${validation.score}%)`;
+        
+        // Actualizar requisitos
+        const checks = {
+          'length': validation.issues.includes('length') ? '❌' : '✅',
+          'upper': validation.issues.includes('upper') ? '❌' : '✅',
+          'lower': validation.issues.includes('lower') ? '❌' : '✅',
+          'number': validation.issues.includes('number') ? '❌' : '✅',
+          'special': validation.issues.includes('special') ? '❌' : '✅'
+        };
+        
+        $('req-length').textContent = checks.length + ' Mínimo 8 caracteres';
+        $('req-upper').textContent = checks.upper + ' Al menos una mayúscula (A-Z)';
+        $('req-lower').textContent = checks.lower + ' Al menos una minúscula (a-z)';
+        $('req-number').textContent = checks.number + ' Al menos un número (0-9)';
+        $('req-special').textContent = checks.special + ' Al menos un símbolo (!@#$%^&* etc)';
+      } else {
+        strengthBar.style.display = 'none';
+        strengthText.style.display = 'none';
+        requirements.style.display = 'none';
+      }
+    });
+  }
+  
   // Mostrar/ocultar consultorio según rol
   $('newUserRol').addEventListener('change', function() {
     const consultorioCol = $('consultorioCol');
@@ -1712,6 +1801,7 @@ async function initUsuarios() {
       $('newUserConsultorio').value = '';
     }
   });
+  
   await cargarUsuarios();
 }
 
@@ -1726,22 +1816,50 @@ async function cargarUsuarios() {
     else usuarios.forEach(u => {
       const tr = document.createElement('tr');
       const rolLabels = { admin: 'Administrador', recepcion: 'Recepción', electro: 'Electrodiagnóstico', doctor: 'Doctor' };
+      const estadoIcon = u.activo ? '🟢' : '🔴';
+      const estadoColor = u.activo ? '#10b981' : '#666';
       tr.innerHTML = `
         <td style="padding:8px;border:1px solid #ddd">${escapeHtml(u.usuario)}</td>
         <td style="padding:8px;border:1px solid #ddd">${escapeHtml(u.nombre||'')}</td>
         <td style="padding:8px;border:1px solid #ddd">${rolLabels[u.rol]||u.rol}</td>
         <td style="padding:8px;border:1px solid #ddd">${u.numero_consultorio ? u.numero_consultorio : '-'}</td>
-        <td style="padding:8px;border:1px solid #ddd">${u.activo ? 'Activo' : 'Inactivo'}</td>
+        <td style="padding:8px;border:1px solid #ddd;color:${estadoColor};font-weight:600">${estadoIcon} ${u.activo ? 'Activo' : 'Inactivo'}</td>
         <td style="padding:8px;border:1px solid #ddd">
-          <button class="btn-estado-small" data-edit="${u.id}">Editar</button>
+          <button class="btn-estado-small" data-edit="${u.id}" style="background:#2d4a47">Editar</button>
           ${u.numero_consultorio ? `<button class="btn-estado-small" data-speak="${u.numero_consultorio}" style="background:#059669;margin-left:4px" title="Reproducir número de consultorio">🔊 ${u.numero_consultorio}</button>` : ''}
+          <button class="btn-estado-small" data-historial="${u.id}" style="background:#2d4a47;margin-left:4px" title="Ver historial de cambios">Historial</button>
+          <button class="btn-estado-small" data-reset="${u.id}" style="background:#2d4a47;margin-left:4px" title="Resetear contraseña">Reset</button>
+          ${currentUser?.id !== u.id ? `<button class="btn-estado-small" data-toggle="${u.id}" style="background:#2d4a47;margin-left:4px">${u.activo ? 'Desactivar' : 'Activar'}</button>` : ''}
           ${currentUser?.id !== u.id ? `<button class="btn-estado-small" data-del="${u.id}" style="background:#dc2626;margin-left:4px">Eliminar</button>` : ''}
         </td>
       `;
       tr.querySelector('[data-edit]')?.addEventListener('click', () => editarUsuario(u));
       tr.querySelector('[data-speak]')?.addEventListener('click', (e) => speakConsultorio(e.target.dataset.speak));
+      tr.querySelector('[data-historial]')?.addEventListener('click', (e) => verHistorialAuditoria(u.id, u.usuario));
+      tr.querySelector('[data-reset]')?.addEventListener('click', async (e) => {
+        if (!confirm(`¿Resetear contraseña para ${u.usuario}?`)) return;
+        try {
+          const r = await apiFetch(`/api/usuarios/${e.target.dataset.reset}/reset-password`, { method: 'PATCH' });
+          const d = await r.json();
+          if (d.ok) {
+            verResetPassword(d);
+          } else showToast(d.error||'Error', 'error');
+        } catch (x) { showToast('Error', 'error'); }
+      });
+      tr.querySelector('[data-toggle]')?.addEventListener('click', async (e) => {
+        const newState = u.activo ? 'desactivar' : 'activar';
+        if (!confirm(`¿${newState.charAt(0).toUpperCase() + newState.slice(1)} este usuario?`)) return;
+        try {
+          const r = await apiFetch(`/api/usuarios/${e.target.dataset.toggle}/toggle-estado`, { method: 'PATCH' });
+          const d = await r.json();
+          if (d.ok) {
+            showToast(`Usuario ${d.activo ? 'activado' : 'desactivado'}`, 'success');
+            cargarUsuarios();
+          } else showToast(d.error||'Error', 'error');
+        } catch (x) { showToast('Error', 'error'); }
+      });
       tr.querySelector('[data-del]')?.addEventListener('click', async (e) => {
-        if (!confirm('¿Eliminar este usuario?')) return;
+        if (!confirm('¿Eliminar este usuario permanentemente?')) return;
         try {
           const r = await apiFetch(`/api/usuarios/${e.target.dataset.del}`, { method: 'DELETE' });
           const d = await r.json();
@@ -1792,6 +1910,229 @@ function mostrarConsultorioEdicion(rol) {
 function closeEditarUsuarioModal() {
   usuarioEnEdicion = null;
   $('modalEditarUsuario').classList.add('hidden');
+}
+
+async function verHistorialAuditoria(usuarioId, usuarioNombre) {
+  try {
+    const res = await apiFetch(`/api/usuarios/${usuarioId}/historial`);
+    const historial = await res.json();
+    
+    const contenedor = $('historialContent');
+    
+    if (!historial || historial.length === 0) {
+      contenedor.innerHTML = '<p style="padding:20px;text-align:center;color:#999">No hay cambios registrados</p>';
+    } else {
+      let html = `<h4 style="margin:0 0 16px 0;color:#374151">Usuario: <strong>${escapeHtml(usuarioNombre)}</strong></h4>`;
+      html += '<table style="width:100%;border-collapse:collapse">';
+      html += '<tr style="background:#f3f4f6"><th style="padding:12px;border:1px solid #e5e7eb;text-align:left;font-weight:600">Fecha</th><th style="padding:12px;border:1px solid #e5e7eb;text-align:left;font-weight:600">Acción</th><th style="padding:12px;border:1px solid #e5e7eb;text-align:left;font-weight:600">Realizado por</th><th style="padding:12px;border:1px solid #e5e7eb;text-align:left;font-weight:600">Cambios</th></tr>';
+      
+      historial.forEach(h => {
+        const iconos = {
+          'CREAR': '✨',
+          'ACTUALIZAR': '✏️',
+          'ELIMINAR': '🗑️',
+          'ACTIVAR': '🟢',
+          'DESACTIVAR': '🔴'
+        };
+        const icon = iconos[h.accion] || '•';
+        const cambios = h.cambios ? JSON.parse(h.cambios) : {};
+        let cambiosHtml = '';
+        
+        Object.entries(cambios).forEach(([campo, valores]) => {
+          const label = {
+            'usuario': 'Usuario',
+            'nombre': 'Nombre',
+            'rol': 'Rol',
+            'numero_consultorio': 'Consultorio',
+            'activo': 'Estado',
+            'password': 'Contraseña'
+          }[campo] || campo;
+          
+          cambiosHtml += `<div style="font-size:12px;margin:4px 0"><strong>${label}:</strong> ${valores.antes || '-'} → ${valores.despues || '-'}</div>`;
+        });
+        
+        if (!cambiosHtml) cambiosHtml = '<div style="font-size:12px;color:#999">Sin detalles</div>';
+        
+        html += `<tr style="border-bottom:1px solid #e5e7eb;background:${h.id % 2 === 0 ? 'white' : '#f9fafb'}">
+          <td style="padding:12px;border:1px solid #e5e7eb;font-size:12px">${h.fecha}</td>
+          <td style="padding:12px;border:1px solid #e5e7eb;font-size:13px;font-weight:500">${icon} ${h.accion}</td>
+          <td style="padding:12px;border:1px solid #e5e7eb;font-size:12px">${escapeHtml(h.usuario_admin || 'sistema')}</td>
+          <td style="padding:12px;border:1px solid #e5e7eb;font-size:11px">${cambiosHtml}</td>
+        </tr>`;
+      });
+      
+      html += '</table>';
+      contenedor.innerHTML = html;
+    }
+    
+    $('modalHistorialAuditoria').classList.remove('hidden');
+  } catch (e) {
+    showToast('Error cargando historial', 'error');
+    console.error(e);
+  }
+}
+
+function closeHistorialModal() {
+  $('modalHistorialAuditoria').classList.add('hidden');
+}
+
+// Mostrar contraseña temporal de reset password
+function verResetPassword(data) {
+  const modal = $('modalResetPassword');
+  $('resetPasswordUser').textContent = escapeHtml(data.usuario);
+  $('resetPasswordName').textContent = escapeHtml(data.nombre || '-');
+  $('resetPasswordValue').textContent = data.passwordTemporal;
+  modal.classList.remove('hidden');
+  
+  // Copiar al portapapeles
+  $('btnCopyPassword').addEventListener('click', () => {
+    navigator.clipboard.writeText(data.passwordTemporal).then(() => {
+      showToast('Contraseña copiada al portapapeles', 'success');
+    }).catch(() => {
+      showToast('No se pudo copiar', 'error');
+    });
+  });
+}
+
+function closeResetPasswordModal() {
+  $('modalResetPassword').classList.add('hidden');
+}
+
+// ========== BÚSQUEDA AVANZADA DE AUDITORÍA ==========
+function abrirBusquedaAuditoria() {
+  $('modalBusquedaAuditoria').classList.remove('hidden');
+  limpiarFiltrosAuditoria();
+}
+
+function closeBusquedaAuditoriaModal() {
+  $('modalBusquedaAuditoria').classList.add('hidden');
+}
+
+async function buscarAuditoria() {
+  try {
+    const container = $('busquedaResultados');
+    container.innerHTML = '<p style="text-align:center;color:#2d4a47;padding:20px">⏳ Cargando...</p>';
+    
+    const accion = $('filtroAccion').value || '';
+    const desde = $('filtroDesde').value || '';
+    const hasta = $('filtroHasta').value || '';
+    
+    // Construir URL con parámetros
+    const params = new URLSearchParams();
+    if (accion.trim()) params.append('accion', accion.trim());
+    if (desde) params.append('desde', desde);
+    if (hasta) params.append('hasta', hasta);
+    params.append('limit', 500);
+    
+    console.log('[AUDIT SEARCH] Parámetros:', {accion, desde, hasta});
+    
+    const res = await apiFetch(`/api/auditoria/buscar?${params.toString()}`);
+    const data = await res.json();
+    
+    console.log('[AUDIT SEARCH RESPONSE]', data);
+    
+    if (!data || (!data.ok && !data.results)) {
+      showToast('Error en búsqueda: ' + (data?.error || 'desconocido'), 'error');
+      container.innerHTML = '<p style="text-align:center;color:#dc2626;padding:20px">Error en la búsqueda</p>';
+      return;
+    }
+    
+    const results = data.results || [];
+    
+    if (results.length === 0) {
+      container.innerHTML = '<p style="text-align:center;color:#6b7280;padding:20px">No se encontraron registros</p>';
+      return;
+    }
+    
+    // Generar tabla de resultados
+    let html = `<table style="width:100%;border-collapse:collapse;font-size:0.85rem"><thead><tr style="background:#f3f4f6;border:1px solid #e5e7eb"><th style="padding:10px;text-align:left;border:1px solid #e5e7eb">Fecha</th><th style="padding:10px;text-align:left;border:1px solid #e5e7eb">Acción</th><th style="padding:10px;text-align:left;border:1px solid #e5e7eb">Usuario</th><th style="padding:10px;text-align:left;border:1px solid #e5e7eb">Admin</th><th style="padding:10px;text-align:left;border:1px solid #e5e7eb">Cambios</th></tr></thead><tbody>`;
+    
+    const iconos = {
+      'CREAR': '✨',
+      'ACTUALIZAR': '✏️',
+      'ELIMINAR': '🗑️',
+      'ACTIVAR': '🟢',
+      'DESACTIVAR': '🔴',
+      'RESET_PASSWORD': '🔑'
+    };
+    
+    results.forEach((r, idx) => {
+      const icon = iconos[r.accion] || '•';
+      const fecha = new Date(r.fecha_cambio).toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' });
+      const cambiosHtml = formatearCambios(r.cambios);
+      
+      html += `<tr style="border-bottom:1px solid #e5e7eb;background:${idx % 2 === 0 ? '#fff' : '#f9fafb'}">
+        <td style="padding:10px;border:1px solid #e5e7eb">${fecha}</td>
+        <td style="padding:10px;border:1px solid #e5e7eb"><span style="font-weight:600">${icon} ${r.accion}</span></td>
+        <td style="padding:10px;border:1px solid #e5e7eb">${escapeHtml(r.usuario || '-')}</td>
+        <td style="padding:10px;border:1px solid #e5e7eb">${escapeHtml(r.usuario_admin || '-')}</td>
+        <td style="padding:10px;border:1px solid #e5e7eb;max-width:200px;overflow:hidden">${cambiosHtml}</td>
+      </tr>`;
+    });
+    
+    html += '</tbody></table>';
+    container.innerHTML = html;
+    
+    // Guardar resultados para exportar
+    window.ultimosBusquedasAuditoria = results;
+    
+  } catch (e) {
+    showToast('Error buscando auditoría', 'error');
+    console.error(e);
+  }
+}
+
+function formatearCambios(cambios) {
+  if (!cambios || Object.keys(cambios).length === 0) return '-';
+  let html = '';
+  for (const [field, changes] of Object.entries(cambios)) {
+    html += `<div style="font-size:0.8rem;margin:4px 0"><strong>${field}:</strong> ${changes.antes || '∅'} → ${changes.despues || '∅'}</div>`;
+  }
+  return html;
+}
+
+function limpiarFiltrosAuditoria() {
+  $('filtroAccion').value = '';
+  $('filtroDesde').value = '';
+  $('filtroHasta').value = '';
+  window.ultimosBusquedasAuditoria = [];
+  // Cargar últimos registros por defecto
+  buscarAuditoria();
+}
+
+function exportarAuditoriaCSV() {
+  const results = window.ultimosBusquedasAuditoria || [];
+  if (results.length === 0) {
+    showToast('No hay datos para exportar', 'warning');
+    return;
+  }
+  
+  // Headers del CSV
+  const headers = ['Fecha', 'Acción', 'Usuario Afectado', 'Admin', 'Cambios'];
+  let csv = headers.join(',') + '\n';
+  
+  // Datos
+  results.forEach(r => {
+    const fecha = new Date(r.fecha_cambio).toLocaleString('es-CO');
+    const usuario = (r.usuario || '-').replace(/,/g, ' ');
+    const admin = (r.usuario_admin || '-').replace(/,/g, ' ');
+    const cambios = JSON.stringify(r.cambios).replace(/,/g, ' ').replace(/"/g, '');
+    
+    csv += `"${fecha}","${r.accion}","${usuario}","${admin}","${cambios}"\n`;
+  });
+  
+  // Crear descarga
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  const url = URL.createObjectURL(blob);
+  link.setAttribute('href', url);
+  link.setAttribute('download', `auditoria_${new Date().getTime()}.csv`);
+  link.style.visibility = 'hidden';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  
+  showToast('Auditoría exportada a CSV', 'success');
 }
 
 async function guardarCambiosUsuario(e) {
@@ -1872,9 +2213,30 @@ async function crearUsuario() {
   const rol = $('newUserRol').value;
   let numero_consultorio = null;
   
+  // Validar campos vacíos
   if (!usuario || !password || !nombre || !rol) { 
     showToast('Completa todos los campos', 'error'); 
     return; 
+  }
+
+  // Validar username
+  const usernameValidation = validateUsername(usuario);
+  if (!usernameValidation.isValid) {
+    showToast('Usuario: ' + usernameValidation.messages[0], 'error');
+    return;
+  }
+
+  // Validar contraseña
+  const passwordValidation = validatePasswordStrength(password);
+  if (!passwordValidation.isValid) {
+    const mensaje = passwordValidation.issues.length > 0 
+      ? 'Contraseña incompleta: ' + passwordValidation.issues.map(i => {
+          const labels = { length: '8+ caracteres', upper: 'mayúscula', lower: 'minúscula', number: 'número', special: 'símbolo' };
+          return labels[i];
+        }).join(', ')
+      : 'Contraseña no válida';
+    showToast(mensaje, 'error');
+    return;
   }
   
   if (rol === 'doctor') {
@@ -1901,15 +2263,22 @@ async function crearUsuario() {
     });
     const data = await res.json();
     if (data.ok) { 
-      showToast('Usuario creado', 'success'); 
+      showToast('Usuario creado exitosamente', 'success'); 
       $('newUserUsuario').value=''; 
       $('newUserPassword').value=''; 
       $('newUserName').value=''; 
       $('newUserConsultorio').value='';
+      $('passwordStrengthBar').style.display = 'none';
+      $('passwordStrengthText').style.display = 'none';
+      $('passwordRequirements').style.display = 'none';
       cargarUsuarios(); 
+    } else if (data.details) {
+      // Error con detalles de validación
+      showToast(data.details[0] || data.error || 'Error', 'error');
+    } else {
+      showToast(data.error || 'Error al crear usuario', 'error');
     }
-    else showToast(data.error||'Error', 'error');
-  } catch (e) { showToast('Error', 'error'); }
+  } catch (e) { showToast('Error de conexión', 'error'); }
 }
 
 function formatMoney(n){ 

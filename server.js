@@ -5,6 +5,9 @@ const https = require('https');
 const http = require('http');
 const socketIo = require('socket.io');
 const db = require('./db-mysql');  // ← MySQL Pool en lugar de SQLite
+const rateLimiter = require('./rate-limiter');  // ← Rate limiting
+const validation = require('./validation');  // ← Validaciones
+const auditLog = require('./audit-log');  // ← Auditoría de usuarios
 const procesarAgendaExcel = require('./procesar-agenda-excel');
 const bodyParser = require('body-parser');
 const cors = require('cors');
@@ -205,7 +208,19 @@ app.post('/api/login', async (req, res) => {
     return res.status(400).json({ error: 'Usuario y contraseña requeridos' });
   }
 
+  const clientIP = rateLimiter.getClientIP(req);
+
   try {
+    // Verificar si el IP está bloqueado
+    if (await rateLimiter.isBlocked(clientIP)) {
+      const blockInfo = await rateLimiter.getBlockInfo(clientIP);
+      return res.status(429).json({
+        error: 'Demasiados intentos fallidos. Intenta más tarde.',
+        bloqueado_hasta: blockInfo.bloqueado_hasta,
+        intentos: blockInfo.intentos
+      });
+    }
+
     // Buscar usuario en MySQL
     const users = await db.query(
       'SELECT * FROM usuarios WHERE usuario = ? AND activo = 1',
@@ -213,6 +228,8 @@ app.post('/api/login', async (req, res) => {
     );
     
     if (users.length === 0) {
+      // Registrar intento fallido
+      await rateLimiter.recordFailedAttempt(clientIP, usuario);
       return res.status(401).json({ error: 'Usuario o contraseña incorrectos' });
     }
 
@@ -220,8 +237,13 @@ app.post('/api/login', async (req, res) => {
 
     // Verificar contraseña
     if (!bcrypt.compareSync(password, user.password_hash)) {
+      // Registrar intento fallido
+      await rateLimiter.recordFailedAttempt(clientIP, usuario);
       return res.status(401).json({ error: 'Usuario o contraseña incorrectos' });
     }
+
+    // Login exitoso: resetear intentos
+    await rateLimiter.resetAttempts(clientIP);
 
     // Guardar en sesión
     req.session.usuarioId = user.id;
@@ -381,13 +403,34 @@ app.get('/api/usuarios', requireAuth, requireAdmin, async (req, res) => {
 
 app.post('/api/usuarios', requireAuth, requireAdmin, async (req, res) => {
   const { usuario, password, nombre, rol, numero_consultorio } = req.body || {};
+  
+  // Validaciones básicas
   if (!usuario || !password || !nombre || !rol) {
     return res.status(400).json({ error: 'usuario, password, nombre y rol son obligatorios' });
   }
+
+  // Validar username
+  const usernameValidation = validation.validateUsername(usuario);
+  if (!usernameValidation.isValid) {
+    return res.status(400).json({ error: usernameValidation.messages[0] });
+  }
+
+  // Validar contraseña
+  const passwordValidation = validation.validatePasswordStrength(password);
+  if (!passwordValidation.isValid) {
+    return res.status(400).json({ 
+      error: 'Contraseña no es lo suficientemente fuerte',
+      details: passwordValidation.messages
+    });
+  }
+
+  // Validar rol
   const rolesValidos = ['admin', 'recepcion', 'electro', 'doctor'];
   if (!rolesValidos.includes(rol)) {
     return res.status(400).json({ error: 'Rol inválido. Use: admin, recepcion, electro, doctor' });
   }
+
+  // Validar consultorio para doctores
   let consultorioFinal = null;
   if (rol === 'doctor') {
     const numConsultorio = parseInt(numero_consultorio, 10);
@@ -396,16 +439,29 @@ app.post('/api/usuarios', requireAuth, requireAdmin, async (req, res) => {
     }
     consultorioFinal = numConsultorio;
   }
+
   try {
     const hash = bcrypt.hashSync(password, 10);
     const result = await db.execute(
       'INSERT INTO usuarios (usuario, password_hash, nombre, rol, numero_consultorio) VALUES (?, ?, ?, ?, ?)',
       [usuario, hash, nombre, rol, consultorioFinal]
     );
+    
+    // Registrar en auditoría
+    await auditLog.registrarAuditoria({
+      usuarioId: result.insertId,
+      adminId: req.session.usuarioId,
+      adminUsuario: req.session.usuario,
+      accion: 'CREAR',
+      cambios: { usuario, nombre, rol, numero_consultorio: consultorioFinal },
+      ip: req.ip
+    });
+    
     // Emitir evento WebSocket
     if (app.io) {
       app.io.emit('usuario:creado', { id: result.insertId });
     }
+    
     res.json({ ok: true, id: result.insertId });
   } catch (e) {
     if (e.message && e.message.includes('UNIQUE')) {
@@ -469,6 +525,40 @@ app.patch('/api/usuarios/:id', requireAuth, requireAdmin, async (req, res) => {
     if (updates.length === 0) return res.status(400).json({ error: 'Nada que actualizar' });
     params.push(id);
     await db.execute(`UPDATE usuarios SET ${updates.join(', ')} WHERE id = ?`, params);
+    
+    // Construir objeto de cambios para auditoría
+    const cambios = {};
+    if (usuario !== undefined && usuario !== user.usuario) {
+      cambios.usuario = { antes: user.usuario, despues: usuario };
+    }
+    if (nombre !== undefined && nombre !== user.nombre) {
+      cambios.nombre = { antes: user.nombre, despues: nombre };
+    }
+    if (rol !== undefined && rol !== user.rol) {
+      cambios.rol = { antes: user.rol, despues: rol };
+    }
+    if (numero_consultorio !== undefined && numero_consultorio !== user.numero_consultorio) {
+      cambios.numero_consultorio = { antes: user.numero_consultorio, despues: numero_consultorio };
+    }
+    if (activo !== undefined && (activo ? 1 : 0) !== user.activo) {
+      cambios.activo = { antes: user.activo, despues: activo ? 1 : 0 };
+    }
+    if (password && password.trim()) {
+      cambios.password = { antes: '***', despues: '***' };
+    }
+    
+    // Registrar en auditoría si hay cambios
+    if (Object.keys(cambios).length > 0) {
+      await auditLog.registrarAuditoria({
+        usuarioId: id,
+        adminId: req.session.usuarioId,
+        adminUsuario: req.session.usuario,
+        accion: 'ACTUALIZAR',
+        cambios,
+        ip: req.ip
+      });
+    }
+    
     res.json({ ok: true });
   } catch (e) {
     if (e.message && e.message.includes('UNIQUE')) {
@@ -486,9 +576,228 @@ app.delete('/api/usuarios/:id', requireAuth, requireAdmin, async (req, res) => {
     return res.status(400).json({ error: 'No puedes eliminar tu propio usuario' });
   }
   try {
+    // Obtener usuario antes de eliminar para auditoría
+    const userBefore = await db.queryOne('SELECT usuario, nombre FROM usuarios WHERE id = ?', [id]);
+    if (!userBefore) return res.status(404).json({ error: 'Usuario no encontrado' });
+    
     const result = await db.execute('DELETE FROM usuarios WHERE id = ?', [id]);
     if (result.affectedRows === 0) return res.status(404).json({ error: 'Usuario no encontrado' });
+    
+    // Registrar en auditoría
+    await auditLog.registrarAuditoria({
+      usuarioId: id,
+      adminId: req.session.usuarioId,
+      adminUsuario: req.session.usuario,
+      accion: 'ELIMINAR',
+      cambios: { usuario: userBefore.usuario, nombre: userBefore.nombre },
+      ip: req.ip
+    });
+    
+    // Emitir evento WebSocket
+    if (app.io) {
+      app.io.emit('usuario:eliminado', { id });
+    }
+    
     res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Toggle activo/inactivo de usuario
+app.patch('/api/usuarios/:id/toggle-estado', requireAuth, requireAdmin, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!id) return res.status(400).json({ error: 'ID inválido' });
+  if (id === req.session.usuarioId) {
+    return res.status(400).json({ error: 'No puedes cambiar tu propio estado' });
+  }
+  
+  try {
+    // Obtener estado actual
+    const user = await db.queryOne('SELECT id, activo FROM usuarios WHERE id = ?', [id]);
+    if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+    
+    // Cambiar estado
+    const nuevoEstado = user.activo ? 0 : 1;
+    await db.execute('UPDATE usuarios SET activo = ? WHERE id = ?', [nuevoEstado, id]);
+    
+    // Registrar en auditoría
+    await auditLog.registrarAuditoria({
+      usuarioId: id,
+      adminId: req.session.usuarioId,
+      adminUsuario: req.session.usuario,
+      accion: nuevoEstado ? 'ACTIVAR' : 'DESACTIVAR',
+      cambios: { activo: { antes: user.activo, despues: nuevoEstado } },
+      ip: req.ip
+    });
+    
+    // Emitir evento WebSocket
+    if (app.io) {
+      app.io.emit('usuario:actualizado', { id, activo: nuevoEstado });
+    }
+    
+    res.json({ ok: true, activo: nuevoEstado });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Obtener historial de auditoría de un usuario
+app.get('/api/usuarios/:id/historial', requireAuth, requireAdmin, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!id) return res.status(400).json({ error: 'ID inválido' });
+  
+  try {
+    const historial = await auditLog.obtenerHistorial(id, 50);
+    res.json(historial);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Obtener historial global de auditoría
+app.get('/api/auditoria/historial', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 100;
+    const historial = await auditLog.obtenerHistorialGlobal(limit);
+    res.json(historial);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Búsqueda avanzada en auditoría
+app.get('/api/auditoria/buscar', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { usuario_id, accion, admin_id, desde, hasta, limit: reqLimit } = req.query;
+    const limit = Math.min(parseInt(reqLimit) || 500, 1000); // Max 1000
+    
+    let query = 'SELECT ua.*, u.usuario, u.nombre FROM usuario_auditorias ua LEFT JOIN usuarios u ON ua.usuario_id = u.id WHERE 1=1';
+    const params = [];
+    
+    // Filtros opcionales
+    if (usuario_id && usuario_id.trim() !== '') {
+      query += ' AND ua.usuario_id = ?';
+      params.push(parseInt(usuario_id));
+    }
+    
+    if (accion && accion.trim() !== '') {
+      query += ' AND ua.accion = ?';
+      params.push(accion.toUpperCase());
+    }
+    
+    if (admin_id && admin_id.trim() !== '') {
+      query += ' AND ua.admin_id = ?';
+      params.push(parseInt(admin_id));
+    }
+    
+    if (desde && desde.trim() !== '') {
+      query += ' AND ua.fecha_cambio >= ?';
+      params.push(desde + ' 00:00:00');
+    }
+    
+    if (hasta && hasta.trim() !== '') {
+      query += ' AND ua.fecha_cambio <= ?';
+      params.push(hasta + ' 23:59:59');
+    }
+    
+    // Ordenar por fecha descendente y limitar (LIMIT debe ser número directo, no parámetro)
+    query += ` ORDER BY ua.fecha_cambio DESC LIMIT ${limit}`;
+    
+    console.log('[AUDIT SEARCH] Query:', query);
+    console.log('[AUDIT SEARCH] Params:', params);
+    
+    const results = await db.query(query, params);
+    
+    console.log('[AUDIT SEARCH] Resultados encontrados:', results.length);
+    
+    // Parsear JSON de cambios - IMPORTANTE: el campo cambios viene como STRING de JSON
+    const resultsWithParsedChanges = results.map(r => {
+      let cambiosParsed = {};
+      try {
+        if (typeof r.cambios === 'string' && r.cambios) {
+          cambiosParsed = JSON.parse(r.cambios);
+        } else if (typeof r.cambios === 'object') {
+          cambiosParsed = r.cambios;
+        }
+      } catch (e) {
+        console.error('[AUDIT SEARCH] Error parsing cambios:', e.message);
+        cambiosParsed = { error: 'No se pudo parsear' };
+      }
+      
+      return {
+        ...r,
+        cambios: cambiosParsed
+      };
+    });
+    
+    res.json({
+      ok: true,
+      total: results.length,
+      results: resultsWithParsedChanges
+    });
+  } catch (e) {
+    console.error('[AUDIT SEARCH ERROR]', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Generar contraseña temporal aleatoria
+function generarPasswordTemporal() {
+  const caracteres = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%';
+  let password = '';
+  const longitud = 12;
+  for (let i = 0; i < longitud; i++) {
+    password += caracteres.charAt(Math.floor(Math.random() * caracteres.length));
+  }
+  return password;
+}
+
+// Reset password de usuario por admin
+app.patch('/api/usuarios/:id/reset-password', requireAuth, requireAdmin, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!id) return res.status(400).json({ error: 'ID inválido' });
+  if (id === req.session.usuarioId) {
+    return res.status(400).json({ error: 'No puedes resetear tu propia contraseña' });
+  }
+  
+  try {
+    // Obtener usuario
+    const user = await db.queryOne('SELECT id, usuario, nombre FROM usuarios WHERE id = ?', [id]);
+    if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+    
+    // Generar contraseña temporal
+    const passwordTemporal = generarPasswordTemporal();
+    const passwordHash = bcrypt.hashSync(passwordTemporal, 10);
+    
+    // Actualizar contraseña
+    await db.execute('UPDATE usuarios SET password_hash = ? WHERE id = ?', [passwordHash, id]);
+    
+    // Registrar en auditoría
+    await auditLog.registrarAuditoria({
+      usuarioId: id,
+      adminId: req.session.usuarioId,
+      adminUsuario: req.session.usuario,
+      accion: 'RESET_PASSWORD',
+      cambios: { password: { antes: '***', despues: '***' } },
+      ip: req.ip
+    });
+    
+    // Emitir evento WebSocket
+    if (app.io) {
+      app.io.emit('usuario:actualizado', { id, passwordReset: true });
+    }
+    
+    res.json({ 
+      ok: true, 
+      usuario: user.usuario,
+      nombre: user.nombre,
+      passwordTemporal: passwordTemporal
+    });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: e.message });

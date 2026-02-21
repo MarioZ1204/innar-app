@@ -37,9 +37,16 @@
         </div>
         <div class="form-group">
           <label for="loginPassword">Contraseña</label>
-          <input id="loginPassword" type="password" placeholder="Contraseña" autocomplete="current-password" required />
+          <div style="position:relative;display:flex;align-items:center">
+            <input id="loginPassword" type="password" placeholder="Contraseña" autocomplete="current-password" required style="flex:1;padding-right:40px" />
+            <button type="button" id="togglePassword" style="position:absolute;right:12px;background:none;border:none;cursor:pointer;font-size:18px;color:#627371" title="Mostrar/ocultar contraseña">👁️</button>
+          </div>
+          <div id="capsLockWarning" style="display:none;margin-top:8px;padding:8px 12px;background:#fef3c7;border:1px solid #fcd34d;border-radius:4px;color:#92400e;font-size:13px;font-weight:500">Mayús activado</div>
         </div>
-        <div id="loginError" class="login-error hidden"></div>
+        <div id="loginError" class="login-error hidden" style="padding:12px;background:#fee;border:1px solid #fcc;border-radius:6px;color:#c00;font-size:14px">
+          <div id="loginErrorText"></div>
+          <div id="loginErrorRetry" style="margin-top:8px;font-size:12px;opacity:0.8"></div>
+        </div>
         <button type="submit" id="btnLogin" class="btn-login">Iniciar sesión</button>
       </form>
     </div>
@@ -430,16 +437,36 @@
           <section class="card no-print" id="usuariosNuevoSection">
             <h3>Nuevo Usuario</h3>
             <div class="row">
-              <div class="col"><label>Usuario</label><input id="newUserUsuario" type="text" placeholder="Usuario" /></div>
-              <div class="col"><label>Contraseña</label><input id="newUserPassword" type="password" placeholder="Contraseña" /></div>
+              <div class="col"><label>Usuario</label><input id="newUserUsuario" type="text" placeholder="Usuario (mín 4 caracteres)" /></div>
+              <div class="col">
+                <label>Contraseña</label>
+                <input id="newUserPassword" type="password" placeholder="Contraseña" />
+                <div id="passwordStrengthBar" style="margin-top:6px;height:6px;background:#e5e7eb;border-radius:3px;overflow:hidden;display:none">
+                  <div id="passwordStrengthFill" style="height:100%;width:0%;background:#dc2626;transition:width 0.3s,background-color 0.3s"></div>
+                </div>
+                <div id="passwordStrengthText" style="margin-top:4px;font-size:12px;color:#666;display:none"></div>
+              </div>
               <div class="col"><label>Nombre</label><input id="newUserName" type="text" placeholder="Nombre completo" /></div>
               <div class="col"><label>Rol</label><select id="newUserRol"><option value="recepcion">Recepción</option><option value="electro">Electrodiagnóstico</option><option value="doctor">Doctor</option><option value="admin">Administrador</option></select></div>
               <div class="col" id="consultorioCol" style="display:none"><label>Consultorio #</label><input id="newUserConsultorio" type="number" placeholder="Número de consultorio" min="1" /></div>
               <div class="col" style="display:flex;align-items:flex-end"><button id="crearUsuario" style="width:100%">Crear Usuario</button></div>
             </div>
+            <div id="passwordRequirements" style="margin-top:12px;padding:12px;background:#f9fafb;border-radius:6px;border:1px solid #e5e7eb;display:none">
+              <p style="margin:0 0 8px 0;font-size:13px;font-weight:600;color:#374151">Requisitos de contraseña:</p>
+              <ul style="margin:0;padding-left:20px;font-size:12px;color:#666">
+                <li id="req-length" style="list-style:none;padding:4px 0">Mínimo 8 caracteres</li>
+                <li id="req-upper" style="list-style:none;padding:4px 0">Al menos una mayúscula (A-Z)</li>
+                <li id="req-lower" style="list-style:none;padding:4px 0">Al menos una minúscula (a-z)</li>
+                <li id="req-number" style="list-style:none;padding:4px 0">Al menos un número (0-9)</li>
+                <li id="req-special" style="list-style:none;padding:4px 0">Al menos un símbolo (!@#$%^&* etc)</li>
+              </ul>
+            </div>
           </section>
           <section class="card">
-            <h3>Usuarios Existentes</h3>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+              <h3 style="margin:0">Usuarios Existentes</h3>
+              <button type="button" onclick="abrirBusquedaAuditoria()" style="padding:10px 16px;background:#0369a1;color:white;border:none;border-radius:6px;font-weight:600;font-size:0.9rem;cursor:pointer;transition:all 0.2s" onmouseover="this.style.background='#0284c7'" onmouseout="this.style.background='#0369a1'">Auditoría</button>
+            </div>
             <div id="usuariosList" style="overflow-x:auto">
               <table id="usuariosTable" style="width:100%;border-collapse:collapse">
                 <thead><tr style="background:#f0f0f0"><th style="padding:8px;border:1px solid #ddd">Usuario</th><th style="padding:8px;border:1px solid #ddd">Nombre</th><th style="padding:8px;border:1px solid #ddd">Rol</th><th style="padding:8px;border:1px solid #ddd">Consultorio</th><th style="padding:8px;border:1px solid #ddd">Estado</th><th style="padding:8px;border:1px solid #ddd">Acciones</th></tr></thead>
@@ -592,6 +619,91 @@
     </div>
   </div>
 
+  <!-- Modal de Historial de Auditoría -->
+  <div id="modalHistorialAuditoria" class="modal-overlay hidden">
+    <div class="modal-box" style="max-width:900px;max-height:80vh;overflow-y:auto">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;padding-bottom:16px;border-bottom:2px solid #e5e7eb">
+        <h3 style="margin:0;color:#627371;font-size:20px;font-weight:600">Historial de Auditoría</h3>
+        <button class="btn-close-modal" onclick="closeHistorialModal()" style="background:none;border:none;font-size:24px;cursor:pointer;color:#627371;transition:color 0.2s" onmouseover="this.style.color='#3f4a48'" onmouseout="this.style.color='#627371'">✕</button>
+      </div>
+      <div id="historialContent" style="max-height:60vh;overflow-y:auto">
+        <!-- Se llena dinámicamente -->
+      </div>
+      <div style="display:flex;gap:12px;margin-top:20px;padding-top:20px;border-top:1px solid #e5e7eb">
+        <button type="button" style="flex:1;padding:11px 16px;background:#e5e7eb;color:#374151;border:none;border-radius:6px;font-weight:600;font-size:14px;cursor:pointer;transition:all 0.2s" onclick="closeHistorialModal()" onmouseover="this.style.background='#d1d5db'" onmouseout="this.style.background='#e5e7eb'">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== MODAL RESET PASSWORD ========== -->
+  <div id="modalResetPassword" class="modal-overlay hidden">
+    <div class="modal-box" style="max-width:450px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;padding-bottom:16px;border-bottom:2px solid #e5e7eb">
+        <h3 style="margin:0;color:#627371;font-size:20px;font-weight:600">Contraseña Temporal</h3>
+        <button class="btn-close-modal" onclick="closeResetPasswordModal()" style="background:none;border:none;font-size:24px;cursor:pointer;color:#627371;transition:color 0.2s" onmouseover="this.style.color='#3f4a48'" onmouseout="this.style.color='#627371'">✕</button>
+      </div>
+      <div style="background:#f0f9ff;padding:16px;border-radius:8px;margin-bottom:20px;border-left:4px solid #0369a1">
+        <p style="margin:0 0 8px 0;font-size:0.9rem;color:#0c4a6e;font-weight:600">Usuario: <span id="resetPasswordUser" style="font-weight:700">-</span></p>
+        <p style="margin:0 0 12px 0;font-size:0.9rem;color:#0c4a6e;font-weight:600">Nombre: <span id="resetPasswordName" style="font-weight:700">-</span></p>
+        <p style="margin:0;font-size:0.85rem;color:#0c4a6e">⚠️ Comparte esta contraseña de forma segura. No vuelvas a mostrarla nuevamente.</p>
+      </div>
+      <div style="background:#f3f4f6;padding:16px;border-radius:8px;margin-bottom:20px;border:2px solid #d1d5db;font-family:monospace;font-size:1rem;font-weight:600;color:#1f2937;word-break:break-all;display:flex;justify-content:space-between;align-items:center">
+        <span id="resetPasswordValue">-</span>
+        <button type="button" id="btnCopyPassword" style="background:none;border:none;cursor:pointer;font-size:1.2rem;padding:8px;color:#2d4a47;transition:all 0.2s" onmouseover="this.style.color='#1f3634'" onmouseout="this.style.color='#2d4a47'" title="Copiar">📋</button>
+      </div>
+      <p style="margin:0 0 20px 0;font-size:0.85rem;color:#6b7280;text-align:center">La contraseña temporal ha sido generada. El usuario deberá cambiarla en su próximo login.</p>
+      <div style="display:flex;gap:12px">
+        <button type="button" style="flex:1;padding:11px 16px;background:#2d4a47;color:white;border:none;border-radius:6px;font-weight:600;font-size:14px;cursor:pointer;transition:all 0.2s" onclick="closeResetPasswordModal()" onmouseover="this.style.background='#1f3634'" onmouseout="this.style.background='#2d4a47'">Entendido</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== MODAL BÚSQUEDA AVANZADA AUDITORÍA ========== -->
+  <div id="modalBusquedaAuditoria" class="modal-overlay hidden">
+    <div class="modal-box" style="max-width:900px;max-height:90vh;overflow-y:auto">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;padding-bottom:16px;border-bottom:2px solid #e5e7eb">
+        <h3 style="margin:0;color:#627371;font-size:20px;font-weight:600">Búsqueda Avanzada de Auditoría</h3>
+        <button class="btn-close-modal" onclick="closeBusquedaAuditoriaModal()" style="background:none;border:none;font-size:24px;cursor:pointer;color:#627371;transition:color 0.2s" onmouseover="this.style.color='#3f4a48'" onmouseout="this.style.color='#627371'">✕</button>
+      </div>
+      
+      <!-- Filtros -->
+      <div style="background:#f9fafb;padding:16px;border-radius:8px;margin-bottom:20px;border:1px solid #e5e7eb">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:12px">
+          <div>
+            <label style="display:block;font-size:0.85rem;font-weight:600;color:#374151;margin-bottom:4px">Tipo de Acción</label>
+            <select id="filtroAccion" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:0.9rem">
+              <option value="">Todas las acciones</option>
+              <option value="CREAR">Crear Usuario</option>
+              <option value="ACTUALIZAR">Actualizar</option>
+              <option value="ELIMINAR">Eliminar</option>
+              <option value="ACTIVAR">Activar</option>
+              <option value="DESACTIVAR">Desactivar</option>
+              <option value="RESET_PASSWORD">Reset Password</option>
+            </select>
+          </div>
+          <div>
+            <label style="display:block;font-size:0.85rem;font-weight:600;color:#374151;margin-bottom:4px">Desde</label>
+            <input type="date" id="filtroDesde" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:0.9rem">
+          </div>
+          <div>
+            <label style="display:block;font-size:0.85rem;font-weight:600;color:#374151;margin-bottom:4px">Hasta</label>
+            <input type="date" id="filtroHasta" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:0.9rem">
+          </div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button type="button" onclick="buscarAuditoria()" style="padding:10px 16px;background:#2d4a47;color:white;border:none;border-radius:6px;font-weight:600;font-size:0.9rem;cursor:pointer;transition:all 0.2s" onmouseover="this.style.background='#1f3634'" onmouseout="this.style.background='#2d4a47'">Buscar</button>
+          <button type="button" onclick="exportarAuditoriaCSV()" style="padding:10px 16px;background:#059669;color:white;border:none;border-radius:6px;font-weight:600;font-size:0.9rem;cursor:pointer;transition:all 0.2s" onmouseover="this.style.background='#047857'" onmouseout="this.style.background='#059669'">Exportar CSV</button>
+          <button type="button" onclick="limpiarFiltrosAuditoria()" style="padding:10px 16px;background:#6b7280;color:white;border:none;border-radius:6px;font-weight:600;font-size:0.9rem;cursor:pointer;transition:all 0.2s" onmouseover="this.style.background='#4b5563'" onmouseout="this.style.background='#6b7280'">Limpiar</button>
+        </div>
+      </div>
+      
+      <!-- Resultados -->
+      <div id="busquedaResultados" style="max-height:60vh;overflow-y:auto">
+        <p style="text-align:center;color:#6b7280;padding:20px">Usa los filtros arriba para buscar registros</p>
+      </div>
+    </div>
+  </div>
+
   <!-- ========== FOOTER ========== -->
   <footer class="app-footer">
     <div class="footer-content">
@@ -603,6 +715,7 @@
   <script src="app.js"></script>
   <script src="socket-client.js"></script>
   <script src="calendario-bloqueado.js"></script>
+  <script src="validation-client.js"></script>
   <script>
     // Establecer año actual en footer
     document.getElementById('currentYear').textContent = new Date().getFullYear();
