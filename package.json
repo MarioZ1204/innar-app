@@ -42,7 +42,8 @@
     "multer": "^2.0.2",
     "mysql2": "^3.17.3",
     "puppeteer": "^24.35.0",
-    "socket.io": "^4.8.3"
+    "socket.io": "^4.8.3",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "javascript-obfuscator": "^4.1.1",

@@ -5,6 +5,7 @@ const https = require('https');
 const http = require('http');
 const socketIo = require('socket.io');
 const db = require('./db-mysql');  // ← MySQL Pool en lugar de SQLite
+const procesarAgendaExcel = require('./procesar-agenda-excel');
 const bodyParser = require('body-parser');
 const cors = require('cors');
 const puppeteer = require('puppeteer');
@@ -401,6 +402,10 @@ app.post('/api/usuarios', requireAuth, requireAdmin, async (req, res) => {
       'INSERT INTO usuarios (usuario, password_hash, nombre, rol, numero_consultorio) VALUES (?, ?, ?, ?, ?)',
       [usuario, hash, nombre, rol, consultorioFinal]
     );
+    // Emitir evento WebSocket
+    if (app.io) {
+      app.io.emit('usuario:creado', { id: result.insertId });
+    }
     res.json({ ok: true, id: result.insertId });
   } catch (e) {
     if (e.message && e.message.includes('UNIQUE')) {
@@ -801,6 +806,226 @@ app.delete('/api/doctor-agenda-files/:id', requireAuth, async (req, res) => {
 });
 
 // ============================================
+// ENDPOINTS DÍAS BLOQUEADOS (NO AGENDAR)
+// ============================================
+
+// Crear tabla si no existe
+app.get('/api/init-doctor-disponibilidad', async (req, res) => {
+  try {
+    const sql = `
+      CREATE TABLE IF NOT EXISTS doctor_disponibilidad_mensual (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        doctor_id INT NOT NULL,
+        fecha DATE NOT NULL,
+        pacientes_proinsalud INT DEFAULT 0,
+        pacientes_otros INT DEFAULT 0,
+        total_pacientes INT DEFAULT 0,
+        disponible BOOLEAN DEFAULT TRUE,
+        creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        actualizado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY unique_doctor_fecha (doctor_id, fecha),
+        FOREIGN KEY (doctor_id) REFERENCES usuarios(id) ON DELETE CASCADE,
+        INDEX idx_doctor_fecha (doctor_id, fecha),
+        INDEX idx_disponible (disponible)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `;
+    await db.execute(sql);
+    res.json({ ok: true, message: 'Tabla doctor_disponibilidad_mensual creada/verificada' });
+  } catch (e) {
+    console.error('[DISPONIBILIDAD] Error creando tabla:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Procesar Excel de disponibilidad mensual
+app.post('/api/doctor-disponibilidad/procesar-excel', requireAuth, upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No se recibió archivo' });
+    }
+
+    const doctorId = parseInt(req.body.doctor_id || req.session.usuarioId, 10);
+    console.log(`[DISPONIBILIDAD] Procesando Excel para doctor=${doctorId}, archivo=${req.file.originalname}`);
+    
+    if (!doctorId) {
+      fs.unlink(req.file.path, () => {});
+      return res.status(400).json({ error: 'doctor_id inválido' });
+    }
+
+    // Permisos: admin o el doctor puede subir su propia disponibilidad
+    const isAdmin = req.session.rol === 'admin';
+    const isDoctor = req.session.rol === 'doctor' && doctorId === req.session.usuarioId;
+    if (!isAdmin && !isDoctor) {
+      fs.unlink(req.file.path, () => {});
+      console.log(`[DISPONIBILIDAD] Acceso denegado: rol=${req.session.rol}, usuarioId=${req.session.usuarioId}`);
+      return res.status(403).json({ error: 'No tienes permiso para esto' });
+    }
+
+    // Procesar el Excel
+    console.log(`[DISPONIBILIDAD] Llamando a procesarAgendaExcel con path=${req.file.path}`);
+    const result = await procesarAgendaExcel.procesarAgendaExcel(req.file.path, doctorId, db);
+    console.log(`[DISPONIBILIDAD] Resultado del procesamiento:`, result);
+
+    if (!result.ok) {
+      fs.unlink(req.file.path, () => {});
+      console.log(`[DISPONIBILIDAD] Error en procesamiento: ${result.error}`);
+      return res.status(400).json({ error: result.error });
+    }
+
+    // Guardar metadatos del archivo en la BD para poder verlo/descargarlo después
+    const url = `/uploads/${req.file.filename}`;
+    try {
+      const fileResult = await db.execute(
+        'INSERT INTO doctor_agenda_files (doctor_id, filename, url, uploaded_by) VALUES (?, ?, ?, ?)',
+        [doctorId, req.file.originalname, url, req.session.usuarioId || null]
+      );
+      console.log(`[DISPONIBILIDAD] Archivo guardado en BD con ID: ${fileResult.insertId}`);
+    } catch (dbErr) {
+      console.warn(`[DISPONIBILIDAD] Advertencia: error guardando metadatos del archivo:`, dbErr.message);
+      // Continuar aunque falle guardar metadatos - el procesamiento fue exitoso
+    }
+
+    // NO borrar el archivo del filesystem para que sea visible en la lista
+
+    // Emitir actualización a través de WebSocket
+    if (app.io) {
+      app.io.emit('agenda:disponibilidad-actualizada', { doctor_id: doctorId });
+    }
+
+    res.json({ 
+      ok: true, 
+      diasGuardados: result.diasGuardados,
+      errores: result.errores,
+      fileUrl: url,
+      message: `✓ ${result.diasGuardados} días de disponibilidad guardados` 
+    });
+  } catch (e) {
+    console.error('[DISPONIBILIDAD] Error procesando Excel:', e.message, e.stack);
+    if (req.file) fs.unlink(req.file.path, () => {});
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Obtener disponibilidad mensual de un doctor
+app.get('/api/doctor-disponibilidad/:doctorId', async (req, res) => {
+  try {
+    const doctorId = parseInt(req.params.doctorId, 10);
+    const mes = req.query.mes; // Formato: YYYY-MM, opcional
+    
+    if (!doctorId) {
+      return res.status(400).json({ error: 'doctorId inválido' });
+    }
+
+    const disponibilidad = await procesarAgendaExcel.obtenerDisponibilidadMensual(doctorId, mes, db);
+    res.json({ ok: true, disponibilidad });
+  } catch (e) {
+    console.error('[DISPONIBILIDAD] Error obteniendo disponibilidad:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Validar si un doctor tiene disponibilidad en una fecha
+app.post('/api/doctor-disponibilidad/validar', async (req, res) => {
+  try {
+    const { doctor_id, fecha } = req.body;
+    
+    if (!doctor_id || !fecha) {
+      return res.status(400).json({ error: 'doctor_id y fecha son obligatorios' });
+    }
+
+    const resultado = await procesarAgendaExcel.tieneDisponibilidad(doctor_id, fecha, db);
+    
+    res.json({ 
+      ok: true, 
+      fecha,
+      doctor_id,
+      disponible: resultado.disponible,
+      totalPacientes: resultado.totalPacientes || null,
+      mensaje: !resultado.disponible ? 'PARA ESTE DÍA NO PUEDES AGENDAR, EL DOCTOR NO CUENTA CON DISPONIBILIDAD' : null
+    });
+  } catch (e) {
+    console.error('[DISPONIBILIDAD] Error validando disponibilidad:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Limpiar disponibilidad de un doctor
+app.delete('/api/doctor-disponibilidad/:doctorId', requireAuth, async (req, res) => {
+  try {
+    const doctorId = parseInt(req.params.doctorId, 10);
+    
+    if (!doctorId) {
+      return res.status(400).json({ error: 'doctorId inválido' });
+    }
+
+    // Permisos: admin o el doctor
+    const isAdmin = req.session.rol === 'admin';
+    const isDoctor = req.session.rol === 'doctor' && doctorId === req.session.usuarioId;
+    if (!isAdmin && !isDoctor) {
+      return res.status(403).json({ error: 'No tienes permiso para esto' });
+    }
+
+    const result = await procesarAgendaExcel.limpiarDisponibilidad(doctorId, db);
+    
+    if (result.ok) {
+      // Emitir actualización a través de WebSocket
+      if (app.io) {
+        app.io.emit('agenda:disponibilidad-actualizada', { doctor_id: doctorId });
+      }
+    }
+
+    res.json(result);
+  } catch (e) {
+    console.error('[DISPONIBILIDAD] Error limpiando disponibilidad:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Rutas heredadas para compatibilidad (redirigen a las nuevas)
+app.post('/api/doctor-dias-bloqueados/procesar-excel', requireAuth, upload.single('file'), async (req, res) => {
+  // Redirige a la nueva ruta
+  req.url = '/api/doctor-disponibilidad/procesar-excel';
+  return app._router.handle(req, res);
+});
+
+app.get('/api/doctor-dias-bloqueados/:doctorId', async (req, res) => {
+  try {
+    const doctorId = parseInt(req.params.doctorId, 10);
+    const disp = await procesarAgendaExcel.obtenerDiasBloqueados(doctorId, db);
+    res.json({ ok: true, dias: disp });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/doctor-dias-bloqueados/validar', async (req, res) => {
+  try {
+    const { doctor_id, fecha } = req.body;
+    const esta_bloqueada = await procesarAgendaExcel.estaFechaBloqueada(doctor_id, fecha, db);
+    res.json({ 
+      ok: true, 
+      fecha,
+      doctor_id,
+      bloqueada: esta_bloqueada,
+      mensaje: esta_bloqueada ? 'PARA ESTE DÍA NO PUEDES AGENDAR, EL DOCTOR NO CUENTA CON DISPONIBILIDAD' : null
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.delete('/api/doctor-dias-bloqueados/:doctorId', requireAuth, async (req, res) => {
+  const doctorId = parseInt(req.params.doctorId, 10);
+  const isAdmin = req.session.rol === 'admin';
+  const isDoctor = req.session.rol === 'doctor' && doctorId === req.session.usuarioId;
+  if (!isAdmin && !isDoctor) {
+    return res.status(403).json({ error: 'No tienes permiso' });
+  }
+  const result = await procesarAgendaExcel.limpiarDisponibilidad(doctorId, db);
+  res.json(result);
+});
+
+// ============================================
 // ENDPOINTS DE TURNOS (AGENDA)
 // ============================================
 
@@ -846,6 +1071,19 @@ app.post('/api/turnos', async (req, res) => {
   try {
     console.log(`[DEBUG] Creando turno:`, { doctor_id, paciente_nombre, fecha, hora, tipo_consulta, entidad });
     
+    // Validar disponibilidad del doctor en esa fecha
+    const disponibilidad = await procesarAgendaExcel.tieneDisponibilidad(doctor_id, fecha, db);
+    console.log(`[DEBUG] Validación de disponibilidad para doctor=${doctor_id}, fecha=${fecha}:`, disponibilidad);
+    
+    if (!disponibilidad.disponible) {
+      console.log(`[DEBUG] Rechazo de turno: doctor no disponible`);
+      return res.status(400).json({ 
+        error: 'El doctor no está disponible en esta fecha',
+        razon: disponibilidad.razon,
+        disponible: false
+      });
+    }
+    
     // Crear turno como PENDIENTE sin número (numero_turno NULL)
     const result = await db.execute(`
       INSERT INTO turnos (numero_turno, doctor_id, paciente_nombre, paciente_documento, paciente_telefono, estado, fecha, hora, tipo_consulta, entidad, notas, oportunidad, programado_por)
@@ -865,6 +1103,11 @@ app.post('/api/turnos', async (req, res) => {
     ]);
 
     console.log(`[DEBUG] Turno creado con ID:`, result.insertId);
+
+    // Emitir evento WebSocket
+    if (app.io) {
+      app.io.emit('agenda:turno-creado', { id: result.insertId, doctor_id, paciente_nombre, fecha });
+    }
 
     res.json({ ok: true, id: result.insertId });
   } catch (e) {
@@ -895,6 +1138,11 @@ app.patch('/api/turnos/:id/estado', async (req, res) => {
 
     // Actualizar estado
     await db.execute('UPDATE turnos SET estado = ? WHERE id = ?', [estado, id]);
+
+    // Emitir evento WebSocket
+    if (app.io) {
+      app.io.emit('agenda:turno-estado-cambio', { id, estado });
+    }
 
     res.json({ ok: true });
   } catch (e) {
@@ -1171,6 +1419,14 @@ app.post('/api/recibos', async (req, res) => {
     );
     // Emitir actualización a través de WebSocket
     if (app.io) {
+      const nuevoRecibo = {
+        id: result.insertId,
+        numero,
+        cliente,
+        fecha,
+        total
+      };
+      app.io.emit('recibo:creado', nuevoRecibo);
       app.io.emit('recibo:actualizar-lista');
       app.io.emit('stats:actualizar');
     }
@@ -1208,6 +1464,12 @@ app.delete('/api/recibos/:id', requireAuth, requireAdmin, async (req, res) => {
   try {
     const result = await db.execute('DELETE FROM recibos WHERE id=?', [id]);
     if (result.affectedRows === 0) return res.status(404).json({ error: 'No encontrado' });
+    // Emitir actualización a través de WebSocket
+    if (app.io) {
+      app.io.emit('recibo:eliminado', { id });
+      app.io.emit('recibo:actualizar-lista');
+      app.io.emit('stats:actualizar');
+    }
     res.json({ ok: true });
   } catch(err) {
     res.status(500).json({ error: err.message });

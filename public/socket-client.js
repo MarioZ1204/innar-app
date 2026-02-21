@@ -1,4 +1,4 @@
-// socket-client.js - Manejo de conexión WebSocket global
+// socket-client.js - Manejo de conexión WebSocket global con soporte para TODO
 
 let socket = null;
 
@@ -28,55 +28,99 @@ function initSocket() {
 
   // ===== EVENTOS DE RECIBOS =====
   socket.on('recibo:actualizar-lista', () => {
-    if (typeof loadRecibos === 'function') {
-      loadRecibos();
+    console.log('[SOCKET] Recibos actualizado');
+    if (typeof cargarLista === 'function') cargarLista();
+  });
+
+  socket.on('recibo:creado', (data) => {
+    console.log('[SOCKET] Nuevo recibo creado:', data);
+    if (typeof cargarLista === 'function') cargarLista();
+  });
+
+  socket.on('recibo:eliminado', (data) => {
+    console.log('[SOCKET] Recibo eliminado:', data);
+    if (typeof cargarLista === 'function') cargarLista();
+  });
+
+  // ===== EVENTOS DE USUARIOS =====
+  socket.on('usuarios:actualizar-lista', () => {
+    console.log('[SOCKET] Lista de usuarios actualizada');
+    if (typeof cargarUsuarios === 'function') cargarUsuarios();
+  });
+
+  socket.on('usuario:creado', (data) => {
+    console.log('[SOCKET] Nuevo usuario creado:', data);
+    if (typeof cargarUsuarios === 'function') cargarUsuarios();
+  });
+
+  socket.on('usuario:actualizado', (data) => {
+    console.log('[SOCKET] Usuario actualizado:', data);
+    if (typeof cargarUsuarios === 'function') cargarUsuarios();
+  });
+
+  socket.on('usuario:eliminado', (data) => {
+    console.log('[SOCKET] Usuario eliminado:', data);
+    if (typeof cargarUsuarios === 'function') cargarUsuarios();
+  });
+
+  // ===== EVENTOS DE AGENDA MÉDICA =====
+  socket.on('agenda:turno-creado', (data) => {
+    console.log('[SOCKET] Turno creado:', data);
+    if (typeof cargarTurnosMedica === 'function') cargarTurnosMedica();
+  });
+
+  socket.on('agenda:turno-eliminado', (data) => {
+    console.log('[SOCKET] Turno eliminado:', data);
+    if (typeof cargarTurnosMedica === 'function') cargarTurnosMedica();
+  });
+
+  socket.on('agenda:turno-estado-cambio', (data) => {
+    console.log('[SOCKET] Estado de turno cambió:', data);
+    if (typeof cargarTurnosMedica === 'function') cargarTurnosMedica();
+  });
+
+  socket.on('agenda:turno-numero-cambio', (data) => {
+    console.log('[SOCKET] Número de turno cambió:', data);
+    if (typeof cargarTurnosMedica === 'function') cargarTurnosMedica();
+  });
+
+  socket.on('agenda:disponibilidad-actualizada', (data) => {
+    console.log('[SOCKET] Disponibilidad actualizada para doctor:', data.doctor_id);
+    if (typeof actualizarDisponibilidad === 'function') {
+      actualizarDisponibilidad(data.doctor_id);
     }
+  });
+
+  socket.on('agenda:turno-llamar-siguiente', (data) => {
+    console.log('[SOCKET] Llamar siguiente turno:', data);
+    if (typeof cargarTurnosMedica === 'function') cargarTurnosMedica();
+  });
+
+  socket.on('agenda:turno-marcar-atendido', (data) => {
+    console.log('[SOCKET] Turno marcado como atendido:', data);
+    if (typeof cargarTurnosMedica === 'function') cargarTurnosMedica();
+  });
+
+  // ===== EVENTOS DE ELECTRODIAGNÓSTICO =====
+  socket.on('electro:cita-creada', (data) => {
+    console.log('[SOCKET] Cita electrodiagnóstico creada:', data);
+    if (typeof cargarCitasElectro === 'function') cargarCitasElectro();
+  });
+
+  socket.on('electro:cita-eliminada', (data) => {
+    console.log('[SOCKET] Cita electrodiagnóstico eliminada:', data);
+    if (typeof cargarCitasElectro === 'function') cargarCitasElectro();
+  });
+
+  socket.on('electro:cita-estado-cambio', (data) => {
+    console.log('[SOCKET] Estado de cita electrodiagnóstico cambió:', data);
+    if (typeof cargarCitasElectro === 'function') cargarCitasElectro();
   });
 
   // ===== EVENTOS DE ESTADÍSTICAS =====
   socket.on('stats:actualizar', () => {
-    if (typeof updateStats === 'function') {
-      updateStats();
-    }
-  });
-
-  // ===== EVENTOS DE AGENDA MÉDICA =====
-  socket.on('agenda:actualizar-lista', () => {
-    if (typeof cargarAgenda === 'function') {
-      cargarAgenda();
-    }
-  });
-
-  socket.on('agenda:actualizar-consultorio', (consultorio) => {
-    if (typeof cargarAgendaConsultorio === 'function') {
-      cargarAgendaConsultorio(consultorio);
-    }
-  });
-
-  socket.on('voz:anunciar-siguiente', (data) => {
-    if (typeof anunciarSiguiente === 'function') {
-      anunciarSiguiente(data);
-    }
-  });
-
-  // ===== EVENTOS DE ELECTRODIAGNÓSTICO =====
-  socket.on('electro:actualizar-lista', () => {
-    if (typeof cargarElectro === 'function') {
-      cargarElectro();
-    }
-  });
-
-  socket.on('electro:actualizar-equipo', (equipo) => {
-    if (typeof cargarEquipo === 'function') {
-      cargarEquipo(equipo);
-    }
-  });
-
-  // ===== EVENTOS DE USUARIOS =====
-  socket.on('usuario:actualizar-lista', () => {
-    if (typeof cargarUsuarios === 'function') {
-      cargarUsuarios();
-    }
+    console.log('[SOCKET] Estadísticas actualizadas');
+    if (typeof updateStats === 'function') updateStats();
   });
 
   return socket;

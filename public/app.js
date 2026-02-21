@@ -383,6 +383,8 @@ function selectDoctor(doctorId, doctorName) {
   selectedDoctorId = doctorId;
   sessionStorage.setItem(lsKeySelectedDoctor, doctorId);
   closeDoctorSelectionModal();
+  // Forzar reinicialización del módulo agenda médica cuando se cambiadel doctor
+  initAgendaDone = false;
   goToModule('agenda-medica');
 }
 
@@ -435,7 +437,6 @@ async function initAgendaMedica() {
   const hoy = new Date().toISOString().slice(0,10);
   $('agendaMedicaFecha').value = hoy;
   updateAgendaFechaDisplay();
-  $('agendaMedicaFecha').addEventListener('change', updateAgendaFechaDisplay);
   
   // Cargar lista de médicos
   const medicos = await apiFetch('/api/medicos').then(r=>r.json()).catch(()=>[]);
@@ -450,6 +451,7 @@ async function initAgendaMedica() {
     }
   } else if (isDoctor()) {
     // Si es un DOCTOR, mostrar su propio nombre
+    selectedDoctorId = currentUser?.id;
     $('agendaMedicaDoctorDisplay').textContent = currentUser?.nombre || currentUser?.usuario || '-';
   } else if (medicos.length) {
     // Otros roles: mostrar el primero disponible
@@ -459,6 +461,13 @@ async function initAgendaMedica() {
     $('agendaMedicaDoctorDisplay').textContent = '-';
   }
   
+  // Validar disponibilidad del doctor cuando se selecciona una fecha
+  // SIEMPRE aplicar validación si hay un doctor seleccionado
+  if (typeof crearDatepickerConDisponibilidad === 'function' && selectedDoctorId) {
+    crearDatepickerConDisponibilidad($('agendaMedicaFecha'), selectedDoctorId);
+  }
+  
+  $('agendaMedicaFecha').addEventListener('change', updateAgendaFechaDisplay);
   $('cargarTurnosMedica').addEventListener('click', cargarTurnosMedica);
   if (!isElectro() && !isDoctor()) {
     $('crearTurnoMedica').addEventListener('click', crearTurnoMedica);
@@ -690,11 +699,14 @@ function setupAgendaProgramarHandlers() {
       const doctorId = selectedDoctorId || currentUser?.id;
       if (!doctorId) {
         showToast('No hay doctor seleccionado', 'error');
+        uploadBtn.disabled = false;
+        uploadBtn.textContent = 'Subir archivo';
         return;
       }
       formData.append('doctor_id', doctorId);
       
-      const res = await fetch('/api/doctor-agenda/upload', {
+      // Usar el endpoint correcto para procesar Excel de disponibilidad
+      const res = await fetch('/api/doctor-disponibilidad/procesar-excel', {
         method: 'POST',
         credentials: 'include',
         body: formData
@@ -704,9 +716,9 @@ function setupAgendaProgramarHandlers() {
       const data = await res.json();
       
       if (data.ok) { 
-        showToast('Archivo subido correctamente', 'success'); 
+        showToast(`✓ ${data.diasGuardados} días de disponibilidad guardados correctamente`, 'success'); 
         fileInput.value = '';
-        preview.innerHTML = '<div style="padding:12px;background:#d1fae5;border-radius:6px;color:#059669">✓ Archivo subido exitosamente</div>';
+        preview.innerHTML = `<div style="padding:12px;background:#d1fae5;border-radius:6px;color:#059669">✓ ${data.diasGuardados} días procesados exitosamente</div>`;
         setTimeout(() => { preview.innerHTML = ''; }, 3000);
         // Recargar lista de archivos
         setTimeout(() => loadDoctorFiles(), 500);
