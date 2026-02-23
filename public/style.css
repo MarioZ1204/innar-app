@@ -263,7 +263,124 @@ button.remove { padding:6px 10px; font-size:.85rem; width:100%; }
 .turno-row.estado-ABOGADO { background-color: #97BF7A; }
 
 .btn-estado { padding: 4px 8px; font-size: 0.85rem; margin: 2px; border-radius: 4px; }
+
+/* Icono en botones */
+.btn-icon {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  margin-right: 4px;
+  vertical-align: middle;
+  filter: brightness(0) invert(1);
+}
+
+/* Botones de prioridad y editar */
 .btn-estado-small { padding: 2px 6px; font-size: 0.75rem; }
+
+.btn-prioridad-up {
+  padding: 6px 10px;
+  font-size: 0.8rem;
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: white;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-weight: 600;
+  margin: 2px;
+}
+
+.btn-prioridad-up:hover:not(:disabled) {
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(37, 99, 235, 0.3);
+}
+
+.btn-prioridad-up:disabled {
+  background: #cbd5e1;
+  color: #94a3b8;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.btn-prioridad-down {
+  padding: 6px 10px;
+  font-size: 0.8rem;
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  color: white;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-weight: 600;
+  margin: 2px;
+}
+
+.btn-prioridad-down:hover:not(:disabled) {
+  background: linear-gradient(135deg, #d97706 0%, #b45309 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(217, 119, 6, 0.3);
+}
+
+.btn-prioridad-down:disabled {
+  background: #cbd5e1;
+  color: #94a3b8;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.btn-editar {
+  padding: 6px 10px;
+  font-size: 0.8rem;
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: white;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-weight: 600;
+  margin: 2px;
+}
+
+.btn-editar:hover:not(:disabled) {
+  background: linear-gradient(135deg, #059669 0%, #047857 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(5, 150, 105, 0.3);
+}
+
+.btn-editar:disabled {
+  background: #cbd5e1;
+  color: #94a3b8;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.btn-eliminar {
+  padding: 6px 10px;
+  font-size: 0.8rem;
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  color: white;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-weight: 600;
+  margin: 2px;
+}
+
+.btn-eliminar:hover:not(:disabled) {
+  background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(220, 38, 38, 0.3);
+}
+
+.btn-eliminar:disabled {
+  background: #cbd5e1;
+  color: #94a3b8;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
 .btn-llamar { padding: 12px 24px; background: #0369a1; color: white; border: none; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: all 0.2s; }
 .btn-llamar:hover { background: #0284c7; transform: translateY(-1px); }
 .btn-marcar { padding: 12px 24px; background: #059669; color: white; border: none; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: all 0.2s; }

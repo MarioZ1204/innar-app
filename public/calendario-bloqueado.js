@@ -87,7 +87,7 @@ function mostrarNotificacionSinDisponibilidad(fecha) {
   `;
   
   notification.innerHTML = `
-    <strong>⚠️ No disponible</strong><br>
+    <strong>No disponible</strong><br>
     PARA ESTE DÍA NO PUEDES AGENDAR, EL DOCTOR NO CUENTA CON DISPONIBILIDAD
   `;
 

@@ -137,7 +137,7 @@ if(logoPath && fs.existsSync(logoPath)) {
     const logoBuffer = fs.readFileSync(logoPath);
     logoBase64 = logoBuffer.toString('base64')
   } catch(e) {
-    console.warn('⚠️ Error cargando logo:', e.message);
+    console.warn('Error cargando logo:', e.message);
   }
 }
 
@@ -854,6 +854,17 @@ app.post('/api/turnos/llamar-siguiente', requireAuth, async (req, res) => {
 
     const updated = await db.query(`SELECT * FROM turnos WHERE id = ?`, [turno.id]);
     const turnoConConsultorio = { ...updated[0], numero_consultorio: numeroConsultorio };
+    
+    // Emitir evento de socket para actualizar todos los clientes
+    app.io.emit('agenda:turno-llamar-siguiente', { 
+      turno_id: turno.id, 
+      doctor_id, 
+      fecha,
+      paciente_nombre: turnoConConsultorio.paciente_nombre,
+      numero_turno: turnoConConsultorio.numero_turno
+    });
+    app.io.emit('agenda:turno-estado-cambio', { id: turno.id, estado: 'EN_ATENCION' });
+    
     res.json({ ok: true, turno: turnoConConsultorio });
   } catch (e) {
     console.error(e);
@@ -899,6 +910,14 @@ app.post('/api/turnos/marcar-atendido', requireAuth, async (req, res) => {
       const nuevoNumero = i + 1;
       await db.execute('UPDATE turnos SET numero_turno = ? WHERE id = ?', [nuevoNumero, enSalaList[i].id]);
     }
+    
+    // Emitir eventos de socket para actualizar todos los clientes
+    app.io.emit('agenda:turno-marcar-atendido', { 
+      turno_id, 
+      doctor_id: turno.doctor_id,
+      fecha: turno.fecha
+    });
+    app.io.emit('agenda:turno-estado-cambio', { id: turno_id, estado: 'ATENDIDO' });
     
     res.json({ ok: true });
   } catch (e) {
@@ -1401,7 +1420,6 @@ app.get('/api/doctor-disponibilidad', async (req, res) => {
     );
 
     if (result.length === 0) {
-      // Si no hay registro, asumir disponibilidad completa
       return res.json({ 
         ok: true, 
         tiene_intervalos: false,
@@ -1482,6 +1500,70 @@ app.post('/api/turnos', async (req, res) => {
 });
 
 // Cambiar estado de un turno
+// Actualizar turno (campo genérico)
+app.patch('/api/turnos/:id', async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const { paciente_nombre, observaciones } = req.body || {};
+  
+  if (!id) {
+    return res.status(400).json({ error: 'ID inválido' });
+  }
+
+  try {
+    const turnos = await db.query('SELECT * FROM turnos WHERE id = ?', [id]);
+    const turno = turnos.length > 0 ? turnos[0] : null;
+    if (!turno) {
+      return res.status(404).json({ error: 'Turno no encontrado' });
+    }
+
+    // Si ya está ATENDIDO, no permitir cambios
+    if (turno.estado === 'ATENDIDO') {
+      return res.status(400).json({ error: 'No se puede modificar un turno ya atendido' });
+    }
+
+    // Construir query dinámicamente según qué campos se envíen
+    const updates = [];
+    const values = [];
+    
+    if (paciente_nombre !== undefined) {
+      updates.push('paciente_nombre = ?');
+      values.push(paciente_nombre);
+    }
+    
+    if (observaciones !== undefined) {
+      updates.push('observaciones = ?');
+      values.push(observaciones);
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ error: 'No hay campos para actualizar' });
+    }
+
+    values.push(id);
+    const query = `UPDATE turnos SET ${updates.join(', ')} WHERE id = ?`;
+    
+    await db.execute(query, values);
+
+    // Emitir eventos de socket
+    if (app.io) {
+      if (paciente_nombre !== undefined) {
+        app.io.emit('agenda:turno-cambio-paciente', { 
+          id, 
+          paciente_nombre,
+          doctor_id: turno.doctor_id,
+          fecha: turno.fecha
+        });
+      }
+    }
+
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Actualizar estado del turno específicamente
 app.patch('/api/turnos/:id/estado', async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const { estado } = req.body || {};
@@ -1501,12 +1583,36 @@ app.patch('/api/turnos/:id/estado', async (req, res) => {
       return res.status(400).json({ error: 'No se puede modificar un turno ya atendido' });
     }
 
-    // Actualizar estado
-    await db.execute('UPDATE turnos SET estado = ? WHERE id = ?', [estado, id]);
+    // Si cambia a EN_SALA y no tiene número de turno, asignar automáticamente
+    let numeroAsignado = null;
+    if (estado === 'EN_SALA' && !turno.numero_turno) {
+      // Obtener el siguiente número disponible
+      const result = await db.query(`
+        SELECT MAX(CAST(numero_turno AS UNSIGNED)) as max_num FROM turnos 
+        WHERE fecha = ? AND doctor_id = ? AND numero_turno IS NOT NULL
+      `, [turno.fecha, turno.doctor_id]);
+      
+      const maxNum = result[0]?.max_num || 0;
+      numeroAsignado = maxNum + 1;
+      
+      // Actualizar estado y número de turno
+      await db.execute('UPDATE turnos SET estado = ?, numero_turno = ? WHERE id = ?', [estado, numeroAsignado, id]);
+    } else {
+      // Solo actualizar estado
+      await db.execute('UPDATE turnos SET estado = ? WHERE id = ?', [estado, id]);
+    }
 
     // Emitir evento WebSocket
     if (app.io) {
       app.io.emit('agenda:turno-estado-cambio', { id, estado });
+      if (numeroAsignado) {
+        app.io.emit('agenda:turno-numero-cambio', { 
+          id, 
+          numero_turno: numeroAsignado,
+          doctor_id: turno.doctor_id,
+          fecha: turno.fecha
+        });
+      }
     }
 
     res.json({ ok: true });
@@ -1530,7 +1636,27 @@ app.delete('/api/turnos/:id', async (req, res) => {
       return res.status(404).json({ error: 'Turno no encontrado' });
     }
 
+    // No permitir eliminar un turno que está EN_ATENCION
+    if (turno.estado === 'EN_ATENCION' || turno.estado === 'ATENDIDO') {
+      return res.status(400).json({ error: 'No se puede eliminar un turno en atención o ya atendido' });
+    }
+
+    // No permitir eliminar si hay un turno EN_ATENCION en la misma fecha/doctor
+    const enAtencion = await db.query(
+      'SELECT * FROM turnos WHERE doctor_id = ? AND fecha = ? AND estado = ? AND id != ?',
+      [turno.doctor_id, turno.fecha, 'EN_ATENCION', id]
+    );
+    if (enAtencion.length > 0) {
+      return res.status(400).json({ error: 'No se pueden eliminar citas mientras hay un paciente en atención' });
+    }
+
     const result = await db.execute('DELETE FROM turnos WHERE id = ?', [id]);
+    
+    // Emitir evento de socket para actualizar todos los clientes
+    if (app.io) {
+      app.io.emit('agenda:turno-eliminado', { id, doctor_id: turno.doctor_id, fecha: turno.fecha });
+    }
+    
     res.json({ ok: true });
   } catch (e) {
     console.error(e);
@@ -1581,6 +1707,17 @@ app.patch('/api/turnos/:id/numero', requireAuth, requireRole(['admin', 'recepcio
         return res.status(400).json({ error: 'Número debe ser mayor a 0' });
       }
       await db.execute('UPDATE turnos SET numero_turno = ? WHERE id = ?', [numero, id]);
+      
+      // Emitir evento de socket para actualizar todos los clientes
+      if (app.io) {
+        app.io.emit('agenda:turno-numero-cambio', { 
+          id,
+          numero_turno: numero,
+          doctor_id: turno.doctor_id,
+          fecha: turno.fecha
+        });
+      }
+      
       return res.json({ ok: true });
     }
 
@@ -1621,6 +1758,16 @@ app.patch('/api/turnos/:id/numero', requireAuth, requireRole(['admin', 'recepcio
       await db.execute('UPDATE turnos SET numero_turno = -1 WHERE id = ?', [id]);
       await db.execute('UPDATE turnos SET numero_turno = ? WHERE id = ?', [turno.numero_turno, turnoIntercambio[0].id]);
       await db.execute('UPDATE turnos SET numero_turno = ? WHERE id = ?', [nuevoNumero, id]);
+
+      // Emitir evento de socket para actualizar todos los clientes
+      if (app.io) {
+        app.io.emit('agenda:turno-numero-cambio', { 
+          id, 
+          numero_turno: nuevoNumero,
+          doctor_id: turno.doctor_id,
+          fecha: turno.fecha 
+        });
+      }
 
       return res.json({ ok: true });
     }

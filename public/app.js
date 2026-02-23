@@ -34,6 +34,7 @@ let originalAccionesTHHtml = null;
 let lastAnimatedTurnoId = null;
 let lastAnimatedAt = 0;
 let lastTurnoNumber1Id = null; // Guardar cuál fue el último turno con número 1
+let globalHayEnAtencion = false; // Variable global para rastrear si hay turno EN_ATENCION
 
 // Fetch con credenciales para sesión
 function apiFetch(url, opts = {}) {
@@ -171,7 +172,7 @@ function goToModule(moduleId) {
   if (moduleId === 'agenda-medica') { 
     if (!initAgendaDone) initAgendaMedica(); 
     initAgendaDone = true; 
-    startAgendaMedicaAutoRefresh();
+    // Socket.IO maneja los cambios en tiempo real, no necesitamos auto-refresh
   } else {
     stopAgendaMedicaAutoRefresh();
   }
@@ -325,7 +326,7 @@ function showLoader(show = true) {
     loader = document.createElement('div');
     loader.id = 'loader';
     loader.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:9999';
-    loader.innerHTML = '<div style="background:white;padding:20px;border-radius:8px;text-align:center"><div style="font-size:24px;margin-bottom:10px">⏳</div><div>Procesando...</div></div>';
+    loader.innerHTML = '<div style="background:white;padding:20px;border-radius:8px;text-align:center"><div style="font-size:24px;margin-bottom:10px"></div><div>Procesando...</div></div>';
     document.body.appendChild(loader);
   }
   loader.style.display = show ? 'flex' : 'none';
@@ -767,7 +768,7 @@ async function actualizarHorasDisponibles() {
     if (!disponibleManana && !disponibleTarde) {
       // Día completamente no disponible
       if (mensajeDiv) {
-        mensajeDiv.textContent = '⚠️ El doctor no está disponible en ningún horario este día.';
+        mensajeDiv.textContent = 'El doctor no está disponible en ningún horario este día.';
         mensajeDiv.style.display = 'block';
       }
       const opt = document.createElement('option');
@@ -834,7 +835,7 @@ async function actualizarHorasDisponibles() {
       // Mostrar mensaje con razones
       if (mensajeDiv) {
         if (horasDisponibles.length === 0) {
-          mensajeDiv.innerHTML = '⚠️ No hay horarios disponibles (todos están bloqueados por intervalos)';
+          mensajeDiv.innerHTML = 'No hay horarios disponibles (todos están bloqueados por intervalos)';
           mensajeDiv.style.display = 'block';
           comboHoras.disabled = true;
           const opt = document.createElement('option');
@@ -855,7 +856,7 @@ async function actualizarHorasDisponibles() {
           }
           
           for (const [razon, horas] of razonesUnicas) {
-            mensajeTexto += `⏳ ${horas.join(', ')}: ${razon}<br>`;
+            mensajeTexto += ` ${horas.join(', ')}: ${razon}<br>`;
           }
           mensajeDiv.innerHTML = mensajeTexto;
           mensajeDiv.style.display = 'block';
@@ -891,7 +892,7 @@ async function actualizarHorasDisponibles() {
       }
       
       if (mensajes.length > 0) {
-        mensajeDiv.innerHTML = '⚠️ ' + mensajes.join('<br>⚠️ ');
+        mensajeDiv.innerHTML = '' + mensajes.join('<br>');
         mensajeDiv.style.display = 'block';
       } else {
         mensajeDiv.style.display = 'none';
@@ -1516,10 +1517,14 @@ async function cargarTurnosMedica() {
     const filasRequeridas = 25;
     const colspan = isDoctor() ? 8 : 9;
     
+    // Verificar si hay algún turno EN_ATENCION
+    const hayEnAtencion = turnos.some(t => t.estado === 'EN_ATENCION');
+    globalHayEnAtencion = hayEnAtencion; // Guardar en variable global
+    
     for (let i = 0; i < filasRequeridas; i++) {
       if (i < turnos.length) {
         // Llenar con datos reales
-        renderTurnoRowMedica(tbody, turnos[i], animateTargetId);
+        renderTurnoRowMedica(tbody, turnos[i], animateTargetId, hayEnAtencion);
       } else {
         // Crear fila vacía
         crearFilaTurnoVacia(tbody, colspan, isDoctor());
@@ -1567,7 +1572,7 @@ function updateMarcarAtendidoButton(turnos) {
 
 let selectedTurnoMedica = null;
 
-function renderTurnoRowMedica(tbody, t, animateTargetId) {
+function renderTurnoRowMedica(tbody, t, animateTargetId, hayEnAtencion) {
   // DEBUG: registra objeto turno para detectar desalineamientos en la tabla (remover cuando se confirme)
   if (window && window.location && window.location.search && window.location.search.indexOf('debugTurnos') !== -1) {
     console.debug('DEBUG turno object:', t);
@@ -1592,10 +1597,21 @@ function renderTurnoRowMedica(tbody, t, animateTargetId) {
     ? `<select class="btn-estado" data-id="${t.id}">${opts}</select>`
     : escapeHtml((t.estado||'').replace(/_/g,' '));
 
+  // Deshabilitar botones cuando hay algún turno EN_ATENCION (excepto si es el mismo turno)
+  const deshabilitarBotones = hayEnAtencion && !esEnAtencion;
+  
   const puedeEliminar = isAdmin() || isRecepcion();
-  const prioridadBtns = (isAdmin() || isRecepcion()) ? `<button class="btn-estado-small" data-up="${t.id}" title="Subir prioridad">↑</button><button class="btn-estado-small" data-down="${t.id}" title="Bajar prioridad">↓</button>` : '';
+  const btnUpDisabled = deshabilitarBotones ? 'disabled' : '';
+  const btnDownDisabled = deshabilitarBotones ? 'disabled' : '';
+  const btnEditDisabled = deshabilitarBotones ? 'disabled' : '';
+  const btnDeleteDisabled = deshabilitarBotones ? 'disabled' : '';
+  
+  // Guardar estado de deshabilitación en data attributes para que los event listeners puedan acceder
+  const dataDeshabilitado = deshabilitarBotones ? 'data-deshabilitado="true"' : 'data-deshabilitado="false"';
+  
+  const prioridadBtns = (isAdmin() || isRecepcion()) ? `<button class="btn-prioridad-up" data-up="${t.id}" title="Subir prioridad" ${btnUpDisabled} ${dataDeshabilitado}><img src="images/up.svg" alt="↑" class="btn-icon"/> Subir</button><button class="btn-prioridad-down" data-down="${t.id}" title="Bajar prioridad" ${btnDownDisabled} ${dataDeshabilitado}><img src="images/down.svg" alt="↓" class="btn-icon"/> Bajar</button>` : '';
   const accionesCell = puedeEliminar
-    ? `${prioridadBtns} <button class="btn-estado-small" data-edit="${t.id}" title="Editar">✎</button> <button class="btn-estado-small" data-delete="${t.id}">Eliminar</button>`
+    ? `${prioridadBtns} <button class="btn-editar" data-edit="${t.id}" title="Editar" ${btnEditDisabled} ${dataDeshabilitado}><img src="images/edit.svg" alt="✎" class="btn-icon"/> Editar</button> <button class="btn-eliminar" data-delete="${t.id}" ${btnDeleteDisabled} ${dataDeshabilitado}><img src="images/delete.svg" alt="🗑" class="btn-icon"/> Eliminar</button>`
     : '-';
     if (isDoctor()) {
       tr.innerHTML = `
@@ -1630,6 +1646,9 @@ function renderTurnoRowMedica(tbody, t, animateTargetId) {
     const btnEdit = tr.querySelector('[data-edit]');
     btnEdit?.addEventListener('click', (e) => {
       e.stopPropagation();
+      const btn = e.target.closest('[data-edit]');
+      const deshabilitado = btn?.getAttribute('data-deshabilitado') === 'true';
+      if (btn?.disabled || deshabilitado) return;
       seleccionarTurnoMedica(tr, t);
     });
   }
@@ -1640,21 +1659,37 @@ function renderTurnoRowMedica(tbody, t, animateTargetId) {
     const downBtn = tr.querySelector('[data-down]');
     upBtn?.addEventListener('click', async (e)=>{
       e.stopPropagation();
+      const btn = e.target.closest('[data-up]');
+      const deshabilitado = btn?.getAttribute('data-deshabilitado') === 'true';
+      if (btn?.disabled || deshabilitado) return;
       try {
-        const id = e.target.dataset.up;
-        await apiFetch(`/api/turnos/${id}/numero`, { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ delta: -1 }) });
-        showToast('Prioridad subida', 'success');
-        cargarTurnosMedica();
-      } catch(x){ showToast('Error', 'error'); }
+        const id = btn?.dataset.up || e.target.dataset.up;
+        const res = await apiFetch(`/api/turnos/${id}/numero`, { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ delta: -1 }) });
+        const data = await res.json();
+        if (data.ok) {
+          showToast('Prioridad subida', 'success');
+          cargarTurnosMedica();
+        } else {
+          showToast(data.error || 'Error al subir prioridad', 'error');
+        }
+      } catch(x){ showToast('Error al subir prioridad', 'error'); console.error(x); }
     });
     downBtn?.addEventListener('click', async (e)=>{
       e.stopPropagation();
+      const btn = e.target.closest('[data-down]');
+      const deshabilitado = btn?.getAttribute('data-deshabilitado') === 'true';
+      if (btn?.disabled || deshabilitado) return;
       try {
-        const id = e.target.dataset.down;
-        await apiFetch(`/api/turnos/${id}/numero`, { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ delta: 1 }) });
-        showToast('Prioridad bajada', 'success');
-        cargarTurnosMedica();
-      } catch(x){ showToast('Error', 'error'); }
+        const id = btn?.dataset.down || e.target.dataset.down;
+        const res = await apiFetch(`/api/turnos/${id}/numero`, { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ delta: 1 }) });
+        const data = await res.json();
+        if (data.ok) {
+          showToast('Prioridad bajada', 'success');
+          cargarTurnosMedica();
+        } else {
+          showToast(data.error || 'Error al bajar prioridad', 'error');
+        }
+      } catch(x){ showToast('Error al bajar prioridad', 'error'); console.error(x); }
     });
   }
   // ajustar columnas por rol (ocultar Hora para doctor)
@@ -1679,20 +1714,34 @@ function renderTurnoRowMedica(tbody, t, animateTargetId) {
         }
         
         // Luego cambiar estado
-        await apiFetch(`/api/turnos/${turnoId}/estado`, { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({estado:nuevoEstado}) });
-        showToast('Estado actualizado', 'success');
-        cargarTurnosMedica();
+        const stateRes = await apiFetch(`/api/turnos/${turnoId}/estado`, { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({estado:nuevoEstado}) });
+        const stateData = await stateRes.json();
+        if (stateData.ok) {
+          showToast('Estado actualizado', 'success');
+          cargarTurnosMedica();
+        } else {
+          showToast(stateData.error || 'Error al actualizar estado', 'error');
+        }
       } catch(x){ showToast('Error al actualizar', 'error'); console.error(x); }
     });
   }
   if (puedeEliminar) {
     tr.querySelector('[data-delete]')?.addEventListener('click', async (e)=>{
+      const btn = e.target.closest('[data-delete]');
+      const deshabilitado = btn?.getAttribute('data-deshabilitado') === 'true';
+      if (btn?.disabled || deshabilitado) return;
       if (!confirm('¿Eliminar esta cita?')) return;
       try {
-        await apiFetch(`/api/turnos/${e.target.dataset.delete}`, { method:'DELETE' });
-        showToast('Cita eliminada', 'success');
-        cargarTurnosMedica();
-      } catch(x){ showToast('Error', 'error'); }
+        const deleteId = btn?.dataset.delete || e.target.dataset.delete;
+        const res = await apiFetch(`/api/turnos/${deleteId}`, { method:'DELETE' });
+        const data = await res.json();
+        if (data.ok) {
+          showToast('Cita eliminada', 'success');
+          cargarTurnosMedica();
+        } else {
+          showToast(data.error || 'Error al eliminar', 'error');
+        }
+      } catch(x){ showToast('Error al eliminar', 'error'); console.error(x); }
     });
   }
   tbody.appendChild(tr);
@@ -1795,6 +1844,16 @@ function seleccionarTurnoMedica(tr, t) {
   if (inputNombre) {
     inputNombre.value = t.paciente_nombre || '';
   }
+  
+  // Deshabilitar botón de guardar nombre si hay EN_ATENCION (excepto si es el turno EN_ATENCION actual)
+  const btnGuardar = $('btnGuardarNombreMedica');
+  if (btnGuardar) {
+    const puedeEditar = !(globalHayEnAtencion && t.estado !== 'EN_ATENCION');
+    btnGuardar.disabled = !puedeEditar;
+    btnGuardar.style.opacity = puedeEditar ? '1' : '0.5';
+    btnGuardar.style.cursor = puedeEditar ? 'pointer' : 'not-allowed';
+  }
+  
   const modal = $('agendaEditPacienteSection');
   if (modal) {
     modal.classList.remove('hidden');
@@ -1802,6 +1861,12 @@ function seleccionarTurnoMedica(tr, t) {
 }
 
 async function guardarNombrePacienteMedica() {
+  // Prevenir edición cuando hay un turno EN_ATENCION
+  if (globalHayEnAtencion) {
+    showToast('No se pueden editar citas mientras hay un paciente en atención', 'error');
+    return;
+  }
+  
   if (!selectedTurnoMedica) {
     showToast('Selecciona un paciente primero', 'error');
     return;
@@ -1812,10 +1877,10 @@ async function guardarNombrePacienteMedica() {
     return;
   }
   try {
-    const res = await apiFetch(`/api/pacientes/${selectedTurnoMedica.paciente_id}`, {
+    const res = await apiFetch(`/api/turnos/${selectedTurnoMedica.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ nombre: nuevoNombre })
+      body: JSON.stringify({ paciente_nombre: nuevoNombre })
     });
     const data = await res.json();
     if (data.ok) {
@@ -2302,7 +2367,7 @@ function closeBusquedaAuditoriaModal() {
 async function buscarAuditoria() {
   try {
     const container = $('busquedaResultados');
-    container.innerHTML = '<p style="text-align:center;color:#2d4a47;padding:20px">⏳ Cargando...</p>';
+    container.innerHTML = '<p style="text-align:center;color:#2d4a47;padding:20px">Cargando...</p>';
     
     const accion = $('filtroAccion').value || '';
     const desde = $('filtroDesde').value || '';
@@ -3054,7 +3119,7 @@ function updateStats(recibos) {
 }
 
 async function resetAllRecibos(){
-  if(!confirm('⚠️ ¿Eliminar TODOS los recibos guardados? Esta acción no se puede deshacer.')) return;
+  if(!confirm('¿Eliminar TODOS los recibos guardados? Esta acción no se puede deshacer.')) return;
   
   const password = prompt('Ingresa la contraseña para eliminar todos los recibos:');
   if(!password) return;
