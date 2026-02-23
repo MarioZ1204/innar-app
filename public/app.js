@@ -370,14 +370,17 @@ document.addEventListener('DOMContentLoaded', async ()=>{
       });
     }
     
-    // Detector de Caps Lock
+    // Detector de Caps Lock (tiempo real)
     if (passwordInput && capsWarning) {
-      passwordInput.addEventListener('keypress', (e) => {
-        const esMayuscula = e.shiftKey === !e.key.match(/[a-z]/);
-        if (e.key.match(/[a-zA-Z]/)) {
-          capsWarning.style.display = esMayuscula ? 'block' : 'none';
-        }
-      });
+      const checkCapsLock = (e) => {
+        const isCapsLockOn = e.getModifierState('CapsLock');
+        capsWarning.style.display = isCapsLockOn ? 'block' : 'none';
+      };
+      
+      // Escuchar keydown, keyup y keypress para detectar en tiempo real
+      passwordInput.addEventListener('keydown', checkCapsLock);
+      passwordInput.addEventListener('keyup', checkCapsLock);
+      passwordInput.addEventListener('keypress', checkCapsLock);
     }
     
     // Login form submit
