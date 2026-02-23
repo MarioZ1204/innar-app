@@ -11,7 +11,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxyge
     justify-content: center; 
     /* Añadimos un rgba blanco al 50% antes de la url de la imagen */
     background: linear-gradient(rgba(255, 255, 255, 0), rgba(255, 255, 255, 0)), 
-                url('bck3.jpeg') center/cover no-repeat fixed; 
+                url('images/bck3.jpeg') center/cover no-repeat fixed; 
     padding: 100px; 
 }
 .view-login.hidden { display: none !important; }
@@ -31,7 +31,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxyge
 
 /* Menú principal */
 .view-menu { min-height: 100vh; background: linear-gradient(180deg, #f0f4f8 0%, #e5e9ec 100%); position: relative; }
-.view-menu::before { content: ''; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background-image: url('fondo.png'); background-position: center; background-size: 700px; background-repeat: no-repeat; background-attachment: fixed; opacity: 0.15; pointer-events: none; z-index: 0; }
+.view-menu::before { content: ''; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background-image: url('images/fondo.png'); background-position: center; background-size: 700px; background-repeat: no-repeat; background-attachment: fixed; opacity: 0.15; pointer-events: none; z-index: 0; }
 .view-menu > * { position: relative; z-index: 1; }
 .view-menu.hidden { display: none !important; }
 .menu-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 24px; background: white; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
@@ -52,7 +52,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxyge
 
 /* Módulos (Recibos, Agenda, Electro) */
 .view-module { min-height: 100vh; background-color: white; position: relative; }
-.view-module::before { content: ''; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background-image: url('fondo.png'); background-position: center; background-size: 700px; background-repeat: no-repeat; background-attachment: fixed; opacity: 0.12; pointer-events: none; z-index: 0; }
+.view-module::before { content: ''; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background-image: url('images/fondo.png'); background-position: center; background-size: 700px; background-repeat: no-repeat; background-attachment: fixed; opacity: 0.12; pointer-events: none; z-index: 0; }
 .view-module > * { position: relative; z-index: 1; }
 .view-module.hidden { display: none !important; }
 .btn-volver { width: 100%; padding: 10px 16px; margin-bottom: 16px; background: #2d4a47; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 0.9rem; text-align: left; transition: all 0.2s; }

@@ -1,5 +1,5 @@
 // audit-log.js - Módulo para registrar auditorías de usuarios
-const db = require('./db-mysql');
+const db = require('../utils/db-mysql');
 
 /**
  * Registrar cambio en auditoría

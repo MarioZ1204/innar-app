@@ -538,6 +538,8 @@ async function initAgendaMedica() {
   const btnProgramar = document.querySelector('[data-page="programar"]');
   if (btnProgramar) {
     btnProgramar.style.display = (isDoctor() || isRecepcion()) ? '' : 'none';
+    // Cambiar texto del botón según rol
+    btnProgramar.textContent = isDoctor() ? 'Programar Agenda' : 'Agenda Programada';
   }
   
   // Pre-inicializar handlers si es DOCTOR o RECEPCION para que estén listos cuando abran "Programar Agenda"

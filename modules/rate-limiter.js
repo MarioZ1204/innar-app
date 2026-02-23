@@ -1,5 +1,5 @@
 // rate-limiter.js - Módulo para Rate Limiting de Login
-const db = require('./db-mysql');
+const db = require('../utils/db-mysql');
 
 const MAX_INTENTOS = 3;
 const TIEMPO_BLOQUEO_MIN = 5; // 5 minutos en milisegundos, pero se multiplica por 60*1000, así que debe ser ajustado
