@@ -9,6 +9,16 @@ function hashPassword(password) {
   if (!password) return '';
   return CryptoJS.SHA512(password).toString();
 }
+
+// ========== FUNCIÓN AUXILIAR PARA ACTUALIZAR REQUISITOS ==========
+function updateRequirementItem(elementId, isMet, text) {
+  const element = $(elementId);
+  if (element) {
+    element.textContent = (isMet ? '✅' : '❌') + ' ' + text;
+    element.style.color = isMet ? '#16a34a' : '#dc2626';
+  }
+}
+
 const lsKeySelectedDoctor = 'selected_doctor_v1';
 let lastReciboId = null;
 
@@ -439,6 +449,8 @@ function selectDoctor(doctorId, doctorName) {
   selectedDoctorId = doctorId;
   sessionStorage.setItem(lsKeySelectedDoctor, doctorId);
   closeDoctorSelectionModal();
+  // Actualizar horas disponibles con el nuevo doctor
+  actualizarHorasDisponibles();
   // Forzar reinicialización del módulo agenda médica cuando se cambiadel doctor
   initAgendaDone = false;
   goToModule('agenda-medica');
@@ -523,7 +535,10 @@ async function initAgendaMedica() {
     crearDatepickerConDisponibilidad($('agendaMedicaFecha'), selectedDoctorId);
   }
   
-  $('agendaMedicaFecha').addEventListener('change', updateAgendaFechaDisplay);
+  $('agendaMedicaFecha').addEventListener('change', () => {
+    updateAgendaFechaDisplay();
+    actualizarHorasDisponibles();
+  });
   $('cargarTurnosMedica').addEventListener('click', cargarTurnosMedica);
   if (!isElectro() && !isDoctor()) {
     $('crearTurnoMedica').addEventListener('click', crearTurnoMedica);
@@ -711,6 +726,216 @@ function populateTurnoHoras(selectId, from='07:00', to='18:00', stepMinutes=20){
     o.textContent = val;
     sel.appendChild(o);
     start += stepMinutes;
+  }
+}
+
+// Actualizar horas disponibles según disponibilidad del doctor
+async function actualizarHorasDisponibles() {
+  const doctorId = selectedDoctorId;
+  const fecha = $('agendaMedicaFecha')?.value;
+  const comboHoras = $('nuevoTurnoHoraMedica');
+  const mensajeDiv = $('mensajeDisponibilidad');
+  
+  if (!comboHoras || !doctorId || !fecha) {
+    // Si no hay todos los datos, mostrar todas las horas
+    populateTurnoHoras('nuevoTurnoHoraMedica', '07:00', '18:00', 60);
+    if (mensajeDiv) mensajeDiv.style.display = 'none';
+    return;
+  }
+  
+  try {
+    // Obtener disponibilidad del doctor para esa fecha
+    const res = await apiFetch(`/api/doctor-disponibilidad?doctor_id=${doctorId}&fecha=${fecha}`);
+    const data = await res.json();
+    
+    if (!data.ok) {
+      // Si hay error, mostrar todas las horas
+      console.warn('Error obteniendo disponibilidad:', data.error);
+      populateTurnoHoras('nuevoTurnoHoraMedica', '07:00', '18:00', 60);
+      if (mensajeDiv) mensajeDiv.style.display = 'none';
+      return;
+    }
+    
+    const disponibleManana = data.disponible_manana;
+    const disponibleTarde = data.disponible_tarde;
+    
+    comboHoras.innerHTML = '';
+    
+    // PASO 1: Validar disponibilidad general por turno (MAÑANA/TARDE)
+    console.log(`Disponibilidad general para doctor ${doctorId}, fecha ${fecha}:`, {disponibleManana, disponibleTarde});
+    
+    if (!disponibleManana && !disponibleTarde) {
+      // Día completamente no disponible
+      if (mensajeDiv) {
+        mensajeDiv.textContent = '⚠️ El doctor no está disponible en ningún horario este día.';
+        mensajeDiv.style.display = 'block';
+      }
+      const opt = document.createElement('option');
+      opt.value = '';
+      opt.textContent = 'Sin disponibilidad este día';
+      comboHoras.appendChild(opt);
+      comboHoras.disabled = true;
+      return;
+    }
+    
+    // PASO 2: Si hay intervalos específicos, filtrar dentro de turnos disponibles
+    if (data.tiene_intervalos && data.intervalos && data.intervalos.length > 0) {
+      console.log(`Doctor tiene ${data.intervalos.length} intervalos no disponibles:`, data.intervalos);
+      
+      // Generar base de horas disponibles según turno
+      const horasBase = [];
+      
+      if (disponibleManana) {
+        for (let h = 7; h <= 12; h++) {
+          horasBase.push(`${String(h).padStart(2,'0')}:00`);
+        }
+      }
+      
+      if (disponibleTarde) {
+        for (let h = 14; h <= 18; h++) {
+          horasBase.push(`${String(h).padStart(2,'0')}:00`);
+        }
+      }
+      
+      // Filtrar horas que caen en intervalos bloqueados
+      const horasDisponibles = [];
+      const horasBloqueadas = new Map();
+      
+      for (const hora of horasBase) {
+        let estaBloqueada = false;
+        let razonBloqueo = null;
+        
+        const [horaStr, minStr] = hora.split(':');
+        const horaNum = parseInt(horaStr, 10);
+        const minNum = parseInt(minStr, 10);
+        const minutoCita = horaNum * 60 + minNum;
+        
+        // Verificar si cae en algún intervalo bloqueado
+        for (const intervalo of data.intervalos) {
+          const [inicioH, inicioM, inicioS] = intervalo.hora_inicio.split(':').map(x => parseInt(x, 10));
+          const [finH, finM, finS] = intervalo.hora_fin.split(':').map(x => parseInt(x, 10));
+          const minutoInicio = inicioH * 60 + inicioM;
+          const minutoFin = finH * 60 + finM;
+          
+          if (minutoCita >= minutoInicio && minutoCita < minutoFin) {
+            estaBloqueada = true;
+            razonBloqueo = intervalo.razon || 'No disponible';
+            break;
+          }
+        }
+        
+        if (estaBloqueada) {
+          horasBloqueadas.set(hora, razonBloqueo);
+        } else {
+          horasDisponibles.push(hora);
+        }
+      }
+      
+      // Mostrar mensaje con razones
+      if (mensajeDiv) {
+        if (horasDisponibles.length === 0) {
+          mensajeDiv.innerHTML = '⚠️ No hay horarios disponibles (todos están bloqueados por intervalos)';
+          mensajeDiv.style.display = 'block';
+          comboHoras.disabled = true;
+          const opt = document.createElement('option');
+          opt.value = '';
+          opt.textContent = 'Sin disponibilidad este día';
+          comboHoras.appendChild(opt);
+          return;
+        }
+        
+        if (horasBloqueadas.size > 0) {
+          let mensajeTexto = '<strong>Horarios bloqueados:</strong><br>';
+          const razonesUnicas = new Map();
+          for (const [hora, razon] of horasBloqueadas) {
+            if (!razonesUnicas.has(razon)) {
+              razonesUnicas.set(razon, []);
+            }
+            razonesUnicas.get(razon).push(hora);
+          }
+          
+          for (const [razon, horas] of razonesUnicas) {
+            mensajeTexto += `⏳ ${horas.join(', ')}: ${razon}<br>`;
+          }
+          mensajeDiv.innerHTML = mensajeTexto;
+          mensajeDiv.style.display = 'block';
+        } else {
+          mensajeDiv.style.display = 'none';
+        }
+      }
+      
+      comboHoras.disabled = false;
+      
+      // Agregar opciones disponibles
+      horasDisponibles.forEach(hora => {
+        const opt = document.createElement('option');
+        opt.value = hora;
+        opt.textContent = hora;
+        comboHoras.appendChild(opt);
+      });
+      
+      return;
+    }
+    
+    // PASO 3: Si NO hay intervalos, usar solo el sistema de MAÑANA/TARDE
+    console.log(`Sin intervalos específicos. Usando sistema clásico de turnos`);
+    
+    // Mostrar mensaje si algún turno NO está disponible
+    if (mensajeDiv) {
+      let mensajes = [];
+      if (!disponibleManana) {
+        mensajes.push('El doctor no estará disponible en la mañana (7:00-12:00)');
+      }
+      if (!disponibleTarde) {
+        mensajes.push('El doctor no estará disponible en la tarde (14:00-18:00)');
+      }
+      
+      if (mensajes.length > 0) {
+        mensajeDiv.innerHTML = '⚠️ ' + mensajes.join('<br>⚠️ ');
+        mensajeDiv.style.display = 'block';
+      } else {
+        mensajeDiv.style.display = 'none';
+      }
+    }
+    
+    comboHoras.disabled = false;
+    
+    // Generar horas con intervalos de 20 minutos (clásico)
+    const horas = [];
+    
+    if (disponibleManana) {
+      for (let h = 7; h < 13; h++) {
+        for (let m = 0; m < 60; m += 20) {
+          if (h === 12 && m > 0) continue;
+          horas.push(`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`);
+        }
+      }
+    }
+    
+    if (disponibleTarde) {
+      for (let h = 14; h < 19; h++) {
+        for (let m = 0; m < 60; m += 20) {
+          if (h === 18 && m > 0) continue;
+          horas.push(`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`);
+        }
+      }
+    }
+    
+    // Agregar opciones al combobox
+    horas.forEach(hora => {
+      const opt = document.createElement('option');
+      opt.value = hora;
+      opt.textContent = hora;
+      comboHoras.appendChild(opt);
+    });
+    
+    
+    
+  } catch (e) {
+    console.error('Error en actualizarHorasDisponibles:', e);
+    // En caso de error, mostrar todas las horas
+    populateTurnoHoras('nuevoTurnoHoraMedica', '07:00', '18:00', 20);
+    if (mensajeDiv) mensajeDiv.style.display = 'none';
   }
 }
 
@@ -1286,14 +1511,40 @@ async function cargarTurnosMedica() {
       lastTurnoNumber1Id = firstWithNum1.id; // Recordar el nuevo paciente con número 1
     }
 
+    // Crear 25 filas: algunas con datos, otras vacías
     tbody.innerHTML = '';
+    const filasRequeridas = 25;
     const colspan = isDoctor() ? 8 : 9;
-    if (!turnos.length) tbody.innerHTML = `<tr><td colspan="${colspan}" style="padding:20px;text-align:center;color:#999">No hay citas</td></tr>`;
-    else turnos.forEach(t => renderTurnoRowMedica(tbody, t, animateTargetId));
+    
+    for (let i = 0; i < filasRequeridas; i++) {
+      if (i < turnos.length) {
+        // Llenar con datos reales
+        renderTurnoRowMedica(tbody, turnos[i], animateTargetId);
+      } else {
+        // Crear fila vacía
+        crearFilaTurnoVacia(tbody, colspan, isDoctor());
+      }
+    }
     
     // Actualizar estado del botón "Marcar como atendido"
     updateMarcarAtendidoButton(turnos);
   } catch (e) { showToast('Error cargando citas', 'error'); }
+}
+
+// Función para crear una fila vacía de turno
+function crearFilaTurnoVacia(tbody, colspan, esDoctor) {
+  const tr = document.createElement('tr');
+  tr.className = 'turno-row estado-vacio';
+  tr.style.opacity = '0.4';
+  
+  // Crear celdas vacías según si es doctor o no
+  const columnas = esDoctor ? 8 : 9;
+  let html = '';
+  for (let i = 0; i < columnas; i++) {
+    html += '<td style="padding:8px;border:1px solid #ddd;background:#fafafa">&nbsp;</td>';
+  }
+  tr.innerHTML = html;
+  tbody.appendChild(tr);
 }
 
 function updateMarcarAtendidoButton(turnos) {
@@ -1686,9 +1937,35 @@ async function cargarCitasElectro() {
     const citas = await res.json();
     const tbody = $('citasElectroBody');
     tbody.innerHTML = '';
-    if (!citas.length) tbody.innerHTML = '<tr><td colspan="7" style="padding:20px;text-align:center;color:#999">No hay citas</td></tr>';
-    else citas.forEach(c => renderCitaElectroRow(tbody, c));
+    
+    // Crear 25 filas: algunas con datos, otras vacías
+    const filasRequeridas = 25;
+    const numColumnas = 7;
+    
+    for (let i = 0; i < filasRequeridas; i++) {
+      if (i < citas.length) {
+        // Llenar con datos reales
+        renderCitaElectroRow(tbody, citas[i]);
+      } else {
+        // Crear fila vacía
+        crearFilaCitaVacia(tbody, numColumnas);
+      }
+    }
   } catch (e) { showToast('Error cargando citas', 'error'); }
+}
+
+// Función para crear una fila vacía de cita electrodiagnóstico
+function crearFilaCitaVacia(tbody, numColumnas) {
+  const tr = document.createElement('tr');
+  tr.className = 'turno-row estado-vacio';
+  tr.style.opacity = '0.4';
+  
+  let html = '';
+  for (let i = 0; i < numColumnas; i++) {
+    html += '<td style="padding:8px;border:1px solid #ddd;background:#fafafa">&nbsp;</td>';
+  }
+  tr.innerHTML = html;
+  tbody.appendChild(tr);
 }
 
 function renderCitaElectroRow(tbody, c) {
@@ -2870,6 +3147,59 @@ function closeCambiarContrasenaModal() {
 
 // Event listener para el formulario de gestionar cuenta
 document.addEventListener('DOMContentLoaded', () => {
+  // Setup toggle buttons para "Mi Cuenta"
+  const toggleBtns = ['toggleContrasenaActual', 'toggleNuevaContrasena', 'toggleConfirmarContrasena'];
+  const inputIds = ['contrasenaActual', 'nuevaContrasena', 'confirmarContrasena'];
+  
+  toggleBtns.forEach((btnId, idx) => {
+    const btn = $(btnId);
+    const input = $(inputIds[idx]);
+    if (btn && input) {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        const type = input.type === 'password' ? 'text' : 'password';
+        input.type = type;
+        btn.textContent = type === 'password' ? '👁️' : '👁️‍🗨️';
+      });
+    }
+  });
+  
+  // Setup password requirements display para "Cambiar Contraseña"
+  const nuevaContrasenaInput = $('nuevaContrasena');
+  const requirementsContainer = $('cambiarContrasenaRequirements');
+  if (nuevaContrasenaInput && requirementsContainer) {
+    nuevaContrasenaInput.addEventListener('input', () => {
+      const password = nuevaContrasenaInput.value;
+      if (password) {
+        requirementsContainer.style.display = 'block';
+        // Actualizar requisitos
+        const hasLength = password.length >= 8;
+        const hasUpper = /[A-Z]/.test(password);
+        const hasLower = /[a-z]/.test(password);
+        const hasNumber = /[0-9]/.test(password);
+        
+        updateRequirementItem('cambiar-req-length', hasLength, 'Mínimo 8 caracteres');
+        updateRequirementItem('cambiar-req-upper', hasUpper, 'Al menos una mayúscula (A-Z)');
+        updateRequirementItem('cambiar-req-lower', hasLower, 'Al menos una minúscula (a-z)');
+        updateRequirementItem('cambiar-req-number', hasNumber, 'Al menos un número (0-9)');
+      } else {
+        requirementsContainer.style.display = 'none';
+      }
+    });
+  }
+  
+  // Setup toggle button para "Editar Usuario"
+  const toggleEditBtn = $('toggleEditPassword');
+  const editPasswordInput = $('editPassword');
+  if (toggleEditBtn && editPasswordInput) {
+    toggleEditBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      const type = editPasswordInput.type === 'password' ? 'text' : 'password';
+      editPasswordInput.type = type;
+      toggleEditBtn.textContent = type === 'password' ? '👁️' : '👁️‍🗨️';
+    });
+  }
+  
   const form = $('formCambiarContrasena');
   if (form) {
     form.addEventListener('submit', async (e) => {

@@ -35,14 +35,7 @@ function validatePasswordStrength(password) {
   if (!/[0-9]/.test(password)) {
     issues.push('number');
   } else {
-    score += 20;
-  }
-
-  // Caracteres especiales
-  if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)) {
-    issues.push('special');
-  } else {
-    score += 20;
+    score += 25;
   }
 
   return {

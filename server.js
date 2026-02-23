@@ -1130,6 +1130,8 @@ app.get('/api/init-doctor-disponibilidad', async (req, res) => {
         pacientes_otros INT DEFAULT 0,
         total_pacientes INT DEFAULT 0,
         disponible BOOLEAN DEFAULT TRUE,
+        disponible_manana BOOLEAN DEFAULT TRUE,
+        disponible_tarde BOOLEAN DEFAULT TRUE,
         creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         actualizado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         UNIQUE KEY unique_doctor_fecha (doctor_id, fecha),
@@ -1171,7 +1173,6 @@ app.post('/api/doctor-disponibilidad/procesar-excel', requireAuth, upload.single
     }
 
     // Procesar el Excel
-    console.log(`[DISPONIBILIDAD] Llamando a procesarAgendaExcel con path=${req.file.path}`);
     const result = await procesarAgendaExcel.procesarAgendaExcel(req.file.path, doctorId, db);
     console.log(`[DISPONIBILIDAD] Resultado del procesamiento:`, result);
 
@@ -1369,6 +1370,62 @@ app.get('/api/turnos', async (req, res) => {
   }
 });
 
+// Obtener disponibilidad de doctor para una fecha específica
+app.get('/api/doctor-disponibilidad', async (req, res) => {
+  const { doctor_id, fecha } = req.query;
+  
+  if (!doctor_id || !fecha) {
+    return res.status(400).json({ ok: false, error: 'doctor_id y fecha son obligatorios' });
+  }
+
+  try {
+    // Consultar intervalos no disponibles
+    const {intervalos, existe_registro: tiene_intervalos} = await procesarAgendaExcel.consultarIntervalosNoDisponibles(doctor_id, fecha, db);
+
+    if (tiene_intervalos) {
+      // Si hay intervalos, retornar esos
+      return res.json({
+        ok: true,
+        tiene_intervalos: true,
+        intervalos: intervalos,
+        disponible_manana: true,  // Por defecto disponible (los intervalos definen qué NO está disponible)
+        disponible_tarde: true
+      });
+    }
+
+    // Si no hay intervalos, usar el sistema antiguo de disponible_manana/tarde
+    const result = await db.execute(
+      `SELECT disponible_manana, disponible_tarde FROM doctor_disponibilidad_mensual
+       WHERE doctor_id = ? AND fecha = ?`,
+      [doctor_id, fecha]
+    );
+
+    if (result.length === 0) {
+      // Si no hay registro, asumir disponibilidad completa
+      return res.json({ 
+        ok: true, 
+        tiene_intervalos: false,
+        intervalos: [],
+        disponible_manana: true, 
+        disponible_tarde: true,
+        razon: 'sin_restricciones' 
+      });
+    }
+
+    const registro = result[0];
+    return res.json({
+      ok: true,
+      tiene_intervalos: false,
+      intervalos: [],
+      disponible_manana: Boolean(registro.disponible_manana),
+      disponible_tarde: Boolean(registro.disponible_tarde)
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 // Crear turno
 app.post('/api/turnos', async (req, res) => {
   const { doctor_id, paciente_nombre, paciente_documento, paciente_telefono, fecha, hora, tipo_consulta, entidad, notas, oportunidad, programado_por } = req.body || {};
@@ -1380,16 +1437,15 @@ app.post('/api/turnos', async (req, res) => {
   try {
     console.log(`[DEBUG] Creando turno:`, { doctor_id, paciente_nombre, fecha, hora, tipo_consulta, entidad });
     
-    // Validar disponibilidad del doctor en esa fecha
-    const disponibilidad = await procesarAgendaExcel.tieneDisponibilidad(doctor_id, fecha, db);
-    console.log(`[DEBUG] Validación de disponibilidad para doctor=${doctor_id}, fecha=${fecha}:`, disponibilidad);
+    // Validar disponibilidad del doctor en esa fecha y hora específica
+    const validacion = await procesarAgendaExcel.validarDisponibilidadPorHora(doctor_id, fecha, hora, db);
+    console.log(`[DEBUG] Validación de disponibilidad para doctor=${doctor_id}, fecha=${fecha}, hora=${hora}:`, validacion);
     
-    if (!disponibilidad.disponible) {
-      console.log(`[DEBUG] Rechazo de turno: doctor no disponible`);
+    if (!validacion.valido) {
+      console.log(`[DEBUG] Rechazo de turno:`, validacion.razon);
       return res.status(400).json({ 
-        error: 'El doctor no está disponible en esta fecha',
-        razon: disponibilidad.razon,
-        disponible: false
+        error: validacion.razon,
+        valido: false
       });
     }
     

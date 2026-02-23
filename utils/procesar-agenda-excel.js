@@ -7,7 +7,18 @@ const fs = require('fs');
 
 /**
  * Procesa un archivo Excel de disponibilidad mensual del doctor
- * Estructura: FECHA | PROINSALUD | OTROS | TOTAL | DISPONIBILIDAD
+ * Estructura OBLIGATORIA: FECHA | MAÑANA | TARDE
+ * Estructura OPCIONAL: + INTERVALO | RAZÓN (define espacios específicos bloqueados dentro del turno)
+ * 
+ * El sistema es COMBINADO:
+ * 1. MAÑANA/TARDE define disponibilidad general del turno
+ * 2. INTERVALO/RAZÓN define bloques específicos DENTRO de ese turno
+ * 
+ * Ejemplo:
+ *   FECHA        | MAÑANA | TARDE | INTERVALO     | RAZÓN
+ *   2026-02-23   | SÍ     | NO    | 07:00-09:00   | Con estudiantes
+ *   Resultado: Turno tarde NO disponible, mañana disponible entre 09:00-12:00
+ * 
  * @param {string} filePath - Ruta del archivo Excel
  * @param {number} doctorId - ID del doctor
  * @param {object} db - Conexión a base de datos
@@ -32,54 +43,60 @@ async function procesarAgendaExcel(filePath, doctorId, db) {
 
     // Encontrar las columnas necesarias
     const headers = Object.keys(data[0]);
+    console.log(`[AGENDA] Headers encontrados:`, headers);
+    
+    // OBLIGATORIAS
     const fechaCol = encontrarColumna(headers, ['fecha', 'día', 'date']);
-    const proinsaludCol = encontrarColumna(headers, ['proinsalud', 'pro insalud', 'pacientes proinsalud']);
-    const otrosCol = encontrarColumna(headers, ['otros', 'otros pacientes', 'pacientes otros']);
-    const totalCol = encontrarColumna(headers, ['total', 'número total', 'total pacientes']);
-    const disponibilidadCol = encontrarColumna(headers, ['disponibilidad', 'disponible', 'estado']);
+    const mañanaCol = encontrarColumna(headers, ['mañana', 'manana', 'morning', 'matutino']);
+    const tardeCol = encontrarColumna(headers, ['tarde', 'afternoon', 'vespertino']);
+    
+    // OPCIONALES (para intervalos específicos)
+    const intervaloCol = encontrarColumna(headers, ['intervalo', 'no disponible', 'bloque', 'horario']);
+    const razonCol = encontrarColumna(headers, ['razón', 'razon', 'motivo', 'reason']);
+    
+    const tieneIntervalos = intervaloCol && razonCol;
+    
+    console.log(`[AGENDA] Sistema detectado: ${tieneIntervalos ? 'COMBINADO (mañana/tarde + intervalos)' : 'CLÁSICO (mañana/tarde)'}`);
 
-    // Validar que todas las columnas necesarias existan
-    const columnasRequeridas = {
-      'FECHA': fechaCol,
-      'PACIENTES PROINSALUD': proinsaludCol,
-      'OTROS PACIENTES': otrosCol,
-      'NÚMERO TOTAL': totalCol,
-      'DISPONIBILIDAD': disponibilidadCol
-    };
+    // Validar columnas OBLIGATORIAS
+    const columnasObligatorias = [];
+    if (!fechaCol) columnasObligatorias.push('FECHA');
+    if (!mañanaCol) columnasObligatorias.push('MAÑANA');
+    if (!tardeCol) columnasObligatorias.push('TARDE');
 
-    const columnasQueFaltan = Object.entries(columnasRequeridas)
-      .filter(([_, col]) => !col)
-      .map(([nombre]) => nombre);
-
-    if (columnasQueFaltan.length > 0) {
+    if (columnasObligatorias.length > 0) {
       return { 
         ok: false, 
-        error: `Columnas faltantes: ${columnasQueFaltan.join(', ')}. Expected: FECHA, PACIENTES PROINSALUD, OTROS PACIENTES, NÚMERO TOTAL, DISPONIBILIDAD` 
+        error: `Columnas OBLIGATORIAS faltantes: ${columnasObligatorias.join(', ')}. El Excel debe tener: FECHA, MAÑANA, TARDE. Headers encontrados: ${headers.join(', ')}`
       };
     }
 
-    // Limpiar días anteriores del doctor para este mes
+    // Limpiar dias anteriores del doctor para este mes
     const mesActual = new Date().toISOString().slice(0, 7); // YYYY-MM
     await db.execute(
       'DELETE FROM doctor_disponibilidad_mensual WHERE doctor_id = ? AND DATE_FORMAT(fecha, "%Y-%m") = ?',
       [doctorId, mesActual]
     );
+    
+    // Si hay intervalos, también limpiar esos
+    if (tieneIntervalos) {
+      await db.execute(
+        'DELETE FROM doctor_disponibilidad_intervalos WHERE doctor_id = ? AND DATE_FORMAT(fecha, "%Y-%m") = ?',
+        [doctorId, mesActual]
+      );
+    }
 
     // Procesar cada fila
     let diasGuardados = 0;
+    let intervalosGuardados = 0;
     let diasConError = [];
 
     for (let idx = 0; idx < data.length; idx++) {
       const row = data[idx];
       
       try {
-        // Parsear datos
         const fechaStr = row[fechaCol];
-        const proinsalud = parseInt(row[proinsaludCol]) || 0;
-        const otros = parseInt(row[otrosCol]) || 0;
-        const total = parseInt(row[totalCol]) || 0;
-        const disponibilidad = (row[disponibilidadCol] || '').toString().trim().toUpperCase();
-
+        
         // Validar fecha
         const fecha = parseExcelDate(fechaStr);
         if (!fecha) {
@@ -89,29 +106,84 @@ async function procesarAgendaExcel(filePath, doctorId, db) {
 
         const fechaFormato = fecha.toISOString().split('T')[0]; // YYYY-MM-DD
 
-        // Validar disponibilidad
-        const esDisponible = disponibilidad === 'DISPONIBLE' || disponibilidad === 'SÍ' || disponibilidad === 'SI';
+        // PASO 1: SIEMPRE leer MAÑANA/TARDE (obligatorio)
+        const mañanaStr = (row[mañanaCol] || '').toString().trim().toUpperCase();
+        const tardeStr = (row[tardeCol] || '').toString().trim().toUpperCase();
+
+        const esMañanaDisponible = mañanaStr === 'SÍ' || mañanaStr === 'SI' || mañanaStr === '1' || mañanaStr === 'DISPONIBLE';
+        const esTardeDisponible = tardeStr === 'SÍ' || tardeStr === 'SI' || tardeStr === '1' || tardeStr === 'DISPONIBLE';
         
-        console.log(`[AGENDA] Fila ${idx + 2}: fecha=${fechaFormato}, proinsalud=${proinsalud}, otros=${otros}, total=${total}, disponible=${esDisponible} (disponibilidad="${disponibilidad}")`);
+        console.log(`[AGENDA] Fila ${idx + 2}: fecha=${fechaFormato}, mañana=${esMañanaDisponible}, tarde=${esTardeDisponible}`);
         
-        // Guardar en BD
+        // Guardar disponibilidad general de turno
         await db.execute(
           `INSERT INTO doctor_disponibilidad_mensual 
-           (doctor_id, fecha, pacientes_proinsalud, pacientes_otros, total_pacientes, disponible) 
-           VALUES (?, ?, ?, ?, ?, ?)
-           ON DUPLICATE KEY UPDATE
-           pacientes_proinsalud = ?, pacientes_otros = ?, total_pacientes = ?, disponible = ?`,
-          [doctorId, fechaFormato, proinsalud, otros, total, esDisponible ? 1 : 0,
-           proinsalud, otros, total, esDisponible ? 1 : 0]
+           (doctor_id, fecha, disponible_manana, disponible_tarde) 
+           VALUES (?, ?, ?, ?)
+           ON DUPLICATE KEY UPDATE disponible_manana = ?, disponible_tarde = ?`,
+          [doctorId, fechaFormato, esMañanaDisponible ? 1 : 0, esTardeDisponible ? 1 : 0,
+           esMañanaDisponible ? 1 : 0, esTardeDisponible ? 1 : 0]
         );
-
         diasGuardados++;
+
+        // PASO 2: Si hay intervalos, guardar como refinamiento DENTRO de los turnos disponibles
+        if (tieneIntervalos) {
+          const intervaloStr = (row[intervaloCol] || '').toString().trim();
+          const razonStr = (row[razonCol] || '').toString().trim();
+
+          if (intervaloStr) {
+            // Parsear intervalo "07:00-09:00"
+            const intervaloParsed = parseIntervalo(intervaloStr);
+            if (!intervaloParsed) {
+              diasConError.push(`Fila ${idx + 2}: Intervalo inválido "${intervaloStr}"`);
+              continue;
+            }
+
+            // Validar que el intervalo esté dentro de un turno disponible
+            const [inicioH] = intervaloStr.split('-')[0].split(':').map(x => parseInt(x, 10));
+            const esMañana = inicioH >= 7 && inicioH < 13;
+            const esTarde = inicioH >= 14 && inicioH < 19;
+
+            let esValido = false;
+            let razonInvalidez = null;
+
+            if (esMañana && !esMañanaDisponible) {
+              razonInvalidez = 'El intervalo está en la mañana pero MAÑANA está marcado como NO disponible';
+            } else if (esTarde && !esTardeDisponible) {
+              razonInvalidez = 'El intervalo está en la tarde pero TARDE está marcado como NO disponible';
+            } else if (!esMañana && !esTarde) {
+              razonInvalidez = 'El intervalo está fuera del horario permitido (7:00-12:00 o 14:00-18:00)';
+            } else {
+              esValido = true;
+            }
+
+            if (!esValido) {
+              diasConError.push(`Fila ${idx + 2}: ${razonInvalidez}`);
+              continue;
+            }
+
+            // Guardar intervalo bloqueado
+            await db.execute(
+              `INSERT INTO doctor_disponibilidad_intervalos 
+               (doctor_id, fecha, hora_inicio, hora_fin, razon)
+               VALUES (?, ?, ?, ?, ?)`,
+              [doctorId, fechaFormato, intervaloParsed.inicio, intervaloParsed.fin, razonStr || null]
+            );
+            
+            intervalosGuardados++;
+            console.log(`[AGENDA] Fila ${idx + 2}: intervalo=${intervaloStr}, razón=${razonStr}`);
+          }
+        }
+        
       } catch (err) {
         diasConError.push(`Fila ${idx + 2}: ${err.message}`);
       }
     }
 
-    console.log(`[AGENDA] ✓ ${diasGuardados} días guardados para doctor ${doctorId}`);
+    const mensaje = tieneIntervalos 
+      ? `✓ ${diasGuardados} días y ${intervalosGuardados} intervalos guardados` 
+      : `✓ ${diasGuardados} días guardados`;
+    console.log(`[AGENDA] ${mensaje} para doctor ${doctorId}`);
     
     if (diasConError.length > 0) {
       console.warn('[AGENDA] Errores encontrados:', diasConError);
@@ -120,6 +192,8 @@ async function procesarAgendaExcel(filePath, doctorId, db) {
     return { 
       ok: true, 
       diasGuardados,
+      intervalosGuardados: tieneIntervalos ? intervalosGuardados : 0,
+      formato: tieneIntervalos ? 'combinado' : 'clasico',
       errores: diasConError.length > 0 ? diasConError : null
     };
   } catch (error) {
@@ -139,6 +213,31 @@ function encontrarColumna(headers, variaciones) {
     if (encontrada) return encontrada;
   }
   return null;
+}
+
+/**
+ * Parsea un intervalo de tiempo "HH:MM-HH:MM" a formato TIME de MySQL
+ * Ejemplo: "07:00-09:00" => { inicio: "07:00:00", fin: "09:00:00" }
+ */
+function parseIntervalo(intervaloStr) {
+  if (!intervaloStr) return null;
+  
+  const partes = intervaloStr.trim().split('-');
+  if (partes.length !== 2) return null;
+  
+  const inicio = partes[0].trim();
+  const fin = partes[1].trim();
+  
+  // Validar formato HH:MM
+  const regexTime = /^([0-1][0-9]|2[0-3]):([0-5][0-9])$/;
+  if (!regexTime.test(inicio) || !regexTime.test(fin)) {
+    return null;
+  }
+  
+  return {
+    inicio: `${inicio}:00`,  // Agregar segundos
+    fin: `${fin}:00`         // Agregar segundos
+  };
 }
 
 /**
@@ -210,6 +309,103 @@ async function obtenerDisponibilidadMensual(doctorId, mes = null, db) {
 }
 
 /**
+ * Verifica si un doctor tiene disponibilidad en una fecha específica con validación de horario
+ * Validación COMBINADA: MAÑANA/TARDE obligatorio, luego intervalos específicos como refinamiento
+ * 
+ * Proceso:
+ * 1. Verficiar que el día esté disponible enn general (MAÑANA/TARDE)
+ * 2. Verificar que la hora NO caiga en un intervalo bloqueado
+ */
+async function validarDisponibilidadPorHora(doctorId, fecha, hora, db) {
+  try {
+    const fechaFormato = typeof fecha === 'string' ? fecha : fecha.toISOString().split('T')[0];
+    
+    const result = await db.execute(
+      `SELECT disponible_manana, disponible_tarde FROM doctor_disponibilidad_mensual
+       WHERE doctor_id = ? AND fecha = ?`,
+      [doctorId, fechaFormato]
+    );
+    
+    // Si no existe registro, asumir que está disponible todo el día
+    if (result.length === 0) {
+      console.log(`[DISPONIBILIDAD] Sin registro para doctor=${doctorId}, fecha=${fechaFormato} - permitiendo`);
+      return { valido: true, razon: null };
+    }
+
+    const registro = result[0];
+    // Convertir a booleano con múltiples validaciones
+    const disponibleManana = Boolean(registro.disponible_manana);
+    const disponibleTarde = Boolean(registro.disponible_tarde);
+
+    console.log(`[DISPONIBILIDAD] Registro completo:`, JSON.stringify(registro));
+    console.log(`[DISPONIBILIDAD] Doctor ${doctorId}, fecha ${fechaFormato}: Mañana=${disponibleManana} (raw: ${registro.disponible_manana}), Tarde=${disponibleTarde} (raw: ${registro.disponible_tarde})`);
+
+    // PASO 1: Validar que el turno esté disponible en general
+    if (!disponibleManana && !disponibleTarde) {
+      console.log(`[DISPONIBILIDAD] Rechazando: ambos turnos NO disponibles`);
+      return { 
+        valido: false, 
+        razon: 'El doctor no está disponible en esta fecha' 
+      };
+    }
+
+    // Parsear hora (formato HH:MM)
+    const [horaStr, minStr] = (hora || '').split(':');
+    const horaNum = parseInt(horaStr, 10);
+    const minNum = parseInt(minStr || '0', 10);
+
+    console.log(`[DISPONIBILIDAD] Validando hora ${horaNum}:${(minStr || '00').padStart(2, '0')}`);
+
+    // Validar horario de la mañana (7:00-12:59) - INCLUSIVE hasta las 12:59
+    if ((horaNum === 7 || horaNum === 8 || horaNum === 9 || horaNum === 10 || horaNum === 11) || (horaNum === 12 && minNum <= 59)) {
+      console.log(`[DISPONIBILIDAD] Hora está en rango MAÑANA (7:00-12:59). Disponible mañana: ${disponibleManana}`);
+      if (!disponibleManana) {
+        console.log(`[DISPONIBILIDAD] Rechazando: no disponible en la mañana`);
+        return { 
+          valido: false, 
+          razon: 'El doctor no está disponible en la mañana (7:00-12:00) en esta fecha' 
+        };
+      }
+    } 
+    // Validar horario de la tarde (14:00-18:59) - INCLUSIVE hasta las 18:59
+    else if ((horaNum === 14 || horaNum === 15 || horaNum === 16 || horaNum === 17) || (horaNum === 18 && minNum <= 59)) {
+      console.log(`[DISPONIBILIDAD] Hora está en rango TARDE (14:00-18:59). Disponible tarde: ${disponibleTarde}`);
+      if (!disponibleTarde) {
+        console.log(`[DISPONIBILIDAD] Rechazando: no disponible en la tarde`);
+        return { 
+          valido: false, 
+          razon: 'El doctor no está disponible en la tarde (14:00-18:00) en esta fecha' 
+        };
+      }
+    } 
+    // Rango fuera de horario (13:00-13:59 es descanso/almuerzo)
+    else {
+      console.log(`[DISPONIBILIDAD] Hora ${horaNum}:${(minStr || '00').padStart(2, '0')} está fuera del rango permitido`);
+      return { 
+        valido: false, 
+        razon: 'Hora fuera del rango disponible. Horarios: Mañana (7:00-12:00) o Tarde (14:00-18:00)' 
+      };
+    }
+
+    // PASO 2: Validar que la hora NO caiga en un intervalo bloqueado
+    const {intervalos, existe_registro: tiene_intervalos} = await consultarIntervalosNoDisponibles(doctorId, fechaFormato, db);
+    if (tiene_intervalos) {
+      const {bloqueado, razon} = esHoraBloqueada(hora, intervalos);
+      if (bloqueado) {
+        console.log(`[DISPONIBILIDAD] Rechazando: hora ${hora} cae en intervalo bloqueado: ${razon}`);
+        return { valido: false, razon };
+      }
+    }
+
+    console.log(`[DISPONIBILIDAD] Permitiendo cita: validación pasada (turno disponible, no está en intervalo bloqueado)`);
+    return { valido: true, razon: null };
+  } catch (error) {
+    console.error('[DISPONIBILIDAD] Error validando disponibilidad por hora:', error.message);
+    return { valido: true, razon: null }; // En caso de error, permitir
+  }
+}
+
+/**
  * Verifica si un doctor tiene disponibilidad en una fecha específica
  */
 async function tieneDisponibilidad(doctorId, fecha, db) {
@@ -217,7 +413,7 @@ async function tieneDisponibilidad(doctorId, fecha, db) {
     const fechaFormato = typeof fecha === 'string' ? fecha : fecha.toISOString().split('T')[0];
     
     const result = await db.execute(
-      `SELECT disponible, total_pacientes FROM doctor_disponibilidad_mensual
+      `SELECT disponible_manana, disponible_tarde FROM doctor_disponibilidad_mensual
        WHERE doctor_id = ? AND fecha = ?`,
       [doctorId, fechaFormato]
     );
@@ -228,15 +424,85 @@ async function tieneDisponibilidad(doctorId, fecha, db) {
     }
 
     const registro = result[0];
+    // Convertir a booleano
+    const disponibleManana = Boolean(registro.disponible_manana);
+    const disponibleTarde = Boolean(registro.disponible_tarde);
+    
+    // Disponible si al menos uno de los turnos está disponible
+    const disponible = disponibleManana || disponibleTarde;
+    
     return {
-      disponible: registro.disponible === 1,
-      totalPacientes: registro.total_pacientes,
-      razon: !registro.disponible ? 'Doctor no disponible' : null
+      disponible: disponible,
+      totalPacientes: null,
+      razon: !disponible ? 'Doctor no disponible' : null
     };
   } catch (error) {
     console.error('[AGENDA] Error verificando disponibilidad:', error.message);
     return { disponible: true, razon: null };
   }
+}
+
+/**
+ * Consulta los intervalos no disponibles de un doctor para una fecha específica
+ * @returns { intervalos: Array, existe_registro: Boolean }
+ */
+async function consultarIntervalosNoDisponibles(doctorId, fecha, db) {
+  try {
+    const fechaFormato = typeof fecha === 'string' ? fecha : fecha.toISOString().split('T')[0];
+    
+    const result = await db.execute(
+      `SELECT hora_inicio, hora_fin, razon FROM doctor_disponibilidad_intervalos
+       WHERE doctor_id = ? AND fecha = ?
+       ORDER BY hora_inicio ASC`,
+      [doctorId, fechaFormato]
+    );
+
+    return {
+      intervalos: result || [],
+      existe_registro: result.length > 0
+    };
+  } catch (error) {
+    console.error('[AGENDA] Error consultando intervalos:', error.message);
+    return { intervalos: [], existe_registro: false };
+  }
+}
+
+/**
+ * Verifica si una hora específica cae dentro de un intervalo no disponible
+ * @param {string} hora - Hora en formato HH:MM
+ * @param {Array} intervalos - Array de intervalos con hora_inicio y hora_fin
+ * @returns { bloqueado: Boolean, razon: String }
+ */
+function esHoraBloqueada(hora, intervalos) {
+  if (!intervalos || intervalos.length === 0) {
+    return { bloqueado: false, razon: null };
+  }
+
+  const [horaStr, minStr] = (hora || '').split(':');
+  const horaNum = parseInt(horaStr, 10);
+  const minNum = parseInt(minStr || '0', 10);
+  
+  // Convertir a minutos desde medianoche para comparación
+  const minutosCita = horaNum * 60 + minNum;
+
+  for (const intervalo of intervalos) {
+    // Parsear hora_inicio y hora_fin (formato TIME "HH:MM:SS")
+    const [inicioHora, inicioMin] = intervalo.hora_inicio.split(':').map(x => parseInt(x, 10));
+    const [finHora, finMin] = intervalo.hora_fin.split(':').map(x => parseInt(x, 10));
+    
+    const minutosInicio = inicioHora * 60 + inicioMin;
+    const minutosFin = finHora * 60 + finMin;
+    
+    // Verificar si la cita está dentro del intervalo bloqueado
+    if (minutosCita >= minutosInicio && minutosCita < minutosFin) {
+      return {
+        bloqueado: true,
+        razon: intervalo.razon || 'No disponible en este horario'
+      };
+    }
+  }
+
+  return { bloqueado: false, razon: null };
 }
 
 /**
@@ -270,7 +536,11 @@ module.exports = {
   procesarAgendaExcel,
   obtenerDisponibilidadMensual,
   tieneDisponibilidad,
+  validarDisponibilidadPorHora,
+  consultarIntervalosNoDisponibles,
+  esHoraBloqueada,
   limpiarDisponibilidad,
+  parseIntervalo,
   // Compatibilidad anterior
   obtenerDiasBloqueados,
   estaFechaBloqueada

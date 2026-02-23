@@ -377,6 +377,7 @@
                 </div>
                 <div class="col"><label>Prioridad</label><select id="nuevoTurnoPrioridadMedica"><option value="2">Normal</option><option value="1">Prioritario</option></select></div>
               </div>
+              <div style="margin-top:8px;padding:8px;border-radius:4px;background-color:#fff3cd;border:1px solid #ffc107;display:none;font-size:0.9rem;color:#856404" id="mensajeDisponibilidad"></div>
               <div class="row" style="margin-top:12px">
                 <div class="col"><label>Hora</label><select id="nuevoTurnoHoraMedica"></select></div>
                 <div class="col"><label>Teléfono</label><input id="nuevoPacienteTelefonoMedica" type="tel" placeholder="Teléfono" /></div>
@@ -515,7 +516,7 @@
                 <li id="req-upper" style="list-style:none;padding:4px 0">Al menos una mayúscula (A-Z)</li>
                 <li id="req-lower" style="list-style:none;padding:4px 0">Al menos una minúscula (a-z)</li>
                 <li id="req-number" style="list-style:none;padding:4px 0">Al menos un número (0-9)</li>
-                <li id="req-special" style="list-style:none;padding:4px 0">Al menos un símbolo (!@#$%^&* etc)</li>
+
               </ul>
             </div>
           </section>
@@ -613,15 +614,33 @@
           
           <div>
             <label for="contrasenaActual" style="display:block;margin-bottom:8px;font-weight:500;color:#333;font-size:14px">Contraseña Actual</label>
-            <input id="contrasenaActual" type="password" placeholder="Ingresa tu contraseña actual" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;font-size:14px;transition:all 0.2s" onfocus="this.style.borderColor='#627371';this.style.boxShadow='0 0 0 3px rgba(98,115,113,0.1)'" onblur="this.style.borderColor='#d1d5db';this.style.boxShadow='none'" />
+            <div style="position:relative;display:flex;align-items:center">
+              <input id="contrasenaActual" type="password" placeholder="Ingresa tu contraseña actual" style="flex:1;padding:10px 12px;padding-right:40px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;font-size:14px;transition:all 0.2s" onfocus="this.style.borderColor='#627371';this.style.boxShadow='0 0 0 3px rgba(98,115,113,0.1)'" onblur="this.style.borderColor='#d1d5db';this.style.boxShadow='none'" />
+              <button type="button" id="toggleContrasenaActual" style="position:absolute;right:12px;background:none;border:none;cursor:pointer;font-size:18px;color:#627371;transition:color 0.2s" title="Mostrar/ocultar">👁️</button>
+            </div>
           </div>
           <div>
             <label for="nuevaContrasena" style="display:block;margin-bottom:8px;font-weight:500;color:#333;font-size:14px">Nueva Contraseña</label>
-            <input id="nuevaContrasena" type="password" placeholder="Ingresa tu nueva contraseña" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;font-size:14px;transition:all 0.2s" onfocus="this.style.borderColor='#627371';this.style.boxShadow='0 0 0 3px rgba(98,115,113,0.1)'" onblur="this.style.borderColor='#d1d5db';this.style.boxShadow='none'" />
+            <div style="position:relative;display:flex;align-items:center">
+              <input id="nuevaContrasena" type="password" placeholder="Ingresa tu nueva contraseña" style="flex:1;padding:10px 12px;padding-right:40px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;font-size:14px;transition:all 0.2s" onfocus="this.style.borderColor='#627371';this.style.boxShadow='0 0 0 3px rgba(98,115,113,0.1)'" onblur="this.style.borderColor='#d1d5db';this.style.boxShadow='none'" />
+              <button type="button" id="toggleNuevaContrasena" style="position:absolute;right:12px;background:none;border:none;cursor:pointer;font-size:18px;color:#627371;transition:color 0.2s" title="Mostrar/ocultar">👁️</button>
+            </div>
+            <div id="cambiarContrasenaRequirements" style="margin-top:12px;padding:12px;background:#f9fafb;border-radius:6px;border:1px solid #e5e7eb;display:none">
+              <p style="margin:0 0 8px 0;font-size:13px;font-weight:600;color:#374151">Requisitos de contraseña:</p>
+              <ul style="margin:0;padding-left:20px;font-size:12px;color:#666">
+                <li id="cambiar-req-length" style="list-style:none;padding:4px 0">Mínimo 8 caracteres</li>
+                <li id="cambiar-req-upper" style="list-style:none;padding:4px 0">Al menos una mayúscula (A-Z)</li>
+                <li id="cambiar-req-lower" style="list-style:none;padding:4px 0">Al menos una minúscula (a-z)</li>
+                <li id="cambiar-req-number" style="list-style:none;padding:4px 0">Al menos un número (0-9)</li>
+              </ul>
+            </div>
           </div>
           <div>
             <label for="confirmarContrasena" style="display:block;margin-bottom:8px;font-weight:500;color:#333;font-size:14px">Confirmar Nueva Contraseña</label>
-            <input id="confirmarContrasena" type="password" placeholder="Confirma tu nueva contraseña" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;font-size:14px;transition:all 0.2s" onfocus="this.style.borderColor='#627371';this.style.boxShadow='0 0 0 3px rgba(98,115,113,0.1)'" onblur="this.style.borderColor='#d1d5db';this.style.boxShadow='none'" />
+            <div style="position:relative;display:flex;align-items:center">
+              <input id="confirmarContrasena" type="password" placeholder="Confirma tu nueva contraseña" style="flex:1;padding:10px 12px;padding-right:40px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;font-size:14px;transition:all 0.2s" onfocus="this.style.borderColor='#627371';this.style.boxShadow='0 0 0 3px rgba(98,115,113,0.1)'" onblur="this.style.borderColor='#d1d5db';this.style.boxShadow='none'" />
+              <button type="button" id="toggleConfirmarContrasena" style="position:absolute;right:12px;background:none;border:none;cursor:pointer;font-size:18px;color:#627371;transition:color 0.2s" title="Mostrar/ocultar">👁️</button>
+            </div>
           </div>
         </div>
         
@@ -665,7 +684,10 @@
         </div>
         <div>
           <label for="editPassword" style="display:block;margin-bottom:8px;font-weight:500;color:#333;font-size:14px">Nueva Contraseña</label>
-          <input id="editPassword" type="password" placeholder="Dejar vacío para no cambiar" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;font-size:14px;transition:all 0.2s" onfocus="this.style.borderColor='#627371';this.style.boxShadow='0 0 0 3px rgba(98,115,113,0.1)'" onblur="this.style.borderColor='#d1d5db';this.style.boxShadow='none'" />
+          <div style="position:relative;display:flex;align-items:center">
+            <input id="editPassword" type="password" placeholder="Dejar vacío para no cambiar" style="flex:1;padding:10px 12px;padding-right:40px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;font-size:14px;transition:all 0.2s" onfocus="this.style.borderColor='#627371';this.style.boxShadow='0 0 0 3px rgba(98,115,113,0.1)'" onblur="this.style.borderColor='#d1d5db';this.style.boxShadow='none'" />
+            <button type="button" id="toggleEditPassword" style="position:absolute;right:12px;background:none;border:none;cursor:pointer;font-size:18px;color:#627371;transition:color 0.2s" title="Mostrar/ocultar">👁️</button>
+          </div>
         </div>
         <div id="editarUsuarioError" class="login-error hidden" style="padding:12px;background:#fee;border:1px solid #fcc;border-radius:6px;color:#c00;font-size:14px;display:none"></div>
         <div style="display:flex;gap:12px;margin-top:20px;padding-top:20px;border-top:1px solid #e5e7eb">

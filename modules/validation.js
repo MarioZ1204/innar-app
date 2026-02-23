@@ -42,13 +42,6 @@ function validatePasswordStrength(password) {
     score += 20;
   }
 
-  // Caracteres especiales
-  if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)) {
-    issues.push('Debe contener al menos un símbolo especial (!@#$%^&* etc)');
-  } else {
-    score += 20;
-  }
-
   // Evitar patrones comunes
   const commonPatterns = ['123', '000', 'abc', 'aaa', 'password', 'adminmvbn'];
   if (commonPatterns.some(p => password.toLowerCase().includes(p))) {
@@ -58,7 +51,7 @@ function validatePasswordStrength(password) {
 
   return {
     isValid: issues.length === 0,
-    score: Math.min(100, score),
+    score: Math.min(80, score),
     messages: issues,
     strength: getPasswordStrength(score)
   };

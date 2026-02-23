@@ -1,5 +1,5 @@
 // db-migrations.js - Archivo consolidado de todas las migraciones
-const db = require('./db-mysql');
+const db = require('./utils/db-mysql');
 
 // Lista de todas las migraciones
 const migrations = [
@@ -44,7 +44,7 @@ const migrations = [
   {
     name: 'usuarios_activo',
     description: 'Agregar columna activo a tabla usuarios',
-    sql: `ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS activo TINYINT DEFAULT 1`
+    sql: `ALTER TABLE usuarios ADD COLUMN activo TINYINT DEFAULT 1`
   },
   {
     name: 'turnos',
@@ -103,7 +103,7 @@ const migrations = [
   {
     name: 'consultorio',
     description: 'Agregar columna numero_consultorio a tabla usuarios',
-    sql: `ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS numero_consultorio INT`
+    sql: `ALTER TABLE usuarios ADD COLUMN numero_consultorio INT`
   },
   {
     name: 'recibos',
@@ -125,6 +125,34 @@ const migrations = [
         INDEX idx_fecha (fecha),
         INDEX idx_estado (estado),
         FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+    `
+  },
+  {
+    name: 'doctor_disponibilidad_turnos',
+    description: 'Agregar columnas de disponibilidad por turno (mañana/tarde) a tabla doctor_disponibilidad_mensual',
+    sql: `
+      ALTER TABLE doctor_disponibilidad_mensual 
+      ADD COLUMN disponible_manana BOOLEAN DEFAULT TRUE,
+      ADD COLUMN disponible_tarde BOOLEAN DEFAULT TRUE
+    `
+  },
+  {
+    name: 'doctor_disponibilidad_intervalos',
+    description: 'Tabla para almacenar intervalos de disponibilidad por hora con razones',
+    sql: `
+      CREATE TABLE IF NOT EXISTS doctor_disponibilidad_intervalos (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        doctor_id INT NOT NULL,
+        fecha DATE NOT NULL,
+        hora_inicio TIME NOT NULL,
+        hora_fin TIME NOT NULL,
+        razon VARCHAR(255),
+        creado_en DATETIME DEFAULT CURRENT_TIMESTAMP,
+        actualizado_en DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_doctor_fecha (doctor_id, fecha),
+        INDEX idx_hora (hora_inicio, hora_fin),
+        FOREIGN KEY (doctor_id) REFERENCES usuarios(id) ON DELETE CASCADE
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
     `
   }
