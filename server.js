@@ -1623,7 +1623,7 @@ app.patch('/api/turnos/:id/estado', async (req, res) => {
 });
 
 // Eliminar turno
-app.delete('/api/turnos/:id', async (req, res) => {
+app.delete('/api/turnos/:id', requireAuth, requireRole(['admin', 'recepcion']), async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (!id) {
     return res.status(400).json({ error: 'ID inválido' });
@@ -1636,19 +1636,26 @@ app.delete('/api/turnos/:id', async (req, res) => {
       return res.status(404).json({ error: 'Turno no encontrado' });
     }
 
-    // No permitir eliminar un turno que está EN_ATENCION
-    if (turno.estado === 'EN_ATENCION' || turno.estado === 'ATENDIDO') {
-      return res.status(400).json({ error: 'No se puede eliminar un turno en atención o ya atendido' });
-    }
+    // Los admins y recepcion pueden eliminar, pero verificar restricciones para recepcion
+    const userRole = req.user?.rol;
+    
+    // Si es recepcion (no admin), aplicar restricciones
+    if (userRole === 'recepcion') {
+      // No permitir eliminar un turno que está EN_ATENCION o ATENDIDO
+      if (turno.estado === 'EN_ATENCION' || turno.estado === 'ATENDIDO') {
+        return res.status(400).json({ error: 'No se puede eliminar un turno en atención o ya atendido' });
+      }
 
-    // No permitir eliminar si hay un turno EN_ATENCION en la misma fecha/doctor
-    const enAtencion = await db.query(
-      'SELECT * FROM turnos WHERE doctor_id = ? AND fecha = ? AND estado = ? AND id != ?',
-      [turno.doctor_id, turno.fecha, 'EN_ATENCION', id]
-    );
-    if (enAtencion.length > 0) {
-      return res.status(400).json({ error: 'No se pueden eliminar citas mientras hay un paciente en atención' });
+      // No permitir eliminar si hay un turno EN_ATENCION en la misma fecha/doctor
+      const enAtencion = await db.query(
+        'SELECT * FROM turnos WHERE doctor_id = ? AND fecha = ? AND estado = ? AND id != ?',
+        [turno.doctor_id, turno.fecha, 'EN_ATENCION', id]
+      );
+      if (enAtencion.length > 0) {
+        return res.status(400).json({ error: 'No se pueden eliminar citas mientras hay un paciente en atención' });
+      }
     }
+    // Si es admin, no hay restricciones
 
     const result = await db.execute('DELETE FROM turnos WHERE id = ?', [id]);
     
