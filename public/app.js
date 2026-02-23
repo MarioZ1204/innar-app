@@ -3,6 +3,12 @@ const $ = id => document.getElementById(id);
 const lsKey = 'recibos_sencillo_v1';
 const lsKeyServicios = 'servicios_list_v1';
 const lsKeyCurrentModule = 'current_module_v1';
+
+// ========== FUNCIÓN DE HASHING SHA512 ==========
+function hashPassword(password) {
+  if (!password) return '';
+  return CryptoJS.SHA512(password).toString();
+}
 const lsKeySelectedDoctor = 'selected_doctor_v1';
 let lastReciboId = null;
 
@@ -82,10 +88,13 @@ async function checkSession() {
 
 async function doLogin(usuario, password) {
   try {
+    // Hashear contraseña con SHA512
+    const hashedPassword = hashPassword(password);
+    
     const res = await apiFetch('/api/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ usuario, password })
+      body: JSON.stringify({ usuario, password: hashedPassword })
     });
     const data = await res.json();
     if (data.ok) {
@@ -2181,7 +2190,7 @@ async function guardarCambiosUsuario(e) {
   }
   
   if (password && password.trim()) {
-    body.password = password;
+    body.password = hashPassword(password);
   }
   
   try {
@@ -2258,7 +2267,7 @@ async function crearUsuario() {
   }
   
   try {
-    const body = { usuario, password, nombre, rol };
+    const body = { usuario, password: hashPassword(password), nombre, rol };
     if (numero_consultorio) body.numero_consultorio = numero_consultorio;
     
     const res = await apiFetch('/api/usuarios', { 
@@ -2913,9 +2922,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Solo incluir contraseña si está siendo cambiada
         if (nuevaContrasena) {
-          body.contrasenaActual = contrasenaActual;
-          body.nuevaContrasena = nuevaContrasena;
-          body.confirmarContrasena = confirmarContrasena;
+          body.contrasenaActual = hashPassword(contrasenaActual);
+          body.nuevaContrasena = hashPassword(nuevaContrasena);
+          body.confirmarContrasena = hashPassword(confirmarContrasena);
         }
 
         const res = await apiFetch('/api/cambiar-contrasena', {

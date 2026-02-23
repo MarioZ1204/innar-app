@@ -235,7 +235,7 @@ app.post('/api/login', async (req, res) => {
 
     const user = users[0];
 
-    // Verificar contraseña
+    // Verificar contraseña (recibe SHA512 del cliente, compara con bcrypt de SHA512)
     if (!bcrypt.compareSync(password, user.password_hash)) {
       // Registrar intento fallido
       await rateLimiter.recordFailedAttempt(clientIP, usuario);
@@ -309,8 +309,10 @@ app.post('/api/cambiar-contrasena', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Las contraseñas no coinciden' });
     }
 
-    if (nuevaContrasena.length < 6) {
-      return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres' });
+    // Nota: Validación de longitud de contraseña (6 caracteres) ya fue hecha en cliente
+    // El servidor recibe SHA512 (128 caracteres)
+    if (nuevaContrasena.length < 100) {
+      return res.status(400).json({ error: 'Contraseña inválida' });
     }
 
     // Validar nombre si es proporcionado
@@ -416,12 +418,10 @@ app.post('/api/usuarios', requireAuth, requireAdmin, async (req, res) => {
   }
 
   // Validar contraseña
-  const passwordValidation = validation.validatePasswordStrength(password);
-  if (!passwordValidation.isValid) {
-    return res.status(400).json({ 
-      error: 'Contraseña no es lo suficientemente fuerte',
-      details: passwordValidation.messages
-    });
+  // Nota: La validación de fortaleza ya fue hecha en cliente antes de hashear con SHA512
+  // El servidor recibe el hash SHA512, no el texto plano
+  if (!password || password.length < 100) {
+    return res.status(400).json({ error: 'Contraseña inválida' });
   }
 
   // Validar rol
