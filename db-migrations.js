@@ -155,6 +155,11 @@ const migrations = [
         FOREIGN KEY (doctor_id) REFERENCES usuarios(id) ON DELETE CASCADE
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
     `
+  },
+  {
+    name: 'especialidad_doctor',
+    description: 'Agregar columna especialidad a tabla usuarios para doctors',
+    sql: `ALTER TABLE usuarios ADD COLUMN especialidad VARCHAR(100)`
   }
 ];
 

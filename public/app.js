@@ -648,6 +648,8 @@ async function initAgendaMedica() {
     }
   }
   await cargarTurnosMedica();
+  // Cargar disponibilidad programada (intervalos) desde el inicio
+  await actualizarHorasDisponibles();
 }
 
 // Autocompletado por documento removido por solicitud del usuario
@@ -783,18 +785,24 @@ async function actualizarHorasDisponibles() {
     if (data.tiene_intervalos && data.intervalos && data.intervalos.length > 0) {
       console.log(`Doctor tiene ${data.intervalos.length} intervalos no disponibles:`, data.intervalos);
       
-      // Generar base de horas disponibles según turno
+      // Generar base de horas disponibles según turno CON INTERVALOS DE 20 MINUTOS
       const horasBase = [];
       
       if (disponibleManana) {
-        for (let h = 7; h <= 12; h++) {
-          horasBase.push(`${String(h).padStart(2,'0')}:00`);
+        for (let h = 7; h < 13; h++) {
+          for (let m = 0; m < 60; m += 20) {
+            if (h === 12 && m > 0) continue;
+            horasBase.push(`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`);
+          }
         }
       }
       
       if (disponibleTarde) {
-        for (let h = 14; h <= 18; h++) {
-          horasBase.push(`${String(h).padStart(2,'0')}:00`);
+        for (let h = 14; h < 19; h++) {
+          for (let m = 0; m < 60; m += 20) {
+            if (h === 18 && m > 0) continue;
+            horasBase.push(`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`);
+          }
         }
       }
       
@@ -1597,8 +1605,18 @@ function renderTurnoRowMedica(tbody, t, animateTargetId, hayEnAtencion) {
     ? `<select class="btn-estado" data-id="${t.id}">${opts}</select>`
     : escapeHtml((t.estado||'').replace(/_/g,' '));
 
-  // Deshabilitar botones cuando hay algún turno EN_ATENCION (excepto si es el mismo turno)
-  const deshabilitarBotones = hayEnAtencion && !esEnAtencion;
+  // Deshabilitar botones según rol:
+  // ADMIN: solo deshabilita cuando hay EN_ATENCION EN OTRO TURNO
+  // RECEPCION: deshabilita si EN_ATENCION o ATENDIDO
+  let deshabilitarBotones = false;
+  
+  if (isAdmin()) {
+    // Admin: solo bloquear si hay EN_ATENCION en otro turno
+    deshabilitarBotones = hayEnAtencion && !esEnAtencion;
+  } else if (isRecepcion()) {
+    // Recepción: bloquear si está ATENDIDO o hay EN_ATENCION (excepto si es el mismo turno)
+    deshabilitarBotones = esAtendido || (hayEnAtencion && !esEnAtencion);
+  }
   
   const puedeEliminar = isAdmin() || isRecepcion();
   const btnUpDisabled = deshabilitarBotones ? 'disabled' : '';
@@ -1609,7 +1627,7 @@ function renderTurnoRowMedica(tbody, t, animateTargetId, hayEnAtencion) {
   // Guardar estado de deshabilitación en data attributes para que los event listeners puedan acceder
   const dataDeshabilitado = deshabilitarBotones ? 'data-deshabilitado="true"' : 'data-deshabilitado="false"';
   
-  const prioridadBtns = (isAdmin() || isRecepcion()) ? `<button class="btn-prioridad-up" data-up="${t.id}" title="Subir prioridad" ${btnUpDisabled} ${dataDeshabilitado}><img src="images/up.svg" alt="↑" class="btn-icon"/> Subir</button><button class="btn-prioridad-down" data-down="${t.id}" title="Bajar prioridad" ${btnDownDisabled} ${dataDeshabilitado}><img src="images/down.svg" alt="↓" class="btn-icon"/> Bajar</button>` : '';
+  const prioridadBtns = (isAdmin() || isRecepcion()) ? `<button class="btn-prioridad-up" data-up="${t.id}" title="Subir prioridad" ${btnUpDisabled} ${dataDeshabilitado}><img src="images/up.svg" alt="↑" class="btn-icon"/></button><button class="btn-prioridad-down" data-down="${t.id}" title="Bajar prioridad" ${btnDownDisabled} ${dataDeshabilitado}><img src="images/down.svg" alt="↓" class="btn-icon"/></button>` : '';
   const accionesCell = puedeEliminar
     ? `${prioridadBtns} <button class="btn-editar" data-edit="${t.id}" title="Editar" ${btnEditDisabled} ${dataDeshabilitado}><img src="images/edit.svg" alt="✎" class="btn-icon"/> Editar</button> <button class="btn-eliminar" data-delete="${t.id}" ${btnDeleteDisabled} ${dataDeshabilitado}><img src="images/delete.svg" alt="🗑" class="btn-icon"/> Eliminar</button>`
     : '-';
@@ -1845,10 +1863,22 @@ function seleccionarTurnoMedica(tr, t) {
     inputNombre.value = t.paciente_nombre || '';
   }
   
-  // Deshabilitar botón de guardar nombre si hay EN_ATENCION (excepto si es el turno EN_ATENCION actual)
+  // Deshabilitar botón de guardar nombre según rol:
+  // ADMIN: puede editar si hay EN_ATENCION en otro turno, pero NO si está ATENDIDO
+  // RECEPCION: no puede editar si está ATENDIDO o hay EN_ATENCION
   const btnGuardar = $('btnGuardarNombreMedica');
   if (btnGuardar) {
-    const puedeEditar = !(globalHayEnAtencion && t.estado !== 'EN_ATENCION');
+    const esAtendido = t.estado === 'ATENDIDO';
+    let puedeEditar = true;
+    
+    if (isAdmin()) {
+      // Admin: bloquear si hay EN_ATENCION en otro turno
+      puedeEditar = !(globalHayEnAtencion && t.estado !== 'EN_ATENCION');
+    } else if (isRecepcion()) {
+      // Recepción: bloquear si está ATENDIDO o hay EN_ATENCION
+      puedeEditar = !(esAtendido || (globalHayEnAtencion && t.estado !== 'EN_ATENCION'));
+    }
+    
     btnGuardar.disabled = !puedeEditar;
     btnGuardar.style.opacity = puedeEditar ? '1' : '0.5';
     btnGuardar.style.cursor = puedeEditar ? 'pointer' : 'not-allowed';
@@ -1861,11 +1891,20 @@ function seleccionarTurnoMedica(tr, t) {
 }
 
 async function guardarNombrePacienteMedica() {
-  // Prevenir edición cuando hay un turno EN_ATENCION
-  if (globalHayEnAtencion) {
-    showToast('No se pueden editar citas mientras hay un paciente en atención', 'error');
-    return;
+  // Prevenir edición según rol:
+  // ADMIN: puede editar si hay EN_ATENCION en otro turno
+  // RECEPCION: no puede editar si está ATENDIDO o hay EN_ATENCION
+  if (isRecepcion()) {
+    if (selectedTurnoMedica?.estado === 'ATENDIDO') {
+      showToast('No se pueden editar citas ya atendidas', 'error');
+      return;
+    }
+    if (globalHayEnAtencion && selectedTurnoMedica?.estado !== 'EN_ATENCION') {
+      showToast('No se pueden editar citas mientras hay un paciente en atención', 'error');
+      return;
+    }
   }
+  // Admin no tiene restricciones basadas en estado
   
   if (!selectedTurnoMedica) {
     showToast('Selecciona un paciente primero', 'error');
@@ -1927,17 +1966,44 @@ async function crearTurnoMedica() {
   const nombre = $('nuevoPacienteNombreMedica').value.trim();
   const doc = $('nuevoPacienteDocMedica').value.trim();
   const fecha = $('agendaMedicaFecha').value;
-  // Usar selectedDoctorId en lugar del combobox
   const doctorId = selectedDoctorId || (isDoctor() ? currentUser?.id : null);
   const hora = $('nuevoTurnoHoraMedica')?.value || '';
-  const telefono = $('nuevoPacienteTelefonoMedica')?.value || '';
+  const telefono = $('nuevoPacienteTelefonoMedica')?.value.trim() || '';
   const tipoConsulta = $('nuevoTurnoTipoMedica')?.value || '';
   const entidad = $('nuevoTurnoEntidadMedica')?.value || '';
   const notas = $('nuevoTurnoNotasMedica')?.value || '';
   const oportunidad = $('nuevoTurnoOportunidadMedica')?.value || '';
-  if (!nombre || !fecha || !doctorId || !hora) { showToast('Completa paciente, fecha, médico y hora', 'error'); return; }
+
+  // ========== VALIDACIONES ==========
   
+  // 1. Validar campos obligatorios
+  if (!nombre || !fecha || !doctorId || !hora) {
+    showToast('Completa paciente, fecha, médico y hora', 'error');
+    return;
+  }
+
+  // 2. Validar nombre: mínimo 3 caracteres
+  if (nombre.length < 3) {
+    showToast('El nombre debe tener al menos 3 caracteres', 'error');
+    return;
+  }
+
+  // 3. Validar documento: solo números, 6-15 caracteres
+  if (doc && !/^\d{6,15}$/.test(doc)) {
+    showToast('Documento inválido. Solo números, 6-15 dígitos', 'error');
+    return;
+  }
+
+  // 4. Validar teléfono: solo números (mínimo 7 dígitos si se ingresa)
+  if (telefono && !/^\d{7,}$/.test(telefono.replace(/[\s\-\(\)]/g, ''))) {
+    showToast('Teléfono inválido. Mínimo 7 dígitos', 'error');
+    return;
+  }
+
   try {
+    // Validaciones completadas - permitir múltiples pacientes en la misma hora
+    // (no hay validación de duplicados por hora, se permite hasta 20 pacientes)
+
     const body = {
       doctor_id: parseInt(doctorId, 10),
       paciente_nombre: nombre,
@@ -1951,17 +2017,28 @@ async function crearTurnoMedica() {
       oportunidad: oportunidad ? parseInt(oportunidad, 10) : null,
       programado_por: (currentUser && (currentUser.nombre || currentUser.usuario)) || null
     };
-    const res = await apiFetch('/api/turnos', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
+
+    const res = await apiFetch('/api/turnos', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
     const data = await res.json();
+
     if (data.ok) {
-      showToast('Cita creada', 'success');
-      $('nuevoPacienteNombreMedica').value='';
-      $('nuevoPacienteDocMedica').value='';
+      showToast('Cita creada correctamente', 'success');
+      $('nuevoPacienteNombreMedica').value = '';
+      $('nuevoPacienteDocMedica').value = '';
       $('nuevoPacienteTelefonoMedica').value = '';
       $('nuevoTurnoNotasMedica').value = '';
       cargarTurnosMedica();
-    } else showToast(data.error||'Error', 'error');
-  } catch (e) { showToast('Error creando cita', 'error'); }
+    } else {
+      showToast(data.error || 'Error al crear la cita', 'error');
+    }
+  } catch (e) {
+    showToast('Error creando cita: ' + e.message, 'error');
+    console.error(e);
+  }
 }
 
 // ========== AGENDA ELECTRODIAGNÓSTICO ==========
@@ -2147,14 +2224,34 @@ async function initUsuarios() {
     });
   }
   
-  // Mostrar/ocultar consultorio según rol
+  // Mostrar/ocultar especialidad y consultorio según rol
   $('newUserRol').addEventListener('change', function() {
     const consultorioCol = $('consultorioCol');
+    const especialidadCol = $('especialidadCol');
+    const especialidadOtraCol = $('especialidadOtraCol');
+    
     if (this.value === 'doctor') {
       consultorioCol.style.display = '';
+      especialidadCol.style.display = '';
     } else {
       consultorioCol.style.display = 'none';
+      especialidadCol.style.display = 'none';
+      especialidadOtraCol.style.display = 'none';
       $('newUserConsultorio').value = '';
+      $('newUserEspecialidad').value = '';
+      $('newUserEspecialidadOtra').value = '';
+    }
+  });
+  
+  // Mostrar campo "Otra" si se selecciona "Otra" en especialidad
+  $('newUserEspecialidad').addEventListener('change', function() {
+    const especialidadOtraCol = $('especialidadOtraCol');
+    if (this.value === 'Otra') {
+      especialidadOtraCol.style.display = '';
+      $('newUserEspecialidadOtra').focus();
+    } else {
+      especialidadOtraCol.style.display = 'none';
+      $('newUserEspecialidadOtra').value = '';
     }
   });
   
@@ -2240,13 +2337,28 @@ function editarUsuario(u) {
   $('editPassword').value = '';
   $('editarUsuarioError').classList.add('hidden');
   
-  // Mostrar/ocultar consultorio según rol
+  // Mostrar/ocultar consultorio y especialidad según rol
   mostrarConsultorioEdicion(u.rol);
   $('editConsultorio').value = u.numero_consultorio || '';
   
-  // Cambiar rol automáticamente muestra/oculta consultorio
+  // Mostrar/ocultar especialidad según rol
+  mostrarEspecialidadEdicion(u.rol, u.especialidad);
+  
+  // Cambiar rol automáticamente muestra/oculta consultorio y especialidad
   $('editRol').addEventListener('change', function() {
     mostrarConsultorioEdicion(this.value);
+    mostrarEspecialidadEdicion(this.value, null);
+  });
+  
+  // Cambiar especialidad muestra/oculta el campo "Otra"
+  $('editEspecialidad')?.addEventListener('change', function() {
+    if (this.value === 'Otra') {
+      $('editEspecialidadOtraCol').style.display = '';
+      $('editEspecialidadOtra').focus();
+    } else {
+      $('editEspecialidadOtraCol').style.display = 'none';
+      $('editEspecialidadOtra').value = '';
+    }
   });
   
   $('modalEditarUsuario').classList.remove('hidden');
@@ -2260,6 +2372,38 @@ function mostrarConsultorioEdicion(rol) {
   } else {
     col.style.display = 'none';
     $('editConsultorio').value = '';
+  }
+}
+
+function mostrarEspecialidadEdicion(rol, especialidadActual) {
+  const colEspecialidad = $('editEspecialidadCol');
+  const colOtra = $('editEspecialidadOtraCol');
+  
+  if (rol === 'doctor') {
+    colEspecialidad.style.display = '';
+    
+    // Si tiene especialidad actual
+    if (especialidadActual) {
+      const predefinidas = ['Neurología', 'Epileptología', 'Psicología', 'Neuropsicología', 'Psiquiatría'];
+      if (predefinidas.includes(especialidadActual)) {
+        $('editEspecialidad').value = especialidadActual;
+        colOtra.style.display = 'none';
+        $('editEspecialidadOtra').value = '';
+      } else {
+        $('editEspecialidad').value = 'Otra';
+        colOtra.style.display = '';
+        $('editEspecialidadOtra').value = especialidadActual;
+      }
+    } else {
+      $('editEspecialidad').value = '';
+      colOtra.style.display = 'none';
+      $('editEspecialidadOtra').value = '';
+    }
+  } else {
+    colEspecialidad.style.display = 'none';
+    colOtra.style.display = 'none';
+    $('editEspecialidad').value = '';
+    $('editEspecialidadOtra').value = '';
   }
 }
 
@@ -2300,6 +2444,7 @@ async function verHistorialAuditoria(usuarioId, usuarioNombre) {
             'nombre': 'Nombre',
             'rol': 'Rol',
             'numero_consultorio': 'Consultorio',
+            'especialidad': 'Especialidad',
             'activo': 'Estado',
             'password': 'Contraseña'
           }[campo] || campo;
@@ -2526,9 +2671,28 @@ async function guardarCambiosUsuario(e) {
       return;
     }
     body.numero_consultorio = numero;
+    
+    // Capturar especialidad
+    const especialidadSelect = $('editEspecialidad').value;
+    if (!especialidadSelect) {
+      mostrarErrorEdicion('La especialidad es obligatoria para DOCTOR');
+      return;
+    }
+    
+    if (especialidadSelect === 'Otra') {
+      const especialidadOtra = $('editEspecialidadOtra').value.trim();
+      if (!especialidadOtra) {
+        mostrarErrorEdicion('Por favor especifica la especialidad personalizada');
+        return;
+      }
+      body.especialidad = especialidadOtra;
+    } else {
+      body.especialidad = especialidadSelect;
+    }
   } else if (rol_actual === 'doctor') {
-    // Si cambia de doctor a otro rol, limpiar consultorio
+    // Si cambia de doctor a otro rol, limpiar consultorio y especialidad
     body.numero_consultorio = null;
+    body.especialidad = null;
   }
   
   if (password && password.trim()) {
@@ -2568,6 +2732,7 @@ async function crearUsuario() {
   const nombre = $('newUserName').value.trim();
   const rol = $('newUserRol').value;
   let numero_consultorio = null;
+  let especialidad = null;
   
   // Validar campos vacíos
   if (!usuario || !password || !nombre || !rol) { 
@@ -2606,11 +2771,29 @@ async function crearUsuario() {
       showToast('El número de consultorio debe ser un número válido', 'error');
       return;
     }
+    
+    // Obtener especialidad
+    const especialidadSelect = $('newUserEspecialidad').value.trim();
+    if (!especialidadSelect) {
+      showToast('La especialidad es obligatoria para DOCTOR', 'error');
+      return;
+    }
+    
+    if (especialidadSelect === 'Otra') {
+      especialidad = $('newUserEspecialidadOtra').value.trim();
+      if (!especialidad) {
+        showToast('Especifica la especialidad', 'error');
+        return;
+      }
+    } else {
+      especialidad = especialidadSelect;
+    }
   }
   
   try {
     const body = { usuario, password: hashPassword(password), nombre, rol };
     if (numero_consultorio) body.numero_consultorio = numero_consultorio;
+    if (especialidad) body.especialidad = especialidad;
     
     const res = await apiFetch('/api/usuarios', { 
       method: 'POST', 
@@ -2624,6 +2807,8 @@ async function crearUsuario() {
       $('newUserPassword').value=''; 
       $('newUserName').value=''; 
       $('newUserConsultorio').value='';
+      $('newUserEspecialidad').value='';
+      $('newUserEspecialidadOtra').value='';
       $('passwordStrengthBar').style.display = 'none';
       $('passwordStrengthText').style.display = 'none';
       $('passwordRequirements').style.display = 'none';

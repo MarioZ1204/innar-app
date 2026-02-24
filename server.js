@@ -404,7 +404,7 @@ app.get('/api/usuarios', requireAuth, requireAdmin, async (req, res) => {
 });
 
 app.post('/api/usuarios', requireAuth, requireAdmin, async (req, res) => {
-  const { usuario, password, nombre, rol, numero_consultorio } = req.body || {};
+  const { usuario, password, nombre, rol, numero_consultorio, especialidad } = req.body || {};
   
   // Validaciones básicas
   if (!usuario || !password || !nombre || !rol) {
@@ -432,19 +432,26 @@ app.post('/api/usuarios', requireAuth, requireAdmin, async (req, res) => {
 
   // Validar consultorio para doctores
   let consultorioFinal = null;
+  let especialidadFinal = null;
   if (rol === 'doctor') {
     const numConsultorio = parseInt(numero_consultorio, 10);
     if (isNaN(numConsultorio) || numConsultorio < 1) {
       return res.status(400).json({ error: 'Número de consultorio debe ser un número válido' });
     }
     consultorioFinal = numConsultorio;
+    
+    // Validar especialidad
+    if (!especialidad || especialidad.trim() === '') {
+      return res.status(400).json({ error: 'La especialidad es obligatoria para DOCTOR' });
+    }
+    especialidadFinal = especialidad.trim();
   }
 
   try {
     const hash = bcrypt.hashSync(password, 10);
     const result = await db.execute(
-      'INSERT INTO usuarios (usuario, password_hash, nombre, rol, numero_consultorio) VALUES (?, ?, ?, ?, ?)',
-      [usuario, hash, nombre, rol, consultorioFinal]
+      'INSERT INTO usuarios (usuario, password_hash, nombre, rol, numero_consultorio, especialidad) VALUES (?, ?, ?, ?, ?, ?)',
+      [usuario, hash, nombre, rol, consultorioFinal, especialidadFinal]
     );
     
     // Registrar en auditoría
@@ -453,7 +460,7 @@ app.post('/api/usuarios', requireAuth, requireAdmin, async (req, res) => {
       adminId: req.session.usuarioId,
       adminUsuario: req.session.usuario,
       accion: 'CREAR',
-      cambios: { usuario, nombre, rol, numero_consultorio: consultorioFinal },
+      cambios: { usuario, nombre, rol, numero_consultorio: consultorioFinal, especialidad: especialidadFinal },
       ip: req.ip
     });
     
@@ -474,7 +481,7 @@ app.post('/api/usuarios', requireAuth, requireAdmin, async (req, res) => {
 
 app.patch('/api/usuarios/:id', requireAuth, requireAdmin, async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  const { usuario, password, nombre, rol, activo, numero_consultorio } = req.body || {};
+  const { usuario, password, nombre, rol, activo, numero_consultorio, especialidad } = req.body || {};
   if (!id) return res.status(400).json({ error: 'ID inválido' });
   try {
     const users = await db.query('SELECT * FROM usuarios WHERE id = ?', [id]);
@@ -516,6 +523,23 @@ app.patch('/api/usuarios/:id', requireAuth, requireAdmin, async (req, res) => {
       params.push(null);
     }
     
+    // Manejar especialidad
+    if (especialidad !== undefined && (nuevoRol === 'doctor' || rol === 'doctor')) {
+      let especialidadFinal = null;
+      if (especialidad !== null && especialidad.trim() !== '') {
+        especialidadFinal = especialidad.trim();
+      }
+      if (nuevoRol === 'doctor' && !especialidadFinal) {
+        return res.status(400).json({ error: 'La especialidad es obligatoria para DOCTOR' });
+      }
+      updates.push('especialidad = ?');
+      params.push(especialidadFinal);
+    } else if (rol !== 'doctor' && user.rol === 'doctor') {
+      // Si cambia DE doctor A otro rol, limpiar especialidad
+      updates.push('especialidad = ?');
+      params.push(null);
+    }
+    
     if (activo !== undefined) { updates.push('activo = ?'); params.push(activo ? 1 : 0); }
     if (password && password.trim()) {
       updates.push('password_hash = ?');
@@ -539,6 +563,9 @@ app.patch('/api/usuarios/:id', requireAuth, requireAdmin, async (req, res) => {
     }
     if (numero_consultorio !== undefined && numero_consultorio !== user.numero_consultorio) {
       cambios.numero_consultorio = { antes: user.numero_consultorio, despues: numero_consultorio };
+    }
+    if (especialidad !== undefined && especialidad !== user.especialidad) {
+      cambios.especialidad = { antes: user.especialidad || '', despues: especialidad || '' };
     }
     if (activo !== undefined && (activo ? 1 : 0) !== user.activo) {
       cambios.activo = { antes: user.activo, despues: activo ? 1 : 0 };
@@ -1516,10 +1543,12 @@ app.patch('/api/turnos/:id', async (req, res) => {
       return res.status(404).json({ error: 'Turno no encontrado' });
     }
 
-    // Si ya está ATENDIDO, no permitir cambios
-    if (turno.estado === 'ATENDIDO') {
+    // Si ya está ATENDIDO, verificar restrictions según rol
+    const userRole = req.session?.rol;
+    if (turno.estado === 'ATENDIDO' && userRole === 'recepcion') {
       return res.status(400).json({ error: 'No se puede modificar un turno ya atendido' });
     }
+    // Admin sí puede editar si está ATENDIDO
 
     // Construir query dinámicamente según qué campos se envíen
     const updates = [];
@@ -1637,7 +1666,7 @@ app.delete('/api/turnos/:id', requireAuth, requireRole(['admin', 'recepcion']), 
     }
 
     // Los admins y recepcion pueden eliminar, pero verificar restricciones para recepcion
-    const userRole = req.user?.rol;
+    const userRole = req.session?.rol;
     
     // Si es recepcion (no admin), aplicar restricciones
     if (userRole === 'recepcion') {

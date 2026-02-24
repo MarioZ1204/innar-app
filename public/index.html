@@ -350,8 +350,8 @@
             <section class="card no-print" id="agendaDoctorAcciones" style="display:none;background:#f0f9ff;border-left:4px solid #0369a1">
               <h3>Acciones Rápidas</h3>
               <div style="display:flex;gap:16px;flex-wrap:wrap">
-                <button id="btnLlamarSiguiente" class="btn-llamar">📢 Llamar siguiente paciente</button>
-                <button id="btnMarcarAtendido" class="btn-marcar">✓ Marcar como atendido</button>
+                <button id="btnLlamarSiguiente" class="btn-llamar">Llamar siguiente paciente</button>
+                <button id="btnMarcarAtendido" class="btn-marcar">Marcar como atendido</button>
               </div>
             </section>
             <section class="card no-print" id="agendaNuevoTurnoSection">
@@ -375,13 +375,12 @@
                     <option value="Medicina Para Todos">Medicina Para Todos</option>
                   </select>
                 </div>
-                <div class="col"><label>Prioridad</label><select id="nuevoTurnoPrioridadMedica"><option value="2">Normal</option><option value="1">Prioritario</option></select></div>
               </div>
               <div style="margin-top:8px;padding:8px;border-radius:4px;background-color:#fff3cd;border:1px solid #ffc107;display:none;font-size:0.9rem;color:#856404" id="mensajeDisponibilidad"></div>
               <div class="row" style="margin-top:12px">
                 <div class="col"><label>Hora</label><select id="nuevoTurnoHoraMedica"></select></div>
                 <div class="col"><label>Teléfono</label><input id="nuevoPacienteTelefonoMedica" type="tel" placeholder="Teléfono" /></div>
-                <div class="col"><label>Tipo de consulta</label><select id="nuevoTurnoTipoMedica"><option value="">Seleccionar</option><option>Consulta General</option><option>Control</option><option>Urgencia</option><option>Electrodiagnóstico</option><option>Otro</option></select></div>
+                <div class="col"><label>Tipo de consulta</label><select id="nuevoTurnoTipoMedica"><option value="">Seleccionar</option><option>Consulta Por Primera Vez - Neurologia</option><option>Consulta Por Control - Neurologia</option><option>Urgencia</option><option>Electrodiagnóstico</option><option>Otro</option></select></div>
                 <div class="col"><label>Oportunidad (n°)</label><input id="nuevoTurnoOportunidadMedica" type="number" min="0" step="1" /></div>
               </div>
               <div class="row" style="margin-top:8px">
@@ -506,6 +505,8 @@
               </div>
               <div class="col"><label>Nombre</label><input id="newUserName" type="text" placeholder="Nombre completo" /></div>
               <div class="col"><label>Rol</label><select id="newUserRol"><option value="recepcion">Recepción</option><option value="electro">Electrodiagnóstico</option><option value="doctor">Doctor</option><option value="admin">Administrador</option></select></div>
+              <div class="col" id="especialidadCol" style="display:none"><label>Especialidad</label><select id="newUserEspecialidad"><option value="">Seleccionar</option><option>Neurología</option><option>Epileptología</option><option>Psicología</option><option>Neuropsicología</option><option>Psiquiatría</option><option>Otra</option></select></div>
+              <div class="col" id="especialidadOtraCol" style="display:none"><input id="newUserEspecialidadOtra" type="text" placeholder="Especificar especialidad" /></div>
               <div class="col" id="consultorioCol" style="display:none"><label>Consultorio #</label><input id="newUserConsultorio" type="number" placeholder="Número de consultorio" min="1" /></div>
               <div class="col" style="display:flex;align-items:flex-end"><button id="crearUsuario" style="width:100%">Crear Usuario</button></div>
             </div>
@@ -681,6 +682,22 @@
         <div id="editConsultorioCol" style="display:none">
           <label for="editConsultorio" style="display:block;margin-bottom:8px;font-weight:500;color:#333;font-size:14px">Número de Consultorio</label>
           <input id="editConsultorio" type="number" placeholder="Número de consultorio" min="1" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;font-size:14px;transition:all 0.2s" onfocus="this.style.borderColor='#627371';this.style.boxShadow='0 0 0 3px rgba(98,115,113,0.1)'" onblur="this.style.borderColor='#d1d5db';this.style.boxShadow='none'" />
+        </div>
+        <div id="editEspecialidadCol" style="display:none">
+          <label for="editEspecialidad" style="display:block;margin-bottom:8px;font-weight:500;color:#333;font-size:14px">Especialidad</label>
+          <select id="editEspecialidad" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;font-size:14px;background-color:white;cursor:pointer;transition:all 0.2s" onfocus="this.style.borderColor='#627371';this.style.boxShadow='0 0 0 3px rgba(98,115,113,0.1)'" onblur="this.style.borderColor='#d1d5db';this.style.boxShadow='none'">
+            <option value="">Seleccionar especialidad</option>
+            <option value="Neurología">Neurología</option>
+            <option value="Epileptología">Epileptología</option>
+            <option value="Psicología">Psicología</option>
+            <option value="Neuropsicología">Neuropsicología</option>
+            <option value="Psiquiatría">Psiquiatría</option>
+            <option value="Otra">Otra</option>
+          </select>
+        </div>
+        <div id="editEspecialidadOtraCol" style="display:none">
+          <label for="editEspecialidadOtra" style="display:block;margin-bottom:8px;font-weight:500;color:#333;font-size:14px">Especificar Especialidad</label>
+          <input id="editEspecialidadOtra" type="text" placeholder="Escribir especialidad personalizada" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;font-size:14px;transition:all 0.2s" onfocus="this.style.borderColor='#627371';this.style.boxShadow='0 0 0 3px rgba(98,115,113,0.1)'" onblur="this.style.borderColor='#d1d5db';this.style.boxShadow='none'" />
         </div>
         <div>
           <label for="editPassword" style="display:block;margin-bottom:8px;font-weight:500;color:#333;font-size:14px">Nueva Contraseña</label>
