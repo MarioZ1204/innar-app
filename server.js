@@ -252,7 +252,7 @@ app.post('/api/login', async (req, res) => {
 
     res.json({ 
       ok: true, 
-      usuario: { id: user.id, usuario: user.usuario, nombre: user.nombre, rol: user.rol }
+      usuario: { id: user.id, usuario: user.usuario, nombre: user.nombre, rol: user.rol, especialidad: user.especialidad }
     });
   } catch (e) {
     console.error(e);
@@ -271,7 +271,7 @@ app.get('/api/sesion', async (req, res) => {
   if (req.session && req.session.usuarioId) {
     try {
       const users = await db.query(
-        'SELECT id, usuario, nombre, rol FROM usuarios WHERE id = ?',
+        'SELECT id, usuario, nombre, rol, especialidad FROM usuarios WHERE id = ?',
         [req.session.usuarioId]
       );
       const user = users.length > 0 ? users[0] : null;
@@ -1043,7 +1043,7 @@ app.get('/api/consultorios', async (req, res) => {
 // Listar medicos (usuarios con rol 'doctor') — accesible a recepcion y doctores
 app.get('/api/medicos', requireAuth, async (req, res) => {
   try {
-    const medicos = await db.query("SELECT id, nombre, usuario FROM usuarios WHERE rol = 'doctor' AND activo = 1 ORDER BY nombre ASC");
+    const medicos = await db.query("SELECT id, nombre, usuario, especialidad FROM usuarios WHERE rol = 'doctor' AND activo = 1 ORDER BY nombre ASC");
     res.json(medicos);
   } catch (e) {
     console.error(e);

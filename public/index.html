@@ -70,6 +70,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
   <script src="/socket.io/socket.io.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:wght@400;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
   <!-- ========== SPLASH SCREEN ========== -->
@@ -119,6 +120,7 @@
         <button id="btnLogout" class="btn-logout">Cerrar sesión</button>
       </div>
     </header>
+    <div id="doctorGreeting" class="doctor-greeting hidden"></div>
     <div class="menu-content">
       <h2>¿Qué deseas hacer?</h2>
       <div class="menu-cards" id="menuCardsContainer">
@@ -380,8 +382,12 @@
               <div class="row" style="margin-top:12px">
                 <div class="col"><label>Hora</label><select id="nuevoTurnoHoraMedica"></select></div>
                 <div class="col"><label>Teléfono</label><input id="nuevoPacienteTelefonoMedica" type="tel" placeholder="Teléfono" /></div>
-                <div class="col"><label>Tipo de consulta</label><select id="nuevoTurnoTipoMedica"><option value="">Seleccionar</option><option>Consulta Por Primera Vez - Neurologia</option><option>Consulta Por Control - Neurologia</option><option>Urgencia</option><option>Electrodiagnóstico</option><option>Otro</option></select></div>
+                <div class="col"><label>Tipo de consulta</label><select id="nuevoTurnoTipoMedica"><option value="">Seleccionar</option></select></div>
                 <div class="col"><label>Oportunidad (n°)</label><input id="nuevoTurnoOportunidadMedica" type="number" min="0" step="1" /></div>
+              </div>
+              <div class="row" id="otraConsultaRow" style="margin-top:8px;display:none">
+                <div class="col" style="flex:2"><label>Especificar tipo de consulta</label><input id="otraConsultaInput" type="text" placeholder="Escribir tipo de consulta personalizado" style="width:100%" /></div>
+                <div class="col" style="flex:1;display:flex;align-items:flex-end"><button id="agregarOtraConsulta" type="button" style="width:100%">Agregar</button></div>
               </div>
               <div class="row" style="margin-top:8px">
                 <div class="col" style="width:100%"><label>Notas</label><textarea id="nuevoTurnoNotasMedica" rows="2" placeholder="Observaciones, preparación, info relevante..."></textarea></div>
@@ -391,19 +397,19 @@
             </section>
             <section class="card">
               <h3>Citas del Día</h3>
-              <div id="turnosListMedica" style="overflow-x:auto">
-                <table id="turnosTableMedica" style="width:100%;border-collapse:collapse">
+              <div id="turnosListMedica" style="overflow-x:auto;border-radius:8px;overflow:hidden">
+                <table id="turnosTableMedica" class="modern-table">
                   <thead>
-                    <tr style="background:#f0f0f0">
-                      <th style="padding:8px;border:1px solid #ddd">Turno</th>
-                      <th style="padding:8px;border:1px solid #ddd" class="col-hora">Hora</th>
-                      <th style="padding:8px;border:1px solid #ddd">Paciente</th>
-                      <th style="padding:8px;border:1px solid #ddd">Tipo consulta</th>
-                      <th style="padding:8px;border:1px solid #ddd">Documento</th>
-                      <th style="padding:8px;border:1px solid #ddd">Entidad</th>
-                      <th style="padding:8px;border:1px solid #ddd">Estado</th>
-                      <th style="padding:8px;border:1px solid #ddd">Notas</th>
-                      <th style="padding:8px;border:1px solid #ddd">Acciones</th>
+                    <tr>
+                      <th>Turno</th>
+                      <th class="col-hora">Hora</th>
+                      <th>Paciente</th>
+                      <th>Tipo consulta</th>
+                      <th>Documento</th>
+                      <th>Entidad</th>
+                      <th>Estado</th>
+                      <th>Notas</th>
+                      <th>Acciones</th>
                     </tr>
                   </thead>
                   <tbody id="turnosTableBodyMedica">

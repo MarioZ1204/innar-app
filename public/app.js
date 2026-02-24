@@ -26,6 +26,58 @@ let lastReciboId = null;
 let currentUser = null;
 let currentModule = null;
 let selectedDoctorId = null;
+let selectedDoctorEspecialidad = null;
+
+// Mapeo de especialidades a tipos de consulta
+const ESPECIALIDAD_TIPOS_CONSULTA = {
+  'Neurología': [
+    'Consulta de Primera Vez por Neurología',
+    'Consulta de Control por Neurología',
+    'Consulta Virtual de Primera Vez por Neurología',
+    'Consulta Virtual de Control por Neurología',
+    'Aplicación de Toxina Botulínica (Botox)',
+    'Control de Toxina Botulínica (Botox)',
+    'Actigrafía',
+    'Rev. Neuroestimulador',
+    'Agente Anestésico',
+    'Particular',
+    'Abogado',
+    'Otra'
+  ],
+  'Epileptología': [
+    'Consulta de Primera Vez por Epileptología',
+    'Consulta de Control por Epileptología',
+    'Consulta Virtual de Primera Vez por Epileptología',
+    'Consulta Virtual de Control por Epileptología',
+    'Consulta de Primera Vez por Neurología',
+    'Consulta de Control por Neurología',
+    'Consulta Virtual de Primera Vez por Neurología',
+    'Consulta Virtual de Control por Neurología',
+    'Aplicación de Toxina Botulínica (Botox)',
+    'Control de Toxina Botulínica (Botox)',
+    'Actigrafía',
+    'Rev. Neuroestimulador',
+    'Bloqueo Mioneural',
+    'Particular',
+    'Abogado',
+    'Otra'
+  ],
+  'Psicología': [
+    'Consulta de Primera Vez por Psicología',
+    'Consulta de Control por Psicología',
+    'Otra'
+  ],
+  'Neuropsicología': [
+    'Consulta de Primera Vez por Neuropsicología',
+    'Consulta de Control por Neuropsicología',
+    'Otra'
+  ],
+  'Psiquiatría': [
+    'Consulta de Primera Vez por Psiquiatría',
+    'Consulta de Control por Psiquiatría',
+    'Otra'
+  ]
+};
 
 // Intervalo de auto-refresh para Agenda Médica
 let agendaMedicaInterval = null;
@@ -46,6 +98,20 @@ function isRecepcion() { return currentUser && currentUser.rol === 'recepcion'; 
 function isElectro() { return currentUser && currentUser.rol === 'electro'; }
 function isDoctor() { return currentUser && currentUser.rol === 'doctor'; }
 function canDeleteRecibos() { return isAdmin(); }
+
+// Mostrar saludo para doctores
+function mostrarSaludoDoctor() {
+  const greeting = $('doctorGreeting');
+  if (!greeting) return;
+  
+  if (isDoctor()) {
+    const nombre = currentUser?.nombre || currentUser?.usuario || 'Doctor';
+    greeting.textContent = `¡Hola Dr. ${nombre}!`;
+    greeting.classList.remove('hidden');
+  } else {
+    greeting.classList.add('hidden');
+  }
+}
 
 // ========== LOGIN Y NAVEGACIÓN ==========
 function showView(id) {
@@ -76,6 +142,7 @@ async function checkSession() {
       $('menuUserName').textContent = currentUser?.nombre || currentUser?.usuario || 'Usuario';
       sessionStorage.setItem('nombre_usuario', currentUser?.nombre || '');
       updateMenuByRole();
+      mostrarSaludoDoctor();
       // Restaurar módulo anterior si existe (sessionStorage = solo esta pestaña)
       const savedModule = sessionStorage.getItem(lsKeyCurrentModule);
       // Restaurar doctor seleccionado si existe (para RECEPCIONISTA)
@@ -117,6 +184,7 @@ async function doLogin(usuario, password) {
       $('menuUserName').textContent = currentUser?.nombre || currentUser?.usuario || 'Usuario';
       sessionStorage.setItem('nombre_usuario', currentUser?.nombre || '');
       updateMenuByRole();
+      mostrarSaludoDoctor();
       initSocket();
       setupMenuHandlers();
       history.pushState({view: 'menu'}, '', '#menu');
@@ -436,7 +504,7 @@ async function showDoctorSelectionModal() {
       btn.textContent = med.nombre;
       btn.onmouseover = () => btn.style.background = '#f3f4f6';
       btn.onmouseout = () => btn.style.background = 'white';
-      btn.addEventListener('click', () => selectDoctor(med.id, med.nombre));
+      btn.addEventListener('click', () => selectDoctor(med.id, med.nombre, med.especialidad));
       container.appendChild(btn);
     });
   }
@@ -446,15 +514,107 @@ async function showDoctorSelectionModal() {
   $('btnCancelarSelectDoctor').onclick = closeDoctorSelectionModal;
 }
 
-function selectDoctor(doctorId, doctorName) {
+function selectDoctor(doctorId, doctorName, especialidad) {
   selectedDoctorId = doctorId;
+  selectedDoctorEspecialidad = especialidad;
   sessionStorage.setItem(lsKeySelectedDoctor, doctorId);
+  sessionStorage.setItem('selected_doctor_especialidad', especialidad || '');
   closeDoctorSelectionModal();
   // Actualizar horas disponibles con el nuevo doctor
   actualizarHorasDisponibles();
+  // Cargar tipos de consulta según especialidad
+  cargarTiposConsultaSegunEspecialidad(especialidad);
   // Forzar reinicialización del módulo agenda médica cuando se cambiadel doctor
   initAgendaDone = false;
   goToModule('agenda-medica');
+}
+
+function cargarTiposConsultaSegunEspecialidad(especialidad) {
+  const selectTipo = $('nuevoTurnoTipoMedica');
+  if (!selectTipo) return;
+  
+  // Limpiar opciones actuales excepto la primera (vacía)
+  selectTipo.innerHTML = '<option value="">Seleccionar</option>';
+  
+  // Obtener tipos de consulta según especialidad
+  const tipos = ESPECIALIDAD_TIPOS_CONSULTA[especialidad] || [];
+  
+  tipos.forEach(tipo => {
+    const option = document.createElement('option');
+    option.value = tipo;
+    option.textContent = tipo;
+    selectTipo.appendChild(option);
+  });
+  
+  // Remover listeners anteriores para evitar duplicados
+  selectTipo.removeEventListener('change', manejarCambioTipoConsulta);
+  // Agregar nuevo listener
+  selectTipo.addEventListener('change', manejarCambioTipoConsulta);
+}
+
+function manejarCambioTipoConsulta(e) {
+  manejarOtraConsulta(e.target.value);
+}
+
+function manejarOtraConsulta(tipoSeleccionado) {
+  const otraConsultaRow = $('otraConsultaRow');
+  const otraConsultaInput = $('otraConsultaInput');
+  const agregarBtn = $('agregarOtraConsulta');
+  
+  if (tipoSeleccionado === 'Otra') {
+    // Mostrar campo para agregar consulta personalizada
+    otraConsultaRow.style.display = '';
+    otraConsultaInput.value = '';
+    otraConsultaInput.focus();
+    
+    // Remover listener anterior si existe
+    agregarBtn.removeEventListener('click', agregarConsultaPersonalizada);
+    // Agregar nuevo listener
+    agregarBtn.addEventListener('click', agregarConsultaPersonalizada);
+    
+    // Permitir Enter en el input
+    otraConsultaInput.removeEventListener('keypress', manejarEnterConsulta);
+    otraConsultaInput.addEventListener('keypress', manejarEnterConsulta);
+  } else {
+    // Ocultar campo
+    otraConsultaRow.style.display = 'none';
+    otraConsultaInput.value = '';
+  }
+}
+
+function agregarConsultaPersonalizada() {
+  const selectTipo = $('nuevoTurnoTipoMedica');
+  const otraConsultaInput = $('otraConsultaInput');
+  const nuevaConsulta = otraConsultaInput.value.trim();
+  
+  if (!nuevaConsulta) {
+    showToast('Por favor escribe el tipo de consulta', 'warning');
+    otraConsultaInput.focus();
+    return;
+  }
+  
+  // Agregar la nueva opción al select
+  const option = document.createElement('option');
+  option.value = nuevaConsulta;
+  option.textContent = nuevaConsulta;
+  selectTipo.appendChild(option);
+  
+  // Seleccionar la nueva opción
+  selectTipo.value = nuevaConsulta;
+  
+  // Limpiar input y ocultar fila
+  otraConsultaInput.value = '';
+  $('otraConsultaRow').style.display = 'none';
+  
+  // Mostrar confirmación
+  showToast(`Consulta agregada: ${nuevaConsulta}`, 'success');
+}
+
+function manejarEnterConsulta(e) {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    agregarConsultaPersonalizada();
+  }
 }
 
 function closeDoctorSelectionModal() {
@@ -515,17 +675,25 @@ async function initAgendaMedica() {
     const medico = medicos.find(m => m.id == selectedDoctorId);
     if (medico) {
       $('agendaMedicaDoctorDisplay').textContent = medico.nombre;
+      selectedDoctorEspecialidad = medico.especialidad;
+      sessionStorage.setItem('selected_doctor_especialidad', medico.especialidad || '');
+      // Cargar tipos de consulta según especialidad
+      cargarTiposConsultaSegunEspecialidad(medico.especialidad);
     } else {
       $('agendaMedicaDoctorDisplay').textContent = '-';
     }
   } else if (isDoctor()) {
     // Si es un DOCTOR, mostrar su propio nombre
     selectedDoctorId = currentUser?.id;
+    selectedDoctorEspecialidad = currentUser?.especialidad;
     $('agendaMedicaDoctorDisplay').textContent = currentUser?.nombre || currentUser?.usuario || '-';
+    cargarTiposConsultaSegunEspecialidad(currentUser?.especialidad);
   } else if (medicos.length) {
     // Otros roles: mostrar el primero disponible
     selectedDoctorId = medicos[0].id;
+    selectedDoctorEspecialidad = medicos[0].especialidad;
     $('agendaMedicaDoctorDisplay').textContent = medicos[0].nombre;
+    cargarTiposConsultaSegunEspecialidad(medicos[0].especialidad);
   } else {
     $('agendaMedicaDoctorDisplay').textContent = '-';
   }

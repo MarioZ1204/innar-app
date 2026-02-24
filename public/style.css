@@ -40,6 +40,34 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxyge
 .menu-user span { color: #374151; font-weight: 500; }
 .btn-logout { padding: 10px 16px; background: #2d4a47; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 0.9rem; transition: all 0.2s; }
 .btn-logout:hover { background: #1f3634; }
+
+/* Doctor Greeting */
+.doctor-greeting {
+  padding: 24px 30px;
+  text-align: center;
+  font-family: 'Bodoni Moda', 'Boda', serif;
+  font-size: 28px;
+  font-weight: 600;
+  font-style: italic;
+  color: #166534;
+  letter-spacing: 0.5px;
+  animation: slideFromLeft 0.6s ease-out;
+}
+
+.doctor-greeting.hidden {
+  display: none !important;
+}
+
+@keyframes slideFromLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-50px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
 .menu-content { max-width: 700px; margin: 0 auto; padding: 50px 24px 60px 30px; }
 .menu-content h2 { font-size: 1.5rem; color: #1f2937; margin: 0 0 32px 0; text-align: center; }
 .menu-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 24px; }
@@ -98,6 +126,85 @@ button.remove { padding:6px 10px; font-size:.85rem; width:100%; }
 .servicio-item button { padding:4px 8px; font-size:0.85rem; background:#dc2626; margin-left:8px }
 #receiptPreview { background:#fff; border:2px solid #e5e7eb }
 .page { display:none }
+
+/* Modern Table Styles */
+.modern-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  background: white;
+}
+
+.modern-table thead {
+  background: #8AA6A1;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.modern-table thead tr {
+  box-shadow: 0 2px 8px rgba(138, 166, 161, 0.3);
+}
+
+.modern-table thead th {
+  padding: 16px 14px;
+  text-align: left;
+  font-weight: 700;
+  color: #8AA6A1;
+  font-size: 0.95rem;
+  letter-spacing: 0.5px;
+  border: none;
+  text-transform: uppercase;
+}
+
+.modern-table thead th:first-child {
+  border-radius: 8px 0 0 0;
+}
+
+.modern-table thead th:last-child {
+  border-radius: 0 8px 0 0;
+}
+
+.modern-table tbody tr {
+  border-bottom: 1px solid #e5e7eb;
+  transition: all 0.2s ease;
+}
+
+.modern-table tbody tr:hover {
+  background-color: #f8fafb;
+  box-shadow: 0 2px 8px rgba(138, 166, 161, 0.1);
+}
+
+.modern-table tbody tr:last-child {
+  border-bottom: none;
+}
+
+.modern-table tbody tr:last-child td:first-child {
+  border-radius: 0 0 0 8px;
+}
+
+.modern-table tbody tr:last-child td:last-child {
+  border-radius: 0 0 8px 0;
+}
+
+.modern-table td {
+  padding: 12px;
+  border: none;
+  font-size: 0.9rem;
+  color: #374151;
+}
+
+.modern-table td a {
+  color: #8AA6A1;
+  text-decoration: none;
+  font-weight: 500;
+  transition: color 0.2s;
+}
+
+.modern-table td a:hover {
+  color: #7a9390;
+  text-decoration: underline;
+}
 .page.active { display:block }
 .agenda-page { display:none }
 .agenda-page.active { display:block }
