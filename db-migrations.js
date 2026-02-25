@@ -186,6 +186,33 @@ const migrations = [
     name: 'citas_electro_equipo_nullable',
     description: 'Hacer que equipo_id sea nullable en citas_electro (se selecciona después)',
     sql: `ALTER TABLE citas_electro MODIFY COLUMN equipo_id INT NULL`
+  },
+  {
+    name: 'citas_electro_estado_enum_fix',
+    description: 'Actualizar valores ENUM de estado en citas_electro',
+    sql: [
+      "UPDATE citas_electro SET estado = 'Programado' WHERE estado = 'PROGRAMADO'",
+      "UPDATE citas_electro SET estado = 'Completado' WHERE estado = 'REALIZADO'",
+      "UPDATE citas_electro SET estado = 'Cancelado' WHERE estado = 'CANCELADO'",
+      "ALTER TABLE citas_electro MODIFY COLUMN estado ENUM('Programado', 'En Sala', 'En Estudio', 'Completado', 'No Asistió', 'Cancelado') NOT NULL DEFAULT 'Programado'",
+      "ALTER TABLE citas_electro ADD COLUMN IF NOT EXISTS programado_por_nombre VARCHAR(150) AFTER diagnostico_id"
+    ]
+  },
+  {
+    name: 'citas_electro_hora_agendamiento',
+    description: 'Agregar columna hora_agendamiento para almacenar hora de programación',
+    sql: `
+      ALTER TABLE citas_electro 
+      ADD COLUMN IF NOT EXISTS hora_agendamiento TIME AFTER fecha
+    `
+  },
+  {
+    name: 'citas_electro_hora_inicio_nullable',
+    description: 'Hacer hora_inicio nullable (solo se asigna al iniciar estudio)',
+    sql: `
+      ALTER TABLE citas_electro 
+      MODIFY COLUMN hora_inicio TIME NULL
+    `
   }
 ];
 

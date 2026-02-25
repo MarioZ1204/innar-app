@@ -1013,6 +1013,21 @@ app.post('/api/pacientes', async (req, res) => {
     return res.status(400).json({ error: 'Nombre es obligatorio' });
   }
 
+  // Validar nombre: solo letras y espacios
+  if (!/^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$/.test(nombre)) {
+    return res.status(400).json({ error: 'El nombre no puede contener números o caracteres especiales' });
+  }
+
+  // Validar documento si se proporciona: solo números
+  if (documento && !/^\d+$/.test(documento)) {
+    return res.status(400).json({ error: 'El documento solo puede contener números' });
+  }
+
+  // Validar teléfono si se proporciona: exactamente 10 dígitos
+  if (telefono && !/^\d{10}$/.test(telefono)) {
+    return res.status(400).json({ error: 'El teléfono debe tener exactamente 10 dígitos' });
+  }
+
   try {
     const result = await db.execute(
       'INSERT INTO pacientes (nombre, documento, telefono, email) VALUES (?, ?, ?, ?)',
@@ -2026,7 +2041,6 @@ app.post('/api/diagnosticos/import-excel', requireAuth, upload.single('file'), a
   }
 });
 
-
 // Listar citas electro por fecha (solo fecha requerida)
 app.get('/api/citas-electro', async (req, res) => {
   const { fecha, equipo_id } = req.query;
@@ -2035,7 +2049,6 @@ app.get('/api/citas-electro', async (req, res) => {
   }
 
   try {
-    console.log('🔍 GET /api/citas-electro:', { fecha, equipo_id });
     
     // Si hay equipo_id, filtrar por eso también
     let query = `
@@ -2044,6 +2057,7 @@ app.get('/api/citas-electro', async (req, res) => {
              p.documento AS paciente_documento,
              p.telefono AS telefono,
              d.nombre AS diagnostico_nombre,
+             d.codigo AS diagnostico_codigo,
              e.nombre AS equipo_nombre
       FROM citas_electro c
       JOIN pacientes p ON p.id = c.paciente_id
@@ -2061,10 +2075,6 @@ app.get('/api/citas-electro', async (req, res) => {
     query += ` ORDER BY c.hora_agendamiento ASC, c.hora_inicio ASC, c.id ASC`;
     
     const citas = await db.query(query, params);
-    console.log(`✅ Se encontraron ${citas.length} cita(s)`);
-    if (citas.length > 0) {
-      console.log('📋 Sample cita:', JSON.stringify(citas[0], null, 2));
-    }
     res.json(citas);
   } catch (e) {
     console.error('❌ Error en GET /api/citas-electro:', e);
@@ -2081,6 +2091,16 @@ app.post('/api/citas-electro', async (req, res) => {
 
   if (!paciente_id || !fecha || !horaAgendamiento) {
     return res.status(400).json({ error: 'paciente_id, fecha y hora_agendamiento son obligatorios' });
+  }
+
+  // Validar formato de fecha (YYYY-MM-DD)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
+    return res.status(400).json({ error: 'Fecha en formato inválido (debe ser YYYY-MM-DD)' });
+  }
+
+  // Validar formato de hora (HH:MM o HH:MM:SS)
+  if (!/^\d{2}:\d{2}(:\d{2})?$/.test(horaAgendamiento)) {
+    return res.status(400).json({ error: 'Hora en formato inválido (debe ser HH:MM o HH:MM:SS)' });
   }
 
   try {
@@ -2109,7 +2129,27 @@ app.post('/api/citas-electro', async (req, res) => {
       estado || 'Programado'
     ]);
     
+    console.log(`✅ Cita creada (ID: ${result.insertId}). Emitiendo socket events...`);
+    
+    // Emitir evento de socket para actualizar en tiempo real
+    if (app.io) {
+      console.log('📡 Emitiendo: electro:cita-creada a todos los clientes');
+      app.io.emit('electro:cita-creada', {
+        id: result.insertId,
+        paciente_id,
+        fecha,
+        hora_agendamiento: horaAgendamiento,
+        estudio,
+        estado: estado || 'Programado'
+      });
+      console.log('📡 Emitiendo: electro:actualizar-lista a todos los clientes');
+      app.io.emit('electro:actualizar-lista', { type: 'creada', id: result.insertId });
+    } else {
+      console.warn('⚠️ app.io no está disponible');
+    }
+    
     console.log('✅ Cita creada con ID:', result.insertId);
+    
     res.json({ ok: true, id: result.insertId });
   } catch (e) {
     console.error('❌ Error creando cita:', e);
@@ -2201,7 +2241,31 @@ app.patch('/api/citas-electro/:id', requireAuth, async (req, res) => {
     
     values.push(id);
     
+    // Construir objeto de cambios para logging y socket
+    const cambios = {};
+    if (equipo_id !== undefined) cambios.equipo_id = equipo_id;
+    if (estado !== undefined) cambios.estado = estado;
+    if (hora_inicio !== undefined) cambios.hora_inicio = hora_inicio;
+    if (hora_fin !== undefined) cambios.hora_fin = hora_fin;
+    
     await db.execute(`UPDATE citas_electro SET ${updates.join(', ')} WHERE id = ?`, values);
+    
+    console.log(`✅ Cita actualizada (ID: ${id}). Cambios: ${JSON.stringify(cambios)}. Emitiendo socket events...`);
+    
+    // Emitir evento de socket para actualizar en tiempo real
+    if (app.io) {
+      console.log('📡 Emitiendo: electro:cita-actualizada a todos los clientes');
+      app.io.emit('electro:cita-actualizada', {
+        id,
+        ...cambios,
+        editado_por: req.session.usuarioNombre || 'Sistema'
+      });
+      console.log('📡 Emitiendo: electro:actualizar-lista a todos los clientes');
+      app.io.emit('electro:actualizar-lista', { type: 'actualizada', id, cambios });
+    } else {
+      console.warn('⚠️ app.io no está disponible');
+    }
+    
     res.json({ ok: true });
   } catch (e) {
     console.error(e);
@@ -2232,6 +2296,22 @@ app.delete('/api/citas-electro/:id', requireAuth, async (req, res) => {
     }
 
     await db.execute('DELETE FROM citas_electro WHERE id = ?', [id]);
+    
+    console.log(`✅ Cita eliminada (ID: ${id}). Emitiendo socket events...`);
+    
+    // Emitir evento de socket para actualizar en tiempo real
+    if (app.io) {
+      console.log('📡 Emitiendo: electro:cita-eliminada a todos los clientes');
+      app.io.emit('electro:cita-eliminada', {
+        id,
+        cita_info: cita
+      });
+      console.log('📡 Emitiendo: electro:actualizar-lista a todos los clientes');
+      app.io.emit('electro:actualizar-lista', { type: 'eliminada', id });
+    } else {
+      console.warn('⚠️ app.io no está disponible');
+    }
+    
     res.json({ ok: true });
   } catch (e) {
     console.error(e);
@@ -2910,6 +2990,24 @@ const PORT = process.env.PORT || 3000;
       socket.on('electro:completar-turno', (data) => {
         io.emit('electro:actualizar-equipo', data.equipo);
         io.emit('electro:actualizar-lista');
+      });
+
+      // Evento: Cita creada en electrodiagnóstico
+      socket.on('electro:cita-creada', (data) => {
+        io.emit('electro:actualizar-lista');
+        io.emit('electro:nueva-cita', data);
+      });
+
+      // Evento: Cita actualizada en electrodiagnóstico
+      socket.on('electro:cita-actualizada', (data) => {
+        io.emit('electro:actualizar-lista');
+        io.emit('electro:cita-cambio-estado', data);
+      });
+
+      // Evento: Cita eliminada en electrodiagnóstico
+      socket.on('electro:cita-eliminada', (data) => {
+        io.emit('electro:actualizar-lista');
+        io.emit('electro:cita-removida', data);
       });
 
       // Evento: Nuevo usuario creado

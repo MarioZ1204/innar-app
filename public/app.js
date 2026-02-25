@@ -28,6 +28,7 @@ let currentModule = null;
 let selectedDoctorId = null;
 let citaElectroSeleccionada = null;
 let selectedDoctorEspecialidad = null;
+let selectedDiagnosticoElectroId = null;
 
 // Mapeo de especialidades a tipos de consulta
 const ESPECIALIDAD_TIPOS_CONSULTA = {
@@ -223,10 +224,14 @@ async function doLogout() {
   try {
     await apiFetch('/api/logout', { method: 'POST' });
   } catch (e) {}
+  // Resetear flag de listeners de socket-electro
+  window.listenersConfigured = false;
+  window.socketElectroListenerAdded = false;
   closeSocket();
   sessionStorage.removeItem(lsKeyCurrentModule);
   sessionStorage.removeItem(lsKeySelectedDoctor);
   currentModule = null;
+  window.currentModule = null;  // Limpiar para sockets
   showView('view-login');
   history.pushState({view: 'login'}, '', '#login');
 }
@@ -235,6 +240,7 @@ let initRecibosDone = false, initAgendaDone = false, initElectroDone = false, in
 function goToModule(moduleId) {
   showView(`view-${moduleId}`);
   currentModule = moduleId;
+  window.currentModule = moduleId;  // Exponer para sockets
   sessionStorage.setItem(lsKeyCurrentModule, moduleId);
   history.pushState({view: moduleId}, '', `#${moduleId}`);
   if (moduleId === 'recibos') { if (!initRecibosDone) initRecibos(); else cargarLista(); }
@@ -253,10 +259,14 @@ function goToModule(moduleId) {
 function goToMenu() {
   showView('view-menu');
   currentModule = null;
+  window.currentModule = null;  // Limpiar para sockets
   sessionStorage.removeItem(lsKeyCurrentModule);
   stopAgendaMedicaAutoRefresh();
   // Resetear flags de inicialización para permitir reinicialización
   initAgendaDone = false;
+  initElectroDone = false;
+  // Resetear flag de listeners de socket-electro
+  window.listenersConfigured = false;
   // Limpiar selectedDoctorId cuando se vuelve al menú
   selectedDoctorId = null;
   sessionStorage.removeItem(lsKeySelectedDoctor);
@@ -317,6 +327,23 @@ function escapeHtml(str) {
   const div = document.createElement('div');
   div.textContent = s;
   return div.innerHTML;
+}
+
+/**
+ * Formatea una hora al formato HH:MM
+ * Maneja: null, undefined, '', 'null', HH:MM, HH:MM:SS
+ * @param {string|null} valor - La hora a formatear
+ * @returns {string} Hora en formato HH:MM o '-' si es inválida
+ */
+function formatearHora(valor) {
+  if (valor === null || valor === undefined || valor === '' || valor === 'null') {
+    return '-';
+  }
+  const strValor = String(valor).trim();
+  if (strValor.length >= 5) {
+    return strValor.substring(0, 5); // HH:MM
+  }
+  return strValor || '-';
 }
 
 // Servicios por defecto
@@ -1819,7 +1846,7 @@ function renderTurnoRowMedica(tbody, t, animateTargetId, hayEnAtencion) {
     } else {
       tr.innerHTML = `
         <td style="padding:8px;border:1px solid #ddd">${t.numero_turno || ''}</td>
-        <td class="col-hora" style="padding:8px;border:1px solid #ddd">${escapeHtml(t.hora || '')}</td>
+        <td class="col-hora" style="padding:8px;border:1px solid #ddd">${escapeHtml(formatearHora(t.hora))}</td>
         <td style="padding:8px;border:1px solid #ddd">${escapeHtml(t.paciente_nombre)}</td>
         <td style="padding:8px;border:1px solid #ddd">${escapeHtml(t.tipo_consulta || '')}</td>
         <td style="padding:8px;border:1px solid #ddd">${escapeHtml(t.paciente_documento||'')}</td>
@@ -2236,7 +2263,6 @@ async function initElectro() {
   try {
     const res = await apiFetch('/api/equipos-electro');
     const equipos = await res.json();
-    console.log('Equipos cargados:', equipos);
     const equipoSelect = $('modalEquipo');
     equipoSelect.innerHTML = '<option value="">Seleccionar equipo</option>';
     equipos.forEach(e => {
@@ -2276,6 +2302,38 @@ async function initElectro() {
   // Cargar diagnósticos inicialmente
   await buscarDiagnosticosElectro();
   
+  // Validadores en tiempo real
+  // Nombre: Solo letras y espacios
+  $('electroPacienteNombre')?.addEventListener('input', (e) => {
+    const valor = e.target.value;
+    if (valor && !/^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]*$/.test(valor)) {
+      // Remover caracteres inválidos
+      e.target.value = valor.replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑ\s]/g, '');
+    }
+  });
+  
+  // Documento: Solo números
+  $('electroDocumento')?.addEventListener('input', (e) => {
+    const valor = e.target.value;
+    if (valor && !/^\d*$/.test(valor)) {
+      // Remover caracteres no numéricos
+      e.target.value = valor.replace(/\D/g, '');
+    }
+  });
+  
+  // Teléfono: Solo números, máximo 10 dígitos
+  $('electroTelefono')?.addEventListener('input', (e) => {
+    const valor = e.target.value;
+    if (valor && !/^\d*$/.test(valor)) {
+      // Remover caracteres no numéricos
+      e.target.value = valor.replace(/\D/g, '');
+    }
+    // Limitar a 10 dígitos
+    if (e.target.value.length > 10) {
+      e.target.value = e.target.value.slice(0, 10);
+    }
+  });
+  
   const nuevaCitaSection = $('electroNuevaCitaSection');
   if (nuevaCitaSection) nuevaCitaSection.style.display = (isRecepcion() || isElectro()) ? '' : 'none';
   if (!isDoctor()) {
@@ -2288,8 +2346,14 @@ async function initElectro() {
   $('btnCancelarModal')?.addEventListener('click', cerrarModalDetallesCita);
   $('btnGuardarCambios')?.addEventListener('click', guardarCambiosCitaElectro);
   $('btnIniciarEstudio')?.addEventListener('click', iniciarEstudioModal);
-  $('btnFinalizarEstudio')?.addEventListener('click', (e) => {
-    showToast('Función "Finalizar Estudio" - En desarrollo', 'info');
+  $('btnFinalizarEstudio')?.addEventListener('click', finalizarEstudioModal);
+  
+  // Event listeners para cambios en el modal (equipo y estado)
+  $('modalEquipo')?.addEventListener('change', (e) => {
+    console.log('🔧 Equipo cambiado en modal a:', e.target.value);
+  });
+  $('modalEstado')?.addEventListener('change', (e) => {
+    console.log('🔧 Estado cambiado en modal a:', e.target.value);
   });
   $('btnEnviarRecomendaciones')?.addEventListener('click', (e) => {
     showToast('Función "Enviar Recomendaciones" - En desarrollo', 'info');
@@ -2339,15 +2403,29 @@ async function buscarDiagnosticosElectro() {
   }
 }
 
+// Listener para cuando se selecciona un diagnóstico del datalist
+$('electroDiagnostico').addEventListener('input', function() {
+  const selectedValue = this.value.trim();
+  if (selectedValue) {
+    const dl = $('diagnosticosListElectro');
+    const opciones = dl.querySelectorAll('option');
+    for (let opt of opciones) {
+      if (opt.value === selectedValue) {
+        selectedDiagnosticoElectroId = parseInt(opt.dataset.id, 10);
+        break;
+      }
+    }
+  } else {
+    selectedDiagnosticoElectroId = null;
+  }
+});
+
 async function cargarCitasElectro() {
   const fecha = $('electroFecha').value;
   if (!fecha) { showToast('Selecciona una fecha', 'error'); return; }
   try {
-    console.log('📅 Cargando citas para fecha:', fecha);
     const res = await apiFetch(`/api/citas-electro?fecha=${fecha}`);
     const citas = await res.json();
-    
-    console.log('📊 Respuesta del servidor:', citas);
     
     const tbody = $('citasElectroBody');
     tbody.innerHTML = '';
@@ -2360,8 +2438,6 @@ async function cargarCitasElectro() {
       return;
     }
     
-    console.log('✅ Se encontraron', citas.length, 'cita(s)');
-    
     // Renderizar cada cita
     citas.forEach(c => renderCitaElectroRow(tbody, c));
     
@@ -2371,7 +2447,7 @@ async function cargarCitasElectro() {
       $('electroUsuarioEdito').textContent = citas[0].editado_por_nombre || citas[0].usuario_edito || citas[0].programado_por_nombre || citas[0].usuario_programo || 'Quien programó';
     }
   } catch (e) { 
-    console.error('❌ Error cargando citas:', e);
+    console.error('Error cargando citas:', e);
     showToast('Error cargando citas', 'error'); 
   }
 }
@@ -2381,25 +2457,19 @@ function renderCitaElectroRow(tbody, c) {
   tr.className = 'turno-row';
   tr.style.cursor = 'pointer';
   
-  // Explicar cómo manejar NULL/undefined
-  const mostrarHora = (valor) => {
-    if (valor === null || valor === undefined || valor === '' || valor === 'null') {
-      return '-';
-    }
-    return escapeHtml(valor);
-  };
+  const equipoDisplay = c.equipo_nombre || c.equipo_id ? `${c.equipo_nombre || 'Equipo'} (ID: ${c.equipo_id})` : '-';
   
   tr.innerHTML = `
-    <td style="padding:12px">${mostrarHora(c.hora_agendamiento)}</td>
-    <td style="padding:12px">${mostrarHora(c.hora_inicio)}</td>
-    <td style="padding:12px">${escapeHtml(c.equipo_nombre || c.equipo || '-')}</td>
+    <td style="padding:12px">${formatearHora(c.hora_agendamiento)}</td>
+    <td style="padding:12px">${formatearHora(c.hora_inicio)}</td>
+    <td style="padding:12px">${escapeHtml(equipoDisplay)}</td>
     <td style="padding:12px">${escapeHtml(c.paciente_nombre || '-')}</td>
     <td style="padding:12px">${escapeHtml(c.paciente_documento || '-')}</td>
     <td style="padding:12px">${escapeHtml(c.telefono || '-')}</td>
     <td style="padding:12px">${escapeHtml(c.estudio || '-')}</td>
-    <td style="padding:12px">${escapeHtml(c.diagnostico_nombre || '-')}</td>
+    <td style="padding:12px">${escapeHtml(c.diagnostico_codigo || '-')}</td>
     <td style="padding:12px">${escapeHtml(c.estado || 'Programado')}</td>
-    <td style="padding:12px">${mostrarHora(c.hora_fin)}</td>
+    <td style="padding:12px">${formatearHora(c.hora_fin)}</td>
   `;
   
   // Hacer la fila clickeable para abrir modal
@@ -2408,6 +2478,33 @@ function renderCitaElectroRow(tbody, c) {
   });
   
   tbody.appendChild(tr);
+}
+
+/**
+ * Valida que un nombre solo contenga letras y espacios
+ * @param {string} nombre - El nombre a validar
+ * @returns {boolean} true si es válido
+ */
+function validarNombre(nombre) {
+  return /^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$/.test(nombre);
+}
+
+/**
+ * Valida que un documento solo contenga números
+ * @param {string} doc - El documento a validar
+ * @returns {boolean} true si es válido
+ */
+function validarDocumento(doc) {
+  return /^\d+$/.test(doc);
+}
+
+/**
+ * Valida que un teléfono tenga exactamente 10 dígitos
+ * @param {string} telefono - El teléfono a validar
+ * @returns {boolean} true si es válido
+ */
+function validarTelefono(telefono) {
+  return /^\d{10}$/.test(telefono);
 }
 
 async function crearCitaElectro() {
@@ -2433,6 +2530,33 @@ async function crearCitaElectro() {
     return; 
   }
   
+  // Validar nombre (solo letras y espacios)
+  if (!validarNombre(nombre)) {
+    showToast('El nombre no puede contener números o caracteres especiales', 'error');
+    $('electroPacienteNombre').focus();
+    $('electroPacienteNombre').style.borderColor = '#dc2626';
+    return;
+  }
+  $('electroPacienteNombre').style.borderColor = '';
+  
+  // Validar documento (solo números)
+  if (!validarDocumento(doc)) {
+    showToast('El documento solo puede contener números', 'error');
+    $('electroDocumento').focus();
+    $('electroDocumento').style.borderColor = '#dc2626';
+    return;
+  }
+  $('electroDocumento').style.borderColor = '';
+  
+  // Validar teléfono (exactamente 10 dígitos)
+  if (!validarTelefono(telefono)) {
+    showToast('El teléfono debe tener exactamente 10 dígitos', 'error');
+    $('electroTelefono').focus();
+    $('electroTelefono').style.borderColor = '#dc2626';
+    return;
+  }
+  $('electroTelefono').style.borderColor = '';
+  
   // Validar duración si es Monitorización EEG por Video y Radio
   if (estudio === 'Monitorización Electroencefalografica por Video y Radio' && !duracion) {
     showToast('Debe especificar la duración del estudio', 'error');
@@ -2454,11 +2578,17 @@ async function crearCitaElectro() {
   }
   
   // Buscar ID del diagnóstico si fue seleccionado
-  let diagnosticoId = null;
-  if (diagnostico) {
-    const diagOpt = document.querySelector(`#diagnosticosListElectro option[value="${diagnostico}"]`);
-    if (diagOpt && diagOpt.dataset.id) {
-      diagnosticoId = parseInt(diagOpt.dataset.id, 10);
+  let diagnosticoId = selectedDiagnosticoElectroId;
+  if (!diagnosticoId && diagnostico) {
+    // Fallback: buscar la opción que coincida con el valor ingresado
+    const dl = $('diagnosticosListElectro');
+    const opciones = dl.querySelectorAll('option');
+    for (let opt of opciones) {
+      // Buscar coincidia exacta o parcial con el value o el dataset.codigo
+      if (opt.value === diagnostico || opt.dataset.codigo === diagnostico || opt.dataset.nombre === diagnostico) {
+        diagnosticoId = parseInt(opt.dataset.id, 10);
+        break;
+      }
     }
   }
   
@@ -2486,6 +2616,9 @@ async function crearCitaElectro() {
     const data = await res.json();
     if (data.ok) { 
       showToast('Cita creada correctamente', 'success');
+      
+      // El servidor emite el socket event, no es necesario emitir desde el cliente
+      
       // Limpiar formulario
       $('electroPacienteNombre').value = '';
       $('electroDocumento').value = '';
@@ -2493,6 +2626,7 @@ async function crearCitaElectro() {
       $('electroHora').value = '';
       $('electroEstudio').value = '';
       $('electroDiagnostico').value = '';
+      selectedDiagnosticoElectroId = null;
       $('electroDuracion').value = '';
       $('electroDuracionCol').style.display = 'none';
       // Recargar tabla
@@ -3990,8 +4124,6 @@ async function iniciarEstudioModal() {
     const mm = String(ahora.getMinutes()).padStart(2, '0');
     const horaActual = `${hh}:${mm}`;
     
-    console.log('Iniciando estudio para cita:', citaElectroSeleccionada.id, 'Hora:', horaActual);
-    
     const cambios = {
       estado: 'En Estudio',
       hora_inicio: horaActual
@@ -4005,10 +4137,19 @@ async function iniciarEstudioModal() {
     });
     
     const data = await res.json();
-    console.log('Respuesta del servidor:', res.status, data);
     
     if (data && data.ok) {
-      showToast(`Estudio iniciado a las ${horaActual}`, 'success');
+      showToast(`✅ Estudio iniciado a las ${horaActual}`, 'success');
+      
+      // Emitir evento de socket desde el cliente
+      if (window.socket && window.socket.connected) {
+        window.socket.emit('electro:estudio-iniciado', {
+          id: citaElectroSeleccionada.id,
+          hora_inicio: horaActual
+        });
+      }
+      
+      // El servidor también emitirá el socket event
       cargarCitasElectro();
       cerrarModalDetallesCita();
     } else {
@@ -4017,6 +4158,52 @@ async function iniciarEstudioModal() {
   } catch (e) {
     console.error('Error iniciando estudio:', e);
     showToast('Error iniciando estudio', 'error');
+  }
+}
+
+async function finalizarEstudioModal() {
+  if (!citaElectroSeleccionada) return;
+  
+  try {
+    const ahora = new Date();
+    const hh = String(ahora.getHours()).padStart(2, '0');
+    const mm = String(ahora.getMinutes()).padStart(2, '0');
+    const horaActual = `${hh}:${mm}`;
+    
+    const cambios = {
+      estado: 'Finalizado',
+      hora_fin: horaActual
+    };
+    
+    // Actualizar en la base de datos
+    const res = await apiFetch(`/api/citas-electro/${citaElectroSeleccionada.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(cambios)
+    });
+    
+    const data = await res.json();
+    
+    if (data && data.ok) {
+      showToast(`✅ Estudio finalizado a las ${horaActual}`, 'success');
+      
+      // Emitir evento de socket desde el cliente
+      if (window.socket && window.socket.connected) {
+        window.socket.emit('electro:estudio-finalizado', {
+          id: citaElectroSeleccionada.id,
+          hora_fin: horaActual
+        });
+      }
+      
+      // El servidor también emitirá el socket event
+      cargarCitasElectro();
+      cerrarModalDetallesCita();
+    } else {
+      showToast(data?.error || 'Error finalizando estudio', 'error');
+    }
+  } catch (e) {
+    console.error('Error finalizando estudio:', e);
+    showToast('Error finalizando estudio', 'error');
   }
 }
 
@@ -4075,6 +4262,8 @@ async function eliminarCitaElectro() {
     
     if (res.ok) {
       showToast('Cita eliminada correctamente', 'success');
+      
+      // El servidor emite el socket event, no es necesario emitir desde el cliente
       cargarCitasElectro();
       cerrarModalDetallesCita();
     } else {
@@ -4094,8 +4283,8 @@ async function guardarCambiosCitaElectro() {
     const equipoNuevo = $('modalEquipo').value;
     const estadoNuevo = $('modalEstado').value;
     
-    console.log('Equipos:', 'anterior=', citaElectroSeleccionada.equipo_id, 'nuevo=', equipoNuevo);
-    console.log('Estados:', 'anterior=', citaElectroSeleccionada.estado, 'nuevo=', estadoNuevo);
+    console.log('🖱️ GUARDANDO CAMBIOS - Equipo:', 'anterior=', citaElectroSeleccionada.equipo_id, 'nuevo=', equipoNuevo);
+    console.log('🖱️ GUARDANDO CAMBIOS - Estado:', 'anterior=', citaElectroSeleccionada.estado, 'nuevo=', estadoNuevo);
     
     // Si se cambió equipo o estado, actualizar
     const cambios = {};
@@ -4103,14 +4292,16 @@ async function guardarCambiosCitaElectro() {
     // Comparar equipo (convertir ambos a string para comparar)
     if (String(equipoNuevo) !== String(citaElectroSeleccionada.equipo_id || '')) {
       cambios.equipo_id = equipoNuevo ? parseInt(equipoNuevo) : null;
+      console.log('✏️ Cambio detectado: Equipo');
     }
     
     // Comparar estado
     if (estadoNuevo !== (citaElectroSeleccionada.estado || 'Programado')) {
       cambios.estado = estadoNuevo;
+      console.log('✏️ Cambio detectado: Estado');
     }
     
-    console.log('Cambios detectados:', cambios);
+    console.log('📝 Cambios a guardar:', cambios);
     
     if (Object.keys(cambios).length > 0) {
       const res = await apiFetch(`/api/citas-electro/${citaElectroSeleccionada.id}`, {
@@ -4120,10 +4311,21 @@ async function guardarCambiosCitaElectro() {
       });
       
       const data = await res.json();
-      console.log('Respuesta del servidor:', data);
+      console.log('📊 Respuesta del servidor:', data);
       
       if (data && data.ok) {
-        showToast('Cambios guardados', 'success');
+        showToast('✅ Cambios guardados', 'success');
+        
+        // Emitir evento de socket desde el cliente
+        if (window.socket && window.socket.connected) {
+          window.socket.emit('electro:cambios-guardados', {
+            id: citaElectroSeleccionada.id,
+            cambios
+          });
+          console.log('📤 Socket event emitido: cambios-guardados', cambios);
+        }
+        
+        // El servidor también emite el socket event
         cargarCitasElectro();
         cerrarModalDetallesCita();
       } else {
