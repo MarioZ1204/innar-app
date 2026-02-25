@@ -2343,18 +2343,24 @@ async function cargarCitasElectro() {
   const fecha = $('electroFecha').value;
   if (!fecha) { showToast('Selecciona una fecha', 'error'); return; }
   try {
+    console.log('📅 Cargando citas para fecha:', fecha);
     const res = await apiFetch(`/api/citas-electro?fecha=${fecha}`);
     const citas = await res.json();
+    
+    console.log('📊 Respuesta del servidor:', citas);
+    
     const tbody = $('citasElectroBody');
     tbody.innerHTML = '';
     
     if (citas.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="9" style="padding:20px;text-align:center;color:#999">No hay citas registradas para esta fecha</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="10" style="padding:20px;text-align:center;color:#999">No hay citas registradas para esta fecha</td></tr>';
       // Actualizar información de usuario
       $('electroUsuarioProgramo').textContent = '-';
       $('electroUsuarioEdito').textContent = '-';
       return;
     }
+    
+    console.log('✅ Se encontraron', citas.length, 'cita(s)');
     
     // Renderizar cada cita
     citas.forEach(c => renderCitaElectroRow(tbody, c));
@@ -2364,60 +2370,42 @@ async function cargarCitasElectro() {
       $('electroUsuarioProgramo').textContent = citas[0].programado_por_nombre || citas[0].usuario_programo || '-';
       $('electroUsuarioEdito').textContent = citas[0].editado_por_nombre || citas[0].usuario_edito || citas[0].programado_por_nombre || citas[0].usuario_programo || 'Quien programó';
     }
-  } catch (e) { showToast('Error cargando citas', 'error'); }
+  } catch (e) { 
+    console.error('❌ Error cargando citas:', e);
+    showToast('Error cargando citas', 'error'); 
+  }
 }
 
 function renderCitaElectroRow(tbody, c) {
   const tr = document.createElement('tr');
   tr.className = 'turno-row';
   tr.style.cursor = 'pointer';
-  const canInitiate = isElectro() || !isDoctor();
   
-  // Estados disponibles
-  const estadosOpts = [
-    'En Sala',
-    'En Estudio',
-    'No Asistió',
-    'Reprogramado',
-    'Cancelado',
-    'Adelantado'
-  ].map(e => `<option value="${e}" ${c.estado===e?'selected':''}>${e}</option>`).join('');
-  
-  const estadoCell = !isDoctor()
-    ? `<select class="btn-estado" data-id="${c.id}" style="width:100%;padding:6px;border-radius:4px;border:1px solid #d1d5db;font-size:0.9rem">${estadosOpts}</select>`
-    : escapeHtml(c.estado || '-');
+  // Explicar cómo manejar NULL/undefined
+  const mostrarHora = (valor) => {
+    if (valor === null || valor === undefined || valor === '' || valor === 'null') {
+      return '-';
+    }
+    return escapeHtml(valor);
+  };
   
   tr.innerHTML = `
-    <td style="padding:12px">${escapeHtml(c.hora_inicio || '-')}</td>
+    <td style="padding:12px">${mostrarHora(c.hora_agendamiento)}</td>
+    <td style="padding:12px">${mostrarHora(c.hora_inicio)}</td>
     <td style="padding:12px">${escapeHtml(c.equipo_nombre || c.equipo || '-')}</td>
     <td style="padding:12px">${escapeHtml(c.paciente_nombre || '-')}</td>
     <td style="padding:12px">${escapeHtml(c.paciente_documento || '-')}</td>
     <td style="padding:12px">${escapeHtml(c.telefono || '-')}</td>
     <td style="padding:12px">${escapeHtml(c.estudio || '-')}</td>
     <td style="padding:12px">${escapeHtml(c.diagnostico_nombre || '-')}</td>
-    <td style="padding:12px">${estadoCell}</td>
-    <td style="padding:12px">${escapeHtml(c.hora_inicio || '-')}</td>
-    <td style="padding:12px">${escapeHtml(c.hora_fin || '-')}</td>
+    <td style="padding:12px">${escapeHtml(c.estado || 'Programado')}</td>
+    <td style="padding:12px">${mostrarHora(c.hora_fin)}</td>
   `;
   
-  // Hacer la fila clickeable para abrir modal (excepto si hay select de estado)
+  // Hacer la fila clickeable para abrir modal
   tr.addEventListener('click', (e) => {
-    if (e.target.tagName !== 'SELECT') {
-      abrirModalDetallesCita(c);
-    }
+    abrirModalDetallesCita(c);
   });
-
-  // Event listener para cambio de estado
-  if (!isDoctor()) {
-    tr.querySelector('select')?.addEventListener('click', (e) => e.stopPropagation());
-    tr.querySelector('select')?.addEventListener('change', async (e)=>{
-      try {
-        await apiFetch(`/api/citas-electro/${e.target.dataset.id}`, { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({estado:e.target.value}) });
-        showToast('Estado actualizado', 'success');
-        cargarCitasElectro();
-      } catch(x){ showToast('Error actualizando estado', 'error'); }
-    });
-  }
   
   tbody.appendChild(tr);
 }
@@ -2459,7 +2447,7 @@ async function crearCitaElectro() {
   const opt = document.querySelector(`#pacientesListElectro option[value="${nombre}"]`);
   if (opt && opt.dataset.id) pacienteId = parseInt(opt.dataset.id, 10);
   else {
-    const res = await apiFetch('/api/pacientes', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({nombre, documento:doc||null}) });
+    const res = await apiFetch('/api/pacientes', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({nombre, documento:doc||null, telefono:telefono||null}) });
     const data = await res.json();
     if (!data.ok) { showToast(data.error||'Error creando paciente', 'error'); return; }
     pacienteId = data.id;
@@ -4002,6 +3990,8 @@ async function iniciarEstudioModal() {
     const mm = String(ahora.getMinutes()).padStart(2, '0');
     const horaActual = `${hh}:${mm}`;
     
+    console.log('Iniciando estudio para cita:', citaElectroSeleccionada.id, 'Hora:', horaActual);
+    
     const cambios = {
       estado: 'En Estudio',
       hora_inicio: horaActual
@@ -4014,13 +4004,15 @@ async function iniciarEstudioModal() {
       body: JSON.stringify(cambios)
     });
     
-    if (res.ok) {
-      // También guardar la hora_inicio en la cita local
-      citaElectroSeleccionada.hora_inicio = horaActual;
-      citaElectroSeleccionada.estado = 'En Estudio';
+    const data = await res.json();
+    console.log('Respuesta del servidor:', res.status, data);
+    
+    if (data && data.ok) {
       showToast(`Estudio iniciado a las ${horaActual}`, 'success');
       cargarCitasElectro();
       cerrarModalDetallesCita();
+    } else {
+      showToast(data?.error || 'Error iniciando estudio', 'error');
     }
   } catch (e) {
     console.error('Error iniciando estudio:', e);
@@ -4102,27 +4094,47 @@ async function guardarCambiosCitaElectro() {
     const equipoNuevo = $('modalEquipo').value;
     const estadoNuevo = $('modalEstado').value;
     
+    console.log('Equipos:', 'anterior=', citaElectroSeleccionada.equipo_id, 'nuevo=', equipoNuevo);
+    console.log('Estados:', 'anterior=', citaElectroSeleccionada.estado, 'nuevo=', estadoNuevo);
+    
     // Si se cambió equipo o estado, actualizar
     const cambios = {};
-    if (equipoNuevo !== (citaElectroSeleccionada.equipo_id || '')) {
+    
+    // Comparar equipo (convertir ambos a string para comparar)
+    if (String(equipoNuevo) !== String(citaElectroSeleccionada.equipo_id || '')) {
       cambios.equipo_id = equipoNuevo ? parseInt(equipoNuevo) : null;
     }
-    if (estadoNuevo !== (citaElectroSeleccionada.estado || '')) {
+    
+    // Comparar estado
+    if (estadoNuevo !== (citaElectroSeleccionada.estado || 'Programado')) {
       cambios.estado = estadoNuevo;
     }
     
+    console.log('Cambios detectados:', cambios);
+    
     if (Object.keys(cambios).length > 0) {
-      await apiFetch(`/api/citas-electro/${citaElectroSeleccionada.id}`, {
+      const res = await apiFetch(`/api/citas-electro/${citaElectroSeleccionada.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(cambios)
       });
-      showToast('Cambios guardados', 'success');
+      
+      const data = await res.json();
+      console.log('Respuesta del servidor:', data);
+      
+      if (data && data.ok) {
+        showToast('Cambios guardados', 'success');
+        cargarCitasElectro();
+        cerrarModalDetallesCita();
+      } else {
+        showToast(data?.error || 'Error guardando cambios', 'error');
+      }
+    } else {
+      showToast('No hay cambios para guardar', 'info');
+      cerrarModalDetallesCita();
     }
-    
-    cargarCitasElectro();
-    cerrarModalDetallesCita();
   } catch (e) {
+    console.error('Error guardando cambios:', e);
     showToast('Error guardando cambios: ' + e.message, 'error');
   }
 }

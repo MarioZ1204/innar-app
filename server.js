@@ -2035,6 +2035,8 @@ app.get('/api/citas-electro', async (req, res) => {
   }
 
   try {
+    console.log('🔍 GET /api/citas-electro:', { fecha, equipo_id });
+    
     // Si hay equipo_id, filtrar por eso también
     let query = `
       SELECT c.*, 
@@ -2056,45 +2058,61 @@ app.get('/api/citas-electro', async (req, res) => {
       params.push(equipo_id);
     }
     
-    query += ` ORDER BY c.hora_inicio ASC, c.id ASC`;
+    query += ` ORDER BY c.hora_agendamiento ASC, c.hora_inicio ASC, c.id ASC`;
     
     const citas = await db.query(query, params);
+    console.log(`✅ Se encontraron ${citas.length} cita(s)`);
+    if (citas.length > 0) {
+      console.log('📋 Sample cita:', JSON.stringify(citas[0], null, 2));
+    }
     res.json(citas);
   } catch (e) {
-    console.error(e);
+    console.error('❌ Error en GET /api/citas-electro:', e);
     res.status(500).json({ error: e.message });
   }
 });
 
 // Crear cita electrodiagnóstico
 app.post('/api/citas-electro', async (req, res) => {
-  const { equipo_id, paciente_id, fecha, hora_inicio, hora, hora_fin, estudio, observaciones, diagnostico_id, estado } = req.body || {};
+  const { equipo_id, paciente_id, fecha, hora_agendamiento, hora, hora_fin, estudio, observaciones, diagnostico_id, estado } = req.body || {};
   
-  // Permitir que venga como 'hora' o 'hora_inicio'
-  const finalHoraInicio = hora_inicio || hora;
+  // 'hora' o 'hora_agendamiento' es la hora programada para el estudio
+  const horaAgendamiento = hora_agendamiento || hora;
 
-  if (!paciente_id || !fecha || !finalHoraInicio) {
-    return res.status(400).json({ error: 'paciente_id, fecha y hora son obligatorios' });
+  if (!paciente_id || !fecha || !horaAgendamiento) {
+    return res.status(400).json({ error: 'paciente_id, fecha y hora_agendamiento son obligatorios' });
   }
 
   try {
+    console.log('📝 Creando cita_electro con:', {
+      paciente_id,
+      fecha,
+      hora_agendamiento: horaAgendamiento,
+      hora_inicio: 'NULL (será seteado cuando se presione Iniciar)',
+      estudio,
+      estado
+    });
+
     const result = await db.execute(`
-      INSERT INTO citas_electro (equipo_id, paciente_id, fecha, hora_inicio, hora_fin, estudio, observaciones, diagnostico_id, estado)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO citas_electro (equipo_id, paciente_id, fecha, hora_agendamiento, hora_inicio, hora_fin, estudio, observaciones, diagnostico_id, estado)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       equipo_id || null,
       paciente_id,
       fecha,
-      finalHoraInicio,
+      horaAgendamiento,
+      null,
       hora_fin || null,
       estudio || null,
       observaciones || null,
       diagnostico_id || null,
-      estado || 'PROGRAMADO'
+      estado || 'Programado'
     ]);
+    
+    console.log('✅ Cita creada con ID:', result.insertId);
     res.json({ ok: true, id: result.insertId });
   } catch (e) {
-    console.error(e);
+    console.error('❌ Error creando cita:', e);
     res.status(500).json({ error: e.message });
   }
 });
