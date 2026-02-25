@@ -1828,25 +1828,237 @@ app.get('/api/equipos-electro', async (req, res) => {
   }
 });
 
-// Listar citas electro por fecha y equipo
-app.get('/api/citas-electro', async (req, res) => {
-  const { fecha, equipo_id } = req.query;
-  if (!fecha || !equipo_id) {
-    return res.status(400).json({ error: 'fecha y equipo_id son obligatorios' });
+// ============================================
+// ENDPOINTS DE DIAGNÓSTICOS
+// ============================================
+
+// Listar todos los diagnósticos activos
+app.get('/api/diagnosticos', async (req, res) => {
+  try {
+    const diagnosticos = await db.query(`
+      SELECT id, nombre, descripcion, codigo 
+      FROM diagnosticos 
+      WHERE activo = 1 
+      ORDER BY nombre ASC
+    `);
+    res.json(diagnosticos);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Buscar diagnósticos por término (autocompletado)
+app.get('/api/diagnosticos/search', async (req, res) => {
+  const { q } = req.query;
+  console.log('🔍 Search endpoint - query:', q);
+  if (!q || q.trim().length < 2) {
+    // Si la búsqueda es muy corta, devolver los primeros 10 diagnósticos
+    try {
+      const diagnosticos = await db.query(`
+        SELECT id, nombre, descripcion, codigo 
+        FROM diagnosticos 
+        WHERE activo = 1 
+        ORDER BY nombre ASC 
+        LIMIT 10
+      `);
+      console.log('📊 Retornando', diagnosticos.length, 'diagnósticos');
+      return res.json(diagnosticos);
+    } catch (e) {
+      console.error('❌ Error en búsqueda:', e);
+      return res.status(500).json({ error: e.message });
+    }
   }
 
   try {
-    const citas = await db.query(`
+    const searchTerm = `%${q}%`;
+    console.log('🔎 Buscando con término:', searchTerm);
+    const diagnosticos = await db.query(`
+      SELECT id, nombre, descripcion, codigo 
+      FROM diagnosticos 
+      WHERE activo = 1 AND (nombre LIKE ? OR descripcion LIKE ? OR codigo LIKE ?)
+      ORDER BY nombre ASC
+      LIMIT 20
+    `, [searchTerm, searchTerm, searchTerm]);
+    console.log('📊 Resultados encontrados:', diagnosticos.length);
+    res.json(diagnosticos);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Crear nuevo diagnóstico (solo admin)
+app.post('/api/diagnosticos', requireAuth, async (req, res) => {
+  const { nombre, descripcion, codigo } = req.body || {};
+  
+  if (!nombre || nombre.trim().length === 0) {
+    return res.status(400).json({ error: 'El nombre del diagnóstico es obligatorio' });
+  }
+
+  try {
+    const result = await db.execute(`
+      INSERT INTO diagnosticos (nombre, descripcion, codigo, activo)
+      VALUES (?, ?, ?, 1)
+    `, [nombre.trim(), descripcion || null, codigo || null]);
+    res.json({ ok: true, id: result.insertId, nombre });
+  } catch (e) {
+    if (e.code === 'ER_DUP_ENTRY') {
+      return res.status(400).json({ error: 'El diagnóstico ya existe' });
+    }
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Actualizar diagnóstico
+app.put('/api/diagnosticos/:id', requireAuth, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const { nombre, descripcion, codigo, activo } = req.body || {};
+
+  if (!id) {
+    return res.status(400).json({ error: 'ID inválido' });
+  }
+
+  try {
+    await db.execute(`
+      UPDATE diagnosticos 
+      SET nombre = ?, descripcion = ?, codigo = ?, activo = ?
+      WHERE id = ?
+    `, [nombre || null, descripcion || null, codigo || null, activo !== undefined ? activo : 1, id]);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Importar diagnósticos desde archivo Excel
+app.post('/api/diagnosticos/import-excel', requireAuth, upload.single('file'), async (req, res) => {
+  console.log('📥 Endpoint de importación alcanzado');
+  console.log('Session:', req.session ? 'OK' : 'FALSO');
+  console.log('File:', req.file ? `${req.file.originalname} (${req.file.size} bytes)` : 'NO ENVIADO');
+  
+  if (!req.file) {
+    console.error('❌ No file received');
+    return res.status(400).json({ error: 'Debes seleccionar un archivo' });
+  }
+
+  try {
+    const XLSX = require('xlsx');
+    const filePath = req.file.path;
+    console.log('📂 Procesando archivo:', filePath);
+    
+    // Leer el archivo Excel
+    const workbook = XLSX.readFile(filePath);
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+    const data = XLSX.utils.sheet_to_json(worksheet);
+    
+    // Eliminar archivo temporal
+    const fs = require('fs');
+    fs.unlinkSync(filePath);
+    
+    if (!data || data.length === 0) {
+      return res.status(400).json({ error: 'El archivo Excel está vacío' });
+    }
+    
+    // Procesar diagnósticos
+    let insertados = 0;
+    let actualizados = 0;
+    let errores = 0;
+    
+    console.log('📊 Leyendo filas:', data.length);
+    
+    for (const row of data) {
+      try {
+        // Buscar las columnas (pueden tener espacios o mayúsculas diferentes)
+        let codigo = null, nombre = null;
+        
+        console.log('🔍 Fila:', JSON.stringify(row));
+        
+        for (const key of Object.keys(row)) {
+          const keyLower = key.toLowerCase().trim();
+          if (keyLower.includes('código') || keyLower.includes('codigo')) {
+            codigo = row[key] ? String(row[key]).trim() : null;
+          }
+          if (keyLower.includes('diagnóstico') || keyLower.includes('diagnostico') || keyLower.includes('nombre')) {
+            nombre = row[key] ? String(row[key]).trim() : null;
+          }
+        }
+        
+        if (!nombre) {
+          errores++;
+          continue;
+        }
+        
+        // Intentar insertar o actualizar
+        const result = await db.execute(`
+          INSERT INTO diagnosticos (nombre, codigo, activo) 
+          VALUES (?, ?, 1)
+          ON DUPLICATE KEY UPDATE activo = 1
+        `, [nombre, codigo || null]);
+        
+        if (result.affectedRows > 0) {
+          insertados++;
+        } else {
+          actualizados++;
+        }
+      } catch (e) {
+        console.error('Error procesando fila:', e.message);
+        errores++;
+      }
+    }
+    
+    const mensaje = `Se procesaron ${data.length} filas: ${insertados} insertados, ${actualizados} actualizados, ${errores} con error`;
+    console.log('✅', mensaje);
+    res.json({ 
+      ok: true, 
+      insertados, 
+      actualizados, 
+      errores,
+      total: data.length,
+      mensaje
+    });
+  } catch (e) {
+    console.error('Error importando Excel:', e);
+    res.status(500).json({ error: 'Error procesando archivo: ' + e.message });
+  }
+});
+
+
+// Listar citas electro por fecha (solo fecha requerida)
+app.get('/api/citas-electro', async (req, res) => {
+  const { fecha, equipo_id } = req.query;
+  if (!fecha) {
+    return res.status(400).json({ error: 'fecha es obligatoria' });
+  }
+
+  try {
+    // Si hay equipo_id, filtrar por eso también
+    let query = `
       SELECT c.*, 
              p.nombre AS paciente_nombre, 
              p.documento AS paciente_documento,
+             p.telefono AS telefono,
+             d.nombre AS diagnostico_nombre,
              e.nombre AS equipo_nombre
       FROM citas_electro c
       JOIN pacientes p ON p.id = c.paciente_id
-      JOIN equipos_electro e ON e.id = c.equipo_id
-      WHERE c.fecha = ? AND c.equipo_id = ?
-      ORDER BY c.hora_inicio ASC, c.id ASC
-    `, [fecha, equipo_id]);
+      LEFT JOIN diagnosticos d ON d.id = c.diagnostico_id
+      LEFT JOIN equipos_electro e ON e.id = c.equipo_id
+      WHERE c.fecha = ?
+    `;
+    let params = [fecha];
+    
+    if (equipo_id) {
+      query += ` AND c.equipo_id = ?`;
+      params.push(equipo_id);
+    }
+    
+    query += ` ORDER BY c.hora_inicio ASC, c.id ASC`;
+    
+    const citas = await db.query(query, params);
     res.json(citas);
   } catch (e) {
     console.error(e);
@@ -1856,24 +2068,29 @@ app.get('/api/citas-electro', async (req, res) => {
 
 // Crear cita electrodiagnóstico
 app.post('/api/citas-electro', async (req, res) => {
-  const { equipo_id, paciente_id, fecha, hora_inicio, hora_fin, estudio, observaciones } = req.body || {};
+  const { equipo_id, paciente_id, fecha, hora_inicio, hora, hora_fin, estudio, observaciones, diagnostico_id, estado } = req.body || {};
+  
+  // Permitir que venga como 'hora' o 'hora_inicio'
+  const finalHoraInicio = hora_inicio || hora;
 
-  if (!equipo_id || !paciente_id || !fecha || !hora_inicio) {
-    return res.status(400).json({ error: 'equipo_id, paciente_id, fecha y hora_inicio son obligatorios' });
+  if (!paciente_id || !fecha || !finalHoraInicio) {
+    return res.status(400).json({ error: 'paciente_id, fecha y hora son obligatorios' });
   }
 
   try {
     const result = await db.execute(`
-      INSERT INTO citas_electro (equipo_id, paciente_id, fecha, hora_inicio, hora_fin, estudio, observaciones, estado)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 'PROGRAMADO')
+      INSERT INTO citas_electro (equipo_id, paciente_id, fecha, hora_inicio, hora_fin, estudio, observaciones, diagnostico_id, estado)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
-      equipo_id,
+      equipo_id || null,
       paciente_id,
       fecha,
-      hora_inicio,
+      finalHoraInicio,
       hora_fin || null,
       estudio || null,
-      observaciones || null
+      observaciones || null,
+      diagnostico_id || null,
+      estado || 'PROGRAMADO'
     ]);
     res.json({ ok: true, id: result.insertId });
   } catch (e) {
@@ -1914,8 +2131,76 @@ app.patch('/api/citas-electro/:id/estado', requireAuth, async (req, res) => {
   }
 });
 
+// Actualizar cita electro (equipo, estado, horas, etc)
+app.patch('/api/citas-electro/:id', requireAuth, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const { equipo_id, estado, hora_inicio, hora_fin } = req.body || {};
+  
+  if (!id) {
+    return res.status(400).json({ error: 'id es obligatorio' });
+  }
+
+  try {
+    const citas = await db.query('SELECT * FROM citas_electro WHERE id = ?', [id]);
+    if (citas.length === 0) {
+      return res.status(404).json({ error: 'Cita no encontrada' });
+    }
+
+    const updates = [];
+    const values = [];
+    
+    if (equipo_id !== undefined) {
+      updates.push('equipo_id = ?');
+      values.push(equipo_id);
+    }
+    
+    if (estado !== undefined) {
+      updates.push('estado = ?');
+      values.push(estado);
+    }
+    
+    if (hora_inicio !== undefined) {
+      updates.push('hora_inicio = ?');
+      values.push(hora_inicio);
+    }
+    
+    if (hora_fin !== undefined) {
+      updates.push('hora_fin = ?');
+      values.push(hora_fin);
+    }
+    
+    if (updates.length === 0) {
+      return res.json({ ok: true });
+    }
+    
+    updates.push('editado_en = NOW()');
+    
+    const users = await db.query('SELECT nombre FROM usuarios WHERE id = ?', [req.session.usuarioId]);
+    if (users.length > 0) {
+      updates.push('editado_por_nombre = ?');
+      values.push(users[0].nombre);
+    }
+    
+    values.push(id);
+    
+    await db.execute(`UPDATE citas_electro SET ${updates.join(', ')} WHERE id = ?`, values);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Eliminar cita electro
-app.delete('/api/citas-electro/:id', async (req, res) => {
+app.delete('/api/citas-electro/:id', requireAuth, async (req, res) => {
+  // Solo administrador puede eliminar citas
+  const esAdmin = req.session.rol === 'admin' || req.session.rol === 'administrador';
+  console.log(`🔐 DELETE /api/citas-electro/:id - Verificación de rol. Rol: "${req.session.rol}", es Admin: ${esAdmin}`);
+  
+  if (!req.session.rol || !esAdmin) {
+    return res.status(403).json({ error: 'Solo el administrador puede eliminar citas' });
+  }
+
   const id = parseInt(req.params.id, 10);
   if (!id) {
     return res.status(400).json({ error: 'ID inválido' });

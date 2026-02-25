@@ -26,6 +26,7 @@ let lastReciboId = null;
 let currentUser = null;
 let currentModule = null;
 let selectedDoctorId = null;
+let citaElectroSeleccionada = null;
 let selectedDoctorEspecialidad = null;
 
 // Mapeo de especialidades a tipos de consulta
@@ -230,7 +231,7 @@ async function doLogout() {
   history.pushState({view: 'login'}, '', '#login');
 }
 
-let initRecibosDone = false, initAgendaDone = false, initElectroDone = false, initUsuariosDone = false;
+let initRecibosDone = false, initAgendaDone = false, initElectroDone = false, initUsuariosDone = false, initDiagnosticosDone = false;
 function goToModule(moduleId) {
   showView(`view-${moduleId}`);
   currentModule = moduleId;
@@ -246,6 +247,7 @@ function goToModule(moduleId) {
   }
   if (moduleId === 'electro') { if (!initElectroDone) initElectro(); initElectroDone = true; }
   if (moduleId === 'usuarios') { if (!initUsuariosDone) initUsuarios(); initUsuariosDone = true; }
+  if (moduleId === 'diagnosticos') { if (!initDiagnosticosDone) initDiagnosticos(); initDiagnosticosDone = true; }
 }
 
 function goToMenu() {
@@ -707,8 +709,8 @@ async function initAgendaMedica() {
   $('agendaMedicaFecha').addEventListener('change', () => {
     updateAgendaFechaDisplay();
     actualizarHorasDisponibles();
+    cargarTurnosMedica();
   });
-  $('cargarTurnosMedica').addEventListener('click', cargarTurnosMedica);
   if (!isElectro() && !isDoctor()) {
     $('crearTurnoMedica').addEventListener('click', crearTurnoMedica);
     $('nuevoPacienteNombreMedica').addEventListener('input', debounceBuscarPacientesMedica);
@@ -2213,23 +2215,99 @@ async function crearTurnoMedica() {
 async function initElectro() {
   const hoy = new Date().toISOString().slice(0,10);
   $('electroFecha').value = hoy;
-  const equipos = await apiFetch('/api/equipos-electro').then(r=>r.json()).catch(()=>[]);
-  const sel = $('electroEquipo');
-  sel.innerHTML = '<option value="">Seleccionar equipo</option>';
-  equipos.forEach(e => { const o = document.createElement('option'); o.value = e.id; o.textContent = e.nombre; sel.appendChild(o); });
-  if (equipos.length) sel.value = equipos[0].id;
-  $('cargarCitasElectro').addEventListener('click', cargarCitasElectro);
+  
+  // Generar intervalos de hora (00:00 a 23:00)
+  const horaSelect = $('electroHora');
+  horaSelect.innerHTML = '<option value="">Seleccionar hora</option>';
+  for (let i = 0; i < 24; i++) {
+    const hora = String(i).padStart(2, '0') + ':00';
+    const option = document.createElement('option');
+    option.value = hora;
+    option.textContent = hora;
+    horaSelect.appendChild(option);
+  }
+  
+  // Mostrar usuario actual que programará
+  if (currentUser) {
+    $('electroProgramadoPor').textContent = currentUser.nombre || currentUser.usuario || '-';
+  }
+  
+  // Cargar equipos para el modal
+  try {
+    const res = await apiFetch('/api/equipos-electro');
+    const equipos = await res.json();
+    console.log('Equipos cargados:', equipos);
+    const equipoSelect = $('modalEquipo');
+    equipoSelect.innerHTML = '<option value="">Seleccionar equipo</option>';
+    equipos.forEach(e => {
+      const opt = document.createElement('option');
+      opt.value = e.id;
+      opt.textContent = e.nombre;
+      equipoSelect.appendChild(opt);
+    });
+    window.equiposDisponibles = equipos || [];
+  } catch (e) {
+    console.error('Error cargando equipos:', e);
+    window.equiposDisponibles = [];
+  }
+  
+  // Event listener para cambiar fecha y cargar citas automáticamente
+  $('electroFecha')?.addEventListener('change', async () => {
+    await cargarCitasElectro();
+  });
+  
+  // Event listener para quitar el border rojo cuando se selecciona estudio
+  $('electroEstudio')?.addEventListener('change', (e) => {
+    if (e.target.value) {
+      e.target.style.borderColor = '';
+      // Mostrar/ocultar campo de duración según el estudio
+      const duracionCol = $('electroDuracionCol');
+      if (e.target.value === 'Monitorización Electroencefalografica por Video y Radio') {
+        duracionCol.style.display = '';
+      } else {
+        duracionCol.style.display = 'none';
+        $('electroDuracion').value = '';
+      }
+    }
+  });
+  
+  // Event listener para autocompletado de diagnósticos
+  $('electroDiagnostico')?.addEventListener('input', debounce(buscarDiagnosticosElectro, 300));
+  // Cargar diagnósticos inicialmente
+  await buscarDiagnosticosElectro();
+  
   const nuevaCitaSection = $('electroNuevaCitaSection');
-  if (nuevaCitaSection) nuevaCitaSection.style.display = isDoctor() ? 'none' : '';
+  if (nuevaCitaSection) nuevaCitaSection.style.display = (isRecepcion() || isElectro()) ? '' : 'none';
   if (!isDoctor()) {
     $('crearCitaElectro')?.addEventListener('click', crearCitaElectro);
-    $('nuevoPacienteElectro')?.addEventListener('input', debounce(buscarPacientesElectro, 300));
+    $('electroPacienteNombre')?.addEventListener('input', debounce(buscarPacientesElectro, 300));
   }
+  
+  // Event listeners del modal
+  $('cerrarModalDetallesCita')?.addEventListener('click', cerrarModalDetallesCita);
+  $('btnCancelarModal')?.addEventListener('click', cerrarModalDetallesCita);
+  $('btnGuardarCambios')?.addEventListener('click', guardarCambiosCitaElectro);
+  $('btnIniciarEstudio')?.addEventListener('click', iniciarEstudioModal);
+  $('btnFinalizarEstudio')?.addEventListener('click', (e) => {
+    showToast('Función "Finalizar Estudio" - En desarrollo', 'info');
+  });
+  $('btnEnviarRecomendaciones')?.addEventListener('click', (e) => {
+    showToast('Función "Enviar Recomendaciones" - En desarrollo', 'info');
+  });
+  $('btnEliminarCita')?.addEventListener('click', eliminarCitaElectro);
+  
+  // Cerrar modal con tecla Escape
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !$('modalDetallesCitaElectro').classList.contains('hidden')) {
+      cerrarModalDetallesCita();
+    }
+  });
+
   await cargarCitasElectro();
 }
 
 async function buscarPacientesElectro() {
-  const q = $('nuevoPacienteElectro').value.trim();
+  const q = $('electroPacienteNombre').value.trim();
   if (q.length < 2) return;
   const res = await apiFetch(`/api/pacientes?buscar=${encodeURIComponent(q)}`);
   const pacientes = await res.json();
@@ -2238,94 +2316,145 @@ async function buscarPacientesElectro() {
   pacientes.forEach(p => { const o = document.createElement('option'); o.value = p.nombre; o.dataset.id = p.id; o.dataset.doc = p.documento || ''; dl.appendChild(o); });
 }
 
+async function buscarDiagnosticosElectro() {
+  const q = $('electroDiagnostico').value.trim();
+  try {
+    const url = q.length < 2 ? '/api/diagnosticos/search' : `/api/diagnosticos/search?q=${encodeURIComponent(q)}`;
+    const res = await apiFetch(url);
+    const diagnosticos = await res.json();
+    const dl = $('diagnosticosListElectro');
+    dl.innerHTML = '';
+    diagnosticos.forEach(d => { 
+      const o = document.createElement('option'); 
+      // Mostrar "[Código] - [Diagnóstico]" como opción
+      const displayText = d.codigo ? `[${d.codigo}] - ${d.nombre}` : d.nombre;
+      o.value = displayText;
+      o.dataset.id = d.id;
+      o.dataset.codigo = d.codigo || '';
+      o.dataset.nombre = d.nombre;
+      dl.appendChild(o); 
+    });
+  } catch (e) {
+    console.error('Error buscando diagnósticos:', e);
+  }
+}
+
 async function cargarCitasElectro() {
   const fecha = $('electroFecha').value;
-  const equipoId = $('electroEquipo').value;
-  if (!fecha || !equipoId) { showToast('Selecciona fecha y equipo', 'error'); return; }
+  if (!fecha) { showToast('Selecciona una fecha', 'error'); return; }
   try {
-    const res = await apiFetch(`/api/citas-electro?fecha=${fecha}&equipo_id=${equipoId}`);
+    const res = await apiFetch(`/api/citas-electro?fecha=${fecha}`);
     const citas = await res.json();
     const tbody = $('citasElectroBody');
     tbody.innerHTML = '';
     
-    // Crear 25 filas: algunas con datos, otras vacías
-    const filasRequeridas = 25;
-    const numColumnas = 7;
+    if (citas.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="9" style="padding:20px;text-align:center;color:#999">No hay citas registradas para esta fecha</td></tr>';
+      // Actualizar información de usuario
+      $('electroUsuarioProgramo').textContent = '-';
+      $('electroUsuarioEdito').textContent = '-';
+      return;
+    }
     
-    for (let i = 0; i < filasRequeridas; i++) {
-      if (i < citas.length) {
-        // Llenar con datos reales
-        renderCitaElectroRow(tbody, citas[i]);
-      } else {
-        // Crear fila vacía
-        crearFilaCitaVacia(tbody, numColumnas);
-      }
+    // Renderizar cada cita
+    citas.forEach(c => renderCitaElectroRow(tbody, c));
+    
+    // Actualizar información de usuario (del primer registro)
+    if (citas.length > 0) {
+      $('electroUsuarioProgramo').textContent = citas[0].programado_por_nombre || citas[0].usuario_programo || '-';
+      $('electroUsuarioEdito').textContent = citas[0].editado_por_nombre || citas[0].usuario_edito || citas[0].programado_por_nombre || citas[0].usuario_programo || 'Quien programó';
     }
   } catch (e) { showToast('Error cargando citas', 'error'); }
 }
 
-// Función para crear una fila vacía de cita electrodiagnóstico
-function crearFilaCitaVacia(tbody, numColumnas) {
-  const tr = document.createElement('tr');
-  tr.className = 'turno-row estado-vacio';
-  tr.style.opacity = '0.4';
-  
-  let html = '';
-  for (let i = 0; i < numColumnas; i++) {
-    html += '<td style="padding:8px;border:1px solid #ddd;background:#fafafa">&nbsp;</td>';
-  }
-  tr.innerHTML = html;
-  tbody.appendChild(tr);
-}
-
 function renderCitaElectroRow(tbody, c) {
   const tr = document.createElement('tr');
-  tr.className = `turno-row estado-${c.estado}`;
-  const canEdit = !isDoctor();
-  const estados = ['PROGRAMADO','EN_ATENCION','ATENDIDO','CANCELADO','NO_ASISTIO'];
-  const opts = estados.map(e => `<option value="${e}" ${c.estado===e?'selected':''}>${e.replace(/_/g,' ')}</option>`).join('');
-  const estadoCell = canEdit 
-    ? `<select class="btn-estado" data-id="${c.id}">${opts}</select>` 
-    : escapeHtml((c.estado||'').replace(/_/g,' '));
-  const accionesCell = canEdit 
-    ? `<button class="btn-estado-small" data-delete="${c.id}">Eliminar</button>` 
-    : '-';
+  tr.className = 'turno-row';
+  tr.style.cursor = 'pointer';
+  const canInitiate = isElectro() || !isDoctor();
+  
+  // Estados disponibles
+  const estadosOpts = [
+    'En Sala',
+    'En Estudio',
+    'No Asistió',
+    'Reprogramado',
+    'Cancelado',
+    'Adelantado'
+  ].map(e => `<option value="${e}" ${c.estado===e?'selected':''}>${e}</option>`).join('');
+  
+  const estadoCell = !isDoctor()
+    ? `<select class="btn-estado" data-id="${c.id}" style="width:100%;padding:6px;border-radius:4px;border:1px solid #d1d5db;font-size:0.9rem">${estadosOpts}</select>`
+    : escapeHtml(c.estado || '-');
+  
   tr.innerHTML = `
-    <td style="padding:8px;border:1px solid #ddd">${escapeHtml(c.hora_inicio)}${c.hora_fin ? ' - ' + c.hora_fin : ''}</td>
-    <td style="padding:8px;border:1px solid #ddd">${escapeHtml(c.paciente_nombre)}</td>
-    <td style="padding:8px;border:1px solid #ddd">${escapeHtml(c.paciente_documento||'')}</td>
-    <td style="padding:8px;border:1px solid #ddd">${escapeHtml(c.estudio||'')}</td>
-    <td style="padding:8px;border:1px solid #ddd">${estadoCell}</td>
-    <td style="padding:8px;border:1px solid #ddd;font-size:0.85rem;color:#666">${escapeHtml(c.editado_por_nombre||'-')}</td>
-    <td style="padding:8px;border:1px solid #ddd">${accionesCell}</td>
+    <td style="padding:12px">${escapeHtml(c.hora_inicio || '-')}</td>
+    <td style="padding:12px">${escapeHtml(c.equipo_nombre || c.equipo || '-')}</td>
+    <td style="padding:12px">${escapeHtml(c.paciente_nombre || '-')}</td>
+    <td style="padding:12px">${escapeHtml(c.paciente_documento || '-')}</td>
+    <td style="padding:12px">${escapeHtml(c.telefono || '-')}</td>
+    <td style="padding:12px">${escapeHtml(c.estudio || '-')}</td>
+    <td style="padding:12px">${escapeHtml(c.diagnostico_nombre || '-')}</td>
+    <td style="padding:12px">${estadoCell}</td>
+    <td style="padding:12px">${escapeHtml(c.hora_inicio || '-')}</td>
+    <td style="padding:12px">${escapeHtml(c.hora_fin || '-')}</td>
   `;
-  if (canEdit) {
+  
+  // Hacer la fila clickeable para abrir modal (excepto si hay select de estado)
+  tr.addEventListener('click', (e) => {
+    if (e.target.tagName !== 'SELECT') {
+      abrirModalDetallesCita(c);
+    }
+  });
+
+  // Event listener para cambio de estado
+  if (!isDoctor()) {
+    tr.querySelector('select')?.addEventListener('click', (e) => e.stopPropagation());
     tr.querySelector('select')?.addEventListener('change', async (e)=>{
       try {
-        await apiFetch(`/api/citas-electro/${e.target.dataset.id}/estado`, { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({estado:e.target.value}) });
+        await apiFetch(`/api/citas-electro/${e.target.dataset.id}`, { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({estado:e.target.value}) });
         showToast('Estado actualizado', 'success');
         cargarCitasElectro();
-      } catch(x){ showToast('Error', 'error'); }
-    });
-    tr.querySelector('[data-delete]')?.addEventListener('click', async (e)=>{
-      if (!confirm('¿Eliminar esta cita?')) return;
-      try {
-        await apiFetch(`/api/citas-electro/${e.target.dataset.delete}`, { method:'DELETE' });
-        showToast('Cita eliminada', 'success');
-        cargarCitasElectro();
-      } catch(x){ showToast('Error', 'error'); }
+      } catch(x){ showToast('Error actualizando estado', 'error'); }
     });
   }
+  
   tbody.appendChild(tr);
 }
 
 async function crearCitaElectro() {
-  const nombre = $('nuevoPacienteElectro').value.trim();
-  const doc = $('nuevoPacienteDocElectro').value.trim();
+  // Validar Estudio primero (obligatorio)
+  const estudio = $('electroEstudio').value;
+  if (!estudio) {
+    showToast('Debes seleccionar un estudio para programar la cita', 'error');
+    $('electroEstudio').focus();
+    $('electroEstudio').style.borderColor = '#dc2626';
+    return;
+  }
+  
+  const nombre = $('electroPacienteNombre').value.trim();
+  const doc = $('electroDocumento').value.trim();
+  const telefono = $('electroTelefono').value.trim();
+  const hora = $('electroHora').value;
   const fecha = $('electroFecha').value;
-  const equipoId = $('electroEquipo').value;
-  const horaInicio = $('electroHoraInicio').value;
-  if (!nombre || !fecha || !equipoId || !horaInicio) { showToast('Completa paciente, fecha, equipo y hora', 'error'); return; }
+  const duracion = $('electroDuracion').value;
+  const diagnostico = $('electroDiagnostico').value.trim();
+  
+  if (!nombre || !doc || !telefono || !hora || !fecha) { 
+    showToast('Completa todos los campos obligatorios (Estudio, Hora, Paciente, Documento y Teléfono)', 'error'); 
+    return; 
+  }
+  
+  // Validar duración si es Monitorización EEG por Video y Radio
+  if (estudio === 'Monitorización Electroencefalografica por Video y Radio' && !duracion) {
+    showToast('Debe especificar la duración del estudio', 'error');
+    $('electroDuracion').focus();
+    return;
+  }
+  
+  // Restablecer color del border del estudio
+  $('electroEstudio').style.borderColor = '';
+  
   let pacienteId;
   const opt = document.querySelector(`#pacientesListElectro option[value="${nombre}"]`);
   if (opt && opt.dataset.id) pacienteId = parseInt(opt.dataset.id, 10);
@@ -2335,13 +2464,57 @@ async function crearCitaElectro() {
     if (!data.ok) { showToast(data.error||'Error creando paciente', 'error'); return; }
     pacienteId = data.id;
   }
+  
+  // Buscar ID del diagnóstico si fue seleccionado
+  let diagnosticoId = null;
+  if (diagnostico) {
+    const diagOpt = document.querySelector(`#diagnosticosListElectro option[value="${diagnostico}"]`);
+    if (diagOpt && diagOpt.dataset.id) {
+      diagnosticoId = parseInt(diagOpt.dataset.id, 10);
+    }
+  }
+  
   try {
-    const body = { equipo_id: parseInt(equipoId,10), paciente_id: pacienteId, fecha, hora_inicio: horaInicio, hora_fin: $('electroHoraFin').value || null, estudio: $('electroEstudio').value || null };
+    const body = {
+      paciente_id: pacienteId,
+      fecha,
+      hora,
+      telefono,
+      estudio,
+      estado: 'Programado'
+    };
+    
+    // Agregar duración si fue especificada
+    if (duracion) {
+      body.duracion = parseInt(duracion, 10);
+    }
+    
+    // Agregar diagnóstico si fue seleccionado
+    if (diagnosticoId) {
+      body.diagnostico_id = diagnosticoId;
+    }
+    
     const res = await apiFetch('/api/citas-electro', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
     const data = await res.json();
-    if (data.ok) { showToast('Cita creada', 'success'); $('nuevoPacienteElectro').value=''; $('nuevoPacienteDocElectro').value=''; $('electroHoraInicio').value=''; $('electroHoraFin').value=''; $('electroEstudio').value=''; cargarCitasElectro(); }
-    else showToast(data.error||'Error', 'error');
-  } catch (e) { showToast('Error creando cita', 'error'); }
+    if (data.ok) { 
+      showToast('Cita creada correctamente', 'success');
+      // Limpiar formulario
+      $('electroPacienteNombre').value = '';
+      $('electroDocumento').value = '';
+      $('electroTelefono').value = '';
+      $('electroHora').value = '';
+      $('electroEstudio').value = '';
+      $('electroDiagnostico').value = '';
+      $('electroDuracion').value = '';
+      $('electroDuracionCol').style.display = 'none';
+      // Recargar tabla
+      cargarCitasElectro();
+    } else {
+      showToast(data.error || 'Error creando cita', 'error');
+    }
+  } catch (e) { 
+    showToast('Error creando cita: ' + e.message, 'error'); 
+  }
 }
 
 // ========== GESTIÓN DE USUARIOS (solo admin) ==========
@@ -3710,8 +3883,253 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 });
 
+// ========== GESTIÓN DE DIAGNÓSTICOS (solo admin) ==========
+async function initDiagnosticos() {
+  $('btnVolverDiagnosticos')?.addEventListener('click', goToMenu);
+  $('importarDiagnosticosBtn')?.addEventListener('click', importarDiagnosticosExcel);
+  await cargarListaDiagnosticos();
+}
+
+async function importarDiagnosticosExcel() {
+  const fileInput = $('diagnosticosFileInput');
+  if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+    showToast('Selecciona un archivo Excel', 'error');
+    return;
+  }
+
+  const file = fileInput.files[0];
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const progressDiv = $('importProgress');
+  const status = $('importStatus');
+  const progressBar = $('importProgressBar');
+
+  try {
+    progressDiv.style.display = 'block';
+    progressBar.style.width = '30%';
+    status.textContent = 'Enviando archivo...';
+
+    const res = await fetch('/api/diagnosticos/import-excel', {
+      method: 'POST',
+      body: formData,
+      credentials: 'include'
+    });
+
+    progressBar.style.width = '70%';
+    const data = await res.json();
+
+    if (!res.ok) {
+      progressDiv.style.display = 'none';
+      showToast(data.error || 'Error importando diagnósticos', 'error');
+      return;
+    }
+
+    progressBar.style.width = '100%';
+    status.textContent = data.mensaje;
+    showToast(`✅ ${data.mensaje}`, 'success');
+
+    // Limpiar input
+    fileInput.value = '';
+
+    // Esperar 1 segundo y recargar lista
+    setTimeout(() => {
+      progressDiv.style.display = 'none';
+      cargarListaDiagnosticos();
+    }, 1000);
+  } catch (e) {
+    progressDiv.style.display = 'none';
+    showToast('Error: ' + e.message, 'error');
+    console.error(e);
+  }
+}
+
+async function cargarListaDiagnosticos() {
+  try {
+    const res = await apiFetch('/api/diagnosticos');
+    const diagnosticos = await res.json();
+    const tbody = $('diagnosticosTableBody');
+    tbody.innerHTML = '';
+
+    if (diagnosticos.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" style="padding:20px;text-align:center;color:#999">Sin diagnósticos cargados</td></tr>';
+      return;
+    }
+
+    diagnosticos.forEach(d => {
+      const tr = document.createElement('tr');
+      tr.className = 'turno-row';
+      tr.innerHTML = `
+        <td style="padding:12px">${escapeHtml(d.codigo || '-')}</td>
+        <td style="padding:12px">${escapeHtml(d.nombre)}</td>
+        <td style="padding:12px">${escapeHtml(d.descripcion || '-')}</td>
+        <td style="padding:12px">${d.activo === 1 ? '<span style="background:#dcfce7;color:#15803d;padding:4px 8px;border-radius:4px;font-size:0.85rem">Activo</span>' : '<span style="background:#fee2e2;color:#991b1b;padding:4px 8px;border-radius:4px;font-size:0.85rem">Inactivo</span>'}</td>
+        <td style="padding:12px">
+          <button class="btn-eliminar-diag" data-id="${d.id}" style="padding:6px 10px;background:#dc2626;color:white;border:none;border-radius:4px;cursor:pointer;font-size:0.85rem">Eliminar</button>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+
+    // Agregar event listeners a botones de eliminar
+    document.querySelectorAll('.btn-eliminar-diag').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        const id = e.target.dataset.id;
+        if (confirm('¿Está seguro que desea eliminar este diagnóstico?')) {
+          try {
+            await apiFetch(`/api/diagnosticos/${id}`, { method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({activo: 0}) });
+            showToast('Diagnóstico eliminado', 'success');
+            cargarListaDiagnosticos();
+          } catch (x) {
+            showToast('Error eliminando diagnóstico', 'error');
+          }
+        }
+      });
+    });
+  } catch (e) {
+    console.error('Error cargando diagnósticos:', e);
+    $('diagnosticosTableBody').innerHTML = '<tr><td colspan="5" style="padding:20px;text-align:center;color:#dc2626">Error cargando diagnósticos</td></tr>';
+  }
+}
+
+// ========== FUNCIONES DEL MODAL DE DETALLES DE CITA ELECTRODIAGNÓSTICO ==========
+async function iniciarEstudioModal() {
+  if (!citaElectroSeleccionada) return;
+  
+  try {
+    const ahora = new Date();
+    const hh = String(ahora.getHours()).padStart(2, '0');
+    const mm = String(ahora.getMinutes()).padStart(2, '0');
+    const horaActual = `${hh}:${mm}`;
+    
+    const cambios = {
+      estado: 'En Estudio',
+      hora_inicio: horaActual
+    };
+    
+    // Actualizar en la base de datos
+    const res = await apiFetch(`/api/citas-electro/${citaElectroSeleccionada.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(cambios)
+    });
+    
+    if (res.ok) {
+      // También guardar la hora_inicio en la cita local
+      citaElectroSeleccionada.hora_inicio = horaActual;
+      citaElectroSeleccionada.estado = 'En Estudio';
+      showToast(`Estudio iniciado a las ${horaActual}`, 'success');
+      cargarCitasElectro();
+      cerrarModalDetallesCita();
+    }
+  } catch (e) {
+    console.error('Error iniciando estudio:', e);
+    showToast('Error iniciando estudio', 'error');
+  }
+}
+
+function abrirModalDetallesCita(cita) {
+  citaElectroSeleccionada = cita;
+  
+  // Rellenar datos de paciente
+  $('modalPacienteNombre').textContent = escapeHtml(cita.paciente_nombre || '-');
+  $('modalPacienteDocumento').textContent = escapeHtml(cita.paciente_documento || '-');
+  
+  // Rellenar selector de equipo
+  $('modalEquipo').value = cita.equipo_id || '';
+  
+  // Rellenar selector de estado
+  $('modalEstado').value = cita.estado || 'Programado';
+  
+  // Mostrar botón de eliminar solo para admin
+  const btnEliminar = $('btnEliminarCita');
+  console.log('CurrentUser:', currentUser);
+  console.log('Rol usuario:', currentUser?.rol);
+  if (currentUser && (currentUser.rol === 'admin' || currentUser.rol === 'administrador')) {
+    btnEliminar.style.display = '';
+  } else {
+    btnEliminar.style.display = 'none';
+  }
+  
+  // Mostrar modal
+  $('modalDetallesCitaElectro').classList.remove('hidden');
+}
+
+function cerrarModalDetallesCita() {
+  $('modalDetallesCitaElectro').classList.add('hidden');
+  citaElectroSeleccionada = null;
+}
+
+async function eliminarCitaElectro() {
+  if (!citaElectroSeleccionada) return;
+  
+  // Verificar que sea admin
+  const esAdmin = currentUser && (currentUser.rol === 'admin' || currentUser.rol === 'administrador');
+  console.log('Intentando eliminar cita. Es Admin?', esAdmin, 'Usuario:', currentUser);
+  
+  if (!esAdmin) {
+    showToast('No tienes permisos para eliminar citas', 'error');
+    return;
+  }
+  
+  if (!confirm(`¿Está seguro que desea eliminar la cita de ${citaElectroSeleccionada.paciente_nombre}?`)) {
+    return;
+  }
+  
+  try {
+    const res = await apiFetch(`/api/citas-electro/${citaElectroSeleccionada.id}`, {
+      method: 'DELETE'
+    });
+    
+    if (res.ok) {
+      showToast('Cita eliminada correctamente', 'success');
+      cargarCitasElectro();
+      cerrarModalDetallesCita();
+    } else {
+      const data = await res.json();
+      showToast(data.error || 'Error eliminando cita', 'error');
+    }
+  } catch (e) {
+    console.error('Error eliminando cita:', e);
+    showToast('Error eliminando cita', 'error');
+  }
+}
+
+async function guardarCambiosCitaElectro() {
+  if (!citaElectroSeleccionada) return;
+  
+  try {
+    const equipoNuevo = $('modalEquipo').value;
+    const estadoNuevo = $('modalEstado').value;
+    
+    // Si se cambió equipo o estado, actualizar
+    const cambios = {};
+    if (equipoNuevo !== (citaElectroSeleccionada.equipo_id || '')) {
+      cambios.equipo_id = equipoNuevo ? parseInt(equipoNuevo) : null;
+    }
+    if (estadoNuevo !== (citaElectroSeleccionada.estado || '')) {
+      cambios.estado = estadoNuevo;
+    }
+    
+    if (Object.keys(cambios).length > 0) {
+      await apiFetch(`/api/citas-electro/${citaElectroSeleccionada.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(cambios)
+      });
+      showToast('Cambios guardados', 'success');
+    }
+    
+    cargarCitasElectro();
+    cerrarModalDetallesCita();
+  } catch (e) {
+    showToast('Error guardando cambios: ' + e.message, 'error');
+  }
+}
+
 // cargar inicial
 async function cargar(){
   await cargarLista();
 }
 cargar();
+

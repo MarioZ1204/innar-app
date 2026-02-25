@@ -144,6 +144,11 @@
           <span class="menu-card-title">Usuarios</span>
           <span class="menu-card-desc">Gestionar usuarios y roles</span>
         </button>
+        <button class="menu-card" data-module="diagnosticos" data-rol="admin">
+          <span class="menu-card-icon"><img src="images/iconuser.png" alt="Diagnósticos" class="icon-img" /></span>
+          <span class="menu-card-title">Diagnósticos</span>
+          <span class="menu-card-desc">Importar y gestionar diagnósticos</span>
+        </button>
       </div>
     </div>
   </div>
@@ -342,14 +347,13 @@
               <div class="row" style="margin-bottom:16px">
                 <div class="col"><label>Fecha</label><input id="agendaMedicaFecha" type="date" /></div>
                 <div class="col"><label>Doctor</label><div id="agendaMedicaDoctorDisplay" style="padding:10px;background:#f3f4f6;border-radius:4px;display:flex;align-items:center;font-weight:500;color:#374151">-</div></div>
-                <div class="col" style="display:flex;align-items:flex-end"><button id="cargarTurnosMedica" style="width:100%">Cargar Citas</button></div>
               </div>
               <div style="text-align:center;margin-top:8px">
                 <div id="agendaMedicaFechaDisplay" style="font-size:18px;font-weight:700;color:#111;text-transform:uppercase"></div>
               </div>
             </section>
             <!-- Botones para Doctor: Llamar siguiente / Marcar atendido -->
-            <section class="card no-print" id="agendaDoctorAcciones" style="display:none;background:#f0f9ff;border-left:4px solid #0369a1">
+            <section class="card no-print" id="agendaDoctorAcciones" style="display:none;background:#f0f9ffaf;border-left:4px solid #8AA6A1">
               <h3>Acciones Rápidas</h3>
               <div style="display:flex;gap:16px;flex-wrap:wrap">
                 <button id="btnLlamarSiguiente" class="btn-llamar">Llamar siguiente paciente</button>
@@ -544,6 +548,60 @@
     </div>
   </div>
 
+  <!-- ========== MÓDULO DIAGNÓSTICOS (solo admin) ========== -->
+  <div id="view-diagnosticos" class="view-module hidden">
+    <div class="main-layout">
+      <div class="sidebar">
+        <button class="btn-volver" id="btnVolverDiagnosticos">← Volver</button>
+        <div style="margin-bottom:24px;text-align:center">
+          <img src="images/logo.png" alt="Logo" style="height:70px;width:auto;object-fit:contain" />
+        </div>
+        <h2 style="color:white;margin-bottom:16px">Diagnósticos</h2>
+      </div>
+      <div class="main-content">
+        <div class="container">
+          <header><h2>Gestión de Diagnósticos</h2></header>
+          <section class="card no-print">
+            <h3>Importar desde Excel</h3>
+            <p style="color:#666;font-size:0.9rem;margin-bottom:12px">Sube un archivo Excel con columnas: CÓDIGO | DIAGNÓSTICO</p>
+            <div style="display:flex;gap:12px;align-items:flex-end">
+              <div style="flex:1">
+                <label>Archivo Excel</label>
+                <input id="diagnosticosFileInput" type="file" accept=".xlsx,.xls" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:0.9rem" />
+              </div>
+              <button id="importarDiagnosticosBtn" style="width:150px;background:#8AA6A1;color:white;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-weight:600">Importar</button>
+            </div>
+            <div id="importProgress" style="margin-top:12px;display:none">
+              <div style="background:#e5e7eb;border-radius:6px;height:8px;overflow:hidden">
+                <div id="importProgressBar" style="background:#8AA6A1;height:100%;width:0%;transition:width 0.3s"></div>
+              </div>
+              <p id="importStatus" style="margin-top:8px;font-size:0.9rem;color:#666">Procesando...</p>
+            </div>
+          </section>
+          <section class="card">
+            <h3>Diagnósticos Guardados</h3>
+            <div id="diagnosticosListContainer" style="overflow-x:auto">
+              <table id="diagnosticosTable" class="modern-table">
+                <thead>
+                  <tr>
+                    <th>Código</th>
+                    <th>Diagnóstico</th>
+                    <th>Descripción</th>
+                    <th>Estado</th>
+                    <th>Acciones</th>
+                  </tr>
+                </thead>
+                <tbody id="diagnosticosTableBody">
+                  <tr><td colspan="5" style="padding:20px;text-align:center;color:#999">Cargando diagnósticos...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- ========== MÓDULO AGENDA ELECTRODIAGNÓSTICO ========== -->
   <div id="view-electro" class="view-module hidden">
     <div class="main-layout">
@@ -553,50 +611,146 @@
           <img src="images/logo.png" alt="Logo" style="height:70px;width:auto;object-fit:contain" />
         </div>
         <h2 style="color:white;margin-bottom:16px">Agenda Electrodiagnóstico</h2>
-        <p style="color:rgba(255,255,255,0.9);font-size:0.9rem">4 equipos disponibles</p>
+        <p style="color:rgba(255,255,255,0.9);font-size:0.9rem">Gestión de 4 equipos</p>
       </div>
       <div class="main-content">
         <div class="container">
           <header><h2>Agenda de Equipos de Electrodiagnóstico</h2></header>
+          
+          <!-- Selector de Fecha -->
           <section class="card no-print">
             <div class="row" style="margin-bottom:16px">
               <div class="col"><label>Fecha</label><input id="electroFecha" type="date" /></div>
-              <div class="col"><label>Equipo</label><select id="electroEquipo"><option value="">Seleccionar equipo</option></select></div>
-              <div class="col" style="display:flex;align-items:flex-end"><button id="cargarCitasElectro" style="width:100%">Cargar Agenda</button></div>
             </div>
           </section>
+
+          <!-- Nueva Cita -->
           <section class="card no-print" id="electroNuevaCitaSection">
-            <h3>Nueva Cita</h3>
+            <h3>Nueva Cita de Electrodiagnóstico</h3>
             <div class="row" id="electroNuevaCitaRow">
-              <div class="col"><label>Paciente</label><input id="nuevoPacienteElectro" type="text" placeholder="Buscar o crear paciente..." list="pacientesListElectro" /><datalist id="pacientesListElectro"></datalist></div>
-              <div class="col"><label>Documento</label><input id="nuevoPacienteDocElectro" type="text" placeholder="Documento" /></div>
-              <div class="col"><label>Hora inicio</label><input id="electroHoraInicio" type="time" /></div>
-              <div class="col"><label>Hora fin</label><input id="electroHoraFin" type="time" /></div>
-              <div class="col"><label>Estudio</label><input id="electroEstudio" type="text" placeholder="Ej: EEG, Polisomnografía" /></div>
-              <div class="col" style="display:flex;align-items:flex-end"><button id="crearCitaElectro" style="width:100%">Crear Cita</button></div>
+              <div class="col">
+                <label>Estudio <span style="color:#dc2626">*</span></label>
+                <select id="electroEstudio" required style="border: 2px solid #dc2626;">
+                  <option value="">Seleccionar estudio</option>
+                  <option value="PSG Básica">PSG Básica</option>
+                  <option value="PSG con Titulación de Dispositivo Médico CPAP">PSG con Titulación CPAP</option>
+                  <option value="PSG con Titulación de Dispositivo Médico BPAP">PSG con Titulación BPAP</option>
+                  <option value="Electroencefalograma">Electroencefalograma</option>
+                  <option value="Monitorización Electroencefalografica por Video y Radio">Monitorización EEG por Video y Radio</option>
+                </select>
+              </div>
+              <div class="col">
+                <label>Diagnóstico</label>
+                <input id="electroDiagnostico" type="text" placeholder="Búsqueda de diagnóstico..." list="diagnosticosListElectro" />
+                <datalist id="diagnosticosListElectro"></datalist>
+              </div>
+              <div class="col"><label>Hora</label><select id="electroHora"></select></div>
+              <div class="col"><label>Nombre del Paciente</label><input id="electroPacienteNombre" type="text" placeholder="Nombre del paciente" list="pacientesListElectro" /><datalist id="pacientesListElectro"></datalist></div>
             </div>
+            <div class="row" style="margin-top:12px">
+              <div class="col"><label>Número de Documento</label><input id="electroDocumento" type="text" placeholder="Documento" /></div>
+              <div class="col"><label>Número de Teléfono</label><input id="electroTelefono" type="tel" placeholder="Teléfono" /></div>
+              <div class="col" id="electroDuracionCol" style="display:none">
+                <label>Duración del Estudio (minutos)</label>
+                <input id="electroDuracion" type="number" placeholder="Ej: 60" min="1" />
+              </div>
+            </div>
+            <div style="margin-top:12px;text-align:right;font-size:0.95rem;color:#444">Programado por: <span id="electroProgramadoPor" style="font-weight:600">-</span></div>
+            <div style="margin-top:12px;text-align:right"><button id="crearCitaElectro" style="width:200px">Crear Cita</button></div>
           </section>
+
+          <!-- Tabla de Citas -->
           <section class="card">
             <h3>Citas del Día</h3>
-            <div id="citasElectroList" style="overflow-x:auto">
-              <table id="citasElectroTable" style="width:100%;border-collapse:collapse">
+            <div id="citasElectroList" style="overflow-x:auto;border-radius:8px;overflow:hidden">
+              <table id="citasElectroTable" class="modern-table">
                 <thead>
-                  <tr style="background:#f0f0f0">
-                    <th style="padding:8px;border:1px solid #ddd">Hora</th>
-                    <th style="padding:8px;border:1px solid #ddd">Paciente</th>
-                    <th style="padding:8px;border:1px solid #ddd">Documento</th>
-                    <th style="padding:8px;border:1px solid #ddd">Estudio</th>
-                    <th style="padding:8px;border:1px solid #ddd">Estado</th>
-                    <th style="padding:8px;border:1px solid #ddd" id="electroEditadoTh">Editado por</th>
-                    <th style="padding:8px;border:1px solid #ddd">Acciones</th>
+                  <tr>
+                    <th>Hora</th>
+                    <th>Equipo</th>
+                    <th>Paciente</th>
+                    <th>Documento</th>
+                    <th>Teléfono</th>
+                    <th>Estudio</th>
+                    <th>Diagnóstico</th>
+                    <th>Estado</th>
+                    <th>Hora Inicio</th>
+                    <th>Hora Fin</th>
                   </tr>
                 </thead>
                 <tbody id="citasElectroBody">
-                  <tr><td colspan="7" style="padding:20px;text-align:center;color:#999">Selecciona fecha y equipo para ver las citas</td></tr>
+                  <tr><td colspan="10" style="padding:20px;text-align:center;color:#999">Selecciona una fecha para ver las citas</td></tr>
                 </tbody>
               </table>
             </div>
+
+            <!-- Información de Usuario Programó / Editó (abajo de la tabla) -->
+            <div style="margin-top:20px;padding:16px;background:#f9fafb;border-radius:8px;border:1px solid #e5e7eb;display:flex;justify-content:space-between;gap:24px">
+              <div>
+                <div style="font-size:0.85rem;color:#6b7280;font-weight:600;margin-bottom:4px">USUARIO QUE PROGRAMÓ</div>
+                <div style="font-size:0.95rem;color:#1f2937;font-weight:500" id="electroUsuarioProgramo">-</div>
+              </div>
+              <div style="text-align:right">
+                <div style="font-size:0.85rem;color:#6b7280;font-weight:600;margin-bottom:4px">USUARIO QUE EDITÓ</div>
+                <div style="font-size:0.95rem;color:#1f2937;font-weight:500" id="electroUsuarioEdito">-</div>
+              </div>
+            </div>
           </section>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal para detalles de cita electrodiagnóstico -->
+  <div id="modalDetallesCitaElectro" class="modal hidden" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:1000;padding:20px">
+    <div class="modal-content" style="background:white;border-radius:12px;padding:32px;max-width:600px;width:100%;box-shadow:0 20px 25px -5px rgba(0,0,0,0.1);max-height:90vh;overflow-y:auto">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px">
+        <h2 style="margin:0;color:#1f2937">Detalles de la Cita</h2>
+        <button id="cerrarModalDetallesCita" style="background:none;border:none;font-size:24px;cursor:pointer;color:#6b7280;padding:0;width:32px;height:32px;display:flex;align-items:center;justify-content:center">&times;</button>
+      </div>
+
+      <div style="background:#f9fafb;padding:16px;border-radius:8px;margin-bottom:24px">
+        <div style="margin-bottom:12px">
+          <div style="font-size:0.85rem;color:#6b7280;font-weight:600">PACIENTE</div>
+          <div id="modalPacienteNombre" style="font-size:1.1rem;color:#1f2937;font-weight:600">-</div>
+        </div>
+        <div>
+          <div style="font-size:0.85rem;color:#6b7280;font-weight:600">DOCUMENTO</div>
+          <div id="modalPacienteDocumento" style="font-size:1rem;color:#1f2937">-</div>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px">
+        <div>
+          <label style="display:block;font-size:0.85rem;color:#6b7280;font-weight:600;margin-bottom:6px">Equipo</label>
+          <select id="modalEquipo" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:0.95rem">
+            <option value="">Seleccionar equipo</option>
+          </select>
+        </div>
+        <div>
+          <label style="display:block;font-size:0.85rem;color:#6b7280;font-weight:600;margin-bottom:6px">Estado</label>
+          <select id="modalEstado" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:0.95rem">
+            <option value="Programado">Programado</option>
+            <option value="En Sala">En Sala</option>
+            <option value="En Estudio">En Estudio</option>
+            <option value="Completado">Completado</option>
+            <option value="No Asistió">No Asistió</option>
+            <option value="Cancelado">Cancelado</option>
+          </select>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:24px">
+        <button id="btnIniciarEstudio" style="padding:12px;background:#0369a1;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:0.9rem">Iniciar</button>
+        <button id="btnFinalizarEstudio" style="padding:12px;background:#059669;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:0.9rem">Finalizar</button>
+        <button id="btnEnviarRecomendaciones" style="padding:12px;background:#8AA6A1;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:0.9rem">Recomendaciones</button>
+      </div>
+
+      <div style="display:flex;gap:12px;justify-content:space-between">
+        <button id="btnEliminarCita" style="padding:12px 24px;background:#dc2626;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600;display:none">Eliminar Cita</button>
+        <div style="display:flex;gap:12px">
+          <button id="btnCancelarModal" style="padding:12px 24px;background:#e5e7eb;color:#1f2937;border:none;border-radius:6px;cursor:pointer;font-weight:600" onclick="document.getElementById('modalDetallesCitaElectro').classList.add('hidden')">Cerrar</button>
+          <button id="btnGuardarCambios" style="padding:12px 24px;background:#8AA6A1;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600">Guardar</button>
         </div>
       </div>
     </div>

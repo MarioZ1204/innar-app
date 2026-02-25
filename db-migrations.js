@@ -160,6 +160,32 @@ const migrations = [
     name: 'especialidad_doctor',
     description: 'Agregar columna especialidad a tabla usuarios para doctors',
     sql: `ALTER TABLE usuarios ADD COLUMN especialidad VARCHAR(100)`
+  },
+  {
+    name: 'diagnosticos',
+    description: 'Tabla para gestión de diagnósticos',
+    sql: `
+      CREATE TABLE IF NOT EXISTS diagnosticos (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        nombre VARCHAR(255) NOT NULL UNIQUE,
+        descripcion TEXT,
+        codigo VARCHAR(50),
+        activo TINYINT DEFAULT 1,
+        fecha_creacion DATETIME DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_nombre (nombre),
+        INDEX idx_activo (activo)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+    `
+  },
+  {
+    name: 'citas_electro_diagnostico',
+    description: 'Agregar columna diagnóstico a tabla citas_electro',
+    sql: `ALTER TABLE citas_electro ADD COLUMN diagnostico_id INT, ADD FOREIGN KEY (diagnostico_id) REFERENCES diagnosticos(id) ON DELETE SET NULL`
+  },
+  {
+    name: 'citas_electro_equipo_nullable',
+    description: 'Hacer que equipo_id sea nullable en citas_electro (se selecciona después)',
+    sql: `ALTER TABLE citas_electro MODIFY COLUMN equipo_id INT NULL`
   }
 ];
 
