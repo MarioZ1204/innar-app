@@ -644,6 +644,11 @@
                 <input id="electroDiagnostico" type="text" placeholder="Búsqueda de diagnóstico..." list="diagnosticosListElectro" />
                 <datalist id="diagnosticosListElectro"></datalist>
               </div>
+              <div class="col">
+                <label>Equipo</label>
+                <input id="electroEquipo" type="text" placeholder="Búsqueda de equipo..." list="equiposListElectro" />
+                <datalist id="equiposListElectro"></datalist>
+              </div>
               <div class="col"><label>Hora</label><select id="electroHora"></select></div>
               <div class="col"><label>Nombre del Paciente</label><input id="electroPacienteNombre" type="text" placeholder="Nombre del paciente" list="pacientesListElectro" /><datalist id="pacientesListElectro"></datalist></div>
             </div>
@@ -717,6 +722,17 @@
         <div>
           <div style="font-size:0.85rem;color:#6b7280;font-weight:600">DOCUMENTO</div>
           <div id="modalPacienteDocumento" style="font-size:1rem;color:#1f2937">-</div>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;padding:16px;background:#f9fafb;border-radius:8px">
+        <div>
+          <div style="font-size:0.85rem;color:#6b7280;font-weight:600;margin-bottom:4px">USUARIO QUE PROGRAMÓ</div>
+          <div id="modalUsuarioProgramo" style="font-size:0.95rem;color:#1f2937">-</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:0.85rem;color:#6b7280;font-weight:600;margin-bottom:4px">USUARIO QUE EDITÓ</div>
+          <div id="modalUsuarioEdito" style="font-size:0.95rem;color:#1f2937">-</div>
         </div>
       </div>
 

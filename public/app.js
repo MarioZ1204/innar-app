@@ -29,6 +29,7 @@ let selectedDoctorId = null;
 let citaElectroSeleccionada = null;
 let selectedDoctorEspecialidad = null;
 let selectedDiagnosticoElectroId = null;
+let selectedEquipoElectroId = null;
 
 // Mapeo de especialidades a tipos de consulta
 const ESPECIALIDAD_TIPOS_CONSULTA = {
@@ -2272,8 +2273,18 @@ async function initElectro() {
       equipoSelect.appendChild(opt);
     });
     window.equiposDisponibles = equipos || [];
+    
+    // Cargar equipos también en el datalist del formulario de creación
+    const dl = $('equiposListElectro');
+    dl.innerHTML = '';
+    equipos.forEach(e => {
+      const o = document.createElement('option');
+      o.value = e.nombre || `Equipo ${e.id}`;
+      o.dataset.id = e.id;
+      o.dataset.nombre = e.nombre || '';
+      dl.appendChild(o);
+    });
   } catch (e) {
-    console.error('Error cargando equipos:', e);
     window.equiposDisponibles = [];
   }
   
@@ -2301,6 +2312,9 @@ async function initElectro() {
   $('electroDiagnostico')?.addEventListener('input', debounce(buscarDiagnosticosElectro, 300));
   // Cargar diagnósticos inicialmente
   await buscarDiagnosticosElectro();
+  
+  // Event listener para autocompletado de equipos (búsqueda dinámicamente)
+  $('electroEquipo')?.addEventListener('input', debounce(buscarEquiposElectro, 300));
   
   // Validadores en tiempo real
   // Nombre: Solo letras y espacios
@@ -2350,10 +2364,8 @@ async function initElectro() {
   
   // Event listeners para cambios en el modal (equipo y estado)
   $('modalEquipo')?.addEventListener('change', (e) => {
-    console.log('🔧 Equipo cambiado en modal a:', e.target.value);
   });
   $('modalEstado')?.addEventListener('change', (e) => {
-    console.log('🔧 Estado cambiado en modal a:', e.target.value);
   });
   $('btnEnviarRecomendaciones')?.addEventListener('click', (e) => {
     showToast('Función "Enviar Recomendaciones" - En desarrollo', 'info');
@@ -2399,7 +2411,6 @@ async function buscarDiagnosticosElectro() {
       dl.appendChild(o); 
     });
   } catch (e) {
-    console.error('Error buscando diagnósticos:', e);
   }
 }
 
@@ -2417,6 +2428,42 @@ $('electroDiagnostico').addEventListener('input', function() {
     }
   } else {
     selectedDiagnosticoElectroId = null;
+  }
+});
+
+async function buscarEquiposElectro() {
+  const q = $('electroEquipo').value.trim();
+  try {
+    const url = q.length < 2 ? '/api/equipos-electro' : `/api/equipos-electro?buscar=${encodeURIComponent(q)}`;
+    const res = await apiFetch(url);
+    const equipos = await res.json();
+    const dl = $('equiposListElectro');
+    dl.innerHTML = '';
+    equipos.forEach(e => { 
+      const o = document.createElement('option'); 
+      o.value = e.nombre || `Equipo ${e.id}`;
+      o.dataset.id = e.id;
+      o.dataset.nombre = e.nombre || '';
+      dl.appendChild(o); 
+    });
+  } catch (e) {
+  }
+}
+
+// Listener para cuando se selecciona un equipo del datalist
+$('electroEquipo').addEventListener('input', function() {
+  const selectedValue = this.value.trim();
+  if (selectedValue) {
+    const dl = $('equiposListElectro');
+    const opciones = dl.querySelectorAll('option');
+    for (let opt of opciones) {
+      if (opt.value === selectedValue) {
+        selectedEquipoElectroId = parseInt(opt.dataset.id, 10);
+        break;
+      }
+    }
+  } else {
+    selectedEquipoElectroId = null;
   }
 });
 
@@ -2592,6 +2639,17 @@ async function crearCitaElectro() {
     }
   }
   
+  // Buscar ID del equipo si fue seleccionado
+  let equipoId = selectedEquipoElectroId;
+  if (!equipoId) {
+    // Fallback: buscar en window.equiposDisponibles
+    const equipoNombre = $('electroEquipo').value.trim();
+    if (equipoNombre && window.equiposDisponibles) {
+      const equipo = window.equiposDisponibles.find(e => e.nombre === equipoNombre);
+      if (equipo) equipoId = equipo.id;
+    }
+  }
+  
   try {
     const body = {
       paciente_id: pacienteId,
@@ -2599,7 +2657,8 @@ async function crearCitaElectro() {
       hora,
       telefono,
       estudio,
-      estado: 'Programado'
+      estado: 'Programado',
+      programado_por_nombre: currentUser ? (currentUser.nombre || currentUser.usuario) : 'Sistema'
     };
     
     // Agregar duración si fue especificada
@@ -2610,6 +2669,11 @@ async function crearCitaElectro() {
     // Agregar diagnóstico si fue seleccionado
     if (diagnosticoId) {
       body.diagnostico_id = diagnosticoId;
+    }
+    
+    // Agregar equipo si fue seleccionado
+    if (equipoId) {
+      body.equipo_id = equipoId;
     }
     
     const res = await apiFetch('/api/citas-electro', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
@@ -2627,6 +2691,8 @@ async function crearCitaElectro() {
       $('electroEstudio').value = '';
       $('electroDiagnostico').value = '';
       selectedDiagnosticoElectroId = null;
+      $('electroEquipo').value = '';
+      selectedEquipoElectroId = null;
       $('electroDuracion').value = '';
       $('electroDuracionCol').style.display = 'none';
       // Recargar tabla
@@ -4156,7 +4222,6 @@ async function iniciarEstudioModal() {
       showToast(data?.error || 'Error iniciando estudio', 'error');
     }
   } catch (e) {
-    console.error('Error iniciando estudio:', e);
     showToast('Error iniciando estudio', 'error');
   }
 }
@@ -4202,7 +4267,6 @@ async function finalizarEstudioModal() {
       showToast(data?.error || 'Error finalizando estudio', 'error');
     }
   } catch (e) {
-    console.error('Error finalizando estudio:', e);
     showToast('Error finalizando estudio', 'error');
   }
 }
@@ -4214,6 +4278,10 @@ function abrirModalDetallesCita(cita) {
   $('modalPacienteNombre').textContent = escapeHtml(cita.paciente_nombre || '-');
   $('modalPacienteDocumento').textContent = escapeHtml(cita.paciente_documento || '-');
   
+  // Rellenar usuario que programó y editó
+  $('modalUsuarioProgramo').textContent = escapeHtml(cita.programado_por_nombre || '-');
+  $('modalUsuarioEdito').textContent = escapeHtml(cita.editado_por_nombre || cita.programado_por_nombre || '-');
+  
   // Rellenar selector de equipo
   $('modalEquipo').value = cita.equipo_id || '';
   
@@ -4222,8 +4290,6 @@ function abrirModalDetallesCita(cita) {
   
   // Mostrar botón de eliminar solo para admin
   const btnEliminar = $('btnEliminarCita');
-  console.log('CurrentUser:', currentUser);
-  console.log('Rol usuario:', currentUser?.rol);
   if (currentUser && (currentUser.rol === 'admin' || currentUser.rol === 'administrador')) {
     btnEliminar.style.display = '';
   } else {
@@ -4283,25 +4349,18 @@ async function guardarCambiosCitaElectro() {
     const equipoNuevo = $('modalEquipo').value;
     const estadoNuevo = $('modalEstado').value;
     
-    console.log('🖱️ GUARDANDO CAMBIOS - Equipo:', 'anterior=', citaElectroSeleccionada.equipo_id, 'nuevo=', equipoNuevo);
-    console.log('🖱️ GUARDANDO CAMBIOS - Estado:', 'anterior=', citaElectroSeleccionada.estado, 'nuevo=', estadoNuevo);
-    
     // Si se cambió equipo o estado, actualizar
     const cambios = {};
     
     // Comparar equipo (convertir ambos a string para comparar)
     if (String(equipoNuevo) !== String(citaElectroSeleccionada.equipo_id || '')) {
       cambios.equipo_id = equipoNuevo ? parseInt(equipoNuevo) : null;
-      console.log('✏️ Cambio detectado: Equipo');
     }
     
     // Comparar estado
     if (estadoNuevo !== (citaElectroSeleccionada.estado || 'Programado')) {
       cambios.estado = estadoNuevo;
-      console.log('✏️ Cambio detectado: Estado');
     }
-    
-    console.log('📝 Cambios a guardar:', cambios);
     
     if (Object.keys(cambios).length > 0) {
       const res = await apiFetch(`/api/citas-electro/${citaElectroSeleccionada.id}`, {
@@ -4311,7 +4370,6 @@ async function guardarCambiosCitaElectro() {
       });
       
       const data = await res.json();
-      console.log('📊 Respuesta del servidor:', data);
       
       if (data && data.ok) {
         showToast('✅ Cambios guardados', 'success');
@@ -4322,7 +4380,6 @@ async function guardarCambiosCitaElectro() {
             id: citaElectroSeleccionada.id,
             cambios
           });
-          console.log('📤 Socket event emitido: cambios-guardados', cambios);
         }
         
         // El servidor también emite el socket event
@@ -4336,7 +4393,6 @@ async function guardarCambiosCitaElectro() {
       cerrarModalDetallesCita();
     }
   } catch (e) {
-    console.error('Error guardando cambios:', e);
     showToast('Error guardando cambios: ' + e.message, 'error');
   }
 }

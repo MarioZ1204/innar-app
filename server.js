@@ -1838,7 +1838,6 @@ app.get('/api/equipos-electro', async (req, res) => {
     const equipos = await db.query('SELECT * FROM equipos_electro WHERE activo = 1 ORDER BY nombre ASC');
     res.json(equipos);
   } catch (e) {
-    console.error(e);
     res.status(500).json({ error: e.message });
   }
 });
@@ -2077,14 +2076,13 @@ app.get('/api/citas-electro', async (req, res) => {
     const citas = await db.query(query, params);
     res.json(citas);
   } catch (e) {
-    console.error('❌ Error en GET /api/citas-electro:', e);
     res.status(500).json({ error: e.message });
   }
 });
 
 // Crear cita electrodiagnóstico
 app.post('/api/citas-electro', async (req, res) => {
-  const { equipo_id, paciente_id, fecha, hora_agendamiento, hora, hora_fin, estudio, observaciones, diagnostico_id, estado } = req.body || {};
+  const { equipo_id, paciente_id, fecha, hora_agendamiento, hora, hora_fin, estudio, observaciones, diagnostico_id, estado, programado_por_nombre } = req.body || {};
   
   // 'hora' o 'hora_agendamiento' es la hora programada para el estudio
   const horaAgendamiento = hora_agendamiento || hora;
@@ -2104,18 +2102,9 @@ app.post('/api/citas-electro', async (req, res) => {
   }
 
   try {
-    console.log('📝 Creando cita_electro con:', {
-      paciente_id,
-      fecha,
-      hora_agendamiento: horaAgendamiento,
-      hora_inicio: 'NULL (será seteado cuando se presione Iniciar)',
-      estudio,
-      estado
-    });
-
     const result = await db.execute(`
-      INSERT INTO citas_electro (equipo_id, paciente_id, fecha, hora_agendamiento, hora_inicio, hora_fin, estudio, observaciones, diagnostico_id, estado)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO citas_electro (equipo_id, paciente_id, fecha, hora_agendamiento, hora_inicio, hora_fin, estudio, observaciones, diagnostico_id, estado, programado_por_nombre)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       equipo_id || null,
       paciente_id,
@@ -2126,14 +2115,12 @@ app.post('/api/citas-electro', async (req, res) => {
       estudio || null,
       observaciones || null,
       diagnostico_id || null,
-      estado || 'Programado'
+      estado || 'Programado',
+      programado_por_nombre || 'Sistema'
     ]);
-    
-    console.log(`✅ Cita creada (ID: ${result.insertId}). Emitiendo socket events...`);
     
     // Emitir evento de socket para actualizar en tiempo real
     if (app.io) {
-      console.log('📡 Emitiendo: electro:cita-creada a todos los clientes');
       app.io.emit('electro:cita-creada', {
         id: result.insertId,
         paciente_id,
@@ -2142,17 +2129,11 @@ app.post('/api/citas-electro', async (req, res) => {
         estudio,
         estado: estado || 'Programado'
       });
-      console.log('📡 Emitiendo: electro:actualizar-lista a todos los clientes');
       app.io.emit('electro:actualizar-lista', { type: 'creada', id: result.insertId });
-    } else {
-      console.warn('⚠️ app.io no está disponible');
     }
-    
-    console.log('✅ Cita creada con ID:', result.insertId);
     
     res.json({ ok: true, id: result.insertId });
   } catch (e) {
-    console.error('❌ Error creando cita:', e);
     res.status(500).json({ error: e.message });
   }
 });
@@ -2250,25 +2231,18 @@ app.patch('/api/citas-electro/:id', requireAuth, async (req, res) => {
     
     await db.execute(`UPDATE citas_electro SET ${updates.join(', ')} WHERE id = ?`, values);
     
-    console.log(`✅ Cita actualizada (ID: ${id}). Cambios: ${JSON.stringify(cambios)}. Emitiendo socket events...`);
-    
     // Emitir evento de socket para actualizar en tiempo real
     if (app.io) {
-      console.log('📡 Emitiendo: electro:cita-actualizada a todos los clientes');
       app.io.emit('electro:cita-actualizada', {
         id,
         ...cambios,
         editado_por: req.session.usuarioNombre || 'Sistema'
       });
-      console.log('📡 Emitiendo: electro:actualizar-lista a todos los clientes');
       app.io.emit('electro:actualizar-lista', { type: 'actualizada', id, cambios });
-    } else {
-      console.warn('⚠️ app.io no está disponible');
     }
     
     res.json({ ok: true });
   } catch (e) {
-    console.error(e);
     res.status(500).json({ error: e.message });
   }
 });
@@ -2277,7 +2251,6 @@ app.patch('/api/citas-electro/:id', requireAuth, async (req, res) => {
 app.delete('/api/citas-electro/:id', requireAuth, async (req, res) => {
   // Solo administrador puede eliminar citas
   const esAdmin = req.session.rol === 'admin' || req.session.rol === 'administrador';
-  console.log(`🔐 DELETE /api/citas-electro/:id - Verificación de rol. Rol: "${req.session.rol}", es Admin: ${esAdmin}`);
   
   if (!req.session.rol || !esAdmin) {
     return res.status(403).json({ error: 'Solo el administrador puede eliminar citas' });
@@ -2297,24 +2270,17 @@ app.delete('/api/citas-electro/:id', requireAuth, async (req, res) => {
 
     await db.execute('DELETE FROM citas_electro WHERE id = ?', [id]);
     
-    console.log(`✅ Cita eliminada (ID: ${id}). Emitiendo socket events...`);
-    
     // Emitir evento de socket para actualizar en tiempo real
     if (app.io) {
-      console.log('📡 Emitiendo: electro:cita-eliminada a todos los clientes');
       app.io.emit('electro:cita-eliminada', {
         id,
         cita_info: cita
       });
-      console.log('📡 Emitiendo: electro:actualizar-lista a todos los clientes');
       app.io.emit('electro:actualizar-lista', { type: 'eliminada', id });
-    } else {
-      console.warn('⚠️ app.io no está disponible');
     }
     
     res.json({ ok: true });
   } catch (e) {
-    console.error(e);
     res.status(500).json({ error: e.message });
   }
 });
