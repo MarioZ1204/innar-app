@@ -633,10 +633,10 @@
                 <select id="electroEstudio" required style="border: 2px solid #dc2626;">
                   <option value="">Seleccionar estudio</option>
                   <option value="PSG Básica">PSG Básica</option>
-                  <option value="PSG con Titulación de Dispositivo Médico CPAP">PSG con Titulación CPAP</option>
-                  <option value="PSG con Titulación de Dispositivo Médico BPAP">PSG con Titulación BPAP</option>
+                  <option value="PSG con Titulación de Dispositivo Médico CPAP/BPAP">PSG con Titulación CPAP/BPAP</option>
                   <option value="Electroencefalograma">Electroencefalograma</option>
                   <option value="Monitorización Electroencefalografica por Video y Radio">Monitorización EEG por Video y Radio</option>
+                  <option value="Test de Latencia">Test de Latencia</option>
                 </select>
               </div>
               <div class="col">
@@ -667,6 +667,16 @@
           <!-- Tabla de Citas -->
           <section class="card">
             <h3>Citas del Día</h3>
+            <!-- PESTAÑAS DE ESTUDIOS -->
+            <div style="display:flex;gap:8px;margin-bottom:16px;border-bottom:2px solid #e5e7eb;overflow-x:auto">
+              <button class="tab-electro-btn active" data-estudio="todas" style="padding:12px 16px;background:none;border:none;border-bottom:3px solid #0369a1;color:#0369a1;cursor:pointer;font-weight:600;white-space:nowrap">Todas</button>
+              <button class="tab-electro-btn" data-estudio="PSG Básica" style="padding:12px 16px;background:none;border:none;border-bottom:3px solid transparent;color:#6b7280;cursor:pointer;font-weight:600;white-space:nowrap">PSG Básica</button>
+              <button class="tab-electro-btn" data-estudio="PSG con Titulación de Dispositivo Médico CPAP/BPAP" style="padding:12px 16px;background:none;border:none;border-bottom:3px solid transparent;color:#6b7280;cursor:pointer;font-weight:600;white-space:nowrap">PSG CPAP/BPAP</button>
+              <button class="tab-electro-btn" data-estudio="Electroencefalograma" style="padding:12px 16px;background:none;border:none;border-bottom:3px solid transparent;color:#6b7280;cursor:pointer;font-weight:600;white-space:nowrap">EEG</button>
+              <button class="tab-electro-btn" data-estudio="Monitorización Electroencefalografica por Video y Radio" style="padding:12px 16px;background:none;border:none;border-bottom:3px solid transparent;color:#6b7280;cursor:pointer;font-weight:600;white-space:nowrap">Monit. EEG</button>
+              <button class="tab-electro-btn" data-estudio="Test de Latencia" style="padding:12px 16px;background:none;border:none;border-bottom:3px solid transparent;color:#6b7280;cursor:pointer;font-weight:600;white-space:nowrap">Test Latencia</button>
+            </div>
+
             <div id="citasElectroList" style="overflow-x:auto;border-radius:8px;overflow:hidden">
               <table id="citasElectroTable" class="modern-table">
                 <thead>

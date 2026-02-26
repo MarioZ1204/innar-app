@@ -31,6 +31,7 @@ let selectedDoctorEspecialidad = null;
 let selectedDiagnosticoElectroId = null;
 let selectedEquipoElectroId = null;
 let selectedEstudioDuracion = null; // Duración en minutos del estudio seleccionado
+let filtroEstudioElectro = 'todas'; // Filtro de estudio en tabla de citas
 
 // Mapeo de especialidades a tipos de consulta
 const ESPECIALIDAD_TIPOS_CONSULTA = {
@@ -2400,6 +2401,24 @@ async function initElectro() {
     }
   });
 
+  // Event listeners para pestañas de estudios
+  document.querySelectorAll('.tab-electro-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      filtroEstudioElectro = e.target.dataset.estudio;
+      
+      // Actualizar estilos de botones
+      document.querySelectorAll('.tab-electro-btn').forEach(b => {
+        b.style.borderBottomColor = 'transparent';
+        b.style.color = '#6b7280';
+      });
+      e.target.style.borderBottomColor = '#0369a1';
+      e.target.style.color = '#0369a1';
+      
+      // Recargar tabla filtrada
+      cargarCitasElectro();
+    });
+  });
+
   await cargarCitasElectro();
 }
 
@@ -2625,24 +2644,31 @@ async function cargarCitasElectro() {
     const res = await apiFetch(`/api/citas-electro?fecha=${fecha}`);
     const citas = await res.json();
     
+    // Filtrar por estudio si es necesario
+    let citasFiltradas = citas;
+    if (filtroEstudioElectro !== 'todas') {
+      citasFiltradas = citas.filter(c => c.estudio === filtroEstudioElectro);
+    }
+    
     const tbody = $('citasElectroBody');
     tbody.innerHTML = '';
     
-    if (citas.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="10" style="padding:20px;text-align:center;color:#999">No hay citas registradas para esta fecha</td></tr>';
+    if (citasFiltradas.length === 0) {
+      const mensajeEstudio = filtroEstudioElectro === 'todas' ? '' : ` para ${filtroEstudioElectro}`;
+      tbody.innerHTML = `<tr><td colspan="10" style="padding:20px;text-align:center;color:#999">No hay citas registradas para esta fecha${mensajeEstudio}</td></tr>`;
       // Actualizar información de usuario
       $('electroUsuarioProgramo').textContent = '-';
       $('electroUsuarioEdito').textContent = '-';
       return;
     }
     
-    // Renderizar cada cita
-    citas.forEach(c => renderCitaElectroRow(tbody, c));
+    // Renderizar cada cita filtrada
+    citasFiltradas.forEach(c => renderCitaElectroRow(tbody, c));
     
-    // Actualizar información de usuario (del primer registro)
-    if (citas.length > 0) {
-      $('electroUsuarioProgramo').textContent = citas[0].programado_por_nombre || citas[0].usuario_programo || '-';
-      $('electroUsuarioEdito').textContent = citas[0].editado_por_nombre || citas[0].usuario_edito || citas[0].programado_por_nombre || citas[0].usuario_programo || 'Quien programó';
+    // Actualizar información de usuario (del primer registro filtrado)
+    if (citasFiltradas.length > 0) {
+      $('electroUsuarioProgramo').textContent = citasFiltradas[0].programado_por_nombre || citasFiltradas[0].usuario_programo || '-';
+      $('electroUsuarioEdito').textContent = citasFiltradas[0].editado_por_nombre || citasFiltradas[0].usuario_edito || citasFiltradas[0].programado_por_nombre || citasFiltradas[0].usuario_programo || 'Quien programó';
     }
   } catch (e) { 
     console.error('Error cargando citas:', e);
