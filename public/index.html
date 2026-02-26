@@ -641,23 +641,23 @@
               </div>
               <div class="col">
                 <label>Diagnóstico</label>
-                <input id="electroDiagnostico" type="text" placeholder="Búsqueda de diagnóstico..." list="diagnosticosListElectro" />
+                <input id="electroDiagnostico" type="text" placeholder="Búsqueda de diagnóstico..." list="diagnosticosListElectro" autocomplete="off" style="background-image: none; background-clip: padding-box;" />
                 <datalist id="diagnosticosListElectro"></datalist>
               </div>
-              <div class="col">
-                <label>Equipo</label>
-                <input id="electroEquipo" type="text" placeholder="Búsqueda de equipo..." list="equiposListElectro" />
-                <datalist id="equiposListElectro"></datalist>
-              </div>
               <div class="col"><label>Hora</label><select id="electroHora"></select></div>
-              <div class="col"><label>Nombre del Paciente</label><input id="electroPacienteNombre" type="text" placeholder="Nombre del paciente" list="pacientesListElectro" /><datalist id="pacientesListElectro"></datalist></div>
+              <div class="col"><label>Número de Documento</label><input id="electroDocumento" type="text" placeholder="Documento (buscar paciente)" /></div>
+            </div>
+            <!-- Avisos de Disponibilidad de Equipos -->
+            <div id="equiposDisponibilidadAlerta" style="margin-top:12px;padding:10px;background:#f0f9ff;border-left:4px solid #3b82f6;border-radius:4px;display:none">
+              <div style="font-weight:600;color:#1e40af;margin-bottom:8px">📊 Disponibilidad de Equipos</div>
+              <div id="equiposDisponibilidadContenido"></div>
             </div>
             <div class="row" style="margin-top:12px">
-              <div class="col"><label>Número de Documento</label><input id="electroDocumento" type="text" placeholder="Documento" /></div>
-              <div class="col"><label>Número de Teléfono</label><input id="electroTelefono" type="tel" placeholder="Teléfono" /></div>
+              <div class="col"><label>Nombre del Paciente</label><input id="electroPacienteNombre" type="text" placeholder="Se autocompleta al ingresar documento" /></div>
+              <div class="col"><label>Número de Teléfono</label><input id="electroTelefono" type="tel" placeholder="Se autocompleta al ingresar documento" /></div>
               <div class="col" id="electroDuracionCol" style="display:none">
-                <label>Duración del Estudio (minutos)</label>
-                <input id="electroDuracion" type="number" placeholder="Ej: 60" min="1" />
+                <label>Duración del Estudio (horas)</label>
+                <input id="electroDuracion" type="number" placeholder="Ej: 8" min="1" max="168" step="0.5" />
               </div>
             </div>
             <div style="margin-top:12px;text-align:right;font-size:0.95rem;color:#444">Programado por: <span id="electroProgramadoPor" style="font-weight:600">-</span></div>
@@ -746,10 +746,7 @@
         <div>
           <label style="display:block;font-size:0.85rem;color:#6b7280;font-weight:600;margin-bottom:6px">Estado</label>
           <select id="modalEstado" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:0.95rem">
-            <option value="Programado">Programado</option>
             <option value="En Sala">En Sala</option>
-            <option value="En Estudio">En Estudio</option>
-            <option value="Completado">Completado</option>
             <option value="No Asistió">No Asistió</option>
             <option value="Cancelado">Cancelado</option>
           </select>

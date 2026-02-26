@@ -6,13 +6,9 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "init-db": "node init-db.js",
-    "migrate": "node migrate.js",
-    "migrate-estados": "node migrate-estados.js",
+    "migrate": "node db-migrations.js",
     "build": "pkg . --target win --compress Brotli",
-    "build:all": "pkg . --target win,macos,linux --compress Brotli",
-    "obfuscate": "node scripts/obfuscate-frontend.js",
-    "restore-source": "node scripts/restore-source.js"
+    "build:all": "pkg . --target win,macos,linux --compress Brotli"
   },
   "keywords": [
     "recibos",
@@ -46,7 +42,6 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
-    "javascript-obfuscator": "^4.1.1",
     "pkg": "^5.8.0"
   },
   "engines": {

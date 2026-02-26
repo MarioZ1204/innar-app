@@ -17,6 +17,7 @@ const path = require('path');
 const session = require('express-session');
 const bcrypt = require('bcrypt');
 const multer = require('multer');
+const appointmentsRouter = require('./routes/appointmentsV1');  // ← API v1 de citas
 
 const app = express();
 app.use(cors({
@@ -73,6 +74,9 @@ app.use(session({
 }));
 // activar rolling session para actualizar cookie en cada respuesta
 app.set('trust proxy', 1);
+
+// Rutas de la API v1 de Appointments Service
+app.use('/api/v1/appointments', appointmentsRouter);
 
 // Páginas wrapper para reportes (muestran favicon en la pestaña y el PDF en iframe)
 app.get('/reportes/diario/vista', (req, res) => {
@@ -1842,6 +1846,174 @@ app.get('/api/equipos-electro', async (req, res) => {
   }
 });
 
+// Obtener disponibilidad de CUPOS para una fecha y hora específica
+// Obtener duración de un estudio específico
+app.get('/api/estudios/duracion', async (req, res) => {
+  try {
+    const { nombre } = req.query;
+    
+    if (!nombre) {
+      return res.status(400).json({ error: 'nombre del estudio es obligatorio' });
+    }
+
+    const estudios = await db.query(
+      'SELECT duracion_minutos, duracion_min, duracion_max FROM estudio_duraciones WHERE nombre = ?',
+      [nombre]
+    );
+    
+    if (!estudios || estudios.length === 0) {
+      return res.status(404).json({ error: 'Estudio no encontrado' });
+    }
+    
+    const est = estudios[0];
+    res.json({
+      ok: true,
+      duracion_minutos: est.duracion_minutos,
+      duracion_min: est.duracion_min,
+      duracion_max: est.duracion_max,
+      esVariable: est.duracion_min !== null && est.duracion_max !== null
+    });
+  } catch (e) {
+    console.error('Error obteniendo duración:', e);
+    res.status(500).json({ error: 'Error del servidor' });
+  }
+});
+
+app.get('/api/equipos-electro/disponibilidad', async (req, res) => {
+  try {
+    const { fecha, hora, estudio, duracion_manual } = req.query;
+    
+    if (!fecha || !hora) {
+      return res.status(400).json({ error: 'fecha y hora son obligatorios' });
+    }
+
+    // Validar formato
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
+      return res.status(400).json({ error: 'Fecha inválida (YYYY-MM-DD)' });
+    }
+    if (!/^\d{2}:\d{2}(:\d{2})?$/.test(hora)) {
+      return res.status(400).json({ error: 'Hora inválida (HH:MM)' });
+    }
+
+    // Obtener duración del estudio
+    let duracionMinutos = 30; // default
+    
+    if (estudio) {
+      const estudios = await db.query(
+        'SELECT duracion_minutos, duracion_min, duracion_max FROM estudio_duraciones WHERE nombre = ?',
+        [estudio]
+      );
+      
+      if (estudios && estudios.length > 0) {
+        const est = estudios[0];
+        // Si es Estudio4 (duracion_min/max), usar duracion_manual si está provided
+        if (est.duracion_min && est.duracion_max) {
+          duracionMinutos = duracion_manual ? parseInt(duracion_manual, 10) : est.duracion_min;
+        } else {
+          duracionMinutos = est.duracion_minutos || 30;
+        }
+      }
+    }
+
+    // Calcular hora_fin y fecha_fin
+    const [hh, mm] = hora.split(':').map(x => parseInt(x, 10));
+    const startTime = new Date();
+    startTime.setHours(hh, mm, 0, 0);
+    startTime.setMinutes(startTime.getMinutes() + duracionMinutos);
+    const horaFin = `${String(startTime.getHours()).padStart(2, '0')}:${String(startTime.getMinutes()).padStart(2, '0')}`;
+    
+    // Si hora_fin <= hora, cruza medianoche
+    let fechaFin = fecha;
+    if (horaFin <= hora) {
+      const nextDay = new Date(fecha);
+      nextDay.setDate(nextDay.getDate() + 1);
+      fechaFin = nextDay.toISOString().slice(0, 10);
+    }
+
+    // CRÍTICO: Contar CUPOS OCUPADOS en este rango horario
+    // Los cupos se RESERVAN al agendar (Programado), se OCUPAN EN USO (En Estudio, Completado)
+    // NO ocupan cupo: No Asistió, Cancelado
+    // Convertir a DATETIME para comparación correcta incluso con cambio de día
+    const citasOcupadas = await db.query(`
+      SELECT 
+        id, paciente_id, fecha, hora_agendamiento, hora_fin, hora_fin_date, estudio, estado
+      FROM citas_electro
+      WHERE estado IN ('Programado', 'En Sala', 'En Estudio', 'Completado')
+      AND CONCAT(COALESCE(hora_fin_date, fecha), ' ', hora_fin) > CONCAT(?, ' ', ?)
+      AND CONCAT(fecha, ' ', hora_agendamiento) < CONCAT(?, ' ', ?)
+      ORDER BY fecha, hora_agendamiento
+    `, [fecha, hora, fechaFin, horaFin]);
+
+    const cuposOcupados = citasOcupadas && citasOcupadas.length > 0 ? citasOcupadas.length : 0;
+    const cuposaDisponibles = 4 - cuposOcupados;
+    const hayDisponibilidad = cuposaDisponibles > 0;
+
+    // Obtener detalles de las citas que solapan
+    const citasEnRango = (citasOcupadas || []).map(cita => {
+      const fechaFin = cita.hora_fin_date || cita.fecha;
+      
+      // Convertir DATE a string YYYY-MM-DD si es necesario
+      const convertirFecha = (fecha) => {
+        if (typeof fecha === 'string') return fecha;
+        if (fecha instanceof Date) return fecha.toISOString().slice(0, 10);
+        return String(fecha);
+      };
+      
+      // Convertir TIME a string HH:MM:SS si es necesario
+      const convertirHora = (hora) => {
+        if (typeof hora === 'string') return hora;
+        return String(hora);
+      };
+      
+      return {
+        id: cita.id,
+        estudio: cita.estudio,
+        fechaInicio: convertirFecha(cita.fecha),
+        horaInicio: convertirHora(cita.hora_agendamiento),
+        fechaFin: convertirFecha(fechaFin),
+        horaFin: convertirHora(cita.hora_fin),
+        estado: cita.estado,
+        // Para compatibilidad hacia atrás
+        hora: `${convertirHora(cita.hora_agendamiento)}-${convertirHora(cita.hora_fin)}`
+      };
+    });
+
+    // Calcular próximo momento con disponibilidad (si está al máximo)
+    let proximaDisponibilidad = null;
+    if (!hayDisponibilidad && citasOcupadas.length > 0) {
+      // Encontrar el máximo hora_fin de las citas que solapan
+      let maxHoraFin = hora;
+      citasOcupadas.forEach(cita => {
+        if (cita.hora_fin > maxHoraFin) {
+          maxHoraFin = cita.hora_fin;
+        }
+      });
+      proximaDisponibilidad = maxHoraFin;
+    }
+
+    res.json({
+      fecha,
+      hora,
+      horaFin,
+      duracionMinutos,
+      estudio: estudio || 'Sin especificar',
+      capacidad: {
+        maxCupos: 4,
+        cuposOcupados,
+        cuposaDisponibles,
+        hayDisponibilidad
+      },
+      citasEnRango,
+      proximaDisponibilidad,
+      mensaje: !hayDisponibilidad 
+        ? `⚠️ Sin capacidad. ${cuposOcupados}/4 cupos ocupados. Próxima disponibilidad: ${proximaDisponibilidad}`
+        : `✅ Disponibilidad: ${cuposaDisponibles}/${4} cupos libres`
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ============================================
 // ENDPOINTS DE DIAGNÓSTICOS
 // ============================================
@@ -2051,7 +2223,8 @@ app.get('/api/citas-electro', async (req, res) => {
     
     // Si hay equipo_id, filtrar por eso también
     let query = `
-      SELECT c.*, 
+      SELECT c.id, c.equipo_id, c.paciente_id, c.fecha, c.hora_agendamiento, c.hora_inicio, c.hora_fin, c.hora_fin_date,
+             c.estudio, c.observaciones, c.diagnostico_id, c.estado, c.programado_por_nombre, c.editado_por_nombre, c.editado_en, c.creado_en, c.actualizado_en,
              p.nombre AS paciente_nombre, 
              p.documento AS paciente_documento,
              p.telefono AS telefono,
@@ -2082,7 +2255,7 @@ app.get('/api/citas-electro', async (req, res) => {
 
 // Crear cita electrodiagnóstico
 app.post('/api/citas-electro', async (req, res) => {
-  const { equipo_id, paciente_id, fecha, hora_agendamiento, hora, hora_fin, estudio, observaciones, diagnostico_id, estado, programado_por_nombre } = req.body || {};
+  const { equipo_id, paciente_id, fecha, hora_agendamiento, hora, hora_fin, duracion, estudio, observaciones, diagnostico_id, estado, programado_por_nombre, telefono } = req.body || {};
   
   // 'hora' o 'hora_agendamiento' es la hora programada para el estudio
   const horaAgendamiento = hora_agendamiento || hora;
@@ -2102,16 +2275,63 @@ app.post('/api/citas-electro', async (req, res) => {
   }
 
   try {
+    // VALIDACIÓN DE CAPACIDAD: En este rango horario hay X estudios. Si X < 4 → permitir
+    // Calcular hora_fin y fecha_fin si no están proporcionadas
+    let finalHoraFin = hora_fin;
+    let finalFechaFin = fecha; // Default: misma fecha
+    
+    if (!hora_fin) {
+      // duracion está en minutos (default: 30 si no se especifica)
+      const duracionMinutos = duracion ? parseInt(duracion, 10) : 30;
+      const [hh, mm] = horaAgendamiento.split(':').map(x => parseInt(x, 10));
+      const startTime = new Date();
+      startTime.setHours(hh, mm, 0, 0);
+      startTime.setMinutes(startTime.getMinutes() + duracionMinutos);
+      
+      finalHoraFin = `${String(startTime.getHours()).padStart(2, '0')}:${String(startTime.getMinutes()).padStart(2, '0')}`;
+      
+      // Si hora_fin <= hora_agendamiento, cruza medianoche
+      if (finalHoraFin <= horaAgendamiento) {
+        const nextDay = new Date(fecha);
+        nextDay.setDate(nextDay.getDate() + 1);
+        finalFechaFin = nextDay.toISOString().slice(0, 10);
+      }
+    }
+
+    // Contar cupos OCUPADOS que se solapan
+    // Los cupos se ocupan por: Programado, En Sala, En Estudio, Completado
+    // NO ocupan: No Asistió, Cancelado
+    // Convertir a DATETIME para comparación correcta incluso con cambio de día
+    const overlapCitas = await db.query(`
+      SELECT COUNT(*) as overlap_count
+      FROM citas_electro
+      WHERE estado IN ('Programado', 'En Sala', 'En Estudio', 'Completado')
+      AND CONCAT(COALESCE(hora_fin_date, fecha), ' ', hora_fin) > CONCAT(?, ' ', ?)
+      AND CONCAT(fecha, ' ', hora_agendamiento) < CONCAT(?, ' ', ?)
+    `, [fecha, horaAgendamiento, finalFechaFin, finalHoraFin]);
+
+    const overlapCount = overlapCitas[0]?.overlap_count || 0;
+
+    // Validar capacidad: máximo 4 cupos disponibles
+    if (overlapCount >= 4) {
+      return res.status(409).json({ 
+        error: 'Sin capacidad disponible en este horario',
+        details: `Hay ${overlapCount} cupos ocupados en este rango. Máximo permitido: 4`,
+        capacity: { active: overlapCount, max: 4 }
+      });
+    }
+
     const result = await db.execute(`
-      INSERT INTO citas_electro (equipo_id, paciente_id, fecha, hora_agendamiento, hora_inicio, hora_fin, estudio, observaciones, diagnostico_id, estado, programado_por_nombre)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO citas_electro (equipo_id, paciente_id, fecha, hora_agendamiento, hora_inicio, hora_fin, hora_fin_date, estudio, observaciones, diagnostico_id, estado, programado_por_nombre)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       equipo_id || null,
       paciente_id,
       fecha,
       horaAgendamiento,
       null,
-      hora_fin || null,
+      finalHoraFin,
+      finalFechaFin,
       estudio || null,
       observaciones || null,
       diagnostico_id || null,
@@ -2126,13 +2346,24 @@ app.post('/api/citas-electro', async (req, res) => {
         paciente_id,
         fecha,
         hora_agendamiento: horaAgendamiento,
+        hora_fin: finalHoraFin,
         estudio,
-        estado: estado || 'Programado'
+        estado: estado || 'Programado',
+        overlap_count: overlapCount,
+        telefono: telefono || null
       });
       app.io.emit('electro:actualizar-lista', { type: 'creada', id: result.insertId });
     }
     
-    res.json({ ok: true, id: result.insertId });
+    res.json({ 
+      ok: true, 
+      id: result.insertId, 
+      capacity_info: { 
+        active_studies: overlapCount, 
+        max: 4,
+        available: 4 - overlapCount - 1 // El que acaba de crearse
+      } 
+    });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -2171,6 +2402,10 @@ app.patch('/api/citas-electro/:id/estado', requireAuth, async (req, res) => {
 });
 
 // Actualizar cita electro (equipo, estado, horas, etc)
+// FLUJO DE ESTADOS:
+// "Programado" → "En Estudio" (validar capacidad)
+// "En Estudio" → "Completado" (marcar fin)
+// Cualquier estado → "En Sala", "No Asistió", "Cancelado" (manual)
 app.patch('/api/citas-electro/:id', requireAuth, async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const { equipo_id, estado, hora_inicio, hora_fin } = req.body || {};
@@ -2180,9 +2415,56 @@ app.patch('/api/citas-electro/:id', requireAuth, async (req, res) => {
   }
 
   try {
-    const citas = await db.query('SELECT * FROM citas_electro WHERE id = ?', [id]);
-    if (citas.length === 0) {
+    const citasResult = await db.query('SELECT * FROM citas_electro WHERE id = ?', [id]);
+    if (citasResult.length === 0) {
       return res.status(404).json({ error: 'Cita no encontrada' });
+    }
+
+    const citaActual = citasResult[0];
+    const estadoActual = citaActual.estado;
+
+    // ============ VALIDAR TRANSICIÓN DE ESTADOS ============
+    if (estado && estado !== estadoActual) {
+      // Estados manuales (permitidos desde cualquier estado)
+      const estadosManuales = ['En Sala', 'No Asistió', 'Cancelado'];
+      const esManual = estadosManuales.includes(estado);
+
+      // Transición automática: Programado → En Estudio
+      const esInicioEstudio = estadoActual === 'Programado' && estado === 'En Estudio';
+
+      // Transición automática: En Estudio → Completado
+      const esFinEstudio = estadoActual === 'En Estudio' && estado === 'Completado';
+
+      if (!esManual && !esInicioEstudio && !esFinEstudio) {
+        return res.status(400).json({ 
+          error: `Transición de estado inválida: ${estadoActual} → ${estado}` 
+        });
+      }
+
+      // ============ VALIDAR CAPACIDAD AL CAMBIAR A "En Estudio" ============
+      if (esInicioEstudio) {
+        // Contar CUPOS OCUPADOS por otras citas que se solapan
+        // Incluir: Programado, En Sala, En Estudio, Completado
+        const overlapCitas = await db.query(`
+          SELECT COUNT(*) as overlap_count
+          FROM citas_electro
+          WHERE id != ?
+          AND fecha = ?
+          AND estado IN ('Programado', 'En Sala', 'En Estudio', 'Completado')
+          AND NOT (hora_fin <= ? OR hora_agendamiento >= ?)
+        `, [id, citaActual.fecha, citaActual.hora_agendamiento, citaActual.hora_fin]);
+
+        const overlapCount = overlapCitas[0]?.overlap_count || 0;
+
+        // Validar capacidad: máximo 4 cupos disponibles
+        if (overlapCount >= 4) {
+          return res.status(409).json({ 
+            error: 'Sin capacidad disponible en este horario',
+            details: `Hay ${overlapCount} cupos ocupados en este rango. Máximo permitido: 4`,
+            capacity: { active: overlapCount, max: 4 }
+          });
+        }
+      }
     }
 
     const updates = [];
@@ -2241,7 +2523,7 @@ app.patch('/api/citas-electro/:id', requireAuth, async (req, res) => {
       app.io.emit('electro:actualizar-lista', { type: 'actualizada', id, cambios });
     }
     
-    res.json({ ok: true });
+    res.json({ ok: true, transicion: `${estadoActual} → ${estado || estadoActual}` });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

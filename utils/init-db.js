@@ -142,6 +142,16 @@ async function initializeDatabase() {
               INDEX idx_nombre (nombre)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+            CREATE TABLE IF NOT EXISTS estudio_duraciones (
+              id INT AUTO_INCREMENT PRIMARY KEY,
+              nombre VARCHAR(100) NOT NULL UNIQUE,
+              duracion_minutos INT,
+              duracion_min INT,
+              duracion_max INT,
+              creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              INDEX idx_nombre (nombre)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
             CREATE TABLE IF NOT EXISTS citas_electro (
               id INT AUTO_INCREMENT PRIMARY KEY,
               equipo_id INT,
@@ -191,49 +201,68 @@ async function initializeDatabase() {
 
             console.log('✓ Tablas creadas');
 
-            // Verificar usuarios
-            conn.query('SELECT COUNT(*) as count FROM usuarios', (err, results) => {
+            // Seed: Duraciones de estudios
+            const seedEstudios = `
+              INSERT IGNORE INTO estudio_duraciones (nombre, duracion_minutos, duracion_min, duracion_max) VALUES
+              ('PSG Básica', 480, NULL, NULL),
+              ('PSG con Titulación de Dispositivo Médico CPAP', 480, NULL, NULL),
+              ('PSG con Titulación de Dispositivo Médico BPAP', 480, NULL, NULL),
+              ('Electroencefalograma', 60, NULL, NULL),
+              ('Monitorización Electroencefalografica por Video y Radio', NULL, 60, 10080);
+            `;
+            
+            conn.query(seedEstudios, (err) => {
               if (err) {
-                console.error(err);
-                conn.end();
-                reject(err);
-                return;
+                console.error('⚠️ Error seeding estudios:', err.message);
+                // No rechazar si falla el seed
+              } else {
+                console.log('✓ Duraciones de estudios cargadas');
               }
 
-              if (results[0].count === 0) {
-                bcrypt.hash('123456', 10, (hashErr, hash) => {
-                  if (hashErr) {
-                    console.error('❌ Error hasheando password:', hashErr.message);
-                    conn.end();
-                    reject(hashErr);
-                    return;
-                  }
+              // Verificar usuarios
+              conn.query('SELECT COUNT(*) as count FROM usuarios', (err, results) => {
+                if (err) {
+                  console.error(err);
+                  conn.end();
+                  reject(err);
+                  return;
+                }
 
-                  const insertUsersSQL = `
-                    INSERT INTO usuarios (usuario, password_hash, nombre, rol) VALUES ('admin', '${hash.replace(/'/g, "\\'")}', 'Administrador', 'admin');
-                    INSERT INTO usuarios (usuario, password_hash, nombre, rol) VALUES ('doctor', '${hash.replace(/'/g, "\\'")}', 'Doctor de Prueba', 'doctor');
-                    INSERT INTO usuarios (usuario, password_hash, nombre, rol) VALUES ('recepcion', '${hash.replace(/'/g, "\\'")}', 'Recepcionista de Prueba', 'recepcion');
-                  `;
-
-                  conn.query(insertUsersSQL, (err) => {
-                    if (err) {
-                      console.error('❌ Error insertando usuarios:', err.message);
+                if (results[0].count === 0) {
+                  bcrypt.hash('123456', 10, (hashErr, hash) => {
+                    if (hashErr) {
+                      console.error('❌ Error hasheando password:', hashErr.message);
                       conn.end();
-                      reject(err);
+                      reject(hashErr);
                       return;
                     }
-                    console.log('✓ Usuarios creados (admin/doctor/recepcion - contraseña: 123456)');
-                    conn.end();
-                    console.log('✅ Base de datos inicializada correctamente');
-                    resolve();
+
+                    const insertUsersSQL = `
+                      INSERT INTO usuarios (usuario, password_hash, nombre, rol) VALUES ('admin', '${hash.replace(/'/g, "\\'")}', 'Administrador', 'admin');
+                      INSERT INTO usuarios (usuario, password_hash, nombre, rol) VALUES ('doctor', '${hash.replace(/'/g, "\\'")}', 'Doctor de Prueba', 'doctor');
+                      INSERT INTO usuarios (usuario, password_hash, nombre, rol) VALUES ('recepcion', '${hash.replace(/'/g, "\\'")}', 'Recepcionista de Prueba', 'recepcion');
+                    `;
+
+                    conn.query(insertUsersSQL, (err) => {
+                      if (err) {
+                        console.error('❌ Error insertando usuarios:', err.message);
+                        conn.end();
+                        reject(err);
+                        return;
+                      }
+                      console.log('✓ Usuarios creados (admin/doctor/recepcion - contraseña: 123456)');
+                      conn.end();
+                      console.log('✅ Base de datos inicializada correctamente');
+                      resolve();
+                    });
                   });
-                });
-              } else {
-                console.log(`✓ ${results[0].count} usuarios existentes`);
-                conn.end();
-                console.log('✅ Base de datos lista');
-                resolve();
-              }
+                } else {
+                  console.log(`✓ ${results[0].count} usuarios existentes`);
+                  conn.end();
+                  console.log('✅ Base de datos lista');
+                  resolve();
+                }
+              });
             });
           });
         });

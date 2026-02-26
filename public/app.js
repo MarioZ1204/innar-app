@@ -30,6 +30,7 @@ let citaElectroSeleccionada = null;
 let selectedDoctorEspecialidad = null;
 let selectedDiagnosticoElectroId = null;
 let selectedEquipoElectroId = null;
+let selectedEstudioDuracion = null; // Duración en minutos del estudio seleccionado
 
 // Mapeo de especialidades a tipos de consulta
 const ESPECIALIDAD_TIPOS_CONSULTA = {
@@ -2260,7 +2261,7 @@ async function initElectro() {
     $('electroProgramadoPor').textContent = currentUser.nombre || currentUser.usuario || '-';
   }
   
-  // Cargar equipos para el modal
+  // Cargar equipos SOLO para el modal (para seleccionar después)
   try {
     const res = await apiFetch('/api/equipos-electro');
     const equipos = await res.json();
@@ -2272,49 +2273,68 @@ async function initElectro() {
       opt.textContent = e.nombre;
       equipoSelect.appendChild(opt);
     });
-    window.equiposDisponibles = equipos || [];
-    
-    // Cargar equipos también en el datalist del formulario de creación
-    const dl = $('equiposListElectro');
-    dl.innerHTML = '';
-    equipos.forEach(e => {
-      const o = document.createElement('option');
-      o.value = e.nombre || `Equipo ${e.id}`;
-      o.dataset.id = e.id;
-      o.dataset.nombre = e.nombre || '';
-      dl.appendChild(o);
-    });
   } catch (e) {
-    window.equiposDisponibles = [];
+    console.error('Error cargando equipos para modal:', e);
   }
   
   // Event listener para cambiar fecha y cargar citas automáticamente
   $('electroFecha')?.addEventListener('change', async () => {
     await cargarCitasElectro();
+    await checkEquiposDisponibilidad();
   });
   
-  // Event listener para quitar el border rojo cuando se selecciona estudio
-  $('electroEstudio')?.addEventListener('change', (e) => {
+  // Event listener para quitar el border rojo cuando se selecciona estudio y auto-completar duración
+  $('electroEstudio')?.addEventListener('change', async (e) => {
     if (e.target.value) {
       e.target.style.borderColor = '';
-      // Mostrar/ocultar campo de duración según el estudio
-      const duracionCol = $('electroDuracionCol');
-      if (e.target.value === 'Monitorización Electroencefalografica por Video y Radio') {
-        duracionCol.style.display = '';
-      } else {
+      
+      // Obtener duración del estudio
+      try {
+        const res = await apiFetch(`/api/estudios/duracion?nombre=${encodeURIComponent(e.target.value)}`);
+        const data = await res.json();
+        
+        const duracionCol = $('electroDuracionCol');
+        const durationInput = $('electroDuracion');
+        
+        if (data.ok) {
+          if (data.esVariable) {
+            // Estudio variable: mostrar campo para que usuario ingrese duración en HORAS
+            duracionCol.style.display = '';
+            durationInput.value = '';
+            durationInput.min = Math.round(data.duracion_min / 60);  // Convertir a horas
+            durationInput.max = Math.round(data.duracion_max / 60);  // Convertir a horas
+            durationInput.placeholder = `⚠️ REQUERIDO: Duración (${Math.round(data.duracion_min / 60)}-${Math.round(data.duracion_max / 60)} horas)`;
+            durationInput.style.borderColor = ''; // Reset any previous error
+            selectedEstudioDuracion = null; // No hay duración predeterminada
+          } else {
+            // Estudio fijo: guardar duración y ocultarla
+            duracionCol.style.display = 'none';
+            durationInput.value = '';
+            selectedEstudioDuracion = data.duracion_minutos; // Guardar duración en minutos
+          }
+        }
+      } catch (e) {
+        console.error('Error obteniendo duración:', e);
         duracionCol.style.display = 'none';
-        $('electroDuracion').value = '';
+        durationInput.value = '';
+        selectedEstudioDuracion = null;
       }
     }
+    await checkEquiposDisponibilidad();
+  });
+
+  // Event listener para cambio en hora
+  $('electroHora')?.addEventListener('change', async () => {
+    await checkEquiposDisponibilidad();
+  });
+
+  // Event listener para cambio en duración
+  $('electroDuracion')?.addEventListener('change', async () => {
+    await checkEquiposDisponibilidad();
   });
   
-  // Event listener para autocompletado de diagnósticos
+  // Event listener para autocompletado de diagnósticos (búsqueda dinámica, sin opciones iniciales)
   $('electroDiagnostico')?.addEventListener('input', debounce(buscarDiagnosticosElectro, 300));
-  // Cargar diagnósticos inicialmente
-  await buscarDiagnosticosElectro();
-  
-  // Event listener para autocompletado de equipos (búsqueda dinámicamente)
-  $('electroEquipo')?.addEventListener('input', debounce(buscarEquiposElectro, 300));
   
   // Validadores en tiempo real
   // Nombre: Solo letras y espacios
@@ -2326,14 +2346,16 @@ async function initElectro() {
     }
   });
   
-  // Documento: Solo números
-  $('electroDocumento')?.addEventListener('input', (e) => {
+  // Documento: Solo números + buscar paciente
+  $('electroDocumento')?.addEventListener('input', debounce((e) => {
     const valor = e.target.value;
     if (valor && !/^\d*$/.test(valor)) {
       // Remover caracteres no numéricos
       e.target.value = valor.replace(/\D/g, '');
     }
-  });
+    // Buscar paciente por documento
+    buscarPacientePorDocumento();
+  }, 300));
   
   // Teléfono: Solo números, máximo 10 dígitos
   $('electroTelefono')?.addEventListener('input', (e) => {
@@ -2352,7 +2374,6 @@ async function initElectro() {
   if (nuevaCitaSection) nuevaCitaSection.style.display = (isRecepcion() || isElectro()) ? '' : 'none';
   if (!isDoctor()) {
     $('crearCitaElectro')?.addEventListener('click', crearCitaElectro);
-    $('electroPacienteNombre')?.addEventListener('input', debounce(buscarPacientesElectro, 300));
   }
   
   // Event listeners del modal
@@ -2382,27 +2403,193 @@ async function initElectro() {
   await cargarCitasElectro();
 }
 
-async function buscarPacientesElectro() {
-  const q = $('electroPacienteNombre').value.trim();
-  if (q.length < 2) return;
-  const res = await apiFetch(`/api/pacientes?buscar=${encodeURIComponent(q)}`);
-  const pacientes = await res.json();
-  const dl = $('pacientesListElectro');
-  dl.innerHTML = '';
-  pacientes.forEach(p => { const o = document.createElement('option'); o.value = p.nombre; o.dataset.id = p.id; o.dataset.doc = p.documento || ''; dl.appendChild(o); });
+// Verificar y mostrar disponibilidad de CUPOS
+async function checkEquiposDisponibilidad() {
+  const fecha = $('electroFecha').value;
+  const hora = $('electroHora').value;
+  const estudio = $('electroEstudio').value;
+  const duracionHoras = $('electroDuracion').value;
+
+  if (!fecha || !hora) {
+    $('equiposDisponibilidadAlerta').style.display = 'none';
+    return;
+  }
+
+  try {
+    // Determinar duración en MINUTOS
+    let duracionMinutos = null;
+    
+    if (duracionHoras) {
+      // Usuario ingresó duración (Monitorización): convertir HORAS a MINUTOS
+      duracionMinutos = Math.round(parseFloat(duracionHoras) * 60);
+    } else if (selectedEstudioDuracion) {
+      // Estudio fijo con duración predeterminada (ya en minutos)
+      duracionMinutos = selectedEstudioDuracion;
+    }
+
+    const params = new URLSearchParams({
+      fecha,
+      hora,
+      ...(estudio && { estudio }),
+      ...(duracionMinutos && { duracion_manual: duracionMinutos })
+    });
+
+    const res = await apiFetch(`/api/equipos-electro/disponibilidad?${params}`);
+    const data = await res.json();
+
+    if (!res.ok) {
+      console.error('Error:', data.error);
+      $('equiposDisponibilidadAlerta').style.display = 'none';
+      return;
+    }
+
+    const contenido = $('equiposDisponibilidadContenido');
+    const alerta = $('equiposDisponibilidadAlerta');
+    
+    // Determinar color según disponibilidad
+    const esDisponible = data.capacidad.hayDisponibilidad;
+    const colorFondo = esDisponible ? '#dbeafe' : '#fef2f2';
+    const colorBorde = esDisponible ? '#0284c7' : '#dc2626';
+    const colorTexto = esDisponible ? '#0c4a6e' : '#7f1d1d';
+    
+    alerta.style.backgroundColor = colorFondo;
+    alerta.style.borderLeftColor = colorBorde;
+    
+    // Mostrar estado de cupos
+    let html = `
+      <div style="font-weight:600;color:${colorTexto};margin-bottom:12px">
+        ${esDisponible ? '✅' : '⛔'} ${data.mensaje}
+      </div>
+      
+      <div style="margin-bottom:8px;font-size:0.9rem;color:${colorTexto}">
+        <strong>${data.capacidad.cuposaDisponibles}/4</strong> cupos libres | 
+        <strong>${data.duracionMinutos}min</strong> | 
+        <strong>${data.horaFin}</strong>h fin
+      </div>
+      
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">
+    `;
+    
+    // Mostrar 4 cupos
+    for (let i = 1; i <= 4; i++) {
+      const ocupado = i <= data.capacidad.cuposOcupados;
+      const colorCupo = ocupado ? '#fee2e2' : '#dcfce7';
+      const textoCupo = ocupado ? '🔴' : '⭕';
+      const borderColor = ocupado ? '#fca5a5' : '#86efac';
+      
+      html += `
+        <div style="
+          padding:8px;
+          background:${colorCupo};
+          border:2px solid ${borderColor};
+          border-radius:6px;
+          text-align:center;
+          font-weight:600;
+          font-size:1.1rem
+        ">
+          ${textoCupo} <div style="font-size:0.75rem;color:${ocupado ? '#991b1b' : '#166534'};margin-top:2px">${ocupado ? 'Ocupado' : 'Libre'}</div>
+        </div>
+      `;
+    }
+    html += '</div>';
+    
+    // Mostrar citas en rango si las hay
+    if (data.citasEnRango && data.citasEnRango.length > 0) {
+      html += `
+        <div style="margin-top:12px;padding:8px;background:white;border-radius:4px;border-left:3px solid #6366f1">
+          <div style="font-weight:600;color:#1e293b;margin-bottom:6px">📋 Estudios en este rango:</div>
+      `;
+      data.citasEnRango.forEach(cita => {
+        // Función para formatear fecha (asegurar que sea YYYY-MM-DD)
+        const formatearFecha = (fecha) => {
+          if (!fecha) return '';
+          // Remover caracteres ISO adicionales si los hay
+          const fechaLimpia = fecha.substring(0, 10); // Tomar solo los primeros 10 caracteres (YYYY-MM-DD)
+          const [año, mes, día] = fechaLimpia.split('-');
+          return `${día}/${mes}`;
+        };
+        
+        // Función para formatear hora (asegurar HH:MM)
+        const formatearHora = (hora) => {
+          if (!hora) return '';
+          return hora.substring(0, 5); // HH:MM
+        };
+        
+        const fechaInicio = formatearFecha(cita.fechaInicio);
+        const horaInicio = formatearHora(cita.horaInicio);
+        const fechaFin = formatearFecha(cita.fechaFin);
+        const horaFin = formatearHora(cita.horaFin);
+        
+        const etiquetaCita = `${cita.estudio} (Inicio ${fechaInicio} - ${horaInicio} | Fin ${fechaFin} - ${horaFin})`;
+        html += `<div style="font-size:0.85rem;color:#475569;margin:4px 0">• ${etiquetaCita}</div>`;
+      });
+      html += '</div>';
+    }
+    
+    // Si no hay disponibilidad, mostrar próxima disponibilidad
+    if (!esDisponible && data.proximaDisponibilidad) {
+      html += `
+        <div style="margin-top:12px;padding:8px;background:#fef3c7;border-radius:4px;color:#92400e;font-size:0.9rem">
+          ⏰ Próxima disponibilidad: <strong>${data.proximaDisponibilidad}</strong>
+        </div>
+      `;
+    }
+
+    contenido.innerHTML = html;
+    alerta.style.display = 'block';
+  } catch (e) {
+    console.error('Error checking disponibilidad:', e);
+    $('equiposDisponibilidadAlerta').style.display = 'none';
+  }
+}
+
+// Buscar paciente por documento y auto-completar nombre y teléfono
+async function buscarPacientePorDocumento() {
+  const doc = $('electroDocumento').value.trim();
+  
+  if (doc.length < 1) {
+    // Si el documento está vacío, limpiar nombre y teléfono
+    $('electroPacienteNombre').value = '';
+    $('electroTelefono').value = '';
+    return;
+  }
+  
+  try {
+    const res = await apiFetch(`/api/pacientes?buscar=${encodeURIComponent(doc)}`);
+    const pacientes = await res.json();
+    
+    if (pacientes && pacientes.length > 0) {
+      // Buscar el paciente con documento exacto
+      const paciente = pacientes.find(p => p.documento === doc);
+      
+      if (paciente) {
+        // Auto-completar nombre y teléfono
+        $('electroPacienteNombre').value = paciente.nombre || '';
+        $('electroTelefono').value = paciente.telefono || '';
+        $('electroDocumento').dataset.pacienteId = paciente.id;
+      }
+    }
+  } catch (e) {
+    console.error('Error buscando paciente:', e);
+  }
 }
 
 async function buscarDiagnosticosElectro() {
   const q = $('electroDiagnostico').value.trim();
+  const dl = $('diagnosticosListElectro');
+  
+  if (q.length < 2) {
+    dl.innerHTML = '';
+    return;
+  }
+  
   try {
-    const url = q.length < 2 ? '/api/diagnosticos/search' : `/api/diagnosticos/search?q=${encodeURIComponent(q)}`;
+    const url = `/api/diagnosticos/search?q=${encodeURIComponent(q)}`;
     const res = await apiFetch(url);
     const diagnosticos = await res.json();
-    const dl = $('diagnosticosListElectro');
     dl.innerHTML = '';
     diagnosticos.forEach(d => { 
       const o = document.createElement('option'); 
-      // Mostrar "[Código] - [Diagnóstico]" como opción
       const displayText = d.codigo ? `[${d.codigo}] - ${d.nombre}` : d.nombre;
       o.value = displayText;
       o.dataset.id = d.id;
@@ -2428,42 +2615,6 @@ $('electroDiagnostico').addEventListener('input', function() {
     }
   } else {
     selectedDiagnosticoElectroId = null;
-  }
-});
-
-async function buscarEquiposElectro() {
-  const q = $('electroEquipo').value.trim();
-  try {
-    const url = q.length < 2 ? '/api/equipos-electro' : `/api/equipos-electro?buscar=${encodeURIComponent(q)}`;
-    const res = await apiFetch(url);
-    const equipos = await res.json();
-    const dl = $('equiposListElectro');
-    dl.innerHTML = '';
-    equipos.forEach(e => { 
-      const o = document.createElement('option'); 
-      o.value = e.nombre || `Equipo ${e.id}`;
-      o.dataset.id = e.id;
-      o.dataset.nombre = e.nombre || '';
-      dl.appendChild(o); 
-    });
-  } catch (e) {
-  }
-}
-
-// Listener para cuando se selecciona un equipo del datalist
-$('electroEquipo').addEventListener('input', function() {
-  const selectedValue = this.value.trim();
-  if (selectedValue) {
-    const dl = $('equiposListElectro');
-    const opciones = dl.querySelectorAll('option');
-    for (let opt of opciones) {
-      if (opt.value === selectedValue) {
-        selectedEquipoElectroId = parseInt(opt.dataset.id, 10);
-        break;
-      }
-    }
-  } else {
-    selectedEquipoElectroId = null;
   }
 });
 
@@ -2506,6 +2657,12 @@ function renderCitaElectroRow(tbody, c) {
   
   const equipoDisplay = c.equipo_nombre || c.equipo_id ? `${c.equipo_nombre || 'Equipo'} (ID: ${c.equipo_id})` : '-';
   
+  // Mostrar hora_fin con indicador si cruza medianoche
+  let horaFinDisplay = formatearHora(c.hora_fin);
+  if (c.hora_fin_date && c.hora_fin_date !== c.fecha) {
+    horaFinDisplay = `${formatearHora(c.hora_fin)} <span style="color:#dc2626;font-weight:600;">(+1 día)</span>`;
+  }
+  
   tr.innerHTML = `
     <td style="padding:12px">${formatearHora(c.hora_agendamiento)}</td>
     <td style="padding:12px">${formatearHora(c.hora_inicio)}</td>
@@ -2516,7 +2673,7 @@ function renderCitaElectroRow(tbody, c) {
     <td style="padding:12px">${escapeHtml(c.estudio || '-')}</td>
     <td style="padding:12px">${escapeHtml(c.diagnostico_codigo || '-')}</td>
     <td style="padding:12px">${escapeHtml(c.estado || 'Programado')}</td>
-    <td style="padding:12px">${formatearHora(c.hora_fin)}</td>
+    <td style="padding:12px">${horaFinDisplay}</td>
   `;
   
   // Hacer la fila clickeable para abrir modal
@@ -2569,7 +2726,7 @@ async function crearCitaElectro() {
   const telefono = $('electroTelefono').value.trim();
   const hora = $('electroHora').value;
   const fecha = $('electroFecha').value;
-  const duracion = $('electroDuracion').value;
+  const duracion = $('electroDuracion').value.trim();
   const diagnostico = $('electroDiagnostico').value.trim();
   
   if (!nombre || !doc || !telefono || !hora || !fecha) { 
@@ -2606,22 +2763,35 @@ async function crearCitaElectro() {
   
   // Validar duración si es Monitorización EEG por Video y Radio
   if (estudio === 'Monitorización Electroencefalografica por Video y Radio' && !duracion) {
-    showToast('Debe especificar la duración del estudio', 'error');
+    showToast('Debe especificar la duración del estudio (en horas)', 'error');
     $('electroDuracion').focus();
+    $('electroDuracion').style.borderColor = '#dc2626';
     return;
+  }
+  
+  // Validar que duración sea un número válido si es Monitorización
+  if (estudio === 'Monitorización Electroencefalografica por Video y Radio' && duracion) {
+    const duracionNum = parseFloat(duracion);
+    if (isNaN(duracionNum) || duracionNum < 1 || duracionNum > 168) {
+      showToast('La duración debe estar entre 1 y 168 horas', 'error');
+      $('electroDuracion').focus();
+      $('electroDuracion').style.borderColor = '#dc2626';
+      return;
+    }
   }
   
   // Restablecer color del border del estudio
   $('electroEstudio').style.borderColor = '';
   
-  let pacienteId;
-  const opt = document.querySelector(`#pacientesListElectro option[value="${nombre}"]`);
-  if (opt && opt.dataset.id) pacienteId = parseInt(opt.dataset.id, 10);
-  else {
-    const res = await apiFetch('/api/pacientes', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({nombre, documento:doc||null, telefono:telefono||null}) });
-    const data = await res.json();
-    if (!data.ok) { showToast(data.error||'Error creando paciente', 'error'); return; }
-    pacienteId = data.id;
+  // Obtener pacienteId del buscador o crear nuevo
+  let pacienteId = parseInt($('electroDocumento').dataset.pacienteId, 10) || null;
+  
+  if (!pacienteId) {
+    // Si no existe paciente en base de datos, crear uno nuevo
+    const resP = await apiFetch('/api/pacientes', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({nombre, documento:doc||null, telefono:telefono||null}) });
+    const dataP = await resP.json();
+    if (!dataP.ok) { showToast(dataP.error||'Error creando paciente', 'error'); return; }
+    pacienteId = dataP.id;
   }
   
   // Buscar ID del diagnóstico si fue seleccionado
@@ -2639,16 +2809,8 @@ async function crearCitaElectro() {
     }
   }
   
-  // Buscar ID del equipo si fue seleccionado
-  let equipoId = selectedEquipoElectroId;
-  if (!equipoId) {
-    // Fallback: buscar en window.equiposDisponibles
-    const equipoNombre = $('electroEquipo').value.trim();
-    if (equipoNombre && window.equiposDisponibles) {
-      const equipo = window.equiposDisponibles.find(e => e.nombre === equipoNombre);
-      if (equipo) equipoId = equipo.id;
-    }
-  }
+  // Nota: El equipo se selecciona después en el modal cuando se inicia el estudio
+  let equipoId = null;
   
   try {
     const body = {
@@ -2661,9 +2823,19 @@ async function crearCitaElectro() {
       programado_por_nombre: currentUser ? (currentUser.nombre || currentUser.usuario) : 'Sistema'
     };
     
-    // Agregar duración si fue especificada
+    // Determinar duración en minutos
+    let duracionMinutos = null;
+    
     if (duracion) {
-      body.duracion = parseInt(duracion, 10);
+      // Usuario ingresó duración (es Monitorización): convertir HORAS a MINUTOS
+      duracionMinutos = Math.round(parseFloat(duracion) * 60);
+    } else if (selectedEstudioDuracion) {
+      // Estudio fijo con duración predeterminada (ya en minutos)
+      duracionMinutos = selectedEstudioDuracion;
+    }
+    
+    if (duracionMinutos) {
+      body.duracion = duracionMinutos;
     }
     
     // Agregar diagnóstico si fue seleccionado
@@ -2691,8 +2863,8 @@ async function crearCitaElectro() {
       $('electroEstudio').value = '';
       $('electroDiagnostico').value = '';
       selectedDiagnosticoElectroId = null;
-      $('electroEquipo').value = '';
       selectedEquipoElectroId = null;
+      selectedEstudioDuracion = null;
       $('electroDuracion').value = '';
       $('electroDuracionCol').style.display = 'none';
       // Recargar tabla
@@ -4236,7 +4408,7 @@ async function finalizarEstudioModal() {
     const horaActual = `${hh}:${mm}`;
     
     const cambios = {
-      estado: 'Finalizado',
+      estado: 'Completado',
       hora_fin: horaActual
     };
     
