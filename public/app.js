@@ -333,10 +333,10 @@ function escapeHtml(str) {
 }
 
 /**
- * Formatea una hora al formato HH:MM
+ * Formatea una hora al formato HH:MM AM/PM (12 horas)
  * Maneja: null, undefined, '', 'null', HH:MM, HH:MM:SS
  * @param {string|null} valor - La hora a formatear
- * @returns {string} Hora en formato HH:MM o '-' si es inválida
+ * @returns {string} Hora en formato H:MM AM/PM o '-' si es inválida
  */
 function formatearHora(valor) {
   if (valor === null || valor === undefined || valor === '' || valor === 'null') {
@@ -344,7 +344,22 @@ function formatearHora(valor) {
   }
   const strValor = String(valor).trim();
   if (strValor.length >= 5) {
-    return strValor.substring(0, 5); // HH:MM
+    const timeStr = strValor.substring(0, 5); // Obtiene HH:MM
+    const [horas, minutos] = timeStr.split(':').map(Number);
+    
+    let periodo = 'AM';
+    let horasFormato = horas;
+    
+    if (horas >= 12) {
+      periodo = 'PM';
+      if (horas > 12) {
+        horasFormato = horas - 12;
+      }
+    } else if (horas === 0) {
+      horasFormato = 12;
+    }
+    
+    return `${horasFormato}:${String(minutos).padStart(2, '0')} ${periodo}`;
   }
   return strValor || '-';
 }
@@ -750,6 +765,17 @@ async function initAgendaMedica() {
   populateTurnoHoras('nuevoTurnoHoraMedica', '07:00', '18:00', 20);
   const prog = $('nuevoTurnoProgramadoPor');
   if (prog) prog.textContent = (currentUser && (currentUser.nombre || currentUser.usuario)) || '-';
+  
+  // Configurar listeners de socket para ver cambios en tiempo real
+  if (window.socket && !window.socketAgendaMedicaListenerAdded) {
+    window.socket.on('agenda:actualizar-lista', () => {
+      cargarTurnosMedica();
+    });
+    window.socket.on('agenda:actualizar-consultorio', (consultorio) => {
+      cargarTurnosMedica();
+    });
+    window.socketAgendaMedicaListenerAdded = true;
+  }
   // ajustar columnas según rol
   // guardar HTML original del TH de Hora para poder reinsertarlo si el rol cambia
   try {
@@ -926,7 +952,7 @@ function populateTurnoHoras(selectId, from='07:00', to='18:00', stepMinutes=20){
     const val = `${hh}:${mm}`;
     const o = document.createElement('option');
     o.value = val;
-    o.textContent = val;
+    o.textContent = formatearHora(val);
     sel.appendChild(o);
     start += stepMinutes;
   }
@@ -1556,7 +1582,7 @@ function setupAgendaVerMedicos() {
         const tb = document.createElement('tbody');
         slots.forEach(r => { 
           const tr = document.createElement('tr'); 
-          tr.innerHTML = `<td style="padding:8px;border:1px solid #ddd">${escapeHtml(r.fecha)}</td><td style="padding:8px;border:1px solid #ddd">${escapeHtml(r.hora_inicio)}</td><td style="padding:8px;border:1px solid #ddd">${escapeHtml(r.hora_fin||'')}</td><td style="padding:8px;border:1px solid #ddd">${r.disponible? 'Sí':'No'}</td>`; 
+          tr.innerHTML = `<td style="padding:8px;border:1px solid #ddd">${escapeHtml(r.fecha)}</td><td style="padding:8px;border:1px solid #ddd">${formatearHora(r.hora_inicio)}</td><td style="padding:8px;border:1px solid #ddd">${formatearHora(r.hora_fin)}</td><td style="padding:8px;border:1px solid #ddd">${r.disponible? 'Sí':'No'}</td>`; 
           tb.appendChild(tr); 
         });
         tbl.appendChild(tb);
@@ -1849,7 +1875,7 @@ function renderTurnoRowMedica(tbody, t, animateTargetId, hayEnAtencion) {
     } else {
       tr.innerHTML = `
         <td style="padding:8px;border:1px solid #ddd">${t.numero_turno || ''}</td>
-        <td class="col-hora" style="padding:8px;border:1px solid #ddd">${escapeHtml(formatearHora(t.hora))}</td>
+        <td class="col-hora" style="padding:8px;border:1px solid #ddd">${formatearHora(t.hora)}</td>
         <td style="padding:8px;border:1px solid #ddd">${escapeHtml(t.paciente_nombre)}</td>
         <td style="padding:8px;border:1px solid #ddd">${escapeHtml(t.tipo_consulta || '')}</td>
         <td style="padding:8px;border:1px solid #ddd">${escapeHtml(t.paciente_documento||'')}</td>
@@ -2241,7 +2267,8 @@ async function crearTurnoMedica() {
   }
 }
 
-// ========== AGENDA ELECTRODIAGNÓSTICO ==========
+// ========== DASHBOARD (Admin solo) ==========
+// ========== AGENDA ELECTRODIAGNÓSTICO =========
 async function initElectro() {
   const hoy = new Date().toISOString().slice(0,10);
   $('electroFecha').value = hoy;
@@ -2253,7 +2280,7 @@ async function initElectro() {
     const hora = String(i).padStart(2, '0') + ':00';
     const option = document.createElement('option');
     option.value = hora;
-    option.textContent = hora;
+    option.textContent = formatearHora(hora);
     horaSelect.appendChild(option);
   }
   
@@ -2418,6 +2445,23 @@ async function initElectro() {
       cargarCitasElectro();
     });
   });
+
+  // Configurar listeners de socket para ver cambios en tiempo real
+  if (window.socket && !window.socketElectroListenerAdded) {
+    window.socket.on('electro:actualizar-lista', () => {
+      cargarCitasElectro();
+    });
+    window.socket.on('electro:nueva-cita', () => {
+      cargarCitasElectro();
+    });
+    window.socket.on('electro:cita-cambio-estado', () => {
+      cargarCitasElectro();
+    });
+    window.socket.on('electro:cita-removida', () => {
+      cargarCitasElectro();
+    });
+    window.socketElectroListenerAdded = true;
+  }
 
   await cargarCitasElectro();
 }
