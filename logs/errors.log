@@ -1,0 +1,30 @@
+[2026-02-27T16:26:07.740Z] [ERROR] ROLLBACK: Failed Transaction | {"error":"Operation failed","duration":"0ms"}
+[2026-02-27T16:26:07.747Z] [ERROR] ROLLBACK: Transaction | {"error":"Test error","duration":"0ms"}
+[2026-02-27T16:26:07.754Z] [ERROR] Query 1/2 failed: Unknown | {"error":"Query failed"}
+[2026-02-27T16:26:07.755Z] [ERROR] ROLLBACK: Multi-query transaction | {"error":"Query failed","duration":"1ms"}
+[2026-02-27T16:26:08.148Z] [ERROR] Test error message | {"code":"ERR001"}
+[2026-02-27T16:36:18.705Z] [ERROR] ROLLBACK: Failed Transaction | {"error":"Operation failed","duration":"0ms"}
+[2026-02-27T16:36:18.711Z] [ERROR] ROLLBACK: Transaction | {"error":"Test error","duration":"0ms"}
+[2026-02-27T16:36:18.717Z] [ERROR] Query 1/2 failed: Unknown | {"error":"Query failed"}
+[2026-02-27T16:36:18.718Z] [ERROR] ROLLBACK: Multi-query transaction | {"error":"Query failed","duration":"1ms"}
+[2026-02-27T16:36:18.979Z] [ERROR] Test error message | {"code":"ERR001"}
+[2026-02-27T16:38:28.741Z] [ERROR] ROLLBACK: Failed Transaction | {"error":"Operation failed","duration":"0ms"}
+[2026-02-27T16:38:28.764Z] [ERROR] ROLLBACK: Transaction | {"error":"Test error","duration":"0ms"}
+[2026-02-27T16:38:28.772Z] [ERROR] Query 1/2 failed: Unknown | {"error":"Query failed"}
+[2026-02-27T16:38:28.773Z] [ERROR] ROLLBACK: Multi-query transaction | {"error":"Query failed","duration":"1ms"}
+[2026-02-27T16:38:28.860Z] [ERROR] Test error message | {"code":"ERR001"}
+[2026-02-27T16:38:35.416Z] [ERROR] ROLLBACK: Failed Transaction | {"error":"Operation failed","duration":"0ms"}
+[2026-02-27T16:38:35.422Z] [ERROR] ROLLBACK: Transaction | {"error":"Test error","duration":"0ms"}
+[2026-02-27T16:38:35.427Z] [ERROR] Query 1/2 failed: Unknown | {"error":"Query failed"}
+[2026-02-27T16:38:35.427Z] [ERROR] ROLLBACK: Multi-query transaction | {"error":"Query failed","duration":"1ms"}
+[2026-02-27T16:38:35.516Z] [ERROR] Test error message | {"code":"ERR001"}
+[2026-02-27T16:48:19.602Z] [ERROR] ROLLBACK: Failed Transaction | {"error":"Operation failed","duration":"0ms"}
+[2026-02-27T16:48:19.607Z] [ERROR] ROLLBACK: Transaction | {"error":"Test error","duration":"0ms"}
+[2026-02-27T16:48:19.612Z] [ERROR] Query 1/2 failed: Unknown | {"error":"Query failed"}
+[2026-02-27T16:48:19.613Z] [ERROR] ROLLBACK: Multi-query transaction | {"error":"Query failed","duration":"1ms"}
+[2026-02-27T16:48:19.683Z] [ERROR] Test error message | {"code":"ERR001"}
+[2026-02-27T16:50:37.651Z] [ERROR] ROLLBACK: Failed Transaction | {"error":"Operation failed","duration":"0ms"}
+[2026-02-27T16:50:37.657Z] [ERROR] ROLLBACK: Transaction | {"error":"Test error","duration":"0ms"}
+[2026-02-27T16:50:37.662Z] [ERROR] Query 1/2 failed: Unknown | {"error":"Query failed"}
+[2026-02-27T16:50:37.663Z] [ERROR] ROLLBACK: Multi-query transaction | {"error":"Query failed","duration":"1ms"}
+[2026-02-27T16:50:37.835Z] [ERROR] Test error message | {"code":"ERR001"}

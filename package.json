@@ -6,6 +6,9 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
+    "test": "jest --forceExit --detectOpenHandles",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
     "migrate": "node db-migrations.js",
     "build": "pkg . --target win --compress Brotli",
     "build:all": "pkg . --target win,macos,linux --compress Brotli"
@@ -35,13 +38,17 @@
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
     "express-session": "^1.19.0",
+    "helmet": "^7.2.0",
+    "joi": "^18.0.2",
     "multer": "^2.0.2",
     "mysql2": "^3.17.3",
+    "node-schedule": "^2.1.1",
     "puppeteer": "^24.35.0",
     "socket.io": "^4.8.3",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "jest": "^29.7.0",
     "pkg": "^5.8.0"
   },
   "engines": {

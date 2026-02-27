@@ -4,10 +4,13 @@ const express = require('express');
 const https = require('https');
 const http = require('http');
 const socketIo = require('socket.io');
+const helmet = require('helmet');  // ← Security headers
 const db = require('./utils/db-mysql');  // ← MySQL Pool en lugar de SQLite
 const rateLimiter = require('./modules/rate-limiter');  // ← Rate limiting
 const validation = require('./modules/validation');  // ← Validaciones
 const auditLog = require('./modules/audit-log');  // ← Auditoría de usuarios
+const transactions = require('./utils/transactions');  // ← Transaction support
+const logger = require('./utils/logger');  // ← Logging system
 const procesarAgendaExcel = require('./utils/procesar-agenda-excel');
 const bodyParser = require('body-parser');
 const cors = require('cors');
@@ -20,12 +23,88 @@ const multer = require('multer');
 const appointmentsRouter = require('./routes/appointmentsV1');  // ← API v1 de citas
 
 const app = express();
+
+// 🔒 Agregar Helmet para headers de seguridad
+// Helmet.js proporciona protección contra:
+// - XSS (Cross-Site Scripting)
+// - Clickjacking (X-Frame-Options)
+// - MIME sniffing (Content-Type options)
+// - SQL Injection (indirectamente, con otras medidas)
+// - Otros ataques comunes HTTP
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: [
+        "'self'", 
+        "'unsafe-inline'",
+        "https://cdnjs.cloudflare.com"  // ← Permitir XLSX, CryptoJS desde CDN
+      ],
+      styleSrc: [
+        "'self'", 
+        "'unsafe-inline'",
+        "https://fonts.googleapis.com"  // ← Permitir Google Fonts CSS
+      ],
+      fontSrc: [
+        "'self'",
+        "https://fonts.gstatic.com"     // ← Permitir Google Fonts archivos
+      ],
+      imgSrc: ["'self'", 'data:', 'https:'],
+      connectSrc: ["'self'", "https:"],  // ← Permitir conexiones HTTPS
+    }
+  },
+  hsts: {
+    maxAge: 31536000, // 1 año
+    includeSubDomains: true,
+    preload: true
+  },
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+  noSniff: true,
+  xssFilter: true,
+  frameguard: { action: 'deny' }
+}));
+
 app.use(cors({
   origin: true,
   credentials: true
 }));
 app.use(bodyParser.json({ limit: '50mb' }));
 app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
+
+// 📊 Middleware de logging para requests/responses
+app.use((req, res, next) => {
+  const startTime = Date.now();
+  
+  // Capturar el método original de res.end/res.send
+  const originalEnd = res.end;
+  const originalSend = res.send;
+  
+  res.end = function(data, encoding) {
+    const duration = Date.now() - startTime;
+    const statusCode = res.statusCode || 200;
+    
+    logger.api(req.method, req.path, statusCode, duration, {
+      ip: req.ip,
+      userAgent: req.get('user-agent')?.substring(0, 50)
+    });
+    
+    originalEnd.call(this, data, encoding);
+  };
+  
+  res.send = function(data) {
+    const duration = Date.now() - startTime;
+    const statusCode = res.statusCode || 200;
+    
+    logger.api(req.method, req.path, statusCode, duration, {
+      ip: req.ip,
+      userAgent: req.get('user-agent')?.substring(0, 50)
+    });
+    
+    return originalSend.call(this, data);
+  };
+  
+  next();
+});
 
 // Configurar multer para uploads de archivos
 const uploadDir = path.join(__dirname, 'public', 'uploads');
@@ -173,6 +252,17 @@ function getPuppeteerLaunchOptions() {
 function parseReciboId(id) {
   const n = parseInt(id, 10);
   return Number.isInteger(n) && n > 0 ? n : null;
+}
+
+// Helper seguro para emitir eventos de Socket.IO
+function emitSocket(eventName, data) {
+  try {
+    if (app.io) {
+      app.io.emit(eventName, data);
+    }
+  } catch (error) {
+    logger.warn(`Socket.IO emit error: ${eventName}`, { error: error.message });
+  }
 }
 
 // Middleware de autenticación
@@ -469,9 +559,7 @@ app.post('/api/usuarios', requireAuth, requireAdmin, async (req, res) => {
     });
     
     // Emitir evento WebSocket
-    if (app.io) {
-      app.io.emit('usuario:creado', { id: result.insertId });
-    }
+    emitSocket('usuario:creado', { id: result.insertId });
     
     res.json({ ok: true, id: result.insertId });
   } catch (e) {
@@ -625,9 +713,7 @@ app.delete('/api/usuarios/:id', requireAuth, requireAdmin, async (req, res) => {
     });
     
     // Emitir evento WebSocket
-    if (app.io) {
-      app.io.emit('usuario:eliminado', { id });
-    }
+    emitSocket('usuario:eliminado', { id });
     
     res.json({ ok: true });
   } catch (e) {
@@ -665,7 +751,7 @@ app.patch('/api/usuarios/:id/toggle-estado', requireAuth, requireAdmin, async (r
     
     // Emitir evento WebSocket
     if (app.io) {
-      app.io.emit('usuario:actualizado', { id, activo: nuevoEstado });
+      emitSocket('usuario:actualizado', { id, activo: nuevoEstado });
     }
     
     res.json({ ok: true, activo: nuevoEstado });
@@ -820,7 +906,7 @@ app.patch('/api/usuarios/:id/reset-password', requireAuth, requireAdmin, async (
     
     // Emitir evento WebSocket
     if (app.io) {
-      app.io.emit('usuario:actualizado', { id, passwordReset: true });
+      emitSocket('usuario:actualizado', { id, passwordReset: true });
     }
     
     res.json({ 
@@ -887,14 +973,14 @@ app.post('/api/turnos/llamar-siguiente', requireAuth, async (req, res) => {
     const turnoConConsultorio = { ...updated[0], numero_consultorio: numeroConsultorio };
     
     // Emitir evento de socket para actualizar todos los clientes
-    app.io.emit('agenda:turno-llamar-siguiente', { 
+    emitSocket('agenda:turno-llamar-siguiente', { 
       turno_id: turno.id, 
       doctor_id, 
       fecha,
       paciente_nombre: turnoConConsultorio.paciente_nombre,
       numero_turno: turnoConConsultorio.numero_turno
     });
-    app.io.emit('agenda:turno-estado-cambio', { id: turno.id, estado: 'EN_ATENCION' });
+    emitSocket('agenda:turno-estado-cambio', { id: turno.id, estado: 'EN_ATENCION' });
     
     res.json({ ok: true, turno: turnoConConsultorio });
   } catch (e) {
@@ -943,12 +1029,12 @@ app.post('/api/turnos/marcar-atendido', requireAuth, async (req, res) => {
     }
     
     // Emitir eventos de socket para actualizar todos los clientes
-    app.io.emit('agenda:turno-marcar-atendido', { 
+    emitSocket('agenda:turno-marcar-atendido', { 
       turno_id, 
       doctor_id: turno.doctor_id,
       fecha: turno.fecha
     });
-    app.io.emit('agenda:turno-estado-cambio', { id: turno_id, estado: 'ATENDIDO' });
+    emitSocket('agenda:turno-estado-cambio', { id: turno_id, estado: 'ATENDIDO' });
     
     res.json({ ok: true });
   } catch (e) {
@@ -1264,7 +1350,7 @@ app.post('/api/doctor-disponibilidad/procesar-excel', requireAuth, upload.single
 
     // Emitir actualización a través de WebSocket
     if (app.io) {
-      app.io.emit('agenda:disponibilidad-actualizada', { doctor_id: doctorId });
+      emitSocket('agenda:disponibilidad-actualizada', { doctor_id: doctorId });
     }
 
     res.json({ 
@@ -1345,7 +1431,7 @@ app.delete('/api/doctor-disponibilidad/:doctorId', requireAuth, async (req, res)
     if (result.ok) {
       // Emitir actualización a través de WebSocket
       if (app.io) {
-        app.io.emit('agenda:disponibilidad-actualizada', { doctor_id: doctorId });
+        emitSocket('agenda:disponibilidad-actualizada', { doctor_id: doctorId });
       }
     }
 
@@ -1535,7 +1621,7 @@ app.post('/api/turnos', async (req, res) => {
 
     // Emitir evento WebSocket
     if (app.io) {
-      app.io.emit('agenda:turno-creado', { id: result.insertId, doctor_id, paciente_nombre, fecha });
+      emitSocket('agenda:turno-creado', { id: result.insertId, doctor_id, paciente_nombre, fecha });
     }
 
     res.json({ ok: true, id: result.insertId });
@@ -1595,7 +1681,7 @@ app.patch('/api/turnos/:id', async (req, res) => {
     // Emitir eventos de socket
     if (app.io) {
       if (paciente_nombre !== undefined) {
-        app.io.emit('agenda:turno-cambio-paciente', { 
+        emitSocket('agenda:turno-cambio-paciente', { 
           id, 
           paciente_nombre,
           doctor_id: turno.doctor_id,
@@ -1652,9 +1738,9 @@ app.patch('/api/turnos/:id/estado', async (req, res) => {
 
     // Emitir evento WebSocket
     if (app.io) {
-      app.io.emit('agenda:turno-estado-cambio', { id, estado });
+      emitSocket('agenda:turno-estado-cambio', { id, estado });
       if (numeroAsignado) {
-        app.io.emit('agenda:turno-numero-cambio', { 
+        emitSocket('agenda:turno-numero-cambio', { 
           id, 
           numero_turno: numeroAsignado,
           doctor_id: turno.doctor_id,
@@ -1709,7 +1795,7 @@ app.delete('/api/turnos/:id', requireAuth, requireRole(['admin', 'recepcion']), 
     
     // Emitir evento de socket para actualizar todos los clientes
     if (app.io) {
-      app.io.emit('agenda:turno-eliminado', { id, doctor_id: turno.doctor_id, fecha: turno.fecha });
+      emitSocket('agenda:turno-eliminado', { id, doctor_id: turno.doctor_id, fecha: turno.fecha });
     }
     
     res.json({ ok: true });
@@ -1765,7 +1851,7 @@ app.patch('/api/turnos/:id/numero', requireAuth, requireRole(['admin', 'recepcio
       
       // Emitir evento de socket para actualizar todos los clientes
       if (app.io) {
-        app.io.emit('agenda:turno-numero-cambio', { 
+        emitSocket('agenda:turno-numero-cambio', { 
           id,
           numero_turno: numero,
           doctor_id: turno.doctor_id,
@@ -1816,7 +1902,7 @@ app.patch('/api/turnos/:id/numero', requireAuth, requireRole(['admin', 'recepcio
 
       // Emitir evento de socket para actualizar todos los clientes
       if (app.io) {
-        app.io.emit('agenda:turno-numero-cambio', { 
+        emitSocket('agenda:turno-numero-cambio', { 
           id, 
           numero_turno: nuevoNumero,
           doctor_id: turno.doctor_id,
@@ -2253,7 +2339,7 @@ app.get('/api/citas-electro', async (req, res) => {
   }
 });
 
-// Crear cita electrodiagnóstico
+// Crear cita electrodiagnóstico (con TRANSACCIÓN para garantizar integridad)
 app.post('/api/citas-electro', async (req, res) => {
   const { equipo_id, paciente_id, fecha, hora_agendamiento, hora, hora_fin, duracion, estudio, observaciones, diagnostico_id, estado, programado_por_nombre, telefono } = req.body || {};
   
@@ -2275,96 +2361,110 @@ app.post('/api/citas-electro', async (req, res) => {
   }
 
   try {
-    // VALIDACIÓN DE CAPACIDAD: En este rango horario hay X estudios. Si X < 4 → permitir
-    // Calcular hora_fin y fecha_fin si no están proporcionadas
-    let finalHoraFin = hora_fin;
-    let finalFechaFin = fecha; // Default: misma fecha
-    
-    if (!hora_fin) {
-      // duracion está en minutos (default: 30 si no se especifica)
-      const duracionMinutos = duracion ? parseInt(duracion, 10) : 30;
-      const [hh, mm] = horaAgendamiento.split(':').map(x => parseInt(x, 10));
-      const startTime = new Date();
-      startTime.setHours(hh, mm, 0, 0);
-      startTime.setMinutes(startTime.getMinutes() + duracionMinutos);
+    // 🔄 Usar transacción para garantizar que la validación de capacidad y la inserción sean atómicas
+    const result = await transactions.withTransaction(async (conn) => {
+      // Calcular hora_fin y fecha_fin si no están proporcionadas
+      let finalHoraFin = hora_fin;
+      let finalFechaFin = fecha; // Default: misma fecha
       
-      finalHoraFin = `${String(startTime.getHours()).padStart(2, '0')}:${String(startTime.getMinutes()).padStart(2, '0')}`;
-      
-      // Si hora_fin <= hora_agendamiento, cruza medianoche
-      if (finalHoraFin <= horaAgendamiento) {
-        const nextDay = new Date(fecha);
-        nextDay.setDate(nextDay.getDate() + 1);
-        finalFechaFin = nextDay.toISOString().slice(0, 10);
+      if (!hora_fin) {
+        // duracion está en minutos (default: 30 si no se especifica)
+        const duracionMinutos = duracion ? parseInt(duracion, 10) : 30;
+        const [hh, mm] = horaAgendamiento.split(':').map(x => parseInt(x, 10));
+        const startTime = new Date();
+        startTime.setHours(hh, mm, 0, 0);
+        startTime.setMinutes(startTime.getMinutes() + duracionMinutos);
+        
+        finalHoraFin = `${String(startTime.getHours()).padStart(2, '0')}:${String(startTime.getMinutes()).padStart(2, '0')}`;
+        
+        // Si hora_fin <= hora_agendamiento, cruza medianoche
+        if (finalHoraFin <= horaAgendamiento) {
+          const nextDay = new Date(fecha);
+          nextDay.setDate(nextDay.getDate() + 1);
+          finalFechaFin = nextDay.toISOString().slice(0, 10);
+        }
       }
-    }
 
-    // Contar cupos OCUPADOS que se solapan
-    // Los cupos se ocupan por: Programado, En Sala, En Estudio, Completado
-    // NO ocupan: No Asistió, Cancelado
-    // Convertir a DATETIME para comparación correcta incluso con cambio de día
-    const overlapCitas = await db.query(`
-      SELECT COUNT(*) as overlap_count
-      FROM citas_electro
-      WHERE estado IN ('Programado', 'En Sala', 'En Estudio', 'Completado')
-      AND CONCAT(COALESCE(hora_fin_date, fecha), ' ', hora_fin) > CONCAT(?, ' ', ?)
-      AND CONCAT(fecha, ' ', hora_agendamiento) < CONCAT(?, ' ', ?)
-    `, [fecha, horaAgendamiento, finalFechaFin, finalHoraFin]);
+      // VALIDACIÓN DE CAPACIDAD DENTRO DE LA TRANSACCIÓN con SELECT FOR UPDATE
+      const overlapCitas = await transactions.selectForUpdate(conn,
+        `SELECT COUNT(*) as overlap_count
+         FROM citas_electro
+         WHERE estado IN ('Programado', 'En Sala', 'En Estudio', 'Completado')
+         AND CONCAT(COALESCE(hora_fin_date, fecha), ' ', hora_fin) > CONCAT(?, ' ', ?)
+         AND CONCAT(fecha, ' ', hora_agendamiento) < CONCAT(?, ' ', ?)`,
+        [fecha, horaAgendamiento, finalFechaFin, finalHoraFin]
+      );
 
-    const overlapCount = overlapCitas[0]?.overlap_count || 0;
+      const overlapCount = overlapCitas[0]?.overlap_count || 0;
 
-    // Validar capacidad: máximo 4 cupos disponibles
-    if (overlapCount >= 4) {
-      return res.status(409).json({ 
-        error: 'Sin capacidad disponible en este horario',
-        details: `Hay ${overlapCount} cupos ocupados en este rango. Máximo permitido: 4`,
-        capacity: { active: overlapCount, max: 4 }
-      });
-    }
+      // Validar capacidad: máximo 4 cupos disponibles
+      if (overlapCount >= 4) {
+        throw new Error(`Sin capacidad disponible en este horario. Hay ${overlapCount} cupos ocupados. Máximo: 4`);
+      }
 
-    const result = await db.execute(`
-      INSERT INTO citas_electro (equipo_id, paciente_id, fecha, hora_agendamiento, hora_inicio, hora_fin, hora_fin_date, estudio, observaciones, diagnostico_id, estado, programado_por_nombre)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [
-      equipo_id || null,
-      paciente_id,
-      fecha,
-      horaAgendamiento,
-      null,
-      finalHoraFin,
-      finalFechaFin,
-      estudio || null,
-      observaciones || null,
-      diagnostico_id || null,
-      estado || 'Programado',
-      programado_por_nombre || 'Sistema'
-    ]);
-    
+      // INSERTAR DENTRO DE LA TRANSACCIÓN
+      const insertResult = await conn.execute(`
+        INSERT INTO citas_electro (equipo_id, paciente_id, fecha, hora_agendamiento, hora_inicio, hora_fin, hora_fin_date, estudio, observaciones, diagnostico_id, estado, programado_por_nombre)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        equipo_id || null,
+        paciente_id,
+        fecha,
+        horaAgendamiento,
+        null,
+        finalHoraFin,
+        finalFechaFin,
+        estudio || null,
+        observaciones || null,
+        diagnostico_id || null,
+        estado || 'Programado',
+        programado_por_nombre || 'Sistema'
+      ]);
+
+      return {
+        insertId: insertResult[0].insertId,
+        overlapCount,
+        finalHoraFin,
+        finalFechaFin
+      };
+    });
+
     // Emitir evento de socket para actualizar en tiempo real
     if (app.io) {
-      app.io.emit('electro:cita-creada', {
+      emitSocket('electro:cita-creada', {
         id: result.insertId,
         paciente_id,
         fecha,
         hora_agendamiento: horaAgendamiento,
-        hora_fin: finalHoraFin,
+        hora_fin: result.finalHoraFin,
         estudio,
         estado: estado || 'Programado',
-        overlap_count: overlapCount,
+        overlap_count: result.overlapCount,
         telefono: telefono || null
       });
-      app.io.emit('electro:actualizar-lista', { type: 'creada', id: result.insertId });
+      emitSocket('electro:actualizar-lista', { type: 'creada', id: result.insertId });
     }
     
     res.json({ 
       ok: true, 
       id: result.insertId, 
       capacity_info: { 
-        active_studies: overlapCount, 
+        active_studies: result.overlapCount, 
         max: 4,
-        available: 4 - overlapCount - 1 // El que acaba de crearse
+        available: 4 - result.overlapCount - 1 // El que acaba de crearse
       } 
     });
   } catch (e) {
+    // La transacción fue automáticamente revertida si hubo error
+    const errorMsg = e.message.includes('Sin capacidad') ? e.message : e.message;
+    if (e.message.includes('Sin capacidad')) {
+      return res.status(409).json({ 
+        error: errorMsg,
+        details: e.message,
+        capacity: { max: 4 }
+      });
+    }
+    logger.error('Error creando cita electro', { error: e.message, paciente_id });
     res.status(500).json({ error: e.message });
   }
 });
@@ -2515,12 +2615,12 @@ app.patch('/api/citas-electro/:id', requireAuth, async (req, res) => {
     
     // Emitir evento de socket para actualizar en tiempo real
     if (app.io) {
-      app.io.emit('electro:cita-actualizada', {
+      emitSocket('electro:cita-actualizada', {
         id,
         ...cambios,
         editado_por: req.session.usuarioNombre || 'Sistema'
       });
-      app.io.emit('electro:actualizar-lista', { type: 'actualizada', id, cambios });
+      emitSocket('electro:actualizar-lista', { type: 'actualizada', id, cambios });
     }
     
     res.json({ ok: true, transicion: `${estadoActual} → ${estado || estadoActual}` });
@@ -2554,11 +2654,11 @@ app.delete('/api/citas-electro/:id', requireAuth, async (req, res) => {
     
     // Emitir evento de socket para actualizar en tiempo real
     if (app.io) {
-      app.io.emit('electro:cita-eliminada', {
+      emitSocket('electro:cita-eliminada', {
         id,
         cita_info: cita
       });
-      app.io.emit('electro:actualizar-lista', { type: 'eliminada', id });
+      emitSocket('electro:actualizar-lista', { type: 'eliminada', id });
     }
     
     res.json({ ok: true });
@@ -2605,9 +2705,9 @@ app.post('/api/recibos', async (req, res) => {
         fecha,
         total
       };
-      app.io.emit('recibo:creado', nuevoRecibo);
-      app.io.emit('recibo:actualizar-lista');
-      app.io.emit('stats:actualizar');
+      emitSocket('recibo:creado', nuevoRecibo);
+      emitSocket('recibo:actualizar-lista');
+      emitSocket('stats:actualizar');
     }
     res.json({ ok: true, id: result.insertId });
   } catch(err) {
@@ -2645,9 +2745,9 @@ app.delete('/api/recibos/:id', requireAuth, requireAdmin, async (req, res) => {
     if (result.affectedRows === 0) return res.status(404).json({ error: 'No encontrado' });
     // Emitir actualización a través de WebSocket
     if (app.io) {
-      app.io.emit('recibo:eliminado', { id });
-      app.io.emit('recibo:actualizar-lista');
-      app.io.emit('stats:actualizar');
+      emitSocket('recibo:eliminado', { id });
+      emitSocket('recibo:actualizar-lista');
+      emitSocket('stats:actualizar');
     }
     res.json({ ok: true });
   } catch(err) {
@@ -3145,27 +3245,20 @@ const PORT = process.env.PORT || 3000;
   try {
     await db.initPool();
     
-    // Configuración HTTPS
+    // 🔒 Configuración HTTPS (Development)
+    // Detectar certificado autofirmado y usar HTTPS si está configurado
+    const USE_HTTPS = process.env.USE_HTTPS === 'true';
     const certPath = path.join(__dirname, 'server.crt');
     const keyPath = path.join(__dirname, 'server.key');
     let httpServer;
 
-    if (fs.existsSync(certPath) && fs.existsSync(keyPath)) {
-      // Usar HTTPS con certificado
+    if (USE_HTTPS && fs.existsSync(certPath) && fs.existsSync(keyPath)) {
+      // Usar HTTPS con certificado autofirmado
+      console.log('🔐 Iniciando servidor con HTTPS...');
       const options = {
         cert: fs.readFileSync(certPath),
         key: fs.readFileSync(keyPath)
       };
-
-      // Añadir headers de seguridad
-      app.use((req, res, next) => {
-        res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
-        res.setHeader('X-Content-Type-Options', 'nosniff');
-        res.setHeader('X-Frame-Options', 'DENY');
-        res.setHeader('X-XSS-Protection', '1; mode=block');
-        res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-        next();
-      });
 
       httpServer = https.createServer(options, app);
 
@@ -3178,18 +3271,33 @@ const PORT = process.env.PORT || 3000;
       const redirectServer = http.createServer(httpApp);
       const httpPort = 3001;
       
-      redirectServer.listen(httpPort, () => {});
+      redirectServer.listen(httpPort, () => {
+        logger.info('HTTP → HTTPS redirect server listening on port 3001', { type: 'HTTPS' });
+      });
+
+      logger.info('✅ HTTPS activado con certificado autofirmado', { type: 'HTTPS' });
+    } else if (USE_HTTPS && !fs.existsSync(certPath)) {
+      // Usuario quiere HTTPS pero no tiene certificado
+      logger.warn('⚠️ USE_HTTPS=true pero no hay certificados. Generando...', { type: 'HTTPS' });
+      console.log('\n🔐 Para generar certificado, ejecuta:');
+      console.log('   node utils/generate-cert.js\n');
+      
+      // Continuar con HTTP por ahora
+      httpServer = http.createServer(app);
+      logger.warn('Iniciando temporalmente con HTTP (sin certificado)', { type: 'HTTPS' });
     } else {
-      // Sin HTTPS (desarrollo local)
+      // Desarrollo local sin HTTPS (HTTP)
       httpServer = http.createServer(app);
     }
 
     // Configurar Socket.IO en el servidor HTTP
     const io = socketIo(httpServer, {
       cors: {
-        origin: true,
+        origin: "*",  // Permitir todas las conexiones (considerar restringir en prod)
+        methods: ["GET", "POST"],
         credentials: true
-      }
+      },
+      transports: ['websocket', 'polling']
     });
 
     // Almacenar instancia de io en app para usar en rutas
@@ -3286,6 +3394,27 @@ const PORT = process.env.PORT || 3000;
 
     httpServer.listen(PORT, () => {
       console.log('OK');
+      
+      // 🔄 Iniciar scheduler de backups automáticos
+      try {
+        let backupScheduler = null;
+        try {
+          const { startBackupScheduler } = require('./utils/backup-scheduler');
+          backupScheduler = startBackupScheduler();
+          logger.info('✅ Programador de backups automáticos iniciado', { type: 'STARTUP' });
+        } catch (e) {
+          if (e.code === 'MODULE_NOT_FOUND') {
+            logger.warn('⚠️ node-schedule no instalado, backups automáticos deshabilitados', { type: 'STARTUP' });
+          } else {
+            throw e;
+          }
+        }
+        
+        // Guardar referencia global para poder detenerlo después
+        global.backupScheduler = backupScheduler;
+      } catch (error) {
+        logger.error('❌ Error iniciando backup scheduler', { error: error.message, type: 'STARTUP' });
+      }
     });
 
     // Manejo de errores
@@ -3314,3 +3443,4 @@ process.on('uncaughtException', (error) => {
 process.on('unhandledRejection', (reason, promise) => {
   console.error('\n❌ Promise rechazado:', reason);
 });
+
