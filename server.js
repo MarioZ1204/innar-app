@@ -2508,7 +2508,7 @@ app.patch('/api/citas-electro/:id/estado', requireAuth, async (req, res) => {
 // Cualquier estado → "En Sala", "No Asistió", "Cancelado" (manual)
 app.patch('/api/citas-electro/:id', requireAuth, async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  const { equipo_id, estado, hora_inicio, hora_fin } = req.body || {};
+  const { equipo_id, estado, hora_inicio, hora_fin, hora_agendamiento, fecha } = req.body || {};
   
   if (!id) {
     return res.status(400).json({ error: 'id es obligatorio' });
@@ -2526,7 +2526,7 @@ app.patch('/api/citas-electro/:id', requireAuth, async (req, res) => {
     // ============ VALIDAR TRANSICIÓN DE ESTADOS ============
     if (estado && estado !== estadoActual) {
       // Estados manuales (permitidos desde cualquier estado)
-      const estadosManuales = ['En Sala', 'No Asistió', 'Cancelado'];
+      const estadosManuales = ['En Sala', 'No Asistió', 'Reprogramado', 'Cancelado', 'Adelantado'];
       const esManual = estadosManuales.includes(estado);
 
       // Transición automática: Programado → En Estudio
@@ -2590,6 +2590,16 @@ app.patch('/api/citas-electro/:id', requireAuth, async (req, res) => {
       values.push(hora_fin);
     }
     
+    if (hora_agendamiento !== undefined) {
+      updates.push('hora_agendamiento = ?');
+      values.push(hora_agendamiento);
+    }
+    
+    if (fecha !== undefined) {
+      updates.push('fecha = ?');
+      values.push(fecha);
+    }
+    
     if (updates.length === 0) {
       return res.json({ ok: true });
     }
@@ -2610,6 +2620,8 @@ app.patch('/api/citas-electro/:id', requireAuth, async (req, res) => {
     if (estado !== undefined) cambios.estado = estado;
     if (hora_inicio !== undefined) cambios.hora_inicio = hora_inicio;
     if (hora_fin !== undefined) cambios.hora_fin = hora_fin;
+    if (hora_agendamiento !== undefined) cambios.hora_agendamiento = hora_agendamiento;
+    if (fecha !== undefined) cambios.fecha = fecha;
     
     await db.execute(`UPDATE citas_electro SET ${updates.join(', ')} WHERE id = ?`, values);
     
@@ -3225,6 +3237,297 @@ app.get('/api/reportes/mensual', async (req, res) => {
   } catch(e) {
     console.error(e);
     res.status(500).json({ error: 'Error generando reporte: ' + e.message });
+  }
+});
+
+// 📊 Dashboard Auditoría de Citas - Ver quién agendó cada cita
+app.get('/api/dashboard/citas-auditoria', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { tipo_cita, fecha_desde, fecha_hasta, programado_por } = req.query;
+    
+    // Construir consultas para ambas tablas
+    const citasMedicas = await db.query(`
+      SELECT 
+        t.id,
+        t.fecha,
+        t.hora,
+        t.paciente_documento,
+        t.paciente_nombre,
+        t.tipo_consulta,
+        t.programado_por,
+        t.doctor_id,
+        t.estado,
+        'AGENDA_MEDICA' as tipo_cita,
+        t.numero_turno
+      FROM turnos t
+      WHERE 1=1
+        ${fecha_desde ? 'AND t.fecha >= ?' : ''}
+        ${fecha_hasta ? 'AND t.fecha <= ?' : ''}
+        ${programado_por ? 'AND t.programado_por LIKE ?' : ''}
+      ORDER BY t.fecha DESC, t.hora DESC
+    `, [
+      ...(fecha_desde ? [fecha_desde] : []),
+      ...(fecha_hasta ? [fecha_hasta] : []),
+      ...(programado_por ? [`%${programado_por}%`] : [])
+    ]);
+
+    const citasElectro = await db.query(`
+      SELECT 
+        ce.id,
+        ce.fecha,
+        ce.hora_agendamiento as hora,
+        p.documento as paciente_documento,
+        p.nombre as paciente_nombre,
+        ce.estudio as tipo_consulta,
+        ce.programado_por_nombre as programado_por,
+        ce.equipo_id as doctor_id,
+        ce.estado,
+        'ELECTRODIAGNOSTICO' as tipo_cita,
+        'N/A' as numero_turno
+      FROM citas_electro ce
+      LEFT JOIN pacientes p ON p.id = ce.paciente_id
+      WHERE 1=1
+        ${fecha_desde ? 'AND ce.fecha >= ?' : ''}
+        ${fecha_hasta ? 'AND ce.fecha <= ?' : ''}
+        ${programado_por ? 'AND ce.programado_por_nombre LIKE ?' : ''}
+      ORDER BY ce.fecha DESC, ce.hora_agendamiento DESC
+    `, [
+      ...(fecha_desde ? [fecha_desde] : []),
+      ...(fecha_hasta ? [fecha_hasta] : []),
+      ...(programado_por ? [`%${programado_por}%`] : [])
+    ]);
+
+    // Combinar y filtrar por tipo_cita si viene en el query
+    let citas = [...citasMedicas, ...citasElectro];
+    
+    if (tipo_cita && tipo_cita !== 'TODOS') {
+      citas = citas.filter(c => c.tipo_cita === tipo_cita);
+    }
+
+    // Ordenar por fecha descendente
+    citas.sort((a, b) => {
+      const fechaA = new Date(a.fecha);
+      const fechaB = new Date(b.fecha);
+      return fechaB - fechaA;
+    });
+
+    logger.info('Dashboard auditoría citas', {
+      usuario: req.session && req.session.usuario ? req.session.usuario : 'Unknown',
+      total_citas: citas.length,
+      medicas: citasMedicas.length,
+      electro: citasElectro.length
+    });
+
+    res.json({
+      success: true,
+      data: citas,
+      resumen: {
+        total_citas: citas.length,
+        citas_medicas: citasMedicas.length,
+        citas_electrodiagnostico: citasElectro.length,
+        agendadores: [...new Set(citas.map(c => c.programado_por))].filter(p => p)
+      }
+    });
+  } catch(e) {
+    logger.error('Error en dashboard auditoría', { error: e.message, stack: e.stack });
+    res.status(500).json({ error: 'Error al cargar auditoría de citas: ' + e.message });
+  }
+});
+
+// 📄 PDF de Agenda del Doctor - Descargar agenda de pacientes
+app.post('/api/agenda/pdf', requireAuth, async (req, res) => {
+  try {
+    const { doctor_id, fecha_inicio, fecha_fin } = req.body;
+    const userId = req.session.usuarioId;
+    const userRol = req.session.rol;
+    
+    // Validar permisos: solo admin, recepcion o el doctor mismo
+    if (!['admin', 'recepcion'].includes(userRol)) {
+      // Si es doctor, solo puede ver su propia agenda
+      if (userId !== parseInt(doctor_id)) {
+        return res.status(403).json({ error: 'No tienes permiso para ver esta agenda' });
+      }
+    }
+    
+    // Obtener información del doctor desde usuarios
+    const doctorData = await db.query(
+      'SELECT nombre, usuario, numero_consultorio FROM usuarios WHERE id = ?',
+      [doctor_id]
+    );
+    
+    if (!doctorData || !doctorData.length) {
+      return res.status(404).json({ error: 'Doctor no encontrado' });
+    }
+    
+    const doctor = doctorData[0];
+    const nombredoctor = doctor.nombre || doctor.usuario;
+    const consultorio = doctor.numero_consultorio || 'N/A';
+    
+    // Determinar rango de fechas (mes actual por defecto)
+    let desde = fecha_inicio;
+    let hasta = fecha_fin;
+    
+    if (!desde || !hasta) {
+      const hoy = new Date();
+      desde = new Date(hoy.getFullYear(), hoy.getMonth(), 1).toISOString().split('T')[0];
+      hasta = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0).toISOString().split('T')[0];
+    }
+    
+    // Obtener citas del doctor en ese período (excluir canceladas y completadas)
+    const citas = await db.query(`
+      SELECT 
+        t.fecha,
+        t.hora,
+        t.paciente_nombre,
+        t.paciente_documento,
+        t.paciente_telefono,
+        t.tipo_consulta,
+        t.estado,
+        t.numero_turno
+      FROM turnos t
+      WHERE t.doctor_id = ? AND t.fecha BETWEEN ? AND ? AND t.estado NOT IN ('CANCELADO', 'COMPLETADO')
+      ORDER BY t.fecha ASC, t.hora ASC
+    `, [doctor_id, desde, hasta]);
+    
+    // Agrupar por fecha
+    const citasPorFecha = {};
+    citas.forEach(cita => {
+      if (!citasPorFecha[cita.fecha]) {
+        citasPorFecha[cita.fecha] = [];
+      }
+      citasPorFecha[cita.fecha].push(cita);
+    });
+    
+    // Obtener logo en base64
+    const logoPath = path.join(__dirname, 'public', 'images', 'logo1.png');
+    let logoBase64Data = '';
+    if (fs.existsSync(logoPath)) {
+      const logoBuffer = fs.readFileSync(logoPath);
+      logoBase64Data = logoBuffer.toString('base64');
+    }
+    
+    // Formatear fechas
+    const fechaDesdeFormato = new Date(desde).toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric' });
+    const fechaHastaFormato = new Date(hasta).toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric' });
+    
+    // Generar HTML
+    const html = `
+      <!doctype html>
+      <html>
+      <head>
+        <meta charset="utf-8"/>
+        <title>Agenda - ${nombredoctor}</title>
+        <style>
+          body { font-family:Arial; margin:18px; color:#000; position:relative; padding:0; }
+          .watermark { position:fixed; top:50%; left:50%; transform:translate(-50%, -50%) rotate(-45deg); font-size:100px; opacity:0.08; z-index:0; width:200%; height:200%; pointer-events:none; }
+          .content { position:relative; z-index:1; }
+          .header { text-align:center; margin-bottom:24px; padding-bottom:16px; border-bottom:2px solid #8AA6A1; }
+          .logo-corner { width:120px; height:120px; object-fit:contain; display:block; margin:0 auto 12px auto; }
+          .doctor-info { background-color:#f0f9ff; padding:12px; border-left:4px solid #8AA6A1; margin-bottom:16px; border-radius:4px; }
+          .doctor-info p { margin:4px 0; font-size:11px; }
+          .fecha-section { margin-bottom:20px; page-break-inside:avoid; }
+          .fecha-titulo { background-color:#8AA6A1; color:white; padding:8px 12px; font-weight:bold; margin-bottom:8px; border-radius:4px; }
+          table { width:100%; border-collapse:collapse; margin-bottom:16px; font-size:9px; }
+          th { background-color:#e0e7e6; border:1px solid #bbb; padding:6px 4px; text-align:left; font-weight:bold; }
+          td { border:1px solid #ddd; padding:4px 6px; text-align:left; }
+          .estado-pendiente { color:#f59e0b; font-weight:600; }
+          .estado-completado { color:#10b981; font-weight:600; }
+          .estado-en-atencion { color:#3b82f6; font-weight:600; }
+          .footer { text-align:center; margin-top:24px; padding-top:12px; border-top:1px solid #ddd; font-size:9px; color:#666; }
+          .no-data { text-align:center; padding:20px; color:#999; font-style:italic; }
+        </style>
+      </head>
+      <body>
+        <div class="watermark">AGENDA</div>
+        <div class="content">
+          <div class="header">
+            ${logoBase64Data ? `<img src="data:image/png;base64,${logoBase64Data}" class="logo-corner" alt="Logo" />` : ''}
+            <h1 style="margin:0 0 6px 0; color:#8AA6A1; font-size:14px">AGENDA DE PACIENTES</h1>
+            <p style="margin:0; font-size:11px; color:#666">${nombredoctor}</p>
+          </div>
+          
+          <div class="doctor-info">
+            <p><strong>Doctor:</strong> ${escapeHtml(nombredoctor)}</p>
+            <p><strong>Consultorio:</strong> ${escapeHtml(consultorio)}</p>
+            <p><strong>Período:</strong> ${fechaDesdeFormato} al ${fechaHastaFormato}</p>
+            <p><strong>Total de citas:</strong> ${citas.length}</p>
+          </div>
+          
+          ${Object.keys(citasPorFecha).length > 0 ? Object.entries(citasPorFecha).map(([fecha, citasDelDia]) => {
+            const fechaObj = new Date(fecha);
+            const fechaFormato = fechaObj.toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+            return `
+              <div class="fecha-section">
+                <div class="fecha-titulo">${fechaFormato.charAt(0).toUpperCase() + fechaFormato.slice(1)} (${citasDelDia.length} pacientes)</div>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Hora</th>
+                      <th>Nº Turno</th>
+                      <th>Paciente</th>
+                      <th>Documento</th>
+                      <th>Teléfono</th>
+                      <th>Tipo Consulta</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${citasDelDia.map(c => {
+                      return `
+                        <tr>
+                          <td>${c.hora ? c.hora.substring(0, 5) : '-'}</td>
+                          <td>${c.numero_turno || '-'}</td>
+                          <td>${escapeHtml(c.paciente_nombre || '-')}</td>
+                          <td>${escapeHtml(c.paciente_documento || '-')}</td>
+                          <td>${escapeHtml(c.paciente_telefono || '-')}</td>
+                          <td>${escapeHtml(c.tipo_consulta || '-')}</td>
+                        </tr>
+                      `;
+                    }).join('')}
+                  </tbody>
+                </table>
+              </div>
+            `;
+          }).join('')
+          : `<div class="no-data">No hay citas registradas para este período</div>`}
+          
+          <div class="footer">
+            <p>Generado: ${new Date().toLocaleDateString('es-ES')} - Instituto Neurociencias de Nariño S.A.S.</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+    
+    // Generar PDF
+    let browser = null;
+    try {
+      const launchOptions = getPuppeteerLaunchOptions();
+      browser = await puppeteer.launch(launchOptions);
+      const page = await browser.newPage();
+      await page.setContent(html, { waitUntil: 'networkidle0' });
+      const pdf = await page.pdf({
+        format: 'A4',
+        margin: { top: '12px', bottom: '12px', left: '12px', right: '12px' }
+      });
+      await browser.close();
+      
+      logger.info('PDF Agenda generado', {
+        doctor_id: doctor_id,
+        total_citas: citas.length,
+        usuario: req.session.usuario
+      });
+      
+      res.contentType('application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename=agenda_${nombredoctor.replace(/\s+/g, '_')}_${desde}.pdf`);
+      res.send(pdf);
+    } catch(e) {
+      if (browser) await browser.close().catch(() => {});
+      logger.error('Error generando PDF agenda', { error: e.message });
+      res.status(500).json({ error: 'Error generando PDF: ' + e.message });
+    }
+  } catch(e) {
+    logger.error('Error en endpoint agenda PDF', { error: e.message, stack: e.stack });
+    res.status(500).json({ error: 'Error: ' + e.message });
   }
 });
 

@@ -97,7 +97,7 @@
           <label for="loginPassword">Contraseña</label>
           <div style="position:relative;display:flex;align-items:center">
             <input id="loginPassword" type="password" placeholder="Contraseña" autocomplete="current-password" required style="flex:1;padding-right:40px" />
-            <button type="button" id="togglePassword" style="position:absolute;right:12px;background:none;border:none;cursor:pointer;font-size:18px;color:#627371" title="Mostrar/ocultar contraseña">👁️</button>
+            <button type="button" id="togglePassword" style="position:absolute;right:12px;background:none;border:none;cursor:pointer;font-size:18px;color:#627371" title="Mostrar/ocultar contraseña">Mostrar</button>
           </div>
           <div id="capsLockWarning" style="display:none;margin-top:8px;padding:8px 12px;background:#fef3c7;border:1px solid #fcd34d;border-radius:4px;color:#92400e;font-size:13px;font-weight:500">Mayús activado</div>
         </div>
@@ -148,6 +148,11 @@
           <span class="menu-card-icon"><img src="images/iconuser.png" alt="Diagnósticos" class="icon-img" /></span>
           <span class="menu-card-title">Diagnósticos</span>
           <span class="menu-card-desc">Importar y gestionar diagnósticos</span>
+        </button>
+        <button class="menu-card" data-module="dashboard-citas" data-rol="admin">
+          <span class="menu-card-icon"><img src="images/iconagenda.png" alt="Dashboard Citas" class="icon-img" /></span>
+          <span class="menu-card-title">Auditoría de Citas</span>
+          <span class="menu-card-desc">Ver quién agendó cada cita médica y electrodiagnóstico</span>
         </button>
       </div>
     </div>
@@ -215,7 +220,7 @@
               </div>
               <div style="margin-top:10px">
                 <label>Conceptos</label>
-                <table id="itemsTable">
+                <table id="itemsTable" class="modern-table">
                   <thead><tr><th>Descripción</th><th>Valor</th><th></th></tr></thead>
                   <tbody></tbody>
                 </table>
@@ -244,7 +249,7 @@
                   <div><strong>Cliente:</strong> <span id="r_cliente"></span></div>
                   <div><strong>Documento:</strong> <span id="r_doc"></span></div>
                 </div>
-                <table id="r_table">
+                <table id="r_table" class="modern-table">
                   <thead><tr><th>Descripción</th><th>Precio</th></tr></thead>
                   <tbody></tbody>
                 </table>
@@ -266,14 +271,14 @@
             <header><h2>Recibos Guardados</h2></header>
             <section id="savedList" class="card no-print">
               <div style="overflow-x:auto">
-                <table id="tablaSavedItems" style="width:100%;border-collapse:collapse;margin-bottom:12px;">
-                  <thead style="background:#f3f4f6;border-bottom:2px solid #d1d5db">
+                <table id="tablaSavedItems" class="modern-table">
+                  <thead>
                     <tr>
-                      <th style="padding:12px;text-align:left;font-weight:600;color:#374151;border:1px solid #e5e7eb">Número</th>
-                      <th style="padding:12px;text-align:left;font-weight:600;color:#374151;border:1px solid #e5e7eb">Cliente</th>
-                      <th style="padding:12px;text-align:left;font-weight:600;color:#374151;border:1px solid #e5e7eb">Fecha</th>
-                      <th style="padding:12px;text-align:right;font-weight:600;color:#374151;border:1px solid #e5e7eb">Total</th>
-                      <th style="padding:12px;text-align:center;font-weight:600;color:#374151;border:1px solid #e5e7eb">Acciones</th>
+                      <th>Número</th>
+                      <th>Cliente</th>
+                      <th>Fecha</th>
+                      <th style="text-align:right">Total</th>
+                      <th style="text-align:center">Acciones</th>
                     </tr>
                   </thead>
                   <tbody id="savedItems">
@@ -348,6 +353,9 @@
                 <div class="col"><label>Fecha</label><input id="agendaMedicaFecha" type="date" /></div>
                 <div class="col"><label>Doctor</label><div id="agendaMedicaDoctorDisplay" style="padding:10px;background:#f3f4f6;border-radius:4px;display:flex;align-items:center;font-weight:500;color:#374151">-</div></div>
               </div>
+              <div style="display:flex;gap:12px;align-items:flex-end;margin-bottom:8px">
+                <button id="btnDescargarAgendaPDF" style="flex:1;padding:10px 16px;background:#059669;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600;display:none">Descargar Agenda en PDF</button>
+              </div>
               <div style="text-align:center;margin-top:8px">
                 <div id="agendaMedicaFechaDisplay" style="font-size:18px;font-weight:700;color:#111;text-transform:uppercase"></div>
               </div>
@@ -421,6 +429,7 @@
                   </tbody>
                 </table>
               </div>
+              <div id="turnosTableMedicaControls"></div>
             </section>
           </div>
           
@@ -537,11 +546,12 @@
               <button type="button" onclick="abrirBusquedaAuditoria()" style="padding:10px 16px;background:#0369a1;color:white;border:none;border-radius:6px;font-weight:600;font-size:0.9rem;cursor:pointer;transition:all 0.2s" onmouseover="this.style.background='#0284c7'" onmouseout="this.style.background='#0369a1'">Auditoría</button>
             </div>
             <div id="usuariosList" style="overflow-x:auto">
-              <table id="usuariosTable" style="width:100%;border-collapse:collapse">
-                <thead><tr style="background:#f0f0f0"><th style="padding:8px;border:1px solid #ddd">Usuario</th><th style="padding:8px;border:1px solid #ddd">Nombre</th><th style="padding:8px;border:1px solid #ddd">Rol</th><th style="padding:8px;border:1px solid #ddd">Consultorio</th><th style="padding:8px;border:1px solid #ddd">Estado</th><th style="padding:8px;border:1px solid #ddd">Acciones</th></tr></thead>
+              <table id="usuariosTable" class="modern-table">
+                <thead><tr><th>Usuario</th><th>Nombre</th><th>Rol</th><th>Consultorio</th><th>Estado</th><th>Acciones</th></tr></thead>
                 <tbody id="usuariosTableBody"></tbody>
               </table>
             </div>
+            <div id="usuariosTableControls"></div>
           </section>
         </div>
       </div>
@@ -596,6 +606,7 @@
                 </tbody>
               </table>
             </div>
+            <div id="diagnosticosTableControls"></div>
           </section>
         </div>
       </div>
@@ -648,8 +659,8 @@
               <div class="col"><label>Número de Documento</label><input id="electroDocumento" type="text" placeholder="Documento (buscar paciente)" /></div>
             </div>
             <!-- Avisos de Disponibilidad de Equipos -->
-            <div id="equiposDisponibilidadAlerta" style="margin-top:12px;padding:10px;background:#f0f9ff;border-left:4px solid #3b82f6;border-radius:4px;display:none">
-              <div style="font-weight:600;color:#1e40af;margin-bottom:8px">📊 Disponibilidad de Equipos</div>
+            <div id="equiposDisponibilidadAlerta" style="margin-top:12px;padding:16px;background:#f0f8f7;border:2px solid #627371;border-radius:8px;display:none">
+              <div style="font-weight:600;color:#627371;margin-bottom:12px;font-size:0.95rem">Disponibilidad de Equipos</div>
               <div id="equiposDisponibilidadContenido"></div>
             </div>
             <div class="row" style="margin-top:12px">
@@ -668,13 +679,13 @@
           <section class="card">
             <h3>Citas del Día</h3>
             <!-- PESTAÑAS DE ESTUDIOS -->
-            <div style="display:flex;gap:8px;margin-bottom:16px;border-bottom:2px solid #e5e7eb;overflow-x:auto">
-              <button class="tab-electro-btn active" data-estudio="todas" style="padding:12px 16px;background:none;border:none;border-bottom:3px solid #0369a1;color:#0369a1;cursor:pointer;font-weight:600;white-space:nowrap">Todas</button>
-              <button class="tab-electro-btn" data-estudio="PSG Básica" style="padding:12px 16px;background:none;border:none;border-bottom:3px solid transparent;color:#6b7280;cursor:pointer;font-weight:600;white-space:nowrap">PSG Básica</button>
-              <button class="tab-electro-btn" data-estudio="PSG con Titulación de Dispositivo Médico CPAP/BPAP" style="padding:12px 16px;background:none;border:none;border-bottom:3px solid transparent;color:#6b7280;cursor:pointer;font-weight:600;white-space:nowrap">PSG CPAP/BPAP</button>
-              <button class="tab-electro-btn" data-estudio="Electroencefalograma" style="padding:12px 16px;background:none;border:none;border-bottom:3px solid transparent;color:#6b7280;cursor:pointer;font-weight:600;white-space:nowrap">EEG</button>
-              <button class="tab-electro-btn" data-estudio="Monitorización Electroencefalografica por Video y Radio" style="padding:12px 16px;background:none;border:none;border-bottom:3px solid transparent;color:#6b7280;cursor:pointer;font-weight:600;white-space:nowrap">Monit. EEG</button>
-              <button class="tab-electro-btn" data-estudio="Test de Latencia" style="padding:12px 16px;background:none;border:none;border-bottom:3px solid transparent;color:#6b7280;cursor:pointer;font-weight:600;white-space:nowrap">Test Latencia</button>
+            <div class="tabs-container">
+              <button class="tab-electro-btn active" data-estudio="todas">Todas</button>
+              <button class="tab-electro-btn" data-estudio="PSG Básica">PSG Básica</button>
+              <button class="tab-electro-btn" data-estudio="PSG con Titulación de Dispositivo Médico CPAP/BPAP">PSG CPAP/BPAP</button>
+              <button class="tab-electro-btn" data-estudio="Electroencefalograma">EEG</button>
+              <button class="tab-electro-btn" data-estudio="Monitorización Electroencefalografica por Video y Radio">Monit. EEG</button>
+              <button class="tab-electro-btn" data-estudio="Test de Latencia">Test Latencia</button>
             </div>
 
             <div id="citasElectroList" style="overflow-x:auto;border-radius:8px;overflow:hidden">
@@ -698,6 +709,7 @@
                 </tbody>
               </table>
             </div>
+            <div id="citasElectroTableControls"></div>
 
             <!-- Información de Usuario Programó / Editó (abajo de la tabla) -->
             <div style="margin-top:20px;padding:16px;background:#f9fafb;border-radius:8px;border:1px solid #e5e7eb;display:flex;justify-content:space-between;gap:24px">
@@ -763,10 +775,21 @@
         </div>
       </div>
 
+      <div id="modalAdelantadoContainer" style="display:none;margin-bottom:24px;padding:16px;background:#f0f9ff;border-left:4px solid #0369a1;border-radius:6px">
+        <label style="display:block;font-size:0.85rem;color:#6b7280;font-weight:600;margin-bottom:8px">Nueva hora de agendamiento</label>
+        <input id="modalHoraAdelantado" type="time" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:0.95rem">
+        <div style="font-size:0.8rem;color:#6b7280;margin-top:6px">Selecciona la nueva hora para esta cita</div>
+      </div>
+
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:24px">
         <button id="btnIniciarEstudio" style="padding:12px;background:#0369a1;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:0.9rem">Iniciar</button>
         <button id="btnFinalizarEstudio" style="padding:12px;background:#059669;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:0.9rem">Finalizar</button>
-        <button id="btnEnviarRecomendaciones" style="padding:12px;background:#8AA6A1;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:0.9rem">Recomendaciones</button>
+        <button id="btnEnviarRecomendaciones" style="padding:12px;background:#627371;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:0.9rem">Recomendaciones</button>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:24px">
+        <button id="btnReprogramarCita" style="padding:12px;background:#ff9500;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:0.9rem">Reprogramar</button>
+        <button id="btnAdelantarCita" style="padding:12px;background:#d946ef;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:0.9rem">Adelantar</button>
       </div>
 
       <div style="display:flex;gap:12px;justify-content:space-between">
@@ -775,6 +798,62 @@
           <button id="btnCancelarModal" style="padding:12px 24px;background:#e5e7eb;color:#1f2937;border:none;border-radius:6px;cursor:pointer;font-weight:600" onclick="document.getElementById('modalDetallesCitaElectro').classList.add('hidden')">Cerrar</button>
           <button id="btnGuardarCambios" style="padding:12px 24px;background:#8AA6A1;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600">Guardar</button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal para Reprogramar Cita -->
+  <div id="modalReprogramarCita" class="modal hidden" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:1001;padding:20px">
+    <div class="modal-content" style="background:white;border-radius:12px;padding:32px;max-width:500px;width:100%;box-shadow:0 20px 25px -5px rgba(0,0,0,0.1)">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px">
+        <h2 style="margin:0;color:#1f2937">Reprogramar Cita</h2>
+        <button id="cerrarModalReprogramar" style="background:none;border:none;font-size:24px;cursor:pointer;color:#6b7280;padding:0;width:32px;height:32px;display:flex;align-items:center;justify-content:center">&times;</button>
+      </div>
+
+      <div style="display:grid;gap:16px;margin-bottom:24px">
+        <div>
+          <label style="display:block;font-size:0.85rem;color:#6b7280;font-weight:600;margin-bottom:6px">Nueva Fecha</label>
+          <input id="modalReprogramarFecha" type="date" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:0.95rem">
+        </div>
+        <div>
+          <label style="display:block;font-size:0.85rem;color:#6b7280;font-weight:600;margin-bottom:6px">Nueva Hora</label>
+          <input id="modalReprogramarHora" type="time" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:0.95rem">
+        </div>
+        <div style="padding:12px;background:#f0f9ff;border-left:4px solid #0369a1;border-radius:6px">
+          <div style="font-size:0.85rem;color:#6b7280;font-weight:600;margin-bottom:4px">Cita actual:</div>
+          <div id="modalReprogramarFechaActual" style="font-size:0.95rem;color:#1f2937">-</div>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:12px;justify-content:flex-end">
+        <button id="btnCancelarReprogramar" style="padding:12px 24px;background:#e5e7eb;color:#1f2937;border:none;border-radius:6px;cursor:pointer;font-weight:600">Cancelar</button>
+        <button id="btnConfirmarReprogramar" style="padding:12px 24px;background:#f59e0b;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600">Reprogramar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal para Adelantar Cita -->
+  <div id="modalAdelantarCita" class="modal hidden" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:1001;padding:20px">
+    <div class="modal-content" style="background:white;border-radius:12px;padding:32px;max-width:500px;width:100%;box-shadow:0 20px 25px -5px rgba(0,0,0,0.1)">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px">
+        <h2 style="margin:0;color:#1f2937">Adelantar Cita</h2>
+        <button id="cerrarModalAdelantarCita" style="background:none;border:none;font-size:24px;cursor:pointer;color:#6b7280;padding:0;width:32px;height:32px;display:flex;align-items:center;justify-content:center">&times;</button>
+      </div>
+
+      <div style="display:grid;gap:16px;margin-bottom:24px">
+        <div>
+          <label style="display:block;font-size:0.85rem;color:#6b7280;font-weight:600;margin-bottom:6px">Nueva Hora de Agendamiento</label>
+          <input id="modalAdelantarHora" type="time" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:0.95rem">
+        </div>
+        <div style="padding:12px;background:#f0f9ff;border-left:4px solid #0369a1;border-radius:6px">
+          <div style="font-size:0.85rem;color:#6b7280;font-weight:600;margin-bottom:4px">Hora actual:</div>
+          <div id="modalAdelantarHoraActual" style="font-size:0.95rem;color:#1f2937">-</div>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:12px;justify-content:flex-end">
+        <button id="btnCancelarAdelantarCita" style="padding:12px 24px;background:#e5e7eb;color:#1f2937;border:none;border-radius:6px;cursor:pointer;font-weight:600">Cancelar</button>
+        <button id="btnConfirmarAdelantarCita" style="padding:12px 24px;background:#8b5cf6;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600">Adelantar</button>
       </div>
     </div>
   </div>
@@ -800,14 +879,14 @@
             <label for="contrasenaActual" style="display:block;margin-bottom:8px;font-weight:500;color:#333;font-size:14px">Contraseña Actual</label>
             <div style="position:relative;display:flex;align-items:center">
               <input id="contrasenaActual" type="password" placeholder="Ingresa tu contraseña actual" style="flex:1;padding:10px 12px;padding-right:40px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;font-size:14px;transition:all 0.2s" onfocus="this.style.borderColor='#627371';this.style.boxShadow='0 0 0 3px rgba(98,115,113,0.1)'" onblur="this.style.borderColor='#d1d5db';this.style.boxShadow='none'" />
-              <button type="button" id="toggleContrasenaActual" style="position:absolute;right:12px;background:none;border:none;cursor:pointer;font-size:18px;color:#627371;transition:color 0.2s" title="Mostrar/ocultar">👁️</button>
+              <button type="button" id="toggleContrasenaActual" style="position:absolute;right:12px;background:none;border:none;cursor:pointer;font-size:18px;color:#627371;transition:color 0.2s" title="Mostrar/ocultar">Mostrar</button>
             </div>
           </div>
           <div>
             <label for="nuevaContrasena" style="display:block;margin-bottom:8px;font-weight:500;color:#333;font-size:14px">Nueva Contraseña</label>
             <div style="position:relative;display:flex;align-items:center">
               <input id="nuevaContrasena" type="password" placeholder="Ingresa tu nueva contraseña" style="flex:1;padding:10px 12px;padding-right:40px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;font-size:14px;transition:all 0.2s" onfocus="this.style.borderColor='#627371';this.style.boxShadow='0 0 0 3px rgba(98,115,113,0.1)'" onblur="this.style.borderColor='#d1d5db';this.style.boxShadow='none'" />
-              <button type="button" id="toggleNuevaContrasena" style="position:absolute;right:12px;background:none;border:none;cursor:pointer;font-size:18px;color:#627371;transition:color 0.2s" title="Mostrar/ocultar">👁️</button>
+              <button type="button" id="toggleNuevaContrasena" style="position:absolute;right:12px;background:none;border:none;cursor:pointer;font-size:18px;color:#627371;transition:color 0.2s" title="Mostrar/ocultar">Mostrar</button>
             </div>
             <div id="cambiarContrasenaRequirements" style="margin-top:12px;padding:12px;background:#f9fafb;border-radius:6px;border:1px solid #e5e7eb;display:none">
               <p style="margin:0 0 8px 0;font-size:13px;font-weight:600;color:#374151">Requisitos de contraseña:</p>
@@ -823,7 +902,7 @@
             <label for="confirmarContrasena" style="display:block;margin-bottom:8px;font-weight:500;color:#333;font-size:14px">Confirmar Nueva Contraseña</label>
             <div style="position:relative;display:flex;align-items:center">
               <input id="confirmarContrasena" type="password" placeholder="Confirma tu nueva contraseña" style="flex:1;padding:10px 12px;padding-right:40px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;font-size:14px;transition:all 0.2s" onfocus="this.style.borderColor='#627371';this.style.boxShadow='0 0 0 3px rgba(98,115,113,0.1)'" onblur="this.style.borderColor='#d1d5db';this.style.boxShadow='none'" />
-              <button type="button" id="toggleConfirmarContrasena" style="position:absolute;right:12px;background:none;border:none;cursor:pointer;font-size:18px;color:#627371;transition:color 0.2s" title="Mostrar/ocultar">👁️</button>
+              <button type="button" id="toggleConfirmarContrasena" style="position:absolute;right:12px;background:none;border:none;cursor:pointer;font-size:18px;color:#627371;transition:color 0.2s" title="Mostrar/ocultar">Mostrar</button>
             </div>
           </div>
         </div>
@@ -834,6 +913,102 @@
           <button type="button" style="flex:1;padding:11px 16px;background:#e5e7eb;color:#374151;border:none;border-radius:6px;font-weight:600;font-size:14px;cursor:pointer;transition:all 0.2s" onclick="closeCambiarContrasenaModal()" onmouseover="this.style.background='#d1d5db'" onmouseout="this.style.background='#e5e7eb'">Cancelar</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- ========== MÓDULO DASHBOARD AUDITORÍA DE CITAS ========== -->
+  <div id="view-dashboard-citas" class="view-module hidden">
+    <div class="main-layout">
+      <div class="sidebar">
+        <button class="btn-volver" id="btnVolverDashboardCitas">← Volver</button>
+        <div style="margin-bottom:24px;text-align:center">
+          <img src="images/logo.png" alt="Logo" style="height:70px;width:auto;object-fit:contain" />
+        </div>
+        <h2 style="color:white;margin-bottom:16px">Auditoría de Citas</h2>
+        <p style="color:rgba(255,255,255,0.9);font-size:0.9rem">Controlar quién agenda</p>
+      </div>
+      <div class="main-content">
+        <div class="container">
+          <header><h2>Auditoría de Citas - Quién Agendó</h2></header>
+          
+          <!-- Filtros -->
+          <section class="card no-print">
+            <h3>Filtros</h3>
+            <div class="row">
+              <div class="col">
+                <label>Tipo de Cita</label>
+                <select id="dashboardTipoCita">
+                  <option value="TODOS">Todas</option>
+                  <option value="AGENDA_MEDICA">Agenda Médica</option>
+                  <option value="ELECTRODIAGNOSTICO">Electrodiagnóstico</option>
+                </select>
+              </div>
+              <div class="col">
+                <label>Desde</label>
+                <input id="dashboardFechaDesde" type="date" />
+              </div>
+              <div class="col">
+                <label>Hasta</label>
+                <input id="dashboardFechaHasta" type="date" />
+              </div>
+              <div class="col">
+                <label>Agendado por</label>
+                <input id="dashboardAgendadoPor" type="text" placeholder="Nombre del usuario" />
+              </div>
+              <div class="col" style="display:flex;align-items:flex-end;gap:8px">
+                <button id="btnBuscarCitas" style="flex:1;padding:8px 16px;background:#8AA6A1;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600">Buscar</button>
+                <button id="btnLimpiarFiltros" style="flex:1;padding:8px 16px;background:#d1d5db;color:#333;border:none;border-radius:6px;cursor:pointer;font-weight:600">Limpiar</button>
+              </div>
+            </div>
+          </section>
+
+          <!-- Resumen -->
+          <section class="card no-print" style="background-color:#f0f9ff;border-left:4px solid #8AA6A1">
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px">
+              <div style="text-align:center">
+                <div style="font-size:24px;font-weight:bold;color:#0369a1" id="dashboardTotalCitas">0</div>
+                <div style="font-size:12px;color:#666">Citas totales</div>
+              </div>
+              <div style="text-align:center">
+                <div style="font-size:24px;font-weight:bold;color:#10b981" id="dashboardCitasMedicas">0</div>
+                <div style="font-size:12px;color:#666">Citas médicas</div>
+              </div>
+              <div style="text-align:center">
+                <div style="font-size:24px;font-weight:bold;color:#8b5cf6" id="dashboardCitasElectro">0</div>
+                <div style="font-size:12px;color:#666">Electrodiagnóstico</div>
+              </div>
+              <div style="text-align:center">
+                <div style="font-size:24px;font-weight:bold;color:#f59e0b" id="dashboardAgendadores">0</div>
+                <div style="font-size:12px;color:#666">Usuarios que agendaron</div>
+              </div>
+            </div>
+          </section>
+
+          <!-- Tabla de Citas -->
+          <section class="card">
+            <h3>Citas Agendadas</h3>
+            <div style="overflow-x:auto">
+              <table class="modern-table" id="tablaCitasAuditoria">
+                <thead>
+                  <tr>
+                    <th>Fecha</th>
+                    <th>Hora</th>
+                    <th>Paciente (Documento)</th>
+                    <th>Tipo Consulta</th>
+                    <th>Tipo Cita</th>
+                    <th>Agendado por</th>
+                    <th>Estado</th>
+                  </tr>
+                </thead>
+                <tbody id="bodyTablaAuditoria">
+                  <tr><td colspan="7" style="padding:20px;text-align:center;color:#999">Selecciona los filtros y haz clic en Buscar</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div id="tablaCitasAuditoriaControls"></div>
+          </section>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -886,7 +1061,7 @@
           <label for="editPassword" style="display:block;margin-bottom:8px;font-weight:500;color:#333;font-size:14px">Nueva Contraseña</label>
           <div style="position:relative;display:flex;align-items:center">
             <input id="editPassword" type="password" placeholder="Dejar vacío para no cambiar" style="flex:1;padding:10px 12px;padding-right:40px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;font-size:14px;transition:all 0.2s" onfocus="this.style.borderColor='#627371';this.style.boxShadow='0 0 0 3px rgba(98,115,113,0.1)'" onblur="this.style.borderColor='#d1d5db';this.style.boxShadow='none'" />
-            <button type="button" id="toggleEditPassword" style="position:absolute;right:12px;background:none;border:none;cursor:pointer;font-size:18px;color:#627371;transition:color 0.2s" title="Mostrar/ocultar">👁️</button>
+            <button type="button" id="toggleEditPassword" style="position:absolute;right:12px;background:none;border:none;cursor:pointer;font-size:18px;color:#627371;transition:color 0.2s" title="Mostrar/ocultar">Mostrar</button>
           </div>
         </div>
         <div id="editarUsuarioError" class="login-error hidden" style="padding:12px;background:#fee;border:1px solid #fcc;border-radius:6px;color:#c00;font-size:14px;display:none"></div>
@@ -928,7 +1103,7 @@
       </div>
       <div style="background:#f3f4f6;padding:16px;border-radius:8px;margin-bottom:20px;border:2px solid #d1d5db;font-family:monospace;font-size:1rem;font-weight:600;color:#1f2937;word-break:break-all;display:flex;justify-content:space-between;align-items:center">
         <span id="resetPasswordValue">-</span>
-        <button type="button" id="btnCopyPassword" style="background:none;border:none;cursor:pointer;font-size:1.2rem;padding:8px;color:#2d4a47;transition:all 0.2s" onmouseover="this.style.color='#1f3634'" onmouseout="this.style.color='#2d4a47'" title="Copiar">📋</button>
+        <button type="button" id="btnCopyPassword" style="background:none;border:none;cursor:pointer;font-size:1.2rem;padding:8px;color:#2d4a47;transition:all 0.2s" onmouseover="this.style.color='#1f3634'" onmouseout="this.style.color='#2d4a47'" title="Copiar">Copiar</button>
       </div>
       <p style="margin:0 0 20px 0;font-size:0.85rem;color:#6b7280;text-align:center">La contraseña temporal ha sido generada. El usuario deberá cambiarla en su próximo login.</p>
       <div style="display:flex;gap:12px">
@@ -942,7 +1117,7 @@
     <div class="modal-box" style="max-width:900px;max-height:90vh;overflow-y:auto">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;padding-bottom:16px;border-bottom:2px solid #e5e7eb">
         <h3 style="margin:0;color:#627371;font-size:20px;font-weight:600">Búsqueda Avanzada de Auditoría</h3>
-        <button class="btn-close-modal" onclick="closeBusquedaAuditoriaModal()" style="background:none;border:none;font-size:24px;cursor:pointer;color:#627371;transition:color 0.2s" onmouseover="this.style.color='#3f4a48'" onmouseout="this.style.color='#627371'">✕</button>
+        <button type="button" class="btn-close-modal" style="background:none;border:none;font-size:24px;cursor:pointer;color:#627371;transition:color 0.2s;padding:8px;line-height:1;width:32px;height:32px;display:flex;align-items:center;justify-content:center" title="Cerrar">✕</button>
       </div>
       
       <!-- Filtros -->
@@ -953,11 +1128,13 @@
             <select id="filtroAccion" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:0.9rem">
               <option value="">Todas las acciones</option>
               <option value="CREAR">Crear Usuario</option>
-              <option value="ACTUALIZAR">Actualizar</option>
-              <option value="ELIMINAR">Eliminar</option>
-              <option value="ACTIVAR">Activar</option>
-              <option value="DESACTIVAR">Desactivar</option>
-              <option value="RESET_PASSWORD">Reset Password</option>
+              <option value="ACTUALIZAR">Actualizar Usuario</option>
+              <option value="ACTIVAR">Activar Usuario</option>
+              <option value="DESACTIVAR">Desactivar Usuario</option>
+              <option value="ELIMINAR">Eliminar Usuario</option>
+              <option value="RESET_PASSWORD">Reset de Contraseña</option>
+              <option value="LOGIN">Login</option>
+              <option value="LOGOUT">Logout</option>
             </select>
           </div>
           <div>
@@ -970,9 +1147,9 @@
           </div>
         </div>
         <div style="display:flex;gap:8px">
-          <button type="button" onclick="buscarAuditoria()" style="padding:10px 16px;background:#2d4a47;color:white;border:none;border-radius:6px;font-weight:600;font-size:0.9rem;cursor:pointer;transition:all 0.2s" onmouseover="this.style.background='#1f3634'" onmouseout="this.style.background='#2d4a47'">Buscar</button>
-          <button type="button" onclick="exportarAuditoriaCSV()" style="padding:10px 16px;background:#059669;color:white;border:none;border-radius:6px;font-weight:600;font-size:0.9rem;cursor:pointer;transition:all 0.2s" onmouseover="this.style.background='#047857'" onmouseout="this.style.background='#059669'">Exportar CSV</button>
-          <button type="button" onclick="limpiarFiltrosAuditoria()" style="padding:10px 16px;background:#6b7280;color:white;border:none;border-radius:6px;font-weight:600;font-size:0.9rem;cursor:pointer;transition:all 0.2s" onmouseover="this.style.background='#4b5563'" onmouseout="this.style.background='#6b7280'">Limpiar</button>
+          <button type="button" class="btn-buscar-auditoria" style="padding:10px 16px;background:#2d4a47;color:white;border:none;border-radius:6px;font-weight:600;font-size:0.9rem;cursor:pointer;transition:all 0.2s">Buscar</button>
+          <button type="button" class="btn-exportar-auditoria" style="padding:10px 16px;background:#059669;color:white;border:none;border-radius:6px;font-weight:600;font-size:0.9rem;cursor:pointer;transition:all 0.2s">Exportar CSV</button>
+          <button type="button" class="btn-limpiar-auditoria" style="padding:10px 16px;background:#6b7280;color:white;border:none;border-radius:6px;font-weight:600;font-size:0.9rem;cursor:pointer;transition:all 0.2s">Limpiar</button>
         </div>
       </div>
       
@@ -980,6 +1157,7 @@
       <div id="busquedaResultados" style="max-height:60vh;overflow-y:auto">
         <p style="text-align:center;color:#6b7280;padding:20px">Usa los filtros arriba para buscar registros</p>
       </div>
+      <div id="busquedaAuditoriaControls"></div>
     </div>
   </div>
 
@@ -993,6 +1171,7 @@
 
   <script src="socket-client.js"></script>
   <script src="socket-electro.js"></script>
+  <script src="dashboard-citas.js"></script>
   <script src="app.js"></script>
   <script src="calendario-bloqueado.js"></script>
   <script src="validation-client.js"></script>

@@ -27,6 +27,7 @@ let currentUser = null;
 let currentModule = null;
 let selectedDoctorId = null;
 let citaElectroSeleccionada = null;
+let citaReprogramarAdelantarActual = null; // Almacena la cita cuando se abre modal de reprogramación/adelanto
 let selectedDoctorEspecialidad = null;
 let selectedDiagnosticoElectroId = null;
 let selectedEquipoElectroId = null;
@@ -239,7 +240,7 @@ async function doLogout() {
   history.pushState({view: 'login'}, '', '#login');
 }
 
-let initRecibosDone = false, initAgendaDone = false, initElectroDone = false, initUsuariosDone = false, initDiagnosticosDone = false;
+let initRecibosDone = false, initAgendaDone = false, initElectroDone = false, initUsuariosDone = false, initDiagnosticosDone = false, initDashboardCitasDone = false;
 function goToModule(moduleId) {
   showView(`view-${moduleId}`);
   currentModule = moduleId;
@@ -257,6 +258,7 @@ function goToModule(moduleId) {
   if (moduleId === 'electro') { if (!initElectroDone) initElectro(); initElectroDone = true; }
   if (moduleId === 'usuarios') { if (!initUsuariosDone) initUsuarios(); initUsuariosDone = true; }
   if (moduleId === 'diagnosticos') { if (!initDiagnosticosDone) initDiagnosticos(); initDiagnosticosDone = true; }
+  if (moduleId === 'dashboard-citas') { if (!initDashboardCitasDone) initDashboardCitas(); initDashboardCitasDone = true; }
 }
 
 function goToMenu() {
@@ -268,6 +270,7 @@ function goToMenu() {
   // Resetear flags de inicialización para permitir reinicialización
   initAgendaDone = false;
   initElectroDone = false;
+  initDashboardCitasDone = false;
   // Resetear flag de listeners de socket-electro
   window.listenersConfigured = false;
   // Limpiar selectedDoctorId cuando se vuelve al menú
@@ -295,6 +298,7 @@ function setupMenuHandlers() {
   $('btnVolverAgenda').addEventListener('click', goToMenu);
   $('btnVolverElectro').addEventListener('click', goToMenu);
   if ($('btnVolverUsuarios')) $('btnVolverUsuarios').addEventListener('click', goToMenu);
+  if ($('btnVolverDashboardCitas')) $('btnVolverDashboardCitas').addEventListener('click', goToMenu);
   // Manejar botón atrás del navegador (solo una vez)
   if (!window._popstateSetup) {
     window._popstateSetup = true;
@@ -394,6 +398,232 @@ function editServicio(idx) {
     renderServiciosList();
     showToast('Servicio actualizado', 'success');
   }
+}
+
+// ============================================
+// SISTEMA GENÉRICO DE PAGINACIÓN
+// ============================================
+
+// Almacenar estado de paginación de cada tabla
+window.paginationState = {};
+
+/**
+ * Configura paginación para una tabla
+ * @param {string} tableId - ID único para la tabla (ej: 'usuarios', 'citasElectro', etc)
+ * @param {Array} data - Array de datos a paginar
+ * @param {Function} renderFunction - Función que renderiza una fila (recibe el tbody y un elemento de data)
+ * @param {Object} options - Opciones de configuración
+ */
+function setupPagination(tableId, data, renderFunction, options = {}) {
+  const {
+    itemsPerPageDefault = 20,
+    itemsPerPageOptions = [5, 10, 15, 20, 50],
+    tbodyId = null,
+    containerSelector = null
+  } = options;
+
+  // Inicializar estado
+  if (!window.paginationState[tableId]) {
+    window.paginationState[tableId] = {
+      currentPage: 1,
+      itemsPerPage: itemsPerPageDefault,
+      data: data,
+      totalPages: Math.ceil(data.length / itemsPerPageDefault)
+    };
+  } else {
+    // Actualizar datos y recalcular
+    window.paginationState[tableId].data = data;
+    window.paginationState[tableId].totalPages = Math.ceil(data.length / window.paginationState[tableId].itemsPerPage);
+    window.paginationState[tableId].currentPage = 1;
+  }
+
+  const state = window.paginationState[tableId];
+
+  // Renderizar tabla
+  renderPaginatedTable(tableId, renderFunction, tbodyId);
+
+  // Crear controles de paginación si el contenedor existe
+  if (containerSelector) {
+    createPaginationControls(tableId, containerSelector, itemsPerPageOptions, renderFunction, tbodyId);
+  }
+}
+
+/**
+ * Renderiza una página de la tabla paginada
+ */
+function renderPaginatedTable(tableId, renderFunction, tbodyId) {
+  const state = window.paginationState[tableId];
+  if (!state) return;
+
+  const tbody = tbodyId ? document.getElementById(tbodyId) : null;
+  if (!tbody) return;
+
+  tbody.innerHTML = '';
+
+  // Calcular índices de items a mostrar
+  const startIdx = (state.currentPage - 1) * state.itemsPerPage;
+  const endIdx = startIdx + state.itemsPerPage;
+  const paginatedData = state.data.slice(startIdx, endIdx);
+
+  if (paginatedData.length === 0) {
+    const colCount = 6; // Ajustar según la tabla
+    tbody.innerHTML = `<tr><td colspan="${colCount}" style="padding:20px;text-align:center;color:#999">No hay datos para mostrar</td></tr>`;
+    return;
+  }
+
+  // Renderizar cada fila
+  paginatedData.forEach(item => {
+    try {
+      renderFunction(tbody, item);
+    } catch (e) {
+      console.error('[PAGINATION ERROR]', e);
+    }
+  });
+}
+
+/**
+ * Crea controles de paginación (selector de items por página + navegación)
+ */
+function createPaginationControls(tableId, containerSelector, itemsPerPageOptions, renderFunction, tbodyId) {
+  const container = document.querySelector(containerSelector) || document.getElementById(containerSelector);
+  if (!container) return;
+
+  const state = window.paginationState[tableId];
+  if (!state) return;
+
+  // Limpiar controles anteriores
+  const existingControls = container.querySelector(`[data-pagination-id="${tableId}"]`);
+  if (existingControls) {
+    existingControls.remove();
+  }
+
+  // Crear contenedor de controles
+  const controlsDiv = document.createElement('div');
+  controlsDiv.setAttribute('data-pagination-id', tableId);
+  controlsDiv.style.cssText = `
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px 14px;
+    gap: 15px;
+    flex-wrap: wrap;
+  `;
+
+  // Selector de items por página
+  const itemsSelectDiv = document.createElement('div');
+  itemsSelectDiv.style.cssText = 'display: flex; align-items: center; gap: 8px;';
+  itemsSelectDiv.innerHTML = `<label>Mostrar:</label><select></select>`;
+  
+  const selectEl = itemsSelectDiv.querySelector('select');
+  itemsPerPageOptions.forEach(opt => {
+    const option = document.createElement('option');
+    option.value = opt;
+    option.textContent = opt;
+    if (opt === state.itemsPerPage) option.selected = true;
+    selectEl.appendChild(option);
+  });
+  
+  selectEl.addEventListener('change', (e) => {
+    state.itemsPerPage = parseInt(e.target.value);
+    state.totalPages = Math.ceil(state.data.length / state.itemsPerPage);
+    state.currentPage = 1;
+    renderPaginatedTable(tableId, renderFunction, tbodyId);
+    createPaginationControls(tableId, containerSelector, itemsPerPageOptions, renderFunction, tbodyId);
+  });
+
+  // Info de página y total de registros
+  const infoDiv = document.createElement('div');
+  infoDiv.style.cssText = 'font-size: 13px; color: #6b7280; text-align: center; flex-grow: 1; white-space: nowrap;';
+  infoDiv.textContent = `Página ${state.currentPage} de ${state.totalPages} | Total: ${state.data.length} registros`;
+
+  // Números de página
+  const pageNumbersDiv = document.createElement('div');
+  pageNumbersDiv.style.cssText = 'display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end;';
+  
+  // Botón "Primera"
+  if (state.currentPage > 1) {
+    const firstBtn = document.createElement('button');
+    firstBtn.textContent = '«';
+    firstBtn.style.background = '#059669';
+    firstBtn.addEventListener('click', () => {
+      state.currentPage = 1;
+      renderPaginatedTable(tableId, renderFunction, tbodyId);
+      createPaginationControls(tableId, containerSelector, itemsPerPageOptions, renderFunction, tbodyId);
+    });
+    pageNumbersDiv.appendChild(firstBtn);
+  }
+
+  // Botón "Anterior"
+  if (state.currentPage > 1) {
+    const prevBtn = document.createElement('button');
+    prevBtn.textContent = '‹';
+    prevBtn.style.background = '#059669';
+    prevBtn.addEventListener('click', () => {
+      state.currentPage--;
+      renderPaginatedTable(tableId, renderFunction, tbodyId);
+      createPaginationControls(tableId, containerSelector, itemsPerPageOptions, renderFunction, tbodyId);
+    });
+    pageNumbersDiv.appendChild(prevBtn);
+  }
+
+  // Números de página (mostrar hasta 5 números)
+  const maxPageButtons = 5;
+  const startPage = Math.max(1, state.currentPage - Math.floor(maxPageButtons / 2));
+  const endPage = Math.min(state.totalPages, startPage + maxPageButtons - 1);
+  
+  for (let i = startPage; i <= endPage; i++) {
+    const pageBtn = document.createElement('button');
+    pageBtn.textContent = i;
+    const isActive = i === state.currentPage;
+    if (isActive) {
+      pageBtn.style.background = '#2d4a47';
+      pageBtn.style.color = 'white';
+      pageBtn.disabled = true;
+    } else {
+      pageBtn.style.background = '#e5e7eb';
+      pageBtn.style.color = '#374151';
+      pageBtn.addEventListener('click', () => {
+        state.currentPage = i;
+        renderPaginatedTable(tableId, renderFunction, tbodyId);
+        createPaginationControls(tableId, containerSelector, itemsPerPageOptions, renderFunction, tbodyId);
+      });
+    }
+    pageNumbersDiv.appendChild(pageBtn);
+  }
+
+  // Botón "Siguiente"
+  if (state.currentPage < state.totalPages) {
+    const nextBtn = document.createElement('button');
+    nextBtn.textContent = '›';
+    nextBtn.style.background = '#059669';
+    nextBtn.addEventListener('click', () => {
+      state.currentPage++;
+      renderPaginatedTable(tableId, renderFunction, tbodyId);
+      createPaginationControls(tableId, containerSelector, itemsPerPageOptions, renderFunction, tbodyId);
+    });
+    pageNumbersDiv.appendChild(nextBtn);
+  }
+
+  // Botón "Última"
+  if (state.currentPage < state.totalPages) {
+    const lastBtn = document.createElement('button');
+    lastBtn.textContent = '»';
+    lastBtn.style.background = '#059669';
+    lastBtn.addEventListener('click', () => {
+      state.currentPage = state.totalPages;
+      renderPaginatedTable(tableId, renderFunction, tbodyId);
+      createPaginationControls(tableId, containerSelector, itemsPerPageOptions, renderFunction, tbodyId);
+    });
+    pageNumbersDiv.appendChild(lastBtn);
+  }
+
+  // Agregar componentes al contenedor de controles
+  controlsDiv.appendChild(itemsSelectDiv);
+  controlsDiv.appendChild(infoDiv);
+  controlsDiv.appendChild(pageNumbersDiv);
+
+  // Insertar controles en el contenedor
+  container.appendChild(controlsDiv);
 }
 
 function renderServiciosList() {
@@ -857,6 +1087,14 @@ async function initAgendaMedica() {
   
   $('btnLlamarSiguiente')?.addEventListener('click', llamarSiguientePaciente);
   $('btnMarcarAtendido')?.addEventListener('click', marcarAtendido);
+  $('btnDescargarAgendaPDF')?.addEventListener('click', descargarAgendaPDF);
+  
+  // Mostrar botón de descarga PDF solo si hay doctor seleccionado
+  const btnPDF = $('btnDescargarAgendaPDF');
+  if (btnPDF && selectedDoctorId) {
+    btnPDF.style.display = '';
+  }
+  
   // Modal de edición solo para admin/recepción
   const editSection = $('agendaEditPacienteSection');
   if (editSection) {
@@ -2056,6 +2294,64 @@ async function marcarAtendido() {
   }
 }
 
+async function descargarAgendaPDF() {
+  try {
+    const doctorId = selectedDoctorId;
+    
+    if (!doctorId) {
+      showToast('Selecciona un doctor', 'error');
+      return;
+    }
+    
+    // Mostrar indicador de carga
+    const btnPDF = $('btnDescargarAgendaPDF');
+    const textOriginal = btnPDF.textContent;
+    btnPDF.disabled = true;
+    btnPDF.textContent = '⏳ Generando PDF...';
+    
+    // Obtener mes actual (puede ser personalizado)
+    const hoy = new Date();
+    const fechaInicio = new Date(hoy.getFullYear(), hoy.getMonth(), 1).toISOString().split('T')[0];
+    const fechaFin = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0).toISOString().split('T')[0];
+    
+    const response = await apiFetch('/api/agenda/pdf', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        doctor_id: doctorId,
+        fecha_inicio: fechaInicio,
+        fecha_fin: fechaFin
+      })
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Error ${response.status}`);
+    }
+    
+    // Descargar el PDF
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `agenda_${doctorId}_${fechaInicio}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    a.remove();
+    
+    showToast('PDF descargado correctamente', 'success');
+  } catch (e) {
+    console.error('Error descargando PDF:', e);
+    showToast('Error al descargar PDF: ' + e.message, 'error');
+  } finally {
+    const btnPDF = $('btnDescargarAgendaPDF');
+    if (btnPDF) {
+      btnPDF.disabled = false;
+      btnPDF.textContent = '📄 Descargar Agenda en PDF';
+    }
+  }
+}
+
 async function moverTurno(id, delta) {
   try {
     const res = await apiFetch(`/api/turnos/${id}/numero`, {
@@ -2421,6 +2717,30 @@ async function initElectro() {
   });
   $('btnEliminarCita')?.addEventListener('click', eliminarCitaElectro);
   
+  // Event listeners para modales de reprogramación y adelanto
+  const btnConfRep = $('btnConfirmarReprogramar');
+  const btnCancelRep = $('btnCancelarReprogramar');
+  const cerrarRep = $('cerrarModalReprogramar');
+  const btnConfAde = $('btnConfirmarAdelantarCita');
+  const btnCancelAde = $('btnCancelarAdelantarCita');
+  const cerrarAde = $('cerrarModalAdelantarCita');
+  
+  console.log('[INIT_LISTENERS] btnConfirmarReprogramar existe:', !!btnConfRep);
+  console.log('[INIT_LISTENERS] btnCancelarReprogramar existe:', !!btnCancelRep);
+  console.log('[INIT_LISTENERS] cerrarModalReprogramar existe:', !!cerrarRep);
+  console.log('[INIT_LISTENERS] btnConfirmarAdelantarCita existe:', !!btnConfAde);
+  console.log('[INIT_LISTENERS] btnCancelarAdelantarCita existe:', !!btnCancelAde);
+  console.log('[INIT_LISTENERS] cerrarModalAdelantarCita existe:', !!cerrarAde);
+  
+  if (cerrarRep) cerrarRep.addEventListener('click', cerrarModalReprogramar);
+  if (btnCancelRep) btnCancelRep.addEventListener('click', cerrarModalReprogramar);
+  if (btnConfRep) btnConfRep.addEventListener('click', confirmarReprogramar);
+  
+  if (cerrarAde) cerrarAde.addEventListener('click', cerrarModalAdelantarCita);
+  if (btnCancelAde) btnCancelAde.addEventListener('click', cerrarModalAdelantarCita);
+  if (btnConfAde) btnConfAde.addEventListener('click', confirmarAdelantarCita);
+  $('btnConfirmarAdelantarCita')?.addEventListener('click', confirmarAdelantarCita);
+  
   // Cerrar modal con tecla Escape
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && !$('modalDetallesCitaElectro').classList.contains('hidden')) {
@@ -2433,13 +2753,11 @@ async function initElectro() {
     btn.addEventListener('click', (e) => {
       filtroEstudioElectro = e.target.dataset.estudio;
       
-      // Actualizar estilos de botones
+      // Actualizar clases de botones
       document.querySelectorAll('.tab-electro-btn').forEach(b => {
-        b.style.borderBottomColor = 'transparent';
-        b.style.color = '#6b7280';
+        b.classList.remove('active');
       });
-      e.target.style.borderBottomColor = '#0369a1';
-      e.target.style.color = '#0369a1';
+      e.target.classList.add('active');
       
       // Recargar tabla filtrada
       cargarCitasElectro();
@@ -2511,46 +2829,51 @@ async function checkEquiposDisponibilidad() {
     
     // Determinar color según disponibilidad
     const esDisponible = data.capacidad.hayDisponibilidad;
-    const colorFondo = esDisponible ? '#dbeafe' : '#fef2f2';
-    const colorBorde = esDisponible ? '#0284c7' : '#dc2626';
-    const colorTexto = esDisponible ? '#0c4a6e' : '#7f1d1d';
+    const colorFondo = esDisponible ? '#f0f8f7' : '#fef5f5';
+    const colorBorde = esDisponible ? '#627371' : '#dc2626';
+    const colorTexto = esDisponible ? '#627371' : '#7f1d1d';
     
     alerta.style.backgroundColor = colorFondo;
-    alerta.style.borderLeftColor = colorBorde;
+    alerta.style.borderColor = colorBorde;
     
     // Mostrar estado de cupos
     let html = `
       <div style="font-weight:600;color:${colorTexto};margin-bottom:12px">
-        ${esDisponible ? '✅' : '⛔'} ${data.mensaje}
+        ${esDisponible ? 'Equipos disponibles' : 'Sin disponibilidad'}
       </div>
       
-      <div style="margin-bottom:8px;font-size:0.9rem;color:${colorTexto}">
-        <strong>${data.capacidad.cuposaDisponibles}/4</strong> cupos libres | 
-        <strong>${data.duracionMinutos}min</strong> | 
-        <strong>${data.horaFin}</strong>h fin
+      <div style="margin-bottom:12px;font-size:0.9rem;color:#627371;display:flex;gap:16px;flex-wrap:wrap">
+        <div><strong>${data.capacidad.cuposaDisponibles}/4</strong> cupos libres</div>
+        <div><strong>${data.duracionMinutos}min</strong> duración</div>
+        <div><strong>${data.horaFin}</strong>h fin estimado</div>
       </div>
       
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(80px,1fr));gap:8px">
     `;
     
-    // Mostrar 4 cupos
+    // Mostrar 4 cupos con diseño moderno
     for (let i = 1; i <= 4; i++) {
       const ocupado = i <= data.capacidad.cuposOcupados;
-      const colorCupo = ocupado ? '#fee2e2' : '#dcfce7';
-      const textoCupo = ocupado ? '🔴' : '⭕';
-      const borderColor = ocupado ? '#fca5a5' : '#86efac';
+      const colorCupo = ocupado ? '#fee2e2' : '#e8f4f1';
+      const colorBordeCupo = ocupado ? '#dc2626' : '#627371';
+      const estado = ocupado ? 'Ocupado' : 'Libre';
+      const textoColor = ocupado ? '#7f1d1d' : '#2d4a47';
       
       html += `
         <div style="
-          padding:8px;
+          padding:12px;
           background:${colorCupo};
-          border:2px solid ${borderColor};
-          border-radius:6px;
+          border:2px solid ${colorBordeCupo};
+          border-radius:8px;
           text-align:center;
           font-weight:600;
-          font-size:1.1rem
+          font-size:0.95rem
         ">
-          ${textoCupo} <div style="font-size:0.75rem;color:${ocupado ? '#991b1b' : '#166534'};margin-top:2px">${ocupado ? 'Ocupado' : 'Libre'}</div>
+          <div style="font-size:1.2rem;color:${colorBordeCupo};margin-bottom:4px">
+            ${ocupado ? '●' : '○'}
+          </div>
+          <div style="color:${textoColor};font-size:0.85rem">${estado}</div>
+          <div style="font-size:0.75rem;color:#6b7280;margin-top:4px">Equipo ${i}</div>
         </div>
       `;
     }
@@ -2559,8 +2882,8 @@ async function checkEquiposDisponibilidad() {
     // Mostrar citas en rango si las hay
     if (data.citasEnRango && data.citasEnRango.length > 0) {
       html += `
-        <div style="margin-top:12px;padding:8px;background:white;border-radius:4px;border-left:3px solid #6366f1">
-          <div style="font-weight:600;color:#1e293b;margin-bottom:6px">📋 Estudios en este rango:</div>
+        <div style="margin-top:12px;padding:12px;background:white;border-radius:6px;border-left:3px solid #627371">
+          <div style="font-weight:600;color:#627371;margin-bottom:8px">Estudios en este rango:</div>
       `;
       data.citasEnRango.forEach(cita => {
         // Función para formatear fecha (asegurar que sea YYYY-MM-DD)
@@ -2592,8 +2915,8 @@ async function checkEquiposDisponibilidad() {
     // Si no hay disponibilidad, mostrar próxima disponibilidad
     if (!esDisponible && data.proximaDisponibilidad) {
       html += `
-        <div style="margin-top:12px;padding:8px;background:#fef3c7;border-radius:4px;color:#92400e;font-size:0.9rem">
-          ⏰ Próxima disponibilidad: <strong>${data.proximaDisponibilidad}</strong>
+        <div style="margin-top:12px;padding:10px;background:#fef5e7;border-radius:6px;color:#7a5c1a;font-size:0.9rem;border-left:3px solid #d4721b">
+          Próxima disponibilidad: <strong>${data.proximaDisponibilidad}</strong>
         </div>
       `;
     }
@@ -2694,10 +3017,8 @@ async function cargarCitasElectro() {
       citasFiltradas = citas.filter(c => c.estudio === filtroEstudioElectro);
     }
     
-    const tbody = $('citasElectroBody');
-    tbody.innerHTML = '';
-    
     if (citasFiltradas.length === 0) {
+      const tbody = $('citasElectroBody');
       const mensajeEstudio = filtroEstudioElectro === 'todas' ? '' : ` para ${filtroEstudioElectro}`;
       tbody.innerHTML = `<tr><td colspan="10" style="padding:20px;text-align:center;color:#999">No hay citas registradas para esta fecha${mensajeEstudio}</td></tr>`;
       // Actualizar información de usuario
@@ -2705,9 +3026,13 @@ async function cargarCitasElectro() {
       $('electroUsuarioEdito').textContent = '-';
       return;
     }
-    
-    // Renderizar cada cita filtrada
-    citasFiltradas.forEach(c => renderCitaElectroRow(tbody, c));
+
+    // Usar setupPagination para renderizar con paginación
+    setupPagination('citasElectro', citasFiltradas, renderCitaElectroRow, {
+      itemsPerPageDefault: 20,
+      tbodyId: 'citasElectroBody',
+      containerSelector: '#citasElectroTableControls'
+    });
     
     // Actualizar información de usuario (del primer registro filtrado)
     if (citasFiltradas.length > 0) {
@@ -2734,16 +3059,16 @@ function renderCitaElectroRow(tbody, c) {
   }
   
   tr.innerHTML = `
-    <td style="padding:12px">${formatearHora(c.hora_agendamiento)}</td>
-    <td style="padding:12px">${formatearHora(c.hora_inicio)}</td>
-    <td style="padding:12px">${escapeHtml(equipoDisplay)}</td>
-    <td style="padding:12px">${escapeHtml(c.paciente_nombre || '-')}</td>
-    <td style="padding:12px">${escapeHtml(c.paciente_documento || '-')}</td>
-    <td style="padding:12px">${escapeHtml(c.telefono || '-')}</td>
-    <td style="padding:12px">${escapeHtml(c.estudio || '-')}</td>
-    <td style="padding:12px">${escapeHtml(c.diagnostico_codigo || '-')}</td>
-    <td style="padding:12px">${escapeHtml(c.estado || 'Programado')}</td>
-    <td style="padding:12px">${horaFinDisplay}</td>
+    <td>${formatearHora(c.hora_agendamiento)}</td>
+    <td>${formatearHora(c.hora_inicio)}</td>
+    <td>${escapeHtml(equipoDisplay)}</td>
+    <td>${escapeHtml(c.paciente_nombre || '-')}</td>
+    <td>${escapeHtml(c.paciente_documento || '-')}</td>
+    <td>${escapeHtml(c.telefono || '-')}</td>
+    <td>${escapeHtml(c.estudio || '-')}</td>
+    <td>${escapeHtml(c.diagnostico_codigo || '-')}</td>
+    <td>${escapeHtml(c.estado || 'Programado')}</td>
+    <td>${horaFinDisplay}</td>
   `;
   
   // Hacer la fila clickeable para abrir modal
@@ -3026,6 +3351,18 @@ async function initUsuarios() {
     }
   });
   
+  // Event listener para el botón de Auditoría
+  const btnAuditoria = document.querySelector('button[onclick="abrirBusquedaAuditoria()"]');
+  if (btnAuditoria) {
+    btnAuditoria.addEventListener('click', function(e) {
+      e.preventDefault();
+      abrirBusquedaAuditoria();
+    });
+    console.log('[AUDIT] Event listener agregado al botón de Auditoría');
+  } else {
+    console.warn('[AUDIT] No se encontró el botón de Auditoría');
+  }
+  
   await cargarUsuarios();
 }
 
@@ -3034,66 +3371,86 @@ async function cargarUsuarios() {
     const res = await apiFetch('/api/usuarios');
     if (res.status === 403) { showToast('No tienes permiso', 'error'); return; }
     const usuarios = await res.json();
-    const tbody = $('usuariosTableBody');
-    tbody.innerHTML = '';
-    if (!usuarios.length) tbody.innerHTML = '<tr><td colspan="6" style="padding:20px;text-align:center;color:#999">No hay usuarios</td></tr>';
-    else usuarios.forEach(u => {
-      const tr = document.createElement('tr');
-      const rolLabels = { admin: 'Administrador', recepcion: 'Recepción', electro: 'Electrodiagnóstico', doctor: 'Doctor' };
-      const estadoIcon = u.activo ? '🟢' : '🔴';
-      const estadoColor = u.activo ? '#10b981' : '#666';
-      tr.innerHTML = `
-        <td style="padding:8px;border:1px solid #ddd">${escapeHtml(u.usuario)}</td>
-        <td style="padding:8px;border:1px solid #ddd">${escapeHtml(u.nombre||'')}</td>
-        <td style="padding:8px;border:1px solid #ddd">${rolLabels[u.rol]||u.rol}</td>
-        <td style="padding:8px;border:1px solid #ddd">${u.numero_consultorio ? u.numero_consultorio : '-'}</td>
-        <td style="padding:8px;border:1px solid #ddd;color:${estadoColor};font-weight:600">${estadoIcon} ${u.activo ? 'Activo' : 'Inactivo'}</td>
-        <td style="padding:8px;border:1px solid #ddd">
-          <button class="btn-estado-small" data-edit="${u.id}" style="background:#2d4a47">Editar</button>
-          ${u.numero_consultorio ? `<button class="btn-estado-small" data-speak="${u.numero_consultorio}" style="background:#059669;margin-left:4px" title="Reproducir número de consultorio">🔊 ${u.numero_consultorio}</button>` : ''}
-          <button class="btn-estado-small" data-historial="${u.id}" style="background:#2d4a47;margin-left:4px" title="Ver historial de cambios">Historial</button>
-          <button class="btn-estado-small" data-reset="${u.id}" style="background:#2d4a47;margin-left:4px" title="Resetear contraseña">Reset</button>
-          ${currentUser?.id !== u.id ? `<button class="btn-estado-small" data-toggle="${u.id}" style="background:#2d4a47;margin-left:4px">${u.activo ? 'Desactivar' : 'Activar'}</button>` : ''}
-          ${currentUser?.id !== u.id ? `<button class="btn-estado-small" data-del="${u.id}" style="background:#dc2626;margin-left:4px">Eliminar</button>` : ''}
-        </td>
-      `;
-      tr.querySelector('[data-edit]')?.addEventListener('click', () => editarUsuario(u));
-      tr.querySelector('[data-speak]')?.addEventListener('click', (e) => speakConsultorio(e.target.dataset.speak));
-      tr.querySelector('[data-historial]')?.addEventListener('click', (e) => verHistorialAuditoria(u.id, u.usuario));
-      tr.querySelector('[data-reset]')?.addEventListener('click', async (e) => {
-        if (!confirm(`¿Resetear contraseña para ${u.usuario}?`)) return;
-        try {
-          const r = await apiFetch(`/api/usuarios/${e.target.dataset.reset}/reset-password`, { method: 'PATCH' });
-          const d = await r.json();
-          if (d.ok) {
-            verResetPassword(d);
-          } else showToast(d.error||'Error', 'error');
-        } catch (x) { showToast('Error', 'error'); }
-      });
-      tr.querySelector('[data-toggle]')?.addEventListener('click', async (e) => {
-        const newState = u.activo ? 'desactivar' : 'activar';
-        if (!confirm(`¿${newState.charAt(0).toUpperCase() + newState.slice(1)} este usuario?`)) return;
-        try {
-          const r = await apiFetch(`/api/usuarios/${e.target.dataset.toggle}/toggle-estado`, { method: 'PATCH' });
-          const d = await r.json();
-          if (d.ok) {
-            showToast(`Usuario ${d.activo ? 'activado' : 'desactivado'}`, 'success');
-            cargarUsuarios();
-          } else showToast(d.error||'Error', 'error');
-        } catch (x) { showToast('Error', 'error'); }
-      });
-      tr.querySelector('[data-del]')?.addEventListener('click', async (e) => {
-        if (!confirm('¿Eliminar este usuario permanentemente?')) return;
-        try {
-          const r = await apiFetch(`/api/usuarios/${e.target.dataset.del}`, { method: 'DELETE' });
-          const d = await r.json();
-          if (d.ok) { showToast('Usuario eliminado', 'success'); cargarUsuarios(); }
-          else showToast(d.error||'Error', 'error');
-        } catch (x) { showToast('Error', 'error'); }
-      });
-      tbody.appendChild(tr);
+    
+    if (!usuarios.length) {
+      const tbody = $('usuariosTableBody');
+      tbody.innerHTML = '<tr><td colspan="6" style="padding:20px;text-align:center;color:#999">No hay usuarios</td></tr>';
+      return;
+    }
+
+    // Usar setupPagination para renderizar con paginación
+    setupPagination('usuarios', usuarios, renderUsuarioRow, {
+      itemsPerPageDefault: 20,
+      tbodyId: 'usuariosTableBody',
+      containerSelector: '#usuariosTableControls'
     });
-  } catch (e) { showToast('Error cargando usuarios', 'error'); }
+  } catch (e) { 
+    showToast('Error cargando usuarios', 'error'); 
+    console.error('[USUARIOS ERROR]', e);
+  }
+}
+
+/**
+ * Renderiza una fila de usuario en la tabla
+ */
+function renderUsuarioRow(tbody, u) {
+  const tr = document.createElement('tr');
+  const rolLabels = { admin: 'Administrador', recepcion: 'Recepción', electro: 'Electrodiagnóstico', doctor: 'Doctor' };
+  const estadoIcon = u.activo ? '🟢' : '🔴';
+  const estadoColor = u.activo ? '#10b981' : '#666';
+  
+  tr.innerHTML = `
+    <td>${escapeHtml(u.usuario)}</td>
+    <td>${escapeHtml(u.nombre||'')}</td>
+    <td>${rolLabels[u.rol]||u.rol}</td>
+    <td>${u.numero_consultorio ? u.numero_consultorio : '-'}</td>
+    <td style="color:${estadoColor};font-weight:600">${estadoIcon} ${u.activo ? 'Activo' : 'Inactivo'}</td>
+    <td>
+      <button class="btn-estado-small" data-edit="${u.id}" style="background:#2d4a47">Editar</button>
+      ${u.numero_consultorio ? `<button class="btn-estado-small" data-speak="${u.numero_consultorio}" style="background:#059669;margin-left:4px" title="Reproducir número de consultorio">🔊 ${u.numero_consultorio}</button>` : ''}
+      <button class="btn-estado-small" data-historial="${u.id}" style="background:#2d4a47;margin-left:4px" title="Ver historial de cambios">Historial</button>
+      <button class="btn-estado-small" data-reset="${u.id}" style="background:#2d4a47;margin-left:4px" title="Resetear contraseña">Reset</button>
+      ${currentUser?.id !== u.id ? `<button class="btn-estado-small" data-toggle="${u.id}" style="background:#2d4a47;margin-left:4px">${u.activo ? 'Desactivar' : 'Activar'}</button>` : ''}
+      ${currentUser?.id !== u.id ? `<button class="btn-estado-small" data-del="${u.id}" style="background:#dc2626;margin-left:4px">Eliminar</button>` : ''}
+    </td>
+  `;
+  
+  tr.querySelector('[data-edit]')?.addEventListener('click', () => editarUsuario(u));
+  tr.querySelector('[data-speak]')?.addEventListener('click', (e) => speakConsultorio(e.target.dataset.speak));
+  tr.querySelector('[data-historial]')?.addEventListener('click', (e) => verHistorialAuditoria(u.id, u.usuario));
+  tr.querySelector('[data-reset]')?.addEventListener('click', async (e) => {
+    if (!confirm(`¿Resetear contraseña para ${u.usuario}?`)) return;
+    try {
+      const r = await apiFetch(`/api/usuarios/${e.target.dataset.reset}/reset-password`, { method: 'PATCH' });
+      const d = await r.json();
+      if (d.ok) {
+        verResetPassword(d);
+      } else showToast(d.error||'Error', 'error');
+    } catch (x) { showToast('Error', 'error'); }
+  });
+  tr.querySelector('[data-toggle]')?.addEventListener('click', async (e) => {
+    const newState = u.activo ? 'desactivar' : 'activar';
+    if (!confirm(`¿${newState.charAt(0).toUpperCase() + newState.slice(1)} este usuario?`)) return;
+    try {
+      const r = await apiFetch(`/api/usuarios/${e.target.dataset.toggle}/toggle-estado`, { method: 'PATCH' });
+      const d = await r.json();
+      if (d.ok) {
+        showToast(`Usuario ${d.activo ? 'activado' : 'desactivado'}`, 'success');
+        cargarUsuarios();
+      } else showToast(d.error||'Error', 'error');
+    } catch (x) { showToast('Error', 'error'); }
+  });
+  tr.querySelector('[data-del]')?.addEventListener('click', async (e) => {
+    if (!confirm('¿Eliminar este usuario permanentemente?')) return;
+    try {
+      const r = await apiFetch(`/api/usuarios/${e.target.dataset.del}`, { method: 'DELETE' });
+      const d = await r.json();
+      if (d.ok) { showToast('Usuario eliminado', 'success'); cargarUsuarios(); }
+      else showToast(d.error||'Error', 'error');
+    } catch (x) { showToast('Error', 'error'); }
+  });
+  
+  tbody.appendChild(tr);
 }
 
 // Variable global para guardar el usuario siendo editado
@@ -3272,26 +3629,106 @@ function closeResetPasswordModal() {
 
 // ========== BÚSQUEDA AVANZADA DE AUDITORÍA ==========
 function abrirBusquedaAuditoria() {
-  $('modalBusquedaAuditoria').classList.remove('hidden');
-  limpiarFiltrosAuditoria();
+  console.log('[AUDIT] Abriendo búsqueda de auditoría');
+  
+  // Asegurar que el modal existe
+  const modal = document.getElementById('modalBusquedaAuditoria');
+  console.log('[AUDIT] Modal encontrado:', !!modal);
+  
+  if (!modal) {
+    console.error('[AUDIT] Modal de auditoría NO encontrado en el DOM');
+    alert('Error: No se encontró el modal de auditoría');
+    return;
+  }
+  
+  console.log('[AUDIT] Clases actuales del modal:', modal.className);
+  
+  // Remover clase hidden
+  modal.classList.remove('hidden');
+  
+  console.log('[AUDIT] Clases después de remove:', modal.className);
+  console.log('[AUDIT] Display style:', window.getComputedStyle(modal).display);
+  
+  // Configurar event listeners para botones del modal
+  setTimeout(() => {
+    console.log('[AUDIT] Configurando event listeners del modal');
+    
+    // Botón de cerrar X
+    const btnCerrar = modal.querySelector('.btn-close-modal');
+    if (btnCerrar) {
+      btnCerrar.removeEventListener('click', closeBusquedaAuditoriaModal);
+      btnCerrar.addEventListener('click', closeBusquedaAuditoriaModal);
+      console.log('[AUDIT] Event listener agregado al botón de cerrar');
+    } else {
+      console.warn('[AUDIT] Botón de cerrar no encontrado');
+    }
+    
+    // Botón Buscar
+    const btnBuscar = modal.querySelector('.btn-buscar-auditoria');
+    if (btnBuscar) {
+      btnBuscar.removeEventListener('click', buscarAuditoria);
+      btnBuscar.addEventListener('click', buscarAuditoria);
+      console.log('[AUDIT] Event listener agregado al botón Buscar');
+    }
+    
+    // Botón Limpiar
+    const btnLimpiar = modal.querySelector('.btn-limpiar-auditoria');
+    if (btnLimpiar) {
+      btnLimpiar.removeEventListener('click', limpiarFiltrosAuditoria);
+      btnLimpiar.addEventListener('click', limpiarFiltrosAuditoria);
+      console.log('[AUDIT] Event listener agregado al botón Limpiar');
+    }
+    
+    // Botón Exportar
+    const btnExportar = modal.querySelector('.btn-exportar-auditoria');
+    if (btnExportar) {
+      btnExportar.removeEventListener('click', exportarAuditoriaCSV);
+      btnExportar.addEventListener('click', exportarAuditoriaCSV);
+      console.log('[AUDIT] Event listener agregado al botón Exportar');
+    }
+    
+    // Ejecutar limpieza de filtros
+    limpiarFiltrosAuditoria();
+    
+  }, 100);
 }
 
 function closeBusquedaAuditoriaModal() {
-  $('modalBusquedaAuditoria').classList.add('hidden');
+  console.log('[AUDIT] Cerrando modal de auditoría');
+  const modal = document.getElementById('modalBusquedaAuditoria');
+  if (modal) {
+    modal.classList.add('hidden');
+    console.log('[AUDIT] Modal cerrado correctamente');
+  } else {
+    console.error('[AUDIT] No se pudo cerrar el modal - no encontrado');
+  }
 }
 
 async function buscarAuditoria() {
   try {
-    const container = $('busquedaResultados');
-    container.innerHTML = '<p style="text-align:center;color:#2d4a47;padding:20px">Cargando...</p>';
+    console.log('[AUDIT SEARCH] Iniciando búsqueda de auditoría');
     
-    const accion = $('filtroAccion').value || '';
-    const desde = $('filtroDesde').value || '';
-    const hasta = $('filtroHasta').value || '';
+    // Obtener elementos del DOM
+    const containerEl = document.getElementById('busquedaResultados');
+    const accionEl = document.getElementById('filtroAccion');
+    const desdeEl = document.getElementById('filtroDesde');
+    const hastaEl = document.getElementById('filtroHasta');
+    
+    if (!containerEl) {
+      console.error('[AUDIT SEARCH] Container no encontrado');
+      showToast('Error: No se encontró el contenedor de resultados', 'error');
+      return;
+    }
+    
+    containerEl.innerHTML = '<p style="text-align:center;color:#2d4a47;padding:20px">Cargando...</p>';
+    
+    const accion = (accionEl?.value || '').trim();
+    const desde = desdeEl?.value || '';
+    const hasta = hastaEl?.value || '';
     
     // Construir URL con parámetros
     const params = new URLSearchParams();
-    if (accion.trim()) params.append('accion', accion.trim());
+    if (accion) params.append('accion', accion);
     if (desde) params.append('desde', desde);
     if (hasta) params.append('hasta', hasta);
     params.append('limit', 500);
@@ -3299,112 +3736,227 @@ async function buscarAuditoria() {
     console.log('[AUDIT SEARCH] Parámetros:', {accion, desde, hasta});
     
     const res = await apiFetch(`/api/auditoria/buscar?${params.toString()}`);
+    
+    if (!res.ok) {
+      const errorData = await res.json();
+      throw new Error(errorData.error || 'Error en la búsqueda');
+    }
+    
     const data = await res.json();
     
-    console.log('[AUDIT SEARCH RESPONSE]', data);
+    console.log('[AUDIT SEARCH RESPONSE] Recibidos', data.results?.length || 0, 'registros');
     
-    if (!data || (!data.ok && !data.results)) {
-      showToast('Error en búsqueda: ' + (data?.error || 'desconocido'), 'error');
-      container.innerHTML = '<p style="text-align:center;color:#dc2626;padding:20px">Error en la búsqueda</p>';
+    if (!data || !data.results) {
+      showToast('Error: Respuesta inválida del servidor', 'error');
+      containerEl.innerHTML = '<p style="text-align:center;color:#dc2626;padding:20px">Error en la búsqueda</p>';
       return;
     }
     
     const results = data.results || [];
     
     if (results.length === 0) {
-      container.innerHTML = '<p style="text-align:center;color:#6b7280;padding:20px">No se encontraron registros</p>';
+      containerEl.innerHTML = '<p style="text-align:center;color:#6b7280;padding:20px">No se encontraron registros</p>';
       return;
     }
-    
-    // Generar tabla de resultados
-    let html = `<table style="width:100%;border-collapse:collapse;font-size:0.85rem"><thead><tr style="background:#f3f4f6;border:1px solid #e5e7eb"><th style="padding:10px;text-align:left;border:1px solid #e5e7eb">Fecha</th><th style="padding:10px;text-align:left;border:1px solid #e5e7eb">Acción</th><th style="padding:10px;text-align:left;border:1px solid #e5e7eb">Usuario</th><th style="padding:10px;text-align:left;border:1px solid #e5e7eb">Admin</th><th style="padding:10px;text-align:left;border:1px solid #e5e7eb">Cambios</th></tr></thead><tbody>`;
-    
-    const iconos = {
-      'CREAR': '✨',
-      'ACTUALIZAR': '✏️',
-      'ELIMINAR': '🗑️',
-      'ACTIVAR': '🟢',
-      'DESACTIVAR': '🔴',
-      'RESET_PASSWORD': '🔑'
-    };
-    
-    results.forEach((r, idx) => {
-      const icon = iconos[r.accion] || '•';
-      const fecha = new Date(r.fecha_cambio).toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' });
-      const cambiosHtml = formatearCambios(r.cambios);
-      
-      html += `<tr style="border-bottom:1px solid #e5e7eb;background:${idx % 2 === 0 ? '#fff' : '#f9fafb'}">
-        <td style="padding:10px;border:1px solid #e5e7eb">${fecha}</td>
-        <td style="padding:10px;border:1px solid #e5e7eb"><span style="font-weight:600">${icon} ${r.accion}</span></td>
-        <td style="padding:10px;border:1px solid #e5e7eb">${escapeHtml(r.usuario || '-')}</td>
-        <td style="padding:10px;border:1px solid #e5e7eb">${escapeHtml(r.usuario_admin || '-')}</td>
-        <td style="padding:10px;border:1px solid #e5e7eb;max-width:200px;overflow:hidden">${cambiosHtml}</td>
-      </tr>`;
+
+    // Crear estructura de tabla con tbody
+    containerEl.innerHTML = `
+      <table class="modern-table" style="font-size:0.85rem">
+        <thead>
+          <tr>
+            <th>Fecha</th>
+            <th>Acción</th>
+            <th>Usuario</th>
+            <th>Admin</th>
+            <th>Cambios</th>
+          </tr>
+        </thead>
+        <tbody id="bodyAuditoriaTemporary">
+        </tbody>
+      </table>
+    `;
+
+    // Usar setupPagination para renderizar con paginación
+    setupPagination('auditoria', results, renderAuditoriaRow, {
+      itemsPerPageDefault: 20,
+      tbodyId: 'bodyAuditoriaTemporary',
+      containerSelector: '#busquedaAuditoriaControls'
     });
-    
-    html += '</tbody></table>';
-    container.innerHTML = html;
     
     // Guardar resultados para exportar
     window.ultimosBusquedasAuditoria = results;
     
+    showToast(`Se encontraron ${results.length} registros`, 'success');
+    
   } catch (e) {
-    showToast('Error buscando auditoría', 'error');
-    console.error(e);
+    console.error('[AUDIT SEARCH ERROR]', e.message);
+    showToast('Error buscando auditoría: ' + e.message, 'error');
+    const containerEl = document.getElementById('busquedaResultados');
+    if (containerEl) {
+      containerEl.innerHTML = `<p style="text-align:center;color:#dc2626;padding:20px">Error: ${e.message}</p>`;
+    }
   }
+}
+
+/**
+ * Renderiza una fila de auditoría en la tabla
+ */
+function renderAuditoriaRow(tbody, r) {
+  const tr = document.createElement('tr');
+  
+  const iconos = {
+    'CREAR': '✨',
+    'ACTUALIZAR': '✏️',
+    'ELIMINAR': '🗑️',
+    'ACTIVAR': '🟢',
+    'DESACTIVAR': '🔴',
+    'RESET_PASSWORD': '🔑',
+    'LOGIN': '🔓',
+    'LOGOUT': '🔒'
+  };
+  
+  const icon = iconos[r.accion] || '•';
+  const fecha = new Date(r.fecha_cambio).toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' });
+  const cambiosHtml = formatearCambios(r.cambios);
+  
+  tr.innerHTML = `
+    <td>${fecha}</td>
+    <td><span style="font-weight:700">${icon} ${r.accion}</span></td>
+    <td>${escapeHtml(r.usuario || '-')}</td>
+    <td>${escapeHtml(r.usuario_admin || '-')}</td>
+    <td style="max-width:200px;overflow:hidden">${cambiosHtml}</td>
+  `;
+  
+  tbody.appendChild(tr);
 }
 
 function formatearCambios(cambios) {
-  if (!cambios || Object.keys(cambios).length === 0) return '-';
-  let html = '';
-  for (const [field, changes] of Object.entries(cambios)) {
-    html += `<div style="font-size:0.8rem;margin:4px 0"><strong>${field}:</strong> ${changes.antes || '∅'} → ${changes.despues || '∅'}</div>`;
+  try {
+    if (!cambios) return '<span style="color:#999">Sin cambios</span>';
+    
+    // Si es string, intentar parsear
+    if (typeof cambios === 'string') {
+      try {
+        cambios = JSON.parse(cambios);
+      } catch (e) {
+        return `<span style="color:#999">${escapeHtml(cambios)}</span>`;
+      }
+    }
+    
+    // Si no hay propiedades, retornar vacío
+    if (!cambios || Object.keys(cambios).length === 0) {
+      return '<span style="color:#999">Sin cambios</span>';
+    }
+    
+    let html = '';
+    for (const [field, changes] of Object.entries(cambios)) {
+      if (changes && typeof changes === 'object') {
+        const antes = escapeHtml(String(changes.antes || ''));
+        const despues = escapeHtml(String(changes.despues || ''));
+        html += `<div style="font-size:0.8rem;margin:4px 0;padding:4px;background:#f5f5f5;border-radius:3px"><strong>${escapeHtml(field)}:</strong> <span style="color:#999">${antes}</span> → <span style="color:#0369a1">${despues}</span></div>`;
+      }
+    }
+    
+    return html || '<span style="color:#999">Sin cambios</span>';
+    
+  } catch (e) {
+    console.error('[AUDIT] Error formateando cambios:', e.message);
+    return '<span style="color:#dc2626">Error al formatear</span>';
   }
-  return html;
 }
 
 function limpiarFiltrosAuditoria() {
-  $('filtroAccion').value = '';
-  $('filtroDesde').value = '';
-  $('filtroHasta').value = '';
-  window.ultimosBusquedasAuditoria = [];
-  // Cargar últimos registros por defecto
-  buscarAuditoria();
+  console.log('[AUDIT] Limpiando filtros de auditoría');
+  
+  try {
+    const filtroAccion = document.getElementById('filtroAccion');
+    const filtroDesde = document.getElementById('filtroDesde');
+    const filtroHasta = document.getElementById('filtroHasta');
+    
+    if (filtroAccion) {
+      filtroAccion.value = '';
+      console.log('[AUDIT] Filter Acción limpio');
+    }
+    if (filtroDesde) {
+      filtroDesde.value = '';
+      console.log('[AUDIT] Filter Desde limpio');
+    }
+    if (filtroHasta) {
+      filtroHasta.value = '';
+      console.log('[AUDIT] Filter Hasta limpio');
+    }
+    
+    window.ultimosBusquedasAuditoria = [];
+    
+    console.log('[AUDIT] Esperando para ejecutar búsqueda...');
+    // Cargar últimos registros por defecto después de un pequeño delay
+    setTimeout(() => {
+      console.log('[AUDIT] Ejecutando búsqueda después de limpiar filtros');
+      buscarAuditoria();
+    }, 200);
+    
+  } catch (e) {
+    console.error('[AUDIT] Error limpiando filtros:', e.message);
+    showToast('Error limpiando filtros: ' + e.message, 'error');
+  }
 }
 
 function exportarAuditoriaCSV() {
-  const results = window.ultimosBusquedasAuditoria || [];
-  if (results.length === 0) {
-    showToast('No hay datos para exportar', 'warning');
-    return;
-  }
-  
-  // Headers del CSV
-  const headers = ['Fecha', 'Acción', 'Usuario Afectado', 'Admin', 'Cambios'];
-  let csv = headers.join(',') + '\n';
-  
-  // Datos
-  results.forEach(r => {
-    const fecha = new Date(r.fecha_cambio).toLocaleString('es-CO');
-    const usuario = (r.usuario || '-').replace(/,/g, ' ');
-    const admin = (r.usuario_admin || '-').replace(/,/g, ' ');
-    const cambios = JSON.stringify(r.cambios).replace(/,/g, ' ').replace(/"/g, '');
+  try {
+    console.log('[AUDIT EXPORT] Iniciando exportación a CSV');
     
-    csv += `"${fecha}","${r.accion}","${usuario}","${admin}","${cambios}"\n`;
-  });
-  
-  // Crear descarga
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const link = document.createElement('a');
-  const url = URL.createObjectURL(blob);
-  link.setAttribute('href', url);
-  link.setAttribute('download', `auditoria_${new Date().getTime()}.csv`);
-  link.style.visibility = 'hidden';
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  
-  showToast('Auditoría exportada a CSV', 'success');
+    const results = window.ultimosBusquedasAuditoria || [];
+    if (results.length === 0) {
+      showToast('No hay datos para exportar (ejecuta una búsqueda primero)', 'warning');
+      return;
+    }
+    
+    console.log('[AUDIT EXPORT] Exportando', results.length, 'registros');
+    
+    // Headers del CSV
+    const headers = ['Fecha', 'Acción', 'Usuario Afectado', 'Admin', 'Cambios'];
+    let csv = headers.join(',') + '\n';
+    
+    // Datos
+    results.forEach(r => {
+      const fecha = new Date(r.fecha_cambio).toLocaleString('es-CO');
+      const usuario = (r.usuario || '-').replace(/"/g, '""').replace(/,/g, ' ');
+      const admin = (r.usuario_admin || '-').replace(/"/g, '""').replace(/,/g, ' ');
+      
+      // Serializar cambios de manera más legible
+      let cambiosStr = '-';
+      if (r.cambios && Object.keys(r.cambios).length > 0) {
+        const cambiosParts = [];
+        for (const [field, change] of Object.entries(r.cambios)) {
+          cambiosParts.push(`${field}: ${change.antes} -> ${change.despues}`);
+        }
+        cambiosStr = cambiosParts.join('; ');
+      }
+      cambiosStr = cambiosStr.replace(/"/g, '""');
+      
+      csv += `"${fecha}","${r.accion}","${usuario}","${admin}","${cambiosStr}"\n`;
+    });
+    
+    console.log('[AUDIT EXPORT] CSV generado, tamaño:', csv.length);
+    
+    // Crear descarga
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `auditoria_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    showToast('Auditoría exportada a CSV - ' + results.length + ' registros', 'success');
+    console.log('[AUDIT EXPORT] Exportación completada');
+    
+  } catch (e) {
+    console.error('[AUDIT EXPORT ERROR]', e.message);
+    showToast('Error exportando auditoría: ' + e.message, 'error');
+  }
 }
 
 async function guardarCambiosUsuario(e) {
@@ -4378,48 +4930,58 @@ async function cargarListaDiagnosticos() {
   try {
     const res = await apiFetch('/api/diagnosticos');
     const diagnosticos = await res.json();
-    const tbody = $('diagnosticosTableBody');
-    tbody.innerHTML = '';
 
     if (diagnosticos.length === 0) {
+      const tbody = $('diagnosticosTableBody');
       tbody.innerHTML = '<tr><td colspan="5" style="padding:20px;text-align:center;color:#999">Sin diagnósticos cargados</td></tr>';
       return;
     }
 
-    diagnosticos.forEach(d => {
-      const tr = document.createElement('tr');
-      tr.className = 'turno-row';
-      tr.innerHTML = `
-        <td style="padding:12px">${escapeHtml(d.codigo || '-')}</td>
-        <td style="padding:12px">${escapeHtml(d.nombre)}</td>
-        <td style="padding:12px">${escapeHtml(d.descripcion || '-')}</td>
-        <td style="padding:12px">${d.activo === 1 ? '<span style="background:#dcfce7;color:#15803d;padding:4px 8px;border-radius:4px;font-size:0.85rem">Activo</span>' : '<span style="background:#fee2e2;color:#991b1b;padding:4px 8px;border-radius:4px;font-size:0.85rem">Inactivo</span>'}</td>
-        <td style="padding:12px">
-          <button class="btn-eliminar-diag" data-id="${d.id}" style="padding:6px 10px;background:#dc2626;color:white;border:none;border-radius:4px;cursor:pointer;font-size:0.85rem">Eliminar</button>
-        </td>
-      `;
-      tbody.appendChild(tr);
-    });
-
-    // Agregar event listeners a botones de eliminar
-    document.querySelectorAll('.btn-eliminar-diag').forEach(btn => {
-      btn.addEventListener('click', async (e) => {
-        const id = e.target.dataset.id;
-        if (confirm('¿Está seguro que desea eliminar este diagnóstico?')) {
-          try {
-            await apiFetch(`/api/diagnosticos/${id}`, { method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({activo: 0}) });
-            showToast('Diagnóstico eliminado', 'success');
-            cargarListaDiagnosticos();
-          } catch (x) {
-            showToast('Error eliminando diagnóstico', 'error');
-          }
-        }
-      });
+    // Usar setupPagination para renderizar con paginación
+    setupPagination('diagnosticos', diagnosticos, renderDiagnosticoRow, {
+      itemsPerPageDefault: 20,
+      tbodyId: 'diagnosticosTableBody',
+      containerSelector: '#diagnosticosTableControls'
     });
   } catch (e) {
     console.error('Error cargando diagnósticos:', e);
-    $('diagnosticosTableBody').innerHTML = '<tr><td colspan="5" style="padding:20px;text-align:center;color:#dc2626">Error cargando diagnósticos</td></tr>';
+    const tbody = $('diagnosticosTableBody');
+    if (tbody) {
+      tbody.innerHTML = '<tr><td colspan="5" style="padding:20px;text-align:center;color:#dc2626">Error cargando diagnósticos</td></tr>';
+    }
   }
+}
+
+/**
+ * Renderiza una fila de diagnóstico en la tabla
+ */
+function renderDiagnosticoRow(tbody, d) {
+  const tr = document.createElement('tr');
+  tr.className = 'turno-row';
+  tr.innerHTML = `
+    <td style="padding:12px">${escapeHtml(d.codigo || '-')}</td>
+    <td style="padding:12px">${escapeHtml(d.nombre)}</td>
+    <td style="padding:12px">${escapeHtml(d.descripcion || '-')}</td>
+    <td style="padding:12px">${d.activo === 1 ? '<span style="background:#dcfce7;color:#15803d;padding:4px 8px;border-radius:4px;font-size:0.85rem">Activo</span>' : '<span style="background:#fee2e2;color:#991b1b;padding:4px 8px;border-radius:4px;font-size:0.85rem">Inactivo</span>'}</td>
+    <td style="padding:12px">
+      <button class="btn-eliminar-diag" data-id="${d.id}" style="padding:6px 10px;background:#dc2626;color:white;border:none;border-radius:4px;cursor:pointer;font-size:0.85rem">Eliminar</button>
+    </td>
+  `;
+  
+  tr.querySelector('.btn-eliminar-diag')?.addEventListener('click', async (e) => {
+    const id = e.target.dataset.id;
+    if (confirm('¿Está seguro que desea eliminar este diagnóstico?')) {
+      try {
+        await apiFetch(`/api/diagnosticos/${id}`, { method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({activo: 0}) });
+        showToast('Diagnóstico eliminado', 'success');
+        cargarListaDiagnosticos();
+      } catch (x) {
+        showToast('Error eliminando diagnóstico', 'error');
+      }
+    }
+  });
+  
+  tbody.appendChild(tr);
 }
 
 // ========== FUNCIONES DEL MODAL DE DETALLES DE CITA ELECTRODIAGNÓSTICO ==========
@@ -4514,6 +5076,7 @@ async function finalizarEstudioModal() {
 }
 
 function abrirModalDetallesCita(cita) {
+  console.log('[MODAL_DETALLES] Abriendo modal de detalles');
   citaElectroSeleccionada = cita;
   
   // Rellenar datos de paciente
@@ -4536,6 +5099,23 @@ function abrirModalDetallesCita(cita) {
     btnEliminar.style.display = '';
   } else {
     btnEliminar.style.display = 'none';
+  }
+  
+  // Agregar listeners para los botones de reprogramación y adelanto
+  const btnRep = $('btnReprogramarCita');
+  const btnAde = $('btnAdelantarCita');
+  
+  console.log('[MODAL_DETALLES] btnReprogramarCita existe:', !!btnRep);
+  console.log('[MODAL_DETALLES] btnAdelantarCita existe:', !!btnAde);
+  
+  if (btnRep) {
+    btnRep.addEventListener('click', abrirModalReprogramar);
+    console.log('[MODAL_DETALLES] Listener agregado a btnReprogramarCita');
+  }
+  
+  if (btnAde) {
+    btnAde.addEventListener('click', abrirModalAdelantarCita);
+    console.log('[MODAL_DETALLES] Listener agregado a btnAdelantarCita');
   }
   
   // Mostrar modal
@@ -4636,6 +5216,191 @@ async function guardarCambiosCitaElectro() {
     }
   } catch (e) {
     showToast('Error guardando cambios: ' + e.message, 'error');
+  }
+}
+
+// ========== FUNCIONES PARA REPROGRAMAR Y ADELANTAR CITAS ==========
+
+function abrirModalReprogramar() {
+  console.log('[REPROGRAMAR] Llamando abrirModalReprogramar');
+  if (!citaElectroSeleccionada) {
+    console.log('[REPROGRAMAR] Sin cita seleccionada');
+    return;
+  }
+  
+  console.log('[REPROGRAMAR] Cita seleccionada:', citaElectroSeleccionada);
+  
+  // GUARDAR CITA ANTES DE CERRAR MODAL
+  citaReprogramarAdelantarActual = citaElectroSeleccionada;
+  console.log('[REPROGRAMAR] Guardada en variable temporal');
+  
+  // Rellenar datos actuales
+  $('modalReprogramarFechaActual').textContent = 
+    `${formatearFecha(citaElectroSeleccionada.fecha)} a las ${citaElectroSeleccionada.hora_agendamiento}`;
+  
+  // Precargar fecha y hora actual (extraer solo la fecha en formato YYYY-MM-DD)
+  const fecha = citaElectroSeleccionada.fecha;
+  const fechaFormato = fecha ? fecha.split('T')[0] : '';
+  $('modalReprogramarFecha').value = fechaFormato;
+  $('modalReprogramarHora').value = citaElectroSeleccionada.hora_agendamiento || '';
+  
+  console.log('[REPROGRAMAR] Fecha format: ' + fechaFormato);
+  
+  // Cerrar modal de detalles
+  cerrarModalDetallesCita();
+  
+  // Abrir modal de reprogramación
+  $('modalReprogramarCita').classList.remove('hidden');
+}
+
+function cerrarModalReprogramar() {
+  $('modalReprogramarCita').classList.add('hidden');
+}
+
+async function confirmarReprogramar() {
+  console.log('[CONFIRMAR_REPROGRAMAR] Iniciando...');
+  if (!citaReprogramarAdelantarActual) {
+    console.log('[CONFIRMAR_REPROGRAMAR] Sin cita seleccionada');
+    return;
+  }
+  
+  try {
+    const fechaNueva = $('modalReprogramarFecha').value;
+    const horaNueva = $('modalReprogramarHora').value;
+    
+    console.log('[CONFIRMAR_REPROGRAMAR] fechaNueva:', fechaNueva);
+    console.log('[CONFIRMAR_REPROGRAMAR] horaNueva:', horaNueva);
+    
+    if (!fechaNueva || !horaNueva) {
+      showToast('Debes completar fecha y hora', 'error');
+      return;
+    }
+    
+    const cambios = {
+      estado: 'Reprogramado',
+      fecha: fechaNueva,
+      hora_agendamiento: horaNueva
+    };
+    
+    console.log('[CONFIRMAR_REPROGRAMAR] Enviando cambios:', cambios);
+    
+    const res = await apiFetch(`/api/citas-electro/${citaReprogramarAdelantarActual.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(cambios)
+    });
+    
+    const data = await res.json();
+    
+    console.log('[CONFIRMAR_REPROGRAMAR] Respuesta del servidor:', data);
+    
+    if (data && data.ok) {
+      showToast('✅ Cita reprogramada exitosamente', 'success');
+      
+      // Emitir evento de socket
+      if (window.socket && window.socket.connected) {
+        window.socket.emit('electro:cambios-guardados', {
+          id: citaReprogramarAdelantarActual.id,
+          cambios
+        });
+      }
+      
+      cargarCitasElectro();
+      cerrarModalReprogramar();
+      citaReprogramarAdelantarActual = null; // Limpiar referencia
+    } else {
+      showToast(data?.error || 'Error reprogramando cita', 'error');
+    }
+  } catch (e) {
+    console.error('[CONFIRMAR_REPROGRAMAR] Error:', e);
+    showToast('Error reprogramando cita: ' + e.message, 'error');
+  }
+}
+
+function abrirModalAdelantarCita() {
+  console.log('[ADELANTAR] Llamando abrirModalAdelantarCita');
+  if (!citaElectroSeleccionada) {
+    console.log('[ADELANTAR] Sin cita seleccionada');
+    return;
+  }
+  
+  console.log('[ADELANTAR] Cita seleccionada:', citaElectroSeleccionada);
+  
+  // GUARDAR CITA ANTES DE CERRAR MODAL
+  citaReprogramarAdelantarActual = citaElectroSeleccionada;
+  console.log('[ADELANTAR] Guardada en variable temporal');
+  
+  // Rellenar datos actuales
+  $('modalAdelantarHoraActual').textContent = citaElectroSeleccionada.hora_agendamiento || '-';
+  
+  // Precargar hora actual
+  $('modalAdelantarHora').value = citaElectroSeleccionada.hora_agendamiento || '';
+  
+  // Cerrar modal de detalles
+  cerrarModalDetallesCita();
+  
+  // Abrir modal de adelanto
+  $('modalAdelantarCita').classList.remove('hidden');
+}
+
+function cerrarModalAdelantarCita() {
+  $('modalAdelantarCita').classList.add('hidden');
+}
+
+async function confirmarAdelantarCita() {
+  console.log('[CONFIRMAR_ADELANTAR] Iniciando...');
+  if (!citaReprogramarAdelantarActual) {
+    console.log('[CONFIRMAR_ADELANTAR] Sin cita seleccionada');
+    return;
+  }
+  
+  try {
+    const horaNueva = $('modalAdelantarHora').value;
+    
+    console.log('[CONFIRMAR_ADELANTAR] horaNueva:', horaNueva);
+    
+    if (!horaNueva) {
+      showToast('Debes completar la hora', 'error');
+      return;
+    }
+    
+    const cambios = {
+      estado: 'Adelantado',
+      hora_agendamiento: horaNueva
+    };
+    
+    console.log('[CONFIRMAR_ADELANTAR] Enviando cambios:', cambios);
+    
+    const res = await apiFetch(`/api/citas-electro/${citaReprogramarAdelantarActual.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(cambios)
+    });
+    
+    const data = await res.json();
+    
+    console.log('[CONFIRMAR_ADELANTAR] Respuesta del servidor:', data);
+    
+    if (data && data.ok) {
+      showToast('✅ Cita adelantada exitosamente', 'success');
+      
+      // Emitir evento de socket
+      if (window.socket && window.socket.connected) {
+        window.socket.emit('electro:cambios-guardados', {
+          id: citaReprogramarAdelantarActual.id,
+          cambios
+        });
+      }
+      
+      cargarCitasElectro();
+      cerrarModalAdelantarCita();
+      citaReprogramarAdelantarActual = null; // Limpiar referencia
+    } else {
+      showToast(data?.error || 'Error adelantando cita', 'error');
+    }
+  } catch (e) {
+    console.error('[CONFIRMAR_ADELANTAR] Error:', e);
+    showToast('Error adelantando cita: ' + e.message, 'error');
   }
 }
 

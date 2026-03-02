@@ -163,7 +163,7 @@ async function initializeDatabase() {
               estudio VARCHAR(255),
               observaciones TEXT,
               diagnostico_id INT,
-              estado ENUM('Programado', 'En Sala', 'En Estudio', 'Completado', 'No Asistió', 'Cancelado') NOT NULL DEFAULT 'Programado',
+              estado ENUM('Programado', 'En Sala', 'En Estudio', 'Completado', 'No Asistió', 'Cancelado', 'Reprogramado', 'Adelantado') NOT NULL DEFAULT 'Programado',
               programado_por_nombre VARCHAR(150),
               editado_por_nombre VARCHAR(150),
               editado_en TIMESTAMP,
