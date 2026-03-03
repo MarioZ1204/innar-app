@@ -26,8 +26,65 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxyge
 .login-form input:focus { outline: none; border-color: #8AA6A1; box-shadow: 0 0 0 3px rgba(138,166,161,0.2); }
 .btn-login { width: 100%; padding: 14px; background: #8AA6A1; color: white; border: none; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; margin-top: 8px; transition: all 0.2s; }
 .btn-login:hover { background: #7a9691; transform: translateY(-1px); }
+.btn-login:active { transform: translateY(0); background: #6a8780; }
 .login-error { margin-top: 12px; padding: 10px; background: #fef2f2; color: #dc2626; border-radius: 6px; font-size: 0.9rem; }
 .login-error.hidden { display: none !important; }
+
+/* Toggle Password Button */
+.password-wrapper { 
+  display: flex; 
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.password-input {
+  flex: 1;
+  min-width: 0;
+  padding: 12px 14px !important;
+  border: 2px solid #e5e7eb;
+  border-radius: 8px;
+  font-size: 1rem;
+  height: 44px;
+  box-sizing: border-box;
+}
+
+.password-input:focus {
+  outline: none;
+  border-color: #8AA6A1;
+  box-shadow: 0 0 0 3px rgba(138,166,161,0.2);
+}
+
+.toggle-password-btn { 
+  background: none;
+  border: 2px solid #e5e7eb;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 20px;
+  color: #627371;
+  padding: 12px 12px;
+  min-width: 44px;
+  min-height: 44px;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  flex-shrink: 0;
+  box-sizing: border-box;
+}
+
+.toggle-password-btn:hover {
+  background-color: #f3f4f6;
+}
+
+.toggle-password-btn:active { 
+  background-color: #e5e7eb;
+}
 
 /* Menú principal */
 .view-menu { min-height: 100vh; background: linear-gradient(180deg, #f0f4f8 0%, #e5e9ec 100%); position: relative; }
@@ -187,19 +244,13 @@ button.remove { padding:6px 10px; font-size:.85rem; width:100%; }
   border-bottom: none;
 }
 
-.modern-table tbody tr:last-child td:first-child {
-  border-radius: 0 0 0 8px;
-}
-
-.modern-table tbody tr:last-child td:last-child {
-  border-radius: 0 0 8px 0;
-}
-
-.modern-table td {
+.modern-table tbody td {
   padding: 12px 14px;
   border: none;
   font-size: 0.9rem;
   color: #374151;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
 }
 
 .modern-table td a {
@@ -307,12 +358,46 @@ button.remove { padding:6px 10px; font-size:.85rem; width:100%; }
 /* Móviles pequeños (320px - 480px) */
 @media (max-width:480px) {
   body { font-size: 14px; }
-  .view-login { padding: 16px; }
-  .login-box { padding: 24px 16px; }
-  .login-header h1 { font-size: 1.2rem; }
-  .login-header p { font-size: 0.85rem; }
-  .login-form input { padding: 10px 12px; font-size: 16px; }
-  .btn-login { padding: 12px; font-size: 0.95rem; }
+  .view-login { padding: 12px; min-height: 100vh; overflow-y: auto; }
+  .login-box { padding: 24px 16px; max-width: 95vw; width: 100%; }
+  .login-header h1 { font-size: 1.1rem; }
+  .login-header p { font-size: 0.8rem; }
+  .login-form .form-group { margin-bottom: 14px; }
+  .login-form label { font-size: 0.9rem; margin-bottom: 6px; }
+  .login-form input { padding: 12px 12px; font-size: 16px; border-radius: 6px; height: 44px; width: 100%; }
+  input[type="password"]::placeholder { font-size: 16px; }
+  
+  /* Password wrapper en móviles - más compacto */
+  .password-wrapper {
+    gap: 6px;
+  }
+  
+  /* Input de contraseña - ocupa todo el espacio disponible */
+  .password-input {
+    flex: 1;
+    min-width: 0;
+    padding: 12px 12px !important;
+    font-size: 16px;
+    height: 44px;
+    border-radius: 6px;
+    box-sizing: border-box;
+  }
+  
+  /* Botón toggle - pequeño y compacto en móviles */
+  .toggle-password-btn {
+    min-width: 36px;
+    min-height: 36px;
+    width: 36px;
+    height: 36px;
+    padding: 6px;
+    font-size: 16px;
+    border: 2px solid #e5e7eb;
+    border-radius: 6px;
+    flex-shrink: 0;
+  }
+  
+  .btn-login { padding: 12px 16px; font-size: 1rem; height: 44px; margin-top: 8px; }
+  button[type="submit"] { min-height: 44px; }
   
   .menu-header { padding: 12px 16px; }
   .menu-logo { height: 40px; }
@@ -357,6 +442,77 @@ button.remove { padding:6px 10px; font-size:.85rem; width:100%; }
   
   .btn-estado { padding: 2px 6px; font-size: 0.75rem; }
   .btn-llamar, .btn-marcar { padding: 10px 16px; font-size: 0.9rem; }
+  
+  /* Tablas en móviles - hacer responsive con scroll horizontal */
+  .table-wrapper {
+    width: 100%;
+    overflow-x: auto;
+    overflow-y: visible;
+    -webkit-overflow-scrolling: touch;
+    margin-bottom: 16px;
+    border-radius: 6px;
+    border: 1px solid #e5e7eb;
+    background: white;
+  }
+  
+  .table-wrapper .modern-table {
+    min-width: 1000px;
+    width: auto;
+    border-radius: 0;
+    box-shadow: none;
+    border-collapse: collapse;
+  }
+  
+  .modern-table thead th {
+    padding: 10px 8px;
+    font-size: 0.75rem;
+    letter-spacing: 0;
+    white-space: normal;
+    background: linear-gradient(135deg, #8AA6A1 0%, #7a9690 100%);
+    color: #fff;
+    border: 1px solid #7a9690;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+  }
+  
+  .modern-table tbody tr {
+    border-bottom: 1px solid #e5e7eb;
+    transition: none;
+    background: white;
+  }
+  
+  .modern-table tbody tr:nth-child(even) {
+    background-color: #f9fafb;
+  }
+  
+  .modern-table tbody tr:hover {
+    background-color: #f0f3f2;
+    box-shadow: none;
+  }
+  
+  .modern-table tbody td {
+    padding: 8px 6px;
+    font-size: 0.8rem;
+    white-space: normal;
+    border: 1px solid #e5e7eb;
+    overflow: visible;
+    text-overflow: clip;
+    max-width: none;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+  }
+  
+  /* Indicador visual de scroll horizontal */
+  .table-wrapper::before {
+    content: '← Deslizar tabla →';
+    display: block;
+    text-align: center;
+    font-size: 0.7rem;
+    color: #088;
+    padding: 6px 0 2px 0;
+    font-weight: 600;
+    background: #f0f7f7;
+  }
 }
 
 /* Tablets pequeños (481px - 768px) */
@@ -381,6 +537,37 @@ button.remove { padding:6px 10px; font-size:.85rem; width:100%; }
   button { width:100% }
   table { font-size:.85rem }
   th, td { padding:8px }
+  
+  /* Tablas en tablets - permitir scroll horizontal */
+  .table-wrapper {
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    -webkit-user-select: none;
+    user-select: none;
+    margin-bottom: 12px;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    background: white;
+  }
+  
+  .table-wrapper .modern-table {
+    min-width: 1000px;
+    width: auto;
+    border-collapse: collapse;
+  }
+  
+  .table-wrapper::before {
+    content: '← Deslizar tabla →';
+    display: block;
+    text-align: center;
+    font-size: 0.7rem;
+    color: #088;
+    padding: 6px 0 2px 0;
+    font-weight: 600;
+    background: #f0f7f7;
+  }
+  
   .receipt-header { flex-direction:column }
   
   .agenda-page-btn { padding: 9px 14px; font-size: 0.9rem; }
@@ -399,6 +586,33 @@ button.remove { padding:6px 10px; font-size:.85rem; width:100%; }
   th, td { padding: 9px; }
   
   .modal-box { max-width: 500px; }
+}
+
+/* Tablets (481px - 768px) */
+@media (min-width: 481px) and (max-width: 768px) {
+  .password-wrapper {
+    gap: 8px;
+  }
+  
+  .password-input {
+    flex: 1;
+    min-width: 0;
+    padding: 12px 12px !important;
+    font-size: 16px;
+    height: 44px;
+    border-radius: 6px;
+    box-sizing: border-box;
+  }
+  
+  .toggle-password-btn {
+    min-width: 40px;
+    min-height: 40px;
+    width: 40px;
+    height: 40px;
+    padding: 8px;
+    font-size: 18px;
+    border-radius: 6px;
+  }
 }
 
 /* Desktops estándar (1025px - 1280px) */
@@ -593,6 +807,16 @@ button.remove { padding:6px 10px; font-size:.85rem; width:100%; }
 .turno-row.turno-selected { outline: 2px solid #8AA6A1; background-color: #e0f2fe; }
 
 /* Modal genérico */
+.modal {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+.modal.hidden {
+  display: none !important;
+}
+
 .modal-overlay {
   position: fixed;
   inset: 0;
@@ -682,4 +906,65 @@ button.remove { padding:6px 10px; font-size:.85rem; width:100%; }
   color: #627371;
   border-bottom-color: #627371;
   background: white;
+}
+
+/* Contenedor para scroll horizontal en tablas */
+.table-wrapper {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border-radius: 8px;
+  margin-bottom: 12px;
+  /* Para mostrar indicador de scroll en móviles */
+  scrollbar-width: thin;
+  scrollbar-color: #8AA6A1 #f3f4f6;
+}
+
+/* Scrollbar personalizado para Chrome/Edge */
+.table-wrapper::-webkit-scrollbar {
+  height: 6px;
+}
+
+.table-wrapper::-webkit-scrollbar-track {
+  background: #f3f4f6;
+  border-radius: 8px;
+}
+
+.table-wrapper::-webkit-scrollbar-thumb {
+  background: #8AA6A1;
+  border-radius: 8px;
+}
+
+.table-wrapper::-webkit-scrollbar-thumb:hover {
+  background: #7a9690;
+}
+
+.table-wrapper .modern-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: auto;
+}
+
+/* Estilos para colores de fila en citas médicas */
+.turno-row.estado-en-sala {
+  background-color: #fef3c7 !important;
+  border-left: 4px solid #fbbf24 !important;
+}
+
+.turno-row.estado-reprogramado {
+  background-color: #dbeafe !important;
+  border-left: 4px solid #3b82f6 !important;
+}
+
+.turno-row.estado-cancelado-paciente {
+  background-color: #fee2e2 !important;
+  border-left: 4px solid #ef4444 !important;
+}
+
+.turno-row.estado-no-asistio {
+  background-color: #fce7f3 !important;
+  border-left: 4px solid #ec4899 !important;
+}
+
+.turno-row td {
+  border-left: none;
 }

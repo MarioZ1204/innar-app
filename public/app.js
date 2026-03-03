@@ -14,7 +14,7 @@ function hashPassword(password) {
 function updateRequirementItem(elementId, isMet, text) {
   const element = $(elementId);
   if (element) {
-    element.textContent = (isMet ? '✅' : '❌') + ' ' + text;
+    element.textContent = (isMet ? '[✓]' : '[✗]') + ' ' + text;
     element.style.color = isMet ? '#16a34a' : '#dc2626';
   }
 }
@@ -33,6 +33,8 @@ let selectedDiagnosticoElectroId = null;
 let selectedEquipoElectroId = null;
 let selectedEstudioDuracion = null; // Duración en minutos del estudio seleccionado
 let filtroEstudioElectro = 'todas'; // Filtro de estudio en tabla de citas
+let filtroEquipoSeleccionado = null; // Filtro de equipo en tabla de citas
+let intervaloProgreso = null; // Intervalo para actualizar barra de progreso del estudio
 
 // Mapeo de especialidades a tipos de consulta
 const ESPECIALIDAD_TIPOS_CONSULTA = {
@@ -342,6 +344,25 @@ function escapeHtml(str) {
  * @param {string|null} valor - La hora a formatear
  * @returns {string} Hora en formato H:MM AM/PM o '-' si es inválida
  */
+/**
+ * Formatea una fecha ISO (ej: 2026-03-03T05:00:00.000Z) a formato DD/MM/YYYY
+ * @param {string} fecha - Fecha en formato ISO
+ * @returns {string} Fecha en formato DD/MM/YYYY o la fecha original si no es ISO
+ */
+function formatearFecha(fecha) {
+  if (!fecha) return '-';
+  try {
+    const date = new Date(fecha);
+    if (isNaN(date)) return fecha; // Si no es una fecha válida, devuelve original
+    const dia = String(date.getDate()).padStart(2, '0');
+    const mes = String(date.getMonth() + 1).padStart(2, '0');
+    const anio = date.getFullYear();
+    return `${dia}/${mes}/${anio}`;
+  } catch (e) {
+    return fecha;
+  }
+}
+
 function formatearHora(valor) {
   if (valor === null || valor === undefined || valor === '' || valor === 'null') {
     return '-';
@@ -366,6 +387,28 @@ function formatearHora(valor) {
     return `${horasFormato}:${String(minutos).padStart(2, '0')} ${periodo}`;
   }
   return strValor || '-';
+}
+
+/**
+ * Formatea una fecha ISO (2026-03-03T05:00:00.000Z) a YYYY-MM-DD
+ * @param {string} fecha - Fecha en formato ISO o YYYY-MM-DD
+ * @returns {string} Fecha en formato YYYY-MM-DD o la fecha original si es válida
+ */
+function formatearFechaISO(fecha) {
+  if (!fecha) return '';
+  const strFecha = String(fecha).trim();
+  
+  // Si ya está en formato YYYY-MM-DD, devolverlo tal cual
+  if (/^\d{4}-\d{2}-\d{2}$/.test(strFecha)) {
+    return strFecha;
+  }
+  
+  // Si es un ISO string, extraer la parte de la fecha
+  if (strFecha.includes('T')) {
+    return strFecha.split('T')[0];
+  }
+  
+  return strFecha;
 }
 
 // Servicios por defecto
@@ -729,23 +772,30 @@ document.addEventListener('DOMContentLoaded', async ()=>{
     if (toggleBtn) {
       toggleBtn.addEventListener('click', (e) => {
         e.preventDefault();
+        e.stopPropagation();
         const type = passwordInput.type === 'password' ? 'text' : 'password';
         passwordInput.type = type;
-        toggleBtn.textContent = type === 'password' ? '👁️' : '👁️‍🗨️';
+        // El emoji 👁 es el mismo para ambos estados - visualmente claro
       });
     }
     
     // Detector de Caps Lock (tiempo real)
     if (passwordInput && capsWarning) {
       const checkCapsLock = (e) => {
-        const isCapsLockOn = e.getModifierState('CapsLock');
-        capsWarning.style.display = isCapsLockOn ? 'block' : 'none';
+        // Solo verificar CapsLock en desktop (getModifierState no funciona bien en móviles)
+        if (e.type.includes('key')) {
+          try {
+            const isCapsLockOn = e.getModifierState('CapsLock');
+            capsWarning.style.display = isCapsLockOn ? 'block' : 'none';
+          } catch (err) {
+            capsWarning.style.display = 'none';
+          }
+        }
       };
       
-      // Escuchar keydown, keyup y keypress para detectar en tiempo real
+      // Escuchar keydown y keyup (mejor compatibilidad en móviles que keypress)
       passwordInput.addEventListener('keydown', checkCapsLock);
       passwordInput.addEventListener('keyup', checkCapsLock);
-      passwordInput.addEventListener('keypress', checkCapsLock);
     }
     
     // Login form submit
@@ -1004,6 +1054,23 @@ async function initAgendaMedica() {
     window.socket.on('agenda:actualizar-consultorio', (consultorio) => {
       cargarTurnosMedica();
     });
+    
+    // ========= Listeners para Turnos Médicos (Agenda Médica) =========
+    window.socket.on('turno-medico:estado-actualizado', (data) => {
+      console.log('[SOCKET_MEDICA] turno-medico:estado-actualizado:', data);
+      cargarTurnosMedica();
+    });
+    
+    window.socket.on('turno-medico:reprogramado', (data) => {
+      console.log('[SOCKET_MEDICA] turno-medico:reprogramado:', data);
+      cargarTurnosMedica();
+    });
+    
+    window.socket.on('turno-medico:creado', (data) => {
+      console.log('[SOCKET_MEDICA] turno-medico:creado:', data);
+      cargarTurnosMedica();
+    });
+    
     window.socketAgendaMedicaListenerAdded = true;
   }
   // ajustar columnas según rol
@@ -1987,7 +2054,7 @@ async function cargarTurnosMedica() {
     // Crear 25 filas: algunas con datos, otras vacías
     tbody.innerHTML = '';
     const filasRequeridas = 25;
-    const colspan = isDoctor() ? 8 : 9;
+    const colspan = isDoctor() ? 7 : 8;
     
     // Verificar si hay algún turno EN_ATENCION
     const hayEnAtencion = turnos.some(t => t.estado === 'EN_ATENCION');
@@ -2051,27 +2118,27 @@ function renderTurnoRowMedica(tbody, t, animateTargetId, hayEnAtencion) {
   }
   const tr = document.createElement('tr');
   tr.className = `turno-row estado-${t.estado}`;
+  
+  // Agregar data-turno-id para poder identificar la fila después
+  if (t.id) {
+    tr.setAttribute('data-turno-id', t.id);
+  }
+  
+  // Aplicar clase de color según estado
+  if (t.estado === 'EN_SALA') {
+    tr.classList.add('estado-en-sala');
+  } else if (t.estado === 'REPROGRAMADO') {
+    tr.classList.add('estado-reprogramado');
+  } else if (t.estado === 'CANCELADO') {
+    tr.classList.add('estado-cancelado-paciente');
+  } else if (t.estado === 'NO_ASISTIO') {
+    tr.classList.add('estado-no-asistio');
+  }
 
   const esAtendido = t.estado === 'ATENDIDO';
   const esEnAtencion = t.estado === 'EN_ATENCION';
 
-  // Doctor y usuario electro no editan por dropdown (doctor usa botones especiales)
-  let canEdit = !isElectro() && !isDoctor();
-  // No permitir edición desde dropdown cuando está EN_ATENCION o ATENDIDO
-  if (esEnAtencion || esAtendido) canEdit = false;
-
-  // Opciones generales 
-  let estadosDisponibles = ['PROGRAMADO','EN_SALA','EN_ATENCION','CANCELADO','NO_ASISTIO','REPROGRAMADO'];
-
-  const opts = estadosDisponibles.map(e => `<option value="${e}" ${t.estado===e?'selected':''}>${e ? e.replace(/_/g,' ') : ''}</option>`).join('');
-
-  const estadoCell = canEdit
-    ? `<select class="btn-estado" data-id="${t.id}">${opts}</select>`
-    : escapeHtml((t.estado||'').replace(/_/g,' '));
-
-  // Deshabilitar botones según rol:
-  // ADMIN: solo deshabilita cuando hay EN_ATENCION EN OTRO TURNO
-  // RECEPCION: deshabilita si EN_ATENCION o ATENDIDO
+  // Opciones generales para deshabilitación
   let deshabilitarBotones = false;
   
   if (isAdmin()) {
@@ -2102,7 +2169,6 @@ function renderTurnoRowMedica(tbody, t, animateTargetId, hayEnAtencion) {
         <td style="padding:8px;border:1px solid #ddd">${escapeHtml(t.tipo_consulta || '')}</td>
         <td style="padding:8px;border:1px solid #ddd">${escapeHtml(t.paciente_documento||'')}</td>
         <td style="padding:8px;border:1px solid #ddd">${escapeHtml(t.entidad||'')}</td>
-        <td style="padding:8px;border:1px solid #ddd">${estadoCell}</td>
         <td style="padding:8px;border:1px solid #ddd">${escapeHtml(t.notas || '')}</td>
         <td style="padding:8px;border:1px solid #ddd">${escapeHtml(t.programado_por || '-')}</td>
       `;
@@ -2118,13 +2184,21 @@ function renderTurnoRowMedica(tbody, t, animateTargetId, hayEnAtencion) {
         <td style="padding:8px;border:1px solid #ddd">${escapeHtml(t.tipo_consulta || '')}</td>
         <td style="padding:8px;border:1px solid #ddd">${escapeHtml(t.paciente_documento||'')}</td>
         <td style="padding:8px;border:1px solid #ddd">${escapeHtml(t.entidad||'')}</td>
-        <td style="padding:8px;border:1px solid #ddd">${estadoCell}</td>
         <td style="padding:8px;border:1px solid #ddd">${escapeHtml(t.notas || '')}</td>
         <td style="padding:8px;border:1px solid #ddd">${accionesCell}</td>
       `;
     }
-  // Abrir panel de edición SOLO desde botón 'editar' (lapiz) para admin/recepcion
+  // Abrir modal al hacer clic en la fila (como en electrodiagnóstico)
   if (isAdmin() || isRecepcion()) {
+    tr.addEventListener('click', (e) => {
+      // No activar si hace clic en botones
+      if (e.target.closest('button') || e.target.closest('[data-delete]') || e.target.closest('[data-edit]') || e.target.closest('[data-up]') || e.target.closest('[data-down]')) {
+        return;
+      }
+      abrirModalEstadoCitaMedica(t);
+    });
+    
+    // Botón de Editar
     const btnEdit = tr.querySelector('[data-edit]');
     btnEdit?.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -2177,36 +2251,6 @@ function renderTurnoRowMedica(tbody, t, animateTargetId, hayEnAtencion) {
   // ajustar columnas por rol (ocultar Hora para doctor)
   adjustColumnsForRole();
 
-  if (canEdit) {
-    tr.querySelector('select')?.addEventListener('change', async (e)=>{
-      try {
-        const nuevoEstado = e.target.value;
-        const turnoId = e.target.dataset.id;
-        
-        // Si se cambia a "EN_SALA", asignar número de turno automáticamente
-        if (nuevoEstado === 'EN_SALA' && !t.numero_turno) {
-          // Primero asignar número
-          const fecha = $('agendaMedicaFecha').value;
-          const doctorId = selectedDoctorId || (isDoctor() ? currentUser?.id : null);
-          const nextNumRes = await apiFetch(`/api/turnos/get-next-number?fecha=${fecha}&doctor_id=${doctorId}`);
-          const nextNumData = await nextNumRes.json();
-          const nextNum = nextNumData.numero || 1;
-          
-          await apiFetch(`/api/turnos/${turnoId}/numero`, { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({numero: nextNum}) });
-        }
-        
-        // Luego cambiar estado
-        const stateRes = await apiFetch(`/api/turnos/${turnoId}/estado`, { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({estado:nuevoEstado}) });
-        const stateData = await stateRes.json();
-        if (stateData.ok) {
-          showToast('Estado actualizado', 'success');
-          cargarTurnosMedica();
-        } else {
-          showToast(stateData.error || 'Error al actualizar estado', 'error');
-        }
-      } catch(x){ showToast('Error al actualizar', 'error'); console.error(x); }
-    });
-  }
   if (puedeEliminar) {
     tr.querySelector('[data-delete]')?.addEventListener('click', async (e)=>{
       const btn = e.target.closest('[data-delete]');
@@ -2490,7 +2534,8 @@ async function crearTurnoMedica() {
   const fecha = $('agendaMedicaFecha').value;
   const doctorId = selectedDoctorId || (isDoctor() ? currentUser?.id : null);
   const hora = $('nuevoTurnoHoraMedica')?.value || '';
-  const telefono = $('nuevoPacienteTelefonoMedica')?.value.trim() || '';
+  const telefono1 = $('nuevoPacienteTelefonoMedica')?.value.trim() || '';
+  const telefono2 = $('nuevoPacienteTelefonoMedica2')?.value.trim() || '';
   const tipoConsulta = $('nuevoTurnoTipoMedica')?.value || '';
   const entidad = $('nuevoTurnoEntidadMedica')?.value || '';
   const notas = $('nuevoTurnoNotasMedica')?.value || '';
@@ -2516,9 +2561,23 @@ async function crearTurnoMedica() {
     return;
   }
 
-  // 4. Validar teléfono: solo números (mínimo 7 dígitos si se ingresa)
-  if (telefono && !/^\d{7,}$/.test(telefono.replace(/[\s\-\(\)]/g, ''))) {
-    showToast('Teléfono inválido. Mínimo 7 dígitos', 'error');
+  // 4. Validar teléfono 1: obligatorio, mínimo 7 dígitos
+  if (!telefono1) {
+    showToast('Teléfono 1 es obligatorio', 'error');
+    return;
+  }
+  if (!/^\d{7,}$/.test(telefono1.replace(/[\s\-\(\)]/g, ''))) {
+    showToast('Teléfono 1 inválido. Mínimo 7 dígitos', 'error');
+    return;
+  }
+
+  // 5. Validar teléfono 2: obligatorio, mínimo 7 dígitos
+  if (!telefono2) {
+    showToast('Teléfono 2 es obligatorio', 'error');
+    return;
+  }
+  if (!/^\d{7,}$/.test(telefono2.replace(/[\s\-\(\)]/g, ''))) {
+    showToast('Teléfono 2 inválido. Mínimo 7 dígitos', 'error');
     return;
   }
 
@@ -2530,7 +2589,8 @@ async function crearTurnoMedica() {
       doctor_id: parseInt(doctorId, 10),
       paciente_nombre: nombre,
       paciente_documento: doc || null,
-      paciente_telefono: telefono || null,
+      paciente_telefono: telefono1,
+      paciente_telefono2: telefono2,
       fecha,
       hora,
       tipo_consulta: tipoConsulta || null,
@@ -2552,6 +2612,7 @@ async function crearTurnoMedica() {
       $('nuevoPacienteNombreMedica').value = '';
       $('nuevoPacienteDocMedica').value = '';
       $('nuevoPacienteTelefonoMedica').value = '';
+      $('nuevoPacienteTelefonoMedica2').value = '';
       $('nuevoTurnoNotasMedica').value = '';
       cargarTurnosMedica();
     } else {
@@ -2595,6 +2656,11 @@ async function initElectro() {
       const opt = document.createElement('option');
       opt.value = e.id;
       opt.textContent = e.nombre;
+      // Si el equipo está en uso (En Estudio), deshabilitarlo
+      if (e.en_uso) {
+        opt.disabled = true;
+        opt.textContent += ' (En uso)';
+      }
       equipoSelect.appendChild(opt);
     });
   } catch (e) {
@@ -2708,9 +2774,111 @@ async function initElectro() {
   $('btnFinalizarEstudio')?.addEventListener('click', finalizarEstudioModal);
   
   // Event listeners para cambios en el modal (equipo y estado)
-  $('modalEquipo')?.addEventListener('change', (e) => {
+  $('modalEquipo')?.addEventListener('change', async (e) => {
+    if (!citaElectroSeleccionada) return;
+    
+    const nuevoEquipoId = e.target.value;
+    const equipoIdActual = citaElectroSeleccionada.equipo_id || '';
+    
+    // Si el equipo no cambió, no hacer nada
+    if (String(nuevoEquipoId) === String(equipoIdActual)) return;
+    
+    console.log('[MODAL_EQUIPO_CHANGE] Cambio de equipo a:', nuevoEquipoId);
+    
+    try {
+      const cambios = { equipo_id: nuevoEquipoId ? parseInt(nuevoEquipoId) : null };
+      
+      const res = await apiFetch(`/api/citas-electro/${citaElectroSeleccionada.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(cambios)
+      });
+      
+      const data = await res.json();
+      
+      if (data && data.ok) {
+        const equipoName = e.target.options[e.target.selectedIndex].text;
+        showToast(`Equipo actualizado a "${equipoName}"`, 'success');
+        
+        // Actualizar el objeto de la cita
+        citaElectroSeleccionada.equipo_id = nuevoEquipoId ? parseInt(nuevoEquipoId) : null;
+        
+        // Emitir socket
+        if (window.socket && window.socket.connected) {
+          window.socket.emit('electro:cambios-guardados', {
+            id: citaElectroSeleccionada.id,
+            cambios
+          });
+        }
+        
+        // Cargar citas para reflejar el cambio en la tabla
+        cargarCitasElectro();
+      } else {
+        showToast(data?.error || 'Error actualizando equipo', 'error');
+        // Revertir el cambio en el UI
+        e.target.value = equipoIdActual;
+      }
+    } catch (error) {
+      console.error('[MODAL_EQUIPO_CHANGE] Error:', error);
+      showToast('Error actualizando equipo', 'error');
+      e.target.value = equipoIdActual;
+    }
   });
-  $('modalEstado')?.addEventListener('change', (e) => {
+  $('modalEstado')?.addEventListener('change', async (e) => {
+  if (!citaElectroSeleccionada) return;
+    
+    const nuevoEstado = e.target.value;
+    console.log('[MODAL_ESTADO_CHANGE] Cambio de estado a:', nuevoEstado);
+    
+    try {
+      const cambios = { estado: nuevoEstado };
+      
+      const res = await apiFetch(`/api/citas-electro/${citaElectroSeleccionada.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(cambios)
+      });
+      
+      const data = await res.json();
+      
+      if (data && data.ok) {
+        showToast(`Estado actualizado a "${nuevoEstado}"`, 'success');
+        
+        // Actualizar el objeto de la cita
+        citaElectroSeleccionada.estado = nuevoEstado;
+        
+        // Si el estado es "En Sala" o "En Estudio", desabilitar el select
+        if (nuevoEstado === 'En Sala' || nuevoEstado === 'En Estudio') {
+          e.target.disabled = true;
+          e.target.style.opacity = '0.5';
+          e.target.style.cursor = 'not-allowed';
+          console.log('[MODAL_ESTADO_CHANGE] Select deshabilitado - estado "' + nuevoEstado + '"');
+        } else {
+          e.target.disabled = false;
+          e.target.style.opacity = '1';
+          e.target.style.cursor = 'pointer';
+          console.log('[MODAL_ESTADO_CHANGE] Select habilitado');
+        }
+        
+        // Emitir socket
+        if (window.socket && window.socket.connected) {
+          window.socket.emit('electro:cambios-guardados', {
+            id: citaElectroSeleccionada.id,
+            cambios
+          });
+        }
+        
+        cargarCitasElectro();
+      } else {
+        showToast(data?.error || 'Error actualizando estado', 'error');
+        // Revertir el cambio en el UI
+        e.target.value = citaElectroSeleccionada.estado;
+      }
+    } catch (error) {
+      console.error('[MODAL_ESTADO_CHANGE] Error:', error);
+      showToast('Error actualizando estado', 'error');
+      e.target.value = citaElectroSeleccionada.estado;
+    }
   });
   $('btnEnviarRecomendaciones')?.addEventListener('click', (e) => {
     showToast('Función "Enviar Recomendaciones" - En desarrollo', 'info');
@@ -2847,6 +3015,14 @@ async function checkEquiposDisponibilidad() {
         <div><strong>${data.duracionMinutos}min</strong> duración</div>
         <div><strong>${data.horaFin}</strong>h fin estimado</div>
       </div>
+      
+      ${data.capacidad.equiposEnUso && data.capacidad.equiposEnUso.length > 0 ? `
+        <div style="margin-bottom:12px;padding:10px;background:#fff5f5;border-left:3px solid #dc2626;border-radius:4px">
+          <div style="font-size:0.9rem;color:#7f1d1d">
+            <strong>En uso:</strong> ${data.capacidad.equiposEnUso.map(e => e.equipo_nombre).join(', ')}
+          </div>
+        </div>
+      ` : ''}
       
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(80px,1fr));gap:8px">
     `;
@@ -3052,10 +3228,11 @@ function renderCitaElectroRow(tbody, c) {
   
   const equipoDisplay = c.equipo_nombre || c.equipo_id ? `${c.equipo_nombre || 'Equipo'} (ID: ${c.equipo_id})` : '-';
   
-  // Mostrar hora_fin con indicador si cruza medianoche
+  // Mostrar hora_fin con fecha SOLO si cruza medianoche
   let horaFinDisplay = formatearHora(c.hora_fin);
   if (c.hora_fin_date && c.hora_fin_date !== c.fecha) {
-    horaFinDisplay = `${formatearHora(c.hora_fin)} <span style="color:#dc2626;font-weight:600;">(+1 día)</span>`;
+    const fechaFormateada = formatearFechaISO(c.hora_fin_date);
+    horaFinDisplay = `${formatearHora(c.hora_fin)} <span style="color:#dc2626;font-weight:600;">(${fechaFormateada})</span>`;
   }
   
   tr.innerHTML = `
@@ -3073,8 +3250,25 @@ function renderCitaElectroRow(tbody, c) {
   
   // Hacer la fila clickeable para abrir modal
   tr.addEventListener('click', (e) => {
+    if (c.estado === 'Completado') {
+      // Permitir click si es admin (puede eliminar)
+      const esAdmin = currentUser && (currentUser.rol === 'admin' || currentUser.rol === 'administrador');
+      if (!esAdmin) {
+        showToast('Esta cita ya está completada - No se puede modificar', 'info');
+        return;
+      }
+    }
     abrirModalDetallesCita(c);
   });
+  
+  // Cambiar apariencia visual si está completado
+  if (c.estado === 'Completado') {
+    tr.style.opacity = '0.6';
+    tr.style.backgroundColor = '#f0fdf4';
+    // Cursor normal para admin, not-allowed para otros
+    const esAdmin = currentUser && (currentUser.rol === 'admin' || currentUser.rol === 'administrador');
+    tr.style.cursor = esAdmin ? 'pointer' : 'not-allowed';
+  }
   
   tbody.appendChild(tr);
 }
@@ -3300,11 +3494,11 @@ async function initUsuarios() {
         
         // Actualizar requisitos
         const checks = {
-          'length': validation.issues.includes('length') ? '❌' : '✅',
-          'upper': validation.issues.includes('upper') ? '❌' : '✅',
-          'lower': validation.issues.includes('lower') ? '❌' : '✅',
-          'number': validation.issues.includes('number') ? '❌' : '✅',
-          'special': validation.issues.includes('special') ? '❌' : '✅'
+          'length': validation.issues.includes('length') ? '[✗]' : '[✓]',
+          'upper': validation.issues.includes('upper') ? '[✗]' : '[✓]',
+          'lower': validation.issues.includes('lower') ? '[✗]' : '[✓]',
+          'number': validation.issues.includes('number') ? '[✗]' : '[✓]',
+          'special': validation.issues.includes('special') ? '[✗]' : '[✓]'
         };
         
         $('req-length').textContent = checks.length + ' Mínimo 8 caracteres';
@@ -4720,9 +4914,75 @@ function closeCambiarContrasenaModal() {
 
 // Event listener para el formulario de gestionar cuenta
 document.addEventListener('DOMContentLoaded', () => {
+  // Setup botones de cerrar modal de cambiar contraseña
+  const modalCambiarContrasena = $('modalCambiarContrasena');
+  if (modalCambiarContrasena) {
+    // Botón X de cerrar
+    const btnCloseX = modalCambiarContrasena.querySelector('button.btn-close-modal');
+    if (btnCloseX) {
+      btnCloseX.addEventListener('click', closeCambiarContrasenaModal);
+    }
+    
+    // Botón Cancelar
+    const btnsCancelar = modalCambiarContrasena.querySelectorAll('button[type="button"]');
+    btnsCancelar.forEach(btn => {
+      if (btn.textContent.includes('Cancelar')) {
+        btn.addEventListener('click', closeCambiarContrasenaModal);
+      }
+    });
+  }
+  
+  // Setup botones de cerrar modal de editar usuario
+  const modalEditarUsuario = $('modalEditarUsuario');
+  if (modalEditarUsuario) {
+    const btnCloseX = modalEditarUsuario.querySelector('button.btn-close-modal');
+    if (btnCloseX) {
+      btnCloseX.addEventListener('click', closeEditarUsuarioModal);
+    }
+    
+    const btnsCancelar = modalEditarUsuario.querySelectorAll('button[type="button"]');
+    btnsCancelar.forEach(btn => {
+      if (btn.textContent.includes('Cancelar')) {
+        btn.addEventListener('click', closeEditarUsuarioModal);
+      }
+    });
+  }
+  
+  // Setup botones de cerrar modal de historial
+  const modalHistorial = $('modalHistorial');
+  if (modalHistorial) {
+    const btnCloseX = modalHistorial.querySelector('button.btn-close-modal');
+    if (btnCloseX) {
+      btnCloseX.addEventListener('click', closeHistorialModal);
+    }
+    
+    const btnsCerrar = modalHistorial.querySelectorAll('button[type="button"]');
+    btnsCerrar.forEach(btn => {
+      if (btn.textContent.includes('Cerrar')) {
+        btn.addEventListener('click', closeHistorialModal);
+      }
+    });
+  }
+  
+  // Setup botones de cerrar modal de reset password
+  const modalResetPassword = $('modalResetPassword');
+  if (modalResetPassword) {
+    const btnCloseX = modalResetPassword.querySelector('button.btn-close-modal');
+    if (btnCloseX) {
+      btnCloseX.addEventListener('click', closeResetPasswordModal);
+    }
+    
+    const btnsEntendido = modalResetPassword.querySelectorAll('button[type="button"]');
+    btnsEntendido.forEach(btn => {
+      if (btn.textContent.includes('Entendido')) {
+        btn.addEventListener('click', closeResetPasswordModal);
+      }
+    });
+  }
+  
   // Setup toggle buttons para "Mi Cuenta"
-  const toggleBtns = ['toggleContrasenaActual', 'toggleNuevaContrasena', 'toggleConfirmarContrasena'];
-  const inputIds = ['contrasenaActual', 'nuevaContrasena', 'confirmarContrasena'];
+  const toggleBtns = ['toggleContrasenaActual', 'toggleNuevaContrasena', 'toggleConfirmarContrasena', 'toggleEditPassword'];
+  const inputIds = ['contrasenaActual', 'nuevaContrasena', 'confirmarContrasena', 'editPassword'];
   
   toggleBtns.forEach((btnId, idx) => {
     const btn = $(btnId);
@@ -4730,9 +4990,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (btn && input) {
       btn.addEventListener('click', (e) => {
         e.preventDefault();
+        e.stopPropagation();
         const type = input.type === 'password' ? 'text' : 'password';
         input.type = type;
-        btn.textContent = type === 'password' ? '👁️' : '👁️‍🗨️';
+        // El emoji 👁 es el mismo para ambos estados - visualmente claro
       });
     }
   });
@@ -4769,7 +5030,7 @@ document.addEventListener('DOMContentLoaded', () => {
       e.preventDefault();
       const type = editPasswordInput.type === 'password' ? 'text' : 'password';
       editPasswordInput.type = type;
-      toggleEditBtn.textContent = type === 'password' ? '👁️' : '👁️‍🗨️';
+      toggleEditBtn.textContent = type === 'password' ? 'Mostrar' : 'Ocultar';
     });
   }
   
@@ -4909,7 +5170,7 @@ async function importarDiagnosticosExcel() {
 
     progressBar.style.width = '100%';
     status.textContent = data.mensaje;
-    showToast(`✅ ${data.mensaje}`, 'success');
+    showToast(`${data.mensaje}`, 'success');
 
     // Limpiar input
     fileInput.value = '';
@@ -4988,46 +5249,8 @@ function renderDiagnosticoRow(tbody, d) {
 async function iniciarEstudioModal() {
   if (!citaElectroSeleccionada) return;
   
-  try {
-    const ahora = new Date();
-    const hh = String(ahora.getHours()).padStart(2, '0');
-    const mm = String(ahora.getMinutes()).padStart(2, '0');
-    const horaActual = `${hh}:${mm}`;
-    
-    const cambios = {
-      estado: 'En Estudio',
-      hora_inicio: horaActual
-    };
-    
-    // Actualizar en la base de datos
-    const res = await apiFetch(`/api/citas-electro/${citaElectroSeleccionada.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(cambios)
-    });
-    
-    const data = await res.json();
-    
-    if (data && data.ok) {
-      showToast(`✅ Estudio iniciado a las ${horaActual}`, 'success');
-      
-      // Emitir evento de socket desde el cliente
-      if (window.socket && window.socket.connected) {
-        window.socket.emit('electro:estudio-iniciado', {
-          id: citaElectroSeleccionada.id,
-          hora_inicio: horaActual
-        });
-      }
-      
-      // El servidor también emitirá el socket event
-      cargarCitasElectro();
-      cerrarModalDetallesCita();
-    } else {
-      showToast(data?.error || 'Error iniciando estudio', 'error');
-    }
-  } catch (e) {
-    showToast('Error iniciando estudio', 'error');
-  }
+  // Mostrar modal de confirmación
+  abrirModalConfirmarDuracion();
 }
 
 async function finalizarEstudioModal() {
@@ -5054,7 +5277,30 @@ async function finalizarEstudioModal() {
     const data = await res.json();
     
     if (data && data.ok) {
-      showToast(`✅ Estudio finalizado a las ${horaActual}`, 'success');
+      showToast(`Estudio finalizado a las ${horaActual}`, 'success');
+      
+      // Actualizar el objeto de la cita localmente
+      citaElectroSeleccionada.estado = 'Completado';
+      citaElectroSeleccionada.hora_fin = horaActual;
+      
+      // Habilitar el select de estado ahora que se cambió a "Completado"
+      const selectEstado = $('modalEstado');
+      if (selectEstado) {
+        selectEstado.disabled = false;
+        selectEstado.style.opacity = '1';
+        selectEstado.style.cursor = 'pointer';
+        selectEstado.value = 'Completado';
+        console.log('[FINALIZAR] Select habilitado - estado "Completado"');
+      }
+      
+      // Habilitar selector de equipo cuando se finaliza el estudio
+      const selectEquipo = $('modalEquipo');
+      if (selectEquipo) {
+        selectEquipo.disabled = false;
+        selectEquipo.style.opacity = '1';
+        selectEquipo.style.cursor = 'pointer';
+        console.log('[FINALIZAR] Selector de equipo habilitado');
+      }
       
       // Emitir evento de socket desde el cliente
       if (window.socket && window.socket.connected) {
@@ -5075,6 +5321,489 @@ async function finalizarEstudioModal() {
   }
 }
 
+// ===== FUNCIONES PARA DURACIÓN DEL ESTUDIO =====
+
+function abrirModalConfirmarDuracion() {
+  console.log('[DURACION] Abriendo modal de confirmación');
+  const modal = $('modalConfirmarDuracion');
+  if (modal) {
+    modal.classList.remove('hidden');
+  }
+}
+
+function cerrarModalConfirmarDuracion() {
+  console.log('[DURACION] Cerrando modal de confirmación');
+  const modal = $('modalConfirmarDuracion');
+  if (modal) {
+    modal.classList.add('hidden');
+  }
+}
+
+function abrirModalDuracionEstudio() {
+  console.log('[DURACION] Abriendo modal de duración');
+  const modal = $('modalDuracionEstudio');
+  if (modal) {
+    modal.classList.remove('hidden');
+    
+    // Establecer valores por defecto con hora actual
+    const ahora = new Date();
+    const hh = String(ahora.getHours()).padStart(2, '0');
+    const mm = String(ahora.getMinutes()).padStart(2, '0');
+    
+    // Hora inicio: ahora
+    $('horaEstudioInicio').value = `${hh}:${mm}`;
+    
+    // Hora fin: 1 hora después
+    const ahoraFin = new Date();
+    ahoraFin.setHours(ahora.getHours() + 1);
+    const hhFin = String(ahoraFin.getHours()).padStart(2, '0');
+    const mmFin = String(ahoraFin.getMinutes()).padStart(2, '0');
+    $('horaEstudioFin').value = `${hhFin}:${mmFin}`;
+    
+    actualizarDuracionMostrada();
+  }
+}
+
+function cerrarModalDuracionEstudio() {
+  console.log('[DURACION] Cerrando modal de duración');
+  const modal = $('modalDuracionEstudio');
+  if (modal) {
+    modal.classList.add('hidden');
+  }
+}
+
+function actualizarDuracionMostrada() {
+  const horaInicio = $('horaEstudioInicio').value;
+  const horaFin = $('horaEstudioFin').value;
+  
+  if (!horaInicio || !horaFin) {
+    const display = $('duracionCalculada');
+    if (display) display.textContent = '-';
+    return;
+  }
+  
+  // Convertir tiempos a minutos
+  const [hhI, mmI] = horaInicio.split(':').map(Number);
+  const [hhF, mmF] = horaFin.split(':').map(Number);
+  
+  const minutosInicio = hhI * 60 + mmI;
+  const minutosFin = hhF * 60 + mmF;
+  
+  let diferenciaMinutos = minutosFin - minutosInicio;
+  
+  // Si el fin es menor que inicio, asumir que es al día siguiente
+  if (diferenciaMinutos < 0) {
+    diferenciaMinutos += 24 * 60;
+  }
+  
+  // Si la diferencia es 0, asumir 24 horas
+  if (diferenciaMinutos === 0) {
+    diferenciaMinutos = 24 * 60;
+  }
+  
+  const horas = Math.floor(diferenciaMinutos / 60);
+  const minutos = diferenciaMinutos % 60;
+  
+  let texto = '';
+  if (horas > 0) {
+    texto += `${horas} hora${horas !== 1 ? 's' : ''}`;
+  }
+  if (minutos > 0) {
+    if (texto) texto += ' ';
+    texto += `${minutos} minuto${minutos !== 1 ? 's' : ''}`;
+  }
+  
+  const display = $('duracionCalculada');
+  if (display) {
+    display.textContent = texto || '-';
+  }
+}
+
+async function confirmarDuracionEstudio() {
+  console.log('[DURACION] Confirmando duración del estudio');
+  
+  if (!citaElectroSeleccionada) {
+    showToast('Error: No hay cita seleccionada', 'error');
+    return;
+  }
+  
+  // VALIDAR QUE SE HAYA SELECCIONADO UN EQUIPO
+  const equipoSelect = $('modalEquipo');
+  if (!equipoSelect || !equipoSelect.value) {
+    showToast('❌ Debes seleccionar un equipo antes de iniciar el estudio', 'error');
+    return;
+  }
+  
+  try {
+    const horaInicio = $('horaEstudioInicio').value;
+    const horaFin = $('horaEstudioFin').value;
+    
+    if (!horaInicio || !horaFin) {
+      showToast('Por favor completa hora de inicio y fin', 'error');
+      return;
+    }
+    
+    // Validar que fin sea después de inicio (o al día siguiente)
+    const [hhI, mmI] = horaInicio.split(':').map(Number);
+    const [hhF, mmF] = horaFin.split(':').map(Number);
+    const minutosInicio = hhI * 60 + mmI;
+    let minutosFin = hhF * 60 + mmF;
+    
+    if (minutosFin < minutosInicio) {
+      minutosFin += 24 * 60; // Asumir que es al día siguiente
+    }
+    
+    if (minutosFin === minutosInicio) {
+      showToast('La hora de fin debe ser diferente a la de inicio', 'error');
+      return;
+    }
+    
+    // Calcular duración en minutos
+    let duracionMinutos = minutosFin - minutosInicio;
+    if (duracionMinutos < 0) {
+      duracionMinutos += 24 * 60;
+    }
+    
+    console.log(`[DURACION] Iniciando estudio: ${horaInicio} → ${horaFin} (${duracionMinutos} minutos)`);
+    
+    const equipoId = equipoSelect.value;
+    const cambios = {
+      estado: 'En Estudio',
+      hora_inicio: horaInicio,
+      hora_fin: horaFin,
+      duracion_minutos: duracionMinutos,
+      equipo_id: equipoId
+    };
+    
+    // Actualizar en la base de datos
+    const res = await apiFetch(`/api/citas-electro/${citaElectroSeleccionada.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(cambios)
+    });
+    
+    const data = await res.json();
+    console.log('[DURACION] Respuesta del servidor:', data);
+    
+    if (data && data.ok) {
+      showToast(`Estudio iniciado: ${horaInicio} - ${horaFin}`, 'success');
+      
+      // Actualizar el objeto de la cita localmente
+      citaElectroSeleccionada.estado = 'En Estudio';
+      citaElectroSeleccionada.hora_inicio = horaInicio;
+      citaElectroSeleccionada.hora_fin = horaFin;
+      
+      // BLOQUEAR el select de estado mientras está en "En Estudio"
+      const selectEstado = $('modalEstado');
+      if (selectEstado) {
+        selectEstado.disabled = true;
+        selectEstado.style.opacity = '0.5';
+        selectEstado.style.cursor = 'not-allowed';
+        selectEstado.value = 'En Estudio';
+        console.log('[DURACION] Select bloqueado - estado "En Estudio"');
+      }
+      
+      // BLOQUEAR el menú de "Más opciones" mientras está en "En Estudio"
+      const btnMasOpciones = $('btnMasOpciones');
+      const menuMasOpciones = $('menuMasOpciones');
+      if (btnMasOpciones) {
+        btnMasOpciones.disabled = true;
+        btnMasOpciones.style.opacity = '0.5';
+        btnMasOpciones.style.cursor = 'not-allowed';
+        if (menuMasOpciones) menuMasOpciones.style.display = 'none';
+        console.log('[DURACION] Menú bloqueado - estado "En Estudio"');
+      }
+      
+      // Emitir evento de socket desde el cliente
+      if (window.socket && window.socket.connected) {
+        window.socket.emit('electro:estudio-iniciado', {
+          id: citaElectroSeleccionada.id,
+          hora_inicio: horaInicio,
+          hora_fin: horaFin,
+          duracion_minutos: duracionMinutos
+        });
+      }
+      
+      // El servidor también emitirá el socket event
+      cargarCitasElectro();
+      cerrarModalDetallesCita();
+      cerrarModalDuracionEstudio();
+    } else {
+      showToast(data?.error || 'Error iniciando estudio', 'error');
+    }
+  } catch (e) {
+    console.error('[DURACION] Error:', e);
+    showToast('Error iniciando estudio', 'error');
+  }
+}
+
+async function iniciarEstudioSinDuracion() {
+  console.log('[DURACION] Iniciando estudio sin duración personalizada');
+  
+  if (!citaElectroSeleccionada) return;
+  
+  // VALIDAR QUE SE HAYA SELECCIONADO UN EQUIPO
+  const equipoSelect = $('modalEquipo');
+  if (!equipoSelect || !equipoSelect.value) {
+    showToast('❌ Debes seleccionar un equipo antes de iniciar el estudio', 'error');
+    return;
+  }
+  
+  try {
+    const ahora = new Date();
+    const hh = String(ahora.getHours()).padStart(2, '0');
+    const mm = String(ahora.getMinutes()).padStart(2, '0');
+    const horaActual = `${hh}:${mm}`;
+    
+    // Obtener la duración predeterminada de la cita (en minutos)
+    const duracionMinutos = citaElectroSeleccionada.duracion_minutos || 480; // 480 minutos = 8 horas por defecto
+    
+    console.log(`[DURACION_SIN] Usando duración predeterminada: ${duracionMinutos} minutos`);
+    
+    // Calcular hora_fin: ahora + duracionMinutos
+    const [hh_inicio, mm_inicio] = horaActual.split(':').map(Number);
+    let minutosInicio = hh_inicio * 60 + mm_inicio;
+    let minutosFin = minutosInicio + duracionMinutos;
+    
+    // Manejar si cruza medianoche
+    let crucedaMedianoche = false;
+    if (minutosFin >= 24 * 60) {
+      minutosFin -= 24 * 60;
+      crucedaMedianoche = true;
+    }
+    
+    const hh_fin = Math.floor(minutosFin / 60);
+    const mm_fin = minutosFin % 60;
+    const horaFin = `${String(hh_fin).padStart(2, '0')}:${String(mm_fin).padStart(2, '0')}`;
+    
+    console.log(`[DURACION_SIN] Hora inicio: ${horaActual}, Hora fin: ${horaFin} (${crucedaMedianoche ? 'cruza medianoche' : 'mismo día'})`);
+    
+    const equipoId = equipoSelect.value;
+    const cambios = {
+      estado: 'En Estudio',
+      hora_inicio: horaActual,
+      hora_fin: horaFin,
+      duracion_minutos: duracionMinutos,
+      equipo_id: equipoId
+    };
+    
+    // Actualizar en la base de datos
+    const res = await apiFetch(`/api/citas-electro/${citaElectroSeleccionada.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(cambios)
+    });
+    
+    const data = await res.json();
+    
+    if (data && data.ok) {
+      const horas = Math.floor(duracionMinutos / 60);
+      const mins = duracionMinutos % 60;
+      let textoHora = '';
+      if (horas > 0) textoHora += `${horas}h`;
+      if (mins > 0) textoHora += `${mins}m`;
+      
+      showToast(`Estudio iniciado a las ${horaActual} (duración: ${textoHora})`, 'success');
+      
+      // Actualizar el objeto de la cita localmente
+      citaElectroSeleccionada.estado = 'En Estudio';
+      citaElectroSeleccionada.hora_inicio = horaActual;
+      citaElectroSeleccionada.hora_fin = horaFin;
+      citaElectroSeleccionada.duracion_minutos = duracionMinutos;
+      
+      // BLOQUEAR el select de estado mientras está en "En Estudio"
+      const selectEstado = $('modalEstado');
+      if (selectEstado) {
+        selectEstado.disabled = true;
+        selectEstado.style.opacity = '0.5';
+        selectEstado.style.cursor = 'not-allowed';
+        selectEstado.value = 'En Estudio';
+        console.log('[DURACION_SIN] Select bloqueado - estado "En Estudio"');
+      }
+      
+      // BLOQUEAR el menú de "Más opciones" mientras está en "En Estudio"
+      const btnMasOpciones = $('btnMasOpciones');
+      const menuMasOpciones = $('menuMasOpciones');
+      if (btnMasOpciones) {
+        btnMasOpciones.disabled = true;
+        btnMasOpciones.style.opacity = '0.5';
+        btnMasOpciones.style.cursor = 'not-allowed';
+        if (menuMasOpciones) menuMasOpciones.style.display = 'none';
+        console.log('[DURACION_SIN] Menú bloqueado - estado "En Estudio"');
+      }
+      
+      // Emitir evento de socket desde el cliente
+      if (window.socket && window.socket.connected) {
+        window.socket.emit('electro:estudio-iniciado', {
+          id: citaElectroSeleccionada.id,
+          hora_inicio: horaActual,
+          hora_fin: horaFin,
+          duracion_minutos: duracionMinutos
+        });
+      }
+      
+      // Llamar para actualizar progreso del estudio
+      cargarCitasElectro();
+      cerrarModalDetallesCita();
+    } else {
+      showToast(data?.error || 'Error iniciando estudio', 'error');
+    }
+  } catch (e) {
+    showToast('Error iniciando estudio', 'error');
+  }
+}
+
+// Función para actualizar progreso del estudio en tiempo real
+function actualizarProgresoEstudio() {
+  if (!citaElectroSeleccionada || citaElectroSeleccionada.estado !== 'En Estudio') {
+    return;
+  }
+  
+  // Detener intervalo anterior si existe
+  if (intervaloProgreso) {
+    clearInterval(intervaloProgreso);
+    intervaloProgreso = null;
+  }
+  
+  // Convertir horas a segundos desde medianoche
+  const horaInicio = citaElectroSeleccionada.hora_inicio; // "HH:MM"
+  const horaFin = citaElectroSeleccionada.hora_fin; // "HH:MM"
+  
+  if (!horaInicio || !horaFin) {
+    console.log('[PROGRESO] Horas no disponibles');
+    return;
+  }
+  
+  const parseHora = (hora) => {
+    const [h, m] = hora.split(':').map(Number);
+    return h * 3600 + m * 60; // Convertir a SEGUNDOS
+  };
+  
+  const segundosInicio = parseHora(horaInicio);
+  let segundosFin = parseHora(horaFin);
+  
+  // Manejar cruces de medianoche
+  if (segundosFin < segundosInicio) {
+    segundosFin += 24 * 3600;
+  }
+  
+  const duracionTotal = segundosFin - segundosInicio;
+  
+  if (duracionTotal <= 0) {
+    console.log('[PROGRESO] Duración inválida');
+    return;
+  }
+  
+  console.log(`[PROGRESO] Iniciando. Inicio: ${horaInicio}, Fin: ${horaFin}, Duración: ${Math.round(duracionTotal/60)} min`);
+  
+  // Actualizar cada 250ms para que la barra avance suavemente en tiempo real
+  intervaloProgreso = setInterval(async () => {
+    const ahora = new Date();
+    const segundosAhora = ahora.getHours() * 3600 + ahora.getMinutes() * 60 + ahora.getSeconds();
+    
+    // Calcular progreso
+    let segundosTranscurridos = segundosAhora - segundosInicio;
+    
+    // Manejar cruces de medianoche
+    if (segundosTranscurridos < 0) {
+      segundosTranscurridos += 24 * 3600;
+    }
+    
+    let porcentaje = (segundosTranscurridos / duracionTotal) * 100;
+    porcentaje = Math.min(Math.max(porcentaje, 0), 100); // Limitar entre 0 y 100
+    
+    // Convertir segundos transcurridos a HH:MM:SS
+    const horas = Math.floor(segundosTranscurridos / 3600);
+    const minutos = Math.floor((segundosTranscurridos % 3600) / 60);
+    const segundos = Math.floor(segundosTranscurridos % 60);
+    const tiempoFormato = `${String(horas).padStart(2, '0')}:${String(minutos).padStart(2, '0')}:${String(segundos).padStart(2, '0')}`;
+    
+    // Actualizar barra visual
+    const barraLlena = $('estudioBarraLlena');
+    const progreso = $('estudioProgreso');
+    const tiempoTranscurrido = $('estudioTiempoTranscurrido');
+    
+    if (barraLlena) {
+      barraLlena.style.width = porcentaje + '%';
+    }
+    if (progreso) {
+      progreso.textContent = Math.round(porcentaje);
+    }
+    if (tiempoTranscurrido) {
+      tiempoTranscurrido.textContent = tiempoFormato;
+    }
+    
+    // Emitir evento de socket para actualizar otros usuarios
+    if (window.socket && window.socket.connected) {
+      window.socket.emit('electro:progreso-estudio', {
+        citaId: citaElectroSeleccionada.id,
+        porcentaje: porcentaje,
+        tiempoTranscurrido: tiempoFormato
+      });
+    }
+    
+    console.log(`[PROGRESO] ${Math.round(porcentaje)}% - ${tiempoFormato}`);
+    
+    // Si llegó al 100%, finalizar automáticamente
+    if (porcentaje >= 100) {
+      clearInterval(intervaloProgreso);
+      intervaloProgreso = null;
+      
+      console.log('[PROGRESO] Estudio completado. Finalizando automáticamente...');
+      
+      try {
+        const ahora = new Date();
+        const hh = String(ahora.getHours()).padStart(2, '0');
+        const mm = String(ahora.getMinutes()).padStart(2, '0');
+        const horaActual = `${hh}:${mm}`;
+        
+        const cambios = {
+          estado: 'Completado',
+          hora_fin: horaActual
+        };
+        
+        const res = await apiFetch(`/api/citas-electro/${citaElectroSeleccionada.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(cambios)
+        });
+        
+        const data = await res.json();
+        
+        if (data && data.ok) {
+          showToast(`Estudio completado automáticamente a las ${horaActual}`, 'success');
+          
+          citaElectroSeleccionada.estado = 'Completado';
+          citaElectroSeleccionada.hora_fin = horaActual;
+          
+          // Ocultar barra de progreso
+          const estudioBarra = $('estudioBarra');
+          if (estudioBarra) {
+            estudioBarra.style.display = 'none';
+          }
+          
+          // Emitir socket
+          if (window.socket && window.socket.connected) {
+            window.socket.emit('electro:estudio-finalizado', {
+              id: citaElectroSeleccionada.id,
+              hora_fin: horaActual
+            });
+          }
+          
+          // Recargar citas
+          cargarCitasElectro();
+          
+          // Cerrar modal
+          cerrarModalDetallesCita();
+        }
+      } catch (error) {
+        console.error('[PROGRESO] Error finalizando estudio:', error);
+        showToast('Error finalizando estudio automáticamente', 'error');
+      }
+    }
+  }, 250);
+}
+
 function abrirModalDetallesCita(cita) {
   console.log('[MODAL_DETALLES] Abriendo modal de detalles');
   citaElectroSeleccionada = cita;
@@ -5092,6 +5821,32 @@ function abrirModalDetallesCita(cita) {
   
   // Rellenar selector de estado
   $('modalEstado').value = cita.estado || 'Programado';
+  
+  // Bloquear selector de estado si está "En Sala" o "En Estudio"
+  const selectEstado = $('modalEstado');
+  if (cita.estado === 'En Sala' || cita.estado === 'En Estudio') {
+    selectEstado.disabled = true;
+    selectEstado.style.opacity = '0.5';
+    selectEstado.style.cursor = 'not-allowed';
+    console.log('[MODAL_DETALLES] Estado "' + cita.estado + '" detectado - select deshabilitado');
+  } else {
+    selectEstado.disabled = false;
+    selectEstado.style.opacity = '1';
+    selectEstado.style.cursor = 'pointer';
+  }
+  
+  // Bloquear selector de equipo si está "En Estudio" para evitar cambios durante el estudio
+  const selectEquipo = $('modalEquipo');
+  if (cita.estado === 'En Estudio') {
+    selectEquipo.disabled = true;
+    selectEquipo.style.opacity = '0.5';
+    selectEquipo.style.cursor = 'not-allowed';
+    console.log('[MODAL_DETALLES] Estado "En Estudio" - selector de equipo deshabilitado');
+  } else {
+    selectEquipo.disabled = false;
+    selectEquipo.style.opacity = '1';
+    selectEquipo.style.cursor = 'pointer';
+  }
   
   // Mostrar botón de eliminar solo para admin
   const btnEliminar = $('btnEliminarCita');
@@ -5118,6 +5873,91 @@ function abrirModalDetallesCita(cita) {
     console.log('[MODAL_DETALLES] Listener agregado a btnAdelantarCita');
   }
   
+  // Configurar el menú de "Más opciones"
+  const btnMasOpciones = $('btnMasOpciones');
+  const menuMasOpciones = $('menuMasOpciones');
+  const btnRepProgramarMenu = $('btnReprogramarCitaMenu');
+  const btnAdelantarMenu = $('btnAdelantarCitaMenu');
+  const btnRecomendacionesMenu = $('btnEnviarRecomendacionesMenu');
+  
+  if (btnMasOpciones) {
+    btnMasOpciones.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (menuMasOpciones.style.display === 'none' || menuMasOpciones.style.display === '') {
+        menuMasOpciones.style.display = 'block';
+      } else {
+        menuMasOpciones.style.display = 'none';
+      }
+    });
+  }
+  
+  // Cerrar menú al hacer click afuera
+  document.addEventListener('click', (e) => {
+    if (menuMasOpciones && !menuMasOpciones.contains(e.target) && e.target !== btnMasOpciones) {
+      menuMasOpciones.style.display = 'none';
+    }
+  });
+  
+  // Agregar listeners a los items del menú
+  if (btnRepProgramarMenu) {
+    btnRepProgramarMenu.addEventListener('click', () => {
+      menuMasOpciones.style.display = 'none';
+      abrirModalReprogramar();
+    });
+  }
+  
+  if (btnAdelantarMenu) {
+    btnAdelantarMenu.addEventListener('click', () => {
+      menuMasOpciones.style.display = 'none';
+      abrirModalAdelantarCita();
+    });
+  }
+  
+  if (btnRecomendacionesMenu) {
+    btnRecomendacionesMenu.addEventListener('click', () => {
+      menuMasOpciones.style.display = 'none';
+      showToast('Función "Enviar Recomendaciones" - En desarrollo', 'info');
+    });
+  }
+  
+  // Bloquear menú si el estado es "En Estudio"
+  if (cita.estado === 'En Estudio') {
+    if (btnMasOpciones) {
+      btnMasOpciones.disabled = true;
+      btnMasOpciones.style.opacity = '0.5';
+      btnMasOpciones.style.cursor = 'not-allowed';
+    }
+  } else {
+    if (btnMasOpciones) {
+      btnMasOpciones.disabled = false;
+      btnMasOpciones.style.opacity = '1';
+      btnMasOpciones.style.cursor = 'pointer';
+    }
+  }
+  
+  // Mostrar/Ocultar barra de progreso
+  const estudioBarra = $('estudioBarra');
+  if (cita.estado === 'En Estudio' && cita.hora_inicio && cita.hora_fin) {
+    if (estudioBarra) {
+      estudioBarra.style.display = 'block';
+      $('estudioHoraInicio').textContent = cita.hora_inicio;
+      $('estudioHoraFin').textContent = cita.hora_fin;
+      $('estudioProgreso').textContent = '0';
+      $('estudioBarraLlena').style.width = '0%';
+    }
+    // Iniciar actualización de progreso
+    actualizarProgresoEstudio();
+  } else {
+    if (estudioBarra) {
+      estudioBarra.style.display = 'none';
+    }
+    // Detener el intervalo si existe
+    if (intervaloProgreso) {
+      clearInterval(intervaloProgreso);
+      intervaloProgreso = null;
+    }
+  }
+  
   // Mostrar modal
   $('modalDetallesCitaElectro').classList.remove('hidden');
 }
@@ -5125,6 +5965,12 @@ function abrirModalDetallesCita(cita) {
 function cerrarModalDetallesCita() {
   $('modalDetallesCitaElectro').classList.add('hidden');
   citaElectroSeleccionada = null;
+  
+  // Detener intervalo de progreso si existe
+  if (intervaloProgreso) {
+    clearInterval(intervaloProgreso);
+    intervaloProgreso = null;
+  }
 }
 
 async function eliminarCitaElectro() {
@@ -5194,7 +6040,7 @@ async function guardarCambiosCitaElectro() {
       const data = await res.json();
       
       if (data && data.ok) {
-        showToast('✅ Cambios guardados', 'success');
+        showToast('Cambios guardados', 'success');
         
         // Emitir evento de socket desde el cliente
         if (window.socket && window.socket.connected) {
@@ -5295,7 +6141,7 @@ async function confirmarReprogramar() {
     console.log('[CONFIRMAR_REPROGRAMAR] Respuesta del servidor:', data);
     
     if (data && data.ok) {
-      showToast('✅ Cita reprogramada exitosamente', 'success');
+      showToast('Cita reprogramada exitosamente', 'success');
       
       // Emitir evento de socket
       if (window.socket && window.socket.connected) {
@@ -5382,7 +6228,7 @@ async function confirmarAdelantarCita() {
     console.log('[CONFIRMAR_ADELANTAR] Respuesta del servidor:', data);
     
     if (data && data.ok) {
-      showToast('✅ Cita adelantada exitosamente', 'success');
+      showToast('Cita adelantada exitosamente', 'success');
       
       // Emitir evento de socket
       if (window.socket && window.socket.connected) {
@@ -5403,6 +6249,322 @@ async function confirmarAdelantarCita() {
     showToast('Error adelantando cita: ' + e.message, 'error');
   }
 }
+
+// ===== Event Listeners para Modal de Duración =====
+$('btnConfirmarDuracionSi')?.addEventListener('click', () => {
+  console.log('[DURACION] Usuario seleccionó SÍ');
+  cerrarModalConfirmarDuracion();
+  abrirModalDuracionEstudio();
+});
+
+$('btnConfirmarDuracionNo')?.addEventListener('click', () => {
+  console.log('[DURACION] Usuario seleccionó NO');
+  cerrarModalConfirmarDuracion();
+  iniciarEstudioSinDuracion();
+});
+
+$('cerrarModalDuracion')?.addEventListener('click', cerrarModalDuracionEstudio);
+$('btnCancelarDuracion')?.addEventListener('click', cerrarModalDuracionEstudio);
+$('btnConfirmarDuracion')?.addEventListener('click', confirmarDuracionEstudio);
+
+// ========== FUNCIONES PARA MODAL DE ESTADO DE CITAS MÉDICAS ==========
+
+let currentTurnoMedicaData = null;
+let currentEstadoAction = null;
+
+function abrirModalEstadoCitaMedica(turno) {
+  currentTurnoMedicaData = turno;
+  
+  // Llenar información del paciente
+  $('modalMedicaPaciente').textContent = escapeHtml(turno.paciente_nombre || '-');
+  $('modalMedicaHora').textContent = formatearHora(turno.hora) || '-';
+  $('modalReprogramarMedicaFechaActual').innerHTML = `<strong>${formatearFecha(turno.fecha)}</strong> a las <strong>${formatearHora(turno.hora)}</strong>`;
+  
+  // Mostrar modal
+  $('modalEstadoCitaMedica').classList.remove('hidden');
+}
+
+function cerrarModalEstadoCitaMedica() {
+  $('modalEstadoCitaMedica').classList.add('hidden');
+  // NO limpiar currentTurnoMedicaData ni currentEstadoAction aquí 
+  // Se necesitan para el modal de confirmación
+  // currentTurnoMedicaData = null;
+  // currentEstadoAction = null;
+}
+
+function cerrarModalReprogramarMedica() {
+  $('modalReprogramarMedica').classList.add('hidden');
+  // Limpiar datos después de reprogramar
+  currentTurnoMedicaData = null;
+  currentEstadoAction = null;
+}
+
+function cerrarModalConfirmReprogramacion() {
+  $('modalConfirmReprogramacion').classList.add('hidden');
+  // Limpiar datos después de cerrar confirmación
+  currentTurnoMedicaData = null;
+  currentEstadoAction = null;
+}
+
+// Botón: En Sala
+$('btnEstadoEnSala')?.addEventListener('click', async (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  if (!currentTurnoMedicaData) return;
+  
+  try {
+    const turnoId = currentTurnoMedicaData.id;
+    
+    // Cambiar estado a EN_SALA y aplicar color amarillo
+    const res = await apiFetch(`/api/turnos/${turnoId}/estado`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ estado: 'EN_SALA' })
+    });
+    
+    const data = await res.json();
+    if (data.ok) {
+      showToast('Paciente marcado como En Sala', 'success');
+      cerrarModalEstadoCitaMedica();
+      cargarTurnosMedica(); // Recargar tabla
+    } else {
+      showToast(data.error || 'Error al actualizar', 'error');
+    }
+  } catch (e) {
+    showToast('Error al actualizar estado', 'error');
+    console.error(e);
+  }
+});
+
+// Botón: Reprogramar
+$('btnEstadoReprogramar')?.addEventListener('click', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  if (!currentTurnoMedicaData) return;
+  
+  currentEstadoAction = 'reprogramar';
+  cerrarModalEstadoCitaMedica();
+  
+  // Abrir modal de reprogramación
+  $('modalReprogramarMedica').classList.remove('hidden');
+  
+  // Limpiar campos
+  $('modalReprogramarMedicaFecha').value = '';
+  $('modalReprogramarMedicaHora').value = '';
+});
+
+// Botón: Cancelado por Paciente
+$('btnEstadoCanceladoPaciente')?.addEventListener('click', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  if (!currentTurnoMedicaData) return;
+  
+  currentEstadoAction = 'cancelado-paciente';
+  cerrarModalEstadoCitaMedica();
+  
+  // Preguntar si desea reprogramar
+  $('modalConfirmReprogramacionTitle').textContent = '¿Desea reprogramar esta cita?';
+  $('modalConfirmReprogramacionMessage').textContent = 'El paciente canceló la cita. ¿Desea reprogramarla para otro día?';
+  $('modalConfirmReprogramacion').classList.remove('hidden');
+});
+
+// Botón: No Asistió
+$('btnEstadoNoAsistio')?.addEventListener('click', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  if (!currentTurnoMedicaData) return;
+  
+  currentEstadoAction = 'no-asistio';
+  cerrarModalEstadoCitaMedica();
+  
+  // Preguntar si desea reprogramar
+  $('modalConfirmReprogramacionTitle').textContent = '¿Desea reprogramar esta cita?';
+  $('modalConfirmReprogramacionMessage').textContent = 'El paciente no asistió. ¿Desea reprogramarla para otro día?';
+  $('modalConfirmReprogramacion').classList.remove('hidden');
+});
+
+// Delegación de eventos para los botones del modal de confirmación de reprogramación
+document.addEventListener('click', async (e) => {
+  const btnSi = e.target.closest('#btnConfirmReprogramacionSi');
+  const btnNo = e.target.closest('#btnConfirmReprogramacionNo');
+  
+  // Botón: Confirmar Reprogramación - SÍ
+  if (btnSi) {
+    e.preventDefault();
+    e.stopPropagation();
+    console.log('[CONFIRM_SI] Botón clickeado');
+    cerrarModalConfirmReprogramacion();
+    
+    // Abrir modal de reprogramación
+    $('modalReprogramarMedica').classList.remove('hidden');
+    $('modalReprogramarMedicaFecha').value = '';
+    $('modalReprogramarMedicaHora').value = '';
+  }
+  
+  // Botón: Confirmar Reprogramación - NO
+  if (btnNo) {
+    e.preventDefault();
+    e.stopPropagation();
+    console.log('[CONFIRM_NO] Botón clickeado');
+    
+    if (!currentTurnoMedicaData) {
+      console.log('[CONFIRM_NO] No hay turno seleccionado');
+      return;
+    }
+    
+    // Guardar datos ANTES de limpiar modal
+    const turnoData = currentTurnoMedicaData;
+    const accion = currentEstadoAction;
+    
+    console.log('[CONFIRM_NO] Acción:', accion);
+    console.log('[CONFIRM_NO] Turno ID:', turnoData?.id);
+    
+    cerrarModalConfirmReprogramacion();
+    
+    // Actualizar estado sin reprogramar
+    try {
+      let estadoFinal = '';
+      
+      if (accion === 'cancelado-paciente') {
+        estadoFinal = 'CANCELADO';
+      } else if (accion === 'no-asistio') {
+        estadoFinal = 'NO_ASISTIO';
+      }
+      
+      if (!estadoFinal) {
+        console.error('[CONFIRM_NO] Acción desconocida:', accion);
+        showToast('Error: no se especificó acción válida', 'error');
+        return;
+      }
+      
+      console.log('[CONFIRM_NO] Actualizando estado a:', estadoFinal);
+      
+      const res = await apiFetch(`/api/turnos/${turnoData.id}/estado`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ estado: estadoFinal })
+      });
+      
+      const data = await res.json();
+      if (data.ok) {
+        console.log('[CONFIRM_NO] Respuesta OK del servidor');
+        showToast(`Estado actualizado a ${estadoFinal.replace(/_/g, ' ')}`, 'success');
+        
+        // Emitir socket para actualizar otros usuarios en tiempo real
+        if (window.socket && window.socket.connected) {
+          window.socket.emit('turno-medico:estado-actualizado', {
+            turnoId: turnoData.id,
+            estadoAnterior: turnoData.estado,
+            estadoNuevo: estadoFinal
+          });
+          console.log('[CONFIRM_NO] Socket emitido');
+        }
+        
+        // Actualizar la fila en la tabla con el nuevo color
+        if (turnoData && turnoData.id) {
+          const turnoRow = document.querySelector(`[data-turno-id="${turnoData.id}"]`);
+          if (turnoRow) {
+            // Remover todas las clases de estado anteriores
+            turnoRow.classList.remove('estado-en-sala', 'estado-reprogramado', 'estado-cancelado-paciente', 'estado-no-asistio');
+            
+            // Agregar la nueva clase de estado
+            if (estadoFinal === 'CANCELADO') {
+              turnoRow.classList.add('estado-cancelado-paciente');
+            } else if (estadoFinal === 'NO_ASISTIO') {
+              turnoRow.classList.add('estado-no-asistio');
+            }
+            console.log('[CONFIRM_NO] Fila actualizada con nuevo color');
+          }
+        }
+        
+        // Recargar para asegurar que todo está sincronizado
+        cargarTurnosMedica();
+      } else {
+        console.error('[CONFIRM_NO] Error en respuesta:', data.error);
+        showToast(data.error || 'Error al actualizar', 'error');
+      }
+    } catch (e) {
+      console.error('[CONFIRM_NO] Error:', e);
+      showToast('Error al actualizar estado', 'error');
+    }
+  }
+});
+
+// Modal: Confirmar Reprogramación
+$('btnConfirmarReprogramarMedica')?.addEventListener('click', async (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  if (!currentTurnoMedicaData) return;
+  
+  const fechaNew = $('modalReprogramarMedicaFecha').value;
+  const horaNew = $('modalReprogramarMedicaHora').value;
+  
+  if (!fechaNew || !horaNew) {
+    showToast('Por favor selecciona fecha y hora', 'error');
+    return;
+  }
+  
+  try {
+    // Determinar estado final según acción
+    let estadoFinal = 'REPROGRAMADO';
+    
+    // Actualizar cita con nueva fecha/hora
+    const res = await apiFetch(`/api/turnos/${currentTurnoMedicaData.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fecha: fechaNew,
+        hora: horaNew,
+        estado: estadoFinal
+      })
+    });
+    
+    const data = await res.json();
+    if (data.ok) {
+      showToast('Cita reprogramada correctamente', 'success');
+      
+      // Emitir socket para actualizar otros usuarios en tiempo real
+      if (window.socket && window.socket.connected) {
+        window.socket.emit('turno-medico:reprogramado', {
+          turnoId: currentTurnoMedicaData.id,
+          fechaNueva: fechaNew,
+          horaNueva: horaNew
+        });
+      }
+      
+      cerrarModalReprogramarMedica();
+      cargarTurnosMedica();
+    } else {
+      showToast(data.error || 'Error al reprogramar', 'error');
+    }
+  } catch (e) {
+    showToast('Error al reprogramar cita', 'error');
+    console.error(e);
+  }
+});
+
+// Cierres de modales
+$('btnCerrarEstadoMedica')?.addEventListener('click', cerrarModalEstadoCitaMedica);
+$('btnCancelarEstadoMedica')?.addEventListener('click', cerrarModalEstadoCitaMedica);
+$('btnCerrarReprogramarMedica')?.addEventListener('click', cerrarModalReprogramarMedica);
+$('btnCancelarReprogramarMedica')?.addEventListener('click', cerrarModalReprogramarMedica);
+$('modalConfirmReprogramacion')?.addEventListener('click', (e) => {
+  if (e.target === $('modalConfirmReprogramacion')) {
+    cerrarModalConfirmReprogramacion();
+  }
+});
+$('modalEstadoCitaMedica')?.addEventListener('click', (e) => {
+  if (e.target === $('modalEstadoCitaMedica')) {
+    cerrarModalEstadoCitaMedica();
+  }
+});
+$('modalReprogramarMedica')?.addEventListener('click', (e) => {
+  if (e.target === $('modalReprogramarMedica')) {
+    cerrarModalReprogramarMedica();
+  }
+});
+$('horaEstudioInicio')?.addEventListener('change', actualizarDuracionMostrada);
+$('horaEstudioFin')?.addEventListener('change', actualizarDuracionMostrada);
 
 // cargar inicial
 async function cargar(){

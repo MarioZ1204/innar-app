@@ -20,7 +20,7 @@ function startBackupScheduler() {
     console.log(`\n📅 [${new Date().toLocaleString()}] Ejecutando backup automático...`);
     try {
       await createBackup();
-      log.info('✅ Backup automático completado exitosamente', { type: 'BACKUP' });
+      log.info('[OK] Backup automático completado exitosamente', { type: 'BACKUP' });
     } catch (error) {
       console.error('❌ Error en backup automático:', error.message);
       log.error('❌ Falló backup automático', { error: error.message, type: 'BACKUP' });
@@ -38,7 +38,7 @@ function startBackupScheduler() {
     }
   });
 
-  console.log('✅ Programador iniciado:');
+  console.log('[OK] Programador iniciado:');
   console.log('   - Backup diario: 2:00 AM');
   console.log('   - Backup cada 6h: 0:00, 6:00, 12:00, 18:00');
   console.log('   - Última 7 días mantenidos en carpeta backups/\n');

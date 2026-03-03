@@ -9,6 +9,8 @@
 
 let socketConectado = false;
 let listenersConfigured = false;  // Flag para evitar registrar listeners múltiples veces
+let configRetries = 0;             // Contador de reintentos
+const maxRetries = 30;             // Máximo 30 reintentos (15 segundos en móvil)
 
 /**
  * Configurar listeners cuando el socket esté listo
@@ -21,11 +23,19 @@ function configurarListeners() {
   
   // Esperar a que el socket global esté disponible
   if (!window.socket) {
-    setTimeout(configurarListeners, 500);
+    configRetries++;
+    if (configRetries <= maxRetries) {
+      console.log(`[Socket Electro] Reintentando esperar socket... (${configRetries}/${maxRetries})`);
+      setTimeout(configurarListeners, 500);
+    } else {
+      console.warn('[Socket Electro] **No se pudo conectar al socket después de múltiples reintentos**');
+    }
     return;
   }
 
   listenersConfigured = true;  // Marcar como configurado
+  configRetries = 0;           // Resetear contador
+  console.log('[Socket Electro] ✓ Listeners configurados correctamente');
 
   /**
    * Cuando se recibe solicitud de actualizar lista (evento generado por cambios)
@@ -71,6 +81,27 @@ function configurarListeners() {
   window.socket.on('electro:estudio-iniciado', (data) => {
     if (window.currentModule === 'electro' && typeof cargarCitasElectro === 'function') {
       cargarCitasElectro();
+    }
+  });
+
+  /**
+   * Actualización de progreso del estudio en tiempo real
+   */
+  window.socket.on('electro:progreso-estudio', (data) => {
+    // Si el usuario tiene abierto el modal de esta cita, actualizar la barra
+    if (window.citaElectroSeleccionada && window.citaElectroSeleccionada.id === data.citaId) {
+      const barraLlena = document.getElementById('estudioBarraLlena');
+      const progreso = document.getElementById('estudioProgreso');
+      const tiempoTranscurrido = document.getElementById('estudioTiempoTranscurrido');
+      
+      if (barraLlena && progreso && data.porcentaje !== undefined) {
+        barraLlena.style.width = data.porcentaje + '%';
+        progreso.textContent = Math.round(data.porcentaje);
+        if (tiempoTranscurrido && data.tiempoTranscurrido) {
+          tiempoTranscurrido.textContent = data.tiempoTranscurrido;
+        }
+        console.log('[SOCKET] Progreso actualizado:', data.porcentaje + '%');
+      }
     }
   });
 

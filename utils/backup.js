@@ -76,7 +76,7 @@ function createBackup() {
       if (code === 0) {
         const stats = fs.statSync(filepath);
         const sizeInMB = (stats.size / (1024 * 1024)).toFixed(2);
-        console.log(`✅ Backup creado: ${filename} (${sizeInMB} MB)`);
+        console.log(`[OK] Backup creado: ${filename} (${sizeInMB} MB)`);
         
         // Limpiar backups antiguos
         cleanOldBackups();
@@ -108,7 +108,7 @@ function cleanOldBackups() {
         console.log(`   Eliminado: ${file}`);
       });
       
-      console.log(`✅ Manteniendo últimos ${MAX_BACKUPS} backups`);
+      console.log(`[OK] Manteniendo últimos ${MAX_BACKUPS} backups`);
     }
   } catch (error) {
     console.error('❌ Error limpiando backups antiguos:', error.message);

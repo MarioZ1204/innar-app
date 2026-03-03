@@ -34,8 +34,8 @@ async function debugDisponibilidad() {
       console.log('├────┼────────┼───────┼────────┼───────┼─────────────────────┤');
       
       registros.forEach(r => {
-        const manana = r.disponible_manana === 1 || r.disponible_manana === true ? '✅ SÍ' : '❌ NO';
-        const tarde = r.disponible_tarde === 1 || r.disponible_tarde === true ? '✅ SÍ' : '❌ NO';
+        const manana = r.disponible_manana === 1 || r.disponible_manana === true ? '[OK] SI' : '[NO] NO';
+        const tarde = r.disponible_tarde === 1 || r.disponible_tarde === true ? '[OK] SI' : '[NO] NO';
         const fecha = r.fecha ? new Date(r.fecha).toISOString().split('T')[0] : 'N/A';
         console.log(`│ ${r.id.toString().padEnd(3)} │ ${(r.doctor || '-').padEnd(6)} │ ${fecha} │ ${manana.padEnd(6)} │ ${tarde.padEnd(5)} │ ${r.creado_en}`);
       });
@@ -67,7 +67,7 @@ async function debugDisponibilidad() {
     
     console.log('└──────────────────┴──────────────┴──────────┴────────────┘\n');
     
-    console.log('✅ Debug completado\n');
+    console.log('[OK] Debug completado\n');
     
     await db.closePool();
   } catch (e) {

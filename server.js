@@ -24,45 +24,8 @@ const appointmentsRouter = require('./routes/appointmentsV1');  // ← API v1 de
 
 const app = express();
 
-// 🔒 Agregar Helmet para headers de seguridad
-// Helmet.js proporciona protección contra:
-// - XSS (Cross-Site Scripting)
-// - Clickjacking (X-Frame-Options)
-// - MIME sniffing (Content-Type options)
-// - SQL Injection (indirectamente, con otras medidas)
-// - Otros ataques comunes HTTP
-app.use(helmet({
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      scriptSrc: [
-        "'self'", 
-        "'unsafe-inline'",
-        "https://cdnjs.cloudflare.com"  // ← Permitir XLSX, CryptoJS desde CDN
-      ],
-      styleSrc: [
-        "'self'", 
-        "'unsafe-inline'",
-        "https://fonts.googleapis.com"  // ← Permitir Google Fonts CSS
-      ],
-      fontSrc: [
-        "'self'",
-        "https://fonts.gstatic.com"     // ← Permitir Google Fonts archivos
-      ],
-      imgSrc: ["'self'", 'data:', 'https:'],
-      connectSrc: ["'self'", "https:"],  // ← Permitir conexiones HTTPS
-    }
-  },
-  hsts: {
-    maxAge: 31536000, // 1 año
-    includeSubDomains: true,
-    preload: true
-  },
-  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
-  noSniff: true,
-  xssFilter: true,
-  frameguard: { action: 'deny' }
-}));
+// DESARROLLO LOCAL HTTP - Sin certificados SSL/HTTPS
+// Helmet deshabilitado para permitir acceso HTTP completo en desarrollo local
 
 app.use(cors({
   origin: true,
@@ -192,6 +155,19 @@ app.get('/reportes/mensual/vista', (req, res) => {
 </body>
 </html>`;
   res.type('html').send(html);
+});
+
+// Middleware simple sin forzar HTTPS - desarrollo local HTTP puro
+app.use((req, res, next) => {
+  // Limpiar cache HSTS del navegador - decirle que olvide que fue HTTPS
+  res.setHeader('Strict-Transport-Security', 'max-age=0; includeSubDomains');
+  
+  // Headers anti-cache para que no use versiones viejas
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  
+  next();
 });
 
 app.use(express.static('public'));
@@ -1926,7 +1902,21 @@ app.patch('/api/turnos/:id/numero', requireAuth, requireRole(['admin', 'recepcio
 app.get('/api/equipos-electro', async (req, res) => {
   try {
     const equipos = await db.query('SELECT * FROM equipos_electro WHERE activo = 1 ORDER BY nombre ASC');
-    res.json(equipos);
+    
+    // Obtener equipos que están actualmente "En Estudio"
+    const equiposEnUso = await db.query(`
+      SELECT DISTINCT equipo_id FROM citas_electro WHERE estado = 'En Estudio' AND equipo_id IS NOT NULL
+    `);
+    
+    const equiposEnUsoIds = equiposEnUso.map(e => e.equipo_id);
+    
+    // Agregar flag "en_uso" a cada equipo
+    const equiposConEstado = equipos.map(e => ({
+      ...e,
+      en_uso: equiposEnUsoIds.includes(e.id)
+    }));
+    
+    res.json(equiposConEstado);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -2017,22 +2007,37 @@ app.get('/api/equipos-electro/disponibilidad', async (req, res) => {
     }
 
     // CRÍTICO: Contar CUPOS OCUPADOS en este rango horario
-    // Los cupos se RESERVAN al agendar (Programado), se OCUPAN EN USO (En Estudio, Completado)
+    // Los cupos se RESERVAN al agendar (Programado), se OCUPAN EN USO (En Estudio)
+    // Cuando se completa el estudio (Completado), se LIBERA el cupo
     // NO ocupan cupo: No Asistió, Cancelado
     // Convertir a DATETIME para comparación correcta incluso con cambio de día
     const citasOcupadas = await db.query(`
       SELECT 
-        id, paciente_id, fecha, hora_agendamiento, hora_fin, hora_fin_date, estudio, estado
-      FROM citas_electro
-      WHERE estado IN ('Programado', 'En Sala', 'En Estudio', 'Completado')
-      AND CONCAT(COALESCE(hora_fin_date, fecha), ' ', hora_fin) > CONCAT(?, ' ', ?)
-      AND CONCAT(fecha, ' ', hora_agendamiento) < CONCAT(?, ' ', ?)
-      ORDER BY fecha, hora_agendamiento
+        c.id, c.paciente_id, c.fecha, c.hora_agendamiento, c.hora_fin, c.hora_fin_date, 
+        c.estudio, c.estado, c.equipo_id,
+        e.nombre AS equipo_nombre
+      FROM citas_electro c
+      LEFT JOIN equipos_electro e ON e.id = c.equipo_id
+      WHERE c.estado IN ('Programado', 'En Sala', 'En Estudio')
+      AND CONCAT(COALESCE(c.hora_fin_date, c.fecha), ' ', c.hora_fin) > CONCAT(?, ' ', ?)
+      AND CONCAT(c.fecha, ' ', c.hora_agendamiento) < CONCAT(?, ' ', ?)
+      ORDER BY c.fecha, c.hora_agendamiento
     `, [fecha, hora, fechaFin, horaFin]);
 
     const cuposOcupados = citasOcupadas && citasOcupadas.length > 0 ? citasOcupadas.length : 0;
     const cuposaDisponibles = 4 - cuposOcupados;
     const hayDisponibilidad = cuposaDisponibles > 0;
+
+    // Extraer EQUIPOS específicos que están siendo usados
+    const equiposEnUso = citasOcupadas
+      .filter(cita => cita.equipo_id) // Solo las que tienen equipo asignado
+      .map(cita => ({
+        equipo_id: cita.equipo_id,
+        equipo_nombre: cita.equipo_nombre || `Equipo ${cita.equipo_id}`
+      }))
+      .filter((equipo, index, self) => 
+        index === self.findIndex(e => e.equipo_id === equipo.equipo_id)
+      ); // Eliminar duplicados
 
     // Obtener detalles de las citas que solapan
     const citasEnRango = (citasOcupadas || []).map(cita => {
@@ -2087,13 +2092,14 @@ app.get('/api/equipos-electro/disponibilidad', async (req, res) => {
         maxCupos: 4,
         cuposOcupados,
         cuposaDisponibles,
-        hayDisponibilidad
+        hayDisponibilidad,
+        equiposEnUso: equiposEnUso // Agregar equipos específicos en uso
       },
       citasEnRango,
       proximaDisponibilidad,
       mensaje: !hayDisponibilidad 
-        ? `⚠️ Sin capacidad. ${cuposOcupados}/4 cupos ocupados. Próxima disponibilidad: ${proximaDisponibilidad}`
-        : `✅ Disponibilidad: ${cuposaDisponibles}/${4} cupos libres`
+        ? `⚠️ Sin capacidad. ${cuposOcupados}/4 cupos ocupados (${equiposEnUso.map(e => e.equipo_nombre).join(', ')}). Próxima disponibilidad: ${proximaDisponibilidad}`
+        : `Disponibilidad: ${cuposaDisponibles}/${4} cupos libres${equiposEnUso.length > 0 ? ` (En uso: ${equiposEnUso.map(e => e.equipo_nombre).join(', ')})` : ''}`
     });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -2283,7 +2289,7 @@ app.post('/api/diagnosticos/import-excel', requireAuth, upload.single('file'), a
     }
     
     const mensaje = `Se procesaron ${data.length} filas: ${insertados} insertados, ${actualizados} actualizados, ${errores} con error`;
-    console.log('✅', mensaje);
+    console.log('[INFO]', mensaje);
     res.json({ 
       ok: true, 
       insertados, 
@@ -2311,6 +2317,7 @@ app.get('/api/citas-electro', async (req, res) => {
     let query = `
       SELECT c.id, c.equipo_id, c.paciente_id, c.fecha, c.hora_agendamiento, c.hora_inicio, c.hora_fin, c.hora_fin_date,
              c.estudio, c.observaciones, c.diagnostico_id, c.estado, c.programado_por_nombre, c.editado_por_nombre, c.editado_en, c.creado_en, c.actualizado_en,
+             c.duracion_minutos,
              p.nombre AS paciente_nombre, 
              p.documento AS paciente_documento,
              p.telefono AS telefono,
@@ -2321,9 +2328,9 @@ app.get('/api/citas-electro', async (req, res) => {
       JOIN pacientes p ON p.id = c.paciente_id
       LEFT JOIN diagnosticos d ON d.id = c.diagnostico_id
       LEFT JOIN equipos_electro e ON e.id = c.equipo_id
-      WHERE c.fecha = ?
+      WHERE c.fecha = ? OR c.hora_fin_date = ?
     `;
-    let params = [fecha];
+    let params = [fecha, fecha];
     
     if (equipo_id) {
       query += ` AND c.equipo_id = ?`;
@@ -2508,7 +2515,7 @@ app.patch('/api/citas-electro/:id/estado', requireAuth, async (req, res) => {
 // Cualquier estado → "En Sala", "No Asistió", "Cancelado" (manual)
 app.patch('/api/citas-electro/:id', requireAuth, async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  const { equipo_id, estado, hora_inicio, hora_fin, hora_agendamiento, fecha } = req.body || {};
+  const { equipo_id, estado, hora_inicio, hora_fin, hora_agendamiento, fecha, duracion_minutos } = req.body || {};
   
   if (!id) {
     return res.status(400).json({ error: 'id es obligatorio' });
@@ -2529,8 +2536,8 @@ app.patch('/api/citas-electro/:id', requireAuth, async (req, res) => {
       const estadosManuales = ['En Sala', 'No Asistió', 'Reprogramado', 'Cancelado', 'Adelantado'];
       const esManual = estadosManuales.includes(estado);
 
-      // Transición automática: Programado → En Estudio
-      const esInicioEstudio = estadoActual === 'Programado' && estado === 'En Estudio';
+      // Transición automática: Programado → En Estudio o En Sala → En Estudio
+      const esInicioEstudio = (estadoActual === 'Programado' || estadoActual === 'En Sala') && estado === 'En Estudio';
 
       // Transición automática: En Estudio → Completado
       const esFinEstudio = estadoActual === 'En Estudio' && estado === 'Completado';
@@ -2544,13 +2551,13 @@ app.patch('/api/citas-electro/:id', requireAuth, async (req, res) => {
       // ============ VALIDAR CAPACIDAD AL CAMBIAR A "En Estudio" ============
       if (esInicioEstudio) {
         // Contar CUPOS OCUPADOS por otras citas que se solapan
-        // Incluir: Programado, En Sala, En Estudio, Completado
+        // Incluir: Programado, En Sala, En Estudio (NO Completado porque libera el cupo)
         const overlapCitas = await db.query(`
           SELECT COUNT(*) as overlap_count
           FROM citas_electro
           WHERE id != ?
           AND fecha = ?
-          AND estado IN ('Programado', 'En Sala', 'En Estudio', 'Completado')
+          AND estado IN ('Programado', 'En Sala', 'En Estudio')
           AND NOT (hora_fin <= ? OR hora_agendamiento >= ?)
         `, [id, citaActual.fecha, citaActual.hora_agendamiento, citaActual.hora_fin]);
 
@@ -2588,6 +2595,32 @@ app.patch('/api/citas-electro/:id', requireAuth, async (req, res) => {
     if (hora_fin !== undefined) {
       updates.push('hora_fin = ?');
       values.push(hora_fin);
+      
+      // Calcular hora_fin_date si se está actualizando hora_fin
+      // hora_fin_date debe estar set si el estudio cruza a otro día
+      const horaInicio = hora_inicio || citaActual.hora_inicio;
+      const fechaEstudio = fecha || citaActual.fecha;
+      
+      if (horaInicio && fechaEstudio) {
+        // Comparar hora_fin con hora_inicio
+        // Si hora_fin < hora_inicio, significa que cruza medianoche
+        const [hiI, miI] = horaInicio.split(':').map(Number);
+        const [hiF, miF] = hora_fin.split(':').map(Number);
+        const minutosInicio = hiI * 60 + miI;
+        const minutosFin = hiF * 60 + miF;
+        
+        if (minutosFin < minutosInicio) {
+          // Cruza medianoche, calcular fecha del día siguiente
+          const fechaObj = new Date(fechaEstudio);
+          fechaObj.setDate(fechaObj.getDate() + 1);
+          const horaFinDate = fechaObj.toISOString().split('T')[0];
+          updates.push('hora_fin_date = ?');
+          values.push(horaFinDate);
+        } else {
+          // No cruza medianoche, hora_fin_date es NULL
+          updates.push('hora_fin_date = NULL');
+        }
+      }
     }
     
     if (hora_agendamiento !== undefined) {
@@ -2598,6 +2631,11 @@ app.patch('/api/citas-electro/:id', requireAuth, async (req, res) => {
     if (fecha !== undefined) {
       updates.push('fecha = ?');
       values.push(fecha);
+    }
+    
+    if (duracion_minutos !== undefined) {
+      updates.push('duracion_minutos = ?');
+      values.push(duracion_minutos);
     }
     
     if (updates.length === 0) {
@@ -2622,6 +2660,7 @@ app.patch('/api/citas-electro/:id', requireAuth, async (req, res) => {
     if (hora_fin !== undefined) cambios.hora_fin = hora_fin;
     if (hora_agendamiento !== undefined) cambios.hora_agendamiento = hora_agendamiento;
     if (fecha !== undefined) cambios.fecha = fecha;
+    if (duracion_minutos !== undefined) cambios.duracion_minutos = duracion_minutos;
     
     await db.execute(`UPDATE citas_electro SET ${updates.join(', ')} WHERE id = ?`, values);
     
@@ -3550,7 +3589,8 @@ const PORT = process.env.PORT || 3000;
     
     // 🔒 Configuración HTTPS (Development)
     // Detectar certificado autofirmado y usar HTTPS si está configurado
-    const USE_HTTPS = process.env.USE_HTTPS === 'true';
+    // NOTA: Deshabilitado para acceso por IP local. Solo funciona en localhost
+    const USE_HTTPS = false; // Deshabilitado para desarrollo en red local
     const certPath = path.join(__dirname, 'server.crt');
     const keyPath = path.join(__dirname, 'server.key');
     let httpServer;
@@ -3574,11 +3614,11 @@ const PORT = process.env.PORT || 3000;
       const redirectServer = http.createServer(httpApp);
       const httpPort = 3001;
       
-      redirectServer.listen(httpPort, () => {
+      redirectServer.listen(httpPort, '0.0.0.0', () => {
         logger.info('HTTP → HTTPS redirect server listening on port 3001', { type: 'HTTPS' });
       });
 
-      logger.info('✅ HTTPS activado con certificado autofirmado', { type: 'HTTPS' });
+      logger.info('[HTTPS] Activado con certificado autofirmado', { type: 'HTTPS' });
     } else if (USE_HTTPS && !fs.existsSync(certPath)) {
       // Usuario quiere HTTPS pero no tiene certificado
       logger.warn('⚠️ USE_HTTPS=true pero no hay certificados. Generando...', { type: 'HTTPS' });
@@ -3593,14 +3633,22 @@ const PORT = process.env.PORT || 3000;
       httpServer = http.createServer(app);
     }
 
-    // Configurar Socket.IO en el servidor HTTP
+    // Configurar Socket.IO en el servidor HTTP con soporte mejorado para móviles
     const io = socketIo(httpServer, {
       cors: {
         origin: "*",  // Permitir todas las conexiones (considerar restringir en prod)
         methods: ["GET", "POST"],
         credentials: true
       },
-      transports: ['websocket', 'polling']
+      transports: ['websocket', 'polling'],           // WebSocket con fallback a polling
+      allowUpgrades: true,                            // Permitir upgrade de polling a WebSocket
+      pingInterval: 30000,                            // Aumentado para móviles con conexión lenta
+      pingTimeout: 60000,                             // Timeout más largo para móviles
+      maxHttpBufferSize: 1e6,                         // 1MB buffer
+      serveClient: true,                              // Servir socket.io.js client
+      perMessageDeflate: {                            // Compresión optimizada para móviles
+        threshold: 32 * 1024                          // Comprimir solo mensajes > 32KB
+      }
     });
 
     // Almacenar instancia de io en app para usar en rutas
@@ -3669,25 +3717,39 @@ const PORT = process.env.PORT || 3000;
         io.emit('electro:cita-removida', data);
       });
 
-      // Evento: Nuevo usuario creado
-      socket.on('usuario:crear', (data) => {
-        io.emit('usuario:actualizar-lista');
+      // Evento: Estudio iniciado en electrodiagnóstico
+      socket.on('electro:estudio-iniciado', (data) => {
+        io.emit('electro:actualizar-lista');
       });
 
-      // Evento: Usuario actualizado
-      socket.on('usuario:actualizar', (data) => {
-        io.emit('usuario:actualizar-lista');
+      // Evento: Estudio finalizado en electrodiagnóstico
+      socket.on('electro:estudio-finalizado', (data) => {
+        io.emit('electro:actualizar-lista');
       });
 
-      // Evento: Usuario eliminado
-      socket.on('usuario:eliminar', (data) => {
-        io.emit('usuario:actualizar-lista');
+      // Evento: Cambios guardados en electrodiagnóstico
+      socket.on('electro:cambios-guardados', (data) => {
+        io.emit('electro:actualizar-lista');
       });
 
-      // Evento: Solicitar estadísticas
-      socket.on('stats:solicitar', () => {
-        // El cliente recibirá stats:actualizar
-        io.emit('stats:actualizar');
+      // ========== Eventos para Turnos Médicos (Agenda Médica) ==========
+      
+      // Evento: Estado de turno médico actualizado
+      socket.on('turno-medico:estado-actualizado', (data) => {
+        console.log('[SOCKET] turno-medico:estado-actualizado:', data);
+        io.emit('turno-medico:estado-actualizado', data);
+      });
+
+      // Evento: Turno médico reprogramado
+      socket.on('turno-medico:reprogramado', (data) => {
+        console.log('[SOCKET] turno-medico:reprogramado:', data);
+        io.emit('turno-medico:reprogramado', data);
+      });
+
+      // Evento: Nuevo turno médico creado
+      socket.on('turno-medico:creado', (data) => {
+        console.log('[SOCKET] turno-medico:creado:', data);
+        io.emit('turno-medico:creado', data);
       });
 
       socket.on('disconnect', () => {
@@ -3695,8 +3757,8 @@ const PORT = process.env.PORT || 3000;
       });
     });
 
-    httpServer.listen(PORT, () => {
-      console.log('OK');
+    httpServer.listen(PORT, '0.0.0.0', () => {
+      console.log(`Servidor corriendo en http://0.0.0.0:${PORT}`);
       
       // 🔄 Iniciar scheduler de backups automáticos
       try {
@@ -3704,7 +3766,7 @@ const PORT = process.env.PORT || 3000;
         try {
           const { startBackupScheduler } = require('./utils/backup-scheduler');
           backupScheduler = startBackupScheduler();
-          logger.info('✅ Programador de backups automáticos iniciado', { type: 'STARTUP' });
+          logger.info('[STARTUP] Programador de backups automáticos iniciado', { type: 'STARTUP' });
         } catch (e) {
           if (e.code === 'MODULE_NOT_FOUND') {
             logger.warn('⚠️ node-schedule no instalado, backups automáticos deshabilitados', { type: 'STARTUP' });

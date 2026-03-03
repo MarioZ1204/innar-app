@@ -11,7 +11,7 @@ const CERT_FILE = path.join(process.cwd(), 'server.crt');
 console.log('\n🔐 GENERADOR DE CERTIFICADO (OPCIONAL)\n');
 
 if (fs.existsSync(KEY_FILE) && fs.existsSync(CERT_FILE)) {
-  console.log('✅ Certificados ya existen\n');
+  console.log('[OK] Certificados ya existen\n');
   process.exit(0);
 }
 

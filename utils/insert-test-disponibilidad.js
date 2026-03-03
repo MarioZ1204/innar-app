@@ -46,15 +46,15 @@ async function insertTestData() {
       switch(pattern) {
         case 0:
           manana = 1; tarde = 1;
-          console.log(`${fecha} → ✅ MAÑANA: SÍ  │ TARDE: SÍ`);
+          console.log(`${fecha} - MAÑANA: SI | TARDE: SI`);
           break;
         case 1:
           manana = 1; tarde = 0;
-          console.log(`${fecha} → ✅ MAÑANA: SÍ  │ TARDE: ❌ NO`);
+          console.log(`${fecha} - MAÑANA: SI | TARDE: NO`);
           break;
         case 2:
           manana = 0; tarde = 1;
-          console.log(`${fecha} → ❌ MAÑANA: NO │ TARDE: ✅ SÍ`);
+          console.log(`${fecha} - MAÑANA: NO | TARDE: SI`);
           break;
         case 3:
           manana = 0; tarde = 0;
@@ -73,7 +73,7 @@ async function insertTestData() {
       );
     }
     
-    console.log('\n✅ Datos de prueba insertados correctamente\n');
+    console.log('\n[OK] Datos de prueba insertados correctamente\n');
     console.log('Ahora puedes probar:');
     console.log('- Agendar a las 09:00 en día 0 (debe permitir)');
     console.log('- Agendar a las 15:00 en día 1 (debe rechazar - no disponible tarde)');

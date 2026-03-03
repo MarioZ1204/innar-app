@@ -51,7 +51,7 @@ function getPasswordStrength(score) {
   if (score < 40) return { level: 'Débil', color: '#f97316', icon: '🟠' };
   if (score < 60) return { level: 'Regular', color: '#eab308', icon: '🟡' };
   if (score < 80) return { level: 'Fuerte', color: '#84cc16', icon: '🟢' };
-  return { level: 'Muy fuerte', color: '#16a34a', icon: '✅' };
+  return { level: 'Muy fuerte', color: '#16a34a', icon: '[OK]' };
 }
 
 function validateUsername(username) {

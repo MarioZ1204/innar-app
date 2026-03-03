@@ -75,7 +75,7 @@
 <body>
   <!-- ========== SPLASH SCREEN ========== -->
   <div id="splashScreen">
-    <img src="images/logo3.png" alt="Logo" class="splash-logo" />
+    <img src="/images/logo3.png" alt="Logo" class="splash-logo" />
     <div class="splash-text">Cargando</div>
     <div class="splash-spinner"></div>
   </div>
@@ -84,7 +84,7 @@
   <div id="view-login" class="view-login hidden">
     <div class="login-box">
       <div class="login-header">
-        <img src="images/logo3.png" alt="Logo Instituto Neurociencias" class="login-logo" />
+        <img src="/images/logo3.png" alt="Logo Instituto Neurociencias" class="login-logo" />
         <h1>Instituto Neurociencias de Nariño IPS S.A.S</h1>
         <p>Regístrate para continuar</p>
       </div>
@@ -95,9 +95,9 @@
         </div>
         <div class="form-group">
           <label for="loginPassword">Contraseña</label>
-          <div style="position:relative;display:flex;align-items:center">
-            <input id="loginPassword" type="password" placeholder="Contraseña" autocomplete="current-password" required style="flex:1;padding-right:40px" />
-            <button type="button" id="togglePassword" style="position:absolute;right:12px;background:none;border:none;cursor:pointer;font-size:18px;color:#627371" title="Mostrar/ocultar contraseña">Mostrar</button>
+          <div class="password-wrapper">
+            <input id="loginPassword" type="password" placeholder="Contraseña" autocomplete="current-password" required class="password-input" />
+            <button type="button" id="togglePassword" class="toggle-password-btn" title="Mostrar/ocultar">👁</button>
           </div>
           <div id="capsLockWarning" style="display:none;margin-top:8px;padding:8px 12px;background:#fef3c7;border:1px solid #fcd34d;border-radius:4px;color:#92400e;font-size:13px;font-weight:500">Mayús activado</div>
         </div>
@@ -113,7 +113,7 @@
   <!-- ========== MENÚ PRINCIPAL ========== -->
   <div id="view-menu" class="view-menu hidden">
     <header class="menu-header">
-      <img src="images/logo3.png" alt="Logo" class="menu-logo" />
+      <img src="/images/logo3.png" alt="Logo" class="menu-logo" />
       <div class="menu-user">
         <span id="menuUserName"></span>
         <button id="btnCambiarContrasena" class="btn-logout" title="Gestionar tu cuenta"> Mi Cuenta</button>
@@ -125,32 +125,32 @@
       <h2>¿Qué deseas hacer?</h2>
       <div class="menu-cards" id="menuCardsContainer">
         <button class="menu-card" data-module="recibos" data-rol="admin recepcion">
-          <span class="menu-card-icon"><img src="images/iconrecibos.png" alt="Recibos" class="icon-img" /></span>
+          <span class="menu-card-icon"><img src="/images/iconrecibos.png" alt="Recibos" class="icon-img" /></span>
           <span class="menu-card-title">Recibos</span>
           <span class="menu-card-desc">Crear recibos, ver historial y reportes</span>
         </button>
         <button class="menu-card" data-module="agenda-medica" data-rol="admin recepcion electro doctor">
-          <span class="menu-card-icon"><img src="images/iconagenda.png" alt="Agenda Médica" class="icon-img" /></span>
+          <span class="menu-card-icon"><img src="/images/iconagenda.png" alt="Agenda Médica" class="icon-img" /></span>
           <span class="menu-card-title">Agenda Médica</span>
           <span class="menu-card-desc">Citas por consultorio</span>
         </button>
         <button class="menu-card" data-module="electro" data-rol="admin recepcion electro doctor">
-          <span class="menu-card-icon"><img src="images/iconelectro.png" alt="Electrodiagnóstico" class="icon-img" /></span>
+          <span class="menu-card-icon"><img src="/images/iconelectro.png" alt="Electrodiagnóstico" class="icon-img" /></span>
           <span class="menu-card-title">Agenda Electrodiagnóstico</span>
           <span class="menu-card-desc">Agenda de los 4 equipos de electrodiagnóstico</span>
         </button>
         <button class="menu-card" data-module="usuarios" data-rol="admin">
-          <span class="menu-card-icon"><img src="images/iconuser.png" alt="Usuarios" class="icon-img" /></span>
+          <span class="menu-card-icon"><img src="/images/iconuser.png" alt="Usuarios" class="icon-img" /></span>
           <span class="menu-card-title">Usuarios</span>
           <span class="menu-card-desc">Gestionar usuarios y roles</span>
         </button>
         <button class="menu-card" data-module="diagnosticos" data-rol="admin">
-          <span class="menu-card-icon"><img src="images/iconuser.png" alt="Diagnósticos" class="icon-img" /></span>
+          <span class="menu-card-icon"><img src="/images/iconuser.png" alt="Diagnósticos" class="icon-img" /></span>
           <span class="menu-card-title">Diagnósticos</span>
           <span class="menu-card-desc">Importar y gestionar diagnósticos</span>
         </button>
         <button class="menu-card" data-module="dashboard-citas" data-rol="admin">
-          <span class="menu-card-icon"><img src="images/iconagenda.png" alt="Dashboard Citas" class="icon-img" /></span>
+          <span class="menu-card-icon"><img src="/images/iconagenda.png" alt="Dashboard Citas" class="icon-img" /></span>
           <span class="menu-card-title">Auditoría de Citas</span>
           <span class="menu-card-desc">Ver quién agendó cada cita médica y electrodiagnóstico</span>
         </button>
@@ -164,7 +164,7 @@
       <div class="sidebar no-print">
         <button class="btn-volver" id="btnVolverRecibos">← Volver</button>
         <div style="margin-bottom:24px;text-align:center">
-          <img src="images/logo.png" alt="Logo" style="height:70px;width:auto;object-fit:contain" />
+          <img src="/images/logo.png" alt="Logo" style="height:70px;width:auto;object-fit:contain" />
         </div>
         <button class="sidebar-btn active" data-page="crear">Crear Recibo</button>
         <button class="sidebar-btn" data-page="recibos">Ver Recibos</button>
@@ -176,7 +176,7 @@
           <!-- PÁGINA: CREAR RECIBO -->
           <div class="page active" id="page-crear">
             <header>
-              <div><img src="images/logo1.png" alt="Logo" style="height:80px;object-fit:contain;display:block;margin:0 auto;" /></div>
+              <div><img src="/images/logo1.png" alt="Logo" style="height:80px;object-fit:contain;display:block;margin:0 auto;" /></div>
             </header>
             <section id="statsSection" class="card no-print" style="background-color:#f0f9ff;border-left:4px solid #8AA6A1">
               <div style="display:flex;justify-content:space-around;align-items:center">
@@ -220,10 +220,12 @@
               </div>
               <div style="margin-top:10px">
                 <label>Conceptos</label>
+                <div class="table-wrapper">
                 <table id="itemsTable" class="modern-table">
                   <thead><tr><th>Descripción</th><th>Valor</th><th></th></tr></thead>
                   <tbody></tbody>
                 </table>
+                </div>
                 <div style="margin-top:8px"><button id="addItem">+ Agregar ítem manual</button></div>
               </div>
               <div class="row" style="margin-top:12px">
@@ -249,10 +251,12 @@
                   <div><strong>Cliente:</strong> <span id="r_cliente"></span></div>
                   <div><strong>Documento:</strong> <span id="r_doc"></span></div>
                 </div>
+                <div class="table-wrapper">
                 <table id="r_table" class="modern-table">
                   <thead><tr><th>Descripción</th><th>Precio</th></tr></thead>
                   <tbody></tbody>
                 </table>
+                </div>
                 <div style="text-align:right;margin-top:8px">
                   <div>Subtotal: <strong id="r_subtotal">0.00</strong></div>
                   <div>IVA: <strong id="r_iva">0.00</strong></div>
@@ -270,7 +274,7 @@
           <div class="page" id="page-recibos">
             <header><h2>Recibos Guardados</h2></header>
             <section id="savedList" class="card no-print">
-              <div style="overflow-x:auto">
+              <div class="table-wrapper">
                 <table id="tablaSavedItems" class="modern-table">
                   <thead>
                     <tr>
@@ -337,7 +341,7 @@
       <div class="sidebar">
         <button class="btn-volver" id="btnVolverAgenda">← Volver</button>
         <div style="margin-bottom:24px;text-align:center">
-          <img src="images/logo.png" alt="Logo" style="height:70px;width:auto;object-fit:contain" />
+          <img src="/images/logo.png" alt="Logo" style="height:70px;width:auto;object-fit:contain" />
         </div>
         <h2 style="color:white;margin-bottom:16px">Agenda Médica</h2>
         <button class="sidebar-btn agenda-page-btn active" data-page="citas">Ver Citas</button>
@@ -393,9 +397,9 @@
               <div style="margin-top:8px;padding:8px;border-radius:4px;background-color:#fff3cd;border:1px solid #ffc107;display:none;font-size:0.9rem;color:#856404" id="mensajeDisponibilidad"></div>
               <div class="row" style="margin-top:12px">
                 <div class="col"><label>Hora</label><select id="nuevoTurnoHoraMedica"></select></div>
-                <div class="col"><label>Teléfono</label><input id="nuevoPacienteTelefonoMedica" type="tel" placeholder="Teléfono" /></div>
+                <div class="col"><label>Teléfono 1</label><input id="nuevoPacienteTelefonoMedica" type="tel" placeholder="Teléfono principal" /></div>
+                <div class="col"><label>Teléfono 2</label><input id="nuevoPacienteTelefonoMedica2" type="tel" placeholder="Teléfono alternativo" /></div>
                 <div class="col"><label>Tipo de consulta</label><select id="nuevoTurnoTipoMedica"><option value="">Seleccionar</option></select></div>
-                <div class="col"><label>Oportunidad (n°)</label><input id="nuevoTurnoOportunidadMedica" type="number" min="0" step="1" /></div>
               </div>
               <div class="row" id="otraConsultaRow" style="margin-top:8px;display:none">
                 <div class="col" style="flex:2"><label>Especificar tipo de consulta</label><input id="otraConsultaInput" type="text" placeholder="Escribir tipo de consulta personalizado" style="width:100%" /></div>
@@ -409,8 +413,8 @@
             </section>
             <section class="card">
               <h3>Citas del Día</h3>
-              <div id="turnosListMedica" style="overflow-x:auto;border-radius:8px;overflow:hidden">
-                <table id="turnosTableMedica" class="modern-table">
+              <div class="table-wrapper">
+              <table id="turnosTableMedica" class="modern-table">
                   <thead>
                     <tr>
                       <th>Turno</th>
@@ -419,13 +423,12 @@
                       <th>Tipo consulta</th>
                       <th>Documento</th>
                       <th>Entidad</th>
-                      <th>Estado</th>
                       <th>Notas</th>
                       <th>Acciones</th>
                     </tr>
                   </thead>
                   <tbody id="turnosTableBodyMedica">
-                    <tr><td colspan="9" style="padding:20px;text-align:center;color:#999">Selecciona fecha y consultorio para ver las citas</td></tr>
+                    <tr><td colspan="8" style="padding:20px;text-align:center;color:#999">Selecciona fecha y consultorio para ver las citas</td></tr>
                   </tbody>
                 </table>
               </div>
@@ -503,7 +506,7 @@
       <div class="sidebar">
         <button class="btn-volver" id="btnVolverUsuarios">← Volver</button>
         <div style="margin-bottom:24px;text-align:center">
-          <img src="images/logo.png" alt="Logo" style="height:70px;width:auto;object-fit:contain" />
+          <img src="/images/logo.png" alt="Logo" style="height:70px;width:auto;object-fit:contain" />
         </div>
         <h2 style="color:white;margin-bottom:16px">Usuarios</h2>
       </div>
@@ -545,7 +548,7 @@
               <h3 style="margin:0">Usuarios Existentes</h3>
               <button type="button" onclick="abrirBusquedaAuditoria()" style="padding:10px 16px;background:#0369a1;color:white;border:none;border-radius:6px;font-weight:600;font-size:0.9rem;cursor:pointer;transition:all 0.2s" onmouseover="this.style.background='#0284c7'" onmouseout="this.style.background='#0369a1'">Auditoría</button>
             </div>
-            <div id="usuariosList" style="overflow-x:auto">
+            <div class="table-wrapper">
               <table id="usuariosTable" class="modern-table">
                 <thead><tr><th>Usuario</th><th>Nombre</th><th>Rol</th><th>Consultorio</th><th>Estado</th><th>Acciones</th></tr></thead>
                 <tbody id="usuariosTableBody"></tbody>
@@ -564,7 +567,7 @@
       <div class="sidebar">
         <button class="btn-volver" id="btnVolverDiagnosticos">← Volver</button>
         <div style="margin-bottom:24px;text-align:center">
-          <img src="images/logo.png" alt="Logo" style="height:70px;width:auto;object-fit:contain" />
+          <img src="/images/logo.png" alt="Logo" style="height:70px;width:auto;object-fit:contain" />
         </div>
         <h2 style="color:white;margin-bottom:16px">Diagnósticos</h2>
       </div>
@@ -590,7 +593,7 @@
           </section>
           <section class="card">
             <h3>Diagnósticos Guardados</h3>
-            <div id="diagnosticosListContainer" style="overflow-x:auto">
+            <div class="table-wrapper">
               <table id="diagnosticosTable" class="modern-table">
                 <thead>
                   <tr>
@@ -619,7 +622,7 @@
       <div class="sidebar">
         <button class="btn-volver" id="btnVolverElectro">← Volver</button>
         <div style="margin-bottom:24px;text-align:center">
-          <img src="images/logo.png" alt="Logo" style="height:70px;width:auto;object-fit:contain" />
+          <img src="/images/logo.png" alt="Logo" style="height:70px;width:auto;object-fit:contain" />
         </div>
         <h2 style="color:white;margin-bottom:16px">Agenda Electrodiagnóstico</h2>
         <p style="color:rgba(255,255,255,0.9);font-size:0.9rem">Gestión de 4 equipos</p>
@@ -688,7 +691,7 @@
               <button class="tab-electro-btn" data-estudio="Test de Latencia">Test Latencia</button>
             </div>
 
-            <div id="citasElectroList" style="overflow-x:auto;border-radius:8px;overflow:hidden">
+            <div class="table-wrapper">
               <table id="citasElectroTable" class="modern-table">
                 <thead>
                   <tr>
@@ -729,11 +732,24 @@
   </div>
 
   <!-- Modal para detalles de cita electrodiagnóstico -->
-  <div id="modalDetallesCitaElectro" class="modal hidden" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:1000;padding:20px">
+  <div id="modalDetallesCitaElectro" class="modal hidden" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);align-items:center;justify-content:center;z-index:1000;padding:20px">
     <div class="modal-content" style="background:white;border-radius:12px;padding:32px;max-width:600px;width:100%;box-shadow:0 20px 25px -5px rgba(0,0,0,0.1);max-height:90vh;overflow-y:auto">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px">
         <h2 style="margin:0;color:#1f2937">Detalles de la Cita</h2>
-        <button id="cerrarModalDetallesCita" style="background:none;border:none;font-size:24px;cursor:pointer;color:#6b7280;padding:0;width:32px;height:32px;display:flex;align-items:center;justify-content:center">&times;</button>
+        <div style="display:flex;gap:8px;align-items:center">
+          <!-- Botón de 3 puntos para Más Opciones -->
+          <div style="position:relative">
+            <button id="btnMasOpciones" style="background:none;border:none;font-size:18px;cursor:pointer;color:#6b7280;padding:0;width:32px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:6px;transition:background-color 0.2s;font-weight:bold" onmouseover="this.style.backgroundColor='#f3f4f6'" onmouseout="this.style.backgroundColor='transparent'">...</button>
+            <!-- Menú desplegable -->
+            <div id="menuMasOpciones" style="position:absolute;top:100%;right:0;background:white;border:1px solid #d1d5db;border-radius:8px;box-shadow:0 10px 15px -3px rgba(0,0,0,0.1);min-width:200px;display:none;z-index:1001;margin-top:4px">
+              <button id="btnReprogramarCitaMenu" style="display:block;width:100%;text-align:left;padding:12px 16px;border:none;background:none;cursor:pointer;color:#1f2937;font-size:0.95rem;transition:background-color 0.2s" onmouseover="this.style.backgroundColor='#f3f4f6'" onmouseout="this.style.backgroundColor='transparent'">Reprogramar</button>
+              <button id="btnAdelantarCitaMenu" style="display:block;width:100%;text-align:left;padding:12px 16px;border:none;background:none;cursor:pointer;color:#1f2937;font-size:0.95rem;border-top:1px solid #e5e7eb;transition:background-color 0.2s" onmouseover="this.style.backgroundColor='#f3f4f6'" onmouseout="this.style.backgroundColor='transparent'">Adelantar</button>
+              <button id="btnEnviarRecomendacionesMenu" style="display:block;width:100%;text-align:left;padding:12px 16px;border:none;background:none;cursor:pointer;color:#1f2937;font-size:0.95rem;border-top:1px solid #e5e7eb;transition:background-color 0.2s" onmouseover="this.style.backgroundColor='#f3f4f6'" onmouseout="this.style.backgroundColor='transparent'">Recomendaciones</button>
+            </div>
+          </div>
+          <!-- Botón Cerrar -->
+          <button id="cerrarModalDetallesCita" style="background:none;border:none;font-size:24px;cursor:pointer;color:#6b7280;padding:0;width:32px;height:32px;display:flex;align-items:center;justify-content:center">&times;</button>
+        </div>
       </div>
 
       <div style="background:#f9fafb;padding:16px;border-radius:8px;margin-bottom:24px">
@@ -775,21 +791,31 @@
         </div>
       </div>
 
+      <!-- Barra de Progreso del Estudio -->
+      <div id="estudioBarra" style="display:none;margin-bottom:24px;padding:16px;background:#fafafa;border-radius:8px;border:1px solid #e5e7eb">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <div style="font-size:0.85rem;color:#6b7280;font-weight:600">Progreso del Estudio</div>
+          <div style="font-size:0.85rem;color:#1f2937;font-weight:600"><span id="estudioProgreso">0</span>%</div>
+        </div>
+        <div style="width:100%;height:24px;background:#e5e7eb;border-radius:6px;overflow:hidden">
+          <div id="estudioBarraLlena" style="height:100%;width:0%;background:linear-gradient(to right, #dc2626, #f59e0b, #059669);transition:width 0.5s ease, background-color 0.5s ease;border-radius:6px"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;margin-top:8px;font-size:0.8rem;color:#6b7280">
+          <div id="estudioHoraInicio">-</div>
+          <div id="estudioTiempoTranscurrido" style="text-align:center;font-weight:600;color:#1f2937">00:00:00</div>
+          <div id="estudioHoraFin">-</div>
+        </div>
+      </div>
+
       <div id="modalAdelantadoContainer" style="display:none;margin-bottom:24px;padding:16px;background:#f0f9ff;border-left:4px solid #0369a1;border-radius:6px">
         <label style="display:block;font-size:0.85rem;color:#6b7280;font-weight:600;margin-bottom:8px">Nueva hora de agendamiento</label>
         <input id="modalHoraAdelantado" type="time" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:0.95rem">
         <div style="font-size:0.8rem;color:#6b7280;margin-top:6px">Selecciona la nueva hora para esta cita</div>
       </div>
 
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:24px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:24px">
         <button id="btnIniciarEstudio" style="padding:12px;background:#0369a1;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:0.9rem">Iniciar</button>
         <button id="btnFinalizarEstudio" style="padding:12px;background:#059669;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:0.9rem">Finalizar</button>
-        <button id="btnEnviarRecomendaciones" style="padding:12px;background:#627371;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:0.9rem">Recomendaciones</button>
-      </div>
-
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:24px">
-        <button id="btnReprogramarCita" style="padding:12px;background:#ff9500;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:0.9rem">Reprogramar</button>
-        <button id="btnAdelantarCita" style="padding:12px;background:#d946ef;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:0.9rem">Adelantar</button>
       </div>
 
       <div style="display:flex;gap:12px;justify-content:space-between">
@@ -803,7 +829,7 @@
   </div>
 
   <!-- Modal para Reprogramar Cita -->
-  <div id="modalReprogramarCita" class="modal hidden" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:1001;padding:20px">
+  <div id="modalReprogramarCita" class="modal hidden" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);align-items:center;justify-content:center;z-index:1001;padding:20px">
     <div class="modal-content" style="background:white;border-radius:12px;padding:32px;max-width:500px;width:100%;box-shadow:0 20px 25px -5px rgba(0,0,0,0.1)">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px">
         <h2 style="margin:0;color:#1f2937">Reprogramar Cita</h2>
@@ -833,7 +859,7 @@
   </div>
 
   <!-- Modal para Adelantar Cita -->
-  <div id="modalAdelantarCita" class="modal hidden" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:1001;padding:20px">
+  <div id="modalAdelantarCita" class="modal hidden" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);align-items:center;justify-content:center;z-index:1001;padding:20px">
     <div class="modal-content" style="background:white;border-radius:12px;padding:32px;max-width:500px;width:100%;box-shadow:0 20px 25px -5px rgba(0,0,0,0.1)">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px">
         <h2 style="margin:0;color:#1f2937">Adelantar Cita</h2>
@@ -858,13 +884,62 @@
     </div>
   </div>
 
+  <!-- Modal Duración del Estudio -->
+  <!-- Modal Confirmación Duración -->
+  <div id="modalConfirmarDuracion" class="modal hidden" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);align-items:center;justify-content:center;z-index:1002;padding:20px">
+    <div class="modal-content" style="background:white;border-radius:12px;padding:32px;max-width:400px;width:100%;box-shadow:0 20px 25px -5px rgba(0,0,0,0.1);text-align:center">
+      <h2 style="margin:0 0 16px 0;color:#1f2937;font-size:1.25rem">¿Desea incluir duración del estudio?</h2>
+      <p style="color:#6b7280;margin:0 0 32px 0;font-size:0.95rem">Podrá establecer una duración personalizada</p>
+      
+      <div style="display:flex;gap:12px;justify-content:center">
+        <button id="btnConfirmarDuracionNo" style="padding:12px 32px;background:#e5e7eb;color:#1f2937;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:1rem">No</button>
+        <button id="btnConfirmarDuracionSi" style="padding:12px 32px;background:#0369a1;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:1rem">Sí</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Duración del Estudio -->
+  <div id="modalDuracionEstudio" class="modal hidden" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);align-items:center;justify-content:center;z-index:1001;padding:20px">
+    <div class="modal-content" style="background:white;border-radius:12px;padding:32px;max-width:500px;width:100%;box-shadow:0 20px 25px -5px rgba(0,0,0,0.1)">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px">
+        <h2 style="margin:0;color:#1f2937">Horario del Estudio</h2>
+        <button id="cerrarModalDuracion" style="background:none;border:none;font-size:24px;cursor:pointer;color:#6b7280;padding:0;width:32px;height:32px;display:flex;align-items:center;justify-content:center">&times;</button>
+      </div>
+
+      <div style="text-align:center;margin-bottom:24px">
+        <p style="color:#6b7280;margin:0 0 24px 0;font-size:0.95rem">Define el horario inicial y final del estudio</p>
+        
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px">
+          <div>
+            <label style="display:block;font-size:0.85rem;color:#6b7280;font-weight:600;margin-bottom:8px">Hora Inicio</label>
+            <input id="horaEstudioInicio" type="time" style="width:100%;padding:12px;border:2px solid #d1d5db;border-radius:8px;font-size:1.1rem;text-align:center">
+          </div>
+          <div>
+            <label style="display:block;font-size:0.85rem;color:#6b7280;font-weight:600;margin-bottom:8px">Hora Fin</label>
+            <input id="horaEstudioFin" type="time" style="width:100%;padding:12px;border:2px solid #d1d5db;border-radius:8px;font-size:1.1rem;text-align:center">
+          </div>
+        </div>
+
+        <div style="padding:16px;background:#f3f4f6;border-radius:8px;margin-bottom:24px">
+          <p style="margin:0 0 8px 0;font-size:0.85rem;color:#6b7280;font-weight:600">Duración del estudio:</p>
+          <p id="duracionCalculada" style="margin:0;font-size:1.5rem;font-weight:bold;color:#1f2937">-</p>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:12px;justify-content:flex-end">
+        <button id="btnCancelarDuracion" style="padding:12px 24px;background:#e5e7eb;color:#1f2937;border:none;border-radius:6px;cursor:pointer;font-weight:600">Cancelar</button>
+        <button id="btnConfirmarDuracion" style="padding:12px 24px;background:#0369a1;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600">Iniciar Estudio</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal Cambiar Contraseña -->
   <!-- MODAL: GESTIONAR CUENTA -->
   <div id="modalCambiarContrasena" class="modal-overlay hidden">
     <div class="modal-box" style="max-width:500px;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;padding-bottom:16px;border-bottom:2px solid #e5e7eb">
         <h3 style="margin:0;color:#627371;font-size:20px;font-weight:600">Gestionar Cuenta</h3>
-        <button class="btn-close-modal" onclick="closeCambiarContrasenaModal()" style="background:none;border:none;font-size:24px;cursor:pointer;color:#627371;transition:color 0.2s" onmouseover="this.style.color='#3f4a48'" onmouseout="this.style.color='#627371'">✕</button>
+        <button class="btn-close-modal" style="background:none;border:none;font-size:24px;cursor:pointer;color:#627371;transition:color 0.2s" onmouseover="this.style.color='#3f4a48'" onmouseout="this.style.color='#627371'">✕</button>
       </div>
       <form id="formCambiarContrasena" style="display:flex;flex-direction:column;gap:16px">
         <div>
@@ -877,16 +952,16 @@
           
           <div>
             <label for="contrasenaActual" style="display:block;margin-bottom:8px;font-weight:500;color:#333;font-size:14px">Contraseña Actual</label>
-            <div style="position:relative;display:flex;align-items:center">
-              <input id="contrasenaActual" type="password" placeholder="Ingresa tu contraseña actual" style="flex:1;padding:10px 12px;padding-right:40px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;font-size:14px;transition:all 0.2s" onfocus="this.style.borderColor='#627371';this.style.boxShadow='0 0 0 3px rgba(98,115,113,0.1)'" onblur="this.style.borderColor='#d1d5db';this.style.boxShadow='none'" />
-              <button type="button" id="toggleContrasenaActual" style="position:absolute;right:12px;background:none;border:none;cursor:pointer;font-size:18px;color:#627371;transition:color 0.2s" title="Mostrar/ocultar">Mostrar</button>
+            <div class="password-wrapper">
+              <input id="contrasenaActual" type="password" placeholder="Ingresa tu contraseña actual" class="password-input" />
+              <button type="button" id="toggleContrasenaActual" class="toggle-password-btn" title="Mostrar/ocultar">👁</button>
             </div>
           </div>
           <div>
             <label for="nuevaContrasena" style="display:block;margin-bottom:8px;font-weight:500;color:#333;font-size:14px">Nueva Contraseña</label>
-            <div style="position:relative;display:flex;align-items:center">
-              <input id="nuevaContrasena" type="password" placeholder="Ingresa tu nueva contraseña" style="flex:1;padding:10px 12px;padding-right:40px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;font-size:14px;transition:all 0.2s" onfocus="this.style.borderColor='#627371';this.style.boxShadow='0 0 0 3px rgba(98,115,113,0.1)'" onblur="this.style.borderColor='#d1d5db';this.style.boxShadow='none'" />
-              <button type="button" id="toggleNuevaContrasena" style="position:absolute;right:12px;background:none;border:none;cursor:pointer;font-size:18px;color:#627371;transition:color 0.2s" title="Mostrar/ocultar">Mostrar</button>
+            <div class="password-wrapper">
+              <input id="nuevaContrasena" type="password" placeholder="Ingresa tu nueva contraseña" class="password-input" />
+              <button type="button" id="toggleNuevaContrasena" class="toggle-password-btn" title="Mostrar/ocultar">👁</button>
             </div>
             <div id="cambiarContrasenaRequirements" style="margin-top:12px;padding:12px;background:#f9fafb;border-radius:6px;border:1px solid #e5e7eb;display:none">
               <p style="margin:0 0 8px 0;font-size:13px;font-weight:600;color:#374151">Requisitos de contraseña:</p>
@@ -900,9 +975,9 @@
           </div>
           <div>
             <label for="confirmarContrasena" style="display:block;margin-bottom:8px;font-weight:500;color:#333;font-size:14px">Confirmar Nueva Contraseña</label>
-            <div style="position:relative;display:flex;align-items:center">
-              <input id="confirmarContrasena" type="password" placeholder="Confirma tu nueva contraseña" style="flex:1;padding:10px 12px;padding-right:40px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;font-size:14px;transition:all 0.2s" onfocus="this.style.borderColor='#627371';this.style.boxShadow='0 0 0 3px rgba(98,115,113,0.1)'" onblur="this.style.borderColor='#d1d5db';this.style.boxShadow='none'" />
-              <button type="button" id="toggleConfirmarContrasena" style="position:absolute;right:12px;background:none;border:none;cursor:pointer;font-size:18px;color:#627371;transition:color 0.2s" title="Mostrar/ocultar">Mostrar</button>
+            <div class="password-wrapper">
+              <input id="confirmarContrasena" type="password" placeholder="Confirma tu nueva contraseña" class="password-input" />
+              <button type="button" id="toggleConfirmarContrasena" class="toggle-password-btn" title="Mostrar/ocultar">👁</button>
             </div>
           </div>
         </div>
@@ -910,7 +985,7 @@
         <div id="cambiarContrasenaError" class="login-error hidden" style="padding:12px;background:#fee;border:1px solid #fcc;border-radius:6px;color:#c00;font-size:14px"></div>
         <div style="display:flex;gap:12px;margin-top:20px;padding-top:20px;border-top:1px solid #e5e7eb">
           <button type="submit" style="flex:1;padding:11px 16px;background:#627371;color:white;border:none;border-radius:6px;font-weight:600;font-size:14px;cursor:pointer;transition:all 0.2s" onmouseover="this.style.background='#4f5f5c'" onmouseout="this.style.background='#627371'">Guardar Cambios</button>
-          <button type="button" style="flex:1;padding:11px 16px;background:#e5e7eb;color:#374151;border:none;border-radius:6px;font-weight:600;font-size:14px;cursor:pointer;transition:all 0.2s" onclick="closeCambiarContrasenaModal()" onmouseover="this.style.background='#d1d5db'" onmouseout="this.style.background='#e5e7eb'">Cancelar</button>
+          <button type="button" style="flex:1;padding:11px 16px;background:#e5e7eb;color:#374151;border:none;border-radius:6px;font-weight:600;font-size:14px;cursor:pointer;transition:all 0.2s" onmouseover="this.style.background='#d1d5db'" onmouseout="this.style.background='#e5e7eb'">Cancelar</button>
         </div>
       </form>
     </div>
@@ -922,7 +997,7 @@
       <div class="sidebar">
         <button class="btn-volver" id="btnVolverDashboardCitas">← Volver</button>
         <div style="margin-bottom:24px;text-align:center">
-          <img src="images/logo.png" alt="Logo" style="height:70px;width:auto;object-fit:contain" />
+          <img src="/images/logo.png" alt="Logo" style="height:70px;width:auto;object-fit:contain" />
         </div>
         <h2 style="color:white;margin-bottom:16px">Auditoría de Citas</h2>
         <p style="color:rgba(255,255,255,0.9);font-size:0.9rem">Controlar quién agenda</p>
@@ -987,7 +1062,7 @@
           <!-- Tabla de Citas -->
           <section class="card">
             <h3>Citas Agendadas</h3>
-            <div style="overflow-x:auto">
+            <div class="table-wrapper">
               <table class="modern-table" id="tablaCitasAuditoria">
                 <thead>
                   <tr>
@@ -1017,7 +1092,7 @@
     <div class="modal-box" style="max-width:500px;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;padding-bottom:16px;border-bottom:2px solid #e5e7eb">
         <h3 style="margin:0;color:#627371;font-size:20px;font-weight:600">Editar Usuario</h3>
-        <button class="btn-close-modal" onclick="closeEditarUsuarioModal()" style="background:none;border:none;font-size:24px;cursor:pointer;color:#627371;transition:color 0.2s" onmouseover="this.style.color='#3f4a48'" onmouseout="this.style.color='#627371'">✕</button>
+        <button class="btn-close-modal" style="background:none;border:none;font-size:24px;cursor:pointer;color:#627371;transition:color 0.2s" onmouseover="this.style.color='#3f4a48'" onmouseout="this.style.color='#627371'">✕</button>
       </div>
       <form id="formEditarUsuario" style="display:flex;flex-direction:column;gap:16px">
         <div>
@@ -1059,15 +1134,15 @@
         </div>
         <div>
           <label for="editPassword" style="display:block;margin-bottom:8px;font-weight:500;color:#333;font-size:14px">Nueva Contraseña</label>
-          <div style="position:relative;display:flex;align-items:center">
-            <input id="editPassword" type="password" placeholder="Dejar vacío para no cambiar" style="flex:1;padding:10px 12px;padding-right:40px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;font-size:14px;transition:all 0.2s" onfocus="this.style.borderColor='#627371';this.style.boxShadow='0 0 0 3px rgba(98,115,113,0.1)'" onblur="this.style.borderColor='#d1d5db';this.style.boxShadow='none'" />
-            <button type="button" id="toggleEditPassword" style="position:absolute;right:12px;background:none;border:none;cursor:pointer;font-size:18px;color:#627371;transition:color 0.2s" title="Mostrar/ocultar">Mostrar</button>
+          <div class="password-wrapper">
+            <input id="editPassword" type="password" placeholder="Dejar vacío para no cambiar" class="password-input" />
+            <button type="button" id="toggleEditPassword" class="toggle-password-btn" title="Mostrar/ocultar">👁</button>
           </div>
         </div>
         <div id="editarUsuarioError" class="login-error hidden" style="padding:12px;background:#fee;border:1px solid #fcc;border-radius:6px;color:#c00;font-size:14px;display:none"></div>
         <div style="display:flex;gap:12px;margin-top:20px;padding-top:20px;border-top:1px solid #e5e7eb">
           <button type="submit" style="flex:1;padding:11px 16px;background:#627371;color:white;border:none;border-radius:6px;font-weight:600;font-size:14px;cursor:pointer;transition:all 0.2s" onmouseover="this.style.background='#4f5f5c'" onmouseout="this.style.background='#627371'">Guardar Cambios</button>
-          <button type="button" style="flex:1;padding:11px 16px;background:#e5e7eb;color:#374151;border:none;border-radius:6px;font-weight:600;font-size:14px;cursor:pointer;transition:all 0.2s" onclick="closeEditarUsuarioModal()" onmouseover="this.style.background='#d1d5db'" onmouseout="this.style.background='#e5e7eb'">Cancelar</button>
+          <button type="button" style="flex:1;padding:11px 16px;background:#e5e7eb;color:#374151;border:none;border-radius:6px;font-weight:600;font-size:14px;cursor:pointer;transition:all 0.2s" onmouseover="this.style.background='#d1d5db'" onmouseout="this.style.background='#e5e7eb'">Cancelar</button>
         </div>
       </form>
     </div>
@@ -1078,13 +1153,13 @@
     <div class="modal-box" style="max-width:900px;max-height:80vh;overflow-y:auto">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;padding-bottom:16px;border-bottom:2px solid #e5e7eb">
         <h3 style="margin:0;color:#627371;font-size:20px;font-weight:600">Historial de Auditoría</h3>
-        <button class="btn-close-modal" onclick="closeHistorialModal()" style="background:none;border:none;font-size:24px;cursor:pointer;color:#627371;transition:color 0.2s" onmouseover="this.style.color='#3f4a48'" onmouseout="this.style.color='#627371'">✕</button>
+        <button class="btn-close-modal" style="background:none;border:none;font-size:24px;cursor:pointer;color:#627371;transition:color 0.2s" onmouseover="this.style.color='#3f4a48'" onmouseout="this.style.color='#627371'">✕</button>
       </div>
       <div id="historialContent" style="max-height:60vh;overflow-y:auto">
         <!-- Se llena dinámicamente -->
       </div>
       <div style="display:flex;gap:12px;margin-top:20px;padding-top:20px;border-top:1px solid #e5e7eb">
-        <button type="button" style="flex:1;padding:11px 16px;background:#e5e7eb;color:#374151;border:none;border-radius:6px;font-weight:600;font-size:14px;cursor:pointer;transition:all 0.2s" onclick="closeHistorialModal()" onmouseover="this.style.background='#d1d5db'" onmouseout="this.style.background='#e5e7eb'">Cerrar</button>
+        <button type="button" style="flex:1;padding:11px 16px;background:#e5e7eb;color:#374151;border:none;border-radius:6px;font-weight:600;font-size:14px;cursor:pointer;transition:all 0.2s" onmouseover="this.style.background='#d1d5db'" onmouseout="this.style.background='#e5e7eb'">Cerrar</button>
       </div>
     </div>
   </div>
@@ -1094,7 +1169,7 @@
     <div class="modal-box" style="max-width:450px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;padding-bottom:16px;border-bottom:2px solid #e5e7eb">
         <h3 style="margin:0;color:#627371;font-size:20px;font-weight:600">Contraseña Temporal</h3>
-        <button class="btn-close-modal" onclick="closeResetPasswordModal()" style="background:none;border:none;font-size:24px;cursor:pointer;color:#627371;transition:color 0.2s" onmouseover="this.style.color='#3f4a48'" onmouseout="this.style.color='#627371'">✕</button>
+        <button class="btn-close-modal" style="background:none;border:none;font-size:24px;cursor:pointer;color:#627371;transition:color 0.2s" onmouseover="this.style.color='#3f4a48'" onmouseout="this.style.color='#627371'">✕</button>
       </div>
       <div style="background:#f0f9ff;padding:16px;border-radius:8px;margin-bottom:20px;border-left:4px solid #0369a1">
         <p style="margin:0 0 8px 0;font-size:0.9rem;color:#0c4a6e;font-weight:600">Usuario: <span id="resetPasswordUser" style="font-weight:700">-</span></p>
@@ -1107,7 +1182,7 @@
       </div>
       <p style="margin:0 0 20px 0;font-size:0.85rem;color:#6b7280;text-align:center">La contraseña temporal ha sido generada. El usuario deberá cambiarla en su próximo login.</p>
       <div style="display:flex;gap:12px">
-        <button type="button" style="flex:1;padding:11px 16px;background:#2d4a47;color:white;border:none;border-radius:6px;font-weight:600;font-size:14px;cursor:pointer;transition:all 0.2s" onclick="closeResetPasswordModal()" onmouseover="this.style.background='#1f3634'" onmouseout="this.style.background='#2d4a47'">Entendido</button>
+        <button type="button" style="flex:1;padding:11px 16px;background:#2d4a47;color:white;border:none;border-radius:6px;font-weight:600;font-size:14px;cursor:pointer;transition:all 0.2s" onmouseover="this.style.background='#1f3634'" onmouseout="this.style.background='#2d4a47'">Entendido</button>
       </div>
     </div>
   </div>
@@ -1158,6 +1233,95 @@
         <p style="text-align:center;color:#6b7280;padding:20px">Usa los filtros arriba para buscar registros</p>
       </div>
       <div id="busquedaAuditoriaControls"></div>
+    </div>
+  </div>
+
+  <!-- ========== MODAL ESTADO CITA MÉDICA ========== -->
+  <div id="modalEstadoCitaMedica" class="modal-overlay hidden">
+    <div class="modal-box" style="max-width:500px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;padding-bottom:16px;border-bottom:2px solid #e5e7eb">
+        <h3 style="margin:0;color:#627371;font-size:20px;font-weight:600" id="modalEstadoMedicaTitle">Cambiar Estado de Cita</h3>
+        <button type="button" id="btnCerrarEstadoMedica" class="btn-close-modal" style="background:none;border:none;font-size:24px;cursor:pointer;color:#627371;transition:color 0.2s;padding:8px;line-height:1;width:32px;height:32px;display:flex;align-items:center;justify-content:center">✕</button>
+      </div>
+
+      <!-- Información del Paciente -->
+      <div style="background:#f9fafb;padding:16px;border-radius:8px;margin-bottom:20px">
+        <div style="margin-bottom:12px">
+          <div style="font-size:0.85rem;color:#6b7280;font-weight:600">PACIENTE</div>
+          <div id="modalMedicaPaciente" style="font-size:1.1rem;color:#1f2937;font-weight:600">-</div>
+        </div>
+        <div>
+          <div style="font-size:0.85rem;color:#6b7280;font-weight:600">HORA</div>
+          <div id="modalMedicaHora" style="font-size:1rem;color:#1f2937">-</div>
+        </div>
+      </div>
+
+      <!-- Opciones de Estado -->
+      <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:24px">
+        <button id="btnEstadoEnSala" type="button" style="padding:14px 16px;background:#fbbf24;color:#78350f;border:2px solid #f59e0b;border-radius:8px;font-weight:600;font-size:0.95rem;cursor:pointer;transition:all 0.2s;text-align:left" onmouseover="this.style.backgroundColor='#f59e0b';this.style.color='white'" onmouseout="this.style.backgroundColor='#fbbf24';this.style.color='#78350f'">
+          En Sala
+          <div style="font-size:0.8rem;margin-top:4px;font-weight:400">Paciente está siendo atendido</div>
+        </button>
+        <button id="btnEstadoReprogramar" type="button" style="padding:14px 16px;background:#3b82f6;color:white;border:2px solid #1e40af;border-radius:8px;font-weight:600;font-size:0.95rem;cursor:pointer;transition:all 0.2s;text-align:left" onmouseover="this.style.backgroundColor='#1e40af'" onmouseout="this.style.backgroundColor='#3b82f6'">
+          Reprogramar
+          <div style="font-size:0.8rem;margin-top:4px;font-weight:400">Cambiar a otro día y hora</div>
+        </button>
+        <button id="btnEstadoCanceladoPaciente" type="button" style="padding:14px 16px;background:#ef4444;color:white;border:2px solid #991b1b;border-radius:8px;font-weight:600;font-size:0.95rem;cursor:pointer;transition:all 0.2s;text-align:left" onmouseover="this.style.backgroundColor='#991b1b'" onmouseout="this.style.backgroundColor='#ef4444'">
+          Cancelado por Paciente
+          <div style="font-size:0.8rem;margin-top:4px;font-weight:400">Paciente canceló la cita</div>
+        </button>
+        <button id="btnEstadoNoAsistio" type="button" style="padding:14px 16px;background:#ec4899;color:white;border:2px solid #be185d;border-radius:8px;font-weight:600;font-size:0.95rem;cursor:pointer;transition:all 0.2s;text-align:left" onmouseover="this.style.backgroundColor='#be185d'" onmouseout="this.style.backgroundColor='#ec4899'">
+          Paciente No Asistió
+          <div style="font-size:0.8rem;margin-top:4px;font-weight:400">Paciente no se presentó a la cita</div>
+        </button>
+      </div>
+
+      <div style="display:flex;gap:12px;justify-content:flex-end;padding-top:20px;border-top:1px solid #e5e7eb">
+        <button type="button" id="btnCancelarEstadoMedica" style="padding:11px 24px;background:#e5e7eb;color:#374151;border:none;border-radius:6px;font-weight:600;font-size:14px;cursor:pointer;transition:all 0.2s">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== MODAL REPROGRAMAR CITA MÉDICA ========== -->
+  <div id="modalReprogramarMedica" class="modal-overlay hidden">
+    <div class="modal-box" style="max-width:500px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;padding-bottom:16px;border-bottom:2px solid #e5e7eb">
+        <h3 style="margin:0;color:#627371;font-size:20px;font-weight:600">Reprogramar Cita</h3>
+        <button type="button" id="btnCerrarReprogramarMedica" class="btn-close-modal" style="background:none;border:none;font-size:24px;cursor:pointer;color:#627371;transition:color 0.2s;padding:8px;line-height:1;width:32px;height:32px;display:flex;align-items:center;justify-content:center">✕</button>
+      </div>
+
+      <div style="display:grid;gap:16px;margin-bottom:24px">
+        <div>
+          <label style="display:block;font-size:0.85rem;color:#6b7280;font-weight:600;margin-bottom:6px">Nueva Fecha</label>
+          <input id="modalReprogramarMedicaFecha" type="date" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:0.95rem">
+        </div>
+        <div>
+          <label style="display:block;font-size:0.85rem;color:#6b7280;font-weight:600;margin-bottom:6px">Nueva Hora</label>
+          <input id="modalReprogramarMedicaHora" type="time" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:0.95rem">
+        </div>
+        <div style="padding:12px;background:#f0f9ff;border-left:4px solid #0369a1;border-radius:6px">
+          <div style="font-size:0.85rem;color:#6b7280;font-weight:600;margin-bottom:4px">Cita actual:</div>
+          <div id="modalReprogramarMedicaFechaActual" style="font-size:0.95rem;color:#1f2937">-</div>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:12px;justify-content:flex-end">
+        <button type="button" id="btnCancelarReprogramarMedica" style="padding:11px 24px;background:#e5e7eb;color:#374151;border:none;border-radius:6px;font-weight:600;font-size:14px;cursor:pointer;transition:all 0.2s">Cancelar</button>
+        <button type="button" id="btnConfirmarReprogramarMedica" style="padding:11px 24px;background:#3b82f6;color:white;border:none;border-radius:6px;font-weight:600;font-size:14px;cursor:pointer;transition:all 0.2s">Reprogramar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== MODAL CONFIRMACIÓN REPROGRAMACIÓN ========== -->
+  <div id="modalConfirmReprogramacion" class="modal-overlay hidden">
+    <div class="modal-box" style="max-width:400px;text-align:center">
+      <h2 style="margin:0 0 16px 0;color:#1f2937;font-size:1.25rem" id="modalConfirmReprogramacionTitle">¿Reprogramar la cita?</h2>
+      <p style="color:#6b7280;margin:0 0 32px 0;font-size:0.95rem" id="modalConfirmReprogramacionMessage">-</p>
+      
+      <div style="display:flex;gap:12px;justify-content:center">
+        <button type="button" id="btnConfirmReprogramacionSi" style="padding:11px 32px;background:#3b82f6;color:white;border:none;border-radius:6px;font-weight:600;font-size:0.95rem;cursor:pointer;transition:all 0.2s">Sí, Reprogramar</button>
+        <button type="button" id="btnConfirmReprogramacionNo" style="padding:11px 32px;background:#e5e7eb;color:#374151;border:none;border-radius:6px;font-weight:600;font-size:0.95rem;cursor:pointer;transition:all 0.2s">No</button>
+      </div>
     </div>
   </div>
 

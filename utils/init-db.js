@@ -164,6 +164,7 @@ async function initializeDatabase() {
               observaciones TEXT,
               diagnostico_id INT,
               estado ENUM('Programado', 'En Sala', 'En Estudio', 'Completado', 'No Asistió', 'Cancelado', 'Reprogramado', 'Adelantado') NOT NULL DEFAULT 'Programado',
+              duracion_minutos INT NULL DEFAULT NULL,
               programado_por_nombre VARCHAR(150),
               editado_por_nombre VARCHAR(150),
               editado_en TIMESTAMP,
@@ -252,14 +253,14 @@ async function initializeDatabase() {
                       }
                       console.log('✓ Usuarios creados (admin/doctor/recepcion - contraseña: 123456)');
                       conn.end();
-                      console.log('✅ Base de datos inicializada correctamente');
+                      console.log('[OK] Base de datos inicializada correctamente');
                       resolve();
                     });
                   });
                 } else {
                   console.log(`✓ ${results[0].count} usuarios existentes`);
                   conn.end();
-                  console.log('✅ Base de datos lista');
+                  console.log('[OK] Base de datos lista');
                   resolve();
                 }
               });

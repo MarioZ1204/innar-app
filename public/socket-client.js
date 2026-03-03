@@ -3,33 +3,55 @@
 let socket = null;
 window.socketReady = false;  // Flag para indicar cuando socket está listo
 
-// Inicializar WebSocket después de login
+// Detectar si es dispositivo móvil
+function isMobile() {
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+}
+
+// Inicializar WebSocket después de login (con soporte mejorado para móviles)
 function initSocket() {
   if (socket) return;
   
+  const isMobileDevice = isMobile();
+  
+  // Configuración optimizada para móviles y desktop
   socket = io({
     reconnection: true,
-    reconnectionDelay: 1000,
-    reconnectionDelayMax: 5000,
-    reconnectionAttempts: 5
+    reconnectionDelay: isMobileDevice ? 3000 : 1000,          // Mayor demora en móviles
+    reconnectionDelayMax: isMobileDevice ? 20000 : 5000,       // Máximo más alto para móviles
+    reconnectionAttempts: isMobileDevice ? 10 : 5,             // Más intentos en móviles
+    timeout: isMobileDevice ? 30000 : 20000,                   // Timeout más largo en móviles
+    transports: isMobileDevice ? ['polling', 'websocket'] : ['websocket', 'polling'],  // Prioridad diferente
+    path: '/socket.io/',                                       // Ruta explícita de Socket.IO
+    withCredentials: true,                                     // Permitir credenciales (cookies)
+    forceNew: false,                                           // Reutilizar conexión existente
+    autoConnect: true                                          // Conectar automáticamente
   });
 
   // Eventos de conexión
   socket.on('connect', () => {
-    console.log('✓ Conectado al servidor WebSocket');
+    console.log('✓ Conectado al servidor WebSocket', {
+      mobile: isMobileDevice,
+      transport: socket.io.engine.transport.name,
+      socketId: socket.id
+    });
     window.socket = socket;  // Exponer globalmente
     window.socketReady = true;  // Marcar como listo
     // Disparar evento para módulos que esperan
     window.dispatchEvent(new CustomEvent('socketReady', { detail: socket }));
   });
 
-  socket.on('disconnect', () => {
-    console.log('✗ Desconectado del servidor');
+  socket.on('disconnect', (reason) => {
+    console.log('✗ Desconectado del servidor', { reason, mobile: isMobileDevice });
     window.socketReady = false;
   });
 
   socket.on('connect_error', (error) => {
-    console.error('Error en conexión WebSocket:', error);
+    console.error('Error en conexión WebSocket:', {
+      error: error.message || error,
+      mobile: isMobileDevice,
+      transport: socket?.io?.engine?.transport?.name
+    });
   });
 
   // ===== EVENTOS DE RECIBOS =====
