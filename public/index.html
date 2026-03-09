@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Innar-App</title>
+  <title>Instituto Neurociencias de Nariño IPS S.A.S</title>
   <link rel="icon" type="image/png" href="images/icon.png">
   <link rel="stylesheet" href="style.css">
   <style>
@@ -25,7 +25,7 @@
       left: 0;
       right: 0;
       bottom: 0;
-      background: linear-gradient(135deg, #647878 0%, #647878 50%, #92B1AC 100%);
+      background: linear-gradient(135deg, var(--c-mid) 0%, var(--c-mid) 50%, var(--c-primary) 100%);
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -67,8 +67,8 @@
       to { transform: rotate(360deg); }
     }
   </style>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+  <script src="/libs/xlsx.full.min.js" onerror="console.warn('xlsx local no encontrado')"></script>
+  <script src="/libs/crypto-js.min.js" onerror="console.warn('crypto-js local no encontrado')"></script>
   <script src="/socket.io/socket.io.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:wght@400;600;700&display=swap" rel="stylesheet">
 </head>
@@ -86,7 +86,7 @@
       <div class="login-header">
         <img src="/images/logo3.png" alt="Logo Instituto Neurociencias" class="login-logo" />
         <h1>Instituto Neurociencias de Nariño IPS S.A.S</h1>
-        <p>Regístrate para continuar</p>
+        <p>Ingresa tus credenciales para continuar</p>
       </div>
       <form id="formLogin" class="login-form">
         <div class="form-group">
@@ -97,11 +97,13 @@
           <label for="loginPassword">Contraseña</label>
           <div class="password-wrapper">
             <input id="loginPassword" type="password" placeholder="Contraseña" autocomplete="current-password" required class="password-input" />
-            <button type="button" id="togglePassword" class="toggle-password-btn" title="Mostrar/ocultar">👁</button>
+            <button type="button" id="togglePassword" class="toggle-password-btn" title="Mostrar/ocultar contraseña">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
           </div>
-          <div id="capsLockWarning" style="display:none;margin-top:8px;padding:8px 12px;background:#fef3c7;border:1px solid #fcd34d;border-radius:4px;color:#92400e;font-size:13px;font-weight:500">Mayús activado</div>
+          <div id="capsLockWarning" style="display:none;margin-top:8px;padding:8px 12px;background:#fef3c7;border:1px solid #f59e0b;border-radius:4px;color:#92400e;font-size:13px;font-weight:500">⚠ Bloq Mayús activado</div>
         </div>
-        <div id="loginError" class="login-error hidden" style="padding:12px;background:#fee;border:1px solid #fcc;border-radius:6px;color:#c00;font-size:14px">
+        <div id="loginError" class="login-error hidden">
           <div id="loginErrorText"></div>
           <div id="loginErrorRetry" style="margin-top:8px;font-size:12px;opacity:0.8"></div>
         </div>
@@ -145,12 +147,12 @@
           <span class="menu-card-desc">Gestionar usuarios y roles</span>
         </button>
         <button class="menu-card" data-module="diagnosticos" data-rol="admin">
-          <span class="menu-card-icon"><img src="/images/iconuser.png" alt="Diagnósticos" class="icon-img" /></span>
+          <span class="menu-card-icon"><img src="/images/icondiagnosticos.svg" alt="Diagnósticos" class="icon-img" /></span>
           <span class="menu-card-title">Diagnósticos</span>
           <span class="menu-card-desc">Importar y gestionar diagnósticos</span>
         </button>
         <button class="menu-card" data-module="dashboard-citas" data-rol="admin">
-          <span class="menu-card-icon"><img src="/images/iconagenda.png" alt="Dashboard Citas" class="icon-img" /></span>
+          <span class="menu-card-icon"><img src="/images/icondashboard.svg" alt="Auditoría de Citas" class="icon-img" /></span>
           <span class="menu-card-title">Auditoría de Citas</span>
           <span class="menu-card-desc">Ver quién agendó cada cita médica y electrodiagnóstico</span>
         </button>
@@ -162,14 +164,32 @@
   <div id="view-recibos" class="view-module hidden">
     <div class="main-layout">
       <div class="sidebar no-print">
-        <button class="btn-volver" id="btnVolverRecibos">← Volver</button>
-        <div style="margin-bottom:24px;text-align:center">
-          <img src="/images/logo.png" alt="Logo" style="height:70px;width:auto;object-fit:contain" />
+        <div class="sidebar-inner">
+          <button class="btn-volver" id="btnVolverRecibos">
+            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+            Volver al menú
+          </button>
+          <div class="sidebar-logo">
+            <img src="/images/logo.png" alt="Logo" style="height:58px;width:auto;object-fit:contain" />
+          </div>
+          <hr class="sidebar-title-sep" />
+          <h2>Recibos</h2>
+          <p class="sidebar-desc">Gestión de recibos y reportes</p>
+          <span class="sidebar-section-label">Navegación</span>
+          <button class="sidebar-btn active" data-page="crear"><span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg></span>Crear Recibo</button>
+          <button class="sidebar-btn" data-page="recibos"><span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg></span>Ver Recibos</button>
+          <button class="sidebar-btn" data-page="reportes"><span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></span>Reportes</button>
+          <button class="sidebar-btn" data-page="servicios" data-rol-recibos="admin"><span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg></span>Gestionar Servicios</button>
         </div>
-        <button class="sidebar-btn active" data-page="crear">Crear Recibo</button>
-        <button class="sidebar-btn" data-page="recibos">Ver Recibos</button>
-        <button class="sidebar-btn" data-page="reportes">Reportes</button>
-        <button class="sidebar-btn" data-page="servicios" data-rol-recibos="admin">Gestionar Servicios</button>
+        <div class="sidebar-footer">
+          <div class="sidebar-user">
+            <div class="sidebar-user-avatar">--</div>
+            <div>
+              <div class="sidebar-user-name">Cargando...</div>
+              <div class="sidebar-user-role">-</div>
+            </div>
+          </div>
+        </div>
       </div>
       <div class="main-content">
         <div class="container" id="recibos-container">
@@ -185,7 +205,7 @@
                   <div style="font-size:12px;color:#666">Recibos hoy</div>
                 </div>
                 <div style="text-align:center">
-                  <div style="font-size:24px;font-weight:bold;color:#10b981" id="statsTotalHoy">$ 0.00</div>
+                  <div style="font-size:24px;font-weight:bold;color:#059669" id="statsTotalHoy">$ 0.00</div>
                   <div style="font-size:12px;color:#666">Total del día</div>
                 </div>
               </div>
@@ -226,7 +246,7 @@
                   <tbody></tbody>
                 </table>
                 </div>
-                <div style="margin-top:8px"><button id="addItem">+ Agregar ítem manual</button></div>
+                <div style="margin-top:8px"><button id="addItem" class="btn-secondary btn-sm">+ Agregar ítem manual</button></div>
               </div>
               <div class="row" style="margin-top:12px">
                 <div class="col"><label>Observaciones</label><textarea id="observ" rows="2" placeholder="Opcional"></textarea></div>
@@ -235,7 +255,7 @@
                   <label>Fecha</label><input id="fecha" type="date" />
                 </div>
               </div>
-              <div class="actions"><button id="generate">Generar recibo</button></div>
+              <div class="actions"><button id="generate" class="btn-primary">Generar recibo</button></div>
             </section>
             <section id="receiptPreview" class="card">
               <div id="previewContent">
@@ -265,14 +285,30 @@
                 <div style="margin-top:8px"><strong>Observaciones:</strong> <span id="r_observ"></span></div>
               </div>
               <div class="actions no-print" style="margin-top:12px">
-                <button id="print">Generar PDF</button>
-                <button id="downloadPDF" class="secondary">Descargar PDF anterior</button>
+                <button id="print" class="btn-primary">Generar PDF</button>
+                <button id="downloadPDF" class="btn-primary">Descargar PDF anterior</button>
               </div>
             </section>
           </div>
           <!-- PÁGINA: VER RECIBOS -->
           <div class="page" id="page-recibos">
             <header><h2>Recibos Guardados</h2></header>
+            
+            <!-- Buscador por Documento - Consulta de Recibos -->
+            <section class="card no-print" style="background:#f4f7f7;border-left:4px solid #8AA6A1">
+              <h3 style="margin-top:0;color:#2d4a47">Buscar Recibos</h3>
+              <p style="color:#6b7280;margin-bottom:16px;font-size:0.95rem">Ingresa un número de documento para buscar recibos</p>
+              <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
+                <div style="flex:1;min-width:200px">
+                  <label>Número de Documento</label>
+                  <input id="buscarReciboDocumento" type="text" placeholder="Escribe aquí el número de documento" style="width:100%" />
+                </div>
+                <button id="btnBuscarReciboDocumento" class="btn-primary">Buscar</button>
+                <button id="btnLimpiarReciboDocumento" class="btn-secondary">Limpiar</button>
+              </div>
+              <div id="resultadoBuscarRecibo" style="margin-top:16px;display:none;padding:12px;background:white;border-radius:6px;border-left:3px solid #8AA6A1"></div>
+            </section>
+            
             <section id="savedList" class="card no-print">
               <div class="table-wrapper">
                 <table id="tablaSavedItems" class="modern-table">
@@ -280,6 +316,7 @@
                     <tr>
                       <th>Número</th>
                       <th>Cliente</th>
+                      <th>Entidad</th>
                       <th>Fecha</th>
                       <th style="text-align:right">Total</th>
                       <th style="text-align:center">Acciones</th>
@@ -292,7 +329,7 @@
                   </tbody>
                 </table>
               </div>
-              <button id="resetAll" class="secondary" style="margin-top:12px;width:100%;background:#dc2626;display:none">Eliminar todos los recibos</button>
+              <button id="resetAll" class="btn-danger" style="margin-top:12px;width:100%;display:none">Eliminar todos los recibos</button>
             </section>
           </div>
           <!-- PÁGINA: REPORTES -->
@@ -304,14 +341,14 @@
                   <label>Reporte Diario</label>
                   <div style="display:flex;gap:8px">
                     <input id="reportDiaFecha" type="date" />
-                    <button id="reportDiaBtn" style="flex:1">Generar PDF</button>
+                    <button id="reportDiaBtn" class="btn-primary" style="flex:1">Generar PDF</button>
                   </div>
                 </div>
                 <div class="col">
                   <label>Reporte Mensual</label>
                   <div style="display:flex;gap:8px">
                     <input id="reportMesFecha" type="month" />
-                    <button id="reportMesBtn" style="flex:1">Generar PDF</button>
+                    <button id="reportMesBtn" class="btn-primary" style="flex:1">Generar PDF</button>
                   </div>
                 </div>
               </div>
@@ -326,7 +363,7 @@
               <h3 style="margin-top:20px">Agregar Nuevo Servicio</h3>
               <div style="display:flex;gap:8px;margin-bottom:12px">
                 <input id="newServicioNombre" type="text" placeholder="Nombre del servicio" />
-                <button id="addServicio">Agregar</button>
+                <button id="addServicio" class="btn-primary">Agregar</button>
               </div>
             </section>
           </div>
@@ -339,33 +376,67 @@
   <div id="view-agenda-medica" class="view-module hidden">
     <div class="main-layout">
       <div class="sidebar">
-        <button class="btn-volver" id="btnVolverAgenda">← Volver</button>
-        <div style="margin-bottom:24px;text-align:center">
-          <img src="/images/logo.png" alt="Logo" style="height:70px;width:auto;object-fit:contain" />
+        <div class="sidebar-inner">
+          <button class="btn-volver" id="btnVolverAgenda">
+            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+            Volver al menú
+          </button>
+          <div class="sidebar-logo">
+            <img src="/images/logo.png" alt="Logo" style="height:58px;width:auto;object-fit:contain" />
+          </div>
+          <hr class="sidebar-title-sep" />
+          <h2>Agenda Médica</h2>
+          <p class="sidebar-desc">Citas y turnos médicos</p>
+          <span class="sidebar-section-label">Navegación</span>
+          <button class="sidebar-btn agenda-page-btn active" data-page="citas"><span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span>Ver Citas</button>
+          <button class="sidebar-btn agenda-page-btn" data-page="programar" id="btnAgendaProgramar" style="display:none"><span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 13V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h8"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="19" y2="10"/><line x1="19" y1="16" x2="19" y2="22"/><line x1="16" y1="19" x2="22" y2="19"/></svg></span>Programar Agenda</button>
         </div>
-        <h2 style="color:white;margin-bottom:16px">Agenda Médica</h2>
-        <button class="sidebar-btn agenda-page-btn active" data-page="citas">Ver Citas</button>
-        <button class="sidebar-btn agenda-page-btn" data-page="programar" id="btnAgendaProgramar" style="display:none">Programar Agenda</button>
+        <div class="sidebar-footer">
+          <div class="sidebar-user">
+            <div class="sidebar-user-avatar">--</div>
+            <div>
+              <div class="sidebar-user-name">Cargando...</div>
+              <div class="sidebar-user-role">-</div>
+            </div>
+          </div>
+        </div>
       </div>
       <div class="main-content">
         <div class="container">
           <!-- PÁGINA: VER CITAS -->
           <div class="agenda-page active" data-agenda-page="citas">
             <header><h2>Agenda de Citas</h2></header>
+            
+            <!-- Buscador por Documento - Consulta de Citas -->
+            <section class="card no-print" style="background:#f4f7f7;border-left:4px solid #8AA6A1">
+              <h3 style="margin-top:0;color:#2d4a47">Buscar Cita</h3>
+              <p style="color:#6b7280;margin-bottom:16px;font-size:0.95rem">Ingresa el número de documento del paciente para ver sus citas programadas</p>
+              <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
+                <div style="flex:1;min-width:200px">
+                  <label>Número de Documento</label>
+                  <input id="buscarCitaDocumento" type="text" placeholder="Ingresa aquí el número de documento" style="width:100%" />
+                </div>
+                <button id="btnBuscarCitaDocumento" class="btn-primary">Buscar</button>
+                <button id="btnLimpiarCitaDocumento" class="btn-secondary">Limpiar</button>
+              </div>
+              <div id="resultadoBuscarCita" style="margin-top:16px;display:none;padding:12px;background:white;border-radius:6px;border-left:3px solid #8AA6A1"></div>
+            </section>
+
             <section class="card no-print">
               <div class="row" style="margin-bottom:16px">
                 <div class="col"><label>Fecha</label><input id="agendaMedicaFecha" type="date" /></div>
                 <div class="col"><label>Doctor</label><div id="agendaMedicaDoctorDisplay" style="padding:10px;background:#f3f4f6;border-radius:4px;display:flex;align-items:center;font-weight:500;color:#374151">-</div></div>
               </div>
-              <div style="display:flex;gap:12px;align-items:flex-end;margin-bottom:8px">
-                <button id="btnDescargarAgendaPDF" style="flex:1;padding:10px 16px;background:#059669;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600;display:none">Descargar Agenda en PDF</button>
+              <div class="row" style="margin-bottom:8px;align-items:flex-end">
+                <div class="col" style="flex:1"><label>Descargar PDF del día</label><input id="reportDiaAgendaPDF" type="date" style="width:100%" /></div>
+                <div class="col" style="flex:0 0 auto;min-width:0"><button id="btnDescargarAgendaPDF" class="btn-primary" style="display:none">Descargar PDF</button></div>
               </div>
               <div style="text-align:center;margin-top:8px">
                 <div id="agendaMedicaFechaDisplay" style="font-size:18px;font-weight:700;color:#111;text-transform:uppercase"></div>
               </div>
             </section>
             <!-- Botones para Doctor: Llamar siguiente / Marcar atendido -->
-            <section class="card no-print" id="agendaDoctorAcciones" style="display:none;background:#f0f9ffaf;border-left:4px solid #8AA6A1">
+            <section class="card no-print" id="agendaDoctorAcciones" style="display:none;background:#f4f7f7;border-left:4px solid #8AA6A1">
               <h3>Acciones Rápidas</h3>
               <div style="display:flex;gap:16px;flex-wrap:wrap">
                 <button id="btnLlamarSiguiente" class="btn-llamar">Llamar siguiente paciente</button>
@@ -394,7 +465,7 @@
                   </select>
                 </div>
               </div>
-              <div style="margin-top:8px;padding:8px;border-radius:4px;background-color:#fff3cd;border:1px solid #ffc107;display:none;font-size:0.9rem;color:#856404" id="mensajeDisponibilidad"></div>
+              <div style="margin-top:8px;padding:8px;border-radius:4px;background-color:#fef3c7;border:1px solid #f59e0b;display:none;font-size:0.9rem;color:#92400e" id="mensajeDisponibilidad"></div>
               <div class="row" style="margin-top:12px">
                 <div class="col"><label>Hora</label><select id="nuevoTurnoHoraMedica"></select></div>
                 <div class="col"><label>Teléfono 1</label><input id="nuevoPacienteTelefonoMedica" type="tel" placeholder="Teléfono principal" /></div>
@@ -403,13 +474,13 @@
               </div>
               <div class="row" id="otraConsultaRow" style="margin-top:8px;display:none">
                 <div class="col" style="flex:2"><label>Especificar tipo de consulta</label><input id="otraConsultaInput" type="text" placeholder="Escribir tipo de consulta personalizado" style="width:100%" /></div>
-                <div class="col" style="flex:1;display:flex;align-items:flex-end"><button id="agregarOtraConsulta" type="button" style="width:100%">Agregar</button></div>
+                <div class="col" style="flex:1;display:flex;align-items:flex-end"><button id="agregarOtraConsulta" type="button" class="btn-primary" style="width:100%">Agregar</button></div>
               </div>
               <div class="row" style="margin-top:8px">
                 <div class="col" style="width:100%"><label>Notas</label><textarea id="nuevoTurnoNotasMedica" rows="2" placeholder="Observaciones, preparación, info relevante..."></textarea></div>
               </div>
-              <div style="margin-top:8px;text-align:right;font-size:0.95rem;color:#444">Programado por: <span id="nuevoTurnoProgramadoPor">-</span></div>
-              <div style="margin-top:12px;text-align:right"><button id="crearTurnoMedica" style="width:220px">Crear Cita</button></div>
+              <div style="margin-top:8px;text-align:right;font-size:0.95rem;color:#6b7280">Programado por: <span id="nuevoTurnoProgramadoPor">-</span></div>
+              <div style="margin-top:12px;text-align:right"><button id="crearTurnoMedica" class="btn-primary">Crear Cita</button></div>
             </section>
             <section class="card">
               <h3>Citas del Día</h3>
@@ -418,17 +489,18 @@
                   <thead>
                     <tr>
                       <th>Turno</th>
-                      <th class="col-hora">Hora</th>
+                      <th class="col-hora col-mobile-hide">Hora</th>
                       <th>Paciente</th>
-                      <th>Tipo consulta</th>
-                      <th>Documento</th>
-                      <th>Entidad</th>
-                      <th>Notas</th>
+                      <th class="col-mobile-hide">Tipo consulta</th>
+                      <th class="col-mobile-hide">Documento</th>
+                      <th class="col-mobile-hide">Entidad</th>
+                      <th class="col-mobile-hide">Notas</th>
+                      <th>Estado</th>
                       <th>Acciones</th>
                     </tr>
                   </thead>
                   <tbody id="turnosTableBodyMedica">
-                    <tr><td colspan="8" style="padding:20px;text-align:center;color:#999">Selecciona fecha y consultorio para ver las citas</td></tr>
+                    <tr><td colspan="9" style="padding:20px;text-align:center;color:#999">Selecciona fecha y consultorio para ver las citas</td></tr>
                   </tbody>
                 </table>
               </div>
@@ -452,7 +524,7 @@
               <h3>Agenda Programada de Médicos</h3>
               <div style="margin-bottom:16px">
                 <label>Seleccionar médico:</label>
-                <select id="agendaDoctorSelect" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:.95rem;margin-top:4px"></select>
+                <select id="agendaDoctorSelect"></select>
               </div>
               <div id="agendaDoctorSchedule" style="overflow:auto"></div>
             </section>
@@ -467,13 +539,13 @@
     <div class="modal-box" style="max-width:400px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
         <h3 style="margin:0;font-size:1.1rem">Selecciona un médico</h3>
-        <button id="btnCerrarSelectDoctor" class="btn-estado-small" style="background:#6b7280;color:white">✕</button>
+        <button id="btnCerrarSelectDoctor" class="btn-close-x">&times;</button>
       </div>
       <div id="medicosListContainer" style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px">
         <!-- Se llena dinámicamente -->
       </div>
       <div style="display:flex;gap:8px;justify-content:flex-end">
-        <button id="btnCancelarSelectDoctor" class="btn-estado-small" style="background:#6b7280;color:white">Cancelar</button>
+        <button id="btnCancelarSelectDoctor" class="btn-secondary btn-sm">Cancelar</button>
       </div>
     </div>
   </div>
@@ -483,7 +555,7 @@
     <div class="modal-box">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
         <h3 style="margin:0;font-size:1rem">Editar paciente / cita</h3>
-        <button id="btnCerrarEditPaciente" class="btn-estado-small" style="background:#6b7280;color:white">✕</button>
+        <button id="btnCerrarEditPaciente" class="btn-close-x">&times;</button>
       </div>
       <div id="agendaEditInfo" style="font-size:0.9rem;color:#4b5563;margin-bottom:8px">
         Ningún paciente seleccionado.
@@ -494,7 +566,7 @@
           <input id="editPacienteNombreMedica" type="text" placeholder="Nombre para llamar al paciente" />
         </div>
         <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
-          <button id="btnGuardarNombreMedica">Guardar nombre</button>
+          <button id="btnGuardarNombreMedica" class="btn-primary">Guardar nombre</button>
         </div>
       </div>
     </div>
@@ -504,11 +576,27 @@
   <div id="view-usuarios" class="view-module hidden">
     <div class="main-layout">
       <div class="sidebar">
-        <button class="btn-volver" id="btnVolverUsuarios">← Volver</button>
-        <div style="margin-bottom:24px;text-align:center">
-          <img src="/images/logo.png" alt="Logo" style="height:70px;width:auto;object-fit:contain" />
+        <div class="sidebar-inner">
+          <button class="btn-volver" id="btnVolverUsuarios">
+            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+            Volver al menú
+          </button>
+          <div class="sidebar-logo">
+            <img src="/images/logo.png" alt="Logo" style="height:58px;width:auto;object-fit:contain" />
+          </div>
+          <hr class="sidebar-title-sep" />
+          <h2>Usuarios</h2>
+          <p class="sidebar-desc">Gestión de acceso al sistema</p>
         </div>
-        <h2 style="color:white;margin-bottom:16px">Usuarios</h2>
+        <div class="sidebar-footer">
+          <div class="sidebar-user">
+            <div class="sidebar-user-avatar">--</div>
+            <div>
+              <div class="sidebar-user-name">Cargando...</div>
+              <div class="sidebar-user-role">-</div>
+            </div>
+          </div>
+        </div>
       </div>
       <div class="main-content">
         <div class="container">
@@ -530,7 +618,7 @@
               <div class="col" id="especialidadCol" style="display:none"><label>Especialidad</label><select id="newUserEspecialidad"><option value="">Seleccionar</option><option>Neurología</option><option>Epileptología</option><option>Psicología</option><option>Neuropsicología</option><option>Psiquiatría</option><option>Otra</option></select></div>
               <div class="col" id="especialidadOtraCol" style="display:none"><input id="newUserEspecialidadOtra" type="text" placeholder="Especificar especialidad" /></div>
               <div class="col" id="consultorioCol" style="display:none"><label>Consultorio #</label><input id="newUserConsultorio" type="number" placeholder="Número de consultorio" min="1" /></div>
-              <div class="col" style="display:flex;align-items:flex-end"><button id="crearUsuario" style="width:100%">Crear Usuario</button></div>
+              <div class="col" style="display:flex;align-items:flex-end"><button id="crearUsuario" class="btn-primary" style="width:100%">Crear Usuario</button></div>
             </div>
             <div id="passwordRequirements" style="margin-top:12px;padding:12px;background:#f9fafb;border-radius:6px;border:1px solid #e5e7eb;display:none">
               <p style="margin:0 0 8px 0;font-size:13px;font-weight:600;color:#374151">Requisitos de contraseña:</p>
@@ -546,7 +634,7 @@
           <section class="card">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
               <h3 style="margin:0">Usuarios Existentes</h3>
-              <button type="button" onclick="abrirBusquedaAuditoria()" style="padding:10px 16px;background:#0369a1;color:white;border:none;border-radius:6px;font-weight:600;font-size:0.9rem;cursor:pointer;transition:all 0.2s" onmouseover="this.style.background='#0284c7'" onmouseout="this.style.background='#0369a1'">Auditoría</button>
+              <button type="button" onclick="abrirBusquedaAuditoria()" class="btn-info btn-sm">Auditoría</button>
             </div>
             <div class="table-wrapper">
               <table id="usuariosTable" class="modern-table">
@@ -565,11 +653,27 @@
   <div id="view-diagnosticos" class="view-module hidden">
     <div class="main-layout">
       <div class="sidebar">
-        <button class="btn-volver" id="btnVolverDiagnosticos">← Volver</button>
-        <div style="margin-bottom:24px;text-align:center">
-          <img src="/images/logo.png" alt="Logo" style="height:70px;width:auto;object-fit:contain" />
+        <div class="sidebar-inner">
+          <button class="btn-volver" id="btnVolverDiagnosticos">
+            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+            Volver al menú
+          </button>
+          <div class="sidebar-logo">
+            <img src="/images/logo.png" alt="Logo" style="height:58px;width:auto;object-fit:contain" />
+          </div>
+          <hr class="sidebar-title-sep" />
+          <h2>Diagnósticos</h2>
+          <p class="sidebar-desc">Catálogo de diagnósticos CIE</p>
         </div>
-        <h2 style="color:white;margin-bottom:16px">Diagnósticos</h2>
+        <div class="sidebar-footer">
+          <div class="sidebar-user">
+            <div class="sidebar-user-avatar">--</div>
+            <div>
+              <div class="sidebar-user-name">Cargando...</div>
+              <div class="sidebar-user-role">-</div>
+            </div>
+          </div>
+        </div>
       </div>
       <div class="main-content">
         <div class="container">
@@ -580,9 +684,9 @@
             <div style="display:flex;gap:12px;align-items:flex-end">
               <div style="flex:1">
                 <label>Archivo Excel</label>
-                <input id="diagnosticosFileInput" type="file" accept=".xlsx,.xls" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:0.9rem" />
+                <input id="diagnosticosFileInput" type="file" accept=".xlsx,.xls" />
               </div>
-              <button id="importarDiagnosticosBtn" style="width:150px;background:#8AA6A1;color:white;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-weight:600">Importar</button>
+              <button id="importarDiagnosticosBtn" class="btn-primary btn-sm" style="width:150px">Importar</button>
             </div>
             <div id="importProgress" style="margin-top:12px;display:none">
               <div style="background:#e5e7eb;border-radius:6px;height:8px;overflow:hidden">
@@ -620,31 +724,61 @@
   <div id="view-electro" class="view-module hidden">
     <div class="main-layout">
       <div class="sidebar">
-        <button class="btn-volver" id="btnVolverElectro">← Volver</button>
-        <div style="margin-bottom:24px;text-align:center">
-          <img src="/images/logo.png" alt="Logo" style="height:70px;width:auto;object-fit:contain" />
+        <div class="sidebar-inner">
+          <button class="btn-volver" id="btnVolverElectro">
+            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+            Volver al menú
+          </button>
+          <div class="sidebar-logo">
+            <img src="/images/logo.png" alt="Logo" style="height:58px;width:auto;object-fit:contain" />
+          </div>
+          <hr class="sidebar-title-sep" />
+          <h2>Electrodiagnóstico</h2>
+          <p class="sidebar-desc">Agenda de equipos y estudios</p>
         </div>
-        <h2 style="color:white;margin-bottom:16px">Agenda Electrodiagnóstico</h2>
-        <p style="color:rgba(255,255,255,0.9);font-size:0.9rem">Gestión de 4 equipos</p>
+        <div class="sidebar-footer">
+          <div class="sidebar-user">
+            <div class="sidebar-user-avatar">--</div>
+            <div>
+              <div class="sidebar-user-name">Cargando...</div>
+              <div class="sidebar-user-role">-</div>
+            </div>
+          </div>
+        </div>
       </div>
       <div class="main-content">
         <div class="container">
           <header><h2>Agenda de Equipos de Electrodiagnóstico</h2></header>
           
-          <!-- Selector de Fecha -->
-          <section class="card no-print">
-            <div class="row" style="margin-bottom:16px">
-              <div class="col"><label>Fecha</label><input id="electroFecha" type="date" /></div>
+          <!-- Buscador por Documento - Consulta de Citas Electro -->
+          <section class="card no-print" style="background:#f4f7f7;border-left:4px solid #8AA6A1">
+            <h3 style="margin-top:0;color:#2d4a47">Buscar Estudio</h3>
+            <p style="color:#6b7280;margin-bottom:16px;font-size:0.95rem">Ingresa el número de documento del paciente para ver sus estudios programados</p>
+            <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
+              <div style="flex:1;min-width:200px">
+                <label>Número de Documento</label>
+                <input id="buscarEstudioDocumento" type="text" placeholder="Ingresa aquí el número de documento" style="width:100%" />
+              </div>
+              <button id="btnBuscarEstudioDocumento" class="btn-primary">Buscar</button>
+              <button id="btnLimpiarEstudioDocumento" class="btn-secondary">Limpiar</button>
             </div>
+            <div id="resultadoBuscarEstudio" style="margin-top:16px;display:none;padding:12px;background:white;border-radius:6px;border-left:3px solid #8AA6A1"></div>
           </section>
-
+          
           <!-- Nueva Cita -->
           <section class="card no-print" id="electroNuevaCitaSection">
-            <h3>Nueva Cita de Electrodiagnóstico</h3>
+            <div class="row" style="margin-bottom:4px">
+              <div class="col"><label>Fecha</label><input id="electroFecha" type="date" /></div>
+            </div>
+            <div class="card-collapsible-header" id="electroNuevaCitaToggle">
+              <h3>Nueva Cita de Electrodiagnóstico</h3>
+              <button class="card-collapse-btn" id="electroNuevaCitaCollapseBtn" type="button">▲ Ocultar</button>
+            </div>
+            <div class="card-collapsible-body" id="electroNuevaCitaBody">
             <div class="row" id="electroNuevaCitaRow">
               <div class="col">
                 <label>Estudio <span style="color:#dc2626">*</span></label>
-                <select id="electroEstudio" required style="border: 2px solid #dc2626;">
+                <select id="electroEstudio" required>
                   <option value="">Seleccionar estudio</option>
                   <option value="PSG Básica">PSG Básica</option>
                   <option value="PSG con Titulación de Dispositivo Médico CPAP/BPAP">PSG con Titulación CPAP/BPAP</option>
@@ -667,15 +801,16 @@
               <div id="equiposDisponibilidadContenido"></div>
             </div>
             <div class="row" style="margin-top:12px">
-              <div class="col"><label>Nombre del Paciente</label><input id="electroPacienteNombre" type="text" placeholder="Se autocompleta al ingresar documento" /></div>
-              <div class="col"><label>Número de Teléfono</label><input id="electroTelefono" type="tel" placeholder="Se autocompleta al ingresar documento" /></div>
+              <div class="col"><label>Nombre del Paciente</label><input id="electroPacienteNombre" type="text" placeholder="Nombre completo del paciente" /></div>
+              <div class="col"><label>Número de Teléfono</label><input id="electroTelefono" type="tel" placeholder="Ej: 3001234567" /></div>
               <div class="col" id="electroDuracionCol" style="display:none">
                 <label>Duración del Estudio (horas)</label>
                 <input id="electroDuracion" type="number" placeholder="Ej: 8" min="1" max="168" step="0.5" />
               </div>
             </div>
-            <div style="margin-top:12px;text-align:right;font-size:0.95rem;color:#444">Programado por: <span id="electroProgramadoPor" style="font-weight:600">-</span></div>
-            <div style="margin-top:12px;text-align:right"><button id="crearCitaElectro" style="width:200px">Crear Cita</button></div>
+            <div style="margin-top:12px;text-align:right;font-size:0.95rem;color:#6b7280">Programado por: <span id="electroProgramadoPor" style="font-weight:600">-</span></div>
+            <div style="margin-top:12px;text-align:right"><button id="crearCitaElectro" class="btn-primary">Crear Cita</button></div>
+            </div><!-- /card-collapsible-body -->
           </section>
 
           <!-- Tabla de Citas -->
@@ -691,20 +826,23 @@
               <button class="tab-electro-btn" data-estudio="Test de Latencia">Test Latencia</button>
             </div>
 
+            <!-- Contador de citas -->
+            <div id="citasElectroContador" style="padding:6px 0 10px 2px;font-size:0.88rem;color:#6b7280;font-weight:500;min-height:22px"></div>
+
             <div class="table-wrapper">
               <table id="citasElectroTable" class="modern-table">
                 <thead>
                   <tr>
                     <th>Hora Agendamiento</th>
-                    <th>Hora Inicio</th>
-                    <th>Equipo</th>
+                    <th class="col-mobile-hide">Hora Inicio</th>
+                    <th class="col-mobile-hide">Equipo</th>
                     <th>Paciente</th>
                     <th>Documento</th>
-                    <th>Teléfono</th>
+                    <th class="col-mobile-hide">Teléfono</th>
                     <th>Estudio</th>
-                    <th>Diagnóstico</th>
+                    <th class="col-mobile-hide">Diagnóstico</th>
                     <th>Estado</th>
-                    <th>Hora Fin</th>
+                    <th class="col-mobile-hide">Hora Fin</th>
                   </tr>
                 </thead>
                 <tbody id="citasElectroBody">
@@ -715,7 +853,7 @@
             <div id="citasElectroTableControls"></div>
 
             <!-- Información de Usuario Programó / Editó (abajo de la tabla) -->
-            <div style="margin-top:20px;padding:16px;background:#f9fafb;border-radius:8px;border:1px solid #e5e7eb;display:flex;justify-content:space-between;gap:24px">
+            <div style="margin-top:20px;padding:16px;background:#f9fafb;border-radius:8px;border:1px solid #e5e7eb;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap">
               <div>
                 <div style="font-size:0.85rem;color:#6b7280;font-weight:600;margin-bottom:4px">USUARIO QUE PROGRAMÓ</div>
                 <div style="font-size:0.95rem;color:#1f2937;font-weight:500" id="electroUsuarioProgramo">-</div>
@@ -731,6 +869,67 @@
     </div>
   </div>
 
+  <!-- Modal Resultados Búsqueda de Citas -->
+  <div id="modalBuscarCitasResultados" class="modal hidden" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);align-items:center;justify-content:center;z-index:1000;padding:20px">
+    <div class="modal-content" style="background:white;border-radius:12px;padding:32px;max-width:900px;width:100%;box-shadow:0 20px 25px -5px rgba(0,0,0,0.1);max-height:90vh;overflow-y:auto">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px">
+        <h2 style="margin:0;color:#1f2937">Citas Encontradas</h2>
+        <button id="cerrarModalBuscarCitas" class="btn-close-x">&times;</button>
+      </div>
+      
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:0.95rem">
+          <thead>
+            <tr style="background:#f3f4f6;border-bottom:2px solid #d1d5db">
+              <th style="padding:12px;text-align:left;font-weight:600;color:#1f2937">Fecha</th>
+              <th style="padding:12px;text-align:left;font-weight:600;color:#1f2937">Hora</th>
+              <th style="padding:12px;text-align:left;font-weight:600;color:#1f2937">Documento</th>
+              <th style="padding:12px;text-align:left;font-weight:600;color:#1f2937">Nombre</th>
+              <th style="padding:12px;text-align:left;font-weight:600;color:#1f2937">Tipo Consulta</th>
+            </tr>
+          </thead>
+          <tbody id="modalBuscarCitasBody">
+            <tr><td colspan="5" style="padding:20px;text-align:center;color:#999">Cargando...</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div style="display:flex;gap:12px;justify-content:flex-end;margin-top:24px">
+        <button id="btnCerrarBuscarCitas" class="btn-secondary">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Resultados Búsqueda de Estudios Electro -->
+  <div id="modalBuscarEstudiosResultados" class="modal hidden" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);align-items:center;justify-content:center;z-index:1000;padding:20px">
+    <div class="modal-content" style="background:white;border-radius:12px;padding:32px;max-width:950px;width:100%;box-shadow:0 20px 25px -5px rgba(0,0,0,0.1);max-height:90vh;overflow-y:auto">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px">
+        <h2 style="margin:0;color:#1f2937">Estudios Encontrados</h2>
+        <button id="cerrarModalBuscarEstudios" class="btn-close-x">&times;</button>
+      </div>
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:0.95rem">
+          <thead>
+            <tr style="background:#f3f4f6;border-bottom:2px solid #d1d5db">
+              <th style="padding:12px;text-align:left;font-weight:600;color:#1f2937">Fecha</th>
+              <th style="padding:12px;text-align:left;font-weight:600;color:#1f2937">Hora</th>
+              <th style="padding:12px;text-align:left;font-weight:600;color:#1f2937">Documento</th>
+              <th style="padding:12px;text-align:left;font-weight:600;color:#1f2937">Nombre</th>
+              <th style="padding:12px;text-align:left;font-weight:600;color:#1f2937">Estudio</th>
+              <th style="padding:12px;text-align:left;font-weight:600;color:#1f2937">Estado</th>
+            </tr>
+          </thead>
+          <tbody id="modalBuscarEstudiosBody">
+            <tr><td colspan="6" style="padding:20px;text-align:center;color:#999">Cargando...</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div style="display:flex;gap:12px;justify-content:flex-end;margin-top:24px">
+        <button id="btnCerrarBuscarEstudios" class="btn-secondary">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal para detalles de cita electrodiagnóstico -->
   <div id="modalDetallesCitaElectro" class="modal hidden" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);align-items:center;justify-content:center;z-index:1000;padding:20px">
     <div class="modal-content" style="background:white;border-radius:12px;padding:32px;max-width:600px;width:100%;box-shadow:0 20px 25px -5px rgba(0,0,0,0.1);max-height:90vh;overflow-y:auto">
@@ -739,16 +938,16 @@
         <div style="display:flex;gap:8px;align-items:center">
           <!-- Botón de 3 puntos para Más Opciones -->
           <div style="position:relative">
-            <button id="btnMasOpciones" style="background:none;border:none;font-size:18px;cursor:pointer;color:#6b7280;padding:0;width:32px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:6px;transition:background-color 0.2s;font-weight:bold" onmouseover="this.style.backgroundColor='#f3f4f6'" onmouseout="this.style.backgroundColor='transparent'">...</button>
+            <button id="btnMasOpciones" class="btn-close-x" style="color:#6b7280;font-weight:bold;font-size:18px">...</button>
             <!-- Menú desplegable -->
             <div id="menuMasOpciones" style="position:absolute;top:100%;right:0;background:white;border:1px solid #d1d5db;border-radius:8px;box-shadow:0 10px 15px -3px rgba(0,0,0,0.1);min-width:200px;display:none;z-index:1001;margin-top:4px">
-              <button id="btnReprogramarCitaMenu" style="display:block;width:100%;text-align:left;padding:12px 16px;border:none;background:none;cursor:pointer;color:#1f2937;font-size:0.95rem;transition:background-color 0.2s" onmouseover="this.style.backgroundColor='#f3f4f6'" onmouseout="this.style.backgroundColor='transparent'">Reprogramar</button>
-              <button id="btnAdelantarCitaMenu" style="display:block;width:100%;text-align:left;padding:12px 16px;border:none;background:none;cursor:pointer;color:#1f2937;font-size:0.95rem;border-top:1px solid #e5e7eb;transition:background-color 0.2s" onmouseover="this.style.backgroundColor='#f3f4f6'" onmouseout="this.style.backgroundColor='transparent'">Adelantar</button>
-              <button id="btnEnviarRecomendacionesMenu" style="display:block;width:100%;text-align:left;padding:12px 16px;border:none;background:none;cursor:pointer;color:#1f2937;font-size:0.95rem;border-top:1px solid #e5e7eb;transition:background-color 0.2s" onmouseover="this.style.backgroundColor='#f3f4f6'" onmouseout="this.style.backgroundColor='transparent'">Recomendaciones</button>
+              <button id="btnReprogramarCitaMenu" class="btn-dropdown-item">Reprogramar</button>
+              <button id="btnAdelantarCitaMenu" class="btn-dropdown-item" style="border-top:1px solid #e5e7eb">Adelantar</button>
+              <button id="btnEnviarRecomendacionesMenu" class="btn-dropdown-item" style="border-top:1px solid #e5e7eb">Recomendaciones</button>
             </div>
           </div>
           <!-- Botón Cerrar -->
-          <button id="cerrarModalDetallesCita" style="background:none;border:none;font-size:24px;cursor:pointer;color:#6b7280;padding:0;width:32px;height:32px;display:flex;align-items:center;justify-content:center">&times;</button>
+          <button id="cerrarModalDetallesCita" class="btn-close-x">&times;</button>
         </div>
       </div>
 
@@ -814,16 +1013,29 @@
       </div>
 
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:24px">
-        <button id="btnIniciarEstudio" style="padding:12px;background:#0369a1;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:0.9rem">Iniciar</button>
-        <button id="btnFinalizarEstudio" style="padding:12px;background:#059669;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:0.9rem">Finalizar</button>
+        <button id="btnIniciarEstudio" class="btn-info">Iniciar</button>
+        <button id="btnFinalizarEstudio" class="btn-success">Finalizar</button>
       </div>
 
       <div style="display:flex;gap:12px;justify-content:space-between">
-        <button id="btnEliminarCita" style="padding:12px 24px;background:#dc2626;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600;display:none">Eliminar Cita</button>
+        <button id="btnEliminarCita" class="btn-danger" style="display:none">Eliminar Cita</button>
         <div style="display:flex;gap:12px">
-          <button id="btnCancelarModal" style="padding:12px 24px;background:#e5e7eb;color:#1f2937;border:none;border-radius:6px;cursor:pointer;font-weight:600" onclick="document.getElementById('modalDetallesCitaElectro').classList.add('hidden')">Cerrar</button>
-          <button id="btnGuardarCambios" style="padding:12px 24px;background:#8AA6A1;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600">Guardar</button>
+          <button id="btnCancelarModal" class="btn-secondary" onclick="document.getElementById('modalDetallesCitaElectro').classList.add('hidden')">Cerrar</button>
+          <button id="btnGuardarCambios" class="btn-primary">Guardar</button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Confirmar Eliminar Cita -->
+  <div id="modalConfirmarEliminarCita" class="modal hidden" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.55);align-items:center;justify-content:center;z-index:1100;padding:20px">
+    <div style="background:white;border-radius:12px;padding:32px;max-width:420px;width:100%;box-shadow:0 20px 40px rgba(0,0,0,0.2);text-align:center">
+      <div style="font-size:2.5rem;margin-bottom:12px">&#x26A0;&#xFE0F;</div>
+      <h3 style="margin:0 0 12px;color:#1f2937">Eliminar cita</h3>
+      <p style="margin:0 0 24px;color:#6b7280;font-size:0.95rem">¿Estás seguro que deseas eliminar la cita de<br><strong id="modalEliminarNombrePaciente" style="color:#1f2937"></strong>?<br><span style="color:#dc2626;font-size:0.85rem">Esta acción no se puede deshacer.</span></p>
+      <div style="display:flex;gap:12px;justify-content:center">
+        <button id="btnCancelarEliminarCita" class="btn-secondary">Cancelar</button>
+        <button id="btnConfirmarEliminarCita" class="btn-danger">Sí, eliminar</button>
       </div>
     </div>
   </div>
@@ -833,13 +1045,13 @@
     <div class="modal-content" style="background:white;border-radius:12px;padding:32px;max-width:500px;width:100%;box-shadow:0 20px 25px -5px rgba(0,0,0,0.1)">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px">
         <h2 style="margin:0;color:#1f2937">Reprogramar Cita</h2>
-        <button id="cerrarModalReprogramar" style="background:none;border:none;font-size:24px;cursor:pointer;color:#6b7280;padding:0;width:32px;height:32px;display:flex;align-items:center;justify-content:center">&times;</button>
+        <button id="cerrarModalReprogramar" class="btn-close-x">&times;</button>
       </div>
 
       <div style="display:grid;gap:16px;margin-bottom:24px">
         <div>
           <label style="display:block;font-size:0.85rem;color:#6b7280;font-weight:600;margin-bottom:6px">Nueva Fecha</label>
-          <input id="modalReprogramarFecha" type="date" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:0.95rem">
+          <input id="modalReprogramarFecha" type="date">
         </div>
         <div>
           <label style="display:block;font-size:0.85rem;color:#6b7280;font-weight:600;margin-bottom:6px">Nueva Hora</label>
@@ -852,8 +1064,8 @@
       </div>
 
       <div style="display:flex;gap:12px;justify-content:flex-end">
-        <button id="btnCancelarReprogramar" style="padding:12px 24px;background:#e5e7eb;color:#1f2937;border:none;border-radius:6px;cursor:pointer;font-weight:600">Cancelar</button>
-        <button id="btnConfirmarReprogramar" style="padding:12px 24px;background:#f59e0b;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600">Reprogramar</button>
+        <button id="btnCancelarReprogramar" class="btn-secondary">Cancelar</button>
+        <button id="btnConfirmarReprogramar" class="btn-warning">Reprogramar</button>
       </div>
     </div>
   </div>
@@ -863,7 +1075,7 @@
     <div class="modal-content" style="background:white;border-radius:12px;padding:32px;max-width:500px;width:100%;box-shadow:0 20px 25px -5px rgba(0,0,0,0.1)">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px">
         <h2 style="margin:0;color:#1f2937">Adelantar Cita</h2>
-        <button id="cerrarModalAdelantarCita" style="background:none;border:none;font-size:24px;cursor:pointer;color:#6b7280;padding:0;width:32px;height:32px;display:flex;align-items:center;justify-content:center">&times;</button>
+        <button id="cerrarModalAdelantarCita" class="btn-close-x">&times;</button>
       </div>
 
       <div style="display:grid;gap:16px;margin-bottom:24px">
@@ -878,8 +1090,8 @@
       </div>
 
       <div style="display:flex;gap:12px;justify-content:flex-end">
-        <button id="btnCancelarAdelantarCita" style="padding:12px 24px;background:#e5e7eb;color:#1f2937;border:none;border-radius:6px;cursor:pointer;font-weight:600">Cancelar</button>
-        <button id="btnConfirmarAdelantarCita" style="padding:12px 24px;background:#8b5cf6;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600">Adelantar</button>
+        <button id="btnCancelarAdelantarCita" class="btn-secondary">Cancelar</button>
+        <button id="btnConfirmarAdelantarCita" class="btn-info">Adelantar</button>
       </div>
     </div>
   </div>
@@ -892,8 +1104,21 @@
       <p style="color:#6b7280;margin:0 0 32px 0;font-size:0.95rem">Podrá establecer una duración personalizada</p>
       
       <div style="display:flex;gap:12px;justify-content:center">
-        <button id="btnConfirmarDuracionNo" style="padding:12px 32px;background:#e5e7eb;color:#1f2937;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:1rem">No</button>
-        <button id="btnConfirmarDuracionSi" style="padding:12px 32px;background:#0369a1;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:1rem">Sí</button>
+        <button id="btnConfirmarDuracionNo" class="btn-secondary">No</button>
+        <button id="btnConfirmarDuracionSi" class="btn-info">Sí</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Confirmar Finalizar Estudio -->
+  <div id="modalConfirmarFinalizarEstudio" class="modal hidden" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);align-items:center;justify-content:center;z-index:1002;padding:20px">
+    <div class="modal-content" style="background:white;border-radius:12px;padding:32px;max-width:400px;width:100%;box-shadow:0 20px 25px -5px rgba(0,0,0,0.1);text-align:center">
+      <h2 style="margin:0 0 16px 0;color:#1f2937;font-size:1.25rem">¿Finalizar estudio?</h2>
+      <p style="color:#6b7280;margin:0 0 32px 0;font-size:0.95rem">Esta acción no se puede deshacer</p>
+      
+      <div style="display:flex;gap:12px;justify-content:center">
+        <button id="btnConfirmarFinalizarNo" class="btn-secondary">Cancelar</button>
+        <button id="btnConfirmarFinalizarSi" class="btn-danger">Finalizar</button>
       </div>
     </div>
   </div>
@@ -903,7 +1128,7 @@
     <div class="modal-content" style="background:white;border-radius:12px;padding:32px;max-width:500px;width:100%;box-shadow:0 20px 25px -5px rgba(0,0,0,0.1)">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px">
         <h2 style="margin:0;color:#1f2937">Horario del Estudio</h2>
-        <button id="cerrarModalDuracion" style="background:none;border:none;font-size:24px;cursor:pointer;color:#6b7280;padding:0;width:32px;height:32px;display:flex;align-items:center;justify-content:center">&times;</button>
+        <button id="cerrarModalDuracion" class="btn-close-x">&times;</button>
       </div>
 
       <div style="text-align:center;margin-bottom:24px">
@@ -927,8 +1152,8 @@
       </div>
 
       <div style="display:flex;gap:12px;justify-content:flex-end">
-        <button id="btnCancelarDuracion" style="padding:12px 24px;background:#e5e7eb;color:#1f2937;border:none;border-radius:6px;cursor:pointer;font-weight:600">Cancelar</button>
-        <button id="btnConfirmarDuracion" style="padding:12px 24px;background:#0369a1;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600">Iniciar Estudio</button>
+        <button id="btnCancelarDuracion" class="btn-secondary">Cancelar</button>
+        <button id="btnConfirmarDuracion" class="btn-info">Iniciar Estudio</button>
       </div>
     </div>
   </div>
@@ -984,8 +1209,8 @@
         
         <div id="cambiarContrasenaError" class="login-error hidden" style="padding:12px;background:#fee;border:1px solid #fcc;border-radius:6px;color:#c00;font-size:14px"></div>
         <div style="display:flex;gap:12px;margin-top:20px;padding-top:20px;border-top:1px solid #e5e7eb">
-          <button type="submit" style="flex:1;padding:11px 16px;background:#627371;color:white;border:none;border-radius:6px;font-weight:600;font-size:14px;cursor:pointer;transition:all 0.2s" onmouseover="this.style.background='#4f5f5c'" onmouseout="this.style.background='#627371'">Guardar Cambios</button>
-          <button type="button" style="flex:1;padding:11px 16px;background:#e5e7eb;color:#374151;border:none;border-radius:6px;font-weight:600;font-size:14px;cursor:pointer;transition:all 0.2s" onmouseover="this.style.background='#d1d5db'" onmouseout="this.style.background='#e5e7eb'">Cancelar</button>
+          <button type="submit" class="btn-primary" style="flex:1">Guardar Cambios</button>
+          <button type="button" class="btn-secondary" style="flex:1">Cancelar</button>
         </div>
       </form>
     </div>
@@ -995,12 +1220,27 @@
   <div id="view-dashboard-citas" class="view-module hidden">
     <div class="main-layout">
       <div class="sidebar">
-        <button class="btn-volver" id="btnVolverDashboardCitas">← Volver</button>
-        <div style="margin-bottom:24px;text-align:center">
-          <img src="/images/logo.png" alt="Logo" style="height:70px;width:auto;object-fit:contain" />
+        <div class="sidebar-inner">
+          <button class="btn-volver" id="btnVolverDashboardCitas">
+            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+            Volver al menú
+          </button>
+          <div class="sidebar-logo">
+            <img src="/images/logo.png" alt="Logo" style="height:58px;width:auto;object-fit:contain" />
+          </div>
+          <hr class="sidebar-title-sep" />
+          <h2>Auditoría de Citas</h2>
+          <p class="sidebar-desc">Seguimiento de quién agenda</p>
         </div>
-        <h2 style="color:white;margin-bottom:16px">Auditoría de Citas</h2>
-        <p style="color:rgba(255,255,255,0.9);font-size:0.9rem">Controlar quién agenda</p>
+        <div class="sidebar-footer">
+          <div class="sidebar-user">
+            <div class="sidebar-user-avatar">--</div>
+            <div>
+              <div class="sidebar-user-name">Cargando...</div>
+              <div class="sidebar-user-role">-</div>
+            </div>
+          </div>
+        </div>
       </div>
       <div class="main-content">
         <div class="container">
@@ -1031,8 +1271,8 @@
                 <input id="dashboardAgendadoPor" type="text" placeholder="Nombre del usuario" />
               </div>
               <div class="col" style="display:flex;align-items:flex-end;gap:8px">
-                <button id="btnBuscarCitas" style="flex:1;padding:8px 16px;background:#8AA6A1;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600">Buscar</button>
-                <button id="btnLimpiarFiltros" style="flex:1;padding:8px 16px;background:#d1d5db;color:#333;border:none;border-radius:6px;cursor:pointer;font-weight:600">Limpiar</button>
+                <button id="btnBuscarCitas" class="btn-primary btn-sm" style="flex:1">Buscar</button>
+                <button id="btnLimpiarFiltros" class="btn-secondary btn-sm" style="flex:1">Limpiar</button>
               </div>
             </div>
           </section>
@@ -1141,8 +1381,8 @@
         </div>
         <div id="editarUsuarioError" class="login-error hidden" style="padding:12px;background:#fee;border:1px solid #fcc;border-radius:6px;color:#c00;font-size:14px;display:none"></div>
         <div style="display:flex;gap:12px;margin-top:20px;padding-top:20px;border-top:1px solid #e5e7eb">
-          <button type="submit" style="flex:1;padding:11px 16px;background:#627371;color:white;border:none;border-radius:6px;font-weight:600;font-size:14px;cursor:pointer;transition:all 0.2s" onmouseover="this.style.background='#4f5f5c'" onmouseout="this.style.background='#627371'">Guardar Cambios</button>
-          <button type="button" style="flex:1;padding:11px 16px;background:#e5e7eb;color:#374151;border:none;border-radius:6px;font-weight:600;font-size:14px;cursor:pointer;transition:all 0.2s" onmouseover="this.style.background='#d1d5db'" onmouseout="this.style.background='#e5e7eb'">Cancelar</button>
+          <button type="submit" class="btn-primary" style="flex:1">Guardar Cambios</button>
+          <button type="button" class="btn-secondary" style="flex:1">Cancelar</button>
         </div>
       </form>
     </div>
@@ -1159,7 +1399,7 @@
         <!-- Se llena dinámicamente -->
       </div>
       <div style="display:flex;gap:12px;margin-top:20px;padding-top:20px;border-top:1px solid #e5e7eb">
-        <button type="button" style="flex:1;padding:11px 16px;background:#e5e7eb;color:#374151;border:none;border-radius:6px;font-weight:600;font-size:14px;cursor:pointer;transition:all 0.2s" onmouseover="this.style.background='#d1d5db'" onmouseout="this.style.background='#e5e7eb'">Cerrar</button>
+        <button type="button" class="btn-secondary" style="flex:1">Cerrar</button>
       </div>
     </div>
   </div>
@@ -1178,11 +1418,11 @@
       </div>
       <div style="background:#f3f4f6;padding:16px;border-radius:8px;margin-bottom:20px;border:2px solid #d1d5db;font-family:monospace;font-size:1rem;font-weight:600;color:#1f2937;word-break:break-all;display:flex;justify-content:space-between;align-items:center">
         <span id="resetPasswordValue">-</span>
-        <button type="button" id="btnCopyPassword" style="background:none;border:none;cursor:pointer;font-size:1.2rem;padding:8px;color:#2d4a47;transition:all 0.2s" onmouseover="this.style.color='#1f3634'" onmouseout="this.style.color='#2d4a47'" title="Copiar">Copiar</button>
+        <button type="button" id="btnCopyPassword" class="btn-info btn-sm" title="Copiar">Copiar</button>
       </div>
       <p style="margin:0 0 20px 0;font-size:0.85rem;color:#6b7280;text-align:center">La contraseña temporal ha sido generada. El usuario deberá cambiarla en su próximo login.</p>
       <div style="display:flex;gap:12px">
-        <button type="button" style="flex:1;padding:11px 16px;background:#2d4a47;color:white;border:none;border-radius:6px;font-weight:600;font-size:14px;cursor:pointer;transition:all 0.2s" onmouseover="this.style.background='#1f3634'" onmouseout="this.style.background='#2d4a47'">Entendido</button>
+        <button type="button" class="btn-primary" style="flex:1">Entendido</button>
       </div>
     </div>
   </div>
@@ -1214,17 +1454,17 @@
           </div>
           <div>
             <label style="display:block;font-size:0.85rem;font-weight:600;color:#374151;margin-bottom:4px">Desde</label>
-            <input type="date" id="filtroDesde" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:0.9rem">
+            <input type="date" id="filtroDesde">
           </div>
           <div>
             <label style="display:block;font-size:0.85rem;font-weight:600;color:#374151;margin-bottom:4px">Hasta</label>
-            <input type="date" id="filtroHasta" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:0.9rem">
+            <input type="date" id="filtroHasta">
           </div>
         </div>
         <div style="display:flex;gap:8px">
-          <button type="button" class="btn-buscar-auditoria" style="padding:10px 16px;background:#2d4a47;color:white;border:none;border-radius:6px;font-weight:600;font-size:0.9rem;cursor:pointer;transition:all 0.2s">Buscar</button>
-          <button type="button" class="btn-exportar-auditoria" style="padding:10px 16px;background:#059669;color:white;border:none;border-radius:6px;font-weight:600;font-size:0.9rem;cursor:pointer;transition:all 0.2s">Exportar CSV</button>
-          <button type="button" class="btn-limpiar-auditoria" style="padding:10px 16px;background:#6b7280;color:white;border:none;border-radius:6px;font-weight:600;font-size:0.9rem;cursor:pointer;transition:all 0.2s">Limpiar</button>
+          <button type="button" class="btn-primary btn-buscar-auditoria">Buscar</button>
+          <button type="button" class="btn-success btn-exportar-auditoria">Exportar CSV</button>
+          <button type="button" class="btn-secondary btn-limpiar-auditoria">Limpiar</button>
         </div>
       </div>
       
@@ -1258,26 +1498,26 @@
 
       <!-- Opciones de Estado -->
       <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:24px">
-        <button id="btnEstadoEnSala" type="button" style="padding:14px 16px;background:#fbbf24;color:#78350f;border:2px solid #f59e0b;border-radius:8px;font-weight:600;font-size:0.95rem;cursor:pointer;transition:all 0.2s;text-align:left" onmouseover="this.style.backgroundColor='#f59e0b';this.style.color='white'" onmouseout="this.style.backgroundColor='#fbbf24';this.style.color='#78350f'">
+        <button id="btnEstadoEnSala" type="button" class="btn-estado-opcion" style="background:#fbbf24;color:#78350f;border:2px solid #f59e0b">
           En Sala
-          <div style="font-size:0.8rem;margin-top:4px;font-weight:400">Paciente está siendo atendido</div>
+          <div style="font-size:0.8rem;margin-top:4px;font-weight:400"></div>
         </button>
-        <button id="btnEstadoReprogramar" type="button" style="padding:14px 16px;background:#3b82f6;color:white;border:2px solid #1e40af;border-radius:8px;font-weight:600;font-size:0.95rem;cursor:pointer;transition:all 0.2s;text-align:left" onmouseover="this.style.backgroundColor='#1e40af'" onmouseout="this.style.backgroundColor='#3b82f6'">
+        <button id="btnEstadoReprogramar" type="button" class="btn-estado-opcion" style="background:#3b82f6;color:white;border:2px solid #1e40af">
           Reprogramar
-          <div style="font-size:0.8rem;margin-top:4px;font-weight:400">Cambiar a otro día y hora</div>
+          <div style="font-size:0.8rem;margin-top:4px;font-weight:400"></div>
         </button>
-        <button id="btnEstadoCanceladoPaciente" type="button" style="padding:14px 16px;background:#ef4444;color:white;border:2px solid #991b1b;border-radius:8px;font-weight:600;font-size:0.95rem;cursor:pointer;transition:all 0.2s;text-align:left" onmouseover="this.style.backgroundColor='#991b1b'" onmouseout="this.style.backgroundColor='#ef4444'">
+        <button id="btnEstadoCanceladoPaciente" type="button" class="btn-estado-opcion" style="background:#ef4444;color:white;border:2px solid #991b1b">
           Cancelado por Paciente
-          <div style="font-size:0.8rem;margin-top:4px;font-weight:400">Paciente canceló la cita</div>
+          <div style="font-size:0.8rem;margin-top:4px;font-weight:400"></div>
         </button>
-        <button id="btnEstadoNoAsistio" type="button" style="padding:14px 16px;background:#ec4899;color:white;border:2px solid #be185d;border-radius:8px;font-weight:600;font-size:0.95rem;cursor:pointer;transition:all 0.2s;text-align:left" onmouseover="this.style.backgroundColor='#be185d'" onmouseout="this.style.backgroundColor='#ec4899'">
+        <button id="btnEstadoNoAsistio" type="button" class="btn-estado-opcion" style="background:#ec4899;color:white;border:2px solid #be185d">
           Paciente No Asistió
-          <div style="font-size:0.8rem;margin-top:4px;font-weight:400">Paciente no se presentó a la cita</div>
+          <div style="font-size:0.8rem;margin-top:4px;font-weight:400"></div>
         </button>
       </div>
 
       <div style="display:flex;gap:12px;justify-content:flex-end;padding-top:20px;border-top:1px solid #e5e7eb">
-        <button type="button" id="btnCancelarEstadoMedica" style="padding:11px 24px;background:#e5e7eb;color:#374151;border:none;border-radius:6px;font-weight:600;font-size:14px;cursor:pointer;transition:all 0.2s">Cancelar</button>
+        <button type="button" id="btnCancelarEstadoMedica" class="btn-secondary">Cancelar</button>
       </div>
     </div>
   </div>
@@ -1293,7 +1533,7 @@
       <div style="display:grid;gap:16px;margin-bottom:24px">
         <div>
           <label style="display:block;font-size:0.85rem;color:#6b7280;font-weight:600;margin-bottom:6px">Nueva Fecha</label>
-          <input id="modalReprogramarMedicaFecha" type="date" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:0.95rem">
+          <input id="modalReprogramarMedicaFecha" type="date">
         </div>
         <div>
           <label style="display:block;font-size:0.85rem;color:#6b7280;font-weight:600;margin-bottom:6px">Nueva Hora</label>
@@ -1306,8 +1546,8 @@
       </div>
 
       <div style="display:flex;gap:12px;justify-content:flex-end">
-        <button type="button" id="btnCancelarReprogramarMedica" style="padding:11px 24px;background:#e5e7eb;color:#374151;border:none;border-radius:6px;font-weight:600;font-size:14px;cursor:pointer;transition:all 0.2s">Cancelar</button>
-        <button type="button" id="btnConfirmarReprogramarMedica" style="padding:11px 24px;background:#3b82f6;color:white;border:none;border-radius:6px;font-weight:600;font-size:14px;cursor:pointer;transition:all 0.2s">Reprogramar</button>
+        <button type="button" id="btnCancelarReprogramarMedica" class="btn-secondary">Cancelar</button>
+        <button type="button" id="btnConfirmarReprogramarMedica" class="btn-info">Reprogramar</button>
       </div>
     </div>
   </div>
@@ -1319,8 +1559,8 @@
       <p style="color:#6b7280;margin:0 0 32px 0;font-size:0.95rem" id="modalConfirmReprogramacionMessage">-</p>
       
       <div style="display:flex;gap:12px;justify-content:center">
-        <button type="button" id="btnConfirmReprogramacionSi" style="padding:11px 32px;background:#3b82f6;color:white;border:none;border-radius:6px;font-weight:600;font-size:0.95rem;cursor:pointer;transition:all 0.2s">Sí, Reprogramar</button>
-        <button type="button" id="btnConfirmReprogramacionNo" style="padding:11px 32px;background:#e5e7eb;color:#374151;border:none;border-radius:6px;font-weight:600;font-size:0.95rem;cursor:pointer;transition:all 0.2s">No</button>
+        <button type="button" id="btnConfirmReprogramacionSi" class="btn-info">Sí, Reprogramar</button>
+        <button type="button" id="btnConfirmReprogramacionNo" class="btn-secondary">No</button>
       </div>
     </div>
   </div>
@@ -1396,7 +1636,7 @@
     } else {
       preloadImages();
     }
-    
+
     // Timeout máximo de 3 segundos para no dejar el splash indefinidamente
     setTimeout(() => {
       if (splashScreen && !splashScreen.classList.contains('hidden-splash')) {
@@ -1404,5 +1644,18 @@
       }
     }, 3000);
   </script>
+
+  <!-- ========== MODAL EDITAR SERVICIO ========== -->
+  <div id="modalEditarServicio" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:10000;align-items:center;justify-content:center;">
+    <div style="background:white;padding:24px;border-radius:10px;min-width:320px;max-width:460px;box-shadow:0 8px 32px rgba(0,0,0,0.2)">
+      <h3 style="margin:0 0 16px 0;font-size:1.1rem;color:#1f2937">Editar servicio</h3>
+      <input id="editarServicioInput" type="text" class="form-input" placeholder="Nombre del servicio" style="width:100%;margin-bottom:20px;box-sizing:border-box">
+      <div style="display:flex;gap:10px;justify-content:flex-end">
+        <button type="button" class="btn-secondary" onclick="cerrarModalEditarServicio()">Cancelar</button>
+        <button type="button" class="btn-primary" onclick="confirmarEditarServicio()">Guardar</button>
+      </div>
+    </div>
+  </div>
+
 </body>
 </html>

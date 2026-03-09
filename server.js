@@ -31,11 +31,19 @@ app.use(cors({
   origin: true,
   credentials: true
 }));
-app.use(bodyParser.json({ limit: '50mb' }));
-app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
+// Límite global moderado — previene body-flooding (el original era 50mb sin razón)
+app.use(bodyParser.json({ limit: '10mb' }));
+app.use(bodyParser.urlencoded({ limit: '10mb', extended: true }));
+// Middleware de 50mb reservado para rutas que generan PDFs con HTML grande
+const jsonLargeBody = bodyParser.json({ limit: '50mb' });
+const urlencodedLargeBody = bodyParser.urlencoded({ limit: '50mb', extended: true });
 
 // 📊 Middleware de logging para requests/responses
+// Solo loggea rutas importantes, ignora assets estáticos (CSS, JS, imágenes)
+const EXTENSIONES_ESTATICAS = /\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|map)$/i;
 app.use((req, res, next) => {
+  if (EXTENSIONES_ESTATICAS.test(req.path)) return next();
+
   const startTime = Date.now();
   
   // Capturar el método original de res.end/res.send
@@ -81,7 +89,16 @@ const upload = multer({
       cb(null, safeName);
     }
   }),
-  limits: { fileSize: 100 * 1024 * 1024 } // 100MB max
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB max
+  fileFilter: (req, file, cb) => {
+    const allowed = ['.xlsx', '.xls', '.csv', '.pdf', '.png', '.jpg', '.jpeg'];
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (allowed.includes(ext)) {
+      cb(null, true);
+    } else {
+      cb(new Error(`Tipo de archivo no permitido: ${ext}`));
+    }
+  }
 });
 
 // Middleware para cerrar sesión por inactividad (60 minutos)
@@ -105,7 +122,7 @@ app.use((req, res, next) => {
 
 // Configurar sesiones
 app.use(session({
-  secret: 'innar-clinica-secret-key-change-in-production',
+  secret: process.env.SESSION_SECRET || 'innar-clinica-secret-key-change-in-production',
   resave: false,
   saveUninitialized: false,
   rolling: true,
@@ -118,10 +135,10 @@ app.use(session({
 app.set('trust proxy', 1);
 
 // Rutas de la API v1 de Appointments Service
-app.use('/api/v1/appointments', appointmentsRouter);
+app.use('/api/v1/appointments', requireAuth, appointmentsRouter);
 
 // Páginas wrapper para reportes (muestran favicon en la pestaña y el PDF en iframe)
-app.get('/reportes/diario/vista', (req, res) => {
+app.get('/reportes/diario/vista', requireAuth, (req, res) => {
   const fecha = req.query.fecha || '';
   const pdfUrl = `/api/reportes/diario?fecha=${encodeURIComponent(fecha)}`;
   const html = `<!DOCTYPE html>
@@ -139,7 +156,7 @@ app.get('/reportes/diario/vista', (req, res) => {
   res.type('html').send(html);
 });
 
-app.get('/reportes/mensual/vista', (req, res) => {
+app.get('/reportes/mensual/vista', requireAuth, (req, res) => {
   const mes = req.query.mes || '';
   const pdfUrl = `/api/reportes/mensual?mes=${encodeURIComponent(mes)}`;
   const html = `<!DOCTYPE html>
@@ -161,12 +178,14 @@ app.get('/reportes/mensual/vista', (req, res) => {
 app.use((req, res, next) => {
   // Limpiar cache HSTS del navegador - decirle que olvide que fue HTTPS
   res.setHeader('Strict-Transport-Security', 'max-age=0; includeSubDomains');
-  
-  // Headers anti-cache para que no use versiones viejas
+  next();
+});
+
+// Headers anti-cache solo para rutas /api (los assets estáticos sí pueden cachearse)
+app.use('/api', (req, res, next) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
   res.setHeader('Pragma', 'no-cache');
   res.setHeader('Expires', '0');
-  
   next();
 });
 
@@ -178,27 +197,35 @@ let logoBase64 = '';
 // Función para obtener la ruta del logo (compatible con pkg)
 function getLogoPath() {
   const possiblePaths = [
+    path.join(__dirname, 'public', 'images', 'logo.png'),  // ubicación real
     path.join(__dirname, 'public', 'logo.png'),
+    path.join(__dirname, '../public/images/logo.png'),
     path.join(__dirname, '../public/logo.png'),
-    path.join(__dirname, '../../public/logo.png'),
+    path.join(process.execPath, '..', 'public', 'images', 'logo.png'),
     path.join(process.execPath, '..', 'public', 'logo.png'),
   ];
-  
   for (let p of possiblePaths) {
     if (fs.existsSync(p)) return p;
   }
   return null;
 }
 
-const logoPath = getLogoPath();
-if(logoPath && fs.existsSync(logoPath)) {
-  try {
-    const logoBuffer = fs.readFileSync(logoPath);
-    logoBase64 = logoBuffer.toString('base64')
-  } catch(e) {
-    console.warn('Error cargando logo:', e.message);
+// Cargar logo de forma lazy (al primer uso) para tolerar reinicios sin logo
+function getLogoBase64() {
+  if (logoBase64) return logoBase64;
+  const logoPath = getLogoPath();
+  if (logoPath) {
+    try {
+      logoBase64 = fs.readFileSync(logoPath).toString('base64');
+    } catch(e) {
+      console.warn('Error cargando logo:', e.message);
+    }
   }
+  return logoBase64;
 }
+
+// Intento inicial (no crítico)
+try { getLogoBase64(); } catch(_) {}
 
 // Las tablas de MySQL se inicializan con npm run init-db
 // No es necesario db.exec() aquí
@@ -839,13 +866,13 @@ app.get('/api/auditoria/buscar', requireAuth, requireAdmin, async (req, res) => 
   }
 });
 
-// Generar contraseña temporal aleatoria
+// Generar contraseña temporal aleatoria usando crypto seguro
 function generarPasswordTemporal() {
   const caracteres = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%';
+  const bytes = require('crypto').randomBytes(12);
   let password = '';
-  const longitud = 12;
-  for (let i = 0; i < longitud; i++) {
-    password += caracteres.charAt(Math.floor(Math.random() * caracteres.length));
+  for (let i = 0; i < 12; i++) {
+    password += caracteres[bytes[i] % caracteres.length];
   }
   return password;
 }
@@ -919,7 +946,7 @@ app.post('/api/turnos/llamar-siguiente', requireAuth, async (req, res) => {
     
     // Si hay un paciente EN_ATENCION, devolver el mismo con numero_consultorio
     if (enAtencion.length > 0) {
-      console.log(`[DEBUG] Ya hay paciente EN_ATENCION:`, enAtencion[0].paciente_nombre);
+      // Hay paciente EN_ATENCION: enAtencion[0].paciente_nombre);
       const turnoConConsultorio = { ...enAtencion[0], numero_consultorio: numeroConsultorio };
       return res.json({ ok: true, turno: turnoConConsultorio });
     }
@@ -931,7 +958,7 @@ app.post('/api/turnos/llamar-siguiente', requireAuth, async (req, res) => {
       ORDER BY numero_turno ASC LIMIT 1
     `, [fecha, doctor_id]);
     
-    console.log(`[DEBUG] Turnos EN_SALA para doctor ${doctor_id}:`, turnos.length, turnos);
+    // Turnos EN_SALA para doctor ${doctor_id}:`, turnos.length, turnos);
     
     const turno = turnos.length > 0 ? turnos[0] : null;
     if (!turno) {
@@ -1024,7 +1051,7 @@ app.post('/api/turnos/marcar-atendido', requireAuth, async (req, res) => {
 // ============================================
 
 // Listar pacientes (con búsqueda opcional)
-app.get('/api/pacientes', async (req, res) => {
+app.get('/api/pacientes', requireAuth, async (req, res) => {
   const { buscar } = req.query;
   try {
     let pacientes;
@@ -1041,6 +1068,19 @@ app.get('/api/pacientes', async (req, res) => {
     res.json(pacientes);
   } catch (e) {
     console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Obtener paciente por ID
+app.get('/api/pacientes/:id', requireAuth, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!id) return res.status(400).json({ error: 'ID inválido' });
+  try {
+    const rows = await db.query('SELECT * FROM pacientes WHERE id = ?', [id]);
+    if (!rows.length) return res.status(404).json({ error: 'Paciente no encontrado' });
+    res.json(rows[0]);
+  } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
@@ -1073,7 +1113,7 @@ app.patch('/api/pacientes/:id', requireAuth, requireRole(['admin', 'recepcion'])
 });
 
 // Crear paciente
-app.post('/api/pacientes', async (req, res) => {
+app.post('/api/pacientes', requireAuth, async (req, res) => {
   const { nombre, documento, telefono, email } = req.body || {};
   if (!nombre) {
     return res.status(400).json({ error: 'Nombre es obligatorio' });
@@ -1111,7 +1151,7 @@ app.post('/api/pacientes', async (req, res) => {
 // ============================================
 
 // Listar consultorios
-app.get('/api/consultorios', async (req, res) => {
+app.get('/api/consultorios', requireAuth, async (req, res) => {
   try {
     const consultorios = await db.query('SELECT * FROM consultorios WHERE activo = 1 ORDER BY nombre ASC');
     res.json(consultorios);
@@ -1226,8 +1266,12 @@ app.delete('/api/doctor-agenda-files/:id', requireAuth, async (req, res) => {
     const isAdmin = req.session.rol === 'admin';
     if (!isDoctorOwner && !isAdmin) return res.status(403).json({ error: 'No tienes permiso para eliminar este archivo' });
     
-    // Eliminar archivo del sistema de archivos
-    const filePath = path.join(__dirname, 'public', file.url);
+    // Eliminar archivo del sistema de archivos con protección contra path traversal
+    const publicDir = path.resolve(__dirname, 'public');
+    const filePath = path.resolve(publicDir, file.url.replace(/^\//, ''));
+    if (!filePath.startsWith(publicDir)) {
+      return res.status(400).json({ error: 'Ruta de archivo inválida' });
+    }
     if (fs.existsSync(filePath)) {
       fs.unlinkSync(filePath);
     }
@@ -1246,7 +1290,7 @@ app.delete('/api/doctor-agenda-files/:id', requireAuth, async (req, res) => {
 // ============================================
 
 // Crear tabla si no existe
-app.get('/api/init-doctor-disponibilidad', async (req, res) => {
+app.get('/api/init-doctor-disponibilidad', requireAuth, async (req, res) => {
   try {
     const sql = `
       CREATE TABLE IF NOT EXISTS doctor_disponibilidad_mensual (
@@ -1344,7 +1388,7 @@ app.post('/api/doctor-disponibilidad/procesar-excel', requireAuth, upload.single
 });
 
 // Obtener disponibilidad mensual de un doctor
-app.get('/api/doctor-disponibilidad/:doctorId', async (req, res) => {
+app.get('/api/doctor-disponibilidad/:doctorId', requireAuth, async (req, res) => {
   try {
     const doctorId = parseInt(req.params.doctorId, 10);
     const mes = req.query.mes; // Formato: YYYY-MM, opcional
@@ -1467,9 +1511,27 @@ app.delete('/api/doctor-dias-bloqueados/:doctorId', requireAuth, async (req, res
 // ============================================
 
 // Listar turnos por fecha y consultorio
-app.get('/api/turnos', async (req, res) => {
-  const { fecha, doctor_id } = req.query;
-  if (!fecha) {
+app.get('/api/turnos', requireAuth, async (req, res) => {
+  const { fecha, doctor_id, buscar } = req.query;
+  
+  // Si está buscando por documento de paciente
+  if (buscar && !fecha) {
+    try {
+      const turnos = await db.query(`
+        SELECT * FROM turnos
+        WHERE paciente_documento LIKE ? OR paciente_nombre LIKE ?
+        ORDER BY fecha ASC, hora ASC
+        LIMIT 50
+      `, [`%${buscar}%`, `%${buscar}%`]);
+      return res.json(turnos);
+    } catch (e) {
+      console.error(e);
+      return res.status(500).json({ error: e.message });
+    }
+  }
+  
+  // Si falta fecha (requerida para búsqueda por fecha)
+  if (!fecha && !buscar) {
     return res.status(400).json({ error: 'fecha es obligatoria' });
   }
 
@@ -1493,6 +1555,40 @@ app.get('/api/turnos', async (req, res) => {
     res.json(turnos);
   } catch (e) {
     console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Export CSV de turnos por fecha
+app.get('/api/turnos/export', requireAuth, async (req, res) => {
+  const { fecha, doctor_id } = req.query;
+  if (!fecha) return res.status(400).json({ error: 'fecha es obligatoria' });
+  try {
+    const params = doctor_id ? [fecha, doctor_id] : [fecha];
+    const whereClause = doctor_id
+      ? 'WHERE fecha = ? AND doctor_id = ?'
+      : 'WHERE fecha = ?';
+    const rows = await db.query(
+      `SELECT numero_turno, paciente_nombre, paciente_documento, paciente_telefono,
+              estado, hora, tipo_consulta, entidad, notas, fecha
+       FROM turnos ${whereClause}
+       ORDER BY hora ASC, numero_turno ASC`,
+      params
+    );
+    const headers = ['N° Turno','Paciente','Documento','Teléfono','Estado',
+                     'Hora','Tipo Consulta','Entidad','Notas','Fecha'];
+    const escape = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const lines = [
+      headers.join(','),
+      ...rows.map(r => [
+        r.numero_turno, r.paciente_nombre, r.paciente_documento, r.paciente_telefono,
+        r.estado, r.hora, r.tipo_consulta, r.entidad, r.notas, r.fecha
+      ].map(escape).join(','))
+    ];
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="turnos-${fecha}.csv"`);
+    res.send('\uFEFF' + lines.join('\r\n'));
+  } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
@@ -1553,7 +1649,7 @@ app.get('/api/doctor-disponibilidad', async (req, res) => {
 });
 
 // Crear turno
-app.post('/api/turnos', async (req, res) => {
+app.post('/api/turnos', requireAuth, async (req, res) => {
   const { doctor_id, paciente_nombre, paciente_documento, paciente_telefono, fecha, hora, tipo_consulta, entidad, notas, oportunidad, programado_por } = req.body || {};
 
   if (!doctor_id || !paciente_nombre || !fecha || !hora) {
@@ -1561,14 +1657,14 @@ app.post('/api/turnos', async (req, res) => {
   }
 
   try {
-    console.log(`[DEBUG] Creando turno:`, { doctor_id, paciente_nombre, fecha, hora, tipo_consulta, entidad });
+
     
     // Validar disponibilidad del doctor en esa fecha y hora específica
     const validacion = await procesarAgendaExcel.validarDisponibilidadPorHora(doctor_id, fecha, hora, db);
-    console.log(`[DEBUG] Validación de disponibilidad para doctor=${doctor_id}, fecha=${fecha}, hora=${hora}:`, validacion);
+
     
     if (!validacion.valido) {
-      console.log(`[DEBUG] Rechazo de turno:`, validacion.razon);
+
       return res.status(400).json({ 
         error: validacion.razon,
         valido: false
@@ -1593,7 +1689,7 @@ app.post('/api/turnos', async (req, res) => {
       programado_por || null
     ]);
 
-    console.log(`[DEBUG] Turno creado con ID:`, result.insertId);
+
 
     // Emitir evento WebSocket
     if (app.io) {
@@ -1609,7 +1705,7 @@ app.post('/api/turnos', async (req, res) => {
 
 // Cambiar estado de un turno
 // Actualizar turno (campo genérico)
-app.patch('/api/turnos/:id', async (req, res) => {
+app.patch('/api/turnos/:id', requireAuth, async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const { paciente_nombre, observaciones } = req.body || {};
   
@@ -1674,7 +1770,7 @@ app.patch('/api/turnos/:id', async (req, res) => {
 });
 
 // Actualizar estado del turno específicamente
-app.patch('/api/turnos/:id/estado', async (req, res) => {
+app.patch('/api/turnos/:id/estado', requireAuth, async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const { estado } = req.body || {};
   if (!id || !estado) {
@@ -2019,8 +2115,8 @@ app.get('/api/equipos-electro/disponibilidad', async (req, res) => {
       FROM citas_electro c
       LEFT JOIN equipos_electro e ON e.id = c.equipo_id
       WHERE c.estado IN ('Programado', 'En Sala', 'En Estudio')
-      AND CONCAT(COALESCE(c.hora_fin_date, c.fecha), ' ', c.hora_fin) > CONCAT(?, ' ', ?)
-      AND CONCAT(c.fecha, ' ', c.hora_agendamiento) < CONCAT(?, ' ', ?)
+      AND CONCAT(COALESCE(c.hora_fin_date, c.fecha), ' ', c.hora_fin) >= CONCAT(?, ' ', ?)
+      AND CONCAT(c.fecha, ' ', c.hora_agendamiento) <= CONCAT(?, ' ', ?)
       ORDER BY c.fecha, c.hora_agendamiento
     `, [fecha, hora, fechaFin, horaFin]);
 
@@ -2111,7 +2207,7 @@ app.get('/api/equipos-electro/disponibilidad', async (req, res) => {
 // ============================================
 
 // Listar todos los diagnósticos activos
-app.get('/api/diagnosticos', async (req, res) => {
+app.get('/api/diagnosticos', requireAuth, async (req, res) => {
   try {
     const diagnosticos = await db.query(`
       SELECT id, nombre, descripcion, codigo 
@@ -2127,9 +2223,8 @@ app.get('/api/diagnosticos', async (req, res) => {
 });
 
 // Buscar diagnósticos por término (autocompletado)
-app.get('/api/diagnosticos/search', async (req, res) => {
+app.get('/api/diagnosticos/search', requireAuth, async (req, res) => {
   const { q } = req.query;
-  console.log('🔍 Search endpoint - query:', q);
   if (!q || q.trim().length < 2) {
     // Si la búsqueda es muy corta, devolver los primeros 10 diagnósticos
     try {
@@ -2140,17 +2235,15 @@ app.get('/api/diagnosticos/search', async (req, res) => {
         ORDER BY nombre ASC 
         LIMIT 10
       `);
-      console.log('📊 Retornando', diagnosticos.length, 'diagnósticos');
       return res.json(diagnosticos);
     } catch (e) {
-      console.error('❌ Error en búsqueda:', e);
+      console.error('Error en búsqueda:', e);
       return res.status(500).json({ error: e.message });
     }
   }
 
   try {
     const searchTerm = `%${q}%`;
-    console.log('🔎 Buscando con término:', searchTerm);
     const diagnosticos = await db.query(`
       SELECT id, nombre, descripcion, codigo 
       FROM diagnosticos 
@@ -2158,7 +2251,6 @@ app.get('/api/diagnosticos/search', async (req, res) => {
       ORDER BY nombre ASC
       LIMIT 20
     `, [searchTerm, searchTerm, searchTerm]);
-    console.log('📊 Resultados encontrados:', diagnosticos.length);
     res.json(diagnosticos);
   } catch (e) {
     console.error(e);
@@ -2213,19 +2305,13 @@ app.put('/api/diagnosticos/:id', requireAuth, async (req, res) => {
 
 // Importar diagnósticos desde archivo Excel
 app.post('/api/diagnosticos/import-excel', requireAuth, upload.single('file'), async (req, res) => {
-  console.log('📥 Endpoint de importación alcanzado');
-  console.log('Session:', req.session ? 'OK' : 'FALSO');
-  console.log('File:', req.file ? `${req.file.originalname} (${req.file.size} bytes)` : 'NO ENVIADO');
-  
   if (!req.file) {
-    console.error('❌ No file received');
     return res.status(400).json({ error: 'Debes seleccionar un archivo' });
   }
 
   try {
     const XLSX = require('xlsx');
     const filePath = req.file.path;
-    console.log('📂 Procesando archivo:', filePath);
     
     // Leer el archivo Excel
     const workbook = XLSX.readFile(filePath);
@@ -2246,14 +2332,10 @@ app.post('/api/diagnosticos/import-excel', requireAuth, upload.single('file'), a
     let actualizados = 0;
     let errores = 0;
     
-    console.log('📊 Leyendo filas:', data.length);
-    
     for (const row of data) {
       try {
         // Buscar las columnas (pueden tener espacios o mayúsculas diferentes)
         let codigo = null, nombre = null;
-        
-        console.log('🔍 Fila:', JSON.stringify(row));
         
         for (const key of Object.keys(row)) {
           const keyLower = key.toLowerCase().trim();
@@ -2289,7 +2371,6 @@ app.post('/api/diagnosticos/import-excel', requireAuth, upload.single('file'), a
     }
     
     const mensaje = `Se procesaron ${data.length} filas: ${insertados} insertados, ${actualizados} actualizados, ${errores} con error`;
-    console.log('[INFO]', mensaje);
     res.json({ 
       ok: true, 
       insertados, 
@@ -2305,8 +2386,37 @@ app.post('/api/diagnosticos/import-excel', requireAuth, upload.single('file'), a
 });
 
 // Listar citas electro por fecha (solo fecha requerida)
-app.get('/api/citas-electro', async (req, res) => {
-  const { fecha, equipo_id } = req.query;
+app.get('/api/citas-electro', requireAuth, async (req, res) => {
+  const { fecha, equipo_id, buscar } = req.query;
+  
+  // Si está buscando por documento de paciente
+  if (buscar && !fecha) {
+    try {
+      const citas = await db.query(`
+        SELECT c.id, c.equipo_id, c.paciente_id, c.fecha, c.hora_agendamiento, c.hora_inicio, c.hora_fin, c.hora_fin_date,
+               c.estudio, c.observaciones, c.diagnostico_id, c.estado, c.programado_por_nombre, c.editado_por_nombre, c.editado_en, c.creado_en, c.actualizado_en,
+               c.duracion_minutos,
+               p.nombre AS paciente_nombre, 
+               p.documento AS paciente_documento,
+               p.telefono AS telefono,
+               d.nombre AS diagnostico_nombre,
+               d.codigo AS diagnostico_codigo,
+               e.nombre AS equipo_nombre
+        FROM citas_electro c
+        JOIN pacientes p ON p.id = c.paciente_id
+        LEFT JOIN diagnosticos d ON d.id = c.diagnostico_id
+        LEFT JOIN equipos_electro e ON e.id = c.equipo_id
+        WHERE (p.documento LIKE ? OR p.nombre LIKE ?) AND c.deleted_at IS NULL
+        ORDER BY c.fecha ASC, c.hora_agendamiento ASC
+        LIMIT 50
+      `, [`%${buscar}%`, `%${buscar}%`]);
+      return res.json(citas);
+    } catch (e) {
+      console.error(e);
+      return res.status(500).json({ error: e.message });
+    }
+  }
+  
   if (!fecha) {
     return res.status(400).json({ error: 'fecha es obligatoria' });
   }
@@ -2328,7 +2438,7 @@ app.get('/api/citas-electro', async (req, res) => {
       JOIN pacientes p ON p.id = c.paciente_id
       LEFT JOIN diagnosticos d ON d.id = c.diagnostico_id
       LEFT JOIN equipos_electro e ON e.id = c.equipo_id
-      WHERE c.fecha = ? OR c.hora_fin_date = ?
+      WHERE (c.fecha = ? OR c.hora_fin_date = ?) AND c.deleted_at IS NULL
     `;
     let params = [fecha, fecha];
     
@@ -2347,7 +2457,7 @@ app.get('/api/citas-electro', async (req, res) => {
 });
 
 // Crear cita electrodiagnóstico (con TRANSACCIÓN para garantizar integridad)
-app.post('/api/citas-electro', async (req, res) => {
+app.post('/api/citas-electro', requireAuth, async (req, res) => {
   const { equipo_id, paciente_id, fecha, hora_agendamiento, hora, hora_fin, duracion, estudio, observaciones, diagnostico_id, estado, programado_por_nombre, telefono } = req.body || {};
   
   // 'hora' o 'hora_agendamiento' es la hora programada para el estudio
@@ -2396,9 +2506,9 @@ app.post('/api/citas-electro', async (req, res) => {
       const overlapCitas = await transactions.selectForUpdate(conn,
         `SELECT COUNT(*) as overlap_count
          FROM citas_electro
-         WHERE estado IN ('Programado', 'En Sala', 'En Estudio', 'Completado')
-         AND CONCAT(COALESCE(hora_fin_date, fecha), ' ', hora_fin) > CONCAT(?, ' ', ?)
-         AND CONCAT(fecha, ' ', hora_agendamiento) < CONCAT(?, ' ', ?)`,
+         WHERE estado IN ('Programado', 'En Sala', 'En Estudio')
+         AND CONCAT(COALESCE(hora_fin_date, fecha), ' ', hora_fin) >= CONCAT(?, ' ', ?)
+         AND CONCAT(fecha, ' ', hora_agendamiento) <= CONCAT(?, ' ', ?)`,
         [fecha, horaAgendamiento, finalFechaFin, finalHoraFin]
       );
 
@@ -2476,6 +2586,100 @@ app.post('/api/citas-electro', async (req, res) => {
   }
 });
 
+// Estadísticas de citas por fecha (estado, estudio, equipo)
+// IMPORTANTE: debe estar ANTES de /:id para que "stats" no sea interpretado como un ID
+app.get('/api/citas-electro/stats', requireAuth, async (req, res) => {
+  const { fecha } = req.query;
+  if (!fecha) return res.status(400).json({ error: 'fecha es obligatoria' });
+  try {
+    const [porEstado, porEstudio] = await Promise.all([
+      db.query(
+        `SELECT estado, COUNT(*) AS total FROM citas_electro
+         WHERE (fecha = ? OR hora_fin_date = ?) AND deleted_at IS NULL
+         GROUP BY estado`,
+        [fecha, fecha]
+      ),
+      db.query(
+        `SELECT estudio, COUNT(*) AS total FROM citas_electro
+         WHERE (fecha = ? OR hora_fin_date = ?) AND deleted_at IS NULL
+         GROUP BY estudio`,
+        [fecha, fecha]
+      )
+    ]);
+    // Totales rápidos
+    const total = porEstado.reduce((a, r) => a + r.total, 0);
+    const completadas = (porEstado.find(r => r.estado === 'Completado') || {}).total || 0;
+    const enEstudio  = (porEstado.find(r => r.estado === 'En Estudio')  || {}).total || 0;
+    res.json({ total, completadas, enEstudio, porEstado, porEstudio });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Export CSV de citas electro por fecha
+// IMPORTANTE: antes del /:id para que "export" no sea capturado como un ID
+app.get('/api/citas-electro/export', requireAuth, async (req, res) => {
+  const { fecha } = req.query;
+  if (!fecha) return res.status(400).json({ error: 'fecha es obligatoria' });
+  try {
+    const rows = await db.query(`
+      SELECT c.fecha, c.hora_agendamiento, c.hora_inicio, c.hora_fin, c.estudio,
+             c.estado, c.programado_por_nombre, c.editado_por_nombre,
+             p.nombre AS paciente_nombre, p.documento AS paciente_documento, p.telefono,
+             d.codigo AS diagnostico_codigo, d.nombre AS diagnostico_nombre,
+             e.nombre AS equipo_nombre
+      FROM citas_electro c
+      JOIN pacientes p ON p.id = c.paciente_id
+      LEFT JOIN diagnosticos d ON d.id = c.diagnostico_id
+      LEFT JOIN equipos_electro e ON e.id = c.equipo_id
+      WHERE (c.fecha = ? OR c.hora_fin_date = ?) AND c.deleted_at IS NULL
+      ORDER BY c.hora_agendamiento ASC
+    `, [fecha, fecha]);
+
+    const headers = ['Fecha','Hora Agendamiento','Hora Inicio','Hora Fin','Estudio','Estado',
+                     'Paciente','Documento','Teléfono','Diagnóstico Cód','Diagnóstico',
+                     'Equipo','Programó','Editó'];
+    const escape = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const lines = [
+      headers.join(','),
+      ...rows.map(r => [
+        r.fecha, r.hora_agendamiento, r.hora_inicio, r.hora_fin, r.estudio, r.estado,
+        r.paciente_nombre, r.paciente_documento, r.telefono,
+        r.diagnostico_codigo, r.diagnostico_nombre, r.equipo_nombre,
+        r.programado_por_nombre, r.editado_por_nombre
+      ].map(escape).join(','))
+    ];
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="citas-electro-${fecha}.csv"`);
+    res.send('\uFEFF' + lines.join('\r\n')); // BOM para que Excel abra bien en Windows
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Obtener una cita electro por ID
+app.get('/api/citas-electro/:id', requireAuth, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!id) return res.status(400).json({ error: 'ID inválido' });
+  try {
+    const rows = await db.query(`
+      SELECT c.*, p.nombre AS paciente_nombre, p.documento AS paciente_documento,
+             p.telefono AS telefono, d.nombre AS diagnostico_nombre,
+             d.codigo AS diagnostico_codigo, e.nombre AS equipo_nombre
+      FROM citas_electro c
+      JOIN pacientes p ON p.id = c.paciente_id
+      LEFT JOIN diagnosticos d ON d.id = c.diagnostico_id
+      LEFT JOIN equipos_electro e ON e.id = c.equipo_id
+      WHERE c.id = ? AND c.deleted_at IS NULL
+    `, [id]);
+    if (!rows.length) return res.status(404).json({ error: 'Cita no encontrada' });
+    res.json(rows[0]);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Actualizar estado de cita electro (registra quién editó)
 app.patch('/api/citas-electro/:id/estado', requireAuth, async (req, res) => {
   const id = parseInt(req.params.id, 10);
@@ -2522,7 +2726,7 @@ app.patch('/api/citas-electro/:id', requireAuth, async (req, res) => {
   }
 
   try {
-    const citasResult = await db.query('SELECT * FROM citas_electro WHERE id = ?', [id]);
+    const citasResult = await db.query('SELECT * FROM citas_electro WHERE id = ? AND deleted_at IS NULL', [id]);
     if (citasResult.length === 0) {
       return res.status(404).json({ error: 'Cita no encontrada' });
     }
@@ -2644,11 +2848,10 @@ app.patch('/api/citas-electro/:id', requireAuth, async (req, res) => {
     
     updates.push('editado_en = NOW()');
     
-    const users = await db.query('SELECT nombre FROM usuarios WHERE id = ?', [req.session.usuarioId]);
-    if (users.length > 0) {
-      updates.push('editado_por_nombre = ?');
-      values.push(users[0].nombre);
-    }
+    // Siempre registrar quién editó desde la sesión activa
+    const editorNombre = req.session.usuarioNombre || req.session.usuario || 'Sistema';
+    updates.push('editado_por_nombre = ?');
+    values.push(editorNombre);
     
     values.push(id);
     
@@ -2695,13 +2898,18 @@ app.delete('/api/citas-electro/:id', requireAuth, async (req, res) => {
   }
 
   try {
-    const citas = await db.query('SELECT * FROM citas_electro WHERE id = ?', [id]);
+    const citas = await db.query('SELECT * FROM citas_electro WHERE id = ? AND deleted_at IS NULL', [id]);
     const cita = citas.length > 0 ? citas[0] : null;
     if (!cita) {
       return res.status(404).json({ error: 'Cita no encontrada' });
     }
 
-    await db.execute('DELETE FROM citas_electro WHERE id = ?', [id]);
+    // Soft-delete: marcar como eliminada en lugar de borrar físicamente
+    const eliminadoPor = req.session.usuarioNombre || req.session.usuario || 'Admin';
+    await db.execute(
+      "UPDATE citas_electro SET deleted_at = NOW(), editado_por_nombre = ? WHERE id = ?",
+      [eliminadoPor, id]
+    );
     
     // Emitir evento de socket para actualizar en tiempo real
     if (app.io) {
@@ -2719,11 +2927,57 @@ app.delete('/api/citas-electro/:id', requireAuth, async (req, res) => {
 });
 
 // ============================================
+// ============================================
+// ENDPOINTS DE SERVICIOS (catálogo de recibos)
+// ============================================
+
+app.get('/api/servicios', requireAuth, async (req, res) => {
+  try {
+    const rows = await db.query('SELECT id, nombre FROM servicios_recibo WHERE activo=1 ORDER BY nombre ASC');
+    res.json(rows);
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/servicios', requireAuth, requireAdmin, async (req, res) => {
+  const nombre = (req.body.nombre || '').trim();
+  if (!nombre) return res.status(400).json({ error: 'Nombre requerido' });
+  try {
+    const result = await db.execute('INSERT INTO servicios_recibo (nombre) VALUES (?)', [nombre]);
+    res.json({ ok: true, id: result.insertId });
+  } catch(err) {
+    if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'El servicio ya existe' });
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/servicios/:id', requireAuth, requireAdmin, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const nombre = (req.body.nombre || '').trim();
+  if (!nombre || isNaN(id)) return res.status(400).json({ error: 'Datos inválidos' });
+  try {
+    await db.execute('UPDATE servicios_recibo SET nombre=? WHERE id=?', [nombre, id]);
+    res.json({ ok: true });
+  } catch(err) {
+    if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'El servicio ya existe' });
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/servicios/:id', requireAuth, requireAdmin, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) return res.status(400).json({ error: 'ID inválido' });
+  try {
+    await db.execute('DELETE FROM servicios_recibo WHERE id=?', [id]);
+    res.json({ ok: true });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
+// ============================================
 // ENDPOINTS DE RECIBOS (EXISTENTES)
 // ============================================
 
 // Guardar recibo
-app.post('/api/recibos', async (req, res) => {
+app.post('/api/recibos', requireAuth, async (req, res) => {
   const body = req.body;
   if (!body || typeof body !== 'object') {
     return res.status(400).json({ error: 'Cuerpo de la petición inválido' });
@@ -2767,10 +3021,21 @@ app.post('/api/recibos', async (req, res) => {
   }
 });
 
-// Listar recibos
-app.get('/api/recibos', async (req, res) => {
+// Obtener siguiente número de recibo (server-side)
+app.get('/api/recibos/next-number', requireAuth, async (req, res) => {
   try {
-    const rows = await db.query('SELECT * FROM recibos ORDER BY id DESC');
+    const rows = await db.query('SELECT MAX(CAST(numero AS UNSIGNED)) AS maxNum FROM recibos');
+    const maxNum = parseInt(rows[0]?.maxNum || '0', 10) || 0;
+    res.json({ nextNumber: maxNum + 1 });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Listar recibos
+app.get('/api/recibos', requireAuth, async (req, res) => {
+  try {
+    const rows = await db.query('SELECT * FROM recibos ORDER BY id DESC LIMIT 500');
     res.json(rows || []);
   } catch(err) {
     res.status(500).json({ error: err.message });
@@ -2807,7 +3072,7 @@ app.delete('/api/recibos/:id', requireAuth, requireAdmin, async (req, res) => {
 });
 
 // Obtener recibo (por id)
-app.get('/api/recibos/:id', async (req, res) => {
+app.get('/api/recibos/:id', requireAuth, async (req, res) => {
   const id = parseReciboId(req.params.id);
   if (id === null) return res.status(400).json({ error: 'ID de recibo inválido' });
   try {
@@ -2826,7 +3091,7 @@ app.get('/api/recibos/:id', async (req, res) => {
 });
 
 // Generar PDF del recibo
-app.get('/api/recibos/:id/pdf', async (req, res) => {
+app.get('/api/recibos/:id/pdf', requireAuth, async (req, res) => {
   const id = parseReciboId(req.params.id);
   if (id === null) return res.status(400).json({ error: 'ID de recibo inválido' });
   try {
@@ -2912,7 +3177,7 @@ app.get('/api/recibos/:id/pdf', async (req, res) => {
         <div class="header">
           <div class="header-top">
             <div class="header-logo">
-              <img src="data:image/png;base64,${logoBase64}" alt="Logo" />
+              <img src="data:image/png;base64,${getLogoBase64()}" alt="Logo" />
             </div>
           </div>
           <div class="company-info">
@@ -2954,10 +3219,10 @@ app.get('/api/recibos/:id/pdf', async (req, res) => {
             <td class="label">Subtotal:</td>
             <td class="value">$ ${subtotalFormatted}</td>
           </tr>
-          <tr>
+          ${Number(data.iva || 0) > 0 ? `<tr>
             <td class="label">IVA (${data.tasa_iva || 0}%):</td>
             <td class="value">$ ${ivaFormatted}</td>
-          </tr>
+          </tr>` : ''}
           <tr class="total-row">
             <td class="label">TOTAL:</td>
             <td class="value">$ ${totalFormatted}</td>
@@ -3052,7 +3317,7 @@ app.get('/api/reportes/diario', async (req, res) => {
       return { ...r, doc, servicios, fechaFormato };
     });
 
-    const logoBase64Data = logoBase64;
+    const logoBase64Data = getLogoBase64();
 
     const html = `
       <!doctype html>
@@ -3151,7 +3416,7 @@ app.get('/api/reportes/mensual', async (req, res) => {
     proximoMes.setMonth(proximoMes.getMonth() + 1);
     const fechaFin = proximoMes.toISOString().slice(0, 10);
     
-    const recibos = await db.query('SELECT * FROM recibos WHERE fecha BETWEEN ? AND ? ORDER BY fecha DESC', [fechaInicio, fechaFin]);
+    const recibos = await db.query('SELECT * FROM recibos WHERE fecha >= ? AND fecha < ? ORDER BY fecha DESC', [fechaInicio, fechaFin]);
     const total = recibos.reduce((sum, r) => sum + (Number(r.total) || 0), 0);
     // Extraer doc y servicios del JSON data de cada recibo
     const recibosConDoc = recibos.map(r => {
@@ -3189,14 +3454,13 @@ app.get('/api/reportes/mensual', async (req, res) => {
       return { ...r, doc, servicios, fechaFormato };
     });
 
-    const logoBase64Data = logoBase64;
+    const logoBase64Data = getLogoBase64();
 
     const html = `
       <!doctype html>
       <html>
       <head>
         <meta charset="utf-8"/>
-        <title>Reporte Mensual</title>
         <style>
           body { font-family:Arial; margin:18px; color:#000; position:relative; padding:0; }
           .watermark { position:fixed; top:50%; left:50%; transform:translate(-50%, -50%) rotate(-45deg); font-size:120px; opacity:0.1; z-index:0; width:200%; height:200%; pointer-events:none; }
@@ -3374,7 +3638,7 @@ app.get('/api/dashboard/citas-auditoria', requireAuth, requireAdmin, async (req,
 });
 
 // 📄 PDF de Agenda del Doctor - Descargar agenda de pacientes
-app.post('/api/agenda/pdf', requireAuth, async (req, res) => {
+app.post('/api/agenda/pdf', requireAuth, jsonLargeBody, async (req, res) => {
   try {
     const { doctor_id, fecha_inicio, fecha_fin } = req.body;
     const userId = req.session.usuarioId;
@@ -3586,8 +3850,60 @@ const PORT = process.env.PORT || 3000;
 (async () => {
   try {
     await db.initPool();
-    
-    // 🔒 Configuración HTTPS (Development)
+
+    // ─── Inicializar tabla de servicios ──────────────────────────────────────
+    try {
+      await db.execute(`CREATE TABLE IF NOT EXISTS servicios_recibo (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        nombre VARCHAR(300) NOT NULL UNIQUE,
+        activo TINYINT DEFAULT 1,
+        creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+      const svcRows = await db.query('SELECT COUNT(*) AS n FROM servicios_recibo');
+      if (svcRows[0].n === 0) {
+        const defaults = [
+          'Electroencefalograma Computarizado',
+          'Electroencefalograma Convencional',
+          'Monitorización Electroencefalográfica por video y radio',
+          'Polisomnografía',
+          'Polisomnograma en Titulación de CPAP/BPAP',
+          'Test de Latencia Múltiple',
+          'Polisomnograma Noche Dividida'
+        ];
+        for (const nombre of defaults) {
+          await db.execute('INSERT IGNORE INTO servicios_recibo (nombre) VALUES (?)', [nombre]);
+        }
+        logger.info('[STARTUP] Tabla servicios_recibo creada y poblada con valores por defecto', { type: 'STARTUP' });
+      } else {
+        logger.info('[STARTUP] Tabla servicios_recibo lista', { type: 'STARTUP' });
+      }
+    } catch (svcErr) {
+      logger.warn('[STARTUP] Error inicializando servicios_recibo: ' + svcErr.message, { type: 'STARTUP' });
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
+    // ─── Auto-migraciones al inicio ──────────────────────────────────────────
+    // Agregar columna deleted_at a citas_electro si no existe (soft-delete)
+    // Compatible con MySQL 5.x y 8.x
+    try {
+      const colRows = await db.query(
+        `SELECT COUNT(*) AS cnt FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME   = 'citas_electro'
+           AND COLUMN_NAME  = 'deleted_at'`
+      );
+      if (!colRows || !colRows[0] || colRows[0].cnt === 0) {
+        await db.execute(
+          `ALTER TABLE citas_electro ADD COLUMN deleted_at DATETIME DEFAULT NULL`
+        );
+        logger.info('[MIGRATION] Columna citas_electro.deleted_at agregada', { type: 'STARTUP' });
+      } else {
+        logger.info('[MIGRATION] citas_electro.deleted_at ya existe, sin cambios', { type: 'STARTUP' });
+      }
+    } catch (migErr) {
+      logger.warn('[MIGRATION] Advertencia en migración deleted_at: ' + migErr.message, { type: 'STARTUP' });
+    }
+    // ─────────────────────────────────────────────────────────────────────────
     // Detectar certificado autofirmado y usar HTTPS si está configurado
     // NOTA: Deshabilitado para acceso por IP local. Solo funciona en localhost
     const USE_HTTPS = false; // Deshabilitado para desarrollo en red local
@@ -3760,26 +4076,7 @@ const PORT = process.env.PORT || 3000;
     httpServer.listen(PORT, '0.0.0.0', () => {
       console.log(`Servidor corriendo en http://0.0.0.0:${PORT}`);
       
-      // 🔄 Iniciar scheduler de backups automáticos
-      try {
-        let backupScheduler = null;
-        try {
-          const { startBackupScheduler } = require('./utils/backup-scheduler');
-          backupScheduler = startBackupScheduler();
-          logger.info('[STARTUP] Programador de backups automáticos iniciado', { type: 'STARTUP' });
-        } catch (e) {
-          if (e.code === 'MODULE_NOT_FOUND') {
-            logger.warn('⚠️ node-schedule no instalado, backups automáticos deshabilitados', { type: 'STARTUP' });
-          } else {
-            throw e;
-          }
-        }
-        
-        // Guardar referencia global para poder detenerlo después
-        global.backupScheduler = backupScheduler;
-      } catch (error) {
-        logger.error('❌ Error iniciando backup scheduler', { error: error.message, type: 'STARTUP' });
-      }
+      // Backups automáticos desactivados (ejecutar manualmente: node utils/backup.js)
     });
 
     // Manejo de errores

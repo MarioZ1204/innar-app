@@ -1,7 +1,7 @@
 {
-  "name": "recibos-app",
-  "version": "1.0.0",
-  "description": "Aplicación para generar y gestionar recibos de venta",
+  "name": "innar-app",
+  "version": "1.1.0",
+  "description": "Innar - Sistema de gestión de agenda médica y recibos",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

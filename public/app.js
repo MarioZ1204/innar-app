@@ -15,7 +15,7 @@ function updateRequirementItem(elementId, isMet, text) {
   const element = $(elementId);
   if (element) {
     element.textContent = (isMet ? '[✓]' : '[✗]') + ' ' + text;
-    element.style.color = isMet ? '#16a34a' : '#dc2626';
+    element.style.color = isMet ? '#059669' : '#dc2626';
   }
 }
 
@@ -27,6 +27,7 @@ let currentUser = null;
 let currentModule = null;
 let selectedDoctorId = null;
 let citaElectroSeleccionada = null;
+let isInitializingElectroModal = false; // Flag para evitar cambios automáticos al cargar modal
 let citaReprogramarAdelantarActual = null; // Almacena la cita cuando se abre modal de reprogramación/adelanto
 let selectedDoctorEspecialidad = null;
 let selectedDiagnosticoElectroId = null;
@@ -128,6 +129,20 @@ function showView(id) {
   if (el) el.classList.remove('hidden');
 }
 
+function updateSidebarUser(user) {
+  if (!user) return;
+  const name = user.nombre || user.usuario || '';
+  const words = name.trim().split(/\s+/);
+  const initials = (words.length >= 2
+    ? words[0][0] + words[words.length - 1][0]
+    : name.substring(0, 2)).toUpperCase();
+  const roleMap = { admin: 'Administrador', recepcion: 'Recepción', electro: 'Electrodiagnóstico', doctor: 'Doctor' };
+  const roleLabel = roleMap[user.rol] || user.rol || '-';
+  document.querySelectorAll('.sidebar-user-avatar').forEach(el => el.textContent = initials);
+  document.querySelectorAll('.sidebar-user-name').forEach(el => el.textContent = name);
+  document.querySelectorAll('.sidebar-user-role').forEach(el => el.textContent = roleLabel);
+}
+
 function updateMenuByRole() {
   const rol = currentUser?.rol || '';
   document.querySelectorAll('.menu-card').forEach(card => {
@@ -149,6 +164,7 @@ async function checkSession() {
       currentUser = data.usuario;
       $('menuUserName').textContent = currentUser?.nombre || currentUser?.usuario || 'Usuario';
       sessionStorage.setItem('nombre_usuario', currentUser?.nombre || '');
+      updateSidebarUser(currentUser);
       updateMenuByRole();
       mostrarSaludoDoctor();
       // Restaurar módulo anterior si existe (sessionStorage = solo esta pestaña)
@@ -191,6 +207,7 @@ async function doLogin(usuario, password) {
       showView('view-menu');
       $('menuUserName').textContent = currentUser?.nombre || currentUser?.usuario || 'Usuario';
       sessionStorage.setItem('nombre_usuario', currentUser?.nombre || '');
+      updateSidebarUser(currentUser);
       updateMenuByRole();
       mostrarSaludoDoctor();
       initSocket();
@@ -273,6 +290,10 @@ function goToMenu() {
   initAgendaDone = false;
   initElectroDone = false;
   initDashboardCitasDone = false;
+  // initRecibosDone: NO resetear — initRecibos usa addEventListener (acumularía duplicados)
+  // el módulo recibos maneja refresh via el branch `else cargarLista()` en goToModule
+  initUsuariosDone = false;
+  initDiagnosticosDone = false;
   // Resetear flag de listeners de socket-electro
   window.listenersConfigured = false;
   // Limpiar selectedDoctorId cuando se vuelve al menú
@@ -336,6 +357,21 @@ function escapeHtml(str) {
   const div = document.createElement('div');
   div.textContent = s;
   return div.innerHTML;
+}
+
+// Genera un badge de color según el estado de la cita electro
+function estadoBadge(estado) {
+  const map = {
+    'Programado':   { bg: '#dbeafe', color: '#1d4ed8', border: '#93c5fd' },
+    'En Sala':      { bg: '#fef9c3', color: '#92400e', border: '#fde047' },
+    'En Estudio':   { bg: '#ffedd5', color: '#c2410c', border: '#fdba74' },
+    'Completado':   { bg: '#dcfce7', color: '#15803d', border: '#86efac' },
+    'Cancelado':    { bg: '#fee2e2', color: '#991b1b', border: '#fca5a5' },
+    'No Asistió':   { bg: '#f3e8ff', color: '#6b21a8', border: '#d8b4fe' },
+  };
+  const e = estado || 'Programado';
+  const s = map[e] || { bg: '#f3f4f6', color: '#374151', border: '#d1d5db' };
+  return `<span style="display:inline-block;padding:3px 10px;border-radius:12px;font-size:0.78rem;font-weight:600;background:${s.bg};color:${s.color};border:1px solid ${s.border};white-space:nowrap">${escapeHtml(e)}</span>`;
 }
 
 /**
@@ -413,34 +449,74 @@ function formatearFechaISO(fecha) {
 
 // Servicios por defecto
 const serviciosDefault = [
-  { nombre: 'Electroencefalograma Computarizado' },
-  { nombre: 'Electroencefalograma Convencional'},
-  { nombre: 'Monitorización Electroencefalográfica por video y radio'},
-  { nombre: 'Polisomnografía'},
-  { nombre: 'Polisomnograma en Titulación de CPAP/BPAP' },
-  { nombre: 'Test de Latencia Múltiple'},
-  { nombre: 'Polisomnograma Noche Dividida' }
+  { id: null, nombre: 'Electroencefalograma Computarizado' },
+  { id: null, nombre: 'Electroencefalograma Convencional'},
+  { id: null, nombre: 'Monitorización Electroencefalográfica por video y radio'},
+  { id: null, nombre: 'Polisomnografía'},
+  { id: null, nombre: 'Polisomnograma en Titulación de CPAP/BPAP' },
+  { id: null, nombre: 'Test de Latencia Múltiple'},
+  { id: null, nombre: 'Polisomnograma Noche Dividida' }
 ];
 
-function getServicios() {
-  const stored = localStorage.getItem(lsKeyServicios);
-  return stored ? JSON.parse(stored) : serviciosDefault;
+// Caché en memoria de servicios (se carga desde el servidor)
+let _serviciosCache = null;
+
+async function getServicios() {
+  if (_serviciosCache) return _serviciosCache;
+  try {
+    const res = await apiFetch('/api/servicios');
+    if (res.ok) {
+      _serviciosCache = await res.json();
+      return _serviciosCache;
+    }
+  } catch(_) {}
+  return serviciosDefault;
 }
 
-function saveServicios(servicios) {
-  localStorage.setItem(lsKeyServicios, JSON.stringify(servicios));
-  updateServiciosSelects();
+function invalidarCacheServicios() {
+  _serviciosCache = null;
 }
 
-function editServicio(idx) {
-  const servicios = getServicios();
-  const nuevoNombre = prompt('Editar servicio:', servicios[idx].nombre);
-  if(nuevoNombre && nuevoNombre.trim()) {
-    servicios[idx].nombre = nuevoNombre.trim();
-    saveServicios(servicios);
-    renderServiciosList();
-    showToast('Servicio actualizado', 'success');
-  }
+function editServicio(id, nombreActual) {
+  const modal = document.getElementById('modalEditarServicio');
+  const input = document.getElementById('editarServicioInput');
+  if (!modal || !input) return;
+  input.value = nombreActual;
+  modal.style.display = 'flex';
+  modal.dataset.editId = id;
+  input.focus();
+  input.select();
+}
+
+function cerrarModalEditarServicio() {
+  const modal = document.getElementById('modalEditarServicio');
+  if (modal) modal.style.display = 'none';
+}
+
+async function confirmarEditarServicio() {
+  const modal = document.getElementById('modalEditarServicio');
+  const input = document.getElementById('editarServicioInput');
+  if (!modal || !input) return;
+  const id = modal.dataset.editId;
+  const nuevoNombre = input.value.trim();
+  if (!nuevoNombre) return;
+  try {
+    const res = await apiFetch(`/api/servicios/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nombre: nuevoNombre })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      invalidarCacheServicios();
+      await renderServiciosList();
+      await updateServiciosSelects();
+      showToast('Servicio actualizado', 'success');
+    } else {
+      showToast(data.error || 'Error al editar', 'error');
+    }
+  } catch(_) { showToast('Error de conexión', 'error'); }
+  cerrarModalEditarServicio();
 }
 
 // ============================================
@@ -587,7 +663,7 @@ function createPaginationControls(tableId, containerSelector, itemsPerPageOption
   if (state.currentPage > 1) {
     const firstBtn = document.createElement('button');
     firstBtn.textContent = '«';
-    firstBtn.style.background = '#059669';
+    firstBtn.className = 'pg-nav';
     firstBtn.addEventListener('click', () => {
       state.currentPage = 1;
       renderPaginatedTable(tableId, renderFunction, tbodyId);
@@ -600,7 +676,7 @@ function createPaginationControls(tableId, containerSelector, itemsPerPageOption
   if (state.currentPage > 1) {
     const prevBtn = document.createElement('button');
     prevBtn.textContent = '‹';
-    prevBtn.style.background = '#059669';
+    prevBtn.className = 'pg-nav';
     prevBtn.addEventListener('click', () => {
       state.currentPage--;
       renderPaginatedTable(tableId, renderFunction, tbodyId);
@@ -619,12 +695,10 @@ function createPaginationControls(tableId, containerSelector, itemsPerPageOption
     pageBtn.textContent = i;
     const isActive = i === state.currentPage;
     if (isActive) {
-      pageBtn.style.background = '#2d4a47';
-      pageBtn.style.color = 'white';
+      pageBtn.className = 'pg-active';
       pageBtn.disabled = true;
     } else {
-      pageBtn.style.background = '#e5e7eb';
-      pageBtn.style.color = '#374151';
+      pageBtn.className = 'pg-page';
       pageBtn.addEventListener('click', () => {
         state.currentPage = i;
         renderPaginatedTable(tableId, renderFunction, tbodyId);
@@ -638,7 +712,7 @@ function createPaginationControls(tableId, containerSelector, itemsPerPageOption
   if (state.currentPage < state.totalPages) {
     const nextBtn = document.createElement('button');
     nextBtn.textContent = '›';
-    nextBtn.style.background = '#059669';
+    nextBtn.className = 'pg-nav';
     nextBtn.addEventListener('click', () => {
       state.currentPage++;
       renderPaginatedTable(tableId, renderFunction, tbodyId);
@@ -651,7 +725,7 @@ function createPaginationControls(tableId, containerSelector, itemsPerPageOption
   if (state.currentPage < state.totalPages) {
     const lastBtn = document.createElement('button');
     lastBtn.textContent = '»';
-    lastBtn.style.background = '#059669';
+    lastBtn.className = 'pg-nav';
     lastBtn.addEventListener('click', () => {
       state.currentPage = state.totalPages;
       renderPaginatedTable(tableId, renderFunction, tbodyId);
@@ -669,11 +743,11 @@ function createPaginationControls(tableId, containerSelector, itemsPerPageOption
   container.appendChild(controlsDiv);
 }
 
-function renderServiciosList() {
-  const servicios = getServicios();
+async function renderServiciosList() {
+  const servicios = await getServicios();
   const list = $('serviciosList');
   list.innerHTML = '';
-  servicios.forEach((s, idx) => {
+  servicios.forEach((s) => {
     const div = document.createElement('div');
     div.className = 'servicio-item';
     const span = document.createElement('span');
@@ -681,15 +755,34 @@ function renderServiciosList() {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.textContent = 'Editar';
-    btn.addEventListener('click', () => editServicio(idx));
+    btn.addEventListener('click', () => editServicio(s.id, s.nombre));
+    const btnDel = document.createElement('button');
+    btnDel.type = 'button';
+    btnDel.textContent = 'Eliminar';
+    btnDel.className = 'btn-danger btn-sm';
+    btnDel.style.marginLeft = '6px';
+    btnDel.addEventListener('click', async () => {
+      if (!confirm(`¿Eliminar el servicio "${s.nombre}"?`)) return;
+      try {
+        const res = await apiFetch(`/api/servicios/${s.id}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (data.ok) {
+          invalidarCacheServicios();
+          await renderServiciosList();
+          await updateServiciosSelects();
+          showToast('Servicio eliminado', 'success');
+        }
+      } catch(_) { showToast('Error eliminando', 'error'); }
+    });
     div.appendChild(span);
     div.appendChild(btn);
+    div.appendChild(btnDel);
     list.appendChild(div);
   });
 }
 
-function updateServiciosSelects() {
-  const servicios = getServicios();
+async function updateServiciosSelects() {
+  const servicios = await getServicios();
   document.querySelectorAll('.item-desc:not(.item-desc-input)').forEach(select => {
     const currentVal = select.value;
     select.innerHTML = `<option value="">Seleccionar servicio</option>`;
@@ -713,8 +806,8 @@ function showLoader(show = true) {
   if (!loader) {
     loader = document.createElement('div');
     loader.id = 'loader';
-    loader.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:9999';
-    loader.innerHTML = '<div style="background:white;padding:20px;border-radius:8px;text-align:center"><div style="font-size:24px;margin-bottom:10px"></div><div>Procesando...</div></div>';
+    loader.className = 'app-loader-overlay';
+    loader.innerHTML = '<div class="app-loader-box"><div class="app-loader-spinner"></div><div>Procesando...</div></div>';
     document.body.appendChild(loader);
   }
   loader.style.display = show ? 'flex' : 'none';
@@ -723,7 +816,7 @@ function showLoader(show = true) {
 // Mostrar toast
 function showToast(msg, type = 'info') {
   const toast = document.createElement('div');
-  toast.style.cssText = `position:fixed;top:20px;right:20px;padding:12px 20px;border-radius:6px;background:${type === 'error' ? '#ef4444' : type === 'success' ? '#10b981' : '#3b82f6'};color:white;z-index:9998;max-width:400px;box-shadow:0 4px 12px rgba(0,0,0,0.15)`;
+  toast.className = `app-toast app-toast-${type}`;
   toast.textContent = msg;
   document.body.appendChild(toast);
   setTimeout(() => toast.remove(), 3000);
@@ -964,16 +1057,26 @@ function initRecibos() {
   if ($('reportDiaBtn')) $('reportDiaBtn').addEventListener('click', generarReporteDiario);
   if ($('reportMesBtn')) $('reportMesBtn').addEventListener('click', generarReporteMensual);
   const addServ = document.getElementById('addServicio');
-  if (addServ) addServ.addEventListener('click', () => {
+  if (addServ) addServ.addEventListener('click', async () => {
     const nombre = $('newServicioNombre').value.trim();
     if(!nombre) { showToast('Ingresa el nombre del servicio', 'error'); return; }
-    const servicios = getServicios();
-    if(servicios.some(s => s.nombre.toLowerCase() === nombre.toLowerCase())) { showToast('Este servicio ya existe', 'error'); return; }
-    servicios.push({ nombre, precio: 0 });
-    saveServicios(servicios);
-    $('newServicioNombre').value = '';
-    renderServiciosList();
-    showToast('Servicio agregado', 'success');
+    try {
+      const res = await apiFetch('/api/servicios', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nombre })
+      });
+      const data = await res.json();
+      if (data.ok) {
+        invalidarCacheServicios();
+        $('newServicioNombre').value = '';
+        await renderServiciosList();
+        await updateServiciosSelects();
+        showToast('Servicio agregado', 'success');
+      } else {
+        showToast(data.error || 'Error al agregar', 'error');
+      }
+    } catch(_) { showToast('Error de conexión', 'error'); }
   });
   const docCliente = document.getElementById('docCliente');
   if (docCliente) docCliente.addEventListener('input', function() { this.value = this.value.replace(/[^0-9]/g, ''); });
@@ -1057,17 +1160,14 @@ async function initAgendaMedica() {
     
     // ========= Listeners para Turnos Médicos (Agenda Médica) =========
     window.socket.on('turno-medico:estado-actualizado', (data) => {
-      console.log('[SOCKET_MEDICA] turno-medico:estado-actualizado:', data);
       cargarTurnosMedica();
     });
     
     window.socket.on('turno-medico:reprogramado', (data) => {
-      console.log('[SOCKET_MEDICA] turno-medico:reprogramado:', data);
       cargarTurnosMedica();
     });
     
     window.socket.on('turno-medico:creado', (data) => {
-      console.log('[SOCKET_MEDICA] turno-medico:creado:', data);
       cargarTurnosMedica();
     });
     
@@ -2072,6 +2172,8 @@ async function cargarTurnosMedica() {
     
     // Actualizar estado del botón "Marcar como atendido"
     updateMarcarAtendidoButton(turnos);
+    // Ajustar columnas según rol (una sola vez después de renderizar todas las filas)
+    adjustColumnsForRole();
   } catch (e) { showToast('Error cargando citas', 'error'); }
 }
 
@@ -2085,7 +2187,7 @@ function crearFilaTurnoVacia(tbody, colspan, esDoctor) {
   const columnas = esDoctor ? 8 : 9;
   let html = '';
   for (let i = 0; i < columnas; i++) {
-    html += '<td style="padding:8px;border:1px solid #ddd;background:#fafafa">&nbsp;</td>';
+    html += '<td style="padding:8px;border:none;background:transparent">&nbsp;</td>';
   }
   tr.innerHTML = html;
   tbody.appendChild(tr);
@@ -2111,28 +2213,31 @@ function updateMarcarAtendidoButton(turnos) {
 
 let selectedTurnoMedica = null;
 
+function estadoBadgeMedica(estado) {
+  const map = {
+    'EN_ESPERA':    { bg: '#dbeafe', color: '#1d4ed8', border: '#93c5fd',  label: 'En Espera' },
+    'EN_SALA':      { bg: '#fef9c3', color: '#92400e', border: '#fde047',  label: 'En Sala' },
+    'EN_ATENCION':  { bg: '#ffedd5', color: '#c2410c', border: '#fdba74',  label: 'En Atención' },
+    'ATENDIDO':     { bg: '#dcfce7', color: '#15803d', border: '#86efac',  label: 'Atendido' },
+    'CANCELADO':    { bg: '#fee2e2', color: '#991b1b', border: '#fca5a5',  label: 'Cancelado' },
+    'REPROGRAMADO': { bg: '#e0f2fe', color: '#0369a1', border: '#7dd3fc',  label: 'Reprogramado' },
+    'NO_ASISTIO':   { bg: '#f3e8ff', color: '#6b21a8', border: '#d8b4fe',  label: 'No Asistió' },
+  };
+  const s = map[estado] || { bg: '#f3f4f6', color: '#374151', border: '#d1d5db', label: estado || '-' };
+  return `<span style="display:inline-block;padding:3px 10px;border-radius:12px;font-size:0.78rem;font-weight:600;background:${s.bg};color:${s.color};border:1px solid ${s.border};white-space:nowrap">${escapeHtml(s.label)}</span>`;
+}
+
 function renderTurnoRowMedica(tbody, t, animateTargetId, hayEnAtencion) {
   // DEBUG: registra objeto turno para detectar desalineamientos en la tabla (remover cuando se confirme)
   if (window && window.location && window.location.search && window.location.search.indexOf('debugTurnos') !== -1) {
     console.debug('DEBUG turno object:', t);
   }
   const tr = document.createElement('tr');
-  tr.className = `turno-row estado-${t.estado}`;
-  
-  // Agregar data-turno-id para poder identificar la fila después
+  tr.className = 'turno-row';
+  tr.style.cursor = (isAdmin() || isRecepcion()) ? 'pointer' : 'default';
+
   if (t.id) {
     tr.setAttribute('data-turno-id', t.id);
-  }
-  
-  // Aplicar clase de color según estado
-  if (t.estado === 'EN_SALA') {
-    tr.classList.add('estado-en-sala');
-  } else if (t.estado === 'REPROGRAMADO') {
-    tr.classList.add('estado-reprogramado');
-  } else if (t.estado === 'CANCELADO') {
-    tr.classList.add('estado-cancelado-paciente');
-  } else if (t.estado === 'NO_ASISTIO') {
-    tr.classList.add('estado-no-asistio');
   }
 
   const esAtendido = t.estado === 'ATENDIDO';
@@ -2158,19 +2263,21 @@ function renderTurnoRowMedica(tbody, t, animateTargetId, hayEnAtencion) {
   // Guardar estado de deshabilitación en data attributes para que los event listeners puedan acceder
   const dataDeshabilitado = deshabilitarBotones ? 'data-deshabilitado="true"' : 'data-deshabilitado="false"';
   
-  const prioridadBtns = (isAdmin() || isRecepcion()) ? `<button class="btn-prioridad-up" data-up="${t.id}" title="Subir prioridad" ${btnUpDisabled} ${dataDeshabilitado}><img src="images/up.svg" alt="↑" class="btn-icon"/></button><button class="btn-prioridad-down" data-down="${t.id}" title="Bajar prioridad" ${btnDownDisabled} ${dataDeshabilitado}><img src="images/down.svg" alt="↓" class="btn-icon"/></button>` : '';
+  const prioridadBtns = (isAdmin() || isRecepcion()) ? `<button class="btn-prioridad-up" data-up="${t.id}" title="Subir prioridad" ${btnUpDisabled} ${dataDeshabilitado}><img src="images/up.svg" alt="↑"/></button><button class="btn-prioridad-down" data-down="${t.id}" title="Bajar prioridad" ${btnDownDisabled} ${dataDeshabilitado}><img src="images/down.svg" alt="↓"/></button>` : '';
   const accionesCell = puedeEliminar
-    ? `${prioridadBtns} <button class="btn-editar" data-edit="${t.id}" title="Editar" ${btnEditDisabled} ${dataDeshabilitado}><img src="images/edit.svg" alt="✎" class="btn-icon"/> Editar</button> <button class="btn-eliminar" data-delete="${t.id}" ${btnDeleteDisabled} ${dataDeshabilitado}><img src="images/delete.svg" alt="🗑" class="btn-icon"/> Eliminar</button>`
+    ? `<div class="table-actions">${prioridadBtns}<button class="btn-editar" data-edit="${t.id}" title="Editar" ${btnEditDisabled} ${dataDeshabilitado}><img src="images/edit.svg" alt="Editar"/></button><button class="btn-eliminar" data-delete="${t.id}" title="Eliminar" ${btnDeleteDisabled} ${dataDeshabilitado}><img src="images/delete.svg" alt="Eliminar"/></button></div>`
     : '-';
     if (isDoctor()) {
       tr.innerHTML = `
-        <td style="padding:8px;border:1px solid #ddd">${t.numero_turno || ''}</td>
-        <td style="padding:8px;border:1px solid #ddd">${escapeHtml(t.paciente_nombre)}</td>
-        <td style="padding:8px;border:1px solid #ddd">${escapeHtml(t.tipo_consulta || '')}</td>
-        <td style="padding:8px;border:1px solid #ddd">${escapeHtml(t.paciente_documento||'')}</td>
-        <td style="padding:8px;border:1px solid #ddd">${escapeHtml(t.entidad||'')}</td>
-        <td style="padding:8px;border:1px solid #ddd">${escapeHtml(t.notas || '')}</td>
-        <td style="padding:8px;border:1px solid #ddd">${escapeHtml(t.programado_por || '-')}</td>
+        <td>${t.numero_turno || ''}</td>
+        <td class="col-hora col-mobile-hide">${formatearHora(t.hora)}</td>
+        <td>${escapeHtml(t.paciente_nombre)}</td>
+        <td class="col-mobile-hide">${escapeHtml(t.tipo_consulta || '')}</td>
+        <td class="col-mobile-hide">${escapeHtml(t.paciente_documento||'')}</td>
+        <td class="col-mobile-hide">${escapeHtml(t.entidad||'')}</td>
+        <td class="col-mobile-hide">${escapeHtml(t.notas || '')}</td>
+        <td>${estadoBadgeMedica(t.estado)}</td>
+        <td>-</td>
       `;
       if (animateTargetId && t.id === animateTargetId) {
         tr.classList.add('animate-up');
@@ -2178,14 +2285,15 @@ function renderTurnoRowMedica(tbody, t, animateTargetId, hayEnAtencion) {
       }
     } else {
       tr.innerHTML = `
-        <td style="padding:8px;border:1px solid #ddd">${t.numero_turno || ''}</td>
-        <td class="col-hora" style="padding:8px;border:1px solid #ddd">${formatearHora(t.hora)}</td>
-        <td style="padding:8px;border:1px solid #ddd">${escapeHtml(t.paciente_nombre)}</td>
-        <td style="padding:8px;border:1px solid #ddd">${escapeHtml(t.tipo_consulta || '')}</td>
-        <td style="padding:8px;border:1px solid #ddd">${escapeHtml(t.paciente_documento||'')}</td>
-        <td style="padding:8px;border:1px solid #ddd">${escapeHtml(t.entidad||'')}</td>
-        <td style="padding:8px;border:1px solid #ddd">${escapeHtml(t.notas || '')}</td>
-        <td style="padding:8px;border:1px solid #ddd">${accionesCell}</td>
+        <td>${t.numero_turno || ''}</td>
+        <td class="col-hora col-mobile-hide">${formatearHora(t.hora)}</td>
+        <td>${escapeHtml(t.paciente_nombre)}</td>
+        <td class="col-mobile-hide">${escapeHtml(t.tipo_consulta || '')}</td>
+        <td class="col-mobile-hide">${escapeHtml(t.paciente_documento||'')}</td>
+        <td class="col-mobile-hide">${escapeHtml(t.entidad||'')}</td>
+        <td class="col-mobile-hide">${escapeHtml(t.notas || '')}</td>
+        <td>${estadoBadgeMedica(t.estado)}</td>
+        <td>${accionesCell}</td>
       `;
     }
   // Abrir modal al hacer clic en la fila (como en electrodiagnóstico)
@@ -2248,8 +2356,6 @@ function renderTurnoRowMedica(tbody, t, animateTargetId, hayEnAtencion) {
       } catch(x){ showToast('Error al bajar prioridad', 'error'); console.error(x); }
     });
   }
-  // ajustar columnas por rol (ocultar Hora para doctor)
-  adjustColumnsForRole();
 
   if (puedeEliminar) {
     tr.querySelector('[data-delete]')?.addEventListener('click', async (e)=>{
@@ -2341,9 +2447,15 @@ async function marcarAtendido() {
 async function descargarAgendaPDF() {
   try {
     const doctorId = selectedDoctorId;
+    const fecha = $('reportDiaAgendaPDF').value;
     
     if (!doctorId) {
       showToast('Selecciona un doctor', 'error');
+      return;
+    }
+    
+    if (!fecha) {
+      showToast('Selecciona una fecha', 'error');
       return;
     }
     
@@ -2351,20 +2463,15 @@ async function descargarAgendaPDF() {
     const btnPDF = $('btnDescargarAgendaPDF');
     const textOriginal = btnPDF.textContent;
     btnPDF.disabled = true;
-    btnPDF.textContent = '⏳ Generando PDF...';
-    
-    // Obtener mes actual (puede ser personalizado)
-    const hoy = new Date();
-    const fechaInicio = new Date(hoy.getFullYear(), hoy.getMonth(), 1).toISOString().split('T')[0];
-    const fechaFin = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0).toISOString().split('T')[0];
+    btnPDF.textContent = 'Generando PDF...';
     
     const response = await apiFetch('/api/agenda/pdf', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         doctor_id: doctorId,
-        fecha_inicio: fechaInicio,
-        fecha_fin: fechaFin
+        fecha_inicio: fecha,
+        fecha_fin: fecha
       })
     });
     
@@ -2377,7 +2484,7 @@ async function descargarAgendaPDF() {
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `agenda_${doctorId}_${fechaInicio}.pdf`;
+    a.download = `agenda_${doctorId}_${fecha}.pdf`;
     document.body.appendChild(a);
     a.click();
     window.URL.revokeObjectURL(url);
@@ -2391,7 +2498,7 @@ async function descargarAgendaPDF() {
     const btnPDF = $('btnDescargarAgendaPDF');
     if (btnPDF) {
       btnPDF.disabled = false;
-      btnPDF.textContent = '📄 Descargar Agenda en PDF';
+      btnPDF.textContent = 'Descargar PDF';
     }
   }
 }
@@ -2765,6 +2872,17 @@ async function initElectro() {
   if (!isDoctor()) {
     $('crearCitaElectro')?.addEventListener('click', crearCitaElectro);
   }
+
+  // Collapsible "Nueva Cita" form
+  const collapseToggle = $('electroNuevaCitaToggle');
+  const collapseBtn = $('electroNuevaCitaCollapseBtn');
+  const collapseBody = $('electroNuevaCitaBody');
+  if (collapseToggle && collapseBody) {
+    collapseToggle.addEventListener('click', () => {
+      const isCollapsed = collapseBody.classList.toggle('collapsed');
+      if (collapseBtn) collapseBtn.textContent = isCollapsed ? '▼ Mostrar' : '▲ Ocultar';
+    });
+  }
   
   // Event listeners del modal
   $('cerrarModalDetallesCita')?.addEventListener('click', cerrarModalDetallesCita);
@@ -2776,6 +2894,12 @@ async function initElectro() {
   // Event listeners para cambios en el modal (equipo y estado)
   $('modalEquipo')?.addEventListener('change', async (e) => {
     if (!citaElectroSeleccionada) return;
+    
+    // No procesar cambios si estamos inicializando el modal
+    if (isInitializingElectroModal) {
+      console.log('[MODAL_EQUIPO_CHANGE] Ignorando cambio durante inicialización del modal');
+      return;
+    }
     
     const nuevoEquipoId = e.target.value;
     const equipoIdActual = citaElectroSeleccionada.equipo_id || '';
@@ -2826,6 +2950,12 @@ async function initElectro() {
   });
   $('modalEstado')?.addEventListener('change', async (e) => {
   if (!citaElectroSeleccionada) return;
+    
+    // No procesar cambios si estamos inicializando el modal
+    if (isInitializingElectroModal) {
+      console.log('[MODAL_ESTADO_CHANGE] Ignorando cambio durante inicialización del modal');
+      return;
+    }
     
     const nuevoEstado = e.target.value;
     console.log('[MODAL_ESTADO_CHANGE] Cambio de estado a:', nuevoEstado);
@@ -2880,11 +3010,25 @@ async function initElectro() {
       e.target.value = citaElectroSeleccionada.estado;
     }
   });
-  $('btnEnviarRecomendaciones')?.addEventListener('click', (e) => {
-    showToast('Función "Enviar Recomendaciones" - En desarrollo', 'info');
+  $('btnEnviarRecomendaciones')?.addEventListener('click', () => {
+    if (citaElectroSeleccionada) enviarRecomendacionesWhatsApp(citaElectroSeleccionada);
   });
-  $('btnEliminarCita')?.addEventListener('click', eliminarCitaElectro);
-  
+  $('btnEliminarCita')?.addEventListener('click', () => {
+    if (!citaElectroSeleccionada) return;
+    const nombre = (citaElectroSeleccionada.paciente_nombre || '').trim() || 'este paciente';
+    $('modalEliminarNombrePaciente').textContent = nombre;
+    const m = $('modalConfirmarEliminarCita');
+    m.classList.remove('hidden');
+    m.style.display = 'flex';
+  });
+  $('btnConfirmarEliminarCita')?.addEventListener('click', async () => {
+    $('modalConfirmarEliminarCita').classList.add('hidden');
+    await eliminarCitaElectro();
+  });
+  $('btnCancelarEliminarCita')?.addEventListener('click', () => {
+    $('modalConfirmarEliminarCita').classList.add('hidden');
+  });
+
   // Event listeners para modales de reprogramación y adelanto
   const btnConfRep = $('btnConfirmarReprogramar');
   const btnCancelRep = $('btnCancelarReprogramar');
@@ -2892,13 +3036,6 @@ async function initElectro() {
   const btnConfAde = $('btnConfirmarAdelantarCita');
   const btnCancelAde = $('btnCancelarAdelantarCita');
   const cerrarAde = $('cerrarModalAdelantarCita');
-  
-  console.log('[INIT_LISTENERS] btnConfirmarReprogramar existe:', !!btnConfRep);
-  console.log('[INIT_LISTENERS] btnCancelarReprogramar existe:', !!btnCancelRep);
-  console.log('[INIT_LISTENERS] cerrarModalReprogramar existe:', !!cerrarRep);
-  console.log('[INIT_LISTENERS] btnConfirmarAdelantarCita existe:', !!btnConfAde);
-  console.log('[INIT_LISTENERS] btnCancelarAdelantarCita existe:', !!btnCancelAde);
-  console.log('[INIT_LISTENERS] cerrarModalAdelantarCita existe:', !!cerrarAde);
   
   if (cerrarRep) cerrarRep.addEventListener('click', cerrarModalReprogramar);
   if (btnCancelRep) btnCancelRep.addEventListener('click', cerrarModalReprogramar);
@@ -2909,10 +3046,23 @@ async function initElectro() {
   if (btnConfAde) btnConfAde.addEventListener('click', confirmarAdelantarCita);
   $('btnConfirmarAdelantarCita')?.addEventListener('click', confirmarAdelantarCita);
   
-  // Cerrar modal con tecla Escape
+  // Cerrar modales con tecla Escape
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && !$('modalDetallesCitaElectro').classList.contains('hidden')) {
-      cerrarModalDetallesCita();
+    if (e.key !== 'Escape') return;
+    if (!$('modalDetallesCitaElectro').classList.contains('hidden')) {
+      cerrarModalDetallesCita(); return;
+    }
+    const confirmEl = $('modalConfirmarEliminarCita');
+    if (confirmEl && !confirmEl.classList.contains('hidden')) {
+      confirmEl.classList.add('hidden'); return;
+    }
+    const buscarCitasEl = $('modalBuscarCitasResultados');
+    if (buscarCitasEl && !buscarCitasEl.classList.contains('hidden')) {
+      buscarCitasEl.classList.add('hidden'); buscarCitasEl.style.display = 'none'; return;
+    }
+    const buscarEstudiosEl = $('modalBuscarEstudiosResultados');
+    if (buscarEstudiosEl && !buscarEstudiosEl.classList.contains('hidden')) {
+      buscarEstudiosEl.classList.add('hidden'); buscarEstudiosEl.style.display = 'none'; return;
     }
   });
 
@@ -3049,7 +3199,6 @@ async function checkEquiposDisponibilidad() {
             ${ocupado ? '●' : '○'}
           </div>
           <div style="color:${textoColor};font-size:0.85rem">${estado}</div>
-          <div style="font-size:0.75rem;color:#6b7280;margin-top:4px">Equipo ${i}</div>
         </div>
       `;
     }
@@ -3107,33 +3256,7 @@ async function checkEquiposDisponibilidad() {
 
 // Buscar paciente por documento y auto-completar nombre y teléfono
 async function buscarPacientePorDocumento() {
-  const doc = $('electroDocumento').value.trim();
-  
-  if (doc.length < 1) {
-    // Si el documento está vacío, limpiar nombre y teléfono
-    $('electroPacienteNombre').value = '';
-    $('electroTelefono').value = '';
-    return;
-  }
-  
-  try {
-    const res = await apiFetch(`/api/pacientes?buscar=${encodeURIComponent(doc)}`);
-    const pacientes = await res.json();
-    
-    if (pacientes && pacientes.length > 0) {
-      // Buscar el paciente con documento exacto
-      const paciente = pacientes.find(p => p.documento === doc);
-      
-      if (paciente) {
-        // Auto-completar nombre y teléfono
-        $('electroPacienteNombre').value = paciente.nombre || '';
-        $('electroTelefono').value = paciente.telefono || '';
-        $('electroDocumento').dataset.pacienteId = paciente.id;
-      }
-    }
-  } catch (e) {
-    console.error('Error buscando paciente:', e);
-  }
+  // Eliminado autocompletado por documento. No hacer nada.
 }
 
 async function buscarDiagnosticosElectro() {
@@ -3197,10 +3320,24 @@ async function cargarCitasElectro() {
       const tbody = $('citasElectroBody');
       const mensajeEstudio = filtroEstudioElectro === 'todas' ? '' : ` para ${filtroEstudioElectro}`;
       tbody.innerHTML = `<tr><td colspan="10" style="padding:20px;text-align:center;color:#999">No hay citas registradas para esta fecha${mensajeEstudio}</td></tr>`;
+      const contador = $('citasElectroContador');
+      if (contador) contador.textContent = '';
       // Actualizar información de usuario
       $('electroUsuarioProgramo').textContent = '-';
       $('electroUsuarioEdito').textContent = '-';
       return;
+    }
+
+    // Actualizar contador de citas
+    const contador = $('citasElectroContador');
+    if (contador) {
+      const total = citasFiltradas.length;
+      const completadas = citasFiltradas.filter(c => c.estado === 'Completado').length;
+      const enEstudio = citasFiltradas.filter(c => c.estado === 'En Estudio').length;
+      const partes = [`${total} cita${total !== 1 ? 's' : ''}`];
+      if (enEstudio > 0) partes.push(`${enEstudio} en estudio`);
+      if (completadas > 0) partes.push(`${completadas} completada${completadas !== 1 ? 's' : ''}`);
+      contador.textContent = partes.join(' · ');
     }
 
     // Usar setupPagination para renderizar con paginación
@@ -3237,15 +3374,15 @@ function renderCitaElectroRow(tbody, c) {
   
   tr.innerHTML = `
     <td>${formatearHora(c.hora_agendamiento)}</td>
-    <td>${formatearHora(c.hora_inicio)}</td>
-    <td>${escapeHtml(equipoDisplay)}</td>
+    <td class="col-mobile-hide">${formatearHora(c.hora_inicio)}</td>
+    <td class="col-mobile-hide">${escapeHtml(equipoDisplay)}</td>
     <td>${escapeHtml(c.paciente_nombre || '-')}</td>
     <td>${escapeHtml(c.paciente_documento || '-')}</td>
-    <td>${escapeHtml(c.telefono || '-')}</td>
+    <td class="col-mobile-hide">${escapeHtml(c.telefono || '-')}</td>
     <td>${escapeHtml(c.estudio || '-')}</td>
-    <td>${escapeHtml(c.diagnostico_codigo || '-')}</td>
-    <td>${escapeHtml(c.estado || 'Programado')}</td>
-    <td>${horaFinDisplay}</td>
+    <td class="col-mobile-hide">${escapeHtml(c.diagnostico_codigo || '-')}</td>
+    <td>${estadoBadge(c.estado || 'Programado')}</td>
+    <td class="col-mobile-hide">${horaFinDisplay}</td>
   `;
   
   // Hacer la fila clickeable para abrir modal
@@ -3400,7 +3537,12 @@ async function crearCitaElectro() {
   
   // Nota: El equipo se selecciona después en el modal cuando se inicia el estudio
   let equipoId = null;
-  
+
+  // Mostrar spinner en el botón
+  const btnCrear = $('crearCitaElectro');
+  const btnOriginalText = btnCrear ? btnCrear.textContent : 'Crear Cita';
+  if (btnCrear) { btnCrear.disabled = true; btnCrear.textContent = '⏳ Guardando...'; }
+
   try {
     const body = {
       paciente_id: pacienteId,
@@ -3463,6 +3605,8 @@ async function crearCitaElectro() {
     }
   } catch (e) { 
     showToast('Error creando cita: ' + e.message, 'error'); 
+  } finally {
+    if (btnCrear) { btnCrear.disabled = false; btnCrear.textContent = btnOriginalText; }
   }
 }
 
@@ -3589,61 +3733,72 @@ async function cargarUsuarios() {
  */
 function renderUsuarioRow(tbody, u) {
   const tr = document.createElement('tr');
-  const rolLabels = { admin: 'Administrador', recepcion: 'Recepción', electro: 'Electrodiagnóstico', doctor: 'Doctor' };
-  const estadoIcon = u.activo ? '🟢' : '🔴';
-  const estadoColor = u.activo ? '#10b981' : '#666';
-  
+  const rolMap = {
+    admin:     { label: 'Administrador',     bg: '#fef3c7', color: '#92400e', border: '#fde047' },
+    recepcion: { label: 'Recepci\u00f3n',       bg: '#dbeafe', color: '#1d4ed8', border: '#93c5fd' },
+    electro:   { label: 'Electrodiagn\u00f3stico', bg: '#ede9fe', color: '#5b21b6', border: '#c4b5fd' },
+    doctor:    { label: 'Doctor',             bg: '#dcfce7', color: '#15803d', border: '#86efac' },
+  };
+  const rol = rolMap[u.rol] || { label: escapeHtml(u.rol), bg: '#f3f4f6', color: '#374151', border: '#d1d5db' };
+  const rolBadge = `<span style="display:inline-block;padding:3px 10px;border-radius:12px;font-size:0.78rem;font-weight:600;background:${rol.bg};color:${rol.color};border:1px solid ${rol.border};white-space:nowrap">${rol.label}</span>`;
+  const estadoBadgeHtml = u.activo
+    ? `<span style="display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:12px;font-size:0.78rem;font-weight:600;background:#dcfce7;color:#15803d;border:1px solid #86efac"><span style="width:7px;height:7px;border-radius:50%;background:#16a34a;display:inline-block"></span>Activo</span>`
+    : `<span style="display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:12px;font-size:0.78rem;font-weight:600;background:#fee2e2;color:#991b1b;border:1px solid #fca5a5"><span style="width:7px;height:7px;border-radius:50%;background:#dc2626;display:inline-block"></span>Inactivo</span>`;
+
+  const toggleBtn = currentUser?.id !== u.id
+    ? `<button class="btn-usr-toggle" data-toggle="${u.id}" data-activo="${u.activo ? 'true' : 'false'}" title="${u.activo ? 'Desactivar' : 'Activar'}"><img src="images/power.svg" alt="${u.activo ? 'Desactivar' : 'Activar'}"/></button>` : '';
+  const delBtn = currentUser?.id !== u.id
+    ? `<button class="btn-usr-del" data-del="${u.id}" title="Eliminar"><img src="images/delete.svg" alt="Eliminar"/></button>` : '';
+
   tr.innerHTML = `
-    <td>${escapeHtml(u.usuario)}</td>
-    <td>${escapeHtml(u.nombre||'')}</td>
-    <td>${rolLabels[u.rol]||u.rol}</td>
-    <td>${u.numero_consultorio ? u.numero_consultorio : '-'}</td>
-    <td style="color:${estadoColor};font-weight:600">${estadoIcon} ${u.activo ? 'Activo' : 'Inactivo'}</td>
+    <td><span style="font-weight:500;color:#111827">${escapeHtml(u.usuario)}</span></td>
+    <td>${escapeHtml(u.nombre || '-')}</td>
+    <td>${rolBadge}</td>
+    <td>${escapeHtml(String(u.numero_consultorio || '-'))}</td>
+    <td>${estadoBadgeHtml}</td>
     <td>
-      <button class="btn-estado-small" data-edit="${u.id}" style="background:#2d4a47">Editar</button>
-      ${u.numero_consultorio ? `<button class="btn-estado-small" data-speak="${u.numero_consultorio}" style="background:#059669;margin-left:4px" title="Reproducir número de consultorio">🔊 ${u.numero_consultorio}</button>` : ''}
-      <button class="btn-estado-small" data-historial="${u.id}" style="background:#2d4a47;margin-left:4px" title="Ver historial de cambios">Historial</button>
-      <button class="btn-estado-small" data-reset="${u.id}" style="background:#2d4a47;margin-left:4px" title="Resetear contraseña">Reset</button>
-      ${currentUser?.id !== u.id ? `<button class="btn-estado-small" data-toggle="${u.id}" style="background:#2d4a47;margin-left:4px">${u.activo ? 'Desactivar' : 'Activar'}</button>` : ''}
-      ${currentUser?.id !== u.id ? `<button class="btn-estado-small" data-del="${u.id}" style="background:#dc2626;margin-left:4px">Eliminar</button>` : ''}
+      <div class="table-actions">
+        <button class="btn-usr-edit" data-edit="${u.id}" title="Editar"><img src="images/edit.svg" alt="Editar"/></button>
+        <button class="btn-usr-reset" data-reset="${u.id}" title="Resetear contrase\u00f1a"><img src="images/lock.svg" alt="Resetear"/></button>
+        <button class="btn-usr-hist" data-historial="${u.id}" title="Ver historial"><img src="images/history.svg" alt="Historial"/></button>
+        ${u.numero_consultorio ? `<button class="btn-usr-speak" data-speak="${u.numero_consultorio}" title="Reproducir consultorio ${u.numero_consultorio}"><img src="images/speaker.svg" alt="Hablar"/></button>` : ''}
+        ${toggleBtn}
+        ${delBtn}
+      </div>
     </td>
   `;
-  
+
   tr.querySelector('[data-edit]')?.addEventListener('click', () => editarUsuario(u));
-  tr.querySelector('[data-speak]')?.addEventListener('click', (e) => speakConsultorio(e.target.dataset.speak));
-  tr.querySelector('[data-historial]')?.addEventListener('click', (e) => verHistorialAuditoria(u.id, u.usuario));
+  tr.querySelector('[data-speak]')?.addEventListener('click', (e) => speakConsultorio(e.target.closest('[data-speak]').dataset.speak));
+  tr.querySelector('[data-historial]')?.addEventListener('click', () => verHistorialAuditoria(u.id, u.usuario));
   tr.querySelector('[data-reset]')?.addEventListener('click', async (e) => {
-    if (!confirm(`¿Resetear contraseña para ${u.usuario}?`)) return;
+    if (!confirm(`\u00bfResetear contrase\u00f1a para ${u.usuario}?`)) return;
     try {
-      const r = await apiFetch(`/api/usuarios/${e.target.dataset.reset}/reset-password`, { method: 'PATCH' });
+      const r = await apiFetch(`/api/usuarios/${e.target.closest('[data-reset]').dataset.reset}/reset-password`, { method: 'PATCH' });
       const d = await r.json();
-      if (d.ok) {
-        verResetPassword(d);
-      } else showToast(d.error||'Error', 'error');
+      if (d.ok) { verResetPassword(d); } else showToast(d.error||'Error', 'error');
     } catch (x) { showToast('Error', 'error'); }
   });
   tr.querySelector('[data-toggle]')?.addEventListener('click', async (e) => {
     const newState = u.activo ? 'desactivar' : 'activar';
-    if (!confirm(`¿${newState.charAt(0).toUpperCase() + newState.slice(1)} este usuario?`)) return;
+    if (!confirm(`\u00bf${newState.charAt(0).toUpperCase() + newState.slice(1)} este usuario?`)) return;
     try {
-      const r = await apiFetch(`/api/usuarios/${e.target.dataset.toggle}/toggle-estado`, { method: 'PATCH' });
+      const r = await apiFetch(`/api/usuarios/${e.target.closest('[data-toggle]').dataset.toggle}/toggle-estado`, { method: 'PATCH' });
       const d = await r.json();
-      if (d.ok) {
-        showToast(`Usuario ${d.activo ? 'activado' : 'desactivado'}`, 'success');
-        cargarUsuarios();
-      } else showToast(d.error||'Error', 'error');
+      if (d.ok) { showToast(`Usuario ${d.activo ? 'activado' : 'desactivado'}`, 'success'); cargarUsuarios(); }
+      else showToast(d.error||'Error', 'error');
     } catch (x) { showToast('Error', 'error'); }
   });
   tr.querySelector('[data-del]')?.addEventListener('click', async (e) => {
-    if (!confirm('¿Eliminar este usuario permanentemente?')) return;
+    if (!confirm('\u00bfEliminar este usuario permanentemente?')) return;
     try {
-      const r = await apiFetch(`/api/usuarios/${e.target.dataset.del}`, { method: 'DELETE' });
+      const r = await apiFetch(`/api/usuarios/${e.target.closest('[data-del]').dataset.del}`, { method: 'DELETE' });
       const d = await r.json();
       if (d.ok) { showToast('Usuario eliminado', 'success'); cargarUsuarios(); }
       else showToast(d.error||'Error', 'error');
     } catch (x) { showToast('Error', 'error'); }
   });
-  
+
   tbody.appendChild(tr);
 }
 
@@ -3987,7 +4142,7 @@ async function buscarAuditoria() {
     showToast('Error buscando auditoría: ' + e.message, 'error');
     const containerEl = document.getElementById('busquedaResultados');
     if (containerEl) {
-      containerEl.innerHTML = `<p style="text-align:center;color:#dc2626;padding:20px">Error: ${e.message}</p>`;
+      containerEl.innerHTML = `<p style="text-align:center;color:#dc2626;padding:20px">Error: ${escapeHtml(e.message)}</p>`;
     }
   }
 }
@@ -4344,11 +4499,11 @@ function formatMoney(n){
   return '$ ' + formatted.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
 
-function addRow(desc='', price=0){
+async function addRow(desc='', price=0){
   const tbody = document.querySelector('#itemsTable tbody');
   const tr = document.createElement('tr');
   
-  const servicios = getServicios();
+  const servicios = await getServicios();
   
   const descSelect = `<select class="item-desc">
     <option value="">Seleccionar servicio</option>
@@ -4409,10 +4564,10 @@ function addRow(desc='', price=0){
   tr.querySelector('.remove').addEventListener('click', ()=>{ tr.remove(); recalc(); });
 }
 
-function initItemsTable(){
+async function initItemsTable(){
   const tbody = document.querySelector('#itemsTable tbody');
   // si no hay filas, agrega una de ejemplo
-  if(!tbody.children.length) addRow();
+  if(!tbody.children.length) await addRow();
 }
 
 function recalc(){
@@ -4434,34 +4589,27 @@ function recalc(){
 function setDefaultDate(){
   const f = new Date().toISOString().slice(0,10);
   $('fecha').value = f;
-  $('fecha').readOnly = true;
-  $('fecha').style.cursor = 'not-allowed';
-  $('fecha').style.backgroundColor = '#f0f0f0';
 }
 
 async function nextNumber(){
   try {
-    const res = await apiFetch('/api/recibos');
-    const arr = await res.json();
-    // Buscar el máximo número entre todos los recibos
-    // SOLO contar números pequeños (secuenciales, no timestamps)
-    let maxNum = 0;
-    arr.forEach(r => {
-      const num = Number(r.numero);
-      // Solo contar números menores a 10000 (ignorar timestamps)
-      if(!isNaN(num) && num > maxNum && num < 10000) maxNum = num;
-    });
-    const next = maxNum + 1;
-    $('numero').value = String(next).padStart(4,'0');
+    const res = await apiFetch('/api/recibos/next-number');
+    const data = await res.json();
+    $('numero').value = String(data.nextNumber).padStart(4,'0');
   } catch(e) {
-    // si falla el servidor, fallback local
-    const saved = JSON.parse(localStorage.getItem(lsKey) || '[]');
-    let maxNum = 0;
-    saved.forEach(r => {
-      const num = Number(r.numero);
-      if(!isNaN(num) && num > maxNum && num < 10000) maxNum = num;
-    });
-    $('numero').value = String(maxNum + 1).padStart(4,'0');
+    // fallback: buscar en lista del servidor
+    try {
+      const res2 = await apiFetch('/api/recibos');
+      const arr = await res2.json();
+      let maxNum = 0;
+      arr.forEach(r => {
+        const num = Number(r.numero);
+        if(!isNaN(num) && num > maxNum && num < 10000) maxNum = num;
+      });
+      $('numero').value = String(maxNum + 1).padStart(4,'0');
+    } catch(e2) {
+      $('numero').value = '0001';
+    }
   }
   updateSavedCount();
 }
@@ -4639,6 +4787,7 @@ function resetFormulario() {
 }
 
 async function abrirPDF(){
+  showLoader(true);
   try {
     const res = await apiFetch('/api/recibos');
     const arr = await res.json();
@@ -4656,13 +4805,14 @@ async function abrirPDF(){
     lastReciboId = lastRecibo.id;
     
     const pdfWindow = window.open(`/api/recibos/${lastRecibo.id}/pdf`, '_blank');
-    pdfWindow.onload = () => {
-      setTimeout(() => {
-        pdfWindow.print();
-      }, 250);
-    };
+    if (!pdfWindow) {
+      showToast('El navegador bloqueó la ventana emergente. Permite los popups para este sitio.', 'error');
+      return;
+    }
   } catch(e){
     showToast('Error al generar PDF', 'error');
+  } finally {
+    showLoader(false);
   }
 }
 
@@ -4671,6 +4821,7 @@ async function descargarPDFAnterior(){
     showToast('No hay PDF anterior', 'error');
     return;
   }
+  showLoader(true);
   try {
     const res = await apiFetch('/api/recibos');
     const arr = await res.json();
@@ -4682,26 +4833,36 @@ async function descargarPDFAnterior(){
     let sorted = arr.sort((a, b) => b.id - a.id);
     const previousRecibo = sorted[1];
     const pdfWindow = window.open(`/api/recibos/${previousRecibo.id}/pdf`, '_blank');
-    pdfWindow.onload = () => {
-      setTimeout(() => {
-        pdfWindow.print();
-      }, 250);
-    };
+    if (!pdfWindow) {
+      showToast('El navegador bloqueó la ventana emergente. Permite los popups para este sitio.', 'error');
+    }
   } catch(e){
     showToast('Error al descargar PDF anterior', 'error');
+  } finally {
+    showLoader(false);
   }
 }
 
 async function cargarLista(){
   try {
     const res = await apiFetch('/api/recibos');
+    if (!res.ok) {
+      if (res.status === 401) {
+        showToast('Sesión expirada. Volviendo al inicio...', 'error');
+        setTimeout(() => { showView('view-login'); }, 1200);
+      } else {
+        showToast('Error al cargar recibos', 'error');
+      }
+      updateStats([]);
+      return;
+    }
     const recibos = await res.json();
     const tbody = document.getElementById('savedItems');
-    updateStats(recibos);
+    updateStats(Array.isArray(recibos) ? recibos : []);
     
     if(tbody){
       tbody.innerHTML = '';
-      if(!recibos.length) {
+      if(!recibos || !recibos.length) {
         tbody.innerHTML = '<tr><td colspan="5" style="padding:12px;text-align:center;color:#999">No hay recibos guardados</td></tr>';
       } else {
         recibos.forEach((r, idx) => {
@@ -4725,31 +4886,38 @@ async function cargarLista(){
           }
           
           const deleteBtn = canDeleteRecibos() 
-            ? `<button class="delete" data-id="${r.id}" style="font-size:0.85rem;padding:6px 10px;background:#ef4444;color:white;border:0;border-radius:6px;cursor:pointer;margin-left:6px">✕ Eliminar</button>`
+            ? `<button class="delete btn-danger btn-sm" data-id="${r.id}" style="margin-left:6px">✕ Eliminar</button>`
             : '';
-          
+
+          // Extraer entidad del campo data JSON
+          let entidadMostrar = '-';
+          try {
+            if (r.data) {
+              const d = typeof r.data === 'string' ? JSON.parse(r.data) : r.data;
+              entidadMostrar = d.entidad || '-';
+            }
+          } catch(_) {}
+
+          // Total con separador de miles
+          const totalFormateado = Number(r.total || 0).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
           tr.innerHTML = `
             <td style="padding:12px;border:1px solid #e5e7eb;color:#374151">${escapeHtml(r.numero || '-')}</td>
             <td style="padding:12px;border:1px solid #e5e7eb;color:#374151">${escapeHtml(r.cliente || '-')}</td>
+            <td style="padding:12px;border:1px solid #e5e7eb;color:#374151">${escapeHtml(entidadMostrar)}</td>
             <td style="padding:12px;border:1px solid #e5e7eb;color:#374151">${escapeHtml(fechaFormato)}</td>
-            <td style="padding:12px;border:1px solid #e5e7eb;color:#374151;text-align:right;font-weight:500">$${escapeHtml(Number(r.total || 0).toFixed(2))}</td>
+            <td style="padding:12px;border:1px solid #e5e7eb;color:#374151;text-align:right;font-weight:500">$ ${escapeHtml(totalFormateado)}</td>
             <td style="padding:12px;border:1px solid #e5e7eb;text-align:center;white-space:nowrap">
-              <a href="/api/recibos/${r.id}/pdf" target="_blank" style="padding:6px 10px;background:#10b981;color:white;border:0;border-radius:6px;cursor:pointer;font-size:0.85rem;text-decoration:none;display:inline-block">📄 PDF</a>
+              <a href="/api/recibos/${r.id}/pdf" target="_blank" class="btn-success btn-sm" style="text-decoration:none">📄 PDF</a>
               ${deleteBtn}
             </td>
           `;
           tbody.appendChild(tr);
         });
         
-        // listeners delete con protección de contraseña
+        // listeners delete (el servidor ya valida que sea admin)
         tbody.querySelectorAll('.delete').forEach(b => b.addEventListener('click', async (e)=>{
-          const password = prompt('Ingresa la contraseña para eliminar el recibo:');
-          if(!password) return;
-          if(password !== '1NN4R') {
-            showToast('Contraseña incorrecta', 'error');
-            return;
-          }
-          if(!confirm('¿Eliminar este recibo? Esta acción no se puede deshacer.')) return;
+          if(!confirm('¿Eliminar este recibo? Esta acción no se puede deshacer.\nSolo los administradores pueden eliminar recibos.')) return;
           const id = e.target.dataset.id;
           try {
             const res = await apiFetch(`/api/recibos/${id}`, { method: 'DELETE' });
@@ -4773,21 +4941,20 @@ async function cargarLista(){
 
 function updateSavedCount(n) {
   // Siempre cargar desde el servidor
-  console.log('[DEBUG] updateSavedCount iniciado');
-  apiFetch('/api/recibos').then(r=>r.json()).then(arr=> {
-    console.log('[DEBUG] Recibos cargados desde servidor:', arr);
-    updateStats(arr);
-  }).catch((err)=> {
-    console.error('[DEBUG] Error cargando recibos:', err);
+  apiFetch('/api/recibos').then(r => {
+    if (!r.ok) return [];
+    return r.json();
+  }).then(arr=> {
+    updateStats(Array.isArray(arr) ? arr : []);
+  }).catch(() => {
     updateStats([]);
   });
 }
 
 function updateStats(recibos) {
-  console.log('[DEBUG] updateStats llamado con recibos:', recibos);
+  if (!Array.isArray(recibos)) recibos = [];
   
   const hoy = new Date().toISOString().slice(0, 10);
-  console.log('[DEBUG] Fecha de hoy:', hoy);
   
   // Normalizar fechas a formato YYYY-MM-DD para comparación
   const recibosHoy = recibos.filter(r => {
@@ -4795,7 +4962,6 @@ function updateStats(recibos) {
     
     // Si es un string y ya está en YYYY-MM-DD, úsalo directamente
     if (typeof fechaFormato === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(fechaFormato)) {
-      console.log('[DEBUG] Recibo', r.id, 'fecha ya en formato correcto:', fechaFormato, '===', hoy, '?', fechaFormato === hoy);
       return fechaFormato === hoy;
     }
     
@@ -4803,9 +4969,7 @@ function updateStats(recibos) {
     if (fechaFormato) {
       const d = new Date(fechaFormato);
       if (!isNaN(d.getTime())) {
-        fechaFormato = d.toISOString().split('T')[0];
-        console.log('[DEBUG] Recibo', r.id, 'fecha convertida:', fechaFormato, '===', hoy, '?', fechaFormato === hoy);
-        return fechaFormato === hoy;
+        return d.toISOString().split('T')[0] === hoy;
       }
     }
     
@@ -4814,22 +4978,12 @@ function updateStats(recibos) {
   
   const totalHoy = recibosHoy.reduce((sum, r) => sum + (Number(r.total) || 0), 0);
   
-  console.log('[DEBUG] Recibos de hoy:', recibosHoy.length, 'Total:', totalHoy);
-  
   $('statsRecibosHoy').textContent = recibosHoy.length;
-  $('statsTotalHoy').textContent = '$ ' + totalHoy.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  $('statsTotalHoy').textContent = '$ ' + totalHoy.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 async function resetAllRecibos(){
-  if(!confirm('¿Eliminar TODOS los recibos guardados? Esta acción no se puede deshacer.')) return;
-  
-  const password = prompt('Ingresa la contraseña para eliminar todos los recibos:');
-  if(!password) return;
-  if(password !== '1NN4R') {
-    showToast('Contraseña incorrecta', 'error');
-    return;
-  }
-  
+  if(!confirm('¿Eliminar TODOS los recibos guardados? Esta acción no se puede deshacer.\nSolo los administradores pueden realizar esta operación.')) return;
   if(!confirm('Confirma: ¿Eliminar todos los recibos?')) return;
   
   showLoader(true);
@@ -5225,7 +5379,7 @@ function renderDiagnosticoRow(tbody, d) {
     <td style="padding:12px">${escapeHtml(d.descripcion || '-')}</td>
     <td style="padding:12px">${d.activo === 1 ? '<span style="background:#dcfce7;color:#15803d;padding:4px 8px;border-radius:4px;font-size:0.85rem">Activo</span>' : '<span style="background:#fee2e2;color:#991b1b;padding:4px 8px;border-radius:4px;font-size:0.85rem">Inactivo</span>'}</td>
     <td style="padding:12px">
-      <button class="btn-eliminar-diag" data-id="${d.id}" style="padding:6px 10px;background:#dc2626;color:white;border:none;border-radius:4px;cursor:pointer;font-size:0.85rem">Eliminar</button>
+      <button class="btn-eliminar-diag btn-danger btn-sm" data-id="${d.id}">Eliminar</button>
     </td>
   `;
   
@@ -5249,12 +5403,43 @@ function renderDiagnosticoRow(tbody, d) {
 async function iniciarEstudioModal() {
   if (!citaElectroSeleccionada) return;
   
+  // VALIDACIÓN: Verificar que ya haya llegado la hora de agendamiento
+  const ahora = new Date();
+  const horaActualHH = String(ahora.getHours()).padStart(2, '0');
+  const horaActualMM = String(ahora.getMinutes()).padStart(2, '0');
+  const horaActual = `${horaActualHH}:${horaActualMM}`;
+  
+  const horaAgendada = citaElectroSeleccionada.hora_agendamiento || '';
+  
+  // Validar que la hora actual sea >= a la hora agendada
+  if (horaActual < horaAgendada) {
+    const faltanMinutos = Math.ceil((new Date(`2000-01-01 ${horaAgendada}`) - new Date(`2000-01-01 ${horaActual}`)) / 60000);
+    showToast(`❌ El estudio está agendado para las ${horaAgendada}. Faltan ${faltanMinutos} minutos para poder iniciarlo.`, 'error');
+    return;
+  }
+  
   // Mostrar modal de confirmación
   abrirModalConfirmarDuracion();
 }
 
 async function finalizarEstudioModal() {
   if (!citaElectroSeleccionada) return;
+  
+  // Mostrar modal de confirmación
+  const modal = $('modalConfirmarFinalizarEstudio');
+  if (modal) {
+    modal.classList.remove('hidden');
+  }
+}
+
+async function confirmarFinalizarEstudio() {
+  if (!citaElectroSeleccionada) return;
+  
+  // Cerrar modal de confirmación
+  const modal = $('modalConfirmarFinalizarEstudio');
+  if (modal) {
+    modal.classList.add('hidden');
+  }
   
   try {
     const ahora = new Date();
@@ -5317,7 +5502,15 @@ async function finalizarEstudioModal() {
       showToast(data?.error || 'Error finalizando estudio', 'error');
     }
   } catch (e) {
+    console.error('[FINALIZAR] Error:', e);
     showToast('Error finalizando estudio', 'error');
+  }
+}
+
+function cancelarFinalizarEstudio() {
+  const modal = $('modalConfirmarFinalizarEstudio');
+  if (modal) {
+    modal.classList.add('hidden');
   }
 }
 
@@ -5424,6 +5617,21 @@ async function confirmarDuracionEstudio() {
   
   if (!citaElectroSeleccionada) {
     showToast('Error: No hay cita seleccionada', 'error');
+    return;
+  }
+  
+  // VALIDACIÓN: Verificar que ya haya llegado la hora de agendamiento
+  const ahora = new Date();
+  const horaActualHH = String(ahora.getHours()).padStart(2, '0');
+  const horaActualMM = String(ahora.getMinutes()).padStart(2, '0');
+  const horaActual = `${horaActualHH}:${horaActualMM}`;
+  
+  const horaAgendada = citaElectroSeleccionada.hora_agendamiento || '';
+  
+  // Validar que la hora actual sea >= a la hora agendada
+  if (horaActual < horaAgendada) {
+    const faltanMinutos = Math.ceil((new Date(`2000-01-01 ${horaAgendada}`) - new Date(`2000-01-01 ${horaActual}`)) / 60000);
+    showToast(`❌ El estudio está agendado para las ${horaAgendada}. Faltan ${faltanMinutos} minutos para poder iniciarlo.`, 'error');
     return;
   }
   
@@ -5542,6 +5750,21 @@ async function iniciarEstudioSinDuracion() {
   
   if (!citaElectroSeleccionada) return;
   
+  // VALIDACIÓN: Verificar que ya haya llegado la hora de agendamiento
+  const ahora = new Date();
+  const horaActualHH = String(ahora.getHours()).padStart(2, '0');
+  const horaActualMM = String(ahora.getMinutes()).padStart(2, '0');
+  const horaActual = `${horaActualHH}:${horaActualMM}`;
+  
+  const horaAgendada = citaElectroSeleccionada.hora_agendamiento || '';
+  
+  // Validar que la hora actual sea >= a la hora agendada
+  if (horaActual < horaAgendada) {
+    const faltanMinutos = Math.ceil((new Date(`2000-01-01 ${horaAgendada}`) - new Date(`2000-01-01 ${horaActual}`)) / 60000);
+    showToast(`❌ El estudio está agendado para las ${horaAgendada}. Faltan ${faltanMinutos} minutos para poder iniciarlo.`, 'error');
+    return;
+  }
+  
   // VALIDAR QUE SE HAYA SELECCIONADO UN EQUIPO
   const equipoSelect = $('modalEquipo');
   if (!equipoSelect || !equipoSelect.value) {
@@ -5550,11 +5773,6 @@ async function iniciarEstudioSinDuracion() {
   }
   
   try {
-    const ahora = new Date();
-    const hh = String(ahora.getHours()).padStart(2, '0');
-    const mm = String(ahora.getMinutes()).padStart(2, '0');
-    const horaActual = `${hh}:${mm}`;
-    
     // Obtener la duración predeterminada de la cita (en minutos)
     const duracionMinutos = citaElectroSeleccionada.duracion_minutos || 480; // 480 minutos = 8 horas por defecto
     
@@ -5804,9 +6022,221 @@ function actualizarProgresoEstudio() {
   }, 250);
 }
 
+// Función para enviar recomendaciones por WhatsApp
+function enviarRecomendacionesWhatsApp(cita) {
+  if (!cita) {
+    showToast('Error: No hay cita seleccionada', 'error');
+    return;
+  }
+
+  // Validar que haya teléfono
+  if (!cita.telefono) {
+    showToast('Error: El paciente no tiene teléfono registrado', 'error');
+    return;
+  }
+
+  // Crear un input file oculto
+  const fileInput = document.createElement('input');
+  fileInput.type = 'file';
+  fileInput.accept = '.pdf';
+  fileInput.style.display = 'none';
+
+  fileInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    // Guardar temporalmente el archivo seleccionado
+    citaParaWhatsApp = {
+      cita: cita,
+      archivo: file
+    };
+
+    // Mostrar modal con información de la cita y el archivo
+    mostrarModalEnviarWhatsApp(cita, file.name);
+  });
+
+  document.body.appendChild(fileInput);
+  fileInput.click();
+  document.body.removeChild(fileInput);
+}
+
+// Variable global para guardar la información temporalmente
+let citaParaWhatsApp = null;
+
+// Función para mostrar modal de confirmación
+function mostrarModalEnviarWhatsApp(cita, nombreArchivo) {
+  // Crear modal si no existe
+  let modal = $('modalEnviarWhatsApp');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'modalEnviarWhatsApp';
+    modal.className = 'modal hidden';
+    modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);align-items:center;justify-content:center;z-index:1000;padding:20px;display:none';
+    modal.innerHTML = `
+      <div class="modal-content" style="background:white;border-radius:12px;padding:32px;max-width:500px;width:100%;box-shadow:0 20px 25px -5px rgba(0,0,0,0.1)">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px">
+          <h2 style="margin:0;color:#1f2937">Enviar Recomendaciones por WhatsApp</h2>
+          <button id="cerrarModalWhatsApp" style="background:none;border:none;font-size:24px;cursor:pointer;color:#6b7280;padding:0;width:32px;height:32px;display:flex;align-items:center;justify-content:center">&times;</button>
+        </div>
+
+        <div style="margin-bottom:20px;padding:16px;background:#f3f4f6;border-radius:8px">
+          <p style="margin:0 0 12px 0;font-size:0.85rem;color:#6b7280;font-weight:600">INFORMACIÓN DEL PACIENTE</p>
+          <div style="display:grid;gap:8px;font-size:0.95rem">
+            <div><strong>Nombre:</strong> <span id="whatsappNombrePaciente">-</span></div>
+            <div><strong>Documento:</strong> <span id="whatsappDocumento">-</span></div>
+            <div><strong>Teléfono:</strong> <span id="whatsappTelefono">-</span></div>
+          </div>
+        </div>
+
+        <div style="margin-bottom:20px;padding:16px;background:#f0fdf4;border-left:4px solid #059669;border-radius:8px">
+          <p style="margin:0 0 12px 0;font-size:0.85rem;color:#059669;font-weight:600">📎 ARCHIVO SELECCIONADO</p>
+          <div style="font-size:0.95rem;color:#1f2937;font-weight:500" id="whatsappNombreArchivo">-</div>
+        </div>
+
+        <div style="margin-bottom:20px">
+          <label style="display:block;font-size:0.85rem;color:#6b7280;font-weight:600;margin-bottom:8px">Mensaje personalizado (opcional):</label>
+          <textarea id="whatsappMensajePersonalizado" placeholder="Agregar un mensaje personalizado..." style="width:100%;padding:12px;border:1px solid #d1d5db;border-radius:6px;font-size:0.95rem;font-family:Arial,sans-serif;resize:vertical;min-height:80px"></textarea>
+        </div>
+
+        <div style="display:flex;gap:12px;justify-content:flex-end">
+          <button id="btnCancelarWhatsApp" class="btn-secondary">Cancelar</button>
+          <button id="btnConfirmarWhatsApp" class="btn-success">Abrir WhatsApp</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+
+    // Event listeners
+    $('cerrarModalWhatsApp').addEventListener('click', () => {
+      modal.classList.add('hidden');
+      modal.style.display = 'none';
+    });
+
+    $('btnCancelarWhatsApp').addEventListener('click', () => {
+      modal.classList.add('hidden');
+      modal.style.display = 'none';
+    });
+
+    $('btnConfirmarWhatsApp').addEventListener('click', enviarPorWhatsApp);
+  }
+
+  // Llenar datos del modal
+  $('whatsappNombrePaciente').textContent = escapeHtml(cita.paciente_nombre || '-');
+  $('whatsappDocumento').textContent = escapeHtml(cita.paciente_documento || '-');
+  $('whatsappTelefono').textContent = escapeHtml(cita.telefono || '-');
+  $('whatsappNombreArchivo').textContent = nombreArchivo;
+  $('whatsappMensajePersonalizado').value = '';
+
+  // Mostrar modal
+  modal.classList.remove('hidden');
+  modal.style.display = 'flex';
+}
+
+// Función para enviar por WhatsApp
+function enviarPorWhatsApp() {
+  if (!citaParaWhatsApp) {
+    showToast('Error: No hay información para enviar', 'error');
+    return;
+  }
+
+  const cita = citaParaWhatsApp.cita;
+  const archivo = citaParaWhatsApp.archivo;
+  const mensajePersonalizado = $('whatsappMensajePersonalizado').value.trim();
+
+  // Construir el mensaje para WhatsApp con formato correcto de fecha
+  let fechaObj;
+  try {
+    console.log('Fecha recibida:', cita.fecha, 'Tipo:', typeof cita.fecha);
+    
+    // Intentar parsear la fecha de diferentes formas
+    if (typeof cita.fecha === 'string') {
+      // Eliminar hora si está incluida (formato ISO: YYYY-MM-DD HH:MM:SS)
+      const soloFecha = cita.fecha.split(' ')[0];
+      
+      if (soloFecha.includes('-')) {
+        // Formato YYYY-MM-DD
+        const [year, month, day] = soloFecha.split('-');
+        fechaObj = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+      } else if (soloFecha.includes('/')) {
+        // Formato DD/MM/YYYY
+        const [day, month, year] = soloFecha.split('/');
+        fechaObj = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+      } else {
+        // Intentar parseo directo
+        fechaObj = new Date(cita.fecha);
+      }
+    } else {
+      // Si es un número (timestamp)
+      fechaObj = new Date(cita.fecha);
+    }
+    
+    // Validar que sea una fecha válida
+    if (isNaN(fechaObj.getTime())) {
+      console.error('Fecha inválida después del parseo:', cita.fecha);
+      throw new Error('Fecha inválida');
+    }
+    
+    console.log('Fecha parseada correctamente:', fechaObj);
+  } catch (e) {
+    console.error('Error parsing fecha:', e);
+    showToast('Error: Formato de fecha inválido', 'error');
+    return;
+  }
+
+  // Formato de fecha: DD de MMMM de YYYY
+  const options = { day: 'numeric', month: 'long', year: 'numeric' };
+  const fechaFormato = fechaObj.toLocaleDateString('es-ES', options);
+
+  // Asegurarse de que la fecha sea capitalizada correctamente
+  const fechaCapitalizada = fechaFormato.charAt(0).toUpperCase() + fechaFormato.slice(1);
+
+  // Mensaje predeterminado del instituto
+  let mensaje = `HOLA, ${(cita.paciente_nombre || '').toUpperCase()}, INSTITUTO NEUROCIENCIAS DE NARIÑO LE INFORMA QUE:\n\n`;
+  mensaje += `Tiene programada su cita para la toma de su ${cita.estudio || 'ESTUDIO'}\n`;
+  mensaje += `DÍA:  ${fechaCapitalizada.toUpperCase()}\n`;
+  mensaje += `HORA:  ${cita.hora_agendamiento || '-'}\n\n`;
+  mensaje += `Le recordamos que será atendido por una técnica especializada en electrodiagnostico.\n`;
+  mensaje += `Anexo a este mensaje le enviamos las recomendaciones que debe tener en cuenta, le recordamos la dirección: Carrera 34 #13-80, Barrio San Ignacio.\n`;
+  mensaje += `Teléfonos 3053560651- 6027238141\n\n`;
+  mensaje += `NOTA: no olvide traer su orden de servicio, copia de su documento de identificación y epicrisis o historia clínica.\n\n`;
+  mensaje += `Le solicitamos confirmar su asistencia.\n`;
+  mensaje += `Recuerde acercarse al centro comercial Valle de Atriz 2do piso y hacer la respectiva facturación con sello. Muchas Gracias.`;
+
+  if (mensajePersonalizado) {
+    mensaje += `\n\n${mensajePersonalizado}`;
+  }
+
+  // Formatear el número de teléfono para WhatsApp
+  let numeroWhatsApp = cita.telefono.replace(/\D/g, '');
+  
+  if (!numeroWhatsApp.startsWith('+')) {
+    if (numeroWhatsApp.length === 10) {
+      numeroWhatsApp = '57' + numeroWhatsApp;
+    }
+    numeroWhatsApp = '+' + numeroWhatsApp;
+  }
+
+  // Abrir WhatsApp con el mensaje
+  const urlWhatsApp = `https://wa.me/${numeroWhatsApp}?text=${encodeURIComponent(mensaje)}`;
+  
+  // Cerrar modal
+  const modal = $('modalEnviarWhatsApp');
+  if (modal) {
+    modal.classList.add('hidden');
+    modal.style.display = 'none';
+  }
+
+  // Abrir WhatsApp
+  window.open(urlWhatsApp, '_blank');
+
+  showToast(`WhatsApp abierto. Adjunta el archivo: ${archivo.name}`, 'success');
+}
+
 function abrirModalDetallesCita(cita) {
-  console.log('[MODAL_DETALLES] Abriendo modal de detalles');
   citaElectroSeleccionada = cita;
+  
+  // Activar flag para evitar cambios automáticos
+  isInitializingElectroModal = true;
   
   // Rellenar datos de paciente
   $('modalPacienteNombre').textContent = escapeHtml(cita.paciente_nombre || '-');
@@ -5828,7 +6258,6 @@ function abrirModalDetallesCita(cita) {
     selectEstado.disabled = true;
     selectEstado.style.opacity = '0.5';
     selectEstado.style.cursor = 'not-allowed';
-    console.log('[MODAL_DETALLES] Estado "' + cita.estado + '" detectado - select deshabilitado');
   } else {
     selectEstado.disabled = false;
     selectEstado.style.opacity = '1';
@@ -5841,7 +6270,6 @@ function abrirModalDetallesCita(cita) {
     selectEquipo.disabled = true;
     selectEquipo.style.opacity = '0.5';
     selectEquipo.style.cursor = 'not-allowed';
-    console.log('[MODAL_DETALLES] Estado "En Estudio" - selector de equipo deshabilitado');
   } else {
     selectEquipo.disabled = false;
     selectEquipo.style.opacity = '1';
@@ -5916,7 +6344,7 @@ function abrirModalDetallesCita(cita) {
   if (btnRecomendacionesMenu) {
     btnRecomendacionesMenu.addEventListener('click', () => {
       menuMasOpciones.style.display = 'none';
-      showToast('Función "Enviar Recomendaciones" - En desarrollo', 'info');
+      enviarRecomendacionesWhatsApp(citaElectroSeleccionada);
     });
   }
   
@@ -5958,6 +6386,9 @@ function abrirModalDetallesCita(cita) {
     }
   }
   
+  // Desactivar flag de inicialización - Ahora es seguro procesar cambios del usuario
+  isInitializingElectroModal = false;
+  
   // Mostrar modal
   $('modalDetallesCitaElectro').classList.remove('hidden');
 }
@@ -5965,6 +6396,7 @@ function abrirModalDetallesCita(cita) {
 function cerrarModalDetallesCita() {
   $('modalDetallesCitaElectro').classList.add('hidden');
   citaElectroSeleccionada = null;
+  isInitializingElectroModal = false; // Resetear flag al cerrar
   
   // Detener intervalo de progreso si existe
   if (intervaloProgreso) {
@@ -5978,14 +6410,9 @@ async function eliminarCitaElectro() {
   
   // Verificar que sea admin
   const esAdmin = currentUser && (currentUser.rol === 'admin' || currentUser.rol === 'administrador');
-  console.log('Intentando eliminar cita. Es Admin?', esAdmin, 'Usuario:', currentUser);
   
   if (!esAdmin) {
     showToast('No tienes permisos para eliminar citas', 'error');
-    return;
-  }
-  
-  if (!confirm(`¿Está seguro que desea eliminar la cita de ${citaElectroSeleccionada.paciente_nombre}?`)) {
     return;
   }
   
@@ -6266,6 +6693,10 @@ $('btnConfirmarDuracionNo')?.addEventListener('click', () => {
 $('cerrarModalDuracion')?.addEventListener('click', cerrarModalDuracionEstudio);
 $('btnCancelarDuracion')?.addEventListener('click', cerrarModalDuracionEstudio);
 $('btnConfirmarDuracion')?.addEventListener('click', confirmarDuracionEstudio);
+
+// Event listeners para confirmación de finalizar estudio
+$('btnConfirmarFinalizarSi')?.addEventListener('click', confirmarFinalizarEstudio);
+$('btnConfirmarFinalizarNo')?.addEventListener('click', cancelarFinalizarEstudio);
 
 // ========== FUNCIONES PARA MODAL DE ESTADO DE CITAS MÉDICAS ==========
 
@@ -6566,9 +6997,216 @@ $('modalReprogramarMedica')?.addEventListener('click', (e) => {
 $('horaEstudioInicio')?.addEventListener('change', actualizarDuracionMostrada);
 $('horaEstudioFin')?.addEventListener('change', actualizarDuracionMostrada);
 
-// cargar inicial
-async function cargar(){
-  await cargarLista();
+// ========== BUSCADORES POR DOCUMENTO ==========
+
+async function buscarCitasPorDocumento() {
+  const documento = $('buscarCitaDocumento').value.trim();
+  
+  if (!documento) {
+    return;
+  }
+  
+  try {
+    // Mostrar el modal con estado de carga
+    const modal = $('modalBuscarCitasResultados');
+    const tbody = $('modalBuscarCitasBody');
+    tbody.innerHTML = '<tr><td colspan="5" style="padding:20px;text-align:center;color:#999">Cargando...</td></tr>';
+    modal.classList.remove('hidden');
+    modal.style.display = 'flex';
+    
+    // Buscar en citas médicas
+    const res = await apiFetch(`/api/turnos?buscar=${encodeURIComponent(documento)}`);
+    const citas = await res.json();
+    
+    if (!citas || citas.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="5" style="padding:20px;text-align:center;color:#7f1d1d">❌ No se encontraron citas para el documento "${documento}"</td></tr>`;
+      return;
+    }
+    
+    // Llenar la tabla
+    let html = '';
+    citas.forEach(cita => {
+      const rawFecha = cita.fecha ? String(cita.fecha).slice(0, 10) : '';
+      const [y, m, d] = rawFecha.split('-');
+      const fecha = y ? new Date(parseInt(y), parseInt(m) - 1, parseInt(d)).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '-';
+      const hora = escapeHtml(cita.hora || '-');
+      const docPaciente = escapeHtml(cita.paciente_documento || '-');
+      const nombre = escapeHtml(cita.paciente_nombre || '-');
+      const tipoConsulta = escapeHtml(cita.tipo_consulta || '-');
+      
+      html += `
+        <tr style="border-bottom:1px solid #e5e7eb;hover-background:#f9fafb">
+          <td style="padding:12px;color:#374151">${fecha}</td>
+          <td style="padding:12px;color:#374151">${hora}</td>
+          <td style="padding:12px;color:#374151;font-weight:500">${docPaciente}</td>
+          <td style="padding:12px;color:#1f2937;font-weight:500">${nombre}</td>
+          <td style="padding:12px;color:#374151">${tipoConsulta}</td>
+        </tr>
+      `;
+    });
+    
+    tbody.innerHTML = html;
+  } catch (e) {
+    console.error('Error buscando citas:', e);
+    const tbody = $('modalBuscarCitasBody');
+    tbody.innerHTML = '<tr><td colspan="5" style="padding:20px;text-align:center;color:#dc2626">Error al buscar citas</td></tr>';
+  }
 }
-cargar();
+
+async function buscarEstudiosPorDocumento() {
+  const documento = $('buscarEstudioDocumento').value.trim();
+  if (!documento) return;
+
+  const modal = $('modalBuscarEstudiosResultados');
+  const tbody = $('modalBuscarEstudiosBody');
+  tbody.innerHTML = '<tr><td colspan="6" style="padding:20px;text-align:center;color:#999">Cargando...</td></tr>';
+  modal.classList.remove('hidden');
+  modal.style.display = 'flex';
+
+  try {
+    const res = await apiFetch(`/api/citas-electro?buscar=${encodeURIComponent(documento)}`);
+    const citas = await res.json();
+
+    if (!citas || citas.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="6" style="padding:20px;text-align:center;color:#7f1d1d">❌ No se encontraron estudios para el documento "${documento}"</td></tr>`;
+      return;
+    }
+
+    let html = '';
+    citas.forEach(cita => {
+      const [y,m,d] = (cita.fecha || '').split('-');
+      const fecha = y ? new Date(parseInt(y), parseInt(m)-1, parseInt(d)).toLocaleDateString('es-ES', {day:'2-digit',month:'2-digit',year:'numeric'}) : '-';
+      html += `
+        <tr style="border-bottom:1px solid #e5e7eb">
+          <td style="padding:12px;color:#374151">${fecha}</td>
+          <td style="padding:12px;color:#374151">${escapeHtml(cita.hora_agendamiento || '-')}</td>
+          <td style="padding:12px;color:#374151;font-weight:500">${escapeHtml(cita.paciente_documento || '-')}</td>
+          <td style="padding:12px;color:#1f2937;font-weight:500">${escapeHtml(cita.paciente_nombre || '-')}</td>
+          <td style="padding:12px;color:#374151">${escapeHtml(cita.estudio || '-')}</td>
+          <td style="padding:12px">${estadoBadge(cita.estado)}</td>
+        </tr>
+      `;
+    });
+    tbody.innerHTML = html;
+  } catch (e) {
+    console.error('Error buscando estudios:', e);
+    tbody.innerHTML = '<tr><td colspan="6" style="padding:20px;text-align:center;color:#dc2626">Error al buscar estudios</td></tr>';
+  }
+}
+
+async function buscarRecibosPorDocumento() {
+  const termino = $('buscarReciboDocumento').value.trim().toLowerCase();
+  const resultado = $('resultadoBuscarRecibo');
+  
+  if (!termino) {
+    resultado.style.display = 'none';
+    return;
+  }
+  
+  resultado.innerHTML = '<div style="color:#6b7280">Buscando...</div>';
+  resultado.style.display = 'block';
+
+  try {
+    const res = await apiFetch('/api/recibos');
+    if (!res.ok) throw new Error('Error ' + res.status);
+    const recibos = await res.json();
+
+    const recibosEncontrados = recibos.filter(r => {
+      const cliente = (r.cliente || '').toLowerCase();
+      let doc = '';
+      try { doc = (JSON.parse(r.data)?.doc || '').toLowerCase(); } catch(_) {}
+      return cliente.includes(termino) || doc.includes(termino);
+    });
+    
+    if (recibosEncontrados.length === 0) {
+      resultado.innerHTML = `
+        <div style="color:#7f1d1d;font-weight:600">
+          ❌ No se encontraron recibos para "${escapeHtml(termino)}"
+        </div>
+      `;
+      resultado.style.display = 'block';
+      return;
+    }
+    
+    let html = `<div style="color:#2d4a47;font-weight:600;margin-bottom:12px">✓ Se encontraron ${recibosEncontrados.length} recibo(s):</div>`;
+    
+    recibosEncontrados.forEach(recibo => {
+      const fecha = recibo.fecha || 'Sin fecha';
+      const totalFormateado = Number(recibo.total || 0).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      html += `
+        <div style="padding:8px;background:white;border-radius:4px;margin-bottom:4px;border-left:3px solid #059669">
+          <div style="color:#374151;font-size:0.95rem">
+            <strong>Recibo #${escapeHtml(recibo.numero || '-')}</strong> - ${escapeHtml(recibo.cliente || '-')}
+          </div>
+          <div style="color:#6b7280;font-size:0.85rem">
+            Fecha: ${escapeHtml(String(fecha))} | Total: $ ${escapeHtml(totalFormateado)}
+            &nbsp;<a href="/api/recibos/${recibo.id}/pdf" target="_blank" style="color:#059669;font-size:0.8rem">📄 PDF</a>
+          </div>
+        </div>
+      `;
+    });
+    
+    resultado.innerHTML = html;
+    resultado.style.display = 'block';
+  } catch (e) {
+    console.error('Error buscando recibos:', e);
+    resultado.innerHTML = '<div style="color:#dc2626">Error al buscar recibos</div>';
+    resultado.style.display = 'block';
+  }
+}
+
+// Event listeners para buscadores
+$('btnBuscarCitaDocumento')?.addEventListener('click', buscarCitasPorDocumento);
+$('buscarCitaDocumento')?.removeEventListener('keypress', buscarCitasPorDocumento);
+$('btnLimpiarCitaDocumento')?.addEventListener('click', () => {
+  $('buscarCitaDocumento').value = '';
+  const modal = $('modalBuscarCitasResultados');
+  if (modal) modal.classList.add('hidden');
+});
+
+// Event listeners para cerrar modal de búsqueda de citas
+$('cerrarModalBuscarCitas')?.addEventListener('click', () => {
+  const modal = $('modalBuscarCitasResultados');
+  if (modal) modal.classList.add('hidden');
+});
+$('btnCerrarBuscarCitas')?.addEventListener('click', () => {
+  const modal = $('modalBuscarCitasResultados');
+  if (modal) modal.classList.add('hidden');
+});
+
+// Cerrar modal al hacer clic fuera
+document.addEventListener('click', (e) => {
+  const modal = $('modalBuscarCitasResultados');
+  if (modal && e.target === modal) {
+    modal.classList.add('hidden');
+  }
+});
+
+$('btnBuscarEstudioDocumento')?.addEventListener('click', buscarEstudiosPorDocumento);
+$('btnLimpiarEstudioDocumento')?.addEventListener('click', () => {
+  $('buscarEstudioDocumento').value = '';
+  const m = $('modalBuscarEstudiosResultados');
+  if (m) { m.classList.add('hidden'); m.style.display = 'none'; }
+});
+$('cerrarModalBuscarEstudios')?.addEventListener('click', () => {
+  const m = $('modalBuscarEstudiosResultados');
+  if (m) { m.classList.add('hidden'); m.style.display = 'none'; }
+});
+$('btnCerrarBuscarEstudios')?.addEventListener('click', () => {
+  const m = $('modalBuscarEstudiosResultados');
+  if (m) { m.classList.add('hidden'); m.style.display = 'none'; }
+});
+document.addEventListener('click', (e) => {
+  const m = $('modalBuscarEstudiosResultados');
+  if (m && e.target === m) { m.classList.add('hidden'); m.style.display = 'none'; }
+});
+
+$('btnBuscarReciboDocumento')?.addEventListener('click', buscarRecibosPorDocumento);
+$('buscarReciboDocumento')?.addEventListener('keypress', (e) => {
+  if (e.key === 'Enter') buscarRecibosPorDocumento();
+});
+$('btnLimpiarReciboDocumento')?.addEventListener('click', () => {
+  $('buscarReciboDocumento').value = '';
+  $('resultadoBuscarRecibo').style.display = 'none';
+});
 

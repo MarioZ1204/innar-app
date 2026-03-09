@@ -17,7 +17,19 @@ const DB_NAME = process.env.DB_NAME || 'innar_clinica';
 
 // Carpeta de backups
 const BACKUP_DIR = path.join(__dirname, '../backups');
-const MAX_BACKUPS = 7; // Mantener últimos 7 backups (1 semana)
+// Con 2 schedules (~5 backups/día), 35 = 7 días de retención
+const MAX_BACKUPS = 35;
+
+/**
+ * Detectar ruta de mysqldump (XAMPP en Windows o PATH del sistema)
+ */
+function getMysqldumpPath() {
+  if (process.platform === 'win32') {
+    const xamppPath = 'C:\\xampp\\mysql\\bin\\mysqldump.exe';
+    if (fs.existsSync(xamppPath)) return xamppPath;
+  }
+  return 'mysqldump'; // fallback al PATH del sistema
+}
 
 /**
  * Crear carpeta de backups si no existe
@@ -50,29 +62,42 @@ function createBackup() {
     const writeStream = fs.createWriteStream(filepath);
 
     console.log(`⏳ Creando backup: ${filename}`);
-    
+
+    // Pasar contraseña por variable de entorno (no como arg, evita exposición en Task Manager)
+    const childEnv = { ...process.env };
+    if (DB_PASSWORD) childEnv.MYSQL_PWD = DB_PASSWORD;
+
     // Comando mysqldump
-    const mysqldump = spawn('mysqldump', [
+    const mysqldump = spawn(getMysqldumpPath(), [
       `--host=${DB_HOST}`,
       `--port=${DB_PORT}`,
       `--user=${DB_USER}`,
-      DB_PASSWORD ? `--password=${DB_PASSWORD}` : '--no-password',
-      '--single-transaction',     // No bloquear tablas
-      '--routines',              // Incluir stored procedures
-      '--triggers',              // Incluir triggers
-      '--events',                // Incluir events
-      '--quick',                 // Búfer de límite
-      '--lock-tables=false',     // Mejor para producción
+      '--default-auth=mysql_native_password', // Compatibilidad con MySQL 8 desde cliente MariaDB/antiguo
+      '--single-transaction',     // No bloquear tablas (transacción consistente)
+      '--skip-lock-tables',       // Necesario junto con --single-transaction
+      '--routines',               // Incluir stored procedures
+      '--triggers',               // Incluir triggers
+      '--events',                 // Incluir events
+      '--quick',                  // Búfer de límite
       DB_NAME
-    ]);
+    ], { env: childEnv });
 
     mysqldump.stdout.pipe(writeStream);
 
     mysqldump.stderr.on('data', (data) => {
-      console.error(`❌ Error mysqldump: ${data}`);
+      const msg = data.toString().trim();
+      // mysqldump escribe advertencias a stderr incluso cuando tiene éxito
+      if (msg) console.warn(`⚠️ mysqldump: ${msg}`);
+    });
+
+    mysqldump.on('error', (err) => {
+      writeStream.destroy();
+      try { fs.unlinkSync(filepath); } catch (_) {}
+      reject(new Error(`No se pudo ejecutar mysqldump: ${err.message}. Verifique que existe en C:\\xampp\\mysql\\bin\\`));
     });
 
     mysqldump.on('close', (code) => {
+      writeStream.end();
       if (code === 0) {
         const stats = fs.statSync(filepath);
         const sizeInMB = (stats.size / (1024 * 1024)).toFixed(2);
@@ -82,6 +107,8 @@ function createBackup() {
         cleanOldBackups();
         resolve(filepath);
       } else {
+        // Eliminar archivo parcial/vacío para no contaminar la lista
+        try { fs.unlinkSync(filepath); } catch (_) {}
         reject(new Error(`mysqldump terminó con código ${code}`));
       }
     });

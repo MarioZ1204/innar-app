@@ -157,7 +157,7 @@ async function buscarCitasAuditoria() {
     // Mostrar tabla vacía
     const tbody = document.getElementById('bodyTablaAuditoria');
     if (tbody) {
-      tbody.innerHTML = `<tr><td colspan="7" style="padding:20px;text-align:center;color:#dc2626">Error: ${e.message}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="7" style="padding:20px;text-align:center;color:#dc2626">Error: ${typeof escapeHtml === 'function' ? escapeHtml(e.message) : e.message}</td></tr>`;
     }
   }
 }
@@ -228,7 +228,7 @@ function renderizarTablaCitasAuditoria(citas) {
     console.error('[DASHBOARD CITAS] Error renderizando tabla:', e.message);
     const tbody = document.getElementById('bodyTablaAuditoria');
     if (tbody) {
-      tbody.innerHTML = `<tr><td colspan="7" style="padding:20px;text-align:center;color:#dc2626">Error al renderizar tabla: ${e.message}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="7" style="padding:20px;text-align:center;color:#dc2626">Error al renderizar tabla: ${typeof escapeHtml === 'function' ? escapeHtml(e.message) : e.message}</td></tr>`;
     }
   }
 }

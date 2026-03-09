@@ -1,5 +1,5 @@
 // db-migrations.js - Archivo consolidado de todas las migraciones
-const db = require('./utils/db-mysql');
+const db = require('../utils/db-mysql');
 
 // Lista de todas las migraciones
 const migrations = [
@@ -195,16 +195,13 @@ const migrations = [
       "UPDATE citas_electro SET estado = 'Completado' WHERE estado = 'REALIZADO'",
       "UPDATE citas_electro SET estado = 'Cancelado' WHERE estado = 'CANCELADO'",
       "ALTER TABLE citas_electro MODIFY COLUMN estado ENUM('Programado', 'En Sala', 'En Estudio', 'Completado', 'No Asistió', 'Cancelado') NOT NULL DEFAULT 'Programado'",
-      "ALTER TABLE citas_electro ADD COLUMN IF NOT EXISTS programado_por_nombre VARCHAR(150) AFTER diagnostico_id"
+      "ALTER TABLE citas_electro ADD COLUMN programado_por_nombre VARCHAR(150) AFTER diagnostico_id"
     ]
   },
   {
     name: 'citas_electro_hora_agendamiento',
     description: 'Agregar columna hora_agendamiento para almacenar hora de programación',
-    sql: `
-      ALTER TABLE citas_electro 
-      ADD COLUMN IF NOT EXISTS hora_agendamiento TIME AFTER fecha
-    `
+    sql: `ALTER TABLE citas_electro ADD COLUMN hora_agendamiento TIME AFTER fecha`
   },
   {
     name: 'citas_electro_hora_inicio_nullable',
@@ -234,14 +231,24 @@ async function runAllMigrations() {
       try {
         console.log(`⏳ Ejecutando: ${migration.name}`);
         console.log(`   📝 ${migration.description}`);
-        
-        await db.execute(migration.sql);
-        
+
+        // sql puede ser string o array de statements
+        const statements = Array.isArray(migration.sql) ? migration.sql : [migration.sql];
+        for (const stmt of statements) {
+          await db.execute(stmt.trim());
+        }
+
         console.log(`✅ ${migration.name} - OK\n`);
         successCount++;
       } catch (error) {
-        console.error(`❌ ERROR en ${migration.name}: ${error.message}\n`);
-        errorCount++;
+        // Columna/tabla ya existe → migración ya fue aplicada antes, no es un error real
+        if (error.errno === 1060 || error.errno === 1061 || error.errno === 1050) {
+          console.log(`⏭️  ${migration.name} - ya aplicada (${error.message.split(':')[0]})\n`);
+          successCount++;
+        } else {
+          console.error(`❌ ERROR en ${migration.name}: ${error.message}\n`);
+          errorCount++;
+        }
       }
     }
     
