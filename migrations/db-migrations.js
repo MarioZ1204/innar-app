@@ -129,12 +129,35 @@ const migrations = [
     `
   },
   {
+    name: 'doctor_disponibilidad_mensual',
+    description: 'Tabla para disponibilidad mensual de doctores',
+    sql: `
+      CREATE TABLE IF NOT EXISTS doctor_disponibilidad_mensual (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        doctor_id INT NOT NULL,
+        fecha DATE NOT NULL,
+        pacientes_proinsalud INT DEFAULT 0,
+        pacientes_otros INT DEFAULT 0,
+        total_pacientes INT DEFAULT 0,
+        disponible BOOLEAN DEFAULT TRUE,
+        disponible_manana BOOLEAN DEFAULT TRUE,
+        disponible_tarde BOOLEAN DEFAULT TRUE,
+        creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        actualizado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY unique_doctor_fecha (doctor_id, fecha),
+        FOREIGN KEY (doctor_id) REFERENCES usuarios(id) ON DELETE CASCADE,
+        INDEX idx_doctor_fecha (doctor_id, fecha),
+        INDEX idx_disponible (disponible)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `
+  },
+  {
     name: 'doctor_disponibilidad_turnos',
     description: 'Agregar columnas de disponibilidad por turno (mañana/tarde) a tabla doctor_disponibilidad_mensual',
     sql: `
       ALTER TABLE doctor_disponibilidad_mensual 
-      ADD COLUMN disponible_manana BOOLEAN DEFAULT TRUE,
-      ADD COLUMN disponible_tarde BOOLEAN DEFAULT TRUE
+      ADD COLUMN IF NOT EXISTS disponible_manana BOOLEAN DEFAULT TRUE,
+      ADD COLUMN IF NOT EXISTS disponible_tarde BOOLEAN DEFAULT TRUE
     `
   },
   {
