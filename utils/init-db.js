@@ -2,6 +2,7 @@
 require('dotenv').config();
 const mysql = require('mysql2');
 const bcrypt = require('bcrypt');
+const crypto = require('crypto');
 
 async function initializeDatabase() {
   return new Promise((resolve, reject) => {
@@ -230,7 +231,9 @@ async function initializeDatabase() {
                 }
 
                 if (results[0].count === 0) {
-                  bcrypt.hash('123456', 10, (hashErr, hash) => {
+                  // El frontend envía SHA512 de la contraseña antes de mandarla al servidor
+                  const sha512 = crypto.createHash('sha512').update('123456').digest('hex');
+                  bcrypt.hash(sha512, 10, (hashErr, hash) => {
                     if (hashErr) {
                       console.error('❌ Error hasheando password:', hashErr.message);
                       conn.end();

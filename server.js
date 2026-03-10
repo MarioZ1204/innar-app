@@ -2,8 +2,8 @@
 require('dotenv').config();
 
 // Validar variables de entorno requeridas antes de arrancar
-const REQUIRED_ENV = ['DB_HOST', 'DB_USER', 'DB_PASSWORD', 'DB_NAME', 'SESSION_SECRET'];
-const MISSING_ENV = REQUIRED_ENV.filter(v => !process.env[v]);
+const REQUIRED_ENV = ['DB_HOST', 'DB_USER', 'DB_NAME', 'SESSION_SECRET'];
+const MISSING_ENV = REQUIRED_ENV.filter(v => process.env[v] === undefined || process.env[v] === null);
 if (MISSING_ENV.length > 0) {
   console.error(`[ERROR] Faltan variables de entorno requeridas: ${MISSING_ENV.join(', ')}`);
   console.error('[ERROR] Copie .env.example a .env y configure los valores correctos.');
@@ -14,13 +14,13 @@ const express = require('express');
 const https = require('https');
 const http = require('http');
 const socketIo = require('socket.io');
-const helmet = require('helmet');  // ← Security headers
-const db = require('./utils/db-mysql');  // ← MySQL Pool en lugar de SQLite
-const rateLimiter = require('./modules/rate-limiter');  // ← Rate limiting
-const validation = require('./modules/validation');  // ← Validaciones
-const auditLog = require('./modules/audit-log');  // ← Auditoría de usuarios
-const transactions = require('./utils/transactions');  // ← Transaction support
-const logger = require('./utils/logger');  // ← Logging system
+const helmet = require('helmet');
+const db = require('./utils/db-mysql');
+const rateLimiter = require('./modules/rate-limiter');
+const validation = require('./modules/validation');
+const auditLog = require('./modules/audit-log');
+const transactions = require('./utils/transactions');
+const logger = require('./utils/logger');
 const procesarAgendaExcel = require('./utils/procesar-agenda-excel');
 const bodyParser = require('body-parser');
 const cors = require('cors');
@@ -30,26 +30,21 @@ const path = require('path');
 const session = require('express-session');
 const bcrypt = require('bcrypt');
 const multer = require('multer');
-const appointmentsRouter = require('./routes/appointmentsV1');  // ← API v1 de citas
+const appointmentsRouter = require('./routes/appointmentsV1');
 
 const app = express();
-
-// DESARROLLO LOCAL HTTP - Sin certificados SSL/HTTPS
-// Helmet deshabilitado para permitir acceso HTTP completo en desarrollo local
 
 app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:3000',
   credentials: true
 }));
-// Límite global moderado — previene body-flooding (el original era 50mb sin razón)
 app.use(bodyParser.json({ limit: '10mb' }));
 app.use(bodyParser.urlencoded({ limit: '10mb', extended: true }));
-// Middleware de 50mb reservado para rutas que generan PDFs con HTML grande
+// 50mb para rutas que generan PDFs con HTML grande
 const jsonLargeBody = bodyParser.json({ limit: '50mb' });
 const urlencodedLargeBody = bodyParser.urlencoded({ limit: '50mb', extended: true });
 
-// 📊 Middleware de logging para requests/responses
-// Solo loggea rutas importantes, ignora assets estáticos (CSS, JS, imágenes)
+// Logging de requests — ignora assets estáticos
 const EXTENSIONES_ESTATICAS = /\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|map)$/i;
 app.use((req, res, next) => {
   if (EXTENSIONES_ESTATICAS.test(req.path)) return next();
@@ -304,9 +299,7 @@ function requireRole(roles) {
   };
 }
 
-// ============================================
-// ENDPOINTS DE AUTENTICACIÓN
-// ============================================
+// --- Autenticación ---
 
 // Login
 app.post('/api/login', async (req, res) => {
@@ -495,9 +488,7 @@ app.post('/api/cambiar-contrasena', requireAuth, async (req, res) => {
   }
 });
 
-// ============================================
-// ENDPOINTS DE USUARIOS (solo admin)
-// ============================================
+// --- Usuarios ---
 app.get('/api/usuarios', requireAuth, requireAdmin, async (req, res) => {
   try {
     const usuarios = await db.query(
@@ -937,9 +928,7 @@ app.patch('/api/usuarios/:id/reset-password', requireAuth, requireAdmin, async (
   }
 });
 
-// ============================================
-// ENDPOINTS DOCTOR: Llamar siguiente / Marcar atendido
-// ============================================
+// --- Doctor: llamar siguiente / marcar atendido ---
 app.post('/api/turnos/llamar-siguiente', requireAuth, requireRole(['admin', 'doctor']), async (req, res) => {
   const { fecha, doctor_id } = req.body || {};
   if (!fecha || !doctor_id) {
@@ -1059,9 +1048,7 @@ app.post('/api/turnos/marcar-atendido', requireAuth, requireRole(['admin', 'doct
   }
 });
 
-// ============================================
-// ENDPOINTS DE PACIENTES
-// ============================================
+// --- Pacientes ---
 
 // Listar pacientes (con búsqueda opcional)
 app.get('/api/pacientes', requireAuth, async (req, res) => {
@@ -1164,9 +1151,7 @@ app.post('/api/pacientes', requireAuth, requireRole(['admin', 'recepcion']), asy
   }
 });
 
-// ============================================
-// ENDPOINTS DE CONSULTORIOS
-// ============================================
+// --- Consultorios ---
 
 // Listar consultorios
 app.get('/api/consultorios', requireAuth, async (req, res) => {
@@ -1303,9 +1288,7 @@ app.delete('/api/doctor-agenda-files/:id', requireAuth, async (req, res) => {
   }
 });
 
-// ============================================
-// ENDPOINTS DÍAS BLOQUEADOS (NO AGENDAR)
-// ============================================
+// --- Días bloqueados ---
 
 // Crear tabla si no existe
 app.get('/api/init-doctor-disponibilidad', requireAuth, async (req, res) => {
@@ -1524,9 +1507,7 @@ app.delete('/api/doctor-dias-bloqueados/:doctorId', requireAuth, async (req, res
   res.json(result);
 });
 
-// ============================================
-// ENDPOINTS DE TURNOS (AGENDA)
-// ============================================
+// --- Turnos (agenda médica) ---
 
 // Listar turnos por fecha y consultorio
 app.get('/api/turnos', requireAuth, async (req, res) => {
@@ -2009,9 +1990,7 @@ app.patch('/api/turnos/:id/numero', requireAuth, requireRole(['admin', 'recepcio
   }
 });
 
-// ============================================
-// ENDPOINTS AGENDA ELECTRODIAGNÓSTICO
-// ============================================
+// --- Agenda electrodiagnóstico ---
 
 // Listar equipos de electrodiagnóstico
 app.get('/api/equipos-electro', async (req, res) => {
@@ -2221,9 +2200,7 @@ app.get('/api/equipos-electro/disponibilidad', async (req, res) => {
   }
 });
 
-// ============================================
-// ENDPOINTS DE DIAGNÓSTICOS
-// ============================================
+// --- Diagnósticos ---
 
 // Listar todos los diagnósticos activos
 app.get('/api/diagnosticos', requireAuth, async (req, res) => {
@@ -2938,9 +2915,7 @@ app.delete('/api/citas-electro/:id', requireAuth, requireAdmin, async (req, res)
   }
 });
 
-// ============================================
-// ESPECIALIDADES Y TIPOS DE CONSULTA
-// ============================================
+// --- Especialidades y tipos de consulta ---
 
 // GET — legible por todos los roles (para poblar selects)
 app.get('/api/especialidades', requireAuth, async (req, res) => {
@@ -3041,9 +3016,7 @@ app.delete('/api/tipos-consulta/:id', requireAuth, requireAdmin, async (req, res
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ============================================
-// PACIENTES EN ESPERA — ELECTRODIAGNÓSTICO
-// ============================================
+// --- Pacientes en espera (electro) ---
 
 app.get('/api/pacientes-espera', requireAuth, async (req, res) => {
   try {
@@ -3092,10 +3065,7 @@ app.delete('/api/pacientes-espera/:id', requireAuth, async (req, res) => {
   }
 });
 
-// ============================================
-// ============================================
-// ENDPOINTS DE SERVICIOS (catálogo de recibos)
-// ============================================
+// --- Servicios (catálogo de recibos) ---
 
 app.get('/api/servicios', requireAuth, async (req, res) => {
   try {
@@ -3138,9 +3108,7 @@ app.delete('/api/servicios/:id', requireAuth, requireAdmin, async (req, res) => 
   } catch(err) { res.status(500).json({ error: err.message }); }
 });
 
-// ============================================
-// ENDPOINTS DE RECIBOS (EXISTENTES)
-// ============================================
+// --- Recibos ---
 
 // Guardar recibo
 app.post('/api/recibos', requireAuth, requireRole(['admin', 'recepcion']), async (req, res) => {
@@ -4238,21 +4206,20 @@ const PORT = process.env.PORT || 3000;
       httpServer = http.createServer(app);
     }
 
-    // Configurar Socket.IO en el servidor HTTP con soporte mejorado para móviles
     const io = socketIo(httpServer, {
       cors: {
         origin: process.env.FRONTEND_URL || 'http://localhost:3000',
         methods: ["GET", "POST"],
         credentials: true
       },
-      transports: ['websocket', 'polling'],           // WebSocket con fallback a polling
-      allowUpgrades: true,                            // Permitir upgrade de polling a WebSocket
-      pingInterval: 30000,                            // Aumentado para móviles con conexión lenta
-      pingTimeout: 60000,                             // Timeout más largo para móviles
-      maxHttpBufferSize: 1e6,                         // 1MB buffer
-      serveClient: true,                              // Servir socket.io.js client
-      perMessageDeflate: {                            // Compresión optimizada para móviles
-        threshold: 32 * 1024                          // Comprimir solo mensajes > 32KB
+      transports: ['websocket', 'polling'],
+      allowUpgrades: true,
+      pingInterval: 30000,
+      pingTimeout: 60000,
+      maxHttpBufferSize: 1e6,
+      serveClient: true,
+      perMessageDeflate: {
+        threshold: 32 * 1024
       }
     });
 
