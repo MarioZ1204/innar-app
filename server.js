@@ -1,5 +1,15 @@
 // server.js
 require('dotenv').config();
+
+// Validar variables de entorno requeridas antes de arrancar
+const REQUIRED_ENV = ['DB_HOST', 'DB_USER', 'DB_PASSWORD', 'DB_NAME', 'SESSION_SECRET'];
+const MISSING_ENV = REQUIRED_ENV.filter(v => !process.env[v]);
+if (MISSING_ENV.length > 0) {
+  console.error(`[ERROR] Faltan variables de entorno requeridas: ${MISSING_ENV.join(', ')}`);
+  console.error('[ERROR] Copie .env.example a .env y configure los valores correctos.');
+  process.exit(1);
+}
+
 const express = require('express');
 const https = require('https');
 const http = require('http');
@@ -28,7 +38,7 @@ const app = express();
 // Helmet deshabilitado para permitir acceso HTTP completo en desarrollo local
 
 app.use(cors({
-  origin: true,
+  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
   credentials: true
 }));
 // Límite global moderado — previene body-flooding (el original era 50mb sin razón)
@@ -122,7 +132,7 @@ app.use((req, res, next) => {
 
 // Configurar sesiones
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'innar-clinica-secret-key-change-in-production',
+  secret: process.env.SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
   rolling: true,
@@ -680,7 +690,10 @@ app.patch('/api/usuarios/:id', requireAuth, requireAdmin, async (req, res) => {
         ip: req.ip
       });
     }
-    
+
+    // Notificar a todos los clientes conectados
+    emitSocket('usuario:actualizado', { id });
+
     res.json({ ok: true });
   } catch (e) {
     if (e.message && e.message.includes('UNIQUE')) {
@@ -927,7 +940,7 @@ app.patch('/api/usuarios/:id/reset-password', requireAuth, requireAdmin, async (
 // ============================================
 // ENDPOINTS DOCTOR: Llamar siguiente / Marcar atendido
 // ============================================
-app.post('/api/turnos/llamar-siguiente', requireAuth, async (req, res) => {
+app.post('/api/turnos/llamar-siguiente', requireAuth, requireRole(['admin', 'doctor']), async (req, res) => {
   const { fecha, doctor_id } = req.body || {};
   if (!fecha || !doctor_id) {
     return res.status(400).json({ error: 'fecha y doctor_id son obligatorios' });
@@ -1002,7 +1015,7 @@ async function getNextTurnoNumber(fecha, doctor_id) {
   return maxNum + 1;
 }
 
-app.post('/api/turnos/marcar-atendido', requireAuth, async (req, res) => {
+app.post('/api/turnos/marcar-atendido', requireAuth, requireRole(['admin', 'doctor']), async (req, res) => {
   const { turno_id } = req.body || {};
   if (!turno_id) {
     return res.status(400).json({ error: 'turno_id es obligatorio' });
@@ -1113,8 +1126,8 @@ app.patch('/api/pacientes/:id', requireAuth, requireRole(['admin', 'recepcion'])
 });
 
 // Crear paciente
-app.post('/api/pacientes', requireAuth, async (req, res) => {
-  const { nombre, documento, telefono, email } = req.body || {};
+app.post('/api/pacientes', requireAuth, requireRole(['admin', 'recepcion']), async (req, res) => {
+  const { nombre, documento, telefono, telefono2, email } = req.body || {};
   if (!nombre) {
     return res.status(400).json({ error: 'Nombre es obligatorio' });
   }
@@ -1134,10 +1147,15 @@ app.post('/api/pacientes', requireAuth, async (req, res) => {
     return res.status(400).json({ error: 'El teléfono debe tener exactamente 10 dígitos' });
   }
 
+  // Validar teléfono 2 si se proporciona: exactamente 10 dígitos
+  if (telefono2 && !/^\d{10}$/.test(telefono2)) {
+    return res.status(400).json({ error: 'El teléfono 2 debe tener exactamente 10 dígitos' });
+  }
+
   try {
     const result = await db.execute(
-      'INSERT INTO pacientes (nombre, documento, telefono, email) VALUES (?, ?, ?, ?)',
-      [nombre, documento || null, telefono || null, email || null]
+      'INSERT INTO pacientes (nombre, documento, telefono, telefono2, email) VALUES (?, ?, ?, ?, ?)',
+      [nombre, documento || null, telefono || null, telefono2 || null, email || null]
     );
     res.json({ ok: true, id: result.insertId });
   } catch (e) {
@@ -1649,8 +1667,8 @@ app.get('/api/doctor-disponibilidad', async (req, res) => {
 });
 
 // Crear turno
-app.post('/api/turnos', requireAuth, async (req, res) => {
-  const { doctor_id, paciente_nombre, paciente_documento, paciente_telefono, fecha, hora, tipo_consulta, entidad, notas, oportunidad, programado_por } = req.body || {};
+app.post('/api/turnos', requireAuth, requireRole(['admin', 'recepcion']), async (req, res) => {
+  const { doctor_id, paciente_nombre, paciente_documento, paciente_telefono, paciente_telefono2, fecha, hora, tipo_consulta, entidad, notas, oportunidad, programado_por } = req.body || {};
 
   if (!doctor_id || !paciente_nombre || !fecha || !hora) {
     return res.status(400).json({ error: 'doctor_id, paciente_nombre, fecha y hora son obligatorios' });
@@ -1673,13 +1691,14 @@ app.post('/api/turnos', requireAuth, async (req, res) => {
     
     // Crear turno como PENDIENTE sin número (numero_turno NULL)
     const result = await db.execute(`
-      INSERT INTO turnos (numero_turno, doctor_id, paciente_nombre, paciente_documento, paciente_telefono, estado, fecha, hora, tipo_consulta, entidad, notas, oportunidad, programado_por)
-      VALUES (NULL, ?, ?, ?, ?, 'PENDIENTE', ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO turnos (numero_turno, doctor_id, paciente_nombre, paciente_documento, paciente_telefono, paciente_telefono2, estado, fecha, hora, tipo_consulta, entidad, notas, oportunidad, programado_por)
+      VALUES (NULL, ?, ?, ?, ?, ?, 'PENDIENTE', ?, ?, ?, ?, ?, ?, ?)
     `, [
       doctor_id,
       paciente_nombre,
       paciente_documento || null,
       paciente_telefono || null,
+      paciente_telefono2 || null,
       fecha,
       hora,
       tipo_consulta || null,
@@ -1770,7 +1789,7 @@ app.patch('/api/turnos/:id', requireAuth, async (req, res) => {
 });
 
 // Actualizar estado del turno específicamente
-app.patch('/api/turnos/:id/estado', requireAuth, async (req, res) => {
+app.patch('/api/turnos/:id/estado', requireAuth, requireRole(['admin', 'recepcion', 'doctor']), async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const { estado } = req.body || {};
   if (!id || !estado) {
@@ -2259,7 +2278,7 @@ app.get('/api/diagnosticos/search', requireAuth, async (req, res) => {
 });
 
 // Crear nuevo diagnóstico (solo admin)
-app.post('/api/diagnosticos', requireAuth, async (req, res) => {
+app.post('/api/diagnosticos', requireAuth, requireAdmin, async (req, res) => {
   const { nombre, descripcion, codigo } = req.body || {};
   
   if (!nombre || nombre.trim().length === 0) {
@@ -2282,7 +2301,7 @@ app.post('/api/diagnosticos', requireAuth, async (req, res) => {
 });
 
 // Actualizar diagnóstico
-app.put('/api/diagnosticos/:id', requireAuth, async (req, res) => {
+app.put('/api/diagnosticos/:id', requireAuth, requireAdmin, async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const { nombre, descripcion, codigo, activo } = req.body || {};
 
@@ -2304,7 +2323,7 @@ app.put('/api/diagnosticos/:id', requireAuth, async (req, res) => {
 });
 
 // Importar diagnósticos desde archivo Excel
-app.post('/api/diagnosticos/import-excel', requireAuth, upload.single('file'), async (req, res) => {
+app.post('/api/diagnosticos/import-excel', requireAuth, requireAdmin, upload.single('file'), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'Debes seleccionar un archivo' });
   }
@@ -2457,7 +2476,7 @@ app.get('/api/citas-electro', requireAuth, async (req, res) => {
 });
 
 // Crear cita electrodiagnóstico (con TRANSACCIÓN para garantizar integridad)
-app.post('/api/citas-electro', requireAuth, async (req, res) => {
+app.post('/api/citas-electro', requireAuth, requireRole(['admin', 'electro', 'recepcion']), async (req, res) => {
   const { equipo_id, paciente_id, fecha, hora_agendamiento, hora, hora_fin, duracion, estudio, observaciones, diagnostico_id, estado, programado_por_nombre, telefono } = req.body || {};
   
   // 'hora' o 'hora_agendamiento' es la hora programada para el estudio
@@ -2681,7 +2700,7 @@ app.get('/api/citas-electro/:id', requireAuth, async (req, res) => {
 });
 
 // Actualizar estado de cita electro (registra quién editó)
-app.patch('/api/citas-electro/:id/estado', requireAuth, async (req, res) => {
+app.patch('/api/citas-electro/:id/estado', requireAuth, requireRole(['admin', 'electro', 'recepcion']), async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const { estado } = req.body || {};
   if (!id || !estado) {
@@ -2717,7 +2736,7 @@ app.patch('/api/citas-electro/:id/estado', requireAuth, async (req, res) => {
 // "Programado" → "En Estudio" (validar capacidad)
 // "En Estudio" → "Completado" (marcar fin)
 // Cualquier estado → "En Sala", "No Asistió", "Cancelado" (manual)
-app.patch('/api/citas-electro/:id', requireAuth, async (req, res) => {
+app.patch('/api/citas-electro/:id', requireAuth, requireRole(['admin', 'electro', 'recepcion']), async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const { equipo_id, estado, hora_inicio, hora_fin, hora_agendamiento, fecha, duracion_minutos } = req.body || {};
   
@@ -2884,14 +2903,7 @@ app.patch('/api/citas-electro/:id', requireAuth, async (req, res) => {
 });
 
 // Eliminar cita electro
-app.delete('/api/citas-electro/:id', requireAuth, async (req, res) => {
-  // Solo administrador puede eliminar citas
-  const esAdmin = req.session.rol === 'admin' || req.session.rol === 'administrador';
-  
-  if (!req.session.rol || !esAdmin) {
-    return res.status(403).json({ error: 'Solo el administrador puede eliminar citas' });
-  }
-
+app.delete('/api/citas-electro/:id', requireAuth, requireAdmin, async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (!id) {
     return res.status(400).json({ error: 'ID inválido' });
@@ -2920,6 +2932,160 @@ app.delete('/api/citas-electro/:id', requireAuth, async (req, res) => {
       emitSocket('electro:actualizar-lista', { type: 'eliminada', id });
     }
     
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ============================================
+// ESPECIALIDADES Y TIPOS DE CONSULTA
+// ============================================
+
+// GET — legible por todos los roles (para poblar selects)
+app.get('/api/especialidades', requireAuth, async (req, res) => {
+  try {
+    const rows = await db.query('SELECT id, nombre FROM especialidades WHERE activo=1 ORDER BY nombre ASC');
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/especialidades', requireAuth, requireAdmin, async (req, res) => {
+  const { nombre } = req.body || {};
+  if (!nombre || !nombre.trim()) return res.status(400).json({ error: 'El nombre es obligatorio' });
+  try {
+    const result = await db.execute('INSERT INTO especialidades (nombre) VALUES (?)', [nombre.trim()]);
+    res.json({ ok: true, id: result.insertId });
+  } catch (e) {
+    if (e.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'Ya existe una especialidad con ese nombre' });
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.patch('/api/especialidades/:id', requireAuth, requireAdmin, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const { nombre } = req.body || {};
+  if (!id) return res.status(400).json({ error: 'ID inválido' });
+  if (!nombre || !nombre.trim()) return res.status(400).json({ error: 'El nombre es obligatorio' });
+  try {
+    await db.execute('UPDATE especialidades SET nombre=? WHERE id=?', [nombre.trim(), id]);
+    res.json({ ok: true });
+  } catch (e) {
+    if (e.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'Ya existe una especialidad con ese nombre' });
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.delete('/api/especialidades/:id', requireAuth, requireAdmin, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!id) return res.status(400).json({ error: 'ID inválido' });
+  try {
+    await db.execute('DELETE FROM especialidades WHERE id=?', [id]);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET — legible por todos los roles (para poblar selects de agenda)
+app.get('/api/tipos-consulta', requireAuth, async (req, res) => {
+  const { especialidad_id, especialidad_nombre } = req.query;
+  try {
+    let espId = especialidad_id ? parseInt(especialidad_id, 10) : null;
+    if (!espId && especialidad_nombre) {
+      const rows = await db.query('SELECT id FROM especialidades WHERE nombre=? AND activo=1', [especialidad_nombre]);
+      espId = rows.length > 0 ? rows[0].id : null;
+    }
+    if (!espId) return res.json([]);
+    const rows = await db.query(
+      'SELECT id, nombre, orden FROM tipos_consulta WHERE especialidad_id=? AND activo=1 ORDER BY orden ASC, id ASC',
+      [espId]
+    );
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/tipos-consulta', requireAuth, requireAdmin, async (req, res) => {
+  const { especialidad_id, nombre } = req.body || {};
+  if (!especialidad_id || !nombre || !nombre.trim())
+    return res.status(400).json({ error: 'Especialidad y nombre son obligatorios' });
+  try {
+    const ordenRows = await db.query(
+      'SELECT COALESCE(MAX(orden)+1, 0) AS sig FROM tipos_consulta WHERE especialidad_id=?',
+      [especialidad_id]
+    );
+    const orden = ordenRows[0]?.sig ?? 0;
+    const result = await db.execute(
+      'INSERT INTO tipos_consulta (especialidad_id, nombre, orden) VALUES (?,?,?)',
+      [especialidad_id, nombre.trim(), orden]
+    );
+    res.json({ ok: true, id: result.insertId });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.patch('/api/tipos-consulta/:id', requireAuth, requireAdmin, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const { nombre } = req.body || {};
+  if (!id) return res.status(400).json({ error: 'ID inválido' });
+  if (!nombre || !nombre.trim()) return res.status(400).json({ error: 'El nombre es obligatorio' });
+  try {
+    await db.execute('UPDATE tipos_consulta SET nombre=? WHERE id=?', [nombre.trim(), id]);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/tipos-consulta/:id', requireAuth, requireAdmin, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!id) return res.status(400).json({ error: 'ID inválido' });
+  try {
+    await db.execute('DELETE FROM tipos_consulta WHERE id=?', [id]);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ============================================
+// PACIENTES EN ESPERA — ELECTRODIAGNÓSTICO
+// ============================================
+
+app.get('/api/pacientes-espera', requireAuth, async (req, res) => {
+  try {
+    const rows = await db.query(
+      `SELECT * FROM pacientes_espera
+       ORDER BY FIELD(prioridad,'ALTA','MEDIA','BAJA'), creado_en ASC`
+    );
+    res.json(rows);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/pacientes-espera', requireAuth, async (req, res) => {
+  const { documento, nombres, apellidos, entidad, prioridad, ingresado_por } = req.body || {};
+  if (!documento || !nombres || !apellidos || !entidad || !prioridad) {
+    return res.status(400).json({ error: 'Todos los campos son obligatorios' });
+  }
+  const entidadesValidas = ['FOMAG', 'UCQN', 'PARTICULAR'];
+  const prioridadesValidas = ['ALTA', 'MEDIA', 'BAJA'];
+  if (!entidadesValidas.includes(entidad)) {
+    return res.status(400).json({ error: 'Entidad inválida' });
+  }
+  if (!prioridadesValidas.includes(prioridad)) {
+    return res.status(400).json({ error: 'Prioridad inválida' });
+  }
+  try {
+    const result = await db.execute(
+      'INSERT INTO pacientes_espera (documento, nombres, apellidos, entidad, prioridad, ingresado_por) VALUES (?, ?, ?, ?, ?, ?)',
+      [documento, nombres, apellidos, entidad, prioridad, ingresado_por || null]
+    );
+    res.json({ ok: true, id: result.insertId });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.delete('/api/pacientes-espera/:id', requireAuth, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!id) return res.status(400).json({ error: 'ID inválido' });
+  try {
+    await db.execute('DELETE FROM pacientes_espera WHERE id = ?', [id]);
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -2977,7 +3143,7 @@ app.delete('/api/servicios/:id', requireAuth, requireAdmin, async (req, res) => 
 // ============================================
 
 // Guardar recibo
-app.post('/api/recibos', requireAuth, async (req, res) => {
+app.post('/api/recibos', requireAuth, requireRole(['admin', 'recepcion']), async (req, res) => {
   const body = req.body;
   if (!body || typeof body !== 'object') {
     return res.status(400).json({ error: 'Cuerpo de la petición inválido' });
@@ -3903,6 +4069,129 @@ const PORT = process.env.PORT || 3000;
     } catch (migErr) {
       logger.warn('[MIGRATION] Advertencia en migración deleted_at: ' + migErr.message, { type: 'STARTUP' });
     }
+    // ─── Migración: paciente_telefono2 en turnos ──────────────────────────────
+    try {
+      const colTel2Turnos = await db.query(
+        `SELECT COUNT(*) AS cnt FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME   = 'turnos'
+           AND COLUMN_NAME  = 'paciente_telefono2'`
+      );
+      if (!colTel2Turnos || !colTel2Turnos[0] || colTel2Turnos[0].cnt === 0) {
+        await db.execute(`ALTER TABLE turnos ADD COLUMN paciente_telefono2 VARCHAR(20) DEFAULT NULL AFTER paciente_telefono`);
+        logger.info('[MIGRATION] Columna turnos.paciente_telefono2 agregada', { type: 'STARTUP' });
+      }
+    } catch (migErr) {
+      logger.warn('[MIGRATION] Advertencia en migración turnos.paciente_telefono2: ' + migErr.message, { type: 'STARTUP' });
+    }
+    // ─── Migración: telefono2 en pacientes ───────────────────────────────────
+    try {
+      const colTel2Pac = await db.query(
+        `SELECT COUNT(*) AS cnt FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME   = 'pacientes'
+           AND COLUMN_NAME  = 'telefono2'`
+      );
+      if (!colTel2Pac || !colTel2Pac[0] || colTel2Pac[0].cnt === 0) {
+        await db.execute(`ALTER TABLE pacientes ADD COLUMN telefono2 VARCHAR(20) DEFAULT NULL AFTER telefono`);
+        logger.info('[MIGRATION] Columna pacientes.telefono2 agregada', { type: 'STARTUP' });
+      }
+    } catch (migErr) {
+      logger.warn('[MIGRATION] Advertencia en migración pacientes.telefono2: ' + migErr.message, { type: 'STARTUP' });
+    }
+    // ─── Migración: tabla pacientes_espera ───────────────────────────────────
+    try {
+      const tblEspera = await db.query(
+        `SELECT COUNT(*) AS cnt FROM information_schema.TABLES
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME   = 'pacientes_espera'`
+      );
+      if (!tblEspera || !tblEspera[0] || tblEspera[0].cnt === 0) {
+        await db.execute(`
+          CREATE TABLE pacientes_espera (
+            id           INT AUTO_INCREMENT PRIMARY KEY,
+            documento    VARCHAR(20)  NOT NULL,
+            nombres      VARCHAR(100) NOT NULL,
+            apellidos    VARCHAR(100) NOT NULL,
+            entidad      VARCHAR(50)  NOT NULL,
+            prioridad    ENUM('ALTA','MEDIA','BAJA') NOT NULL DEFAULT 'MEDIA',
+            ingresado_por VARCHAR(100) DEFAULT NULL,
+            creado_en    TIMESTAMP   DEFAULT CURRENT_TIMESTAMP
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        `);
+        logger.info('[MIGRATION] Tabla pacientes_espera creada', { type: 'STARTUP' });
+      }
+    } catch (migErr) {
+      logger.warn('[MIGRATION] Error creando tabla pacientes_espera: ' + migErr.message, { type: 'STARTUP' });
+    }
+    // ─── Migración: tabla especialidades ─────────────────────────────────────
+    try {
+      const tblEsp = await db.query(
+        `SELECT COUNT(*) AS cnt FROM information_schema.TABLES
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'especialidades'`
+      );
+      if (!tblEsp || !tblEsp[0] || tblEsp[0].cnt === 0) {
+        await db.execute(`
+          CREATE TABLE especialidades (
+            id        INT AUTO_INCREMENT PRIMARY KEY,
+            nombre    VARCHAR(100) NOT NULL,
+            activo    TINYINT(1) NOT NULL DEFAULT 1,
+            creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY uk_esp_nombre (nombre)
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        `);
+        logger.info('[MIGRATION] Tabla especialidades creada', { type: 'STARTUP' });
+        const seedEsp = ['Neurología', 'Epileptología', 'Psicología', 'Neuropsicología', 'Psiquiatría'];
+        for (const nombre of seedEsp) {
+          await db.execute('INSERT IGNORE INTO especialidades (nombre) VALUES (?)', [nombre]);
+        }
+        logger.info('[MIGRATION] Especialidades sembradas', { type: 'STARTUP' });
+      }
+    } catch (migErr) {
+      logger.warn('[MIGRATION] Error creando tabla especialidades: ' + migErr.message, { type: 'STARTUP' });
+    }
+    // ─── Migración: tabla tipos_consulta ─────────────────────────────────────
+    try {
+      const tblTc = await db.query(
+        `SELECT COUNT(*) AS cnt FROM information_schema.TABLES
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tipos_consulta'`
+      );
+      if (!tblTc || !tblTc[0] || tblTc[0].cnt === 0) {
+        await db.execute(`
+          CREATE TABLE tipos_consulta (
+            id              INT AUTO_INCREMENT PRIMARY KEY,
+            especialidad_id INT NOT NULL,
+            nombre          VARCHAR(200) NOT NULL,
+            orden           INT NOT NULL DEFAULT 0,
+            activo          TINYINT(1) NOT NULL DEFAULT 1,
+            FOREIGN KEY (especialidad_id) REFERENCES especialidades(id) ON DELETE CASCADE
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        `);
+        logger.info('[MIGRATION] Tabla tipos_consulta creada', { type: 'STARTUP' });
+        const tiposPorEsp = {
+          'Neurología':     ['Consulta de Primera Vez por Neurología','Consulta de Control por Neurología','Consulta Virtual de Primera Vez por Neurología','Consulta Virtual de Control por Neurología','Aplicación de Toxina Botulínica (Botox)','Control de Toxina Botulínica (Botox)','Actigrafía','Rev. Neuroestimulador','Agente Anestésico','Particular','Abogado','Otra'],
+          'Epileptología':  ['Consulta de Primera Vez por Epileptología','Consulta de Control por Epileptología','Consulta Virtual de Primera Vez por Epileptología','Consulta Virtual de Control por Epileptología','Consulta de Primera Vez por Neurología','Consulta de Control por Neurología','Consulta Virtual de Primera Vez por Neurología','Consulta Virtual de Control por Neurología','Aplicación de Toxina Botulínica (Botox)','Control de Toxina Botulínica (Botox)','Actigrafía','Rev. Neuroestimulador','Bloqueo Mioneural','Particular','Abogado','Otra'],
+          'Psicología':     ['Consulta de Primera Vez por Psicología','Consulta de Control por Psicología','Otra'],
+          'Neuropsicología':['Consulta de Primera Vez por Neuropsicología','Consulta de Control por Neuropsicología','Otra'],
+          'Psiquiatría':    ['Consulta de Primera Vez por Psiquiatría','Consulta de Control por Psiquiatría','Otra'],
+        };
+        for (const [espNombre, tipos] of Object.entries(tiposPorEsp)) {
+          const espRows = await db.query('SELECT id FROM especialidades WHERE nombre = ?', [espNombre]);
+          if (espRows && espRows.length > 0) {
+            const espId = espRows[0].id;
+            for (let i = 0; i < tipos.length; i++) {
+              await db.execute(
+                'INSERT INTO tipos_consulta (especialidad_id, nombre, orden) VALUES (?,?,?)',
+                [espId, tipos[i], i]
+              );
+            }
+          }
+        }
+        logger.info('[MIGRATION] Tipos de consulta sembrados', { type: 'STARTUP' });
+      }
+    } catch (migErr) {
+      logger.warn('[MIGRATION] Error creando tabla tipos_consulta: ' + migErr.message, { type: 'STARTUP' });
+    }
     // ─────────────────────────────────────────────────────────────────────────
     // Detectar certificado autofirmado y usar HTTPS si está configurado
     // NOTA: Deshabilitado para acceso por IP local. Solo funciona en localhost
@@ -3952,7 +4241,7 @@ const PORT = process.env.PORT || 3000;
     // Configurar Socket.IO en el servidor HTTP con soporte mejorado para móviles
     const io = socketIo(httpServer, {
       cors: {
-        origin: "*",  // Permitir todas las conexiones (considerar restringir en prod)
+        origin: process.env.FRONTEND_URL || 'http://localhost:3000',
         methods: ["GET", "POST"],
         credentials: true
       },

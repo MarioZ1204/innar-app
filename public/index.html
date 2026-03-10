@@ -124,37 +124,52 @@
     </header>
     <div id="doctorGreeting" class="doctor-greeting hidden"></div>
     <div class="menu-content">
-      <h2>¿Qué deseas hacer?</h2>
+      <div class="menu-welcome">
+        <h2>¿Qué deseas hacer?</h2>
+        <p>Selecciona un módulo para continuar</p>
+      </div>
       <div class="menu-cards" id="menuCardsContainer">
         <button class="menu-card" data-module="recibos" data-rol="admin recepcion">
           <span class="menu-card-icon"><img src="/images/iconrecibos.png" alt="Recibos" class="icon-img" /></span>
-          <span class="menu-card-title">Recibos</span>
-          <span class="menu-card-desc">Crear recibos, ver historial y reportes</span>
+          <span class="menu-card-label">
+            <span class="menu-card-title">Recibos</span>
+            <span class="menu-card-desc">Historial y reportes</span>
+          </span>
         </button>
         <button class="menu-card" data-module="agenda-medica" data-rol="admin recepcion electro doctor">
           <span class="menu-card-icon"><img src="/images/iconagenda.png" alt="Agenda Médica" class="icon-img" /></span>
-          <span class="menu-card-title">Agenda Médica</span>
-          <span class="menu-card-desc">Citas por consultorio</span>
+          <span class="menu-card-label">
+            <span class="menu-card-title">Agenda Médica</span>
+            <span class="menu-card-desc">Citas por consultorio</span>
+          </span>
         </button>
         <button class="menu-card" data-module="electro" data-rol="admin recepcion electro doctor">
           <span class="menu-card-icon"><img src="/images/iconelectro.png" alt="Electrodiagnóstico" class="icon-img" /></span>
-          <span class="menu-card-title">Agenda Electrodiagnóstico</span>
-          <span class="menu-card-desc">Agenda de los 4 equipos de electrodiagnóstico</span>
+          <span class="menu-card-label">
+            <span class="menu-card-title">Electrodiagnóstico</span>
+            <span class="menu-card-desc">Agenda de los 4 equipos</span>
+          </span>
         </button>
         <button class="menu-card" data-module="usuarios" data-rol="admin">
           <span class="menu-card-icon"><img src="/images/iconuser.png" alt="Usuarios" class="icon-img" /></span>
-          <span class="menu-card-title">Usuarios</span>
-          <span class="menu-card-desc">Gestionar usuarios y roles</span>
+          <span class="menu-card-label">
+            <span class="menu-card-title">Usuarios</span>
+            <span class="menu-card-desc">Gestionar usuarios y roles</span>
+          </span>
         </button>
         <button class="menu-card" data-module="diagnosticos" data-rol="admin">
           <span class="menu-card-icon"><img src="/images/icondiagnosticos.svg" alt="Diagnósticos" class="icon-img" /></span>
-          <span class="menu-card-title">Diagnósticos</span>
-          <span class="menu-card-desc">Importar y gestionar diagnósticos</span>
+          <span class="menu-card-label">
+            <span class="menu-card-title">Diagnósticos</span>
+            <span class="menu-card-desc">Importar y gestionar</span>
+          </span>
         </button>
         <button class="menu-card" data-module="dashboard-citas" data-rol="admin">
           <span class="menu-card-icon"><img src="/images/icondashboard.svg" alt="Auditoría de Citas" class="icon-img" /></span>
-          <span class="menu-card-title">Auditoría de Citas</span>
-          <span class="menu-card-desc">Ver quién agendó cada cita médica y electrodiagnóstico</span>
+          <span class="menu-card-label">
+            <span class="menu-card-title">Auditoría de Citas</span>
+            <span class="menu-card-desc">Quién agendó cada cita</span>
+          </span>
         </button>
       </div>
     </div>
@@ -165,6 +180,7 @@
     <div class="main-layout">
       <div class="sidebar no-print">
         <div class="sidebar-inner">
+          <div class="sidebar-logo-mini"><img src="/images/logo.png" alt="Logo" /></div>
           <button class="btn-volver" id="btnVolverRecibos">
             <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
             Volver al menú
@@ -240,7 +256,7 @@
               </div>
               <div style="margin-top:10px">
                 <label>Conceptos</label>
-                <div class="table-wrapper">
+                <div class="table-wrapper table-compact">
                 <table id="itemsTable" class="modern-table">
                   <thead><tr><th>Descripción</th><th>Valor</th><th></th></tr></thead>
                   <tbody></tbody>
@@ -271,7 +287,7 @@
                   <div><strong>Cliente:</strong> <span id="r_cliente"></span></div>
                   <div><strong>Documento:</strong> <span id="r_doc"></span></div>
                 </div>
-                <div class="table-wrapper">
+                <div class="table-wrapper table-compact">
                 <table id="r_table" class="modern-table">
                   <thead><tr><th>Descripción</th><th>Precio</th></tr></thead>
                   <tbody></tbody>
@@ -377,6 +393,7 @@
     <div class="main-layout">
       <div class="sidebar">
         <div class="sidebar-inner">
+          <div class="sidebar-logo-mini"><img src="/images/logo.png" alt="Logo" /></div>
           <button class="btn-volver" id="btnVolverAgenda">
             <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
             Volver al menú
@@ -436,20 +453,39 @@
               </div>
             </section>
             <!-- Botones para Doctor: Llamar siguiente / Marcar atendido -->
-            <section class="card no-print" id="agendaDoctorAcciones" style="display:none;background:#f4f7f7;border-left:4px solid #8AA6A1">
-              <h3>Acciones Rápidas</h3>
-              <div style="display:flex;gap:16px;flex-wrap:wrap">
-                <button id="btnLlamarSiguiente" class="btn-llamar">Llamar siguiente paciente</button>
-                <button id="btnMarcarAtendido" class="btn-marcar">Marcar como atendido</button>
+            <section class="card no-print doctor-acciones-card" id="agendaDoctorAcciones" style="display:none">
+              <div class="doctor-acciones-header">
+                <span class="doctor-acciones-icon">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                </span>
+                <span>Acciones</span>
+              </div>
+              <div class="doctor-acciones-btns">
+                <button id="btnLlamarSiguiente" class="btn-llamar">
+                  <span class="btn-llamar-icon">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+                  </span>
+                  <span class="btn-llamar-text">
+                    <span class="btn-llamar-label">Llamar siguiente</span>
+                  </span>
+                </button>
+                <button id="btnMarcarAtendido" class="btn-marcar">
+                  <span class="btn-marcar-icon">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                  </span>
+                  <span class="btn-marcar-text">
+                    <span class="btn-marcar-label">Marcar atendido</span>
+                  </span>
+                </button>
               </div>
             </section>
             <section class="card no-print" id="agendaNuevoTurnoSection">
               <h3>Nueva Cita</h3>
               <div class="row" id="agendaNuevoTurnoRow">
-                <div class="col"><label>Documento</label><input id="nuevoPacienteDocMedica" type="text" placeholder="Documento" /></div>
-                <div class="col"><label>Paciente</label><input id="nuevoPacienteNombreMedica" type="text" placeholder="Buscar o crear paciente..." list="pacientesListMedica" /><datalist id="pacientesListMedica"></datalist></div>
+                <div class="col"><label>Documento <span style="color:#dc2626">*</span></label><input id="nuevoPacienteDocMedica" type="text" placeholder="Documento" /></div>
+                <div class="col"><label>Paciente <span style="color:#dc2626">*</span></label><input id="nuevoPacienteNombreMedica" type="text" placeholder="Buscar o crear paciente..." list="pacientesListMedica" /><datalist id="pacientesListMedica"></datalist></div>
                 <div class="col">
-                  <label>Entidad</label>
+                  <label>Entidad <span style="color:#dc2626">*</span></label>
                   <select id="nuevoTurnoEntidadMedica">
                     <option value="">Seleccionar</option>
                     <option value="Protegemos">Protegemos</option>
@@ -467,10 +503,10 @@
               </div>
               <div style="margin-top:8px;padding:8px;border-radius:4px;background-color:#fef3c7;border:1px solid #f59e0b;display:none;font-size:0.9rem;color:#92400e" id="mensajeDisponibilidad"></div>
               <div class="row" style="margin-top:12px">
-                <div class="col"><label>Hora</label><select id="nuevoTurnoHoraMedica"></select></div>
-                <div class="col"><label>Teléfono 1</label><input id="nuevoPacienteTelefonoMedica" type="tel" placeholder="Teléfono principal" /></div>
-                <div class="col"><label>Teléfono 2</label><input id="nuevoPacienteTelefonoMedica2" type="tel" placeholder="Teléfono alternativo" /></div>
-                <div class="col"><label>Tipo de consulta</label><select id="nuevoTurnoTipoMedica"><option value="">Seleccionar</option></select></div>
+                <div class="col"><label>Hora <span style="color:#dc2626">*</span></label><select id="nuevoTurnoHoraMedica"></select></div>
+                <div class="col"><label>Teléfono 1 <span style="color:#dc2626">*</span></label><input id="nuevoPacienteTelefonoMedica" type="tel" placeholder="Teléfono principal" /></div>
+                <div class="col"><label>Teléfono 2 <span style="color:#dc2626">*</span></label><input id="nuevoPacienteTelefonoMedica2" type="tel" placeholder="Teléfono alternativo" /></div>
+                <div class="col"><label>Tipo de consulta <span style="color:#dc2626">*</span></label><select id="nuevoTurnoTipoMedica"><option value="">Seleccionar</option></select></div>
               </div>
               <div class="row" id="otraConsultaRow" style="margin-top:8px;display:none">
                 <div class="col" style="flex:2"><label>Especificar tipo de consulta</label><input id="otraConsultaInput" type="text" placeholder="Escribir tipo de consulta personalizado" style="width:100%" /></div>
@@ -577,6 +613,7 @@
     <div class="main-layout">
       <div class="sidebar">
         <div class="sidebar-inner">
+          <div class="sidebar-logo-mini"><img src="/images/logo.png" alt="Logo" /></div>
           <button class="btn-volver" id="btnVolverUsuarios">
             <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
             Volver al menú
@@ -587,6 +624,13 @@
           <hr class="sidebar-title-sep" />
           <h2>Usuarios</h2>
           <p class="sidebar-desc">Gestión de acceso al sistema</p>
+          <span class="sidebar-section-label">Navegación</span>
+          <button class="sidebar-btn usuarios-page-btn active" data-page="usuarios">
+            <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>Usuarios
+          </button>
+          <button class="sidebar-btn usuarios-page-btn" data-page="especialidades">
+            <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v1H6a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3V5a3 3 0 0 0-3-3z"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="12" y1="9" x2="12" y2="15"/></svg></span>Especialidades
+          </button>
         </div>
         <div class="sidebar-footer">
           <div class="sidebar-user">
@@ -600,6 +644,7 @@
       </div>
       <div class="main-content">
         <div class="container">
+          <div class="usuarios-page active" data-usuarios-page="usuarios">
           <header><h2>Gestión de Usuarios</h2></header>
           <section class="card no-print" id="usuariosNuevoSection">
             <h3>Nuevo Usuario</h3>
@@ -615,7 +660,7 @@
               </div>
               <div class="col"><label>Nombre</label><input id="newUserName" type="text" placeholder="Nombre completo" /></div>
               <div class="col"><label>Rol</label><select id="newUserRol"><option value="recepcion">Recepción</option><option value="electro">Electrodiagnóstico</option><option value="doctor">Doctor</option><option value="admin">Administrador</option></select></div>
-              <div class="col" id="especialidadCol" style="display:none"><label>Especialidad</label><select id="newUserEspecialidad"><option value="">Seleccionar</option><option>Neurología</option><option>Epileptología</option><option>Psicología</option><option>Neuropsicología</option><option>Psiquiatría</option><option>Otra</option></select></div>
+              <div class="col" id="especialidadCol" style="display:none"><label>Especialidad</label><select id="newUserEspecialidad"><option value="">Seleccionar</option><option value="Otra">Otra</option></select></div>
               <div class="col" id="especialidadOtraCol" style="display:none"><input id="newUserEspecialidadOtra" type="text" placeholder="Especificar especialidad" /></div>
               <div class="col" id="consultorioCol" style="display:none"><label>Consultorio #</label><input id="newUserConsultorio" type="number" placeholder="Número de consultorio" min="1" /></div>
               <div class="col" style="display:flex;align-items:flex-end"><button id="crearUsuario" class="btn-primary" style="width:100%">Crear Usuario</button></div>
@@ -644,6 +689,44 @@
             </div>
             <div id="usuariosTableControls"></div>
           </section>
+          </div><!-- /usuarios-page usuarios -->
+
+          <!-- ===== PÁGINA: ESPECIALIDADES ===== -->
+          <div class="usuarios-page" data-usuarios-page="especialidades">
+            <header><h2>Especialidades y Tipos de Consulta</h2></header>
+            <section class="card no-print">
+              <h3>Nueva Especialidad</h3>
+              <div class="row">
+                <div class="col"><label>Nombre <span style="color:#dc2626">*</span></label><input id="espNombreNuevo" type="text" placeholder="Ej: Cardiología" /></div>
+                <div class="col" style="display:flex;align-items:flex-end;max-width:210px"><button id="btnCrearEspecialidad" class="btn-primary" style="width:100%">Agregar Especialidad</button></div>
+              </div>
+            </section>
+            <section class="card">
+              <h3 style="margin:0 0 16px 0">Especialidades registradas</h3>
+              <div class="table-wrapper">
+                <table class="modern-table" id="especialidadesTable">
+                  <thead><tr><th>Especialidad</th><th>Acciones</th></tr></thead>
+                  <tbody id="especialidadesTableBody"><tr><td colspan="2" style="padding:20px;text-align:center;color:#999">Cargando...</td></tr></tbody>
+                </table>
+              </div>
+            </section>
+            <section class="card" id="tiposConsultaPanel" style="display:none">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+                <h3 style="margin:0">Tipos de consulta &mdash; <span id="tiposConsultaEspNombre" style="color:var(--c-primary)"></span></h3>
+                <button onclick="cerrarTiposConsultaPanel()" class="btn-secondary btn-sm">&times; Cerrar panel</button>
+              </div>
+              <div class="row no-print" style="margin-bottom:12px">
+                <div class="col"><label>Nuevo tipo de consulta <span style="color:#dc2626">*</span></label><input id="tipoConsultaNuevoNombre" type="text" placeholder="Ej: Consulta Virtual de Control" /></div>
+                <div class="col" style="display:flex;align-items:flex-end;max-width:160px"><button id="btnCrearTipoConsulta" class="btn-primary" style="width:100%">Agregar</button></div>
+              </div>
+              <div class="table-wrapper">
+                <table class="modern-table table-compact" id="tiposConsultaTable">
+                  <thead><tr><th>Tipo de Consulta</th><th>Acciones</th></tr></thead>
+                  <tbody id="tiposConsultaTableBody"><tr><td colspan="2" style="padding:16px;text-align:center;color:#999">Selecciona una especialidad para ver sus tipos</td></tr></tbody>
+                </table>
+              </div>
+            </section>
+          </div><!-- /usuarios-page especialidades -->
         </div>
       </div>
     </div>
@@ -654,6 +737,7 @@
     <div class="main-layout">
       <div class="sidebar">
         <div class="sidebar-inner">
+          <div class="sidebar-logo-mini"><img src="/images/logo.png" alt="Logo" /></div>
           <button class="btn-volver" id="btnVolverDiagnosticos">
             <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
             Volver al menú
@@ -725,6 +809,7 @@
     <div class="main-layout">
       <div class="sidebar">
         <div class="sidebar-inner">
+          <div class="sidebar-logo-mini"><img src="/images/logo.png" alt="Logo" /></div>
           <button class="btn-volver" id="btnVolverElectro">
             <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
             Volver al menú
@@ -735,6 +820,15 @@
           <hr class="sidebar-title-sep" />
           <h2>Electrodiagnóstico</h2>
           <p class="sidebar-desc">Agenda de equipos y estudios</p>
+          <span class="sidebar-section-label">Navegación</span>
+          <button class="sidebar-btn electro-page-btn active" data-page="agenda">
+            <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span>
+            Agenda
+          </button>
+          <button class="sidebar-btn electro-page-btn" data-page="espera">
+            <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
+            Pacientes en Espera
+          </button>
         </div>
         <div class="sidebar-footer">
           <div class="sidebar-user">
@@ -748,6 +842,9 @@
       </div>
       <div class="main-content">
         <div class="container">
+
+          <!-- ===== PÁGINA: AGENDA ===== -->
+          <div class="electro-page active" data-electro-page="agenda">
           <header><h2>Agenda de Equipos de Electrodiagnóstico</h2></header>
           
           <!-- Buscador por Documento - Consulta de Citas Electro -->
@@ -788,12 +885,12 @@
                 </select>
               </div>
               <div class="col">
-                <label>Diagnóstico</label>
+                <label>Diagnóstico <span style="color:#dc2626">*</span></label>
                 <input id="electroDiagnostico" type="text" placeholder="Búsqueda de diagnóstico..." list="diagnosticosListElectro" autocomplete="off" style="background-image: none; background-clip: padding-box;" />
                 <datalist id="diagnosticosListElectro"></datalist>
               </div>
-              <div class="col"><label>Hora</label><select id="electroHora"></select></div>
-              <div class="col"><label>Número de Documento</label><input id="electroDocumento" type="text" placeholder="Documento (buscar paciente)" /></div>
+              <div class="col"><label>Hora <span style="color:#dc2626">*</span></label><select id="electroHora"></select></div>
+              <div class="col"><label>Número de Documento <span style="color:#dc2626">*</span></label><input id="electroDocumento" type="text" placeholder="Documento (buscar paciente)" /></div>
             </div>
             <!-- Avisos de Disponibilidad de Equipos -->
             <div id="equiposDisponibilidadAlerta" style="margin-top:12px;padding:16px;background:#f0f8f7;border:2px solid #627371;border-radius:8px;display:none">
@@ -801,8 +898,9 @@
               <div id="equiposDisponibilidadContenido"></div>
             </div>
             <div class="row" style="margin-top:12px">
-              <div class="col"><label>Nombre del Paciente</label><input id="electroPacienteNombre" type="text" placeholder="Nombre completo del paciente" /></div>
-              <div class="col"><label>Número de Teléfono</label><input id="electroTelefono" type="tel" placeholder="Ej: 3001234567" /></div>
+              <div class="col"><label>Nombre del Paciente <span style="color:#dc2626">*</span></label><input id="electroPacienteNombre" type="text" placeholder="Nombre completo del paciente" /></div>
+              <div class="col"><label>Número de Teléfono <span style="color:#dc2626">*</span></label><input id="electroTelefono" type="tel" placeholder="Ej: 3001234567" /></div>
+              <div class="col"><label>Teléfono 2 <span style="color:#dc2626">*</span></label><input id="electroTelefono2" type="tel" placeholder="Ej: 3001234567" /></div>
               <div class="col" id="electroDuracionCol" style="display:none">
                 <label>Duración del Estudio (horas)</label>
                 <input id="electroDuracion" type="number" placeholder="Ej: 8" min="1" max="168" step="0.5" />
@@ -864,6 +962,109 @@
               </div>
             </div>
           </section>
+          </div><!-- /electro-page agenda -->
+
+          <!-- ===== PÁGINA: PACIENTES EN ESPERA ===== -->
+          <div class="electro-page" data-electro-page="espera">
+            <header><h2>Pacientes en Espera</h2></header>
+
+            <!-- Formulario agregar paciente -->
+            <section class="card no-print">
+              <h3>Agregar Paciente a Lista de Espera</h3>
+              <div class="row">
+                <div class="col">
+                  <label>Número de Documento <span style="color:#dc2626">*</span></label>
+                  <input id="esperaDocumento" type="text" placeholder="Ej: 1234567890" />
+                </div>
+                <div class="col">
+                  <label>Nombres <span style="color:#dc2626">*</span></label>
+                  <input id="esperaNombres" type="text" placeholder="Nombres del paciente" />
+                </div>
+                <div class="col">
+                  <label>Apellidos <span style="color:#dc2626">*</span></label>
+                  <input id="esperaApellidos" type="text" placeholder="Apellidos del paciente" />
+                </div>
+                <div class="col">
+                  <label>Entidad <span style="color:#dc2626">*</span></label>
+                  <select id="esperaEntidad">
+                    <option value="">Seleccionar</option>
+                    <option value="FOMAG">FOMAG</option>
+                    <option value="UCQN">UCQN</option>
+                    <option value="PARTICULAR">PARTICULAR</option>
+                  </select>
+                </div>
+                <div class="col">
+                  <label>Prioridad <span style="color:#dc2626">*</span></label>
+                  <select id="esperaPrioridad">
+                    <option value="">Seleccionar</option>
+                    <option value="ALTA">ALTA (ROJO)</option>
+                    <option value="MEDIA">MEDIA (AMARILLO)</option>
+                    <option value="BAJA">BAJA (AZUL)</option>
+                  </select>
+                </div>
+              </div>
+              <div style="margin-top:12px;text-align:right">
+                <button id="btnAgregarEspera" class="btn-primary">Agregar a Lista</button>
+              </div>
+            </section>
+
+            <!-- Filtros -->
+            <section class="card no-print">
+              <h3>Filtrar Lista</h3>
+              <div class="row">
+                <div class="col">
+                  <label>Buscar (nombre, apellido o documento)</label>
+                  <input id="esperaFiltroTexto" type="text" placeholder="Escribir para filtrar..." />
+                </div>
+                <div class="col">
+                  <label>Entidad</label>
+                  <select id="esperaFiltroEntidad">
+                    <option value="">Todas</option>
+                    <option value="FOMAG">FOMAG</option>
+                    <option value="UCQN">UCQN</option>
+                    <option value="PARTICULAR">PARTICULAR</option>
+                  </select>
+                </div>
+                <div class="col">
+                  <label>Prioridad</label>
+                  <select id="esperaFiltroPrioridad">
+                    <option value="">Todas</option>
+                    <option value="ALTA">ALTA (ROJO)</option>
+                    <option value="MEDIA">MEDIA (AMARILLO)</option>
+                    <option value="BAJA">BAJA (AZUL)</option>
+                  </select>
+                </div>
+              </div>
+            </section>
+
+            <!-- Tabla -->
+            <section class="card">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+                <h3 style="margin:0">Lista de Espera</h3>
+                <span id="esperaContador" style="font-size:0.85rem;color:#6b7280;font-weight:500"></span>
+              </div>
+              <div class="table-wrapper">
+                <table class="modern-table" id="esperaTable">
+                  <thead>
+                    <tr>
+                      <th>Prioridad</th>
+                      <th>Documento</th>
+                      <th>Nombres</th>
+                      <th>Apellidos</th>
+                      <th>Entidad</th>
+                      <th>Fecha Ingreso</th>
+                      <th>Ingresado por</th>
+                      <th>Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody id="esperaTableBody">
+                    <tr><td colspan="8" style="padding:20px;text-align:center;color:#999">No hay pacientes en espera</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          </div><!-- /electro-page espera -->
+
         </div>
       </div>
     </div>
@@ -1023,6 +1224,28 @@
           <button id="btnCancelarModal" class="btn-secondary" onclick="document.getElementById('modalDetallesCitaElectro').classList.add('hidden')">Cerrar</button>
           <button id="btnGuardarCambios" class="btn-primary">Guardar</button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Confirmar Eliminar Paciente Espera -->
+  <div id="modalConfirmarEliminarEspera" class="modal hidden" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.55);align-items:center;justify-content:center;z-index:1200;padding:20px">
+    <div style="background:white;border-radius:12px;padding:32px;max-width:420px;width:100%;box-shadow:0 20px 40px rgba(0,0,0,0.2);text-align:center">
+      <div style="width:56px;height:56px;background:#fee2e2;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 16px">
+        <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="3 6 5 6 21 6"/>
+          <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+          <path d="M10 11v6"/><path d="M14 11v6"/>
+          <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+        </svg>
+      </div>
+      <h3 style="margin:0 0 12px;color:#1f2937">Eliminar paciente</h3>
+      <p style="margin:0 0 4px;color:#6b7280;font-size:0.95rem">¿Estás seguro que deseas eliminar a</p>
+      <p style="margin:0 0 20px"><strong id="modalEsperaNombrePaciente" style="color:#1f2937"></strong>?</p>
+      <p style="margin:0 0 24px;color:#dc2626;font-size:0.85rem">Esta acción no se puede deshacer.</p>
+      <div style="display:flex;gap:12px;justify-content:center">
+        <button id="btnCancelarEliminarEspera" class="btn-secondary">Cancelar</button>
+        <button id="btnConfirmarEliminarEspera" class="btn-danger">Sí, eliminar</button>
       </div>
     </div>
   </div>
@@ -1221,6 +1444,7 @@
     <div class="main-layout">
       <div class="sidebar">
         <div class="sidebar-inner">
+          <div class="sidebar-logo-mini"><img src="/images/logo.png" alt="Logo" /></div>
           <button class="btn-volver" id="btnVolverDashboardCitas">
             <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
             Volver al menú
@@ -1360,11 +1584,6 @@
           <label for="editEspecialidad" style="display:block;margin-bottom:8px;font-weight:500;color:#333;font-size:14px">Especialidad</label>
           <select id="editEspecialidad" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;font-size:14px;background-color:white;cursor:pointer;transition:all 0.2s" onfocus="this.style.borderColor='#627371';this.style.boxShadow='0 0 0 3px rgba(98,115,113,0.1)'" onblur="this.style.borderColor='#d1d5db';this.style.boxShadow='none'">
             <option value="">Seleccionar especialidad</option>
-            <option value="Neurología">Neurología</option>
-            <option value="Epileptología">Epileptología</option>
-            <option value="Psicología">Psicología</option>
-            <option value="Neuropsicología">Neuropsicología</option>
-            <option value="Psiquiatría">Psiquiatría</option>
             <option value="Otra">Otra</option>
           </select>
         </div>

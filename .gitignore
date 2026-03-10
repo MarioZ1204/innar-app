@@ -1,0 +1,27 @@
+# Dependencias
+node_modules/
+
+# Variables de entorno — contienen contraseñas y secretos
+.env
+
+# Logs
+logs/
+*.log
+
+# Backups de la BD
+backups/
+
+# Archivos de compilación / distribución
+dist-app/
+dist-app - copia/
+
+# Archivos temporales de uploads
+uploads/
+
+# Sistema operativo
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Editor
+.vscode/

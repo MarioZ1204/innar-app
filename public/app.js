@@ -167,6 +167,8 @@ async function checkSession() {
       updateSidebarUser(currentUser);
       updateMenuByRole();
       mostrarSaludoDoctor();
+      initSocket();        // Inicializar socket al restaurar sesión (recarga de página)
+      setupMenuHandlers(); // Configurar handlers (incluyendo mobile sidebar)
       // Restaurar módulo anterior si existe (sessionStorage = solo esta pestaña)
       const savedModule = sessionStorage.getItem(lsKeyCurrentModule);
       // Restaurar doctor seleccionado si existe (para RECEPCIONISTA)
@@ -335,6 +337,53 @@ function setupMenuHandlers() {
       }
     });
   }
+
+  // ── Swipe derecha en móvil = botón Volver ────────────────────────────────
+  // Solo interceptamos si el gesto empieza desde el borde izquierdo (<50px),
+  // es predominantemente horizontal y ocurre dentro de un módulo activo.
+  if (!window._swipeBackSetup) {
+    window._swipeBackSetup = true;
+    let _swipeStartX = 0, _swipeStartY = 0, _swipeTracking = false;
+    const EDGE_ZONE   = 50;   // px desde el borde izquierdo para activar
+    const MIN_DIST    = 80;   // desplazamiento horizontal mínimo para disparar
+    const MAX_VER     = 60;   // máximo vertical permitido (evita confundir con scroll)
+
+    document.addEventListener('touchstart', (e) => {
+      const touch = e.touches[0];
+      // Solo activar si el dedo empieza cerca del borde izquierdo
+      // y el usuario está en un módulo (no en menú ni login)
+      if (touch.clientX <= EDGE_ZONE && currentModule) {
+        _swipeStartX = touch.clientX;
+        _swipeStartY = touch.clientY;
+        _swipeTracking = true;
+      } else {
+        _swipeTracking = false;
+      }
+    }, { passive: true });
+
+    document.addEventListener('touchmove', (e) => {
+      if (!_swipeTracking) return;
+      const touch = e.touches[0];
+      const dx = touch.clientX - _swipeStartX;
+      const dy = Math.abs(touch.clientY - _swipeStartY);
+      // Si el movimiento vertical supera el límite, cancelar — es un scroll
+      if (dy > MAX_VER) { _swipeTracking = false; return; }
+      // Si ya alcanzó el umbral horizontal, prevenir navegación nativa del browser
+      if (dx > MIN_DIST) e.preventDefault();
+    }, { passive: false });
+
+    document.addEventListener('touchend', (e) => {
+      if (!_swipeTracking) return;
+      _swipeTracking = false;
+      const touch = e.changedTouches[0];
+      const dx = touch.clientX - _swipeStartX;
+      const dy = Math.abs(touch.clientY - _swipeStartY);
+      if (dx >= MIN_DIST && dy <= MAX_VER && currentModule) {
+        goToMenu();
+      }
+    }, { passive: true });
+  }
+  // ────────────────────────────────────────────────────────────────────────
   // Sidebar recibos
   document.querySelectorAll('#view-recibos .sidebar-btn').forEach(btn => {
     btn.addEventListener('click', function() {
@@ -348,6 +397,59 @@ function setupMenuHandlers() {
       if (page === 'servicios') renderServiciosList();
     });
   });
+
+  setupMobileSidebars();
+}
+
+function setupMobileSidebars() {
+  if (window._mobileSidebarSetup) return;
+  window._mobileSidebarSetup = true;
+
+  function openSidebar(sidebar, backdrop) {
+    sidebar.classList.add('mobile-open');
+    backdrop.classList.add('active');
+  }
+
+  function closeSidebar(sidebar, backdrop) {
+    sidebar.classList.remove('mobile-open');
+    backdrop.classList.remove('active');
+  }
+
+  function closeAll() {
+    document.querySelectorAll('.sidebar.mobile-open').forEach(s => {
+      const layout = s.closest('.main-layout');
+      const bd = layout && layout.querySelector('.mobile-sidebar-backdrop');
+      closeSidebar(s, bd || { classList: { remove: () => {} } });
+    });
+  }
+
+  // Inyectar backdrop y botón en cada módulo
+  document.querySelectorAll('.main-layout').forEach(layout => {
+    const sidebar = layout.querySelector(':scope > .sidebar');
+    const mainContent = layout.querySelector(':scope > .main-content');
+    if (!sidebar || !mainContent) return;
+
+    // Backdrop dentro del mismo layout (mismo stacking context que el sidebar)
+    const backdrop = document.createElement('div');
+    backdrop.className = 'mobile-sidebar-backdrop';
+    layout.appendChild(backdrop);
+    backdrop.addEventListener('click', () => closeSidebar(sidebar, backdrop));
+
+    // Botón hamburguesa antes del main-content
+    const btn = document.createElement('button');
+    btn.className = 'mobile-menu-btn no-print';
+    btn.setAttribute('aria-label', 'Abrir navegación');
+    btn.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>`;
+    layout.insertBefore(btn, mainContent);
+    btn.addEventListener('click', () => openSidebar(sidebar, backdrop));
+  });
+
+  // Cerrar sidebar al elegir opción o volver
+  document.addEventListener('click', e => {
+    if (e.target.closest('.btn-volver') || e.target.closest('.sidebar-btn')) {
+      closeAll();
+    }
+  }, true);
 }
 
 // Escapar HTML para evitar XSS al insertar en innerHTML
@@ -949,26 +1051,51 @@ function selectDoctor(doctorId, doctorName, especialidad) {
   goToModule('agenda-medica');
 }
 
-function cargarTiposConsultaSegunEspecialidad(especialidad) {
+async function cargarTiposConsultaSegunEspecialidad(especialidad) {
   const selectTipo = $('nuevoTurnoTipoMedica');
   if (!selectTipo) return;
-  
-  // Limpiar opciones actuales excepto la primera (vacía)
   selectTipo.innerHTML = '<option value="">Seleccionar</option>';
-  
-  // Obtener tipos de consulta según especialidad
-  const tipos = ESPECIALIDAD_TIPOS_CONSULTA[especialidad] || [];
-  
-  tipos.forEach(tipo => {
-    const option = document.createElement('option');
-    option.value = tipo;
-    option.textContent = tipo;
-    selectTipo.appendChild(option);
-  });
-  
-  // Remover listeners anteriores para evitar duplicados
+  if (!especialidad) return;
+
+  try {
+    let tipos = [];
+    if (_tiposConsultaCache[especialidad]) {
+      tipos = _tiposConsultaCache[especialidad];
+    } else {
+      const res = await apiFetch(`/api/tipos-consulta?especialidad_nombre=${encodeURIComponent(especialidad)}`);
+      const data = await res.json();
+      if (Array.isArray(data) && data.length > 0) {
+        tipos = data;
+        _tiposConsultaCache[especialidad] = tipos;
+      }
+    }
+    if (tipos.length > 0) {
+      tipos.forEach(t => {
+        const opt = document.createElement('option');
+        opt.value = t.nombre;
+        opt.textContent = t.nombre;
+        selectTipo.appendChild(opt);
+      });
+    } else {
+      // Fallback a datos hardcodeados si la API no devuelve nada
+      (ESPECIALIDAD_TIPOS_CONSULTA[especialidad] || []).forEach(tipo => {
+        const opt = document.createElement('option');
+        opt.value = tipo;
+        opt.textContent = tipo;
+        selectTipo.appendChild(opt);
+      });
+    }
+  } catch {
+    // Fallback completo si la API falla
+    (ESPECIALIDAD_TIPOS_CONSULTA[especialidad] || []).forEach(tipo => {
+      const opt = document.createElement('option');
+      opt.value = tipo;
+      opt.textContent = tipo;
+      selectTipo.appendChild(opt);
+    });
+  }
+
   selectTipo.removeEventListener('change', manejarCambioTipoConsulta);
-  // Agregar nuevo listener
   selectTipo.addEventListener('change', manejarCambioTipoConsulta);
 }
 
@@ -1248,7 +1375,6 @@ async function initAgendaMedica() {
   const btnMarcar = $('btnMarcarAtendido');
   if (btnMarcar) {
     btnMarcar.disabled = true;
-    btnMarcar.style.opacity = '0.5';
     btnMarcar.title = 'No hay paciente en atención';
   }
   
@@ -2202,11 +2328,9 @@ function updateMarcarAtendidoButton(turnos) {
   
   if (turnoEnAtencion) {
     btnMarcar.disabled = false;
-    btnMarcar.style.opacity = '1';
     btnMarcar.title = `Paciente en atención: ${turnoEnAtencion.paciente_nombre}`;
   } else {
     btnMarcar.disabled = true;
-    btnMarcar.style.opacity = '0.5';
     btnMarcar.title = 'No hay paciente en atención';
   }
 }
@@ -2267,9 +2391,14 @@ function renderTurnoRowMedica(tbody, t, animateTargetId, hayEnAtencion) {
   const accionesCell = puedeEliminar
     ? `<div class="table-actions">${prioridadBtns}<button class="btn-editar" data-edit="${t.id}" title="Editar" ${btnEditDisabled} ${dataDeshabilitado}><img src="images/edit.svg" alt="Editar"/></button><button class="btn-eliminar" data-delete="${t.id}" title="Eliminar" ${btnDeleteDisabled} ${dataDeshabilitado}><img src="images/delete.svg" alt="Eliminar"/></button></div>`
     : '-';
+    const numCellHtml = t.numero_turno === 1
+      ? `<span class="badge-siguiente">Siguiente</span>`
+      : (t.numero_turno || '');
+    if (t.numero_turno === 1) tr.classList.add('turno-es-primero');
+
     if (isDoctor()) {
       tr.innerHTML = `
-        <td>${t.numero_turno || ''}</td>
+        <td>${numCellHtml}</td>
         <td class="col-hora col-mobile-hide">${formatearHora(t.hora)}</td>
         <td>${escapeHtml(t.paciente_nombre)}</td>
         <td class="col-mobile-hide">${escapeHtml(t.tipo_consulta || '')}</td>
@@ -2280,12 +2409,12 @@ function renderTurnoRowMedica(tbody, t, animateTargetId, hayEnAtencion) {
         <td>-</td>
       `;
       if (animateTargetId && t.id === animateTargetId) {
-        tr.classList.add('animate-up');
-        setTimeout(() => tr.classList.remove('animate-up'), 900);
+        tr.classList.add('animate-nuevo-primero');
+        setTimeout(() => tr.classList.remove('animate-nuevo-primero'), 1100);
       }
     } else {
       tr.innerHTML = `
-        <td>${t.numero_turno || ''}</td>
+        <td>${numCellHtml}</td>
         <td class="col-hora col-mobile-hide">${formatearHora(t.hora)}</td>
         <td>${escapeHtml(t.paciente_nombre)}</td>
         <td class="col-mobile-hide">${escapeHtml(t.tipo_consulta || '')}</td>
@@ -2651,8 +2780,8 @@ async function crearTurnoMedica() {
   // ========== VALIDACIONES ==========
   
   // 1. Validar campos obligatorios
-  if (!nombre || !fecha || !doctorId || !hora) {
-    showToast('Completa paciente, fecha, médico y hora', 'error');
+  if (!nombre || !doc || !fecha || !doctorId || !hora || !entidad || !tipoConsulta) {
+    showToast('Completa todos los campos obligatorios', 'error');
     return;
   }
 
@@ -2663,7 +2792,7 @@ async function crearTurnoMedica() {
   }
 
   // 3. Validar documento: solo números, 6-15 caracteres
-  if (doc && !/^\d{6,15}$/.test(doc)) {
+  if (!/^\d{6,15}$/.test(doc)) {
     showToast('Documento inválido. Solo números, 6-15 dígitos', 'error');
     return;
   }
@@ -2721,6 +2850,8 @@ async function crearTurnoMedica() {
       $('nuevoPacienteTelefonoMedica').value = '';
       $('nuevoPacienteTelefonoMedica2').value = '';
       $('nuevoTurnoNotasMedica').value = '';
+      $('nuevoTurnoEntidadMedica').value = '';
+      $('nuevoTurnoTipoMedica').value = '';
       cargarTurnosMedica();
     } else {
       showToast(data.error || 'Error al crear la cita', 'error');
@@ -3100,6 +3231,21 @@ async function initElectro() {
   }
 
   await cargarCitasElectro();
+
+  // ── Sidebar navegación por páginas ──────────────────────────────────────
+  document.querySelectorAll('#view-electro .electro-page-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+      const page = this.dataset.page;
+      document.querySelectorAll('#view-electro .electro-page-btn').forEach(b => b.classList.remove('active'));
+      this.classList.add('active');
+      document.querySelectorAll('#view-electro .electro-page').forEach(p => p.classList.remove('active'));
+      const pgEl = document.querySelector(`#view-electro .electro-page[data-electro-page="${page}"]`);
+      if (pgEl) pgEl.classList.add('active');
+      if (page === 'espera') cargarEsperaElectro();
+    });
+  });
+
+  initEsperaElectro();
 }
 
 // Verificar y mostrar disponibilidad de CUPOS
@@ -3450,13 +3596,14 @@ async function crearCitaElectro() {
   const nombre = $('electroPacienteNombre').value.trim();
   const doc = $('electroDocumento').value.trim();
   const telefono = $('electroTelefono').value.trim();
+  const telefono2 = $('electroTelefono2').value.trim();
   const hora = $('electroHora').value;
   const fecha = $('electroFecha').value;
   const duracion = $('electroDuracion').value.trim();
   const diagnostico = $('electroDiagnostico').value.trim();
   
-  if (!nombre || !doc || !telefono || !hora || !fecha) { 
-    showToast('Completa todos los campos obligatorios (Estudio, Hora, Paciente, Documento y Teléfono)', 'error'); 
+  if (!nombre || !doc || !telefono || !telefono2 || !hora || !fecha || !diagnostico) { 
+    showToast('Completa todos los campos obligatorios', 'error'); 
     return; 
   }
   
@@ -3487,6 +3634,15 @@ async function crearCitaElectro() {
   }
   $('electroTelefono').style.borderColor = '';
   
+  // Validar teléfono 2 (exactamente 10 dígitos)
+  if (!validarTelefono(telefono2)) {
+    showToast('El teléfono 2 debe tener exactamente 10 dígitos', 'error');
+    $('electroTelefono2').focus();
+    $('electroTelefono2').style.borderColor = '#dc2626';
+    return;
+  }
+  $('electroTelefono2').style.borderColor = '';
+  
   // Validar duración si es Monitorización EEG por Video y Radio
   if (estudio === 'Monitorización Electroencefalografica por Video y Radio' && !duracion) {
     showToast('Debe especificar la duración del estudio (en horas)', 'error');
@@ -3514,7 +3670,7 @@ async function crearCitaElectro() {
   
   if (!pacienteId) {
     // Si no existe paciente en base de datos, crear uno nuevo
-    const resP = await apiFetch('/api/pacientes', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({nombre, documento:doc||null, telefono:telefono||null}) });
+    const resP = await apiFetch('/api/pacientes', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({nombre, documento:doc||null, telefono:telefono||null, telefono2:telefono2||null}) });
     const dataP = await resP.json();
     if (!dataP.ok) { showToast(dataP.error||'Error creando paciente', 'error'); return; }
     pacienteId = dataP.id;
@@ -3549,6 +3705,7 @@ async function crearCitaElectro() {
       fecha,
       hora,
       telefono,
+      telefono2,
       estudio,
       estado: 'Programado',
       programado_por_nombre: currentUser ? (currentUser.nombre || currentUser.usuario) : 'Sistema'
@@ -3590,6 +3747,7 @@ async function crearCitaElectro() {
       $('electroPacienteNombre').value = '';
       $('electroDocumento').value = '';
       $('electroTelefono').value = '';
+      $('electroTelefono2').value = '';
       $('electroHora').value = '';
       $('electroEstudio').value = '';
       $('electroDiagnostico').value = '';
@@ -3613,7 +3771,24 @@ async function crearCitaElectro() {
 // ========== GESTIÓN DE USUARIOS (solo admin) ==========
 async function initUsuarios() {
   $('crearUsuario').addEventListener('click', crearUsuario);
-  
+
+  // ── Navegación lateral por páginas ────────────────────────────────────────
+  document.querySelectorAll('#view-usuarios .usuarios-page-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+      const page = this.dataset.page;
+      document.querySelectorAll('#view-usuarios .usuarios-page-btn').forEach(b => b.classList.remove('active'));
+      this.classList.add('active');
+      document.querySelectorAll('#view-usuarios .usuarios-page').forEach(p => p.classList.remove('active'));
+      const pgEl = document.querySelector(`#view-usuarios .usuarios-page[data-usuarios-page="${page}"]`);
+      if (pgEl) pgEl.classList.add('active');
+      if (page === 'especialidades') initEspecialidades();
+    });
+  });
+
+  // Cargar especialidades en los selects al abrir el módulo
+  await cargarOpcionesEspecialidad('newUserEspecialidad');
+  await cargarOpcionesEspecialidad('editEspecialidad');
+
   // Validador de contraseña en tiempo real
   const passwordInput = $('newUserPassword');
   const strengthBar = $('passwordStrengthBar');
@@ -3858,16 +4033,15 @@ function mostrarEspecialidadEdicion(rol, especialidadActual) {
   
   if (rol === 'doctor') {
     colEspecialidad.style.display = '';
-    
-    // Si tiene especialidad actual
     if (especialidadActual) {
-      const predefinidas = ['Neurología', 'Epileptología', 'Psicología', 'Neuropsicología', 'Psiquiatría'];
-      if (predefinidas.includes(especialidadActual)) {
-        $('editEspecialidad').value = especialidadActual;
+      const sel = $('editEspecialidad');
+      const optionExists = sel && Array.from(sel.options).some(o => o.value === especialidadActual);
+      if (optionExists) {
+        sel.value = especialidadActual;
         colOtra.style.display = 'none';
         $('editEspecialidadOtra').value = '';
       } else {
-        $('editEspecialidad').value = 'Otra';
+        sel.value = 'Otra';
         colOtra.style.display = '';
         $('editEspecialidadOtra').value = especialidadActual;
       }
@@ -7210,3 +7384,429 @@ $('btnLimpiarReciboDocumento')?.addEventListener('click', () => {
   $('resultadoBuscarRecibo').style.display = 'none';
 });
 
+// ============================================================
+// PACIENTES EN ESPERA — ELECTRODIAGNÓSTICO
+// ============================================================
+
+let esperaData = [];   // caché local de registros
+
+let _esperaPendienteId = null;  // id esperando confirmación de eliminación
+
+function initEsperaElectro() {
+  $('btnAgregarEspera')?.addEventListener('click', agregarPacienteEspera);
+
+  // Filtros en tiempo real
+  ['esperaFiltroTexto', 'esperaFiltroEntidad', 'esperaFiltroPrioridad'].forEach(id => {
+    $(id)?.addEventListener('input', renderEsperaTable);
+    $(id)?.addEventListener('change', renderEsperaTable);
+  });
+
+  // Botones del modal de confirmación de eliminación
+  $('btnConfirmarEliminarEspera')?.addEventListener('click', async () => {
+    cerrarModalEliminarEspera();
+    if (!_esperaPendienteId) return;
+    try {
+      const res = await apiFetch(`/api/pacientes-espera/${_esperaPendienteId}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (!data.ok) { showToast(data.error || 'Error al eliminar', 'error'); return; }
+      showToast('Paciente eliminado de la lista', 'success');
+      await cargarEsperaElectro();
+    } catch (e) {
+      showToast('Error: ' + e.message, 'error');
+    } finally {
+      _esperaPendienteId = null;
+    }
+  });
+  $('btnCancelarEliminarEspera')?.addEventListener('click', cerrarModalEliminarEspera);
+}
+
+function cerrarModalEliminarEspera() {
+  const m = $('modalConfirmarEliminarEspera');
+  if (m) { m.classList.add('hidden'); m.style.display = 'none'; }
+  _esperaPendienteId = null;
+}
+
+async function cargarEsperaElectro() {
+  try {
+    const res = await apiFetch('/api/pacientes-espera');
+    esperaData = await res.json();
+    renderEsperaTable();
+  } catch (e) {
+    console.error('Error cargando lista de espera:', e);
+  }
+}
+
+function renderEsperaTable() {
+  const texto = ($('esperaFiltroTexto')?.value || '').toLowerCase().trim();
+  const entidad = $('esperaFiltroEntidad')?.value || '';
+  const prioridad = $('esperaFiltroPrioridad')?.value || '';
+
+  let lista = esperaData.filter(p => {
+    const matchTexto = !texto || (
+      (p.nombres || '').toLowerCase().includes(texto) ||
+      (p.apellidos || '').toLowerCase().includes(texto) ||
+      (p.documento || '').toLowerCase().includes(texto)
+    );
+    const matchEntidad = !entidad || p.entidad === entidad;
+    const matchPrioridad = !prioridad || p.prioridad === prioridad;
+    return matchTexto && matchEntidad && matchPrioridad;
+  });
+
+  // Orden: ALTA primero, luego MEDIA, luego BAJA
+  const orden = { ALTA: 0, MEDIA: 1, BAJA: 2 };
+  lista.sort((a, b) => (orden[a.prioridad] ?? 9) - (orden[b.prioridad] ?? 9));
+
+  const tbody = $('esperaTableBody');
+  const contador = $('esperaContador');
+  if (!tbody) return;
+
+  if (lista.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="8" style="padding:20px;text-align:center;color:#999">No hay pacientes que coincidan con los filtros</td></tr>';
+    if (contador) contador.textContent = '0 pacientes';
+    return;
+  }
+
+  if (contador) contador.textContent = `${lista.length} paciente${lista.length !== 1 ? 's' : ''}`;
+
+  tbody.innerHTML = lista.map(p => {
+    const prioMap = {
+      ALTA:  { label: 'ALTA',  cls: 'alta'  },
+      MEDIA: { label: 'MEDIA', cls: 'media' },
+      BAJA:  { label: 'BAJA',  cls: 'baja'  },
+    };
+    const prio = prioMap[p.prioridad] || { label: p.prioridad, cls: '' };
+    const fecha = p.creado_en
+      ? new Date(p.creado_en).toLocaleDateString('es-CO', { day:'2-digit', month:'2-digit', year:'numeric' })
+      : '-';
+    return `<tr>
+      <td><span class="badge-prioridad ${prio.cls}">${escapeHtml(prio.label)}</span></td>
+      <td>${escapeHtml(p.documento || '-')}</td>
+      <td>${escapeHtml(p.nombres || '')}</td>
+      <td>${escapeHtml(p.apellidos || '')}</td>
+      <td>${escapeHtml(p.entidad || '-')}</td>
+      <td>${fecha}</td>
+      <td>${escapeHtml(p.ingresado_por || '-')}</td>
+      <td>
+        <div class="table-actions">
+          <button class="btn-eliminar" title="Eliminar" onclick="eliminarPacienteEspera(${p.id})">
+            <img src="images/delete.svg" alt="Eliminar" />
+          </button>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+async function agregarPacienteEspera() {
+  const documento = $('esperaDocumento').value.trim();
+  const nombres   = $('esperaNombres').value.trim();
+  const apellidos = $('esperaApellidos').value.trim();
+  const entidad   = $('esperaEntidad').value;
+  const prioridad = $('esperaPrioridad').value;
+
+  if (!documento || !nombres || !apellidos || !entidad || !prioridad) {
+    showToast('Completa todos los campos obligatorios', 'error');
+    return;
+  }
+  if (!/^\d{4,15}$/.test(documento)) {
+    showToast('El documento debe tener entre 4 y 15 dígitos numéricos', 'error');
+    $('esperaDocumento').focus();
+    return;
+  }
+
+  const btn = $('btnAgregarEspera');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Guardando...'; }
+
+  try {
+    const res = await apiFetch('/api/pacientes-espera', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        documento, nombres, apellidos, entidad, prioridad,
+        ingresado_por: currentUser ? (currentUser.nombre || currentUser.usuario) : 'Sistema'
+      })
+    });
+    const data = await res.json();
+    if (!data.ok) { showToast(data.error || 'Error al agregar paciente', 'error'); return; }
+
+    showToast('Paciente agregado a la lista de espera', 'success');
+    $('esperaDocumento').value = '';
+    $('esperaNombres').value = '';
+    $('esperaApellidos').value = '';
+    $('esperaEntidad').value = '';
+    $('esperaPrioridad').value = '';
+    await cargarEsperaElectro();
+  } catch (e) {
+    showToast('Error: ' + e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Agregar a Lista'; }
+  }
+}
+
+function eliminarPacienteEspera(id) {
+  // Buscar nombre del paciente en caché para mostrarlo en el modal
+  const paciente = esperaData.find(p => p.id === id);
+  const nombre = paciente
+    ? `${paciente.nombres || ''} ${paciente.apellidos || ''}`.trim() || 'este paciente'
+    : 'este paciente';
+
+  _esperaPendienteId = id;
+  const m = $('modalConfirmarEliminarEspera');
+  if (m) {
+    $('modalEsperaNombrePaciente').textContent = nombre;
+    m.classList.remove('hidden');
+    m.style.display = 'flex';
+  }
+}
+
+// ============================================================
+// ESPECIALIDADES Y TIPOS DE CONSULTA — MÓDULO USUARIOS
+// ============================================================
+
+// Caché para evitar re-fetches innecesarios
+let _especialidadesCache = null;
+let _tiposConsultaCache  = {};   // clave: nombre de especialidad
+let _especialidadSelId   = null; // id de especialidad abierta en el panel de tipos
+let _especialidadesInitialized = false;
+
+// Popula un <select> con las especialidades cargadas de la API
+async function cargarOpcionesEspecialidad(selectId) {
+  const sel = $(selectId);
+  if (!sel) return;
+  try {
+    if (!_especialidadesCache) {
+      const res = await apiFetch('/api/especialidades');
+      _especialidadesCache = await res.json();
+    }
+    // Conservar primera opción (vacía) y "Otra" al final
+    const primeraOpcion = sel.options[0];
+    sel.innerHTML = '';
+    sel.appendChild(primeraOpcion);
+    _especialidadesCache.forEach(e => {
+      const opt = document.createElement('option');
+      opt.value = e.nombre;
+      opt.textContent = e.nombre;
+      sel.appendChild(opt);
+    });
+    const otraOpt = document.createElement('option');
+    otraOpt.value = 'Otra';
+    otraOpt.textContent = 'Otra';
+    sel.appendChild(otraOpt);
+  } catch (e) {
+    console.error('Error cargando especialidades en select:', e);
+  }
+}
+
+function initEspecialidades() {
+  if (_especialidadesInitialized) { cargarEspecialidades(); return; }
+  _especialidadesInitialized = true;
+
+  $('btnCrearEspecialidad')?.addEventListener('click', crearEspecialidad);
+  $('espNombreNuevo')?.addEventListener('keydown', e => { if (e.key === 'Enter') crearEspecialidad(); });
+  $('btnCrearTipoConsulta')?.addEventListener('click', crearTipoConsulta);
+  $('tipoConsultaNuevoNombre')?.addEventListener('keydown', e => { if (e.key === 'Enter') crearTipoConsulta(); });
+
+  cargarEspecialidades();
+}
+
+async function cargarEspecialidades() {
+  try {
+    const res = await apiFetch('/api/especialidades');
+    const data = await res.json();
+    _especialidadesCache = data;   // actualizar caché
+    _tiposConsultaCache  = {};     // invalidar caché de tipos
+    renderEspecialidadesTable(data);
+  } catch (e) {
+    showToast('Error cargando especialidades', 'error');
+  }
+}
+
+function renderEspecialidadesTable(lista) {
+  const tbody = $('especialidadesTableBody');
+  if (!tbody) return;
+  if (!lista || lista.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="2" style="padding:20px;text-align:center;color:#999">No hay especialidades. Agrega la primera.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = lista.map(e => {
+    const n = escapeHtml(e.nombre).replace(/'/g, "\\'");
+    return `<tr>
+      <td style="font-weight:500">${escapeHtml(e.nombre)}</td>
+      <td>
+        <div class="table-actions">
+          <button class="btn-secondary btn-sm" title="Gestionar tipos de consulta" onclick="abrirTiposConsulta(${e.id},'${n}')">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:3px"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>Tipos
+          </button>
+          <button class="btn-editar" title="Renombrar" onclick="editarEspecialidad(${e.id},'${n}')">
+            <img src="images/edit.svg" alt="Editar" />
+          </button>
+          <button class="btn-eliminar" title="Eliminar" onclick="eliminarEspecialidad(${e.id},'${n}')">
+            <img src="images/delete.svg" alt="Eliminar" />
+          </button>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+async function crearEspecialidad() {
+  const nombre = $('espNombreNuevo').value.trim();
+  if (!nombre) { showToast('Escribe el nombre de la especialidad', 'error'); return; }
+  const btn = $('btnCrearEspecialidad');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Guardando...'; }
+  try {
+    const res = await apiFetch('/api/especialidades', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nombre })
+    });
+    const data = await res.json();
+    if (!data.ok) { showToast(data.error || 'Error al crear', 'error'); return; }
+    showToast('Especialidad creada', 'success');
+    $('espNombreNuevo').value = '';
+    _especialidadesCache = null;
+    await cargarEspecialidades();
+    await cargarOpcionesEspecialidad('newUserEspecialidad');
+    await cargarOpcionesEspecialidad('editEspecialidad');
+  } catch (e) { showToast('Error: ' + e.message, 'error'); }
+  finally { if (btn) { btn.disabled = false; btn.textContent = 'Agregar Especialidad'; } }
+}
+
+async function editarEspecialidad(id, nombreActual) {
+  const nuevoNombre = prompt('Renombrar especialidad:', nombreActual);
+  if (!nuevoNombre || nuevoNombre.trim() === nombreActual) return;
+  try {
+    const res = await apiFetch(`/api/especialidades/${id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nombre: nuevoNombre.trim() })
+    });
+    const data = await res.json();
+    if (!data.ok) { showToast(data.error || 'Error', 'error'); return; }
+    showToast('Especialidad actualizada', 'success');
+    _especialidadesCache = null;
+    _tiposConsultaCache = {};
+    await cargarEspecialidades();
+    await cargarOpcionesEspecialidad('newUserEspecialidad');
+    await cargarOpcionesEspecialidad('editEspecialidad');
+  } catch (e) { showToast('Error: ' + e.message, 'error'); }
+}
+
+async function eliminarEspecialidad(id, nombre) {
+  if (!confirm(`¿Eliminar la especialidad "${nombre}" y todos sus tipos de consulta?\nEsta acción no se puede deshacer.`)) return;
+  try {
+    const res = await apiFetch(`/api/especialidades/${id}`, { method: 'DELETE' });
+    const data = await res.json();
+    if (!data.ok) { showToast(data.error || 'Error', 'error'); return; }
+    showToast('Especialidad eliminada', 'success');
+    if (_especialidadSelId === id) cerrarTiposConsultaPanel();
+    _especialidadesCache = null;
+    _tiposConsultaCache = {};
+    await cargarEspecialidades();
+    await cargarOpcionesEspecialidad('newUserEspecialidad');
+    await cargarOpcionesEspecialidad('editEspecialidad');
+  } catch (e) { showToast('Error: ' + e.message, 'error'); }
+}
+
+async function abrirTiposConsulta(id, nombre) {
+  _especialidadSelId = id;
+  $('tiposConsultaEspNombre').textContent = nombre;
+  const panel = $('tiposConsultaPanel');
+  if (panel) {
+    panel.style.display = '';
+    setTimeout(() => panel.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+  }
+  $('tipoConsultaNuevoNombre').value = '';
+  await cargarTiposConsultaPanel();
+}
+
+function cerrarTiposConsultaPanel() {
+  _especialidadSelId = null;
+  const panel = $('tiposConsultaPanel');
+  if (panel) panel.style.display = 'none';
+}
+
+async function cargarTiposConsultaPanel() {
+  if (!_especialidadSelId) return;
+  const tbody = $('tiposConsultaTableBody');
+  if (tbody) tbody.innerHTML = '<tr><td colspan="2" style="padding:16px;text-align:center;color:#999">Cargando...</td></tr>';
+  try {
+    const res = await apiFetch(`/api/tipos-consulta?especialidad_id=${_especialidadSelId}`);
+    const data = await res.json();
+    renderTiposConsultaPanel(data);
+    // Invalidar caché de agenda para esta especialidad
+    if (_especialidadesCache) {
+      const esp = _especialidadesCache.find(e => e.id === _especialidadSelId);
+      if (esp) delete _tiposConsultaCache[esp.nombre];
+    }
+  } catch (e) { showToast('Error cargando tipos', 'error'); }
+}
+
+function renderTiposConsultaPanel(lista) {
+  const tbody = $('tiposConsultaTableBody');
+  if (!tbody) return;
+  if (!lista || lista.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="2" style="padding:16px;text-align:center;color:#999">Sin tipos de consulta. Agrega el primero.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = lista.map(t => {
+    const n = escapeHtml(t.nombre).replace(/'/g, "\\'");
+    return `<tr>
+      <td>${escapeHtml(t.nombre)}</td>
+      <td>
+        <div class="table-actions">
+          <button class="btn-editar" title="Editar" onclick="editarTipoConsulta(${t.id},'${n}')">
+            <img src="images/edit.svg" alt="Editar" />
+          </button>
+          <button class="btn-eliminar" title="Eliminar" onclick="eliminarTipoConsulta(${t.id})">
+            <img src="images/delete.svg" alt="Eliminar" />
+          </button>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+async function crearTipoConsulta() {
+  const nombre = $('tipoConsultaNuevoNombre').value.trim();
+  if (!nombre) { showToast('Escribe el nombre del tipo de consulta', 'error'); return; }
+  if (!_especialidadSelId) return;
+  const btn = $('btnCrearTipoConsulta');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳'; }
+  try {
+    const res = await apiFetch('/api/tipos-consulta', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ especialidad_id: _especialidadSelId, nombre })
+    });
+    const data = await res.json();
+    if (!data.ok) { showToast(data.error || 'Error', 'error'); return; }
+    showToast('Tipo de consulta agregado', 'success');
+    $('tipoConsultaNuevoNombre').value = '';
+    await cargarTiposConsultaPanel();
+  } catch (e) { showToast('Error: ' + e.message, 'error'); }
+  finally { if (btn) { btn.disabled = false; btn.textContent = 'Agregar'; } }
+}
+
+async function editarTipoConsulta(id, nombreActual) {
+  const nuevoNombre = prompt('Editar tipo de consulta:', nombreActual);
+  if (!nuevoNombre || nuevoNombre.trim() === nombreActual) return;
+  try {
+    const res = await apiFetch(`/api/tipos-consulta/${id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nombre: nuevoNombre.trim() })
+    });
+    const data = await res.json();
+    if (!data.ok) { showToast(data.error || 'Error', 'error'); return; }
+    showToast('Tipo actualizado', 'success');
+    await cargarTiposConsultaPanel();
+  } catch (e) { showToast('Error: ' + e.message, 'error'); }
+}
+
+async function eliminarTipoConsulta(id) {
+  if (!confirm('¿Eliminar este tipo de consulta?')) return;
+  try {
+    const res = await apiFetch(`/api/tipos-consulta/${id}`, { method: 'DELETE' });
+    const data = await res.json();
+    if (!data.ok) { showToast(data.error || 'Error', 'error'); return; }
+    showToast('Tipo eliminado', 'success');
+    await cargarTiposConsultaPanel();
+  } catch (e) { showToast('Error: ' + e.message, 'error'); }
+}

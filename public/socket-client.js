@@ -21,7 +21,7 @@ function initSocket() {
     reconnectionDelayMax: isMobileDevice ? 20000 : 5000,       // Máximo más alto para móviles
     reconnectionAttempts: isMobileDevice ? 10 : 5,             // Más intentos en móviles
     timeout: isMobileDevice ? 30000 : 20000,                   // Timeout más largo en móviles
-    transports: isMobileDevice ? ['polling', 'websocket'] : ['websocket', 'polling'],  // Prioridad diferente
+    transports: ['websocket', 'polling'],                      // WebSocket primero siempre (polling como fallback)
     path: '/socket.io/',                                       // Ruta explícita de Socket.IO
     withCredentials: true,                                     // Permitir credenciales (cookies)
     forceNew: false,                                           // Reutilizar conexión existente
@@ -40,6 +40,27 @@ function initSocket() {
     // Disparar evento para módulos que esperan
     window.dispatchEvent(new CustomEvent('socketReady', { detail: socket }));
   });
+
+  // Reconectar automáticamente al volver de segundo plano (móvil)
+  // Cuando la pestaña vuelve a estar visible, si el socket se desconectó,
+  // se reconecta y se refresca el módulo activo para no perder actualizaciones.
+  if (!window._visibilityHandlerAdded) {
+    window._visibilityHandlerAdded = true;
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && socket) {
+        if (!socket.connected) {
+          socket.connect();
+        }
+        // Refrescar datos del módulo activo para recuperar lo perdido durante la suspensión
+        const mod = window.currentModule;
+        if (mod === 'recibos' && typeof cargarLista === 'function') cargarLista();
+        if (mod === 'agenda-medica' && typeof cargarTurnosMedica === 'function') cargarTurnosMedica();
+        if (mod === 'electro' && typeof cargarCitasElectro === 'function') cargarCitasElectro();
+        if (mod === 'usuarios' && typeof cargarUsuarios === 'function') cargarUsuarios();
+        if (typeof updateStats === 'function') updateStats();
+      }
+    });
+  }
 
   socket.on('disconnect', (reason) => {
     console.log('✗ Desconectado del servidor', { reason, mobile: isMobileDevice });
@@ -68,10 +89,6 @@ function initSocket() {
   });
 
   // ===== EVENTOS DE USUARIOS =====
-  socket.on('usuarios:actualizar-lista', () => {
-    if (typeof cargarUsuarios === 'function') cargarUsuarios();
-  });
-
   socket.on('usuario:creado', (data) => {
     if (typeof cargarUsuarios === 'function') cargarUsuarios();
   });
@@ -115,17 +132,27 @@ function initSocket() {
     if (typeof cargarTurnosMedica === 'function') cargarTurnosMedica();
   });
 
+  socket.on('agenda:turno-cambio-paciente', (data) => {
+    if (typeof cargarTurnosMedica === 'function') cargarTurnosMedica();
+  });
+
   // ===== EVENTOS DE ELECTRODIAGNÓSTICO =====
+  // Guard de módulo activo para evitar doble llamada con socket-electro.js
   socket.on('electro:cita-creada', (data) => {
-    if (typeof cargarCitasElectro === 'function') cargarCitasElectro();
+    if (window.currentModule === 'electro' && typeof cargarCitasElectro === 'function') cargarCitasElectro();
   });
 
   socket.on('electro:cita-eliminada', (data) => {
-    if (typeof cargarCitasElectro === 'function') cargarCitasElectro();
+    if (window.currentModule === 'electro' && typeof cargarCitasElectro === 'function') cargarCitasElectro();
   });
 
-  socket.on('electro:cita-estado-cambio', (data) => {
-    if (typeof cargarCitasElectro === 'function') cargarCitasElectro();
+  // electro:cita-actualizada es el evento correcto (el servidor emite este, no electro:cita-estado-cambio)
+  socket.on('electro:cita-actualizada', (data) => {
+    if (window.currentModule === 'electro' && typeof cargarCitasElectro === 'function') cargarCitasElectro();
+  });
+
+  socket.on('electro:actualizar-lista', (data) => {
+    if (window.currentModule === 'electro' && typeof cargarCitasElectro === 'function') cargarCitasElectro();
   });
 
   // ===== EVENTOS DE ESTADÍSTICAS =====
