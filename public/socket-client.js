@@ -14,18 +14,17 @@ function initSocket() {
   
   const isMobileDevice = isMobile();
   
-  // Configuración optimizada para móviles y desktop
   socket = io({
     reconnection: true,
-    reconnectionDelay: isMobileDevice ? 3000 : 1000,          // Mayor demora en móviles
-    reconnectionDelayMax: isMobileDevice ? 20000 : 5000,       // Máximo más alto para móviles
-    reconnectionAttempts: isMobileDevice ? 10 : 5,             // Más intentos en móviles
-    timeout: isMobileDevice ? 30000 : 20000,                   // Timeout más largo en móviles
-    transports: ['websocket', 'polling'],                      // WebSocket primero siempre (polling como fallback)
-    path: '/socket.io/',                                       // Ruta explícita de Socket.IO
-    withCredentials: true,                                     // Permitir credenciales (cookies)
-    forceNew: false,                                           // Reutilizar conexión existente
-    autoConnect: true                                          // Conectar automáticamente
+    reconnectionDelay: isMobileDevice ? 3000 : 1000,
+    reconnectionDelayMax: isMobileDevice ? 20000 : 5000,
+    reconnectionAttempts: isMobileDevice ? 10 : 5,
+    timeout: isMobileDevice ? 30000 : 20000,
+    transports: ['websocket', 'polling'],
+    path: '/socket.io/',
+    withCredentials: true,
+    forceNew: false,
+    autoConnect: true
   });
 
   // Eventos de conexión
@@ -41,9 +40,7 @@ function initSocket() {
     window.dispatchEvent(new CustomEvent('socketReady', { detail: socket }));
   });
 
-  // Reconectar automáticamente al volver de segundo plano (móvil)
-  // Cuando la pestaña vuelve a estar visible, si el socket se desconectó,
-  // se reconecta y se refresca el módulo activo para no perder actualizaciones.
+  // Al volver de segundo plano, reconectar y refrescar datos del módulo activo
   if (!window._visibilityHandlerAdded) {
     window._visibilityHandlerAdded = true;
     document.addEventListener('visibilitychange', () => {
@@ -75,7 +72,7 @@ function initSocket() {
     });
   });
 
-  // ===== EVENTOS DE RECIBOS =====
+  // Recibos
   socket.on('recibo:actualizar-lista', () => {
     if (typeof cargarLista === 'function') cargarLista();
   });
@@ -88,7 +85,7 @@ function initSocket() {
     if (typeof cargarLista === 'function') cargarLista();
   });
 
-  // ===== EVENTOS DE USUARIOS =====
+  // Usuarios
   socket.on('usuario:creado', (data) => {
     if (typeof cargarUsuarios === 'function') cargarUsuarios();
   });
@@ -101,7 +98,7 @@ function initSocket() {
     if (typeof cargarUsuarios === 'function') cargarUsuarios();
   });
 
-  // ===== EVENTOS DE AGENDA MÉDICA =====
+  // Agenda médica
   socket.on('agenda:turno-creado', (data) => {
     if (typeof cargarTurnosMedica === 'function') cargarTurnosMedica();
   });
@@ -155,7 +152,7 @@ function initSocket() {
     if (window.currentModule === 'electro' && typeof cargarCitasElectro === 'function') cargarCitasElectro();
   });
 
-  // ===== EVENTOS DE ESTADÍSTICAS =====
+  // Dashboard
   socket.on('stats:actualizar', () => {
     if (typeof updateStats === 'function') updateStats();
   });

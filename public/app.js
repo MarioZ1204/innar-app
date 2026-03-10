@@ -94,8 +94,8 @@ let originalHoraTHHtml = null;
 let originalAccionesTHHtml = null;
 let lastAnimatedTurnoId = null;
 let lastAnimatedAt = 0;
-let lastTurnoNumber1Id = null; // Guardar cuál fue el último turno con número 1
-let globalHayEnAtencion = false; // Variable global para rastrear si hay turno EN_ATENCION
+let lastTurnoNumber1Id = null;
+let globalHayEnAtencion = false;
 
 // Fetch con credenciales para sesión
 function apiFetch(url, opts = {}) {
@@ -2270,28 +2270,22 @@ async function cargarTurnosMedica() {
     const firstWithNum1 = turnos.find(t => t.numero_turno === 1);
     let animateTargetId = null;
     
-    // Solo animar si el turno con número 1 es DIFERENTE al anterior
-    // (es decir, un paciente que no tenía número 1 ahora tiene número 1)
     if (firstWithNum1 && firstWithNum1.id !== lastTurnoNumber1Id) {
       animateTargetId = firstWithNum1.id;
-      lastTurnoNumber1Id = firstWithNum1.id; // Recordar el nuevo paciente con número 1
+      lastTurnoNumber1Id = firstWithNum1.id;
     }
 
-    // Crear 25 filas: algunas con datos, otras vacías
     tbody.innerHTML = '';
     const filasRequeridas = 25;
     const colspan = isDoctor() ? 7 : 8;
     
-    // Verificar si hay algún turno EN_ATENCION
     const hayEnAtencion = turnos.some(t => t.estado === 'EN_ATENCION');
-    globalHayEnAtencion = hayEnAtencion; // Guardar en variable global
+    globalHayEnAtencion = hayEnAtencion;
     
     for (let i = 0; i < filasRequeridas; i++) {
       if (i < turnos.length) {
-        // Llenar con datos reales
         renderTurnoRowMedica(tbody, turnos[i], animateTargetId, hayEnAtencion);
       } else {
-        // Crear fila vacía
         crearFilaTurnoVacia(tbody, colspan, isDoctor());
       }
     }
