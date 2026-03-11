@@ -1308,7 +1308,7 @@
         <div class="cita-modal-header-right">
           <div style="position:relative">
             <button id="btnMasOpciones" class="cita-modal-icon-btn" title="Más opciones">
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
             </button>
             <div id="menuMasOpciones" style="position:absolute;top:calc(100% + 6px);right:0;background:white;border:1px solid #e5e7eb;border-radius:10px;box-shadow:0 10px 25px rgba(0,0,0,0.12);min-width:190px;display:none;z-index:1001;overflow:hidden">
               <button id="btnReprogramarCitaMenu" class="btn-dropdown-item" style="display:flex;align-items:center;gap:8px">
@@ -1334,7 +1334,7 @@
         <div class="cita-modal-patient-avatar">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z"/></svg>
         </div>
-        <div class="cita-modal-patient-info">
+        <div class="cita-modal-patient-info" style="flex:1;min-width:0">
           <div id="modalPacienteNombre" class="cita-modal-patient-name">-</div>
           <div class="cita-modal-patient-meta">
             <span id="modalPacienteDocumento">-</span>
@@ -1342,6 +1342,31 @@
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2A19.79 19.79 0 0 1 11.39 19a19.47 19.47 0 0 1-6-6A19.79 19.79 0 0 1 2.09 4.18 2 2 0 0 1 4.07 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.9a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
             <span id="modalTelefonoDisplay">-</span>
           </div>
+        </div>
+        <button id="btnEditarPacienteModal" class="cita-modal-icon-btn" title="Editar datos del paciente" style="flex-shrink:0">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        </button>
+      </div>
+
+      <!-- EDIT PANEL PACIENTE (oculto por defecto) -->
+      <div id="editarPacientePanel" style="display:none;padding:14px 22px;background:#f8fafa;border-bottom:1px solid #e5e7eb">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+          <div>
+            <label style="font-size:0.8rem;font-weight:600;color:#6b7280;display:block;margin-bottom:4px">Nombre</label>
+            <input id="editNombrePaciente" type="text" placeholder="Nombre completo" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:0.9rem" />
+          </div>
+          <div>
+            <label style="font-size:0.8rem;font-weight:600;color:#6b7280;display:block;margin-bottom:4px">Documento</label>
+            <input id="editDocumentoPaciente" type="text" inputmode="numeric" placeholder="Número de documento" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:0.9rem" />
+          </div>
+        </div>
+        <div style="margin-bottom:10px">
+          <label style="font-size:0.8rem;font-weight:600;color:#6b7280;display:block;margin-bottom:4px">Teléfono</label>
+          <input id="editTelefonoPaciente" type="tel" inputmode="numeric" maxlength="10" placeholder="10 dígitos" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:0.9rem" />
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button id="btnCancelarEditarPaciente" class="btn-secondary btn-sm">Cancelar</button>
+          <button id="btnGuardarEditarPaciente" class="btn-primary btn-sm">Guardar cambios</button>
         </div>
       </div>
 

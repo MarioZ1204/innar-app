@@ -3413,6 +3413,29 @@ async function initElectro() {
   $('btnEnviarRecomendaciones')?.addEventListener('click', () => {
     if (citaElectroSeleccionada) enviarRecomendacionesWhatsApp(citaElectroSeleccionada);
   });
+
+  // Editar datos del paciente
+  const btnEditarPaciente = $('btnEditarPacienteModal');
+  const editPanel = $('editarPacientePanel');
+  if (btnEditarPaciente && editPanel) {
+    btnEditarPaciente.onclick = () => {
+      const abierto = editPanel.style.display !== 'none';
+      if (abierto) {
+        editPanel.style.display = 'none';
+      } else {
+        $('editNombrePaciente').value = citaElectroSeleccionada?.paciente_nombre || '';
+        $('editDocumentoPaciente').value = citaElectroSeleccionada?.paciente_documento || '';
+        $('editTelefonoPaciente').value = citaElectroSeleccionada?.telefono || '';
+        editPanel.style.display = 'block';
+      }
+    };
+    $('btnCancelarEditarPaciente').onclick = () => { editPanel.style.display = 'none'; };
+    $('btnGuardarEditarPaciente').onclick = () => guardarEdicionPaciente();
+    // Solo dígitos y max 10 en el teléfono del panel de edición
+    $('editTelefonoPaciente').addEventListener('input', (e) => {
+      e.target.value = e.target.value.replace(/\D/g, '').slice(0, 10);
+    });
+  }
   $('btnEliminarCita')?.addEventListener('click', () => {
     if (!citaElectroSeleccionada) return;
     const nombre = (citaElectroSeleccionada.paciente_nombre || '').trim() || 'este paciente';
@@ -6470,49 +6493,57 @@ function actualizarProgresoEstudio() {
   }, 250);
 }
 
+// Función para guardar edición de datos del paciente desde el modal
+async function guardarEdicionPaciente() {
+  if (!citaElectroSeleccionada?.paciente_id) {
+    showToast('No se puede identificar al paciente', 'error');
+    return;
+  }
+  const nombre = $('editNombrePaciente').value.trim();
+  const documento = $('editDocumentoPaciente').value.trim();
+  const telefono = $('editTelefonoPaciente').value.trim();
+
+  if (!nombre) { showToast('El nombre no puede estar vacío', 'error'); return; }
+  if (documento && !/^\d+$/.test(documento)) { showToast('El documento solo puede contener números', 'error'); return; }
+  if (telefono && !/^\d{10}$/.test(telefono)) { showToast('El teléfono debe tener exactamente 10 dígitos', 'error'); return; }
+
+  try {
+    const res = await apiFetch(`/api/pacientes/${citaElectroSeleccionada.paciente_id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nombre, documento, telefono })
+    });
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error || 'Error desconocido');
+    // Actualizar modal y objeto local
+    citaElectroSeleccionada.paciente_nombre = nombre;
+    citaElectroSeleccionada.paciente_documento = documento;
+    citaElectroSeleccionada.telefono = telefono;
+    $('modalPacienteNombre').textContent = nombre;
+    $('modalPacienteDocumento').textContent = documento;
+    $('modalTelefonoDisplay').textContent = telefono;
+    $('editarPacientePanel').style.display = 'none';
+    showToast('Datos del paciente actualizados', 'success');
+    // Refrescar lista de citas
+    cargarCitasElectro();
+  } catch(e) {
+    showToast('Error al guardar: ' + e.message, 'error');
+  }
+}
+
 // Función para enviar recomendaciones por WhatsApp
 function enviarRecomendacionesWhatsApp(cita) {
-  if (!cita) {
-    showToast('Error: No hay cita seleccionada', 'error');
-    return;
-  }
-
-  // Validar que haya teléfono
-  if (!cita.telefono) {
-    showToast('Error: El paciente no tiene teléfono registrado', 'error');
-    return;
-  }
-
-  // Crear un input file oculto
-  const fileInput = document.createElement('input');
-  fileInput.type = 'file';
-  fileInput.accept = '.pdf';
-  fileInput.style.display = 'none';
-
-  fileInput.addEventListener('change', (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    // Guardar temporalmente el archivo seleccionado
-    citaParaWhatsApp = {
-      cita: cita,
-      archivo: file
-    };
-
-    // Mostrar modal con información de la cita y el archivo
-    mostrarModalEnviarWhatsApp(cita, file.name);
-  });
-
-  document.body.appendChild(fileInput);
-  fileInput.click();
-  document.body.removeChild(fileInput);
+  if (!cita) { showToast('Error: No hay cita seleccionada', 'error'); return; }
+  if (!cita.telefono) { showToast('El paciente no tiene teléfono registrado', 'error'); return; }
+  mostrarModalEnviarWhatsApp(cita);
 }
 
 // Variable global para guardar la información temporalmente
 let citaParaWhatsApp = null;
 
 // Función para mostrar modal de confirmación
-function mostrarModalEnviarWhatsApp(cita, nombreArchivo) {
+function mostrarModalEnviarWhatsApp(cita) {
+  citaParaWhatsApp = { cita };
   // Crear modal si no existe
   let modal = $('modalEnviarWhatsApp');
   if (!modal) {
@@ -6536,9 +6567,8 @@ function mostrarModalEnviarWhatsApp(cita, nombreArchivo) {
           </div>
         </div>
 
-        <div style="margin-bottom:20px;padding:16px;background:#f0fdf4;border-left:4px solid #059669;border-radius:8px">
-          <p style="margin:0 0 12px 0;font-size:0.85rem;color:#059669;font-weight:600">📎 ARCHIVO SELECCIONADO</p>
-          <div style="font-size:0.95rem;color:#1f2937;font-weight:500" id="whatsappNombreArchivo">-</div>
+        <div style="margin-bottom:16px;padding:12px 16px;background:#fffbeb;border-left:4px solid #f59e0b;border-radius:0 8px 8px 0;font-size:0.88rem;color:#92400e">
+          ⚠️ WhatsApp Web no permite adjuntar archivos por enlace. Después de abrir el chat, adjunta el PDF de recomendaciones manualmente.
         </div>
 
         <div style="margin-bottom:20px">
@@ -6555,16 +6585,8 @@ function mostrarModalEnviarWhatsApp(cita, nombreArchivo) {
     document.body.appendChild(modal);
 
     // Event listeners
-    $('cerrarModalWhatsApp').addEventListener('click', () => {
-      modal.classList.add('hidden');
-      modal.style.display = 'none';
-    });
-
-    $('btnCancelarWhatsApp').addEventListener('click', () => {
-      modal.classList.add('hidden');
-      modal.style.display = 'none';
-    });
-
+    $('cerrarModalWhatsApp').addEventListener('click', () => { modal.classList.add('hidden'); modal.style.display = 'none'; });
+    $('btnCancelarWhatsApp').addEventListener('click', () => { modal.classList.add('hidden'); modal.style.display = 'none'; });
     $('btnConfirmarWhatsApp').addEventListener('click', enviarPorWhatsApp);
   }
 
@@ -6572,7 +6594,6 @@ function mostrarModalEnviarWhatsApp(cita, nombreArchivo) {
   $('whatsappNombrePaciente').textContent = escapeHtml(cita.paciente_nombre || '-');
   $('whatsappDocumento').textContent = escapeHtml(cita.paciente_documento || '-');
   $('whatsappTelefono').textContent = escapeHtml(cita.telefono || '-');
-  $('whatsappNombreArchivo').textContent = nombreArchivo;
   $('whatsappMensajePersonalizado').value = '';
 
   // Mostrar modal
@@ -6588,7 +6609,6 @@ function enviarPorWhatsApp() {
   }
 
   const cita = citaParaWhatsApp.cita;
-  const archivo = citaParaWhatsApp.archivo;
   const mensajePersonalizado = $('whatsappMensajePersonalizado').value.trim();
 
   // Construir el mensaje para WhatsApp con formato correcto de fecha
@@ -6677,7 +6697,7 @@ function enviarPorWhatsApp() {
   // Abrir WhatsApp
   window.open(urlWhatsApp, '_blank');
 
-  showToast(`WhatsApp abierto. Adjunta el archivo: ${archivo.name}`, 'success');
+  showToast('WhatsApp abierto. Recuerda adjuntar el PDF de recomendaciones manualmente.', 'success');
 }
 
 function abrirModalDetallesCita(cita) {

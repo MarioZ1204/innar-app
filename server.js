@@ -1107,7 +1107,7 @@ app.get('/api/pacientes/:id', requireAuth, async (req, res) => {
 });
 
 // Actualizar paciente (nombre, documento, etc.)
-app.patch('/api/pacientes/:id', requireAuth, requireRole(['admin', 'recepcion']), async (req, res) => {
+app.patch('/api/pacientes/:id', requireAuth, requireRole(['admin', 'recepcion', 'electro']), async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (!id) return res.status(400).json({ error: 'ID inválido' });
   const { nombre, documento, telefono, email } = req.body || {};
