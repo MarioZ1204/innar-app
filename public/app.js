@@ -1331,18 +1331,12 @@ async function cargarFiltrosUsuarios() {
   const sel = $('filtroGeneradoPor');
   if (!sel) return;
   try {
-    const filas = await apiFetch('/api/recibos').then(r => r.json()).catch(() => []);
-    const vistos = new Map();
-    filas.forEach(r => {
-      if (r.generado_por_id && !vistos.has(r.generado_por_id)) {
-        vistos.set(r.generado_por_id, r.generado_por_nombre || String(r.generado_por_id));
-      }
-    });
+    const generadores = await apiFetch('/api/recibos/generadores').then(r => r.json()).catch(() => []);
     sel.innerHTML = '<option value="">Todos</option>';
-    vistos.forEach((nombre, id) => {
+    generadores.forEach(u => {
       const opt = document.createElement('option');
-      opt.value = id;
-      opt.textContent = nombre;
+      opt.value = u.id;
+      opt.textContent = u.nombre || String(u.id);
       sel.appendChild(opt);
     });
   } catch (_) {}

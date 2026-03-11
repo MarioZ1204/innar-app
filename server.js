@@ -3214,6 +3214,21 @@ app.post('/api/recibos', requireAuth, requireRole(['admin', 'recepcion']), async
 });
 
 // Obtener siguiente número de recibo (server-side)
+// Usuarios que han generado al menos un recibo (para el filtro)
+app.get('/api/recibos/generadores', requireAuth, async (req, res) => {
+  try {
+    const rows = await db.query(
+      `SELECT DISTINCT generado_por_id AS id, generado_por_nombre AS nombre
+       FROM recibos
+       WHERE generado_por_id IS NOT NULL
+       ORDER BY generado_por_nombre ASC`
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/recibos/next-number', requireAuth, async (req, res) => {
   try {
     const rows = await db.query('SELECT MAX(CAST(numero AS UNSIGNED)) AS maxNum FROM recibos');
