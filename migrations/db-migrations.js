@@ -233,7 +233,20 @@ const migrations = [
       ALTER TABLE citas_electro 
       MODIFY COLUMN hora_inicio TIME NULL
     `
-  }
+  },
+  {
+    name: 'citas_electro_hora_fin_date',
+    description: 'Agregar columna hora_fin_date para citas que cruzan medianoche',
+    sql: `ALTER TABLE citas_electro ADD COLUMN hora_fin_date DATE NULL AFTER hora_fin`
+  },
+  {
+    name: 'citas_electro_estado_enum_completo',
+    description: 'Ampliar ENUM de estado para incluir Reprogramado y Adelantado',
+    sql: `ALTER TABLE citas_electro MODIFY COLUMN estado ENUM('Programado','En Sala','En Estudio','Completado','No Asistió','Cancelado','Reprogramado','Adelantado') NOT NULL DEFAULT 'Programado'`  },
+  {
+    name: 'equipos_electro_unique_nombre',
+    description: 'Agregar restricci\u00f3n UNIQUE en equipos_electro.nombre para evitar duplicados',
+    sql: `ALTER TABLE equipos_electro ADD UNIQUE KEY uk_equipos_nombre (nombre)`  }
 ];
 
 /**

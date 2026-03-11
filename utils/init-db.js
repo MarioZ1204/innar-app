@@ -140,6 +140,7 @@ async function initializeDatabase() {
               activo TINYINT DEFAULT 1,
               creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
               actualizado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              UNIQUE KEY uk_equipos_nombre (nombre),
               INDEX idx_nombre (nombre)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
