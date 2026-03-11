@@ -2107,7 +2107,7 @@ app.get('/api/equipos-electro/disponibilidad', async (req, res) => {
     // Convertir a DATETIME para comparación correcta incluso con cambio de día
     const citasOcupadas = await db.query(`
       SELECT 
-        c.id, c.paciente_id, c.fecha, c.hora_agendamiento, c.hora_fin, c.hora_fin_date, 
+        c.id, c.paciente_id, c.fecha, c.hora_agendamiento, c.hora_inicio, c.hora_fin, c.hora_fin_date, 
         c.estudio, c.estado, c.equipo_id,
         e.nombre AS equipo_nombre
       FROM citas_electro c
