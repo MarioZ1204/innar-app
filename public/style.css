@@ -1552,6 +1552,28 @@ button.remove { padding:5px 10px; font-size:.8rem; width:100%; }
   color: #78350f;
 }
 
+.cupos-panel-empty {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  color: #9db5b2;
+  font-size: 0.875rem;
+}
+.cupos-panel-empty svg { flex-shrink: 0; opacity: 0.5; }
+.cupos-grid-empty {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  padding: 0 16px 14px;
+}
+.cupo-card.vacio {
+  background: #f8fafa;
+  border-color: #e2ecea;
+}
+.cupo-card.vacio .cupo-card-icon { color: #c8d9d7; }
+.cupo-card.vacio .cupo-card-label { color: #b0c5c2; }
+
 .tab-electro-btn {
   padding: 14px 20px;
   background: none;

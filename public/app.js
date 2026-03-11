@@ -3240,6 +3240,7 @@ async function initElectro() {
   });
 
   initEsperaElectro();
+  checkEquiposDisponibilidad();
 }
 
 // Verificar y mostrar disponibilidad de CUPOS
@@ -3250,7 +3251,20 @@ async function checkEquiposDisponibilidad() {
   const duracionHoras = $('electroDuracion').value;
 
   if (!fecha || !hora) {
-    $('equiposDisponibilidadAlerta').style.display = 'none';
+    const contenido = $('equiposDisponibilidadContenido');
+    let html = `<div class="cupos-panel-empty">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
+      Selecciona fecha y hora para ver disponibilidad de equipos
+    </div>
+    <div class="cupos-grid-empty">`;
+    for (let i = 1; i <= 4; i++) {
+      html += `<div class="cupo-card vacio">
+        <div class="cupo-card-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/></svg></div>
+        <div class="cupo-card-label">Equipo ${i}</div>
+      </div>`;
+    }
+    html += `</div>`;
+    contenido.innerHTML = html;
     return;
   }
 
@@ -3278,7 +3292,6 @@ async function checkEquiposDisponibilidad() {
 
     if (!res.ok) {
       console.error('Error:', data.error);
-      $('equiposDisponibilidadAlerta').style.display = 'none';
       return;
     }
 
@@ -3359,10 +3372,8 @@ async function checkEquiposDisponibilidad() {
     html += `</div>`; // cierra cupos-panel-body
 
     contenido.innerHTML = html;
-    alerta.style.display = 'block';
   } catch (e) {
     console.error('Error checking disponibilidad:', e);
-    $('equiposDisponibilidadAlerta').style.display = 'none';
   }
 }
 
