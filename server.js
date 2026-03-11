@@ -3135,35 +3135,53 @@ app.post('/api/recibos', requireAuth, requireRole(['admin', 'recepcion']), async
   if (!body || typeof body !== 'object') {
     return res.status(400).json({ error: 'Cuerpo de la petición inválido' });
   }
-  
-  const { numero, cliente, fecha, total, data } = body;
-  
-  // Validar que al menos el total exista
+
+  const { numero, cliente, fecha, total, data,
+          medico_id, medico_nombre, tipo_pago, nombre_entidad,
+          tipo_servicio, turno_id, cita_electro_id, observaciones } = body;
+
   if (total == null) {
     return res.status(400).json({ error: 'Se requiere el campo total' });
   }
-  
+
+  // Generado por — extraer del usuario en sesión
+  let generado_por_id = req.session.usuarioId || null;
+  let generado_por_nombre = null;
+  try {
+    if (generado_por_id) {
+      const users = await db.query('SELECT nombre, usuario FROM usuarios WHERE id = ?', [generado_por_id]);
+      if (users.length > 0) generado_por_nombre = users[0].nombre || users[0].usuario;
+    }
+  } catch (_) {}
+
   try {
     const result = await db.execute(
-      'INSERT INTO recibos (numero, cliente, fecha, total, data) VALUES (?, ?, ?, ?, ?)',
+      `INSERT INTO recibos
+        (numero, cliente, fecha, total, data,
+         medico_id, medico_nombre, tipo_pago, nombre_entidad,
+         tipo_servicio, generado_por_id, generado_por_nombre,
+         turno_id, cita_electro_id, observaciones)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         numero || null,
         cliente || null,
         fecha || null,
         total || 0,
-        data ? JSON.stringify(data) : null
+        data ? JSON.stringify(data) : null,
+        medico_id || null,
+        medico_nombre || null,
+        tipo_pago || null,
+        nombre_entidad || null,
+        tipo_servicio || null,
+        generado_por_id,
+        generado_por_nombre,
+        turno_id || null,
+        cita_electro_id || null,
+        observaciones || null
       ]
     );
-    // Emitir actualización a través de WebSocket
     if (app.io) {
-      const nuevoRecibo = {
-        id: result.insertId,
-        numero,
-        cliente,
-        fecha,
-        total
-      };
-      emitSocket('recibo:creado', nuevoRecibo);
+      emitSocket('recibo:creado', { id: result.insertId, numero, cliente, fecha, total });
       emitSocket('recibo:actualizar-lista');
       emitSocket('stats:actualizar');
     }
@@ -3185,12 +3203,205 @@ app.get('/api/recibos/next-number', requireAuth, async (req, res) => {
   }
 });
 
-// Listar recibos
+// Buscar cita para pre-llenar recibo (turnos de hoy/ayer por nombre o documento)
+app.get('/api/recibos/buscar-cita', requireAuth, requireRole(['admin', 'recepcion']), async (req, res) => {
+  const q = (req.query.q || '').trim();
+  if (!q || q.length < 2) return res.json([]);
+  try {
+    const like = `%${q}%`;
+    // Turnos de agenda médica (estados atendidos, últimos 7 días)
+    const turnos = await db.query(
+      `SELECT t.id, t.paciente_nombre, t.paciente_documento, t.fecha, t.hora,
+              t.tipo_consulta, t.entidad, u.nombre AS medico_nombre, u.id AS medico_id,
+              'turno' AS origen
+       FROM turnos t
+       LEFT JOIN usuarios u ON u.id = t.doctor_id
+       WHERE (t.paciente_nombre LIKE ? OR t.paciente_documento LIKE ?)
+         AND t.estado IN ('COMPLETADO','ATENDIDO')
+         AND t.fecha >= CURDATE() - INTERVAL 7 DAY
+       ORDER BY t.fecha DESC, t.hora DESC
+       LIMIT 20`,
+      [like, like]
+    );
+    // Citas electro (completadas, últimos 7 días)
+    const citasE = await db.query(
+      `SELECT ce.id, p.nombre AS paciente_nombre, p.documento AS paciente_documento,
+              ce.fecha, ce.hora_agendamiento AS hora, ce.estudio AS tipo_consulta,
+              NULL AS entidad, NULL AS medico_nombre, NULL AS medico_id,
+              'electro' AS origen
+       FROM citas_electro ce
+       JOIN pacientes p ON p.id = ce.paciente_id
+       WHERE (p.nombre LIKE ? OR p.documento LIKE ?)
+         AND ce.estado = 'Completado'
+         AND ce.deleted_at IS NULL
+         AND ce.fecha >= CURDATE() - INTERVAL 7 DAY
+       ORDER BY ce.fecha DESC, ce.hora_agendamiento DESC
+       LIMIT 20`,
+      [like, like]
+    );
+    res.json([...turnos, ...citasE]);
+  } catch (err) {
+    console.error('[RECIBOS] buscar-cita:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Listar recibos (con filtros opcionales)
 app.get('/api/recibos', requireAuth, async (req, res) => {
   try {
-    const rows = await db.query('SELECT * FROM recibos ORDER BY id DESC LIMIT 500');
+    const { fecha_desde, fecha_hasta, tipo_pago, medico_id, generado_por_id } = req.query;
+    const conditions = [];
+    const params = [];
+
+    if (fecha_desde) { conditions.push('fecha >= ?'); params.push(fecha_desde); }
+    if (fecha_hasta) { conditions.push('fecha <= ?'); params.push(fecha_hasta); }
+    if (tipo_pago)   { conditions.push('tipo_pago = ?'); params.push(tipo_pago); }
+    if (medico_id)   { conditions.push('medico_id = ?'); params.push(parseInt(medico_id, 10)); }
+    if (generado_por_id) { conditions.push('generado_por_id = ?'); params.push(parseInt(generado_por_id, 10)); }
+
+    const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
+    const rows = await db.query(
+      `SELECT id, numero, cliente, fecha, total, tipo_pago, nombre_entidad,
+              medico_id, medico_nombre, tipo_servicio,
+              generado_por_id, generado_por_nombre, observaciones,
+              turno_id, cita_electro_id, creado_en, data
+       FROM recibos ${where} ORDER BY id DESC LIMIT 1000`,
+      params
+    );
     res.json(rows || []);
   } catch(err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Exportar recibos a CSV (Excel nativo)
+app.get('/api/recibos/export/csv', requireAuth, async (req, res) => {
+  try {
+    const { fecha_desde, fecha_hasta, tipo_pago, medico_id, generado_por_id } = req.query;
+    const conditions = [];
+    const params = [];
+    if (fecha_desde) { conditions.push('fecha >= ?'); params.push(fecha_desde); }
+    if (fecha_hasta) { conditions.push('fecha <= ?'); params.push(fecha_hasta); }
+    if (tipo_pago)   { conditions.push('tipo_pago = ?'); params.push(tipo_pago); }
+    if (medico_id)   { conditions.push('medico_id = ?');  params.push(parseInt(medico_id, 10)); }
+    if (generado_por_id) { conditions.push('generado_por_id = ?'); params.push(parseInt(generado_por_id, 10)); }
+    const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
+    const rows = await db.query(
+      `SELECT numero, fecha, cliente, tipo_pago, nombre_entidad,
+              medico_nombre, tipo_servicio, total,
+              generado_por_nombre, observaciones, creado_en
+       FROM recibos ${where} ORDER BY fecha DESC, id DESC`,
+      params
+    );
+
+    const escapeCSV = (v) => {
+      if (v == null) return '';
+      const s = String(v).replace(/"/g, '""');
+      return /[,"\n]/.test(s) ? `"${s}"` : s;
+    };
+    const headers = ['Nº Recibo','Fecha','Paciente','Tipo de Pago','Entidad','Médico','Servicio','Total','Generado por','Observaciones','Creado en'];
+    const lines = [headers.join(',')];
+    rows.forEach(r => {
+      let fechaFmt = r.fecha ? String(r.fecha).slice(0,10) : '';
+      let creadoFmt = r.creado_en ? new Date(r.creado_en).toISOString().slice(0,19).replace('T',' ') : '';
+      lines.push([
+        escapeCSV(r.numero),
+        escapeCSV(fechaFmt),
+        escapeCSV(r.cliente),
+        escapeCSV(r.tipo_pago),
+        escapeCSV(r.nombre_entidad),
+        escapeCSV(r.medico_nombre),
+        escapeCSV(r.tipo_servicio),
+        escapeCSV(Number(r.total || 0).toFixed(2)),
+        escapeCSV(r.generado_por_nombre),
+        escapeCSV(r.observaciones),
+        escapeCSV(creadoFmt)
+      ].join(','));
+    });
+    const csv = '\uFEFF' + lines.join('\r\n'); // BOM para que Excel reconozca UTF-8
+    const today = new Date().toISOString().slice(0,10);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="recibos-${today}.csv"`);
+    res.send(csv);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Exportar recibos a PDF (página HTML imprimible)
+app.get('/api/recibos/export/pdf-reporte', requireAuth, async (req, res) => {
+  try {
+    const { fecha_desde, fecha_hasta, tipo_pago, medico_id, generado_por_id } = req.query;
+    const conditions = [];
+    const params = [];
+    if (fecha_desde) { conditions.push('fecha >= ?'); params.push(fecha_desde); }
+    if (fecha_hasta) { conditions.push('fecha <= ?'); params.push(fecha_hasta); }
+    if (tipo_pago)   { conditions.push('tipo_pago = ?'); params.push(tipo_pago); }
+    if (medico_id)   { conditions.push('medico_id = ?');  params.push(parseInt(medico_id, 10)); }
+    if (generado_por_id) { conditions.push('generado_por_id = ?'); params.push(parseInt(generado_por_id, 10)); }
+    const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
+    const rows = await db.query(
+      `SELECT numero, fecha, cliente, tipo_pago, nombre_entidad,
+              medico_nombre, tipo_servicio, total,
+              generado_por_nombre, observaciones
+       FROM recibos ${where} ORDER BY fecha DESC, id DESC`,
+      params
+    );
+    const total = rows.reduce((s, r) => s + Number(r.total || 0), 0);
+    const fmt = (v) => Number(v).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const fmtFecha = (v) => v ? String(v).slice(0,10) : '-';
+    const rowsHTML = rows.map((r, i) => `
+      <tr${i%2===0?' style="background:#f9fafb"':''}>
+        <td>${escapeHtml(r.numero||'-')}</td>
+        <td>${escapeHtml(fmtFecha(r.fecha))}</td>
+        <td>${escapeHtml(r.cliente||'-')}</td>
+        <td>${escapeHtml(r.tipo_pago||'-')}</td>
+        <td>${escapeHtml(r.nombre_entidad||'-')}</td>
+        <td>${escapeHtml(r.medico_nombre||'-')}</td>
+        <td>${escapeHtml(r.tipo_servicio||'-')}</td>
+        <td style="text-align:right">$ ${fmt(r.total)}</td>
+        <td>${escapeHtml(r.generado_por_nombre||'-')}</td>
+      </tr>`).join('');
+    const descFiltros = [
+      fecha_desde ? `Desde: ${fecha_desde}` : '',
+      fecha_hasta ? `Hasta: ${fecha_hasta}` : '',
+      tipo_pago   ? `Tipo pago: ${tipo_pago}` : ''
+    ].filter(Boolean).join(' · ') || 'Sin filtros';
+    const html = `<!doctype html><html><head><meta charset="utf-8"/>
+    <title>Reporte Recibos</title>
+    <style>
+      *{margin:0;padding:0;box-sizing:border-box}
+      body{font-family:Arial,sans-serif;font-size:11px;padding:16px;color:#111}
+      h1{font-size:16px;margin-bottom:4px}
+      .sub{color:#555;font-size:11px;margin-bottom:12px}
+      table{width:100%;border-collapse:collapse;font-size:10px}
+      th{background:#2d4a47;color:white;padding:6px 8px;text-align:left}
+      td{padding:5px 8px;border-bottom:1px solid #e5e7eb}
+      .total-row{font-weight:bold;background:#f0f9f4;border-top:2px solid #2d4a47}
+      @media print{.no-print{display:none}}
+    </style>
+    </head><body>
+    <h1>Reporte de Recibos — Instituto Neurociencias</h1>
+    <div class="sub">${escapeHtml(descFiltros)} · ${rows.length} recibos · Total: $ ${fmt(total)}</div>
+    <div class="no-print" style="margin-bottom:12px">
+      <button onclick="window.print()" style="padding:6px 14px;background:#2d4a47;color:white;border:none;border-radius:4px;cursor:pointer">Imprimir / Guardar PDF</button>
+    </div>
+    <table>
+      <thead><tr>
+        <th>Nº</th><th>Fecha</th><th>Paciente</th><th>Tipo Pago</th>
+        <th>Entidad</th><th>Médico</th><th>Servicio</th><th>Total</th><th>Generado por</th>
+      </tr></thead>
+      <tbody>${rowsHTML}
+        <tr class="total-row">
+          <td colspan="7" style="text-align:right">TOTAL</td>
+          <td style="text-align:right">$ ${fmt(total)}</td><td></td>
+        </tr>
+      </tbody>
+    </table>
+    <script>window.onload=function(){window.print();}<\/script>
+    </body></html>`;
+    res.send(html);
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
@@ -3199,6 +3410,7 @@ app.get('/api/recibos', requireAuth, async (req, res) => {
 app.delete('/api/recibos/reset', requireAuth, requireAdmin, async (req, res) => {
   try {
     await db.execute('DELETE FROM recibos');
+    await db.execute('ALTER TABLE recibos AUTO_INCREMENT = 1');
     res.json({ ok: true, message: 'Todos los recibos han sido eliminados' });
   } catch(err) {
     res.status(500).json({ error: err.message });
@@ -3212,7 +3424,6 @@ app.delete('/api/recibos/:id', requireAuth, requireAdmin, async (req, res) => {
   try {
     const result = await db.execute('DELETE FROM recibos WHERE id=?', [id]);
     if (result.affectedRows === 0) return res.status(404).json({ error: 'No encontrado' });
-    // Emitir actualización a través de WebSocket
     if (app.io) {
       emitSocket('recibo:eliminado', { id });
       emitSocket('recibo:actualizar-lista');

@@ -190,12 +190,20 @@
           </div>
           <hr class="sidebar-title-sep" />
           <h2>Recibos</h2>
-          <p class="sidebar-desc">Gestión de recibos y reportes</p>
+          <p class="sidebar-desc">Contabilidad y seguimiento</p>
           <span class="sidebar-section-label">Navegación</span>
-          <button class="sidebar-btn active" data-page="crear"><span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg></span>Crear Recibo</button>
-          <button class="sidebar-btn" data-page="recibos"><span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg></span>Ver Recibos</button>
-          <button class="sidebar-btn" data-page="reportes"><span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></span>Reportes</button>
-          <button class="sidebar-btn" data-page="servicios" data-rol-recibos="admin"><span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg></span>Gestionar Servicios</button>
+          <button class="sidebar-btn active" data-page="crear">
+            <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg></span>
+            Crear Recibo
+          </button>
+          <button class="sidebar-btn" data-page="recibos">
+            <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></span>
+            Ver Recibos
+          </button>
+          <button class="sidebar-btn" data-page="servicios" data-rol-recibos="admin">
+            <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg></span>
+            Servicios
+          </button>
         </div>
         <div class="sidebar-footer">
           <div class="sidebar-user">
@@ -207,73 +215,151 @@
           </div>
         </div>
       </div>
+
       <div class="main-content">
         <div class="container" id="recibos-container">
-          <!-- PÁGINA: CREAR RECIBO -->
+
+          <!-- ===== PÁGINA: CREAR RECIBO ===== -->
           <div class="page active" id="page-crear">
             <header>
-              <div><img src="/images/logo1.png" alt="Logo" style="height:80px;object-fit:contain;display:block;margin:0 auto;" /></div>
+              <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+                <div>
+                  <h2 style="margin:0;color:#2d4a47">Nuevo Recibo</h2>
+                  <p style="margin:0;color:#6b7280;font-size:0.9rem">Complete los datos del cobro</p>
+                </div>
+                <div style="display:flex;gap:10px;font-size:13px">
+                  <div style="text-align:center;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:8px 16px">
+                    <div style="font-size:22px;font-weight:bold;color:#0369a1" id="statsRecibosHoy">0</div>
+                    <div style="color:#666">Hoy</div>
+                  </div>
+                  <div style="text-align:center;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:8px 16px">
+                    <div style="font-size:22px;font-weight:bold;color:#059669" id="statsTotalHoy">$ 0</div>
+                    <div style="color:#666">Total día</div>
+                  </div>
+                </div>
+              </div>
             </header>
-            <section id="statsSection" class="card no-print" style="background-color:#f0f9ff;border-left:4px solid #8AA6A1">
-              <div style="display:flex;justify-content:space-around;align-items:center">
-                <div style="text-align:center">
-                  <div style="font-size:24px;font-weight:bold;color:#0369a1" id="statsRecibosHoy">0</div>
-                  <div style="font-size:12px;color:#666">Recibos hoy</div>
-                </div>
-                <div style="text-align:center">
-                  <div style="font-size:24px;font-weight:bold;color:#059669" id="statsTotalHoy">$ 0.00</div>
-                  <div style="font-size:12px;color:#666">Total del día</div>
-                </div>
+
+            <!-- Buscar cita del día -->
+            <section class="card recibo-buscar-section no-print">
+              <div class="recibo-buscar-header">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                <span>Buscar cita del día para pre-llenar</span>
               </div>
+              <div style="display:flex;gap:10px;align-items:center">
+                <input id="reciboBuscarInput" type="text" placeholder="Documento o nombre del paciente..." style="flex:1" />
+                <button id="btnReciboBuscar" class="btn-secondary">Buscar</button>
+              </div>
+              <div id="reciboBuscarResultados" class="hidden recibo-buscar-resultados"></div>
             </section>
-            <section class="card form-area">
-              <div class="row">
-                <div class="col"><label>Nombre Cliente</label><input id="cliente" placeholder="Nombre" /></div>
-                <div class="col"><label>Documento Cliente</label><input id="docCliente" type="text" inputmode="numeric" placeholder="Documento" /></div>
+
+            <!-- Formulario principal -->
+            <section class="card recibo-form-card">
+              <div class="recibo-form-grid-2">
+                <!-- Datos del paciente -->
+                <div class="recibo-form-group">
+                  <h4 class="recibo-form-section-title">Paciente</h4>
+                  <label>Nombre completo</label>
+                  <input id="cliente" placeholder="Nombre del paciente" />
+                  <label style="margin-top:10px">Documento</label>
+                  <input id="docCliente" type="text" inputmode="numeric" placeholder="Número de documento" />
+                </div>
+
+                <!-- Tipo de pago -->
+                <div class="recibo-form-group">
+                  <h4 class="recibo-form-section-title">Tipo de Pago</h4>
+                  <div class="recibo-tipo-pago-group">
+                    <label class="recibo-radio-card" id="radioPagoPCard">
+                      <input type="radio" name="tipoPago" value="Particular" id="radioPagoParticular" />
+                      <span class="recibo-radio-icon">💵</span>
+                      <span class="recibo-radio-label">Particular</span>
+                    </label>
+                    <label class="recibo-radio-card" id="radioPagoTCard">
+                      <input type="radio" name="tipoPago" value="Tarjeta de Salud" id="radioPagoTarjeta" />
+                      <span class="recibo-radio-icon">🪪</span>
+                      <span class="recibo-radio-label">Tarjeta de Salud</span>
+                    </label>
+                  </div>
+                  <div id="reciboEntidadRow" class="hidden" style="margin-top:10px">
+                    <label>Entidad / Tarjeta</label>
+                    <select id="reciboEntidad">
+                      <option value="">Seleccionar entidad</option>
+                      <option value="Protegemos">Protegemos</option>
+                      <option value="Global Salud">Global Salud</option>
+                      <option value="Medica Preferencial">Medica Preferencial</option>
+                      <option value="Multiservicios">Multiservicios</option>
+                      <option value="Medica Estar Bien">Medica Estar Bien</option>
+                      <option value="Previred">Previred</option>
+                      <option value="Prevenir Descuentos">Prevenir Descuentos</option>
+                      <option value="Clical Medic">Clical Medic</option>
+                      <option value="Medicina Para Todos">Medicina Para Todos</option>
+                      <option value="Abogado">Abogado</option>
+                      <option value="Otra">Otra</option>
+                    </select>
+                  </div>
+                </div>
               </div>
-              <div class="row">
-                <div class="col">
-                  <label>Entidad</label>
-                  <select id="entidad">
-                    <option value="">Seleccionar entidad</option>
-                    <option value="Protegemos">Protegemos</option>
-                    <option value="Global Salud">Global Salud</option>
-                    <option value="Particular">Particular</option>
-                    <option value="Medica Preferencial">Medica Preferencial</option>
-                    <option value="Multiservicios">Multiservicios</option>
-                    <option value="Medica Estar Bien">Medica Estar Bien</option>
-                    <option value="Previred">Previred</option>
-                    <option value="Prevenir Descuentos">Prevenir Descuentos</option>
-                    <option value="Clical Medic">Clical Medic</option>
-                    <option value="Medicina Para Todos">Medicina Para Todos</option>
-                    <option value="Otra">Otra</option>
+
+              <div class="recibo-form-grid-2" style="margin-top:16px">
+                <!-- Médico -->
+                <div>
+                  <label>Médico que realizó la consulta</label>
+                  <select id="reciboMedico">
+                    <option value="">Sin médico / No aplica</option>
                   </select>
                 </div>
-                <div class="col" id="entidadOtraContainer" style="display:none">
-                  <label>Especificar entidad</label>
-                  <input id="entidadOtra" type="text" placeholder="Escribir entidad" />
+                <!-- Tipo de servicio -->
+                <div>
+                  <label>Tipo de servicio / Estudio</label>
+                  <select id="reciboTipoServicio">
+                    <option value="">Sin servicio / No aplica</option>
+                  </select>
                 </div>
               </div>
-              <div style="margin-top:10px">
-                <label>Conceptos</label>
-                <div class="table-wrapper table-compact">
-                <table id="itemsTable" class="modern-table">
-                  <thead><tr><th>Descripción</th><th>Valor</th><th></th></tr></thead>
-                  <tbody></tbody>
-                </table>
+
+              <!-- Conceptos (items) -->
+              <div style="margin-top:18px">
+                <label style="font-weight:600">Conceptos del cobro</label>
+                <div class="table-wrapper table-compact" style="margin-top:8px">
+                  <table id="itemsTable" class="modern-table">
+                    <thead><tr><th>Descripción</th><th>Valor</th><th></th></tr></thead>
+                    <tbody></tbody>
+                  </table>
                 </div>
-                <div style="margin-top:8px"><button id="addItem" class="btn-secondary btn-sm">+ Agregar ítem manual</button></div>
+                <button id="addItem" class="btn-secondary btn-sm" style="margin-top:8px">+ Agregar ítem manual</button>
               </div>
-              <div class="row" style="margin-top:12px">
-                <div class="col"><label>Observaciones</label><textarea id="observ" rows="2" placeholder="Opcional"></textarea></div>
-                <div style="width:220px">
-                  <label>Número de recibo</label><input id="numero" readonly />
-                  <label>Fecha</label><input id="fecha" type="date" />
+
+              <!-- Obs + fecha + número -->
+              <div class="recibo-form-grid-2" style="margin-top:18px">
+                <div>
+                  <label>Observaciones</label>
+                  <textarea id="observ" rows="3" placeholder="Anotaciones opcionales..."></textarea>
+                </div>
+                <div>
+                  <label>Nº de Recibo</label>
+                  <input id="numero" readonly style="background:#f3f4f6;font-weight:bold" />
+                  <label style="margin-top:10px">Fecha</label>
+                  <input id="fecha" type="date" />
+                  <div style="margin-top:10px;font-size:0.85rem;color:#6b7280">
+                    Generado por: <strong id="reciboGeneradoPorDisplay">—</strong>
+                  </div>
                 </div>
               </div>
-              <div class="actions"><button id="generate" class="btn-primary">Generar recibo</button></div>
+
+              <!-- Turno/cita vinculados (hidden) -->
+              <input type="hidden" id="reciboTurnoId" value="" />
+              <input type="hidden" id="reciboCitaElectroId" value="" />
+
+              <div class="actions" style="margin-top:18px">
+                <button id="generate" class="btn-primary" style="min-width:180px">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="vertical-align:middle;margin-right:6px"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                  Generar Recibo
+                </button>
+              </div>
             </section>
-            <section id="receiptPreview" class="card">
+
+            <!-- Vista previa / PDF -->
+            <section id="receiptPreview" class="card" style="display:none">
               <div id="previewContent">
                 <div class="receipt-header">
                   <div><strong>Instituto Neurociencias</strong><br/><small>Carrera 34 #13 - 80 · 305-356-0651</small></div>
@@ -284,14 +370,15 @@
                 </div>
                 <hr/>
                 <div>
-                  <div><strong>Cliente:</strong> <span id="r_cliente"></span></div>
+                  <div><strong>Paciente:</strong> <span id="r_cliente"></span></div>
                   <div><strong>Documento:</strong> <span id="r_doc"></span></div>
+                  <div id="r_entidad_row"><strong>Entidad:</strong> <span id="r_entidad"></span></div>
                 </div>
                 <div class="table-wrapper table-compact">
-                <table id="r_table" class="modern-table">
-                  <thead><tr><th>Descripción</th><th>Precio</th></tr></thead>
-                  <tbody></tbody>
-                </table>
+                  <table id="r_table" class="modern-table">
+                    <thead><tr><th>Descripción</th><th>Precio</th></tr></thead>
+                    <tbody></tbody>
+                  </table>
                 </div>
                 <div style="text-align:right;margin-top:8px">
                   <div>Subtotal: <strong id="r_subtotal">0.00</strong></div>
@@ -301,76 +388,119 @@
                 <div style="margin-top:8px"><strong>Observaciones:</strong> <span id="r_observ"></span></div>
               </div>
               <div class="actions no-print" style="margin-top:12px">
-                <button id="print" class="btn-primary">Generar PDF</button>
-                <button id="downloadPDF" class="btn-primary">Descargar PDF anterior</button>
+                <button id="print" class="btn-primary">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="vertical-align:middle;margin-right:4px"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+                  Ver / Imprimir PDF
+                </button>
+                <button id="btnNuevoRecibo" class="btn-secondary">+ Nuevo Recibo</button>
               </div>
             </section>
           </div>
-          <!-- PÁGINA: VER RECIBOS -->
+
+          <!-- ===== PÁGINA: VER RECIBOS ===== -->
           <div class="page" id="page-recibos">
-            <header><h2>Recibos Guardados</h2></header>
-            
-            <!-- Buscador por Documento - Consulta de Recibos -->
-            <section class="card no-print" style="background:#f4f7f7;border-left:4px solid #8AA6A1">
-              <h3 style="margin-top:0;color:#2d4a47">Buscar Recibos</h3>
-              <p style="color:#6b7280;margin-bottom:16px;font-size:0.95rem">Ingresa un número de documento para buscar recibos</p>
-              <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
-                <div style="flex:1;min-width:200px">
-                  <label>Número de Documento</label>
-                  <input id="buscarReciboDocumento" type="text" placeholder="Escribe aquí el número de documento" style="width:100%" />
+            <header>
+              <h2>Recibos Guardados</h2>
+              <p style="color:#6b7280;font-size:0.9rem;margin-top:2px">Aplica filtros y exporta para contabilidad</p>
+            </header>
+
+            <!-- Filtros -->
+            <section class="card no-print recibo-filtros-card">
+              <h3 style="margin:0 0 14px;color:#2d4a47;font-size:1rem">Filtros</h3>
+              <div class="recibo-filtros-grid">
+                <div>
+                  <label>Desde</label>
+                  <input id="filtroFechaDesde" type="date" />
                 </div>
-                <button id="btnBuscarReciboDocumento" class="btn-primary">Buscar</button>
-                <button id="btnLimpiarReciboDocumento" class="btn-secondary">Limpiar</button>
+                <div>
+                  <label>Hasta</label>
+                  <input id="filtroFechaHasta" type="date" />
+                </div>
+                <div>
+                  <label>Tipo de pago</label>
+                  <select id="filtroTipoPago">
+                    <option value="">Todos</option>
+                    <option value="Particular">Particular</option>
+                    <option value="Tarjeta de Salud">Tarjeta de Salud</option>
+                  </select>
+                </div>
+                <div>
+                  <label>Médico</label>
+                  <select id="filtroMedico">
+                    <option value="">Todos</option>
+                  </select>
+                </div>
+                <div>
+                  <label>Generado por</label>
+                  <select id="filtroGeneradoPor">
+                    <option value="">Todos</option>
+                  </select>
+                </div>
               </div>
-              <div id="resultadoBuscarRecibo" style="margin-top:16px;display:none;padding:12px;background:white;border-radius:6px;border-left:3px solid #8AA6A1"></div>
+              <div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap;align-items:center">
+                <button id="btnAplicarFiltros" class="btn-primary">Aplicar filtros</button>
+                <button id="btnLimpiarFiltros" class="btn-secondary">Limpiar</button>
+              </div>
             </section>
-            
+
+            <!-- Resumen + exportar -->
+            <section class="card no-print recibo-resumen-card hidden" id="reciboResumenCard">
+              <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
+                <div style="display:flex;gap:20px;align-items:center">
+                  <div>
+                    <span style="font-size:24px;font-weight:bold;color:#2d4a47" id="resumenCantidad">0</span>
+                    <span style="color:#6b7280;font-size:0.9rem;margin-left:4px">recibos</span>
+                  </div>
+                  <div>
+                    <span style="font-size:13px;color:#6b7280">Total:</span>
+                    <span style="font-size:20px;font-weight:bold;color:#059669;margin-left:4px" id="resumenTotal">$ 0</span>
+                  </div>
+                </div>
+                <div style="display:flex;gap:8px">
+                  <button id="btnExportarCSV" class="recibo-export-btn recibo-export-excel">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    Excel (CSV)
+                  </button>
+                  <button id="btnExportarPDF" class="recibo-export-btn recibo-export-pdf">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+                    Reporte PDF
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            <!-- Tabla de recibos -->
             <section id="savedList" class="card no-print">
               <div class="table-wrapper">
                 <table id="tablaSavedItems" class="modern-table">
                   <thead>
                     <tr>
-                      <th>Número</th>
-                      <th>Cliente</th>
-                      <th>Entidad</th>
+                      <th>Nº</th>
                       <th>Fecha</th>
+                      <th>Paciente</th>
+                      <th>Tipo Pago</th>
+                      <th>Entidad</th>
+                      <th>Médico</th>
+                      <th>Servicio</th>
                       <th style="text-align:right">Total</th>
+                      <th>Generado por</th>
                       <th style="text-align:center">Acciones</th>
                     </tr>
                   </thead>
                   <tbody id="savedItems">
                     <tr>
-                      <td colspan="5" style="padding:12px;text-align:center;color:#999">No hay recibos guardados</td>
+                      <td colspan="10" style="padding:24px;text-align:center;color:#999">
+                        Aplica un filtro para ver los recibos
+                      </td>
                     </tr>
                   </tbody>
                 </table>
               </div>
-              <button id="resetAll" class="btn-danger" style="margin-top:12px;width:100%;display:none">Eliminar todos los recibos</button>
+              <button id="resetAll" class="btn-danger" style="margin-top:12px;width:100%;display:none">🗑 Eliminar TODOS los recibos</button>
             </section>
           </div>
-          <!-- PÁGINA: REPORTES -->
-          <div class="page" id="page-reportes">
-            <header><h2>Generar Reportes</h2></header>
-            <section id="reportSection" class="card no-print">
-              <div class="row">
-                <div class="col">
-                  <label>Reporte Diario</label>
-                  <div style="display:flex;gap:8px">
-                    <input id="reportDiaFecha" type="date" />
-                    <button id="reportDiaBtn" class="btn-primary" style="flex:1">Generar PDF</button>
-                  </div>
-                </div>
-                <div class="col">
-                  <label>Reporte Mensual</label>
-                  <div style="display:flex;gap:8px">
-                    <input id="reportMesFecha" type="month" />
-                    <button id="reportMesBtn" class="btn-primary" style="flex:1">Generar PDF</button>
-                  </div>
-                </div>
-              </div>
-            </section>
-          </div>
-          <!-- PÁGINA: SERVICIOS -->
+
+          <!-- ===== PÁGINA: SERVICIOS ===== -->
           <div class="page" id="page-servicios">
             <header><h2>Gestionar Servicios</h2></header>
             <section class="card no-print">
@@ -383,6 +513,7 @@
               </div>
             </section>
           </div>
+
         </div>
       </div>
     </div>
@@ -1220,7 +1351,7 @@
         <span>Editado por <strong id="modalUsuarioEdito">-</strong></span>
       </div>
 
-      <!-- EDICIÓN: EQUIPO + ESTADO -->
+      <!-- EDICIÓN: EQUIPO + FLUJO DE ESTADO -->
       <div class="cita-modal-edit-grid">
         <div class="cita-modal-field">
           <label class="cita-modal-field-label">Equipo</label>
@@ -1228,14 +1359,14 @@
             <option value="">Seleccionar equipo</option>
           </select>
         </div>
-        <div class="cita-modal-field">
-          <label class="cita-modal-field-label">Estado</label>
-          <select id="modalEstado" class="cita-modal-select">
-            <option value="En Sala">En Sala</option>
-            <option value="No Asistió">No Asistió</option>
-            <option value="Cancelado">Cancelado</option>
-          </select>
-        </div>
+        <!-- Estado oculto (usado internamente) -->
+        <select id="modalEstado" style="display:none">
+          <option value="En Sala">En Sala</option>
+          <option value="No Asistió">No Asistió</option>
+          <option value="Cancelado">Cancelado</option>
+        </select>
+        <!-- Flujo contextual de acciones (llena JS) -->
+        <div id="modalFlujoEstudio"></div>
       </div>
 
       <!-- BARRA DE PROGRESO DEL ESTUDIO -->
@@ -1266,8 +1397,8 @@
         <div style="font-size:0.8rem;color:#6b7280;margin-top:6px">Selecciona la nueva hora para esta cita</div>
       </div>
 
-      <!-- ACCIONES ESTUDIO: INICIAR / FINALIZAR -->
-      <div class="cita-modal-actions-study">
+      <!-- ACCIONES ESTUDIO: generadas dinámicamente por renderFlujoEstado() -->
+      <div class="cita-modal-actions-study" id="modalAccionesEstudio" style="display:none">
         <button id="btnIniciarEstudio" class="btn-info cita-modal-action-btn">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
           Iniciar Estudio

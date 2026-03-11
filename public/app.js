@@ -1175,23 +1175,58 @@ function initRecibos() {
   setDefaultDate();
   nextNumber();
   updateSavedCount();
-  setDefaultReportDates();
+
+  // Cargar médicos en el select
+  cargarMedicosEnRecibo();
+  // Cargar servicios en el select de tipo servicio
+  cargarServiciosEnRecibo();
+  // Mostrar usuario actual como "generado por"
+  const gpEl = $('reciboGeneradoPorDisplay');
+  if (gpEl) {
+    const nombre = sessionStorage.getItem('nombre_usuario') || currentUser?.nombre || currentUser?.usuario || '—';
+    gpEl.textContent = nombre;
+  }
+
+  // Radios tipo de pago
+  document.querySelectorAll('input[name="tipoPago"]').forEach(radio => {
+    radio.addEventListener('change', function() {
+      const entRow = document.getElementById('reciboEntidadRow');
+      const pCard  = document.getElementById('radioPagoPCard');
+      const tCard  = document.getElementById('radioPagoTCard');
+      if (pCard) pCard.classList.toggle('selected', this.value === 'Particular');
+      if (tCard) tCard.classList.toggle('selected', this.value === 'Tarjeta de Salud');
+      if (entRow) entRow.classList.toggle('hidden', this.value !== 'Tarjeta de Salud');
+    });
+  });
+
+  // Buscar cita del día
+  const btnBuscar = $('btnReciboBuscar');
+  if (btnBuscar) btnBuscar.onclick = buscarCitaParaRecibo;
+  const buscarInput = $('reciboBuscarInput');
+  if (buscarInput) buscarInput.addEventListener('keydown', e => { if (e.key === 'Enter') buscarCitaParaRecibo(); });
+
+  // Botones del formulario
   const addItem = document.getElementById('addItem');
-  if (addItem) addItem.addEventListener('click', ()=> addRow());
+  if (addItem) addItem.addEventListener('click', () => addRow());
   if ($('generate')) $('generate').addEventListener('click', generatePreview);
-  if ($('resetAll')) $('resetAll').addEventListener('click', resetAllRecibos);
+  if ($('btnNuevoRecibo')) $('btnNuevoRecibo').addEventListener('click', resetFormulario);
   if ($('print')) $('print').addEventListener('click', abrirPDF);
-  if ($('downloadPDF')) $('downloadPDF').addEventListener('click', descargarPDFAnterior);
-  if ($('reportDiaBtn')) $('reportDiaBtn').addEventListener('click', generarReporteDiario);
-  if ($('reportMesBtn')) $('reportMesBtn').addEventListener('click', generarReporteMensual);
+  if ($('resetAll')) $('resetAll').addEventListener('click', resetAllRecibos);
+
+  // Filtros + exportar (página Ver Recibos)
+  if ($('btnAplicarFiltros')) $('btnAplicarFiltros').onclick = aplicarFiltrosRecibos;
+  if ($('btnLimpiarFiltros')) $('btnLimpiarFiltros').onclick = limpiarFiltrosRecibos;
+  if ($('btnExportarCSV')) $('btnExportarCSV').onclick = exportarReciboCSV;
+  if ($('btnExportarPDF')) $('btnExportarPDF').onclick = exportarReciboPDF;
+
+  // Servicios
   const addServ = document.getElementById('addServicio');
   if (addServ) addServ.addEventListener('click', async () => {
     const nombre = $('newServicioNombre').value.trim();
-    if(!nombre) { showToast('Ingresa el nombre del servicio', 'error'); return; }
+    if (!nombre) { showToast('Ingresa el nombre del servicio', 'error'); return; }
     try {
       const res = await apiFetch('/api/servicios', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ nombre })
       });
       const data = await res.json();
@@ -1200,23 +1235,185 @@ function initRecibos() {
         $('newServicioNombre').value = '';
         await renderServiciosList();
         await updateServiciosSelects();
+        await cargarServiciosEnRecibo();
         showToast('Servicio agregado', 'success');
       } else {
         showToast(data.error || 'Error al agregar', 'error');
       }
-    } catch(_) { showToast('Error de conexión', 'error'); }
+    } catch (_) { showToast('Error de conexión', 'error'); }
   });
+
+  // Sólo números en documento
   const docCliente = document.getElementById('docCliente');
   if (docCliente) docCliente.addEventListener('input', function() { this.value = this.value.replace(/[^0-9]/g, ''); });
-  const entidad = document.getElementById('entidad');
-  if (entidad) entidad.addEventListener('change', function() {
-    const otherContainer = document.getElementById('entidadOtraContainer');
-    const otherInput = document.getElementById('entidadOtra');
-    if(this.value === 'Otra') { otherContainer.style.display = 'block'; otherInput.focus(); }
-    else { otherContainer.style.display = 'none'; otherInput.value = ''; }
-  });
-  cargarLista();
+
+  // Precargar filtros médicos y usuarios en Ver Recibos
+  cargarFiltrosMedicos();
+  cargarFiltrosUsuarios();
+
   initRecibosDone = true;
+}
+
+// ---- Cargar médicos en el select del formulario ----
+async function cargarMedicosEnRecibo() {
+  const sel = $('reciboMedico');
+  const filtro = $('filtroMedico');
+  if (!sel) return;
+  try {
+    const medicos = await apiFetch('/api/medicos').then(r => r.json()).catch(() => []);
+    [sel, filtro].forEach(el => {
+      if (!el) return;
+      const first = el.querySelector('option');
+      el.innerHTML = '';
+      if (first) el.appendChild(first.cloneNode(true));
+      medicos.forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m.id;
+        opt.textContent = m.nombre || m.usuario;
+        el.appendChild(opt);
+      });
+    });
+  } catch (_) {}
+}
+
+// ---- Cargar servicios en el select del formulario ----
+async function cargarServiciosEnRecibo() {
+  const sel = $('reciboTipoServicio');
+  if (!sel) return;
+  try {
+    const servicios = await getServicios();
+    const firstOpt = sel.querySelector('option');
+    sel.innerHTML = '';
+    if (firstOpt) sel.appendChild(firstOpt.cloneNode(true));
+    servicios.forEach(s => {
+      const opt = document.createElement('option');
+      opt.value = s.nombre;
+      opt.textContent = s.nombre;
+      sel.appendChild(opt);
+    });
+  } catch (_) {}
+}
+
+// ---- Cargar médicos en filtro ----
+async function cargarFiltrosMedicos() {
+  const sel = $('filtroMedico');
+  if (!sel) return;
+  try {
+    const medicos = await apiFetch('/api/medicos').then(r => r.json()).catch(() => []);
+    sel.innerHTML = '<option value="">Todos los médicos</option>';
+    medicos.forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m.id;
+      opt.textContent = m.nombre || m.usuario;
+      sel.appendChild(opt);
+    });
+  } catch (_) {}
+}
+
+// ---- Cargar usuarios que han generado recibos en filtro ----
+async function cargarFiltrosUsuarios() {
+  const sel = $('filtroGeneradoPor');
+  if (!sel) return;
+  try {
+    const filas = await apiFetch('/api/recibos').then(r => r.json()).catch(() => []);
+    const vistos = new Map();
+    filas.forEach(r => {
+      if (r.generado_por_id && !vistos.has(r.generado_por_id)) {
+        vistos.set(r.generado_por_id, r.generado_por_nombre || String(r.generado_por_id));
+      }
+    });
+    sel.innerHTML = '<option value="">Todos</option>';
+    vistos.forEach((nombre, id) => {
+      const opt = document.createElement('option');
+      opt.value = id;
+      opt.textContent = nombre;
+      sel.appendChild(opt);
+    });
+  } catch (_) {}
+}
+
+// ---- Buscar cita del día para pre-llenar formulario ----
+async function buscarCitaParaRecibo() {
+  const q = ($('reciboBuscarInput')?.value || '').trim();
+  if (q.length < 2) { showToast('Escribe al menos 2 caracteres', 'error'); return; }
+  const contenedor = document.getElementById('reciboBuscarResultados');
+  if (!contenedor) return;
+  contenedor.classList.remove('hidden');
+  contenedor.innerHTML = '<div style="padding:12px;color:#6b7280;text-align:center">Buscando...</div>';
+  try {
+    const resultados = await apiFetch(`/api/recibos/buscar-cita?q=${encodeURIComponent(q)}`).then(r => r.json());
+    if (!resultados.length) {
+      contenedor.innerHTML = '<div style="padding:12px;color:#6b7280;text-align:center">No se encontraron citas completadas en los últimos 7 días.</div>';
+      return;
+    }
+    contenedor.innerHTML = resultados.map((c, i) => {
+      const esTarjeta = c.entidad && c.entidad !== 'Particular';
+      const badgeClass = c.origen === 'electro' ? 'electro' : '';
+      const badgeText = c.origen === 'electro' ? 'Electro' : 'Consulta';
+      return `<div class="recibo-buscar-item" data-idx="${i}">
+        <div>
+          <div class="rci-nombre">${escapeHtml(c.paciente_nombre || '-')}</div>
+          <div class="rci-meta">Doc: ${escapeHtml(c.paciente_documento || '-')} · ${escapeHtml(String(c.fecha||'').slice(0,10))} · ${escapeHtml(c.hora||'')}
+            ${c.medico_nombre ? ` · Dr. ${escapeHtml(c.medico_nombre)}` : ''}
+            ${c.tipo_consulta ? ` · ${escapeHtml(c.tipo_consulta)}` : ''}
+            ${c.entidad ? ` · ${escapeHtml(c.entidad)}` : ''}
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <span class="rci-badge ${badgeClass}">${badgeText}</span>
+          <span class="recibo-buscar-accion">↑ Usar</span>
+        </div>
+      </div>`;
+    }).join('');
+    // Event listeners
+    contenedor.querySelectorAll('.recibo-buscar-item').forEach(el => {
+      el.addEventListener('click', () => {
+        const idx = parseInt(el.dataset.idx, 10);
+        const cita = resultados[idx];
+        preLlenarReciboDesdeCita(cita);
+        contenedor.classList.add('hidden');
+        $('reciboBuscarInput').value = '';
+      });
+    });
+  } catch (e) {
+    contenedor.innerHTML = '<div style="padding:12px;color:#dc2626">Error al buscar citas.</div>';
+  }
+}
+
+// ---- Pre-llenar formulario desde una cita seleccionada ----
+function preLlenarReciboDesdeCita(cita) {
+  if ($('cliente')) $('cliente').value = cita.paciente_nombre || '';
+  if ($('docCliente')) $('docCliente').value = cita.paciente_documento || '';
+
+  // Tipo de pago y entidad
+  const esTarjeta = cita.entidad && cita.entidad !== 'Particular';
+  const tipoPago = esTarjeta ? 'Tarjeta de Salud' : 'Particular';
+  document.querySelectorAll('input[name="tipoPago"]').forEach(r => {
+    r.checked = r.value === tipoPago;
+  });
+  document.getElementById('radioPagoPCard')?.classList.toggle('selected', tipoPago === 'Particular');
+  document.getElementById('radioPagoTCard')?.classList.toggle('selected', tipoPago === 'Tarjeta de Salud');
+  const entRow = document.getElementById('reciboEntidadRow');
+  if (entRow) entRow.classList.toggle('hidden', !esTarjeta);
+  if (esTarjeta && $('reciboEntidad') && cita.entidad) {
+    $('reciboEntidad').value = cita.entidad; // intentará coincidir con la opción
+  }
+
+  // Médico
+  if (cita.medico_id && $('reciboMedico')) {
+    $('reciboMedico').value = String(cita.medico_id);
+  }
+
+  // Tipo de servicio
+  if (cita.tipo_consulta && $('reciboTipoServicio')) {
+    $('reciboTipoServicio').value = cita.tipo_consulta;
+  }
+
+  // Turno / cita vinculada
+  if ($('reciboTurnoId')) $('reciboTurnoId').value = cita.origen === 'turno' ? (cita.id || '') : '';
+  if ($('reciboCitaElectroId')) $('reciboCitaElectroId').value = cita.origen === 'electro' ? (cita.id || '') : '';
+
+  showToast('Formulario pre-llenado con datos de la cita', 'success');
 }
 
 // ========== AGENDA MÉDICA (Citas) ==========
@@ -4817,173 +5014,179 @@ async function nextNumber(){
 function collectFormData(){
   const items = [];
   document.querySelectorAll('#itemsTable tbody tr').forEach(r=>{
-    // Si hay input personalizado, usar su valor; si no, usar el select
     const descEl = r.querySelector('.item-desc-custom') || r.querySelector('.item-desc');
     const priceValue = r.querySelector('.item-price').value || '0';
-    items.push({
-      desc: descEl.value,
-      price: Number(priceValue.replace(/,/g, ''))
-    });
+    items.push({ desc: descEl.value, price: Number(priceValue.replace(/,/g, '')) });
   });
-  // Extraer solo los números del textContent (remover $ y comas)
   const subtotal = Number($('r_subtotal').textContent.replace(/[^\d.]/g, '') || 0);
-  const iva = Number($('r_iva').textContent.replace(/[^\d.]/g, '') || 0);
-  const total = Number($('r_total').textContent.replace(/[^\d.]/g, '') || 0);
+  const iva     = Number($('r_iva').textContent.replace(/[^\d.]/g, '') || 0);
+  const total   = Number($('r_total').textContent.replace(/[^\d.]/g, '') || 0);
+
+  const tipoPagoRadio = document.querySelector('input[name="tipoPago"]:checked');
+  const tipoPago = tipoPagoRadio ? tipoPagoRadio.value : null;
+  const reciboEntidadEl = $('reciboEntidad');
+  const nombreEntidad   = (tipoPago === 'Tarjeta de Salud' && reciboEntidadEl) ? reciboEntidadEl.value : null;
+
+  const medicoSel = $('reciboMedico');
+  const medicoId  = medicoSel && medicoSel.value ? parseInt(medicoSel.value, 10) : null;
+  const medicoNombre = medicoSel && medicoSel.value ? (medicoSel.options[medicoSel.selectedIndex]?.text || null) : null;
+
+  const servSel = $('reciboTipoServicio');
+  const tipoServicio = servSel && servSel.value ? servSel.value : null;
+
   return {
     numero: $('numero').value,
     fecha: $('fecha').value,
     cliente: $('cliente').value,
     doc: $('docCliente').value,
-    entidad: $('entidad').value === 'Otra' ? $('entidadOtra').value : $('entidad').value,
+    tipoPago, nombreEntidad,
+    medicoId, medicoNombre, tipoServicio,
     observ: $('observ').value,
+    turnoId: $('reciboTurnoId')?.value || null,
+    citaElectroId: $('reciboCitaElectroId')?.value || null,
     items, subtotal, iva, total
   };
 }
 
 function generatePreview(){
   if(!validarFormulario()) return;
-  
-  // llenar campos del preview
-  $('r_num').textContent = $('numero').value;
-  $('r_fecha').textContent = $('fecha').value;
-  $('r_cliente').textContent = $('cliente').value;
-  $('r_doc').textContent = $('docCliente').value;
-  $('r_observ').textContent = $('observ').value;
 
-  const tbody = document.querySelector('#r_table tbody'); tbody.innerHTML = '';
-  document.querySelectorAll('#itemsTable tbody tr').forEach(r=>{
-    // Si hay input personalizado, usar su valor; si no, usar el select
-    const descEl = r.querySelector('.item-desc-custom') || r.querySelector('.item-desc');
-    const desc = descEl.value;
-    const priceValue = r.querySelector('.item-price').value || '0';
-    const price = Number(priceValue.replace(/,/g, ''));
+  const payload = collectFormData();
+
+  $('r_num').textContent = payload.numero;
+  $('r_fecha').textContent = payload.fecha;
+  $('r_cliente').textContent = payload.cliente;
+  $('r_doc').textContent = payload.doc;
+  $('r_observ').textContent = payload.observ;
+
+  const rentEl = document.getElementById('r_entidad_row');
+  const rentSpan = document.getElementById('r_entidad');
+  if (payload.tipoPago === 'Tarjeta de Salud' && payload.nombreEntidad) {
+    if (rentEl) rentEl.style.display = '';
+    if (rentSpan) rentSpan.textContent = payload.nombreEntidad;
+  } else if (payload.tipoPago === 'Particular') {
+    if (rentEl) rentEl.style.display = '';
+    if (rentSpan) rentSpan.textContent = 'Particular';
+  } else {
+    if (rentEl) rentEl.style.display = 'none';
+  }
+
+  const tbody = document.querySelector('#r_table tbody');
+  tbody.innerHTML = '';
+  payload.items.forEach(it => {
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${escapeHtml(desc)}</td><td style="text-align:right">${escapeHtml(formatMoney(price))}</td>`;
+    tr.innerHTML = `<td>${escapeHtml(it.desc)}</td><td style="text-align:right">${escapeHtml(formatMoney(it.price))}</td>`;
     tbody.appendChild(tr);
   });
 
   recalc();
-  
-  // Guardar automáticamente en la base de datos
+
+  const preview = document.getElementById('receiptPreview');
+  if (preview) preview.style.display = '';
+
   saveToDatabase();
 }
 
 function validarFormulario(){
-  const cliente = $('cliente').value.trim();
-  const docCliente = $('docCliente').value.trim();
-  const fecha = $('fecha').value.trim();
-  const entidad = $('entidad').value.trim();
+  const cliente = $('cliente')?.value.trim();
+  const docCliente = $('docCliente')?.value.trim();
+  const fecha = $('fecha')?.value.trim();
+
+  if (!cliente) { showToast('Por favor escribe el nombre del paciente', 'error'); return false; }
+  if (!docCliente) { showToast('Por favor escribe el documento del paciente', 'error'); return false; }
+  if (!fecha) { showToast('Por favor selecciona una fecha', 'error'); return false; }
+
+  const tipoPago = document.querySelector('input[name="tipoPago"]:checked')?.value;
+  if (!tipoPago) { showToast('Selecciona el tipo de pago (Particular o Tarjeta de Salud)', 'error'); return false; }
+
   const items = document.querySelectorAll('#itemsTable tbody tr');
-  
-  if(!cliente) {
-    showToast('Por favor escribe el nombre del cliente', 'error');
-    return false;
-  }
-  
-  if(!docCliente) {
-    showToast('Por favor escribe el documento del cliente', 'error');
-    return false;
-  }
-  
-  if(!entidad) {
-    showToast('Por favor selecciona una entidad', 'error');
-    return false;
-  }
-  
-  if(entidad === 'Otra') {
-    const entidadOtra = $('entidadOtra').value.trim();
-    if(!entidadOtra) {
-      showToast('Por favor especifica la entidad personalizada', 'error');
-      return false;
-    }
-  }
-  
-  if(!fecha) {
-    showToast('Por favor selecciona una fecha', 'error');
-    return false;
-  }
-  
-  if(items.length === 0) {
-    showToast('Por favor agrega al menos un servicio', 'error');
-    return false;
-  }
-  
   let hayItemValido = false;
   items.forEach(r => {
-    // Si hay input personalizado, usar su valor; si no, usar el select
     const descEl = r.querySelector('.item-desc-custom') || r.querySelector('.item-desc');
-    const desc = descEl.value.trim();
-    const priceValue = r.querySelector('.item-price').value || '0';
+    const priceValue = r.querySelector('.item-price')?.value || '0';
     const price = Number(priceValue.replace(/,/g, ''));
-    if(desc && price > 0) {
-      hayItemValido = true;
-    }
+    if (descEl?.value.trim() && price > 0) hayItemValido = true;
   });
-  
-  if(!hayItemValido) {
-    showToast('Por favor completa descripción y precio de al menos un servicio', 'error');
-    return false;
-  }
-  
+  if (!hayItemValido) { showToast('Agrega al menos un concepto con descripción y valor', 'error'); return false; }
   return true;
 }
 
 async function saveToDatabase(){
-  if(!validarFormulario()) return;
-  
   const payload = collectFormData();
   try {
+    const body = {
+      numero: payload.numero,
+      cliente: payload.cliente,
+      fecha: payload.fecha,
+      total: payload.total,
+      data: payload,
+      tipo_pago: payload.tipoPago || null,
+      nombre_entidad: payload.nombreEntidad || null,
+      medico_id: payload.medicoId || null,
+      medico_nombre: payload.medicoNombre || null,
+      tipo_servicio: payload.tipoServicio || null,
+      turno_id: payload.turnoId ? parseInt(payload.turnoId, 10) : null,
+      cita_electro_id: payload.citaElectroId ? parseInt(payload.citaElectroId, 10) : null,
+      observaciones: payload.observ || null
+    };
     const res = await apiFetch('/api/recibos', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ numero: payload.numero, cliente: payload.cliente, fecha: payload.fecha, total: payload.total, data: payload })
+      body: JSON.stringify(body)
     });
     const json = await res.json();
-    if(json.ok){
+    if (json.ok) {
       showToast('✓ Recibo guardado', 'success');
-      resetFormulario();
-      cargarLista();
-      // Actualizar stats después de guardar
       updateSavedCount();
       nextNumber();
     } else {
       showToast('Error guardando: ' + (json.error || 'desconocido'), 'error');
     }
-  } catch(e){
+  } catch(e) {
     console.error(e);
+    showToast('Error de conexión al guardar recibo', 'error');
   }
 }
 
 function resetFormulario() {
-  // Limpiar campos del cliente
-  $('cliente').value = '';
-  $('docCliente').value = '';
-  $('entidad').value = '';
-  $('entidadOtra').value = '';
-  document.getElementById('entidadOtraContainer').style.display = 'none';
-  
-  // Limpiar observaciones
-  $('observ').value = '';
-  
+  if ($('cliente')) $('cliente').value = '';
+  if ($('docCliente')) $('docCliente').value = '';
+  if ($('observ')) $('observ').value = '';
+
+  // Limpiar tipo de pago
+  document.querySelectorAll('input[name="tipoPago"]').forEach(r => { r.checked = false; });
+  document.getElementById('radioPagoPCard')?.classList.remove('selected');
+  document.getElementById('radioPagoTCard')?.classList.remove('selected');
+  document.getElementById('reciboEntidadRow')?.classList.add('hidden');
+  if ($('reciboEntidad')) $('reciboEntidad').value = '';
+
+  // Limpiar médico y servicio
+  if ($('reciboMedico')) $('reciboMedico').value = '';
+  if ($('reciboTipoServicio')) $('reciboTipoServicio').value = '';
+
+  // Limpiar vinculación
+  if ($('reciboTurnoId')) $('reciboTurnoId').value = '';
+  if ($('reciboCitaElectroId')) $('reciboCitaElectroId').value = '';
+
   // Limpiar tabla de items
   const tbody = document.querySelector('#itemsTable tbody');
-  tbody.innerHTML = '';
-  addRow();
-  
-  // Generar nuevo número de recibo
+  if (tbody) { tbody.innerHTML = ''; addRow(); }
+
   nextNumber();
-  
-  // Establecer fecha actual
   setDefaultDate();
-  
-  // Limpiar preview
-  document.querySelector('#r_table tbody').innerHTML = '';
-  $('r_cliente').textContent = '';
-  $('r_doc').textContent = '';
-  $('r_observ').textContent = '';
-  $('r_subtotal').textContent = '0.00';
-  $('r_iva').textContent = '0.00';
-  $('r_total').textContent = '0.00';
+
+  // Ocultar preview
+  const preview = document.getElementById('receiptPreview');
+  if (preview) preview.style.display = 'none';
+
+  const rTbody = document.querySelector('#r_table tbody');
+  if (rTbody) rTbody.innerHTML = '';
+  if ($('r_cliente')) $('r_cliente').textContent = '';
+  if ($('r_doc')) $('r_doc').textContent = '';
+  if ($('r_observ')) $('r_observ').textContent = '';
+  if ($('r_subtotal')) $('r_subtotal').textContent = '0.00';
+  if ($('r_iva')) $('r_iva').textContent = '0.00';
+  if ($('r_total')) $('r_total').textContent = '0.00';
 }
 
 async function abrirPDF(){
@@ -5016,170 +5219,135 @@ async function abrirPDF(){
   }
 }
 
-async function descargarPDFAnterior(){
-  if(!lastReciboId) {
-    showToast('No hay PDF anterior', 'error');
-    return;
-  }
-  showLoader(true);
-  try {
-    const res = await apiFetch('/api/recibos');
-    const arr = await res.json();
-    if(!arr || arr.length < 2) {
-      showToast('No hay PDF anterior', 'error');
-      return;
-    }
-    // Encontrar el segundo más reciente
-    let sorted = arr.sort((a, b) => b.id - a.id);
-    const previousRecibo = sorted[1];
-    const pdfWindow = window.open(`/api/recibos/${previousRecibo.id}/pdf`, '_blank');
-    if (!pdfWindow) {
-      showToast('El navegador bloqueó la ventana emergente. Permite los popups para este sitio.', 'error');
-    }
-  } catch(e){
-    showToast('Error al descargar PDF anterior', 'error');
-  } finally {
-    showLoader(false);
-  }
+// descargarPDFAnterior removed — #downloadPDF button no longer exists in the new Recibos UI
+
+// ---- Filtros activos para exportación ----
+let _recibosLastParams = '';
+
+async function aplicarFiltrosRecibos() {
+  const desde = $('filtroFechaDesde')?.value || '';
+  const hasta = $('filtroFechaHasta')?.value || '';
+  const tipoPago = $('filtroTipoPago')?.value || '';
+  const medicoId = $('filtroMedico')?.value || '';
+  const genPor = $('filtroGeneradoPor')?.value || '';
+
+  const params = new URLSearchParams();
+  if (desde) params.set('fecha_desde', desde);
+  if (hasta) params.set('fecha_hasta', hasta);
+  if (tipoPago) params.set('tipo_pago', tipoPago);
+  if (medicoId) params.set('medico_id', medicoId);
+  if (genPor) params.set('generado_por_id', genPor);
+  _recibosLastParams = params.toString();
+
+  await cargarLista(_recibosLastParams);
 }
 
-async function cargarLista(){
+function limpiarFiltrosRecibos() {
+  if ($('filtroFechaDesde')) $('filtroFechaDesde').value = '';
+  if ($('filtroFechaHasta')) $('filtroFechaHasta').value = '';
+  if ($('filtroTipoPago')) $('filtroTipoPago').value = '';
+  if ($('filtroMedico')) $('filtroMedico').value = '';
+  if ($('filtroGeneradoPor')) $('filtroGeneradoPor').value = '';
+  _recibosLastParams = '';
+  const tbody = document.getElementById('savedItems');
+  if (tbody) tbody.innerHTML = '<tr><td colspan="10" style="padding:24px;text-align:center;color:#999">Aplica un filtro para ver los recibos</td></tr>';
+  document.getElementById('reciboResumenCard')?.classList.add('hidden');
+}
+
+function exportarReciboCSV() {
+  const url = '/api/recibos/export/csv' + (_recibosLastParams ? '?' + _recibosLastParams : '');
+  window.location.href = url;
+}
+
+function exportarReciboPDF() {
+  const url = '/api/recibos/export/pdf-reporte' + (_recibosLastParams ? '?' + _recibosLastParams : '');
+  window.open(url, '_blank');
+}
+
+async function cargarLista(queryString) {
   try {
-    const res = await apiFetch('/api/recibos');
+    const url = '/api/recibos' + (queryString ? '?' + queryString : '');
+    const res = await apiFetch(url);
     if (!res.ok) {
-      if (res.status === 401) {
-        showToast('Sesión expirada. Volviendo al inicio...', 'error');
-        setTimeout(() => { showView('view-login'); }, 1200);
-      } else {
-        showToast('Error al cargar recibos', 'error');
-      }
+      if (res.status === 401) { showToast('Sesión expirada', 'error'); setTimeout(() => showView('view-login'), 1200); }
+      else showToast('Error al cargar recibos', 'error');
       updateStats([]);
       return;
     }
     const recibos = await res.json();
-    const tbody = document.getElementById('savedItems');
     updateStats(Array.isArray(recibos) ? recibos : []);
-    
-    if(tbody){
-      tbody.innerHTML = '';
-      if(!recibos || !recibos.length) {
-        tbody.innerHTML = '<tr><td colspan="5" style="padding:12px;text-align:center;color:#999">No hay recibos guardados</td></tr>';
-      } else {
-        recibos.forEach((r, idx) => {
-          const tr = document.createElement('tr');
-          tr.style.borderBottom = '1px solid #e5e7eb';
-          if (idx % 2 === 0) {
-            tr.style.backgroundColor = '#f9fafb';
-          }
-          
-          // Formatear fecha a YYYY-MM-DD
-          let fechaFormato = r.fecha || '-';
-          if (r.fecha) {
-            if (typeof r.fecha === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(r.fecha)) {
-              fechaFormato = r.fecha;
-            } else {
-              const d = new Date(r.fecha);
-              if (!isNaN(d.getTime())) {
-                fechaFormato = d.toISOString().split('T')[0];
-              }
-            }
-          }
-          
-          const deleteBtn = canDeleteRecibos() 
-            ? `<button class="delete btn-danger btn-sm" data-id="${r.id}" style="margin-left:6px">✕ Eliminar</button>`
-            : '';
+    const tbody = document.getElementById('savedItems');
+    if (!tbody) return;
+    tbody.innerHTML = '';
 
-          // Extraer entidad del campo data JSON
-          let entidadMostrar = '-';
-          try {
-            if (r.data) {
-              const d = typeof r.data === 'string' ? JSON.parse(r.data) : r.data;
-              entidadMostrar = d.entidad || '-';
-            }
-          } catch(_) {}
+    const resumenCard = document.getElementById('reciboResumenCard');
 
-          // Total con separador de miles
-          const totalFormateado = Number(r.total || 0).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-          tr.innerHTML = `
-            <td style="padding:12px;border:1px solid #e5e7eb;color:#374151">${escapeHtml(r.numero || '-')}</td>
-            <td style="padding:12px;border:1px solid #e5e7eb;color:#374151">${escapeHtml(r.cliente || '-')}</td>
-            <td style="padding:12px;border:1px solid #e5e7eb;color:#374151">${escapeHtml(entidadMostrar)}</td>
-            <td style="padding:12px;border:1px solid #e5e7eb;color:#374151">${escapeHtml(fechaFormato)}</td>
-            <td style="padding:12px;border:1px solid #e5e7eb;color:#374151;text-align:right;font-weight:500">$ ${escapeHtml(totalFormateado)}</td>
-            <td style="padding:12px;border:1px solid #e5e7eb;text-align:center;white-space:nowrap">
-              <a href="/api/recibos/${r.id}/pdf" target="_blank" class="btn-success btn-sm" style="text-decoration:none">📄 PDF</a>
-              ${deleteBtn}
-            </td>
-          `;
-          tbody.appendChild(tr);
-        });
-        
-        // listeners delete (el servidor ya valida que sea admin)
-        tbody.querySelectorAll('.delete').forEach(b => b.addEventListener('click', async (e)=>{
-          if(!confirm('¿Eliminar este recibo? Esta acción no se puede deshacer.\nSolo los administradores pueden eliminar recibos.')) return;
-          const id = e.target.dataset.id;
-          try {
-            const res = await apiFetch(`/api/recibos/${id}`, { method: 'DELETE' });
-            const json = await res.json();
-            if(json.ok) {
-              showToast('Recibo eliminado', 'success');
-              cargarLista();
-            }
-          } catch(e) { 
-            console.error(e); 
-            showToast('Error eliminando recibo', 'error'); 
-          }
-        }));
-      }
+    if (!recibos || !recibos.length) {
+      tbody.innerHTML = '<tr><td colspan="10" style="padding:24px;text-align:center;color:#999">No hay recibos con los filtros aplicados</td></tr>';
+      if (resumenCard) resumenCard.classList.add('hidden');
+      return;
     }
-  } catch(e){
+
+    // Resumen
+    const totalMonto = recibos.reduce((s, r) => s + Number(r.total||0), 0);
+    if ($('resumenCantidad')) $('resumenCantidad').textContent = recibos.length;
+    if ($('resumenTotal')) $('resumenTotal').textContent = '$ ' + totalMonto.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    if (resumenCard) resumenCard.classList.remove('hidden');
+
+    recibos.forEach((r, idx) => {
+      const tr = document.createElement('tr');
+      if (idx % 2 === 0) tr.style.background = '#f9fafb';
+      const fecha = r.fecha ? String(r.fecha).slice(0,10) : '-';
+      const total = Number(r.total||0).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      const deleteBtn = canDeleteRecibos()
+        ? `<button class="delete btn-danger btn-sm" data-id="${r.id}">✕</button>` : '';
+      tr.innerHTML = `
+        <td style="padding:10px 12px">${escapeHtml(r.numero||'-')}</td>
+        <td style="padding:10px 12px">${escapeHtml(fecha)}</td>
+        <td style="padding:10px 12px">${escapeHtml(r.cliente||'-')}</td>
+        <td style="padding:10px 12px">
+          <span style="font-size:0.8rem;padding:2px 8px;border-radius:99px;${r.tipo_pago==='Particular'?'background:#fef9c3;color:#92400e':r.tipo_pago?'background:#dbeafe;color:#1e40af':'background:#f3f4f6;color:#6b7280'}">
+            ${escapeHtml(r.tipo_pago||'-')}
+          </span>
+        </td>
+        <td style="padding:10px 12px">${escapeHtml(r.nombre_entidad||'-')}</td>
+        <td style="padding:10px 12px">${escapeHtml(r.medico_nombre||'-')}</td>
+        <td style="padding:10px 12px">${escapeHtml(r.tipo_servicio||'-')}</td>
+        <td style="padding:10px 12px;text-align:right;font-weight:600;color:#2d4a47">$ ${escapeHtml(total)}</td>
+        <td style="padding:10px 12px">${escapeHtml(r.generado_por_nombre||'-')}</td>
+        <td style="padding:10px 12px;text-align:center;white-space:nowrap">
+          <a href="/api/recibos/${r.id}/pdf" target="_blank" class="btn-success btn-sm" style="text-decoration:none">PDF</a>
+          ${deleteBtn}
+        </td>`;
+      tbody.appendChild(tr);
+    });
+
+    tbody.querySelectorAll('.delete').forEach(b => b.addEventListener('click', async e => {
+      if (!confirm('¿Eliminar este recibo?')) return;
+      try {
+        const jr = await apiFetch(`/api/recibos/${e.target.dataset.id}`, { method: 'DELETE' }).then(r => r.json());
+        if (jr.ok) { showToast('Recibo eliminado', 'success'); cargarLista(_recibosLastParams); }
+      } catch (_) { showToast('Error eliminando recibo', 'error'); }
+    }));
+  } catch(e) {
     console.error(e);
     showToast('Error cargando lista', 'error');
   }
 }
 
-function updateSavedCount(n) {
-  // Siempre cargar desde el servidor
-  apiFetch('/api/recibos').then(r => {
-    if (!r.ok) return [];
-    return r.json();
-  }).then(arr=> {
-    updateStats(Array.isArray(arr) ? arr : []);
-  }).catch(() => {
-    updateStats([]);
-  });
+function updateSavedCount() {
+  const hoy = new Date().toISOString().slice(0,10);
+  apiFetch(`/api/recibos?fecha_desde=${hoy}&fecha_hasta=${hoy}`)
+    .then(r => r.ok ? r.json() : [])
+    .then(arr => updateStats(Array.isArray(arr) ? arr : []))
+    .catch(() => updateStats([]));
 }
 
 function updateStats(recibos) {
   if (!Array.isArray(recibos)) recibos = [];
-  
-  const hoy = new Date().toISOString().slice(0, 10);
-  
-  // Normalizar fechas a formato YYYY-MM-DD para comparación
-  const recibosHoy = recibos.filter(r => {
-    let fechaFormato = r.fecha;
-    
-    // Si es un string y ya está en YYYY-MM-DD, úsalo directamente
-    if (typeof fechaFormato === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(fechaFormato)) {
-      return fechaFormato === hoy;
-    }
-    
-    // Si no, intenta convertir
-    if (fechaFormato) {
-      const d = new Date(fechaFormato);
-      if (!isNaN(d.getTime())) {
-        return d.toISOString().split('T')[0] === hoy;
-      }
-    }
-    
-    return false;
-  });
-  
-  const totalHoy = recibosHoy.reduce((sum, r) => sum + (Number(r.total) || 0), 0);
-  
-  $('statsRecibosHoy').textContent = recibosHoy.length;
-  $('statsTotalHoy').textContent = '$ ' + totalHoy.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const totalHoy = recibos.reduce((sum, r) => sum + (Number(r.total)||0), 0);
+  if ($('statsRecibosHoy')) $('statsRecibosHoy').textContent = recibos.length;
+  if ($('statsTotalHoy')) $('statsTotalHoy').textContent = '$ ' + totalHoy.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 async function resetAllRecibos(){
@@ -5203,40 +5371,7 @@ async function resetAllRecibos(){
   }
 }
 
-function setDefaultReportDates(){
-  const hoy = new Date().toISOString().slice(0, 10);
-  const mesActual = hoy.slice(0, 7);
-  $('reportDiaFecha').value = hoy;
-  $('reportMesFecha').value = mesActual;
-}
-
-async function generarReporteDiario(){
-  const fecha = $('reportDiaFecha').value;
-  if(!fecha) {
-    showToast('Selecciona una fecha', 'error');
-    return;
-  }
-  try {
-    window.open(`/reportes/diario/vista?fecha=${encodeURIComponent(fecha)}`, '_blank');
-  } catch(e) {
-    showToast('Error generando reporte', 'error');
-    console.error(e);
-  }
-}
-
-async function generarReporteMensual(){
-  const mes = $('reportMesFecha').value;
-  if(!mes) {
-    showToast('Selecciona un mes', 'error');
-    return;
-  }
-  try {
-    window.open(`/reportes/mensual/vista?mes=${encodeURIComponent(mes)}`, '_blank');
-  } catch(e) {
-    showToast('Error generando reporte', 'error');
-    console.error(e);
-  }
-}
+// (setDefaultReportDates, generarReporteDiario, generarReporteMensual eliminados — reemplazados por filtros en Ver Recibos)
 
 // ============================================
 // GESTIONAR CUENTA
@@ -7394,66 +7529,7 @@ async function buscarEstudiosPorDocumento() {
   }
 }
 
-async function buscarRecibosPorDocumento() {
-  const termino = $('buscarReciboDocumento').value.trim().toLowerCase();
-  const resultado = $('resultadoBuscarRecibo');
-  
-  if (!termino) {
-    resultado.style.display = 'none';
-    return;
-  }
-  
-  resultado.innerHTML = '<div style="color:#6b7280">Buscando...</div>';
-  resultado.style.display = 'block';
-
-  try {
-    const res = await apiFetch('/api/recibos');
-    if (!res.ok) throw new Error('Error ' + res.status);
-    const recibos = await res.json();
-
-    const recibosEncontrados = recibos.filter(r => {
-      const cliente = (r.cliente || '').toLowerCase();
-      let doc = '';
-      try { doc = (JSON.parse(r.data)?.doc || '').toLowerCase(); } catch(_) {}
-      return cliente.includes(termino) || doc.includes(termino);
-    });
-    
-    if (recibosEncontrados.length === 0) {
-      resultado.innerHTML = `
-        <div style="color:#7f1d1d;font-weight:600">
-          ❌ No se encontraron recibos para "${escapeHtml(termino)}"
-        </div>
-      `;
-      resultado.style.display = 'block';
-      return;
-    }
-    
-    let html = `<div style="color:#2d4a47;font-weight:600;margin-bottom:12px">✓ Se encontraron ${recibosEncontrados.length} recibo(s):</div>`;
-    
-    recibosEncontrados.forEach(recibo => {
-      const fecha = recibo.fecha || 'Sin fecha';
-      const totalFormateado = Number(recibo.total || 0).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-      html += `
-        <div style="padding:8px;background:white;border-radius:4px;margin-bottom:4px;border-left:3px solid #059669">
-          <div style="color:#374151;font-size:0.95rem">
-            <strong>Recibo #${escapeHtml(recibo.numero || '-')}</strong> - ${escapeHtml(recibo.cliente || '-')}
-          </div>
-          <div style="color:#6b7280;font-size:0.85rem">
-            Fecha: ${escapeHtml(String(fecha))} | Total: $ ${escapeHtml(totalFormateado)}
-            &nbsp;<a href="/api/recibos/${recibo.id}/pdf" target="_blank" style="color:#059669;font-size:0.8rem">📄 PDF</a>
-          </div>
-        </div>
-      `;
-    });
-    
-    resultado.innerHTML = html;
-    resultado.style.display = 'block';
-  } catch (e) {
-    console.error('Error buscando recibos:', e);
-    resultado.innerHTML = '<div style="color:#dc2626">Error al buscar recibos</div>';
-    resultado.style.display = 'block';
-  }
-}
+// buscarRecibosPorDocumento removed — replaced by buscarCitaParaRecibo in new Recibos UI
 
 // Event listeners para buscadores
 $('btnBuscarCitaDocumento')?.addEventListener('click', buscarCitasPorDocumento);
@@ -7501,14 +7577,7 @@ document.addEventListener('click', (e) => {
   if (m && e.target === m) { m.classList.add('hidden'); m.style.display = 'none'; }
 });
 
-$('btnBuscarReciboDocumento')?.addEventListener('click', buscarRecibosPorDocumento);
-$('buscarReciboDocumento')?.addEventListener('keypress', (e) => {
-  if (e.key === 'Enter') buscarRecibosPorDocumento();
-});
-$('btnLimpiarReciboDocumento')?.addEventListener('click', () => {
-  $('buscarReciboDocumento').value = '';
-  $('resultadoBuscarRecibo').style.display = 'none';
-});
+// Old recibo document search listeners removed — those IDs no longer exist in the new HTML
 
 // ============================================================
 // PACIENTES EN ESPERA — ELECTRODIAGNÓSTICO
