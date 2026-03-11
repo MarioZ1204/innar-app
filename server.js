@@ -2004,11 +2004,14 @@ app.get('/api/equipos-electro', async (req, res) => {
     
     const equiposEnUsoIds = equiposEnUso.map(e => e.equipo_id);
     
-    // Agregar flag "en_uso" a cada equipo
-    const equiposConEstado = equipos.map(e => ({
-      ...e,
-      en_uso: equiposEnUsoIds.includes(e.id)
-    }));
+    // Agregar flag "en_uso" a cada equipo y deduplicar por id (por si hay filas repetidas en DB)
+    const vistosIds = new Set();
+    const equiposConEstado = equipos
+      .filter(e => { if (vistosIds.has(e.id)) return false; vistosIds.add(e.id); return true; })
+      .map(e => ({
+        ...e,
+        en_uso: equiposEnUsoIds.map(String).includes(String(e.id))
+      }));
     
     res.json(equiposConEstado);
   } catch (e) {
