@@ -5208,6 +5208,18 @@ function validarFormulario(){
   const tipoPago = document.querySelector('input[name="tipoPago"]:checked')?.value;
   if (!tipoPago) { showToast('Selecciona la forma de pago (Efectivo o Transferencia)', 'error'); return false; }
 
+  const entidadVal = $('reciboEntidad')?.value;
+  if (!entidadVal) { showToast('Selecciona la entidad de pago', 'error'); return false; }
+
+  const reciboTipoVal = document.querySelector('input[name="reciboTipo"]:checked')?.value;
+  if (!reciboTipoVal) { showToast('Selecciona el tipo de recibo (Doctor o Estudio)', 'error'); return false; }
+  if (reciboTipoVal === 'doctor' && !$('reciboMedico')?.value) {
+    showToast('Selecciona el médico que realizó la consulta', 'error'); return false;
+  }
+  if (reciboTipoVal === 'estudio' && !$('reciboTipoServicio')?.value) {
+    showToast('Selecciona el estudio / servicio', 'error'); return false;
+  }
+
   const items = document.querySelectorAll('#itemsTable tbody tr');
   let hayItemValido = false;
   items.forEach(r => {

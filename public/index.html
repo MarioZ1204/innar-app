@@ -264,10 +264,10 @@
                 <!-- Datos del paciente -->
                 <div class="recibo-form-group">
                   <h4 class="recibo-form-section-title">Paciente</h4>
-                  <label>Nombre completo</label>
-                  <input id="cliente" placeholder="Nombre del paciente" />
-                  <label style="margin-top:10px">Documento</label>
-                  <input id="docCliente" type="text" inputmode="numeric" placeholder="Número de documento" />
+                  <label>Nombre completo <span style="color:#dc2626">*</span></label>
+                  <input id="cliente" placeholder="Nombre del paciente" required />
+                  <label style="margin-top:10px">Documento <span style="color:#dc2626">*</span></label>
+                  <input id="docCliente" type="text" inputmode="numeric" placeholder="Número de documento" required />
                 </div>
 
                 <!-- Tipo de pago -->
@@ -275,7 +275,7 @@
                   <h4 class="recibo-form-section-title">Tipo de Pago</h4>
                   <div class="recibo-tipo-pago-group">
                     <label class="recibo-radio-card" id="radioPagoPCard">
-                      <input type="radio" name="tipoPago" value="Efectivo" id="radioPagoParticular" />
+                      <input type="radio" name="tipoPago" value="Efectivo" id="radioPagoParticular" required />
                       <span class="recibo-radio-icon">
                         <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="6" width="22" height="13" rx="2"/><circle cx="12" cy="12" r="3"/><path d="M5 12h.01M19 12h.01"/></svg>
                       </span>
@@ -290,8 +290,8 @@
                     </label>
                   </div>
                   <div id="reciboEntidadRow" style="margin-top:10px">
-                    <label>Entidad</label>
-                    <select id="reciboEntidad">
+                    <label>Entidad <span style="color:#dc2626">*</span></label>
+                    <select id="reciboEntidad" required>
                       <option value="">Seleccionar entidad</option>
                       <option value="Particular">Particular</option>
                       <option value="Protegemos">Protegemos</option>
@@ -315,7 +315,7 @@
                 <h4 class="recibo-form-section-title">Tipo de recibo</h4>
                 <div class="recibo-tipo-pago-group">
                   <label class="recibo-radio-card" id="reciboTipoDocCard">
-                    <input type="radio" name="reciboTipo" value="doctor" id="reciboTipoDoc" />
+                    <input type="radio" name="reciboTipo" value="doctor" id="reciboTipoDoc" required />
                     <span class="recibo-radio-icon">
                       <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                     </span>
@@ -332,26 +332,17 @@
 
                 <!-- Panel Doctor -->
                 <div id="reciboTipoDocPanel" class="hidden" style="margin-top:12px">
-                  <div class="recibo-form-grid-2">
-                    <div>
-                      <label>Médico que realizó la consulta</label>
-                      <select id="reciboMedico">
-                        <option value="">Seleccionar médico</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label>Tipo de consulta</label>
-                      <select id="reciboTipoConsulta">
-                        <option value="">Seleccionar tipo</option>
-                      </select>
-                    </div>
-                  </div>
+                  <label>Médico que realizó la consulta <span style="color:#dc2626">*</span></label>
+                  <select id="reciboMedico" required>
+                    <option value="">Seleccionar médico</option>
+                  </select>
+                  <select id="reciboTipoConsulta" style="display:none"></select>
                 </div>
 
                 <!-- Panel Estudio -->
                 <div id="reciboTipoEstPanel" class="hidden" style="margin-top:12px">
-                  <label>Estudio / Servicio</label>
-                  <select id="reciboTipoServicio">
+                  <label>Estudio / Servicio <span style="color:#dc2626">*</span></label>
+                  <select id="reciboTipoServicio" required>
                     <option value="">Seleccionar estudio</option>
                   </select>
                 </div>
@@ -369,20 +360,23 @@
                 <button id="addItem" class="btn-secondary btn-sm" style="margin-top:8px">+ Agregar ítem manual</button>
               </div>
 
-              <!-- Obs + fecha + número -->
+              <!-- Fecha + Nº -->
               <div class="recibo-form-grid-2" style="margin-top:18px">
                 <div>
-                  <label>Observaciones</label>
-                  <textarea id="observ" rows="3" placeholder="Anotaciones opcionales..."></textarea>
+                  <label>Fecha <span style="color:#dc2626">*</span></label>
+                  <input id="fecha" type="date" required />
                 </div>
                 <div>
                   <label>Nº de Recibo</label>
                   <input id="numero" readonly style="background:#f3f4f6;font-weight:bold" />
-                  <label style="margin-top:10px">Fecha</label>
-                  <input id="fecha" type="date" />
-                  <div style="margin-top:10px;font-size:0.85rem;color:#6b7280">
-                    Generado por: <strong id="reciboGeneradoPorDisplay">—</strong>
-                  </div>
+                </div>
+              </div>
+              <!-- Observaciones -->
+              <div style="margin-top:14px">
+                <label>Observaciones</label>
+                <textarea id="observ" rows="3" placeholder="Anotaciones opcionales..."></textarea>
+                <div style="margin-top:8px;font-size:0.85rem;color:#6b7280">
+                  Generado por: <strong id="reciboGeneradoPorDisplay">—</strong>
                 </div>
               </div>
 
