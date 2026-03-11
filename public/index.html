@@ -310,19 +310,49 @@
                 </div>
               </div>
 
-              <div class="recibo-form-grid-2" style="margin-top:16px">
-                <!-- Médico -->
-                <div>
-                  <label>Médico que realizó la consulta</label>
-                  <select id="reciboMedico">
-                    <option value="">Sin médico / No aplica</option>
-                  </select>
+              <!-- Tipo de recibo: Doctor / Estudio -->
+              <div style="margin-top:16px">
+                <h4 class="recibo-form-section-title">Tipo de recibo</h4>
+                <div class="recibo-tipo-pago-group">
+                  <label class="recibo-radio-card" id="reciboTipoDocCard">
+                    <input type="radio" name="reciboTipo" value="doctor" id="reciboTipoDoc" />
+                    <span class="recibo-radio-icon">
+                      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                    </span>
+                    <span class="recibo-radio-label">Doctor</span>
+                  </label>
+                  <label class="recibo-radio-card" id="reciboTipoEstCard">
+                    <input type="radio" name="reciboTipo" value="estudio" id="reciboTipoEst" />
+                    <span class="recibo-radio-icon">
+                      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                    </span>
+                    <span class="recibo-radio-label">Estudio</span>
+                  </label>
                 </div>
-                <!-- Tipo de servicio -->
-                <div>
-                  <label>Tipo de servicio / Estudio</label>
+
+                <!-- Panel Doctor -->
+                <div id="reciboTipoDocPanel" class="hidden" style="margin-top:12px">
+                  <div class="recibo-form-grid-2">
+                    <div>
+                      <label>Médico que realizó la consulta</label>
+                      <select id="reciboMedico">
+                        <option value="">Seleccionar médico</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label>Tipo de consulta</label>
+                      <select id="reciboTipoConsulta">
+                        <option value="">Seleccionar tipo</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Panel Estudio -->
+                <div id="reciboTipoEstPanel" class="hidden" style="margin-top:12px">
+                  <label>Estudio / Servicio</label>
                   <select id="reciboTipoServicio">
-                    <option value="">Sin servicio / No aplica</option>
+                    <option value="">Seleccionar estudio</option>
                   </select>
                 </div>
               </div>

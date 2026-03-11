@@ -1192,7 +1192,7 @@ function initRecibos() {
 
   // Cargar médicos en el select
   cargarMedicosEnRecibo();
-  // Cargar servicios en el select de tipo servicio
+  // Cargar servicios en el select de tipo estudio
   cargarServiciosEnRecibo();
   // Mostrar usuario actual como "generado por"
   const gpEl = $('reciboGeneradoPorDisplay');
@@ -1210,6 +1210,35 @@ function initRecibos() {
       if (tCard) tCard.classList.toggle('selected', this.value === 'Transferencia');
     });
   });
+
+  // Radios tipo de recibo: Doctor / Estudio
+  document.querySelectorAll('input[name="reciboTipo"]').forEach(radio => {
+    radio.addEventListener('change', function() {
+      const docCard  = document.getElementById('reciboTipoDocCard');
+      const estCard  = document.getElementById('reciboTipoEstCard');
+      const docPanel = document.getElementById('reciboTipoDocPanel');
+      const estPanel = document.getElementById('reciboTipoEstPanel');
+      if (docCard) docCard.classList.toggle('selected', this.value === 'doctor');
+      if (estCard) estCard.classList.toggle('selected', this.value === 'estudio');
+      if (docPanel) docPanel.classList.toggle('hidden', this.value !== 'doctor');
+      if (estPanel) estPanel.classList.toggle('hidden', this.value !== 'estudio');
+      // Al cambiar a doctor, limpiar estudio y viceversa
+      if (this.value === 'doctor') {
+        if ($('reciboTipoServicio')) $('reciboTipoServicio').value = '';
+      } else {
+        if ($('reciboMedico')) $('reciboMedico').value = '';
+        if ($('reciboTipoConsulta')) $('reciboTipoConsulta').innerHTML = '<option value="">Seleccionar tipo</option>';
+      }
+    });
+  });
+
+  // Al cambiar médico en el formulario de recibo, cargar tipos de consulta
+  const reciboMedicoSel = $('reciboMedico');
+  if (reciboMedicoSel) {
+    reciboMedicoSel.addEventListener('change', async function() {
+      await cargarTiposConsultaEnRecibo(this.value);
+    });
+  }
 
   // Buscar cita del día
   const btnBuscar = $('btnReciboBuscar');
@@ -1277,17 +1306,50 @@ async function cargarMedicosEnRecibo() {
   if (!sel) return;
   try {
     const medicos = await apiFetch('/api/medicos').then(r => r.json()).catch(() => []);
-    [sel, filtro].forEach(el => {
-      if (!el) return;
-      const first = el.querySelector('option');
-      el.innerHTML = '';
-      if (first) el.appendChild(first.cloneNode(true));
+    // guardar lista para lookup de especialidad
+    window._reciboMedicos = medicos;
+    const first = sel.querySelector('option');
+    sel.innerHTML = '';
+    if (first) sel.appendChild(first.cloneNode(true));
+    medicos.forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m.id;
+      opt.textContent = m.nombre || m.usuario;
+      sel.appendChild(opt);
+    });
+    if (filtro) {
+      filtro.innerHTML = '<option value="">Todos los médicos</option>';
       medicos.forEach(m => {
         const opt = document.createElement('option');
         opt.value = m.id;
         opt.textContent = m.nombre || m.usuario;
-        el.appendChild(opt);
+        filtro.appendChild(opt);
       });
+    }
+  } catch (_) {}
+}
+
+// ---- Cargar tipos de consulta según el médico seleccionado (formulario recibo) ----
+async function cargarTiposConsultaEnRecibo(medicoId) {
+  const sel = $('reciboTipoConsulta');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">Seleccionar tipo</option>';
+  if (!medicoId) return;
+  try {
+    const medicos = window._reciboMedicos || [];
+    const medico = medicos.find(m => String(m.id) === String(medicoId));
+    const especialidad = medico?.especialidad || '';
+    if (!especialidad) return;
+    const res = await apiFetch(`/api/tipos-consulta?especialidad_nombre=${encodeURIComponent(especialidad)}`);
+    let tipos = await res.json().catch(() => []);
+    if (!Array.isArray(tipos) || tipos.length === 0) {
+      tipos = (ESPECIALIDAD_TIPOS_CONSULTA[especialidad] || []).map(n => ({ nombre: n }));
+    }
+    tipos.forEach(t => {
+      const opt = document.createElement('option');
+      opt.value = t.nombre;
+      opt.textContent = t.nombre;
+      sel.appendChild(opt);
     });
   } catch (_) {}
 }
@@ -1298,9 +1360,7 @@ async function cargarServiciosEnRecibo() {
   if (!sel) return;
   try {
     const servicios = await getServicios();
-    const firstOpt = sel.querySelector('option');
-    sel.innerHTML = '';
-    if (firstOpt) sel.appendChild(firstOpt.cloneNode(true));
+    sel.innerHTML = '<option value="">Seleccionar estudio</option>';
     servicios.forEach(s => {
       const opt = document.createElement('option');
       opt.value = s.nombre;
@@ -1391,7 +1451,7 @@ async function buscarCitaParaRecibo() {
 }
 
 // ---- Pre-llenar formulario desde una cita seleccionada ----
-function preLlenarReciboDesdeCita(cita) {
+async function preLlenarReciboDesdeCita(cita) {
   if ($('cliente')) $('cliente').value = cita.paciente_nombre || '';
   if ($('docCliente')) $('docCliente').value = cita.paciente_documento || '';
 
@@ -1400,14 +1460,21 @@ function preLlenarReciboDesdeCita(cita) {
     $('reciboEntidad').value = cita.entidad; // intentará coincidir con la opción
   }
 
-  // Médico
-  if (cita.medico_id && $('reciboMedico')) {
-    $('reciboMedico').value = String(cita.medico_id);
-  }
-
-  // Tipo de servicio
-  if (cita.tipo_consulta && $('reciboTipoServicio')) {
-    $('reciboTipoServicio').value = cita.tipo_consulta;
+  // Tipo de recibo: si hay médico -> seleccionar 'doctor', si hay tipo de estudio -> 'estudio'
+  if (cita.medico_id) {
+    const docRadio = document.querySelector('input[name="reciboTipo"][value="doctor"]');
+    if (docRadio) { docRadio.checked = true; docRadio.dispatchEvent(new Event('change')); }
+    if ($('reciboMedico')) {
+      $('reciboMedico').value = String(cita.medico_id);
+      await cargarTiposConsultaEnRecibo(cita.medico_id);
+    }
+    if (cita.tipo_consulta && $('reciboTipoConsulta')) {
+      $('reciboTipoConsulta').value = cita.tipo_consulta;
+    }
+  } else if (cita.tipo_consulta) {
+    const estRadio = document.querySelector('input[name="reciboTipo"][value="estudio"]');
+    if (estRadio) { estRadio.checked = true; estRadio.dispatchEvent(new Event('change')); }
+    if ($('reciboTipoServicio')) $('reciboTipoServicio').value = cita.tipo_consulta;
   }
 
   // Turno / cita vinculada
@@ -5028,12 +5095,21 @@ function collectFormData(){
   const reciboEntidadEl = $('reciboEntidad');
   const nombreEntidad   = reciboEntidadEl ? (reciboEntidadEl.value || null) : null;
 
+  const reciboTipoRadio = document.querySelector('input[name="reciboTipo"]:checked');
+  const reciboTipo = reciboTipoRadio ? reciboTipoRadio.value : null; // 'doctor' | 'estudio'
+
   const medicoSel = $('reciboMedico');
-  const medicoId  = medicoSel && medicoSel.value ? parseInt(medicoSel.value, 10) : null;
-  const medicoNombre = medicoSel && medicoSel.value ? (medicoSel.options[medicoSel.selectedIndex]?.text || null) : null;
+  const medicoId  = (reciboTipo === 'doctor' && medicoSel && medicoSel.value) ? parseInt(medicoSel.value, 10) : null;
+  const medicoNombre = (reciboTipo === 'doctor' && medicoSel && medicoSel.value) ? (medicoSel.options[medicoSel.selectedIndex]?.text || null) : null;
+
+  const consultaSel = $('reciboTipoConsulta');
+  const tipoConsulta = (reciboTipo === 'doctor' && consultaSel && consultaSel.value) ? consultaSel.value : null;
 
   const servSel = $('reciboTipoServicio');
-  const tipoServicio = servSel && servSel.value ? servSel.value : null;
+  const tipoEstudio = (reciboTipo === 'estudio' && servSel && servSel.value) ? servSel.value : null;
+
+  // tipoServicio unificado para guardar en BD
+  const tipoServicio = tipoConsulta || tipoEstudio;
 
   return {
     numero: $('numero').value,
@@ -5157,8 +5233,14 @@ function resetFormulario() {
   document.getElementById('radioPagoTCard')?.classList.remove('selected');
   if ($('reciboEntidad')) $('reciboEntidad').value = '';
 
-  // Limpiar médico y servicio
+  // Limpiar médico, tipo de consulta y estudio
+  document.querySelectorAll('input[name="reciboTipo"]').forEach(r => { r.checked = false; });
+  document.getElementById('reciboTipoDocCard')?.classList.remove('selected');
+  document.getElementById('reciboTipoEstCard')?.classList.remove('selected');
+  document.getElementById('reciboTipoDocPanel')?.classList.add('hidden');
+  document.getElementById('reciboTipoEstPanel')?.classList.add('hidden');
   if ($('reciboMedico')) $('reciboMedico').value = '';
+  if ($('reciboTipoConsulta')) $('reciboTipoConsulta').innerHTML = '<option value="">Seleccionar tipo</option>';
   if ($('reciboTipoServicio')) $('reciboTipoServicio').value = '';
 
   // Limpiar vinculación
