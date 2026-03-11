@@ -246,7 +246,22 @@ const migrations = [
   {
     name: 'equipos_electro_unique_nombre',
     description: 'Agregar restricci\u00f3n UNIQUE en equipos_electro.nombre para evitar duplicados',
-    sql: `ALTER TABLE equipos_electro ADD UNIQUE KEY uk_equipos_nombre (nombre)`  }
+    sql: `ALTER TABLE equipos_electro ADD UNIQUE KEY uk_equipos_nombre (nombre)`  },
+  {
+    name: 'recibos_esquema_contable',
+    description: 'Ampliar tabla recibos con campos contables: medico, tipo_pago, entidad, tipo_servicio, generado_por, turno_id, cita_electro_id, observaciones',
+    sql: `ALTER TABLE recibos
+      ADD COLUMN IF NOT EXISTS medico_id INT NULL,
+      ADD COLUMN IF NOT EXISTS medico_nombre VARCHAR(200) NULL,
+      ADD COLUMN IF NOT EXISTS tipo_pago VARCHAR(50) NULL,
+      ADD COLUMN IF NOT EXISTS nombre_entidad VARCHAR(200) NULL,
+      ADD COLUMN IF NOT EXISTS tipo_servicio VARCHAR(200) NULL,
+      ADD COLUMN IF NOT EXISTS generado_por_id INT NULL,
+      ADD COLUMN IF NOT EXISTS generado_por_nombre VARCHAR(200) NULL,
+      ADD COLUMN IF NOT EXISTS turno_id INT NULL,
+      ADD COLUMN IF NOT EXISTS cita_electro_id INT NULL,
+      ADD COLUMN IF NOT EXISTS observaciones TEXT NULL`
+  }
 ];
 
 /**
