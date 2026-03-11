@@ -6456,32 +6456,11 @@ function abrirModalDetallesCita(cita) {
   // Rellenar selector de equipo
   $('modalEquipo').value = cita.equipo_id || '';
   
-  // Rellenar selector de estado
+  // Actualizar selector de estado oculto
   $('modalEstado').value = cita.estado || 'Programado';
   
-  // Bloquear selector de estado si está "En Sala" o "En Estudio"
-  const selectEstado = $('modalEstado');
-  if (cita.estado === 'En Sala' || cita.estado === 'En Estudio') {
-    selectEstado.disabled = true;
-    selectEstado.style.opacity = '0.5';
-    selectEstado.style.cursor = 'not-allowed';
-  } else {
-    selectEstado.disabled = false;
-    selectEstado.style.opacity = '1';
-    selectEstado.style.cursor = 'pointer';
-  }
-  
-  // Bloquear selector de equipo si está "En Estudio" para evitar cambios durante el estudio
-  const selectEquipo = $('modalEquipo');
-  if (cita.estado === 'En Estudio') {
-    selectEquipo.disabled = true;
-    selectEquipo.style.opacity = '0.5';
-    selectEquipo.style.cursor = 'not-allowed';
-  } else {
-    selectEquipo.disabled = false;
-    selectEquipo.style.opacity = '1';
-    selectEquipo.style.cursor = 'pointer';
-  }
+  // Renderizar flujo contextual de estado
+  renderFlujoEstado(cita);
   
   // Mostrar botón de eliminar solo para admin
   const btnEliminar = $('btnEliminarCita');
@@ -6603,6 +6582,115 @@ function abrirModalDetallesCita(cita) {
   
   // Mostrar modal
   $('modalDetallesCitaElectro').classList.remove('hidden');
+}
+
+// ===== FLUJO CONTEXTUAL DE ESTADO =====
+function renderFlujoEstado(cita) {
+  const estado = cita.estado || 'Programado';
+  const flujoEl = document.getElementById('modalFlujoEstudio');
+  const accionesEl = document.getElementById('modalAccionesEstudio');
+  const equipoSelect = $('modalEquipo');
+  const btnGuardar = $('btnGuardarCambios');
+
+  // Ocultar botones Iniciar/Finalizar del bloque separado (se muestran dentro del flujo)
+  if (accionesEl) accionesEl.style.display = 'none';
+
+  // Control de equipo: bloqueado si En Estudio
+  const equipoBloqueado = estado === 'En Estudio' || estado === 'Completado';
+  if (equipoSelect) {
+    equipoSelect.disabled = equipoBloqueado;
+    equipoSelect.style.opacity = equipoBloqueado ? '0.5' : '1';
+    equipoSelect.style.cursor = equipoBloqueado ? 'not-allowed' : 'pointer';
+  }
+
+  if (!flujoEl) return;
+
+  const svgCheck = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>`;
+  const svgPlay  = `<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
+  const svgStop  = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>`;
+
+  if (estado === 'Programado') {
+    // Equipo bloqueado hasta que llegue el paciente
+    if (equipoSelect) { equipoSelect.disabled = true; equipoSelect.style.opacity = '0.45'; equipoSelect.style.cursor = 'not-allowed'; }
+    flujoEl.innerHTML = `
+      <div class="flujo-estado-panel">
+        <div class="flujo-estado-label">Acci\u00f3n</div>
+        <button class="flujo-btn-primary llegada" id="flujo-btn-llego">
+          ${svgCheck} Paciente lleg\u00f3 &rarr; En Sala
+        </button>
+        <div class="flujo-btn-secondary-row">
+          <button class="flujo-btn-sm no-asistio" id="flujo-btn-noasistio">No asisti\u00f3</button>
+          <button class="flujo-btn-sm cancelar" id="flujo-btn-cancelar">Cancelar cita</button>
+        </div>
+      </div>`;
+    document.getElementById('flujo-btn-llego').onclick    = () => cambiarEstadoCita('En Sala');
+    document.getElementById('flujo-btn-noasistio').onclick = () => cambiarEstadoCita('No Asisti\u00f3');
+    document.getElementById('flujo-btn-cancelar').onclick  = () => cambiarEstadoCita('Cancelado');
+
+  } else if (estado === 'En Sala') {
+    // Equipo habilitado
+    if (equipoSelect) { equipoSelect.disabled = false; equipoSelect.style.opacity = '1'; equipoSelect.style.cursor = 'pointer'; }
+    flujoEl.innerHTML = `
+      <div class="flujo-estado-panel">
+        <div class="flujo-estado-label">Acci\u00f3n</div>
+        <button class="flujo-btn-primary" id="flujo-btn-iniciar" style="background:linear-gradient(135deg,#f97316,#ea580c);color:white;">
+          ${svgPlay} Iniciar Estudio
+        </button>
+        <div class="flujo-btn-secondary-row">
+          <button class="flujo-btn-sm no-asistio" id="flujo-btn-noasistio2">No asisti\u00f3</button>
+          <button class="flujo-btn-sm cancelar" id="flujo-btn-cancelar2">Cancelar cita</button>
+        </div>
+      </div>`;
+    document.getElementById('flujo-btn-iniciar').onclick    = () => iniciarEstudioModal();
+    document.getElementById('flujo-btn-noasistio2').onclick  = () => cambiarEstadoCita('No Asisti\u00f3');
+    document.getElementById('flujo-btn-cancelar2').onclick   = () => cambiarEstadoCita('Cancelado');
+
+  } else if (estado === 'En Estudio') {
+    flujoEl.innerHTML = `
+      <div class="flujo-estado-panel">
+        <div class="flujo-estado-label">Acci\u00f3n</div>
+        <button class="flujo-btn-primary" id="flujo-btn-finalizar" style="background:linear-gradient(135deg,#22c55e,#16a34a);color:white;">
+          ${svgStop} Finalizar Estudio
+        </button>
+      </div>`;
+    document.getElementById('flujo-btn-finalizar').onclick = () => finalizarEstudioModal();
+
+  } else {
+    // Completado / Cancelado / No Asist\u00f3 / Reprogramado / Adelantado
+    flujoEl.innerHTML = `<div class="flujo-estado-readonly">Sin acciones disponibles para este estado.</div>`;
+  }
+
+  // Guardar: solo util para cambio de equipo; ocultarlo si estado final
+  const estadosFinales = ['Completado','Cancelado','No Asisti\u00f3','Reprogramado','Adelantado'];
+  if (btnGuardar) btnGuardar.style.display = estadosFinales.includes(estado) ? 'none' : '';
+}
+
+async function cambiarEstadoCita(nuevoEstado) {
+  if (!citaElectroSeleccionada) return;
+  try {
+    const res = await apiFetch(`/api/citas-electro/${citaElectroSeleccionada.id}/estado`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ estado: nuevoEstado })
+    });
+    const data = await res.json();
+    if (data && data.ok) {
+      citaElectroSeleccionada.estado = nuevoEstado;
+      $('modalEstado').value = nuevoEstado;
+      const $badgeEl = document.getElementById('modalEstadoHeaderBadge');
+      if ($badgeEl) $badgeEl.innerHTML = estadoBadge(nuevoEstado);
+      renderFlujoEstado(citaElectroSeleccionada);
+      showToast(`Estado: ${nuevoEstado}`, 'success');
+      if (window.socket && window.socket.connected) {
+        window.socket.emit('electro:cambios-guardados', { id: citaElectroSeleccionada.id, cambios: { estado: nuevoEstado } });
+      }
+      cargarCitasElectro();
+    } else {
+      showToast(data?.error || 'Error actualizando estado', 'error');
+    }
+  } catch (e) {
+    showToast('Error actualizando estado', 'error');
+  }
 }
 
 function cerrarModalDetallesCita() {
