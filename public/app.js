@@ -395,7 +395,7 @@ function setupMenuHandlers() {
       document.querySelectorAll('#view-recibos .page').forEach(p => p.classList.remove('active'));
       const pg = document.getElementById(`page-${page}`);
       if (pg) pg.classList.add('active');
-      if (page === 'recibos') { cargarLista(); if ($('resetAll')) $('resetAll').style.display = canDeleteRecibos() ? 'inline-block' : 'none'; }
+      if (page === 'recibos') { cargarLista(); cargarFiltrosUsuarios(); if ($('resetAll')) $('resetAll').style.display = canDeleteRecibos() ? 'inline-block' : 'none'; }
       if (page === 'servicios') renderServiciosList();
     });
   });
@@ -5136,6 +5136,7 @@ async function saveToDatabase(){
       showToast('✓ Recibo guardado', 'success');
       updateSavedCount();
       nextNumber();
+      cargarFiltrosUsuarios();
     } else {
       showToast('Error guardando: ' + (json.error || 'desconocido'), 'error');
     }
