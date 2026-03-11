@@ -70,6 +70,17 @@ Bienvenido. Acá está todo lo que necesitás saber.
 
 ---
 
+## 🖥️ Instalación desde cero (Windows Server)
+
+→ **[INSTALACION-WINDOWS-SERVER.md](./INSTALACION-WINDOWS-SERVER.md)** (10 minutos) - **EMPEZÁ AQUÍ SI ES NUEVA INSTALACIÓN**
+- Requisitos previos (Node.js, MySQL)
+- Configurar `.env`
+- Crear base de datos y ejecutar migraciones
+- Iniciar el servidor
+- Ejecutar como servicio de Windows (NSSM)
+
+---
+
 ## 🚀 Si recién empezás
 
 → **[INICIO.md](./INICIO.md)** (5 minutos)
