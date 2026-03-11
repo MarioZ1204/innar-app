@@ -1999,7 +1999,7 @@ app.get('/api/equipos-electro', async (req, res) => {
     
     // Obtener equipos que están actualmente "En Estudio"
     const equiposEnUso = await db.query(`
-      SELECT DISTINCT equipo_id FROM citas_electro WHERE estado = 'En Estudio' AND equipo_id IS NOT NULL
+      SELECT DISTINCT equipo_id FROM citas_electro WHERE estado = 'En Estudio' AND equipo_id IS NOT NULL AND deleted_at IS NULL
     `);
     
     const equiposEnUsoIds = equiposEnUso.map(e => e.equipo_id);

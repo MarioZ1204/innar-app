@@ -861,6 +861,11 @@
             </div>
             <div id="resultadoBuscarEstudio" style="margin-top:16px;display:none;padding:12px;background:white;border-radius:6px;border-left:3px solid #8AA6A1"></div>
           </section>
+
+          <!-- Panel disponibilidad de cupos -->
+          <div id="equiposDisponibilidadAlerta" class="cupos-panel">              
+            <div id="equiposDisponibilidadContenido"></div>
+          </div>
           
           <!-- Nueva Cita -->
           <section class="card no-print" id="electroNuevaCitaSection">
@@ -892,10 +897,7 @@
               <div class="col"><label>Hora <span style="color:#dc2626">*</span></label><select id="electroHora"></select></div>
               <div class="col"><label>Número de Documento <span style="color:#dc2626">*</span></label><input id="electroDocumento" type="text" placeholder="Documento (buscar paciente)" /></div>
             </div>
-            <!-- Avisos de Disponibilidad de Equipos -->
-            <div id="equiposDisponibilidadAlerta" class="cupos-panel">              
-              <div id="equiposDisponibilidadContenido"></div>
-            </div>
+            <!-- Avisos de Disponibilidad de Equipos (movido arriba) -->
             <div class="row" style="margin-top:12px">
               <div class="col"><label>Nombre del Paciente <span style="color:#dc2626">*</span></label><input id="electroPacienteNombre" type="text" placeholder="Nombre completo del paciente" /></div>
               <div class="col"><label>Número de Teléfono <span style="color:#dc2626">*</span></label><input id="electroTelefono" type="tel" placeholder="Ej: 3001234567" /></div>
@@ -1362,7 +1364,7 @@
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
           <div>
             <label style="display:block;font-size:0.85rem;color:#6b7280;font-weight:600;margin-bottom:8px">Hora Inicio</label>
-            <input id="horaEstudioInicio" type="time" readonly style="width:100%;padding:12px;border:2px solid #d1d5db;border-radius:8px;font-size:1.1rem;text-align:center;background:#f9fafb;color:#374151;box-sizing:border-box">
+            <input id="horaEstudioInicio" type="time" style="width:100%;padding:12px;border:2px solid #d1d5db;border-radius:8px;font-size:1.1rem;text-align:center;background:#fff;color:#374151;box-sizing:border-box" oninput="actualizarHoraFinCalculada()">
           </div>
           <div>
             <label style="display:block;font-size:0.85rem;color:#6b7280;font-weight:600;margin-bottom:8px">Duración</label>
