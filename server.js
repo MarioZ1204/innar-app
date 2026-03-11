@@ -544,9 +544,9 @@ app.post('/api/usuarios', requireAuth, requireAdmin, async (req, res) => {
   }
 
   // Validar rol
-  const rolesValidos = ['admin', 'recepcion', 'electro', 'doctor'];
+  const rolesValidos = ['admin', 'recepcion', 'electro', 'doctor', 'contabilidad'];
   if (!rolesValidos.includes(rol)) {
-    return res.status(400).json({ error: 'Rol inválido. Use: admin, recepcion, electro, doctor' });
+    return res.status(400).json({ error: 'Rol inválido. Use: admin, recepcion, electro, doctor, contabilidad' });
   }
 
   // Validar consultorio para doctores
@@ -614,7 +614,7 @@ app.patch('/api/usuarios/:id', requireAuth, requireAdmin, async (req, res) => {
     if (usuario !== undefined) { updates.push('usuario = ?'); params.push(usuario); }
     if (nombre !== undefined) { updates.push('nombre = ?'); params.push(nombre); }
     if (rol !== undefined) {
-      const rolesValidos = ['admin', 'recepcion', 'electro', 'doctor'];
+      const rolesValidos = ['admin', 'recepcion', 'electro', 'doctor', 'contabilidad'];
       if (!rolesValidos.includes(rol)) return res.status(400).json({ error: 'Rol inválido' });
       updates.push('rol = ?'); params.push(rol);
     }

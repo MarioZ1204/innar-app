@@ -107,6 +107,7 @@ function isAdmin() { return currentUser && currentUser.rol === 'admin'; }
 function isRecepcion() { return currentUser && currentUser.rol === 'recepcion'; }
 function isElectro() { return currentUser && currentUser.rol === 'electro'; }
 function isDoctor() { return currentUser && currentUser.rol === 'doctor'; }
+function isContabilidad() { return currentUser && currentUser.rol === 'contabilidad'; }
 function canDeleteRecibos() { return isAdmin(); }
 
 // Mostrar saludo para doctores
@@ -137,7 +138,7 @@ function updateSidebarUser(user) {
   const initials = (words.length >= 2
     ? words[0][0] + words[words.length - 1][0]
     : name.substring(0, 2)).toUpperCase();
-  const roleMap = { admin: 'Administrador', recepcion: 'Recepción', electro: 'Electrodiagnóstico', doctor: 'Doctor' };
+  const roleMap = { admin: 'Administrador', recepcion: 'Recepción', electro: 'Electrodiagnóstico', doctor: 'Doctor', contabilidad: 'Contabilidad' };
   const roleLabel = roleMap[user.rol] || user.rol || '-';
   document.querySelectorAll('.sidebar-user-avatar').forEach(el => el.textContent = initials);
   document.querySelectorAll('.sidebar-user-name').forEach(el => el.textContent = name);
@@ -1173,6 +1174,19 @@ function closeDoctorSelectionModal() {
 function initRecibos() {
   initItemsTable();
   setDefaultDate();
+
+  // Contabilidad: ir directo a Ver Recibos, ocultar tab crear
+  if (isContabilidad()) {
+    const crearBtn = document.querySelector('#view-recibos .sidebar-btn[data-page="crear"]');
+    const crearPage = document.getElementById('page-crear');
+    const recibosBtn = document.querySelector('#view-recibos .sidebar-btn[data-page="recibos"]');
+    const recibosPage = document.getElementById('page-recibos');
+    if (crearBtn)  { crearBtn.classList.remove('active'); crearBtn.style.display = 'none'; }
+    if (crearPage) { crearPage.classList.remove('active'); }
+    if (recibosBtn)  { recibosBtn.classList.add('active'); }
+    if (recibosPage) { recibosPage.classList.add('active'); }
+    cargarLista();
+  }
   nextNumber();
   updateSavedCount();
 
@@ -1209,6 +1223,10 @@ function initRecibos() {
   if ($('generate')) $('generate').addEventListener('click', generatePreview);
   if ($('btnNuevoRecibo')) $('btnNuevoRecibo').addEventListener('click', resetFormulario);
   if ($('print')) $('print').addEventListener('click', abrirPDF);
+  // Botón sidebar: resetear consecutivos (solo admin)
+  const btnResetCons = document.getElementById('btnResetarConsecutivos');
+  if (btnResetCons) btnResetCons.addEventListener('click', resetAllRecibos);
+
   if ($('resetAll')) $('resetAll').addEventListener('click', resetAllRecibos);
 
   // Filtros + exportar (página Ver Recibos)
@@ -4708,7 +4726,7 @@ async function guardarCambiosUsuario(e) {
     return;
   }
   
-  const rolesValidos = ['admin','recepcion','electro','doctor'];
+  const rolesValidos = ['admin','recepcion','electro','doctor','contabilidad'];
   if (!rolesValidos.includes(rol)) {
     mostrarErrorEdicion('Rol inválido');
     return;

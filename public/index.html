@@ -129,7 +129,7 @@
         <p>Selecciona un módulo para continuar</p>
       </div>
       <div class="menu-cards" id="menuCardsContainer">
-        <button class="menu-card" data-module="recibos" data-rol="admin recepcion">
+        <button class="menu-card" data-module="recibos" data-rol="admin recepcion contabilidad">
           <span class="menu-card-icon"><img src="/images/iconrecibos.png" alt="Recibos" class="icon-img" /></span>
           <span class="menu-card-label">
             <span class="menu-card-title">Recibos</span>
@@ -192,7 +192,7 @@
           <h2>Recibos</h2>
           <p class="sidebar-desc">Contabilidad y seguimiento</p>
           <span class="sidebar-section-label">Navegación</span>
-          <button class="sidebar-btn active" data-page="crear">
+          <button class="sidebar-btn active" data-page="crear" data-rol-recibos="admin recepcion">
             <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg></span>
             Crear Recibo
           </button>
@@ -203,6 +203,12 @@
           <button class="sidebar-btn" data-page="servicios" data-rol-recibos="admin">
             <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg></span>
             Servicios
+          </button>
+          <!-- Sección administración: solo visible para admin -->
+          <span class="sidebar-section-label" data-rol-recibos="admin" style="margin-top:16px">Administración</span>
+          <button class="sidebar-btn sidebar-btn-danger" id="btnResetarConsecutivos" data-rol-recibos="admin">
+            <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.61"/></svg></span>
+            Resetear consecutivos
           </button>
         </div>
         <div class="sidebar-footer">
@@ -271,12 +277,16 @@
                   <div class="recibo-tipo-pago-group">
                     <label class="recibo-radio-card" id="radioPagoPCard">
                       <input type="radio" name="tipoPago" value="Efectivo" id="radioPagoParticular" />
-                      <span class="recibo-radio-icon">💵</span>
+                      <span class="recibo-radio-icon">
+                        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="6" width="22" height="13" rx="2"/><circle cx="12" cy="12" r="3"/><path d="M5 12h.01M19 12h.01"/></svg>
+                      </span>
                       <span class="recibo-radio-label">Efectivo</span>
                     </label>
                     <label class="recibo-radio-card" id="radioPagoTCard">
                       <input type="radio" name="tipoPago" value="Transferencia" id="radioPagoTarjeta" />
-                      <span class="recibo-radio-icon">🏦</span>
+                      <span class="recibo-radio-icon">
+                        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+                      </span>
                       <span class="recibo-radio-label">Transferencia</span>
                     </label>
                   </div>
@@ -792,7 +802,7 @@
                 <div id="passwordStrengthText" style="margin-top:4px;font-size:12px;color:#666;display:none"></div>
               </div>
               <div class="col"><label>Nombre</label><input id="newUserName" type="text" placeholder="Nombre completo" /></div>
-              <div class="col"><label>Rol</label><select id="newUserRol"><option value="recepcion">Recepción</option><option value="electro">Electrodiagnóstico</option><option value="doctor">Doctor</option><option value="admin">Administrador</option></select></div>
+              <div class="col"><label>Rol</label><select id="newUserRol"><option value="recepcion">Recepción</option><option value="electro">Electrodiagnóstico</option><option value="doctor">Doctor</option><option value="contabilidad">Contabilidad</option><option value="admin">Administrador</option></select></div>
               <div class="col" id="especialidadCol" style="display:none"><label>Especialidad</label><select id="newUserEspecialidad"><option value="">Seleccionar</option><option value="Otra">Otra</option></select></div>
               <div class="col" id="especialidadOtraCol" style="display:none"><input id="newUserEspecialidadOtra" type="text" placeholder="Especificar especialidad" /></div>
               <div class="col" id="consultorioCol" style="display:none"><label>Consultorio #</label><input id="newUserConsultorio" type="number" placeholder="Número de consultorio" min="1" /></div>
@@ -1779,6 +1789,7 @@
             <option value="recepcion">Recepción</option>
             <option value="electro">Electrodiagnóstico</option>
             <option value="doctor">Doctor</option>
+            <option value="contabilidad">Contabilidad</option>
             <option value="admin">Administrador</option>
           </select>
         </div>

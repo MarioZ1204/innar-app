@@ -202,6 +202,10 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxyge
 .sb-icon { width:18px; height:18px; flex-shrink:0; display:flex; align-items:center; justify-content:center; opacity:0.7; transition:opacity 0.15s; }
 .sb-icon svg { display:block; }
 .sidebar-btn:hover .sb-icon, .sidebar-btn.active .sb-icon { opacity:1; }
+.sidebar-btn-danger { color:rgba(252,165,165,0.85); }
+.sidebar-btn-danger:hover { background:rgba(220,38,38,0.18); color:#fca5a5; box-shadow:inset 3px 0 0 #ef4444; }
+/* Icono radio SVG (reemplaza emoji) */
+.recibo-radio-icon svg { display:block; }
 .sidebar-footer { padding:14px 20px; border-top:1px solid rgba(255,255,255,0.1); background:rgba(0,0,0,0.13); flex-shrink:0; }
 .sidebar-user { display:flex; align-items:center; gap:10px; }
 .sidebar-user-avatar { width:32px; height:32px; border-radius:50%; background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.2); display:flex; align-items:center; justify-content:center; font-size:0.75rem; font-weight:700; color:white; flex-shrink:0; }
@@ -1644,7 +1648,7 @@ button.remove { padding:5px 10px; font-size:.8rem; width:100%; }
 .recibo-radio-card.selected {
   border-color: #8AA6A1; background: #e8f4f1; box-shadow: 0 0 0 2px #8AA6A130;
 }
-.recibo-radio-icon { font-size: 1.4rem; }
+.recibo-radio-icon { font-size: 1.4rem; display:flex; align-items:center; justify-content:center; }
 .recibo-radio-label { font-size: 0.85rem; font-weight: 600; color: #374151; margin-top: 4px; }
 
 .recibo-filtros-card { padding: 18px 20px; }
