@@ -445,7 +445,7 @@
                 <div class="col"><label>Doctor</label><div id="agendaMedicaDoctorDisplay" style="padding:10px;background:#f3f4f6;border-radius:4px;display:flex;align-items:center;font-weight:500;color:#374151">-</div></div>
               </div>
               <div class="row" style="margin-bottom:8px;align-items:flex-end">
-                <div class="col" style="flex:1"><label>Descargar PDF del día</label><input id="reportDiaAgendaPDF" type="date" style="width:100%" /></div>
+                <div class="col" style="flex:1"><label>Descargar Agenda Programada Para el Día:</label><input id="reportDiaAgendaPDF" type="date" style="width:100%" /></div>
                 <div class="col" style="flex:0 0 auto;min-width:0"><button id="btnDescargarAgendaPDF" class="btn-primary" style="display:none">Descargar PDF</button></div>
               </div>
               <div style="text-align:center;margin-top:8px">
@@ -482,8 +482,8 @@
             <section class="card no-print" id="agendaNuevoTurnoSection">
               <h3>Nueva Cita</h3>
               <div class="row" id="agendaNuevoTurnoRow">
-                <div class="col"><label>Documento <span style="color:#dc2626">*</span></label><input id="nuevoPacienteDocMedica" type="text" placeholder="Documento" /></div>
-                <div class="col"><label>Paciente <span style="color:#dc2626">*</span></label><input id="nuevoPacienteNombreMedica" type="text" placeholder="Buscar o crear paciente..." list="pacientesListMedica" /><datalist id="pacientesListMedica"></datalist></div>
+                <div class="col"><label>Número de Documento <span style="color:#dc2626">*</span></label><input id="nuevoPacienteDocMedica" type="text" placeholder="Documento" /></div>
+                <div class="col"><label>Nombres y Apellidos Completos del Paciente <span style="color:#dc2626">*</span></label><input id="nuevoPacienteNombreMedica" type="text" placeholder="Nombre Paciente" list="pacientesListMedica" /><datalist id="pacientesListMedica"></datalist></div>
                 <div class="col">
                   <label>Entidad <span style="color:#dc2626">*</span></label>
                   <select id="nuevoTurnoEntidadMedica">
@@ -557,7 +557,7 @@
             </section>
             <!-- Ver agenda de médicos (recepción) -->
             <section class="card" id="agendaVerMedicosSection" style="display:none">
-              <h3>Agenda Programada de Médicos</h3>
+              <h3>Agenda de Médicos</h3>
               <div style="margin-bottom:16px">
                 <label>Seleccionar médico:</label>
                 <select id="agendaDoctorSelect"></select>
@@ -1191,18 +1191,21 @@
       </div>
 
       <!-- Barra de Progreso del Estudio -->
-      <div id="estudioBarra" style="display:none;margin-bottom:24px;padding:16px;background:#fafafa;border-radius:8px;border:1px solid #e5e7eb">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-          <div style="font-size:0.85rem;color:#6b7280;font-weight:600">Progreso del Estudio</div>
-          <div style="font-size:0.85rem;color:#1f2937;font-weight:600"><span id="estudioProgreso">0</span>%</div>
+      <div id="estudioBarra" class="estudio-progreso-card" style="display:none">
+        <div class="estudio-progreso-header">
+          <div class="estudio-progreso-titulo">
+            <span class="estudio-progreso-dot"></span>
+            En estudio
+          </div>
+          <div class="estudio-progreso-pct"><span id="estudioProgreso">0</span>%</div>
         </div>
-        <div style="width:100%;height:24px;background:#e5e7eb;border-radius:6px;overflow:hidden">
-          <div id="estudioBarraLlena" style="height:100%;width:0%;background:linear-gradient(to right, #dc2626, #f59e0b, #059669);transition:width 0.5s ease, background-color 0.5s ease;border-radius:6px"></div>
+        <div class="estudio-progreso-barra-wrap">
+          <div id="estudioBarraLlena" class="estudio-progreso-barra" style="width:0%"></div>
         </div>
-        <div style="display:flex;justify-content:space-between;margin-top:8px;font-size:0.8rem;color:#6b7280">
-          <div id="estudioHoraInicio">-</div>
-          <div id="estudioTiempoTranscurrido" style="text-align:center;font-weight:600;color:#1f2937">00:00:00</div>
-          <div id="estudioHoraFin">-</div>
+        <div class="estudio-progreso-footer">
+          <div id="estudioHoraInicio" class="estudio-progreso-hora">-</div>
+          <div id="estudioTiempoTranscurrido" class="estudio-progreso-timer">00:00:00</div>
+          <div id="estudioHoraFin" class="estudio-progreso-hora">-</div>
         </div>
       </div>
 

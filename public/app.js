@@ -3342,10 +3342,12 @@ async function checkEquiposDisponibilidad() {
         : `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/></svg>`;
 
       const barraId = enEstudio ? `cupo-barra-${i}` : '';
+      const tiempoId = enEstudio ? `cupo-tiempo-${i}` : '';
       const barraHtml = enEstudio ? `
         <div class="cupo-mini-barra-wrap" title="${fmtHora(cita.horaInicioReal)} → ${fmtHora(cita.horaFin)}">
-          <div class="cupo-mini-barra" id="${barraId}" data-inicio="${cita.horaInicioReal}" data-fin="${fmtHora(cita.horaFin)}" style="width:0%"></div>
-        </div>` : (ocupado ? `<div class="cupo-mini-barra-wrap"><div class="cupo-mini-barra" style="width:100%;opacity:0.3"></div></div>` : '');
+          <div class="cupo-mini-barra" id="${barraId}" style="width:0%"></div>
+        </div>
+        <div class="cupo-tiempo" id="${tiempoId}">00:00</div>` : (ocupado ? `<div class="cupo-mini-barra-wrap"><div class="cupo-mini-barra" style="width:100%;opacity:0.3"></div></div>` : '');
 
       html += `
         <div class="cupo-card ${tipoCard}">
@@ -3365,14 +3367,21 @@ async function checkEquiposDisponibilidad() {
         data.citasEnRango.forEach((cita, idx) => {
           if (cita.estado !== 'En Estudio' || !cita.horaInicioReal) return;
           const barra = $(`cupo-barra-${idx + 1}`);
-          if (!barra) return;
+          const tiempoEl = $(`cupo-tiempo-${idx + 1}`);
           const parseHora = h => { const [hh, mm] = h.substring(0,5).split(':').map(Number); return hh * 3600 + mm * 60; };
           let segsInicio = parseHora(cita.horaInicioReal);
           let segsFin = parseHora(cita.horaFin);
           if (segsFin < segsInicio) segsFin += 86400;
           let segsActual = segsAhora < segsInicio ? segsAhora + 86400 : segsAhora;
-          const pct = Math.min(100, Math.max(0, ((segsActual - segsInicio) / (segsFin - segsInicio)) * 100));
-          barra.style.width = pct + '%';
+          const segsTranscurridos = Math.max(0, segsActual - segsInicio);
+          const pct = Math.min(100, Math.max(0, (segsTranscurridos / (segsFin - segsInicio)) * 100));
+          if (barra) barra.style.width = pct + '%';
+          if (tiempoEl) {
+            const hh = String(Math.floor(segsTranscurridos / 3600)).padStart(2, '0');
+            const mm = String(Math.floor((segsTranscurridos % 3600) / 60)).padStart(2, '0');
+            const ss = String(segsTranscurridos % 60).padStart(2, '0');
+            tiempoEl.textContent = `${hh}:${mm}:${ss}`;
+          }
         });
       };
       actualizarBarras();
