@@ -1225,9 +1225,15 @@ function initRecibos() {
       // Al cambiar a doctor, limpiar estudio y viceversa
       if (this.value === 'doctor') {
         if ($('reciboTipoServicio')) $('reciboTipoServicio').value = '';
+        window._reciboCurrentTipos = [];
+        refreshConceptosRows();
       } else {
         if ($('reciboMedico')) $('reciboMedico').value = '';
         if ($('reciboTipoConsulta')) $('reciboTipoConsulta').innerHTML = '<option value="">Seleccionar tipo</option>';
+        getServicios().then(servicios => {
+          window._reciboCurrentTipos = servicios.map(s => ({ nombre: s.nombre }));
+          refreshConceptosRows();
+        });
       }
     });
   });
@@ -1351,6 +1357,8 @@ async function cargarTiposConsultaEnRecibo(medicoId) {
       opt.textContent = t.nombre;
       sel.appendChild(opt);
     });
+    window._reciboCurrentTipos = tipos.map(t => ({ nombre: t.nombre }));
+    refreshConceptosRows();
   } catch (_) {}
 }
 
@@ -4964,15 +4972,43 @@ function formatMoney(n){
   return '$ ' + formatted.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
 
+async function refreshConceptosRows() {
+  const reciboTipoRadio = document.querySelector('input[name="reciboTipo"]:checked');
+  const reciboTipo = reciboTipoRadio ? reciboTipoRadio.value : null;
+  let opciones = [];
+  let placeholderDesc = 'Seleccionar servicio';
+  if (reciboTipo === 'doctor') {
+    opciones = Array.isArray(window._reciboCurrentTipos) ? window._reciboCurrentTipos : [];
+    placeholderDesc = 'Seleccionar tipo de consulta';
+  } else {
+    opciones = (Array.isArray(window._reciboCurrentTipos) && window._reciboCurrentTipos.length > 0)
+      ? window._reciboCurrentTipos
+      : await getServicios();
+  }
+  document.querySelectorAll('#itemsTable tbody tr').forEach(tr => {
+    const tdDesc = tr.querySelector('td:first-child');
+    const sel = tdDesc ? tdDesc.querySelector('.item-desc') : null;
+    if (!sel) return;
+    const currentVal = sel.value;
+    sel.innerHTML = `<option value="">${placeholderDesc}</option>` +
+      opciones.map(s => `<option value="${escapeHtml(s.nombre)}"${currentVal === s.nombre ? ' selected' : ''}>${escapeHtml(s.nombre)}</option>`).join('') +
+      `<option value="custom">Personalizado...</option>`;
+  });
+}
+
 async function addRow(desc='', price=0){
   const tbody = document.querySelector('#itemsTable tbody');
   const tr = document.createElement('tr');
   
-  const servicios = await getServicios();
+  const reciboTipoRadio = document.querySelector('input[name="reciboTipo"]:checked');
+  const reciboTipo = reciboTipoRadio ? reciboTipoRadio.value : null;
+  const usarTiposConsulta = reciboTipo === 'doctor' && Array.isArray(window._reciboCurrentTipos) && window._reciboCurrentTipos.length > 0;
+  const opciones = usarTiposConsulta ? window._reciboCurrentTipos : await getServicios();
+  const placeholderDesc = usarTiposConsulta ? 'Seleccionar tipo de consulta' : 'Seleccionar servicio';
   
   const descSelect = `<select class="item-desc">
-    <option value="">Seleccionar servicio</option>
-    ${servicios.map(s => `<option value="${escapeHtml(s.nombre).replace(/"/g, '&quot;')}" ${desc === s.nombre ? 'selected' : ''}>${escapeHtml(s.nombre)}</option>`).join('')}
+    <option value="">${placeholderDesc}</option>
+    ${opciones.map(s => `<option value="${escapeHtml(s.nombre).replace(/"/g, '&quot;')}" ${desc === s.nombre ? 'selected' : ''}>${escapeHtml(s.nombre)}</option>`).join('')}
     <option value="custom">Personalizado...</option>
   </select>`;
   
