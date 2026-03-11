@@ -5975,8 +5975,9 @@ async function iniciarEstudioSinDuracion() {
     
     console.log(`[DURACION_SIN] Usando duración predeterminada: ${duracionMinutos} minutos`);
     
-    // Calcular hora_fin: ahora + duracionMinutos
-    const [hh_inicio, mm_inicio] = horaActual.split(':').map(Number);
+    // Calcular hora_fin: hora_agendada + duracionMinutos (el inicio es la hora programada, no la actual)
+    const horaInicio = horaAgendada;
+    const [hh_inicio, mm_inicio] = horaInicio.split(':').map(Number);
     let minutosInicio = hh_inicio * 60 + mm_inicio;
     let minutosFin = minutosInicio + duracionMinutos;
     
@@ -5991,12 +5992,12 @@ async function iniciarEstudioSinDuracion() {
     const mm_fin = minutosFin % 60;
     const horaFin = `${String(hh_fin).padStart(2, '0')}:${String(mm_fin).padStart(2, '0')}`;
     
-    console.log(`[DURACION_SIN] Hora inicio: ${horaActual}, Hora fin: ${horaFin} (${crucedaMedianoche ? 'cruza medianoche' : 'mismo día'})`);
+    console.log(`[DURACION_SIN] Hora inicio: ${horaInicio}, Hora fin: ${horaFin} (${crucedaMedianoche ? 'cruza medianoche' : 'mismo día'})`);
     
     const equipoId = equipoSelect.value;
     const cambios = {
       estado: 'En Estudio',
-      hora_inicio: horaActual,
+      hora_inicio: horaInicio,
       hora_fin: horaFin,
       duracion_minutos: duracionMinutos,
       equipo_id: equipoId
@@ -6018,11 +6019,11 @@ async function iniciarEstudioSinDuracion() {
       if (horas > 0) textoHora += `${horas}h`;
       if (mins > 0) textoHora += `${mins}m`;
       
-      showToast(`Estudio iniciado a las ${horaActual} (duración: ${textoHora})`, 'success');
+      showToast(`Estudio iniciado a las ${horaInicio} (duración: ${textoHora})`, 'success');
       
       // Actualizar el objeto de la cita localmente
       citaElectroSeleccionada.estado = 'En Estudio';
-      citaElectroSeleccionada.hora_inicio = horaActual;
+      citaElectroSeleccionada.hora_inicio = horaInicio;
       citaElectroSeleccionada.hora_fin = horaFin;
       citaElectroSeleccionada.duracion_minutos = duracionMinutos;
       
@@ -6051,7 +6052,7 @@ async function iniciarEstudioSinDuracion() {
       if (window.socket && window.socket.connected) {
         window.socket.emit('electro:estudio-iniciado', {
           id: citaElectroSeleccionada.id,
-          hora_inicio: horaActual,
+          hora_inicio: horaInicio,
           hora_fin: horaFin,
           duracion_minutos: duracionMinutos
         });
@@ -6506,43 +6507,48 @@ function abrirModalDetallesCita(cita) {
   const btnRecomendacionesMenu = $('btnEnviarRecomendacionesMenu');
   
   if (btnMasOpciones) {
-    btnMasOpciones.addEventListener('click', (e) => {
+    btnMasOpciones.onclick = (e) => {
       e.stopPropagation();
       if (menuMasOpciones.style.display === 'none' || menuMasOpciones.style.display === '') {
         menuMasOpciones.style.display = 'block';
       } else {
         menuMasOpciones.style.display = 'none';
       }
-    });
+    };
   }
   
-  // Cerrar menú al hacer click afuera
-  document.addEventListener('click', (e) => {
-    if (menuMasOpciones && !menuMasOpciones.contains(e.target) && e.target !== btnMasOpciones) {
-      menuMasOpciones.style.display = 'none';
-    }
-  });
+  // Cerrar menú al hacer click afuera (se registra una sola vez con flag)
+  if (!document._menuMasOpcionesListener) {
+    document._menuMasOpcionesListener = (e) => {
+      const menu = $('menuMasOpciones');
+      const btn = $('btnMasOpciones');
+      if (menu && btn && !menu.contains(e.target) && e.target !== btn) {
+        menu.style.display = 'none';
+      }
+    };
+    document.addEventListener('click', document._menuMasOpcionesListener);
+  }
   
-  // Agregar listeners a los items del menú
+  // Agregar listeners a los items del menú (onclick para evitar acumulación)
   if (btnRepProgramarMenu) {
-    btnRepProgramarMenu.addEventListener('click', () => {
+    btnRepProgramarMenu.onclick = () => {
       menuMasOpciones.style.display = 'none';
       abrirModalReprogramar();
-    });
+    };
   }
   
   if (btnAdelantarMenu) {
-    btnAdelantarMenu.addEventListener('click', () => {
+    btnAdelantarMenu.onclick = () => {
       menuMasOpciones.style.display = 'none';
       abrirModalAdelantarCita();
-    });
+    };
   }
   
   if (btnRecomendacionesMenu) {
-    btnRecomendacionesMenu.addEventListener('click', () => {
+    btnRecomendacionesMenu.onclick = () => {
       menuMasOpciones.style.display = 'none';
       enviarRecomendacionesWhatsApp(citaElectroSeleccionada);
-    });
+    };
   }
   
   // Bloquear menú si el estado es "En Estudio"
