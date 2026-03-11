@@ -2113,6 +2113,7 @@ app.get('/api/equipos-electro/disponibilidad', async (req, res) => {
       FROM citas_electro c
       LEFT JOIN equipos_electro e ON e.id = c.equipo_id
       WHERE c.estado IN ('Programado', 'En Sala', 'En Estudio')
+      AND c.deleted_at IS NULL
       AND CONCAT(COALESCE(c.hora_fin_date, c.fecha), ' ', c.hora_fin) >= CONCAT(?, ' ', ?)
       AND CONCAT(c.fecha, ' ', c.hora_agendamiento) <= CONCAT(?, ' ', ?)
       ORDER BY c.fecha, c.hora_agendamiento
@@ -2166,14 +2167,25 @@ app.get('/api/equipos-electro/disponibilidad', async (req, res) => {
     // Calcular próximo momento con disponibilidad (si está al máximo)
     let proximaDisponibilidad = null;
     if (!hayDisponibilidad && citasOcupadas.length > 0) {
-      // Encontrar el máximo hora_fin de las citas que solapan
-      let maxHoraFin = hora;
+      // Encontrar la cita que termina más tarde, considerando hora_fin_date
+      let maxFechaHoraFin = null;
       citasOcupadas.forEach(cita => {
-        if (cita.hora_fin > maxHoraFin) {
-          maxHoraFin = cita.hora_fin;
+        const convertirFecha = (f) => {
+          if (typeof f === 'string') return f;
+          if (f instanceof Date) return f.toISOString().slice(0, 10);
+          return String(f);
+        };
+        const fechaFinCita = convertirFecha(cita.hora_fin_date || cita.fecha);
+        const horaFinCita = typeof cita.hora_fin === 'string' ? cita.hora_fin : String(cita.hora_fin);
+        const datetimeFin = `${fechaFinCita} ${horaFinCita}`;
+        if (!maxFechaHoraFin || datetimeFin > maxFechaHoraFin) {
+          maxFechaHoraFin = datetimeFin;
         }
       });
-      proximaDisponibilidad = maxHoraFin;
+      if (maxFechaHoraFin) {
+        const [fechaMax, horaMax] = maxFechaHoraFin.split(' ');
+        proximaDisponibilidad = fechaMax !== fecha ? `${fechaMax} ${horaMax}` : horaMax;
+      }
     }
 
     res.json({
@@ -2503,6 +2515,7 @@ app.post('/api/citas-electro', requireAuth, requireRole(['admin', 'electro', 're
         `SELECT COUNT(*) as overlap_count
          FROM citas_electro
          WHERE estado IN ('Programado', 'En Sala', 'En Estudio')
+         AND deleted_at IS NULL
          AND CONCAT(COALESCE(hora_fin_date, fecha), ' ', hora_fin) >= CONCAT(?, ' ', ?)
          AND CONCAT(fecha, ' ', hora_agendamiento) <= CONCAT(?, ' ', ?)`,
         [fecha, horaAgendamiento, finalFechaFin, finalHoraFin]
@@ -2756,10 +2769,11 @@ app.patch('/api/citas-electro/:id', requireAuth, requireRole(['admin', 'electro'
           SELECT COUNT(*) as overlap_count
           FROM citas_electro
           WHERE id != ?
-          AND fecha = ?
           AND estado IN ('Programado', 'En Sala', 'En Estudio')
-          AND NOT (hora_fin <= ? OR hora_agendamiento >= ?)
-        `, [id, citaActual.fecha, citaActual.hora_agendamiento, citaActual.hora_fin]);
+          AND deleted_at IS NULL
+          AND CONCAT(COALESCE(hora_fin_date, fecha), ' ', hora_fin) >= CONCAT(?, ' ', ?)
+          AND CONCAT(fecha, ' ', hora_agendamiento) <= CONCAT(COALESCE(?, ?), ' ', ?)
+        `, [id, citaActual.fecha, citaActual.hora_agendamiento, citaActual.hora_fin_date, citaActual.fecha, citaActual.hora_fin]);
 
         const overlapCount = overlapCitas[0]?.overlap_count || 0;
 
