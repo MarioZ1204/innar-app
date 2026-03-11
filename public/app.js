@@ -1544,6 +1544,12 @@ async function initAgendaMedica() {
     $('crearTurnoMedica').addEventListener('click', crearTurnoMedica);
     $('nuevoPacienteNombreMedica').addEventListener('input', debounceBuscarPacientesMedica);
   }
+  // Forzar solo dígitos y máximo 10 en los teléfonos de cita médica
+  const limitarTelMedica = (e) => {
+    e.target.value = e.target.value.replace(/\D/g, '').slice(0, 10);
+  };
+  $('nuevoPacienteTelefonoMedica')?.addEventListener('input', limitarTelMedica);
+  $('nuevoPacienteTelefonoMedica2')?.addEventListener('input', limitarTelMedica);
   // (autocompletado por documento removido)
   // poblar opciones de hora y mostrar quien programa
   populateTurnoHoras('nuevoTurnoHoraMedica', '07:00', '18:00', 20);
@@ -3065,23 +3071,24 @@ async function crearTurnoMedica() {
     return;
   }
 
-  // 4. Validar teléfono 1: obligatorio, mínimo 7 dígitos
-  if (!telefono1) {
-    showToast('Teléfono 1 es obligatorio', 'error');
-    return;
-  }
-  if (!/^\d{7,}$/.test(telefono1.replace(/[\s\-\(\)]/g, ''))) {
-    showToast('Teléfono 1 inválido. Mínimo 7 dígitos', 'error');
+  // 4. Validar teléfono 1: exactamente 10 dígitos
+  if (!telefono1 || !/^\d{10}$/.test(telefono1)) {
+    showToast('Teléfono 1 debe tener exactamente 10 dígitos', 'error');
+    $('nuevoPacienteTelefonoMedica')?.focus();
     return;
   }
 
-  // 5. Validar teléfono 2: obligatorio, mínimo 7 dígitos
-  if (!telefono2) {
-    showToast('Teléfono 2 es obligatorio', 'error');
+  // 5. Validar teléfono 2: exactamente 10 dígitos
+  if (!telefono2 || !/^\d{10}$/.test(telefono2)) {
+    showToast('Teléfono 2 debe tener exactamente 10 dígitos', 'error');
+    $('nuevoPacienteTelefonoMedica2')?.focus();
     return;
   }
-  if (!/^\d{7,}$/.test(telefono2.replace(/[\s\-\(\)]/g, ''))) {
-    showToast('Teléfono 2 inválido. Mínimo 7 dígitos', 'error');
+
+  // 6. Teléfono 2 no puede ser igual al 1
+  if (telefono1 === telefono2) {
+    showToast('El Teléfono 2 no puede ser igual al Teléfono 1', 'error');
+    $('nuevoPacienteTelefonoMedica2')?.focus();
     return;
   }
 
@@ -3254,18 +3261,12 @@ async function initElectro() {
   }, 300));
   
   // Teléfono: Solo números, máximo 10 dígitos
-  $('electroTelefono')?.addEventListener('input', (e) => {
-    const valor = e.target.value;
-    if (valor && !/^\d*$/.test(valor)) {
-      // Remover caracteres no numéricos
-      e.target.value = valor.replace(/\D/g, '');
-    }
-    // Limitar a 10 dígitos
-    if (e.target.value.length > 10) {
-      e.target.value = e.target.value.slice(0, 10);
-    }
-  });
-  
+  const limitarTel = (e) => {
+    e.target.value = e.target.value.replace(/\D/g, '').slice(0, 10);
+  };
+  $('electroTelefono')?.addEventListener('input', limitarTel);
+  $('electroTelefono2')?.addEventListener('input', limitarTel);
+
   const nuevaCitaSection = $('electroNuevaCitaSection');
   if (nuevaCitaSection) nuevaCitaSection.style.display = (isRecepcion() || isElectro()) ? '' : 'none';
   if (!isDoctor()) {
@@ -3941,6 +3942,14 @@ async function crearCitaElectro() {
     return;
   }
   $('electroTelefono2').style.borderColor = '';
+
+  // Teléfono 2 no puede ser igual al 1
+  if (telefono === telefono2) {
+    showToast('El Teléfono 2 no puede ser igual al Teléfono 1', 'error');
+    $('electroTelefono2').focus();
+    $('electroTelefono2').style.borderColor = '#dc2626';
+    return;
+  }
   
   // Validar duración si es Monitorización EEG por Video y Radio
   if (estudio === 'Monitorización Electroencefalografica por Video y Radio' && !duracion) {

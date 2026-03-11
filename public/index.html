@@ -341,10 +341,8 @@
 
                 <!-- Panel Estudio -->
                 <div id="reciboTipoEstPanel" class="hidden" style="margin-top:12px">
-                  <label>Estudio / Servicio <span style="color:#dc2626">*</span></label>
-                  <select id="reciboTipoServicio" required>
-                    <option value="">Seleccionar estudio</option>
-                  </select>
+                  <p style="margin:0;font-size:0.9rem;color:#6b7280">Selecciona el servicio directamente en el combobox de <strong>Conceptos del cobro</strong>.</p>
+                  <select id="reciboTipoServicio" style="display:none"></select>
                 </div>
               </div>
 
@@ -669,8 +667,8 @@
               <div style="margin-top:8px;padding:8px;border-radius:4px;background-color:#fef3c7;border:1px solid #f59e0b;display:none;font-size:0.9rem;color:#92400e" id="mensajeDisponibilidad"></div>
               <div class="row" style="margin-top:12px">
                 <div class="col"><label>Hora <span style="color:#dc2626">*</span></label><select id="nuevoTurnoHoraMedica"></select></div>
-                <div class="col"><label>Teléfono 1 <span style="color:#dc2626">*</span></label><input id="nuevoPacienteTelefonoMedica" type="tel" placeholder="Teléfono principal" /></div>
-                <div class="col"><label>Teléfono 2 <span style="color:#dc2626">*</span></label><input id="nuevoPacienteTelefonoMedica2" type="tel" placeholder="Teléfono alternativo" /></div>
+                <div class="col"><label>Teléfono 1 <span style="color:#dc2626">*</span></label><input id="nuevoPacienteTelefonoMedica" type="tel" inputmode="numeric" maxlength="10" placeholder="10 dígitos" /></div>
+                <div class="col"><label>Teléfono 2 <span style="color:#dc2626">*</span></label><input id="nuevoPacienteTelefonoMedica2" type="tel" inputmode="numeric" maxlength="10" placeholder="10 dígitos" /></div>
                 <div class="col"><label>Tipo de consulta <span style="color:#dc2626">*</span></label><select id="nuevoTurnoTipoMedica"><option value="">Seleccionar</option></select></div>
               </div>
               <div class="row" id="otraConsultaRow" style="margin-top:8px;display:none">
@@ -1065,8 +1063,8 @@
             <!-- Avisos de Disponibilidad de Equipos (movido arriba) -->
             <div class="row" style="margin-top:12px">
               <div class="col"><label>Nombre del Paciente <span style="color:#dc2626">*</span></label><input id="electroPacienteNombre" type="text" placeholder="Nombre completo del paciente" /></div>
-              <div class="col"><label>Número de Teléfono <span style="color:#dc2626">*</span></label><input id="electroTelefono" type="tel" placeholder="Ej: 3001234567" /></div>
-              <div class="col"><label>Teléfono 2 <span style="color:#dc2626">*</span></label><input id="electroTelefono2" type="tel" placeholder="Ej: 3001234567" /></div>
+              <div class="col"><label>Número de Teléfono <span style="color:#dc2626">*</span></label><input id="electroTelefono" type="tel" inputmode="numeric" maxlength="10" placeholder="10 dígitos" /></div>
+              <div class="col"><label>Teléfono 2 <span style="color:#dc2626">*</span></label><input id="electroTelefono2" type="tel" inputmode="numeric" maxlength="10" placeholder="10 dígitos" /></div>
               <div class="col" id="electroDuracionCol" style="display:none">
                 <label>Duración del Estudio (horas)</label>
                 <input id="electroDuracion" type="number" placeholder="Ej: 8" min="1" max="168" step="0.5" />
