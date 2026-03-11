@@ -36,6 +36,7 @@ let selectedEstudioDuracion = null; // Duración en minutos del estudio seleccio
 let filtroEstudioElectro = 'todas'; // Filtro de estudio en tabla de citas
 let filtroEquipoSeleccionado = null; // Filtro de equipo en tabla de citas
 let intervaloProgreso = null; // Intervalo para actualizar barra de progreso del estudio
+let intervaloProgresoPanel = null; // Intervalo para mini-barras en panel de equipos
 
 // Mapeo de especialidades a tipos de consulta
 const ESPECIALIDAD_TIPOS_CONSULTA = {
@@ -1317,7 +1318,7 @@ async function initAgendaMedica() {
   if (btnProgramar) {
     btnProgramar.style.display = (isDoctor() || isRecepcion()) ? '' : 'none';
     // Cambiar texto del botón según rol
-    btnProgramar.textContent = isDoctor() ? 'Programar Agenda' : 'Agenda Programada';
+    btnProgramar.textContent = isDoctor() ? 'Programar Agenda' : 'Agenda';
   }
   
   // Pre-inicializar handlers si es DOCTOR o RECEPCION para que estén listos cuando abran "Programar Agenda"
@@ -1345,7 +1346,7 @@ async function initAgendaMedica() {
       // mostrar/ocultar secciones dentro de página según rol
       if (page === 'programar') {
         const titleHeader = document.getElementById('agendaTitleHeader');
-        if (titleHeader) titleHeader.textContent = isDoctor() ? 'Programar Agenda' : 'Agenda Programada';
+        if (titleHeader) titleHeader.textContent = isDoctor() ? 'Programar Agenda' : 'Agenda';
         const progSection = $('agendaProgramarSection');
         const verMedicosSection = $('agendaVerMedicosSection');
         if (progSection) progSection.style.display = isDoctor() ? '' : 'none';
@@ -3326,21 +3327,57 @@ async function checkEquiposDisponibilidad() {
       <div class="cupos-panel-body">
     `;
 
+    // Citas "En Estudio" con hora_inicio real (para barra de progreso)
+    const citasEnEstudio = data.citasEnRango.filter(c => c.estado === 'En Estudio' && c.horaInicioReal);
+
     // Grid de cupos
     html += `<div class="cupos-grid">`;
     for (let i = 1; i <= 4; i++) {
+      const cita = data.citasEnRango[i - 1] || null;
       const ocupado = i <= data.capacidad.cuposOcupados;
+      const enEstudio = ocupado && cita && cita.estado === 'En Estudio' && cita.horaInicioReal;
       const tipoCard = ocupado ? 'ocupado' : 'libre';
       const icono = ocupado
-        ? `<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/></svg>`
-        : `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/></svg>`;
+        ? `<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/></svg>`
+        : `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/></svg>`;
+
+      const barraId = enEstudio ? `cupo-barra-${i}` : '';
+      const barraHtml = enEstudio ? `
+        <div class="cupo-mini-barra-wrap" title="${fmtHora(cita.horaInicioReal)} → ${fmtHora(cita.horaFin)}">
+          <div class="cupo-mini-barra" id="${barraId}" data-inicio="${cita.horaInicioReal}" data-fin="${fmtHora(cita.horaFin)}" style="width:0%"></div>
+        </div>` : (ocupado ? `<div class="cupo-mini-barra-wrap"><div class="cupo-mini-barra" style="width:100%;opacity:0.3"></div></div>` : '');
+
       html += `
         <div class="cupo-card ${tipoCard}">
           <div class="cupo-card-icon">${icono}</div>
-          <div class="cupo-card-label">${ocupado ? 'Ocupado' : 'Libre'}</div>
+          <div class="cupo-card-label">${enEstudio ? 'En estudio' : (ocupado ? 'Ocupado' : 'Libre')}</div>
+          ${barraHtml}
         </div>`;
     }
     html += `</div>`;
+
+    // Iniciar actualización de barras de progreso (cada segundo)
+    if (intervaloProgresoPanel) clearInterval(intervaloProgresoPanel);
+    if (citasEnEstudio.length > 0) {
+      const actualizarBarras = () => {
+        const ahora = new Date();
+        const segsAhora = ahora.getHours() * 3600 + ahora.getMinutes() * 60 + ahora.getSeconds();
+        data.citasEnRango.forEach((cita, idx) => {
+          if (cita.estado !== 'En Estudio' || !cita.horaInicioReal) return;
+          const barra = $(`cupo-barra-${idx + 1}`);
+          if (!barra) return;
+          const parseHora = h => { const [hh, mm] = h.substring(0,5).split(':').map(Number); return hh * 3600 + mm * 60; };
+          let segsInicio = parseHora(cita.horaInicioReal);
+          let segsFin = parseHora(cita.horaFin);
+          if (segsFin < segsInicio) segsFin += 86400;
+          let segsActual = segsAhora < segsInicio ? segsAhora + 86400 : segsAhora;
+          const pct = Math.min(100, Math.max(0, ((segsActual - segsInicio) / (segsFin - segsInicio)) * 100));
+          barra.style.width = pct + '%';
+        });
+      };
+      actualizarBarras();
+      intervaloProgresoPanel = setInterval(actualizarBarras, 1000);
+    }
 
     // Equipos en uso
     if (data.capacidad.equiposEnUso && data.capacidad.equiposEnUso.length > 0) {

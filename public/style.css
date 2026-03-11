@@ -1506,6 +1506,21 @@ button.remove { padding:5px 10px; font-size:.8rem; width:100%; }
 }
 .cupo-card.libre   .cupo-card-label { color: #4d7873; }
 .cupo-card.ocupado .cupo-card-label { color: #b91c1c; }
+.cupo-mini-barra-wrap {
+  margin-top: 6px;
+  height: 4px;
+  background: rgba(0,0,0,0.08);
+  border-radius: 99px;
+  overflow: hidden;
+  width: 100%;
+}
+.cupo-mini-barra {
+  height: 100%;
+  border-radius: 99px;
+  background: linear-gradient(90deg, #8AA6A1, #2d4a47);
+  transition: width 0.8s linear;
+}
+.cupo-card.ocupado .cupo-mini-barra { background: linear-gradient(90deg, #f87171, #dc2626); }
 .cupos-en-uso {
   display: flex;
   align-items: flex-start;

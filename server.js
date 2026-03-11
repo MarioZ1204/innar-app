@@ -2156,10 +2156,12 @@ app.get('/api/equipos-electro/disponibilidad', async (req, res) => {
         estudio: cita.estudio,
         fechaInicio: convertirFecha(cita.fecha),
         horaInicio: convertirHora(cita.hora_agendamiento),
+        horaInicioReal: cita.hora_inicio ? convertirHora(cita.hora_inicio) : null,
         fechaFin: convertirFecha(fechaFin),
         horaFin: convertirHora(cita.hora_fin),
         estado: cita.estado,
-        // Para compatibilidad hacia atrás
+        equipo_id: cita.equipo_id,
+        equipo_nombre: cita.equipo_nombre,
         hora: `${convertirHora(cita.hora_agendamiento)}-${convertirHora(cita.hora_fin)}`
       };
     });
