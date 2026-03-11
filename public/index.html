@@ -270,20 +270,21 @@
                   <h4 class="recibo-form-section-title">Tipo de Pago</h4>
                   <div class="recibo-tipo-pago-group">
                     <label class="recibo-radio-card" id="radioPagoPCard">
-                      <input type="radio" name="tipoPago" value="Particular" id="radioPagoParticular" />
+                      <input type="radio" name="tipoPago" value="Efectivo" id="radioPagoParticular" />
                       <span class="recibo-radio-icon">💵</span>
-                      <span class="recibo-radio-label">Particular</span>
+                      <span class="recibo-radio-label">Efectivo</span>
                     </label>
                     <label class="recibo-radio-card" id="radioPagoTCard">
-                      <input type="radio" name="tipoPago" value="Tarjeta de Salud" id="radioPagoTarjeta" />
-                      <span class="recibo-radio-icon">🪪</span>
-                      <span class="recibo-radio-label">Tarjeta de Salud</span>
+                      <input type="radio" name="tipoPago" value="Transferencia" id="radioPagoTarjeta" />
+                      <span class="recibo-radio-icon">🏦</span>
+                      <span class="recibo-radio-label">Transferencia</span>
                     </label>
                   </div>
-                  <div id="reciboEntidadRow" class="hidden" style="margin-top:10px">
-                    <label>Entidad / Tarjeta</label>
+                  <div id="reciboEntidadRow" style="margin-top:10px">
+                    <label>Entidad</label>
                     <select id="reciboEntidad">
                       <option value="">Seleccionar entidad</option>
+                      <option value="Particular">Particular</option>
                       <option value="Protegemos">Protegemos</option>
                       <option value="Global Salud">Global Salud</option>
                       <option value="Medica Preferencial">Medica Preferencial</option>
@@ -372,6 +373,7 @@
                 <div>
                   <div><strong>Paciente:</strong> <span id="r_cliente"></span></div>
                   <div><strong>Documento:</strong> <span id="r_doc"></span></div>
+                  <div><strong>Forma de pago:</strong> <span id="r_tipo_pago"></span></div>
                   <div id="r_entidad_row"><strong>Entidad:</strong> <span id="r_entidad"></span></div>
                 </div>
                 <div class="table-wrapper table-compact">
@@ -420,8 +422,8 @@
                   <label>Tipo de pago</label>
                   <select id="filtroTipoPago">
                     <option value="">Todos</option>
-                    <option value="Particular">Particular</option>
-                    <option value="Tarjeta de Salud">Tarjeta de Salud</option>
+                    <option value="Efectivo">Efectivo</option>
+                    <option value="Transferencia">Transferencia</option>
                   </select>
                 </div>
                 <div>

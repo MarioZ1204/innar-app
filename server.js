@@ -232,6 +232,27 @@ function getLogoBase64() {
 // Intento inicial (no crítico)
 try { getLogoBase64(); } catch(_) {}
 
+// Logo específico para recibos (logorecibo.png)
+let logoReciboBase64 = null;
+function getLogoReciboBase64() {
+  if (logoReciboBase64) return logoReciboBase64;
+  const possiblePaths = [
+    path.join(__dirname, 'public', 'images', 'logorecibo.png'),
+    path.join(__dirname, 'public', 'logorecibo.png'),
+    path.join(__dirname, '../public/images/logorecibo.png'),
+    path.join(__dirname, '../public/logorecibo.png'),
+    path.join(process.execPath, '..', 'public', 'images', 'logorecibo.png'),
+    path.join(process.execPath, '..', 'public', 'logorecibo.png'),
+  ];
+  for (const p of possiblePaths) {
+    if (fs.existsSync(p)) {
+      try { logoReciboBase64 = fs.readFileSync(p).toString('base64'); } catch(_) {}
+      break;
+    }
+  }
+  return logoReciboBase64 || getLogoBase64(); // fallback al logo genérico
+}
+
 // Las tablas de MySQL se inicializan con npm run init-db
 // No es necesario db.exec() aquí
 
@@ -3274,9 +3295,10 @@ app.get('/api/recibos', requireAuth, async (req, res) => {
   }
 });
 
-// Exportar recibos a CSV (Excel nativo)
-app.get('/api/recibos/export/csv', requireAuth, async (req, res) => {
+// Exportar recibos a Excel (XLSX)
+app.get('/api/recibos/export/xlsx', requireAuth, async (req, res) => {
   try {
+    const XLSX = require('xlsx');
     const { fecha_desde, fecha_hasta, tipo_pago, medico_id, generado_por_id } = req.query;
     const conditions = [];
     const params = [];
@@ -3293,36 +3315,27 @@ app.get('/api/recibos/export/csv', requireAuth, async (req, res) => {
        FROM recibos ${where} ORDER BY fecha DESC, id DESC`,
       params
     );
-
-    const escapeCSV = (v) => {
-      if (v == null) return '';
-      const s = String(v).replace(/"/g, '""');
-      return /[,"\n]/.test(s) ? `"${s}"` : s;
-    };
-    const headers = ['Nº Recibo','Fecha','Paciente','Tipo de Pago','Entidad','Médico','Servicio','Total','Generado por','Observaciones','Creado en'];
-    const lines = [headers.join(',')];
-    rows.forEach(r => {
-      let fechaFmt = r.fecha ? String(r.fecha).slice(0,10) : '';
-      let creadoFmt = r.creado_en ? new Date(r.creado_en).toISOString().slice(0,19).replace('T',' ') : '';
-      lines.push([
-        escapeCSV(r.numero),
-        escapeCSV(fechaFmt),
-        escapeCSV(r.cliente),
-        escapeCSV(r.tipo_pago),
-        escapeCSV(r.nombre_entidad),
-        escapeCSV(r.medico_nombre),
-        escapeCSV(r.tipo_servicio),
-        escapeCSV(Number(r.total || 0).toFixed(2)),
-        escapeCSV(r.generado_por_nombre),
-        escapeCSV(r.observaciones),
-        escapeCSV(creadoFmt)
-      ].join(','));
-    });
-    const csv = '\uFEFF' + lines.join('\r\n'); // BOM para que Excel reconozca UTF-8
-    const today = new Date().toISOString().slice(0,10);
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="recibos-${today}.csv"`);
-    res.send(csv);
+    const data = rows.map(r => ({
+      'Nº Recibo': r.numero || '',
+      'Fecha': r.fecha ? String(r.fecha).slice(0, 10) : '',
+      'Paciente': r.cliente || '',
+      'Forma de Pago': r.tipo_pago || '',
+      'Entidad': r.nombre_entidad || '',
+      'Médico': r.medico_nombre || '',
+      'Servicio': r.tipo_servicio || '',
+      'Total': Number(r.total || 0),
+      'Generado por': r.generado_por_nombre || '',
+      'Observaciones': r.observaciones || '',
+      'Creado en': r.creado_en ? new Date(r.creado_en).toISOString().slice(0, 19).replace('T', ' ') : ''
+    }));
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Recibos');
+    const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    const today = new Date().toISOString().slice(0, 10);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="recibos-${today}.xlsx"`);
+    res.send(buffer);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -3541,7 +3554,7 @@ app.get('/api/recibos/:id/pdf', requireAuth, async (req, res) => {
         <div class="header">
           <div class="header-top">
             <div class="header-logo">
-              <img src="data:image/png;base64,${getLogoBase64()}" alt="Logo" />
+              <img src="data:image/png;base64,${getLogoReciboBase64()}" alt="Logo" />
             </div>
           </div>
           <div class="company-info">
@@ -3562,7 +3575,8 @@ app.get('/api/recibos/:id/pdf', requireAuth, async (req, res) => {
           <div style="margin-top:2px">
             <p style="margin:1px 0"><strong>Nombre:</strong> ${escapeHtml(row.cliente)}</p>
             <p style="margin:1px 0"><strong>Documento:</strong> ${escapeHtml(data.doc || '-')}</p>
-            <p style="margin:1px 0"><strong>Entidad:</strong> ${escapeHtml(data.entidad || '-')}</p>
+            <p style="margin:1px 0"><strong>Forma de pago:</strong> ${escapeHtml(row.tipo_pago || '-')}</p>
+            <p style="margin:1px 0"><strong>Entidad:</strong> ${escapeHtml(row.nombre_entidad || data.entidad || '-')}</p>
           </div>
         </div>
 

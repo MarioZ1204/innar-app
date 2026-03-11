@@ -1190,12 +1190,10 @@ function initRecibos() {
   // Radios tipo de pago
   document.querySelectorAll('input[name="tipoPago"]').forEach(radio => {
     radio.addEventListener('change', function() {
-      const entRow = document.getElementById('reciboEntidadRow');
       const pCard  = document.getElementById('radioPagoPCard');
       const tCard  = document.getElementById('radioPagoTCard');
-      if (pCard) pCard.classList.toggle('selected', this.value === 'Particular');
-      if (tCard) tCard.classList.toggle('selected', this.value === 'Tarjeta de Salud');
-      if (entRow) entRow.classList.toggle('hidden', this.value !== 'Tarjeta de Salud');
+      if (pCard) pCard.classList.toggle('selected', this.value === 'Efectivo');
+      if (tCard) tCard.classList.toggle('selected', this.value === 'Transferencia');
     });
   });
 
@@ -1385,17 +1383,8 @@ function preLlenarReciboDesdeCita(cita) {
   if ($('cliente')) $('cliente').value = cita.paciente_nombre || '';
   if ($('docCliente')) $('docCliente').value = cita.paciente_documento || '';
 
-  // Tipo de pago y entidad
-  const esTarjeta = cita.entidad && cita.entidad !== 'Particular';
-  const tipoPago = esTarjeta ? 'Tarjeta de Salud' : 'Particular';
-  document.querySelectorAll('input[name="tipoPago"]').forEach(r => {
-    r.checked = r.value === tipoPago;
-  });
-  document.getElementById('radioPagoPCard')?.classList.toggle('selected', tipoPago === 'Particular');
-  document.getElementById('radioPagoTCard')?.classList.toggle('selected', tipoPago === 'Tarjeta de Salud');
-  const entRow = document.getElementById('reciboEntidadRow');
-  if (entRow) entRow.classList.toggle('hidden', !esTarjeta);
-  if (esTarjeta && $('reciboEntidad') && cita.entidad) {
+  // Entidad: pre-seleccionar si existe en el select
+  if ($('reciboEntidad') && cita.entidad) {
     $('reciboEntidad').value = cita.entidad; // intentará coincidir con la opción
   }
 
@@ -5025,7 +5014,7 @@ function collectFormData(){
   const tipoPagoRadio = document.querySelector('input[name="tipoPago"]:checked');
   const tipoPago = tipoPagoRadio ? tipoPagoRadio.value : null;
   const reciboEntidadEl = $('reciboEntidad');
-  const nombreEntidad   = (tipoPago === 'Tarjeta de Salud' && reciboEntidadEl) ? reciboEntidadEl.value : null;
+  const nombreEntidad   = reciboEntidadEl ? (reciboEntidadEl.value || null) : null;
 
   const medicoSel = $('reciboMedico');
   const medicoId  = medicoSel && medicoSel.value ? parseInt(medicoSel.value, 10) : null;
@@ -5059,17 +5048,13 @@ function generatePreview(){
   $('r_doc').textContent = payload.doc;
   $('r_observ').textContent = payload.observ;
 
+  const rtpEl = document.getElementById('r_tipo_pago');
+  if (rtpEl) rtpEl.textContent = payload.tipoPago || '-';
+
   const rentEl = document.getElementById('r_entidad_row');
   const rentSpan = document.getElementById('r_entidad');
-  if (payload.tipoPago === 'Tarjeta de Salud' && payload.nombreEntidad) {
-    if (rentEl) rentEl.style.display = '';
-    if (rentSpan) rentSpan.textContent = payload.nombreEntidad;
-  } else if (payload.tipoPago === 'Particular') {
-    if (rentEl) rentEl.style.display = '';
-    if (rentSpan) rentSpan.textContent = 'Particular';
-  } else {
-    if (rentEl) rentEl.style.display = 'none';
-  }
+  if (rentEl) rentEl.style.display = '';
+  if (rentSpan) rentSpan.textContent = payload.nombreEntidad || '-';
 
   const tbody = document.querySelector('#r_table tbody');
   tbody.innerHTML = '';
@@ -5097,7 +5082,7 @@ function validarFormulario(){
   if (!fecha) { showToast('Por favor selecciona una fecha', 'error'); return false; }
 
   const tipoPago = document.querySelector('input[name="tipoPago"]:checked')?.value;
-  if (!tipoPago) { showToast('Selecciona el tipo de pago (Particular o Tarjeta de Salud)', 'error'); return false; }
+  if (!tipoPago) { showToast('Selecciona la forma de pago (Efectivo o Transferencia)', 'error'); return false; }
 
   const items = document.querySelectorAll('#itemsTable tbody tr');
   let hayItemValido = false;
@@ -5157,7 +5142,6 @@ function resetFormulario() {
   document.querySelectorAll('input[name="tipoPago"]').forEach(r => { r.checked = false; });
   document.getElementById('radioPagoPCard')?.classList.remove('selected');
   document.getElementById('radioPagoTCard')?.classList.remove('selected');
-  document.getElementById('reciboEntidadRow')?.classList.add('hidden');
   if ($('reciboEntidad')) $('reciboEntidad').value = '';
 
   // Limpiar médico y servicio
@@ -5255,7 +5239,7 @@ function limpiarFiltrosRecibos() {
 }
 
 function exportarReciboCSV() {
-  const url = '/api/recibos/export/csv' + (_recibosLastParams ? '?' + _recibosLastParams : '');
+  const url = '/api/recibos/export/xlsx' + (_recibosLastParams ? '?' + _recibosLastParams : '');
   window.location.href = url;
 }
 
