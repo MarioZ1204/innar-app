@@ -3319,7 +3319,7 @@ async function checkEquiposDisponibilidad() {
         </div>
         <div class="cupos-panel-meta">
           <span><strong>${data.capacidad.cuposaDisponibles}/4</strong> libres</span>
-          <span><strong>${data.duracionMinutos}min</strong></span>
+          <span><strong>${data.duracionMinutos >= 60 ? (data.duracionMinutos % 60 === 0 ? (data.duracionMinutos / 60) + 'h' : (data.duracionMinutos / 60).toFixed(1) + 'h') : data.duracionMinutos + 'min'}</strong></span>
           <span>fin <strong>${fmtHora(data.horaFin)}</strong></span>
         </div>
       </div>
