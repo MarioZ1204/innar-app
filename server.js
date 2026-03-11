@@ -3157,7 +3157,7 @@ app.post('/api/recibos', requireAuth, requireRole(['admin', 'recepcion']), async
     return res.status(400).json({ error: 'Cuerpo de la petición inválido' });
   }
 
-  const { numero, cliente, fecha, total, data,
+  const { cliente, fecha, total, data,
           medico_id, medico_nombre, tipo_pago, nombre_entidad,
           tipo_servicio, turno_id, cita_electro_id, observaciones } = body;
 
@@ -3175,8 +3175,18 @@ app.post('/api/recibos', requireAuth, requireRole(['admin', 'recepcion']), async
     }
   } catch (_) {}
 
+  // Asignar número de recibo de forma atómica para evitar duplicados concurrentes
+  const conn = await db.getPool().getConnection();
   try {
-    const result = await db.execute(
+    await conn.beginTransaction();
+    // FOR UPDATE bloquea la lectura hasta que la transacción finalice
+    const [maxRows] = await conn.execute(
+      'SELECT MAX(CAST(numero AS UNSIGNED)) AS maxNum FROM recibos FOR UPDATE'
+    );
+    const nextNum = (parseInt(maxRows[0]?.maxNum || '0', 10) || 0) + 1;
+    const numeroAsignado = String(nextNum).padStart(4, '0');
+
+    const [result] = await conn.execute(
       `INSERT INTO recibos
         (numero, cliente, fecha, total, data,
          medico_id, medico_nombre, tipo_pago, nombre_entidad,
@@ -3184,7 +3194,7 @@ app.post('/api/recibos', requireAuth, requireRole(['admin', 'recepcion']), async
          turno_id, cita_electro_id, observaciones)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
-        numero || null,
+        numeroAsignado,
         cliente || null,
         fecha || null,
         total || 0,
@@ -3201,15 +3211,20 @@ app.post('/api/recibos', requireAuth, requireRole(['admin', 'recepcion']), async
         observaciones || null
       ]
     );
+    await conn.commit();
+
     if (app.io) {
-      emitSocket('recibo:creado', { id: result.insertId, numero, cliente, fecha, total });
+      emitSocket('recibo:creado', { id: result.insertId, numero: numeroAsignado, cliente, fecha, total });
       emitSocket('recibo:actualizar-lista');
       emitSocket('stats:actualizar');
     }
-    res.json({ ok: true, id: result.insertId });
+    res.json({ ok: true, id: result.insertId, numero: numeroAsignado });
   } catch(err) {
+    await conn.rollback();
     console.error('[RECIBOS] Error guardando recibo:', err.message);
     res.status(500).json({ error: err.message });
+  } finally {
+    conn.release();
   }
 });
 
@@ -3327,7 +3342,7 @@ app.get('/api/recibos/export/xlsx', requireAuth, async (req, res) => {
       `SELECT numero, fecha, cliente, tipo_pago, nombre_entidad,
               medico_nombre, tipo_servicio, total,
               generado_por_nombre, observaciones, creado_en
-       FROM recibos ${where} ORDER BY fecha DESC, id DESC`,
+       FROM recibos ${where} ORDER BY numero ASC, id ASC`,
       params
     );
     const data = rows.map(r => ({
@@ -3372,7 +3387,7 @@ app.get('/api/recibos/export/pdf-reporte', requireAuth, async (req, res) => {
       `SELECT numero, fecha, cliente, tipo_pago, nombre_entidad,
               medico_nombre, tipo_servicio, total,
               generado_por_nombre, observaciones
-       FROM recibos ${where} ORDER BY fecha DESC, id DESC`,
+       FROM recibos ${where} ORDER BY numero ASC, id ASC`,
       params
     );
     const total = rows.reduce((s, r) => s + Number(r.total || 0), 0);

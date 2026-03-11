@@ -264,8 +264,16 @@
                 <!-- Datos del paciente -->
                 <div class="recibo-form-group">
                   <h4 class="recibo-form-section-title">Paciente</h4>
-                  <label>Nombre completo <span style="color:#dc2626">*</span></label>
-                  <input id="cliente" placeholder="Nombre del paciente" required />
+                  <div style="display:flex;gap:10px">
+                    <div style="flex:1">
+                      <label>Nombres <span style="color:#dc2626">*</span></label>
+                      <input id="clienteNombres" placeholder="Nombres" required />
+                    </div>
+                    <div style="flex:1">
+                      <label>Apellidos <span style="color:#dc2626">*</span></label>
+                      <input id="clienteApellidos" placeholder="Apellidos" required />
+                    </div>
+                  </div>
                   <label style="margin-top:10px">Documento <span style="color:#dc2626">*</span></label>
                   <input id="docCliente" type="text" inputmode="numeric" placeholder="Número de documento" required />
                 </div>
@@ -336,7 +344,7 @@
                   <select id="reciboMedico" required>
                     <option value="">Seleccionar médico</option>
                   </select>
-                  <select id="reciboTipoConsulta" style="display:none"></select>
+                  <select id="                  mysql -u root -p innar_clinica < C:\ruta\donde\guardaste\innar_clinica_produccion.sqlta" style="display:none"></select>
                 </div>
 
                 <!-- Panel Estudio -->
@@ -646,7 +654,8 @@
               <h3>Nueva Cita</h3>
               <div class="row" id="agendaNuevoTurnoRow">
                 <div class="col"><label>Número de Documento <span style="color:#dc2626">*</span></label><input id="nuevoPacienteDocMedica" type="text" placeholder="Documento" /></div>
-                <div class="col"><label>Nombres y Apellidos Completos del Paciente <span style="color:#dc2626">*</span></label><input id="nuevoPacienteNombreMedica" type="text" placeholder="Nombre Paciente" list="pacientesListMedica" /><datalist id="pacientesListMedica"></datalist></div>
+                <div class="col"><label>Nombres del Paciente <span style="color:#dc2626">*</span></label><input id="nuevoPacienteNombresMedica" type="text" placeholder="Nombres" list="pacientesListMedica" /><datalist id="pacientesListMedica"></datalist></div>
+                <div class="col"><label>Apellidos del Paciente <span style="color:#dc2626">*</span></label><input id="nuevoPacienteApellidosMedica" type="text" placeholder="Apellidos" /></div>
                 <div class="col">
                   <label>Entidad <span style="color:#dc2626">*</span></label>
                   <select id="nuevoTurnoEntidadMedica">
@@ -1062,7 +1071,8 @@
             </div>
             <!-- Avisos de Disponibilidad de Equipos (movido arriba) -->
             <div class="row" style="margin-top:12px">
-              <div class="col"><label>Nombre del Paciente <span style="color:#dc2626">*</span></label><input id="electroPacienteNombre" type="text" placeholder="Nombre completo del paciente" /></div>
+              <div class="col"><label>Nombres del Paciente <span style="color:#dc2626">*</span></label><input id="electroPacienteNombres" type="text" placeholder="Nombres" /></div>
+              <div class="col"><label>Apellidos del Paciente <span style="color:#dc2626">*</span></label><input id="electroPacienteApellidos" type="text" placeholder="Apellidos" /></div>
               <div class="col"><label>Número de Teléfono <span style="color:#dc2626">*</span></label><input id="electroTelefono" type="tel" inputmode="numeric" maxlength="10" placeholder="10 dígitos" /></div>
               <div class="col"><label>Teléfono 2 <span style="color:#dc2626">*</span></label><input id="electroTelefono2" type="tel" inputmode="numeric" maxlength="10" placeholder="10 dígitos" /></div>
               <div class="col" id="electroDuracionCol" style="display:none">

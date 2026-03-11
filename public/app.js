@@ -1460,7 +1460,10 @@ async function buscarCitaParaRecibo() {
 
 // ---- Pre-llenar formulario desde una cita seleccionada ----
 async function preLlenarReciboDesdeCita(cita) {
-  if ($('cliente')) $('cliente').value = cita.paciente_nombre || '';
+  const _partesNombre = (cita.paciente_nombre || '').trim().split(/\s+/);
+  const _mitad = Math.ceil(_partesNombre.length / 2);
+  if ($('clienteNombres')) $('clienteNombres').value = _partesNombre.slice(0, _mitad).join(' ');
+  if ($('clienteApellidos')) $('clienteApellidos').value = _partesNombre.slice(_mitad).join(' ');
   if ($('docCliente')) $('docCliente').value = cita.paciente_documento || '';
 
   // Entidad: pre-seleccionar si existe en el select
@@ -1542,7 +1545,7 @@ async function initAgendaMedica() {
   });
   if (!isElectro() && !isDoctor()) {
     $('crearTurnoMedica').addEventListener('click', crearTurnoMedica);
-    $('nuevoPacienteNombreMedica').addEventListener('input', debounceBuscarPacientesMedica);
+    $('nuevoPacienteNombresMedica')?.addEventListener('input', debounceBuscarPacientesMedica);
   }
   // Forzar solo dígitos y máximo 10 en los teléfonos de cita médica
   const limitarTelMedica = (e) => {
@@ -2518,7 +2521,7 @@ function stopAgendaMedicaAutoRefresh() {
 function debounce(fn, ms) { let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); }; }
 const debounceBuscarPacientesMedica = debounce(buscarPacientesMedica, 300);
 async function buscarPacientesMedica() {
-  const q = $('nuevoPacienteNombreMedica').value.trim();
+  const q = $('nuevoPacienteNombresMedica')?.value.trim() || '';
   if (q.length < 2) return;
   const res = await apiFetch(`/api/pacientes?buscar=${encodeURIComponent(q)}`);
   const pacientes = await res.json();
@@ -3039,7 +3042,9 @@ async function guardarNumeroTurnoMedica() {
 }
 
 async function crearTurnoMedica() {
-  const nombre = $('nuevoPacienteNombreMedica').value.trim();
+  const nombresMedica = $('nuevoPacienteNombresMedica')?.value.trim() || '';
+  const apellidosMedica = $('nuevoPacienteApellidosMedica')?.value.trim() || '';
+  const nombre = [nombresMedica, apellidosMedica].filter(Boolean).join(' ');
   const doc = $('nuevoPacienteDocMedica').value.trim();
   const fecha = $('agendaMedicaFecha').value;
   const doctorId = selectedDoctorId || (isDoctor() ? currentUser?.id : null);
@@ -3054,7 +3059,9 @@ async function crearTurnoMedica() {
   // ========== VALIDACIONES ==========
   
   // 1. Validar campos obligatorios
-  if (!nombre || !doc || !fecha || !doctorId || !hora || !entidad || !tipoConsulta) {
+  if (!nombresMedica) { showToast('Escribe los nombres del paciente', 'error'); return; }
+  if (!apellidosMedica) { showToast('Escribe los apellidos del paciente', 'error'); return; }
+  if (!doc || !fecha || !doctorId || !hora || !entidad || !tipoConsulta) {
     showToast('Completa todos los campos obligatorios', 'error');
     return;
   }
@@ -3120,7 +3127,8 @@ async function crearTurnoMedica() {
 
     if (data.ok) {
       showToast('Cita creada correctamente', 'success');
-      $('nuevoPacienteNombreMedica').value = '';
+      $('nuevoPacienteNombresMedica').value = '';
+      $('nuevoPacienteApellidosMedica').value = '';
       $('nuevoPacienteDocMedica').value = '';
       $('nuevoPacienteTelefonoMedica').value = '';
       $('nuevoPacienteTelefonoMedica2').value = '';
@@ -3241,13 +3249,15 @@ async function initElectro() {
   
   // Validadores en tiempo real
   // Nombre: Solo letras y espacios
-  $('electroPacienteNombre')?.addEventListener('input', (e) => {
+  const _sanitizarNombreElectro = (e) => {
     const valor = e.target.value;
     if (valor && !/^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]*$/.test(valor)) {
-      // Remover caracteres inválidos
       e.target.value = valor.replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑ\s]/g, '');
     }
-  });
+    e.target.style.borderColor = '';
+  };
+  $('electroPacienteNombres')?.addEventListener('input', _sanitizarNombreElectro);
+  $('electroPacienteApellidos')?.addEventListener('input', _sanitizarNombreElectro);
   
   // Documento: Solo números + buscar paciente
   $('electroDocumento')?.addEventListener('input', debounce((e) => {
@@ -3916,7 +3926,9 @@ async function crearCitaElectro() {
     return;
   }
   
-  const nombre = $('electroPacienteNombre').value.trim();
+  const electroNombres = $('electroPacienteNombres')?.value.trim() || '';
+  const electroApellidos = $('electroPacienteApellidos')?.value.trim() || '';
+  const nombre = [electroNombres, electroApellidos].filter(Boolean).join(' ');
   const doc = $('electroDocumento').value.trim();
   const telefono = $('electroTelefono').value.trim();
   const telefono2 = $('electroTelefono2').value.trim();
@@ -3925,19 +3937,28 @@ async function crearCitaElectro() {
   const duracion = $('electroDuracion').value.trim();
   const diagnostico = $('electroDiagnostico').value.trim();
   
-  if (!nombre || !doc || !telefono || !telefono2 || !hora || !fecha || !diagnostico) { 
+  if (!electroNombres) { showToast('Escribe los nombres del paciente', 'error'); $('electroPacienteNombres').focus(); $('electroPacienteNombres').style.borderColor='#dc2626'; return; }
+  if (!electroApellidos) { showToast('Escribe los apellidos del paciente', 'error'); $('electroPacienteApellidos').focus(); $('electroPacienteApellidos').style.borderColor='#dc2626'; return; }
+  if (!doc || !telefono || !telefono2 || !hora || !fecha || !diagnostico) { 
     showToast('Completa todos los campos obligatorios', 'error'); 
     return; 
   }
   
   // Validar nombre (solo letras y espacios)
-  if (!validarNombre(nombre)) {
-    showToast('El nombre no puede contener números o caracteres especiales', 'error');
-    $('electroPacienteNombre').focus();
-    $('electroPacienteNombre').style.borderColor = '#dc2626';
+  if (!validarNombre(electroNombres)) {
+    showToast('Los nombres no pueden contener números o caracteres especiales', 'error');
+    $('electroPacienteNombres').focus();
+    $('electroPacienteNombres').style.borderColor = '#dc2626';
     return;
   }
-  $('electroPacienteNombre').style.borderColor = '';
+  if (!validarNombre(electroApellidos)) {
+    showToast('Los apellidos no pueden contener números o caracteres especiales', 'error');
+    $('electroPacienteApellidos').focus();
+    $('electroPacienteApellidos').style.borderColor = '#dc2626';
+    return;
+  }
+  $('electroPacienteNombres').style.borderColor = '';
+  $('electroPacienteApellidos').style.borderColor = '';
   
   // Validar documento (solo números)
   if (!validarDocumento(doc)) {
@@ -4075,7 +4096,8 @@ async function crearCitaElectro() {
       // El servidor emite el socket event, no es necesario emitir desde el cliente
       
       // Limpiar formulario
-      $('electroPacienteNombre').value = '';
+      $('electroPacienteNombres').value = '';
+      $('electroPacienteApellidos').value = '';
       $('electroDocumento').value = '';
       $('electroTelefono').value = '';
       $('electroTelefono2').value = '';
@@ -5182,7 +5204,7 @@ function collectFormData(){
   return {
     numero: $('numero').value,
     fecha: $('fecha').value,
-    cliente: $('cliente').value,
+    cliente: [($('clienteNombres')?.value||'').trim(), ($('clienteApellidos')?.value||'').trim()].filter(Boolean).join(' '),
     doc: $('docCliente').value,
     tipoPago, nombreEntidad,
     medicoId, medicoNombre, tipoServicio,
@@ -5229,11 +5251,14 @@ function generatePreview(){
 }
 
 function validarFormulario(){
-  const cliente = $('cliente')?.value.trim();
+  const clienteNombres = $('clienteNombres')?.value.trim();
+  const clienteApellidos = $('clienteApellidos')?.value.trim();
+  const cliente = [clienteNombres, clienteApellidos].filter(Boolean).join(' ');
   const docCliente = $('docCliente')?.value.trim();
   const fecha = $('fecha')?.value.trim();
 
-  if (!cliente) { showToast('Por favor escribe el nombre del paciente', 'error'); return false; }
+  if (!clienteNombres) { showToast('Por favor escribe los nombres del paciente', 'error'); return false; }
+  if (!clienteApellidos) { showToast('Por favor escribe los apellidos del paciente', 'error'); return false; }
   if (!docCliente) { showToast('Por favor escribe el documento del paciente', 'error'); return false; }
   if (!fecha) { showToast('Por favor selecciona una fecha', 'error'); return false; }
 
@@ -5248,9 +5273,8 @@ function validarFormulario(){
   if (reciboTipoVal === 'doctor' && !$('reciboMedico')?.value) {
     showToast('Selecciona el médico que realizó la consulta', 'error'); return false;
   }
-  if (reciboTipoVal === 'estudio' && !$('reciboTipoServicio')?.value) {
-    showToast('Selecciona el estudio / servicio', 'error'); return false;
-  }
+  // Para 'estudio' no se valida reciboTipoServicio (está oculto);
+  // el servicio se elige directamente en los conceptos del cobro.
 
   const items = document.querySelectorAll('#itemsTable tbody tr');
   let hayItemValido = false;
@@ -5268,7 +5292,7 @@ async function saveToDatabase(){
   const payload = collectFormData();
   try {
     const body = {
-      numero: payload.numero,
+      // numero no se envía: el servidor lo asigna atómicamente
       cliente: payload.cliente,
       fecha: payload.fecha,
       total: payload.total,
@@ -5289,6 +5313,12 @@ async function saveToDatabase(){
     });
     const json = await res.json();
     if (json.ok) {
+      // Actualizar el número con el asignado realmente por el servidor (evita duplicados concurrentes)
+      if (json.numero) {
+        $('numero').value = json.numero;
+        const rNum = document.getElementById('r_num');
+        if (rNum) rNum.textContent = json.numero;
+      }
       showToast('✓ Recibo guardado', 'success');
       updateSavedCount();
       nextNumber();
@@ -5303,7 +5333,8 @@ async function saveToDatabase(){
 }
 
 function resetFormulario() {
-  if ($('cliente')) $('cliente').value = '';
+  if ($('clienteNombres')) $('clienteNombres').value = '';
+  if ($('clienteApellidos')) $('clienteApellidos').value = '';
   if ($('docCliente')) $('docCliente').value = '';
   if ($('observ')) $('observ').value = '';
 
