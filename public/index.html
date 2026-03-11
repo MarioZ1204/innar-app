@@ -1133,58 +1133,104 @@
   </div>
 
   <!-- Modal para detalles de cita electrodiagnóstico -->
-  <div id="modalDetallesCitaElectro" class="modal hidden" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);align-items:center;justify-content:center;z-index:1000;padding:20px">
-    <div class="modal-content" style="background:white;border-radius:12px;padding:32px;max-width:600px;width:100%;box-shadow:0 20px 25px -5px rgba(0,0,0,0.1);max-height:90vh;overflow-y:auto">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px">
-        <h2 style="margin:0;color:#1f2937">Detalles de la Cita</h2>
-        <div style="display:flex;gap:8px;align-items:center">
-          <!-- Botón de 3 puntos para Más Opciones -->
+  <div id="modalDetallesCitaElectro" class="modal hidden" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.55);align-items:center;justify-content:center;z-index:1000;padding:16px">
+    <div class="cita-modal-card">
+
+      <!-- HEADER -->
+      <div class="cita-modal-header">
+        <div class="cita-modal-header-left">
+          <h2 class="cita-modal-title">Detalles de la Cita</h2>
+          <span id="modalEstadoHeaderBadge"></span>
+        </div>
+        <div class="cita-modal-header-right">
           <div style="position:relative">
-            <button id="btnMasOpciones" class="btn-close-x" style="color:#6b7280;font-weight:bold;font-size:18px">...</button>
-            <!-- Menú desplegable -->
-            <div id="menuMasOpciones" style="position:absolute;top:100%;right:0;background:white;border:1px solid #d1d5db;border-radius:8px;box-shadow:0 10px 15px -3px rgba(0,0,0,0.1);min-width:200px;display:none;z-index:1001;margin-top:4px">
-              <button id="btnReprogramarCitaMenu" class="btn-dropdown-item">Reprogramar</button>
-              <button id="btnAdelantarCitaMenu" class="btn-dropdown-item" style="border-top:1px solid #e5e7eb">Adelantar</button>
-              <button id="btnEnviarRecomendacionesMenu" class="btn-dropdown-item" style="border-top:1px solid #e5e7eb">Recomendaciones</button>
+            <button id="btnMasOpciones" class="cita-modal-icon-btn" title="Más opciones">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>
+            </button>
+            <div id="menuMasOpciones" style="position:absolute;top:calc(100% + 6px);right:0;background:white;border:1px solid #e5e7eb;border-radius:10px;box-shadow:0 10px 25px rgba(0,0,0,0.12);min-width:190px;display:none;z-index:1001;overflow:hidden">
+              <button id="btnReprogramarCitaMenu" class="btn-dropdown-item" style="display:flex;align-items:center;gap:8px">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                Reprogramar
+              </button>
+              <button id="btnAdelantarCitaMenu" class="btn-dropdown-item" style="border-top:1px solid #f3f4f6;display:flex;align-items:center;gap:8px">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+                Adelantar
+              </button>
+              <button id="btnEnviarRecomendacionesMenu" class="btn-dropdown-item" style="border-top:1px solid #f3f4f6;display:flex;align-items:center;gap:8px">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                Recomendaciones
+              </button>
             </div>
           </div>
-          <!-- Botón Cerrar -->
-          <button id="cerrarModalDetallesCita" class="btn-close-x">&times;</button>
+          <button id="cerrarModalDetallesCita" class="cita-modal-icon-btn cita-modal-close-btn" title="Cerrar" style="font-size:1.2rem;line-height:1">&times;</button>
         </div>
       </div>
 
-      <div style="background:#f9fafb;padding:16px;border-radius:8px;margin-bottom:24px">
-        <div style="margin-bottom:12px">
-          <div style="font-size:0.85rem;color:#6b7280;font-weight:600">PACIENTE</div>
-          <div id="modalPacienteNombre" style="font-size:1.1rem;color:#1f2937;font-weight:600">-</div>
+      <!-- PACIENTE -->
+      <div class="cita-modal-patient">
+        <div class="cita-modal-patient-avatar">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z"/></svg>
         </div>
-        <div>
-          <div style="font-size:0.85rem;color:#6b7280;font-weight:600">DOCUMENTO</div>
-          <div id="modalPacienteDocumento" style="font-size:1rem;color:#1f2937">-</div>
-        </div>
-      </div>
-
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;padding:16px;background:#f9fafb;border-radius:8px">
-        <div>
-          <div style="font-size:0.85rem;color:#6b7280;font-weight:600;margin-bottom:4px">USUARIO QUE PROGRAMÓ</div>
-          <div id="modalUsuarioProgramo" style="font-size:0.95rem;color:#1f2937">-</div>
-        </div>
-        <div style="text-align:right">
-          <div style="font-size:0.85rem;color:#6b7280;font-weight:600;margin-bottom:4px">USUARIO QUE EDITÓ</div>
-          <div id="modalUsuarioEdito" style="font-size:0.95rem;color:#1f2937">-</div>
+        <div class="cita-modal-patient-info">
+          <div id="modalPacienteNombre" class="cita-modal-patient-name">-</div>
+          <div class="cita-modal-patient-meta">
+            <span id="modalPacienteDocumento">-</span>
+            <span class="cita-modal-sep">·</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2A19.79 19.79 0 0 1 11.39 19a19.47 19.47 0 0 1-6-6A19.79 19.79 0 0 1 2.09 4.18 2 2 0 0 1 4.07 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.9a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+            <span id="modalTelefonoDisplay">-</span>
+          </div>
         </div>
       </div>
 
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px">
-        <div>
-          <label style="display:block;font-size:0.85rem;color:#6b7280;font-weight:600;margin-bottom:6px">Equipo</label>
-          <select id="modalEquipo" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:0.95rem">
+      <!-- INFO DEL ESTUDIO -->
+      <div class="cita-modal-info-grid">
+        <div class="cita-modal-info-item">
+          <div class="cita-modal-info-label">Estudio</div>
+          <div id="modalEstudioDisplay" class="cita-modal-info-value cita-modal-info-highlight">-</div>
+        </div>
+        <div class="cita-modal-info-item">
+          <div class="cita-modal-info-label">Diagnóstico</div>
+          <div id="modalDiagnosticoDisplay" class="cita-modal-info-value">-</div>
+        </div>
+        <div class="cita-modal-info-item">
+          <div class="cita-modal-info-label">Fecha</div>
+          <div id="modalFechaDisplay" class="cita-modal-info-value">-</div>
+        </div>
+        <div class="cita-modal-info-item">
+          <div class="cita-modal-info-label">Hora Agendada</div>
+          <div id="modalHoraDisplay" class="cita-modal-info-value">-</div>
+        </div>
+      </div>
+
+      <!-- HORARIO REAL (solo cuando hay hora_inicio) -->
+      <div id="modalInfoHorarios" class="cita-modal-horario-strip" style="display:none">
+        <div class="cita-modal-horario-item">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          Inicio real: <strong id="modalHoraInicioDisplay">-</strong>
+        </div>
+        <div class="cita-modal-horario-item">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          Fin programado: <strong id="modalHoraFinDisplay">-</strong>
+        </div>
+      </div>
+
+      <!-- AUDIT -->
+      <div class="cita-modal-audit">
+        <span>Programado por <strong id="modalUsuarioProgramo">-</strong></span>
+        <span>Editado por <strong id="modalUsuarioEdito">-</strong></span>
+      </div>
+
+      <!-- EDICIÓN: EQUIPO + ESTADO -->
+      <div class="cita-modal-edit-grid">
+        <div class="cita-modal-field">
+          <label class="cita-modal-field-label">Equipo</label>
+          <select id="modalEquipo" class="cita-modal-select">
             <option value="">Seleccionar equipo</option>
           </select>
         </div>
-        <div>
-          <label style="display:block;font-size:0.85rem;color:#6b7280;font-weight:600;margin-bottom:6px">Estado</label>
-          <select id="modalEstado" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:0.95rem">
+        <div class="cita-modal-field">
+          <label class="cita-modal-field-label">Estado</label>
+          <select id="modalEstado" class="cita-modal-select">
             <option value="En Sala">En Sala</option>
             <option value="No Asistió">No Asistió</option>
             <option value="Cancelado">Cancelado</option>
@@ -1192,43 +1238,61 @@
         </div>
       </div>
 
-      <!-- Barra de Progreso del Estudio -->
-      <div id="estudioBarra" class="estudio-progreso-card" style="display:none">
-        <div class="estudio-progreso-header">
-          <div class="estudio-progreso-titulo">
-            <span class="estudio-progreso-dot"></span>
-            En estudio
+      <!-- BARRA DE PROGRESO DEL ESTUDIO -->
+      <div class="cita-modal-section" id="estudiosBarraWrapper">
+        <div id="estudioBarra" class="estudio-progreso-card" style="display:none">
+          <div class="estudio-progreso-header">
+            <div class="estudio-progreso-titulo">
+              <span class="estudio-progreso-dot"></span>
+              En estudio
+            </div>
+            <div class="estudio-progreso-pct"><span id="estudioProgreso">0</span>%</div>
           </div>
-          <div class="estudio-progreso-pct"><span id="estudioProgreso">0</span>%</div>
-        </div>
-        <div class="estudio-progreso-barra-wrap">
-          <div id="estudioBarraLlena" class="estudio-progreso-barra" style="width:0%"></div>
-        </div>
-        <div class="estudio-progreso-footer">
-          <div id="estudioHoraInicio" class="estudio-progreso-hora">-</div>
-          <div id="estudioTiempoTranscurrido" class="estudio-progreso-timer">00:00:00</div>
-          <div id="estudioHoraFin" class="estudio-progreso-hora">-</div>
+          <div class="estudio-progreso-barra-wrap">
+            <div id="estudioBarraLlena" class="estudio-progreso-barra" style="width:0%"></div>
+          </div>
+          <div class="estudio-progreso-footer">
+            <div id="estudioHoraInicio" class="estudio-progreso-hora">-</div>
+            <div id="estudioTiempoTranscurrido" class="estudio-progreso-timer">00:00:00</div>
+            <div id="estudioHoraFin" class="estudio-progreso-hora">-</div>
+          </div>
         </div>
       </div>
 
-      <div id="modalAdelantadoContainer" style="display:none;margin-bottom:24px;padding:16px;background:#f0f9ff;border-left:4px solid #0369a1;border-radius:6px">
-        <label style="display:block;font-size:0.85rem;color:#6b7280;font-weight:600;margin-bottom:8px">Nueva hora de agendamiento</label>
-        <input id="modalHoraAdelantado" type="time" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:0.95rem">
+      <!-- ADELANTADO CONTAINER -->
+      <div id="modalAdelantadoContainer" style="display:none;margin:0 24px 16px;padding:14px 16px;background:#f0f9ff;border-left:3px solid #0369a1;border-radius:0 8px 8px 0">
+        <label class="cita-modal-field-label" style="margin-bottom:8px">Nueva hora de agendamiento</label>
+        <input id="modalHoraAdelantado" type="time" class="cita-modal-select">
         <div style="font-size:0.8rem;color:#6b7280;margin-top:6px">Selecciona la nueva hora para esta cita</div>
       </div>
 
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:24px">
-        <button id="btnIniciarEstudio" class="btn-info">Iniciar</button>
-        <button id="btnFinalizarEstudio" class="btn-success">Finalizar</button>
+      <!-- ACCIONES ESTUDIO: INICIAR / FINALIZAR -->
+      <div class="cita-modal-actions-study">
+        <button id="btnIniciarEstudio" class="btn-info cita-modal-action-btn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          Iniciar Estudio
+        </button>
+        <button id="btnFinalizarEstudio" class="btn-success cita-modal-action-btn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+          Finalizar Estudio
+        </button>
       </div>
 
-      <div style="display:flex;gap:12px;justify-content:space-between">
-        <button id="btnEliminarCita" class="btn-danger" style="display:none">Eliminar Cita</button>
-        <div style="display:flex;gap:12px">
+      <!-- FOOTER -->
+      <div class="cita-modal-footer">
+        <button id="btnEliminarCita" class="btn-danger cita-modal-action-btn" style="display:none">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+          Eliminar
+        </button>
+        <div style="display:flex;gap:10px">
           <button id="btnCancelarModal" class="btn-secondary" onclick="document.getElementById('modalDetallesCitaElectro').classList.add('hidden')">Cerrar</button>
-          <button id="btnGuardarCambios" class="btn-primary">Guardar</button>
+          <button id="btnGuardarCambios" class="btn-primary cita-modal-action-btn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+            Guardar
+          </button>
         </div>
       </div>
+
     </div>
   </div>
 

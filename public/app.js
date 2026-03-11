@@ -6422,6 +6422,36 @@ function abrirModalDetallesCita(cita) {
   // Rellenar usuario que programó y editó
   $('modalUsuarioProgramo').textContent = escapeHtml(cita.programado_por_nombre || '-');
   $('modalUsuarioEdito').textContent = escapeHtml(cita.editado_por_nombre || cita.programado_por_nombre || '-');
+
+  // Nuevos campos de información de la cita
+  const $estudioEl = document.getElementById('modalEstudioDisplay');
+  if ($estudioEl) $estudioEl.textContent = cita.estudio || '-';
+  const $fechaEl = document.getElementById('modalFechaDisplay');
+  if ($fechaEl) $fechaEl.textContent = cita.fecha ? formatearFechaISO(cita.fecha) : '-';
+  const $horaEl = document.getElementById('modalHoraDisplay');
+  if ($horaEl) $horaEl.textContent = cita.hora_agendamiento ? formatearHora(cita.hora_agendamiento) : '-';
+  const $diagEl = document.getElementById('modalDiagnosticoDisplay');
+  if ($diagEl) $diagEl.textContent = cita.diagnostico_codigo ? `${cita.diagnostico_codigo}${cita.diagnostico_nombre ? ' – ' + cita.diagnostico_nombre : ''}` : (cita.diagnostico_nombre || '-');
+  const $telEl = document.getElementById('modalTelefonoDisplay');
+  if ($telEl) $telEl.textContent = cita.telefono || '-';
+
+  // Badge de estado en el header
+  const $badgeEl = document.getElementById('modalEstadoHeaderBadge');
+  if ($badgeEl) $badgeEl.innerHTML = estadoBadge(cita.estado || 'Programado');
+
+  // Franja de horario real (cuando la cita ya tiene hora_inicio)
+  const $horarios = document.getElementById('modalInfoHorarios');
+  if ($horarios) {
+    if (cita.hora_inicio) {
+      $horarios.style.display = 'flex';
+      const $hi = document.getElementById('modalHoraInicioDisplay');
+      const $hf = document.getElementById('modalHoraFinDisplay');
+      if ($hi) $hi.textContent = formatearHora(cita.hora_inicio);
+      if ($hf) $hf.textContent = cita.hora_fin ? formatearHora(cita.hora_fin) : '-';
+    } else {
+      $horarios.style.display = 'none';
+    }
+  }
   
   // Rellenar selector de equipo
   $('modalEquipo').value = cita.equipo_id || '';
