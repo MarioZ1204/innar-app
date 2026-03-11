@@ -3284,107 +3284,79 @@ async function checkEquiposDisponibilidad() {
 
     const contenido = $('equiposDisponibilidadContenido');
     const alerta = $('equiposDisponibilidadAlerta');
-    
-    // Determinar color según disponibilidad
+
     const esDisponible = data.capacidad.hayDisponibilidad;
-    const colorFondo = esDisponible ? '#f0f8f7' : '#fef5f5';
-    const colorBorde = esDisponible ? '#627371' : '#dc2626';
-    const colorTexto = esDisponible ? '#627371' : '#7f1d1d';
-    
-    alerta.style.backgroundColor = colorFondo;
-    alerta.style.borderColor = colorBorde;
-    
-    // Mostrar estado de cupos
+    const estado = esDisponible ? 'disponible' : 'ocupado';
+    const titulo = esDisponible ? 'Equipos disponibles' : 'Sin disponibilidad';
+
+    // Helpers
+    const fmtFecha = (f) => {
+      if (!f) return '';
+      const [y, m, d] = f.substring(0, 10).split('-');
+      return `${d}/${m}`;
+    };
+    const fmtHora = (h) => h ? h.substring(0, 5) : '';
+
+    // Header
     let html = `
-      <div style="font-weight:600;color:${colorTexto};margin-bottom:12px">
-        ${esDisponible ? 'Equipos disponibles' : 'Sin disponibilidad'}
-      </div>
-      
-      <div style="margin-bottom:12px;font-size:0.9rem;color:#627371;display:flex;gap:16px;flex-wrap:wrap">
-        <div><strong>${data.capacidad.cuposaDisponibles}/4</strong> cupos libres</div>
-        <div><strong>${data.duracionMinutos}min</strong> duración</div>
-        <div><strong>${data.horaFin}</strong>h fin estimado</div>
-      </div>
-      
-      ${data.capacidad.equiposEnUso && data.capacidad.equiposEnUso.length > 0 ? `
-        <div style="margin-bottom:12px;padding:10px;background:#fff5f5;border-left:3px solid #dc2626;border-radius:4px">
-          <div style="font-size:0.9rem;color:#7f1d1d">
-            <strong>En uso:</strong> ${data.capacidad.equiposEnUso.map(e => e.equipo_nombre).join(', ')}
-          </div>
+      <div class="cupos-panel-header ${estado}">
+        <div class="cupos-panel-title ${estado}">
+          <span class="cupos-dot ${estado}"></span>
+          ${titulo}
         </div>
-      ` : ''}
-      
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(80px,1fr));gap:8px">
+        <div class="cupos-panel-meta">
+          <span><strong>${data.capacidad.cuposaDisponibles}/4</strong> libres</span>
+          <span><strong>${data.duracionMinutos}min</strong></span>
+          <span>fin <strong>${fmtHora(data.horaFin)}</strong></span>
+        </div>
+      </div>
+      <div class="cupos-panel-body">
     `;
-    
-    // Mostrar 4 cupos con diseño moderno
+
+    // Grid de cupos
+    html += `<div class="cupos-grid">`;
     for (let i = 1; i <= 4; i++) {
       const ocupado = i <= data.capacidad.cuposOcupados;
-      const colorCupo = ocupado ? '#fee2e2' : '#e8f4f1';
-      const colorBordeCupo = ocupado ? '#dc2626' : '#627371';
-      const estado = ocupado ? 'Ocupado' : 'Libre';
-      const textoColor = ocupado ? '#7f1d1d' : '#2d4a47';
-      
+      const tipoCard = ocupado ? 'ocupado' : 'libre';
+      const icono = ocupado
+        ? `<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/></svg>`
+        : `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/></svg>`;
       html += `
-        <div style="
-          padding:12px;
-          background:${colorCupo};
-          border:2px solid ${colorBordeCupo};
-          border-radius:8px;
-          text-align:center;
-          font-weight:600;
-          font-size:0.95rem
-        ">
-          <div style="font-size:1.2rem;color:${colorBordeCupo};margin-bottom:4px">
-            ${ocupado ? '●' : '○'}
-          </div>
-          <div style="color:${textoColor};font-size:0.85rem">${estado}</div>
-        </div>
-      `;
+        <div class="cupo-card ${tipoCard}">
+          <div class="cupo-card-icon">${icono}</div>
+          <div class="cupo-card-label">${ocupado ? 'Ocupado' : 'Libre'}</div>
+        </div>`;
     }
-    html += '</div>';
-    
-    // Mostrar citas en rango si las hay
+    html += `</div>`;
+
+    // Equipos en uso
+    if (data.capacidad.equiposEnUso && data.capacidad.equiposEnUso.length > 0) {
+      html += `
+        <div class="cupos-en-uso">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="flex-shrink:0;margin-top:1px"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
+          <span><strong>En uso:</strong> ${data.capacidad.equiposEnUso.map(e => e.equipo_nombre).join(', ')}</span>
+        </div>`;
+    }
+
+    // Estudios solapados
     if (data.citasEnRango && data.citasEnRango.length > 0) {
-      html += `
-        <div style="margin-top:12px;padding:12px;background:white;border-radius:6px;border-left:3px solid #627371">
-          <div style="font-weight:600;color:#627371;margin-bottom:8px">Estudios en este rango:</div>
-      `;
+      html += `<div class="cupos-estudios"><div class="cupos-estudios-title">Estudios en este rango</div>`;
       data.citasEnRango.forEach(cita => {
-        // Función para formatear fecha (asegurar que sea YYYY-MM-DD)
-        const formatearFecha = (fecha) => {
-          if (!fecha) return '';
-          // Remover caracteres ISO adicionales si los hay
-          const fechaLimpia = fecha.substring(0, 10); // Tomar solo los primeros 10 caracteres (YYYY-MM-DD)
-          const [año, mes, día] = fechaLimpia.split('-');
-          return `${día}/${mes}`;
-        };
-        
-        // Función para formatear hora (asegurar HH:MM)
-        const formatearHora = (hora) => {
-          if (!hora) return '';
-          return hora.substring(0, 5); // HH:MM
-        };
-        
-        const fechaInicio = formatearFecha(cita.fechaInicio);
-        const horaInicio = formatearHora(cita.horaInicio);
-        const fechaFin = formatearFecha(cita.fechaFin);
-        const horaFin = formatearHora(cita.horaFin);
-        
-        const etiquetaCita = `${cita.estudio} (Inicio ${fechaInicio} - ${horaInicio} | Fin ${fechaFin} - ${horaFin})`;
-        html += `<div style="font-size:0.85rem;color:#475569;margin:4px 0">• ${etiquetaCita}</div>`;
+        html += `<div class="cupos-estudio-item">${cita.estudio || 'Sin estudio'} &nbsp;<span style="color:#94a3b8">${fmtFecha(cita.fechaInicio)} ${fmtHora(cita.horaInicio)} → ${fmtFecha(cita.fechaFin)} ${fmtHora(cita.horaFin)}</span></div>`;
       });
-      html += '</div>';
+      html += `</div>`;
     }
-    
-    // Si no hay disponibilidad, mostrar próxima disponibilidad
+
+    // Próxima disponibilidad
     if (!esDisponible && data.proximaDisponibilidad) {
       html += `
-        <div style="margin-top:12px;padding:10px;background:#fef5e7;border-radius:6px;color:#7a5c1a;font-size:0.9rem;border-left:3px solid #d4721b">
-          Próxima disponibilidad: <strong>${data.proximaDisponibilidad}</strong>
-        </div>
-      `;
+        <div class="cupos-proxima">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="flex-shrink:0"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm.5 5H11v6l5.25 3.15.75-1.23-4.5-2.67V7z"/></svg>
+          <span>Próxima disponibilidad: <strong>${data.proximaDisponibilidad}</strong></span>
+        </div>`;
     }
+
+    html += `</div>`; // cierra cupos-panel-body
 
     contenido.innerHTML = html;
     alerta.style.display = 'block';
