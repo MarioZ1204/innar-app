@@ -2127,12 +2127,12 @@ app.get('/api/equipos-electro/disponibilidad', async (req, res) => {
     const equiposEnUso = citasOcupadas
       .filter(cita => cita.equipo_id) // Solo las que tienen equipo asignado
       .map(cita => ({
-        equipo_id: cita.equipo_id,
+        equipo_id: String(cita.equipo_id),
         equipo_nombre: cita.equipo_nombre || `Equipo ${cita.equipo_id}`
       }))
       .filter((equipo, index, self) => 
-        index === self.findIndex(e => e.equipo_id === equipo.equipo_id)
-      ); // Eliminar duplicados
+        index === self.findIndex(e => String(e.equipo_id) === String(equipo.equipo_id))
+      ); // Eliminar duplicados (usar String para evitar type mismatch)
 
     // Obtener detalles de las citas que solapan
     const citasEnRango = (citasOcupadas || []).map(cita => {

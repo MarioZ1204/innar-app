@@ -3521,6 +3521,9 @@ async function cargarCitasElectro() {
       $('electroUsuarioProgramo').textContent = citasFiltradas[0].programado_por_nombre || citasFiltradas[0].usuario_programo || '-';
       $('electroUsuarioEdito').textContent = citasFiltradas[0].editado_por_nombre || citasFiltradas[0].usuario_edito || citasFiltradas[0].programado_por_nombre || citasFiltradas[0].usuario_programo || 'Quien programó';
     }
+    
+    // Refrescar panel de disponibilidad de equipos
+    checkEquiposDisponibilidad();
   } catch (e) { 
     console.error('Error cargando citas:', e);
     showToast('Error cargando citas', 'error'); 
@@ -5735,22 +5738,23 @@ function abrirModalDuracionEstudio() {
   if (modal) {
     modal.classList.remove('hidden');
     
-    // Establecer valores por defecto con hora actual
-    const ahora = new Date();
-    const hh = String(ahora.getHours()).padStart(2, '0');
-    const mm = String(ahora.getMinutes()).padStart(2, '0');
+    // Hora inicio: hora agendada de la cita (fija, no editable)
+    const horaAgendada = citaElectroSeleccionada && citaElectroSeleccionada.hora_agendamiento
+      ? citaElectroSeleccionada.hora_agendamiento.substring(0, 5)
+      : (() => {
+          const a = new Date();
+          return `${String(a.getHours()).padStart(2,'0')}:${String(a.getMinutes()).padStart(2,'0')}`;
+        })();
+    $('horaEstudioInicio').value = horaAgendada;
     
-    // Hora inicio: ahora
-    $('horaEstudioInicio').value = `${hh}:${mm}`;
+    // Duración predeterminada HH:MM desde duracion_minutos de la cita
+    const durPredMin = (citaElectroSeleccionada && citaElectroSeleccionada.duracion_minutos)
+      ? citaElectroSeleccionada.duracion_minutos
+      : (selectedEstudioDuracion || 480);
+    $('durEstudioHH').value = Math.floor(durPredMin / 60);
+    $('durEstudioMM').value = durPredMin % 60;
     
-    // Hora fin: 1 hora después
-    const ahoraFin = new Date();
-    ahoraFin.setHours(ahora.getHours() + 1);
-    const hhFin = String(ahoraFin.getHours()).padStart(2, '0');
-    const mmFin = String(ahoraFin.getMinutes()).padStart(2, '0');
-    $('horaEstudioFin').value = `${hhFin}:${mmFin}`;
-    
-    actualizarDuracionMostrada();
+    actualizarHoraFinCalculada();
   }
 }
 
@@ -5762,52 +5766,35 @@ function cerrarModalDuracionEstudio() {
   }
 }
 
-function actualizarDuracionMostrada() {
+function actualizarHoraFinCalculada() {
   const horaInicio = $('horaEstudioInicio').value;
-  const horaFin = $('horaEstudioFin').value;
+  const hhDur = parseInt($('durEstudioHH').value) || 0;
+  const mmDur = parseInt($('durEstudioMM').value) || 0;
+  const display = $('duracionCalculada');
   
-  if (!horaInicio || !horaFin) {
-    const display = $('duracionCalculada');
+  if (!horaInicio || (hhDur === 0 && mmDur === 0)) {
     if (display) display.textContent = '-';
     return;
   }
   
-  // Convertir tiempos a minutos
   const [hhI, mmI] = horaInicio.split(':').map(Number);
-  const [hhF, mmF] = horaFin.split(':').map(Number);
-  
   const minutosInicio = hhI * 60 + mmI;
-  const minutosFin = hhF * 60 + mmF;
+  const duracionMinutos = hhDur * 60 + mmDur;
+  let minutosFin = minutosInicio + duracionMinutos;
   
-  let diferenciaMinutos = minutosFin - minutosInicio;
+  const cruceMedianoche = minutosFin >= 24 * 60;
+  if (cruceMedianoche) minutosFin -= 24 * 60;
   
-  // Si el fin es menor que inicio, asumir que es al día siguiente
-  if (diferenciaMinutos < 0) {
-    diferenciaMinutos += 24 * 60;
-  }
+  const hhFin = String(Math.floor(minutosFin / 60)).padStart(2, '0');
+  const mmFin = String(minutosFin % 60).padStart(2, '0');
   
-  // Si la diferencia es 0, asumir 24 horas
-  if (diferenciaMinutos === 0) {
-    diferenciaMinutos = 24 * 60;
-  }
-  
-  const horas = Math.floor(diferenciaMinutos / 60);
-  const minutos = diferenciaMinutos % 60;
-  
-  let texto = '';
-  if (horas > 0) {
-    texto += `${horas} hora${horas !== 1 ? 's' : ''}`;
-  }
-  if (minutos > 0) {
-    if (texto) texto += ' ';
-    texto += `${minutos} minuto${minutos !== 1 ? 's' : ''}`;
-  }
-  
-  const display = $('duracionCalculada');
   if (display) {
-    display.textContent = texto || '-';
+    display.textContent = `${hhFin}:${mmFin}${cruceMedianoche ? ' (+1 día)' : ''}`;
   }
 }
+
+// Alias para compatibilidad con cualquier referencia vieja
+function actualizarDuracionMostrada() { actualizarHoraFinCalculada(); }
 
 async function confirmarDuracionEstudio() {
   console.log('[DURACION] Confirmando duración del estudio');
@@ -5841,35 +5828,27 @@ async function confirmarDuracionEstudio() {
   
   try {
     const horaInicio = $('horaEstudioInicio').value;
-    const horaFin = $('horaEstudioFin').value;
+    const hhDur = parseInt($('durEstudioHH').value) || 0;
+    const mmDur = parseInt($('durEstudioMM').value) || 0;
+    const duracionMinutos = hhDur * 60 + mmDur;
     
-    if (!horaInicio || !horaFin) {
-      showToast('Por favor completa hora de inicio y fin', 'error');
+    if (!horaInicio) {
+      showToast('No se pudo determinar la hora de inicio', 'error');
+      return;
+    }
+    if (duracionMinutos <= 0) {
+      showToast('Ingresa una duración válida (HH y/o MM)', 'error');
       return;
     }
     
-    // Validar que fin sea después de inicio (o al día siguiente)
+    // Calcular hora_fin a partir de inicio + duración
     const [hhI, mmI] = horaInicio.split(':').map(Number);
-    const [hhF, mmF] = horaFin.split(':').map(Number);
-    const minutosInicio = hhI * 60 + mmI;
-    let minutosFin = hhF * 60 + mmF;
+    let minutosFin = hhI * 60 + mmI + duracionMinutos;
+    let cruceMedianoche = false;
+    if (minutosFin >= 24 * 60) { minutosFin -= 24 * 60; cruceMedianoche = true; }
+    const horaFin = `${String(Math.floor(minutosFin / 60)).padStart(2,'0')}:${String(minutosFin % 60).padStart(2,'0')}`;
     
-    if (minutosFin < minutosInicio) {
-      minutosFin += 24 * 60; // Asumir que es al día siguiente
-    }
-    
-    if (minutosFin === minutosInicio) {
-      showToast('La hora de fin debe ser diferente a la de inicio', 'error');
-      return;
-    }
-    
-    // Calcular duración en minutos
-    let duracionMinutos = minutosFin - minutosInicio;
-    if (duracionMinutos < 0) {
-      duracionMinutos += 24 * 60;
-    }
-    
-    console.log(`[DURACION] Iniciando estudio: ${horaInicio} → ${horaFin} (${duracionMinutos} minutos)`);
+    console.log(`[DURACION] Iniciando estudio: ${horaInicio} → ${horaFin} (${duracionMinutos} min${cruceMedianoche ? ', cruza medianoche' : ''})`);
     
     const equipoId = equipoSelect.value;
     const cambios = {
