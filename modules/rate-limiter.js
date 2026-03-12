@@ -1,8 +1,9 @@
 // rate-limiter.js - Módulo para Rate Limiting de Login
 const db = require('../utils/db-mysql');
+const logger = require('../utils/logger');
 
 const MAX_INTENTOS = 3;
-const TIEMPO_BLOQUEO_MIN = 5; // 5 minutos en milisegundos, pero se multiplica por 60*1000, así que debe ser ajustado
+const TIEMPO_BLOQUEO_MIN = 5; // Duración del bloqueo en minutos (se multiplica por 60*1000 al calcular el timestamp UNIX)
 
 /**
  * Obtener IP del cliente (considerando proxies)
@@ -37,7 +38,7 @@ async function isBlocked(ip) {
     );
     return false;
   } catch (error) {
-    console.error('[RATE LIMIT] Error verificando bloqueo:', error.message);
+    logger.error('[RATE LIMIT] Error verificando bloqueo', { error: error.message });
     return false;
   }
 }
@@ -74,9 +75,9 @@ async function recordFailedAttempt(ip, usuario) {
       );
     }
     
-    console.log(`[RATE LIMIT] Intento fallido registrado para IP: ${ip}`);
+    logger.warn(`[RATE LIMIT] Intento fallido registrado para IP: ${ip}`);
   } catch (error) {
-    console.error('[RATE LIMIT] Error registrando intento fallido:', error.message);
+    logger.error('[RATE LIMIT] Error registrando intento fallido', { error: error.message });
   }
 }
 
@@ -89,9 +90,9 @@ async function resetAttempts(ip) {
       'DELETE FROM login_attempts WHERE ip_address = ?',
       [ip]
     );
-    console.log(`[RATE LIMIT] Intentos reseteados para IP: ${ip}`);
+    logger.info(`[RATE LIMIT] Intentos reseteados para IP: ${ip}`);
   } catch (error) {
-    console.error('[RATE LIMIT] Error reseteando intentos:', error.message);
+    logger.error('[RATE LIMIT] Error reseteando intentos', { error: error.message });
   }
 }
 
@@ -113,7 +114,7 @@ async function getBlockInfo(ip) {
       usuario: attempts.usuario
     };
   } catch (error) {
-    console.error('[RATE LIMIT] Error obteniendo info de bloqueo:', error.message);
+    logger.error('[RATE LIMIT] Error obteniendo info de bloqueo', { error: error.message });
     return null;
   }
 }

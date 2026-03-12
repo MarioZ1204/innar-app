@@ -22,7 +22,6 @@ const auditLog = require('./modules/audit-log');
 const transactions = require('./utils/transactions');
 const logger = require('./utils/logger');
 const procesarAgendaExcel = require('./utils/procesar-agenda-excel');
-const bodyParser = require('body-parser');
 const cors = require('cors');
 const puppeteer = require('puppeteer');
 const fs = require('fs');
@@ -31,6 +30,7 @@ const session = require('express-session');
 const bcrypt = require('bcrypt');
 const multer = require('multer');
 const appointmentsRouter = require('./routes/appointmentsV1');
+const { startBackupScheduler } = require('./utils/backup-scheduler');
 
 const app = express();
 
@@ -38,11 +38,19 @@ app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:3000',
   credentials: true
 }));
-app.use(bodyParser.json({ limit: '10mb' }));
-app.use(bodyParser.urlencoded({ limit: '10mb', extended: true }));
+// Headers de seguridad HTTP (configurado para uso local sin HTTPS)
+app.use(helmet({
+  contentSecurityPolicy: false,    // La app usa scripts/estilos inline
+  hsts: false,                     // Solo HTTP local, sin HTTPS
+  crossOriginEmbedderPolicy: false,
+  frameguard: { action: 'sameorigin' },
+}));
+
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ limit: '10mb', extended: true }));
 // 50mb para rutas que generan PDFs con HTML grande
-const jsonLargeBody = bodyParser.json({ limit: '50mb' });
-const urlencodedLargeBody = bodyParser.urlencoded({ limit: '50mb', extended: true });
+const jsonLargeBody = express.json({ limit: '50mb' });
+const urlencodedLargeBody = express.urlencoded({ limit: '50mb', extended: true });
 
 // Logging de requests â€” ignora assets estÃ¡ticos
 const EXTENSIONES_ESTATICAS = /\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|map)$/i;
@@ -649,6 +657,9 @@ app.patch('/api/usuarios/:id', requireAuth, requireAdmin, async (req, res) => {
     if (rol !== undefined) {
       const rolesValidos = ['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro', 'tecnico_electro', 'auxiliar_recepcion', 'doctor', 'contabilidad'];
       if (!rolesValidos.includes(rol)) return res.status(400).json({ error: 'Rol invÃ¡lido' });
+      if (user.rol === 'superadmin' && rol !== 'superadmin') {
+        return res.status(403).json({ error: 'No se puede cambiar el rol del Super Administrador' });
+      }
       updates.push('rol = ?'); params.push(rol);
     }
     
@@ -757,8 +768,11 @@ app.delete('/api/usuarios/:id', requireAuth, requireAdmin, async (req, res) => {
   }
   try {
     // Obtener usuario antes de eliminar para auditorÃ­a
-    const userBefore = await db.queryOne('SELECT usuario, nombre FROM usuarios WHERE id = ?', [id]);
+    const userBefore = await db.queryOne('SELECT usuario, nombre, rol FROM usuarios WHERE id = ?', [id]);
     if (!userBefore) return res.status(404).json({ error: 'Usuario no encontrado' });
+    if (userBefore.rol === 'superadmin') {
+      return res.status(403).json({ error: 'El Super Administrador no puede ser eliminado' });
+    }
     
     const result = await db.execute('DELETE FROM usuarios WHERE id = ?', [id]);
     if (result.affectedRows === 0) return res.status(404).json({ error: 'Usuario no encontrado' });
@@ -886,12 +900,12 @@ app.get('/api/auditoria/buscar', requireAuth, requireAdmin, async (req, res) => 
     // Ordenar por fecha descendente y limitar (LIMIT debe ser nÃºmero directo, no parÃ¡metro)
     query += ` ORDER BY ua.fecha_cambio DESC LIMIT ${limit}`;
     
-    console.log('[AUDIT SEARCH] Query:', query);
-    console.log('[AUDIT SEARCH] Params:', params);
-    
+    logger.debug('[AUDIT SEARCH] Query: ' + query);
+    logger.debug('[AUDIT SEARCH] Params: ' + JSON.stringify(params));
+
     const results = await db.query(query, params);
-    
-    console.log('[AUDIT SEARCH] Resultados encontrados:', results.length);
+
+    logger.debug('[AUDIT SEARCH] Resultados: ' + results.length);
     
     // Parsear JSON de cambios - IMPORTANTE: el campo cambios viene como STRING de JSON
     const resultsWithParsedChanges = results.map(r => {
@@ -1382,7 +1396,7 @@ app.post('/api/doctor-disponibilidad/procesar-excel', requireAuth, upload.single
     }
 
     const doctorId = parseInt(req.body.doctor_id || req.session.usuarioId, 10);
-    console.log(`[DISPONIBILIDAD] Procesando Excel para doctor=${doctorId}, archivo=${req.file.originalname}`);
+    logger.info(`[DISPONIBILIDAD] Procesando Excel para doctor=${doctorId}, archivo=${req.file.originalname}`);
     
     if (!doctorId) {
       fs.unlink(req.file.path, () => {});
@@ -1394,17 +1408,17 @@ app.post('/api/doctor-disponibilidad/procesar-excel', requireAuth, upload.single
     const isDoctor = req.session.rol === 'doctor' && doctorId === req.session.usuarioId;
     if (!isAdmin && !isDoctor) {
       fs.unlink(req.file.path, () => {});
-      console.log(`[DISPONIBILIDAD] Acceso denegado: rol=${req.session.rol}, usuarioId=${req.session.usuarioId}`);
+      logger.warn(`[DISPONIBILIDAD] Acceso denegado: rol=${req.session.rol}, usuarioId=${req.session.usuarioId}`);
       return res.status(403).json({ error: 'No tienes permiso para esto' });
     }
 
     // Procesar el Excel
     const result = await procesarAgendaExcel.procesarAgendaExcel(req.file.path, doctorId, db);
-    console.log(`[DISPONIBILIDAD] Resultado del procesamiento:`, result);
+    logger.debug('[DISPONIBILIDAD] Resultado: ' + JSON.stringify(result));
 
     if (!result.ok) {
       fs.unlink(req.file.path, () => {});
-      console.log(`[DISPONIBILIDAD] Error en procesamiento: ${result.error}`);
+      logger.warn(`[DISPONIBILIDAD] Error en procesamiento: ${result.error}`);
       return res.status(400).json({ error: result.error });
     }
 
@@ -1415,7 +1429,7 @@ app.post('/api/doctor-disponibilidad/procesar-excel', requireAuth, upload.single
         'INSERT INTO doctor_agenda_files (doctor_id, filename, url, uploaded_by) VALUES (?, ?, ?, ?)',
         [doctorId, req.file.originalname, url, req.session.usuarioId || null]
       );
-      console.log(`[DISPONIBILIDAD] Archivo guardado en BD con ID: ${fileResult.insertId}`);
+      logger.info(`[DISPONIBILIDAD] Archivo guardado en BD con ID: ${fileResult.insertId}`);
     } catch (dbErr) {
       console.warn(`[DISPONIBILIDAD] Advertencia: error guardando metadatos del archivo:`, dbErr.message);
       // Continuar aunque falle guardar metadatos - el procesamiento fue exitoso
@@ -4579,6 +4593,38 @@ const PORT = process.env.PORT || 3000;
     } catch (migErr) {
       logger.warn('[MIGRATION] Advertencia en migración usuarios.ultimo_acceso: ' + migErr.message, { type: 'STARTUP' });
     }
+
+    // --- Migracion: convertir usuario 'admin' legacy a 'superadmin' ----------
+    try {
+      const existingSuperadmin = await db.query("SELECT COUNT(*) AS cnt FROM usuarios WHERE rol = 'superadmin'");
+      if (existingSuperadmin?.[0]?.cnt === 0) {
+        const legacyAdmin = await db.queryOne("SELECT id FROM usuarios WHERE usuario = 'admin' AND rol = 'admin'");
+        if (legacyAdmin) {
+          await db.execute("UPDATE usuarios SET rol = 'superadmin', nombre = 'Super Administrador' WHERE id = ?", [legacyAdmin.id]);
+          logger.info('[MIGRATION] Usuario admin convertido a superadmin', { type: 'STARTUP' });
+        }
+      }
+    } catch (migErr) {
+      logger.warn('[MIGRATION] Advertencia en migracion admin->superadmin: ' + migErr.message, { type: 'STARTUP' });
+    }
+    // ─── Migración: ENUM rol en usuarios (agregar nuevos roles) ─────────────
+    try {
+      const enumRow = await db.query(
+        `SELECT COLUMN_TYPE FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME   = 'usuarios'
+           AND COLUMN_NAME  = 'rol'`
+      );
+      const currentEnum = enumRow?.[0]?.COLUMN_TYPE || '';
+      if (!currentEnum.includes('superadmin') || !currentEnum.includes('admin_recepcion') || !currentEnum.includes('auxiliar_recepcion')) {
+        await db.execute(
+          `ALTER TABLE usuarios MODIFY COLUMN rol ENUM('doctor','recepcion','admin','electro','contabilidad','superadmin','admin_recepcion','admin_electro','tecnico_electro','auxiliar_recepcion') NOT NULL DEFAULT 'auxiliar_recepcion'`
+        );
+        logger.info('[MIGRATION] ENUM rol de usuarios actualizado con nuevos roles', { type: 'STARTUP' });
+      }
+    } catch (migErr) {
+      logger.warn('[MIGRATION] Advertencia en migración ENUM rol: ' + migErr.message, { type: 'STARTUP' });
+    }
     // ─── Migración: tabla pacientes_espera ───────────────────────────────────
     try {
       const tblEspera = await db.query(
@@ -4820,19 +4866,19 @@ const PORT = process.env.PORT || 3000;
       
       // Evento: Estado de turno mÃ©dico actualizado
       socket.on('turno-medico:estado-actualizado', (data) => {
-        console.log('[SOCKET] turno-medico:estado-actualizado:', data);
+        logger.debug('[SOCKET] turno-medico:estado-actualizado');
         io.emit('turno-medico:estado-actualizado', data);
       });
 
-      // Evento: Turno mÃ©dico reprogramado
+      // Evento: Turno médico reprogramado
       socket.on('turno-medico:reprogramado', (data) => {
-        console.log('[SOCKET] turno-medico:reprogramado:', data);
+        logger.debug('[SOCKET] turno-medico:reprogramado');
         io.emit('turno-medico:reprogramado', data);
       });
 
-      // Evento: Nuevo turno mÃ©dico creado
+      // Evento: Nuevo turno médico creado
       socket.on('turno-medico:creado', (data) => {
-        console.log('[SOCKET] turno-medico:creado:', data);
+        logger.debug('[SOCKET] turno-medico:creado');
         io.emit('turno-medico:creado', data);
       });
 
@@ -4842,7 +4888,8 @@ const PORT = process.env.PORT || 3000;
     });
 
     httpServer.listen(PORT, '0.0.0.0', () => {
-      console.log(`Servidor corriendo en http://0.0.0.0:${PORT}`);
+      logger.info(`Servidor corriendo en http://0.0.0.0:${PORT}`);
+      startBackupScheduler();
       
       // Backups automÃ¡ticos desactivados (ejecutar manualmente: node utils/backup.js)
     });

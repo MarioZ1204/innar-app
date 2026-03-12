@@ -101,18 +101,12 @@ function apiFetch(url, opts = {}) {
   return fetch(url, { ...opts, credentials: 'include' });
 }
 
-function isAdmin()        { return currentUser && (currentUser.rol === 'superadmin' || currentUser.rol === 'admin'); }
-function isSuperAdmin()   { return isAdmin(); }
-function isRecepcion()    { return currentUser && (currentUser.rol === 'admin_recepcion' || currentUser.rol === 'recepcion' || isAdmin()); }
-function isAdminRecepcion() { return currentUser && (currentUser.rol === 'admin_recepcion' || currentUser.rol === 'recepcion') ; }
-function isElectro()      { return currentUser && (currentUser.rol === 'admin_electro' || currentUser.rol === 'electro' || currentUser.rol === 'tecnico_electro' || isAdmin()); }
-function isAdminElectro() { return currentUser && (currentUser.rol === 'admin_electro' || currentUser.rol === 'electro'); }
-function isTecnicoElectro() { return currentUser && currentUser.rol === 'tecnico_electro'; }
-function isAuxiliarRecepcion() { return currentUser && currentUser.rol === 'auxiliar_recepcion'; }
-function isDoctor()       { return currentUser && currentUser.rol === 'doctor'; }
+function isAdmin() { return currentUser && (currentUser.rol === 'admin' || currentUser.rol === 'superadmin'); }
+function isRecepcion() { return currentUser && currentUser.rol === 'recepcion'; }
+function isElectro() { return currentUser && currentUser.rol === 'electro'; }
+function isDoctor() { return currentUser && currentUser.rol === 'doctor'; }
 function isContabilidad() { return currentUser && currentUser.rol === 'contabilidad'; }
-function canDeleteRecibos() { return isAdmin() || isAdminRecepcion(); }
-function canViewAuditoriaCitas() { return isAdmin() || isAdminRecepcion() || isAdminElectro(); }
+function canDeleteRecibos() { return isAdmin(); }
 
 // Mostrar saludo para doctores
 function mostrarSaludoDoctor() {
@@ -142,18 +136,7 @@ function updateSidebarUser(user) {
   const initials = (words.length >= 2
     ? words[0][0] + words[words.length - 1][0]
     : name.substring(0, 2)).toUpperCase();
-  const roleMap = {
-    superadmin: 'Super Administrador',
-    admin: 'Super Administrador',
-    admin_recepcion: 'Admin. Recepción',
-    recepcion: 'Admin. Recepción',
-    admin_electro: 'Admin. Electrodiagnóstico',
-    electro: 'Admin. Electrodiagnóstico',
-    tecnico_electro: 'Técnico Electrodiagnóstico',
-    auxiliar_recepcion: 'Auxiliar Recepción',
-    doctor: 'Doctor',
-    contabilidad: 'Contabilidad'
-  };
+  const roleMap = { superadmin: 'Super Admin', admin: 'Administrador', admin_recepcion: 'Admin Recepción', recepcion: 'Recepción', admin_electro: 'Admin Electro', electro: 'Electrodiagnóstico', tecnico_electro: 'Técnico Electro', auxiliar_recepcion: 'Auxiliar Recepción', doctor: 'Doctor', contabilidad: 'Contabilidad' };
   const roleLabel = roleMap[user.rol] || user.rol || '-';
   document.querySelectorAll('.sidebar-user-avatar').forEach(el => el.textContent = initials);
   document.querySelectorAll('.sidebar-user-name').forEach(el => el.textContent = name);
@@ -310,11 +293,11 @@ function goToMenu() {
   initAgendaDone = false;
   initElectroDone = false;
   initDashboardCitasDone = false;
-  initGestionDatosDone = false;
   // initRecibosDone: NO resetear — initRecibos usa addEventListener (acumularía duplicados)
   // el módulo recibos maneja refresh via el branch `else cargarLista()` en goToModule
   initUsuariosDone = false;
   initDiagnosticosDone = false;
+  initGestionDatosDone = false;
   // Resetear flag de listeners de socket-electro
   window.listenersConfigured = false;
   // Limpiar selectedDoctorId cuando se vuelve al menú
@@ -1372,7 +1355,7 @@ async function cargarMedicosEnRecibo() {
         filtro.appendChild(opt);
       });
     }
-  } catch (_) {}
+  } catch (e) { console.warn('[cargarMedicos] Error cargando médicos:', e.message); }
 }
 
 // ---- Cargar tipos de consulta según el médico seleccionado (formulario recibo) ----
@@ -1395,7 +1378,7 @@ async function cargarTiposConsultaEnRecibo(medicoId) {
     });
     window._reciboCurrentTipos = Array.isArray(tipos) ? tipos.map(t => ({ nombre: t.nombre })) : [];
     refreshConceptosRows();
-  } catch (_) {}
+  } catch (e) { console.warn('[cargarTiposConsultaEnRecibo] Error:', e.message); }
 }
 
 // ---- Cargar servicios en el select del formulario ----
@@ -1411,7 +1394,7 @@ async function cargarServiciosEnRecibo() {
       opt.textContent = s.nombre;
       sel.appendChild(opt);
     });
-  } catch (_) {}
+  } catch (e) { console.warn('[cargarServiciosEnRecibo] Error:', e.message); }
 }
 
 // ---- Cargar médicos en filtro ----
@@ -1427,7 +1410,7 @@ async function cargarFiltrosMedicos() {
       opt.textContent = m.nombre || m.usuario;
       sel.appendChild(opt);
     });
-  } catch (_) {}
+  } catch (e) { console.warn('[cargarFiltrosMedicos] Error:', e.message); }
 }
 
 // ---- Cargar usuarios que han generado recibos en filtro ----
@@ -1443,7 +1426,7 @@ async function cargarFiltrosUsuarios() {
       opt.textContent = u.nombre || String(u.id);
       sel.appendChild(opt);
     });
-  } catch (_) {}
+  } catch (e) { console.warn('[cargarFiltrosUsuarios] Error:', e.message); }
 }
 
 // ---- Buscar cita del día para pre-llenar formulario ----
@@ -4209,11 +4192,11 @@ async function initUsuarios() {
           'special': validation.issues.includes('special') ? '[✗]' : '[✓]'
         };
         
-        $('req-length').textContent = checks.length + ' Mínimo 8 caracteres';
-        $('req-upper').textContent = checks.upper + ' Al menos una mayúscula (A-Z)';
-        $('req-lower').textContent = checks.lower + ' Al menos una minúscula (a-z)';
-        $('req-number').textContent = checks.number + ' Al menos un número (0-9)';
-        $('req-special').textContent = checks.special + ' Al menos un símbolo (!@#$%^&* etc)';
+        $('req-length')?.textContent  && ($('req-length').textContent  = checks.length  + ' Mínimo 8 caracteres');
+        $('req-upper')?.textContent   && ($('req-upper').textContent   = checks.upper   + ' Al menos una mayúscula (A-Z)');
+        $('req-lower')?.textContent   && ($('req-lower').textContent   = checks.lower   + ' Al menos una minúscula (a-z)');
+        $('req-number')?.textContent  && ($('req-number').textContent  = checks.number  + ' Al menos un número (0-9)');
+        if ($('req-special')) $('req-special').textContent = checks.special + ' Al menos un símbolo (!@#$%^&* etc)';
       } else {
         strengthBar.style.display = 'none';
         strengthText.style.display = 'none';
@@ -6640,73 +6623,11 @@ async function guardarEdicionPaciente() {
   }
 }
 
-// Función para enviar recomendaciones por WhatsApp - muestra selección de tipo de paciente
+// Función para enviar recomendaciones por WhatsApp
 function enviarRecomendacionesWhatsApp(cita) {
   if (!cita) { showToast('Error: No hay cita seleccionada', 'error'); return; }
   if (!cita.telefono) { showToast('El paciente no tiene teléfono registrado', 'error'); return; }
-  mostrarModalSelectorRecomendaciones(cita);
-}
-
-// Modal selector: Fiduprevisora vs UCQN
-function mostrarModalSelectorRecomendaciones(cita) {
-  const MSG_FIDUPREVISORA = `Estimado(a) *${cita.paciente_nombre || 'paciente'}*, le informamos que su estudio electrodiagnóstico ha sido realizado. Como paciente *Fiduprevisora*, le recordamos las siguientes recomendaciones:\n\n✅ Presente su carnet de salud en el momento de retiro de resultados.\n✅ Los resultados estarán disponibles en 5 días hábiles.\n✅ Asista a su cita de control con el neurofisiólogo.\n\nGracias por confiar en el *Instituto Neurociencias de Nariño*.`;
-  const MSG_UCQN = `Estimado(a) *${cita.paciente_nombre || 'paciente'}*, le informamos que su estudio electrodiagnóstico ha finalizado. Como paciente *UCQN*, le indicamos:\n\n✅ Su orden debe estar debidamente autorizada antes del retiro de resultados.\n✅ Los resultados estarán disponibles en 3 días hábiles.\n✅ Ante cualquier novedad, comuníquese con su EPS.\n✅ Asista puntualmente a futuras citas programadas.\n\nGracias por su visita al *Instituto Neurociencias de Nariño*.`;
-
-  let modal = document.getElementById('modalSelectorRecomendaciones');
-  if (!modal) {
-    modal = document.createElement('div');
-    modal.id = 'modalSelectorRecomendaciones';
-    modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);align-items:center;justify-content:center;z-index:1100;padding:20px;display:none';
-    modal.innerHTML = `
-      <div style="background:white;border-radius:12px;padding:28px;max-width:440px;width:100%;box-shadow:0 20px 40px rgba(0,0,0,0.18)">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
-          <h2 style="margin:0;color:#1f2937;font-size:1.1rem">💬 Recomendaciones por WhatsApp</h2>
-          <button id="cerrarModalSelectorRec" style="background:none;border:none;font-size:22px;cursor:pointer;color:#6b7280">&times;</button>
-        </div>
-        <p style="color:#6b7280;font-size:0.9rem;margin-bottom:20px">Selecciona el tipo de paciente para enviar el mensaje correspondiente:</p>
-        <div style="display:flex;flex-direction:column;gap:12px">
-          <button id="btnRecFiduprevisora" style="padding:14px 18px;background:linear-gradient(135deg,#1d4ed8,#2563eb);color:white;border:none;border-radius:8px;font-size:0.95rem;cursor:pointer;text-align:left">
-            🏥 <strong>Paciente Fiduprevisora</strong><br/><span style="font-size:0.8rem;opacity:0.85">Mensaje con instrucciones para afiliados Fiduprevisora</span>
-          </button>
-          <button id="btnRecUCQN" style="padding:14px 18px;background:linear-gradient(135deg,#047857,#059669);color:white;border:none;border-radius:8px;font-size:0.95rem;cursor:pointer;text-align:left">
-            🏥 <strong>Paciente UCQN</strong><br/><span style="font-size:0.8rem;opacity:0.85">Mensaje con instrucciones para pacientes UCQN</span>
-          </button>
-        </div>
-        <button id="btnCancelarSelectorRec" style="margin-top:16px;width:100%;padding:10px;background:#f3f4f6;border:none;border-radius:6px;cursor:pointer;color:#374151">Cancelar</button>
-      </div>`;
-    document.body.appendChild(modal);
-    document.getElementById('cerrarModalSelectorRec').onclick = () => { modal.style.display = 'none'; };
-    document.getElementById('btnCancelarSelectorRec').onclick = () => { modal.style.display = 'none'; };
-    document.getElementById('btnRecFiduprevisora').onclick = () => {
-      modal.style.display = 'none';
-      const tel = cita.telefono.replace(/\D/g, '');
-      const numColombia = tel.startsWith('57') ? tel : '57' + tel;
-      const msg = encodeURIComponent(MSG_FIDUPREVISORA);
-      window.open(`https://wa.me/${numColombia}?text=${msg}`, '_blank');
-    };
-    document.getElementById('btnRecUCQN').onclick = () => {
-      modal.style.display = 'none';
-      const tel = cita.telefono.replace(/\D/g, '');
-      const numColombia = tel.startsWith('57') ? tel : '57' + tel;
-      const msg = encodeURIComponent(MSG_UCQN);
-      window.open(`https://wa.me/${numColombia}?text=${msg}`, '_blank');
-    };
-  } else {
-    // Actualizar los handlers con la cita actual (closure re-bind)
-    document.getElementById('btnRecFiduprevisora').onclick = () => {
-      modal.style.display = 'none';
-      const tel = cita.telefono.replace(/\D/g, '');
-      const numColombia = tel.startsWith('57') ? tel : '57' + tel;
-      window.open(`https://wa.me/${numColombia}?text=${encodeURIComponent(MSG_FIDUPREVISORA)}`, '_blank');
-    };
-    document.getElementById('btnRecUCQN').onclick = () => {
-      modal.style.display = 'none';
-      const tel = cita.telefono.replace(/\D/g, '');
-      const numColombia = tel.startsWith('57') ? tel : '57' + tel;
-      window.open(`https://wa.me/${numColombia}?text=${encodeURIComponent(MSG_UCQN)}`, '_blank');
-    };
-  }
-  modal.style.display = 'flex';
+  mostrarModalEnviarWhatsApp(cita);
 }
 
 // Variable global para guardar la información temporalmente
@@ -8336,204 +8257,246 @@ async function eliminarTipoConsulta(id) {
 
 // ========== MÓDULO GESTIÓN DE DATOS ==========
 
-let gestionDatosTipoActual = 'citas_electro';
-let gestionDatosRegistros = [];
+let _gestionTipoActual = 'citas_electro';
 
-const GESTION_CONFIG = {
-  citas_electro:      { titulo: 'Citas Electrodiagnóstico', cols: ['ID','Paciente','Documento','Estudio','Fecha','Estado'] },
-  turnos:             { titulo: 'Turnos Médicos',            cols: ['ID','Paciente','Documento','Tipo Consulta','Fecha','Estado'] },
-  recibos:            { titulo: 'Recibos',                   cols: ['ID','Número','Cliente','Fecha','Total'] },
-  estudio_duraciones: { titulo: 'Tipos de Estudio',          cols: ['ID','Nombre','Duración (min)'] },
-  especialidades:     { titulo: 'Especialidades',            cols: ['ID','Nombre'] },
-  tipos_consulta:     { titulo: 'Tipos de Consulta',         cols: ['ID','Nombre'] },
-  diagnosticos:       { titulo: 'Diagnósticos',              cols: ['ID','Código','Descripción'] }
+const _gestionTitulos = {
+  citas_electro:     'Citas Electrodiagnóstico',
+  turnos:            'Turnos Médicos',
+  recibos:           'Recibos',
+  estudio_duraciones:'Tipos de Estudio',
+  especialidades:    'Especialidades',
+  tipos_consulta:    'Tipos de Consulta',
+  diagnosticos:      'Diagnósticos'
 };
 
+const _gestionColumnas = {
+  citas_electro: [
+    { key: 'id',              label: 'ID' },
+    { key: 'paciente_nombre', label: 'Paciente' },
+    { key: 'documento',       label: 'Documento' },
+    { key: 'fecha',           label: 'Fecha' },
+    { key: 'hora',            label: 'Hora' },
+    { key: 'estudio',         label: 'Estudio' },
+    { key: 'estado',          label: 'Estado' }
+  ],
+  turnos: [
+    { key: 'id',              label: 'ID' },
+    { key: 'paciente_nombre', label: 'Paciente' },
+    { key: 'documento',       label: 'Documento' },
+    { key: 'fecha',           label: 'Fecha' },
+    { key: 'hora',            label: 'Hora' },
+    { key: 'tipo',            label: 'Tipo consulta' },
+    { key: 'estado',          label: 'Estado' }
+  ],
+  recibos: [
+    { key: 'id',         label: 'ID' },
+    { key: 'numero',     label: 'N°' },
+    { key: 'cliente',    label: 'Cliente' },
+    { key: 'fecha',      label: 'Fecha' },
+    { key: 'total',      label: 'Total' },
+    { key: 'tipo_pago',  label: 'Pago' },
+    { key: 'creado_por', label: 'Creado por' }
+  ],
+  estudio_duraciones: [
+    { key: 'id',                label: 'ID' },
+    { key: 'nombre',            label: 'Nombre' },
+    { key: 'duracion_minutos',  label: 'Duración (min)' }
+  ],
+  especialidades: [
+    { key: 'id',     label: 'ID' },
+    { key: 'nombre', label: 'Nombre' },
+    { key: 'activo', label: 'Activo', format: v => v ? 'Sí' : 'No' }
+  ],
+  tipos_consulta: [
+    { key: 'id',          label: 'ID' },
+    { key: 'nombre',      label: 'Nombre' },
+    { key: 'especialidad',label: 'Especialidad' },
+    { key: 'activo',      label: 'Activo', format: v => v ? 'Sí' : 'No' }
+  ],
+  diagnosticos: [
+    { key: 'id',     label: 'ID' },
+    { key: 'nombre', label: 'Nombre' },
+    { key: 'codigo', label: 'Código' },
+    { key: 'activo', label: 'Activo', format: v => v ? 'Sí' : 'No' }
+  ]
+};
+
+let _gestionSeleccionados = new Set();
+
+function _actualizarConteoGestion() {
+  const n = _gestionSeleccionados.size;
+  const span = $('gestionSeleccionados');
+  if (span) span.textContent = `${n} seleccionado${n !== 1 ? 's' : ''}`;
+  const btn = $('btnEliminarSeleccionados');
+  if (btn) btn.disabled = n === 0;
+}
+
+function _gestionActualizarFiltros() {
+  const tipo = _gestionTipoActual;
+  const hayFechas   = ['citas_electro', 'turnos', 'recibos'].includes(tipo);
+  const hayBusqueda = ['citas_electro', 'turnos', 'recibos', 'diagnosticos'].includes(tipo);
+  const colBusqueda = $('gestionBusqueda')?.closest('.col');
+  const colDesde    = $('gestionFechaDesde')?.closest('.col');
+  const colHasta    = $('gestionFechaHasta')?.closest('.col');
+  if (colBusqueda) colBusqueda.style.display = hayBusqueda ? '' : 'none';
+  if (colDesde)    colDesde.style.display    = hayFechas   ? '' : 'none';
+  if (colHasta)    colHasta.style.display    = hayFechas   ? '' : 'none';
+}
+
 function initGestionDatos() {
-  // Tab buttons
-  document.querySelectorAll('[data-gestion-tab]').forEach(btn => {
-    btn.addEventListener('click', function() {
-      document.querySelectorAll('[data-gestion-tab]').forEach(b => b.classList.remove('active'));
-      this.classList.add('active');
-      gestionDatosTipoActual = this.dataset.gestionTab;
-      const cfg = GESTION_CONFIG[gestionDatosTipoActual];
-      const titulo = document.getElementById('gestionDatosTitulo');
-      if (titulo && cfg) titulo.textContent = cfg.titulo;
-      document.getElementById('gestionBusqueda').value = '';
-      document.getElementById('gestionFechaDesde').value = '';
-      document.getElementById('gestionFechaHasta').value = '';
-      cargarRegistrosGestion();
+  // Sidebar: cambio de tab
+  document.querySelectorAll('#view-gestion-datos [data-gestion-tab]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#view-gestion-datos [data-gestion-tab]').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      _gestionTipoActual = btn.dataset.gestionTab;
+      const titulo = $('gestionDatosTitulo');
+      if (titulo) titulo.textContent = _gestionTitulos[_gestionTipoActual] || _gestionTipoActual;
+      if ($('gestionBusqueda')) $('gestionBusqueda').value = '';
+      if ($('gestionFechaDesde')) $('gestionFechaDesde').value = '';
+      if ($('gestionFechaHasta')) $('gestionFechaHasta').value = '';
+      _gestionSeleccionados = new Set();
+      _actualizarConteoGestion();
+      _gestionActualizarFiltros();
+      buscarGestionDatos();
     });
   });
 
-  const btnBuscar = document.getElementById('btnBuscarGestion');
-  if (btnBuscar) btnBuscar.addEventListener('click', cargarRegistrosGestion);
-
-  const btnLimpiar = document.getElementById('btnLimpiarGestion');
-  if (btnLimpiar) btnLimpiar.addEventListener('click', function() {
-    document.getElementById('gestionBusqueda').value = '';
-    document.getElementById('gestionFechaDesde').value = '';
-    document.getElementById('gestionFechaHasta').value = '';
-    cargarRegistrosGestion();
+  $('btnBuscarGestion')?.addEventListener('click', buscarGestionDatos);
+  $('btnLimpiarGestion')?.addEventListener('click', () => {
+    if ($('gestionBusqueda'))   $('gestionBusqueda').value   = '';
+    if ($('gestionFechaDesde')) $('gestionFechaDesde').value = '';
+    if ($('gestionFechaHasta')) $('gestionFechaHasta').value = '';
+    buscarGestionDatos();
   });
+  $('gestionBusqueda')?.addEventListener('keydown', e => { if (e.key === 'Enter') buscarGestionDatos(); });
 
-  const chkAll = document.getElementById('chkSelectAll');
-  if (chkAll) chkAll.addEventListener('change', function() {
-    document.querySelectorAll('.chk-gestion-row').forEach(c => { c.checked = this.checked; });
-    actualizarContadorSeleccionados();
-  });
-
-  cargarRegistrosGestion();
+  _gestionActualizarFiltros();
+  buscarGestionDatos();
 }
 
-async function cargarRegistrosGestion() {
-  const body = document.getElementById('bodyGestionDatos');
-  if (!body) return;
-  body.innerHTML = '<tr><td colspan="6" style="padding:20px;text-align:center;color:#999">Cargando...</td></tr>';
-
-  const q = (document.getElementById('gestionBusqueda') || {}).value || '';
-  const fd = (document.getElementById('gestionFechaDesde') || {}).value || '';
-  const fh = (document.getElementById('gestionFechaHasta') || {}).value || '';
-  const params = new URLSearchParams();
-  if (q) params.append('q', q);
-  if (fd) params.append('fecha_desde', fd);
-  if (fh) params.append('fecha_hasta', fh);
-
-  try {
-    const resp = await apiFetch('/api/admin/datos/' + gestionDatosTipoActual + '?' + params.toString());
-    if (!resp.ok) {
-      const err = await resp.json().catch(() => ({}));
-      body.innerHTML = '<tr><td colspan="6" style="padding:20px;text-align:center;color:#dc2626">Error: ' + (err.error || resp.status) + '</td></tr>';
-      return;
-    }
-    const data = await resp.json();
-    gestionDatosRegistros = data.registros || [];
-    renderizarTablaGestion();
-  } catch(e) {
-    body.innerHTML = '<tr><td colspan="6" style="padding:20px;text-align:center;color:#dc2626">Error: ' + e.message + '</td></tr>';
-  }
-}
-
-function renderizarTablaGestion() {
-  const body = document.getElementById('bodyGestionDatos');
-  const thead = document.getElementById('gestionThead');
-  if (!body) return;
-
-  const cfg = GESTION_CONFIG[gestionDatosTipoActual];
-  if (!cfg) return;
-
-  // Actualizar encabezados
-  if (thead) {
-    thead.innerHTML = '<tr><th><input type="checkbox" id="chkSelectAll" title="Seleccionar todos" /></th>' +
-      cfg.cols.map(c => '<th>' + c + '</th>').join('') +
-      '<th>Acciones</th></tr>';
-    const chkAll = document.getElementById('chkSelectAll');
-    if (chkAll) chkAll.addEventListener('change', function() {
-      document.querySelectorAll('.chk-gestion-row').forEach(c => { c.checked = this.checked; });
-      actualizarContadorSeleccionados();
+function _gestionRenderThead(tipo) {
+  const cols  = _gestionColumnas[tipo] || [];
+  const thead = $('gestionThead');
+  if (!thead) return;
+  const colHeaders = cols.map(c => `<th>${c.label}</th>`).join('');
+  thead.innerHTML = `<tr>
+    <th><input type="checkbox" id="chkSelectAll" title="Seleccionar todos" /></th>
+    ${colHeaders}
+    <th>Acciones</th>
+  </tr>`;
+  $('chkSelectAll')?.addEventListener('change', function () {
+    document.querySelectorAll('#bodyGestionDatos .chk-row').forEach(chk => {
+      chk.checked = this.checked;
+      const id = parseInt(chk.dataset.id);
+      if (this.checked) _gestionSeleccionados.add(id);
+      else _gestionSeleccionados.delete(id);
     });
-  }
+    _actualizarConteoGestion();
+  });
+}
 
-  if (gestionDatosRegistros.length === 0) {
-    body.innerHTML = '<tr><td colspan="' + (cfg.cols.length + 2) + '" style="padding:20px;text-align:center;color:#999">No se encontraron registros</td></tr>';
-    actualizarContadorSeleccionados();
+function _gestionRenderRows(tipo, registros) {
+  const cols  = _gestionColumnas[tipo] || [];
+  const tbody = $('bodyGestionDatos');
+  if (!tbody) return;
+  if (!registros.length) {
+    tbody.innerHTML = `<tr><td colspan="${cols.length + 2}" style="padding:20px;text-align:center;color:#999">No se encontraron registros</td></tr>`;
     return;
   }
-
-  body.innerHTML = '';
-  gestionDatosRegistros.forEach(reg => {
-    const tr = document.createElement('tr');
-    let celdas = '';
-    if (gestionDatosTipoActual === 'citas_electro') {
-      celdas = '<td>' + escapeHtml(String(reg.paciente_nombre || '-')) + '</td>' +
-               '<td>' + escapeHtml(String(reg.documento || '-')) + '</td>' +
-               '<td>' + escapeHtml(String(reg.estudio || '-')) + '</td>' +
-               '<td>' + escapeHtml(String(reg.fecha || '-')) + '</td>' +
-               '<td>' + escapeHtml(String(reg.estado || '-')) + '</td>';
-    } else if (gestionDatosTipoActual === 'turnos') {
-      celdas = '<td>' + escapeHtml(String(reg.paciente_nombre || '-')) + '</td>' +
-               '<td>' + escapeHtml(String(reg.paciente_documento || reg.documento || '-')) + '</td>' +
-               '<td>' + escapeHtml(String(reg.tipo_consulta || reg.tipo || '-')) + '</td>' +
-               '<td>' + escapeHtml(String(reg.fecha || '-')) + '</td>' +
-               '<td>' + escapeHtml(String(reg.estado || '-')) + '</td>';
-    } else if (gestionDatosTipoActual === 'recibos') {
-      celdas = '<td>' + escapeHtml(String(reg.numero || '-')) + '</td>' +
-               '<td>' + escapeHtml(String(reg.cliente || '-')) + '</td>' +
-               '<td>' + escapeHtml(String(reg.fecha || '-')) + '</td>' +
-               '<td>' + escapeHtml(String(reg.total !== undefined ? '$' + reg.total : '-')) + '</td>';
-    } else if (gestionDatosTipoActual === 'estudio_duraciones') {
-      celdas = '<td>' + escapeHtml(String(reg.nombre || reg.estudio || '-')) + '</td>' +
-               '<td>' + escapeHtml(String(reg.duracion !== undefined ? reg.duracion : '-')) + '</td>';
-    } else if (gestionDatosTipoActual === 'especialidades') {
-      celdas = '<td>' + escapeHtml(String(reg.nombre || '-')) + '</td>';
-    } else if (gestionDatosTipoActual === 'tipos_consulta') {
-      celdas = '<td>' + escapeHtml(String(reg.nombre || '-')) + '</td>';
-    } else if (gestionDatosTipoActual === 'diagnosticos') {
-      celdas = '<td>' + escapeHtml(String(reg.codigo || '-')) + '</td>' +
-               '<td>' + escapeHtml(String(reg.descripcion || '-')) + '</td>';
-    }
-    const idReg = reg.id || reg.id_cita || reg.id_turno || reg.id_recibo || reg.id_estudio;
-    tr.innerHTML = '<td><input type="checkbox" class="chk-gestion-row" data-id="' + idReg + '" onchange="actualizarContadorSeleccionados()" /></td>' +
-                   '<td>' + escapeHtml(String(idReg || '-')) + '</td>' +
-                   celdas +
-                   '<td><button class="btn-danger btn-sm" onclick="confirmarEliminarGestion(\'' + gestionDatosTipoActual + '\',' + idReg + ')"> Eliminar</button></td>';
-    body.appendChild(tr);
+  tbody.innerHTML = registros.map(r => {
+    const cells = cols.map(c => {
+      const val = r[c.key];
+      const display = (val === null || val === undefined) ? '-' : (c.format ? c.format(val) : escapeHtml(String(val)));
+      return `<td>${display}</td>`;
+    }).join('');
+    return `<tr>
+      <td><input type="checkbox" class="chk-row" data-id="${r.id}" /></td>
+      ${cells}
+      <td>
+        <button class="btn-eliminar" title="Eliminar" onclick="confirmarEliminarGestion('${tipo}',${r.id})">
+          <img src="images/delete.svg" alt="Eliminar" />
+        </button>
+      </td>
+    </tr>`;
+  }).join('');
+  tbody.querySelectorAll('.chk-row').forEach(chk => {
+    chk.addEventListener('change', function () {
+      const id = parseInt(this.dataset.id);
+      if (this.checked) _gestionSeleccionados.add(id);
+      else _gestionSeleccionados.delete(id);
+      _actualizarConteoGestion();
+    });
   });
-
-  const secAcciones = document.getElementById('gestionAccionesMasivas');
-  if (secAcciones) secAcciones.style.display = '';
-  actualizarContadorSeleccionados();
 }
 
-function actualizarContadorSeleccionados() {
-  const checks = document.querySelectorAll('.chk-gestion-row:checked');
-  const span = document.getElementById('gestionSeleccionados');
-  const btn = document.getElementById('btnEliminarSeleccionados');
-  if (span) span.textContent = checks.length + ' seleccionados';
-  if (btn) btn.disabled = checks.length === 0;
-}
+async function buscarGestionDatos() {
+  const tipo  = _gestionTipoActual;
+  const q     = $('gestionBusqueda')?.value.trim() || '';
+  const desde = $('gestionFechaDesde')?.value || '';
+  const hasta = $('gestionFechaHasta')?.value || '';
+  const params = new URLSearchParams({ limit: 100 });
+  if (q)     params.set('q',           q);
+  if (desde) params.set('fecha_desde', desde);
+  if (hasta) params.set('fecha_hasta', hasta);
 
-function confirmarEliminarGestion(tipo, id) {
-  const cfg = GESTION_CONFIG[tipo];
-  const nombre = cfg ? cfg.titulo : tipo;
-  if (!confirm('¿Estás seguro de que deseas eliminar este registro de ' + nombre + '?\n\nEsta acción es permanente e irreversible.')) return;
-  eliminarRegistroGestion(tipo, id);
-}
+  const tbody = $('bodyGestionDatos');
+  if (tbody) tbody.innerHTML = `<tr><td colspan="10" style="padding:20px;text-align:center;color:#999">Cargando...</td></tr>`;
+  _gestionSeleccionados = new Set();
+  _actualizarConteoGestion();
+  const chkAll = $('chkSelectAll');
+  if (chkAll) chkAll.checked = false;
 
-async function eliminarRegistroGestion(tipo, id) {
   try {
-    const resp = await apiFetch('/api/admin/datos/' + tipo + '/' + id, { method: 'DELETE' });
-    const data = await resp.json().catch(() => ({}));
-    if (!resp.ok) {
-      showToast('Error al eliminar: ' + (data.error || resp.status), 'error');
+    const res = await apiFetch(`/api/admin/datos/${tipo}?${params}`);
+    if (res.status === 403) {
+      if (tbody) tbody.innerHTML = `<tr><td colspan="10" style="padding:20px;text-align:center;color:#dc2626">Sin permisos para realizar esta acción</td></tr>`;
       return;
     }
-    showToast('Registro eliminado correctamente', 'success');
-    cargarRegistrosGestion();
-  } catch(e) {
-    showToast('Error al eliminar: ' + e.message, 'error');
+    const data = await res.json();
+    if (!data.ok) {
+      if (tbody) tbody.innerHTML = `<tr><td colspan="10" style="padding:20px;text-align:center;color:#dc2626">${escapeHtml(data.error || 'Error')}</td></tr>`;
+      return;
+    }
+    const registros = data.registros || [];
+    _gestionRenderThead(tipo);
+    _gestionRenderRows(tipo, registros);
+    const ctrl = $('gestionDatosControls');
+    if (ctrl) ctrl.textContent = `${registros.length} registro${registros.length !== 1 ? 's' : ''}${registros.length >= 100 ? ' (mostrando máx. 100)' : ''}`;
+  } catch (e) {
+    if (tbody) tbody.innerHTML = `<tr><td colspan="10" style="padding:20px;text-align:center;color:#dc2626">Error: ${escapeHtml(e.message)}</td></tr>`;
   }
+}
+
+async function confirmarEliminarGestion(tipo, id) {
+  const titulo = _gestionTitulos[tipo] || tipo;
+  if (!confirm(`¿Eliminar este registro de "${titulo}"?\nEsta acción es permanente e irreversible.`)) return;
+  try {
+    const res  = await apiFetch(`/api/admin/datos/${tipo}/${id}`, { method: 'DELETE' });
+    const data = await res.json();
+    if (!data.ok) { showToast(data.error || 'Error al eliminar', 'error'); return; }
+    showToast('Registro eliminado', 'success');
+    buscarGestionDatos();
+  } catch (e) { showToast('Error: ' + e.message, 'error'); }
 }
 
 async function eliminarSeleccionadosGestion() {
-  const checks = document.querySelectorAll('.chk-gestion-row:checked');
-  if (checks.length === 0) return;
-  if (!confirm('¿Estás seguro de que deseas eliminar ' + checks.length + ' registros de forma permanente?\n\nEsta acción es irreversible.')) return;
-  const ids = Array.from(checks).map(c => Number(c.dataset.id));
+  const ids = Array.from(_gestionSeleccionados);
+  if (!ids.length) return;
+  const tipo   = _gestionTipoActual;
+  const titulo = _gestionTitulos[tipo] || tipo;
+  const n      = ids.length;
+  if (!confirm(`¿Eliminar ${n} registro${n !== 1 ? 's' : ''} de "${titulo}"?\nEsta acción es permanente e irreversible.`)) return;
   try {
-    const resp = await apiFetch('/api/admin/datos/' + gestionDatosTipoActual + '/bulk', {
+    const res  = await apiFetch(`/api/admin/datos/${tipo}/bulk`, {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ids })
     });
-    const data = await resp.json().catch(() => ({}));
-    if (!resp.ok) {
-      showToast('Error al eliminar: ' + (data.error || resp.status), 'error');
-      return;
-    }
-    showToast(checks.length + ' registros eliminados correctamente', 'success');
-    cargarRegistrosGestion();
-  } catch(e) {
-    showToast('Error al eliminar: ' + e.message, 'error');
-  }
+    const data = await res.json();
+    if (!data.ok) { showToast(data.error || 'Error al eliminar', 'error'); return; }
+    const eliminados = data.eliminados ?? n;
+    showToast(`${eliminados} registro${eliminados !== 1 ? 's' : ''} eliminado${eliminados !== 1 ? 's' : ''}`, 'success');
+    buscarGestionDatos();
+  } catch (e) { showToast('Error: ' + e.message, 'error'); }
 }

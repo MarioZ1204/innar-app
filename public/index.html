@@ -354,7 +354,7 @@
                   <select id="reciboMedico" required>
                     <option value="">Seleccionar médico</option>
                   </select>
-                  <select id="                  mysql -u root -p innar_clinica < C:\ruta\donde\guardaste\innar_clinica_produccion.sqlta" style="display:none"></select>
+                  <select id="reciboTipoConsulta" style="display:none"></select>
                 </div>
 
                 <!-- Panel Estudio -->
@@ -546,7 +546,7 @@
                   </tbody>
                 </table>
               </div>
-              <button id="resetAll" class="btn-danger" style="margin-top:12px;width:100%;display:none">🗑 Eliminar TODOS los recibos</button>
+              <button id="resetAll" class="btn-danger" style="margin-top:12px;width:100%;display:none"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>Eliminar TODOS los recibos</button>
             </section>
           </div>
 
@@ -858,6 +858,7 @@
                 <li id="req-upper" style="list-style:none;padding:4px 0">Al menos una mayúscula (A-Z)</li>
                 <li id="req-lower" style="list-style:none;padding:4px 0">Al menos una minúscula (a-z)</li>
                 <li id="req-number" style="list-style:none;padding:4px 0">Al menos un número (0-9)</li>
+                <li id="req-special" style="list-style:none;padding:4px 0">Al menos un símbolo (!@#$%^&* etc)</li>
 
               </ul>
             </div>
@@ -1862,10 +1863,10 @@
             <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
               <span style="font-weight:600;color:#627371;font-size:14px">Exportar:</span>
               <button id="btnExportarExcel" class="btn-secondary btn-sm" onclick="exportarAuditoriaCitasExcel()">
-                📊 Excel (.xlsx)
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>Excel (.xlsx)
               </button>
               <button id="btnExportarPDF" class="btn-secondary btn-sm" onclick="exportarAuditoriaCitasPDF()">
-                📄 PDF
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>PDF
               </button>
             </div>
           </section>
@@ -1938,25 +1939,25 @@
           <p class="sidebar-desc">Eliminar registros del sistema</p>
           <span class="sidebar-section-label">Tipo de Registro</span>
           <button class="sidebar-btn active" data-gestion-tab="citas_electro">
-            <span class="sb-icon">🔬</span> Citas Electro
+            <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></span> Citas Electro
           </button>
           <button class="sidebar-btn" data-gestion-tab="turnos">
-            <span class="sb-icon">📅</span> Turnos Médicos
+            <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span> Turnos Médicos
           </button>
           <button class="sidebar-btn" data-gestion-tab="recibos">
-            <span class="sb-icon">🧾</span> Recibos
+            <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg></span> Recibos
           </button>
           <button class="sidebar-btn" data-gestion-tab="estudio_duraciones">
-            <span class="sb-icon">⏱️</span> Tipos de Estudio
+            <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span> Tipos de Estudio
           </button>
           <button class="sidebar-btn" data-gestion-tab="especialidades">
-            <span class="sb-icon">🏥</span> Especialidades
+            <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg></span> Especialidades
           </button>
           <button class="sidebar-btn" data-gestion-tab="tipos_consulta">
-            <span class="sb-icon">📋</span> Tipos de Consulta
+            <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="15" y2="16"/></svg></span> Tipos de Consulta
           </button>
           <button class="sidebar-btn" data-gestion-tab="diagnosticos">
-            <span class="sb-icon">🩺</span> Diagnósticos
+            <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span> Diagnósticos
           </button>
         </div>
         <div class="sidebar-footer">
@@ -1973,7 +1974,7 @@
         <div class="container">
           <header>
             <h2 id="gestionDatosTitulo">Citas Electrodiagnóstico</h2>
-            <p style="color:#dc2626;font-weight:600;font-size:13px">⚠️ Atención: Esta acción es permanente e irreversible. Los registros eliminados no se pueden recuperar.</p>
+            <p style="color:#dc2626;font-weight:600;font-size:13px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>Atención: Esta acción es permanente e irreversible. Los registros eliminados no se pueden recuperar.</p>
           </header>
 
           <!-- Filtros -->
@@ -2004,7 +2005,7 @@
             <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
               <span id="gestionSeleccionados" style="font-size:14px;color:#627371">0 seleccionados</span>
               <button id="btnEliminarSeleccionados" class="btn-danger btn-sm" onclick="eliminarSeleccionadosGestion()" disabled>
-                🗑️ Eliminar seleccionados
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>Eliminar seleccionados
               </button>
             </div>
           </section>

@@ -4,6 +4,7 @@
  */
 const express = require('express');
 const AppointmentService = require('../services/appointmentService');
+const logger = require('../utils/logger');
 
 const router = express.Router();
 
@@ -54,7 +55,7 @@ router.post('/', async (req, res) => {
 
     res.status(201).json(result);
   } catch (error) {
-    console.error('Error creando cita:', error);
+    logger.error('Error creando cita', { error: error.message });
     res.status(500).json({ error: error.message });
   }
 });
@@ -76,7 +77,7 @@ router.get('/', async (req, res) => {
 
     res.json(appointments);
   } catch (error) {
-    console.error('Error listando citas:', error);
+    logger.error('Error listando citas', { error: error.message });
     res.status(500).json({ error: error.message });
   }
 });
@@ -96,7 +97,7 @@ router.get('/:id', async (req, res) => {
 
     res.json(appointment);
   } catch (error) {
-    console.error('Error obteniendo cita:', error);
+    logger.error('Error obteniendo cita', { error: error.message });
     res.status(500).json({ error: error.message });
   }
 });
@@ -114,7 +115,7 @@ router.patch('/:id', async (req, res) => {
 
     res.json({ ok: true, message: 'Cita actualizada correctamente' });
   } catch (error) {
-    console.error('Error actualizando cita:', error);
+    logger.error('Error actualizando cita', { error: error.message });
     res.status(500).json({ error: error.message });
   }
 });
@@ -131,7 +132,7 @@ router.delete('/:id', async (req, res) => {
 
     res.json({ ok: true, message: 'Cita cancelada correctamente' });
   } catch (error) {
-    console.error('Error cancelando cita:', error);
+    logger.error('Error cancelando cita', { error: error.message });
     res.status(500).json({ error: error.message });
   }
 });
@@ -147,7 +148,7 @@ router.get('/availability/:equipment_id/:date', async (req, res) => {
 
     res.json({ equipment_id, date, occupancies });
   } catch (error) {
-    console.error('Error obteniendo disponibilidad:', error);
+    logger.error('Error obteniendo disponibilidad', { error: error.message });
     res.status(500).json({ error: error.message });
   }
 });
@@ -161,7 +162,7 @@ router.get('/types/list', async (req, res) => {
     const studies = await AppointmentService.getStudyTypes();
     res.json(studies);
   } catch (error) {
-    console.error('Error obteniendo tipos de estudio:', error);
+    logger.error('Error obteniendo tipos de estudio', { error: error.message });
     res.status(500).json({ error: error.message });
   }
 });
@@ -175,7 +176,7 @@ router.get('/equipments/list', async (req, res) => {
     const equipments = await AppointmentService.getEquipments();
     res.json(equipments);
   } catch (error) {
-    console.error('Error obteniendo equipos:', error);
+    logger.error('Error obteniendo equipos', { error: error.message });
     res.status(500).json({ error: error.message });
   }
 });

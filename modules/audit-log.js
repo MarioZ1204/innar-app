@@ -1,5 +1,6 @@
 // audit-log.js - Módulo para registrar auditorías de usuarios
 const db = require('../utils/db-mysql');
+const logger = require('../utils/logger');
 
 /**
  * Registrar cambio en auditoría
@@ -22,9 +23,9 @@ async function registrarAuditoria(options) {
       ]
     );
 
-    console.log(`[AUDIT] ${accion.toUpperCase()} - Usuario: ${usuarioId}, Admin: ${adminUsuario}`);
+    logger.info(`[AUDIT] ${accion.toUpperCase()} - Usuario: ${usuarioId}, Admin: ${adminUsuario}`);
   } catch (error) {
-    console.error('[AUDIT ERROR]', error.message);
+    logger.error('[AUDIT ERROR]', { error: error.message });
   }
 }
 
@@ -50,7 +51,7 @@ async function obtenerHistorial(usuarioId, limit = 50) {
 
     return historial;
   } catch (error) {
-    console.error('[AUDIT QUERY ERROR]', error.message);
+    logger.error('[AUDIT QUERY ERROR]', { error: error.message });
     return [];
   }
 }
@@ -80,7 +81,7 @@ async function obtenerHistorialGlobal(limit = 100) {
 
     return historial;
   } catch (error) {
-    console.error('[AUDIT GLOBAL QUERY ERROR]', error.message);
+    logger.error('[AUDIT GLOBAL QUERY ERROR]', { error: error.message });
     return [];
   }
 }
