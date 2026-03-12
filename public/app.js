@@ -1345,6 +1345,10 @@ async function cargarTiposConsultaEnRecibo(medicoId) {
   sel.innerHTML = '<option value="">Seleccionar tipo</option>';
   if (!medicoId) return;
   try {
+    // Esperar a que _reciboMedicos esté listo si aún no lo está
+    if (!window._reciboMedicos || window._reciboMedicos.length === 0) {
+      window._reciboMedicos = await apiFetch('/api/medicos').then(r => r.json()).catch(() => []);
+    }
     const medicos = window._reciboMedicos || [];
     const medico = medicos.find(m => String(m.id) === String(medicoId));
     const especialidad = medico?.especialidad || '';
@@ -1355,7 +1359,7 @@ async function cargarTiposConsultaEnRecibo(medicoId) {
     let tipos = await res.json().catch(() => []);
     if (!Array.isArray(tipos) || tipos.length === 0) {
       tipos = especialidad
-        ? (ESPECIALIDAD_TIPOS_CONSULTA[especialidad] || []).map(n => ({ nombre: n }))
+        ? (ESPECIALIDAD_TIPOS_CONSULTA[especialidad] || Object.values(ESPECIALIDAD_TIPOS_CONSULTA).flat()).map(n => ({ nombre: n }))
         : Object.values(ESPECIALIDAD_TIPOS_CONSULTA).flat().map(n => ({ nombre: n }));
     }
     tipos.forEach(t => {
@@ -2690,7 +2694,7 @@ function renderTurnoRowMedica(tbody, t, animateTargetId, hayEnAtencion) {
         <td class="col-mobile-hide">${escapeHtml(t.entidad||'')}</td>
         <td class="col-mobile-hide">${escapeHtml(t.notas || '')}</td>
         <td>${estadoBadgeMedica(t.estado)}</td>
-        <td>-</td>
+        <td>${escapeHtml(t.programado_por || '-')}</td>
       `;
       if (animateTargetId && t.id === animateTargetId) {
         tr.classList.add('animate-nuevo-primero');
@@ -7364,6 +7368,7 @@ function abrirModalEstadoCitaMedica(turno) {
   // Llenar información del paciente
   $('modalMedicaPaciente').textContent = escapeHtml(turno.paciente_nombre || '-');
   $('modalMedicaHora').textContent = formatearHora(turno.hora) || '-';
+  if ($('modalMedicaProgramadoPor')) $('modalMedicaProgramadoPor').textContent = escapeHtml(turno.programado_por || '-');
   $('modalReprogramarMedicaFechaActual').innerHTML = `<strong>${formatearFecha(turno.fecha)}</strong> a las <strong>${formatearHora(turno.hora)}</strong>`;
   
   // Mostrar modal
