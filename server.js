@@ -3016,25 +3016,35 @@ app.delete('/api/especialidades/:id', requireAuth, requireAdmin, async (req, res
 app.get('/api/tipos-consulta', requireAuth, async (req, res) => {
   const { especialidad_id, especialidad_nombre, medico_id } = req.query;
   try {
-    // Prioridad 1: medico_id — JOIN directo doctor → especialidad → tipos_consulta
+    // Prioridad 1: medico_id — 2 queries secuenciales (más robusto que JOIN)
     if (medico_id) {
-      const rows = await db.query(
-        `SELECT tc.id, tc.nombre, tc.orden
-         FROM tipos_consulta tc
-         JOIN especialidades e ON e.id = tc.especialidad_id AND e.activo = 1
-         JOIN usuarios u ON LOWER(TRIM(u.especialidad)) = LOWER(TRIM(e.nombre))
-         WHERE u.id = ? AND u.rol = 'doctor' AND tc.activo = 1
-         ORDER BY tc.orden ASC, tc.id ASC`,
+      const doc = await db.queryOne(
+        "SELECT especialidad FROM usuarios WHERE id=? AND rol='doctor'",
         [parseInt(medico_id, 10)]
       );
-      return res.json(rows);
+      const espNombre = (doc?.especialidad || '').trim();
+      if (espNombre) {
+        // Buscar especialidad_id (sin filtro activo para mayor tolerancia)
+        const espRows = await db.query(
+          'SELECT id FROM especialidades WHERE LOWER(TRIM(nombre))=LOWER(TRIM(?))',
+          [espNombre]
+        );
+        if (espRows.length > 0) {
+          const rows = await db.query(
+            'SELECT id, nombre, orden FROM tipos_consulta WHERE especialidad_id=? AND activo=1 ORDER BY orden ASC, id ASC',
+            [espRows[0].id]
+          );
+          return res.json(rows);
+        }
+      }
+      return res.json([]); // cliente usará fallback hardcoded para ESA especialidad
     }
     // Prioridad 2: especialidad_id directo
     let espId = especialidad_id ? parseInt(especialidad_id, 10) : null;
     // Prioridad 3: buscar por nombre (case-insensitive + trim)
     if (!espId && especialidad_nombre) {
       const rows = await db.query(
-        'SELECT id FROM especialidades WHERE LOWER(TRIM(nombre))=LOWER(TRIM(?)) AND activo=1',
+        'SELECT id FROM especialidades WHERE LOWER(TRIM(nombre))=LOWER(TRIM(?))',
         [especialidad_nombre]
       );
       espId = rows.length > 0 ? rows[0].id : null;
