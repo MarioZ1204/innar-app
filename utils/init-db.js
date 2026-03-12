@@ -144,6 +144,8 @@ async function initializeDatabase() {
               INDEX idx_nombre (nombre)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+            INSERT IGNORE INTO equipos_electro (nombre) VALUES ('Equipo 1'),('Equipo 2'),('Equipo 3'),('Equipo 4');
+
             CREATE TABLE IF NOT EXISTS estudio_duraciones (
               id INT AUTO_INCREMENT PRIMARY KEY,
               nombre VARCHAR(100) NOT NULL UNIQUE,
@@ -153,6 +155,17 @@ async function initializeDatabase() {
               creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
               INDEX idx_nombre (nombre)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+              CREATE TABLE IF NOT EXISTS diagnosticos (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                nombre VARCHAR(255) NOT NULL UNIQUE,
+                descripcion TEXT,
+                codigo VARCHAR(50),
+                activo TINYINT DEFAULT 1,
+                fecha_creacion DATETIME DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_nombre (nombre),
+                INDEX idx_activo (activo)
+              ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
             CREATE TABLE IF NOT EXISTS citas_electro (
               id INT AUTO_INCREMENT PRIMARY KEY,

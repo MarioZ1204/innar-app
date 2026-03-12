@@ -9,7 +9,7 @@
     "test": "jest --forceExit --detectOpenHandles",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
-    "migrate": "node db-migrations.js",
+    "migrate": "node utils/init-db.js && node migrations/db-migrations.js",
     "build": "pkg . --target win --compress Brotli",
     "build:all": "pkg . --target win,macos,linux --compress Brotli"
   },

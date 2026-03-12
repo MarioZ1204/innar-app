@@ -2536,6 +2536,18 @@ app.post('/api/citas-electro', requireAuth, requireRole(['admin', 'electro', 're
         }
       }
 
+      // VALIDACIÓN: el paciente no puede tener ya una cita activa ese día
+      const dupCheck = await transactions.selectForUpdate(conn,
+        `SELECT COUNT(*) as cnt FROM citas_electro
+         WHERE paciente_id = ? AND fecha = ?
+         AND estado IN ('Programado', 'En Sala', 'En Estudio')
+         AND deleted_at IS NULL`,
+        [paciente_id, fecha]
+      );
+      if ((dupCheck[0]?.cnt || 0) > 0) {
+        throw new Error('Este paciente ya tiene una cita agendada para esa fecha en Electrodiagnóstico.');
+      }
+
       // VALIDACIÓN DE CAPACIDAD DENTRO DE LA TRANSACCIÓN con SELECT FOR UPDATE
       const overlapCitas = await transactions.selectForUpdate(conn,
         `SELECT COUNT(*) as overlap_count
@@ -3009,7 +3021,10 @@ app.get('/api/tipos-consulta', requireAuth, async (req, res) => {
       const rows = await db.query('SELECT id FROM especialidades WHERE nombre=? AND activo=1', [especialidad_nombre]);
       espId = rows.length > 0 ? rows[0].id : null;
     }
-    if (!espId) return res.json([]);
+    if (!espId) {
+      const rows = await db.query('SELECT id, nombre, orden FROM tipos_consulta WHERE activo=1 ORDER BY orden ASC, id ASC');
+      return res.json(rows);
+    }
     const rows = await db.query(
       'SELECT id, nombre, orden FROM tipos_consulta WHERE especialidad_id=? AND activo=1 ORDER BY orden ASC, id ASC',
       [espId]
@@ -3075,7 +3090,7 @@ app.post('/api/pacientes-espera', requireAuth, async (req, res) => {
   if (!documento || !nombres || !apellidos || !entidad || !prioridad) {
     return res.status(400).json({ error: 'Todos los campos son obligatorios' });
   }
-  const entidadesValidas = ['FOMAG', 'UCQN', 'PARTICULAR'];
+  const entidadesValidas = ['FOMAG', 'UCQN', 'PARTICULAR', 'PROINSALUD'];
   const prioridadesValidas = ['ALTA', 'MEDIA', 'BAJA'];
   if (!entidadesValidas.includes(entidad)) {
     return res.status(400).json({ error: 'Entidad inválida' });
@@ -4411,8 +4426,8 @@ const PORT = process.env.PORT || 3000;
         `);
         logger.info('[MIGRATION] Tabla tipos_consulta creada', { type: 'STARTUP' });
         const tiposPorEsp = {
-          'Neurología':     ['Consulta de Primera Vez por Neurología','Consulta de Control por Neurología','Consulta Virtual de Primera Vez por Neurología','Consulta Virtual de Control por Neurología','Aplicación de Toxina Botulínica (Botox)','Control de Toxina Botulínica (Botox)','Actigrafía','Rev. Neuroestimulador','Agente Anestésico','Particular','Abogado','Otra'],
-          'Epileptología':  ['Consulta de Primera Vez por Epileptología','Consulta de Control por Epileptología','Consulta Virtual de Primera Vez por Epileptología','Consulta Virtual de Control por Epileptología','Consulta de Primera Vez por Neurología','Consulta de Control por Neurología','Consulta Virtual de Primera Vez por Neurología','Consulta Virtual de Control por Neurología','Aplicación de Toxina Botulínica (Botox)','Control de Toxina Botulínica (Botox)','Actigrafía','Rev. Neuroestimulador','Bloqueo Mioneural','Particular','Abogado','Otra'],
+          'Neurología':     ['Consulta de Primera Vez por Neurología','Consulta de Control por Neurología','Consulta Virtual de Primera Vez por Neurología','Consulta Virtual de Control por Neurología','Aplicación de Toxina Botulínica (Botox)','Control de Toxina Botulínica (Botox)','Actigrafía','Rev. Neuroestimulador','Agente Anestésico','Particular','Otra'],
+          'Epileptología':  ['Consulta de Primera Vez por Epileptología','Consulta de Control por Epileptología','Consulta Virtual de Primera Vez por Epileptología','Consulta Virtual de Control por Epileptología','Consulta de Primera Vez por Neurología','Consulta de Control por Neurología','Consulta Virtual de Primera Vez por Neurología','Consulta Virtual de Control por Neurología','Aplicación de Toxina Botulínica (Botox)','Control de Toxina Botulínica (Botox)','Actigrafía','Rev. Neuroestimulador','Bloqueo Mioneural','Particular','Otra'],
           'Psicología':     ['Consulta de Primera Vez por Psicología','Consulta de Control por Psicología','Otra'],
           'Neuropsicología':['Consulta de Primera Vez por Neuropsicología','Consulta de Control por Neuropsicología','Otra'],
           'Psiquiatría':    ['Consulta de Primera Vez por Psiquiatría','Consulta de Control por Psiquiatría','Otra'],

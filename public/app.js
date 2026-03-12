@@ -51,7 +51,6 @@ const ESPECIALIDAD_TIPOS_CONSULTA = {
     'Rev. Neuroestimulador',
     'Agente Anestésico',
     'Particular',
-    'Abogado',
     'Otra'
   ],
   'Epileptología': [
@@ -69,7 +68,6 @@ const ESPECIALIDAD_TIPOS_CONSULTA = {
     'Rev. Neuroestimulador',
     'Bloqueo Mioneural',
     'Particular',
-    'Abogado',
     'Otra'
   ],
   'Psicología': [
@@ -1345,11 +1343,15 @@ async function cargarTiposConsultaEnRecibo(medicoId) {
     const medicos = window._reciboMedicos || [];
     const medico = medicos.find(m => String(m.id) === String(medicoId));
     const especialidad = medico?.especialidad || '';
-    if (!especialidad) return;
-    const res = await apiFetch(`/api/tipos-consulta?especialidad_nombre=${encodeURIComponent(especialidad)}`);
+    const url = especialidad
+      ? `/api/tipos-consulta?especialidad_nombre=${encodeURIComponent(especialidad)}`
+      : '/api/tipos-consulta';
+    const res = await apiFetch(url);
     let tipos = await res.json().catch(() => []);
     if (!Array.isArray(tipos) || tipos.length === 0) {
-      tipos = (ESPECIALIDAD_TIPOS_CONSULTA[especialidad] || []).map(n => ({ nombre: n }));
+      tipos = especialidad
+        ? (ESPECIALIDAD_TIPOS_CONSULTA[especialidad] || []).map(n => ({ nombre: n }))
+        : Object.values(ESPECIALIDAD_TIPOS_CONSULTA).flat().map(n => ({ nombre: n }));
     }
     tipos.forEach(t => {
       const opt = document.createElement('option');
