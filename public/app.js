@@ -4361,13 +4361,15 @@ function editarUsuario(u) {
   mostrarEspecialidadEdicion(u.rol, u.especialidad);
   
   // Cambiar rol automáticamente muestra/oculta consultorio y especialidad
-  $('editRol').addEventListener('change', function() {
+  // Usamos onchange (no addEventListener) para evitar acumulación de listeners al reabrir el modal
+  $('editRol').onchange = function() {
     mostrarConsultorioEdicion(this.value);
     mostrarEspecialidadEdicion(this.value, null);
-  });
+  };
   
   // Cambiar especialidad muestra/oculta el campo "Otra"
-  $('editEspecialidad')?.addEventListener('change', function() {
+  const editEspSel = $('editEspecialidad');
+  if (editEspSel) editEspSel.onchange = function() {
     if (this.value === 'Otra') {
       $('editEspecialidadOtraCol').style.display = '';
       $('editEspecialidadOtra').focus();
@@ -4375,7 +4377,7 @@ function editarUsuario(u) {
       $('editEspecialidadOtraCol').style.display = 'none';
       $('editEspecialidadOtra').value = '';
     }
-  });
+  };
   
   $('modalEditarUsuario').classList.remove('hidden');
   $('formEditarUsuario').onsubmit = guardarCambiosUsuario;

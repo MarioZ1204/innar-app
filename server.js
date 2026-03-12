@@ -513,7 +513,7 @@ app.post('/api/cambiar-contrasena', requireAuth, async (req, res) => {
 app.get('/api/usuarios', requireAuth, requireAdmin, async (req, res) => {
   try {
     const usuarios = await db.query(
-      'SELECT id, usuario, nombre, rol, activo FROM usuarios ORDER BY usuario ASC'
+      'SELECT id, usuario, nombre, rol, activo, numero_consultorio, especialidad FROM usuarios ORDER BY usuario ASC'
     );
     res.json(usuarios);
   } catch (e) {
