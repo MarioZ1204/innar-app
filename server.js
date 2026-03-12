@@ -3037,7 +3037,12 @@ app.get('/api/tipos-consulta', requireAuth, async (req, res) => {
           return res.json(rows);
         }
       }
-      return res.json([]); // cliente usará fallback hardcoded para ESA especialidad
+      // Especialidad no resuelta: devolver TODOS los tipos de la BD como fallback
+      // (mejor que vacío o que los hardcoded del cliente)
+      const allRows = await db.query(
+        'SELECT id, nombre, orden FROM tipos_consulta WHERE activo=1 ORDER BY orden ASC, id ASC'
+      );
+      return res.json(allRows);
     }
     // Prioridad 2: especialidad_id directo
     let espId = especialidad_id ? parseInt(especialidad_id, 10) : null;
@@ -3075,6 +3080,7 @@ app.post('/api/tipos-consulta', requireAuth, requireAdmin, async (req, res) => {
       'INSERT INTO tipos_consulta (especialidad_id, nombre, orden) VALUES (?,?,?)',
       [especialidad_id, nombre.trim(), orden]
     );
+    emitSocket('tipos-consulta:actualizado', { especialidad_id });
     res.json({ ok: true, id: result.insertId });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -3086,6 +3092,7 @@ app.patch('/api/tipos-consulta/:id', requireAuth, requireAdmin, async (req, res)
   if (!nombre || !nombre.trim()) return res.status(400).json({ error: 'El nombre es obligatorio' });
   try {
     await db.execute('UPDATE tipos_consulta SET nombre=? WHERE id=?', [nombre.trim(), id]);
+    emitSocket('tipos-consulta:actualizado', { id });
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -3095,6 +3102,7 @@ app.delete('/api/tipos-consulta/:id', requireAuth, requireAdmin, async (req, res
   if (!id) return res.status(400).json({ error: 'ID inválido' });
   try {
     await db.execute('DELETE FROM tipos_consulta WHERE id=?', [id]);
+    emitSocket('tipos-consulta:actualizado', { id });
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

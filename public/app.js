@@ -1223,7 +1223,13 @@ function initRecibos() {
       // Al cambiar a doctor, limpiar estudio y viceversa
       if (this.value === 'doctor') {
         if ($('reciboTipoServicio')) $('reciboTipoServicio').value = '';
-        const medicoId = $('reciboMedico') ? $('reciboMedico').value : '';
+        const medicoSel = $('reciboMedico');
+        let medicoId = medicoSel ? medicoSel.value : '';
+        // Auto-seleccionar el primer médico disponible si ninguno está elegido
+        if (!medicoId && medicoSel && medicoSel.options.length > 1) {
+          const firstOpt = Array.from(medicoSel.options).find(o => o.value !== '');
+          if (firstOpt) { medicoSel.value = firstOpt.value; medicoId = firstOpt.value; }
+        }
         if (medicoId) {
           cargarTiposConsultaEnRecibo(medicoId);
         } else {
@@ -1305,6 +1311,17 @@ function initRecibos() {
   cargarFiltrosMedicos();
   cargarFiltrosUsuarios();
 
+  // Socket: cuando admin modifica tipos de consulta, refrescar el dropdown activo
+  if (window.socket && !window.socketRecibosTiposListenerAdded) {
+    window.socket.on('tipos-consulta:actualizado', () => {
+      _tiposConsultaCache = {};                     // invalidar caché de agenda/turnos
+      window._reciboCurrentTipos = [];              // invalidar caché del formulario
+      const medicoId = $('reciboMedico')?.value;
+      if (medicoId) cargarTiposConsultaEnRecibo(medicoId);
+    });
+    window.socketRecibosTiposListenerAdded = true;
+  }
+
   initRecibosDone = true;
 }
 
@@ -1345,29 +1362,18 @@ async function cargarTiposConsultaEnRecibo(medicoId) {
   sel.innerHTML = '<option value="">Seleccionar tipo</option>';
   if (!medicoId) return;
   try {
-    // Pasar medico_id: el servidor hace lookup especialidad → tipos
+    // El servidor resuelve la especialidad del médico y devuelve tipos de la BD
     const res = await apiFetch(`/api/tipos-consulta?medico_id=${encodeURIComponent(medicoId)}`);
-    let tipos = await res.json().catch(() => []);
+    const tipos = await res.json().catch(() => []);
 
-    // Fallback: si el servidor no encontró tipos en la BD,
-    // usar los hardcoded para la especialidad EXACTA del doctor (nunca flat-all)
-    if (!Array.isArray(tipos) || tipos.length === 0) {
-      if (!window._reciboMedicos || window._reciboMedicos.length === 0) {
-        window._reciboMedicos = await apiFetch('/api/medicos').then(r => r.json()).catch(() => []);
-      }
-      const medico = (window._reciboMedicos || []).find(m => String(m.id) === String(medicoId));
-      const especialidad = (medico?.especialidad || '').trim();
-      const hardcoded = ESPECIALIDAD_TIPOS_CONSULTA[especialidad];
-      tipos = hardcoded ? hardcoded.map(n => ({ nombre: n })) : [];
-    }
-
+    // Confiar 100% en la BD — si está vacío es porque no hay tipos configurados
     tipos.forEach(t => {
       const opt = document.createElement('option');
       opt.value = t.nombre;
       opt.textContent = t.nombre;
       sel.appendChild(opt);
     });
-    window._reciboCurrentTipos = tipos.map(t => ({ nombre: t.nombre }));
+    window._reciboCurrentTipos = Array.isArray(tipos) ? tipos.map(t => ({ nombre: t.nombre })) : [];
     refreshConceptosRows();
   } catch (_) {}
 }
@@ -5038,18 +5044,13 @@ function formatMoney(n){
   return '$ ' + formatted.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
 
-// Devuelve los tipos de consulta para el médico actualmente seleccionado en recibos,
-// usando la caché _reciboCurrentTipos si está disponible,
-// o el fallback hardcoded para la especialidad de ese doctor.
+// Devuelve los tipos de consulta cacheados para el médico actualmente seleccionado.
+// La BD es la única fuente de verdad; _reciboCurrentTipos se llena en cargarTiposConsultaEnRecibo.
 function _getTiposParaDoctor(medicoId) {
   if (Array.isArray(window._reciboCurrentTipos) && window._reciboCurrentTipos.length > 0) {
     return window._reciboCurrentTipos;
   }
-  if (!medicoId) return [];
-  const medico = (window._reciboMedicos || []).find(m => String(m.id) === String(medicoId));
-  const esp = (medico?.especialidad || '').trim();
-  const hardcoded = esp ? ESPECIALIDAD_TIPOS_CONSULTA[esp] : null;
-  return hardcoded ? hardcoded.map(n => ({ nombre: n })) : [];
+  return []; // sin caché → se esperará a que cargarTiposConsultaEnRecibo finalice
 }
 
 async function refreshConceptosRows() {
