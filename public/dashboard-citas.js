@@ -29,6 +29,9 @@ function initDashboardCitas() {
       btnLimpiar.addEventListener('click', limpiarFiltrosDashboard);
       console.log('[DASHBOARD CITAS] Event listener agregado a Limpiar');
     }
+
+    // Cargar tipos de estudio para el filtro
+    cargarTiposEstudioFiltro();
     
     // Configurar valores por defecto
     const hoy = new Date().toISOString().split('T')[0];
@@ -107,14 +110,17 @@ async function buscarCitasAuditoria() {
     const fechaDesde = elFechaDesde ? elFechaDesde.value : '';
     const fechaHasta = elFechaHasta ? elFechaHasta.value : '';
     const programadoPor = elProgramadoPor ? elProgramadoPor.value.trim() : '';
+    const elTipoEstudio = document.getElementById('dashboardTipoEstudio');
+    const tipoEstudio = elTipoEstudio ? elTipoEstudio.value.trim() : '';
     
-    console.log('[DASHBOARD CITAS] Filtros:', { tipoCita, fechaDesde, fechaHasta, programadoPor });
+    console.log('[DASHBOARD CITAS] Filtros:', { tipoCita, fechaDesde, fechaHasta, programadoPor, tipoEstudio });
     
     const params = new URLSearchParams();
     if (tipoCita !== 'TODOS') params.append('tipo_cita', tipoCita);
     if (fechaDesde) params.append('fecha_desde', fechaDesde);
     if (fechaHasta) params.append('fecha_hasta', fechaHasta);
     if (programadoPor) params.append('programado_por', programadoPor);
+    if (tipoEstudio) params.append('tipo_estudio', tipoEstudio);
     
     const url = `/api/dashboard/citas-auditoria?${params.toString()}`;
     console.log('[DASHBOARD CITAS] URL:', url);
@@ -281,6 +287,7 @@ function limpiarFiltrosDashboard() {
     const elFechaDesde = document.getElementById('dashboardFechaDesde');
     const elFechaHasta = document.getElementById('dashboardFechaHasta');
     const elAgendadoPor = document.getElementById('dashboardAgendadoPor');
+    const elTipoEstudio = document.getElementById('dashboardTipoEstudio');
     
     if (elTipoCita) {
       elTipoCita.value = 'TODOS';
@@ -289,6 +296,10 @@ function limpiarFiltrosDashboard() {
     if (elAgendadoPor) {
       elAgendadoPor.value = '';
       console.log('[DASHBOARD CITAS] Agendado por limpio');
+    }
+    if (elTipoEstudio) {
+      elTipoEstudio.value = '';
+      console.log('[DASHBOARD CITAS] Tipo de Estudio limpio');
     }
     
     // Configurar fechas por defecto (últimos 30 días)
@@ -359,8 +370,7 @@ function formatearFecha(fecha) {
 /**
  * Mostrar toast notification
  */
-function mostrarToast(mensaje, tipo = 'info') {
-  try {
+function mostrarToast(mensaje, tipo = 'info') {  try {
     // Usar función global showToast si existe
     if (typeof showToast === 'function') {
       showToast(mensaje, tipo);
@@ -399,5 +409,109 @@ function mostrarToast(mensaje, tipo = 'info') {
     
   } catch(e) {
     console.error('[DASHBOARD CITAS] Error mostrando toast:', e.message);
+  }
+}
+
+/**
+ * Cargar lista de tipos de estudio para el select de filtro
+ */
+async function cargarTiposEstudioFiltro() {
+  try {
+    const el = document.getElementById('dashboardTipoEstudio');
+    if (!el) return;
+    const resp = await apiFetch('/api/admin/datos/estudio_duraciones');
+    if (!resp.ok) return;
+    const data = await resp.json();
+    const estudios = data.registros || [];
+    el.innerHTML = '<option value="">Todos los estudios</option>';
+    estudios.forEach(est => {
+      const opt = document.createElement('option');
+      opt.value = est.nombre || '';
+      opt.textContent = est.nombre || '';
+      el.appendChild(opt);
+    });
+  } catch(e) {
+    console.warn('[DASHBOARD CITAS] No se pudieron cargar tipos de estudio:', e.message);
+  }
+}
+
+/**
+ * Exportar auditoría de citas a Excel (xlsx)
+ */
+function exportarAuditoriaCitasExcel() {
+  try {
+    if (!dashboardCitasActuales || dashboardCitasActuales.length === 0) {
+      if (typeof showToast === 'function') showToast('No hay datos para exportar. Realiza una búsqueda primero.', 'warning');
+      return;
+    }
+    if (!window.XLSX) {
+      if (typeof showToast === 'function') showToast('Librería XLSX no disponible', 'error');
+      return;
+    }
+    const filas = dashboardCitasActuales.map(c => ({
+      'Fecha': formatearFecha(c.fecha),
+      'Hora': c.hora ? c.hora.substring(0, 5) : '-',
+      'Paciente': c.paciente_nombre || '-',
+      'Documento': c.paciente_documento || '-',
+      'Tipo Consulta / Estudio': c.tipo_consulta || '-',
+      'Tipo Cita': c.tipo_cita === 'AGENDA_MEDICA' ? 'Medica' : 'Electro',
+      'Agendado por': c.programado_por || '-',
+      'Estado': c.estado || '-'
+    }));
+    const ws = window.XLSX.utils.json_to_sheet(filas);
+    const wb = window.XLSX.utils.book_new();
+    window.XLSX.utils.book_append_sheet(wb, ws, 'Auditoria');
+    const fechaHoy = new Date().toISOString().split('T')[0];
+    window.XLSX.writeFile(wb, 'auditoria-citas-' + fechaHoy + '.xlsx');
+    if (typeof showToast === 'function') showToast('Exportacion Excel completada', 'success');
+  } catch(e) {
+    console.error('[DASHBOARD CITAS] Error exportando Excel:', e.message);
+    if (typeof showToast === 'function') showToast('Error al exportar: ' + e.message, 'error');
+  }
+}
+
+/**
+ * Exportar auditoría de citas a PDF (ventana de impresión)
+ */
+function exportarAuditoriaCitasPDF() {
+  try {
+    if (!dashboardCitasActuales || dashboardCitasActuales.length === 0) {
+      if (typeof showToast === 'function') showToast('No hay datos para exportar. Realiza una busqueda primero.', 'warning');
+      return;
+    }
+    const filas = dashboardCitasActuales.map(function(c) {
+      return '<tr><td>' + formatearFecha(c.fecha) + '</td>' +
+        '<td>' + (c.hora ? c.hora.substring(0,5) : '-') + '</td>' +
+        '<td>' + (c.paciente_nombre || '-').replace(/</g,'&lt;') + '</td>' +
+        '<td>' + (c.paciente_documento || '-').replace(/</g,'&lt;') + '</td>' +
+        '<td>' + (c.tipo_consulta || '-').replace(/</g,'&lt;') + '</td>' +
+        '<td>' + (c.tipo_cita === 'AGENDA_MEDICA' ? 'Medica' : 'Electro') + '</td>' +
+        '<td>' + (c.programado_por || '-').replace(/</g,'&lt;') + '</td>' +
+        '<td>' + (c.estado || '-').replace(/</g,'&lt;') + '</td></tr>';
+    }).join('');
+    var fechaGen = new Date().toLocaleDateString('es-CO');
+    var html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Auditoria de Citas</title>' +
+      '<style>body{font-family:Arial,sans-serif;font-size:12px;margin:20px}' +
+      'h2{color:#627371}table{width:100%;border-collapse:collapse;margin-top:16px}' +
+      'th{background:#627371;color:white;padding:8px;text-align:left}' +
+      'td{padding:6px 8px;border-bottom:1px solid #e5e7eb}' +
+      'tr:nth-child(even){background:#f9fafb}' +
+      '.meta{color:#666;font-size:11px;margin-bottom:8px}</style></head><body>' +
+      '<h2>Auditoria de Citas</h2>' +
+      '<p class="meta">Generado el ' + fechaGen + ' &mdash; Total: ' + dashboardCitasActuales.length + ' registros</p>' +
+      '<table><thead><tr><th>Fecha</th><th>Hora</th><th>Paciente</th><th>Documento</th>' +
+      '<th>Tipo Estudio</th><th>Tipo Cita</th><th>Agendado por</th><th>Estado</th></tr></thead>' +
+      '<tbody>' + filas + '</tbody></table>' +
+      '<script>window.onload=function(){window.print();}<\/script></body></html>';
+    var ventana = window.open('', '_blank', 'width=900,height=700');
+    if (ventana) {
+      ventana.document.write(html);
+      ventana.document.close();
+    } else {
+      if (typeof showToast === 'function') showToast('El navegador bloqueo la ventana emergente. Permite pop-ups para este sitio.', 'warning');
+    }
+  } catch(e) {
+    console.error('[DASHBOARD CITAS] Error exportando PDF:', e.message);
+    if (typeof showToast === 'function') showToast('Error al exportar PDF: ' + e.message, 'error');
   }
 }
