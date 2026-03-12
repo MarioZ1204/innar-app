@@ -366,6 +366,9 @@ app.post('/api/login', async (req, res) => {
     // Login exitoso: resetear intentos
     await rateLimiter.resetAttempts(clientIP);
 
+    // Actualizar último acceso
+    await db.execute('UPDATE usuarios SET ultimo_acceso = NOW() WHERE id = ?', [user.id]).catch(() => {});
+
     // Guardar en sesión
     req.session.usuarioId = user.id;
     req.session.usuario = user.usuario;
@@ -407,6 +410,18 @@ app.get('/api/sesion', async (req, res) => {
 });
 
 // Cambiar contraseña (cualquier usuario autenticado)
+// Datos completos del usuario actual (modal Mi Cuenta)
+app.get('/api/mi-cuenta', requireAuth, async (req, res) => {
+  try {
+    const rows = await db.query(
+      'SELECT id, usuario, nombre, rol, especialidad, numero_consultorio, creado_en, ultimo_acceso FROM usuarios WHERE id = ?',
+      [req.session.usuarioId]
+    );
+    if (!rows || rows.length === 0) return res.status(404).json({ error: 'Usuario no encontrado' });
+    res.json(rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.post('/api/cambiar-contrasena', requireAuth, async (req, res) => {
   const { 
     nombre, 
@@ -489,9 +504,10 @@ app.post('/api/cambiar-contrasena', requireAuth, async (req, res) => {
       params
     );
 
-    // Si cambió nombre, actualizar en sesión
+    // Si cambió nombre, actualizar en sesión y notificar vía socket
     if (nombre) {
       req.session.nombre = nombre.trim();
+      emitSocket('usuario:nombre-actualizado', { id: req.session.usuarioId, nombre: nombre.trim() });
     }
 
     const mensaje = [];
@@ -513,7 +529,7 @@ app.post('/api/cambiar-contrasena', requireAuth, async (req, res) => {
 app.get('/api/usuarios', requireAuth, requireAdmin, async (req, res) => {
   try {
     const usuarios = await db.query(
-      'SELECT id, usuario, nombre, rol, activo FROM usuarios ORDER BY usuario ASC'
+      'SELECT id, usuario, nombre, rol, activo, numero_consultorio, especialidad FROM usuarios ORDER BY usuario ASC'
     );
     res.json(usuarios);
   } catch (e) {
@@ -3014,11 +3030,44 @@ app.delete('/api/especialidades/:id', requireAuth, requireAdmin, async (req, res
 
 // GET — legible por todos los roles (para poblar selects de agenda)
 app.get('/api/tipos-consulta', requireAuth, async (req, res) => {
-  const { especialidad_id, especialidad_nombre } = req.query;
+  const { especialidad_id, especialidad_nombre, medico_id } = req.query;
   try {
+    // Prioridad 1: medico_id — 2 queries secuenciales (más robusto que JOIN)
+    if (medico_id) {
+      const doc = await db.queryOne(
+        "SELECT especialidad FROM usuarios WHERE id=? AND rol='doctor'",
+        [parseInt(medico_id, 10)]
+      );
+      const espNombre = (doc?.especialidad || '').trim();
+      if (espNombre) {
+        // Buscar especialidad_id (sin filtro activo para mayor tolerancia)
+        const espRows = await db.query(
+          'SELECT id FROM especialidades WHERE LOWER(TRIM(nombre))=LOWER(TRIM(?))',
+          [espNombre]
+        );
+        if (espRows.length > 0) {
+          const rows = await db.query(
+            'SELECT id, nombre, orden FROM tipos_consulta WHERE especialidad_id=? AND activo=1 ORDER BY orden ASC, id ASC',
+            [espRows[0].id]
+          );
+          return res.json(rows);
+        }
+      }
+      // Especialidad no resuelta: devolver TODOS los tipos de la BD como fallback
+      // (mejor que vacío o que los hardcoded del cliente)
+      const allRows = await db.query(
+        'SELECT id, nombre, orden FROM tipos_consulta WHERE activo=1 ORDER BY orden ASC, id ASC'
+      );
+      return res.json(allRows);
+    }
+    // Prioridad 2: especialidad_id directo
     let espId = especialidad_id ? parseInt(especialidad_id, 10) : null;
+    // Prioridad 3: buscar por nombre (case-insensitive + trim)
     if (!espId && especialidad_nombre) {
-      const rows = await db.query('SELECT id FROM especialidades WHERE nombre=? AND activo=1', [especialidad_nombre]);
+      const rows = await db.query(
+        'SELECT id FROM especialidades WHERE LOWER(TRIM(nombre))=LOWER(TRIM(?))',
+        [especialidad_nombre]
+      );
       espId = rows.length > 0 ? rows[0].id : null;
     }
     if (!espId) {
@@ -3047,6 +3096,7 @@ app.post('/api/tipos-consulta', requireAuth, requireAdmin, async (req, res) => {
       'INSERT INTO tipos_consulta (especialidad_id, nombre, orden) VALUES (?,?,?)',
       [especialidad_id, nombre.trim(), orden]
     );
+    emitSocket('tipos-consulta:actualizado', { especialidad_id });
     res.json({ ok: true, id: result.insertId });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -3058,6 +3108,7 @@ app.patch('/api/tipos-consulta/:id', requireAuth, requireAdmin, async (req, res)
   if (!nombre || !nombre.trim()) return res.status(400).json({ error: 'El nombre es obligatorio' });
   try {
     await db.execute('UPDATE tipos_consulta SET nombre=? WHERE id=?', [nombre.trim(), id]);
+    emitSocket('tipos-consulta:actualizado', { id });
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -3067,6 +3118,7 @@ app.delete('/api/tipos-consulta/:id', requireAuth, requireAdmin, async (req, res
   if (!id) return res.status(400).json({ error: 'ID inválido' });
   try {
     await db.execute('DELETE FROM tipos_consulta WHERE id=?', [id]);
+    emitSocket('tipos-consulta:actualizado', { id });
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -4355,6 +4407,21 @@ const PORT = process.env.PORT || 3000;
       }
     } catch (migErr) {
       logger.warn('[MIGRATION] Advertencia en migración pacientes.telefono2: ' + migErr.message, { type: 'STARTUP' });
+    }
+    // ─── Migración: ultimo_acceso en usuarios ────────────────────────────────
+    try {
+      const colUltAcc = await db.query(
+        `SELECT COUNT(*) AS cnt FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME   = 'usuarios'
+           AND COLUMN_NAME  = 'ultimo_acceso'`
+      );
+      if (!colUltAcc || !colUltAcc[0] || colUltAcc[0].cnt === 0) {
+        await db.execute(`ALTER TABLE usuarios ADD COLUMN ultimo_acceso DATETIME DEFAULT NULL`);
+        logger.info('[MIGRATION] Columna usuarios.ultimo_acceso agregada', { type: 'STARTUP' });
+      }
+    } catch (migErr) {
+      logger.warn('[MIGRATION] Advertencia en migración usuarios.ultimo_acceso: ' + migErr.message, { type: 'STARTUP' });
     }
     // ─── Migración: tabla pacientes_espera ───────────────────────────────────
     try {

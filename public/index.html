@@ -664,7 +664,7 @@
                   <select id="nuevoTurnoEntidadMedica">
                     <option value="">Seleccionar</option>
                     <option value="Particular">Particular</option>
-                    <option value="PROINSALUD">PROINSALUD</option>
+                    <option value="PROINSALUD">Proinsalud</option>
                     <option value="UCQN">UCQN</option>
                     <option value="FOMAG">FOMAG</option>
                     <option value="Protegemos">Protegemos</option>
@@ -1664,58 +1664,121 @@
   <!-- Modal Cambiar Contraseña -->
   <!-- MODAL: GESTIONAR CUENTA -->
   <div id="modalCambiarContrasena" class="modal-overlay hidden">
-    <div class="modal-box" style="max-width:500px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;padding-bottom:16px;border-bottom:2px solid #e5e7eb">
-        <h3 style="margin:0;color:#627371;font-size:20px;font-weight:600">Gestionar Cuenta</h3>
-        <button class="btn-close-modal" style="background:none;border:none;font-size:24px;cursor:pointer;color:#627371;transition:color 0.2s" onmouseover="this.style.color='#3f4a48'" onmouseout="this.style.color='#627371'">✕</button>
-      </div>
-      <form id="formCambiarContrasena" style="display:flex;flex-direction:column;gap:16px">
-        <div>
-          <label for="cuentaNombreActual" style="display:block;margin-bottom:8px;font-weight:500;color:#333;font-size:14px">Nombre Completo</label>
-          <input id="cuentaNombreActual" type="text" placeholder="Tu nombre completo" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;font-size:14px;transition:all 0.2s" onfocus="this.style.borderColor='#627371';this.style.boxShadow='0 0 0 3px rgba(98,115,113,0.1)'" onblur="this.style.borderColor='#d1d5db';this.style.boxShadow='none'" />
+    <div class="modal-box mc-modal" style="max-width:500px">
+
+      <!-- Header con gradiente -->
+      <div class="mc-header">
+        <div class="mc-avatar" id="mcAvatar">U</div>
+        <div class="mc-header-info">
+          <div class="mc-header-name" id="mcHeaderName">—</div>
+          <div class="mc-header-badges">
+            <span class="mc-badge" id="mcRolBadge">—</span>
+            <span class="mc-header-at" id="mcHeaderAt"></span>
+          </div>
         </div>
-        
-        <div style="padding-top:12px;border-top:1px solid #e5e7eb;">
-          <h4 style="color:#627371;font-size:15px;font-weight:600;margin:0 0 16px 0">Cambiar Contraseña</h4>
-          
-          <div>
-            <label for="contrasenaActual" style="display:block;margin-bottom:8px;font-weight:500;color:#333;font-size:14px">Contraseña Actual</label>
+        <button type="button" class="mc-close btn-close-modal" title="Cerrar" aria-label="Cerrar">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+
+      <!-- Tabs -->
+      <div class="mc-tabs" role="tablist">
+        <button type="button" class="mc-tab active" data-mc-tab="perfil" role="tab" aria-selected="true">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+          Perfil
+        </button>
+        <button type="button" class="mc-tab" data-mc-tab="seguridad" role="tab" aria-selected="false">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          Contraseña
+        </button>
+      </div>
+
+      <!-- Panel: Perfil -->
+      <div class="mc-panel" id="mc-panel-perfil">
+        <div class="mc-info-grid">
+          <div class="mc-info-card">
+            <span class="mc-info-label">Usuario</span>
+            <span class="mc-info-val" id="mcInfoUsuario">—</span>
+          </div>
+          <div class="mc-info-card">
+            <span class="mc-info-label">Rol</span>
+            <span class="mc-info-val" id="mcInfoRol">—</span>
+          </div>
+          <div class="mc-info-card" id="mcInfoEspCard" style="display:none">
+            <span class="mc-info-label">Especialidad</span>
+            <span class="mc-info-val" id="mcInfoEspecialidad">—</span>
+          </div>
+          <div class="mc-info-card" id="mcInfoConsCard" style="display:none">
+            <span class="mc-info-label">Consultorio N°</span>
+            <span class="mc-info-val" id="mcInfoConsultorio">—</span>
+          </div>
+          <div class="mc-info-card">
+            <span class="mc-info-label">Miembro desde</span>
+            <span class="mc-info-val" id="mcInfoCreado">—</span>
+          </div>
+          <div class="mc-info-card">
+            <span class="mc-info-label">Último acceso</span>
+            <span class="mc-info-val" id="mcInfoAcceso">—</span>
+          </div>
+        </div>
+        <form id="formCambiarNombre">
+          <label class="mc-form-label" for="cuentaNombreActual">Nombre completo</label>
+          <input id="cuentaNombreActual" type="text" class="mc-input" placeholder="Tu nombre completo" autocomplete="name" />
+          <div id="cambiarNombreError" class="mc-error hidden"></div>
+          <div class="mc-actions">
+            <button type="submit" class="btn-primary">Guardar nombre</button>
+            <button type="button" class="btn-secondary mc-btn-cancelar">Cancelar</button>
+          </div>
+        </form>
+      </div>
+
+      <!-- Panel: Contraseña -->
+      <div class="mc-panel hidden" id="mc-panel-seguridad">
+        <form id="formCambiarContrasena" class="mc-pwd-section">
+          <div class="mc-pwd-field">
+            <label for="contrasenaActual">Contraseña actual</label>
             <div class="password-wrapper">
-              <input id="contrasenaActual" type="password" placeholder="Ingresa tu contraseña actual" class="password-input" />
-              <button type="button" id="toggleContrasenaActual" class="toggle-password-btn" title="Mostrar/ocultar">👁</button>
+              <input id="contrasenaActual" type="password" class="password-input" placeholder="Ingresa tu contraseña actual" autocomplete="current-password" />
+              <button type="button" id="toggleContrasenaActual" class="toggle-password-btn" title="Mostrar/ocultar">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
             </div>
           </div>
-          <div>
-            <label for="nuevaContrasena" style="display:block;margin-bottom:8px;font-weight:500;color:#333;font-size:14px">Nueva Contraseña</label>
+          <div class="mc-pwd-field">
+            <label for="nuevaContrasena">Nueva contraseña</label>
             <div class="password-wrapper">
-              <input id="nuevaContrasena" type="password" placeholder="Ingresa tu nueva contraseña" class="password-input" />
-              <button type="button" id="toggleNuevaContrasena" class="toggle-password-btn" title="Mostrar/ocultar">👁</button>
+              <input id="nuevaContrasena" type="password" class="password-input" placeholder="Mínimo 8 caracteres" autocomplete="new-password" />
+              <button type="button" id="toggleNuevaContrasena" class="toggle-password-btn" title="Mostrar/ocultar">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
             </div>
-            <div id="cambiarContrasenaRequirements" style="margin-top:12px;padding:12px;background:#f9fafb;border-radius:6px;border:1px solid #e5e7eb;display:none">
-              <p style="margin:0 0 8px 0;font-size:13px;font-weight:600;color:#374151">Requisitos de contraseña:</p>
-              <ul style="margin:0;padding-left:20px;font-size:12px;color:#666">
-                <li id="cambiar-req-length" style="list-style:none;padding:4px 0">Mínimo 8 caracteres</li>
-                <li id="cambiar-req-upper" style="list-style:none;padding:4px 0">Al menos una mayúscula (A-Z)</li>
-                <li id="cambiar-req-lower" style="list-style:none;padding:4px 0">Al menos una minúscula (a-z)</li>
-                <li id="cambiar-req-number" style="list-style:none;padding:4px 0">Al menos un número (0-9)</li>
+            <div id="cambiarContrasenaRequirements" style="margin-top:8px;padding:10px 12px;background:#f9fafb;border-radius:6px;border:1px solid #e5e7eb;display:none">
+              <p style="margin:0 0 6px 0;font-size:12px;font-weight:600;color:#374151">Requisitos:</p>
+              <ul style="margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:3px;font-size:12px">
+                <li id="cambiar-req-length">Mínimo 8 caracteres</li>
+                <li id="cambiar-req-upper">Al menos una mayúscula (A-Z)</li>
+                <li id="cambiar-req-lower">Al menos una minúscula (a-z)</li>
+                <li id="cambiar-req-number">Al menos un número (0-9)</li>
               </ul>
             </div>
           </div>
-          <div>
-            <label for="confirmarContrasena" style="display:block;margin-bottom:8px;font-weight:500;color:#333;font-size:14px">Confirmar Nueva Contraseña</label>
+          <div class="mc-pwd-field">
+            <label for="confirmarContrasena">Confirmar nueva contraseña</label>
             <div class="password-wrapper">
-              <input id="confirmarContrasena" type="password" placeholder="Confirma tu nueva contraseña" class="password-input" />
-              <button type="button" id="toggleConfirmarContrasena" class="toggle-password-btn" title="Mostrar/ocultar">👁</button>
+              <input id="confirmarContrasena" type="password" class="password-input" placeholder="Repite la nueva contraseña" autocomplete="new-password" />
+              <button type="button" id="toggleConfirmarContrasena" class="toggle-password-btn" title="Mostrar/ocultar">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
             </div>
           </div>
-        </div>
-        
-        <div id="cambiarContrasenaError" class="login-error hidden" style="padding:12px;background:#fee;border:1px solid #fcc;border-radius:6px;color:#c00;font-size:14px"></div>
-        <div style="display:flex;gap:12px;margin-top:20px;padding-top:20px;border-top:1px solid #e5e7eb">
-          <button type="submit" class="btn-primary" style="flex:1">Guardar Cambios</button>
-          <button type="button" class="btn-secondary" style="flex:1">Cancelar</button>
-        </div>
-      </form>
+          <div id="cambiarContrasenaError" class="mc-error hidden"></div>
+          <div class="mc-actions">
+            <button type="submit" class="btn-primary">Actualizar contraseña</button>
+            <button type="button" class="btn-secondary mc-btn-cancelar">Cancelar</button>
+          </div>
+        </form>
+      </div>
+
     </div>
   </div>
 
@@ -1990,9 +2053,13 @@
           <div style="font-size:0.85rem;color:#6b7280;font-weight:600">PACIENTE</div>
           <div id="modalMedicaPaciente" style="font-size:1.1rem;color:#1f2937;font-weight:600">-</div>
         </div>
-        <div>
+        <div style="margin-bottom:12px">
           <div style="font-size:0.85rem;color:#6b7280;font-weight:600">HORA</div>
           <div id="modalMedicaHora" style="font-size:1rem;color:#1f2937">-</div>
+        </div>
+        <div>
+          <div style="font-size:0.85rem;color:#6b7280;font-weight:600">PROGRAMADO POR</div>
+          <div id="modalMedicaProgramadoPor" style="font-size:0.95rem;color:#1f2937">-</div>
         </div>
       </div>
 
