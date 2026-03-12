@@ -366,6 +366,9 @@ app.post('/api/login', async (req, res) => {
     // Login exitoso: resetear intentos
     await rateLimiter.resetAttempts(clientIP);
 
+    // Actualizar último acceso
+    await db.execute('UPDATE usuarios SET ultimo_acceso = NOW() WHERE id = ?', [user.id]).catch(() => {});
+
     // Guardar en sesión
     req.session.usuarioId = user.id;
     req.session.usuario = user.usuario;
@@ -407,6 +410,18 @@ app.get('/api/sesion', async (req, res) => {
 });
 
 // Cambiar contraseña (cualquier usuario autenticado)
+// Datos completos del usuario actual (modal Mi Cuenta)
+app.get('/api/mi-cuenta', requireAuth, async (req, res) => {
+  try {
+    const rows = await db.query(
+      'SELECT id, usuario, nombre, rol, especialidad, numero_consultorio, creado_en, ultimo_acceso FROM usuarios WHERE id = ?',
+      [req.session.usuarioId]
+    );
+    if (!rows || rows.length === 0) return res.status(404).json({ error: 'Usuario no encontrado' });
+    res.json(rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.post('/api/cambiar-contrasena', requireAuth, async (req, res) => {
   const { 
     nombre, 
@@ -489,9 +504,10 @@ app.post('/api/cambiar-contrasena', requireAuth, async (req, res) => {
       params
     );
 
-    // Si cambió nombre, actualizar en sesión
+    // Si cambió nombre, actualizar en sesión y notificar vía socket
     if (nombre) {
       req.session.nombre = nombre.trim();
+      emitSocket('usuario:nombre-actualizado', { id: req.session.usuarioId, nombre: nombre.trim() });
     }
 
     const mensaje = [];
@@ -4391,6 +4407,21 @@ const PORT = process.env.PORT || 3000;
       }
     } catch (migErr) {
       logger.warn('[MIGRATION] Advertencia en migración pacientes.telefono2: ' + migErr.message, { type: 'STARTUP' });
+    }
+    // ─── Migración: ultimo_acceso en usuarios ────────────────────────────────
+    try {
+      const colUltAcc = await db.query(
+        `SELECT COUNT(*) AS cnt FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME   = 'usuarios'
+           AND COLUMN_NAME  = 'ultimo_acceso'`
+      );
+      if (!colUltAcc || !colUltAcc[0] || colUltAcc[0].cnt === 0) {
+        await db.execute(`ALTER TABLE usuarios ADD COLUMN ultimo_acceso DATETIME DEFAULT NULL`);
+        logger.info('[MIGRATION] Columna usuarios.ultimo_acceso agregada', { type: 'STARTUP' });
+      }
+    } catch (migErr) {
+      logger.warn('[MIGRATION] Advertencia en migración usuarios.ultimo_acceso: ' + migErr.message, { type: 'STARTUP' });
     }
     // ─── Migración: tabla pacientes_espera ───────────────────────────────────
     try {

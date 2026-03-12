@@ -4245,6 +4245,14 @@ async function initUsuarios() {
     console.warn('[AUDIT] No se encontró el botón de Auditoría');
   }
   
+  // Socket: cuando cualquier usuario cambia su nombre, refrescar lista de usuarios (si está visible)
+  if (window.socket && !window.socketUsuariosNombreListenerAdded) {
+    window.socket.on('usuario:nombre-actualizado', () => {
+      if ($('view-usuarios') && !$('view-usuarios').classList.contains('hidden')) cargarUsuarios();
+    });
+    window.socketUsuariosNombreListenerAdded = true;
+  }
+
   await cargarUsuarios();
 }
 
@@ -5609,246 +5617,251 @@ async function resetAllRecibos(){
 // (setDefaultReportDates, generarReporteDiario, generarReporteMensual eliminados — reemplazados por filtros en Ver Recibos)
 
 // ============================================
-// GESTIONAR CUENTA
+// GESTIONAR CUENTA — Mi Cuenta
 // ============================================
-function openCambiarContrasenaModal() {
+const MC_ROL_LABELS = {
+  admin: 'Administrador', recepcion: 'Recepción', electro: 'Electro',
+  doctor: 'Doctor', contabilidad: 'Contabilidad'
+};
+
+async function openCambiarContrasenaModal() {
   const modal = $('modalCambiarContrasena');
-  if (modal) {
-    modal.classList.remove('hidden');
-    $('formCambiarContrasena').reset();
-    $('cambiarContrasenaError').classList.add('hidden');
-    
-    // Cargar nombre actual
-    const nombreSpan = $('menuUserName');
-    if (nombreSpan) {
-      const nombreCompleto = nombreSpan.textContent.split(' ').pop(); // Obtener del menú
-      // Mejor aún, hacer una búsqueda del nombre en sesión
-      $('cuentaNombreActual').value = sessionStorage.getItem('nombre_usuario') || '';
+  if (!modal) return;
+
+  // Reset ambos formularios y errores
+  $('formCambiarNombre')?.reset();
+  $('formCambiarContrasena')?.reset();
+  $('cambiarNombreError')?.classList.add('hidden');
+  $('cambiarContrasenaError')?.classList.add('hidden');
+  if ($('cambiarContrasenaRequirements')) $('cambiarContrasenaRequirements').style.display = 'none';
+
+  // Activar tab Perfil
+  modal.querySelectorAll('.mc-tab').forEach(t => { t.classList.remove('active'); t.setAttribute('aria-selected', 'false'); });
+  modal.querySelector('[data-mc-tab="perfil"]')?.classList.add('active');
+  modal.querySelector('[data-mc-tab="perfil"]')?.setAttribute('aria-selected', 'true');
+  modal.querySelectorAll('.mc-panel').forEach(p => p.classList.add('hidden'));
+  $('mc-panel-perfil')?.classList.remove('hidden');
+
+  modal.classList.remove('hidden');
+
+  // Cargar perfil desde el servidor
+  try {
+    const res = await apiFetch('/api/mi-cuenta');
+    if (!res.ok) return;
+    const d = await res.json();
+
+    // Avatar (iniciales del nombre)
+    const iniciales = (d.nombre || d.usuario || '?')
+      .split(' ').filter(Boolean).map(w => w[0]).slice(0, 2).join('').toUpperCase();
+    if ($('mcAvatar')) $('mcAvatar').textContent = iniciales;
+
+    // Header
+    if ($('mcHeaderName')) $('mcHeaderName').textContent = d.nombre || d.usuario || '—';
+    if ($('mcHeaderAt'))   $('mcHeaderAt').textContent   = '@' + (d.usuario || '');
+    if ($('mcRolBadge'))   $('mcRolBadge').textContent   = MC_ROL_LABELS[d.rol] || d.rol || '—';
+
+    // Info cards
+    if ($('mcInfoUsuario')) $('mcInfoUsuario').textContent = '@' + (d.usuario || '—');
+    if ($('mcInfoRol'))     $('mcInfoRol').textContent     = MC_ROL_LABELS[d.rol] || d.rol || '—';
+
+    // Especialidad / consultorio — solo doctores
+    const espCard = $('mcInfoEspCard'), consCard = $('mcInfoConsCard');
+    if (d.rol === 'doctor') {
+      if (espCard)  { espCard.style.display  = ''; if ($('mcInfoEspecialidad')) $('mcInfoEspecialidad').textContent = d.especialidad || '—'; }
+      if (consCard) { consCard.style.display = ''; if ($('mcInfoConsultorio'))  $('mcInfoConsultorio').textContent  = d.numero_consultorio ? 'N° ' + d.numero_consultorio : '—'; }
+    } else {
+      if (espCard)  espCard.style.display  = 'none';
+      if (consCard) consCard.style.display = 'none';
     }
+
+    // Fechas formateadas
+    const fmtDate = (iso) => {
+      if (!iso) return '—';
+      const dt = new Date(iso), hoy = new Date();
+      if (dt.toDateString() === hoy.toDateString())
+        return 'Hoy ' + dt.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
+      return dt.toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' });
+    };
+    if ($('mcInfoCreado')) $('mcInfoCreado').textContent = fmtDate(d.creado_en);
+    if ($('mcInfoAcceso')) $('mcInfoAcceso').textContent = d.ultimo_acceso ? fmtDate(d.ultimo_acceso) : 'Esta sesión';
+
+    // Pre-llenar campo de nombre
+    if ($('cuentaNombreActual')) $('cuentaNombreActual').value = d.nombre || '';
+  } catch (_) {
+    if ($('cuentaNombreActual')) $('cuentaNombreActual').value = sessionStorage.getItem('nombre_usuario') || '';
   }
 }
 
 function closeCambiarContrasenaModal() {
   const modal = $('modalCambiarContrasena');
-  if (modal) {
-    modal.classList.add('hidden');
-    $('formCambiarContrasena').reset();
-  }
+  if (modal) modal.classList.add('hidden');
+  $('formCambiarNombre')?.reset();
+  $('formCambiarContrasena')?.reset();
 }
 
-// Event listener para el formulario de gestionar cuenta
+// Event listeners para el modal Mi Cuenta y otros modales
 document.addEventListener('DOMContentLoaded', () => {
-  // Setup botones de cerrar modal de cambiar contraseña
-  const modalCambiarContrasena = $('modalCambiarContrasena');
-  if (modalCambiarContrasena) {
-    // Botón X de cerrar
-    const btnCloseX = modalCambiarContrasena.querySelector('button.btn-close-modal');
-    if (btnCloseX) {
-      btnCloseX.addEventListener('click', closeCambiarContrasenaModal);
-    }
-    
-    // Botón Cancelar
-    const btnsCancelar = modalCambiarContrasena.querySelectorAll('button[type="button"]');
-    btnsCancelar.forEach(btn => {
-      if (btn.textContent.includes('Cancelar')) {
-        btn.addEventListener('click', closeCambiarContrasenaModal);
-      }
-    });
-  }
-  
-  // Setup botones de cerrar modal de editar usuario
-  const modalEditarUsuario = $('modalEditarUsuario');
-  if (modalEditarUsuario) {
-    const btnCloseX = modalEditarUsuario.querySelector('button.btn-close-modal');
-    if (btnCloseX) {
-      btnCloseX.addEventListener('click', closeEditarUsuarioModal);
-    }
-    
-    const btnsCancelar = modalEditarUsuario.querySelectorAll('button[type="button"]');
-    btnsCancelar.forEach(btn => {
-      if (btn.textContent.includes('Cancelar')) {
-        btn.addEventListener('click', closeEditarUsuarioModal);
-      }
-    });
-  }
-  
-  // Setup botones de cerrar modal de historial
-  const modalHistorial = $('modalHistorial');
-  if (modalHistorial) {
-    const btnCloseX = modalHistorial.querySelector('button.btn-close-modal');
-    if (btnCloseX) {
-      btnCloseX.addEventListener('click', closeHistorialModal);
-    }
-    
-    const btnsCerrar = modalHistorial.querySelectorAll('button[type="button"]');
-    btnsCerrar.forEach(btn => {
-      if (btn.textContent.includes('Cerrar')) {
-        btn.addEventListener('click', closeHistorialModal);
-      }
-    });
-  }
-  
-  // Setup botones de cerrar modal de reset password
-  const modalResetPassword = $('modalResetPassword');
-  if (modalResetPassword) {
-    const btnCloseX = modalResetPassword.querySelector('button.btn-close-modal');
-    if (btnCloseX) {
-      btnCloseX.addEventListener('click', closeResetPasswordModal);
-    }
-    
-    const btnsEntendido = modalResetPassword.querySelectorAll('button[type="button"]');
-    btnsEntendido.forEach(btn => {
-      if (btn.textContent.includes('Entendido')) {
-        btn.addEventListener('click', closeResetPasswordModal);
-      }
-    });
-  }
-  
-  // Setup toggle buttons para "Mi Cuenta"
-  const toggleBtns = ['toggleContrasenaActual', 'toggleNuevaContrasena', 'toggleConfirmarContrasena', 'toggleEditPassword'];
-  const inputIds = ['contrasenaActual', 'nuevaContrasena', 'confirmarContrasena', 'editPassword'];
-  
-  toggleBtns.forEach((btnId, idx) => {
-    const btn = $(btnId);
-    const input = $(inputIds[idx]);
-    if (btn && input) {
-      btn.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        const type = input.type === 'password' ? 'text' : 'password';
-        input.type = type;
-        // El emoji 👁 es el mismo para ambos estados - visualmente claro
+
+  // ── Mi Cuenta: cerrar, cancelar, tabs ───────────────────────────────────────────
+  const modalCC = $('modalCambiarContrasena');
+  if (modalCC) {
+    modalCC.querySelector('button.btn-close-modal')?.addEventListener('click', closeCambiarContrasenaModal);
+    modalCC.querySelectorAll('.mc-btn-cancelar').forEach(btn =>
+      btn.addEventListener('click', closeCambiarContrasenaModal)
+    );
+    // Tabs
+    modalCC.querySelectorAll('.mc-tab').forEach(tab => {
+      tab.addEventListener('click', function () {
+        modalCC.querySelectorAll('.mc-tab').forEach(t => { t.classList.remove('active'); t.setAttribute('aria-selected', 'false'); });
+        this.classList.add('active'); this.setAttribute('aria-selected', 'true');
+        const panelId = 'mc-panel-' + this.dataset.mcTab;
+        modalCC.querySelectorAll('.mc-panel').forEach(p => p.classList.add('hidden'));
+        $(panelId)?.classList.remove('hidden');
       });
-    }
-  });
-  
-  // Setup password requirements display para "Cambiar Contraseña"
-  const nuevaContrasenaInput = $('nuevaContrasena');
-  const requirementsContainer = $('cambiarContrasenaRequirements');
-  if (nuevaContrasenaInput && requirementsContainer) {
-    nuevaContrasenaInput.addEventListener('input', () => {
-      const password = nuevaContrasenaInput.value;
-      if (password) {
-        requirementsContainer.style.display = 'block';
-        // Actualizar requisitos
-        const hasLength = password.length >= 8;
-        const hasUpper = /[A-Z]/.test(password);
-        const hasLower = /[a-z]/.test(password);
-        const hasNumber = /[0-9]/.test(password);
-        
-        updateRequirementItem('cambiar-req-length', hasLength, 'Mínimo 8 caracteres');
-        updateRequirementItem('cambiar-req-upper', hasUpper, 'Al menos una mayúscula (A-Z)');
-        updateRequirementItem('cambiar-req-lower', hasLower, 'Al menos una minúscula (a-z)');
-        updateRequirementItem('cambiar-req-number', hasNumber, 'Al menos un número (0-9)');
-      } else {
-        requirementsContainer.style.display = 'none';
-      }
     });
   }
-  
-  // Setup toggle button para "Editar Usuario"
-  const toggleEditBtn = $('toggleEditPassword');
-  const editPasswordInput = $('editPassword');
-  if (toggleEditBtn && editPasswordInput) {
-    toggleEditBtn.addEventListener('click', (e) => {
+
+  // ── Formulario: cambiar nombre ──────────────────────────────────────────────
+  const formNombre = $('formCambiarNombre');
+  if (formNombre) {
+    formNombre.addEventListener('submit', async (e) => {
       e.preventDefault();
-      const type = editPasswordInput.type === 'password' ? 'text' : 'password';
-      editPasswordInput.type = type;
-      toggleEditBtn.textContent = type === 'password' ? 'Mostrar' : 'Ocultar';
-    });
-  }
-  
-  const form = $('formCambiarContrasena');
-  if (form) {
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      
-      const nombre = $('cuentaNombreActual').value.trim();
-      const contrasenaActual = $('contrasenaActual').value;
-      const nuevaContrasena = $('nuevaContrasena').value;
-      const confirmarContrasena = $('confirmarContrasena').value;
-      const errorDiv = $('cambiarContrasenaError');
+      const nombre = $('cuentaNombreActual')?.value.trim() || '';
+      const errDiv = $('cambiarNombreError');
+      const showErr = (msg) => { if (errDiv) { errDiv.textContent = msg; errDiv.classList.remove('hidden'); } };
+      if (!nombre) return showErr('El nombre no puede estar vacío');
 
-      // Validar que al menos nombre o contraseña sea proporcionado
-      if (!nombre && !nuevaContrasena) {
-        errorDiv.textContent = 'Debe cambiar al menos su nombre o contraseña';
-        errorDiv.classList.remove('hidden');
-        return;
-      }
-
-      // Si va a cambiar contraseña, validar los campos
-      if (nuevaContrasena) {
-        if (!contrasenaActual) {
-          errorDiv.textContent = 'Se requiere tu contraseña actual para cambiar la contraseña';
-          errorDiv.classList.remove('hidden');
-          return;
-        }
-
-        if (!confirmarContrasena) {
-          errorDiv.textContent = 'Debe confirmar la nueva contraseña';
-          errorDiv.classList.remove('hidden');
-          return;
-        }
-
-        if (nuevaContrasena !== confirmarContrasena) {
-          errorDiv.textContent = 'Las contraseñas no coinciden';
-          errorDiv.classList.remove('hidden');
-          return;
-        }
-
-        if (nuevaContrasena.length < 6) {
-          errorDiv.textContent = 'La contraseña debe tener al menos 6 caracteres';
-          errorDiv.classList.remove('hidden');
-          return;
-        }
-      }
-
+      const btn = formNombre.querySelector('button[type="submit"]');
+      if (btn) { btn.disabled = true; btn.textContent = 'Guardando…'; }
       try {
-        const body = {
-          nombre: nombre || null
-        };
-
-        // Solo incluir contraseña si está siendo cambiada
-        if (nuevaContrasena) {
-          body.contrasenaActual = hashPassword(contrasenaActual);
-          body.nuevaContrasena = hashPassword(nuevaContrasena);
-          body.confirmarContrasena = hashPassword(confirmarContrasena);
-        }
-
         const res = await apiFetch('/api/cambiar-contrasena', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body)
+          body: JSON.stringify({ nombre })
         });
-
         const data = await res.json();
+        if (!res.ok) return showErr(data.error || 'Error al actualizar');
 
-        if (!res.ok) {
-          errorDiv.textContent = data.error || 'Error al actualizar cuenta';
-          errorDiv.classList.remove('hidden');
-          return;
-        }
+        showToast('Nombre actualizado', 'success');
+        sessionStorage.setItem('nombre_usuario', nombre);
+        if ($('menuUserName')) $('menuUserName').textContent = nombre;
+        if ($('mcHeaderName')) $('mcHeaderName').textContent = nombre;
+        const iniciales = nombre.split(' ').filter(Boolean).map(w => w[0]).slice(0, 2).join('').toUpperCase();
+        if ($('mcAvatar')) $('mcAvatar').textContent = iniciales;
+        if (errDiv) errDiv.classList.add('hidden');
+        updateSidebarUser({ ...currentUser, nombre });
+        if (currentUser) currentUser.nombre = nombre;
+      } catch (_) { showErr('Error de conexión'); }
+      finally { if (btn) { btn.disabled = false; btn.textContent = 'Guardar nombre'; } }
+    });
+  }
 
-        showToast(data.mensaje, 'success');
-        
-        // Actualizar nombre en sesión y menú
-        if (data.nombre) {
-          sessionStorage.setItem('nombre_usuario', data.nombre);
-          const menuUserName = $('menuUserName');
-          if (menuUserName) {
-            menuUserName.textContent = `${data.nombre}`;
-          }
-        }
-        
-        closeCambiarContrasenaModal();
-      } catch (error) {
-        errorDiv.textContent = 'Error en la solicitud';
-        errorDiv.classList.remove('hidden');
-        console.error(error);
+  // ── Formulario: cambiar contraseña ───────────────────────────────────────────
+  const formPwd = $('formCambiarContrasena');
+  if (formPwd) {
+    formPwd.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const contrasenaActual    = $('contrasenaActual')?.value    || '';
+      const nuevaContrasena     = $('nuevaContrasena')?.value     || '';
+      const confirmarContrasena = $('confirmarContrasena')?.value || '';
+      const errDiv = $('cambiarContrasenaError');
+      const showErr = (msg) => { if (errDiv) { errDiv.textContent = msg; errDiv.classList.remove('hidden'); } };
+
+      if (!contrasenaActual)  return showErr('Ingresa tu contraseña actual');
+      if (!nuevaContrasena)   return showErr('Ingresa la nueva contraseña');
+      if (!confirmarContrasena) return showErr('Confirma la nueva contraseña');
+      if (nuevaContrasena !== confirmarContrasena) return showErr('Las contraseñas no coinciden');
+      if (nuevaContrasena.length < 6) return showErr('La contraseña debe tener al menos 6 caracteres');
+
+      const btn = formPwd.querySelector('button[type="submit"]');
+      if (btn) { btn.disabled = true; btn.textContent = 'Actualizando…'; }
+      try {
+        const res = await apiFetch('/api/cambiar-contrasena', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contrasenaActual:    hashPassword(contrasenaActual),
+            nuevaContrasena:     hashPassword(nuevaContrasena),
+            confirmarContrasena: hashPassword(confirmarContrasena)
+          })
+        });
+        const data = await res.json();
+        if (!res.ok) return showErr(data.error || 'Error al actualizar contraseña');
+        showToast('Contraseña actualizada correctamente', 'success');
+        formPwd.reset();
+        if ($('cambiarContrasenaRequirements')) $('cambiarContrasenaRequirements').style.display = 'none';
+        if (errDiv) errDiv.classList.add('hidden');
+      } catch (_) { showErr('Error de conexión'); }
+      finally { if (btn) { btn.disabled = false; btn.textContent = 'Actualizar contraseña'; } }
+    });
+  }
+
+  // ── Toggle contraseñas (Mi Cuenta) ───────────────────────────────────────────
+  [['toggleContrasenaActual', 'contrasenaActual'],
+   ['toggleNuevaContrasena',  'nuevaContrasena'],
+   ['toggleConfirmarContrasena', 'confirmarContrasena'],
+  ].forEach(([btnId, inputId]) => {
+    const btn = $(btnId), inp = $(inputId);
+    if (btn && inp) {
+      btn.addEventListener('click', (ev) => {
+        ev.preventDefault(); ev.stopPropagation();
+        inp.type = inp.type === 'password' ? 'text' : 'password';
+      });
+    }
+  });
+
+  // ── Requisitos de contraseña en tiempo real ─────────────────────────────────
+  const pwdInput = $('nuevaContrasena'), reqBox = $('cambiarContrasenaRequirements');
+  if (pwdInput && reqBox) {
+    pwdInput.addEventListener('input', () => {
+      const p = pwdInput.value;
+      reqBox.style.display = p ? 'block' : 'none';
+      if (p) {
+        updateRequirementItem('cambiar-req-length', p.length >= 8,   'Mínimo 8 caracteres');
+        updateRequirementItem('cambiar-req-upper',  /[A-Z]/.test(p), 'Al menos una mayúscula (A-Z)');
+        updateRequirementItem('cambiar-req-lower',  /[a-z]/.test(p), 'Al menos una minúscula (a-z)');
+        updateRequirementItem('cambiar-req-number', /[0-9]/.test(p), 'Al menos un número (0-9)');
       }
     });
   }
+
+  // ── Modal Editar Usuario ─────────────────────────────────────────────────────
+  const modalEditarUsuario = $('modalEditarUsuario');
+  if (modalEditarUsuario) {
+    modalEditarUsuario.querySelector('button.btn-close-modal')?.addEventListener('click', closeEditarUsuarioModal);
+    modalEditarUsuario.querySelectorAll('button[type="button"]').forEach(btn => {
+      if (btn.textContent.includes('Cancelar')) btn.addEventListener('click', closeEditarUsuarioModal);
+    });
+    const toggleEditBtn = $('toggleEditPassword'), editPasswordInput = $('editPassword');
+    if (toggleEditBtn && editPasswordInput) {
+      toggleEditBtn.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        const t = editPasswordInput.type === 'password' ? 'text' : 'password';
+        editPasswordInput.type = t;
+        toggleEditBtn.textContent = t === 'password' ? 'Mostrar' : 'Ocultar';
+      });
+    }
+  }
+
+  // ── Modal Historial ─────────────────────────────────────────────────────────────
+  const modalHistorial = $('modalHistorial');
+  if (modalHistorial) {
+    modalHistorial.querySelector('button.btn-close-modal')?.addEventListener('click', closeHistorialModal);
+    modalHistorial.querySelectorAll('button[type="button"]').forEach(btn => {
+      if (btn.textContent.includes('Cerrar')) btn.addEventListener('click', closeHistorialModal);
+    });
+  }
+
+  // ── Modal Reset Password ─────────────────────────────────────────────────────
+  const modalResetPassword = $('modalResetPassword');
+  if (modalResetPassword) {
+    modalResetPassword.querySelector('button.btn-close-modal')?.addEventListener('click', closeResetPasswordModal);
+    modalResetPassword.querySelectorAll('button[type="button"]').forEach(btn => {
+      if (btn.textContent.includes('Entendido')) btn.addEventListener('click', closeResetPasswordModal);
+    });
+  }
 });
+
 
 // ========== GESTIÓN DE DIAGNÓSTICOS (solo admin) ==========
 async function initDiagnosticos() {
