@@ -129,46 +129,53 @@
         <p>Selecciona un módulo para continuar</p>
       </div>
       <div class="menu-cards" id="menuCardsContainer">
-        <button class="menu-card" data-module="recibos" data-rol="admin recepcion contabilidad">
+        <button class="menu-card" data-module="recibos" data-rol="superadmin admin admin_recepcion recepcion contabilidad auxiliar_recepcion">
           <span class="menu-card-icon"><img src="/images/iconrecibos.png" alt="Recibos" class="icon-img" /></span>
           <span class="menu-card-label">
             <span class="menu-card-title">Recibos</span>
             <span class="menu-card-desc">Historial y reportes</span>
           </span>
         </button>
-        <button class="menu-card" data-module="agenda-medica" data-rol="admin recepcion electro doctor">
+        <button class="menu-card" data-module="agenda-medica" data-rol="superadmin admin admin_recepcion recepcion admin_electro electro tecnico_electro auxiliar_recepcion doctor">
           <span class="menu-card-icon"><img src="/images/iconagenda.png" alt="Agenda Médica" class="icon-img" /></span>
           <span class="menu-card-label">
             <span class="menu-card-title">Agenda Médica</span>
             <span class="menu-card-desc">Citas por consultorio</span>
           </span>
         </button>
-        <button class="menu-card" data-module="electro" data-rol="admin recepcion electro doctor">
+        <button class="menu-card" data-module="electro" data-rol="superadmin admin admin_recepcion recepcion admin_electro electro tecnico_electro">
           <span class="menu-card-icon"><img src="/images/iconelectro.png" alt="Electrodiagnóstico" class="icon-img" /></span>
           <span class="menu-card-label">
             <span class="menu-card-title">Electrodiagnóstico</span>
             <span class="menu-card-desc">Agenda de los 4 equipos</span>
           </span>
         </button>
-        <button class="menu-card" data-module="usuarios" data-rol="admin">
+        <button class="menu-card" data-module="usuarios" data-rol="superadmin admin">
           <span class="menu-card-icon"><img src="/images/iconuser.png" alt="Usuarios" class="icon-img" /></span>
           <span class="menu-card-label">
             <span class="menu-card-title">Usuarios</span>
             <span class="menu-card-desc">Gestionar usuarios y roles</span>
           </span>
         </button>
-        <button class="menu-card" data-module="diagnosticos" data-rol="admin">
+        <button class="menu-card" data-module="diagnosticos" data-rol="superadmin admin">
           <span class="menu-card-icon"><img src="/images/icondiagnosticos.svg" alt="Diagnósticos" class="icon-img" /></span>
           <span class="menu-card-label">
             <span class="menu-card-title">Diagnósticos</span>
             <span class="menu-card-desc">Importar y gestionar</span>
           </span>
         </button>
-        <button class="menu-card" data-module="dashboard-citas" data-rol="admin">
+        <button class="menu-card" data-module="dashboard-citas" data-rol="superadmin admin admin_recepcion recepcion admin_electro electro">
           <span class="menu-card-icon"><img src="/images/icondashboard.svg" alt="Auditoría de Citas" class="icon-img" /></span>
           <span class="menu-card-label">
             <span class="menu-card-title">Auditoría de Citas</span>
             <span class="menu-card-desc">Quién agendó cada cita</span>
+          </span>
+        </button>
+        <button class="menu-card" data-module="gestion-datos" data-rol="superadmin admin">
+          <span class="menu-card-icon"><img src="/images/icondiagnosticos.svg" alt="Gestión de Datos" class="icon-img" /></span>
+          <span class="menu-card-label">
+            <span class="menu-card-title">Gestión de Datos</span>
+            <span class="menu-card-desc">Eliminar registros del sistema</span>
           </span>
         </button>
       </div>
@@ -192,7 +199,7 @@
           <h2>Recibos</h2>
           <p class="sidebar-desc">Contabilidad y seguimiento</p>
           <span class="sidebar-section-label">Navegación</span>
-          <button class="sidebar-btn active" data-page="crear" data-rol-recibos="admin recepcion">
+          <button class="sidebar-btn active" data-page="crear" data-rol-recibos="superadmin admin admin_recepcion recepcion">
             <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg></span>
             Crear Recibo
           </button>
@@ -200,13 +207,13 @@
             <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></span>
             Reportes
           </button>
-          <button class="sidebar-btn" data-page="servicios" data-rol-recibos="admin">
+          <button class="sidebar-btn" data-page="servicios" data-rol-recibos="superadmin admin">
             <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg></span>
             Servicios
           </button>
           <!-- Sección administración: solo visible para admin -->
-          <span class="sidebar-section-label" data-rol-recibos="admin" style="margin-top:16px">Administración</span>
-          <button class="sidebar-btn sidebar-btn-danger" id="btnResetarConsecutivos" data-rol-recibos="admin">
+          <span class="sidebar-section-label" data-rol-recibos="superadmin admin" style="margin-top:16px">Administración</span>
+          <button class="sidebar-btn sidebar-btn-danger" id="btnResetarConsecutivos" data-rol-recibos="superadmin admin">
             <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.61"/></svg></span>
             Resetear consecutivos
           </button>
@@ -838,7 +845,7 @@
                 <div id="passwordStrengthText" style="margin-top:4px;font-size:12px;color:#666;display:none"></div>
               </div>
               <div class="col"><label>Nombre</label><input id="newUserName" type="text" placeholder="Nombre completo" /></div>
-              <div class="col"><label>Rol</label><select id="newUserRol"><option value="recepcion">Recepción</option><option value="electro">Electrodiagnóstico</option><option value="doctor">Doctor</option><option value="contabilidad">Contabilidad</option><option value="admin">Administrador</option></select></div>
+              <div class="col"><label>Rol</label><select id="newUserRol"><option value="auxiliar_recepcion">Auxiliar Recepción</option><option value="admin_recepcion">Admin. Recepción</option><option value="tecnico_electro">Técnico Electrodiagnóstico</option><option value="admin_electro">Admin. Electrodiagnóstico</option><option value="doctor">Doctor</option><option value="contabilidad">Contabilidad</option><option value="recepcion">Recepción (legacy)</option><option value="electro">Electrodiagnóstico (legacy)</option><option value="admin">Administrador (legacy)</option><option value="superadmin">Super Administrador</option></select></div>
               <div class="col" id="especialidadCol" style="display:none"><label>Especialidad</label><select id="newUserEspecialidad"><option value="">Seleccionar</option><option value="Otra">Otra</option></select></div>
               <div class="col" id="especialidadOtraCol" style="display:none"><input id="newUserEspecialidadOtra" type="text" placeholder="Especificar especialidad" /></div>
               <div class="col" id="consultorioCol" style="display:none"><label>Consultorio #</label><input id="newUserConsultorio" type="number" placeholder="Número de consultorio" min="1" /></div>
@@ -1837,10 +1844,29 @@
                 <label>Agendado por</label>
                 <input id="dashboardAgendadoPor" type="text" placeholder="Nombre del usuario" />
               </div>
+              <div class="col">
+                <label>Tipo de Estudio</label>
+                <select id="dashboardTipoEstudio">
+                  <option value="">Todos los estudios</option>
+                </select>
+              </div>
               <div class="col" style="display:flex;align-items:flex-end;gap:8px">
                 <button id="btnBuscarCitas" class="btn-primary btn-sm" style="flex:1">Buscar</button>
                 <button id="btnLimpiarFiltros" class="btn-secondary btn-sm" style="flex:1">Limpiar</button>
               </div>
+            </div>
+          </section>
+
+          <!-- Botones de exportación -->
+          <section class="card no-print" style="padding:12px 20px">
+            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+              <span style="font-weight:600;color:#627371;font-size:14px">Exportar:</span>
+              <button id="btnExportarExcel" class="btn-secondary btn-sm" onclick="exportarAuditoriaCitasExcel()">
+                📊 Excel (.xlsx)
+              </button>
+              <button id="btnExportarPDF" class="btn-secondary btn-sm" onclick="exportarAuditoriaCitasPDF()">
+                📄 PDF
+              </button>
             </div>
           </section>
 
@@ -1894,6 +1920,120 @@
     </div>
   </div>
 
+  <!-- ========== MÓDULO GESTIÓN DE DATOS ========== -->
+  <div id="view-gestion-datos" class="view-module hidden">
+    <div class="main-layout">
+      <div class="sidebar no-print">
+        <div class="sidebar-inner">
+          <div class="sidebar-logo-mini"><img src="/images/logo.png" alt="Logo" /></div>
+          <button class="btn-volver" id="btnVolverGestionDatos">
+            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+            Volver al menú
+          </button>
+          <div class="sidebar-logo">
+            <img src="/images/logo.png" alt="Logo" style="height:58px;width:auto;object-fit:contain" />
+          </div>
+          <hr class="sidebar-title-sep" />
+          <h2>Gestión de Datos</h2>
+          <p class="sidebar-desc">Eliminar registros del sistema</p>
+          <span class="sidebar-section-label">Tipo de Registro</span>
+          <button class="sidebar-btn active" data-gestion-tab="citas_electro">
+            <span class="sb-icon">🔬</span> Citas Electro
+          </button>
+          <button class="sidebar-btn" data-gestion-tab="turnos">
+            <span class="sb-icon">📅</span> Turnos Médicos
+          </button>
+          <button class="sidebar-btn" data-gestion-tab="recibos">
+            <span class="sb-icon">🧾</span> Recibos
+          </button>
+          <button class="sidebar-btn" data-gestion-tab="estudio_duraciones">
+            <span class="sb-icon">⏱️</span> Tipos de Estudio
+          </button>
+          <button class="sidebar-btn" data-gestion-tab="especialidades">
+            <span class="sb-icon">🏥</span> Especialidades
+          </button>
+          <button class="sidebar-btn" data-gestion-tab="tipos_consulta">
+            <span class="sb-icon">📋</span> Tipos de Consulta
+          </button>
+          <button class="sidebar-btn" data-gestion-tab="diagnosticos">
+            <span class="sb-icon">🩺</span> Diagnósticos
+          </button>
+        </div>
+        <div class="sidebar-footer">
+          <div class="sidebar-user">
+            <div class="sidebar-user-avatar">--</div>
+            <div>
+              <div class="sidebar-user-name">Cargando...</div>
+              <div class="sidebar-user-role">-</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="main-content">
+        <div class="container">
+          <header>
+            <h2 id="gestionDatosTitulo">Citas Electrodiagnóstico</h2>
+            <p style="color:#dc2626;font-weight:600;font-size:13px">⚠️ Atención: Esta acción es permanente e irreversible. Los registros eliminados no se pueden recuperar.</p>
+          </header>
+
+          <!-- Filtros -->
+          <section class="card no-print">
+            <h3>Búsqueda</h3>
+            <div class="row">
+              <div class="col">
+                <label>Buscar</label>
+                <input id="gestionBusqueda" type="text" placeholder="Nombre, documento, descripción..." />
+              </div>
+              <div class="col">
+                <label>Desde</label>
+                <input id="gestionFechaDesde" type="date" />
+              </div>
+              <div class="col">
+                <label>Hasta</label>
+                <input id="gestionFechaHasta" type="date" />
+              </div>
+              <div class="col" style="display:flex;align-items:flex-end;gap:8px">
+                <button id="btnBuscarGestion" class="btn-primary btn-sm" style="flex:1">Buscar</button>
+                <button id="btnLimpiarGestion" class="btn-secondary btn-sm" style="flex:1">Limpiar</button>
+              </div>
+            </div>
+          </section>
+
+          <!-- Acciones masivas -->
+          <section class="card no-print" style="padding:12px 20px" id="gestionAccionesMasivas" style="display:none">
+            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+              <span id="gestionSeleccionados" style="font-size:14px;color:#627371">0 seleccionados</span>
+              <button id="btnEliminarSeleccionados" class="btn-danger btn-sm" onclick="eliminarSeleccionadosGestion()" disabled>
+                🗑️ Eliminar seleccionados
+              </button>
+            </div>
+          </section>
+
+          <!-- Tabla -->
+          <section class="card">
+            <div class="table-wrapper">
+              <table class="modern-table" id="tablaGestionDatos">
+                <thead id="gestionThead">
+                  <tr>
+                    <th><input type="checkbox" id="chkSelectAll" title="Seleccionar todos" /></th>
+                    <th>ID</th>
+                    <th>Descripción</th>
+                    <th>Fecha</th>
+                    <th>Acciones</th>
+                  </tr>
+                </thead>
+                <tbody id="bodyGestionDatos">
+                  <tr><td colspan="5" style="padding:20px;text-align:center;color:#999">Selecciona un tipo de registro del menú lateral</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div id="gestionDatosControls"></div>
+          </section>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- MODAL: EDITAR USUARIO (ADMIN) -->
   <div id="modalEditarUsuario" class="modal-overlay hidden">
     <div class="modal-box" style="max-width:500px;">
@@ -1913,11 +2053,16 @@
         <div>
           <label for="editRol" style="display:block;margin-bottom:8px;font-weight:500;color:#333;font-size:14px">Rol</label>
           <select id="editRol" required style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;font-size:14px;background-color:white;cursor:pointer;transition:all 0.2s" onfocus="this.style.borderColor='#627371';this.style.boxShadow='0 0 0 3px rgba(98,115,113,0.1)'" onblur="this.style.borderColor='#d1d5db';this.style.boxShadow='none'">
-            <option value="recepcion">Recepción</option>
-            <option value="electro">Electrodiagnóstico</option>
+            <option value="auxiliar_recepcion">Auxiliar Recepción</option>
+            <option value="admin_recepcion">Admin. Recepción</option>
+            <option value="tecnico_electro">Técnico Electrodiagnóstico</option>
+            <option value="admin_electro">Admin. Electrodiagnóstico</option>
             <option value="doctor">Doctor</option>
             <option value="contabilidad">Contabilidad</option>
-            <option value="admin">Administrador</option>
+            <option value="recepcion">Recepción (legacy)</option>
+            <option value="electro">Electrodiagnóstico (legacy)</option>
+            <option value="admin">Administrador (legacy)</option>
+            <option value="superadmin">Super Administrador</option>
           </select>
         </div>
         <div id="editConsultorioCol" style="display:none">

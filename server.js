@@ -1,4 +1,4 @@
-// server.js
+﻿// server.js
 require('dotenv').config();
 
 // Validar variables de entorno requeridas antes de arrancar
@@ -44,14 +44,14 @@ app.use(bodyParser.urlencoded({ limit: '10mb', extended: true }));
 const jsonLargeBody = bodyParser.json({ limit: '50mb' });
 const urlencodedLargeBody = bodyParser.urlencoded({ limit: '50mb', extended: true });
 
-// Logging de requests — ignora assets estáticos
+// Logging de requests â€” ignora assets estÃ¡ticos
 const EXTENSIONES_ESTATICAS = /\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|map)$/i;
 app.use((req, res, next) => {
   if (EXTENSIONES_ESTATICAS.test(req.path)) return next();
 
   const startTime = Date.now();
   
-  // Capturar el método original de res.end/res.send
+  // Capturar el mÃ©todo original de res.end/res.send
   const originalEnd = res.end;
   const originalSend = res.send;
   
@@ -106,14 +106,14 @@ const upload = multer({
   }
 });
 
-// Middleware para cerrar sesión por inactividad (60 minutos)
+// Middleware para cerrar sesiÃ³n por inactividad (60 minutos)
 app.use((req, res, next) => {
   try {
     if (req.session) {
       const INACTIVITY_MS = 60 * 60 * 1000; // 60 minutos
       const now = Date.now();
       if (req.session.lastActivity && (now - req.session.lastActivity) > INACTIVITY_MS) {
-        // destruir sesión por inactividad
+        // destruir sesiÃ³n por inactividad
         req.session.destroy(() => {});
       } else {
         req.session.lastActivity = now;
@@ -142,7 +142,7 @@ app.set('trust proxy', 1);
 // Rutas de la API v1 de Appointments Service
 app.use('/api/v1/appointments', requireAuth, appointmentsRouter);
 
-// Páginas wrapper para reportes (muestran favicon en la pestaña y el PDF en iframe)
+// PÃ¡ginas wrapper para reportes (muestran favicon en la pestaÃ±a y el PDF en iframe)
 app.get('/reportes/diario/vista', requireAuth, (req, res) => {
   const fecha = req.query.fecha || '';
   const pdfUrl = `/api/reportes/diario?fecha=${encodeURIComponent(fecha)}`;
@@ -186,7 +186,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// Headers anti-cache solo para rutas /api (los assets estáticos sí pueden cachearse)
+// Headers anti-cache solo para rutas /api (los assets estÃ¡ticos sÃ­ pueden cachearse)
 app.use('/api', (req, res, next) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
   res.setHeader('Pragma', 'no-cache');
@@ -199,10 +199,10 @@ app.use(express.static('public'));
 // Cargar imagen del logo como base64
 let logoBase64 = '';
 
-// Función para obtener la ruta del logo (compatible con pkg)
+// FunciÃ³n para obtener la ruta del logo (compatible con pkg)
 function getLogoPath() {
   const possiblePaths = [
-    path.join(__dirname, 'public', 'images', 'logo.png'),  // ubicación real
+    path.join(__dirname, 'public', 'images', 'logo.png'),  // ubicaciÃ³n real
     path.join(__dirname, 'public', 'logo.png'),
     path.join(__dirname, '../public/images/logo.png'),
     path.join(__dirname, '../public/logo.png'),
@@ -229,10 +229,10 @@ function getLogoBase64() {
   return logoBase64;
 }
 
-// Intento inicial (no crítico)
+// Intento inicial (no crÃ­tico)
 try { getLogoBase64(); } catch(_) {}
 
-// Logo específico para recibos (logorecibo.png)
+// Logo especÃ­fico para recibos (logorecibo.png)
 let logoReciboBase64 = null;
 function getLogoReciboBase64() {
   if (logoReciboBase64) return logoReciboBase64;
@@ -250,11 +250,11 @@ function getLogoReciboBase64() {
       break;
     }
   }
-  return logoReciboBase64 || getLogoBase64(); // fallback al logo genérico
+  return logoReciboBase64 || getLogoBase64(); // fallback al logo genÃ©rico
 }
 
 // Las tablas de MySQL se inicializan con npm run init-db
-// No es necesario db.exec() aquí
+// No es necesario db.exec() aquÃ­
 
 // Opciones para Puppeteer (Chrome/Edge del sistema si existe)
 function getPuppeteerLaunchOptions() {
@@ -294,7 +294,7 @@ function emitSocket(eventName, data) {
   }
 }
 
-// Middleware de autenticación
+// Middleware de autenticaciÃ³n
 function requireAuth(req, res, next) {
   if (req.session && req.session.usuarioId) {
     return next();
@@ -302,12 +302,29 @@ function requireAuth(req, res, next) {
   return res.status(401).json({ error: 'No autenticado' });
 }
 
-// Middleware: solo rol admin
+// Helper: comprueba si el rol es superadmin (o admin legacy)
+function isAdminRol(rol) {
+  return rol === 'superadmin' || rol === 'admin';
+}
+// Helper: roles que gestionan RecepciÃ³n
+function isRecepcionRol(rol) {
+  return rol === 'admin_recepcion' || rol === 'recepcion' || isAdminRol(rol);
+}
+// Helper: roles que gestionan ElectrodiagnÃ³stico
+function isElectroRol(rol) {
+  return rol === 'admin_electro' || rol === 'electro' || rol === 'tecnico_electro' || isAdminRol(rol);
+}
+// Helper: puede ver auditorÃ­a de citas
+function canViewAuditoriaCitas(rol) {
+  return isAdminRol(rol) || rol === 'admin_recepcion' || rol === 'recepcion' || rol === 'admin_electro' || rol === 'electro';
+}
+
+// Middleware: solo rol superadmin (y legacy admin)
 function requireAdmin(req, res, next) {
-  if (req.session && req.session.rol === 'admin') {
+  if (req.session && isAdminRol(req.session.rol)) {
     return next();
   }
-  return res.status(403).json({ error: 'Solo administradores pueden realizar esta acción' });
+  return res.status(403).json({ error: 'Solo super administradores pueden realizar esta acciÃ³n' });
 }
 
 // Middleware: rol permitido (array de roles)
@@ -316,27 +333,27 @@ function requireRole(roles) {
     if (req.session && req.session.usuarioId && roles.includes(req.session.rol)) {
       return next();
     }
-    return res.status(403).json({ error: 'No tienes permiso para esta acción' });
+    return res.status(403).json({ error: 'No tienes permiso para esta acciÃ³n' });
   };
 }
 
-// --- Autenticación ---
+// --- AutenticaciÃ³n ---
 
 // Login
 app.post('/api/login', async (req, res) => {
   const { usuario, password } = req.body || {};
   if (!usuario || !password) {
-    return res.status(400).json({ error: 'Usuario y contraseña requeridos' });
+    return res.status(400).json({ error: 'Usuario y contraseÃ±a requeridos' });
   }
 
   const clientIP = rateLimiter.getClientIP(req);
 
   try {
-    // Verificar si el IP está bloqueado
+    // Verificar si el IP estÃ¡ bloqueado
     if (await rateLimiter.isBlocked(clientIP)) {
       const blockInfo = await rateLimiter.getBlockInfo(clientIP);
       return res.status(429).json({
-        error: 'Demasiados intentos fallidos. Intenta más tarde.',
+        error: 'Demasiados intentos fallidos. Intenta mÃ¡s tarde.',
         bloqueado_hasta: blockInfo.bloqueado_hasta,
         intentos: blockInfo.intentos
       });
@@ -351,16 +368,16 @@ app.post('/api/login', async (req, res) => {
     if (users.length === 0) {
       // Registrar intento fallido
       await rateLimiter.recordFailedAttempt(clientIP, usuario);
-      return res.status(401).json({ error: 'Usuario o contraseña incorrectos' });
+      return res.status(401).json({ error: 'Usuario o contraseÃ±a incorrectos' });
     }
 
     const user = users[0];
 
-    // Verificar contraseña (recibe SHA512 del cliente, compara con bcrypt de SHA512)
+    // Verificar contraseÃ±a (recibe SHA512 del cliente, compara con bcrypt de SHA512)
     if (!bcrypt.compareSync(password, user.password_hash)) {
       // Registrar intento fallido
       await rateLimiter.recordFailedAttempt(clientIP, usuario);
-      return res.status(401).json({ error: 'Usuario o contraseña incorrectos' });
+      return res.status(401).json({ error: 'Usuario o contraseÃ±a incorrectos' });
     }
 
     // Login exitoso: resetear intentos
@@ -390,7 +407,7 @@ app.post('/api/logout', (req, res) => {
   res.json({ ok: true });
 });
 
-// Verificar sesión actual
+// Verificar sesiÃ³n actual
 app.get('/api/sesion', async (req, res) => {
   if (req.session && req.session.usuarioId) {
     try {
@@ -430,30 +447,30 @@ app.post('/api/cambiar-contrasena', requireAuth, async (req, res) => {
     confirmarContrasena 
   } = req.body || {};
   
-  // Validar que al menos nombre o contraseña sea proporcionado
+  // Validar que al menos nombre o contraseÃ±a sea proporcionado
   if (!nombre && !nuevaContrasena) {
-    return res.status(400).json({ error: 'Debe proporcionar al menos nombre o contraseña nueva' });
+    return res.status(400).json({ error: 'Debe proporcionar al menos nombre o contraseÃ±a nueva' });
   }
 
-  // Si va a cambiar contraseña, validar los campos
+  // Si va a cambiar contraseÃ±a, validar los campos
   if (nuevaContrasena) {
     if (!contrasenaActual || !confirmarContrasena) {
-      return res.status(400).json({ error: 'Se requieren contraseña actual y confirmación' });
+      return res.status(400).json({ error: 'Se requieren contraseÃ±a actual y confirmaciÃ³n' });
     }
 
     if (nuevaContrasena !== confirmarContrasena) {
-      return res.status(400).json({ error: 'Las contraseñas no coinciden' });
+      return res.status(400).json({ error: 'Las contraseÃ±as no coinciden' });
     }
 
-    // Nota: Validación de longitud de contraseña (6 caracteres) ya fue hecha en cliente
+    // Nota: ValidaciÃ³n de longitud de contraseÃ±a (6 caracteres) ya fue hecha en cliente
     // El servidor recibe SHA512 (128 caracteres)
     if (nuevaContrasena.length < 100) {
-      return res.status(400).json({ error: 'Contraseña inválida' });
+      return res.status(400).json({ error: 'ContraseÃ±a invÃ¡lida' });
     }
 
     // Validar nombre si es proporcionado
     if (nombre && nombre.trim().length === 0) {
-      return res.status(400).json({ error: 'El nombre no puede estar vacío' });
+      return res.status(400).json({ error: 'El nombre no puede estar vacÃ­o' });
     }
   }
 
@@ -470,18 +487,18 @@ app.post('/api/cambiar-contrasena', requireAuth, async (req, res) => {
 
     const user = users[0];
 
-    // Si va a cambiar contraseña, verificar la actual
+    // Si va a cambiar contraseÃ±a, verificar la actual
     if (nuevaContrasena) {
       if (!bcrypt.compareSync(contrasenaActual, user.password_hash)) {
-        return res.status(401).json({ error: 'La contraseña actual es incorrecta' });
+        return res.status(401).json({ error: 'La contraseÃ±a actual es incorrecta' });
       }
 
       if (bcrypt.compareSync(nuevaContrasena, user.password_hash)) {
-        return res.status(400).json({ error: 'La nueva contraseña debe ser diferente a la actual' });
+        return res.status(400).json({ error: 'La nueva contraseÃ±a debe ser diferente a la actual' });
       }
     }
 
-    // Preparar actualización
+    // Preparar actualizaciÃ³n
     const updates = [];
     const params = [];
 
@@ -498,7 +515,7 @@ app.post('/api/cambiar-contrasena', requireAuth, async (req, res) => {
 
     params.push(req.session.usuarioId);
 
-    // Ejecutar actualización
+    // Ejecutar actualizaciÃ³n
     await db.execute(
       `UPDATE usuarios SET ${updates.join(', ')} WHERE id = ?`,
       params
@@ -512,7 +529,7 @@ app.post('/api/cambiar-contrasena', requireAuth, async (req, res) => {
 
     const mensaje = [];
     if (nombre) mensaje.push('nombre');
-    if (nuevaContrasena) mensaje.push('contraseña');
+    if (nuevaContrasena) mensaje.push('contraseÃ±a');
     
     res.json({ 
       ok: true, 
@@ -541,7 +558,7 @@ app.get('/api/usuarios', requireAuth, requireAdmin, async (req, res) => {
 app.post('/api/usuarios', requireAuth, requireAdmin, async (req, res) => {
   const { usuario, password, nombre, rol, numero_consultorio, especialidad } = req.body || {};
   
-  // Validaciones básicas
+  // Validaciones bÃ¡sicas
   if (!usuario || !password || !nombre || !rol) {
     return res.status(400).json({ error: 'usuario, password, nombre y rol son obligatorios' });
   }
@@ -552,17 +569,17 @@ app.post('/api/usuarios', requireAuth, requireAdmin, async (req, res) => {
     return res.status(400).json({ error: usernameValidation.messages[0] });
   }
 
-  // Validar contraseña
-  // Nota: La validación de fortaleza ya fue hecha en cliente antes de hashear con SHA512
+  // Validar contraseÃ±a
+  // Nota: La validaciÃ³n de fortaleza ya fue hecha en cliente antes de hashear con SHA512
   // El servidor recibe el hash SHA512, no el texto plano
   if (!password || password.length < 100) {
-    return res.status(400).json({ error: 'Contraseña inválida' });
+    return res.status(400).json({ error: 'ContraseÃ±a invÃ¡lida' });
   }
 
   // Validar rol
-  const rolesValidos = ['admin', 'recepcion', 'electro', 'doctor', 'contabilidad'];
+  const rolesValidos = ['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro', 'tecnico_electro', 'auxiliar_recepcion', 'doctor', 'contabilidad'];
   if (!rolesValidos.includes(rol)) {
-    return res.status(400).json({ error: 'Rol inválido. Use: admin, recepcion, electro, doctor, contabilidad' });
+    return res.status(400).json({ error: 'Rol invÃ¡lido.' });
   }
 
   // Validar consultorio para doctores
@@ -571,7 +588,7 @@ app.post('/api/usuarios', requireAuth, requireAdmin, async (req, res) => {
   if (rol === 'doctor') {
     const numConsultorio = parseInt(numero_consultorio, 10);
     if (isNaN(numConsultorio) || numConsultorio < 1) {
-      return res.status(400).json({ error: 'Número de consultorio debe ser un número válido' });
+      return res.status(400).json({ error: 'NÃºmero de consultorio debe ser un nÃºmero vÃ¡lido' });
     }
     consultorioFinal = numConsultorio;
     
@@ -589,7 +606,7 @@ app.post('/api/usuarios', requireAuth, requireAdmin, async (req, res) => {
       [usuario, hash, nombre, rol, consultorioFinal, especialidadFinal]
     );
     
-    // Registrar en auditoría
+    // Registrar en auditorÃ­a
     await auditLog.registrarAuditoria({
       usuarioId: result.insertId,
       adminId: req.session.usuarioId,
@@ -615,7 +632,7 @@ app.post('/api/usuarios', requireAuth, requireAdmin, async (req, res) => {
 app.patch('/api/usuarios/:id', requireAuth, requireAdmin, async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const { usuario, password, nombre, rol, activo, numero_consultorio, especialidad } = req.body || {};
-  if (!id) return res.status(400).json({ error: 'ID inválido' });
+  if (!id) return res.status(400).json({ error: 'ID invÃ¡lido' });
   try {
     const users = await db.query('SELECT * FROM usuarios WHERE id = ?', [id]);
     const user = users.length > 0 ? users[0] : null;
@@ -630,8 +647,8 @@ app.patch('/api/usuarios/:id', requireAuth, requireAdmin, async (req, res) => {
     if (usuario !== undefined) { updates.push('usuario = ?'); params.push(usuario); }
     if (nombre !== undefined) { updates.push('nombre = ?'); params.push(nombre); }
     if (rol !== undefined) {
-      const rolesValidos = ['admin', 'recepcion', 'electro', 'doctor', 'contabilidad'];
-      if (!rolesValidos.includes(rol)) return res.status(400).json({ error: 'Rol inválido' });
+      const rolesValidos = ['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro', 'tecnico_electro', 'auxiliar_recepcion', 'doctor', 'contabilidad'];
+      if (!rolesValidos.includes(rol)) return res.status(400).json({ error: 'Rol invÃ¡lido' });
       updates.push('rol = ?'); params.push(rol);
     }
     
@@ -641,7 +658,7 @@ app.patch('/api/usuarios/:id', requireAuth, requireAdmin, async (req, res) => {
       if (numero_consultorio !== null) {
         const num = parseInt(numero_consultorio, 10);
         if (isNaN(num) || num < 1) {
-          return res.status(400).json({ error: 'Número de consultorio debe ser un número válido' });
+          return res.status(400).json({ error: 'NÃºmero de consultorio debe ser un nÃºmero vÃ¡lido' });
         }
         consultorioFinal = num;
       }
@@ -649,7 +666,7 @@ app.patch('/api/usuarios/:id', requireAuth, requireAdmin, async (req, res) => {
       params.push(consultorioFinal);
     } else if (rol === 'doctor' && user.rol !== 'doctor') {
       // Si cambia A doctor pero no especifica consultorio, pedir que lo haga
-      return res.status(400).json({ error: 'Número de consultorio es obligatorio para DOCTOR' });
+      return res.status(400).json({ error: 'NÃºmero de consultorio es obligatorio para DOCTOR' });
     } else if (rol !== 'doctor' && user.rol === 'doctor') {
       // Si cambia DE doctor A otro rol, limpiar consultorio
       updates.push('numero_consultorio = ?');
@@ -683,7 +700,7 @@ app.patch('/api/usuarios/:id', requireAuth, requireAdmin, async (req, res) => {
     params.push(id);
     await db.execute(`UPDATE usuarios SET ${updates.join(', ')} WHERE id = ?`, params);
     
-    // Construir objeto de cambios para auditoría
+    // Construir objeto de cambios para auditorÃ­a
     const cambios = {};
     if (usuario !== undefined && usuario !== user.usuario) {
       cambios.usuario = { antes: user.usuario, despues: usuario };
@@ -707,7 +724,7 @@ app.patch('/api/usuarios/:id', requireAuth, requireAdmin, async (req, res) => {
       cambios.password = { antes: '***', despues: '***' };
     }
     
-    // Registrar en auditoría si hay cambios
+    // Registrar en auditorÃ­a si hay cambios
     if (Object.keys(cambios).length > 0) {
       await auditLog.registrarAuditoria({
         usuarioId: id,
@@ -734,19 +751,19 @@ app.patch('/api/usuarios/:id', requireAuth, requireAdmin, async (req, res) => {
 
 app.delete('/api/usuarios/:id', requireAuth, requireAdmin, async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  if (!id) return res.status(400).json({ error: 'ID inválido' });
+  if (!id) return res.status(400).json({ error: 'ID invÃ¡lido' });
   if (id === req.session.usuarioId) {
     return res.status(400).json({ error: 'No puedes eliminar tu propio usuario' });
   }
   try {
-    // Obtener usuario antes de eliminar para auditoría
+    // Obtener usuario antes de eliminar para auditorÃ­a
     const userBefore = await db.queryOne('SELECT usuario, nombre FROM usuarios WHERE id = ?', [id]);
     if (!userBefore) return res.status(404).json({ error: 'Usuario no encontrado' });
     
     const result = await db.execute('DELETE FROM usuarios WHERE id = ?', [id]);
     if (result.affectedRows === 0) return res.status(404).json({ error: 'Usuario no encontrado' });
     
-    // Registrar en auditoría
+    // Registrar en auditorÃ­a
     await auditLog.registrarAuditoria({
       usuarioId: id,
       adminId: req.session.usuarioId,
@@ -769,7 +786,7 @@ app.delete('/api/usuarios/:id', requireAuth, requireAdmin, async (req, res) => {
 // Toggle activo/inactivo de usuario
 app.patch('/api/usuarios/:id/toggle-estado', requireAuth, requireAdmin, async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  if (!id) return res.status(400).json({ error: 'ID inválido' });
+  if (!id) return res.status(400).json({ error: 'ID invÃ¡lido' });
   if (id === req.session.usuarioId) {
     return res.status(400).json({ error: 'No puedes cambiar tu propio estado' });
   }
@@ -783,7 +800,7 @@ app.patch('/api/usuarios/:id/toggle-estado', requireAuth, requireAdmin, async (r
     const nuevoEstado = user.activo ? 0 : 1;
     await db.execute('UPDATE usuarios SET activo = ? WHERE id = ?', [nuevoEstado, id]);
     
-    // Registrar en auditoría
+    // Registrar en auditorÃ­a
     await auditLog.registrarAuditoria({
       usuarioId: id,
       adminId: req.session.usuarioId,
@@ -805,10 +822,10 @@ app.patch('/api/usuarios/:id/toggle-estado', requireAuth, requireAdmin, async (r
   }
 });
 
-// Obtener historial de auditoría de un usuario
+// Obtener historial de auditorÃ­a de un usuario
 app.get('/api/usuarios/:id/historial', requireAuth, requireAdmin, async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  if (!id) return res.status(400).json({ error: 'ID inválido' });
+  if (!id) return res.status(400).json({ error: 'ID invÃ¡lido' });
   
   try {
     const historial = await auditLog.obtenerHistorial(id, 50);
@@ -819,7 +836,7 @@ app.get('/api/usuarios/:id/historial', requireAuth, requireAdmin, async (req, re
   }
 });
 
-// Obtener historial global de auditoría
+// Obtener historial global de auditorÃ­a
 app.get('/api/auditoria/historial', requireAuth, requireAdmin, async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 100;
@@ -831,7 +848,7 @@ app.get('/api/auditoria/historial', requireAuth, requireAdmin, async (req, res) 
   }
 });
 
-// Búsqueda avanzada en auditoría
+// BÃºsqueda avanzada en auditorÃ­a
 app.get('/api/auditoria/buscar', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { usuario_id, accion, admin_id, desde, hasta, limit: reqLimit } = req.query;
@@ -866,7 +883,7 @@ app.get('/api/auditoria/buscar', requireAuth, requireAdmin, async (req, res) => 
       params.push(hasta + ' 23:59:59');
     }
     
-    // Ordenar por fecha descendente y limitar (LIMIT debe ser número directo, no parámetro)
+    // Ordenar por fecha descendente y limitar (LIMIT debe ser nÃºmero directo, no parÃ¡metro)
     query += ` ORDER BY ua.fecha_cambio DESC LIMIT ${limit}`;
     
     console.log('[AUDIT SEARCH] Query:', query);
@@ -907,7 +924,7 @@ app.get('/api/auditoria/buscar', requireAuth, requireAdmin, async (req, res) => 
   }
 });
 
-// Generar contraseña temporal aleatoria usando crypto seguro
+// Generar contraseÃ±a temporal aleatoria usando crypto seguro
 function generarPasswordTemporal() {
   const caracteres = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%';
   const bytes = require('crypto').randomBytes(12);
@@ -921,9 +938,9 @@ function generarPasswordTemporal() {
 // Reset password de usuario por admin
 app.patch('/api/usuarios/:id/reset-password', requireAuth, requireAdmin, async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  if (!id) return res.status(400).json({ error: 'ID inválido' });
+  if (!id) return res.status(400).json({ error: 'ID invÃ¡lido' });
   if (id === req.session.usuarioId) {
-    return res.status(400).json({ error: 'No puedes resetear tu propia contraseña' });
+    return res.status(400).json({ error: 'No puedes resetear tu propia contraseÃ±a' });
   }
   
   try {
@@ -931,14 +948,14 @@ app.patch('/api/usuarios/:id/reset-password', requireAuth, requireAdmin, async (
     const user = await db.queryOne('SELECT id, usuario, nombre FROM usuarios WHERE id = ?', [id]);
     if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
     
-    // Generar contraseña temporal
+    // Generar contraseÃ±a temporal
     const passwordTemporal = generarPasswordTemporal();
     const passwordHash = bcrypt.hashSync(passwordTemporal, 10);
     
-    // Actualizar contraseña
+    // Actualizar contraseÃ±a
     await db.execute('UPDATE usuarios SET password_hash = ? WHERE id = ?', [passwordHash, id]);
     
-    // Registrar en auditoría
+    // Registrar en auditorÃ­a
     await auditLog.registrarAuditoria({
       usuarioId: id,
       adminId: req.session.usuarioId,
@@ -966,7 +983,7 @@ app.patch('/api/usuarios/:id/reset-password', requireAuth, requireAdmin, async (
 });
 
 // --- Doctor: llamar siguiente / marcar atendido ---
-app.post('/api/turnos/llamar-siguiente', requireAuth, requireRole(['admin', 'doctor']), async (req, res) => {
+app.post('/api/turnos/llamar-siguiente', requireAuth, requireRole(['superadmin', 'admin', 'doctor', 'admin_recepcion', 'recepcion']), async (req, res) => {
   const { fecha, doctor_id } = req.body || {};
   if (!fecha || !doctor_id) {
     return res.status(400).json({ error: 'fecha y doctor_id son obligatorios' });
@@ -1001,7 +1018,7 @@ app.post('/api/turnos/llamar-siguiente', requireAuth, requireRole(['admin', 'doc
     
     const turno = turnos.length > 0 ? turnos[0] : null;
     if (!turno) {
-      return res.status(404).json({ error: 'No hay más pacientes en espera' });
+      return res.status(404).json({ error: 'No hay mÃ¡s pacientes en espera' });
     }
 
     // Cambiar estado a EN_ATENCION (solo el primero)
@@ -1031,7 +1048,7 @@ app.post('/api/turnos/llamar-siguiente', requireAuth, requireRole(['admin', 'doc
   }
 });
 
-// Helper para obtener el siguiente número de turno
+// Helper para obtener el siguiente nÃºmero de turno
 async function getNextTurnoNumber(fecha, doctor_id) {
   const result = await db.query(`
     SELECT MAX(CAST(numero_turno AS UNSIGNED)) as max_num FROM turnos 
@@ -1041,7 +1058,7 @@ async function getNextTurnoNumber(fecha, doctor_id) {
   return maxNum + 1;
 }
 
-app.post('/api/turnos/marcar-atendido', requireAuth, requireRole(['admin', 'doctor']), async (req, res) => {
+app.post('/api/turnos/marcar-atendido', requireAuth, requireRole(['superadmin', 'admin', 'doctor', 'admin_recepcion', 'recepcion']), async (req, res) => {
   const { turno_id } = req.body || {};
   if (!turno_id) {
     return res.status(400).json({ error: 'turno_id es obligatorio' });
@@ -1051,20 +1068,20 @@ app.post('/api/turnos/marcar-atendido', requireAuth, requireRole(['admin', 'doct
     const turno = turnos.length > 0 ? turnos[0] : null;
     
     if (!turno) {
-      return res.status(404).json({ error: 'No hay turno en atención actualmente' });
+      return res.status(404).json({ error: 'No hay turno en atenciÃ³n actualmente' });
     }
     
-    // Marcar como ATENDIDO y limpiar el número de turno
+    // Marcar como ATENDIDO y limpiar el nÃºmero de turno
     await db.execute('UPDATE turnos SET estado = ?, numero_turno = NULL WHERE id = ?', ['ATENDIDO', turno_id]);
     
-    // Reasignar números de turno a los pacientes EN_SALA del mismo doctor ese día
+    // Reasignar nÃºmeros de turno a los pacientes EN_SALA del mismo doctor ese dÃ­a
     // Obtener todos los turnos EN_SALA ordenados por numero_turno
     const enSalaList = await db.query(
       `SELECT id FROM turnos WHERE fecha = ? AND doctor_id = ? AND estado = 'EN_SALA' ORDER BY numero_turno ASC, id ASC`,
       [turno.fecha, turno.doctor_id]
     );
     
-    // Reasignar números 1, 2, 3, etc.
+    // Reasignar nÃºmeros 1, 2, 3, etc.
     for (let i = 0; i < enSalaList.length; i++) {
       const nuevoNumero = i + 1;
       await db.execute('UPDATE turnos SET numero_turno = ? WHERE id = ?', [nuevoNumero, enSalaList[i].id]);
@@ -1087,7 +1104,7 @@ app.post('/api/turnos/marcar-atendido', requireAuth, requireRole(['admin', 'doct
 
 // --- Pacientes ---
 
-// Listar pacientes (con búsqueda opcional)
+// Listar pacientes (con bÃºsqueda opcional)
 app.get('/api/pacientes', requireAuth, async (req, res) => {
   const { buscar } = req.query;
   try {
@@ -1112,7 +1129,7 @@ app.get('/api/pacientes', requireAuth, async (req, res) => {
 // Obtener paciente por ID
 app.get('/api/pacientes/:id', requireAuth, async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  if (!id) return res.status(400).json({ error: 'ID inválido' });
+  if (!id) return res.status(400).json({ error: 'ID invÃ¡lido' });
   try {
     const rows = await db.query('SELECT * FROM pacientes WHERE id = ?', [id]);
     if (!rows.length) return res.status(404).json({ error: 'Paciente no encontrado' });
@@ -1123,9 +1140,9 @@ app.get('/api/pacientes/:id', requireAuth, async (req, res) => {
 });
 
 // Actualizar paciente (nombre, documento, etc.)
-app.patch('/api/pacientes/:id', requireAuth, requireRole(['admin', 'recepcion', 'electro']), async (req, res) => {
+app.patch('/api/pacientes/:id', requireAuth, requireRole(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro', 'tecnico_electro', 'auxiliar_recepcion']), async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  if (!id) return res.status(400).json({ error: 'ID inválido' });
+  if (!id) return res.status(400).json({ error: 'ID invÃ¡lido' });
   const { nombre, documento, telefono, email } = req.body || {};
   if (!nombre && !documento && !telefono && !email) {
     return res.status(400).json({ error: 'Nada que actualizar' });
@@ -1150,30 +1167,30 @@ app.patch('/api/pacientes/:id', requireAuth, requireRole(['admin', 'recepcion', 
 });
 
 // Crear paciente
-app.post('/api/pacientes', requireAuth, requireRole(['admin', 'recepcion']), async (req, res) => {
+app.post('/api/pacientes', requireAuth, requireRole(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion']), async (req, res) => {
   const { nombre, documento, telefono, telefono2, email } = req.body || {};
   if (!nombre) {
     return res.status(400).json({ error: 'Nombre es obligatorio' });
   }
 
   // Validar nombre: solo letras y espacios
-  if (!/^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$/.test(nombre)) {
-    return res.status(400).json({ error: 'El nombre no puede contener números o caracteres especiales' });
+  if (!/^[a-zA-ZÃ¡Ã©Ã­Ã³ÃºÃÃ‰ÃÃ“ÃšÃ±Ã‘\s]+$/.test(nombre)) {
+    return res.status(400).json({ error: 'El nombre no puede contener nÃºmeros o caracteres especiales' });
   }
 
-  // Validar documento si se proporciona: solo números
+  // Validar documento si se proporciona: solo nÃºmeros
   if (documento && !/^\d+$/.test(documento)) {
-    return res.status(400).json({ error: 'El documento solo puede contener números' });
+    return res.status(400).json({ error: 'El documento solo puede contener nÃºmeros' });
   }
 
-  // Validar teléfono si se proporciona: exactamente 10 dígitos
+  // Validar telÃ©fono si se proporciona: exactamente 10 dÃ­gitos
   if (telefono && !/^\d{10}$/.test(telefono)) {
-    return res.status(400).json({ error: 'El teléfono debe tener exactamente 10 dígitos' });
+    return res.status(400).json({ error: 'El telÃ©fono debe tener exactamente 10 dÃ­gitos' });
   }
 
-  // Validar teléfono 2 si se proporciona: exactamente 10 dígitos
+  // Validar telÃ©fono 2 si se proporciona: exactamente 10 dÃ­gitos
   if (telefono2 && !/^\d{10}$/.test(telefono2)) {
-    return res.status(400).json({ error: 'El teléfono 2 debe tener exactamente 10 dígitos' });
+    return res.status(400).json({ error: 'El telÃ©fono 2 debe tener exactamente 10 dÃ­gitos' });
   }
 
   try {
@@ -1201,7 +1218,7 @@ app.get('/api/consultorios', requireAuth, async (req, res) => {
   }
 });
 
-// Listar medicos (usuarios con rol 'doctor') — accesible a recepcion y doctores
+// Listar medicos (usuarios con rol 'doctor') â€” accesible a recepcion y doctores
 app.get('/api/medicos', requireAuth, async (req, res) => {
   try {
     const medicos = await db.query("SELECT id, nombre, usuario, especialidad FROM usuarios WHERE rol = 'doctor' AND activo = 1 ORDER BY nombre ASC");
@@ -1231,12 +1248,12 @@ app.post('/api/doctor-agenda', requireAuth, async (req, res) => {
   if (!Array.isArray(slots)) return res.status(400).json({ error: 'slots debe ser un arreglo' });
   // Permitir que el doctor suba su propia agenda o admin
   const actorId = req.session.usuarioId;
-  const isAdminUser = req.session.rol === 'admin';
+  const isAdminUser = isAdminRol(req.session.rol) || isRecepcionRol(req.session.rol);
   const isDoctorUser = req.session.rol === 'doctor';
   const targetDoctorId = parseInt(doctor_id || actorId, 10);
-  if (!targetDoctorId) return res.status(400).json({ error: 'doctor_id inválido' });
-  if (!isAdminUser && !isDoctorUser) return res.status(403).json({ error: 'Solo médicos o administradores pueden subir agenda' });
-  if (isDoctorUser && targetDoctorId !== actorId) return res.status(403).json({ error: 'Médicos solo pueden modificar su propia agenda' });
+  if (!targetDoctorId) return res.status(400).json({ error: 'doctor_id invÃ¡lido' });
+  if (!isAdminUser && !isDoctorUser) return res.status(403).json({ error: 'Solo mÃ©dicos o administradores pueden subir agenda' });
+  if (isDoctorUser && targetDoctorId !== actorId) return res.status(403).json({ error: 'MÃ©dicos solo pueden modificar su propia agenda' });
 
   try {
     // Eliminar agenda anterior
@@ -1264,7 +1281,7 @@ app.post('/api/doctor-agenda', requireAuth, async (req, res) => {
 app.post('/api/doctor-agenda/upload', requireAuth, upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
-      return res.status(400).json({ error: 'No se recibió archivo' });
+      return res.status(400).json({ error: 'No se recibiÃ³ archivo' });
     }
     
     const doctor_id = req.body.doctor_id || req.session.usuarioId;
@@ -1303,14 +1320,14 @@ app.delete('/api/doctor-agenda-files/:id', requireAuth, async (req, res) => {
     
     // Verificar que el usuario sea el doctor o admin
     const isDoctorOwner = req.session.rol === 'doctor' && req.session.usuarioId === file.doctor_id;
-    const isAdmin = req.session.rol === 'admin';
+    const isAdmin = isAdminRol(req.session.rol);
     if (!isDoctorOwner && !isAdmin) return res.status(403).json({ error: 'No tienes permiso para eliminar este archivo' });
     
-    // Eliminar archivo del sistema de archivos con protección contra path traversal
+    // Eliminar archivo del sistema de archivos con protecciÃ³n contra path traversal
     const publicDir = path.resolve(__dirname, 'public');
     const filePath = path.resolve(publicDir, file.url.replace(/^\//, ''));
     if (!filePath.startsWith(publicDir)) {
-      return res.status(400).json({ error: 'Ruta de archivo inválida' });
+      return res.status(400).json({ error: 'Ruta de archivo invÃ¡lida' });
     }
     if (fs.existsSync(filePath)) {
       fs.unlinkSync(filePath);
@@ -1325,7 +1342,7 @@ app.delete('/api/doctor-agenda-files/:id', requireAuth, async (req, res) => {
   }
 });
 
-// --- Días bloqueados ---
+// --- DÃ­as bloqueados ---
 
 // Crear tabla si no existe
 app.get('/api/init-doctor-disponibilidad', requireAuth, async (req, res) => {
@@ -1361,7 +1378,7 @@ app.get('/api/init-doctor-disponibilidad', requireAuth, async (req, res) => {
 app.post('/api/doctor-disponibilidad/procesar-excel', requireAuth, upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
-      return res.status(400).json({ error: 'No se recibió archivo' });
+      return res.status(400).json({ error: 'No se recibiÃ³ archivo' });
     }
 
     const doctorId = parseInt(req.body.doctor_id || req.session.usuarioId, 10);
@@ -1369,11 +1386,11 @@ app.post('/api/doctor-disponibilidad/procesar-excel', requireAuth, upload.single
     
     if (!doctorId) {
       fs.unlink(req.file.path, () => {});
-      return res.status(400).json({ error: 'doctor_id inválido' });
+      return res.status(400).json({ error: 'doctor_id invÃ¡lido' });
     }
 
     // Permisos: admin o el doctor puede subir su propia disponibilidad
-    const isAdmin = req.session.rol === 'admin';
+    const isAdmin = isAdminRol(req.session.rol);
     const isDoctor = req.session.rol === 'doctor' && doctorId === req.session.usuarioId;
     if (!isAdmin && !isDoctor) {
       fs.unlink(req.file.path, () => {});
@@ -1391,7 +1408,7 @@ app.post('/api/doctor-disponibilidad/procesar-excel', requireAuth, upload.single
       return res.status(400).json({ error: result.error });
     }
 
-    // Guardar metadatos del archivo en la BD para poder verlo/descargarlo después
+    // Guardar metadatos del archivo en la BD para poder verlo/descargarlo despuÃ©s
     const url = `/uploads/${req.file.filename}`;
     try {
       const fileResult = await db.execute(
@@ -1406,7 +1423,7 @@ app.post('/api/doctor-disponibilidad/procesar-excel', requireAuth, upload.single
 
     // NO borrar el archivo del filesystem para que sea visible en la lista
 
-    // Emitir actualización a través de WebSocket
+    // Emitir actualizaciÃ³n a travÃ©s de WebSocket
     if (app.io) {
       emitSocket('agenda:disponibilidad-actualizada', { doctor_id: doctorId });
     }
@@ -1416,7 +1433,7 @@ app.post('/api/doctor-disponibilidad/procesar-excel', requireAuth, upload.single
       diasGuardados: result.diasGuardados,
       errores: result.errores,
       fileUrl: url,
-      message: `✓ ${result.diasGuardados} días de disponibilidad guardados` 
+      message: `âœ“ ${result.diasGuardados} dÃ­as de disponibilidad guardados` 
     });
   } catch (e) {
     console.error('[DISPONIBILIDAD] Error procesando Excel:', e.message, e.stack);
@@ -1432,7 +1449,7 @@ app.get('/api/doctor-disponibilidad/:doctorId', requireAuth, async (req, res) =>
     const mes = req.query.mes; // Formato: YYYY-MM, opcional
     
     if (!doctorId) {
-      return res.status(400).json({ error: 'doctorId inválido' });
+      return res.status(400).json({ error: 'doctorId invÃ¡lido' });
     }
 
     const disponibilidad = await procesarAgendaExcel.obtenerDisponibilidadMensual(doctorId, mes, db);
@@ -1460,7 +1477,7 @@ app.post('/api/doctor-disponibilidad/validar', async (req, res) => {
       doctor_id,
       disponible: resultado.disponible,
       totalPacientes: resultado.totalPacientes || null,
-      mensaje: !resultado.disponible ? 'PARA ESTE DÍA NO PUEDES AGENDAR, EL DOCTOR NO CUENTA CON DISPONIBILIDAD' : null
+      mensaje: !resultado.disponible ? 'PARA ESTE DÃA NO PUEDES AGENDAR, EL DOCTOR NO CUENTA CON DISPONIBILIDAD' : null
     });
   } catch (e) {
     console.error('[DISPONIBILIDAD] Error validando disponibilidad:', e.message);
@@ -1474,7 +1491,7 @@ app.delete('/api/doctor-disponibilidad/:doctorId', requireAuth, async (req, res)
     const doctorId = parseInt(req.params.doctorId, 10);
     
     if (!doctorId) {
-      return res.status(400).json({ error: 'doctorId inválido' });
+      return res.status(400).json({ error: 'doctorId invÃ¡lido' });
     }
 
     // Permisos: admin o el doctor
@@ -1487,7 +1504,7 @@ app.delete('/api/doctor-disponibilidad/:doctorId', requireAuth, async (req, res)
     const result = await procesarAgendaExcel.limpiarDisponibilidad(doctorId, db);
     
     if (result.ok) {
-      // Emitir actualización a través de WebSocket
+      // Emitir actualizaciÃ³n a travÃ©s de WebSocket
       if (app.io) {
         emitSocket('agenda:disponibilidad-actualizada', { doctor_id: doctorId });
       }
@@ -1526,7 +1543,7 @@ app.post('/api/doctor-dias-bloqueados/validar', async (req, res) => {
       fecha,
       doctor_id,
       bloqueada: esta_bloqueada,
-      mensaje: esta_bloqueada ? 'PARA ESTE DÍA NO PUEDES AGENDAR, EL DOCTOR NO CUENTA CON DISPONIBILIDAD' : null
+      mensaje: esta_bloqueada ? 'PARA ESTE DÃA NO PUEDES AGENDAR, EL DOCTOR NO CUENTA CON DISPONIBILIDAD' : null
     });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -1535,7 +1552,7 @@ app.post('/api/doctor-dias-bloqueados/validar', async (req, res) => {
 
 app.delete('/api/doctor-dias-bloqueados/:doctorId', requireAuth, async (req, res) => {
   const doctorId = parseInt(req.params.doctorId, 10);
-  const isAdmin = req.session.rol === 'admin';
+  const isAdmin = isAdminRol(req.session.rol);
   const isDoctor = req.session.rol === 'doctor' && doctorId === req.session.usuarioId;
   if (!isAdmin && !isDoctor) {
     return res.status(403).json({ error: 'No tienes permiso' });
@@ -1544,13 +1561,13 @@ app.delete('/api/doctor-dias-bloqueados/:doctorId', requireAuth, async (req, res
   res.json(result);
 });
 
-// --- Turnos (agenda médica) ---
+// --- Turnos (agenda mÃ©dica) ---
 
 // Listar turnos por fecha y consultorio
 app.get('/api/turnos', requireAuth, async (req, res) => {
   const { fecha, doctor_id, buscar } = req.query;
   
-  // Si está buscando por documento de paciente
+  // Si estÃ¡ buscando por documento de paciente
   if (buscar && !fecha) {
     try {
       const turnos = await db.query(`
@@ -1566,7 +1583,7 @@ app.get('/api/turnos', requireAuth, async (req, res) => {
     }
   }
   
-  // Si falta fecha (requerida para búsqueda por fecha)
+  // Si falta fecha (requerida para bÃºsqueda por fecha)
   if (!fecha && !buscar) {
     return res.status(400).json({ error: 'fecha es obligatoria' });
   }
@@ -1611,7 +1628,7 @@ app.get('/api/turnos/export', requireAuth, async (req, res) => {
        ORDER BY hora ASC, numero_turno ASC`,
       params
     );
-    const headers = ['N° Turno','Paciente','Documento','Teléfono','Estado',
+    const headers = ['NÂ° Turno','Paciente','Documento','TelÃ©fono','Estado',
                      'Hora','Tipo Consulta','Entidad','Notas','Fecha'];
     const escape = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
     const lines = [
@@ -1629,7 +1646,7 @@ app.get('/api/turnos/export', requireAuth, async (req, res) => {
   }
 });
 
-// Obtener disponibilidad de doctor para una fecha específica
+// Obtener disponibilidad de doctor para una fecha especÃ­fica
 app.get('/api/doctor-disponibilidad', async (req, res) => {
   const { doctor_id, fecha } = req.query;
   
@@ -1647,7 +1664,7 @@ app.get('/api/doctor-disponibilidad', async (req, res) => {
         ok: true,
         tiene_intervalos: true,
         intervalos: intervalos,
-        disponible_manana: true,  // Por defecto disponible (los intervalos definen qué NO está disponible)
+        disponible_manana: true,  // Por defecto disponible (los intervalos definen quÃ© NO estÃ¡ disponible)
         disponible_tarde: true
       });
     }
@@ -1685,7 +1702,7 @@ app.get('/api/doctor-disponibilidad', async (req, res) => {
 });
 
 // Crear turno
-app.post('/api/turnos', requireAuth, requireRole(['admin', 'recepcion']), async (req, res) => {
+app.post('/api/turnos', requireAuth, requireRole(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion']), async (req, res) => {
   const { doctor_id, paciente_nombre, paciente_documento, paciente_telefono, paciente_telefono2, fecha, hora, tipo_consulta, entidad, notas, oportunidad, programado_por } = req.body || {};
 
   if (!doctor_id || !paciente_nombre || !fecha || !hora) {
@@ -1695,7 +1712,7 @@ app.post('/api/turnos', requireAuth, requireRole(['admin', 'recepcion']), async 
   try {
 
     
-    // Validar disponibilidad del doctor en esa fecha y hora específica
+    // Validar disponibilidad del doctor en esa fecha y hora especÃ­fica
     const validacion = await procesarAgendaExcel.validarDisponibilidadPorHora(doctor_id, fecha, hora, db);
 
     
@@ -1707,7 +1724,7 @@ app.post('/api/turnos', requireAuth, requireRole(['admin', 'recepcion']), async 
       });
     }
     
-    // Crear turno como PENDIENTE sin número (numero_turno NULL)
+    // Crear turno como PENDIENTE sin nÃºmero (numero_turno NULL)
     const result = await db.execute(`
       INSERT INTO turnos (numero_turno, doctor_id, paciente_nombre, paciente_documento, paciente_telefono, paciente_telefono2, estado, fecha, hora, tipo_consulta, entidad, notas, oportunidad, programado_por)
       VALUES (NULL, ?, ?, ?, ?, ?, 'PENDIENTE', ?, ?, ?, ?, ?, ?, ?)
@@ -1741,13 +1758,13 @@ app.post('/api/turnos', requireAuth, requireRole(['admin', 'recepcion']), async 
 });
 
 // Cambiar estado de un turno
-// Actualizar turno (campo genérico)
+// Actualizar turno (campo genÃ©rico)
 app.patch('/api/turnos/:id', requireAuth, async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const { paciente_nombre, observaciones } = req.body || {};
   
   if (!id) {
-    return res.status(400).json({ error: 'ID inválido' });
+    return res.status(400).json({ error: 'ID invÃ¡lido' });
   }
 
   try {
@@ -1757,14 +1774,14 @@ app.patch('/api/turnos/:id', requireAuth, async (req, res) => {
       return res.status(404).json({ error: 'Turno no encontrado' });
     }
 
-    // Si ya está ATENDIDO, verificar restrictions según rol
+    // Si ya estÃ¡ ATENDIDO, verificar restrictions segÃºn rol
     const userRole = req.session?.rol;
     if (turno.estado === 'ATENDIDO' && userRole === 'recepcion') {
       return res.status(400).json({ error: 'No se puede modificar un turno ya atendido' });
     }
-    // Admin sí puede editar si está ATENDIDO
+    // Admin sÃ­ puede editar si estÃ¡ ATENDIDO
 
-    // Construir query dinámicamente según qué campos se envíen
+    // Construir query dinÃ¡micamente segÃºn quÃ© campos se envÃ­en
     const updates = [];
     const values = [];
     
@@ -1806,8 +1823,8 @@ app.patch('/api/turnos/:id', requireAuth, async (req, res) => {
   }
 });
 
-// Actualizar estado del turno específicamente
-app.patch('/api/turnos/:id/estado', requireAuth, requireRole(['admin', 'recepcion', 'doctor']), async (req, res) => {
+// Actualizar estado del turno especÃ­ficamente
+app.patch('/api/turnos/:id/estado', requireAuth, requireRole(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'doctor', 'auxiliar_recepcion']), async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const { estado } = req.body || {};
   if (!id || !estado) {
@@ -1821,15 +1838,15 @@ app.patch('/api/turnos/:id/estado', requireAuth, requireRole(['admin', 'recepcio
       return res.status(404).json({ error: 'Turno no encontrado' });
     }
 
-    // Si ya está ATENDIDO, no permitir cambios posteriores
+    // Si ya estÃ¡ ATENDIDO, no permitir cambios posteriores
     if (turno.estado === 'ATENDIDO' && estado !== 'ATENDIDO') {
       return res.status(400).json({ error: 'No se puede modificar un turno ya atendido' });
     }
 
-    // Si cambia a EN_SALA y no tiene número de turno, asignar automáticamente
+    // Si cambia a EN_SALA y no tiene nÃºmero de turno, asignar automÃ¡ticamente
     let numeroAsignado = null;
     if (estado === 'EN_SALA' && !turno.numero_turno) {
-      // Obtener el siguiente número disponible
+      // Obtener el siguiente nÃºmero disponible
       const result = await db.query(`
         SELECT MAX(CAST(numero_turno AS UNSIGNED)) as max_num FROM turnos 
         WHERE fecha = ? AND doctor_id = ? AND numero_turno IS NOT NULL
@@ -1838,7 +1855,7 @@ app.patch('/api/turnos/:id/estado', requireAuth, requireRole(['admin', 'recepcio
       const maxNum = result[0]?.max_num || 0;
       numeroAsignado = maxNum + 1;
       
-      // Actualizar estado y número de turno
+      // Actualizar estado y nÃºmero de turno
       await db.execute('UPDATE turnos SET estado = ?, numero_turno = ? WHERE id = ?', [estado, numeroAsignado, id]);
     } else {
       // Solo actualizar estado
@@ -1866,10 +1883,10 @@ app.patch('/api/turnos/:id/estado', requireAuth, requireRole(['admin', 'recepcio
 });
 
 // Eliminar turno
-app.delete('/api/turnos/:id', requireAuth, requireRole(['admin', 'recepcion']), async (req, res) => {
+app.delete('/api/turnos/:id', requireAuth, requireRole(['superadmin', 'admin', 'admin_recepcion', 'recepcion']), async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (!id) {
-    return res.status(400).json({ error: 'ID inválido' });
+    return res.status(400).json({ error: 'ID invÃ¡lido' });
   }
 
   try {
@@ -1884,9 +1901,9 @@ app.delete('/api/turnos/:id', requireAuth, requireRole(['admin', 'recepcion']), 
     
     // Si es recepcion (no admin), aplicar restricciones
     if (userRole === 'recepcion') {
-      // No permitir eliminar un turno que está EN_ATENCION o ATENDIDO
+      // No permitir eliminar un turno que estÃ¡ EN_ATENCION o ATENDIDO
       if (turno.estado === 'EN_ATENCION' || turno.estado === 'ATENDIDO') {
-        return res.status(400).json({ error: 'No se puede eliminar un turno en atención o ya atendido' });
+        return res.status(400).json({ error: 'No se puede eliminar un turno en atenciÃ³n o ya atendido' });
       }
 
       // No permitir eliminar si hay un turno EN_ATENCION en la misma fecha/doctor
@@ -1895,7 +1912,7 @@ app.delete('/api/turnos/:id', requireAuth, requireRole(['admin', 'recepcion']), 
         [turno.doctor_id, turno.fecha, 'EN_ATENCION', id]
       );
       if (enAtencion.length > 0) {
-        return res.status(400).json({ error: 'No se pueden eliminar citas mientras hay un paciente en atención' });
+        return res.status(400).json({ error: 'No se pueden eliminar citas mientras hay un paciente en atenciÃ³n' });
       }
     }
     // Si es admin, no hay restricciones
@@ -1914,8 +1931,8 @@ app.delete('/api/turnos/:id', requireAuth, requireRole(['admin', 'recepcion']), 
   }
 });
 
-// Reordenar número de turno (mover arriba/abajo en la cola)
-// Obtener siguiente número de turno disponible
+// Reordenar nÃºmero de turno (mover arriba/abajo en la cola)
+// Obtener siguiente nÃºmero de turno disponible
 app.get('/api/turnos/get-next-number', requireAuth, async (req, res) => {
   const { fecha, doctor_id } = req.query;
   if (!fecha || !doctor_id) {
@@ -1935,7 +1952,7 @@ app.get('/api/turnos/get-next-number', requireAuth, async (req, res) => {
   }
 });
 
-app.patch('/api/turnos/:id/numero', requireAuth, requireRole(['admin', 'recepcion']), async (req, res) => {
+app.patch('/api/turnos/:id/numero', requireAuth, requireRole(['superadmin', 'admin', 'admin_recepcion', 'recepcion']), async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const { numero, delta } = req.body || {};
   
@@ -1951,10 +1968,10 @@ app.patch('/api/turnos/:id/numero', requireAuth, requireRole(['admin', 'recepcio
       return res.status(404).json({ error: 'Turno no encontrado' });
     }
     
-    // CASO 1: Asignar número específico (cuando pasa a EN_SALA)
+    // CASO 1: Asignar nÃºmero especÃ­fico (cuando pasa a EN_SALA)
     if (typeof numero === 'number') {
       if (numero <= 0) {
-        return res.status(400).json({ error: 'Número debe ser mayor a 0' });
+        return res.status(400).json({ error: 'NÃºmero debe ser mayor a 0' });
       }
       await db.execute('UPDATE turnos SET numero_turno = ? WHERE id = ?', [numero, id]);
       
@@ -1977,24 +1994,24 @@ app.patch('/api/turnos/:id/numero', requireAuth, requireRole(['admin', 'recepcio
         return res.status(400).json({ error: 'delta debe ser -1 o 1' });
       }
 
-      // No reordenar si ya está ATENDIDO o EN_ATENCION
+      // No reordenar si ya estÃ¡ ATENDIDO o EN_ATENCION
       if (turno.estado === 'ATENDIDO' || turno.estado === 'EN_ATENCION') {
-        return res.status(400).json({ error: 'No se puede reordenar un turno en atención o ya atendido' });
+        return res.status(400).json({ error: 'No se puede reordenar un turno en atenciÃ³n o ya atendido' });
       }
 
-      // Si no tiene número de turno, no puede cambiar prioridad
+      // Si no tiene nÃºmero de turno, no puede cambiar prioridad
       if (!turno.numero_turno) {
-        return res.status(400).json({ error: 'El turno no tiene número asignado aún' });
+        return res.status(400).json({ error: 'El turno no tiene nÃºmero asignado aÃºn' });
       }
 
       const nuevoNumero = turno.numero_turno + delta;
 
-      // Si intenta subir el primero o bajar el último, denegar
+      // Si intenta subir el primero o bajar el Ãºltimo, denegar
       if (nuevoNumero <= 0) {
-        return res.status(400).json({ error: 'No se puede subir más la prioridad' });
+        return res.status(400).json({ error: 'No se puede subir mÃ¡s la prioridad' });
       }
 
-      // Buscar si existe un turno con el nuevo número
+      // Buscar si existe un turno con el nuevo nÃºmero
       const turnoIntercambio = await db.query(
         `SELECT * FROM turnos WHERE numero_turno = ? AND fecha = ? AND doctor_id = ? AND estado IN ('EN_SALA', 'PENDIENTE')`,
         [nuevoNumero, turno.fecha, turno.doctor_id]
@@ -2004,7 +2021,7 @@ app.patch('/api/turnos/:id/numero', requireAuth, requireRole(['admin', 'recepcio
         return res.status(400).json({ error: 'No hay turno para intercambiar' });
       }
 
-      // Intercambiar números: usar número temporal para evitar conflictos
+      // Intercambiar nÃºmeros: usar nÃºmero temporal para evitar conflictos
       await db.execute('UPDATE turnos SET numero_turno = -1 WHERE id = ?', [id]);
       await db.execute('UPDATE turnos SET numero_turno = ? WHERE id = ?', [turno.numero_turno, turnoIntercambio[0].id]);
       await db.execute('UPDATE turnos SET numero_turno = ? WHERE id = ?', [nuevoNumero, id]);
@@ -2027,14 +2044,14 @@ app.patch('/api/turnos/:id/numero', requireAuth, requireRole(['admin', 'recepcio
   }
 });
 
-// --- Agenda electrodiagnóstico ---
+// --- Agenda electrodiagnÃ³stico ---
 
-// Listar equipos de electrodiagnóstico
+// Listar equipos de electrodiagnÃ³stico
 app.get('/api/equipos-electro', async (req, res) => {
   try {
     const equipos = await db.query('SELECT * FROM equipos_electro WHERE activo = 1 ORDER BY nombre ASC');
     
-    // Obtener equipos que están actualmente "En Estudio"
+    // Obtener equipos que estÃ¡n actualmente "En Estudio"
     const equiposEnUso = await db.query(`
       SELECT DISTINCT equipo_id FROM citas_electro WHERE estado = 'En Estudio' AND equipo_id IS NOT NULL AND deleted_at IS NULL
     `);
@@ -2056,8 +2073,8 @@ app.get('/api/equipos-electro', async (req, res) => {
   }
 });
 
-// Obtener disponibilidad de CUPOS para una fecha y hora específica
-// Obtener duración de un estudio específico
+// Obtener disponibilidad de CUPOS para una fecha y hora especÃ­fica
+// Obtener duraciÃ³n de un estudio especÃ­fico
 app.get('/api/estudios/duracion', async (req, res) => {
   try {
     const { nombre } = req.query;
@@ -2084,7 +2101,7 @@ app.get('/api/estudios/duracion', async (req, res) => {
       esVariable: est.duracion_min !== null && est.duracion_max !== null
     });
   } catch (e) {
-    console.error('Error obteniendo duración:', e);
+    console.error('Error obteniendo duraciÃ³n:', e);
     res.status(500).json({ error: 'Error del servidor' });
   }
 });
@@ -2099,13 +2116,13 @@ app.get('/api/equipos-electro/disponibilidad', async (req, res) => {
 
     // Validar formato
     if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
-      return res.status(400).json({ error: 'Fecha inválida (YYYY-MM-DD)' });
+      return res.status(400).json({ error: 'Fecha invÃ¡lida (YYYY-MM-DD)' });
     }
     if (!/^\d{2}:\d{2}(:\d{2})?$/.test(hora)) {
-      return res.status(400).json({ error: 'Hora inválida (HH:MM)' });
+      return res.status(400).json({ error: 'Hora invÃ¡lida (HH:MM)' });
     }
 
-    // Obtener duración del estudio
+    // Obtener duraciÃ³n del estudio
     let duracionMinutos = 30; // default
     
     if (estudio) {
@@ -2116,7 +2133,7 @@ app.get('/api/equipos-electro/disponibilidad', async (req, res) => {
       
       if (estudios && estudios.length > 0) {
         const est = estudios[0];
-        // Si es Estudio4 (duracion_min/max), usar duracion_manual si está provided
+        // Si es Estudio4 (duracion_min/max), usar duracion_manual si estÃ¡ provided
         if (est.duracion_min && est.duracion_max) {
           duracionMinutos = duracion_manual ? parseInt(duracion_manual, 10) : est.duracion_min;
         } else {
@@ -2140,11 +2157,11 @@ app.get('/api/equipos-electro/disponibilidad', async (req, res) => {
       fechaFin = nextDay.toISOString().slice(0, 10);
     }
 
-    // CRÍTICO: Contar CUPOS OCUPADOS en este rango horario
+    // CRÃTICO: Contar CUPOS OCUPADOS en este rango horario
     // Los cupos se RESERVAN al agendar (Programado), se OCUPAN EN USO (En Estudio)
     // Cuando se completa el estudio (Completado), se LIBERA el cupo
-    // NO ocupan cupo: No Asistió, Cancelado
-    // Convertir a DATETIME para comparación correcta incluso con cambio de día
+    // NO ocupan cupo: No AsistiÃ³, Cancelado
+    // Convertir a DATETIME para comparaciÃ³n correcta incluso con cambio de dÃ­a
     const citasOcupadas = await db.query(`
       SELECT 
         c.id, c.paciente_id, c.fecha, c.hora_agendamiento, c.hora_inicio, c.hora_fin, c.hora_fin_date, 
@@ -2163,7 +2180,7 @@ app.get('/api/equipos-electro/disponibilidad', async (req, res) => {
     const cuposaDisponibles = 4 - cuposOcupados;
     const hayDisponibilidad = cuposaDisponibles > 0;
 
-    // Extraer EQUIPOS específicos que están siendo usados
+    // Extraer EQUIPOS especÃ­ficos que estÃ¡n siendo usados
     const equiposEnUso = citasOcupadas
       .filter(cita => cita.equipo_id) // Solo las que tienen equipo asignado
       .map(cita => ({
@@ -2206,10 +2223,10 @@ app.get('/api/equipos-electro/disponibilidad', async (req, res) => {
       };
     });
 
-    // Calcular próximo momento con disponibilidad (si está al máximo)
+    // Calcular prÃ³ximo momento con disponibilidad (si estÃ¡ al mÃ¡ximo)
     let proximaDisponibilidad = null;
     if (!hayDisponibilidad && citasOcupadas.length > 0) {
-      // Encontrar la cita que termina más tarde, considerando hora_fin_date
+      // Encontrar la cita que termina mÃ¡s tarde, considerando hora_fin_date
       let maxFechaHoraFin = null;
       citasOcupadas.forEach(cita => {
         const convertirFecha = (f) => {
@@ -2241,12 +2258,12 @@ app.get('/api/equipos-electro/disponibilidad', async (req, res) => {
         cuposOcupados,
         cuposaDisponibles,
         hayDisponibilidad,
-        equiposEnUso: equiposEnUso // Agregar equipos específicos en uso
+        equiposEnUso: equiposEnUso // Agregar equipos especÃ­ficos en uso
       },
       citasEnRango,
       proximaDisponibilidad,
       mensaje: !hayDisponibilidad 
-        ? `⚠️ Sin capacidad. ${cuposOcupados}/4 cupos ocupados (${equiposEnUso.map(e => e.equipo_nombre).join(', ')}). Próxima disponibilidad: ${proximaDisponibilidad}`
+        ? `âš ï¸ Sin capacidad. ${cuposOcupados}/4 cupos ocupados (${equiposEnUso.map(e => e.equipo_nombre).join(', ')}). PrÃ³xima disponibilidad: ${proximaDisponibilidad}`
         : `Disponibilidad: ${cuposaDisponibles}/${4} cupos libres${equiposEnUso.length > 0 ? ` (En uso: ${equiposEnUso.map(e => e.equipo_nombre).join(', ')})` : ''}`
     });
   } catch (e) {
@@ -2254,9 +2271,9 @@ app.get('/api/equipos-electro/disponibilidad', async (req, res) => {
   }
 });
 
-// --- Diagnósticos ---
+// --- DiagnÃ³sticos ---
 
-// Listar todos los diagnósticos activos
+// Listar todos los diagnÃ³sticos activos
 app.get('/api/diagnosticos', requireAuth, async (req, res) => {
   try {
     const diagnosticos = await db.query(`
@@ -2272,11 +2289,11 @@ app.get('/api/diagnosticos', requireAuth, async (req, res) => {
   }
 });
 
-// Buscar diagnósticos por término (autocompletado)
+// Buscar diagnÃ³sticos por tÃ©rmino (autocompletado)
 app.get('/api/diagnosticos/search', requireAuth, async (req, res) => {
   const { q } = req.query;
   if (!q || q.trim().length < 2) {
-    // Si la búsqueda es muy corta, devolver los primeros 10 diagnósticos
+    // Si la bÃºsqueda es muy corta, devolver los primeros 10 diagnÃ³sticos
     try {
       const diagnosticos = await db.query(`
         SELECT id, nombre, descripcion, codigo 
@@ -2287,7 +2304,7 @@ app.get('/api/diagnosticos/search', requireAuth, async (req, res) => {
       `);
       return res.json(diagnosticos);
     } catch (e) {
-      console.error('Error en búsqueda:', e);
+      console.error('Error en bÃºsqueda:', e);
       return res.status(500).json({ error: e.message });
     }
   }
@@ -2308,12 +2325,12 @@ app.get('/api/diagnosticos/search', requireAuth, async (req, res) => {
   }
 });
 
-// Crear nuevo diagnóstico (solo admin)
+// Crear nuevo diagnÃ³stico (solo admin)
 app.post('/api/diagnosticos', requireAuth, requireAdmin, async (req, res) => {
   const { nombre, descripcion, codigo } = req.body || {};
   
   if (!nombre || nombre.trim().length === 0) {
-    return res.status(400).json({ error: 'El nombre del diagnóstico es obligatorio' });
+    return res.status(400).json({ error: 'El nombre del diagnÃ³stico es obligatorio' });
   }
 
   try {
@@ -2324,20 +2341,20 @@ app.post('/api/diagnosticos', requireAuth, requireAdmin, async (req, res) => {
     res.json({ ok: true, id: result.insertId, nombre });
   } catch (e) {
     if (e.code === 'ER_DUP_ENTRY') {
-      return res.status(400).json({ error: 'El diagnóstico ya existe' });
+      return res.status(400).json({ error: 'El diagnÃ³stico ya existe' });
     }
     console.error(e);
     res.status(500).json({ error: e.message });
   }
 });
 
-// Actualizar diagnóstico
+// Actualizar diagnÃ³stico
 app.put('/api/diagnosticos/:id', requireAuth, requireAdmin, async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const { nombre, descripcion, codigo, activo } = req.body || {};
 
   if (!id) {
-    return res.status(400).json({ error: 'ID inválido' });
+    return res.status(400).json({ error: 'ID invÃ¡lido' });
   }
 
   try {
@@ -2353,7 +2370,7 @@ app.put('/api/diagnosticos/:id', requireAuth, requireAdmin, async (req, res) => 
   }
 });
 
-// Importar diagnósticos desde archivo Excel
+// Importar diagnÃ³sticos desde archivo Excel
 app.post('/api/diagnosticos/import-excel', requireAuth, requireAdmin, upload.single('file'), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'Debes seleccionar un archivo' });
@@ -2374,25 +2391,25 @@ app.post('/api/diagnosticos/import-excel', requireAuth, requireAdmin, upload.sin
     fs.unlinkSync(filePath);
     
     if (!data || data.length === 0) {
-      return res.status(400).json({ error: 'El archivo Excel está vacío' });
+      return res.status(400).json({ error: 'El archivo Excel estÃ¡ vacÃ­o' });
     }
     
-    // Procesar diagnósticos
+    // Procesar diagnÃ³sticos
     let insertados = 0;
     let actualizados = 0;
     let errores = 0;
     
     for (const row of data) {
       try {
-        // Buscar las columnas (pueden tener espacios o mayúsculas diferentes)
+        // Buscar las columnas (pueden tener espacios o mayÃºsculas diferentes)
         let codigo = null, nombre = null;
         
         for (const key of Object.keys(row)) {
           const keyLower = key.toLowerCase().trim();
-          if (keyLower.includes('código') || keyLower.includes('codigo')) {
+          if (keyLower.includes('cÃ³digo') || keyLower.includes('codigo')) {
             codigo = row[key] ? String(row[key]).trim() : null;
           }
-          if (keyLower.includes('diagnóstico') || keyLower.includes('diagnostico') || keyLower.includes('nombre')) {
+          if (keyLower.includes('diagnÃ³stico') || keyLower.includes('diagnostico') || keyLower.includes('nombre')) {
             nombre = row[key] ? String(row[key]).trim() : null;
           }
         }
@@ -2439,7 +2456,7 @@ app.post('/api/diagnosticos/import-excel', requireAuth, requireAdmin, upload.sin
 app.get('/api/citas-electro', requireAuth, async (req, res) => {
   const { fecha, equipo_id, buscar } = req.query;
   
-  // Si está buscando por documento de paciente
+  // Si estÃ¡ buscando por documento de paciente
   if (buscar && !fecha) {
     try {
       const citas = await db.query(`
@@ -2473,7 +2490,7 @@ app.get('/api/citas-electro', requireAuth, async (req, res) => {
 
   try {
     
-    // Si hay equipo_id, filtrar por eso también
+    // Si hay equipo_id, filtrar por eso tambiÃ©n
     let query = `
       SELECT c.id, c.equipo_id, c.paciente_id, c.fecha, c.hora_agendamiento, c.hora_inicio, c.hora_fin, c.hora_fin_date,
              c.estudio, c.observaciones, c.diagnostico_id, c.estado, c.programado_por_nombre, c.editado_por_nombre, c.editado_en, c.creado_en, c.actualizado_en,
@@ -2506,8 +2523,8 @@ app.get('/api/citas-electro', requireAuth, async (req, res) => {
   }
 });
 
-// Crear cita electrodiagnóstico (con TRANSACCIÓN para garantizar integridad)
-app.post('/api/citas-electro', requireAuth, requireRole(['admin', 'electro', 'recepcion']), async (req, res) => {
+// Crear cita electrodiagnÃ³stico (con TRANSACCIÃ“N para garantizar integridad)
+app.post('/api/citas-electro', requireAuth, requireRole(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro', 'auxiliar_recepcion']), async (req, res) => {
   const { equipo_id, paciente_id, fecha, hora_agendamiento, hora, hora_fin, duracion, estudio, observaciones, diagnostico_id, estado, programado_por_nombre, telefono } = req.body || {};
   
   // 'hora' o 'hora_agendamiento' es la hora programada para el estudio
@@ -2519,23 +2536,23 @@ app.post('/api/citas-electro', requireAuth, requireRole(['admin', 'electro', 're
 
   // Validar formato de fecha (YYYY-MM-DD)
   if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
-    return res.status(400).json({ error: 'Fecha en formato inválido (debe ser YYYY-MM-DD)' });
+    return res.status(400).json({ error: 'Fecha en formato invÃ¡lido (debe ser YYYY-MM-DD)' });
   }
 
   // Validar formato de hora (HH:MM o HH:MM:SS)
   if (!/^\d{2}:\d{2}(:\d{2})?$/.test(horaAgendamiento)) {
-    return res.status(400).json({ error: 'Hora en formato inválido (debe ser HH:MM o HH:MM:SS)' });
+    return res.status(400).json({ error: 'Hora en formato invÃ¡lido (debe ser HH:MM o HH:MM:SS)' });
   }
 
   try {
-    // 🔄 Usar transacción para garantizar que la validación de capacidad y la inserción sean atómicas
+    // ðŸ”„ Usar transacciÃ³n para garantizar que la validaciÃ³n de capacidad y la inserciÃ³n sean atÃ³micas
     const result = await transactions.withTransaction(async (conn) => {
-      // Calcular hora_fin y fecha_fin si no están proporcionadas
+      // Calcular hora_fin y fecha_fin si no estÃ¡n proporcionadas
       let finalHoraFin = hora_fin;
       let finalFechaFin = fecha; // Default: misma fecha
       
       if (!hora_fin) {
-        // duracion está en minutos (default: 30 si no se especifica)
+        // duracion estÃ¡ en minutos (default: 30 si no se especifica)
         const duracionMinutos = duracion ? parseInt(duracion, 10) : 30;
         const [hh, mm] = horaAgendamiento.split(':').map(x => parseInt(x, 10));
         const startTime = new Date();
@@ -2552,7 +2569,7 @@ app.post('/api/citas-electro', requireAuth, requireRole(['admin', 'electro', 're
         }
       }
 
-      // VALIDACIÓN: el paciente no puede tener ya una cita activa ese día
+      // VALIDACIÃ“N: el paciente no puede tener ya una cita activa ese dÃ­a
       const dupCheck = await transactions.selectForUpdate(conn,
         `SELECT COUNT(*) as cnt FROM citas_electro
          WHERE paciente_id = ? AND fecha = ?
@@ -2561,10 +2578,10 @@ app.post('/api/citas-electro', requireAuth, requireRole(['admin', 'electro', 're
         [paciente_id, fecha]
       );
       if ((dupCheck[0]?.cnt || 0) > 0) {
-        throw new Error('Este paciente ya tiene una cita agendada para esa fecha en Electrodiagnóstico.');
+        throw new Error('Este paciente ya tiene una cita agendada para esa fecha en ElectrodiagnÃ³stico.');
       }
 
-      // VALIDACIÓN DE CAPACIDAD DENTRO DE LA TRANSACCIÓN con SELECT FOR UPDATE
+      // VALIDACIÃ“N DE CAPACIDAD DENTRO DE LA TRANSACCIÃ“N con SELECT FOR UPDATE
       const overlapCitas = await transactions.selectForUpdate(conn,
         `SELECT COUNT(*) as overlap_count
          FROM citas_electro
@@ -2577,12 +2594,12 @@ app.post('/api/citas-electro', requireAuth, requireRole(['admin', 'electro', 're
 
       const overlapCount = overlapCitas[0]?.overlap_count || 0;
 
-      // Validar capacidad: máximo 4 cupos disponibles
+      // Validar capacidad: mÃ¡ximo 4 cupos disponibles
       if (overlapCount >= 4) {
-        throw new Error(`Sin capacidad disponible en este horario. Hay ${overlapCount} cupos ocupados. Máximo: 4`);
+        throw new Error(`Sin capacidad disponible en este horario. Hay ${overlapCount} cupos ocupados. MÃ¡ximo: 4`);
       }
 
-      // INSERTAR DENTRO DE LA TRANSACCIÓN
+      // INSERTAR DENTRO DE LA TRANSACCIÃ“N
       const insertResult = await conn.execute(`
         INSERT INTO citas_electro (equipo_id, paciente_id, fecha, hora_agendamiento, hora_inicio, hora_fin, hora_fin_date, estudio, observaciones, diagnostico_id, estado, programado_por_nombre)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -2635,7 +2652,7 @@ app.post('/api/citas-electro', requireAuth, requireRole(['admin', 'electro', 're
       } 
     });
   } catch (e) {
-    // La transacción fue automáticamente revertida si hubo error
+    // La transacciÃ³n fue automÃ¡ticamente revertida si hubo error
     const errorMsg = e.message.includes('Sin capacidad') ? e.message : e.message;
     if (e.message.includes('Sin capacidad')) {
       return res.status(409).json({ 
@@ -2649,7 +2666,7 @@ app.post('/api/citas-electro', requireAuth, requireRole(['admin', 'electro', 're
   }
 });
 
-// Estadísticas de citas por fecha (estado, estudio, equipo)
+// EstadÃ­sticas de citas por fecha (estado, estudio, equipo)
 // IMPORTANTE: debe estar ANTES de /:id para que "stats" no sea interpretado como un ID
 app.get('/api/citas-electro/stats', requireAuth, async (req, res) => {
   const { fecha } = req.query;
@@ -2669,7 +2686,7 @@ app.get('/api/citas-electro/stats', requireAuth, async (req, res) => {
         [fecha, fecha]
       )
     ]);
-    // Totales rápidos
+    // Totales rÃ¡pidos
     const total = porEstado.reduce((a, r) => a + r.total, 0);
     const completadas = (porEstado.find(r => r.estado === 'Completado') || {}).total || 0;
     const enEstudio  = (porEstado.find(r => r.estado === 'En Estudio')  || {}).total || 0;
@@ -2700,8 +2717,8 @@ app.get('/api/citas-electro/export', requireAuth, async (req, res) => {
     `, [fecha, fecha]);
 
     const headers = ['Fecha','Hora Agendamiento','Hora Inicio','Hora Fin','Estudio','Estado',
-                     'Paciente','Documento','Teléfono','Diagnóstico Cód','Diagnóstico',
-                     'Equipo','Programó','Editó'];
+                     'Paciente','Documento','TelÃ©fono','DiagnÃ³stico CÃ³d','DiagnÃ³stico',
+                     'Equipo','ProgramÃ³','EditÃ³'];
     const escape = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
     const lines = [
       headers.join(','),
@@ -2724,7 +2741,7 @@ app.get('/api/citas-electro/export', requireAuth, async (req, res) => {
 // Obtener una cita electro por ID
 app.get('/api/citas-electro/:id', requireAuth, async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  if (!id) return res.status(400).json({ error: 'ID inválido' });
+  if (!id) return res.status(400).json({ error: 'ID invÃ¡lido' });
   try {
     const rows = await db.query(`
       SELECT c.*, p.nombre AS paciente_nombre, p.documento AS paciente_documento,
@@ -2743,8 +2760,8 @@ app.get('/api/citas-electro/:id', requireAuth, async (req, res) => {
   }
 });
 
-// Actualizar estado de cita electro (registra quién editó)
-app.patch('/api/citas-electro/:id/estado', requireAuth, requireRole(['admin', 'electro', 'recepcion']), async (req, res) => {
+// Actualizar estado de cita electro (registra quiÃ©n editÃ³)
+app.patch('/api/citas-electro/:id/estado', requireAuth, requireRole(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro', 'tecnico_electro']), async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const { estado } = req.body || {};
   if (!id || !estado) {
@@ -2777,10 +2794,10 @@ app.patch('/api/citas-electro/:id/estado', requireAuth, requireRole(['admin', 'e
 
 // Actualizar cita electro (equipo, estado, horas, etc)
 // FLUJO DE ESTADOS:
-// "Programado" → "En Estudio" (validar capacidad)
-// "En Estudio" → "Completado" (marcar fin)
-// Cualquier estado → "En Sala", "No Asistió", "Cancelado" (manual)
-app.patch('/api/citas-electro/:id', requireAuth, requireRole(['admin', 'electro', 'recepcion']), async (req, res) => {
+// "Programado" â†’ "En Estudio" (validar capacidad)
+// "En Estudio" â†’ "Completado" (marcar fin)
+// Cualquier estado â†’ "En Sala", "No AsistiÃ³", "Cancelado" (manual)
+app.patch('/api/citas-electro/:id', requireAuth, requireRole(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro']), async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const { equipo_id, estado, hora_inicio, hora_fin, hora_agendamiento, fecha, duracion_minutos } = req.body || {};
   
@@ -2797,21 +2814,21 @@ app.patch('/api/citas-electro/:id', requireAuth, requireRole(['admin', 'electro'
     const citaActual = citasResult[0];
     const estadoActual = citaActual.estado;
 
-    // ============ VALIDAR TRANSICIÓN DE ESTADOS ============
+    // ============ VALIDAR TRANSICIÃ“N DE ESTADOS ============
     if (estado && estado !== estadoActual) {
       // Estados manuales (permitidos desde cualquier estado)
-      const estadosManuales = ['En Sala', 'No Asistió', 'Reprogramado', 'Cancelado', 'Adelantado'];
+      const estadosManuales = ['En Sala', 'No AsistiÃ³', 'Reprogramado', 'Cancelado', 'Adelantado'];
       const esManual = estadosManuales.includes(estado);
 
-      // Transición automática: Programado → En Estudio o En Sala → En Estudio
+      // TransiciÃ³n automÃ¡tica: Programado â†’ En Estudio o En Sala â†’ En Estudio
       const esInicioEstudio = (estadoActual === 'Programado' || estadoActual === 'En Sala') && estado === 'En Estudio';
 
-      // Transición automática: En Estudio → Completado
+      // TransiciÃ³n automÃ¡tica: En Estudio â†’ Completado
       const esFinEstudio = estadoActual === 'En Estudio' && estado === 'Completado';
 
       if (!esManual && !esInicioEstudio && !esFinEstudio) {
         return res.status(400).json({ 
-          error: `Transición de estado inválida: ${estadoActual} → ${estado}` 
+          error: `TransiciÃ³n de estado invÃ¡lida: ${estadoActual} â†’ ${estado}` 
         });
       }
 
@@ -2831,11 +2848,11 @@ app.patch('/api/citas-electro/:id', requireAuth, requireRole(['admin', 'electro'
 
         const overlapCount = overlapCitas[0]?.overlap_count || 0;
 
-        // Validar capacidad: máximo 4 cupos disponibles
+        // Validar capacidad: mÃ¡ximo 4 cupos disponibles
         if (overlapCount >= 4) {
           return res.status(409).json({ 
             error: 'Sin capacidad disponible en este horario',
-            details: `Hay ${overlapCount} cupos ocupados en este rango. Máximo permitido: 4`,
+            details: `Hay ${overlapCount} cupos ocupados en este rango. MÃ¡ximo permitido: 4`,
             capacity: { active: overlapCount, max: 4 }
           });
         }
@@ -2864,8 +2881,8 @@ app.patch('/api/citas-electro/:id', requireAuth, requireRole(['admin', 'electro'
       updates.push('hora_fin = ?');
       values.push(hora_fin);
       
-      // Calcular hora_fin_date si se está actualizando hora_fin
-      // hora_fin_date debe estar set si el estudio cruza a otro día
+      // Calcular hora_fin_date si se estÃ¡ actualizando hora_fin
+      // hora_fin_date debe estar set si el estudio cruza a otro dÃ­a
       const horaInicio = hora_inicio || citaActual.hora_inicio;
       const fechaEstudio = fecha || citaActual.fecha;
       
@@ -2878,7 +2895,7 @@ app.patch('/api/citas-electro/:id', requireAuth, requireRole(['admin', 'electro'
         const minutosFin = hiF * 60 + miF;
         
         if (minutosFin < minutosInicio) {
-          // Cruza medianoche, calcular fecha del día siguiente
+          // Cruza medianoche, calcular fecha del dÃ­a siguiente
           const fechaObj = new Date(fechaEstudio);
           fechaObj.setDate(fechaObj.getDate() + 1);
           const horaFinDate = fechaObj.toISOString().split('T')[0];
@@ -2912,7 +2929,7 @@ app.patch('/api/citas-electro/:id', requireAuth, requireRole(['admin', 'electro'
     
     updates.push('editado_en = NOW()');
     
-    // Siempre registrar quién editó desde la sesión activa
+    // Siempre registrar quiÃ©n editÃ³ desde la sesiÃ³n activa
     const editorNombre = req.session.usuarioNombre || req.session.usuario || 'Sistema';
     updates.push('editado_por_nombre = ?');
     values.push(editorNombre);
@@ -2941,17 +2958,17 @@ app.patch('/api/citas-electro/:id', requireAuth, requireRole(['admin', 'electro'
       emitSocket('electro:actualizar-lista', { type: 'actualizada', id, cambios });
     }
     
-    res.json({ ok: true, transicion: `${estadoActual} → ${estado || estadoActual}` });
+    res.json({ ok: true, transicion: `${estadoActual} â†’ ${estado || estadoActual}` });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
 // Eliminar cita electro
-app.delete('/api/citas-electro/:id', requireAuth, requireAdmin, async (req, res) => {
+app.delete('/api/citas-electro/:id', requireAuth, requireRole(['superadmin', 'admin', 'admin_electro', 'electro']), async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (!id) {
-    return res.status(400).json({ error: 'ID inválido' });
+    return res.status(400).json({ error: 'ID invÃ¡lido' });
   }
 
   try {
@@ -2961,7 +2978,7 @@ app.delete('/api/citas-electro/:id', requireAuth, requireAdmin, async (req, res)
       return res.status(404).json({ error: 'Cita no encontrada' });
     }
 
-    // Soft-delete: marcar como eliminada en lugar de borrar físicamente
+    // Soft-delete: marcar como eliminada en lugar de borrar fÃ­sicamente
     const eliminadoPor = req.session.usuarioNombre || req.session.usuario || 'Admin';
     await db.execute(
       "UPDATE citas_electro SET deleted_at = NOW(), editado_por_nombre = ? WHERE id = ?",
@@ -2985,7 +3002,7 @@ app.delete('/api/citas-electro/:id', requireAuth, requireAdmin, async (req, res)
 
 // --- Especialidades y tipos de consulta ---
 
-// GET — legible por todos los roles (para poblar selects)
+// GET â€” legible por todos los roles (para poblar selects)
 app.get('/api/especialidades', requireAuth, async (req, res) => {
   try {
     const rows = await db.query('SELECT id, nombre FROM especialidades WHERE activo=1 ORDER BY nombre ASC');
@@ -3008,7 +3025,7 @@ app.post('/api/especialidades', requireAuth, requireAdmin, async (req, res) => {
 app.patch('/api/especialidades/:id', requireAuth, requireAdmin, async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const { nombre } = req.body || {};
-  if (!id) return res.status(400).json({ error: 'ID inválido' });
+  if (!id) return res.status(400).json({ error: 'ID invÃ¡lido' });
   if (!nombre || !nombre.trim()) return res.status(400).json({ error: 'El nombre es obligatorio' });
   try {
     await db.execute('UPDATE especialidades SET nombre=? WHERE id=?', [nombre.trim(), id]);
@@ -3021,14 +3038,14 @@ app.patch('/api/especialidades/:id', requireAuth, requireAdmin, async (req, res)
 
 app.delete('/api/especialidades/:id', requireAuth, requireAdmin, async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  if (!id) return res.status(400).json({ error: 'ID inválido' });
+  if (!id) return res.status(400).json({ error: 'ID invÃ¡lido' });
   try {
     await db.execute('DELETE FROM especialidades WHERE id=?', [id]);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// GET — legible por todos los roles (para poblar selects de agenda)
+// GET â€” legible por todos los roles (para poblar selects de agenda)
 app.get('/api/tipos-consulta', requireAuth, async (req, res) => {
   const { especialidad_id, especialidad_nombre, medico_id } = req.query;
   try {
@@ -3104,7 +3121,7 @@ app.post('/api/tipos-consulta', requireAuth, requireAdmin, async (req, res) => {
 app.patch('/api/tipos-consulta/:id', requireAuth, requireAdmin, async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const { nombre } = req.body || {};
-  if (!id) return res.status(400).json({ error: 'ID inválido' });
+  if (!id) return res.status(400).json({ error: 'ID invÃ¡lido' });
   if (!nombre || !nombre.trim()) return res.status(400).json({ error: 'El nombre es obligatorio' });
   try {
     await db.execute('UPDATE tipos_consulta SET nombre=? WHERE id=?', [nombre.trim(), id]);
@@ -3115,7 +3132,7 @@ app.patch('/api/tipos-consulta/:id', requireAuth, requireAdmin, async (req, res)
 
 app.delete('/api/tipos-consulta/:id', requireAuth, requireAdmin, async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  if (!id) return res.status(400).json({ error: 'ID inválido' });
+  if (!id) return res.status(400).json({ error: 'ID invÃ¡lido' });
   try {
     await db.execute('DELETE FROM tipos_consulta WHERE id=?', [id]);
     emitSocket('tipos-consulta:actualizado', { id });
@@ -3145,10 +3162,10 @@ app.post('/api/pacientes-espera', requireAuth, async (req, res) => {
   const entidadesValidas = ['FOMAG', 'UCQN', 'PARTICULAR', 'PROINSALUD'];
   const prioridadesValidas = ['ALTA', 'MEDIA', 'BAJA'];
   if (!entidadesValidas.includes(entidad)) {
-    return res.status(400).json({ error: 'Entidad inválida' });
+    return res.status(400).json({ error: 'Entidad invÃ¡lida' });
   }
   if (!prioridadesValidas.includes(prioridad)) {
-    return res.status(400).json({ error: 'Prioridad inválida' });
+    return res.status(400).json({ error: 'Prioridad invÃ¡lida' });
   }
   try {
     const result = await db.execute(
@@ -3163,7 +3180,7 @@ app.post('/api/pacientes-espera', requireAuth, async (req, res) => {
 
 app.delete('/api/pacientes-espera/:id', requireAuth, async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  if (!id) return res.status(400).json({ error: 'ID inválido' });
+  if (!id) return res.status(400).json({ error: 'ID invÃ¡lido' });
   try {
     await db.execute('DELETE FROM pacientes_espera WHERE id = ?', [id]);
     res.json({ ok: true });
@@ -3172,7 +3189,7 @@ app.delete('/api/pacientes-espera/:id', requireAuth, async (req, res) => {
   }
 });
 
-// --- Servicios (catálogo de recibos) ---
+// --- Servicios (catÃ¡logo de recibos) ---
 
 app.get('/api/servicios', requireAuth, async (req, res) => {
   try {
@@ -3196,7 +3213,7 @@ app.post('/api/servicios', requireAuth, requireAdmin, async (req, res) => {
 app.put('/api/servicios/:id', requireAuth, requireAdmin, async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const nombre = (req.body.nombre || '').trim();
-  if (!nombre || isNaN(id)) return res.status(400).json({ error: 'Datos inválidos' });
+  if (!nombre || isNaN(id)) return res.status(400).json({ error: 'Datos invÃ¡lidos' });
   try {
     await db.execute('UPDATE servicios_recibo SET nombre=? WHERE id=?', [nombre, id]);
     res.json({ ok: true });
@@ -3208,7 +3225,7 @@ app.put('/api/servicios/:id', requireAuth, requireAdmin, async (req, res) => {
 
 app.delete('/api/servicios/:id', requireAuth, requireAdmin, async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  if (isNaN(id)) return res.status(400).json({ error: 'ID inválido' });
+  if (isNaN(id)) return res.status(400).json({ error: 'ID invÃ¡lido' });
   try {
     await db.execute('DELETE FROM servicios_recibo WHERE id=?', [id]);
     res.json({ ok: true });
@@ -3218,10 +3235,10 @@ app.delete('/api/servicios/:id', requireAuth, requireAdmin, async (req, res) => 
 // --- Recibos ---
 
 // Guardar recibo
-app.post('/api/recibos', requireAuth, requireRole(['admin', 'recepcion']), async (req, res) => {
+app.post('/api/recibos', requireAuth, requireRole(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion']), async (req, res) => {
   const body = req.body;
   if (!body || typeof body !== 'object') {
-    return res.status(400).json({ error: 'Cuerpo de la petición inválido' });
+    return res.status(400).json({ error: 'Cuerpo de la peticiÃ³n invÃ¡lido' });
   }
 
   const { cliente, fecha, total, data,
@@ -3232,7 +3249,7 @@ app.post('/api/recibos', requireAuth, requireRole(['admin', 'recepcion']), async
     return res.status(400).json({ error: 'Se requiere el campo total' });
   }
 
-  // Generado por — extraer del usuario en sesión
+  // Generado por â€” extraer del usuario en sesiÃ³n
   let generado_por_id = req.session.usuarioId || null;
   let generado_por_nombre = null;
   try {
@@ -3242,11 +3259,11 @@ app.post('/api/recibos', requireAuth, requireRole(['admin', 'recepcion']), async
     }
   } catch (_) {}
 
-  // Asignar número de recibo de forma atómica para evitar duplicados concurrentes
+  // Asignar nÃºmero de recibo de forma atÃ³mica para evitar duplicados concurrentes
   const conn = await db.getPool().getConnection();
   try {
     await conn.beginTransaction();
-    // FOR UPDATE bloquea la lectura hasta que la transacción finalice
+    // FOR UPDATE bloquea la lectura hasta que la transacciÃ³n finalice
     const [maxRows] = await conn.execute(
       'SELECT MAX(CAST(numero AS UNSIGNED)) AS maxNum FROM recibos FOR UPDATE'
     );
@@ -3295,7 +3312,7 @@ app.post('/api/recibos', requireAuth, requireRole(['admin', 'recepcion']), async
   }
 });
 
-// Obtener siguiente número de recibo (server-side)
+// Obtener siguiente nÃºmero de recibo (server-side)
 // Usuarios que han generado al menos un recibo (para el filtro)
 app.get('/api/recibos/generadores', requireAuth, async (req, res) => {
   try {
@@ -3322,12 +3339,12 @@ app.get('/api/recibos/next-number', requireAuth, async (req, res) => {
 });
 
 // Buscar cita para pre-llenar recibo (turnos de hoy/ayer por nombre o documento)
-app.get('/api/recibos/buscar-cita', requireAuth, requireRole(['admin', 'recepcion']), async (req, res) => {
+app.get('/api/recibos/buscar-cita', requireAuth, requireRole(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion']), async (req, res) => {
   const q = (req.query.q || '').trim();
   if (!q || q.length < 2) return res.json([]);
   try {
     const like = `%${q}%`;
-    // Turnos de agenda médica (estados atendidos, últimos 7 días)
+    // Turnos de agenda mÃ©dica (estados atendidos, Ãºltimos 7 dÃ­as)
     const turnos = await db.query(
       `SELECT t.id, t.paciente_nombre, t.paciente_documento, t.fecha, t.hora,
               t.tipo_consulta, t.entidad, u.nombre AS medico_nombre, u.id AS medico_id,
@@ -3341,7 +3358,7 @@ app.get('/api/recibos/buscar-cita', requireAuth, requireRole(['admin', 'recepcio
        LIMIT 20`,
       [like, like]
     );
-    // Citas electro (completadas, últimos 7 días)
+    // Citas electro (completadas, Ãºltimos 7 dÃ­as)
     const citasE = await db.query(
       `SELECT ce.id, p.nombre AS paciente_nombre, p.documento AS paciente_documento,
               ce.fecha, ce.hora_agendamiento AS hora, ce.estudio AS tipo_consulta,
@@ -3413,12 +3430,12 @@ app.get('/api/recibos/export/xlsx', requireAuth, async (req, res) => {
       params
     );
     const data = rows.map(r => ({
-      'Nº Recibo': r.numero || '',
+      'NÂº Recibo': r.numero || '',
       'Fecha': r.fecha ? String(r.fecha).slice(0, 10) : '',
       'Paciente': r.cliente || '',
       'Forma de Pago': r.tipo_pago || '',
       'Entidad': r.nombre_entidad || '',
-      'Médico': r.medico_nombre || '',
+      'MÃ©dico': r.medico_nombre || '',
       'Servicio': r.tipo_servicio || '',
       'Total': Number(r.total || 0),
       'Generado por': r.generado_por_nombre || '',
@@ -3438,7 +3455,7 @@ app.get('/api/recibos/export/xlsx', requireAuth, async (req, res) => {
   }
 });
 
-// Exportar recibos a PDF (página HTML imprimible)
+// Exportar recibos a PDF (pÃ¡gina HTML imprimible)
 app.get('/api/recibos/export/pdf-reporte', requireAuth, async (req, res) => {
   try {
     const { fecha_desde, fecha_hasta, tipo_pago, medico_id, generado_por_id } = req.query;
@@ -3476,7 +3493,7 @@ app.get('/api/recibos/export/pdf-reporte', requireAuth, async (req, res) => {
       fecha_desde ? `Desde: ${fecha_desde}` : '',
       fecha_hasta ? `Hasta: ${fecha_hasta}` : '',
       tipo_pago   ? `Tipo pago: ${tipo_pago}` : ''
-    ].filter(Boolean).join(' · ') || 'Sin filtros';
+    ].filter(Boolean).join(' Â· ') || 'Sin filtros';
     const html = `<!doctype html><html><head><meta charset="utf-8"/>
     <title>Reporte Recibos</title>
     <style>
@@ -3491,15 +3508,15 @@ app.get('/api/recibos/export/pdf-reporte', requireAuth, async (req, res) => {
       @media print{.no-print{display:none}}
     </style>
     </head><body>
-    <h1>Reporte de Recibos — Instituto Neurociencias</h1>
-    <div class="sub">${escapeHtml(descFiltros)} · ${rows.length} recibos · Total: $ ${fmt(total)}</div>
+    <h1>Reporte de Recibos â€” Instituto Neurociencias</h1>
+    <div class="sub">${escapeHtml(descFiltros)} Â· ${rows.length} recibos Â· Total: $ ${fmt(total)}</div>
     <div class="no-print" style="margin-bottom:12px">
       <button onclick="window.print()" style="padding:6px 14px;background:#2d4a47;color:white;border:none;border-radius:4px;cursor:pointer">Imprimir / Guardar PDF</button>
     </div>
     <table>
       <thead><tr>
-        <th>Nº</th><th>Fecha</th><th>Paciente</th><th>Tipo Pago</th>
-        <th>Entidad</th><th>Médico</th><th>Servicio</th><th>Total</th><th>Generado por</th>
+        <th>NÂº</th><th>Fecha</th><th>Paciente</th><th>Tipo Pago</th>
+        <th>Entidad</th><th>MÃ©dico</th><th>Servicio</th><th>Total</th><th>Generado por</th>
       </tr></thead>
       <tbody>${rowsHTML}
         <tr class="total-row">
@@ -3530,7 +3547,7 @@ app.delete('/api/recibos/reset', requireAuth, requireAdmin, async (req, res) => 
 // Eliminar recibo individual (solo admin)
 app.delete('/api/recibos/:id', requireAuth, requireAdmin, async (req, res) => {
   const id = parseReciboId(req.params.id);
-  if (id === null) return res.status(400).json({ error: 'ID de recibo inválido' });
+  if (id === null) return res.status(400).json({ error: 'ID de recibo invÃ¡lido' });
   try {
     const result = await db.execute('DELETE FROM recibos WHERE id=?', [id]);
     if (result.affectedRows === 0) return res.status(404).json({ error: 'No encontrado' });
@@ -3548,7 +3565,7 @@ app.delete('/api/recibos/:id', requireAuth, requireAdmin, async (req, res) => {
 // Obtener recibo (por id)
 app.get('/api/recibos/:id', requireAuth, async (req, res) => {
   const id = parseReciboId(req.params.id);
-  if (id === null) return res.status(400).json({ error: 'ID de recibo inválido' });
+  if (id === null) return res.status(400).json({ error: 'ID de recibo invÃ¡lido' });
   try {
     const rows = await db.query('SELECT * FROM recibos WHERE id=?', [id]);
     const row = rows.length > 0 ? rows[0] : null;
@@ -3567,7 +3584,7 @@ app.get('/api/recibos/:id', requireAuth, async (req, res) => {
 // Generar PDF del recibo
 app.get('/api/recibos/:id/pdf', requireAuth, async (req, res) => {
   const id = parseReciboId(req.params.id);
-  if (id === null) return res.status(400).json({ error: 'ID de recibo inválido' });
+  if (id === null) return res.status(400).json({ error: 'ID de recibo invÃ¡lido' });
   try {
     const rows = await db.query('SELECT * FROM recibos WHERE id=?', [id]);
     const row = rows.length > 0 ? rows[0] : null;
@@ -3657,12 +3674,12 @@ app.get('/api/recibos/:id/pdf', requireAuth, async (req, res) => {
           <div class="company-info">
             <h1>INSTITUTO NEUROCIENCIAS</h1>
             <p><strong>NIT:</strong> 901164565-1</p>
-            <p style="margin:0px 0"><strong>Dirección:</strong><br/>Carrera 34 #13 - 80. B/San Ignacio</p>
-            <p><strong>Teléfono:</strong> 305-356-0651</p>
+            <p style="margin:0px 0"><strong>DirecciÃ³n:</strong><br/>Carrera 34 #13 - 80. B/San Ignacio</p>
+            <p><strong>TelÃ©fono:</strong> 305-356-0651</p>
             <p><strong>Ciudad:</strong> Pasto, Colombia</p>
           </div>
           <div class="header-receipt">
-            <div class="receipt-number">Recibo Nº ${row.numero}</div>
+            <div class="receipt-number">Recibo NÂº ${row.numero}</div>
             <div class="receipt-date">Fecha: ${typeof row.fecha === 'string' ? row.fecha : new Date(row.fecha).toISOString().split('T')[0]}</div>
           </div>
         </div>
@@ -3680,7 +3697,7 @@ app.get('/api/recibos/:id/pdf', requireAuth, async (req, res) => {
         <table>
           <thead>
             <tr>
-              <th style="text-align:left;width:65%">Descripción</th>
+              <th style="text-align:left;width:65%">DescripciÃ³n</th>
               <th style="width:35%;text-align:right">Valor</th>
             </tr>
           </thead>
@@ -3716,7 +3733,7 @@ app.get('/api/recibos/:id/pdf', requireAuth, async (req, res) => {
 
         <div class="footer">
           <p>Documento generado digitalmente el ${new Date().toLocaleString('es-CO')}</p>
-          <p>Este recibo es un comprobante de la transacción realizada.</p>
+          <p>Este recibo es un comprobante de la transacciÃ³n realizada.</p>
         </div>
       </body>
       </html>
@@ -3766,7 +3783,7 @@ app.get('/api/reportes/diario', async (req, res) => {
       if (r.fecha) {
         let fechaStr = typeof r.fecha === 'string' ? r.fecha : String(r.fecha);
         
-        // Si ya está en formato YYYY-MM-DD, usarlo directamente
+        // Si ya estÃ¡ en formato YYYY-MM-DD, usarlo directamente
         if (/^\d{4}-\d{2}-\d{2}$/.test(fechaStr)) {
           fechaFormato = fechaStr;
         } else {
@@ -3830,7 +3847,7 @@ app.get('/api/reportes/diario', async (req, res) => {
           <table>
             <thead>
               <tr>
-                <th>Recibo Nº</th>
+                <th>Recibo NÂº</th>
                 <th>Documento</th>
                 <th>Cliente</th>
                 <th>Servicios</th>
@@ -3903,7 +3920,7 @@ app.get('/api/reportes/mensual', async (req, res) => {
       if (r.fecha) {
         let fechaStr = typeof r.fecha === 'string' ? r.fecha : String(r.fecha);
         
-        // Si ya está en formato YYYY-MM-DD, usarlo directamente
+        // Si ya estÃ¡ en formato YYYY-MM-DD, usarlo directamente
         if (/^\d{4}-\d{2}-\d{2}$/.test(fechaStr)) {
           fechaFormato = fechaStr;
         } else {
@@ -3967,7 +3984,7 @@ app.get('/api/reportes/mensual', async (req, res) => {
             <thead>
               <tr>
                 <th>Fecha</th>
-                <th>Recibo Nº</th>
+                <th>Recibo NÂº</th>
                 <th>Documento</th>
                 <th>Cliente</th>
                 <th>Servicios</th>
@@ -4010,7 +4027,7 @@ app.get('/api/reportes/mensual', async (req, res) => {
     } catch(e) {
       if (browser) await browser.close().catch(() => {});
       console.error('Error en PDF:', e.message);
-      res.status(500).json({ error: 'Error generando PDF. Verifica que Puppeteer esté instalado.' });
+      res.status(500).json({ error: 'Error generando PDF. Verifica que Puppeteer estÃ© instalado.' });
     }
   } catch(e) {
     console.error(e);
@@ -4018,10 +4035,10 @@ app.get('/api/reportes/mensual', async (req, res) => {
   }
 });
 
-// 📊 Dashboard Auditoría de Citas - Ver quién agendó cada cita
-app.get('/api/dashboard/citas-auditoria', requireAuth, requireAdmin, async (req, res) => {
+// ðŸ“Š Dashboard AuditorÃ­a de Citas - Ver quiÃ©n agendÃ³ cada cita
+app.get('/api/dashboard/citas-auditoria', requireAuth, requireRole(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro']), async (req, res) => {
   try {
-    const { tipo_cita, fecha_desde, fecha_hasta, programado_por } = req.query;
+    const { tipo_cita, fecha_desde, fecha_hasta, programado_por, tipo_estudio } = req.query;
     
     // Construir consultas para ambas tablas
     const citasMedicas = await db.query(`
@@ -4068,11 +4085,13 @@ app.get('/api/dashboard/citas-auditoria', requireAuth, requireAdmin, async (req,
         ${fecha_desde ? 'AND ce.fecha >= ?' : ''}
         ${fecha_hasta ? 'AND ce.fecha <= ?' : ''}
         ${programado_por ? 'AND ce.programado_por_nombre LIKE ?' : ''}
+        ${tipo_estudio ? 'AND ce.estudio = ?' : ''}
       ORDER BY ce.fecha DESC, ce.hora_agendamiento DESC
     `, [
       ...(fecha_desde ? [fecha_desde] : []),
       ...(fecha_hasta ? [fecha_hasta] : []),
-      ...(programado_por ? [`%${programado_por}%`] : [])
+      ...(programado_por ? [`%${programado_por}%`] : []),
+      ...(tipo_estudio ? [tipo_estudio] : [])
     ]);
 
     // Combinar y filtrar por tipo_cita si viene en el query
@@ -4089,7 +4108,7 @@ app.get('/api/dashboard/citas-auditoria', requireAuth, requireAdmin, async (req,
       return fechaB - fechaA;
     });
 
-    logger.info('Dashboard auditoría citas', {
+    logger.info('Dashboard auditorÃ­a citas', {
       usuario: req.session && req.session.usuario ? req.session.usuario : 'Unknown',
       total_citas: citas.length,
       medicas: citasMedicas.length,
@@ -4107,27 +4126,164 @@ app.get('/api/dashboard/citas-auditoria', requireAuth, requireAdmin, async (req,
       }
     });
   } catch(e) {
-    logger.error('Error en dashboard auditoría', { error: e.message, stack: e.stack });
-    res.status(500).json({ error: 'Error al cargar auditoría de citas: ' + e.message });
+    logger.error('Error en dashboard auditorÃ­a', { error: e.message, stack: e.stack });
+    res.status(500).json({ error: 'Error al cargar auditorÃ­a de citas: ' + e.message });
   }
 });
 
-// 📄 PDF de Agenda del Doctor - Descargar agenda de pacientes
+// ï¿½ï¸ MÃ³dulo de eliminaciÃ³n de registros (solo superadmin)
+// GET /api/admin/datos/:tipo - listar registros de un tipo
+app.get('/api/admin/datos/:tipo', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const tipo = req.params.tipo;
+    const { q, fecha_desde, fecha_hasta, limit: reqLimit } = req.query;
+    const limit = Math.min(parseInt(reqLimit) || 100, 500);
+    let rows = [];
+
+    if (tipo === 'citas_electro') {
+      let where = 'WHERE (ce.deleted_at IS NULL OR ce.deleted_at IS NOT NULL)';
+      const params = [];
+      if (q) { where += ' AND (p.nombre LIKE ? OR p.documento LIKE ?)'; params.push(`%${q}%`, `%${q}%`); }
+      if (fecha_desde) { where += ' AND ce.fecha >= ?'; params.push(fecha_desde); }
+      if (fecha_hasta) { where += ' AND ce.fecha <= ?'; params.push(fecha_hasta); }
+      rows = await db.query(`
+        SELECT ce.id, p.nombre AS paciente_nombre, p.documento, ce.fecha,
+               ce.hora_agendamiento AS hora, ce.estudio, ce.estado, ce.creado_en
+        FROM citas_electro ce LEFT JOIN pacientes p ON p.id=ce.paciente_id
+        ${where} ORDER BY ce.fecha DESC, ce.creado_en DESC LIMIT ${limit}`, params);
+    } else if (tipo === 'turnos') {
+      let where = 'WHERE 1=1';
+      const params = [];
+      if (q) { where += ' AND (t.paciente_nombre LIKE ? OR t.paciente_documento LIKE ?)'; params.push(`%${q}%`, `%${q}%`); }
+      if (fecha_desde) { where += ' AND t.fecha >= ?'; params.push(fecha_desde); }
+      if (fecha_hasta) { where += ' AND t.fecha <= ?'; params.push(fecha_hasta); }
+      rows = await db.query(`
+        SELECT t.id, t.paciente_nombre, t.paciente_documento AS documento,
+               t.fecha, t.hora, t.tipo_consulta AS tipo, t.estado, t.creado_en
+        FROM turnos t ${where} ORDER BY t.fecha DESC, t.creado_en DESC LIMIT ${limit}`, params);
+    } else if (tipo === 'recibos') {
+      let where = 'WHERE 1=1';
+      const params = [];
+      if (q) { where += ' AND (cliente LIKE ? OR numero LIKE ?)'; params.push(`%${q}%`, `%${q}%`); }
+      if (fecha_desde) { where += ' AND fecha >= ?'; params.push(fecha_desde); }
+      if (fecha_hasta) { where += ' AND fecha <= ?'; params.push(fecha_hasta); }
+      rows = await db.query(`
+        SELECT id, numero, cliente, fecha, total, tipo_pago, generado_por_nombre AS creado_por, creado_en
+        FROM recibos ${where} ORDER BY id DESC LIMIT ${limit}`, params);
+    } else if (tipo === 'estudio_duraciones') {
+      rows = await db.query('SELECT id, nombre, duracion_minutos FROM estudio_duraciones ORDER BY nombre ASC');
+    } else if (tipo === 'especialidades') {
+      rows = await db.query('SELECT id, nombre, activo FROM especialidades ORDER BY nombre ASC');
+    } else if (tipo === 'tipos_consulta') {
+      rows = await db.query(`
+        SELECT tc.id, tc.nombre, e.nombre AS especialidad, tc.activo
+        FROM tipos_consulta tc LEFT JOIN especialidades e ON e.id=tc.especialidad_id
+        ORDER BY e.nombre ASC, tc.nombre ASC`);
+    } else if (tipo === 'diagnosticos') {
+      let where = 'WHERE 1=1';
+      const params = [];
+      if (q) { where += ' AND nombre LIKE ?'; params.push(`%${q}%`); }
+      rows = await db.query(`SELECT id, nombre, codigo, activo FROM diagnosticos ${where} ORDER BY nombre ASC LIMIT ${limit}`, params);
+    } else {
+      return res.status(400).json({ error: 'Tipo no vÃ¡lido' });
+    }
+    res.json({ ok: true, registros: rows });
+  } catch (e) {
+    console.error('[ADMIN DELETE]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ðŸ—‘ï¸ Eliminar en bloque (hasta 50 registros)
+app.delete('/api/admin/datos/:tipo/bulk', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const tipo = req.params.tipo;
+    const { ids } = req.body || {};
+    if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'ids requerido' });
+    if (ids.length > 50) return res.status(400).json({ error: 'MÃ¡ximo 50 registros por vez' });
+    const tablaMap = {
+      citas_electro: 'citas_electro', turnos: 'turnos', recibos: 'recibos',
+      estudio_duraciones: 'estudio_duraciones', especialidades: 'especialidades',
+      tipos_consulta: 'tipos_consulta', diagnosticos: 'diagnosticos'
+    };
+    if (!tablaMap[tipo]) return res.status(400).json({ error: 'Tipo no vÃ¡lido' });
+    const tabla = tablaMap[tipo];
+    const placeholders = ids.map(() => '?').join(',');
+    const result = await db.execute(`DELETE FROM ${tabla} WHERE id IN (${placeholders})`, ids);
+    res.json({ ok: true, eliminados: result.affectedRows });
+  } catch (e) {
+    console.error('[ADMIN BULK DELETE]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// DELETE /api/admin/datos/:tipo/:id - eliminar un registro
+app.delete('/api/admin/datos/:tipo/:id', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const tipo = req.params.tipo;
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) return res.status(400).json({ error: 'ID invÃ¡lido' });
+
+    let affected = 0;
+    if (tipo === 'citas_electro') {
+      const result = await db.execute('DELETE FROM citas_electro WHERE id=?', [id]);
+      affected = result.affectedRows;
+      if (affected > 0 && app.io) emitSocket('electro:cita-eliminada', { id });
+    } else if (tipo === 'turnos') {
+      const result = await db.execute('DELETE FROM turnos WHERE id=?', [id]);
+      affected = result.affectedRows;
+    } else if (tipo === 'recibos') {
+      const result = await db.execute('DELETE FROM recibos WHERE id=?', [id]);
+      affected = result.affectedRows;
+      if (affected > 0 && app.io) { emitSocket('recibo:eliminado', { id }); emitSocket('recibo:actualizar-lista'); }
+    } else if (tipo === 'estudio_duraciones') {
+      const result = await db.execute('DELETE FROM estudio_duraciones WHERE id=?', [id]);
+      affected = result.affectedRows;
+    } else if (tipo === 'especialidades') {
+      const result = await db.execute('DELETE FROM especialidades WHERE id=?', [id]);
+      affected = result.affectedRows;
+    } else if (tipo === 'tipos_consulta') {
+      const result = await db.execute('DELETE FROM tipos_consulta WHERE id=?', [id]);
+      affected = result.affectedRows;
+    } else if (tipo === 'diagnosticos') {
+      const result = await db.execute('DELETE FROM diagnosticos WHERE id=?', [id]);
+      affected = result.affectedRows;
+    } else {
+      return res.status(400).json({ error: 'Tipo no vÃ¡lido' });
+    }
+
+    if (affected === 0) return res.status(404).json({ error: 'Registro no encontrado' });
+
+    // Registrar en auditorÃ­a
+    await auditLog.registrarAuditoria({
+      usuarioId: req.session.usuarioId, adminId: req.session.usuarioId,
+      adminUsuario: req.session.usuario, accion: 'ELIMINAR',
+      cambios: { tipo, id }, ip: req.ip
+    });
+
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[ADMIN DELETE]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ï¿½ðŸ“„ PDF de Agenda del Doctor - Descargar agenda de pacientes
 app.post('/api/agenda/pdf', requireAuth, jsonLargeBody, async (req, res) => {
   try {
     const { doctor_id, fecha_inicio, fecha_fin } = req.body;
     const userId = req.session.usuarioId;
     const userRol = req.session.rol;
     
-    // Validar permisos: solo admin, recepcion o el doctor mismo
-    if (!['admin', 'recepcion'].includes(userRol)) {
+    // Validar permisos: superadmin, admin_recepcion (y equivalentes) o el doctor mismo
+    if (!isRecepcionRol(userRol) && !isAdminRol(userRol)) {
       // Si es doctor, solo puede ver su propia agenda
       if (userId !== parseInt(doctor_id)) {
         return res.status(403).json({ error: 'No tienes permiso para ver esta agenda' });
       }
     }
     
-    // Obtener información del doctor desde usuarios
+    // Obtener informaciÃ³n del doctor desde usuarios
     const doctorData = await db.query(
       'SELECT nombre, usuario, numero_consultorio FROM usuarios WHERE id = ?',
       [doctor_id]
@@ -4151,7 +4307,7 @@ app.post('/api/agenda/pdf', requireAuth, jsonLargeBody, async (req, res) => {
       hasta = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0).toISOString().split('T')[0];
     }
     
-    // Obtener citas del doctor en ese período (excluir canceladas y completadas)
+    // Obtener citas del doctor en ese perÃ­odo (excluir canceladas y completadas)
     const citas = await db.query(`
       SELECT 
         t.fecha,
@@ -4227,7 +4383,7 @@ app.post('/api/agenda/pdf', requireAuth, jsonLargeBody, async (req, res) => {
           <div class="doctor-info">
             <p><strong>Doctor:</strong> ${escapeHtml(nombredoctor)}</p>
             <p><strong>Consultorio:</strong> ${escapeHtml(consultorio)}</p>
-            <p><strong>Período:</strong> ${fechaDesdeFormato} al ${fechaHastaFormato}</p>
+            <p><strong>PerÃ­odo:</strong> ${fechaDesdeFormato} al ${fechaHastaFormato}</p>
             <p><strong>Total de citas:</strong> ${citas.length}</p>
           </div>
           
@@ -4241,10 +4397,10 @@ app.post('/api/agenda/pdf', requireAuth, jsonLargeBody, async (req, res) => {
                   <thead>
                     <tr>
                       <th>Hora</th>
-                      <th>Nº Turno</th>
+                      <th>NÂº Turno</th>
                       <th>Paciente</th>
                       <th>Documento</th>
-                      <th>Teléfono</th>
+                      <th>TelÃ©fono</th>
                       <th>Tipo Consulta</th>
                     </tr>
                   </thead>
@@ -4266,10 +4422,10 @@ app.post('/api/agenda/pdf', requireAuth, jsonLargeBody, async (req, res) => {
               </div>
             `;
           }).join('')
-          : `<div class="no-data">No hay citas registradas para este período</div>`}
+          : `<div class="no-data">No hay citas registradas para este perÃ­odo</div>`}
           
           <div class="footer">
-            <p>Generado: ${new Date().toLocaleDateString('es-ES')} - Instituto Neurociencias de Nariño S.A.S.</p>
+            <p>Generado: ${new Date().toLocaleDateString('es-ES')} - Instituto Neurociencias de NariÃ±o S.A.S.</p>
           </div>
         </div>
       </body>
@@ -4326,7 +4482,7 @@ const PORT = process.env.PORT || 3000;
   try {
     await db.initPool();
 
-    // ─── Inicializar tabla de servicios ──────────────────────────────────────
+    // â”€â”€â”€ Inicializar tabla de servicios â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     try {
       await db.execute(`CREATE TABLE IF NOT EXISTS servicios_recibo (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -4339,10 +4495,10 @@ const PORT = process.env.PORT || 3000;
         const defaults = [
           'Electroencefalograma Computarizado',
           'Electroencefalograma Convencional',
-          'Monitorización Electroencefalográfica por video y radio',
-          'Polisomnografía',
-          'Polisomnograma en Titulación de CPAP/BPAP',
-          'Test de Latencia Múltiple',
+          'MonitorizaciÃ³n ElectroencefalogrÃ¡fica por video y radio',
+          'PolisomnografÃ­a',
+          'Polisomnograma en TitulaciÃ³n de CPAP/BPAP',
+          'Test de Latencia MÃºltiple',
           'Polisomnograma Noche Dividida'
         ];
         for (const nombre of defaults) {
@@ -4355,9 +4511,9 @@ const PORT = process.env.PORT || 3000;
     } catch (svcErr) {
       logger.warn('[STARTUP] Error inicializando servicios_recibo: ' + svcErr.message, { type: 'STARTUP' });
     }
-    // ─────────────────────────────────────────────────────────────────────────
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-    // ─── Auto-migraciones al inicio ──────────────────────────────────────────
+    // â”€â”€â”€ Auto-migraciones al inicio â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // Agregar columna deleted_at a citas_electro si no existe (soft-delete)
     // Compatible con MySQL 5.x y 8.x
     try {
@@ -4376,9 +4532,9 @@ const PORT = process.env.PORT || 3000;
         logger.info('[MIGRATION] citas_electro.deleted_at ya existe, sin cambios', { type: 'STARTUP' });
       }
     } catch (migErr) {
-      logger.warn('[MIGRATION] Advertencia en migración deleted_at: ' + migErr.message, { type: 'STARTUP' });
+      logger.warn('[MIGRATION] Advertencia en migraciÃ³n deleted_at: ' + migErr.message, { type: 'STARTUP' });
     }
-    // ─── Migración: paciente_telefono2 en turnos ──────────────────────────────
+    // â”€â”€â”€ MigraciÃ³n: paciente_telefono2 en turnos â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     try {
       const colTel2Turnos = await db.query(
         `SELECT COUNT(*) AS cnt FROM information_schema.COLUMNS
@@ -4391,9 +4547,9 @@ const PORT = process.env.PORT || 3000;
         logger.info('[MIGRATION] Columna turnos.paciente_telefono2 agregada', { type: 'STARTUP' });
       }
     } catch (migErr) {
-      logger.warn('[MIGRATION] Advertencia en migración turnos.paciente_telefono2: ' + migErr.message, { type: 'STARTUP' });
+      logger.warn('[MIGRATION] Advertencia en migraciÃ³n turnos.paciente_telefono2: ' + migErr.message, { type: 'STARTUP' });
     }
-    // ─── Migración: telefono2 en pacientes ───────────────────────────────────
+    // â”€â”€â”€ MigraciÃ³n: telefono2 en pacientes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     try {
       const colTel2Pac = await db.query(
         `SELECT COUNT(*) AS cnt FROM information_schema.COLUMNS
@@ -4406,7 +4562,7 @@ const PORT = process.env.PORT || 3000;
         logger.info('[MIGRATION] Columna pacientes.telefono2 agregada', { type: 'STARTUP' });
       }
     } catch (migErr) {
-      logger.warn('[MIGRATION] Advertencia en migración pacientes.telefono2: ' + migErr.message, { type: 'STARTUP' });
+      logger.warn('[MIGRATION] Advertencia en migraciÃ³n pacientes.telefono2: ' + migErr.message, { type: 'STARTUP' });
     }
     // ─── Migración: ultimo_acceso en usuarios ────────────────────────────────
     try {
@@ -4448,7 +4604,7 @@ const PORT = process.env.PORT || 3000;
     } catch (migErr) {
       logger.warn('[MIGRATION] Error creando tabla pacientes_espera: ' + migErr.message, { type: 'STARTUP' });
     }
-    // ─── Migración: tabla especialidades ─────────────────────────────────────
+    // â”€â”€â”€ MigraciÃ³n: tabla especialidades â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     try {
       const tblEsp = await db.query(
         `SELECT COUNT(*) AS cnt FROM information_schema.TABLES
@@ -4465,7 +4621,7 @@ const PORT = process.env.PORT || 3000;
           ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         `);
         logger.info('[MIGRATION] Tabla especialidades creada', { type: 'STARTUP' });
-        const seedEsp = ['Neurología', 'Epileptología', 'Psicología', 'Neuropsicología', 'Psiquiatría'];
+        const seedEsp = ['NeurologÃ­a', 'EpileptologÃ­a', 'PsicologÃ­a', 'NeuropsicologÃ­a', 'PsiquiatrÃ­a'];
         for (const nombre of seedEsp) {
           await db.execute('INSERT IGNORE INTO especialidades (nombre) VALUES (?)', [nombre]);
         }
@@ -4474,7 +4630,7 @@ const PORT = process.env.PORT || 3000;
     } catch (migErr) {
       logger.warn('[MIGRATION] Error creando tabla especialidades: ' + migErr.message, { type: 'STARTUP' });
     }
-    // ─── Migración: tabla tipos_consulta ─────────────────────────────────────
+    // â”€â”€â”€ MigraciÃ³n: tabla tipos_consulta â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     try {
       const tblTc = await db.query(
         `SELECT COUNT(*) AS cnt FROM information_schema.TABLES
@@ -4493,11 +4649,11 @@ const PORT = process.env.PORT || 3000;
         `);
         logger.info('[MIGRATION] Tabla tipos_consulta creada', { type: 'STARTUP' });
         const tiposPorEsp = {
-          'Neurología':     ['Consulta de Primera Vez por Neurología','Consulta de Control por Neurología','Consulta Virtual de Primera Vez por Neurología','Consulta Virtual de Control por Neurología','Aplicación de Toxina Botulínica (Botox)','Control de Toxina Botulínica (Botox)','Actigrafía','Rev. Neuroestimulador','Agente Anestésico','Particular','Otra'],
-          'Epileptología':  ['Consulta de Primera Vez por Epileptología','Consulta de Control por Epileptología','Consulta Virtual de Primera Vez por Epileptología','Consulta Virtual de Control por Epileptología','Consulta de Primera Vez por Neurología','Consulta de Control por Neurología','Consulta Virtual de Primera Vez por Neurología','Consulta Virtual de Control por Neurología','Aplicación de Toxina Botulínica (Botox)','Control de Toxina Botulínica (Botox)','Actigrafía','Rev. Neuroestimulador','Bloqueo Mioneural','Particular','Otra'],
-          'Psicología':     ['Consulta de Primera Vez por Psicología','Consulta de Control por Psicología','Otra'],
-          'Neuropsicología':['Consulta de Primera Vez por Neuropsicología','Consulta de Control por Neuropsicología','Otra'],
-          'Psiquiatría':    ['Consulta de Primera Vez por Psiquiatría','Consulta de Control por Psiquiatría','Otra'],
+          'NeurologÃ­a':     ['Consulta de Primera Vez por NeurologÃ­a','Consulta de Control por NeurologÃ­a','Consulta Virtual de Primera Vez por NeurologÃ­a','Consulta Virtual de Control por NeurologÃ­a','AplicaciÃ³n de Toxina BotulÃ­nica (Botox)','Control de Toxina BotulÃ­nica (Botox)','ActigrafÃ­a','Rev. Neuroestimulador','Agente AnestÃ©sico','Particular','Otra'],
+          'EpileptologÃ­a':  ['Consulta de Primera Vez por EpileptologÃ­a','Consulta de Control por EpileptologÃ­a','Consulta Virtual de Primera Vez por EpileptologÃ­a','Consulta Virtual de Control por EpileptologÃ­a','Consulta de Primera Vez por NeurologÃ­a','Consulta de Control por NeurologÃ­a','Consulta Virtual de Primera Vez por NeurologÃ­a','Consulta Virtual de Control por NeurologÃ­a','AplicaciÃ³n de Toxina BotulÃ­nica (Botox)','Control de Toxina BotulÃ­nica (Botox)','ActigrafÃ­a','Rev. Neuroestimulador','Bloqueo Mioneural','Particular','Otra'],
+          'PsicologÃ­a':     ['Consulta de Primera Vez por PsicologÃ­a','Consulta de Control por PsicologÃ­a','Otra'],
+          'NeuropsicologÃ­a':['Consulta de Primera Vez por NeuropsicologÃ­a','Consulta de Control por NeuropsicologÃ­a','Otra'],
+          'PsiquiatrÃ­a':    ['Consulta de Primera Vez por PsiquiatrÃ­a','Consulta de Control por PsiquiatrÃ­a','Otra'],
         };
         for (const [espNombre, tipos] of Object.entries(tiposPorEsp)) {
           const espRows = await db.query('SELECT id FROM especialidades WHERE nombre = ?', [espNombre]);
@@ -4516,8 +4672,8 @@ const PORT = process.env.PORT || 3000;
     } catch (migErr) {
       logger.warn('[MIGRATION] Error creando tabla tipos_consulta: ' + migErr.message, { type: 'STARTUP' });
     }
-    // ─────────────────────────────────────────────────────────────────────────
-    // Detectar certificado autofirmado y usar HTTPS si está configurado
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // Detectar certificado autofirmado y usar HTTPS si estÃ¡ configurado
     // NOTA: Deshabilitado para acceso por IP local. Solo funciona en localhost
     const USE_HTTPS = false; // Deshabilitado para desarrollo en red local
     const certPath = path.join(__dirname, 'server.crt');
@@ -4526,7 +4682,7 @@ const PORT = process.env.PORT || 3000;
 
     if (USE_HTTPS && fs.existsSync(certPath) && fs.existsSync(keyPath)) {
       // Usar HTTPS con certificado autofirmado
-      console.log('🔐 Iniciando servidor con HTTPS...');
+      console.log('ðŸ” Iniciando servidor con HTTPS...');
       const options = {
         cert: fs.readFileSync(certPath),
         key: fs.readFileSync(keyPath)
@@ -4544,14 +4700,14 @@ const PORT = process.env.PORT || 3000;
       const httpPort = 3001;
       
       redirectServer.listen(httpPort, '0.0.0.0', () => {
-        logger.info('HTTP → HTTPS redirect server listening on port 3001', { type: 'HTTPS' });
+        logger.info('HTTP â†’ HTTPS redirect server listening on port 3001', { type: 'HTTPS' });
       });
 
       logger.info('[HTTPS] Activado con certificado autofirmado', { type: 'HTTPS' });
     } else if (USE_HTTPS && !fs.existsSync(certPath)) {
       // Usuario quiere HTTPS pero no tiene certificado
-      logger.warn('⚠️ USE_HTTPS=true pero no hay certificados. Generando...', { type: 'HTTPS' });
-      console.log('\n🔐 Para generar certificado, ejecuta:');
+      logger.warn('âš ï¸ USE_HTTPS=true pero no hay certificados. Generando...', { type: 'HTTPS' });
+      console.log('\nðŸ” Para generar certificado, ejecuta:');
       console.log('   node utils/generate-cert.js\n');
       
       // Continuar con HTTP por ahora
@@ -4596,7 +4752,7 @@ const PORT = process.env.PORT || 3000;
         io.emit('stats:actualizar');
       });
 
-      // Evento: Nueva cita en agenda médica
+      // Evento: Nueva cita en agenda mÃ©dica
       socket.on('cita:crear', (data) => {
         io.emit('agenda:actualizar-consultorio', data.consultorio);
         io.emit('agenda:actualizar-lista');
@@ -4615,7 +4771,7 @@ const PORT = process.env.PORT || 3000;
         io.emit('voz:anunciar-siguiente', data);
       });
 
-      // Evento: Nuevo turno en electrodiagnóstico
+      // Evento: Nuevo turno en electrodiagnÃ³stico
       socket.on('electro:crear-turno', (data) => {
         io.emit('electro:actualizar-equipo', data.equipo);
         io.emit('electro:actualizar-lista');
@@ -4627,54 +4783,54 @@ const PORT = process.env.PORT || 3000;
         io.emit('electro:actualizar-lista');
       });
 
-      // Evento: Cita creada en electrodiagnóstico
+      // Evento: Cita creada en electrodiagnÃ³stico
       socket.on('electro:cita-creada', (data) => {
         io.emit('electro:actualizar-lista');
         io.emit('electro:nueva-cita', data);
       });
 
-      // Evento: Cita actualizada en electrodiagnóstico
+      // Evento: Cita actualizada en electrodiagnÃ³stico
       socket.on('electro:cita-actualizada', (data) => {
         io.emit('electro:actualizar-lista');
         io.emit('electro:cita-cambio-estado', data);
       });
 
-      // Evento: Cita eliminada en electrodiagnóstico
+      // Evento: Cita eliminada en electrodiagnÃ³stico
       socket.on('electro:cita-eliminada', (data) => {
         io.emit('electro:actualizar-lista');
         io.emit('electro:cita-removida', data);
       });
 
-      // Evento: Estudio iniciado en electrodiagnóstico
+      // Evento: Estudio iniciado en electrodiagnÃ³stico
       socket.on('electro:estudio-iniciado', (data) => {
         io.emit('electro:actualizar-lista');
       });
 
-      // Evento: Estudio finalizado en electrodiagnóstico
+      // Evento: Estudio finalizado en electrodiagnÃ³stico
       socket.on('electro:estudio-finalizado', (data) => {
         io.emit('electro:actualizar-lista');
       });
 
-      // Evento: Cambios guardados en electrodiagnóstico
+      // Evento: Cambios guardados en electrodiagnÃ³stico
       socket.on('electro:cambios-guardados', (data) => {
         io.emit('electro:actualizar-lista');
       });
 
-      // ========== Eventos para Turnos Médicos (Agenda Médica) ==========
+      // ========== Eventos para Turnos MÃ©dicos (Agenda MÃ©dica) ==========
       
-      // Evento: Estado de turno médico actualizado
+      // Evento: Estado de turno mÃ©dico actualizado
       socket.on('turno-medico:estado-actualizado', (data) => {
         console.log('[SOCKET] turno-medico:estado-actualizado:', data);
         io.emit('turno-medico:estado-actualizado', data);
       });
 
-      // Evento: Turno médico reprogramado
+      // Evento: Turno mÃ©dico reprogramado
       socket.on('turno-medico:reprogramado', (data) => {
         console.log('[SOCKET] turno-medico:reprogramado:', data);
         io.emit('turno-medico:reprogramado', data);
       });
 
-      // Evento: Nuevo turno médico creado
+      // Evento: Nuevo turno mÃ©dico creado
       socket.on('turno-medico:creado', (data) => {
         console.log('[SOCKET] turno-medico:creado:', data);
         io.emit('turno-medico:creado', data);
@@ -4688,13 +4844,13 @@ const PORT = process.env.PORT || 3000;
     httpServer.listen(PORT, '0.0.0.0', () => {
       console.log(`Servidor corriendo en http://0.0.0.0:${PORT}`);
       
-      // Backups automáticos desactivados (ejecutar manualmente: node utils/backup.js)
+      // Backups automÃ¡ticos desactivados (ejecutar manualmente: node utils/backup.js)
     });
 
     // Manejo de errores
     httpServer.on('error', (error) => {
       if (error.code === 'EADDRINUSE') {
-        console.error(`\n❌ Puerto ${PORT} ya está en uso.\n`);
+        console.error(`\nâŒ Puerto ${PORT} ya estÃ¡ en uso.\n`);
         console.log(`Intenta con otro puerto:`);
         console.log(`set PORT=3001 && node server.js\n`);
         process.exit(1);
@@ -4703,18 +4859,18 @@ const PORT = process.env.PORT || 3000;
       }
     });
   } catch (error) {
-    console.error('❌ Error iniciando servidor:', error.message);
+    console.error('âŒ Error iniciando servidor:', error.message);
     process.exit(1);
   }
 })();
 
 // Manejo de excepciones no capturadas
 process.on('uncaughtException', (error) => {
-  console.error('\n❌ Error no controlado:', error.message);
-  console.error('El servidor seguirá funcionando, pero verifica los errores anteriores.\n');
+  console.error('\nâŒ Error no controlado:', error.message);
+  console.error('El servidor seguirÃ¡ funcionando, pero verifica los errores anteriores.\n');
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-  console.error('\n❌ Promise rechazado:', reason);
+  console.error('\nâŒ Promise rechazado:', reason);
 });
 

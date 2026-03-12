@@ -55,7 +55,7 @@ async function initializeDatabase() {
               usuario VARCHAR(100) UNIQUE NOT NULL,
               password_hash VARCHAR(255) NOT NULL,
               nombre VARCHAR(150),
-              rol ENUM('doctor', 'recepcion', 'admin', 'electro') NOT NULL DEFAULT 'recepcion',
+              rol ENUM('doctor', 'recepcion', 'admin', 'electro', 'contabilidad', 'superadmin', 'admin_recepcion', 'admin_electro', 'tecnico_electro', 'auxiliar_recepcion') NOT NULL DEFAULT 'auxiliar_recepcion',
               activo TINYINT DEFAULT 1,
               creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
               INDEX idx_usuario (usuario)
@@ -256,9 +256,9 @@ async function initializeDatabase() {
                     }
 
                     const insertUsersSQL = `
-                      INSERT INTO usuarios (usuario, password_hash, nombre, rol) VALUES ('admin', '${hash.replace(/'/g, "\\'")}', 'Administrador', 'admin');
-                      INSERT INTO usuarios (usuario, password_hash, nombre, rol) VALUES ('doctor', '${hash.replace(/'/g, "\\'")}', 'Doctor de Prueba', 'doctor');
-                      INSERT INTO usuarios (usuario, password_hash, nombre, rol) VALUES ('recepcion', '${hash.replace(/'/g, "\\'")}', 'Recepcionista de Prueba', 'recepcion');
+                      INSERT INTO usuarios (usuario, password_hash, nombre, rol) VALUES ('superadmin', '${hash.replace(/'/g, "\\'")}'  , 'Super Administrador', 'superadmin');
+                      INSERT INTO usuarios (usuario, password_hash, nombre, rol) VALUES ('doctor', '${hash.replace(/'/g, "\\'")}'  , 'Doctor de Prueba', 'doctor');
+                      INSERT INTO usuarios (usuario, password_hash, nombre, rol) VALUES ('recepcion', '${hash.replace(/'/g, "\\'")}'  , 'Admin Recepción', 'admin_recepcion');
                     `;
 
                     conn.query(insertUsersSQL, (err) => {
