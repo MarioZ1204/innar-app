@@ -1345,19 +1345,16 @@ async function cargarTiposConsultaEnRecibo(medicoId) {
   sel.innerHTML = '<option value="">Seleccionar tipo</option>';
   if (!medicoId) return;
   try {
-    // Esperar a que _reciboMedicos esté listo si aún no lo está
-    if (!window._reciboMedicos || window._reciboMedicos.length === 0) {
-      window._reciboMedicos = await apiFetch('/api/medicos').then(r => r.json()).catch(() => []);
-    }
-    const medicos = window._reciboMedicos || [];
-    const medico = medicos.find(m => String(m.id) === String(medicoId));
-    const especialidad = medico?.especialidad || '';
-    const url = especialidad
-      ? `/api/tipos-consulta?especialidad_nombre=${encodeURIComponent(especialidad)}`
-      : '/api/tipos-consulta';
-    const res = await apiFetch(url);
+    // Pasar medico_id directamente — el servidor hace el JOIN doctor→especialidad→tipos_consulta
+    const res = await apiFetch(`/api/tipos-consulta?medico_id=${encodeURIComponent(medicoId)}`);
     let tipos = await res.json().catch(() => []);
+    // Fallback si la BD no tiene tipos para ese médico (especialidad sin configurar)
     if (!Array.isArray(tipos) || tipos.length === 0) {
+      if (!window._reciboMedicos || window._reciboMedicos.length === 0) {
+        window._reciboMedicos = await apiFetch('/api/medicos').then(r => r.json()).catch(() => []);
+      }
+      const medico = (window._reciboMedicos || []).find(m => String(m.id) === String(medicoId));
+      const especialidad = medico?.especialidad || '';
       tipos = especialidad
         ? (ESPECIALIDAD_TIPOS_CONSULTA[especialidad] || Object.values(ESPECIALIDAD_TIPOS_CONSULTA).flat()).map(n => ({ nombre: n }))
         : Object.values(ESPECIALIDAD_TIPOS_CONSULTA).flat().map(n => ({ nombre: n }));

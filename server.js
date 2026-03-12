@@ -3014,11 +3014,29 @@ app.delete('/api/especialidades/:id', requireAuth, requireAdmin, async (req, res
 
 // GET — legible por todos los roles (para poblar selects de agenda)
 app.get('/api/tipos-consulta', requireAuth, async (req, res) => {
-  const { especialidad_id, especialidad_nombre } = req.query;
+  const { especialidad_id, especialidad_nombre, medico_id } = req.query;
   try {
+    // Prioridad 1: medico_id — JOIN directo doctor → especialidad → tipos_consulta
+    if (medico_id) {
+      const rows = await db.query(
+        `SELECT tc.id, tc.nombre, tc.orden
+         FROM tipos_consulta tc
+         JOIN especialidades e ON e.id = tc.especialidad_id AND e.activo = 1
+         JOIN usuarios u ON LOWER(TRIM(u.especialidad)) = LOWER(TRIM(e.nombre))
+         WHERE u.id = ? AND u.rol = 'doctor' AND tc.activo = 1
+         ORDER BY tc.orden ASC, tc.id ASC`,
+        [parseInt(medico_id, 10)]
+      );
+      return res.json(rows);
+    }
+    // Prioridad 2: especialidad_id directo
     let espId = especialidad_id ? parseInt(especialidad_id, 10) : null;
+    // Prioridad 3: buscar por nombre (case-insensitive + trim)
     if (!espId && especialidad_nombre) {
-      const rows = await db.query('SELECT id FROM especialidades WHERE nombre=? AND activo=1', [especialidad_nombre]);
+      const rows = await db.query(
+        'SELECT id FROM especialidades WHERE LOWER(TRIM(nombre))=LOWER(TRIM(?)) AND activo=1',
+        [especialidad_nombre]
+      );
       espId = rows.length > 0 ? rows[0].id : null;
     }
     if (!espId) {
