@@ -8,85 +8,56 @@ let dashboardCitasActuales = [];
  * Inicializar el módulo de dashboard de citas
  */
 function initDashboardCitas() {
-  console.log('[DASHBOARD CITAS] Inicializando módulo');
-  
   try {
-    // Event listeners para filtros
     const btnBuscar = document.getElementById('btnBuscarCitas');
     const btnLimpiar = document.getElementById('btnLimpiarFiltros');
-    
-    console.log('[DASHBOARD CITAS] Botón Buscar encontrado:', !!btnBuscar);
-    console.log('[DASHBOARD CITAS] Botón Limpiar encontrado:', !!btnLimpiar);
-    
+
     if (btnBuscar) {
       btnBuscar.removeEventListener('click', buscarCitasAuditoria);
       btnBuscar.addEventListener('click', buscarCitasAuditoria);
-      console.log('[DASHBOARD CITAS] Event listener agregado a Buscar');
     }
-    
+
     if (btnLimpiar) {
       btnLimpiar.removeEventListener('click', limpiarFiltrosDashboard);
       btnLimpiar.addEventListener('click', limpiarFiltrosDashboard);
-      console.log('[DASHBOARD CITAS] Event listener agregado a Limpiar');
     }
 
-    // Cargar tipos de estudio para el filtro
-    cargarTiposEstudioFiltro();
-    
+    // Cambio de tipo de cita → recargar tipos de estudio dinámicamente
+    const elTipoCita = document.getElementById('dashboardTipoCita');
+    if (elTipoCita) {
+      elTipoCita.addEventListener('change', function () {
+        cargarTiposEstudioFiltro(this.value);
+      });
+    }
+
+    // Cargar tipos de estudio para el valor inicial
+    cargarTiposEstudioFiltro(elTipoCita ? elTipoCita.value : 'TODOS');
+
     // Configurar valores por defecto
     const hoy = new Date().toISOString().split('T')[0];
     const hace30 = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-    
+
     const elFechaDesde = document.getElementById('dashboardFechaDesde');
     const elFechaHasta = document.getElementById('dashboardFechaHasta');
-    
-    if (elFechaDesde) {
-      elFechaDesde.value = hace30;
-      console.log('[DASHBOARD CITAS] Fecha desde establecida:', hace30);
-    }
-    if (elFechaHasta) {
-      elFechaHasta.value = hoy;
-      console.log('[DASHBOARD CITAS] Fecha hasta establecida:', hoy);
-    }
-    
+    if (elFechaDesde) elFechaDesde.value = hace30;
+    if (elFechaHasta) elFechaHasta.value = hoy;
+
     // Cargar datos iniciales
-    console.log('[DASHBOARD CITAS] Cargando datos iniciales');
     buscarCitasAuditoria();
-    
+
     // Escuchar cambios en tiempo real via Socket.IO
     if (window.socket) {
-      console.log('[DASHBOARD CITAS] Configurando listeners de Socket.IO');
-      
-      // Limpiar listeners previos
       window.socket.off('turno:creado');
       window.socket.off('turno:eliminado');
       window.socket.off('cita_electro:creada');
       window.socket.off('cita_electro:eliminada');
-      
-      // Nuevos listeners
-      window.socket.on('turno:creado', () => {
-        console.log('[DASHBOARD CITAS] Evento: Nuevo turno creado');
-        buscarCitasAuditoria();
-      });
-      
-      window.socket.on('turno:eliminado', () => {
-        console.log('[DASHBOARD CITAS] Evento: Turno eliminado');
-        buscarCitasAuditoria();
-      });
-      
-      window.socket.on('cita_electro:creada', () => {
-        console.log('[DASHBOARD CITAS] Evento: Nueva cita electrodiagnóstico');
-        buscarCitasAuditoria();
-      });
-      
-      window.socket.on('cita_electro:eliminada', () => {
-        console.log('[DASHBOARD CITAS] Evento: Cita electrodiagnóstico eliminada');
-        buscarCitasAuditoria();
-      });
+
+      window.socket.on('turno:creado', buscarCitasAuditoria);
+      window.socket.on('turno:eliminado', buscarCitasAuditoria);
+      window.socket.on('cita_electro:creada', buscarCitasAuditoria);
+      window.socket.on('cita_electro:eliminada', buscarCitasAuditoria);
     }
-    
-    console.log('[DASHBOARD CITAS] Inicialización completada');
-    
+
   } catch (e) {
     console.error('[DASHBOARD CITAS] Error en inicialización:', e.message);
     if (typeof showToast === 'function') showToast('Error inicializando dashboard: ' + e.message, 'error');
@@ -98,69 +69,44 @@ function initDashboardCitas() {
  */
 async function buscarCitasAuditoria() {
   try {
-    console.log('[DASHBOARD CITAS] Iniciando búsqueda de citas');
-    
-    // Obtener elementos del DOM
     const elTipoCita = document.getElementById('dashboardTipoCita');
     const elFechaDesde = document.getElementById('dashboardFechaDesde');
     const elFechaHasta = document.getElementById('dashboardFechaHasta');
     const elProgramadoPor = document.getElementById('dashboardAgendadoPor');
-    
+    const elTipoEstudio = document.getElementById('dashboardTipoEstudio');
+
     const tipoCita = elTipoCita ? elTipoCita.value : 'TODOS';
     const fechaDesde = elFechaDesde ? elFechaDesde.value : '';
     const fechaHasta = elFechaHasta ? elFechaHasta.value : '';
     const programadoPor = elProgramadoPor ? elProgramadoPor.value.trim() : '';
-    const elTipoEstudio = document.getElementById('dashboardTipoEstudio');
     const tipoEstudio = elTipoEstudio ? elTipoEstudio.value.trim() : '';
-    
-    console.log('[DASHBOARD CITAS] Filtros:', { tipoCita, fechaDesde, fechaHasta, programadoPor, tipoEstudio });
-    
+
     const params = new URLSearchParams();
     if (tipoCita !== 'TODOS') params.append('tipo_cita', tipoCita);
     if (fechaDesde) params.append('fecha_desde', fechaDesde);
     if (fechaHasta) params.append('fecha_hasta', fechaHasta);
     if (programadoPor) params.append('programado_por', programadoPor);
     if (tipoEstudio) params.append('tipo_estudio', tipoEstudio);
-    
-    const url = `/api/dashboard/citas-auditoria?${params.toString()}`;
-    console.log('[DASHBOARD CITAS] URL:', url);
-    
-    const response = await apiFetch(url);
-    
+
+    const response = await apiFetch(`/api/dashboard/citas-auditoria?${params.toString()}`);
+
     if (!response.ok) {
-      if (response.status === 401 || response.status === 403) {
-        console.warn('[DASHBOARD CITAS] No autorizado, volviendo al menú');
-        goToMenu();
-        return;
-      }
+      if (response.status === 401 || response.status === 403) { goToMenu(); return; }
       throw new Error(`Error HTTP ${response.status}`);
     }
-    
+
     const data = await response.json();
-    console.log('[DASHBOARD CITAS] Respuesta recibida:', data);
-    
     dashboardCitasActuales = data.data || [];
-    console.log('[DASHBOARD CITAS] Citas encontradas:', dashboardCitasActuales.length);
-    
-    // Actualizar resumen
-    if (data.resumen) {
-      actualizarResumenDashboard(data.resumen);
-    }
-    
-    // Renderizar tabla
+
+    if (data.resumen) actualizarResumenDashboard(data.resumen);
     renderizarTablaCitasAuditoria(dashboardCitasActuales);
-    
-    if (dashboardCitasActuales.length > 0) {
-      if (typeof showToast === 'function') showToast(`Se encontraron ${dashboardCitasActuales.length} citas`, 'success');
-    } else {
+
+    if (dashboardCitasActuales.length === 0) {
       if (typeof showToast === 'function') showToast('No se encontraron citas con los filtros especificados', 'warning');
     }
-    
   } catch(e) {
     console.error('[DASHBOARD CITAS] Error cargando auditoría:', e.message);
     if (typeof showToast === 'function') showToast('Error al cargar citas: ' + e.message, 'error');
-    
-    // Mostrar tabla vacía
     const tbody = document.getElementById('bodyTablaAuditoria');
     if (tbody) {
       tbody.innerHTML = `<tr><td colspan="7" style="padding:20px;text-align:center;color:#dc2626">Error: ${typeof escapeHtml === 'function' ? escapeHtml(e.message) : e.message}</td></tr>`;
@@ -173,29 +119,14 @@ async function buscarCitasAuditoria() {
  */
 function actualizarResumenDashboard(resumen) {
   try {
-    console.log('[DASHBOARD CITAS] Actualizando resumen:', resumen);
-    
     const elTotal = document.getElementById('dashboardTotalCitas');
     const elMedicas = document.getElementById('dashboardCitasMedicas');
     const elElectro = document.getElementById('dashboardCitasElectro');
     const elAgendadores = document.getElementById('dashboardAgendadores');
-    
-    if (elTotal) {
-      elTotal.textContent = resumen && resumen.total_citas ? resumen.total_citas : 0;
-    }
-    if (elMedicas) {
-      elMedicas.textContent = resumen && resumen.citas_medicas ? resumen.citas_medicas : 0;
-    }
-    if (elElectro) {
-      elElectro.textContent = resumen && resumen.citas_electrodiagnostico ? resumen.citas_electrodiagnostico : 0;
-    }
-    if (elAgendadores) {
-      const agendadores = resumen && resumen.agendadores ? resumen.agendadores.length : 0;
-      elAgendadores.textContent = agendadores;
-    }
-    
-    console.log('[DASHBOARD CITAS] Resumen actualizado');
-    
+    if (elTotal) elTotal.textContent = resumen?.total_citas ?? 0;
+    if (elMedicas) elMedicas.textContent = resumen?.citas_medicas ?? 0;
+    if (elElectro) elElectro.textContent = resumen?.citas_electrodiagnostico ?? 0;
+    if (elAgendadores) elAgendadores.textContent = resumen?.agendadores?.length ?? 0;
   } catch(e) {
     console.error('[DASHBOARD CITAS] Error actualizando resumen:', e.message);
   }
@@ -207,29 +138,16 @@ function actualizarResumenDashboard(resumen) {
 function renderizarTablaCitasAuditoria(citas) {
   try {
     const tbody = document.getElementById('bodyTablaAuditoria');
-    
-    if (!tbody) {
-      console.error('[DASHBOARD CITAS] Tabla no encontrada en el DOM');
-      return;
-    }
-    
-    console.log('[DASHBOARD CITAS] Renderizando', citas.length, 'citas');
-    
+    if (!tbody) return;
     if (citas.length === 0) {
       tbody.innerHTML = '<tr><td colspan="7" style="padding:20px;text-align:center;color:#999">No hay citas que coincidan con los filtros</td></tr>';
-      console.log('[DASHBOARD CITAS] Tabla vacía');
       return;
     }
-
-    // Usar setupPagination (función de app.js) para renderizar con paginación
     setupPagination('citasAuditoria', citas, renderCitaAuditoriaRow, {
       itemsPerPageDefault: 20,
       tbodyId: 'bodyTablaAuditoria',
       containerSelector: '#tablaCitasAuditoriaControls'
     });
-    
-    console.log('[DASHBOARD CITAS] Tabla renderizada exitosamente con paginación');
-    
   } catch(e) {
     console.error('[DASHBOARD CITAS] Error renderizando tabla:', e.message);
     const tbody = document.getElementById('bodyTablaAuditoria');
@@ -281,46 +199,21 @@ function renderCitaAuditoriaRow(tbody, cita) {
  */
 function limpiarFiltrosDashboard() {
   try {
-    console.log('[DASHBOARD CITAS] Limpiando filtros');
-    
     const elTipoCita = document.getElementById('dashboardTipoCita');
     const elFechaDesde = document.getElementById('dashboardFechaDesde');
     const elFechaHasta = document.getElementById('dashboardFechaHasta');
     const elAgendadoPor = document.getElementById('dashboardAgendadoPor');
-    const elTipoEstudio = document.getElementById('dashboardTipoEstudio');
-    
-    if (elTipoCita) {
-      elTipoCita.value = 'TODOS';
-      console.log('[DASHBOARD CITAS] Tipo de Cita limpio');
-    }
-    if (elAgendadoPor) {
-      elAgendadoPor.value = '';
-      console.log('[DASHBOARD CITAS] Agendado por limpio');
-    }
-    if (elTipoEstudio) {
-      elTipoEstudio.value = '';
-      console.log('[DASHBOARD CITAS] Tipo de Estudio limpio');
-    }
-    
-    // Configurar fechas por defecto (últimos 30 días)
+
+    if (elTipoCita) elTipoCita.value = 'TODOS';
+    if (elAgendadoPor) elAgendadoPor.value = '';
+
     const hoy = new Date().toISOString().split('T')[0];
     const hace30 = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-    
-    if (elFechaDesde) {
-      elFechaDesde.value = hace30;
-      console.log('[DASHBOARD CITAS] Fecha desde limpia:', hace30);
-    }
-    if (elFechaHasta) {
-      elFechaHasta.value = hoy;
-      console.log('[DASHBOARD CITAS] Fecha hasta limpia:', hoy);
-    }
-    
-    // Ejecutar búsqueda con filtros limpios
-    setTimeout(() => {
-      console.log('[DASHBOARD CITAS] Ejecutando búsqueda después de limpiar filtros');
-      buscarCitasAuditoria();
-    }, 200);
-    
+    if (elFechaDesde) elFechaDesde.value = hace30;
+    if (elFechaHasta) elFechaHasta.value = hoy;
+
+    cargarTiposEstudioFiltro('TODOS');
+    setTimeout(buscarCitasAuditoria, 100);
   } catch(e) {
     console.error('[DASHBOARD CITAS] Error limpiando filtros:', e.message);
     if (typeof showToast === 'function') showToast('Error limpiando filtros: ' + e.message, 'error');
@@ -413,23 +306,61 @@ function mostrarToast(mensaje, tipo = 'info') {  try {
 }
 
 /**
- * Cargar lista de tipos de estudio para el select de filtro
+ * Cargar lista de tipos de estudio para el select de filtro, según el tipo de cita seleccionado.
+ * @param {string} tipoCita - 'AGENDA_MEDICA', 'ELECTRODIAGNOSTICO' o 'TODOS'
  */
-async function cargarTiposEstudioFiltro() {
+async function cargarTiposEstudioFiltro(tipoCita) {
+  const el = document.getElementById('dashboardTipoEstudio');
+  if (!el) return;
+  const valorActual = el.value;
+  el.innerHTML = '<option value="">Todos los estudios</option>';
+
   try {
-    const el = document.getElementById('dashboardTipoEstudio');
-    if (!el) return;
-    const resp = await apiFetch('/api/admin/datos/estudio_duraciones');
-    if (!resp.ok) return;
-    const data = await resp.json();
-    const estudios = data.registros || [];
-    el.innerHTML = '<option value="">Todos los estudios</option>';
-    estudios.forEach(est => {
-      const opt = document.createElement('option');
-      opt.value = est.nombre || '';
-      opt.textContent = est.nombre || '';
-      el.appendChild(opt);
-    });
+    if (!tipoCita || tipoCita === 'TODOS') {
+      // Cargar ambos tipos
+      const [resElectro, resMedica] = await Promise.all([
+        apiFetch('/api/estudios/lista'),
+        apiFetch('/api/tipos-consulta')
+      ]);
+      if (resElectro.ok) {
+        const dataElectro = await resElectro.json();
+        const estudios = dataElectro.registros || [];
+        if (estudios.length) {
+          const grp = document.createElement('optgroup');
+          grp.label = 'Electrodiagnóstico';
+          estudios.forEach(e => { const o = document.createElement('option'); o.value = e.nombre; o.textContent = e.nombre; grp.appendChild(o); });
+          el.appendChild(grp);
+        }
+      }
+      if (resMedica.ok) {
+        const dataMedica = await resMedica.json();
+        const tipos = Array.isArray(dataMedica) ? dataMedica : (dataMedica.registros || []);
+        if (tipos.length) {
+          const grp = document.createElement('optgroup');
+          grp.label = 'Agenda Médica';
+          tipos.forEach(t => { const o = document.createElement('option'); o.value = t.nombre; o.textContent = t.nombre; grp.appendChild(o); });
+          el.appendChild(grp);
+        }
+      }
+    } else if (tipoCita === 'ELECTRODIAGNOSTICO') {
+      const resp = await apiFetch('/api/estudios/lista');
+      if (resp.ok) {
+        const data = await resp.json();
+        (data.registros || []).forEach(e => { const o = document.createElement('option'); o.value = e.nombre; o.textContent = e.nombre; el.appendChild(o); });
+      }
+    } else if (tipoCita === 'AGENDA_MEDICA') {
+      const resp = await apiFetch('/api/tipos-consulta');
+      if (resp.ok) {
+        const data = await resp.json();
+        const tipos = Array.isArray(data) ? data : (data.registros || []);
+        tipos.forEach(t => { const o = document.createElement('option'); o.value = t.nombre; o.textContent = t.nombre; el.appendChild(o); });
+      }
+    }
+    // Restaurar selección si sigue siendo válida
+    if (valorActual) {
+      const opt = el.querySelector(`option[value="${valorActual}"]`);
+      if (opt) el.value = valorActual;
+    }
   } catch(e) {
     console.warn('[DASHBOARD CITAS] No se pudieron cargar tipos de estudio:', e.message);
   }
