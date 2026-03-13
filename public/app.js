@@ -102,8 +102,8 @@ function apiFetch(url, opts = {}) {
 }
 
 function isAdmin() { return currentUser && (currentUser.rol === 'admin' || currentUser.rol === 'superadmin'); }
-function isRecepcion() { return currentUser && (currentUser.rol === 'recepcion' || currentUser.rol === 'auxiliar_recepcion'); }
-function isElectro() { return currentUser && currentUser.rol === 'electro'; }
+function isRecepcion() { return currentUser && (currentUser.rol === 'recepcion' || currentUser.rol === 'auxiliar_recepcion' || currentUser.rol === 'admin_recepcion'); }
+function isElectro() { return currentUser && (currentUser.rol === 'electro' || currentUser.rol === 'admin_electro' || currentUser.rol === 'tecnico_electro'); }
 function isDoctor() { return currentUser && currentUser.rol === 'doctor'; }
 function isContabilidad() { return currentUser && currentUser.rol === 'contabilidad'; }
 function canDeleteRecibos() { return isAdmin(); }
@@ -8020,7 +8020,7 @@ function renderEsperaTable() {
   if (!tbody) return;
 
   if (lista.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="8" style="padding:20px;text-align:center;color:#999">No hay pacientes que coincidan con los filtros</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="11" style="padding:20px;text-align:center;color:#999">No hay pacientes que coincidan con los filtros</td></tr>';
     if (contador) contador.textContent = '0 pacientes';
     return;
   }
@@ -8043,6 +8043,9 @@ function renderEsperaTable() {
       <td>${escapeHtml(p.nombres || '')}</td>
       <td>${escapeHtml(p.apellidos || '')}</td>
       <td>${escapeHtml(p.entidad || '-')}</td>
+      <td>${escapeHtml(p.telefono1 || '-')}</td>
+      <td>${escapeHtml(p.telefono2 || '-')}</td>
+      <td>${escapeHtml(p.tipo_estudio || '-')}</td>
       <td>${fecha}</td>
       <td>${escapeHtml(p.ingresado_por || '-')}</td>
       <td>
@@ -8057,11 +8060,14 @@ function renderEsperaTable() {
 }
 
 async function agregarPacienteEspera() {
-  const documento = $('esperaDocumento').value.trim();
-  const nombres   = $('esperaNombres').value.trim();
-  const apellidos = $('esperaApellidos').value.trim();
-  const entidad   = $('esperaEntidad').value;
-  const prioridad = $('esperaPrioridad').value;
+  const documento   = $('esperaDocumento').value.trim();
+  const nombres     = $('esperaNombres').value.trim();
+  const apellidos   = $('esperaApellidos').value.trim();
+  const entidad     = $('esperaEntidad').value;
+  const prioridad   = $('esperaPrioridad').value;
+  const telefono1   = $('esperaTelefono1')?.value.trim() || '';
+  const telefono2   = $('esperaTelefono2')?.value.trim() || '';
+  const tipo_estudio = $('esperaTipoEstudio')?.value.trim() || '';
 
   if (!documento || !nombres || !apellidos || !entidad || !prioridad) {
     showToast('Completa todos los campos obligatorios', 'error');
@@ -8082,6 +8088,7 @@ async function agregarPacienteEspera() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         documento, nombres, apellidos, entidad, prioridad,
+        telefono1, telefono2, tipo_estudio,
         ingresado_por: currentUser ? (currentUser.nombre || currentUser.usuario) : 'Sistema'
       })
     });
@@ -8094,6 +8101,9 @@ async function agregarPacienteEspera() {
     $('esperaApellidos').value = '';
     $('esperaEntidad').value = '';
     $('esperaPrioridad').value = '';
+    if ($('esperaTelefono1')) $('esperaTelefono1').value = '';
+    if ($('esperaTelefono2')) $('esperaTelefono2').value = '';
+    if ($('esperaTipoEstudio')) $('esperaTipoEstudio').value = '';
     await cargarEsperaElectro();
   } catch (e) {
     showToast('Error: ' + e.message, 'error');

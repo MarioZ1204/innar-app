@@ -3195,7 +3195,7 @@ app.get('/api/pacientes-espera', requireAuth, async (req, res) => {
 });
 
 app.post('/api/pacientes-espera', requireAuth, async (req, res) => {
-  const { documento, nombres, apellidos, entidad, prioridad, ingresado_por } = req.body || {};
+  const { documento, nombres, apellidos, entidad, prioridad, ingresado_por, telefono1, telefono2, tipo_estudio } = req.body || {};
   if (!documento || !nombres || !apellidos || !entidad || !prioridad) {
     return res.status(400).json({ error: 'Todos los campos son obligatorios' });
   }
@@ -3209,8 +3209,8 @@ app.post('/api/pacientes-espera', requireAuth, async (req, res) => {
   }
   try {
     const result = await db.execute(
-      'INSERT INTO pacientes_espera (documento, nombres, apellidos, entidad, prioridad, ingresado_por) VALUES (?, ?, ?, ?, ?, ?)',
-      [documento, nombres, apellidos, entidad, prioridad, ingresado_por || null]
+      'INSERT INTO pacientes_espera (documento, nombres, apellidos, entidad, prioridad, ingresado_por, telefono1, telefono2, tipo_estudio) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [documento, nombres, apellidos, entidad, prioridad, ingresado_por || null, telefono1 || null, telefono2 || null, tipo_estudio || null]
     );
     res.json({ ok: true, id: result.insertId });
   } catch (e) {
@@ -4735,6 +4735,25 @@ const PORT = process.env.PORT || 3000;
           ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         `);
         logger.info('[MIGRATION] Tabla pacientes_espera creada', { type: 'STARTUP' });
+      } else {
+        // Migración: agregar columnas nuevas si no existen
+        const colsEspera = await db.query(
+          `SELECT COLUMN_NAME FROM information_schema.COLUMNS
+           WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'pacientes_espera'`
+        );
+        const colNamesEspera = colsEspera.map(c => c.COLUMN_NAME);
+        if (!colNamesEspera.includes('telefono1')) {
+          await db.execute(`ALTER TABLE pacientes_espera ADD COLUMN telefono1 VARCHAR(20) DEFAULT NULL`);
+          logger.info('[MIGRATION] Columna telefono1 agregada a pacientes_espera', { type: 'STARTUP' });
+        }
+        if (!colNamesEspera.includes('telefono2')) {
+          await db.execute(`ALTER TABLE pacientes_espera ADD COLUMN telefono2 VARCHAR(20) DEFAULT NULL`);
+          logger.info('[MIGRATION] Columna telefono2 agregada a pacientes_espera', { type: 'STARTUP' });
+        }
+        if (!colNamesEspera.includes('tipo_estudio')) {
+          await db.execute(`ALTER TABLE pacientes_espera ADD COLUMN tipo_estudio VARCHAR(100) DEFAULT NULL`);
+          logger.info('[MIGRATION] Columna tipo_estudio agregada a pacientes_espera', { type: 'STARTUP' });
+        }
       }
     } catch (migErr) {
       logger.warn('[MIGRATION] Error creando tabla pacientes_espera: ' + migErr.message, { type: 'STARTUP' });

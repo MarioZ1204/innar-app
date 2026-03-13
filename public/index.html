@@ -1188,6 +1188,20 @@
                   </select>
                 </div>
               </div>
+              <div class="row" style="margin-top:10px">
+                <div class="col">
+                  <label>Teléfono 1</label>
+                  <input id="esperaTelefono1" type="text" placeholder="Ej: 3001234567" maxlength="15" />
+                </div>
+                <div class="col">
+                  <label>Teléfono 2</label>
+                  <input id="esperaTelefono2" type="text" placeholder="Ej: 3007654321" maxlength="15" />
+                </div>
+                <div class="col">
+                  <label>Tipo de Estudio / Consulta</label>
+                  <input id="esperaTipoEstudio" type="text" placeholder="Ej: EMG, EEG, Holter..." maxlength="100" />
+                </div>
+              </div>
               <div style="margin-top:12px;text-align:right">
                 <button id="btnAgregarEspera" class="btn-primary">Agregar a Lista</button>
               </div>
@@ -1238,13 +1252,16 @@
                       <th>Nombres</th>
                       <th>Apellidos</th>
                       <th>Entidad</th>
+                      <th>Teléfono 1</th>
+                      <th>Teléfono 2</th>
+                      <th>Tipo Estudio/Consulta</th>
                       <th>Fecha Ingreso</th>
                       <th>Ingresado por</th>
                       <th>Acciones</th>
                     </tr>
                   </thead>
                   <tbody id="esperaTableBody">
-                    <tr><td colspan="8" style="padding:20px;text-align:center;color:#999">No hay pacientes en espera</td></tr>
+                    <tr><td colspan="11" style="padding:20px;text-align:center;color:#999">No hay pacientes en espera</td></tr>
                   </tbody>
                 </table>
               </div>
