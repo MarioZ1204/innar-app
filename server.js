@@ -1775,10 +1775,10 @@ app.post('/api/turnos', requireAuth, requireRole(['superadmin', 'admin', 'admin_
 // Actualizar turno (campo genÃ©rico)
 app.patch('/api/turnos/:id', requireAuth, async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  const { paciente_nombre, observaciones } = req.body || {};
-  
+  const { paciente_nombre, paciente_telefono, tipo_consulta, fecha, hora, estado, observaciones } = req.body || {};
+
   if (!id) {
-    return res.status(400).json({ error: 'ID invÃ¡lido' });
+    return res.status(400).json({ error: 'ID inválido' });
   }
 
   try {
@@ -1788,22 +1788,40 @@ app.patch('/api/turnos/:id', requireAuth, async (req, res) => {
       return res.status(404).json({ error: 'Turno no encontrado' });
     }
 
-    // Si ya estÃ¡ ATENDIDO, verificar restrictions segÃºn rol
+    // Si ya está ATENDIDO, verificar restrictions según rol
     const userRole = req.session?.rol;
     if (turno.estado === 'ATENDIDO' && userRole === 'recepcion') {
       return res.status(400).json({ error: 'No se puede modificar un turno ya atendido' });
     }
-    // Admin sÃ­ puede editar si estÃ¡ ATENDIDO
 
-    // Construir query dinÃ¡micamente segÃºn quÃ© campos se envÃ­en
+    // Construir query dinámicamente según qué campos se envíen
     const updates = [];
     const values = [];
-    
+
     if (paciente_nombre !== undefined) {
       updates.push('paciente_nombre = ?');
       values.push(paciente_nombre);
     }
-    
+    if (paciente_telefono !== undefined) {
+      updates.push('paciente_telefono = ?');
+      values.push(paciente_telefono);
+    }
+    if (tipo_consulta !== undefined) {
+      updates.push('tipo_consulta = ?');
+      values.push(tipo_consulta);
+    }
+    if (fecha !== undefined) {
+      updates.push('fecha = ?');
+      values.push(fecha);
+    }
+    if (hora !== undefined) {
+      updates.push('hora = ?');
+      values.push(hora);
+    }
+    if (estado !== undefined) {
+      updates.push('estado = ?');
+      values.push(estado);
+    }
     if (observaciones !== undefined) {
       updates.push('observaciones = ?');
       values.push(observaciones);
@@ -1815,17 +1833,25 @@ app.patch('/api/turnos/:id', requireAuth, async (req, res) => {
 
     values.push(id);
     const query = `UPDATE turnos SET ${updates.join(', ')} WHERE id = ?`;
-    
+
     await db.execute(query, values);
 
     // Emitir eventos de socket
     if (app.io) {
-      if (paciente_nombre !== undefined) {
-        emitSocket('agenda:turno-cambio-paciente', { 
-          id, 
-          paciente_nombre,
+      if (paciente_nombre !== undefined || paciente_telefono !== undefined || tipo_consulta !== undefined) {
+        emitSocket('agenda:turno-cambio-paciente', {
+          id,
+          paciente_nombre: paciente_nombre || turno.paciente_nombre,
           doctor_id: turno.doctor_id,
           fecha: turno.fecha
+        });
+      }
+      if (fecha !== undefined || hora !== undefined || estado !== undefined) {
+        emitSocket('agenda:turno-estado-cambio', {
+          id,
+          estado: estado || turno.estado,
+          doctor_id: turno.doctor_id,
+          fecha: fecha || turno.fecha
         });
       }
     }
@@ -2183,7 +2209,7 @@ app.get('/api/equipos-electro/disponibilidad', async (req, res) => {
         e.nombre AS equipo_nombre
       FROM citas_electro c
       LEFT JOIN equipos_electro e ON e.id = c.equipo_id
-      WHERE c.estado IN ('Programado', 'En Sala', 'En Estudio')
+      WHERE c.estado IN ('Programado', 'En Sala', 'En Estudio', 'Pausado')
       AND c.deleted_at IS NULL
       AND CONCAT(COALESCE(c.hora_fin_date, c.fecha), ' ', c.hora_fin) >= CONCAT(?, ' ', ?)
       AND CONCAT(c.fecha, ' ', c.hora_agendamiento) <= CONCAT(?, ' ', ?)
@@ -2587,7 +2613,7 @@ app.post('/api/citas-electro', requireAuth, requireRole(['superadmin', 'admin', 
       const dupCheck = await transactions.selectForUpdate(conn,
         `SELECT COUNT(*) as cnt FROM citas_electro
          WHERE paciente_id = ? AND fecha = ?
-         AND estado IN ('Programado', 'En Sala', 'En Estudio')
+         AND estado IN ('Programado', 'En Sala', 'En Estudio', 'Pausado')
          AND deleted_at IS NULL`,
         [paciente_id, fecha]
       );
@@ -2599,7 +2625,7 @@ app.post('/api/citas-electro', requireAuth, requireRole(['superadmin', 'admin', 
       const overlapCitas = await transactions.selectForUpdate(conn,
         `SELECT COUNT(*) as overlap_count
          FROM citas_electro
-         WHERE estado IN ('Programado', 'En Sala', 'En Estudio')
+         WHERE estado IN ('Programado', 'En Sala', 'En Estudio', 'Pausado')
          AND deleted_at IS NULL
          AND CONCAT(COALESCE(hora_fin_date, fecha), ' ', hora_fin) >= CONCAT(?, ' ', ?)
          AND CONCAT(fecha, ' ', hora_agendamiento) <= CONCAT(?, ' ', ?)`,
@@ -2854,7 +2880,7 @@ app.patch('/api/citas-electro/:id', requireAuth, requireRole(['superadmin', 'adm
           SELECT COUNT(*) as overlap_count
           FROM citas_electro
           WHERE id != ?
-          AND estado IN ('Programado', 'En Sala', 'En Estudio')
+          AND estado IN ('Programado', 'En Sala', 'En Estudio', 'Pausado')
           AND deleted_at IS NULL
           AND CONCAT(COALESCE(hora_fin_date, fecha), ' ', hora_fin) >= CONCAT(?, ' ', ?)
           AND CONCAT(fecha, ' ', hora_agendamiento) <= CONCAT(COALESCE(?, ?), ' ', ?)
@@ -4146,6 +4172,16 @@ app.get('/api/dashboard/citas-auditoria', requireAuth, requireRole(['superadmin'
 });
 
 // ï¿½ï¸ MÃ³dulo de eliminaciÃ³n de registros (solo superadmin)
+// GET /api/estudios/lista - lista pública de tipos de estudio (accesible a todos los roles)
+app.get('/api/estudios/lista', requireAuth, async (req, res) => {
+  try {
+    const rows = await db.query('SELECT id, nombre FROM estudio_duraciones ORDER BY nombre ASC');
+    res.json({ ok: true, registros: rows });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // GET /api/admin/datos/:tipo - listar registros de un tipo
 app.get('/api/admin/datos/:tipo', requireAuth, requireAdmin, async (req, res) => {
   try {
@@ -4204,6 +4240,59 @@ app.get('/api/admin/datos/:tipo', requireAuth, requireAdmin, async (req, res) =>
     res.json({ ok: true, registros: rows });
   } catch (e) {
     console.error('[ADMIN DELETE]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/admin/datos/:tipo - crear registro en catalogos
+app.post('/api/admin/datos/:tipo', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const tipo = req.params.tipo;
+    const body = req.body || {};
+    if (tipo === 'estudio_duraciones') {
+      const { nombre, duracion_minutos } = body;
+      if (!nombre || !nombre.trim()) return res.status(400).json({ error: 'El nombre es obligatorio' });
+      const dur = parseInt(duracion_minutos, 10);
+      if (isNaN(dur) || dur <= 0) return res.status(400).json({ error: 'La duracion debe ser un numero positivo' });
+      const result = await db.execute(
+        'INSERT INTO estudio_duraciones (nombre, duracion_minutos) VALUES (?,?)',
+        [nombre.trim(), dur]
+      );
+      if (app.io) emitSocket('estudio:creado', { id: result.insertId });
+      res.json({ ok: true, id: result.insertId });
+    } else if (tipo === 'especialidades') {
+      const { nombre } = body;
+      if (!nombre || !nombre.trim()) return res.status(400).json({ error: 'El nombre es obligatorio' });
+      const result = await db.execute('INSERT INTO especialidades (nombre) VALUES (?)', [nombre.trim()]);
+      res.json({ ok: true, id: result.insertId });
+    } else if (tipo === 'tipos_consulta') {
+      const { especialidad_id, nombre } = body;
+      if (!especialidad_id || !nombre || !nombre.trim())
+        return res.status(400).json({ error: 'Especialidad y nombre son obligatorios' });
+      const ordenRows = await db.query(
+        'SELECT COALESCE(MAX(orden)+1, 0) AS sig FROM tipos_consulta WHERE especialidad_id=?',
+        [especialidad_id]
+      );
+      const orden = ordenRows[0]?.sig ?? 0;
+      const result = await db.execute(
+        'INSERT INTO tipos_consulta (especialidad_id, nombre, orden) VALUES (?,?,?)',
+        [especialidad_id, nombre.trim(), orden]
+      );
+      emitSocket('tipos-consulta:actualizado', { especialidad_id });
+      res.json({ ok: true, id: result.insertId });
+    } else if (tipo === 'diagnosticos') {
+      const { nombre, descripcion, codigo } = body;
+      if (!nombre || !nombre.trim()) return res.status(400).json({ error: 'El nombre es obligatorio' });
+      const result = await db.execute(
+        'INSERT INTO diagnosticos (nombre, descripcion, codigo, activo) VALUES (?,?,?,1)',
+        [nombre.trim(), descripcion || null, codigo || null]
+      );
+      res.json({ ok: true, id: result.insertId });
+    } else {
+      res.status(400).json({ error: 'Tipo no soportado para agregar' });
+    }
+  } catch (e) {
+    if (e.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'Ya existe un registro con ese nombre' });
     res.status(500).json({ error: e.message });
   }
 });

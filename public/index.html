@@ -129,21 +129,21 @@
         <p>Selecciona un módulo para continuar</p>
       </div>
       <div class="menu-cards" id="menuCardsContainer">
-        <button class="menu-card" data-module="recibos" data-rol="superadmin admin admin_recepcion recepcion contabilidad auxiliar_recepcion">
+        <button class="menu-card" data-module="recibos" data-rol="superadmin admin admin_recepcion recepcion contabilidad auxiliar_recepcion tecnico_electro">
           <span class="menu-card-icon"><img src="/images/iconrecibos.png" alt="Recibos" class="icon-img" /></span>
           <span class="menu-card-label">
             <span class="menu-card-title">Recibos</span>
             <span class="menu-card-desc">Historial y reportes</span>
           </span>
         </button>
-        <button class="menu-card" data-module="agenda-medica" data-rol="superadmin admin admin_recepcion recepcion admin_electro electro tecnico_electro auxiliar_recepcion doctor">
+        <button class="menu-card" data-module="agenda-medica" data-rol="superadmin admin admin_recepcion recepcion admin_electro electro auxiliar_recepcion doctor">
           <span class="menu-card-icon"><img src="/images/iconagenda.png" alt="Agenda Médica" class="icon-img" /></span>
           <span class="menu-card-label">
             <span class="menu-card-title">Agenda Médica</span>
             <span class="menu-card-desc">Citas por consultorio</span>
           </span>
         </button>
-        <button class="menu-card" data-module="electro" data-rol="superadmin admin admin_recepcion recepcion admin_electro electro tecnico_electro">
+        <button class="menu-card" data-module="electro" data-rol="superadmin admin admin_recepcion recepcion admin_electro electro tecnico_electro auxiliar_recepcion">
           <span class="menu-card-icon"><img src="/images/iconelectro.png" alt="Electrodiagnóstico" class="icon-img" /></span>
           <span class="menu-card-label">
             <span class="menu-card-title">Electrodiagnóstico</span>
@@ -164,7 +164,7 @@
             <span class="menu-card-desc">Importar y gestionar</span>
           </span>
         </button>
-        <button class="menu-card" data-module="dashboard-citas" data-rol="superadmin admin admin_recepcion recepcion admin_electro electro">
+        <button class="menu-card" data-module="dashboard-citas" data-rol="superadmin admin admin_recepcion recepcion admin_electro electro contabilidad">
           <span class="menu-card-icon"><img src="/images/icondashboard.svg" alt="Auditoría de Citas" class="icon-img" /></span>
           <span class="menu-card-label">
             <span class="menu-card-title">Auditoría de Citas</span>
@@ -175,7 +175,7 @@
           <span class="menu-card-icon"><img src="/images/icondiagnosticos.svg" alt="Gestión de Datos" class="icon-img" /></span>
           <span class="menu-card-label">
             <span class="menu-card-title">Gestión de Datos</span>
-            <span class="menu-card-desc">Eliminar registros del sistema</span>
+            <span class="menu-card-desc">Administrar registros del sistema</span>
           </span>
         </button>
       </div>
@@ -200,22 +200,18 @@
           <p class="sidebar-desc">Contabilidad y seguimiento</p>
           <span class="sidebar-section-label">Navegación</span>
           <button class="sidebar-btn active" data-page="crear" data-rol-recibos="superadmin admin admin_recepcion recepcion">
-            <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg></span>
-            Crear Recibo
+            <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg></span><span>Crear Recibo</span>
           </button>
           <button class="sidebar-btn" data-page="recibos">
-            <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></span>
-            Reportes
+            <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></span><span>Reportes</span>
           </button>
           <button class="sidebar-btn" data-page="servicios" data-rol-recibos="superadmin admin">
-            <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg></span>
-            Servicios
+            <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg></span><span>Servicios</span>
           </button>
           <!-- Sección administración: solo visible para admin -->
           <span class="sidebar-section-label" data-rol-recibos="superadmin admin" style="margin-top:16px">Administración</span>
           <button class="sidebar-btn sidebar-btn-danger" id="btnResetarConsecutivos" data-rol-recibos="superadmin admin">
-            <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.61"/></svg></span>
-            Resetear consecutivos
+            <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.61"/></svg></span><span>Resetear consecutivos</span>
           </button>
         </div>
         <div class="sidebar-footer">
@@ -586,8 +582,8 @@
           <h2>Agenda Médica</h2>
           <p class="sidebar-desc">Citas y turnos médicos</p>
           <span class="sidebar-section-label">Navegación</span>
-          <button class="sidebar-btn agenda-page-btn active" data-page="citas"><span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span>Ver Citas</button>
-          <button class="sidebar-btn agenda-page-btn" data-page="programar" id="btnAgendaProgramar" style="display:none"><span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 13V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h8"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="19" y2="10"/><line x1="19" y1="16" x2="19" y2="22"/><line x1="16" y1="19" x2="22" y2="19"/></svg></span>Programar Agenda</button>
+          <button class="sidebar-btn agenda-page-btn active" data-page="citas"><span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span><span>Ver Citas</span></button>
+          <button class="sidebar-btn agenda-page-btn" data-page="programar" id="btnAgendaProgramar" style="display:none"><span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 13V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h8"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="19" y2="10"/><line x1="19" y1="16" x2="19" y2="22"/><line x1="16" y1="19" x2="22" y2="19"/></svg></span><span>Programar Agenda</span></button>
         </div>
         <div class="sidebar-footer">
           <div class="sidebar-user">
@@ -624,10 +620,6 @@
               <div class="row" style="margin-bottom:16px">
                 <div class="col"><label>Fecha</label><input id="agendaMedicaFecha" type="date" /></div>
                 <div class="col"><label>Doctor</label><div id="agendaMedicaDoctorDisplay" style="padding:10px;background:#f3f4f6;border-radius:4px;display:flex;align-items:center;font-weight:500;color:#374151">-</div></div>
-              </div>
-              <div class="row" style="margin-bottom:8px;align-items:flex-end">
-                <div class="col" style="flex:1"><label>Descargar Agenda Programada Para el Día:</label><input id="reportDiaAgendaPDF" type="date" style="width:100%" /></div>
-                <div class="col" style="flex:0 0 auto;min-width:0"><button id="btnDescargarAgendaPDF" class="btn-primary" style="display:none">Descargar PDF</button></div>
               </div>
               <div style="text-align:center;margin-top:8px">
                 <div id="agendaMedicaFechaDisplay" style="font-size:18px;font-weight:700;color:#111;text-transform:uppercase"></div>
@@ -740,6 +732,11 @@
               <input id="agendaProgramarFile" type="file" />
               <div style="margin-top:8px"><button id="agendaProgramarUpload" disabled>Subir archivo</button></div>
               <div id="agendaProgramarPreview" style="margin-top:12px;overflow:auto"></div>
+              <hr style="margin:16px 0;border:none;border-top:1px solid #e5e7eb" />
+              <div class="row" style="align-items:flex-end">
+                <div class="col" style="flex:1"><label>Descargar Agenda del Día:</label><input id="reportDiaAgendaPDF" type="date" style="width:100%" /></div>
+                <div class="col" style="flex:0 0 auto;min-width:0"><button id="btnDescargarAgendaPDF" class="btn-primary">Descargar PDF</button></div>
+              </div>
             </section>
             <!-- Ver agenda de médicos (recepción) -->
             <section class="card" id="agendaVerMedicosSection" style="display:none">
@@ -812,10 +809,10 @@
           <p class="sidebar-desc">Gestión de acceso al sistema</p>
           <span class="sidebar-section-label">Navegación</span>
           <button class="sidebar-btn usuarios-page-btn active" data-page="usuarios">
-            <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>Usuarios
+            <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span><span>Usuarios</span>
           </button>
           <button class="sidebar-btn usuarios-page-btn" data-page="especialidades">
-            <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v1H6a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3V5a3 3 0 0 0-3-3z"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="12" y1="9" x2="12" y2="15"/></svg></span>Especialidades
+            <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v1H6a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3V5a3 3 0 0 0-3-3z"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="12" y1="9" x2="12" y2="15"/></svg></span><span>Especialidades</span>
           </button>
         </div>
         <div class="sidebar-footer">
@@ -1009,12 +1006,10 @@
           <p class="sidebar-desc">Agenda de equipos y estudios</p>
           <span class="sidebar-section-label">Navegación</span>
           <button class="sidebar-btn electro-page-btn active" data-page="agenda">
-            <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span>
-            Agenda
+            <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span><span>Agenda</span>
           </button>
           <button class="sidebar-btn electro-page-btn" data-page="espera">
-            <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
-            Pacientes en Espera
+            <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span><span>Pacientes en Espera</span>
           </button>
         </div>
         <div class="sidebar-footer">
@@ -1936,28 +1931,28 @@
           </div>
           <hr class="sidebar-title-sep" />
           <h2>Gestión de Datos</h2>
-          <p class="sidebar-desc">Eliminar registros del sistema</p>
+          <p class="sidebar-desc">Administrar registros del sistema</p>
           <span class="sidebar-section-label">Tipo de Registro</span>
           <button class="sidebar-btn active" data-gestion-tab="citas_electro">
-            <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></span> Citas Electro
+            <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></span><span>Citas Electro</span>
           </button>
           <button class="sidebar-btn" data-gestion-tab="turnos">
-            <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span> Turnos Médicos
+            <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span><span>Turnos Médicos</span>
           </button>
           <button class="sidebar-btn" data-gestion-tab="recibos">
-            <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg></span> Recibos
+            <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg></span><span>Recibos</span>
           </button>
           <button class="sidebar-btn" data-gestion-tab="estudio_duraciones">
-            <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span> Tipos de Estudio
+            <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span><span>Tipos de Estudio</span>
           </button>
           <button class="sidebar-btn" data-gestion-tab="especialidades">
-            <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg></span> Especialidades
+            <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg></span><span>Especialidades</span>
           </button>
           <button class="sidebar-btn" data-gestion-tab="tipos_consulta">
-            <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="15" y2="16"/></svg></span> Tipos de Consulta
+            <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="15" y2="16"/></svg></span><span>Tipos de Consulta</span>
           </button>
           <button class="sidebar-btn" data-gestion-tab="diagnosticos">
-            <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span> Diagnósticos
+            <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span><span>Diagnósticos</span>
           </button>
         </div>
         <div class="sidebar-footer">
@@ -1996,6 +1991,7 @@
               <div class="col" style="display:flex;align-items:flex-end;gap:8px">
                 <button id="btnBuscarGestion" class="btn-primary btn-sm" style="flex:1">Buscar</button>
                 <button id="btnLimpiarGestion" class="btn-secondary btn-sm" style="flex:1">Limpiar</button>
+                <button id="btnAgregarGestion" class="btn-primary btn-sm" style="display:none">+ Agregar</button>
               </div>
             </div>
           </section>
@@ -2032,6 +2028,17 @@
           </section>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- MODAL: AGREGAR REGISTRO GESTION DATOS -->
+  <div id="modalAgregarGestion" class="modal-overlay hidden">
+    <div class="modal-box" style="max-width:480px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;padding-bottom:16px;border-bottom:2px solid #e5e7eb">
+        <h3 id="modalAgregarGestionTitulo" style="margin:0;color:#627371;font-size:20px;font-weight:600">Agregar</h3>
+        <button class="btn-close-modal" style="background:none;border:none;font-size:24px;cursor:pointer;color:#627371" onclick="this.closest('.modal-overlay').classList.add('hidden')">&#x2715;</button>
+      </div>
+      <form id="formAgregarGestion"></form>
     </div>
   </div>
 
@@ -2186,52 +2193,115 @@
   </div>
 
   <!-- ========== MODAL ESTADO CITA MÉDICA ========== -->
-  <div id="modalEstadoCitaMedica" class="modal-overlay hidden">
-    <div class="modal-box" style="max-width:500px">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;padding-bottom:16px;border-bottom:2px solid #e5e7eb">
-        <h3 style="margin:0;color:#627371;font-size:20px;font-weight:600" id="modalEstadoMedicaTitle">Cambiar Estado de Cita</h3>
-        <button type="button" id="btnCerrarEstadoMedica" class="btn-close-modal" style="background:none;border:none;font-size:24px;cursor:pointer;color:#627371;transition:color 0.2s;padding:8px;line-height:1;width:32px;height:32px;display:flex;align-items:center;justify-content:center">✕</button>
+  <!-- ========== MODAL DETALLES CITA MÉDICA ========== -->
+  <div id="modalEstadoCitaMedica" class="modal hidden" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.55);align-items:center;justify-content:center;z-index:9999;padding:16px">
+    <div class="cita-modal-card">
+
+      <!-- HEADER -->
+      <div class="cita-modal-header">
+        <div class="cita-modal-header-left">
+          <h2 class="cita-modal-title">Detalles de Cita Médica</h2>
+          <span id="detMedicaBadge"></span>
+        </div>
+        <div class="cita-modal-header-right">
+          <div style="position:relative">
+            <button id="btnMasOpcionesMedica" class="cita-modal-icon-btn" title="Más opciones">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
+            </button>
+            <div id="menuMasOpcionesMedica" style="position:absolute;top:calc(100% + 6px);right:0;background:white;border:1px solid #e5e7eb;border-radius:10px;box-shadow:0 10px 25px rgba(0,0,0,0.12);min-width:200px;display:none;z-index:10001;overflow:hidden">
+              <button id="btnReprogramarMedicaMenu" class="btn-dropdown-item" style="display:flex;align-items:center;gap:8px">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                Reprogramar
+              </button>
+              <button id="btnCanceladoPacienteMedicaMenu" class="btn-dropdown-item" style="border-top:1px solid #f3f4f6;display:flex;align-items:center;gap:8px">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+                Cancelado por Paciente
+              </button>
+              <button id="btnNoAsistioMedicaMenu" class="btn-dropdown-item" style="border-top:1px solid #f3f4f6;display:flex;align-items:center;gap:8px">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="17" y1="8" x2="23" y2="14"/><line x1="23" y1="8" x2="17" y2="14"/></svg>
+                Paciente No Asistió
+              </button>
+            </div>
+          </div>
+          <button id="btnCerrarEstadoMedica" class="cita-modal-icon-btn cita-modal-close-btn" title="Cerrar" style="font-size:1.2rem;line-height:1">&times;</button>
+        </div>
       </div>
 
-      <!-- Información del Paciente -->
-      <div style="background:#f9fafb;padding:16px;border-radius:8px;margin-bottom:20px">
-        <div style="margin-bottom:12px">
-          <div style="font-size:0.85rem;color:#6b7280;font-weight:600">PACIENTE</div>
-          <div id="modalMedicaPaciente" style="font-size:1.1rem;color:#1f2937;font-weight:600">-</div>
+      <!-- PACIENTE -->
+      <div class="cita-modal-patient">
+        <div class="cita-modal-patient-avatar">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z"/></svg>
         </div>
-        <div style="margin-bottom:12px">
-          <div style="font-size:0.85rem;color:#6b7280;font-weight:600">HORA</div>
-          <div id="modalMedicaHora" style="font-size:1rem;color:#1f2937">-</div>
+        <div class="cita-modal-patient-info" style="flex:1;min-width:0">
+          <div id="detMedicaPaciente" class="cita-modal-patient-name">-</div>
+          <div class="cita-modal-patient-meta">
+            <span id="detMedicaDocumento">-</span>
+            <span class="cita-modal-sep">·</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2A19.79 19.79 0 0 1 11.39 19a19.47 19.47 0 0 1-6-6A19.79 19.79 0 0 1 2.09 4.18 2 2 0 0 1 4.07 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.9a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+            <span id="detMedicaTelefono">-</span>
+          </div>
         </div>
-        <div>
-          <div style="font-size:0.85rem;color:#6b7280;font-weight:600">PROGRAMADO POR</div>
-          <div id="modalMedicaProgramadoPor" style="font-size:0.95rem;color:#1f2937">-</div>
-        </div>
-      </div>
-
-      <!-- Opciones de Estado -->
-      <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:24px">
-        <button id="btnEstadoEnSala" type="button" class="btn-estado-opcion" style="background:#fbbf24;color:#78350f;border:2px solid #f59e0b">
-          En Sala
-          <div style="font-size:0.8rem;margin-top:4px;font-weight:400"></div>
-        </button>
-        <button id="btnEstadoReprogramar" type="button" class="btn-estado-opcion" style="background:#3b82f6;color:white;border:2px solid #1e40af">
-          Reprogramar
-          <div style="font-size:0.8rem;margin-top:4px;font-weight:400"></div>
-        </button>
-        <button id="btnEstadoCanceladoPaciente" type="button" class="btn-estado-opcion" style="background:#ef4444;color:white;border:2px solid #991b1b">
-          Cancelado por Paciente
-          <div style="font-size:0.8rem;margin-top:4px;font-weight:400"></div>
-        </button>
-        <button id="btnEstadoNoAsistio" type="button" class="btn-estado-opcion" style="background:#ec4899;color:white;border:2px solid #be185d">
-          Paciente No Asistió
-          <div style="font-size:0.8rem;margin-top:4px;font-weight:400"></div>
+        <button id="btnEditarMedicaModal" class="cita-modal-icon-btn" title="Editar datos del paciente" style="flex-shrink:0">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
         </button>
       </div>
 
-      <div style="display:flex;gap:12px;justify-content:flex-end;padding-top:20px;border-top:1px solid #e5e7eb">
-        <button type="button" id="btnCancelarEstadoMedica" class="btn-secondary">Cancelar</button>
+      <!-- EDIT PANEL (oculto por defecto) -->
+      <div id="editarMedicaPanel" style="display:none;padding:14px 22px;background:#f8fafa;border-bottom:1px solid #e5e7eb">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+          <div>
+            <label style="font-size:0.8rem;font-weight:600;color:#6b7280;display:block;margin-bottom:4px">Nombre</label>
+            <input id="editMedicaNombre" type="text" placeholder="Nombre completo" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:0.9rem" />
+          </div>
+          <div>
+            <label style="font-size:0.8rem;font-weight:600;color:#6b7280;display:block;margin-bottom:4px">Teléfono</label>
+            <input id="editMedicaTelefono" type="tel" inputmode="numeric" maxlength="10" placeholder="10 dígitos" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:0.9rem" />
+          </div>
+        </div>
+        <div style="margin-bottom:10px">
+          <label style="font-size:0.8rem;font-weight:600;color:#6b7280;display:block;margin-bottom:4px">Tipo de Consulta</label>
+          <select id="editMedicaTipoConsulta" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:0.9rem;background:white">
+            <option value="">Seleccionar</option>
+          </select>
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button id="btnCancelarEditarMedica" class="btn-secondary btn-sm">Cancelar</button>
+          <button id="btnGuardarEditarMedica" class="btn-primary btn-sm">Guardar cambios</button>
+        </div>
       </div>
+
+      <!-- INFO GRID -->
+      <div class="cita-modal-info-grid">
+        <div class="cita-modal-info-item">
+          <div class="cita-modal-info-label">Tipo Consulta</div>
+          <div id="detMedicaTipo" class="cita-modal-info-value cita-modal-info-highlight">-</div>
+        </div>
+        <div class="cita-modal-info-item">
+          <div class="cita-modal-info-label">Entidad</div>
+          <div id="detMedicaEntidad" class="cita-modal-info-value">-</div>
+        </div>
+        <div class="cita-modal-info-item">
+          <div class="cita-modal-info-label">Fecha</div>
+          <div id="detMedicaFecha" class="cita-modal-info-value">-</div>
+        </div>
+        <div class="cita-modal-info-item">
+          <div class="cita-modal-info-label">Hora</div>
+          <div id="detMedicaHora" class="cita-modal-info-value">-</div>
+        </div>
+      </div>
+
+      <!-- AUDIT -->
+      <div class="cita-modal-audit">
+        <span>Programado por <strong id="detMedicaProgramadoPor">-</strong></span>
+        <span id="detMedicaNotas" style="font-style:italic;color:#6b7280;max-width:55%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+      </div>
+
+      <!-- FOOTER -->
+      <div class="cita-modal-footer">
+        <button id="btnEstadoEnSala" type="button" class="btn-primary" style="background:#f59e0b;border-color:#d97706;color:#fff">En Sala</button>
+        <button type="button" id="btnCancelarEstadoMedica" class="btn-secondary">Cerrar</button>
+      </div>
+
     </div>
   </div>
 

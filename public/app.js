@@ -102,7 +102,7 @@ function apiFetch(url, opts = {}) {
 }
 
 function isAdmin() { return currentUser && (currentUser.rol === 'admin' || currentUser.rol === 'superadmin'); }
-function isRecepcion() { return currentUser && currentUser.rol === 'recepcion'; }
+function isRecepcion() { return currentUser && (currentUser.rol === 'recepcion' || currentUser.rol === 'auxiliar_recepcion'); }
 function isElectro() { return currentUser && currentUser.rol === 'electro'; }
 function isDoctor() { return currentUser && currentUser.rol === 'doctor'; }
 function isContabilidad() { return currentUser && currentUser.rol === 'contabilidad'; }
@@ -1617,17 +1617,17 @@ async function initAgendaMedica() {
   // Mostrar/ocultar botón "Programar Agenda" según rol
   const btnProgramar = document.querySelector('[data-page="programar"]');
   if (btnProgramar) {
-    btnProgramar.style.display = (isDoctor() || isRecepcion()) ? '' : 'none';
+    btnProgramar.style.display = (isDoctor() || isRecepcion() || isAdmin()) ? '' : 'none';
     // Cambiar texto del botón según rol
     btnProgramar.textContent = isDoctor() ? 'Programar Agenda' : 'Agenda';
   }
   
-  // Pre-inicializar handlers si es DOCTOR o RECEPCION para que estén listos cuando abran "Programar Agenda"
-  if ((isDoctor() || isRecepcion()) && !window._agendaProgramarHandlersSetup) {
+  // Pre-inicializar handlers si es DOCTOR, RECEPCION o ADMIN para que estén listos cuando abran "Programar Agenda"
+  if ((isDoctor() || isRecepcion() || isAdmin()) && !window._agendaProgramarHandlersSetup) {
     setupAgendaProgramarHandlers();
     window._agendaProgramarHandlersSetup = true;
   }
-  if (isRecepcion() && !window._agendaVerMedicosSetup) {
+  if ((isRecepcion() || isAdmin()) && !window._agendaVerMedicosSetup) {
     setupAgendaVerMedicos();
     window._agendaVerMedicosSetup = true;
   }
@@ -1651,7 +1651,7 @@ async function initAgendaMedica() {
         const progSection = $('agendaProgramarSection');
         const verMedicosSection = $('agendaVerMedicosSection');
         if (progSection) progSection.style.display = isDoctor() ? '' : 'none';
-        if (verMedicosSection) verMedicosSection.style.display = isRecepcion() ? '' : 'none';
+        if (verMedicosSection) verMedicosSection.style.display = (isRecepcion() || isAdmin()) ? '' : 'none';
       }
     });
   });
@@ -1683,13 +1683,7 @@ async function initAgendaMedica() {
   $('btnLlamarSiguiente')?.addEventListener('click', llamarSiguientePaciente);
   $('btnMarcarAtendido')?.addEventListener('click', marcarAtendido);
   $('btnDescargarAgendaPDF')?.addEventListener('click', descargarAgendaPDF);
-  
-  // Mostrar botón de descarga PDF solo si hay doctor seleccionado
-  const btnPDF = $('btnDescargarAgendaPDF');
-  if (btnPDF && selectedDoctorId) {
-    btnPDF.style.display = '';
-  }
-  
+
   // Modal de edición solo para admin/recepción
   const editSection = $('agendaEditPacienteSection');
   if (editSection) {
@@ -2667,11 +2661,11 @@ function renderTurnoRowMedica(tbody, t, animateTargetId, hayEnAtencion) {
   let deshabilitarBotones = false;
   
   if (isAdmin()) {
-    // Admin: solo bloquear si hay EN_ATENCION en otro turno
-    deshabilitarBotones = hayEnAtencion && !esEnAtencion;
+    // Admin: bloquear si hay algún turno EN_ATENCION (incluido el propio)
+    deshabilitarBotones = hayEnAtencion;
   } else if (isRecepcion()) {
-    // Recepción: bloquear si está ATENDIDO o hay EN_ATENCION (excepto si es el mismo turno)
-    deshabilitarBotones = esAtendido || (hayEnAtencion && !esEnAtencion);
+    // Recepción: bloquear si está ATENDIDO o hay EN_ATENCION
+    deshabilitarBotones = esAtendido || hayEnAtencion;
   }
   
   const puedeEliminar = isAdmin() || isRecepcion();
@@ -3297,7 +3291,7 @@ async function initElectro() {
   $('electroTelefono2')?.addEventListener('input', limitarTel);
 
   const nuevaCitaSection = $('electroNuevaCitaSection');
-  if (nuevaCitaSection) nuevaCitaSection.style.display = (isRecepcion() || isElectro()) ? '' : 'none';
+  if (nuevaCitaSection) nuevaCitaSection.style.display = (isRecepcion() || isElectro() || isAdmin()) ? '' : 'none';
   if (!isDoctor()) {
     $('crearCitaElectro')?.addEventListener('click', crearCitaElectro);
   }
@@ -3666,6 +3660,13 @@ async function checkEquiposDisponibilidad() {
       const icono = ocupado
         ? `<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/></svg>`
         : `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/></svg>`;
+      const estadoLabel = enEstudio ? 'En estudio'
+        : ocupado
+          ? (cita?.estado === 'Programado' ? 'Reservado'
+            : cita?.estado === 'En Sala' ? 'En Sala'
+            : cita?.estado === 'Pausado' ? 'Pausado'
+            : 'Ocupado')
+          : 'Libre';
 
       const barraId = enEstudio ? `cupo-barra-${i}` : '';
       const tiempoId = enEstudio ? `cupo-tiempo-${i}` : '';
@@ -3678,7 +3679,7 @@ async function checkEquiposDisponibilidad() {
       html += `
         <div class="cupo-card ${tipoCard}">
           <div class="cupo-card-icon">${icono}</div>
-          <div class="cupo-card-label">${enEstudio ? 'En estudio' : (ocupado ? 'Ocupado' : 'Libre')}</div>
+          <div class="cupo-card-label">${estadoLabel}</div>
           ${barraHtml}
         </div>`;
     }
@@ -6978,8 +6979,8 @@ function renderFlujoEstado(cita) {
   // Ocultar botones Iniciar/Finalizar del bloque separado (se muestran dentro del flujo)
   if (accionesEl) accionesEl.style.display = 'none';
 
-  // Control de equipo: bloqueado si En Estudio
-  const equipoBloqueado = estado === 'En Estudio' || estado === 'Completado';
+  // Control de equipo: bloqueado si En Estudio o Pausado
+  const equipoBloqueado = estado === 'En Estudio' || estado === 'Pausado' || estado === 'Completado';
   if (equipoSelect) {
     equipoSelect.disabled = equipoBloqueado;
     equipoSelect.style.opacity = equipoBloqueado ? '0.5' : '1';
@@ -7035,8 +7036,24 @@ function renderFlujoEstado(cita) {
         <button class="flujo-btn-primary" id="flujo-btn-finalizar" style="background:linear-gradient(135deg,#22c55e,#16a34a);color:white;">
           ${svgStop} Finalizar Estudio
         </button>
+        <div class="flujo-btn-secondary-row">
+          <button class="flujo-btn-sm pausar" id="flujo-btn-pausar" style="background:#f59e0b;color:#78350f;border:none;font-weight:600;">
+            &#9646;&#9646; Pausar estudio
+          </button>
+        </div>
       </div>`;
     document.getElementById('flujo-btn-finalizar').onclick = () => finalizarEstudioModal();
+    document.getElementById('flujo-btn-pausar').onclick = () => cambiarEstadoCita('Pausado');
+
+  } else if (estado === 'Pausado') {
+    flujoEl.innerHTML = `
+      <div class="flujo-estado-panel">
+        <div class="flujo-estado-label">Estudio Pausado</div>
+        <button class="flujo-btn-primary" id="flujo-btn-reanudar" style="background:linear-gradient(135deg,#f97316,#ea580c);color:white;">
+          &#9654; Reanudar Estudio
+        </button>
+      </div>`;
+    document.getElementById('flujo-btn-reanudar').onclick = () => cambiarEstadoCita('En Estudio');
 
   } else {
     // Completado / Cancelado / No Asist\u00f3 / Reprogramado / Adelantado
@@ -7388,13 +7405,39 @@ let currentEstadoAction = null;
 
 function abrirModalEstadoCitaMedica(turno) {
   currentTurnoMedicaData = turno;
-  
-  // Llenar información del paciente
-  $('modalMedicaPaciente').textContent = escapeHtml(turno.paciente_nombre || '-');
-  $('modalMedicaHora').textContent = formatearHora(turno.hora) || '-';
-  if ($('modalMedicaProgramadoPor')) $('modalMedicaProgramadoPor').textContent = escapeHtml(turno.programado_por || '-');
+
+  // Cerrar menú y panel de edición si estaban abiertos
+  const menuMed = document.getElementById('menuMasOpcionesMedica');
+  if (menuMed) menuMed.style.display = 'none';
+  const editPanelMed = document.getElementById('editarMedicaPanel');
+  if (editPanelMed) editPanelMed.style.display = 'none';
+
+  // Llenar datos de la tarjeta
+  const el = (id) => document.getElementById(id);
+  const badge = el('detMedicaBadge');
+  if (badge) badge.innerHTML = estadoBadgeMedica(turno.estado || 'EN_ESPERA');
+  if (el('detMedicaPaciente')) el('detMedicaPaciente').textContent = escapeHtml(turno.paciente_nombre || '-');
+  if (el('detMedicaDocumento')) el('detMedicaDocumento').textContent = escapeHtml(turno.paciente_documento || '-');
+  if (el('detMedicaTelefono')) el('detMedicaTelefono').textContent = turno.paciente_telefono || '-';
+  if (el('detMedicaTipo')) el('detMedicaTipo').textContent = turno.tipo_consulta || '-';
+  if (el('detMedicaEntidad')) el('detMedicaEntidad').textContent = turno.entidad || '-';
+  if (el('detMedicaFecha')) el('detMedicaFecha').textContent = turno.fecha ? formatearFechaISO(turno.fecha) : '-';
+  if (el('detMedicaHora')) el('detMedicaHora').textContent = turno.hora ? formatearHora(turno.hora) : '-';
+  if (el('detMedicaProgramadoPor')) el('detMedicaProgramadoPor').textContent = escapeHtml(turno.programado_por || '-');
+  if (el('detMedicaNotas')) el('detMedicaNotas').textContent = turno.notas || '';
   $('modalReprogramarMedicaFechaActual').innerHTML = `<strong>${formatearFecha(turno.fecha)}</strong> a las <strong>${formatearHora(turno.hora)}</strong>`;
-  
+
+  // Bloquear edición si está EN ATENCIÓN
+  const esEnAtencionModal = turno.estado === 'EN_ATENCION';
+  const editBtnMed = el('btnEditarMedicaModal');
+  if (editBtnMed) {
+    editBtnMed.disabled = esEnAtencionModal;
+    editBtnMed.style.opacity = esEnAtencionModal ? '0.4' : '';
+    editBtnMed.title = esEnAtencionModal
+      ? 'No es posible editar mientras el paciente está en atención'
+      : 'Editar datos del paciente';
+  }
+
   // Mostrar modal
   $('modalEstadoCitaMedica').classList.remove('hidden');
 }
@@ -7451,48 +7494,47 @@ $('btnEstadoEnSala')?.addEventListener('click', async (e) => {
   }
 });
 
-// Botón: Reprogramar
-$('btnEstadoReprogramar')?.addEventListener('click', (e) => {
-  e.preventDefault();
+// Menú 3 puntos: abrir/cerrar
+document.getElementById('btnMasOpcionesMedica')?.addEventListener('click', (e) => {
   e.stopPropagation();
-  if (!currentTurnoMedicaData) return;
-  
-  currentEstadoAction = 'reprogramar';
-  cerrarModalEstadoCitaMedica();
-  
-  // Abrir modal de reprogramación
-  $('modalReprogramarMedica').classList.remove('hidden');
-  
-  // Limpiar campos
-  $('modalReprogramarMedicaFecha').value = '';
-  $('modalReprogramarMedicaHora').value = '';
+  const menu = document.getElementById('menuMasOpcionesMedica');
+  if (menu) menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
 });
 
-// Botón: Cancelado por Paciente
-$('btnEstadoCanceladoPaciente')?.addEventListener('click', (e) => {
+// Menú: Reprogramar
+document.getElementById('btnReprogramarMedicaMenu')?.addEventListener('click', (e) => {
   e.preventDefault();
   e.stopPropagation();
   if (!currentTurnoMedicaData) return;
-  
+  document.getElementById('menuMasOpcionesMedica').style.display = 'none';
+  currentEstadoAction = 'reprogramar';
+  cerrarModalEstadoCitaMedica();
+  $('modalReprogramarMedica').classList.remove('hidden');
+  $('modalReprogramarMedicaFecha').value = currentTurnoMedicaData.fecha || '';
+  $('modalReprogramarMedicaHora').value = (currentTurnoMedicaData.hora || '').substring(0, 5);
+});
+
+// Menú: Cancelado por Paciente
+document.getElementById('btnCanceladoPacienteMedicaMenu')?.addEventListener('click', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  if (!currentTurnoMedicaData) return;
+  document.getElementById('menuMasOpcionesMedica').style.display = 'none';
   currentEstadoAction = 'cancelado-paciente';
   cerrarModalEstadoCitaMedica();
-  
-  // Preguntar si desea reprogramar
   $('modalConfirmReprogramacionTitle').textContent = '¿Desea reprogramar esta cita?';
   $('modalConfirmReprogramacionMessage').textContent = 'El paciente canceló la cita. ¿Desea reprogramarla para otro día?';
   $('modalConfirmReprogramacion').classList.remove('hidden');
 });
 
-// Botón: No Asistió
-$('btnEstadoNoAsistio')?.addEventListener('click', (e) => {
+// Menú: No Asistió
+document.getElementById('btnNoAsistioMedicaMenu')?.addEventListener('click', (e) => {
   e.preventDefault();
   e.stopPropagation();
   if (!currentTurnoMedicaData) return;
-  
+  document.getElementById('menuMasOpcionesMedica').style.display = 'none';
   currentEstadoAction = 'no-asistio';
   cerrarModalEstadoCitaMedica();
-  
-  // Preguntar si desea reprogramar
   $('modalConfirmReprogramacionTitle').textContent = '¿Desea reprogramar esta cita?';
   $('modalConfirmReprogramacionMessage').textContent = 'El paciente no asistió. ¿Desea reprogramarla para otro día?';
   $('modalConfirmReprogramacion').classList.remove('hidden');
@@ -7508,12 +7550,17 @@ document.addEventListener('click', async (e) => {
     e.preventDefault();
     e.stopPropagation();
     console.log('[CONFIRM_SI] Botón clickeado');
+    // Guardar datos antes de cerrar (cerrarModalConfirmReprogramacion los limpia)
+    const savedTurnoData = currentTurnoMedicaData;
     cerrarModalConfirmReprogramacion();
+    // Restaurar datos para el modal de reprogramación
+    currentTurnoMedicaData = savedTurnoData;
     
     // Abrir modal de reprogramación
     $('modalReprogramarMedica').classList.remove('hidden');
-    $('modalReprogramarMedicaFecha').value = '';
-    $('modalReprogramarMedicaHora').value = '';
+    // Pre-llenar con la fecha/hora actuales de la cita como punto de partida
+    $('modalReprogramarMedicaFecha').value = savedTurnoData?.fecha || '';
+    $('modalReprogramarMedicaHora').value = (savedTurnoData?.hora || '').substring(0, 5);
   }
   
   // Botón: Confirmar Reprogramación - NO
@@ -7672,12 +7719,80 @@ $('modalEstadoCitaMedica')?.addEventListener('click', (e) => {
   if (e.target === $('modalEstadoCitaMedica')) {
     cerrarModalEstadoCitaMedica();
   }
+  // Cerrar menú desplegable si se hace clic fuera de él
+  if (!e.target.closest('#btnMasOpcionesMedica') && !e.target.closest('#menuMasOpcionesMedica')) {
+    const menu = document.getElementById('menuMasOpcionesMedica');
+    if (menu) menu.style.display = 'none';
+  }
 });
 $('modalReprogramarMedica')?.addEventListener('click', (e) => {
   if (e.target === $('modalReprogramarMedica')) {
     cerrarModalReprogramarMedica();
   }
 });
+
+// ── Editar paciente en modal médica ──
+document.getElementById('btnEditarMedicaModal')?.addEventListener('click', () => {
+  const panel = document.getElementById('editarMedicaPanel');
+  if (!panel) return;
+  if (panel.style.display !== 'none') {
+    panel.style.display = 'none';
+    return;
+  }
+  document.getElementById('editMedicaNombre').value = currentTurnoMedicaData?.paciente_nombre || '';
+  document.getElementById('editMedicaTelefono').value = currentTurnoMedicaData?.paciente_telefono || '';
+  // Poblar tipos de consulta desde el selector del formulario de nueva cita
+  const selectSrc = $('nuevoTurnoTipoMedica');
+  const selectDst = document.getElementById('editMedicaTipoConsulta');
+  if (selectSrc && selectDst) {
+    selectDst.innerHTML = '<option value="">Seleccionar</option>';
+    Array.from(selectSrc.options).slice(1).forEach(opt => {
+      selectDst.add(new Option(opt.text, opt.value));
+    });
+    selectDst.value = currentTurnoMedicaData?.tipo_consulta || '';
+  }
+  panel.style.display = 'block';
+});
+document.getElementById('btnCancelarEditarMedica')?.addEventListener('click', () => {
+  const panel = document.getElementById('editarMedicaPanel');
+  if (panel) panel.style.display = 'none';
+});
+document.getElementById('editMedicaTelefono')?.addEventListener('input', (e) => {
+  e.target.value = e.target.value.replace(/\D/g, '').slice(0, 10);
+});
+document.getElementById('btnGuardarEditarMedica')?.addEventListener('click', async () => {
+  if (!currentTurnoMedicaData) return;
+  const nombre = document.getElementById('editMedicaNombre')?.value.trim();
+  const telefono = document.getElementById('editMedicaTelefono')?.value.trim();
+  const tipoConsulta = document.getElementById('editMedicaTipoConsulta')?.value;
+  if (!nombre) { showToast('El nombre es obligatorio', 'error'); return; }
+  try {
+    const res = await apiFetch(`/api/turnos/${currentTurnoMedicaData.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paciente_nombre: nombre, paciente_telefono: telefono, tipo_consulta: tipoConsulta })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      currentTurnoMedicaData.paciente_nombre = nombre;
+      currentTurnoMedicaData.paciente_telefono = telefono;
+      currentTurnoMedicaData.tipo_consulta = tipoConsulta;
+      const el = (id) => document.getElementById(id);
+      if (el('detMedicaPaciente')) el('detMedicaPaciente').textContent = escapeHtml(nombre);
+      if (el('detMedicaTelefono')) el('detMedicaTelefono').textContent = telefono || '-';
+      if (el('detMedicaTipo')) el('detMedicaTipo').textContent = tipoConsulta || '-';
+      document.getElementById('editarMedicaPanel').style.display = 'none';
+      showToast('Datos actualizados correctamente', 'success');
+      cargarTurnosMedica();
+    } else {
+      showToast(data.error || 'Error al guardar', 'error');
+    }
+  } catch (err) {
+    showToast('Error al guardar cambios', 'error');
+    console.error(err);
+  }
+});
+
 $('horaEstudioInicio')?.addEventListener('change', actualizarDuracionMostrada);
 $('horaEstudioFin')?.addEventListener('change', actualizarDuracionMostrada);
 
@@ -8322,6 +8437,10 @@ const _gestionColumnas = {
 };
 
 let _gestionSeleccionados = new Set();
+let _gestionRegistrosAll  = [];
+let _gestionPaginaActual  = 1;
+const _GESTION_POR_PAGINA = 20;
+const _GESTION_TIPOS_AGREGAR = ['estudio_duraciones', 'especialidades', 'tipos_consulta', 'diagnosticos'];
 
 function _actualizarConteoGestion() {
   const n = _gestionSeleccionados.size;
@@ -8358,6 +8477,9 @@ function initGestionDatos() {
       _gestionSeleccionados = new Set();
       _actualizarConteoGestion();
       _gestionActualizarFiltros();
+      // Mostrar/ocultar botón Agregar según tipo
+      const btnAgregar = $('btnAgregarGestion');
+      if (btnAgregar) btnAgregar.style.display = _GESTION_TIPOS_AGREGAR.includes(_gestionTipoActual) ? '' : 'none';
       buscarGestionDatos();
     });
   });
@@ -8370,8 +8492,20 @@ function initGestionDatos() {
     buscarGestionDatos();
   });
   $('gestionBusqueda')?.addEventListener('keydown', e => { if (e.key === 'Enter') buscarGestionDatos(); });
+  $('btnAgregarGestion')?.addEventListener('click', abrirModalAgregarGestion);
+
+  // Socket: recargar cuando se crea un estudio, especialidad, etc.
+  if (window.socket) {
+    window.socket.off('estudio:creado');
+    window.socket.off('tipos-consulta:actualizado');
+    window.socket.on('estudio:creado',           () => { if (_gestionTipoActual === 'estudio_duraciones') buscarGestionDatos(); });
+    window.socket.on('tipos-consulta:actualizado',() => { if (_gestionTipoActual === 'tipos_consulta')    buscarGestionDatos(); });
+  }
 
   _gestionActualizarFiltros();
+  // Visibilidad inicial del botón Agregar
+  const btnAgregar = $('btnAgregarGestion');
+  if (btnAgregar) btnAgregar.style.display = _GESTION_TIPOS_AGREGAR.includes(_gestionTipoActual) ? '' : 'none';
   buscarGestionDatos();
 }
 
@@ -8435,7 +8569,7 @@ async function buscarGestionDatos() {
   const q     = $('gestionBusqueda')?.value.trim() || '';
   const desde = $('gestionFechaDesde')?.value || '';
   const hasta = $('gestionFechaHasta')?.value || '';
-  const params = new URLSearchParams({ limit: 100 });
+  const params = new URLSearchParams({ limit: 500 });
   if (q)     params.set('q',           q);
   if (desde) params.set('fecha_desde', desde);
   if (hasta) params.set('fecha_hasta', hasta);
@@ -8458,14 +8592,160 @@ async function buscarGestionDatos() {
       if (tbody) tbody.innerHTML = `<tr><td colspan="10" style="padding:20px;text-align:center;color:#dc2626">${escapeHtml(data.error || 'Error')}</td></tr>`;
       return;
     }
-    const registros = data.registros || [];
+    _gestionRegistrosAll = data.registros || [];
+    _gestionPaginaActual = 1;
     _gestionRenderThead(tipo);
-    _gestionRenderRows(tipo, registros);
-    const ctrl = $('gestionDatosControls');
-    if (ctrl) ctrl.textContent = `${registros.length} registro${registros.length !== 1 ? 's' : ''}${registros.length >= 100 ? ' (mostrando máx. 100)' : ''}`;
+    _gestionRenderPagina();
+    _gestionRenderPaginacion();
   } catch (e) {
     if (tbody) tbody.innerHTML = `<tr><td colspan="10" style="padding:20px;text-align:center;color:#dc2626">Error: ${escapeHtml(e.message)}</td></tr>`;
   }
+}
+
+function _gestionRenderPagina() {
+  const inicio = (_gestionPaginaActual - 1) * _GESTION_POR_PAGINA;
+  const pagina = _gestionRegistrosAll.slice(inicio, inicio + _GESTION_POR_PAGINA);
+  _gestionRenderRows(_gestionTipoActual, pagina);
+}
+
+function _gestionRenderPaginacion() {
+  const ctrl = $('gestionDatosControls');
+  if (!ctrl) return;
+  const total   = _gestionRegistrosAll.length;
+  const pages   = Math.ceil(total / _GESTION_POR_PAGINA);
+  const pag     = _gestionPaginaActual;
+  const inicio  = ((pag - 1) * _GESTION_POR_PAGINA) + 1;
+  const fin     = Math.min(pag * _GESTION_POR_PAGINA, total);
+
+  if (total === 0) { ctrl.textContent = '0 registros'; return; }
+
+  let html = `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 0">
+    <span style="font-size:13px;color:#627371">${total} registro${total !== 1 ? 's' : ''} — mostrando ${inicio}–${fin}</span>`;
+  if (pages > 1) {
+    html += `<div style="display:flex;gap:4px;align-items:center">`;
+    html += `<button onclick="_gestionIrPagina(${pag - 1})" ${pag <= 1 ? 'disabled' : ''} style="padding:4px 10px;border:1px solid #d1d5db;border-radius:4px;background:#fff;cursor:pointer;font-size:13px">‹</button>`;
+    const start = Math.max(1, pag - 2), end = Math.min(pages, pag + 2);
+    if (start > 1) html += `<button onclick="_gestionIrPagina(1)" style="padding:4px 8px;border:1px solid #d1d5db;border-radius:4px;background:#fff;cursor:pointer;font-size:13px">1</button>${start > 2 ? '<span style="padding:0 4px">…</span>' : ''}`;
+    for (let i = start; i <= end; i++) {
+      const active = i === pag ? 'background:#627371;color:#fff;border-color:#627371' : 'background:#fff';
+      html += `<button onclick="_gestionIrPagina(${i})" style="padding:4px 8px;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;font-size:13px;${active}">${i}</button>`;
+    }
+    if (end < pages) html += `${end < pages - 1 ? '<span style="padding:0 4px">…</span>' : ''}<button onclick="_gestionIrPagina(${pages})" style="padding:4px 8px;border:1px solid #d1d5db;border-radius:4px;background:#fff;cursor:pointer;font-size:13px">${pages}</button>`;
+    html += `<button onclick="_gestionIrPagina(${pag + 1})" ${pag >= pages ? 'disabled' : ''} style="padding:4px 10px;border:1px solid #d1d5db;border-radius:4px;background:#fff;cursor:pointer;font-size:13px">›</button>`;
+    html += `</div>`;
+  }
+  html += `</div>`;
+  ctrl.innerHTML = html;
+}
+
+function _gestionIrPagina(n) {
+  const pages = Math.ceil(_gestionRegistrosAll.length / _GESTION_POR_PAGINA);
+  if (n < 1 || n > pages) return;
+  _gestionPaginaActual = n;
+  _gestionSeleccionados = new Set();
+  _actualizarConteoGestion();
+  const chkAll = $('chkSelectAll');
+  if (chkAll) chkAll.checked = false;
+  _gestionRenderPagina();
+  _gestionRenderPaginacion();
+}
+
+async function abrirModalAgregarGestion() {
+  const tipo = _gestionTipoActual;
+  if (!_GESTION_TIPOS_AGREGAR.includes(tipo)) return;
+  const modal = $('modalAgregarGestion');
+  if (!modal) return;
+
+  const titulo = $('modalAgregarGestionTitulo');
+  if (titulo) titulo.textContent = `Agregar — ${_gestionTitulos[tipo] || tipo}`;
+
+  // Construir formulario dinámico
+  const form = $('formAgregarGestion');
+  if (!form) return;
+  let camposHtml = '';
+  if (tipo === 'estudio_duraciones') {
+    camposHtml = `
+      <div style="margin-bottom:14px">
+        <label style="display:block;margin-bottom:6px;font-weight:500;font-size:14px">Nombre del estudio *</label>
+        <input id="agrGestionNombre" type="text" required maxlength="120" placeholder="Ej: Electromiografía" style="width:100%;padding:9px 12px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;font-size:14px" />
+      </div>
+      <div style="margin-bottom:14px">
+        <label style="display:block;margin-bottom:6px;font-weight:500;font-size:14px">Duración en minutos *</label>
+        <input id="agrGestionDuracion" type="number" required min="1" max="480" placeholder="Ej: 45" style="width:100%;padding:9px 12px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;font-size:14px" />
+      </div>`;
+  } else if (tipo === 'especialidades') {
+    camposHtml = `
+      <div style="margin-bottom:14px">
+        <label style="display:block;margin-bottom:6px;font-weight:500;font-size:14px">Nombre de la especialidad *</label>
+        <input id="agrGestionNombre" type="text" required maxlength="120" placeholder="Ej: Cardiología" style="width:100%;padding:9px 12px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;font-size:14px" />
+      </div>`;
+  } else if (tipo === 'tipos_consulta') {
+    // Cargar especialidades para el select
+    let espOptions = '<option value="">Seleccionar especialidad…</option>';
+    try {
+      const res = await apiFetch('/api/especialidades');
+      if (res.ok) {
+        const lista = await res.json();
+        espOptions += lista.map(e => `<option value="${e.id}">${escapeHtml(e.nombre)}</option>`).join('');
+      }
+    } catch(_) {}
+    camposHtml = `
+      <div style="margin-bottom:14px">
+        <label style="display:block;margin-bottom:6px;font-weight:500;font-size:14px">Especialidad *</label>
+        <select id="agrGestionEspecialidad" required style="width:100%;padding:9px 12px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;font-size:14px;background:#fff">${espOptions}</select>
+      </div>
+      <div style="margin-bottom:14px">
+        <label style="display:block;margin-bottom:6px;font-weight:500;font-size:14px">Nombre del tipo de consulta *</label>
+        <input id="agrGestionNombre" type="text" required maxlength="120" placeholder="Ej: Consulta de control" style="width:100%;padding:9px 12px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;font-size:14px" />
+      </div>`;
+  } else if (tipo === 'diagnosticos') {
+    camposHtml = `
+      <div style="margin-bottom:14px">
+        <label style="display:block;margin-bottom:6px;font-weight:500;font-size:14px">Nombre *</label>
+        <input id="agrGestionNombre" type="text" required maxlength="200" placeholder="Nombre del diagnóstico" style="width:100%;padding:9px 12px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;font-size:14px" />
+      </div>
+      <div style="margin-bottom:14px">
+        <label style="display:block;margin-bottom:6px;font-weight:500;font-size:14px">Código (opcional)</label>
+        <input id="agrGestionCodigo" type="text" maxlength="20" placeholder="Ej: A00.1" style="width:100%;padding:9px 12px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;font-size:14px" />
+      </div>
+      <div style="margin-bottom:14px">
+        <label style="display:block;margin-bottom:6px;font-weight:500;font-size:14px">Descripción (opcional)</label>
+        <textarea id="agrGestionDescripcion" rows="3" maxlength="500" placeholder="Descripción adicional…" style="width:100%;padding:9px 12px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;font-size:14px;resize:vertical"></textarea>
+      </div>`;
+  }
+  form.innerHTML = camposHtml +
+    `<div style="display:flex;justify-content:flex-end;gap:10px;margin-top:20px">
+       <button type="button" class="btn-secondary btn-sm" onclick="$('modalAgregarGestion').classList.add('hidden')">Cancelar</button>
+       <button type="submit" class="btn-primary btn-sm">Guardar</button>
+     </div>`;
+  form.onsubmit = guardarAgregarGestion;
+  modal.classList.remove('hidden');
+  setTimeout(() => { const inp = form.querySelector('input,select'); if (inp) inp.focus(); }, 80);
+}
+
+async function guardarAgregarGestion(e) {
+  e.preventDefault();
+  const tipo  = _gestionTipoActual;
+  const nombre = $('agrGestionNombre')?.value.trim() || '';
+  const body  = { nombre };
+  if (tipo === 'estudio_duraciones') body.duracion_minutos = parseInt($('agrGestionDuracion')?.value || '0', 10);
+  if (tipo === 'tipos_consulta')     body.especialidad_id  = $('agrGestionEspecialidad')?.value;
+  if (tipo === 'diagnosticos') {
+    body.codigo      = $('agrGestionCodigo')?.value.trim() || undefined;
+    body.descripcion = $('agrGestionDescripcion')?.value.trim() || undefined;
+  }
+  try {
+    const res  = await apiFetch(`/api/admin/datos/${tipo}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    if (!data.ok) { showToast(data.error || 'Error al guardar', 'error'); return; }
+    showToast('Registro agregado exitosamente', 'success');
+    $('modalAgregarGestion').classList.add('hidden');
+    buscarGestionDatos();
+  } catch (err) { showToast('Error: ' + err.message, 'error'); }
 }
 
 async function confirmarEliminarGestion(tipo, id) {
