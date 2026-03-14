@@ -1949,7 +1949,7 @@ app.delete('/api/turnos/:id', requireAuth, requireRole(['superadmin', 'admin', '
     // Los admins y recepcion pueden eliminar, pero verificar restricciones para recepcion
     const userRole = req.session?.rol;
     
-    // Si es recepcion (no admin), aplicar restricciones
+    // Si es recepcion básica, aplicar restricciones completas
     if (userRole === 'recepcion') {
       // No permitir eliminar un turno que está EN_ATENCION o ATENDIDO
       if (turno.estado === 'EN_ATENCION' || turno.estado === 'ATENDIDO') {
@@ -1964,8 +1964,13 @@ app.delete('/api/turnos/:id', requireAuth, requireRole(['superadmin', 'admin', '
       if (enAtencion.length > 0) {
         return res.status(400).json({ error: 'No se pueden eliminar citas mientras hay un paciente en atención' });
       }
+    } else if (userRole === 'admin_recepcion') {
+      // Admin recepción: solo bloquear si ya fue ATENDIDO (completado)
+      if (turno.estado === 'ATENDIDO') {
+        return res.status(400).json({ error: 'No se puede eliminar un turno ya atendido' });
+      }
     }
-    // Si es admin, no hay restricciones
+    // admin/superadmin: sin restricciones
 
     const result = await db.execute('DELETE FROM turnos WHERE id = ?', [id]);
     
@@ -2192,20 +2197,12 @@ app.get('/api/equipos-electro/disponibilidad', async (req, res) => {
       }
     }
 
-    // Calcular hora_fin y fecha_fin
+    // Calcular hora_fin y fecha_fin usando la fecha real (soporta durations multi-día)
     const [hh, mm] = hora.split(':').map(x => parseInt(x, 10));
-    const startTime = new Date();
-    startTime.setHours(hh, mm, 0, 0);
-    startTime.setMinutes(startTime.getMinutes() + duracionMinutos);
-    const horaFin = `${String(startTime.getHours()).padStart(2, '0')}:${String(startTime.getMinutes()).padStart(2, '0')}`;
-    
-    // Si hora_fin <= hora, cruza medianoche
-    let fechaFin = fecha;
-    if (horaFin <= hora) {
-      const nextDay = new Date(fecha);
-      nextDay.setDate(nextDay.getDate() + 1);
-      fechaFin = nextDay.toISOString().slice(0, 10);
-    }
+    const startDate = new Date(`${fecha}T${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}:00`);
+    startDate.setMinutes(startDate.getMinutes() + duracionMinutos);
+    const horaFin = `${String(startDate.getHours()).padStart(2, '0')}:${String(startDate.getMinutes()).padStart(2, '0')}`;
+    const fechaFin = startDate.toISOString().slice(0, 10);
 
     // CRÍTICO: Contar CUPOS OCUPADOS en este rango horario
     // Los cupos se RESERVAN al agendar (Programado), se OCUPAN EN USO (En Estudio)
@@ -2605,18 +2602,11 @@ app.post('/api/citas-electro', requireAuth, requireRole(['superadmin', 'admin', 
         // duracion está en minutos (default: 30 si no se especifica)
         const duracionMinutos = duracion ? parseInt(duracion, 10) : 30;
         const [hh, mm] = horaAgendamiento.split(':').map(x => parseInt(x, 10));
-        const startTime = new Date();
-        startTime.setHours(hh, mm, 0, 0);
-        startTime.setMinutes(startTime.getMinutes() + duracionMinutos);
-        
-        finalHoraFin = `${String(startTime.getHours()).padStart(2, '0')}:${String(startTime.getMinutes()).padStart(2, '0')}`;
-        
-        // Si hora_fin <= hora_agendamiento, cruza medianoche
-        if (finalHoraFin <= horaAgendamiento) {
-          const nextDay = new Date(fecha);
-          nextDay.setDate(nextDay.getDate() + 1);
-          finalFechaFin = nextDay.toISOString().slice(0, 10);
-        }
+        // Usar la fecha real para calcular correctamente durations multi-día
+        const startDate = new Date(`${fecha}T${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}:00`);
+        startDate.setMinutes(startDate.getMinutes() + duracionMinutos);
+        finalHoraFin = `${String(startDate.getHours()).padStart(2, '0')}:${String(startDate.getMinutes()).padStart(2, '0')}`;
+        finalFechaFin = startDate.toISOString().slice(0, 10);
       }
 
       // VALIDACIÓN: el paciente no puede tener ya una cita activa ese día
@@ -3026,6 +3016,12 @@ app.delete('/api/citas-electro/:id', requireAuth, requireRole(['superadmin', 'ad
     const cita = citas.length > 0 ? citas[0] : null;
     if (!cita) {
       return res.status(404).json({ error: 'Cita no encontrada' });
+    }
+
+    // Admin electro: no puede eliminar estudios ya completados
+    const userRoleElectro = req.session?.rol;
+    if (userRoleElectro === 'admin_electro' && cita.estado === 'Completado') {
+      return res.status(400).json({ error: 'No se puede eliminar un estudio ya completado' });
     }
 
     // Soft-delete: marcar como eliminada en lugar de borrar físicamente

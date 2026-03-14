@@ -2533,6 +2533,9 @@ function renderTurnoRowMedica(tbody, t, animateTargetId, hayEnAtencion) {
   if (isAdmin()) {
     // Admin: bloquear si hay algún turno EN_ATENCION (incluido el propio)
     deshabilitarBotones = hayEnAtencion;
+  } else if (currentUser?.rol === 'admin_recepcion') {
+    // Admin recepción: solo bloquear si este turno está ATENDIDO
+    deshabilitarBotones = esAtendido;
   } else if (isRecepcion()) {
     // Recepción: bloquear si está ATENDIDO o hay EN_ATENCION
     deshabilitarBotones = esAtendido || hayEnAtencion;
@@ -2845,6 +2848,9 @@ function seleccionarTurnoMedica(tr, t) {
     if (isAdmin()) {
       // Admin: bloquear si hay EN_ATENCION en otro turno
       puedeEditar = !(globalHayEnAtencion && t.estado !== 'EN_ATENCION');
+    } else if (currentUser?.rol === 'admin_recepcion') {
+      // Admin recepción: solo bloquear si está ATENDIDO
+      puedeEditar = !esAtendido;
     } else if (isRecepcion()) {
       // Recepción: bloquear si está ATENDIDO o hay EN_ATENCION
       puedeEditar = !(esAtendido || (globalHayEnAtencion && t.estado !== 'EN_ATENCION'));
@@ -2865,7 +2871,12 @@ async function guardarNombrePacienteMedica() {
   // Prevenir edición según rol:
   // ADMIN: puede editar si hay EN_ATENCION en otro turno
   // RECEPCION: no puede editar si está ATENDIDO o hay EN_ATENCION
-  if (isRecepcion()) {
+  if (currentUser?.rol === 'admin_recepcion') {
+    if (selectedTurnoMedica?.estado === 'ATENDIDO') {
+      showToast('No se pueden editar citas ya atendidas', 'error');
+      return;
+    }
+  } else if (isRecepcion()) {
     if (selectedTurnoMedica?.estado === 'ATENDIDO') {
       showToast('No se pueden editar citas ya atendidas', 'error');
       return;
@@ -2953,7 +2964,7 @@ async function crearTurnoMedica() {
   // 1. Validar campos obligatorios
   if (!nombresMedica) { showToast('Escribe los nombres del paciente', 'error'); return; }
   if (!apellidosMedica) { showToast('Escribe los apellidos del paciente', 'error'); return; }
-  if (!hora) { showToast('Ingresa una hora válida (ej: 10:30 AM ó 14:30)', 'error'); $('nuevoTurnoHoraMedica')?.focus(); return; }
+  if (!hora) { showToast('Selecciona una hora', 'error'); $('nuevoTurnoHoraMedica')?.focus(); return; }
   if (!doc || !fecha || !doctorId || !entidad || !tipoConsulta) {
     showToast('Completa todos los campos obligatorios', 'error');
     return;
@@ -3119,10 +3130,13 @@ async function initElectro() {
     await checkEquiposDisponibilidad();
   });
 
-  // Event listener para cambio en hora
-  $('electroHora')?.addEventListener('input', async () => {
-    if (parseHora12a24($('electroHora').value)) await checkEquiposDisponibilidad();
-  });
+  // Event listener para cambio en hora (type=time dispara 'change' al completar la selección)
+  const _onElectroHoraChange = async () => {
+    const v = $('electroHora').value;
+    if (v) await checkEquiposDisponibilidad();
+  };
+  $('electroHora')?.addEventListener('change', _onElectroHoraChange);
+  $('electroHora')?.addEventListener('input', _onElectroHoraChange);
 
   // Event listener para cambio en duración
   $('electroDuracion')?.addEventListener('change', async () => {
@@ -3850,7 +3864,7 @@ async function crearCitaElectro() {
   
   if (!electroNombres) { showToast('Escribe los nombres del paciente', 'error'); $('electroPacienteNombres').focus(); $('electroPacienteNombres').style.borderColor='#dc2626'; return; }
   if (!electroApellidos) { showToast('Escribe los apellidos del paciente', 'error'); $('electroPacienteApellidos').focus(); $('electroPacienteApellidos').style.borderColor='#dc2626'; return; }
-  if (!hora) { showToast('Ingresa una hora válida (ej: 2:00 PM ó 14:00)', 'error'); $('electroHora').focus(); return; }
+  if (!hora) { showToast('Selecciona una hora', 'error'); $('electroHora').focus(); return; }
   if (!doc || !telefono || !telefono2 || !fecha || !diagnostico) { 
     showToast('Completa todos los campos obligatorios', 'error'); 
     return; 
@@ -6738,10 +6752,18 @@ function abrirModalDetallesCita(cita) {
   // Renderizar flujo contextual de estado
   renderFlujoEstado(cita);
   
-  // Mostrar botón de eliminar solo para admin
+  // Mostrar botón de eliminar para admin/superadmin y admin_electro (excepto estudios completados)
   const btnEliminar = $('btnEliminarCita');
-  if (currentUser && (currentUser.rol === 'admin' || currentUser.rol === 'administrador')) {
-    btnEliminar.style.display = '';
+  const esCompletado = cita.estado === 'Completado';
+  if (currentUser) {
+    const rol = currentUser.rol;
+    const esAdminGlobal = rol === 'admin' || rol === 'administrador' || rol === 'superadmin';
+    const esAdminElectro = rol === 'admin_electro';
+    if (esAdminGlobal || (esAdminElectro && !esCompletado)) {
+      btnEliminar.style.display = '';
+    } else {
+      btnEliminar.style.display = 'none';
+    }
   } else {
     btnEliminar.style.display = 'none';
   }
@@ -7000,11 +7022,17 @@ function cerrarModalDetallesCita() {
 async function eliminarCitaElectro() {
   if (!citaElectroSeleccionada) return;
   
-  // Verificar que sea admin
-  const esAdmin = currentUser && (currentUser.rol === 'admin' || currentUser.rol === 'administrador');
-  
-  if (!esAdmin) {
+  // Verificar permisos: admin/superadmin siempre; admin_electro solo si no está Completado
+  const rol = currentUser?.rol;
+  const esAdminGlobal = rol === 'admin' || rol === 'administrador' || rol === 'superadmin';
+  const esAdminElectro = rol === 'admin_electro';
+
+  if (!esAdminGlobal && !esAdminElectro) {
     showToast('No tienes permisos para eliminar citas', 'error');
+    return;
+  }
+  if (esAdminElectro && citaElectroSeleccionada.estado === 'Completado') {
+    showToast('No se puede eliminar un estudio ya completado', 'error');
     return;
   }
   
