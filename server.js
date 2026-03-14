@@ -1904,7 +1904,7 @@ app.patch('/api/turnos/:id/estado', requireAuth, requireRole(['superadmin', 'adm
 
     // Emitir evento WebSocket
     if (app.io) {
-      emitSocket('agenda:turno-estado-cambio', { id, estado });
+      emitSocket('agenda:turno-estado-cambio', { id, estado, paciente_nombre: turno.paciente_nombre || null });
       if (numeroAsignado) {
         emitSocket('agenda:turno-numero-cambio', { 
           id, 
@@ -1921,6 +1921,16 @@ app.patch('/api/turnos/:id/estado', requireAuth, requireRole(['superadmin', 'adm
     res.status(500).json({ error: e.message });
   }
 });
+
+// Aviso al doctor para concluir consulta (emite socket, sin cambios en BD)
+app.post('/api/turnos/aviso-concluir', requireAuth,
+  requireRole(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion', 'admin_electro', 'electro', 'tecnico_electro']),
+  (req, res) => {
+    const { doctor_id } = req.body || {};
+    emitSocket('agenda:aviso-concluir-consulta', { doctor_id: doctor_id || null });
+    res.json({ ok: true });
+  }
+);
 
 // Eliminar turno
 app.delete('/api/turnos/:id', requireAuth, requireRole(['superadmin', 'admin', 'admin_recepcion', 'recepcion']), async (req, res) => {

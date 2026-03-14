@@ -109,6 +109,17 @@ function initSocket() {
 
   socket.on('agenda:turno-estado-cambio', (data) => {
     if (typeof cargarTurnosMedica === 'function') cargarTurnosMedica();
+    // Alerta sonora al doctor cuando un paciente entra en sala
+    if (data.estado === 'EN_SALA' && typeof isDoctor === 'function' && isDoctor()) {
+      const nombre = data.paciente_nombre ? ` - ${data.paciente_nombre}` : '';
+      if (typeof showToast === 'function') showToast(`🔔 Paciente en sala${nombre}`, 'info');
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+        const utter = new SpeechSynthesisUtterance('Paciente en sala');
+        utter.lang = 'es-ES'; utter.rate = 1.1; utter.volume = 1;
+        window.speechSynthesis.speak(utter);
+      }
+    }
   });
 
   socket.on('agenda:turno-numero-cambio', (data) => {
@@ -123,6 +134,20 @@ function initSocket() {
 
   socket.on('agenda:turno-llamar-siguiente', (data) => {
     if (typeof cargarTurnosMedica === 'function') cargarTurnosMedica();
+    // Anuncio de voz para recepción y electrodiagnóstico (no para doctor ni admin puro)
+    if (typeof isRecepcion === 'function' && typeof isElectro === 'function') {
+      if ((isRecepcion() || isElectro()) && 'speechSynthesis' in window) {
+        const nombre = data.paciente_nombre || '';
+        const num = data.numero_turno || '';
+        let texto = num ? `Turno ${num}` : '';
+        if (nombre) texto += (texto ? ', ' : '') + `Paciente ${nombre}`;
+        texto += ', por favor pasar a consultorio';
+        window.speechSynthesis.cancel();
+        const utter = new SpeechSynthesisUtterance(texto);
+        utter.lang = 'es-ES'; utter.rate = 1; utter.volume = 1;
+        window.speechSynthesis.speak(utter);
+      }
+    }
   });
 
   socket.on('agenda:turno-marcar-atendido', (data) => {
@@ -131,6 +156,22 @@ function initSocket() {
 
   socket.on('agenda:turno-cambio-paciente', (data) => {
     if (typeof cargarTurnosMedica === 'function') cargarTurnosMedica();
+  });
+
+  // Aviso al doctor para concluir consulta
+  socket.on('agenda:aviso-concluir-consulta', (data) => {
+    if (typeof isDoctor === 'function' && isDoctor()) {
+      // Solo actuar si no hay doctor específico o el aviso es para este doctor
+      if (!data.doctor_id || (typeof currentUser !== 'undefined' && currentUser && data.doctor_id === currentUser.id)) {
+        if (typeof showToast === 'function') showToast('⏰ Recepción solicita que concluya la consulta', 'warning');
+        if ('speechSynthesis' in window) {
+          window.speechSynthesis.cancel();
+          const utter = new SpeechSynthesisUtterance('Doctor, puede concluir su consulta');
+          utter.lang = 'es-ES'; utter.rate = 1; utter.volume = 1;
+          window.speechSynthesis.speak(utter);
+        }
+      }
+    }
   });
 
   // ===== EVENTOS DE ELECTRODIAGNÓSTICO =====

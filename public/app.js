@@ -1615,19 +1615,20 @@ async function initAgendaMedica() {
   
   // === PAGE NAVIGATION (Citas / Programar Agenda) ===
   // Mostrar/ocultar botón "Programar Agenda" según rol
+  const canAgendaProgram = isDoctor() || isRecepcion() || isAdmin() || currentUser?.rol === 'admin_electro';
   const btnProgramar = document.querySelector('[data-page="programar"]');
   if (btnProgramar) {
-    btnProgramar.style.display = (isDoctor() || isRecepcion() || isAdmin()) ? '' : 'none';
+    btnProgramar.style.display = canAgendaProgram ? '' : 'none';
     // Cambiar texto del botón según rol
     btnProgramar.textContent = isDoctor() ? 'Programar Agenda' : 'Agenda';
   }
   
-  // Pre-inicializar handlers si es DOCTOR, RECEPCION o ADMIN para que estén listos cuando abran "Programar Agenda"
-  if ((isDoctor() || isRecepcion() || isAdmin()) && !window._agendaProgramarHandlersSetup) {
+  // Pre-inicializar handlers si es DOCTOR, RECEPCION, ADMIN o admin_electro
+  if (canAgendaProgram && !window._agendaProgramarHandlersSetup) {
     setupAgendaProgramarHandlers();
     window._agendaProgramarHandlersSetup = true;
   }
-  if ((isRecepcion() || isAdmin()) && !window._agendaVerMedicosSetup) {
+  if ((isRecepcion() || isAdmin() || currentUser?.rol === 'admin_electro') && !window._agendaVerMedicosSetup) {
     setupAgendaVerMedicos();
     window._agendaVerMedicosSetup = true;
   }
@@ -1650,8 +1651,9 @@ async function initAgendaMedica() {
         if (titleHeader) titleHeader.textContent = isDoctor() ? 'Programar Agenda' : 'Agenda';
         const progSection = $('agendaProgramarSection');
         const verMedicosSection = $('agendaVerMedicosSection');
-        if (progSection) progSection.style.display = isDoctor() ? '' : 'none';
-        if (verMedicosSection) verMedicosSection.style.display = (isRecepcion() || isAdmin()) ? '' : 'none';
+        const canUpload = isDoctor() || isAdmin() || currentUser?.rol === 'admin_recepcion' || currentUser?.rol === 'admin_electro';
+        if (progSection) progSection.style.display = canUpload ? '' : 'none';
+        if (verMedicosSection) verMedicosSection.style.display = (isRecepcion() || isAdmin() || currentUser?.rol === 'admin_electro') ? '' : 'none';
       }
     });
   });
@@ -1672,6 +1674,14 @@ async function initAgendaMedica() {
   const doctorAcciones = $('agendaDoctorAcciones');
   if (nuevoTurnoSection) nuevoTurnoSection.style.display = (isElectro() || isDoctor()) ? 'none' : '';
   if (doctorAcciones) doctorAcciones.style.display = isDoctor() ? '' : 'none';
+
+  // Sección de aviso al doctor (visible para admin_recepcion, aux_recepcion, admin_electro)
+  const recepcionAcciones = $('agendaRecepcionAcciones');
+  const canAvisar = ['admin_recepcion', 'auxiliar_recepcion', 'admin_electro'].includes(currentUser?.rol);
+  if (recepcionAcciones) recepcionAcciones.style.display = canAvisar ? '' : 'none';
+  if (canAvisar) {
+    $('btnAvisarDoctor')?.addEventListener('click', avisoDoctor);
+  }
   
   // Desactivar el botón "Marcar como atendido" inicialmente
   const btnMarcar = $('btnMarcarAtendido');
@@ -2798,6 +2808,27 @@ function renderTurnoRowMedica(tbody, t, animateTargetId, hayEnAtencion) {
   tbody.appendChild(tr);
 }
 
+// Enviar aviso al doctor para que concluya su consulta
+async function avisoDoctor(doctorIdParam) {
+  const doctorId = doctorIdParam !== undefined ? doctorIdParam : (selectedDoctorId || null);
+  const btn = doctorIdParam !== undefined ? $('btnAvisarDoctorElectro') : $('btnAvisarDoctor');
+  if (btn) btn.disabled = true;
+  try {
+    const res = await apiFetch('/api/turnos/aviso-concluir', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ doctor_id: doctorId })
+    });
+    const data = await res.json();
+    if (data.ok) showToast('Aviso enviado al doctor', 'success');
+    else showToast(data.error || 'Error al enviar aviso', 'error');
+  } catch (e) {
+    showToast('Error: ' + e.message, 'error');
+  } finally {
+    if (btn) setTimeout(() => { btn.disabled = false; }, 3000);
+  }
+}
+
 async function llamarSiguientePaciente() {
   const fecha = $('agendaMedicaFecha').value;
   const doctorId = selectedDoctorId || (isDoctor() ? currentUser?.id : null);
@@ -2809,19 +2840,7 @@ async function llamarSiguientePaciente() {
       const nombre = data.turno.paciente_nombre || '';
       const consultorio = data.turno.numero_consultorio;
       showToast('Paciente llamado: ' + nombre, 'success'); 
-      // Alerta por voz solo en la sesión del doctor
-      if (isDoctor() && 'speechSynthesis' in window) {
-        let texto = `Paciente ${nombre}`;
-        if (consultorio) {
-          texto += `, por favor pasar a consultorio número ${consultorio}`;
-        } else {
-          texto += ', por favor pasar a consultorio';
-        }
-        const utter = new SpeechSynthesisUtterance(texto);
-        utter.lang = 'es-ES';
-        utter.rate = 1;
-        window.speechSynthesis.speak(utter);
-      }
+      // El anuncio de voz es recibido por recepción/electro vía socket (agenda:turno-llamar-siguiente)
       cargarTurnosMedica(); 
     } else {
       showToast(data.error||'Error', 'error');
@@ -3291,9 +3310,27 @@ async function initElectro() {
   $('electroTelefono2')?.addEventListener('input', limitarTel);
 
   const nuevaCitaSection = $('electroNuevaCitaSection');
-  if (nuevaCitaSection) nuevaCitaSection.style.display = (isRecepcion() || isElectro() || isAdmin()) ? '' : 'none';
-  if (!isDoctor()) {
+  // tecnico_electro y doctor NO pueden crear citas
+  const canCreateElectro = !isDoctor() && currentUser?.rol !== 'tecnico_electro';
+  if (nuevaCitaSection) nuevaCitaSection.style.display = canCreateElectro ? '' : 'none';
+  if (canCreateElectro) {
     $('crearCitaElectro')?.addEventListener('click', crearCitaElectro);
+  }
+
+  // Ocultar "Pacientes en Espera" para tecnico_electro y doctor
+  const esperaBtnSidebar = document.querySelector('#view-electro .electro-page-btn[data-page="espera"]');
+  if (esperaBtnSidebar && (isDoctor() || currentUser?.rol === 'tecnico_electro')) {
+    esperaBtnSidebar.style.display = 'none';
+  }
+
+  // Botón aviso al doctor en módulo electro (para admin_electro y tecnico_electro)
+  const canAvisarElectro = ['admin_electro', 'tecnico_electro'].includes(currentUser?.rol);
+  const avisoBtnElectro = $('btnAvisarDoctorElectro');
+  if (avisoBtnElectro) {
+    avisoBtnElectro.style.display = canAvisarElectro ? 'inline-flex' : 'none';
+    if (canAvisarElectro) {
+      avisoBtnElectro.addEventListener('click', () => avisoDoctor(null));
+    }
   }
 
   // Collapsible "Nueva Cita" form
@@ -3886,6 +3923,7 @@ function renderCitaElectroRow(tbody, c) {
   
   // Hacer la fila clickeable para abrir modal
   tr.addEventListener('click', (e) => {
+    if (isDoctor()) return; // Doctor solo puede ver la lista, no los detalles
     if (c.estado === 'Completado') {
       // Permitir click si es admin (puede eliminar)
       const esAdmin = currentUser && (currentUser.rol === 'admin' || currentUser.rol === 'administrador');

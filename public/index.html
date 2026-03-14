@@ -129,7 +129,7 @@
         <p>Selecciona un módulo para continuar</p>
       </div>
       <div class="menu-cards" id="menuCardsContainer">
-        <button class="menu-card" data-module="recibos" data-rol="superadmin admin admin_recepcion recepcion contabilidad auxiliar_recepcion tecnico_electro">
+        <button class="menu-card" data-module="recibos" data-rol="superadmin admin admin_recepcion recepcion contabilidad auxiliar_recepcion">
           <span class="menu-card-icon"><img src="/images/iconrecibos.png" alt="Recibos" class="icon-img" /></span>
           <span class="menu-card-label">
             <span class="menu-card-title">Recibos</span>
@@ -143,7 +143,7 @@
             <span class="menu-card-desc">Citas por consultorio</span>
           </span>
         </button>
-        <button class="menu-card" data-module="electro" data-rol="superadmin admin admin_recepcion recepcion admin_electro electro tecnico_electro auxiliar_recepcion">
+        <button class="menu-card" data-module="electro" data-rol="superadmin admin admin_recepcion recepcion admin_electro electro tecnico_electro auxiliar_recepcion doctor">
           <span class="menu-card-icon"><img src="/images/iconelectro.png" alt="Electrodiagnóstico" class="icon-img" /></span>
           <span class="menu-card-label">
             <span class="menu-card-title">Electrodiagnóstico</span>
@@ -164,7 +164,7 @@
             <span class="menu-card-desc">Importar y gestionar</span>
           </span>
         </button>
-        <button class="menu-card" data-module="dashboard-citas" data-rol="superadmin admin admin_recepcion recepcion admin_electro electro contabilidad">
+        <button class="menu-card" data-module="dashboard-citas" data-rol="superadmin admin admin_recepcion recepcion admin_electro electro contabilidad doctor">
           <span class="menu-card-icon"><img src="/images/icondashboard.svg" alt="Auditoría de Citas" class="icon-img" /></span>
           <span class="menu-card-label">
             <span class="menu-card-title">Auditoría de Citas</span>
@@ -652,6 +652,25 @@
                 </button>
               </div>
             </section>
+            <!-- Botones para Recepción/Electro: Avisar al Doctor para que concluya -->
+            <section class="card no-print doctor-acciones-card" id="agendaRecepcionAcciones" style="display:none">
+              <div class="doctor-acciones-header">
+                <span class="doctor-acciones-icon">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                </span>
+                <span>Avisar al Doctor</span>
+              </div>
+              <div class="doctor-acciones-btns">
+                <button id="btnAvisarDoctor" class="btn-llamar">
+                  <span class="btn-llamar-icon">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                  </span>
+                  <span class="btn-llamar-text">
+                    <span class="btn-llamar-label">Concluir Consulta</span>
+                  </span>
+                </button>
+              </div>
+            </section>
             <section class="card no-print" id="agendaNuevoTurnoSection">
               <h3>Nueva Cita</h3>
               <div class="row" id="agendaNuevoTurnoRow">
@@ -1027,7 +1046,13 @@
 
           <!-- ===== PÁGINA: AGENDA ===== -->
           <div class="electro-page active" data-electro-page="agenda">
-          <header><h2>Agenda de Equipos de Electrodiagnóstico</h2></header>
+          <header style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+            <h2 style="margin:0">Agenda de Equipos de Electrodiagnóstico</h2>
+            <button id="btnAvisarDoctorElectro" class="btn-secondary" style="display:none;gap:6px;align-items:center">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+              Avisar al Doctor
+            </button>
+          </header>
           
           <!-- Buscador por Documento - Consulta de Citas Electro -->
           <section class="card no-print" style="background:#f4f7f7;border-left:4px solid #8AA6A1">
