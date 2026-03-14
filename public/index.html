@@ -700,7 +700,7 @@
               </div>
               <div style="margin-top:8px;padding:8px;border-radius:4px;background-color:#fef3c7;border:1px solid #f59e0b;display:none;font-size:0.9rem;color:#92400e" id="mensajeDisponibilidad"></div>
               <div class="row" style="margin-top:12px">
-                <div class="col"><label>Hora <span style="color:#dc2626">*</span></label><select id="nuevoTurnoHoraMedica"></select></div>
+                <div class="col"><label>Hora <span style="color:#dc2626">*</span></label><input type="text" id="nuevoTurnoHoraMedica" placeholder="ej: 10:30 AM" autocomplete="off" /></div>
                 <div class="col"><label>Teléfono 1 <span style="color:#dc2626">*</span></label><input id="nuevoPacienteTelefonoMedica" type="tel" inputmode="numeric" maxlength="10" placeholder="10 dígitos" /></div>
                 <div class="col"><label>Teléfono 2 <span style="color:#dc2626">*</span></label><input id="nuevoPacienteTelefonoMedica2" type="tel" inputmode="numeric" maxlength="10" placeholder="10 dígitos" /></div>
                 <div class="col"><label>Tipo de consulta <span style="color:#dc2626">*</span></label><select id="nuevoTurnoTipoMedica"><option value="">Seleccionar</option></select></div>
@@ -1101,7 +1101,7 @@
                 <input id="electroDiagnostico" type="text" placeholder="Búsqueda de diagnóstico..." list="diagnosticosListElectro" autocomplete="off" style="background-image: none; background-clip: padding-box;" />
                 <datalist id="diagnosticosListElectro"></datalist>
               </div>
-              <div class="col"><label>Hora <span style="color:#dc2626">*</span></label><select id="electroHora"></select></div>
+              <div class="col"><label>Hora <span style="color:#dc2626">*</span></label><input type="text" id="electroHora" placeholder="ej: 2:00 PM" autocomplete="off" /></div>
               <div class="col"><label>Número de Documento <span style="color:#dc2626">*</span></label><input id="electroDocumento" type="text" placeholder="Documento (buscar paciente)" /></div>
             </div>
             <!-- Avisos de Disponibilidad de Equipos (movido arriba) -->
