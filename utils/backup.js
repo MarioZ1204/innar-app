@@ -16,9 +16,10 @@ const DB_PASSWORD = process.env.DB_PASSWORD || '';
 const DB_NAME = process.env.DB_NAME || 'innar_clinica';
 
 // Carpeta de backups
-const BACKUP_DIR = path.join(__dirname, '../backups');
-// Con 2 schedules (~5 backups/día), 35 = 7 días de retención
-const MAX_BACKUPS = 35;
+const BACKUP_DIR = process.env.BACKUP_DIR
+  ? path.resolve(process.env.BACKUP_DIR)
+  : path.join(__dirname, '../backups');
+const MAX_BACKUPS = parseInt(process.env.MAX_BACKUPS) || 14;
 
 /**
  * Detectar ruta de mysqldump (XAMPP en Windows o PATH del sistema)
