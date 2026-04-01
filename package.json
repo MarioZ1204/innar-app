@@ -10,8 +10,7 @@
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "migrate": "node utils/init-db.js && node migrations/db-migrations.js",
-    "build": "pkg . --target win --compress Brotli",
-    "build:all": "pkg . --target win,macos,linux --compress Brotli"
+    "build": "echo No build step required"
   },
   "keywords": [
     "recibos",
@@ -20,16 +19,7 @@
   ],
   "author": "",
   "license": "ISC",
-  "bin": "server.js",
-  "pkg": {
-    "assets": [
-      "public/**/*"
-    ],
-    "targets": [
-      "win-x64"
-    ],
-    "outputPath": "."
-  },
+
   "dependencies": {
     "bcrypt": "^5.1.1",
     "better-sqlite3": "^12.6.2",
