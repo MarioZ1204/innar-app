@@ -1499,6 +1499,98 @@ app.post('/api/doctor-disponibilidad/validar', async (req, res) => {
   }
 });
 
+// Guardar disponibilidad de un día individual (calendario interactivo)
+app.post('/api/doctor-disponibilidad/guardar-dia', requireAuth, async (req, res) => {
+  try {
+    const { doctor_id, fecha, disponible, disponible_manana, disponible_tarde } = req.body || {};
+    const doctorId = parseInt(doctor_id || req.session.usuarioId, 10);
+    if (!doctorId || !fecha) return res.status(400).json({ error: 'doctor_id y fecha son requeridos' });
+
+    // Permisos
+    const isAdminUser = isAdminRol(req.session.rol) || isRecepcionRol(req.session.rol);
+    const isDoctorUser = req.session.rol === 'doctor' && doctorId === req.session.usuarioId;
+    if (!isAdminUser && !isDoctorUser) return res.status(403).json({ error: 'Sin permiso' });
+
+    // Validar formato de fecha
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return res.status(400).json({ error: 'Formato de fecha inválido' });
+
+    await db.execute(
+      `INSERT INTO doctor_disponibilidad_mensual (doctor_id, fecha, disponible, disponible_manana, disponible_tarde)
+       VALUES (?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE disponible = VALUES(disponible), disponible_manana = VALUES(disponible_manana), disponible_tarde = VALUES(disponible_tarde)`,
+      [doctorId, fecha, disponible ? 1 : 0, disponible_manana ? 1 : 0, disponible_tarde ? 1 : 0]
+    );
+
+    if (app.io) emitSocket('agenda:disponibilidad-actualizada', { doctor_id: doctorId });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[DISPONIBILIDAD] Error guardando día:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Guardar slots de un día individual (calendario interactivo)
+app.post('/api/doctor-agenda/guardar-dia', requireAuth, async (req, res) => {
+  try {
+    const { doctor_id, fecha, slots } = req.body || {};
+    const doctorId = parseInt(doctor_id || req.session.usuarioId, 10);
+    if (!doctorId || !fecha) return res.status(400).json({ error: 'doctor_id y fecha son requeridos' });
+
+    // Permisos
+    const isAdminUser = isAdminRol(req.session.rol) || isRecepcionRol(req.session.rol);
+    const isDoctorUser = req.session.rol === 'doctor' && doctorId === req.session.usuarioId;
+    if (!isAdminUser && !isDoctorUser) return res.status(403).json({ error: 'Sin permiso' });
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return res.status(400).json({ error: 'Formato de fecha inválido' });
+
+    // Delete existing slots for this day
+    await db.execute('DELETE FROM doctor_agenda WHERE doctor_id = ? AND fecha = ?', [doctorId, fecha]);
+
+    // Insert new slots
+    if (Array.isArray(slots)) {
+      for (const s of slots) {
+        if (!s.hora_inicio || !s.hora_fin) continue;
+        // Validate time format
+        if (!/^\d{2}:\d{2}$/.test(s.hora_inicio) || !/^\d{2}:\d{2}$/.test(s.hora_fin)) continue;
+        await db.execute(
+          'INSERT INTO doctor_agenda (doctor_id, fecha, hora_inicio, hora_fin, disponible) VALUES (?, ?, ?, ?, ?)',
+          [doctorId, fecha, s.hora_inicio, s.hora_fin, s.disponible ? 1 : 0]
+        );
+      }
+    }
+
+    if (app.io) emitSocket('agenda:disponibilidad-actualizada', { doctor_id: doctorId });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[AGENDA] Error guardando slots del día:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Eliminar disponibilidad de un día individual
+app.post('/api/doctor-disponibilidad/eliminar-dia', requireAuth, async (req, res) => {
+  try {
+    const { doctor_id, fecha } = req.body || {};
+    const doctorId = parseInt(doctor_id || req.session.usuarioId, 10);
+    if (!doctorId || !fecha) return res.status(400).json({ error: 'doctor_id y fecha son requeridos' });
+
+    const isAdminUser = isAdminRol(req.session.rol) || isRecepcionRol(req.session.rol);
+    const isDoctorUser = req.session.rol === 'doctor' && doctorId === req.session.usuarioId;
+    if (!isAdminUser && !isDoctorUser) return res.status(403).json({ error: 'Sin permiso' });
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return res.status(400).json({ error: 'Formato de fecha inválido' });
+
+    await db.execute('DELETE FROM doctor_disponibilidad_mensual WHERE doctor_id = ? AND fecha = ?', [doctorId, fecha]);
+    await db.execute('DELETE FROM doctor_agenda WHERE doctor_id = ? AND fecha = ?', [doctorId, fecha]);
+
+    if (app.io) emitSocket('agenda:disponibilidad-actualizada', { doctor_id: doctorId });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[DISPONIBILIDAD] Error eliminando día:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Limpiar disponibilidad de un doctor
 app.delete('/api/doctor-disponibilidad/:doctorId', requireAuth, async (req, res) => {
   try {

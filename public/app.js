@@ -1588,7 +1588,6 @@ async function initAgendaMedica() {
     cargarTurnosMedica();
   });
   if (!isElectro() && !isDoctor()) {
-    $('crearTurnoMedica').addEventListener('click', crearTurnoMedica);
     $('nuevoPacienteNombresMedica')?.addEventListener('input', debounceBuscarPacientesMedica);
   }
   // Forzar solo dígitos y máximo 10 en los teléfonos de cita médica
@@ -1643,18 +1642,15 @@ async function initAgendaMedica() {
   const btnProgramar = document.querySelector('[data-page="programar"]');
   if (btnProgramar) {
     btnProgramar.style.display = canAgendaProgram ? '' : 'none';
-    // Cambiar texto del botón según rol
-    btnProgramar.textContent = isDoctor() ? 'Programar Agenda' : 'Agenda';
+    // Cambiar texto del botón según rol (preservar SVG)
+    const btnProgramarText = btnProgramar.querySelector('span:last-child');
+    if (btnProgramarText) btnProgramarText.textContent = isDoctor() ? 'Programar Agenda' : 'Agenda';
   }
   
-  // Pre-inicializar handlers si es DOCTOR, RECEPCION, ADMIN o admin_electro
-  if (canAgendaProgram && !window._agendaProgramarHandlersSetup) {
-    setupAgendaProgramarHandlers();
-    window._agendaProgramarHandlersSetup = true;
-  }
-  if ((isRecepcion() || isAdmin() || currentUser?.rol === 'admin_electro') && !window._agendaVerMedicosSetup) {
-    setupAgendaVerMedicos();
-    window._agendaVerMedicosSetup = true;
+  // Pre-inicializar calendario de disponibilidad
+  if (canAgendaProgram && !window._agendaCalendarSetup) {
+    setupAgendaCalendar();
+    window._agendaCalendarSetup = true;
   }
   
   // Sidebar button listeners para cambio de página
@@ -1673,11 +1669,12 @@ async function initAgendaMedica() {
       if (page === 'programar') {
         const titleHeader = document.getElementById('agendaTitleHeader');
         if (titleHeader) titleHeader.textContent = isDoctor() ? 'Programar Agenda' : 'Agenda';
+        // Show PDF download section for roles that can upload
         const progSection = $('agendaProgramarSection');
-        const verMedicosSection = $('agendaVerMedicosSection');
         const canUpload = isDoctor() || isAdmin() || currentUser?.rol === 'admin_recepcion' || currentUser?.rol === 'admin_electro';
         if (progSection) progSection.style.display = canUpload ? '' : 'none';
-        if (verMedicosSection) verMedicosSection.style.display = (isRecepcion() || isAdmin() || currentUser?.rol === 'admin_electro') ? '' : 'none';
+        // Reload calendar data when switching to this tab
+        if (typeof loadCalendarData === 'function') loadCalendarData();
       }
     });
   });
@@ -1690,14 +1687,30 @@ async function initAgendaMedica() {
   
   // Ocultar inicialmente las secciones de programar agenda
   const progSection = $('agendaProgramarSection');
-  const verMedicosSection = $('agendaVerMedicosSection');
   if (progSection) progSection.style.display = 'none';
-  if (verMedicosSection) verMedicosSection.style.display = 'none';
   
-  const nuevoTurnoSection = $('agendaNuevoTurnoSection');
   const doctorAcciones = $('agendaDoctorAcciones');
-  if (nuevoTurnoSection) nuevoTurnoSection.style.display = (isElectro() || isDoctor()) ? 'none' : '';
   if (doctorAcciones) doctorAcciones.style.display = isDoctor() ? '' : 'none';
+
+  // Botón "Nueva Cita" y modal
+  const btnNuevaCita = $('btnNuevaCitaMedica');
+  if (btnNuevaCita) btnNuevaCita.style.display = (!isElectro() && !isDoctor()) ? 'inline-flex' : 'none';
+  if (!isElectro() && !isDoctor()) {
+    btnNuevaCita?.addEventListener('click', () => {
+      const fechaModal = $('modalNuevaCitaFecha');
+      if (fechaModal) fechaModal.value = $('agendaMedicaFecha')?.value || new Date().toISOString().slice(0, 10);
+      const nomDiv = $('modalNuevaCitaDoctorNombre');
+      if (nomDiv) nomDiv.textContent = $('agendaMedicaDoctorDisplay')?.textContent || '-';
+      const prog = $('nuevoTurnoProgramadoPor');
+      if (prog) prog.textContent = (currentUser && (currentUser.nombre || currentUser.usuario)) || '-';
+      actualizarHorasDisponibles();
+      $('modalNuevaCitaMedica')?.classList.remove('hidden');
+    });
+    $('btnCerrarNuevaCitaModal')?.addEventListener('click', () => $('modalNuevaCitaMedica')?.classList.add('hidden'));
+    $('btnCancelarNuevaCitaModal')?.addEventListener('click', () => $('modalNuevaCitaMedica')?.classList.add('hidden'));
+    $('modalNuevaCitaFecha')?.addEventListener('change', actualizarHorasDisponibles);
+    $('crearTurnoMedica')?.addEventListener('click', crearTurnoMedica);
+  }
 
   // Sección de aviso al doctor (visible para admin_recepcion, aux_recepcion, admin_electro)
   const recepcionAcciones = $('agendaRecepcionAcciones');
@@ -1734,6 +1747,27 @@ async function initAgendaMedica() {
       editSection.classList.add('hidden');
     }
   }
+  // Botón "Cargar Pacientes" (solo admin/recepción)
+  const btnCargarPacMedica = $('btnCargarPacientesMedica');
+  if (btnCargarPacMedica && !isElectro() && !isDoctor()) {
+    btnCargarPacMedica.style.display = '';
+    btnCargarPacMedica.addEventListener('click', () => {
+      const nomDiv = $('cargarPacientesMedicaDoctorNombre');
+      if (nomDiv) nomDiv.textContent = $('agendaMedicaDoctorDisplay')?.textContent || '-';
+      $('cargarPacientesMedicaFile').value = '';
+      $('cargarPacientesMedicaPreview').style.display = 'none';
+      $('cargarPacientesMedicaError').style.display = 'none';
+      $('btnConfirmarCargarPacientesMedica').disabled = true;
+      window._cargarPacientesMedicaData = null;
+      $('modalCargarPacientesMedica')?.classList.remove('hidden');
+    });
+    $('btnCerrarCargarPacientesMedica')?.addEventListener('click', () => $('modalCargarPacientesMedica')?.classList.add('hidden'));
+    $('btnCancelarCargarPacientesMedica')?.addEventListener('click', () => $('modalCargarPacientesMedica')?.classList.add('hidden'));
+    $('cargarPacientesMedicaFile')?.addEventListener('change', (e) => procesarExcelPacientesMedica(e.target.files[0]));
+    $('btnConfirmarCargarPacientesMedica')?.addEventListener('click', confirmarCargarPacientesMedica);
+    $('btnDescargarPlantillaMedica')?.addEventListener('click', descargarPlantillaMedica);
+  }
+
   await cargarTurnosMedica();
   // Cargar disponibilidad programada (intervalos) desde el inicio
   await actualizarHorasDisponibles();
@@ -1822,7 +1856,7 @@ function populateTurnoHoras(selectId, from='07:00', to='18:00', stepMinutes=20){
 // Actualizar horas disponibles según disponibilidad del doctor
 async function actualizarHorasDisponibles() {
   const doctorId = selectedDoctorId;
-  const fecha = $('agendaMedicaFecha')?.value;
+  const fecha = $('modalNuevaCitaFecha')?.value || $('agendaMedicaFecha')?.value;
   const mensajeDiv = $('mensajeDisponibilidad');
 
   if (!doctorId || !fecha) {
@@ -1871,209 +1905,388 @@ async function actualizarHorasDisponibles() {
   }
 }
 
-// --- Programar agenda (cliente) ---
-function setupAgendaProgramarHandlers() {
-  const fileInput = $('agendaProgramarFile');
-  const uploadBtn = $('agendaProgramarUpload');
-  const preview = $('agendaProgramarPreview');
-  if (!fileInput) return;
-  
-  fileInput.addEventListener('change', (e) => {
-    const f = e.target.files[0];
-    uploadBtn.disabled = !f;
-    if (f) {
-      preview.innerHTML = `<div style="padding:12px;background:#e0f2fe;border-radius:6px;color:#0369a1">
-        <strong>Archivo seleccionado:</strong> ${escapeHtml(f.name)}
-        <br><small>Tamaño: ${(f.size / 1024).toFixed(2)} KB</small>
-      </div>`;
-    } else {
-      preview.innerHTML = '';
-    }
-  });
-  
-  uploadBtn?.addEventListener('click', async () => {
-    if (!confirm('¿Subir este archivo?')) return;
-    try {
-      const f = fileInput.files[0];
-      if (!f) { showToast('Selecciona un archivo', 'error'); return; }
-      
-      // Validar tamaño máximo (50MB)
-      const maxSize = 50 * 1024 * 1024;
-      if (f.size > maxSize) {
-        showToast('El archivo es demasiado grande. Máximo 50MB.', 'error');
-        return;
-      }
-      
-      uploadBtn.disabled = true;
-      uploadBtn.textContent = 'Subiendo...';
-      
-      // Usar FormData para enviar el archivo directamente
-      const formData = new FormData();
-      formData.append('file', f);
-      // Usar selectedDoctorId si está disponible (RECEPCIONISTA), sino usar currentUser.id (DOCTOR)
-      const doctorId = selectedDoctorId || currentUser?.id;
-      if (!doctorId) {
-        showToast('No hay doctor seleccionado', 'error');
-        uploadBtn.disabled = false;
-        uploadBtn.textContent = 'Subir archivo';
-        return;
-      }
-      formData.append('doctor_id', doctorId);
-      
-      // Usar el endpoint correcto para procesar Excel de disponibilidad
-      const res = await fetch('/api/doctor-disponibilidad/procesar-excel', {
-        method: 'POST',
-        credentials: 'include',
-        body: formData
-        // NO enviar Content-Type: multipart/form-data, dejar que el navegador lo establezca automáticamente
+// --- Calendario interactivo de disponibilidad ---
+let calCurrentYear = new Date().getFullYear();
+let calCurrentMonth = new Date().getMonth(); // 0-based
+let calSelectedDate = null; // 'YYYY-MM-DD'
+let calDisponibilidad = {}; // { 'YYYY-MM-DD': { disponible, disponible_manana, disponible_tarde } }
+let calSlots = []; // [{ fecha, hora_inicio, hora_fin, disponible }]
+let calDoctorIdForCal = null;
+
+function setupAgendaCalendar() {
+  calDoctorIdForCal = selectedDoctorId || currentUser?.id;
+  if (!calDoctorIdForCal) return;
+
+  // Selector de doctor para recepción/admin
+  const selectorDiv = $('agendaCalDoctorSelector');
+  if (selectorDiv && !isDoctor()) {
+    selectorDiv.style.display = '';
+    const sel = $('agendaCalDoctorSelect');
+    if (sel && !sel.dataset.loaded) {
+      sel.innerHTML = '<option value="">Cargando...</option>';
+      apiFetch('/api/medicos').then(r => r.json()).then(list => {
+        sel.innerHTML = '<option value="">Seleccionar médico</option>';
+        list.forEach(m => {
+          const o = document.createElement('option');
+          o.value = m.id;
+          o.textContent = m.nombre || m.usuario;
+          if (m.id == calDoctorIdForCal) o.selected = true;
+          sel.appendChild(o);
+        });
+        sel.dataset.loaded = '1';
+      }).catch(() => { sel.innerHTML = '<option value="">Error</option>'; });
+
+      sel.addEventListener('change', () => {
+        const v = parseInt(sel.value, 10);
+        if (v) {
+          calDoctorIdForCal = v;
+          calSelectedDate = null;
+          loadCalendarData();
+        }
       });
-      
-      const data = await res.json();
-      
-      if (data.ok) { 
-        showToast(`✓ ${data.diasGuardados} días de disponibilidad guardados correctamente`, 'success'); 
-        fileInput.value = '';
-        preview.innerHTML = `<div style="padding:12px;background:#d1fae5;border-radius:6px;color:#059669">✓ ${data.diasGuardados} días procesados exitosamente</div>`;
-        setTimeout(() => { preview.innerHTML = ''; }, 3000);
-        // Recargar lista de archivos
-        setTimeout(() => loadDoctorFiles(), 500);
-      }
-      else showToast(data.error||'Error', 'error');
-      
-      uploadBtn.disabled = false;
-      uploadBtn.textContent = 'Subir archivo';
-    } catch (e) { 
-      showToast('Error subiendo archivo: ' + e.message, 'error');
-      console.error('Error detalles:', e);
-      uploadBtn.disabled = false;
-      uploadBtn.textContent = 'Subir archivo';
     }
+  } else if (selectorDiv) {
+    selectorDiv.style.display = 'none';
+  }
+
+  // Nav buttons
+  $('calPrevMonth')?.addEventListener('click', () => { calCurrentMonth--; if (calCurrentMonth < 0) { calCurrentMonth = 11; calCurrentYear--; } calSelectedDate = null; loadCalendarData(); });
+  $('calNextMonth')?.addEventListener('click', () => { calCurrentMonth++; if (calCurrentMonth > 11) { calCurrentMonth = 0; calCurrentYear++; } calSelectedDate = null; loadCalendarData(); });
+
+  // Modal events
+  $('calModalClose')?.addEventListener('click', closeCalModal);
+  $('calDayModal')?.addEventListener('click', (e) => { if (e.target.id === 'calDayModal') closeCalModal(); });
+  $('calToggleYes')?.addEventListener('click', () => setCalToggle(true));
+  $('calToggleNo')?.addEventListener('click', () => setCalToggle(false));
+  $('calModalAddHora')?.addEventListener('click', () => addCalHoraRow('', ''));
+  $('calModalSave')?.addEventListener('click', saveCalDay);
+  $('calModalClear')?.addEventListener('click', deleteCalDay);
+
+  // ESC to close modal
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && $('calDayModal')?.classList.contains('active')) closeCalModal();
   });
-  
-  // Cargar archivos del doctor actual
-  setTimeout(() => loadDoctorFiles(), 500);
+
+  loadCalendarData();
 }
 
-function loadDoctorFiles(doctorId) {
-  // Usar el doctorId pasado, o defaultear a selectedDoctorId o currentUser.id
-  const id = doctorId || selectedDoctorId || currentUser?.id;
-  if (!id) {
-    console.warn('loadDoctorFiles: no doctor id available');
-    return;
+function setCalToggle(asistire) {
+  const btnYes = $('calToggleYes');
+  const btnNo = $('calToggleNo');
+  const horasC = $('calModalHorasContainer');
+  if (asistire) {
+    btnYes.classList.add('cal-toggle-active-yes');
+    btnNo.classList.remove('cal-toggle-active-no');
+    if (horasC) horasC.style.display = '';
+  } else {
+    btnYes.classList.remove('cal-toggle-active-yes');
+    btnNo.classList.add('cal-toggle-active-no');
+    if (horasC) horasC.style.display = 'none';
   }
-  apiFetch(`/api/doctor-agenda-files?doctor_id=${id}`)
-    .then(r => r.json())
-    .then(files => {
-      const preview = $('agendaProgramarPreview');
-      // Limpiar preview antes de agregar nuevos elementos
-      preview.innerHTML = '';
-      
-      if (!files || files.length === 0) {
-        const div = document.createElement('div');
-        div.innerHTML = '<div style="padding:12px;color:#999;margin-top:16px;border-top:2px solid #e5e7eb;margin-top:16px;padding-top:16px">No hay archivos subidos aún</div>';
-        preview.appendChild(div);
-        return;
-      }
-      const filesSection = document.createElement('div');
-      filesSection.style.marginTop = '20px';
-      filesSection.style.paddingTop = '16px';
-      filesSection.style.borderTop = '2px solid #e5e7eb';
-      
-      const title = document.createElement('h4');
-      title.textContent = 'Archivos Subidos';
-      title.style.margin = '0 0 12px 0';
-      filesSection.appendChild(title);
-      
-      const ul = document.createElement('ul');
-      ul.style.margin = '0';
-      ul.style.paddingLeft = '20px';
-      files.forEach(f => {
-        const li = document.createElement('li');
-        li.style.marginBottom = '8px';
-        li.style.display = 'flex';
-        li.style.justifyContent = 'space-between';
-        li.style.alignItems = 'center';
-        li.style.padding = '8px';
-        li.style.background = '#f9fafb';
-        li.style.borderRadius = '4px';
-        
-        const link = document.createElement('a');
-        link.href = f.url;
-        link.target = '_blank';
-        link.textContent = f.filename;
-        link.style.color = '#0369a1';
-        link.style.textDecoration = 'underline';
-        link.style.flex = '1';
-        
-        const buttonsContainer = document.createElement('div');
-        buttonsContainer.style.display = 'flex';
-        buttonsContainer.style.gap = '8px';
-        buttonsContainer.style.marginLeft = '8px';
-        
-        // Botón Ver para archivos Excel
-        const isExcel = /\.(xlsx?|xls)$/i.test(f.filename);
-        if (isExcel) {
-          const btnView = document.createElement('button');
-          btnView.textContent = 'Ver';
-          btnView.style.padding = '4px 12px';
-          btnView.style.fontSize = '0.85rem';
-          btnView.style.background = '#0369a1';
-          btnView.style.color = 'white';
-          btnView.style.border = 'none';
-          btnView.style.borderRadius = '4px';
-          btnView.style.cursor = 'pointer';
-          btnView.addEventListener('click', async (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            try {
-              const response = await fetch(f.url);
-              const arrayBuffer = await response.arrayBuffer();
-              const workbook = XLSX.read(arrayBuffer, { type: 'array' });
-              showExcelViewer(workbook, f.filename);
-            } catch (err) {
-              showToast('Error al leer el archivo Excel', 'error');
-              console.error(err);
-            }
-          });
-          buttonsContainer.appendChild(btnView);
-        }
-        
-        const btnDelete = document.createElement('button');
-        btnDelete.textContent = 'Eliminar';
-        btnDelete.style.padding = '4px 12px';
-        btnDelete.style.fontSize = '0.85rem';
-        btnDelete.style.background = '#dc2626';
-        btnDelete.style.color = 'white';
-        btnDelete.style.border = 'none';
-        btnDelete.style.borderRadius = '4px';
-        btnDelete.style.cursor = 'pointer';
-        btnDelete.addEventListener('click', async (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          if (!confirm('¿Eliminar este archivo?')) return;
-          try {
-            const res = await apiFetch(`/api/doctor-agenda-files/${f.id}`, { method: 'DELETE' });
-            const data = await res.json();
-            if (data.ok) {
-              showToast('Archivo eliminado', 'success');
-              loadDoctorFiles();
-            } else {
-              showToast(data.error || 'Error', 'error');
-            }
-          } catch (e) {
-            showToast('Error eliminando archivo', 'error');
-          }
-        });
-        
-        li.appendChild(link);
-        buttonsContainer.appendChild(btnDelete);
-        li.appendChild(buttonsContainer);
-        ul.appendChild(li);
+}
+
+function openCalModal(dateStr) {
+  calSelectedDate = dateStr;
+  const overlay = $('calDayModal');
+  if (!overlay) return;
+
+  // Title
+  const d = new Date(dateStr + 'T12:00:00');
+  const diasSemana = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
+  const meses = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  const titulo = $('calModalTitle');
+  const sub = $('calModalDateSub');
+  if (titulo) titulo.textContent = `${diasSemana[d.getDay()]} ${d.getDate()} de ${meses[d.getMonth()]}`;
+  if (sub) sub.textContent = `${calCurrentYear}`;
+
+  // Load existing data
+  const disp = calDisponibilidad[dateStr];
+  const daySlots = calSlots.filter(s => (s.fecha || '').slice(0, 10) === dateStr && s.disponible);
+
+  const horasList = $('calModalHorasList');
+  if (horasList) horasList.innerHTML = '';
+
+  if (disp && !disp.disponible) {
+    setCalToggle(false);
+  } else {
+    setCalToggle(true);
+    if (daySlots.length > 0) {
+      daySlots.forEach(s => addCalHoraRow(s.hora_inicio?.slice(0, 5), s.hora_fin?.slice(0, 5)));
+    } else if (disp) {
+      if (disp.disponible_manana) addCalHoraRow('07:00', '12:00');
+      if (disp.disponible_tarde) addCalHoraRow('14:00', '18:00');
+      if (!disp.disponible_manana && !disp.disponible_tarde) addCalHoraRow('', '');
+    } else {
+      addCalHoraRow('', '');
+    }
+  }
+
+  // Show with animation
+  requestAnimationFrame(() => {
+    overlay.classList.add('active');
+  });
+  renderCalendar();
+}
+
+function closeCalModal() {
+  const overlay = $('calDayModal');
+  if (overlay) overlay.classList.remove('active');
+  calSelectedDate = null;
+  renderCalendar();
+}
+
+async function loadCalendarData() {
+  if (!calDoctorIdForCal) return;
+  const mes = `${calCurrentYear}-${String(calCurrentMonth + 1).padStart(2, '0')}`;
+
+  try {
+    // Cargar disponibilidad mensual
+    const resDisp = await apiFetch(`/api/doctor-disponibilidad/${calDoctorIdForCal}?mes=${mes}`);
+    const dataDisp = await resDisp.json();
+    calDisponibilidad = {};
+    if (dataDisp.ok && Array.isArray(dataDisp.disponibilidad)) {
+      dataDisp.disponibilidad.forEach(d => {
+        const fecha = (d.fecha || '').slice(0, 10);
+        calDisponibilidad[fecha] = d;
       });
-      filesSection.appendChild(ul);
-      preview.appendChild(filesSection);
-    })
-    .catch(e => console.error(e));
+    }
+
+    // Cargar slots de agenda
+    const resSlots = await apiFetch(`/api/doctor-agenda?doctor_id=${calDoctorIdForCal}`);
+    const slotsData = await resSlots.json();
+    calSlots = Array.isArray(slotsData) ? slotsData : [];
+  } catch (e) {
+    console.error('Error cargando datos del calendario:', e);
+  }
+
+  renderCalendar();
+  renderCalResumen();
+}
+
+function renderCalendar() {
+  const grid = $('calDaysGrid');
+  const titleEl = $('calMonthTitle');
+  if (!grid) return;
+
+  const meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  if (titleEl) titleEl.textContent = `${meses[calCurrentMonth]} ${calCurrentYear}`;
+
+  grid.innerHTML = '';
+  const firstDay = new Date(calCurrentYear, calCurrentMonth, 1);
+  let startWeekday = firstDay.getDay(); // 0=Sun
+  startWeekday = startWeekday === 0 ? 6 : startWeekday - 1; // convert to Mon=0
+
+  const daysInMonth = new Date(calCurrentYear, calCurrentMonth + 1, 0).getDate();
+  const today = new Date();
+  today.setHours(0,0,0,0);
+
+  // Empty cells before first day
+  for (let i = 0; i < startWeekday; i++) {
+    const empty = document.createElement('div');
+    empty.className = 'cal-day cal-empty';
+    grid.appendChild(empty);
+  }
+
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateObj = new Date(calCurrentYear, calCurrentMonth, d);
+    const dateStr = `${calCurrentYear}-${String(calCurrentMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    const cell = document.createElement('div');
+    cell.className = 'cal-day';
+    cell.textContent = d;
+
+    const isPast = dateObj < today;
+    if (isPast) cell.classList.add('cal-past');
+    if (dateObj.getTime() === today.getTime()) cell.classList.add('cal-today');
+    if (dateStr === calSelectedDate) cell.classList.add('cal-selected');
+
+    // Check status
+    const disp = calDisponibilidad[dateStr];
+    const daySlots = calSlots.filter(s => (s.fecha || '').slice(0, 10) === dateStr);
+
+    if (disp) {
+      if (!disp.disponible) {
+        cell.classList.add('cal-unavailable');
+      } else if (disp.disponible_manana && disp.disponible_tarde) {
+        cell.classList.add('cal-available');
+      } else if (disp.disponible_manana || disp.disponible_tarde) {
+        cell.classList.add('cal-partial');
+      } else {
+        cell.classList.add('cal-available');
+      }
+    } else if (daySlots.length > 0) {
+      const anyAvailable = daySlots.some(s => s.disponible);
+      cell.classList.add(anyAvailable ? 'cal-available' : 'cal-unavailable');
+    }
+
+    if (!isPast) {
+      cell.addEventListener('click', () => {
+        calSelectedDate = dateStr;
+        openCalModal(dateStr);
+      });
+    }
+
+    grid.appendChild(cell);
+  }
+}
+
+function addCalHoraRow(inicio, fin) {
+  // If called from button click, inicio/fin are undefined
+  if (inicio instanceof Event || inicio === undefined) { inicio = ''; fin = ''; }
+
+  const horasList = $('calModalHorasList');
+  if (!horasList) return;
+
+  const row = document.createElement('div');
+  row.className = 'cal-hora-row';
+  row.innerHTML = `
+    <span class="cal-hora-label">De</span>
+    <input type="time" class="cal-hora-inicio" value="${escapeHtml(inicio || '')}" />
+    <span class="cal-hora-label">a</span>
+    <input type="time" class="cal-hora-fin" value="${escapeHtml(fin || '')}" />
+    <button class="cal-hora-remove" title="Quitar">
+      <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg>
+    </button>
+  `;
+  row.querySelector('.cal-hora-remove').addEventListener('click', () => row.remove());
+  horasList.appendChild(row);
+}
+
+async function saveCalDay() {
+  if (!calSelectedDate || !calDoctorIdForCal) return;
+
+  const disponible = $('calToggleYes')?.classList.contains('cal-toggle-active-yes');
+  const horasRows = document.querySelectorAll('#calModalHorasList .cal-hora-row');
+
+  // Build slots
+  const slots = [];
+  let hasManana = false, hasTarde = false;
+
+  if (disponible) {
+    let valid = true;
+    horasRows.forEach(row => {
+      const hi = row.querySelector('.cal-hora-inicio')?.value;
+      const hf = row.querySelector('.cal-hora-fin')?.value;
+      if (!hi || !hf) { valid = false; return; }
+      if (hi >= hf) { valid = false; return; }
+      slots.push({ fecha: calSelectedDate, hora_inicio: hi, hora_fin: hf, disponible: 1 });
+      const h = parseInt(hi.split(':')[0], 10);
+      if (h < 12) hasManana = true;
+      if (h >= 12) hasTarde = true;
+    });
+    if (!valid || slots.length === 0) {
+      showToast('Completa todos los horarios correctamente (inicio < fin)', 'error');
+      return;
+    }
+  }
+
+  const saveBtn = $('calModalSave');
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Guardando...'; }
+
+  try {
+    // 1. Save availability in doctor_disponibilidad_mensual
+    await apiFetch('/api/doctor-disponibilidad/guardar-dia', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        doctor_id: calDoctorIdForCal,
+        fecha: calSelectedDate,
+        disponible,
+        disponible_manana: disponible ? (hasManana || (!hasManana && !hasTarde)) : false,
+        disponible_tarde: disponible ? (hasTarde || (!hasManana && !hasTarde)) : false
+      })
+    });
+
+    // 2. Save specific slots in doctor_agenda (replace day's slots)
+    await apiFetch('/api/doctor-agenda/guardar-dia', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        doctor_id: calDoctorIdForCal,
+        fecha: calSelectedDate,
+        slots
+      })
+    });
+
+    showToast('Día guardado correctamente', 'success');
+    closeCalModal();
+    await loadCalendarData();
+  } catch (e) {
+    showToast('Error guardando: ' + e.message, 'error');
+  } finally {
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Guardar'; }
+  }
+}
+
+async function deleteCalDay() {
+  if (!calSelectedDate || !calDoctorIdForCal) return;
+  if (!confirm(`¿Limpiar la configuración del día seleccionado?`)) return;
+
+  try {
+    await apiFetch('/api/doctor-disponibilidad/eliminar-dia', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ doctor_id: calDoctorIdForCal, fecha: calSelectedDate })
+    });
+    showToast('Día limpiado', 'success');
+    closeCalModal();
+    await loadCalendarData();
+  } catch (e) {
+    showToast('Error: ' + e.message, 'error');
+  }
+}
+
+function renderCalResumen() {
+  const cont = $('calResumenList');
+  if (!cont) return;
+
+  const daysInMonth = new Date(calCurrentYear, calCurrentMonth + 1, 0).getDate();
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const diasSemana = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+  let html = '';
+  let configured = 0;
+
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateStr = `${calCurrentYear}-${String(calCurrentMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    const dateObj = new Date(calCurrentYear, calCurrentMonth, d);
+    if (dateObj < today) continue;
+
+    const disp = calDisponibilidad[dateStr];
+    const daySlots = calSlots.filter(s => (s.fecha || '').slice(0, 10) === dateStr && s.disponible);
+
+    if (!disp && daySlots.length === 0) continue;
+    configured++;
+
+    const dayName = diasSemana[dateObj.getDay()];
+    let estadoHtml = '', horasHtml = '';
+
+    if (disp && !disp.disponible) {
+      estadoHtml = '<span class="cal-resumen-estado" style="background:#fee2e2;color:#991b1b">No asiste</span>';
+    } else if (disp || daySlots.length > 0) {
+      estadoHtml = '<span class="cal-resumen-estado" style="background:#dcfce7;color:#166534">Disponible</span>';
+      if (daySlots.length > 0) {
+        const horas = daySlots.map(s => `${(s.hora_inicio||'').slice(0,5)}–${(s.hora_fin||'').slice(0,5)}`).join(', ');
+        horasHtml = `<span class="cal-resumen-horas">${escapeHtml(horas)}</span>`;
+      } else if (disp) {
+        const partes = [];
+        if (disp.disponible_manana) partes.push('Mañana');
+        if (disp.disponible_tarde) partes.push('Tarde');
+        if (partes.length) horasHtml = `<span class="cal-resumen-horas">${partes.join(', ')}</span>`;
+      }
+    }
+
+    html += `<div class="cal-resumen-dia">
+      <span class="cal-resumen-fecha">${dayName} ${d}</span>
+      ${estadoHtml}
+      ${horasHtml}
+    </div>`;
+  }
+
+  if (!configured) {
+    cont.innerHTML = '<div style="color:#9ca3af;padding:8px 0">No hay días configurados este mes</div>';
+  } else {
+    cont.innerHTML = html;
+  }
 }
 
 function showExcelViewer(workbook, filename) {
@@ -2949,7 +3162,7 @@ async function crearTurnoMedica() {
   const apellidosMedica = $('nuevoPacienteApellidosMedica')?.value.trim() || '';
   const nombre = [nombresMedica, apellidosMedica].filter(Boolean).join(' ');
   const doc = $('nuevoPacienteDocMedica').value.trim();
-  const fecha = $('agendaMedicaFecha').value;
+  const fecha = $('modalNuevaCitaFecha')?.value || $('agendaMedicaFecha').value;
   const doctorId = selectedDoctorId || (isDoctor() ? currentUser?.id : null);
   const hora = parseHora12a24($('nuevoTurnoHoraMedica')?.value || '');
   const telefono1 = $('nuevoPacienteTelefonoMedica')?.value.trim() || '';
@@ -3031,6 +3244,7 @@ async function crearTurnoMedica() {
 
     if (data.ok) {
       showToast('Cita creada correctamente', 'success');
+      $('modalNuevaCitaMedica')?.classList.add('hidden');
       $('nuevoPacienteNombresMedica').value = '';
       $('nuevoPacienteApellidosMedica').value = '';
       $('nuevoPacienteDocMedica').value = '';
@@ -3046,6 +3260,327 @@ async function crearTurnoMedica() {
   } catch (e) {
     showToast('Error creando cita: ' + e.message, 'error');
     console.error(e);
+  }
+}
+
+// ========== CARGAR PACIENTES DESDE EXCEL (Agenda Médica) ==========
+
+function descargarPlantillaMedica() {
+  const headers = ['FECHA', 'HORA', 'NUMERO DOCUMENTO', 'NOMBRES Y APELLIDOS', 'ENTIDAD', 'TIPO DE CONSULTA', 'TELEFONO1', 'TELEFONO2', 'NOTAS'];
+  const ejemplo = ['2026-04-01', '08:00', '1234567890', 'Juan Carlos Pérez López', 'Particular', 'Consulta General', '3001234567', '3009876543', ''];
+  const ws = XLSX.utils.aoa_to_sheet([headers, ejemplo]);
+  ws['!cols'] = headers.map(() => ({ wch: 20 }));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Pacientes');
+  XLSX.writeFile(wb, 'plantilla_citas_medicas.xlsx');
+}
+
+function descargarPlantillaElectro() {
+  const headers = ['FECHA', 'HORA', 'NUMERO DOCUMENTO', 'NOMBRES Y APELLIDOS', 'ESTUDIO', 'DIAGNOSTICO', 'TELEFONO1', 'TELEFONO2'];
+  const ejemplo = ['2026-04-01', '20:00', '1234567890', 'Juan Carlos Pérez López', 'PSG Básica', 'Apnea del sueño', '3001234567', '3009876543'];
+  const ws = XLSX.utils.aoa_to_sheet([headers, ejemplo]);
+  ws['!cols'] = headers.map(() => ({ wch: 20 }));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Estudios');
+  XLSX.writeFile(wb, 'plantilla_estudios_electro.xlsx');
+}
+function splitNombreApellido(fullName) {
+  const parts = (fullName || '').trim().split(/\s+/);
+  if (parts.length <= 1) return { nombres: parts[0] || '', apellidos: '' };
+  if (parts.length === 2) return { nombres: parts[0], apellidos: parts[1] };
+  // 2+ partes: primeras mitad nombres, resto apellidos
+  const mid = Math.ceil(parts.length / 2);
+  return { nombres: parts.slice(0, mid).join(' '), apellidos: parts.slice(mid).join(' ') };
+}
+
+function encontrarColumnaExcel(headers, posibles) {
+  const lower = headers.map(h => (h || '').toString().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim());
+  for (const p of posibles) {
+    const pn = p.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const idx = lower.findIndex(h => h.includes(pn));
+    if (idx >= 0) return headers[idx];
+  }
+  return null;
+}
+
+function excelDateToString(v) {
+  if (!v) return '';
+  if (typeof v === 'number') {
+    // Serial date de Excel
+    const d = new Date(Math.round((v - 25569) * 86400 * 1000));
+    return d.toISOString().slice(0, 10);
+  }
+  const s = String(v).trim();
+  // Intenta parsear dd/mm/yyyy o dd-mm-yyyy
+  const match = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (match) return `${match[3]}-${match[2].padStart(2,'0')}-${match[1].padStart(2,'0')}`;
+  // yyyy-mm-dd
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  return s;
+}
+
+function excelTimeToString(v) {
+  if (!v) return '';
+  if (typeof v === 'number') {
+    // Fracción de día
+    const totalMin = Math.round(v * 24 * 60);
+    const hh = String(Math.floor(totalMin / 60)).padStart(2, '0');
+    const mm = String(totalMin % 60).padStart(2, '0');
+    return `${hh}:${mm}`;
+  }
+  return String(v).trim();
+}
+
+function procesarExcelPacientesMedica(file) {
+  const errorDiv = $('cargarPacientesMedicaError');
+  const previewDiv = $('cargarPacientesMedicaPreview');
+  const btnConfirm = $('btnConfirmarCargarPacientesMedica');
+  errorDiv.style.display = 'none';
+  previewDiv.style.display = 'none';
+  btnConfirm.disabled = true;
+  window._cargarPacientesMedicaData = null;
+
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const workbook = XLSX.read(e.target.result, { type: 'array' });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(sheet);
+      if (!rows.length) { errorDiv.textContent = 'El archivo está vacío'; errorDiv.style.display = 'block'; return; }
+
+      const headers = Object.keys(rows[0]);
+      const colFecha = encontrarColumnaExcel(headers, ['fecha', 'date']);
+      const colHora = encontrarColumnaExcel(headers, ['hora', 'time', 'hour']);
+      const colDoc = encontrarColumnaExcel(headers, ['documento', 'numero documento', 'num documento', 'cedula', 'identificacion', 'doc']);
+      const colNombre = encontrarColumnaExcel(headers, ['nombres y apellidos', 'nombre', 'paciente', 'nombres', 'nombre completo']);
+      const colEntidad = encontrarColumnaExcel(headers, ['entidad', 'eps', 'aseguradora']);
+      const colTipo = encontrarColumnaExcel(headers, ['tipo de consulta', 'tipo consulta', 'consulta', 'tipo']);
+      const colTel1 = encontrarColumnaExcel(headers, ['telefono1', 'telefono 1', 'tel1', 'tel 1', 'telefono', 'celular']);
+      const colTel2 = encontrarColumnaExcel(headers, ['telefono2', 'telefono 2', 'tel2', 'tel 2']);
+      const colNotas = encontrarColumnaExcel(headers, ['notas', 'nota', 'observaciones', 'observacion']);
+
+      if (!colFecha || !colHora || !colDoc || !colNombre) {
+        errorDiv.innerHTML = 'Columnas requeridas no encontradas. Se necesitan al menos: <strong>FECHA, HORA, DOCUMENTO, NOMBRES Y APELLIDOS</strong><br>Columnas encontradas: ' + headers.map(h => escapeHtml(h)).join(', ');
+        errorDiv.style.display = 'block';
+        return;
+      }
+
+      const parsed = [];
+      const tbody = $('cargarPacientesMedicaBody');
+      tbody.innerHTML = '';
+
+      for (const row of rows) {
+        const fecha = excelDateToString(row[colFecha]);
+        const hora = excelTimeToString(row[colHora]);
+        const documento = String(row[colDoc] || '').trim();
+        const { nombres, apellidos } = splitNombreApellido(row[colNombre]);
+        const entidad = colEntidad ? String(row[colEntidad] || '').trim() : '';
+        const tipo = colTipo ? String(row[colTipo] || '').trim() : '';
+        const tel1 = colTel1 ? String(row[colTel1] || '').replace(/\D/g, '') : '';
+        const tel2 = colTel2 ? String(row[colTel2] || '').replace(/\D/g, '') : '';
+        const notas = colNotas ? String(row[colNotas] || '').trim() : '';
+
+        if (!fecha || !hora || !documento || !nombres) continue;
+
+        parsed.push({ fecha, hora, documento, nombres, apellidos, entidad, tipo, tel1, tel2, notas });
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${escapeHtml(fecha)}</td><td>${escapeHtml(hora)}</td><td>${escapeHtml(documento)}</td><td>${escapeHtml(nombres)}</td><td>${escapeHtml(apellidos)}</td><td>${escapeHtml(entidad)}</td><td>${escapeHtml(tipo)}</td><td>${escapeHtml(tel1)}</td><td>${escapeHtml(tel2)}</td><td>${escapeHtml(notas)}</td>`;
+        tbody.appendChild(tr);
+      }
+
+      if (!parsed.length) { errorDiv.textContent = 'No se encontraron filas válidas con los datos requeridos'; errorDiv.style.display = 'block'; return; }
+
+      $('cargarPacientesMedicaCount').textContent = parsed.length;
+      previewDiv.style.display = 'block';
+      btnConfirm.disabled = false;
+      window._cargarPacientesMedicaData = parsed;
+    } catch (err) {
+      errorDiv.textContent = 'Error leyendo el archivo: ' + err.message;
+      errorDiv.style.display = 'block';
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+async function confirmarCargarPacientesMedica() {
+  const data = window._cargarPacientesMedicaData;
+  if (!data || !data.length) return;
+
+  const doctorId = selectedDoctorId;
+  if (!doctorId) { showToast('No hay doctor seleccionado', 'error'); return; }
+
+  const btn = $('btnConfirmarCargarPacientesMedica');
+  btn.disabled = true;
+  btn.textContent = '⏳ Cargando...';
+  const errorDiv = $('cargarPacientesMedicaError');
+  errorDiv.style.display = 'none';
+
+  let ok = 0, errores = [];
+  for (let i = 0; i < data.length; i++) {
+    const p = data[i];
+    try {
+      const body = {
+        doctor_id: parseInt(doctorId, 10),
+        paciente_nombre: [p.nombres, p.apellidos].filter(Boolean).join(' '),
+        paciente_documento: p.documento || null,
+        paciente_telefono: p.tel1 || null,
+        paciente_telefono2: p.tel2 || null,
+        fecha: p.fecha,
+        hora: parseHora12a24(p.hora),
+        tipo_consulta: p.tipo || null,
+        entidad: p.entidad || null,
+        notas: p.notas || null,
+        programado_por: (currentUser && (currentUser.nombre || currentUser.usuario)) || 'Excel'
+      };
+      const res = await apiFetch('/api/turnos', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const result = await res.json();
+      if (result.ok) ok++;
+      else errores.push(`Fila ${i+1}: ${result.error || 'Error desconocido'}`);
+    } catch (e) {
+      errores.push(`Fila ${i+1}: ${e.message}`);
+    }
+  }
+
+  btn.textContent = 'Cargar Pacientes';
+  btn.disabled = false;
+
+  if (ok > 0) {
+    showToast(`${ok} cita(s) creada(s) correctamente`, 'success');
+    cargarTurnosMedica();
+  }
+  if (errores.length) {
+    errorDiv.innerHTML = `<strong>${errores.length} error(es):</strong><br>` + errores.slice(0, 10).join('<br>');
+    errorDiv.style.display = 'block';
+  } else {
+    $('modalCargarPacientesMedica')?.classList.add('hidden');
+  }
+}
+
+// ========== CARGAR PACIENTES DESDE EXCEL (Electrodiagnóstico) ==========
+function procesarExcelPacientesElectro(file) {
+  const errorDiv = $('cargarPacientesElectroError');
+  const previewDiv = $('cargarPacientesElectroPreview');
+  const btnConfirm = $('btnConfirmarCargarPacientesElectro');
+  errorDiv.style.display = 'none';
+  previewDiv.style.display = 'none';
+  btnConfirm.disabled = true;
+  window._cargarPacientesElectroData = null;
+
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const workbook = XLSX.read(e.target.result, { type: 'array' });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(sheet);
+      if (!rows.length) { errorDiv.textContent = 'El archivo está vacío'; errorDiv.style.display = 'block'; return; }
+
+      const headers = Object.keys(rows[0]);
+      const colFecha = encontrarColumnaExcel(headers, ['fecha', 'date']);
+      const colHora = encontrarColumnaExcel(headers, ['hora', 'time', 'hour']);
+      const colDoc = encontrarColumnaExcel(headers, ['documento', 'numero documento', 'num documento', 'cedula', 'identificacion', 'doc']);
+      const colNombre = encontrarColumnaExcel(headers, ['nombres y apellidos', 'nombre', 'paciente', 'nombres', 'nombre completo']);
+      const colEstudio = encontrarColumnaExcel(headers, ['estudio', 'tipo estudio', 'examen']);
+      const colDiag = encontrarColumnaExcel(headers, ['diagnostico', 'dx', 'diag']);
+      const colTel1 = encontrarColumnaExcel(headers, ['telefono1', 'telefono 1', 'tel1', 'tel 1', 'telefono', 'celular']);
+      const colTel2 = encontrarColumnaExcel(headers, ['telefono2', 'telefono 2', 'tel2', 'tel 2']);
+
+      if (!colFecha || !colHora || !colDoc || !colNombre) {
+        errorDiv.innerHTML = 'Columnas requeridas no encontradas. Se necesitan al menos: <strong>FECHA, HORA, DOCUMENTO, NOMBRES Y APELLIDOS</strong><br>Columnas encontradas: ' + headers.map(h => escapeHtml(h)).join(', ');
+        errorDiv.style.display = 'block';
+        return;
+      }
+
+      const parsed = [];
+      const tbody = $('cargarPacientesElectroBody');
+      tbody.innerHTML = '';
+
+      for (const row of rows) {
+        const fecha = excelDateToString(row[colFecha]);
+        const hora = excelTimeToString(row[colHora]);
+        const documento = String(row[colDoc] || '').trim();
+        const { nombres, apellidos } = splitNombreApellido(row[colNombre]);
+        const estudio = colEstudio ? String(row[colEstudio] || '').trim() : '';
+        const diagnostico = colDiag ? String(row[colDiag] || '').trim() : '';
+        const tel1 = colTel1 ? String(row[colTel1] || '').replace(/\D/g, '') : '';
+        const tel2 = colTel2 ? String(row[colTel2] || '').replace(/\D/g, '') : '';
+
+        if (!fecha || !hora || !documento || !nombres) continue;
+
+        parsed.push({ fecha, hora, documento, nombres, apellidos, estudio, diagnostico, tel1, tel2 });
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${escapeHtml(fecha)}</td><td>${escapeHtml(hora)}</td><td>${escapeHtml(documento)}</td><td>${escapeHtml(nombres)}</td><td>${escapeHtml(apellidos)}</td><td>${escapeHtml(estudio)}</td><td>${escapeHtml(diagnostico)}</td><td>${escapeHtml(tel1)}</td><td>${escapeHtml(tel2)}</td>`;
+        tbody.appendChild(tr);
+      }
+
+      if (!parsed.length) { errorDiv.textContent = 'No se encontraron filas válidas con los datos requeridos'; errorDiv.style.display = 'block'; return; }
+
+      $('cargarPacientesElectroCount').textContent = parsed.length;
+      previewDiv.style.display = 'block';
+      btnConfirm.disabled = false;
+      window._cargarPacientesElectroData = parsed;
+    } catch (err) {
+      errorDiv.textContent = 'Error leyendo el archivo: ' + err.message;
+      errorDiv.style.display = 'block';
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+async function confirmarCargarPacientesElectro() {
+  const data = window._cargarPacientesElectroData;
+  if (!data || !data.length) return;
+
+  const btn = $('btnConfirmarCargarPacientesElectro');
+  btn.disabled = true;
+  btn.textContent = '⏳ Cargando...';
+  const errorDiv = $('cargarPacientesElectroError');
+  errorDiv.style.display = 'none';
+
+  let ok = 0, errores = [];
+  for (let i = 0; i < data.length; i++) {
+    const p = data[i];
+    try {
+      const nombre = [p.nombres, p.apellidos].filter(Boolean).join(' ');
+      // Crear paciente primero
+      const resP = await apiFetch('/api/pacientes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nombre, documento: p.documento || null, telefono: p.tel1 || null, telefono2: p.tel2 || null }) });
+      const dataP = await resP.json();
+      if (!dataP.ok && !dataP.id) { errores.push(`Fila ${i+1}: Error creando paciente`); continue; }
+      const pacienteId = dataP.id;
+
+      const body = {
+        paciente_id: pacienteId,
+        fecha: p.fecha,
+        hora: parseHora12a24(p.hora),
+        telefono: p.tel1 || null,
+        telefono2: p.tel2 || null,
+        estudio: p.estudio || 'PSG Básica',
+        estado: 'Programado',
+        programado_por_nombre: (currentUser ? (currentUser.nombre || currentUser.usuario) : 'Excel')
+      };
+
+      const res = await apiFetch('/api/citas-electro', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const result = await res.json();
+      if (result.ok) ok++;
+      else errores.push(`Fila ${i+1}: ${result.error || 'Error desconocido'}`);
+    } catch (e) {
+      errores.push(`Fila ${i+1}: ${e.message}`);
+    }
+  }
+
+  btn.textContent = 'Cargar Estudios';
+  btn.disabled = false;
+
+  if (ok > 0) {
+    showToast(`${ok} estudio(s) creado(s) correctamente`, 'success');
+    cargarCitasElectro();
+  }
+  if (errores.length) {
+    errorDiv.innerHTML = `<strong>${errores.length} error(es):</strong><br>` + errores.slice(0, 10).join('<br>');
+    errorDiv.style.display = 'block';
+  } else {
+    $('modalCargarPacientesElectro')?.classList.add('hidden');
   }
 }
 
@@ -3176,11 +3711,25 @@ async function initElectro() {
   $('electroTelefono')?.addEventListener('input', limitarTel);
   $('electroTelefono2')?.addEventListener('input', limitarTel);
 
-  const nuevaCitaSection = $('electroNuevaCitaSection');
   // tecnico_electro y doctor NO pueden crear citas
   const canCreateElectro = !isDoctor() && currentUser?.rol !== 'tecnico_electro';
-  if (nuevaCitaSection) nuevaCitaSection.style.display = canCreateElectro ? '' : 'none';
+
+  // Botón "Nuevo Estudio" y modal
+  const btnNuevoEstudio = $('btnNuevoEstudioElectro');
+  if (btnNuevoEstudio) btnNuevoEstudio.style.display = canCreateElectro ? 'inline-flex' : 'none';
   if (canCreateElectro) {
+    btnNuevoEstudio?.addEventListener('click', () => {
+      const fecha = $('electroFecha')?.value;
+      const fechaInput = $('modalNuevoEstudioFecha');
+      if (fechaInput) fechaInput.value = fecha || new Date().toISOString().slice(0, 10);
+      const progEl = $('electroProgramadoPor');
+      if (progEl) progEl.textContent = currentUser ? (currentUser.nombre || currentUser.usuario || '-') : '-';
+      checkEquiposDisponibilidad();
+      $('modalNuevoEstudioElectro')?.classList.remove('hidden');
+    });
+    $('modalNuevoEstudioFecha')?.addEventListener('change', checkEquiposDisponibilidad);
+    $('btnCerrarNuevoEstudioModal')?.addEventListener('click', () => $('modalNuevoEstudioElectro')?.classList.add('hidden'));
+    $('btnCancelarNuevoEstudioModal')?.addEventListener('click', () => $('modalNuevoEstudioElectro')?.classList.add('hidden'));
     $('crearCitaElectro')?.addEventListener('click', crearCitaElectro);
   }
 
@@ -3200,17 +3749,6 @@ async function initElectro() {
     }
   }
 
-  // Collapsible "Nueva Cita" form
-  const collapseToggle = $('electroNuevaCitaToggle');
-  const collapseBtn = $('electroNuevaCitaCollapseBtn');
-  const collapseBody = $('electroNuevaCitaBody');
-  if (collapseToggle && collapseBody) {
-    collapseToggle.addEventListener('click', () => {
-      const isCollapsed = collapseBody.classList.toggle('collapsed');
-      if (collapseBtn) collapseBtn.textContent = isCollapsed ? '▼ Mostrar' : '▲ Ocultar';
-    });
-  }
-  
   // Event listeners del modal
   $('cerrarModalDetallesCita')?.addEventListener('click', cerrarModalDetallesCita);
   $('btnCancelarModal')?.addEventListener('click', cerrarModalDetallesCita);
@@ -3406,13 +3944,13 @@ async function initElectro() {
     if (confirmEl && !confirmEl.classList.contains('hidden')) {
       confirmEl.classList.add('hidden'); return;
     }
-    const buscarCitasEl = $('modalBuscarCitasResultados');
-    if (buscarCitasEl && !buscarCitasEl.classList.contains('hidden')) {
-      buscarCitasEl.classList.add('hidden'); buscarCitasEl.style.display = 'none'; return;
+    const buscarCitasEl = $('buscarCitaResultadosSection');
+    if (buscarCitasEl && buscarCitasEl.style.display !== 'none') {
+      buscarCitasEl.style.display = 'none'; return;
     }
-    const buscarEstudiosEl = $('modalBuscarEstudiosResultados');
-    if (buscarEstudiosEl && !buscarEstudiosEl.classList.contains('hidden')) {
-      buscarEstudiosEl.classList.add('hidden'); buscarEstudiosEl.style.display = 'none'; return;
+    const buscarEstudiosEl = $('buscarEstudioResultadosSection');
+    if (buscarEstudiosEl && buscarEstudiosEl.style.display !== 'none') {
+      buscarEstudiosEl.style.display = 'none'; return;
     }
   });
 
@@ -3449,6 +3987,25 @@ async function initElectro() {
     window.socketElectroListenerAdded = true;
   }
 
+  // Botón "Cargar Pacientes" (solo admin_electro, admin, recepcion)
+  const btnCargarPacElectro = $('btnCargarPacientesElectro');
+  if (btnCargarPacElectro && canCreateElectro) {
+    btnCargarPacElectro.style.display = '';
+    btnCargarPacElectro.addEventListener('click', () => {
+      $('cargarPacientesElectroFile').value = '';
+      $('cargarPacientesElectroPreview').style.display = 'none';
+      $('cargarPacientesElectroError').style.display = 'none';
+      $('btnConfirmarCargarPacientesElectro').disabled = true;
+      window._cargarPacientesElectroData = null;
+      $('modalCargarPacientesElectro')?.classList.remove('hidden');
+    });
+    $('btnCerrarCargarPacientesElectro')?.addEventListener('click', () => $('modalCargarPacientesElectro')?.classList.add('hidden'));
+    $('btnCancelarCargarPacientesElectro')?.addEventListener('click', () => $('modalCargarPacientesElectro')?.classList.add('hidden'));
+    $('cargarPacientesElectroFile')?.addEventListener('change', (e) => procesarExcelPacientesElectro(e.target.files[0]));
+    $('btnConfirmarCargarPacientesElectro')?.addEventListener('click', confirmarCargarPacientesElectro);
+    $('btnDescargarPlantillaElectro')?.addEventListener('click', descargarPlantillaElectro);
+  }
+
   await cargarCitasElectro();
 
   // ── Sidebar navegación por páginas ──────────────────────────────────────
@@ -3470,7 +4027,7 @@ async function initElectro() {
 
 // Verificar y mostrar disponibilidad de CUPOS
 async function checkEquiposDisponibilidad() {
-  const fecha = $('electroFecha').value;
+  const fecha = $('modalNuevoEstudioFecha')?.value || $('electroFecha').value;
   const hora = parseHora12a24($('electroHora').value);
   const estudio = $('electroEstudio').value;
   const duracionHoras = $('electroDuracion').value;
@@ -3858,7 +4415,7 @@ async function crearCitaElectro() {
   const telefono = $('electroTelefono').value.trim();
   const telefono2 = $('electroTelefono2').value.trim();
   const hora = parseHora12a24($('electroHora').value);
-  const fecha = $('electroFecha').value;
+  const fecha = $('modalNuevoEstudioFecha')?.value || $('electroFecha').value;
   const duracion = $('electroDuracion').value.trim();
   const diagnostico = $('electroDiagnostico').value.trim();
   
@@ -4037,6 +4594,7 @@ async function crearCitaElectro() {
       $('electroDuracionCol').style.display = 'none';
       // Recargar tabla
       cargarCitasElectro();
+      $('modalNuevoEstudioElectro')?.classList.add('hidden');
     } else {
       showToast(data.error || 'Error creando cita', 'error');
     }
@@ -7724,27 +8282,28 @@ async function buscarCitasPorDocumento() {
   if (!documento) {
     return;
   }
-  
+
+  const seccion = $('buscarCitaResultadosSection');
+  const tbody = $('buscarCitaBody');
+  const conteo = $('buscarCitaConteo');
+
+  if (seccion) seccion.style.display = '';
+  if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="padding:20px;text-align:center;color:#999">Cargando...</td></tr>';
+
   try {
-    // Mostrar el modal con estado de carga
-    const modal = $('modalBuscarCitasResultados');
-    const tbody = $('modalBuscarCitasBody');
-    tbody.innerHTML = '<tr><td colspan="5" style="padding:20px;text-align:center;color:#999">Cargando...</td></tr>';
-    modal.classList.remove('hidden');
-    modal.style.display = 'flex';
-    
-    // Buscar en citas médicas
     const res = await apiFetch(`/api/turnos?buscar=${encodeURIComponent(documento)}`);
     const citas = await res.json();
     
     if (!citas || citas.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="5" style="padding:20px;text-align:center;color:#7f1d1d">❌ No se encontraron citas para el documento "${documento}"</td></tr>`;
+      if (tbody) tbody.innerHTML = `<tr><td colspan="7" style="padding:20px;text-align:center;color:#7f1d1d">❌ No se encontraron citas para el documento "<strong>${escapeHtml(documento)}</strong>"</td></tr>`;
+      if (conteo) conteo.textContent = '0 resultados';
       return;
     }
-    
-    // Llenar la tabla
-    let html = '';
-    citas.forEach(cita => {
+
+    if (conteo) conteo.textContent = `${citas.length} resultado${citas.length !== 1 ? 's' : ''}`;
+
+    if (tbody) tbody.innerHTML = '';
+    citas.forEach((cita, idx) => {
       const rawFecha = cita.fecha ? String(cita.fecha).slice(0, 10) : '';
       const [y, m, d] = rawFecha.split('-');
       const fecha = y ? new Date(parseInt(y), parseInt(m) - 1, parseInt(d)).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '-';
@@ -7752,23 +8311,27 @@ async function buscarCitasPorDocumento() {
       const docPaciente = escapeHtml(cita.paciente_documento || '-');
       const nombre = escapeHtml(cita.paciente_nombre || '-');
       const tipoConsulta = escapeHtml(cita.tipo_consulta || '-');
-      
-      html += `
-        <tr style="border-bottom:1px solid #e5e7eb;hover-background:#f9fafb">
-          <td style="padding:12px;color:#374151">${fecha}</td>
-          <td style="padding:12px;color:#374151">${hora}</td>
-          <td style="padding:12px;color:#374151;font-weight:500">${docPaciente}</td>
-          <td style="padding:12px;color:#1f2937;font-weight:500">${nombre}</td>
-          <td style="padding:12px;color:#374151">${tipoConsulta}</td>
-        </tr>
+      const estadoHtml = estadoBadgeMedica(cita.estado || 'EN_ESPERA');
+
+      const tr = document.createElement('tr');
+      tr.style.borderBottom = '1px solid #e5e7eb';
+      tr.innerHTML = `
+        <td style="padding:12px;color:#374151">${fecha}</td>
+        <td style="padding:12px;color:#374151">${hora}</td>
+        <td style="padding:12px;color:#374151;font-weight:500">${docPaciente}</td>
+        <td style="padding:12px;color:#1f2937;font-weight:500">${nombre}</td>
+        <td style="padding:12px;color:#374151">${tipoConsulta}</td>
+        <td style="padding:12px">${estadoHtml}</td>
+        <td style="padding:12px"><button class="btn-primary btn-sm" data-idx="${idx}">Ver / Editar</button></td>
       `;
+      tr.querySelector('button').addEventListener('click', () => {
+        abrirModalEstadoCitaMedica(cita);
+      });
+      tbody.appendChild(tr);
     });
-    
-    tbody.innerHTML = html;
   } catch (e) {
     console.error('Error buscando citas:', e);
-    const tbody = $('modalBuscarCitasBody');
-    tbody.innerHTML = '<tr><td colspan="5" style="padding:20px;text-align:center;color:#dc2626">Error al buscar citas</td></tr>';
+    if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="padding:20px;text-align:center;color:#dc2626">Error al buscar citas</td></tr>';
   }
 }
 
@@ -7776,89 +8339,71 @@ async function buscarEstudiosPorDocumento() {
   const documento = $('buscarEstudioDocumento').value.trim();
   if (!documento) return;
 
-  const modal = $('modalBuscarEstudiosResultados');
-  const tbody = $('modalBuscarEstudiosBody');
-  tbody.innerHTML = '<tr><td colspan="6" style="padding:20px;text-align:center;color:#999">Cargando...</td></tr>';
-  modal.classList.remove('hidden');
-  modal.style.display = 'flex';
+  const seccion = $('buscarEstudioResultadosSection');
+  const tbody = $('buscarEstudioBody');
+  const conteo = $('buscarEstudioConteo');
+
+  if (seccion) seccion.style.display = '';
+  if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="padding:20px;text-align:center;color:#999">Cargando...</td></tr>';
 
   try {
     const res = await apiFetch(`/api/citas-electro?buscar=${encodeURIComponent(documento)}`);
     const citas = await res.json();
 
     if (!citas || citas.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="6" style="padding:20px;text-align:center;color:#7f1d1d">❌ No se encontraron estudios para el documento "${documento}"</td></tr>`;
+      if (tbody) tbody.innerHTML = `<tr><td colspan="7" style="padding:20px;text-align:center;color:#7f1d1d">❌ No se encontraron estudios para el documento "<strong>${escapeHtml(documento)}</strong>"</td></tr>`;
+      if (conteo) conteo.textContent = '0 resultados';
       return;
     }
 
-    let html = '';
-    citas.forEach(cita => {
+    if (conteo) conteo.textContent = `${citas.length} resultado${citas.length !== 1 ? 's' : ''}`;
+    if (tbody) tbody.innerHTML = '';
+
+    citas.forEach((cita) => {
       const [y,m,d] = (cita.fecha || '').split('-');
       const fecha = y ? new Date(parseInt(y), parseInt(m)-1, parseInt(d)).toLocaleDateString('es-ES', {day:'2-digit',month:'2-digit',year:'numeric'}) : '-';
-      html += `
-        <tr style="border-bottom:1px solid #e5e7eb">
-          <td style="padding:12px;color:#374151">${fecha}</td>
-          <td style="padding:12px;color:#374151">${escapeHtml(cita.hora_agendamiento || '-')}</td>
-          <td style="padding:12px;color:#374151;font-weight:500">${escapeHtml(cita.paciente_documento || '-')}</td>
-          <td style="padding:12px;color:#1f2937;font-weight:500">${escapeHtml(cita.paciente_nombre || '-')}</td>
-          <td style="padding:12px;color:#374151">${escapeHtml(cita.estudio || '-')}</td>
-          <td style="padding:12px">${estadoBadge(cita.estado)}</td>
-        </tr>
+
+      const tr = document.createElement('tr');
+      tr.style.borderBottom = '1px solid #e5e7eb';
+      tr.innerHTML = `
+        <td style="padding:12px;color:#374151">${fecha}</td>
+        <td style="padding:12px;color:#374151">${escapeHtml(cita.hora_agendamiento || '-')}</td>
+        <td style="padding:12px;color:#374151;font-weight:500">${escapeHtml(cita.paciente_documento || '-')}</td>
+        <td style="padding:12px;color:#1f2937;font-weight:500">${escapeHtml(cita.paciente_nombre || '-')}</td>
+        <td style="padding:12px;color:#374151">${escapeHtml(cita.estudio || '-')}</td>
+        <td style="padding:12px">${estadoBadge(cita.estado)}</td>
+        <td style="padding:12px"><button class="btn-primary btn-sm">Ver / Editar</button></td>
       `;
+      tr.querySelector('button').addEventListener('click', () => {
+        abrirModalDetallesCita(cita);
+      });
+      tbody.appendChild(tr);
     });
-    tbody.innerHTML = html;
   } catch (e) {
     console.error('Error buscando estudios:', e);
-    tbody.innerHTML = '<tr><td colspan="6" style="padding:20px;text-align:center;color:#dc2626">Error al buscar estudios</td></tr>';
+    if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="padding:20px;text-align:center;color:#dc2626">Error al buscar estudios</td></tr>';
   }
 }
 
 // buscarRecibosPorDocumento removed — replaced by buscarCitaParaRecibo in new Recibos UI
 
-// Event listeners para buscadores
+// Event listeners para buscadores (páginas dedicadas en sidebar)
 $('btnBuscarCitaDocumento')?.addEventListener('click', buscarCitasPorDocumento);
-$('buscarCitaDocumento')?.removeEventListener('keypress', buscarCitasPorDocumento);
+$('buscarCitaDocumento')?.addEventListener('keydown', e => { if (e.key === 'Enter') buscarCitasPorDocumento(); });
 $('btnLimpiarCitaDocumento')?.addEventListener('click', () => {
-  $('buscarCitaDocumento').value = '';
-  const modal = $('modalBuscarCitasResultados');
-  if (modal) modal.classList.add('hidden');
-});
-
-// Event listeners para cerrar modal de búsqueda de citas
-$('cerrarModalBuscarCitas')?.addEventListener('click', () => {
-  const modal = $('modalBuscarCitasResultados');
-  if (modal) modal.classList.add('hidden');
-});
-$('btnCerrarBuscarCitas')?.addEventListener('click', () => {
-  const modal = $('modalBuscarCitasResultados');
-  if (modal) modal.classList.add('hidden');
-});
-
-// Cerrar modal al hacer clic fuera
-document.addEventListener('click', (e) => {
-  const modal = $('modalBuscarCitasResultados');
-  if (modal && e.target === modal) {
-    modal.classList.add('hidden');
-  }
+  const input = $('buscarCitaDocumento');
+  if (input) input.value = '';
+  const sec = $('buscarCitaResultadosSection');
+  if (sec) sec.style.display = 'none';
 });
 
 $('btnBuscarEstudioDocumento')?.addEventListener('click', buscarEstudiosPorDocumento);
+$('buscarEstudioDocumento')?.addEventListener('keydown', e => { if (e.key === 'Enter') buscarEstudiosPorDocumento(); });
 $('btnLimpiarEstudioDocumento')?.addEventListener('click', () => {
-  $('buscarEstudioDocumento').value = '';
-  const m = $('modalBuscarEstudiosResultados');
-  if (m) { m.classList.add('hidden'); m.style.display = 'none'; }
-});
-$('cerrarModalBuscarEstudios')?.addEventListener('click', () => {
-  const m = $('modalBuscarEstudiosResultados');
-  if (m) { m.classList.add('hidden'); m.style.display = 'none'; }
-});
-$('btnCerrarBuscarEstudios')?.addEventListener('click', () => {
-  const m = $('modalBuscarEstudiosResultados');
-  if (m) { m.classList.add('hidden'); m.style.display = 'none'; }
-});
-document.addEventListener('click', (e) => {
-  const m = $('modalBuscarEstudiosResultados');
-  if (m && e.target === m) { m.classList.add('hidden'); m.style.display = 'none'; }
+  const input = $('buscarEstudioDocumento');
+  if (input) input.value = '';
+  const sec = $('buscarEstudioResultadosSection');
+  if (sec) sec.style.display = 'none';
 });
 
 // Old recibo document search listeners removed — those IDs no longer exist in the new HTML
