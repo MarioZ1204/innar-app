@@ -5101,6 +5101,7 @@ const PORT = process.env.PORT || 3000;
 
     httpServer.listen(PORT, '0.0.0.0', () => {
       logger.info(`Servidor corriendo en http://0.0.0.0:${PORT}`);
+      logger.cleanOldLogs(); // Rotar logs al iniciar
       startBackupScheduler();
       
       // Backups automáticos desactivados (ejecutar manualmente: node utils/backup.js)

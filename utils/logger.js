@@ -169,7 +169,7 @@ function sql(query, params = [], error = null) {
 function cleanOldLogs() {
   try {
     const files = [LOG_FILE, ERROR_LOG_FILE, DEBUG_LOG_FILE];
-    const maxSizeMB = 50;
+    const maxSizeMB = parseInt(process.env.LOG_MAX_SIZE_MB) || 10;
     
     files.forEach(file => {
       if (fs.existsSync(file)) {
@@ -177,15 +177,8 @@ function cleanOldLogs() {
         const sizeMB = stats.size / (1024 * 1024);
         
         if (sizeMB > maxSizeMB) {
-          // Renombrar archivo viejo
-          const timestamp = new Date().toISOString().slice(0, 10);
-          const backupFile = file.replace(/\.log$/, `.${timestamp}.log`);
-          fs.renameSync(file, backupFile);
-          
-          // Crear archivo nuevo
-          fs.writeFileSync(file, '', 'utf8');
-          
-          info(`Log rotado: ${path.basename(file)} (${sizeMB.toFixed(1)} MB)`);
+          // Truncar archivo (no archivar — evita acumulación)
+          fs.writeFileSync(file, `[${new Date().toISOString()}] [INFO] Log truncado por rotación (era ${sizeMB.toFixed(1)} MB)\n`, 'utf8');
         }
       }
     });
