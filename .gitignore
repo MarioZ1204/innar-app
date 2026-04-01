@@ -3,6 +3,7 @@ node_modules/
 
 # Variables de entorno — contienen contraseñas y secretos
 .env
+.env.*
 
 # Logs
 logs/

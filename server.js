@@ -140,7 +140,7 @@ app.use(session({
   saveUninitialized: false,
   rolling: true,
   cookie: { 
-    secure: false, // true si usas HTTPS
+    secure: process.env.NODE_ENV === 'production', // true en producción detrás de proxy HTTPS
     maxAge: 24 * 60 * 60 * 1000 // 24 horas
   }
 }));
@@ -267,10 +267,16 @@ function getLogoReciboBase64() {
 // Opciones para Puppeteer (Chrome/Edge del sistema si existe)
 function getPuppeteerLaunchOptions() {
   const launchOptions = {
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--no-zygote', '--single-process'],
     dumpio: false
   };
   const chromePaths = [
+    // Linux (Hostinger / servidor)
+    '/usr/bin/chromium-browser',
+    '/usr/bin/chromium',
+    '/usr/bin/google-chrome',
+    '/usr/bin/google-chrome-stable',
+    // Windows (desarrollo local)
     'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
     'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
     'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
@@ -5112,7 +5118,15 @@ const PORT = process.env.PORT || 3000;
       }
     });
   } catch (error) {
-    console.error('âŒ Error iniciando servidor:', error.message);
+    console.error('STARTUP ERROR:', error.message);
+    console.error(error.stack);
+    try {
+      const _fs = require('fs'), _path = require('path');
+      const _d = _path.join(__dirname, 'logs');
+      if (!_fs.existsSync(_d)) _fs.mkdirSync(_d, { recursive: true });
+      _fs.appendFileSync(_path.join(_d, 'startup-error.log'),
+        '[' + new Date().toISOString() + '] STARTUP ERROR: ' + error.message + '\n' + error.stack + '\n');
+    } catch (_) {}
     process.exit(1);
   }
 })();
