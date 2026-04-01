@@ -23,6 +23,8 @@ const transactions = require('./utils/transactions');
 const logger = require('./utils/logger');
 const procesarAgendaExcel = require('./utils/procesar-agenda-excel');
 const cors = require('cors');
+const compression = require('compression');
+const rateLimit = require('express-rate-limit');
 const puppeteer = require('puppeteer');
 const fs = require('fs');
 const path = require('path');
@@ -34,17 +36,30 @@ const { startBackupScheduler } = require('./utils/backup-scheduler');
 
 const app = express();
 
+// Compresión gzip para todas las respuestas
+app.use(compression());
+
 app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:3000',
   credentials: true
 }));
-// Headers de seguridad HTTP (configurado para uso local sin HTTPS)
+// Headers de seguridad HTTP
 app.use(helmet({
   contentSecurityPolicy: false,    // La app usa scripts/estilos inline
-  hsts: false,                     // Solo HTTP local, sin HTTPS
+  hsts: process.env.NODE_ENV === 'production',
   crossOriginEmbedderPolicy: false,
   frameguard: { action: 'sameorigin' },
 }));
+
+// Rate limiter global — max 200 requests por minuto por IP
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 200,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Demasiadas solicitudes, intenta de nuevo en un minuto' }
+});
+app.use('/api/', apiLimiter);
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
@@ -140,8 +155,10 @@ app.use(session({
   saveUninitialized: false,
   rolling: true,
   cookie: { 
-    secure: process.env.NODE_ENV === 'production', // true en producción detrás de proxy HTTPS
-    maxAge: 24 * 60 * 60 * 1000 // 24 horas
+    secure: process.env.NODE_ENV === 'production',
+    httpOnly: true,
+    sameSite: 'lax',
+    maxAge: 8 * 60 * 60 * 1000 // 8 horas
   }
 }));
 // activar rolling session para actualizar cookie en cada respuesta
@@ -872,7 +889,7 @@ app.get('/api/auditoria/historial', requireAuth, requireAdmin, async (req, res) 
 app.get('/api/auditoria/buscar', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { usuario_id, accion, admin_id, desde, hasta, limit: reqLimit } = req.query;
-    const limit = Math.min(parseInt(reqLimit) || 500, 1000); // Max 1000
+    const limit = Math.min(parseInt(reqLimit) || 500, 500); // Max 500
     
     let query = 'SELECT ua.*, u.usuario, u.nombre FROM usuario_auditorias ua LEFT JOIN usuarios u ON ua.usuario_id = u.id WHERE 1=1';
     const params = [];
@@ -3544,7 +3561,7 @@ app.get('/api/recibos', requireAuth, async (req, res) => {
               medico_id, medico_nombre, tipo_servicio,
               generado_por_id, generado_por_nombre, observaciones,
               turno_id, cita_electro_id, creado_en, data
-       FROM recibos ${where} ORDER BY id DESC LIMIT 1000`,
+       FROM recibos ${where} ORDER BY id DESC LIMIT 500`,
       params
     );
     res.json(rows || []);
