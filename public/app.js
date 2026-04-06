@@ -184,6 +184,7 @@ async function checkSession() {
       mostrarSaludoDoctor();
       initSocket();        // Inicializar socket al restaurar sesión (recarga de página)
       setupMenuHandlers(); // Configurar handlers (incluyendo mobile sidebar)
+      _initAudioStatusBtn(); // Mostrar botón de audio (requiere clic manual al recargar)
       // Restaurar módulo anterior si existe (sessionStorage = solo esta pestaña)
       const savedModule = sessionStorage.getItem(lsKeyCurrentModule);
       // Restaurar doctor seleccionado si existe (para RECEPCIONISTA)
@@ -229,6 +230,9 @@ async function doLogin(usuario, password) {
       mostrarSaludoDoctor();
       initSocket();
       setupMenuHandlers();
+      // El clic del login desbloquea el motor de voz
+      _unlockSpeech();
+      _initAudioStatusBtn();
       history.pushState({view: 'menu'}, '', '#menu');
       return true;
     }
@@ -264,10 +268,6 @@ async function doLogout() {
   try {
     await apiFetch('/api/logout', { method: 'POST' });
   } catch (e) {}
-  // Limpiar campos de login
-  const u = $('loginUsuario'), p = $('loginPassword');
-  if (u) u.value = '';
-  if (p) p.value = '';
   // Resetear flag de listeners de socket-electro
   window.listenersConfigured = false;
   window.socketElectroListenerAdded = false;
@@ -275,9 +275,16 @@ async function doLogout() {
   sessionStorage.removeItem(lsKeyCurrentModule);
   sessionStorage.removeItem(lsKeySelectedDoctor);
   currentModule = null;
-  window.currentModule = null;  // Limpiar para sockets
+  window.currentModule = null;
+  _hideAudioStatusBtn();
   showView('view-login');
   history.pushState({view: 'login'}, '', '#login');
+  // Limpiar campos de login después del cambio de vista
+  const formLogin = document.getElementById('formLogin');
+  if (formLogin) formLogin.reset();
+  const u = $('loginUsuario'), p = $('loginPassword');
+  if (u) { u.value = ''; u.setAttribute('value', ''); }
+  if (p) { p.value = ''; p.setAttribute('value', ''); }
 }
 
 let initRecibosDone = false, initAgendaDone = false, initElectroDone = false, initUsuariosDone = false, initDiagnosticosDone = false, initDashboardCitasDone = false, initGestionDatosDone = false;
@@ -1015,11 +1022,45 @@ function setLoading(btn, loading, loadingText = 'Guardando...') {
 }
 
 // ========== VOZ LATINOAMERICANA ==========
-// Prefiere voces de Colombia/Latinoamérica sobre España
 let _voiceCache = null;
+let _speechUnlocked = false;
 if ('speechSynthesis' in window) {
   window.speechSynthesis.onvoiceschanged = () => { _voiceCache = null; };
 }
+
+// Desbloquea speechSynthesis con un silencio (requiere gesto del usuario)
+function _unlockSpeech() {
+  if (_speechUnlocked || !('speechSynthesis' in window)) return;
+  _speechUnlocked = true;
+  const silent = new SpeechSynthesisUtterance(' ');
+  silent.volume = 0;
+  silent.lang = 'es-CO';
+  window.speechSynthesis.speak(silent);
+  const btn = document.getElementById('btnAudioStatus');
+  if (btn) { btn.title = 'Audio habilitado'; btn.textContent = '\uD83D\uDD0A'; }
+}
+
+function _initAudioStatusBtn() {
+  if (!('speechSynthesis' in window)) return;
+  if (document.getElementById('btnAudioStatus')) return;
+  const btn = document.createElement('button');
+  btn.id = 'btnAudioStatus';
+  btn.title = 'Clic para habilitar audio de voz';
+  btn.textContent = '\uD83D\uDD07';
+  btn.style.cssText = 'position:fixed;bottom:18px;right:18px;z-index:9000;width:40px;height:40px;border-radius:50%;background:#fff;border:2px solid #8AA6A1;font-size:1.1rem;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.18);padding:0;line-height:1;display:flex;align-items:center;justify-content:center;';
+  btn.addEventListener('click', () => {
+    _unlockSpeech();
+    setTimeout(() => _speak('Audio habilitado', 1), 100);
+  });
+  document.body.appendChild(btn);
+}
+
+function _hideAudioStatusBtn() {
+  const btn = document.getElementById('btnAudioStatus');
+  if (btn) btn.remove();
+  _speechUnlocked = false;
+}
+
 function _pickLatAmVoice() {
   if (_voiceCache) return _voiceCache;
   const voices = window.speechSynthesis.getVoices();
