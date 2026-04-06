@@ -324,6 +324,13 @@ input[type="month"]::-webkit-calendar-picker-indicator {
   opacity: 0;
   cursor: pointer;
 }
+/* Electro fecha — styled consistently with global date inputs */
+.electro-fecha-input {
+  padding: 8px 12px 8px 36px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 0.95rem;
+}
 .row { display:flex; gap:12px; margin-bottom:8px; flex-wrap:wrap }
 .col { flex:1; min-width:200px }
 table { width:100%; border-collapse:collapse; margin-top:8px; font-size:.95rem }

@@ -264,6 +264,10 @@ async function doLogout() {
   try {
     await apiFetch('/api/logout', { method: 'POST' });
   } catch (e) {}
+  // Limpiar campos de login
+  const u = $('loginUsuario'), p = $('loginPassword');
+  if (u) u.value = '';
+  if (p) p.value = '';
   // Resetear flag de listeners de socket-electro
   window.listenersConfigured = false;
   window.socketElectroListenerAdded = false;
