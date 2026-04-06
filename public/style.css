@@ -2370,3 +2370,61 @@ button.remove { padding:5px 10px; font-size:.8rem; width:100%; }
   border-radius: 50%;
   animation: loaderSpin 0.6s linear infinite;
 }
+
+/* ========== VIEW FADE TRANSITION ========== */
+[id^="view-"]:not(.hidden) { animation: viewFadeIn 0.15s ease; }
+@keyframes viewFadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+/* ========== CONFIRM MODAL ========== */
+.confirm-backdrop {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.45);
+  z-index: 10001; display: flex; align-items: center; justify-content: center;
+  animation: viewFadeIn 0.15s ease;
+}
+.confirm-box {
+  background: white; border-radius: 12px; padding: 28px 32px;
+  max-width: 420px; width: calc(100vw - 48px);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+  animation: scaleIn 0.15s ease;
+}
+.confirm-icon { font-size: 2rem; text-align: center; margin-bottom: 10px; }
+.confirm-msg { font-size: 0.95rem; color: #374151; margin-bottom: 24px; text-align: center; line-height: 1.55; white-space: pre-line; }
+.confirm-actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+.confirm-actions .btn-cancel { background: #f3f4f6; color: #374151; border: none; padding: 9px 22px; border-radius: 7px; cursor: pointer; font-size: 0.9rem; }
+.confirm-actions .btn-cancel:hover { background: #e5e7eb; }
+.confirm-actions .btn-ok { padding: 9px 22px; border-radius: 7px; border: none; cursor: pointer; font-size: 0.9rem; font-weight: 600; color: white; background: var(--c-primary, #8AA6A1); }
+.confirm-actions .btn-ok.danger { background: #dc2626; }
+.confirm-actions .btn-ok:hover { opacity: 0.88; }
+@keyframes scaleIn { from { opacity: 0; transform: scale(0.93); } to { opacity: 1; transform: scale(1); } }
+
+/* ========== SESSION EXPIRED BANNER ========== */
+#session-expired-banner {
+  position: fixed; inset: 0; z-index: 10002;
+  background: rgba(0,0,0,0.6); backdrop-filter: blur(3px);
+  display: flex; align-items: center; justify-content: center;
+  animation: viewFadeIn 0.2s ease;
+}
+.session-expired-box {
+  background: white; border-radius: 16px; padding: 40px 44px;
+  text-align: center; max-width: 380px; width: calc(100vw - 48px);
+  box-shadow: 0 16px 48px rgba(0,0,0,0.28);
+}
+.session-expired-icon { font-size: 2.8rem; margin-bottom: 14px; }
+.session-expired-title { font-size: 1.25rem; font-weight: 700; color: #111827; margin: 0 0 8px; }
+.session-expired-sub { font-size: 0.9rem; color: #6b7280; margin: 0 0 26px; line-height: 1.5; }
+.session-expired-btn { display: block; width: 100%; padding: 13px 0; border-radius: 9px; border: none; background: var(--c-primary, #8AA6A1); color: white; font-size: 1rem; font-weight: 700; cursor: pointer; transition: opacity 0.15s; }
+.session-expired-btn:hover { opacity: 0.88; }
+
+/* ========== SKELETON ROWS ========== */
+@keyframes shimmer { 0% { background-position: -600px 0; } 100% { background-position: 600px 0; } }
+.skeleton-row td { padding: 10px 14px; border-bottom: 1px solid #f3f4f6; }
+.skeleton-cell {
+  height: 13px; border-radius: 4px;
+  background: linear-gradient(90deg, #ececec 25%, #e2e2e2 50%, #ececec 75%);
+  background-size: 600px 100%;
+  animation: shimmer 1.4s infinite;
+}
+
+/* ========== FIELD ERROR ========== */
+.field-error-input { border-color: #dc2626 !important; box-shadow: 0 0 0 2px rgba(220,38,38,0.15) !important; }
+.field-error-msg { color: #dc2626; font-size: 0.78rem; margin-top: 3px; display: block; }

@@ -113,10 +113,11 @@ function initSocket() {
     if (data.estado === 'EN_SALA' && typeof isDoctor === 'function' && isDoctor()) {
       const nombre = data.paciente_nombre ? ` - ${data.paciente_nombre}` : '';
       if (typeof showToast === 'function') showToast(`🔔 Paciente en sala${nombre}`, 'info');
-      if ('speechSynthesis' in window) {
+      if (typeof _speak === 'function') _speak('Paciente en sala', 1.05);
+      else if ('speechSynthesis' in window) {
         window.speechSynthesis.cancel();
         const utter = new SpeechSynthesisUtterance('Paciente en sala');
-        utter.lang = 'es-ES'; utter.rate = 1.1; utter.volume = 1;
+        utter.lang = 'es-CO'; utter.rate = 1.05; utter.volume = 1;
         window.speechSynthesis.speak(utter);
       }
     }
@@ -136,16 +137,19 @@ function initSocket() {
     if (typeof cargarTurnosMedica === 'function') cargarTurnosMedica();
     // Anuncio de voz para recepción y electrodiagnóstico (no para doctor ni admin puro)
     if (typeof isRecepcion === 'function' && typeof isElectro === 'function') {
-      if ((isRecepcion() || isElectro()) && 'speechSynthesis' in window) {
+    if ((isRecepcion() || isElectro()) && 'speechSynthesis' in window) {
         const nombre = data.paciente_nombre || '';
         const num = data.numero_turno || '';
         let texto = num ? `Turno ${num}` : '';
         if (nombre) texto += (texto ? ', ' : '') + `Paciente ${nombre}`;
         texto += ', por favor pasar a consultorio';
-        window.speechSynthesis.cancel();
-        const utter = new SpeechSynthesisUtterance(texto);
-        utter.lang = 'es-ES'; utter.rate = 1; utter.volume = 1;
-        window.speechSynthesis.speak(utter);
+        if (typeof _speak === 'function') _speak(texto, 0.95);
+        else {
+          window.speechSynthesis.cancel();
+          const utter = new SpeechSynthesisUtterance(texto);
+          utter.lang = 'es-CO'; utter.rate = 0.95; utter.volume = 1;
+          window.speechSynthesis.speak(utter);
+        }
       }
     }
   });
@@ -164,10 +168,11 @@ function initSocket() {
       // Solo actuar si no hay doctor específico o el aviso es para este doctor
       if (!data.doctor_id || (typeof currentUser !== 'undefined' && currentUser && data.doctor_id === currentUser.id)) {
         if (typeof showToast === 'function') showToast('⏰ Recepción solicita que concluya la consulta', 'warning');
-        if ('speechSynthesis' in window) {
+        if (typeof _speak === 'function') _speak('Doctor, puede concluir su consulta', 0.9);
+        else if ('speechSynthesis' in window) {
           window.speechSynthesis.cancel();
           const utter = new SpeechSynthesisUtterance('Doctor, puede concluir su consulta');
-          utter.lang = 'es-ES'; utter.rate = 1; utter.volume = 1;
+          utter.lang = 'es-CO'; utter.rate = 0.9; utter.volume = 1;
           window.speechSynthesis.speak(utter);
         }
       }

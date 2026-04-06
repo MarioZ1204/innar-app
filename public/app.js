@@ -100,8 +100,7 @@ let globalHayEnAtencion = false;
 function apiFetch(url, opts = {}) {
   return fetch(url, { ...opts, credentials: 'include' }).then(res => {
     if (res.status === 401) {
-      showToast('Sesión expirada. Por favor inicia sesión nuevamente.', 'warning');
-      setTimeout(() => showView('view-login'), 1500);
+      showSessionExpiredBanner();
     }
     if (res.status === 429) {
       showToast('Demasiadas solicitudes. Espera un momento.', 'warning');
@@ -907,18 +906,19 @@ async function renderServiciosList() {
     btnDel.textContent = 'Eliminar';
     btnDel.className = 'btn-danger btn-sm';
     btnDel.style.marginLeft = '6px';
-    btnDel.addEventListener('click', async () => {
-      if (!confirm(`¿Eliminar el servicio "${s.nombre}"?`)) return;
-      try {
-        const res = await apiFetch(`/api/servicios/${s.id}`, { method: 'DELETE' });
-        const data = await res.json();
-        if (data.ok) {
-          invalidarCacheServicios();
-          await renderServiciosList();
-          await updateServiciosSelects();
-          showToast('Servicio eliminado', 'success');
-        }
-      } catch(_) { showToast('Error eliminando', 'error'); }
+    btnDel.addEventListener('click', () => {
+      showConfirm(`¿Eliminar el servicio "${s.nombre}"?`, async () => {
+        try {
+          const res = await apiFetch(`/api/servicios/${s.id}`, { method: 'DELETE' });
+          const data = await res.json();
+          if (data.ok) {
+            invalidarCacheServicios();
+            await renderServiciosList();
+            await updateServiciosSelects();
+            showToast('Servicio eliminado', 'success');
+          }
+        } catch(_) { showToast('Error eliminando', 'error'); }
+      });
     });
     div.appendChild(span);
     div.appendChild(btn);
@@ -1010,33 +1010,117 @@ function setLoading(btn, loading, loadingText = 'Guardando...') {
   }
 }
 
+// ========== VOZ LATINOAMERICANA ==========
+// Prefiere voces de Colombia/Latinoamérica sobre España
+let _voiceCache = null;
+if ('speechSynthesis' in window) {
+  window.speechSynthesis.onvoiceschanged = () => { _voiceCache = null; };
+}
+function _pickLatAmVoice() {
+  if (_voiceCache) return _voiceCache;
+  const voices = window.speechSynthesis.getVoices();
+  if (!voices.length) return null;
+  const priority = ['es-CO', 'es-419', 'es-MX', 'es-AR', 'es-CL', 'es-PE', 'es-US', 'es-ES'];
+  for (const lang of priority) {
+    const v = voices.find(v => v.lang === lang || v.lang.startsWith(lang + '-'));
+    if (v) { _voiceCache = v; return v; }
+  }
+  const fallback = voices.find(v => v.lang.startsWith('es')) || null;
+  _voiceCache = fallback;
+  return fallback;
+}
+function _speak(text, rate = 1, onEnd = null) {
+  if (!('speechSynthesis' in window)) return;
+  window.speechSynthesis.cancel();
+  const utter = new SpeechSynthesisUtterance(text);
+  utter.rate = rate;
+  utter.volume = 1;
+  const voice = _pickLatAmVoice();
+  if (voice) { utter.voice = voice; utter.lang = voice.lang; }
+  else { utter.lang = 'es-CO'; }
+  if (onEnd) utter.onend = onEnd;
+  utter.onerror = ev => console.error('Speech error:', ev.error);
+  window.speechSynthesis.speak(utter);
+}
+
 // Reproducir número de consultorio por voz
 function speakConsultorio(numero) {
-  // Cancelar cualquier síntesis de voz anterior
-  window.speechSynthesis.cancel();
-  
-  // Crear mensaje a sintetizar
-  const texto = `Consultorio número ${numero}`;
-  const utterance = new SpeechSynthesisUtterance(texto);
-  
-  // Configurar voz en español (si está disponible)
-  utterance.lang = 'es-ES';
-  utterance.rate = 1;
-  utterance.pitch = 1;
-  utterance.volume = 1;
-  
-  // Al terminar la síntesis, mostrar un toast
-  utterance.onend = () => {
-    showToast(`Consultorio ${numero} anunciado`, 'success');
-  };
-  
-  utterance.onerror = (event) => {
-    console.error('Error en síntesis de voz:', event.error);
-    showToast('Error al reproducir audio', 'error');
-  };
-  
-  // Reproducir
-  window.speechSynthesis.speak(utterance);
+  _speak(`Consultorio número ${numero}`, 1, () => showToast(`Consultorio ${numero} anunciado`, 'success'));
+}
+
+// ========== SESSION EXPIRADA ==========
+let _sessionBannerShown = false;
+function showSessionExpiredBanner() {
+  if (_sessionBannerShown || document.getElementById('session-expired-banner')) return;
+  _sessionBannerShown = true;
+  const banner = document.createElement('div');
+  banner.id = 'session-expired-banner';
+  banner.innerHTML = `
+    <div class="session-expired-box">
+      <div class="session-expired-icon">🔒</div>
+      <h3 class="session-expired-title">Sesión expirada</h3>
+      <p class="session-expired-sub">Tu sesión ha terminado.<br>Vuelve a iniciar sesión para continuar.</p>
+      <button class="session-expired-btn" id="btnGoLogin">Iniciar sesión</button>
+    </div>`;
+  document.body.appendChild(banner);
+  banner.querySelector('#btnGoLogin').addEventListener('click', () => {
+    banner.remove();
+    _sessionBannerShown = false;
+    if (window.socket) { window.socket.disconnect(); window.socket = null; }
+    currentUser = null;
+    showView('view-login');
+  });
+}
+
+// ========== CONFIRM MODAL ==========
+function showConfirm(msg, onOk, { okText = 'Eliminar', cancelText = 'Cancelar', danger = true, icon = '⚠️' } = {}) {
+  const backdrop = document.createElement('div');
+  backdrop.className = 'confirm-backdrop';
+  backdrop.innerHTML = `
+    <div class="confirm-box">
+      <div class="confirm-icon">${icon}</div>
+      <div class="confirm-msg">${msg}</div>
+      <div class="confirm-actions">
+        <button class="btn-cancel">${cancelText}</button>
+        <button class="btn-ok${danger ? ' danger' : ''}">${okText}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(backdrop);
+  backdrop.querySelector('.btn-cancel').addEventListener('click', () => backdrop.remove());
+  backdrop.querySelector('.btn-ok').addEventListener('click', () => { backdrop.remove(); onOk(); });
+  backdrop.addEventListener('click', e => { if (e.target === backdrop) backdrop.remove(); });
+}
+
+// ========== SKELETON ROWS ==========
+function showSkeletonRows(tbody, cols, count = 5) {
+  if (!tbody) return;
+  tbody.innerHTML = Array.from({ length: count }, (_, r) =>
+    `<tr class="skeleton-row">${Array.from({ length: cols }, (_, i) =>
+      `<td><div class="skeleton-cell" style="width:${55 + ((r + i * 3) % 4) * 10}%"></div></td>`
+    ).join('')}</tr>`
+  ).join('');
+}
+
+// ========== FIELD ERROR (validación inline) ==========
+function markFieldError(input, msg) {
+  if (!input) return;
+  input.classList.add('field-error-input');
+  let span = input.nextElementSibling;
+  if (!span || !span.classList.contains('field-error-msg')) {
+    span = document.createElement('span');
+    span.className = 'field-error-msg';
+    input.parentNode.insertBefore(span, input.nextSibling);
+  }
+  span.textContent = msg;
+  const clear = () => { clearFieldError(input); input.removeEventListener('input', clear); input.removeEventListener('change', clear); };
+  input.addEventListener('input', clear);
+  input.addEventListener('change', clear);
+}
+function clearFieldError(input) {
+  if (!input) return;
+  input.classList.remove('field-error-input');
+  const span = input.nextElementSibling;
+  if (span && span.classList.contains('field-error-msg')) span.remove();
 }
 
 // init
@@ -2275,12 +2359,11 @@ async function saveCalDay() {
   }
 }
 
-async function deleteCalDay() {
+function deleteCalDay() {
   if (!calSelectedDate || !calDoctorIdForCal) return;
-  if (!confirm(`¿Limpiar la configuración del día seleccionado?`)) return;
-
-  try {
-    await apiFetch('/api/doctor-disponibilidad/eliminar-dia', {
+  showConfirm('¿Limpiar la configuración del día seleccionado?', async () => {
+    try {
+      await apiFetch('/api/doctor-disponibilidad/eliminar-dia', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ doctor_id: calDoctorIdForCal, fecha: calSelectedDate })
@@ -2291,6 +2374,7 @@ async function deleteCalDay() {
   } catch (e) {
     showToast('Error: ' + e.message, 'error');
   }
+  }, { okText: 'Limpiar', icon: '🗓️' });
 }
 
 function renderCalResumen() {
@@ -2688,9 +2772,9 @@ async function buscarPacientesMedica() {
 
 async function cargarTurnosMedica() {
   const fecha = $('agendaMedicaFecha').value;
-  // Usar selectedDoctorId (establecido al seleccionar doctor) o el ID del doctor logging si es doctor
   const doctorId = selectedDoctorId || (isDoctor() ? currentUser?.id : null);
   if (!fecha || !doctorId) { showToast('Selecciona fecha y médico', 'error'); return; }
+  showSkeletonRows($('turnosTableBodyMedica'), isDoctor() ? 7 : 8, 6);
   try {
     const res = await apiFetch(`/api/turnos?fecha=${fecha}&doctor_id=${doctorId}`);
     const turnos = await res.json();
@@ -2925,7 +3009,7 @@ function renderTurnoRowMedica(tbody, t, animateTargetId, hayEnAtencion) {
       const btn = e.target.closest('[data-delete]');
       const deshabilitado = btn?.getAttribute('data-deshabilitado') === 'true';
       if (btn?.disabled || deshabilitado) return;
-      if (!confirm('¿Eliminar esta cita?')) return;
+      showConfirm('¿Eliminar esta cita?', async () => {
       try {
         const deleteId = btn?.dataset.delete || e.target.dataset.delete;
         const res = await apiFetch(`/api/turnos/${deleteId}`, { method:'DELETE' });
@@ -2937,6 +3021,7 @@ function renderTurnoRowMedica(tbody, t, animateTargetId, hayEnAtencion) {
           showToast(data.error || 'Error al eliminar', 'error');
         }
       } catch(x){ showToast('Error al eliminar', 'error'); console.error(x); }
+      });
     });
   }
   tbody.appendChild(tr);
@@ -4317,6 +4402,7 @@ $('electroDiagnostico').addEventListener('input', function() {
 async function cargarCitasElectro() {
   const fecha = $('electroFecha').value;
   if (!fecha) { showToast('Selecciona una fecha', 'error'); return; }
+  showSkeletonRows($('citasElectroBody'), 10, 6);
   try {
     const res = await apiFetch(`/api/citas-electro?fecha=${fecha}`);
     const citas = await res.json();
@@ -4330,7 +4416,7 @@ async function cargarCitasElectro() {
     if (citasFiltradas.length === 0) {
       const tbody = $('citasElectroBody');
       const mensajeEstudio = filtroEstudioElectro === 'todas' ? '' : ` para ${filtroEstudioElectro}`;
-      tbody.innerHTML = `<tr><td colspan="10" style="padding:20px;text-align:center;color:#999">No hay citas registradas para esta fecha${mensajeEstudio}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="10"><div class="empty-state"><div class="empty-state-icon">📅</div><p class="empty-state-title">Sin citas</p><p class="empty-state-subtitle">No hay citas registradas para esta fecha${mensajeEstudio}</p></div></td></tr>`;
       const contador = $('citasElectroContador');
       if (contador) contador.textContent = '';
       // Actualizar información de usuario
@@ -4778,14 +4864,15 @@ async function initUsuarios() {
 }
 
 async function cargarUsuarios() {
+  const tbody = $('usuariosTableBody');
+  showSkeletonRows(tbody, 6, 5);
   try {
     const res = await apiFetch('/api/usuarios');
     if (res.status === 403) { showToast('No tienes permiso', 'error'); return; }
     const usuarios = await res.json();
     
     if (!usuarios.length) {
-      const tbody = $('usuariosTableBody');
-      tbody.innerHTML = '<tr><td colspan="6" style="padding:20px;text-align:center;color:#999">No hay usuarios</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6"><div class="empty-state"><div class="empty-state-icon">👤</div><p class="empty-state-title">Sin usuarios</p><p class="empty-state-subtitle">No hay usuarios registrados en el sistema</p></div></td></tr>';
       return;
     }
 
@@ -4844,32 +4931,36 @@ function renderUsuarioRow(tbody, u) {
   tr.querySelector('[data-edit]')?.addEventListener('click', () => editarUsuario(u));
   tr.querySelector('[data-speak]')?.addEventListener('click', (e) => speakConsultorio(e.target.closest('[data-speak]').dataset.speak));
   tr.querySelector('[data-historial]')?.addEventListener('click', () => verHistorialAuditoria(u.id, u.usuario));
-  tr.querySelector('[data-reset]')?.addEventListener('click', async (e) => {
-    if (!confirm(`\u00bfResetear contrase\u00f1a para ${u.usuario}?`)) return;
-    try {
-      const r = await apiFetch(`/api/usuarios/${e.target.closest('[data-reset]').dataset.reset}/reset-password`, { method: 'PATCH' });
-      const d = await r.json();
-      if (d.ok) { verResetPassword(d); } else showToast(d.error||'Error', 'error');
-    } catch (x) { showToast('Error', 'error'); }
+  tr.querySelector('[data-reset]')?.addEventListener('click', (e) => {
+    showConfirm(`¿Resetear contraseña para ${u.usuario}?`, async () => {
+      try {
+        const r = await apiFetch(`/api/usuarios/${e.target.closest('[data-reset]').dataset.reset}/reset-password`, { method: 'PATCH' });
+        const d = await r.json();
+        if (d.ok) { verResetPassword(d); } else showToast(d.error||'Error', 'error');
+      } catch (x) { showToast('Error', 'error'); }
+    }, { okText: 'Resetear', icon: '🔑' });
   });
-  tr.querySelector('[data-toggle]')?.addEventListener('click', async (e) => {
+  tr.querySelector('[data-toggle]')?.addEventListener('click', (e) => {
     const newState = u.activo ? 'desactivar' : 'activar';
-    if (!confirm(`\u00bf${newState.charAt(0).toUpperCase() + newState.slice(1)} este usuario?`)) return;
-    try {
-      const r = await apiFetch(`/api/usuarios/${e.target.closest('[data-toggle]').dataset.toggle}/toggle-estado`, { method: 'PATCH' });
-      const d = await r.json();
-      if (d.ok) { showToast(`Usuario ${d.activo ? 'activado' : 'desactivado'}`, 'success'); cargarUsuarios(); }
-      else showToast(d.error||'Error', 'error');
-    } catch (x) { showToast('Error', 'error'); }
+    const label = newState.charAt(0).toUpperCase() + newState.slice(1);
+    showConfirm(`¿${label} este usuario?`, async () => {
+      try {
+        const r = await apiFetch(`/api/usuarios/${e.target.closest('[data-toggle]').dataset.toggle}/toggle-estado`, { method: 'PATCH' });
+        const d = await r.json();
+        if (d.ok) { showToast(`Usuario ${d.activo ? 'activado' : 'desactivado'}`, 'success'); cargarUsuarios(); }
+        else showToast(d.error||'Error', 'error');
+      } catch (x) { showToast('Error', 'error'); }
+    }, { okText: label, danger: u.activo, icon: u.activo ? '🚫' : '✅' });
   });
-  tr.querySelector('[data-del]')?.addEventListener('click', async (e) => {
-    if (!confirm('\u00bfEliminar este usuario permanentemente?')) return;
-    try {
-      const r = await apiFetch(`/api/usuarios/${e.target.closest('[data-del]').dataset.del}`, { method: 'DELETE' });
-      const d = await r.json();
-      if (d.ok) { showToast('Usuario eliminado', 'success'); cargarUsuarios(); }
-      else showToast(d.error||'Error', 'error');
-    } catch (x) { showToast('Error', 'error'); }
+  tr.querySelector('[data-del]')?.addEventListener('click', (e) => {
+    showConfirm('¿Eliminar este usuario permanentemente?', async () => {
+      try {
+        const r = await apiFetch(`/api/usuarios/${e.target.closest('[data-del]').dataset.del}`, { method: 'DELETE' });
+        const d = await r.json();
+        if (d.ok) { showToast('Usuario eliminado', 'success'); cargarUsuarios(); }
+        else showToast(d.error||'Error', 'error');
+      } catch (x) { showToast('Error', 'error'); }
+    });
   });
 
   tbody.appendChild(tr);
@@ -6014,7 +6105,7 @@ function limpiarFiltrosRecibos() {
   if ($('filtroGeneradoPor')) $('filtroGeneradoPor').value = '';
   _recibosLastParams = '';
   const tbody = document.getElementById('savedItems');
-  if (tbody) tbody.innerHTML = '<tr><td colspan="10" style="padding:24px;text-align:center;color:#999">Aplica un filtro para ver los recibos</td></tr>';
+  if (tbody) tbody.innerHTML = '<tr><td colspan="10"><div class="empty-state"><div class="empty-state-icon">📋</div><p class="empty-state-title">Aplica un filtro para ver los recibos</p></div></td></tr>';
   document.getElementById('reciboResumenCard')?.classList.add('hidden');
 }
 
@@ -6033,7 +6124,7 @@ async function cargarLista(queryString) {
     const url = '/api/recibos' + (queryString ? '?' + queryString : '');
     const res = await apiFetch(url);
     if (!res.ok) {
-      if (res.status === 401) { showToast('Sesión expirada', 'error'); setTimeout(() => showView('view-login'), 1200); }
+      if (res.status === 401) { /* handled by apiFetch */ return; }
       else showToast('Error al cargar recibos', 'error');
       updateStats([]);
       return;
@@ -6047,7 +6138,7 @@ async function cargarLista(queryString) {
     const resumenCard = document.getElementById('reciboResumenCard');
 
     if (!recibos || !recibos.length) {
-      tbody.innerHTML = '<tr><td colspan="10" style="padding:24px;text-align:center;color:#999">No hay recibos con los filtros aplicados</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="10"><div class="empty-state"><div class="empty-state-icon">📋</div><p class="empty-state-title">Sin resultados</p><p class="empty-state-subtitle">No hay recibos con los filtros aplicados</p></div></td></tr>';
       if (resumenCard) resumenCard.classList.add('hidden');
       return;
     }
@@ -6086,12 +6177,13 @@ async function cargarLista(queryString) {
       tbody.appendChild(tr);
     });
 
-    tbody.querySelectorAll('.delete').forEach(b => b.addEventListener('click', async e => {
-      if (!confirm('¿Eliminar este recibo?')) return;
-      try {
-        const jr = await apiFetch(`/api/recibos/${e.target.dataset.id}`, { method: 'DELETE' }).then(r => r.json());
-        if (jr.ok) { showToast('Recibo eliminado', 'success'); cargarLista(_recibosLastParams); }
-      } catch (_) { showToast('Error eliminando recibo', 'error'); }
+    tbody.querySelectorAll('.delete').forEach(b => b.addEventListener('click', e => {
+      showConfirm('¿Eliminar este recibo?', async () => {
+        try {
+          const jr = await apiFetch(`/api/recibos/${e.target.dataset.id}`, { method: 'DELETE' }).then(r => r.json());
+          if (jr.ok) { showToast('Recibo eliminado', 'success'); cargarLista(_recibosLastParams); }
+        } catch (_) { showToast('Error eliminando recibo', 'error'); }
+      });
     }));
   } catch(e) {
     console.error(e);
@@ -6114,25 +6206,24 @@ function updateStats(recibos) {
   if ($('statsTotalHoy')) $('statsTotalHoy').textContent = '$ ' + totalHoy.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-async function resetAllRecibos(){
-  if(!confirm('¿Eliminar TODOS los recibos guardados? Esta acción no se puede deshacer.\nSolo los administradores pueden realizar esta operación.')) return;
-  if(!confirm('Confirma: ¿Eliminar todos los recibos?')) return;
-  
-  showLoader(true);
-  try {
-    const res = await apiFetch('/api/recibos/reset', { method: 'DELETE' });
-    const json = await res.json();
-    showLoader(false);
-    if(json.ok) {
-      showToast('✓ Todos los recibos han sido eliminados', 'success');
-      cargarLista();
-      nextNumber();
+function resetAllRecibos(){
+  showConfirm('¿Eliminar TODOS los recibos guardados?\nEsta acción no se puede deshacer.\nSolo los administradores pueden realizar esta operación.', async () => {
+    showLoader(true, 'Eliminando todos los recibos...');
+    try {
+      const res = await apiFetch('/api/recibos/reset', { method: 'DELETE' });
+      const json = await res.json();
+      showLoader(false);
+      if(json.ok) {
+        showToast('Todos los recibos han sido eliminados', 'success');
+        cargarLista();
+        nextNumber();
+      }
+    } catch(e) {
+      showLoader(false);
+      showToast('Error al resetear', 'error');
+      console.error(e);
     }
-  } catch(e) {
-    showLoader(false);
-    showToast('Error al resetear', 'error');
-    console.error(e);
-  }
+  }, { okText: 'Eliminar todo', icon: '🗑️' });
 }
 
 // (setDefaultReportDates, generarReporteDiario, generarReporteMensual eliminados — reemplazados por filtros en Ver Recibos)
@@ -6446,13 +6537,14 @@ async function importarDiagnosticosExcel() {
 }
 
 async function cargarListaDiagnosticos() {
+  const tbody = $('diagnosticosTableBody');
+  showSkeletonRows(tbody, 5, 5);
   try {
     const res = await apiFetch('/api/diagnosticos');
     const diagnosticos = await res.json();
 
     if (diagnosticos.length === 0) {
-      const tbody = $('diagnosticosTableBody');
-      tbody.innerHTML = '<tr><td colspan="5" style="padding:20px;text-align:center;color:#999">Sin diagnósticos cargados</td></tr>';
+      if (tbody) tbody.innerHTML = '<tr><td colspan="5"><div class="empty-state"><div class="empty-state-icon">💬</div><p class="empty-state-title">Sin diagnósticos</p><p class="empty-state-subtitle">No hay diagnósticos cargados en el sistema</p></div></td></tr>';
       return;
     }
 
@@ -6464,10 +6556,7 @@ async function cargarListaDiagnosticos() {
     });
   } catch (e) {
     console.error('Error cargando diagnósticos:', e);
-    const tbody = $('diagnosticosTableBody');
-    if (tbody) {
-      tbody.innerHTML = '<tr><td colspan="5" style="padding:20px;text-align:center;color:#dc2626">Error cargando diagnósticos</td></tr>';
-    }
+    if (tbody) tbody.innerHTML = '<tr><td colspan="5"><div class="empty-state"><div class="empty-state-icon">⚠️</div><p class="empty-state-title" style="color:#dc2626">Error cargando diagnósticos</p></div></td></tr>';
   }
 }
 
@@ -6487,9 +6576,9 @@ function renderDiagnosticoRow(tbody, d) {
     </td>
   `;
   
-  tr.querySelector('.btn-eliminar-diag')?.addEventListener('click', async (e) => {
+  tr.querySelector('.btn-eliminar-diag')?.addEventListener('click', (e) => {
     const id = e.target.dataset.id;
-    if (confirm('¿Está seguro que desea eliminar este diagnóstico?')) {
+    showConfirm('¿Eliminar este diagnóstico?', async () => {
       try {
         await apiFetch(`/api/diagnosticos/${id}`, { method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({activo: 0}) });
         showToast('Diagnóstico eliminado', 'success');
@@ -6497,7 +6586,7 @@ function renderDiagnosticoRow(tbody, d) {
       } catch (x) {
         showToast('Error eliminando diagnóstico', 'error');
       }
-    }
+    });
   });
   
   tbody.appendChild(tr);
@@ -8777,8 +8866,8 @@ async function editarEspecialidad(id, nombreActual) {
   } catch (e) { showToast('Error: ' + e.message, 'error'); }
 }
 
-async function eliminarEspecialidad(id, nombre) {
-  if (!confirm(`¿Eliminar la especialidad "${nombre}" y todos sus tipos de consulta?\nEsta acción no se puede deshacer.`)) return;
+function eliminarEspecialidad(id, nombre) {
+  showConfirm(`¿Eliminar la especialidad "${nombre}" y todos sus tipos de consulta?\nEsta acción no se puede deshacer.`, async () => {
   try {
     const res = await apiFetch(`/api/especialidades/${id}`, { method: 'DELETE' });
     const data = await res.json();
@@ -8791,6 +8880,7 @@ async function eliminarEspecialidad(id, nombre) {
     await cargarOpcionesEspecialidad('newUserEspecialidad');
     await cargarOpcionesEspecialidad('editEspecialidad');
   } catch (e) { showToast('Error: ' + e.message, 'error'); }
+  });
 }
 
 async function abrirTiposConsulta(id, nombre) {
@@ -8887,15 +8977,16 @@ async function editarTipoConsulta(id, nombreActual) {
   } catch (e) { showToast('Error: ' + e.message, 'error'); }
 }
 
-async function eliminarTipoConsulta(id) {
-  if (!confirm('¿Eliminar este tipo de consulta?')) return;
-  try {
-    const res = await apiFetch(`/api/tipos-consulta/${id}`, { method: 'DELETE' });
-    const data = await res.json();
-    if (!data.ok) { showToast(data.error || 'Error', 'error'); return; }
-    showToast('Tipo eliminado', 'success');
-    await cargarTiposConsultaPanel();
-  } catch (e) { showToast('Error: ' + e.message, 'error'); }
+function eliminarTipoConsulta(id) {
+  showConfirm('¿Eliminar este tipo de consulta?', async () => {
+    try {
+      const res = await apiFetch(`/api/tipos-consulta/${id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (!data.ok) { showToast(data.error || 'Error', 'error'); return; }
+      showToast('Tipo eliminado', 'success');
+      await cargarTiposConsultaPanel();
+    } catch (e) { showToast('Error: ' + e.message, 'error'); }
+  });
 }
 
 // ========== MÓDULO GESTIÓN DE DATOS ==========
@@ -9276,9 +9367,9 @@ async function guardarAgregarGestion(e) {
   } catch (err) { showToast('Error: ' + err.message, 'error'); }
 }
 
-async function confirmarEliminarGestion(tipo, id) {
+function confirmarEliminarGestion(tipo, id) {
   const titulo = _gestionTitulos[tipo] || tipo;
-  if (!confirm(`¿Eliminar este registro de "${titulo}"?\nEsta acción es permanente e irreversible.`)) return;
+  showConfirm(`¿Eliminar este registro de "${titulo}"?\nEsta acción es permanente e irreversible.`, async () => {
   try {
     const res  = await apiFetch(`/api/admin/datos/${tipo}/${id}`, { method: 'DELETE' });
     const data = await res.json();
@@ -9286,15 +9377,16 @@ async function confirmarEliminarGestion(tipo, id) {
     showToast('Registro eliminado', 'success');
     buscarGestionDatos();
   } catch (e) { showToast('Error: ' + e.message, 'error'); }
+  });
 }
 
-async function eliminarSeleccionadosGestion() {
+function eliminarSeleccionadosGestion() {
   const ids = Array.from(_gestionSeleccionados);
   if (!ids.length) return;
   const tipo   = _gestionTipoActual;
   const titulo = _gestionTitulos[tipo] || tipo;
   const n      = ids.length;
-  if (!confirm(`¿Eliminar ${n} registro${n !== 1 ? 's' : ''} de "${titulo}"?\nEsta acción es permanente e irreversible.`)) return;
+  showConfirm(`¿Eliminar ${n} registro${n !== 1 ? 's' : ''} de "${titulo}"?\nEsta acción es permanente e irreversible.`, async () => {
   try {
     const res  = await apiFetch(`/api/admin/datos/${tipo}/bulk`, {
       method: 'DELETE',
@@ -9307,4 +9399,5 @@ async function eliminarSeleccionadosGestion() {
     showToast(`${eliminados} registro${eliminados !== 1 ? 's' : ''} eliminado${eliminados !== 1 ? 's' : ''}`, 'success');
     buscarGestionDatos();
   } catch (e) { showToast('Error: ' + e.message, 'error'); }
+  });
 }
