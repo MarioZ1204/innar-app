@@ -98,7 +98,23 @@ let globalHayEnAtencion = false;
 
 // Fetch con credenciales para sesión
 function apiFetch(url, opts = {}) {
-  return fetch(url, { ...opts, credentials: 'include' });
+  return fetch(url, { ...opts, credentials: 'include' }).then(res => {
+    if (res.status === 401) {
+      showToast('Sesión expirada. Por favor inicia sesión nuevamente.', 'warning');
+      setTimeout(() => showView('view-login'), 1500);
+    }
+    if (res.status === 429) {
+      showToast('Demasiadas solicitudes. Espera un momento.', 'warning');
+    }
+    return res;
+  }).catch(err => {
+    if (!navigator.onLine) {
+      showToast('Sin conexión a internet.', 'error');
+    } else {
+      showToast('Error de red. Intenta nuevamente.', 'error');
+    }
+    throw err;
+  });
 }
 
 function isAdmin() { return currentUser && (currentUser.rol === 'admin' || currentUser.rol === 'superadmin'); }
@@ -931,25 +947,67 @@ async function updateServiciosSelects() {
 }
 
 // Mostrar/ocultar loader
-function showLoader(show = true) {
+function showLoader(show = true, msg = 'Procesando...') {
   let loader = document.getElementById('loader');
   if (!loader) {
     loader = document.createElement('div');
     loader.id = 'loader';
     loader.className = 'app-loader-overlay';
-    loader.innerHTML = '<div class="app-loader-box"><div class="app-loader-spinner"></div><div>Procesando...</div></div>';
+    loader.innerHTML = '<div class="app-loader-box"><div class="app-loader-spinner"></div><div class="loader-msg">Procesando...</div></div>';
     document.body.appendChild(loader);
   }
-  loader.style.display = show ? 'flex' : 'none';
+  if (show) {
+    const msgEl = loader.querySelector('.loader-msg');
+    if (msgEl) msgEl.textContent = msg;
+    loader.style.display = 'flex';
+  } else {
+    loader.style.display = 'none';
+  }
 }
 
-// Mostrar toast
-function showToast(msg, type = 'info') {
+// Iconos por tipo de toast
+const _TOAST_ICONS = { success: '✓', error: '✕', warning: '⚠', info: 'ℹ' };
+
+// Mostrar toast apilado con icono y botón de cierre
+function showToast(msg, type = 'info', duration = 4000) {
+  let container = document.getElementById('toast-container');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'toast-container';
+    document.body.appendChild(container);
+  }
   const toast = document.createElement('div');
   toast.className = `app-toast app-toast-${type}`;
-  toast.textContent = msg;
-  document.body.appendChild(toast);
-  setTimeout(() => toast.remove(), 3000);
+  const icon = _TOAST_ICONS[type] || 'ℹ';
+  toast.innerHTML =
+    `<span class="toast-icon">${icon}</span>` +
+    `<span class="toast-body">${msg}</span>` +
+    `<button class="toast-close" aria-label="Cerrar">×</button>`;
+  toast.querySelector('.toast-close').addEventListener('click', () => _removeToast(toast));
+  container.appendChild(toast);
+  setTimeout(() => _removeToast(toast), duration);
+}
+
+function _removeToast(toast) {
+  if (!toast || toast.classList.contains('removing')) return;
+  toast.classList.add('removing');
+  setTimeout(() => toast.remove(), 280);
+}
+
+// Botón con estado de carga
+function setLoading(btn, loading, loadingText = 'Guardando...') {
+  if (!btn) return;
+  if (loading) {
+    btn._origText = btn.textContent;
+    btn._origDisabled = btn.disabled;
+    btn.disabled = true;
+    btn.textContent = loadingText;
+    btn.classList.add('btn-loading');
+  } else {
+    btn.disabled = btn._origDisabled || false;
+    btn.textContent = btn._origText || btn.textContent;
+    btn.classList.remove('btn-loading');
+  }
 }
 
 // Reproducir número de consultorio por voz
@@ -2180,7 +2238,7 @@ async function saveCalDay() {
   }
 
   const saveBtn = $('calModalSave');
-  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Guardando...'; }
+  setLoading(saveBtn, true, 'Guardando...');
 
   try {
     // 1. Save availability in doctor_disponibilidad_mensual
@@ -2213,7 +2271,7 @@ async function saveCalDay() {
   } catch (e) {
     showToast('Error guardando: ' + e.message, 'error');
   } finally {
-    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Guardar'; }
+    setLoading(saveBtn, false);
   }
 }
 
@@ -3411,8 +3469,7 @@ async function confirmarCargarPacientesMedica() {
   if (!doctorId) { showToast('No hay doctor seleccionado', 'error'); return; }
 
   const btn = $('btnConfirmarCargarPacientesMedica');
-  btn.disabled = true;
-  btn.textContent = '⏳ Cargando...';
+  setLoading(btn, true, 'Cargando...');
   const errorDiv = $('cargarPacientesMedicaError');
   errorDiv.style.display = 'none';
 
@@ -3442,8 +3499,7 @@ async function confirmarCargarPacientesMedica() {
     }
   }
 
-  btn.textContent = 'Cargar Pacientes';
-  btn.disabled = false;
+  setLoading(btn, false);
 
   if (ok > 0) {
     showToast(`${ok} cita(s) creada(s) correctamente`, 'success');
@@ -3533,8 +3589,7 @@ async function confirmarCargarPacientesElectro() {
   if (!data || !data.length) return;
 
   const btn = $('btnConfirmarCargarPacientesElectro');
-  btn.disabled = true;
-  btn.textContent = '⏳ Cargando...';
+  setLoading(btn, true, 'Cargando...');
   const errorDiv = $('cargarPacientesElectroError');
   errorDiv.style.display = 'none';
 
@@ -3569,8 +3624,7 @@ async function confirmarCargarPacientesElectro() {
     }
   }
 
-  btn.textContent = 'Cargar Estudios';
-  btn.disabled = false;
+  setLoading(btn, false);
 
   if (ok > 0) {
     showToast(`${ok} estudio(s) creado(s) correctamente`, 'success');
@@ -4531,8 +4585,7 @@ async function crearCitaElectro() {
 
   // Mostrar spinner en el botón
   const btnCrear = $('crearCitaElectro');
-  const btnOriginalText = btnCrear ? btnCrear.textContent : 'Crear Cita';
-  if (btnCrear) { btnCrear.disabled = true; btnCrear.textContent = '⏳ Guardando...'; }
+  setLoading(btnCrear, true, 'Guardando...');
 
   try {
     const body = {
@@ -4601,7 +4654,7 @@ async function crearCitaElectro() {
   } catch (e) { 
     showToast('Error creando cita: ' + e.message, 'error'); 
   } finally {
-    if (btnCrear) { btnCrear.disabled = false; btnCrear.textContent = btnOriginalText; }
+    setLoading(btnCrear, false);
   }
 }
 
@@ -6200,7 +6253,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!nombre) return showErr('El nombre no puede estar vacío');
 
       const btn = formNombre.querySelector('button[type="submit"]');
-      if (btn) { btn.disabled = true; btn.textContent = 'Guardando…'; }
+      setLoading(btn, true, 'Guardando...');
       try {
         const res = await apiFetch('/api/cambiar-contrasena', {
           method: 'POST',
@@ -6220,7 +6273,7 @@ document.addEventListener('DOMContentLoaded', () => {
         updateSidebarUser({ ...currentUser, nombre });
         if (currentUser) currentUser.nombre = nombre;
       } catch (_) { showErr('Error de conexión'); }
-      finally { if (btn) { btn.disabled = false; btn.textContent = 'Guardar nombre'; } }
+      finally { setLoading(btn, false); }
     });
   }
 
@@ -6242,7 +6295,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (nuevaContrasena.length < 6) return showErr('La contraseña debe tener al menos 6 caracteres');
 
       const btn = formPwd.querySelector('button[type="submit"]');
-      if (btn) { btn.disabled = true; btn.textContent = 'Actualizando…'; }
+      setLoading(btn, true, 'Actualizando...');
       try {
         const res = await apiFetch('/api/cambiar-contrasena', {
           method: 'POST',
@@ -6260,7 +6313,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if ($('cambiarContrasenaRequirements')) $('cambiarContrasenaRequirements').style.display = 'none';
         if (errDiv) errDiv.classList.add('hidden');
       } catch (_) { showErr('Error de conexión'); }
-      finally { if (btn) { btn.disabled = false; btn.textContent = 'Actualizar contraseña'; } }
+      finally { setLoading(btn, false); }
     });
   }
 
@@ -8545,7 +8598,7 @@ async function agregarPacienteEspera() {
   }
 
   const btn = $('btnAgregarEspera');
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ Guardando...'; }
+  setLoading(btn, true, 'Guardando...');
 
   try {
     const res = await apiFetch('/api/pacientes-espera', {
@@ -8573,7 +8626,7 @@ async function agregarPacienteEspera() {
   } catch (e) {
     showToast('Error: ' + e.message, 'error');
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = 'Agregar a Lista'; }
+    setLoading(btn, false);
   }
 }
 
@@ -8687,7 +8740,7 @@ async function crearEspecialidad() {
   const nombre = $('espNombreNuevo').value.trim();
   if (!nombre) { showToast('Escribe el nombre de la especialidad', 'error'); return; }
   const btn = $('btnCrearEspecialidad');
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ Guardando...'; }
+  setLoading(btn, true, 'Guardando...');
   try {
     const res = await apiFetch('/api/especialidades', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -8702,7 +8755,7 @@ async function crearEspecialidad() {
     await cargarOpcionesEspecialidad('newUserEspecialidad');
     await cargarOpcionesEspecialidad('editEspecialidad');
   } catch (e) { showToast('Error: ' + e.message, 'error'); }
-  finally { if (btn) { btn.disabled = false; btn.textContent = 'Agregar Especialidad'; } }
+  finally { setLoading(btn, false); }
 }
 
 async function editarEspecialidad(id, nombreActual) {
@@ -8804,7 +8857,7 @@ async function crearTipoConsulta() {
   if (!nombre) { showToast('Escribe el nombre del tipo de consulta', 'error'); return; }
   if (!_especialidadSelId) return;
   const btn = $('btnCrearTipoConsulta');
-  if (btn) { btn.disabled = true; btn.textContent = '⏳'; }
+  setLoading(btn, true, 'Guardando...');
   try {
     const res = await apiFetch('/api/tipos-consulta', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -8816,7 +8869,7 @@ async function crearTipoConsulta() {
     $('tipoConsultaNuevoNombre').value = '';
     await cargarTiposConsultaPanel();
   } catch (e) { showToast('Error: ' + e.message, 'error'); }
-  finally { if (btn) { btn.disabled = false; btn.textContent = 'Agregar'; } }
+  finally { setLoading(btn, false); }
 }
 
 async function editarTipoConsulta(id, nombreActual) {
