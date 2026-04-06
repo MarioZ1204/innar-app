@@ -15,8 +15,10 @@ async function initPool() {
     password: process.env.DB_PASSWORD || '',
     database: process.env.DB_NAME || 'innar_clinica',
     waitForConnections: true,
-    connectionLimit: 10,
-    queueLimit: 0,
+    connectionLimit: 20,
+    queueLimit: 100,
+    enableKeepAlive: true,
+    keepAliveInitialDelay: 10000,
     charset: 'utf8mb4'
   });
 

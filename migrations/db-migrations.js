@@ -261,6 +261,30 @@ const migrations = [
       ADD COLUMN IF NOT EXISTS turno_id INT NULL,
       ADD COLUMN IF NOT EXISTS cita_electro_id INT NULL,
       ADD COLUMN IF NOT EXISTS observaciones TEXT NULL`
+  },
+  {
+    name: 'performance_indexes',
+    description: 'Agregar índices de rendimiento en tablas principales para consultas frecuentes',
+    sql: [
+      // turnos: consultas por fecha, doctor, estado, paciente
+      'CREATE INDEX IF NOT EXISTS idx_turnos_fecha ON turnos(fecha)',
+      'CREATE INDEX IF NOT EXISTS idx_turnos_doctor_id ON turnos(doctor_id)',
+      'CREATE INDEX IF NOT EXISTS idx_turnos_estado ON turnos(estado)',
+      'CREATE INDEX IF NOT EXISTS idx_turnos_fecha_doctor ON turnos(fecha, doctor_id)',
+      // citas_electro: consultas por fecha, estado, equipo
+      'CREATE INDEX IF NOT EXISTS idx_citas_electro_fecha ON citas_electro(fecha)',
+      'CREATE INDEX IF NOT EXISTS idx_citas_electro_estado ON citas_electro(estado)',
+      'CREATE INDEX IF NOT EXISTS idx_citas_electro_equipo ON citas_electro(equipo_id)',
+      'CREATE INDEX IF NOT EXISTS idx_citas_electro_fecha_estado ON citas_electro(fecha, estado)',
+      // recibos: consultas por fecha, cliente
+      'CREATE INDEX IF NOT EXISTS idx_recibos_fecha ON recibos(fecha)',
+      'CREATE INDEX IF NOT EXISTS idx_recibos_cliente ON recibos(cliente(100))',
+      // pacientes: búsqueda por nombre y documento
+      'CREATE INDEX IF NOT EXISTS idx_pacientes_nombre ON pacientes(nombre(100))',
+      'CREATE INDEX IF NOT EXISTS idx_pacientes_documento ON pacientes(documento)',
+      // auditorias: consultas por fecha
+      'CREATE INDEX IF NOT EXISTS idx_auditorias_fecha ON usuario_auditorias(fecha_cambio)'
+    ]
   }
 ];
 

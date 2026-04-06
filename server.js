@@ -4706,6 +4706,15 @@ const PORT = process.env.PORT || 3000;
   try {
     await db.initPool();
 
+    // Aplicar índices de rendimiento en background (no bloquea el arranque)
+    const { migrations } = require('./migrations/db-migrations');
+    const perfMigration = migrations.find(m => m.name === 'performance_indexes');
+    if (perfMigration) {
+      const stmts = Array.isArray(perfMigration.sql) ? perfMigration.sql : [perfMigration.sql];
+      Promise.all(stmts.map(s => db.execute(s).catch(() => {})))
+        .then(() => logger.info('[STARTUP] Índices de rendimiento verificados', { type: 'STARTUP' }));
+    }
+
     // â”€â”€â”€ Inicializar tabla de servicios â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     try {
       await db.execute(`CREATE TABLE IF NOT EXISTS servicios_recibo (
