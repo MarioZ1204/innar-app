@@ -421,11 +421,11 @@ app.post('/api/login', async (req, res) => {
     req.session.usuarioId = user.id;
     req.session.usuario = user.usuario;
     req.session.rol = user.rol;
-    req.session.permisos = user.permisos || null;
-
+    const parsedPermisos = (() => { let p = user.permisos; if (typeof p === 'string') { try { p = JSON.parse(p); } catch(_) { p = null; } } return Array.isArray(p) ? p : null; })();
+    req.session.permisos = parsedPermisos;
     res.json({ 
       ok: true, 
-      usuario: { id: user.id, usuario: user.usuario, nombre: user.nombre, rol: user.rol, especialidad: user.especialidad, permisos: user.permisos || null }
+      usuario: { id: user.id, usuario: user.usuario, nombre: user.nombre, rol: user.rol, especialidad: user.especialidad, permisos: parsedPermisos }
     });
   } catch (e) {
     console.error(e);
@@ -450,7 +450,9 @@ app.get('/api/sesion', async (req, res) => {
       const user = users.length > 0 ? users[0] : null;
       if (user) {
         // Refresh permisos in session in case they changed
-        req.session.permisos = user.permisos || null;
+        const p = user.permisos;
+        user.permisos = (() => { let v = p; if (typeof v === 'string') { try { v = JSON.parse(v); } catch(_) { v = null; } } return Array.isArray(v) ? v : null; })();
+        req.session.permisos = user.permisos;
       }
       res.json({ autenticado: true, usuario: user });
     } catch (e) {
@@ -582,7 +584,7 @@ app.post('/api/cambiar-contrasena', requireAuth, async (req, res) => {
 app.get('/api/usuarios', requireAuth, requireAdmin, async (req, res) => {
   try {
     const usuarios = await db.query(
-      'SELECT id, usuario, nombre, rol, activo, numero_consultorio, especialidad FROM usuarios ORDER BY usuario ASC'
+      'SELECT id, usuario, nombre, rol, activo, numero_consultorio, especialidad, permisos FROM usuarios ORDER BY usuario ASC'
     );
     res.json(usuarios);
   } catch (e) {
