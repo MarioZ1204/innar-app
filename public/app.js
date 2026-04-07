@@ -4827,6 +4827,336 @@ async function crearCitaElectro() {
   }
 }
 
+// ========== MÓDULO DE PERMISOS (solo superadmin) ==========
+
+// Definición completa de todos los permisos del sistema
+const PERMISOS_DEFS = [
+  // ── Acceso a Módulos ───────────────────────────────────────────────────────
+  { key: 'modulo.recibos',          label: 'Módulo: Recibos',                     grupo: 'Acceso a Módulos' },
+  { key: 'modulo.agenda_medica',    label: 'Módulo: Agenda Médica',               grupo: 'Acceso a Módulos' },
+  { key: 'modulo.electrodiag',      label: 'Módulo: Electrodiagnóstico',          grupo: 'Acceso a Módulos' },
+  { key: 'modulo.dashboard',        label: 'Módulo: Dashboard de Citas',          grupo: 'Acceso a Módulos' },
+  { key: 'modulo.usuarios',         label: 'Módulo: Gestión de Usuarios',         grupo: 'Acceso a Módulos' },
+  { key: 'modulo.diagnosticos',     label: 'Módulo: Diagnósticos',                grupo: 'Acceso a Módulos' },
+  { key: 'modulo.gestion_datos',    label: 'Módulo: Gestión de Datos',            grupo: 'Acceso a Módulos' },
+  // ── Recibos ───────────────────────────────────────────────────────────────
+  { key: 'recibos.crear',           label: 'Recibos: Crear nuevo recibo',         grupo: 'Recibos' },
+  { key: 'recibos.ver',             label: 'Recibos: Ver lista de recibos',       grupo: 'Recibos' },
+  { key: 'recibos.eliminar',        label: 'Recibos: Eliminar recibos',           grupo: 'Recibos' },
+  { key: 'recibos.exportar',        label: 'Recibos: Exportar Excel / PDF',       grupo: 'Recibos' },
+  { key: 'recibos.gestionar_servicios', label: 'Recibos: Gestionar servicios',    grupo: 'Recibos' },
+  { key: 'recibos.resetear',        label: 'Recibos: Resetear consecutivos',      grupo: 'Recibos' },
+  // ── Agenda Médica ──────────────────────────────────────────────────────────
+  { key: 'agenda.ver',              label: 'Agenda: Ver turnos del día',          grupo: 'Agenda Médica' },
+  { key: 'agenda.crear',            label: 'Agenda: Crear / Programar citas',     grupo: 'Agenda Médica' },
+  { key: 'agenda.editar',           label: 'Agenda: Editar citas',                grupo: 'Agenda Médica' },
+  { key: 'agenda.eliminar',         label: 'Agenda: Eliminar citas',              grupo: 'Agenda Médica' },
+  { key: 'agenda.cambiar_estado',   label: 'Agenda: Cambiar estado de turno',     grupo: 'Agenda Médica' },
+  { key: 'agenda.llamar_siguiente', label: 'Agenda: Llamar siguiente paciente',   grupo: 'Agenda Médica' },
+  { key: 'agenda.marcar_atendido',  label: 'Agenda: Marcar como atendido',        grupo: 'Agenda Médica' },
+  { key: 'agenda.aviso_doctor',     label: 'Agenda: Enviar aviso al doctor',      grupo: 'Agenda Médica' },
+  { key: 'agenda.disponibilidad',   label: 'Agenda: Programar disponibilidad',    grupo: 'Agenda Médica' },
+  // ── Electrodiagnóstico ────────────────────────────────────────────────────
+  { key: 'electro.ver',             label: 'Electro: Ver citas',                  grupo: 'Electrodiagnóstico' },
+  { key: 'electro.crear',           label: 'Electro: Crear cita',                grupo: 'Electrodiagnóstico' },
+  { key: 'electro.editar',          label: 'Electro: Editar cita',                grupo: 'Electrodiagnóstico' },
+  { key: 'electro.eliminar',        label: 'Electro: Eliminar cita',              grupo: 'Electrodiagnóstico' },
+  { key: 'electro.cambiar_estado',  label: 'Electro: Cambiar estado de cita',     grupo: 'Electrodiagnóstico' },
+  { key: 'electro.subir_archivo',   label: 'Electro: Subir archivos de estudios', grupo: 'Electrodiagnóstico' },
+  { key: 'electro.ver_archivo',     label: 'Electro: Ver/descargar archivos',     grupo: 'Electrodiagnóstico' },
+  { key: 'electro.aviso_doctor',    label: 'Electro: Enviar aviso al doctor',     grupo: 'Electrodiagnóstico' },
+  // ── Usuarios ─────────────────────────────────────────────────────────────
+  { key: 'usuarios.ver',            label: 'Usuarios: Ver lista de usuarios',     grupo: 'Gestión de Usuarios' },
+  { key: 'usuarios.crear',          label: 'Usuarios: Crear usuario',             grupo: 'Gestión de Usuarios' },
+  { key: 'usuarios.editar',         label: 'Usuarios: Editar usuario',            grupo: 'Gestión de Usuarios' },
+  { key: 'usuarios.cambiar_clave',  label: 'Usuarios: Cambiar contraseña',        grupo: 'Gestión de Usuarios' },
+  { key: 'usuarios.eliminar',       label: 'Usuarios: Eliminar usuario',          grupo: 'Gestión de Usuarios' },
+  { key: 'usuarios.auditoria',      label: 'Usuarios: Ver auditoría de accesos',  grupo: 'Gestión de Usuarios' },
+  { key: 'usuarios.permisos',       label: 'Usuarios: Gestionar permisos (superadmin)', grupo: 'Gestión de Usuarios' },
+  // ── Diagnósticos ──────────────────────────────────────────────────────────
+  { key: 'diagnosticos.ver',        label: 'Diagnósticos: Ver lista',             grupo: 'Diagnósticos' },
+  { key: 'diagnosticos.crear',      label: 'Diagnósticos: Crear diagnóstico',     grupo: 'Diagnósticos' },
+  { key: 'diagnosticos.editar',     label: 'Diagnósticos: Editar diagnóstico',    grupo: 'Diagnósticos' },
+  { key: 'diagnosticos.eliminar',   label: 'Diagnósticos: Eliminar diagnóstico',  grupo: 'Diagnósticos' },
+  // ── Sistema ───────────────────────────────────────────────────────────────
+  { key: 'sistema.backups',         label: 'Sistema: Gestión de backups',         grupo: 'Sistema' },
+  { key: 'sistema.exportar_datos',  label: 'Sistema: Exportar datos del sistema', grupo: 'Sistema' },
+  { key: 'sistema.dashboard',       label: 'Sistema: Ver dashboard estadísticas', grupo: 'Sistema' },
+  { key: 'sistema.reportes',        label: 'Sistema: Ver reportes de recibos',    grupo: 'Sistema' },
+];
+
+// Permisos predeterminados por rol (null = sin restricciones / todo permitido)
+const PERMISOS_ROL_DEFAULTS = {
+  superadmin: null,
+  admin: null,
+  admin_recepcion: [
+    'modulo.recibos','modulo.agenda_medica','modulo.electrodiag','modulo.dashboard',
+    'recibos.crear','recibos.ver','recibos.exportar',
+    'agenda.ver','agenda.crear','agenda.editar','agenda.eliminar','agenda.cambiar_estado',
+    'agenda.llamar_siguiente','agenda.marcar_atendido','agenda.aviso_doctor','agenda.disponibilidad',
+    'electro.ver','electro.crear','electro.editar','electro.cambiar_estado','electro.subir_archivo','electro.ver_archivo','electro.aviso_doctor',
+    'sistema.dashboard',
+  ],
+  recepcion: [
+    'modulo.recibos','modulo.agenda_medica','modulo.electrodiag','modulo.dashboard',
+    'recibos.crear','recibos.ver',
+    'agenda.ver','agenda.crear','agenda.editar','agenda.eliminar','agenda.cambiar_estado',
+    'agenda.llamar_siguiente','agenda.marcar_atendido','agenda.aviso_doctor',
+    'electro.ver','electro.crear','electro.editar','electro.cambiar_estado',
+    'sistema.dashboard',
+  ],
+  auxiliar_recepcion: [
+    'modulo.recibos','modulo.agenda_medica','modulo.electrodiag',
+    'recibos.crear','recibos.ver',
+    'agenda.ver','agenda.crear','agenda.editar','agenda.cambiar_estado',
+    'electro.ver','electro.crear',
+  ],
+  doctor: [
+    'modulo.agenda_medica','modulo.electrodiag','modulo.dashboard',
+    'agenda.ver','agenda.disponibilidad',
+    'electro.ver','electro.cambiar_estado','electro.subir_archivo','electro.ver_archivo',
+    'sistema.dashboard',
+  ],
+  admin_electro: [
+    'modulo.electrodiag','modulo.agenda_medica','modulo.dashboard',
+    'electro.ver','electro.crear','electro.editar','electro.eliminar','electro.cambiar_estado','electro.subir_archivo','electro.ver_archivo','electro.aviso_doctor',
+    'agenda.ver','agenda.aviso_doctor',
+    'sistema.dashboard',
+  ],
+  electro: [
+    'modulo.electrodiag','modulo.agenda_medica','modulo.dashboard',
+    'electro.ver','electro.crear','electro.editar','electro.cambiar_estado','electro.subir_archivo','electro.ver_archivo','electro.aviso_doctor',
+    'agenda.ver','agenda.aviso_doctor',
+    'sistema.dashboard',
+  ],
+  tecnico_electro: [
+    'modulo.electrodiag','modulo.agenda_medica',
+    'electro.ver','electro.crear','electro.editar','electro.cambiar_estado','electro.subir_archivo','electro.ver_archivo',
+    'agenda.ver',
+  ],
+  contabilidad: [
+    'modulo.recibos','modulo.dashboard',
+    'recibos.ver','recibos.exportar',
+    'sistema.dashboard','sistema.reportes',
+  ],
+};
+
+let _permisosUsuarioSeleccionado = null; // { id, usuario, nombre, rol, permisos }
+
+async function initPermisosPage() {
+  // Mostrar tab solo a superadmin
+  const btnTab = document.getElementById('btnSidebarPermisos');
+  if (btnTab && currentUser?.rol === 'superadmin') btnTab.style.display = '';
+
+  await _cargarPermisosUserList();
+
+  const btnGuardar = document.getElementById('btnPermisosGuardar');
+  const btnRestablecer = document.getElementById('btnPermisosRestablecer');
+
+  if (btnGuardar) btnGuardar.onclick = _guardarPermisos;
+  if (btnRestablecer) btnRestablecer.onclick = _restablecerPermisos;
+}
+
+async function _cargarPermisosUserList() {
+  const container = document.getElementById('permisosUserList');
+  if (!container) return;
+  container.innerHTML = '<div style="padding:12px;text-align:center;color:#9ca3af;font-size:0.9rem">Cargando...</div>';
+  try {
+    const res = await apiFetch('/api/usuarios');
+    const usuarios = await res.json();
+    container.innerHTML = '';
+    usuarios
+      .filter(u => u.rol !== 'superadmin')
+      .forEach(u => {
+        const btn = document.createElement('button');
+        btn.className = 'permisos-user-btn';
+        btn.dataset.id = u.id;
+        btn.style.cssText = 'width:100%;text-align:left;padding:8px 10px;border:1px solid #e5e7eb;border-radius:6px;background:#fff;cursor:pointer;font-size:0.88rem;transition:background 0.15s';
+        btn.innerHTML = `<div style="font-weight:600;color:#111827">${escapeHtml(u.nombre || u.usuario)}</div><div style="font-size:0.78rem;color:#6b7280">${escapeHtml(u.usuario)} &middot; ${escapeHtml(_rolLabel(u.rol))}${u.permisos ? ' &nbsp;<span style="color:#6366f1;font-size:0.73rem">✦ personalizado</span>' : ''}</div>`;
+        btn.addEventListener('click', () => _seleccionarUsuarioPermisos(u.id));
+        btn.addEventListener('mouseenter', () => { btn.style.background = '#f3f4f6'; });
+        btn.addEventListener('mouseleave', () => { btn.style.background = _permisosUsuarioSeleccionado?.id === u.id ? '#eff6ff' : '#fff'; btn.style.borderColor = _permisosUsuarioSeleccionado?.id === u.id ? '#93c5fd' : '#e5e7eb'; });
+        container.appendChild(btn);
+      });
+  } catch(e) { container.innerHTML = '<div style="padding:12px;color:#dc2626;font-size:0.85rem">Error al cargar usuarios</div>'; }
+}
+
+function _rolLabel(rol) {
+  const map = { admin:'Administrador', admin_recepcion:'Admin Recepción', recepcion:'Recepción', auxiliar_recepcion:'Auxiliar Recepción', admin_electro:'Admin Electro', electro:'Electrodiagnóstico', tecnico_electro:'Técnico Electro', doctor:'Doctor', contabilidad:'Contabilidad' };
+  return map[rol] || rol;
+}
+
+async function _seleccionarUsuarioPermisos(userId) {
+  // Marcar botón activo
+  document.querySelectorAll('.permisos-user-btn').forEach(b => {
+    const activo = parseInt(b.dataset.id) === userId;
+    b.style.background = activo ? '#eff6ff' : '#fff';
+    b.style.borderColor = activo ? '#93c5fd' : '#e5e7eb';
+    b.style.fontWeight  = activo ? '600' : 'normal';
+  });
+
+  const editor = document.getElementById('permisosEditorSection');
+  const noSel  = document.getElementById('permisosNoSeleccion');
+  if (editor) editor.style.display = 'none';
+  if (noSel)  noSel.style.display  = 'flex';
+
+  try {
+    const res = await apiFetch(`/api/usuarios/${userId}/permisos`);
+    const data = await res.json();
+    _permisosUsuarioSeleccionado = data;
+
+    document.getElementById('permisosEditorTitle').textContent = data.nombre || data.usuario;
+    document.getElementById('permisosEditorRol').textContent   = `Rol: ${_rolLabel(data.rol)}`;
+
+    // Calcular permisos efectivos
+    const rolDefaults = PERMISOS_ROL_DEFAULTS[data.rol] || null; // null = todos
+    const tienePersonalizados = Array.isArray(data.permisos);
+    const activos = tienePersonalizados ? new Set(data.permisos) : null;
+
+    _renderPermisosChecklist(activos, rolDefaults);
+
+    if (editor) editor.style.display = '';
+    if (noSel)  noSel.style.display  = 'none';
+  } catch(e) { showToast('Error al cargar permisos de usuario', 'error'); }
+}
+
+function _renderPermisosChecklist(activos, rolDefaults) {
+  const container = document.getElementById('permisosChecklistContainer');
+  if (!container) return;
+  container.innerHTML = '';
+
+  // Agrupar
+  const grupos = {};
+  PERMISOS_DEFS.forEach(p => {
+    if (!grupos[p.grupo]) grupos[p.grupo] = [];
+    grupos[p.grupo].push(p);
+  });
+
+  Object.entries(grupos).forEach(([grupo, perms]) => {
+    const section = document.createElement('div');
+    section.style.cssText = 'margin-bottom:16px';
+
+    // Encabezado de grupo con checkbox "marcar todos"
+    const header = document.createElement('div');
+    header.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:6px;padding:5px 8px;background:#f3f4f6;border-radius:6px';
+    const chkAll = document.createElement('input');
+    chkAll.type = 'checkbox';
+    chkAll.title = 'Marcar/desmarcar todos';
+    chkAll.style.cssText = 'width:15px;height:15px;cursor:pointer';
+    const lbl = document.createElement('span');
+    lbl.style.cssText = 'font-weight:700;font-size:0.88rem;color:#374151';
+    lbl.textContent = grupo;
+    header.appendChild(chkAll);
+    header.appendChild(lbl);
+    section.appendChild(header);
+
+    // Grid de checkboxes
+    const grid = document.createElement('div');
+    grid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:4px 12px;padding:0 4px';
+
+    perms.forEach(p => {
+      const esRolDefault = rolDefaults === null || (Array.isArray(rolDefaults) && rolDefaults.includes(p.key));
+      const estaActivo   = activos !== null ? activos.has(p.key) : esRolDefault;
+
+      const row = document.createElement('label');
+      row.style.cssText = 'display:flex;align-items:center;gap:7px;padding:5px 6px;border-radius:5px;cursor:pointer;transition:background 0.12s;font-size:0.85rem';
+      row.addEventListener('mouseenter', () => { row.style.background = '#f9fafb'; });
+      row.addEventListener('mouseleave', () => { row.style.background = 'transparent'; });
+
+      const chk = document.createElement('input');
+      chk.type = 'checkbox';
+      chk.dataset.key = p.key;
+      chk.checked = estaActivo;
+      chk.style.cssText = 'width:15px;height:15px;flex-shrink:0;cursor:pointer';
+
+      const txt = document.createElement('span');
+      txt.style.color = '#374151';
+      txt.textContent = p.label;
+
+      const badge = document.createElement('span');
+      if (esRolDefault) {
+        badge.style.cssText = 'font-size:0.7rem;color:#6366f1;white-space:nowrap;margin-left:auto;flex-shrink:0';
+        badge.textContent = '◈ rol';
+      }
+
+      row.appendChild(chk);
+      row.appendChild(txt);
+      if (esRolDefault) row.appendChild(badge);
+      grid.appendChild(row);
+    });
+
+    section.appendChild(grid);
+    container.appendChild(section);
+
+    // Lógica del "marcar todos" del grupo
+    const chks = grid.querySelectorAll('input[type=checkbox]');
+    chkAll.checked = Array.from(chks).every(c => c.checked);
+    chkAll.indeterminate = !chkAll.checked && Array.from(chks).some(c => c.checked);
+    chkAll.addEventListener('change', () => {
+      chks.forEach(c => { c.checked = chkAll.checked; });
+    });
+    chks.forEach(c => c.addEventListener('change', () => {
+      chkAll.checked = Array.from(chks).every(x => x.checked);
+      chkAll.indeterminate = !chkAll.checked && Array.from(chks).some(x => x.checked);
+    }));
+  });
+}
+
+async function _guardarPermisos() {
+  if (!_permisosUsuarioSeleccionado) return;
+  const chks = document.querySelectorAll('#permisosChecklistContainer input[type=checkbox][data-key]');
+  const permisos = Array.from(chks).filter(c => c.checked).map(c => c.dataset.key);
+  const btn = document.getElementById('btnPermisosGuardar');
+  setLoading(btn, true, 'Guardando...');
+  try {
+    const res = await apiFetch(`/api/usuarios/${_permisosUsuarioSeleccionado.id}/permisos`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ permisos })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      showToast('Permisos guardados correctamente', 'success');
+      _permisosUsuarioSeleccionado.permisos = permisos;
+      await _cargarPermisosUserList();
+      // Re-marcar el usuario activo
+      const btnActivo = document.querySelector(`.permisos-user-btn[data-id="${_permisosUsuarioSeleccionado.id}"]`);
+      if (btnActivo) { btnActivo.style.background='#eff6ff'; btnActivo.style.borderColor='#93c5fd'; }
+    } else {
+      showToast(data.error || 'Error al guardar permisos', 'error');
+    }
+  } catch(e) { showToast('Error de conexión', 'error'); }
+  finally { setLoading(btn, false, 'Guardar cambios'); }
+}
+
+async function _restablecerPermisos() {
+  if (!_permisosUsuarioSeleccionado) return;
+  showConfirm(`¿Restablecer los permisos de "${_permisosUsuarioSeleccionado.nombre || _permisosUsuarioSeleccionado.usuario}" al predeterminado de su rol?\nSe eliminarán los permisos personalizados.`, async () => {
+    const btn = document.getElementById('btnPermisosRestablecer');
+    setLoading(btn, true, 'Restableciendo...');
+    try {
+      const res = await apiFetch(`/api/usuarios/${_permisosUsuarioSeleccionado.id}/permisos`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ permisos: null })
+      });
+      const data = await res.json();
+      if (data.ok) {
+        showToast('Permisos restablecidos al rol por defecto', 'success');
+        _permisosUsuarioSeleccionado.permisos = null;
+        const rolDefaults = PERMISOS_ROL_DEFAULTS[_permisosUsuarioSeleccionado.rol] || null;
+        _renderPermisosChecklist(null, rolDefaults);
+        await _cargarPermisosUserList();
+        const btnActivo = document.querySelector(`.permisos-user-btn[data-id="${_permisosUsuarioSeleccionado.id}"]`);
+        if (btnActivo) { btnActivo.style.background='#eff6ff'; btnActivo.style.borderColor='#93c5fd'; }
+      } else {
+        showToast(data.error || 'Error al restablecer', 'error');
+      }
+    } catch(e) { showToast('Error de conexión', 'error'); }
+    finally { setLoading(btn, false, '↺ Restablecer al rol'); }
+  }, { okText: 'Restablecer', icon: '↺' });
+}
+
 // ========== GESTIÓN DE USUARIOS (solo admin) ==========
 async function initUsuarios() {
   $('crearUsuario').addEventListener('click', crearUsuario);
@@ -4841,8 +5171,13 @@ async function initUsuarios() {
       const pgEl = document.querySelector(`#view-usuarios .usuarios-page[data-usuarios-page="${page}"]`);
       if (pgEl) pgEl.classList.add('active');
       if (page === 'especialidades') initEspecialidades();
+      if (page === 'permisos') initPermisosPage();
     });
   });
+
+  // Mostrar tab de Permisos solo a superadmin
+  const btnTabPermisos = document.getElementById('btnSidebarPermisos');
+  if (btnTabPermisos && currentUser?.rol === 'superadmin') btnTabPermisos.style.display = '';
 
   // Cargar especialidades en los selects al abrir el módulo
   await cargarOpcionesEspecialidad('newUserEspecialidad');
