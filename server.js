@@ -3795,34 +3795,34 @@ app.get('/api/recibos/:id/pdf', requireAuth, async (req, res) => {
   <title>Recibo ${escapeHtml(row.numero)}</title>
   <style>
     * { margin:0; padding:0; box-sizing:border-box; }
-    body { font-family:Arial,Helvetica,sans-serif; color:#000; font-size:12px; padding:6mm; line-height:1.4; max-width:80mm; margin:0 auto; }
-    .no-print { text-align:center; margin-bottom:10px; }
-    .no-print button { padding:8px 20px; background:#2d4a47; color:#fff; border:none; border-radius:4px; cursor:pointer; font-size:13px; }
+    body { font-family:Arial,Helvetica,sans-serif; color:#000; font-size:10px; padding:3mm; line-height:1.3; max-width:58mm; margin:0 auto; }
+    .no-print { text-align:center; margin-bottom:8px; }
+    .no-print button { padding:7px 18px; background:#2d4a47; color:#fff; border:none; border-radius:4px; cursor:pointer; font-size:12px; }
     .no-print button:hover { background:#1e3330; }
-    .header { margin-bottom:8px; border-bottom:2px solid #000; padding-bottom:5px; }
-    .header-logo { text-align:center; margin-bottom:4px; }
-    .header-logo img { max-width:50px; max-height:40px; object-fit:contain; }
-    .company-info h1 { font-size:12px; font-weight:bold; margin-bottom:1px; }
-    .company-info p { font-size:10px; margin:1px 0; }
-    .receipt-number { font-size:12px; font-weight:bold; margin-top:4px; }
-    .receipt-date { font-size:10px; }
-    .client-section { margin:6px 0; font-size:10px; line-height:1.4; background:#f9f9f9; padding:5px; border-radius:2px; }
-    .client-section strong.title { font-size:11px; display:block; margin-bottom:3px; }
+    .header { margin-bottom:5px; border-bottom:2px solid #000; padding-bottom:4px; }
+    .header-logo { text-align:center; margin-bottom:3px; }
+    .header-logo img { max-width:40px; max-height:32px; object-fit:contain; }
+    .company-info h1 { font-size:10px; font-weight:bold; margin-bottom:1px; }
+    .company-info p { font-size:8px; margin:1px 0; }
+    .receipt-number { font-size:10px; font-weight:bold; margin-top:3px; }
+    .receipt-date { font-size:8px; }
+    .client-section { margin:4px 0; font-size:8px; line-height:1.3; background:#f9f9f9; padding:3px; border-radius:2px; }
+    .client-section strong.title { font-size:9px; display:block; margin-bottom:2px; }
     .client-section p { margin:1px 0; }
-    table { width:100%; border-collapse:collapse; margin:6px 0; font-size:10px; }
-    th { background:#f0f0f0; padding:4px; border:1px solid #000; font-size:9px; font-weight:bold; }
-    td { padding:4px; border:1px solid #000; font-size:9px; word-break:break-word; }
-    .totals-table td { border:none; padding:2px; font-size:10px; font-weight:bold; }
+    table { width:100%; border-collapse:collapse; margin:4px 0; font-size:8px; }
+    th { background:#f0f0f0; padding:2px 3px; border:1px solid #000; font-size:8px; font-weight:bold; }
+    td { padding:2px 3px; border:1px solid #000; font-size:8px; word-break:break-word; }
+    .totals-table td { border:none; padding:1px 2px; font-size:9px; font-weight:bold; }
     .totals-table .value { text-align:right; }
-    .total-row td { border-top:2px solid #000; border-bottom:2px solid #000; font-size:11px; }
-    .observations { margin:6px 0; padding:5px; background:#f9f9f9; border-left:2px solid #000; font-size:9px; line-height:1.3; }
-    .signature-line { border-top:1px solid #000; width:100%; margin-top:20px; margin-bottom:2px; }
-    .signature-label { font-size:8px; font-weight:bold; text-align:center; }
-    .footer { margin-top:8px; text-align:center; font-size:8px; border-top:1px solid #000; padding-top:3px; line-height:1.3; }
+    .total-row td { border-top:2px solid #000; border-bottom:2px solid #000; font-size:10px; }
+    .observations { margin:4px 0; padding:3px; background:#f9f9f9; border-left:2px solid #000; font-size:8px; line-height:1.3; }
+    .signature-line { border-top:1px solid #000; width:100%; margin-top:16px; margin-bottom:2px; }
+    .signature-label { font-size:7px; font-weight:bold; text-align:center; }
+    .footer { margin-top:5px; text-align:center; font-size:7px; border-top:1px solid #000; padding-top:2px; line-height:1.3; }
     @media print {
       .no-print { display:none !important; }
-      body { padding:0; max-width:100%; }
-      @page { size: 80mm auto; margin:4mm; }
+      body { padding:1mm; max-width:100%; }
+      @page { size: 58mm auto; margin:2mm; }
     }
   </style>
 </head>
