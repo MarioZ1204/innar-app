@@ -421,10 +421,11 @@ app.post('/api/login', async (req, res) => {
     req.session.usuarioId = user.id;
     req.session.usuario = user.usuario;
     req.session.rol = user.rol;
+    req.session.permisos = user.permisos || null;
 
     res.json({ 
       ok: true, 
-      usuario: { id: user.id, usuario: user.usuario, nombre: user.nombre, rol: user.rol, especialidad: user.especialidad }
+      usuario: { id: user.id, usuario: user.usuario, nombre: user.nombre, rol: user.rol, especialidad: user.especialidad, permisos: user.permisos || null }
     });
   } catch (e) {
     console.error(e);
@@ -443,10 +444,14 @@ app.get('/api/sesion', async (req, res) => {
   if (req.session && req.session.usuarioId) {
     try {
       const users = await db.query(
-        'SELECT id, usuario, nombre, rol, especialidad FROM usuarios WHERE id = ?',
+        'SELECT id, usuario, nombre, rol, especialidad, permisos FROM usuarios WHERE id = ?',
         [req.session.usuarioId]
       );
       const user = users.length > 0 ? users[0] : null;
+      if (user) {
+        // Refresh permisos in session in case they changed
+        req.session.permisos = user.permisos || null;
+      }
       res.json({ autenticado: true, usuario: user });
     } catch (e) {
       console.error(e);
@@ -781,6 +786,41 @@ app.patch('/api/usuarios/:id', requireAuth, requireAdmin, async (req, res) => {
     console.error(e);
     res.status(500).json({ error: e.message });
   }
+});
+
+// ── Permisos granulares por usuario (solo superadmin) ──────────────────────
+app.get('/api/usuarios/:id/permisos', requireAuth, requireAdmin, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) return res.status(400).json({ error: 'ID inválido' });
+  try {
+    const rows = await db.query('SELECT id, usuario, nombre, rol, permisos FROM usuarios WHERE id = ?', [id]);
+    if (!rows.length) return res.status(404).json({ error: 'Usuario no encontrado' });
+    const u = rows[0];
+    let permisos = null;
+    if (u.permisos) {
+      try { permisos = typeof u.permisos === 'string' ? JSON.parse(u.permisos) : u.permisos; } catch(_) {}
+    }
+    res.json({ id: u.id, usuario: u.usuario, nombre: u.nombre, rol: u.rol, permisos });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put('/api/usuarios/:id/permisos', requireAuth, requireAdmin, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) return res.status(400).json({ error: 'ID inválido' });
+  const { permisos } = req.body;
+  if (permisos !== null && !Array.isArray(permisos)) return res.status(400).json({ error: 'permisos debe ser array o null' });
+  // Validar que los permisos sean strings
+  if (Array.isArray(permisos) && permisos.some(p => typeof p !== 'string')) {
+    return res.status(400).json({ error: 'permisos debe contener solo cadenas de texto' });
+  }
+  try {
+    const rows = await db.query('SELECT rol FROM usuarios WHERE id = ?', [id]);
+    if (!rows.length) return res.status(404).json({ error: 'Usuario no encontrado' });
+    if (rows[0].rol === 'superadmin') return res.status(403).json({ error: 'No se pueden modificar permisos del superadmin' });
+    const value = permisos === null ? null : JSON.stringify(permisos);
+    await db.execute('UPDATE usuarios SET permisos = ? WHERE id = ?', [value, id]);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.delete('/api/usuarios/:id', requireAuth, requireAdmin, async (req, res) => {
@@ -4773,6 +4813,22 @@ const PORT = process.env.PORT || 3000;
     } catch (migErr) {
       logger.warn('[MIGRATION] Advertencia en migración pacientes.telefono2: ' + migErr.message, { type: 'STARTUP' });
     }
+    // ─── Migración: permisos en usuarios ──────────────────────────────────────
+    try {
+      const colPermisos = await db.query(
+        `SELECT COUNT(*) AS cnt FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME   = 'usuarios'
+           AND COLUMN_NAME  = 'permisos'`
+      );
+      if (!colPermisos || !colPermisos[0] || colPermisos[0].cnt === 0) {
+        await db.execute(`ALTER TABLE usuarios ADD COLUMN permisos JSON DEFAULT NULL`);
+        logger.info('[MIGRATION] Columna usuarios.permisos agregada', { type: 'STARTUP' });
+      }
+    } catch (migErr) {
+      logger.warn('[MIGRATION] Advertencia en migración usuarios.permisos: ' + migErr.message, { type: 'STARTUP' });
+    }
+
     // ─── Migración: ultimo_acceso en usuarios ────────────────────────────────
     try {
       const colUltAcc = await db.query(
