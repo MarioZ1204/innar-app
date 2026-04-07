@@ -3777,152 +3777,128 @@ app.get('/api/recibos/:id/pdf', requireAuth, async (req, res) => {
     const subtotal = Number(data.subtotal || 0).toFixed(2);
     const iva = Number(data.iva || 0).toFixed(2);
     const total = Number(data.total || 0).toFixed(2);
-    
+
     const formatCurrencyValue = (value) => {
       const formatted = value.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
       return formatted.endsWith('.00') ? formatted.slice(0, -3) : formatted;
     };
-    
+
     const subtotalFormatted = formatCurrencyValue(subtotal);
     const ivaFormatted = formatCurrencyValue(iva);
     const totalFormatted = formatCurrencyValue(total);
+    const fechaRecibo = typeof row.fecha === 'string' ? row.fecha : new Date(row.fecha).toISOString().split('T')[0];
 
-    const html = `
-      <!doctype html>
-      <html>
-      <head>
-        <meta charset="utf-8"/>
-        <title>Recibo ${row.numero}</title>
-        <style>
-          * { margin: 0; padding: 0; }
-          body { font-family:Arial,Helvetica,sans-serif; color:#000; font-size:12px; padding:1mm; line-height:1.4; }
-          .header { margin-bottom:8px; border-bottom:2px solid #000; padding-bottom:5px; display:flex; flex-direction:column; }
-          .header-top { display:flex; justify-content:center; margin-bottom:1px; }
-          .header-logo { width:50px; height:40px; display:flex; align-items:center; justify-content:center; }
-          .header-logo img { max-width:50px; max-height:40px; object-fit:contain; }
-          .company-info { margin-bottom:2px; }
-          .company-info h1 { margin:0 0 1px 0; font-size:12px; color:#000; line-height:1.0; font-weight:bold; }
-          .company-info p { margin:0px 0; font-size:10px; color:#000; line-height:1.0 }
-          .header-receipt { display:flex; flex-direction:column; align-items:flex-end; margin-top:2px; }
-          .receipt-number { font-size:12px; font-weight:bold; color:#000; margin-bottom:1px; }
-          .receipt-date { font-size:10px; color:#000; }
-          .client-section { margin:1px 0; font-size:10px; line-height:1.3; background:#f9f9f9; padding:4px; border-radius:2px; }
-          table { width:100%; border-collapse:collapse; margin:6px 0; font-size:10px; table-layout:fixed; }
-          th { background-color:#f0f0f0; padding:3px; border:1px solid #000; text-align:left; font-weight:bold; color:#000; font-size:9px; line-height:1.1; }
-          td { padding:3px; border:1px solid #000; font-size:9px; color:#000; line-height:1.1; word-wrap:break-word; word-break:break-word; white-space:normal; }
-          .totals-table { margin-left:0; width:100%; margin-right:0; margin-top:4px; margin-bottom:4px; }
-          .totals-table td { border:none; padding:2px; font-size:10px; color:#000; }
-          .totals-table .label { text-align:left; width:auto; font-weight:bold; }
-          .totals-table .value { text-align:right; font-weight:bold; width:auto; font-size:10px; }
-          .totals-table .total-row { border-top:2px solid #000; border-bottom:2px solid #000; font-size:11px; font-weight:bold; color:#000; padding:2px 2px; }
-          .signatures { margin-top:6px; display:flex; flex-direction:column; gap:8px; font-size:8px; }
-          .signature-block { width:100%; text-align:center; page-break-inside:avoid; }
-          .signature-block p { margin:2px 0; font-weight:bold; font-size:9px; }
-          .signature-line { border-top:1px solid #000; width:100%; margin-top:15px; margin-bottom:1px; }
-          .signature-label { margin-top:1px; font-weight:bold; color:#000; font-size:8px; }
-          .observations { margin:6px 0; padding:4px; background-color:#f9f9f9; border-left:2px solid #000; font-size:9px; color:#000; line-height:1.2; }
-          .observations strong { font-weight:bold; }
-          .footer { margin-top:6px; text-align:center; font-size:8px; color:#000; border-top:1px solid #000; padding-top:2px; line-height:1.1; }
-        </style>
-      </head>
-      <body>
-        <div class="header">
-          <div class="header-top">
-            <div class="header-logo">
-              <img src="data:image/png;base64,${getLogoReciboBase64()}" alt="Logo" />
-            </div>
-          </div>
-          <div class="company-info">
-            <h1>INSTITUTO NEUROCIENCIAS</h1>
-            <p><strong>NIT:</strong> 901164565-1</p>
-            <p style="margin:0px 0"><strong>Dirección:</strong><br/>Carrera 34 #13 - 80. B/San Ignacio</p>
-            <p><strong>Teléfono:</strong> 305-356-0651</p>
-            <p><strong>Ciudad:</strong> Pasto, Colombia</p>
-          </div>
-          <div class="header-receipt">
-            <div class="receipt-number">Recibo NÂº ${row.numero}</div>
-            <div class="receipt-date">Fecha: ${typeof row.fecha === 'string' ? row.fecha : new Date(row.fecha).toISOString().split('T')[0]}</div>
-          </div>
-        </div>
-
-        <div class="client-section">
-          <strong style="font-size:13px;margin:0">CLIENTE</strong>
-          <div style="margin-top:2px">
-            <p style="margin:1px 0"><strong>Nombre:</strong> ${escapeHtml(row.cliente)}</p>
-            <p style="margin:1px 0"><strong>Documento:</strong> ${escapeHtml(data.doc || '-')}</p>
-            <p style="margin:1px 0"><strong>Forma de pago:</strong> ${escapeHtml(row.tipo_pago || '-')}</p>
-            <p style="margin:1px 0"><strong>Entidad:</strong> ${escapeHtml(row.nombre_entidad || data.entidad || '-')}</p>
-          </div>
-        </div>
-
-        <table>
-          <thead>
-            <tr>
-              <th style="text-align:left;width:65%">Descripción</th>
-              <th style="width:35%;text-align:right">Valor</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${itemsRows}
-          </tbody>
-        </table>
-
-        <table class="totals-table">
-          <tr>
-            <td class="label">Subtotal:</td>
-            <td class="value">$ ${subtotalFormatted}</td>
-          </tr>
-          ${Number(data.iva || 0) > 0 ? `<tr>
-            <td class="label">IVA (${data.tasa_iva || 0}%):</td>
-            <td class="value">$ ${ivaFormatted}</td>
-          </tr>` : ''}
-          <tr class="total-row">
-            <td class="label">TOTAL:</td>
-            <td class="value">$ ${totalFormatted}</td>
-          </tr>
-        </table>
-
-        ${data.observ ? `<div class="observations"><strong>Observaciones:</strong><br/>${escapeHtml(data.observ)}</div>` : ''}
-
-        <div class="signatures">
-          <div class="signature-block">
-            <p>Quien recibe</p>
-            <div class="signature-line"></div>
-            <div class="signature-label">Nombre</div>
-          </div>
-        </div>
-
-        <div class="footer">
-          <p>Documento generado digitalmente el ${new Date().toLocaleString('es-CO')}</p>
-          <p>Este recibo es un comprobante de la transacción realizada.</p>
-        </div>
-      </body>
-      </html>
-    `;
-
-    let browser = null;
-    try {
-      const launchOptions = getPuppeteerLaunchOptions();
-      browser = await puppeteer.launch(launchOptions);
-      const page = await browser.newPage();
-      await page.setContent(html, { waitUntil: 'networkidle0' });
-      const pdf = await page.pdf({
-        width: '58mm',
-        margin: { top: '0', bottom: '0', left: '0', right: '0' }
-      });
-      await browser.close();
-
-      res.contentType('application/pdf');
-      res.setHeader('Content-Disposition', `inline; filename=recibo_${row.numero}.pdf`);
-      res.send(pdf);
-    } catch (e) {
-      if (browser) await browser.close().catch(() => {});
-      console.error('Error en PDF:', e.message);
-      res.status(500).json({ error: 'Error generando PDF: ' + e.message + '. Intenta instalar Google Chrome.' });
+    const html = `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>Recibo ${escapeHtml(row.numero)}</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family:Arial,Helvetica,sans-serif; color:#000; font-size:12px; padding:6mm; line-height:1.4; max-width:80mm; margin:0 auto; }
+    .no-print { text-align:center; margin-bottom:10px; }
+    .no-print button { padding:8px 20px; background:#2d4a47; color:#fff; border:none; border-radius:4px; cursor:pointer; font-size:13px; }
+    .no-print button:hover { background:#1e3330; }
+    .header { margin-bottom:8px; border-bottom:2px solid #000; padding-bottom:5px; }
+    .header-logo { text-align:center; margin-bottom:4px; }
+    .header-logo img { max-width:50px; max-height:40px; object-fit:contain; }
+    .company-info h1 { font-size:12px; font-weight:bold; margin-bottom:1px; }
+    .company-info p { font-size:10px; margin:1px 0; }
+    .receipt-number { font-size:12px; font-weight:bold; margin-top:4px; }
+    .receipt-date { font-size:10px; }
+    .client-section { margin:6px 0; font-size:10px; line-height:1.4; background:#f9f9f9; padding:5px; border-radius:2px; }
+    .client-section strong.title { font-size:11px; display:block; margin-bottom:3px; }
+    .client-section p { margin:1px 0; }
+    table { width:100%; border-collapse:collapse; margin:6px 0; font-size:10px; }
+    th { background:#f0f0f0; padding:4px; border:1px solid #000; font-size:9px; font-weight:bold; }
+    td { padding:4px; border:1px solid #000; font-size:9px; word-break:break-word; }
+    .totals-table td { border:none; padding:2px; font-size:10px; font-weight:bold; }
+    .totals-table .value { text-align:right; }
+    .total-row td { border-top:2px solid #000; border-bottom:2px solid #000; font-size:11px; }
+    .observations { margin:6px 0; padding:5px; background:#f9f9f9; border-left:2px solid #000; font-size:9px; line-height:1.3; }
+    .signature-line { border-top:1px solid #000; width:100%; margin-top:20px; margin-bottom:2px; }
+    .signature-label { font-size:8px; font-weight:bold; text-align:center; }
+    .footer { margin-top:8px; text-align:center; font-size:8px; border-top:1px solid #000; padding-top:3px; line-height:1.3; }
+    @media print {
+      .no-print { display:none !important; }
+      body { padding:0; max-width:100%; }
+      @page { size: 80mm auto; margin:4mm; }
     }
+  </style>
+</head>
+<body>
+  <div class="no-print">
+    <button onclick="window.print()">🖨️ Imprimir / Guardar PDF</button>
+  </div>
+
+  <div class="header">
+    <div class="header-logo">
+      <img src="data:image/png;base64,${getLogoReciboBase64()}" alt="Logo" />
+    </div>
+    <div class="company-info">
+      <h1>INSTITUTO NEUROCIENCIAS</h1>
+      <p><strong>NIT:</strong> 901164565-1</p>
+      <p><strong>Dirección:</strong> Carrera 34 #13-80. B/San Ignacio</p>
+      <p><strong>Teléfono:</strong> 305-356-0651 &nbsp;|&nbsp; <strong>Ciudad:</strong> Pasto, Colombia</p>
+    </div>
+    <div class="receipt-number">Recibo N° ${escapeHtml(row.numero)}</div>
+    <div class="receipt-date">Fecha: ${escapeHtml(fechaRecibo)}</div>
+  </div>
+
+  <div class="client-section">
+    <strong class="title">CLIENTE</strong>
+    <p><strong>Nombre:</strong> ${escapeHtml(row.cliente || '-')}</p>
+    <p><strong>Documento:</strong> ${escapeHtml(data.doc || '-')}</p>
+    <p><strong>Forma de pago:</strong> ${escapeHtml(row.tipo_pago || '-')}</p>
+    <p><strong>Entidad:</strong> ${escapeHtml(row.nombre_entidad || data.entidad || '-')}</p>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="text-align:left;width:65%">Descripción</th>
+        <th style="width:35%;text-align:right">Valor</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${itemsRows}
+    </tbody>
+  </table>
+
+  <table class="totals-table">
+    <tr>
+      <td>Subtotal:</td>
+      <td class="value">$ ${subtotalFormatted}</td>
+    </tr>
+    ${Number(data.iva || 0) > 0 ? `<tr>
+      <td>IVA (${data.tasa_iva || 0}%):</td>
+      <td class="value">$ ${ivaFormatted}</td>
+    </tr>` : ''}
+    <tr class="total-row">
+      <td>TOTAL:</td>
+      <td class="value">$ ${totalFormatted}</td>
+    </tr>
+  </table>
+
+  ${data.observ ? `<div class="observations"><strong>Observaciones:</strong><br/>${escapeHtml(data.observ)}</div>` : ''}
+
+  <div style="margin-top:10px">
+    <div class="signature-line"></div>
+    <div class="signature-label">Quien recibe — Nombre y firma</div>
+  </div>
+
+  <div class="footer">
+    <p>Documento generado digitalmente el ${new Date().toLocaleString('es-CO')}</p>
+    <p>Este recibo es un comprobante de la transacción realizada.</p>
+  </div>
+</body>
+</html>`;
+
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(html);
   } catch (e) {
     console.error(e);
-    res.status(500).json({ error: 'Error generando PDF: ' + e.message });
+    res.status(500).json({ error: 'Error generando recibo: ' + e.message });
   }
 });
 

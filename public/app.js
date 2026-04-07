@@ -6149,7 +6149,7 @@ async function abrirPDF(){
     
     const pdfWindow = window.open(`/api/recibos/${lastRecibo.id}/pdf`, '_blank');
     if (!pdfWindow) {
-      showToast('El navegador bloqueó la ventana emergente. Permite los popups para este sitio.', 'error');
+      showToast('El navegador bloqueó la ventana emergente. Permite los popups para este sitio y vuelve a intentarlo.', 'warn');
       return;
     }
   } catch(e){
