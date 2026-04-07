@@ -556,6 +556,15 @@ function formatearHora(valor) {
   return strValor || '-';
 }
 
+// Convierte una cadena de hora "HH:MM" o "HH:MM:SS" a minutos totales desde medianoche.
+// Retorna null si el valor no es válido.
+function horaAMinutos(h) {
+  if (!h || typeof h !== 'string') return null;
+  const parts = h.slice(0, 5).split(':').map(Number);
+  if (parts.length < 2 || isNaN(parts[0]) || isNaN(parts[1])) return null;
+  return parts[0] * 60 + parts[1];
+}
+
 // Parsea una hora en formato "H:MM AM/PM" o "HH:MM" (24h) a "HH:MM" (24h).
 function parseHora12a24(str) {
   if (!str) return '';
@@ -2847,10 +2856,30 @@ async function cargarTurnosMedica() {
     
     const hayEnAtencion = turnos.some(t => t.estado === 'EN_ATENCION');
     globalHayEnAtencion = hayEnAtencion;
-    
+
+    // Construir lista de visualización: insertar fila "hueco" cuando el gap
+    // entre citas consecutivas es >= 40 minutos (consulta extendida)
+    const UMBRAL_HUECO_MIN = 40;
+    const displayList = [];
+    for (let i = 0; i < turnos.length; i++) {
+      displayList.push({ tipo: 'turno', data: turnos[i] });
+      if (i < turnos.length - 1) {
+        const mActual   = horaAMinutos(turnos[i].hora);
+        const mSiguiente = horaAMinutos(turnos[i + 1].hora);
+        if (mActual !== null && mSiguiente !== null && (mSiguiente - mActual) >= UMBRAL_HUECO_MIN) {
+          displayList.push({ tipo: 'hueco' });
+        }
+      }
+    }
+
     for (let i = 0; i < filasRequeridas; i++) {
-      if (i < turnos.length) {
-        renderTurnoRowMedica(tbody, turnos[i], animateTargetId, hayEnAtencion);
+      if (i < displayList.length) {
+        const item = displayList[i];
+        if (item.tipo === 'turno') {
+          renderTurnoRowMedica(tbody, item.data, animateTargetId, hayEnAtencion);
+        } else {
+          crearFilaTurnoHueco(tbody, colspan);
+        }
       } else {
         crearFilaTurnoVacia(tbody, colspan, isDoctor());
       }
@@ -2876,6 +2905,15 @@ function crearFilaTurnoVacia(tbody, colspan, esDoctor) {
     html += '<td style="padding:8px;border:none;background:transparent">&nbsp;</td>';
   }
   tr.innerHTML = html;
+  tbody.appendChild(tr);
+}
+
+// Fila visual que indica un hueco de tiempo extendido entre citas
+function crearFilaTurnoHueco(tbody, colspan) {
+  const tr = document.createElement('tr');
+  tr.className = 'turno-row turno-hueco';
+  tr.style.cssText = 'opacity:0.55;background:repeating-linear-gradient(90deg,#f0f4f8 0px,#f0f4f8 8px,transparent 8px,transparent 16px)';
+  tr.innerHTML = `<td colspan="${colspan}" style="padding:5px 12px;border:none;color:#9ca3af;font-size:0.78rem;font-style:italic;letter-spacing:0.02em">&#x2015; Consulta extendida &#x2015;</td>`;
   tbody.appendChild(tr);
 }
 
@@ -5908,8 +5946,10 @@ function collectFormData(){
   const servSel = $('reciboTipoServicio');
   const tipoEstudio = (reciboTipo === 'estudio' && servSel && servSel.value) ? servSel.value : null;
 
-  // tipoServicio unificado para guardar en BD
-  const tipoServicio = tipoConsulta || tipoEstudio;
+  // tipoServicio unificado para guardar en BD.
+  // Fallback: si ningún selector tiene valor, usar la descripción del primer ítem.
+  const firstItemDesc = items.find(it => it.desc && it.desc.trim())?.desc?.trim() || null;
+  const tipoServicio = tipoConsulta || tipoEstudio || firstItemDesc;
 
   return {
     numero: $('numero').value,
