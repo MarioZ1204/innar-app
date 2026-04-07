@@ -160,8 +160,30 @@ function updateSidebarUser(user) {
 
 function updateMenuByRole() {
   const rol = currentUser?.rol || '';
+  // Resolve custom permisos (may come as JSON string from mysql2)
+  let perms = currentUser?.permisos ?? null;
+  if (typeof perms === 'string') { try { perms = JSON.parse(perms); } catch(_) { perms = null; } }
+  if (!Array.isArray(perms)) perms = null;
+
+  // Maps data-module HTML attribute → modulo.* permission key
+  const MODULE_PERM_MAP = {
+    'recibos':        'modulo.recibos',
+    'agenda-medica':  'modulo.agenda_medica',
+    'electro':        'modulo.electrodiag',
+    'usuarios':       'modulo.usuarios',
+    'diagnosticos':   'modulo.diagnosticos',
+    'dashboard-citas':'modulo.dashboard',
+    'gestion-datos':  'modulo.gestion_datos',
+  };
+
   document.querySelectorAll('.menu-card').forEach(card => {
-    const allowed = (card.dataset.rol || '').split(' ').includes(rol);
+    let allowed;
+    if (perms) {
+      const permKey = MODULE_PERM_MAP[card.dataset.module || ''];
+      allowed = permKey ? perms.includes(permKey) : (card.dataset.rol || '').split(' ').includes(rol);
+    } else {
+      allowed = (card.dataset.rol || '').split(' ').includes(rol);
+    }
     card.style.display = allowed ? '' : 'none';
   });
   // Sidebar recibos: ocultar Gestionar Servicios para no-admin
