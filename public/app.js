@@ -8508,16 +8508,17 @@ function abrirModalEstadoCitaMedica(turno) {
       : 'Editar datos del paciente';
   }
 
-  // Mostrar/deshabilitar botones según estado actual
+  // Mostrar/deshabilitar botones de acción (solo para doctor)
+  const esDoctor = currentUser?.rol === 'doctor';
   const estadoFinal = ['ATENDIDO', 'NO_ASISTIO', 'CANCELADO', 'REPROGRAMADO'].includes(turno.estado);
   const puedeEnAtencion = !estadoFinal && turno.estado !== 'EN_ATENCION';
   const puedeAtendido   = turno.estado === 'EN_ATENCION';
   const btnLlamarMod   = el('btnModalLlamarPaciente');
   const btnAtendidoMod = el('btnModalAtendido');
   const btnNoAsistioMod = el('btnModalNoAsistio');
-  if (btnLlamarMod)    { btnLlamarMod.disabled    = !puedeEnAtencion; btnLlamarMod.style.opacity    = puedeEnAtencion ? '' : '0.4'; }
-  if (btnAtendidoMod)  { btnAtendidoMod.disabled   = !puedeAtendido;  btnAtendidoMod.style.opacity   = puedeAtendido  ? '' : '0.4'; }
-  if (btnNoAsistioMod) { btnNoAsistioMod.disabled  = estadoFinal;     btnNoAsistioMod.style.opacity  = estadoFinal     ? '0.4' : ''; }
+  if (btnLlamarMod)    { btnLlamarMod.style.display    = esDoctor ? '' : 'none'; btnLlamarMod.disabled    = !puedeEnAtencion; btnLlamarMod.style.opacity    = puedeEnAtencion ? '' : '0.4'; }
+  if (btnAtendidoMod)  { btnAtendidoMod.style.display  = esDoctor ? '' : 'none'; btnAtendidoMod.disabled   = !puedeAtendido;  btnAtendidoMod.style.opacity   = puedeAtendido  ? '' : '0.4'; }
+  if (btnNoAsistioMod) { btnNoAsistioMod.style.display = esDoctor ? '' : 'none'; btnNoAsistioMod.disabled  = estadoFinal;     btnNoAsistioMod.style.opacity  = estadoFinal     ? '0.4' : ''; }
 
   // Mostrar modal
   $('modalEstadoCitaMedica').classList.remove('hidden');
