@@ -1558,6 +1558,39 @@ function initRecibos() {
   cargarFiltrosUsuarios();
   cargarFiltrosOpciones();
 
+  // Al cambiar médico en filtros de reporte: cargar tipos de consulta y mostrar/ocultar selector
+  const filtroMedicoSel = $('filtroMedico');
+  if (filtroMedicoSel) {
+    filtroMedicoSel.addEventListener('change', async function() {
+      const wrap = $('filtroTipoConsultaWrap');
+      const sel  = $('filtroTipoConsulta');
+      if (!wrap || !sel) return;
+      if (this.value) {
+        sel.innerHTML = '<option value="">Todos</option>';
+        try {
+          const tipos = await apiFetch(`/api/tipos-consulta?medico_id=${encodeURIComponent(this.value)}`).then(r => r.json()).catch(() => []);
+          tipos.forEach(t => {
+            const opt = document.createElement('option');
+            opt.value = t.nombre; opt.textContent = t.nombre;
+            sel.appendChild(opt);
+          });
+        } catch (e) { console.warn('[filtroTipoConsulta] Error cargando tipos:', e.message); }
+        wrap.style.display = '';
+      } else {
+        wrap.style.display = 'none';
+        sel.value = '';
+      }
+    });
+  }
+
+  // Mutua exclusión: al seleccionar tipo de consulta, limpiar estudio y viceversa
+  $('filtroTipoConsulta')?.addEventListener('change', function() {
+    if (this.value && $('filtroEstudio')) $('filtroEstudio').value = '';
+  });
+  $('filtroEstudio')?.addEventListener('change', function() {
+    if (this.value && $('filtroTipoConsulta')) $('filtroTipoConsulta').value = '';
+  });
+
   // Socket: cuando admin modifica tipos de consulta, refrescar el dropdown activo
   if (window.socket && !window.socketRecibosTiposListenerAdded) {
     window.socket.on('tipos-consulta:actualizado', () => {
@@ -1676,23 +1709,23 @@ async function cargarFiltrosUsuarios() {
 // ---- Cargar entidades y tipos de servicio/estudio usados en recibos ----
 async function cargarFiltrosOpciones() {
   try {
-    const { entidades, tiposServicio } = await apiFetch('/api/recibos/opciones').then(r => r.json()).catch(() => ({ entidades: [], tiposServicio: [] }));
+    const data = await apiFetch('/api/recibos/opciones').then(r => r.json()).catch(() => ({ entidades: [], estudios: [] }));
     const selEnt = $('filtroEntidad');
     if (selEnt) {
       selEnt.innerHTML = '<option value="">Todas</option>';
-      entidades.forEach(v => {
+      (data.entidades || []).forEach(v => {
         const opt = document.createElement('option');
         opt.value = v; opt.textContent = v;
         selEnt.appendChild(opt);
       });
     }
-    const selTipo = $('filtroTipoServicio');
-    if (selTipo) {
-      selTipo.innerHTML = '<option value="">Todos</option>';
-      tiposServicio.forEach(v => {
+    const selEstudio = $('filtroEstudio');
+    if (selEstudio) {
+      selEstudio.innerHTML = '<option value="">Todos</option>';
+      (data.estudios || []).forEach(v => {
         const opt = document.createElement('option');
         opt.value = v; opt.textContent = v;
-        selTipo.appendChild(opt);
+        selEstudio.appendChild(opt);
       });
     }
   } catch (e) { console.warn('[cargarFiltrosOpciones] Error:', e.message); }
@@ -6530,7 +6563,8 @@ async function aplicarFiltrosRecibos() {
   const medicoId    = $('filtroMedico')?.value         || '';
   const genPor      = $('filtroGeneradoPor')?.value    || '';
   const entidad     = $('filtroEntidad')?.value        || '';
-  const tipoServicio= $('filtroTipoServicio')?.value   || '';
+  const tipoConsulta= $('filtroTipoConsulta')?.value   || '';
+  const tipoEstudio = $('filtroEstudio')?.value        || '';
 
   const params = new URLSearchParams();
   if (desde)        params.set('fecha_desde',      desde);
@@ -6539,6 +6573,8 @@ async function aplicarFiltrosRecibos() {
   if (medicoId)     params.set('medico_id',        medicoId);
   if (genPor)       params.set('generado_por_id',  genPor);
   if (entidad)      params.set('nombre_entidad',   entidad);
+  // Tipo de consulta y estudio filtran la misma columna tipo_servicio
+  const tipoServicio = tipoConsulta || tipoEstudio;
   if (tipoServicio) params.set('tipo_servicio',    tipoServicio);
   _recibosLastParams = params.toString();
 
@@ -6552,7 +6588,11 @@ function limpiarFiltrosRecibos() {
   if ($('filtroMedico'))        $('filtroMedico').value        = '';
   if ($('filtroGeneradoPor'))   $('filtroGeneradoPor').value   = '';
   if ($('filtroEntidad'))       $('filtroEntidad').value       = '';
-  if ($('filtroTipoServicio'))  $('filtroTipoServicio').value  = '';
+  if ($('filtroTipoConsulta'))  $('filtroTipoConsulta').value  = '';
+  if ($('filtroEstudio'))       $('filtroEstudio').value       = '';
+  // Ocultar tipo de consulta al limpiar
+  const wrap = $('filtroTipoConsultaWrap');
+  if (wrap) wrap.style.display = 'none';
   _recibosLastParams = '';
   const tbody = document.getElementById('savedItems');
   if (tbody) tbody.innerHTML = '<tr><td colspan="10"><div class="empty-state"><div class="empty-state-icon">📋</div><p class="empty-state-title">Aplica un filtro para ver los recibos</p></div></td></tr>';
@@ -8511,11 +8551,12 @@ function abrirModalEstadoCitaMedica(turno) {
   // Mostrar/deshabilitar botones de acción según rol
   const esDoctor = currentUser?.rol === 'doctor';
   const esAdminOrRecep = isAdmin() || isRecepcion();
+  const puedeInteractuar = esDoctor || esAdminOrRecep;
   const estadoFinal = ['ATENDIDO', 'NO_ASISTIO', 'CANCELADO', 'REPROGRAMADO'].includes(turno.estado);
   const puedeEnAtencion = !estadoFinal && turno.estado !== 'EN_ATENCION';
   const puedeAtendido   = turno.estado === 'EN_ATENCION';
 
-  // Doctor: 3 botones de acción directa
+  // Doctor: 3 botones de acción directa (Llamar, Atendido, No asistió)
   const btnLlamarMod   = el('btnModalLlamarPaciente');
   const btnAtendidoMod = el('btnModalAtendido');
   const btnNoAsistioMod = el('btnModalNoAsistio');
@@ -8523,12 +8564,14 @@ function abrirModalEstadoCitaMedica(turno) {
   if (btnAtendidoMod)  { btnAtendidoMod.style.display  = esDoctor ? '' : 'none'; btnAtendidoMod.disabled   = !puedeAtendido;  btnAtendidoMod.style.opacity   = puedeAtendido  ? '' : '0.4'; }
   if (btnNoAsistioMod) { btnNoAsistioMod.style.display = esDoctor ? '' : 'none'; btnNoAsistioMod.disabled  = estadoFinal;     btnNoAsistioMod.style.opacity  = estadoFinal     ? '0.4' : ''; }
 
-  // Admin/Recepcion: botón En Sala + menú 3 puntos + editar
+  // Admin/Recepcion: botón En Sala
   const btnEnSala = el('btnEstadoEnSala');
   if (btnEnSala) { btnEnSala.style.display = (esAdminOrRecep && !estadoFinal && turno.estado !== 'EN_ATENCION') ? '' : 'none'; }
+
+  // Menú 3 puntos + editar: visible para TODOS los roles que interactúan
   const btn3dots = el('btnMasOpcionesMedica');
-  if (btn3dots) btn3dots.style.display = esAdminOrRecep ? '' : 'none';
-  if (editBtnMed) editBtnMed.style.display = esAdminOrRecep ? '' : 'none';
+  if (btn3dots) btn3dots.style.display = puedeInteractuar ? '' : 'none';
+  if (editBtnMed) editBtnMed.style.display = puedeInteractuar ? '' : 'none';
 
   // Mostrar modal
   $('modalEstadoCitaMedica').classList.remove('hidden');

@@ -3534,13 +3534,21 @@ app.get('/api/recibos/generadores', requireAuth, async (req, res) => {
 // Opciones dinámicas para filtros del reporte (entidades y tipos de servicio usados)
 app.get('/api/recibos/opciones', requireAuth, async (req, res) => {
   try {
-    const [entidades, tiposServicio] = await Promise.all([
-      db.query(`SELECT DISTINCT nombre_entidad AS valor FROM recibos WHERE nombre_entidad IS NOT NULL AND nombre_entidad <> '' ORDER BY nombre_entidad ASC`),
-      db.query(`SELECT DISTINCT tipo_servicio  AS valor FROM recibos WHERE tipo_servicio  IS NOT NULL AND tipo_servicio  <> '' ORDER BY tipo_servicio  ASC`),
-    ]);
+    // Entidades: desde turnos + recibos (UNION para máxima cobertura)
+    const entidadesRows = await db.query(`
+      SELECT DISTINCT valor FROM (
+        SELECT TRIM(entidad) AS valor FROM turnos WHERE entidad IS NOT NULL AND TRIM(entidad) <> ''
+        UNION
+        SELECT TRIM(nombre_entidad) AS valor FROM recibos WHERE nombre_entidad IS NOT NULL AND TRIM(nombre_entidad) <> ''
+      ) AS t ORDER BY valor ASC
+    `);
+    // Estudios: desde tabla estudio_duraciones (catálogo real)
+    const estudiosRows = await db.query(
+      'SELECT DISTINCT nombre AS valor FROM estudio_duraciones WHERE nombre IS NOT NULL AND nombre <> \"\" ORDER BY nombre ASC'
+    ).catch(() => []);
     res.json({
-      entidades:     entidades.map(r => r.valor),
-      tiposServicio: tiposServicio.map(r => r.valor),
+      entidades: entidadesRows.map(r => r.valor),
+      estudios:  estudiosRows.map(r => r.valor),
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
