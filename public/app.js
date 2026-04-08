@@ -1556,6 +1556,7 @@ function initRecibos() {
   // Precargar filtros médicos y usuarios en Ver Recibos
   cargarFiltrosMedicos();
   cargarFiltrosUsuarios();
+  cargarFiltrosOpciones();
 
   // Socket: cuando admin modifica tipos de consulta, refrescar el dropdown activo
   if (window.socket && !window.socketRecibosTiposListenerAdded) {
@@ -1672,7 +1673,30 @@ async function cargarFiltrosUsuarios() {
   } catch (e) { console.warn('[cargarFiltrosUsuarios] Error:', e.message); }
 }
 
-// ---- Buscar cita del día para pre-llenar formulario ----
+// ---- Cargar entidades y tipos de servicio/estudio usados en recibos ----
+async function cargarFiltrosOpciones() {
+  try {
+    const { entidades, tiposServicio } = await apiFetch('/api/recibos/opciones').then(r => r.json()).catch(() => ({ entidades: [], tiposServicio: [] }));
+    const selEnt = $('filtroEntidad');
+    if (selEnt) {
+      selEnt.innerHTML = '<option value="">Todas</option>';
+      entidades.forEach(v => {
+        const opt = document.createElement('option');
+        opt.value = v; opt.textContent = v;
+        selEnt.appendChild(opt);
+      });
+    }
+    const selTipo = $('filtroTipoServicio');
+    if (selTipo) {
+      selTipo.innerHTML = '<option value="">Todos</option>';
+      tiposServicio.forEach(v => {
+        const opt = document.createElement('option');
+        opt.value = v; opt.textContent = v;
+        selTipo.appendChild(opt);
+      });
+    }
+  } catch (e) { console.warn('[cargarFiltrosOpciones] Error:', e.message); }
+}
 async function buscarCitaParaRecibo() {
   const q = ($('reciboBuscarInput')?.value || '').trim();
   if (q.length < 2) { showToast('Escribe al menos 2 caracteres', 'error'); return; }
@@ -6522,29 +6546,35 @@ async function abrirPDF(){
 let _recibosLastParams = '';
 
 async function aplicarFiltrosRecibos() {
-  const desde = $('filtroFechaDesde')?.value || '';
-  const hasta = $('filtroFechaHasta')?.value || '';
-  const tipoPago = $('filtroTipoPago')?.value || '';
-  const medicoId = $('filtroMedico')?.value || '';
-  const genPor = $('filtroGeneradoPor')?.value || '';
+  const desde       = $('filtroFechaDesde')?.value     || '';
+  const hasta       = $('filtroFechaHasta')?.value     || '';
+  const tipoPago    = $('filtroTipoPago')?.value       || '';
+  const medicoId    = $('filtroMedico')?.value         || '';
+  const genPor      = $('filtroGeneradoPor')?.value    || '';
+  const entidad     = $('filtroEntidad')?.value        || '';
+  const tipoServicio= $('filtroTipoServicio')?.value   || '';
 
   const params = new URLSearchParams();
-  if (desde) params.set('fecha_desde', desde);
-  if (hasta) params.set('fecha_hasta', hasta);
-  if (tipoPago) params.set('tipo_pago', tipoPago);
-  if (medicoId) params.set('medico_id', medicoId);
-  if (genPor) params.set('generado_por_id', genPor);
+  if (desde)        params.set('fecha_desde',      desde);
+  if (hasta)        params.set('fecha_hasta',      hasta);
+  if (tipoPago)     params.set('tipo_pago',        tipoPago);
+  if (medicoId)     params.set('medico_id',        medicoId);
+  if (genPor)       params.set('generado_por_id',  genPor);
+  if (entidad)      params.set('nombre_entidad',   entidad);
+  if (tipoServicio) params.set('tipo_servicio',    tipoServicio);
   _recibosLastParams = params.toString();
 
   await cargarLista(_recibosLastParams);
 }
 
 function limpiarFiltrosRecibos() {
-  if ($('filtroFechaDesde')) $('filtroFechaDesde').value = '';
-  if ($('filtroFechaHasta')) $('filtroFechaHasta').value = '';
-  if ($('filtroTipoPago')) $('filtroTipoPago').value = '';
-  if ($('filtroMedico')) $('filtroMedico').value = '';
-  if ($('filtroGeneradoPor')) $('filtroGeneradoPor').value = '';
+  if ($('filtroFechaDesde'))    $('filtroFechaDesde').value    = '';
+  if ($('filtroFechaHasta'))    $('filtroFechaHasta').value    = '';
+  if ($('filtroTipoPago'))      $('filtroTipoPago').value      = '';
+  if ($('filtroMedico'))        $('filtroMedico').value        = '';
+  if ($('filtroGeneradoPor'))   $('filtroGeneradoPor').value   = '';
+  if ($('filtroEntidad'))       $('filtroEntidad').value       = '';
+  if ($('filtroTipoServicio'))  $('filtroTipoServicio').value  = '';
   _recibosLastParams = '';
   const tbody = document.getElementById('savedItems');
   if (tbody) tbody.innerHTML = '<tr><td colspan="10"><div class="empty-state"><div class="empty-state-icon">📋</div><p class="empty-state-title">Aplica un filtro para ver los recibos</p></div></td></tr>';

@@ -3531,6 +3531,22 @@ app.get('/api/recibos/generadores', requireAuth, async (req, res) => {
   }
 });
 
+// Opciones dinámicas para filtros del reporte (entidades y tipos de servicio usados)
+app.get('/api/recibos/opciones', requireAuth, async (req, res) => {
+  try {
+    const [entidades, tiposServicio] = await Promise.all([
+      db.query(`SELECT DISTINCT nombre_entidad AS valor FROM recibos WHERE nombre_entidad IS NOT NULL AND nombre_entidad <> '' ORDER BY nombre_entidad ASC`),
+      db.query(`SELECT DISTINCT tipo_servicio  AS valor FROM recibos WHERE tipo_servicio  IS NOT NULL AND tipo_servicio  <> '' ORDER BY tipo_servicio  ASC`),
+    ]);
+    res.json({
+      entidades:     entidades.map(r => r.valor),
+      tiposServicio: tiposServicio.map(r => r.valor),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/recibos/next-number', requireAuth, async (req, res) => {
   try {
     const rows = await db.query('SELECT MAX(CAST(numero AS UNSIGNED)) AS maxNum FROM recibos');
@@ -3587,15 +3603,17 @@ app.get('/api/recibos/buscar-cita', requireAuth, requireRole(['superadmin', 'adm
 // Listar recibos (con filtros opcionales)
 app.get('/api/recibos', requireAuth, async (req, res) => {
   try {
-    const { fecha_desde, fecha_hasta, tipo_pago, medico_id, generado_por_id } = req.query;
+    const { fecha_desde, fecha_hasta, tipo_pago, medico_id, generado_por_id, nombre_entidad, tipo_servicio } = req.query;
     const conditions = [];
     const params = [];
 
-    if (fecha_desde) { conditions.push('fecha >= ?'); params.push(fecha_desde); }
-    if (fecha_hasta) { conditions.push('fecha <= ?'); params.push(fecha_hasta); }
-    if (tipo_pago)   { conditions.push('tipo_pago = ?'); params.push(tipo_pago); }
-    if (medico_id)   { conditions.push('medico_id = ?'); params.push(parseInt(medico_id, 10)); }
+    if (fecha_desde)     { conditions.push('fecha >= ?');           params.push(fecha_desde); }
+    if (fecha_hasta)     { conditions.push('fecha <= ?');           params.push(fecha_hasta); }
+    if (tipo_pago)       { conditions.push('tipo_pago = ?');        params.push(tipo_pago); }
+    if (medico_id)       { conditions.push('medico_id = ?');        params.push(parseInt(medico_id, 10)); }
     if (generado_por_id) { conditions.push('generado_por_id = ?'); params.push(parseInt(generado_por_id, 10)); }
+    if (nombre_entidad)  { conditions.push('nombre_entidad = ?');  params.push(nombre_entidad); }
+    if (tipo_servicio)   { conditions.push('tipo_servicio = ?');   params.push(tipo_servicio); }
 
     const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
     const rows = await db.query(
@@ -3616,14 +3634,16 @@ app.get('/api/recibos', requireAuth, async (req, res) => {
 app.get('/api/recibos/export/xlsx', requireAuth, async (req, res) => {
   try {
     const XLSX = require('xlsx');
-    const { fecha_desde, fecha_hasta, tipo_pago, medico_id, generado_por_id } = req.query;
+    const { fecha_desde, fecha_hasta, tipo_pago, medico_id, generado_por_id, nombre_entidad, tipo_servicio } = req.query;
     const conditions = [];
     const params = [];
-    if (fecha_desde) { conditions.push('fecha >= ?'); params.push(fecha_desde); }
-    if (fecha_hasta) { conditions.push('fecha <= ?'); params.push(fecha_hasta); }
-    if (tipo_pago)   { conditions.push('tipo_pago = ?'); params.push(tipo_pago); }
-    if (medico_id)   { conditions.push('medico_id = ?');  params.push(parseInt(medico_id, 10)); }
+    if (fecha_desde)     { conditions.push('fecha >= ?');           params.push(fecha_desde); }
+    if (fecha_hasta)     { conditions.push('fecha <= ?');           params.push(fecha_hasta); }
+    if (tipo_pago)       { conditions.push('tipo_pago = ?');        params.push(tipo_pago); }
+    if (medico_id)       { conditions.push('medico_id = ?');        params.push(parseInt(medico_id, 10)); }
     if (generado_por_id) { conditions.push('generado_por_id = ?'); params.push(parseInt(generado_por_id, 10)); }
+    if (nombre_entidad)  { conditions.push('nombre_entidad = ?');  params.push(nombre_entidad); }
+    if (tipo_servicio)   { conditions.push('tipo_servicio = ?');   params.push(tipo_servicio); }
     const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
     const rows = await db.query(
       `SELECT numero, fecha, cliente, tipo_pago, nombre_entidad,
@@ -3661,14 +3681,16 @@ app.get('/api/recibos/export/xlsx', requireAuth, async (req, res) => {
 // Exportar recibos a PDF (página HTML imprimible)
 app.get('/api/recibos/export/pdf-reporte', requireAuth, async (req, res) => {
   try {
-    const { fecha_desde, fecha_hasta, tipo_pago, medico_id, generado_por_id } = req.query;
+    const { fecha_desde, fecha_hasta, tipo_pago, medico_id, generado_por_id, nombre_entidad, tipo_servicio } = req.query;
     const conditions = [];
     const params = [];
-    if (fecha_desde) { conditions.push('fecha >= ?'); params.push(fecha_desde); }
-    if (fecha_hasta) { conditions.push('fecha <= ?'); params.push(fecha_hasta); }
-    if (tipo_pago)   { conditions.push('tipo_pago = ?'); params.push(tipo_pago); }
-    if (medico_id)   { conditions.push('medico_id = ?');  params.push(parseInt(medico_id, 10)); }
+    if (fecha_desde)     { conditions.push('fecha >= ?');           params.push(fecha_desde); }
+    if (fecha_hasta)     { conditions.push('fecha <= ?');           params.push(fecha_hasta); }
+    if (tipo_pago)       { conditions.push('tipo_pago = ?');        params.push(tipo_pago); }
+    if (medico_id)       { conditions.push('medico_id = ?');        params.push(parseInt(medico_id, 10)); }
     if (generado_por_id) { conditions.push('generado_por_id = ?'); params.push(parseInt(generado_por_id, 10)); }
+    if (nombre_entidad)  { conditions.push('nombre_entidad = ?');  params.push(nombre_entidad); }
+    if (tipo_servicio)   { conditions.push('tipo_servicio = ?');   params.push(tipo_servicio); }
     const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
     const rows = await db.query(
       `SELECT numero, fecha, cliente, tipo_pago, nombre_entidad,
