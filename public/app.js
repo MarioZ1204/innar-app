@@ -1932,7 +1932,7 @@ async function initAgendaMedica() {
   if (progSection) progSection.style.display = 'none';
   
   const doctorAcciones = $('agendaDoctorAcciones');
-  if (doctorAcciones) doctorAcciones.style.display = isDoctor() ? '' : 'none';
+  if (doctorAcciones) doctorAcciones.style.display = 'none'; // removed — acciones ahora en modal por fila
 
   // Botón "Nueva Cita" y modal
   const btnNuevaCita = $('btnNuevaCitaMedica');
@@ -1962,15 +1962,6 @@ async function initAgendaMedica() {
     $('btnAvisarDoctor')?.addEventListener('click', avisoDoctor);
   }
   
-  // Desactivar el botón "Marcar como atendido" inicialmente
-  const btnMarcar = $('btnMarcarAtendido');
-  if (btnMarcar) {
-    btnMarcar.disabled = true;
-    btnMarcar.title = 'No hay paciente en atención';
-  }
-  
-  $('btnLlamarSiguiente')?.addEventListener('click', llamarSiguientePaciente);
-  $('btnMarcarAtendido')?.addEventListener('click', marcarAtendido);
   $('btnDescargarAgendaPDF')?.addEventListener('click', descargarAgendaPDF);
 
   // Modal de edición solo para admin/recepción
@@ -2932,7 +2923,8 @@ async function cargarTurnosMedica() {
     }
     
     // Actualizar estado del botón "Marcar como atendido"
-    updateMarcarAtendidoButton(turnos);
+    // (eliminado: ahora el cambio de estado se hace desde el modal al clickear el paciente)
+    // adjustColumnsForRole
     // Ajustar columnas según rol (una sola vez después de renderizar todas las filas)
     adjustColumnsForRole();
   } catch (e) { showToast('Error cargando citas', 'error'); }
@@ -2963,21 +2955,7 @@ function crearFilaTurnoHueco(tbody, colspan) {
   tbody.appendChild(tr);
 }
 
-function updateMarcarAtendidoButton(turnos) {
-  const btnMarcar = $('btnMarcarAtendido');
-  if (!btnMarcar) return;
-  
-  // Verificar si hay algún turno EN_ATENCION
-  const turnoEnAtencion = turnos.find(t => t.estado === 'EN_ATENCION');
-  
-  if (turnoEnAtencion) {
-    btnMarcar.disabled = false;
-    btnMarcar.title = `Paciente en atención: ${turnoEnAtencion.paciente_nombre}`;
-  } else {
-    btnMarcar.disabled = true;
-    btnMarcar.title = 'No hay paciente en atención';
-  }
-}
+function updateMarcarAtendidoButton(_turnos) { /* no-op: replaced by per-row modal buttons */ }
 
 let selectedTurnoMedica = null;
 
@@ -3002,7 +2980,7 @@ function renderTurnoRowMedica(tbody, t, animateTargetId, hayEnAtencion) {
   }
   const tr = document.createElement('tr');
   tr.className = 'turno-row';
-  tr.style.cursor = (isAdmin() || isRecepcion()) ? 'pointer' : 'default';
+  tr.style.cursor = (isAdmin() || isRecepcion() || isDoctor()) ? 'pointer' : 'default';
 
   if (t.id) {
     tr.setAttribute('data-turno-id', t.id);
@@ -3072,8 +3050,8 @@ function renderTurnoRowMedica(tbody, t, animateTargetId, hayEnAtencion) {
         <td>${accionesCell}</td>
       `;
     }
-  // Abrir modal al hacer clic en la fila (como en electrodiagnóstico)
-  if (isAdmin() || isRecepcion()) {
+  // Abrir modal al hacer clic en la fila
+  if (isAdmin() || isRecepcion() || isDoctor()) {
     tr.addEventListener('click', (e) => {
       // No activar si hace clic en botones
       if (e.target.closest('button') || e.target.closest('[data-delete]') || e.target.closest('[data-edit]') || e.target.closest('[data-up]') || e.target.closest('[data-down]')) {
@@ -8530,6 +8508,17 @@ function abrirModalEstadoCitaMedica(turno) {
       : 'Editar datos del paciente';
   }
 
+  // Mostrar/deshabilitar botones según estado actual
+  const estadoFinal = ['ATENDIDO', 'NO_ASISTIO', 'CANCELADO', 'REPROGRAMADO'].includes(turno.estado);
+  const puedeEnAtencion = !estadoFinal && turno.estado !== 'EN_ATENCION';
+  const puedeAtendido   = turno.estado === 'EN_ATENCION';
+  const btnLlamarMod   = el('btnModalLlamarPaciente');
+  const btnAtendidoMod = el('btnModalAtendido');
+  const btnNoAsistioMod = el('btnModalNoAsistio');
+  if (btnLlamarMod)    { btnLlamarMod.disabled    = !puedeEnAtencion; btnLlamarMod.style.opacity    = puedeEnAtencion ? '' : '0.4'; }
+  if (btnAtendidoMod)  { btnAtendidoMod.disabled   = !puedeAtendido;  btnAtendidoMod.style.opacity   = puedeAtendido  ? '' : '0.4'; }
+  if (btnNoAsistioMod) { btnNoAsistioMod.disabled  = estadoFinal;     btnNoAsistioMod.style.opacity  = estadoFinal     ? '0.4' : ''; }
+
   // Mostrar modal
   $('modalEstadoCitaMedica').classList.remove('hidden');
 }
@@ -8556,34 +8545,47 @@ function cerrarModalConfirmReprogramacion() {
   currentEstadoAction = null;
 }
 
-// Botón: En Sala
-$('btnEstadoEnSala')?.addEventListener('click', async (e) => {
-  e.preventDefault();
-  e.stopPropagation();
+// Botón: LLAMAR AL PACIENTE → EN_ATENCION
+$('btnModalLlamarPaciente')?.addEventListener('click', async (e) => {
+  e.preventDefault(); e.stopPropagation();
   if (!currentTurnoMedicaData) return;
-  
   try {
-    const turnoId = currentTurnoMedicaData.id;
-    
-    // Cambiar estado a EN_SALA y aplicar color amarillo
-    const res = await apiFetch(`/api/turnos/${turnoId}/estado`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ estado: 'EN_SALA' })
+    const res = await apiFetch(`/api/turnos/${currentTurnoMedicaData.id}/estado`, {
+      method: 'PATCH', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ estado: 'EN_ATENCION' })
     });
-    
     const data = await res.json();
-    if (data.ok) {
-      showToast('Paciente marcado como En Sala', 'success');
-      cerrarModalEstadoCitaMedica();
-      cargarTurnosMedica(); // Recargar tabla
-    } else {
-      showToast(data.error || 'Error al actualizar', 'error');
-    }
-  } catch (e) {
-    showToast('Error al actualizar estado', 'error');
-    console.error(e);
-  }
+    if (data.ok) { showToast('Paciente en atención: ' + (currentTurnoMedicaData.paciente_nombre || ''), 'success'); cerrarModalEstadoCitaMedica(); cargarTurnosMedica(); }
+    else showToast(data.error || 'Error al actualizar', 'error');
+  } catch (err) { showToast('Error al actualizar estado', 'error'); console.error(err); }
+});
+
+// Botón: ATENDIDO
+$('btnModalAtendido')?.addEventListener('click', async (e) => {
+  e.preventDefault(); e.stopPropagation();
+  if (!currentTurnoMedicaData) return;
+  try {
+    const res = await apiFetch(`/api/turnos/${currentTurnoMedicaData.id}/estado`, {
+      method: 'PATCH', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ estado: 'ATENDIDO' })
+    });
+    const data = await res.json();
+    if (data.ok) { showToast('Paciente marcado como atendido', 'success'); cerrarModalEstadoCitaMedica(); cargarTurnosMedica(); }
+    else showToast(data.error || 'Error al actualizar', 'error');
+  } catch (err) { showToast('Error al actualizar estado', 'error'); console.error(err); }
+});
+
+// Botón: NO ASISTIÓ
+$('btnModalNoAsistio')?.addEventListener('click', (e) => {
+  e.preventDefault(); e.stopPropagation();
+  if (!currentTurnoMedicaData) return;
+  const menu = document.getElementById('menuMasOpcionesMedica');
+  if (menu) menu.style.display = 'none';
+  currentEstadoAction = 'no-asistio';
+  cerrarModalEstadoCitaMedica();
+  $('modalConfirmReprogramacionTitle').textContent = '¿Desea reprogramar esta cita?';
+  $('modalConfirmReprogramacionMessage').textContent = 'El paciente no asistió. ¿Desea reprogramarla para otro día?';
+  $('modalConfirmReprogramacion').classList.remove('hidden');
 });
 
 // Menú 3 puntos: abrir/cerrar
