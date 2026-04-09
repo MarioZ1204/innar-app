@@ -8553,16 +8553,16 @@ function abrirModalEstadoCitaMedica(turno) {
   const esAdminOrRecep = isAdmin() || isRecepcion();
   const puedeInteractuar = esDoctor || esAdminOrRecep;
   const estadoFinal = ['ATENDIDO', 'NO_ASISTIO', 'CANCELADO', 'REPROGRAMADO'].includes(turno.estado);
-  const puedeEnAtencion = !estadoFinal && turno.estado !== 'EN_ATENCION';
-  const puedeAtendido   = turno.estado === 'EN_ATENCION';
+  const puedeLlamar   = !estadoFinal; // puede llamar varias veces (EN_SALA o EN_ATENCION)
+  const puedeAtendido = turno.estado === 'EN_ATENCION';
 
   // Doctor: 3 botones de acción directa (Llamar, Atendido, No asistió)
   const btnLlamarMod   = el('btnModalLlamarPaciente');
   const btnAtendidoMod = el('btnModalAtendido');
   const btnNoAsistioMod = el('btnModalNoAsistio');
-  if (btnLlamarMod)    { btnLlamarMod.style.display    = esDoctor ? '' : 'none'; btnLlamarMod.disabled    = !puedeEnAtencion; btnLlamarMod.style.opacity    = puedeEnAtencion ? '' : '0.4'; }
-  if (btnAtendidoMod)  { btnAtendidoMod.style.display  = esDoctor ? '' : 'none'; btnAtendidoMod.disabled   = !puedeAtendido;  btnAtendidoMod.style.opacity   = puedeAtendido  ? '' : '0.4'; }
-  if (btnNoAsistioMod) { btnNoAsistioMod.style.display = esDoctor ? '' : 'none'; btnNoAsistioMod.disabled  = estadoFinal;     btnNoAsistioMod.style.opacity  = estadoFinal     ? '0.4' : ''; }
+  if (btnLlamarMod)    { btnLlamarMod.style.display    = esDoctor ? '' : 'none'; btnLlamarMod.disabled    = !puedeLlamar;   btnLlamarMod.style.opacity    = puedeLlamar   ? '' : '0.4'; }
+  if (btnAtendidoMod)  { btnAtendidoMod.style.display  = esDoctor ? '' : 'none'; btnAtendidoMod.disabled   = !puedeAtendido; btnAtendidoMod.style.opacity   = puedeAtendido ? '' : '0.4'; }
+  if (btnNoAsistioMod) { btnNoAsistioMod.style.display = esDoctor ? '' : 'none'; btnNoAsistioMod.disabled  = estadoFinal;    btnNoAsistioMod.style.opacity  = estadoFinal   ? '0.4' : ''; }
 
   // Admin/Recepcion: botón En Sala
   const btnEnSala = el('btnEstadoEnSala');
@@ -8629,14 +8629,14 @@ $('btnModalLlamarPaciente')?.addEventListener('click', async (e) => {
   } catch (err) { showToast('Error al actualizar estado', 'error'); console.error(err); }
 });
 
-// Botón: ATENDIDO
+// Botón: ATENDIDO — usa marcar-atendido para renumerar turnos (el siguiente pasa a ser #1)
 $('btnModalAtendido')?.addEventListener('click', async (e) => {
   e.preventDefault(); e.stopPropagation();
   if (!currentTurnoMedicaData) return;
   try {
-    const res = await apiFetch(`/api/turnos/${currentTurnoMedicaData.id}/estado`, {
-      method: 'PATCH', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ estado: 'ATENDIDO' })
+    const res = await apiFetch('/api/turnos/marcar-atendido', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ turno_id: currentTurnoMedicaData.id })
     });
     const data = await res.json();
     if (data.ok) { showToast('Paciente marcado como atendido', 'success'); cerrarModalEstadoCitaMedica(); cargarTurnosMedica(); }
