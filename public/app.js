@@ -2937,20 +2937,43 @@ async function cargarTurnosMedica() {
     // Umbral de hueco dinámico según especialidad del doctor
     const espLower = (selectedDoctorEspecialidad || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     const es25min = espLower.includes('epileptolog') || espLower.includes('neurolog');
-    const UMBRAL_HUECO_MIN = es25min ? 25 : 40;
+    const INTERVALO_MIN = es25min ? 25 : 40;
 
-    // Construir lista de visualización: insertar fila "hueco" cuando el gap
-    // entre citas consecutivas es >= umbral minutos
+    // Construir lista de visualización: insertar filas de slot vacío con hora
+    // cuando entre citas consecutivas hay espacio para 1+ slots
     const displayList = [];
     for (let i = 0; i < turnosOrdenados.length; i++) {
       displayList.push({ tipo: 'turno', data: turnosOrdenados[i] });
       if (i < turnosOrdenados.length - 1) {
-        // Solo mostrar huecos entre citas activas (no entre finalizados)
+        // Solo mostrar slots vacíos entre citas activas (no entre finalizados)
         if (!ESTADOS_FINALES.includes(turnosOrdenados[i].estado) && !ESTADOS_FINALES.includes(turnosOrdenados[i + 1].estado)) {
           const mActual   = horaAMinutos(turnosOrdenados[i].hora);
           const mSiguiente = horaAMinutos(turnosOrdenados[i + 1].hora);
-          if (mActual !== null && mSiguiente !== null && (mSiguiente - mActual) >= UMBRAL_HUECO_MIN) {
-            displayList.push({ tipo: 'hueco' });
+          if (mActual !== null && mSiguiente !== null) {
+            let slotMin = mActual + INTERVALO_MIN;
+            while (slotMin + INTERVALO_MIN <= mSiguiente + 1) { // +1 para tolerancia de 1 min
+              const hh = String(Math.floor(slotMin / 60)).padStart(2, '0');
+              const mm = String(slotMin % 60).padStart(2, '0');
+              displayList.push({ tipo: 'slot-vacio', hora: `${hh}:${mm}` });
+              slotMin += INTERVALO_MIN;
+            }
+          }
+        }
+      }
+      // Después del último turno activo, generar slots extras hasta completar visualización
+      if (i === activos.length - 1 && activos.length > 0 && !ESTADOS_FINALES.includes(turnosOrdenados[i].estado)) {
+        const mUltimo = horaAMinutos(turnosOrdenados[i].hora);
+        if (mUltimo !== null) {
+          let slotMin = mUltimo + INTERVALO_MIN;
+          const MAX_HORA = 18 * 60; // hasta las 6pm
+          const maxSlots = 8; // máximo 8 slots vacíos extra
+          let count = 0;
+          while (slotMin <= MAX_HORA && count < maxSlots) {
+            const hh = String(Math.floor(slotMin / 60)).padStart(2, '0');
+            const mm = String(slotMin % 60).padStart(2, '0');
+            displayList.push({ tipo: 'slot-vacio', hora: `${hh}:${mm}` });
+            slotMin += INTERVALO_MIN;
+            count++;
           }
         }
       }
@@ -2961,6 +2984,8 @@ async function cargarTurnosMedica() {
         const item = displayList[i];
         if (item.tipo === 'turno') {
           renderTurnoRowMedica(tbody, item.data, animateTargetId, hayEnAtencion);
+        } else if (item.tipo === 'slot-vacio') {
+          crearFilaSlotVacio(tbody, colspan, item.hora);
         } else {
           crearFilaTurnoHueco(tbody, colspan);
         }
@@ -2999,6 +3024,19 @@ function crearFilaTurnoHueco(tbody, colspan) {
   tr.className = 'turno-row turno-hueco';
   tr.style.cssText = 'opacity:0.55;background:repeating-linear-gradient(90deg,#f0f4f8 0px,#f0f4f8 8px,transparent 8px,transparent 16px)';
   tr.innerHTML = `<td colspan="${colspan}" style="padding:5px 12px;border:none;color:#9ca3af;font-size:0.78rem;font-style:italic;letter-spacing:0.02em">&#x2015; Consulta extendida &#x2015;</td>`;
+  tbody.appendChild(tr);
+}
+
+// Fila visual de slot vacío con hora tentativa (rojo claro suave)
+function crearFilaSlotVacio(tbody, colspan, hora) {
+  const tr = document.createElement('tr');
+  tr.className = 'turno-row turno-slot-vacio';
+  const horaDisplay = formatearHora(hora);
+  tr.innerHTML = `
+    <td style="padding:7px 10px;color:#b0b8b6;font-size:0.82rem"></td>
+    <td class="col-hora col-mobile-hide" style="padding:7px 10px;color:#e57373;font-size:0.82rem;font-style:italic">${horaDisplay}</td>
+    <td colspan="${colspan - 2}" style="padding:7px 10px;color:#e57373;font-size:0.8rem;font-style:italic">Disponible</td>
+  `;
   tbody.appendChild(tr);
 }
 
@@ -8592,6 +8630,10 @@ function abrirModalEstadoCitaMedica(turno) {
   const btnEnSala = el('btnEstadoEnSala');
   if (btnEnSala) { btnEnSala.style.display = (esAdminOrRecep && !estadoFinal && turno.estado !== 'EN_ATENCION') ? '' : 'none'; }
 
+  // Admin/Recepcion: botón Reprogramar (solo cuando NO_ASISTIO)
+  const btnReprogramarNA = el('btnModalReprogramarNoAsistio');
+  if (btnReprogramarNA) { btnReprogramarNA.style.display = (esAdminOrRecep && turno.estado === 'NO_ASISTIO') ? '' : 'none'; }
+
   // Menú 3 puntos + editar: ocultar completamente si estado final
   const btn3dots = el('btnMasOpcionesMedica');
   if (btn3dots) btn3dots.style.display = (puedeInteractuar && !estadoFinal) ? '' : 'none';
@@ -8694,6 +8736,18 @@ document.getElementById('btnReprogramarMedicaMenu')?.addEventListener('click', (
   e.stopPropagation();
   if (!currentTurnoMedicaData) return;
   document.getElementById('menuMasOpcionesMedica').style.display = 'none';
+  currentEstadoAction = 'reprogramar';
+  cerrarModalEstadoCitaMedica();
+  $('modalReprogramarMedica').classList.remove('hidden');
+  $('modalReprogramarMedicaFecha').value = currentTurnoMedicaData.fecha || '';
+  $('modalReprogramarMedicaHora').value = (currentTurnoMedicaData.hora || '').substring(0, 5);
+});
+
+// Botón Reprogramar (admin/recepcion) para NO_ASISTIO
+document.getElementById('btnModalReprogramarNoAsistio')?.addEventListener('click', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  if (!currentTurnoMedicaData) return;
   currentEstadoAction = 'reprogramar';
   cerrarModalEstadoCitaMedica();
   $('modalReprogramarMedica').classList.remove('hidden');

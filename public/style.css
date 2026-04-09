@@ -1016,6 +1016,15 @@ button.remove { padding:5px 10px; font-size:.8rem; width:100%; }
 .turno-row.estado-ABOGADO { background-color: #97BF7A; }
 
 /* === Siguiente paciente (turno #1) === */
+/* Slot vacío (disponible) – rojo claro suave */
+.turno-slot-vacio {
+  background: #fff1f2 !important;
+  border-left: 3px solid #fca5a5 !important;
+}
+.turno-slot-vacio td {
+  color: #9ca3af !important;
+}
+
 .turno-es-primero {
   background: linear-gradient(90deg,
     rgba(138,166,161,0.18) 0%,
