@@ -1116,9 +1116,10 @@ app.post('/api/turnos/llamar-siguiente', requireAuth, requireRole(['superadmin',
       doctor_id, 
       fecha,
       paciente_nombre: turnoConConsultorio.paciente_nombre,
-      numero_turno: turnoConConsultorio.numero_turno
+      numero_turno: turnoConConsultorio.numero_turno,
+      numero_consultorio: numeroConsultorio
     });
-    emitSocket('agenda:turno-estado-cambio', { id: turno.id, estado: 'EN_ATENCION' });
+    emitSocket('agenda:turno-estado-cambio', { id: turno.id, estado: 'EN_ATENCION', paciente_nombre: turnoConConsultorio.paciente_nombre, numero_consultorio: numeroConsultorio });
     
     res.json({ ok: true, turno: turnoConConsultorio });
   } catch (e) {
@@ -1300,7 +1301,7 @@ app.get('/api/consultorios', requireAuth, async (req, res) => {
 // Listar medicos (usuarios con rol 'doctor')  accesible a recepcion y doctores
 app.get('/api/medicos', requireAuth, async (req, res) => {
   try {
-    const medicos = await db.query("SELECT id, nombre, usuario, especialidad FROM usuarios WHERE rol = 'doctor' AND activo = 1 ORDER BY nombre ASC");
+    const medicos = await db.query("SELECT id, nombre, usuario, especialidad, numero_consultorio FROM usuarios WHERE rol = 'doctor' AND activo = 1 ORDER BY nombre ASC");
     res.json(medicos);
   } catch (e) {
     console.error(e);
@@ -2069,7 +2070,13 @@ app.patch('/api/turnos/:id/estado', requireAuth, requireRole(['superadmin', 'adm
 
     // Emitir evento WebSocket
     if (app.io) {
-      emitSocket('agenda:turno-estado-cambio', { id, estado, paciente_nombre: turno.paciente_nombre || null });
+      const emitData = { id, estado, paciente_nombre: turno.paciente_nombre || null };
+      // Cuando cambia a EN_ATENCION, incluir info de consultorio para el anuncio de voz
+      if (estado === 'EN_ATENCION') {
+        const doctorRow = await db.query('SELECT numero_consultorio FROM usuarios WHERE id = ?', [turno.doctor_id]);
+        emitData.numero_consultorio = doctorRow.length > 0 ? doctorRow[0].numero_consultorio : null;
+      }
+      emitSocket('agenda:turno-estado-cambio', emitData);
       if (numeroAsignado) {
         emitSocket('agenda:turno-numero-cambio', { 
           id, 

@@ -112,13 +112,32 @@ function initSocket() {
     // Alerta sonora al doctor cuando un paciente entra en sala
     if (data.estado === 'EN_SALA' && typeof isDoctor === 'function' && isDoctor()) {
       const nombre = data.paciente_nombre ? ` - ${data.paciente_nombre}` : '';
-      if (typeof showToast === 'function') showToast(`🔔 Paciente en sala${nombre}`, 'info');
+      if (typeof showToast === 'function') showToast(`Paciente en sala${nombre}`, 'info');
       if (typeof _speak === 'function') _speak('Paciente en sala', 1.05);
       else if ('speechSynthesis' in window) {
         window.speechSynthesis.cancel();
         const utter = new SpeechSynthesisUtterance('Paciente en sala');
         utter.lang = 'es-CO'; utter.rate = 1.05; utter.volume = 1;
         window.speechSynthesis.speak(utter);
+      }
+    }
+    // Anuncio de voz para recepción cuando doctor llama paciente (EN_ATENCION)
+    if (data.estado === 'EN_ATENCION') {
+      const esRecep = (typeof isRecepcion === 'function' && isRecepcion()) ||
+                      (typeof isAdmin === 'function' && isAdmin()) ||
+                      (typeof isElectro === 'function' && isElectro());
+      if (esRecep && 'speechSynthesis' in window) {
+        const nombre = data.paciente_nombre || 'siguiente paciente';
+        const consultorio = data.numero_consultorio ? `consultorio ${data.numero_consultorio}` : 'consultorio';
+        const texto = `Paciente ${nombre}, pasar al ${consultorio}`;
+        if (typeof showToast === 'function') showToast(texto, 'info');
+        if (typeof _speak === 'function') _speak(texto, 0.9);
+        else {
+          window.speechSynthesis.cancel();
+          const utter = new SpeechSynthesisUtterance(texto);
+          utter.lang = 'es-CO'; utter.rate = 0.9; utter.volume = 1;
+          window.speechSynthesis.speak(utter);
+        }
       }
     }
   });
@@ -135,21 +154,20 @@ function initSocket() {
 
   socket.on('agenda:turno-llamar-siguiente', (data) => {
     if (typeof cargarTurnosMedica === 'function') cargarTurnosMedica();
-    // Anuncio de voz para recepción y electrodiagnóstico (no para doctor ni admin puro)
-    if (typeof isRecepcion === 'function' && typeof isElectro === 'function') {
-    if ((isRecepcion() || isElectro()) && 'speechSynthesis' in window) {
-        const nombre = data.paciente_nombre || '';
-        const num = data.numero_turno || '';
-        let texto = num ? `Turno ${num}` : '';
-        if (nombre) texto += (texto ? ', ' : '') + `Paciente ${nombre}`;
-        texto += ', por favor pasar a consultorio';
-        if (typeof _speak === 'function') _speak(texto, 0.95);
-        else {
-          window.speechSynthesis.cancel();
-          const utter = new SpeechSynthesisUtterance(texto);
-          utter.lang = 'es-CO'; utter.rate = 0.95; utter.volume = 1;
-          window.speechSynthesis.speak(utter);
-        }
+    // Anuncio de voz para recepción y electrodiagnóstico
+    const esRecep = (typeof isRecepcion === 'function' && isRecepcion()) ||
+                    (typeof isAdmin === 'function' && isAdmin()) ||
+                    (typeof isElectro === 'function' && isElectro());
+    if (esRecep && 'speechSynthesis' in window) {
+      const nombre = data.paciente_nombre || 'siguiente paciente';
+      const consultorio = data.numero_consultorio ? `consultorio ${data.numero_consultorio}` : 'consultorio';
+      const texto = `Paciente ${nombre}, pasar al ${consultorio}`;
+      if (typeof _speak === 'function') _speak(texto, 0.9);
+      else {
+        window.speechSynthesis.cancel();
+        const utter = new SpeechSynthesisUtterance(texto);
+        utter.lang = 'es-CO'; utter.rate = 0.9; utter.volume = 1;
+        window.speechSynthesis.speak(utter);
       }
     }
   });

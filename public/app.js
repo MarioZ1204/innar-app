@@ -2903,16 +2903,23 @@ async function cargarTurnosMedica() {
     const res = await apiFetch(`/api/turnos?fecha=${fecha}&doctor_id=${doctorId}`);
     const turnos = await res.json();
     const tbody = $('turnosTableBodyMedica');
+
+    // Separar activos y finalizados: atendidos/finalizados van al final
+    const ESTADOS_FINALES = ['ATENDIDO', 'NO_ASISTIO', 'CANCELADO', 'REPROGRAMADO'];
+    const activos = turnos.filter(t => !ESTADOS_FINALES.includes(t.estado));
+    const finalizados = turnos.filter(t => ESTADOS_FINALES.includes(t.estado));
+    const turnosOrdenados = [...activos, ...finalizados];
+
     // Si es doctor, asegurarnos de mostrar primero quien tenga numero_turno == 1
     if (isDoctor()) {
-      const idx1 = turnos.findIndex(x => x.numero_turno === 1);
+      const idx1 = turnosOrdenados.findIndex(x => x.numero_turno === 1 && !ESTADOS_FINALES.includes(x.estado));
       if (idx1 > 0) {
-        const [one] = turnos.splice(idx1, 1);
-        turnos.unshift(one);
+        const [one] = turnosOrdenados.splice(idx1, 1);
+        turnosOrdenados.unshift(one);
       }
     }
     // Detectar si hay nuevo primer paciente con numero 1 para animar
-    const firstWithNum1 = turnos.find(t => t.numero_turno === 1);
+    const firstWithNum1 = turnosOrdenados.find(t => t.numero_turno === 1 && !ESTADOS_FINALES.includes(t.estado));
     let animateTargetId = null;
     
     if (firstWithNum1 && firstWithNum1.id !== lastTurnoNumber1Id) {
@@ -2924,20 +2931,27 @@ async function cargarTurnosMedica() {
     const filasRequeridas = 25;
     const colspan = isDoctor() ? 7 : 8;
     
-    const hayEnAtencion = turnos.some(t => t.estado === 'EN_ATENCION');
+    const hayEnAtencion = turnosOrdenados.some(t => t.estado === 'EN_ATENCION');
     globalHayEnAtencion = hayEnAtencion;
 
+    // Umbral de hueco dinámico según especialidad del doctor
+    const espLower = (selectedDoctorEspecialidad || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const es25min = espLower.includes('epileptolog') || espLower.includes('neurolog');
+    const UMBRAL_HUECO_MIN = es25min ? 25 : 40;
+
     // Construir lista de visualización: insertar fila "hueco" cuando el gap
-    // entre citas consecutivas es >= 40 minutos (consulta extendida)
-    const UMBRAL_HUECO_MIN = 40;
+    // entre citas consecutivas es >= umbral minutos
     const displayList = [];
-    for (let i = 0; i < turnos.length; i++) {
-      displayList.push({ tipo: 'turno', data: turnos[i] });
-      if (i < turnos.length - 1) {
-        const mActual   = horaAMinutos(turnos[i].hora);
-        const mSiguiente = horaAMinutos(turnos[i + 1].hora);
-        if (mActual !== null && mSiguiente !== null && (mSiguiente - mActual) >= UMBRAL_HUECO_MIN) {
-          displayList.push({ tipo: 'hueco' });
+    for (let i = 0; i < turnosOrdenados.length; i++) {
+      displayList.push({ tipo: 'turno', data: turnosOrdenados[i] });
+      if (i < turnosOrdenados.length - 1) {
+        // Solo mostrar huecos entre citas activas (no entre finalizados)
+        if (!ESTADOS_FINALES.includes(turnosOrdenados[i].estado) && !ESTADOS_FINALES.includes(turnosOrdenados[i + 1].estado)) {
+          const mActual   = horaAMinutos(turnosOrdenados[i].hora);
+          const mSiguiente = horaAMinutos(turnosOrdenados[i + 1].hora);
+          if (mActual !== null && mSiguiente !== null && (mSiguiente - mActual) >= UMBRAL_HUECO_MIN) {
+            displayList.push({ tipo: 'hueco' });
+          }
         }
       }
     }
