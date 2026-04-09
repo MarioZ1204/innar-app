@@ -2040,22 +2040,30 @@ app.patch('/api/turnos/:id/estado', requireAuth, requireRole(['superadmin', 'adm
       return res.status(400).json({ error: 'No se puede modificar un turno ya atendido' });
     }
 
+    const ESTADOS_FINALES = ['ATENDIDO', 'NO_ASISTIO', 'CANCELADO', 'REPROGRAMADO'];
+    const esFinal = ESTADOS_FINALES.includes(estado);
+
     // Si cambia a EN_SALA y no tiene número de turno, asignar automáticamente
     let numeroAsignado = null;
     if (estado === 'EN_SALA' && !turno.numero_turno) {
-      // Obtener el siguiente número disponible
       const result = await db.query(`
         SELECT MAX(CAST(numero_turno AS UNSIGNED)) as max_num FROM turnos 
         WHERE fecha = ? AND doctor_id = ? AND numero_turno IS NOT NULL
       `, [turno.fecha, turno.doctor_id]);
-      
       const maxNum = result[0]?.max_num || 0;
       numeroAsignado = maxNum + 1;
-      
-      // Actualizar estado y número de turno
       await db.execute('UPDATE turnos SET estado = ?, numero_turno = ? WHERE id = ?', [estado, numeroAsignado, id]);
+    } else if (esFinal) {
+      // Estado final: limpiar numero_turno y renumerar EN_SALA restantes
+      await db.execute('UPDATE turnos SET estado = ?, numero_turno = NULL WHERE id = ?', [estado, id]);
+      const enSalaList = await db.query(
+        `SELECT id FROM turnos WHERE fecha = ? AND doctor_id = ? AND estado = 'EN_SALA' ORDER BY numero_turno ASC, id ASC`,
+        [turno.fecha, turno.doctor_id]
+      );
+      for (let i = 0; i < enSalaList.length; i++) {
+        await db.execute('UPDATE turnos SET numero_turno = ? WHERE id = ?', [i + 1, enSalaList[i].id]);
+      }
     } else {
-      // Solo actualizar estado
       await db.execute('UPDATE turnos SET estado = ? WHERE id = ?', [estado, id]);
     }
 

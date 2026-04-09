@@ -1070,6 +1070,40 @@ button.remove { padding:5px 10px; font-size:.8rem; width:100%; }
   position: relative;
   z-index: 1;
 }
+.badge-en-atencion {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 11px 4px 9px;
+  border-radius: 20px;
+  background: linear-gradient(135deg, #dc2626 0%, #ef4444 100%);
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  box-shadow: 0 2px 10px rgba(220,38,38,0.35), 0 0 0 2px rgba(239,68,68,0.25);
+  vertical-align: middle;
+  position: relative;
+  z-index: 1;
+}
+.badge-en-atencion::before {
+  content: '';
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #fca5a5;
+  flex-shrink: 0;
+  animation: pingBadgeAtencion 1s ease-in-out infinite;
+  box-shadow: 0 0 0 0 rgba(252,165,165,0.6);
+}
+@keyframes pingBadgeAtencion {
+  0%   { box-shadow: 0 0 0 0 rgba(252,165,165,0.7); }
+  60%  { box-shadow: 0 0 0 5px rgba(252,165,165,0);  }
+  100% { box-shadow: 0 0 0 0 rgba(252,165,165,0);    }
+}
 /* Punto pulsante */
 .badge-siguiente::before {
   content: '';

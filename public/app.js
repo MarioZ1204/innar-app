@@ -3049,10 +3049,20 @@ function renderTurnoRowMedica(tbody, t, animateTargetId, hayEnAtencion) {
   const accionesCell = puedeEliminar
     ? `<div class="table-actions">${prioridadBtns}<button class="btn-editar" data-edit="${t.id}" title="Editar" ${btnEditDisabled} ${dataDeshabilitado}><img src="images/edit.svg" alt="Editar"/></button><button class="btn-eliminar" data-delete="${t.id}" title="Eliminar" ${btnDeleteDisabled} ${dataDeshabilitado}><img src="images/delete.svg" alt="Eliminar"/></button></div>`
     : '-';
-    const numCellHtml = t.numero_turno === 1
-      ? `<span class="badge-siguiente">Siguiente</span>`
-      : (t.numero_turno || '');
-    if (t.numero_turno === 1) tr.classList.add('turno-es-primero');
+    const esEnSala = t.estado === 'EN_SALA';
+    const tieneTurno = t.numero_turno != null;
+    let numCellHtml = '';
+    if (t.numero_turno === 1 && esEnSala) {
+      numCellHtml = `<span class="badge-siguiente">Siguiente</span>`;
+      tr.classList.add('turno-es-primero');
+    } else if (t.numero_turno === 1 && esEnAtencion) {
+      numCellHtml = `<span class="badge-en-atencion">En atenci\u00f3n</span>`;
+      tr.classList.add('turno-es-primero');
+    } else if (esEnSala && tieneTurno) {
+      numCellHtml = t.numero_turno;
+    } else {
+      numCellHtml = '';
+    }
 
     if (isDoctor()) {
       tr.innerHTML = `
@@ -8553,7 +8563,7 @@ function abrirModalEstadoCitaMedica(turno) {
   const esAdminOrRecep = isAdmin() || isRecepcion();
   const puedeInteractuar = esDoctor || esAdminOrRecep;
   const estadoFinal = ['ATENDIDO', 'NO_ASISTIO', 'CANCELADO', 'REPROGRAMADO'].includes(turno.estado);
-  const puedeLlamar   = !estadoFinal; // puede llamar varias veces (EN_SALA o EN_ATENCION)
+  const puedeLlamar   = !estadoFinal; // puede llamar varias veces
   const puedeAtendido = turno.estado === 'EN_ATENCION';
 
   // Doctor: 3 botones de acción directa (Llamar, Atendido, No asistió)
@@ -8568,10 +8578,10 @@ function abrirModalEstadoCitaMedica(turno) {
   const btnEnSala = el('btnEstadoEnSala');
   if (btnEnSala) { btnEnSala.style.display = (esAdminOrRecep && !estadoFinal && turno.estado !== 'EN_ATENCION') ? '' : 'none'; }
 
-  // Menú 3 puntos + editar: visible para TODOS los roles que interactúan
+  // Menú 3 puntos + editar: ocultar completamente si estado final
   const btn3dots = el('btnMasOpcionesMedica');
-  if (btn3dots) btn3dots.style.display = puedeInteractuar ? '' : 'none';
-  if (editBtnMed) editBtnMed.style.display = puedeInteractuar ? '' : 'none';
+  if (btn3dots) btn3dots.style.display = (puedeInteractuar && !estadoFinal) ? '' : 'none';
+  if (editBtnMed) editBtnMed.style.display = (puedeInteractuar && !estadoFinal) ? '' : 'none';
 
   // Mostrar modal
   $('modalEstadoCitaMedica').classList.remove('hidden');
