@@ -2971,50 +2971,78 @@ async function cargarTurnosMedica() {
     }
 
     // Construir lista de visualización: insertar filas de slot vacío con hora
-    // cuando entre citas consecutivas hay espacio para 1+ slots
+    // tanto en los huecos entre citas como antes/después, respetando disponibilidad
     const displayList = [];
-    for (let i = 0; i < turnosOrdenados.length; i++) {
-      displayList.push({ tipo: 'turno', data: turnosOrdenados[i] });
-      if (i < turnosOrdenados.length - 1) {
-        // Solo mostrar slots vacíos entre citas activas (no entre finalizados)
-        if (!ESTADOS_FINALES.includes(turnosOrdenados[i].estado) && !ESTADOS_FINALES.includes(turnosOrdenados[i + 1].estado)) {
-          const mActual   = horaAMinutos(turnosOrdenados[i].hora);
-          const mSiguiente = horaAMinutos(turnosOrdenados[i + 1].hora);
-          if (mActual !== null && mSiguiente !== null) {
-            let slotMin = mActual + INTERVALO_MIN;
-            while (slotMin + INTERVALO_MIN <= mSiguiente + 1) { // +1 para tolerancia de 1 min
-              if (minutoDentroDeDisponibilidad(slotMin)) {
-                const hh = String(Math.floor(slotMin / 60)).padStart(2, '0');
-                const mm = String(slotMin % 60).padStart(2, '0');
-                displayList.push({ tipo: 'slot-vacio', hora: `${hh}:${mm}` });
-              }
-              slotMin += INTERVALO_MIN;
+
+    // Helper: generar todos los slots disponibles en los rangos del doctor
+    function generarSlotsEnRango(desdeMin, hastaMin) {
+      const slots = [];
+      let m = desdeMin;
+      while (m < hastaMin) {
+        if (minutoDentroDeDisponibilidad(m)) {
+          const hh = String(Math.floor(m / 60)).padStart(2, '0');
+          const mm = String(m % 60).padStart(2, '0');
+          slots.push({ tipo: 'slot-vacio', hora: `${hh}:${mm}` });
+        }
+        m += INTERVALO_MIN;
+      }
+      return slots;
+    }
+
+    // Recopilar horas de turnos activos para detectar huecos
+    const horasActivos = activos.map(t => horaAMinutos(t.hora)).filter(m => m !== null);
+
+    if (horasActivos.length === 0) {
+      // Sin turnos activos: generar slots en todos los rangos disponibles
+      for (const rango of rangosDisponibles) {
+        displayList.push(...generarSlotsEnRango(rango.inicio, rango.fin));
+      }
+      // Agregar los turnos finalizados al final
+      for (const t of finalizados) {
+        displayList.push({ tipo: 'turno', data: t });
+      }
+    } else {
+      // Hay turnos activos: generar slots antes, entre y después de ellos
+
+      // (a) Slots antes del primer turno activo
+      const primerActivo = Math.min(...horasActivos);
+      for (const rango of rangosDisponibles) {
+        if (rango.fin <= primerActivo) {
+          // Rango entero antes de la primera cita
+          displayList.push(...generarSlotsEnRango(rango.inicio, rango.fin));
+        } else if (rango.inicio < primerActivo) {
+          // Rango parcial antes de la primera cita
+          displayList.push(...generarSlotsEnRango(rango.inicio, primerActivo));
+        }
+      }
+
+      // (b) Turnos + slots entre citas activas + slots después del último activo
+      for (let i = 0; i < turnosOrdenados.length; i++) {
+        displayList.push({ tipo: 'turno', data: turnosOrdenados[i] });
+        if (i < turnosOrdenados.length - 1) {
+          // Solo mostrar slots vacíos entre citas activas (no entre finalizados)
+          if (!ESTADOS_FINALES.includes(turnosOrdenados[i].estado) && !ESTADOS_FINALES.includes(turnosOrdenados[i + 1].estado)) {
+            const mActual   = horaAMinutos(turnosOrdenados[i].hora);
+            const mSiguiente = horaAMinutos(turnosOrdenados[i + 1].hora);
+            if (mActual !== null && mSiguiente !== null) {
+              displayList.push(...generarSlotsEnRango(mActual + INTERVALO_MIN, mSiguiente));
             }
           }
         }
-      }
-      // Después del último turno activo, generar slots extras hasta fin de disponibilidad
-      if (i === activos.length - 1 && activos.length > 0 && !ESTADOS_FINALES.includes(turnosOrdenados[i].estado)) {
-        const mUltimo = horaAMinutos(turnosOrdenados[i].hora);
-        if (mUltimo !== null) {
-          let slotMin = mUltimo + INTERVALO_MIN;
-          const maxSlots = 8; // máximo 8 slots vacíos extra
-          let count = 0;
-          while (count < maxSlots) {
-            if (!minutoDentroDeDisponibilidad(slotMin)) {
-              // Si ya salimos del rango, buscar el siguiente rango disponible
-              const siguienteRango = rangosDisponibles.find(r => r.inicio > slotMin);
-              if (siguienteRango) {
-                slotMin = siguienteRango.inicio;
-                continue;
+        // Después del último turno activo, generar slots hasta fin de disponibilidad
+        if (i === activos.length - 1 && !ESTADOS_FINALES.includes(turnosOrdenados[i].estado)) {
+          const mUltimo = horaAMinutos(turnosOrdenados[i].hora);
+          if (mUltimo !== null) {
+            const ultimoRango = rangosDisponibles[rangosDisponibles.length - 1];
+            if (ultimoRango) {
+              // Generar desde después del último turno hasta el fin del último rango
+              let inicio = mUltimo + INTERVALO_MIN;
+              for (const rango of rangosDisponibles) {
+                if (rango.fin <= inicio) continue;
+                const desde = Math.max(rango.inicio, inicio);
+                displayList.push(...generarSlotsEnRango(desde, rango.fin));
               }
-              break; // No hay más rangos disponibles
             }
-            const hh = String(Math.floor(slotMin / 60)).padStart(2, '0');
-            const mm = String(slotMin % 60).padStart(2, '0');
-            displayList.push({ tipo: 'slot-vacio', hora: `${hh}:${mm}` });
-            slotMin += INTERVALO_MIN;
-            count++;
           }
         }
       }
@@ -8834,7 +8862,7 @@ document.getElementById('btnModalReprogramarNoAsistio')?.addEventListener('click
   e.preventDefault();
   e.stopPropagation();
   if (!currentTurnoMedicaData) return;
-  currentEstadoAction = 'reprogramar';
+  currentEstadoAction = 'no-asistio'; // El turno original ya era NO_ASISTIO
   cerrarModalEstadoCitaMedica();
   $('modalReprogramarMedica').classList.remove('hidden');
   $('modalReprogramarMedicaFecha').value = currentTurnoMedicaData.fecha || '';
@@ -8994,18 +9022,37 @@ $('btnConfirmarReprogramarMedica')?.addEventListener('click', async (e) => {
   }
   
   try {
-    // Determinar estado final según acción
-    let estadoFinal = 'REPROGRAMADO';
-    
-    // Actualizar cita con nueva fecha/hora
-    const res = await apiFetch(`/api/turnos/${currentTurnoMedicaData.id}`, {
+    // Determinar el estado final del turno original según la acción
+    let estadoOriginal = 'REPROGRAMADO';
+    if (currentEstadoAction === 'no-asistio') estadoOriginal = 'NO_ASISTIO';
+    else if (currentEstadoAction === 'cancelado-paciente') estadoOriginal = 'CANCELADO';
+
+    // 1) Marcar el turno original con su estado correspondiente (se queda en su fecha original)
+    await apiFetch(`/api/turnos/${currentTurnoMedicaData.id}/estado`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        fecha: fechaNew,
-        hora: horaNew,
-        estado: estadoFinal
-      })
+      body: JSON.stringify({ estado: estadoOriginal })
+    });
+
+    // 2) Crear un NUEVO turno con estado PENDIENTE en la fecha/hora nueva
+    const body = {
+      doctor_id: currentTurnoMedicaData.doctor_id,
+      paciente_nombre: currentTurnoMedicaData.paciente_nombre,
+      paciente_documento: currentTurnoMedicaData.paciente_documento || null,
+      paciente_telefono: currentTurnoMedicaData.paciente_telefono || null,
+      paciente_telefono2: currentTurnoMedicaData.paciente_telefono2 || null,
+      fecha: fechaNew,
+      hora: horaNew,
+      tipo_consulta: currentTurnoMedicaData.tipo_consulta || null,
+      entidad: currentTurnoMedicaData.entidad || null,
+      notas: currentTurnoMedicaData.notas ? `[Reprogramado] ${currentTurnoMedicaData.notas}` : '[Reprogramado]',
+      programado_por: (currentUser && (currentUser.nombre || currentUser.usuario)) || 'Sistema'
+    };
+
+    const res = await apiFetch('/api/turnos', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
     });
     
     const data = await res.json();
