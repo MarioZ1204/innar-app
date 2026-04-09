@@ -165,6 +165,15 @@ function updateMenuByRole() {
   if (typeof perms === 'string') { try { perms = JSON.parse(perms); } catch(_) { perms = null; } }
   if (!Array.isArray(perms)) perms = null;
 
+  // Helper global: verifica si el usuario tiene un permiso granular
+  window.tienePermiso = function(permKey) {
+    const r = currentUser?.rol || '';
+    if (r === 'superadmin' || r === 'admin') return true;
+    const p = perms;
+    if (!p) return true; // sin restricciones personalizadas → defaults del rol
+    return p.includes(permKey);
+  };
+
   // Maps data-module HTML attribute → modulo.* permission key
   const MODULE_PERM_MAP = {
     'recibos':        'modulo.recibos',
@@ -2904,11 +2913,13 @@ async function cargarTurnosMedica() {
     const turnos = await res.json();
     const tbody = $('turnosTableBodyMedica');
 
-    // Separar activos y finalizados: atendidos/finalizados van al final
+    // Todos los turnos ordenados por hora (mantener orden cronológico siempre)
     const ESTADOS_FINALES = ['ATENDIDO', 'NO_ASISTIO', 'CANCELADO', 'REPROGRAMADO'];
-    const activos = turnos.filter(t => !ESTADOS_FINALES.includes(t.estado));
-    const finalizados = turnos.filter(t => ESTADOS_FINALES.includes(t.estado));
-    const turnosOrdenados = [...activos, ...finalizados];
+    const turnosOrdenados = [...turnos].sort((a, b) => {
+      const ma = horaAMinutos(a.hora) ?? 9999;
+      const mb = horaAMinutos(b.hora) ?? 9999;
+      return ma - mb;
+    });
 
     // Si es doctor, asegurarnos de mostrar primero quien tenga numero_turno == 1
     if (isDoctor()) {
@@ -2989,62 +3000,44 @@ async function cargarTurnosMedica() {
       return slots;
     }
 
-    // Recopilar horas de turnos activos para detectar huecos
-    const horasActivos = activos.map(t => horaAMinutos(t.hora)).filter(m => m !== null);
+    // Recopilar horas de TODOS los turnos para detectar huecos
+    const horasTurnos = turnosOrdenados.map(t => horaAMinutos(t.hora)).filter(m => m !== null);
 
-    if (horasActivos.length === 0) {
-      // Sin turnos activos: generar slots en todos los rangos disponibles
+    if (horasTurnos.length === 0) {
+      // Sin turnos: generar slots en todos los rangos disponibles
       for (const rango of rangosDisponibles) {
         displayList.push(...generarSlotsEnRango(rango.inicio, rango.fin));
       }
-      // Agregar los turnos finalizados al final
-      for (const t of finalizados) {
-        displayList.push({ tipo: 'turno', data: t });
-      }
     } else {
-      // Hay turnos activos: generar slots antes, entre y después de ellos
-
-      // (a) Slots antes del primer turno activo
-      const primerActivo = Math.min(...horasActivos);
+      // (a) Slots antes del primer turno
+      const primerTurno = Math.min(...horasTurnos);
       for (const rango of rangosDisponibles) {
-        if (rango.fin <= primerActivo) {
-          // Rango entero antes de la primera cita
+        if (rango.fin <= primerTurno) {
           displayList.push(...generarSlotsEnRango(rango.inicio, rango.fin));
-        } else if (rango.inicio < primerActivo) {
-          // Rango parcial antes de la primera cita
-          displayList.push(...generarSlotsEnRango(rango.inicio, primerActivo));
+        } else if (rango.inicio < primerTurno) {
+          displayList.push(...generarSlotsEnRango(rango.inicio, primerTurno));
         }
       }
 
-      // (b) Turnos + slots entre citas activas + slots después del último activo
+      // (b) Turnos + slots entre TODAS las citas (incluidas atendidas)
       for (let i = 0; i < turnosOrdenados.length; i++) {
         displayList.push({ tipo: 'turno', data: turnosOrdenados[i] });
         if (i < turnosOrdenados.length - 1) {
-          // Solo mostrar slots vacíos entre citas activas (no entre finalizados)
-          if (!ESTADOS_FINALES.includes(turnosOrdenados[i].estado) && !ESTADOS_FINALES.includes(turnosOrdenados[i + 1].estado)) {
-            const mActual   = horaAMinutos(turnosOrdenados[i].hora);
-            const mSiguiente = horaAMinutos(turnosOrdenados[i + 1].hora);
-            if (mActual !== null && mSiguiente !== null) {
-              displayList.push(...generarSlotsEnRango(mActual + INTERVALO_MIN, mSiguiente));
-            }
+          const mActual   = horaAMinutos(turnosOrdenados[i].hora);
+          const mSiguiente = horaAMinutos(turnosOrdenados[i + 1].hora);
+          if (mActual !== null && mSiguiente !== null) {
+            displayList.push(...generarSlotsEnRango(mActual + INTERVALO_MIN, mSiguiente));
           }
         }
-        // Después del último turno activo, generar slots hasta fin de disponibilidad
-        if (i === activos.length - 1 && !ESTADOS_FINALES.includes(turnosOrdenados[i].estado)) {
-          const mUltimo = horaAMinutos(turnosOrdenados[i].hora);
-          if (mUltimo !== null) {
-            const ultimoRango = rangosDisponibles[rangosDisponibles.length - 1];
-            if (ultimoRango) {
-              // Generar desde después del último turno hasta el fin del último rango
-              let inicio = mUltimo + INTERVALO_MIN;
-              for (const rango of rangosDisponibles) {
-                if (rango.fin <= inicio) continue;
-                const desde = Math.max(rango.inicio, inicio);
-                displayList.push(...generarSlotsEnRango(desde, rango.fin));
-              }
-            }
-          }
-        }
+      }
+
+      // (c) Slots después del último turno hasta fin de disponibilidad
+      const ultimoTurno = Math.max(...horasTurnos);
+      let inicio = ultimoTurno + INTERVALO_MIN;
+      for (const rango of rangosDisponibles) {
+        if (rango.fin <= inicio) continue;
+        const desde = Math.max(rango.inicio, inicio);
+        displayList.push(...generarSlotsEnRango(desde, rango.fin));
       }
     }
 
@@ -3680,13 +3673,21 @@ async function crearTurnoMedica() {
 // ========== CARGAR PACIENTES DESDE EXCEL (Agenda Médica) ==========
 
 function descargarPlantillaMedica() {
-  const headers = ['FECHA', 'HORA', 'NUMERO DOCUMENTO', 'NOMBRES Y APELLIDOS', 'ENTIDAD', 'TIPO DE CONSULTA', 'TELEFONO1', 'TELEFONO2', 'NOTAS'];
-  const ejemplo = ['2026-04-01', '08:00', '1234567890', 'Juan Carlos Pérez López', 'Particular', 'Consulta General', '3001234567', '3009876543', ''];
-  const ws = XLSX.utils.aoa_to_sheet([headers, ejemplo]);
-  ws['!cols'] = headers.map(() => ({ wch: 20 }));
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Pacientes');
-  XLSX.writeFile(wb, 'plantilla_citas_medicas.xlsx');
+  const doctorId = selectedDoctorId || (isDoctor() ? currentUser?.id : null);
+  const url = `/api/turnos/plantilla-excel${doctorId ? '?doctor_id=' + encodeURIComponent(doctorId) : ''}`;
+  // Descargar del servidor (tiene dropdowns de entidad y tipo de consulta)
+  apiFetch(url).then(res => {
+    if (!res.ok) throw new Error('Error descargando plantilla');
+    return res.blob();
+  }).then(blob => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'plantilla_citas_medicas.xlsx';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }).catch(e => {
+    showToast('Error descargando plantilla: ' + e.message, 'error');
+  });
 }
 
 function descargarPlantillaElectro() {

@@ -368,6 +368,21 @@ function requireRole(roles) {
   };
 }
 
+// Middleware: permiso granular (verifica permisos personalizados del superadmin)
+// Si el usuario tiene permisos personalizados (array), exige que incluya el permiso.
+// Si permisos es null (rol sin restricciones), deja pasar.
+// superadmin y admin siempre pasan.
+function requirePermiso(permiso) {
+  return (req, res, next) => {
+    const rol = req.session?.rol;
+    if (rol === 'superadmin' || rol === 'admin') return next();
+    const perms = req.session?.permisos;
+    if (perms === null || perms === undefined) return next(); // sin restricciones personalizadas
+    if (Array.isArray(perms) && perms.includes(permiso)) return next();
+    return res.status(403).json({ error: 'No tienes permiso para esta acción' });
+  };
+}
+
 // --- Autenticación ---
 
 // Login
@@ -1062,7 +1077,7 @@ app.patch('/api/usuarios/:id/reset-password', requireAuth, requireAdmin, async (
 });
 
 // --- Doctor: llamar siguiente / marcar atendido ---
-app.post('/api/turnos/llamar-siguiente', requireAuth, requireRole(['superadmin', 'admin', 'doctor', 'admin_recepcion', 'recepcion']), async (req, res) => {
+app.post('/api/turnos/llamar-siguiente', requireAuth, requireRole(['superadmin', 'admin', 'doctor', 'admin_recepcion', 'recepcion']), requirePermiso('agenda.llamar_siguiente'), async (req, res) => {
   const { fecha, doctor_id } = req.body || {};
   if (!fecha || !doctor_id) {
     return res.status(400).json({ error: 'fecha y doctor_id son obligatorios' });
@@ -1138,7 +1153,7 @@ async function getNextTurnoNumber(fecha, doctor_id) {
   return maxNum + 1;
 }
 
-app.post('/api/turnos/marcar-atendido', requireAuth, requireRole(['superadmin', 'admin', 'doctor', 'admin_recepcion', 'recepcion']), async (req, res) => {
+app.post('/api/turnos/marcar-atendido', requireAuth, requireRole(['superadmin', 'admin', 'doctor', 'admin_recepcion', 'recepcion']), requirePermiso('agenda.marcar_atendido'), async (req, res) => {
   const { turno_id } = req.body || {};
   if (!turno_id) {
     return res.status(400).json({ error: 'turno_id es obligatorio' });
@@ -1874,7 +1889,7 @@ app.get('/api/doctor-disponibilidad', async (req, res) => {
 });
 
 // Crear turno
-app.post('/api/turnos', requireAuth, requireRole(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion']), async (req, res) => {
+app.post('/api/turnos', requireAuth, requireRole(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion']), requirePermiso('agenda.crear'), async (req, res) => {
   const { doctor_id, paciente_nombre, paciente_documento, paciente_telefono, paciente_telefono2, fecha, hora, tipo_consulta, entidad, notas, oportunidad, programado_por } = req.body || {};
 
   if (!doctor_id || !paciente_nombre || !fecha || !hora) {
@@ -2022,7 +2037,7 @@ app.patch('/api/turnos/:id', requireAuth, async (req, res) => {
 });
 
 // Actualizar estado del turno específicamente
-app.patch('/api/turnos/:id/estado', requireAuth, requireRole(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'doctor', 'auxiliar_recepcion']), async (req, res) => {
+app.patch('/api/turnos/:id/estado', requireAuth, requireRole(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'doctor', 'auxiliar_recepcion']), requirePermiso('agenda.cambiar_estado'), async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const { estado } = req.body || {};
   if (!id || !estado) {
@@ -2105,7 +2120,7 @@ app.post('/api/turnos/aviso-concluir', requireAuth,
 );
 
 // Eliminar turno
-app.delete('/api/turnos/:id', requireAuth, requireRole(['superadmin', 'admin', 'admin_recepcion', 'recepcion']), async (req, res) => {
+app.delete('/api/turnos/:id', requireAuth, requireRole(['superadmin', 'admin', 'admin_recepcion', 'recepcion']), requirePermiso('agenda.eliminar'), async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (!id) {
     return res.status(400).json({ error: 'ID inválido' });
@@ -2671,6 +2686,98 @@ app.post('/api/diagnosticos/import-excel', requireAuth, requireAdmin, upload.sin
   }
 });
 
+// Descargar plantilla Excel con dropdowns de entidad y tipo de consulta
+app.get('/api/turnos/plantilla-excel', requireAuth, async (req, res) => {
+  const { doctor_id } = req.query;
+  try {
+    const ExcelJS = require('exceljs');
+
+    // Obtener entidades existentes
+    const entidadesRows = await db.query(`
+      SELECT DISTINCT valor FROM (
+        SELECT TRIM(entidad) AS valor FROM turnos WHERE entidad IS NOT NULL AND TRIM(entidad) <> ''
+        UNION
+        SELECT TRIM(nombre_entidad) AS valor FROM recibos WHERE nombre_entidad IS NOT NULL AND TRIM(nombre_entidad) <> ''
+      ) AS t ORDER BY valor ASC
+    `);
+    const entidades = entidadesRows.map(r => r.valor);
+
+    // Obtener tipos de consulta según el doctor
+    let tiposConsulta = [];
+    if (doctor_id) {
+      const docs = await db.query('SELECT especialidad FROM usuarios WHERE id = ?', [parseInt(doctor_id, 10)]);
+      if (docs.length && docs[0].especialidad) {
+        const esp = await db.query('SELECT id FROM especialidades WHERE nombre = ?', [docs[0].especialidad]);
+        if (esp.length) {
+          const tipos = await db.query('SELECT nombre FROM tipos_consulta WHERE especialidad_id = ? AND activo = 1 ORDER BY orden ASC, nombre ASC', [esp[0].id]);
+          tiposConsulta = tipos.map(t => t.nombre);
+        }
+      }
+    }
+    if (!tiposConsulta.length) {
+      const all = await db.query('SELECT DISTINCT nombre FROM tipos_consulta WHERE activo = 1 ORDER BY nombre ASC');
+      tiposConsulta = all.map(t => t.nombre);
+    }
+
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('Pacientes');
+
+    // Headers
+    ws.columns = [
+      { header: 'FECHA', key: 'fecha', width: 15 },
+      { header: 'HORA', key: 'hora', width: 10 },
+      { header: 'NUMERO DOCUMENTO', key: 'documento', width: 20 },
+      { header: 'NOMBRES Y APELLIDOS', key: 'nombre', width: 30 },
+      { header: 'ENTIDAD', key: 'entidad', width: 20 },
+      { header: 'TIPO DE CONSULTA', key: 'tipo', width: 25 },
+      { header: 'TELEFONO1', key: 'tel1', width: 15 },
+      { header: 'TELEFONO2', key: 'tel2', width: 15 },
+      { header: 'NOTAS', key: 'notas', width: 20 },
+    ];
+
+    // Style header row
+    ws.getRow(1).font = { bold: true };
+
+    // Fila ejemplo
+    ws.addRow(['2026-04-01', '08:00', '1234567890', 'Juan Carlos Pérez López', entidades[0] || 'Particular', tiposConsulta[0] || 'Consulta General', '3001234567', '3009876543', '']);
+
+    // Agregar validaciones de datos (dropdown) en columnas E y F para filas 2-200
+    const maxRows = 200;
+    if (entidades.length > 0) {
+      for (let row = 2; row <= maxRows; row++) {
+        ws.getCell(`E${row}`).dataValidation = {
+          type: 'list',
+          allowBlank: true,
+          formulae: [`"${entidades.join(',')}"`],
+          showErrorMessage: true,
+          errorTitle: 'Entidad no válida',
+          error: 'Seleccione una entidad de la lista',
+        };
+      }
+    }
+    if (tiposConsulta.length > 0) {
+      for (let row = 2; row <= maxRows; row++) {
+        ws.getCell(`F${row}`).dataValidation = {
+          type: 'list',
+          allowBlank: true,
+          formulae: [`"${tiposConsulta.join(',')}"`],
+          showErrorMessage: true,
+          errorTitle: 'Tipo de consulta no válido',
+          error: 'Seleccione un tipo de consulta de la lista',
+        };
+      }
+    }
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename=plantilla_citas_medicas.xlsx');
+    await wb.xlsx.write(res);
+    res.end();
+  } catch (e) {
+    console.error('Error generando plantilla:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Listar citas electro por fecha (solo fecha requerida)
 app.get('/api/citas-electro', requireAuth, async (req, res) => {
   const { fecha, equipo_id, buscar } = req.query;
@@ -2743,7 +2850,7 @@ app.get('/api/citas-electro', requireAuth, async (req, res) => {
 });
 
 // Crear cita electrodiagnóstico (con TRANSACCIÓN para garantizar integridad)
-app.post('/api/citas-electro', requireAuth, requireRole(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro', 'auxiliar_recepcion']), async (req, res) => {
+app.post('/api/citas-electro', requireAuth, requireRole(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro', 'auxiliar_recepcion']), requirePermiso('electro.crear'), async (req, res) => {
   const { equipo_id, paciente_id, fecha, hora_agendamiento, hora, hora_fin, duracion, estudio, observaciones, diagnostico_id, estado, programado_por_nombre, telefono } = req.body || {};
   
   // 'hora' o 'hora_agendamiento' es la hora programada para el estudio
@@ -3177,7 +3284,7 @@ app.patch('/api/citas-electro/:id', requireAuth, requireRole(['superadmin', 'adm
 });
 
 // Eliminar cita electro
-app.delete('/api/citas-electro/:id', requireAuth, requireRole(['superadmin', 'admin', 'admin_electro', 'electro']), async (req, res) => {
+app.delete('/api/citas-electro/:id', requireAuth, requireRole(['superadmin', 'admin', 'admin_electro', 'electro']), requirePermiso('electro.eliminar'), async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (!id) {
     return res.status(400).json({ error: 'ID inválido' });
@@ -3453,7 +3560,7 @@ app.delete('/api/servicios/:id', requireAuth, requireAdmin, async (req, res) => 
 // --- Recibos ---
 
 // Guardar recibo
-app.post('/api/recibos', requireAuth, requireRole(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion']), async (req, res) => {
+app.post('/api/recibos', requireAuth, requireRole(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion']), requirePermiso('recibos.crear'), async (req, res) => {
   const body = req.body;
   if (!body || typeof body !== 'object') {
     return res.status(400).json({ error: 'Cuerpo de la petición inválido' });
