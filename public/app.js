@@ -2939,6 +2939,37 @@ async function cargarTurnosMedica() {
     const es25min = espLower.includes('epileptolog') || espLower.includes('neurolog');
     const INTERVALO_MIN = es25min ? 25 : 40;
 
+    // Obtener disponibilidad del doctor para la fecha seleccionada
+    let dispManana = true, dispTarde = true, intervalosBloqueados = [];
+    try {
+      const dispRes = await apiFetch(`/api/doctor-disponibilidad?doctor_id=${doctorId}&fecha=${fecha}`);
+      const dispData = await dispRes.json();
+      if (dispData.ok) {
+        dispManana = dispData.disponible_manana;
+        dispTarde  = dispData.disponible_tarde;
+        if (dispData.tiene_intervalos && dispData.intervalos) {
+          intervalosBloqueados = dispData.intervalos.map(i => ({
+            inicio: horaAMinutos(i.hora_inicio),
+            fin:    horaAMinutos(i.hora_fin)
+          }));
+        }
+      }
+    } catch (e) { console.warn('Error obteniendo disponibilidad:', e.message); }
+
+    // Construir rangos disponibles basados en la agenda del doctor
+    const rangosDisponibles = [];
+    if (dispManana) rangosDisponibles.push({ inicio: 7 * 60, fin: 12 * 60 }); // 7:00 - 12:00
+    if (dispTarde)  rangosDisponibles.push({ inicio: 14 * 60, fin: 18 * 60 }); // 14:00 - 18:00
+
+    // Función para verificar si un minuto está dentro de los rangos disponibles
+    // y no está en un intervalo bloqueado
+    function minutoDentroDeDisponibilidad(m) {
+      const enRango = rangosDisponibles.some(r => m >= r.inicio && m < r.fin);
+      if (!enRango) return false;
+      const bloqueado = intervalosBloqueados.some(b => m >= b.inicio && m < b.fin);
+      return !bloqueado;
+    }
+
     // Construir lista de visualización: insertar filas de slot vacío con hora
     // cuando entre citas consecutivas hay espacio para 1+ slots
     const displayList = [];
@@ -2952,23 +2983,33 @@ async function cargarTurnosMedica() {
           if (mActual !== null && mSiguiente !== null) {
             let slotMin = mActual + INTERVALO_MIN;
             while (slotMin + INTERVALO_MIN <= mSiguiente + 1) { // +1 para tolerancia de 1 min
-              const hh = String(Math.floor(slotMin / 60)).padStart(2, '0');
-              const mm = String(slotMin % 60).padStart(2, '0');
-              displayList.push({ tipo: 'slot-vacio', hora: `${hh}:${mm}` });
+              if (minutoDentroDeDisponibilidad(slotMin)) {
+                const hh = String(Math.floor(slotMin / 60)).padStart(2, '0');
+                const mm = String(slotMin % 60).padStart(2, '0');
+                displayList.push({ tipo: 'slot-vacio', hora: `${hh}:${mm}` });
+              }
               slotMin += INTERVALO_MIN;
             }
           }
         }
       }
-      // Después del último turno activo, generar slots extras hasta completar visualización
+      // Después del último turno activo, generar slots extras hasta fin de disponibilidad
       if (i === activos.length - 1 && activos.length > 0 && !ESTADOS_FINALES.includes(turnosOrdenados[i].estado)) {
         const mUltimo = horaAMinutos(turnosOrdenados[i].hora);
         if (mUltimo !== null) {
           let slotMin = mUltimo + INTERVALO_MIN;
-          const MAX_HORA = 18 * 60; // hasta las 6pm
           const maxSlots = 8; // máximo 8 slots vacíos extra
           let count = 0;
-          while (slotMin <= MAX_HORA && count < maxSlots) {
+          while (count < maxSlots) {
+            if (!minutoDentroDeDisponibilidad(slotMin)) {
+              // Si ya salimos del rango, buscar el siguiente rango disponible
+              const siguienteRango = rangosDisponibles.find(r => r.inicio > slotMin);
+              if (siguienteRango) {
+                slotMin = siguienteRango.inicio;
+                continue;
+              }
+              break; // No hay más rangos disponibles
+            }
             const hh = String(Math.floor(slotMin / 60)).padStart(2, '0');
             const mm = String(slotMin % 60).padStart(2, '0');
             displayList.push({ tipo: 'slot-vacio', hora: `${hh}:${mm}` });
@@ -3687,7 +3728,7 @@ function procesarExcelPacientesMedica(file) {
 
   if (!file) return;
   const reader = new FileReader();
-  reader.onload = function(e) {
+  reader.onload = async function(e) {
     try {
       const workbook = XLSX.read(e.target.result, { type: 'array' });
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
@@ -3711,11 +3752,42 @@ function procesarExcelPacientesMedica(file) {
         return;
       }
 
+      // Cargar opciones de entidad y tipo de consulta para dropdowns en preview
+      let opcionesEntidad = [], opcionesTipo = [];
+      try {
+        const opcData = await apiFetch('/api/recibos/opciones').then(r => r.json()).catch(() => ({ entidades: [] }));
+        opcionesEntidad = opcData.entidades || [];
+      } catch (_) {}
+      const doctorIdPlantilla = selectedDoctorId || (isDoctor() ? currentUser?.id : null);
+      if (doctorIdPlantilla) {
+        try {
+          opcionesTipo = await apiFetch(`/api/tipos-consulta?medico_id=${encodeURIComponent(doctorIdPlantilla)}`).then(r => r.json()).catch(() => []);
+        } catch (_) {}
+      }
+
+      function crearSelectOpciones(opciones, valorActual, rowIdx, campo) {
+        const normalizado = (valorActual || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        let optionsHtml = '<option value="">— Seleccionar —</option>';
+        let encontrado = false;
+        for (const opc of opciones) {
+          const opcNorm = opc.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+          const sel = (opcNorm === normalizado || opc === valorActual) ? ' selected' : '';
+          if (sel) encontrado = true;
+          optionsHtml += `<option value="${escapeHtml(opc)}"${sel}>${escapeHtml(opc)}</option>`;
+        }
+        // Si el valor del Excel no coincide con ninguna opción, agregarlo como opción extra
+        if (valorActual && !encontrado) {
+          optionsHtml += `<option value="${escapeHtml(valorActual)}" selected>${escapeHtml(valorActual)} ⚠️</option>`;
+        }
+        return `<select data-row="${rowIdx}" data-campo="${campo}" style="width:100%;padding:4px 6px;border:1px solid #d1d5db;border-radius:6px;font-size:0.82rem">${optionsHtml}</select>`;
+      }
+
       const parsed = [];
       const tbody = $('cargarPacientesMedicaBody');
       tbody.innerHTML = '';
 
-      for (const row of rows) {
+      for (let ri = 0; ri < rows.length; ri++) {
+        const row = rows[ri];
         const fecha = excelDateToString(row[colFecha]);
         const hora = excelTimeToString(row[colHora]);
         const documento = String(row[colDoc] || '').trim();
@@ -3729,10 +3801,24 @@ function procesarExcelPacientesMedica(file) {
         if (!fecha || !hora || !documento || !nombres) continue;
 
         parsed.push({ fecha, hora, documento, nombres, apellidos, entidad, tipo, tel1, tel2, notas });
+        const idx = parsed.length - 1;
         const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${escapeHtml(fecha)}</td><td>${escapeHtml(hora)}</td><td>${escapeHtml(documento)}</td><td>${escapeHtml(nombres)}</td><td>${escapeHtml(apellidos)}</td><td>${escapeHtml(entidad)}</td><td>${escapeHtml(tipo)}</td><td>${escapeHtml(tel1)}</td><td>${escapeHtml(tel2)}</td><td>${escapeHtml(notas)}</td>`;
+        const entidadCell = opcionesEntidad.length ? crearSelectOpciones(opcionesEntidad, entidad, idx, 'entidad') : escapeHtml(entidad);
+        const tipoCell = opcionesTipo.length ? crearSelectOpciones(opcionesTipo.map(t => t.nombre || t), tipo, idx, 'tipo') : escapeHtml(tipo);
+        tr.innerHTML = `<td>${escapeHtml(fecha)}</td><td>${escapeHtml(hora)}</td><td>${escapeHtml(documento)}</td><td>${escapeHtml(nombres)}</td><td>${escapeHtml(apellidos)}</td><td>${entidadCell}</td><td>${tipoCell}</td><td>${escapeHtml(tel1)}</td><td>${escapeHtml(tel2)}</td><td>${escapeHtml(notas)}</td>`;
         tbody.appendChild(tr);
       }
+
+      // Listeners para actualizar parsed cuando el usuario cambia un dropdown
+      tbody.addEventListener('change', function(ev) {
+        const sel = ev.target;
+        if (sel.tagName !== 'SELECT') return;
+        const ri = parseInt(sel.dataset.row, 10);
+        const campo = sel.dataset.campo;
+        if (!isNaN(ri) && window._cargarPacientesMedicaData && window._cargarPacientesMedicaData[ri]) {
+          window._cargarPacientesMedicaData[ri][campo] = sel.value;
+        }
+      });
 
       if (!parsed.length) { errorDiv.textContent = 'No se encontraron filas válidas con los datos requeridos'; errorDiv.style.display = 'block'; return; }
 

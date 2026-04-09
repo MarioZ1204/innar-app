@@ -3636,7 +3636,7 @@ app.get('/api/recibos', requireAuth, async (req, res) => {
     if (medico_id)       { conditions.push('medico_id = ?');        params.push(parseInt(medico_id, 10)); }
     if (generado_por_id) { conditions.push('generado_por_id = ?'); params.push(parseInt(generado_por_id, 10)); }
     if (nombre_entidad)  { conditions.push('nombre_entidad = ?');  params.push(nombre_entidad); }
-    if (tipo_servicio)   { conditions.push('tipo_servicio = ?');   params.push(tipo_servicio); }
+    if (tipo_servicio)   { conditions.push('tipo_servicio LIKE ?'); params.push(`%${tipo_servicio}%`); }
 
     const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
     const rows = await db.query(
@@ -3666,7 +3666,7 @@ app.get('/api/recibos/export/xlsx', requireAuth, async (req, res) => {
     if (medico_id)       { conditions.push('medico_id = ?');        params.push(parseInt(medico_id, 10)); }
     if (generado_por_id) { conditions.push('generado_por_id = ?'); params.push(parseInt(generado_por_id, 10)); }
     if (nombre_entidad)  { conditions.push('nombre_entidad = ?');  params.push(nombre_entidad); }
-    if (tipo_servicio)   { conditions.push('tipo_servicio = ?');   params.push(tipo_servicio); }
+    if (tipo_servicio)   { conditions.push('tipo_servicio LIKE ?'); params.push(`%${tipo_servicio}%`); }
     const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
     const rows = await db.query(
       `SELECT numero, fecha, cliente, tipo_pago, nombre_entidad,
@@ -3713,7 +3713,7 @@ app.get('/api/recibos/export/pdf-reporte', requireAuth, async (req, res) => {
     if (medico_id)       { conditions.push('medico_id = ?');        params.push(parseInt(medico_id, 10)); }
     if (generado_por_id) { conditions.push('generado_por_id = ?'); params.push(parseInt(generado_por_id, 10)); }
     if (nombre_entidad)  { conditions.push('nombre_entidad = ?');  params.push(nombre_entidad); }
-    if (tipo_servicio)   { conditions.push('tipo_servicio = ?');   params.push(tipo_servicio); }
+    if (tipo_servicio)   { conditions.push('tipo_servicio LIKE ?'); params.push(`%${tipo_servicio}%`); }
     const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
     const rows = await db.query(
       `SELECT numero, fecha, cliente, tipo_pago, nombre_entidad,
