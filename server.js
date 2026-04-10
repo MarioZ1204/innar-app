@@ -395,7 +395,7 @@ function requirePermiso(permiso) {
 // Si el rol NO está en la lista: pasa si tiene el permiso concedido explícitamente.
 function requireRoleOrPerm(roles, permiso) {
   return (req, res, next) => {
-    if (!req.session?.userId) return res.status(401).json({ error: 'No autenticado' });
+    if (!req.session?.usuarioId) return res.status(401).json({ error: 'No autenticado' });
     const rol = req.session.rol;
     const perms = req.session?.permisos; // null = sin restricciones; array = permisos personalizados
     if (rol === 'superadmin' || rol === 'admin') return next();
@@ -4604,6 +4604,11 @@ app.get('/api/admin/datos/:tipo', requireAuth, requireAdmin, async (req, res) =>
       const params = [];
       if (q) { where += ' AND nombre LIKE ?'; params.push(`%${q}%`); }
       rows = await db.query(`SELECT id, nombre, codigo, activo FROM diagnosticos ${where} ORDER BY nombre ASC LIMIT ${limit}`, params);
+    } else if (tipo === 'entidades') {
+      let where = 'WHERE 1=1';
+      const params = [];
+      if (q) { where += ' AND nombre LIKE ?'; params.push(`%${q}%`); }
+      rows = await db.query(`SELECT id, nombre, activo FROM entidades ${where} ORDER BY nombre ASC LIMIT ${limit}`, params);
     } else {
       return res.status(400).json({ error: 'Tipo no válido' });
     }

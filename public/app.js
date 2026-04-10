@@ -3950,7 +3950,7 @@ async function procesarExcelPacientesElectro(file) {
   try {
     const res = await apiFetch('/api/estudios/lista');
     const d = await res.json();
-    opcionesEstudio = (Array.isArray(d) ? d : (d.estudios || [])).map(e => e.nombre || e);
+    opcionesEstudio = (Array.isArray(d) ? d : (d.registros || d.estudios || [])).map(e => e.nombre || e);
   } catch (_) {}
 
   function crearSelectEstudio(valorActual, rowIdx) {
@@ -6235,7 +6235,7 @@ async function guardarCambiosUsuario(e) {
     return;
   }
   
-  const rolesValidos = ['admin','recepcion','electro','doctor','contabilidad'];
+  const rolesValidos = ['superadmin','admin','admin_recepcion','recepcion','admin_electro','electro','tecnico_electro','auxiliar_recepcion','doctor','contabilidad'];
   if (!rolesValidos.includes(rol)) {
     mostrarErrorEdicion('Rol inválido');
     return;
