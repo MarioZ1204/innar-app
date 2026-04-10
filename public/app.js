@@ -1136,29 +1136,35 @@ function speakConsultorio(numero) {
 // ========== SESSION EXPIRADA ==========
 let _sessionBannerShown = false;
 function showSessionExpiredBanner() {
-  if (_sessionBannerShown || document.getElementById('session-expired-banner')) return;
+  if (_sessionBannerShown || document.getElementById('session-expired-toast')) return;
   _sessionBannerShown = true;
-  // Marcar en sessionStorage para que un refresh también cierre sesión
   sessionStorage.setItem('session_expired', '1');
-  const banner = document.createElement('div');
-  banner.id = 'session-expired-banner';
-  banner.innerHTML = `
-    <div class="session-expired-box">
-      <div class="session-expired-icon">🔒</div>
-      <h3 class="session-expired-title">Sesión expirada</h3>
-      <p class="session-expired-sub">Tu sesión ha terminado.<br>Vuelve a iniciar sesión para continuar.</p>
-      <button class="session-expired-btn" id="btnGoLogin">Iniciar sesión</button>
+  const toast = document.createElement('div');
+  toast.id = 'session-expired-toast';
+  toast.innerHTML = `
+    <div class="session-expired-toast-content">
+      <span class="session-expired-toast-icon">🔒</span>
+      <div class="session-expired-toast-text">
+        <strong>Sesión expirada</strong>
+        <span>Tu sesión ha terminado</span>
+      </div>
+      <button class="session-expired-toast-btn" id="btnGoLogin">Iniciar sesión</button>
+      <button class="session-expired-toast-close" aria-label="Cerrar">&times;</button>
     </div>`;
-  document.body.appendChild(banner);
-  banner.querySelector('#btnGoLogin').addEventListener('click', async () => {
-    // Cerrar sesión en el servidor antes de mostrar login
+  document.body.appendChild(toast);
+  const goLogin = async () => {
     try { await fetch('/api/logout', { method: 'POST', credentials: 'include' }); } catch(_) {}
-    banner.remove();
+    toast.remove();
     _sessionBannerShown = false;
     sessionStorage.removeItem('session_expired');
     if (window.socket) { window.socket.disconnect(); window.socket = null; }
     currentUser = null;
     showView('view-login');
+  };
+  toast.querySelector('#btnGoLogin').addEventListener('click', goLogin);
+  toast.querySelector('.session-expired-toast-close').addEventListener('click', () => {
+    toast.remove();
+    _sessionBannerShown = false;
   });
 }
 
@@ -2070,18 +2076,16 @@ function adjustColumnsForRole(){
   if (!headerRow) return;
   
   if (isDoctor()) {
-    // Para DOCTOR: remover Hora, cambiar Acciones por "Quien Programó"
-    headerRow.querySelectorAll('.col-hora').forEach(th => th.remove());
-    // Ocultar la col del colgroup para que no reserve espacio
+    // Para DOCTOR: mantener Hora visible, cambiar Acciones por "Quien Programó"
     const colHora = document.querySelector('#turnosTableMedica colgroup .col-hora');
-    if (colHora) colHora.style.display = 'none';
+    if (colHora) colHora.style.display = '';
     
     const lastTh = headerRow.querySelector('th:last-child');
     if (lastTh && lastTh.textContent.includes('Acciones')) {
       lastTh.textContent = 'Quien Programó';
     }
   } else {
-    // Para RECEPCION/ADMIN: agregar Hora, cambiar "Quien Programó" por "Acciones"
+    // Para RECEPCION/ADMIN: asegurar Hora visible, cambiar "Quien Programó" por "Acciones"
     const colHora = document.querySelector('#turnosTableMedica colgroup .col-hora');
     if (colHora) colHora.style.display = '';
     
@@ -2920,7 +2924,7 @@ async function cargarTurnosMedica() {
   const fecha = $('agendaMedicaFecha').value;
   const doctorId = selectedDoctorId || (isDoctor() ? currentUser?.id : null);
   if (!fecha || !doctorId) { showToast('Selecciona fecha y médico', 'error'); return; }
-  showSkeletonRows($('turnosTableBodyMedica'), isDoctor() ? 7 : 8, 6);
+  showSkeletonRows($('turnosTableBodyMedica'), 8, 6);
   try {
     const res = await apiFetch(`/api/turnos?fecha=${fecha}&doctor_id=${doctorId}`);
     const turnos = await res.json();
@@ -2953,7 +2957,7 @@ async function cargarTurnosMedica() {
 
     tbody.innerHTML = '';
     const filasRequeridas = 25;
-    const colspan = isDoctor() ? 8 : 9;
+    const colspan = 9;
     
     const hayEnAtencion = turnosOrdenados.some(t => t.estado === 'EN_ATENCION');
     globalHayEnAtencion = hayEnAtencion;
@@ -3084,7 +3088,7 @@ function crearFilaTurnoVacia(tbody, colspan, esDoctor) {
   tr.style.opacity = '0.4';
   
   // Crear celdas vacías según si es doctor o no
-  const columnas = esDoctor ? 8 : 9;
+  const columnas = 9;
   let html = '';
   for (let i = 0; i < columnas; i++) {
     html += '<td style="padding:8px;border:none;background:transparent">&nbsp;</td>';
@@ -3201,6 +3205,7 @@ function renderTurnoRowMedica(tbody, t, animateTargetId, hayEnAtencion) {
     if (isDoctor()) {
       tr.innerHTML = `
         <td>${numCellHtml}</td>
+        <td class="col-hora col-mobile-hide">${formatearHora(t.hora)}</td>
         <td>${escapeHtml(t.paciente_nombre)}</td>
         <td class="col-mobile-hide">${escapeHtml(t.tipo_consulta || '')}</td>
         <td class="col-mobile-hide">${escapeHtml(t.paciente_documento||'')}</td>
