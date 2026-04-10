@@ -1099,12 +1099,12 @@
           <div class="usuarios-page" data-usuarios-page="permisos">
             <header><h2>Control de Permisos</h2></header>
             <div style="display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap">
-              <!-- Panel izquierdo: lista de usuarios -->
-              <section class="card" style="min-width:220px;flex:0 0 220px">
-                <h3 style="margin-bottom:12px">Usuarios</h3>
-                <div id="permisosUserList" style="display:flex;flex-direction:column;gap:4px;max-height:520px;overflow-y:auto">
-                  <div style="padding:12px;text-align:center;color:#9ca3af;font-size:0.9rem">Cargando...</div>
-                </div>
+              <!-- Panel izquierdo: selector de usuario -->
+              <section class="card" style="min-width:280px;flex:0 0 280px">
+                <h3 style="margin-bottom:12px">Seleccionar Usuario</h3>
+                <select id="permisosUserList" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:0.9rem;background:#fff;cursor:pointer">
+                  <option value="">— Seleccionar usuario —</option>
+                </select>
               </section>
               <!-- Panel derecho: permisos del usuario seleccionado -->
               <section class="card" id="permisosEditorSection" style="flex:1;min-width:300px;display:none">

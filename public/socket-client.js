@@ -98,6 +98,13 @@ function initSocket() {
     if (typeof cargarUsuarios === 'function') cargarUsuarios();
   });
 
+  // Permisos cambiados: refrescar sesión del usuario afectado
+  socket.on('usuario:permisos-cambiados', (data) => {
+    if (data?.userId && typeof window.currentUser !== 'undefined' && window.currentUser?.id === data.userId) {
+      if (typeof checkSession === 'function') checkSession();
+    }
+  });
+
   // Agenda médica
   socket.on('agenda:turno-creado', (data) => {
     if (typeof cargarTurnosMedica === 'function') cargarTurnosMedica();

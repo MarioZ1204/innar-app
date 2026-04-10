@@ -5285,30 +5285,42 @@ async function initPermisosPage() {
 
   if (btnGuardar) btnGuardar.onclick = _guardarPermisos;
   if (btnRestablecer) btnRestablecer.onclick = _restablecerPermisos;
+
+  // Socket: refrescar sesión del usuario actual si le cambiaron permisos
+  if (window.socket && !window._socketPermisosListener) {
+    window.socket.on('usuario:permisos-cambiados', (data) => {
+      if (data?.userId === currentUser?.id) {
+        checkSession(); // Refresca currentUser.permisos desde DB
+      }
+    });
+    window._socketPermisosListener = true;
+  }
 }
 
 async function _cargarPermisosUserList() {
   const container = document.getElementById('permisosUserList');
   if (!container) return;
-  container.innerHTML = '<div style="padding:12px;text-align:center;color:#9ca3af;font-size:0.9rem">Cargando...</div>';
+  container.innerHTML = '<option value="" disabled selected>Cargando...</option>';
   try {
     const res = await apiFetch('/api/usuarios');
     const usuarios = await res.json();
-    container.innerHTML = '';
+    container.innerHTML = '<option value="">— Seleccionar usuario —</option>';
     usuarios
       .filter(u => u.rol !== 'superadmin')
       .forEach(u => {
-        const btn = document.createElement('button');
-        btn.className = 'permisos-user-btn';
-        btn.dataset.id = u.id;
-        btn.style.cssText = 'width:100%;text-align:left;padding:8px 10px;border:1px solid #e5e7eb;border-radius:6px;background:#fff;cursor:pointer;font-size:0.88rem;transition:background 0.15s';
-        btn.innerHTML = `<div style="font-weight:600;color:#111827">${escapeHtml(u.nombre || u.usuario)}</div><div style="font-size:0.78rem;color:#6b7280">${escapeHtml(u.usuario)} &middot; ${escapeHtml(_rolLabel(u.rol))}${u.permisos ? ' &nbsp;<span style="color:#6366f1;font-size:0.73rem">✦ personalizado</span>' : ''}</div>`;
-        btn.addEventListener('click', () => _seleccionarUsuarioPermisos(u.id));
-        btn.addEventListener('mouseenter', () => { btn.style.background = '#f3f4f6'; });
-        btn.addEventListener('mouseleave', () => { btn.style.background = _permisosUsuarioSeleccionado?.id === u.id ? '#eff6ff' : '#fff'; btn.style.borderColor = _permisosUsuarioSeleccionado?.id === u.id ? '#93c5fd' : '#e5e7eb'; });
-        container.appendChild(btn);
+        const opt = document.createElement('option');
+        opt.value = u.id;
+        const badge = u.permisos ? ' ✦ personalizado' : '';
+        opt.textContent = `${u.nombre || u.usuario} — ${_rolLabel(u.rol)}${badge}`;
+        if (_permisosUsuarioSeleccionado?.id === u.id) opt.selected = true;
+        container.appendChild(opt);
       });
-  } catch(e) { container.innerHTML = '<div style="padding:12px;color:#dc2626;font-size:0.85rem">Error al cargar usuarios</div>'; }
+    // Listener para cambio de selección
+    container.onchange = function() {
+      const val = parseInt(this.value);
+      if (val) _seleccionarUsuarioPermisos(val);
+    };
+  } catch(e) { container.innerHTML = '<option value="" disabled>Error al cargar usuarios</option>'; }
 }
 
 function _rolLabel(rol) {
@@ -5317,14 +5329,6 @@ function _rolLabel(rol) {
 }
 
 async function _seleccionarUsuarioPermisos(userId) {
-  // Marcar botón activo
-  document.querySelectorAll('.permisos-user-btn').forEach(b => {
-    const activo = parseInt(b.dataset.id) === userId;
-    b.style.background = activo ? '#eff6ff' : '#fff';
-    b.style.borderColor = activo ? '#93c5fd' : '#e5e7eb';
-    b.style.fontWeight  = activo ? '600' : 'normal';
-  });
-
   const editor = document.getElementById('permisosEditorSection');
   const noSel  = document.getElementById('permisosNoSeleccion');
   if (editor) editor.style.display = 'none';
@@ -5449,9 +5453,6 @@ async function _guardarPermisos() {
       showToast('Permisos guardados correctamente', 'success');
       _permisosUsuarioSeleccionado.permisos = permisos;
       await _cargarPermisosUserList();
-      // Re-marcar el usuario activo
-      const btnActivo = document.querySelector(`.permisos-user-btn[data-id="${_permisosUsuarioSeleccionado.id}"]`);
-      if (btnActivo) { btnActivo.style.background='#eff6ff'; btnActivo.style.borderColor='#93c5fd'; }
     } else {
       showToast(data.error || 'Error al guardar permisos', 'error');
     }
@@ -5477,8 +5478,6 @@ async function _restablecerPermisos() {
         const rolDefaults = PERMISOS_ROL_DEFAULTS[_permisosUsuarioSeleccionado.rol] || null;
         _renderPermisosChecklist(null, rolDefaults);
         await _cargarPermisosUserList();
-        const btnActivo = document.querySelector(`.permisos-user-btn[data-id="${_permisosUsuarioSeleccionado.id}"]`);
-        if (btnActivo) { btnActivo.style.background='#eff6ff'; btnActivo.style.borderColor='#93c5fd'; }
       } else {
         showToast(data.error || 'Error al restablecer', 'error');
       }

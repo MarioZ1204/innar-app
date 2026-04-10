@@ -864,6 +864,8 @@ app.put('/api/usuarios/:id/permisos', requireAuth, requireAdmin, async (req, res
     if (rows[0].rol === 'superadmin') return res.status(403).json({ error: 'No se pueden modificar permisos del superadmin' });
     const value = permisos === null ? null : JSON.stringify(permisos);
     await db.execute('UPDATE usuarios SET permisos = ? WHERE id = ?', [value, id]);
+    // Notificar via socket para que el usuario refresque su sesión
+    emitSocket('usuario:permisos-cambiados', { userId: id });
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
