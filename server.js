@@ -39,8 +39,14 @@ const app = express();
 // Compresión gzip para todas las respuestas
 app.use(compression());
 
+const _frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+const _allowedOrigins = [_frontendUrl];
+// En desarrollo aceptar también acceso por IP de red local
+if (process.env.NODE_ENV !== 'production') {
+  _allowedOrigins.push(/^http:\/\/192\.168\.\d+\.\d+:\d+$/, /^http:\/\/10\.\d+\.\d+\.\d+:\d+$/, /^http:\/\/172\.(1[6-9]|2\d|3[01])\.\d+\.\d+:\d+$/);
+}
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  origin: _allowedOrigins,
   credentials: true
 }));
 // Headers de seguridad HTTP
@@ -380,6 +386,28 @@ function requirePermiso(permiso) {
     if (perms === null || perms === undefined) return next(); // sin restricciones personalizadas
     if (Array.isArray(perms) && perms.includes(permiso)) return next();
     return res.status(403).json({ error: 'No tienes permiso para esta acción' });
+  };
+}
+
+// Middleware: rol base O permiso explícito.
+// Permite que el superadmin otorgue permisos a roles que no los tienen por defecto.
+// Si el rol está en la lista: igual que requireRole + requirePermiso combinados.
+// Si el rol NO está en la lista: pasa si tiene el permiso concedido explícitamente.
+function requireRoleOrPerm(roles, permiso) {
+  return (req, res, next) => {
+    if (!req.session?.userId) return res.status(401).json({ error: 'No autenticado' });
+    const rol = req.session.rol;
+    const perms = req.session?.permisos; // null = sin restricciones; array = permisos personalizados
+    if (rol === 'superadmin' || rol === 'admin') return next();
+    if (roles.includes(rol)) {
+      // Rol permitido por defecto: verificar que no esté restringido
+      if (perms === null || perms === undefined) return next();
+      if (Array.isArray(perms) && perms.includes(permiso)) return next();
+      return res.status(403).json({ error: 'No tienes permiso para esta acción' });
+    }
+    // Rol fuera de la lista base: solo pasa si tiene el permiso explícito
+    if (Array.isArray(perms) && perms.includes(permiso)) return next();
+    return res.status(403).json({ error: 'Acceso denegado' });
   };
 }
 
@@ -1077,7 +1105,7 @@ app.patch('/api/usuarios/:id/reset-password', requireAuth, requireAdmin, async (
 });
 
 // --- Doctor: llamar siguiente / marcar atendido ---
-app.post('/api/turnos/llamar-siguiente', requireAuth, requireRole(['superadmin', 'admin', 'doctor', 'admin_recepcion', 'recepcion']), requirePermiso('agenda.llamar_siguiente'), async (req, res) => {
+app.post('/api/turnos/llamar-siguiente', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'doctor', 'admin_recepcion', 'recepcion'], 'agenda.llamar_siguiente'), async (req, res) => {
   const { fecha, doctor_id } = req.body || {};
   if (!fecha || !doctor_id) {
     return res.status(400).json({ error: 'fecha y doctor_id son obligatorios' });
@@ -1153,7 +1181,7 @@ async function getNextTurnoNumber(fecha, doctor_id) {
   return maxNum + 1;
 }
 
-app.post('/api/turnos/marcar-atendido', requireAuth, requireRole(['superadmin', 'admin', 'doctor', 'admin_recepcion', 'recepcion']), requirePermiso('agenda.marcar_atendido'), async (req, res) => {
+app.post('/api/turnos/marcar-atendido', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'doctor', 'admin_recepcion', 'recepcion'], 'agenda.marcar_atendido'), async (req, res) => {
   const { turno_id } = req.body || {};
   if (!turno_id) {
     return res.status(400).json({ error: 'turno_id es obligatorio' });
@@ -1235,7 +1263,7 @@ app.get('/api/pacientes/:id', requireAuth, async (req, res) => {
 });
 
 // Actualizar paciente (nombre, documento, etc.)
-app.patch('/api/pacientes/:id', requireAuth, requireRole(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro', 'tecnico_electro', 'auxiliar_recepcion']), async (req, res) => {
+app.patch('/api/pacientes/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro', 'tecnico_electro', 'auxiliar_recepcion'], 'agenda.editar'), async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (!id) return res.status(400).json({ error: 'ID inválido' });
   const { nombre, documento, telefono, email } = req.body || {};
@@ -1262,7 +1290,7 @@ app.patch('/api/pacientes/:id', requireAuth, requireRole(['superadmin', 'admin',
 });
 
 // Crear paciente
-app.post('/api/pacientes', requireAuth, requireRole(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion', 'admin_electro', 'electro']), async (req, res) => {
+app.post('/api/pacientes', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion', 'admin_electro', 'electro'], 'agenda.crear'), async (req, res) => {
   const { nombre, documento, telefono, telefono2, email } = req.body || {};
   if (!nombre) {
     return res.status(400).json({ error: 'Nombre es obligatorio' });
@@ -1889,7 +1917,7 @@ app.get('/api/doctor-disponibilidad', async (req, res) => {
 });
 
 // Crear turno
-app.post('/api/turnos', requireAuth, requireRole(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion']), requirePermiso('agenda.crear'), async (req, res) => {
+app.post('/api/turnos', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion'], 'agenda.crear'), async (req, res) => {
   const { doctor_id, paciente_nombre, paciente_documento, paciente_telefono, paciente_telefono2, fecha, hora, tipo_consulta, entidad, notas, oportunidad, programado_por } = req.body || {};
 
   if (!doctor_id || !paciente_nombre || !fecha || !hora) {
@@ -2037,7 +2065,7 @@ app.patch('/api/turnos/:id', requireAuth, async (req, res) => {
 });
 
 // Actualizar estado del turno específicamente
-app.patch('/api/turnos/:id/estado', requireAuth, requireRole(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'doctor', 'auxiliar_recepcion']), requirePermiso('agenda.cambiar_estado'), async (req, res) => {
+app.patch('/api/turnos/:id/estado', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'doctor', 'auxiliar_recepcion'], 'agenda.cambiar_estado'), async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const { estado } = req.body || {};
   if (!id || !estado) {
@@ -2111,7 +2139,7 @@ app.patch('/api/turnos/:id/estado', requireAuth, requireRole(['superadmin', 'adm
 
 // Aviso al doctor para concluir consulta (emite socket, sin cambios en BD)
 app.post('/api/turnos/aviso-concluir', requireAuth,
-  requireRole(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion', 'admin_electro', 'electro', 'tecnico_electro']),
+  requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion', 'admin_electro', 'electro', 'tecnico_electro'], 'agenda.aviso_doctor'),
   (req, res) => {
     const { doctor_id } = req.body || {};
     emitSocket('agenda:aviso-concluir-consulta', { doctor_id: doctor_id || null });
@@ -2120,7 +2148,7 @@ app.post('/api/turnos/aviso-concluir', requireAuth,
 );
 
 // Eliminar turno
-app.delete('/api/turnos/:id', requireAuth, requireRole(['superadmin', 'admin', 'admin_recepcion', 'recepcion']), requirePermiso('agenda.eliminar'), async (req, res) => {
+app.delete('/api/turnos/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion'], 'agenda.eliminar'), async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (!id) {
     return res.status(400).json({ error: 'ID inválido' });
@@ -2194,7 +2222,7 @@ app.get('/api/turnos/get-next-number', requireAuth, async (req, res) => {
   }
 });
 
-app.patch('/api/turnos/:id/numero', requireAuth, requireRole(['superadmin', 'admin', 'admin_recepcion', 'recepcion']), async (req, res) => {
+app.patch('/api/turnos/:id/numero', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion'], 'agenda.cambiar_estado'), async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const { numero, delta } = req.body || {};
   
@@ -2850,7 +2878,7 @@ app.get('/api/citas-electro', requireAuth, async (req, res) => {
 });
 
 // Crear cita electrodiagnóstico (con TRANSACCIÓN para garantizar integridad)
-app.post('/api/citas-electro', requireAuth, requireRole(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro', 'auxiliar_recepcion']), requirePermiso('electro.crear'), async (req, res) => {
+app.post('/api/citas-electro', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro', 'auxiliar_recepcion'], 'electro.crear'), async (req, res) => {
   const { equipo_id, paciente_id, fecha, hora_agendamiento, hora, hora_fin, duracion, estudio, observaciones, diagnostico_id, estado, programado_por_nombre, telefono } = req.body || {};
   
   // 'hora' o 'hora_agendamiento' es la hora programada para el estudio
@@ -3080,7 +3108,7 @@ app.get('/api/citas-electro/:id', requireAuth, async (req, res) => {
 });
 
 // Actualizar estado de cita electro (registra quién editó)
-app.patch('/api/citas-electro/:id/estado', requireAuth, requireRole(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro', 'tecnico_electro']), async (req, res) => {
+app.patch('/api/citas-electro/:id/estado', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro', 'tecnico_electro'], 'electro.cambiar_estado'), async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const { estado } = req.body || {};
   if (!id || !estado) {
@@ -3116,7 +3144,7 @@ app.patch('/api/citas-electro/:id/estado', requireAuth, requireRole(['superadmin
 // "Programado" â†’ "En Estudio" (validar capacidad)
 // "En Estudio" â†’ "Completado" (marcar fin)
 // Cualquier estado â†’ "En Sala", "No Asistió", "Cancelado" (manual)
-app.patch('/api/citas-electro/:id', requireAuth, requireRole(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro']), async (req, res) => {
+app.patch('/api/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro'], 'electro.editar'), async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const { equipo_id, estado, hora_inicio, hora_fin, hora_agendamiento, fecha, duracion_minutos } = req.body || {};
   
@@ -3284,7 +3312,7 @@ app.patch('/api/citas-electro/:id', requireAuth, requireRole(['superadmin', 'adm
 });
 
 // Eliminar cita electro
-app.delete('/api/citas-electro/:id', requireAuth, requireRole(['superadmin', 'admin', 'admin_electro', 'electro']), requirePermiso('electro.eliminar'), async (req, res) => {
+app.delete('/api/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_electro', 'electro'], 'electro.eliminar'), async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (!id) {
     return res.status(400).json({ error: 'ID inválido' });
@@ -3557,10 +3585,53 @@ app.delete('/api/servicios/:id', requireAuth, requireAdmin, async (req, res) => 
   } catch(err) { res.status(500).json({ error: err.message }); }
 });
 
+// --- Entidades (aseguradoras / EPS) ---
+
+app.get('/api/entidades', requireAuth, async (req, res) => {
+  try {
+    const rows = await db.query('SELECT id, nombre FROM entidades WHERE activo=1 ORDER BY nombre ASC');
+    res.json(rows);
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/entidades', requireAuth, requireAdmin, async (req, res) => {
+  const nombre = (req.body.nombre || '').trim().toUpperCase();
+  if (!nombre) return res.status(400).json({ error: 'Nombre requerido' });
+  try {
+    const result = await db.execute('INSERT INTO entidades (nombre) VALUES (?)', [nombre]);
+    res.json({ ok: true, id: result.insertId });
+  } catch(err) {
+    if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'La entidad ya existe' });
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/entidades/:id', requireAuth, requireAdmin, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const nombre = (req.body.nombre || '').trim().toUpperCase();
+  if (!nombre || isNaN(id)) return res.status(400).json({ error: 'Datos inválidos' });
+  try {
+    await db.execute('UPDATE entidades SET nombre=? WHERE id=?', [nombre, id]);
+    res.json({ ok: true });
+  } catch(err) {
+    if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'La entidad ya existe' });
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/entidades/:id', requireAuth, requireAdmin, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) return res.status(400).json({ error: 'ID inválido' });
+  try {
+    await db.execute('DELETE FROM entidades WHERE id=?', [id]);
+    res.json({ ok: true });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
 // --- Recibos ---
 
 // Guardar recibo
-app.post('/api/recibos', requireAuth, requireRole(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion']), requirePermiso('recibos.crear'), async (req, res) => {
+app.post('/api/recibos', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion'], 'recibos.crear'), async (req, res) => {
   const body = req.body;
   if (!body || typeof body !== 'object') {
     return res.status(400).json({ error: 'Cuerpo de la petición inválido' });
@@ -3656,21 +3727,29 @@ app.get('/api/recibos/generadores', requireAuth, async (req, res) => {
 // Opciones dinámicas para filtros del reporte (entidades y tipos de servicio usados)
 app.get('/api/recibos/opciones', requireAuth, async (req, res) => {
   try {
-    // Entidades: desde turnos + recibos (UNION para máxima cobertura)
-    const entidadesRows = await db.query(`
-      SELECT DISTINCT valor FROM (
-        SELECT TRIM(entidad) AS valor FROM turnos WHERE entidad IS NOT NULL AND TRIM(entidad) <> ''
-        UNION
-        SELECT TRIM(nombre_entidad) AS valor FROM recibos WHERE nombre_entidad IS NOT NULL AND TRIM(nombre_entidad) <> ''
-      ) AS t ORDER BY valor ASC
-    `);
+    // Entidades: primero la tabla entidades (catálogo), luego complementar con las usadas en datos
+    const [catalogoRows, usadasRows] = await Promise.all([
+      db.query('SELECT nombre AS valor FROM entidades WHERE activo=1 ORDER BY nombre ASC'),
+      db.query(`
+        SELECT DISTINCT valor FROM (
+          SELECT TRIM(entidad) AS valor FROM turnos WHERE entidad IS NOT NULL AND TRIM(entidad) <> ''
+          UNION
+          SELECT TRIM(nombre_entidad) AS valor FROM recibos WHERE nombre_entidad IS NOT NULL AND TRIM(nombre_entidad) <> ''
+        ) AS t ORDER BY valor ASC
+      `)
+    ]);
+    // Unión: catálogo primero, luego las usadas que no estén en catálogo
+    const catalogoSet = new Set(catalogoRows.map(r => r.valor.toUpperCase()));
+    const extras = usadasRows.filter(r => !catalogoSet.has((r.valor || '').toUpperCase()));
+    const entidades = [...catalogoRows.map(r => r.valor), ...extras.map(r => r.valor)].sort((a,b) => a.localeCompare(b));
+
     // Estudios: desde tabla estudio_duraciones (catálogo real)
     const estudiosRows = await db.query(
-      'SELECT DISTINCT nombre AS valor FROM estudio_duraciones WHERE nombre IS NOT NULL AND nombre <> \"\" ORDER BY nombre ASC'
+      'SELECT DISTINCT nombre AS valor FROM estudio_duraciones WHERE nombre IS NOT NULL AND nombre <> "" ORDER BY nombre ASC'
     ).catch(() => []);
     res.json({
-      entidades: entidadesRows.map(r => r.valor),
-      estudios:  estudiosRows.map(r => r.valor),
+      entidades,
+      estudios: estudiosRows.map(r => r.valor),
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -3688,7 +3767,7 @@ app.get('/api/recibos/next-number', requireAuth, async (req, res) => {
 });
 
 // Buscar cita para pre-llenar recibo (turnos de hoy/ayer por nombre o documento)
-app.get('/api/recibos/buscar-cita', requireAuth, requireRole(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion']), async (req, res) => {
+app.get('/api/recibos/buscar-cita', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion'], 'recibos.ver'), async (req, res) => {
   const q = (req.query.q || '').trim();
   if (!q || q.length < 2) return res.json([]);
   try {
@@ -4367,7 +4446,7 @@ app.get('/api/reportes/mensual', async (req, res) => {
 });
 
 // ðŸ“Š Dashboard Auditoría de Citas - Ver quién agendó cada cita
-app.get('/api/dashboard/citas-auditoria', requireAuth, requireRole(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro']), async (req, res) => {
+app.get('/api/dashboard/citas-auditoria', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro', 'doctor'], 'sistema.dashboard'), async (req, res) => {
   try {
     const { tipo_cita, fecha_desde, fecha_hasta, programado_por, tipo_estudio } = req.query;
     
@@ -4579,6 +4658,14 @@ app.post('/api/admin/datos/:tipo', requireAuth, requireAdmin, async (req, res) =
         [nombre.trim(), descripcion || null, codigo || null]
       );
       res.json({ ok: true, id: result.insertId });
+    } else if (tipo === 'entidades') {
+      const { nombre } = body;
+      if (!nombre || !nombre.trim()) return res.status(400).json({ error: 'El nombre es obligatorio' });
+      const result = await db.execute(
+        'INSERT INTO entidades (nombre, activo) VALUES (?,1)',
+        [nombre.trim().toUpperCase()]
+      );
+      res.json({ ok: true, id: result.insertId });
     } else {
       res.status(400).json({ error: 'Tipo no soportado para agregar' });
     }
@@ -4598,7 +4685,7 @@ app.delete('/api/admin/datos/:tipo/bulk', requireAuth, requireAdmin, async (req,
     const tablaMap = {
       citas_electro: 'citas_electro', turnos: 'turnos', recibos: 'recibos',
       estudio_duraciones: 'estudio_duraciones', especialidades: 'especialidades',
-      tipos_consulta: 'tipos_consulta', diagnosticos: 'diagnosticos'
+      tipos_consulta: 'tipos_consulta', diagnosticos: 'diagnosticos', entidades: 'entidades'
     };
     if (!tablaMap[tipo]) return res.status(400).json({ error: 'Tipo no válido' });
     const tabla = tablaMap[tipo];
@@ -4641,6 +4728,9 @@ app.delete('/api/admin/datos/:tipo/:id', requireAuth, requireAdmin, async (req, 
       affected = result.affectedRows;
     } else if (tipo === 'diagnosticos') {
       const result = await db.execute('DELETE FROM diagnosticos WHERE id=?', [id]);
+      affected = result.affectedRows;
+    } else if (tipo === 'entidades') {
+      const result = await db.execute('DELETE FROM entidades WHERE id=?', [id]);
       affected = result.affectedRows;
     } else {
       return res.status(400).json({ error: 'Tipo no válido' });
@@ -4913,6 +5003,26 @@ const PORT = process.env.PORT || 3000;
       }
     } catch (svcErr) {
       logger.warn('[STARTUP] Error inicializando servicios_recibo: ' + svcErr.message, { type: 'STARTUP' });
+    }
+
+    // ── Tabla entidades ──────────────────────────────────────────────────────
+    try {
+      await db.execute(`CREATE TABLE IF NOT EXISTS entidades (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        nombre VARCHAR(200) NOT NULL UNIQUE,
+        activo TINYINT DEFAULT 1,
+        creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+      const entRows = await db.query('SELECT COUNT(*) AS n FROM entidades');
+      if (entRows[0].n === 0) {
+        const defaults = ['PARTICULAR', 'FOMAG', 'UCQN', 'PROINSALUD', 'FIDUPREVISORA', 'CAFESALUD', 'NUEVA EPS', 'SURA', 'SANITAS', 'COMPENSAR'];
+        for (const nombre of defaults) {
+          await db.execute('INSERT IGNORE INTO entidades (nombre) VALUES (?)', [nombre]);
+        }
+        logger.info('[STARTUP] Tabla entidades creada con valores por defecto', { type: 'STARTUP' });
+      }
+    } catch (entErr) {
+      logger.warn('[STARTUP] Error inicializando entidades: ' + entErr.message, { type: 'STARTUP' });
     }
     // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 

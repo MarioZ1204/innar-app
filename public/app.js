@@ -1138,6 +1138,8 @@ let _sessionBannerShown = false;
 function showSessionExpiredBanner() {
   if (_sessionBannerShown || document.getElementById('session-expired-banner')) return;
   _sessionBannerShown = true;
+  // Marcar en sessionStorage para que un refresh también cierre sesión
+  sessionStorage.setItem('session_expired', '1');
   const banner = document.createElement('div');
   banner.id = 'session-expired-banner';
   banner.innerHTML = `
@@ -1148,9 +1150,12 @@ function showSessionExpiredBanner() {
       <button class="session-expired-btn" id="btnGoLogin">Iniciar sesión</button>
     </div>`;
   document.body.appendChild(banner);
-  banner.querySelector('#btnGoLogin').addEventListener('click', () => {
+  banner.querySelector('#btnGoLogin').addEventListener('click', async () => {
+    // Cerrar sesión en el servidor antes de mostrar login
+    try { await fetch('/api/logout', { method: 'POST', credentials: 'include' }); } catch(_) {}
     banner.remove();
     _sessionBannerShown = false;
+    sessionStorage.removeItem('session_expired');
     if (window.socket) { window.socket.disconnect(); window.socket = null; }
     currentUser = null;
     showView('view-login');
@@ -1210,6 +1215,13 @@ function clearFieldError(input) {
 
 // init
 document.addEventListener('DOMContentLoaded', async ()=>{
+  // Si la página se refresca con sesión expirada pendiente, hacer logout en servidor
+  if (sessionStorage.getItem('session_expired')) {
+    sessionStorage.removeItem('session_expired');
+    try { await fetch('/api/logout', { method: 'POST', credentials: 'include' }); } catch(_) {}
+    showView('view-login');
+    return;
+  }
   // Verificar sesión al cargar
   const autenticado = await checkSession();
   if (!autenticado) {
@@ -1978,8 +1990,10 @@ async function initAgendaMedica() {
 
   // Botón "Nueva Cita" y modal
   const btnNuevaCita = $('btnNuevaCitaMedica');
-  if (btnNuevaCita) btnNuevaCita.style.display = (!isElectro() && !isDoctor()) ? 'inline-flex' : 'none';
-  if (!isElectro() && !isDoctor()) {
+  const doctorTieneAgendaCrear = isDoctor() && Array.isArray(currentUser?.permisos) && currentUser.permisos.includes('agenda.crear');
+  const canCrearCita = !isElectro() && (!isDoctor() || doctorTieneAgendaCrear);
+  if (btnNuevaCita) btnNuevaCita.style.display = canCrearCita ? 'inline-flex' : 'none';
+  if (canCrearCita) {
     btnNuevaCita?.addEventListener('click', () => {
       const fechaModal = $('modalNuevaCitaFecha');
       if (fechaModal) fechaModal.value = $('agendaMedicaFecha')?.value || new Date().toISOString().slice(0, 10);
@@ -2057,29 +2071,28 @@ function adjustColumnsForRole(){
   
   if (isDoctor()) {
     // Para DOCTOR: remover Hora, cambiar Acciones por "Quien Programó"
-    
-    // Remover columna Hora si existe
     headerRow.querySelectorAll('.col-hora').forEach(th => th.remove());
+    // Ocultar la col del colgroup para que no reserve espacio
+    const colHora = document.querySelector('#turnosTableMedica colgroup .col-hora');
+    if (colHora) colHora.style.display = 'none';
     
-    // Cambiar última columna de "Acciones" a "Quien Programó"
     const lastTh = headerRow.querySelector('th:last-child');
     if (lastTh && lastTh.textContent.includes('Acciones')) {
       lastTh.textContent = 'Quien Programó';
     }
   } else {
     // Para RECEPCION/ADMIN: agregar Hora, cambiar "Quien Programó" por "Acciones"
+    const colHora = document.querySelector('#turnosTableMedica colgroup .col-hora');
+    if (colHora) colHora.style.display = '';
     
-    // Insertar columna Hora si no existe
     if (!headerRow.querySelector('.col-hora') && originalHoraTHHtml) {
       const tpl = document.createElement('template');
       tpl.innerHTML = originalHoraTHHtml.trim();
       const newTh = tpl.content.firstChild;
-      // insertar en segunda posición (después de Cita)
       const ref = headerRow.children[1] || null;
       headerRow.insertBefore(newTh, ref);
     }
     
-    // Cambiar última columna de "Quien Programó" a "Acciones" si es necesario
     const lastTh = headerRow.querySelector('th:last-child');
     if (lastTh && (lastTh.textContent.includes('Quien') || lastTh.textContent.includes('Programó'))) {
       lastTh.textContent = 'Acciones';
@@ -2940,7 +2953,7 @@ async function cargarTurnosMedica() {
 
     tbody.innerHTML = '';
     const filasRequeridas = 25;
-    const colspan = isDoctor() ? 7 : 8;
+    const colspan = isDoctor() ? 8 : 9;
     
     const hayEnAtencion = turnosOrdenados.some(t => t.estado === 'EN_ATENCION');
     globalHayEnAtencion = hayEnAtencion;
@@ -3094,11 +3107,18 @@ function crearFilaSlotVacio(tbody, colspan, hora) {
   const tr = document.createElement('tr');
   tr.className = 'turno-row turno-slot-vacio';
   const horaDisplay = formatearHora(hora);
-  tr.innerHTML = `
-    <td style="padding:7px 10px;color:#b0b8b6;font-size:0.82rem"></td>
-    <td class="col-hora col-mobile-hide" style="padding:7px 10px;color:#e57373;font-size:0.82rem;font-style:italic">${horaDisplay}</td>
-    <td colspan="${colspan - 2}" style="padding:7px 10px;color:#e57373;font-size:0.8rem;font-style:italic">Disponible</td>
-  `;
+  if (isDoctor()) {
+    tr.innerHTML = `
+      <td style="padding:7px 10px;color:#e57373;font-size:0.82rem;font-style:italic">${horaDisplay}</td>
+      <td colspan="${colspan - 1}" style="padding:7px 10px;color:#e57373;font-size:0.8rem;font-style:italic">Disponible</td>
+    `;
+  } else {
+    tr.innerHTML = `
+      <td style="padding:7px 10px;color:#b0b8b6;font-size:0.82rem"></td>
+      <td class="col-hora col-mobile-hide" style="padding:7px 10px;color:#e57373;font-size:0.82rem;font-style:italic">${horaDisplay}</td>
+      <td colspan="${colspan - 2}" style="padding:7px 10px;color:#e57373;font-size:0.8rem;font-style:italic">Disponible</td>
+    `;
+  }
   tbody.appendChild(tr);
 }
 
@@ -3181,7 +3201,6 @@ function renderTurnoRowMedica(tbody, t, animateTargetId, hayEnAtencion) {
     if (isDoctor()) {
       tr.innerHTML = `
         <td>${numCellHtml}</td>
-        <td class="col-hora col-mobile-hide">${formatearHora(t.hora)}</td>
         <td>${escapeHtml(t.paciente_nombre)}</td>
         <td class="col-mobile-hide">${escapeHtml(t.tipo_consulta || '')}</td>
         <td class="col-mobile-hide">${escapeHtml(t.paciente_documento||'')}</td>
@@ -3916,68 +3935,145 @@ async function confirmarCargarPacientesMedica() {
 }
 
 // ========== CARGAR PACIENTES DESDE EXCEL (Electrodiagnóstico) ==========
-function procesarExcelPacientesElectro(file) {
-  const errorDiv = $('cargarPacientesElectroError');
+async function procesarExcelPacientesElectro(file) {
+  const errorDiv   = $('cargarPacientesElectroError');
   const previewDiv = $('cargarPacientesElectroPreview');
   const btnConfirm = $('btnConfirmarCargarPacientesElectro');
-  errorDiv.style.display = 'none';
+  errorDiv.style.display   = 'none';
   previewDiv.style.display = 'none';
   btnConfirm.disabled = true;
   window._cargarPacientesElectroData = null;
-
   if (!file) return;
-  const reader = new FileReader();
-  reader.onload = function(e) {
+
+  // 1. Cargar tipos de estudio para el dropdown
+  let opcionesEstudio = [];
+  try {
+    const res = await apiFetch('/api/estudios/lista');
+    const d = await res.json();
+    opcionesEstudio = (Array.isArray(d) ? d : (d.estudios || [])).map(e => e.nombre || e);
+  } catch (_) {}
+
+  function crearSelectEstudio(valorActual, rowIdx) {
+    if (!opcionesEstudio.length) return escapeHtml(valorActual);
+    const normalizado = (valorActual || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    let optHtml = '<option value="">— Tipo de estudio —</option>';
+    let encontrado = false;
+    for (const opc of opcionesEstudio) {
+      const opcNorm = opc.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const sel = (opcNorm === normalizado || opc === valorActual) ? ' selected' : '';
+      if (sel) encontrado = true;
+      optHtml += `<option value="${escapeHtml(opc)}"${sel}>${escapeHtml(opc)}</option>`;
+    }
+    if (valorActual && !encontrado)
+      optHtml += `<option value="${escapeHtml(valorActual)}" selected>${escapeHtml(valorActual)} ⚠️</option>`;
+    return `<select data-row="${rowIdx}" data-campo="estudio" style="width:100%;padding:4px 6px;border:1px solid #d1d5db;border-radius:6px;font-size:0.82rem">${optHtml}</select>`;
+  }
+
+  async function validarDisponibilidadFila(ri) {
+    const allData = window._cargarPacientesElectroData;
+    if (!allData || !allData[ri]) return;
+    const p = allData[ri];
+    const cell = document.querySelector(`.cell-disp-${ri}`);
+    if (!cell) return;
+    if (!p.estudio || !p.fecha || !p.hora) {
+      cell.innerHTML = '<span style="color:#6b7280;font-size:0.8rem">—</span>';
+      return;
+    }
+    cell.innerHTML = '<span style="color:#6b7280;font-size:0.8rem">⏳</span>';
     try {
-      const workbook = XLSX.read(e.target.result, { type: 'array' });
+      const params = new URLSearchParams({ fecha: p.fecha, hora: parseHora12a24(p.hora), estudio: p.estudio });
+      const res  = await apiFetch(`/api/equipos-electro/disponibilidad?${params}`);
+      const info = await res.json();
+      const cap  = info.capacidad || {};
+      if (cap.hayDisponibilidad) {
+        const cupos = cap.cuposDisponibles ?? cap.cuposADisponibles ?? '';
+        cell.innerHTML = `<span style="color:#16a34a;font-size:0.8rem" title="${cupos} cupo(s)">✓ OK</span>`;
+        p._equipoOk = true;
+      } else {
+        const prox = info.proximaDisponibilidad
+          ? ` Próx: ${escapeHtml(info.proximaDisponibilidad)}` : '';
+        cell.innerHTML = `<span style="color:#dc2626;font-size:0.8rem" title="${escapeHtml(info.mensaje || 'Sin cupos')}">⚠️ Sin cupo${prox ? '<br><small>' + prox + '</small>' : ''}</span>`;
+        p._equipoOk = false;
+      }
+    } catch (_) {
+      cell.innerHTML = '<span style="color:#6b7280;font-size:0.8rem" title="No se pudo verificar">? N/D</span>';
+      p._equipoOk = null;
+    }
+  }
+
+  const reader = new FileReader();
+  reader.onload = async function(ev) {
+    try {
+      const workbook = XLSX.read(ev.target.result, { type: 'array' });
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(sheet);
+      const rows  = XLSX.utils.sheet_to_json(sheet);
       if (!rows.length) { errorDiv.textContent = 'El archivo está vacío'; errorDiv.style.display = 'block'; return; }
 
-      const headers = Object.keys(rows[0]);
-      const colFecha = encontrarColumnaExcel(headers, ['fecha', 'date']);
-      const colHora = encontrarColumnaExcel(headers, ['hora', 'time', 'hour']);
-      const colDoc = encontrarColumnaExcel(headers, ['documento', 'numero documento', 'num documento', 'cedula', 'identificacion', 'doc']);
+      const headers  = Object.keys(rows[0]);
+      const colFecha  = encontrarColumnaExcel(headers, ['fecha', 'date']);
+      const colHora   = encontrarColumnaExcel(headers, ['hora', 'time', 'hour']);
+      const colDoc    = encontrarColumnaExcel(headers, ['documento', 'numero documento', 'num documento', 'cedula', 'identificacion', 'doc']);
       const colNombre = encontrarColumnaExcel(headers, ['nombres y apellidos', 'nombre', 'paciente', 'nombres', 'nombre completo']);
       const colEstudio = encontrarColumnaExcel(headers, ['estudio', 'tipo estudio', 'examen']);
-      const colDiag = encontrarColumnaExcel(headers, ['diagnostico', 'dx', 'diag']);
-      const colTel1 = encontrarColumnaExcel(headers, ['telefono1', 'telefono 1', 'tel1', 'tel 1', 'telefono', 'celular']);
-      const colTel2 = encontrarColumnaExcel(headers, ['telefono2', 'telefono 2', 'tel2', 'tel 2']);
+      const colDiag   = encontrarColumnaExcel(headers, ['diagnostico', 'dx', 'diag']);
+      const colTel1   = encontrarColumnaExcel(headers, ['telefono1', 'telefono 1', 'tel1', 'tel 1', 'telefono', 'celular']);
+      const colTel2   = encontrarColumnaExcel(headers, ['telefono2', 'telefono 2', 'tel2', 'tel 2']);
 
       if (!colFecha || !colHora || !colDoc || !colNombre) {
-        errorDiv.innerHTML = 'Columnas requeridas no encontradas. Se necesitan al menos: <strong>FECHA, HORA, DOCUMENTO, NOMBRES Y APELLIDOS</strong><br>Columnas encontradas: ' + headers.map(h => escapeHtml(h)).join(', ');
+        errorDiv.innerHTML = 'Columnas requeridas no encontradas. Se necesitan: <strong>FECHA, HORA, DOCUMENTO, NOMBRES Y APELLIDOS</strong><br>Encontradas: ' + headers.map(h => escapeHtml(h)).join(', ');
         errorDiv.style.display = 'block';
         return;
       }
 
       const parsed = [];
-      const tbody = $('cargarPacientesElectroBody');
+      const tbody  = $('cargarPacientesElectroBody');
       tbody.innerHTML = '';
 
-      for (const row of rows) {
-        const fecha = excelDateToString(row[colFecha]);
-        const hora = excelTimeToString(row[colHora]);
-        const documento = String(row[colDoc] || '').trim();
+      for (let ri = 0; ri < rows.length; ri++) {
+        const row = rows[ri];
+        const fecha      = excelDateToString(row[colFecha]);
+        const hora       = excelTimeToString(row[colHora]);
+        const documento  = String(row[colDoc]    || '').trim();
         const { nombres, apellidos } = splitNombreApellido(row[colNombre]);
-        const estudio = colEstudio ? String(row[colEstudio] || '').trim() : '';
-        const diagnostico = colDiag ? String(row[colDiag] || '').trim() : '';
-        const tel1 = colTel1 ? String(row[colTel1] || '').replace(/\D/g, '') : '';
-        const tel2 = colTel2 ? String(row[colTel2] || '').replace(/\D/g, '') : '';
-
+        const estudio    = colEstudio ? String(row[colEstudio] || '').trim() : '';
+        const diagnostico = colDiag   ? String(row[colDiag]   || '').trim() : '';
+        const tel1       = colTel1   ? String(row[colTel1]    || '').replace(/\D/g, '') : '';
+        const tel2       = colTel2   ? String(row[colTel2]    || '').replace(/\D/g, '') : '';
         if (!fecha || !hora || !documento || !nombres) continue;
 
-        parsed.push({ fecha, hora, documento, nombres, apellidos, estudio, diagnostico, tel1, tel2 });
-        const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${escapeHtml(fecha)}</td><td>${escapeHtml(hora)}</td><td>${escapeHtml(documento)}</td><td>${escapeHtml(nombres)}</td><td>${escapeHtml(apellidos)}</td><td>${escapeHtml(estudio)}</td><td>${escapeHtml(diagnostico)}</td><td>${escapeHtml(tel1)}</td><td>${escapeHtml(tel2)}</td>`;
+        parsed.push({ fecha, hora, documento, nombres, apellidos, estudio, diagnostico, tel1, tel2, _equipoOk: null });
+        const idx = parsed.length - 1;
+        const tr  = document.createElement('tr');
+        tr.dataset.rowIdx = idx;
+        tr.innerHTML = `<td>${escapeHtml(fecha)}</td><td>${escapeHtml(hora)}</td><td>${escapeHtml(documento)}</td><td>${escapeHtml(nombres)}</td><td>${escapeHtml(apellidos)}</td><td>${crearSelectEstudio(estudio, idx)}</td><td>${escapeHtml(diagnostico)}</td><td>${escapeHtml(tel1)}</td><td>${escapeHtml(tel2)}</td><td class="cell-disp-${idx}"><span style="color:#6b7280;font-size:0.8rem">—</span></td>`;
         tbody.appendChild(tr);
       }
 
-      if (!parsed.length) { errorDiv.textContent = 'No se encontraron filas válidas con los datos requeridos'; errorDiv.style.display = 'block'; return; }
+      // Actualizar parsed + revalidar al cambiar dropdown
+      tbody.addEventListener('change', async function(ev2) {
+        const sel = ev2.target;
+        if (sel.tagName !== 'SELECT' || sel.dataset.campo !== 'estudio') return;
+        const ri = parseInt(sel.dataset.row, 10);
+        if (!isNaN(ri) && window._cargarPacientesElectroData?.[ri]) {
+          window._cargarPacientesElectroData[ri].estudio = sel.value;
+          await validarDisponibilidadFila(ri);
+        }
+      });
+
+      if (!parsed.length) {
+        errorDiv.textContent = 'No se encontraron filas válidas con los datos requeridos';
+        errorDiv.style.display = 'block';
+        return;
+      }
 
       $('cargarPacientesElectroCount').textContent = parsed.length;
       previewDiv.style.display = 'block';
       btnConfirm.disabled = false;
       window._cargarPacientesElectroData = parsed;
+
+      // 2. Validar disponibilidad de equipos en paralelo
+      await Promise.all(parsed.map((_, ri) => validarDisponibilidadFila(ri)));
+
     } catch (err) {
       errorDiv.textContent = 'Error leyendo el archivo: ' + err.message;
       errorDiv.style.display = 'block';
@@ -9755,7 +9851,8 @@ const _gestionTitulos = {
   estudio_duraciones:'Tipos de Estudio',
   especialidades:    'Especialidades',
   tipos_consulta:    'Tipos de Consulta',
-  diagnosticos:      'Diagnósticos'
+  diagnosticos:      'Diagnósticos',
+  entidades:         'Entidades'
 };
 
 const _gestionColumnas = {
@@ -9807,6 +9904,11 @@ const _gestionColumnas = {
     { key: 'nombre', label: 'Nombre' },
     { key: 'codigo', label: 'Código' },
     { key: 'activo', label: 'Activo', format: v => v ? 'Sí' : 'No' }
+  ],
+  entidades: [
+    { key: 'id',     label: 'ID' },
+    { key: 'nombre', label: 'Nombre' },
+    { key: 'activo', label: 'Activo', format: v => v ? 'Sí' : 'No' }
   ]
 };
 
@@ -9814,7 +9916,7 @@ let _gestionSeleccionados = new Set();
 let _gestionRegistrosAll  = [];
 let _gestionPaginaActual  = 1;
 const _GESTION_POR_PAGINA = 20;
-const _GESTION_TIPOS_AGREGAR = ['estudio_duraciones', 'especialidades', 'tipos_consulta', 'diagnosticos'];
+const _GESTION_TIPOS_AGREGAR = ['estudio_duraciones', 'especialidades', 'tipos_consulta', 'diagnosticos', 'entidades'];
 
 function _actualizarConteoGestion() {
   const n = _gestionSeleccionados.size;
@@ -10085,6 +10187,13 @@ async function abrirModalAgregarGestion() {
       <div style="margin-bottom:14px">
         <label style="display:block;margin-bottom:6px;font-weight:500;font-size:14px">Descripción (opcional)</label>
         <textarea id="agrGestionDescripcion" rows="3" maxlength="500" placeholder="Descripción adicional…" style="width:100%;padding:9px 12px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;font-size:14px;resize:vertical"></textarea>
+      </div>`;
+  } else if (tipo === 'entidades') {
+    camposHtml = `
+      <div style="margin-bottom:14px">
+        <label style="display:block;margin-bottom:6px;font-weight:500;font-size:14px">Nombre de la entidad *</label>
+        <input id="agrGestionNombre" type="text" required maxlength="200" placeholder="Ej: NUEVA EPS" style="width:100%;padding:9px 12px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;font-size:14px" />
+        <span style="font-size:0.78rem;color:#6b7280;margin-top:4px;display:block">Se guardará en mayúsculas automáticamente</span>
       </div>`;
   }
   form.innerHTML = camposHtml +
