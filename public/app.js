@@ -121,14 +121,14 @@ function isRecepcion() { return currentUser && (currentUser.rol === 'recepcion' 
 function isElectro() { return currentUser && (currentUser.rol === 'electro' || currentUser.rol === 'admin_electro' || currentUser.rol === 'tecnico_electro'); }
 function isDoctor() { return currentUser && currentUser.rol === 'doctor'; }
 function isContabilidad() { return currentUser && currentUser.rol === 'contabilidad'; }
-function canDeleteRecibos() { return isAdmin(); }
+function canDeleteRecibos() { return tienePermiso('recibos.eliminar'); }
 
 // Mostrar saludo para doctores
 function mostrarSaludoDoctor() {
   const greeting = $('doctorGreeting');
   if (!greeting) return;
   
-  if (isDoctor()) {
+  if (currentUser?.rol === 'doctor') {
     const nombre = currentUser?.nombre || currentUser?.usuario || 'Doctor';
     greeting.textContent = `¡Hola Dr. ${nombre}!`;
     greeting.classList.remove('hidden');
@@ -195,10 +195,10 @@ function updateMenuByRole() {
     }
     card.style.display = allowed ? '' : 'none';
   });
-  // Sidebar recibos: ocultar Gestionar Servicios para no-admin
-  document.querySelectorAll('[data-rol-recibos]').forEach(btn => {
-    const r = btn.dataset.rolRecibos || '';
-    btn.style.display = r.split(' ').includes(rol) ? '' : 'none';
+  // Sidebar recibos: mostrar/ocultar según permisos
+  document.querySelectorAll('[data-perm-recibos]').forEach(btn => {
+    const permKey = btn.dataset.permRecibos || '';
+    btn.style.display = tienePermiso(permKey) ? '' : 'none';
   });
 }
 
@@ -355,6 +355,9 @@ function goToMenu() {
   initUsuariosDone = false;
   initDiagnosticosDone = false;
   initGestionDatosDone = false;
+  // Resetear caché de catálogos para recargar al volver a entrar
+  invalidarCacheEntidades();
+  invalidarCacheEstudios();
   // Resetear flag de listeners de socket-electro
   window.listenersConfigured = false;
   // Limpiar selectedDoctorId cuando se vuelve al menú
@@ -370,8 +373,8 @@ function setupMenuHandlers() {
   $('btnCambiarContrasena').addEventListener('click', openCambiarContrasenaModal);
   document.querySelectorAll('.menu-card').forEach(card => {
     card.addEventListener('click', () => {
-      // Si es RECEPCION/ELECTRO/ADMIN (no doctor) y hace clic en AGENDA MÉDICA, mostrar selección de doctor
-      if (card.dataset.module === 'agenda-medica' && !isDoctor()) {
+      // Si NO es doctor y hace clic en AGENDA MÉDICA, mostrar selección de doctor
+      if (card.dataset.module === 'agenda-medica' && currentUser?.rol !== 'doctor') {
         showDoctorSelectionModal();
       } else {
         goToModule(card.dataset.module);
@@ -530,6 +533,9 @@ function estadoBadge(estado) {
     'Completado':   { bg: '#dcfce7', color: '#15803d', border: '#86efac' },
     'Cancelado':    { bg: '#fee2e2', color: '#991b1b', border: '#fca5a5' },
     'No Asistió':   { bg: '#f3e8ff', color: '#6b21a8', border: '#d8b4fe' },
+    'Reprogramado': { bg: '#e0f2fe', color: '#0369a1', border: '#7dd3fc' },
+    'Adelantado':   { bg: '#ecfdf5', color: '#047857', border: '#6ee7b7' },
+    'Pausado':      { bg: '#fef3c7', color: '#92400e', border: '#fcd34d' },
   };
   const e = estado || 'Programado';
   const s = map[e] || { bg: '#f3f4f6', color: '#374151', border: '#d1d5db' };
@@ -1446,8 +1452,8 @@ function initRecibos() {
   initItemsTable();
   setDefaultDate();
 
-  // Contabilidad: ir directo a Ver Recibos, ocultar tab crear
-  if (isContabilidad()) {
+  // Si el usuario NO tiene permiso de crear recibos: ir directo a Ver Recibos, ocultar tab crear
+  if (!tienePermiso('recibos.crear')) {
     const crearBtn = document.querySelector('#view-recibos .sidebar-btn[data-page="crear"]');
     const crearPage = document.getElementById('page-crear');
     const recibosBtn = document.querySelector('#view-recibos .sidebar-btn[data-page="recibos"]');
@@ -1549,6 +1555,7 @@ function initRecibos() {
   // Filtros + exportar (página Ver Recibos)
   if ($('btnAplicarFiltros')) $('btnAplicarFiltros').onclick = aplicarFiltrosRecibos;
   if ($('btnLimpiarFiltros')) $('btnLimpiarFiltros').onclick = limpiarFiltrosRecibos;
+  if ($('filtroPalabraClave')) $('filtroPalabraClave').addEventListener('keydown', e => { if (e.key === 'Enter') aplicarFiltrosRecibos(); });
   if ($('btnExportarCSV')) $('btnExportarCSV').onclick = exportarReciboCSV;
   if ($('btnExportarPDF')) $('btnExportarPDF').onclick = exportarReciboPDF;
 
@@ -1841,11 +1848,92 @@ async function preLlenarReciboDesdeCita(cita) {
   showToast('Formulario pre-llenado con datos de la cita', 'success');
 }
 
+// ========== CARGA DINÁMICA DE CATÁLOGOS ==========
+let _entidadesCache = null;
+let _estudiosCache = null;
+
+async function cargarEntidadesEnSelect(selectId) {
+  const sel = $(selectId);
+  if (!sel) return;
+  try {
+    if (!_entidadesCache) {
+      const res = await apiFetch('/api/entidades');
+      _entidadesCache = await res.json();
+    }
+    sel.innerHTML = '<option value="">Seleccionar</option>';
+    (_entidadesCache || []).forEach(e => {
+      const opt = document.createElement('option');
+      opt.value = e.nombre;
+      opt.textContent = e.nombre;
+      sel.appendChild(opt);
+    });
+  } catch (err) {
+    console.warn('[cargarEntidadesEnSelect] Error:', err.message);
+  }
+}
+
+async function cargarEstudiosEnSelect(selectId) {
+  const sel = $(selectId);
+  if (!sel) return;
+  try {
+    if (!_estudiosCache) {
+      const res = await apiFetch('/api/estudios/lista');
+      const data = await res.json();
+      _estudiosCache = (Array.isArray(data) ? data : (data.registros || data.estudios || [])).map(e => e.nombre || e);
+    }
+    sel.innerHTML = '<option value="">Seleccionar estudio</option>';
+    (_estudiosCache || []).forEach(nombre => {
+      const opt = document.createElement('option');
+      opt.value = nombre;
+      opt.textContent = nombre;
+      sel.appendChild(opt);
+    });
+  } catch (err) {
+    console.warn('[cargarEstudiosEnSelect] Error:', err.message);
+  }
+}
+
+function generarTabsElectro(estudios) {
+  const container = $('tabsElectroContainer');
+  if (!container) return;
+  // Mantener solo el botón "Todas"
+  container.innerHTML = '<button class="tab-electro-btn active" data-estudio="todas">Todas</button>';
+  // Etiquetas cortas para tabs
+  const labelCorto = (nombre) => {
+    if (!nombre) return nombre;
+    if (nombre.toLowerCase().includes('monitorización') || nombre.toLowerCase().includes('monitorizacion')) return 'Monit. EEG';
+    if (nombre.toLowerCase().includes('titulación') || nombre.toLowerCase().includes('titulacion') || nombre.toLowerCase().includes('cpap')) return 'PSG CPAP/BPAP';
+    if (nombre.toLowerCase().includes('electroencefalograma')) return 'EEG';
+    if (nombre.toLowerCase().includes('test de latencia')) return 'Test Latencia';
+    // Para nombres cortos, usar tal cual; para largos, abreviar
+    return nombre.length > 15 ? nombre.substring(0, 15) + '…' : nombre;
+  };
+  (estudios || []).forEach(nombre => {
+    const btn = document.createElement('button');
+    btn.className = 'tab-electro-btn';
+    btn.dataset.estudio = nombre;
+    btn.textContent = labelCorto(nombre);
+    btn.addEventListener('click', (e) => {
+      filtroEstudioElectro = e.target.dataset.estudio;
+      container.querySelectorAll('.tab-electro-btn').forEach(b => b.classList.remove('active'));
+      e.target.classList.add('active');
+      cargarCitasElectro();
+    });
+    container.appendChild(btn);
+  });
+}
+
+function invalidarCacheEntidades() { _entidadesCache = null; }
+function invalidarCacheEstudios() { _estudiosCache = null; }
+
 // ========== AGENDA MÉDICA (Citas) ==========
 async function initAgendaMedica() {
   const hoy = new Date().toISOString().slice(0,10);
   $('agendaMedicaFecha').value = hoy;
   updateAgendaFechaDisplay();
+  
+  // Cargar entidades desde la base de datos
+  await cargarEntidadesEnSelect('nuevoTurnoEntidadMedica');
   
   // Cargar lista de médicos
   const medicos = await apiFetch('/api/medicos').then(r=>r.json()).catch(()=>[]);
@@ -1862,7 +1950,7 @@ async function initAgendaMedica() {
     } else {
       $('agendaMedicaDoctorDisplay').textContent = '-';
     }
-  } else if (isDoctor()) {
+  } else if (currentUser?.rol === 'doctor') {
     // Si es un DOCTOR, mostrar su propio nombre
     selectedDoctorId = currentUser?.id;
     selectedDoctorEspecialidad = currentUser?.especialidad;
@@ -1940,13 +2028,13 @@ async function initAgendaMedica() {
   
   // === PAGE NAVIGATION (Citas / Programar Agenda) ===
   // Mostrar/ocultar botón "Programar Agenda" según rol
-  const canAgendaProgram = isDoctor() || isRecepcion() || isAdmin() || currentUser?.rol === 'admin_electro';
+  const canAgendaProgram = tienePermiso('agenda.disponibilidad') || tienePermiso('agenda.crear');
   const btnProgramar = document.querySelector('[data-page="programar"]');
   if (btnProgramar) {
     btnProgramar.style.display = canAgendaProgram ? '' : 'none';
     // Cambiar texto del botón según rol (preservar SVG)
     const btnProgramarText = btnProgramar.querySelector('span:last-child');
-    if (btnProgramarText) btnProgramarText.textContent = isDoctor() ? 'Programar Agenda' : 'Agenda';
+    if (btnProgramarText) btnProgramarText.textContent = currentUser?.rol === 'doctor' ? 'Programar Agenda' : 'Agenda';
   }
   
   // Pre-inicializar calendario de disponibilidad
@@ -1970,10 +2058,10 @@ async function initAgendaMedica() {
       // mostrar/ocultar secciones dentro de página según rol
       if (page === 'programar') {
         const titleHeader = document.getElementById('agendaTitleHeader');
-        if (titleHeader) titleHeader.textContent = isDoctor() ? 'Programar Agenda' : 'Agenda';
+        if (titleHeader) titleHeader.textContent = currentUser?.rol === 'doctor' ? 'Programar Agenda' : 'Agenda';
         // Show PDF download section for roles that can upload
         const progSection = $('agendaProgramarSection');
-        const canUpload = isDoctor() || isAdmin() || currentUser?.rol === 'admin_recepcion' || currentUser?.rol === 'admin_electro';
+        const canUpload = tienePermiso('agenda.crear');
         if (progSection) progSection.style.display = canUpload ? '' : 'none';
         // Reload calendar data when switching to this tab
         if (typeof loadCalendarData === 'function') loadCalendarData();
@@ -2074,7 +2162,7 @@ function adjustColumnsForRole(){
   const headerRow = document.querySelector('#turnosTableMedica thead tr');
   if (!headerRow) return;
   
-  if (isDoctor()) {
+  if (currentUser?.rol === 'doctor') {
     // Para DOCTOR: mantener Hora visible, cambiar Acciones por "Quien Programó"
     const colHora = document.querySelector('#turnosTableMedica colgroup .col-hora');
     if (colHora) colHora.style.display = '';
@@ -2210,7 +2298,7 @@ function setupAgendaCalendar() {
 
   // Selector de doctor para recepción/admin
   const selectorDiv = $('agendaCalDoctorSelector');
-  if (selectorDiv && !isDoctor()) {
+  if (selectorDiv && currentUser?.rol !== 'doctor') {
     selectorDiv.style.display = '';
     const sel = $('agendaCalDoctorSelect');
     if (sel && !sel.dataset.loaded) {
@@ -2921,7 +3009,7 @@ async function buscarPacientesMedica() {
 
 async function cargarTurnosMedica() {
   const fecha = $('agendaMedicaFecha').value;
-  const doctorId = selectedDoctorId || (isDoctor() ? currentUser?.id : null);
+  const doctorId = selectedDoctorId || ((currentUser?.rol === 'doctor' ? currentUser?.id : null));
   if (!fecha || !doctorId) { showToast('Selecciona fecha y médico', 'error'); return; }
   showSkeletonRows($('turnosTableBodyMedica'), 8, 6);
   try {
@@ -2938,7 +3026,7 @@ async function cargarTurnosMedica() {
     });
 
     // Si es doctor, asegurarnos de mostrar primero quien tenga numero_turno == 1
-    if (isDoctor()) {
+    if (currentUser?.rol === 'doctor') {
       const idx1 = turnosOrdenados.findIndex(x => x.numero_turno === 1 && !ESTADOS_FINALES.includes(x.estado));
       if (idx1 > 0) {
         const [one] = turnosOrdenados.splice(idx1, 1);
@@ -3068,7 +3156,7 @@ async function cargarTurnosMedica() {
           crearFilaTurnoHueco(tbody, colspan);
         }
       } else {
-        crearFilaTurnoVacia(tbody, colspan, isDoctor());
+        crearFilaTurnoVacia(tbody, colspan, currentUser?.rol === 'doctor');
       }
     }
     
@@ -3110,7 +3198,7 @@ function crearFilaSlotVacio(tbody, colspan, hora) {
   const tr = document.createElement('tr');
   tr.className = 'turno-row turno-slot-vacio';
   const horaDisplay = formatearHora(hora);
-  if (isDoctor()) {
+  if (currentUser?.rol === 'doctor') {
     tr.innerHTML = `
       <td style="padding:7px 10px;color:#e57373;font-size:0.82rem;font-style:italic">${horaDisplay}</td>
       <td colspan="${colspan - 1}" style="padding:7px 10px;color:#e57373;font-size:0.8rem;font-style:italic">Disponible</td>
@@ -3163,7 +3251,8 @@ function renderTurnoRowMedica(tbody, t, animateTargetId, hayEnAtencion) {
   let deshabilitarBotones = false;
   
   if (tienePermiso('agenda.editar') || tienePermiso('agenda.cambiar_estado')) {
-    if (isAdmin()) {
+    const esAdminRol = currentUser?.rol === 'superadmin' || currentUser?.rol === 'admin';
+    if (esAdminRol) {
       deshabilitarBotones = hayEnAtencion;
     } else {
       deshabilitarBotones = esAtendido || hayEnAtencion;
@@ -3202,7 +3291,7 @@ function renderTurnoRowMedica(tbody, t, animateTargetId, hayEnAtencion) {
       numCellHtml = '';
     }
 
-    if (isDoctor()) {
+    if (currentUser?.rol === 'doctor') {
       tr.innerHTML = `
         <td>${numCellHtml}</td>
         <td class="col-hora col-mobile-hide">${formatearHora(t.hora)}</td>
@@ -3338,7 +3427,7 @@ async function avisoDoctor(doctorIdParam) {
 
 async function llamarSiguientePaciente() {
   const fecha = $('agendaMedicaFecha').value;
-  const doctorId = selectedDoctorId || (isDoctor() ? currentUser?.id : null);
+  const doctorId = selectedDoctorId || ((currentUser?.rol === 'doctor' ? currentUser?.id : null));
   if (!fecha || !doctorId) { showToast('Selecciona fecha y médico', 'error'); return; }
   try {
     const res = await apiFetch('/api/turnos/llamar-siguiente', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({fecha, doctor_id:doctorId}) });
@@ -3357,7 +3446,7 @@ async function llamarSiguientePaciente() {
 
 async function marcarAtendido() {
   const fecha = $('agendaMedicaFecha').value;
-  const doctorId = selectedDoctorId || (isDoctor() ? currentUser?.id : null);
+  const doctorId = selectedDoctorId || ((currentUser?.rol === 'doctor' ? currentUser?.id : null));
   
   try {
     // Buscar el turno en atención
@@ -3487,17 +3576,15 @@ function seleccionarTurnoMedica(tr, t) {
   const btnGuardar = $('btnGuardarNombreMedica');
   if (btnGuardar) {
     const esAtendido = t.estado === 'ATENDIDO';
-    let puedeEditar = true;
+    let puedeEditar = tienePermiso('agenda.editar');
     
-    if (isAdmin()) {
+    const esAdminRol = currentUser?.rol === 'superadmin' || currentUser?.rol === 'admin';
+    if (esAdminRol) {
       // Admin: bloquear si hay EN_ATENCION en otro turno
-      puedeEditar = !(globalHayEnAtencion && t.estado !== 'EN_ATENCION');
-    } else if (currentUser?.rol === 'admin_recepcion') {
-      // Admin recepción: solo bloquear si está ATENDIDO
-      puedeEditar = !esAtendido;
-    } else if (isRecepcion()) {
-      // Recepción: bloquear si está ATENDIDO o hay EN_ATENCION
-      puedeEditar = !(esAtendido || (globalHayEnAtencion && t.estado !== 'EN_ATENCION'));
+      puedeEditar = puedeEditar && !(globalHayEnAtencion && t.estado !== 'EN_ATENCION');
+    } else {
+      // Otros roles: bloquear si está ATENDIDO o hay EN_ATENCION
+      puedeEditar = puedeEditar && !(esAtendido || (globalHayEnAtencion && t.estado !== 'EN_ATENCION'));
     }
     
     btnGuardar.disabled = !puedeEditar;
@@ -3512,15 +3599,13 @@ function seleccionarTurnoMedica(tr, t) {
 }
 
 async function guardarNombrePacienteMedica() {
-  // Prevenir edición según rol:
-  // ADMIN: puede editar si hay EN_ATENCION en otro turno
-  // RECEPCION: no puede editar si está ATENDIDO o hay EN_ATENCION
-  if (currentUser?.rol === 'admin_recepcion') {
-    if (selectedTurnoMedica?.estado === 'ATENDIDO') {
-      showToast('No se pueden editar citas ya atendidas', 'error');
-      return;
-    }
-  } else if (isRecepcion()) {
+  // Prevenir edición según permisos y estado:
+  const esAdminRolGuardar = currentUser?.rol === 'superadmin' || currentUser?.rol === 'admin';
+  if (!tienePermiso('agenda.editar')) {
+    showToast('No tienes permiso para editar', 'error');
+    return;
+  }
+  if (!esAdminRolGuardar) {
     if (selectedTurnoMedica?.estado === 'ATENDIDO') {
       showToast('No se pueden editar citas ya atendidas', 'error');
       return;
@@ -3530,7 +3615,6 @@ async function guardarNombrePacienteMedica() {
       return;
     }
   }
-  // Admin no tiene restricciones basadas en estado
   
   if (!selectedTurnoMedica) {
     showToast('Selecciona un paciente primero', 'error');
@@ -3594,7 +3678,7 @@ async function crearTurnoMedica() {
   const nombre = [nombresMedica, apellidosMedica].filter(Boolean).join(' ');
   const doc = $('nuevoPacienteDocMedica').value.trim();
   const fecha = $('modalNuevaCitaFecha')?.value || $('agendaMedicaFecha').value;
-  const doctorId = selectedDoctorId || (isDoctor() ? currentUser?.id : null);
+  const doctorId = selectedDoctorId || ((currentUser?.rol === 'doctor' ? currentUser?.id : null));
   const hora = parseHora12a24($('nuevoTurnoHoraMedica')?.value || '');
   const telefono1 = $('nuevoPacienteTelefonoMedica')?.value.trim() || '';
   const telefono2 = $('nuevoPacienteTelefonoMedica2')?.value.trim() || '';
@@ -3697,7 +3781,7 @@ async function crearTurnoMedica() {
 // ========== CARGAR PACIENTES DESDE EXCEL (Agenda Médica) ==========
 
 function descargarPlantillaMedica() {
-  const doctorId = selectedDoctorId || (isDoctor() ? currentUser?.id : null);
+  const doctorId = selectedDoctorId || ((currentUser?.rol === 'doctor' ? currentUser?.id : null));
   const url = `/api/turnos/plantilla-excel${doctorId ? '?doctor_id=' + encodeURIComponent(doctorId) : ''}`;
   // Descargar del servidor (tiene dropdowns de entidad y tipo de consulta)
   apiFetch(url).then(res => {
@@ -3819,7 +3903,7 @@ function procesarExcelPacientesMedica(file) {
         const opcData = await apiFetch('/api/recibos/opciones').then(r => r.json()).catch(() => ({ entidades: [] }));
         opcionesEntidad = opcData.entidades || [];
       } catch (_) {}
-      const doctorIdPlantilla = selectedDoctorId || (isDoctor() ? currentUser?.id : null);
+      const doctorIdPlantilla = selectedDoctorId || ((currentUser?.rol === 'doctor' ? currentUser?.id : null));
       if (doctorIdPlantilla) {
         try {
           opcionesTipo = await apiFetch(`/api/tipos-consulta?medico_id=${encodeURIComponent(doctorIdPlantilla)}`).then(r => r.json()).catch(() => []);
@@ -4237,6 +4321,13 @@ async function initElectro() {
   const hoy = new Date().toISOString().slice(0,10);
   $('electroFecha').value = hoy;
   
+  // Cargar estudios desde BD para el select y las pestañas
+  await cargarEstudiosEnSelect('electroEstudio');
+  generarTabsElectro(_estudiosCache || []);
+  
+  // Cargar entidades desde BD para pacientes en espera
+  await cargarEntidadesEnSelect('esperaEntidad');
+  
   // Generar intervalos de hora (texto libre con formato HH:MM AM/PM)
   // No se genera select, el usuario escribe la hora directamente
   
@@ -4359,7 +4450,7 @@ async function initElectro() {
   $('electroTelefono2')?.addEventListener('input', limitarTel);
 
   // tecnico_electro y doctor NO pueden crear citas
-  const canCreateElectro = !isDoctor() && currentUser?.rol !== 'tecnico_electro';
+  const canCreateElectro = tienePermiso('electro.crear');
 
   // Botón "Nuevo Estudio" y modal
   const btnNuevoEstudio = $('btnNuevoEstudioElectro');
@@ -4382,12 +4473,12 @@ async function initElectro() {
 
   // Ocultar "Pacientes en Espera" para tecnico_electro y doctor
   const esperaBtnSidebar = document.querySelector('#view-electro .electro-page-btn[data-page="espera"]');
-  if (esperaBtnSidebar && (isDoctor() || currentUser?.rol === 'tecnico_electro')) {
+  if (esperaBtnSidebar && !tienePermiso('electro.crear')) {
     esperaBtnSidebar.style.display = 'none';
   }
 
   // Botón aviso al doctor en módulo electro (para admin_electro y tecnico_electro)
-  const canAvisarElectro = ['admin_electro', 'tecnico_electro'].includes(currentUser?.rol);
+  const canAvisarElectro = tienePermiso('electro.aviso_doctor');
   const avisoBtnElectro = $('btnAvisarDoctorElectro');
   if (avisoBtnElectro) {
     avisoBtnElectro.style.display = canAvisarElectro ? 'inline-flex' : 'none';
@@ -4598,21 +4689,7 @@ async function initElectro() {
     }
   });
 
-  // Event listeners para pestañas de estudios
-  document.querySelectorAll('.tab-electro-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      filtroEstudioElectro = e.target.dataset.estudio;
-      
-      // Actualizar clases de botones
-      document.querySelectorAll('.tab-electro-btn').forEach(b => {
-        b.classList.remove('active');
-      });
-      e.target.classList.add('active');
-      
-      // Recargar tabla filtrada
-      cargarCitasElectro();
-    });
-  });
+  // Las pestañas de estudios se generan dinámicamente en generarTabsElectro() con sus propios event listeners
 
   // Configurar listeners de socket para ver cambios en tiempo real
   if (window.socket && !window.socketElectroListenerAdded) {
@@ -4992,11 +5069,10 @@ function renderCitaElectroRow(tbody, c) {
   
   // Hacer la fila clickeable para abrir modal
   tr.addEventListener('click', (e) => {
-    if (isDoctor()) return; // Doctor solo puede ver la lista, no los detalles
+    if (!tienePermiso('electro.editar') && !tienePermiso('electro.cambiar_estado')) return; // Sin permiso para editar detalles
     if (c.estado === 'Completado') {
-      // Permitir click si es admin (puede eliminar)
-      const esAdmin = currentUser && (currentUser.rol === 'admin' || currentUser.rol === 'administrador');
-      if (!esAdmin) {
+      // Permitir click si tiene permiso de eliminar
+      if (!tienePermiso('electro.eliminar')) {
         showToast('Esta cita ya está completada - No se puede modificar', 'info');
         return;
       }
@@ -5008,9 +5084,8 @@ function renderCitaElectroRow(tbody, c) {
   if (c.estado === 'Completado') {
     tr.style.opacity = '0.6';
     tr.style.backgroundColor = '#f0fdf4';
-    // Cursor normal para admin, not-allowed para otros
-    const esAdmin = currentUser && (currentUser.rol === 'admin' || currentUser.rol === 'administrador');
-    tr.style.cursor = esAdmin ? 'pointer' : 'not-allowed';
+    // Cursor normal si puede eliminar, not-allowed para otros
+    tr.style.cursor = tienePermiso('electro.eliminar') ? 'pointer' : 'not-allowed';
   }
   
   tbody.appendChild(tr);
@@ -6932,6 +7007,7 @@ async function aplicarFiltrosRecibos() {
   const entidad     = $('filtroEntidad')?.value        || '';
   const tipoConsulta= $('filtroTipoConsulta')?.value   || '';
   const tipoEstudio = $('filtroEstudio')?.value        || '';
+  const palabraClave= $('filtroPalabraClave')?.value?.trim() || '';
 
   const params = new URLSearchParams();
   if (desde)        params.set('fecha_desde',      desde);
@@ -6940,6 +7016,7 @@ async function aplicarFiltrosRecibos() {
   if (medicoId)     params.set('medico_id',        medicoId);
   if (genPor)       params.set('generado_por_id',  genPor);
   if (entidad)      params.set('nombre_entidad',   entidad);
+  if (palabraClave) params.set('q',                palabraClave);
   // Tipo de consulta y estudio filtran la misma columna tipo_servicio
   const tipoServicio = tipoConsulta || tipoEstudio;
   if (tipoServicio) params.set('tipo_servicio',    tipoServicio);
@@ -6957,6 +7034,7 @@ function limpiarFiltrosRecibos() {
   if ($('filtroEntidad'))       $('filtroEntidad').value       = '';
   if ($('filtroTipoConsulta'))  $('filtroTipoConsulta').value  = '';
   if ($('filtroEstudio'))       $('filtroEstudio').value       = '';
+  if ($('filtroPalabraClave'))  $('filtroPalabraClave').value  = '';
   // Ocultar tipo de consulta al limpiar
   const wrap = $('filtroTipoConsultaWrap');
   if (wrap) wrap.style.display = 'none';
@@ -8449,11 +8527,21 @@ function renderFlujoEstado(cita) {
   const svgPlay  = `<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
   const svgStop  = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>`;
 
-  if (estado === 'Programado') {
+  // Reprogramado y Adelantado se tratan como Programado (con nota informativa)
+  const esReprogramadoAdelantado = estado === 'Reprogramado' || estado === 'Adelantado';
+  const estadoEfectivo = esReprogramadoAdelantado ? 'Programado' : estado;
+
+  if (estadoEfectivo === 'Programado') {
     // Equipo bloqueado hasta que llegue el paciente
     if (equipoSelect) { equipoSelect.disabled = true; equipoSelect.style.opacity = '0.45'; equipoSelect.style.cursor = 'not-allowed'; }
+    const notaReprog = esReprogramadoAdelantado
+      ? `<div style="font-size:0.8rem;color:#6b7280;margin-bottom:8px;padding:6px 10px;background:#f0f9ff;border-radius:6px;border-left:3px solid #3b82f6">
+           \u2139\ufe0f Cita ${estado === 'Reprogramado' ? 'reprogramada' : 'adelantada'}
+         </div>`
+      : '';
     flujoEl.innerHTML = `
       <div class="flujo-estado-panel">
+        ${notaReprog}
         <div class="flujo-estado-label">Acci\u00f3n</div>
         <button class="flujo-btn-primary llegada" id="flujo-btn-llego">
           ${svgCheck} Paciente lleg\u00f3 &rarr; En Sala
@@ -8512,13 +8600,12 @@ function renderFlujoEstado(cita) {
     document.getElementById('flujo-btn-reanudar').onclick = () => cambiarEstadoCita('En Estudio');
 
   } else {
-    // Completado / Cancelado / No Asist\u00f3 / Reprogramado / Adelantado
+    // Completado / Cancelado / No Asisti\u00f3
     flujoEl.innerHTML = `<div class="flujo-estado-readonly">Sin acciones disponibles para este estado.</div>`;
   }
 
-  // Guardar: solo util para cambio de equipo; ocultarlo si estado final
   // Guardar: ocultar en estados finales Y durante En Estudio/Pausado
-  const estadosOcultar = ['Completado','Cancelado','No Asisti\u00f3','Reprogramado','Adelantado','En Estudio','Pausado'];
+  const estadosOcultar = ['Completado','Cancelado','No Asisti\u00f3','En Estudio','Pausado'];
   if (btnGuardar) btnGuardar.style.display = estadosOcultar.includes(estado) ? 'none' : '';
 }
 
@@ -8605,19 +8692,14 @@ async function guardarCambiosCitaElectro() {
   
   try {
     const equipoNuevo = $('modalEquipo').value;
-    const estadoNuevo = $('modalEstado').value;
     
-    // Si se cambió equipo o estado, actualizar
+    // Solo manejar cambio de equipo — los cambios de estado se manejan
+    // exclusivamente por los botones de flujo (cambiarEstadoCita, iniciarEstudioModal, etc.)
     const cambios = {};
     
     // Comparar equipo (convertir ambos a string para comparar)
     if (String(equipoNuevo) !== String(citaElectroSeleccionada.equipo_id || '')) {
       cambios.equipo_id = equipoNuevo ? parseInt(equipoNuevo) : null;
-    }
-    
-    // Comparar estado
-    if (estadoNuevo !== (citaElectroSeleccionada.estado || 'Programado')) {
-      cambios.estado = estadoNuevo;
     }
     
     if (Object.keys(cambios).length > 0) {
@@ -8885,26 +8967,33 @@ function abrirModalEstadoCitaMedica(turno) {
   const puedeLlamar   = !estadoFinal; // puede llamar varias veces
   const puedeAtendido = turno.estado === 'EN_ATENCION';
 
-  // Botones de acción directa: Llamar, Atendido, No asistió (visibles si tiene permiso)
-  const btnLlamarMod   = el('btnModalLlamarPaciente');
+  // --- BOTONES FOOTER ---
+  // Llamar paciente: SOLO doctor
+  const btnLlamarMod = el('btnModalLlamarPaciente');
+  if (btnLlamarMod) { btnLlamarMod.style.display = (esDoctor && puedeLlamarSiguiente && !estadoFinal) ? '' : 'none'; btnLlamarMod.disabled = !puedeLlamar; btnLlamarMod.style.opacity = puedeLlamar ? '' : '0.4'; }
+
+  // Atendido: SOLO doctor
   const btnAtendidoMod = el('btnModalAtendido');
+  if (btnAtendidoMod) { btnAtendidoMod.style.display = (esDoctor && puedeMarcarAtendido) ? '' : 'none'; btnAtendidoMod.disabled = !puedeAtendido; btnAtendidoMod.style.opacity = puedeAtendido ? '' : '0.4'; }
+
+  // No asistió: SOLO doctor
   const btnNoAsistioMod = el('btnModalNoAsistio');
-  if (btnLlamarMod)    { btnLlamarMod.style.display    = puedeLlamarSiguiente ? '' : 'none'; btnLlamarMod.disabled    = !puedeLlamar;   btnLlamarMod.style.opacity    = puedeLlamar   ? '' : '0.4'; }
-  if (btnAtendidoMod)  { btnAtendidoMod.style.display  = puedeMarcarAtendido ? '' : 'none'; btnAtendidoMod.disabled   = !puedeAtendido; btnAtendidoMod.style.opacity   = puedeAtendido ? '' : '0.4'; }
-  if (btnNoAsistioMod) { btnNoAsistioMod.style.display = puedeVerEstado ? '' : 'none'; btnNoAsistioMod.disabled  = estadoFinal;    btnNoAsistioMod.style.opacity  = estadoFinal   ? '0.4' : ''; }
+  if (btnNoAsistioMod) { btnNoAsistioMod.style.display = (esDoctor && !estadoFinal) ? '' : 'none'; btnNoAsistioMod.disabled = estadoFinal; btnNoAsistioMod.style.opacity = estadoFinal ? '0.4' : ''; }
 
-  // Botón En Sala
+  // En Sala: SOLO recepción/admin (NO doctor)
   const btnEnSala = el('btnEstadoEnSala');
-  if (btnEnSala) { btnEnSala.style.display = (puedeVerEstado && !estadoFinal && turno.estado !== 'EN_ATENCION') ? '' : 'none'; }
+  if (btnEnSala) { btnEnSala.style.display = (puedeVerEstado && !esDoctor && !estadoFinal && turno.estado !== 'EN_ATENCION') ? '' : 'none'; }
 
-  // Botón Reprogramar (solo cuando NO_ASISTIO)
+  // Reprogramar (cuando NO_ASISTIO): SOLO recepción/admin (NO doctor)
   const btnReprogramarNA = el('btnModalReprogramarNoAsistio');
-  if (btnReprogramarNA) { btnReprogramarNA.style.display = (puedeVerEstado && turno.estado === 'NO_ASISTIO') ? '' : 'none'; }
+  if (btnReprogramarNA) { btnReprogramarNA.style.display = (puedeVerEstado && !esDoctor && turno.estado === 'NO_ASISTIO') ? '' : 'none'; }
 
-  // Menú 3 puntos + editar: ocultar completamente si estado final
+  // --- MENÚ 3 PUNTOS: solo recepción/admin (NO doctor) ---
   const btn3dots = el('btnMasOpcionesMedica');
-  if (btn3dots) btn3dots.style.display = (puedeInteractuar && !estadoFinal) ? '' : 'none';
-  if (editBtnMed) editBtnMed.style.display = (tienePermiso('agenda.editar') && !estadoFinal) ? '' : 'none';
+  if (btn3dots) btn3dots.style.display = (puedeInteractuar && !esDoctor && !estadoFinal) ? '' : 'none';
+
+  // Editar: solo recepción/admin (NO doctor)
+  if (editBtnMed) editBtnMed.style.display = (tienePermiso('agenda.editar') && !esDoctor && !estadoFinal) ? '' : 'none';
 
   // Mostrar modal
   $('modalEstadoCitaMedica').classList.remove('hidden');
@@ -8947,19 +9036,42 @@ $('btnEstadoEnSala')?.addEventListener('click', async (e) => {
   } catch (err) { showToast('Error al actualizar estado', 'error'); console.error(err); }
 });
 
-// Botón: LLAMAR AL PACIENTE → EN_ATENCION
+// Botón: LLAMAR AL PACIENTE → Anuncio por voz + Confirmación de llegada
 $('btnModalLlamarPaciente')?.addEventListener('click', async (e) => {
   e.preventDefault(); e.stopPropagation();
   if (!currentTurnoMedicaData) return;
-  try {
-    const res = await apiFetch(`/api/turnos/${currentTurnoMedicaData.id}/estado`, {
-      method: 'PATCH', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ estado: 'EN_ATENCION' })
-    });
-    const data = await res.json();
-    if (data.ok) { showToast('Paciente en atención: ' + (currentTurnoMedicaData.paciente_nombre || ''), 'success'); cerrarModalEstadoCitaMedica(); cargarTurnosMedica(); }
-    else showToast(data.error || 'Error al actualizar', 'error');
-  } catch (err) { showToast('Error al actualizar estado', 'error'); console.error(err); }
+  
+  const nombrePaciente = currentTurnoMedicaData.paciente_nombre || 'el paciente';
+  const consultorio = currentUser?.numero_consultorio;
+  const textoVoz = `Paciente ${nombrePaciente}, pasar al ${consultorio ? 'consultorio ' + consultorio : 'consultorio'}`;
+  
+  // 1) Anuncio por voz
+  if (typeof _speak === 'function') {
+    _speak(textoVoz, 0.9);
+  } else if ('speechSynthesis' in window) {
+    window.speechSynthesis.cancel();
+    const utter = new SpeechSynthesisUtterance(textoVoz);
+    utter.lang = 'es-CO'; utter.rate = 0.9; utter.volume = 1;
+    window.speechSynthesis.speak(utter);
+  }
+  
+  // 2) Preguntar si el paciente ya llegó
+  showConfirm(
+    `Se llamó a <strong>${escapeHtml(nombrePaciente)}</strong>.<br>¿El paciente ya llegó al consultorio?`,
+    async () => {
+      // Sí, llegó → EN_ATENCION (sin repetir llamado por voz)
+      try {
+        const res = await apiFetch(`/api/turnos/${currentTurnoMedicaData.id}/estado`, {
+          method: 'PATCH', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ estado: 'EN_ATENCION' })
+        });
+        const data = await res.json();
+        if (data.ok) { showToast('Paciente en atención: ' + nombrePaciente, 'success'); cerrarModalEstadoCitaMedica(); cargarTurnosMedica(); }
+        else showToast(data.error || 'Error al actualizar', 'error');
+      } catch (err) { showToast('Error al actualizar estado', 'error'); console.error(err); }
+    },
+    { okText: 'Sí, llegó', cancelText: 'No, aún no', danger: false, icon: '📢' }
+  );
 });
 
 // Botón: ATENDIDO — usa marcar-atendido para renumerar turnos (el siguiente pasa a ser #1)
@@ -10283,6 +10395,9 @@ async function guardarAgregarGestion(e) {
     if (!data.ok) { showToast(data.error || 'Error al guardar', 'error'); return; }
     showToast('Registro agregado exitosamente', 'success');
     $('modalAgregarGestion').classList.add('hidden');
+    // Invalidar caché para que otros módulos recarguen datos actualizados
+    if (tipo === 'entidades') invalidarCacheEntidades();
+    if (tipo === 'estudio_duraciones') invalidarCacheEstudios();
     buscarGestionDatos();
   } catch (err) { showToast('Error: ' + err.message, 'error'); }
 }
@@ -10295,6 +10410,9 @@ function confirmarEliminarGestion(tipo, id) {
     const data = await res.json();
     if (!data.ok) { showToast(data.error || 'Error al eliminar', 'error'); return; }
     showToast('Registro eliminado', 'success');
+    // Invalidar caché para que otros módulos recarguen datos actualizados
+    if (tipo === 'entidades') invalidarCacheEntidades();
+    if (tipo === 'estudio_duraciones') invalidarCacheEstudios();
     buscarGestionDatos();
   } catch (e) { showToast('Error: ' + e.message, 'error'); }
   });
@@ -10317,6 +10435,9 @@ function eliminarSeleccionadosGestion() {
     if (!data.ok) { showToast(data.error || 'Error al eliminar', 'error'); return; }
     const eliminados = data.eliminados ?? n;
     showToast(`${eliminados} registro${eliminados !== 1 ? 's' : ''} eliminado${eliminados !== 1 ? 's' : ''}`, 'success');
+    // Invalidar caché para que otros módulos recarguen datos actualizados
+    if (tipo === 'entidades') invalidarCacheEntidades();
+    if (tipo === 'estudio_duraciones') invalidarCacheEstudios();
     buscarGestionDatos();
   } catch (e) { showToast('Error: ' + e.message, 'error'); }
   });

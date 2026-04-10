@@ -242,7 +242,12 @@ const migrations = [
   {
     name: 'citas_electro_estado_enum_completo',
     description: 'Ampliar ENUM de estado para incluir Reprogramado y Adelantado',
-    sql: `ALTER TABLE citas_electro MODIFY COLUMN estado ENUM('Programado','En Sala','En Estudio','Completado','No Asistió','Cancelado','Reprogramado','Adelantado') NOT NULL DEFAULT 'Programado'`  },
+    sql: `ALTER TABLE citas_electro MODIFY COLUMN estado ENUM('Programado','En Sala','En Estudio','Pausado','Completado','No Asistió','Cancelado','Reprogramado','Adelantado') NOT NULL DEFAULT 'Programado'`  },
+  {
+    name: 'citas_electro_estado_enum_pausado',
+    description: 'Agregar Pausado al ENUM de estado de citas_electro',
+    sql: `ALTER TABLE citas_electro MODIFY COLUMN estado ENUM('Programado','En Sala','En Estudio','Pausado','Completado','No Asistió','Cancelado','Reprogramado','Adelantado') NOT NULL DEFAULT 'Programado'`
+  },
   {
     name: 'equipos_electro_unique_nombre',
     description: 'Agregar restricci\u00f3n UNIQUE en equipos_electro.nombre para evitar duplicados',

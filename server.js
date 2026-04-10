@@ -876,7 +876,7 @@ app.patch('/api/usuarios/:id', requireAuth, requireRoleOrPerm(['superadmin', 'ad
 });
 
 // ── Permisos granulares por usuario (solo superadmin) ──────────────────────
-app.get('/api/usuarios/:id/permisos', requireAuth, requireAdmin, async (req, res) => {
+app.get('/api/usuarios/:id/permisos', requireAuth, requireRoleOrPerm(['superadmin'], 'usuarios.permisos'), async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (isNaN(id)) return res.status(400).json({ error: 'ID inválido' });
   try {
@@ -891,7 +891,7 @@ app.get('/api/usuarios/:id/permisos', requireAuth, requireAdmin, async (req, res
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.put('/api/usuarios/:id/permisos', requireAuth, requireAdmin, async (req, res) => {
+app.put('/api/usuarios/:id/permisos', requireAuth, requireRoleOrPerm(['superadmin'], 'usuarios.permisos'), async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (isNaN(id)) return res.status(400).json({ error: 'ID inválido' });
   const { permisos } = req.body;
@@ -1003,7 +1003,7 @@ app.get('/api/usuarios/:id/historial', requireAuth, requireRoleOrPerm(['superadm
 });
 
 // Obtener historial global de auditoría
-app.get('/api/auditoria/historial', requireAuth, requireAdmin, async (req, res) => {
+app.get('/api/auditoria/historial', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'usuarios.auditoria'), async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 100;
     const historial = await auditLog.obtenerHistorialGlobal(limit);
@@ -1015,7 +1015,7 @@ app.get('/api/auditoria/historial', requireAuth, requireAdmin, async (req, res) 
 });
 
 // Búsqueda avanzada en auditoría
-app.get('/api/auditoria/buscar', requireAuth, requireAdmin, async (req, res) => {
+app.get('/api/auditoria/buscar', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'usuarios.auditoria'), async (req, res) => {
   try {
     const { usuario_id, accion, admin_id, desde, hasta, limit: reqLimit } = req.query;
     const limit = Math.min(parseInt(reqLimit) || 500, 500); // Max 500
@@ -3208,11 +3208,11 @@ app.patch('/api/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin'
     // ============ VALIDAR TRANSICIÓN DE ESTADOS ============
     if (estado && estado !== estadoActual) {
       // Estados manuales (permitidos desde cualquier estado)
-      const estadosManuales = ['En Sala', 'No Asistió', 'Reprogramado', 'Cancelado', 'Adelantado'];
+      const estadosManuales = ['En Sala', 'No Asistió', 'Reprogramado', 'Cancelado', 'Adelantado', 'Pausado'];
       const esManual = estadosManuales.includes(estado);
 
       // Transición automática: Programado â†’ En Estudio o En Sala â†’ En Estudio
-      const esInicioEstudio = (estadoActual === 'Programado' || estadoActual === 'En Sala') && estado === 'En Estudio';
+      const esInicioEstudio = ['Programado', 'En Sala', 'Reprogramado', 'Adelantado', 'Pausado'].includes(estadoActual) && estado === 'En Estudio';
 
       // Transición automática: En Estudio â†’ Completado
       const esFinEstudio = estadoActual === 'En Estudio' && estado === 'Completado';
@@ -3556,13 +3556,15 @@ app.post('/api/pacientes-espera', requireAuth, async (req, res) => {
   if (!documento || !nombres || !apellidos || !entidad || !prioridad) {
     return res.status(400).json({ error: 'Todos los campos son obligatorios' });
   }
-  const entidadesValidas = ['FOMAG', 'UCQN', 'PARTICULAR', 'PROINSALUD'];
   const prioridadesValidas = ['ALTA', 'MEDIA', 'BAJA'];
-  if (!entidadesValidas.includes(entidad)) {
-    return res.status(400).json({ error: 'Entidad inválida' });
-  }
   if (!prioridadesValidas.includes(prioridad)) {
     return res.status(400).json({ error: 'Prioridad inválida' });
+  }
+  // Validar entidad contra la base de datos
+  const entidadesDB = await db.query('SELECT nombre FROM entidades WHERE activo=1');
+  const entidadesValidas = entidadesDB.map(e => e.nombre.toUpperCase());
+  if (!entidadesValidas.includes(entidad.toUpperCase())) {
+    return res.status(400).json({ error: 'Entidad inválida' });
   }
   try {
     const result = await db.execute(
@@ -3642,7 +3644,7 @@ app.post('/api/entidades', requireAuth, requireRoleOrPerm(['superadmin', 'admin'
   const nombre = (req.body.nombre || '').trim().toUpperCase();
   if (!nombre) return res.status(400).json({ error: 'Nombre requerido' });
   try {
-    const result = await db.execute('INSERT INTO entidades (nombre) VALUES (?)', [nombre]);
+    const result = await db.execute('INSERT INTO entidades (nombre, activo) VALUES (?, 1)', [nombre]);
     res.json({ ok: true, id: result.insertId });
   } catch(err) {
     if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'La entidad ya existe' });
@@ -3856,7 +3858,7 @@ app.get('/api/recibos/buscar-cita', requireAuth, requireRoleOrPerm(['superadmin'
 // Listar recibos (con filtros opcionales)
 app.get('/api/recibos', requireAuth, async (req, res) => {
   try {
-    const { fecha_desde, fecha_hasta, tipo_pago, medico_id, generado_por_id, nombre_entidad, tipo_servicio } = req.query;
+    const { fecha_desde, fecha_hasta, tipo_pago, medico_id, generado_por_id, nombre_entidad, tipo_servicio, q } = req.query;
     const conditions = [];
     const params = [];
 
@@ -3867,6 +3869,11 @@ app.get('/api/recibos', requireAuth, async (req, res) => {
     if (generado_por_id) { conditions.push('generado_por_id = ?'); params.push(parseInt(generado_por_id, 10)); }
     if (nombre_entidad)  { conditions.push('nombre_entidad = ?');  params.push(nombre_entidad); }
     if (tipo_servicio)   { conditions.push('tipo_servicio LIKE ?'); params.push(`%${tipo_servicio}%`); }
+    if (q) {
+      conditions.push('(cliente LIKE ? OR numero LIKE ? OR observaciones LIKE ? OR medico_nombre LIKE ? OR nombre_entidad LIKE ? OR tipo_servicio LIKE ? OR generado_por_nombre LIKE ?)');
+      const like = `%${q}%`;
+      params.push(like, like, like, like, like, like, like);
+    }
 
     const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
     const rows = await db.query(
@@ -3887,7 +3894,7 @@ app.get('/api/recibos', requireAuth, async (req, res) => {
 app.get('/api/recibos/export/xlsx', requireAuth, async (req, res) => {
   try {
     const XLSX = require('xlsx');
-    const { fecha_desde, fecha_hasta, tipo_pago, medico_id, generado_por_id, nombre_entidad, tipo_servicio } = req.query;
+    const { fecha_desde, fecha_hasta, tipo_pago, medico_id, generado_por_id, nombre_entidad, tipo_servicio, q } = req.query;
     const conditions = [];
     const params = [];
     if (fecha_desde)     { conditions.push('fecha >= ?');           params.push(fecha_desde); }
@@ -3897,6 +3904,11 @@ app.get('/api/recibos/export/xlsx', requireAuth, async (req, res) => {
     if (generado_por_id) { conditions.push('generado_por_id = ?'); params.push(parseInt(generado_por_id, 10)); }
     if (nombre_entidad)  { conditions.push('nombre_entidad = ?');  params.push(nombre_entidad); }
     if (tipo_servicio)   { conditions.push('tipo_servicio LIKE ?'); params.push(`%${tipo_servicio}%`); }
+    if (q) {
+      conditions.push('(cliente LIKE ? OR numero LIKE ? OR observaciones LIKE ? OR medico_nombre LIKE ? OR nombre_entidad LIKE ? OR tipo_servicio LIKE ? OR generado_por_nombre LIKE ?)');
+      const like = `%${q}%`;
+      params.push(like, like, like, like, like, like, like);
+    }
     const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
     const rows = await db.query(
       `SELECT numero, fecha, cliente, tipo_pago, nombre_entidad,
@@ -3934,7 +3946,7 @@ app.get('/api/recibos/export/xlsx', requireAuth, async (req, res) => {
 // Exportar recibos a PDF (página HTML imprimible)
 app.get('/api/recibos/export/pdf-reporte', requireAuth, async (req, res) => {
   try {
-    const { fecha_desde, fecha_hasta, tipo_pago, medico_id, generado_por_id, nombre_entidad, tipo_servicio } = req.query;
+    const { fecha_desde, fecha_hasta, tipo_pago, medico_id, generado_por_id, nombre_entidad, tipo_servicio, q } = req.query;
     const conditions = [];
     const params = [];
     if (fecha_desde)     { conditions.push('fecha >= ?');           params.push(fecha_desde); }
@@ -3944,6 +3956,11 @@ app.get('/api/recibos/export/pdf-reporte', requireAuth, async (req, res) => {
     if (generado_por_id) { conditions.push('generado_por_id = ?'); params.push(parseInt(generado_por_id, 10)); }
     if (nombre_entidad)  { conditions.push('nombre_entidad = ?');  params.push(nombre_entidad); }
     if (tipo_servicio)   { conditions.push('tipo_servicio LIKE ?'); params.push(`%${tipo_servicio}%`); }
+    if (q) {
+      conditions.push('(cliente LIKE ? OR numero LIKE ? OR observaciones LIKE ? OR medico_nombre LIKE ? OR nombre_entidad LIKE ? OR tipo_servicio LIKE ? OR generado_por_nombre LIKE ?)');
+      const like = `%${q}%`;
+      params.push(like, like, like, like, like, like, like);
+    }
     const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
     const rows = await db.query(
       `SELECT numero, fecha, cliente, tipo_pago, nombre_entidad,
@@ -4597,7 +4614,7 @@ app.get('/api/estudios/lista', requireAuth, async (req, res) => {
 });
 
 // GET /api/admin/datos/:tipo - listar registros de un tipo
-app.get('/api/admin/datos/:tipo', requireAuth, requireAdmin, async (req, res) => {
+app.get('/api/admin/datos/:tipo', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'modulo.gestion_datos'), async (req, res) => {
   try {
     const tipo = req.params.tipo;
     const { q, fecha_desde, fecha_hasta, limit: reqLimit } = req.query;
@@ -4664,7 +4681,7 @@ app.get('/api/admin/datos/:tipo', requireAuth, requireAdmin, async (req, res) =>
 });
 
 // POST /api/admin/datos/:tipo - crear registro en catalogos
-app.post('/api/admin/datos/:tipo', requireAuth, requireAdmin, async (req, res) => {
+app.post('/api/admin/datos/:tipo', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'modulo.gestion_datos'), async (req, res) => {
   try {
     const tipo = req.params.tipo;
     const body = req.body || {};
@@ -4725,7 +4742,7 @@ app.post('/api/admin/datos/:tipo', requireAuth, requireAdmin, async (req, res) =
 });
 
 // ðŸ—‘ï¸ Eliminar en bloque (hasta 50 registros)
-app.delete('/api/admin/datos/:tipo/bulk', requireAuth, requireAdmin, async (req, res) => {
+app.delete('/api/admin/datos/:tipo/bulk', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'modulo.gestion_datos'), async (req, res) => {
   try {
     const tipo = req.params.tipo;
     const { ids } = req.body || {};
@@ -4748,7 +4765,7 @@ app.delete('/api/admin/datos/:tipo/bulk', requireAuth, requireAdmin, async (req,
 });
 
 // DELETE /api/admin/datos/:tipo/:id - eliminar un registro
-app.delete('/api/admin/datos/:tipo/:id', requireAuth, requireAdmin, async (req, res) => {
+app.delete('/api/admin/datos/:tipo/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'modulo.gestion_datos'), async (req, res) => {
   try {
     const tipo = req.params.tipo;
     const id = parseInt(req.params.id, 10);

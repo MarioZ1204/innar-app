@@ -125,7 +125,7 @@ function initSocket() {
   socket.on('agenda:turno-estado-cambio', (data) => {
     if (typeof cargarTurnosMedica === 'function') cargarTurnosMedica();
     // Alerta sonora al doctor cuando un paciente entra en sala
-    if (data.estado === 'EN_SALA' && typeof isDoctor === 'function' && isDoctor()) {
+    if (data.estado === 'EN_SALA' && typeof currentUser !== 'undefined' && currentUser && currentUser.rol === 'doctor') {
       const nombre = data.paciente_nombre ? ` - ${data.paciente_nombre}` : '';
       if (typeof showToast === 'function') showToast(`Paciente en sala${nombre}`, 'info');
       if (typeof _speak === 'function') _speak('Paciente en sala', 1.05);
@@ -138,9 +138,7 @@ function initSocket() {
     }
     // Anuncio de voz para recepción cuando doctor llama paciente (EN_ATENCION)
     if (data.estado === 'EN_ATENCION') {
-      const esRecep = (typeof isRecepcion === 'function' && isRecepcion()) ||
-                      (typeof isAdmin === 'function' && isAdmin()) ||
-                      (typeof isElectro === 'function' && isElectro());
+      const esRecep = typeof tienePermiso === 'function' && tienePermiso('agenda.cambiar_estado');
       if (esRecep && 'speechSynthesis' in window) {
         const nombre = data.paciente_nombre || 'siguiente paciente';
         const consultorio = data.numero_consultorio ? `consultorio ${data.numero_consultorio}` : 'consultorio';
@@ -170,9 +168,7 @@ function initSocket() {
   socket.on('agenda:turno-llamar-siguiente', (data) => {
     if (typeof cargarTurnosMedica === 'function') cargarTurnosMedica();
     // Anuncio de voz para recepción y electrodiagnóstico
-    const esRecep = (typeof isRecepcion === 'function' && isRecepcion()) ||
-                    (typeof isAdmin === 'function' && isAdmin()) ||
-                    (typeof isElectro === 'function' && isElectro());
+    const esRecep = typeof tienePermiso === 'function' && tienePermiso('agenda.cambiar_estado');
     if (esRecep && 'speechSynthesis' in window) {
       const nombre = data.paciente_nombre || 'siguiente paciente';
       const consultorio = data.numero_consultorio ? `consultorio ${data.numero_consultorio}` : 'consultorio';
@@ -197,9 +193,9 @@ function initSocket() {
 
   // Aviso al doctor para concluir consulta
   socket.on('agenda:aviso-concluir-consulta', (data) => {
-    if (typeof isDoctor === 'function' && isDoctor()) {
-      // Solo actuar si no hay doctor específico o el aviso es para este doctor
-      if (!data.doctor_id || (typeof currentUser !== 'undefined' && currentUser && data.doctor_id === currentUser.id)) {
+    // Este aviso es para el doctor — solo actuar si es doctor y el aviso es para este doctor
+    if (typeof currentUser !== 'undefined' && currentUser && currentUser.rol === 'doctor') {
+      if (!data.doctor_id || data.doctor_id === currentUser.id) {
         if (typeof showToast === 'function') showToast('⏰ Recepción solicita que concluya la consulta', 'warning');
         if (typeof _speak === 'function') _speak('Doctor, puede concluir su consulta', 0.9);
         else if ('speechSynthesis' in window) {

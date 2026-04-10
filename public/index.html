@@ -204,18 +204,18 @@
           <h2>Recibos</h2>
           <p class="sidebar-desc">Contabilidad y seguimiento</p>
           <span class="sidebar-section-label">Navegación</span>
-          <button class="sidebar-btn active" data-page="crear" data-rol-recibos="superadmin admin admin_recepcion recepcion">
+          <button class="sidebar-btn active" data-page="crear" data-perm-recibos="recibos.crear">
             <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg></span><span>Crear Recibo</span>
           </button>
           <button class="sidebar-btn" data-page="recibos">
             <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></span><span>Reportes</span>
           </button>
-          <button class="sidebar-btn" data-page="servicios" data-rol-recibos="superadmin admin">
+          <button class="sidebar-btn" data-page="servicios" data-perm-recibos="recibos.gestionar_servicios">
             <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg></span><span>Servicios</span>
           </button>
           <!-- Sección administración: solo visible para admin -->
-          <span class="sidebar-section-label" data-rol-recibos="superadmin admin" style="margin-top:16px">Administración</span>
-          <button class="sidebar-btn sidebar-btn-danger" id="btnResetarConsecutivos" data-rol-recibos="superadmin admin">
+          <span class="sidebar-section-label" data-perm-recibos="recibos.resetear" style="margin-top:16px">Administración</span>
+          <button class="sidebar-btn sidebar-btn-danger" id="btnResetarConsecutivos" data-perm-recibos="recibos.resetear">
             <span class="sb-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.61"/></svg></span><span>Resetear consecutivos</span>
           </button>
         </div>
@@ -459,6 +459,10 @@
             <section class="card no-print recibo-filtros-card">
               <h3 style="margin:0 0 14px;color:#2d4a47;font-size:1rem">Filtros</h3>
               <div class="recibo-filtros-grid">
+                <div style="grid-column: 1 / -1">
+                  <label>Buscar por palabra clave</label>
+                  <input id="filtroPalabraClave" type="text" placeholder="Nombre, N° recibo, observaciones..." style="width:100%" />
+                </div>
                 <div>
                   <label>Desde</label>
                   <input id="filtroFechaDesde" type="date" />
@@ -824,20 +828,6 @@
           <label>Entidad <span style="color:#dc2626">*</span></label>
           <select id="nuevoTurnoEntidadMedica">
             <option value="">Seleccionar</option>
-            <option value="Particular">Particular</option>
-            <option value="PROINSALUD">Proinsalud</option>
-            <option value="UCQN">UCQN</option>
-            <option value="FOMAG">FOMAG</option>
-            <option value="Protegemos">Protegemos</option>
-            <option value="Global Salud">Global Salud</option>
-            <option value="Medica Preferencial">Medica Preferencial</option>
-            <option value="Multiservicios">Multiservicios</option>
-            <option value="Medica Estar Bien">Medica Estar Bien</option>
-            <option value="Previred">Previred</option>
-            <option value="Prevenir Descuentos">Prevenir Descuentos</option>
-            <option value="Clical Medic">Clical Medic</option>
-            <option value="Medicina Para Todos">Medicina Para Todos</option>
-            <option value="Abogado">Abogado</option>
           </select>
         </div>
         <div class="col"><label>Tipo de consulta <span style="color:#dc2626">*</span></label><select id="nuevoTurnoTipoMedica"><option value="">Seleccionar</option></select></div>
@@ -1286,13 +1276,8 @@
           <section class="card">
             <h3>Citas del Día</h3>
             <!-- PESTAÑAS DE ESTUDIOS -->
-            <div class="tabs-container">
+            <div class="tabs-container" id="tabsElectroContainer">
               <button class="tab-electro-btn active" data-estudio="todas">Todas</button>
-              <button class="tab-electro-btn" data-estudio="PSG Básica">PSG Básica</button>
-              <button class="tab-electro-btn" data-estudio="PSG con Titulación de Dispositivo Médico CPAP/BPAP">PSG CPAP/BPAP</button>
-              <button class="tab-electro-btn" data-estudio="Electroencefalograma">EEG</button>
-              <button class="tab-electro-btn" data-estudio="Monitorización Electroencefalografica por Video y Radio">Monit. EEG</button>
-              <button class="tab-electro-btn" data-estudio="Test de Latencia">Test Latencia</button>
             </div>
 
             <!-- Contador de citas -->
@@ -1399,10 +1384,6 @@
                   <label>Entidad <span style="color:#dc2626">*</span></label>
                   <select id="esperaEntidad">
                     <option value="">Seleccionar</option>
-                    <option value="PROINSALUD">PROINSALUD</option>
-                    <option value="FOMAG">FOMAG</option>
-                    <option value="UCQN">UCQN</option>
-                    <option value="PARTICULAR">PARTICULAR</option>
                   </select>
                 </div>
                 <div class="col">
@@ -1558,11 +1539,6 @@
           <label>Estudio <span style="color:#dc2626">*</span></label>
           <select id="electroEstudio" required>
             <option value="">Seleccionar estudio</option>
-            <option value="PSG Básica">PSG Básica</option>
-            <option value="PSG con Titulación de Dispositivo Médico CPAP/BPAP">PSG con Titulación CPAP/BPAP</option>
-            <option value="Electroencefalograma">Electroencefalograma</option>
-            <option value="Monitorización Electroencefalografica por Video y Radio">Monitorización EEG por Video y Radio</option>
-            <option value="Test de Latencia">Test de Latencia</option>
           </select>
         </div>
         <div class="col">
@@ -1714,9 +1690,15 @@
         </div>
         <!-- Estado oculto (usado internamente) -->
         <select id="modalEstado" style="display:none">
+          <option value="Programado">Programado</option>
           <option value="En Sala">En Sala</option>
+          <option value="En Estudio">En Estudio</option>
+          <option value="Pausado">Pausado</option>
+          <option value="Completado">Completado</option>
           <option value="No Asistió">No Asistió</option>
           <option value="Cancelado">Cancelado</option>
+          <option value="Reprogramado">Reprogramado</option>
+          <option value="Adelantado">Adelantado</option>
         </select>
         <!-- Flujo contextual de acciones (llena JS) -->
         <div id="modalFlujoEstudio"></div>
