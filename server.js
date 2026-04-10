@@ -28,6 +28,9 @@ const rateLimit = require('express-rate-limit');
 const puppeteer = require('puppeteer');
 const fs = require('fs');
 const path = require('path');
+
+// Versión de la aplicación (para cache busting)
+const APP_VERSION = require('./package.json').version;
 const session = require('express-session');
 const bcrypt = require('bcryptjs');
 const multer = require('multer');
@@ -225,7 +228,45 @@ app.use('/api', (req, res, next) => {
   next();
 });
 
-app.use(express.static('public'));
+// Servir index.html con inyección de versión para cache busting
+app.get('/', (req, res) => {
+  const htmlPath = path.join(__dirname, 'public', 'index.html');
+  let html = fs.readFileSync(htmlPath, 'utf8');
+  // Inyectar versión como variable global y agregar ?v=VERSION a assets locales
+  const vTag = `?v=${APP_VERSION}`;
+  html = html
+    .replace('href="style.css"', `href="style.css${vTag}"`)
+    .replace('src="socket-client.js"', `src="socket-client.js${vTag}"`)
+    .replace('src="socket-electro.js"', `src="socket-electro.js${vTag}"`)
+    .replace('src="dashboard-citas.js"', `src="dashboard-citas.js${vTag}"`)
+    .replace('src="app.js"', `src="app.js${vTag}"`)
+    .replace('src="calendario-bloqueado.js"', `src="calendario-bloqueado.js${vTag}"`)
+    .replace('src="validation-client.js"', `src="validation-client.js${vTag}"`)
+    .replace('</head>', `<script>window.APP_VERSION="${APP_VERSION}";</script>\n</head>`);
+  res.setHeader('Content-Type', 'text/html');
+  res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+  res.send(html);
+});
+
+app.use(express.static('public', {
+  etag: true,
+  lastModified: true,
+  setHeaders: (res, filePath) => {
+    // HTML: no cachear nunca (siempre verificar con servidor)
+    if (filePath.endsWith('.html')) {
+      res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+    }
+    // JS/CSS: cache corto + must-revalidate (ETag maneja la validación)
+    else if (filePath.endsWith('.js') || filePath.endsWith('.css')) {
+      res.setHeader('Cache-Control', 'public, max-age=60, must-revalidate');
+    }
+  }
+}));
+
+// Endpoint de versión (público, sin auth)
+app.get('/api/version', (req, res) => {
+  res.json({ version: APP_VERSION });
+});
 
 // Cargar imagen del logo como base64
 let logoBase64 = '';
@@ -394,6 +435,7 @@ function requirePermiso(permiso) {
 // Si el rol está en la lista: igual que requireRole + requirePermiso combinados.
 // Si el rol NO está en la lista: pasa si tiene el permiso concedido explícitamente.
 function requireRoleOrPerm(roles, permiso) {
+  const permisos = Array.isArray(permiso) ? permiso : [permiso];
   return (req, res, next) => {
     if (!req.session?.usuarioId) return res.status(401).json({ error: 'No autenticado' });
     const rol = req.session.rol;
@@ -402,11 +444,11 @@ function requireRoleOrPerm(roles, permiso) {
     if (roles.includes(rol)) {
       // Rol permitido por defecto: verificar que no esté restringido
       if (perms === null || perms === undefined) return next();
-      if (Array.isArray(perms) && perms.includes(permiso)) return next();
+      if (Array.isArray(perms) && permisos.some(p => perms.includes(p))) return next();
       return res.status(403).json({ error: 'No tienes permiso para esta acción' });
     }
     // Rol fuera de la lista base: solo pasa si tiene el permiso explícito
-    if (Array.isArray(perms) && perms.includes(permiso)) return next();
+    if (Array.isArray(perms) && permisos.some(p => perms.includes(p))) return next();
     return res.status(403).json({ error: 'Acceso denegado' });
   };
 }
@@ -1292,7 +1334,7 @@ app.patch('/api/pacientes/:id', requireAuth, requireRoleOrPerm(['superadmin', 'a
 });
 
 // Crear paciente
-app.post('/api/pacientes', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion', 'admin_electro', 'electro'], 'agenda.crear'), async (req, res) => {
+app.post('/api/pacientes', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion', 'admin_electro', 'electro', 'tecnico_electro', 'doctor'], ['agenda.crear', 'electro.crear']), async (req, res) => {
   const { nombre, documento, telefono, telefono2, email } = req.body || {};
   if (!nombre) {
     return res.status(400).json({ error: 'Nombre es obligatorio' });
@@ -3146,7 +3188,7 @@ app.patch('/api/citas-electro/:id/estado', requireAuth, requireRoleOrPerm(['supe
 // "Programado" â†’ "En Estudio" (validar capacidad)
 // "En Estudio" â†’ "Completado" (marcar fin)
 // Cualquier estado â†’ "En Sala", "No Asistió", "Cancelado" (manual)
-app.patch('/api/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro'], 'electro.editar'), async (req, res) => {
+app.patch('/api/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro', 'tecnico_electro'], 'electro.editar'), async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const { equipo_id, estado, hora_inicio, hora_fin, hora_agendamiento, fecha, duracion_minutos } = req.body || {};
   
@@ -5327,6 +5369,9 @@ const PORT = process.env.PORT || 3000;
 
     // Manejar conexiones de WebSocket
     io.on('connection', (socket) => {
+      // Enviar versión al conectar para que el cliente detecte actualizaciones
+      socket.emit('sistema:version', { version: APP_VERSION });
+
       // Evento: Nuevo recibo creado
       socket.on('recibo:crear', (data) => {
         io.emit('recibo:actualizar-lista');

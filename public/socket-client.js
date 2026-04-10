@@ -105,6 +105,14 @@ function initSocket() {
     }
   });
 
+  // Detectar nueva versión del servidor (cache busting)
+  socket.on('sistema:version', (data) => {
+    if (data?.version && window.APP_VERSION && data.version !== window.APP_VERSION) {
+      const banner = document.getElementById('updateBanner');
+      if (banner) banner.style.display = 'block';
+    }
+  });
+
   // Agenda médica
   socket.on('agenda:turno-creado', (data) => {
     if (typeof cargarTurnosMedica === 'function') cargarTurnosMedica();

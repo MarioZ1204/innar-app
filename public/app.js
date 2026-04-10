@@ -3750,6 +3750,14 @@ function excelDateToString(v) {
   if (match) return `${match[3]}-${match[2].padStart(2,'0')}-${match[1].padStart(2,'0')}`;
   // yyyy-mm-dd
   if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  // Fecha textual en español: "Jueves: 02 de abril 2026" o "Viernes; 03 de abril de 2026"
+  const mesesEs = { enero:1, febrero:2, marzo:3, abril:4, mayo:5, junio:6, julio:7, agosto:8, septiembre:9, octubre:10, noviembre:11, diciembre:12 };
+  const matchEs = s.match(/(\d{1,2})\s+de\s+(\w+)\s+(?:de\s+)?(\d{4})/);
+  if (matchEs) {
+    const dia = matchEs[1].padStart(2, '0');
+    const mes = mesesEs[matchEs[2].toLowerCase()];
+    if (mes) return `${matchEs[3]}-${String(mes).padStart(2, '0')}-${dia}`;
+  }
   return s;
 }
 
@@ -3969,6 +3977,10 @@ async function procesarExcelPacientesElectro(file) {
     return `<select data-row="${rowIdx}" data-campo="estudio" style="width:100%;padding:4px 6px;border:1px solid #d1d5db;border-radius:6px;font-size:0.82rem">${optHtml}</select>`;
   }
 
+  function crearInputDiagnostico(valorActual, rowIdx) {
+    return `<div style="position:relative"><input type="text" data-row="${rowIdx}" data-campo="diagnostico" value="${escapeHtml(valorActual)}" placeholder="Buscar diagnóstico..." autocomplete="off" style="width:100%;padding:4px 6px;border:1px solid #d1d5db;border-radius:6px;font-size:0.82rem"><div class="diag-suggestions-${rowIdx}" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:100;background:#fff;border:1px solid #d1d5db;border-radius:0 0 6px 6px;max-height:150px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,0.15)"></div></div>`;
+  }
+
   async function validarDisponibilidadFila(ri) {
     const allData = window._cargarPacientesElectroData;
     if (!allData || !allData[ri]) return;
@@ -4041,11 +4053,11 @@ async function procesarExcelPacientesElectro(file) {
         const tel2       = colTel2   ? String(row[colTel2]    || '').replace(/\D/g, '') : '';
         if (!fecha || !hora || !documento || !nombres) continue;
 
-        parsed.push({ fecha, hora, documento, nombres, apellidos, estudio, diagnostico, tel1, tel2, _equipoOk: null });
+        parsed.push({ fecha, hora, documento, nombres, apellidos, estudio, diagnostico, diagnostico_id: null, tel1, tel2, _equipoOk: null });
         const idx = parsed.length - 1;
         const tr  = document.createElement('tr');
         tr.dataset.rowIdx = idx;
-        tr.innerHTML = `<td>${escapeHtml(fecha)}</td><td>${escapeHtml(hora)}</td><td>${escapeHtml(documento)}</td><td>${escapeHtml(nombres)}</td><td>${escapeHtml(apellidos)}</td><td>${crearSelectEstudio(estudio, idx)}</td><td>${escapeHtml(diagnostico)}</td><td>${escapeHtml(tel1)}</td><td>${escapeHtml(tel2)}</td><td class="cell-disp-${idx}"><span style="color:#6b7280;font-size:0.8rem">—</span></td>`;
+        tr.innerHTML = `<td>${escapeHtml(fecha)}</td><td>${escapeHtml(hora)}</td><td>${escapeHtml(documento)}</td><td>${escapeHtml(nombres)}</td><td>${escapeHtml(apellidos)}</td><td>${crearSelectEstudio(estudio, idx)}</td><td>${crearInputDiagnostico(diagnostico, idx)}</td><td>${escapeHtml(tel1)}</td><td>${escapeHtml(tel2)}</td><td class="cell-disp-${idx}"><span style="color:#6b7280;font-size:0.8rem">—</span></td>`;
         tbody.appendChild(tr);
       }
 
@@ -4060,6 +4072,65 @@ async function procesarExcelPacientesElectro(file) {
         }
       });
 
+      // Buscador de diagnósticos con debounce
+      let _diagTimer = null;
+      tbody.addEventListener('input', function(ev2) {
+        const inp = ev2.target;
+        if (inp.tagName !== 'INPUT' || inp.dataset.campo !== 'diagnostico') return;
+        const ri = parseInt(inp.dataset.row, 10);
+        if (isNaN(ri)) return;
+        if (window._cargarPacientesElectroData?.[ri]) {
+          window._cargarPacientesElectroData[ri].diagnostico = inp.value;
+          window._cargarPacientesElectroData[ri].diagnostico_id = null;
+        }
+        clearTimeout(_diagTimer);
+        _diagTimer = setTimeout(async () => {
+          const q = inp.value.trim();
+          const sugDiv = tbody.querySelector(`.diag-suggestions-${ri}`);
+          if (!sugDiv) return;
+          if (q.length < 2) { sugDiv.style.display = 'none'; sugDiv.innerHTML = ''; return; }
+          try {
+            const res = await apiFetch(`/api/diagnosticos/search?q=${encodeURIComponent(q)}`);
+            const diags = await res.json();
+            if (!diags.length) { sugDiv.style.display = 'none'; sugDiv.innerHTML = ''; return; }
+            sugDiv.innerHTML = diags.map(d => {
+              const label = d.codigo ? `[${escapeHtml(d.codigo)}] ${escapeHtml(d.nombre)}` : escapeHtml(d.nombre);
+              return `<div data-id="${d.id}" data-nombre="${escapeHtml(d.nombre)}" data-codigo="${escapeHtml(d.codigo || '')}" style="padding:6px 10px;cursor:pointer;font-size:0.82rem;border-bottom:1px solid #f0f0f0" onmouseover="this.style.background='#e0edff'" onmouseout="this.style.background='#fff'">${label}</div>`;
+            }).join('');
+            sugDiv.style.display = 'block';
+          } catch (_) { sugDiv.style.display = 'none'; }
+        }, 300);
+      });
+
+      // Seleccionar diagnóstico de las sugerencias
+      tbody.addEventListener('click', function(ev2) {
+        const item = ev2.target.closest('[data-id]');
+        if (!item || !item.closest('[class^="diag-suggestions-"]')) return;
+        const sugDiv = item.parentElement;
+        const className = sugDiv.className;
+        const riMatch = className.match(/diag-suggestions-(\d+)/);
+        if (!riMatch) return;
+        const ri = parseInt(riMatch[1], 10);
+        const inp = tbody.querySelector(`input[data-row="${ri}"][data-campo="diagnostico"]`);
+        if (!inp) return;
+        const diagId = parseInt(item.dataset.id, 10);
+        const codigo = item.dataset.codigo || '';
+        const nombre = item.dataset.nombre || '';
+        inp.value = codigo ? `[${codigo}] ${nombre}` : nombre;
+        if (window._cargarPacientesElectroData?.[ri]) {
+          window._cargarPacientesElectroData[ri].diagnostico = inp.value;
+          window._cargarPacientesElectroData[ri].diagnostico_id = diagId;
+        }
+        sugDiv.style.display = 'none';
+      });
+
+      // Cerrar sugerencias al hacer clic fuera
+      document.addEventListener('click', function(ev2) {
+        if (!ev2.target.closest('[data-campo="diagnostico"]') && !ev2.target.closest('[class^="diag-suggestions-"]')) {
+          tbody.querySelectorAll('[class^="diag-suggestions-"]').forEach(d => d.style.display = 'none');
+        }
+      });
+
       if (!parsed.length) {
         errorDiv.textContent = 'No se encontraron filas válidas con los datos requeridos';
         errorDiv.style.display = 'block';
@@ -4071,7 +4142,25 @@ async function procesarExcelPacientesElectro(file) {
       btnConfirm.disabled = false;
       window._cargarPacientesElectroData = parsed;
 
-      // 2. Validar disponibilidad de equipos en paralelo
+      // 2. Auto-buscar diagnósticos del Excel para pre-asignar ID
+      await Promise.all(parsed.map(async (p, ri) => {
+        if (!p.diagnostico || p.diagnostico.length < 2) return;
+        try {
+          const res = await apiFetch(`/api/diagnosticos/search?q=${encodeURIComponent(p.diagnostico)}`);
+          const diags = await res.json();
+          if (diags.length > 0) {
+            const exact = diags.find(d => d.nombre.toLowerCase() === p.diagnostico.toLowerCase() || d.codigo === p.diagnostico);
+            const match = exact || diags[0];
+            p.diagnostico_id = match.id;
+            const label = match.codigo ? `[${match.codigo}] ${match.nombre}` : match.nombre;
+            p.diagnostico = label;
+            const inp = tbody.querySelector(`input[data-row="${ri}"][data-campo="diagnostico"]`);
+            if (inp) inp.value = label;
+          }
+        } catch (_) {}
+      }));
+
+      // 3. Validar disponibilidad de equipos en paralelo
       await Promise.all(parsed.map((_, ri) => validarDisponibilidadFila(ri)));
 
     } catch (err) {
@@ -4109,6 +4198,7 @@ async function confirmarCargarPacientesElectro() {
         telefono: p.tel1 || null,
         telefono2: p.tel2 || null,
         estudio: p.estudio || 'PSG Básica',
+        diagnostico_id: p.diagnostico_id || null,
         estado: 'Programado',
         programado_por_nombre: (currentUser ? (currentUser.nombre || currentUser.usuario) : 'Excel')
       };
@@ -4314,7 +4404,6 @@ async function initElectro() {
     
     // No procesar cambios si estamos inicializando el modal
     if (isInitializingElectroModal) {
-      console.log('[MODAL_EQUIPO_CHANGE] Ignorando cambio durante inicialización del modal');
       return;
     }
     
@@ -4323,8 +4412,6 @@ async function initElectro() {
     
     // Si el equipo no cambió, no hacer nada
     if (String(nuevoEquipoId) === String(equipoIdActual)) return;
-    
-    console.log('[MODAL_EQUIPO_CHANGE] Cambio de equipo a:', nuevoEquipoId);
     
     try {
       const cambios = { equipo_id: nuevoEquipoId ? parseInt(nuevoEquipoId) : null };
@@ -7472,7 +7559,6 @@ function cancelarFinalizarEstudio() {
 // ===== FUNCIONES PARA DURACIÓN DEL ESTUDIO =====
 
 function abrirModalConfirmarDuracion() {
-  console.log('[DURACION] Abriendo modal de confirmación');
   const modal = $('modalConfirmarDuracion');
   if (modal) {
     modal.classList.remove('hidden');
@@ -7480,7 +7566,6 @@ function abrirModalConfirmarDuracion() {
 }
 
 function cerrarModalConfirmarDuracion() {
-  console.log('[DURACION] Cerrando modal de confirmación');
   const modal = $('modalConfirmarDuracion');
   if (modal) {
     modal.classList.add('hidden');
@@ -7488,7 +7573,6 @@ function cerrarModalConfirmarDuracion() {
 }
 
 function abrirModalDuracionEstudio() {
-  console.log('[DURACION] Abriendo modal de duración');
   const modal = $('modalDuracionEstudio');
   if (modal) {
     modal.classList.remove('hidden');
@@ -7514,7 +7598,6 @@ function abrirModalDuracionEstudio() {
 }
 
 function cerrarModalDuracionEstudio() {
-  console.log('[DURACION] Cerrando modal de duración');
   const modal = $('modalDuracionEstudio');
   if (modal) {
     modal.classList.add('hidden');
@@ -7552,7 +7635,6 @@ function actualizarHoraFinCalculada() {
 function actualizarDuracionMostrada() { actualizarHoraFinCalculada(); }
 
 async function confirmarDuracionEstudio() {
-  console.log('[DURACION] Confirmando duración del estudio');
   
   if (!citaElectroSeleccionada) {
     showToast('Error: No hay cita seleccionada', 'error');
@@ -7622,7 +7704,6 @@ async function confirmarDuracionEstudio() {
     });
     
     const data = await res.json();
-    console.log('[DURACION] Respuesta del servidor:', data);
     
     if (data && data.ok) {
       showToast(`Estudio iniciado: ${horaInicio} - ${horaFin}`, 'success');
@@ -7639,7 +7720,6 @@ async function confirmarDuracionEstudio() {
         selectEstado.style.opacity = '0.5';
         selectEstado.style.cursor = 'not-allowed';
         selectEstado.value = 'En Estudio';
-        console.log('[DURACION] Select bloqueado - estado "En Estudio"');
       }
       
       // BLOQUEAR el menú de "Más opciones" mientras está en "En Estudio"
@@ -7650,7 +7730,6 @@ async function confirmarDuracionEstudio() {
         btnMasOpciones.style.opacity = '0.5';
         btnMasOpciones.style.cursor = 'not-allowed';
         if (menuMasOpciones) menuMasOpciones.style.display = 'none';
-        console.log('[DURACION] Menú bloqueado - estado "En Estudio"');
       }
       
       // Emitir evento de socket desde el cliente
@@ -7677,7 +7756,6 @@ async function confirmarDuracionEstudio() {
 }
 
 async function iniciarEstudioSinDuracion() {
-  console.log('[DURACION] Iniciando estudio sin duración personalizada');
   
   if (!citaElectroSeleccionada) return;
   
@@ -7768,7 +7846,6 @@ async function iniciarEstudioSinDuracion() {
         selectEstado.style.opacity = '0.5';
         selectEstado.style.cursor = 'not-allowed';
         selectEstado.value = 'En Estudio';
-        console.log('[DURACION_SIN] Select bloqueado - estado "En Estudio"');
       }
       
       // BLOQUEAR el menú de "Más opciones" mientras está en "En Estudio"
@@ -7779,7 +7856,6 @@ async function iniciarEstudioSinDuracion() {
         btnMasOpciones.style.opacity = '0.5';
         btnMasOpciones.style.cursor = 'not-allowed';
         if (menuMasOpciones) menuMasOpciones.style.display = 'none';
-        console.log('[DURACION_SIN] Menú bloqueado - estado "En Estudio"');
       }
       
       // Emitir evento de socket desde el cliente
@@ -7820,7 +7896,6 @@ function actualizarProgresoEstudio() {
   const horaFin = citaElectroSeleccionada.hora_fin; // "HH:MM"
   
   if (!horaInicio || !horaFin) {
-    console.log('[PROGRESO] Horas no disponibles');
     return;
   }
   
@@ -7840,11 +7915,10 @@ function actualizarProgresoEstudio() {
   const duracionTotal = segundosFin - segundosInicio;
   
   if (duracionTotal <= 0) {
-    console.log('[PROGRESO] Duración inválida');
     return;
   }
   
-  console.log(`[PROGRESO] Iniciando. Inicio: ${horaInicio}, Fin: ${horaFin}, Duración: ${Math.round(duracionTotal/60)} min`);
+  let _lastSocketEmit = 0;
   
   // Actualizar cada 250ms para que la barra avance suavemente en tiempo real
   intervaloProgreso = setInterval(async () => {
@@ -7883,8 +7957,10 @@ function actualizarProgresoEstudio() {
       tiempoTranscurrido.textContent = tiempoFormato;
     }
     
-    // Emitir evento de socket para actualizar otros usuarios
-    if (window.socket && window.socket.connected) {
+    // Emitir evento de socket para actualizar otros usuarios (cada 15 segundos, no cada 250ms)
+    const nowMs = Date.now();
+    if (window.socket && window.socket.connected && (nowMs - _lastSocketEmit >= 15000)) {
+      _lastSocketEmit = nowMs;
       window.socket.emit('electro:progreso-estudio', {
         citaId: citaElectroSeleccionada.id,
         porcentaje: porcentaje,
@@ -7892,14 +7968,10 @@ function actualizarProgresoEstudio() {
       });
     }
     
-    console.log(`[PROGRESO] ${Math.round(porcentaje)}% - ${tiempoFormato}`);
-    
     // Si llegó al 100%, finalizar automáticamente
     if (porcentaje >= 100) {
       clearInterval(intervaloProgreso);
       intervaloProgreso = null;
-      
-      console.log('[PROGRESO] Estudio completado. Finalizando automáticamente...');
       
       try {
         const ahora = new Date();
@@ -8437,8 +8509,9 @@ function renderFlujoEstado(cita) {
   }
 
   // Guardar: solo util para cambio de equipo; ocultarlo si estado final
-  const estadosFinales = ['Completado','Cancelado','No Asisti\u00f3','Reprogramado','Adelantado'];
-  if (btnGuardar) btnGuardar.style.display = estadosFinales.includes(estado) ? 'none' : '';
+  // Guardar: ocultar en estados finales Y durante En Estudio/Pausado
+  const estadosOcultar = ['Completado','Cancelado','No Asisti\u00f3','Reprogramado','Adelantado','En Estudio','Pausado'];
+  if (btnGuardar) btnGuardar.style.display = estadosOcultar.includes(estado) ? 'none' : '';
 }
 
 async function cambiarEstadoCita(nuevoEstado) {
@@ -8577,17 +8650,12 @@ async function guardarCambiosCitaElectro() {
 // ========== FUNCIONES PARA REPROGRAMAR Y ADELANTAR CITAS ==========
 
 function abrirModalReprogramar() {
-  console.log('[REPROGRAMAR] Llamando abrirModalReprogramar');
   if (!citaElectroSeleccionada) {
-    console.log('[REPROGRAMAR] Sin cita seleccionada');
     return;
   }
   
-  console.log('[REPROGRAMAR] Cita seleccionada:', citaElectroSeleccionada);
-  
   // GUARDAR CITA ANTES DE CERRAR MODAL
   citaReprogramarAdelantarActual = citaElectroSeleccionada;
-  console.log('[REPROGRAMAR] Guardada en variable temporal');
   
   // Rellenar datos actuales
   $('modalReprogramarFechaActual').textContent = 
@@ -8598,8 +8666,6 @@ function abrirModalReprogramar() {
   const fechaFormato = fecha ? fecha.split('T')[0] : '';
   $('modalReprogramarFecha').value = fechaFormato;
   $('modalReprogramarHora').value = citaElectroSeleccionada.hora_agendamiento || '';
-  
-  console.log('[REPROGRAMAR] Fecha format: ' + fechaFormato);
   
   // Cerrar modal de detalles
   cerrarModalDetallesCita();
@@ -8613,18 +8679,13 @@ function cerrarModalReprogramar() {
 }
 
 async function confirmarReprogramar() {
-  console.log('[CONFIRMAR_REPROGRAMAR] Iniciando...');
   if (!citaReprogramarAdelantarActual) {
-    console.log('[CONFIRMAR_REPROGRAMAR] Sin cita seleccionada');
     return;
   }
   
   try {
     const fechaNueva = $('modalReprogramarFecha').value;
     const horaNueva = $('modalReprogramarHora').value;
-    
-    console.log('[CONFIRMAR_REPROGRAMAR] fechaNueva:', fechaNueva);
-    console.log('[CONFIRMAR_REPROGRAMAR] horaNueva:', horaNueva);
     
     if (!fechaNueva || !horaNueva) {
       showToast('Debes completar fecha y hora', 'error');
@@ -8637,8 +8698,6 @@ async function confirmarReprogramar() {
       hora_agendamiento: horaNueva
     };
     
-    console.log('[CONFIRMAR_REPROGRAMAR] Enviando cambios:', cambios);
-    
     const res = await apiFetch(`/api/citas-electro/${citaReprogramarAdelantarActual.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -8646,8 +8705,6 @@ async function confirmarReprogramar() {
     });
     
     const data = await res.json();
-    
-    console.log('[CONFIRMAR_REPROGRAMAR] Respuesta del servidor:', data);
     
     if (data && data.ok) {
       showToast('Cita reprogramada exitosamente', 'success');
@@ -8703,16 +8760,12 @@ function cerrarModalAdelantarCita() {
 }
 
 async function confirmarAdelantarCita() {
-  console.log('[CONFIRMAR_ADELANTAR] Iniciando...');
   if (!citaReprogramarAdelantarActual) {
-    console.log('[CONFIRMAR_ADELANTAR] Sin cita seleccionada');
     return;
   }
   
   try {
     const horaNueva = $('modalAdelantarHora').value;
-    
-    console.log('[CONFIRMAR_ADELANTAR] horaNueva:', horaNueva);
     
     if (!horaNueva) {
       showToast('Debes completar la hora', 'error');
@@ -8724,8 +8777,6 @@ async function confirmarAdelantarCita() {
       hora_agendamiento: horaNueva
     };
     
-    console.log('[CONFIRMAR_ADELANTAR] Enviando cambios:', cambios);
-    
     const res = await apiFetch(`/api/citas-electro/${citaReprogramarAdelantarActual.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -8733,8 +8784,6 @@ async function confirmarAdelantarCita() {
     });
     
     const data = await res.json();
-    
-    console.log('[CONFIRMAR_ADELANTAR] Respuesta del servidor:', data);
     
     if (data && data.ok) {
       showToast('Cita adelantada exitosamente', 'success');
@@ -8761,13 +8810,11 @@ async function confirmarAdelantarCita() {
 
 // ===== Event Listeners para Modal de Duración =====
 $('btnConfirmarDuracionSi')?.addEventListener('click', () => {
-  console.log('[DURACION] Usuario seleccionó SÍ');
   cerrarModalConfirmarDuracion();
   abrirModalDuracionEstudio();
 });
 
 $('btnConfirmarDuracionNo')?.addEventListener('click', () => {
-  console.log('[DURACION] Usuario seleccionó NO');
   cerrarModalConfirmarDuracion();
   iniciarEstudioSinDuracion();
 });
