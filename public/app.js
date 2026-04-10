@@ -5308,6 +5308,9 @@ const PERMISOS_DEFS = [
 ];
 
 // Permisos predeterminados por rol (null = sin restricciones / todo permitido)
+// IMPORTANTE: Estos defaults DEBEN incluir todos los permisos que el rol obtiene
+// por defecto en requireRoleOrPerm del servidor. Si un permiso falta aquí,
+// al guardar permisos personalizados el usuario perdería acceso a esa acción.
 const PERMISOS_ROL_DEFAULTS = {
   superadmin: null,
   admin: null,
@@ -5330,31 +5333,31 @@ const PERMISOS_ROL_DEFAULTS = {
   auxiliar_recepcion: [
     'modulo.recibos','modulo.agenda_medica','modulo.electrodiag',
     'recibos.crear','recibos.ver',
-    'agenda.ver','agenda.crear','agenda.editar','agenda.cambiar_estado',
+    'agenda.ver','agenda.crear','agenda.editar','agenda.cambiar_estado','agenda.aviso_doctor',
     'electro.ver','electro.crear',
   ],
   doctor: [
     'modulo.agenda_medica','modulo.electrodiag','modulo.dashboard',
-    'agenda.ver','agenda.disponibilidad',
+    'agenda.ver','agenda.cambiar_estado','agenda.llamar_siguiente','agenda.marcar_atendido','agenda.disponibilidad',
     'electro.ver','electro.cambiar_estado','electro.subir_archivo','electro.ver_archivo',
     'sistema.dashboard',
   ],
   admin_electro: [
     'modulo.electrodiag','modulo.agenda_medica','modulo.dashboard',
     'electro.ver','electro.crear','electro.editar','electro.eliminar','electro.cambiar_estado','electro.subir_archivo','electro.ver_archivo','electro.aviso_doctor',
-    'agenda.ver','agenda.aviso_doctor',
+    'agenda.ver','agenda.editar','agenda.aviso_doctor',
     'sistema.dashboard',
   ],
   electro: [
     'modulo.electrodiag','modulo.agenda_medica','modulo.dashboard',
-    'electro.ver','electro.crear','electro.editar','electro.cambiar_estado','electro.subir_archivo','electro.ver_archivo','electro.aviso_doctor',
-    'agenda.ver','agenda.aviso_doctor',
+    'electro.ver','electro.crear','electro.editar','electro.eliminar','electro.cambiar_estado','electro.subir_archivo','electro.ver_archivo','electro.aviso_doctor',
+    'agenda.ver','agenda.editar','agenda.aviso_doctor',
     'sistema.dashboard',
   ],
   tecnico_electro: [
     'modulo.electrodiag','modulo.agenda_medica',
     'electro.ver','electro.crear','electro.editar','electro.cambiar_estado','electro.subir_archivo','electro.ver_archivo',
-    'agenda.ver',
+    'agenda.ver','agenda.editar','agenda.aviso_doctor',
   ],
   contabilidad: [
     'modulo.recibos','modulo.dashboard',

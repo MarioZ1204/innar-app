@@ -666,7 +666,7 @@ app.post('/api/cambiar-contrasena', requireAuth, async (req, res) => {
 });
 
 // --- Usuarios ---
-app.get('/api/usuarios', requireAuth, requireAdmin, async (req, res) => {
+app.get('/api/usuarios', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'usuarios.ver'), async (req, res) => {
   try {
     const usuarios = await db.query(
       'SELECT id, usuario, nombre, rol, activo, numero_consultorio, especialidad, permisos FROM usuarios ORDER BY usuario ASC'
@@ -678,7 +678,7 @@ app.get('/api/usuarios', requireAuth, requireAdmin, async (req, res) => {
   }
 });
 
-app.post('/api/usuarios', requireAuth, requireAdmin, async (req, res) => {
+app.post('/api/usuarios', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'usuarios.crear'), async (req, res) => {
   const { usuario, password, nombre, rol, numero_consultorio, especialidad } = req.body || {};
   
   // Validaciones básicas
@@ -752,7 +752,7 @@ app.post('/api/usuarios', requireAuth, requireAdmin, async (req, res) => {
   }
 });
 
-app.patch('/api/usuarios/:id', requireAuth, requireAdmin, async (req, res) => {
+app.patch('/api/usuarios/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'usuarios.editar'), async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const { usuario, password, nombre, rol, activo, numero_consultorio, especialidad } = req.body || {};
   if (!id) return res.status(400).json({ error: 'ID inválido' });
@@ -912,7 +912,7 @@ app.put('/api/usuarios/:id/permisos', requireAuth, requireAdmin, async (req, res
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.delete('/api/usuarios/:id', requireAuth, requireAdmin, async (req, res) => {
+app.delete('/api/usuarios/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'usuarios.eliminar'), async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (!id) return res.status(400).json({ error: 'ID inválido' });
   if (id === req.session.usuarioId) {
@@ -950,7 +950,7 @@ app.delete('/api/usuarios/:id', requireAuth, requireAdmin, async (req, res) => {
 });
 
 // Toggle activo/inactivo de usuario
-app.patch('/api/usuarios/:id/toggle-estado', requireAuth, requireAdmin, async (req, res) => {
+app.patch('/api/usuarios/:id/toggle-estado', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'usuarios.editar'), async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (!id) return res.status(400).json({ error: 'ID inválido' });
   if (id === req.session.usuarioId) {
@@ -989,7 +989,7 @@ app.patch('/api/usuarios/:id/toggle-estado', requireAuth, requireAdmin, async (r
 });
 
 // Obtener historial de auditoría de un usuario
-app.get('/api/usuarios/:id/historial', requireAuth, requireAdmin, async (req, res) => {
+app.get('/api/usuarios/:id/historial', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'usuarios.auditoria'), async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (!id) return res.status(400).json({ error: 'ID inválido' });
   
@@ -1102,7 +1102,7 @@ function generarPasswordTemporal() {
 }
 
 // Reset password de usuario por admin
-app.patch('/api/usuarios/:id/reset-password', requireAuth, requireAdmin, async (req, res) => {
+app.patch('/api/usuarios/:id/reset-password', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'usuarios.cambiar_clave'), async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (!id) return res.status(400).json({ error: 'ID inválido' });
   if (id === req.session.usuarioId) {
@@ -1307,7 +1307,7 @@ app.get('/api/pacientes/:id', requireAuth, async (req, res) => {
 });
 
 // Actualizar paciente (nombre, documento, etc.)
-app.patch('/api/pacientes/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro', 'tecnico_electro', 'auxiliar_recepcion'], 'agenda.editar'), async (req, res) => {
+app.patch('/api/pacientes/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro', 'tecnico_electro', 'auxiliar_recepcion'], ['agenda.editar', 'electro.editar']), async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (!id) return res.status(400).json({ error: 'ID inválido' });
   const { nombre, documento, telefono, email } = req.body || {};
@@ -2632,7 +2632,7 @@ app.get('/api/diagnosticos/search', requireAuth, async (req, res) => {
 });
 
 // Crear nuevo diagnóstico (solo admin)
-app.post('/api/diagnosticos', requireAuth, requireAdmin, async (req, res) => {
+app.post('/api/diagnosticos', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'diagnosticos.crear'), async (req, res) => {
   const { nombre, descripcion, codigo } = req.body || {};
   
   if (!nombre || nombre.trim().length === 0) {
@@ -2655,7 +2655,7 @@ app.post('/api/diagnosticos', requireAuth, requireAdmin, async (req, res) => {
 });
 
 // Actualizar diagnóstico
-app.put('/api/diagnosticos/:id', requireAuth, requireAdmin, async (req, res) => {
+app.put('/api/diagnosticos/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'diagnosticos.editar'), async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const { nombre, descripcion, codigo, activo } = req.body || {};
 
@@ -2677,7 +2677,7 @@ app.put('/api/diagnosticos/:id', requireAuth, requireAdmin, async (req, res) => 
 });
 
 // Importar diagnósticos desde archivo Excel
-app.post('/api/diagnosticos/import-excel', requireAuth, requireAdmin, upload.single('file'), async (req, res) => {
+app.post('/api/diagnosticos/import-excel', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'diagnosticos.crear'), upload.single('file'), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'Debes seleccionar un archivo' });
   }
@@ -3407,7 +3407,7 @@ app.get('/api/especialidades', requireAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.post('/api/especialidades', requireAuth, requireAdmin, async (req, res) => {
+app.post('/api/especialidades', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'modulo.gestion_datos'), async (req, res) => {
   const { nombre } = req.body || {};
   if (!nombre || !nombre.trim()) return res.status(400).json({ error: 'El nombre es obligatorio' });
   try {
@@ -3419,7 +3419,7 @@ app.post('/api/especialidades', requireAuth, requireAdmin, async (req, res) => {
   }
 });
 
-app.patch('/api/especialidades/:id', requireAuth, requireAdmin, async (req, res) => {
+app.patch('/api/especialidades/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'modulo.gestion_datos'), async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const { nombre } = req.body || {};
   if (!id) return res.status(400).json({ error: 'ID inválido' });
@@ -3433,7 +3433,7 @@ app.patch('/api/especialidades/:id', requireAuth, requireAdmin, async (req, res)
   }
 });
 
-app.delete('/api/especialidades/:id', requireAuth, requireAdmin, async (req, res) => {
+app.delete('/api/especialidades/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'modulo.gestion_datos'), async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (!id) return res.status(400).json({ error: 'ID inválido' });
   try {
@@ -3496,7 +3496,7 @@ app.get('/api/tipos-consulta', requireAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.post('/api/tipos-consulta', requireAuth, requireAdmin, async (req, res) => {
+app.post('/api/tipos-consulta', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'modulo.gestion_datos'), async (req, res) => {
   const { especialidad_id, nombre } = req.body || {};
   if (!especialidad_id || !nombre || !nombre.trim())
     return res.status(400).json({ error: 'Especialidad y nombre son obligatorios' });
@@ -3515,7 +3515,7 @@ app.post('/api/tipos-consulta', requireAuth, requireAdmin, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.patch('/api/tipos-consulta/:id', requireAuth, requireAdmin, async (req, res) => {
+app.patch('/api/tipos-consulta/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'modulo.gestion_datos'), async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const { nombre } = req.body || {};
   if (!id) return res.status(400).json({ error: 'ID inválido' });
@@ -3527,7 +3527,7 @@ app.patch('/api/tipos-consulta/:id', requireAuth, requireAdmin, async (req, res)
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.delete('/api/tipos-consulta/:id', requireAuth, requireAdmin, async (req, res) => {
+app.delete('/api/tipos-consulta/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'modulo.gestion_datos'), async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (!id) return res.status(400).json({ error: 'ID inválido' });
   try {
@@ -3595,7 +3595,7 @@ app.get('/api/servicios', requireAuth, async (req, res) => {
   } catch(err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/servicios', requireAuth, requireAdmin, async (req, res) => {
+app.post('/api/servicios', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'recibos.gestionar_servicios'), async (req, res) => {
   const nombre = (req.body.nombre || '').trim();
   if (!nombre) return res.status(400).json({ error: 'Nombre requerido' });
   try {
@@ -3607,7 +3607,7 @@ app.post('/api/servicios', requireAuth, requireAdmin, async (req, res) => {
   }
 });
 
-app.put('/api/servicios/:id', requireAuth, requireAdmin, async (req, res) => {
+app.put('/api/servicios/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'recibos.gestionar_servicios'), async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const nombre = (req.body.nombre || '').trim();
   if (!nombre || isNaN(id)) return res.status(400).json({ error: 'Datos inválidos' });
@@ -3620,7 +3620,7 @@ app.put('/api/servicios/:id', requireAuth, requireAdmin, async (req, res) => {
   }
 });
 
-app.delete('/api/servicios/:id', requireAuth, requireAdmin, async (req, res) => {
+app.delete('/api/servicios/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'recibos.gestionar_servicios'), async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (isNaN(id)) return res.status(400).json({ error: 'ID inválido' });
   try {
@@ -3638,7 +3638,7 @@ app.get('/api/entidades', requireAuth, async (req, res) => {
   } catch(err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/entidades', requireAuth, requireAdmin, async (req, res) => {
+app.post('/api/entidades', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'modulo.gestion_datos'), async (req, res) => {
   const nombre = (req.body.nombre || '').trim().toUpperCase();
   if (!nombre) return res.status(400).json({ error: 'Nombre requerido' });
   try {
@@ -3650,7 +3650,7 @@ app.post('/api/entidades', requireAuth, requireAdmin, async (req, res) => {
   }
 });
 
-app.put('/api/entidades/:id', requireAuth, requireAdmin, async (req, res) => {
+app.put('/api/entidades/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'modulo.gestion_datos'), async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const nombre = (req.body.nombre || '').trim().toUpperCase();
   if (!nombre || isNaN(id)) return res.status(400).json({ error: 'Datos inválidos' });
@@ -3663,7 +3663,7 @@ app.put('/api/entidades/:id', requireAuth, requireAdmin, async (req, res) => {
   }
 });
 
-app.delete('/api/entidades/:id', requireAuth, requireAdmin, async (req, res) => {
+app.delete('/api/entidades/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'modulo.gestion_datos'), async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (isNaN(id)) return res.status(400).json({ error: 'ID inválido' });
   try {
@@ -4012,7 +4012,7 @@ app.get('/api/recibos/export/pdf-reporte', requireAuth, async (req, res) => {
 });
 
 // Resetear/limpiar todos los recibos (solo admin)
-app.delete('/api/recibos/reset', requireAuth, requireAdmin, async (req, res) => {
+app.delete('/api/recibos/reset', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'recibos.resetear'), async (req, res) => {
   try {
     await db.execute('DELETE FROM recibos');
     await db.execute('ALTER TABLE recibos AUTO_INCREMENT = 1');
@@ -4022,8 +4022,8 @@ app.delete('/api/recibos/reset', requireAuth, requireAdmin, async (req, res) => 
   }
 });
 
-// Eliminar recibo individual (solo admin)
-app.delete('/api/recibos/:id', requireAuth, requireAdmin, async (req, res) => {
+// Eliminar recibo individual
+app.delete('/api/recibos/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'recibos.eliminar'), async (req, res) => {
   const id = parseReciboId(req.params.id);
   if (id === null) return res.status(400).json({ error: 'ID de recibo inválido' });
   try {
@@ -4490,7 +4490,7 @@ app.get('/api/reportes/mensual', async (req, res) => {
 });
 
 // ðŸ“Š Dashboard Auditoría de Citas - Ver quién agendó cada cita
-app.get('/api/dashboard/citas-auditoria', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro', 'doctor'], 'sistema.dashboard'), async (req, res) => {
+app.get('/api/dashboard/citas-auditoria', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro', 'doctor', 'contabilidad'], 'sistema.dashboard'), async (req, res) => {
   try {
     const { tipo_cita, fecha_desde, fecha_hasta, programado_por, tipo_estudio } = req.query;
     
