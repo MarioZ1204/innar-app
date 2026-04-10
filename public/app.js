@@ -1883,7 +1883,7 @@ async function initAgendaMedica() {
     actualizarHorasDisponibles();
     cargarTurnosMedica();
   });
-  if (!isElectro() && !isDoctor()) {
+  if (tienePermiso('agenda.crear')) {
     $('nuevoPacienteNombresMedica')?.addEventListener('input', debounceBuscarPacientesMedica);
   }
   // Forzar solo dígitos y máximo 10 en los teléfonos de cita médica
@@ -1990,8 +1990,8 @@ async function initAgendaMedica() {
 
   // Botón "Nueva Cita" y modal
   const btnNuevaCita = $('btnNuevaCitaMedica');
-  const doctorTieneAgendaCrear = isDoctor() && Array.isArray(currentUser?.permisos) && currentUser.permisos.includes('agenda.crear');
-  const canCrearCita = !isElectro() && (!isDoctor() || doctorTieneAgendaCrear);
+  const tienePermisoCrear = tienePermiso('agenda.crear');
+  const canCrearCita = tienePermisoCrear && (!isDoctor() || (Array.isArray(currentUser?.permisos) && currentUser.permisos.includes('agenda.crear')));
   if (btnNuevaCita) btnNuevaCita.style.display = canCrearCita ? 'inline-flex' : 'none';
   if (canCrearCita) {
     btnNuevaCita?.addEventListener('click', () => {
@@ -2038,7 +2038,7 @@ async function initAgendaMedica() {
   }
   // Botón "Cargar Pacientes" (solo admin/recepción)
   const btnCargarPacMedica = $('btnCargarPacientesMedica');
-  if (btnCargarPacMedica && !isElectro() && !isDoctor()) {
+  if (btnCargarPacMedica && tienePermiso('agenda.crear')) {
     btnCargarPacMedica.style.display = '';
     btnCargarPacMedica.addEventListener('click', () => {
       const nomDiv = $('cargarPacientesMedicaDoctorNombre');
