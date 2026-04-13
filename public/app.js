@@ -1114,24 +1114,12 @@ function _unlockSpeech() {
 }
 
 function _initAudioStatusBtn() {
-  if (!('speechSynthesis' in window)) return;
-  if (document.getElementById('btnAudioStatus')) return;
-  const btn = document.createElement('button');
-  btn.id = 'btnAudioStatus';
-  btn.title = 'Clic para habilitar audio de voz';
-  btn.textContent = '\uD83D\uDD07';
-  btn.style.cssText = 'position:fixed;bottom:18px;right:18px;z-index:9000;width:40px;height:40px;border-radius:50%;background:#fff;border:2px solid #8AA6A1;font-size:1.1rem;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.18);padding:0;line-height:1;display:flex;align-items:center;justify-content:center;';
-  btn.addEventListener('click', () => {
-    _unlockSpeech();
-    setTimeout(() => _speak('Audio habilitado', 1), 100);
-  });
-  document.body.appendChild(btn);
+  // Audio button removed
 }
 
 function _hideAudioStatusBtn() {
   const btn = document.getElementById('btnAudioStatus');
   if (btn) btn.remove();
-  _speechUnlocked = false;
 }
 
 function _pickLatAmVoice() {
