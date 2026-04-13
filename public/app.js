@@ -7346,46 +7346,63 @@ async function cargarLista(queryString) {
 
     recibos.forEach((r, idx) => {
       const tr = document.createElement('tr');
-      if (idx % 2 === 0) tr.style.background = '#f9fafb';
       const fecha = r.fecha ? String(r.fecha).slice(0,10) : '-';
       const total = Number(r.total||0).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
       const esAnulado = r.anulado == 1;
-      const deleteBtn = canDeleteRecibos() && !esAnulado
-        ? `<button class="delete btn-danger btn-sm" data-id="${r.id}">✕</button>` : '';
-      const anularBtn = currentUser?.rol === 'superadmin' && !esAnulado
-        ? `<button class="anular-recibo btn-sm" data-id="${r.id}" style="background:#dc2626;color:#fff;border:none;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:0.75rem">Anular</button>` : '';
       const anulBadge = esAnulado
-        ? `<span style="display:inline-block;padding:2px 8px;border-radius:99px;font-size:0.72rem;font-weight:700;background:#fee2e2;color:#991b1b;border:1px solid #fca5a5" title="${escapeHtml(r.anulado_razon||'')}">ANULADO</span>` : '';
+        ? `<span class="recibo-badge-anulado" title="${escapeHtml(r.anulado_razon||'')}">ANULADO</span>` : '';
       if (esAnulado) {
-        tr.style.opacity = '0.6';
-        tr.style.textDecoration = 'line-through';
-        tr.style.background = '#fef2f2';
+        tr.classList.add('recibo-row-anulado');
       }
+
+      // --- Botones de acción ---
+      let acciones = `<div class="recibo-acciones">`;
+      acciones += `<a href="/api/recibos/${r.id}/pdf" target="_blank" class="recibo-btn recibo-btn-pdf" title="Ver PDF">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> PDF</a>`;
+      if (currentUser?.rol === 'superadmin' && !esAnulado) {
+        acciones += `<button class="recibo-btn recibo-btn-editar" data-id="${r.id}" data-medico="${escapeHtml(r.medico_nombre||'')}" data-servicio="${escapeHtml(r.tipo_servicio||'')}" data-entidad="${escapeHtml(r.nombre_entidad||'')}" data-cliente="${escapeHtml(r.cliente||'')}" title="Editar">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> Editar</button>`;
+        acciones += `<button class="recibo-btn recibo-btn-anular anular-recibo" data-id="${r.id}" title="Anular">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg> Anular</button>`;
+      }
+      if (canDeleteRecibos() && !esAnulado) {
+        acciones += `<button class="recibo-btn recibo-btn-eliminar delete" data-id="${r.id}" title="Eliminar">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg></button>`;
+      }
+      acciones += `</div>`;
+
       tr.innerHTML = `
-        <td style="padding:10px 12px">${escapeHtml(r.numero||'-')} ${anulBadge}</td>
-        <td style="padding:10px 12px">${escapeHtml(fecha)}</td>
-        <td style="padding:10px 12px">${escapeHtml(r.cliente||'-')}</td>
-        <td style="padding:10px 12px">
-          <span style="font-size:0.8rem;padding:2px 8px;border-radius:99px;${r.tipo_pago==='Particular'?'background:#fef9c3;color:#92400e':r.tipo_pago?'background:#dbeafe;color:#1e40af':'background:#f3f4f6;color:#6b7280'}">
+        <td>${escapeHtml(r.numero||'-')} ${anulBadge}</td>
+        <td>${escapeHtml(fecha)}</td>
+        <td>${escapeHtml(r.cliente||'-')}</td>
+        <td>
+          <span class="recibo-badge-pago ${r.tipo_pago==='Particular'?'pago-particular':r.tipo_pago?'pago-entidad':'pago-none'}">
             ${escapeHtml(r.tipo_pago||'-')}
           </span>
         </td>
-        <td style="padding:10px 12px">${escapeHtml(r.nombre_entidad||'-')}</td>
-        <td style="padding:10px 12px">${escapeHtml(r.medico_nombre || (r.cita_electro_id ? 'ELECTRODIAGNÓSTICOS' : '-'))}</td>
-        <td style="padding:10px 12px">${escapeHtml(r.tipo_servicio||'-')}</td>
-        <td style="padding:10px 12px;text-align:right;font-weight:600;color:${esAnulado ? '#991b1b' : '#2d4a47'}">$ ${escapeHtml(total)}</td>
-        <td style="padding:10px 12px">${escapeHtml(r.generado_por_nombre||'-')}</td>
-        <td style="padding:10px 12px;text-align:center;white-space:nowrap">
-          <a href="/api/recibos/${r.id}/pdf" target="_blank" class="btn-success btn-sm" style="text-decoration:none">PDF</a>
-          ${anularBtn}
-          ${deleteBtn}
-        </td>`;
+        <td>${escapeHtml(r.nombre_entidad||'-')}</td>
+        <td>${escapeHtml(r.medico_nombre || (r.cita_electro_id ? 'ELECTRODIAGNÓSTICOS' : '-'))}</td>
+        <td>${escapeHtml(r.tipo_servicio||'-')}</td>
+        <td style="text-align:right;font-weight:600;color:${esAnulado ? '#991b1b' : '#2d4a47'}">$ ${escapeHtml(total)}</td>
+        <td>${escapeHtml(r.generado_por_nombre||'-')}</td>
+        <td style="text-align:center">${acciones}</td>`;
       tbody.appendChild(tr);
     });
 
+    // Listener: Editar recibo (superadmin)
+    tbody.querySelectorAll('.recibo-btn-editar').forEach(b => b.addEventListener('click', e => {
+      const btn = e.target.closest('.recibo-btn-editar');
+      const reciboId = btn.dataset.id;
+      const medico   = btn.dataset.medico   || '';
+      const servicio = btn.dataset.servicio || '';
+      const entidad  = btn.dataset.entidad  || '';
+      const cliente  = btn.dataset.cliente  || '';
+      showEditReciboModal({ id: reciboId, medico, servicio, entidad, cliente });
+    }));
+
     // Listener: Anular recibo
     tbody.querySelectorAll('.anular-recibo').forEach(b => b.addEventListener('click', e => {
-      const reciboId = e.target.dataset.id;
+      const reciboId = e.target.closest('.anular-recibo').dataset.id;
       showPrompt('Ingrese la razón de anulación de este recibo:', async (razon) => {
         try {
           const jr = await apiFetch(`/api/recibos/${reciboId}/anular`, {
@@ -7402,7 +7419,7 @@ async function cargarLista(queryString) {
     tbody.querySelectorAll('.delete').forEach(b => b.addEventListener('click', e => {
       showConfirm('¿Eliminar este recibo?', async () => {
         try {
-          const jr = await apiFetch(`/api/recibos/${e.target.dataset.id}`, { method: 'DELETE' }).then(r => r.json());
+          const jr = await apiFetch(`/api/recibos/${e.target.closest('.delete').dataset.id}`, { method: 'DELETE' }).then(r => r.json());
           if (jr.ok) { showToast('Recibo eliminado', 'success'); cargarLista(_recibosLastParams); }
         } catch (_) { showToast('Error eliminando recibo', 'error'); }
       });
@@ -7411,6 +7428,59 @@ async function cargarLista(queryString) {
     console.error(e);
     showToast('Error cargando lista', 'error');
   }
+}
+
+function showEditReciboModal({ id, medico, servicio, entidad, cliente }) {
+  const backdrop = document.createElement('div');
+  backdrop.className = 'confirm-backdrop';
+  backdrop.innerHTML = `
+    <div class="confirm-box" style="max-width:460px;width:92%">
+      <div class="confirm-icon">✏️</div>
+      <div class="confirm-msg" style="font-size:1rem;margin-bottom:14px">Editar Recibo</div>
+      <div style="text-align:left;display:flex;flex-direction:column;gap:12px">
+        <label style="font-size:0.85rem;font-weight:600;color:#374151">
+          Paciente
+          <input type="text" id="editReciboCliente" value="${cliente}" style="width:100%;margin-top:4px;padding:9px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:0.9rem" />
+        </label>
+        <label style="font-size:0.85rem;font-weight:600;color:#374151">
+          Médico
+          <input type="text" id="editReciboMedico" value="${medico}" style="width:100%;margin-top:4px;padding:9px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:0.9rem" />
+        </label>
+        <label style="font-size:0.85rem;font-weight:600;color:#374151">
+          Servicio
+          <input type="text" id="editReciboServicio" value="${servicio}" style="width:100%;margin-top:4px;padding:9px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:0.9rem" />
+        </label>
+        <label style="font-size:0.85rem;font-weight:600;color:#374151">
+          Entidad
+          <input type="text" id="editReciboEntidad" value="${entidad}" style="width:100%;margin-top:4px;padding:9px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:0.9rem" />
+        </label>
+      </div>
+      <div class="confirm-actions" style="margin-top:18px">
+        <button class="btn-cancel">Cancelar</button>
+        <button class="btn-ok" style="background:#2d4a47">Guardar cambios</button>
+      </div>
+    </div>`;
+  document.body.appendChild(backdrop);
+  backdrop.querySelector('#editReciboCliente').focus();
+  backdrop.querySelector('.btn-cancel').addEventListener('click', () => backdrop.remove());
+  backdrop.querySelector('.btn-ok').addEventListener('click', async () => {
+    const data = {
+      cliente:        backdrop.querySelector('#editReciboCliente').value.trim(),
+      medico_nombre:  backdrop.querySelector('#editReciboMedico').value.trim(),
+      tipo_servicio:  backdrop.querySelector('#editReciboServicio').value.trim(),
+      nombre_entidad: backdrop.querySelector('#editReciboEntidad').value.trim()
+    };
+    try {
+      const jr = await apiFetch(`/api/recibos/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      }).then(r => r.json());
+      if (jr.ok) { backdrop.remove(); showToast('Recibo actualizado', 'success'); cargarLista(_recibosLastParams); }
+      else showToast(jr.error || 'Error al actualizar', 'error');
+    } catch (_) { showToast('Error actualizando recibo', 'error'); }
+  });
+  backdrop.addEventListener('click', e => { if (e.target === backdrop) backdrop.remove(); });
 }
 
 function updateSavedCount() {

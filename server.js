@@ -3956,12 +3956,13 @@ app.get('/api/recibos/export/xlsx', requireAuth, async (req, res) => {
     const rows = await db.query(
       `SELECT numero, fecha, cliente, tipo_pago, nombre_entidad,
               medico_nombre, tipo_servicio, total,
-              generado_por_nombre, observaciones, creado_en
+              generado_por_nombre, observaciones, creado_en,
+              anulado, anulado_razon
        FROM recibos ${where} ORDER BY numero ASC, id ASC`,
       params
     );
     const data = rows.map(r => ({
-      'NÂº Recibo': r.numero || '',
+      'Nº Recibo': r.numero || '',
       'Fecha': r.fecha ? String(r.fecha).slice(0, 10) : '',
       'Paciente': r.cliente || '',
       'Forma de Pago': r.tipo_pago || '',
@@ -3969,6 +3970,8 @@ app.get('/api/recibos/export/xlsx', requireAuth, async (req, res) => {
       'Médico': r.medico_nombre || '',
       'Servicio': r.tipo_servicio || '',
       'Total': Number(r.total || 0),
+      'Estado': r.anulado ? 'ANULADO' : 'Activo',
+      'Razón Anulación': r.anulado ? (r.anulado_razon || '') : '',
       'Generado por': r.generado_por_nombre || '',
       'Observaciones': r.observaciones || '',
       'Creado en': r.creado_en ? new Date(r.creado_en).toISOString().slice(0, 19).replace('T', ' ') : ''
@@ -4009,16 +4012,26 @@ app.get('/api/recibos/export/pdf-reporte', requireAuth, async (req, res) => {
     const rows = await db.query(
       `SELECT numero, fecha, cliente, tipo_pago, nombre_entidad,
               medico_nombre, tipo_servicio, total,
-              generado_por_nombre, observaciones
+              generado_por_nombre, observaciones,
+              anulado, anulado_razon
        FROM recibos ${where} ORDER BY numero ASC, id ASC`,
       params
     );
-    const total = rows.reduce((s, r) => s + Number(r.total || 0), 0);
+    const recibosActivos = rows.filter(r => !r.anulado);
+    const totalActivos = recibosActivos.reduce((s, r) => s + Number(r.total || 0), 0);
+    const totalGeneral = rows.reduce((s, r) => s + Number(r.total || 0), 0);
+    const cantAnulados = rows.length - recibosActivos.length;
     const fmt = (v) => Number(v).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const fmtFecha = (v) => v ? String(v).slice(0,10) : '-';
-    const rowsHTML = rows.map((r, i) => `
-      <tr${i%2===0?' style="background:#f9fafb"':''}>
-        <td>${escapeHtml(r.numero||'-')}</td>
+    const rowsHTML = rows.map((r, i) => {
+      const esAnulado = r.anulado == 1;
+      const anulTag = esAnulado ? ' <span style="background:#dc2626;color:#fff;font-size:7px;padding:1px 5px;border-radius:3px;font-weight:700;letter-spacing:0.5px">ANULADO</span>' : '';
+      const rowStyle = esAnulado
+        ? 'background:#fef2f2;border-left:3px solid #dc2626;color:#991b1b;text-decoration:line-through'
+        : (i % 2 === 0 ? 'background:#f9fafb' : '');
+      return `
+      <tr style="${rowStyle}">
+        <td>${escapeHtml(r.numero||'-')}${anulTag}</td>
         <td>${escapeHtml(fmtFecha(r.fecha))}</td>
         <td>${escapeHtml(r.cliente||'-')}</td>
         <td>${escapeHtml(r.tipo_pago||'-')}</td>
@@ -4027,43 +4040,59 @@ app.get('/api/recibos/export/pdf-reporte', requireAuth, async (req, res) => {
         <td>${escapeHtml(r.tipo_servicio||'-')}</td>
         <td style="text-align:right">$ ${fmt(r.total)}</td>
         <td>${escapeHtml(r.generado_por_nombre||'-')}</td>
-      </tr>`).join('');
+      </tr>`;
+    }).join('');
     const descFiltros = [
       fecha_desde ? `Desde: ${fecha_desde}` : '',
       fecha_hasta ? `Hasta: ${fecha_hasta}` : '',
       tipo_pago   ? `Tipo pago: ${tipo_pago}` : ''
-    ].filter(Boolean).join(' Â· ') || 'Sin filtros';
+    ].filter(Boolean).join(' \u00B7 ') || 'Sin filtros';
+    const resumenAnulados = cantAnulados > 0 ? `<span style="color:#dc2626;margin-left:10px">(${cantAnulados} anulado${cantAnulados>1?'s':''})</span>` : '';
     const html = `<!doctype html><html><head><meta charset="utf-8"/>
     <title>Reporte Recibos</title>
     <style>
       *{margin:0;padding:0;box-sizing:border-box}
-      body{font-family:Arial,sans-serif;font-size:11px;padding:16px;color:#111}
-      h1{font-size:16px;margin-bottom:4px}
-      .sub{color:#555;font-size:11px;margin-bottom:12px}
-      table{width:100%;border-collapse:collapse;font-size:10px}
-      th{background:#2d4a47;color:white;padding:6px 8px;text-align:left}
-      td{padding:5px 8px;border-bottom:1px solid #e5e7eb}
+      body{font-family:'Segoe UI',Arial,sans-serif;font-size:11px;padding:20px 24px;color:#111}
+      .report-header{display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #2d4a47;padding-bottom:10px;margin-bottom:14px}
+      .report-header h1{font-size:17px;color:#2d4a47;font-weight:700}
+      .report-header .date{font-size:10px;color:#6b7280}
+      .sub{color:#555;font-size:10.5px;margin-bottom:14px;display:flex;gap:16px;flex-wrap:wrap;align-items:center}
+      .sub .stat{background:#f0f9f7;padding:4px 12px;border-radius:6px;font-weight:600;color:#2d4a47}
+      table{width:100%;border-collapse:collapse;font-size:9.5px;border:1px solid #d1d5db}
+      th{background:#2d4a47;color:white;padding:7px 8px;text-align:left;font-size:9px;text-transform:uppercase;letter-spacing:0.04em}
+      td{padding:6px 8px;border-bottom:1px solid #e5e7eb}
+      tr:nth-child(even){background:#f9fafb}
       .total-row{font-weight:bold;background:#f0f9f4;border-top:2px solid #2d4a47}
+      .footer{margin-top:14px;text-align:center;font-size:8px;color:#9ca3af;border-top:1px solid #e5e7eb;padding-top:6px}
       @media print{.no-print{display:none}}
     </style>
     </head><body>
-    <h1>Reporte de Recibos  Instituto Neurociencias</h1>
-    <div class="sub">${escapeHtml(descFiltros)} Â· ${rows.length} recibos Â· Total: $ ${fmt(total)}</div>
-    <div class="no-print" style="margin-bottom:12px">
-      <button onclick="window.print()" style="padding:6px 14px;background:#2d4a47;color:white;border:none;border-radius:4px;cursor:pointer">Imprimir / Guardar PDF</button>
+    <div class="report-header">
+      <h1>Reporte de Recibos &mdash; Instituto Neurociencias</h1>
+      <span class="date">Generado: ${new Date().toLocaleDateString('es-CO', { year:'numeric', month:'long', day:'numeric' })}</span>
+    </div>
+    <div class="sub">
+      <span>${escapeHtml(descFiltros)}</span>
+      <span class="stat">${recibosActivos.length} recibos activos</span>
+      <span class="stat" style="color:#059669">Total: $ ${fmt(totalActivos)}</span>
+      ${resumenAnulados}
+    </div>
+    <div class="no-print" style="margin-bottom:14px">
+      <button onclick="window.print()" style="padding:8px 18px;background:#2d4a47;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:12px">🖨️ Imprimir / Guardar PDF</button>
     </div>
     <table>
       <thead><tr>
-        <th>NÂº</th><th>Fecha</th><th>Paciente</th><th>Tipo Pago</th>
-        <th>Entidad</th><th>Médico</th><th>Servicio</th><th>Total</th><th>Generado por</th>
+        <th>N\u00BA</th><th>Fecha</th><th>Paciente</th><th>Tipo Pago</th>
+        <th>Entidad</th><th>M\u00E9dico</th><th>Servicio</th><th style="text-align:right">Total</th><th>Generado por</th>
       </tr></thead>
       <tbody>${rowsHTML}
         <tr class="total-row">
-          <td colspan="7" style="text-align:right">TOTAL</td>
-          <td style="text-align:right">$ ${fmt(total)}</td><td></td>
+          <td colspan="7" style="text-align:right;padding-right:12px">TOTAL (activos)</td>
+          <td style="text-align:right">$ ${fmt(totalActivos)}</td><td></td>
         </tr>
       </tbody>
     </table>
+    <div class="footer">Instituto Neurociencias &middot; NIT 901164565-1 &middot; Reporte generado autom\u00E1ticamente</div>
     <script>window.onload=function(){window.print();}<\/script>
     </body></html>`;
     res.send(html);
@@ -4083,7 +4112,34 @@ app.delete('/api/recibos/reset', requireAuth, requireRoleOrPerm(['superadmin', '
   }
 });
 
-// Eliminar recibo individual
+// Editar recibo (solo superadmin) — actualizar campos como médico, servicio, entidad, paciente
+app.put('/api/recibos/:id', requireAuth, requireRoleOrPerm(['superadmin'], 'recibos.editar'), async (req, res) => {
+  const id = parseReciboId(req.params.id);
+  if (id === null) return res.status(400).json({ error: 'ID de recibo inválido' });
+  const { cliente, medico_nombre, tipo_servicio, nombre_entidad } = req.body || {};
+  try {
+    const rows = await db.query('SELECT * FROM recibos WHERE id=?', [id]);
+    if (!rows.length) return res.status(404).json({ error: 'Recibo no encontrado' });
+    if (rows[0].anulado) return res.status(400).json({ error: 'No se puede editar un recibo anulado' });
+    const updates = [];
+    const params = [];
+    if (cliente !== undefined)        { updates.push('cliente = ?');        params.push(String(cliente).trim()); }
+    if (medico_nombre !== undefined)  { updates.push('medico_nombre = ?');  params.push(String(medico_nombre).trim()); }
+    if (tipo_servicio !== undefined)  { updates.push('tipo_servicio = ?');  params.push(String(tipo_servicio).trim()); }
+    if (nombre_entidad !== undefined) { updates.push('nombre_entidad = ?'); params.push(String(nombre_entidad).trim()); }
+    if (!updates.length) return res.status(400).json({ error: 'No hay campos para actualizar' });
+    params.push(id);
+    await db.execute(`UPDATE recibos SET ${updates.join(', ')} WHERE id = ?`, params);
+    if (app.io) {
+      emitSocket('recibo:actualizar-lista');
+      emitSocket('stats:actualizar');
+    }
+    res.json({ ok: true });
+  } catch(err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Anular recibo (solo superadmin) — conserva consecutivo, registra razón
 app.patch('/api/recibos/:id/anular', requireAuth, requireRoleOrPerm(['superadmin'], 'recibos.anular'), async (req, res) => {
   const id = parseReciboId(req.params.id);
