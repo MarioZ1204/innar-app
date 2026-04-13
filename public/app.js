@@ -3380,7 +3380,7 @@ function renderTurnoRowMedica(tbody, t, animateTargetId, hayEnAtencion) {
         <td class="col-mobile-hide">${escapeHtml(t.entidad||'')}</td>
         <td class="col-mobile-hide">${escapeHtml(t.notas || '')}</td>
         <td>${estadoBadgeMedica(t.estado)}</td>
-        <td>${accionesCell}</td>
+        <td class="td-acciones">${accionesCell}</td>
       `;
     }
   // Abrir modal al hacer clic en la fila
