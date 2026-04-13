@@ -7355,19 +7355,19 @@ async function cargarLista(queryString) {
         tr.classList.add('recibo-row-anulado');
       }
 
-      // --- Botones de acción ---
-      let acciones = `<div class="recibo-acciones">`;
-      acciones += `<a href="/api/recibos/${r.id}/pdf" target="_blank" class="recibo-btn recibo-btn-pdf" title="Ver PDF">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> PDF</a>`;
+      // --- Botones de acción (estilo agenda médica) ---
+      let acciones = `<div class="table-actions">`;
+      acciones += `<a href="/api/recibos/${r.id}/pdf" target="_blank" class="btn-recibo-pdf" title="Ver PDF">
+        <img src="images/pdf.svg" alt="PDF"/></a>`;
       if (currentUser?.rol === 'superadmin' && !esAnulado) {
-        acciones += `<button class="recibo-btn recibo-btn-editar" data-id="${r.id}" data-medico="${escapeHtml(r.medico_nombre||'')}" data-servicio="${escapeHtml(r.tipo_servicio||'')}" data-entidad="${escapeHtml(r.nombre_entidad||'')}" data-cliente="${escapeHtml(r.cliente||'')}" title="Editar">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> Editar</button>`;
-        acciones += `<button class="recibo-btn recibo-btn-anular anular-recibo" data-id="${r.id}" title="Anular">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg> Anular</button>`;
+        acciones += `<button class="btn-editar" data-id="${r.id}" data-medico="${escapeHtml(r.medico_nombre||'')}" data-servicio="${escapeHtml(r.tipo_servicio||'')}" data-entidad="${escapeHtml(r.nombre_entidad||'')}" data-cliente="${escapeHtml(r.cliente||'')}" title="Editar">
+          <img src="images/edit.svg" alt="Editar"/></button>`;
+        acciones += `<button class="btn-recibo-anular anular-recibo" data-id="${r.id}" title="Anular">
+          <img src="images/cancel.svg" alt="Anular"/></button>`;
       }
       if (canDeleteRecibos() && !esAnulado) {
-        acciones += `<button class="recibo-btn recibo-btn-eliminar delete" data-id="${r.id}" title="Eliminar">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg></button>`;
+        acciones += `<button class="btn-eliminar delete" data-id="${r.id}" title="Eliminar">
+          <img src="images/delete.svg" alt="Eliminar"/></button>`;
       }
       acciones += `</div>`;
 
@@ -7390,8 +7390,8 @@ async function cargarLista(queryString) {
     });
 
     // Listener: Editar recibo (superadmin)
-    tbody.querySelectorAll('.recibo-btn-editar').forEach(b => b.addEventListener('click', e => {
-      const btn = e.target.closest('.recibo-btn-editar');
+    tbody.querySelectorAll('.btn-editar').forEach(b => b.addEventListener('click', e => {
+      const btn = e.target.closest('.btn-editar');
       const reciboId = btn.dataset.id;
       const medico   = btn.dataset.medico   || '';
       const servicio = btn.dataset.servicio || '';
@@ -7416,10 +7416,10 @@ async function cargarLista(queryString) {
       }, { okText: 'Anular Recibo', cancelText: 'Cancelar', danger: true, icon: '🚫', placeholder: 'Ej: Error en el monto, duplicado, etc.' });
     }));
 
-    tbody.querySelectorAll('.delete').forEach(b => b.addEventListener('click', e => {
+    tbody.querySelectorAll('.btn-eliminar.delete').forEach(b => b.addEventListener('click', e => {
       showConfirm('¿Eliminar este recibo?', async () => {
         try {
-          const jr = await apiFetch(`/api/recibos/${e.target.closest('.delete').dataset.id}`, { method: 'DELETE' }).then(r => r.json());
+          const jr = await apiFetch(`/api/recibos/${e.target.closest('.btn-eliminar').dataset.id}`, { method: 'DELETE' }).then(r => r.json());
           if (jr.ok) { showToast('Recibo eliminado', 'success'); cargarLista(_recibosLastParams); }
         } catch (_) { showToast('Error eliminando recibo', 'error'); }
       });
@@ -7430,29 +7430,56 @@ async function cargarLista(queryString) {
   }
 }
 
-function showEditReciboModal({ id, medico, servicio, entidad, cliente }) {
+async function showEditReciboModal({ id, medico, servicio, entidad, cliente }) {
+  // Cargar opciones en paralelo
+  const [medicosRes, serviciosArr, entidadesRes] = await Promise.all([
+    apiFetch('/api/medicos').then(r => r.json()).catch(() => []),
+    getServicios().catch(() => []),
+    apiFetch('/api/entidades').then(r => r.json()).catch(() => [])
+  ]);
+  const medicos = Array.isArray(medicosRes) ? medicosRes : [];
+  const servicios = Array.isArray(serviciosArr) ? serviciosArr : [];
+  const entidades = Array.isArray(entidadesRes) ? entidadesRes : [];
+
+  const medicoOpts = medicos.map(m => `<option value="${escapeHtml(m.nombre)}"${m.nombre===medico?' selected':''}>${escapeHtml(m.nombre)}</option>`).join('');
+  const servicioOpts = servicios.map(s => `<option value="${escapeHtml(s.nombre)}"${s.nombre===servicio?' selected':''}>${escapeHtml(s.nombre)}</option>`).join('');
+  const entidadOpts = entidades.map(e => `<option value="${escapeHtml(e.nombre)}"${e.nombre===entidad?' selected':''}>${escapeHtml(e.nombre)}</option>`).join('');
+
+  const inputStyle = 'width:100%;margin-top:4px;padding:9px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:0.9rem;background:#fff';
   const backdrop = document.createElement('div');
   backdrop.className = 'confirm-backdrop';
   backdrop.innerHTML = `
-    <div class="confirm-box" style="max-width:460px;width:92%">
+    <div class="confirm-box" style="max-width:480px;width:92%">
       <div class="confirm-icon">✏️</div>
       <div class="confirm-msg" style="font-size:1rem;margin-bottom:14px">Editar Recibo</div>
       <div style="text-align:left;display:flex;flex-direction:column;gap:12px">
         <label style="font-size:0.85rem;font-weight:600;color:#374151">
           Paciente
-          <input type="text" id="editReciboCliente" value="${cliente}" style="width:100%;margin-top:4px;padding:9px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:0.9rem" />
+          <input type="text" id="editReciboCliente" value="${escapeHtml(cliente)}" style="${inputStyle}" />
         </label>
         <label style="font-size:0.85rem;font-weight:600;color:#374151">
           Médico
-          <input type="text" id="editReciboMedico" value="${medico}" style="width:100%;margin-top:4px;padding:9px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:0.9rem" />
+          <select id="editReciboMedico" style="${inputStyle}">
+            <option value="">-- Seleccionar --</option>
+            ${medicoOpts}
+            ${medico && !medicos.find(m=>m.nombre===medico) ? `<option value="${escapeHtml(medico)}" selected>${escapeHtml(medico)}</option>` : ''}
+          </select>
         </label>
         <label style="font-size:0.85rem;font-weight:600;color:#374151">
-          Servicio
-          <input type="text" id="editReciboServicio" value="${servicio}" style="width:100%;margin-top:4px;padding:9px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:0.9rem" />
+          Servicio / Tipo consulta
+          <select id="editReciboServicio" style="${inputStyle}">
+            <option value="">-- Seleccionar --</option>
+            ${servicioOpts}
+            ${servicio && !servicios.find(s=>s.nombre===servicio) ? `<option value="${escapeHtml(servicio)}" selected>${escapeHtml(servicio)}</option>` : ''}
+          </select>
         </label>
         <label style="font-size:0.85rem;font-weight:600;color:#374151">
           Entidad
-          <input type="text" id="editReciboEntidad" value="${entidad}" style="width:100%;margin-top:4px;padding:9px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:0.9rem" />
+          <select id="editReciboEntidad" style="${inputStyle}">
+            <option value="">-- Seleccionar --</option>
+            ${entidadOpts}
+            ${entidad && !entidades.find(e=>e.nombre===entidad) ? `<option value="${escapeHtml(entidad)}" selected>${escapeHtml(entidad)}</option>` : ''}
+          </select>
         </label>
       </div>
       <div class="confirm-actions" style="margin-top:18px">
@@ -7466,9 +7493,9 @@ function showEditReciboModal({ id, medico, servicio, entidad, cliente }) {
   backdrop.querySelector('.btn-ok').addEventListener('click', async () => {
     const data = {
       cliente:        backdrop.querySelector('#editReciboCliente').value.trim(),
-      medico_nombre:  backdrop.querySelector('#editReciboMedico').value.trim(),
-      tipo_servicio:  backdrop.querySelector('#editReciboServicio').value.trim(),
-      nombre_entidad: backdrop.querySelector('#editReciboEntidad').value.trim()
+      medico_nombre:  backdrop.querySelector('#editReciboMedico').value,
+      tipo_servicio:  backdrop.querySelector('#editReciboServicio').value,
+      nombre_entidad: backdrop.querySelector('#editReciboEntidad').value
     };
     try {
       const jr = await apiFetch(`/api/recibos/${id}`, {
