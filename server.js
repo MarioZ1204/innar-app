@@ -508,9 +508,17 @@ app.post('/api/login', async (req, res) => {
     req.session.rol = user.rol;
     const parsedPermisos = (() => { let p = user.permisos; if (typeof p === 'string') { try { p = JSON.parse(p); } catch(_) { p = null; } } return Array.isArray(p) ? p : null; })();
     req.session.permisos = parsedPermisos;
-    res.json({ 
-      ok: true, 
-      usuario: { id: user.id, usuario: user.usuario, nombre: user.nombre, rol: user.rol, especialidad: user.especialidad, permisos: parsedPermisos }
+    
+    // Guardar sesión explícitamente antes de responder para evitar race conditions
+    req.session.save((saveErr) => {
+      if (saveErr) {
+        console.error('Error al guardar sesión:', saveErr);
+        return res.status(500).json({ error: 'Error interno al iniciar sesión' });
+      }
+      res.json({ 
+        ok: true, 
+        usuario: { id: user.id, usuario: user.usuario, nombre: user.nombre, rol: user.rol, especialidad: user.especialidad, permisos: parsedPermisos }
+      });
     });
   } catch (e) {
     console.error(e);
@@ -1092,13 +1100,20 @@ app.get('/api/auditoria/buscar', requireAuth, requireRoleOrPerm(['superadmin', '
 
 // Generar contraseña temporal aleatoria usando crypto seguro
 function generarPasswordTemporal() {
+  const crypto = require('crypto');
   const caracteres = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%';
-  const bytes = require('crypto').randomBytes(12);
+  const bytes = crypto.randomBytes(12);
   let password = '';
   for (let i = 0; i < 12; i++) {
     password += caracteres[bytes[i] % caracteres.length];
   }
   return password;
+}
+
+// Hashear con SHA512 en el servidor (equivale al hashPassword del cliente)
+function hashPasswordSHA512(password) {
+  const crypto = require('crypto');
+  return crypto.createHash('sha512').update(password).digest('hex');
 }
 
 // Reset password de usuario por admin
@@ -1116,7 +1131,8 @@ app.patch('/api/usuarios/:id/reset-password', requireAuth, requireRoleOrPerm(['s
     
     // Generar contraseña temporal
     const passwordTemporal = generarPasswordTemporal();
-    const passwordHash = bcrypt.hashSync(passwordTemporal, 10);
+    // Hashear con SHA512 primero (igual que el cliente) y luego bcrypt
+    const passwordHash = bcrypt.hashSync(hashPasswordSHA512(passwordTemporal), 10);
     
     // Actualizar contraseña
     await db.execute('UPDATE usuarios SET password_hash = ? WHERE id = ?', [passwordHash, id]);
@@ -2109,7 +2125,7 @@ app.patch('/api/turnos/:id', requireAuth, async (req, res) => {
 });
 
 // Actualizar estado del turno específicamente
-app.patch('/api/turnos/:id/estado', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'doctor', 'auxiliar_recepcion'], 'agenda.cambiar_estado'), async (req, res) => {
+app.patch('/api/turnos/:id/estado', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'doctor', 'auxiliar_recepcion', 'admin_electro', 'electro', 'tecnico_electro'], 'agenda.cambiar_estado'), async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const { estado } = req.body || {};
   if (!id || !estado) {
@@ -2266,7 +2282,7 @@ app.get('/api/turnos/get-next-number', requireAuth, async (req, res) => {
   }
 });
 
-app.patch('/api/turnos/:id/numero', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion'], 'agenda.cambiar_estado'), async (req, res) => {
+app.patch('/api/turnos/:id/numero', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro', 'tecnico_electro'], 'agenda.cambiar_estado'), async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const { numero, delta } = req.body || {};
   
@@ -2397,13 +2413,22 @@ app.get('/api/estudios/duracion', async (req, res) => {
       return res.status(400).json({ error: 'nombre del estudio es obligatorio' });
     }
 
-    const estudios = await db.query(
-      'SELECT duracion_minutos, duracion_min, duracion_max FROM estudio_duraciones WHERE nombre = ?',
+    // Búsqueda exacta primero, luego fuzzy con LIKE
+    let estudios = await db.query(
+      'SELECT nombre, duracion_minutos, duracion_min, duracion_max FROM estudio_duraciones WHERE nombre = ?',
       [nombre]
     );
     
     if (!estudios || estudios.length === 0) {
-      return res.status(404).json({ error: 'Estudio no encontrado' });
+      // Fallback: buscar por coincidencia parcial (para nombres del Excel que no coinciden exactamente)
+      estudios = await db.query(
+        'SELECT nombre, duracion_minutos, duracion_min, duracion_max FROM estudio_duraciones WHERE nombre LIKE ? OR ? LIKE CONCAT(\'%\', nombre, \'%\')',
+        [`%${nombre}%`, nombre]
+      );
+    }
+    
+    if (!estudios || estudios.length === 0) {
+      return res.json({ ok: false, error: 'Estudio no encontrado en duraciones' });
     }
     
     const est = estudios[0];
@@ -2972,15 +2997,15 @@ app.post('/api/citas-electro', requireAuth, requireRoleOrPerm(['superadmin', 'ad
         throw new Error('Este paciente ya tiene una cita agendada para esa fecha en Electrodiagnóstico.');
       }
 
-      // VALIDACIÓN DE CAPACIDAD DENTRO DE LA TRANSACCIÓN con SELECT FOR UPDATE
+      // VALIDACIÓN DE CAPACIDAD: contar estudios activos en el momento de inicio
       const overlapCitas = await transactions.selectForUpdate(conn,
         `SELECT COUNT(*) as overlap_count
          FROM citas_electro
          WHERE estado IN ('Programado', 'En Sala', 'En Estudio', 'Pausado')
          AND deleted_at IS NULL
-         AND CONCAT(COALESCE(hora_fin_date, fecha), ' ', hora_fin) >= CONCAT(?, ' ', ?)
-         AND CONCAT(fecha, ' ', hora_agendamiento) <= CONCAT(?, ' ', ?)`,
-        [fecha, horaAgendamiento, finalFechaFin, finalHoraFin]
+         AND CONCAT(fecha, ' ', hora_agendamiento) <= CONCAT(?, ' ', ?)
+         AND CONCAT(COALESCE(hora_fin_date, fecha), ' ', hora_fin) > CONCAT(?, ' ', ?)`,
+        [fecha, horaAgendamiento, fecha, horaAgendamiento]
       );
 
       const overlapCount = overlapCitas[0]?.overlap_count || 0;
@@ -2991,9 +3016,10 @@ app.post('/api/citas-electro', requireAuth, requireRoleOrPerm(['superadmin', 'ad
       }
 
       // INSERTAR DENTRO DE LA TRANSACCIÓN
+      const duracionMinutosDB = duracion ? parseInt(duracion, 10) : null;
       const insertResult = await conn.execute(`
-        INSERT INTO citas_electro (equipo_id, paciente_id, fecha, hora_agendamiento, hora_inicio, hora_fin, hora_fin_date, estudio, observaciones, diagnostico_id, estado, programado_por_nombre)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO citas_electro (equipo_id, paciente_id, fecha, hora_agendamiento, hora_inicio, hora_fin, hora_fin_date, estudio, observaciones, diagnostico_id, estado, programado_por_nombre, duracion_minutos)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `, [
         equipo_id || null,
         paciente_id,
@@ -3006,7 +3032,8 @@ app.post('/api/citas-electro', requireAuth, requireRoleOrPerm(['superadmin', 'ad
         observaciones || null,
         diagnostico_id || null,
         estado || 'Programado',
-        programado_por_nombre || 'Sistema'
+        programado_por_nombre || 'Sistema',
+        duracionMinutosDB
       ]);
 
       return {
@@ -3225,17 +3252,21 @@ app.patch('/api/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin'
 
       // ============ VALIDAR CAPACIDAD AL CAMBIAR A "En Estudio" ============
       if (esInicioEstudio) {
-        // Contar CUPOS OCUPADOS por otras citas que se solapan
-        // Incluir: Programado, En Sala, En Estudio (NO Completado porque libera el cupo)
+        // Usar los valores NUEVOS si vienen en el request, sino los actuales de la BD
+        const checkHoraInicio = hora_agendamiento || (typeof citaActual.hora_agendamiento === 'string' ? citaActual.hora_agendamiento : String(citaActual.hora_agendamiento));
+        const checkFecha = fecha || (typeof citaActual.fecha === 'string' && citaActual.fecha.length <= 10 ? citaActual.fecha : new Date(citaActual.fecha).toISOString().slice(0, 10));
+        
+        // Validar capacidad: contar cuántos estudios están activos EN EL MOMENTO de inicio
+        // (es decir, estudios que empezaron antes y no han terminado cuando este inicia)
         const overlapCitas = await db.query(`
           SELECT COUNT(*) as overlap_count
           FROM citas_electro
           WHERE id != ?
           AND estado IN ('Programado', 'En Sala', 'En Estudio', 'Pausado')
           AND deleted_at IS NULL
-          AND CONCAT(COALESCE(hora_fin_date, fecha), ' ', hora_fin) >= CONCAT(?, ' ', ?)
-          AND CONCAT(fecha, ' ', hora_agendamiento) <= CONCAT(COALESCE(?, ?), ' ', ?)
-        `, [id, citaActual.fecha, citaActual.hora_agendamiento, citaActual.hora_fin_date, citaActual.fecha, citaActual.hora_fin]);
+          AND CONCAT(fecha, ' ', hora_agendamiento) <= CONCAT(?, ' ', ?)
+          AND CONCAT(COALESCE(hora_fin_date, fecha), ' ', hora_fin) > CONCAT(?, ' ', ?)
+        `, [id, checkFecha, checkHoraInicio, checkFecha, checkHoraInicio]);
 
         const overlapCount = overlapCitas[0]?.overlap_count || 0;
 
@@ -3271,29 +3302,38 @@ app.patch('/api/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin'
     if (hora_fin !== undefined) {
       updates.push('hora_fin = ?');
       values.push(hora_fin);
-      
-      // Calcular hora_fin_date si se está actualizando hora_fin
-      // hora_fin_date debe estar set si el estudio cruza a otro día
-      const horaInicio = hora_inicio || citaActual.hora_inicio;
+    }
+    
+    // hora_fin_date: usar el valor explícito del cliente si viene, sino calcular
+    if (req.body.hora_fin_date !== undefined) {
+      updates.push('hora_fin_date = ?');
+      values.push(req.body.hora_fin_date);
+    } else if (hora_fin !== undefined) {
+      // Calcular hora_fin_date basado en duración si está disponible
+      const horaInicio = hora_inicio || citaActual.hora_inicio || citaActual.hora_agendamiento;
       const fechaEstudio = fecha || citaActual.fecha;
+      const durMin = duracion_minutos || citaActual.duracion_minutos;
       
-      if (horaInicio && fechaEstudio) {
-        // Comparar hora_fin con hora_inicio
-        // Si hora_fin < hora_inicio, significa que cruza medianoche
-        const [hiI, miI] = horaInicio.split(':').map(Number);
+      if (durMin && horaInicio && fechaEstudio) {
+        // Usar duración para calcular fecha de fin correctamente (multi-día)
+        const fechaStr = typeof fechaEstudio === 'string' ? fechaEstudio : new Date(fechaEstudio).toISOString().slice(0, 10);
+        const horaStr = typeof horaInicio === 'string' ? horaInicio : String(horaInicio);
+        const [hhS, mmS] = horaStr.split(':').map(Number);
+        const startDate = new Date(`${fechaStr}T${String(hhS).padStart(2,'0')}:${String(mmS).padStart(2,'0')}:00`);
+        startDate.setMinutes(startDate.getMinutes() + parseInt(durMin, 10));
+        const horaFinDate = startDate.toISOString().slice(0, 10);
+        updates.push('hora_fin_date = ?');
+        values.push(horaFinDate);
+      } else {
+        // Fallback: comparar hora simple
+        const [hiI, miI] = (horaInicio || '00:00').split(':').map(Number);
         const [hiF, miF] = hora_fin.split(':').map(Number);
-        const minutosInicio = hiI * 60 + miI;
-        const minutosFin = hiF * 60 + miF;
-        
-        if (minutosFin < minutosInicio) {
-          // Cruza medianoche, calcular fecha del día siguiente
-          const fechaObj = new Date(fechaEstudio);
+        if (hiF * 60 + miF < hiI * 60 + miI) {
+          const fechaObj = new Date(fechaEstudio || citaActual.fecha);
           fechaObj.setDate(fechaObj.getDate() + 1);
-          const horaFinDate = fechaObj.toISOString().split('T')[0];
           updates.push('hora_fin_date = ?');
-          values.push(horaFinDate);
+          values.push(fechaObj.toISOString().split('T')[0]);
         } else {
-          // No cruza medianoche, hora_fin_date es NULL
           updates.push('hora_fin_date = NULL');
         }
       }

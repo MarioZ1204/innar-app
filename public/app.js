@@ -99,7 +99,8 @@ let globalHayEnAtencion = false;
 // Fetch con credenciales para sesión
 function apiFetch(url, opts = {}) {
   return fetch(url, { ...opts, credentials: 'include' }).then(res => {
-    if (res.status === 401) {
+    // No mostrar banner de sesión expirada en endpoints de autenticación
+    if (res.status === 401 && !url.includes('/api/login')) {
       showSessionExpiredBanner();
     }
     if (res.status === 429) {
@@ -250,6 +251,11 @@ async function doLogin(usuario, password) {
     const data = await res.json();
     if (data.ok) {
       currentUser = data.usuario;
+      // Limpiar cualquier flag de sesión expirada residual
+      sessionStorage.removeItem('session_expired');
+      _sessionBannerShown = false;
+      const expiredToast = document.getElementById('session-expired-toast');
+      if (expiredToast) expiredToast.remove();
       $('loginError').classList.add('hidden');
       $('loginErrorText').textContent = '';
       $('loginErrorRetry').textContent = '';
@@ -325,7 +331,7 @@ function goToModule(moduleId) {
   window.currentModule = moduleId;  // Exponer para sockets
   sessionStorage.setItem(lsKeyCurrentModule, moduleId);
   history.pushState({view: moduleId}, '', `#${moduleId}`);
-  if (moduleId === 'recibos') { if (!initRecibosDone) initRecibos(); else cargarLista(); }
+  if (moduleId === 'recibos') { if (!initRecibosDone) initRecibos(); else cargarLista(_recibosLastParams || ''); }
   if (moduleId === 'agenda-medica') { 
     if (!initAgendaDone) initAgendaMedica(); 
     initAgendaDone = true; 
@@ -456,7 +462,7 @@ function setupMenuHandlers() {
       document.querySelectorAll('#view-recibos .page').forEach(p => p.classList.remove('active'));
       const pg = document.getElementById(`page-${page}`);
       if (pg) pg.classList.add('active');
-      if (page === 'recibos') { cargarLista(); cargarFiltrosUsuarios(); if ($('resetAll')) $('resetAll').style.display = canDeleteRecibos() ? 'inline-block' : 'none'; }
+      if (page === 'recibos') { cargarLista(_recibosLastParams || ''); cargarFiltrosUsuarios(); if ($('resetAll')) $('resetAll').style.display = canDeleteRecibos() ? 'inline-block' : 'none'; }
       if (page === 'servicios') renderServiciosList();
     });
   });
@@ -524,6 +530,27 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
+// Abreviar nombres largos de estudios para la tabla
+function abreviarEstudio(nombre) {
+  if (!nombre) return '-';
+  const abreviaturas = {
+    'Monitorización Electroencefalografica por Video y Radio': 'Monit. EEG Video',
+    'POLISOMNOGRAFIA': 'PSG',
+    'PSG Básica': 'PSG Básica',
+    'PSG CPAP': 'PSG CPAP',
+    'POLISOMNOGRAFIA CPAP': 'PSG CPAP',
+    'VTM': 'VTM',
+  };
+  // Coincidencia exacta
+  if (abreviaturas[nombre]) return abreviaturas[nombre];
+  // Coincidencia parcial (inicio)
+  for (const [key, val] of Object.entries(abreviaturas)) {
+    if (nombre.toUpperCase().startsWith(key.toUpperCase())) return val;
+  }
+  // Si es muy largo, truncar
+  return nombre.length > 22 ? nombre.substring(0, 20) + '…' : nombre;
+}
+
 // Genera un badge de color según el estado de la cita electro
 function estadoBadge(estado) {
   const map = {
@@ -539,7 +566,7 @@ function estadoBadge(estado) {
   };
   const e = estado || 'Programado';
   const s = map[e] || { bg: '#f3f4f6', color: '#374151', border: '#d1d5db' };
-  return `<span style="display:inline-block;padding:3px 10px;border-radius:12px;font-size:0.78rem;font-weight:600;background:${s.bg};color:${s.color};border:1px solid ${s.border};white-space:nowrap">${escapeHtml(e)}</span>`;
+  return `<span style="display:inline-block;padding:5px 14px;border-radius:14px;font-size:0.85rem;font-weight:700;background:${s.bg};color:${s.color};border:1px solid ${s.border};white-space:nowrap;letter-spacing:0.01em">${escapeHtml(e)}</span>`;
 }
 
 /**
@@ -1171,6 +1198,7 @@ function showSessionExpiredBanner() {
   toast.querySelector('.session-expired-toast-close').addEventListener('click', () => {
     toast.remove();
     _sessionBannerShown = false;
+    sessionStorage.removeItem('session_expired');
   });
 }
 
@@ -1225,8 +1253,58 @@ function clearFieldError(input) {
   if (span && span.classList.contains('field-error-msg')) span.remove();
 }
 
+let _loginFormSetup = false;
+function setupLoginForm() {
+  if (_loginFormSetup) return;
+  _loginFormSetup = true;
+
+  const passwordInput = $('loginPassword');
+  const toggleBtn = $('togglePassword');
+  const capsWarning = $('capsLockWarning');
+
+  // Toggle mostrar/ocultar contraseña
+  if (toggleBtn) {
+    toggleBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const type = passwordInput.type === 'password' ? 'text' : 'password';
+      passwordInput.type = type;
+    });
+  }
+
+  // Detector de Caps Lock (tiempo real)
+  if (passwordInput && capsWarning) {
+    const checkCapsLock = (e) => {
+      if (e.type.includes('key')) {
+        try {
+          const isCapsLockOn = e.getModifierState('CapsLock');
+          capsWarning.style.display = isCapsLockOn ? 'block' : 'none';
+        } catch (err) {
+          capsWarning.style.display = 'none';
+        }
+      }
+    };
+    passwordInput.addEventListener('keydown', checkCapsLock);
+    passwordInput.addEventListener('keyup', checkCapsLock);
+  }
+
+  // Login form submit
+  $('formLogin').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const usuario = $('loginUsuario').value.trim();
+    const password = $('loginPassword').value;
+    if (!usuario || !password) return;
+    $('btnLogin').disabled = true;
+    await doLogin(usuario, password);
+    $('btnLogin').disabled = false;
+  });
+}
+
 // init
 document.addEventListener('DOMContentLoaded', async ()=>{
+  // SIEMPRE registrar el handler del formulario de login (antes de cualquier return)
+  setupLoginForm();
+  
   // Si la página se refresca con sesión expirada pendiente, hacer logout en servidor
   if (sessionStorage.getItem('session_expired')) {
     sessionStorage.removeItem('session_expired');
@@ -1237,51 +1315,6 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   // Verificar sesión al cargar
   const autenticado = await checkSession();
   if (!autenticado) {
-    // Setup login form
-    const passwordInput = $('loginPassword');
-    const toggleBtn = $('togglePassword');
-    const capsWarning = $('capsLockWarning');
-    
-    // Toggle mostrar/ocultar contraseña
-    if (toggleBtn) {
-      toggleBtn.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        const type = passwordInput.type === 'password' ? 'text' : 'password';
-        passwordInput.type = type;
-        // El emoji 👁 es el mismo para ambos estados - visualmente claro
-      });
-    }
-    
-    // Detector de Caps Lock (tiempo real)
-    if (passwordInput && capsWarning) {
-      const checkCapsLock = (e) => {
-        // Solo verificar CapsLock en desktop (getModifierState no funciona bien en móviles)
-        if (e.type.includes('key')) {
-          try {
-            const isCapsLockOn = e.getModifierState('CapsLock');
-            capsWarning.style.display = isCapsLockOn ? 'block' : 'none';
-          } catch (err) {
-            capsWarning.style.display = 'none';
-          }
-        }
-      };
-      
-      // Escuchar keydown y keyup (mejor compatibilidad en móviles que keypress)
-      passwordInput.addEventListener('keydown', checkCapsLock);
-      passwordInput.addEventListener('keyup', checkCapsLock);
-    }
-    
-    // Login form submit
-    $('formLogin').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const usuario = $('loginUsuario').value.trim();
-      const password = $('loginPassword').value;
-      if (!usuario || !password) return;
-      $('btnLogin').disabled = true;
-      await doLogin(usuario, password);
-      $('btnLogin').disabled = false;
-    });
     return;
   }
 
@@ -1559,6 +1592,12 @@ function initRecibos() {
   if ($('btnExportarCSV')) $('btnExportarCSV').onclick = exportarReciboCSV;
   if ($('btnExportarPDF')) $('btnExportarPDF').onclick = exportarReciboPDF;
 
+  // Auto-aplicar filtros al cambiar cualquier select o fecha
+  ['filtroFechaDesde', 'filtroFechaHasta', 'filtroTipoPago', 'filtroMedico', 'filtroEntidad', 'filtroEstudio', 'filtroGeneradoPor'].forEach(id => {
+    const el = $(id);
+    if (el) el.addEventListener('change', () => aplicarFiltrosRecibos());
+  });
+
   // Servicios
   const addServ = document.getElementById('addServicio');
   if (addServ) addServ.addEventListener('click', async () => {
@@ -1713,7 +1752,9 @@ async function cargarFiltrosMedicos() {
   const sel = $('filtroMedico');
   if (!sel) return;
   try {
-    const medicos = await apiFetch('/api/medicos').then(r => r.json()).catch(() => []);
+    const res = await apiFetch('/api/medicos');
+    const medicos = res.ok ? await res.json() : [];
+    if (!Array.isArray(medicos)) { console.warn('[cargarFiltrosMedicos] Respuesta no es array'); return; }
     sel.innerHTML = '<option value="">Todos los médicos</option>';
     medicos.forEach(m => {
       const opt = document.createElement('option');
@@ -1729,7 +1770,9 @@ async function cargarFiltrosUsuarios() {
   const sel = $('filtroGeneradoPor');
   if (!sel) return;
   try {
-    const generadores = await apiFetch('/api/recibos/generadores').then(r => r.json()).catch(() => []);
+    const res = await apiFetch('/api/recibos/generadores');
+    const generadores = res.ok ? await res.json() : [];
+    if (!Array.isArray(generadores)) { console.warn('[cargarFiltrosUsuarios] Respuesta no es array'); return; }
     sel.innerHTML = '<option value="">Todos</option>';
     generadores.forEach(u => {
       const opt = document.createElement('option');
@@ -1743,11 +1786,12 @@ async function cargarFiltrosUsuarios() {
 // ---- Cargar entidades y tipos de servicio/estudio usados en recibos ----
 async function cargarFiltrosOpciones() {
   try {
-    const data = await apiFetch('/api/recibos/opciones').then(r => r.json()).catch(() => ({ entidades: [], estudios: [] }));
+    const res = await apiFetch('/api/recibos/opciones');
+    const data = res.ok ? await res.json() : { entidades: [], estudios: [] };
     const selEnt = $('filtroEntidad');
     if (selEnt) {
       selEnt.innerHTML = '<option value="">Todas</option>';
-      (data.entidades || []).forEach(v => {
+      (Array.isArray(data.entidades) ? data.entidades : []).forEach(v => {
         const opt = document.createElement('option');
         opt.value = v; opt.textContent = v;
         selEnt.appendChild(opt);
@@ -1756,7 +1800,7 @@ async function cargarFiltrosOpciones() {
     const selEstudio = $('filtroEstudio');
     if (selEstudio) {
       selEstudio.innerHTML = '<option value="">Todos</option>';
-      (data.estudios || []).forEach(v => {
+      (Array.isArray(data.estudios) ? data.estudios : []).forEach(v => {
         const opt = document.createElement('option');
         opt.value = v; opt.textContent = v;
         selEstudio.appendChild(opt);
@@ -1897,7 +1941,19 @@ function generarTabsElectro(estudios) {
   const container = $('tabsElectroContainer');
   if (!container) return;
   // Mantener solo el botón "Todas"
-  container.innerHTML = '<button class="tab-electro-btn active" data-estudio="todas">Todas</button>';
+  container.innerHTML = '';
+  // Botón "Todas" con su listener
+  const btnTodas = document.createElement('button');
+  btnTodas.className = 'tab-electro-btn active';
+  btnTodas.dataset.estudio = 'todas';
+  btnTodas.textContent = 'Todas';
+  btnTodas.addEventListener('click', (e) => {
+    filtroEstudioElectro = 'todas';
+    container.querySelectorAll('.tab-electro-btn').forEach(b => b.classList.remove('active'));
+    e.target.classList.add('active');
+    cargarCitasElectro();
+  });
+  container.appendChild(btnTodas);
   // Etiquetas cortas para tabs
   const labelCorto = (nombre) => {
     if (!nombre) return nombre;
@@ -3238,7 +3294,8 @@ function renderTurnoRowMedica(tbody, t, animateTargetId, hayEnAtencion) {
   }
   const tr = document.createElement('tr');
   tr.className = 'turno-row';
-  tr.style.cursor = tienePermiso('agenda.ver') ? 'pointer' : 'default';
+  const puedeVerDetalle = tienePermiso('agenda.ver') || tienePermiso('agenda.cambiar_estado') || tienePermiso('agenda.editar');
+  tr.style.cursor = puedeVerDetalle ? 'pointer' : 'default';
 
   if (t.id) {
     tr.setAttribute('data-turno-id', t.id);
@@ -3321,7 +3378,7 @@ function renderTurnoRowMedica(tbody, t, animateTargetId, hayEnAtencion) {
       `;
     }
   // Abrir modal al hacer clic en la fila
-  if (tienePermiso('agenda.ver')) {
+  if (puedeVerDetalle) {
     tr.addEventListener('click', (e) => {
       // No activar si hace clic en botones
       if (e.target.closest('button') || e.target.closest('[data-delete]') || e.target.closest('[data-edit]') || e.target.closest('[data-up]') || e.target.closest('[data-down]')) {
@@ -4044,11 +4101,61 @@ async function procesarExcelPacientesElectro(file) {
 
   // 1. Cargar tipos de estudio para el dropdown
   let opcionesEstudio = [];
+  // Cache de info de duración por estudio { [nombre]: { esVariable, duracion_minutos, duracion_min, duracion_max } }
+  if (!window._duracionCacheElectro) window._duracionCacheElectro = {};
+  const _duracionCache = window._duracionCacheElectro;
   try {
     const res = await apiFetch('/api/estudios/lista');
     const d = await res.json();
     opcionesEstudio = (Array.isArray(d) ? d : (d.registros || d.estudios || [])).map(e => e.nombre || e);
   } catch (_) {}
+
+  // Precargar duración de todos los estudios
+  async function obtenerDuracionEstudio(nombre) {
+    if (_duracionCache[nombre]) return _duracionCache[nombre];
+    try {
+      const res = await apiFetch(`/api/estudios/duracion?nombre=${encodeURIComponent(nombre)}`);
+      const data = await res.json();
+      if (data.ok) { _duracionCache[nombre] = data; return data; }
+    } catch (_) {}
+    return null;
+  }
+
+  function crearCeldaDuracion(estudio, rowIdx) {
+    // Se llena dinámicamente después — inicializar vacío
+    return `<td class="cell-duracion-${rowIdx}" style="min-width:80px"><span style="color:#6b7280;font-size:0.8rem">—</span></td>`;
+  }
+
+  async function actualizarCeldaDuracion(rowIdx) {
+    const allData = window._cargarPacientesElectroData;
+    if (!allData || !allData[rowIdx]) return;
+    const p = allData[rowIdx];
+    const cell = document.querySelector(`.cell-duracion-${rowIdx}`);
+    if (!cell) return;
+
+    if (!p.estudio) {
+      cell.innerHTML = '<span style="color:#6b7280;font-size:0.8rem">—</span>';
+      p.duracion_horas = null;
+      return;
+    }
+
+    const info = await obtenerDuracionEstudio(p.estudio);
+    if (!info) {
+      cell.innerHTML = '<span style="color:#6b7280;font-size:0.8rem">—</span>';
+      p.duracion_horas = null;
+      return;
+    }
+
+    if (info.esVariable) {
+      const minH = Math.max(1, Math.round(info.duracion_min / 60));
+      const maxH = Math.round(info.duracion_max / 60);
+      cell.innerHTML = `<input type="number" data-row="${rowIdx}" data-campo="duracion" min="${minH}" max="${maxH}" step="0.5" placeholder="${minH}-${maxH}h" style="width:70px;padding:4px 6px;border:1px solid #d1d5db;border-radius:6px;font-size:0.82rem" value="${p.duracion_horas || ''}">`;
+    } else {
+      const horas = info.duracion_minutos ? (info.duracion_minutos / 60) : null;
+      p.duracion_horas = horas;
+      cell.innerHTML = horas ? `<span style="font-size:0.82rem;color:#374151">${horas}h</span>` : '<span style="color:#6b7280;font-size:0.8rem">—</span>';
+    }
+  }
 
   function crearSelectEstudio(valorActual, rowIdx) {
     if (!opcionesEstudio.length) return escapeHtml(valorActual);
@@ -4083,6 +4190,10 @@ async function procesarExcelPacientesElectro(file) {
     cell.innerHTML = '<span style="color:#6b7280;font-size:0.8rem">⏳</span>';
     try {
       const params = new URLSearchParams({ fecha: p.fecha, hora: parseHora12a24(p.hora), estudio: p.estudio });
+      // Si el estudio tiene duración variable, pasar la duración manual en minutos
+      if (p.duracion_horas) {
+        params.set('duracion_manual', Math.round(parseFloat(p.duracion_horas) * 60));
+      }
       const res  = await apiFetch(`/api/equipos-electro/disponibilidad?${params}`);
       const info = await res.json();
       const cap  = info.capacidad || {};
@@ -4142,30 +4253,52 @@ async function procesarExcelPacientesElectro(file) {
         const tel2       = colTel2   ? String(row[colTel2]    || '').replace(/\D/g, '') : '';
         if (!fecha || !hora || !documento || !nombres) continue;
 
-        parsed.push({ fecha, hora, documento, nombres, apellidos, estudio, diagnostico, diagnostico_id: null, tel1, tel2, _equipoOk: null });
+        parsed.push({ fecha, hora, documento, nombres, apellidos, estudio, diagnostico, diagnostico_id: null, tel1, tel2, _equipoOk: null, duracion_horas: null });
         const idx = parsed.length - 1;
         const tr  = document.createElement('tr');
         tr.dataset.rowIdx = idx;
-        tr.innerHTML = `<td>${escapeHtml(fecha)}</td><td>${escapeHtml(hora)}</td><td>${escapeHtml(documento)}</td><td>${escapeHtml(nombres)}</td><td>${escapeHtml(apellidos)}</td><td>${crearSelectEstudio(estudio, idx)}</td><td>${crearInputDiagnostico(diagnostico, idx)}</td><td>${escapeHtml(tel1)}</td><td>${escapeHtml(tel2)}</td><td class="cell-disp-${idx}"><span style="color:#6b7280;font-size:0.8rem">—</span></td>`;
+        tr.innerHTML = `<td>${escapeHtml(fecha)}</td><td>${escapeHtml(hora)}</td><td>${escapeHtml(documento)}</td><td>${escapeHtml(nombres)}</td><td>${escapeHtml(apellidos)}</td><td>${crearSelectEstudio(estudio, idx)}</td>${crearCeldaDuracion(estudio, idx)}<td>${crearInputDiagnostico(diagnostico, idx)}</td><td>${escapeHtml(tel1)}</td><td>${escapeHtml(tel2)}</td><td class="cell-disp-${idx}"><span style="color:#6b7280;font-size:0.8rem">—</span></td>`;
         tbody.appendChild(tr);
       }
 
       // Actualizar parsed + revalidar al cambiar dropdown
       tbody.addEventListener('change', async function(ev2) {
         const sel = ev2.target;
-        if (sel.tagName !== 'SELECT' || sel.dataset.campo !== 'estudio') return;
-        const ri = parseInt(sel.dataset.row, 10);
-        if (!isNaN(ri) && window._cargarPacientesElectroData?.[ri]) {
-          window._cargarPacientesElectroData[ri].estudio = sel.value;
-          await validarDisponibilidadFila(ri);
+        if (sel.tagName === 'SELECT' && sel.dataset.campo === 'estudio') {
+          const ri = parseInt(sel.dataset.row, 10);
+          if (!isNaN(ri) && window._cargarPacientesElectroData?.[ri]) {
+            window._cargarPacientesElectroData[ri].estudio = sel.value;
+            window._cargarPacientesElectroData[ri].duracion_horas = null;
+            await actualizarCeldaDuracion(ri);
+            await validarDisponibilidadFila(ri);
+          }
         }
       });
 
       // Buscador de diagnósticos con debounce
       let _diagTimer = null;
+      let _duracionTimer = null;
       tbody.addEventListener('input', function(ev2) {
         const inp = ev2.target;
-        if (inp.tagName !== 'INPUT' || inp.dataset.campo !== 'diagnostico') return;
+        if (inp.tagName !== 'INPUT') return;
+        
+        // Handler para campo de duración
+        if (inp.dataset.campo === 'duracion') {
+          const ri = parseInt(inp.dataset.row, 10);
+          if (isNaN(ri)) return;
+          if (window._cargarPacientesElectroData?.[ri]) {
+            const val = parseFloat(inp.value);
+            window._cargarPacientesElectroData[ri].duracion_horas = isNaN(val) ? null : val;
+          }
+          // Revalidar disponibilidad con debounce
+          clearTimeout(_duracionTimer);
+          _duracionTimer = setTimeout(async () => {
+            await validarDisponibilidadFila(ri);
+          }, 500);
+          return;
+        }
+        
+        if (inp.dataset.campo !== 'diagnostico') return;
         const ri = parseInt(inp.dataset.row, 10);
         if (isNaN(ri)) return;
         if (window._cargarPacientesElectroData?.[ri]) {
@@ -4249,6 +4382,9 @@ async function procesarExcelPacientesElectro(file) {
         } catch (_) {}
       }));
 
+      // 2.5. Actualizar celdas de duración (muestra input para estudios variables)
+      await Promise.all(parsed.map((_, ri) => actualizarCeldaDuracion(ri)));
+
       // 3. Validar disponibilidad de equipos en paralelo
       await Promise.all(parsed.map((_, ri) => validarDisponibilidadFila(ri)));
 
@@ -4272,6 +4408,14 @@ async function confirmarCargarPacientesElectro() {
   let ok = 0, errores = [];
   for (let i = 0; i < data.length; i++) {
     const p = data[i];
+    
+    // Validar duración requerida para estudios variables
+    const durInfo = window._duracionCacheElectro?.[p.estudio];
+    if (durInfo && durInfo.esVariable && !p.duracion_horas) {
+      errores.push(`Fila ${i+1}: Duración requerida para "${p.estudio}"`);
+      continue;
+    }
+    
     try {
       const nombre = [p.nombres, p.apellidos].filter(Boolean).join(' ');
       // Crear paciente primero
@@ -4279,6 +4423,14 @@ async function confirmarCargarPacientesElectro() {
       const dataP = await resP.json();
       if (!dataP.ok && !dataP.id) { errores.push(`Fila ${i+1}: Error creando paciente`); continue; }
       const pacienteId = dataP.id;
+
+      // Calcular duración en minutos
+      let duracionMinutos = null;
+      if (p.duracion_horas) {
+        duracionMinutos = Math.round(parseFloat(p.duracion_horas) * 60);
+      } else if (durInfo && durInfo.duracion_minutos) {
+        duracionMinutos = durInfo.duracion_minutos;
+      }
 
       const body = {
         paciente_id: pacienteId,
@@ -4291,6 +4443,7 @@ async function confirmarCargarPacientesElectro() {
         estado: 'Programado',
         programado_por_nombre: (currentUser ? (currentUser.nombre || currentUser.usuario) : 'Excel')
       };
+      if (duracionMinutos) body.duracion = duracionMinutos;
 
       const res = await apiFetch('/api/citas-electro', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       const result = await res.json();
@@ -4998,14 +5151,17 @@ async function cargarCitasElectro() {
     if (citasFiltradas.length === 0) {
       const tbody = $('citasElectroBody');
       const mensajeEstudio = filtroEstudioElectro === 'todas' ? '' : ` para ${filtroEstudioElectro}`;
-      tbody.innerHTML = `<tr><td colspan="10"><div class="empty-state"><div class="empty-state-icon">📅</div><p class="empty-state-title">Sin citas</p><p class="empty-state-subtitle">No hay citas registradas para esta fecha${mensajeEstudio}</p></div></td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="11"><div class="empty-state"><div class="empty-state-icon">📅</div><p class="empty-state-title">Sin citas</p><p class="empty-state-subtitle">No hay citas registradas para esta fecha${mensajeEstudio}</p></div></td></tr>`;
       const contador = $('citasElectroContador');
       if (contador) contador.textContent = '';
-      // Actualizar información de usuario
       $('electroUsuarioProgramo').textContent = '-';
       $('electroUsuarioEdito').textContent = '-';
+      actualizarStatsElectro(citas);
       return;
     }
+
+    // Actualizar stats cards (siempre con TODAS las citas, no filtradas)
+    actualizarStatsElectro(citas);
 
     // Actualizar contador de citas
     const contador = $('citasElectroContador');
@@ -5040,28 +5196,77 @@ async function cargarCitasElectro() {
   }
 }
 
+function actualizarStatsElectro(citas) {
+  const total = citas.length;
+  const enEstudio = citas.filter(c => c.estado === 'En Estudio' || c.estado === 'Pausado').length;
+  const completados = citas.filter(c => c.estado === 'Completado').length;
+  const pendientes = citas.filter(c => c.estado === 'Programado' || c.estado === 'En Sala' || c.estado === 'Reprogramado' || c.estado === 'Adelantado').length;
+  
+  const elTotal = $('statTotalCitas');
+  const elEstudio = $('statEnEstudio');
+  const elComp = $('statCompletados');
+  const elPend = $('statPendientes');
+  if (elTotal) elTotal.textContent = total;
+  if (elEstudio) elEstudio.textContent = enEstudio;
+  if (elComp) elComp.textContent = completados;
+  if (elPend) elPend.textContent = pendientes;
+}
+
 function renderCitaElectroRow(tbody, c) {
   const tr = document.createElement('tr');
   tr.className = 'turno-row';
   tr.style.cursor = 'pointer';
   
-  const equipoDisplay = c.equipo_nombre || c.equipo_id ? `${c.equipo_nombre || 'Equipo'} (ID: ${c.equipo_id})` : '-';
+  const equipoDisplay = c.equipo_nombre ? escapeHtml(c.equipo_nombre) : (c.equipo_id ? `Equipo ${c.equipo_id}` : '<span style="color:#9ca3af">—</span>');
   
   // Mostrar hora_fin con fecha SOLO si cruza medianoche
   let horaFinDisplay = formatearHora(c.hora_fin);
   if (c.hora_fin_date && c.hora_fin_date !== c.fecha) {
     const fechaFormateada = formatearFechaISO(c.hora_fin_date);
-    horaFinDisplay = `${formatearHora(c.hora_fin)} <span style="color:#dc2626;font-weight:600;">(${fechaFormateada})</span>`;
+    horaFinDisplay = `${formatearHora(c.hora_fin)} <span style="color:#dc2626;font-size:0.72rem;font-weight:600;">(${fechaFormateada})</span>`;
   }
   
+  // Formatear duración
+  let duracionDisplay = '<span style="color:#9ca3af">—</span>';
+  if (c.duracion_minutos) {
+    const dHrs = Math.floor(c.duracion_minutos / 60);
+    const dMin = c.duracion_minutos % 60;
+    if (dHrs >= 24) {
+      const dias = Math.floor(dHrs / 24);
+      const hResto = dHrs % 24;
+      duracionDisplay = `<span class="electro-dur-badge multi-day">${dias}d ${hResto}h</span>`;
+    } else if (dHrs > 0 && dMin > 0) {
+      duracionDisplay = `<span class="electro-dur-badge">${dHrs}h ${dMin}m</span>`;
+    } else if (dHrs > 0) {
+      duracionDisplay = `<span class="electro-dur-badge">${dHrs}h</span>`;
+    } else {
+      duracionDisplay = `<span class="electro-dur-badge">${dMin}m</span>`;
+    }
+  }
+  
+  // Colorear fila según estado
+  const estadoClasses = {
+    'En Sala': 'estado-en-sala',
+    'En Estudio': 'estado-en-estudio',
+    'Pausado': 'estado-pausado',
+    'Completado': 'estado-completado',
+    'Cancelado': 'estado-cancelado',
+    'No Asistió': 'estado-no-asistio'
+  };
+  if (estadoClasses[c.estado]) tr.classList.add(estadoClasses[c.estado]);
+  
+  // Abreviar nombre del estudio para la tabla
+  const estudioCorto = abreviarEstudio(c.estudio);
+
   tr.innerHTML = `
-    <td>${formatearHora(c.hora_agendamiento)}</td>
+    <td><strong>${formatearHora(c.hora_agendamiento)}</strong></td>
     <td class="col-mobile-hide">${formatearHora(c.hora_inicio)}</td>
-    <td class="col-mobile-hide">${escapeHtml(equipoDisplay)}</td>
-    <td>${escapeHtml(c.paciente_nombre || '-')}</td>
+    <td class="col-mobile-hide">${equipoDisplay}</td>
+    <td><span class="electro-paciente-cell">${escapeHtml(c.paciente_nombre || '-')}</span></td>
     <td>${escapeHtml(c.paciente_documento || '-')}</td>
     <td class="col-mobile-hide">${escapeHtml(c.telefono || '-')}</td>
-    <td>${escapeHtml(c.estudio || '-')}</td>
+    <td><span title="${escapeHtml(c.estudio || '')}">${escapeHtml(estudioCorto)}</span></td>
+    <td class="col-mobile-hide">${duracionDisplay}</td>
     <td class="col-mobile-hide">${escapeHtml(c.diagnostico_codigo || '-')}</td>
     <td>${estadoBadge(c.estado || 'Programado')}</td>
     <td class="col-mobile-hide">${horaFinDisplay}</td>
@@ -5069,9 +5274,8 @@ function renderCitaElectroRow(tbody, c) {
   
   // Hacer la fila clickeable para abrir modal
   tr.addEventListener('click', (e) => {
-    if (!tienePermiso('electro.editar') && !tienePermiso('electro.cambiar_estado')) return; // Sin permiso para editar detalles
+    if (!tienePermiso('electro.editar') && !tienePermiso('electro.cambiar_estado')) return;
     if (c.estado === 'Completado') {
-      // Permitir click si tiene permiso de eliminar
       if (!tienePermiso('electro.eliminar')) {
         showToast('Esta cita ya está completada - No se puede modificar', 'info');
         return;
@@ -5082,9 +5286,7 @@ function renderCitaElectroRow(tbody, c) {
   
   // Cambiar apariencia visual si está completado
   if (c.estado === 'Completado') {
-    tr.style.opacity = '0.6';
-    tr.style.backgroundColor = '#f0fdf4';
-    // Cursor normal si puede eliminar, not-allowed para otros
+    tr.style.opacity = '0.55';
     tr.style.cursor = tienePermiso('electro.eliminar') ? 'pointer' : 'not-allowed';
   }
   
@@ -6999,30 +7201,39 @@ async function abrirPDF(){
 let _recibosLastParams = '';
 
 async function aplicarFiltrosRecibos() {
-  const desde       = $('filtroFechaDesde')?.value     || '';
-  const hasta       = $('filtroFechaHasta')?.value     || '';
-  const tipoPago    = $('filtroTipoPago')?.value       || '';
-  const medicoId    = $('filtroMedico')?.value         || '';
-  const genPor      = $('filtroGeneradoPor')?.value    || '';
-  const entidad     = $('filtroEntidad')?.value        || '';
-  const tipoConsulta= $('filtroTipoConsulta')?.value   || '';
-  const tipoEstudio = $('filtroEstudio')?.value        || '';
-  const palabraClave= $('filtroPalabraClave')?.value?.trim() || '';
+  const btn = $('btnAplicarFiltros');
+  try {
+    if (btn) { btn.disabled = true; btn.textContent = 'Cargando...'; }
+    const desde       = $('filtroFechaDesde')?.value     || '';
+    const hasta       = $('filtroFechaHasta')?.value     || '';
+    const tipoPago    = $('filtroTipoPago')?.value       || '';
+    const medicoId    = $('filtroMedico')?.value         || '';
+    const genPor      = $('filtroGeneradoPor')?.value    || '';
+    const entidad     = $('filtroEntidad')?.value        || '';
+    const tipoConsulta= $('filtroTipoConsulta')?.value   || '';
+    const tipoEstudio = $('filtroEstudio')?.value        || '';
+    const palabraClave= $('filtroPalabraClave')?.value?.trim() || '';
 
-  const params = new URLSearchParams();
-  if (desde)        params.set('fecha_desde',      desde);
-  if (hasta)        params.set('fecha_hasta',      hasta);
-  if (tipoPago)     params.set('tipo_pago',        tipoPago);
-  if (medicoId)     params.set('medico_id',        medicoId);
-  if (genPor)       params.set('generado_por_id',  genPor);
-  if (entidad)      params.set('nombre_entidad',   entidad);
-  if (palabraClave) params.set('q',                palabraClave);
-  // Tipo de consulta y estudio filtran la misma columna tipo_servicio
-  const tipoServicio = tipoConsulta || tipoEstudio;
-  if (tipoServicio) params.set('tipo_servicio',    tipoServicio);
-  _recibosLastParams = params.toString();
+    const params = new URLSearchParams();
+    if (desde)        params.set('fecha_desde',      desde);
+    if (hasta)        params.set('fecha_hasta',      hasta);
+    if (tipoPago)     params.set('tipo_pago',        tipoPago);
+    if (medicoId)     params.set('medico_id',        medicoId);
+    if (genPor)       params.set('generado_por_id',  genPor);
+    if (entidad)      params.set('nombre_entidad',   entidad);
+    if (palabraClave) params.set('q',                palabraClave);
+    // Tipo de consulta y estudio filtran la misma columna tipo_servicio
+    const tipoServicio = tipoConsulta || tipoEstudio;
+    if (tipoServicio) params.set('tipo_servicio',    tipoServicio);
+    _recibosLastParams = params.toString();
 
-  await cargarLista(_recibosLastParams);
+    await cargarLista(_recibosLastParams);
+  } catch (e) {
+    console.error('[aplicarFiltrosRecibos] Error:', e);
+    showToast('Error al aplicar filtros', 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Aplicar filtros'; }
+  }
 }
 
 function limpiarFiltrosRecibos() {
@@ -7039,9 +7250,7 @@ function limpiarFiltrosRecibos() {
   const wrap = $('filtroTipoConsultaWrap');
   if (wrap) wrap.style.display = 'none';
   _recibosLastParams = '';
-  const tbody = document.getElementById('savedItems');
-  if (tbody) tbody.innerHTML = '<tr><td colspan="10"><div class="empty-state"><div class="empty-state-icon">📋</div><p class="empty-state-title">Aplica un filtro para ver los recibos</p></div></td></tr>';
-  document.getElementById('reciboResumenCard')?.classList.add('hidden');
+  cargarLista();
 }
 
 function exportarReciboCSV() {
@@ -7702,18 +7911,20 @@ function actualizarHoraFinCalculada() {
   }
   
   const [hhI, mmI] = horaInicio.split(':').map(Number);
-  const minutosInicio = hhI * 60 + mmI;
   const duracionMinutos = hhDur * 60 + mmDur;
-  let minutosFin = minutosInicio + duracionMinutos;
   
-  const cruceMedianoche = minutosFin >= 24 * 60;
-  if (cruceMedianoche) minutosFin -= 24 * 60;
+  // Usar Date para calcular correctamente estudios multi-día
+  const start = new Date(2000, 0, 1, hhI, mmI);
+  start.setMinutes(start.getMinutes() + duracionMinutos);
   
-  const hhFin = String(Math.floor(minutosFin / 60)).padStart(2, '0');
-  const mmFin = String(minutosFin % 60).padStart(2, '0');
+  const hhFin = String(start.getHours()).padStart(2, '0');
+  const mmFin = String(start.getMinutes()).padStart(2, '0');
+  const diasExtra = Math.floor((hhI * 60 + mmI + duracionMinutos) / (24 * 60));
+  // Restar el día base si no cruzó medianoche
+  const diasCruce = diasExtra > 0 ? diasExtra : 0;
   
   if (display) {
-    display.textContent = `${hhFin}:${mmFin}${cruceMedianoche ? ' (+1 día)' : ''}`;
+    display.textContent = `${hhFin}:${mmFin}${diasCruce > 0 ? ` (+${diasCruce} día${diasCruce > 1 ? 's' : ''})` : ''}`;
   }
 }
 
@@ -7764,20 +7975,24 @@ async function confirmarDuracionEstudio() {
       return;
     }
     
-    // Calcular hora_fin a partir de inicio + duración
+    // Calcular hora_fin a partir de inicio + duración usando Date (soporta multi-día)
     const [hhI, mmI] = horaInicio.split(':').map(Number);
-    let minutosFin = hhI * 60 + mmI + duracionMinutos;
-    let cruceMedianoche = false;
-    if (minutosFin >= 24 * 60) { minutosFin -= 24 * 60; cruceMedianoche = true; }
-    const horaFin = `${String(Math.floor(minutosFin / 60)).padStart(2,'0')}:${String(minutosFin % 60).padStart(2,'0')}`;
+    const fechaCitaRaw = citaElectroSeleccionada.fecha || new Date().toISOString().slice(0, 10);
+    const fechaCita = typeof fechaCitaRaw === 'string' && fechaCitaRaw.length > 10 ? fechaCitaRaw.slice(0, 10) : fechaCitaRaw;
+    const startDate = new Date(`${fechaCita}T${String(hhI).padStart(2,'0')}:${String(mmI).padStart(2,'0')}:00`);
+    startDate.setMinutes(startDate.getMinutes() + duracionMinutos);
+    const horaFin = `${String(startDate.getHours()).padStart(2,'0')}:${String(startDate.getMinutes()).padStart(2,'0')}`;
+    const horaFinDate = `${startDate.getFullYear()}-${String(startDate.getMonth()+1).padStart(2,'0')}-${String(startDate.getDate()).padStart(2,'0')}`;
+    const cruceMedianoche = horaFinDate !== fechaCita;
     
-    console.log(`[DURACION] Iniciando estudio: ${horaInicio} → ${horaFin} (${duracionMinutos} min${cruceMedianoche ? ', cruza medianoche' : ''})`);
+    console.log(`[DURACION] Iniciando estudio: ${horaInicio} → ${horaFin} (${duracionMinutos} min${cruceMedianoche ? `, fin: ${horaFinDate}` : ''})`);
     
     const equipoId = equipoSelect.value;
     const cambios = {
       estado: 'En Estudio',
       hora_inicio: horaInicio,
       hora_fin: horaFin,
+      hora_fin_date: horaFinDate,
       duracion_minutos: duracionMinutos,
       equipo_id: equipoId
     };
@@ -7798,6 +8013,8 @@ async function confirmarDuracionEstudio() {
       citaElectroSeleccionada.estado = 'En Estudio';
       citaElectroSeleccionada.hora_inicio = horaInicio;
       citaElectroSeleccionada.hora_fin = horaFin;
+      citaElectroSeleccionada.hora_fin_date = horaFinDate;
+      citaElectroSeleccionada.duracion_minutos = duracionMinutos;
       
       // BLOQUEAR el select de estado mientras está en "En Estudio"
       const selectEstado = $('modalEstado');
@@ -7869,34 +8086,28 @@ async function iniciarEstudioSinDuracion() {
   
   try {
     // Obtener la duración predeterminada de la cita (en minutos)
-    const duracionMinutos = citaElectroSeleccionada.duracion_minutos || 480; // 480 minutos = 8 horas por defecto
+    const duracionMinutos = citaElectroSeleccionada.duracion_minutos || 480;
     
     console.log(`[DURACION_SIN] Usando duración predeterminada: ${duracionMinutos} minutos`);
     
-    // Calcular hora_fin: hora_agendada + duracionMinutos (el inicio es la hora programada, no la actual)
+    // Calcular hora_fin usando Date (soporta multi-día)
     const horaInicio = horaAgendada;
     const [hh_inicio, mm_inicio] = horaInicio.split(':').map(Number);
-    let minutosInicio = hh_inicio * 60 + mm_inicio;
-    let minutosFin = minutosInicio + duracionMinutos;
+    const fechaCitaRaw = citaElectroSeleccionada.fecha || new Date().toISOString().slice(0, 10);
+    const fechaCita = typeof fechaCitaRaw === 'string' && fechaCitaRaw.length > 10 ? fechaCitaRaw.slice(0, 10) : String(fechaCitaRaw);
+    const startDate = new Date(`${fechaCita}T${String(hh_inicio).padStart(2,'0')}:${String(mm_inicio).padStart(2,'0')}:00`);
+    startDate.setMinutes(startDate.getMinutes() + duracionMinutos);
+    const horaFin = `${String(startDate.getHours()).padStart(2,'0')}:${String(startDate.getMinutes()).padStart(2,'0')}`;
+    const horaFinDate = `${startDate.getFullYear()}-${String(startDate.getMonth()+1).padStart(2,'0')}-${String(startDate.getDate()).padStart(2,'0')}`;
     
-    // Manejar si cruza medianoche
-    let crucedaMedianoche = false;
-    if (minutosFin >= 24 * 60) {
-      minutosFin -= 24 * 60;
-      crucedaMedianoche = true;
-    }
-    
-    const hh_fin = Math.floor(minutosFin / 60);
-    const mm_fin = minutosFin % 60;
-    const horaFin = `${String(hh_fin).padStart(2, '0')}:${String(mm_fin).padStart(2, '0')}`;
-    
-    console.log(`[DURACION_SIN] Hora inicio: ${horaInicio}, Hora fin: ${horaFin} (${crucedaMedianoche ? 'cruza medianoche' : 'mismo día'})`);
+    console.log(`[DURACION_SIN] Hora inicio: ${horaInicio}, Hora fin: ${horaFin}, Fecha fin: ${horaFinDate}`);
     
     const equipoId = equipoSelect.value;
     const cambios = {
       estado: 'En Estudio',
       hora_inicio: horaInicio,
       hora_fin: horaFin,
+      hora_fin_date: horaFinDate,
       duracion_minutos: duracionMinutos,
       equipo_id: equipoId
     };
@@ -7923,6 +8134,7 @@ async function iniciarEstudioSinDuracion() {
       citaElectroSeleccionada.estado = 'En Estudio';
       citaElectroSeleccionada.hora_inicio = horaInicio;
       citaElectroSeleccionada.hora_fin = horaFin;
+      citaElectroSeleccionada.hora_fin_date = horaFinDate;
       citaElectroSeleccionada.duracion_minutos = duracionMinutos;
       
       // BLOQUEAR el select de estado mientras está en "En Estudio"
@@ -7977,7 +8189,6 @@ function actualizarProgresoEstudio() {
     intervaloProgreso = null;
   }
   
-  // Convertir horas a segundos desde medianoche
   const horaInicio = citaElectroSeleccionada.hora_inicio; // "HH:MM"
   const horaFin = citaElectroSeleccionada.hora_fin; // "HH:MM"
   
@@ -7985,65 +8196,108 @@ function actualizarProgresoEstudio() {
     return;
   }
   
-  const parseHora = (hora) => {
-    const [h, m] = hora.split(':').map(Number);
-    return h * 3600 + m * 60; // Convertir a SEGUNDOS
-  };
+  // Construir fechas absolutas de inicio y fin
+  const fechaRaw = citaElectroSeleccionada.fecha || new Date().toISOString().slice(0, 10);
+  const fechaBase = typeof fechaRaw === 'string' && fechaRaw.length > 10 ? fechaRaw.slice(0, 10) : String(fechaRaw);
+  const [hiH, hiM] = horaInicio.split(':').map(Number);
+  const dateInicio = new Date(`${fechaBase}T${String(hiH).padStart(2,'0')}:${String(hiM).padStart(2,'0')}:00`);
   
-  const segundosInicio = parseHora(horaInicio);
-  let segundosFin = parseHora(horaFin);
+  // Fecha de fin: usar hora_fin_date si existe, sino calcular con duracion_minutos
+  let dateFin;
+  const horaFinDateRaw = citaElectroSeleccionada.hora_fin_date;
+  const fechaFin = horaFinDateRaw ? (typeof horaFinDateRaw === 'string' && horaFinDateRaw.length > 10 ? horaFinDateRaw.slice(0, 10) : String(horaFinDateRaw)) : null;
+  const [hfH, hfM] = horaFin.split(':').map(Number);
   
-  // Manejar cruces de medianoche
-  if (segundosFin < segundosInicio) {
-    segundosFin += 24 * 3600;
+  if (fechaFin && fechaFin !== fechaBase) {
+    // Multi-día: tenemos la fecha de fin explícita
+    dateFin = new Date(`${fechaFin}T${String(hfH).padStart(2,'0')}:${String(hfM).padStart(2,'0')}:00`);
+  } else if (citaElectroSeleccionada.duracion_minutos && citaElectroSeleccionada.duracion_minutos > 0) {
+    // Usar duración para calcular fin
+    dateFin = new Date(dateInicio.getTime() + citaElectroSeleccionada.duracion_minutos * 60000);
+  } else {
+    // Mismo día, calcular normalmente
+    dateFin = new Date(`${fechaBase}T${String(hfH).padStart(2,'0')}:${String(hfM).padStart(2,'0')}:00`);
+    // Si hora_fin <= hora_inicio, asumir que cruza medianoche (+1 día)
+    if (dateFin <= dateInicio) {
+      dateFin.setDate(dateFin.getDate() + 1);
+    }
   }
   
-  const duracionTotal = segundosFin - segundosInicio;
+  const duracionTotalMs = dateFin.getTime() - dateInicio.getTime();
   
-  if (duracionTotal <= 0) {
+  if (duracionTotalMs <= 0) {
+    console.warn('[PROGRESO] Duración <= 0, no se puede calcular progreso');
     return;
   }
   
+  // Mostrar duración total formateada en la barra
+  const durTotalMin = Math.round(duracionTotalMs / 60000);
+  const durDias = Math.floor(durTotalMin / (24 * 60));
+  const durHrs = Math.floor((durTotalMin % (24 * 60)) / 60);
+  const durMin = durTotalMin % 60;
+  let durLabel = '';
+  if (durDias > 0) durLabel += `${durDias}d `;
+  if (durHrs > 0) durLabel += `${durHrs}h `;
+  if (durMin > 0 && durDias === 0) durLabel += `${durMin}m`;
+  durLabel = durLabel.trim();
+  
+  const horaFinEl = $('estudioHoraFin');
+  if (horaFinEl) {
+    const finText = formatearHora(horaFin);
+    horaFinEl.textContent = fechaFin && fechaFin !== fechaBase ? `${finText} (${fechaFin})` : finText;
+  }
+  const horaInicioEl = $('estudioHoraInicio');
+  if (horaInicioEl) horaInicioEl.textContent = formatearHora(horaInicio);
+  
   let _lastSocketEmit = 0;
   
-  // Actualizar cada 250ms para que la barra avance suavemente en tiempo real
+  // Actualizar cada segundo
   intervaloProgreso = setInterval(async () => {
     const ahora = new Date();
-    const segundosAhora = ahora.getHours() * 3600 + ahora.getMinutes() * 60 + ahora.getSeconds();
+    const transcurridoMs = ahora.getTime() - dateInicio.getTime();
+    const restanteMs = dateFin.getTime() - ahora.getTime();
     
-    // Calcular progreso
-    let segundosTranscurridos = segundosAhora - segundosInicio;
+    let porcentaje = (transcurridoMs / duracionTotalMs) * 100;
+    porcentaje = Math.min(Math.max(porcentaje, 0), 100);
     
-    // Manejar cruces de medianoche
-    if (segundosTranscurridos < 0) {
-      segundosTranscurridos += 24 * 3600;
+    // Tiempo transcurrido
+    const segTranscurridos = Math.max(0, Math.floor(transcurridoMs / 1000));
+    const tDias = Math.floor(segTranscurridos / 86400);
+    const tHoras = Math.floor((segTranscurridos % 86400) / 3600);
+    const tMinutos = Math.floor((segTranscurridos % 3600) / 60);
+    const tSegundos = segTranscurridos % 60;
+    
+    let tiempoFormato;
+    if (tDias > 0) {
+      tiempoFormato = `${tDias}d ${String(tHoras).padStart(2,'0')}:${String(tMinutos).padStart(2,'0')}:${String(tSegundos).padStart(2,'0')}`;
+    } else {
+      tiempoFormato = `${String(tHoras).padStart(2,'0')}:${String(tMinutos).padStart(2,'0')}:${String(tSegundos).padStart(2,'0')}`;
     }
     
-    let porcentaje = (segundosTranscurridos / duracionTotal) * 100;
-    porcentaje = Math.min(Math.max(porcentaje, 0), 100); // Limitar entre 0 y 100
-    
-    // Convertir segundos transcurridos a HH:MM:SS
-    const horas = Math.floor(segundosTranscurridos / 3600);
-    const minutos = Math.floor((segundosTranscurridos % 3600) / 60);
-    const segundos = Math.floor(segundosTranscurridos % 60);
-    const tiempoFormato = `${String(horas).padStart(2, '0')}:${String(minutos).padStart(2, '0')}:${String(segundos).padStart(2, '0')}`;
+    // Tiempo restante
+    const segRestante = Math.max(0, Math.floor(restanteMs / 1000));
+    const rDias = Math.floor(segRestante / 86400);
+    const rHoras = Math.floor((segRestante % 86400) / 3600);
+    const rMinutos = Math.floor((segRestante % 3600) / 60);
+    let restoFormato;
+    if (rDias > 0) {
+      restoFormato = `${rDias}d ${rHoras}h ${rMinutos}m`;
+    } else if (rHoras > 0) {
+      restoFormato = `${rHoras}h ${rMinutos}m`;
+    } else {
+      restoFormato = `${rMinutos}m`;
+    }
     
     // Actualizar barra visual
     const barraLlena = $('estudioBarraLlena');
     const progreso = $('estudioProgreso');
     const tiempoTranscurrido = $('estudioTiempoTranscurrido');
     
-    if (barraLlena) {
-      barraLlena.style.width = porcentaje + '%';
-    }
-    if (progreso) {
-      progreso.textContent = Math.round(porcentaje);
-    }
-    if (tiempoTranscurrido) {
-      tiempoTranscurrido.textContent = tiempoFormato;
-    }
+    if (barraLlena) barraLlena.style.width = porcentaje + '%';
+    if (progreso) progreso.textContent = Math.round(porcentaje);
+    if (tiempoTranscurrido) tiempoTranscurrido.textContent = `${tiempoFormato} · Faltan: ${restoFormato}`;
     
-    // Emitir evento de socket para actualizar otros usuarios (cada 15 segundos, no cada 250ms)
+    // Emitir socket cada 15s
     const nowMs = Date.now();
     if (window.socket && window.socket.connected && (nowMs - _lastSocketEmit >= 15000)) {
       _lastSocketEmit = nowMs;
@@ -8080,17 +8334,12 @@ function actualizarProgresoEstudio() {
         
         if (data && data.ok) {
           showToast(`Estudio completado automáticamente a las ${horaActual}`, 'success');
-          
           citaElectroSeleccionada.estado = 'Completado';
           citaElectroSeleccionada.hora_fin = horaActual;
           
-          // Ocultar barra de progreso
           const estudioBarra = $('estudioBarra');
-          if (estudioBarra) {
-            estudioBarra.style.display = 'none';
-          }
+          if (estudioBarra) estudioBarra.style.display = 'none';
           
-          // Emitir socket
           if (window.socket && window.socket.connected) {
             window.socket.emit('electro:estudio-finalizado', {
               id: citaElectroSeleccionada.id,
@@ -8098,10 +8347,7 @@ function actualizarProgresoEstudio() {
             });
           }
           
-          // Recargar citas
           cargarCitasElectro();
-          
-          // Cerrar modal
           cerrarModalDetallesCita();
         }
       } catch (error) {
@@ -8109,7 +8355,7 @@ function actualizarProgresoEstudio() {
         showToast('Error finalizando estudio automáticamente', 'error');
       }
     }
-  }, 250);
+  }, 1000);
 }
 
 // Función para guardar edición de datos del paciente desde el modal
@@ -8344,6 +8590,42 @@ function abrirModalDetallesCita(cita) {
   if ($diagEl) $diagEl.textContent = cita.diagnostico_codigo ? `${cita.diagnostico_codigo}${cita.diagnostico_nombre ? ' – ' + cita.diagnostico_nombre : ''}` : (cita.diagnostico_nombre || '-');
   const $telEl = document.getElementById('modalTelefonoDisplay');
   if ($telEl) $telEl.textContent = cita.telefono || '-';
+  
+  // Duración
+  const $durEl = document.getElementById('modalDuracionDisplay');
+  if ($durEl) {
+    if (cita.duracion_minutos) {
+      const dHrs = Math.floor(cita.duracion_minutos / 60);
+      const dMin = cita.duracion_minutos % 60;
+      if (dHrs >= 24) {
+        const dias = Math.floor(dHrs / 24);
+        const hResto = dHrs % 24;
+        $durEl.innerHTML = `<span class="electro-dur-badge multi-day">${dias}d ${hResto}h</span>`;
+      } else if (dHrs > 0 && dMin > 0) {
+        $durEl.textContent = `${dHrs}h ${dMin}min`;
+      } else if (dHrs > 0) {
+        $durEl.textContent = `${dHrs} horas`;
+      } else {
+        $durEl.textContent = `${dMin} min`;
+      }
+    } else {
+      $durEl.textContent = '-';
+    }
+  }
+  
+  // Hora fin info
+  const $hfInfoEl = document.getElementById('modalHoraFinInfoDisplay');
+  if ($hfInfoEl) {
+    if (cita.hora_fin) {
+      let hfText = formatearHora(cita.hora_fin);
+      if (cita.hora_fin_date && cita.hora_fin_date !== cita.fecha) {
+        hfText += ` (${formatearFechaISO(cita.hora_fin_date)})`;
+      }
+      $hfInfoEl.textContent = hfText;
+    } else {
+      $hfInfoEl.textContent = '-';
+    }
+  }
 
   // Badge de estado en el header
   const $badgeEl = document.getElementById('modalEstadoHeaderBadge');

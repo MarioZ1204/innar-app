@@ -141,7 +141,7 @@
             <span class="menu-card-desc">Historial y reportes</span>
           </span>
         </button>
-        <button class="menu-card" data-module="agenda-medica" data-rol="superadmin admin admin_recepcion recepcion admin_electro electro auxiliar_recepcion doctor">
+        <button class="menu-card" data-module="agenda-medica" data-rol="superadmin admin admin_recepcion recepcion admin_electro electro tecnico_electro auxiliar_recepcion doctor">
           <span class="menu-card-icon"><img src="/images/iconagenda.png" alt="Agenda Médica" class="icon-img" /></span>
           <span class="menu-card-label">
             <span class="menu-card-title">Agenda Médica</span>
@@ -1271,6 +1271,46 @@
               </div>
             </div>
           </section>
+
+          <!-- Resumen del Día -->
+          <div class="electro-stats-grid" id="electroStatsGrid">
+            <div class="electro-stat-card">
+              <div class="electro-stat-icon" style="background:#dbeafe;color:#1d4ed8">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+              </div>
+              <div class="electro-stat-info">
+                <div class="electro-stat-value" id="statTotalCitas">0</div>
+                <div class="electro-stat-label">Total citas</div>
+              </div>
+            </div>
+            <div class="electro-stat-card">
+              <div class="electro-stat-icon" style="background:#ffedd5;color:#c2410c">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              </div>
+              <div class="electro-stat-info">
+                <div class="electro-stat-value" id="statEnEstudio">0</div>
+                <div class="electro-stat-label">En estudio</div>
+              </div>
+            </div>
+            <div class="electro-stat-card">
+              <div class="electro-stat-icon" style="background:#dcfce7;color:#15803d">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+              </div>
+              <div class="electro-stat-info">
+                <div class="electro-stat-value" id="statCompletados">0</div>
+                <div class="electro-stat-label">Completados</div>
+              </div>
+            </div>
+            <div class="electro-stat-card">
+              <div class="electro-stat-icon" style="background:#fef9c3;color:#92400e">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              </div>
+              <div class="electro-stat-info">
+                <div class="electro-stat-value" id="statPendientes">0</div>
+                <div class="electro-stat-label">Pendientes</div>
+              </div>
+            </div>
+          </div>
           
           <!-- Tabla de Citas -->
           <section class="card">
@@ -1287,20 +1327,21 @@
               <table id="citasElectroTable" class="modern-table">
                 <thead>
                   <tr>
-                    <th>Hora Agendamiento</th>
-                    <th class="col-mobile-hide">Hora Inicio</th>
+                    <th>Hora</th>
+                    <th class="col-mobile-hide">Inicio</th>
                     <th class="col-mobile-hide">Equipo</th>
                     <th>Paciente</th>
                     <th>Documento</th>
                     <th class="col-mobile-hide">Teléfono</th>
                     <th>Estudio</th>
+                    <th class="col-mobile-hide">Duración</th>
                     <th class="col-mobile-hide">Diagnóstico</th>
                     <th>Estado</th>
-                    <th class="col-mobile-hide">Hora Fin</th>
+                    <th class="col-mobile-hide">Fin</th>
                   </tr>
                 </thead>
                 <tbody id="citasElectroBody">
-                  <tr><td colspan="10" style="padding:20px;text-align:center;color:#999">Selecciona una fecha para ver las citas</td></tr>
+                  <tr><td colspan="11" style="padding:20px;text-align:center;color:#999">Selecciona una fecha para ver las citas</td></tr>
                 </tbody>
               </table>
             </div>
@@ -1483,7 +1524,7 @@
 
   <!-- Modal Cargar Pacientes (Electrodiagnóstico) -->
   <div id="modalCargarPacientesElectro" class="modal-overlay hidden">
-    <div class="modal-box" style="max-width:800px;max-height:90vh;overflow-y:auto">
+    <div class="modal-box" style="max-width:95vw;width:1200px;max-height:92vh;overflow-y:auto">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px">
         <div>
           <h3 style="margin:0 0 4px 0;font-size:1.2rem">Cargar Estudios desde Excel</h3>
@@ -1504,9 +1545,9 @@
       </div>
       <div id="cargarPacientesElectroPreview" style="display:none;margin-bottom:16px">
         <h4 style="margin:0 0 8px 0;font-size:0.95rem">Vista previa (<span id="cargarPacientesElectroCount">0</span> estudios)</h4>
-        <div class="table-wrapper" style="max-height:300px;overflow-y:auto">
+        <div class="table-wrapper" style="max-height:50vh;overflow-y:auto">
           <table class="modern-table" style="font-size:0.82rem">
-            <thead><tr><th>Fecha</th><th>Hora</th><th>Documento</th><th>Nombres</th><th>Apellidos</th><th>Estudio</th><th>Diagnóstico</th><th>Tel 1</th><th>Tel 2</th><th>Equipo</th></tr></thead>
+            <thead><tr><th>Fecha</th><th>Hora</th><th>Documento</th><th>Nombres</th><th>Apellidos</th><th>Estudio</th><th>Duración (hrs)</th><th>Diagnóstico</th><th>Tel 1</th><th>Tel 2</th><th>Equipo</th></tr></thead>
             <tbody id="cargarPacientesElectroBody"></tbody>
           </table>
         </div>
@@ -1659,6 +1700,14 @@
         <div class="cita-modal-info-item">
           <div class="cita-modal-info-label">Hora Agendada</div>
           <div id="modalHoraDisplay" class="cita-modal-info-value">-</div>
+        </div>
+        <div class="cita-modal-info-item">
+          <div class="cita-modal-info-label">Duración</div>
+          <div id="modalDuracionDisplay" class="cita-modal-info-value">-</div>
+        </div>
+        <div class="cita-modal-info-item">
+          <div class="cita-modal-info-label">Hora Fin</div>
+          <div id="modalHoraFinInfoDisplay" class="cita-modal-info-value">-</div>
         </div>
       </div>
 

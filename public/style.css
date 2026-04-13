@@ -429,11 +429,11 @@ button.remove { padding:5px 10px; font-size:.8rem; width:100%; }
 }
 
 .modern-table thead th {
-  padding: 12px 16px;
+  padding: 14px 18px;
   text-align: left;
   font-weight: 700;
   color: #374151;
-  font-size: 0.73rem;
+  font-size: 0.8rem;
   letter-spacing: 0.06em;
   border: none;
   text-transform: uppercase;
@@ -463,9 +463,9 @@ button.remove { padding:5px 10px; font-size:.8rem; width:100%; }
 }
 
 .modern-table tbody td {
-  padding: 11px 16px;
+  padding: 14px 18px;
   border: none;
-  font-size: 0.875rem;
+  font-size: 0.925rem;
   color: #374151;
   word-wrap: break-word;
   overflow-wrap: break-word;
@@ -1688,10 +1688,17 @@ button.remove { padding:5px 10px; font-size:.8rem; width:100%; }
   text-transform:uppercase; letter-spacing:0.05em; margin-bottom:2px;
 }
 .flujo-btn-primary {
-  width:100%; padding:9px 14px; border:none; border-radius:9px;
-  font-size:0.88rem; font-weight:700; cursor:pointer;
-  display:flex; align-items:center; justify-content:center; gap:7px;
-  transition:all 0.15s;
+  width:100%; padding:13px 18px; border:none; border-radius:11px;
+  font-size:0.95rem; font-weight:700; cursor:pointer;
+  display:flex; align-items:center; justify-content:center; gap:9px;
+  transition:all 0.18s; box-shadow:0 2px 8px rgba(0,0,0,0.12);
+  letter-spacing:0.02em;
+}
+.flujo-btn-primary:hover {
+  transform:translateY(-1px); box-shadow:0 4px 14px rgba(0,0,0,0.18);
+}
+.flujo-btn-primary:active {
+  transform:translateY(0); box-shadow:0 1px 4px rgba(0,0,0,0.1);
 }
 .flujo-btn-primary.llegada {
   background: linear-gradient(135deg,#fbbf24,#f59e0b);
@@ -1702,10 +1709,17 @@ button.remove { padding:5px 10px; font-size:.8rem; width:100%; }
   display:flex; gap:6px;
 }
 .flujo-btn-sm {
-  flex:1; padding:7px 10px; border-radius:7px; border:1.5px solid;
-  font-size:0.78rem; font-weight:600; cursor:pointer;
-  transition:all 0.15s; background:white;
-  display:flex; align-items:center; justify-content:center; gap:5px;
+  flex:1; padding:10px 14px; border-radius:9px; border:1.5px solid;
+  font-size:0.84rem; font-weight:600; cursor:pointer;
+  transition:all 0.18s; background:white;
+  display:flex; align-items:center; justify-content:center; gap:6px;
+  box-shadow:0 1px 4px rgba(0,0,0,0.06);
+}
+.flujo-btn-sm:hover {
+  transform:translateY(-1px); box-shadow:0 3px 10px rgba(0,0,0,0.1);
+}
+.flujo-btn-sm:active {
+  transform:translateY(0);
 }
 .flujo-btn-sm.no-asistio { border-color:#d1d5db; color:#6b7280; }
 .flujo-btn-sm.no-asistio:hover { background:#f3f4f6; border-color:#9ca3af; }
@@ -1879,12 +1893,12 @@ button.remove { padding:5px 10px; font-size:.8rem; width:100%; }
   font-variant-numeric: tabular-nums;
 }
 .estudio-progreso-timer {
-  font-size: 1rem;
+  font-size: 1.15rem;
   font-weight: 800;
   color: #2d4a47;
   font-variant-numeric: tabular-nums;
-  letter-spacing: 0.06em;
-  font-family: 'Courier New', monospace;
+  letter-spacing: 0.04em;
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
 }
 
 /* --- Panel disponibilidad equipos electro --- */
@@ -2137,14 +2151,28 @@ button.remove { padding:5px 10px; font-size:.8rem; width:100%; }
 #turnosTableMedica col.col-doc      { width: 100px; }
 #turnosTableMedica col.col-entidad  { width: 14%; }
 #turnosTableMedica col.col-notas    { width: 13%; }
-#turnosTableMedica col.col-estado   { width: 108px; }
+#turnosTableMedica col.col-estado   { width: 140px; }
 #turnosTableMedica col.col-acciones { width: 130px; }
 
 /* Wrapper con sombra suave */
 .table-wrapper {
   border-radius: 10px;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
   box-shadow: 0 1px 4px 0 rgba(0,0,0,0.07), 0 0 0 1px #e2e8f0;
+}
+
+/* Tabla electro más compacta para que quepan las 11 columnas */
+#citasElectroTable th {
+  padding: 10px 10px;
+  font-size: 0.72rem;
+}
+#citasElectroTable td {
+  padding: 10px 10px;
+  font-size: 0.84rem;
+}
+#citasElectroTable {
+  min-width: 1000px;
 }
 
 /* Estilos para colores de fila en citas médicas */
@@ -2162,6 +2190,122 @@ button.remove { padding:5px 10px; font-size:.8rem; width:100%; }
 }
 .turno-row.estado-reprogramado:hover {
   background-color: #dbeafe !important;
+}
+
+/* ===== ELECTRO AGENDA - STAT CARDS ===== */
+.electro-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 0;
+}
+.electro-stat-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: white;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  transition: box-shadow 0.15s, transform 0.15s;
+}
+.electro-stat-card:hover {
+  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+  transform: translateY(-1px);
+}
+.electro-stat-icon {
+  width: 42px; height: 42px;
+  border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.electro-stat-info { min-width: 0; }
+.electro-stat-value {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: #1f2937;
+  line-height: 1.1;
+}
+.electro-stat-label {
+  font-size: 0.78rem;
+  color: #6b7280;
+  font-weight: 500;
+  margin-top: 2px;
+}
+
+/* ===== ELECTRO AGENDA - ROW STATES ===== */
+.turno-row.estado-en-estudio {
+  background-color: #fff7ed !important;
+  border-left: 3px solid #f97316 !important;
+}
+.turno-row.estado-en-estudio:hover { background-color: #ffedd5 !important; }
+.turno-row.estado-pausado {
+  background-color: #fffbeb !important;
+  border-left: 3px solid #f59e0b !important;
+}
+.turno-row.estado-pausado:hover { background-color: #fef3c7 !important; }
+.turno-row.estado-completado {
+  background-color: #f0fdf4 !important;
+  border-left: 3px solid #22c55e !important;
+}
+.turno-row.estado-completado:hover { background-color: #dcfce7 !important; }
+.turno-row.estado-cancelado,
+.turno-row.estado-no-asistio {
+  background-color: #fef2f2 !important;
+  border-left: 3px solid #ef4444 !important;
+}
+.turno-row.estado-cancelado:hover,
+.turno-row.estado-no-asistio:hover { background-color: #fee2e2 !important; }
+
+/* ===== ELECTRO DURATION BADGE ===== */
+.electro-dur-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  background: #f0f9ff;
+  color: #0369a1;
+  border: 1px solid #bae6fd;
+  white-space: nowrap;
+}
+.electro-dur-badge.multi-day {
+  background: #fef3c7;
+  color: #92400e;
+  border-color: #fcd34d;
+}
+
+/* Patient name cell */
+.electro-paciente-cell {
+  font-weight: 600;
+  color: #1f2937;
+}
+
+/* Modal info grid: 3 rows of 2 */
+.cita-modal-info-item:nth-child(3),
+.cita-modal-info-item:nth-child(4) { border-bottom: 1px solid #f0f0f0; }
+
+/* ===== RESPONSIVE: ELECTRO STATS ===== */
+@media (max-width: 768px) {
+  .electro-stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+  .electro-stat-card {
+    padding: 10px 12px;
+  }
+  .electro-stat-icon {
+    width: 36px; height: 36px;
+  }
+  .electro-stat-value {
+    font-size: 1.2rem;
+  }
+}
+@media (max-width: 480px) {
+  .electro-stats-grid {
+    grid-template-columns: 1fr 1fr;
+  }
 }
 
 /* ===== MI CUENTA MODAL ===== */
