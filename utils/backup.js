@@ -173,6 +173,32 @@ function listBackups() {
 }
 
 /**
+ * Verificar integridad de un backup: tamaño mínimo y presencia de CREATE TABLE
+ */
+function verifyBackup(filepath) {
+  try {
+    const stats = fs.statSync(filepath);
+    if (stats.size < 1024) {
+      return { ok: false, error: 'Archivo demasiado pequeño (< 1KB), posible backup corrupto' };
+    }
+    const content = fs.readFileSync(filepath, 'utf8');
+    const tables = (content.match(/CREATE TABLE/gi) || []).length;
+    if (tables === 0) {
+      return { ok: false, error: 'No se encontraron sentencias CREATE TABLE' };
+    }
+    const hasInsert = /INSERT INTO/i.test(content);
+    return {
+      ok: true,
+      sizeMB: (stats.size / (1024 * 1024)).toFixed(2),
+      tables,
+      hasData: hasInsert
+    };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+/**
  * Comando principal
  */
 async function main() {
@@ -186,9 +212,29 @@ async function main() {
   try {
     if (command === 'list') {
       listBackups();
+    } else if (command === 'verify') {
+      const files = fs.readdirSync(BACKUP_DIR)
+        .filter(f => f.startsWith('backup-') && f.endsWith('.sql'))
+        .sort().reverse();
+      if (files.length === 0) { console.log('No hay backups para verificar'); return; }
+      const target = process.argv[3] ? path.join(BACKUP_DIR, process.argv[3]) : path.join(BACKUP_DIR, files[0]);
+      console.log(`Verificando: ${path.basename(target)}`);
+      const result = verifyBackup(target);
+      if (result.ok) {
+        console.log(`✅ Backup válido: ${result.sizeMB} MB, ${result.tables} tablas, datos: ${result.hasData ? 'sí' : 'no'}`);
+      } else {
+        console.error(`❌ Backup inválido: ${result.error}`);
+      }
     } else {
       // Crear backup
-      await createBackup();
+      const filepath = await createBackup();
+      // Verificar automáticamente
+      const v = verifyBackup(filepath);
+      if (v.ok) {
+        console.log(`✅ Verificación OK: ${v.tables} tablas, datos: ${v.hasData ? 'sí' : 'no'}`);
+      } else {
+        console.warn(`⚠️ Verificación falló: ${v.error}`);
+      }
       listBackups();
     }
   } catch (error) {
@@ -202,4 +248,4 @@ if (require.main === module) {
   main();
 }
 
-module.exports = { createBackup };
+module.exports = { createBackup, verifyBackup };

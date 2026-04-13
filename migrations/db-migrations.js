@@ -290,6 +290,16 @@ const migrations = [
       // auditorias: consultas por fecha
       'CREATE INDEX IF NOT EXISTS idx_auditorias_fecha ON usuario_auditorias(fecha_cambio)'
     ]
+  },
+  {
+    name: 'recibos_anulacion',
+    description: 'Agregar columnas para anulación de recibos: anulado, anulado_razon, anulado_por, anulado_en',
+    sql: `ALTER TABLE recibos
+      ADD COLUMN IF NOT EXISTS anulado TINYINT(1) DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS anulado_razon TEXT NULL,
+      ADD COLUMN IF NOT EXISTS anulado_por_id INT NULL,
+      ADD COLUMN IF NOT EXISTS anulado_por_nombre VARCHAR(200) NULL,
+      ADD COLUMN IF NOT EXISTS anulado_en DATETIME NULL`
   }
 ];
 

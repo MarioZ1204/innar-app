@@ -4084,6 +4084,32 @@ app.delete('/api/recibos/reset', requireAuth, requireRoleOrPerm(['superadmin', '
 });
 
 // Eliminar recibo individual
+// Anular recibo (solo superadmin) — conserva consecutivo, registra razón
+app.patch('/api/recibos/:id/anular', requireAuth, requireRoleOrPerm(['superadmin'], 'recibos.anular'), async (req, res) => {
+  const id = parseReciboId(req.params.id);
+  if (id === null) return res.status(400).json({ error: 'ID de recibo inválido' });
+  const { razon } = req.body || {};
+  if (!razon || !razon.trim()) return res.status(400).json({ error: 'Debe indicar la razón de anulación' });
+  try {
+    const rows = await db.query('SELECT * FROM recibos WHERE id=?', [id]);
+    if (!rows.length) return res.status(404).json({ error: 'Recibo no encontrado' });
+    if (rows[0].anulado) return res.status(400).json({ error: 'Este recibo ya está anulado' });
+    const usuario = await db.query('SELECT nombre FROM usuarios WHERE id=?', [req.session.usuarioId]);
+    const nombreUsuario = usuario.length ? usuario[0].nombre : 'Desconocido';
+    await db.execute(
+      'UPDATE recibos SET anulado=1, anulado_razon=?, anulado_por_id=?, anulado_por_nombre=?, anulado_en=NOW() WHERE id=?',
+      [razon.trim(), req.session.usuarioId, nombreUsuario, id]
+    );
+    if (app.io) {
+      emitSocket('recibo:actualizar-lista');
+      emitSocket('stats:actualizar');
+    }
+    res.json({ ok: true });
+  } catch(err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.delete('/api/recibos/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'recibos.eliminar'), async (req, res) => {
   const id = parseReciboId(req.params.id);
   if (id === null) return res.status(400).json({ error: 'ID de recibo inválido' });
@@ -4165,6 +4191,12 @@ app.get('/api/recibos/:id/pdf', requireAuth, async (req, res) => {
     const ivaFormatted = formatCurrencyValue(iva);
     const totalFormatted = formatCurrencyValue(total);
     const fechaRecibo = typeof row.fecha === 'string' ? row.fecha : new Date(row.fecha).toISOString().split('T')[0];
+    const anuladoWatermark = row.anulado ? `
+  <div style="text-align:center;padding:8px;margin:5px 0;background:#fee2e2;border:2px solid #dc2626;border-radius:4px">
+    <strong style="color:#dc2626;font-size:14px;letter-spacing:2px">ANULADO</strong><br/>
+    <span style="font-size:7px;color:#991b1b">Razón: ${escapeHtml(row.anulado_razon || '-')}</span><br/>
+    <span style="font-size:7px;color:#991b1b">Por: ${escapeHtml(row.anulado_por_nombre || '-')} el ${row.anulado_en ? new Date(row.anulado_en).toLocaleString('es-CO') : '-'}</span>
+  </div>` : '';
 
     const html = `<!doctype html>
 <html>
@@ -4222,6 +4254,8 @@ app.get('/api/recibos/:id/pdf', requireAuth, async (req, res) => {
     <div class="receipt-number">Recibo N° ${escapeHtml(row.numero)}</div>
     <div class="receipt-date">Fecha: ${escapeHtml(fechaRecibo)}</div>
   </div>
+
+  ${anuladoWatermark}
 
   <div class="client-section">
     <strong class="title">CLIENTE</strong>
@@ -5362,7 +5396,22 @@ const PORT = process.env.PORT || 3000;
     } catch (migErr) {
       logger.warn('[MIGRATION] Error creando tabla tipos_consulta: ' + migErr.message, { type: 'STARTUP' });
     }
-    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+    // --- Migration: recibos anulación columns ---
+    try {
+      await db.query(`
+        ALTER TABLE recibos
+        ADD COLUMN IF NOT EXISTS anulado TINYINT(1) DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS anulado_razon TEXT NULL,
+        ADD COLUMN IF NOT EXISTS anulado_por_id INT NULL,
+        ADD COLUMN IF NOT EXISTS anulado_por_nombre VARCHAR(200) NULL,
+        ADD COLUMN IF NOT EXISTS anulado_en DATETIME NULL
+      `);
+      logger.info('[MIGRATION] Columnas de anulación en recibos verificadas', { type: 'STARTUP' });
+    } catch (migErr) {
+      logger.warn('[MIGRATION] Error en migración anulación recibos: ' + migErr.message, { type: 'STARTUP' });
+    }
+
     // Detectar certificado autofirmado y usar HTTPS si está configurado
     // NOTA: Deshabilitado para acceso por IP local. Solo funciona en localhost
     const USE_HTTPS = false; // Deshabilitado para desarrollo en red local

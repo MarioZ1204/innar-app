@@ -4,6 +4,28 @@ const lsKey = 'recibos_sencillo_v1';
 const lsKeyServicios = 'servicios_list_v1';
 const lsKeyCurrentModule = 'current_module_v1';
 
+// ========== GLOBAL ERROR HANDLER ==========
+window.addEventListener('unhandledrejection', (e) => {
+  console.error('[Unhandled Promise]', e.reason);
+});
+window.onerror = function(msg, src, line, col, err) {
+  console.error('[Global Error]', msg, src + ':' + line + ':' + col, err);
+};
+
+// ========== ESCAPE KEY: CERRAR MODAL VISIBLE ==========
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  const modals = document.querySelectorAll('.modal-overlay:not(.hidden), .modal:not(.hidden)');
+  if (modals.length === 0) return;
+  // Cerrar el de mayor z-index (último abierto)
+  let top = null, maxZ = -1;
+  modals.forEach(m => {
+    const z = parseInt(getComputedStyle(m).zIndex) || 0;
+    if (z >= maxZ) { maxZ = z; top = m; }
+  });
+  if (top) top.classList.add('hidden');
+});
+
 // ========== FUNCIÓN DE HASHING SHA512 ==========
 function hashPassword(password) {
   if (!password) return '';
@@ -1207,6 +1229,31 @@ function showConfirm(msg, onOk, { okText = 'Eliminar', cancelText = 'Cancelar', 
   document.body.appendChild(backdrop);
   backdrop.querySelector('.btn-cancel').addEventListener('click', () => backdrop.remove());
   backdrop.querySelector('.btn-ok').addEventListener('click', () => { backdrop.remove(); onOk(); });
+  backdrop.addEventListener('click', e => { if (e.target === backdrop) backdrop.remove(); });
+}
+
+function showPrompt(msg, onOk, { okText = 'Confirmar', cancelText = 'Cancelar', danger = true, icon = '⚠️', placeholder = '' } = {}) {
+  const backdrop = document.createElement('div');
+  backdrop.className = 'confirm-backdrop';
+  backdrop.innerHTML = `
+    <div class="confirm-box">
+      <div class="confirm-icon">${icon}</div>
+      <div class="confirm-msg">${msg}</div>
+      <textarea class="prompt-input" rows="3" placeholder="${escapeHtml(placeholder)}" style="width:100%;margin:10px 0;padding:10px;border:1px solid #d1d5db;border-radius:8px;font-family:inherit;font-size:0.9rem;resize:vertical"></textarea>
+      <div class="confirm-actions">
+        <button class="btn-cancel">${cancelText}</button>
+        <button class="btn-ok${danger ? ' danger' : ''}">${okText}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(backdrop);
+  const input = backdrop.querySelector('.prompt-input');
+  input.focus();
+  backdrop.querySelector('.btn-cancel').addEventListener('click', () => backdrop.remove());
+  backdrop.querySelector('.btn-ok').addEventListener('click', () => {
+    const val = input.value.trim();
+    if (!val) { input.style.borderColor = '#ef4444'; input.focus(); return; }
+    backdrop.remove(); onOk(val);
+  });
   backdrop.addEventListener('click', e => { if (e.target === backdrop) backdrop.remove(); });
 }
 
@@ -7290,9 +7337,10 @@ async function cargarLista(queryString) {
       return;
     }
 
-    // Resumen
-    const totalMonto = recibos.reduce((s, r) => s + Number(r.total||0), 0);
-    if ($('resumenCantidad')) $('resumenCantidad').textContent = recibos.length;
+    // Resumen (excluir anulados del total)
+    const recibosActivos = recibos.filter(r => r.anulado != 1);
+    const totalMonto = recibosActivos.reduce((s, r) => s + Number(r.total||0), 0);
+    if ($('resumenCantidad')) $('resumenCantidad').textContent = recibosActivos.length;
     if ($('resumenTotal')) $('resumenTotal').textContent = '$ ' + totalMonto.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     if (resumenCard) resumenCard.classList.remove('hidden');
 
@@ -7301,10 +7349,20 @@ async function cargarLista(queryString) {
       if (idx % 2 === 0) tr.style.background = '#f9fafb';
       const fecha = r.fecha ? String(r.fecha).slice(0,10) : '-';
       const total = Number(r.total||0).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-      const deleteBtn = canDeleteRecibos()
+      const esAnulado = r.anulado == 1;
+      const deleteBtn = canDeleteRecibos() && !esAnulado
         ? `<button class="delete btn-danger btn-sm" data-id="${r.id}">✕</button>` : '';
+      const anularBtn = currentUser?.rol === 'superadmin' && !esAnulado
+        ? `<button class="anular-recibo btn-sm" data-id="${r.id}" style="background:#dc2626;color:#fff;border:none;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:0.75rem">Anular</button>` : '';
+      const anulBadge = esAnulado
+        ? `<span style="display:inline-block;padding:2px 8px;border-radius:99px;font-size:0.72rem;font-weight:700;background:#fee2e2;color:#991b1b;border:1px solid #fca5a5" title="${escapeHtml(r.anulado_razon||'')}">ANULADO</span>` : '';
+      if (esAnulado) {
+        tr.style.opacity = '0.6';
+        tr.style.textDecoration = 'line-through';
+        tr.style.background = '#fef2f2';
+      }
       tr.innerHTML = `
-        <td style="padding:10px 12px">${escapeHtml(r.numero||'-')}</td>
+        <td style="padding:10px 12px">${escapeHtml(r.numero||'-')} ${anulBadge}</td>
         <td style="padding:10px 12px">${escapeHtml(fecha)}</td>
         <td style="padding:10px 12px">${escapeHtml(r.cliente||'-')}</td>
         <td style="padding:10px 12px">
@@ -7315,14 +7373,31 @@ async function cargarLista(queryString) {
         <td style="padding:10px 12px">${escapeHtml(r.nombre_entidad||'-')}</td>
         <td style="padding:10px 12px">${escapeHtml(r.medico_nombre || (r.cita_electro_id ? 'ELECTRODIAGNÓSTICOS' : '-'))}</td>
         <td style="padding:10px 12px">${escapeHtml(r.tipo_servicio||'-')}</td>
-        <td style="padding:10px 12px;text-align:right;font-weight:600;color:#2d4a47">$ ${escapeHtml(total)}</td>
+        <td style="padding:10px 12px;text-align:right;font-weight:600;color:${esAnulado ? '#991b1b' : '#2d4a47'}">$ ${escapeHtml(total)}</td>
         <td style="padding:10px 12px">${escapeHtml(r.generado_por_nombre||'-')}</td>
         <td style="padding:10px 12px;text-align:center;white-space:nowrap">
           <a href="/api/recibos/${r.id}/pdf" target="_blank" class="btn-success btn-sm" style="text-decoration:none">PDF</a>
+          ${anularBtn}
           ${deleteBtn}
         </td>`;
       tbody.appendChild(tr);
     });
+
+    // Listener: Anular recibo
+    tbody.querySelectorAll('.anular-recibo').forEach(b => b.addEventListener('click', e => {
+      const reciboId = e.target.dataset.id;
+      showPrompt('Ingrese la razón de anulación de este recibo:', async (razon) => {
+        try {
+          const jr = await apiFetch(`/api/recibos/${reciboId}/anular`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ razon })
+          }).then(r => r.json());
+          if (jr.ok) { showToast('Recibo anulado correctamente', 'success'); cargarLista(_recibosLastParams); }
+          else showToast(jr.error || 'Error al anular', 'error');
+        } catch (_) { showToast('Error anulando recibo', 'error'); }
+      }, { okText: 'Anular Recibo', cancelText: 'Cancelar', danger: true, icon: '🚫', placeholder: 'Ej: Error en el monto, duplicado, etc.' });
+    }));
 
     tbody.querySelectorAll('.delete').forEach(b => b.addEventListener('click', e => {
       showConfirm('¿Eliminar este recibo?', async () => {
