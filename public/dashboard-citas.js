@@ -410,15 +410,19 @@ function exportarAuditoriaCitasPDF() {
       if (typeof showToast === 'function') showToast('No hay datos para exportar. Realiza una busqueda primero.', 'warning');
       return;
     }
+    var _esc = function(s) {
+      if (!s) return '-';
+      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    };
     const filas = dashboardCitasActuales.map(function(c) {
       return '<tr><td>' + formatearFecha(c.fecha) + '</td>' +
         '<td>' + (c.hora ? c.hora.substring(0,5) : '-') + '</td>' +
-        '<td>' + (c.paciente_nombre || '-').replace(/</g,'&lt;') + '</td>' +
-        '<td>' + (c.paciente_documento || '-').replace(/</g,'&lt;') + '</td>' +
-        '<td>' + (c.tipo_consulta || '-').replace(/</g,'&lt;') + '</td>' +
+        '<td>' + _esc(c.paciente_nombre) + '</td>' +
+        '<td>' + _esc(c.paciente_documento) + '</td>' +
+        '<td>' + _esc(c.tipo_consulta) + '</td>' +
         '<td>' + (c.tipo_cita === 'AGENDA_MEDICA' ? 'Medica' : 'Electro') + '</td>' +
-        '<td>' + (c.programado_por || '-').replace(/</g,'&lt;') + '</td>' +
-        '<td>' + (c.estado || '-').replace(/</g,'&lt;') + '</td></tr>';
+        '<td>' + _esc(c.programado_por) + '</td>' +
+        '<td>' + _esc(c.estado) + '</td></tr>';
     }).join('');
     var fechaGen = new Date().toLocaleDateString('es-CO');
     var html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Auditoria de Citas</title>' +
@@ -436,6 +440,7 @@ function exportarAuditoriaCitasPDF() {
       '<script>window.onload=function(){window.print();}<\/script></body></html>';
     var ventana = window.open('', '_blank', 'width=900,height=700');
     if (ventana) {
+      ventana.document.open();
       ventana.document.write(html);
       ventana.document.close();
     } else {

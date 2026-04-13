@@ -304,7 +304,7 @@ async function doLogin(usuario, password) {
 async function doLogout() {
   try {
     await apiFetch('/api/logout', { method: 'POST' });
-  } catch (e) {}
+  } catch (e) { console.warn('[doLogout] Logout API failed:', e.message); }
   // Resetear flag de listeners de socket-electro
   window.listenersConfigured = false;
   window.socketElectroListenerAdded = false;
@@ -698,7 +698,7 @@ async function getServicios() {
       _serviciosCache = await res.json();
       return _serviciosCache;
     }
-  } catch(_) {}
+  } catch(_) { console.warn('[getServicios] Failed to load services from API'); }
   return serviciosDefault;
 }
 
@@ -2072,7 +2072,7 @@ async function initAgendaMedica() {
     const thAcciones = headerRow?.querySelector('th:last-child');
     if (thHora && !originalHoraTHHtml) originalHoraTHHtml = thHora.outerHTML;
     if (thAcciones && !originalAccionesTHHtml) originalAccionesTHHtml = thAcciones.outerHTML;
-  } catch (e) {}
+  } catch (e) { console.warn('[setupAgendaMedicaListeners] Failed to cache table headers:', e.message); }
   adjustColumnsForRole();
   
   // === PAGE NAVIGATION (Citas / Programar Agenda) ===
@@ -3953,12 +3953,12 @@ function procesarExcelPacientesMedica(file) {
       try {
         const opcData = await apiFetch('/api/recibos/opciones').then(r => r.json()).catch(() => ({ entidades: [] }));
         opcionesEntidad = opcData.entidades || [];
-      } catch (_) {}
+      } catch (_) { console.warn('[cargarPacientesExcelData] Failed to load entity options'); }
       const doctorIdPlantilla = selectedDoctorId || ((currentUser?.rol === 'doctor' ? currentUser?.id : null));
       if (doctorIdPlantilla) {
         try {
           opcionesTipo = await apiFetch(`/api/tipos-consulta?medico_id=${encodeURIComponent(doctorIdPlantilla)}`).then(r => r.json()).catch(() => []);
-        } catch (_) {}
+        } catch (_) { console.warn('[cargarPacientesExcelData] Failed to load consultation types'); }
       }
 
       function crearSelectOpciones(opciones, valorActual, rowIdx, campo) {
@@ -4102,7 +4102,7 @@ async function procesarExcelPacientesElectro(file) {
     const res = await apiFetch('/api/estudios/lista');
     const d = await res.json();
     opcionesEstudio = (Array.isArray(d) ? d : (d.registros || d.estudios || [])).map(e => e.nombre || e);
-  } catch (_) {}
+  } catch (_) { console.warn('[cargarPacientesElectro] Failed to load studies list'); }
 
   // Precargar duración de todos los estudios
   async function obtenerDuracionEstudio(nombre) {
@@ -4111,7 +4111,7 @@ async function procesarExcelPacientesElectro(file) {
       const res = await apiFetch(`/api/estudios/duracion?nombre=${encodeURIComponent(nombre)}`);
       const data = await res.json();
       if (data.ok) { _duracionCache[nombre] = data; return data; }
-    } catch (_) {}
+    } catch (_) { console.warn('[obtenerDuracionEstudio] Failed to fetch duration for:', nombre); }
     return null;
   }
 
@@ -4373,7 +4373,7 @@ async function procesarExcelPacientesElectro(file) {
             const inp = tbody.querySelector(`input[data-row="${ri}"][data-campo="diagnostico"]`);
             if (inp) inp.value = label;
           }
-        } catch (_) {}
+        } catch (_) { console.warn('[cargarPacientesExcelData] Failed to search diagnostico:', p.diagnostico); }
       }));
 
       // 2.5. Actualizar celdas de duración (muestra input para estudios variables)
@@ -10614,7 +10614,7 @@ async function abrirModalAgregarGestion() {
         const lista = await res.json();
         espOptions += lista.map(e => `<option value="${e.id}">${escapeHtml(e.nombre)}</option>`).join('');
       }
-    } catch(_) {}
+    } catch(_) { console.warn('[showModal] Failed to load specialties'); }
     camposHtml = `
       <div style="margin-bottom:14px">
         <label style="display:block;margin-bottom:6px;font-weight:500;font-size:14px">Especialidad *</label>

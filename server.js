@@ -158,7 +158,7 @@ app.use((req, res, next) => {
 });
 
 // Configurar sesiones
-app.use(session({
+const sessionMiddleware = session({
   secret: process.env.SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
@@ -169,7 +169,8 @@ app.use(session({
     sameSite: 'lax',
     maxAge: 8 * 60 * 60 * 1000 // 8 horas
   }
-}));
+});
+app.use(sessionMiddleware);
 // activar rolling session para actualizar cookie en cada respuesta
 app.set('trust proxy', 1);
 
@@ -1644,7 +1645,7 @@ app.get('/api/doctor-disponibilidad/:doctorId', requireAuth, async (req, res) =>
 });
 
 // Validar si un doctor tiene disponibilidad en una fecha
-app.post('/api/doctor-disponibilidad/validar', async (req, res) => {
+app.post('/api/doctor-disponibilidad/validar', requireAuth, async (req, res) => {
   try {
     const { doctor_id, fecha } = req.body;
     
@@ -2377,7 +2378,7 @@ app.patch('/api/turnos/:id/numero', requireAuth, requireRoleOrPerm(['superadmin'
 // --- Agenda electrodiagnóstico ---
 
 // Listar equipos de electrodiagnóstico
-app.get('/api/equipos-electro', async (req, res) => {
+app.get('/api/equipos-electro', requireAuth, async (req, res) => {
   try {
     const equipos = await db.query('SELECT * FROM equipos_electro WHERE activo = 1 ORDER BY nombre ASC');
     
@@ -2445,7 +2446,7 @@ app.get('/api/estudios/duracion', async (req, res) => {
   }
 });
 
-app.get('/api/equipos-electro/disponibilidad', async (req, res) => {
+app.get('/api/equipos-electro/disponibilidad', requireAuth, async (req, res) => {
   try {
     const { fecha, hora, estudio, duracion_manual } = req.query;
     
@@ -5426,6 +5427,17 @@ const PORT = process.env.PORT || 3000;
 
     // Almacenar instancia de io en app para usar en rutas
     app.io = io;
+
+    // Autenticación de Socket.IO: verificar sesión antes de aceptar conexión
+    io.use((socket, next) => {
+      sessionMiddleware(socket.request, {}, () => {
+        if (socket.request.session && socket.request.session.usuarioId) {
+          next();
+        } else {
+          next(new Error('No autenticado'));
+        }
+      });
+    });
 
     // Manejar conexiones de WebSocket
     io.on('connection', (socket) => {

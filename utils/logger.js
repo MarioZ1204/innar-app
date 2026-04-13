@@ -9,6 +9,11 @@ const LOG_FILE = path.join(LOG_DIR, 'app.log');
 const ERROR_LOG_FILE = path.join(LOG_DIR, 'errors.log');
 const DEBUG_LOG_FILE = path.join(LOG_DIR, 'debug.log');
 
+// Tamaño máximo por archivo de log (en bytes)
+const MAX_LOG_SIZE = (parseInt(process.env.LOG_MAX_SIZE_MB) || 10) * 1024 * 1024;
+// Máximo de archivos rotados a conservar
+const MAX_ROTATED_FILES = 3;
+
 // Colores ANSI para terminal
 const Colors = {
   reset: '\x1b[0m',
@@ -41,8 +46,9 @@ function getTimestamp() {
  */
 function formatLogLine(level, message, data = {}, includeData = true) {
   const timestamp = getTimestamp();
-  const dataStr = includeData && Object.keys(data).length > 0 
-    ? ` | ${JSON.stringify(data)}`
+  const safeData = redactSensitive(data);
+  const dataStr = includeData && Object.keys(safeData).length > 0 
+    ? ` | ${JSON.stringify(safeData)}`
     : '';
   return `[${timestamp}] [${level.toUpperCase()}] ${message}${dataStr}`;
 }
@@ -65,43 +71,28 @@ function getLevelColor(level) {
  * Log de información
  */
 function info(message, data = {}) {
-  ensureLogDir();
   const line = formatLogLine('info', message, data);
-  
-  // Terminal con color
-  console.log(`${Colors.green}ℹ ${line}${Colors.reset}`);
-  
-  // Archivo
-  fs.appendFileSync(LOG_FILE, line + '\n', 'utf8');
+  console.log(`${Colors.green}\u2139 ${line}${Colors.reset}`);
+  appendToLog(LOG_FILE, line);
 }
 
 /**
  * Log de errores
  */
 function error(message, data = {}) {
-  ensureLogDir();
   const line = formatLogLine('error', message, data);
-  
-  // Terminal con color
-  console.error(`${Colors.red}✗ ${line}${Colors.reset}`);
-  
-  // Archivos
-  fs.appendFileSync(ERROR_LOG_FILE, line + '\n', 'utf8');
-  fs.appendFileSync(LOG_FILE, line + '\n', 'utf8');
+  console.error(`${Colors.red}\u2717 ${line}${Colors.reset}`);
+  appendToLog(ERROR_LOG_FILE, line);
+  appendToLog(LOG_FILE, line);
 }
 
 /**
  * Log de advertencias
  */
 function warn(message, data = {}) {
-  ensureLogDir();
   const line = formatLogLine('warn', message, data);
-  
-  // Terminal con color
-  console.warn(`${Colors.yellow}⚠ ${line}${Colors.reset}`);
-  
-  // Archivo
-  fs.appendFileSync(LOG_FILE, line + '\n', 'utf8');
+  console.warn(`${Colors.yellow}\u26A0 ${line}${Colors.reset}`);
+  appendToLog(LOG_FILE, line);
 }
 
 /**
@@ -109,44 +100,28 @@ function warn(message, data = {}) {
  */
 function debug(message, data = {}) {
   if (process.env.DEBUG_MODE !== 'true') return;
-  
-  ensureLogDir();
   const line = formatLogLine('debug', message, data);
-  
-  // Terminal
-  console.log(`${Colors.cyan}🐛 ${line}${Colors.reset}`);
-  
-  // Archivo
-  fs.appendFileSync(DEBUG_LOG_FILE, line + '\n', 'utf8');
+  console.log(`${Colors.cyan}\uD83D\uDC1B ${line}${Colors.reset}`);
+  appendToLog(DEBUG_LOG_FILE, line);
 }
 
 /**
  * Log de éxito
  */
 function success(message, data = {}) {
-  ensureLogDir();
   const line = formatLogLine('success', message, data);
-  
-  // Terminal
-  console.log(`${Colors.green}✓ ${line}${Colors.reset}`);
-  
-  // Archivo
-  fs.appendFileSync(LOG_FILE, line + '\n', 'utf8');
+  console.log(`${Colors.green}\u2713 ${line}${Colors.reset}`);
+  appendToLog(LOG_FILE, line);
 }
 
 /**
  * Log de API (requests/responses)
  */
 function api(method, path, status, duration, data = {}) {
-  ensureLogDir();
   const statusColor = status >= 400 ? Colors.red : status >= 300 ? Colors.yellow : Colors.green;
   const line = formatLogLine('api', `${method} ${path} ${status} (${duration}ms)`, data, false);
-  
-  // Terminal
-  console.log(`${statusColor}→ ${method.padEnd(6)} ${path.padEnd(40)} ${status} ${Colors.gray}${duration}ms${Colors.reset}`);
-  
-  // Archivo
-  fs.appendFileSync(LOG_FILE, line + '\n', 'utf8');
+  console.log(`${statusColor}\u2192 ${method.padEnd(6)} ${path.padEnd(40)} ${status} ${Colors.gray}${duration}ms${Colors.reset}`);
+  appendToLog(LOG_FILE, line);
 }
 
 /**
@@ -154,13 +129,76 @@ function api(method, path, status, duration, data = {}) {
  */
 function sql(query, params = [], error = null) {
   if (process.env.DEBUG_MODE !== 'true') return;
-  
-  ensureLogDir();
   const line = `[${getTimestamp()}] [SQL] ${query.substring(0, 100)}... | params: ${JSON.stringify(params).substring(0, 100)}${error ? ' | ERROR: ' + error : ''}`;
-  
   console.log(`${Colors.gray}SQL: ${query.substring(0, 80)}...${Colors.reset}`);
-  
-  fs.appendFileSync(DEBUG_LOG_FILE, line + '\n', 'utf8');
+  appendToLog(DEBUG_LOG_FILE, line);
+}
+
+/**
+ * Rotar archivo de log si excede el tamaño máximo.
+ * nombre.log → nombre.1.log → nombre.2.log → nombre.3.log (borrado)
+ */
+function rotateIfNeeded(filePath) {
+  try {
+    if (!fs.existsSync(filePath)) return;
+    const stats = fs.statSync(filePath);
+    if (stats.size < MAX_LOG_SIZE) return;
+
+    // Borrar el más antiguo
+    const oldest = filePath.replace(/\.log$/, `.${MAX_ROTATED_FILES}.log`);
+    if (fs.existsSync(oldest)) fs.unlinkSync(oldest);
+
+    // Renombrar hacia arriba: 2→3, 1→2
+    for (let i = MAX_ROTATED_FILES - 1; i >= 1; i--) {
+      const src = filePath.replace(/\.log$/, `.${i}.log`);
+      const dst = filePath.replace(/\.log$/, `.${i + 1}.log`);
+      if (fs.existsSync(src)) fs.renameSync(src, dst);
+    }
+
+    // Actual → .1
+    fs.renameSync(filePath, filePath.replace(/\.log$/, '.1.log'));
+
+    // Crear nuevo archivo vacío con marca de rotación
+    fs.writeFileSync(filePath, `[${new Date().toISOString()}] [INFO] Log rotado (anterior excedió ${(MAX_LOG_SIZE / 1024 / 1024).toFixed(0)} MB)\n`, 'utf8');
+  } catch (e) {
+    console.error('Error en rotación de log:', e.message);
+  }
+}
+
+/**
+ * Campos sensibles que se redactan antes de escribir al log
+ */
+const SENSITIVE_KEYS = ['password', 'contrasena', 'contraseña', 'secret', 'token', 'authorization', 'cookie'];
+
+/**
+ * Redactar datos sensibles del objeto de datos
+ */
+function redactSensitive(data) {
+  if (!data || typeof data !== 'object') return data;
+  const clean = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (SENSITIVE_KEYS.some(s => key.toLowerCase().includes(s))) {
+      clean[key] = '[REDACTED]';
+    } else if (typeof value === 'object' && value !== null) {
+      clean[key] = redactSensitive(value);
+    } else {
+      clean[key] = value;
+    }
+  }
+  return clean;
+}
+
+/**
+ * Escribir línea al archivo de log de forma segura
+ */
+function appendToLog(filePath, line) {
+  try {
+    ensureLogDir();
+    rotateIfNeeded(filePath);
+    fs.appendFileSync(filePath, line + '\n', 'utf8');
+  } catch (e) {
+    console.error('Error escribiendo log:', e.message);
+  }
 }
 
 /**
@@ -169,18 +207,8 @@ function sql(query, params = [], error = null) {
 function cleanOldLogs() {
   try {
     const files = [LOG_FILE, ERROR_LOG_FILE, DEBUG_LOG_FILE];
-    const maxSizeMB = parseInt(process.env.LOG_MAX_SIZE_MB) || 10;
-    
     files.forEach(file => {
-      if (fs.existsSync(file)) {
-        const stats = fs.statSync(file);
-        const sizeMB = stats.size / (1024 * 1024);
-        
-        if (sizeMB > maxSizeMB) {
-          // Truncar archivo (no archivar — evita acumulación)
-          fs.writeFileSync(file, `[${new Date().toISOString()}] [INFO] Log truncado por rotación (era ${sizeMB.toFixed(1)} MB)\n`, 'utf8');
-        }
-      }
+      rotateIfNeeded(file);
     });
   } catch (e) {
     console.error('Error limpiando logs:', e.message);
