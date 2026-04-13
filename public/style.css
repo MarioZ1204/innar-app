@@ -2169,40 +2169,29 @@ button.remove { padding:5px 10px; font-size:.8rem; width:100%; }
 }
 
 /* Columnas del turnosTableMedica (vista admin/recepción: 9 cols) */
-#turnosTableMedica col.col-turno    { width: 50px; }
-#turnosTableMedica col.col-hora     { width: 68px; }
+#turnosTableMedica col.col-turno    { width: 60px; }
+#turnosTableMedica col.col-hora     { width: 80px; }
 #turnosTableMedica col.col-paciente { width: auto; }
-#turnosTableMedica col.col-tipo     { width: 13%; }
-#turnosTableMedica col.col-doc      { width: 85px; }
-#turnosTableMedica col.col-entidad  { width: 12%; }
-#turnosTableMedica col.col-notas    { width: 11%; }
-#turnosTableMedica col.col-estado   { width: 120px; }
-#turnosTableMedica col.col-acciones { width: 150px; }
+#turnosTableMedica col.col-tipo     { width: 150px; }
+#turnosTableMedica col.col-doc      { width: 100px; }
+#turnosTableMedica col.col-entidad  { width: 130px; }
+#turnosTableMedica col.col-notas    { width: 120px; }
+#turnosTableMedica col.col-estado   { width: 110px; }
+#turnosTableMedica col.col-acciones { width: 160px; }
 
-/* Tabla médica: ajustar para que quepa sin scroll horizontal */
+/* Tabla médica */
 #turnosTableMedica {
+  min-width: 1000px;
   width: 100%;
-  table-layout: fixed;
 }
 #turnosTableMedica th,
 #turnosTableMedica td {
   padding: 10px 8px;
   font-size: 0.85rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 #turnosTableMedica td.td-acciones {
-  overflow: visible;
   white-space: nowrap;
-}
-
-/* Wrapper con sombra suave */
-.table-wrapper {
-  border-radius: 10px;
-  overflow-x: auto;
-  overflow-y: visible;
-  box-shadow: 0 1px 4px 0 rgba(0,0,0,0.07), 0 0 0 1px #e2e8f0;
 }
 
 /* Tabla electro más compacta para que quepan las 11 columnas */

@@ -95,6 +95,7 @@ let lastAnimatedTurnoId = null;
 let lastAnimatedAt = 0;
 let lastTurnoNumber1Id = null;
 let globalHayEnAtencion = false;
+let _cargandoTurnosMedica = false;
 
 // Fetch con credenciales para sesión
 function apiFetch(url, opts = {}) {
@@ -3057,9 +3058,11 @@ async function buscarPacientesMedica() {
 // Attach document input listener in init (added later)
 
 async function cargarTurnosMedica() {
+  if (_cargandoTurnosMedica) return;
+  _cargandoTurnosMedica = true;
   const fecha = $('agendaMedicaFecha').value;
   const doctorId = selectedDoctorId || ((currentUser?.rol === 'doctor' ? currentUser?.id : null));
-  if (!fecha || !doctorId) { showToast('Selecciona fecha y médico', 'error'); return; }
+  if (!fecha || !doctorId) { _cargandoTurnosMedica = false; showToast('Selecciona fecha y médico', 'error'); return; }
   showSkeletonRows($('turnosTableBodyMedica'), 8, 6);
   try {
     const res = await apiFetch(`/api/turnos?fecha=${fecha}&doctor_id=${doctorId}`);
@@ -3215,7 +3218,7 @@ async function cargarTurnosMedica() {
     // adjustColumnsForRole
     // Ajustar columnas según rol (una sola vez después de renderizar todas las filas)
     adjustColumnsForRole();
-  } catch (e) { showToast('Error cargando citas', 'error'); }
+  } catch (e) { showToast('Error cargando citas', 'error'); } finally { _cargandoTurnosMedica = false; }
 }
 
 // Función para crear una fila vacía de turno
