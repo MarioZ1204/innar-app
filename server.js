@@ -3898,7 +3898,7 @@ app.get('/api/recibos/buscar-cita', requireAuth, requireRoleOrPerm(['superadmin'
 // Listar recibos (con filtros opcionales)
 app.get('/api/recibos', requireAuth, async (req, res) => {
   try {
-    const { fecha_desde, fecha_hasta, tipo_pago, medico_id, generado_por_id, nombre_entidad, tipo_servicio, q } = req.query;
+    const { fecha_desde, fecha_hasta, tipo_pago, medico_id, medico_nombre, generado_por_id, nombre_entidad, tipo_servicio, q } = req.query;
     const conditions = [];
     const params = [];
 
@@ -3906,6 +3906,7 @@ app.get('/api/recibos', requireAuth, async (req, res) => {
     if (fecha_hasta)     { conditions.push('fecha <= ?');           params.push(fecha_hasta); }
     if (tipo_pago)       { conditions.push('tipo_pago = ?');        params.push(tipo_pago); }
     if (medico_id)       { conditions.push('medico_id = ?');        params.push(parseInt(medico_id, 10)); }
+    if (medico_nombre)   { conditions.push('medico_nombre = ?');    params.push(medico_nombre); }
     if (generado_por_id) { conditions.push('generado_por_id = ?'); params.push(parseInt(generado_por_id, 10)); }
     if (nombre_entidad)  { conditions.push('nombre_entidad = ?');  params.push(nombre_entidad); }
     if (tipo_servicio)   { conditions.push('tipo_servicio LIKE ?'); params.push(`%${tipo_servicio}%`); }
@@ -3934,13 +3935,14 @@ app.get('/api/recibos', requireAuth, async (req, res) => {
 app.get('/api/recibos/export/xlsx', requireAuth, async (req, res) => {
   try {
     const XLSX = require('xlsx');
-    const { fecha_desde, fecha_hasta, tipo_pago, medico_id, generado_por_id, nombre_entidad, tipo_servicio, q } = req.query;
+    const { fecha_desde, fecha_hasta, tipo_pago, medico_id, medico_nombre, generado_por_id, nombre_entidad, tipo_servicio, q } = req.query;
     const conditions = [];
     const params = [];
     if (fecha_desde)     { conditions.push('fecha >= ?');           params.push(fecha_desde); }
     if (fecha_hasta)     { conditions.push('fecha <= ?');           params.push(fecha_hasta); }
     if (tipo_pago)       { conditions.push('tipo_pago = ?');        params.push(tipo_pago); }
     if (medico_id)       { conditions.push('medico_id = ?');        params.push(parseInt(medico_id, 10)); }
+    if (medico_nombre)   { conditions.push('medico_nombre = ?');    params.push(medico_nombre); }
     if (generado_por_id) { conditions.push('generado_por_id = ?'); params.push(parseInt(generado_por_id, 10)); }
     if (nombre_entidad)  { conditions.push('nombre_entidad = ?');  params.push(nombre_entidad); }
     if (tipo_servicio)   { conditions.push('tipo_servicio LIKE ?'); params.push(`%${tipo_servicio}%`); }
@@ -3986,13 +3988,14 @@ app.get('/api/recibos/export/xlsx', requireAuth, async (req, res) => {
 // Exportar recibos a PDF (página HTML imprimible)
 app.get('/api/recibos/export/pdf-reporte', requireAuth, async (req, res) => {
   try {
-    const { fecha_desde, fecha_hasta, tipo_pago, medico_id, generado_por_id, nombre_entidad, tipo_servicio, q } = req.query;
+    const { fecha_desde, fecha_hasta, tipo_pago, medico_id, medico_nombre, generado_por_id, nombre_entidad, tipo_servicio, q } = req.query;
     const conditions = [];
     const params = [];
     if (fecha_desde)     { conditions.push('fecha >= ?');           params.push(fecha_desde); }
     if (fecha_hasta)     { conditions.push('fecha <= ?');           params.push(fecha_hasta); }
     if (tipo_pago)       { conditions.push('tipo_pago = ?');        params.push(tipo_pago); }
     if (medico_id)       { conditions.push('medico_id = ?');        params.push(parseInt(medico_id, 10)); }
+    if (medico_nombre)   { conditions.push('medico_nombre = ?');    params.push(medico_nombre); }
     if (generado_por_id) { conditions.push('generado_por_id = ?'); params.push(parseInt(generado_por_id, 10)); }
     if (nombre_entidad)  { conditions.push('nombre_entidad = ?');  params.push(nombre_entidad); }
     if (tipo_servicio)   { conditions.push('tipo_servicio LIKE ?'); params.push(`%${tipo_servicio}%`); }

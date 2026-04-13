@@ -1762,6 +1762,11 @@ async function cargarFiltrosMedicos() {
       opt.textContent = m.nombre || m.usuario;
       sel.appendChild(opt);
     });
+    // Opción especial para filtrar recibos de electrodiagnósticos
+    const optElectro = document.createElement('option');
+    optElectro.value = 'ELECTRODIAGNOSTICOS';
+    optElectro.textContent = 'ELECTRODIAGNÓSTICOS';
+    sel.appendChild(optElectro);
   } catch (e) { console.warn('[cargarFiltrosMedicos] Error:', e.message); }
 }
 
@@ -3201,7 +3206,8 @@ async function cargarTurnosMedica() {
       }
     }
 
-    for (let i = 0; i < filasRequeridas; i++) {
+    const totalFilas = Math.max(displayList.length, filasRequeridas);
+    for (let i = 0; i < totalFilas; i++) {
       if (i < displayList.length) {
         const item = displayList[i];
         if (item.tipo === 'turno') {
@@ -6974,7 +6980,9 @@ function collectFormData(){
 
   const medicoSel = $('reciboMedico');
   const medicoId  = (reciboTipo === 'doctor' && medicoSel && medicoSel.value) ? parseInt(medicoSel.value, 10) : null;
-  const medicoNombre = (reciboTipo === 'doctor' && medicoSel && medicoSel.value) ? (medicoSel.options[medicoSel.selectedIndex]?.text || null) : null;
+  const medicoNombre = (reciboTipo === 'doctor' && medicoSel && medicoSel.value)
+    ? (medicoSel.options[medicoSel.selectedIndex]?.text || null)
+    : (reciboTipo === 'estudio' ? 'ELECTRODIAGNÓSTICOS' : null);
 
   const consultaSel = $('reciboTipoConsulta');
   const tipoConsulta = (reciboTipo === 'doctor' && consultaSel && consultaSel.value) ? consultaSel.value : null;
@@ -7086,7 +7094,7 @@ async function saveToDatabase(){
       tipo_pago: payload.tipoPago || null,
       nombre_entidad: payload.nombreEntidad || null,
       medico_id: payload.medicoId || null,
-      medico_nombre: payload.medicoNombre || null,
+      medico_nombre: payload.medicoNombre || (payload.citaElectroId ? 'ELECTRODIAGNÓSTICOS' : null),
       tipo_servicio: payload.tipoServicio || null,
       turno_id: payload.turnoId ? parseInt(payload.turnoId, 10) : null,
       cita_electro_id: payload.citaElectroId ? parseInt(payload.citaElectroId, 10) : null,
@@ -7218,7 +7226,11 @@ async function aplicarFiltrosRecibos() {
     if (desde)        params.set('fecha_desde',      desde);
     if (hasta)        params.set('fecha_hasta',      hasta);
     if (tipoPago)     params.set('tipo_pago',        tipoPago);
-    if (medicoId)     params.set('medico_id',        medicoId);
+    if (medicoId && medicoId === 'ELECTRODIAGNOSTICOS') {
+      params.set('medico_nombre', 'ELECTRODIAGNÓSTICOS');
+    } else if (medicoId) {
+      params.set('medico_id', medicoId);
+    }
     if (genPor)       params.set('generado_por_id',  genPor);
     if (entidad)      params.set('nombre_entidad',   entidad);
     if (palabraClave) params.set('q',                palabraClave);
@@ -7310,7 +7322,7 @@ async function cargarLista(queryString) {
           </span>
         </td>
         <td style="padding:10px 12px">${escapeHtml(r.nombre_entidad||'-')}</td>
-        <td style="padding:10px 12px">${escapeHtml(r.medico_nombre||'-')}</td>
+        <td style="padding:10px 12px">${escapeHtml(r.medico_nombre || (r.cita_electro_id ? 'ELECTRODIAGNÓSTICOS' : '-'))}</td>
         <td style="padding:10px 12px">${escapeHtml(r.tipo_servicio||'-')}</td>
         <td style="padding:10px 12px;text-align:right;font-weight:600;color:#2d4a47">$ ${escapeHtml(total)}</td>
         <td style="padding:10px 12px">${escapeHtml(r.generado_por_nombre||'-')}</td>
