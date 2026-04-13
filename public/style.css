@@ -469,6 +469,7 @@ button.remove { padding:5px 10px; font-size:.8rem; width:100%; }
   color: #374151;
   word-wrap: break-word;
   overflow-wrap: break-word;
+  overflow: visible;
 }
 
 .modern-table td a {
@@ -1186,6 +1187,8 @@ button.remove { padding:5px 10px; font-size:.8rem; width:100%; }
   align-items: center;
   gap: 4px;
   flex-wrap: nowrap;
+  overflow: visible;
+  white-space: nowrap;
 }
 
 /* Base compartida para todos los botones de acción */
@@ -2152,13 +2155,18 @@ button.remove { padding:5px 10px; font-size:.8rem; width:100%; }
 #turnosTableMedica col.col-entidad  { width: 14%; }
 #turnosTableMedica col.col-notas    { width: 13%; }
 #turnosTableMedica col.col-estado   { width: 140px; }
-#turnosTableMedica col.col-acciones { width: 130px; }
+#turnosTableMedica col.col-acciones { width: 160px; }
+
+/* Asegurar que la tabla médica sea scrollable si es muy ancha */
+#turnosTableMedica {
+  min-width: 900px;
+}
 
 /* Wrapper con sombra suave */
 .table-wrapper {
   border-radius: 10px;
   overflow-x: auto;
-  overflow-y: hidden;
+  overflow-y: visible;
   box-shadow: 0 1px 4px 0 rgba(0,0,0,0.07), 0 0 0 1px #e2e8f0;
 }
 
