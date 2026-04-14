@@ -1839,8 +1839,8 @@ app.get('/api/turnos/calendario', requireAuth, async (req, res) => {
   try {
     const baseSql = `
         SELECT fecha, COUNT(*) as total,
-          SUM(CASE WHEN estado IN ('AGENDADO','EN_SALA','EN_ATENCION') THEN 1 ELSE 0 END) as agendadas,
-          SUM(CASE WHEN estado = 'ATENDIDO' THEN 1 ELSE 0 END) as atendidas,
+          SUM(CASE WHEN estado IN ('PENDIENTE','EN_SALA','EN_ATENCION') THEN 1 ELSE 0 END) as agendadas,
+          SUM(CASE WHEN estado IN ('ATENDIDO','COMPLETADO') THEN 1 ELSE 0 END) as atendidas,
           SUM(CASE WHEN estado = 'NO_ASISTIO' THEN 1 ELSE 0 END) as no_asistieron,
           SUM(CASE WHEN estado = 'CANCELADO' THEN 1 ELSE 0 END) as canceladas,
           SUM(CASE WHEN estado = 'REPROGRAMADO' THEN 1 ELSE 0 END) as reprogramadas
