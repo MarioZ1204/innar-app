@@ -10,7 +10,7 @@ let dashboardCitasActuales = [];
 function initDashboardCitas() {
   try {
     const btnBuscar = document.getElementById('btnBuscarCitas');
-    const btnLimpiar = document.getElementById('btnLimpiarFiltros');
+    const btnLimpiar = document.getElementById('btnLimpiarFiltrosDashboard');
 
     if (btnBuscar) {
       btnBuscar.removeEventListener('click', buscarCitasAuditoria);
@@ -32,6 +32,9 @@ function initDashboardCitas() {
 
     // Cargar tipos de estudio para el valor inicial
     cargarTiposEstudioFiltro(elTipoCita ? elTipoCita.value : 'TODOS');
+
+    // Cargar entidades disponibles
+    cargarEntidadesFiltroAuditoria();
 
     // Configurar valores por defecto
     const hoy = new Date().toISOString().split('T')[0];
@@ -74,12 +77,14 @@ async function buscarCitasAuditoria() {
     const elFechaHasta = document.getElementById('dashboardFechaHasta');
     const elProgramadoPor = document.getElementById('dashboardAgendadoPor');
     const elTipoEstudio = document.getElementById('dashboardTipoEstudio');
+    const elEntidad = document.getElementById('dashboardEntidad');
 
     const tipoCita = elTipoCita ? elTipoCita.value : 'TODOS';
     const fechaDesde = elFechaDesde ? elFechaDesde.value : '';
     const fechaHasta = elFechaHasta ? elFechaHasta.value : '';
     const programadoPor = elProgramadoPor ? elProgramadoPor.value.trim() : '';
     const tipoEstudio = elTipoEstudio ? elTipoEstudio.value.trim() : '';
+    const entidad = elEntidad ? elEntidad.value.trim() : '';
 
     const params = new URLSearchParams();
     if (tipoCita !== 'TODOS') params.append('tipo_cita', tipoCita);
@@ -87,6 +92,7 @@ async function buscarCitasAuditoria() {
     if (fechaHasta) params.append('fecha_hasta', fechaHasta);
     if (programadoPor) params.append('programado_por', programadoPor);
     if (tipoEstudio) params.append('tipo_estudio', tipoEstudio);
+    if (entidad) params.append('entidad', entidad);
 
     const response = await apiFetch(`/api/dashboard/citas-auditoria?${params.toString()}`);
 
@@ -109,7 +115,7 @@ async function buscarCitasAuditoria() {
     if (typeof showToast === 'function') showToast('Error al cargar citas: ' + e.message, 'error');
     const tbody = document.getElementById('bodyTablaAuditoria');
     if (tbody) {
-      tbody.innerHTML = `<tr><td colspan="7" style="padding:20px;text-align:center;color:#dc2626">Error: ${typeof escapeHtml === 'function' ? escapeHtml(e.message) : e.message}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="8" style="padding:20px;text-align:center;color:#dc2626">Error: ${typeof escapeHtml === 'function' ? escapeHtml(e.message) : e.message}</td></tr>`;
     }
   }
 }
@@ -140,7 +146,7 @@ function renderizarTablaCitasAuditoria(citas) {
     const tbody = document.getElementById('bodyTablaAuditoria');
     if (!tbody) return;
     if (citas.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="7" style="padding:20px;text-align:center;color:#999">No hay citas que coincidan con los filtros</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" style="padding:20px;text-align:center;color:#999">No hay citas que coincidan con los filtros</td></tr>';
       return;
     }
     setupPagination('citasAuditoria', citas, renderCitaAuditoriaRow, {
@@ -152,7 +158,7 @@ function renderizarTablaCitasAuditoria(citas) {
     console.error('[DASHBOARD CITAS] Error renderizando tabla:', e.message);
     const tbody = document.getElementById('bodyTablaAuditoria');
     if (tbody) {
-      tbody.innerHTML = `<tr><td colspan="7" style="padding:20px;text-align:center;color:#dc2626">Error al renderizar tabla: ${typeof escapeHtml === 'function' ? escapeHtml(e.message) : e.message}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="8" style="padding:20px;text-align:center;color:#dc2626">Error al renderizar tabla: ${typeof escapeHtml === 'function' ? escapeHtml(e.message) : e.message}</td></tr>`;
     }
   }
 }
@@ -168,6 +174,7 @@ function renderCitaAuditoriaRow(tbody, cita) {
     const hora = cita.hora ? cita.hora.substring(0, 5) : '-';
     const documento = cita.paciente_documento || '-';
     const tipoConsulta = cita.tipo_consulta || '-';
+    const entidad = cita.entidad || '-';
     const tipoCita = cita.tipo_cita === 'AGENDA_MEDICA' ? 'Médica' : 'Electro';
     const agendadoPor = cita.programado_por || '-';
     const estado = cita.estado || '-';
@@ -179,6 +186,7 @@ function renderCitaAuditoriaRow(tbody, cita) {
       <td>${escapeHtml(hora)}</td>
       <td>${escapeHtml(cita.paciente_nombre || '-')} (${escapeHtml(documento)})</td>
       <td>${escapeHtml(tipoConsulta)}</td>
+      <td>${escapeHtml(entidad)}</td>
       <td>${escapeHtml(tipoCita)}</td>
       <td style="font-weight:600">${escapeHtml(agendadoPor)}</td>
       <td style="color:${estadoColor};font-weight:600">${escapeHtml(estado)}</td>
@@ -189,7 +197,7 @@ function renderCitaAuditoriaRow(tbody, cita) {
   } catch(e) {
     console.error('[DASHBOARD CITAS] Error renderizando fila:', e.message);
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td colspan="7" style="padding:8px;text-align:center;color:#dc2626">Error en fila</td>`;
+    tr.innerHTML = `<td colspan="8" style="padding:8px;text-align:center;color:#dc2626">Error en fila</td>`;
     tbody.appendChild(tr);
   }
 }
@@ -203,9 +211,11 @@ function limpiarFiltrosDashboard() {
     const elFechaDesde = document.getElementById('dashboardFechaDesde');
     const elFechaHasta = document.getElementById('dashboardFechaHasta');
     const elAgendadoPor = document.getElementById('dashboardAgendadoPor');
+    const elEntidad = document.getElementById('dashboardEntidad');
 
     if (elTipoCita) elTipoCita.value = 'TODOS';
     if (elAgendadoPor) elAgendadoPor.value = '';
+    if (elEntidad) elEntidad.value = '';
 
     const hoy = new Date().toISOString().split('T')[0];
     const hace30 = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
@@ -306,6 +316,35 @@ function mostrarToast(mensaje, tipo = 'info') {  try {
 }
 
 /**
+ * Cargar entidades disponibles para el filtro de auditoría
+ */
+async function cargarEntidadesFiltroAuditoria() {
+  const el = document.getElementById('dashboardEntidad');
+  if (!el) return;
+  const valorActual = el.value;
+  el.innerHTML = '<option value="">Todas</option>';
+  try {
+    const resp = await apiFetch('/api/entidades');
+    if (resp.ok) {
+      const data = await resp.json();
+      const entidades = Array.isArray(data) ? data : (data.registros || []);
+      entidades.forEach(e => {
+        const o = document.createElement('option');
+        o.value = e.nombre;
+        o.textContent = e.nombre;
+        el.appendChild(o);
+      });
+    }
+    if (valorActual) {
+      const opt = el.querySelector(`option[value="${valorActual}"]`);
+      if (opt) el.value = valorActual;
+    }
+  } catch(e) {
+    console.warn('[DASHBOARD CITAS] No se pudieron cargar entidades:', e.message);
+  }
+}
+
+/**
  * Cargar lista de tipos de estudio para el select de filtro, según el tipo de cita seleccionado.
  * @param {string} tipoCita - 'AGENDA_MEDICA', 'ELECTRODIAGNOSTICO' o 'TODOS'
  */
@@ -385,6 +424,7 @@ function exportarAuditoriaCitasExcel() {
       'Paciente': c.paciente_nombre || '-',
       'Documento': c.paciente_documento || '-',
       'Tipo Consulta / Estudio': c.tipo_consulta || '-',
+      'Entidad': c.entidad || '-',
       'Tipo Cita': c.tipo_cita === 'AGENDA_MEDICA' ? 'Medica' : 'Electro',
       'Agendado por': c.programado_por || '-',
       'Estado': c.estado || '-'
@@ -420,6 +460,7 @@ function exportarAuditoriaCitasPDF() {
         '<td>' + _esc(c.paciente_nombre) + '</td>' +
         '<td>' + _esc(c.paciente_documento) + '</td>' +
         '<td>' + _esc(c.tipo_consulta) + '</td>' +
+        '<td>' + _esc(c.entidad) + '</td>' +
         '<td>' + (c.tipo_cita === 'AGENDA_MEDICA' ? 'Medica' : 'Electro') + '</td>' +
         '<td>' + _esc(c.programado_por) + '</td>' +
         '<td>' + _esc(c.estado) + '</td></tr>';
@@ -435,7 +476,7 @@ function exportarAuditoriaCitasPDF() {
       '<h2>Auditoria de Citas</h2>' +
       '<p class="meta">Generado el ' + fechaGen + ' &mdash; Total: ' + dashboardCitasActuales.length + ' registros</p>' +
       '<table><thead><tr><th>Fecha</th><th>Hora</th><th>Paciente</th><th>Documento</th>' +
-      '<th>Tipo Estudio</th><th>Tipo Cita</th><th>Agendado por</th><th>Estado</th></tr></thead>' +
+      '<th>Tipo Estudio</th><th>Entidad</th><th>Tipo Cita</th><th>Agendado por</th><th>Estado</th></tr></thead>' +
       '<tbody>' + filas + '</tbody></table>' +
       '<script>window.onload=function(){window.print();}<\/script></body></html>';
     var ventana = window.open('', '_blank', 'width=900,height=700');

@@ -194,8 +194,11 @@ function updateMenuByRole() {
     const r = currentUser?.rol || '';
     if (r === 'superadmin' || r === 'admin') return true;
     const p = perms;
-    if (!p) return true; // sin restricciones personalizadas → defaults del rol
-    return p.includes(permKey);
+    if (Array.isArray(p)) return p.includes(permKey);
+    // Sin permisos personalizados → verificar defaults del rol
+    const defaults = typeof PERMISOS_ROL_DEFAULTS !== 'undefined' ? PERMISOS_ROL_DEFAULTS[r] : null;
+    if (defaults === null || defaults === undefined) return true; // rol sin restricciones
+    return Array.isArray(defaults) && defaults.includes(permKey);
   };
 
   // Maps data-module HTML attribute → modulo.* permission key
@@ -210,13 +213,8 @@ function updateMenuByRole() {
   };
 
   document.querySelectorAll('.menu-card').forEach(card => {
-    let allowed;
-    if (perms) {
-      const permKey = MODULE_PERM_MAP[card.dataset.module || ''];
-      allowed = permKey ? perms.includes(permKey) : (card.dataset.rol || '').split(' ').includes(rol);
-    } else {
-      allowed = (card.dataset.rol || '').split(' ').includes(rol);
-    }
+    const permKey = MODULE_PERM_MAP[card.dataset.module || ''];
+    const allowed = permKey ? tienePermiso(permKey) : (card.dataset.rol || '').split(' ').includes(rol);
     card.style.display = allowed ? '' : 'none';
   });
   // Sidebar recibos: mostrar/ocultar según permisos
@@ -384,6 +382,8 @@ function goToMenu() {
   initUsuariosDone = false;
   initDiagnosticosDone = false;
   initGestionDatosDone = false;
+  // Resetear calendario de citas integrado
+  if (typeof _citasCalIniciado !== 'undefined') _citasCalIniciado = false;
   // Resetear caché de catálogos para recargar al volver a entrar
   invalidarCacheEntidades();
   invalidarCacheEstudios();
@@ -416,6 +416,7 @@ function setupMenuHandlers() {
   if ($('btnVolverUsuarios')) $('btnVolverUsuarios').addEventListener('click', goToMenu);
   if ($('btnVolverDashboardCitas')) $('btnVolverDashboardCitas').addEventListener('click', goToMenu);
   if ($('btnVolverGestionDatos')) $('btnVolverGestionDatos').addEventListener('click', goToMenu);
+
   // Manejar botón atrás del navegador (solo una vez)
   if (!window._popstateSetup) {
     window._popstateSetup = true;
@@ -2153,7 +2154,10 @@ async function initAgendaMedica() {
       if (pgEl) pgEl.classList.add('active');
       
       // mostrar/ocultar secciones dentro de página según rol
-      if (page === 'programar') {
+      if (page === 'citas') {
+        // Recargar calendario al volver a la pestaña de citas
+        if (typeof cargarCitasCalendario === 'function') cargarCitasCalendario();
+      } else if (page === 'programar') {
         const titleHeader = document.getElementById('agendaTitleHeader');
         if (titleHeader) titleHeader.textContent = currentUser?.rol === 'doctor' ? 'Programar Agenda' : 'Agenda';
         // Show PDF download section for roles that can upload
@@ -2247,7 +2251,8 @@ async function initAgendaMedica() {
     $('btnDescargarPlantillaMedica')?.addEventListener('click', descargarPlantillaMedica);
   }
 
-  await cargarTurnosMedica();
+  // Inicializar calendario de citas (Ver Citas) - muestra el grid mensual primero
+  if (typeof initCitasCalendario === 'function') initCitasCalendario();
   // Cargar disponibilidad programada (intervalos) desde el inicio
   await actualizarHorasDisponibles();
 }
@@ -2363,8 +2368,8 @@ async function actualizarHorasDisponibles() {
     const lineas = [];
     if (disponibleManana) lineas.push('Mañana: 7:00 AM – 12:00 PM');
     if (disponibleTarde) lineas.push('Tarde: 2:00 PM – 6:00 PM');
-    if (!disponibleManana) lineas.push('⚠️ Sin disponibilidad matutina');
-    if (!disponibleTarde) lineas.push('⚠️ Sin disponibilidad vespertina');
+    if (!disponibleManana) lineas.push('⚠️ No estará disponible en el horario de la mañana');
+    if (!disponibleTarde) lineas.push('⚠️ No estará disponible en el horario de la tarde');
 
     if (data.tiene_intervalos && data.intervalos && data.intervalos.length > 0) {
       const bloqueados = data.intervalos.map(i =>
@@ -3260,6 +3265,13 @@ async function cargarTurnosMedica() {
       }
     }
     
+    // Actualizar contador de citas en el header
+    const countEl = $('citasTableCount');
+    if (countEl) {
+      const totalCitas = turnosOrdenados.filter(t => t.nombre_paciente).length;
+      countEl.textContent = totalCitas > 0 ? totalCitas + ' cita' + (totalCitas !== 1 ? 's' : '') : '';
+    }
+    
     // Actualizar estado del botón "Marcar como atendido"
     // (eliminado: ahora el cambio de estado se hace desde el modal al clickear el paciente)
     // adjustColumnsForRole
@@ -3900,13 +3912,18 @@ function descargarPlantillaMedica() {
 }
 
 function descargarPlantillaElectro() {
-  const headers = ['FECHA', 'HORA', 'NUMERO DOCUMENTO', 'NOMBRES Y APELLIDOS', 'ESTUDIO', 'DIAGNOSTICO', 'TELEFONO1', 'TELEFONO2'];
-  const ejemplo = ['2026-04-01', '20:00', '1234567890', 'Juan Carlos Pérez López', 'PSG Básica', 'Apnea del sueño', '3001234567', '3009876543'];
-  const ws = XLSX.utils.aoa_to_sheet([headers, ejemplo]);
-  ws['!cols'] = headers.map(() => ({ wch: 20 }));
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Estudios');
-  XLSX.writeFile(wb, 'plantilla_estudios_electro.xlsx');
+  apiFetch('/api/citas-electro/plantilla-excel').then(res => {
+    if (!res.ok) throw new Error('Error descargando plantilla');
+    return res.blob();
+  }).then(blob => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'plantilla_estudios_electro.xlsx';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }).catch(e => {
+    showToast('Error descargando plantilla: ' + e.message, 'error');
+  });
 }
 function splitNombreApellido(fullName) {
   const parts = (fullName || '').trim().split(/\s+/);
@@ -5585,6 +5602,8 @@ const PERMISOS_DEFS = [
   // ── Recibos ───────────────────────────────────────────────────────────────
   { key: 'recibos.crear',           label: 'Recibos: Crear nuevo recibo',         grupo: 'Recibos' },
   { key: 'recibos.ver',             label: 'Recibos: Ver lista de recibos',       grupo: 'Recibos' },
+  { key: 'recibos.editar',          label: 'Recibos: Editar recibo existente',    grupo: 'Recibos' },
+  { key: 'recibos.anular',          label: 'Recibos: Anular recibo',              grupo: 'Recibos' },
   { key: 'recibos.eliminar',        label: 'Recibos: Eliminar recibos',           grupo: 'Recibos' },
   { key: 'recibos.exportar',        label: 'Recibos: Exportar Excel / PDF',       grupo: 'Recibos' },
   { key: 'recibos.gestionar_servicios', label: 'Recibos: Gestionar servicios',    grupo: 'Recibos' },
@@ -7359,9 +7378,11 @@ async function cargarLista(queryString) {
       let acciones = `<div class="table-actions">`;
       acciones += `<a href="/api/recibos/${r.id}/pdf" target="_blank" class="btn-recibo-pdf" title="Ver PDF">
         <img src="images/pdf.svg" alt="PDF"/></a>`;
-      if (currentUser?.rol === 'superadmin' && !esAnulado) {
+      if (tienePermiso('recibos.editar') && !esAnulado) {
         acciones += `<button class="btn-editar" data-id="${r.id}" data-medico="${escapeHtml(r.medico_nombre||'')}" data-servicio="${escapeHtml(r.tipo_servicio||'')}" data-entidad="${escapeHtml(r.nombre_entidad||'')}" data-cliente="${escapeHtml(r.cliente||'')}" title="Editar">
           <img src="images/edit.svg" alt="Editar"/></button>`;
+      }
+      if (tienePermiso('recibos.anular') && !esAnulado) {
         acciones += `<button class="btn-recibo-anular anular-recibo" data-id="${r.id}" title="Anular">
           <img src="images/cancel.svg" alt="Anular"/></button>`;
       }
@@ -9493,23 +9514,20 @@ $('btnEstadoEnSala')?.addEventListener('click', async (e) => {
   } catch (err) { showToast('Error al actualizar estado', 'error'); console.error(err); }
 });
 
-// Botón: LLAMAR AL PACIENTE → Anuncio por voz + Confirmación de llegada
+// Botón: LLAMAR AL PACIENTE → Emitir anuncio por socket (solo recepción escucha) + Confirmación de llegada
 $('btnModalLlamarPaciente')?.addEventListener('click', async (e) => {
   e.preventDefault(); e.stopPropagation();
   if (!currentTurnoMedicaData) return;
   
   const nombrePaciente = currentTurnoMedicaData.paciente_nombre || 'el paciente';
   const consultorio = currentUser?.numero_consultorio;
-  const textoVoz = `Paciente ${nombrePaciente}, pasar al ${consultorio ? 'consultorio ' + consultorio : 'consultorio'}`;
   
-  // 1) Anuncio por voz
-  if (typeof _speak === 'function') {
-    _speak(textoVoz, 0.9);
-  } else if ('speechSynthesis' in window) {
-    window.speechSynthesis.cancel();
-    const utter = new SpeechSynthesisUtterance(textoVoz);
-    utter.lang = 'es-CO'; utter.rate = 0.9; utter.volume = 1;
-    window.speechSynthesis.speak(utter);
+  // 1) Emitir anuncio por socket (solo recepción reproduce la voz)
+  if (typeof socket !== 'undefined' && socket) {
+    socket.emit('agenda:anunciar-paciente', {
+      paciente_nombre: nombrePaciente,
+      numero_consultorio: consultorio
+    });
   }
   
   // 2) Preguntar si el paciente ya llegó
@@ -10037,6 +10055,27 @@ let _esperaPendienteId = null;  // id esperando confirmación de eliminación
 function initEsperaElectro() {
   $('btnAgregarEspera')?.addEventListener('click', agregarPacienteEspera);
 
+  // Cargar entidades dinámicamente
+  (async () => {
+    try {
+      const el = $('esperaFiltroEntidad');
+      if (el) {
+        el.innerHTML = '<option value="">Todas</option>';
+        const resp = await apiFetch('/api/entidades');
+        if (resp.ok) {
+          const data = await resp.json();
+          const entidades = Array.isArray(data) ? data : (data.registros || []);
+          entidades.filter(e => e.activo !== 0).forEach(e => {
+            const o = document.createElement('option');
+            o.value = e.nombre;
+            o.textContent = e.nombre;
+            el.appendChild(o);
+          });
+        }
+      }
+    } catch (e) { console.warn('No se pudieron cargar entidades para espera:', e.message); }
+  })();
+
   // Filtros en tiempo real
   ['esperaFiltroTexto', 'esperaFiltroEntidad', 'esperaFiltroPrioridad'].forEach(id => {
     $(id)?.addEventListener('input', renderEsperaTable);
@@ -10554,7 +10593,7 @@ function _actualizarConteoGestion() {
 function _gestionActualizarFiltros() {
   const tipo = _gestionTipoActual;
   const hayFechas   = ['citas_electro', 'turnos', 'recibos'].includes(tipo);
-  const hayBusqueda = ['citas_electro', 'turnos', 'recibos', 'diagnosticos'].includes(tipo);
+  const hayBusqueda = ['citas_electro', 'turnos', 'recibos', 'diagnosticos', 'entidades'].includes(tipo);
   const colBusqueda = $('gestionBusqueda')?.closest('.col');
   const colDesde    = $('gestionFechaDesde')?.closest('.col');
   const colHasta    = $('gestionFechaHasta')?.closest('.col');

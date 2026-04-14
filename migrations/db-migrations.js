@@ -148,7 +148,7 @@ const migrations = [
         FOREIGN KEY (doctor_id) REFERENCES usuarios(id) ON DELETE CASCADE,
         INDEX idx_doctor_fecha (doctor_id, fecha),
         INDEX idx_disponible (disponible)
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
     `
   },
   {

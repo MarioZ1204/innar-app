@@ -82,33 +82,23 @@ app.use((req, res, next) => {
   if (EXTENSIONES_ESTATICAS.test(req.path)) return next();
 
   const startTime = Date.now();
+  let logged = false;
   
-  // Capturar el método original de res.end/res.send
-  const originalEnd = res.end;
-  const originalSend = res.send;
-  
-  res.end = function(data, encoding) {
+  const logRequest = () => {
+    if (logged) return;
+    logged = true;
     const duration = Date.now() - startTime;
     const statusCode = res.statusCode || 200;
-    
     logger.api(req.method, req.path, statusCode, duration, {
       ip: req.ip,
       userAgent: req.get('user-agent')?.substring(0, 50)
     });
-    
-    originalEnd.call(this, data, encoding);
   };
-  
-  res.send = function(data) {
-    const duration = Date.now() - startTime;
-    const statusCode = res.statusCode || 200;
-    
-    logger.api(req.method, req.path, statusCode, duration, {
-      ip: req.ip,
-      userAgent: req.get('user-agent')?.substring(0, 50)
-    });
-    
-    return originalSend.call(this, data);
+
+  const originalEnd = res.end;
+  res.end = function(data, encoding) {
+    logRequest();
+    return originalEnd.call(this, data, encoding);
   };
   
   next();
@@ -1223,7 +1213,8 @@ app.post('/api/turnos/llamar-siguiente', requireAuth, requireRoleOrPerm(['supera
       numero_turno: turnoConConsultorio.numero_turno,
       numero_consultorio: numeroConsultorio
     });
-    emitSocket('agenda:turno-estado-cambio', { id: turno.id, estado: 'EN_ATENCION', paciente_nombre: turnoConConsultorio.paciente_nombre, numero_consultorio: numeroConsultorio });
+    // No emitir agenda:turno-estado-cambio aquí para evitar doble anuncio de voz
+    emitSocket('agenda:turno-estado-cambio', { id: turno.id, estado: 'EN_ATENCION' });
     
     res.json({ ok: true, turno: turnoConConsultorio });
   } catch (e) {
@@ -1529,7 +1520,7 @@ app.delete('/api/doctor-agenda-files/:id', requireAuth, async (req, res) => {
 // --- Días bloqueados ---
 
 // Crear tabla si no existe
-app.get('/api/init-doctor-disponibilidad', requireAuth, async (req, res) => {
+app.get('/api/init-doctor-disponibilidad', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'modulo.gestion_datos'), async (req, res) => {
   try {
     const sql = `
       CREATE TABLE IF NOT EXISTS doctor_disponibilidad_mensual (
@@ -1548,7 +1539,7 @@ app.get('/api/init-doctor-disponibilidad', requireAuth, async (req, res) => {
         FOREIGN KEY (doctor_id) REFERENCES usuarios(id) ON DELETE CASCADE,
         INDEX idx_doctor_fecha (doctor_id, fecha),
         INDEX idx_disponible (disponible)
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
     `;
     await db.execute(sql);
     res.json({ ok: true, message: 'Tabla doctor_disponibilidad_mensual creada/verificada' });
@@ -1770,8 +1761,8 @@ app.delete('/api/doctor-disponibilidad/:doctorId', requireAuth, async (req, res)
       return res.status(400).json({ error: 'doctorId inválido' });
     }
 
-    // Permisos: admin o el doctor
-    const isAdmin = req.session.rol === 'admin';
+    // Permisos: admin, superadmin o el doctor
+    const isAdmin = req.session.rol === 'admin' || req.session.rol === 'superadmin';
     const isDoctor = req.session.rol === 'doctor' && doctorId === req.session.usuarioId;
     if (!isAdmin && !isDoctor) {
       return res.status(403).json({ error: 'No tienes permiso para esto' });
@@ -1800,7 +1791,7 @@ app.post('/api/doctor-dias-bloqueados/procesar-excel', requireAuth, upload.singl
   return app._router.handle(req, res);
 });
 
-app.get('/api/doctor-dias-bloqueados/:doctorId', async (req, res) => {
+app.get('/api/doctor-dias-bloqueados/:doctorId', requireAuth, async (req, res) => {
   try {
     const doctorId = parseInt(req.params.doctorId, 10);
     const disp = await procesarAgendaExcel.obtenerDiasBloqueados(doctorId, db);
@@ -1810,7 +1801,7 @@ app.get('/api/doctor-dias-bloqueados/:doctorId', async (req, res) => {
   }
 });
 
-app.post('/api/doctor-dias-bloqueados/validar', async (req, res) => {
+app.post('/api/doctor-dias-bloqueados/validar', requireAuth, async (req, res) => {
   try {
     const { doctor_id, fecha } = req.body;
     const esta_bloqueada = await procesarAgendaExcel.estaFechaBloqueada(doctor_id, fecha, db);
@@ -1838,6 +1829,50 @@ app.delete('/api/doctor-dias-bloqueados/:doctorId', requireAuth, async (req, res
 });
 
 // --- Turnos (agenda médica) ---
+
+// Calendario de citas: cuenta de turnos por día en un mes
+app.get('/api/turnos/calendario', requireAuth, async (req, res) => {
+  const { mes, doctor_id } = req.query; // mes = YYYY-MM
+  if (!mes || !/^\d{4}-\d{2}$/.test(mes)) {
+    return res.status(400).json({ error: 'mes es obligatorio (formato YYYY-MM)' });
+  }
+  try {
+    const baseSql = `
+        SELECT fecha, COUNT(*) as total,
+          SUM(CASE WHEN estado IN ('AGENDADO','EN_SALA','EN_ATENCION') THEN 1 ELSE 0 END) as agendadas,
+          SUM(CASE WHEN estado = 'ATENDIDO' THEN 1 ELSE 0 END) as atendidas,
+          SUM(CASE WHEN estado = 'NO_ASISTIO' THEN 1 ELSE 0 END) as no_asistieron,
+          SUM(CASE WHEN estado = 'CANCELADO' THEN 1 ELSE 0 END) as canceladas,
+          SUM(CASE WHEN estado = 'REPROGRAMADO' THEN 1 ELSE 0 END) as reprogramadas
+        FROM turnos
+        WHERE DATE_FORMAT(fecha, '%Y-%m') = ?`;
+    let sql, params;
+    if (doctor_id) {
+      sql = baseSql + ` AND doctor_id = ? GROUP BY fecha ORDER BY fecha ASC`;
+      params = [mes, doctor_id];
+    } else {
+      sql = baseSql + ` GROUP BY fecha ORDER BY fecha ASC`;
+      params = [mes];
+    }
+    const rows = await db.query(sql, params);
+
+    // Obtener disponibilidad del doctor para el mes
+    let disponibilidad = [];
+    if (doctor_id) {
+      try {
+        disponibilidad = await db.query(
+          'SELECT fecha, disponible FROM doctor_disponibilidad_mensual WHERE doctor_id = ? AND DATE_FORMAT(fecha, \'%Y-%m\') = ?',
+          [doctor_id, mes]
+        );
+      } catch (_) { /* tabla puede no existir aún */ }
+    }
+
+    res.json({ ok: true, dias: rows, disponibilidad });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
 
 // Listar turnos por fecha y consultorio
 app.get('/api/turnos', requireAuth, async (req, res) => {
@@ -1923,7 +1958,7 @@ app.get('/api/turnos/export', requireAuth, async (req, res) => {
 });
 
 // Obtener disponibilidad de doctor para una fecha específica
-app.get('/api/doctor-disponibilidad', async (req, res) => {
+app.get('/api/doctor-disponibilidad', requireAuth, async (req, res) => {
   const { doctor_id, fecha } = req.query;
   
   if (!doctor_id || !fecha) {
@@ -2035,7 +2070,7 @@ app.post('/api/turnos', requireAuth, requireRoleOrPerm(['superadmin', 'admin', '
 
 // Cambiar estado de un turno
 // Actualizar turno (campo genérico)
-app.patch('/api/turnos/:id', requireAuth, async (req, res) => {
+app.patch('/api/turnos/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion', 'doctor'], 'agenda.editar'), async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const { paciente_nombre, paciente_telefono, tipo_consulta, fecha, hora, estado, observaciones } = req.body || {};
 
@@ -2406,7 +2441,7 @@ app.get('/api/equipos-electro', requireAuth, async (req, res) => {
 
 // Obtener disponibilidad de CUPOS para una fecha y hora específica
 // Obtener duración de un estudio específico
-app.get('/api/estudios/duracion', async (req, res) => {
+app.get('/api/estudios/duracion', requireAuth, async (req, res) => {
   try {
     const { nombre } = req.query;
     
@@ -2790,15 +2825,9 @@ app.get('/api/turnos/plantilla-excel', requireAuth, async (req, res) => {
   try {
     const ExcelJS = require('exceljs');
 
-    // Obtener entidades existentes
-    const entidadesRows = await db.query(`
-      SELECT DISTINCT valor FROM (
-        SELECT TRIM(entidad) AS valor FROM turnos WHERE entidad IS NOT NULL AND TRIM(entidad) <> ''
-        UNION
-        SELECT TRIM(nombre_entidad) AS valor FROM recibos WHERE nombre_entidad IS NOT NULL AND TRIM(nombre_entidad) <> ''
-      ) AS t ORDER BY valor ASC
-    `);
-    const entidades = entidadesRows.map(r => r.valor);
+    // Obtener todas las entidades activas
+    const entidadesRows = await db.query('SELECT nombre FROM entidades WHERE activo=1 ORDER BY nombre ASC');
+    const entidades = entidadesRows.map(r => r.nombre);
 
     // Obtener tipos de consulta según el doctor
     let tiposConsulta = [];
@@ -2820,6 +2849,12 @@ app.get('/api/turnos/plantilla-excel', requireAuth, async (req, res) => {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('Pacientes');
 
+    // Hoja oculta con listas de valores para los desplegables
+    const wsListas = wb.addWorksheet('_Listas');
+    wsListas.state = 'veryHidden';
+    entidades.forEach((v, i) => { wsListas.getCell(`A${i + 1}`).value = v; });
+    tiposConsulta.forEach((v, i) => { wsListas.getCell(`B${i + 1}`).value = v; });
+
     // Headers
     ws.columns = [
       { header: 'FECHA', key: 'fecha', width: 15 },
@@ -2839,14 +2874,15 @@ app.get('/api/turnos/plantilla-excel', requireAuth, async (req, res) => {
     // Fila ejemplo
     ws.addRow(['2026-04-01', '08:00', '1234567890', 'Juan Carlos Pérez López', entidades[0] || 'Particular', tiposConsulta[0] || 'Consulta General', '3001234567', '3009876543', '']);
 
-    // Agregar validaciones de datos (dropdown) en columnas E y F para filas 2-200
+    // Agregar validaciones de datos (dropdown) referenciando la hoja oculta
     const maxRows = 200;
     if (entidades.length > 0) {
+      const ref = `_Listas!$A$1:$A$${entidades.length}`;
       for (let row = 2; row <= maxRows; row++) {
         ws.getCell(`E${row}`).dataValidation = {
           type: 'list',
           allowBlank: true,
-          formulae: [`"${entidades.join(',')}"`],
+          formulae: [ref],
           showErrorMessage: true,
           errorTitle: 'Entidad no válida',
           error: 'Seleccione una entidad de la lista',
@@ -2854,11 +2890,12 @@ app.get('/api/turnos/plantilla-excel', requireAuth, async (req, res) => {
       }
     }
     if (tiposConsulta.length > 0) {
+      const ref = `_Listas!$B$1:$B$${tiposConsulta.length}`;
       for (let row = 2; row <= maxRows; row++) {
         ws.getCell(`F${row}`).dataValidation = {
           type: 'list',
           allowBlank: true,
-          formulae: [`"${tiposConsulta.join(',')}"`],
+          formulae: [ref],
           showErrorMessage: true,
           errorTitle: 'Tipo de consulta no válido',
           error: 'Seleccione un tipo de consulta de la lista',
@@ -2872,6 +2909,87 @@ app.get('/api/turnos/plantilla-excel', requireAuth, async (req, res) => {
     res.end();
   } catch (e) {
     console.error('Error generando plantilla:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Descargar plantilla Excel de electrodiagnóstico con dropdowns de estudio y entidad
+app.get('/api/citas-electro/plantilla-excel', requireAuth, async (req, res) => {
+  try {
+    const ExcelJS = require('exceljs');
+
+    // Obtener estudios activos
+    const estudiosRows = await db.query('SELECT nombre FROM estudio_duraciones ORDER BY nombre ASC');
+    const estudios = estudiosRows.map(r => r.nombre);
+
+    // Obtener entidades activas
+    const entidadesRows = await db.query('SELECT nombre FROM entidades WHERE activo=1 ORDER BY nombre ASC');
+    const entidades = entidadesRows.map(r => r.nombre);
+
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('Estudios');
+
+    // Hoja oculta con listas de valores para los desplegables
+    const wsListas = wb.addWorksheet('_Listas');
+    wsListas.state = 'veryHidden';
+    estudios.forEach((v, i) => { wsListas.getCell(`A${i + 1}`).value = v; });
+    entidades.forEach((v, i) => { wsListas.getCell(`B${i + 1}`).value = v; });
+
+    ws.columns = [
+      { header: 'FECHA', key: 'fecha', width: 15 },
+      { header: 'HORA', key: 'hora', width: 10 },
+      { header: 'NUMERO DOCUMENTO', key: 'documento', width: 20 },
+      { header: 'NOMBRES Y APELLIDOS', key: 'nombre', width: 30 },
+      { header: 'ESTUDIO', key: 'estudio', width: 25 },
+      { header: 'ENTIDAD', key: 'entidad', width: 20 },
+      { header: 'DIAGNOSTICO', key: 'diagnostico', width: 25 },
+      { header: 'TELEFONO1', key: 'tel1', width: 15 },
+      { header: 'TELEFONO2', key: 'tel2', width: 15 },
+    ];
+
+    ws.getRow(1).font = { bold: true };
+
+    // Fila ejemplo
+    ws.addRow(['2026-04-01', '20:00', '1234567890', 'Juan Carlos Pérez López', estudios[0] || 'PSG Básica', entidades[0] || 'Particular', 'Apnea del sueño', '3001234567', '3009876543']);
+
+    const maxRows = 200;
+
+    // Dropdown de estudios en columna E referenciando hoja oculta
+    if (estudios.length > 0) {
+      const ref = `_Listas!$A$1:$A$${estudios.length}`;
+      for (let row = 2; row <= maxRows; row++) {
+        ws.getCell(`E${row}`).dataValidation = {
+          type: 'list',
+          allowBlank: true,
+          formulae: [ref],
+          showErrorMessage: true,
+          errorTitle: 'Estudio no válido',
+          error: 'Seleccione un estudio de la lista',
+        };
+      }
+    }
+
+    // Dropdown de entidades en columna F referenciando hoja oculta
+    if (entidades.length > 0) {
+      const ref = `_Listas!$B$1:$B$${entidades.length}`;
+      for (let row = 2; row <= maxRows; row++) {
+        ws.getCell(`F${row}`).dataValidation = {
+          type: 'list',
+          allowBlank: true,
+          formulae: [ref],
+          showErrorMessage: true,
+          errorTitle: 'Entidad no válida',
+          error: 'Seleccione una entidad de la lista',
+        };
+      }
+    }
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename=plantilla_estudios_electro.xlsx');
+    await wb.xlsx.write(res);
+    res.end();
+  } catch (e) {
+    console.error('Error generando plantilla electro:', e);
     res.status(500).json({ error: e.message });
   }
 });
@@ -3897,7 +4015,7 @@ app.get('/api/recibos/buscar-cita', requireAuth, requireRoleOrPerm(['superadmin'
 });
 
 // Listar recibos (con filtros opcionales)
-app.get('/api/recibos', requireAuth, async (req, res) => {
+app.get('/api/recibos', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion', 'contabilidad'], 'recibos.ver'), async (req, res) => {
   try {
     const { fecha_desde, fecha_hasta, tipo_pago, medico_id, medico_nombre, generado_por_id, nombre_entidad, tipo_servicio, q } = req.query;
     const conditions = [];
@@ -3933,7 +4051,7 @@ app.get('/api/recibos', requireAuth, async (req, res) => {
 });
 
 // Exportar recibos a Excel (XLSX)
-app.get('/api/recibos/export/xlsx', requireAuth, async (req, res) => {
+app.get('/api/recibos/export/xlsx', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion', 'contabilidad'], 'recibos.ver'), async (req, res) => {
   try {
     const XLSX = require('xlsx');
     const { fecha_desde, fecha_hasta, tipo_pago, medico_id, medico_nombre, generado_por_id, nombre_entidad, tipo_servicio, q } = req.query;
@@ -3990,7 +4108,7 @@ app.get('/api/recibos/export/xlsx', requireAuth, async (req, res) => {
 });
 
 // Exportar recibos a PDF (página HTML imprimible)
-app.get('/api/recibos/export/pdf-reporte', requireAuth, async (req, res) => {
+app.get('/api/recibos/export/pdf-reporte', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion', 'contabilidad'], 'recibos.ver'), async (req, res) => {
   try {
     const { fecha_desde, fecha_hasta, tipo_pago, medico_id, medico_nombre, generado_por_id, nombre_entidad, tipo_servicio, q } = req.query;
     const conditions = [];
@@ -4184,7 +4302,7 @@ app.delete('/api/recibos/:id', requireAuth, requireRoleOrPerm(['superadmin', 'ad
 });
 
 // Obtener recibo (por id)
-app.get('/api/recibos/:id', requireAuth, async (req, res) => {
+app.get('/api/recibos/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion', 'contabilidad'], 'recibos.ver'), async (req, res) => {
   const id = parseReciboId(req.params.id);
   if (id === null) return res.status(400).json({ error: 'ID de recibo inválido' });
   try {
@@ -4203,7 +4321,7 @@ app.get('/api/recibos/:id', requireAuth, async (req, res) => {
 });
 
 // Generar PDF del recibo
-app.get('/api/recibos/:id/pdf', requireAuth, async (req, res) => {
+app.get('/api/recibos/:id/pdf', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion', 'contabilidad'], 'recibos.ver'), async (req, res) => {
   const id = parseReciboId(req.params.id);
   if (id === null) return res.status(400).json({ error: 'ID de recibo inválido' });
   try {
@@ -4371,7 +4489,7 @@ app.get('/api/recibos/:id/pdf', requireAuth, async (req, res) => {
 });
 
 // Generar Reporte Diario
-app.get('/api/reportes/diario', async (req, res) => {
+app.get('/api/reportes/diario', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'contabilidad'], 'recibos.ver'), async (req, res) => {
   try {
     const fecha = req.query.fecha;
     if(!fecha) return res.status(400).json({ error: 'Fecha requerida' });
@@ -4503,7 +4621,7 @@ app.get('/api/reportes/diario', async (req, res) => {
 });
 
 // Generar Reporte Mensual
-app.get('/api/reportes/mensual', async (req, res) => {
+app.get('/api/reportes/mensual', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'contabilidad'], 'recibos.ver'), async (req, res) => {
   try {
     const mes = req.query.mes;
     if(!mes) return res.status(400).json({ error: 'Mes requerido' });
@@ -4643,7 +4761,7 @@ app.get('/api/reportes/mensual', async (req, res) => {
 // ðŸ“Š Dashboard Auditoría de Citas - Ver quién agendó cada cita
 app.get('/api/dashboard/citas-auditoria', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro', 'doctor', 'contabilidad'], 'sistema.dashboard'), async (req, res) => {
   try {
-    const { tipo_cita, fecha_desde, fecha_hasta, programado_por, tipo_estudio } = req.query;
+    const { tipo_cita, fecha_desde, fecha_hasta, programado_por, tipo_estudio, entidad } = req.query;
     
     // Construir consultas para ambas tablas
     const citasMedicas = await db.query(`
@@ -4657,6 +4775,7 @@ app.get('/api/dashboard/citas-auditoria', requireAuth, requireRoleOrPerm(['super
         t.programado_por,
         t.doctor_id,
         t.estado,
+        t.entidad,
         'AGENDA_MEDICA' as tipo_cita,
         t.numero_turno
       FROM turnos t
@@ -4664,11 +4783,15 @@ app.get('/api/dashboard/citas-auditoria', requireAuth, requireRoleOrPerm(['super
         ${fecha_desde ? 'AND t.fecha >= ?' : ''}
         ${fecha_hasta ? 'AND t.fecha <= ?' : ''}
         ${programado_por ? 'AND t.programado_por LIKE ?' : ''}
+        ${entidad ? 'AND t.entidad = ?' : ''}
+        ${tipo_estudio ? 'AND t.tipo_consulta = ?' : ''}
       ORDER BY t.fecha DESC, t.hora DESC
     `, [
       ...(fecha_desde ? [fecha_desde] : []),
       ...(fecha_hasta ? [fecha_hasta] : []),
-      ...(programado_por ? [`%${programado_por}%`] : [])
+      ...(programado_por ? [`%${programado_por}%`] : []),
+      ...(entidad ? [entidad] : []),
+      ...(tipo_estudio ? [tipo_estudio] : [])
     ]);
 
     const citasElectro = await db.query(`
@@ -5226,6 +5349,18 @@ const PORT = process.env.PORT || 3000;
     }
     // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
+    // --- Migración: corregir collation de doctor_disponibilidad_mensual ---
+    try {
+      await db.execute(
+        'ALTER TABLE doctor_disponibilidad_mensual CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci'
+      );
+      logger.info('[MIGRATION] Collation de doctor_disponibilidad_mensual corregida a utf8mb4_general_ci', { type: 'STARTUP' });
+    } catch (migErr) {
+      if (!migErr.message.includes("doesn't exist")) {
+        logger.warn('[MIGRATION] Advertencia collation doctor_disponibilidad_mensual: ' + migErr.message, { type: 'STARTUP' });
+      }
+    }
+
     // â”€â”€â”€ Auto-migraciones al inicio â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // Agregar columna deleted_at a citas_electro si no existe (soft-delete)
     // Compatible con MySQL 5.x y 8.x
@@ -5578,6 +5713,11 @@ const PORT = process.env.PORT || 3000;
         io.emit('agenda:actualizar-consultorio', data.consultorio);
         io.emit('agenda:actualizar-lista');
         io.emit('voz:anunciar-siguiente', data);
+      });
+
+      // Evento: Doctor anuncia paciente (voz solo para recepción)
+      socket.on('agenda:anunciar-paciente', (data) => {
+        socket.broadcast.emit('agenda:anunciar-paciente', data);
       });
 
       // Evento: Nuevo turno en electrodiagnóstico

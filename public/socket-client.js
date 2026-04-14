@@ -136,23 +136,7 @@ function initSocket() {
         window.speechSynthesis.speak(utter);
       }
     }
-    // Anuncio de voz para recepción cuando doctor llama paciente (EN_ATENCION)
-    if (data.estado === 'EN_ATENCION') {
-      const esRecep = typeof tienePermiso === 'function' && tienePermiso('agenda.cambiar_estado');
-      if (esRecep && 'speechSynthesis' in window) {
-        const nombre = data.paciente_nombre || 'siguiente paciente';
-        const consultorio = data.numero_consultorio ? `consultorio ${data.numero_consultorio}` : 'consultorio';
-        const texto = `Paciente ${nombre}, pasar al ${consultorio}`;
-        if (typeof showToast === 'function') showToast(texto, 'info');
-        if (typeof _speak === 'function') _speak(texto, 0.9);
-        else {
-          window.speechSynthesis.cancel();
-          const utter = new SpeechSynthesisUtterance(texto);
-          utter.lang = 'es-CO'; utter.rate = 0.9; utter.volume = 1;
-          window.speechSynthesis.speak(utter);
-        }
-      }
-    }
+    // EN_ATENCION: ya NO se reproduce voz aquí (se maneja vía agenda:anunciar-paciente y agenda:turno-llamar-siguiente)
   });
 
   socket.on('agenda:turno-numero-cambio', (data) => {
@@ -162,6 +146,24 @@ function initSocket() {
   socket.on('agenda:disponibilidad-actualizada', (data) => {
     if (typeof actualizarDisponibilidad === 'function') {
       actualizarDisponibilidad(data.doctor_id);
+    }
+  });
+
+  // Anuncio de voz directo: doctor presiona "Llamar al paciente"
+  socket.on('agenda:anunciar-paciente', (data) => {
+    const esRecep = typeof tienePermiso === 'function' && tienePermiso('agenda.cambiar_estado');
+    if (esRecep && 'speechSynthesis' in window) {
+      const nombre = data.paciente_nombre || 'siguiente paciente';
+      const consultorio = data.numero_consultorio ? `consultorio ${data.numero_consultorio}` : 'consultorio';
+      const texto = `Paciente ${nombre}, pasar al ${consultorio}`;
+      if (typeof showToast === 'function') showToast(texto, 'info');
+      if (typeof _speak === 'function') _speak(texto, 0.9);
+      else {
+        window.speechSynthesis.cancel();
+        const utter = new SpeechSynthesisUtterance(texto);
+        utter.lang = 'es-CO'; utter.rate = 0.9; utter.volume = 1;
+        window.speechSynthesis.speak(utter);
+      }
     }
   });
 
