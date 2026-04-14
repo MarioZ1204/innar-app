@@ -257,6 +257,11 @@ function formatearFecha(fecha) {
   if (!fecha) return '-';
   
   try {
+    // Extraer directamente YYYY-MM-DD para evitar desfase de zona horaria
+    const str = typeof fecha === 'string' ? fecha : new Date(fecha).toISOString();
+    const parts = str.substring(0, 10).split('-');
+    if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    
     const d = new Date(fecha);
     if (isNaN(d.getTime())) return fecha;
     

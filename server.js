@@ -1837,6 +1837,11 @@ app.get('/api/turnos/calendario', requireAuth, async (req, res) => {
     return res.status(400).json({ error: 'mes es obligatorio (formato YYYY-MM)' });
   }
   try {
+    // Calcular rango de fechas del mes (evita DATE_FORMAT que causa conflictos de collation)
+    const [year, month] = mes.split('-').map(Number);
+    const fechaInicio = `${mes}-01`;
+    const fechaFin = month === 12 ? `${year + 1}-01-01` : `${year}-${String(month + 1).padStart(2, '0')}-01`;
+
     const baseSql = `
         SELECT fecha, COUNT(*) as total,
           SUM(CASE WHEN estado IN ('PENDIENTE','EN_SALA','EN_ATENCION') THEN 1 ELSE 0 END) as agendadas,
@@ -1845,14 +1850,14 @@ app.get('/api/turnos/calendario', requireAuth, async (req, res) => {
           SUM(CASE WHEN estado = 'CANCELADO' THEN 1 ELSE 0 END) as canceladas,
           SUM(CASE WHEN estado = 'REPROGRAMADO' THEN 1 ELSE 0 END) as reprogramadas
         FROM turnos
-        WHERE DATE_FORMAT(fecha, '%Y-%m') = ?`;
+        WHERE fecha >= ? AND fecha < ?`;
     let sql, params;
     if (doctor_id) {
       sql = baseSql + ` AND doctor_id = ? GROUP BY fecha ORDER BY fecha ASC`;
-      params = [mes, doctor_id];
+      params = [fechaInicio, fechaFin, doctor_id];
     } else {
       sql = baseSql + ` GROUP BY fecha ORDER BY fecha ASC`;
-      params = [mes];
+      params = [fechaInicio, fechaFin];
     }
     const rawRows = await db.query(sql, params);
     // Convertir BigInt a Number (mysql2 puede retornar COUNT/SUM como BigInt)
@@ -1871,8 +1876,8 @@ app.get('/api/turnos/calendario', requireAuth, async (req, res) => {
     if (doctor_id) {
       try {
         disponibilidad = await db.query(
-          'SELECT fecha, disponible FROM doctor_disponibilidad_mensual WHERE doctor_id = ? AND DATE_FORMAT(fecha, \'%Y-%m\') = ?',
-          [doctor_id, mes]
+          'SELECT fecha, disponible FROM doctor_disponibilidad_mensual WHERE doctor_id = ? AND fecha >= ? AND fecha < ?',
+          [doctor_id, fechaInicio, fechaFin]
         );
       } catch (_) { /* tabla puede no existir aún */ }
     }
