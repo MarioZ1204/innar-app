@@ -56,6 +56,7 @@ async function cargarCitasCalendario() {
     var url = '/api/turnos/calendario?mes=' + mes + (doctorId ? '&doctor_id=' + encodeURIComponent(doctorId) : '');
     var res = await apiFetch(url);
     var data = await res.json();
+    console.log('[CALENDARIO DEBUG] url:', url, 'data.ok:', data.ok, 'dias.length:', data.dias?.length, 'sample:', JSON.stringify(data.dias?.slice?.(0, 2)));
 
     _citasCalDatosCache = {};
     _citasCalDispCache = {};

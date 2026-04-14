@@ -1855,6 +1855,7 @@ app.get('/api/turnos/calendario', requireAuth, async (req, res) => {
       params = [mes];
     }
     const rows = await db.query(sql, params);
+    console.log('[CALENDARIO DEBUG] mes:', mes, 'doctor_id:', doctor_id, 'rows:', JSON.stringify(rows?.slice?.(0, 3) || rows));
 
     // Obtener disponibilidad del doctor para el mes
     let disponibilidad = [];
