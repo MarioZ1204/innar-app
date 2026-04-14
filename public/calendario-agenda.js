@@ -37,21 +37,23 @@ function initCitasCalendario() {
 }
 
 function _getCitasCalDoctorId() {
-  return typeof selectedDoctorId !== 'undefined' && selectedDoctorId
-    ? selectedDoctorId
-    : (typeof currentUser !== 'undefined' && currentUser ? currentUser.id : null);
+  // Si hay un doctor explícitamente seleccionado, usarlo
+  if (typeof selectedDoctorId !== 'undefined' && selectedDoctorId) return selectedDoctorId;
+  // Si el usuario actual es doctor, usar su propio ID
+  if (typeof currentUser !== 'undefined' && currentUser && currentUser.rol === 'doctor') return currentUser.id;
+  // Para otros roles (recepción, admin, etc.) sin doctor seleccionado: null = mostrar todos
+  return null;
 }
 
 async function cargarCitasCalendario() {
   var doctorId = _getCitasCalDoctorId();
-  if (!doctorId) return;
 
   var mes = _citasCalMesActual.getFullYear() + '-' + String(_citasCalMesActual.getMonth() + 1).padStart(2, '0');
   var titulo = document.getElementById('citasCalMonthTitle');
   if (titulo) titulo.textContent = _MESES_ES[_citasCalMesActual.getMonth()] + ' ' + _citasCalMesActual.getFullYear();
 
   try {
-    var url = '/api/turnos/calendario?mes=' + mes + '&doctor_id=' + encodeURIComponent(doctorId);
+    var url = '/api/turnos/calendario?mes=' + mes + (doctorId ? '&doctor_id=' + encodeURIComponent(doctorId) : '');
     var res = await apiFetch(url);
     var data = await res.json();
 
