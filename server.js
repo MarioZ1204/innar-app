@@ -1854,8 +1854,17 @@ app.get('/api/turnos/calendario', requireAuth, async (req, res) => {
       sql = baseSql + ` GROUP BY fecha ORDER BY fecha ASC`;
       params = [mes];
     }
-    const rows = await db.query(sql, params);
-    console.log('[CALENDARIO DEBUG] mes:', mes, 'doctor_id:', doctor_id, 'rows:', JSON.stringify(rows?.slice?.(0, 3) || rows));
+    const rawRows = await db.query(sql, params);
+    // Convertir BigInt a Number (mysql2 puede retornar COUNT/SUM como BigInt)
+    const rows = rawRows.map(r => ({
+      fecha: r.fecha,
+      total: Number(r.total) || 0,
+      agendadas: Number(r.agendadas) || 0,
+      atendidas: Number(r.atendidas) || 0,
+      no_asistieron: Number(r.no_asistieron) || 0,
+      canceladas: Number(r.canceladas) || 0,
+      reprogramadas: Number(r.reprogramadas) || 0
+    }));
 
     // Obtener disponibilidad del doctor para el mes
     let disponibilidad = [];
