@@ -1897,6 +1897,25 @@ button.remove { padding:5px 10px; font-size:.8rem; width:100%; }
   vertical-align: middle;
   margin-left: 6px;
 }
+.recibo-badge-estado {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 99px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+.recibo-badge-pendiente {
+  background: #fff7ed;
+  color: #c2410c;
+  border: 1.5px solid #fdba74;
+}
+.recibo-badge-pagado {
+  background: #dcfce7;
+  color: #15803d;
+  border: 1.5px solid #86efac;
+}
 .recibo-badge-pago {
   display: inline-block;
   font-size: 0.78rem;
@@ -1909,6 +1928,30 @@ button.remove { padding:5px 10px; font-size:.8rem; width:100%; }
 .recibo-badge-pago.pago-none       { background: #f3f4f6; color: #6b7280; }
 
 /* --- Recibo action buttons (estilo agenda médica) --- */
+.btn-recibo-pagar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  background: #f0fdf4;
+  color: #15803d;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+.btn-recibo-pagar svg {
+  width: 16px;
+  height: 16px;
+}
+.btn-recibo-pagar:hover {
+  background: #dcfce7;
+  border-color: #4ade80;
+  color: #166534;
+  transform: translateY(-1px);
+}
 .btn-recibo-pdf {
   display: inline-flex;
   align-items: center;
@@ -2875,6 +2918,41 @@ button.remove { padding:5px 10px; font-size:.8rem; width:100%; }
 /* ========== FIELD ERROR ========== */
 .field-error-input { border-color: #dc2626 !important; box-shadow: 0 0 0 2px rgba(220,38,38,0.15) !important; }
 .field-error-msg { color: #dc2626; font-size: 0.78rem; margin-top: 3px; display: block; }
+
+/* ========== MULTI-SELECT COMPONENT ========== */
+.ms-wrap { position: relative; width: 100%; }
+.ms-trigger {
+  width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 8px 12px; background: #fff; border: 1px solid #d1d5db; border-radius: 8px;
+  font-size: 0.9rem; color: #374151; cursor: pointer; text-align: left;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.ms-trigger:hover { border-color: var(--c-primary); }
+.ms-trigger:focus { outline: none; border-color: var(--c-primary); box-shadow: 0 0 0 3px rgba(138,166,161,0.15); }
+.ms-trigger.ms-has-value { border-color: var(--c-primary); background: #f0fdf4; }
+.ms-text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ms-arrow { flex-shrink: 0; color: #9ca3af; transition: transform 0.2s; }
+.ms-open .ms-arrow { transform: rotate(180deg); }
+.ms-dropdown {
+  display: none; position: absolute; top: calc(100% + 4px); left: 0; right: 0;
+  background: #fff; border: 1px solid #d1d5db; border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.12); z-index: 1000;
+  max-height: 240px; overflow-y: auto; padding: 6px 0;
+}
+.ms-open .ms-dropdown { display: block; }
+.ms-item {
+  display: flex; align-items: center; gap: 10px; padding: 8px 14px;
+  cursor: pointer; font-size: 0.88rem; color: #374151; transition: background 0.15s;
+  user-select: none;
+}
+.ms-item:hover { background: #f3f4f6; }
+.ms-item input[type="checkbox"] {
+  width: 16px; height: 16px; accent-color: var(--c-primary);
+  cursor: pointer; flex-shrink: 0;
+}
+.ms-dropdown::-webkit-scrollbar { width: 6px; }
+.ms-dropdown::-webkit-scrollbar-track { background: transparent; }
+.ms-dropdown::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 3px; }
 
 /* ========== CALENDARIO AGENDA (Ver Citas) — Diseño Moderno ========== */
 

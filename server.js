@@ -1029,8 +1029,9 @@ app.get('/api/auditoria/buscar', requireAuth, requireRoleOrPerm(['superadmin', '
     }
     
     if (accion && accion.trim() !== '') {
-      query += ' AND ua.accion = ?';
-      params.push(accion.toUpperCase());
+      const arr = accion.split(',').filter(Boolean);
+      if (arr.length === 1) { query += ' AND ua.accion = ?'; params.push(arr[0].toUpperCase()); }
+      else if (arr.length > 1) { query += ` AND ua.accion IN (${arr.map(() => '?').join(',')})`; params.push(...arr.map(a => a.toUpperCase())); }
     }
     
     if (admin_id && admin_id.trim() !== '') {
@@ -2100,9 +2101,9 @@ app.patch('/api/turnos/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admi
       return res.status(404).json({ error: 'Turno no encontrado' });
     }
 
-    // Si ya está ATENDIDO, verificar restrictions según rol
+    // Si ya está ATENDIDO, solo superadmin puede editar
     const userRole = req.session?.rol;
-    if (turno.estado === 'ATENDIDO' && userRole === 'recepcion') {
+    if (turno.estado === 'ATENDIDO' && userRole !== 'superadmin') {
       return res.status(400).json({ error: 'No se puede modificar un turno ya atendido' });
     }
 
@@ -3859,11 +3860,14 @@ app.post('/api/recibos', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 
 
   const { cliente, fecha, total, data,
           medico_id, medico_nombre, tipo_pago, nombre_entidad,
-          tipo_servicio, turno_id, cita_electro_id, observaciones } = body;
+          tipo_servicio, turno_id, cita_electro_id, observaciones, estado_pago } = body;
 
   if (total == null) {
     return res.status(400).json({ error: 'Se requiere el campo total' });
   }
+
+  // Validar estado_pago
+  const estadoPagoVal = (estado_pago === 'PENDIENTE') ? 'PENDIENTE' : 'PAGADO';
 
   // Generado por  extraer del usuario en sesión
   let generado_por_id = req.session.usuarioId || null;
@@ -3891,8 +3895,8 @@ app.post('/api/recibos', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 
         (numero, cliente, fecha, total, data,
          medico_id, medico_nombre, tipo_pago, nombre_entidad,
          tipo_servicio, generado_por_id, generado_por_nombre,
-         turno_id, cita_electro_id, observaciones)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         turno_id, cita_electro_id, observaciones, estado_pago, fecha_pago)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         numeroAsignado,
         cliente || null,
@@ -3908,7 +3912,9 @@ app.post('/api/recibos', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 
         generado_por_nombre,
         turno_id || null,
         cita_electro_id || null,
-        observaciones || null
+        observaciones || null,
+        estadoPagoVal,
+        estadoPagoVal === 'PAGADO' ? new Date() : null
       ]
     );
     await conn.commit();
@@ -4032,18 +4038,41 @@ app.get('/api/recibos/buscar-cita', requireAuth, requireRoleOrPerm(['superadmin'
 // Listar recibos (con filtros opcionales)
 app.get('/api/recibos', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion', 'contabilidad'], 'recibos.ver'), async (req, res) => {
   try {
-    const { fecha_desde, fecha_hasta, tipo_pago, medico_id, medico_nombre, generado_por_id, nombre_entidad, tipo_servicio, q } = req.query;
+    const { fecha_desde, fecha_hasta, tipo_pago, medico_id, medico_nombre, generado_por_id, nombre_entidad, tipo_servicio, q, estado_pago } = req.query;
     const conditions = [];
     const params = [];
 
     if (fecha_desde)     { conditions.push('fecha >= ?');           params.push(fecha_desde); }
     if (fecha_hasta)     { conditions.push('fecha <= ?');           params.push(fecha_hasta); }
-    if (tipo_pago)       { conditions.push('tipo_pago = ?');        params.push(tipo_pago); }
-    if (medico_id)       { conditions.push('medico_id = ?');        params.push(parseInt(medico_id, 10)); }
+    if (tipo_pago) {
+      const arr = tipo_pago.split(',').filter(Boolean);
+      if (arr.length === 1) { conditions.push('tipo_pago = ?'); params.push(arr[0]); }
+      else if (arr.length > 1) { conditions.push(`tipo_pago IN (${arr.map(() => '?').join(',')})`); params.push(...arr); }
+    }
+    if (medico_id) {
+      const arr = medico_id.split(',').filter(Boolean);
+      if (arr.length === 1) { conditions.push('medico_id = ?'); params.push(parseInt(arr[0], 10)); }
+      else if (arr.length > 1) { conditions.push(`medico_id IN (${arr.map(() => '?').join(',')})`); params.push(...arr.map(v => parseInt(v, 10))); }
+    }
     if (medico_nombre)   { conditions.push('medico_nombre = ?');    params.push(medico_nombre); }
-    if (generado_por_id) { conditions.push('generado_por_id = ?'); params.push(parseInt(generado_por_id, 10)); }
-    if (nombre_entidad)  { conditions.push('nombre_entidad = ?');  params.push(nombre_entidad); }
-    if (tipo_servicio)   { conditions.push('tipo_servicio LIKE ?'); params.push(`%${tipo_servicio}%`); }
+    if (generado_por_id) {
+      const arr = generado_por_id.split(',').filter(Boolean);
+      if (arr.length === 1) { conditions.push('generado_por_id = ?'); params.push(parseInt(arr[0], 10)); }
+      else if (arr.length > 1) { conditions.push(`generado_por_id IN (${arr.map(() => '?').join(',')})`); params.push(...arr.map(v => parseInt(v, 10))); }
+    }
+    if (nombre_entidad) {
+      const arr = nombre_entidad.split(',').filter(Boolean);
+      if (arr.length === 1) { conditions.push('nombre_entidad = ?'); params.push(arr[0]); }
+      else if (arr.length > 1) { conditions.push(`nombre_entidad IN (${arr.map(() => '?').join(',')})`); params.push(...arr); }
+    }
+    if (tipo_servicio) {
+      const arr = tipo_servicio.split(',').filter(Boolean);
+      if (arr.length === 1) { conditions.push('tipo_servicio LIKE ?'); params.push(`%${arr[0]}%`); }
+      else if (arr.length > 1) { conditions.push(`(${arr.map(() => 'tipo_servicio LIKE ?').join(' OR ')})`); params.push(...arr.map(v => `%${v}%`)); }
+    }
+    if (estado_pago && (estado_pago === 'PAGADO' || estado_pago === 'PENDIENTE')) {
+      conditions.push('estado_pago = ?'); params.push(estado_pago);
+    }
     if (q) {
       conditions.push('(cliente LIKE ? OR numero LIKE ? OR observaciones LIKE ? OR medico_nombre LIKE ? OR nombre_entidad LIKE ? OR tipo_servicio LIKE ? OR generado_por_nombre LIKE ?)');
       const like = `%${q}%`;
@@ -4055,7 +4084,8 @@ app.get('/api/recibos', requireAuth, requireRoleOrPerm(['superadmin', 'admin', '
       `SELECT id, numero, cliente, fecha, total, tipo_pago, nombre_entidad,
               medico_id, medico_nombre, tipo_servicio,
               generado_por_id, generado_por_nombre, observaciones,
-              turno_id, cita_electro_id, creado_en, data
+              turno_id, cita_electro_id, creado_en, data,
+              estado_pago, fecha_pago, pagado_por_nombre
        FROM recibos ${where} ORDER BY id DESC LIMIT 500`,
       params
     );
@@ -4069,17 +4099,40 @@ app.get('/api/recibos', requireAuth, requireRoleOrPerm(['superadmin', 'admin', '
 app.get('/api/recibos/export/xlsx', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion', 'contabilidad'], 'recibos.ver'), async (req, res) => {
   try {
     const XLSX = require('xlsx');
-    const { fecha_desde, fecha_hasta, tipo_pago, medico_id, medico_nombre, generado_por_id, nombre_entidad, tipo_servicio, q } = req.query;
+    const { fecha_desde, fecha_hasta, tipo_pago, medico_id, medico_nombre, generado_por_id, nombre_entidad, tipo_servicio, q, estado_pago } = req.query;
     const conditions = [];
     const params = [];
     if (fecha_desde)     { conditions.push('fecha >= ?');           params.push(fecha_desde); }
     if (fecha_hasta)     { conditions.push('fecha <= ?');           params.push(fecha_hasta); }
-    if (tipo_pago)       { conditions.push('tipo_pago = ?');        params.push(tipo_pago); }
-    if (medico_id)       { conditions.push('medico_id = ?');        params.push(parseInt(medico_id, 10)); }
+    if (tipo_pago) {
+      const arr = tipo_pago.split(',').filter(Boolean);
+      if (arr.length === 1) { conditions.push('tipo_pago = ?'); params.push(arr[0]); }
+      else if (arr.length > 1) { conditions.push(`tipo_pago IN (${arr.map(() => '?').join(',')})`); params.push(...arr); }
+    }
+    if (medico_id) {
+      const arr = medico_id.split(',').filter(Boolean);
+      if (arr.length === 1) { conditions.push('medico_id = ?'); params.push(parseInt(arr[0], 10)); }
+      else if (arr.length > 1) { conditions.push(`medico_id IN (${arr.map(() => '?').join(',')})`); params.push(...arr.map(v => parseInt(v, 10))); }
+    }
     if (medico_nombre)   { conditions.push('medico_nombre = ?');    params.push(medico_nombre); }
-    if (generado_por_id) { conditions.push('generado_por_id = ?'); params.push(parseInt(generado_por_id, 10)); }
-    if (nombre_entidad)  { conditions.push('nombre_entidad = ?');  params.push(nombre_entidad); }
-    if (tipo_servicio)   { conditions.push('tipo_servicio LIKE ?'); params.push(`%${tipo_servicio}%`); }
+    if (generado_por_id) {
+      const arr = generado_por_id.split(',').filter(Boolean);
+      if (arr.length === 1) { conditions.push('generado_por_id = ?'); params.push(parseInt(arr[0], 10)); }
+      else if (arr.length > 1) { conditions.push(`generado_por_id IN (${arr.map(() => '?').join(',')})`); params.push(...arr.map(v => parseInt(v, 10))); }
+    }
+    if (nombre_entidad) {
+      const arr = nombre_entidad.split(',').filter(Boolean);
+      if (arr.length === 1) { conditions.push('nombre_entidad = ?'); params.push(arr[0]); }
+      else if (arr.length > 1) { conditions.push(`nombre_entidad IN (${arr.map(() => '?').join(',')})`); params.push(...arr); }
+    }
+    if (tipo_servicio) {
+      const arr = tipo_servicio.split(',').filter(Boolean);
+      if (arr.length === 1) { conditions.push('tipo_servicio LIKE ?'); params.push(`%${arr[0]}%`); }
+      else if (arr.length > 1) { conditions.push(`(${arr.map(() => 'tipo_servicio LIKE ?').join(' OR ')})`); params.push(...arr.map(v => `%${v}%`)); }
+    }
+    if (estado_pago && (estado_pago === 'PAGADO' || estado_pago === 'PENDIENTE')) {
+      conditions.push('estado_pago = ?'); params.push(estado_pago);
+    }
     if (q) {
       conditions.push('(cliente LIKE ? OR numero LIKE ? OR observaciones LIKE ? OR medico_nombre LIKE ? OR nombre_entidad LIKE ? OR tipo_servicio LIKE ? OR generado_por_nombre LIKE ?)');
       const like = `%${q}%`;
@@ -4090,7 +4143,7 @@ app.get('/api/recibos/export/xlsx', requireAuth, requireRoleOrPerm(['superadmin'
       `SELECT numero, fecha, cliente, tipo_pago, nombre_entidad,
               medico_nombre, tipo_servicio, total,
               generado_por_nombre, observaciones, creado_en,
-              anulado, anulado_razon
+              anulado, anulado_razon, estado_pago, fecha_pago, pagado_por_nombre
        FROM recibos ${where} ORDER BY numero ASC, id ASC`,
       params
     );
@@ -4104,6 +4157,9 @@ app.get('/api/recibos/export/xlsx', requireAuth, requireRoleOrPerm(['superadmin'
       'Servicio': r.tipo_servicio || '',
       'Total': Number(r.total || 0),
       'Estado': r.anulado ? 'ANULADO' : 'Activo',
+      'Estado Pago': r.anulado ? '-' : (r.estado_pago || 'PAGADO'),
+      'Fecha Pago': r.fecha_pago ? new Date(r.fecha_pago).toISOString().slice(0, 19).replace('T', ' ') : '',
+      'Pagado por': r.pagado_por_nombre || '',
       'Razón Anulación': r.anulado ? (r.anulado_razon || '') : '',
       'Generado por': r.generado_por_nombre || '',
       'Observaciones': r.observaciones || '',
@@ -4125,7 +4181,7 @@ app.get('/api/recibos/export/xlsx', requireAuth, requireRoleOrPerm(['superadmin'
 // Exportar recibos a PDF (página HTML imprimible)
 app.get('/api/recibos/export/pdf-reporte', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion', 'contabilidad'], 'recibos.ver'), async (req, res) => {
   try {
-    const { fecha_desde, fecha_hasta, tipo_pago, medico_id, medico_nombre, generado_por_id, nombre_entidad, tipo_servicio, q } = req.query;
+    const { fecha_desde, fecha_hasta, tipo_pago, medico_id, medico_nombre, generado_por_id, nombre_entidad, tipo_servicio, q, estado_pago } = req.query;
     const conditions = [];
     const params = [];
     if (fecha_desde)     { conditions.push('fecha >= ?');           params.push(fecha_desde); }
@@ -4136,6 +4192,9 @@ app.get('/api/recibos/export/pdf-reporte', requireAuth, requireRoleOrPerm(['supe
     if (generado_por_id) { conditions.push('generado_por_id = ?'); params.push(parseInt(generado_por_id, 10)); }
     if (nombre_entidad)  { conditions.push('nombre_entidad = ?');  params.push(nombre_entidad); }
     if (tipo_servicio)   { conditions.push('tipo_servicio LIKE ?'); params.push(`%${tipo_servicio}%`); }
+    if (estado_pago && (estado_pago === 'PAGADO' || estado_pago === 'PENDIENTE')) {
+      conditions.push('estado_pago = ?'); params.push(estado_pago);
+    }
     if (q) {
       conditions.push('(cliente LIKE ? OR numero LIKE ? OR observaciones LIKE ? OR medico_nombre LIKE ? OR nombre_entidad LIKE ? OR tipo_servicio LIKE ? OR generado_por_nombre LIKE ?)');
       const like = `%${q}%`;
@@ -4146,7 +4205,7 @@ app.get('/api/recibos/export/pdf-reporte', requireAuth, requireRoleOrPerm(['supe
       `SELECT numero, fecha, cliente, tipo_pago, nombre_entidad,
               medico_nombre, tipo_servicio, total,
               generado_por_nombre, observaciones,
-              anulado, anulado_razon
+              anulado, anulado_razon, estado_pago
        FROM recibos ${where} ORDER BY numero ASC, id ASC`,
       params
     );
@@ -4154,17 +4213,23 @@ app.get('/api/recibos/export/pdf-reporte', requireAuth, requireRoleOrPerm(['supe
     const totalActivos = recibosActivos.reduce((s, r) => s + Number(r.total || 0), 0);
     const totalGeneral = rows.reduce((s, r) => s + Number(r.total || 0), 0);
     const cantAnulados = rows.length - recibosActivos.length;
+    const recibosPendientes = recibosActivos.filter(r => r.estado_pago === 'PENDIENTE');
+    const totalPendientes = recibosPendientes.reduce((s, r) => s + Number(r.total || 0), 0);
     const fmt = (v) => Number(v).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const fmtFecha = (v) => v ? String(v).slice(0,10) : '-';
     const rowsHTML = rows.map((r, i) => {
       const esAnulado = r.anulado == 1;
       const anulTag = esAnulado ? ' <span style="background:#dc2626;color:#fff;font-size:7px;padding:1px 5px;border-radius:3px;font-weight:700;letter-spacing:0.5px">ANULADO</span>' : '';
+      const esPendiente = !esAnulado && r.estado_pago === 'PENDIENTE';
+      const pendienteTag = esPendiente ? ' <span style="background:#fff7ed;color:#c2410c;font-size:7px;padding:1px 5px;border-radius:3px;font-weight:700;letter-spacing:0.5px;border:1px solid #fed7aa">PENDIENTE</span>' : '';
       const rowStyle = esAnulado
         ? 'background:#fef2f2;border-left:3px solid #dc2626;color:#991b1b;text-decoration:line-through'
-        : (i % 2 === 0 ? 'background:#f9fafb' : '');
+        : esPendiente
+          ? 'background:#fff7ed;border-left:3px solid #f97316'
+          : (i % 2 === 0 ? 'background:#f9fafb' : '');
       return `
       <tr style="${rowStyle}">
-        <td>${escapeHtml(r.numero||'-')}${anulTag}</td>
+        <td>${escapeHtml(r.numero||'-')}${anulTag}${pendienteTag}</td>
         <td>${escapeHtml(fmtFecha(r.fecha))}</td>
         <td>${escapeHtml(r.cliente||'-')}</td>
         <td>${escapeHtml(r.tipo_pago||'-')}</td>
@@ -4181,6 +4246,7 @@ app.get('/api/recibos/export/pdf-reporte', requireAuth, requireRoleOrPerm(['supe
       tipo_pago   ? `Tipo pago: ${tipo_pago}` : ''
     ].filter(Boolean).join(' \u00B7 ') || 'Sin filtros';
     const resumenAnulados = cantAnulados > 0 ? `<span style="color:#dc2626;margin-left:10px">(${cantAnulados} anulado${cantAnulados>1?'s':''})</span>` : '';
+    const resumenPendientes = recibosPendientes.length > 0 ? `<span class="stat" style="color:#c2410c;background:#fff7ed">${recibosPendientes.length} pendiente${recibosPendientes.length>1?'s':''}: $ ${fmt(totalPendientes)}</span>` : '';
     const html = `<!doctype html><html><head><meta charset="utf-8"/>
     <title>Reporte Recibos</title>
     <style>
@@ -4209,6 +4275,7 @@ app.get('/api/recibos/export/pdf-reporte', requireAuth, requireRoleOrPerm(['supe
       <span class="stat">${recibosActivos.length} recibos activos</span>
       <span class="stat" style="color:#059669">Total: $ ${fmt(totalActivos)}</span>
       ${resumenAnulados}
+      ${resumenPendientes}
     </div>
     <div class="no-print" style="margin-bottom:14px">
       <button onclick="window.print()" style="padding:8px 18px;background:#2d4a47;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:12px">🖨️ Imprimir / Guardar PDF</button>
@@ -4288,6 +4355,31 @@ app.patch('/api/recibos/:id/anular', requireAuth, requireRoleOrPerm(['superadmin
     await db.execute(
       'UPDATE recibos SET anulado=1, anulado_razon=?, anulado_por_id=?, anulado_por_nombre=?, anulado_en=NOW() WHERE id=?',
       [razon.trim(), req.session.usuarioId, nombreUsuario, id]
+    );
+    if (app.io) {
+      emitSocket('recibo:actualizar-lista');
+      emitSocket('stats:actualizar');
+    }
+    res.json({ ok: true });
+  } catch(err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Marcar recibo como pagado
+app.patch('/api/recibos/:id/pagar', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion', 'contabilidad'], 'recibos.editar'), async (req, res) => {
+  const id = parseReciboId(req.params.id);
+  if (id === null) return res.status(400).json({ error: 'ID de recibo inválido' });
+  try {
+    const rows = await db.query('SELECT * FROM recibos WHERE id=?', [id]);
+    if (!rows.length) return res.status(404).json({ error: 'Recibo no encontrado' });
+    if (rows[0].anulado) return res.status(400).json({ error: 'No se puede marcar como pagado un recibo anulado' });
+    if (rows[0].estado_pago === 'PAGADO') return res.status(400).json({ error: 'Este recibo ya está pagado' });
+    const usuario = await db.query('SELECT nombre FROM usuarios WHERE id=?', [req.session.usuarioId]);
+    const nombreUsuario = usuario.length ? usuario[0].nombre : 'Desconocido';
+    await db.execute(
+      'UPDATE recibos SET estado_pago=?, fecha_pago=NOW(), pagado_por_id=?, pagado_por_nombre=? WHERE id=?',
+      ['PAGADO', req.session.usuarioId, nombreUsuario, id]
     );
     if (app.io) {
       emitSocket('recibo:actualizar-lista');
@@ -4778,7 +4870,21 @@ app.get('/api/dashboard/citas-auditoria', requireAuth, requireRoleOrPerm(['super
   try {
     const { tipo_cita, fecha_desde, fecha_hasta, programado_por, tipo_estudio, entidad } = req.query;
     
+    // Pre-parse multi-value filters
+    const entidadArr = entidad ? entidad.split(',').filter(Boolean) : [];
+    const tipoEstudioArr = tipo_estudio ? tipo_estudio.split(',').filter(Boolean) : [];
+    
     // Construir consultas para ambas tablas
+    const medConditions = ['1=1'];
+    const medParams = [];
+    if (fecha_desde) { medConditions.push('t.fecha >= ?'); medParams.push(fecha_desde); }
+    if (fecha_hasta) { medConditions.push('t.fecha <= ?'); medParams.push(fecha_hasta); }
+    if (programado_por) { medConditions.push('t.programado_por LIKE ?'); medParams.push(`%${programado_por}%`); }
+    if (entidadArr.length === 1) { medConditions.push('t.entidad = ?'); medParams.push(entidadArr[0]); }
+    else if (entidadArr.length > 1) { medConditions.push(`t.entidad IN (${entidadArr.map(() => '?').join(',')})`); medParams.push(...entidadArr); }
+    if (tipoEstudioArr.length === 1) { medConditions.push('t.tipo_consulta = ?'); medParams.push(tipoEstudioArr[0]); }
+    else if (tipoEstudioArr.length > 1) { medConditions.push(`t.tipo_consulta IN (${tipoEstudioArr.map(() => '?').join(',')})`); medParams.push(...tipoEstudioArr); }
+
     const citasMedicas = await db.query(`
       SELECT 
         t.id,
@@ -4794,20 +4900,17 @@ app.get('/api/dashboard/citas-auditoria', requireAuth, requireRoleOrPerm(['super
         'AGENDA_MEDICA' as tipo_cita,
         t.numero_turno
       FROM turnos t
-      WHERE 1=1
-        ${fecha_desde ? 'AND t.fecha >= ?' : ''}
-        ${fecha_hasta ? 'AND t.fecha <= ?' : ''}
-        ${programado_por ? 'AND t.programado_por LIKE ?' : ''}
-        ${entidad ? 'AND t.entidad = ?' : ''}
-        ${tipo_estudio ? 'AND t.tipo_consulta = ?' : ''}
+      WHERE ${medConditions.join(' AND ')}
       ORDER BY t.fecha DESC, t.hora DESC
-    `, [
-      ...(fecha_desde ? [fecha_desde] : []),
-      ...(fecha_hasta ? [fecha_hasta] : []),
-      ...(programado_por ? [`%${programado_por}%`] : []),
-      ...(entidad ? [entidad] : []),
-      ...(tipo_estudio ? [tipo_estudio] : [])
-    ]);
+    `, medParams);
+
+    const electroConditions = ['1=1'];
+    const electroParams = [];
+    if (fecha_desde) { electroConditions.push('ce.fecha >= ?'); electroParams.push(fecha_desde); }
+    if (fecha_hasta) { electroConditions.push('ce.fecha <= ?'); electroParams.push(fecha_hasta); }
+    if (programado_por) { electroConditions.push('ce.programado_por_nombre LIKE ?'); electroParams.push(`%${programado_por}%`); }
+    if (tipoEstudioArr.length === 1) { electroConditions.push('ce.estudio = ?'); electroParams.push(tipoEstudioArr[0]); }
+    else if (tipoEstudioArr.length > 1) { electroConditions.push(`ce.estudio IN (${tipoEstudioArr.map(() => '?').join(',')})`); electroParams.push(...tipoEstudioArr); }
 
     const citasElectro = await db.query(`
       SELECT 
@@ -4824,18 +4927,9 @@ app.get('/api/dashboard/citas-auditoria', requireAuth, requireRoleOrPerm(['super
         'N/A' as numero_turno
       FROM citas_electro ce
       LEFT JOIN pacientes p ON p.id = ce.paciente_id
-      WHERE 1=1
-        ${fecha_desde ? 'AND ce.fecha >= ?' : ''}
-        ${fecha_hasta ? 'AND ce.fecha <= ?' : ''}
-        ${programado_por ? 'AND ce.programado_por_nombre LIKE ?' : ''}
-        ${tipo_estudio ? 'AND ce.estudio = ?' : ''}
+      WHERE ${electroConditions.join(' AND ')}
       ORDER BY ce.fecha DESC, ce.hora_agendamiento DESC
-    `, [
-      ...(fecha_desde ? [fecha_desde] : []),
-      ...(fecha_hasta ? [fecha_hasta] : []),
-      ...(programado_por ? [`%${programado_por}%`] : []),
-      ...(tipo_estudio ? [tipo_estudio] : [])
-    ]);
+    `, electroParams);
 
     // Combinar y filtrar por tipo_cita si viene en el query
     let citas = [...citasMedicas, ...citasElectro];
@@ -5616,6 +5710,20 @@ const PORT = process.env.PORT || 3000;
       logger.info('[MIGRATION] Columnas de anulación en recibos verificadas', { type: 'STARTUP' });
     } catch (migErr) {
       logger.warn('[MIGRATION] Error en migración anulación recibos: ' + migErr.message, { type: 'STARTUP' });
+    }
+
+    // --- Migration: recibos estado de pago columns ---
+    try {
+      await db.query(`
+        ALTER TABLE recibos
+        ADD COLUMN IF NOT EXISTS estado_pago VARCHAR(20) DEFAULT 'PAGADO',
+        ADD COLUMN IF NOT EXISTS fecha_pago DATETIME NULL,
+        ADD COLUMN IF NOT EXISTS pagado_por_id INT NULL,
+        ADD COLUMN IF NOT EXISTS pagado_por_nombre VARCHAR(200) NULL
+      `);
+      logger.info('[MIGRATION] Columnas de estado de pago en recibos verificadas', { type: 'STARTUP' });
+    } catch (migErr) {
+      logger.warn('[MIGRATION] Error en migración estado de pago recibos: ' + migErr.message, { type: 'STARTUP' });
     }
 
     // Detectar certificado autofirmado y usar HTTPS si está configurado

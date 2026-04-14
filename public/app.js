@@ -1629,8 +1629,8 @@ function initRecibos() {
   if ($('btnExportarCSV')) $('btnExportarCSV').onclick = exportarReciboCSV;
   if ($('btnExportarPDF')) $('btnExportarPDF').onclick = exportarReciboPDF;
 
-  // Auto-aplicar filtros al cambiar cualquier select o fecha
-  ['filtroFechaDesde', 'filtroFechaHasta', 'filtroTipoPago', 'filtroMedico', 'filtroEntidad', 'filtroEstudio', 'filtroGeneradoPor'].forEach(id => {
+  // Auto-aplicar filtros al cambiar fecha
+  ['filtroFechaDesde', 'filtroFechaHasta'].forEach(id => {
     const el = $(id);
     if (el) el.addEventListener('change', () => aplicarFiltrosRecibos());
   });
@@ -1663,43 +1663,50 @@ function initRecibos() {
   const docCliente = document.getElementById('docCliente');
   if (docCliente) docCliente.addEventListener('input', function() { this.value = this.value.replace(/[^0-9]/g, ''); });
 
-  // Precargar filtros médicos y usuarios en Ver Recibos
-  cargarFiltrosMedicos();
-  cargarFiltrosUsuarios();
-  cargarFiltrosOpciones();
-
-  // Al cambiar médico en filtros de reporte: cargar tipos de consulta y mostrar/ocultar selector
-  const filtroMedicoSel = $('filtroMedico');
-  if (filtroMedicoSel) {
-    filtroMedicoSel.addEventListener('change', async function() {
-      const wrap = $('filtroTipoConsultaWrap');
-      const sel  = $('filtroTipoConsulta');
-      if (!wrap || !sel) return;
-      if (this.value) {
-        sel.innerHTML = '<option value="">Todos</option>';
-        try {
-          const tipos = await apiFetch(`/api/tipos-consulta?medico_id=${encodeURIComponent(this.value)}`).then(r => r.json()).catch(() => []);
-          tipos.forEach(t => {
-            const opt = document.createElement('option');
-            opt.value = t.nombre; opt.textContent = t.nombre;
-            sel.appendChild(opt);
-          });
-        } catch (e) { console.warn('[filtroTipoConsulta] Error cargando tipos:', e.message); }
-        wrap.style.display = '';
-      } else {
-        wrap.style.display = 'none';
-        sel.value = '';
-      }
-    });
-  }
-
-  // Mutua exclusión: al seleccionar tipo de consulta, limpiar estudio y viceversa
-  $('filtroTipoConsulta')?.addEventListener('change', function() {
-    if (this.value && $('filtroEstudio')) $('filtroEstudio').value = '';
+  // Precargar filtros e inicializar multi-selects
+  cargarFiltrosMedicos().then(() => {
+    const el = $('filtroMedico');
+    if (el) {
+      initMultiSelect(el, { placeholder: 'Todos los médicos', onChange: async (vals) => {
+        // Cargar tipos de consulta si hay exactamente 1 médico (no Electro)
+        const wrap = $('filtroTipoConsultaWrap');
+        const sel  = $('filtroTipoConsulta');
+        if (wrap && sel) {
+          if (vals.length === 1 && vals[0] !== 'ELECTRODIAGNOSTICOS') {
+            sel.innerHTML = '<option value="">Todos</option>';
+            try {
+              const tipos = await apiFetch(`/api/tipos-consulta?medico_id=${encodeURIComponent(vals[0])}`).then(r => r.json()).catch(() => []);
+              tipos.forEach(t => { const opt = document.createElement('option'); opt.value = t.nombre; opt.textContent = t.nombre; sel.appendChild(opt); });
+            } catch (e) { console.warn('[filtroTipoConsulta] Error cargando tipos:', e.message); }
+            if (!sel._ms) initMultiSelect(sel, { placeholder: 'Todos', onChange: () => { clearMultiSelect($('filtroEstudio')); aplicarFiltrosRecibos(); } });
+            else sel._ms.refresh();
+            wrap.style.display = '';
+          } else {
+            wrap.style.display = 'none';
+            clearMultiSelect(sel);
+          }
+        }
+        aplicarFiltrosRecibos();
+      }});
+      observeSelectForMulti(el);
+    }
   });
-  $('filtroEstudio')?.addEventListener('change', function() {
-    if (this.value && $('filtroTipoConsulta')) $('filtroTipoConsulta').value = '';
+  cargarFiltrosUsuarios().then(() => {
+    const el = $('filtroGeneradoPor');
+    if (el) { initMultiSelect(el, { placeholder: 'Todos', onChange: () => aplicarFiltrosRecibos() }); observeSelectForMulti(el); }
   });
+  cargarFiltrosOpciones().then(() => {
+    const elEnt = $('filtroEntidad');
+    if (elEnt) { initMultiSelect(elEnt, { placeholder: 'Todas', onChange: () => aplicarFiltrosRecibos() }); observeSelectForMulti(elEnt); }
+    const elEst = $('filtroEstudio');
+    if (elEst) {
+      initMultiSelect(elEst, { placeholder: 'Todos', onChange: () => { clearMultiSelect($('filtroTipoConsulta')); aplicarFiltrosRecibos(); } });
+      observeSelectForMulti(elEst);
+    }
+  });
+  // Tipo de pago (opciones estáticas)
+  const elTP = $('filtroTipoPago');
+  if (elTP) initMultiSelect(elTP, { placeholder: 'Todos', onChange: () => aplicarFiltrosRecibos() });
 
   // Socket: cuando admin modifica tipos de consulta, refrescar el dropdown activo
   if (window.socket && !window.socketRecibosTiposListenerAdded) {
@@ -6383,6 +6390,12 @@ function abrirBusquedaAuditoria() {
       console.log('[AUDIT] Event listener agregado al botón Exportar');
     }
     
+    // Inicializar multi-select de acciones
+    const elAccion = document.getElementById('filtroAccion');
+    if (elAccion && !elAccion._ms && typeof initMultiSelect === 'function') {
+      initMultiSelect(elAccion, { placeholder: 'Todas las acciones', onChange: () => buscarAuditoria() });
+    }
+    
     // Ejecutar limpieza de filtros
     limpiarFiltrosAuditoria();
     
@@ -6418,7 +6431,7 @@ async function buscarAuditoria() {
     
     containerEl.innerHTML = '<p style="text-align:center;color:#2d4a47;padding:20px">Cargando...</p>';
     
-    const accion = (accionEl?.value || '').trim();
+    const accion = typeof getMultiSelectValue === 'function' ? getMultiSelectValue(accionEl) : (accionEl?.value || '').trim();
     const desde = desdeEl?.value || '';
     const hasta = hastaEl?.value || '';
     
@@ -6570,7 +6583,8 @@ function limpiarFiltrosAuditoria() {
     const filtroHasta = document.getElementById('filtroHasta');
     
     if (filtroAccion) {
-      filtroAccion.value = '';
+      if (typeof clearMultiSelect === 'function') clearMultiSelect(filtroAccion);
+      else filtroAccion.value = '';
       console.log('[AUDIT] Filter Acción limpio');
     }
     if (filtroDesde) {
@@ -7155,7 +7169,8 @@ async function saveToDatabase(){
       tipo_servicio: payload.tipoServicio || null,
       turno_id: payload.turnoId ? parseInt(payload.turnoId, 10) : null,
       cita_electro_id: payload.citaElectroId ? parseInt(payload.citaElectroId, 10) : null,
-      observaciones: payload.observ || null
+      observaciones: payload.observ || null,
+      estado_pago: $('reciboPendientePago')?.checked ? 'PENDIENTE' : 'PAGADO'
     };
     const res = await apiFetch('/api/recibos', {
       method: 'POST',
@@ -7271,12 +7286,13 @@ async function aplicarFiltrosRecibos() {
     if (btn) { btn.disabled = true; btn.textContent = 'Cargando...'; }
     const desde       = $('filtroFechaDesde')?.value     || '';
     const hasta       = $('filtroFechaHasta')?.value     || '';
-    const tipoPago    = $('filtroTipoPago')?.value       || '';
-    const medicoId    = $('filtroMedico')?.value         || '';
-    const genPor      = $('filtroGeneradoPor')?.value    || '';
-    const entidad     = $('filtroEntidad')?.value        || '';
-    const tipoConsulta= $('filtroTipoConsulta')?.value   || '';
-    const tipoEstudio = $('filtroEstudio')?.value        || '';
+    const tipoPago    = getMultiSelectValue($('filtroTipoPago'));
+    const medicoId    = getMultiSelectValue($('filtroMedico'));
+    const genPor      = getMultiSelectValue($('filtroGeneradoPor'));
+    const entidad     = getMultiSelectValue($('filtroEntidad'));
+    const tipoConsulta= getMultiSelectValue($('filtroTipoConsulta'));
+    const tipoEstudio = getMultiSelectValue($('filtroEstudio'));
+    const estadoPago  = $('filtroEstadoPago')?.value || '';
     const palabraClave= $('filtroPalabraClave')?.value?.trim() || '';
 
     const params = new URLSearchParams();
@@ -7290,6 +7306,7 @@ async function aplicarFiltrosRecibos() {
     }
     if (genPor)       params.set('generado_por_id',  genPor);
     if (entidad)      params.set('nombre_entidad',   entidad);
+    if (estadoPago)   params.set('estado_pago',      estadoPago);
     if (palabraClave) params.set('q',                palabraClave);
     // Tipo de consulta y estudio filtran la misma columna tipo_servicio
     const tipoServicio = tipoConsulta || tipoEstudio;
@@ -7308,12 +7325,13 @@ async function aplicarFiltrosRecibos() {
 function limpiarFiltrosRecibos() {
   if ($('filtroFechaDesde'))    $('filtroFechaDesde').value    = '';
   if ($('filtroFechaHasta'))    $('filtroFechaHasta').value    = '';
-  if ($('filtroTipoPago'))      $('filtroTipoPago').value      = '';
-  if ($('filtroMedico'))        $('filtroMedico').value        = '';
-  if ($('filtroGeneradoPor'))   $('filtroGeneradoPor').value   = '';
-  if ($('filtroEntidad'))       $('filtroEntidad').value       = '';
-  if ($('filtroTipoConsulta'))  $('filtroTipoConsulta').value  = '';
-  if ($('filtroEstudio'))       $('filtroEstudio').value       = '';
+  clearMultiSelect($('filtroTipoPago'));
+  clearMultiSelect($('filtroMedico'));
+  clearMultiSelect($('filtroGeneradoPor'));
+  clearMultiSelect($('filtroEntidad'));
+  clearMultiSelect($('filtroTipoConsulta'));
+  clearMultiSelect($('filtroEstudio'));
+  if ($('filtroEstadoPago'))    $('filtroEstadoPago').value    = '';
   if ($('filtroPalabraClave'))  $('filtroPalabraClave').value  = '';
   // Ocultar tipo de consulta al limpiar
   const wrap = $('filtroTipoConsultaWrap');
@@ -7351,7 +7369,7 @@ async function cargarLista(queryString) {
     const resumenCard = document.getElementById('reciboResumenCard');
 
     if (!recibos || !recibos.length) {
-      tbody.innerHTML = '<tr><td colspan="10"><div class="empty-state"><div class="empty-state-icon">📋</div><p class="empty-state-title">Sin resultados</p><p class="empty-state-subtitle">No hay recibos con los filtros aplicados</p></div></td></tr>';
+      tbody.innerHTML = '<tr><td colspan="11"><div class="empty-state"><div class="empty-state-icon">📋</div><p class="empty-state-title">Sin resultados</p><p class="empty-state-subtitle">No hay recibos con los filtros aplicados</p></div></td></tr>';
       if (resumenCard) resumenCard.classList.add('hidden');
       return;
     }
@@ -7359,8 +7377,14 @@ async function cargarLista(queryString) {
     // Resumen (excluir anulados del total)
     const recibosActivos = recibos.filter(r => r.anulado != 1);
     const totalMonto = recibosActivos.reduce((s, r) => s + Number(r.total||0), 0);
+    const recibosPendientes = recibosActivos.filter(r => r.estado_pago === 'PENDIENTE');
+    const totalPendiente = recibosPendientes.reduce((s, r) => s + Number(r.total||0), 0);
     if ($('resumenCantidad')) $('resumenCantidad').textContent = recibosActivos.length;
     if ($('resumenTotal')) $('resumenTotal').textContent = '$ ' + totalMonto.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    if ($('resumenPendienteCant')) $('resumenPendienteCant').textContent = recibosPendientes.length;
+    if ($('resumenPendienteTotal')) $('resumenPendienteTotal').textContent = '$ ' + totalPendiente.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const pendientesWrap = $('resumenPendientesWrap');
+    if (pendientesWrap) pendientesWrap.style.display = recibosPendientes.length ? 'block' : 'none';
     if (resumenCard) resumenCard.classList.remove('hidden');
 
     recibos.forEach((r, idx) => {
@@ -7368,8 +7392,14 @@ async function cargarLista(queryString) {
       const fecha = r.fecha ? String(r.fecha).slice(0,10) : '-';
       const total = Number(r.total||0).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
       const esAnulado = r.anulado == 1;
+      const esPendiente = !esAnulado && r.estado_pago === 'PENDIENTE';
       const anulBadge = esAnulado
         ? `<span class="recibo-badge-anulado" title="${escapeHtml(r.anulado_razon||'')}">ANULADO</span>` : '';
+      const estadoPagoBadge = esAnulado
+        ? `<span class="recibo-badge-estado recibo-badge-anulado">ANULADO</span>`
+        : esPendiente
+          ? `<span class="recibo-badge-estado recibo-badge-pendiente">PENDIENTE</span>`
+          : `<span class="recibo-badge-estado recibo-badge-pagado">PAGADO</span>`;
       if (esAnulado) {
         tr.classList.add('recibo-row-anulado');
       }
@@ -7381,6 +7411,15 @@ async function cargarLista(queryString) {
       if (tienePermiso('recibos.editar') && !esAnulado) {
         acciones += `<button class="btn-editar" data-id="${r.id}" data-medico="${escapeHtml(r.medico_nombre||'')}" data-servicio="${escapeHtml(r.tipo_servicio||'')}" data-entidad="${escapeHtml(r.nombre_entidad||'')}" data-cliente="${escapeHtml(r.cliente||'')}" title="Editar">
           <img src="images/edit.svg" alt="Editar"/></button>`;
+      }
+      if (tienePermiso('recibos.editar') && esPendiente) {
+        acciones += `<button class="btn-recibo-pagar marcar-pagado" data-id="${r.id}" title="Marcar como pagado" aria-label="Marcar como pagado">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M3 7.5A2.5 2.5 0 0 1 5.5 5h13A2.5 2.5 0 0 1 21 7.5v9A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5z"/>
+            <path d="M3 9h18"/>
+            <path d="m9 14 2 2 4-4"/>
+          </svg>
+        </button>`;
       }
       if (tienePermiso('recibos.anular') && !esAnulado) {
         acciones += `<button class="btn-recibo-anular anular-recibo" data-id="${r.id}" title="Anular">
@@ -7405,6 +7444,7 @@ async function cargarLista(queryString) {
         <td>${escapeHtml(r.medico_nombre || (r.cita_electro_id ? 'ELECTRODIAGNÓSTICOS' : '-'))}</td>
         <td>${escapeHtml(r.tipo_servicio||'-')}</td>
         <td style="text-align:right;font-weight:600;color:${esAnulado ? '#991b1b' : '#2d4a47'}">$ ${escapeHtml(total)}</td>
+        <td>${estadoPagoBadge}</td>
         <td>${escapeHtml(r.generado_por_nombre||'-')}</td>
         <td style="text-align:center">${acciones}</td>`;
       tbody.appendChild(tr);
@@ -7419,6 +7459,25 @@ async function cargarLista(queryString) {
       const entidad  = btn.dataset.entidad  || '';
       const cliente  = btn.dataset.cliente  || '';
       showEditReciboModal({ id: reciboId, medico, servicio, entidad, cliente });
+    }));
+
+    // Listener: Marcar como pagado
+    tbody.querySelectorAll('.marcar-pagado').forEach(b => b.addEventListener('click', e => {
+      const reciboId = e.target.closest('.marcar-pagado').dataset.id;
+      showConfirm('¿Marcar este recibo como pagado?', async () => {
+        try {
+          const jr = await apiFetch(`/api/recibos/${reciboId}/pagar`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' }
+          }).then(r => r.json());
+          if (jr.ok) {
+            showToast('Recibo marcado como pagado', 'success');
+            cargarLista(_recibosLastParams);
+          } else {
+            showToast(jr.error || 'Error al marcar como pagado', 'error');
+          }
+        } catch (_) { showToast('Error marcando como pagado', 'error'); }
+      }, { okText: 'Pagado', cancelText: 'Cancelar', danger: false, icon: '✅' });
     }));
 
     // Listener: Anular recibo
@@ -9473,6 +9532,14 @@ function abrirModalEstadoCitaMedica(turno) {
   // Editar: solo recepción/admin (NO doctor)
   if (editBtnMed) editBtnMed.style.display = (tienePermiso('agenda.editar') && !esDoctor && !estadoFinal) ? '' : 'none';
 
+  // Editar tipo consulta en citas atendidas: SOLO superadmin
+  const btnEditTipo = el('btnEditTipoConsultaAtendida');
+  const editTipoWrap = el('editTipoConsultaAtendidaWrap');
+  if (btnEditTipo) {
+    btnEditTipo.style.display = (currentUser?.rol === 'superadmin' && turno.estado === 'ATENDIDO') ? '' : 'none';
+  }
+  if (editTipoWrap) editTipoWrap.style.display = 'none';
+
   // Mostrar modal
   $('modalEstadoCitaMedica').classList.remove('hidden');
 }
@@ -9907,6 +9974,67 @@ document.getElementById('btnGuardarEditarMedica')?.addEventListener('click', asy
   }
 });
 
+// ── Editar tipo de consulta en citas ATENDIDAS (solo superadmin) ──
+document.getElementById('btnEditTipoConsultaAtendida')?.addEventListener('click', async () => {
+  const wrap = document.getElementById('editTipoConsultaAtendidaWrap');
+  const sel = document.getElementById('editTipoConsultaAtendidaSel');
+  if (!wrap || !sel || !currentTurnoMedicaData) return;
+
+  // Poblar tipos de consulta
+  sel.innerHTML = '<option value="">Seleccionar</option>';
+  try {
+    // Cargar tipos de consulta del doctor de la cita
+    const doctorId = currentTurnoMedicaData.doctor_id;
+    if (doctorId) {
+      const tipos = await apiFetch(`/api/tipos-consulta?medico_id=${encodeURIComponent(doctorId)}`).then(r => r.json()).catch(() => []);
+      tipos.forEach(t => { sel.add(new Option(t.nombre, t.nombre)); });
+    }
+    // Fallback: cargar del select de nueva cita
+    if (sel.options.length <= 1) {
+      const selectSrc = $('nuevoTurnoTipoMedica');
+      if (selectSrc) {
+        Array.from(selectSrc.options).slice(1).forEach(opt => { sel.add(new Option(opt.text, opt.value)); });
+      }
+    }
+  } catch (e) { console.warn('Error cargando tipos de consulta:', e.message); }
+
+  sel.value = currentTurnoMedicaData.tipo_consulta || '';
+  wrap.style.display = 'block';
+});
+
+document.getElementById('btnCancelEditTipoAtendida')?.addEventListener('click', () => {
+  const wrap = document.getElementById('editTipoConsultaAtendidaWrap');
+  if (wrap) wrap.style.display = 'none';
+});
+
+document.getElementById('btnSaveEditTipoAtendida')?.addEventListener('click', async () => {
+  if (!currentTurnoMedicaData) return;
+  const sel = document.getElementById('editTipoConsultaAtendidaSel');
+  const tipoConsulta = sel?.value || '';
+  if (!tipoConsulta) { showToast('Selecciona un tipo de consulta', 'error'); return; }
+
+  try {
+    const res = await apiFetch(`/api/turnos/${currentTurnoMedicaData.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tipo_consulta: tipoConsulta })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      currentTurnoMedicaData.tipo_consulta = tipoConsulta;
+      if (document.getElementById('detMedicaTipo')) document.getElementById('detMedicaTipo').textContent = tipoConsulta;
+      document.getElementById('editTipoConsultaAtendidaWrap').style.display = 'none';
+      showToast('Tipo de consulta actualizado', 'success');
+      cargarTurnosMedica();
+    } else {
+      showToast(data.error || 'Error al guardar', 'error');
+    }
+  } catch (err) {
+    showToast('Error al guardar cambios', 'error');
+    console.error(err);
+  }
+});
+
 $('horaEstudioInicio')?.addEventListener('change', actualizarDuracionMostrada);
 $('horaEstudioFin')?.addEventListener('change', actualizarDuracionMostrada);
 
@@ -10072,12 +10200,23 @@ function initEsperaElectro() {
             el.appendChild(o);
           });
         }
+        // Inicializar multi-select
+        if (typeof initMultiSelect === 'function') {
+          initMultiSelect(el, { placeholder: 'Todas', onChange: () => renderEsperaTable() });
+          if (typeof observeSelectForMulti === 'function') observeSelectForMulti(el);
+        }
       }
     } catch (e) { console.warn('No se pudieron cargar entidades para espera:', e.message); }
   })();
 
+  // Inicializar multi-select de prioridad (opciones estáticas)
+  const elPrio = $('esperaFiltroPrioridad');
+  if (elPrio && typeof initMultiSelect === 'function') {
+    initMultiSelect(elPrio, { placeholder: 'Todas', onChange: () => renderEsperaTable() });
+  }
+
   // Filtros en tiempo real
-  ['esperaFiltroTexto', 'esperaFiltroEntidad', 'esperaFiltroPrioridad'].forEach(id => {
+  ['esperaFiltroTexto'].forEach(id => {
     $(id)?.addEventListener('input', renderEsperaTable);
     $(id)?.addEventListener('change', renderEsperaTable);
   });
@@ -10119,8 +10258,10 @@ async function cargarEsperaElectro() {
 
 function renderEsperaTable() {
   const texto = ($('esperaFiltroTexto')?.value || '').toLowerCase().trim();
-  const entidad = $('esperaFiltroEntidad')?.value || '';
-  const prioridad = $('esperaFiltroPrioridad')?.value || '';
+  const entidadRaw = typeof getMultiSelectValue === 'function' ? getMultiSelectValue($('esperaFiltroEntidad')) : ($('esperaFiltroEntidad')?.value || '');
+  const prioridadRaw = typeof getMultiSelectValue === 'function' ? getMultiSelectValue($('esperaFiltroPrioridad')) : ($('esperaFiltroPrioridad')?.value || '');
+  const entidades = entidadRaw ? entidadRaw.split(',') : [];
+  const prioridades = prioridadRaw ? prioridadRaw.split(',') : [];
 
   let lista = esperaData.filter(p => {
     const matchTexto = !texto || (
@@ -10128,8 +10269,8 @@ function renderEsperaTable() {
       (p.apellidos || '').toLowerCase().includes(texto) ||
       (p.documento || '').toLowerCase().includes(texto)
     );
-    const matchEntidad = !entidad || p.entidad === entidad;
-    const matchPrioridad = !prioridad || p.prioridad === prioridad;
+    const matchEntidad = entidades.length === 0 || entidades.includes(p.entidad);
+    const matchPrioridad = prioridades.length === 0 || prioridades.includes(p.prioridad);
     return matchTexto && matchEntidad && matchPrioridad;
   });
 

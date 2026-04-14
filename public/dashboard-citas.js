@@ -26,15 +26,30 @@ function initDashboardCitas() {
     const elTipoCita = document.getElementById('dashboardTipoCita');
     if (elTipoCita) {
       elTipoCita.addEventListener('change', function () {
-        cargarTiposEstudioFiltro(this.value);
+        cargarTiposEstudioFiltro(this.value).then(() => {
+          const el = document.getElementById('dashboardTipoEstudio');
+          if (el && el._ms) el._ms.refresh();
+        });
       });
     }
 
-    // Cargar tipos de estudio para el valor inicial
-    cargarTiposEstudioFiltro(elTipoCita ? elTipoCita.value : 'TODOS');
+    // Cargar tipos de estudio para el valor inicial e inicializar multi-select
+    cargarTiposEstudioFiltro(elTipoCita ? elTipoCita.value : 'TODOS').then(() => {
+      const el = document.getElementById('dashboardTipoEstudio');
+      if (el && typeof initMultiSelect === 'function') {
+        initMultiSelect(el, { placeholder: 'Todos los estudios', onChange: () => buscarCitasAuditoria() });
+        if (typeof observeSelectForMulti === 'function') observeSelectForMulti(el);
+      }
+    });
 
-    // Cargar entidades disponibles
-    cargarEntidadesFiltroAuditoria();
+    // Cargar entidades disponibles e inicializar multi-select
+    cargarEntidadesFiltroAuditoria().then(() => {
+      const el = document.getElementById('dashboardEntidad');
+      if (el && typeof initMultiSelect === 'function') {
+        initMultiSelect(el, { placeholder: 'Todas', onChange: () => buscarCitasAuditoria() });
+        if (typeof observeSelectForMulti === 'function') observeSelectForMulti(el);
+      }
+    });
 
     // Configurar valores por defecto
     const hoy = new Date().toISOString().split('T')[0];
@@ -83,8 +98,8 @@ async function buscarCitasAuditoria() {
     const fechaDesde = elFechaDesde ? elFechaDesde.value : '';
     const fechaHasta = elFechaHasta ? elFechaHasta.value : '';
     const programadoPor = elProgramadoPor ? elProgramadoPor.value.trim() : '';
-    const tipoEstudio = elTipoEstudio ? elTipoEstudio.value.trim() : '';
-    const entidad = elEntidad ? elEntidad.value.trim() : '';
+    const tipoEstudio = typeof getMultiSelectValue === 'function' ? getMultiSelectValue(elTipoEstudio) : (elTipoEstudio ? elTipoEstudio.value.trim() : '');
+    const entidad = typeof getMultiSelectValue === 'function' ? getMultiSelectValue(elEntidad) : (elEntidad ? elEntidad.value.trim() : '');
 
     const params = new URLSearchParams();
     if (tipoCita !== 'TODOS') params.append('tipo_cita', tipoCita);
@@ -215,15 +230,20 @@ function limpiarFiltrosDashboard() {
 
     if (elTipoCita) elTipoCita.value = 'TODOS';
     if (elAgendadoPor) elAgendadoPor.value = '';
-    if (elEntidad) elEntidad.value = '';
+    if (typeof clearMultiSelect === 'function') {
+      clearMultiSelect(elEntidad);
+    } else if (elEntidad) { elEntidad.value = ''; }
 
     const hoy = new Date().toISOString().split('T')[0];
     const hace30 = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
     if (elFechaDesde) elFechaDesde.value = hace30;
     if (elFechaHasta) elFechaHasta.value = hoy;
 
-    cargarTiposEstudioFiltro('TODOS');
-    setTimeout(buscarCitasAuditoria, 100);
+    cargarTiposEstudioFiltro('TODOS').then(() => {
+      const elTE = document.getElementById('dashboardTipoEstudio');
+      if (elTE && elTE._ms) elTE._ms.refresh();
+    });
+    setTimeout(buscarCitasAuditoria, 150);
   } catch(e) {
     console.error('[DASHBOARD CITAS] Error limpiando filtros:', e.message);
     if (typeof showToast === 'function') showToast('Error limpiando filtros: ' + e.message, 'error');

@@ -300,6 +300,15 @@ const migrations = [
       ADD COLUMN IF NOT EXISTS anulado_por_id INT NULL,
       ADD COLUMN IF NOT EXISTS anulado_por_nombre VARCHAR(200) NULL,
       ADD COLUMN IF NOT EXISTS anulado_en DATETIME NULL`
+  },
+  {
+    name: 'recibos_estado_pago',
+    description: 'Agregar estado de pago: PAGADO o PENDIENTE, con fecha de pago y quién marcó como pagado',
+    sql: `ALTER TABLE recibos
+      ADD COLUMN IF NOT EXISTS estado_pago VARCHAR(20) DEFAULT 'PAGADO',
+      ADD COLUMN IF NOT EXISTS fecha_pago DATETIME NULL,
+      ADD COLUMN IF NOT EXISTS pagado_por_id INT NULL,
+      ADD COLUMN IF NOT EXISTS pagado_por_nombre VARCHAR(200) NULL`
   }
 ];
 

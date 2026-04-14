@@ -402,6 +402,13 @@
               <input type="hidden" id="reciboTurnoId" value="" />
               <input type="hidden" id="reciboCitaElectroId" value="" />
 
+              <!-- Pendiente de pago -->
+              <div style="margin-top:14px;display:flex;align-items:center;gap:10px;padding:10px 14px;background:#fffbeb;border:1.5px solid #fde68a;border-radius:10px">
+                <input type="checkbox" id="reciboPendientePago" style="width:18px;height:18px;accent-color:#f59e0b;cursor:pointer" />
+                <label for="reciboPendientePago" style="font-size:0.9rem;color:#92400e;font-weight:600;cursor:pointer;margin:0">Pendiente de pago</label>
+                <span style="font-size:0.78rem;color:#b45309">— El paciente aún no ha realizado el pago</span>
+              </div>
+
               <div class="actions" style="margin-top:18px">
                 <button id="generate" class="btn-primary" style="min-width:180px">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="vertical-align:middle;margin-right:6px"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
@@ -510,6 +517,14 @@
                     <option value="">Todos</option>
                   </select>
                 </div>
+                <div>
+                  <label>Estado de pago</label>
+                  <select id="filtroEstadoPago">
+                    <option value="">Todos</option>
+                    <option value="PAGADO">Pagado</option>
+                    <option value="PENDIENTE">Pendiente</option>
+                  </select>
+                </div>
               </div>
               <div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap;align-items:center">
                 <button id="btnAplicarFiltros" class="btn-primary">Aplicar filtros</button>
@@ -528,6 +543,11 @@
                   <div>
                     <span style="font-size:13px;color:#6b7280">Total:</span>
                     <span style="font-size:20px;font-weight:bold;color:#059669;margin-left:4px" id="resumenTotal">$ 0</span>
+                  </div>
+                  <div id="resumenPendientesWrap" style="display:none">
+                    <span style="font-size:13px;color:#c2410c">Pendientes:</span>
+                    <span style="font-size:16px;font-weight:bold;color:#c2410c;margin-left:4px" id="resumenPendienteCant">0</span>
+                    <span style="font-size:14px;font-weight:600;color:#ea580c;margin-left:6px" id="resumenPendienteTotal">$ 0</span>
                   </div>
                 </div>
                 <div style="display:flex;gap:8px">
@@ -557,13 +577,14 @@
                       <th>Médico</th>
                       <th>Servicio</th>
                       <th style="text-align:right">Total</th>
+                      <th>Estado Pago</th>
                       <th>Generado por</th>
                       <th style="text-align:center">Acciones</th>
                     </tr>
                   </thead>
                   <tbody id="savedItems">
                     <tr>
-                      <td colspan="10" style="padding:24px;text-align:center;color:#999">
+                      <td colspan="11" style="padding:24px;text-align:center;color:#999">
                         Aplica un filtro para ver los recibos
                       </td>
                     </tr>
@@ -2628,7 +2649,21 @@
       <div class="cita-modal-info-grid">
         <div class="cita-modal-info-item">
           <div class="cita-modal-info-label">Tipo Consulta</div>
-          <div id="detMedicaTipo" class="cita-modal-info-value cita-modal-info-highlight">-</div>
+          <div style="display:flex;align-items:center;gap:6px">
+            <div id="detMedicaTipo" class="cita-modal-info-value cita-modal-info-highlight" style="flex:1">-</div>
+            <button id="btnEditTipoConsultaAtendida" type="button" title="Editar tipo de consulta" style="display:none;background:none;border:none;cursor:pointer;color:#8aa6a1;padding:2px;line-height:1;flex-shrink:0">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            </button>
+          </div>
+          <div id="editTipoConsultaAtendidaWrap" style="display:none;margin-top:6px">
+            <select id="editTipoConsultaAtendidaSel" style="width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:0.85rem;background:white;margin-bottom:6px">
+              <option value="">Seleccionar</option>
+            </select>
+            <div style="display:flex;gap:6px;justify-content:flex-end">
+              <button id="btnCancelEditTipoAtendida" type="button" class="btn-secondary btn-sm" style="font-size:0.78rem;padding:4px 10px">Cancelar</button>
+              <button id="btnSaveEditTipoAtendida" type="button" class="btn-primary btn-sm" style="font-size:0.78rem;padding:4px 10px">Guardar</button>
+            </div>
+          </div>
         </div>
         <div class="cita-modal-info-item">
           <div class="cita-modal-info-label">Entidad</div>
@@ -2714,6 +2749,7 @@
     </div>
   </footer>
 
+  <script src="multiselect.js"></script>
   <script src="socket-client.js"></script>
   <script src="socket-electro.js"></script>
   <script src="dashboard-citas.js"></script>
