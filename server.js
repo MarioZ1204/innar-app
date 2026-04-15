@@ -5436,6 +5436,9 @@ function escapeHtml(str) {
 }
 
 const PORT = process.env.PORT || 3000;
+app.listen(port, '0.0.0.0', () => {
+ console.log(`Listening on ${port}`);
+});
 
 // Inicializar pool MySQL y luego iniciar servidor
 (async () => {
