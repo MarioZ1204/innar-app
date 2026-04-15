@@ -46,9 +46,7 @@ app.use(compression());
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Manejo explícito de favicon.ico
-app.get('/favicon.ico', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'favicon.ico'));
-});
+app.get('/favicon.ico', (req, res) => res.status(204).end());
 
 // Configuración de sesión recomendada para Hostinger/proxy
 app.set('trust proxy', 1);
@@ -303,9 +301,6 @@ app.get('/api/health', (req, res) => {
     uptime: process.uptime()
   });
 });
-
-// Favicon — responder sin contenido para evitar 403 cuando no existe el archivo
-app.get('/favicon.ico', (req, res) => res.status(204).end());
 
 // Cargar imagen del logo como base64
 let logoBase64 = '';
