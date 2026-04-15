@@ -9,6 +9,12 @@ Bienvenido. Acá está todo lo que necesitás saber.
 - 3 minutos: Testar funcionalidades
 - Checklist rápido y sencillo
 
+→ **[HOSTINGER-DEPLOY.md](./HOSTINGER-DEPLOY.md)** - **DESPLIEGUE PRODUCCIÓN**
+- Configuración Node.js App en hPanel
+- Variables de entorno requeridas
+- Flujo Git -> deploy -> restart
+- Diagnóstico rápido 403/503
+
 ---
 
 ## 🔧 **ÚLTIMAS CORRECCIONES (Feb 27, 2026)**

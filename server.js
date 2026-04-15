@@ -42,8 +42,6 @@ const app = express();
 // Compresión gzip para todas las respuestas
 app.use(compression());
 
-const path = require('path');
-
 // Servir archivos estáticos desde public
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -295,6 +293,15 @@ app.use(express.static('public', {
 // Endpoint de versión (público, sin auth)
 app.get('/api/version', (req, res) => {
   res.json({ version: APP_VERSION });
+});
+
+// Healthcheck para validar arranque en Hostinger/CDN
+app.get('/api/health', (req, res) => {
+  res.status(200).json({
+    ok: true,
+    version: APP_VERSION,
+    uptime: process.uptime()
+  });
 });
 
 // Favicon — responder sin contenido para evitar 403 cuando no existe el archivo
@@ -5436,9 +5443,6 @@ function escapeHtml(str) {
 }
 
 const PORT = process.env.PORT || 3000;
-app.listen(port, '0.0.0.0', () => {
- console.log(`Listening on ${port}`);
-});
 
 // Inicializar pool MySQL y luego iniciar servidor
 (async () => {
