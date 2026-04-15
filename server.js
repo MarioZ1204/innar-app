@@ -260,7 +260,6 @@ app.get('/api/version', (req, res) => {
 });
 
 // Favicon — responder sin contenido para evitar 403 cuando no existe el archivo
-app.get('/favicon.ico', (req, res) => res.status(204).end());
 
 // Cargar imagen del logo como base64
 let logoBase64 = '';
