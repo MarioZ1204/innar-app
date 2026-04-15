@@ -42,11 +42,15 @@ const app = express();
 // Compresión gzip para todas las respuestas
 app.use(compression());
 
-// Servir archivos estáticos desde public
-app.use(express.static(path.join(__dirname, 'public')));
+// CORS debe ir antes de cualquier sesión o body parser
+app.use(cors({
+  origin: process.env.FRONTEND_URL || 'https://innarapp.neurocienciasnarino.com',
+  credentials: true
+}));
 
-// Manejo explícito de favicon.ico
-app.get('/favicon.ico', (req, res) => res.status(204).end());
+// Body parsers
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 // Configuración de sesión recomendada para Hostinger/proxy
 app.set('trust proxy', 1);
@@ -57,13 +61,20 @@ const sessionMiddleware = session({
   proxy: true,
   rolling: true,
   cookie: {
-    secure: process.env.NODE_ENV === 'production',
+    secure: true, // Siempre true en producción/https
     httpOnly: true,
-    sameSite: 'lax',
-    maxAge: 8 * 60 * 60 * 1000
+    sameSite: 'none', // Para cross-domain/subdominio y HTTPS
+    maxAge: 8 * 60 * 60 * 1000,
+    // domain: '.neurocienciasnarino.com' // Descomenta si frontend y backend están en subdominios distintos
   }
 });
 app.use(sessionMiddleware);
+
+// Servir archivos estáticos desde public
+app.use(express.static(path.join(__dirname, 'public')));
+
+// Manejo explícito de favicon.ico
+app.get('/favicon.ico', (req, res) => res.status(204).end());
 
 // Middleware para cerrar sesión por inactividad (60 minutos)
 app.use((req, res, next) => {
