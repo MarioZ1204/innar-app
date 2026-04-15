@@ -51,9 +51,12 @@ function initDashboardCitas() {
       }
     });
 
-    // Configurar valores por defecto
-    const hoy = new Date().toISOString().split('T')[0];
-    const hace30 = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    // Configurar valores por defecto usando la fecha LOCAL (no UTC) para evitar desfase de zona horaria
+    const ahora = new Date();
+    const hoy = `${ahora.getFullYear()}-${String(ahora.getMonth()+1).padStart(2,'0')}-${String(ahora.getDate()).padStart(2,'0')}`;
+    const hace30dias = new Date(ahora);
+    hace30dias.setDate(hace30dias.getDate() - 30);
+    const hace30 = `${hace30dias.getFullYear()}-${String(hace30dias.getMonth()+1).padStart(2,'0')}-${String(hace30dias.getDate()).padStart(2,'0')}`;
 
     const elFechaDesde = document.getElementById('dashboardFechaDesde');
     const elFechaHasta = document.getElementById('dashboardFechaHasta');
@@ -234,14 +237,21 @@ function limpiarFiltrosDashboard() {
       clearMultiSelect(elEntidad);
     } else if (elEntidad) { elEntidad.value = ''; }
 
-    const hoy = new Date().toISOString().split('T')[0];
-    const hace30 = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    // Usar fecha LOCAL para evitar desfase de zona horaria
+    const ahora = new Date();
+    const hoy = `${ahora.getFullYear()}-${String(ahora.getMonth()+1).padStart(2,'0')}-${String(ahora.getDate()).padStart(2,'0')}`;
+    const hace30dias = new Date(ahora);
+    hace30dias.setDate(hace30dias.getDate() - 30);
+    const hace30 = `${hace30dias.getFullYear()}-${String(hace30dias.getMonth()+1).padStart(2,'0')}-${String(hace30dias.getDate()).padStart(2,'0')}`;
     if (elFechaDesde) elFechaDesde.value = hace30;
     if (elFechaHasta) elFechaHasta.value = hoy;
 
     cargarTiposEstudioFiltro('TODOS').then(() => {
       const elTE = document.getElementById('dashboardTipoEstudio');
-      if (elTE && elTE._ms) elTE._ms.refresh();
+      if (elTE) {
+        if (typeof clearMultiSelect === 'function') clearMultiSelect(elTE);
+        if (elTE._ms) elTE._ms.refresh();
+      }
     });
     setTimeout(buscarCitasAuditoria, 150);
   } catch(e) {

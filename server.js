@@ -4888,7 +4888,7 @@ app.get('/api/dashboard/citas-auditoria', requireAuth, requireRoleOrPerm(['super
     const citasMedicas = await db.query(`
       SELECT 
         t.id,
-        t.fecha,
+        DATE_FORMAT(t.fecha, '%Y-%m-%d') as fecha,
         t.hora,
         t.paciente_documento,
         t.paciente_nombre,
@@ -4915,7 +4915,7 @@ app.get('/api/dashboard/citas-auditoria', requireAuth, requireRoleOrPerm(['super
     const citasElectro = await db.query(`
       SELECT 
         ce.id,
-        ce.fecha,
+        DATE_FORMAT(ce.fecha, '%Y-%m-%d') as fecha,
         ce.hora_agendamiento as hora,
         p.documento as paciente_documento,
         p.nombre as paciente_nombre,
@@ -4938,11 +4938,14 @@ app.get('/api/dashboard/citas-auditoria', requireAuth, requireRoleOrPerm(['super
       citas = citas.filter(c => c.tipo_cita === tipo_cita);
     }
 
-    // Ordenar por fecha descendente
+    // Ordenar por fecha y hora descendente (fecha ya es string YYYY-MM-DD gracias a DATE_FORMAT)
     citas.sort((a, b) => {
-      const fechaA = new Date(a.fecha);
-      const fechaB = new Date(b.fecha);
-      return fechaB - fechaA;
+      if (a.fecha < b.fecha) return 1;
+      if (a.fecha > b.fecha) return -1;
+      // Misma fecha: ordenar por hora DESC
+      const horaA = (a.hora || '').toString().substring(0, 8);
+      const horaB = (b.hora || '').toString().substring(0, 8);
+      return horaB.localeCompare(horaA);
     });
 
     logger.info('Dashboard auditoría citas', {
