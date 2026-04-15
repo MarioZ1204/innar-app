@@ -261,13 +261,11 @@ async function checkSession() {
 
 async function doLogin(usuario, password) {
   try {
-    // Hashear contraseña con SHA512
-    const hashedPassword = hashPassword(password);
-    
+    // Enviar contraseña en texto plano (solo si usas HTTPS)
     const res = await apiFetch('/api/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ usuario, password: hashedPassword })
+      body: JSON.stringify({ usuario, password })
     });
     const data = await res.json();
     if (data.ok) {
