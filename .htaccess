@@ -4,7 +4,11 @@ RewriteEngine On
 RewriteCond %{REQUEST_URI} ^/api/
 RewriteRule ^api/(.*)$ http://localhost:3000/api/$1 [P,L]
 
+# Proxy de Socket.IO hacia Node.js
+RewriteCond %{REQUEST_URI} ^/socket.io/
+RewriteRule ^socket.io/(.*)$ http://localhost:3000/socket.io/$1 [P,L]
+
 # Todo lo demás va al index.html (SPA)
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
-RewriteRule ^ index.html [QSA,L]
+RewriteRule ^ public/index.html [QSA,L]

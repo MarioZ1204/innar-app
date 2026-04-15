@@ -72,11 +72,19 @@ function initDashboardCitas() {
       window.socket.off('turno:eliminado');
       window.socket.off('cita_electro:creada');
       window.socket.off('cita_electro:eliminada');
+      window.socket.off('agenda:turno-creado');
+      window.socket.off('agenda:turno-eliminado');
+      window.socket.off('electro:cita-creada');
+      window.socket.off('electro:cita-eliminada');
 
       window.socket.on('turno:creado', buscarCitasAuditoria);
       window.socket.on('turno:eliminado', buscarCitasAuditoria);
       window.socket.on('cita_electro:creada', buscarCitasAuditoria);
       window.socket.on('cita_electro:eliminada', buscarCitasAuditoria);
+      window.socket.on('agenda:turno-creado', buscarCitasAuditoria);
+      window.socket.on('agenda:turno-eliminado', buscarCitasAuditoria);
+      window.socket.on('electro:cita-creada', buscarCitasAuditoria);
+      window.socket.on('electro:cita-eliminada', buscarCitasAuditoria);
     }
 
   } catch (e) {

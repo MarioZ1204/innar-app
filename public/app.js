@@ -1,4 +1,4 @@
-﻿// public/app.js
+// public/app.js
 const $ = id => document.getElementById(id);
 const lsKey = 'recibos_sencillo_v1';
 const lsKeyServicios = 'servicios_list_v1';
@@ -125,6 +125,9 @@ function apiFetch(url, opts = {}) {
     // No mostrar banner de sesión expirada en endpoints de autenticación
     if (res.status === 401 && !url.includes('/api/login')) {
       showSessionExpiredBanner();
+    }
+    if (res.status === 403) {
+      showToast('Acceso denegado o bloqueado por seguridad del servidor.', 'error');
     }
     if (res.status === 429) {
       showToast('Demasiadas solicitudes. Espera un momento.', 'warning');

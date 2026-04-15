@@ -50,7 +50,7 @@ app.get('/favicon.ico', (req, res) => res.status(204).end());
 
 // Configuración de sesión recomendada para Hostinger/proxy
 app.set('trust proxy', 1);
-app.use(session({
+const sessionMiddleware = session({
   secret: process.env.SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
@@ -62,7 +62,8 @@ app.use(session({
     sameSite: 'lax',
     maxAge: 8 * 60 * 60 * 1000
   }
-}));
+});
+app.use(sessionMiddleware);
 
 // Middleware para cerrar sesión por inactividad (60 minutos)
 app.use((req, res, next) => {
@@ -161,43 +162,6 @@ const upload = multer({
     }
   }
 });
-
-
-// Configuración recomendada para Hostinger/proxy
-app.set('trust proxy', 1);
-app.use(session({
-  secret: process.env.SESSION_SECRET,
-  resave: false,
-  saveUninitialized: false,
-  proxy: true, // importante para Hostinger/HTTPS
-  rolling: true,
-  cookie: {
-    secure: true, // solo sobre HTTPS
-    httpOnly: true,
-    sameSite: 'lax',
-    maxAge: 8 * 60 * 60 * 1000 // 8 horas
-  }
-}));
-
-// Middleware para cerrar sesión por inactividad (60 minutos)
-app.use((req, res, next) => {
-  try {
-    if (req.session) {
-      const INACTIVITY_MS = 60 * 60 * 1000; // 60 minutos
-      const now = Date.now();
-      if (req.session.lastActivity && (now - req.session.lastActivity) > INACTIVITY_MS) {
-        // destruir sesión por inactividad
-        req.session.destroy(() => {});
-      } else {
-        req.session.lastActivity = now;
-      }
-    }
-  } catch (e) {
-    console.error('session middleware error', e.message);
-  }
-  next();
-});
-
 // Rutas de la API v1 de Appointments Service
 app.use('/api/v1/appointments', requireAuth, appointmentsRouter);
 
@@ -1595,20 +1559,23 @@ app.get('/api/init-doctor-disponibilidad', requireAuth, requireRoleOrPerm(['supe
 
 // Procesar Excel de disponibilidad mensual
 app.post('/api/doctor-disponibilidad/procesar-excel', requireAuth, upload.single('file'), async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ error: 'No se recibió archivo' });
-    }
+  return handleProcesarExcelDisponibilidad(req, res);
+});
 
+async function handleProcesarExcelDisponibilidad(req, res) {
+  if (!req.file) {
+    return res.status(400).json({ error: 'No se recibió archivo' });
+  }
+
+  try {
     const doctorId = parseInt(req.body.doctor_id || req.session.usuarioId, 10);
     logger.info(`[DISPONIBILIDAD] Procesando Excel para doctor=${doctorId}, archivo=${req.file.originalname}`);
-    
+
     if (!doctorId) {
       fs.unlink(req.file.path, () => {});
       return res.status(400).json({ error: 'doctor_id inválido' });
     }
 
-    // Permisos: admin o el doctor puede subir su propia disponibilidad
     const isAdmin = isAdminRol(req.session.rol);
     const isDoctor = req.session.rol === 'doctor' && doctorId === req.session.usuarioId;
     if (!isAdmin && !isDoctor) {
@@ -1617,7 +1584,6 @@ app.post('/api/doctor-disponibilidad/procesar-excel', requireAuth, upload.single
       return res.status(403).json({ error: 'No tienes permiso para esto' });
     }
 
-    // Procesar el Excel
     const result = await procesarAgendaExcel.procesarAgendaExcel(req.file.path, doctorId, db);
     logger.debug('[DISPONIBILIDAD] Resultado: ' + JSON.stringify(result));
 
@@ -1627,39 +1593,33 @@ app.post('/api/doctor-disponibilidad/procesar-excel', requireAuth, upload.single
       return res.status(400).json({ error: result.error });
     }
 
-    // Guardar metadatos del archivo en la BD para poder verlo/descargarlo después
     const url = `/uploads/${req.file.filename}`;
     try {
-      const fileResult = await db.execute(
+      await db.execute(
         'INSERT INTO doctor_agenda_files (doctor_id, filename, url, uploaded_by) VALUES (?, ?, ?, ?)',
         [doctorId, req.file.originalname, url, req.session.usuarioId || null]
       );
-      logger.info(`[DISPONIBILIDAD] Archivo guardado en BD con ID: ${fileResult.insertId}`);
     } catch (dbErr) {
-      console.warn(`[DISPONIBILIDAD] Advertencia: error guardando metadatos del archivo:`, dbErr.message);
-      // Continuar aunque falle guardar metadatos - el procesamiento fue exitoso
+      logger.warn('[DISPONIBILIDAD] Error guardando metadatos del archivo', { error: dbErr.message });
     }
 
-    // NO borrar el archivo del filesystem para que sea visible en la lista
-
-    // Emitir actualización a través de WebSocket
     if (app.io) {
       emitSocket('agenda:disponibilidad-actualizada', { doctor_id: doctorId });
     }
 
-    res.json({ 
-      ok: true, 
+    res.json({
+      ok: true,
       diasGuardados: result.diasGuardados,
       errores: result.errores,
       fileUrl: url,
-      message: `âœ“ ${result.diasGuardados} días de disponibilidad guardados` 
+      message: `âœ“ ${result.diasGuardados} días de disponibilidad guardados`
     });
   } catch (e) {
     console.error('[DISPONIBILIDAD] Error procesando Excel:', e.message, e.stack);
     if (req.file) fs.unlink(req.file.path, () => {});
     res.status(500).json({ error: e.message });
   }
-});
+}
 
 // Obtener disponibilidad mensual de un doctor
 app.get('/api/doctor-disponibilidad/:doctorId', requireAuth, async (req, res) => {
@@ -1830,9 +1790,7 @@ app.delete('/api/doctor-disponibilidad/:doctorId', requireAuth, async (req, res)
 
 // Rutas heredadas para compatibilidad (redirigen a las nuevas)
 app.post('/api/doctor-dias-bloqueados/procesar-excel', requireAuth, upload.single('file'), async (req, res) => {
-  // Redirige a la nueva ruta
-  req.url = '/api/doctor-disponibilidad/procesar-excel';
-  return app._router.handle(req, res);
+  return handleProcesarExcelDisponibilidad(req, res);
 });
 
 app.get('/api/doctor-dias-bloqueados/:doctorId', requireAuth, async (req, res) => {

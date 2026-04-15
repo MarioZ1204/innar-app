@@ -83,6 +83,50 @@ router.get('/', async (req, res) => {
 });
 
 /**
+ * GET /api/v1/appointments/availability/:equipment_id/:date
+ * Obtener disponibilidad de un equipo
+ */
+router.get('/availability/:equipment_id/:date', async (req, res) => {
+  try {
+    const { equipment_id, date } = req.params;
+    const occupancies = await AppointmentService.getEquipmentAvailability(equipment_id, date);
+
+    res.json({ equipment_id, date, occupancies });
+  } catch (error) {
+    logger.error('Error obteniendo disponibilidad', { error: error.message });
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/v1/study-types
+ * Obtener tipos de estudio
+ */
+router.get('/types/list', async (req, res) => {
+  try {
+    const studies = await AppointmentService.getStudyTypes();
+    res.json(studies);
+  } catch (error) {
+    logger.error('Error obteniendo tipos de estudio', { error: error.message });
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/v1/equipments
+ * Obtener equipos disponibles
+ */
+router.get('/equipments/list', async (req, res) => {
+  try {
+    const equipments = await AppointmentService.getEquipments();
+    res.json(equipments);
+  } catch (error) {
+    logger.error('Error obteniendo equipos', { error: error.message });
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
  * GET /api/v1/appointments/:id
  * Obtener cita por ID
  */
@@ -133,50 +177,6 @@ router.delete('/:id', async (req, res) => {
     res.json({ ok: true, message: 'Cita cancelada correctamente' });
   } catch (error) {
     logger.error('Error cancelando cita', { error: error.message });
-    res.status(500).json({ error: error.message });
-  }
-});
-
-/**
- * GET /api/v1/appointments/availability/:equipment_id/:date
- * Obtener disponibilidad de un equipo
- */
-router.get('/availability/:equipment_id/:date', async (req, res) => {
-  try {
-    const { equipment_id, date } = req.params;
-    const occupancies = await AppointmentService.getEquipmentAvailability(equipment_id, date);
-
-    res.json({ equipment_id, date, occupancies });
-  } catch (error) {
-    logger.error('Error obteniendo disponibilidad', { error: error.message });
-    res.status(500).json({ error: error.message });
-  }
-});
-
-/**
- * GET /api/v1/study-types
- * Obtener tipos de estudio
- */
-router.get('/types/list', async (req, res) => {
-  try {
-    const studies = await AppointmentService.getStudyTypes();
-    res.json(studies);
-  } catch (error) {
-    logger.error('Error obteniendo tipos de estudio', { error: error.message });
-    res.status(500).json({ error: error.message });
-  }
-});
-
-/**
- * GET /api/v1/equipments
- * Obtener equipos disponibles
- */
-router.get('/equipments/list', async (req, res) => {
-  try {
-    const equipments = await AppointmentService.getEquipments();
-    res.json(equipments);
-  } catch (error) {
-    logger.error('Error obteniendo equipos', { error: error.message });
     res.status(500).json({ error: error.message });
   }
 });
