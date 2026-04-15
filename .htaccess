@@ -1,27 +1,10 @@
 RewriteEngine On
-RewriteCond %{HTTPS} off
-RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
 
-Options -Indexes
+# Proxy de /api/ hacia Node.js
+RewriteCond %{REQUEST_URI} ^/api/
+RewriteRule ^api/(.*)$ http://localhost:3000/api/$1 [P,L]
 
-<FilesMatch "^(favicon\.ico|robots\.txt)$">
-    <IfModule mod_authz_core.c>
-        Require all granted
-    </IfModule>
-    <IfModule !mod_authz_core.c>
-        Allow from all
-    </IfModule>
-</FilesMatch>
-
-<FilesMatch "\.(env|git|yml|yaml|log|sh|bat|sql|ini|lock|conf|config)$">
-    <IfModule mod_authz_core.c>
-        Require all denied
-    </IfModule>
-    <IfModule !mod_authz_core.c>
-        Deny from all
-    </IfModule>
-</FilesMatch>
-
-<IfModule mod_deflate.c>
-    AddOutputFilterByType DEFLATE text/plain text/html text/xml text/css application/xml application/xhtml+xml application/rss+xml application/javascript application/x-javascript application/json
-</IfModule>
+# Todo lo demás va al index.html (SPA)
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^ index.html [QSA,L]
