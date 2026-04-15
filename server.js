@@ -128,6 +128,23 @@ const upload = multer({
   }
 });
 
+
+// Configuración recomendada para Hostinger/proxy
+app.set('trust proxy', 1);
+app.use(session({
+  secret: process.env.SESSION_SECRET,
+  resave: false,
+  saveUninitialized: false,
+  proxy: true, // importante para Hostinger/HTTPS
+  rolling: true,
+  cookie: {
+    secure: true, // solo sobre HTTPS
+    httpOnly: true,
+    sameSite: 'lax',
+    maxAge: 8 * 60 * 60 * 1000 // 8 horas
+  }
+}));
+
 // Middleware para cerrar sesión por inactividad (60 minutos)
 app.use((req, res, next) => {
   try {
@@ -146,23 +163,6 @@ app.use((req, res, next) => {
   }
   next();
 });
-
-// Configurar sesiones
-const sessionMiddleware = session({
-  secret: process.env.SESSION_SECRET,
-  resave: false,
-  saveUninitialized: false,
-  rolling: true,
-  cookie: { 
-    secure: process.env.NODE_ENV === 'production',
-    httpOnly: true,
-    sameSite: 'lax',
-    maxAge: 8 * 60 * 60 * 1000 // 8 horas
-  }
-});
-app.use(sessionMiddleware);
-// activar rolling session para actualizar cookie en cada respuesta
-app.set('trust proxy', 1);
 
 // Rutas de la API v1 de Appointments Service
 app.use('/api/v1/appointments', requireAuth, appointmentsRouter);
@@ -260,6 +260,7 @@ app.get('/api/version', (req, res) => {
 });
 
 // Favicon — responder sin contenido para evitar 403 cuando no existe el archivo
+app.get('/favicon.ico', (req, res) => res.status(204).end());
 
 // Cargar imagen del logo como base64
 let logoBase64 = '';
