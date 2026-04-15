@@ -42,19 +42,57 @@ const app = express();
 // Compresión gzip para todas las respuestas
 app.use(compression());
 
+const path = require('path');
+
+// Servir archivos estáticos desde public
+app.use(express.static(path.join(__dirname, 'public')));
+
+// Manejo explícito de favicon.ico
+app.get('/favicon.ico', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'favicon.ico'));
+});
+
+// Configuración de sesión recomendada para Hostinger/proxy
+app.set('trust proxy', 1);
+app.use(session({
+  secret: process.env.SESSION_SECRET,
+  resave: false,
+  saveUninitialized: false,
+  proxy: true,
+  rolling: true,
+  cookie: {
+    secure: process.env.NODE_ENV === 'production',
+    httpOnly: true,
+    sameSite: 'lax',
+    maxAge: 8 * 60 * 60 * 1000
+  }
+}));
+
+// Middleware para cerrar sesión por inactividad (60 minutos)
+app.use((req, res, next) => {
+  if (req.session) {
+    const INACTIVITY_MS = 60 * 60 * 1000;
+    const now = Date.now();
+    if (req.session.lastActivity && (now - req.session.lastActivity) > INACTIVITY_MS) {
+      return req.session.destroy(() => next());
+    }
+    req.session.lastActivity = now;
+  }
+  next();
+});
+
+// CORS y headers de seguridad
 const _frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
 const _allowedOrigins = [_frontendUrl];
-// En desarrollo aceptar también acceso por IP de red local
 if (process.env.NODE_ENV !== 'production') {
-  _allowedOrigins.push(/^http:\/\/192\.168\.\d+\.\d+:\d+$/, /^http:\/\/10\.\d+\.\d+\.\d+:\d+$/, /^http:\/\/172\.(1[6-9]|2\d|3[01])\.\d+\.\d+:\d+$/);
+  _allowedOrigins.push(/^http:\/\/192\.168\.\d+\.\d+:\d+$/, /^http:\/\/10\.\d+\.\d+\.\d+:\d+$/, /^http:\/\/172\.(1[6-9]|2\d|3[01])\.\d+\.\d+$/);
 }
 app.use(cors({
   origin: _allowedOrigins,
   credentials: true
 }));
-// Headers de seguridad HTTP
 app.use(helmet({
-  contentSecurityPolicy: false,    // La app usa scripts/estilos inline
+  contentSecurityPolicy: false,
   hsts: process.env.NODE_ENV === 'production',
   crossOriginEmbedderPolicy: false,
   frameguard: { action: 'sameorigin' },
