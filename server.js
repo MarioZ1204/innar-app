@@ -107,23 +107,51 @@ app.use(helmet({
 }));
 
 
-// Rate limiter global — ahora limita por usuario o sesión, no solo por IP
+const trustedIps = (process.env.RATE_LIMIT_TRUSTED_IPS || '')
+  .split(',')
+  .map((ip) => ip.trim())
+  .filter(Boolean);
+
+function isTrustedIp(ip) {
+  if (!ip) return false;
+  return trustedIps.includes(ip);
+}
+
+// Rate limiter global — limita por usuario/sesión y permite whitelist de IP
 const apiLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 300, // Puedes ajustar este valor según tus necesidades
+  max: Number(process.env.API_RATE_LIMIT_MAX || 500),
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Demasiadas solicitudes, intenta de nuevo en un minuto' },
+  skip: (req) => {
+    // No limitar healthcheck/version y permitir IPs de confianza (oficina/sede)
+    if (req.path === '/health' || req.path === '/version') return true;
+    return isTrustedIp(req.ip);
+  },
   keyGenerator: (req) => {
-    // Si tienes autenticación basada en usuario
+    // Preferir usuario autenticado cuando exista
+    if (req.session?.usuarioId) return `user:${req.session.usuarioId}`;
     if (req.user?.id) return `user:${req.user.id}`;
-    // Si usas sesiones
+    // Fallback por sesión para no castigar a toda una red NAT
     if (req.sessionID) return `session:${req.sessionID}`;
-    // Fallback a IP
+    // Último fallback: IP
     return req.ip;
   }
 });
 app.use('/api/', apiLimiter);
+
+// Límite estricto solo para login por IP (protección anti fuerza bruta)
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: Number(process.env.LOGIN_RATE_LIMIT_MAX || 40),
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Demasiados intentos de inicio de sesión. Intenta más tarde.' },
+  keyGenerator: (req) => req.ip,
+  skip: (req) => isTrustedIp(req.ip)
+});
+app.use('/api/login', authLimiter);
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
