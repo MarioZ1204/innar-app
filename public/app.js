@@ -3376,9 +3376,11 @@ function renderTurnoRowMedica(tbody, t, animateTargetId, hayEnAtencion) {
   if (tienePermiso('agenda.editar') || tienePermiso('agenda.cambiar_estado')) {
     const esAdminRol = currentUser?.rol === 'superadmin' || currentUser?.rol === 'admin';
     if (esAdminRol) {
-      deshabilitarBotones = hayEnAtencion;
+      // Admin/superadmin no quedan bloqueados por existencia de EN_ATENCION
+      deshabilitarBotones = false;
     } else {
-      deshabilitarBotones = esAtendido || hayEnAtencion;
+      // Otros roles: bloquear atendidos y, si hay EN_ATENCION, solo filas distintas al turno en atención
+      deshabilitarBotones = esAtendido || (hayEnAtencion && !esEnAtencion);
     }
   } else {
     deshabilitarBotones = true;
