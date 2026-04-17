@@ -118,6 +118,9 @@ let lastAnimatedAt = 0;
 let lastTurnoNumber1Id = null;
 let globalHayEnAtencion = false;
 let _cargandoTurnosMedica = false;
+let _pendienteTurnosMedica = false;
+let _cargandoCitasElectro = false;
+let _pendienteCitasElectro = false;
 
 // Fetch con credenciales para sesión
 function apiFetch(url, opts = {}) {
@@ -1524,9 +1527,10 @@ function closeDoctorSelectionModal() {
 function initRecibos() {
   initItemsTable();
   setDefaultDate();
+  const puedeCrearRecibos = tienePermiso('recibos.crear');
 
   // Si el usuario NO tiene permiso de crear recibos: ir directo a Ver Recibos, ocultar tab crear
-  if (!tienePermiso('recibos.crear')) {
+  if (!puedeCrearRecibos) {
     const crearBtn = document.querySelector('#view-recibos .sidebar-btn[data-page="crear"]');
     const crearPage = document.getElementById('page-crear');
     const recibosBtn = document.querySelector('#view-recibos .sidebar-btn[data-page="recibos"]');
@@ -1536,9 +1540,10 @@ function initRecibos() {
     if (recibosBtn)  { recibosBtn.classList.add('active'); }
     if (recibosPage) { recibosPage.classList.add('active'); }
     cargarLista();
+  } else {
+    // Solo usuarios con permiso de creación necesitan el consecutivo
+    nextNumber();
   }
-  nextNumber();
-  updateSavedCount();
 
   // Cargar médicos en el select
   cargarMedicosEnRecibo();
@@ -3120,7 +3125,10 @@ async function buscarPacientesMedica() {
 // Attach document input listener in init (added later)
 
 async function cargarTurnosMedica() {
-  if (_cargandoTurnosMedica) return;
+  if (_cargandoTurnosMedica) {
+    _pendienteTurnosMedica = true;
+    return;
+  }
   _cargandoTurnosMedica = true;
   const fecha = $('agendaMedicaFecha').value;
   const doctorId = selectedDoctorId || ((currentUser?.rol === 'doctor' ? currentUser?.id : null));
@@ -3287,7 +3295,15 @@ async function cargarTurnosMedica() {
     // adjustColumnsForRole
     // Ajustar columnas según rol (una sola vez después de renderizar todas las filas)
     adjustColumnsForRole();
-  } catch (e) { showToast('Error cargando citas', 'error'); } finally { _cargandoTurnosMedica = false; }
+  } catch (e) {
+    showToast('Error cargando citas', 'error');
+  } finally {
+    _cargandoTurnosMedica = false;
+    if (_pendienteTurnosMedica) {
+      _pendienteTurnosMedica = false;
+      setTimeout(() => cargarTurnosMedica(), 150);
+    }
+  }
 }
 
 // Función para crear una fila vacía de turno
@@ -5208,8 +5224,17 @@ $('electroDiagnostico').addEventListener('input', function() {
 });
 
 async function cargarCitasElectro() {
+  if (_cargandoCitasElectro) {
+    _pendienteCitasElectro = true;
+    return;
+  }
+  _cargandoCitasElectro = true;
   const fecha = $('electroFecha').value;
-  if (!fecha) { showToast('Selecciona una fecha', 'error'); return; }
+  if (!fecha) {
+    _cargandoCitasElectro = false;
+    showToast('Selecciona una fecha', 'error');
+    return;
+  }
   showSkeletonRows($('citasElectroBody'), 10, 6);
   try {
     const res = await apiFetch(`/api/citas-electro?fecha=${fecha}`);
@@ -5266,6 +5291,12 @@ async function cargarCitasElectro() {
   } catch (e) { 
     console.error('Error cargando citas:', e);
     showToast('Error cargando citas', 'error'); 
+  } finally {
+    _cargandoCitasElectro = false;
+    if (_pendienteCitasElectro) {
+      _pendienteCitasElectro = false;
+      setTimeout(() => cargarCitasElectro(), 150);
+    }
   }
 }
 

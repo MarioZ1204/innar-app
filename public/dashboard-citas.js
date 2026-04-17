@@ -3,6 +3,18 @@
 
 // Variables globales para el dashboard
 let dashboardCitasActuales = [];
+let dashboardFetchInFlight = false;
+let dashboardFetchPending = false;
+let dashboardFetchTimer = null;
+let dashboardTipoCitaChangeHandler = null;
+
+function scheduleBuscarCitasAuditoria(delayMs = 120) {
+  if (dashboardFetchTimer) clearTimeout(dashboardFetchTimer);
+  dashboardFetchTimer = setTimeout(() => {
+    dashboardFetchTimer = null;
+    buscarCitasAuditoria();
+  }, delayMs);
+}
 
 /**
  * Inicializar el módulo de dashboard de citas
@@ -25,12 +37,17 @@ function initDashboardCitas() {
     // Cambio de tipo de cita → recargar tipos de estudio dinámicamente
     const elTipoCita = document.getElementById('dashboardTipoCita');
     if (elTipoCita) {
-      elTipoCita.addEventListener('change', function () {
+      if (dashboardTipoCitaChangeHandler) {
+        elTipoCita.removeEventListener('change', dashboardTipoCitaChangeHandler);
+      }
+      dashboardTipoCitaChangeHandler = function () {
         cargarTiposEstudioFiltro(this.value).then(() => {
           const el = document.getElementById('dashboardTipoEstudio');
           if (el && el._ms) el._ms.refresh();
+          scheduleBuscarCitasAuditoria(150);
         });
-      });
+      };
+      elTipoCita.addEventListener('change', dashboardTipoCitaChangeHandler);
     }
 
     // Cargar tipos de estudio para el valor inicial e inicializar multi-select
@@ -64,7 +81,7 @@ function initDashboardCitas() {
     if (elFechaHasta) elFechaHasta.value = hoy;
 
     // Cargar datos iniciales
-    buscarCitasAuditoria();
+    scheduleBuscarCitasAuditoria(60);
 
     // Escuchar cambios en tiempo real via Socket.IO
     if (window.socket) {
@@ -77,14 +94,14 @@ function initDashboardCitas() {
       window.socket.off('electro:cita-creada');
       window.socket.off('electro:cita-eliminada');
 
-      window.socket.on('turno:creado', buscarCitasAuditoria);
-      window.socket.on('turno:eliminado', buscarCitasAuditoria);
-      window.socket.on('cita_electro:creada', buscarCitasAuditoria);
-      window.socket.on('cita_electro:eliminada', buscarCitasAuditoria);
-      window.socket.on('agenda:turno-creado', buscarCitasAuditoria);
-      window.socket.on('agenda:turno-eliminado', buscarCitasAuditoria);
-      window.socket.on('electro:cita-creada', buscarCitasAuditoria);
-      window.socket.on('electro:cita-eliminada', buscarCitasAuditoria);
+      window.socket.on('turno:creado', () => scheduleBuscarCitasAuditoria(180));
+      window.socket.on('turno:eliminado', () => scheduleBuscarCitasAuditoria(180));
+      window.socket.on('cita_electro:creada', () => scheduleBuscarCitasAuditoria(180));
+      window.socket.on('cita_electro:eliminada', () => scheduleBuscarCitasAuditoria(180));
+      window.socket.on('agenda:turno-creado', () => scheduleBuscarCitasAuditoria(180));
+      window.socket.on('agenda:turno-eliminado', () => scheduleBuscarCitasAuditoria(180));
+      window.socket.on('electro:cita-creada', () => scheduleBuscarCitasAuditoria(180));
+      window.socket.on('electro:cita-eliminada', () => scheduleBuscarCitasAuditoria(180));
     }
 
   } catch (e) {
@@ -97,6 +114,11 @@ function initDashboardCitas() {
  * Buscar citas según los filtros
  */
 async function buscarCitasAuditoria() {
+  if (dashboardFetchInFlight) {
+    dashboardFetchPending = true;
+    return;
+  }
+  dashboardFetchInFlight = true;
   try {
     const elTipoCita = document.getElementById('dashboardTipoCita');
     const elFechaDesde = document.getElementById('dashboardFechaDesde');
@@ -142,6 +164,12 @@ async function buscarCitasAuditoria() {
     const tbody = document.getElementById('bodyTablaAuditoria');
     if (tbody) {
       tbody.innerHTML = `<tr><td colspan="8" style="padding:20px;text-align:center;color:#dc2626">Error: ${typeof escapeHtml === 'function' ? escapeHtml(e.message) : e.message}</td></tr>`;
+    }
+  } finally {
+    dashboardFetchInFlight = false;
+    if (dashboardFetchPending) {
+      dashboardFetchPending = false;
+      scheduleBuscarCitasAuditoria(150);
     }
   }
 }
