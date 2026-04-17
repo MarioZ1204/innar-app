@@ -9507,12 +9507,17 @@ function abrirModalEstadoCitaMedica(turno) {
   const puedeInteractuar = puedeVerEstado || puedeLlamarSiguiente || puedeMarcarAtendido;
   const estadoFinal = ['ATENDIDO', 'NO_ASISTIO', 'CANCELADO', 'REPROGRAMADO'].includes(turno.estado);
   const puedeLlamar   = !estadoFinal; // puede llamar varias veces
+  const puedeEnAtencion = !estadoFinal && turno.estado !== 'EN_ATENCION';
   const puedeAtendido = turno.estado === 'EN_ATENCION';
 
   // --- BOTONES FOOTER ---
   // Llamar paciente: SOLO doctor
   const btnLlamarMod = el('btnModalLlamarPaciente');
   if (btnLlamarMod) { btnLlamarMod.style.display = (esDoctor && puedeLlamarSiguiente && !estadoFinal) ? '' : 'none'; btnLlamarMod.disabled = !puedeLlamar; btnLlamarMod.style.opacity = puedeLlamar ? '' : '0.4'; }
+
+  // En Atención: SOLO doctor
+  const btnEnAtencionMod = el('btnModalEnAtencion');
+  if (btnEnAtencionMod) { btnEnAtencionMod.style.display = (esDoctor && puedeMarcarAtendido && !estadoFinal) ? '' : 'none'; btnEnAtencionMod.disabled = !puedeEnAtencion; btnEnAtencionMod.style.opacity = puedeEnAtencion ? '' : '0.4'; }
 
   // Atendido: SOLO doctor
   const btnAtendidoMod = el('btnModalAtendido');
@@ -9586,7 +9591,7 @@ $('btnEstadoEnSala')?.addEventListener('click', async (e) => {
   } catch (err) { showToast('Error al actualizar estado', 'error'); console.error(err); }
 });
 
-// Botón: LLAMAR AL PACIENTE → Emitir anuncio por socket (solo recepción escucha) + Confirmación de llegada
+// Botón: LLAMAR AL PACIENTE → Emitir anuncio por socket (solo recepción escucha)
 $('btnModalLlamarPaciente')?.addEventListener('click', async (e) => {
   e.preventDefault(); e.stopPropagation();
   if (!currentTurnoMedicaData) return;
@@ -9601,24 +9606,23 @@ $('btnModalLlamarPaciente')?.addEventListener('click', async (e) => {
       numero_consultorio: consultorio
     });
   }
-  
-  // 2) Preguntar si el paciente ya llegó
-  showConfirm(
-    `Se llamó a <strong>${escapeHtml(nombrePaciente)}</strong>.<br>¿El paciente ya llegó al consultorio?`,
-    async () => {
-      // Sí, llegó → EN_ATENCION (sin repetir llamado por voz)
-      try {
-        const res = await apiFetch(`/api/turnos/${currentTurnoMedicaData.id}/estado`, {
-          method: 'PATCH', headers: {'Content-Type':'application/json'},
-          body: JSON.stringify({ estado: 'EN_ATENCION' })
-        });
-        const data = await res.json();
-        if (data.ok) { showToast('Paciente en atención: ' + nombrePaciente, 'success'); cerrarModalEstadoCitaMedica(); cargarTurnosMedica(); }
-        else showToast(data.error || 'Error al actualizar', 'error');
-      } catch (err) { showToast('Error al actualizar estado', 'error'); console.error(err); }
-    },
-    { okText: 'Sí, llegó', cancelText: 'No, aún no', danger: false, icon: '📢' }
-  );
+  showToast('Paciente llamado: ' + nombrePaciente, 'success');
+});
+
+// Botón: EN ATENCIÓN — equivalente a "Sí, llegó"
+$('btnModalEnAtencion')?.addEventListener('click', async (e) => {
+  e.preventDefault(); e.stopPropagation();
+  if (!currentTurnoMedicaData) return;
+  const nombrePaciente = currentTurnoMedicaData.paciente_nombre || 'el paciente';
+  try {
+    const res = await apiFetch(`/api/turnos/${currentTurnoMedicaData.id}/estado`, {
+      method: 'PATCH', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ estado: 'EN_ATENCION' })
+    });
+    const data = await res.json();
+    if (data.ok) { showToast('Paciente en atención: ' + nombrePaciente, 'success'); cerrarModalEstadoCitaMedica(); cargarTurnosMedica(); }
+    else showToast(data.error || 'Error al actualizar', 'error');
+  } catch (err) { showToast('Error al actualizar estado', 'error'); console.error(err); }
 });
 
 // Botón: ATENDIDO — usa marcar-atendido para renumerar turnos (el siguiente pasa a ser #1)
