@@ -106,13 +106,22 @@ app.use(helmet({
   frameguard: { action: 'sameorigin' },
 }));
 
-// Rate limiter global — max 200 requests por minuto por IP
+
+// Rate limiter global — ahora limita por usuario o sesión, no solo por IP
 const apiLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 200,
+  max: 300, // Puedes ajustar este valor según tus necesidades
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: 'Demasiadas solicitudes, intenta de nuevo en un minuto' }
+  message: { error: 'Demasiadas solicitudes, intenta de nuevo en un minuto' },
+  keyGenerator: (req) => {
+    // Si tienes autenticación basada en usuario
+    if (req.user?.id) return `user:${req.user.id}`;
+    // Si usas sesiones
+    if (req.sessionID) return `session:${req.sessionID}`;
+    // Fallback a IP
+    return req.ip;
+  }
 });
 app.use('/api/', apiLimiter);
 
