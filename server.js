@@ -101,17 +101,6 @@ const CSRF_COOKIE_OPTS = {
   maxAge: 8 * 60 * 60 * 1000,
 };
 
-function getCookie(req, name) {
-  const raw = req.headers.cookie;
-  if (!raw) return null;
-  const parts = raw.split(';').map((s) => s.trim());
-  const prefix = `${name}=`;
-  for (const p of parts) {
-    if (p.startsWith(prefix)) return decodeURIComponent(p.slice(prefix.length));
-  }
-  return null;
-}
-
 function ensureCsrfForSession(req, res) {
   if (!req.session) return;
   if (!req.session.csrfToken) {
@@ -135,13 +124,11 @@ function csrfProtection(req, res, next) {
   // Sin sesión autenticada no exigimos CSRF (evita bloquear logout/limpieza con sesión rota)
   if (!req.session?.usuarioId) return next();
 
+  // Basta con que el header coincida con la sesión (el atacante cross-site no puede leerlo).
+  // La cookie legible es opcional: algunos navegadores/proxy no exponen document.cookie igual que el servidor.
   const tokenSession = req.session?.csrfToken;
   const tokenHeader = req.get(CSRF_HEADER);
-  const tokenCookie = getCookie(req, CSRF_TOKEN_COOKIE);
-
-  if (!tokenSession || !tokenHeader || !tokenCookie
-    || tokenHeader !== tokenSession
-    || tokenCookie !== tokenSession) {
+  if (!tokenSession || !tokenHeader || tokenHeader !== tokenSession) {
     return res.status(403).json({ error: 'Token CSRF inválido o faltante', code: 'CSRF_INVALID' });
   }
   return next();
@@ -662,7 +649,8 @@ app.post('/api/login', async (req, res) => {
       }
       ensureCsrfForSession(req, res);
       res.json({ 
-        ok: true, 
+        ok: true,
+        csrfToken: req.session.csrfToken,
         usuario: { id: user.id, usuario: user.usuario, nombre: user.nombre, rol: user.rol, especialidad: user.especialidad, permisos: parsedPermisos }
       });
     });
@@ -694,7 +682,7 @@ app.get('/api/sesion', async (req, res) => {
         req.session.permisos = user.permisos;
       }
       ensureCsrfForSession(req, res);
-      res.json({ autenticado: true, usuario: user });
+      res.json({ autenticado: true, csrfToken: req.session.csrfToken, usuario: user });
     } catch (e) {
       console.error(e);
       res.status(500).json({ error: e.message });

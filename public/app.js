@@ -48,6 +48,8 @@ let lastReciboId = null;
 let currentUser = null;
 let currentModule = null;
 let selectedDoctorId = null;
+/** Token CSRF (también viene en JSON de /api/sesion y login; la cookie puede no leerse en document.cookie) */
+let innarCsrfToken = '';
 let citaElectroSeleccionada = null;
 let isInitializingElectroModal = false; // Flag para evitar cambios automáticos al cargar modal
 let citaReprogramarAdelantarActual = null; // Almacena la cita cuando se abre modal de reprogramación/adelanto
@@ -213,6 +215,10 @@ function getCookie(name) {
   return '';
 }
 
+function getCsrfForRequest() {
+  return getCookie('csrf_token') || innarCsrfToken || '';
+}
+
 function normalizeFetchHeaders(input) {
   if (input === undefined || input === null) return new Headers();
   if (input instanceof Headers) return new Headers(input);
@@ -241,7 +247,7 @@ function apiFetch(url, opts = {}) {
     async function oneFetch() {
       const headers = normalizeFetchHeaders(opts.headers);
       if (mutating && typeof url === 'string' && url.startsWith('/api/')) {
-        const csrf = getCookie('csrf_token');
+        const csrf = getCsrfForRequest();
         if (csrf) headers.set('x-csrf-token', csrf);
       }
       return fetch(url, { ...opts, headers, credentials: 'include' });
@@ -255,7 +261,11 @@ function apiFetch(url, opts = {}) {
       if (res.status === 403 && mutating && typeof url === 'string' && url.startsWith('/api/')) {
         const data403 = await parseJsonSafe(res);
         if (data403 && data403.code === 'CSRF_INVALID') {
-          await fetch('/api/sesion', { credentials: 'include' });
+          const rs = await fetch('/api/sesion', { credentials: 'include' });
+          try {
+            const sd = await rs.json();
+            if (sd && sd.csrfToken) innarCsrfToken = sd.csrfToken;
+          } catch (_) { /* ignore */ }
           didCsrfRefresh = true;
           res = await oneFetch();
         }
@@ -378,6 +388,7 @@ async function checkSession() {
     const res = await apiFetch('/api/sesion');
     const data = await res.json();
     if (data.autenticado) {
+      if (data.csrfToken) innarCsrfToken = data.csrfToken;
       currentUser = data.usuario;
       $('menuUserName').textContent = currentUser?.nombre || currentUser?.usuario || 'Usuario';
       sessionStorage.setItem('nombre_usuario', currentUser?.nombre || '');
@@ -420,6 +431,7 @@ async function doLogin(usuario, password) {
     });
     const data = await res.json();
     if (data.ok) {
+      if (data.csrfToken) innarCsrfToken = data.csrfToken;
       currentUser = data.usuario;
       // Limpiar cualquier flag de sesión expirada residual
       sessionStorage.removeItem('session_expired');
@@ -472,6 +484,7 @@ async function doLogin(usuario, password) {
 }
 
 async function doLogout() {
+  innarCsrfToken = '';
   try {
     await apiFetch('/api/logout', { method: 'POST' });
   } catch (e) { console.warn('[doLogout] Logout API failed:', e.message); }
@@ -8050,7 +8063,7 @@ async function importarDiagnosticosExcel() {
     status.textContent = 'Enviando archivo...';
 
     const hdr = new Headers();
-    const csrf = getCookie('csrf_token');
+    const csrf = getCsrfForRequest();
     if (csrf) hdr.set('x-csrf-token', csrf);
 
     const res = await fetch('/api/diagnosticos/import-excel', {
