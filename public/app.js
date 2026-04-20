@@ -207,9 +207,22 @@ function agendaMedicaPolicy(turno, opts = {}) {
   return { perms, row, panel, modal, meta: { rol, esFinal, esEnAtencion, esEnSala, hayEnAtencion } };
 }
 
+function getCookie(name) {
+  const parts = (`; ${document.cookie}`).split(`; ${name}=`);
+  if (parts.length === 2) return parts.pop().split(';').shift() || '';
+  return '';
+}
+
 // Fetch con credenciales para sesión
 function apiFetch(url, opts = {}) {
-  return fetch(url, { ...opts, credentials: 'include' }).then(res => {
+  const method = ((opts.method || 'GET') + '').toUpperCase();
+  const mutating = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method);
+  const headers = new Headers(opts.headers || null);
+  if (mutating && typeof url === 'string' && url.startsWith('/api/')) {
+    const csrf = getCookie('csrf_token');
+    if (csrf) headers.set('x-csrf-token', csrf);
+  }
+  return fetch(url, { ...opts, headers, credentials: 'include' }).then(res => {
     // No mostrar banner de sesión expirada en endpoints de autenticación
     if (res.status === 401 && !url.includes('/api/login')) {
       showSessionExpiredBanner();
@@ -7984,8 +7997,13 @@ async function importarDiagnosticosExcel() {
     progressBar.style.width = '30%';
     status.textContent = 'Enviando archivo...';
 
+    const hdr = new Headers();
+    const csrf = getCookie('csrf_token');
+    if (csrf) hdr.set('x-csrf-token', csrf);
+
     const res = await fetch('/api/diagnosticos/import-excel', {
       method: 'POST',
+      headers: hdr,
       body: formData,
       credentials: 'include'
     });

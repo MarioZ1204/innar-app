@@ -24,7 +24,7 @@ const logger = require('./utils/logger');
 const procesarAgendaExcel = require('./utils/procesar-agenda-excel');
 const cors = require('cors');
 const compression = require('compression');
-const rateLimit = require('express-rate-limit');
+const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const puppeteer = require('puppeteer');
 const fs = require('fs');
 const path = require('path');
@@ -34,6 +34,7 @@ const APP_VERSION = require('./package.json').version;
 const session = require('express-session');
 const bcrypt = require('bcryptjs');
 const multer = require('multer');
+const crypto = require('crypto');
 const appointmentsRouter = require('./routes/appointmentsV1');
 const { startBackupScheduler } = require('./utils/backup-scheduler');
 
@@ -43,8 +44,19 @@ const app = express();
 app.use(compression());
 
 // CORS debe ir antes de cualquier sesión o body parser
+const FRONTEND_URL = process.env.FRONTEND_URL || 'https://innarapp.neurocienciasnarino.com';
+const allowedOrigins = [FRONTEND_URL];
+if (process.env.NODE_ENV !== 'production') {
+  allowedOrigins.push(
+    /^http:\/\/localhost:\d+$/,
+    /^http:\/\/127\.0\.0\.1:\d+$/,
+    /^http:\/\/192\.168\.\d+\.\d+:\d+$/,
+    /^http:\/\/10\.\d+\.\d+\.\d+:\d+$/,
+    /^http:\/\/172\.(1[6-9]|2\d|3[01])\.\d+\.\d+(:\d+)?$/
+  );
+}
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'https://innarapp.neurocienciasnarino.com',
+  origin: allowedOrigins,
   credentials: true
 }));
 
@@ -54,6 +66,14 @@ app.use(express.urlencoded({ extended: true }));
 
 // Configuración de sesión recomendada para Hostinger/proxy
 app.set('trust proxy', 1);
+// Cookies de sesión: en Hostinger el TLS termina en Apache; Node recibe HTTP internamente,
+// pero `trust proxy` + `secure: true` funcionan cuando el proxy envía X-Forwarded-Proto: https.
+// Mismo sitio (SPA + /api en el mismo dominio): SameSite=Lax es más seguro que None.
+const SESSION_COOKIE_SECURE = (process.env.SESSION_COOKIE_SECURE !== undefined)
+  ? (process.env.SESSION_COOKIE_SECURE === 'true')
+  : (process.env.NODE_ENV === 'production');
+const SESSION_COOKIE_SAMESITE = process.env.SESSION_COOKIE_SAMESITE
+  || (process.env.NODE_ENV === 'production' ? 'lax' : 'lax');
 const sessionMiddleware = session({
   secret: process.env.SESSION_SECRET,
   resave: false,
@@ -61,14 +81,84 @@ const sessionMiddleware = session({
   proxy: true,
   rolling: true,
   cookie: {
-    secure: true, // Siempre true en producción/https
+    secure: SESSION_COOKIE_SECURE,
     httpOnly: true,
-    sameSite: 'none', // Para cross-domain/subdominio y HTTPS
+    sameSite: SESSION_COOKIE_SAMESITE,
     maxAge: 8 * 60 * 60 * 1000,
     // domain: '.neurocienciasnarino.com' // Descomenta si frontend y backend están en subdominios distintos
   }
 });
 app.use(sessionMiddleware);
+
+// --- CSRF (doble envío: cookie legible + cabecera en mutaciones) ---
+const CSRF_TOKEN_COOKIE = 'csrf_token';
+const CSRF_HEADER = 'x-csrf-token';
+const CSRF_COOKIE_OPTS = {
+  httpOnly: false,
+  secure: SESSION_COOKIE_SECURE,
+  sameSite: SESSION_COOKIE_SAMESITE,
+  path: '/',
+  maxAge: 8 * 60 * 60 * 1000,
+};
+
+function getCookie(req, name) {
+  const raw = req.headers.cookie;
+  if (!raw) return null;
+  const parts = raw.split(';').map((s) => s.trim());
+  const prefix = `${name}=`;
+  for (const p of parts) {
+    if (p.startsWith(prefix)) return decodeURIComponent(p.slice(prefix.length));
+  }
+  return null;
+}
+
+function ensureCsrfForSession(req, res) {
+  if (!req.session) return;
+  if (!req.session.csrfToken) {
+    req.session.csrfToken = crypto.randomBytes(32).toString('hex');
+  }
+  res.cookie(CSRF_TOKEN_COOKIE, req.session.csrfToken, CSRF_COOKIE_OPTS);
+}
+
+function csrfProtection(req, res, next) {
+  const p = req.path || '';
+  const method = (req.method || 'GET').toUpperCase();
+  const mutating = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method);
+
+  // Rutas que no deben exigir CSRF
+  if (p === '/api/login') return next();
+  if (p === '/api/logout') return next();
+  if (p === '/api/sesion' && method === 'GET') return next();
+  if (!p.startsWith('/api/')) return next();
+  if (!mutating) return next();
+
+  // Sin sesión autenticada no exigimos CSRF (evita bloquear logout/limpieza con sesión rota)
+  if (!req.session?.usuarioId) return next();
+
+  const tokenSession = req.session?.csrfToken;
+  const tokenHeader = req.get(CSRF_HEADER);
+  const tokenCookie = getCookie(req, CSRF_TOKEN_COOKIE);
+
+  if (!tokenSession || !tokenHeader || !tokenCookie
+    || tokenHeader !== tokenSession
+    || tokenCookie !== tokenSession) {
+    return res.status(403).json({ error: 'Token CSRF inválido o faltante' });
+  }
+  return next();
+}
+
+// Emite/renueva cookie CSRF cuando hay sesión autenticada (GET /api/*)
+function issueCsrfIfAuthed(req, res, next) {
+  const p = req.path || '';
+  const method = (req.method || 'GET').toUpperCase();
+  if (method === 'GET' && p.startsWith('/api/') && req.session?.usuarioId) {
+    ensureCsrfForSession(req, res);
+  }
+  return next();
+}
+
+app.use(issueCsrfIfAuthed);
+app.use(csrfProtection);
 
 // Servir archivos estáticos desde public
 app.use(express.static(path.join(__dirname, 'public')));
@@ -89,21 +179,30 @@ app.use((req, res, next) => {
   next();
 });
 
-// CORS y headers de seguridad
-const _frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-const _allowedOrigins = [_frontendUrl];
-if (process.env.NODE_ENV !== 'production') {
-  _allowedOrigins.push(/^http:\/\/192\.168\.\d+\.\d+:\d+$/, /^http:\/\/10\.\d+\.\d+\.\d+:\d+$/, /^http:\/\/172\.(1[6-9]|2\d|3[01])\.\d+\.\d+$/);
-}
-app.use(cors({
-  origin: _allowedOrigins,
-  credentials: true
-}));
+// Headers de seguridad
+// CSP se habilita inicialmente en modo "report-only" para no romper el frontend actual (que aún tiene inline).
+const CSP_ENABLED = (process.env.CSP_ENABLED || 'true').toLowerCase() === 'true';
+const CSP_REPORT_ONLY = (process.env.CSP_REPORT_ONLY || 'true').toLowerCase() === 'true';
+
 app.use(helmet({
-  contentSecurityPolicy: false,
   hsts: process.env.NODE_ENV === 'production',
   crossOriginEmbedderPolicy: false,
   frameguard: { action: 'sameorigin' },
+  contentSecurityPolicy: CSP_ENABLED ? {
+    reportOnly: CSP_REPORT_ONLY,
+    directives: {
+      defaultSrc: ["'self'"],
+      baseUri: ["'self'"],
+      frameAncestors: ["'self'"],
+      objectSrc: ["'none'"],
+      imgSrc: ["'self'", "data:", "blob:"],
+      fontSrc: ["'self'", "data:"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+      connectSrc: ["'self'", "ws:", "wss:"],
+      ...(process.env.NODE_ENV === 'production' ? { upgradeInsecureRequests: [] } : {}),
+    }
+  } : false,
 }));
 
 
@@ -129,14 +228,14 @@ const apiLimiter = rateLimit({
     if (req.path === '/health' || req.path === '/version') return true;
     return isTrustedIp(req.ip);
   },
-  keyGenerator: (req) => {
+  keyGenerator: (req, res) => {
     // Preferir usuario autenticado cuando exista
     if (req.session?.usuarioId) return `user:${req.session.usuarioId}`;
     if (req.user?.id) return `user:${req.user.id}`;
     // Fallback por sesión para no castigar a toda una red NAT
     if (req.sessionID) return `session:${req.sessionID}`;
-    // Último fallback: IP
-    return req.ip;
+    // Último fallback: IP (compatible IPv6 con express-rate-limit v8+)
+    return ipKeyGenerator(req, res);
   }
 });
 app.use('/api/', apiLimiter);
@@ -148,7 +247,7 @@ const authLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Demasiados intentos de inicio de sesión. Intenta más tarde.' },
-  keyGenerator: (req) => req.ip,
+  keyGenerator: (req, res) => ipKeyGenerator(req, res),
   skip: (req) => isTrustedIp(req.ip)
 });
 app.use('/api/login', authLimiter);
@@ -561,6 +660,7 @@ app.post('/api/login', async (req, res) => {
         console.error('Error al guardar sesión:', saveErr);
         return res.status(500).json({ error: 'Error interno al iniciar sesión' });
       }
+      ensureCsrfForSession(req, res);
       res.json({ 
         ok: true, 
         usuario: { id: user.id, usuario: user.usuario, nombre: user.nombre, rol: user.rol, especialidad: user.especialidad, permisos: parsedPermisos }
@@ -574,8 +674,8 @@ app.post('/api/login', async (req, res) => {
 
 // Logout
 app.post('/api/logout', (req, res) => {
-  req.session.destroy();
-  res.json({ ok: true });
+  res.clearCookie(CSRF_TOKEN_COOKIE, { path: '/' });
+  req.session.destroy(() => res.json({ ok: true }));
 });
 
 // Verificar sesión actual
@@ -593,6 +693,7 @@ app.get('/api/sesion', async (req, res) => {
         user.permisos = (() => { let v = p; if (typeof v === 'string') { try { v = JSON.parse(v); } catch(_) { v = null; } } return Array.isArray(v) ? v : null; })();
         req.session.permisos = user.permisos;
       }
+      ensureCsrfForSession(req, res);
       res.json({ autenticado: true, usuario: user });
     } catch (e) {
       console.error(e);
