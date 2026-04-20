@@ -213,11 +213,26 @@ function getCookie(name) {
   return '';
 }
 
+function normalizeFetchHeaders(input) {
+  if (input === undefined || input === null) return new Headers();
+  if (input instanceof Headers) return new Headers(input);
+  if (Array.isArray(input)) return new Headers(input);
+  if (typeof input === 'object') {
+    const h = new Headers();
+    for (const [k, v] of Object.entries(input)) {
+      if (v === undefined || v === null) continue;
+      h.set(k, String(v));
+    }
+    return h;
+  }
+  return new Headers();
+}
+
 // Fetch con credenciales para sesión
 function apiFetch(url, opts = {}) {
   const method = ((opts.method || 'GET') + '').toUpperCase();
   const mutating = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method);
-  const headers = new Headers(opts.headers || null);
+  const headers = normalizeFetchHeaders(opts.headers);
   if (mutating && typeof url === 'string' && url.startsWith('/api/')) {
     const csrf = getCookie('csrf_token');
     if (csrf) headers.set('x-csrf-token', csrf);
