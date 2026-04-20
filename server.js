@@ -2165,12 +2165,14 @@ app.get('/api/doctor-disponibilidad', requireAuth, async (req, res) => {
     }
 
     const registro = result[0];
+    const dm = registro.disponible_manana;
+    const dt = registro.disponible_tarde;
     return res.json({
       ok: true,
       tiene_intervalos: false,
       intervalos: [],
-      disponible_manana: Boolean(registro.disponible_manana),
-      disponible_tarde: Boolean(registro.disponible_tarde)
+      disponible_manana: (dm === null || dm === undefined) ? true : Boolean(dm),
+      disponible_tarde: (dt === null || dt === undefined) ? true : Boolean(dt)
     });
   } catch (e) {
     console.error(e);

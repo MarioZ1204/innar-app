@@ -1505,7 +1505,7 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   }
 
   setupMenuHandlers();
-  initRecibos();
+  // initRecibos() solo al entrar al módulo Recibos (goToModule) — evita GET /api/recibos y 403 en usuarios sin recibos.ver
 });
 
 // ========== MODAL SELECCIÓN DE DOCTOR ==========
@@ -7492,12 +7492,19 @@ function exportarReciboPDF() {
 }
 
 async function cargarLista(queryString) {
+  if (!tienePermiso('recibos.ver')) {
+    updateStats([]);
+    const tbody = document.getElementById('savedItems');
+    if (tbody) tbody.innerHTML = '<tr><td colspan="11"><div class="empty-state"><p class="empty-state-title">Sin acceso</p><p class="empty-state-subtitle">Tu usuario no tiene permiso para ver recibos.</p></div></td></tr>';
+    return;
+  }
   try {
     const url = '/api/recibos' + (queryString ? '?' + queryString : '');
     const res = await apiFetch(url);
     if (!res.ok) {
       if (res.status === 401) { /* handled by apiFetch */ return; }
-      else showToast('Error al cargar recibos', 'error');
+      if (res.status === 403) { updateStats([]); return; }
+      showToast('Error al cargar recibos', 'error');
       updateStats([]);
       return;
     }

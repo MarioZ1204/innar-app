@@ -333,9 +333,13 @@ async function validarDisponibilidadPorHora(doctorId, fecha, hora, db) {
     }
 
     const registro = result[0];
-    // Convertir a booleano con múltiples validaciones
-    const disponibleManana = Boolean(registro.disponible_manana);
-    const disponibleTarde = Boolean(registro.disponible_tarde);
+    // NULL en columna = "no especificado" → tratar como disponible (igual que día sin fila en UI)
+    const disponibleManana = (registro.disponible_manana === null || registro.disponible_manana === undefined)
+      ? true
+      : Boolean(registro.disponible_manana);
+    const disponibleTarde = (registro.disponible_tarde === null || registro.disponible_tarde === undefined)
+      ? true
+      : Boolean(registro.disponible_tarde);
 
     console.log(`[DISPONIBILIDAD] Registro completo:`, JSON.stringify(registro));
     console.log(`[DISPONIBILIDAD] Doctor ${doctorId}, fecha ${fechaFormato}: Mañana=${disponibleManana} (raw: ${registro.disponible_manana}), Tarde=${disponibleTarde} (raw: ${registro.disponible_tarde})`);
@@ -424,9 +428,12 @@ async function tieneDisponibilidad(doctorId, fecha, db) {
     }
 
     const registro = result[0];
-    // Convertir a booleano
-    const disponibleManana = Boolean(registro.disponible_manana);
-    const disponibleTarde = Boolean(registro.disponible_tarde);
+    const disponibleManana = (registro.disponible_manana === null || registro.disponible_manana === undefined)
+      ? true
+      : Boolean(registro.disponible_manana);
+    const disponibleTarde = (registro.disponible_tarde === null || registro.disponible_tarde === undefined)
+      ? true
+      : Boolean(registro.disponible_tarde);
     
     // Disponible si al menos uno de los turnos está disponible
     const disponible = disponibleManana || disponibleTarde;
