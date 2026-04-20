@@ -122,6 +122,91 @@ let _pendienteTurnosMedica = false;
 let _cargandoCitasElectro = false;
 let _pendienteCitasElectro = false;
 
+// ========= POLÍTICA CENTRAL: AGENDA MÉDICA =========
+// Objetivo: evitar reglas duplicadas entre tabla / panel / modal.
+function agendaMedicaEsEstadoFinal(estado) {
+  return ['ATENDIDO', 'NO_ASISTIO', 'CANCELADO', 'REPROGRAMADO'].includes(estado);
+}
+
+function agendaMedicaPolicy(turno, opts = {}) {
+  const estado = turno?.estado || 'EN_ESPERA';
+  const hayEnAtencion = Boolean(opts.hayEnAtencion ?? globalHayEnAtencion);
+
+  const rol = currentUser?.rol || '';
+  const esDoctorRol = rol === 'doctor';
+  const esAdminRol = rol === 'admin' || rol === 'superadmin';
+
+  const perms = {
+    ver: tienePermiso('agenda.ver') || tienePermiso('agenda.editar') || tienePermiso('agenda.cambiar_estado'),
+    editar: tienePermiso('agenda.editar'),
+    eliminar: tienePermiso('agenda.eliminar'),
+    cambiarEstado: tienePermiso('agenda.cambiar_estado'),
+    llamarSiguiente: tienePermiso('agenda.llamar_siguiente') || tienePermiso('agenda.cambiar_estado'),
+    marcarAtendido: tienePermiso('agenda.marcar_atendido') || tienePermiso('agenda.cambiar_estado'),
+  };
+
+  const esFinal = agendaMedicaEsEstadoFinal(estado);
+  const esEnAtencion = estado === 'EN_ATENCION';
+  const esEnSala = estado === 'EN_SALA';
+
+  // Regla de negocio/UI: la existencia de un turno EN_ATENCION sólo “bloquea” otras filas para el doctor.
+  const bloqueadoPorAtencionGlobal = esDoctorRol && hayEnAtencion && !esEnAtencion;
+
+  // Tabla: acciones por fila (editar/eliminar/prioridad)
+  // - Admin no se bloquea por EN_ATENCION global
+  // - Cualquiera se bloquea si está FINAL
+  const rowBloqueada = esFinal || (!esAdminRol && bloqueadoPorAtencionGlobal);
+  const row = {
+    puedeVerDetalle: perms.ver,
+    puedeEditar: perms.editar && !rowBloqueada,
+    puedeEliminar: perms.eliminar && !rowBloqueada,
+    puedePrioridad: perms.cambiarEstado && !rowBloqueada, // la prioridad se maneja como “cambiar estado” hoy
+    deshabilitarBotones: !(perms.editar || perms.cambiarEstado) || rowBloqueada,
+  };
+
+  // Panel de edición lateral (guardar nombre)
+  // Mantener simple y coherente: se puede editar si tiene permiso y el turno NO está FINAL.
+  const panel = {
+    puedeEditarNombre: perms.editar && !esFinal,
+  };
+
+  // Modal: botones de footer
+  // Reset/visibilidad debe derivarse SOLO de aquí.
+  //
+  // Reglas actuales:
+  // - Doctor maneja: Llamar / En Atención / Atendido / No asistió
+  // - Recepción/admin maneja: En Sala + Reprogramar (NO_ASISTIO)
+  // - Caso especial requerido: si está EN_SALA → mostrar solo EN_ATENCION + ATENDIDO (para quien pueda cambiar estado)
+  const modalCasoEnSalaSoloDos = esEnSala && perms.cambiarEstado && !esFinal;
+
+  const modal = {
+    // Edición de datos dentro del modal
+    bloquearEdicion: esDoctorRol && esEnAtencion,
+
+    // Footer
+    showEnSala: perms.cambiarEstado && !esDoctorRol && !esFinal && estado !== 'EN_ATENCION' && estado !== 'EN_SALA',
+    showReprogramarNoAsistio: perms.cambiarEstado && !esDoctorRol && !esFinal && estado === 'NO_ASISTIO',
+
+    showLlamar: !modalCasoEnSalaSoloDos && esDoctorRol && perms.llamarSiguiente && !esFinal,
+    llamarDisabled: esFinal,
+
+    showEnAtencion: (esDoctorRol && perms.marcarAtendido && !esFinal) || modalCasoEnSalaSoloDos,
+    enAtencionDisabled: esFinal || estado === 'EN_ATENCION',
+
+    showAtendido: (esDoctorRol && perms.marcarAtendido) || modalCasoEnSalaSoloDos,
+    // Atendido sólo tiene sentido cuando ya está EN_ATENCION (se mantiene la lógica original)
+    atendidoDisabled: estado !== 'EN_ATENCION',
+
+    showNoAsistio: !modalCasoEnSalaSoloDos && esDoctorRol && !esFinal,
+    noAsistioDisabled: esFinal,
+
+    // Menú 3 puntos (recepción/admin)
+    showMenu3Puntos: (perms.cambiarEstado || perms.llamarSiguiente || perms.marcarAtendido) && !esDoctorRol && !esFinal,
+  };
+
+  return { perms, row, panel, modal, meta: { rol, esFinal, esEnAtencion, esEnSala, hayEnAtencion } };
+}
+
 // Fetch con credenciales para sesión
 function apiFetch(url, opts = {}) {
   return fetch(url, { ...opts, credentials: 'include' }).then(res => {
@@ -3376,46 +3461,25 @@ function renderTurnoRowMedica(tbody, t, animateTargetId, hayEnAtencion) {
   }
   const tr = document.createElement('tr');
   tr.className = 'turno-row';
-  const puedeVerDetalle = tienePermiso('agenda.ver') || tienePermiso('agenda.cambiar_estado') || tienePermiso('agenda.editar');
+  const pol = agendaMedicaPolicy(t, { hayEnAtencion });
+  const puedeVerDetalle = pol.row.puedeVerDetalle;
   tr.style.cursor = puedeVerDetalle ? 'pointer' : 'default';
 
   if (t.id) {
     tr.setAttribute('data-turno-id', t.id);
   }
 
-  const esAtendido = t.estado === 'ATENDIDO';
-  const esEnAtencion = t.estado === 'EN_ATENCION';
-
-  // Opciones generales para deshabilitación
-  let deshabilitarBotones = false;
-  
-  if (tienePermiso('agenda.editar') || tienePermiso('agenda.cambiar_estado')) {
-    const esAdminRol = currentUser?.rol === 'superadmin' || currentUser?.rol === 'admin';
-    if (esAdminRol) {
-      // Admin/superadmin no quedan bloqueados por existencia de EN_ATENCION
-      deshabilitarBotones = false;
-    } else {
-      // Otros roles: bloquear atendidos y, si hay EN_ATENCION, solo filas distintas al turno en atención
-      deshabilitarBotones = esAtendido || (hayEnAtencion && !esEnAtencion);
-    }
-  } else {
-    deshabilitarBotones = true;
-  }
-  
-  const puedeEliminar = tienePermiso('agenda.eliminar');
-  const puedeEditar = tienePermiso('agenda.editar');
-  const puedeCambiarEstado = tienePermiso('agenda.cambiar_estado');
-  const btnUpDisabled = deshabilitarBotones ? 'disabled' : '';
-  const btnDownDisabled = deshabilitarBotones ? 'disabled' : '';
-  const btnEditDisabled = deshabilitarBotones ? 'disabled' : '';
-  const btnDeleteDisabled = deshabilitarBotones ? 'disabled' : '';
+  const btnUpDisabled = pol.row.puedePrioridad ? '' : 'disabled';
+  const btnDownDisabled = pol.row.puedePrioridad ? '' : 'disabled';
+  const btnEditDisabled = pol.row.puedeEditar ? '' : 'disabled';
+  const btnDeleteDisabled = pol.row.puedeEliminar ? '' : 'disabled';
   
   // Guardar estado de deshabilitación en data attributes para que los event listeners puedan acceder
-  const dataDeshabilitado = deshabilitarBotones ? 'data-deshabilitado="true"' : 'data-deshabilitado="false"';
+  const dataDeshabilitado = (!pol.row.puedeEditar && !pol.row.puedeEliminar && !pol.row.puedePrioridad) ? 'data-deshabilitado="true"' : 'data-deshabilitado="false"';
   
-  const prioridadBtns = puedeCambiarEstado ? `<button class="btn-prioridad-up" data-up="${t.id}" title="Subir prioridad" ${btnUpDisabled} ${dataDeshabilitado}><img src="images/up.svg" alt="↑"/></button><button class="btn-prioridad-down" data-down="${t.id}" title="Bajar prioridad" ${btnDownDisabled} ${dataDeshabilitado}><img src="images/down.svg" alt="↓"/></button>` : '';
-  const accionesCell = (puedeEditar || puedeEliminar)
-    ? `<div class="table-actions">${prioridadBtns}${puedeEditar ? `<button class="btn-editar" data-edit="${t.id}" title="Editar" ${btnEditDisabled} ${dataDeshabilitado}><img src="images/edit.svg" alt="Editar"/></button>` : ''}${puedeEliminar ? `<button class="btn-eliminar" data-delete="${t.id}" title="Eliminar" ${btnDeleteDisabled} ${dataDeshabilitado}><img src="images/delete.svg" alt="Eliminar"/></button>` : ''}</div>`
+  const prioridadBtns = pol.perms.cambiarEstado ? `<button class="btn-prioridad-up" data-up="${t.id}" title="Subir prioridad" ${btnUpDisabled} ${dataDeshabilitado}><img src="images/up.svg" alt="↑"/></button><button class="btn-prioridad-down" data-down="${t.id}" title="Bajar prioridad" ${btnDownDisabled} ${dataDeshabilitado}><img src="images/down.svg" alt="↓"/></button>` : '';
+  const accionesCell = (pol.perms.editar || pol.perms.eliminar)
+    ? `<div class="table-actions">${prioridadBtns}${pol.perms.editar ? `<button class="btn-editar" data-edit="${t.id}" title="Editar" ${btnEditDisabled} ${dataDeshabilitado}><img src="images/edit.svg" alt="Editar"/></button>` : ''}${pol.perms.eliminar ? `<button class="btn-eliminar" data-delete="${t.id}" title="Eliminar" ${btnDeleteDisabled} ${dataDeshabilitado}><img src="images/delete.svg" alt="Eliminar"/></button>` : ''}</div>`
     : '-';
     const esEnSala = t.estado === 'EN_SALA';
     const tieneTurno = t.numero_turno != null;
@@ -3423,7 +3487,7 @@ function renderTurnoRowMedica(tbody, t, animateTargetId, hayEnAtencion) {
     if (t.numero_turno === 1 && esEnSala) {
       numCellHtml = `<span class="badge-siguiente">Siguiente</span>`;
       tr.classList.add('turno-es-primero');
-    } else if (t.numero_turno === 1 && esEnAtencion) {
+    } else if (t.numero_turno === 1 && t.estado === 'EN_ATENCION') {
       numCellHtml = `<span class="badge-en-atencion">En atenci\u00f3n</span>`;
       tr.classList.add('turno-es-primero');
     } else if (esEnSala && tieneTurno) {
@@ -3483,7 +3547,7 @@ function renderTurnoRowMedica(tbody, t, animateTargetId, hayEnAtencion) {
   }
 
   // Añadir botones de prioridad
-  if (puedeCambiarEstado) {
+  if (pol.perms.cambiarEstado) {
     const upBtn = tr.querySelector('[data-up]');
     const downBtn = tr.querySelector('[data-down]');
     upBtn?.addEventListener('click', async (e)=>{
@@ -3522,7 +3586,7 @@ function renderTurnoRowMedica(tbody, t, animateTargetId, hayEnAtencion) {
     });
   }
 
-  if (puedeEliminar) {
+  if (pol.perms.eliminar) {
     tr.querySelector('[data-delete]')?.addEventListener('click', async (e)=>{
       const btn = e.target.closest('[data-delete]');
       const deshabilitado = btn?.getAttribute('data-deshabilitado') === 'true';
@@ -3716,21 +3780,10 @@ function seleccionarTurnoMedica(tr, t) {
   // RECEPCION: no puede editar si está ATENDIDO o hay EN_ATENCION
   const btnGuardar = $('btnGuardarNombreMedica');
   if (btnGuardar) {
-    const esAtendido = t.estado === 'ATENDIDO';
-    let puedeEditar = tienePermiso('agenda.editar');
-    
-    const esAdminRol = currentUser?.rol === 'superadmin' || currentUser?.rol === 'admin';
-    if (esAdminRol) {
-      // Admin: bloquear si hay EN_ATENCION en otro turno
-      puedeEditar = puedeEditar && !(globalHayEnAtencion && t.estado !== 'EN_ATENCION');
-    } else {
-      // Otros roles: bloquear si está ATENDIDO o hay EN_ATENCION
-      puedeEditar = puedeEditar && !(esAtendido || (globalHayEnAtencion && t.estado !== 'EN_ATENCION'));
-    }
-    
-    btnGuardar.disabled = !puedeEditar;
-    btnGuardar.style.opacity = puedeEditar ? '1' : '0.5';
-    btnGuardar.style.cursor = puedeEditar ? 'pointer' : 'not-allowed';
+    const pol = agendaMedicaPolicy(t);
+    btnGuardar.disabled = !pol.panel.puedeEditarNombre;
+    btnGuardar.style.opacity = pol.panel.puedeEditarNombre ? '1' : '0.5';
+    btnGuardar.style.cursor = pol.panel.puedeEditarNombre ? 'pointer' : 'not-allowed';
   }
   
   const modal = $('agendaEditPacienteSection');
@@ -3741,20 +3794,14 @@ function seleccionarTurnoMedica(tr, t) {
 
 async function guardarNombrePacienteMedica() {
   // Prevenir edición según permisos y estado:
-  const esAdminRolGuardar = currentUser?.rol === 'superadmin' || currentUser?.rol === 'admin';
   if (!tienePermiso('agenda.editar')) {
     showToast('No tienes permiso para editar', 'error');
     return;
   }
-  if (!esAdminRolGuardar) {
-    if (selectedTurnoMedica?.estado === 'ATENDIDO') {
-      showToast('No se pueden editar citas ya atendidas', 'error');
-      return;
-    }
-    if (globalHayEnAtencion && selectedTurnoMedica?.estado !== 'EN_ATENCION') {
-      showToast('No se pueden editar citas mientras hay un paciente en atención', 'error');
-      return;
-    }
+  const pol = agendaMedicaPolicy(selectedTurnoMedica);
+  if (!pol.panel.puedeEditarNombre) {
+    showToast('No se pueden editar citas ya atendidas', 'error');
+    return;
   }
   
   if (!selectedTurnoMedica) {
@@ -9519,59 +9566,75 @@ function abrirModalEstadoCitaMedica(turno) {
   if (el('detMedicaNotas')) el('detMedicaNotas').textContent = turno.notas || '';
   $('modalReprogramarMedicaFechaActual').innerHTML = `<strong>${formatearFecha(turno.fecha)}</strong> a las <strong>${formatearHora(turno.hora)}</strong>`;
 
-  // Bloquear edición si está EN ATENCIÓN
-  const esEnAtencionModal = turno.estado === 'EN_ATENCION';
+  const pol = agendaMedicaPolicy(turno);
+
+  // Bloquear edición en modal según política
   const editBtnMed = el('btnEditarMedicaModal');
   if (editBtnMed) {
-    editBtnMed.disabled = esEnAtencionModal;
-    editBtnMed.style.opacity = esEnAtencionModal ? '0.4' : '';
-    editBtnMed.title = esEnAtencionModal
+    editBtnMed.disabled = pol.modal.bloquearEdicion;
+    editBtnMed.style.opacity = pol.modal.bloquearEdicion ? '0.4' : '';
+    editBtnMed.title = pol.modal.bloquearEdicion
       ? 'No es posible editar mientras el paciente está en atención'
       : 'Editar datos del paciente';
   }
 
-  // Mostrar/deshabilitar botones de acción según permisos
-  const esDoctor = currentUser?.rol === 'doctor';
-  const puedeVerEstado = tienePermiso('agenda.cambiar_estado');
-  const puedeLlamarSiguiente = tienePermiso('agenda.llamar_siguiente') || tienePermiso('agenda.cambiar_estado');
-  const puedeMarcarAtendido = tienePermiso('agenda.marcar_atendido') || tienePermiso('agenda.cambiar_estado');
-  const puedeInteractuar = puedeVerEstado || puedeLlamarSiguiente || puedeMarcarAtendido;
-  const estadoFinal = ['ATENDIDO', 'NO_ASISTIO', 'CANCELADO', 'REPROGRAMADO'].includes(turno.estado);
-  const puedeLlamar   = !estadoFinal; // puede llamar varias veces
-  const puedeEnAtencion = !estadoFinal && turno.estado !== 'EN_ATENCION';
-  const puedeAtendido = turno.estado === 'EN_ATENCION';
+  // --- RESET footer para evitar estados residuales ---
+  const footerBtnIds = [
+    'btnEstadoEnSala',
+    'btnModalLlamarPaciente',
+    'btnModalEnAtencion',
+    'btnModalAtendido',
+    'btnModalNoAsistio',
+    'btnModalReprogramarNoAsistio',
+  ];
+  footerBtnIds.forEach((id) => {
+    const b = el(id);
+    if (b) b.style.display = 'none';
+  });
 
-  // --- BOTONES FOOTER ---
-  // Llamar paciente: SOLO doctor
-  const btnLlamarMod = el('btnModalLlamarPaciente');
-  if (btnLlamarMod) { btnLlamarMod.style.display = (esDoctor && puedeLlamarSiguiente && !estadoFinal) ? '' : 'none'; btnLlamarMod.disabled = !puedeLlamar; btnLlamarMod.style.opacity = puedeLlamar ? '' : '0.4'; }
-
-  // En Atención: SOLO doctor
-  const btnEnAtencionMod = el('btnModalEnAtencion');
-  if (btnEnAtencionMod) { btnEnAtencionMod.style.display = (esDoctor && puedeMarcarAtendido && !estadoFinal) ? '' : 'none'; btnEnAtencionMod.disabled = !puedeEnAtencion; btnEnAtencionMod.style.opacity = puedeEnAtencion ? '' : '0.4'; }
-
-  // Atendido: SOLO doctor
-  const btnAtendidoMod = el('btnModalAtendido');
-  if (btnAtendidoMod) { btnAtendidoMod.style.display = (esDoctor && puedeMarcarAtendido) ? '' : 'none'; btnAtendidoMod.disabled = !puedeAtendido; btnAtendidoMod.style.opacity = puedeAtendido ? '' : '0.4'; }
-
-  // No asistió: SOLO doctor
-  const btnNoAsistioMod = el('btnModalNoAsistio');
-  if (btnNoAsistioMod) { btnNoAsistioMod.style.display = (esDoctor && !estadoFinal) ? '' : 'none'; btnNoAsistioMod.disabled = estadoFinal; btnNoAsistioMod.style.opacity = estadoFinal ? '0.4' : ''; }
-
-  // En Sala: SOLO recepción/admin (NO doctor)
+  // --- BOTONES FOOTER (desde política) ---
   const btnEnSala = el('btnEstadoEnSala');
-  if (btnEnSala) { btnEnSala.style.display = (puedeVerEstado && !esDoctor && !estadoFinal && turno.estado !== 'EN_ATENCION') ? '' : 'none'; }
+  if (btnEnSala) btnEnSala.style.display = pol.modal.showEnSala ? '' : 'none';
 
-  // Reprogramar (cuando NO_ASISTIO): SOLO recepción/admin (NO doctor)
   const btnReprogramarNA = el('btnModalReprogramarNoAsistio');
-  if (btnReprogramarNA) { btnReprogramarNA.style.display = (puedeVerEstado && !esDoctor && turno.estado === 'NO_ASISTIO') ? '' : 'none'; }
+  if (btnReprogramarNA) btnReprogramarNA.style.display = pol.modal.showReprogramarNoAsistio ? '' : 'none';
 
-  // --- MENÚ 3 PUNTOS: solo recepción/admin (NO doctor) ---
+  const btnLlamarMod = el('btnModalLlamarPaciente');
+  if (btnLlamarMod) {
+    btnLlamarMod.style.display = pol.modal.showLlamar ? '' : 'none';
+    btnLlamarMod.disabled = pol.modal.llamarDisabled;
+    btnLlamarMod.style.opacity = btnLlamarMod.disabled ? '0.4' : '';
+  }
+
+  const btnEnAtencionMod = el('btnModalEnAtencion');
+  if (btnEnAtencionMod) {
+    btnEnAtencionMod.style.display = pol.modal.showEnAtencion ? '' : 'none';
+    btnEnAtencionMod.disabled = pol.modal.enAtencionDisabled;
+    btnEnAtencionMod.style.opacity = btnEnAtencionMod.disabled ? '0.4' : '';
+  }
+
+  const btnAtendidoMod = el('btnModalAtendido');
+  if (btnAtendidoMod) {
+    btnAtendidoMod.style.display = pol.modal.showAtendido ? '' : 'none';
+    btnAtendidoMod.disabled = pol.modal.atendidoDisabled;
+    btnAtendidoMod.style.opacity = btnAtendidoMod.disabled ? '0.4' : '';
+  }
+
+  const btnNoAsistioMod = el('btnModalNoAsistio');
+  if (btnNoAsistioMod) {
+    btnNoAsistioMod.style.display = pol.modal.showNoAsistio ? '' : 'none';
+    btnNoAsistioMod.disabled = pol.modal.noAsistioDisabled;
+    btnNoAsistioMod.style.opacity = btnNoAsistioMod.disabled ? '0.4' : '';
+  }
+
+  // --- MENÚ 3 PUNTOS + EDITAR (desde política) ---
   const btn3dots = el('btnMasOpcionesMedica');
-  if (btn3dots) btn3dots.style.display = (puedeInteractuar && !esDoctor && !estadoFinal) ? '' : 'none';
+  if (btn3dots) btn3dots.style.display = pol.modal.showMenu3Puntos ? '' : 'none';
 
-  // Editar: solo recepción/admin (NO doctor)
-  if (editBtnMed) editBtnMed.style.display = (tienePermiso('agenda.editar') && !esDoctor && !estadoFinal) ? '' : 'none';
+  if (editBtnMed) {
+    // Editar: solo recepción/admin (NO doctor), y no en estados finales
+    editBtnMed.style.display = (pol.perms.editar && currentUser?.rol !== 'doctor' && !pol.meta.esFinal) ? '' : 'none';
+  }
 
   // Editar tipo consulta en citas atendidas: SOLO superadmin
   const btnEditTipo = el('btnEditTipoConsultaAtendida');
