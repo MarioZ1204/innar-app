@@ -142,7 +142,7 @@ function csrfProtection(req, res, next) {
   if (!tokenSession || !tokenHeader || !tokenCookie
     || tokenHeader !== tokenSession
     || tokenCookie !== tokenSession) {
-    return res.status(403).json({ error: 'Token CSRF inválido o faltante' });
+    return res.status(403).json({ error: 'Token CSRF inválido o faltante', code: 'CSRF_INVALID' });
   }
   return next();
 }

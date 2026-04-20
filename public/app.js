@@ -230,33 +230,63 @@ function normalizeFetchHeaders(input) {
 
 // Fetch con credenciales para sesión
 function apiFetch(url, opts = {}) {
-  const method = ((opts.method || 'GET') + '').toUpperCase();
-  const mutating = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method);
-  const headers = normalizeFetchHeaders(opts.headers);
-  if (mutating && typeof url === 'string' && url.startsWith('/api/')) {
-    const csrf = getCookie('csrf_token');
-    if (csrf) headers.set('x-csrf-token', csrf);
-  }
-  return fetch(url, { ...opts, headers, credentials: 'include' }).then(res => {
-    // No mostrar banner de sesión expirada en endpoints de autenticación
-    if (res.status === 401 && !url.includes('/api/login')) {
-      showSessionExpiredBanner();
+  return (async () => {
+    const method = ((opts.method || 'GET') + '').toUpperCase();
+    const mutating = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method);
+
+    async function parseJsonSafe(res) {
+      try { return await res.clone().json(); } catch (_) { return null; }
     }
-    if (res.status === 403) {
-      showToast('Acceso denegado o bloqueado por seguridad del servidor.', 'error');
+
+    async function oneFetch() {
+      const headers = normalizeFetchHeaders(opts.headers);
+      if (mutating && typeof url === 'string' && url.startsWith('/api/')) {
+        const csrf = getCookie('csrf_token');
+        if (csrf) headers.set('x-csrf-token', csrf);
+      }
+      return fetch(url, { ...opts, headers, credentials: 'include' });
     }
-    if (res.status === 429) {
-      showToast('Demasiadas solicitudes. Espera un momento.', 'warning');
+
+    try {
+      let res = await oneFetch();
+      let didCsrfRefresh = false;
+
+      // Reintento: cookie CSRF ausente o sesión previa al despliegue → GET /api/sesion emite token
+      if (res.status === 403 && mutating && typeof url === 'string' && url.startsWith('/api/')) {
+        const data403 = await parseJsonSafe(res);
+        if (data403 && data403.code === 'CSRF_INVALID') {
+          await fetch('/api/sesion', { credentials: 'include' });
+          didCsrfRefresh = true;
+          res = await oneFetch();
+        }
+      }
+
+      if (res.status === 401 && typeof url === 'string' && !url.includes('/api/login')) {
+        showSessionExpiredBanner();
+      }
+      if (res.status === 403) {
+        const data = await parseJsonSafe(res);
+        if (data && data.code === 'CSRF_INVALID' && !didCsrfRefresh) {
+          showToast('Sesión de seguridad desactualizada. Intenta de nuevo.', 'warning');
+        } else if (data && data.code === 'CSRF_INVALID' && didCsrfRefresh) {
+          showToast('No se pudo validar la solicitud (CSRF). Recarga la página.', 'error');
+        } else {
+          showToast('Acceso denegado o bloqueado por seguridad del servidor.', 'error');
+        }
+      }
+      if (res.status === 429) {
+        showToast('Demasiadas solicitudes. Espera un momento.', 'warning');
+      }
+      return res;
+    } catch (err) {
+      if (!navigator.onLine) {
+        showToast('Sin conexión a internet.', 'error');
+      } else {
+        showToast('Error de red. Intenta nuevamente.', 'error');
+      }
+      throw err;
     }
-    return res;
-  }).catch(err => {
-    if (!navigator.onLine) {
-      showToast('Sin conexión a internet.', 'error');
-    } else {
-      showToast('Error de red. Intenta nuevamente.', 'error');
-    }
-    throw err;
-  });
+  })();
 }
 
 function isAdmin() { return currentUser && (currentUser.rol === 'admin' || currentUser.rol === 'superadmin'); }
