@@ -2669,10 +2669,23 @@ app.get('/api/equipos-electro/disponibilidad', requireAuth, async (req, res) => 
       }
     }
 
+    // Guardar backend ante duraciones inválidas (NaN, negativas o exageradas).
+    if (!Number.isFinite(duracionMinutos) || duracionMinutos <= 0) {
+      duracionMinutos = 30;
+    }
+    // Tope de seguridad: 7 días (10080 min) para evitar overflow accidental.
+    duracionMinutos = Math.min(duracionMinutos, 10080);
+
     // Calcular hora_fin y fecha_fin usando la fecha real (soporta durations multi-día)
     const [hh, mm] = hora.split(':').map(x => parseInt(x, 10));
     const startDate = new Date(`${fecha}T${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}:00`);
+    if (isNaN(startDate.getTime())) {
+      return res.status(400).json({ error: 'Fecha/hora inválida para calcular disponibilidad' });
+    }
     startDate.setMinutes(startDate.getMinutes() + duracionMinutos);
+    if (isNaN(startDate.getTime())) {
+      return res.status(400).json({ error: 'No se pudo calcular la fecha final del estudio' });
+    }
     const horaFin = `${String(startDate.getHours()).padStart(2, '0')}:${String(startDate.getMinutes()).padStart(2, '0')}`;
     const fechaFin = startDate.toISOString().slice(0, 10);
 
@@ -2690,8 +2703,8 @@ app.get('/api/equipos-electro/disponibilidad', requireAuth, async (req, res) => 
       LEFT JOIN equipos_electro e ON e.id = c.equipo_id
       WHERE c.estado IN ('Programado', 'En Sala', 'En Estudio', 'Pausado')
       AND c.deleted_at IS NULL
-      AND CONCAT(c.fecha, ' ', c.hora_agendamiento) < CONCAT(?, ' ', ?)
-      AND CONCAT(COALESCE(c.hora_fin_date, c.fecha), ' ', c.hora_fin) > CONCAT(?, ' ', ?)
+      AND CONCAT(c.fecha, ' ', COALESCE(c.hora_agendamiento, '00:00:00')) < CONCAT(?, ' ', ?)
+      AND CONCAT(COALESCE(c.hora_fin_date, c.fecha), ' ', COALESCE(c.hora_fin, '23:59:59')) > CONCAT(?, ' ', ?)
       ORDER BY c.fecha, c.hora_agendamiento
     `, [fechaFin, horaFin, fecha, hora]);
 
@@ -2786,6 +2799,12 @@ app.get('/api/equipos-electro/disponibilidad', requireAuth, async (req, res) => 
         : `Disponibilidad: ${cuposaDisponibles}/${4} cupos libres${equiposEnUso.length > 0 ? ` (En uso: ${equiposEnUso.map(e => e.equipo_nombre).join(', ')})` : ''}`
     });
   } catch (e) {
+    console.error('[electro/disponibilidad] Error:', e.message, {
+      fecha: req.query?.fecha,
+      hora: req.query?.hora,
+      estudio: req.query?.estudio,
+      duracion_manual: req.query?.duracion_manual
+    });
     res.status(500).json({ error: e.message });
   }
 });

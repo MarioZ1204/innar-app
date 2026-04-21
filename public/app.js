@@ -124,6 +124,21 @@ let _pendienteTurnosMedica = false;
 let _cargandoCitasElectro = false;
 let _pendienteCitasElectro = false;
 
+function normalizarTextoBase(str) {
+  return (str || '')
+    .toString()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function esMonitorizacionVideoRadio(estudioNombre) {
+  const s = normalizarTextoBase(estudioNombre);
+  return s.includes('monitorizacion') && s.includes('video') && s.includes('radio');
+}
+
 // ========= POLÍTICA CENTRAL: AGENDA MÉDICA =========
 // Objetivo: evitar reglas duplicadas entre tabla / panel / modal.
 function agendaMedicaEsEstadoFinal(estado) {
@@ -4772,12 +4787,31 @@ async function initElectro() {
             durationInput.value = '';
             selectedEstudioDuracion = data.duracion_minutos; // Guardar duración en minutos
           }
+        } else if (esMonitorizacionVideoRadio(e.target.value)) {
+          // Fallback: este estudio siempre debe pedir duración manual.
+          duracionCol.style.display = '';
+          durationInput.value = '';
+          durationInput.min = 1;
+          durationInput.max = 168;
+          durationInput.placeholder = '⚠️ REQUERIDO: Duración (1-168 horas)';
+          durationInput.style.borderColor = '';
+          selectedEstudioDuracion = null;
         }
       } catch (e) {
         console.error('Error obteniendo duración:', e);
-        duracionCol.style.display = 'none';
-        durationInput.value = '';
-        selectedEstudioDuracion = null;
+        if (esMonitorizacionVideoRadio(e.target.value)) {
+          duracionCol.style.display = '';
+          durationInput.value = '';
+          durationInput.min = 1;
+          durationInput.max = 168;
+          durationInput.placeholder = '⚠️ REQUERIDO: Duración (1-168 horas)';
+          durationInput.style.borderColor = '';
+          selectedEstudioDuracion = null;
+        } else {
+          duracionCol.style.display = 'none';
+          durationInput.value = '';
+          selectedEstudioDuracion = null;
+        }
       }
     }
     await checkEquiposDisponibilidad();
@@ -5643,7 +5677,7 @@ async function crearCitaElectro() {
   }
   
   // Validar duración si es Monitorización EEG por Video y Radio
-  if (estudio === 'Monitorización Electroencefalografica por Video y Radio' && !duracion) {
+  if (esMonitorizacionVideoRadio(estudio) && !duracion) {
     showToast('Debe especificar la duración del estudio (en horas)', 'error');
     $('electroDuracion').focus();
     $('electroDuracion').style.borderColor = '#dc2626';
@@ -5651,7 +5685,7 @@ async function crearCitaElectro() {
   }
   
   // Validar que duración sea un número válido si es Monitorización
-  if (estudio === 'Monitorización Electroencefalografica por Video y Radio' && duracion) {
+  if (esMonitorizacionVideoRadio(estudio) && duracion) {
     const duracionNum = parseFloat(duracion);
     if (isNaN(duracionNum) || duracionNum < 1 || duracionNum > 168) {
       showToast('La duración debe estar entre 1 y 168 horas', 'error');
