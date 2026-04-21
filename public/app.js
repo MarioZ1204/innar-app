@@ -5085,6 +5085,13 @@ async function initElectro() {
     
     const nuevoEquipoId = e.target.value;
     const equipoIdActual = citaElectroSeleccionada.equipo_id || '';
+    const estadoActual = citaElectroSeleccionada.estado || '';
+
+    if (estadoActual === 'En Estudio' || estadoActual === 'Pausado') {
+      showToast('No puedes cambiar el equipo mientras el estudio está activo', 'error');
+      e.target.value = equipoIdActual;
+      return;
+    }
     
     // Si el equipo no cambió, no hacer nada
     if (String(nuevoEquipoId) === String(equipoIdActual)) return;
@@ -9629,6 +9636,12 @@ async function guardarCambiosCitaElectro() {
   if (!citaElectroSeleccionada) return;
   
   try {
+    const estadoActual = citaElectroSeleccionada.estado || '';
+    if (estadoActual === 'En Estudio' || estadoActual === 'Pausado') {
+      showToast('No puedes cambiar el equipo mientras el estudio está activo', 'error');
+      return;
+    }
+
     const equipoNuevo = $('modalEquipo').value;
     
     // Solo manejar cambio de equipo — los cambios de estado se manejan

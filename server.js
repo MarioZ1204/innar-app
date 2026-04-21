@@ -3639,6 +3639,24 @@ app.patch('/api/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin'
 
     const citaActual = citasResult[0];
     const estadoActual = citaActual.estado;
+    const estudioActivo = estadoActual === 'En Estudio' || estadoActual === 'Pausado';
+
+    // Bloquear cambio de equipo durante un estudio activo.
+    // Debe mantenerse fijo desde que inicia hasta que finaliza.
+    if (equipo_id !== undefined && estudioActivo) {
+      const equipoActualNormalizado = citaActual.equipo_id === null || citaActual.equipo_id === undefined
+        ? null
+        : parseInt(citaActual.equipo_id, 10);
+      const equipoNuevoNormalizado = equipo_id === null || equipo_id === ''
+        ? null
+        : parseInt(equipo_id, 10);
+
+      if (equipoNuevoNormalizado !== equipoActualNormalizado) {
+        return res.status(409).json({
+          error: 'No se puede cambiar el equipo mientras el estudio está activo'
+        });
+      }
+    }
 
     // ============ VALIDAR TRANSICIÓN DE ESTADOS ============
     if (estado && estado !== estadoActual) {
