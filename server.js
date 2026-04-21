@@ -2703,8 +2703,8 @@ app.get('/api/equipos-electro/disponibilidad', requireAuth, async (req, res) => 
       LEFT JOIN equipos_electro e ON e.id = c.equipo_id
       WHERE c.estado IN ('Programado', 'En Sala', 'En Estudio', 'Pausado')
       AND c.deleted_at IS NULL
-      AND CONCAT(c.fecha, ' ', COALESCE(c.hora_agendamiento, '00:00:00')) < CONCAT(?, ' ', ?)
-      AND CONCAT(COALESCE(c.hora_fin_date, c.fecha), ' ', COALESCE(c.hora_fin, '23:59:59')) > CONCAT(?, ' ', ?)
+      AND TIMESTAMP(c.fecha, COALESCE(c.hora_agendamiento, '00:00:00')) < TIMESTAMP(?, ?)
+      AND TIMESTAMP(COALESCE(c.hora_fin_date, c.fecha), COALESCE(c.hora_fin, '23:59:59')) > TIMESTAMP(?, ?)
       ORDER BY c.fecha, c.hora_agendamiento
     `, [fechaFin, horaFin, fecha, hora]);
 
@@ -3293,8 +3293,8 @@ app.post('/api/citas-electro', requireAuth, requireRoleOrPerm(['superadmin', 'ad
          FROM citas_electro
          WHERE estado IN ('Programado', 'En Sala', 'En Estudio', 'Pausado')
          AND deleted_at IS NULL
-         AND CONCAT(fecha, ' ', hora_agendamiento) <= CONCAT(?, ' ', ?)
-         AND CONCAT(COALESCE(hora_fin_date, fecha), ' ', hora_fin) > CONCAT(?, ' ', ?)`,
+         AND TIMESTAMP(fecha, COALESCE(hora_agendamiento, '00:00:00')) <= TIMESTAMP(?, ?)
+         AND TIMESTAMP(COALESCE(hora_fin_date, fecha), COALESCE(hora_fin, '23:59:59')) > TIMESTAMP(?, ?)`,
         [fecha, horaAgendamiento, fecha, horaAgendamiento]
       );
 
@@ -3554,8 +3554,8 @@ app.patch('/api/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin'
           WHERE id != ?
           AND estado IN ('Programado', 'En Sala', 'En Estudio', 'Pausado')
           AND deleted_at IS NULL
-          AND CONCAT(fecha, ' ', hora_agendamiento) <= CONCAT(?, ' ', ?)
-          AND CONCAT(COALESCE(hora_fin_date, fecha), ' ', hora_fin) > CONCAT(?, ' ', ?)
+          AND TIMESTAMP(fecha, COALESCE(hora_agendamiento, '00:00:00')) <= TIMESTAMP(?, ?)
+          AND TIMESTAMP(COALESCE(hora_fin_date, fecha), COALESCE(hora_fin, '23:59:59')) > TIMESTAMP(?, ?)
         `, [id, checkFecha, checkHoraInicio, checkFecha, checkHoraInicio]);
 
         const overlapCount = overlapCitas[0]?.overlap_count || 0;
