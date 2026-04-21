@@ -408,8 +408,12 @@ function updateMenuByRole() {
   };
 
   document.querySelectorAll('.menu-card').forEach(card => {
-    const permKey = MODULE_PERM_MAP[card.dataset.module || ''];
-    const allowed = permKey ? tienePermiso(permKey) : (card.dataset.rol || '').split(' ').includes(rol);
+    const moduleKey = card.dataset.module || '';
+    const permKey = MODULE_PERM_MAP[moduleKey];
+    let allowed = permKey ? tienePermiso(permKey) : (card.dataset.rol || '').split(' ').includes(rol);
+    if (moduleKey === 'ucqn') {
+      allowed = allowed || tienePermiso('modulo.electrodiag');
+    }
     card.style.display = allowed ? '' : 'none';
   });
   // Sidebar recibos: mostrar/ocultar según permisos
@@ -4743,7 +4747,7 @@ async function cargarUcqn() {
   if (!res.ok || !data.ok) throw new Error(data.error || 'Error cargando UCQN');
   const body = $('ucqnTableBody');
   if (!body) return;
-  const canEdit = tienePermiso('ucqn.editar_estado');
+  const canEdit = tienePermiso('ucqn.editar_estado') || tienePermiso('electro.editar');
   const regs = Array.isArray(data.registros) ? data.registros : [];
   if (!regs.length) {
     body.innerHTML = '<tr><td colspan="8" style="padding:20px;text-align:center;color:#999">Sin estudios UCQN</td></tr>';
@@ -4773,10 +4777,12 @@ async function initUcqn() {
   const hoy = hoyColombiaISO();
   if ($('ucqnFechaDesde')) $('ucqnFechaDesde').value = hoy;
   if ($('ucqnFechaHasta')) $('ucqnFechaHasta').value = hoy;
-  $('btnUcqnBuscar').onclick = async () => {
+  const btnBuscarUcqn = $('btnUcqnBuscar');
+  if (btnBuscarUcqn) btnBuscarUcqn.onclick = async () => {
     try { await cargarUcqn(); } catch (e) { showToast('Error UCQN: ' + e.message, 'error'); }
   };
-  $('ucqnTableBody').onclick = async (ev) => {
+  const bodyUcqn = $('ucqnTableBody');
+  if (bodyUcqn) bodyUcqn.onclick = async (ev) => {
     const sel = ev.target;
     if (!sel || !sel.matches('.ucqn-estado-select')) return;
     const id = parseInt(sel.dataset.ucqnId, 10);
@@ -5531,7 +5537,7 @@ async function cargarCitasElectro() {
     if (citasFiltradas.length === 0) {
       const tbody = $('citasElectroBody');
       const mensajeEstudio = filtroEstudioElectro === 'todas' ? '' : ` para ${filtroEstudioElectro}`;
-      tbody.innerHTML = `<tr><td colspan="11"><div class="empty-state"><div class="empty-state-icon">📅</div><p class="empty-state-title">Sin citas</p><p class="empty-state-subtitle">No hay citas registradas para esta fecha${mensajeEstudio}</p></div></td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="12"><div class="empty-state"><div class="empty-state-icon">📅</div><p class="empty-state-title">Sin citas</p><p class="empty-state-subtitle">No hay citas registradas para esta fecha${mensajeEstudio}</p></div></td></tr>`;
       const contador = $('citasElectroContador');
       if (contador) contador.textContent = '';
       $('electroUsuarioProgramo').textContent = '-';
@@ -5652,6 +5658,7 @@ function renderCitaElectroRow(tbody, c) {
     <td>${escapeHtml(c.paciente_documento || '-')}</td>
     <td class="col-mobile-hide">${escapeHtml(c.telefono || '-')}</td>
     <td><span title="${escapeHtml(c.estudio || '')}">${escapeHtml(estudioCorto)}</span></td>
+    <td class="col-mobile-hide">${escapeHtml(c.entidad || '-')}</td>
     <td class="col-mobile-hide">${duracionDisplay}</td>
     <td class="col-mobile-hide">${escapeHtml(c.diagnostico_codigo || '-')}</td>
     <td>${estadoBadge(c.estado || 'Programado')}</td>

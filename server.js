@@ -2860,7 +2860,7 @@ async function sincronizarUcqnDesdeElectro() {
   }
 }
 
-app.get('/api/ucqn/estudios', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro', 'contabilidad'], 'ucqn.ver'), async (req, res) => {
+app.get('/api/ucqn/estudios', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro', 'contabilidad'], ['ucqn.ver', 'electro.ver']), async (req, res) => {
   try {
     await sincronizarUcqnDesdeElectro();
     const { fecha_desde, fecha_hasta, estado } = req.query;
@@ -2886,7 +2886,7 @@ app.get('/api/ucqn/estudios', requireAuth, requireRoleOrPerm(['superadmin', 'adm
   }
 });
 
-app.patch('/api/ucqn/estudios/:id/estado', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro', 'contabilidad'], 'ucqn.editar_estado'), async (req, res) => {
+app.patch('/api/ucqn/estudios/:id/estado', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro', 'contabilidad'], ['ucqn.editar_estado', 'electro.editar']), async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
     const estado = String(req.body?.estado || '').trim().toUpperCase();
