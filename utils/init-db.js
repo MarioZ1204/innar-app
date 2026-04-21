@@ -180,6 +180,7 @@ async function initializeDatabase() {
               estudio VARCHAR(255),
               observaciones TEXT,
               diagnostico_id INT,
+              entidad VARCHAR(200),
               estado ENUM('Programado', 'En Sala', 'En Estudio', 'Pausado', 'Completado', 'No Asistió', 'Cancelado', 'Reprogramado', 'Adelantado') NOT NULL DEFAULT 'Programado',
               duracion_minutos INT NULL DEFAULT NULL,
               programado_por_nombre VARCHAR(150),
@@ -192,7 +193,29 @@ async function initializeDatabase() {
               FOREIGN KEY (diagnostico_id) REFERENCES diagnosticos(id) ON DELETE SET NULL,
               INDEX idx_fecha (fecha),
               INDEX idx_equipo_fecha (equipo_id, fecha),
+              INDEX idx_entidad (entidad),
               INDEX idx_estado (estado)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+            CREATE TABLE IF NOT EXISTS ucqn_estudios (
+              id INT AUTO_INCREMENT PRIMARY KEY,
+              cita_electro_id INT NOT NULL,
+              fecha_estudio DATE NOT NULL,
+              hora_estudio TIME NULL,
+              paciente_nombres VARCHAR(150) NOT NULL,
+              paciente_apellidos VARCHAR(150) DEFAULT NULL,
+              paciente_documento VARCHAR(50) DEFAULT NULL,
+              tipo_estudio VARCHAR(255) DEFAULT NULL,
+              entidad VARCHAR(100) NOT NULL DEFAULT 'UCQN',
+              estado ENUM('PENDIENTE','LEIDO','FACTURADO') NOT NULL DEFAULT 'PENDIENTE',
+              estado_actualizado_en DATETIME DEFAULT NULL,
+              estado_actualizado_por VARCHAR(150) DEFAULT NULL,
+              creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              actualizado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              UNIQUE KEY uk_ucqn_cita (cita_electro_id),
+              INDEX idx_ucqn_fecha (fecha_estudio),
+              INDEX idx_ucqn_estado (estado),
+              FOREIGN KEY (cita_electro_id) REFERENCES citas_electro(id) ON DELETE CASCADE
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
             CREATE TABLE IF NOT EXISTS recibos (

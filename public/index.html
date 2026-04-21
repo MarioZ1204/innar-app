@@ -160,6 +160,13 @@
             <span class="menu-card-desc">Agenda de los 4 equipos</span>
           </span>
         </button>
+        <button class="menu-card" data-module="ucqn" data-rol="superadmin admin admin_recepcion recepcion admin_electro electro contabilidad">
+          <span class="menu-card-icon"><img src="/images/icondashboard.svg" alt="UCQN" class="icon-img" /></span>
+          <span class="menu-card-label">
+            <span class="menu-card-title">UCQN</span>
+            <span class="menu-card-desc">Seguimiento de estudios UCQN</span>
+          </span>
+        </button>
         <button class="menu-card" data-module="usuarios" data-rol="superadmin admin">
           <span class="menu-card-icon"><img src="/images/iconuser.png" alt="Usuarios" class="icon-img" /></span>
           <span class="menu-card-label">
@@ -1336,7 +1343,11 @@
             <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
               <div style="flex:0 0 auto">
                 <label style="font-size:0.875rem;margin-bottom:4px;display:block">Fecha</label>
-                <input id="electroFecha" type="date" class="electro-fecha-input" />
+                <div style="display:flex;align-items:center;gap:8px">
+                  <button type="button" id="btnElectroFechaPrev" class="btn-secondary" title="Día anterior">◀</button>
+                  <input id="electroFecha" type="date" class="electro-fecha-input" />
+                  <button type="button" id="btnElectroFechaNext" class="btn-secondary" title="Día siguiente">▶</button>
+                </div>
               </div>
             </div>
           </section>
@@ -1648,9 +1659,15 @@
           </select>
         </div>
         <div class="col">
-          <label>Diagnóstico <span style="color:#dc2626">*</span></label>
+          <label>Diagnóstico</label>
           <input id="electroDiagnostico" type="text" placeholder="Búsqueda de diagnóstico..." list="diagnosticosListElectro" autocomplete="off" style="background-image:none;background-clip:padding-box;" />
           <datalist id="diagnosticosListElectro"></datalist>
+        </div>
+        <div class="col">
+          <label>Entidad <span style="color:#dc2626">*</span></label>
+          <select id="electroEntidad">
+            <option value="">Seleccionar entidad</option>
+          </select>
         </div>
         <div class="col"><label>Hora <span style="color:#dc2626">*</span></label><input type="time" id="electroHora" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:0.95rem" /></div>
         <div class="col"><label>Número de Documento <span style="color:#dc2626">*</span></label><input id="electroDocumento" type="text" placeholder="Documento (buscar paciente)" /></div>
@@ -1670,6 +1687,60 @@
         <button id="btnCancelarNuevoEstudioModal" class="btn-secondary">Cancelar</button>
         <button id="crearCitaElectro" class="btn-primary">Crear Cita</button>
       </div>
+    </div>
+  </div>
+
+  <div id="view-ucqn" class="view-module hidden">
+    <div class="container">
+      <header style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+        <h2 style="margin:0">Módulo UCQN</h2>
+        <button id="btnVolverUcqn" class="btn-secondary">Volver al menú</button>
+      </header>
+      <section class="card no-print">
+        <div class="row">
+          <div class="col">
+            <label>Fecha desde</label>
+            <input id="ucqnFechaDesde" type="date" />
+          </div>
+          <div class="col">
+            <label>Fecha hasta</label>
+            <input id="ucqnFechaHasta" type="date" />
+          </div>
+          <div class="col">
+            <label>Estado</label>
+            <select id="ucqnEstadoFiltro">
+              <option value="">Todos</option>
+              <option value="PENDIENTE">Pendiente</option>
+              <option value="LEIDO">Leído</option>
+              <option value="FACTURADO">Facturado</option>
+            </select>
+          </div>
+          <div class="col" style="display:flex;align-items:flex-end;gap:8px">
+            <button id="btnUcqnBuscar" class="btn-primary">Buscar</button>
+          </div>
+        </div>
+      </section>
+      <section class="card">
+        <div class="table-wrapper">
+          <table class="modern-table">
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Hora</th>
+                <th>Nombres</th>
+                <th>Apellidos</th>
+                <th>Documento</th>
+                <th>Estudio</th>
+                <th>Entidad</th>
+                <th>Estado</th>
+              </tr>
+            </thead>
+            <tbody id="ucqnTableBody">
+              <tr><td colspan="8" style="padding:20px;text-align:center;color:#999">Sin datos</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
     </div>
   </div>
 

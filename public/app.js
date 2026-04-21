@@ -400,6 +400,7 @@ function updateMenuByRole() {
     'recibos':        'modulo.recibos',
     'agenda-medica':  'modulo.agenda_medica',
     'electro':        'modulo.electrodiag',
+    'ucqn':           'modulo.ucqn',
     'usuarios':       'modulo.usuarios',
     'diagnosticos':   'modulo.diagnosticos',
     'dashboard-citas':'modulo.dashboard',
@@ -542,7 +543,7 @@ async function doLogout() {
   if (p) { p.value = ''; p.setAttribute('value', ''); }
 }
 
-let initRecibosDone = false, initAgendaDone = false, initElectroDone = false, initUsuariosDone = false, initDiagnosticosDone = false, initDashboardCitasDone = false, initGestionDatosDone = false;
+let initRecibosDone = false, initAgendaDone = false, initElectroDone = false, initUsuariosDone = false, initDiagnosticosDone = false, initDashboardCitasDone = false, initGestionDatosDone = false, initUcqnDone = false;
 function goToModule(moduleId) {
   showView(`view-${moduleId}`);
   currentModule = moduleId;
@@ -562,6 +563,7 @@ function goToModule(moduleId) {
   if (moduleId === 'diagnosticos') { if (!initDiagnosticosDone) initDiagnosticos(); initDiagnosticosDone = true; }
   if (moduleId === 'dashboard-citas') { if (!initDashboardCitasDone) initDashboardCitas(); initDashboardCitasDone = true; }
   if (moduleId === 'gestion-datos') { if (!initGestionDatosDone) initGestionDatos(); initGestionDatosDone = true; }
+  if (moduleId === 'ucqn') { if (!initUcqnDone) initUcqn(); initUcqnDone = true; }
 }
 
 function goToMenu() {
@@ -579,6 +581,7 @@ function goToMenu() {
   initUsuariosDone = false;
   initDiagnosticosDone = false;
   initGestionDatosDone = false;
+  initUcqnDone = false;
   // Resetear calendario de citas integrado
   if (typeof _citasCalIniciado !== 'undefined') _citasCalIniciado = false;
   // Resetear caché de catálogos para recargar al volver a entrar
@@ -613,6 +616,7 @@ function setupMenuHandlers() {
   if ($('btnVolverUsuarios')) $('btnVolverUsuarios').addEventListener('click', goToMenu);
   if ($('btnVolverDashboardCitas')) $('btnVolverDashboardCitas').addEventListener('click', goToMenu);
   if ($('btnVolverGestionDatos')) $('btnVolverGestionDatos').addEventListener('click', goToMenu);
+  if ($('btnVolverUcqn')) $('btnVolverUcqn').addEventListener('click', goToMenu);
 
   // Manejar botón atrás del navegador (solo una vez)
   if (!window._popstateSetup) {
@@ -895,6 +899,19 @@ function formatearFechaISO(fecha) {
   }
   
   return strFecha;
+}
+
+function hoyColombiaISO() {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Bogota',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(new Date());
+  const y = parts.find(p => p.type === 'year')?.value;
+  const m = parts.find(p => p.type === 'month')?.value;
+  const d = parts.find(p => p.type === 'day')?.value;
+  return `${y}-${m}-${d}`;
 }
 
 // Servicios por defecto
@@ -4469,6 +4486,7 @@ async function procesarExcelPacientesElectro(file) {
       const colDoc    = encontrarColumnaExcel(headers, ['documento', 'numero documento', 'num documento', 'cedula', 'identificacion', 'doc']);
       const colNombre = encontrarColumnaExcel(headers, ['nombres y apellidos', 'nombre', 'paciente', 'nombres', 'nombre completo']);
       const colEstudio = encontrarColumnaExcel(headers, ['estudio', 'tipo estudio', 'examen']);
+      const colEntidad = encontrarColumnaExcel(headers, ['entidad', 'eps', 'aseguradora']);
       const colDiag   = encontrarColumnaExcel(headers, ['diagnostico', 'dx', 'diag']);
       const colTel1   = encontrarColumnaExcel(headers, ['telefono1', 'telefono 1', 'tel1', 'tel 1', 'telefono', 'celular']);
       const colTel2   = encontrarColumnaExcel(headers, ['telefono2', 'telefono 2', 'tel2', 'tel 2']);
@@ -4490,12 +4508,13 @@ async function procesarExcelPacientesElectro(file) {
         const documento  = String(row[colDoc]    || '').trim();
         const { nombres, apellidos } = splitNombreApellido(row[colNombre]);
         const estudio    = colEstudio ? String(row[colEstudio] || '').trim() : '';
+        const entidad    = colEntidad ? String(row[colEntidad] || '').trim() : '';
         const diagnostico = colDiag   ? String(row[colDiag]   || '').trim() : '';
         const tel1       = colTel1   ? String(row[colTel1]    || '').replace(/\D/g, '') : '';
         const tel2       = colTel2   ? String(row[colTel2]    || '').replace(/\D/g, '') : '';
         if (!fecha || !hora || !documento || !nombres) continue;
 
-        parsed.push({ fecha, hora, documento, nombres, apellidos, estudio, diagnostico, diagnostico_id: null, tel1, tel2, _equipoOk: null, duracion_horas: null });
+        parsed.push({ fecha, hora, documento, nombres, apellidos, estudio, entidad, diagnostico, diagnostico_id: null, tel1, tel2, _equipoOk: null, duracion_horas: null });
         const idx = parsed.length - 1;
         const tr  = document.createElement('tr');
         tr.dataset.rowIdx = idx;
@@ -4681,6 +4700,7 @@ async function confirmarCargarPacientesElectro() {
         telefono: p.tel1 || null,
         telefono2: p.tel2 || null,
         estudio: p.estudio || 'PSG Básica',
+        entidad: p.entidad || null,
         diagnostico_id: p.diagnostico_id || null,
         estado: 'Programado',
         programado_por_nombre: (currentUser ? (currentUser.nombre || currentUser.usuario) : 'Excel')
@@ -4710,10 +4730,79 @@ async function confirmarCargarPacientesElectro() {
   }
 }
 
+async function cargarUcqn() {
+  const desde = $('ucqnFechaDesde')?.value || '';
+  const hasta = $('ucqnFechaHasta')?.value || '';
+  const estado = $('ucqnEstadoFiltro')?.value || '';
+  const params = new URLSearchParams();
+  if (desde) params.set('fecha_desde', desde);
+  if (hasta) params.set('fecha_hasta', hasta);
+  if (estado) params.set('estado', estado);
+  const res = await apiFetch(`/api/ucqn/estudios?${params.toString()}`);
+  const data = await res.json();
+  if (!res.ok || !data.ok) throw new Error(data.error || 'Error cargando UCQN');
+  const body = $('ucqnTableBody');
+  if (!body) return;
+  const canEdit = tienePermiso('ucqn.editar_estado');
+  const regs = Array.isArray(data.registros) ? data.registros : [];
+  if (!regs.length) {
+    body.innerHTML = '<tr><td colspan="8" style="padding:20px;text-align:center;color:#999">Sin estudios UCQN</td></tr>';
+    return;
+  }
+  body.innerHTML = regs.map(r => `
+    <tr>
+      <td>${escapeHtml(r.fecha_estudio || '-')}</td>
+      <td>${escapeHtml((r.hora_estudio || '').substring(0,5) || '-')}</td>
+      <td>${escapeHtml(r.paciente_nombres || '-')}</td>
+      <td>${escapeHtml(r.paciente_apellidos || '-')}</td>
+      <td>${escapeHtml(r.paciente_documento || '-')}</td>
+      <td>${escapeHtml(r.tipo_estudio || '-')}</td>
+      <td>${escapeHtml(r.entidad || '-')}</td>
+      <td>
+        <select data-ucqn-id="${r.id}" class="ucqn-estado-select" ${canEdit ? '' : 'disabled'}>
+          <option value="PENDIENTE" ${r.estado === 'PENDIENTE' ? 'selected' : ''}>Pendiente</option>
+          <option value="LEIDO" ${r.estado === 'LEIDO' ? 'selected' : ''}>Leído</option>
+          <option value="FACTURADO" ${r.estado === 'FACTURADO' ? 'selected' : ''}>Facturado</option>
+        </select>
+      </td>
+    </tr>
+  `).join('');
+}
+
+async function initUcqn() {
+  const hoy = hoyColombiaISO();
+  if ($('ucqnFechaDesde')) $('ucqnFechaDesde').value = hoy;
+  if ($('ucqnFechaHasta')) $('ucqnFechaHasta').value = hoy;
+  $('btnUcqnBuscar').onclick = async () => {
+    try { await cargarUcqn(); } catch (e) { showToast('Error UCQN: ' + e.message, 'error'); }
+  };
+  $('ucqnTableBody').onclick = async (ev) => {
+    const sel = ev.target;
+    if (!sel || !sel.matches('.ucqn-estado-select')) return;
+    const id = parseInt(sel.dataset.ucqnId, 10);
+    const estado = sel.value;
+    try {
+      const res = await apiFetch(`/api/ucqn/estudios/${id}/estado`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ estado })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.error || 'No se pudo actualizar estado');
+      showToast('Estado UCQN actualizado', 'success');
+      await cargarUcqn();
+    } catch (e) {
+      showToast(e.message, 'error');
+      await cargarUcqn();
+    }
+  };
+  try { await cargarUcqn(); } catch (e) { showToast('Error UCQN: ' + e.message, 'error'); }
+}
+
 // ========== DASHBOARD (Admin solo) ==========
 // ========== AGENDA ELECTRODIAGNÓSTICO =========
 async function initElectro() {
-  const hoy = new Date().toISOString().slice(0,10);
+  const hoy = hoyColombiaISO();
   $('electroFecha').value = hoy;
   
   // Cargar estudios desde BD para el select y las pestañas
@@ -4722,6 +4811,7 @@ async function initElectro() {
   
   // Cargar entidades desde BD para pacientes en espera
   await cargarEntidadesEnSelect('esperaEntidad');
+  await cargarEntidadesEnSelect('electroEntidad');
   
   // Generar intervalos de hora (texto libre con formato HH:MM AM/PM)
   // No se genera select, el usuario escribe la hora directamente
@@ -4754,6 +4844,24 @@ async function initElectro() {
   
   // Event listener para cambiar fecha y cargar citas automáticamente
   $('electroFecha')?.addEventListener('change', async () => {
+    await cargarCitasElectro();
+    await checkEquiposDisponibilidad();
+  });
+  $('btnElectroFechaPrev')?.addEventListener('click', async () => {
+    const base = $('electroFecha')?.value || hoyColombiaISO();
+    const d = new Date(`${base}T12:00:00`);
+    d.setDate(d.getDate() - 1);
+    const next = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    $('electroFecha').value = next;
+    await cargarCitasElectro();
+    await checkEquiposDisponibilidad();
+  });
+  $('btnElectroFechaNext')?.addEventListener('click', async () => {
+    const base = $('electroFecha')?.value || hoyColombiaISO();
+    const d = new Date(`${base}T12:00:00`);
+    d.setDate(d.getDate() + 1);
+    const next = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    $('electroFecha').value = next;
     await cargarCitasElectro();
     await checkEquiposDisponibilidad();
   });
@@ -4873,7 +4981,7 @@ async function initElectro() {
     btnNuevoEstudio?.addEventListener('click', () => {
       const fecha = $('electroFecha')?.value;
       const fechaInput = $('modalNuevoEstudioFecha');
-      if (fechaInput) fechaInput.value = fecha || new Date().toISOString().slice(0, 10);
+      if (fechaInput) fechaInput.value = fecha || hoyColombiaISO();
       const progEl = $('electroProgramadoPor');
       if (progEl) progEl.textContent = currentUser ? (currentUser.nombre || currentUser.usuario || '-') : '-';
       checkEquiposDisponibilidad();
@@ -5618,11 +5726,12 @@ async function crearCitaElectro() {
   const fecha = $('modalNuevoEstudioFecha')?.value || $('electroFecha').value;
   const duracion = $('electroDuracion').value.trim();
   const diagnostico = $('electroDiagnostico').value.trim();
+  const entidad = $('electroEntidad')?.value || '';
   
   if (!electroNombres) { showToast('Escribe los nombres del paciente', 'error'); $('electroPacienteNombres').focus(); $('electroPacienteNombres').style.borderColor='#dc2626'; return; }
   if (!electroApellidos) { showToast('Escribe los apellidos del paciente', 'error'); $('electroPacienteApellidos').focus(); $('electroPacienteApellidos').style.borderColor='#dc2626'; return; }
   if (!hora) { showToast('Selecciona una hora', 'error'); $('electroHora').focus(); return; }
-  if (!doc || !telefono || !telefono2 || !fecha || !diagnostico) { 
+  if (!doc || !telefono || !telefono2 || !fecha || !entidad) { 
     showToast('Completa todos los campos obligatorios', 'error'); 
     return; 
   }
@@ -5741,6 +5850,7 @@ async function crearCitaElectro() {
       telefono,
       telefono2,
       estudio,
+      entidad,
       estado: 'Programado',
       programado_por_nombre: currentUser ? (currentUser.nombre || currentUser.usuario) : 'Sistema'
     };
@@ -5786,6 +5896,7 @@ async function crearCitaElectro() {
       $('electroHora').value = '';
       $('electroEstudio').value = '';
       $('electroDiagnostico').value = '';
+      if ($('electroEntidad')) $('electroEntidad').value = '';
       selectedDiagnosticoElectroId = null;
       selectedEquipoElectroId = null;
       selectedEstudioDuracion = null;
@@ -5812,6 +5923,7 @@ const PERMISOS_DEFS = [
   { key: 'modulo.recibos',          label: 'Módulo: Recibos',                     grupo: 'Acceso a Módulos' },
   { key: 'modulo.agenda_medica',    label: 'Módulo: Agenda Médica',               grupo: 'Acceso a Módulos' },
   { key: 'modulo.electrodiag',      label: 'Módulo: Electrodiagnóstico',          grupo: 'Acceso a Módulos' },
+  { key: 'modulo.ucqn',             label: 'Módulo: UCQN',                         grupo: 'Acceso a Módulos' },
   { key: 'modulo.dashboard',        label: 'Módulo: Dashboard de Citas',          grupo: 'Acceso a Módulos' },
   { key: 'modulo.usuarios',         label: 'Módulo: Gestión de Usuarios',         grupo: 'Acceso a Módulos' },
   { key: 'modulo.diagnosticos',     label: 'Módulo: Diagnósticos',                grupo: 'Acceso a Módulos' },
@@ -5844,6 +5956,9 @@ const PERMISOS_DEFS = [
   { key: 'electro.subir_archivo',   label: 'Electro: Subir archivos de estudios', grupo: 'Electrodiagnóstico' },
   { key: 'electro.ver_archivo',     label: 'Electro: Ver/descargar archivos',     grupo: 'Electrodiagnóstico' },
   { key: 'electro.aviso_doctor',    label: 'Electro: Enviar aviso al doctor',     grupo: 'Electrodiagnóstico' },
+  // ── UCQN ───────────────────────────────────────────────────────────────────
+  { key: 'ucqn.ver',                label: 'UCQN: Ver estudios',                   grupo: 'UCQN' },
+  { key: 'ucqn.editar_estado',      label: 'UCQN: Cambiar estado',                 grupo: 'UCQN' },
   // ── Usuarios ─────────────────────────────────────────────────────────────
   { key: 'usuarios.ver',            label: 'Usuarios: Ver lista de usuarios',     grupo: 'Gestión de Usuarios' },
   { key: 'usuarios.crear',          label: 'Usuarios: Crear usuario',             grupo: 'Gestión de Usuarios' },
@@ -5872,19 +5987,21 @@ const PERMISOS_ROL_DEFAULTS = {
   superadmin: null,
   admin: null,
   admin_recepcion: [
-    'modulo.recibos','modulo.agenda_medica','modulo.electrodiag','modulo.dashboard',
+    'modulo.recibos','modulo.agenda_medica','modulo.electrodiag','modulo.ucqn','modulo.dashboard',
     'recibos.crear','recibos.ver','recibos.exportar',
     'agenda.ver','agenda.crear','agenda.editar','agenda.eliminar','agenda.cambiar_estado',
     'agenda.llamar_siguiente','agenda.marcar_atendido','agenda.aviso_doctor','agenda.disponibilidad',
     'electro.ver','electro.crear','electro.editar','electro.cambiar_estado','electro.subir_archivo','electro.ver_archivo','electro.aviso_doctor',
+    'ucqn.ver','ucqn.editar_estado',
     'sistema.dashboard',
   ],
   recepcion: [
-    'modulo.recibos','modulo.agenda_medica','modulo.electrodiag','modulo.dashboard',
+    'modulo.recibos','modulo.agenda_medica','modulo.electrodiag','modulo.ucqn','modulo.dashboard',
     'recibos.crear','recibos.ver',
     'agenda.ver','agenda.crear','agenda.editar','agenda.eliminar','agenda.cambiar_estado',
     'agenda.llamar_siguiente','agenda.marcar_atendido','agenda.aviso_doctor',
     'electro.ver','electro.crear','electro.editar','electro.cambiar_estado',
+    'ucqn.ver','ucqn.editar_estado',
     'sistema.dashboard',
   ],
   auxiliar_recepcion: [
@@ -5900,15 +6017,17 @@ const PERMISOS_ROL_DEFAULTS = {
     'sistema.dashboard',
   ],
   admin_electro: [
-    'modulo.electrodiag','modulo.agenda_medica','modulo.dashboard',
+    'modulo.electrodiag','modulo.ucqn','modulo.agenda_medica','modulo.dashboard',
     'electro.ver','electro.crear','electro.editar','electro.eliminar','electro.cambiar_estado','electro.subir_archivo','electro.ver_archivo','electro.aviso_doctor',
     'agenda.ver','agenda.editar','agenda.aviso_doctor',
+    'ucqn.ver','ucqn.editar_estado',
     'sistema.dashboard',
   ],
   electro: [
-    'modulo.electrodiag','modulo.agenda_medica','modulo.dashboard',
+    'modulo.electrodiag','modulo.ucqn','modulo.agenda_medica','modulo.dashboard',
     'electro.ver','electro.crear','electro.editar','electro.eliminar','electro.cambiar_estado','electro.subir_archivo','electro.ver_archivo','electro.aviso_doctor',
     'agenda.ver','agenda.editar','agenda.aviso_doctor',
+    'ucqn.ver','ucqn.editar_estado',
     'sistema.dashboard',
   ],
   tecnico_electro: [
@@ -5917,8 +6036,9 @@ const PERMISOS_ROL_DEFAULTS = {
     'agenda.ver','agenda.editar','agenda.aviso_doctor',
   ],
   contabilidad: [
-    'modulo.recibos','modulo.dashboard',
+    'modulo.recibos','modulo.ucqn','modulo.dashboard',
     'recibos.ver','recibos.exportar',
+    'ucqn.ver','ucqn.editar_estado',
     'sistema.dashboard','sistema.reportes',
   ],
 };

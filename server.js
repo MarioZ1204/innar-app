@@ -2812,6 +2812,107 @@ app.get('/api/equipos-electro/disponibilidad', requireAuth, async (req, res) => 
   }
 });
 
+async function sincronizarUcqnDesdeElectro() {
+  const rows = await db.query(`
+    SELECT
+      ce.id AS cita_electro_id,
+      ce.fecha AS fecha_estudio,
+      ce.hora_agendamiento AS hora_estudio,
+      p.nombre AS paciente_nombre_completo,
+      p.documento AS paciente_documento,
+      ce.estudio AS tipo_estudio,
+      ce.entidad AS entidad
+    FROM citas_electro ce
+    JOIN pacientes p ON p.id = ce.paciente_id
+    WHERE ce.deleted_at IS NULL
+      AND UPPER(TRIM(COALESCE(ce.entidad, ''))) = 'UCQN'
+  `);
+
+  for (const r of rows) {
+    const fullName = String(r.paciente_nombre_completo || '').trim();
+    const parts = fullName.split(/\s+/).filter(Boolean);
+    const nombres = parts.length > 1 ? parts.slice(0, -1).join(' ') : fullName;
+    const apellidos = parts.length > 1 ? parts.slice(-1).join(' ') : '';
+    await db.execute(
+      `INSERT INTO ucqn_estudios (
+        cita_electro_id, fecha_estudio, hora_estudio, paciente_nombres, paciente_apellidos,
+        paciente_documento, tipo_estudio, entidad, estado
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDIENTE')
+      ON DUPLICATE KEY UPDATE
+        fecha_estudio = VALUES(fecha_estudio),
+        hora_estudio = VALUES(hora_estudio),
+        paciente_nombres = VALUES(paciente_nombres),
+        paciente_apellidos = VALUES(paciente_apellidos),
+        paciente_documento = VALUES(paciente_documento),
+        tipo_estudio = VALUES(tipo_estudio),
+        entidad = VALUES(entidad)`,
+      [
+        r.cita_electro_id,
+        r.fecha_estudio,
+        r.hora_estudio,
+        nombres || '',
+        apellidos || '',
+        r.paciente_documento || null,
+        r.tipo_estudio || null,
+        r.entidad || 'UCQN'
+      ]
+    );
+  }
+}
+
+app.get('/api/ucqn/estudios', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro', 'contabilidad'], 'ucqn.ver'), async (req, res) => {
+  try {
+    await sincronizarUcqnDesdeElectro();
+    const { fecha_desde, fecha_hasta, estado } = req.query;
+    const conditions = ['1=1'];
+    const params = [];
+    if (fecha_desde) { conditions.push('u.fecha_estudio >= ?'); params.push(fecha_desde); }
+    if (fecha_hasta) { conditions.push('u.fecha_estudio <= ?'); params.push(fecha_hasta); }
+    if (estado && ['PENDIENTE', 'LEIDO', 'FACTURADO'].includes(String(estado).toUpperCase())) {
+      conditions.push('u.estado = ?');
+      params.push(String(estado).toUpperCase());
+    }
+    const rows = await db.query(`
+      SELECT u.id, u.cita_electro_id, DATE_FORMAT(u.fecha_estudio, '%Y-%m-%d') AS fecha_estudio,
+             u.hora_estudio, u.paciente_nombres, u.paciente_apellidos, u.paciente_documento,
+             u.tipo_estudio, u.entidad, u.estado, u.estado_actualizado_en, u.estado_actualizado_por
+      FROM ucqn_estudios u
+      WHERE ${conditions.join(' AND ')}
+      ORDER BY u.fecha_estudio DESC, u.hora_estudio DESC, u.id DESC
+    `, params);
+    res.json({ ok: true, registros: rows });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.patch('/api/ucqn/estudios/:id/estado', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro', 'contabilidad'], 'ucqn.editar_estado'), async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const estado = String(req.body?.estado || '').trim().toUpperCase();
+    if (!id || !['PENDIENTE', 'LEIDO', 'FACTURADO'].includes(estado)) {
+      return res.status(400).json({ error: 'Parámetros inválidos' });
+    }
+    const current = await db.queryOne('SELECT estado FROM ucqn_estudios WHERE id = ?', [id]);
+    if (!current) return res.status(404).json({ error: 'Registro no encontrado' });
+    if (current.estado === 'FACTURADO' && estado !== 'FACTURADO') {
+      return res.status(409).json({ error: 'Un estudio FACTURADO no puede volver a estado anterior' });
+    }
+    if (current.estado === 'PENDIENTE' && estado === 'FACTURADO') {
+      return res.status(409).json({ error: 'Debe pasar por LEIDO antes de FACTURADO' });
+    }
+    await db.execute(
+      `UPDATE ucqn_estudios
+       SET estado = ?, estado_actualizado_en = NOW(), estado_actualizado_por = ?
+       WHERE id = ?`,
+      [estado, req.session?.usuario || 'Sistema', id]
+    );
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // --- Diagnósticos ---
 
 // Listar todos los diagnósticos activos
@@ -3178,7 +3279,7 @@ app.get('/api/citas-electro', requireAuth, async (req, res) => {
       const citas = await db.query(`
         SELECT c.id, c.equipo_id, c.paciente_id, c.fecha, c.hora_agendamiento, c.hora_inicio, c.hora_fin, c.hora_fin_date,
                c.estudio, c.observaciones, c.diagnostico_id, c.estado, c.programado_por_nombre, c.editado_por_nombre, c.editado_en, c.creado_en, c.actualizado_en,
-               c.duracion_minutos,
+               c.duracion_minutos, c.entidad,
                p.nombre AS paciente_nombre, 
                p.documento AS paciente_documento,
                p.telefono AS telefono,
@@ -3210,7 +3311,7 @@ app.get('/api/citas-electro', requireAuth, async (req, res) => {
     let query = `
       SELECT c.id, c.equipo_id, c.paciente_id, c.fecha, c.hora_agendamiento, c.hora_inicio, c.hora_fin, c.hora_fin_date,
              c.estudio, c.observaciones, c.diagnostico_id, c.estado, c.programado_por_nombre, c.editado_por_nombre, c.editado_en, c.creado_en, c.actualizado_en,
-             c.duracion_minutos,
+             c.duracion_minutos, c.entidad,
              p.nombre AS paciente_nombre, 
              p.documento AS paciente_documento,
              p.telefono AS telefono,
@@ -3241,7 +3342,7 @@ app.get('/api/citas-electro', requireAuth, async (req, res) => {
 
 // Crear cita electrodiagnóstico (con TRANSACCIÓN para garantizar integridad)
 app.post('/api/citas-electro', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro', 'auxiliar_recepcion'], 'electro.crear'), async (req, res) => {
-  const { equipo_id, paciente_id, fecha, hora_agendamiento, hora, hora_fin, duracion, estudio, observaciones, diagnostico_id, estado, programado_por_nombre, telefono } = req.body || {};
+  const { equipo_id, paciente_id, fecha, hora_agendamiento, hora, hora_fin, duracion, estudio, observaciones, diagnostico_id, estado, programado_por_nombre, telefono, entidad } = req.body || {};
   
   // 'hora' o 'hora_agendamiento' es la hora programada para el estudio
   const horaAgendamiento = hora_agendamiento || hora;
@@ -3315,8 +3416,8 @@ app.post('/api/citas-electro', requireAuth, requireRoleOrPerm(['superadmin', 'ad
       // INSERTAR DENTRO DE LA TRANSACCIÓN
       const duracionMinutosDB = duracion ? parseInt(duracion, 10) : null;
       const insertResult = await conn.execute(`
-        INSERT INTO citas_electro (equipo_id, paciente_id, fecha, hora_agendamiento, hora_inicio, hora_fin, hora_fin_date, estudio, observaciones, diagnostico_id, estado, programado_por_nombre, duracion_minutos)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO citas_electro (equipo_id, paciente_id, fecha, hora_agendamiento, hora_inicio, hora_fin, hora_fin_date, estudio, observaciones, diagnostico_id, estado, programado_por_nombre, duracion_minutos, entidad)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `, [
         equipo_id || null,
         paciente_id,
@@ -3330,7 +3431,8 @@ app.post('/api/citas-electro', requireAuth, requireRoleOrPerm(['superadmin', 'ad
         diagnostico_id || null,
         estado || 'Programado',
         programado_por_nombre || 'Sistema',
-        duracionMinutosDB
+        duracionMinutosDB,
+        entidad ? String(entidad).trim() : null
       ]);
 
       return {
@@ -3515,7 +3617,7 @@ app.patch('/api/citas-electro/:id/estado', requireAuth, requireRoleOrPerm(['supe
 // Cualquier estado â†’ "En Sala", "No Asistió", "Cancelado" (manual)
 app.patch('/api/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro', 'tecnico_electro'], 'electro.editar'), async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  const { equipo_id, estado, hora_inicio, hora_fin, hora_agendamiento, fecha, duracion_minutos } = req.body || {};
+  const { equipo_id, estado, hora_inicio, hora_fin, hora_agendamiento, fecha, duracion_minutos, entidad } = req.body || {};
   
   if (!id) {
     return res.status(400).json({ error: 'id es obligatorio' });
@@ -3651,6 +3753,10 @@ app.patch('/api/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin'
     if (duracion_minutos !== undefined) {
       updates.push('duracion_minutos = ?');
       values.push(duracion_minutos);
+    }
+    if (entidad !== undefined) {
+      updates.push('entidad = ?');
+      values.push(entidad ? String(entidad).trim() : null);
     }
     
     if (updates.length === 0) {
@@ -5073,6 +5179,8 @@ app.get('/api/dashboard/citas-auditoria', requireAuth, requireRoleOrPerm(['super
     if (fecha_desde) { electroConditions.push('ce.fecha >= ?'); electroParams.push(fecha_desde); }
     if (fecha_hasta) { electroConditions.push('ce.fecha <= ?'); electroParams.push(fecha_hasta); }
     if (programado_por) { electroConditions.push('ce.programado_por_nombre LIKE ?'); electroParams.push(`%${programado_por}%`); }
+    if (entidadArr.length === 1) { electroConditions.push('ce.entidad = ?'); electroParams.push(entidadArr[0]); }
+    else if (entidadArr.length > 1) { electroConditions.push(`ce.entidad IN (${entidadArr.map(() => '?').join(',')})`); electroParams.push(...entidadArr); }
     if (tipoEstudioArr.length === 1) { electroConditions.push('ce.estudio = ?'); electroParams.push(tipoEstudioArr[0]); }
     else if (tipoEstudioArr.length > 1) { electroConditions.push(`ce.estudio IN (${tipoEstudioArr.map(() => '?').join(',')})`); electroParams.push(...tipoEstudioArr); }
 
@@ -5087,6 +5195,7 @@ app.get('/api/dashboard/citas-auditoria', requireAuth, requireRoleOrPerm(['super
         ce.programado_por_nombre as programado_por,
         ce.equipo_id as doctor_id,
         ce.estado,
+        ce.entidad,
         'ELECTRODIAGNOSTICO' as tipo_cita,
         'N/A' as numero_turno
       FROM citas_electro ce
@@ -5657,6 +5766,50 @@ const PORT = process.env.PORT || 3000;
       }
     } catch (migErr) {
       logger.warn('[MIGRATION] Advertencia en migración deleted_at: ' + migErr.message, { type: 'STARTUP' });
+    }
+    // ─── Migración: columna entidad en citas_electro ─────────────────────────
+    try {
+      const colEntidad = await db.query(
+        `SELECT COUNT(*) AS cnt FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME   = 'citas_electro'
+           AND COLUMN_NAME  = 'entidad'`
+      );
+      if (!colEntidad || !colEntidad[0] || colEntidad[0].cnt === 0) {
+        await db.execute(`ALTER TABLE citas_electro ADD COLUMN entidad VARCHAR(200) DEFAULT NULL AFTER diagnostico_id`);
+        await db.execute(`ALTER TABLE citas_electro ADD INDEX idx_entidad (entidad)`);
+        logger.info('[MIGRATION] Columna citas_electro.entidad agregada', { type: 'STARTUP' });
+      }
+    } catch (migErr) {
+      logger.warn('[MIGRATION] Advertencia en migración entidad citas_electro: ' + migErr.message, { type: 'STARTUP' });
+    }
+    // ─── Migración: tabla ucqn_estudios ──────────────────────────────────────
+    try {
+      await db.execute(`
+        CREATE TABLE IF NOT EXISTS ucqn_estudios (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          cita_electro_id INT NOT NULL,
+          fecha_estudio DATE NOT NULL,
+          hora_estudio TIME NULL,
+          paciente_nombres VARCHAR(150) NOT NULL,
+          paciente_apellidos VARCHAR(150) DEFAULT NULL,
+          paciente_documento VARCHAR(50) DEFAULT NULL,
+          tipo_estudio VARCHAR(255) DEFAULT NULL,
+          entidad VARCHAR(100) NOT NULL DEFAULT 'UCQN',
+          estado ENUM('PENDIENTE','LEIDO','FACTURADO') NOT NULL DEFAULT 'PENDIENTE',
+          estado_actualizado_en DATETIME DEFAULT NULL,
+          estado_actualizado_por VARCHAR(150) DEFAULT NULL,
+          creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          actualizado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          UNIQUE KEY uk_ucqn_cita (cita_electro_id),
+          INDEX idx_ucqn_fecha (fecha_estudio),
+          INDEX idx_ucqn_estado (estado),
+          CONSTRAINT fk_ucqn_cita_electro FOREIGN KEY (cita_electro_id) REFERENCES citas_electro(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+      `);
+      logger.info('[MIGRATION] Tabla ucqn_estudios verificada', { type: 'STARTUP' });
+    } catch (migErr) {
+      logger.warn('[MIGRATION] Advertencia en migración tabla ucqn_estudios: ' + migErr.message, { type: 'STARTUP' });
     }
     // ─── Migración: equipos 5 y 6 bloqueados (inactivos) ─────────────────────
     try {
