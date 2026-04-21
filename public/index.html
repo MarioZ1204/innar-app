@@ -1692,56 +1692,74 @@
   </div>
 
   <div id="view-ucqn" class="view-module hidden">
-    <div class="container">
-      <header style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
-        <h2 style="margin:0">Módulo UCQN</h2>
-        <button id="btnVolverUcqn" class="btn-secondary">Volver al menú</button>
-      </header>
-      <section class="card no-print">
-        <div class="row">
-          <div class="col">
-            <label>Fecha desde</label>
-            <input id="ucqnFechaDesde" type="date" />
+    <div class="main-layout">
+      <div class="sidebar">
+        <div class="sidebar-inner">
+          <div class="sidebar-logo-mini"><img src="/images/logo.png" alt="Logo" /></div>
+          <button class="btn-volver" id="btnVolverUcqn">
+            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+            Volver al menú
+          </button>
+          <div class="sidebar-logo">
+            <img src="/images/logo.png" alt="Logo" style="height:58px;width:auto;object-fit:contain" />
           </div>
-          <div class="col">
-            <label>Fecha hasta</label>
-            <input id="ucqnFechaHasta" type="date" />
-          </div>
-          <div class="col">
-            <label>Estado</label>
-            <select id="ucqnEstadoFiltro">
-              <option value="">Todos</option>
-              <option value="PENDIENTE">Pendiente</option>
-              <option value="LEIDO">Leído</option>
-              <option value="FACTURADO">Facturado</option>
-            </select>
-          </div>
-          <div class="col" style="display:flex;align-items:flex-end;gap:8px">
-            <button id="btnUcqnBuscar" class="btn-primary">Buscar</button>
-          </div>
+          <hr class="sidebar-title-sep" />
+          <h2>UCQN</h2>
+          <p class="sidebar-desc">Seguimiento de estudios UCQN</p>
         </div>
-      </section>
-      <section class="card">
-        <div class="table-wrapper">
-          <table class="modern-table">
-            <thead>
-              <tr>
-                <th>Fecha</th>
-                <th>Hora</th>
-                <th>Nombres</th>
-                <th>Apellidos</th>
-                <th>Documento</th>
-                <th>Estudio</th>
-                <th>Entidad</th>
-                <th>Estado</th>
-              </tr>
-            </thead>
-            <tbody id="ucqnTableBody">
-              <tr><td colspan="8" style="padding:20px;text-align:center;color:#999">Sin datos</td></tr>
-            </tbody>
-          </table>
+      </div>
+      <div class="main-content">
+        <div class="container">
+          <header style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+            <h2 style="margin:0">Módulo UCQN</h2>
+          </header>
+          <section class="card no-print">
+            <div class="row">
+              <div class="col">
+                <label>Fecha desde</label>
+                <input id="ucqnFechaDesde" type="date" />
+              </div>
+              <div class="col">
+                <label>Fecha hasta</label>
+                <input id="ucqnFechaHasta" type="date" />
+              </div>
+              <div class="col">
+                <label>Estado</label>
+                <select id="ucqnEstadoFiltro">
+                  <option value="">Todos</option>
+                  <option value="PENDIENTE">Pendiente</option>
+                  <option value="LEIDO">Leído</option>
+                  <option value="FACTURADO">Facturado</option>
+                </select>
+              </div>
+              <div class="col" style="display:flex;align-items:flex-end;gap:8px">
+                <button id="btnUcqnBuscar" class="btn-primary">Buscar</button>
+              </div>
+            </div>
+          </section>
+          <section class="card">
+            <div class="table-wrapper">
+              <table class="modern-table">
+                <thead>
+                  <tr>
+                    <th>Fecha</th>
+                    <th>Hora</th>
+                    <th>Nombres</th>
+                    <th>Apellidos</th>
+                    <th>Documento</th>
+                    <th>Estudio</th>
+                    <th>Entidad</th>
+                    <th>Estado</th>
+                  </tr>
+                </thead>
+                <tbody id="ucqnTableBody">
+                  <tr><td colspan="8" style="padding:20px;text-align:center;color:#999">Sin datos</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
         </div>
-      </section>
+      </div>
     </div>
   </div>
 

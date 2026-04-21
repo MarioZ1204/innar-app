@@ -170,6 +170,11 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxyge
 .menu-card[data-module="diagnosticos"]    { --mc: #dc2626; }
 .menu-card[data-module="dashboard-citas"] { --mc: #4f46e5; }
 
+.estado-badge-ucqn { display:inline-block; padding:4px 10px; border-radius:999px; font-size:0.75rem; font-weight:700; }
+.estado-badge-ucqn.estado-pendiente { background:#fef9c3; color:#92400e; }
+.estado-badge-ucqn.estado-leido { background:#dbeafe; color:#1d4ed8; }
+.estado-badge-ucqn.estado-facturado { background:#dcfce7; color:#166534; }
+
 /* Módulos (Recibos, Agenda, Electro) */
 .view-module { min-height: 100vh; min-height: 100svh; background-color: white; position: relative; }
 .view-module::before { content: ''; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background-image: url('images/fondo.png'); background-position: center; background-size: 700px; background-repeat: no-repeat; background-attachment: fixed; opacity: 0.12; pointer-events: none; z-index: 0; }

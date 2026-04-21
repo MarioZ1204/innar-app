@@ -4461,7 +4461,7 @@ async function procesarExcelPacientesElectro(file) {
       const info = await res.json();
       const cap  = info.capacidad || {};
       if (cap.hayDisponibilidad) {
-        const cupos = cap.cuposDisponibles ?? cap.cuposADisponibles ?? '';
+        const cupos = cap.cuposaDisponibles ?? cap.cuposDisponibles ?? cap.cuposADisponibles ?? '';
         cell.innerHTML = `<span style="color:#16a34a;font-size:0.8rem" title="${cupos} cupo(s)">✓ OK</span>`;
         p._equipoOk = true;
       } else {
@@ -4473,6 +4473,55 @@ async function procesarExcelPacientesElectro(file) {
     } catch (_) {
       cell.innerHTML = '<span style="color:#6b7280;font-size:0.8rem" title="No se pudo verificar">? N/D</span>';
       p._equipoOk = null;
+    }
+  }
+
+  function _parseDateTimeLocal(fecha, hora) {
+    const h = parseHora12a24(hora || '') || hora || '00:00';
+    return new Date(`${fecha}T${String(h).slice(0, 5)}:00`);
+  }
+
+  function _rangoSolapa(aInicio, aFin, bInicio, bFin) {
+    return aInicio < bFin && aFin > bInicio;
+  }
+
+  async function validarDisponibilidadPreviewArchivo() {
+    const allData = window._cargarPacientesElectroData;
+    if (!Array.isArray(allData) || allData.length === 0) return;
+
+    const reservasSimuladas = [];
+    for (let ri = 0; ri < allData.length; ri++) {
+      const p = allData[ri];
+      const cell = document.querySelector(`.cell-disp-${ri}`);
+      if (!cell || !p?.fecha || !p?.hora || !p?.estudio) continue;
+
+      cell.innerHTML = '<span style="color:#6b7280;font-size:0.8rem">⏳</span>';
+      try {
+        const params = new URLSearchParams({ fecha: p.fecha, hora: parseHora12a24(p.hora), estudio: p.estudio });
+        if (p.duracion_horas) params.set('duracion_manual', Math.round(parseFloat(p.duracion_horas) * 60));
+        const res = await apiFetch(`/api/equipos-electro/disponibilidad?${params}`);
+        const info = await res.json();
+        const cap = info.capacidad || {};
+        const cuposDisponiblesDb = cap.cuposaDisponibles ?? cap.cuposDisponibles ?? 0;
+        const durMin = Number(info.duracionMinutos || 30);
+
+        const inicio = _parseDateTimeLocal(p.fecha, p.hora);
+        const fin = new Date(inicio.getTime() + (durMin * 60000));
+        const choquesArchivo = reservasSimuladas.filter(r => _rangoSolapa(inicio, fin, r.inicio, r.fin)).length;
+        const hayCupoReal = (cuposDisponiblesDb - choquesArchivo) > 0;
+
+        if (hayCupoReal) {
+          reservasSimuladas.push({ inicio, fin });
+          cell.innerHTML = `<span style="color:#16a34a;font-size:0.8rem" title="Disponible considerando el archivo">✓ OK</span>`;
+          p._equipoOk = true;
+        } else {
+          cell.innerHTML = `<span style="color:#dc2626;font-size:0.8rem" title="Sin cupo real al cargar este archivo">⚠️ Sin cupo</span>`;
+          p._equipoOk = false;
+        }
+      } catch (_) {
+        cell.innerHTML = '<span style="color:#6b7280;font-size:0.8rem" title="No se pudo verificar">? N/D</span>';
+        p._equipoOk = null;
+      }
     }
   }
 
@@ -4535,7 +4584,7 @@ async function procesarExcelPacientesElectro(file) {
             window._cargarPacientesElectroData[ri].estudio = sel.value;
             window._cargarPacientesElectroData[ri].duracion_horas = null;
             await actualizarCeldaDuracion(ri);
-            await validarDisponibilidadFila(ri);
+            await validarDisponibilidadPreviewArchivo();
           }
         }
       });
@@ -4558,7 +4607,7 @@ async function procesarExcelPacientesElectro(file) {
           // Revalidar disponibilidad con debounce
           clearTimeout(_duracionTimer);
           _duracionTimer = setTimeout(async () => {
-            await validarDisponibilidadFila(ri);
+            await validarDisponibilidadPreviewArchivo();
           }, 500);
           return;
         }
@@ -4651,7 +4700,7 @@ async function procesarExcelPacientesElectro(file) {
       await Promise.all(parsed.map((_, ri) => actualizarCeldaDuracion(ri)));
 
       // 3. Validar disponibilidad de equipos en paralelo
-      await Promise.all(parsed.map((_, ri) => validarDisponibilidadFila(ri)));
+      await validarDisponibilidadPreviewArchivo();
 
     } catch (err) {
       errorDiv.textContent = 'Error leyendo el archivo: ' + err.message;
@@ -4763,20 +4812,23 @@ async function cargarUcqn() {
       <td>${escapeHtml(r.tipo_estudio || '-')}</td>
       <td>${escapeHtml(r.entidad || '-')}</td>
       <td>
-        <select data-ucqn-id="${r.id}" class="ucqn-estado-select" ${canEdit ? '' : 'disabled'}>
-          <option value="PENDIENTE" ${r.estado === 'PENDIENTE' ? 'selected' : ''}>Pendiente</option>
-          <option value="LEIDO" ${r.estado === 'LEIDO' ? 'selected' : ''}>Leído</option>
-          <option value="FACTURADO" ${r.estado === 'FACTURADO' ? 'selected' : ''}>Facturado</option>
-        </select>
+        <span class="estado-badge-ucqn estado-${String(r.estado || '').toLowerCase()}">${escapeHtml(r.estado || '-')}</span>
+        ${canEdit ? (
+          r.estado === 'PENDIENTE'
+            ? `<button class="btn-primary btn-ucqn-estado" data-ucqn-id="${r.id}" data-next-estado="LEIDO" style="margin-left:8px;padding:4px 10px;font-size:0.78rem">Marcar leído</button>`
+            : r.estado === 'LEIDO'
+              ? `<button class="btn-primary btn-ucqn-estado" data-ucqn-id="${r.id}" data-next-estado="FACTURADO" style="margin-left:8px;padding:4px 10px;font-size:0.78rem">Facturar</button>`
+              : ''
+        ) : ''}
       </td>
     </tr>
   `).join('');
 }
 
 async function initUcqn() {
-  const hoy = hoyColombiaISO();
-  if ($('ucqnFechaDesde')) $('ucqnFechaDesde').value = hoy;
-  if ($('ucqnFechaHasta')) $('ucqnFechaHasta').value = hoy;
+  if ($('ucqnFechaDesde')) $('ucqnFechaDesde').value = '';
+  if ($('ucqnFechaHasta')) $('ucqnFechaHasta').value = '';
+  if ($('ucqnEstadoFiltro')) $('ucqnEstadoFiltro').value = '';
   const btnBuscarUcqn = $('btnUcqnBuscar');
   if (btnBuscarUcqn) btnBuscarUcqn.onclick = async () => {
     try { await cargarUcqn(); } catch (e) { showToast('Error UCQN: ' + e.message, 'error'); }
@@ -4784,9 +4836,9 @@ async function initUcqn() {
   const bodyUcqn = $('ucqnTableBody');
   if (bodyUcqn) bodyUcqn.onclick = async (ev) => {
     const sel = ev.target;
-    if (!sel || !sel.matches('.ucqn-estado-select')) return;
+    if (!sel || !sel.matches('.btn-ucqn-estado')) return;
     const id = parseInt(sel.dataset.ucqnId, 10);
-    const estado = sel.value;
+    const estado = sel.dataset.nextEstado;
     try {
       const res = await apiFetch(`/api/ucqn/estudios/${id}/estado`, {
         method: 'PATCH',
@@ -4849,11 +4901,11 @@ async function initElectro() {
   }
   
   // Event listener para cambiar fecha y cargar citas automáticamente
-  $('electroFecha')?.addEventListener('change', async () => {
+  if ($('electroFecha')) $('electroFecha').onchange = async () => {
     await cargarCitasElectro();
     await checkEquiposDisponibilidad();
-  });
-  $('btnElectroFechaPrev')?.addEventListener('click', async () => {
+  };
+  if ($('btnElectroFechaPrev')) $('btnElectroFechaPrev').onclick = async () => {
     const base = $('electroFecha')?.value || hoyColombiaISO();
     const d = new Date(`${base}T12:00:00`);
     d.setDate(d.getDate() - 1);
@@ -4861,8 +4913,8 @@ async function initElectro() {
     $('electroFecha').value = next;
     await cargarCitasElectro();
     await checkEquiposDisponibilidad();
-  });
-  $('btnElectroFechaNext')?.addEventListener('click', async () => {
+  };
+  if ($('btnElectroFechaNext')) $('btnElectroFechaNext').onclick = async () => {
     const base = $('electroFecha')?.value || hoyColombiaISO();
     const d = new Date(`${base}T12:00:00`);
     d.setDate(d.getDate() + 1);
@@ -4870,7 +4922,7 @@ async function initElectro() {
     $('electroFecha').value = next;
     await cargarCitasElectro();
     await checkEquiposDisponibilidad();
-  });
+  };
   
   // Event listener para quitar el border rojo cuando se selecciona estudio y auto-completar duración
   $('electroEstudio')?.addEventListener('change', async (e) => {
@@ -4993,7 +5045,7 @@ async function initElectro() {
       checkEquiposDisponibilidad();
       $('modalNuevoEstudioElectro')?.classList.remove('hidden');
     });
-    $('modalNuevoEstudioFecha')?.addEventListener('change', checkEquiposDisponibilidad);
+    if ($('modalNuevoEstudioFecha')) $('modalNuevoEstudioFecha').onchange = checkEquiposDisponibilidad;
     $('btnCerrarNuevoEstudioModal')?.addEventListener('click', () => $('modalNuevoEstudioElectro')?.classList.add('hidden'));
     $('btnCancelarNuevoEstudioModal')?.addEventListener('click', () => $('modalNuevoEstudioElectro')?.classList.add('hidden'));
     $('crearCitaElectro')?.addEventListener('click', crearCitaElectro);

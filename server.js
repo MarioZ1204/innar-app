@@ -3322,7 +3322,9 @@ app.get('/api/citas-electro', requireAuth, async (req, res) => {
       JOIN pacientes p ON p.id = c.paciente_id
       LEFT JOIN diagnosticos d ON d.id = c.diagnostico_id
       LEFT JOIN equipos_electro e ON e.id = c.equipo_id
-      WHERE (c.fecha = ? OR c.hora_fin_date = ?) AND c.deleted_at IS NULL
+      WHERE c.deleted_at IS NULL
+        AND c.fecha <= ?
+        AND COALESCE(c.hora_fin_date, c.fecha) >= ?
     `;
     let params = [fecha, fecha];
     
@@ -3493,13 +3495,17 @@ app.get('/api/citas-electro/stats', requireAuth, async (req, res) => {
     const [porEstado, porEstudio] = await Promise.all([
       db.query(
         `SELECT estado, COUNT(*) AS total FROM citas_electro
-         WHERE (fecha = ? OR hora_fin_date = ?) AND deleted_at IS NULL
+         WHERE deleted_at IS NULL
+           AND fecha <= ?
+           AND COALESCE(hora_fin_date, fecha) >= ?
          GROUP BY estado`,
         [fecha, fecha]
       ),
       db.query(
         `SELECT estudio, COUNT(*) AS total FROM citas_electro
-         WHERE (fecha = ? OR hora_fin_date = ?) AND deleted_at IS NULL
+         WHERE deleted_at IS NULL
+           AND fecha <= ?
+           AND COALESCE(hora_fin_date, fecha) >= ?
          GROUP BY estudio`,
         [fecha, fecha]
       )
@@ -3530,7 +3536,9 @@ app.get('/api/citas-electro/export', requireAuth, async (req, res) => {
       JOIN pacientes p ON p.id = c.paciente_id
       LEFT JOIN diagnosticos d ON d.id = c.diagnostico_id
       LEFT JOIN equipos_electro e ON e.id = c.equipo_id
-      WHERE (c.fecha = ? OR c.hora_fin_date = ?) AND c.deleted_at IS NULL
+      WHERE c.deleted_at IS NULL
+        AND c.fecha <= ?
+        AND COALESCE(c.hora_fin_date, c.fecha) >= ?
       ORDER BY c.hora_agendamiento ASC
     `, [fecha, fecha]);
 
