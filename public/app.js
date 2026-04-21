@@ -5174,7 +5174,8 @@ async function checkEquiposDisponibilidad() {
       Selecciona fecha y hora para ver disponibilidad de equipos
     </div>
     <div class="cupos-grid-empty">`;
-    for (let i = 1; i <= 4; i++) {
+    const maxCuposDefault = 4;
+    for (let i = 1; i <= maxCuposDefault; i++) {
       html += `<div class="cupo-card vacio">
         <div class="cupo-card-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/></svg></div>
         <div class="cupo-card-label">Equipo ${i}</div>
@@ -5235,7 +5236,7 @@ async function checkEquiposDisponibilidad() {
           ${titulo}
         </div>
         <div class="cupos-panel-meta">
-          <span><strong>${data.capacidad.cuposaDisponibles}/4</strong> libres</span>
+          <span><strong>${data.capacidad.cuposaDisponibles}/${data.capacidad.maxCupos}</strong> libres</span>
           <span><strong>${data.duracionMinutos >= 60 ? (data.duracionMinutos % 60 === 0 ? (data.duracionMinutos / 60) + 'h' : (data.duracionMinutos / 60).toFixed(1) + 'h') : data.duracionMinutos + 'min'}</strong></span>
           <span>fin <strong>${fmtHora(data.horaFin)}</strong></span>
         </div>
@@ -5248,7 +5249,8 @@ async function checkEquiposDisponibilidad() {
 
     // Grid de cupos
     html += `<div class="cupos-grid">`;
-    for (let i = 1; i <= 4; i++) {
+    const maxCupos = data?.capacidad?.maxCupos || 4;
+    for (let i = 1; i <= maxCupos; i++) {
       const cita = data.citasEnRango[i - 1] || null;
       const ocupado = i <= data.capacidad.cuposOcupados;
       const enEstudio = ocupado && cita && cita.estado === 'En Estudio' && cita.horaInicioReal;

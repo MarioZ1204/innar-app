@@ -144,7 +144,9 @@ async function initializeDatabase() {
               INDEX idx_nombre (nombre)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-            INSERT IGNORE INTO equipos_electro (nombre) VALUES ('Equipo 1'),('Equipo 2'),('Equipo 3'),('Equipo 4');
+            INSERT IGNORE INTO equipos_electro (nombre, activo) VALUES
+              ('Equipo 1', 1),('Equipo 2', 1),('Equipo 3', 1),('Equipo 4', 1),
+              ('Equipo 5', 0),('Equipo 6', 0);
 
             CREATE TABLE IF NOT EXISTS estudio_duraciones (
               id INT AUTO_INCREMENT PRIMARY KEY,

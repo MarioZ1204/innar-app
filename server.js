@@ -2676,18 +2676,21 @@ app.get('/api/equipos-electro/disponibilidad', requireAuth, async (req, res) => 
     // Tope de seguridad: 7 días (10080 min) para evitar overflow accidental.
     duracionMinutos = Math.min(duracionMinutos, 10080);
 
-    // Calcular hora_fin y fecha_fin usando la fecha real (soporta durations multi-día)
+    // Calcular hora_fin y fecha_fin usando la fecha local real (soporta durations multi-día)
     const [hh, mm] = hora.split(':').map(x => parseInt(x, 10));
-    const startDate = new Date(`${fecha}T${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}:00`);
-    if (isNaN(startDate.getTime())) {
+    const fechaHoraInicio = new Date(`${fecha}T${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}:00`);
+    if (isNaN(fechaHoraInicio.getTime())) {
       return res.status(400).json({ error: 'Fecha/hora inválida para calcular disponibilidad' });
     }
-    startDate.setMinutes(startDate.getMinutes() + duracionMinutos);
-    if (isNaN(startDate.getTime())) {
+    const fechaHoraFin = new Date(fechaHoraInicio.getTime() + (duracionMinutos * 60000));
+    if (isNaN(fechaHoraFin.getTime())) {
       return res.status(400).json({ error: 'No se pudo calcular la fecha final del estudio' });
     }
-    const horaFin = `${String(startDate.getHours()).padStart(2, '0')}:${String(startDate.getMinutes()).padStart(2, '0')}`;
-    const fechaFin = startDate.toISOString().slice(0, 10);
+    const horaFin = `${String(fechaHoraFin.getHours()).padStart(2, '0')}:${String(fechaHoraFin.getMinutes()).padStart(2, '0')}`;
+    const fechaFin = `${fechaHoraFin.getFullYear()}-${String(fechaHoraFin.getMonth() + 1).padStart(2, '0')}-${String(fechaHoraFin.getDate()).padStart(2, '0')}`;
+
+    const equiposActivosRows = await db.query(`SELECT COUNT(*) AS total FROM equipos_electro WHERE activo = 1`);
+    const maxCupos = Math.max(0, parseInt(equiposActivosRows?.[0]?.total, 10) || 0);
 
     // CRÍTICO: Contar CUPOS OCUPADOS en este rango horario
     // Los cupos se RESERVAN al agendar (Programado), se OCUPAN EN USO (En Estudio)
@@ -2709,7 +2712,7 @@ app.get('/api/equipos-electro/disponibilidad', requireAuth, async (req, res) => 
     `, [fechaFin, horaFin, fecha, hora]);
 
     const cuposOcupados = citasOcupadas && citasOcupadas.length > 0 ? citasOcupadas.length : 0;
-    const cuposaDisponibles = 4 - cuposOcupados;
+    const cuposaDisponibles = Math.max(0, maxCupos - cuposOcupados);
     const hayDisponibilidad = cuposaDisponibles > 0;
 
     // Extraer EQUIPOS específicos que están siendo usados
@@ -2786,7 +2789,7 @@ app.get('/api/equipos-electro/disponibilidad', requireAuth, async (req, res) => 
       duracionMinutos,
       estudio: estudio || 'Sin especificar',
       capacidad: {
-        maxCupos: 4,
+        maxCupos,
         cuposOcupados,
         cuposaDisponibles,
         hayDisponibilidad,
@@ -2795,8 +2798,8 @@ app.get('/api/equipos-electro/disponibilidad', requireAuth, async (req, res) => 
       citasEnRango,
       proximaDisponibilidad,
       mensaje: !hayDisponibilidad 
-        ? `âš ï¸ Sin capacidad. ${cuposOcupados}/4 cupos ocupados (${equiposEnUso.map(e => e.equipo_nombre).join(', ')}). Próxima disponibilidad: ${proximaDisponibilidad}`
-        : `Disponibilidad: ${cuposaDisponibles}/${4} cupos libres${equiposEnUso.length > 0 ? ` (En uso: ${equiposEnUso.map(e => e.equipo_nombre).join(', ')})` : ''}`
+        ? `âš ï¸ Sin capacidad. ${cuposOcupados}/${maxCupos} cupos ocupados (${equiposEnUso.map(e => e.equipo_nombre).join(', ')}). Próxima disponibilidad: ${proximaDisponibilidad}`
+        : `Disponibilidad: ${cuposaDisponibles}/${maxCupos} cupos libres${equiposEnUso.length > 0 ? ` (En uso: ${equiposEnUso.map(e => e.equipo_nombre).join(', ')})` : ''}`
     });
   } catch (e) {
     console.error('[electro/disponibilidad] Error:', e.message, {
@@ -3270,9 +3273,9 @@ app.post('/api/citas-electro', requireAuth, requireRoleOrPerm(['superadmin', 'ad
         const [hh, mm] = horaAgendamiento.split(':').map(x => parseInt(x, 10));
         // Usar la fecha real para calcular correctamente durations multi-día
         const startDate = new Date(`${fecha}T${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}:00`);
-        startDate.setMinutes(startDate.getMinutes() + duracionMinutos);
-        finalHoraFin = `${String(startDate.getHours()).padStart(2, '0')}:${String(startDate.getMinutes()).padStart(2, '0')}`;
-        finalFechaFin = startDate.toISOString().slice(0, 10);
+        const endDate = new Date(startDate.getTime() + (duracionMinutos * 60000));
+        finalHoraFin = `${String(endDate.getHours()).padStart(2, '0')}:${String(endDate.getMinutes()).padStart(2, '0')}`;
+        finalFechaFin = `${endDate.getFullYear()}-${String(endDate.getMonth() + 1).padStart(2, '0')}-${String(endDate.getDate()).padStart(2, '0')}`;
       }
 
       // VALIDACIÓN: el paciente no puede tener ya una cita activa ese día
@@ -3299,10 +3302,14 @@ app.post('/api/citas-electro', requireAuth, requireRoleOrPerm(['superadmin', 'ad
       );
 
       const overlapCount = overlapCitas[0]?.overlap_count || 0;
+      const maxCuposRows = await transactions.selectForUpdate(
+        conn,
+        `SELECT COUNT(*) as total FROM equipos_electro WHERE activo = 1`
+      );
+      const maxCupos = parseInt(maxCuposRows[0]?.total, 10) || 0;
 
-      // Validar capacidad: máximo 4 cupos disponibles
-      if (overlapCount >= 4) {
-        throw new Error(`Sin capacidad disponible en este horario. Hay ${overlapCount} cupos ocupados. Máximo: 4`);
+      if (overlapCount >= maxCupos) {
+        throw new Error(`Sin capacidad disponible en este horario. Hay ${overlapCount} cupos ocupados. Máximo: ${maxCupos}`);
       }
 
       // INSERTAR DENTRO DE LA TRANSACCIÓN
@@ -3329,6 +3336,7 @@ app.post('/api/citas-electro', requireAuth, requireRoleOrPerm(['superadmin', 'ad
       return {
         insertId: insertResult[0].insertId,
         overlapCount,
+        maxCupos,
         finalHoraFin,
         finalFechaFin
       };
@@ -3355,8 +3363,8 @@ app.post('/api/citas-electro', requireAuth, requireRoleOrPerm(['superadmin', 'ad
       id: result.insertId, 
       capacity_info: { 
         active_studies: result.overlapCount, 
-        max: 4,
-        available: 4 - result.overlapCount - 1 // El que acaba de crearse
+        max: result.maxCupos,
+        available: Math.max(0, result.maxCupos - result.overlapCount - 1) // El que acaba de crearse
       } 
     });
   } catch (e) {
@@ -3366,7 +3374,7 @@ app.post('/api/citas-electro', requireAuth, requireRoleOrPerm(['superadmin', 'ad
       return res.status(409).json({ 
         error: errorMsg,
         details: e.message,
-        capacity: { max: 4 }
+        capacity: { max: null }
       });
     }
     logger.error('Error creando cita electro', { error: e.message, paciente_id });
@@ -3559,13 +3567,14 @@ app.patch('/api/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin'
         `, [id, checkFecha, checkHoraInicio, checkFecha, checkHoraInicio]);
 
         const overlapCount = overlapCitas[0]?.overlap_count || 0;
+        const maxCuposRows = await db.query(`SELECT COUNT(*) as total FROM equipos_electro WHERE activo = 1`);
+        const maxCupos = parseInt(maxCuposRows[0]?.total, 10) || 0;
 
-        // Validar capacidad: máximo 4 cupos disponibles
-        if (overlapCount >= 4) {
+        if (overlapCount >= maxCupos) {
           return res.status(409).json({ 
             error: 'Sin capacidad disponible en este horario',
-            details: `Hay ${overlapCount} cupos ocupados en este rango. Máximo permitido: 4`,
-            capacity: { active: overlapCount, max: 4 }
+            details: `Hay ${overlapCount} cupos ocupados en este rango. Máximo permitido: ${maxCupos}`,
+            capacity: { active: overlapCount, max: maxCupos }
           });
         }
       }
@@ -3610,8 +3619,8 @@ app.patch('/api/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin'
         const horaStr = typeof horaInicio === 'string' ? horaInicio : String(horaInicio);
         const [hhS, mmS] = horaStr.split(':').map(Number);
         const startDate = new Date(`${fechaStr}T${String(hhS).padStart(2,'0')}:${String(mmS).padStart(2,'0')}:00`);
-        startDate.setMinutes(startDate.getMinutes() + parseInt(durMin, 10));
-        const horaFinDate = startDate.toISOString().slice(0, 10);
+        const endDate = new Date(startDate.getTime() + (parseInt(durMin, 10) * 60000));
+        const horaFinDate = `${endDate.getFullYear()}-${String(endDate.getMonth() + 1).padStart(2, '0')}-${String(endDate.getDate()).padStart(2, '0')}`;
         updates.push('hora_fin_date = ?');
         values.push(horaFinDate);
       } else {
@@ -5648,6 +5657,15 @@ const PORT = process.env.PORT || 3000;
       }
     } catch (migErr) {
       logger.warn('[MIGRATION] Advertencia en migración deleted_at: ' + migErr.message, { type: 'STARTUP' });
+    }
+    // ─── Migración: equipos 5 y 6 bloqueados (inactivos) ─────────────────────
+    try {
+      await db.execute(
+        `INSERT IGNORE INTO equipos_electro (nombre, activo) VALUES ('Equipo 5', 0), ('Equipo 6', 0)`
+      );
+      logger.info('[MIGRATION] Equipos 5 y 6 verificados (bloqueados/inactivos)', { type: 'STARTUP' });
+    } catch (migErr) {
+      logger.warn('[MIGRATION] Advertencia en migración equipos 5 y 6: ' + migErr.message, { type: 'STARTUP' });
     }
     // â”€â”€â”€ Migración: paciente_telefono2 en turnos â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     try {
