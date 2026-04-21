@@ -150,6 +150,7 @@ function agendaMedicaPolicy(turno, opts = {}) {
   const esFinal = agendaMedicaEsEstadoFinal(estado);
   const esEnAtencion = estado === 'EN_ATENCION';
   const esEnSala = estado === 'EN_SALA';
+  const esPendiente = estado === 'PENDIENTE' || estado === 'EN_ESPERA';
 
   // Regla de negocio/UI: la existencia de un turno EN_ATENCION sólo “bloquea” otras filas para el doctor.
   const bloqueadoPorAtencionGlobal = esDoctorRol && hayEnAtencion && !esEnAtencion;
@@ -172,34 +173,53 @@ function agendaMedicaPolicy(turno, opts = {}) {
     puedeEditarNombre: perms.editar && !esFinal,
   };
 
-  // Modal: botones de footer
-  // Reset/visibilidad debe derivarse SOLO de aquí.
-  //
-  // Reglas actuales:
-  // - Doctor maneja: Llamar / En Atención / Atendido / No asistió
-  // - Recepción/admin maneja: En Sala + Reprogramar (NO_ASISTIO)
-  // - Caso especial requerido: si está EN_SALA → mostrar solo EN_ATENCION + ATENDIDO (para quien pueda cambiar estado)
-  const modalCasoEnSalaSoloDos = esEnSala && perms.cambiarEstado && !esFinal;
+  // Modal: matriz explícita de visibilidad por estado/rol para evitar inconsistencias.
+  const puedeGestionarComoRecepcion = !esDoctorRol && perms.cambiarEstado;
+  const puedeGestionarComoDoctor = esDoctorRol && (perms.llamarSiguiente || perms.marcarAtendido || perms.cambiarEstado);
 
   const modal = {
     // Edición de datos dentro del modal
     bloquearEdicion: esDoctorRol && esEnAtencion,
 
     // Footer
-    showEnSala: perms.cambiarEstado && !esDoctorRol && !esFinal && estado !== 'EN_ATENCION' && estado !== 'EN_SALA',
-    showReprogramarNoAsistio: perms.cambiarEstado && !esDoctorRol && !esFinal && estado === 'NO_ASISTIO',
+    // RECEPCIÓN/ADMIN:
+    // - PENDIENTE -> EN SALA, NO ASISTIO
+    // - EN_SALA   -> LLAMAR, EN_ATENCION, ATENDIDO
+    // - EN_ATENCION -> ATENDIDO
+    showEnSala: puedeGestionarComoRecepcion && esPendiente,
+    showReprogramarNoAsistio: puedeGestionarComoRecepcion && estado === 'NO_ASISTIO',
 
-    showLlamar: !modalCasoEnSalaSoloDos && esDoctorRol && perms.llamarSiguiente && !esFinal,
+    // LLAMAR solo cuando está EN_SALA (doctor o recepción con permisos)
+    showLlamar: !esFinal && esEnSala && (
+      (esDoctorRol && perms.llamarSiguiente) ||
+      puedeGestionarComoRecepcion
+    ),
     llamarDisabled: esFinal,
 
-    showEnAtencion: (esDoctorRol && perms.marcarAtendido && !esFinal) || modalCasoEnSalaSoloDos,
-    enAtencionDisabled: esFinal || estado === 'EN_ATENCION',
+    // EN_ATENCION:
+    // - Doctor: solo cuando está EN_SALA
+    // - Recepción/Admin: solo cuando está EN_SALA
+    showEnAtencion: !esFinal && esEnSala && (
+      (esDoctorRol && perms.marcarAtendido) ||
+      puedeGestionarComoRecepcion
+    ),
+    enAtencionDisabled: esFinal || esEnAtencion,
 
-    showAtendido: (esDoctorRol && perms.marcarAtendido) || modalCasoEnSalaSoloDos,
-    // Atendido sólo tiene sentido cuando ya está EN_ATENCION (se mantiene la lógica original)
-    atendidoDisabled: estado !== 'EN_ATENCION',
+    // ATENDIDO:
+    // - Doctor: solo cuando está EN_ATENCION
+    // - Recepción/Admin: cuando está EN_SALA o EN_ATENCION
+    showAtendido: !esFinal && (
+      (esDoctorRol && perms.marcarAtendido && esEnAtencion) ||
+      (puedeGestionarComoRecepcion && (esEnSala || esEnAtencion))
+    ),
+    atendidoDisabled: esFinal || (!esEnAtencion && !puedeGestionarComoRecepcion),
 
-    showNoAsistio: !modalCasoEnSalaSoloDos && esDoctorRol && !esFinal,
+    // NO_ASISTIO:
+    // - Doctor: solo en PENDIENTE
+    // - Recepción/Admin: solo en PENDIENTE
+    showNoAsistio: !esFinal && esPendiente && (
+      puedeGestionarComoDoctor || puedeGestionarComoRecepcion
+    ),
     noAsistioDisabled: esFinal,
 
     // Menú 3 puntos (recepción/admin)
@@ -9807,10 +9827,16 @@ $('btnModalAtendido')?.addEventListener('click', async (e) => {
   e.preventDefault(); e.stopPropagation();
   if (!currentTurnoMedicaData) return;
   try {
-    const res = await apiFetch('/api/turnos/marcar-atendido', {
-      method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ turno_id: currentTurnoMedicaData.id })
-    });
+    const enAtencionActual = currentTurnoMedicaData.estado === 'EN_ATENCION';
+    const res = enAtencionActual
+      ? await apiFetch('/api/turnos/marcar-atendido', {
+          method: 'POST', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ turno_id: currentTurnoMedicaData.id })
+        })
+      : await apiFetch(`/api/turnos/${currentTurnoMedicaData.id}/estado`, {
+          method: 'PATCH', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ estado: 'ATENDIDO' })
+        });
     const data = await res.json();
     if (data.ok) { showToast('Paciente marcado como atendido', 'success'); cerrarModalEstadoCitaMedica(); cargarTurnosMedica(); }
     else showToast(data.error || 'Error al actualizar', 'error');

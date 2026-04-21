@@ -29,8 +29,10 @@ const puppeteer = require('puppeteer');
 const fs = require('fs');
 const path = require('path');
 
-// Versión de la aplicación (para cache busting)
-const APP_VERSION = require('./package.json').version;
+// Versión de la aplicación (para cache busting + detección de despliegue)
+// Si no hay variable de entorno de build, usar timestamp de arranque para detectar deploy/restart.
+const PACKAGE_VERSION = require('./package.json').version;
+const APP_VERSION = process.env.APP_BUILD_VERSION || process.env.SOURCE_VERSION || `${PACKAGE_VERSION}-${Math.floor(Date.now() / 1000)}`;
 const session = require('express-session');
 const bcrypt = require('bcryptjs');
 const multer = require('multer');
@@ -2317,6 +2319,19 @@ app.patch('/api/turnos/:id/estado', requireAuth, requireRoleOrPerm(['superadmin'
       return res.status(400).json({ error: 'Solo se puede pasar a EN_ATENCION desde EN_SALA' });
     }
 
+    // Regla crítica: un doctor no puede tener dos pacientes EN_ATENCION el mismo día.
+    if (estado === 'EN_ATENCION') {
+      const enAtencionExistente = await db.query(
+        `SELECT id FROM turnos
+         WHERE fecha = ? AND doctor_id = ? AND estado = 'EN_ATENCION' AND id != ?
+         LIMIT 1`,
+        [turno.fecha, turno.doctor_id, id]
+      );
+      if (enAtencionExistente.length > 0) {
+        return res.status(409).json({ error: 'Ya existe un paciente EN_ATENCION para este doctor' });
+      }
+    }
+
     const ESTADOS_FINALES = ['ATENDIDO', 'NO_ASISTIO', 'CANCELADO', 'REPROGRAMADO'];
     const esFinal = ESTADOS_FINALES.includes(estado);
 
@@ -2675,10 +2690,10 @@ app.get('/api/equipos-electro/disponibilidad', requireAuth, async (req, res) => 
       LEFT JOIN equipos_electro e ON e.id = c.equipo_id
       WHERE c.estado IN ('Programado', 'En Sala', 'En Estudio', 'Pausado')
       AND c.deleted_at IS NULL
-      AND CONCAT(COALESCE(c.hora_fin_date, c.fecha), ' ', c.hora_fin) >= CONCAT(?, ' ', ?)
-      AND CONCAT(c.fecha, ' ', c.hora_agendamiento) <= CONCAT(?, ' ', ?)
+      AND CONCAT(c.fecha, ' ', c.hora_agendamiento) < CONCAT(?, ' ', ?)
+      AND CONCAT(COALESCE(c.hora_fin_date, c.fecha), ' ', c.hora_fin) > CONCAT(?, ' ', ?)
       ORDER BY c.fecha, c.hora_agendamiento
-    `, [fecha, hora, fechaFin, horaFin]);
+    `, [fechaFin, horaFin, fecha, hora]);
 
     const cuposOcupados = citasOcupadas && citasOcupadas.length > 0 ? citasOcupadas.length : 0;
     const cuposaDisponibles = 4 - cuposOcupados;
