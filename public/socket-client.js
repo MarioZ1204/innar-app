@@ -2,6 +2,48 @@
 
 let socket = null;
 window.socketReady = false;  // Flag para indicar cuando socket está listo
+let updateCheckTimer = null;
+let updateBannerShown = false;
+const UPDATE_CHECK_INTERVAL_MS = 60000;
+
+function showUpdateBanner(serverVersion) {
+  if (updateBannerShown) return;
+  updateBannerShown = true;
+  const banner = document.getElementById('updateBanner');
+  if (banner) banner.style.display = 'block';
+  const btnReload = document.getElementById('btnReloadUpdateBanner');
+  if (btnReload && !btnReload.dataset.bound) {
+    btnReload.dataset.bound = '1';
+    btnReload.addEventListener('click', () => window.location.reload());
+  }
+  if (serverVersion) {
+    console.warn('Nueva version detectada:', serverVersion, 'actual:', window.APP_VERSION);
+  }
+}
+
+async function checkServerVersion() {
+  if (!window.APP_VERSION) return;
+  try {
+    const response = await fetch(`/api/version?t=${Date.now()}`, {
+      method: 'GET',
+      credentials: 'include',
+      cache: 'no-store'
+    });
+    if (!response.ok) return;
+    const data = await response.json();
+    if (data?.version && data.version !== window.APP_VERSION) {
+      showUpdateBanner(data.version);
+    }
+  } catch (_) {
+    // Silenciar: si falla red temporalmente, se reintenta en el siguiente ciclo
+  }
+}
+
+function startVersionWatcher() {
+  if (updateCheckTimer) return;
+  checkServerVersion();
+  updateCheckTimer = setInterval(checkServerVersion, UPDATE_CHECK_INTERVAL_MS);
+}
 
 // Detectar si es dispositivo móvil
 function isMobile() {
@@ -38,6 +80,8 @@ function initSocket() {
     window.socketReady = true;  // Marcar como listo
     // Disparar evento para módulos que esperan
     window.dispatchEvent(new CustomEvent('socketReady', { detail: socket }));
+    // Verificación extra por polling para detectar despliegues aunque no llegue evento socket.
+    startVersionWatcher();
   });
 
   // Al volver de segundo plano, reconectar y refrescar datos del módulo activo
@@ -55,6 +99,7 @@ function initSocket() {
         if (mod === 'electro' && typeof cargarCitasElectro === 'function') cargarCitasElectro();
         if (mod === 'usuarios' && typeof cargarUsuarios === 'function') cargarUsuarios();
         if (typeof updateStats === 'function') updateStats();
+        checkServerVersion();
       }
     });
   }
@@ -108,8 +153,7 @@ function initSocket() {
   // Detectar nueva versión del servidor (cache busting)
   socket.on('sistema:version', (data) => {
     if (data?.version && window.APP_VERSION && data.version !== window.APP_VERSION) {
-      const banner = document.getElementById('updateBanner');
-      if (banner) banner.style.display = 'block';
+      showUpdateBanner(data.version);
     }
   });
 
@@ -244,6 +288,10 @@ function closeSocket() {
     socket = null;
     window.socket = null;
     window.socketReady = false;
+  }
+  if (updateCheckTimer) {
+    clearInterval(updateCheckTimer);
+    updateCheckTimer = null;
   }
 }
 

@@ -1311,21 +1311,8 @@ app.post('/api/turnos/llamar-siguiente', requireAuth, requireRoleOrPerm(['supera
     const doctor = await db.query(`SELECT numero_consultorio FROM usuarios WHERE id = ?`, [doctor_id]);
     const numeroConsultorio = doctor.length > 0 ? doctor[0].numero_consultorio : null;
     
-    // Primero verificar si ya hay un paciente EN_ATENCION
-    const enAtencion = await db.query(`
-      SELECT * FROM turnos 
-      WHERE fecha = ? AND doctor_id = ? AND estado = 'EN_ATENCION'
-      LIMIT 1
-    `, [fecha, doctor_id]);
-    
-    // Si hay un paciente EN_ATENCION, devolver el mismo con numero_consultorio
-    if (enAtencion.length > 0) {
-      // Hay paciente EN_ATENCION: enAtencion[0].paciente_nombre);
-      const turnoConConsultorio = { ...enAtencion[0], numero_consultorio: numeroConsultorio };
-      return res.json({ ok: true, turno: turnoConConsultorio });
-    }
-    
-    // Si no hay EN_ATENCION, buscar el siguiente EN_SALA
+    // "Llamar" solo anuncia: NO cambia estado.
+    // Se anuncia el siguiente paciente en sala según prioridad de numero_turno.
     const turnos = await db.query(`
       SELECT * FROM turnos 
       WHERE fecha = ? AND doctor_id = ? AND estado = 'EN_SALA' AND numero_turno IS NOT NULL
@@ -1339,15 +1326,7 @@ app.post('/api/turnos/llamar-siguiente', requireAuth, requireRoleOrPerm(['supera
       return res.status(404).json({ error: 'No hay más pacientes en espera' });
     }
 
-    // Cambiar estado a EN_ATENCION (solo el primero)
-    await db.execute(`
-      UPDATE turnos 
-      SET estado = 'EN_ATENCION'
-      WHERE id = ?
-    `, [turno.id]);
-
-    const updated = await db.query(`SELECT * FROM turnos WHERE id = ?`, [turno.id]);
-    const turnoConConsultorio = { ...updated[0], numero_consultorio: numeroConsultorio };
+    const turnoConConsultorio = { ...turno, numero_consultorio: numeroConsultorio };
     
     // Emitir evento de socket para actualizar todos los clientes
     emitSocket('agenda:turno-llamar-siguiente', { 
@@ -1358,9 +1337,6 @@ app.post('/api/turnos/llamar-siguiente', requireAuth, requireRoleOrPerm(['supera
       numero_turno: turnoConConsultorio.numero_turno,
       numero_consultorio: numeroConsultorio
     });
-    // No emitir agenda:turno-estado-cambio aquí para evitar doble anuncio de voz
-    emitSocket('agenda:turno-estado-cambio', { id: turno.id, estado: 'EN_ATENCION' });
-    
     res.json({ ok: true, turno: turnoConConsultorio });
   } catch (e) {
     console.error(e);
@@ -2334,6 +2310,11 @@ app.patch('/api/turnos/:id/estado', requireAuth, requireRoleOrPerm(['superadmin'
     // Si ya está ATENDIDO, no permitir cambios posteriores
     if (turno.estado === 'ATENDIDO' && estado !== 'ATENDIDO') {
       return res.status(400).json({ error: 'No se puede modificar un turno ya atendido' });
+    }
+
+    // Flujo obligatorio: para pasar a EN_ATENCION el paciente debe estar EN_SALA.
+    if (estado === 'EN_ATENCION' && turno.estado !== 'EN_SALA') {
+      return res.status(400).json({ error: 'Solo se puede pasar a EN_ATENCION desde EN_SALA' });
     }
 
     const ESTADOS_FINALES = ['ATENDIDO', 'NO_ASISTIO', 'CANCELADO', 'REPROGRAMADO'];

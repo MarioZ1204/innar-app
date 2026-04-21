@@ -1723,12 +1723,42 @@ button.remove { padding:5px 10px; font-size:.8rem; width:100%; }
   display:flex !important; align-items:center; justify-content:center; gap:6px;
 }
 .cita-modal-footer {
-  display:flex; justify-content:space-between; align-items:center;
+  display:flex; justify-content:space-between; align-items:center; gap:12px;
+  flex-wrap: wrap;
   padding: 12px 22px;
   background: #f9fafb;
   border-top: 1px solid #e5e7eb;
   border-radius: 0 0 16px 16px;
   flex-shrink: 0;
+}
+.cita-modal-footer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.cita-modal-footer-btn {
+  min-width: 136px;
+}
+.cita-modal-footer-close {
+  margin-left: auto;
+}
+@media (max-width: 860px) {
+  .cita-modal-footer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .cita-modal-footer-actions {
+    width: 100%;
+  }
+  .cita-modal-footer-btn {
+    flex: 1 1 calc(50% - 8px);
+    min-width: 0;
+  }
+  .cita-modal-footer-close {
+    width: 100%;
+    margin-left: 0;
+  }
 }
 
 /* Flujo contextual de estado */
