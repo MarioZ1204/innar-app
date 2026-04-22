@@ -1791,6 +1791,10 @@
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
                 Recomendaciones
               </button>
+              <button id="btnEliminarCitaMenu" class="btn-dropdown-item" style="border-top:1px solid #f3f4f6;display:none;align-items:center;gap:8px;color:#dc2626">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                Eliminar
+              </button>
             </div>
           </div>
           <button id="cerrarModalDetallesCita" class="cita-modal-icon-btn cita-modal-close-btn" title="Cerrar" style="font-size:1.2rem;line-height:1">&times;</button>
@@ -1895,6 +1899,7 @@
         <!-- Estado oculto (usado internamente) -->
         <select id="modalEstado" style="display:none">
           <option value="Programado">Programado</option>
+          <option value="Confirmado">Confirmado</option>
           <option value="En Sala">En Sala</option>
           <option value="En Estudio">En Estudio</option>
           <option value="Pausado">Pausado</option>
@@ -1916,7 +1921,10 @@
               <span class="estudio-progreso-dot"></span>
               En estudio
             </div>
-            <div class="estudio-progreso-pct"><span id="estudioProgreso">0</span>%</div>
+            <div class="estudio-progreso-pct">
+              <span class="estudio-progreso-restante" id="estudioTiempoRestante">--</span>
+              <span><span id="estudioProgreso">0</span>%</span>
+            </div>
           </div>
           <div class="estudio-progreso-barra-wrap">
             <div id="estudioBarraLlena" class="estudio-progreso-barra" style="width:0%"></div>
@@ -1950,10 +1958,6 @@
 
       <!-- FOOTER -->
       <div class="cita-modal-footer">
-        <button id="btnEliminarCita" class="btn-danger cita-modal-action-btn" style="display:none">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
-          Eliminar
-        </button>
         <div style="display:flex;gap:10px">
           <button id="btnCancelarModal" class="btn-secondary" onclick="document.getElementById('modalDetallesCitaElectro').classList.add('hidden')">Cerrar</button>
           <button id="btnGuardarCambios" class="btn-primary cita-modal-action-btn">

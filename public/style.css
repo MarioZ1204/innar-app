@@ -1814,8 +1814,68 @@ button.remove { padding:5px 10px; font-size:.8rem; width:100%; }
 .flujo-btn-sm.no-asistio:hover { background:#f3f4f6; border-color:#9ca3af; }
 .flujo-btn-sm.cancelar { border-color:#fca5a5; color:#dc2626; }
 .flujo-btn-sm.cancelar:hover { background:#fee2e2; }
+.flujo-btn-sm.confirmado {
+  border-color:#93c5fd;
+  color:#1d4ed8;
+  background:#eff6ff;
+}
+.flujo-btn-sm.confirmado:hover {
+  background:#dbeafe;
+  border-color:#60a5fa;
+}
+.flujo-btn-sm.en-sala {
+  border-color:#67e8f9;
+  color:#0e7490;
+  background:#ecfeff;
+}
+.flujo-btn-sm.en-sala:hover {
+  background:#cffafe;
+  border-color:#22d3ee;
+}
+.flujo-btn-sm.iniciar {
+  border-color:#fdba74;
+  color:#c2410c;
+  background:#fff7ed;
+}
+.flujo-btn-sm.iniciar:hover {
+  background:#ffedd5;
+  border-color:#fb923c;
+}
 .flujo-estado-readonly {
   padding:8px 0 2px; font-size:0.82rem; color:#9ca3af; font-style:italic;
+}
+.estudio-progreso-card {
+  border: 1px solid #fed7aa;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #fffaf5 0%, #fff 100%);
+  box-shadow: 0 8px 20px rgba(249, 115, 22, 0.12);
+}
+.estudio-progreso-pct {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 700;
+}
+.estudio-progreso-restante {
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: #9a3412;
+  background: #ffedd5;
+  border: 1px solid #fdba74;
+  border-radius: 999px;
+  padding: 3px 8px;
+}
+.estudio-progreso-barra-wrap {
+  background: #ffedd5;
+  border-radius: 999px;
+  overflow: hidden;
+}
+.estudio-progreso-barra {
+  height: 8px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #f97316 0%, #fb923c 55%, #fdba74 100%);
+  box-shadow: 0 0 12px rgba(249, 115, 22, 0.35);
+  transition: width 0.45s ease;
 }
 
 /* ===== MÓDULO RECIBOS — REDISEÑO CONTABLE ===== */

@@ -61,6 +61,7 @@ let filtroEstudioElectro = 'todas'; // Filtro de estudio en tabla de citas
 let filtroEquipoSeleccionado = null; // Filtro de equipo en tabla de citas
 let intervaloProgreso = null; // Intervalo para actualizar barra de progreso del estudio
 let intervaloProgresoPanel = null; // Intervalo para mini-barras en panel de equipos
+let intervaloAutoSyncElectro = null; // Intervalo para refresco/sincronización automática
 
 // Mapeo de especialidades a tipos de consulta
 const ESPECIALIDAD_TIPOS_CONSULTA = {
@@ -784,6 +785,7 @@ function abreviarEstudio(nombre) {
 function estadoBadge(estado) {
   const map = {
     'Programado':   { bg: '#dbeafe', color: '#1d4ed8', border: '#93c5fd' },
+    'Confirmado':   { bg: '#e0f2fe', color: '#0c4a6e', border: '#7dd3fc' },
     'En Sala':      { bg: '#fef9c3', color: '#92400e', border: '#fde047' },
     'En Estudio':   { bg: '#ffedd5', color: '#c2410c', border: '#fdba74' },
     'Completado':   { bg: '#dcfce7', color: '#15803d', border: '#86efac' },
@@ -5316,6 +5318,16 @@ async function initElectro() {
 
   await cargarCitasElectro();
 
+  if (intervaloAutoSyncElectro) {
+    clearInterval(intervaloAutoSyncElectro);
+    intervaloAutoSyncElectro = null;
+  }
+  intervaloAutoSyncElectro = setInterval(() => {
+    const vistaElectro = document.querySelector('#view-electro');
+    if (!vistaElectro || !vistaElectro.classList.contains('active')) return;
+    cargarCitasElectro();
+  }, 30000);
+
   // ── Sidebar navegación por páginas ──────────────────────────────────────
   document.querySelectorAll('#view-electro .electro-page-btn').forEach(btn => {
     btn.addEventListener('click', function() {
@@ -5570,6 +5582,64 @@ $('electroDiagnostico').addEventListener('input', function() {
   }
 });
 
+function calcularFechaFinEstudio(cita) {
+  if (!cita || cita.estado !== 'En Estudio' || !cita.hora_inicio || !cita.hora_fin) return null;
+  const fechaRaw = cita.fecha || new Date().toISOString().slice(0, 10);
+  const fechaBase = typeof fechaRaw === 'string' && fechaRaw.length > 10 ? fechaRaw.slice(0, 10) : String(fechaRaw);
+  const [hiH, hiM] = cita.hora_inicio.split(':').map(Number);
+  const dateInicio = new Date(`${fechaBase}T${String(hiH).padStart(2, '0')}:${String(hiM).padStart(2, '0')}:00`);
+
+  const horaFinDateRaw = cita.hora_fin_date;
+  const fechaFin = horaFinDateRaw
+    ? (typeof horaFinDateRaw === 'string' && horaFinDateRaw.length > 10 ? horaFinDateRaw.slice(0, 10) : String(horaFinDateRaw))
+    : null;
+  const [hfH, hfM] = cita.hora_fin.split(':').map(Number);
+
+  if (fechaFin && fechaFin !== fechaBase) {
+    return new Date(`${fechaFin}T${String(hfH).padStart(2, '0')}:${String(hfM).padStart(2, '0')}:00`);
+  }
+  if (cita.duracion_minutos && cita.duracion_minutos > 0) {
+    return new Date(dateInicio.getTime() + cita.duracion_minutos * 60000);
+  }
+  const dateFin = new Date(`${fechaBase}T${String(hfH).padStart(2, '0')}:${String(hfM).padStart(2, '0')}:00`);
+  if (dateFin <= dateInicio) dateFin.setDate(dateFin.getDate() + 1);
+  return dateFin;
+}
+
+async function sincronizarEstadosPorTiempo(citas = []) {
+  if (!Array.isArray(citas) || citas.length === 0) return citas;
+
+  const ahora = new Date();
+  const hh = String(ahora.getHours()).padStart(2, '0');
+  const mm = String(ahora.getMinutes()).padStart(2, '0');
+  const horaActual = `${hh}:${mm}`;
+  const vencidas = citas.filter((c) => c?.estado === 'En Estudio' && calcularFechaFinEstudio(c) && ahora >= calcularFechaFinEstudio(c));
+  if (!vencidas.length) return citas;
+
+  const actualizadas = [...citas];
+  for (const cita of vencidas) {
+    try {
+      const res = await apiFetch(`/api/citas-electro/${cita.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ estado: 'Completado', hora_fin: horaActual })
+      });
+      const data = await res.json();
+      if (!data?.ok) continue;
+
+      const idx = actualizadas.findIndex((x) => x.id === cita.id);
+      if (idx >= 0) actualizadas[idx] = { ...actualizadas[idx], estado: 'Completado', hora_fin: horaActual };
+
+      if (window.socket && window.socket.connected) {
+        window.socket.emit('electro:estudio-finalizado', { id: cita.id, hora_fin: horaActual });
+      }
+    } catch (e) {
+      console.error('[AUTO_SYNC_ELECTRO] Error actualizando estado por tiempo:', e);
+    }
+  }
+  return actualizadas;
+}
+
 async function cargarCitasElectro() {
   if (_cargandoCitasElectro) {
     _pendienteCitasElectro = true;
@@ -5586,11 +5656,12 @@ async function cargarCitasElectro() {
   try {
     const res = await apiFetch(`/api/citas-electro?fecha=${fecha}`);
     const citas = await res.json();
+    const citasNormalizadas = await sincronizarEstadosPorTiempo(citas);
     
     // Filtrar por estudio si es necesario
-    let citasFiltradas = citas;
+    let citasFiltradas = citasNormalizadas;
     if (filtroEstudioElectro !== 'todas') {
-      citasFiltradas = citas.filter(c => c.estudio === filtroEstudioElectro);
+      citasFiltradas = citasNormalizadas.filter(c => c.estudio === filtroEstudioElectro);
     }
     
     if (citasFiltradas.length === 0) {
@@ -5601,12 +5672,12 @@ async function cargarCitasElectro() {
       if (contador) contador.textContent = '';
       $('electroUsuarioProgramo').textContent = '-';
       $('electroUsuarioEdito').textContent = '-';
-      actualizarStatsElectro(citas);
+      actualizarStatsElectro(citasNormalizadas);
       return;
     }
 
     // Actualizar stats cards (siempre con TODAS las citas, no filtradas)
-    actualizarStatsElectro(citas);
+    actualizarStatsElectro(citasNormalizadas);
 
     // Actualizar contador de citas
     const contador = $('citasElectroContador');
@@ -5651,7 +5722,7 @@ function actualizarStatsElectro(citas) {
   const total = citas.length;
   const enEstudio = citas.filter(c => c.estado === 'En Estudio' || c.estado === 'Pausado').length;
   const completados = citas.filter(c => c.estado === 'Completado').length;
-  const pendientes = citas.filter(c => c.estado === 'Programado' || c.estado === 'En Sala' || c.estado === 'Reprogramado' || c.estado === 'Adelantado').length;
+  const pendientes = citas.filter(c => c.estado === 'Programado' || c.estado === 'Confirmado' || c.estado === 'En Sala' || c.estado === 'Reprogramado' || c.estado === 'Adelantado').length;
   
   const elTotal = $('statTotalCitas');
   const elEstudio = $('statEnEstudio');
@@ -8911,6 +8982,8 @@ function actualizarProgresoEstudio() {
   }
   const horaInicioEl = $('estudioHoraInicio');
   if (horaInicioEl) horaInicioEl.textContent = formatearHora(horaInicio);
+  const restanteEl = $('estudioTiempoRestante');
+  if (restanteEl) restanteEl.textContent = durLabel ? `Duración ${durLabel}` : '--';
   
   let _lastSocketEmit = 0;
   
@@ -8955,10 +9028,12 @@ function actualizarProgresoEstudio() {
     const barraLlena = $('estudioBarraLlena');
     const progreso = $('estudioProgreso');
     const tiempoTranscurrido = $('estudioTiempoTranscurrido');
+    const tiempoRestante = $('estudioTiempoRestante');
     
     if (barraLlena) barraLlena.style.width = porcentaje + '%';
     if (progreso) progreso.textContent = Math.round(porcentaje);
     if (tiempoTranscurrido) tiempoTranscurrido.textContent = `${tiempoFormato} · Faltan: ${restoFormato}`;
+    if (tiempoRestante) tiempoRestante.textContent = `Faltan ${restoFormato}`;
     
     // Emitir socket cada 15s
     const nowMs = Date.now();
@@ -9317,20 +9392,18 @@ function abrirModalDetallesCita(cita) {
   // Renderizar flujo contextual de estado
   renderFlujoEstado(cita);
   
-  // Mostrar botón de eliminar para admin/superadmin y admin_electro (excepto estudios completados)
+  // Eliminar se maneja desde menú de 3 puntos
   const btnEliminar = $('btnEliminarCita');
+  if (btnEliminar) btnEliminar.style.display = 'none';
+  const btnEliminarMenu = $('btnEliminarCitaMenu');
   const esCompletado = cita.estado === 'Completado';
   if (currentUser) {
     const rol = currentUser.rol;
     const esAdminGlobal = rol === 'admin' || rol === 'administrador' || rol === 'superadmin';
     const esAdminElectro = rol === 'admin_electro';
-    if (esAdminGlobal || (esAdminElectro && !esCompletado)) {
-      btnEliminar.style.display = '';
-    } else {
-      btnEliminar.style.display = 'none';
-    }
+    if (btnEliminarMenu) btnEliminarMenu.style.display = (esAdminGlobal || (esAdminElectro && !esCompletado)) ? 'flex' : 'none';
   } else {
-    btnEliminar.style.display = 'none';
+    if (btnEliminarMenu) btnEliminarMenu.style.display = 'none';
   }
   
   // Agregar listeners para los botones de reprogramación y adelanto
@@ -9356,6 +9429,7 @@ function abrirModalDetallesCita(cita) {
   const btnRepProgramarMenu = $('btnReprogramarCitaMenu');
   const btnAdelantarMenu = $('btnAdelantarCitaMenu');
   const btnRecomendacionesMenu = $('btnEnviarRecomendacionesMenu');
+  const btnEliminarMenuAction = $('btnEliminarCitaMenu');
   
   if (btnMasOpciones) {
     btnMasOpciones.onclick = (e) => {
@@ -9401,6 +9475,20 @@ function abrirModalDetallesCita(cita) {
       enviarRecomendacionesWhatsApp(citaElectroSeleccionada);
     };
   }
+
+  if (btnEliminarMenuAction) {
+    btnEliminarMenuAction.onclick = () => {
+      menuMasOpciones.style.display = 'none';
+      if (!citaElectroSeleccionada) return;
+      const nombre = (citaElectroSeleccionada.paciente_nombre || '').trim() || 'este paciente';
+      $('modalEliminarNombrePaciente').textContent = nombre;
+      const m = $('modalConfirmarEliminarCita');
+      if (m) {
+        m.classList.remove('hidden');
+        m.style.display = 'flex';
+      }
+    };
+  }
   
   // Bloquear menú si el estado es "En Estudio"
   if (cita.estado === 'En Estudio') {
@@ -9425,6 +9513,8 @@ function abrirModalDetallesCita(cita) {
       $('estudioHoraInicio').textContent = cita.hora_inicio;
       $('estudioHoraFin').textContent = cita.hora_fin;
       $('estudioProgreso').textContent = '0';
+      const restanteEl = $('estudioTiempoRestante');
+      if (restanteEl) restanteEl.textContent = '--';
       $('estudioBarraLlena').style.width = '0%';
     }
     // Iniciar actualización de progreso
@@ -9477,7 +9567,6 @@ function renderFlujoEstado(cita) {
   const estadoEfectivo = esReprogramadoAdelantado ? 'Programado' : estado;
 
   if (estadoEfectivo === 'Programado') {
-    // Equipo bloqueado hasta que llegue el paciente
     if (equipoSelect) { equipoSelect.disabled = true; equipoSelect.style.opacity = '0.45'; equipoSelect.style.cursor = 'not-allowed'; }
     const notaReprog = esReprogramadoAdelantado
       ? `<div style="font-size:0.8rem;color:#6b7280;margin-bottom:8px;padding:6px 10px;background:#f0f9ff;border-radius:6px;border-left:3px solid #3b82f6">
@@ -9488,17 +9577,26 @@ function renderFlujoEstado(cita) {
       <div class="flujo-estado-panel">
         ${notaReprog}
         <div class="flujo-estado-label">Acci\u00f3n</div>
-        <button class="flujo-btn-primary llegada" id="flujo-btn-llego">
-          ${svgCheck} Paciente lleg\u00f3 &rarr; En Sala
-        </button>
         <div class="flujo-btn-secondary-row">
-          <button class="flujo-btn-sm no-asistio" id="flujo-btn-noasistio">No asisti\u00f3</button>
+          <button class="flujo-btn-sm confirmado" id="flujo-btn-confirmado">${svgCheck} Confirmado</button>
           <button class="flujo-btn-sm cancelar" id="flujo-btn-cancelar">Cancelar cita</button>
         </div>
       </div>`;
-    document.getElementById('flujo-btn-llego').onclick    = () => cambiarEstadoCita('En Sala');
-    document.getElementById('flujo-btn-noasistio').onclick = () => cambiarEstadoCita('No Asisti\u00f3');
-    document.getElementById('flujo-btn-cancelar').onclick  = () => cambiarEstadoCita('Cancelado');
+    document.getElementById('flujo-btn-confirmado').onclick = () => cambiarEstadoCita('Confirmado');
+    document.getElementById('flujo-btn-cancelar').onclick = () => cambiarEstadoCita('Cancelado');
+
+  } else if (estado === 'Confirmado') {
+    if (equipoSelect) { equipoSelect.disabled = true; equipoSelect.style.opacity = '0.45'; equipoSelect.style.cursor = 'not-allowed'; }
+    flujoEl.innerHTML = `
+      <div class="flujo-estado-panel">
+        <div class="flujo-estado-label">Acci\u00f3n</div>
+        <div class="flujo-btn-secondary-row">
+          <button class="flujo-btn-sm en-sala" id="flujo-btn-ensala">${svgCheck} En Sala</button>
+          <button class="flujo-btn-sm no-asistio" id="flujo-btn-noasistio">No asisti\u00f3</button>
+        </div>
+      </div>`;
+    document.getElementById('flujo-btn-ensala').onclick = () => cambiarEstadoCita('En Sala');
+    document.getElementById('flujo-btn-noasistio').onclick = () => cambiarEstadoCita('No Asistió');
 
   } else if (estado === 'En Sala') {
     // Equipo habilitado
@@ -9506,17 +9604,13 @@ function renderFlujoEstado(cita) {
     flujoEl.innerHTML = `
       <div class="flujo-estado-panel">
         <div class="flujo-estado-label">Acci\u00f3n</div>
-        <button class="flujo-btn-primary" id="flujo-btn-iniciar" style="background:linear-gradient(135deg,#f97316,#ea580c);color:white;">
-          ${svgPlay} Iniciar Estudio
-        </button>
         <div class="flujo-btn-secondary-row">
+          <button class="flujo-btn-sm iniciar" id="flujo-btn-iniciar">${svgPlay} Iniciar estudio</button>
           <button class="flujo-btn-sm no-asistio" id="flujo-btn-noasistio2">No asisti\u00f3</button>
-          <button class="flujo-btn-sm cancelar" id="flujo-btn-cancelar2">Cancelar cita</button>
         </div>
       </div>`;
-    document.getElementById('flujo-btn-iniciar').onclick    = () => iniciarEstudioModal();
-    document.getElementById('flujo-btn-noasistio2').onclick  = () => cambiarEstadoCita('No Asisti\u00f3');
-    document.getElementById('flujo-btn-cancelar2').onclick   = () => cambiarEstadoCita('Cancelado');
+    document.getElementById('flujo-btn-iniciar').onclick = () => iniciarEstudioModal();
+    document.getElementById('flujo-btn-noasistio2').onclick = () => cambiarEstadoCita('No Asistió');
 
   } else if (estado === 'En Estudio') {
     flujoEl.innerHTML = `
@@ -9538,11 +9632,13 @@ function renderFlujoEstado(cita) {
     flujoEl.innerHTML = `
       <div class="flujo-estado-panel">
         <div class="flujo-estado-label">Estudio Pausado</div>
-        <button class="flujo-btn-primary" id="flujo-btn-reanudar" style="background:linear-gradient(135deg,#f97316,#ea580c);color:white;">
-          &#9654; Reanudar Estudio
-        </button>
+        <div class="flujo-btn-secondary-row">
+          <button class="flujo-btn-sm iniciar" id="flujo-btn-reanudar">&#9654; Reanudar Estudio</button>
+          <button class="flujo-btn-sm cancelar" id="flujo-btn-finalizar-pausado">Finalizar estudio</button>
+        </div>
       </div>`;
     document.getElementById('flujo-btn-reanudar').onclick = () => cambiarEstadoCita('En Estudio');
+    document.getElementById('flujo-btn-finalizar-pausado').onclick = () => finalizarEstudioModal();
 
   } else {
     // Completado / Cancelado / No Asisti\u00f3
