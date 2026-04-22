@@ -1172,36 +1172,51 @@
 
           <!-- ===== PÁGINA: PERMISOS (solo superadmin) ===== -->
           <div class="usuarios-page" data-usuarios-page="permisos">
-            <header><h2>Control de Permisos</h2></header>
-            <div style="display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap">
-              <!-- Panel izquierdo: selector de usuario -->
-              <section class="card" style="min-width:280px;flex:0 0 280px">
-                <h3 style="margin-bottom:12px">Seleccionar Usuario</h3>
-                <select id="permisosUserList" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:0.9rem;background:#fff;cursor:pointer">
+            <header class="permisos-page-header">
+              <h2>Control de permisos</h2>
+              <p class="permisos-page-lead">Solo se listan los usuarios que no son superadmin. Los permisos personalizados reemplazan el listado del rol; «Restablecer al rol» vuelve a los predeterminados del rol en el sistema.</p>
+            </header>
+            <div class="permisos-page-layout">
+              <section class="card permisos-panel-usuario">
+                <h3 class="permisos-panel-title">Usuario</h3>
+                <label for="permisosUserSearch" class="sr-only">Buscar usuario</label>
+                <input type="search" id="permisosUserSearch" class="permisos-search-input" placeholder="Buscar por nombre, usuario o rol…" autocomplete="off" />
+                <label for="permisosUserList" class="sr-only">Seleccionar usuario</label>
+                <select id="permisosUserList" class="permisos-user-select" size="8">
                   <option value="">— Seleccionar usuario —</option>
                 </select>
               </section>
-              <!-- Panel derecho: permisos del usuario seleccionado -->
-              <section class="card" id="permisosEditorSection" style="flex:1;min-width:300px;display:none">
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;flex-wrap:wrap;gap:8px">
-                  <div>
-                    <h3 style="margin:0" id="permisosEditorTitle">Selecciona un usuario</h3>
-                    <p style="margin:2px 0 0 0;font-size:0.82rem;color:#6b7280" id="permisosEditorRol"></p>
+              <div class="permisos-right">
+                <section class="card permisos-panel-editor" id="permisosEditorSection" style="display:none">
+                  <div class="permisos-editor-toolbar">
+                    <div>
+                      <h3 class="permisos-editor-name" id="permisosEditorTitle">Usuario</h3>
+                      <p class="permisos-editor-rol" id="permisosEditorRol"></p>
+                      <p class="permisos-stats" id="permisosStatsLine" aria-live="polite">—</p>
+                    </div>
+                    <div class="permisos-editor-actions">
+                      <button type="button" id="btnPermisosRestablecer" class="btn-secondary btn-sm" title="Eliminar personalización y usar solo el rol">Restablecer al rol</button>
+                      <button type="button" id="btnPermisosGuardar" class="btn-primary btn-sm">Guardar cambios</button>
+                    </div>
                   </div>
-                  <div style="display:flex;gap:8px;flex-wrap:wrap">
-                    <button id="btnPermisosRestablecer" class="btn-secondary btn-sm" title="Usar permisos predeterminados del rol">↺ Restablecer al rol</button>
-                    <button id="btnPermisosGuardar" class="btn-primary btn-sm">Guardar cambios</button>
+                  <div class="permisos-hint" role="note">
+                    <strong>Referencia visual:</strong> <span class="permisos-badge-rol" aria-hidden="true">rol</span> indica un permiso que suele venir con el <em>rol</em> (predeterminado). Al <strong>Guardar</strong>, solo permanecerán activos los permisos que dejes marcados.
                   </div>
-                </div>
-                <p style="font-size:0.8rem;color:#6b7280;margin-bottom:14px;padding:8px;background:#f9fafb;border-radius:6px;border:1px solid #e5e7eb">
-                  <strong>🔒 Permisos activos:</strong> marcados con ✓. Los marcados con <span style="color:#6366f1;font-weight:600">◈ rol</span> son los predeterminados del rol. Si restableces al rol, se eliminan los permisos personalizados.
-                </p>
-                <div id="permisosChecklistContainer"></div>
-              </section>
-              <div id="permisosNoSeleccion" style="flex:1;display:flex;align-items:center;justify-content:center;min-height:200px;color:#9ca3af">
-                <div style="text-align:center">
-                  <div style="font-size:2.5rem;margin-bottom:8px">🔐</div>
-                  <div style="font-size:0.95rem">Selecciona un usuario para gestionar sus permisos</div>
+                  <div class="permisos-filtro-barra">
+                    <label for="permisosDefSearch" class="sr-only">Filtrar permisos</label>
+                    <input type="search" id="permisosDefSearch" class="permisos-search-input" placeholder="Buscar permiso (ej. recibos, agenda)…" autocomplete="off" />
+                  </div>
+                  <div id="permisosChecklistContainer" class="permisos-checklist-root"></div>
+                  <p id="permisosFiltroSinResultados" class="permisos-sin-coincidencias" role="status" style="display:none">No hay permisos que coincidan con el filtro.</p>
+                </section>
+                <div id="permisosNoSeleccion" class="card permisos-empty-state">
+                  <div class="permisos-empty-inner">
+                    <div class="permisos-empty-icon" aria-hidden="true">
+                      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                    </div>
+                    <p class="permisos-empty-title">Ningún usuario seleccionado</p>
+                    <p class="permisos-empty-text">Escribe en el buscador o elige a alguien de la lista para ver y editar permisos.</p>
+                  </div>
                 </div>
               </div>
             </div>

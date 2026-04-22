@@ -1041,9 +1041,13 @@ app.put('/api/usuarios/:id/permisos', requireAuth, requireRoleOrPerm(['superadmi
   if (isNaN(id)) return res.status(400).json({ error: 'ID inválido' });
   const { permisos } = req.body;
   if (permisos !== null && !Array.isArray(permisos)) return res.status(400).json({ error: 'permisos debe ser array o null' });
-  // Validar que los permisos sean strings
-  if (Array.isArray(permisos) && permisos.some(p => typeof p !== 'string')) {
-    return res.status(400).json({ error: 'permisos debe contener solo cadenas de texto' });
+  if (Array.isArray(permisos)) {
+    for (const p of permisos) {
+      if (typeof p !== 'string') return res.status(400).json({ error: 'permisos debe contener solo cadenas de texto' });
+      if (p.length < 2 || p.length > 80 || !/^[a-z0-9._]+$/i.test(p)) {
+        return res.status(400).json({ error: 'Formato de clave de permiso no válido' });
+      }
+    }
   }
   try {
     const rows = await db.query('SELECT rol FROM usuarios WHERE id = ?', [id]);

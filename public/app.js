@@ -2595,7 +2595,7 @@ async function actualizarHorasDisponibles() {
     }
 
     const lineas = [];
-    if (disponibleManana) lineas.push('Mañana: 7:00 AM – 12:00 PM');
+    if (disponibleManana) lineas.push('Mañana: 8:00 AM – 12:00 PM');
     if (disponibleTarde) lineas.push('Tarde: 2:00 PM – 6:00 PM');
     if (!disponibleManana) lineas.push('⚠️ No estará disponible en el horario de la mañana');
     if (!disponibleTarde) lineas.push('⚠️ No estará disponible en el horario de la tarde');
@@ -2719,9 +2719,12 @@ function openCalModal(dateStr) {
   // Load existing data
   const disp = calDisponibilidad[dateStr];
   const daySlots = calSlots.filter(s => (s.fecha || '').slice(0, 10) === dateStr && s.disponible);
-  const isFullDayConfigured = daySlots.length === 1
-    && (daySlots[0].hora_inicio || '').slice(0, 5) === '07:00'
-    && (daySlots[0].hora_fin || '').slice(0, 5) === '18:00';
+  const normalizedSlots = daySlots
+    .map(s => `${(s.hora_inicio || '').slice(0, 5)}-${(s.hora_fin || '').slice(0, 5)}`)
+    .sort();
+  const isFullDayConfigured = normalizedSlots.length === 2
+    && normalizedSlots[0] === '08:00-12:00'
+    && normalizedSlots[1] === '14:00-18:00';
 
   const horasList = $('calModalHorasList');
   if (horasList) horasList.innerHTML = '';
@@ -2731,11 +2734,11 @@ function openCalModal(dateStr) {
   } else {
     setCalToggle(true, isFullDayConfigured);
     if (isFullDayConfigured) {
-      // "Todo el día" se guarda como un único slot 07:00-18:00.
+      // "Todo el día" se guarda como dos slots: 08:00-12:00 y 14:00-18:00.
     } else if (daySlots.length > 0) {
       daySlots.forEach(s => addCalHoraRow(s.hora_inicio?.slice(0, 5), s.hora_fin?.slice(0, 5)));
     } else if (disp) {
-      if (disp.disponible_manana) addCalHoraRow('07:00', '12:00');
+      if (disp.disponible_manana) addCalHoraRow('08:00', '12:00');
       if (disp.disponible_tarde) addCalHoraRow('14:00', '18:00');
       if (!disp.disponible_manana && !disp.disponible_tarde) addCalHoraRow('', '');
     } else {
@@ -2885,7 +2888,8 @@ async function saveCalDay() {
 
   if (disponible) {
     if (calModoTodoDia) {
-      slots.push({ fecha: calSelectedDate, hora_inicio: '07:00', hora_fin: '18:00', disponible: 1 });
+      slots.push({ fecha: calSelectedDate, hora_inicio: '08:00', hora_fin: '12:00', disponible: 1 });
+      slots.push({ fecha: calSelectedDate, hora_inicio: '14:00', hora_fin: '18:00', disponible: 1 });
       hasManana = true;
       hasTarde = true;
     } else {
@@ -2993,9 +2997,12 @@ function renderCalResumen() {
     } else if (disp || daySlots.length > 0) {
       estadoHtml = '<span class="cal-resumen-estado" style="background:#dcfce7;color:#166534">Disponible</span>';
       if (daySlots.length > 0) {
-        const isFullDayConfigured = daySlots.length === 1
-          && (daySlots[0].hora_inicio || '').slice(0, 5) === '07:00'
-          && (daySlots[0].hora_fin || '').slice(0, 5) === '18:00';
+        const normalizedSlots = daySlots
+          .map(s => `${(s.hora_inicio || '').slice(0, 5)}-${(s.hora_fin || '').slice(0, 5)}`)
+          .sort();
+        const isFullDayConfigured = normalizedSlots.length === 2
+          && normalizedSlots[0] === '08:00-12:00'
+          && normalizedSlots[1] === '14:00-18:00';
         if (isFullDayConfigured) {
           horasHtml = '<span class="cal-resumen-horas">Todo el día</span>';
         } else {
@@ -3434,7 +3441,7 @@ async function cargarTurnosMedica() {
 
     // Construir rangos disponibles basados en la agenda del doctor
     const rangosDisponibles = [];
-    if (dispManana) rangosDisponibles.push({ inicio: 7 * 60, fin: 12 * 60 }); // 7:00 - 12:00
+    if (dispManana) rangosDisponibles.push({ inicio: 8 * 60, fin: 12 * 60 }); // 8:00 - 12:00
     if (dispTarde)  rangosDisponibles.push({ inicio: 14 * 60, fin: 18 * 60 }); // 14:00 - 18:00
 
     // Función para verificar si un minuto está dentro de los rangos disponibles
@@ -6206,19 +6213,105 @@ const PERMISOS_ROL_DEFAULTS = {
 };
 
 let _permisosUsuarioSeleccionado = null; // { id, usuario, nombre, rol, permisos }
+let _permisosUsuariosCache = [];
+
+function _bindPermisosPageUIOnce() {
+  if (window._permisosPageUIBound) return;
+  window._permisosPageUIBound = true;
+  const uSearch = document.getElementById('permisosUserSearch');
+  const pSearch = document.getElementById('permisosDefSearch');
+  const list = document.getElementById('permisosUserList');
+  uSearch?.addEventListener('input', _permisosFiltrarListaUsuarios);
+  pSearch?.addEventListener('input', _permisosAplicarFiltroDefiniciones);
+  list?.addEventListener('change', (e) => {
+    const v = (e.target && e.target.value) || '';
+    if (!v) { _permisosCerrarEditor(); return; }
+    const id = parseInt(v, 10);
+    if (id) _seleccionarUsuarioPermisos(id);
+  });
+  document.getElementById('permisosChecklistContainer')?.addEventListener('change', (e) => {
+    const t = e.target;
+    if (t && t.matches && t.matches('input[data-key]')) _permisosRefreshStats();
+  });
+}
+
+function _permisosCerrarEditor() {
+  _permisosUsuarioSeleccionado = null;
+  const editor = document.getElementById('permisosEditorSection');
+  const noSel = document.getElementById('permisosNoSeleccion');
+  if (editor) editor.style.display = 'none';
+  if (noSel) noSel.style.display = 'flex';
+}
+
+function _permisosFiltrarListaUsuarios() {
+  const q = (document.getElementById('permisosUserSearch')?.value || '').trim().toLowerCase();
+  const select = document.getElementById('permisosUserList');
+  if (!select) return;
+  for (const opt of select.options) {
+    if (!opt.value) { opt.hidden = false; opt.disabled = false; continue; }
+    const t = (opt.textContent || '').toLowerCase();
+    const u = (opt.getAttribute('data-user-text') || t);
+    const match = !q || u.includes(q) || (opt.value && String(opt.value).includes(q));
+    opt.hidden = !match;
+  }
+}
+
+function _permisosAplicarFiltroDefiniciones() {
+  const q = (document.getElementById('permisosDefSearch')?.value || '').trim().toLowerCase();
+  const groups = document.querySelectorAll('#permisosChecklistContainer .permisos-group');
+  groups.forEach((det) => {
+    const rows = det.querySelectorAll('.permisos-row');
+    let shown = 0;
+    rows.forEach((row) => {
+      const hay = !q || (row.dataset.search || '').includes(q);
+      row.classList.toggle('permisos-row--hidden', !hay);
+      if (hay) shown++;
+    });
+    const hideGroup = q.length > 0 && shown === 0;
+    det.classList.toggle('permisos-group--empty-filter', hideGroup);
+  });
+  const noMatch = document.getElementById('permisosFiltroSinResultados');
+  if (noMatch) {
+    const any = [...document.querySelectorAll('#permisosChecklistContainer .permisos-group')].some(d => !d.classList.contains('permisos-group--empty-filter'));
+    noMatch.style.display = q && !any ? 'block' : 'none';
+  }
+}
+
+function _permisosRefreshStats() {
+  const line = document.getElementById('permisosStatsLine');
+  if (!line) return;
+  const chks = document.querySelectorAll('#permisosChecklistContainer input[type=checkbox][data-key]');
+  if (!chks.length) { line.textContent = '—'; return; }
+  const tot = chks.length;
+  const c = document.querySelectorAll('#permisosChecklistContainer input[type=checkbox][data-key]:checked').length;
+  line.textContent = `${c} de ${tot} permisos activos`;
+  document.querySelectorAll('#permisosChecklistContainer .permisos-group').forEach((det) => {
+    const inDet = det.querySelectorAll('input[type=checkbox][data-key]');
+    const cG = [...inDet].filter(x => x.checked).length;
+    const tG = inDet.length;
+    const el = det.querySelector('.permisos-group-count');
+    if (el) el.textContent = `${cG}/${tG}`;
+    const gchk = det.querySelector('.permisos-chk-group');
+    if (gchk && tG) {
+      gchk.checked = cG === tG;
+      gchk.indeterminate = cG > 0 && cG < tG;
+    }
+  });
+}
 
 async function initPermisosPage() {
   // Mostrar tab solo a superadmin
   const btnTab = document.getElementById('btnSidebarPermisos');
   if (btnTab && currentUser?.rol === 'superadmin') btnTab.style.display = '';
 
-  await _cargarPermisosUserList();
+  _bindPermisosPageUIOnce();
 
   const btnGuardar = document.getElementById('btnPermisosGuardar');
   const btnRestablecer = document.getElementById('btnPermisosRestablecer');
-
   if (btnGuardar) btnGuardar.onclick = _guardarPermisos;
   if (btnRestablecer) btnRestablecer.onclick = _restablecerPermisos;
+
+  await _cargarPermisosUserList();
 
   // Socket: refrescar sesión del usuario actual si le cambiaron permisos
   if (window.socket && !window._socketPermisosListener) {
@@ -6234,27 +6327,29 @@ async function initPermisosPage() {
 async function _cargarPermisosUserList() {
   const container = document.getElementById('permisosUserList');
   if (!container) return;
-  container.innerHTML = '<option value="" disabled selected>Cargando...</option>';
+  container.innerHTML = '<option value="" disabled selected>Cargando…</option>';
   try {
     const res = await apiFetch('/api/usuarios');
     const usuarios = await res.json();
+    _permisosUsuariosCache = usuarios.filter(u => u.rol !== 'superadmin');
+    container.removeAttribute('size');
     container.innerHTML = '<option value="">— Seleccionar usuario —</option>';
-    usuarios
-      .filter(u => u.rol !== 'superadmin')
-      .forEach(u => {
-        const opt = document.createElement('option');
-        opt.value = u.id;
-        const badge = u.permisos ? ' ✦ personalizado' : '';
-        opt.textContent = `${u.nombre || u.usuario} — ${_rolLabel(u.rol)}${badge}`;
-        if (_permisosUsuarioSeleccionado?.id === u.id) opt.selected = true;
-        container.appendChild(opt);
-      });
-    // Listener para cambio de selección
-    container.onchange = function() {
-      const val = parseInt(this.value);
-      if (val) _seleccionarUsuarioPermisos(val);
-    };
-  } catch(e) { container.innerHTML = '<option value="" disabled>Error al cargar usuarios</option>'; }
+    _permisosUsuariosCache.forEach(u => {
+      const opt = document.createElement('option');
+      opt.value = u.id;
+      const badge = u.permisos ? ' (personalizado)' : '';
+      const label = `${u.nombre || u.usuario} — ${_rolLabel(u.rol)}${badge}`;
+      opt.textContent = label;
+      opt.setAttribute('data-user-text', `${(u.nombre || '').toLowerCase()} ${(u.usuario || '').toLowerCase()} ${_rolLabel(u.rol).toLowerCase()}`);
+      if (_permisosUsuarioSeleccionado && _permisosUsuarioSeleccionado.id === u.id) opt.selected = true;
+      container.appendChild(opt);
+    });
+    if (_permisosUsuariosCache.length > 5) container.size = 8; else container.removeAttribute('size');
+    _permisosFiltrarListaUsuarios();
+  } catch (e) {
+    container.removeAttribute('size');
+    container.innerHTML = '<option value="" disabled>Error al cargar usuarios</option>';
+  }
 }
 
 function _rolLabel(rol) {
@@ -6285,15 +6380,20 @@ async function _seleccionarUsuarioPermisos(userId) {
 
     if (editor) editor.style.display = '';
     if (noSel)  noSel.style.display  = 'none';
-  } catch(e) { showToast('Error al cargar permisos de usuario', 'error'); }
+  } catch (e) {
+    showToast('Error al cargar permisos de usuario', 'error');
+    if (editor) editor.style.display = 'none';
+    if (noSel) noSel.style.display = 'flex';
+  }
 }
 
 function _renderPermisosChecklist(activos, rolDefaults) {
   const container = document.getElementById('permisosChecklistContainer');
   if (!container) return;
   container.innerHTML = '';
+  const sinRes = document.getElementById('permisosFiltroSinResultados');
+  if (sinRes) sinRes.style.display = 'none';
 
-  // Agrupar
   const grupos = {};
   PERMISOS_DEFS.forEach(p => {
     if (!grupos[p.grupo]) grupos[p.grupo] = [];
@@ -6301,50 +6401,61 @@ function _renderPermisosChecklist(activos, rolDefaults) {
   });
 
   Object.entries(grupos).forEach(([grupo, perms]) => {
-    const section = document.createElement('div');
-    section.style.cssText = 'margin-bottom:16px';
+    const det = document.createElement('details');
+    det.className = 'permisos-group';
+    det.open = true;
+    const sum = document.createElement('summary');
+    sum.className = 'permisos-group-summary';
+    const sumRow = document.createElement('div');
+    sumRow.className = 'permisos-group-summary-row';
 
-    // Encabezado de grupo con checkbox "marcar todos"
-    const header = document.createElement('div');
-    header.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:6px;padding:5px 8px;background:#f3f4f6;border-radius:6px';
     const chkAll = document.createElement('input');
     chkAll.type = 'checkbox';
-    chkAll.title = 'Marcar/desmarcar todos';
-    chkAll.style.cssText = 'width:15px;height:15px;cursor:pointer';
-    const lbl = document.createElement('span');
-    lbl.style.cssText = 'font-weight:700;font-size:0.88rem;color:#374151';
-    lbl.textContent = grupo;
-    header.appendChild(chkAll);
-    header.appendChild(lbl);
-    section.appendChild(header);
+    chkAll.className = 'permisos-chk-group';
+    chkAll.title = 'Marcar o desmarcar todo este bloque';
+    chkAll.addEventListener('click', (e) => e.stopPropagation());
+    chkAll.addEventListener('mousedown', (e) => e.stopPropagation());
 
-    // Grid de checkboxes
+    const title = document.createElement('span');
+    title.className = 'permisos-group-title';
+    title.textContent = grupo;
+    const count = document.createElement('span');
+    count.className = 'permisos-group-count';
+    count.setAttribute('aria-label', 'Activos en este bloque');
+    count.textContent = '0/0';
+
+    sumRow.appendChild(chkAll);
+    sumRow.appendChild(title);
+    sumRow.appendChild(count);
+    sum.appendChild(sumRow);
+    det.appendChild(sum);
+
     const grid = document.createElement('div');
-    grid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:4px 12px;padding:0 4px';
+    grid.className = 'permisos-group-grid';
 
     perms.forEach(p => {
       const esRolDefault = rolDefaults === null || (Array.isArray(rolDefaults) && rolDefaults.includes(p.key));
-      const estaActivo   = activos !== null ? activos.has(p.key) : esRolDefault;
+      const estaActivo = activos !== null ? activos.has(p.key) : esRolDefault;
+      const search = `${(p.key || '')} ${(p.label || '')}`.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
       const row = document.createElement('label');
-      row.style.cssText = 'display:flex;align-items:center;gap:7px;padding:5px 6px;border-radius:5px;cursor:pointer;transition:background 0.12s;font-size:0.85rem';
-      row.addEventListener('mouseenter', () => { row.style.background = '#f9fafb'; });
-      row.addEventListener('mouseleave', () => { row.style.background = 'transparent'; });
+      row.className = 'permisos-row';
+      row.dataset.search = search;
 
       const chk = document.createElement('input');
       chk.type = 'checkbox';
       chk.dataset.key = p.key;
       chk.checked = estaActivo;
-      chk.style.cssText = 'width:15px;height:15px;flex-shrink:0;cursor:pointer';
 
       const txt = document.createElement('span');
-      txt.style.color = '#374151';
+      txt.className = 'permisos-row-text';
       txt.textContent = p.label;
 
       const badge = document.createElement('span');
       if (esRolDefault) {
-        badge.style.cssText = 'font-size:0.7rem;color:#6366f1;white-space:nowrap;margin-left:auto;flex-shrink:0';
-        badge.textContent = '◈ rol';
+        badge.className = 'permisos-badge-rol';
+        badge.textContent = 'rol';
+        badge.title = 'Incluido en el resumen de permisos del rol';
       }
 
       row.appendChild(chk);
@@ -6353,21 +6464,20 @@ function _renderPermisosChecklist(activos, rolDefaults) {
       grid.appendChild(row);
     });
 
-    section.appendChild(grid);
-    container.appendChild(section);
+    det.appendChild(grid);
+    container.appendChild(det);
 
-    // Lógica del "marcar todos" del grupo
-    const chks = grid.querySelectorAll('input[type=checkbox]');
-    chkAll.checked = Array.from(chks).every(c => c.checked);
-    chkAll.indeterminate = !chkAll.checked && Array.from(chks).some(c => c.checked);
+    const chks = grid.querySelectorAll('input[type=checkbox][data-key]');
     chkAll.addEventListener('change', () => {
       chks.forEach(c => { c.checked = chkAll.checked; });
+      _permisosRefreshStats();
     });
-    chks.forEach(c => c.addEventListener('change', () => {
-      chkAll.checked = Array.from(chks).every(x => x.checked);
-      chkAll.indeterminate = !chkAll.checked && Array.from(chks).some(x => x.checked);
-    }));
   });
+
+  _permisosRefreshStats();
+  if (document.getElementById('permisosDefSearch')?.value) {
+    _permisosAplicarFiltroDefiniciones();
+  }
 }
 
 async function _guardarPermisos() {
