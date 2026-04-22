@@ -2622,6 +2622,7 @@ let calSelectedDate = null; // 'YYYY-MM-DD'
 let calDisponibilidad = {}; // { 'YYYY-MM-DD': { disponible, disponible_manana, disponible_tarde } }
 let calSlots = []; // [{ fecha, hora_inicio, hora_fin, disponible }]
 let calDoctorIdForCal = null;
+let calModoTodoDia = false;
 
 function setupAgendaCalendar() {
   calDoctorIdForCal = selectedDoctorId || currentUser?.id;
@@ -2667,6 +2668,7 @@ function setupAgendaCalendar() {
   $('calModalClose')?.addEventListener('click', closeCalModal);
   $('calDayModal')?.addEventListener('click', (e) => { if (e.target.id === 'calDayModal') closeCalModal(); });
   $('calToggleYes')?.addEventListener('click', () => setCalToggle(true));
+  $('calToggleFullDay')?.addEventListener('click', () => setCalToggle(true, true));
   $('calToggleNo')?.addEventListener('click', () => setCalToggle(false));
   $('calModalAddHora')?.addEventListener('click', () => addCalHoraRow('', ''));
   $('calModalSave')?.addEventListener('click', saveCalDay);
@@ -2680,16 +2682,21 @@ function setupAgendaCalendar() {
   loadCalendarData();
 }
 
-function setCalToggle(asistire) {
+function setCalToggle(asistire, todoDia = false) {
   const btnYes = $('calToggleYes');
+  const btnFullDay = $('calToggleFullDay');
   const btnNo = $('calToggleNo');
   const horasC = $('calModalHorasContainer');
   if (asistire) {
-    btnYes.classList.add('cal-toggle-active-yes');
+    calModoTodoDia = Boolean(todoDia);
+    btnYes.classList.toggle('cal-toggle-active-yes', !calModoTodoDia);
+    btnFullDay?.classList.toggle('cal-toggle-active-full', calModoTodoDia);
     btnNo.classList.remove('cal-toggle-active-no');
-    if (horasC) horasC.style.display = '';
+    if (horasC) horasC.style.display = calModoTodoDia ? 'none' : '';
   } else {
+    calModoTodoDia = false;
     btnYes.classList.remove('cal-toggle-active-yes');
+    btnFullDay?.classList.remove('cal-toggle-active-full');
     btnNo.classList.add('cal-toggle-active-no');
     if (horasC) horasC.style.display = 'none';
   }
@@ -2712,6 +2719,9 @@ function openCalModal(dateStr) {
   // Load existing data
   const disp = calDisponibilidad[dateStr];
   const daySlots = calSlots.filter(s => (s.fecha || '').slice(0, 10) === dateStr && s.disponible);
+  const isFullDayConfigured = daySlots.length === 1
+    && (daySlots[0].hora_inicio || '').slice(0, 5) === '07:00'
+    && (daySlots[0].hora_fin || '').slice(0, 5) === '18:00';
 
   const horasList = $('calModalHorasList');
   if (horasList) horasList.innerHTML = '';
@@ -2719,8 +2729,10 @@ function openCalModal(dateStr) {
   if (disp && !disp.disponible) {
     setCalToggle(false);
   } else {
-    setCalToggle(true);
-    if (daySlots.length > 0) {
+    setCalToggle(true, isFullDayConfigured);
+    if (isFullDayConfigured) {
+      // "Todo el día" se guarda como un único slot 07:00-18:00.
+    } else if (daySlots.length > 0) {
       daySlots.forEach(s => addCalHoraRow(s.hora_inicio?.slice(0, 5), s.hora_fin?.slice(0, 5)));
     } else if (disp) {
       if (disp.disponible_manana) addCalHoraRow('07:00', '12:00');
@@ -2872,20 +2884,26 @@ async function saveCalDay() {
   let hasManana = false, hasTarde = false;
 
   if (disponible) {
-    let valid = true;
-    horasRows.forEach(row => {
-      const hi = row.querySelector('.cal-hora-inicio')?.value;
-      const hf = row.querySelector('.cal-hora-fin')?.value;
-      if (!hi || !hf) { valid = false; return; }
-      if (hi >= hf) { valid = false; return; }
-      slots.push({ fecha: calSelectedDate, hora_inicio: hi, hora_fin: hf, disponible: 1 });
-      const h = parseInt(hi.split(':')[0], 10);
-      if (h < 12) hasManana = true;
-      if (h >= 12) hasTarde = true;
-    });
-    if (!valid || slots.length === 0) {
-      showToast('Completa todos los horarios correctamente (inicio < fin)', 'error');
-      return;
+    if (calModoTodoDia) {
+      slots.push({ fecha: calSelectedDate, hora_inicio: '07:00', hora_fin: '18:00', disponible: 1 });
+      hasManana = true;
+      hasTarde = true;
+    } else {
+      let valid = true;
+      horasRows.forEach(row => {
+        const hi = row.querySelector('.cal-hora-inicio')?.value;
+        const hf = row.querySelector('.cal-hora-fin')?.value;
+        if (!hi || !hf) { valid = false; return; }
+        if (hi >= hf) { valid = false; return; }
+        slots.push({ fecha: calSelectedDate, hora_inicio: hi, hora_fin: hf, disponible: 1 });
+        const h = parseInt(hi.split(':')[0], 10);
+        if (h < 12) hasManana = true;
+        if (h >= 12) hasTarde = true;
+      });
+      if (!valid || slots.length === 0) {
+        showToast('Completa todos los horarios correctamente (inicio < fin)', 'error');
+        return;
+      }
     }
   }
 
@@ -2975,8 +2993,15 @@ function renderCalResumen() {
     } else if (disp || daySlots.length > 0) {
       estadoHtml = '<span class="cal-resumen-estado" style="background:#dcfce7;color:#166534">Disponible</span>';
       if (daySlots.length > 0) {
-        const horas = daySlots.map(s => `${(s.hora_inicio||'').slice(0,5)}–${(s.hora_fin||'').slice(0,5)}`).join(', ');
-        horasHtml = `<span class="cal-resumen-horas">${escapeHtml(horas)}</span>`;
+        const isFullDayConfigured = daySlots.length === 1
+          && (daySlots[0].hora_inicio || '').slice(0, 5) === '07:00'
+          && (daySlots[0].hora_fin || '').slice(0, 5) === '18:00';
+        if (isFullDayConfigured) {
+          horasHtml = '<span class="cal-resumen-horas">Todo el día</span>';
+        } else {
+          const horas = daySlots.map(s => `${(s.hora_inicio || '').slice(0, 5)}–${(s.hora_fin || '').slice(0, 5)}`).join(', ');
+          horasHtml = `<span class="cal-resumen-horas">${escapeHtml(horas)}</span>`;
+        }
       } else if (disp) {
         const partes = [];
         if (disp.disponible_manana) partes.push('Mañana');
