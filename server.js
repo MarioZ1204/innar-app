@@ -3615,6 +3615,16 @@ app.patch('/api/citas-electro/:id/estado', requireAuth, requireRoleOrPerm(['supe
       SET estado = ?, editado_por_nombre = ?, editado_en = NOW()
       WHERE id = ?
     `, [estado, editadoPor, id]);
+
+    if (app.io) {
+      emitSocket('electro:cita-actualizada', {
+        id,
+        estado,
+        editado_por: editadoPor
+      });
+      emitSocket('electro:actualizar-lista', { type: 'estado', id, cambios: { estado } });
+    }
+
     res.json({ ok: true });
   } catch (e) {
     console.error(e);

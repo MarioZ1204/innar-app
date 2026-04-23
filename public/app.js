@@ -5721,9 +5721,16 @@ async function cargarCitasElectro() {
   }
   showSkeletonRows($('citasElectroBody'), 10, 6);
   try {
-    const res = await apiFetch(`/api/citas-electro?fecha=${fecha}`);
-    const citas = await res.json();
-    const citasNormalizadas = await sincronizarEstadosPorTiempo(citas);
+    const res = await apiFetch(`/api/citas-electro?fecha=${encodeURIComponent(fecha)}&_t=${Date.now()}`, {
+      cache: 'no-store'
+    });
+    const citasRaw = await res.json();
+    const citas = Array.isArray(citasRaw) ? citasRaw : [];
+    const citasNormalizadasEstado = citas.map((c) => ({
+      ...c,
+      estado: normalizarEstadoElectro(c.estado)
+    }));
+    const citasNormalizadas = await sincronizarEstadosPorTiempo(citasNormalizadasEstado);
     
     // Filtrar por estudio si es necesario
     let citasFiltradas = citasNormalizadas;
@@ -9820,6 +9827,22 @@ function renderFlujoEstado(cita) {
   if (btnGuardar) btnGuardar.style.display = estadosOcultar.includes(estado) ? 'none' : '';
 }
 
+function actualizarEstadoFilaTablaElectro(citaId, nuevoEstado) {
+  const st = window.paginationState && window.paginationState.citasElectro;
+  if (!st || !Array.isArray(st.data)) return;
+  const idStr = String(citaId);
+  const idx = st.data.findIndex((c) => String(c.id) === idStr);
+  if (idx < 0) return;
+  const norm = normalizarEstadoElectro(nuevoEstado);
+  st.data[idx] = { ...st.data[idx], estado: norm };
+  renderPaginatedTable('citasElectro', renderCitaElectroRow, 'citasElectroBody');
+  const containerSel = '#citasElectroTableControls';
+  const container = document.querySelector(containerSel);
+  if (container) {
+    createPaginationControls('citasElectro', containerSel, [5, 10, 15, 20, 50], renderCitaElectroRow, 'citasElectroBody');
+  }
+}
+
 async function cambiarEstadoCita(nuevoEstado) {
   if (!citaElectroSeleccionada) return;
   const estadoObjetivo = normalizarEstadoElectro(nuevoEstado);
@@ -9837,10 +9860,11 @@ async function cambiarEstadoCita(nuevoEstado) {
       if ($badgeEl) $badgeEl.innerHTML = estadoBadge(estadoObjetivo);
       renderFlujoEstado(citaElectroSeleccionada);
       showToast(`Estado: ${estadoObjetivo}`, 'success');
+      actualizarEstadoFilaTablaElectro(citaElectroSeleccionada.id, estadoObjetivo);
       if (window.socket && window.socket.connected) {
         window.socket.emit('electro:cambios-guardados', { id: citaElectroSeleccionada.id, cambios: { estado: estadoObjetivo } });
       }
-      cargarCitasElectro();
+      await cargarCitasElectro();
     } else {
       showToast(data?.error || 'Error actualizando estado', 'error');
     }
