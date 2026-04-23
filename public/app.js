@@ -2280,13 +2280,8 @@ async function initAgendaMedica() {
     selectedDoctorEspecialidad = currentUser?.especialidad;
     $('agendaMedicaDoctorDisplay').textContent = currentUser?.nombre || currentUser?.usuario || '-';
     cargarTiposConsultaSegunEspecialidad(currentUser?.especialidad);
-  } else if (medicos.length) {
-    // Otros roles: mostrar el primero disponible
-    selectedDoctorId = medicos[0].id;
-    selectedDoctorEspecialidad = medicos[0].especialidad;
-    $('agendaMedicaDoctorDisplay').textContent = medicos[0].nombre;
-    cargarTiposConsultaSegunEspecialidad(medicos[0].especialidad);
   } else {
+    // Sin doctor seleccionado (roles no doctor): mantener vacío hasta seleccionar uno desde menú
     $('agendaMedicaDoctorDisplay').textContent = '-';
   }
   
@@ -2633,8 +2628,9 @@ function setupAgendaCalendar() {
     if (sel && !sel.dataset.loaded) {
       sel.innerHTML = '<option value="">Cargando...</option>';
       apiFetch('/api/medicos').then(r => r.json()).then(list => {
+        window._agendaMedicosCacheForCal = Array.isArray(list) ? list : [];
         sel.innerHTML = '<option value="">Seleccionar médico</option>';
-        list.forEach(m => {
+        (Array.isArray(list) ? list : []).forEach(m => {
           const o = document.createElement('option');
           o.value = m.id;
           o.textContent = m.nombre || m.usuario;
@@ -2647,11 +2643,29 @@ function setupAgendaCalendar() {
       sel.addEventListener('change', () => {
         const v = parseInt(sel.value, 10);
         if (v) {
+          const medico = Array.from(sel.options).find(o => parseInt(o.value, 10) === v);
           calDoctorIdForCal = v;
+          selectedDoctorId = v;
+          sessionStorage.setItem(lsKeySelectedDoctor, String(v));
+          if (medico) {
+            $('agendaMedicaDoctorDisplay').textContent = medico.textContent || '-';
+          }
+          const medData = (window._agendaMedicosCacheForCal || []).find(m => parseInt(m.id, 10) === v);
+          selectedDoctorEspecialidad = medData?.especialidad || '';
+          sessionStorage.setItem('selected_doctor_especialidad', selectedDoctorEspecialidad || '');
+          if (typeof crearDatepickerConDisponibilidad === 'function') {
+            crearDatepickerConDisponibilidad($('agendaMedicaFecha'), selectedDoctorId);
+          }
+          cargarTiposConsultaSegunEspecialidad(selectedDoctorEspecialidad);
+          actualizarHorasDisponibles();
+          cargarTurnosMedica();
           calSelectedDate = null;
           loadCalendarData();
         }
       });
+    }
+    if (sel) {
+      sel.value = String(calDoctorIdForCal);
     }
   } else if (selectorDiv) {
     selectorDiv.style.display = 'none';

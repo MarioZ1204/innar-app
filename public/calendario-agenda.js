@@ -128,10 +128,17 @@ function renderCitasCalGrid() {
       bloqueado = true;
     }
 
-    // Colores: 0 → rojo, 1-10 → amarillo, >10 → verde
+    // Colores por estado de agenda:
+    // - Rojo: hay no asistencias o cancelaciones
+    // - Azul: hay reprogramaciones (sin no asistencias/cancelaciones)
+    // - Verde/Amarillo: disponibilidad general por cantidad de citas
     var colorClass = 'ccal-rojo';
     if (bloqueado) {
       colorClass = 'ccal-bloqueado';
+    } else if (datos && ((datos.no_asistieron || 0) > 0 || (datos.canceladas || 0) > 0)) {
+      colorClass = 'ccal-rojo';
+    } else if (datos && (datos.reprogramadas || 0) > 0) {
+      colorClass = 'ccal-azul';
     } else if (total > 10) {
       colorClass = 'ccal-verde';
     } else if (total >= 1) {

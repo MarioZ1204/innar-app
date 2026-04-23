@@ -3344,6 +3344,16 @@ button.remove { padding:5px 10px; font-size:.8rem; width:100%; }
   border-color: rgba(245,158,11,.4);
 }
 
+/* Estado: azul (reprogramadas sin no asistencia/cancelación) */
+.ccal-azul {
+  background: linear-gradient(145deg, #eff6ff 0%, #dbeafe 100%);
+  border-color: rgba(59,130,246,.25);
+}
+.ccal-azul:hover {
+  box-shadow: 0 8px 24px rgba(59,130,246,.15), 0 0 0 2px rgba(59,130,246,.12);
+  border-color: rgba(59,130,246,.4);
+}
+
 /* Estado: rojo (sin citas) */
 .ccal-rojo {
   background: linear-gradient(145deg, #fff5f5 0%, #fee2e2 100%);
@@ -3418,6 +3428,7 @@ button.remove { padding:5px 10px; font-size:.8rem; width:100%; }
 }
 .ccal-verde .ccal-citas-count { color: #16a34a; }
 .ccal-amarillo .ccal-citas-count { color: #d97706; }
+.ccal-azul .ccal-citas-count { color: #2563eb; }
 .ccal-rojo .ccal-citas-count { color: #dc2626; }
 .ccal-citas-label {
   font-size: 0.68rem;
@@ -3427,6 +3438,7 @@ button.remove { padding:5px 10px; font-size:.8rem; width:100%; }
 }
 .ccal-verde .ccal-citas-label { color: #22c55e; }
 .ccal-amarillo .ccal-citas-label { color: #f59e0b; }
+.ccal-azul .ccal-citas-label { color: #3b82f6; }
 .ccal-rojo .ccal-citas-label { color: #f87171; }
 
 /* Barra indicadora inferior */
@@ -3442,6 +3454,7 @@ button.remove { padding:5px 10px; font-size:.8rem; width:100%; }
 }
 .ccal-verde .ccal-bar { background: linear-gradient(90deg, #22c55e, #4ade80); }
 .ccal-amarillo .ccal-bar { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+.ccal-azul .ccal-bar { background: linear-gradient(90deg, #3b82f6, #60a5fa); }
 .ccal-rojo .ccal-bar { background: linear-gradient(90deg, #ef4444, #f87171); }
 
 /* Badges de estado en esquina inferior */
