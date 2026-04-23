@@ -2421,6 +2421,12 @@ async function initAgendaMedica() {
   document.querySelectorAll('.agenda-page-btn').forEach(b => b.classList.remove('active'));
   const citasBtn = document.querySelector('.agenda-page-btn[data-page="citas"]');
   if (citasBtn) citasBtn.classList.add('active');
+
+  // Resetear también las páginas visibles para no conservar la vista anterior
+  // cuando se cambia de doctor desde el menú principal.
+  document.querySelectorAll('.agenda-page').forEach(p => p.classList.remove('active'));
+  const citasPage = document.querySelector('.agenda-page[data-agenda-page="citas"]');
+  if (citasPage) citasPage.classList.add('active');
   
   // Ocultar inicialmente las secciones de programar agenda
   const progSection = $('agendaProgramarSection');
@@ -9818,7 +9824,7 @@ async function cambiarEstadoCita(nuevoEstado) {
   if (!citaElectroSeleccionada) return;
   const estadoObjetivo = normalizarEstadoElectro(nuevoEstado);
   try {
-    const res = await apiFetch(`/api/citas-electro/${citaElectroSeleccionada.id}`, {
+    const res = await apiFetch(`/api/citas-electro/${citaElectroSeleccionada.id}/estado`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ estado: estadoObjetivo })
