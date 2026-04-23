@@ -779,6 +779,31 @@ function abreviarEstudio(nombre) {
 }
 
 // Genera un badge de color según el estado de la cita electro
+function normalizarEstadoElectro(estado) {
+  const raw = String(estado || '').trim();
+  if (!raw) return 'Programado';
+  const key = raw
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[_\s]+/g, ' ')
+    .trim();
+
+  const map = {
+    'programado': 'Programado',
+    'confirmado': 'Confirmado',
+    'en sala': 'En Sala',
+    'en estudio': 'En Estudio',
+    'pausado': 'Pausado',
+    'completado': 'Completado',
+    'cancelado': 'Cancelado',
+    'no asistio': 'No Asistió',
+    'reprogramado': 'Reprogramado',
+    'adelantado': 'Adelantado'
+  };
+  return map[key] || raw;
+}
+
 function estadoBadge(estado) {
   const map = {
     'Programado':   { bg: '#dbeafe', color: '#1d4ed8', border: '#93c5fd' },
@@ -792,7 +817,7 @@ function estadoBadge(estado) {
     'Adelantado':   { bg: '#ecfdf5', color: '#047857', border: '#6ee7b7' },
     'Pausado':      { bg: '#fef3c7', color: '#92400e', border: '#fcd34d' },
   };
-  const e = estado || 'Programado';
+  const e = normalizarEstadoElectro(estado);
   const s = map[e] || { bg: '#f3f4f6', color: '#374151', border: '#d1d5db' };
   return `<span style="display:inline-block;padding:5px 14px;border-radius:14px;font-size:0.85rem;font-weight:700;background:${s.bg};color:${s.color};border:1px solid ${s.border};white-space:nowrap;letter-spacing:0.01em">${escapeHtml(e)}</span>`;
 }
@@ -9443,7 +9468,7 @@ function enviarPorWhatsApp() {
 }
 
 function abrirModalDetallesCita(cita) {
-  citaElectroSeleccionada = cita;
+  citaElectroSeleccionada = { ...cita, estado: normalizarEstadoElectro(cita?.estado) };
   
   // Activar flag para evitar cambios automáticos
   isInitializingElectroModal = true;
@@ -9506,7 +9531,7 @@ function abrirModalDetallesCita(cita) {
 
   // Badge de estado en el header
   const $badgeEl = document.getElementById('modalEstadoHeaderBadge');
-  if ($badgeEl) $badgeEl.innerHTML = estadoBadge(cita.estado || 'Programado');
+  if ($badgeEl) $badgeEl.innerHTML = estadoBadge(citaElectroSeleccionada.estado || 'Programado');
 
   // Franja de horario real (cuando la cita ya tiene hora_inicio)
   const $horarios = document.getElementById('modalInfoHorarios');
@@ -9526,16 +9551,16 @@ function abrirModalDetallesCita(cita) {
   $('modalEquipo').value = cita.equipo_id || '';
   
   // Actualizar selector de estado oculto
-  $('modalEstado').value = cita.estado || 'Programado';
+  $('modalEstado').value = citaElectroSeleccionada.estado || 'Programado';
   
   // Renderizar flujo contextual de estado
-  renderFlujoEstado(cita);
+  renderFlujoEstado(citaElectroSeleccionada);
   
   // Eliminar se maneja desde menú de 3 puntos
   const btnEliminar = $('btnEliminarCita');
   if (btnEliminar) btnEliminar.style.display = 'none';
   const btnEliminarMenu = $('btnEliminarCitaMenu');
-  const esCompletado = cita.estado === 'Completado';
+  const esCompletado = citaElectroSeleccionada.estado === 'Completado';
   if (currentUser) {
     const rol = currentUser.rol;
     const esAdminGlobal = rol === 'admin' || rol === 'administrador' || rol === 'superadmin';
@@ -9678,7 +9703,7 @@ function abrirModalDetallesCita(cita) {
 
 // ===== FLUJO CONTEXTUAL DE ESTADO =====
 function renderFlujoEstado(cita) {
-  const estado = cita.estado || 'Programado';
+  const estado = normalizarEstadoElectro(cita?.estado || 'Programado');
   const flujoEl = document.getElementById('modalFlujoEstudio');
   const accionesEl = document.getElementById('modalAccionesEstudio');
   const equipoSelect = $('modalEquipo');
@@ -9722,7 +9747,7 @@ function renderFlujoEstado(cita) {
         </div>
       </div>`;
     document.getElementById('flujo-btn-confirmado').onclick = () => cambiarEstadoCita('Confirmado');
-    document.getElementById('flujo-btn-cancelar').onclick = () => cambiarEstadoCita('Cancelado');
+    document.getElementById('flujo-btn-cancelar').onclick = () => confirmarCancelacionCitaElectro();
 
   } else if (estado === 'Confirmado') {
     if (equipoSelect) { equipoSelect.disabled = true; equipoSelect.style.opacity = '0.45'; equipoSelect.style.cursor = 'not-allowed'; }
@@ -9791,22 +9816,23 @@ function renderFlujoEstado(cita) {
 
 async function cambiarEstadoCita(nuevoEstado) {
   if (!citaElectroSeleccionada) return;
+  const estadoObjetivo = normalizarEstadoElectro(nuevoEstado);
   try {
-    const res = await apiFetch(`/api/citas-electro/${citaElectroSeleccionada.id}/estado`, {
+    const res = await apiFetch(`/api/citas-electro/${citaElectroSeleccionada.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ estado: nuevoEstado })
+      body: JSON.stringify({ estado: estadoObjetivo })
     });
     const data = await res.json();
     if (data && data.ok) {
-      citaElectroSeleccionada.estado = nuevoEstado;
-      $('modalEstado').value = nuevoEstado;
+      citaElectroSeleccionada.estado = estadoObjetivo;
+      $('modalEstado').value = estadoObjetivo;
       const $badgeEl = document.getElementById('modalEstadoHeaderBadge');
-      if ($badgeEl) $badgeEl.innerHTML = estadoBadge(nuevoEstado);
+      if ($badgeEl) $badgeEl.innerHTML = estadoBadge(estadoObjetivo);
       renderFlujoEstado(citaElectroSeleccionada);
-      showToast(`Estado: ${nuevoEstado}`, 'success');
+      showToast(`Estado: ${estadoObjetivo}`, 'success');
       if (window.socket && window.socket.connected) {
-        window.socket.emit('electro:cambios-guardados', { id: citaElectroSeleccionada.id, cambios: { estado: nuevoEstado } });
+        window.socket.emit('electro:cambios-guardados', { id: citaElectroSeleccionada.id, cambios: { estado: estadoObjetivo } });
       }
       cargarCitasElectro();
     } else {
@@ -9815,6 +9841,16 @@ async function cambiarEstadoCita(nuevoEstado) {
   } catch (e) {
     showToast('Error actualizando estado', 'error');
   }
+}
+
+function confirmarCancelacionCitaElectro() {
+  if (!citaElectroSeleccionada) return;
+  const nombre = (citaElectroSeleccionada.paciente_nombre || '').trim() || 'este paciente';
+  showConfirm(
+    `¿Seguro que deseas cancelar la cita de ${nombre}?`,
+    async () => { await cambiarEstadoCita('Cancelado'); },
+    { okText: 'Sí, cancelar cita', cancelText: 'No', danger: true, icon: '⚠️' }
+  );
 }
 
 function cerrarModalDetallesCita() {
