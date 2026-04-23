@@ -15,7 +15,7 @@ async function fixEnum() {
     
     await connection.execute(`
       ALTER TABLE citas_electro 
-      MODIFY COLUMN estado ENUM('Programado', 'En Sala', 'En Estudio', 'Pausado', 'Completado', 'No Asistió', 'Cancelado', 'Reprogramado', 'Adelantado') 
+      MODIFY COLUMN estado ENUM('Programado', 'Confirmado', 'En Sala', 'En Estudio', 'Pausado', 'Completado', 'No Asistió', 'Cancelado', 'Reprogramado', 'Adelantado') 
       NOT NULL DEFAULT 'Programado'
     `);
     

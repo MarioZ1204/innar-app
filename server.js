@@ -2708,7 +2708,7 @@ app.get('/api/equipos-electro/disponibilidad', requireAuth, async (req, res) => 
         e.nombre AS equipo_nombre
       FROM citas_electro c
       LEFT JOIN equipos_electro e ON e.id = c.equipo_id
-      WHERE c.estado IN ('Programado', 'En Sala', 'En Estudio', 'Pausado')
+      WHERE c.estado IN ('Programado', 'Confirmado', 'En Sala', 'En Estudio', 'Pausado')
       AND c.deleted_at IS NULL
       AND TIMESTAMP(c.fecha, COALESCE(c.hora_agendamiento, '00:00:00')) < TIMESTAMP(?, ?)
       AND TIMESTAMP(COALESCE(c.hora_fin_date, c.fecha), COALESCE(c.hora_fin, '23:59:59')) > TIMESTAMP(?, ?)
@@ -3389,7 +3389,7 @@ app.post('/api/citas-electro', requireAuth, requireRoleOrPerm(['superadmin', 'ad
       const dupCheck = await transactions.selectForUpdate(conn,
         `SELECT COUNT(*) as cnt FROM citas_electro
          WHERE paciente_id = ? AND fecha = ?
-         AND estado IN ('Programado', 'En Sala', 'En Estudio', 'Pausado')
+         AND estado IN ('Programado', 'Confirmado', 'En Sala', 'En Estudio', 'Pausado')
          AND deleted_at IS NULL`,
         [paciente_id, fecha]
       );
@@ -3401,7 +3401,7 @@ app.post('/api/citas-electro', requireAuth, requireRoleOrPerm(['superadmin', 'ad
       const overlapCitas = await transactions.selectForUpdate(conn,
         `SELECT COUNT(*) as overlap_count
          FROM citas_electro
-         WHERE estado IN ('Programado', 'En Sala', 'En Estudio', 'Pausado')
+         WHERE estado IN ('Programado', 'Confirmado', 'En Sala', 'En Estudio', 'Pausado')
          AND deleted_at IS NULL
          AND TIMESTAMP(fecha, COALESCE(hora_agendamiento, '00:00:00')) <= TIMESTAMP(?, ?)
          AND TIMESTAMP(COALESCE(hora_fin_date, fecha), COALESCE(hora_fin, '23:59:59')) > TIMESTAMP(?, ?)`,
@@ -3624,9 +3624,9 @@ app.patch('/api/citas-electro/:id/estado', requireAuth, requireRoleOrPerm(['supe
 
 // Actualizar cita electro (equipo, estado, horas, etc)
 // FLUJO DE ESTADOS:
-// "Programado" â†’ "En Estudio" (validar capacidad)
+// "Programado"/"Confirmado" â†’ "En Estudio" (validar capacidad)
 // "En Estudio" â†’ "Completado" (marcar fin)
-// Cualquier estado â†’ "En Sala", "No Asistió", "Cancelado" (manual)
+// Cualquier estado â†’ "Confirmado", "En Sala", "No Asistió", "Cancelado" (manual)
 app.patch('/api/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro', 'tecnico_electro'], 'electro.editar'), async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const { equipo_id, estado, hora_inicio, hora_fin, hora_agendamiento, fecha, duracion_minutos, entidad } = req.body || {};
@@ -3665,11 +3665,11 @@ app.patch('/api/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin'
     // ============ VALIDAR TRANSICIÓN DE ESTADOS ============
     if (estado && estado !== estadoActual) {
       // Estados manuales (permitidos desde cualquier estado)
-      const estadosManuales = ['En Sala', 'No Asistió', 'Reprogramado', 'Cancelado', 'Adelantado', 'Pausado'];
+      const estadosManuales = ['Confirmado', 'En Sala', 'No Asistió', 'Reprogramado', 'Cancelado', 'Adelantado', 'Pausado'];
       const esManual = estadosManuales.includes(estado);
 
       // Transición automática: Programado â†’ En Estudio o En Sala â†’ En Estudio
-      const esInicioEstudio = ['Programado', 'En Sala', 'Reprogramado', 'Adelantado', 'Pausado'].includes(estadoActual) && estado === 'En Estudio';
+      const esInicioEstudio = ['Programado', 'Confirmado', 'En Sala', 'Reprogramado', 'Adelantado', 'Pausado'].includes(estadoActual) && estado === 'En Estudio';
 
       // Transición automática: En Estudio â†’ Completado
       const esFinEstudio = estadoActual === 'En Estudio' && estado === 'Completado';
@@ -3692,7 +3692,7 @@ app.patch('/api/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin'
           SELECT COUNT(*) as overlap_count
           FROM citas_electro
           WHERE id != ?
-          AND estado IN ('Programado', 'En Sala', 'En Estudio', 'Pausado')
+          AND estado IN ('Programado', 'Confirmado', 'En Sala', 'En Estudio', 'Pausado')
           AND deleted_at IS NULL
           AND TIMESTAMP(fecha, COALESCE(hora_agendamiento, '00:00:00')) <= TIMESTAMP(?, ?)
           AND TIMESTAMP(COALESCE(hora_fin_date, fecha), COALESCE(hora_fin, '23:59:59')) > TIMESTAMP(?, ?)

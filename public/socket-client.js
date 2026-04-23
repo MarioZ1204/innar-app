@@ -159,15 +159,15 @@ function initSocket() {
 
   // Agenda médica
   socket.on('agenda:turno-creado', (data) => {
-    if (typeof cargarTurnosMedica === 'function') cargarTurnosMedica();
+    if (window.currentModule === 'agenda-medica' && typeof cargarTurnosMedica === 'function') cargarTurnosMedica();
   });
 
   socket.on('agenda:turno-eliminado', (data) => {
-    if (typeof cargarTurnosMedica === 'function') cargarTurnosMedica();
+    if (window.currentModule === 'agenda-medica' && typeof cargarTurnosMedica === 'function') cargarTurnosMedica();
   });
 
   socket.on('agenda:turno-estado-cambio', (data) => {
-    if (typeof cargarTurnosMedica === 'function') cargarTurnosMedica();
+    if (window.currentModule === 'agenda-medica' && typeof cargarTurnosMedica === 'function') cargarTurnosMedica();
     // Alerta sonora al doctor cuando un paciente entra en sala
     if (data.estado === 'EN_SALA' && typeof currentUser !== 'undefined' && currentUser && currentUser.rol === 'doctor') {
       const nombre = data.paciente_nombre ? ` - ${data.paciente_nombre}` : '';
@@ -184,7 +184,7 @@ function initSocket() {
   });
 
   socket.on('agenda:turno-numero-cambio', (data) => {
-    if (typeof cargarTurnosMedica === 'function') cargarTurnosMedica();
+    if (window.currentModule === 'agenda-medica' && typeof cargarTurnosMedica === 'function') cargarTurnosMedica();
   });
 
   socket.on('agenda:disponibilidad-actualizada', (data) => {
@@ -212,7 +212,7 @@ function initSocket() {
   });
 
   socket.on('agenda:turno-llamar-siguiente', (data) => {
-    if (typeof cargarTurnosMedica === 'function') cargarTurnosMedica();
+    if (window.currentModule === 'agenda-medica' && typeof cargarTurnosMedica === 'function') cargarTurnosMedica();
     // Anuncio de voz para recepción y electrodiagnóstico
     const esRecep = typeof tienePermiso === 'function' && tienePermiso('agenda.cambiar_estado');
     if (esRecep && 'speechSynthesis' in window) {
@@ -230,11 +230,11 @@ function initSocket() {
   });
 
   socket.on('agenda:turno-marcar-atendido', (data) => {
-    if (typeof cargarTurnosMedica === 'function') cargarTurnosMedica();
+    if (window.currentModule === 'agenda-medica' && typeof cargarTurnosMedica === 'function') cargarTurnosMedica();
   });
 
   socket.on('agenda:turno-cambio-paciente', (data) => {
-    if (typeof cargarTurnosMedica === 'function') cargarTurnosMedica();
+    if (window.currentModule === 'agenda-medica' && typeof cargarTurnosMedica === 'function') cargarTurnosMedica();
   });
 
   // Aviso al doctor para concluir consulta

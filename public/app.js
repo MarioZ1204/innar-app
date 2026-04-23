@@ -412,9 +412,6 @@ function updateMenuByRole() {
     const moduleKey = card.dataset.module || '';
     const permKey = MODULE_PERM_MAP[moduleKey];
     let allowed = permKey ? tienePermiso(permKey) : (card.dataset.rol || '').split(' ').includes(rol);
-    if (moduleKey === 'ucqn') {
-      allowed = allowed || tienePermiso('modulo.electrodiag');
-    }
     card.style.display = allowed ? '' : 'none';
   });
   // Sidebar recibos: mostrar/ocultar según permisos
@@ -3378,7 +3375,13 @@ async function cargarTurnosMedica() {
   _cargandoTurnosMedica = true;
   const fecha = $('agendaMedicaFecha').value;
   const doctorId = selectedDoctorId || ((currentUser?.rol === 'doctor' ? currentUser?.id : null));
-  if (!fecha || !doctorId) { _cargandoTurnosMedica = false; showToast('Selecciona fecha y médico', 'error'); return; }
+  if (!fecha || !doctorId) {
+    _cargandoTurnosMedica = false;
+    if (window.currentModule === 'agenda-medica') {
+      showToast('Selecciona fecha y médico', 'error');
+    }
+    return;
+  }
   showSkeletonRows($('turnosTableBodyMedica'), 8, 6);
   try {
     const res = await apiFetch(`/api/turnos?fecha=${fecha}&doctor_id=${doctorId}`);
