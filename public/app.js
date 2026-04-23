@@ -2616,58 +2616,43 @@ let calSlots = []; // [{ fecha, hora_inicio, hora_fin, disponible }]
 let calDoctorIdForCal = null;
 let calModoTodoDia = false;
 
+function obtenerEstadoDiaAgenda(dateStr) {
+  const disp = calDisponibilidad[dateStr];
+  const daySlots = calSlots.filter(s => (s.fecha || '').slice(0, 10) === dateStr && s.disponible);
+  const normalizedSlots = daySlots
+    .map(s => `${(s.hora_inicio || '').slice(0, 5)}-${(s.hora_fin || '').slice(0, 5)}`)
+    .sort();
+
+  const tieneJornadaCompleta = normalizedSlots.length === 2
+    && normalizedSlots[0] === '08:00-12:00'
+    && normalizedSlots[1] === '14:00-18:00';
+
+  const tieneMediaJornada = normalizedSlots.length === 1
+    && (normalizedSlots[0] === '08:00-12:00' || normalizedSlots[0] === '14:00-18:00');
+
+  if (disp && !disp.disponible) return 'unavailable';
+  if (tieneJornadaCompleta) return 'full';
+  if (tieneMediaJornada) return 'partial';
+
+  // Fallback cuando no hay slots específicos, usando disponibilidad mensual.
+  if (disp) {
+    if (disp.disponible_manana && disp.disponible_tarde) return 'full';
+    if (disp.disponible_manana || disp.disponible_tarde) return 'partial';
+    return 'unavailable';
+  }
+
+  if (daySlots.length > 0) return 'partial';
+  return 'none';
+}
+
 function setupAgendaCalendar() {
   calDoctorIdForCal = selectedDoctorId || currentUser?.id;
   if (!calDoctorIdForCal) return;
 
-  // Selector de doctor para recepción/admin
+  // El doctor se selecciona desde el menú principal para roles no doctor.
+  // En esta vista solo se permite visualizar/editar la agenda del doctor ya seleccionado.
   const selectorDiv = $('agendaCalDoctorSelector');
-  if (selectorDiv && currentUser?.rol !== 'doctor') {
-    selectorDiv.style.display = '';
-    const sel = $('agendaCalDoctorSelect');
-    if (sel && !sel.dataset.loaded) {
-      sel.innerHTML = '<option value="">Cargando...</option>';
-      apiFetch('/api/medicos').then(r => r.json()).then(list => {
-        window._agendaMedicosCacheForCal = Array.isArray(list) ? list : [];
-        sel.innerHTML = '<option value="">Seleccionar médico</option>';
-        (Array.isArray(list) ? list : []).forEach(m => {
-          const o = document.createElement('option');
-          o.value = m.id;
-          o.textContent = m.nombre || m.usuario;
-          if (m.id == calDoctorIdForCal) o.selected = true;
-          sel.appendChild(o);
-        });
-        sel.dataset.loaded = '1';
-      }).catch(() => { sel.innerHTML = '<option value="">Error</option>'; });
-
-      sel.addEventListener('change', () => {
-        const v = parseInt(sel.value, 10);
-        if (v) {
-          const medico = Array.from(sel.options).find(o => parseInt(o.value, 10) === v);
-          calDoctorIdForCal = v;
-          selectedDoctorId = v;
-          sessionStorage.setItem(lsKeySelectedDoctor, String(v));
-          if (medico) {
-            $('agendaMedicaDoctorDisplay').textContent = medico.textContent || '-';
-          }
-          const medData = (window._agendaMedicosCacheForCal || []).find(m => parseInt(m.id, 10) === v);
-          selectedDoctorEspecialidad = medData?.especialidad || '';
-          sessionStorage.setItem('selected_doctor_especialidad', selectedDoctorEspecialidad || '');
-          if (typeof crearDatepickerConDisponibilidad === 'function') {
-            crearDatepickerConDisponibilidad($('agendaMedicaFecha'), selectedDoctorId);
-          }
-          cargarTiposConsultaSegunEspecialidad(selectedDoctorEspecialidad);
-          actualizarHorasDisponibles();
-          cargarTurnosMedica();
-          calSelectedDate = null;
-          loadCalendarData();
-        }
-      });
-    }
-    if (sel) {
-      sel.value = String(calDoctorIdForCal);
-    }
-  } else if (selectorDiv) {
+  if (selectorDiv) {
     selectorDiv.style.display = 'none';
   }
 
@@ -2835,24 +2820,12 @@ function renderCalendar() {
     if (dateObj.getTime() === today.getTime()) cell.classList.add('cal-today');
     if (dateStr === calSelectedDate) cell.classList.add('cal-selected');
 
-    // Check status
-    const disp = calDisponibilidad[dateStr];
-    const daySlots = calSlots.filter(s => (s.fecha || '').slice(0, 10) === dateStr);
-
-    if (disp) {
-      if (!disp.disponible) {
-        cell.classList.add('cal-unavailable');
-      } else if (disp.disponible_manana && disp.disponible_tarde) {
-        cell.classList.add('cal-available');
-      } else if (disp.disponible_manana || disp.disponible_tarde) {
-        cell.classList.add('cal-partial');
-      } else {
-        cell.classList.add('cal-available');
-      }
-    } else if (daySlots.length > 0) {
-      const anyAvailable = daySlots.some(s => s.disponible);
-      cell.classList.add(anyAvailable ? 'cal-available' : 'cal-unavailable');
-    }
+    // Color por estado de jornada:
+    // full (08:00-12:00 + 14:00-18:00)=verde, partial (media jornada)=azul, unavailable=no asiste=rojo.
+    const estadoDia = obtenerEstadoDiaAgenda(dateStr);
+    if (estadoDia === 'full') cell.classList.add('cal-available');
+    if (estadoDia === 'partial') cell.classList.add('cal-partial');
+    if (estadoDia === 'unavailable') cell.classList.add('cal-unavailable');
 
     if (!isPast) {
       cell.addEventListener('click', () => {
@@ -2996,6 +2969,7 @@ function renderCalResumen() {
 
     const disp = calDisponibilidad[dateStr];
     const daySlots = calSlots.filter(s => (s.fecha || '').slice(0, 10) === dateStr && s.disponible);
+    const estadoDia = obtenerEstadoDiaAgenda(dateStr);
 
     if (!disp && daySlots.length === 0) continue;
     configured++;
@@ -3003,10 +2977,10 @@ function renderCalResumen() {
     const dayName = diasSemana[dateObj.getDay()];
     let estadoHtml = '', horasHtml = '';
 
-    if (disp && !disp.disponible) {
-      estadoHtml = '<span class="cal-resumen-estado" style="background:#fee2e2;color:#991b1b">No asiste</span>';
-    } else if (disp || daySlots.length > 0) {
-      estadoHtml = '<span class="cal-resumen-estado" style="background:#dcfce7;color:#166534">Disponible</span>';
+    if (estadoDia === 'unavailable') {
+      estadoHtml = '<span class="cal-resumen-estado">No asiste</span>';
+    } else if (estadoDia === 'full' || estadoDia === 'partial') {
+      estadoHtml = `<span class="cal-resumen-estado">${estadoDia === 'full' ? 'Todo el día' : 'Medio día'}</span>`;
       if (daySlots.length > 0) {
         const normalizedSlots = daySlots
           .map(s => `${(s.hora_inicio || '').slice(0, 5)}-${(s.hora_fin || '').slice(0, 5)}`)
@@ -3028,7 +3002,7 @@ function renderCalResumen() {
       }
     }
 
-    html += `<div class="cal-resumen-dia">
+    html += `<div class="cal-resumen-dia cal-resumen-${estadoDia}">
       <span class="cal-resumen-fecha">${dayName} ${d}</span>
       ${estadoHtml}
       ${horasHtml}
