@@ -2685,7 +2685,8 @@ function setCalToggle(asistire, todoDia = false) {
   const horasC = $('calModalHorasContainer');
   if (asistire) {
     calModoTodoDia = Boolean(todoDia);
-    btnYes.classList.toggle('cal-toggle-active-yes', !calModoTodoDia);
+    // "Todo el día" también es "asistiré", por lo que debe considerarse disponible.
+    btnYes.classList.add('cal-toggle-active-yes');
     btnFullDay?.classList.toggle('cal-toggle-active-full', calModoTodoDia);
     btnNo.classList.remove('cal-toggle-active-no');
     if (horasC) horasC.style.display = calModoTodoDia ? 'none' : '';
@@ -2863,7 +2864,11 @@ function addCalHoraRow(inicio, fin) {
 async function saveCalDay() {
   if (!calSelectedDate || !calDoctorIdForCal) return;
 
-  const disponible = $('calToggleYes')?.classList.contains('cal-toggle-active-yes');
+  const disponible = Boolean(
+    calModoTodoDia
+    || $('calToggleYes')?.classList.contains('cal-toggle-active-yes')
+    || $('calToggleFullDay')?.classList.contains('cal-toggle-active-full')
+  );
   const horasRows = document.querySelectorAll('#calModalHorasList .cal-hora-row');
 
   // Build slots
@@ -4072,6 +4077,14 @@ async function crearTurnoMedica() {
   }
 
   try {
+    // Validación rápida en cliente: si el día está marcado como NO ASISTE, no permitir crear.
+    const dispRes = await apiFetch(`/api/doctor-disponibilidad?doctor_id=${doctorId}&fecha=${fecha}`);
+    const dispData = await dispRes.json().catch(() => null);
+    if (dispData?.ok && dispData.disponible_manana === false && dispData.disponible_tarde === false) {
+      showToast('No se puede agendar: el doctor está marcado como no asistirá ese día', 'error');
+      return;
+    }
+
     // Validaciones completadas - permitir múltiples pacientes en la misma hora
     // (no hay validación de duplicados por hora, se permite hasta 20 pacientes)
 
