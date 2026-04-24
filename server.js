@@ -3826,6 +3826,23 @@ app.patch('/api/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin'
     if (duracion_minutos !== undefined) cambios.duracion_minutos = duracion_minutos;
     
     await db.execute(`UPDATE citas_electro SET ${updates.join(', ')} WHERE id = ?`, values);
+
+    // Autocorrección de esquema: en algunos despliegues antiguos el ENUM de estado
+    // no incluye "Confirmado"/otros valores y MySQL termina guardando "Programado".
+    if (estado !== undefined) {
+      const ver1 = await db.query('SELECT estado FROM citas_electro WHERE id = ?', [id]);
+      const estadoGuardado1 = ver1.length ? ver1[0].estado : null;
+      if (estadoGuardado1 !== estado) {
+        try {
+          await db.execute(
+            "ALTER TABLE citas_electro MODIFY COLUMN estado ENUM('Programado','Confirmado','En Sala','En Estudio','Pausado','Completado','No Asistió','Cancelado','Reprogramado','Adelantado') NOT NULL DEFAULT 'Programado'"
+          );
+          await db.execute(`UPDATE citas_electro SET ${updates.join(', ')} WHERE id = ?`, values);
+        } catch (schemaErr) {
+          console.warn('[ELECTRO] No se pudo autocorregir ENUM estado:', schemaErr.message);
+        }
+      }
+    }
     
     // Emitir evento de socket para actualizar en tiempo real
     if (app.io) {
@@ -3837,6 +3854,17 @@ app.patch('/api/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin'
       emitSocket('electro:actualizar-lista', { type: 'actualizada', id, cambios });
     }
     
+    if (estado !== undefined) {
+      const ver2 = await db.query('SELECT estado FROM citas_electro WHERE id = ?', [id]);
+      const estadoGuardado2 = ver2.length ? ver2[0].estado : null;
+      if (estadoGuardado2 !== estado) {
+        return res.status(409).json({
+          ok: false,
+          error: `No se pudo persistir el estado solicitado (${estado}). Estado actual en BD: ${estadoGuardado2 || 'N/D'}`,
+          estado_actual: estadoGuardado2 || null
+        });
+      }
+    }
     res.json({ ok: true, transicion: `${estadoActual} â†’ ${estado || estadoActual}` });
   } catch (e) {
     res.status(500).json({ error: e.message });

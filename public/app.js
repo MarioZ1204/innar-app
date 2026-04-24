@@ -5260,10 +5260,8 @@ async function initElectro() {
   const modalEstadoEl = $('modalEstado');
   if (modalEstadoEl && !modalEstadoEl.dataset.boundChange) modalEstadoEl.addEventListener('change', async (e) => {
   if (!citaElectroSeleccionada) return;
-    // Este select está oculto; ignorar cambios no interactivos para evitar
-    // sobrescribir el flujo de botones (Programado -> Confirmado -> En Sala...).
-    if (!e.isTrusted) return;
-    if (e.target && e.target.style && e.target.style.display === 'none') return;
+    // Estado se controla solo con botones de flujo. Ignorar este listener.
+    return;
     
     // No procesar cambios si estamos inicializando el modal
     if (isInitializingElectroModal) {
@@ -10284,7 +10282,27 @@ function esEspecialidadRecordatorio(especialidad) {
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '');
-  return v.includes('neuropsicolog') || v.includes('psicolog');
+  return (
+    v.includes('neuropsicolog') ||
+    v.includes('psicolog') ||
+    v.includes('neurolog') ||
+    v.includes('epileptolog') ||
+    v.includes('psiquiatr')
+  );
+}
+
+function especialidadIncluyeEspecialista(especialidad) {
+  const v = String(especialidad || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  return v.includes('neurolog') || v.includes('epileptolog') || v.includes('psiquiatr');
+}
+
+function obtenerNombreEspecialistaRecordatorio() {
+  const desdeDisplay = (document.getElementById('agendaMedicaDoctorDisplay')?.textContent || '').trim();
+  if (desdeDisplay && desdeDisplay !== '-') return desdeDisplay;
+  return (currentUser?.nombre || currentUser?.usuario || '').trim();
 }
 
 function construirMensajeRecordatorioMedica(turno, especialidadDoctor) {
@@ -10292,10 +10310,15 @@ function construirMensajeRecordatorioMedica(turno, especialidadDoctor) {
   const fecha = turno?.fecha ? formatearFechaISO(turno.fecha) : '-';
   const hora = turno?.hora ? formatearHora(turno.hora) : '-';
   const especialidadTexto = especialidadDoctor || 'Neuropsicología';
+  const nombreEspecialista = obtenerNombreEspecialistaRecordatorio();
+  const lineaEspecialista = especialidadIncluyeEspecialista(especialidadTexto)
+    ? `\n◉ Especialista: ${nombreEspecialista || 'Por confirmar'}`
+    : '';
   return `¡Hola, buen día!. Le recordamos su cita de ${especialidadTexto} en el Instituto Neurociencias de Nariño IPS S.A.S:
 ◉ Paciente: ${nombre}
 ◉ Fecha: ${fecha}
 ◉ Hora: ${hora}
+${lineaEspecialista}
 ◉ Ubicación: Carrera 33 #13 - 84 "Casa Verde" (https://maps.app.goo.gl/YU5GheUmVMDAHFbq8)
 Cualquier novedad, no dude en comunicarse con nosotros.
 
