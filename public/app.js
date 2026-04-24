@@ -1655,6 +1655,7 @@ function selectDoctor(doctorId, doctorName, especialidad) {
   closeDoctorSelectionModal();
   // Resetear estado visual interno de Agenda para evitar arrastrar el doctor/página anterior
   if (typeof calSelectedDate !== 'undefined') calSelectedDate = null;
+  if (typeof calLoadReqId !== 'undefined') calLoadReqId++;
   if (typeof window !== 'undefined') window._agendaCalendarSetup = false;
   // Actualizar horas disponibles con el nuevo doctor
   actualizarHorasDisponibles();
@@ -5256,6 +5257,10 @@ async function initElectro() {
   });
   $('modalEstado')?.addEventListener('change', async (e) => {
   if (!citaElectroSeleccionada) return;
+    // Este select está oculto; ignorar cambios no interactivos para evitar
+    // sobrescribir el flujo de botones (Programado -> Confirmado -> En Sala...).
+    if (!e.isTrusted) return;
+    if (e.target && e.target.style && e.target.style.display === 'none') return;
     
     // No procesar cambios si estamos inicializando el modal
     if (isInitializingElectroModal) {
@@ -9917,15 +9922,24 @@ async function cambiarEstadoCita(nuevoEstado) {
     }
     const data = await res.json();
     if (data && data.ok) {
-      citaElectroSeleccionada.estado = estadoObjetivo;
-      $('modalEstado').value = estadoObjetivo;
+      // Confirmar estado persistido en servidor para evitar "rebote" visual.
+      const verRes = await apiFetch(`/api/citas-electro/${citaElectroSeleccionada.id}?_t=${Date.now()}`, { cache: 'no-store' });
+      const verData = await verRes.json().catch(() => null);
+      const estadoPersistido = normalizarEstadoElectro(verData?.estado || estadoObjetivo);
+
+      citaElectroSeleccionada.estado = estadoPersistido;
+      $('modalEstado').value = estadoPersistido;
       const $badgeEl = document.getElementById('modalEstadoHeaderBadge');
-      if ($badgeEl) $badgeEl.innerHTML = estadoBadge(estadoObjetivo);
+      if ($badgeEl) $badgeEl.innerHTML = estadoBadge(estadoPersistido);
       renderFlujoEstado(citaElectroSeleccionada);
-      showToast(`Estado: ${estadoObjetivo}`, 'success');
-      actualizarEstadoFilaTablaElectro(citaElectroSeleccionada.id, estadoObjetivo);
+      if (estadoPersistido !== estadoObjetivo) {
+        showToast(`El servidor conservó el estado "${estadoPersistido}"`, 'warning');
+      } else {
+        showToast(`Estado: ${estadoPersistido}`, 'success');
+      }
+      actualizarEstadoFilaTablaElectro(citaElectroSeleccionada.id, estadoPersistido);
       if (window.socket && window.socket.connected) {
-        window.socket.emit('electro:cambios-guardados', { id: citaElectroSeleccionada.id, cambios: { estado: estadoObjetivo } });
+        window.socket.emit('electro:cambios-guardados', { id: citaElectroSeleccionada.id, cambios: { estado: estadoPersistido } });
       }
       await cargarCitasElectro();
     } else {
