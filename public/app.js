@@ -8710,18 +8710,10 @@ function renderDiagnosticoRow(tbody, d) {
 async function iniciarEstudioModal() {
   if (!citaElectroSeleccionada) return;
   
-  // VALIDACIÓN: Verificar que ya haya llegado la hora de agendamiento
-  const ahora = new Date();
-  const horaActualHH = String(ahora.getHours()).padStart(2, '0');
-  const horaActualMM = String(ahora.getMinutes()).padStart(2, '0');
-  const horaActual = `${horaActualHH}:${horaActualMM}`;
-  
-  const horaAgendada = citaElectroSeleccionada.hora_agendamiento || '';
-  
-  // Validar que la hora actual sea >= a la hora agendada
-  if (horaActual < horaAgendada) {
-    const faltanMinutos = Math.ceil((new Date(`2000-01-01 ${horaAgendada}`) - new Date(`2000-01-01 ${horaActual}`)) / 60000);
-    showToast(`❌ El estudio está agendado para las ${horaAgendada}. Faltan ${faltanMinutos} minutos para poder iniciarlo.`, 'error');
+  // VALIDACIÓN: usar FECHA+HORA real de la cita.
+  const validInicio = validarInicioElectroSegunFechaHora(citaElectroSeleccionada);
+  if (!validInicio.ok) {
+    showToast(`❌ El estudio está agendado para las ${validInicio.horaAgendada}. Faltan ${validInicio.faltanMinutos} minutos para poder iniciarlo.`, 'error');
     return;
   }
   
@@ -8901,6 +8893,33 @@ function actualizarHoraFinCalculada() {
 // Alias para compatibilidad con cualquier referencia vieja
 function actualizarDuracionMostrada() { actualizarHoraFinCalculada(); }
 
+function validarInicioElectroSegunFechaHora(cita) {
+  const horaAgendadaRaw = String(cita?.hora_agendamiento || '').slice(0, 5);
+  if (!/^\d{2}:\d{2}$/.test(horaAgendadaRaw)) {
+    return { ok: true, horaAgendada: horaAgendadaRaw };
+  }
+
+  const fechaRaw = cita?.fecha ? String(cita.fecha).slice(0, 10) : '';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fechaRaw)) {
+    return { ok: true, horaAgendada: horaAgendadaRaw };
+  }
+
+  const [hh, mm] = horaAgendadaRaw.split(':').map(Number);
+  const agendada = new Date(`${fechaRaw}T${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:00`);
+  const ahora = new Date();
+
+  if (Number.isNaN(agendada.getTime())) {
+    return { ok: true, horaAgendada: horaAgendadaRaw };
+  }
+
+  if (ahora < agendada) {
+    const faltanMinutos = Math.ceil((agendada.getTime() - ahora.getTime()) / 60000);
+    return { ok: false, horaAgendada: horaAgendadaRaw, faltanMinutos };
+  }
+
+  return { ok: true, horaAgendada: horaAgendadaRaw };
+}
+
 async function confirmarDuracionEstudio() {
   
   if (!citaElectroSeleccionada) {
@@ -8908,18 +8927,10 @@ async function confirmarDuracionEstudio() {
     return;
   }
   
-  // VALIDACIÓN: Verificar que ya haya llegado la hora de agendamiento
-  const ahora = new Date();
-  const horaActualHH = String(ahora.getHours()).padStart(2, '0');
-  const horaActualMM = String(ahora.getMinutes()).padStart(2, '0');
-  const horaActual = `${horaActualHH}:${horaActualMM}`;
-  
-  const horaAgendada = citaElectroSeleccionada.hora_agendamiento || '';
-  
-  // Validar que la hora actual sea >= a la hora agendada
-  if (horaActual < horaAgendada) {
-    const faltanMinutos = Math.ceil((new Date(`2000-01-01 ${horaAgendada}`) - new Date(`2000-01-01 ${horaActual}`)) / 60000);
-    showToast(`❌ El estudio está agendado para las ${horaAgendada}. Faltan ${faltanMinutos} minutos para poder iniciarlo.`, 'error');
+  // VALIDACIÓN: usar FECHA+HORA real de la cita (evita falsos bloqueos de citas de días previos).
+  const validInicio = validarInicioElectroSegunFechaHora(citaElectroSeleccionada);
+  if (!validInicio.ok) {
+    showToast(`❌ El estudio está agendado para las ${validInicio.horaAgendada}. Faltan ${validInicio.faltanMinutos} minutos para poder iniciarlo.`, 'error');
     return;
   }
   
@@ -9032,20 +9043,14 @@ async function iniciarEstudioSinDuracion() {
   
   if (!citaElectroSeleccionada) return;
   
-  // VALIDACIÓN: Verificar que ya haya llegado la hora de agendamiento
-  const ahora = new Date();
-  const horaActualHH = String(ahora.getHours()).padStart(2, '0');
-  const horaActualMM = String(ahora.getMinutes()).padStart(2, '0');
-  const horaActual = `${horaActualHH}:${horaActualMM}`;
-  
-  const horaAgendada = citaElectroSeleccionada.hora_agendamiento || '';
-  
-  // Validar que la hora actual sea >= a la hora agendada
-  if (horaActual < horaAgendada) {
-    const faltanMinutos = Math.ceil((new Date(`2000-01-01 ${horaAgendada}`) - new Date(`2000-01-01 ${horaActual}`)) / 60000);
-    showToast(`❌ El estudio está agendado para las ${horaAgendada}. Faltan ${faltanMinutos} minutos para poder iniciarlo.`, 'error');
+  // VALIDACIÓN: usar FECHA+HORA real de la cita.
+  const validInicio = validarInicioElectroSegunFechaHora(citaElectroSeleccionada);
+  if (!validInicio.ok) {
+    showToast(`❌ El estudio está agendado para las ${validInicio.horaAgendada}. Faltan ${validInicio.faltanMinutos} minutos para poder iniciarlo.`, 'error');
     return;
   }
+
+  const horaAgendada = String(citaElectroSeleccionada.hora_agendamiento || '').slice(0, 5);
   
   // VALIDAR QUE SE HAYA SELECCIONADO UN EQUIPO
   const equipoSelect = $('modalEquipo');
