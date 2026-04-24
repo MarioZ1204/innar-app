@@ -3640,7 +3640,7 @@ app.patch('/api/citas-electro/:id/estado', requireAuth, requireRoleOrPerm(['supe
 // "Programado"/"Confirmado" â†’ "En Estudio" (validar capacidad)
 // "En Estudio" â†’ "Completado" (marcar fin)
 // Cualquier estado â†’ "Confirmado", "En Sala", "No Asistió", "Cancelado" (manual)
-app.patch('/api/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro', 'tecnico_electro'], 'electro.editar'), async (req, res) => {
+app.patch('/api/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro', 'tecnico_electro'], ['electro.editar', 'electro.cambiar_estado']), async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const { equipo_id, estado, hora_inicio, hora_fin, hora_agendamiento, fecha, duracion_minutos, entidad } = req.body || {};
   

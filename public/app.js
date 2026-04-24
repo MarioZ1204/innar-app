@@ -9546,6 +9546,8 @@ function enviarPorWhatsApp() {
 
 function abrirModalDetallesCita(cita) {
   citaElectroSeleccionada = { ...cita, estado: normalizarEstadoElectro(cita?.estado) };
+  const puedeEditarElectro = tienePermiso('electro.editar');
+  const puedeCambiarEstadoElectro = tienePermiso('electro.cambiar_estado') || puedeEditarElectro;
   
   // Activar flag para evitar cambios automáticos
   isInitializingElectroModal = true;
@@ -9626,6 +9628,12 @@ function abrirModalDetallesCita(cita) {
   
   // Rellenar selector de equipo
   $('modalEquipo').value = cita.equipo_id || '';
+  // Equipo solo editable con permiso de edición.
+  if ($('modalEquipo')) {
+    $('modalEquipo').disabled = !puedeEditarElectro;
+    $('modalEquipo').style.opacity = !puedeEditarElectro ? '0.5' : '1';
+    $('modalEquipo').style.cursor = !puedeEditarElectro ? 'not-allowed' : 'pointer';
+  }
   
   // Actualizar selector de estado oculto
   $('modalEstado').value = citaElectroSeleccionada.estado || 'Programado';
@@ -9654,14 +9662,18 @@ function abrirModalDetallesCita(cita) {
   console.log('[MODAL_DETALLES] btnReprogramarCita existe:', !!btnRep);
   console.log('[MODAL_DETALLES] btnAdelantarCita existe:', !!btnAde);
   
-  if (btnRep) {
+  if (btnRep && puedeEditarElectro) {
     btnRep.addEventListener('click', abrirModalReprogramar);
     console.log('[MODAL_DETALLES] Listener agregado a btnReprogramarCita');
+  } else if (btnRep) {
+    btnRep.style.display = 'none';
   }
   
-  if (btnAde) {
+  if (btnAde && puedeEditarElectro) {
     btnAde.addEventListener('click', abrirModalAdelantarCita);
     console.log('[MODAL_DETALLES] Listener agregado a btnAdelantarCita');
+  } else if (btnAde) {
+    btnAde.style.display = 'none';
   }
   
   // Configurar el menú de "Más opciones"
@@ -9696,18 +9708,22 @@ function abrirModalDetallesCita(cita) {
   }
   
   // Agregar listeners a los items del menú (onclick para evitar acumulación)
-  if (btnRepProgramarMenu) {
+  if (btnRepProgramarMenu && puedeEditarElectro) {
     btnRepProgramarMenu.onclick = () => {
       menuMasOpciones.style.display = 'none';
       abrirModalReprogramar();
     };
+  } else if (btnRepProgramarMenu) {
+    btnRepProgramarMenu.style.display = 'none';
   }
   
-  if (btnAdelantarMenu) {
+  if (btnAdelantarMenu && puedeEditarElectro) {
     btnAdelantarMenu.onclick = () => {
       menuMasOpciones.style.display = 'none';
       abrirModalAdelantarCita();
     };
+  } else if (btnAdelantarMenu) {
+    btnAdelantarMenu.style.display = 'none';
   }
   
   if (btnRecomendacionesMenu) {
@@ -9729,6 +9745,9 @@ function abrirModalDetallesCita(cita) {
         m.style.display = 'flex';
       }
     };
+  }
+  if (!puedeEditarElectro && btnMasOpciones) {
+    btnMasOpciones.style.display = 'none';
   }
   
   // Bloquear menú si el estado es "En Estudio"
@@ -9785,6 +9804,8 @@ function renderFlujoEstado(cita) {
   const accionesEl = document.getElementById('modalAccionesEstudio');
   const equipoSelect = $('modalEquipo');
   const btnGuardar = $('btnGuardarCambios');
+  const puedeEditarElectro = tienePermiso('electro.editar');
+  const puedeCambiarEstadoElectro = tienePermiso('electro.cambiar_estado') || puedeEditarElectro;
 
   // Ocultar botones Iniciar/Finalizar del bloque separado (se muestran dentro del flujo)
   if (accionesEl) accionesEl.style.display = 'none';
@@ -9798,6 +9819,11 @@ function renderFlujoEstado(cita) {
   }
 
   if (!flujoEl) return;
+  if (!puedeCambiarEstadoElectro) {
+    flujoEl.innerHTML = `<div class="flujo-estado-readonly">Sin permisos para cambiar estado.</div>`;
+    if (btnGuardar) btnGuardar.style.display = 'none';
+    return;
+  }
 
   const svgCheck = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>`;
   const svgPlay  = `<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
