@@ -1633,6 +1633,9 @@ function selectDoctor(doctorId, doctorName, especialidad) {
   sessionStorage.setItem(lsKeySelectedDoctor, doctorId);
   sessionStorage.setItem('selected_doctor_especialidad', especialidad || '');
   closeDoctorSelectionModal();
+  // Resetear estado visual interno de Agenda para evitar arrastrar el doctor/página anterior
+  if (typeof calSelectedDate !== 'undefined') calSelectedDate = null;
+  if (typeof window !== 'undefined') window._agendaCalendarSetup = false;
   // Actualizar horas disponibles con el nuevo doctor
   actualizarHorasDisponibles();
   // Cargar tipos de consulta según especialidad
@@ -2309,6 +2312,12 @@ async function initAgendaMedica() {
     // Sin doctor seleccionado (roles no doctor): mantener vacío hasta seleccionar uno desde menú
     $('agendaMedicaDoctorDisplay').textContent = '-';
   }
+
+  // Sincronizar el calendario de programación con el doctor activo actual
+  // incluso si ya había sido inicializado antes.
+  if (typeof calDoctorIdForCal !== 'undefined') {
+    calDoctorIdForCal = selectedDoctorId || currentUser?.id || null;
+  }
   
   // Validar disponibilidad del doctor cuando se selecciona una fecha
   // SIEMPRE aplicar validación si hay un doctor seleccionado
@@ -2385,6 +2394,9 @@ async function initAgendaMedica() {
   if (canAgendaProgram && !window._agendaCalendarSetup) {
     setupAgendaCalendar();
     window._agendaCalendarSetup = true;
+  } else if (canAgendaProgram && typeof loadCalendarData === 'function' && (selectedDoctorId || currentUser?.id)) {
+    // Si ya estaba inicializado, recargar con el doctor actualmente seleccionado.
+    loadCalendarData();
   }
   
   // Sidebar button listeners para cambio de página
@@ -5812,6 +5824,7 @@ function renderCitaElectroRow(tbody, c) {
   const tr = document.createElement('tr');
   tr.className = 'turno-row';
   tr.style.cursor = 'pointer';
+  tr.dataset.citaId = String(c.id || '');
   
   const equipoDisplay = c.equipo_nombre ? escapeHtml(c.equipo_nombre) : (c.equipo_id ? `Equipo ${c.equipo_id}` : '<span style="color:#9ca3af">—</span>');
   

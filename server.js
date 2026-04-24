@@ -3275,6 +3275,9 @@ app.get('/api/citas-electro/plantilla-excel', requireAuth, async (req, res) => {
 
 // Listar citas electro por fecha (solo fecha requerida)
 app.get('/api/citas-electro', requireAuth, async (req, res) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.set('Pragma', 'no-cache');
+  res.set('Expires', '0');
   const { fecha, equipo_id, buscar } = req.query;
   
   // Si está buscando por documento de paciente
