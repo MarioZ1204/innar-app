@@ -554,8 +554,27 @@ function goToModule(moduleId) {
   history.pushState({view: moduleId}, '', `#${moduleId}`);
   if (moduleId === 'recibos') { if (!initRecibosDone) initRecibos(); else cargarLista(_recibosLastParams || ''); }
   if (moduleId === 'agenda-medica') { 
-    if (!initAgendaDone) initAgendaMedica(); 
-    initAgendaDone = true; 
+    if (!initAgendaDone) {
+      initAgendaMedica();
+      initAgendaDone = true;
+    } else {
+      // Al reingresar al módulo, refrescar contra el doctor actualmente seleccionado
+      // y volver a la subvista principal de citas.
+      document.querySelectorAll('.agenda-page-btn').forEach(b => b.classList.remove('active'));
+      const citasBtn = document.querySelector('.agenda-page-btn[data-page="citas"]');
+      if (citasBtn) citasBtn.classList.add('active');
+      document.querySelectorAll('.agenda-page').forEach(p => p.classList.remove('active'));
+      const citasPage = document.querySelector('.agenda-page[data-agenda-page="citas"]');
+      if (citasPage) citasPage.classList.add('active');
+      const progSection = $('agendaProgramarSection');
+      if (progSection) progSection.style.display = 'none';
+      if (typeof calDoctorIdForCal !== 'undefined') {
+        calDoctorIdForCal = selectedDoctorId || currentUser?.id || null;
+      }
+      if (typeof loadCalendarData === 'function' && (selectedDoctorId || currentUser?.id)) loadCalendarData();
+      if (typeof cargarTurnosMedica === 'function') cargarTurnosMedica();
+      if (typeof actualizarHorasDisponibles === 'function') actualizarHorasDisponibles();
+    }
     // Socket.IO maneja los cambios en tiempo real, no necesitamos auto-refresh
   } else {
     stopAgendaMedicaAutoRefresh();
@@ -9860,11 +9879,20 @@ async function cambiarEstadoCita(nuevoEstado) {
   if (!citaElectroSeleccionada) return;
   const estadoObjetivo = normalizarEstadoElectro(nuevoEstado);
   try {
-    const res = await apiFetch(`/api/citas-electro/${citaElectroSeleccionada.id}/estado`, {
+    let res = await apiFetch(`/api/citas-electro/${citaElectroSeleccionada.id}/estado`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ estado: estadoObjetivo })
     });
+    // Compatibilidad de permisos: si el rol no tiene electro.cambiar_estado,
+    // reintentar con endpoint general (electro.editar).
+    if (res.status === 403) {
+      res = await apiFetch(`/api/citas-electro/${citaElectroSeleccionada.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ estado: estadoObjetivo })
+      });
+    }
     const data = await res.json();
     if (data && data.ok) {
       citaElectroSeleccionada.estado = estadoObjetivo;
