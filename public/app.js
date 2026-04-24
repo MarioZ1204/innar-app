@@ -124,6 +124,7 @@ let _cargandoTurnosMedica = false;
 let _pendienteTurnosMedica = false;
 let _cargandoCitasElectro = false;
 let _pendienteCitasElectro = false;
+let _citasElectroReqId = 0;
 
 function normalizarTextoBase(str) {
   return (str || '')
@@ -2677,6 +2678,7 @@ let calDisponibilidad = {}; // { 'YYYY-MM-DD': { disponible, disponible_manana, 
 let calSlots = []; // [{ fecha, hora_inicio, hora_fin, disponible }]
 let calDoctorIdForCal = null;
 let calModoTodoDia = false;
+let calLoadReqId = 0;
 
 function obtenerEstadoDiaAgenda(dateStr) {
   const disp = calDisponibilidad[dateStr];
@@ -2820,24 +2822,41 @@ function closeCalModal() {
 }
 
 async function loadCalendarData() {
+  // Tomar siempre el doctor activo actual para evitar quedar pegado al anterior.
+  calDoctorIdForCal = selectedDoctorId || currentUser?.id || calDoctorIdForCal;
   if (!calDoctorIdForCal) return;
+  const reqId = ++calLoadReqId;
   const mes = `${calCurrentYear}-${String(calCurrentMonth + 1).padStart(2, '0')}`;
 
   try {
     // Cargar disponibilidad mensual
-    const resDisp = await apiFetch(`/api/doctor-disponibilidad/${calDoctorIdForCal}?mes=${mes}`);
+    const resDisp = await apiFetch(`/api/doctor-disponibilidad/${calDoctorIdForCal}?mes=${mes}&_t=${Date.now()}`, {
+      cache: 'no-store'
+    });
     const dataDisp = await resDisp.json();
+    if (reqId !== calLoadReqId) return; // respuesta vieja
     calDisponibilidad = {};
     if (dataDisp.ok && Array.isArray(dataDisp.disponibilidad)) {
       dataDisp.disponibilidad.forEach(d => {
         const fecha = (d.fecha || '').slice(0, 10);
-        calDisponibilidad[fecha] = d;
+        const dispDia = d.disponible === true || d.disponible === 1 || d.disponible === '1';
+        const dispManana = d.disponible_manana === true || d.disponible_manana === 1 || d.disponible_manana === '1';
+        const dispTarde = d.disponible_tarde === true || d.disponible_tarde === 1 || d.disponible_tarde === '1';
+        calDisponibilidad[fecha] = {
+          ...d,
+          disponible: dispDia,
+          disponible_manana: dispManana,
+          disponible_tarde: dispTarde
+        };
       });
     }
 
     // Cargar slots de agenda
-    const resSlots = await apiFetch(`/api/doctor-agenda?doctor_id=${calDoctorIdForCal}`);
+    const resSlots = await apiFetch(`/api/doctor-agenda?doctor_id=${calDoctorIdForCal}&_t=${Date.now()}`, {
+      cache: 'no-store'
+    });
     const slotsData = await resSlots.json();
+    if (reqId !== calLoadReqId) return; // respuesta vieja
     calSlots = Array.isArray(slotsData) ? slotsData : [];
   } catch (e) {
     console.error('Error cargando datos del calendario:', e);
@@ -5743,6 +5762,7 @@ async function cargarCitasElectro() {
     _pendienteCitasElectro = true;
     return;
   }
+  const reqId = ++_citasElectroReqId;
   _cargandoCitasElectro = true;
   const fecha = $('electroFecha').value;
   if (!fecha) {
@@ -5756,12 +5776,14 @@ async function cargarCitasElectro() {
       cache: 'no-store'
     });
     const citasRaw = await res.json();
+    if (reqId !== _citasElectroReqId) return; // respuesta vieja pisa estado reciente
     const citas = Array.isArray(citasRaw) ? citasRaw : [];
     const citasNormalizadasEstado = citas.map((c) => ({
       ...c,
       estado: normalizarEstadoElectro(c.estado)
     }));
     const citasNormalizadas = await sincronizarEstadosPorTiempo(citasNormalizadasEstado);
+    if (reqId !== _citasElectroReqId) return; // respuesta vieja
     
     // Filtrar por estudio si es necesario
     let citasFiltradas = citasNormalizadas;
