@@ -5195,7 +5195,8 @@ async function initElectro() {
   $('btnFinalizarEstudio')?.addEventListener('click', finalizarEstudioModal);
   
   // Event listeners para cambios en el modal (equipo y estado)
-  $('modalEquipo')?.addEventListener('change', async (e) => {
+  const modalEquipoEl = $('modalEquipo');
+  if (modalEquipoEl && !modalEquipoEl.dataset.boundChange) modalEquipoEl.addEventListener('change', async (e) => {
     if (!citaElectroSeleccionada) return;
     
     // No procesar cambios si estamos inicializando el modal
@@ -5255,7 +5256,9 @@ async function initElectro() {
       e.target.value = equipoIdActual;
     }
   });
-  $('modalEstado')?.addEventListener('change', async (e) => {
+  if (modalEquipoEl) modalEquipoEl.dataset.boundChange = '1';
+  const modalEstadoEl = $('modalEstado');
+  if (modalEstadoEl && !modalEstadoEl.dataset.boundChange) modalEstadoEl.addEventListener('change', async (e) => {
   if (!citaElectroSeleccionada) return;
     // Este select está oculto; ignorar cambios no interactivos para evitar
     // sobrescribir el flujo de botones (Programado -> Confirmado -> En Sala...).
@@ -5321,6 +5324,7 @@ async function initElectro() {
       e.target.value = citaElectroSeleccionada.estado;
     }
   });
+  if (modalEstadoEl) modalEstadoEl.dataset.boundChange = '1';
   $('btnEnviarRecomendaciones')?.addEventListener('click', () => {
     if (citaElectroSeleccionada) enviarRecomendacionesWhatsApp(citaElectroSeleccionada);
   });
@@ -10275,19 +10279,20 @@ $('btnConfirmarFinalizarNo')?.addEventListener('click', cancelarFinalizarEstudio
 let currentTurnoMedicaData = null;
 let currentEstadoAction = null;
 
-function esTipoConsultaRecordatorio(tipoConsulta) {
-  const v = String(tipoConsulta || '')
+function esEspecialidadRecordatorio(especialidad) {
+  const v = String(especialidad || '')
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '');
   return v.includes('neuropsicolog') || v.includes('psicolog');
 }
 
-function construirMensajeRecordatorioMedica(turno) {
+function construirMensajeRecordatorioMedica(turno, especialidadDoctor) {
   const nombre = turno?.paciente_nombre || '';
   const fecha = turno?.fecha ? formatearFechaISO(turno.fecha) : '-';
   const hora = turno?.hora ? formatearHora(turno.hora) : '-';
-  return `¡Hola, buen día!. Le recordamos su cita de Neuropsicología en el Instituto Neurociencias de Nariño IPS S.A.S:
+  const especialidadTexto = especialidadDoctor || 'Neuropsicología';
+  return `¡Hola, buen día!. Le recordamos su cita de ${especialidadTexto} en el Instituto Neurociencias de Nariño IPS S.A.S:
 ◉ Paciente: ${nombre}
 ◉ Fecha: ${fecha}
 ◉ Hora: ${hora}
@@ -10305,7 +10310,8 @@ function enviarRecordatorioWhatsAppMedica(turno) {
     return;
   }
   const numeroWhatsApp = telefono.startsWith('57') ? telefono : `57${telefono}`;
-  const mensaje = construirMensajeRecordatorioMedica(turno);
+  const especialidadActual = selectedDoctorEspecialidad || currentUser?.especialidad || '';
+  const mensaje = construirMensajeRecordatorioMedica(turno, especialidadActual);
   window.open(`https://wa.me/${numeroWhatsApp}?text=${encodeURIComponent(mensaje)}`, '_blank');
   showToast('Recordatorio listo para enviar por WhatsApp', 'success');
 }
@@ -10337,7 +10343,8 @@ function abrirModalEstadoCitaMedica(turno) {
   const pol = agendaMedicaPolicy(turno);
   const btnRecordatorio = el('btnEnviarRecordatorioMedica');
   if (btnRecordatorio) {
-    const visible = esTipoConsultaRecordatorio(turno?.tipo_consulta);
+    const especialidadActual = selectedDoctorEspecialidad || currentUser?.especialidad || '';
+    const visible = esEspecialidadRecordatorio(especialidadActual);
     btnRecordatorio.style.display = visible ? '' : 'none';
     btnRecordatorio.disabled = !visible;
     btnRecordatorio.onclick = () => enviarRecordatorioWhatsAppMedica(currentTurnoMedicaData);
