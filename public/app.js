@@ -9937,20 +9937,13 @@ async function cambiarEstadoCita(nuevoEstado) {
   if (!citaElectroSeleccionada) return;
   const estadoObjetivo = normalizarEstadoElectro(nuevoEstado);
   try {
-    let res = await apiFetch(`/api/citas-electro/${citaElectroSeleccionada.id}/estado`, {
+    // Usar endpoint general para unificar exactamente el mismo flujo que ya funciona
+    // en el resto del módulo (equipos, inicio/fin estudio, etc.).
+    const res = await apiFetch(`/api/citas-electro/${citaElectroSeleccionada.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ estado: estadoObjetivo })
     });
-    // Compatibilidad de permisos: si el rol no tiene electro.cambiar_estado,
-    // reintentar con endpoint general (electro.editar).
-    if (res.status === 403) {
-      res = await apiFetch(`/api/citas-electro/${citaElectroSeleccionada.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ estado: estadoObjetivo })
-      });
-    }
     const data = await res.json();
     if (data && data.ok) {
       // Confirmar estado persistido en servidor para evitar "rebote" visual.
@@ -10282,6 +10275,41 @@ $('btnConfirmarFinalizarNo')?.addEventListener('click', cancelarFinalizarEstudio
 let currentTurnoMedicaData = null;
 let currentEstadoAction = null;
 
+function esTipoConsultaRecordatorio(tipoConsulta) {
+  const v = String(tipoConsulta || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  return v.includes('neuropsicolog') || v.includes('psicolog');
+}
+
+function construirMensajeRecordatorioMedica(turno) {
+  const nombre = turno?.paciente_nombre || '';
+  const fecha = turno?.fecha ? formatearFechaISO(turno.fecha) : '-';
+  const hora = turno?.hora ? formatearHora(turno.hora) : '-';
+  return `¡Hola, buen día!. Le recordamos su cita de Neuropsicología en el Instituto Neurociencias de Nariño IPS S.A.S:
+◉ Paciente: ${nombre}
+◉ Fecha: ${fecha}
+◉ Hora: ${hora}
+◉ Ubicación: Carrera 33 #13 - 84 "Casa Verde" (https://maps.app.goo.gl/YU5GheUmVMDAHFbq8)
+Cualquier novedad, no dude en comunicarse con nosotros.
+
+NOTA: Por favor confirmar su asistencia lo antes posible. Muchas gracias.`;
+}
+
+function enviarRecordatorioWhatsAppMedica(turno) {
+  if (!turno) return;
+  const telefono = String(turno.paciente_telefono || '').replace(/\D/g, '');
+  if (!telefono || telefono.length < 7) {
+    showToast('La cita no tiene un teléfono #1 válido para enviar recordatorio', 'error');
+    return;
+  }
+  const numeroWhatsApp = telefono.startsWith('57') ? telefono : `57${telefono}`;
+  const mensaje = construirMensajeRecordatorioMedica(turno);
+  window.open(`https://wa.me/${numeroWhatsApp}?text=${encodeURIComponent(mensaje)}`, '_blank');
+  showToast('Recordatorio listo para enviar por WhatsApp', 'success');
+}
+
 function abrirModalEstadoCitaMedica(turno) {
   currentTurnoMedicaData = turno;
 
@@ -10307,6 +10335,13 @@ function abrirModalEstadoCitaMedica(turno) {
   $('modalReprogramarMedicaFechaActual').innerHTML = `<strong>${formatearFecha(turno.fecha)}</strong> a las <strong>${formatearHora(turno.hora)}</strong>`;
 
   const pol = agendaMedicaPolicy(turno);
+  const btnRecordatorio = el('btnEnviarRecordatorioMedica');
+  if (btnRecordatorio) {
+    const visible = esTipoConsultaRecordatorio(turno?.tipo_consulta);
+    btnRecordatorio.style.display = visible ? '' : 'none';
+    btnRecordatorio.disabled = !visible;
+    btnRecordatorio.onclick = () => enviarRecordatorioWhatsAppMedica(currentTurnoMedicaData);
+  }
 
   // Bloquear edición en modal según política
   const editBtnMed = el('btnEditarMedicaModal');
