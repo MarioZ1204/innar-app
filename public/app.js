@@ -1053,7 +1053,8 @@ function setupPagination(tableId, data, renderFunction, options = {}) {
     itemsPerPageDefault = 20,
     itemsPerPageOptions = [5, 10, 15, 20, 50],
     tbodyId = null,
-    containerSelector = null
+    containerSelector = null,
+    keepCurrentPage = true
   } = options;
 
   // Inicializar estado
@@ -1068,7 +1069,12 @@ function setupPagination(tableId, data, renderFunction, options = {}) {
     // Actualizar datos y recalcular
     window.paginationState[tableId].data = data;
     window.paginationState[tableId].totalPages = Math.ceil(data.length / window.paginationState[tableId].itemsPerPage);
-    window.paginationState[tableId].currentPage = 1;
+    if (!keepCurrentPage) {
+      window.paginationState[tableId].currentPage = 1;
+    } else {
+      const maxPage = Math.max(1, window.paginationState[tableId].totalPages || 1);
+      window.paginationState[tableId].currentPage = Math.min(window.paginationState[tableId].currentPage || 1, maxPage);
+    }
   }
 
   const state = window.paginationState[tableId];
@@ -1085,12 +1091,37 @@ function setupPagination(tableId, data, renderFunction, options = {}) {
 /**
  * Renderiza una página de la tabla paginada
  */
+function _getScrollSnapshot(el) {
+  if (!el) return { winX: window.scrollX, winY: window.scrollY, parent: null, top: 0, left: 0 };
+  let p = el.parentElement;
+  while (p) {
+    const style = window.getComputedStyle(p);
+    const canScrollY = /(auto|scroll)/.test(style.overflowY || '');
+    const canScrollX = /(auto|scroll)/.test(style.overflowX || '');
+    if (canScrollY || canScrollX) {
+      return { winX: window.scrollX, winY: window.scrollY, parent: p, top: p.scrollTop, left: p.scrollLeft };
+    }
+    p = p.parentElement;
+  }
+  return { winX: window.scrollX, winY: window.scrollY, parent: null, top: 0, left: 0 };
+}
+
+function _restoreScrollSnapshot(snapshot) {
+  if (!snapshot) return;
+  if (snapshot.parent) {
+    snapshot.parent.scrollTop = snapshot.top;
+    snapshot.parent.scrollLeft = snapshot.left;
+  }
+  window.scrollTo(snapshot.winX, snapshot.winY);
+}
+
 function renderPaginatedTable(tableId, renderFunction, tbodyId) {
   const state = window.paginationState[tableId];
   if (!state) return;
 
   const tbody = tbodyId ? document.getElementById(tbodyId) : null;
   if (!tbody) return;
+  const scrollSnapshot = _getScrollSnapshot(tbody);
 
   tbody.innerHTML = '';
 
@@ -1113,6 +1144,7 @@ function renderPaginatedTable(tableId, renderFunction, tbodyId) {
       console.error('[PAGINATION ERROR]', e);
     }
   });
+  requestAnimationFrame(() => _restoreScrollSnapshot(scrollSnapshot));
 }
 
 /**
@@ -9851,7 +9883,7 @@ function renderFlujoEstado(cita) {
           <button class="flujo-btn-sm cancelar" id="flujo-btn-cancelar">Cancelar cita</button>
         </div>
       </div>`;
-    document.getElementById('flujo-btn-confirmado').onclick = () => cambiarEstadoCita('Confirmado');
+    document.getElementById('flujo-btn-confirmado').onclick = (ev) => cambiarEstadoCita('Confirmado', ev.currentTarget);
     document.getElementById('flujo-btn-cancelar').onclick = () => confirmarCancelacionCitaElectro();
 
   } else if (estado === 'Confirmado') {
@@ -9864,8 +9896,8 @@ function renderFlujoEstado(cita) {
           <button class="flujo-btn-sm no-asistio" id="flujo-btn-noasistio">No asisti\u00f3</button>
         </div>
       </div>`;
-    document.getElementById('flujo-btn-ensala').onclick = () => cambiarEstadoCita('En Sala');
-    document.getElementById('flujo-btn-noasistio').onclick = () => cambiarEstadoCita('No Asistió');
+    document.getElementById('flujo-btn-ensala').onclick = (ev) => cambiarEstadoCita('En Sala', ev.currentTarget);
+    document.getElementById('flujo-btn-noasistio').onclick = (ev) => cambiarEstadoCita('No Asistió', ev.currentTarget);
 
   } else if (estado === 'En Sala') {
     // Equipo habilitado
@@ -9879,7 +9911,7 @@ function renderFlujoEstado(cita) {
         </div>
       </div>`;
     document.getElementById('flujo-btn-iniciar').onclick = () => iniciarEstudioModal();
-    document.getElementById('flujo-btn-noasistio2').onclick = () => cambiarEstadoCita('No Asistió');
+    document.getElementById('flujo-btn-noasistio2').onclick = (ev) => cambiarEstadoCita('No Asistió', ev.currentTarget);
 
   } else if (estado === 'En Estudio') {
     flujoEl.innerHTML = `
@@ -9895,7 +9927,7 @@ function renderFlujoEstado(cita) {
         </div>
       </div>`;
     document.getElementById('flujo-btn-finalizar').onclick = () => finalizarEstudioModal();
-    document.getElementById('flujo-btn-pausar').onclick = () => cambiarEstadoCita('Pausado');
+    document.getElementById('flujo-btn-pausar').onclick = (ev) => cambiarEstadoCita('Pausado', ev.currentTarget);
 
   } else if (estado === 'Pausado') {
     flujoEl.innerHTML = `
@@ -9906,7 +9938,7 @@ function renderFlujoEstado(cita) {
           <button class="flujo-btn-sm cancelar" id="flujo-btn-finalizar-pausado">Finalizar estudio</button>
         </div>
       </div>`;
-    document.getElementById('flujo-btn-reanudar').onclick = () => cambiarEstadoCita('En Estudio');
+    document.getElementById('flujo-btn-reanudar').onclick = (ev) => cambiarEstadoCita('En Estudio', ev.currentTarget);
     document.getElementById('flujo-btn-finalizar-pausado').onclick = () => finalizarEstudioModal();
 
   } else {
@@ -9935,9 +9967,47 @@ function actualizarEstadoFilaTablaElectro(citaId, nuevoEstado) {
   }
 }
 
-async function cambiarEstadoCita(nuevoEstado) {
+function aplicarCambioCitaElectroRealtime(payload = {}) {
+  const st = window.paginationState && window.paginationState.citasElectro;
+  if (!st || !Array.isArray(st.data)) return;
+  const id = payload?.id;
+  if (!id) return;
+  const idStr = String(id);
+  const idx = st.data.findIndex((c) => String(c.id) === idStr);
+
+  if (payload.type === 'eliminada' || payload.type === 'eliminado') {
+    if (idx >= 0) st.data.splice(idx, 1);
+  } else {
+    const cambios = payload.cambios || payload;
+    const next = {
+      ...(idx >= 0 ? st.data[idx] : { id }),
+      ...cambios
+    };
+    if (next.estado !== undefined) next.estado = normalizarEstadoElectro(next.estado);
+    if (idx >= 0) st.data[idx] = next;
+    else st.data.push(next);
+  }
+
+  st.totalPages = Math.max(1, Math.ceil(st.data.length / st.itemsPerPage));
+  st.currentPage = Math.min(st.currentPage || 1, st.totalPages);
+  renderPaginatedTable('citasElectro', renderCitaElectroRow, 'citasElectroBody');
+  const containerSel = '#citasElectroTableControls';
+  if (document.querySelector(containerSel)) {
+    createPaginationControls('citasElectro', containerSel, [5, 10, 15, 20, 50], renderCitaElectroRow, 'citasElectroBody');
+  }
+}
+
+window.aplicarCambioCitaElectroRealtime = aplicarCambioCitaElectroRealtime;
+
+async function cambiarEstadoCita(nuevoEstado, triggerBtn = null) {
   if (!citaElectroSeleccionada) return;
   const estadoObjetivo = normalizarEstadoElectro(nuevoEstado);
+  const originalText = triggerBtn ? triggerBtn.textContent : '';
+  if (triggerBtn) {
+    triggerBtn.disabled = true;
+    triggerBtn.dataset.loading = '1';
+    triggerBtn.textContent = 'Cargando...';
+  }
   try {
     // Usar endpoint general para unificar exactamente el mismo flujo que ya funciona
     // en el resto del módulo (equipos, inicio/fin estudio, etc.).
@@ -9973,6 +10043,12 @@ async function cambiarEstadoCita(nuevoEstado) {
     }
   } catch (e) {
     showToast('Error actualizando estado', 'error');
+  } finally {
+    if (triggerBtn) {
+      triggerBtn.disabled = false;
+      triggerBtn.dataset.loading = '';
+      triggerBtn.textContent = originalText || triggerBtn.textContent;
+    }
   }
 }
 

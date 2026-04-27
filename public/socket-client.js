@@ -342,19 +342,35 @@ function initSocket() {
   // ===== EVENTOS DE ELECTRODIAGNÓSTICO =====
   // Guard de módulo activo para evitar doble llamada con socket-electro.js
   socket.on('electro:cita-creada', (data) => {
+    if (window.currentModule === 'electro' && typeof window.aplicarCambioCitaElectroRealtime === 'function') {
+      window.aplicarCambioCitaElectroRealtime({ ...(data || {}), type: 'creada' });
+      return;
+    }
     refreshActiveModuleData();
   });
 
   socket.on('electro:cita-eliminada', (data) => {
+    if (window.currentModule === 'electro' && typeof window.aplicarCambioCitaElectroRealtime === 'function') {
+      window.aplicarCambioCitaElectroRealtime({ ...(data || {}), type: 'eliminada' });
+      return;
+    }
     refreshActiveModuleData();
   });
 
   // electro:cita-actualizada es el evento correcto (el servidor emite este, no electro:cita-estado-cambio)
   socket.on('electro:cita-actualizada', (data) => {
+    if (window.currentModule === 'electro' && typeof window.aplicarCambioCitaElectroRealtime === 'function') {
+      window.aplicarCambioCitaElectroRealtime({ ...(data || {}), type: 'actualizada' });
+      return;
+    }
     refreshActiveModuleData();
   });
 
   socket.on('electro:actualizar-lista', (data) => {
+    if (window.currentModule === 'electro' && typeof window.aplicarCambioCitaElectroRealtime === 'function' && data?.id) {
+      window.aplicarCambioCitaElectroRealtime(data);
+      return;
+    }
     refreshActiveModuleData();
   });
 
