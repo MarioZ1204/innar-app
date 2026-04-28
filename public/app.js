@@ -2715,6 +2715,8 @@ let calLoadReqId = 0;
 
 function obtenerEstadoDiaAgenda(dateStr) {
   const disp = calDisponibilidad[dateStr];
+  if (disp && disp.disponible === false) return 'unavailable'; // Prioridad máxima
+
   const daySlots = calSlots.filter(s => (s.fecha || '').slice(0, 10) === dateStr && s.disponible);
   const normalizedSlots = daySlots
     .map(s => `${(s.hora_inicio || '').slice(0, 5)}-${(s.hora_fin || '').slice(0, 5)}`)
@@ -2727,7 +2729,6 @@ function obtenerEstadoDiaAgenda(dateStr) {
   const tieneMediaJornada = normalizedSlots.length === 1
     && (normalizedSlots[0] === '08:00-12:00' || normalizedSlots[0] === '14:00-18:00');
 
-  if (disp && !disp.disponible) return 'unavailable';
   if (tieneJornadaCompleta) return 'full';
   if (tieneMediaJornada) return 'partial';
 
