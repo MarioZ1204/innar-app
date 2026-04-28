@@ -2715,7 +2715,7 @@ let calLoadReqId = 0;
 
 function obtenerEstadoDiaAgenda(dateStr) {
   const disp = calDisponibilidad[dateStr];
-  if (disp && disp.disponible === false) return 'unavailable'; // Prioridad máxima
+  if (disp && (disp.disponible === false || disp.disponible === 0 || disp.disponible === '0' || disp.disponible === 'false')) return 'unavailable'; // Prioridad máxima
 
   const daySlots = calSlots.filter(s => (s.fecha || '').slice(0, 10) === dateStr && s.disponible);
   const normalizedSlots = daySlots
@@ -2999,38 +2999,45 @@ function addCalHoraRow(inicio, fin) {
 async function saveCalDay() {
   if (!calSelectedDate || !calDoctorIdForCal) return;
 
-  const disponible = Boolean(
-    calModoTodoDia
-    || $('calToggleYes')?.classList.contains('cal-toggle-active-yes')
-    || $('calToggleFullDay')?.classList.contains('cal-toggle-active-full')
-  );
-  const horasRows = document.querySelectorAll('#calModalHorasList .cal-hora-row');
-
-  // Build slots
-  const slots = [];
+  // Detectar si el botón "No asistiré" está activo
+  const noAsistireActivo = $('calToggleNo')?.classList.contains('cal-toggle-active-no');
+  let disponible = true;
+  let slots = [];
   let hasManana = false, hasTarde = false;
-
-  if (disponible) {
-    if (calModoTodoDia) {
-      slots.push({ fecha: calSelectedDate, hora_inicio: '08:00', hora_fin: '12:00', disponible: 1 });
-      slots.push({ fecha: calSelectedDate, hora_inicio: '14:00', hora_fin: '18:00', disponible: 1 });
-      hasManana = true;
-      hasTarde = true;
-    } else {
-      let valid = true;
-      horasRows.forEach(row => {
-        const hi = row.querySelector('.cal-hora-inicio')?.value;
-        const hf = row.querySelector('.cal-hora-fin')?.value;
-        if (!hi || !hf) { valid = false; return; }
-        if (hi >= hf) { valid = false; return; }
-        slots.push({ fecha: calSelectedDate, hora_inicio: hi, hora_fin: hf, disponible: 1 });
-        const h = parseInt(hi.split(':')[0], 10);
-        if (h < 12) hasManana = true;
-        if (h >= 12) hasTarde = true;
-      });
-      if (!valid || slots.length === 0) {
-        showToast('Completa todos los horarios correctamente (inicio < fin)', 'error');
-        return;
+  if (noAsistireActivo) {
+    disponible = false;
+    slots = [];
+    hasManana = false;
+    hasTarde = false;
+  } else {
+    disponible = Boolean(
+      calModoTodoDia
+      || $('calToggleYes')?.classList.contains('cal-toggle-active-yes')
+      || $('calToggleFullDay')?.classList.contains('cal-toggle-active-full')
+    );
+    const horasRows = document.querySelectorAll('#calModalHorasList .cal-hora-row');
+    if (disponible) {
+      if (calModoTodoDia) {
+        slots.push({ fecha: calSelectedDate, hora_inicio: '08:00', hora_fin: '12:00', disponible: 1 });
+        slots.push({ fecha: calSelectedDate, hora_inicio: '14:00', hora_fin: '18:00', disponible: 1 });
+        hasManana = true;
+        hasTarde = true;
+      } else {
+        let valid = true;
+        horasRows.forEach(row => {
+          const hi = row.querySelector('.cal-hora-inicio')?.value;
+          const hf = row.querySelector('.cal-hora-fin')?.value;
+          if (!hi || !hf) { valid = false; return; }
+          if (hi >= hf) { valid = false; return; }
+          slots.push({ fecha: calSelectedDate, hora_inicio: hi, hora_fin: hf, disponible: 1 });
+          const h = parseInt(hi.split(':')[0], 10);
+          if (h < 12) hasManana = true;
+          if (h >= 12) hasTarde = true;
+        });
+        if (!valid || slots.length === 0) {
+          showToast('Completa todos los horarios correctamente (inicio < fin)', 'error');
+          return;
+        }
       }
     }
   }
