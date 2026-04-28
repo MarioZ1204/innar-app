@@ -3275,6 +3275,9 @@ app.get('/api/citas-electro/plantilla-excel', requireAuth, async (req, res) => {
 
 // Listar citas electro por fecha (solo fecha requerida)
 app.get('/api/citas-electro', requireAuth, async (req, res) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.set('Pragma', 'no-cache');
+  res.set('Expires', '0');
   const { fecha, equipo_id, buscar } = req.query;
   
   // Si está buscando por documento de paciente
@@ -3615,6 +3618,16 @@ app.patch('/api/citas-electro/:id/estado', requireAuth, requireRoleOrPerm(['supe
       SET estado = ?, editado_por_nombre = ?, editado_en = NOW()
       WHERE id = ?
     `, [estado, editadoPor, id]);
+
+    if (app.io) {
+      emitSocket('electro:cita-actualizada', {
+        id,
+        estado,
+        editado_por: editadoPor
+      });
+      emitSocket('electro:actualizar-lista', { type: 'estado', id, cambios: { estado } });
+    }
+
     res.json({ ok: true });
   } catch (e) {
     console.error(e);
@@ -3627,7 +3640,7 @@ app.patch('/api/citas-electro/:id/estado', requireAuth, requireRoleOrPerm(['supe
 // "Programado"/"Confirmado" â†’ "En Estudio" (validar capacidad)
 // "En Estudio" â†’ "Completado" (marcar fin)
 // Cualquier estado â†’ "Confirmado", "En Sala", "No Asistió", "Cancelado" (manual)
-app.patch('/api/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro', 'tecnico_electro'], 'electro.editar'), async (req, res) => {
+app.patch('/api/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro', 'tecnico_electro'], ['electro.editar', 'electro.cambiar_estado']), async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const { equipo_id, estado, hora_inicio, hora_fin, hora_agendamiento, fecha, duracion_minutos, entidad } = req.body || {};
   
@@ -3813,6 +3826,23 @@ app.patch('/api/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin'
     if (duracion_minutos !== undefined) cambios.duracion_minutos = duracion_minutos;
     
     await db.execute(`UPDATE citas_electro SET ${updates.join(', ')} WHERE id = ?`, values);
+
+    // Autocorrección de esquema: en algunos despliegues antiguos el ENUM de estado
+    // no incluye "Confirmado"/otros valores y MySQL termina guardando "Programado".
+    if (estado !== undefined) {
+      const ver1 = await db.query('SELECT estado FROM citas_electro WHERE id = ?', [id]);
+      const estadoGuardado1 = ver1.length ? ver1[0].estado : null;
+      if (estadoGuardado1 !== estado) {
+        try {
+          await db.execute(
+            "ALTER TABLE citas_electro MODIFY COLUMN estado ENUM('Programado','Confirmado','En Sala','En Estudio','Pausado','Completado','No Asistió','Cancelado','Reprogramado','Adelantado') NOT NULL DEFAULT 'Programado'"
+          );
+          await db.execute(`UPDATE citas_electro SET ${updates.join(', ')} WHERE id = ?`, values);
+        } catch (schemaErr) {
+          console.warn('[ELECTRO] No se pudo autocorregir ENUM estado:', schemaErr.message);
+        }
+      }
+    }
     
     // Emitir evento de socket para actualizar en tiempo real
     if (app.io) {
@@ -3824,6 +3854,17 @@ app.patch('/api/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin'
       emitSocket('electro:actualizar-lista', { type: 'actualizada', id, cambios });
     }
     
+    if (estado !== undefined) {
+      const ver2 = await db.query('SELECT estado FROM citas_electro WHERE id = ?', [id]);
+      const estadoGuardado2 = ver2.length ? ver2[0].estado : null;
+      if (estadoGuardado2 !== estado) {
+        return res.status(409).json({
+          ok: false,
+          error: `No se pudo persistir el estado solicitado (${estado}). Estado actual en BD: ${estadoGuardado2 || 'N/D'}`,
+          estado_actual: estadoGuardado2 || null
+        });
+      }
+    }
     res.json({ ok: true, transicion: `${estadoActual} â†’ ${estado || estadoActual}` });
   } catch (e) {
     res.status(500).json({ error: e.message });

@@ -124,6 +124,7 @@ let _cargandoTurnosMedica = false;
 let _pendienteTurnosMedica = false;
 let _cargandoCitasElectro = false;
 let _pendienteCitasElectro = false;
+let _citasElectroReqId = 0;
 
 function normalizarTextoBase(str) {
   return (str || '')
@@ -554,8 +555,27 @@ function goToModule(moduleId) {
   history.pushState({view: moduleId}, '', `#${moduleId}`);
   if (moduleId === 'recibos') { if (!initRecibosDone) initRecibos(); else cargarLista(_recibosLastParams || ''); }
   if (moduleId === 'agenda-medica') { 
-    if (!initAgendaDone) initAgendaMedica(); 
-    initAgendaDone = true; 
+    if (!initAgendaDone) {
+      initAgendaMedica();
+      initAgendaDone = true;
+    } else {
+      // Al reingresar al módulo, refrescar contra el doctor actualmente seleccionado
+      // y volver a la subvista principal de citas.
+      document.querySelectorAll('.agenda-page-btn').forEach(b => b.classList.remove('active'));
+      const citasBtn = document.querySelector('.agenda-page-btn[data-page="citas"]');
+      if (citasBtn) citasBtn.classList.add('active');
+      document.querySelectorAll('.agenda-page').forEach(p => p.classList.remove('active'));
+      const citasPage = document.querySelector('.agenda-page[data-agenda-page="citas"]');
+      if (citasPage) citasPage.classList.add('active');
+      const progSection = $('agendaProgramarSection');
+      if (progSection) progSection.style.display = 'none';
+      if (typeof calDoctorIdForCal !== 'undefined') {
+        calDoctorIdForCal = selectedDoctorId || currentUser?.id || null;
+      }
+      if (typeof loadCalendarData === 'function' && (selectedDoctorId || currentUser?.id)) loadCalendarData();
+      if (typeof cargarTurnosMedica === 'function') cargarTurnosMedica();
+      if (typeof actualizarHorasDisponibles === 'function') actualizarHorasDisponibles();
+    }
     // Socket.IO maneja los cambios en tiempo real, no necesitamos auto-refresh
   } else {
     stopAgendaMedicaAutoRefresh();
@@ -779,6 +799,31 @@ function abreviarEstudio(nombre) {
 }
 
 // Genera un badge de color según el estado de la cita electro
+function normalizarEstadoElectro(estado) {
+  const raw = String(estado || '').trim();
+  if (!raw) return 'Programado';
+  const key = raw
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[_\s]+/g, ' ')
+    .trim();
+
+  const map = {
+    'programado': 'Programado',
+    'confirmado': 'Confirmado',
+    'en sala': 'En Sala',
+    'en estudio': 'En Estudio',
+    'pausado': 'Pausado',
+    'completado': 'Completado',
+    'cancelado': 'Cancelado',
+    'no asistio': 'No Asistió',
+    'reprogramado': 'Reprogramado',
+    'adelantado': 'Adelantado'
+  };
+  return map[key] || raw;
+}
+
 function estadoBadge(estado) {
   const map = {
     'Programado':   { bg: '#dbeafe', color: '#1d4ed8', border: '#93c5fd' },
@@ -792,7 +837,7 @@ function estadoBadge(estado) {
     'Adelantado':   { bg: '#ecfdf5', color: '#047857', border: '#6ee7b7' },
     'Pausado':      { bg: '#fef3c7', color: '#92400e', border: '#fcd34d' },
   };
-  const e = estado || 'Programado';
+  const e = normalizarEstadoElectro(estado);
   const s = map[e] || { bg: '#f3f4f6', color: '#374151', border: '#d1d5db' };
   return `<span style="display:inline-block;padding:5px 14px;border-radius:14px;font-size:0.85rem;font-weight:700;background:${s.bg};color:${s.color};border:1px solid ${s.border};white-space:nowrap;letter-spacing:0.01em">${escapeHtml(e)}</span>`;
 }
@@ -1008,7 +1053,8 @@ function setupPagination(tableId, data, renderFunction, options = {}) {
     itemsPerPageDefault = 20,
     itemsPerPageOptions = [5, 10, 15, 20, 50],
     tbodyId = null,
-    containerSelector = null
+    containerSelector = null,
+    keepCurrentPage = true
   } = options;
 
   // Inicializar estado
@@ -1023,7 +1069,12 @@ function setupPagination(tableId, data, renderFunction, options = {}) {
     // Actualizar datos y recalcular
     window.paginationState[tableId].data = data;
     window.paginationState[tableId].totalPages = Math.ceil(data.length / window.paginationState[tableId].itemsPerPage);
-    window.paginationState[tableId].currentPage = 1;
+    if (!keepCurrentPage) {
+      window.paginationState[tableId].currentPage = 1;
+    } else {
+      const maxPage = Math.max(1, window.paginationState[tableId].totalPages || 1);
+      window.paginationState[tableId].currentPage = Math.min(window.paginationState[tableId].currentPage || 1, maxPage);
+    }
   }
 
   const state = window.paginationState[tableId];
@@ -1040,12 +1091,37 @@ function setupPagination(tableId, data, renderFunction, options = {}) {
 /**
  * Renderiza una página de la tabla paginada
  */
+function _getScrollSnapshot(el) {
+  if (!el) return { winX: window.scrollX, winY: window.scrollY, parent: null, top: 0, left: 0 };
+  let p = el.parentElement;
+  while (p) {
+    const style = window.getComputedStyle(p);
+    const canScrollY = /(auto|scroll)/.test(style.overflowY || '');
+    const canScrollX = /(auto|scroll)/.test(style.overflowX || '');
+    if (canScrollY || canScrollX) {
+      return { winX: window.scrollX, winY: window.scrollY, parent: p, top: p.scrollTop, left: p.scrollLeft };
+    }
+    p = p.parentElement;
+  }
+  return { winX: window.scrollX, winY: window.scrollY, parent: null, top: 0, left: 0 };
+}
+
+function _restoreScrollSnapshot(snapshot) {
+  if (!snapshot) return;
+  if (snapshot.parent) {
+    snapshot.parent.scrollTop = snapshot.top;
+    snapshot.parent.scrollLeft = snapshot.left;
+  }
+  window.scrollTo(snapshot.winX, snapshot.winY);
+}
+
 function renderPaginatedTable(tableId, renderFunction, tbodyId) {
   const state = window.paginationState[tableId];
   if (!state) return;
 
   const tbody = tbodyId ? document.getElementById(tbodyId) : null;
   if (!tbody) return;
+  const scrollSnapshot = _getScrollSnapshot(tbody);
 
   tbody.innerHTML = '';
 
@@ -1068,6 +1144,7 @@ function renderPaginatedTable(tableId, renderFunction, tbodyId) {
       console.error('[PAGINATION ERROR]', e);
     }
   });
+  requestAnimationFrame(() => _restoreScrollSnapshot(scrollSnapshot));
 }
 
 /**
@@ -1608,6 +1685,10 @@ function selectDoctor(doctorId, doctorName, especialidad) {
   sessionStorage.setItem(lsKeySelectedDoctor, doctorId);
   sessionStorage.setItem('selected_doctor_especialidad', especialidad || '');
   closeDoctorSelectionModal();
+  // Resetear estado visual interno de Agenda para evitar arrastrar el doctor/página anterior
+  if (typeof calSelectedDate !== 'undefined') calSelectedDate = null;
+  if (typeof calLoadReqId !== 'undefined') calLoadReqId++;
+  if (typeof window !== 'undefined') window._agendaCalendarSetup = false;
   // Actualizar horas disponibles con el nuevo doctor
   actualizarHorasDisponibles();
   // Cargar tipos de consulta según especialidad
@@ -2284,6 +2365,12 @@ async function initAgendaMedica() {
     // Sin doctor seleccionado (roles no doctor): mantener vacío hasta seleccionar uno desde menú
     $('agendaMedicaDoctorDisplay').textContent = '-';
   }
+
+  // Sincronizar el calendario de programación con el doctor activo actual
+  // incluso si ya había sido inicializado antes.
+  if (typeof calDoctorIdForCal !== 'undefined') {
+    calDoctorIdForCal = selectedDoctorId || currentUser?.id || null;
+  }
   
   // Validar disponibilidad del doctor cuando se selecciona una fecha
   // SIEMPRE aplicar validación si hay un doctor seleccionado
@@ -2360,6 +2447,9 @@ async function initAgendaMedica() {
   if (canAgendaProgram && !window._agendaCalendarSetup) {
     setupAgendaCalendar();
     window._agendaCalendarSetup = true;
+  } else if (canAgendaProgram && typeof loadCalendarData === 'function' && (selectedDoctorId || currentUser?.id)) {
+    // Si ya estaba inicializado, recargar con el doctor actualmente seleccionado.
+    loadCalendarData();
   }
   
   // Sidebar button listeners para cambio de página
@@ -2396,6 +2486,12 @@ async function initAgendaMedica() {
   document.querySelectorAll('.agenda-page-btn').forEach(b => b.classList.remove('active'));
   const citasBtn = document.querySelector('.agenda-page-btn[data-page="citas"]');
   if (citasBtn) citasBtn.classList.add('active');
+
+  // Resetear también las páginas visibles para no conservar la vista anterior
+  // cuando se cambia de doctor desde el menú principal.
+  document.querySelectorAll('.agenda-page').forEach(p => p.classList.remove('active'));
+  const citasPage = document.querySelector('.agenda-page[data-agenda-page="citas"]');
+  if (citasPage) citasPage.classList.add('active');
   
   // Ocultar inicialmente las secciones de programar agenda
   const progSection = $('agendaProgramarSection');
@@ -2615,59 +2711,45 @@ let calDisponibilidad = {}; // { 'YYYY-MM-DD': { disponible, disponible_manana, 
 let calSlots = []; // [{ fecha, hora_inicio, hora_fin, disponible }]
 let calDoctorIdForCal = null;
 let calModoTodoDia = false;
+let calLoadReqId = 0;
+
+function obtenerEstadoDiaAgenda(dateStr) {
+  const disp = calDisponibilidad[dateStr];
+  const daySlots = calSlots.filter(s => (s.fecha || '').slice(0, 10) === dateStr && s.disponible);
+  const normalizedSlots = daySlots
+    .map(s => `${(s.hora_inicio || '').slice(0, 5)}-${(s.hora_fin || '').slice(0, 5)}`)
+    .sort();
+
+  const tieneJornadaCompleta = normalizedSlots.length === 2
+    && normalizedSlots[0] === '08:00-12:00'
+    && normalizedSlots[1] === '14:00-18:00';
+
+  const tieneMediaJornada = normalizedSlots.length === 1
+    && (normalizedSlots[0] === '08:00-12:00' || normalizedSlots[0] === '14:00-18:00');
+
+  if (disp && !disp.disponible) return 'unavailable';
+  if (tieneJornadaCompleta) return 'full';
+  if (tieneMediaJornada) return 'partial';
+
+  // Fallback cuando no hay slots específicos, usando disponibilidad mensual.
+  if (disp) {
+    if (disp.disponible_manana && disp.disponible_tarde) return 'full';
+    if (disp.disponible_manana || disp.disponible_tarde) return 'partial';
+    return 'unavailable';
+  }
+
+  if (daySlots.length > 0) return 'partial';
+  return 'none';
+}
 
 function setupAgendaCalendar() {
   calDoctorIdForCal = selectedDoctorId || currentUser?.id;
   if (!calDoctorIdForCal) return;
 
-  // Selector de doctor para recepción/admin
+  // El doctor se selecciona desde el menú principal para roles no doctor.
+  // En esta vista solo se permite visualizar/editar la agenda del doctor ya seleccionado.
   const selectorDiv = $('agendaCalDoctorSelector');
-  if (selectorDiv && currentUser?.rol !== 'doctor') {
-    selectorDiv.style.display = '';
-    const sel = $('agendaCalDoctorSelect');
-    if (sel && !sel.dataset.loaded) {
-      sel.innerHTML = '<option value="">Cargando...</option>';
-      apiFetch('/api/medicos').then(r => r.json()).then(list => {
-        window._agendaMedicosCacheForCal = Array.isArray(list) ? list : [];
-        sel.innerHTML = '<option value="">Seleccionar médico</option>';
-        (Array.isArray(list) ? list : []).forEach(m => {
-          const o = document.createElement('option');
-          o.value = m.id;
-          o.textContent = m.nombre || m.usuario;
-          if (m.id == calDoctorIdForCal) o.selected = true;
-          sel.appendChild(o);
-        });
-        sel.dataset.loaded = '1';
-      }).catch(() => { sel.innerHTML = '<option value="">Error</option>'; });
-
-      sel.addEventListener('change', () => {
-        const v = parseInt(sel.value, 10);
-        if (v) {
-          const medico = Array.from(sel.options).find(o => parseInt(o.value, 10) === v);
-          calDoctorIdForCal = v;
-          selectedDoctorId = v;
-          sessionStorage.setItem(lsKeySelectedDoctor, String(v));
-          if (medico) {
-            $('agendaMedicaDoctorDisplay').textContent = medico.textContent || '-';
-          }
-          const medData = (window._agendaMedicosCacheForCal || []).find(m => parseInt(m.id, 10) === v);
-          selectedDoctorEspecialidad = medData?.especialidad || '';
-          sessionStorage.setItem('selected_doctor_especialidad', selectedDoctorEspecialidad || '');
-          if (typeof crearDatepickerConDisponibilidad === 'function') {
-            crearDatepickerConDisponibilidad($('agendaMedicaFecha'), selectedDoctorId);
-          }
-          cargarTiposConsultaSegunEspecialidad(selectedDoctorEspecialidad);
-          actualizarHorasDisponibles();
-          cargarTurnosMedica();
-          calSelectedDate = null;
-          loadCalendarData();
-        }
-      });
-    }
-    if (sel) {
-      sel.value = String(calDoctorIdForCal);
-    }
-  } else if (selectorDiv) {
+  if (selectorDiv) {
     selectorDiv.style.display = 'none';
   }
 
@@ -2720,7 +2802,8 @@ function setCalToggle(asistire, todoDia = false) {
   const horasC = $('calModalHorasContainer');
   if (asistire) {
     calModoTodoDia = Boolean(todoDia);
-    btnYes.classList.toggle('cal-toggle-active-yes', !calModoTodoDia);
+    // "Todo el día" también es "asistiré", por lo que debe considerarse disponible.
+    btnYes.classList.add('cal-toggle-active-yes');
     btnFullDay?.classList.toggle('cal-toggle-active-full', calModoTodoDia);
     btnNo.classList.remove('cal-toggle-active-no');
     if (horasC) horasC.style.display = calModoTodoDia ? 'none' : '';
@@ -2792,24 +2875,41 @@ function closeCalModal() {
 }
 
 async function loadCalendarData() {
+  // Tomar siempre el doctor activo actual para evitar quedar pegado al anterior.
+  calDoctorIdForCal = selectedDoctorId || currentUser?.id || calDoctorIdForCal;
   if (!calDoctorIdForCal) return;
+  const reqId = ++calLoadReqId;
   const mes = `${calCurrentYear}-${String(calCurrentMonth + 1).padStart(2, '0')}`;
 
   try {
     // Cargar disponibilidad mensual
-    const resDisp = await apiFetch(`/api/doctor-disponibilidad/${calDoctorIdForCal}?mes=${mes}`);
+    const resDisp = await apiFetch(`/api/doctor-disponibilidad/${calDoctorIdForCal}?mes=${mes}&_t=${Date.now()}`, {
+      cache: 'no-store'
+    });
     const dataDisp = await resDisp.json();
+    if (reqId !== calLoadReqId) return; // respuesta vieja
     calDisponibilidad = {};
     if (dataDisp.ok && Array.isArray(dataDisp.disponibilidad)) {
       dataDisp.disponibilidad.forEach(d => {
         const fecha = (d.fecha || '').slice(0, 10);
-        calDisponibilidad[fecha] = d;
+        const dispDia = d.disponible === true || d.disponible === 1 || d.disponible === '1';
+        const dispManana = d.disponible_manana === true || d.disponible_manana === 1 || d.disponible_manana === '1';
+        const dispTarde = d.disponible_tarde === true || d.disponible_tarde === 1 || d.disponible_tarde === '1';
+        calDisponibilidad[fecha] = {
+          ...d,
+          disponible: dispDia,
+          disponible_manana: dispManana,
+          disponible_tarde: dispTarde
+        };
       });
     }
 
     // Cargar slots de agenda
-    const resSlots = await apiFetch(`/api/doctor-agenda?doctor_id=${calDoctorIdForCal}`);
+    const resSlots = await apiFetch(`/api/doctor-agenda?doctor_id=${calDoctorIdForCal}&_t=${Date.now()}`, {
+      cache: 'no-store'
+    });
     const slotsData = await resSlots.json();
+    if (reqId !== calLoadReqId) return; // respuesta vieja
     calSlots = Array.isArray(slotsData) ? slotsData : [];
   } catch (e) {
     console.error('Error cargando datos del calendario:', e);
@@ -2855,24 +2955,12 @@ function renderCalendar() {
     if (dateObj.getTime() === today.getTime()) cell.classList.add('cal-today');
     if (dateStr === calSelectedDate) cell.classList.add('cal-selected');
 
-    // Check status
-    const disp = calDisponibilidad[dateStr];
-    const daySlots = calSlots.filter(s => (s.fecha || '').slice(0, 10) === dateStr);
-
-    if (disp) {
-      if (!disp.disponible) {
-        cell.classList.add('cal-unavailable');
-      } else if (disp.disponible_manana && disp.disponible_tarde) {
-        cell.classList.add('cal-available');
-      } else if (disp.disponible_manana || disp.disponible_tarde) {
-        cell.classList.add('cal-partial');
-      } else {
-        cell.classList.add('cal-available');
-      }
-    } else if (daySlots.length > 0) {
-      const anyAvailable = daySlots.some(s => s.disponible);
-      cell.classList.add(anyAvailable ? 'cal-available' : 'cal-unavailable');
-    }
+    // Color por estado de jornada:
+    // full (08:00-12:00 + 14:00-18:00)=verde, partial (media jornada)=azul, unavailable=no asiste=rojo.
+    const estadoDia = obtenerEstadoDiaAgenda(dateStr);
+    if (estadoDia === 'full') cell.classList.add('cal-available');
+    if (estadoDia === 'partial') cell.classList.add('cal-partial');
+    if (estadoDia === 'unavailable') cell.classList.add('cal-unavailable');
 
     if (!isPast) {
       cell.addEventListener('click', () => {
@@ -2910,7 +2998,11 @@ function addCalHoraRow(inicio, fin) {
 async function saveCalDay() {
   if (!calSelectedDate || !calDoctorIdForCal) return;
 
-  const disponible = $('calToggleYes')?.classList.contains('cal-toggle-active-yes');
+  const disponible = Boolean(
+    calModoTodoDia
+    || $('calToggleYes')?.classList.contains('cal-toggle-active-yes')
+    || $('calToggleFullDay')?.classList.contains('cal-toggle-active-full')
+  );
   const horasRows = document.querySelectorAll('#calModalHorasList .cal-hora-row');
 
   // Build slots
@@ -3016,6 +3108,7 @@ function renderCalResumen() {
 
     const disp = calDisponibilidad[dateStr];
     const daySlots = calSlots.filter(s => (s.fecha || '').slice(0, 10) === dateStr && s.disponible);
+    const estadoDia = obtenerEstadoDiaAgenda(dateStr);
 
     if (!disp && daySlots.length === 0) continue;
     configured++;
@@ -3023,10 +3116,10 @@ function renderCalResumen() {
     const dayName = diasSemana[dateObj.getDay()];
     let estadoHtml = '', horasHtml = '';
 
-    if (disp && !disp.disponible) {
-      estadoHtml = '<span class="cal-resumen-estado" style="background:#fee2e2;color:#991b1b">No asiste</span>';
-    } else if (disp || daySlots.length > 0) {
-      estadoHtml = '<span class="cal-resumen-estado" style="background:#dcfce7;color:#166534">Disponible</span>';
+    if (estadoDia === 'unavailable') {
+      estadoHtml = '<span class="cal-resumen-estado">No asiste</span>';
+    } else if (estadoDia === 'full' || estadoDia === 'partial') {
+      estadoHtml = `<span class="cal-resumen-estado">${estadoDia === 'full' ? 'Todo el día' : 'Medio día'}</span>`;
       if (daySlots.length > 0) {
         const normalizedSlots = daySlots
           .map(s => `${(s.hora_inicio || '').slice(0, 5)}-${(s.hora_fin || '').slice(0, 5)}`)
@@ -3048,7 +3141,7 @@ function renderCalResumen() {
       }
     }
 
-    html += `<div class="cal-resumen-dia">
+    html += `<div class="cal-resumen-dia cal-resumen-${estadoDia}">
       <span class="cal-resumen-fecha">${dayName} ${d}</span>
       ${estadoHtml}
       ${horasHtml}
@@ -4118,6 +4211,14 @@ async function crearTurnoMedica() {
   }
 
   try {
+    // Validación rápida en cliente: si el día está marcado como NO ASISTE, no permitir crear.
+    const dispRes = await apiFetch(`/api/doctor-disponibilidad?doctor_id=${doctorId}&fecha=${fecha}`);
+    const dispData = await dispRes.json().catch(() => null);
+    if (dispData?.ok && dispData.disponible_manana === false && dispData.disponible_tarde === false) {
+      showToast('No se puede agendar: el doctor está marcado como no asistirá ese día', 'error');
+      return;
+    }
+
     // Validaciones completadas - permitir múltiples pacientes en la misma hora
     // (no hay validación de duplicados por hora, se permite hasta 20 pacientes)
 
@@ -5146,7 +5247,8 @@ async function initElectro() {
   $('btnFinalizarEstudio')?.addEventListener('click', finalizarEstudioModal);
   
   // Event listeners para cambios en el modal (equipo y estado)
-  $('modalEquipo')?.addEventListener('change', async (e) => {
+  const modalEquipoEl = $('modalEquipo');
+  if (modalEquipoEl && !modalEquipoEl.dataset.boundChange) modalEquipoEl.addEventListener('change', async (e) => {
     if (!citaElectroSeleccionada) return;
     
     // No procesar cambios si estamos inicializando el modal
@@ -5206,8 +5308,12 @@ async function initElectro() {
       e.target.value = equipoIdActual;
     }
   });
-  $('modalEstado')?.addEventListener('change', async (e) => {
+  if (modalEquipoEl) modalEquipoEl.dataset.boundChange = '1';
+  const modalEstadoEl = $('modalEstado');
+  if (modalEstadoEl && !modalEstadoEl.dataset.boundChange) modalEstadoEl.addEventListener('change', async (e) => {
   if (!citaElectroSeleccionada) return;
+    // Estado se controla solo con botones de flujo. Ignorar este listener.
+    return;
     
     // No procesar cambios si estamos inicializando el modal
     if (isInitializingElectroModal) {
@@ -5268,6 +5374,7 @@ async function initElectro() {
       e.target.value = citaElectroSeleccionada.estado;
     }
   });
+  if (modalEstadoEl) modalEstadoEl.dataset.boundChange = '1';
   $('btnEnviarRecomendaciones')?.addEventListener('click', () => {
     if (citaElectroSeleccionada) enviarRecomendacionesWhatsApp(citaElectroSeleccionada);
   });
@@ -5714,6 +5821,7 @@ async function cargarCitasElectro() {
     _pendienteCitasElectro = true;
     return;
   }
+  const reqId = ++_citasElectroReqId;
   _cargandoCitasElectro = true;
   const fecha = $('electroFecha').value;
   if (!fecha) {
@@ -5723,9 +5831,18 @@ async function cargarCitasElectro() {
   }
   showSkeletonRows($('citasElectroBody'), 10, 6);
   try {
-    const res = await apiFetch(`/api/citas-electro?fecha=${fecha}`);
-    const citas = await res.json();
-    const citasNormalizadas = await sincronizarEstadosPorTiempo(citas);
+    const res = await apiFetch(`/api/citas-electro?fecha=${encodeURIComponent(fecha)}&_t=${Date.now()}`, {
+      cache: 'no-store'
+    });
+    const citasRaw = await res.json();
+    if (reqId !== _citasElectroReqId) return; // respuesta vieja pisa estado reciente
+    const citas = Array.isArray(citasRaw) ? citasRaw : [];
+    const citasNormalizadasEstado = citas.map((c) => ({
+      ...c,
+      estado: normalizarEstadoElectro(c.estado)
+    }));
+    const citasNormalizadas = await sincronizarEstadosPorTiempo(citasNormalizadasEstado);
+    if (reqId !== _citasElectroReqId) return; // respuesta vieja
     
     // Filtrar por estudio si es necesario
     let citasFiltradas = citasNormalizadas;
@@ -5807,6 +5924,7 @@ function renderCitaElectroRow(tbody, c) {
   const tr = document.createElement('tr');
   tr.className = 'turno-row';
   tr.style.cursor = 'pointer';
+  tr.dataset.citaId = String(c.id || '');
   
   const equipoDisplay = c.equipo_nombre ? escapeHtml(c.equipo_nombre) : (c.equipo_id ? `Equipo ${c.equipo_id}` : '<span style="color:#9ca3af">—</span>');
   
@@ -8646,18 +8764,10 @@ function renderDiagnosticoRow(tbody, d) {
 async function iniciarEstudioModal() {
   if (!citaElectroSeleccionada) return;
   
-  // VALIDACIÓN: Verificar que ya haya llegado la hora de agendamiento
-  const ahora = new Date();
-  const horaActualHH = String(ahora.getHours()).padStart(2, '0');
-  const horaActualMM = String(ahora.getMinutes()).padStart(2, '0');
-  const horaActual = `${horaActualHH}:${horaActualMM}`;
-  
-  const horaAgendada = citaElectroSeleccionada.hora_agendamiento || '';
-  
-  // Validar que la hora actual sea >= a la hora agendada
-  if (horaActual < horaAgendada) {
-    const faltanMinutos = Math.ceil((new Date(`2000-01-01 ${horaAgendada}`) - new Date(`2000-01-01 ${horaActual}`)) / 60000);
-    showToast(`❌ El estudio está agendado para las ${horaAgendada}. Faltan ${faltanMinutos} minutos para poder iniciarlo.`, 'error');
+  // VALIDACIÓN: usar FECHA+HORA real de la cita.
+  const validInicio = validarInicioElectroSegunFechaHora(citaElectroSeleccionada);
+  if (!validInicio.ok) {
+    showToast(`❌ El estudio está agendado para las ${validInicio.horaAgendada}. Faltan ${validInicio.faltanMinutos} minutos para poder iniciarlo.`, 'error');
     return;
   }
   
@@ -8837,6 +8947,33 @@ function actualizarHoraFinCalculada() {
 // Alias para compatibilidad con cualquier referencia vieja
 function actualizarDuracionMostrada() { actualizarHoraFinCalculada(); }
 
+function validarInicioElectroSegunFechaHora(cita) {
+  const horaAgendadaRaw = String(cita?.hora_agendamiento || '').slice(0, 5);
+  if (!/^\d{2}:\d{2}$/.test(horaAgendadaRaw)) {
+    return { ok: true, horaAgendada: horaAgendadaRaw };
+  }
+
+  const fechaRaw = cita?.fecha ? String(cita.fecha).slice(0, 10) : '';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fechaRaw)) {
+    return { ok: true, horaAgendada: horaAgendadaRaw };
+  }
+
+  const [hh, mm] = horaAgendadaRaw.split(':').map(Number);
+  const agendada = new Date(`${fechaRaw}T${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:00`);
+  const ahora = new Date();
+
+  if (Number.isNaN(agendada.getTime())) {
+    return { ok: true, horaAgendada: horaAgendadaRaw };
+  }
+
+  if (ahora < agendada) {
+    const faltanMinutos = Math.ceil((agendada.getTime() - ahora.getTime()) / 60000);
+    return { ok: false, horaAgendada: horaAgendadaRaw, faltanMinutos };
+  }
+
+  return { ok: true, horaAgendada: horaAgendadaRaw };
+}
+
 async function confirmarDuracionEstudio() {
   
   if (!citaElectroSeleccionada) {
@@ -8844,18 +8981,10 @@ async function confirmarDuracionEstudio() {
     return;
   }
   
-  // VALIDACIÓN: Verificar que ya haya llegado la hora de agendamiento
-  const ahora = new Date();
-  const horaActualHH = String(ahora.getHours()).padStart(2, '0');
-  const horaActualMM = String(ahora.getMinutes()).padStart(2, '0');
-  const horaActual = `${horaActualHH}:${horaActualMM}`;
-  
-  const horaAgendada = citaElectroSeleccionada.hora_agendamiento || '';
-  
-  // Validar que la hora actual sea >= a la hora agendada
-  if (horaActual < horaAgendada) {
-    const faltanMinutos = Math.ceil((new Date(`2000-01-01 ${horaAgendada}`) - new Date(`2000-01-01 ${horaActual}`)) / 60000);
-    showToast(`❌ El estudio está agendado para las ${horaAgendada}. Faltan ${faltanMinutos} minutos para poder iniciarlo.`, 'error');
+  // VALIDACIÓN: usar FECHA+HORA real de la cita (evita falsos bloqueos de citas de días previos).
+  const validInicio = validarInicioElectroSegunFechaHora(citaElectroSeleccionada);
+  if (!validInicio.ok) {
+    showToast(`❌ El estudio está agendado para las ${validInicio.horaAgendada}. Faltan ${validInicio.faltanMinutos} minutos para poder iniciarlo.`, 'error');
     return;
   }
   
@@ -8968,20 +9097,14 @@ async function iniciarEstudioSinDuracion() {
   
   if (!citaElectroSeleccionada) return;
   
-  // VALIDACIÓN: Verificar que ya haya llegado la hora de agendamiento
-  const ahora = new Date();
-  const horaActualHH = String(ahora.getHours()).padStart(2, '0');
-  const horaActualMM = String(ahora.getMinutes()).padStart(2, '0');
-  const horaActual = `${horaActualHH}:${horaActualMM}`;
-  
-  const horaAgendada = citaElectroSeleccionada.hora_agendamiento || '';
-  
-  // Validar que la hora actual sea >= a la hora agendada
-  if (horaActual < horaAgendada) {
-    const faltanMinutos = Math.ceil((new Date(`2000-01-01 ${horaAgendada}`) - new Date(`2000-01-01 ${horaActual}`)) / 60000);
-    showToast(`❌ El estudio está agendado para las ${horaAgendada}. Faltan ${faltanMinutos} minutos para poder iniciarlo.`, 'error');
+  // VALIDACIÓN: usar FECHA+HORA real de la cita.
+  const validInicio = validarInicioElectroSegunFechaHora(citaElectroSeleccionada);
+  if (!validInicio.ok) {
+    showToast(`❌ El estudio está agendado para las ${validInicio.horaAgendada}. Faltan ${validInicio.faltanMinutos} minutos para poder iniciarlo.`, 'error');
     return;
   }
+
+  const horaAgendada = String(citaElectroSeleccionada.hora_agendamiento || '').slice(0, 5);
   
   // VALIDAR QUE SE HAYA SELECCIONADO UN EQUIPO
   const equipoSelect = $('modalEquipo');
@@ -9476,7 +9599,9 @@ function enviarPorWhatsApp() {
 }
 
 function abrirModalDetallesCita(cita) {
-  citaElectroSeleccionada = cita;
+  citaElectroSeleccionada = { ...cita, estado: normalizarEstadoElectro(cita?.estado) };
+  const puedeEditarElectro = tienePermiso('electro.editar');
+  const puedeCambiarEstadoElectro = tienePermiso('electro.cambiar_estado') || puedeEditarElectro;
   
   // Activar flag para evitar cambios automáticos
   isInitializingElectroModal = true;
@@ -9539,7 +9664,7 @@ function abrirModalDetallesCita(cita) {
 
   // Badge de estado en el header
   const $badgeEl = document.getElementById('modalEstadoHeaderBadge');
-  if ($badgeEl) $badgeEl.innerHTML = estadoBadge(cita.estado || 'Programado');
+  if ($badgeEl) $badgeEl.innerHTML = estadoBadge(citaElectroSeleccionada.estado || 'Programado');
 
   // Franja de horario real (cuando la cita ya tiene hora_inicio)
   const $horarios = document.getElementById('modalInfoHorarios');
@@ -9557,18 +9682,24 @@ function abrirModalDetallesCita(cita) {
   
   // Rellenar selector de equipo
   $('modalEquipo').value = cita.equipo_id || '';
+  // Equipo solo editable con permiso de edición.
+  if ($('modalEquipo')) {
+    $('modalEquipo').disabled = !puedeEditarElectro;
+    $('modalEquipo').style.opacity = !puedeEditarElectro ? '0.5' : '1';
+    $('modalEquipo').style.cursor = !puedeEditarElectro ? 'not-allowed' : 'pointer';
+  }
   
   // Actualizar selector de estado oculto
-  $('modalEstado').value = cita.estado || 'Programado';
+  $('modalEstado').value = citaElectroSeleccionada.estado || 'Programado';
   
   // Renderizar flujo contextual de estado
-  renderFlujoEstado(cita);
+  renderFlujoEstado(citaElectroSeleccionada);
   
   // Eliminar se maneja desde menú de 3 puntos
   const btnEliminar = $('btnEliminarCita');
   if (btnEliminar) btnEliminar.style.display = 'none';
   const btnEliminarMenu = $('btnEliminarCitaMenu');
-  const esCompletado = cita.estado === 'Completado';
+  const esCompletado = citaElectroSeleccionada.estado === 'Completado';
   if (currentUser) {
     const rol = currentUser.rol;
     const esAdminGlobal = rol === 'admin' || rol === 'administrador' || rol === 'superadmin';
@@ -9585,14 +9716,18 @@ function abrirModalDetallesCita(cita) {
   console.log('[MODAL_DETALLES] btnReprogramarCita existe:', !!btnRep);
   console.log('[MODAL_DETALLES] btnAdelantarCita existe:', !!btnAde);
   
-  if (btnRep) {
+  if (btnRep && puedeEditarElectro) {
     btnRep.addEventListener('click', abrirModalReprogramar);
     console.log('[MODAL_DETALLES] Listener agregado a btnReprogramarCita');
+  } else if (btnRep) {
+    btnRep.style.display = 'none';
   }
   
-  if (btnAde) {
+  if (btnAde && puedeEditarElectro) {
     btnAde.addEventListener('click', abrirModalAdelantarCita);
     console.log('[MODAL_DETALLES] Listener agregado a btnAdelantarCita');
+  } else if (btnAde) {
+    btnAde.style.display = 'none';
   }
   
   // Configurar el menú de "Más opciones"
@@ -9627,18 +9762,22 @@ function abrirModalDetallesCita(cita) {
   }
   
   // Agregar listeners a los items del menú (onclick para evitar acumulación)
-  if (btnRepProgramarMenu) {
+  if (btnRepProgramarMenu && puedeEditarElectro) {
     btnRepProgramarMenu.onclick = () => {
       menuMasOpciones.style.display = 'none';
       abrirModalReprogramar();
     };
+  } else if (btnRepProgramarMenu) {
+    btnRepProgramarMenu.style.display = 'none';
   }
   
-  if (btnAdelantarMenu) {
+  if (btnAdelantarMenu && puedeEditarElectro) {
     btnAdelantarMenu.onclick = () => {
       menuMasOpciones.style.display = 'none';
       abrirModalAdelantarCita();
     };
+  } else if (btnAdelantarMenu) {
+    btnAdelantarMenu.style.display = 'none';
   }
   
   if (btnRecomendacionesMenu) {
@@ -9660,6 +9799,9 @@ function abrirModalDetallesCita(cita) {
         m.style.display = 'flex';
       }
     };
+  }
+  if (!puedeEditarElectro && btnMasOpciones) {
+    btnMasOpciones.style.display = 'none';
   }
   
   // Bloquear menú si el estado es "En Estudio"
@@ -9711,11 +9853,13 @@ function abrirModalDetallesCita(cita) {
 
 // ===== FLUJO CONTEXTUAL DE ESTADO =====
 function renderFlujoEstado(cita) {
-  const estado = cita.estado || 'Programado';
+  const estado = normalizarEstadoElectro(cita?.estado || 'Programado');
   const flujoEl = document.getElementById('modalFlujoEstudio');
   const accionesEl = document.getElementById('modalAccionesEstudio');
   const equipoSelect = $('modalEquipo');
   const btnGuardar = $('btnGuardarCambios');
+  const puedeEditarElectro = tienePermiso('electro.editar');
+  const puedeCambiarEstadoElectro = tienePermiso('electro.cambiar_estado') || puedeEditarElectro;
 
   // Ocultar botones Iniciar/Finalizar del bloque separado (se muestran dentro del flujo)
   if (accionesEl) accionesEl.style.display = 'none';
@@ -9729,6 +9873,11 @@ function renderFlujoEstado(cita) {
   }
 
   if (!flujoEl) return;
+  if (!puedeCambiarEstadoElectro) {
+    flujoEl.innerHTML = `<div class="flujo-estado-readonly">Sin permisos para cambiar estado.</div>`;
+    if (btnGuardar) btnGuardar.style.display = 'none';
+    return;
+  }
 
   const svgCheck = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>`;
   const svgPlay  = `<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
@@ -9754,8 +9903,8 @@ function renderFlujoEstado(cita) {
           <button class="flujo-btn-sm cancelar" id="flujo-btn-cancelar">Cancelar cita</button>
         </div>
       </div>`;
-    document.getElementById('flujo-btn-confirmado').onclick = () => cambiarEstadoCita('Confirmado');
-    document.getElementById('flujo-btn-cancelar').onclick = () => cambiarEstadoCita('Cancelado');
+    document.getElementById('flujo-btn-confirmado').onclick = (ev) => cambiarEstadoCita('Confirmado', ev.currentTarget);
+    document.getElementById('flujo-btn-cancelar').onclick = () => confirmarCancelacionCitaElectro();
 
   } else if (estado === 'Confirmado') {
     if (equipoSelect) { equipoSelect.disabled = true; equipoSelect.style.opacity = '0.45'; equipoSelect.style.cursor = 'not-allowed'; }
@@ -9767,8 +9916,8 @@ function renderFlujoEstado(cita) {
           <button class="flujo-btn-sm no-asistio" id="flujo-btn-noasistio">No asisti\u00f3</button>
         </div>
       </div>`;
-    document.getElementById('flujo-btn-ensala').onclick = () => cambiarEstadoCita('En Sala');
-    document.getElementById('flujo-btn-noasistio').onclick = () => cambiarEstadoCita('No Asistió');
+    document.getElementById('flujo-btn-ensala').onclick = (ev) => cambiarEstadoCita('En Sala', ev.currentTarget);
+    document.getElementById('flujo-btn-noasistio').onclick = (ev) => cambiarEstadoCita('No Asistió', ev.currentTarget);
 
   } else if (estado === 'En Sala') {
     // Equipo habilitado
@@ -9782,7 +9931,7 @@ function renderFlujoEstado(cita) {
         </div>
       </div>`;
     document.getElementById('flujo-btn-iniciar').onclick = () => iniciarEstudioModal();
-    document.getElementById('flujo-btn-noasistio2').onclick = () => cambiarEstadoCita('No Asistió');
+    document.getElementById('flujo-btn-noasistio2').onclick = (ev) => cambiarEstadoCita('No Asistió', ev.currentTarget);
 
   } else if (estado === 'En Estudio') {
     flujoEl.innerHTML = `
@@ -9798,7 +9947,7 @@ function renderFlujoEstado(cita) {
         </div>
       </div>`;
     document.getElementById('flujo-btn-finalizar').onclick = () => finalizarEstudioModal();
-    document.getElementById('flujo-btn-pausar').onclick = () => cambiarEstadoCita('Pausado');
+    document.getElementById('flujo-btn-pausar').onclick = (ev) => cambiarEstadoCita('Pausado', ev.currentTarget);
 
   } else if (estado === 'Pausado') {
     flujoEl.innerHTML = `
@@ -9809,7 +9958,7 @@ function renderFlujoEstado(cita) {
           <button class="flujo-btn-sm cancelar" id="flujo-btn-finalizar-pausado">Finalizar estudio</button>
         </div>
       </div>`;
-    document.getElementById('flujo-btn-reanudar').onclick = () => cambiarEstadoCita('En Estudio');
+    document.getElementById('flujo-btn-reanudar').onclick = (ev) => cambiarEstadoCita('En Estudio', ev.currentTarget);
     document.getElementById('flujo-btn-finalizar-pausado').onclick = () => finalizarEstudioModal();
 
   } else {
@@ -9822,32 +9971,115 @@ function renderFlujoEstado(cita) {
   if (btnGuardar) btnGuardar.style.display = estadosOcultar.includes(estado) ? 'none' : '';
 }
 
-async function cambiarEstadoCita(nuevoEstado) {
+function actualizarEstadoFilaTablaElectro(citaId, nuevoEstado) {
+  const st = window.paginationState && window.paginationState.citasElectro;
+  if (!st || !Array.isArray(st.data)) return;
+  const idStr = String(citaId);
+  const idx = st.data.findIndex((c) => String(c.id) === idStr);
+  if (idx < 0) return;
+  const norm = normalizarEstadoElectro(nuevoEstado);
+  st.data[idx] = { ...st.data[idx], estado: norm };
+  renderPaginatedTable('citasElectro', renderCitaElectroRow, 'citasElectroBody');
+  const containerSel = '#citasElectroTableControls';
+  const container = document.querySelector(containerSel);
+  if (container) {
+    createPaginationControls('citasElectro', containerSel, [5, 10, 15, 20, 50], renderCitaElectroRow, 'citasElectroBody');
+  }
+}
+
+function aplicarCambioCitaElectroRealtime(payload = {}) {
+  const st = window.paginationState && window.paginationState.citasElectro;
+  if (!st || !Array.isArray(st.data)) return;
+  const id = payload?.id;
+  if (!id) return;
+  const idStr = String(id);
+  const idx = st.data.findIndex((c) => String(c.id) === idStr);
+
+  if (payload.type === 'eliminada' || payload.type === 'eliminado') {
+    if (idx >= 0) st.data.splice(idx, 1);
+  } else {
+    const cambios = payload.cambios || payload;
+    const next = {
+      ...(idx >= 0 ? st.data[idx] : { id }),
+      ...cambios
+    };
+    if (next.estado !== undefined) next.estado = normalizarEstadoElectro(next.estado);
+    if (idx >= 0) st.data[idx] = next;
+    else st.data.push(next);
+  }
+
+  st.totalPages = Math.max(1, Math.ceil(st.data.length / st.itemsPerPage));
+  st.currentPage = Math.min(st.currentPage || 1, st.totalPages);
+  renderPaginatedTable('citasElectro', renderCitaElectroRow, 'citasElectroBody');
+  const containerSel = '#citasElectroTableControls';
+  if (document.querySelector(containerSel)) {
+    createPaginationControls('citasElectro', containerSel, [5, 10, 15, 20, 50], renderCitaElectroRow, 'citasElectroBody');
+  }
+}
+
+window.aplicarCambioCitaElectroRealtime = aplicarCambioCitaElectroRealtime;
+
+async function cambiarEstadoCita(nuevoEstado, triggerBtn = null) {
   if (!citaElectroSeleccionada) return;
+  const estadoObjetivo = normalizarEstadoElectro(nuevoEstado);
+  const originalText = triggerBtn ? triggerBtn.textContent : '';
+  if (triggerBtn) {
+    triggerBtn.disabled = true;
+    triggerBtn.dataset.loading = '1';
+    triggerBtn.textContent = 'Cargando...';
+  }
   try {
-    const res = await apiFetch(`/api/citas-electro/${citaElectroSeleccionada.id}/estado`, {
+    // Usar endpoint general para unificar exactamente el mismo flujo que ya funciona
+    // en el resto del módulo (equipos, inicio/fin estudio, etc.).
+    const res = await apiFetch(`/api/citas-electro/${citaElectroSeleccionada.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ estado: nuevoEstado })
+      body: JSON.stringify({ estado: estadoObjetivo })
     });
     const data = await res.json();
     if (data && data.ok) {
-      citaElectroSeleccionada.estado = nuevoEstado;
-      $('modalEstado').value = nuevoEstado;
+      // Confirmar estado persistido en servidor para evitar "rebote" visual.
+      const verRes = await apiFetch(`/api/citas-electro/${citaElectroSeleccionada.id}?_t=${Date.now()}`, { cache: 'no-store' });
+      const verData = await verRes.json().catch(() => null);
+      const estadoPersistido = normalizarEstadoElectro(verData?.estado || estadoObjetivo);
+
+      citaElectroSeleccionada.estado = estadoPersistido;
+      $('modalEstado').value = estadoPersistido;
       const $badgeEl = document.getElementById('modalEstadoHeaderBadge');
-      if ($badgeEl) $badgeEl.innerHTML = estadoBadge(nuevoEstado);
+      if ($badgeEl) $badgeEl.innerHTML = estadoBadge(estadoPersistido);
       renderFlujoEstado(citaElectroSeleccionada);
-      showToast(`Estado: ${nuevoEstado}`, 'success');
-      if (window.socket && window.socket.connected) {
-        window.socket.emit('electro:cambios-guardados', { id: citaElectroSeleccionada.id, cambios: { estado: nuevoEstado } });
+      if (estadoPersistido !== estadoObjetivo) {
+        showToast(`El servidor conservó el estado "${estadoPersistido}"`, 'warning');
+      } else {
+        showToast(`Estado: ${estadoPersistido}`, 'success');
       }
-      cargarCitasElectro();
+      actualizarEstadoFilaTablaElectro(citaElectroSeleccionada.id, estadoPersistido);
+      if (window.socket && window.socket.connected) {
+        window.socket.emit('electro:cambios-guardados', { id: citaElectroSeleccionada.id, cambios: { estado: estadoPersistido } });
+      }
+      await cargarCitasElectro();
     } else {
       showToast(data?.error || 'Error actualizando estado', 'error');
     }
   } catch (e) {
     showToast('Error actualizando estado', 'error');
+  } finally {
+    if (triggerBtn) {
+      triggerBtn.disabled = false;
+      triggerBtn.dataset.loading = '';
+      triggerBtn.textContent = originalText || triggerBtn.textContent;
+    }
   }
+}
+
+function confirmarCancelacionCitaElectro() {
+  if (!citaElectroSeleccionada) return;
+  const nombre = (citaElectroSeleccionada.paciente_nombre || '').trim() || 'este paciente';
+  showConfirm(
+    `¿Seguro que deseas cancelar la cita de ${nombre}?`,
+    async () => { await cambiarEstadoCita('Cancelado'); },
+    { okText: 'Sí, cancelar cita', cancelText: 'No', danger: true, icon: '⚠️' }
+  );
 }
 
 function cerrarModalDetallesCita() {
@@ -10141,6 +10373,68 @@ $('btnConfirmarFinalizarNo')?.addEventListener('click', cancelarFinalizarEstudio
 let currentTurnoMedicaData = null;
 let currentEstadoAction = null;
 
+function esEspecialidadRecordatorio(especialidad) {
+  const v = String(especialidad || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  return (
+    v.includes('neuropsicolog') ||
+    v.includes('psicolog') ||
+    v.includes('neurolog') ||
+    v.includes('epileptolog') ||
+    v.includes('psiquiatr')
+  );
+}
+
+function especialidadIncluyeEspecialista(especialidad) {
+  const v = String(especialidad || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  return v.includes('neurolog') || v.includes('epileptolog') || v.includes('psiquiatr');
+}
+
+function obtenerNombreEspecialistaRecordatorio() {
+  const desdeDisplay = (document.getElementById('agendaMedicaDoctorDisplay')?.textContent || '').trim();
+  if (desdeDisplay && desdeDisplay !== '-') return desdeDisplay;
+  return (currentUser?.nombre || currentUser?.usuario || '').trim();
+}
+
+function construirMensajeRecordatorioMedica(turno, especialidadDoctor) {
+  const nombre = turno?.paciente_nombre || '';
+  const fecha = turno?.fecha ? formatearFechaISO(turno.fecha) : '-';
+  const hora = turno?.hora ? formatearHora(turno.hora) : '-';
+  const especialidadTexto = especialidadDoctor || 'Neuropsicología';
+  const nombreEspecialista = obtenerNombreEspecialistaRecordatorio();
+  const lineaEspecialista = especialidadIncluyeEspecialista(especialidadTexto)
+    ? `\n◉ Especialista: ${nombreEspecialista || 'Por confirmar'}`
+    : '';
+  return `¡Hola, buen día!. Le recordamos su cita de ${especialidadTexto} en el Instituto Neurociencias de Nariño IPS S.A.S:
+◉ Paciente: ${nombre}
+◉ Fecha: ${fecha}
+◉ Hora: ${hora}
+${lineaEspecialista}
+◉ Ubicación: Carrera 33 #13 - 84 "Casa Verde" (https://maps.app.goo.gl/YU5GheUmVMDAHFbq8)
+Cualquier novedad, no dude en comunicarse con nosotros.
+
+NOTA: Por favor confirmar su asistencia lo antes posible. Muchas gracias.`;
+}
+
+function enviarRecordatorioWhatsAppMedica(turno) {
+  if (!turno) return;
+  const telefono = String(turno.paciente_telefono || '').replace(/\D/g, '');
+  if (!telefono || telefono.length < 7) {
+    showToast('La cita no tiene un teléfono #1 válido para enviar recordatorio', 'error');
+    return;
+  }
+  const numeroWhatsApp = telefono.startsWith('57') ? telefono : `57${telefono}`;
+  const especialidadActual = selectedDoctorEspecialidad || currentUser?.especialidad || '';
+  const mensaje = construirMensajeRecordatorioMedica(turno, especialidadActual);
+  window.open(`https://wa.me/${numeroWhatsApp}?text=${encodeURIComponent(mensaje)}`, '_blank');
+  showToast('Recordatorio listo para enviar por WhatsApp', 'success');
+}
+
 function abrirModalEstadoCitaMedica(turno) {
   currentTurnoMedicaData = turno;
 
@@ -10166,6 +10460,14 @@ function abrirModalEstadoCitaMedica(turno) {
   $('modalReprogramarMedicaFechaActual').innerHTML = `<strong>${formatearFecha(turno.fecha)}</strong> a las <strong>${formatearHora(turno.hora)}</strong>`;
 
   const pol = agendaMedicaPolicy(turno);
+  const btnRecordatorio = el('btnEnviarRecordatorioMedica');
+  if (btnRecordatorio) {
+    const especialidadActual = selectedDoctorEspecialidad || currentUser?.especialidad || '';
+    const visible = esEspecialidadRecordatorio(especialidadActual);
+    btnRecordatorio.style.display = visible ? '' : 'none';
+    btnRecordatorio.disabled = !visible;
+    btnRecordatorio.onclick = () => enviarRecordatorioWhatsAppMedica(currentTurnoMedicaData);
+  }
 
   // Bloquear edición en modal según política
   const editBtnMed = el('btnEditarMedicaModal');

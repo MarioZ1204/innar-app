@@ -293,8 +293,17 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxyge
 #calResumenList .cal-resumen-dia:hover { background:#f1f5f9; }
 #calResumenList .cal-resumen-dia:nth-child(odd) { background:#f8fafc; }
 #calResumenList .cal-resumen-dia:nth-child(odd):hover { background:#f1f5f9; }
+#calResumenList .cal-resumen-dia.cal-resumen-full { background:linear-gradient(135deg,#dcfce7,#bbf7d0); border:1px solid #86efac; }
+#calResumenList .cal-resumen-dia.cal-resumen-full:hover { background:linear-gradient(135deg,#d1fae5,#a7f3d0); }
+#calResumenList .cal-resumen-dia.cal-resumen-partial { background:linear-gradient(135deg,#dbeafe,#bfdbfe); border:1px solid #93c5fd; }
+#calResumenList .cal-resumen-dia.cal-resumen-partial:hover { background:linear-gradient(135deg,#bfdbfe,#93c5fd); }
+#calResumenList .cal-resumen-dia.cal-resumen-unavailable { background:linear-gradient(135deg,#fee2e2,#fecaca); border:1px solid #fca5a5; }
+#calResumenList .cal-resumen-dia.cal-resumen-unavailable:hover { background:linear-gradient(135deg,#fecaca,#fca5a5); }
 #calResumenList .cal-resumen-fecha { font-weight:600; min-width:90px; color:#334155; }
 #calResumenList .cal-resumen-estado { display:inline-flex; align-items:center; gap:4px; padding:3px 10px; border-radius:20px; font-size:0.78rem; font-weight:600; }
+#calResumenList .cal-resumen-dia.cal-resumen-full .cal-resumen-estado { background:#14532d; color:#dcfce7; }
+#calResumenList .cal-resumen-dia.cal-resumen-partial .cal-resumen-estado { background:#1e40af; color:#dbeafe; }
+#calResumenList .cal-resumen-dia.cal-resumen-unavailable .cal-resumen-estado { background:#991b1b; color:#fee2e2; }
 #calResumenList .cal-resumen-horas { color:#64748b; font-size:0.82rem; }
 
 /* ===== Control de permisos (superadmin) ===== */

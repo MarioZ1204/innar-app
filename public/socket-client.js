@@ -5,6 +5,51 @@ window.socketReady = false;  // Flag para indicar cuando socket está listo
 let updateCheckTimer = null;
 let updateBannerShown = false;
 const UPDATE_CHECK_INTERVAL_MS = 60000;
+const _socketRefreshTimers = {};
+
+function scheduleSocketRefresh(key, fn, delayMs = 120) {
+  if (typeof fn !== 'function') return;
+  if (_socketRefreshTimers[key]) clearTimeout(_socketRefreshTimers[key]);
+  _socketRefreshTimers[key] = setTimeout(() => {
+    _socketRefreshTimers[key] = null;
+    try { fn(); } catch (_) {}
+  }, delayMs);
+}
+
+function refreshActiveModuleData() {
+  const mod = window.currentModule;
+  if (mod === 'recibos' && typeof cargarLista === 'function') {
+    scheduleSocketRefresh('recibos:lista', () => cargarLista());
+  }
+  if (mod === 'agenda-medica') {
+    if (typeof cargarTurnosMedica === 'function') {
+      scheduleSocketRefresh('agenda:turnos', () => cargarTurnosMedica());
+    }
+    if (typeof loadCalendarData === 'function') {
+      scheduleSocketRefresh('agenda:programar', () => loadCalendarData());
+    }
+    if (typeof cargarCitasCalendario === 'function') {
+      scheduleSocketRefresh('agenda:citas', () => cargarCitasCalendario());
+    }
+    if (typeof actualizarHorasDisponibles === 'function') {
+      scheduleSocketRefresh('agenda:horas', () => actualizarHorasDisponibles());
+    }
+  }
+  if (mod === 'electro') {
+    if (typeof cargarCitasElectro === 'function') {
+      scheduleSocketRefresh('electro:citas', () => cargarCitasElectro());
+    }
+    if (typeof cargarEsperaElectro === 'function') {
+      scheduleSocketRefresh('electro:espera', () => cargarEsperaElectro());
+    }
+  }
+  if (mod === 'usuarios' && typeof cargarUsuarios === 'function') {
+    scheduleSocketRefresh('usuarios:lista', () => cargarUsuarios());
+  }
+  if (mod === 'dashboard-citas' && typeof scheduleBuscarCitasAuditoria === 'function') {
+    scheduleSocketRefresh('dashboard:citas', () => scheduleBuscarCitasAuditoria(120));
+  }
+}
 
 function showUpdateBanner(serverVersion) {
   if (updateBannerShown) return;
@@ -82,6 +127,8 @@ function initSocket() {
     window.dispatchEvent(new CustomEvent('socketReady', { detail: socket }));
     // Verificación extra por polling para detectar despliegues aunque no llegue evento socket.
     startVersionWatcher();
+    // Al reconectar, sincronizar inmediatamente la vista activa sin recargar página.
+    refreshActiveModuleData();
   });
 
   // Al volver de segundo plano, reconectar y refrescar datos del módulo activo
@@ -119,28 +166,31 @@ function initSocket() {
 
   // Recibos
   socket.on('recibo:actualizar-lista', () => {
-    if (typeof cargarLista === 'function') cargarLista();
+    if (typeof cargarLista === 'function') scheduleSocketRefresh('recibos:lista', () => cargarLista());
+    if (typeof scheduleBuscarCitasAuditoria === 'function') scheduleSocketRefresh('dashboard:citas', () => scheduleBuscarCitasAuditoria(120));
   });
 
   socket.on('recibo:creado', (data) => {
-    if (typeof cargarLista === 'function') cargarLista();
+    if (typeof cargarLista === 'function') scheduleSocketRefresh('recibos:lista', () => cargarLista());
+    if (typeof scheduleBuscarCitasAuditoria === 'function') scheduleSocketRefresh('dashboard:citas', () => scheduleBuscarCitasAuditoria(120));
   });
 
   socket.on('recibo:eliminado', (data) => {
-    if (typeof cargarLista === 'function') cargarLista();
+    if (typeof cargarLista === 'function') scheduleSocketRefresh('recibos:lista', () => cargarLista());
+    if (typeof scheduleBuscarCitasAuditoria === 'function') scheduleSocketRefresh('dashboard:citas', () => scheduleBuscarCitasAuditoria(120));
   });
 
   // Usuarios
   socket.on('usuario:creado', (data) => {
-    if (typeof cargarUsuarios === 'function') cargarUsuarios();
+    if (typeof cargarUsuarios === 'function') scheduleSocketRefresh('usuarios:lista', () => cargarUsuarios());
   });
 
   socket.on('usuario:actualizado', (data) => {
-    if (typeof cargarUsuarios === 'function') cargarUsuarios();
+    if (typeof cargarUsuarios === 'function') scheduleSocketRefresh('usuarios:lista', () => cargarUsuarios());
   });
 
   socket.on('usuario:eliminado', (data) => {
-    if (typeof cargarUsuarios === 'function') cargarUsuarios();
+    if (typeof cargarUsuarios === 'function') scheduleSocketRefresh('usuarios:lista', () => cargarUsuarios());
   });
 
   // Permisos cambiados: refrescar sesión del usuario afectado
@@ -159,15 +209,15 @@ function initSocket() {
 
   // Agenda médica
   socket.on('agenda:turno-creado', (data) => {
-    if (window.currentModule === 'agenda-medica' && typeof cargarTurnosMedica === 'function') cargarTurnosMedica();
+    refreshActiveModuleData();
   });
 
   socket.on('agenda:turno-eliminado', (data) => {
-    if (window.currentModule === 'agenda-medica' && typeof cargarTurnosMedica === 'function') cargarTurnosMedica();
+    refreshActiveModuleData();
   });
 
   socket.on('agenda:turno-estado-cambio', (data) => {
-    if (window.currentModule === 'agenda-medica' && typeof cargarTurnosMedica === 'function') cargarTurnosMedica();
+    refreshActiveModuleData();
     // Alerta sonora al doctor cuando un paciente entra en sala
     if (data.estado === 'EN_SALA' && typeof currentUser !== 'undefined' && currentUser && currentUser.rol === 'doctor') {
       const nombre = data.paciente_nombre ? ` - ${data.paciente_nombre}` : '';
@@ -184,12 +234,26 @@ function initSocket() {
   });
 
   socket.on('agenda:turno-numero-cambio', (data) => {
-    if (window.currentModule === 'agenda-medica' && typeof cargarTurnosMedica === 'function') cargarTurnosMedica();
+    refreshActiveModuleData();
   });
 
   socket.on('agenda:disponibilidad-actualizada', (data) => {
     if (typeof actualizarDisponibilidad === 'function') {
       actualizarDisponibilidad(data.doctor_id);
+    }
+    // Refresco en caliente del módulo Agenda Médica para evitar recargar página.
+    if (window.currentModule === 'agenda-medica') {
+      refreshActiveModuleData();
+      // Re-disparar cambios de fecha para que validadores de disponibilidad
+      // actualicen estilos/estados de inputs sin intervención manual.
+      const agendaFecha = document.getElementById('agendaMedicaFecha');
+      if (agendaFecha?.value) {
+        agendaFecha.dispatchEvent(new Event('change'));
+      }
+      const modalFecha = document.getElementById('modalNuevaCitaFecha');
+      if (modalFecha?.value) {
+        modalFecha.dispatchEvent(new Event('change'));
+      }
     }
   });
 
@@ -212,7 +276,7 @@ function initSocket() {
   });
 
   socket.on('agenda:turno-llamar-siguiente', (data) => {
-    if (window.currentModule === 'agenda-medica' && typeof cargarTurnosMedica === 'function') cargarTurnosMedica();
+    refreshActiveModuleData();
     // Anuncio de voz para recepción y electrodiagnóstico
     const esRecep = typeof tienePermiso === 'function' && tienePermiso('agenda.cambiar_estado');
     if (esRecep && 'speechSynthesis' in window) {
@@ -230,11 +294,32 @@ function initSocket() {
   });
 
   socket.on('agenda:turno-marcar-atendido', (data) => {
-    if (window.currentModule === 'agenda-medica' && typeof cargarTurnosMedica === 'function') cargarTurnosMedica();
+    refreshActiveModuleData();
   });
 
   socket.on('agenda:turno-cambio-paciente', (data) => {
-    if (window.currentModule === 'agenda-medica' && typeof cargarTurnosMedica === 'function') cargarTurnosMedica();
+    refreshActiveModuleData();
+  });
+
+  // Compatibilidad con eventos relay usados en app.js/socket server.
+  socket.on('agenda:actualizar-lista', () => {
+    refreshActiveModuleData();
+  });
+
+  socket.on('agenda:actualizar-consultorio', () => {
+    refreshActiveModuleData();
+  });
+
+  socket.on('turno-medico:estado-actualizado', () => {
+    refreshActiveModuleData();
+  });
+
+  socket.on('turno-medico:reprogramado', () => {
+    refreshActiveModuleData();
+  });
+
+  socket.on('turno-medico:creado', () => {
+    refreshActiveModuleData();
   });
 
   // Aviso al doctor para concluir consulta
@@ -257,20 +342,48 @@ function initSocket() {
   // ===== EVENTOS DE ELECTRODIAGNÓSTICO =====
   // Guard de módulo activo para evitar doble llamada con socket-electro.js
   socket.on('electro:cita-creada', (data) => {
-    if (window.currentModule === 'electro' && typeof cargarCitasElectro === 'function') cargarCitasElectro();
+    if (window.currentModule === 'electro' && typeof window.aplicarCambioCitaElectroRealtime === 'function') {
+      window.aplicarCambioCitaElectroRealtime({ ...(data || {}), type: 'creada' });
+      return;
+    }
+    refreshActiveModuleData();
   });
 
   socket.on('electro:cita-eliminada', (data) => {
-    if (window.currentModule === 'electro' && typeof cargarCitasElectro === 'function') cargarCitasElectro();
+    if (window.currentModule === 'electro' && typeof window.aplicarCambioCitaElectroRealtime === 'function') {
+      window.aplicarCambioCitaElectroRealtime({ ...(data || {}), type: 'eliminada' });
+      return;
+    }
+    refreshActiveModuleData();
   });
 
   // electro:cita-actualizada es el evento correcto (el servidor emite este, no electro:cita-estado-cambio)
   socket.on('electro:cita-actualizada', (data) => {
-    if (window.currentModule === 'electro' && typeof cargarCitasElectro === 'function') cargarCitasElectro();
+    if (window.currentModule === 'electro' && typeof window.aplicarCambioCitaElectroRealtime === 'function') {
+      window.aplicarCambioCitaElectroRealtime({ ...(data || {}), type: 'actualizada' });
+      return;
+    }
+    refreshActiveModuleData();
   });
 
   socket.on('electro:actualizar-lista', (data) => {
-    if (window.currentModule === 'electro' && typeof cargarCitasElectro === 'function') cargarCitasElectro();
+    if (window.currentModule === 'electro' && typeof window.aplicarCambioCitaElectroRealtime === 'function' && data?.id) {
+      window.aplicarCambioCitaElectroRealtime(data);
+      return;
+    }
+    refreshActiveModuleData();
+  });
+
+  socket.on('electro:nueva-cita', () => {
+    refreshActiveModuleData();
+  });
+
+  socket.on('electro:cita-cambio-estado', () => {
+    refreshActiveModuleData();
+  });
+
+  socket.on('electro:cita-removida', () => {
+    refreshActiveModuleData();
   });
 
   // Dashboard
@@ -293,6 +406,10 @@ function closeSocket() {
     clearInterval(updateCheckTimer);
     updateCheckTimer = null;
   }
+  Object.keys(_socketRefreshTimers).forEach((k) => {
+    if (_socketRefreshTimers[k]) clearTimeout(_socketRefreshTimers[k]);
+    _socketRefreshTimers[k] = null;
+  });
 }
 
 // Función para emitir eventos
