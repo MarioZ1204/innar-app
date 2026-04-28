@@ -2893,7 +2893,9 @@ async function loadCalendarData() {
     if (dataDisp.ok && Array.isArray(dataDisp.disponibilidad)) {
       dataDisp.disponibilidad.forEach(d => {
         const fecha = (d.fecha || '').slice(0, 10);
-        const dispDia = d.disponible === true || d.disponible === 1 || d.disponible === '1';
+        let dispDia = false;
+        if (d.disponible === true || d.disponible === 1 || d.disponible === '1') dispDia = true;
+        if (d.disponible === false || d.disponible === 0 || d.disponible === '0' || d.disponible === 'false') dispDia = false;
         const dispManana = d.disponible_manana === true || d.disponible_manana === 1 || d.disponible_manana === '1';
         const dispTarde = d.disponible_tarde === true || d.disponible_tarde === 1 || d.disponible_tarde === '1';
         calDisponibilidad[fecha] = {
