@@ -2671,9 +2671,29 @@ function setupAgendaCalendar() {
     selectorDiv.style.display = 'none';
   }
 
-  // Nav buttons
-  $('calPrevMonth')?.addEventListener('click', () => { calCurrentMonth--; if (calCurrentMonth < 0) { calCurrentMonth = 11; calCurrentYear--; } calSelectedDate = null; loadCalendarData(); });
-  $('calNextMonth')?.addEventListener('click', () => { calCurrentMonth++; if (calCurrentMonth > 11) { calCurrentMonth = 0; calCurrentYear++; } calSelectedDate = null; loadCalendarData(); });
+  // Nav buttons - evitar listeners duplicados
+  const prevBtn = $('calPrevMonth');
+  const nextBtn = $('calNextMonth');
+  if (prevBtn) {
+    prevBtn.replaceWith(prevBtn.cloneNode(true));
+    const newPrevBtn = $('calPrevMonth');
+    newPrevBtn.addEventListener('click', () => {
+      calCurrentMonth--;
+      if (calCurrentMonth < 0) { calCurrentMonth = 11; calCurrentYear--; }
+      calSelectedDate = null;
+      loadCalendarData();
+    });
+  }
+  if (nextBtn) {
+    nextBtn.replaceWith(nextBtn.cloneNode(true));
+    const newNextBtn = $('calNextMonth');
+    newNextBtn.addEventListener('click', () => {
+      calCurrentMonth++;
+      if (calCurrentMonth > 11) { calCurrentMonth = 0; calCurrentYear++; }
+      calSelectedDate = null;
+      loadCalendarData();
+    });
+  }
 
   // Modal events
   $('calModalClose')?.addEventListener('click', closeCalModal);
