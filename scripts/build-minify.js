@@ -99,6 +99,7 @@ async function optimizeImages() {
     const before = (fs.statSync(src).size / 1024).toFixed(1);
     try {
       await sharp(src)
+        .rotate()                                // aplica orientación EXIF antes de procesar
         .resize({ width, withoutEnlargement: true })
         .webp({ quality })
         .toFile(dest);
