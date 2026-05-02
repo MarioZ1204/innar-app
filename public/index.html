@@ -964,11 +964,11 @@
             Agregar horario
           </button>
         </div>
-        <!-- Sección visible solo cuando se selecciona "No asistiré" -->
-        <div id="calModalNoAsistireContainer" style="display:none;margin-bottom:16px">
-          <label class="cal-motivo-label">Motivo de ausencia</label>
+        <!-- Observación: visible siempre (tanto para "Asistiré" como "No asistiré") -->
+        <div id="calModalObsContainer" style="margin-bottom:16px">
+          <label class="cal-motivo-label">Observación</label>
           <select id="calModalMotivoSelect" class="cal-motivo-select">
-            <option value="">Sin especificar</option>
+            <option value="">Sin observación</option>
             <option value="UCQN">UCQN</option>
             <option value="Hospital departamental">Hospital departamental</option>
             <option value="Cita médica personal">Cita médica personal</option>
@@ -976,7 +976,7 @@
             <option value="Capacitación">Capacitación</option>
             <option value="Otro">Otro (especificar)</option>
           </select>
-          <input type="text" id="calModalMotivoOtro" class="cal-motivo-input" placeholder="Escribe el motivo..." style="display:none;margin-top:8px" maxlength="200" />
+          <input type="text" id="calModalMotivoOtro" class="cal-motivo-input" placeholder="Escribe la observación..." style="display:none;margin-top:8px" maxlength="200" />
         </div>
         <div class="cal-modal-actions">
           <button type="button" id="calModalSave" class="cal-btn-save">Guardar</button>
@@ -2313,12 +2313,12 @@
       </div>
       <div class="main-content">
         <div class="container">
-          <header><h2>Auditoría de Citas - Quién Agendó</h2></header>
-          
+          <header><h2>Auditoría Completa de Citas</h2></header>
+
           <!-- Filtros -->
           <section class="card no-print">
-            <h3>Filtros</h3>
-            <div class="row">
+            <h3>Filtros de búsqueda</h3>
+            <div class="row" style="margin-bottom:10px">
               <div class="col">
                 <label>Tipo de Cita</label>
                 <select id="dashboardTipoCita">
@@ -2327,6 +2327,26 @@
                   <option value="ELECTRODIAGNOSTICO">Electrodiagnóstico</option>
                 </select>
               </div>
+              <div class="col" id="dashboardMedicoCol">
+                <label>Médico</label>
+                <select id="dashboardMedico">
+                  <option value="">Todos los médicos</option>
+                </select>
+              </div>
+              <div class="col" id="dashboardEspecialidadCol">
+                <label>Especialidad</label>
+                <select id="dashboardEspecialidad">
+                  <option value="">Todas las especialidades</option>
+                </select>
+              </div>
+              <div class="col">
+                <label id="dashboardTipoEstudioLabel">Tipo de Consulta / Estudio</label>
+                <select id="dashboardTipoEstudio">
+                  <option value="">Todos</option>
+                </select>
+              </div>
+            </div>
+            <div class="row" style="margin-bottom:10px">
               <div class="col">
                 <label>Desde</label>
                 <input id="dashboardFechaDesde" type="date" />
@@ -2336,13 +2356,28 @@
                 <input id="dashboardFechaHasta" type="date" />
               </div>
               <div class="col">
-                <label>Agendado por</label>
-                <input id="dashboardAgendadoPor" type="text" placeholder="Nombre del usuario" />
-              </div>
-              <div class="col">
-                <label>Tipo de Estudio</label>
-                <select id="dashboardTipoEstudio">
-                  <option value="">Todos los estudios</option>
+                <label>Estado</label>
+                <select id="dashboardEstado">
+                  <option value="">Todos los estados</option>
+                  <optgroup label="— Agenda Médica —">
+                    <option value="PENDIENTE">Pendiente</option>
+                    <option value="EN_SALA">En Sala</option>
+                    <option value="EN_ATENCION">En Atención</option>
+                    <option value="ATENDIDO">Atendido</option>
+                    <option value="NO_ASISTIO">No Asistió</option>
+                    <option value="CANCELADO">Cancelado</option>
+                    <option value="REPROGRAMADO">Reprogramado</option>
+                  </optgroup>
+                  <optgroup label="— Electrodiagnóstico —">
+                    <option value="Programado">Programado</option>
+                    <option value="Confirmado">Confirmado</option>
+                    <option value="En Sala">En Sala (Electro)</option>
+                    <option value="En Estudio">En Estudio</option>
+                    <option value="Completado">Completado</option>
+                    <option value="No Asistió">No Asistió (Electro)</option>
+                    <option value="Cancelado">Cancelado (Electro)</option>
+                    <option value="Reprogramado">Reprogramado (Electro)</option>
+                  </optgroup>
                 </select>
               </div>
               <div class="col">
@@ -2351,17 +2386,17 @@
                   <option value="">Todas</option>
                 </select>
               </div>
-              <div class="col" style="display:flex;align-items:flex-end;gap:8px">
-                <button id="btnBuscarCitas" class="btn-primary btn-sm" style="flex:1">Buscar</button>
-                <button id="btnLimpiarFiltrosDashboard" class="btn-secondary btn-sm" style="flex:1">Limpiar</button>
+              <div class="col">
+                <label>Agendado por</label>
+                <input id="dashboardAgendadoPor" type="text" placeholder="Nombre del usuario" />
               </div>
             </div>
-          </section>
-
-          <!-- Botones de exportación -->
-          <section class="card no-print" style="padding:12px 20px">
-            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-              <span style="font-weight:600;color:#627371;font-size:14px">Exportar:</span>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+              <button id="btnBuscarCitas" class="btn-primary btn-sm">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>Buscar
+              </button>
+              <button id="btnLimpiarFiltrosDashboard" class="btn-secondary btn-sm">Limpiar filtros</button>
+              <span style="margin-left:auto;font-weight:600;color:#627371;font-size:13px">Exportar:</span>
               <button id="btnExportarExcel" class="btn-secondary btn-sm" onclick="exportarAuditoriaCitasExcel()">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>Excel (.xlsx)
               </button>
@@ -2371,38 +2406,61 @@
             </div>
           </section>
 
-          <!-- Resumen -->
+          <!-- Resumen estadístico -->
           <section class="card no-print" style="background-color:#f0f9ff;border-left:4px solid #8AA6A1">
-            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px">
-              <div style="text-align:center">
-                <div style="font-size:24px;font-weight:bold;color:#0369a1" id="dashboardTotalCitas">0</div>
-                <div style="font-size:12px;color:#666">Citas totales</div>
+            <h3 style="margin-bottom:12px;font-size:14px;color:#627371">Resumen del período</h3>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px">
+              <div style="text-align:center;background:#fff;border-radius:8px;padding:10px;box-shadow:0 1px 3px rgba(0,0,0,.07)">
+                <div style="font-size:26px;font-weight:bold;color:#0369a1" id="dashboardTotalCitas">0</div>
+                <div style="font-size:11px;color:#666;margin-top:2px">Total citas</div>
               </div>
-              <div style="text-align:center">
-                <div style="font-size:24px;font-weight:bold;color:#10b981" id="dashboardCitasMedicas">0</div>
-                <div style="font-size:12px;color:#666">Citas médicas</div>
+              <div style="text-align:center;background:#fff;border-radius:8px;padding:10px;box-shadow:0 1px 3px rgba(0,0,0,.07)">
+                <div style="font-size:26px;font-weight:bold;color:#10b981" id="dashboardCitasMedicas">0</div>
+                <div style="font-size:11px;color:#666;margin-top:2px">Médicas</div>
               </div>
-              <div style="text-align:center">
-                <div style="font-size:24px;font-weight:bold;color:#8b5cf6" id="dashboardCitasElectro">0</div>
-                <div style="font-size:12px;color:#666">Electrodiagnóstico</div>
+              <div style="text-align:center;background:#fff;border-radius:8px;padding:10px;box-shadow:0 1px 3px rgba(0,0,0,.07)">
+                <div style="font-size:26px;font-weight:bold;color:#8b5cf6" id="dashboardCitasElectro">0</div>
+                <div style="font-size:11px;color:#666;margin-top:2px">Electrodiagnóstico</div>
               </div>
-              <div style="text-align:center">
-                <div style="font-size:24px;font-weight:bold;color:#f59e0b" id="dashboardAgendadores">0</div>
-                <div style="font-size:12px;color:#666">Usuarios que agendaron</div>
+              <div style="text-align:center;background:#fff;border-radius:8px;padding:10px;box-shadow:0 1px 3px rgba(0,0,0,.07)">
+                <div style="font-size:26px;font-weight:bold;color:#059669" id="dashboardAtendidos">0</div>
+                <div style="font-size:11px;color:#666;margin-top:2px">Atendidos</div>
+              </div>
+              <div style="text-align:center;background:#fff;border-radius:8px;padding:10px;box-shadow:0 1px 3px rgba(0,0,0,.07)">
+                <div style="font-size:26px;font-weight:bold;color:#dc2626" id="dashboardNoAsistieron">0</div>
+                <div style="font-size:11px;color:#666;margin-top:2px">No asistieron</div>
+              </div>
+              <div style="text-align:center;background:#fff;border-radius:8px;padding:10px;box-shadow:0 1px 3px rgba(0,0,0,.07)">
+                <div style="font-size:26px;font-weight:bold;color:#9ca3af" id="dashboardCancelados">0</div>
+                <div style="font-size:11px;color:#666;margin-top:2px">Cancelados</div>
+              </div>
+              <div style="text-align:center;background:#fff;border-radius:8px;padding:10px;box-shadow:0 1px 3px rgba(0,0,0,.07)">
+                <div style="font-size:26px;font-weight:bold;color:#f59e0b" id="dashboardReprogramados">0</div>
+                <div style="font-size:11px;color:#666;margin-top:2px">Reprogramados</div>
+              </div>
+              <div style="text-align:center;background:#fff;border-radius:8px;padding:10px;box-shadow:0 1px 3px rgba(0,0,0,.07)">
+                <div style="font-size:26px;font-weight:bold;color:#3b82f6" id="dashboardPendientes">0</div>
+                <div style="font-size:11px;color:#666;margin-top:2px">Pendientes</div>
+              </div>
+              <div style="text-align:center;background:#fff;border-radius:8px;padding:10px;box-shadow:0 1px 3px rgba(0,0,0,.07)">
+                <div style="font-size:26px;font-weight:bold;color:#f97316" id="dashboardAgendadores">0</div>
+                <div style="font-size:11px;color:#666;margin-top:2px">Usuarios agendaron</div>
               </div>
             </div>
           </section>
 
           <!-- Tabla de Citas -->
           <section class="card">
-            <h3>Citas Agendadas</h3>
+            <h3>Detalle de citas</h3>
             <div class="table-wrapper">
               <table class="modern-table" id="tablaCitasAuditoria">
                 <thead>
                   <tr>
                     <th>Fecha</th>
                     <th>Hora</th>
+                    <th>Médico</th>
                     <th>Paciente (Documento)</th>
+                    <th>Especialidad / Estudio</th>
                     <th>Tipo Consulta</th>
                     <th>Entidad</th>
                     <th>Tipo Cita</th>
@@ -2411,7 +2469,7 @@
                   </tr>
                 </thead>
                 <tbody id="bodyTablaAuditoria">
-                  <tr><td colspan="8" style="padding:20px;text-align:center;color:#999">Selecciona los filtros y haz clic en Buscar</td></tr>
+                  <tr><td colspan="10" style="padding:20px;text-align:center;color:#999">Selecciona los filtros y haz clic en Buscar</td></tr>
                 </tbody>
               </table>
             </div>

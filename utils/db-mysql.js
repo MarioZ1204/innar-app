@@ -19,7 +19,8 @@ async function initPool() {
     queueLimit: 100,
     enableKeepAlive: true,
     keepAliveInitialDelay: 10000,
-    charset: 'utf8mb4'
+    charset: 'utf8mb4',
+    dateStrings: true
   });
 
   console.log(`✓ Pool MySQL conectado: ${process.env.DB_HOST}:${process.env.DB_PORT}`);

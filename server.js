@@ -1523,7 +1523,14 @@ app.get('/api/consultorios', requireAuth, async (req, res) => {
 // Listar medicos (usuarios con rol 'doctor')  accesible a recepcion y doctores
 app.get('/api/medicos', requireAuth, async (req, res) => {
   try {
-    const medicos = await db.query("SELECT id, nombre, usuario, especialidad, numero_consultorio FROM usuarios WHERE rol = 'doctor' AND activo = 1 ORDER BY nombre ASC");
+    const medicos = await db.query(`
+      SELECT u.id, u.nombre, u.usuario, u.especialidad, u.numero_consultorio,
+             e.id AS especialidad_id
+      FROM usuarios u
+      LEFT JOIN especialidades e ON LOWER(TRIM(e.nombre)) = LOWER(TRIM(u.especialidad))
+      WHERE u.rol = 'doctor' AND u.activo = 1
+      ORDER BY u.nombre ASC
+    `);
     res.json(medicos);
   } catch (e) {
     console.error(e);
@@ -5214,88 +5221,117 @@ app.get('/api/reportes/mensual', requireAuth, requireRoleOrPerm(['superadmin', '
 // ðŸ“Š Dashboard Auditoría de Citas - Ver quién agendó cada cita
 app.get('/api/dashboard/citas-auditoria', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro', 'doctor', 'contabilidad'], 'sistema.dashboard'), async (req, res) => {
   try {
-    const { tipo_cita, fecha_desde, fecha_hasta, programado_por, tipo_estudio, entidad } = req.query;
-    
+    const { tipo_cita, fecha_desde, fecha_hasta, programado_por, tipo_estudio, entidad, doctor_id, estado, especialidad_id } = req.query;
+
     // Pre-parse multi-value filters
     const entidadArr = entidad ? entidad.split(',').filter(Boolean) : [];
     const tipoEstudioArr = tipo_estudio ? tipo_estudio.split(',').filter(Boolean) : [];
-    
-    // Construir consultas para ambas tablas
+
+    // ── Citas Médicas ──────────────────────────────────────────────────
     const medConditions = ['1=1'];
     const medParams = [];
     if (fecha_desde) { medConditions.push('t.fecha >= ?'); medParams.push(fecha_desde); }
     if (fecha_hasta) { medConditions.push('t.fecha <= ?'); medParams.push(fecha_hasta); }
     if (programado_por) { medConditions.push('t.programado_por LIKE ?'); medParams.push(`%${programado_por}%`); }
+    if (doctor_id) { medConditions.push('t.doctor_id = ?'); medParams.push(parseInt(doctor_id, 10)); }
+    if (estado) { medConditions.push('t.estado = ?'); medParams.push(estado); }
+    if (especialidad_id) { medConditions.push('e.id = ?'); medParams.push(parseInt(especialidad_id, 10)); }
     if (entidadArr.length === 1) { medConditions.push('t.entidad = ?'); medParams.push(entidadArr[0]); }
     else if (entidadArr.length > 1) { medConditions.push(`t.entidad IN (${entidadArr.map(() => '?').join(',')})`); medParams.push(...entidadArr); }
     if (tipoEstudioArr.length === 1) { medConditions.push('t.tipo_consulta = ?'); medParams.push(tipoEstudioArr[0]); }
     else if (tipoEstudioArr.length > 1) { medConditions.push(`t.tipo_consulta IN (${tipoEstudioArr.map(() => '?').join(',')})`); medParams.push(...tipoEstudioArr); }
 
     const citasMedicas = await db.query(`
-      SELECT 
+      SELECT
         t.id,
-        DATE_FORMAT(t.fecha, '%Y-%m-%d') as fecha,
-        t.hora,
+        DATE_FORMAT(t.fecha, '%Y-%m-%d') AS fecha,
+        TIME_FORMAT(t.hora, '%H:%i') AS hora,
         t.paciente_documento,
         t.paciente_nombre,
         t.tipo_consulta,
         t.programado_por,
         t.doctor_id,
+        COALESCE(u.nombre, '') AS medico_nombre,
+        COALESCE(e.nombre, u.especialidad, '') AS especialidad_nombre,
         t.estado,
         t.entidad,
-        'AGENDA_MEDICA' as tipo_cita,
+        'AGENDA_MEDICA' AS tipo_cita,
         t.numero_turno
       FROM turnos t
+      LEFT JOIN usuarios u ON u.id = t.doctor_id
+      LEFT JOIN especialidades e ON LOWER(TRIM(e.nombre)) = LOWER(TRIM(u.especialidad))
       WHERE ${medConditions.join(' AND ')}
       ORDER BY t.fecha DESC, t.hora DESC
     `, medParams);
 
-    const electroConditions = ['1=1'];
+    // ── Citas Electrodiagnóstico ───────────────────────────────────────
+    const electroConditions = ['ce.deleted_at IS NULL'];
     const electroParams = [];
     if (fecha_desde) { electroConditions.push('ce.fecha >= ?'); electroParams.push(fecha_desde); }
     if (fecha_hasta) { electroConditions.push('ce.fecha <= ?'); electroParams.push(fecha_hasta); }
     if (programado_por) { electroConditions.push('ce.programado_por_nombre LIKE ?'); electroParams.push(`%${programado_por}%`); }
+    if (doctor_id) { electroConditions.push('ce.equipo_id = ?'); electroParams.push(parseInt(doctor_id, 10)); }
+    if (estado) { electroConditions.push('ce.estado = ?'); electroParams.push(estado); }
     if (entidadArr.length === 1) { electroConditions.push('ce.entidad = ?'); electroParams.push(entidadArr[0]); }
     else if (entidadArr.length > 1) { electroConditions.push(`ce.entidad IN (${entidadArr.map(() => '?').join(',')})`); electroParams.push(...entidadArr); }
     if (tipoEstudioArr.length === 1) { electroConditions.push('ce.estudio = ?'); electroParams.push(tipoEstudioArr[0]); }
     else if (tipoEstudioArr.length > 1) { electroConditions.push(`ce.estudio IN (${tipoEstudioArr.map(() => '?').join(',')})`); electroParams.push(...tipoEstudioArr); }
 
     const citasElectro = await db.query(`
-      SELECT 
+      SELECT
         ce.id,
-        DATE_FORMAT(ce.fecha, '%Y-%m-%d') as fecha,
-        ce.hora_agendamiento as hora,
-        p.documento as paciente_documento,
-        p.nombre as paciente_nombre,
-        ce.estudio as tipo_consulta,
-        ce.programado_por_nombre as programado_por,
-        ce.equipo_id as doctor_id,
+        DATE_FORMAT(ce.fecha, '%Y-%m-%d') AS fecha,
+        TIME_FORMAT(ce.hora_agendamiento, '%H:%i') AS hora,
+        p.documento AS paciente_documento,
+        p.nombre AS paciente_nombre,
+        ce.estudio AS tipo_consulta,
+        ce.programado_por_nombre AS programado_por,
+        ce.equipo_id AS doctor_id,
+        '' AS medico_nombre,
+        ce.estudio AS especialidad_nombre,
         ce.estado,
         ce.entidad,
-        'ELECTRODIAGNOSTICO' as tipo_cita,
-        'N/A' as numero_turno
+        'ELECTRODIAGNOSTICO' AS tipo_cita,
+        'N/A' AS numero_turno
       FROM citas_electro ce
       LEFT JOIN pacientes p ON p.id = ce.paciente_id
       WHERE ${electroConditions.join(' AND ')}
       ORDER BY ce.fecha DESC, ce.hora_agendamiento DESC
     `, electroParams);
 
-    // Combinar y filtrar por tipo_cita si viene en el query
-    let citas = [...citasMedicas, ...citasElectro];
-    
-    if (tipo_cita && tipo_cita !== 'TODOS') {
-      citas = citas.filter(c => c.tipo_cita === tipo_cita);
+    // Combinar y filtrar por tipo_cita
+    let citas = [];
+    if (!tipo_cita || tipo_cita === 'TODOS') {
+      // Skip electro if estado is a médica-only value and vice versa
+      const esMedicaEstado = estado && ['PENDIENTE','EN_SALA','EN_ATENCION','ATENDIDO','NO_ASISTIO','CANCELADO','REPROGRAMADO'].includes(estado);
+      const esElectroEstado = estado && ['Programado','Confirmado','En Sala','En Estudio','Completado','No Asistió','Cancelado','Reprogramado'].includes(estado);
+      if (esMedicaEstado && !esElectroEstado) {
+        citas = citasMedicas;
+      } else if (esElectroEstado && !esMedicaEstado) {
+        citas = citasElectro;
+      } else {
+        citas = [...citasMedicas, ...citasElectro];
+      }
+    } else if (tipo_cita === 'AGENDA_MEDICA') {
+      citas = citasMedicas;
+    } else {
+      citas = citasElectro;
     }
 
-    // Ordenar por fecha y hora descendente (fecha ya es string YYYY-MM-DD gracias a DATE_FORMAT)
+    // Ordenar por fecha y hora descendente
     citas.sort((a, b) => {
-      if (a.fecha < b.fecha) return 1;
-      if (a.fecha > b.fecha) return -1;
-      // Misma fecha: ordenar por hora DESC
-      const horaA = (a.hora || '').toString().substring(0, 8);
-      const horaB = (b.hora || '').toString().substring(0, 8);
-      return horaB.localeCompare(horaA);
+      const fd = (b.fecha || '').localeCompare(a.fecha || '');
+      if (fd !== 0) return fd;
+      return (b.hora || '').localeCompare(a.hora || '');
     });
+
+    // Calcular resumen por estado
+    const contarEstados = (arr, estadosList) => arr.filter(c => estadosList.includes(c.estado)).length;
+    const atendidos = contarEstados(citas, ['ATENDIDO', 'Completado']);
+    const noAsistieron = contarEstados(citas, ['NO_ASISTIO', 'No Asistió']);
+    const cancelados = contarEstados(citas, ['CANCELADO', 'Cancelado']);
+    const reprogramados = contarEstados(citas, ['REPROGRAMADO', 'Reprogramado']);
+    const pendientes = contarEstados(citas, ['PENDIENTE', 'EN_SALA', 'EN_ATENCION', 'Programado', 'Confirmado', 'En Sala', 'En Estudio']);
 
     logger.info('Dashboard auditoría citas', {
       usuario: req.session && req.session.usuario ? req.session.usuario : 'Unknown',
@@ -5309,8 +5345,13 @@ app.get('/api/dashboard/citas-auditoria', requireAuth, requireRoleOrPerm(['super
       data: citas,
       resumen: {
         total_citas: citas.length,
-        citas_medicas: citasMedicas.length,
-        citas_electrodiagnostico: citasElectro.length,
+        citas_medicas: (!tipo_cita || tipo_cita === 'TODOS' || tipo_cita === 'AGENDA_MEDICA') ? citasMedicas.length : 0,
+        citas_electrodiagnostico: (!tipo_cita || tipo_cita === 'TODOS' || tipo_cita === 'ELECTRODIAGNOSTICO') ? citasElectro.length : 0,
+        atendidos,
+        no_asistieron: noAsistieron,
+        cancelados,
+        reprogramados,
+        pendientes,
         agendadores: [...new Set(citas.map(c => c.programado_por))].filter(p => p)
       }
     });

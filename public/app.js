@@ -2807,22 +2807,18 @@ function setCalToggle(asistire, todoDia = false) {
   const btnFullDay = $('calToggleFullDay');
   const btnNo = $('calToggleNo');
   const horasC = $('calModalHorasContainer');
-  const noAsistireC = $('calModalNoAsistireContainer');
   if (asistire) {
     calModoTodoDia = Boolean(todoDia);
-    // "Todo el día" también es "asistiré", por lo que debe considerarse disponible.
     btnYes.classList.add('cal-toggle-active-yes');
     btnFullDay?.classList.toggle('cal-toggle-active-full', calModoTodoDia);
     btnNo.classList.remove('cal-toggle-active-no');
     if (horasC) horasC.style.display = calModoTodoDia ? 'none' : '';
-    if (noAsistireC) noAsistireC.style.display = 'none';
   } else {
     calModoTodoDia = false;
     btnYes.classList.remove('cal-toggle-active-yes');
     btnFullDay?.classList.remove('cal-toggle-active-full');
     btnNo.classList.add('cal-toggle-active-no');
     if (horasC) horasC.style.display = 'none';
-    if (noAsistireC) noAsistireC.style.display = '';
   }
 }
 
@@ -2855,23 +2851,6 @@ function openCalModal(dateStr) {
 
   if (disp && !disp.disponible) {
     setCalToggle(false);
-    // Cargar motivo de ausencia existente
-    const selectMotivo = $('calModalMotivoSelect');
-    const inputOtro = $('calModalMotivoOtro');
-    if (selectMotivo) {
-      const motivo = disp.motivo_ausencia || '';
-      const opciones = ['', 'UCQN', 'Hospital departamental', 'Cita médica personal', 'Vacaciones', 'Capacitación'];
-      if (opciones.includes(motivo)) {
-        selectMotivo.value = motivo;
-        if (inputOtro) inputOtro.style.display = 'none';
-      } else if (motivo) {
-        selectMotivo.value = 'Otro';
-        if (inputOtro) { inputOtro.style.display = ''; inputOtro.value = motivo; }
-      } else {
-        selectMotivo.value = '';
-        if (inputOtro) inputOtro.style.display = 'none';
-      }
-    }
   } else {
     setCalToggle(true, isFullDayConfigured);
     if (isFullDayConfigured) {
@@ -2884,6 +2863,24 @@ function openCalModal(dateStr) {
       if (!disp.disponible_manana && !disp.disponible_tarde) addCalHoraRow('', '');
     } else {
       addCalHoraRow('', '');
+    }
+  }
+
+  // Cargar observación existente (aplica para todos los estados)
+  const selectMotivo = $('calModalMotivoSelect');
+  const inputOtro = $('calModalMotivoOtro');
+  if (selectMotivo) {
+    const motivo = disp?.motivo_ausencia || '';
+    const opciones = ['', 'UCQN', 'Hospital departamental', 'Cita médica personal', 'Vacaciones', 'Capacitación'];
+    if (opciones.includes(motivo)) {
+      selectMotivo.value = motivo;
+      if (inputOtro) inputOtro.style.display = 'none';
+    } else if (motivo) {
+      selectMotivo.value = 'Otro';
+      if (inputOtro) { inputOtro.style.display = ''; inputOtro.value = motivo; }
+    } else {
+      selectMotivo.value = '';
+      if (inputOtro) inputOtro.style.display = 'none';
     }
   }
 
@@ -3039,7 +3036,7 @@ async function saveCalDay() {
     slots = [];
     hasManana = false;
     hasTarde = false;
-    // Leer motivo de ausencia
+    // Leer observación
     const selectMotivo = $('calModalMotivoSelect');
     const inputOtro = $('calModalMotivoOtro');
     if (selectMotivo) {
@@ -3083,6 +3080,20 @@ async function saveCalDay() {
     }
   }
 
+  // Leer observación (aplica para todos los estados)
+  if (motivoAusencia === null) {
+    const selectMotivo = $('calModalMotivoSelect');
+    const inputOtro = $('calModalMotivoOtro');
+    if (selectMotivo) {
+      const valSelect = selectMotivo.value;
+      if (valSelect === 'Otro') {
+        motivoAusencia = (inputOtro?.value || '').trim() || null;
+      } else {
+        motivoAusencia = valSelect || null;
+      }
+    }
+  }
+
   const saveBtn = $('calModalSave');
   setLoading(saveBtn, true, 'Guardando...');
 
@@ -3113,12 +3124,16 @@ async function saveCalDay() {
     });
 
     // Actualizar caché local inmediatamente para que renderCalendar() refleje el cambio al cerrar modal
-    calDisponibilidad[calSelectedDate] = {
-      disponible,
+    const savedDate = calSelectedDate; // capturar antes de que closeCalModal lo anule
+    calDisponibilidad[savedDate] = {
+      disponible: disponible,
       disponible_manana: disponible ? (hasManana || (!hasManana && !hasTarde)) : false,
       disponible_tarde: disponible ? (hasTarde || (!hasManana && !hasTarde)) : false,
       motivo_ausencia: motivoAusencia
     };
+    // Actualizar también los slots locales
+    calSlots = calSlots.filter(s => (s.fecha || '').slice(0, 10) !== savedDate);
+    slots.forEach(s => calSlots.push(s));
 
     showToast('Día guardado correctamente', 'success');
     closeCalModal();

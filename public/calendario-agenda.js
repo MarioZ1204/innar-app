@@ -133,25 +133,29 @@ function renderCitasCalGrid() {
     var esHoy = fechaStr === hoyStr;
     var esDomingo = new Date(year, month, dia).getDay() === 0;
 
-    // Determinar disponibilidad y motivo
+    // Determinar disponibilidad y observación
     var dispInfo = _citasCalDispCache[fechaStr] || null;
     var bloqueado = false;
-    var motivoAusencia = null;
+    var observacion = null;
     if (esDomingo) {
       bloqueado = true;
     } else if (hayDisponibilidad && dispInfo && dispInfo.disponible === 0) {
       bloqueado = true;
-      motivoAusencia = dispInfo.motivo || null;
     }
+    if (dispInfo) observacion = dispInfo.motivo || null;
 
-    var esUCQN = bloqueado && motivoAusencia === 'UCQN';
-    var esNoAsiste = bloqueado && motivoAusencia && !esUCQN;
+    var esUCQN = observacion === 'UCQN';
+    var tieneObservacion = observacion && observacion !== '';
 
     // Colores por estado de agenda
     var colorClass = 'ccal-rojo';
-    if (esUCQN) {
+    if (!bloqueado && esUCQN) {
+      // Doctor asiste pero en UCQN → azul
+      colorClass = total > 10 ? 'ccal-verde' : (total >= 1 ? 'ccal-ucqn' : 'ccal-ucqn');
+    } else if (bloqueado && esUCQN) {
+      // Doctor no asiste pero está en UCQN → azul bloqueado
       colorClass = 'ccal-ucqn';
-    } else if (esNoAsiste) {
+    } else if (bloqueado && tieneObservacion) {
       colorClass = 'ccal-noasiste';
     } else if (bloqueado) {
       colorClass = 'ccal-bloqueado';
@@ -165,8 +169,8 @@ function renderCitasCalGrid() {
       colorClass = 'ccal-amarillo';
     }
 
-    // Los días UCQN y noasiste son clickables para ver citas aunque esté bloqueado
-    var clickable = !bloqueado || esUCQN || esNoAsiste;
+    // Días con observación son clickables incluso si bloqueado
+    var clickable = !bloqueado || tieneObservacion;
     var clickAttr = clickable ? ' onclick="citasCalClickDia(\'' + fechaStr + '\', this)"' : '';
 
     html += '<div class="ccal-cell ' + colorClass + (esHoy ? ' ccal-hoy' : '') + '"'
@@ -174,12 +178,14 @@ function renderCitasCalGrid() {
       + '<div class="ccal-dia-num">' + dia + '</div>'
       + '<div class="ccal-dia-info">';
 
-    if ((esNoAsiste || esUCQN) && motivoAusencia) {
-      // Mostrar texto diagonal del motivo
-      var motivoTexto = motivoAusencia.length > 18 ? motivoAusencia.substring(0, 16) + '…' : motivoAusencia;
-      html += '<div class="ccal-motivo-diagonal" title="' + escapeHtml(motivoAusencia) + '">' + escapeHtml(motivoTexto) + '</div>';
+    if (tieneObservacion) {
+      // Mostrar texto diagonal de la observación
+      var obsTexto = observacion.length > 18 ? observacion.substring(0, 16) + '…' : observacion;
+      html += '<div class="ccal-motivo-diagonal" title="' + escapeHtml(observacion) + '">' + escapeHtml(obsTexto) + '</div>';
       if (total > 0) {
         html += '<span class="ccal-corner-count" title="' + total + ' cita' + (total !== 1 ? 's' : '') + '">' + total + '</span>';
+      } else if (!bloqueado) {
+        html += '<span class="ccal-citas-label" style="font-size:0.6rem;opacity:0.7">Sin citas</span>';
       }
     } else if (bloqueado && !datos) {
       html += '<span class="ccal-citas-label">No disponible</span>';
