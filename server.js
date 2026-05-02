@@ -149,7 +149,7 @@ function issueCsrfIfAuthed(req, res, next) {
 app.use(issueCsrfIfAuthed);
 app.use(csrfProtection);
 
-// Servir archivos estáticos desde public
+// Servir archivos estáticos desde public (sin headers — la ruta GET / con versioning los sirve vía el segundo middleware)
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Manejo explícito de favicon.ico
@@ -185,8 +185,8 @@ app.use(helmet({
       frameAncestors: ["'self'"],
       objectSrc: ["'none'"],
       imgSrc: ["'self'", "data:", "blob:"],
-      fontSrc: ["'self'", "data:"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
+      fontSrc: ["'self'", "data:", "https://fonts.gstatic.com"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
       scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
       connectSrc: ["'self'", "ws:", "wss:"],
       ...(process.env.NODE_ENV === 'production' ? { upgradeInsecureRequests: [] } : {}),
@@ -361,9 +361,11 @@ app.get('/', (req, res) => {
   const vTag = `?v=${APP_VERSION}`;
   html = html
     .replace('href="style.css"', `href="style.css${vTag}"`)
+    .replace('src="multiselect.js"', `src="multiselect.js${vTag}"`)
     .replace('src="socket-client.js"', `src="socket-client.js${vTag}"`)
     .replace('src="socket-electro.js"', `src="socket-electro.js${vTag}"`)
     .replace('src="dashboard-citas.js"', `src="dashboard-citas.js${vTag}"`)
+    .replace('src="calendario-agenda.js"', `src="calendario-agenda.js${vTag}"`)
     .replace('src="app.js"', `src="app.js${vTag}"`)
     .replace('src="calendario-bloqueado.js"', `src="calendario-bloqueado.js${vTag}"`)
     .replace('src="validation-client.js"', `src="validation-client.js${vTag}"`)
@@ -381,9 +383,18 @@ app.use(express.static('public', {
     if (filePath.endsWith('.html')) {
       res.setHeader('Cache-Control', 'no-cache, must-revalidate');
     }
-    // JS/CSS: cache corto + must-revalidate (ETag maneja la validación)
+    // JS/CSS: 1 año (el servidor inyecta ?v=VERSION en la URL desde la ruta GET /)
+    // Visitas repetidas servirán desde caché del navegador sin red
     else if (filePath.endsWith('.js') || filePath.endsWith('.css')) {
-      res.setHeader('Cache-Control', 'public, max-age=60, must-revalidate');
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    }
+    // Imágenes: 7 días (menos frecuente de cambiar, pero pueden actualizarse)
+    else if (/\.(png|jpg|jpeg|gif|svg|webp|ico)$/.test(filePath)) {
+      res.setHeader('Cache-Control', 'public, max-age=604800, stale-while-revalidate=86400');
+    }
+    // Fuentes: 1 año
+    else if (/\.(woff2?|ttf|eot)$/.test(filePath)) {
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
     }
   }
 }));

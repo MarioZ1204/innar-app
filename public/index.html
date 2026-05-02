@@ -6,6 +6,8 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Instituto Neurociencias de Nariño IPS S.A.S</title>
   <link rel="icon" type="image/png" href="images/icon.png">
+  <!-- Preload LCP image (splash logo) -->
+  <link rel="preload" as="image" href="/images/logo3.webp" fetchpriority="high">
   <link rel="stylesheet" href="style.css">
   <style>
     @keyframes moveUp {
@@ -67,10 +69,10 @@
       to { transform: rotate(360deg); }
     }
   </style>
-  <script src="/libs/xlsx.full.min.js" onerror="console.warn('xlsx local no encontrado')"></script>
-  <script src="/libs/crypto-js.min.js" onerror="console.warn('crypto-js local no encontrado')"></script>
-  <script src="/socket.io/socket.io.js"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:wght@400;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+  <noscript><link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:wght@400;600;700&display=swap" rel="stylesheet"></noscript>
 </head>
 <body>
   <!-- Banner de actualización disponible -->
@@ -85,7 +87,7 @@
 
   <!-- ========== SPLASH SCREEN ========== -->
   <div id="splashScreen">
-    <img src="/images/logo3.png" alt="Logo" class="splash-logo" />
+    <img src="/images/logo3.webp" alt="Logo" class="splash-logo" width="323" height="100" fetchpriority="high" />
     <div class="splash-text">Cargando</div>
     <div class="splash-spinner"></div>
   </div>
@@ -94,7 +96,7 @@
   <div id="view-login" class="view-login hidden">
     <div class="login-box">
       <div class="login-header">
-        <img src="/images/logo3.png" alt="Logo Instituto Neurociencias" class="login-logo" />
+        <img src="/images/logo3.webp" alt="Logo Instituto Neurociencias" class="login-logo" width="323" height="100" />
         <h1>Instituto Neurociencias de Nariño IPS S.A.S</h1>
         <p>Ingresa tus credenciales para continuar</p>
       </div>
@@ -125,7 +127,7 @@
   <!-- ========== MENÚ PRINCIPAL ========== -->
   <div id="view-menu" class="view-menu hidden">
     <header class="menu-header">
-      <img src="/images/logo3.png" alt="Logo" class="menu-logo" />
+      <img src="/images/logo3.webp" alt="Logo" class="menu-logo" width="323" height="100" />
       <div class="menu-user">
         <span id="menuUserName"></span>
         <button id="btnCambiarContrasena" class="btn-logout" title="Gestionar tu cuenta"> Mi Cuenta</button>
@@ -140,21 +142,21 @@
       </div>
       <div class="menu-cards" id="menuCardsContainer">
         <button class="menu-card" data-module="recibos" data-rol="superadmin admin admin_recepcion recepcion contabilidad auxiliar_recepcion">
-          <span class="menu-card-icon"><img src="/images/iconrecibos.png" alt="Recibos" class="icon-img" /></span>
+          <span class="menu-card-icon"><img src="/images/iconrecibos.webp" alt="Recibos" class="icon-img" width="56" height="63" loading="lazy" /></span>
           <span class="menu-card-label">
             <span class="menu-card-title">Recibos</span>
             <span class="menu-card-desc">Historial y reportes</span>
           </span>
         </button>
         <button class="menu-card" data-module="agenda-medica" data-rol="superadmin admin admin_recepcion recepcion admin_electro electro tecnico_electro auxiliar_recepcion doctor">
-          <span class="menu-card-icon"><img src="/images/iconagenda.png" alt="Agenda Médica" class="icon-img" /></span>
+          <span class="menu-card-icon"><img src="/images/iconagenda.webp" alt="Agenda Médica" class="icon-img" width="56" height="47" loading="lazy" /></span>
           <span class="menu-card-label">
             <span class="menu-card-title">Agenda Médica</span>
             <span class="menu-card-desc">Citas por consultorio</span>
           </span>
         </button>
         <button class="menu-card" data-module="electro" data-rol="superadmin admin admin_recepcion recepcion admin_electro electro tecnico_electro auxiliar_recepcion doctor">
-          <span class="menu-card-icon"><img src="/images/iconelectro.png" alt="Electrodiagnóstico" class="icon-img" /></span>
+          <span class="menu-card-icon"><img src="/images/iconelectro.webp" alt="Electrodiagnóstico" class="icon-img" width="56" height="55" loading="lazy" /></span>
           <span class="menu-card-label">
             <span class="menu-card-title">Electrodiagnóstico</span>
             <span class="menu-card-desc">Agenda de los 4 equipos</span>
@@ -168,28 +170,28 @@
           </span>
         </button>
         <button class="menu-card" data-module="usuarios" data-rol="superadmin admin">
-          <span class="menu-card-icon"><img src="/images/iconuser.png" alt="Usuarios" class="icon-img" /></span>
+          <span class="menu-card-icon"><img src="/images/iconuser.webp" alt="Usuarios" class="icon-img" width="56" height="44" loading="lazy" /></span>
           <span class="menu-card-label">
             <span class="menu-card-title">Usuarios</span>
             <span class="menu-card-desc">Gestionar usuarios y roles</span>
           </span>
         </button>
         <button class="menu-card" data-module="diagnosticos" data-rol="superadmin admin">
-          <span class="menu-card-icon"><img src="/images/icondiagnosticos.svg" alt="Diagnósticos" class="icon-img" /></span>
+          <span class="menu-card-icon"><img src="/images/icondiagnosticos.svg" alt="Diagnósticos" class="icon-img" width="56" height="56" loading="lazy" /></span>
           <span class="menu-card-label">
             <span class="menu-card-title">Diagnósticos</span>
             <span class="menu-card-desc">Importar y gestionar</span>
           </span>
         </button>
         <button class="menu-card" data-module="dashboard-citas" data-rol="superadmin admin admin_recepcion recepcion admin_electro electro contabilidad doctor">
-          <span class="menu-card-icon"><img src="/images/icondashboard.svg" alt="Auditoría de Citas" class="icon-img" /></span>
+          <span class="menu-card-icon"><img src="/images/icondashboard.svg" alt="Auditoría de Citas" class="icon-img" width="56" height="56" loading="lazy" /></span>
           <span class="menu-card-label">
             <span class="menu-card-title">Auditoría de Citas</span>
             <span class="menu-card-desc">Quién agendó cada cita</span>
           </span>
         </button>
         <button class="menu-card" data-module="gestion-datos" data-rol="superadmin admin">
-          <span class="menu-card-icon"><img src="/images/icondiagnosticos.svg" alt="Gestión de Datos" class="icon-img" /></span>
+          <span class="menu-card-icon"><img src="/images/icondiagnosticos.svg" alt="Gestión de Datos" class="icon-img" width="56" height="56" loading="lazy" /></span>
           <span class="menu-card-label">
             <span class="menu-card-title">Gestión de Datos</span>
             <span class="menu-card-desc">Administrar registros del sistema</span>
@@ -205,13 +207,13 @@
     <div class="main-layout">
       <div class="sidebar no-print">
         <div class="sidebar-inner">
-          <div class="sidebar-logo-mini"><img src="/images/logo.png" alt="Logo" /></div>
+          <div class="sidebar-logo-mini"><img src="/images/logo.webp" alt="Logo" width="305" height="100" loading="lazy" /></div>
           <button class="btn-volver" id="btnVolverRecibos">
             <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
             Volver al menú
           </button>
           <div class="sidebar-logo">
-            <img src="/images/logo.png" alt="Logo" style="height:58px;width:auto;object-fit:contain" />
+            <img src="/images/logo.webp" alt="Logo" width="305" height="100" style="height:58px;width:auto;object-fit:contain" loading="lazy" />
           </div>
           <hr class="sidebar-title-sep" />
           <h2>Recibos</h2>
@@ -631,13 +633,13 @@
     <div class="main-layout">
       <div class="sidebar">
         <div class="sidebar-inner">
-          <div class="sidebar-logo-mini"><img src="/images/logo.png" alt="Logo" /></div>
+          <div class="sidebar-logo-mini"><img src="/images/logo.webp" alt="Logo" width="305" height="100" loading="lazy" /></div>
           <button class="btn-volver" id="btnVolverAgenda">
             <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
             Volver al menú
           </button>
           <div class="sidebar-logo">
-            <img src="/images/logo.png" alt="Logo" style="height:58px;width:auto;object-fit:contain" />
+            <img src="/images/logo.webp" alt="Logo" width="305" height="100" style="height:58px;width:auto;object-fit:contain" loading="lazy" />
           </div>
           <hr class="sidebar-title-sep" />
           <h2>Agenda Médica</h2>
@@ -1067,13 +1069,13 @@
     <div class="main-layout">
       <div class="sidebar">
         <div class="sidebar-inner">
-          <div class="sidebar-logo-mini"><img src="/images/logo.png" alt="Logo" /></div>
+          <div class="sidebar-logo-mini"><img src="/images/logo.webp" alt="Logo" width="305" height="100" loading="lazy" /></div>
           <button class="btn-volver" id="btnVolverUsuarios">
             <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
             Volver al menú
           </button>
           <div class="sidebar-logo">
-            <img src="/images/logo.png" alt="Logo" style="height:58px;width:auto;object-fit:contain" />
+            <img src="/images/logo.webp" alt="Logo" width="305" height="100" style="height:58px;width:auto;object-fit:contain" loading="lazy" />
           </div>
           <hr class="sidebar-title-sep" />
           <h2>Usuarios</h2>
@@ -1247,13 +1249,13 @@
     <div class="main-layout">
       <div class="sidebar">
         <div class="sidebar-inner">
-          <div class="sidebar-logo-mini"><img src="/images/logo.png" alt="Logo" /></div>
+          <div class="sidebar-logo-mini"><img src="/images/logo.webp" alt="Logo" width="305" height="100" loading="lazy" /></div>
           <button class="btn-volver" id="btnVolverDiagnosticos">
             <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
             Volver al menú
           </button>
           <div class="sidebar-logo">
-            <img src="/images/logo.png" alt="Logo" style="height:58px;width:auto;object-fit:contain" />
+            <img src="/images/logo.webp" alt="Logo" width="305" height="100" style="height:58px;width:auto;object-fit:contain" loading="lazy" />
           </div>
           <hr class="sidebar-title-sep" />
           <h2>Diagnósticos</h2>
@@ -1319,13 +1321,13 @@
     <div class="main-layout">
       <div class="sidebar">
         <div class="sidebar-inner">
-          <div class="sidebar-logo-mini"><img src="/images/logo.png" alt="Logo" /></div>
+          <div class="sidebar-logo-mini"><img src="/images/logo.webp" alt="Logo" width="305" height="100" loading="lazy" /></div>
           <button class="btn-volver" id="btnVolverElectro">
             <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
             Volver al menú
           </button>
           <div class="sidebar-logo">
-            <img src="/images/logo.png" alt="Logo" style="height:58px;width:auto;object-fit:contain" />
+            <img src="/images/logo.webp" alt="Logo" width="305" height="100" style="height:58px;width:auto;object-fit:contain" loading="lazy" />
           </div>
           <hr class="sidebar-title-sep" />
           <h2>Electrodiagnóstico</h2>
@@ -1730,13 +1732,13 @@
     <div class="main-layout">
       <div class="sidebar">
         <div class="sidebar-inner">
-          <div class="sidebar-logo-mini"><img src="/images/logo.png" alt="Logo" /></div>
+          <div class="sidebar-logo-mini"><img src="/images/logo.webp" alt="Logo" width="305" height="100" loading="lazy" /></div>
           <button class="btn-volver" id="btnVolverUcqn">
             <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
             Volver al menú
           </button>
           <div class="sidebar-logo">
-            <img src="/images/logo.png" alt="Logo" style="height:58px;width:auto;object-fit:contain" />
+            <img src="/images/logo.webp" alt="Logo" width="305" height="100" style="height:58px;width:auto;object-fit:contain" loading="lazy" />
           </div>
           <hr class="sidebar-title-sep" />
           <h2>UCQN</h2>
@@ -2289,13 +2291,13 @@
     <div class="main-layout">
       <div class="sidebar">
         <div class="sidebar-inner">
-          <div class="sidebar-logo-mini"><img src="/images/logo.png" alt="Logo" /></div>
+          <div class="sidebar-logo-mini"><img src="/images/logo.webp" alt="Logo" width="305" height="100" loading="lazy" /></div>
           <button class="btn-volver" id="btnVolverDashboardCitas">
             <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
             Volver al menú
           </button>
           <div class="sidebar-logo">
-            <img src="/images/logo.png" alt="Logo" style="height:58px;width:auto;object-fit:contain" />
+            <img src="/images/logo.webp" alt="Logo" width="305" height="100" style="height:58px;width:auto;object-fit:contain" loading="lazy" />
           </div>
           <hr class="sidebar-title-sep" />
           <h2>Auditoría de Citas</h2>
@@ -2485,13 +2487,13 @@
     <div class="main-layout">
       <div class="sidebar no-print">
         <div class="sidebar-inner">
-          <div class="sidebar-logo-mini"><img src="/images/logo.png" alt="Logo" /></div>
+          <div class="sidebar-logo-mini"><img src="/images/logo.webp" alt="Logo" width="305" height="100" loading="lazy" /></div>
           <button class="btn-volver" id="btnVolverGestionDatos">
             <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
             Volver al menú
           </button>
           <div class="sidebar-logo">
-            <img src="/images/logo.png" alt="Logo" style="height:58px;width:auto;object-fit:contain" />
+            <img src="/images/logo.webp" alt="Logo" width="305" height="100" style="height:58px;width:auto;object-fit:contain" loading="lazy" />
           </div>
           <hr class="sidebar-title-sep" />
           <h2>Gestión de Datos</h2>
@@ -2945,6 +2947,9 @@
     </div>
   </footer>
 
+  <script src="/libs/xlsx.full.min.js" onerror="console.warn('xlsx local no encontrado')"></script>
+  <script src="/libs/crypto-js.min.js" onerror="console.warn('crypto-js local no encontrado')"></script>
+  <script src="/socket.io/socket.io.js"></script>
   <script src="multiselect.js"></script>
   <script src="socket-client.js"></script>
   <script src="socket-electro.js"></script>
@@ -2976,11 +2981,11 @@
     // Precargar imágenes importantes
     function preloadImages() {
       const images = [
-        'images/bck3.jpeg',
-        'images/fondo.png',
-        'images/logo.png',
-        'images/logo1.png',
-        'images/logo3.png',
+        'images/bck3.webp',
+        'images/fondo.webp',
+        'images/logo.webp',
+        'images/logo1.webp',
+        'images/logo3.webp',
         'images/icon.png'
       ];
       
