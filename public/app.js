@@ -2788,6 +2788,12 @@ function setupAgendaCalendar() {
   $('calModalSave')?.addEventListener('click', saveCalDay);
   $('calModalClear')?.addEventListener('click', deleteCalDay);
 
+  // Motivo de ausencia: mostrar/ocultar campo libre según selección
+  $('calModalMotivoSelect')?.addEventListener('change', function() {
+    const inputOtro = $('calModalMotivoOtro');
+    if (inputOtro) inputOtro.style.display = this.value === 'Otro' ? '' : 'none';
+  });
+
   // ESC to close modal
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && $('calDayModal')?.classList.contains('active')) closeCalModal();
@@ -2801,6 +2807,7 @@ function setCalToggle(asistire, todoDia = false) {
   const btnFullDay = $('calToggleFullDay');
   const btnNo = $('calToggleNo');
   const horasC = $('calModalHorasContainer');
+  const noAsistireC = $('calModalNoAsistireContainer');
   if (asistire) {
     calModoTodoDia = Boolean(todoDia);
     // "Todo el día" también es "asistiré", por lo que debe considerarse disponible.
@@ -2808,12 +2815,14 @@ function setCalToggle(asistire, todoDia = false) {
     btnFullDay?.classList.toggle('cal-toggle-active-full', calModoTodoDia);
     btnNo.classList.remove('cal-toggle-active-no');
     if (horasC) horasC.style.display = calModoTodoDia ? 'none' : '';
+    if (noAsistireC) noAsistireC.style.display = 'none';
   } else {
     calModoTodoDia = false;
     btnYes.classList.remove('cal-toggle-active-yes');
     btnFullDay?.classList.remove('cal-toggle-active-full');
     btnNo.classList.add('cal-toggle-active-no');
     if (horasC) horasC.style.display = 'none';
+    if (noAsistireC) noAsistireC.style.display = '';
   }
 }
 
@@ -2846,6 +2855,23 @@ function openCalModal(dateStr) {
 
   if (disp && !disp.disponible) {
     setCalToggle(false);
+    // Cargar motivo de ausencia existente
+    const selectMotivo = $('calModalMotivoSelect');
+    const inputOtro = $('calModalMotivoOtro');
+    if (selectMotivo) {
+      const motivo = disp.motivo_ausencia || '';
+      const opciones = ['', 'UCQN', 'Hospital departamental', 'Cita médica personal', 'Vacaciones', 'Capacitación'];
+      if (opciones.includes(motivo)) {
+        selectMotivo.value = motivo;
+        if (inputOtro) inputOtro.style.display = 'none';
+      } else if (motivo) {
+        selectMotivo.value = 'Otro';
+        if (inputOtro) { inputOtro.style.display = ''; inputOtro.value = motivo; }
+      } else {
+        selectMotivo.value = '';
+        if (inputOtro) inputOtro.style.display = 'none';
+      }
+    }
   } else {
     setCalToggle(true, isFullDayConfigured);
     if (isFullDayConfigured) {
@@ -3006,11 +3032,24 @@ async function saveCalDay() {
   let disponible = true;
   let slots = [];
   let hasManana = false, hasTarde = false;
+  let motivoAusencia = null;
+
   if (noAsistireActivo) {
     disponible = false;
     slots = [];
     hasManana = false;
     hasTarde = false;
+    // Leer motivo de ausencia
+    const selectMotivo = $('calModalMotivoSelect');
+    const inputOtro = $('calModalMotivoOtro');
+    if (selectMotivo) {
+      const valSelect = selectMotivo.value;
+      if (valSelect === 'Otro') {
+        motivoAusencia = (inputOtro?.value || '').trim() || null;
+      } else {
+        motivoAusencia = valSelect || null;
+      }
+    }
   } else {
     disponible = Boolean(
       calModoTodoDia
@@ -3057,7 +3096,8 @@ async function saveCalDay() {
         fecha: calSelectedDate,
         disponible,
         disponible_manana: disponible ? (hasManana || (!hasManana && !hasTarde)) : false,
-        disponible_tarde: disponible ? (hasTarde || (!hasManana && !hasTarde)) : false
+        disponible_tarde: disponible ? (hasTarde || (!hasManana && !hasTarde)) : false,
+        motivo_ausencia: motivoAusencia
       })
     });
 
@@ -3071,6 +3111,14 @@ async function saveCalDay() {
         slots
       })
     });
+
+    // Actualizar caché local inmediatamente para que renderCalendar() refleje el cambio al cerrar modal
+    calDisponibilidad[calSelectedDate] = {
+      disponible,
+      disponible_manana: disponible ? (hasManana || (!hasManana && !hasTarde)) : false,
+      disponible_tarde: disponible ? (hasTarde || (!hasManana && !hasTarde)) : false,
+      motivo_ausencia: motivoAusencia
+    };
 
     showToast('Día guardado correctamente', 'success');
     closeCalModal();

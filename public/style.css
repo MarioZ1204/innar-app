@@ -274,6 +274,12 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxyge
 /* Hora rows dentro del modal */
 .cal-hora-section { margin-bottom:8px; }
 .cal-hora-section-label { font-size:0.8rem; font-weight:600; color:#64748b; text-transform:uppercase; letter-spacing:0.04em; margin-bottom:10px; display:block; }
+/* Sección motivo de ausencia en el modal */
+.cal-motivo-label { font-size:0.8rem; font-weight:600; color:#64748b; text-transform:uppercase; letter-spacing:0.04em; margin-bottom:8px; display:block; }
+.cal-motivo-select { width:100%; padding:10px 12px; border:2px solid #e2e8f0; border-radius:10px; background:#f8fafc; font-size:0.9rem; color:#374151; appearance:none; cursor:pointer; transition:border-color 0.15s; }
+.cal-motivo-select:focus { outline:none; border-color:#ef4444; background:#fff; }
+.cal-motivo-input { width:100%; padding:10px 12px; border:2px solid #e2e8f0; border-radius:10px; background:#f8fafc; font-size:0.9rem; color:#374151; box-sizing:border-box; transition:border-color 0.15s; }
+.cal-motivo-input:focus { outline:none; border-color:#ef4444; background:#fff; }
 .cal-hora-row { display:flex; align-items:center; gap:8px; margin-bottom:10px; padding:10px 12px; background:#f8fafc; border-radius:10px; border:1px solid #e2e8f0; }
 .cal-hora-row input[type="time"] { padding:7px 10px; border:1px solid #e2e8f0; border-radius:8px; font-size:0.9rem; background:#fff; color:#1e293b; flex:1; min-width:0; transition:border-color 0.15s; }
 .cal-hora-row input[type="time"]:focus { border-color:#818cf8; outline:none; box-shadow:0 0 0 3px rgba(99,102,241,0.12); }
@@ -3289,6 +3295,8 @@ button.remove { padding:5px 10px; font-size:.8rem; width:100%; }
 .ccal-legend-green .ccal-legend-dot { background: linear-gradient(135deg, #22c55e, #16a34a); box-shadow: 0 0 6px rgba(34,197,94,.35); }
 .ccal-legend-yellow .ccal-legend-dot { background: linear-gradient(135deg, #fbbf24, #f59e0b); box-shadow: 0 0 6px rgba(245,158,11,.35); }
 .ccal-legend-red .ccal-legend-dot { background: linear-gradient(135deg, #f87171, #ef4444); box-shadow: 0 0 6px rgba(239,68,68,.3); }
+.ccal-legend-noasiste .ccal-legend-dot { background: linear-gradient(135deg, #ef4444, #dc2626); box-shadow: 0 0 6px rgba(220,38,38,.35); }
+.ccal-legend-ucqn .ccal-legend-dot { background: linear-gradient(135deg, #60a5fa, #2563eb); box-shadow: 0 0 6px rgba(37,99,235,.35); }
 .ccal-legend-blocked .ccal-legend-dot { background: repeating-linear-gradient(-45deg, #cbd5e1, #cbd5e1 2px, #e2e8f0 2px, #e2e8f0 4px); }
 
 /* Grid */
@@ -3363,7 +3371,7 @@ button.remove { padding:5px 10px; font-size:.8rem; width:100%; }
   border-color: rgba(59,130,246,.4);
 }
 
-/* Estado: rojo (sin citas) */
+/* Estado: rojo (sin citas / no asistencias) */
 .ccal-rojo {
   background: linear-gradient(145deg, #fff5f5 0%, #fee2e2 100%);
   border-color: rgba(239,68,68,.2);
@@ -3372,6 +3380,70 @@ button.remove { padding:5px 10px; font-size:.8rem; width:100%; }
   box-shadow: 0 8px 24px rgba(239,68,68,.15), 0 0 0 2px rgba(239,68,68,.12);
   border-color: rgba(239,68,68,.35);
 }
+
+/* Estado: No asistiré (doctor configuró ausencia con motivo) */
+.ccal-noasiste {
+  background: linear-gradient(145deg, #fef2f2 0%, #fee2e2 100%);
+  border-color: rgba(220,38,38,.35);
+  overflow: hidden;
+}
+.ccal-noasiste:hover {
+  box-shadow: 0 8px 24px rgba(220,38,38,.2), 0 0 0 2px rgba(220,38,38,.2);
+  border-color: rgba(220,38,38,.55);
+}
+.ccal-noasiste .ccal-dia-num { color: #b91c1c; font-weight: 800; }
+
+/* Estado: UCQN (doctor va a UCQN ese día) */
+.ccal-ucqn {
+  background: linear-gradient(145deg, #eff6ff 0%, #dbeafe 100%);
+  border-color: rgba(37,99,235,.35);
+  overflow: hidden;
+}
+.ccal-ucqn:hover {
+  box-shadow: 0 8px 24px rgba(37,99,235,.2), 0 0 0 2px rgba(37,99,235,.2);
+  border-color: rgba(37,99,235,.55);
+}
+.ccal-ucqn .ccal-dia-num { color: #1d4ed8; font-weight: 800; }
+
+/* Texto diagonal del motivo de ausencia */
+.ccal-motivo-diagonal {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(-35deg);
+  font-size: 0.62rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 2;
+  max-width: 130%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ccal-noasiste .ccal-motivo-diagonal { color: rgba(185,28,28,.75); }
+.ccal-ucqn .ccal-motivo-diagonal { color: rgba(29,78,216,.75); }
+
+/* Contador de citas en esquina superior derecha para UCQN/noasiste */
+.ccal-corner-count {
+  position: absolute;
+  top: 5px;
+  right: 6px;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  z-index: 3;
+}
+.ccal-noasiste .ccal-corner-count { background: #dc2626; color: #fff; }
+.ccal-ucqn .ccal-corner-count { background: #2563eb; color: #fff; }
 
 /* Estado: bloqueado (doctor no disponible) */
 .ccal-bloqueado {

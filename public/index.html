@@ -689,6 +689,8 @@
                   <span class="ccal-legend-item ccal-legend-green"><span class="ccal-legend-dot"></span> &gt;10 citas</span>
                   <span class="ccal-legend-item ccal-legend-yellow"><span class="ccal-legend-dot"></span> 1-10 citas</span>
                   <span class="ccal-legend-item ccal-legend-red"><span class="ccal-legend-dot"></span> Sin citas</span>
+                  <span class="ccal-legend-item ccal-legend-noasiste"><span class="ccal-legend-dot"></span> No asistiré</span>
+                  <span class="ccal-legend-item ccal-legend-ucqn"><span class="ccal-legend-dot"></span> UCQN</span>
                   <span class="ccal-legend-item ccal-legend-blocked"><span class="ccal-legend-dot"></span> No disponible</span>
                 </div>
                 <div id="citasCalGrid" class="citas-cal-grid"></div>
@@ -961,6 +963,20 @@
             <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             Agregar horario
           </button>
+        </div>
+        <!-- Sección visible solo cuando se selecciona "No asistiré" -->
+        <div id="calModalNoAsistireContainer" style="display:none;margin-bottom:16px">
+          <label class="cal-motivo-label">Motivo de ausencia</label>
+          <select id="calModalMotivoSelect" class="cal-motivo-select">
+            <option value="">Sin especificar</option>
+            <option value="UCQN">UCQN</option>
+            <option value="Hospital departamental">Hospital departamental</option>
+            <option value="Cita médica personal">Cita médica personal</option>
+            <option value="Vacaciones">Vacaciones</option>
+            <option value="Capacitación">Capacitación</option>
+            <option value="Otro">Otro (especificar)</option>
+          </select>
+          <input type="text" id="calModalMotivoOtro" class="cal-motivo-input" placeholder="Escribe el motivo..." style="display:none;margin-top:8px" maxlength="200" />
         </div>
         <div class="cal-modal-actions">
           <button type="button" id="calModalSave" class="cal-btn-save">Guardar</button>

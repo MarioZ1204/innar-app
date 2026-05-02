@@ -1,8 +1,9 @@
 ﻿// calendario-agenda.js - Calendario mensual integrado en Ver Citas de Agenda Medica
 
-let _citasCalMesActual = null;
+let _citasCalAno = new Date().getFullYear();
+let _citasCalMes = new Date().getMonth(); // 0-based
 let _citasCalDatosCache = {};
-let _citasCalDispCache = {}; // disponibilidad del doctor
+let _citasCalDispCache = {}; // { 'YYYY-MM-DD': { disponible: 0|1, motivo: string|null } }
 let _citasCalIniciado = false;
 
 const _MESES_ES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
@@ -14,25 +15,34 @@ function initCitasCalendario() {
   if (calView) { calView.style.display = ''; calView.classList.remove('agenda-cal-view-exit','agenda-cal-view-enter'); }
   if (dayView) { dayView.classList.remove('agenda-day-view-enter','agenda-day-view-exit'); dayView.classList.add('agenda-day-view-hidden'); }
 
-  if (_citasCalIniciado) { cargarCitasCalendario(); return; }
-  _citasCalIniciado = true;
-  _citasCalMesActual = new Date();
-  _citasCalMesActual.setDate(1);
-
+  // Reasignar listeners usando replaceWith para evitar duplicados
   var btnPrev = document.getElementById('citasCalPrevMonth');
   var btnNext = document.getElementById('citasCalNextMonth');
   var btnVolver = document.getElementById('btnVolverCalendarioCitas');
 
-  if (btnPrev) btnPrev.addEventListener('click', function() {
-    _citasCalMesActual.setMonth(_citasCalMesActual.getMonth() - 1);
-    cargarCitasCalendario();
-  });
-  if (btnNext) btnNext.addEventListener('click', function() {
-    _citasCalMesActual.setMonth(_citasCalMesActual.getMonth() + 1);
-    cargarCitasCalendario();
-  });
-  if (btnVolver) btnVolver.addEventListener('click', citasCalVolverAlMes);
+  if (btnPrev) {
+    var newPrev = btnPrev.cloneNode(true);
+    btnPrev.parentNode.replaceChild(newPrev, btnPrev);
+    newPrev.addEventListener('click', function() {
+      _citasCalMes--;
+      if (_citasCalMes < 0) { _citasCalMes = 11; _citasCalAno--; }
+      cargarCitasCalendario();
+    });
+  }
+  if (btnNext) {
+    var newNext = btnNext.cloneNode(true);
+    btnNext.parentNode.replaceChild(newNext, btnNext);
+    newNext.addEventListener('click', function() {
+      _citasCalMes++;
+      if (_citasCalMes > 11) { _citasCalMes = 0; _citasCalAno++; }
+      cargarCitasCalendario();
+    });
+  }
+  if (btnVolver && !_citasCalIniciado) {
+    btnVolver.addEventListener('click', citasCalVolverAlMes);
+  }
 
+  _citasCalIniciado = true;
   cargarCitasCalendario();
 }
 
@@ -48,9 +58,9 @@ function _getCitasCalDoctorId() {
 async function cargarCitasCalendario() {
   var doctorId = _getCitasCalDoctorId();
 
-  var mes = _citasCalMesActual.getFullYear() + '-' + String(_citasCalMesActual.getMonth() + 1).padStart(2, '0');
+  var mes = _citasCalAno + '-' + String(_citasCalMes + 1).padStart(2, '0');
   var titulo = document.getElementById('citasCalMonthTitle');
-  if (titulo) titulo.textContent = _MESES_ES[_citasCalMesActual.getMonth()] + ' ' + _citasCalMesActual.getFullYear();
+  if (titulo) titulo.textContent = _MESES_ES[_citasCalMes] + ' ' + _citasCalAno;
 
   try {
     var url = '/api/turnos/calendario?mes=' + mes + (doctorId ? '&doctor_id=' + encodeURIComponent(doctorId) : '');
@@ -74,11 +84,14 @@ async function cargarCitasCalendario() {
       });
     }
 
-    // Procesar disponibilidad del doctor
+    // Procesar disponibilidad del doctor (incluye motivo_ausencia)
     if (data.disponibilidad && Array.isArray(data.disponibilidad)) {
       data.disponibilidad.forEach(function(d) {
         var fechaStr = typeof d.fecha === 'string' ? d.fecha.substring(0, 10) : new Date(d.fecha).toISOString().substring(0, 10);
-        _citasCalDispCache[fechaStr] = parseInt(d.disponible) || 0;
+        _citasCalDispCache[fechaStr] = {
+          disponible: parseInt(d.disponible),
+          motivo: d.motivo_ausencia || null
+        };
       });
     }
 
@@ -92,8 +105,8 @@ function renderCitasCalGrid() {
   var grid = document.getElementById('citasCalGrid');
   if (!grid) return;
 
-  var year = _citasCalMesActual.getFullYear();
-  var month = _citasCalMesActual.getMonth();
+  var year = _citasCalAno;
+  var month = _citasCalMes;
   var hoy = new Date();
   var hoyStr = hoy.getFullYear() + '-' + String(hoy.getMonth() + 1).padStart(2, '0') + '-' + String(hoy.getDate()).padStart(2, '0');
 
@@ -120,20 +133,27 @@ function renderCitasCalGrid() {
     var esHoy = fechaStr === hoyStr;
     var esDomingo = new Date(year, month, dia).getDay() === 0;
 
-    // Determinar si el día está bloqueado (doctor no disponible)
+    // Determinar disponibilidad y motivo
+    var dispInfo = _citasCalDispCache[fechaStr] || null;
     var bloqueado = false;
+    var motivoAusencia = null;
     if (esDomingo) {
       bloqueado = true;
-    } else if (hayDisponibilidad && _citasCalDispCache[fechaStr] === 0) {
+    } else if (hayDisponibilidad && dispInfo && dispInfo.disponible === 0) {
       bloqueado = true;
+      motivoAusencia = dispInfo.motivo || null;
     }
 
-    // Colores por estado de agenda:
-    // - Rojo: hay no asistencias o cancelaciones
-    // - Azul: hay reprogramaciones (sin no asistencias/cancelaciones)
-    // - Verde/Amarillo: disponibilidad general por cantidad de citas
+    var esUCQN = bloqueado && motivoAusencia === 'UCQN';
+    var esNoAsiste = bloqueado && motivoAusencia && !esUCQN;
+
+    // Colores por estado de agenda
     var colorClass = 'ccal-rojo';
-    if (bloqueado) {
+    if (esUCQN) {
+      colorClass = 'ccal-ucqn';
+    } else if (esNoAsiste) {
+      colorClass = 'ccal-noasiste';
+    } else if (bloqueado) {
       colorClass = 'ccal-bloqueado';
     } else if (datos && ((datos.no_asistieron || 0) > 0 || (datos.canceladas || 0) > 0)) {
       colorClass = 'ccal-rojo';
@@ -145,13 +165,23 @@ function renderCitasCalGrid() {
       colorClass = 'ccal-amarillo';
     }
 
-    var clickAttr = bloqueado ? '' : ' onclick="citasCalClickDia(\'' + fechaStr + '\', this)"';
+    // Los días UCQN y noasiste son clickables para ver citas aunque esté bloqueado
+    var clickable = !bloqueado || esUCQN || esNoAsiste;
+    var clickAttr = clickable ? ' onclick="citasCalClickDia(\'' + fechaStr + '\', this)"' : '';
+
     html += '<div class="ccal-cell ' + colorClass + (esHoy ? ' ccal-hoy' : '') + '"'
       + ' data-fecha="' + fechaStr + '"' + clickAttr + '>'
       + '<div class="ccal-dia-num">' + dia + '</div>'
       + '<div class="ccal-dia-info">';
 
-    if (bloqueado && !datos) {
+    if ((esNoAsiste || esUCQN) && motivoAusencia) {
+      // Mostrar texto diagonal del motivo
+      var motivoTexto = motivoAusencia.length > 18 ? motivoAusencia.substring(0, 16) + '…' : motivoAusencia;
+      html += '<div class="ccal-motivo-diagonal" title="' + escapeHtml(motivoAusencia) + '">' + escapeHtml(motivoTexto) + '</div>';
+      if (total > 0) {
+        html += '<span class="ccal-corner-count" title="' + total + ' cita' + (total !== 1 ? 's' : '') + '">' + total + '</span>';
+      }
+    } else if (bloqueado && !datos) {
       html += '<span class="ccal-citas-label">No disponible</span>';
     } else if (total > 0) {
       html += '<span class="ccal-citas-count">' + total + '</span>'
@@ -160,13 +190,13 @@ function renderCitasCalGrid() {
       html += '<span class="ccal-citas-label">Sin citas</span>';
     }
 
-    // Barra indicadora inferior
+    // Barra indicadora inferior (solo para días con citas no bloqueados)
     if (total > 0 && !bloqueado) html += '<span class="ccal-bar"></span>';
 
     html += '</div>';
 
-    // Contadores de estados en esquina inferior
-    if (datos && (datos.atendidas || datos.canceladas || datos.reprogramadas || datos.no_asistieron)) {
+    // Contadores de estados en esquina inferior (solo para días no-UCQN/no-noasiste)
+    if (!esUCQN && !esNoAsiste && datos && (datos.atendidas || datos.canceladas || datos.reprogramadas || datos.no_asistieron)) {
       html += '<div class="ccal-status-badges">';
       if (datos.atendidas > 0)
         html += '<span class="ccal-badge ccal-badge-atendida" title="Atendidas">' + datos.atendidas + '</span>';

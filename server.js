@@ -1786,7 +1786,7 @@ app.post('/api/doctor-disponibilidad/validar', requireAuth, async (req, res) => 
 // Guardar disponibilidad de un día individual (calendario interactivo)
 app.post('/api/doctor-disponibilidad/guardar-dia', requireAuth, async (req, res) => {
   try {
-    const { doctor_id, fecha, disponible, disponible_manana, disponible_tarde } = req.body || {};
+    const { doctor_id, fecha, disponible, disponible_manana, disponible_tarde, motivo_ausencia } = req.body || {};
     const doctorId = parseInt(doctor_id || req.session.usuarioId, 10);
     if (!doctorId || !fecha) return res.status(400).json({ error: 'doctor_id y fecha son requeridos' });
 
@@ -1798,11 +1798,16 @@ app.post('/api/doctor-disponibilidad/guardar-dia', requireAuth, async (req, res)
     // Validar formato de fecha
     if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return res.status(400).json({ error: 'Formato de fecha inválido' });
 
+    // Validar motivo_ausencia
+    const motivoLimpio = (typeof motivo_ausencia === 'string' && motivo_ausencia.trim())
+      ? motivo_ausencia.trim().substring(0, 200)
+      : null;
+
     await db.execute(
-      `INSERT INTO doctor_disponibilidad_mensual (doctor_id, fecha, disponible, disponible_manana, disponible_tarde)
-       VALUES (?, ?, ?, ?, ?)
-       ON DUPLICATE KEY UPDATE disponible = VALUES(disponible), disponible_manana = VALUES(disponible_manana), disponible_tarde = VALUES(disponible_tarde)`,
-      [doctorId, fecha, disponible ? 1 : 0, disponible_manana ? 1 : 0, disponible_tarde ? 1 : 0]
+      `INSERT INTO doctor_disponibilidad_mensual (doctor_id, fecha, disponible, disponible_manana, disponible_tarde, motivo_ausencia)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE disponible = VALUES(disponible), disponible_manana = VALUES(disponible_manana), disponible_tarde = VALUES(disponible_tarde), motivo_ausencia = VALUES(motivo_ausencia)`,
+      [doctorId, fecha, disponible ? 1 : 0, disponible_manana ? 1 : 0, disponible_tarde ? 1 : 0, motivoLimpio]
     );
 
     if (app.io) emitSocket('agenda:disponibilidad-actualizada', { doctor_id: doctorId });
@@ -1997,7 +2002,7 @@ app.get('/api/turnos/calendario', requireAuth, async (req, res) => {
     if (doctor_id) {
       try {
         disponibilidad = await db.query(
-          'SELECT fecha, disponible FROM doctor_disponibilidad_mensual WHERE doctor_id = ? AND fecha >= ? AND fecha < ?',
+          'SELECT fecha, disponible, motivo_ausencia FROM doctor_disponibilidad_mensual WHERE doctor_id = ? AND fecha >= ? AND fecha < ?',
           [doctor_id, fechaInicio, fechaFin]
         );
       } catch (_) { /* tabla puede no existir aún */ }
@@ -5815,6 +5820,24 @@ const PORT = process.env.PORT || 3000;
       if (!migErr.message.includes("doesn't exist")) {
         logger.warn('[MIGRATION] Advertencia collation doctor_disponibilidad_mensual: ' + migErr.message, { type: 'STARTUP' });
       }
+    }
+
+    // --- Migración: agregar columna motivo_ausencia a doctor_disponibilidad_mensual ---
+    try {
+      const colMotivoRows = await db.query(
+        `SELECT COUNT(*) AS cnt FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME   = 'doctor_disponibilidad_mensual'
+           AND COLUMN_NAME  = 'motivo_ausencia'`
+      );
+      if (!colMotivoRows || !colMotivoRows[0] || colMotivoRows[0].cnt === 0) {
+        await db.execute(
+          `ALTER TABLE doctor_disponibilidad_mensual ADD COLUMN motivo_ausencia VARCHAR(200) DEFAULT NULL`
+        );
+        logger.info('[MIGRATION] Columna motivo_ausencia agregada a doctor_disponibilidad_mensual', { type: 'STARTUP' });
+      }
+    } catch (migErr) {
+      logger.warn('[MIGRATION] Advertencia motivo_ausencia: ' + migErr.message, { type: 'STARTUP' });
     }
 
     // â”€â”€â”€ Auto-migraciones al inicio â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
