@@ -1799,7 +1799,7 @@ app.post('/api/doctor-disponibilidad/guardar-dia', requireAuth, async (req, res)
 
     // Permisos
     const isAdminUser = isAdminRol(req.session.rol) || isRecepcionRol(req.session.rol);
-    const isDoctorUser = req.session.rol === 'doctor' && doctorId === req.session.usuarioId;
+    const isDoctorUser = req.session.rol === 'doctor' && doctorId === parseInt(req.session.usuarioId, 10);
     if (!isAdminUser && !isDoctorUser) return res.status(403).json({ error: 'Sin permiso' });
 
     // Validar formato de fecha
@@ -1817,9 +1817,11 @@ app.post('/api/doctor-disponibilidad/guardar-dia', requireAuth, async (req, res)
       [doctorId, fecha, disponible ? 1 : 0, disponible_manana ? 1 : 0, disponible_tarde ? 1 : 0, motivoLimpio]
     );
 
+    logger.info(`[DISPONIBILIDAD] Día guardado: doctor=${doctorId}, fecha=${fecha}, disponible=${disponible ? 1 : 0}, motivo=${motivoLimpio || 'ninguno'}`, { type: 'API' });
     if (app.io) emitSocket('agenda:disponibilidad-actualizada', { doctor_id: doctorId });
     res.json({ ok: true });
   } catch (e) {
+    logger.error('[DISPONIBILIDAD] Error guardando día: ' + e.message, { type: 'API' });
     console.error('[DISPONIBILIDAD] Error guardando día:', e.message);
     res.status(500).json({ error: e.message });
   }
@@ -1834,7 +1836,7 @@ app.post('/api/doctor-agenda/guardar-dia', requireAuth, async (req, res) => {
 
     // Permisos
     const isAdminUser = isAdminRol(req.session.rol) || isRecepcionRol(req.session.rol);
-    const isDoctorUser = req.session.rol === 'doctor' && doctorId === req.session.usuarioId;
+    const isDoctorUser = req.session.rol === 'doctor' && doctorId === parseInt(req.session.usuarioId, 10);
     if (!isAdminUser && !isDoctorUser) return res.status(403).json({ error: 'Sin permiso' });
 
     if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return res.status(400).json({ error: 'Formato de fecha inválido' });
@@ -1871,7 +1873,7 @@ app.post('/api/doctor-disponibilidad/eliminar-dia', requireAuth, async (req, res
     if (!doctorId || !fecha) return res.status(400).json({ error: 'doctor_id y fecha son requeridos' });
 
     const isAdminUser = isAdminRol(req.session.rol) || isRecepcionRol(req.session.rol);
-    const isDoctorUser = req.session.rol === 'doctor' && doctorId === req.session.usuarioId;
+    const isDoctorUser = req.session.rol === 'doctor' && doctorId === parseInt(req.session.usuarioId, 10);
     if (!isAdminUser && !isDoctorUser) return res.status(403).json({ error: 'Sin permiso' });
 
     if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return res.status(400).json({ error: 'Formato de fecha inválido' });

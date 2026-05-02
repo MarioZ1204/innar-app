@@ -3099,7 +3099,7 @@ async function saveCalDay() {
 
   try {
     // 1. Save availability in doctor_disponibilidad_mensual
-    await apiFetch('/api/doctor-disponibilidad/guardar-dia', {
+    const r1 = await apiFetch('/api/doctor-disponibilidad/guardar-dia', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -3111,9 +3111,13 @@ async function saveCalDay() {
         motivo_ausencia: motivoAusencia
       })
     });
+    if (!r1.ok) {
+      const errData = await r1.json().catch(() => ({}));
+      throw new Error(errData.error || `Error ${r1.status} guardando disponibilidad`);
+    }
 
     // 2. Save specific slots in doctor_agenda (replace day's slots)
-    await apiFetch('/api/doctor-agenda/guardar-dia', {
+    const r2 = await apiFetch('/api/doctor-agenda/guardar-dia', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -3122,6 +3126,10 @@ async function saveCalDay() {
         slots
       })
     });
+    if (!r2.ok) {
+      const errData2 = await r2.json().catch(() => ({}));
+      throw new Error(errData2.error || `Error ${r2.status} guardando horarios`);
+    }
 
     // Actualizar caché local inmediatamente para que renderCalendar() refleje el cambio al cerrar modal
     const savedDate = calSelectedDate; // capturar antes de que closeCalModal lo anule
@@ -3149,11 +3157,15 @@ function deleteCalDay() {
   if (!calSelectedDate || !calDoctorIdForCal) return;
   showConfirm('¿Limpiar la configuración del día seleccionado?', async () => {
     try {
-      await apiFetch('/api/doctor-disponibilidad/eliminar-dia', {
+      const r = await apiFetch('/api/doctor-disponibilidad/eliminar-dia', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ doctor_id: calDoctorIdForCal, fecha: calSelectedDate })
     });
+    if (!r.ok) {
+      const errData = await r.json().catch(() => ({}));
+      throw new Error(errData.error || `Error ${r.status} limpiando día`);
+    }
     showToast('Día limpiado', 'success');
     closeCalModal();
     await loadCalendarData();
