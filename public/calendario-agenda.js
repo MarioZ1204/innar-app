@@ -201,8 +201,8 @@ function renderCitasCalGrid() {
 
     html += '</div>';
 
-    // Contadores de estados en esquina inferior (solo para días no-UCQN/no-noasiste)
-    if (!esUCQN && !esNoAsiste && datos && (datos.atendidas || datos.canceladas || datos.reprogramadas || datos.no_asistieron)) {
+    // Contadores de estados en esquina inferior (solo para días disponibles, sin UCQN)
+    if (!esUCQN && !bloqueado && datos && (datos.atendidas || datos.canceladas || datos.reprogramadas || datos.no_asistieron)) {
       html += '<div class="ccal-status-badges">';
       if (datos.atendidas > 0)
         html += '<span class="ccal-badge ccal-badge-atendida" title="Atendidas">' + datos.atendidas + '</span>';
