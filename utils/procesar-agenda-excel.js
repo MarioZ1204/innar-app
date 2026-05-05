@@ -2,7 +2,7 @@
 // Procesar Excel de disponibilidad mensual del doctor
 // Columnas esperadas: FECHA | PACIENTES PROINSALUD | OTROS PACIENTES | NÚMERO TOTAL DE PACIENTES | DISPONIBILIDAD
 
-const XLSX = require('xlsx');
+const ExcelJS = require('exceljs');
 const fs = require('fs');
 
 /**
@@ -26,14 +26,30 @@ const fs = require('fs');
  */
 async function procesarAgendaExcel(filePath, doctorId, db) {
   try {
-    // Leer el archivo Excel
-    const workbook = XLSX.readFile(filePath);
-    const sheetName = workbook.SheetNames[0];
-    const worksheet = workbook.Sheets[sheetName];
-    const data = XLSX.utils.sheet_to_json(worksheet);
+    // Leer el archivo Excel con exceljs
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.readFile(filePath);
+    const worksheet = workbook.worksheets[0];
+
+    // Convertir a array de objetos (primera fila = cabeceras)
+    const headers = [];
+    const data = [];
+    worksheet.eachRow((row, rowNumber) => {
+      if (rowNumber === 1) {
+        row.values.forEach((val) => headers.push(val !== null && val !== undefined ? String(val) : ''));
+        return;
+      }
+      const obj = {};
+      row.values.forEach((val, colIdx) => {
+        const key = headers[colIdx] || '';
+        if (key) obj[key] = val !== null && val !== undefined ? val : null;
+      });
+      // Solo incluir filas que tengan algún valor
+      if (Object.values(obj).some(v => v !== null)) data.push(obj);
+    });
 
     console.log(`[AGENDA] Procesando Excel de disponibilidad para doctor ${doctorId}...`);
-    console.log(`[AGENDA] Archivo: ${filePath}, hojas disponibles: ${workbook.SheetNames.join(', ')}`);
+    console.log(`[AGENDA] Archivo: ${filePath}, hoja: ${worksheet.name}`);
     
     if (!data || data.length === 0) {
       return { ok: false, error: 'El Excel está vacío' };
@@ -42,17 +58,17 @@ async function procesarAgendaExcel(filePath, doctorId, db) {
     console.log(`[AGENDA] Filas en Excel: ${data.length}, primeras 3 filas:`, data.slice(0, 3));
 
     // Encontrar las columnas necesarias
-    const headers = Object.keys(data[0]);
-    console.log(`[AGENDA] Headers encontrados:`, headers);
+    const colKeys = data.length > 0 ? Object.keys(data[0]) : [];
+    console.log(`[AGENDA] Headers encontrados:`, colKeys);
     
     // OBLIGATORIAS
-    const fechaCol = encontrarColumna(headers, ['fecha', 'día', 'date']);
-    const mañanaCol = encontrarColumna(headers, ['mañana', 'manana', 'morning', 'matutino']);
-    const tardeCol = encontrarColumna(headers, ['tarde', 'afternoon', 'vespertino']);
+    const fechaCol = encontrarColumna(colKeys, ['fecha', 'día', 'date']);
+    const mañanaCol = encontrarColumna(colKeys, ['mañana', 'manana', 'morning', 'matutino']);
+    const tardeCol = encontrarColumna(colKeys, ['tarde', 'afternoon', 'vespertino']);
     
     // OPCIONALES (para intervalos específicos)
-    const intervaloCol = encontrarColumna(headers, ['intervalo', 'no disponible', 'bloque', 'horario']);
-    const razonCol = encontrarColumna(headers, ['razón', 'razon', 'motivo', 'reason']);
+    const intervaloCol = encontrarColumna(colKeys, ['intervalo', 'no disponible', 'bloque', 'horario']);
+    const razonCol = encontrarColumna(colKeys, ['razón', 'razon', 'motivo', 'reason']);
     
     const tieneIntervalos = intervaloCol && razonCol;
     

@@ -42,6 +42,13 @@ function validatePasswordStrength(password) {
     score += 20;
   }
 
+  // Carácteres especiales
+  if (!/[^a-zA-Z0-9]/.test(password)) {
+    issues.push('Debe contener al menos un carácter especial (!@#$%^&*...)');
+  } else {
+    score += 20;
+  }
+
   // Evitar patrones comunes
   const commonPatterns = ['123', '000', 'abc', 'aaa', 'password', 'adminmvbn'];
   if (commonPatterns.some(p => password.toLowerCase().includes(p))) {
@@ -51,7 +58,7 @@ function validatePasswordStrength(password) {
 
   return {
     isValid: issues.length === 0,
-    score: Math.min(80, score),
+    score: Math.min(100, score),
     messages: issues,
     strength: getPasswordStrength(score)
   };
@@ -65,7 +72,8 @@ function getPasswordStrength(score) {
   if (score < 40) return { level: 'Débil', color: '#f97316', icon: '🟠' };
   if (score < 60) return { level: 'Regular', color: '#eab308', icon: '🟡' };
   if (score < 80) return { level: 'Fuerte', color: '#84cc16', icon: '🟢' };
-  return { level: 'Muy fuerte', color: '#16a34a', icon: '🟢🟢' };
+  if (score < 100) return { level: 'Muy fuerte', color: '#16a34a', icon: '🟢🟢' };
+  return { level: 'Excelente', color: '#15803d', icon: '⭐' };
 }
 
 /**

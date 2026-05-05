@@ -140,7 +140,8 @@ class AppointmentService {
       const safeLimit = Math.max(1, Math.min(parseInt(limit) || 100, 500)); // Max 500
       const safeOffset = Math.max(0, parseInt(offset) || 0);
 
-      query += ` ORDER BY c.hora_agendamiento ASC LIMIT ${safeLimit} OFFSET ${safeOffset}`;
+      query += ` ORDER BY c.hora_agendamiento ASC LIMIT ? OFFSET ?`;
+      params.push(safeLimit, safeOffset);
 
       const appointments = await db.query(query, params);
       return appointments;

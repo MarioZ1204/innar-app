@@ -64,6 +64,35 @@ function prepare(sql) {
   };
 }
 
+/**
+ * Ejecutar operaciones dentro de una transacción.
+ * Uso: await db.transaction(async (conn) => { await conn.execute(sql, params); });
+ * Si el callback lanza, hace ROLLBACK automáticamente.
+ */
+async function transaction(callback) {
+  const connection = await pool.getConnection();
+  await connection.beginTransaction();
+  try {
+    const result = await callback({
+      query: async (sql, params = []) => {
+        const [rows] = await connection.execute(sql, params);
+        return rows;
+      },
+      execute: async (sql, params = []) => {
+        const [result] = await connection.execute(sql, params);
+        return result;
+      }
+    });
+    await connection.commit();
+    return result;
+  } catch (err) {
+    await connection.rollback();
+    throw err;
+  } finally {
+    connection.release();
+  }
+}
+
 // Cerrar pool
 async function closePool() {
   if (pool) {
@@ -78,6 +107,7 @@ module.exports = {
   queryOne,
   execute,
   prepare,
+  transaction,
   closePool,
   getPool: () => pool
 };

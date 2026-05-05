@@ -24,7 +24,6 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "bcrypt": "^6.0.0",
     "bcryptjs": "^2.4.3",
     "compression": "^1.8.1",
     "cors": "^2.8.5",
@@ -38,9 +37,8 @@
     "multer": "^2.0.2",
     "mysql2": "^3.17.3",
     "node-schedule": "^2.1.1",
-    "puppeteer": "^24.35.0",
-    "socket.io": "^4.8.3",
-    "xlsx": "^0.18.5"
+    "puppeteer-core": "^24.42.0",
+    "socket.io": "^4.8.3"
   },
   "devDependencies": {
     "csso-cli": "^4.0.2",

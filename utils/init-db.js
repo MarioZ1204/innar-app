@@ -1,7 +1,7 @@
 // init-db.js - Script para crear base de datos y tablas en MySQL
 require('dotenv').config();
 const mysql = require('mysql2');
-const bcrypt = require('bcrypt');
+const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 
 async function initializeDatabase() {
