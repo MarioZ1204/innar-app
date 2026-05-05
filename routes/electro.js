@@ -65,7 +65,10 @@ router.get('/equipos-electro', requireAuth, async (req, res) => {
   try {
     const equipos = await db.query('SELECT * FROM equipos_electro WHERE activo = 1 ORDER BY nombre ASC');
     const equiposEnUso = await db.query(
-      `SELECT DISTINCT equipo_id FROM citas_electro WHERE estado = 'En Estudio' AND equipo_id IS NOT NULL AND deleted_at IS NULL`
+      `SELECT DISTINCT equipo_id FROM citas_electro
+       WHERE estado = 'En Estudio' AND equipo_id IS NOT NULL AND deleted_at IS NULL
+       AND TIMESTAMP(fecha, COALESCE(hora_agendamiento, '00:00:00')) <= NOW()
+       AND TIMESTAMP(COALESCE(hora_fin_date, fecha), COALESCE(hora_fin, '23:59:59')) >= NOW()`
     );
     const equiposEnUsoIds = equiposEnUso.map(e => e.equipo_id);
     const vistosIds = new Set();
@@ -587,12 +590,25 @@ router.post('/citas-electro', requireAuth, requireRoleOrPerm(['superadmin', 'adm
         finalFechaFin = `${endDate.getFullYear()}-${String(endDate.getMonth() + 1).padStart(2, '0')}-${String(endDate.getDate()).padStart(2, '0')}`;
       }
 
+      // Auto-completar estudios vencidos para liberar capacidad antes de chequear cupo
+      await conn.execute(`
+        UPDATE citas_electro
+        SET estado = 'Completado', editado_por_nombre = 'Sistema (Auto)', editado_en = NOW()
+        WHERE estado = 'En Estudio'
+        AND deleted_at IS NULL
+        AND hora_fin IS NOT NULL
+        AND TIMESTAMP(COALESCE(hora_fin_date, fecha), hora_fin) < NOW()
+      `);
+
       const dupCheck = await transactions.selectForUpdate(conn,
-        `SELECT COUNT(*) as cnt FROM citas_electro WHERE paciente_id = ? AND fecha = ? AND estado IN ('Programado', 'Confirmado', 'En Sala', 'En Estudio', 'Pausado') AND deleted_at IS NULL`,
-        [paciente_id, fecha]
+        `SELECT COUNT(*) as cnt FROM citas_electro
+         WHERE paciente_id = ? AND estado IN ('Programado', 'Confirmado', 'En Sala', 'En Estudio', 'Pausado') AND deleted_at IS NULL
+         AND TIMESTAMP(fecha, COALESCE(hora_agendamiento, '00:00:00')) < TIMESTAMP(?, ?)
+         AND TIMESTAMP(COALESCE(hora_fin_date, fecha), COALESCE(hora_fin, '23:59:59')) > TIMESTAMP(?, ?)`,
+        [paciente_id, finalFechaFin, finalHoraFin, fecha, horaAgendamiento]
       );
       if ((dupCheck[0]?.cnt || 0) > 0) {
-        throw new Error('Este paciente ya tiene una cita agendada para esa fecha en Electrodiagnóstico.');
+        throw new Error('Este paciente ya tiene una cita que se superpone con este horario en Electrodiagnóstico.');
       }
 
       const overlapCitas = await transactions.selectForUpdate(conn,
@@ -722,6 +738,15 @@ router.patch('/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin',
       if (esInicioEstudio) {
         const checkHora = hora_agendamiento || (typeof citaActual.hora_agendamiento === 'string' ? citaActual.hora_agendamiento : String(citaActual.hora_agendamiento));
         const checkFecha = fecha || (typeof citaActual.fecha === 'string' && citaActual.fecha.length <= 10 ? citaActual.fecha : new Date(citaActual.fecha).toISOString().slice(0, 10));
+        // Auto-completar estudios vencidos antes de verificar capacidad
+        await db.execute(`
+          UPDATE citas_electro
+          SET estado = 'Completado', editado_por_nombre = 'Sistema (Auto)', editado_en = NOW()
+          WHERE id != ? AND estado = 'En Estudio'
+          AND deleted_at IS NULL
+          AND hora_fin IS NOT NULL
+          AND TIMESTAMP(COALESCE(hora_fin_date, fecha), hora_fin) < NOW()
+        `, [id]);
         const overlapCitas = await db.query(`
           SELECT COUNT(*) as overlap_count FROM citas_electro
           WHERE id != ? AND estado IN ('Programado', 'Confirmado', 'En Sala', 'En Estudio', 'Pausado') AND deleted_at IS NULL
