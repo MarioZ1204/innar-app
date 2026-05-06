@@ -145,8 +145,21 @@ function issueCsrfIfAuthed(req, res, next) {
 app.use(issueCsrfIfAuthed);
 app.use(csrfProtection);
 
-// Servir archivos estáticos desde public (sin headers — la ruta GET / con versioning los sirve vía el segundo middleware)
-app.use(express.static(path.join(__dirname, 'public')));
+// Servir archivos estáticos desde public (index: false para que la ruta GET / maneje index.html con versioning)
+app.use(express.static(path.join(__dirname, 'public'), {
+  index: false,
+  etag: true,
+  lastModified: true,
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.html')) {
+      res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+    } else if (filePath.endsWith('.js') || filePath.endsWith('.css')) {
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    } else if (/\.(png|jpg|jpeg|gif|svg|webp|ico|woff2?|ttf|eot)$/.test(filePath)) {
+      res.setHeader('Cache-Control', 'public, max-age=604800, stale-while-revalidate=86400');
+    }
+  }
+}));
 
 // Manejo explícito de favicon.ico
 app.get('/favicon.ico', (req, res) => res.status(204).end());
@@ -360,6 +373,7 @@ app.get('/', (req, res) => {
   const vTag = `?v=${APP_VERSION}`;
   html = html
     .replace('href="style.css"', `href="style.css${vTag}"`)
+    .replace('href="style.css"', `href="style.css${vTag}"`)  // preload tag
     .replace('src="multiselect.js"', `src="multiselect.js${vTag}"`)
     .replace('src="socket-client.js"', `src="socket-client.js${vTag}"`)
     .replace('src="socket-electro.js"', `src="socket-electro.js${vTag}"`)
