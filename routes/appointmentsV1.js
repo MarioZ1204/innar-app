@@ -5,6 +5,7 @@
 const express = require('express');
 const AppointmentService = require('../services/appointmentService');
 const logger = require('../utils/logger');
+const { safeError } = require('../middleware/index');
 
 const router = express.Router();
 
@@ -56,7 +57,7 @@ router.post('/', async (req, res) => {
     res.status(201).json(result);
   } catch (error) {
     logger.error('Error creando cita', { error: error.message });
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: safeError(error) });
   }
 });
 
@@ -78,7 +79,7 @@ router.get('/', async (req, res) => {
     res.json(appointments);
   } catch (error) {
     logger.error('Error listando citas', { error: error.message });
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: safeError(error) });
   }
 });
 
@@ -94,7 +95,7 @@ router.get('/availability/:equipment_id/:date', async (req, res) => {
     res.json({ equipment_id, date, occupancies });
   } catch (error) {
     logger.error('Error obteniendo disponibilidad', { error: error.message });
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: safeError(error) });
   }
 });
 
@@ -108,7 +109,7 @@ router.get('/types/list', async (req, res) => {
     res.json(studies);
   } catch (error) {
     logger.error('Error obteniendo tipos de estudio', { error: error.message });
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: safeError(error) });
   }
 });
 
@@ -122,7 +123,7 @@ router.get('/equipments/list', async (req, res) => {
     res.json(equipments);
   } catch (error) {
     logger.error('Error obteniendo equipos', { error: error.message });
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: safeError(error) });
   }
 });
 
@@ -142,7 +143,7 @@ router.get('/:id', async (req, res) => {
     res.json(appointment);
   } catch (error) {
     logger.error('Error obteniendo cita', { error: error.message });
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: safeError(error) });
   }
 });
 
@@ -160,7 +161,7 @@ router.patch('/:id', async (req, res) => {
     res.json({ ok: true, message: 'Cita actualizada correctamente' });
   } catch (error) {
     logger.error('Error actualizando cita', { error: error.message });
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: safeError(error) });
   }
 });
 
@@ -177,7 +178,7 @@ router.delete('/:id', async (req, res) => {
     res.json({ ok: true, message: 'Cita cancelada correctamente' });
   } catch (error) {
     logger.error('Error cancelando cita', { error: error.message });
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: safeError(error) });
   }
 });
 

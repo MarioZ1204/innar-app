@@ -20,6 +20,8 @@ async function getNextTurnoNumber(fecha, doctor_id) {
   return maxNum + 1;
 }
 
+const ESTADOS_VALIDOS_TURNOS = ['PENDIENTE', 'EN_SALA', 'EN_ATENCION', 'ATENDIDO', 'COMPLETADO', 'NO_ASISTIO', 'CANCELADO', 'REPROGRAMADO'];
+
 // GET /api/turnos/calendario
 router.get('/turnos/calendario', requireAuth, async (req, res) => {
   const { mes, doctor_id } = req.query;
@@ -63,7 +65,7 @@ router.get('/turnos/calendario', requireAuth, async (req, res) => {
     if (doctor_id) {
       try {
         disponibilidad = await db.query(
-          'SELECT fecha, disponible, motivo_ausencia FROM doctor_disponibilidad_mensual WHERE doctor_id = ? AND fecha >= ? AND fecha < ?',
+          'SELECT fecha, disponible, disponible_manana, disponible_tarde, motivo_ausencia FROM doctor_disponibilidad_mensual WHERE doctor_id = ? AND fecha >= ? AND fecha < ?',
           [doctor_id, fechaInicio, fechaFin]
         );
       } catch (_) { /* tabla puede no existir aún */ }
@@ -291,7 +293,7 @@ router.post('/turnos/marcar-atendido', requireAuth, requireRoleOrPerm(['superadm
     return res.status(400).json({ error: 'turno_id es obligatorio' });
   }
   try {
-    const turnos = await db.query(`SELECT * FROM turnos WHERE id = ? AND estado = 'EN_ATENCION'`, [turno_id]);
+    const turnos = await db.query(`SELECT id, fecha, doctor_id, estado FROM turnos WHERE id = ? AND estado = 'EN_ATENCION'`, [turno_id]);
     const turno = turnos.length > 0 ? turnos[0] : null;
     if (!turno) {
       return res.status(404).json({ error: 'No hay turno en atención actualmente' });
@@ -368,22 +370,32 @@ router.post('/turnos', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'a
 // PATCH /api/turnos/:id
 router.patch('/turnos/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion', 'doctor'], 'agenda.editar'), async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  const { paciente_nombre, paciente_telefono, tipo_consulta, fecha, hora, estado, observaciones } = req.body || {};
+  const { paciente_nombre, paciente_telefono, paciente_documento, paciente_telefono2, entidad, notas, tipo_consulta, fecha, hora, estado, observaciones } = req.body || {};
 
   if (!id) {
     return res.status(400).json({ error: 'ID inválido' });
   }
 
+  if (estado !== undefined && !ESTADOS_VALIDOS_TURNOS.includes(estado)) {
+    return res.status(400).json({ error: `Estado inválido: "${estado}"` });
+  }
+
   try {
-    const turnos = await db.query('SELECT * FROM turnos WHERE id = ?', [id]);
+    const turnos = await db.query('SELECT id, estado, doctor_id, fecha, paciente_nombre FROM turnos WHERE id = ?', [id]);
     const turno = turnos.length > 0 ? turnos[0] : null;
     if (!turno) {
       return res.status(404).json({ error: 'Turno no encontrado' });
     }
 
     const userRole = req.session?.rol;
-    if (turno.estado === 'ATENDIDO' && userRole !== 'superadmin') {
-      return res.status(400).json({ error: 'No se puede modificar un turno ya atendido' });
+    const puedeEditarSiempre = userRole === 'superadmin' || (Array.isArray(req.session?.permisos) && req.session.permisos.includes('agenda.editar_siempre'));
+    const ESTADOS_FINALES_EDICION = ['ATENDIDO', 'NO_ASISTIO', 'CANCELADO', 'REPROGRAMADO'];
+    if (ESTADOS_FINALES_EDICION.includes(turno.estado) && !puedeEditarSiempre) {
+      return res.status(400).json({ error: 'No se puede modificar una cita en estado final. Se requiere permiso especial.' });
+    }
+    // Solo superadmin puede cambiar el estado de una cita finalizada
+    if (estado !== undefined && ESTADOS_FINALES_EDICION.includes(turno.estado) && userRole !== 'superadmin') {
+      return res.status(400).json({ error: 'No se puede cambiar el estado de una cita finalizada' });
     }
 
     const updates = [];
@@ -391,6 +403,10 @@ router.patch('/turnos/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin
 
     if (paciente_nombre !== undefined) { updates.push('paciente_nombre = ?'); values.push(paciente_nombre); }
     if (paciente_telefono !== undefined) { updates.push('paciente_telefono = ?'); values.push(paciente_telefono); }
+    if (paciente_documento !== undefined) { updates.push('paciente_documento = ?'); values.push(paciente_documento); }
+    if (paciente_telefono2 !== undefined) { updates.push('paciente_telefono2 = ?'); values.push(paciente_telefono2); }
+    if (entidad !== undefined) { updates.push('entidad = ?'); values.push(entidad); }
+    if (notas !== undefined) { updates.push('notas = ?'); values.push(notas); }
     if (tipo_consulta !== undefined) { updates.push('tipo_consulta = ?'); values.push(tipo_consulta); }
     if (fecha !== undefined) { updates.push('fecha = ?'); values.push(fecha); }
     if (hora !== undefined) { updates.push('hora = ?'); values.push(hora); }
@@ -406,7 +422,7 @@ router.patch('/turnos/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin
     await db.execute(query, values);
 
     if (req.app.io) {
-      if (paciente_nombre !== undefined || paciente_telefono !== undefined || tipo_consulta !== undefined) {
+      if (paciente_nombre !== undefined || paciente_telefono !== undefined || paciente_documento !== undefined || paciente_telefono2 !== undefined || entidad !== undefined || notas !== undefined || tipo_consulta !== undefined) {
         emitSocket('agenda:turno-cambio-paciente', {
           id,
           paciente_nombre: paciente_nombre || turno.paciente_nombre,
@@ -439,8 +455,12 @@ router.patch('/turnos/:id/estado', requireAuth, requireRoleOrPerm(['superadmin',
     return res.status(400).json({ error: 'id y estado son obligatorios' });
   }
 
+  if (!ESTADOS_VALIDOS_TURNOS.includes(estado)) {
+    return res.status(400).json({ error: `Estado inválido: "${estado}". Valores permitidos: ${ESTADOS_VALIDOS_TURNOS.join(', ')}` });
+  }
+
   try {
-    const turnos = await db.query('SELECT * FROM turnos WHERE id = ?', [id]);
+    const turnos = await db.query('SELECT id, estado, fecha, doctor_id, paciente_nombre, numero_turno FROM turnos WHERE id = ?', [id]);
     const turno = turnos.length > 0 ? turnos[0] : null;
     if (!turno) {
       return res.status(404).json({ error: 'Turno no encontrado' });
@@ -471,13 +491,15 @@ router.patch('/turnos/:id/estado', requireAuth, requireRoleOrPerm(['superadmin',
 
     let numeroAsignado = null;
     if (estado === 'EN_SALA' && !turno.numero_turno) {
-      const result = await db.query(`
-        SELECT MAX(CAST(numero_turno AS UNSIGNED)) as max_num FROM turnos 
-        WHERE fecha = ? AND doctor_id = ? AND numero_turno IS NOT NULL
-      `, [turno.fecha, turno.doctor_id]);
-      const maxNum = result[0]?.max_num || 0;
-      numeroAsignado = maxNum + 1;
-      await db.execute('UPDATE turnos SET estado = ?, numero_turno = ? WHERE id = ?', [estado, numeroAsignado, id]);
+      await db.transaction(async (conn) => {
+        const result = await conn.query(`
+          SELECT MAX(CAST(numero_turno AS UNSIGNED)) as max_num FROM turnos 
+          WHERE fecha = ? AND doctor_id = ? AND numero_turno IS NOT NULL
+        `, [turno.fecha, turno.doctor_id]);
+        const maxNum = result[0]?.max_num || 0;
+        numeroAsignado = maxNum + 1;
+        await conn.execute('UPDATE turnos SET estado = ?, numero_turno = ? WHERE id = ?', [estado, numeroAsignado, id]);
+      });
     } else if (esFinal) {
       await db.transaction(async (conn) => {
         await conn.execute('UPDATE turnos SET estado = ?, numero_turno = NULL WHERE id = ?', [estado, id]);
@@ -535,7 +557,7 @@ router.delete('/turnos/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admi
   }
 
   try {
-    const turnos = await db.query('SELECT * FROM turnos WHERE id = ?', [id]);
+    const turnos = await db.query('SELECT id, estado, doctor_id, fecha FROM turnos WHERE id = ?', [id]);
     const turno = turnos.length > 0 ? turnos[0] : null;
     if (!turno) {
       return res.status(404).json({ error: 'Turno no encontrado' });
@@ -547,7 +569,7 @@ router.delete('/turnos/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admi
         return res.status(400).json({ error: 'No se puede eliminar un turno en atención o ya atendido' });
       }
       const enAtencion = await db.query(
-        'SELECT * FROM turnos WHERE doctor_id = ? AND fecha = ? AND estado = ? AND id != ?',
+        'SELECT id FROM turnos WHERE doctor_id = ? AND fecha = ? AND estado = ? AND id != ?',
         [turno.doctor_id, turno.fecha, 'EN_ATENCION', id]
       );
       if (enAtencion.length > 0) {
@@ -582,7 +604,7 @@ router.patch('/turnos/:id/numero', requireAuth, requireRoleOrPerm(['superadmin',
   }
 
   try {
-    const turnos = await db.query('SELECT * FROM turnos WHERE id = ?', [id]);
+    const turnos = await db.query('SELECT id, estado, numero_turno, fecha, doctor_id FROM turnos WHERE id = ?', [id]);
     const turno = turnos.length > 0 ? turnos[0] : null;
     if (!turno) {
       return res.status(404).json({ error: 'Turno no encontrado' });
@@ -614,7 +636,7 @@ router.patch('/turnos/:id/numero', requireAuth, requireRoleOrPerm(['superadmin',
         return res.status(400).json({ error: 'No se puede subir más la prioridad' });
       }
       const turnoIntercambio = await db.query(
-        `SELECT * FROM turnos WHERE numero_turno = ? AND fecha = ? AND doctor_id = ? AND estado IN ('EN_SALA', 'PENDIENTE')`,
+        `SELECT id FROM turnos WHERE numero_turno = ? AND fecha = ? AND doctor_id = ? AND estado IN ('EN_SALA', 'PENDIENTE')`,
         [nuevoNumero, turno.fecha, turno.doctor_id]
       );
       if (turnoIntercambio.length === 0) {

@@ -183,7 +183,7 @@ const CSP_ENABLED = (process.env.CSP_ENABLED || 'true').toLowerCase() === 'true'
 const CSP_REPORT_ONLY = (process.env.CSP_REPORT_ONLY || 'true').toLowerCase() === 'true';
 
 app.use(helmet({
-  hsts: process.env.NODE_ENV === 'production',
+  hsts: process.env.NODE_ENV === 'production' ? { maxAge: 31536000, includeSubDomains: true } : false,
   crossOriginEmbedderPolicy: false,
   frameguard: { action: 'sameorigin' },
   contentSecurityPolicy: CSP_ENABLED ? {

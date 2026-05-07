@@ -596,8 +596,10 @@ router.post('/citas-electro', requireAuth, requireRoleOrPerm(['superadmin', 'adm
         SET estado = 'Completado', editado_por_nombre = 'Sistema (Auto)', editado_en = NOW()
         WHERE estado = 'En Estudio'
         AND deleted_at IS NULL
-        AND hora_fin IS NOT NULL
-        AND TIMESTAMP(COALESCE(hora_fin_date, fecha), hora_fin) < NOW()
+        AND (
+          (hora_fin IS NOT NULL AND TIMESTAMP(COALESCE(hora_fin_date, fecha), hora_fin) < NOW())
+          OR fecha < CURDATE()
+        )
       `);
 
       const dupCheck = await transactions.selectForUpdate(conn,
@@ -704,14 +706,22 @@ router.patch('/citas-electro/:id/estado', requireAuth, requireRoleOrPerm(['super
   }
 });
 
+const ESTADOS_VALIDOS_ELECTRO = ['Programado','Confirmado','En Sala','En Estudio','Pausado','Completado','No Asistió','Cancelado','Reprogramado','Adelantado'];
+
 // PATCH /api/citas-electro/:id
 router.patch('/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro', 'tecnico_electro'], ['electro.editar', 'electro.cambiar_estado']), async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const { equipo_id, estado, hora_inicio, hora_fin, hora_agendamiento, fecha, duracion_minutos, entidad } = req.body || {};
   if (!id) return res.status(400).json({ error: 'id es obligatorio' });
+  if (estado !== undefined && !ESTADOS_VALIDOS_ELECTRO.includes(estado)) {
+    return res.status(400).json({ error: `Estado inválido: "${estado}". Valores permitidos: ${ESTADOS_VALIDOS_ELECTRO.join(', ')}` });
+  }
 
   try {
-    const citasResult = await db.query('SELECT * FROM citas_electro WHERE id = ? AND deleted_at IS NULL', [id]);
+    const citasResult = await db.query(
+      'SELECT id, equipo_id, paciente_id, fecha, hora_agendamiento, hora_inicio, hora_fin, hora_fin_date, estudio, estado, duracion_minutos, entidad, observaciones, diagnostico_id FROM citas_electro WHERE id = ? AND deleted_at IS NULL',
+      [id]
+    );
     if (citasResult.length === 0) return res.status(404).json({ error: 'Cita no encontrada' });
     const citaActual = citasResult[0];
     const estadoActual = citaActual.estado;
@@ -744,13 +754,15 @@ router.patch('/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin',
           SET estado = 'Completado', editado_por_nombre = 'Sistema (Auto)', editado_en = NOW()
           WHERE id != ? AND estado = 'En Estudio'
           AND deleted_at IS NULL
-          AND hora_fin IS NOT NULL
-          AND TIMESTAMP(COALESCE(hora_fin_date, fecha), hora_fin) < NOW()
+          AND (
+            (hora_fin IS NOT NULL AND TIMESTAMP(COALESCE(hora_fin_date, fecha), hora_fin) < NOW())
+            OR fecha < CURDATE()
+          )
         `, [id]);
         const overlapCitas = await db.query(`
           SELECT COUNT(*) as overlap_count FROM citas_electro
           WHERE id != ? AND estado IN ('Programado', 'Confirmado', 'En Sala', 'En Estudio', 'Pausado') AND deleted_at IS NULL
-          AND TIMESTAMP(fecha, COALESCE(hora_agendamiento, '00:00:00')) <= TIMESTAMP(?, ?)
+          AND TIMESTAMP(fecha, COALESCE(hora_agendamiento, '00:00:00')) < TIMESTAMP(?, ?)
           AND TIMESTAMP(COALESCE(hora_fin_date, fecha), COALESCE(hora_fin, '23:59:59')) > TIMESTAMP(?, ?)
         `, [id, checkFecha, checkHora, checkFecha, checkHora]);
         const overlapCount = overlapCitas[0]?.overlap_count || 0;
@@ -848,7 +860,7 @@ router.delete('/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin'
   const id = parseInt(req.params.id, 10);
   if (!id) return res.status(400).json({ error: 'ID inválido' });
   try {
-    const citas = await db.query('SELECT * FROM citas_electro WHERE id = ? AND deleted_at IS NULL', [id]);
+    const citas = await db.query('SELECT id, estado FROM citas_electro WHERE id = ? AND deleted_at IS NULL', [id]);
     const cita = citas.length > 0 ? citas[0] : null;
     if (!cita) return res.status(404).json({ error: 'Cita no encontrada' });
     if (req.session?.rol === 'admin_electro' && cita.estado === 'Completado') {

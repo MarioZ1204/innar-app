@@ -732,7 +732,13 @@
                   </span>
                   <h3>Citas del Día</h3>
                 </div>
-                <span class="citas-table-count" id="citasTableCount"></span>
+                <div style="display:flex;align-items:center;gap:8px">
+                  <span class="citas-table-count" id="citasTableCount"></span>
+                  <button id="btnToggleSlotVacio" class="btn-secondary btn-sm" onclick="toggleSlotVacio()" style="display:none;align-items:center;gap:5px" title="Ocultar/mostrar espacios libres disponibles">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                    <span id="lblToggleSlot">Ocultar libres</span>
+                  </button>
+                </div>
               </div>
               <div class="table-wrapper">
               <table id="turnosTableMedica" class="modern-table">
@@ -2710,7 +2716,7 @@
       <div style="background:#f9fafb;padding:16px;border-radius:8px;margin-bottom:20px;border:1px solid #e5e7eb">
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:12px">
           <div>
-            <label style="display:block;font-size:.875rem;font-weight:600;color:#374151;margin-bottom:4px">Tipo de Acción</label>
+            <label style="display:block;font-size:.825rem;font-weight:600;color:#2d4a47;margin-bottom:4px">Tipo de Acción</label>
             <select id="filtroAccion" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:.9rem">
               <option value="">Todas las acciones</option>
               <option value="CREAR">Crear Usuario</option>
@@ -2724,11 +2730,11 @@
             </select>
           </div>
           <div>
-            <label style="display:block;font-size:.875rem;font-weight:600;color:#374151;margin-bottom:4px">Desde</label>
+            <label style="display:block;font-size:.825rem;font-weight:600;color:#2d4a47;margin-bottom:4px">Desde</label>
             <input type="date" id="filtroDesde">
           </div>
           <div>
-            <label style="display:block;font-size:.875rem;font-weight:600;color:#374151;margin-bottom:4px">Hasta</label>
+            <label style="display:block;font-size:.825rem;font-weight:600;color:#2d4a47;margin-bottom:4px">Hasta</label>
             <input type="date" id="filtroHasta">
           </div>
         </div>
@@ -2805,19 +2811,51 @@
       <div id="editarMedicaPanel" style="display:none;padding:14px 22px;background:#f8fafa;border-bottom:1px solid #e5e7eb">
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
           <div>
-            <label style="font-size:.8rem;font-weight:600;color:#6b7280;display:block;margin-bottom:4px">Nombre</label>
+            <label style="font-size:.8rem;font-weight:600;color:#6b7280;display:block;margin-bottom:4px">Nombre completo</label>
             <input id="editMedicaNombre" type="text" placeholder="Nombre completo" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:.9rem" />
           </div>
           <div>
-            <label style="font-size:.8rem;font-weight:600;color:#6b7280;display:block;margin-bottom:4px">Teléfono</label>
+            <label style="font-size:.8rem;font-weight:600;color:#6b7280;display:block;margin-bottom:4px">Número de documento</label>
+            <input id="editMedicaDocumento" type="text" inputmode="numeric" maxlength="15" placeholder="Número de documento" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:.9rem" />
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+          <div>
+            <label style="font-size:.8rem;font-weight:600;color:#6b7280;display:block;margin-bottom:4px">Teléfono 1</label>
             <input id="editMedicaTelefono" type="tel" inputmode="numeric" maxlength="10" placeholder="10 dígitos" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:.9rem" />
+          </div>
+          <div>
+            <label style="font-size:.8rem;font-weight:600;color:#6b7280;display:block;margin-bottom:4px">Teléfono 2</label>
+            <input id="editMedicaTelefono2" type="tel" inputmode="numeric" maxlength="10" placeholder="10 dígitos (opcional)" oninput="this.value=this.value.replace(/\D/g,'').slice(0,10)" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:.9rem" />
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+          <div>
+            <label style="font-size:.8rem;font-weight:600;color:#6b7280;display:block;margin-bottom:4px">Tipo de Consulta</label>
+            <select id="editMedicaTipoConsulta" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:.9rem;background:white">
+              <option value="">Seleccionar</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:.8rem;font-weight:600;color:#6b7280;display:block;margin-bottom:4px">Entidad</label>
+            <select id="editMedicaEntidad" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:.9rem;background:white">
+              <option value="">Seleccionar</option>
+            </select>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+          <div>
+            <label style="font-size:.8rem;font-weight:600;color:#6b7280;display:block;margin-bottom:4px">Fecha</label>
+            <input id="editMedicaFecha" type="date" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:.9rem" />
+          </div>
+          <div>
+            <label style="font-size:.8rem;font-weight:600;color:#6b7280;display:block;margin-bottom:4px">Hora</label>
+            <input id="editMedicaHora" type="time" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:.9rem" />
           </div>
         </div>
         <div style="margin-bottom:10px">
-          <label style="font-size:.8rem;font-weight:600;color:#6b7280;display:block;margin-bottom:4px">Tipo de Consulta</label>
-          <select id="editMedicaTipoConsulta" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:.9rem;background:white">
-            <option value="">Seleccionar</option>
-          </select>
+          <label style="font-size:.8rem;font-weight:600;color:#6b7280;display:block;margin-bottom:4px">Notas</label>
+          <textarea id="editMedicaNotas" rows="2" placeholder="Notas u observaciones" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:.9rem;resize:vertical"></textarea>
         </div>
         <div style="display:flex;gap:8px;justify-content:flex-end">
           <button id="btnCancelarEditarMedica" class="btn-secondary btn-sm">Cancelar</button>

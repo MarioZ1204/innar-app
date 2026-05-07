@@ -23,6 +23,23 @@ function hashPasswordSHA512(password) {
 
 const ROLES_VALIDOS = ['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro', 'tecnico_electro', 'auxiliar_recepcion', 'doctor', 'contabilidad'];
 
+const PERMISOS_VALIDOS = new Set([
+  'modulo.recibos', 'modulo.agenda_medica', 'modulo.electrodiag', 'modulo.ucqn',
+  'modulo.dashboard', 'modulo.usuarios', 'modulo.diagnosticos', 'modulo.gestion_datos',
+  'recibos.crear', 'recibos.ver', 'recibos.editar', 'recibos.anular', 'recibos.eliminar',
+  'recibos.exportar', 'recibos.gestionar_servicios', 'recibos.resetear',
+  'agenda.ver', 'agenda.crear', 'agenda.editar', 'agenda.eliminar', 'agenda.cambiar_estado',
+  'agenda.llamar_siguiente', 'agenda.marcar_atendido', 'agenda.aviso_doctor', 'agenda.disponibilidad',
+  'agenda.editar_siempre',
+  'electro.ver', 'electro.crear', 'electro.editar', 'electro.eliminar', 'electro.cambiar_estado',
+  'electro.subir_archivo', 'electro.ver_archivo', 'electro.aviso_doctor',
+  'ucqn.ver', 'ucqn.editar_estado',
+  'usuarios.ver', 'usuarios.crear', 'usuarios.editar', 'usuarios.cambiar_clave',
+  'usuarios.eliminar', 'usuarios.auditoria', 'usuarios.permisos',
+  'diagnosticos.ver', 'diagnosticos.crear', 'diagnosticos.editar', 'diagnosticos.eliminar',
+  'sistema.backups', 'sistema.exportar_datos', 'sistema.dashboard', 'sistema.reportes'
+]);
+
 // ── Listar usuarios ──────────────────────────────────────────────────────────
 router.get('/', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'usuarios.ver'), async (req, res) => {
   try {
@@ -55,6 +72,10 @@ router.post('/', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'usuari
 
   if (!ROLES_VALIDOS.includes(rol)) {
     return res.status(400).json({ error: 'Rol inválido.' });
+  }
+
+  if (rol === 'superadmin' && req.session.rol !== 'superadmin') {
+    return res.status(403).json({ error: 'Solo superadmin puede asignar el rol superadmin' });
   }
 
   let consultorioFinal = null;
@@ -105,7 +126,7 @@ router.patch('/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'us
   if (!id) return res.status(400).json({ error: 'ID inválido' });
 
   try {
-    const users = await db.query('SELECT * FROM usuarios WHERE id = ?', [id]);
+    const users = await db.query('SELECT id, usuario, nombre, rol, activo, numero_consultorio, especialidad FROM usuarios WHERE id = ?', [id]);
     const user = users.length > 0 ? users[0] : null;
     if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
 
@@ -119,6 +140,9 @@ router.patch('/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'us
       if (!ROLES_VALIDOS.includes(rol)) return res.status(400).json({ error: 'Rol inválido' });
       if (user.rol === 'superadmin' && rol !== 'superadmin') {
         return res.status(403).json({ error: 'No se puede cambiar el rol del Super Administrador' });
+      }
+      if (rol === 'superadmin' && req.session.rol !== 'superadmin') {
+        return res.status(403).json({ error: 'Solo superadmin puede asignar el rol superadmin' });
       }
       updates.push('rol = ?'); params.push(rol);
     }
@@ -217,6 +241,9 @@ router.put('/:id/permisos', requireAuth, requireRoleOrPerm(['superadmin'], 'usua
       if (typeof p !== 'string') return res.status(400).json({ error: 'permisos debe contener solo cadenas de texto' });
       if (p.length < 2 || p.length > 80 || !/^[a-z0-9._]+$/i.test(p)) {
         return res.status(400).json({ error: 'Formato de clave de permiso no válido' });
+      }
+      if (!PERMISOS_VALIDOS.has(p)) {
+        return res.status(400).json({ error: `Permiso desconocido: "${p}"` });
       }
     }
   }

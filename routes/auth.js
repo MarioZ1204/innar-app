@@ -150,7 +150,7 @@ router.post('/cambiar-contrasena', requireAuth, async (req, res) => {
   }
 
   try {
-    const users = await db.query('SELECT * FROM usuarios WHERE id = ?', [req.session.usuarioId]);
+    const users = await db.query('SELECT id, password_hash FROM usuarios WHERE id = ?', [req.session.usuarioId]);
     if (users.length === 0) return res.status(404).json({ error: 'Usuario no encontrado' });
     const user = users[0];
 
