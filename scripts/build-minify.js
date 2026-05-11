@@ -22,6 +22,8 @@ const JS_FILES = [
   'dashboard-citas.js',
   'socket-client.js',
   'socket-electro.js',
+  'socket-io-fallback.js',
+  'socket-path-bootstrap.js',
   'calendario-agenda.js',
   'calendario-bloqueado.js',
   'multiselect.js',

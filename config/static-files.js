@@ -4,7 +4,6 @@
 const fs = require('fs');
 const path = require('path');
 const express = require('express');
-const { getSocketIoPath } = require('./socket-io-path');
 
 function staticCacheHeaders(res, filePath) {
   if (filePath.endsWith('.html')) {
@@ -25,13 +24,11 @@ function buildIndexHandler(publicDir, appVersion) {
     const htmlPath = path.join(publicDir, 'index.html');
     let html = fs.readFileSync(htmlPath, 'utf8');
     const vTag = `?v=${appVersion}`;
-    const sioBase = getSocketIoPath();
-    const sioAbs = `${sioBase}/socket.io.js`;
-    const sioForClient = JSON.stringify(`${sioBase}/`);
     html = html
       .replace('href="style.css"', `href="style.css${vTag}"`)
       .replace('href="style.css"', `href="style.css${vTag}"`)
       .replace('src="multiselect.js"', `src="multiselect.js${vTag}"`)
+      .replace('src="socket-path-bootstrap.js"', `src="socket-path-bootstrap.js${vTag}"`)
       .replace('src="socket-client.js"', `src="socket-client.js${vTag}"`)
       .replace('src="socket-electro.js"', `src="socket-electro.js${vTag}"`)
       .replace('src="dashboard-citas.js"', `src="dashboard-citas.js${vTag}"`)
@@ -41,12 +38,8 @@ function buildIndexHandler(publicDir, appVersion) {
       .replace('src="validation-client.js"', `src="validation-client.js${vTag}"`)
       .replace('src="splash.js"', `src="splash.js${vTag}"`)
       .replace(
-        'src="/socket.io/socket.io.js"',
-        `src="${sioAbs}${vTag}"`
-      )
-      .replace(
         '</head>',
-        `<script>window.APP_VERSION="${appVersion}";window.SOCKET_IO_PATH=${sioForClient};</script>\n</head>`
+        `<script>window.APP_VERSION="${appVersion}";</script>\n</head>`
       );
     res.setHeader('Content-Type', 'text/html');
     res.setHeader('Cache-Control', 'no-cache, must-revalidate');

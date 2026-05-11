@@ -1,9 +1,4 @@
 (function () {
-  if (typeof window.io === 'function') return;
-
-  // Fallback de emergencia:
-  // Si /socket.io/socket.io.js falla por proxy (404), evitamos que la app se caiga
-  // por "io is not defined". Este stub mantiene la app funcional sin tiempo real.
   function noop() {}
 
   function createSocketStub() {
@@ -25,8 +20,16 @@
     };
   }
 
-  window.io = function () {
-    console.warn('[SOCKET] /socket.io/socket.io.js no disponible. Ejecutando en modo fallback sin tiempo real.');
-    return createSocketStub();
-  };
+  function installStub() {
+    if (typeof window.io === 'function') return;
+    window.io = function () {
+      console.warn(
+        '[SOCKET] Sin cliente Socket.IO (timeout). Modo degradado sin tiempo real.'
+      );
+      return createSocketStub();
+    };
+  }
+
+  // Dar tiempo a socket-path-bootstrap.js (fetch + carga asíncrona del script real).
+  setTimeout(installStub, 8000);
 })();
