@@ -101,7 +101,7 @@ app.get('/api/socket-status', (req, res) => {
       loaded: !!require.cache[require.resolve('socket.io')],
       mounted: !!app.io,
       path: '/socket.io/',
-      transports: ['websocket', 'polling'],
+      transports: ['websocket'],
       cors_origin: process.env.FRONTEND_URL || 'http://localhost:3000'
     },
     timestamp: new Date().toISOString()

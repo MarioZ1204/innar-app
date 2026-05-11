@@ -54,8 +54,9 @@ function buildSocketCorsConfig() {
 function attachSockets({ httpServer, app, sessionMiddleware, appVersion }) {
   const io = socketIo(httpServer, {
     cors: buildSocketCorsConfig(),
-    transports: ['websocket', 'polling'],
-    allowUpgrades: true,
+    // Sólo WebSocket (sin long-polling). Requiere que el proxy pasar Upgrade correctamente.
+    transports: ['websocket'],
+    allowUpgrades: false,
     pingInterval: 30000,
     pingTimeout: 60000,
     maxHttpBufferSize: 1e6,

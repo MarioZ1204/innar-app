@@ -17,7 +17,7 @@
   <h3>Información del servidor:</h3>
   <div id="serverInfo"></div>
   <div class="info" style="margin:12px 0;padding:8px;background:#322;border:1px solid #664">
-      <strong>Importante:</strong> en producci&oacute;n Socket.IO solo acepta conexiones si hay sesi&oacute;n (has iniciado sesi&oacute;n en esta misma pesta&ntilde;a). Sin login ver&aacute;s <code>xhr poll error</code>.
+      <strong>Importante:</strong> en producci&oacute;n Socket.IO solo acepta conexiones si hay sesi&oacute;n (has iniciado sesi&oacute;n en esta misma pesta&ntilde;a). Sin login ver&aacute;s error de conexi&oacute;n (<code>connect_error</code>).
     </div>
   <div id="log" class="log"></div>
   
@@ -66,16 +66,14 @@
       }
       
       addLog('✓ Socket.IO client script cargado', 'success');
-      addLog('Conectando con opciones: { reconnection: true, transports: [\"polling\"], path: \"/socket.io/\" }');
+      addLog('Conectando con opciones: { reconnection: true, transports: [\"websocket\"], path: \"/socket.io/\" }');
       
       const socket = io({
         reconnection: true,
         reconnectionDelay: 1000,
         reconnectionDelayMax: 5000,
         reconnectionAttempts: 5,
-        upgrades: [],
-        transports: ['polling'],
-        upgrade: false,
+        transports: ['websocket'],
         path: '/socket.io/',
         withCredentials: true,
         forceNew: false,

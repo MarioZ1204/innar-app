@@ -13,9 +13,11 @@ RewriteEngine On
 # ═══════════════════════════════════════════════════════════════════════════
 
 RewriteCond %{REQUEST_URI} ^/socket\.io/
-RewriteCond %{HTTP:Upgrade} =websocket [NC]
+RewriteCond %{HTTP:Upgrade} websocket [NC]
+RewriteCond %{HTTP:Connection} upgrade [NC]
 RewriteRule ^(.*)$ ws://127.0.0.1:3000%{REQUEST_URI} [P,L,QSA]
 
+# Peticiones HTTP a /socket.io/ (cookies, compat, si algún cliente pide sólo GET sin Upgrade aquí cae igual al Node).
 RewriteCond %{REQUEST_URI} ^/socket\.io/
 RewriteRule ^(.*)$ http://127.0.0.1:3000%{REQUEST_URI} [P,L,QSA]
 
