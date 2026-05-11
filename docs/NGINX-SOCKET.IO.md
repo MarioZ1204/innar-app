@@ -19,7 +19,7 @@ Si no aparece la app o está `errored`, ningún proxy arreglará el 404 hasta qu
 
 ## Bloque Nginx recomendado
 
-Sustituye `3000` por el **puerto real** donde escucha tu app (`PORT` / panel Node). Incluye `map` para WebSocket y `Connection` coherente:
+Sustituye el puerto de ejemplo (**7080** en Hostinger habitual) por el **`PORT`** real de tu panel Node. Incluye `map` para WebSocket y `Connection` coherente:
 
 ```nginx
 map $http_upgrade $connection_upgrade {
@@ -42,7 +42,7 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_pass http://127.0.0.1:3000;
+        proxy_pass http://127.0.0.1:7080;
         proxy_read_timeout 86400;
         proxy_buffering off;
     }
@@ -53,7 +53,7 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_pass http://127.0.0.1:3000;
+        proxy_pass http://127.0.0.1:7080;
     }
 
     # Opcional: SPA y estáticos pueden ir a Node o a `root` + try_files
@@ -63,7 +63,7 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_pass http://127.0.0.1:3000;
+        proxy_pass http://127.0.0.1:7080;
     }
 }
 ```
@@ -76,5 +76,5 @@ sudo nginx -t && sudo systemctl reload nginx
 
 ## Diagnóstico rápido
 
-- Desde el mismo servidor: `curl -sS -o /dev/null -w "%{http_code}\n" http://127.0.0.1:3000/api/health` debe ser **200** si Node está arriba.
+- Desde el mismo servidor: `curl -sS -o /dev/null -w "%{http_code}\n" http://127.0.0.1:7080/api/health` (ajusta puerto) debe ser **200** si Node está arriba.
 - Si eso falla, el problema es **Node/PM2/puerto**, no Nginx delante.

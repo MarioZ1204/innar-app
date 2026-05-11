@@ -42,11 +42,11 @@ RewriteCond %{HTTPS} off
 RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
 
 RewriteCond %{REQUEST_URI} ^/socket\.io/ [NC]
-RewriteRule ^ http://127.0.0.1:3000%{REQUEST_URI} [P,L,QSA]
+RewriteRule ^ http://127.0.0.1:7080%{REQUEST_URI} [P,L,QSA]
 
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
-RewriteRule ^ http://127.0.0.1:3000%{REQUEST_URI} [P,L,QSA]
+RewriteRule ^ http://127.0.0.1:7080%{REQUEST_URI} [P,L,QSA]
 ```
 
 Para WebSocket estable, el `.htaccess` del repo anteponer reglas **`ws://`** para `/socket.io/` antes del `http://`.

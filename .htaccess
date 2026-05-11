@@ -45,25 +45,25 @@ Options -Indexes
   SSLProxyEngine On
 </IfModule>
 
-# ── Proxy a Node (cambiar 3000 por PORT del panel / .env)
+# ── Proxy a Node (este proyecto Hostinger suele usar 7080 — cámbialo si tu panel muestra otro PORT)
 # Sintaxis tipo "minimal": /socket.io/ primero, luego /api/, luego no-estático.
 # Usar %{REQUEST_URI} + QSA (evita pérdida de ?EIO=&transport=polling con $1 en .htaccess).
 
 RewriteCond %{REQUEST_URI} ^/socket\.io/ [NC]
 RewriteCond %{HTTP:Upgrade} websocket [NC]
 RewriteCond %{HTTP:Connection} upgrade [NC]
-RewriteRule ^(.*)$ ws://127.0.0.1:3000%{REQUEST_URI} [P,L,QSA]
+RewriteRule ^(.*)$ ws://127.0.0.1:7080%{REQUEST_URI} [P,L,QSA]
 
 RewriteCond %{REQUEST_URI} ^/socket\.io/ [NC]
 RewriteCond %{HTTP:Upgrade} websocket [NC]
-RewriteRule ^(.*)$ ws://127.0.0.1:3000%{REQUEST_URI} [P,L,QSA]
+RewriteRule ^(.*)$ ws://127.0.0.1:7080%{REQUEST_URI} [P,L,QSA]
 
 RewriteCond %{REQUEST_URI} ^/socket\.io/ [NC]
-RewriteRule ^(.*)$ http://127.0.0.1:3000%{REQUEST_URI} [P,L,QSA]
+RewriteRule ^(.*)$ http://127.0.0.1:7080%{REQUEST_URI} [P,L,QSA]
 
 RewriteCond %{REQUEST_URI} ^/api/ [NC]
-RewriteRule ^(.*)$ http://127.0.0.1:3000%{REQUEST_URI} [P,L,QSA]
+RewriteRule ^(.*)$ http://127.0.0.1:7080%{REQUEST_URI} [P,L,QSA]
 
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
-RewriteRule ^(.*)$ http://127.0.0.1:3000%{REQUEST_URI} [P,L,QSA]
+RewriteRule ^(.*)$ http://127.0.0.1:7080%{REQUEST_URI} [P,L,QSA]

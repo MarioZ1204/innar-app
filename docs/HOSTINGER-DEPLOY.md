@@ -58,7 +58,7 @@ Si el dominio entra por **Apache, LiteSpeed o Nginx** y Node escucha un **puerto
 
 ### Paso A — Obtener el puerto de Node
 
-En Hostinger: **Advanced → Node.js** (tu app): anota el **puerto** que usa el proceso (muchas veces lo muestra el panel o lo defines con `PORT` en variables de entorno). En **todos los ejemplos** del repo aparece **`3000`** como marcador de posición: **cámbialo** por ese puerto en el `.htaccess` o en Nginx.
+En Hostinger: **Advanced → Node.js** (tu app): anota el **puerto** que usa el proceso (`PORT`; en este despliegue suele ser **7080**). El `.htaccess` debe usar **el mismo número** (`http://127.0.0.1:<PUERTO>` / `ws://127.0.0.1:<PUERTO>`).
 
 ### Paso B — Apache / LiteSpeed (`.htaccess`)
 

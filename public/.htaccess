@@ -1,6 +1,6 @@
 RewriteEngine On
 
-# Ver .htaccess en la raíz: diagnóstico mod_proxy y [P].
+# Mismo proxy que raíz; Node en puerto interno habitual Hostinger **7080** (ajusta si cambia tu panel).
 <IfModule mod_proxy.c>
   ProxyRequests Off
   ProxyPreserveHost On
@@ -18,18 +18,18 @@ Options -Indexes
 RewriteCond %{REQUEST_URI} ^/socket\.io/ [NC]
 RewriteCond %{HTTP:Upgrade} websocket [NC]
 RewriteCond %{HTTP:Connection} upgrade [NC]
-RewriteRule ^(.*)$ ws://127.0.0.1:3000%{REQUEST_URI} [P,L,QSA]
+RewriteRule ^(.*)$ ws://127.0.0.1:7080%{REQUEST_URI} [P,L,QSA]
 
 RewriteCond %{REQUEST_URI} ^/socket\.io/ [NC]
 RewriteCond %{HTTP:Upgrade} websocket [NC]
-RewriteRule ^(.*)$ ws://127.0.0.1:3000%{REQUEST_URI} [P,L,QSA]
+RewriteRule ^(.*)$ ws://127.0.0.1:7080%{REQUEST_URI} [P,L,QSA]
 
 RewriteCond %{REQUEST_URI} ^/socket\.io/ [NC]
-RewriteRule ^(.*)$ http://127.0.0.1:3000%{REQUEST_URI} [P,L,QSA]
+RewriteRule ^(.*)$ http://127.0.0.1:7080%{REQUEST_URI} [P,L,QSA]
 
 RewriteCond %{REQUEST_URI} ^/api/ [NC]
-RewriteRule ^(.*)$ http://127.0.0.1:3000%{REQUEST_URI} [P,L,QSA]
+RewriteRule ^(.*)$ http://127.0.0.1:7080%{REQUEST_URI} [P,L,QSA]
 
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
-RewriteRule ^(.*)$ http://127.0.0.1:3000%{REQUEST_URI} [P,L,QSA]
+RewriteRule ^(.*)$ http://127.0.0.1:7080%{REQUEST_URI} [P,L,QSA]
