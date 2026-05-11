@@ -1,34 +1,55 @@
 RewriteEngine On
 
-# ----------------------------------------------------------------------
-# Proxy de /api/ y /socket.io/ hacia Node.js (puerto local).
-# Si el puerto local Node escucha en uno distinto a 3000, ajustar abajo.
-# En Hostinger, Apache proxyea desde el dominio público (HTTPS) hacia Node
-# en localhost. Node nunca expone su puerto al exterior.
-# ----------------------------------------------------------------------
+# ============================================================================
+# IMPORTANTE: En Hostinger, el orden de las reglas es crítico.
+# 1. Proxy Socket.IO PRIMERO (websocket + polling)
+# 2. Luego /api/
+# 3. Al final, SPA fallback
+# ============================================================================
 
-# Proxy explícito de Socket.IO sobre /api/ (polling + websocket)
-RewriteCond %{REQUEST_URI} ^/api/socket.io/ [NC]
-RewriteCond %{HTTP:Upgrade} =websocket [NC]
-RewriteRule ^api/socket.io/(.*)$ ws://localhost:3000/api/socket.io/$1 [P,L]
+# ─────────────────────────────────────────────────────────────────────────
+# 1. PROXY DE SOCKET.IO (PRIORITARIO - DEBE SER PRIMERO)
+# ─────────────────────────────────────────────────────────────────────────
 
-RewriteCond %{REQUEST_URI} ^/api/socket.io/ [NC]
-RewriteRule ^api/socket.io/(.*)$ http://localhost:3000/api/socket.io/$1 [P,L]
-
-# Proxy de /api/ hacia Node.js
-RewriteCond %{REQUEST_URI} ^/api/
-RewriteRule ^api/(.*)$ http://localhost:3000/api/$1 [P,L]
-
-# Proxy de Socket.IO hacia Node.js
-RewriteCond %{REQUEST_URI} ^/socket.io/
-RewriteRule ^socket.io/(.*)$ http://localhost:3000/socket.io/$1 [P,L]
-
-# Soporte explícito para upgrade websocket en Socket.IO (Hostinger/Apache).
+# 1a. Socket.IO con WebSocket upgrade (si el cliente lo soporta)
 RewriteCond %{REQUEST_URI} ^/socket.io/ [NC]
 RewriteCond %{HTTP:Upgrade} =websocket [NC]
+RewriteCond %{HTTP:Connection} Upgrade [NC]
 RewriteRule ^socket.io/(.*)$ ws://localhost:3000/socket.io/$1 [P,L]
 
-# Todo lo demás (rutas SPA) va a public/index.html
+# 1b. Socket.IO con polling HTTP (fallback)
+RewriteCond %{REQUEST_URI} ^/socket.io/ [NC]
+RewriteRule ^socket.io/(.*)$ http://localhost:3000/socket.io/$1 [P,L]
+
+# ─────────────────────────────────────────────────────────────────────────
+# 2. PROXY DE /API/
+# ─────────────────────────────────────────────────────────────────────────
+
+# 2a. /api/ con WebSocket upgrade (si aplica)
+RewriteCond %{REQUEST_URI} ^/api/ [NC]
+RewriteCond %{HTTP:Upgrade} =websocket [NC]
+RewriteCond %{HTTP:Connection} Upgrade [NC]
+RewriteRule ^api/(.*)$ ws://localhost:3000/api/$1 [P,L]
+
+# 2b. /api/ con HTTP normal
+RewriteCond %{REQUEST_URI} ^/api/ [NC]
+RewriteRule ^api/(.*)$ http://localhost:3000/api/$1 [P,L]
+
+# ─────────────────────────────────────────────────────────────────────────
+# 3. FALLBACK A SPA (archivos estáticos y rutas dinámicas)
+# ─────────────────────────────────────────────────────────────────────────
+
+# No reescribir si el archivo o directorio existe
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
 RewriteRule ^ public/index.html [QSA,L]
+
+# ─────────────────────────────────────────────────────────────────────────
+# HEADERS PARA PROXIES Y CACHE
+# ─────────────────────────────────────────────────────────────────────────
+
+<IfModule mod_headers.c>
+  # Asegurar que los proxies pasen los headers necesarios
+  RequestHeader set X-Forwarded-Proto "https"
+  RequestHeader set X-Forwarded-Host "%{SERVER_NAME}s"
+</IfModule>
