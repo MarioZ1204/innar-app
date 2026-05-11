@@ -9,7 +9,9 @@ function staticCacheHeaders(res, filePath) {
   if (filePath.endsWith('.html')) {
     res.setHeader('Cache-Control', 'no-cache, must-revalidate');
   } else if (filePath.endsWith('.js') || filePath.endsWith('.css')) {
-    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    // Evita que clientes/proxies se queden con bundles viejos ante hotfixes urgentes.
+    // Con revalidación en cada request reducimos riesgo de servir JS/CSS obsoletos.
+    res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
   } else if (/\.(png|jpg|jpeg|gif|svg|webp|ico)$/.test(filePath)) {
     res.setHeader('Cache-Control', 'public, max-age=604800, stale-while-revalidate=86400');
   } else if (/\.(woff2?|ttf|eot)$/.test(filePath)) {
