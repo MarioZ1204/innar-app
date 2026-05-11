@@ -21,9 +21,6 @@ function attachSockets({ httpServer, app, sessionMiddleware, appVersion }) {
     pingInterval: 30000,
     pingTimeout: 60000,
     maxHttpBufferSize: 1e6,
-    // Mantener slash final para alinear handshake polling/websocket
-    // con clientes/proxies que envían `/api/socket.io/?...`.
-    path: '/api/socket.io/',
     serveClient: true,
     perMessageDeflate: { threshold: 32 * 1024 }
   });
