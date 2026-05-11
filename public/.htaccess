@@ -1,23 +1,20 @@
 RewriteEngine On
 
-# Mismo proxy que raíz cuando el DocumentRoot es sólo carpeta public/.
-# Cambie 3000 por el PORT de la app Node en el servidor.
+# Ver .htaccess en la raíz: diagnóstico mod_proxy y [P].
+<IfModule mod_proxy.c>
+  ProxyRequests Off
+  ProxyPreserveHost On
+</IfModule>
 
 RewriteCond %{HTTPS} off
 RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
 
 Options -Indexes
 
-<IfModule mod_proxy.c>
-  ProxyRequests Off
-  ProxyPreserveHost On
-</IfModule>
-
 <IfModule mod_ssl.c>
   SSLProxyEngine On
 </IfModule>
 
-# 1. Socket.IO primero (WS después HTTP dentro de esta ruta)
 RewriteCond %{REQUEST_URI} ^/socket\.io/ [NC]
 RewriteCond %{HTTP:Upgrade} websocket [NC]
 RewriteCond %{HTTP:Connection} upgrade [NC]
@@ -30,11 +27,9 @@ RewriteRule ^(.*)$ ws://127.0.0.1:3000%{REQUEST_URI} [P,L,QSA]
 RewriteCond %{REQUEST_URI} ^/socket\.io/ [NC]
 RewriteRule ^(.*)$ http://127.0.0.1:3000%{REQUEST_URI} [P,L,QSA]
 
-# 2. /api/
 RewriteCond %{REQUEST_URI} ^/api/ [NC]
 RewriteRule ^(.*)$ http://127.0.0.1:3000%{REQUEST_URI} [P,L,QSA]
 
-# 3. Resto → Node cuando no existe fichero bajo public/
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
 RewriteRule ^(.*)$ http://127.0.0.1:3000%{REQUEST_URI} [P,L,QSA]

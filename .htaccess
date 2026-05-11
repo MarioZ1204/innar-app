@@ -1,6 +1,19 @@
 RewriteEngine On
 
-# ── HTTPS (primero). En algunos paneles HTTPS ya llega cerrado aquí — regla harmless.
+# ── Diagnóstico mod_proxy ───────────────────────────────────────────────
+# Las RewriteRule con flag [P] DELEGAN en mod_proxy. Si el servidor no tiene
+# mod_proxy (y mod_proxy_http) cargados, Apache/LiteSpeed puede ignorar el
+# proxy o responder 500. Este bloque NO "activa" el módulo: sólo ejecuta
+# directivas válidas cuando el módulo existe.
+# Cómo comprobarlo en Hostinger: soporte técnico, o errores tras desplegar
+# (preguntando si están habilitados mod_proxy, proxy_http y proxy_wstunnel).
+<IfModule mod_proxy.c>
+  ProxyRequests Off
+  ProxyPreserveHost On
+</IfModule>
+# ⚠ Sin mod_proxy cargado, lo siguiente con [P] no tunnelará bien a Node.
+
+# ── HTTPS
 RewriteCond %{HTTPS} off
 RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
 
@@ -28,17 +41,14 @@ Options -Indexes
     AddOutputFilterByType DEFLATE text/plain text/html text/xml text/css application/xml application/xhtml+xml application/rss+xml application/javascript application/x-javascript application/json
 </IfModule>
 
-# ── Proxy a Node.js (sustituir 3000 por el PORT real del panel Hostinger /.env)
-<IfModule mod_proxy.c>
-  ProxyRequests Off
-  ProxyPreserveHost On
-</IfModule>
-
 <IfModule mod_ssl.c>
   SSLProxyEngine On
 </IfModule>
 
-# 1. Socket.IO PRIMERO — WebSocket cuando el cliente envía Upgrade
+# ── Proxy a Node (cambiar 3000 por PORT del panel / .env)
+# Sintaxis tipo "minimal": /socket.io/ primero, luego /api/, luego no-estático.
+# Usar %{REQUEST_URI} + QSA (evita pérdida de ?EIO=&transport=polling con $1 en .htaccess).
+
 RewriteCond %{REQUEST_URI} ^/socket\.io/ [NC]
 RewriteCond %{HTTP:Upgrade} websocket [NC]
 RewriteCond %{HTTP:Connection} upgrade [NC]
@@ -48,15 +58,12 @@ RewriteCond %{REQUEST_URI} ^/socket\.io/ [NC]
 RewriteCond %{HTTP:Upgrade} websocket [NC]
 RewriteRule ^(.*)$ ws://127.0.0.1:3000%{REQUEST_URI} [P,L,QSA]
 
-# Handshake HTTP / long-polling (misma URl; debe estar justo después de las reglas WS)
 RewriteCond %{REQUEST_URI} ^/socket\.io/ [NC]
 RewriteRule ^(.*)$ http://127.0.0.1:3000%{REQUEST_URI} [P,L,QSA]
 
-# 2. API REST
 RewriteCond %{REQUEST_URI} ^/api/ [NC]
 RewriteRule ^(.*)$ http://127.0.0.1:3000%{REQUEST_URI} [P,L,QSA]
 
-# 3. Todo lo demás que NO sea archivo o carpeta física → también Node (Express sirve SPA y rutas).
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
 RewriteRule ^(.*)$ http://127.0.0.1:3000%{REQUEST_URI} [P,L,QSA]

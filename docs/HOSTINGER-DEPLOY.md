@@ -77,7 +77,7 @@ Las reglas hacen (orden relevante):
 
 En **hosting compartido**, la aplicación cliente y servidor usan **`polling` primero** y **WebSocket después** cuando el proxy lo permite (`transports`: polling + websocket): el handshake por **HTTP** atraviesa el `proxy_pass` / `[P]` con más fiabilidad que un upgrade WS aislado.
 
-Requisitos en el servidor: **mod_proxy**, **mod_proxy_http**, **mod_proxy_wstunnel**. Si al guardar el `.htaccess` ves **500** al abrir `/socket.io/`, suele ser módulos desactivados: abre ticket a soporte pidiendo esos módulos o “reverse proxy `[P]` hacia localhost”.
+Si al guardar el `.htaccess` ves **500** al abrir `/socket.io/`, suele ser módulos desactivados: ticket a soporte pidiendo **`mod_proxy`**, **`mod_proxy_http`**, **`mod_proxy_wstunnel`**. Detalle sobre `[P]` e “alternativa sin mod_proxy”: **[HOSTINGER-MOD-PROXY.md](./HOSTINGER-MOD-PROXY.md)**.
 
 **Importante:** el `.htaccess` tiene efecto sólo donde Apache lo lee (`public_html`, dominio, etc.). Si clonaste el repo pero el hosting sigue usando otra carpeta, **copia** este fichero al directorio correcto tras el deploy.
 
