@@ -16,8 +16,9 @@ function attachSockets({ httpServer, app, sessionMiddleware, appVersion }) {
       methods: ['GET', 'POST'],
       credentials: true
     },
-    transports: ['websocket', 'polling'],
-    allowUpgrades: true,
+    // Hostinger (Apache proxy): el upgrade WebSocket suele fallar; solo polling es estable.
+    transports: ['polling'],
+    allowUpgrades: false,
     pingInterval: 30000,
     pingTimeout: 60000,
     maxHttpBufferSize: 1e6,
