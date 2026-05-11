@@ -95,6 +95,18 @@ app.get('/api/version', (req, res) => res.json({ version: APP_VERSION }));
 app.get('/api/health', (req, res) => {
   res.status(200).json({ ok: true, version: APP_VERSION, uptime: process.uptime() });
 });
+app.get('/api/socket-status', (req, res) => {
+  res.json({
+    socketio: {
+      loaded: !!require.cache[require.resolve('socket.io')],
+      mounted: !!app.io,
+      path: '/socket.io/',
+      transports: ['polling'],
+      cors_origin: process.env.FRONTEND_URL || 'http://localhost:3000'
+    },
+    timestamp: new Date().toISOString()
+  });
+});
 
 // Healthcheck profundo: BD, disco de backups, logs. Requiere auth.
 app.get('/api/health/deep', requireAuth, async (req, res) => {
@@ -254,7 +266,14 @@ const PORT = process.env.PORT || 3000;
       httpServer = http.createServer(app);
     }
 
-    attachSockets({ httpServer, app, sessionMiddleware, appVersion: APP_VERSION });
+    try {
+      logger.info('[STARTUP] Llamando attachSockets()...', { type: 'STARTUP' });
+      attachSockets({ httpServer, app, sessionMiddleware, appVersion: APP_VERSION });
+      logger.info('[STARTUP] ✓ attachSockets() completado exitosamente', { type: 'STARTUP' });
+    } catch (e) {
+      logger.error('[SOCKET.IO INIT ERROR] ' + e.message, { type: 'STARTUP', stack: e.stack });
+      throw e;
+    }
 
     httpServer.listen(PORT, '0.0.0.0', () => {
       logger.info(`Servidor corriendo en http://0.0.0.0:${PORT}`);

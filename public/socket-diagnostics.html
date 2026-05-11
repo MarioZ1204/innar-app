@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Socket.IO Diagnostics</title>
+  <style>
+    body { font-family: monospace; padding: 20px; background: #1e1e1e; color: #00ff00; }
+    .log { border: 1px solid #444; padding: 10px; margin: 10px 0; background: #0d0d0d; max-height: 400px; overflow-y: auto; }
+    .error { color: #ff4444; }
+    .success { color: #44ff44; }
+    .info { color: #4488ff; }
+  </style>
+</head>
+<body>
+  <h1>Socket.IO Diagnostics</h1>
+  
+  <h3>Información del servidor:</h3>
+  <div id="serverInfo"></div>
+  
+  <h3>Intentando conectar a Socket.IO...</h3>
+  <div id="log" class="log"></div>
+  
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const log = document.getElementById('log');
+    const serverInfo = document.getElementById('serverInfo');
+    
+    function addLog(msg, type = 'info') {
+      const line = document.createElement('div');
+      line.className = type;
+      line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+      log.appendChild(line);
+      log.scrollTop = log.scrollHeight;
+    }
+    
+    // Información del servidor
+    fetch('/api/version')
+      .then(r => r.json())
+      .then(data => {
+        serverInfo.innerHTML = `<div class="info">Version: ${data.version}</div>`;
+      })
+      .catch(e => {
+        serverInfo.innerHTML = `<div class="error">Error obteniendo versión: ${e.message}</div>`;
+      });
+    
+    // Diagnosticar Socket.IO
+    addLog('URL actual: ' + window.location.href);
+    addLog('Buscando Socket.IO en: /socket.io/socket.io.js');
+    
+    // Esperamos a que Socket.IO se cargue globalmente
+    setTimeout(() => {
+      if (typeof io === 'undefined') {
+        addLog('ERROR: io no definido. ¿socket.io.js no se cargó?', 'error');
+        return;
+      }
+      
+      addLog('✓ Socket.IO client script cargado', 'success');
+      addLog('Conectando con opciones: { reconnection: true, transports: [\"polling\"], path: \"/socket.io/\" }');
+      
+      const socket = io({
+        reconnection: true,
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 5000,
+        reconnectionAttempts: 5,
+        transports: ['polling'],
+        path: '/socket.io/',
+        withCredentials: true,
+        forceNew: false,
+        autoConnect: true
+      });
+      
+      socket.on('connect', () => {
+        addLog('✓ CONEXIÓN EXITOSA', 'success');
+        addLog('Socket ID: ' + socket.id, 'success');
+        addLog('Transport: ' + socket.io.engine.transport.name, 'success');
+      });
+      
+      socket.on('connect_error', (error) => {
+        addLog('ERROR de conexión: ' + (error?.message || error), 'error');
+      });
+      
+      socket.on('disconnect', (reason) => {
+        addLog('Desconectado: ' + reason, 'error');
+      });
+      
+      socket.on('sistema:version', (data) => {
+        addLog('Servidor app version: ' + data.version, 'info');
+      });
+      
+      // Intentamos conectar
+      addLog('Llamando socket.connect()...');
+      socket.connect();
+    }, 500);
+  </script>
+</body>
+</html>
