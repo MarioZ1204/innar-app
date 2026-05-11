@@ -4,6 +4,7 @@
 const socketIo = require('socket.io');
 const logger = require('../utils/logger');
 const socketEmitter = require('../utils/socket-emitter');
+const { getSocketIoPath } = require('../config/socket-io-path');
 
 /**
  * Orígenes permitidos para CORS de Socket.IO.
@@ -53,6 +54,7 @@ function buildSocketCorsConfig() {
  */
 function attachSockets({ httpServer, app, sessionMiddleware, appVersion }) {
   const io = socketIo(httpServer, {
+    path: getSocketIoPath(),
     cors: buildSocketCorsConfig(),
     // Proxy Apache típico de Hostinger: WebSocket suele fallar; polling estable.
     transports: ['polling'],
@@ -66,6 +68,8 @@ function attachSockets({ httpServer, app, sessionMiddleware, appVersion }) {
 
   app.io = io;
   socketEmitter.init(io);
+
+  logger.info('[SOCKET.IO] handshake base path: ' + getSocketIoPath(), { type: 'STARTUP' });
 
   io.engine.on('initial_headers', (_headers, req) => {
     logger.debug('[SOCKET.IO] handshake', { url: req.url, method: req.method });

@@ -57,6 +57,10 @@ function main() {
     console.warn(`[WARN] Variables recomendadas faltantes: ${missingRecommended.join(', ')}`);
   }
 
+  if (env.NODE_ENV === 'production' && !env.SOCKET_IO_PATH) {
+    console.warn('[WARN] Si Socket.IO da 404 (xhr poll error) tras login, define SOCKET_IO_PATH=/api/socket.io y reinicia la app (.env.hostinger.example).');
+  }
+
   console.log('[OK] Validacion de .env para Hostinger completada.');
 }
 

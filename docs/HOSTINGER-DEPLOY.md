@@ -37,6 +37,7 @@ Configura en el panel de Node.js (o archivo `.env` en servidor):
 - `NODE_ENV=production`
 - `FRONTEND_URL=https://innarapp.neurocienciasnarino.com`
 - `PORT` (si Hostinger lo requiere; normalmente lo inyecta)
+- `SOCKET_IO_PATH=/api/socket.io` (recomendado si `/socket.io` devuelve 404 por Apache/proxy — ver punto 5)
 
 Usa `.env.hostinger.example` como plantilla. Nunca subas secretos reales.
 
@@ -51,7 +52,14 @@ Usa `.env.hostinger.example` como plantilla. Nunca subas secretos reales.
    - `https://innarapp.neurocienciasnarino.com/api/version`
    - `https://innarapp.neurocienciasnarino.com/`
 
-## 5) Diagnostico rapido 403/503
+## 5) Socket.IO (404 en `/socket.io/` pero la app carga)
+
+- Lo ideal es que **el dominio apunte sólo** a la **Node.js App** (véase punto 2). Así todo el tráfico llega al proceso Node y Socket.IO monta bien en `/socket.io/`.
+- Si el frontal es **Apache** con proxy y sólo rutas **`/api/*`** llegan a Node con fiabilidad, define en `.env`:
+  - `SOCKET_IO_PATH=/api/socket.io`
+  (ya está incluido en `.env.hostinger.example`.) Reinicia la app Node.
+
+## 6) Diagnostico rapido 403/503
 
 ### Si ves 403 en `/`
 
@@ -65,7 +73,7 @@ Usa `.env.hostinger.example` como plantilla. Nunca subas secretos reales.
 - Revisa logs de Node.js App en Hostinger.
 - Verifica que no falten variables requeridas (`DB_*`, `SESSION_SECRET`).
 
-## 6) Checklist final
+## 7) Checklist final
 
 - [ ] `npm run deploy:check` pasa en local
 - [ ] `server.js` es el startup file

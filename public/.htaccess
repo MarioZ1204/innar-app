@@ -1,17 +1,11 @@
-# ═══════════════════════════════════════════════════════════════════════════
-# SI el DocumentRoot apunta solo a esta carpeta (public/), este .htaccess es
-# NECESARIO: sin él, /socket.io y /api NO se proxean al proceso Node → 404.
-#
-# PUERTO: debe coincidir con PORT del .env (por defecto 3000).
-# ═══════════════════════════════════════════════════════════════════════════
+# Igual que el .htaccess de la raíz, pero SPA → index.html cuando el DocumentRoot
+# es sólo esta carpeta. PORT = mismo que .env (3000 típico).
 RewriteEngine On
 
 <IfModule mod_proxy.c>
   ProxyPreserveHost On
 </IfModule>
 
-# Socket.IO Engine.IO handshake (polling/WebSocket).
-# Condición laxa (^/socket\.io) también cubre /socket.io/?EIO=…
 RewriteCond %{REQUEST_URI} ^/socket\.io [NC]
 RewriteCond %{HTTP:Upgrade} =websocket [NC]
 RewriteRule .* ws://127.0.0.1:3000%{REQUEST_URI} [P,L,QSA]
@@ -19,7 +13,6 @@ RewriteRule .* ws://127.0.0.1:3000%{REQUEST_URI} [P,L,QSA]
 RewriteCond %{REQUEST_URI} ^/socket\.io [NC]
 RewriteRule .* http://127.0.0.1:3000%{REQUEST_URI} [P,L,QSA]
 
-# API REST → mismo backend Node
 RewriteCond %{REQUEST_URI} ^/api/ [NC]
 RewriteCond %{HTTP:Upgrade} =websocket [NC]
 RewriteRule .* ws://127.0.0.1:3000%{REQUEST_URI} [P,L,QSA]
@@ -27,7 +20,6 @@ RewriteRule .* ws://127.0.0.1:3000%{REQUEST_URI} [P,L,QSA]
 RewriteCond %{REQUEST_URI} ^/api/ [NC]
 RewriteRule .* http://127.0.0.1:3000%{REQUEST_URI} [P,L,QSA]
 
-# SPA: solo rutas virtuales (# hash router no llega aquí)
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
 RewriteCond %{REQUEST_URI} !^/socket\.io [NC]

@@ -29,6 +29,7 @@ const { applyStaticFiles } = require('./config/static-files');
 const { applyRateLimiters } = require('./config/rate-limit');
 const { runRuntimeMigrations } = require('./migrations/runtime-migrations');
 const { attachSockets } = require('./socket/handlers');
+const { getSocketIoPath } = require('./config/socket-io-path');
 const { requireAuth } = require('./middleware/index');
 
 const PACKAGE_VERSION = require('./package.json').version;
@@ -96,11 +97,12 @@ app.get('/api/health', (req, res) => {
   res.status(200).json({ ok: true, version: APP_VERSION, uptime: process.uptime() });
 });
 app.get('/api/socket-status', (req, res) => {
+  const sioPath = getSocketIoPath();
   res.json({
     socketio: {
       loaded: !!require.cache[require.resolve('socket.io')],
       mounted: !!app.io,
-      path: '/socket.io/',
+      path: `${sioPath}/`,
       transports: ['polling'],
       cors_origin: process.env.FRONTEND_URL || 'http://localhost:3000'
     },
@@ -110,7 +112,8 @@ app.get('/api/socket-status', (req, res) => {
 
 // ─── WORKAROUND: Sirve el cliente Socket.IO explícitamente ────
 // Si Apache no proxía /socket.io/ correctamente, servimos desde aquí
-app.get('/socket.io/socket.io.js', (req, res, next) => {
+// Sirve el cliente Socket.IO (engine: {path}/socket.io.js).
+app.get(`${getSocketIoPath()}/socket.io.js`, (req, res, next) => {
   const socketIoJs = path.join(__dirname, 'node_modules/socket.io/client-dist/socket.io.min.js');
   if (fs.existsSync(socketIoJs)) {
     logger.debug('[SOCKET.IO] Sirviendo cliente desde: ' + socketIoJs);

@@ -4,6 +4,7 @@
 const fs = require('fs');
 const path = require('path');
 const express = require('express');
+const { getSocketIoPath } = require('./socket-io-path');
 
 function staticCacheHeaders(res, filePath) {
   if (filePath.endsWith('.html')) {
@@ -36,7 +37,14 @@ function buildIndexHandler(publicDir, appVersion) {
       .replace('src="calendario-bloqueado.js"', `src="calendario-bloqueado.js${vTag}"`)
       .replace('src="validation-client.js"', `src="validation-client.js${vTag}"`)
       .replace('src="splash.js"', `src="splash.js${vTag}"`)
-      .replace('</head>', `<script>window.APP_VERSION="${appVersion}";</script>\n</head>`);
+      .replace(
+        'src="/socket.io/socket.io.js"',
+        `src="${sioAbs}${vTag}"`
+      )
+      .replace(
+        '</head>',
+        `<script>window.APP_VERSION="${appVersion}";window.SOCKET_IO_PATH=${sioForClient};</script>\n</head>`
+      );
     res.setHeader('Content-Type', 'text/html');
     res.setHeader('Cache-Control', 'no-cache, must-revalidate');
     res.send(html);
