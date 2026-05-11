@@ -1,69 +1,41 @@
 RewriteEngine On
 
-# ============================================================================
-# IMPORTANTE: En Hostinger, el orden de las reglas es crítico.
-# 1. Proxy Socket.IO PRIMERO (websocket + polling)
-# 2. Luego /api/
-# 3. Al final, SPA fallback
-# ============================================================================
+# Hace que llegue Host: mismo dominio público → Express puede confiar proxy y rutas públicas coherentes.
+<IfModule mod_proxy.c>
+  ProxyPreserveHost On
+</IfModule>
 
-# ─────────────────────────────────────────────────────────────────────────
-# 1. PROXY DE SOCKET.IO (PRIORITARIO - DEBE SER PRIMERO)
-# ─────────────────────────────────────────────────────────────────────────
+# No tocar Cookie ni definir headers inventados ("X-Forwarded-Cookie"): rompen express-session detrás proxy.
 
-# 1a. Socket.IO client JavaScript (/socket.io/socket.io.js)
-#     IMPORTANTE: No usar [NC] aquí para ser más específico
-RewriteRule ^socket\.io/socket\.io\.(js|min\.js)$ http://localhost:3000/socket.io/socket.io.js [P,L]
+# ═══════════════════════════════════════════════════════════════════════════
+# Socket.IO (Engine.IO handshake + opcional upgrade WebSocket)
+# Si Node escucha en otro puerto, cambie 3000.
+# ═══════════════════════════════════════════════════════════════════════════
 
-# 1b. Socket.IO con WebSocket upgrade (si el cliente lo soporta)
-RewriteCond %{REQUEST_URI} ^/socket.io/ [NC]
+RewriteCond %{REQUEST_URI} ^/socket\.io/
 RewriteCond %{HTTP:Upgrade} =websocket [NC]
-RewriteCond %{HTTP:Connection} Upgrade [NC]
-RewriteRule ^socket.io/(.*)$ ws://localhost:3000/socket.io/$1 [P,L]
+RewriteRule ^(.*)$ ws://127.0.0.1:3000%{REQUEST_URI} [P,L,QSA]
 
-# 1c. Socket.IO con polling HTTP (fallback)
-RewriteCond %{REQUEST_URI} ^/socket.io/ [NC]
-RewriteRule ^socket.io/(.*)$ http://localhost:3000/socket.io/$1 [P,L]
+RewriteCond %{REQUEST_URI} ^/socket\.io/
+RewriteRule ^(.*)$ http://127.0.0.1:3000%{REQUEST_URI} [P,L,QSA]
 
-# ─────────────────────────────────────────────────────────────────────────
-# 2. PROXY DE /API/
-# ─────────────────────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════
+# REST /api
+# ═══════════════════════════════════════════════════════════════════════════
 
-# 2a. /api/ con WebSocket upgrade (si aplica)
-RewriteCond %{REQUEST_URI} ^/api/ [NC]
+RewriteCond %{REQUEST_URI} ^/api/
 RewriteCond %{HTTP:Upgrade} =websocket [NC]
-RewriteCond %{HTTP:Connection} Upgrade [NC]
-RewriteRule ^api/(.*)$ ws://localhost:3000/api/$1 [P,L]
+RewriteRule ^(.*)$ ws://127.0.0.1:3000%{REQUEST_URI} [P,L,QSA]
 
-# 2b. /api/ con HTTP normal
-RewriteCond %{REQUEST_URI} ^/api/ [NC]
-RewriteRule ^api/(.*)$ http://localhost:3000/api/$1 [P,L]
+RewriteCond %{REQUEST_URI} ^/api/
+RewriteRule ^(.*)$ http://127.0.0.1:3000%{REQUEST_URI} [P,L,QSA]
 
-# ─────────────────────────────────────────────────────────────────────────
-# 3. FALLBACK A SPA (archivos estáticos y rutas dinámicas)
-# ─────────────────────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════
+# SPA: páginas no estáticas
+# ═══════════════════════════════════════════════════════════════════════════
 
-# No reescribir si el archivo o directorio existe EN PUBLIC/
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
-# Excepto si empieza con /socket.io/ o /api/ (ya manejados arriba)
 RewriteCond %{REQUEST_URI} !^/socket\.io/ [NC]
 RewriteCond %{REQUEST_URI} !^/api/ [NC]
 RewriteRule ^ public/index.html [QSA,L]
-
-# ─────────────────────────────────────────────────────────────────────────
-# HEADERS PARA PROXIES Y CACHE
-# ─────────────────────────────────────────────────────────────────────────
-
-<IfModule mod_headers.c>
-  # Asegurar que los proxies pasen los headers necesarios PARA SOCKET.IO
-  RequestHeader set X-Forwarded-Proto "https"
-  RequestHeader set X-Forwarded-Host "%{SERVER_NAME}s"
-  RequestHeader set X-Forwarded-For "%{REMOTE_ADDR}s"
-  
-  # CRÍTICO: Pasar cookies de sesión a través del proxy
-  RequestHeader set X-Forwarded-Cookie "on"
-  
-  # Preservar la Cookie header original
-  RequestHeader edit Cookie "^(.*)$" "$1"
-</IfModule>

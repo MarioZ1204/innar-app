@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
+  <meta charset="utf-8">
   <title>Socket.IO Diagnostics</title>
   <style>
     body { font-family: monospace; padding: 20px; background: #1e1e1e; color: #00ff00; }
@@ -15,8 +16,9 @@
   
   <h3>Información del servidor:</h3>
   <div id="serverInfo"></div>
-  
-  <h3>Intentando conectar a Socket.IO...</h3>
+  <div class="info" style="margin:12px 0;padding:8px;background:#322;border:1px solid #664">
+      <strong>Importante:</strong> en producci&oacute;n Socket.IO solo acepta conexiones si hay sesi&oacute;n (has iniciado sesi&oacute;n en esta misma pesta&ntilde;a). Sin login ver&aacute;s <code>xhr poll error</code>.
+    </div>
   <div id="log" class="log"></div>
   
   <script src="/socket.io/socket.io.js"></script>
@@ -42,10 +44,20 @@
         serverInfo.innerHTML = `<div class="error">Error obteniendo versión: ${e.message}</div>`;
       });
     
-    // Diagnosticar Socket.IO
-    addLog('URL actual: ' + window.location.href);
-    addLog('Buscando Socket.IO en: /socket.io/socket.io.js');
-    
+    fetch('/api/sesion', { credentials: 'include' })
+      .then(r => r.json())
+      .then(s => {
+        if (!s.autenticado) {
+          addLog('Estado sesión: NO autenticado. Primero entra desde / e inicia sesión; luego vuelve a esta página.', 'error');
+          return;
+        }
+        addLog('Estado sesión: autenticado como ' + (s.usuario && s.usuario.usuario ? s.usuario.usuario : 'ok'), 'success');
+
+        connectSocketProbe();
+      })
+      .catch(e => addLog('/api/sesion error: ' + e.message, 'error'));
+
+    function connectSocketProbe() {
     // Esperamos a que Socket.IO se cargue globalmente
     setTimeout(() => {
       if (typeof io === 'undefined') {
@@ -61,7 +73,9 @@
         reconnectionDelay: 1000,
         reconnectionDelayMax: 5000,
         reconnectionAttempts: 5,
+        upgrades: [],
         transports: ['polling'],
+        upgrade: false,
         path: '/socket.io/',
         withCredentials: true,
         forceNew: false,
@@ -90,6 +104,7 @@
       addLog('Llamando socket.connect()...');
       socket.connect();
     }, 500);
+    }
   </script>
 </body>
 </html>
