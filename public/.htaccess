@@ -1,10 +1,12 @@
 RewriteEngine On
 
-# ═══════════════════════════════════════════════════════════════════════════
-# PROXY → Node.js — Document Root = carpeta public/
-# Sustituye 3000 por el PUERTO de Node (panel / PORT en .env del servidor).
-# Requiere mod_proxy, mod_proxy_http, mod_proxy_wstunnel.
-# ═══════════════════════════════════════════════════════════════════════════
+# Mismo proxy que raíz cuando el DocumentRoot es sólo carpeta public/.
+# Cambie 3000 por el PORT de la app Node en el servidor.
+
+RewriteCond %{HTTPS} off
+RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+Options -Indexes
 
 <IfModule mod_proxy.c>
   ProxyRequests Off
@@ -15,30 +17,24 @@ RewriteEngine On
   SSLProxyEngine On
 </IfModule>
 
-# ─── Socket.IO /socket.io ───
-RewriteCond %{REQUEST_URI} ^/socket\.io/
+# 1. Socket.IO primero (WS después HTTP dentro de esta ruta)
+RewriteCond %{REQUEST_URI} ^/socket\.io/ [NC]
 RewriteCond %{HTTP:Upgrade} websocket [NC]
 RewriteCond %{HTTP:Connection} upgrade [NC]
 RewriteRule ^(.*)$ ws://127.0.0.1:3000%{REQUEST_URI} [P,L,QSA]
 
-RewriteCond %{REQUEST_URI} ^/socket\.io/
+RewriteCond %{REQUEST_URI} ^/socket\.io/ [NC]
 RewriteCond %{HTTP:Upgrade} websocket [NC]
 RewriteRule ^(.*)$ ws://127.0.0.1:3000%{REQUEST_URI} [P,L,QSA]
 
-RewriteCond %{REQUEST_URI} ^/socket\.io/
+RewriteCond %{REQUEST_URI} ^/socket\.io/ [NC]
 RewriteRule ^(.*)$ http://127.0.0.1:3000%{REQUEST_URI} [P,L,QSA]
 
-# ─── /api ───
-RewriteCond %{REQUEST_URI} ^/api/
-RewriteCond %{HTTP:Upgrade} =websocket [NC]
-RewriteRule ^(.*)$ ws://127.0.0.1:3000%{REQUEST_URI} [P,L,QSA]
-
-RewriteCond %{REQUEST_URI} ^/api/
+# 2. /api/
+RewriteCond %{REQUEST_URI} ^/api/ [NC]
 RewriteRule ^(.*)$ http://127.0.0.1:3000%{REQUEST_URI} [P,L,QSA]
 
-# ─── SPA: si no existe fichero físico bajo public/ ───
+# 3. Resto → Node cuando no existe fichero bajo public/
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
-RewriteCond %{REQUEST_URI} !^/socket\.io/ [NC]
-RewriteCond %{REQUEST_URI} !^/api/ [NC]
-RewriteRule ^ index.html [QSA,L]
+RewriteRule ^(.*)$ http://127.0.0.1:3000%{REQUEST_URI} [P,L,QSA]

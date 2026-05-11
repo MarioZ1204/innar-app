@@ -62,18 +62,18 @@ En Hostinger: **Advanced → Node.js** (tu app): anota el **puerto** que usa el 
 
 ### Paso B — Apache / LiteSpeed (`.htaccess`)
 
-En el repositorio hay dos plantillas; usa la que coincida con tu **Document Root**:
+El bloque **«resto que no es fichero físico → proxy a Node»** hace que **`/` y rutas SPA las sirva Express**. Si dejas un `index.html` físico en `public_html`, Apache lo servirá y **no** pasará por Node (y el HTML inyectado puede quedar desfasado).
 
 | Dónde apunta el dominio | Qué copiar / mantener |
 |-------------------------|------------------------|
-| Raíz del proyecto (donde está `server.js` y carpeta `public/`) | `.htaccess` de la **raíz** (regla SPA apunta a `public/index.html`). |
-| Solo la carpeta **`public/`** | `public/.htaccess` (regla SPA apunta a `index.html`). |
+| Raíz del proyecto (donde está `server.js` y carpeta `public/`) | `.htaccess` de la **raíz** (`Options`, seguridad comprimidos de referencia **app-innar** + proxy). |
+| Solo la carpeta **`public/`** | `public/.htaccess` (mismas reglas de proxy, adaptadas). |
 
-Qué deben hacer esas reglas (ya están en los ficheros):
+Las reglas hacen (orden relevante):
 
-1. **`/socket.io/`** con cabecera **WebSocket** → `ws://127.0.0.1:<PUERTO>...` (`[P,L]`).
-2. El resto de **`/socket.io/`** (handshake HTTP, long-polling si el cliente lo usa) → `http://127.0.0.1:<PUERTO>...` (`[P,L]`).
-3. **`/api/`** → mismo `http://127.0.0.1:<PUERTO>...`.
+1. **`/socket.io/`**: primero tentativas **WebSocket** (`ws://`), luego **`http://`** (polling / handshake HTTP), siempre **`%{REQUEST_URI}[QSA]`**.
+2. **`/api/`** → **HTTP** proxy al mismo puerto Node.
+3. **Rutas que no son archivo ni carpeta física** → proxy a Node (SPA y `/` desde Express).
 
 En **hosting compartido**, la aplicación cliente y servidor usan **`polling` primero** y **WebSocket después** cuando el proxy lo permite (`transports`: polling + websocket): el handshake por **HTTP** atraviesa el `proxy_pass` / `[P]` con más fiabilidad que un upgrade WS aislado.
 
