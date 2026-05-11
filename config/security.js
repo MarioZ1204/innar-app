@@ -73,6 +73,8 @@ function csrfProtection(req, res, next) {
   if (p === '/api/login') return next();
   if (p === '/api/logout') return next();
   if (p === '/api/sesion' && method === 'GET') return next();
+  // CSP report-only envía POST sin token CSRF; no debe bloquearse.
+  if (p === '/api/csp-report') return next();
   if (!p.startsWith('/api/')) return next();
   if (!mutating) return next();
   if (!req.session?.usuarioId) return next();

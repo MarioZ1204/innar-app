@@ -15,6 +15,11 @@ RewriteRule ^api/(.*)$ http://localhost:3000/api/$1 [P,L]
 RewriteCond %{REQUEST_URI} ^/socket.io/
 RewriteRule ^socket.io/(.*)$ http://localhost:3000/socket.io/$1 [P,L]
 
+# Soporte explícito para upgrade websocket en Socket.IO (Hostinger/Apache).
+RewriteCond %{REQUEST_URI} ^/socket.io/ [NC]
+RewriteCond %{HTTP:Upgrade} =websocket [NC]
+RewriteRule ^socket.io/(.*)$ ws://localhost:3000/socket.io/$1 [P,L]
+
 # Todo lo demás (rutas SPA) va a public/index.html
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
