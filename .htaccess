@@ -11,13 +11,17 @@ RewriteEngine On
 # 1. PROXY DE SOCKET.IO (PRIORITARIO - DEBE SER PRIMERO)
 # ─────────────────────────────────────────────────────────────────────────
 
-# 1a. Socket.IO con WebSocket upgrade (si el cliente lo soporta)
+# 1a. Socket.IO client JavaScript (/socket.io/socket.io.js)
+#     IMPORTANTE: No usar [NC] aquí para ser más específico
+RewriteRule ^socket\.io/socket\.io\.(js|min\.js)$ http://localhost:3000/socket.io/socket.io.js [P,L]
+
+# 1b. Socket.IO con WebSocket upgrade (si el cliente lo soporta)
 RewriteCond %{REQUEST_URI} ^/socket.io/ [NC]
 RewriteCond %{HTTP:Upgrade} =websocket [NC]
 RewriteCond %{HTTP:Connection} Upgrade [NC]
 RewriteRule ^socket.io/(.*)$ ws://localhost:3000/socket.io/$1 [P,L]
 
-# 1b. Socket.IO con polling HTTP (fallback)
+# 1c. Socket.IO con polling HTTP (fallback)
 RewriteCond %{REQUEST_URI} ^/socket.io/ [NC]
 RewriteRule ^socket.io/(.*)$ http://localhost:3000/socket.io/$1 [P,L]
 
@@ -39,9 +43,12 @@ RewriteRule ^api/(.*)$ http://localhost:3000/api/$1 [P,L]
 # 3. FALLBACK A SPA (archivos estáticos y rutas dinámicas)
 # ─────────────────────────────────────────────────────────────────────────
 
-# No reescribir si el archivo o directorio existe
+# No reescribir si el archivo o directorio existe EN PUBLIC/
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
+# Excepto si empieza con /socket.io/ o /api/ (ya manejados arriba)
+RewriteCond %{REQUEST_URI} !^/socket\.io/ [NC]
+RewriteCond %{REQUEST_URI} !^/api/ [NC]
 RewriteRule ^ public/index.html [QSA,L]
 
 # ─────────────────────────────────────────────────────────────────────────

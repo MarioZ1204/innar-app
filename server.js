@@ -108,6 +108,21 @@ app.get('/api/socket-status', (req, res) => {
   });
 });
 
+// ─── WORKAROUND: Sirve el cliente Socket.IO explícitamente ────
+// Si Apache no proxía /socket.io/ correctamente, servimos desde aquí
+app.get('/socket.io/socket.io.js', (req, res, next) => {
+  const socketIoJs = path.join(__dirname, 'node_modules/socket.io/client-dist/socket.io.min.js');
+  if (fs.existsSync(socketIoJs)) {
+    logger.debug('[SOCKET.IO] Sirviendo cliente desde: ' + socketIoJs);
+    res.type('application/javascript');
+    res.sendFile(socketIoJs);
+  } else {
+    logger.warn('[SOCKET.IO] No encontrado: ' + socketIoJs);
+    res.status(404).send('socket.io.js not found');
+  }
+});
+
+
 // Healthcheck profundo: BD, disco de backups, logs. Requiere auth.
 app.get('/api/health/deep', requireAuth, async (req, res) => {
   const start = Date.now();
