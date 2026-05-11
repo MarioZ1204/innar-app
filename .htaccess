@@ -7,6 +7,14 @@ RewriteEngine On
 # en localhost. Node nunca expone su puerto al exterior.
 # ----------------------------------------------------------------------
 
+# Proxy explícito de Socket.IO sobre /api/ (polling + websocket)
+RewriteCond %{REQUEST_URI} ^/api/socket.io/ [NC]
+RewriteCond %{HTTP:Upgrade} =websocket [NC]
+RewriteRule ^api/socket.io/(.*)$ ws://localhost:3000/api/socket.io/$1 [P,L]
+
+RewriteCond %{REQUEST_URI} ^/api/socket.io/ [NC]
+RewriteRule ^api/socket.io/(.*)$ http://localhost:3000/api/socket.io/$1 [P,L]
+
 # Proxy de /api/ hacia Node.js
 RewriteCond %{REQUEST_URI} ^/api/
 RewriteRule ^api/(.*)$ http://localhost:3000/api/$1 [P,L]
