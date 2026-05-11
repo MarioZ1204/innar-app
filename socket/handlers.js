@@ -54,12 +54,11 @@ function buildSocketCorsConfig() {
 function attachSockets({ httpServer, app, sessionMiddleware, appVersion }) {
   const io = socketIo(httpServer, {
     cors: buildSocketCorsConfig(),
-    // Hosting compartido (Apache/Nginx típico): el long‑polling llega sólo como HTTP estándar…
-    // al puerto Node; el upgrade WebSocket a veces falla. Probamos polling primero y mejoramos después.
-    transports: ['polling', 'websocket'],
-    allowUpgrades: true,
-    pingInterval: 30000,
-    pingTimeout: 60000,
+    // Hosting compartido / Passenger / proxy: sólo polling HTTP (sin upgrade WS).
+    transports: ['polling'],
+    allowUpgrades: false,
+    pingInterval: 25000,
+    pingTimeout: 20000,
     maxHttpBufferSize: 1e6,
     serveClient: true,
     perMessageDeflate: { threshold: 32 * 1024 }

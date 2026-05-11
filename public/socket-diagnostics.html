@@ -66,15 +66,15 @@
       }
       
       addLog('✓ Socket.IO client script cargado', 'success');
-      addLog('Conectando con opciones: polling + websocket (Hosting compartido)', 'info');
+      addLog('Conectando: sólo long-polling (sin upgrade WS; Passenger/hosting)', 'info');
       
       const socket = io({
         reconnection: true,
         reconnectionDelay: 1000,
         reconnectionDelayMax: 5000,
         reconnectionAttempts: 5,
-        transports: ['polling', 'websocket'],
-        upgrade: true,
+        transports: ['polling'],
+        upgrade: false,
         path: '/socket.io/',
         withCredentials: true,
         forceNew: false,
