@@ -37,7 +37,7 @@ Configura en el panel de Node.js (o archivo `.env` en servidor):
 - `NODE_ENV=production`
 - `FRONTEND_URL=https://innarapp.neurocienciasnarino.com`
 - `PORT` (si Hostinger lo requiere; normalmente lo inyecta)
-- Opcional `SOCKET_IO_PATH=/socket.io` sólo si el dominio llega íntegro a Node (sin Apache delante); si no defines nada en producción, la app usa por defecto `/api/socket.io` (ver punto 5)
+- Socket.IO queda montado en la ruta estándar **`/socket.io/`**. El proxy debe reenviar esa ruta al proceso Node (ver punto 5).
 
 Usa `.env.hostinger.example` como plantilla. Nunca subas secretos reales.
 
@@ -54,9 +54,8 @@ Usa `.env.hostinger.example` como plantilla. Nunca subas secretos reales.
 
 ## 5) Socket.IO (404 en `/socket.io/` pero la app carga)
 
-- Lo ideal es que **el dominio apunte sólo** a la **Node.js App** (véase punto 2).
-- Con **Apache delante**, muchos planes **proxean sólo bien `/api/`**, no `/socket.io/`. Sin `SOCKET_IO_PATH`, esta app monta Socket.IO en **`/api/socket.io`** (incluso si el panel **no define** `NODE_ENV=production`, que antes hacía caer todo en `/socket.io` → 404).
-- Si tu entorno llega bien a **`/socket.io/`** detrás del proxy, fuerza **`SOCKET_IO_PATH=/socket.io`** en `.env` y reinicia la Node App.
+- Si Apache **no proxea `/socket.io/`** al proceso Node (`PORT`), el navegador ve **404** en el handshake. Revisa `.htaccess` en la raíz del sitio (`RewriteRule` hacia `http://127.0.0.1:<PORT>/socket.io/...`).
+- Lo ideal es que **el mismo VirtualHost** enrute `/`, `/api/*` **y** `/socket.io/*` hacia Node, o usar la Node.js App como origen único si el hosting lo permite.
 
 ## 6) Diagnostico rapido 403/503
 

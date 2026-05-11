@@ -1,31 +1,41 @@
 RewriteEngine On
 
+# Hace que llegue Host: mismo dominio público → Express puede confiar proxy y rutas públicas coherentes.
 <IfModule mod_proxy.c>
   ProxyPreserveHost On
 </IfModule>
 
-# ── Backend Node (mismo valor que PORT en .env — por defecto 3000).
-# ── SOCKET_IO_PATH=/api/socket.io en producción suele funcionar mejor que la
-#     ruta estándar /socket.io si el proxy del hosting ya atraviesa /api/.
-# ── Cuando todo el dominio lo atiende sólo Node (opción Hosting > Node.js App),
-#     este archivo no interviene; no hace falta proxy.
+# No tocar Cookie ni definir headers inventados ("X-Forwarded-Cookie"): rompen express-session detrás proxy.
 
-RewriteCond %{REQUEST_URI} ^/socket\.io [NC]
+# ═══════════════════════════════════════════════════════════════════════════
+# Socket.IO (Engine.IO handshake + opcional upgrade WebSocket)
+# Si Node escucha en otro puerto, cambie 3000.
+# ═══════════════════════════════════════════════════════════════════════════
+
+RewriteCond %{REQUEST_URI} ^/socket\.io/
 RewriteCond %{HTTP:Upgrade} =websocket [NC]
-RewriteRule .* ws://127.0.0.1:3000%{REQUEST_URI} [P,L,QSA]
+RewriteRule ^(.*)$ ws://127.0.0.1:3000%{REQUEST_URI} [P,L,QSA]
 
-RewriteCond %{REQUEST_URI} ^/socket\.io [NC]
-RewriteRule .* http://127.0.0.1:3000%{REQUEST_URI} [P,L,QSA]
+RewriteCond %{REQUEST_URI} ^/socket\.io/
+RewriteRule ^(.*)$ http://127.0.0.1:3000%{REQUEST_URI} [P,L,QSA]
 
-RewriteCond %{REQUEST_URI} ^/api/ [NC]
+# ═══════════════════════════════════════════════════════════════════════════
+# REST /api
+# ═══════════════════════════════════════════════════════════════════════════
+
+RewriteCond %{REQUEST_URI} ^/api/
 RewriteCond %{HTTP:Upgrade} =websocket [NC]
-RewriteRule .* ws://127.0.0.1:3000%{REQUEST_URI} [P,L,QSA]
+RewriteRule ^(.*)$ ws://127.0.0.1:3000%{REQUEST_URI} [P,L,QSA]
 
-RewriteCond %{REQUEST_URI} ^/api/ [NC]
-RewriteRule .* http://127.0.0.1:3000%{REQUEST_URI} [P,L,QSA]
+RewriteCond %{REQUEST_URI} ^/api/
+RewriteRule ^(.*)$ http://127.0.0.1:3000%{REQUEST_URI} [P,L,QSA]
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SPA: páginas no estáticas
+# ═══════════════════════════════════════════════════════════════════════════
 
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
-RewriteCond %{REQUEST_URI} !^/socket\.io [NC]
+RewriteCond %{REQUEST_URI} !^/socket\.io/ [NC]
 RewriteCond %{REQUEST_URI} !^/api/ [NC]
 RewriteRule ^ public/index.html [QSA,L]

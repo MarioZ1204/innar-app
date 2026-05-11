@@ -60,7 +60,9 @@ function validateMagicBytes(req, res, next) {
 
     const matches = detectByMagic(buf.subarray(0, bytesRead), ext);
     if (!matches) {
-      fs.unlink(filePath, () => {});
+      try {
+        fs.unlinkSync(filePath);
+      } catch (_) {}
       req.file = null;
       return res.status(400).json({
         error: 'El contenido del archivo no coincide con su extensión'
@@ -68,7 +70,9 @@ function validateMagicBytes(req, res, next) {
     }
     return next();
   } catch (e) {
-    fs.unlink(filePath, () => {});
+    try {
+      fs.unlinkSync(filePath);
+    } catch (_) {}
     req.file = null;
     return res.status(500).json({ error: 'No se pudo validar el archivo subido' });
   }

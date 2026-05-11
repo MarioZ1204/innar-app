@@ -28,7 +28,6 @@ function buildIndexHandler(publicDir, appVersion) {
       .replace('href="style.css"', `href="style.css${vTag}"`)
       .replace('href="style.css"', `href="style.css${vTag}"`)
       .replace('src="multiselect.js"', `src="multiselect.js${vTag}"`)
-      .replace('src="socket-path-bootstrap.js"', `src="socket-path-bootstrap.js${vTag}"`)
       .replace('src="socket-client.js"', `src="socket-client.js${vTag}"`)
       .replace('src="socket-electro.js"', `src="socket-electro.js${vTag}"`)
       .replace('src="dashboard-citas.js"', `src="dashboard-citas.js${vTag}"`)
@@ -37,10 +36,7 @@ function buildIndexHandler(publicDir, appVersion) {
       .replace('src="calendario-bloqueado.js"', `src="calendario-bloqueado.js${vTag}"`)
       .replace('src="validation-client.js"', `src="validation-client.js${vTag}"`)
       .replace('src="splash.js"', `src="splash.js${vTag}"`)
-      .replace(
-        '</head>',
-        `<script>window.APP_VERSION="${appVersion}";</script>\n</head>`
-      );
+      .replace('</head>', `<script>window.APP_VERSION="${appVersion}";</script>\n</head>`);
     res.setHeader('Content-Type', 'text/html');
     res.setHeader('Cache-Control', 'no-cache, must-revalidate');
     res.send(html);
