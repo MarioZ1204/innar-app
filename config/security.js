@@ -41,7 +41,12 @@ function applyHelmet(app) {
         scriptSrc,
         scriptSrcAttr,
         connectSrc: ["'self'"],
-        ...(process.env.NODE_ENV === 'production' && !cspReportOnly ? { upgradeInsecureRequests: [] } : {}),
+        // Helmet (useDefaults) incluye upgrade-insecure-requests por defecto. En CSP *report-only*
+        // los navegadores lo ignoran y registran este aviso en consola → lo desactivamos explícitamente.
+        ...(cspReportOnly ? { upgradeInsecureRequests: null }
+          : process.env.NODE_ENV === 'production'
+            ? { upgradeInsecureRequests: [] }
+            : {}),
         reportUri: ['/api/csp-report']
       }
     } : false

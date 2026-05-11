@@ -1,19 +1,33 @@
 // Cola en memoria de eventos tiempo-real por usuario autenticado (HTTP long-polling).
+// NOTA PASAJERO / CLUSTER: cada proceso Node tiene su propio Map. Si Passenger (u otro)
+// balanceador levanta varios workers, un POST puede ir al proceso A y el GET poll del
+// otro navegador al proceso B → no habrá tiempo real hasta usar 1 proceso o Redis/BD.
 const MAX_EVENTS_PER_USER = 200;
 /** Usuarios considerados suscritos tras un GET /api/eventos/poll reciente */
 const SUBSCRIBER_TTL_MS = 3 * 60 * 1000;
 
-/** @type {Map<number, { event: string, data?: unknown }[]>} */
+/**
+ * Unifica número vs string (express-mysql-session / mysql2 pueden devolver `id` como string).
+ * Todas las claves del Map usan el mismo formato para una misma persona.
+ */
+function canonicalUsuarioId(raw) {
+  if (raw == null || raw === '') return null;
+  const n = typeof raw === 'number' ? raw : parseInt(String(raw), 10);
+  if (!Number.isFinite(n) || n < 1) return null;
+  return String(Math.trunc(n));
+}
+
+/** @type {Map<string, { event: string, data?: unknown }[]>} */
 const queues = new Map();
-/** @type {Map<number, number>} usuarioId → timestamp último poll */
+/** @type {Map<string, number>} usuarioId canónico → timestamp último poll */
 const lastPollAt = new Map();
 
 function prune() {
   const now = Date.now();
-  for (const [usuarioId, t] of lastPollAt) {
+  for (const [usuarioKey, t] of lastPollAt) {
     if (now - t > SUBSCRIBER_TTL_MS) {
-      lastPollAt.delete(usuarioId);
-      queues.delete(usuarioId);
+      lastPollAt.delete(usuarioKey);
+      queues.delete(usuarioKey);
     }
   }
 }
@@ -21,24 +35,25 @@ function prune() {
 function activeSubscriberIds() {
   prune();
   const now = Date.now();
-  /** @type {number[]} */
+  /** @type {string[]} */
   const ids = [];
-  for (const [usuarioId, t] of lastPollAt) {
-    if (now - t <= SUBSCRIBER_TTL_MS) ids.push(usuarioId);
+  for (const [usuarioKey, t] of lastPollAt) {
+    if (now - t <= SUBSCRIBER_TTL_MS) ids.push(usuarioKey);
   }
   return ids;
 }
 
 function touchSubscriber(usuarioId) {
-  if (!usuarioId) return;
-  lastPollAt.set(usuarioId, Date.now());
+  const key = canonicalUsuarioId(usuarioId);
+  if (!key) return;
+  lastPollAt.set(key, Date.now());
 }
 
-function enqueue(usuarioId, event, data) {
-  let q = queues.get(usuarioId);
+function enqueue(usuarioKey, event, data) {
+  let q = queues.get(usuarioKey);
   if (!q) {
     q = [];
-    queues.set(usuarioId, q);
+    queues.set(usuarioKey, q);
   }
   q.push(data === undefined ? { event } : { event, data });
   while (q.length > MAX_EVENTS_PER_USER) q.shift();
@@ -49,8 +64,8 @@ function enqueue(usuarioId, event, data) {
  */
 function broadcast(event, data) {
   const ids = activeSubscriberIds();
-  for (const usuarioId of ids) {
-    enqueue(usuarioId, event, data);
+  for (const usuarioKey of ids) {
+    enqueue(usuarioKey, event, data);
   }
 }
 
@@ -58,10 +73,11 @@ function broadcast(event, data) {
  * Broadcast a todos menos `excludeUsuarioId` (equiv. socket.broadcast desde un cliente).
  */
 function broadcastExcept(excludeUsuarioId, event, data) {
+  const ex = canonicalUsuarioId(excludeUsuarioId);
   const ids = activeSubscriberIds();
-  for (const usuarioId of ids) {
-    if (usuarioId === excludeUsuarioId) continue;
-    enqueue(usuarioId, event, data);
+  for (const usuarioKey of ids) {
+    if (usuarioKey === ex) continue;
+    enqueue(usuarioKey, event, data);
   }
 }
 
@@ -69,15 +85,25 @@ function broadcastExcept(excludeUsuarioId, event, data) {
  * Devuelve y vacía la cola pendiente para un usuario.
  */
 function flushUser(usuarioId) {
+  const key = canonicalUsuarioId(usuarioId);
+  if (!key) return [];
   touchSubscriber(usuarioId);
-  const prev = queues.get(usuarioId) || [];
-  queues.set(usuarioId, []);
+  const prev = queues.get(key) || [];
+  queues.set(key, []);
   return prev;
 }
 
+/** Solo para pruebas: limpia el singleton en memoria. */
+function resetQueuesForTests() {
+  queues.clear();
+  lastPollAt.clear();
+}
+
 module.exports = {
+  canonicalUsuarioId,
   touchSubscriber,
   flushUser,
   broadcast,
-  broadcastExcept
+  broadcastExcept,
+  resetQueuesForTests
 };
