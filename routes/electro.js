@@ -646,10 +646,8 @@ router.post('/citas-electro', requireAuth, requireRoleOrPerm(['superadmin', 'adm
       return { insertId: insertResult[0].insertId, overlapCount, maxCupos, finalHoraFin, finalFechaFin };
     });
 
-    if (req.app.io) {
-      emitSocket('electro:cita-creada', { id: result.insertId, paciente_id, fecha, hora_agendamiento: horaAgendamiento, hora_fin: result.finalHoraFin, estudio, estado: estado || 'Programado', telefono: telefono || null });
-      emitSocket('electro:actualizar-lista', { type: 'creada', id: result.insertId });
-    }
+    emitSocket('electro:cita-creada', { id: result.insertId, paciente_id, fecha, hora_agendamiento: horaAgendamiento, hora_fin: result.finalHoraFin, estudio, estado: estado || 'Programado', telefono: telefono || null });
+    emitSocket('electro:actualizar-lista', { type: 'creada', id: result.insertId });
     res.json({ ok: true, id: result.insertId, capacity_info: { active_studies: result.overlapCount, max: result.maxCupos, available: Math.max(0, result.maxCupos - result.overlapCount - 1) } });
   } catch (e) {
     if (e.message.includes('Sin capacidad')) {
@@ -700,10 +698,8 @@ router.patch('/citas-electro/:id/estado', requireAuth, requireRoleOrPerm(['super
 
     await db.execute('UPDATE citas_electro SET estado = ?, editado_por_nombre = ?, editado_en = NOW() WHERE id = ?', [estado, editadoPor, id]);
 
-    if (req.app.io) {
-      emitSocket('electro:cita-actualizada', { id, estado, editado_por: editadoPor });
-      emitSocket('electro:actualizar-lista', { type: 'estado', id, cambios: { estado } });
-    }
+    emitSocket('electro:cita-actualizada', { id, estado, editado_por: editadoPor });
+    emitSocket('electro:actualizar-lista', { type: 'estado', id, cambios: { estado } });
     res.json({ ok: true });
   } catch (e) {
     logger.error(e.message, { error: e });
@@ -828,11 +824,8 @@ router.patch('/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin',
     // Nota: la migración del ENUM `estado` debe aplicarse desde migrations/db-migrations.js
     // (idx: estado_enum_electro). NO se ejecuta ALTER TABLE en caliente desde una petición.
 
-    if (req.app.io) {
-      emitSocket('electro:cita-actualizada', { id, ...cambios, editado_por: editorNombre });
-      emitSocket('electro:actualizar-lista', { type: 'actualizada', id, cambios });
-    }
-
+    emitSocket('electro:cita-actualizada', { id, ...cambios, editado_por: editorNombre });
+    emitSocket('electro:actualizar-lista', { type: 'actualizada', id, cambios });
     if (estado !== undefined) {
       const ver2 = await db.query('SELECT estado FROM citas_electro WHERE id = ?', [id]);
       const estadoGuardado2 = ver2.length ? ver2[0].estado : null;
@@ -860,10 +853,8 @@ router.delete('/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin'
     }
     const eliminadoPor = req.session.usuarioNombre || req.session.usuario || 'Admin';
     await db.execute("UPDATE citas_electro SET deleted_at = NOW(), editado_por_nombre = ? WHERE id = ?", [eliminadoPor, id]);
-    if (req.app.io) {
-      emitSocket('electro:cita-eliminada', { id, cita_info: cita });
-      emitSocket('electro:actualizar-lista', { type: 'eliminada', id });
-    }
+    emitSocket('electro:cita-eliminada', { id, cita_info: cita });
+    emitSocket('electro:actualizar-lista', { type: 'eliminada', id });
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: safeError(e) });

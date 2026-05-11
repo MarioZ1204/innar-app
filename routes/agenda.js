@@ -144,7 +144,7 @@ router.post('/doctor-agenda/guardar-dia', requireAuth, async (req, res) => {
       }
     });
 
-    if (req.app.io) emitSocket('agenda:disponibilidad-actualizada', { doctor_id: doctorId });
+    emitSocket('agenda:disponibilidad-actualizada', { doctor_id: doctorId });
     res.json({ ok: true });
   } catch (e) {
     logger.error('[AGENDA] Error guardando slots del día:', e.message);
@@ -261,9 +261,7 @@ async function handleProcesarExcelDisponibilidad(req, res) {
       logger.warn('[DISPONIBILIDAD] Error guardando metadatos del archivo', { error: dbErr.message });
     }
 
-    if (req.app.io) {
-      emitSocket('agenda:disponibilidad-actualizada', { doctor_id: doctorId });
-    }
+    emitSocket('agenda:disponibilidad-actualizada', { doctor_id: doctorId });
 
     res.json({
       ok: true,
@@ -343,7 +341,7 @@ router.post('/doctor-disponibilidad/guardar-dia', requireAuth, async (req, res) 
     );
 
     logger.info(`[DISPONIBILIDAD] Día guardado: doctor=${doctorId}, fecha=${fecha}, disponible=${disponible ? 1 : 0}, motivo=${motivoLimpio || 'ninguno'}`, { type: 'API' });
-    if (req.app.io) emitSocket('agenda:disponibilidad-actualizada', { doctor_id: doctorId });
+    emitSocket('agenda:disponibilidad-actualizada', { doctor_id: doctorId });
     res.json({ ok: true });
   } catch (e) {
     logger.error('[DISPONIBILIDAD] Error guardando día:', e.message);
@@ -368,7 +366,7 @@ router.post('/doctor-disponibilidad/eliminar-dia', requireAuth, async (req, res)
       await conn.execute('DELETE FROM doctor_agenda WHERE doctor_id = ? AND fecha = ?', [doctorId, fecha]);
     });
 
-    if (req.app.io) emitSocket('agenda:disponibilidad-actualizada', { doctor_id: doctorId });
+    emitSocket('agenda:disponibilidad-actualizada', { doctor_id: doctorId });
     res.json({ ok: true });
   } catch (e) {
     logger.error('[DISPONIBILIDAD] Error eliminando día:', e.message);
@@ -388,9 +386,7 @@ router.delete('/doctor-disponibilidad/:doctorId', requireAuth, async (req, res) 
       return res.status(403).json({ error: 'No tienes permiso para esto' });
     }
     const result = await procesarAgendaExcel.limpiarDisponibilidad(doctorId, db);
-    if (result.ok && req.app.io) {
-      emitSocket('agenda:disponibilidad-actualizada', { doctor_id: doctorId });
-    }
+    if (result.ok) emitSocket('agenda:disponibilidad-actualizada', { doctor_id: doctorId });
     res.json(result);
   } catch (e) {
     logger.error('[DISPONIBILIDAD] Error limpiando disponibilidad:', e.message);

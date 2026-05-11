@@ -27,10 +27,7 @@ function buildIndexHandler(publicDir, appVersion) {
     html = html
       .replace('href="style.css"', `href="style.css${vTag}"`)
       .replace('href="style.css"', `href="style.css${vTag}"`)
-      .replace('src="/socket.io/socket.io.js"', `src="/socket.io/socket.io.js${vTag}"`)
       .replace('src="multiselect.js"', `src="multiselect.js${vTag}"`)
-      .replace('src="socket-io-fallback.js"', `src="socket-io-fallback.js${vTag}"`)
-      .replace('src="socket-transport-lock.js"', `src="socket-transport-lock.js${vTag}"`)
       .replace('src="socket-client.js"', `src="socket-client.js${vTag}"`)
       .replace('src="socket-electro.js"', `src="socket-electro.js${vTag}"`)
       .replace('src="dashboard-citas.js"', `src="dashboard-citas.js${vTag}"`)
@@ -39,7 +36,7 @@ function buildIndexHandler(publicDir, appVersion) {
       .replace('src="calendario-bloqueado.js"', `src="calendario-bloqueado.js${vTag}"`)
       .replace('src="validation-client.js"', `src="validation-client.js${vTag}"`)
       .replace('src="splash.js"', `src="splash.js${vTag}"`)
-      .replace('</head>', `<script>window.APP_VERSION="${appVersion}";window.INNAR_SOCKET_BASE=Object.assign({path:"/socket.io",transports:["polling"],withCredentials:!0,upgrade:!1,rememberUpgrade:!1},typeof window.INNAR_SOCKET_BASE==="object"&&window.INNAR_SOCKET_BASE!==null&&window.INNAR_SOCKET_BASE||{});</script>\n</head>`);
+      .replace('</head>', `<script>window.APP_VERSION="${appVersion}";window.INNAR_REALTIME_MODE="http-poll";</script>\n</head>`);
     res.setHeader('Content-Type', 'text/html');
     res.setHeader('Cache-Control', 'no-cache, must-revalidate');
     res.send(html);

@@ -1,19 +1,15 @@
-// Singleton para emitir eventos Socket.IO desde cualquier módulo sin imports circulares
+// Emisión tiempo-real desde el servidor → cola HTTP (sin Socket.IO).
 const logger = require('./logger');
+const eventPollQueue = require('./event-poll-queue');
 
-let _io = null;
-
-function init(io) {
-  _io = io;
-}
+/** @deprecated ya no inicializa Socket.IO; compatibilidad con código que llamaba init(). */
+function init() {}
 
 function emit(eventName, data) {
   try {
-    if (_io) {
-      _io.emit(eventName, data);
-    }
+    eventPollQueue.broadcast(eventName, data);
   } catch (error) {
-    logger.warn(`Socket.IO emit error: ${eventName}`, { error: error.message });
+    logger.warn(`Realtime emit error: ${eventName}`, { error: error.message });
   }
 }
 

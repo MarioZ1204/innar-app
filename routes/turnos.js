@@ -379,10 +379,7 @@ router.post('/turnos', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'a
       programado_por || null
     ]);
 
-    if (req.app.io) {
-      emitSocket('agenda:turno-creado', { id: result.insertId, doctor_id, paciente_nombre, fecha });
-    }
-
+    emitSocket('agenda:turno-creado', { id: result.insertId, doctor_id, paciente_nombre, fecha });
     res.json({ ok: true, id: result.insertId });
   } catch (e) {
     logger.error(e.message, { error: e });
@@ -443,23 +440,21 @@ router.patch('/turnos/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin
     const query = `UPDATE turnos SET ${updates.join(', ')} WHERE id = ?`;
     await db.execute(query, values);
 
-    if (req.app.io) {
-      if (paciente_nombre !== undefined || paciente_telefono !== undefined || paciente_documento !== undefined || paciente_telefono2 !== undefined || entidad !== undefined || notas !== undefined || tipo_consulta !== undefined) {
-        emitSocket('agenda:turno-cambio-paciente', {
-          id,
-          paciente_nombre: paciente_nombre || turno.paciente_nombre,
-          doctor_id: turno.doctor_id,
-          fecha: turno.fecha
-        });
-      }
-      if (fecha !== undefined || hora !== undefined || estado !== undefined) {
-        emitSocket('agenda:turno-estado-cambio', {
-          id,
-          estado: estado || turno.estado,
-          doctor_id: turno.doctor_id,
-          fecha: fecha || turno.fecha
-        });
-      }
+    if (paciente_nombre !== undefined || paciente_telefono !== undefined || paciente_documento !== undefined || paciente_telefono2 !== undefined || entidad !== undefined || notas !== undefined || tipo_consulta !== undefined) {
+      emitSocket('agenda:turno-cambio-paciente', {
+        id,
+        paciente_nombre: paciente_nombre || turno.paciente_nombre,
+        doctor_id: turno.doctor_id,
+        fecha: turno.fecha
+      });
+    }
+    if (fecha !== undefined || hora !== undefined || estado !== undefined) {
+      emitSocket('agenda:turno-estado-cambio', {
+        id,
+        estado: estado || turno.estado,
+        doctor_id: turno.doctor_id,
+        fecha: fecha || turno.fecha
+      });
     }
 
     res.json({ ok: true });
@@ -536,8 +531,7 @@ router.patch('/turnos/:id/estado', requireAuth, requireRoleOrPerm(['superadmin',
       await db.execute('UPDATE turnos SET estado = ? WHERE id = ?', [estado, id]);
     }
 
-    if (req.app.io) {
-      const emitData = { id, estado, paciente_nombre: turno.paciente_nombre || null };
+    const emitData = { id, estado, paciente_nombre: turno.paciente_nombre || null };
       if (estado === 'EN_ATENCION') {
         const doctorRow = await db.query('SELECT numero_consultorio FROM usuarios WHERE id = ?', [turno.doctor_id]);
         emitData.numero_consultorio = doctorRow.length > 0 ? doctorRow[0].numero_consultorio : null;
@@ -551,7 +545,6 @@ router.patch('/turnos/:id/estado', requireAuth, requireRoleOrPerm(['superadmin',
           fecha: turno.fecha
         });
       }
-    }
 
     res.json({ ok: true });
   } catch (e) {
@@ -604,10 +597,7 @@ router.delete('/turnos/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admi
 
     await db.execute('DELETE FROM turnos WHERE id = ?', [id]);
 
-    if (req.app.io) {
-      emitSocket('agenda:turno-eliminado', { id, doctor_id: turno.doctor_id, fecha: turno.fecha });
-    }
-
+    emitSocket('agenda:turno-eliminado', { id, doctor_id: turno.doctor_id, fecha: turno.fecha });
     res.json({ ok: true });
   } catch (e) {
     logger.error(e.message, { error: e });
@@ -639,9 +629,7 @@ router.patch('/turnos/:id/numero', requireAuth, requireRoleOrPerm(['superadmin',
         return res.status(400).json({ error: 'Número debe ser mayor a 0' });
       }
       await db.execute('UPDATE turnos SET numero_turno = ? WHERE id = ?', [numero, id]);
-      if (req.app.io) {
-        emitSocket('agenda:turno-numero-cambio', { id, numero_turno: numero, doctor_id: turno.doctor_id, fecha: turno.fecha });
-      }
+      emitSocket('agenda:turno-numero-cambio', { id, numero_turno: numero, doctor_id: turno.doctor_id, fecha: turno.fecha });
       return res.json({ ok: true });
     }
 
@@ -677,9 +665,7 @@ router.patch('/turnos/:id/numero', requireAuth, requireRoleOrPerm(['superadmin',
         return res.status(400).json({ error: 'No hay turno para intercambiar' });
       }
 
-      if (req.app.io) {
-        emitSocket('agenda:turno-numero-cambio', { id, numero_turno: nuevoNumero, doctor_id: turno.doctor_id, fecha: turno.fecha });
-      }
+      emitSocket('agenda:turno-numero-cambio', { id, numero_turno: nuevoNumero, doctor_id: turno.doctor_id, fecha: turno.fecha });
       return res.json({ ok: true });
     }
   } catch (e) {

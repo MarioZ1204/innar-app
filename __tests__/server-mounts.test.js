@@ -40,8 +40,14 @@ describe('server bootstrap (smoke)', () => {
     expect(Array.isArray(rm.runtimeMigrations)).toBe(true);
   });
 
-  test('socket/handlers exporta attachSockets', () => {
+  test('socket/handlers exporta attachSockets (stub sin Socket.IO)', () => {
     const s = require('../socket/handlers');
     expect(typeof s.attachSockets).toBe('function');
+  });
+
+  test('utils/event-poll-queue exporta broadcast', () => {
+    const q = require('../utils/event-poll-queue');
+    expect(typeof q.broadcast).toBe('function');
+    expect(typeof q.flushUser).toBe('function');
   });
 });

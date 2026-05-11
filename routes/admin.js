@@ -98,7 +98,7 @@ router.post('/admin/datos/:tipo', requireAuth, requireRoleOrPerm(['superadmin', 
         'INSERT INTO estudio_duraciones (nombre, duracion_minutos) VALUES (?,?)',
         [nombre.trim(), dur]
       );
-      if (req.app.io) emitSocket('estudio:creado', { id: result.insertId });
+      emitSocket('estudio:creado', { id: result.insertId });
       res.json({ ok: true, id: result.insertId });
     } else if (tipo === 'especialidades') {
       const { nombre } = body;
@@ -180,14 +180,14 @@ router.delete('/admin/datos/:tipo/:id', requireAuth, requireRoleOrPerm(['superad
     if (tipo === 'citas_electro') {
       const result = await db.execute('DELETE FROM citas_electro WHERE id=?', [id]);
       affected = result.affectedRows;
-      if (affected > 0 && req.app.io) emitSocket('electro:cita-eliminada', { id });
+      if (affected > 0) emitSocket('electro:cita-eliminada', { id });
     } else if (tipo === 'turnos') {
       const result = await db.execute('DELETE FROM turnos WHERE id=?', [id]);
       affected = result.affectedRows;
     } else if (tipo === 'recibos') {
       const result = await db.execute('DELETE FROM recibos WHERE id=?', [id]);
       affected = result.affectedRows;
-      if (affected > 0 && req.app.io) { emitSocket('recibo:eliminado', { id }); emitSocket('recibo:actualizar-lista'); }
+      if (affected > 0) { emitSocket('recibo:eliminado', { id }); emitSocket('recibo:actualizar-lista'); }
     } else if (tipo === 'estudio_duraciones') {
       const result = await db.execute('DELETE FROM estudio_duraciones WHERE id=?', [id]);
       affected = result.affectedRows;

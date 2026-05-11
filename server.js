@@ -1,4 +1,4 @@
-﻿// server.js — punto de entrada Express + Socket.IO
+﻿// server.js — punto de entrada Express (tiempo real vía GET /api/eventos/poll)
 // La lógica de configuración vive en `config/`, `socket/`, `middleware/`, `migrations/`.
 
 require('dotenv').config();
@@ -97,29 +97,13 @@ app.get('/api/health', (req, res) => {
 });
 app.get('/api/socket-status', (req, res) => {
   res.json({
-    socketio: {
-      loaded: !!require.cache[require.resolve('socket.io')],
-      mounted: !!app.io,
-      path: '/socket.io',
-      transports: ['polling'],
-      cors_origin: process.env.FRONTEND_URL || 'http://localhost:3000'
+    realtime: {
+      mode: 'http-poll',
+      pollPath: '/api/eventos/poll',
+      pushPath: '/api/eventos/push'
     },
     timestamp: new Date().toISOString()
   });
-});
-
-// ─── WORKAROUND: Sirve el cliente Socket.IO explícitamente ────
-// Si Apache no proxía /socket.io/ correctamente, servimos desde aquí
-app.get('/socket.io/socket.io.js', (req, res, next) => {
-  const socketIoJs = path.join(__dirname, 'node_modules/socket.io/client-dist/socket.io.min.js');
-  if (fs.existsSync(socketIoJs)) {
-    logger.debug('[SOCKET.IO] Sirviendo cliente desde: ' + socketIoJs);
-    res.type('application/javascript');
-    res.sendFile(socketIoJs);
-  } else {
-    logger.warn('[SOCKET.IO] No encontrado: ' + socketIoJs);
-    res.status(404).send('socket.io.js not found');
-  }
 });
 
 
@@ -235,6 +219,7 @@ app.get('/reportes/mensual/vista', requireAuth, (req, res) => {
 app.use('/', require('./routes/uploads'));
 app.use('/api/v1/appointments', requireAuth, require('./routes/appointmentsV1'));
 app.use('/api', require('./routes/auth'));
+app.use('/api', require('./routes/eventos'));
 app.use('/api/usuarios', require('./routes/usuarios'));
 app.use('/api/auditoria', require('./routes/auditoria'));
 app.use('/api', require('./routes/agenda'));
@@ -278,19 +263,10 @@ const PORT = process.env.PORT || 3000;
       }, app);
       logger.info('[HTTPS] Activado con certificado autofirmado', { type: 'HTTPS' });
     } else {
-      // Socket.IO debe engancharse al http.Server creado aquí, no al objeto express `app`.
-      // Pasar solo `app` a socket.io no expone Engine.IO en el puerto que escucha Node.
       httpServer = http.createServer(app);
     }
 
-    try {
-      logger.info('[STARTUP] Llamando attachSockets()...', { type: 'STARTUP' });
-      attachSockets({ httpServer, app, sessionMiddleware, appVersion: APP_VERSION });
-      logger.info('[STARTUP] ✓ attachSockets() completado exitosamente', { type: 'STARTUP' });
-    } catch (e) {
-      logger.error('[SOCKET.IO INIT ERROR] ' + e.message, { type: 'STARTUP', stack: e.stack });
-      throw e;
-    }
+    attachSockets({ httpServer, app, sessionMiddleware, appVersion: APP_VERSION });
 
     httpServer.listen(PORT, '0.0.0.0', () => {
       logger.info(`Servidor corriendo en http://0.0.0.0:${PORT}`);

@@ -161,11 +161,9 @@ router.post('/recibos', requireAuth, requireRoleOrPerm(['superadmin', 'admin', '
     );
     await conn.commit();
 
-    if (req.app.io) {
-      emitSocket('recibo:creado', { id: result.insertId, numero: numeroAsignado, cliente, fecha, total });
-      emitSocket('recibo:actualizar-lista');
-      emitSocket('stats:actualizar');
-    }
+    emitSocket('recibo:creado', { id: result.insertId, numero: numeroAsignado, cliente, fecha, total });
+    emitSocket('recibo:actualizar-lista');
+    emitSocket('stats:actualizar');
     res.json({ ok: true, id: result.insertId, numero: numeroAsignado });
   } catch (err) {
     await conn.rollback();
@@ -521,7 +519,7 @@ router.put('/recibos/:id', requireAuth, requireRoleOrPerm(['superadmin'], 'recib
     if (!updates.length) return res.status(400).json({ error: 'No hay campos para actualizar' });
     params.push(id);
     await db.execute(`UPDATE recibos SET ${updates.join(', ')} WHERE id = ?`, params);
-    if (req.app.io) { emitSocket('recibo:actualizar-lista'); emitSocket('stats:actualizar'); }
+    emitSocket('recibo:actualizar-lista'); emitSocket('stats:actualizar');
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: safeError(err) }); }
 });
@@ -542,7 +540,7 @@ router.patch('/recibos/:id/anular', requireAuth, requireRoleOrPerm(['superadmin'
       'UPDATE recibos SET anulado=1, anulado_razon=?, anulado_por_id=?, anulado_por_nombre=?, anulado_en=NOW() WHERE id=?',
       [razon.trim(), req.session.usuarioId, nombreUsuario, id]
     );
-    if (req.app.io) { emitSocket('recibo:actualizar-lista'); emitSocket('stats:actualizar'); }
+    emitSocket('recibo:actualizar-lista'); emitSocket('stats:actualizar');
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: safeError(err) }); }
 });
@@ -562,7 +560,7 @@ router.patch('/recibos/:id/pagar', requireAuth, requireRoleOrPerm(['superadmin',
       'UPDATE recibos SET estado_pago=?, fecha_pago=NOW(), pagado_por_id=?, pagado_por_nombre=? WHERE id=?',
       ['PAGADO', req.session.usuarioId, nombreUsuario, id]
     );
-    if (req.app.io) { emitSocket('recibo:actualizar-lista'); emitSocket('stats:actualizar'); }
+    emitSocket('recibo:actualizar-lista'); emitSocket('stats:actualizar');
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: safeError(err) }); }
 });
@@ -574,7 +572,7 @@ router.delete('/recibos/:id', requireAuth, requireRoleOrPerm(['superadmin', 'adm
   try {
     const result = await db.execute('DELETE FROM recibos WHERE id=?', [id]);
     if (result.affectedRows === 0) return res.status(404).json({ error: 'No encontrado' });
-    if (req.app.io) { emitSocket('recibo:eliminado', { id }); emitSocket('recibo:actualizar-lista'); emitSocket('stats:actualizar'); }
+    emitSocket('recibo:eliminado', { id }); emitSocket('recibo:actualizar-lista'); emitSocket('stats:actualizar');
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: safeError(err) }); }
 });

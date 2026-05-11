@@ -40,7 +40,7 @@ function applyHelmet(app) {
         styleSrc,
         scriptSrc,
         scriptSrcAttr,
-        connectSrc: ["'self'", 'ws:', 'wss:'],
+        connectSrc: ["'self'"],
         ...(process.env.NODE_ENV === 'production' && !cspReportOnly ? { upgradeInsecureRequests: [] } : {}),
         reportUri: ['/api/csp-report']
       }
