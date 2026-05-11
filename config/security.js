@@ -18,6 +18,8 @@ function applyHelmet(app) {
     ? ["'self'"]
     : ["'self'", "'unsafe-inline'", "'unsafe-eval'"];
 
+  const scriptSrcAttr = cspStrict ? ["'none'"] : ["'unsafe-inline'"];
+
   const styleSrc = cspStrict
     ? ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'] // mantener inline en CSS hasta migrar style=""
     : ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'];
@@ -37,8 +39,9 @@ function applyHelmet(app) {
         fontSrc: ["'self'", 'data:', 'https://fonts.gstatic.com'],
         styleSrc,
         scriptSrc,
+        scriptSrcAttr,
         connectSrc: ["'self'", 'ws:', 'wss:'],
-        ...(process.env.NODE_ENV === 'production' ? { upgradeInsecureRequests: [] } : {}),
+        ...(process.env.NODE_ENV === 'production' && !cspReportOnly ? { upgradeInsecureRequests: [] } : {}),
         reportUri: ['/api/csp-report']
       }
     } : false

@@ -1,41 +1,42 @@
-RewriteEngine On
-
-# Hace que llegue Host: mismo dominio público → Express puede confiar proxy y rutas públicas coherentes.
-<IfModule mod_proxy.c>
-  ProxyPreserveHost On
-</IfModule>
-
-# No tocar Cookie ni definir headers inventados ("X-Forwarded-Cookie"): rompen express-session detrás proxy.
-
-# ═══════════════════════════════════════════════════════════════════════════
-# Socket.IO (Engine.IO handshake + opcional upgrade WebSocket)
-# Si Node escucha en otro puerto, cambie 3000.
-# ═══════════════════════════════════════════════════════════════════════════
-
-RewriteCond %{REQUEST_URI} ^/socket\.io/
-RewriteCond %{HTTP:Upgrade} =websocket [NC]
-RewriteRule ^(.*)$ ws://127.0.0.1:3000%{REQUEST_URI} [P,L,QSA]
-
-RewriteCond %{REQUEST_URI} ^/socket\.io/
-RewriteRule ^(.*)$ http://127.0.0.1:3000%{REQUEST_URI} [P,L,QSA]
-
-# ═══════════════════════════════════════════════════════════════════════════
-# REST /api
-# ═══════════════════════════════════════════════════════════════════════════
-
-RewriteCond %{REQUEST_URI} ^/api/
-RewriteCond %{HTTP:Upgrade} =websocket [NC]
-RewriteRule ^(.*)$ ws://127.0.0.1:3000%{REQUEST_URI} [P,L,QSA]
-
-RewriteCond %{REQUEST_URI} ^/api/
-RewriteRule ^(.*)$ http://127.0.0.1:3000%{REQUEST_URI} [P,L,QSA]
-
-# ═══════════════════════════════════════════════════════════════════════════
-# SPA: páginas no estáticas
-# ═══════════════════════════════════════════════════════════════════════════
-
-RewriteCond %{REQUEST_FILENAME} !-f
-RewriteCond %{REQUEST_FILENAME} !-d
-RewriteCond %{REQUEST_URI} !^/socket\.io/ [NC]
-RewriteCond %{REQUEST_URI} !^/api/ [NC]
-RewriteRule ^ public/index.html [QSA,L]
+RewriteEngine On
+
+<IfModule mod_proxy.c>
+  ProxyPreserveHost On
+</IfModule>
+
+# ── Proxy al proceso Node (PORT en .env, aquí típicamente 3000).
+# ── Si /socket.io responde 404, revisa que el puerto coincida con el donde
+#     escucha `node server.js` y que mod_proxy/mod_rewrite permitan flag [P].
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Socket.IO (/socket.io, /socket.io/, query EIO=/transport=polling…)
+# ═══════════════════════════════════════════════════════════════════════════
+
+RewriteCond %{REQUEST_URI} ^/socket\.io [NC]
+RewriteCond %{HTTP:Upgrade} =websocket [NC]
+RewriteRule .* ws://127.0.0.1:3000%{REQUEST_URI} [P,L,QSA]
+
+RewriteCond %{REQUEST_URI} ^/socket\.io [NC]
+RewriteRule .* http://127.0.0.1:3000%{REQUEST_URI} [P,L,QSA]
+
+# ═══════════════════════════════════════════════════════════════════════════
+# REST /api
+# ═══════════════════════════════════════════════════════════════════════════
+
+RewriteCond %{REQUEST_URI} ^/api/ [NC]
+RewriteCond %{HTTP:Upgrade} =websocket [NC]
+RewriteRule .* ws://127.0.0.1:3000%{REQUEST_URI} [P,L,QSA]
+
+RewriteCond %{REQUEST_URI} ^/api/ [NC]
+RewriteRule .* http://127.0.0.1:3000%{REQUEST_URI} [P,L,QSA]
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SPA: páginas no estáticas (repo con index en public/index.html)
+# ═══════════════════════════════════════════════════════════════════════════
+
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteCond %{REQUEST_URI} !^/socket\.io [NC]
+RewriteCond %{REQUEST_URI} !^/api/ [NC]
+RewriteRule ^ public/index.html [QSA,L]
+
