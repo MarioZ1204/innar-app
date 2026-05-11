@@ -8,22 +8,30 @@ const {
   requireAuth, requireRoleOrPerm,
   safeError, emitSocket
 } = require('../middleware/index');
+const { validateSchema } = require('../modules/validation-schemas');
 
 // --- Pacientes ---
 
 router.get('/pacientes', requireAuth, async (req, res) => {
-  const { buscar } = req.query;
+  const { buscar, limit, offset } = req.query;
+  const rawLimit = parseInt(limit, 10);
+  const safeLimit = Math.max(1, Math.min(Number.isFinite(rawLimit) ? rawLimit : 100, 200));
+  const rawOffset = parseInt(offset, 10);
+  const safeOffset = Math.max(0, Number.isFinite(rawOffset) ? rawOffset : 0);
+  const COLS = 'id, nombre, documento, telefono, telefono2, email, creado_en, actualizado_en';
   try {
     let pacientes;
     if (buscar) {
       pacientes = await db.query(`
-        SELECT * FROM pacientes 
+        SELECT ${COLS} FROM pacientes
         WHERE nombre LIKE ? OR documento LIKE ?
         ORDER BY nombre ASC
-        LIMIT 50
+        LIMIT ${safeLimit} OFFSET ${safeOffset}
       `, [`%${buscar}%`, `%${buscar}%`]);
     } else {
-      pacientes = await db.query('SELECT * FROM pacientes ORDER BY nombre ASC LIMIT 100');
+      pacientes = await db.query(
+        `SELECT ${COLS} FROM pacientes ORDER BY nombre ASC LIMIT ${safeLimit} OFFSET ${safeOffset}`
+      );
     }
     res.json(pacientes);
   } catch (e) {
@@ -252,40 +260,43 @@ router.get('/pacientes-espera', requireAuth, async (req, res) => {
   }
 });
 
-router.post('/pacientes-espera', requireAuth, async (req, res) => {
-  const { documento, nombres, apellidos, entidad, prioridad, ingresado_por, telefono1, telefono2, tipo_estudio } = req.body || {};
-  if (!documento || !nombres || !apellidos || !entidad || !prioridad) {
-    return res.status(400).json({ error: 'Todos los campos son obligatorios' });
-  }
-  const prioridadesValidas = ['ALTA', 'MEDIA', 'BAJA'];
-  if (!prioridadesValidas.includes(prioridad)) {
-    return res.status(400).json({ error: 'Prioridad inválida' });
-  }
-  const entidadesDB = await db.query('SELECT nombre FROM entidades WHERE activo=1');
-  const entidadesValidas = entidadesDB.map(e => e.nombre.toUpperCase());
-  if (!entidadesValidas.includes(entidad.toUpperCase())) {
-    return res.status(400).json({ error: 'Entidad inválida' });
-  }
+router.post('/pacientes-espera', requireAuth, validateSchema('apiPacienteEspera'), async (req, res) => {
+  const { documento, nombres, apellidos, entidad, prioridad, ingresado_por, telefono1, telefono2, tipo_estudio } = req.body;
   try {
+    const entidadesDB = await db.query('SELECT nombre FROM entidades WHERE activo=1');
+    const entidadesValidas = entidadesDB.map(e => e.nombre.toUpperCase());
+    if (!entidadesValidas.includes(entidad.toUpperCase())) {
+      return res.status(400).json({ error: 'Entidad inválida' });
+    }
     const result = await db.execute(
       'INSERT INTO pacientes_espera (documento, nombres, apellidos, entidad, prioridad, ingresado_por, telefono1, telefono2, tipo_estudio) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [documento, nombres, apellidos, entidad, prioridad, ingresado_por || null, telefono1 || null, telefono2 || null, tipo_estudio || null]
     );
     res.json({ ok: true, id: result.insertId });
   } catch (e) {
+    logger.error(e.message, { error: e });
     res.status(500).json({ error: safeError(e) });
   }
 });
 
-router.delete('/pacientes-espera/:id', requireAuth, async (req, res) => {
-  const id = parseInt(req.params.id, 10);
-  if (!id) return res.status(400).json({ error: 'ID inválido' });
-  try {
-    await db.execute('DELETE FROM pacientes_espera WHERE id = ?', [id]);
-    res.json({ ok: true });
-  } catch (e) {
-    res.status(500).json({ error: safeError(e) });
+router.delete(
+  '/pacientes-espera/:id',
+  requireAuth,
+  requireRoleOrPerm(
+    ['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro', 'tecnico_electro'],
+    'pacientes.eliminar_espera'
+  ),
+  async (req, res) => {
+    const id = parseInt(req.params.id, 10);
+    if (!id) return res.status(400).json({ error: 'ID inválido' });
+    try {
+      await db.execute('DELETE FROM pacientes_espera WHERE id = ?', [id]);
+      res.json({ ok: true });
+    } catch (e) {
+      logger.error(e.message, { error: e });
+      res.status(500).json({ error: safeError(e) });
+    }
   }
-});
+);
 
 module.exports = router;

@@ -1988,7 +1988,7 @@
       <!-- FOOTER -->
       <div class="cita-modal-footer">
         <div style="display:flex;gap:10px">
-          <button id="btnCancelarModal" class="btn-secondary" onclick="document.getElementById('modalDetallesCitaElectro').classList.add('hidden')">Cerrar</button>
+          <button id="btnCancelarModal" class="btn-secondary" data-close-modal="modalDetallesCitaElectro">Cerrar</button>
           <button id="btnGuardarCambios" class="btn-primary cita-modal-action-btn">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
             Guardar
@@ -2597,7 +2597,7 @@
     <div class="modal-box" style="max-width:480px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;padding-bottom:16px;border-bottom:2px solid #e5e7eb">
         <h3 id="modalAgregarGestionTitulo" style="margin:0;color:#627371;font-size:20px;font-weight:600">Agregar</h3>
-        <button class="btn-close-modal" style="background:none;border:none;font-size:24px;cursor:pointer;color:#627371" onclick="this.closest('.modal-overlay').classList.add('hidden')">&#x2715;</button>
+        <button class="btn-close-modal" style="background:none;border:none;font-size:24px;cursor:pointer;color:#627371" data-close-modal="parent">&#x2715;</button>
       </div>
       <form id="formAgregarGestion"></form>
     </div>
@@ -2982,71 +2982,7 @@
   <script src="app.js"></script>
   <script src="calendario-bloqueado.js"></script>
   <script src="validation-client.js"></script>
-  <script>
-    // Establecer año actual en footer
-    document.getElementById('currentYear').textContent = new Date().getFullYear();
-    
-    // ========== SPLASH SCREEN CONTROL ==========
-    const splashScreen = document.getElementById('splashScreen');
-    
-    // Función para ocultar el splash screen
-    function hideSplashScreen() {
-      if (splashScreen) {
-        splashScreen.classList.add('hidden-splash');
-        // Remover del DOM después de la transición
-        setTimeout(() => {
-          if (splashScreen.parentNode) {
-            splashScreen.parentNode.removeChild(splashScreen);
-          }
-        }, 500);
-      }
-    }
-    
-    // Precargar imágenes importantes
-    function preloadImages() {
-      const images = [
-        'images/bck3.webp',
-        'images/fondo.webp',
-        'images/logo.webp',
-        'images/logo1.webp',
-        'images/logo3.webp',
-        'images/icon.png'
-      ];
-      
-      let loaded = 0;
-      images.forEach(src => {
-        const img = new Image();
-        img.onload = () => {
-          loaded++;
-          if (loaded === images.length) {
-            // Todas las imágenes cargadas
-            setTimeout(hideSplashScreen, 300);
-          }
-        };
-        img.onerror = () => {
-          loaded++;
-          if (loaded === images.length) {
-            setTimeout(hideSplashScreen, 300);
-          }
-        };
-        img.src = src;
-      });
-    }
-    
-    // Iniciar precarga cuando el documento esté listo
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', preloadImages);
-    } else {
-      preloadImages();
-    }
-
-    // Timeout máximo de 3 segundos para no dejar el splash indefinidamente
-    setTimeout(() => {
-      if (splashScreen && !splashScreen.classList.contains('hidden-splash')) {
-        hideSplashScreen();
-      }
-    }, 3000);
-  </script>
+  <script src="splash.js" defer></script>
 
   <!-- ========== MODAL EDITAR SERVICIO ========== -->
   <div id="modalEditarServicio" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:10000;align-items:center;justify-content:center;">

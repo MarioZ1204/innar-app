@@ -9,6 +9,7 @@ const {
   requireAuth, requireRoleOrPerm,
   safeError, emitSocket
 } = require('../middleware/index');
+const { validateSchema } = require('../modules/validation-schemas');
 
 // Helper: obtener siguiente número de turno
 async function getNextTurnoNumber(fecha, doctor_id) {
@@ -21,6 +22,19 @@ async function getNextTurnoNumber(fecha, doctor_id) {
 }
 
 const ESTADOS_VALIDOS_TURNOS = ['PENDIENTE', 'EN_SALA', 'EN_ATENCION', 'ATENDIDO', 'COMPLETADO', 'NO_ASISTIO', 'CANCELADO', 'REPROGRAMADO'];
+
+// Si el rol del usuario es 'doctor', exige que doctorId coincida con la sesión.
+// Otros roles (admin, recepción, electro) no se ven afectados.
+function denyIfDoctorMismatch(req, doctorId) {
+  if (req.session?.rol === 'doctor') {
+    const sessionId = parseInt(req.session.usuarioId, 10);
+    const target = parseInt(doctorId, 10);
+    if (!target || target !== sessionId) {
+      return 'No tienes permiso para operar sobre turnos de otro médico';
+    }
+  }
+  return null;
+}
 
 // GET /api/turnos/calendario
 router.get('/turnos/calendario', requireAuth, async (req, res) => {
@@ -82,10 +96,14 @@ router.get('/turnos/calendario', requireAuth, async (req, res) => {
 router.get('/turnos', requireAuth, async (req, res) => {
   const { fecha, doctor_id, buscar } = req.query;
 
+  const COLS = `id, numero_turno, doctor_id, paciente_nombre, paciente_documento,
+                paciente_telefono, paciente_telefono2, estado, fecha, hora, tipo_consulta,
+                entidad, notas, observaciones, oportunidad, programado_por, creado_en`;
+
   if (buscar && !fecha) {
     try {
       const turnos = await db.query(`
-        SELECT * FROM turnos
+        SELECT ${COLS} FROM turnos
         WHERE paciente_documento LIKE ? OR paciente_nombre LIKE ?
         ORDER BY fecha ASC, hora ASC
         LIMIT 50
@@ -103,18 +121,20 @@ router.get('/turnos', requireAuth, async (req, res) => {
 
   try {
     const query = doctor_id
-      ? `SELECT * FROM turnos 
+      ? `SELECT ${COLS} FROM turnos
          WHERE fecha = ? AND doctor_id = ?
          ORDER BY CASE WHEN hora IS NULL OR hora = '' THEN 1 ELSE 0 END,
                   hora ASC,
                   numero_turno ASC,
-                  id ASC`
-      : `SELECT * FROM turnos 
+                  id ASC
+         LIMIT 500`
+      : `SELECT ${COLS} FROM turnos
          WHERE fecha = ?
          ORDER BY CASE WHEN hora IS NULL OR hora = '' THEN 1 ELSE 0 END,
                   hora ASC,
                   numero_turno ASC,
-                  id ASC`;
+                  id ASC
+         LIMIT 500`;
 
     const params = doctor_id ? [fecha, doctor_id] : [fecha];
     const turnos = await db.query(query, params);
@@ -254,12 +274,16 @@ router.post('/turnos/llamar-siguiente', requireAuth, requireRoleOrPerm(['superad
   if (!fecha || !doctor_id) {
     return res.status(400).json({ error: 'fecha y doctor_id son obligatorios' });
   }
+  const idorErr = denyIfDoctorMismatch(req, doctor_id);
+  if (idorErr) return res.status(403).json({ error: idorErr });
   try {
     const doctor = await db.query(`SELECT numero_consultorio FROM usuarios WHERE id = ?`, [doctor_id]);
     const numeroConsultorio = doctor.length > 0 ? doctor[0].numero_consultorio : null;
 
     const turnos = await db.query(`
-      SELECT * FROM turnos 
+      SELECT id, numero_turno, doctor_id, paciente_nombre, paciente_documento,
+             paciente_telefono, fecha, hora, estado
+      FROM turnos
       WHERE fecha = ? AND doctor_id = ? AND estado = 'EN_SALA' AND numero_turno IS NOT NULL
       ORDER BY numero_turno ASC LIMIT 1
     `, [fecha, doctor_id]);
@@ -299,6 +323,9 @@ router.post('/turnos/marcar-atendido', requireAuth, requireRoleOrPerm(['superadm
       return res.status(404).json({ error: 'No hay turno en atención actualmente' });
     }
 
+    const idorErr = denyIfDoctorMismatch(req, turno.doctor_id);
+    if (idorErr) return res.status(403).json({ error: idorErr });
+
     await db.transaction(async (conn) => {
       await conn.execute('UPDATE turnos SET estado = ?, numero_turno = NULL WHERE id = ?', ['ATENDIDO', turno_id]);
       const enSalaList = await conn.query(
@@ -325,12 +352,8 @@ router.post('/turnos/marcar-atendido', requireAuth, requireRoleOrPerm(['superadm
 });
 
 // POST /api/turnos
-router.post('/turnos', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion'], 'agenda.crear'), async (req, res) => {
-  const { doctor_id, paciente_nombre, paciente_documento, paciente_telefono, paciente_telefono2, fecha, hora, tipo_consulta, entidad, notas, oportunidad, programado_por } = req.body || {};
-
-  if (!doctor_id || !paciente_nombre || !fecha || !hora) {
-    return res.status(400).json({ error: 'doctor_id, paciente_nombre, fecha y hora son obligatorios' });
-  }
+router.post('/turnos', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion'], 'agenda.crear'), validateSchema('apiCrearTurno'), async (req, res) => {
+  const { doctor_id, paciente_nombre, paciente_documento, paciente_telefono, paciente_telefono2, fecha, hora, tipo_consulta, entidad, notas, oportunidad, programado_por } = req.body;
 
   try {
     const validacion = await procesarAgendaExcel.validarDisponibilidadPorHora(doctor_id, fecha, hora, db);
@@ -368,16 +391,12 @@ router.post('/turnos', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'a
 });
 
 // PATCH /api/turnos/:id
-router.patch('/turnos/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion', 'doctor'], 'agenda.editar'), async (req, res) => {
+router.patch('/turnos/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion', 'doctor'], 'agenda.editar'), validateSchema('apiActualizarTurno'), async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  const { paciente_nombre, paciente_telefono, paciente_documento, paciente_telefono2, entidad, notas, tipo_consulta, fecha, hora, estado, observaciones } = req.body || {};
+  const { paciente_nombre, paciente_telefono, paciente_documento, paciente_telefono2, entidad, notas, tipo_consulta, fecha, hora, estado, observaciones } = req.body;
 
   if (!id) {
     return res.status(400).json({ error: 'ID inválido' });
-  }
-
-  if (estado !== undefined && !ESTADOS_VALIDOS_TURNOS.includes(estado)) {
-    return res.status(400).json({ error: `Estado inválido: "${estado}"` });
   }
 
   try {
@@ -386,6 +405,9 @@ router.patch('/turnos/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin
     if (!turno) {
       return res.status(404).json({ error: 'Turno no encontrado' });
     }
+
+    const idorErr = denyIfDoctorMismatch(req, turno.doctor_id);
+    if (idorErr) return res.status(403).json({ error: idorErr });
 
     const userRole = req.session?.rol;
     const puedeEditarSiempre = userRole === 'superadmin' || (Array.isArray(req.session?.permisos) && req.session.permisos.includes('agenda.editar_siempre'));
@@ -448,15 +470,11 @@ router.patch('/turnos/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin
 });
 
 // PATCH /api/turnos/:id/estado
-router.patch('/turnos/:id/estado', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'doctor', 'auxiliar_recepcion', 'admin_electro', 'electro', 'tecnico_electro'], 'agenda.cambiar_estado'), async (req, res) => {
+router.patch('/turnos/:id/estado', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'doctor', 'auxiliar_recepcion'], 'agenda.cambiar_estado'), validateSchema('apiPatchEstadoTurno'), async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  const { estado } = req.body || {};
-  if (!id || !estado) {
-    return res.status(400).json({ error: 'id y estado son obligatorios' });
-  }
-
-  if (!ESTADOS_VALIDOS_TURNOS.includes(estado)) {
-    return res.status(400).json({ error: `Estado inválido: "${estado}". Valores permitidos: ${ESTADOS_VALIDOS_TURNOS.join(', ')}` });
+  const { estado } = req.body;
+  if (!id) {
+    return res.status(400).json({ error: 'ID inválido' });
   }
 
   try {
@@ -465,6 +483,9 @@ router.patch('/turnos/:id/estado', requireAuth, requireRoleOrPerm(['superadmin',
     if (!turno) {
       return res.status(404).json({ error: 'Turno no encontrado' });
     }
+
+    const idorErr = denyIfDoctorMismatch(req, turno.doctor_id);
+    if (idorErr) return res.status(403).json({ error: idorErr });
 
     if (turno.estado === 'ATENDIDO' && estado !== 'ATENDIDO') {
       return res.status(400).json({ error: 'No se puede modificar un turno ya atendido' });
@@ -595,7 +616,7 @@ router.delete('/turnos/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admi
 });
 
 // PATCH /api/turnos/:id/numero
-router.patch('/turnos/:id/numero', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro', 'tecnico_electro'], 'agenda.cambiar_estado'), async (req, res) => {
+router.patch('/turnos/:id/numero', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'doctor'], 'agenda.cambiar_estado'), async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const { numero, delta } = req.body || {};
 
@@ -609,6 +630,9 @@ router.patch('/turnos/:id/numero', requireAuth, requireRoleOrPerm(['superadmin',
     if (!turno) {
       return res.status(404).json({ error: 'Turno no encontrado' });
     }
+
+    const idorErr = denyIfDoctorMismatch(req, turno.doctor_id);
+    if (idorErr) return res.status(403).json({ error: idorErr });
 
     if (typeof numero === 'number') {
       if (numero <= 0) {
@@ -635,16 +659,23 @@ router.patch('/turnos/:id/numero', requireAuth, requireRoleOrPerm(['superadmin',
       if (nuevoNumero <= 0) {
         return res.status(400).json({ error: 'No se puede subir más la prioridad' });
       }
-      const turnoIntercambio = await db.query(
-        `SELECT id FROM turnos WHERE numero_turno = ? AND fecha = ? AND doctor_id = ? AND estado IN ('EN_SALA', 'PENDIENTE')`,
-        [nuevoNumero, turno.fecha, turno.doctor_id]
-      );
-      if (turnoIntercambio.length === 0) {
+
+      let intercambioOk = false;
+      await db.transaction(async (conn) => {
+        const turnoIntercambio = await conn.query(
+          `SELECT id FROM turnos WHERE numero_turno = ? AND fecha = ? AND doctor_id = ? AND estado IN ('EN_SALA', 'PENDIENTE')`,
+          [nuevoNumero, turno.fecha, turno.doctor_id]
+        );
+        if (turnoIntercambio.length === 0) return;
+        await conn.execute('UPDATE turnos SET numero_turno = -1 WHERE id = ?', [id]);
+        await conn.execute('UPDATE turnos SET numero_turno = ? WHERE id = ?', [turno.numero_turno, turnoIntercambio[0].id]);
+        await conn.execute('UPDATE turnos SET numero_turno = ? WHERE id = ?', [nuevoNumero, id]);
+        intercambioOk = true;
+      });
+
+      if (!intercambioOk) {
         return res.status(400).json({ error: 'No hay turno para intercambiar' });
       }
-      await db.execute('UPDATE turnos SET numero_turno = -1 WHERE id = ?', [id]);
-      await db.execute('UPDATE turnos SET numero_turno = ? WHERE id = ?', [turno.numero_turno, turnoIntercambio[0].id]);
-      await db.execute('UPDATE turnos SET numero_turno = ? WHERE id = ?', [nuevoNumero, id]);
 
       if (req.app.io) {
         emitSocket('agenda:turno-numero-cambio', { id, numero_turno: nuevoNumero, doctor_id: turno.doctor_id, fecha: turno.fecha });

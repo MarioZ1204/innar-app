@@ -10,12 +10,8 @@ class AppointmentService {
    */
   static async createAppointment(data) {
     const {
-      study_type_id,
       equipment_id,
       paciente_id,
-      paciente_nombre,
-      paciente_email,
-      paciente_phone,
       start_time,
       end_time,
       estudio,
@@ -25,28 +21,41 @@ class AppointmentService {
       programado_por_nombre
     } = data;
 
-    try {
-      // Convertir start_time y end_time a formato DATETIME si son necesarios
-      const startDateTime = new Date(start_time);
-      const endDateTime = new Date(end_time);
+    const startDateTime = new Date(start_time);
+    const endDateTime = new Date(end_time);
 
-      // Verificar que el equipo esté disponible
-      const conflict = await this.checkEquipmentConflict(equipment_id, startDateTime, endDateTime);
-      if (conflict) {
-        throw new Error('El equipo no está disponible en el rango de tiempo solicitado');
+    // Toda la creación (chequeo de conflicto + INSERT cita + INSERT ocupación)
+    // dentro de una sola transacción para evitar doble booking bajo carga.
+    return db.transaction(async (conn) => {
+      if (equipment_id) {
+        const conflictRows = await conn.query(
+          `SELECT id FROM equipment_occupancies
+           WHERE equipo_id = ?
+           AND (
+             (start_time < ? AND end_time > ?)
+             OR (start_time >= ? AND start_time < ?)
+             OR (end_time > ? AND end_time <= ?)
+           )
+           FOR UPDATE`,
+          [equipment_id, endDateTime, startDateTime, startDateTime, endDateTime, startDateTime, endDateTime]
+        );
+        if (conflictRows.length > 0) {
+          const err = new Error('El equipo no está disponible en el rango de tiempo solicitado');
+          err.code = 'EQUIPMENT_CONFLICT';
+          throw err;
+        }
       }
 
-      // Crear la cita
-      const appointmentResult = await db.execute(
+      const appointmentResult = await conn.execute(
         `INSERT INTO citas_electro (
-          equipo_id, paciente_id, fecha, hora_agendamiento, estudio, 
+          equipo_id, paciente_id, fecha, hora_agendamiento, estudio,
           observaciones, diagnostico_id, estado, programado_por_nombre
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           equipment_id || null,
           paciente_id,
-          new Date(start_time).toISOString().split('T')[0], // Fecha
-          startDateTime.toTimeString().split(' ')[0], // Hora
+          startDateTime.toISOString().split('T')[0],
+          startDateTime.toTimeString().split(' ')[0],
           estudio || null,
           observaciones || null,
           diagnostico_id || null,
@@ -57,9 +66,8 @@ class AppointmentService {
 
       const appointmentId = appointmentResult.insertId;
 
-      // Registrar ocupación del equipo
       if (equipment_id) {
-        await db.execute(
+        await conn.execute(
           `INSERT INTO equipment_occupancies (
             equipo_id, cita_id, start_time, end_time
           ) VALUES (?, ?, ?, ?)`,
@@ -68,9 +76,7 @@ class AppointmentService {
       }
 
       return { ok: true, id: appointmentId };
-    } catch (error) {
-      throw error;
-    }
+    });
   }
 
   /**
@@ -211,23 +217,17 @@ class AppointmentService {
    * Cancelar cita y liberar ocupación de equipo
    */
   static async cancelAppointment(id) {
-    try {
-      // Actualizar estado a cancelado
-      await db.execute(
+    return db.transaction(async (conn) => {
+      await conn.execute(
         `UPDATE citas_electro SET estado = 'Cancelado', actualizado_en = CURRENT_TIMESTAMP WHERE id = ?`,
         [id]
       );
-
-      // Eliminar ocupación de equipo
-      await db.execute(
+      await conn.execute(
         `DELETE FROM equipment_occupancies WHERE cita_id = ?`,
         [id]
       );
-
       return { ok: true };
-    } catch (error) {
-      throw error;
-    }
+    });
   }
 
   /**

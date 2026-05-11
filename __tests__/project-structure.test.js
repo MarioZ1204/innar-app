@@ -74,7 +74,7 @@ describe('Project Structure', () => {
       'express',
       'mysql2',
       'helmet',
-      'bcrypt'
+      'bcryptjs'
     ];
 
     requiredDeps.forEach(dep => {

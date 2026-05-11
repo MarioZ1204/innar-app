@@ -63,9 +63,13 @@ function requireRoleOrPerm(roles, permiso) {
 }
 
 // ── Helpers de respuesta ────────────────────────────────────────────────────
+// Genera un mensaje seguro para devolver al cliente. NUNCA expone stack ni
+// estructura interna; solo el mensaje en entornos no-producción para depurar.
 function safeError(e, prefix) {
   if (process.env.NODE_ENV === 'production') return 'Error interno del servidor';
-  const msg = (e && e.message) ? e.message : String(e);
+  const rawMsg = (e && typeof e.message === 'string') ? e.message : (typeof e === 'string' ? e : 'Error');
+  // Cortar a 200 chars para evitar volcado de queries enteras o stacks pegados
+  const msg = rawMsg.split('\n')[0].slice(0, 200);
   return prefix ? prefix + msg : msg;
 }
 

@@ -2,18 +2,16 @@
 // Tests para verificar que las medidas de seguridad están activas
 
 describe('Security Headers', () => {
-  test('Helmet.js should be configured in server', () => {
-    // Este test verifica que el servidor tiene configurado Helmet
-    const serverCode = require('fs').readFileSync(
-      require('path').join(__dirname, '../server.js'),
+  test('Helmet.js should be configured', () => {
+    const securityCode = require('fs').readFileSync(
+      require('path').join(__dirname, '../config/security.js'),
       'utf8'
     );
 
-    expect(serverCode).toContain('require(\'helmet\')');
-    expect(serverCode).toContain('app.use(helmet');
-    expect(serverCode).toContain('contentSecurityPolicy');
-    expect(serverCode).toContain('hsts');
-    expect(serverCode).toContain('frameguard');
+    expect(securityCode).toContain("require('helmet')");
+    expect(securityCode).toContain('contentSecurityPolicy');
+    expect(securityCode).toContain('hsts');
+    expect(securityCode).toContain('frameguard');
   });
 
   test('should have HTTP security headers configured', () => {
@@ -35,13 +33,19 @@ describe('Security Headers', () => {
 
 describe('Input Validation', () => {
   test('validation module should exist', () => {
-    try {
-      const validation = require('../modules/validation');
-      expect(validation).toBeDefined();
-    } catch (e) {
-      // If module doesn't exist, test documents that it should be created
-      expect(true).toBe(true);
-    }
+    const validation = require('../modules/validation');
+    expect(validation).toBeDefined();
+  });
+
+  test('Joi schemas API exist', () => {
+    const { schemas } = require('../modules/validation-schemas');
+    expect(schemas.apiLogin).toBeDefined();
+    expect(schemas.apiCrearUsuario).toBeDefined();
+    expect(schemas.apiActualizarUsuario).toBeDefined();
+    expect(schemas.apiCrearTurno).toBeDefined();
+    expect(schemas.apiPatchEstadoTurno).toBeDefined();
+    expect(schemas.apiPatchEstadoElectro).toBeDefined();
+    expect(schemas.apiPacienteEspera).toBeDefined();
   });
 });
 
@@ -60,14 +64,42 @@ describe('HTTPS Configuration', () => {
 });
 
 describe('Session Security', () => {
-  test('session middleware should be present in server', () => {
-    const serverCode = require('fs').readFileSync(
-      require('path').join(__dirname, '../server.js'),
+  test('session middleware should be present in config/session', () => {
+    const sessionCode = require('fs').readFileSync(
+      require('path').join(__dirname, '../config/session.js'),
       'utf8'
     );
 
-    expect(serverCode).toContain('express-session');
-    expect(serverCode).toContain('session(');
-    expect(serverCode).toContain('cookie');
+    expect(sessionCode).toContain('express-session');
+    expect(sessionCode).toContain('session(');
+    expect(sessionCode).toContain('cookie');
+    expect(sessionCode).toContain('httpOnly: true');
+  });
+});
+
+describe('Password helper', () => {
+  const password = require('../utils/password');
+
+  test('isValidClientHash detects SHA-512 hex of 128 chars', () => {
+    expect(password.isValidClientHash('a'.repeat(128))).toBe(true);
+    expect(password.isValidClientHash('z'.repeat(128))).toBe(false);
+    expect(password.isValidClientHash('a'.repeat(127))).toBe(false);
+    expect(password.isValidClientHash('')).toBe(false);
+    expect(password.isValidClientHash(null)).toBe(false);
+  });
+
+  test('hashForStorage produces a different bcrypt hash each time', () => {
+    const h = 'a'.repeat(128);
+    const a = password.hashForStorage(h);
+    const b = password.hashForStorage(h);
+    expect(a).not.toEqual(b);
+    expect(a).toMatch(/^\$2[aby]?\$/);
+  });
+
+  test('compareClientHash matches the stored bcrypt of the SHA-512', () => {
+    const clientHash = 'a'.repeat(128);
+    const stored = password.hashForStorage(clientHash);
+    expect(password.compareClientHash(clientHash, stored)).toBe(true);
+    expect(password.compareClientHash('b'.repeat(128), stored)).toBe(false);
   });
 });

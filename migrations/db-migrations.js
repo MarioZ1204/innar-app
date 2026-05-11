@@ -1,5 +1,22 @@
 // db-migrations.js - Archivo consolidado de todas las migraciones
+//
+// Cada migración tiene un `name` único. Antes de ejecutarla se consulta
+// `schema_migrations` para saber si ya fue aplicada y, de ser así, se omite.
+// Después de ejecutarse exitosamente se inserta una fila. Esto reemplaza el
+// patrón anterior de "intentar y atrapar errno 1060/1061/1050".
+
 const db = require('../utils/db-mysql');
+
+const MIGRATIONS_TABLE_SQL = `
+  CREATE TABLE IF NOT EXISTS schema_migrations (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(150) NOT NULL UNIQUE,
+    applied_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    description VARCHAR(500),
+    statements_count INT DEFAULT 1,
+    INDEX idx_name (name)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+`;
 
 // Lista de todas las migraciones
 const migrations = [
@@ -306,55 +323,136 @@ const migrations = [
       ADD COLUMN IF NOT EXISTS fecha_pago DATETIME NULL,
       ADD COLUMN IF NOT EXISTS pagado_por_id INT NULL,
       ADD COLUMN IF NOT EXISTS pagado_por_nombre VARCHAR(200) NULL`
+  },
+  {
+    name: 'recibos_fks_integridad',
+    description: 'Patch B Sección 8g: FK constraints en recibos (medico_id, generado_por_id, anulado_por_id, pagado_por_id, turno_id, cita_electro_id)',
+    sql: [
+      // Limpiar huérfanos primero, idempotente
+      "UPDATE recibos SET turno_id=NULL WHERE turno_id IS NOT NULL AND turno_id NOT IN (SELECT id FROM turnos)",
+      "UPDATE recibos SET cita_electro_id=NULL WHERE cita_electro_id IS NOT NULL AND cita_electro_id NOT IN (SELECT id FROM citas_electro)",
+      "UPDATE recibos SET medico_id=NULL WHERE medico_id IS NOT NULL AND medico_id NOT IN (SELECT id FROM usuarios)",
+      "UPDATE recibos SET generado_por_id=NULL WHERE generado_por_id IS NOT NULL AND generado_por_id NOT IN (SELECT id FROM usuarios)",
+      "UPDATE recibos SET anulado_por_id=NULL WHERE anulado_por_id IS NOT NULL AND anulado_por_id NOT IN (SELECT id FROM usuarios)",
+      "UPDATE recibos SET pagado_por_id=NULL WHERE pagado_por_id IS NOT NULL AND pagado_por_id NOT IN (SELECT id FROM usuarios)",
+      // Crear FK solo si la columna existe y aún no hay otra FK con ese nombre.
+      // MariaDB no soporta `ADD CONSTRAINT IF NOT EXISTS` para FOREIGN KEY,
+      // así que catch ER_FK_DUP_NAME (1826) lo trataremos como ya aplicado.
+      "ALTER TABLE recibos ADD CONSTRAINT fk_recibos_medico FOREIGN KEY (medico_id) REFERENCES usuarios(id) ON DELETE SET NULL",
+      "ALTER TABLE recibos ADD CONSTRAINT fk_recibos_generado_por FOREIGN KEY (generado_por_id) REFERENCES usuarios(id) ON DELETE SET NULL",
+      "ALTER TABLE recibos ADD CONSTRAINT fk_recibos_anulado_por FOREIGN KEY (anulado_por_id) REFERENCES usuarios(id) ON DELETE SET NULL",
+      "ALTER TABLE recibos ADD CONSTRAINT fk_recibos_pagado_por FOREIGN KEY (pagado_por_id) REFERENCES usuarios(id) ON DELETE SET NULL",
+      "ALTER TABLE recibos ADD CONSTRAINT fk_recibos_turno FOREIGN KEY (turno_id) REFERENCES turnos(id) ON DELETE SET NULL",
+      "ALTER TABLE recibos ADD CONSTRAINT fk_recibos_cita_electro FOREIGN KEY (cita_electro_id) REFERENCES citas_electro(id) ON DELETE SET NULL"
+    ]
+  },
+  {
+    name: 'dias_bloqueados_unique_fecha_doctor',
+    description: 'Patch B Sección 5: UNIQUE por (fecha, doctor_id) en dias_bloqueados',
+    sql: [
+      // Eliminar UNIQUE antiguo solo si existe
+      `SET @sql := IF(
+        (SELECT COUNT(*) FROM information_schema.STATISTICS
+          WHERE table_schema=DATABASE() AND table_name='dias_bloqueados' AND index_name='fecha') > 0,
+        'ALTER TABLE dias_bloqueados DROP INDEX \`fecha\`',
+        'SELECT 1'
+      )`,
+      'PREPARE stmt FROM @sql',
+      'EXECUTE stmt',
+      'DEALLOCATE PREPARE stmt',
+      "ALTER TABLE dias_bloqueados ADD UNIQUE KEY IF NOT EXISTS unique_fecha_doctor (fecha, doctor_id)"
+    ]
   }
 ];
 
-/**
- * Ejecutar todas las migraciones
- */
+// Errores que tratamos como "ya aplicado" si una migración legacy se aplicó por
+// fuera del registro `schema_migrations`. Permite migrar instalaciones existentes.
+const LEGACY_ALREADY_APPLIED_ERRNOS = new Set([
+  1060, // ER_DUP_FIELDNAME (columna ya existe)
+  1061, // ER_DUP_KEYNAME (índice ya existe)
+  1050, // ER_TABLE_EXISTS_ERROR (tabla ya existe)
+  1826, // ER_DUP_CONSTRAINT_NAME (FK ya existe en MariaDB)
+  1022, // ER_DUP_KEY
+  1091, // ER_CANT_DROP_FIELD_OR_KEY (drop de algo inexistente)
+]);
+
+async function isMigrationApplied(name) {
+  try {
+    const rows = await db.query('SELECT 1 FROM schema_migrations WHERE name = ? LIMIT 1', [name]);
+    return rows.length > 0;
+  } catch (e) {
+    // Tabla todavía no existe
+    if (e.errno === 1146) return false;
+    throw e;
+  }
+}
+
+async function recordMigration(migration, statementsCount) {
+  await db.execute(
+    'INSERT IGNORE INTO schema_migrations (name, description, statements_count) VALUES (?, ?, ?)',
+    [migration.name, migration.description || '', statementsCount]
+  );
+}
+
 async function runAllMigrations() {
   try {
     await db.initPool();
-    
+
     console.log('\n╔════════════════════════════════════════╗');
     console.log('║  INICIANDO MIGRACIONES DE BASE DE DATOS  ║');
     console.log('╚════════════════════════════════════════╝\n');
-    
-    let successCount = 0;
+
+    await db.execute(MIGRATIONS_TABLE_SQL);
+    console.log('✓ Tabla schema_migrations lista\n');
+
+    let appliedCount = 0;
+    let skippedCount = 0;
     let errorCount = 0;
-    
+
     for (const migration of migrations) {
-      try {
-        console.log(`⏳ Ejecutando: ${migration.name}`);
-        console.log(`   📝 ${migration.description}`);
+      const alreadyApplied = await isMigrationApplied(migration.name);
+      if (alreadyApplied) {
+        console.log(`⏭️  ${migration.name} - ya registrada\n`);
+        skippedCount++;
+        continue;
+      }
 
-        // sql puede ser string o array de statements
-        const statements = Array.isArray(migration.sql) ? migration.sql : [migration.sql];
-        for (const stmt of statements) {
+      console.log(`⏳ Ejecutando: ${migration.name}`);
+      console.log(`   📝 ${migration.description}`);
+
+      const statements = Array.isArray(migration.sql) ? migration.sql : [migration.sql];
+      let statementErrors = 0;
+      for (const stmt of statements) {
+        try {
           await db.execute(stmt.trim());
-        }
-
-        console.log(`✅ ${migration.name} - OK\n`);
-        successCount++;
-      } catch (error) {
-        // Columna/tabla ya existe → migración ya fue aplicada antes, no es un error real
-        if (error.errno === 1060 || error.errno === 1061 || error.errno === 1050) {
-          console.log(`⏭️  ${migration.name} - ya aplicada (${error.message.split(':')[0]})\n`);
-          successCount++;
-        } else {
-          console.error(`❌ ERROR en ${migration.name}: ${error.message}\n`);
-          errorCount++;
+        } catch (error) {
+          if (LEGACY_ALREADY_APPLIED_ERRNOS.has(error.errno)) {
+            console.log(`   ⏭️  statement ya aplicado (errno=${error.errno})`);
+          } else {
+            console.error(`   ❌ ${error.message}`);
+            statementErrors++;
+          }
         }
       }
+
+      if (statementErrors === 0) {
+        await recordMigration(migration, statements.length);
+        console.log(`✅ ${migration.name} - OK\n`);
+        appliedCount++;
+      } else {
+        console.error(`❌ ${migration.name} con ${statementErrors} errores; NO se registra como aplicada\n`);
+        errorCount++;
+      }
     }
-    
+
     console.log('╔════════════════════════════════════════╗');
     console.log('║           RESUMEN DE EJECUCIÓN         ║');
     console.log('╚════════════════════════════════════════╝');
-    console.log(`✅ Exitosas: ${successCount}`);
-    console.log(`❌ Errores:  ${errorCount}`);
-    console.log(`📊 Total:    ${migrations.length}\n`);
-    
+    console.log(`✅ Aplicadas:       ${appliedCount}`);
+    console.log(`⏭️  Ya aplicadas:   ${skippedCount}`);
+    console.log(`❌ Con errores:     ${errorCount}`);
+    console.log(`📊 Total:           ${migrations.length}\n`);
+
     await db.closePool();
     process.exit(errorCount > 0 ? 1 : 0);
   } catch (error) {
@@ -368,4 +466,4 @@ if (require.main === module) {
   runAllMigrations();
 }
 
-module.exports = { migrations, runAllMigrations };
+module.exports = { migrations, runAllMigrations, MIGRATIONS_TABLE_SQL, isMigrationApplied, recordMigration };

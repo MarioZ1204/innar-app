@@ -3,87 +3,85 @@ const db = require('../utils/db-mysql');
 const logger = require('../utils/logger');
 
 const MAX_INTENTOS = 3;
-const TIEMPO_BLOQUEO_MIN = 5; // Duración del bloqueo en minutos (se multiplica por 60*1000 al calcular el timestamp UNIX)
+const TIEMPO_BLOQUEO_MIN = 5;
 
-/**
- * Obtener IP del cliente (considerando proxies)
- */
 function getClientIP(req) {
   return req.headers['x-forwarded-for']?.split(',')[0].trim() ||
          req.socket?.remoteAddress ||
          'unknown';
 }
 
-/**
- * Verificar si el IP está bloqueado
- */
+// `bloqueado_hasta` es DATETIME en la BD. Comparamos en SQL con NOW() para evitar
+// desajustes de zona horaria / formato entre Node y MySQL.
 async function isBlocked(ip) {
   try {
     const attempts = await db.queryOne(
-      'SELECT * FROM login_attempts WHERE ip_address = ?',
+      `SELECT intentos_fallidos,
+              bloqueado_hasta,
+              (bloqueado_hasta IS NOT NULL AND bloqueado_hasta > NOW()) AS aun_bloqueado
+       FROM login_attempts
+       WHERE ip_address = ?`,
       [ip]
     );
-    
+
     if (!attempts) return false;
     if (attempts.intentos_fallidos < MAX_INTENTOS) return false;
-    
-    if (attempts.bloqueado_hasta && attempts.bloqueado_hasta > Math.floor(Date.now() / 1000)) {
-      return true; // Aún bloqueado
-    }
-    
-    // Bloqueo expiró, resetear
+    if (attempts.aun_bloqueado) return true;
+
     await db.execute(
       'UPDATE login_attempts SET intentos_fallidos = 0, bloqueado_hasta = NULL WHERE ip_address = ?',
       [ip]
     );
     return false;
   } catch (error) {
-    logger.error('[RATE LIMIT] Error verificando bloqueo', { error: error.message });
-    return false;
+    logger.error('[RATE LIMIT] Error verificando bloqueo (fail-closed)', { error: error.message });
+    return true;
   }
 }
 
-/**
- * Registrar intento fallido
- */
 async function recordFailedAttempt(ip, usuario) {
   try {
     const attempts = await db.queryOne(
-      'SELECT * FROM login_attempts WHERE ip_address = ?',
+      'SELECT id, intentos_fallidos, usuario FROM login_attempts WHERE ip_address = ?',
       [ip]
     );
-    
+
     if (!attempts) {
-      // Primer intento fallido desde este IP
       await db.execute(
         'INSERT INTO login_attempts (ip_address, usuario, intentos_fallidos, ultimo_intento) VALUES (?, ?, 1, NOW())',
         [ip, usuario || null]
       );
     } else {
-      // Incrementar contador
-      const nuevos_intentos = attempts.intentos_fallidos + 1;
-      let bloqueado_hasta = null;
-      
-      if (nuevos_intentos >= MAX_INTENTOS) {
-        // Calcular tiempo de bloqueo (5 minutos desde ahora, en UNIX timestamp)
-        bloqueado_hasta = Math.floor((Date.now() + TIEMPO_BLOQUEO_MIN * 60 * 1000) / 1000);
+      const nuevosIntentos = attempts.intentos_fallidos + 1;
+      if (nuevosIntentos >= MAX_INTENTOS) {
+        await db.execute(
+          `UPDATE login_attempts
+           SET intentos_fallidos = ?,
+               bloqueado_hasta = DATE_ADD(NOW(), INTERVAL ? MINUTE),
+               usuario = ?,
+               ultimo_intento = NOW()
+           WHERE ip_address = ?`,
+          [nuevosIntentos, TIEMPO_BLOQUEO_MIN, usuario || attempts.usuario, ip]
+        );
+      } else {
+        await db.execute(
+          `UPDATE login_attempts
+           SET intentos_fallidos = ?,
+               bloqueado_hasta = NULL,
+               usuario = ?,
+               ultimo_intento = NOW()
+           WHERE ip_address = ?`,
+          [nuevosIntentos, usuario || attempts.usuario, ip]
+        );
       }
-      
-      await db.execute(
-        'UPDATE login_attempts SET intentos_fallidos = ?, bloqueado_hasta = ?, usuario = ?, ultimo_intento = NOW() WHERE ip_address = ?',
-        [nuevos_intentos, bloqueado_hasta, usuario || attempts.usuario, ip]
-      );
     }
-    
+
     logger.warn(`[RATE LIMIT] Intento fallido registrado para IP: ${ip}`);
   } catch (error) {
     logger.error('[RATE LIMIT] Error registrando intento fallido', { error: error.message });
   }
 }
 
-/**
- * Resetear intentos después de login exitoso
- */
 async function resetAttempts(ip) {
   try {
     await db.execute(
@@ -96,18 +94,13 @@ async function resetAttempts(ip) {
   }
 }
 
-/**
- * Obtener información de bloqueo
- */
 async function getBlockInfo(ip) {
   try {
     const attempts = await db.queryOne(
-      'SELECT * FROM login_attempts WHERE ip_address = ?',
+      'SELECT intentos_fallidos, bloqueado_hasta, usuario FROM login_attempts WHERE ip_address = ?',
       [ip]
     );
-    
     if (!attempts) return null;
-    
     return {
       intentos: attempts.intentos_fallidos,
       bloqueado_hasta: attempts.bloqueado_hasta,

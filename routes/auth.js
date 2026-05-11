@@ -1,12 +1,11 @@
 // routes/auth.js — Login, logout, sesión, mi cuenta, cambiar contraseña
 const express = require('express');
 const router = express.Router();
-const bcrypt = require('bcryptjs');
-const crypto = require('crypto');
 const db = require('../utils/db-mysql');
 const rateLimiter = require('../modules/rate-limiter');
 const logger = require('../utils/logger');
 const { requireAuth, safeError, emitSocket } = require('../middleware');
+const { isValidClientHash, hashForStorage, compareClientHash } = require('../utils/password');
 
 // Estas funciones viven en server.js y se inyectan al montar el router
 // Se acceden vía req.app.locals para evitar imports circulares
@@ -19,6 +18,14 @@ router.post('/login', async (req, res) => {
   const { usuario, password } = req.body || {};
   if (!usuario || !password) {
     return res.status(400).json({ error: 'Usuario y contraseña requeridos' });
+  }
+
+  if (typeof usuario !== 'string' || usuario.length > 64 || !/^[a-zA-Z0-9._-]+$/.test(usuario)) {
+    return res.status(400).json({ error: 'Usuario o contraseña incorrectos' });
+  }
+
+  if (!isValidClientHash(password)) {
+    return res.status(400).json({ error: 'Usuario o contraseña incorrectos' });
   }
 
   const clientIP = rateLimiter.getClientIP(req);
@@ -45,7 +52,7 @@ router.post('/login', async (req, res) => {
 
     const user = users[0];
 
-    if (!bcrypt.compareSync(password, user.password_hash)) {
+    if (!compareClientHash(password, user.password_hash)) {
       await rateLimiter.recordFailedAttempt(clientIP, usuario);
       return res.status(401).json({ error: 'Usuario o contraseña incorrectos' });
     }
@@ -141,7 +148,7 @@ router.post('/cambiar-contrasena', requireAuth, async (req, res) => {
     if (nuevaContrasena !== confirmarContrasena) {
       return res.status(400).json({ error: 'Las contraseñas no coinciden' });
     }
-    if (nuevaContrasena.length < 100) {
+    if (!isValidClientHash(nuevaContrasena) || !isValidClientHash(contrasenaActual)) {
       return res.status(400).json({ error: 'Contraseña inválida' });
     }
     if (nombre && nombre.trim().length === 0) {
@@ -155,10 +162,10 @@ router.post('/cambiar-contrasena', requireAuth, async (req, res) => {
     const user = users[0];
 
     if (nuevaContrasena) {
-      if (!bcrypt.compareSync(contrasenaActual, user.password_hash)) {
+      if (!compareClientHash(contrasenaActual, user.password_hash)) {
         return res.status(401).json({ error: 'La contraseña actual es incorrecta' });
       }
-      if (bcrypt.compareSync(nuevaContrasena, user.password_hash)) {
+      if (compareClientHash(nuevaContrasena, user.password_hash)) {
         return res.status(400).json({ error: 'La nueva contraseña debe ser diferente a la actual' });
       }
     }
@@ -166,7 +173,7 @@ router.post('/cambiar-contrasena', requireAuth, async (req, res) => {
     const updates = [];
     const params = [];
     if (nombre) { updates.push('nombre = ?'); params.push(nombre.trim()); }
-    if (nuevaContrasena) { updates.push('password_hash = ?'); params.push(bcrypt.hashSync(nuevaContrasena, 10)); }
+    if (nuevaContrasena) { updates.push('password_hash = ?'); params.push(hashForStorage(nuevaContrasena)); }
     params.push(req.session.usuarioId);
 
     await db.execute(`UPDATE usuarios SET ${updates.join(', ')} WHERE id = ?`, params);

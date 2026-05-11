@@ -114,7 +114,21 @@ router.post('/recibos', requireAuth, requireRoleOrPerm(['superadmin', 'admin', '
   const body = req.body;
   if (!body || typeof body !== 'object') return res.status(400).json({ error: 'Cuerpo de la petición inválido' });
   const { cliente, fecha, total, data, medico_id, medico_nombre, tipo_pago, nombre_entidad, tipo_servicio, turno_id, cita_electro_id, observaciones, estado_pago } = body;
-  if (total == null) return res.status(400).json({ error: 'Se requiere el campo total' });
+  const totalNum = Number(total);
+  if (!Number.isFinite(totalNum) || totalNum < 0) {
+    return res.status(400).json({ error: 'Se requiere el campo total con un valor numérico válido' });
+  }
+  if (data && typeof data === 'object' && Array.isArray(data.items)) {
+    const sumaItems = data.items.reduce((acc, it) => acc + Number(it?.price || 0), 0);
+    const subtotal = Number(data.subtotal || 0);
+    const iva = Number(data.iva || 0);
+    if (Math.abs(sumaItems - subtotal) > 0.5) {
+      return res.status(400).json({ error: 'El subtotal no coincide con la suma de los ítems' });
+    }
+    if (Math.abs((subtotal + iva) - totalNum) > 0.5) {
+      return res.status(400).json({ error: 'El total no coincide con subtotal + IVA' });
+    }
+  }
   const estadoPagoVal = (estado_pago === 'PENDIENTE') ? 'PENDIENTE' : 'PAGADO';
 
   let generado_por_id = req.session.usuarioId || null;
@@ -235,7 +249,11 @@ router.get('/recibos/buscar-cita', requireAuth, requireRoleOrPerm(['superadmin',
 // GET /api/recibos
 router.get('/recibos', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion', 'contabilidad'], 'recibos.ver'), async (req, res) => {
   try {
-    const { fecha_desde, fecha_hasta, tipo_pago, medico_id, medico_nombre, generado_por_id, nombre_entidad, tipo_servicio, q, estado_pago } = req.query;
+    const { fecha_desde, fecha_hasta, tipo_pago, medico_id, medico_nombre, generado_por_id, nombre_entidad, tipo_servicio, q, estado_pago, limit, offset } = req.query;
+    const rawLimit = parseInt(limit, 10);
+    const safeLimit = Math.max(1, Math.min(Number.isFinite(rawLimit) ? rawLimit : 500, 500));
+    const rawOffset = parseInt(offset, 10);
+    const safeOffset = Math.max(0, Number.isFinite(rawOffset) ? rawOffset : 0);
     const conditions = [];
     const params = [];
     if (fecha_desde) { conditions.push('fecha >= ?'); params.push(fecha_desde); }
@@ -273,12 +291,16 @@ router.get('/recibos', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'a
       params.push(like, like, like, like, like, like, like);
     }
     const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
+    // safeLimit/safeOffset están sanitizados como enteros, interpolación segura
     const rows = await db.query(
-      `SELECT id, numero, cliente, fecha, total, tipo_pago, nombre_entidad, medico_id, medico_nombre, tipo_servicio, generado_por_id, generado_por_nombre, observaciones, turno_id, cita_electro_id, creado_en, data, estado_pago, fecha_pago, pagado_por_nombre FROM recibos ${where} ORDER BY id DESC LIMIT 500`,
+      `SELECT id, numero, cliente, fecha, total, tipo_pago, nombre_entidad, medico_id, medico_nombre, tipo_servicio, generado_por_id, generado_por_nombre, observaciones, turno_id, cita_electro_id, creado_en, data, estado_pago, fecha_pago, pagado_por_nombre FROM recibos ${where} ORDER BY id DESC LIMIT ${safeLimit} OFFSET ${safeOffset}`,
       params
     );
     res.json(rows || []);
-  } catch (err) { res.status(500).json({ error: safeError(err) }); }
+  } catch (err) {
+    logger.error('[RECIBOS] list error:', err.message);
+    res.status(500).json({ error: safeError(err) });
+  }
 });
 
 // GET /api/recibos/export/xlsx — BEFORE /:id
@@ -487,7 +509,7 @@ router.put('/recibos/:id', requireAuth, requireRoleOrPerm(['superadmin'], 'recib
   if (id === null) return res.status(400).json({ error: 'ID de recibo inválido' });
   const { cliente, medico_nombre, tipo_servicio, nombre_entidad } = req.body || {};
   try {
-    const rows = await db.query('SELECT * FROM recibos WHERE id=?', [id]);
+    const rows = await db.query('SELECT id, anulado FROM recibos WHERE id=?', [id]);
     if (!rows.length) return res.status(404).json({ error: 'Recibo no encontrado' });
     if (rows[0].anulado) return res.status(400).json({ error: 'No se puede editar un recibo anulado' });
     const updates = [];
@@ -511,7 +533,7 @@ router.patch('/recibos/:id/anular', requireAuth, requireRoleOrPerm(['superadmin'
   const { razon } = req.body || {};
   if (!razon || !razon.trim()) return res.status(400).json({ error: 'Debe indicar la razón de anulación' });
   try {
-    const rows = await db.query('SELECT * FROM recibos WHERE id=?', [id]);
+    const rows = await db.query('SELECT id, anulado FROM recibos WHERE id=?', [id]);
     if (!rows.length) return res.status(404).json({ error: 'Recibo no encontrado' });
     if (rows[0].anulado) return res.status(400).json({ error: 'Este recibo ya está anulado' });
     const usuario = await db.query('SELECT nombre FROM usuarios WHERE id=?', [req.session.usuarioId]);
@@ -530,7 +552,7 @@ router.patch('/recibos/:id/pagar', requireAuth, requireRoleOrPerm(['superadmin',
   const id = parseReciboId(req.params.id);
   if (id === null) return res.status(400).json({ error: 'ID de recibo inválido' });
   try {
-    const rows = await db.query('SELECT * FROM recibos WHERE id=?', [id]);
+    const rows = await db.query('SELECT id, anulado, estado_pago FROM recibos WHERE id=?', [id]);
     if (!rows.length) return res.status(404).json({ error: 'Recibo no encontrado' });
     if (rows[0].anulado) return res.status(400).json({ error: 'No se puede marcar como pagado un recibo anulado' });
     if (rows[0].estado_pago === 'PAGADO') return res.status(400).json({ error: 'Este recibo ya está pagado' });
@@ -562,7 +584,13 @@ router.get('/recibos/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin'
   const id = parseReciboId(req.params.id);
   if (id === null) return res.status(400).json({ error: 'ID de recibo inválido' });
   try {
-    const rows = await db.query('SELECT * FROM recibos WHERE id=?', [id]);
+    const rows = await db.query(
+      `SELECT id, numero, cliente, fecha, total, data, medico_id, medico_nombre,
+              tipo_pago, nombre_entidad, tipo_servicio, generado_por_id, generado_por_nombre,
+              turno_id, cita_electro_id, observaciones, anulado, anulado_razon,
+              anulado_por_id, anulado_por_nombre, anulado_en,
+              estado_pago, fecha_pago, pagado_por_id, pagado_por_nombre, creado_en
+       FROM recibos WHERE id=?`, [id]);
     const row = rows.length > 0 ? rows[0] : null;
     if (!row) return res.status(404).json({ error: 'No encontrado' });
     try { row.data = JSON.parse(row.data); } catch (e) { return res.status(500).json({ error: 'Datos del recibo corruptos' }); }
@@ -575,7 +603,10 @@ router.get('/recibos/:id/pdf', requireAuth, requireRoleOrPerm(['superadmin', 'ad
   const id = parseReciboId(req.params.id);
   if (id === null) return res.status(400).json({ error: 'ID de recibo inválido' });
   try {
-    const rows = await db.query('SELECT * FROM recibos WHERE id=?', [id]);
+    const rows = await db.query(
+      `SELECT id, numero, cliente, fecha, total, data, tipo_pago, nombre_entidad,
+              anulado, anulado_razon, anulado_por_nombre, anulado_en
+       FROM recibos WHERE id=?`, [id]);
     const row = rows.length > 0 ? rows[0] : null;
     if (!row) return res.status(404).json({ error: 'No encontrado' });
     let data;

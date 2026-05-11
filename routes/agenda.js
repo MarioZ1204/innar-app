@@ -7,7 +7,7 @@ const fs = require('fs');
 const db = require('../utils/db-mysql');
 const logger = require('../utils/logger');
 const procesarAgendaExcel = require('../utils/procesar-agenda-excel');
-const { upload } = require('../middleware/upload');
+const { upload, validateMagicBytes } = require('../middleware/upload');
 const {
   requireAuth, requireRoleOrPerm,
   isAdminRol, isRecepcionRol,
@@ -89,19 +89,30 @@ router.post('/doctor-agenda', requireAuth, async (req, res) => {
   }
 });
 
-router.post('/doctor-agenda/upload', requireAuth, upload.single('file'), async (req, res) => {
+router.post('/doctor-agenda/upload', requireAuth, upload.single('file'), validateMagicBytes, async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No se recibió archivo' });
     }
-    const doctor_id = req.body.doctor_id || req.session.usuarioId;
+    const doctorId = parseInt(req.body.doctor_id || req.session.usuarioId, 10);
+    if (!doctorId) {
+      fs.unlink(req.file.path, () => {});
+      return res.status(400).json({ error: 'doctor_id inválido' });
+    }
+    const isAdminUser = isAdminRol(req.session.rol) || isRecepcionRol(req.session.rol);
+    const isDoctorUser = req.session.rol === 'doctor' && doctorId === parseInt(req.session.usuarioId, 10);
+    if (!isAdminUser && !isDoctorUser) {
+      fs.unlink(req.file.path, () => {});
+      return res.status(403).json({ error: 'No tienes permiso para subir archivos a la agenda de otro doctor' });
+    }
     const url = `/uploads/${req.file.filename}`;
     const result = await db.execute(
       'INSERT INTO doctor_agenda_files (doctor_id, filename, url, uploaded_by) VALUES (?, ?, ?, ?)',
-      [doctor_id, req.file.originalname, url, req.session.usuarioId || null]
+      [doctorId, req.file.originalname, url, req.session.usuarioId || null]
     );
     res.json({ ok: true, id: result.insertId, url });
   } catch (e) {
+    if (req.file) fs.unlink(req.file.path, () => {});
     logger.error(e.message, { error: e });
     res.status(500).json({ error: safeError(e) });
   }
@@ -268,7 +279,7 @@ async function handleProcesarExcelDisponibilidad(req, res) {
   }
 }
 
-router.post('/doctor-disponibilidad/procesar-excel', requireAuth, upload.single('file'), async (req, res) => {
+router.post('/doctor-disponibilidad/procesar-excel', requireAuth, upload.single('file'), validateMagicBytes, async (req, res) => {
   return handleProcesarExcelDisponibilidad(req, res);
 });
 
@@ -352,8 +363,10 @@ router.post('/doctor-disponibilidad/eliminar-dia', requireAuth, async (req, res)
 
     if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return res.status(400).json({ error: 'Formato de fecha inválido' });
 
-    await db.execute('DELETE FROM doctor_disponibilidad_mensual WHERE doctor_id = ? AND fecha = ?', [doctorId, fecha]);
-    await db.execute('DELETE FROM doctor_agenda WHERE doctor_id = ? AND fecha = ?', [doctorId, fecha]);
+    await db.transaction(async (conn) => {
+      await conn.execute('DELETE FROM doctor_disponibilidad_mensual WHERE doctor_id = ? AND fecha = ?', [doctorId, fecha]);
+      await conn.execute('DELETE FROM doctor_agenda WHERE doctor_id = ? AND fecha = ?', [doctorId, fecha]);
+    });
 
     if (req.app.io) emitSocket('agenda:disponibilidad-actualizada', { doctor_id: doctorId });
     res.json({ ok: true });
@@ -439,7 +452,7 @@ router.get('/doctor-disponibilidad', requireAuth, async (req, res) => {
 
 // --- Rutas heredadas (compatibilidad) ---
 
-router.post('/doctor-dias-bloqueados/procesar-excel', requireAuth, upload.single('file'), async (req, res) => {
+router.post('/doctor-dias-bloqueados/procesar-excel', requireAuth, upload.single('file'), validateMagicBytes, async (req, res) => {
   return handleProcesarExcelDisponibilidad(req, res);
 });
 

@@ -168,7 +168,13 @@ function rotateIfNeeded(filePath) {
 /**
  * Campos sensibles que se redactan antes de escribir al log
  */
-const SENSITIVE_KEYS = ['password', 'contrasena', 'contraseña', 'secret', 'token', 'authorization', 'cookie'];
+const SENSITIVE_KEYS = [
+  'password', 'contrasena', 'contraseña', 'secret', 'token', 'authorization', 'cookie',
+  'password_hash', 'password_temporal', 'hash', 'csrf', 'csrftoken',
+  // PII clínica: redactar por defecto
+  'documento', 'dni', 'cedula', 'cédula', 'paciente_telefono', 'telefono', 'telefono2',
+  'paciente_documento', 'paciente_email', 'email'
+];
 
 /**
  * Redactar datos sensibles del objeto de datos
@@ -189,16 +195,86 @@ function redactSensitive(data) {
 }
 
 /**
- * Escribir línea al archivo de log de forma segura
+ * Cola async de escritura. Un solo stream por archivo, encolamos y vaciamos en
+ * el próximo tick para no bloquear el event loop bajo carga.
+ *
+ * En `production` se usa write stream + cola; en otros entornos seguimos con
+ * `appendFileSync` para mantener el comportamiento histórico en tests/dev.
  */
-function appendToLog(filePath, line) {
-  try {
-    ensureLogDir();
-    rotateIfNeeded(filePath);
-    fs.appendFileSync(filePath, line + '\n', 'utf8');
-  } catch (e) {
-    console.error('Error escribiendo log:', e.message);
+const ASYNC_LOGS = (process.env.LOG_ASYNC || (process.env.NODE_ENV === 'production' ? 'true' : 'false')) === 'true';
+
+const writeStreams = new Map();
+const writeQueues = new Map();
+let queueFlushScheduled = false;
+
+function getOrCreateStream(filePath) {
+  let stream = writeStreams.get(filePath);
+  if (stream && !stream.closed) return stream;
+  ensureLogDir();
+  rotateIfNeeded(filePath);
+  stream = fs.createWriteStream(filePath, { flags: 'a', encoding: 'utf8' });
+  stream.on('error', (e) => console.error('Log stream error:', e.message));
+  writeStreams.set(filePath, stream);
+  return stream;
+}
+
+function scheduleFlush() {
+  if (queueFlushScheduled) return;
+  queueFlushScheduled = true;
+  setImmediate(flushQueues);
+}
+
+function flushQueues() {
+  queueFlushScheduled = false;
+  for (const [filePath, lines] of writeQueues.entries()) {
+    if (lines.length === 0) continue;
+    try {
+      rotateIfNeeded(filePath);
+      const stream = getOrCreateStream(filePath);
+      const chunk = lines.join('\n') + '\n';
+      writeQueues.set(filePath, []);
+      stream.write(chunk);
+    } catch (e) {
+      console.error('Error vaciando cola de log:', e.message);
+    }
   }
+}
+
+function appendToLog(filePath, line) {
+  if (!ASYNC_LOGS) {
+    try {
+      ensureLogDir();
+      rotateIfNeeded(filePath);
+      fs.appendFileSync(filePath, line + '\n', 'utf8');
+    } catch (e) {
+      console.error('Error escribiendo log:', e.message);
+    }
+    return;
+  }
+  let q = writeQueues.get(filePath);
+  if (!q) { q = []; writeQueues.set(filePath, q); }
+  q.push(line);
+  // Si la cola crece demasiado, flushear inmediatamente para no perder eventos
+  if (q.length >= 200) {
+    flushQueues();
+  } else {
+    scheduleFlush();
+  }
+}
+
+function closeLogStreams() {
+  try { flushQueues(); } catch (_) {}
+  for (const stream of writeStreams.values()) {
+    try { stream.end(); } catch (_) {}
+  }
+  writeStreams.clear();
+}
+
+// Asegurar flush en cierre del proceso (best-effort)
+if (ASYNC_LOGS) {
+  process.on('exit', closeLogStreams);
+  process.on('SIGINT', () => { closeLogStreams(); process.exit(130); });
+  process.on('SIGTERM', () => { closeLogStreams(); process.exit(143); });
 }
 
 /**
@@ -241,5 +317,7 @@ module.exports = {
   sql,
   getTail,
   cleanOldLogs,
-  ensureLogDir
+  ensureLogDir,
+  closeLogStreams,
+  flushQueues
 };

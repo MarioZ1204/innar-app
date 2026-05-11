@@ -1,5 +1,12 @@
 RewriteEngine On
 
+# ----------------------------------------------------------------------
+# Proxy de /api/ y /socket.io/ hacia Node.js (puerto local).
+# Si el puerto local Node escucha en uno distinto a 3000, ajustar abajo.
+# En Hostinger, Apache proxyea desde el dominio público (HTTPS) hacia Node
+# en localhost. Node nunca expone su puerto al exterior.
+# ----------------------------------------------------------------------
+
 # Proxy de /api/ hacia Node.js
 RewriteCond %{REQUEST_URI} ^/api/
 RewriteRule ^api/(.*)$ http://localhost:3000/api/$1 [P,L]
@@ -8,7 +15,7 @@ RewriteRule ^api/(.*)$ http://localhost:3000/api/$1 [P,L]
 RewriteCond %{REQUEST_URI} ^/socket.io/
 RewriteRule ^socket.io/(.*)$ http://localhost:3000/socket.io/$1 [P,L]
 
-# Todo lo demás va al index.html (SPA)
+# Todo lo demás (rutas SPA) va a public/index.html
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
 RewriteRule ^ public/index.html [QSA,L]

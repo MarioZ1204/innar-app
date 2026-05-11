@@ -5,15 +5,30 @@
 const express = require('express');
 const AppointmentService = require('../services/appointmentService');
 const logger = require('../utils/logger');
-const { safeError } = require('../middleware/index');
+const { requireRoleOrPerm, safeError } = require('../middleware/index');
 
 const router = express.Router();
+
+const ELECTRO_GESTORES = [
+  'superadmin', 'admin',
+  'admin_electro', 'electro', 'tecnico_electro',
+  'admin_recepcion', 'recepcion'
+];
+const ELECTRO_LECTORES = [
+  ...ELECTRO_GESTORES,
+  'auxiliar_recepcion', 'doctor', 'contabilidad'
+];
+
+const canRead = requireRoleOrPerm(ELECTRO_LECTORES, 'electro.ver');
+const canWrite = requireRoleOrPerm(ELECTRO_GESTORES, 'electro.crear');
+const canEdit = requireRoleOrPerm(ELECTRO_GESTORES, 'electro.editar');
+const canDelete = requireRoleOrPerm(ELECTRO_GESTORES, 'electro.eliminar');
 
 /**
  * POST /api/v1/appointments
  * Crear nueva cita
  */
-router.post('/', async (req, res) => {
+router.post('/', canWrite, async (req, res) => {
   try {
     const {
       study_type_id,
@@ -65,15 +80,19 @@ router.post('/', async (req, res) => {
  * GET /api/v1/appointments
  * Listar citas con filtros
  */
-router.get('/', async (req, res) => {
+router.get('/', canRead, async (req, res) => {
   try {
     const { fecha, equipo_id, estado, limit, offset } = req.query;
+    const rawLimit = parseInt(limit, 10);
+    const safeLimit = Math.max(1, Math.min(Number.isFinite(rawLimit) ? rawLimit : 100, 100));
+    const rawOffset = parseInt(offset, 10);
+    const safeOffset = Math.max(0, Number.isFinite(rawOffset) ? rawOffset : 0);
     const appointments = await AppointmentService.listAppointments({
       fecha,
       equipo_id: equipo_id ? parseInt(equipo_id) : undefined,
       estado,
-      limit: limit ? parseInt(limit) : 100,
-      offset: offset ? parseInt(offset) : 0
+      limit: safeLimit,
+      offset: safeOffset
     });
 
     res.json(appointments);
@@ -87,7 +106,7 @@ router.get('/', async (req, res) => {
  * GET /api/v1/appointments/availability/:equipment_id/:date
  * Obtener disponibilidad de un equipo
  */
-router.get('/availability/:equipment_id/:date', async (req, res) => {
+router.get('/availability/:equipment_id/:date', canRead, async (req, res) => {
   try {
     const { equipment_id, date } = req.params;
     const occupancies = await AppointmentService.getEquipmentAvailability(equipment_id, date);
@@ -103,7 +122,7 @@ router.get('/availability/:equipment_id/:date', async (req, res) => {
  * GET /api/v1/study-types
  * Obtener tipos de estudio
  */
-router.get('/types/list', async (req, res) => {
+router.get('/types/list', canRead, async (req, res) => {
   try {
     const studies = await AppointmentService.getStudyTypes();
     res.json(studies);
@@ -117,7 +136,7 @@ router.get('/types/list', async (req, res) => {
  * GET /api/v1/equipments
  * Obtener equipos disponibles
  */
-router.get('/equipments/list', async (req, res) => {
+router.get('/equipments/list', canRead, async (req, res) => {
   try {
     const equipments = await AppointmentService.getEquipments();
     res.json(equipments);
@@ -131,7 +150,7 @@ router.get('/equipments/list', async (req, res) => {
  * GET /api/v1/appointments/:id
  * Obtener cita por ID
  */
-router.get('/:id', async (req, res) => {
+router.get('/:id', canRead, async (req, res) => {
   try {
     const { id } = req.params;
     const appointment = await AppointmentService.getAppointmentById(id);
@@ -151,7 +170,7 @@ router.get('/:id', async (req, res) => {
  * PATCH /api/v1/appointments/:id
  * Actualizar cita
  */
-router.patch('/:id', async (req, res) => {
+router.patch('/:id', canEdit, async (req, res) => {
   try {
     const { id } = req.params;
     const data = req.body;
@@ -169,7 +188,7 @@ router.patch('/:id', async (req, res) => {
  * DELETE /api/v1/appointments/:id
  * Cancelar cita
  */
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', canDelete, async (req, res) => {
   try {
     const { id } = req.params;
 

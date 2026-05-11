@@ -1,0 +1,364 @@
+// migrations/runtime-migrations.js
+// Migraciones que se aplicaban inline en server.js. Se ejecutan al arranque
+// para tolerar instalaciones antiguas. Se registran en `schema_migrations`
+// para no repetirse.
+//
+// Cada entrada es { name, description, run: async (db) => ... }.
+// Si `run` lanza, se loguea y se continúa con la siguiente (best-effort).
+
+const COLUMN_EXISTS_SQL = `
+  SELECT COUNT(*) AS cnt
+  FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME   = ?
+    AND COLUMN_NAME  = ?
+`;
+
+const TABLE_EXISTS_SQL = `
+  SELECT COUNT(*) AS cnt
+  FROM information_schema.TABLES
+  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?
+`;
+
+async function columnExists(db, table, column) {
+  const rows = await db.query(COLUMN_EXISTS_SQL, [table, column]);
+  return !!(rows && rows[0] && rows[0].cnt > 0);
+}
+
+async function tableExists(db, table) {
+  const rows = await db.query(TABLE_EXISTS_SQL, [table]);
+  return !!(rows && rows[0] && rows[0].cnt > 0);
+}
+
+const runtimeMigrations = [
+  {
+    name: 'rt_servicios_recibo_seed',
+    description: 'Crea tabla servicios_recibo y siembra defaults',
+    run: async (db) => {
+      await db.execute(`CREATE TABLE IF NOT EXISTS servicios_recibo (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        nombre VARCHAR(300) NOT NULL UNIQUE,
+        activo TINYINT DEFAULT 1,
+        creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+      const rows = await db.query('SELECT COUNT(*) AS n FROM servicios_recibo');
+      if (rows[0].n === 0) {
+        const defaults = [
+          'Electroencefalograma Computarizado',
+          'Electroencefalograma Convencional',
+          'Monitorización Electroencefalográfica por video y radio',
+          'Polisomnografía',
+          'Polisomnograma en Titulación de CPAP/BPAP',
+          'Test de Latencia Múltiple',
+          'Polisomnograma Noche Dividida'
+        ];
+        for (const nombre of defaults) {
+          await db.execute('INSERT IGNORE INTO servicios_recibo (nombre) VALUES (?)', [nombre]);
+        }
+      }
+    }
+  },
+  {
+    name: 'rt_entidades_seed',
+    description: 'Crea tabla entidades y siembra defaults',
+    run: async (db) => {
+      await db.execute(`CREATE TABLE IF NOT EXISTS entidades (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        nombre VARCHAR(200) NOT NULL UNIQUE,
+        activo TINYINT DEFAULT 1,
+        creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+      const rows = await db.query('SELECT COUNT(*) AS n FROM entidades');
+      if (rows[0].n === 0) {
+        const defaults = ['PARTICULAR', 'FOMAG', 'UCQN', 'PROINSALUD', 'FIDUPREVISORA', 'CAFESALUD', 'NUEVA EPS', 'SURA', 'SANITAS', 'COMPENSAR'];
+        for (const nombre of defaults) {
+          await db.execute('INSERT IGNORE INTO entidades (nombre) VALUES (?)', [nombre]);
+        }
+      }
+    }
+  },
+  {
+    name: 'rt_doctor_disp_collation',
+    description: 'Collation utf8mb4_general_ci en doctor_disponibilidad_mensual',
+    run: async (db) => {
+      if (await tableExists(db, 'doctor_disponibilidad_mensual')) {
+        await db.execute('ALTER TABLE doctor_disponibilidad_mensual CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci');
+      }
+    }
+  },
+  {
+    name: 'rt_doctor_disp_motivo_ausencia',
+    description: 'Añade motivo_ausencia a doctor_disponibilidad_mensual',
+    run: async (db) => {
+      if (!(await columnExists(db, 'doctor_disponibilidad_mensual', 'motivo_ausencia'))) {
+        await db.execute('ALTER TABLE doctor_disponibilidad_mensual ADD COLUMN motivo_ausencia VARCHAR(200) DEFAULT NULL');
+      }
+    }
+  },
+  {
+    name: 'rt_citas_electro_deleted_at',
+    description: 'Soft-delete: citas_electro.deleted_at',
+    run: async (db) => {
+      if (!(await columnExists(db, 'citas_electro', 'deleted_at'))) {
+        await db.execute('ALTER TABLE citas_electro ADD COLUMN deleted_at DATETIME DEFAULT NULL');
+      }
+    }
+  },
+  {
+    name: 'rt_citas_electro_entidad',
+    description: 'citas_electro.entidad + índice',
+    run: async (db) => {
+      if (!(await columnExists(db, 'citas_electro', 'entidad'))) {
+        await db.execute('ALTER TABLE citas_electro ADD COLUMN entidad VARCHAR(200) DEFAULT NULL AFTER diagnostico_id');
+        await db.execute('ALTER TABLE citas_electro ADD INDEX idx_entidad (entidad)');
+      }
+    }
+  },
+  {
+    name: 'rt_ucqn_estudios_table',
+    description: 'Tabla ucqn_estudios',
+    run: async (db) => {
+      await db.execute(`
+        CREATE TABLE IF NOT EXISTS ucqn_estudios (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          cita_electro_id INT NOT NULL,
+          fecha_estudio DATE NOT NULL,
+          hora_estudio TIME NULL,
+          paciente_nombres VARCHAR(150) NOT NULL,
+          paciente_apellidos VARCHAR(150) DEFAULT NULL,
+          paciente_documento VARCHAR(50) DEFAULT NULL,
+          tipo_estudio VARCHAR(255) DEFAULT NULL,
+          entidad VARCHAR(100) NOT NULL DEFAULT 'UCQN',
+          estado ENUM('PENDIENTE','LEIDO','FACTURADO') NOT NULL DEFAULT 'PENDIENTE',
+          estado_actualizado_en DATETIME DEFAULT NULL,
+          estado_actualizado_por VARCHAR(150) DEFAULT NULL,
+          creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          actualizado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          UNIQUE KEY uk_ucqn_cita (cita_electro_id),
+          INDEX idx_ucqn_fecha (fecha_estudio),
+          INDEX idx_ucqn_estado (estado),
+          CONSTRAINT fk_ucqn_cita_electro FOREIGN KEY (cita_electro_id) REFERENCES citas_electro(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+      `);
+    }
+  },
+  {
+    name: 'rt_equipos_5_6_bloqueados',
+    description: 'Equipos 5 y 6 inactivos',
+    run: async (db) => {
+      await db.execute(`INSERT IGNORE INTO equipos_electro (nombre, activo) VALUES ('Equipo 5', 0), ('Equipo 6', 0)`);
+    }
+  },
+  {
+    name: 'rt_turnos_paciente_telefono2',
+    description: 'turnos.paciente_telefono2',
+    run: async (db) => {
+      if (!(await columnExists(db, 'turnos', 'paciente_telefono2'))) {
+        await db.execute('ALTER TABLE turnos ADD COLUMN paciente_telefono2 VARCHAR(20) DEFAULT NULL AFTER paciente_telefono');
+      }
+    }
+  },
+  {
+    name: 'rt_pacientes_telefono2',
+    description: 'pacientes.telefono2',
+    run: async (db) => {
+      if (!(await columnExists(db, 'pacientes', 'telefono2'))) {
+        await db.execute('ALTER TABLE pacientes ADD COLUMN telefono2 VARCHAR(20) DEFAULT NULL AFTER telefono');
+      }
+    }
+  },
+  {
+    name: 'rt_usuarios_permisos',
+    description: 'usuarios.permisos JSON',
+    run: async (db) => {
+      if (!(await columnExists(db, 'usuarios', 'permisos'))) {
+        await db.execute('ALTER TABLE usuarios ADD COLUMN permisos JSON DEFAULT NULL');
+      }
+    }
+  },
+  {
+    name: 'rt_usuarios_ultimo_acceso',
+    description: 'usuarios.ultimo_acceso',
+    run: async (db) => {
+      if (!(await columnExists(db, 'usuarios', 'ultimo_acceso'))) {
+        await db.execute('ALTER TABLE usuarios ADD COLUMN ultimo_acceso DATETIME DEFAULT NULL');
+      }
+    }
+  },
+  {
+    name: 'rt_legacy_admin_to_superadmin',
+    description: 'Convierte usuario admin legacy a superadmin',
+    run: async (db) => {
+      const existing = await db.query("SELECT COUNT(*) AS cnt FROM usuarios WHERE rol = 'superadmin'");
+      if (existing?.[0]?.cnt === 0) {
+        const legacy = await db.queryOne("SELECT id FROM usuarios WHERE usuario = 'admin' AND rol = 'admin'");
+        if (legacy) {
+          await db.execute("UPDATE usuarios SET rol = 'superadmin', nombre = 'Super Administrador' WHERE id = ?", [legacy.id]);
+        }
+      }
+    }
+  },
+  {
+    name: 'rt_usuarios_rol_enum',
+    description: 'ENUM rol en usuarios con todos los roles',
+    run: async (db) => {
+      const enumRow = await db.query(
+        "SELECT COLUMN_TYPE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'usuarios' AND COLUMN_NAME = 'rol'"
+      );
+      const current = enumRow?.[0]?.COLUMN_TYPE || '';
+      if (!current.includes('superadmin') || !current.includes('admin_recepcion') || !current.includes('auxiliar_recepcion')) {
+        await db.execute(
+          `ALTER TABLE usuarios MODIFY COLUMN rol ENUM('doctor','recepcion','admin','electro','contabilidad','superadmin','admin_recepcion','admin_electro','tecnico_electro','auxiliar_recepcion') NOT NULL DEFAULT 'auxiliar_recepcion'`
+        );
+      }
+    }
+  },
+  {
+    name: 'rt_pacientes_espera_table',
+    description: 'Tabla pacientes_espera y columnas extra',
+    run: async (db) => {
+      if (!(await tableExists(db, 'pacientes_espera'))) {
+        await db.execute(`
+          CREATE TABLE pacientes_espera (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            documento VARCHAR(20) NOT NULL,
+            nombres VARCHAR(100) NOT NULL,
+            apellidos VARCHAR(100) NOT NULL,
+            entidad VARCHAR(50) NOT NULL,
+            prioridad ENUM('ALTA','MEDIA','BAJA') NOT NULL DEFAULT 'MEDIA',
+            ingresado_por VARCHAR(100) DEFAULT NULL,
+            telefono1 VARCHAR(20) DEFAULT NULL,
+            telefono2 VARCHAR(20) DEFAULT NULL,
+            tipo_estudio VARCHAR(100) DEFAULT NULL,
+            creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        `);
+      } else {
+        for (const col of ['telefono1', 'telefono2', 'tipo_estudio']) {
+          if (!(await columnExists(db, 'pacientes_espera', col))) {
+            const sqlType = col === 'tipo_estudio' ? 'VARCHAR(100)' : 'VARCHAR(20)';
+            await db.execute(`ALTER TABLE pacientes_espera ADD COLUMN ${col} ${sqlType} DEFAULT NULL`);
+          }
+        }
+      }
+    }
+  },
+  {
+    name: 'rt_especialidades_seed',
+    description: 'Tabla especialidades + seed',
+    run: async (db) => {
+      if (!(await tableExists(db, 'especialidades'))) {
+        await db.execute(`
+          CREATE TABLE especialidades (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            nombre VARCHAR(100) NOT NULL,
+            activo TINYINT(1) NOT NULL DEFAULT 1,
+            creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY uk_esp_nombre (nombre)
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        `);
+        for (const nombre of ['Neurología', 'Epileptología', 'Psicología', 'Neuropsicología', 'Psiquiatría']) {
+          await db.execute('INSERT IGNORE INTO especialidades (nombre) VALUES (?)', [nombre]);
+        }
+      }
+    }
+  },
+  {
+    name: 'rt_tipos_consulta_seed',
+    description: 'Tabla tipos_consulta + seed',
+    run: async (db) => {
+      if (!(await tableExists(db, 'tipos_consulta'))) {
+        await db.execute(`
+          CREATE TABLE tipos_consulta (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            especialidad_id INT NOT NULL,
+            nombre VARCHAR(200) NOT NULL,
+            orden INT NOT NULL DEFAULT 0,
+            activo TINYINT(1) NOT NULL DEFAULT 1,
+            FOREIGN KEY (especialidad_id) REFERENCES especialidades(id) ON DELETE CASCADE
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        `);
+        const tiposPorEsp = {
+          'Neurología':     ['Consulta de Primera Vez por Neurología','Consulta de Control por Neurología','Consulta Virtual de Primera Vez por Neurología','Consulta Virtual de Control por Neurología','Aplicación de Toxina Botulínica (Botox)','Control de Toxina Botulínica (Botox)','Actigrafía','Rev. Neuroestimulador','Agente Anestésico','Particular','Otra'],
+          'Epileptología':  ['Consulta de Primera Vez por Epileptología','Consulta de Control por Epileptología','Consulta Virtual de Primera Vez por Epileptología','Consulta Virtual de Control por Epileptología','Consulta de Primera Vez por Neurología','Consulta de Control por Neurología','Consulta Virtual de Primera Vez por Neurología','Consulta Virtual de Control por Neurología','Aplicación de Toxina Botulínica (Botox)','Control de Toxina Botulínica (Botox)','Actigrafía','Rev. Neuroestimulador','Bloqueo Mioneural','Particular','Otra'],
+          'Psicología':     ['Consulta de Primera Vez por Psicología','Consulta de Control por Psicología','Otra'],
+          'Neuropsicología':['Consulta de Primera Vez por Neuropsicología','Consulta de Control por Neuropsicología','Otra'],
+          'Psiquiatría':    ['Consulta de Primera Vez por Psiquiatría','Consulta de Control por Psiquiatría','Otra']
+        };
+        for (const [espNombre, tipos] of Object.entries(tiposPorEsp)) {
+          const espRows = await db.query('SELECT id FROM especialidades WHERE nombre = ?', [espNombre]);
+          if (espRows.length > 0) {
+            const espId = espRows[0].id;
+            for (let i = 0; i < tipos.length; i += 1) {
+              await db.execute('INSERT INTO tipos_consulta (especialidad_id, nombre, orden) VALUES (?,?,?)', [espId, tipos[i], i]);
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    name: 'rt_recibos_anulacion',
+    description: 'Columnas de anulación en recibos',
+    run: async (db) => {
+      await db.execute(`
+        ALTER TABLE recibos
+        ADD COLUMN IF NOT EXISTS anulado TINYINT(1) DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS anulado_razon TEXT NULL,
+        ADD COLUMN IF NOT EXISTS anulado_por_id INT NULL,
+        ADD COLUMN IF NOT EXISTS anulado_por_nombre VARCHAR(200) NULL,
+        ADD COLUMN IF NOT EXISTS anulado_en DATETIME NULL
+      `);
+    }
+  },
+  {
+    name: 'rt_recibos_estado_pago',
+    description: 'Columnas de estado_pago en recibos',
+    run: async (db) => {
+      await db.execute(`
+        ALTER TABLE recibos
+        ADD COLUMN IF NOT EXISTS estado_pago VARCHAR(20) DEFAULT 'PAGADO',
+        ADD COLUMN IF NOT EXISTS fecha_pago DATETIME NULL,
+        ADD COLUMN IF NOT EXISTS pagado_por_id INT NULL,
+        ADD COLUMN IF NOT EXISTS pagado_por_nombre VARCHAR(200) NULL
+      `);
+    }
+  }
+];
+
+/**
+ * Ejecuta migraciones runtime de forma best-effort.
+ * Las que ya están registradas en schema_migrations se omiten.
+ */
+async function runRuntimeMigrations(db, logger) {
+  const log = logger || console;
+
+  // Crear schema_migrations si no existe (compartido con db-migrations.js)
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS schema_migrations (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      name VARCHAR(150) NOT NULL UNIQUE,
+      applied_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      description VARCHAR(500),
+      statements_count INT DEFAULT 1,
+      INDEX idx_name (name)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+  `);
+
+  for (const m of runtimeMigrations) {
+    try {
+      const applied = await db.query('SELECT 1 FROM schema_migrations WHERE name = ? LIMIT 1', [m.name]);
+      if (applied.length > 0) continue;
+      await m.run(db);
+      await db.execute(
+        'INSERT IGNORE INTO schema_migrations (name, description) VALUES (?, ?)',
+        [m.name, m.description || '']
+      );
+      log.info(`[RT-MIGRATION] ${m.name} aplicada`, { type: 'STARTUP' });
+    } catch (err) {
+      log.warn(`[RT-MIGRATION] ${m.name} falló: ${err.message}`, { type: 'STARTUP' });
+    }
+  }
+}
+
+module.exports = { runtimeMigrations, runRuntimeMigrations };

@@ -1,25 +1,18 @@
 // routes/usuarios.js — CRUD de usuarios, permisos, auditoría y reset password
 const express = require('express');
 const router = express.Router();
-const bcrypt = require('bcryptjs');
-const crypto = require('crypto');
 const db = require('../utils/db-mysql');
 const auditLog = require('../modules/audit-log');
 const validation = require('../modules/validation');
 const logger = require('../utils/logger');
 const { requireAuth, requireRoleOrPerm, safeError, emitSocket } = require('../middleware');
-
-function generarPasswordTemporal() {
-  const caracteres = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%';
-  const bytes = crypto.randomBytes(12);
-  let password = '';
-  for (let i = 0; i < 12; i++) password += caracteres[bytes[i] % caracteres.length];
-  return password;
-}
-
-function hashPasswordSHA512(password) {
-  return crypto.createHash('sha512').update(password).digest('hex');
-}
+const {
+  isValidClientHash,
+  hashForStorage,
+  generarPasswordTemporal,
+  hashTemporalParaAlmacenar
+} = require('../utils/password');
+const { validateSchema } = require('../modules/validation-schemas');
 
 const ROLES_VALIDOS = ['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro', 'tecnico_electro', 'auxiliar_recepcion', 'doctor', 'contabilidad'];
 
@@ -54,7 +47,7 @@ router.get('/', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'usuario
 });
 
 // ── Crear usuario ────────────────────────────────────────────────────────────
-router.post('/', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'usuarios.crear'), async (req, res) => {
+router.post('/', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'usuarios.crear'), validateSchema('apiCrearUsuario'), async (req, res) => {
   const { usuario, password, nombre, rol, numero_consultorio, especialidad } = req.body || {};
 
   if (!usuario || !password || !nombre || !rol) {
@@ -66,7 +59,7 @@ router.post('/', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'usuari
     return res.status(400).json({ error: usernameValidation.messages[0] });
   }
 
-  if (!password || password.length < 100) {
+  if (!isValidClientHash(password)) {
     return res.status(400).json({ error: 'Contraseña inválida' });
   }
 
@@ -93,7 +86,7 @@ router.post('/', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'usuari
   }
 
   try {
-    const hash = bcrypt.hashSync(password, 10);
+    const hash = hashForStorage(password);
     const result = await db.execute(
       'INSERT INTO usuarios (usuario, password_hash, nombre, rol, numero_consultorio, especialidad) VALUES (?, ?, ?, ?, ?, ?)',
       [usuario, hash, nombre, rol, consultorioFinal, especialidadFinal]
@@ -120,7 +113,7 @@ router.post('/', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'usuari
 });
 
 // ── Editar usuario ───────────────────────────────────────────────────────────
-router.patch('/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'usuarios.editar'), async (req, res) => {
+router.patch('/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'usuarios.editar'), validateSchema('apiActualizarUsuario'), async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const { usuario, password, nombre, rol, activo, numero_consultorio, especialidad } = req.body || {};
   if (!id) return res.status(400).json({ error: 'ID inválido' });
@@ -178,8 +171,11 @@ router.patch('/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'us
 
     if (activo !== undefined) { updates.push('activo = ?'); params.push(activo ? 1 : 0); }
     if (password && password.trim()) {
+      if (!isValidClientHash(password)) {
+        return res.status(400).json({ error: 'Contraseña inválida' });
+      }
       updates.push('password_hash = ?');
-      params.push(bcrypt.hashSync(password, 10));
+      params.push(hashForStorage(password));
     }
 
     if (updates.length === 0) return res.status(400).json({ error: 'Nada que actualizar' });
@@ -343,7 +339,7 @@ router.patch('/:id/reset-password', requireAuth, requireRoleOrPerm(['superadmin'
     if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
 
     const passwordTemporal = generarPasswordTemporal();
-    const passwordHash = bcrypt.hashSync(hashPasswordSHA512(passwordTemporal), 10);
+    const passwordHash = hashTemporalParaAlmacenar(passwordTemporal);
     await db.execute('UPDATE usuarios SET password_hash = ? WHERE id = ?', [passwordHash, id]);
 
     await auditLog.registrarAuditoria({

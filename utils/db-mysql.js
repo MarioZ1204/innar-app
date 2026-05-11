@@ -27,8 +27,15 @@ async function initPool() {
   return pool;
 }
 
+function assertPool(op) {
+  if (!pool) {
+    throw new Error(`[db-mysql] Pool no inicializado al ejecutar ${op}. Llama a initPool() antes de cualquier query.`);
+  }
+}
+
 // Ejecutar query (SELECT) - retorna array de filas
 async function query(sql, params = []) {
+  assertPool('query');
   const connection = await pool.getConnection();
   try {
     const [rows] = await connection.execute(sql, params);
@@ -46,6 +53,7 @@ async function queryOne(sql, params = []) {
 
 // Ejecutar INSERT/UPDATE/DELETE - retorna resultado (affected rows, lastInsertId)
 async function execute(sql, params = []) {
+  assertPool('execute');
   const connection = await pool.getConnection();
   try {
     const [result] = await connection.execute(sql, params);
@@ -70,6 +78,7 @@ function prepare(sql) {
  * Si el callback lanza, hace ROLLBACK automáticamente.
  */
 async function transaction(callback) {
+  assertPool('transaction');
   const connection = await pool.getConnection();
   await connection.beginTransaction();
   try {

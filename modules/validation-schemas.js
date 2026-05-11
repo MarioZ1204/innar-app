@@ -1,15 +1,21 @@
 // modules/validation-schemas.js
 // Esquemas de validación centralizados con Joi
-// Mantienen la consistencia de datos en toda la aplicación
+//
+// NOTA: existen dos grupos de schemas:
+//  - Legacy (`login`, `crearUsuario`, `crearTurno`, `crearRecibo`, etc.): mantenidos
+//    por compatibilidad con tests viejos. NO reflejan el modelo real en producción.
+//  - "Api" (prefijados con `api*`): alineados con la BD y las rutas reales de
+//    `routes/`. Estos son los que `validateSchema()` debería usar en código nuevo.
 
 const Joi = require('joi');
 
-/**
- * Esquemas de validación para todos los endpoints
- * Agrupa por módulo (auth, usuarios, turnos, citas, recibos, etc.)
- */
+const SHA512_HEX = /^[a-f0-9]{128}$/i;
+const HORA_HHMM = /^([0-1][0-9]|2[0-3]):[0-5][0-9]$/;
+const FECHA_ISO = /^\d{4}-\d{2}-\d{2}$/;
 
-// ============= AUTH & USUARIOS =============
+const ROLES_VALIDOS = ['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro', 'tecnico_electro', 'auxiliar_recepcion', 'doctor', 'contabilidad'];
+const ESTADOS_TURNOS = ['PENDIENTE', 'EN_SALA', 'EN_ATENCION', 'ATENDIDO', 'COMPLETADO', 'NO_ASISTIO', 'CANCELADO', 'REPROGRAMADO'];
+const ESTADOS_ELECTRO = ['Programado', 'Confirmado', 'En Sala', 'En Estudio', 'Pausado', 'Completado', 'No Asistió', 'Cancelado', 'Reprogramado', 'Adelantado'];
 
 const schemas = {
   // -------- LOGIN & AUTH --------
@@ -212,6 +218,88 @@ const schemas = {
     estado: Joi.string().optional(),
     page: Joi.number().integer().min(1).optional().default(1),
     limit: Joi.number().integer().min(1).max(100).optional().default(20)
+  }),
+
+  // ============= API: schemas alineados al modelo real =============
+
+  apiLogin: Joi.object({
+    usuario: Joi.string().pattern(/^[a-zA-Z0-9._-]+$/).max(64).required(),
+    password: Joi.string().pattern(SHA512_HEX).required()
+  }),
+
+  apiCrearUsuario: Joi.object({
+    usuario: Joi.string().pattern(/^[a-zA-Z0-9._-]+$/).min(3).max(50).required(),
+    password: Joi.string().pattern(SHA512_HEX).required(),
+    nombre: Joi.string().min(2).max(255).required(),
+    rol: Joi.string().valid(...ROLES_VALIDOS).required(),
+    numero_consultorio: Joi.number().integer().positive().optional().allow(null),
+    especialidad: Joi.string().max(100).optional().allow(null, '')
+  }),
+
+  apiActualizarUsuario: Joi.object({
+    usuario: Joi.string().pattern(/^[a-zA-Z0-9._-]+$/).min(3).max(50).optional(),
+    password: Joi.string().pattern(SHA512_HEX).optional(),
+    nombre: Joi.string().min(2).max(255).optional(),
+    rol: Joi.string().valid(...ROLES_VALIDOS).optional(),
+    activo: Joi.alternatives().try(Joi.number().valid(0, 1), Joi.boolean()).optional(),
+    numero_consultorio: Joi.number().integer().positive().optional().allow(null),
+    especialidad: Joi.string().max(100).optional().allow(null, '')
+  }).min(1),
+
+  apiCrearTurno: Joi.object({
+    doctor_id: Joi.number().integer().positive().required(),
+    paciente_nombre: Joi.string().min(2).max(255).required(),
+    paciente_documento: Joi.string().max(30).optional().allow(null, ''),
+    paciente_telefono: Joi.string().max(20).optional().allow(null, ''),
+    paciente_telefono2: Joi.string().max(20).optional().allow(null, ''),
+    fecha: Joi.string().pattern(FECHA_ISO).required(),
+    hora: Joi.string().pattern(HORA_HHMM).required(),
+    tipo_consulta: Joi.string().max(200).optional().allow(null, ''),
+    entidad: Joi.string().max(100).optional().allow(null, ''),
+    notas: Joi.string().max(2000).optional().allow(null, ''),
+    oportunidad: Joi.alternatives().try(Joi.number().integer(), Joi.string()).optional().allow(null, ''),
+    programado_por: Joi.string().max(150).optional().allow(null, '')
+  }),
+
+  apiActualizarTurno: Joi.object({
+    paciente_nombre: Joi.string().min(2).max(255).optional(),
+    paciente_documento: Joi.string().max(30).optional().allow(null, ''),
+    paciente_telefono: Joi.string().max(20).optional().allow(null, ''),
+    paciente_telefono2: Joi.string().max(20).optional().allow(null, ''),
+    entidad: Joi.string().max(100).optional().allow(null, ''),
+    notas: Joi.string().max(2000).optional().allow(null, ''),
+    tipo_consulta: Joi.string().max(200).optional().allow(null, ''),
+    fecha: Joi.string().pattern(FECHA_ISO).optional(),
+    hora: Joi.string().pattern(HORA_HHMM).optional(),
+    estado: Joi.string().valid(...ESTADOS_TURNOS).optional(),
+    observaciones: Joi.string().max(2000).optional().allow(null, '')
+  }).min(1),
+
+  apiPatchEstadoTurno: Joi.object({
+    estado: Joi.string().valid(...ESTADOS_TURNOS).required()
+  }),
+
+  apiPatchEstadoElectro: Joi.object({
+    estado: Joi.string().valid(...ESTADOS_ELECTRO).required()
+  }),
+
+  apiCrearDiagnostico: Joi.object({
+    nombre: Joi.string().min(3).max(255).required(),
+    descripcion: Joi.string().max(1000).optional().allow(null, ''),
+    codigo: Joi.string().max(50).optional().allow(null, ''),
+    activo: Joi.alternatives().try(Joi.number().valid(0, 1), Joi.boolean()).optional()
+  }),
+
+  apiPacienteEspera: Joi.object({
+    documento: Joi.string().min(3).max(30).required(),
+    nombres: Joi.string().min(2).max(150).required(),
+    apellidos: Joi.string().min(2).max(150).required(),
+    entidad: Joi.string().max(100).required(),
+    prioridad: Joi.string().valid('ALTA', 'MEDIA', 'BAJA').optional().default('MEDIA'),
+    ingresado_por: Joi.string().max(150).optional().allow(null, ''),
+    telefono1: Joi.string().max(20).optional().allow(null, ''),
+    telefono2: Joi.string().max(20).optional().allow(null, ''),
+    tipo_estudio: Joi.string().max(200).optional().allow(null, '')
   })
 };
 
@@ -292,5 +380,11 @@ function validate(schemaName, data) {
 module.exports = {
   schemas,
   validateSchema,
-  validate
+  validate,
+  ROLES_VALIDOS,
+  ESTADOS_TURNOS,
+  ESTADOS_ELECTRO,
+  SHA512_HEX,
+  HORA_HHMM,
+  FECHA_ISO
 };

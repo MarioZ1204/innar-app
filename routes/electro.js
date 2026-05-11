@@ -5,11 +5,12 @@ const router = express.Router();
 const db = require('../utils/db-mysql');
 const logger = require('../utils/logger');
 const transactions = require('../utils/transactions');
-const { upload } = require('../middleware/upload');
+const { upload, validateMagicBytes } = require('../middleware/upload');
 const {
   requireAuth, requireRoleOrPerm,
   safeError, emitSocket
 } = require('../middleware/index');
+const { validateSchema } = require('../modules/validation-schemas');
 
 // Helper: sincronizar estudios UCQN desde citas_electro
 async function sincronizarUcqnDesdeElectro() {
@@ -343,7 +344,7 @@ router.put('/diagnosticos/:id', requireAuth, requireRoleOrPerm(['superadmin', 'a
 });
 
 // POST /api/diagnosticos/import-excel
-router.post('/diagnosticos/import-excel', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'diagnosticos.crear'), upload.single('file'), async (req, res) => {
+router.post('/diagnosticos/import-excel', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'diagnosticos.crear'), upload.single('file'), validateMagicBytes, async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Debes seleccionar un archivo' });
   try {
     const ExcelJS = require('exceljs');
@@ -590,16 +591,17 @@ router.post('/citas-electro', requireAuth, requireRoleOrPerm(['superadmin', 'adm
         finalFechaFin = `${endDate.getFullYear()}-${String(endDate.getMonth() + 1).padStart(2, '0')}-${String(endDate.getDate()).padStart(2, '0')}`;
       }
 
-      // Auto-completar estudios vencidos para liberar capacidad antes de chequear cupo
+      // Auto-completar SOLO estudios de días anteriores que quedaron "En Estudio".
+      // Antes cerraba cualquier estudio cuya hora_fin planeada hubiera pasado, lo que
+      // marcaba como "Completado" estudios todavía en curso (la duración planeada por
+      // defecto era de 30 min, pero un estudio real puede durar horas). Ahora solo
+      // limpia el rezago de días previos para liberar capacidad sin tocar el día actual.
       await conn.execute(`
         UPDATE citas_electro
         SET estado = 'Completado', editado_por_nombre = 'Sistema (Auto)', editado_en = NOW()
         WHERE estado = 'En Estudio'
-        AND deleted_at IS NULL
-        AND (
-          (hora_fin IS NOT NULL AND TIMESTAMP(COALESCE(hora_fin_date, fecha), hora_fin) < NOW())
-          OR fecha < CURDATE()
-        )
+          AND deleted_at IS NULL
+          AND fecha < CURDATE()
       `);
 
       const dupCheck = await transactions.selectForUpdate(conn,
@@ -680,13 +682,15 @@ router.get('/citas-electro/:id', requireAuth, async (req, res) => {
   }
 });
 
+const ESTADOS_VALIDOS_ELECTRO = ['Programado','Confirmado','En Sala','En Estudio','Pausado','Completado','No Asistió','Cancelado','Reprogramado','Adelantado'];
+
 // PATCH /api/citas-electro/:id/estado
-router.patch('/citas-electro/:id/estado', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro', 'tecnico_electro'], 'electro.cambiar_estado'), async (req, res) => {
+router.patch('/citas-electro/:id/estado', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro', 'tecnico_electro'], 'electro.cambiar_estado'), validateSchema('apiPatchEstadoElectro'), async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  const { estado } = req.body || {};
-  if (!id || !estado) return res.status(400).json({ error: 'id y estado son obligatorios' });
+  const { estado } = req.body;
+  if (!id) return res.status(400).json({ error: 'ID inválido' });
   try {
-    const citas = await db.query('SELECT * FROM citas_electro WHERE id = ?', [id]);
+    const citas = await db.query('SELECT id FROM citas_electro WHERE id = ? AND deleted_at IS NULL', [id]);
     const cita = citas.length > 0 ? citas[0] : null;
     if (!cita) return res.status(404).json({ error: 'Cita no encontrada' });
 
@@ -702,11 +706,10 @@ router.patch('/citas-electro/:id/estado', requireAuth, requireRoleOrPerm(['super
     }
     res.json({ ok: true });
   } catch (e) {
+    logger.error(e.message, { error: e });
     res.status(500).json({ error: safeError(e) });
   }
 });
-
-const ESTADOS_VALIDOS_ELECTRO = ['Programado','Confirmado','En Sala','En Estudio','Pausado','Completado','No Asistió','Cancelado','Reprogramado','Adelantado'];
 
 // PATCH /api/citas-electro/:id
 router.patch('/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro', 'tecnico_electro'], ['electro.editar', 'electro.cambiar_estado']), async (req, res) => {
@@ -748,16 +751,15 @@ router.patch('/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin',
       if (esInicioEstudio) {
         const checkHora = hora_agendamiento || (typeof citaActual.hora_agendamiento === 'string' ? citaActual.hora_agendamiento : String(citaActual.hora_agendamiento));
         const checkFecha = fecha || (typeof citaActual.fecha === 'string' && citaActual.fecha.length <= 10 ? citaActual.fecha : new Date(citaActual.fecha).toISOString().slice(0, 10));
-        // Auto-completar estudios vencidos antes de verificar capacidad
+        // Auto-completar SOLO estudios de días anteriores (mismo criterio que al crear).
+        // No se cierran estudios del día actual aunque su hora_fin planeada haya pasado,
+        // porque la duración real puede exceder la duración programada.
         await db.execute(`
           UPDATE citas_electro
           SET estado = 'Completado', editado_por_nombre = 'Sistema (Auto)', editado_en = NOW()
           WHERE id != ? AND estado = 'En Estudio'
-          AND deleted_at IS NULL
-          AND (
-            (hora_fin IS NOT NULL AND TIMESTAMP(COALESCE(hora_fin_date, fecha), hora_fin) < NOW())
-            OR fecha < CURDATE()
-          )
+            AND deleted_at IS NULL
+            AND fecha < CURDATE()
         `, [id]);
         const overlapCitas = await db.query(`
           SELECT COUNT(*) as overlap_count FROM citas_electro
@@ -823,18 +825,8 @@ router.patch('/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin',
 
     await db.execute(`UPDATE citas_electro SET ${updates.join(', ')} WHERE id = ?`, values);
 
-    if (estado !== undefined) {
-      const ver1 = await db.query('SELECT estado FROM citas_electro WHERE id = ?', [id]);
-      const estadoGuardado1 = ver1.length ? ver1[0].estado : null;
-      if (estadoGuardado1 !== estado) {
-        try {
-          await db.execute("ALTER TABLE citas_electro MODIFY COLUMN estado ENUM('Programado','Confirmado','En Sala','En Estudio','Pausado','Completado','No Asistió','Cancelado','Reprogramado','Adelantado') NOT NULL DEFAULT 'Programado'");
-          await db.execute(`UPDATE citas_electro SET ${updates.join(', ')} WHERE id = ?`, values);
-        } catch (schemaErr) {
-          logger.warn('[ELECTRO] No se pudo autocorregir ENUM estado:', schemaErr.message);
-        }
-      }
-    }
+    // Nota: la migración del ENUM `estado` debe aplicarse desde migrations/db-migrations.js
+    // (idx: estado_enum_electro). NO se ejecuta ALTER TABLE en caliente desde una petición.
 
     if (req.app.io) {
       emitSocket('electro:cita-actualizada', { id, ...cambios, editado_por: editorNombre });
