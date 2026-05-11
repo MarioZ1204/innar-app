@@ -21,6 +21,7 @@ function attachSockets({ httpServer, app, sessionMiddleware, appVersion }) {
     pingInterval: 30000,
     pingTimeout: 60000,
     maxHttpBufferSize: 1e6,
+    path: '/api/socket.io',
     serveClient: true,
     perMessageDeflate: { threshold: 32 * 1024 }
   });
