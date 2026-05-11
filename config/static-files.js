@@ -25,6 +25,9 @@ function buildIndexHandler(publicDir, appVersion) {
     const htmlPath = path.join(publicDir, 'index.html');
     let html = fs.readFileSync(htmlPath, 'utf8');
     const vTag = `?v=${appVersion}`;
+    const sioBase = getSocketIoPath();
+    const sioAbs = `${sioBase}/socket.io.js`;
+    const sioForClient = JSON.stringify(`${sioBase}/`);
     html = html
       .replace('href="style.css"', `href="style.css${vTag}"`)
       .replace('href="style.css"', `href="style.css${vTag}"`)
