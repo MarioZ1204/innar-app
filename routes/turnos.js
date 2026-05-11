@@ -98,7 +98,7 @@ router.get('/turnos', requireAuth, async (req, res) => {
 
   const COLS = `id, numero_turno, doctor_id, paciente_nombre, paciente_documento,
                 paciente_telefono, paciente_telefono2, estado, fecha, hora, tipo_consulta,
-                entidad, notas, observaciones, oportunidad, programado_por, creado_en`;
+                entidad, notas, oportunidad, programado_por, creado_en`;
 
   if (buscar && !fecha) {
     try {
