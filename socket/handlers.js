@@ -54,9 +54,10 @@ function buildSocketCorsConfig() {
 function attachSockets({ httpServer, app, sessionMiddleware, appVersion }) {
   const io = socketIo(httpServer, {
     cors: buildSocketCorsConfig(),
-    // Sólo WebSocket (sin long-polling). Requiere que el proxy pasar Upgrade correctamente.
-    transports: ['websocket'],
-    allowUpgrades: false,
+    // Hosting compartido (Apache/Nginx típico): el long‑polling llega sólo como HTTP estándar…
+    // al puerto Node; el upgrade WebSocket a veces falla. Probamos polling primero y mejoramos después.
+    transports: ['polling', 'websocket'],
+    allowUpgrades: true,
     pingInterval: 30000,
     pingTimeout: 60000,
     maxHttpBufferSize: 1e6,

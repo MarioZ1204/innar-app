@@ -101,7 +101,7 @@ app.get('/api/socket-status', (req, res) => {
       loaded: !!require.cache[require.resolve('socket.io')],
       mounted: !!app.io,
       path: '/socket.io/',
-      transports: ['websocket'],
+      transports: ['polling', 'websocket'],
       cors_origin: process.env.FRONTEND_URL || 'http://localhost:3000'
     },
     timestamp: new Date().toISOString()
@@ -278,6 +278,8 @@ const PORT = process.env.PORT || 3000;
       }, app);
       logger.info('[HTTPS] Activado con certificado autofirmado', { type: 'HTTPS' });
     } else {
+      // Socket.IO debe engancharse al http.Server creado aquí, no al objeto express `app`.
+      // Pasar solo `app` a socket.io no expone Engine.IO en el puerto que escucha Node.
       httpServer = http.createServer(app);
     }
 

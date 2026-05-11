@@ -66,14 +66,15 @@
       }
       
       addLog('✓ Socket.IO client script cargado', 'success');
-      addLog('Conectando con opciones: { reconnection: true, transports: [\"websocket\"], path: \"/socket.io/\" }');
+      addLog('Conectando con opciones: polling + websocket (Hosting compartido)', 'info');
       
       const socket = io({
         reconnection: true,
         reconnectionDelay: 1000,
         reconnectionDelayMax: 5000,
         reconnectionAttempts: 5,
-        transports: ['websocket'],
+        transports: ['polling', 'websocket'],
+        upgrade: true,
         path: '/socket.io/',
         withCredentials: true,
         forceNew: false,

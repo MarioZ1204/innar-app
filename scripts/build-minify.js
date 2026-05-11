@@ -21,6 +21,7 @@ const JS_FILES = [
   'app.js',
   'dashboard-citas.js',
   'socket-client.js',
+  'socket-transport-lock.js',
   'socket-electro.js',
   'calendario-agenda.js',
   'calendario-bloqueado.js',

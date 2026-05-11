@@ -1,8 +1,21 @@
 RewriteEngine On
 
-# Hace que llegue Host: mismo dominio público → Express puede confiar proxy y rutas públicas coherentes.
+# ═══════════════════════════════════════════════════════════════════════════
+# PROXY → Node.js (Socket.IO + /api)
+# Sustituye 3000 por el PUERTO real de la app (panel Node.js / variable PORT).
+# Este fichero debe estar en el Document Root que Apache/LiteSpeed usa para el dominio.
+# Si el docroot es solo public/, copia también las reglas desde public/.htaccess.
+# Requiere mod_proxy, mod_proxy_http y mod_proxy_wstunnel (WebSocket).
+# ═══════════════════════════════════════════════════════════════════════════
+
 <IfModule mod_proxy.c>
+  ProxyRequests Off
   ProxyPreserveHost On
+</IfModule>
+
+# HTTPS delante → proxy a ws:// backend; sin esto algunos hosts fallan en el upgrade WebSocket.
+<IfModule mod_ssl.c>
+  SSLProxyEngine On
 </IfModule>
 
 # No tocar Cookie ni definir headers inventados ("X-Forwarded-Cookie"): rompen express-session detrás proxy.
@@ -12,9 +25,15 @@ RewriteEngine On
 # Si Node escucha en otro puerto, cambie 3000.
 # ═══════════════════════════════════════════════════════════════════════════
 
+# WebSocket upgrade (prioritario cuando el cliente envía Upgrade + Connection: upgrade).
 RewriteCond %{REQUEST_URI} ^/socket\.io/
 RewriteCond %{HTTP:Upgrade} websocket [NC]
 RewriteCond %{HTTP:Connection} upgrade [NC]
+RewriteRule ^(.*)$ ws://127.0.0.1:3000%{REQUEST_URI} [P,L,QSA]
+
+# Mismo handshake si algún proxy recorta Connection pero deja Upgrade: websocket.
+RewriteCond %{REQUEST_URI} ^/socket\.io/
+RewriteCond %{HTTP:Upgrade} websocket [NC]
 RewriteRule ^(.*)$ ws://127.0.0.1:3000%{REQUEST_URI} [P,L,QSA]
 
 # Peticiones HTTP a /socket.io/ (cookies, compat, si algún cliente pide sólo GET sin Upgrade aquí cae igual al Node).

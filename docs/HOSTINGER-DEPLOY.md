@@ -52,10 +52,43 @@ Usa `.env.hostinger.example` como plantilla. Nunca subas secretos reales.
    - `https://innarapp.neurocienciasnarino.com/api/version`
    - `https://innarapp.neurocienciasnarino.com/`
 
-## 5) Socket.IO (404 en `/socket.io/` pero la app carga)
+## 5) Proxy inverso para `/socket.io/` (obligatorio contra 404)
 
-- Si Apache **no proxea `/socket.io/`** al proceso Node (`PORT`), el navegador ve **404** en el handshake. Revisa `.htaccess` en la raíz del sitio (`RewriteRule` hacia `http://127.0.0.1:<PORT>/socket.io/...`).
-- Lo ideal es que **el mismo VirtualHost** enrute `/`, `/api/*` **y** `/socket.io/*` hacia Node, o usar la Node.js App como origen único si el hosting lo permite.
+Si el dominio entra por **Apache, LiteSpeed o Nginx** y Node escucha un **puerto interno**, esas peticiones **no llegan solas**: hay que configurar el proxy para **`/socket.io/`** y normalmente **`/api/`**.
+
+### Paso A — Obtener el puerto de Node
+
+En Hostinger: **Advanced → Node.js** (tu app): anota el **puerto** que usa el proceso (muchas veces lo muestra el panel o lo defines con `PORT` en variables de entorno). En **todos los ejemplos** del repo aparece **`3000`** como marcador de posición: **cámbialo** por ese puerto en el `.htaccess` o en Nginx.
+
+### Paso B — Apache / LiteSpeed (`.htaccess`)
+
+En el repositorio hay dos plantillas; usa la que coincida con tu **Document Root**:
+
+| Dónde apunta el dominio | Qué copiar / mantener |
+|-------------------------|------------------------|
+| Raíz del proyecto (donde está `server.js` y carpeta `public/`) | `.htaccess` de la **raíz** (regla SPA apunta a `public/index.html`). |
+| Solo la carpeta **`public/`** | `public/.htaccess` (regla SPA apunta a `index.html`). |
+
+Qué deben hacer esas reglas (ya están en los ficheros):
+
+1. **`/socket.io/`** con cabecera **WebSocket** → `ws://127.0.0.1:<PUERTO>...` (`[P,L]`).
+2. El resto de **`/socket.io/`** (handshake HTTP, long-polling si el cliente lo usa) → `http://127.0.0.1:<PUERTO>...` (`[P,L]`).
+3. **`/api/`** → mismo `http://127.0.0.1:<PUERTO>...`.
+
+En **hosting compartido**, la aplicación cliente y servidor usan **`polling` primero** y **WebSocket después** cuando el proxy lo permite (`transports`: polling + websocket): el handshake por **HTTP** atraviesa el `proxy_pass` / `[P]` con más fiabilidad que un upgrade WS aislado.
+
+Requisitos en el servidor: **mod_proxy**, **mod_proxy_http**, **mod_proxy_wstunnel**. Si al guardar el `.htaccess` ves **500** al abrir `/socket.io/`, suele ser módulos desactivados: abre ticket a soporte pidiendo esos módulos o “reverse proxy `[P]` hacia localhost”.
+
+**Importante:** el `.htaccess` tiene efecto sólo donde Apache lo lee (`public_html`, dominio, etc.). Si clonaste el repo pero el hosting sigue usando otra carpeta, **copia** este fichero al directorio correcto tras el deploy.
+
+### Paso C — Nginx
+
+Si tienes acceso al `server { }` (VPS), usa la plantilla **[NGINX-SOCKET.IO.md](./NGINX-SOCKET.IO.md)** (`location /socket.io/` + `proxy_pass` + `Upgrade` / `Connection`).
+
+### Comprobación
+
+- `https://tudominio/api/health` debe responder **200** (si no, el proxy de `/api/` o Node no está bien).
+- Tras arreglar el proxy, el handshake de Socket.IO deja de devolver **404** generado por el estático/HTML del sitio.
 
 ## 6) Diagnostico rapido 403/503
 
@@ -78,4 +111,5 @@ Usa `.env.hostinger.example` como plantilla. Nunca subas secretos reales.
 - [ ] Variables de entorno completas en Hostinger
 - [ ] App reiniciada despues de pull/install
 - [ ] `/api/health` responde `ok: true`
+- [ ] Proxy: `.htaccess` (o Nginx) con **mismo puerto** que Node; `/socket.io/` y `/api/` reenviados (sin 404 del sitio estatico)
 - [ ] No hay secretos reales versionados en Git

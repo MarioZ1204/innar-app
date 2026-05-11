@@ -1,0 +1,44 @@
+RewriteEngine On
+
+# ═══════════════════════════════════════════════════════════════════════════
+# PROXY → Node.js — Document Root = carpeta public/
+# Sustituye 3000 por el PUERTO de Node (panel / PORT en .env del servidor).
+# Requiere mod_proxy, mod_proxy_http, mod_proxy_wstunnel.
+# ═══════════════════════════════════════════════════════════════════════════
+
+<IfModule mod_proxy.c>
+  ProxyRequests Off
+  ProxyPreserveHost On
+</IfModule>
+
+<IfModule mod_ssl.c>
+  SSLProxyEngine On
+</IfModule>
+
+# ─── Socket.IO /socket.io ───
+RewriteCond %{REQUEST_URI} ^/socket\.io/
+RewriteCond %{HTTP:Upgrade} websocket [NC]
+RewriteCond %{HTTP:Connection} upgrade [NC]
+RewriteRule ^(.*)$ ws://127.0.0.1:3000%{REQUEST_URI} [P,L,QSA]
+
+RewriteCond %{REQUEST_URI} ^/socket\.io/
+RewriteCond %{HTTP:Upgrade} websocket [NC]
+RewriteRule ^(.*)$ ws://127.0.0.1:3000%{REQUEST_URI} [P,L,QSA]
+
+RewriteCond %{REQUEST_URI} ^/socket\.io/
+RewriteRule ^(.*)$ http://127.0.0.1:3000%{REQUEST_URI} [P,L,QSA]
+
+# ─── /api ───
+RewriteCond %{REQUEST_URI} ^/api/
+RewriteCond %{HTTP:Upgrade} =websocket [NC]
+RewriteRule ^(.*)$ ws://127.0.0.1:3000%{REQUEST_URI} [P,L,QSA]
+
+RewriteCond %{REQUEST_URI} ^/api/
+RewriteRule ^(.*)$ http://127.0.0.1:3000%{REQUEST_URI} [P,L,QSA]
+
+# ─── SPA: si no existe fichero físico bajo public/ ───
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteCond %{REQUEST_URI} !^/socket\.io/ [NC]
+RewriteCond %{REQUEST_URI} !^/api/ [NC]
+RewriteRule ^ index.html [QSA,L]
