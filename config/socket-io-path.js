@@ -3,11 +3,9 @@
 /**
  * Ruta donde Engine.IO monta el servidor (debe coincidir en cliente y servidor).
  *
- * - Desarrollo (NODE_ENV≠production): /socket.io
- * - Producción sin SOCKET_IO_PATH: /api/socket.io (Hostinger/Apache suele proxear sólo bien /api/*)
- *
- * Sobrescribe con SOCKET_IO_PATH si quieres otra ruta; usa /socket.io si el dominio
- * llega entero al proceso Node sin Apache delante.
+ * - Sin SOCKET_IO_PATH: `NODE_ENV=development` → /socket.io; en cualquier otro caso → /api/socket.io
+ *   (muchos paneles no definen NODE_ENV=production pero sí despliegan como prod; esa ruta evita el 404 tras Apache.)
+ * - Sobrescribe con SOCKET_IO_PATH si quieres otra ruta (p. ej. /socket.io si todo el dominio va al proceso Node).
  */
 function getSocketIoPath() {
   const fromEnv = process.env.SOCKET_IO_PATH;
@@ -17,10 +15,10 @@ function getSocketIoPath() {
   let base;
   if (explicit) {
     base = raw;
-  } else if (process.env.NODE_ENV === 'production') {
-    base = '/api/socket.io';
-  } else {
+  } else if (process.env.NODE_ENV === 'development') {
     base = '/socket.io';
+  } else {
+    base = '/api/socket.io';
   }
 
   const withSlash = base.startsWith('/') ? base : `/${base}`;

@@ -57,13 +57,6 @@ function main() {
     console.warn(`[WARN] Variables recomendadas faltantes: ${missingRecommended.join(', ')}`);
   }
 
-  if (
-    env.NODE_ENV === 'production' &&
-    !env.SOCKET_IO_PATH
-  ) {
-    console.warn('[WARN] SOCKET_IO_PATH no definido → el servidor usará por defecto /api/socket.io (producción). Para ruta estándar /socket.io poner SOCKET_IO_PATH=/socket.io en .env');
-  }
-
   console.log('[OK] Validacion de .env para Hostinger completada.');
 }
 

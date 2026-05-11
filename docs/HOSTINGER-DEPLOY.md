@@ -55,7 +55,7 @@ Usa `.env.hostinger.example` como plantilla. Nunca subas secretos reales.
 ## 5) Socket.IO (404 en `/socket.io/` pero la app carga)
 
 - Lo ideal es que **el dominio apunte sólo** a la **Node.js App** (véase punto 2).
-- Con **Apache delante**, muchos planes **proxean sólo bien `/api/`**, no `/socket.io/`. Con **`NODE_ENV=production`** esta app monta Socket.IO por defecto en **`/api/socket.io`** sin variable extra.
+- Con **Apache delante**, muchos planes **proxean sólo bien `/api/`**, no `/socket.io/`. Sin `SOCKET_IO_PATH`, esta app monta Socket.IO en **`/api/socket.io`** (incluso si el panel **no define** `NODE_ENV=production`, que antes hacía caer todo en `/socket.io` → 404).
 - Si tu entorno llega bien a **`/socket.io/`** detrás del proxy, fuerza **`SOCKET_IO_PATH=/socket.io`** en `.env` y reinicia la Node App.
 
 ## 6) Diagnostico rapido 403/503
