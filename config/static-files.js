@@ -39,7 +39,7 @@ function buildIndexHandler(publicDir, appVersion) {
       .replace('src="calendario-bloqueado.js"', `src="calendario-bloqueado.js${vTag}"`)
       .replace('src="validation-client.js"', `src="validation-client.js${vTag}"`)
       .replace('src="splash.js"', `src="splash.js${vTag}"`)
-      .replace('</head>', `<script>window.APP_VERSION="${appVersion}";window.INNAR_SOCKET_BASE=Object.assign({path:"/socket.io/",transports:["polling"],withCredentials:!0,upgrade:!1,rememberUpgrade:!1},typeof window.INNAR_SOCKET_BASE==="object"&&window.INNAR_SOCKET_BASE!==null&&window.INNAR_SOCKET_BASE||{});</script>\n</head>`);
+      .replace('</head>', `<script>window.APP_VERSION="${appVersion}";window.INNAR_SOCKET_BASE=Object.assign({path:"/socket.io",transports:["polling"],withCredentials:!0,upgrade:!1,rememberUpgrade:!1},typeof window.INNAR_SOCKET_BASE==="object"&&window.INNAR_SOCKET_BASE!==null&&window.INNAR_SOCKET_BASE||{});</script>\n</head>`);
     res.setHeader('Content-Type', 'text/html');
     res.setHeader('Cache-Control', 'no-cache, must-revalidate');
     res.send(html);

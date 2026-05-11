@@ -100,7 +100,7 @@ app.get('/api/socket-status', (req, res) => {
     socketio: {
       loaded: !!require.cache[require.resolve('socket.io')],
       mounted: !!app.io,
-      path: '/socket.io/',
+      path: '/socket.io',
       transports: ['polling'],
       cors_origin: process.env.FRONTEND_URL || 'http://localhost:3000'
     },

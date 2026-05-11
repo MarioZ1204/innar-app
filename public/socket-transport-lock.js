@@ -3,7 +3,7 @@
 'use strict';
 window.INNAR_SOCKET_BASE = Object.assign(
   {
-    path: '/socket.io/',
+    path: '/socket.io',
     transports: ['polling'],
     withCredentials: true,
     upgrade: false,

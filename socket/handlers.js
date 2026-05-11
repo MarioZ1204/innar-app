@@ -53,15 +53,18 @@ function buildSocketCorsConfig() {
  */
 function attachSockets({ httpServer, app, sessionMiddleware, appVersion }) {
   const io = socketIo(httpServer, {
+    path: '/socket.io',
     cors: buildSocketCorsConfig(),
-    // Hosting compartido / Passenger / proxy: sólo polling HTTP (sin upgrade WS).
+    // Passenger / hosting: sólo polling; sin cookie engine.io; sin compresión en handshake.
     transports: ['polling'],
     allowUpgrades: false,
     pingInterval: 25000,
-    pingTimeout: 20000,
+    pingTimeout: 60000,
     maxHttpBufferSize: 1e6,
     serveClient: true,
-    perMessageDeflate: { threshold: 32 * 1024 }
+    perMessageDeflate: false,
+    httpCompression: false,
+    cookie: false
   });
 
   app.io = io;
