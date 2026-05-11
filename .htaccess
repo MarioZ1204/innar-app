@@ -56,7 +56,14 @@ RewriteRule ^ public/index.html [QSA,L]
 # ─────────────────────────────────────────────────────────────────────────
 
 <IfModule mod_headers.c>
-  # Asegurar que los proxies pasen los headers necesarios
+  # Asegurar que los proxies pasen los headers necesarios PARA SOCKET.IO
   RequestHeader set X-Forwarded-Proto "https"
   RequestHeader set X-Forwarded-Host "%{SERVER_NAME}s"
+  RequestHeader set X-Forwarded-For "%{REMOTE_ADDR}s"
+  
+  # CRÍTICO: Pasar cookies de sesión a través del proxy
+  RequestHeader set X-Forwarded-Cookie "on"
+  
+  # Preservar la Cookie header original
+  RequestHeader edit Cookie "^(.*)$" "$1"
 </IfModule>
