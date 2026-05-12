@@ -79,7 +79,7 @@ router.get('/turnos/calendario', requireAuth, async (req, res) => {
     if (doctor_id) {
       try {
         disponibilidad = await db.query(
-          'SELECT fecha, disponible, disponible_manana, disponible_tarde, motivo_ausencia FROM doctor_disponibilidad_mensual WHERE doctor_id = ? AND fecha >= ? AND fecha < ?',
+          'SELECT fecha, disponible, disponible_manana, disponible_tarde, motivo_ausencia, total_pacientes FROM doctor_disponibilidad_mensual WHERE doctor_id = ? AND fecha >= ? AND fecha < ?',
           [doctor_id, fechaInicio, fechaFin]
         );
       } catch (_) { /* tabla puede no existir aún */ }

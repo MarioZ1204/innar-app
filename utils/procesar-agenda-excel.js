@@ -65,6 +65,9 @@ async function procesarAgendaExcel(filePath, doctorId, db) {
     const fechaCol = encontrarColumna(colKeys, ['fecha', 'día', 'date']);
     const mañanaCol = encontrarColumna(colKeys, ['mañana', 'manana', 'morning', 'matutino']);
     const tardeCol = encontrarColumna(colKeys, ['tarde', 'afternoon', 'vespertino']);
+    const proinsaludCol = encontrarColumna(colKeys, ['pacientes proinsalud', 'proinsalud']);
+    const otrosPacientesCol = encontrarColumna(colKeys, ['otros pacientes', 'pacientes otros', 'otros']);
+    const totalPacientesCol = encontrarColumna(colKeys, ['número total de pacientes', 'numero total de pacientes', 'total de pacientes', 'total pacientes']);
     
     // OPCIONALES (para intervalos específicos)
     const intervaloCol = encontrarColumna(colKeys, ['intervalo', 'no disponible', 'bloque', 'horario']);
@@ -125,6 +128,9 @@ async function procesarAgendaExcel(filePath, doctorId, db) {
         // PASO 1: SIEMPRE leer MAÑANA/TARDE (obligatorio)
         const mañanaStr = (row[mañanaCol] || '').toString().trim().toUpperCase();
         const tardeStr = (row[tardeCol] || '').toString().trim().toUpperCase();
+        const pacientesProinsalud = parsePositiveInt(row[proinsaludCol]);
+        const pacientesOtros = parsePositiveInt(row[otrosPacientesCol]);
+        const totalPacientes = parsePositiveInt(row[totalPacientesCol]) || pacientesProinsalud + pacientesOtros;
 
         const esMañanaDisponible = mañanaStr === 'SÍ' || mañanaStr === 'SI' || mañanaStr === '1' || mañanaStr === 'DISPONIBLE';
         const esTardeDisponible = tardeStr === 'SÍ' || tardeStr === 'SI' || tardeStr === '1' || tardeStr === 'DISPONIBLE';
@@ -134,11 +140,13 @@ async function procesarAgendaExcel(filePath, doctorId, db) {
         // Guardar disponibilidad general de turno
         await db.execute(
           `INSERT INTO doctor_disponibilidad_mensual 
-           (doctor_id, fecha, disponible_manana, disponible_tarde) 
-           VALUES (?, ?, ?, ?)
-           ON DUPLICATE KEY UPDATE disponible_manana = ?, disponible_tarde = ?`,
+           (doctor_id, fecha, disponible_manana, disponible_tarde, pacientes_proinsalud, pacientes_otros, total_pacientes) 
+           VALUES (?, ?, ?, ?, ?, ?, ?)
+           ON DUPLICATE KEY UPDATE disponible_manana = ?, disponible_tarde = ?, pacientes_proinsalud = ?, pacientes_otros = ?, total_pacientes = ?`,
           [doctorId, fechaFormato, esMañanaDisponible ? 1 : 0, esTardeDisponible ? 1 : 0,
-           esMañanaDisponible ? 1 : 0, esTardeDisponible ? 1 : 0]
+           pacientesProinsalud, pacientesOtros, totalPacientes,
+           esMañanaDisponible ? 1 : 0, esTardeDisponible ? 1 : 0,
+           pacientesProinsalud, pacientesOtros, totalPacientes]
         );
         diasGuardados++;
 
@@ -229,6 +237,12 @@ function encontrarColumna(headers, variaciones) {
     if (encontrada) return encontrada;
   }
   return null;
+}
+
+function parsePositiveInt(value) {
+  if (value === null || value === undefined || value === '') return 0;
+  const n = parseInt(String(value).replace(/[^\d-]/g, ''), 10);
+  return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
 /**
