@@ -10,8 +10,14 @@
 const Joi = require('joi');
 
 const SHA512_HEX = /^[a-f0-9]{128}$/i;
-const HORA_HHMM = /^([0-1][0-9]|2[0-3]):[0-5][0-9]$/;
-const FECHA_ISO = /^\d{4}-\d{2}-\d{2}$/;
+// El frontend puede recibir horas/fechas desde MySQL como HH:MM:SS o
+// YYYY-MM-DDT00:00:00.000Z y reenviarlas en ediciones parciales.
+// Los schemas API aceptan esos formatos y normalizan a lo que espera la BD.
+const HORA_HHMM = /^([0-1][0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9])?$/;
+const FECHA_ISO = /^\d{4}-\d{2}-\d{2}(?:[T\s].*)?$/;
+
+const fechaApi = Joi.string().pattern(FECHA_ISO).custom((value) => value.slice(0, 10));
+const horaApi = Joi.string().pattern(HORA_HHMM).custom((value) => value.slice(0, 5));
 
 const ROLES_VALIDOS = ['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro', 'tecnico_electro', 'auxiliar_recepcion', 'doctor', 'contabilidad'];
 const ESTADOS_TURNOS = ['PENDIENTE', 'EN_SALA', 'EN_ATENCION', 'ATENDIDO', 'COMPLETADO', 'NO_ASISTIO', 'CANCELADO', 'REPROGRAMADO'];
@@ -252,8 +258,8 @@ const schemas = {
     paciente_documento: Joi.string().max(30).optional().allow(null, ''),
     paciente_telefono: Joi.string().max(20).optional().allow(null, ''),
     paciente_telefono2: Joi.string().max(20).optional().allow(null, ''),
-    fecha: Joi.string().pattern(FECHA_ISO).required(),
-    hora: Joi.string().pattern(HORA_HHMM).required(),
+    fecha: fechaApi.required(),
+    hora: horaApi.required(),
     tipo_consulta: Joi.string().max(200).optional().allow(null, ''),
     entidad: Joi.string().max(100).optional().allow(null, ''),
     notas: Joi.string().max(2000).optional().allow(null, ''),
@@ -269,8 +275,8 @@ const schemas = {
     entidad: Joi.string().max(100).optional().allow(null, ''),
     notas: Joi.string().max(2000).optional().allow(null, ''),
     tipo_consulta: Joi.string().max(200).optional().allow(null, ''),
-    fecha: Joi.string().pattern(FECHA_ISO).optional(),
-    hora: Joi.string().pattern(HORA_HHMM).optional(),
+    fecha: fechaApi.optional(),
+    hora: horaApi.optional(),
     estado: Joi.string().valid(...ESTADOS_TURNOS).optional(),
     observaciones: Joi.string().max(2000).optional().allow(null, '')
   }).min(1),

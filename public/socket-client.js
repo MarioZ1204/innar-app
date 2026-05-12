@@ -111,6 +111,17 @@ function subscribe(event, cb) {
   listeners.get(event).push(cb);
 }
 
+function unsubscribe(event, cb) {
+  if (!listeners.has(event)) return;
+  if (typeof cb !== 'function') {
+    listeners.delete(event);
+    return;
+  }
+  const next = listeners.get(event).filter((fn) => fn !== cb);
+  if (next.length) listeners.set(event, next);
+  else listeners.delete(event);
+}
+
 function dispatchRealtime(event, payload) {
   const cbs = listeners.get(event);
   if (!cbs) return;
@@ -193,6 +204,25 @@ function registerDefaultRealtimeHandlers() {
       typeof checkSession === 'function'
     ) {
       checkSession();
+    }
+  });
+  subscribe('usuario:nombre-actualizado', () => {
+    if (typeof checkSession === 'function') checkSession();
+  });
+  subscribe('tipos-consulta:actualizado', () => {
+    if (typeof _tiposConsultaCache !== 'undefined') _tiposConsultaCache = {};
+    if (typeof window._reciboCurrentTipos !== 'undefined') window._reciboCurrentTipos = [];
+    const medicoId = document.getElementById('reciboMedico')?.value;
+    if (medicoId && typeof cargarTiposConsultaEnRecibo === 'function') {
+      cargarTiposConsultaEnRecibo(medicoId);
+    }
+    if (typeof buscarGestionDatos === 'function' && typeof _gestionTipoActual !== 'undefined' && _gestionTipoActual === 'tipos_consulta') {
+      buscarGestionDatos();
+    }
+  });
+  subscribe('estudio:creado', () => {
+    if (typeof buscarGestionDatos === 'function' && typeof _gestionTipoActual !== 'undefined' && _gestionTipoActual === 'estudio_duraciones') {
+      buscarGestionDatos();
     }
   });
 
@@ -363,6 +393,9 @@ function initSocket() {
     connected: false,
     on(ev, cb) {
       subscribe(ev, cb);
+    },
+    off(ev, cb) {
+      unsubscribe(ev, cb);
     },
     emit(ev, data) {
       void pushToServer(ev, data);

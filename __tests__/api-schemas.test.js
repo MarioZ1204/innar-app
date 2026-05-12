@@ -69,6 +69,34 @@ describe('Api Patch Estado Turno', () => {
   });
 });
 
+describe('Api Actualizar Turno', () => {
+  test('acepta hora HH:MM:SS reenviada desde MySQL', () => {
+    const r = validate('apiActualizarTurno', { hora: '08:30:00' });
+    expect(r.valid).toBe(true);
+    expect(r.data.hora).toBe('08:30');
+  });
+
+  test('acepta fecha con timestamp reenviada desde MySQL', () => {
+    const r = validate('apiActualizarTurno', { fecha: '2026-05-12T00:00:00.000Z' });
+    expect(r.valid).toBe(true);
+    expect(r.data.fecha).toBe('2026-05-12');
+  });
+});
+
+describe('Api Crear Turno', () => {
+  test('normaliza fecha/hora de formularios que reenvían datos MySQL', () => {
+    const r = validate('apiCrearTurno', {
+      doctor_id: 1,
+      paciente_nombre: 'Paciente Prueba',
+      fecha: '2026-05-12T00:00:00.000Z',
+      hora: '09:15:00'
+    });
+    expect(r.valid).toBe(true);
+    expect(r.data.fecha).toBe('2026-05-12');
+    expect(r.data.hora).toBe('09:15');
+  });
+});
+
 describe('Api Patch Estado Electro', () => {
   test('acepta estados válidos de electrodiagnóstico', () => {
     for (const estado of ESTADOS_ELECTRO) {
