@@ -12,6 +12,37 @@ const {
 } = require('../middleware/index');
 const { validateSchema } = require('../modules/validation-schemas');
 
+function normalizeHora(str) {
+  if (!str) return '';
+  const s = String(str).trim().toUpperCase();
+  const m12 = s.match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)$/);
+  if (m12) {
+    let h = parseInt(m12[1], 10);
+    const m = parseInt(m12[2], 10);
+    if (m12[3] === 'AM') { if (h === 12) h = 0; }
+    else { if (h !== 12) h += 12; }
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  }
+  const m24 = s.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+  if (m24) {
+    const h = parseInt(m24[1], 10);
+    const m = parseInt(m24[2], 10);
+    if (h >= 0 && h <= 23 && m >= 0 && m <= 59)
+      return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  }
+  return '';
+}
+
+function normalizeFecha(str) {
+  if (!str) return '';
+  const s = String(str).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  if (/^\d{4}-\d{2}-\d{2}T/.test(s)) return s.slice(0, 10);
+  const dmy = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (dmy) return `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`;
+  return s.slice(0, 10);
+}
+
 // Helper: sincronizar estudios UCQN desde citas_electro
 async function sincronizarUcqnDesdeElectro() {
   const rows = await db.query(`
@@ -78,6 +109,133 @@ router.get('/equipos-electro', requireAuth, async (req, res) => {
       .map(e => ({ ...e, en_uso: equiposEnUsoIds.map(String).includes(String(e.id)) }));
     res.json(equiposConEstado);
   } catch (e) {
+    res.status(500).json({ error: safeError(e) });
+  }
+});
+
+// GET /api/equipos-electro/monitor
+router.get('/equipos-electro/monitor', requireAuth, async (req, res) => {
+  try {
+    const equipos = await db.query('SELECT id, nombre, descripcion, activo FROM equipos_electro ORDER BY activo DESC, nombre ASC');
+
+    const estudiosActuales = await db.query(`
+      SELECT c.id, c.equipo_id, c.estudio, c.estado, c.fecha,
+             c.hora_agendamiento, c.hora_inicio, c.hora_fin, c.hora_fin_date,
+             c.duracion_minutos, c.entidad,
+             p.nombre AS paciente_nombre, p.documento AS paciente_documento
+      FROM citas_electro c
+      JOIN pacientes p ON p.id = c.paciente_id
+      WHERE c.estado = 'En Estudio' AND c.equipo_id IS NOT NULL AND c.deleted_at IS NULL
+      ORDER BY c.fecha, c.hora_agendamiento
+    `);
+
+    const proximosEstudios = await db.query(`
+      SELECT c.id, c.equipo_id, c.estudio, c.estado, c.fecha,
+             c.hora_agendamiento, c.duracion_minutos, c.entidad,
+             p.nombre AS paciente_nombre, p.documento AS paciente_documento
+      FROM citas_electro c
+      JOIN pacientes p ON p.id = c.paciente_id
+      WHERE c.estado IN ('Programado','Confirmado','En Sala')
+        AND c.equipo_id IS NOT NULL AND c.deleted_at IS NULL
+        AND c.fecha >= CURDATE()
+      ORDER BY c.fecha ASC, c.hora_agendamiento ASC
+    `);
+
+    const citasSinEquipo = await db.query(`
+      SELECT c.id, c.estudio, c.estado, c.fecha, c.hora_agendamiento,
+             c.hora_inicio, c.hora_fin, c.hora_fin_date, c.duracion_minutos, c.entidad,
+             p.nombre AS paciente_nombre, p.documento AS paciente_documento
+      FROM citas_electro c
+      JOIN pacientes p ON p.id = c.paciente_id
+      WHERE c.estado IN ('En Estudio','Programado','Confirmado','En Sala')
+        AND (c.equipo_id IS NULL OR c.equipo_id = 0) AND c.deleted_at IS NULL
+        AND c.fecha >= CURDATE()
+      ORDER BY c.fecha ASC, c.hora_agendamiento ASC
+      LIMIT 20
+    `);
+
+    const now = new Date();
+    const toHM = (v) => { if (!v) return null; const s = String(v); return s.length >= 5 ? s.slice(0, 5) : s; };
+    const toDateStr = (v) => {
+      if (!v) return null;
+      if (typeof v === 'string') return v.length > 10 ? v.slice(0, 10) : v;
+      if (v instanceof Date) return v.toISOString().slice(0, 10);
+      return String(v);
+    };
+
+    const calcProgreso = (cita) => {
+      const hi = toHM(cita.hora_inicio || cita.hora_agendamiento);
+      const hf = toHM(cita.hora_fin);
+      if (!hi || !hf) return null;
+      const fechaStr = toDateStr(cita.fecha) || now.toISOString().slice(0, 10);
+      const fechaFinStr = toDateStr(cita.hora_fin_date) || fechaStr;
+      const [hI, mI] = hi.split(':').map(Number);
+      const [hF, mF] = hf.split(':').map(Number);
+      const start = new Date(`${fechaStr}T${String(hI).padStart(2,'0')}:${String(mI).padStart(2,'0')}:00`);
+      const end = new Date(`${fechaFinStr}T${String(hF).padStart(2,'0')}:${String(mF).padStart(2,'0')}:00`);
+      if (end <= start) end.setDate(end.getDate() + 1);
+      const total = end - start;
+      const elapsed = now - start;
+      if (total <= 0) return 0;
+      return Math.max(0, Math.min(100, Math.round((elapsed / total) * 100)));
+    };
+
+    const proximosPorEquipo = {};
+    for (const c of proximosEstudios) {
+      const eid = String(c.equipo_id);
+      if (!proximosPorEquipo[eid]) proximosPorEquipo[eid] = c;
+    }
+
+    const actualesPorEquipo = {};
+    for (const c of estudiosActuales) {
+      actualesPorEquipo[String(c.equipo_id)] = c;
+    }
+
+    const resultado = equipos.map(eq => {
+      const eid = String(eq.id);
+      const actual = actualesPorEquipo[eid] || null;
+      const proximo = proximosPorEquipo[eid] || null;
+
+      return {
+        id: eq.id,
+        nombre: eq.nombre,
+        descripcion: eq.descripcion,
+        activo: !!eq.activo,
+        estudio_actual: actual ? {
+          id: actual.id, estudio: actual.estudio, estado: actual.estado,
+          paciente_nombre: actual.paciente_nombre,
+          paciente_documento: actual.paciente_documento,
+          hora_inicio: toHM(actual.hora_inicio || actual.hora_agendamiento),
+          hora_fin: toHM(actual.hora_fin),
+          fecha: toDateStr(actual.fecha),
+          hora_fin_date: toDateStr(actual.hora_fin_date),
+          duracion_minutos: actual.duracion_minutos,
+          entidad: actual.entidad,
+          progreso_pct: calcProgreso(actual)
+        } : null,
+        proximo_estudio: proximo ? {
+          id: proximo.id, estudio: proximo.estudio, estado: proximo.estado,
+          paciente_nombre: proximo.paciente_nombre,
+          hora_agendamiento: toHM(proximo.hora_agendamiento),
+          fecha: toDateStr(proximo.fecha),
+          entidad: proximo.entidad
+        } : null
+      };
+    });
+
+    const sinEquipo = citasSinEquipo.map(c => ({
+      id: c.id, estudio: c.estudio, estado: c.estado,
+      paciente_nombre: c.paciente_nombre,
+      hora_agendamiento: toHM(c.hora_agendamiento),
+      hora_inicio: toHM(c.hora_inicio),
+      hora_fin: toHM(c.hora_fin),
+      fecha: toDateStr(c.fecha),
+      duracion_minutos: c.duracion_minutos
+    }));
+
+    res.json({ equipos: resultado, sin_equipo: sinEquipo });
+  } catch (e) {
+    logger.error('Error en monitor de equipos:', e);
     res.status(500).json({ error: safeError(e) });
   }
 });
@@ -569,89 +727,88 @@ router.get('/citas-electro', requireAuth, async (req, res) => {
 
 // POST /api/citas-electro
 router.post('/citas-electro', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro', 'auxiliar_recepcion'], 'electro.crear'), async (req, res) => {
-  const { equipo_id, paciente_id, fecha, hora_agendamiento, hora, hora_fin, duracion, estudio, observaciones, diagnostico_id, estado, programado_por_nombre, telefono, entidad } = req.body || {};
-  const horaAgendamiento = hora_agendamiento || hora;
+  const { equipo_id, paciente_id, fecha: rawFecha, hora_agendamiento, hora, hora_fin, duracion, estudio, observaciones, diagnostico_id, estado, programado_por_nombre, telefono, entidad } = req.body || {};
+  const rawHora = String(hora_agendamiento || hora || '').trim();
+  const horaAgendamiento = normalizeHora(rawHora);
+  const fecha = normalizeFecha(rawFecha);
 
   if (!paciente_id || !fecha || !horaAgendamiento) {
     return res.status(400).json({ error: 'paciente_id, fecha y hora_agendamiento son obligatorios' });
   }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return res.status(400).json({ error: 'Fecha en formato inválido (YYYY-MM-DD)' });
-  if (!/^\d{2}:\d{2}(:\d{2})?$/.test(horaAgendamiento)) return res.status(400).json({ error: 'Hora en formato inválido (HH:MM)' });
+  if (!/^\d{2}:\d{2}$/.test(horaAgendamiento)) return res.status(400).json({ error: 'Hora en formato inválido (HH:MM)' });
 
   try {
-    const result = await transactions.withTransaction(async (conn) => {
-      let finalHoraFin = hora_fin;
-      let finalFechaFin = fecha;
-      if (!hora_fin) {
-        const duracionMinutos = duracion ? parseInt(duracion, 10) : 30;
-        const [hh, mm] = horaAgendamiento.split(':').map(x => parseInt(x, 10));
-        const startDate = new Date(`${fecha}T${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:00`);
-        const endDate = new Date(startDate.getTime() + (duracionMinutos * 60000));
-        finalHoraFin = `${String(endDate.getHours()).padStart(2, '0')}:${String(endDate.getMinutes()).padStart(2, '0')}`;
-        finalFechaFin = `${endDate.getFullYear()}-${String(endDate.getMonth() + 1).padStart(2, '0')}-${String(endDate.getDate()).padStart(2, '0')}`;
-      }
+    let finalHoraFin = hora_fin;
+    let finalFechaFin = fecha;
+    if (!hora_fin) {
+      const duracionMinutos = duracion ? parseInt(duracion, 10) : 30;
+      const [hh, mm] = horaAgendamiento.split(':').map(x => parseInt(x, 10));
+      const startDate = new Date(`${fecha}T${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:00`);
+      const endDate = new Date(startDate.getTime() + (duracionMinutos * 60000));
+      finalHoraFin = `${String(endDate.getHours()).padStart(2, '0')}:${String(endDate.getMinutes()).padStart(2, '0')}`;
+      finalFechaFin = `${endDate.getFullYear()}-${String(endDate.getMonth() + 1).padStart(2, '0')}-${String(endDate.getDate()).padStart(2, '0')}`;
+    }
 
-      // Auto-completar SOLO estudios de días anteriores que quedaron "En Estudio".
-      // Antes cerraba cualquier estudio cuya hora_fin planeada hubiera pasado, lo que
-      // marcaba como "Completado" estudios todavía en curso (la duración planeada por
-      // defecto era de 30 min, pero un estudio real puede durar horas). Ahora solo
-      // limpia el rezago de días previos para liberar capacidad sin tocar el día actual.
-      await conn.execute(`
-        UPDATE citas_electro
-        SET estado = 'Completado', editado_por_nombre = 'Sistema (Auto)', editado_en = NOW()
-        WHERE estado = 'En Estudio'
-          AND deleted_at IS NULL
-          AND fecha < CURDATE()
-      `);
+    // Auto-completar estudios de días anteriores FUERA de la transacción para no bloquear
+    await db.execute(`
+      UPDATE citas_electro
+      SET estado = 'Completado', editado_por_nombre = 'Sistema (Auto)', editado_en = NOW()
+      WHERE estado = 'En Estudio'
+        AND deleted_at IS NULL
+        AND fecha < CURDATE()
+    `).catch(err => logger.warn('Auto-completar estudios previos falló (no crítico):', err.message));
 
-      const dupCheck = await transactions.selectForUpdate(conn,
-        `SELECT COUNT(*) as cnt FROM citas_electro
-         WHERE paciente_id = ? AND estado IN ('Programado', 'Confirmado', 'En Sala', 'En Estudio', 'Pausado') AND deleted_at IS NULL
-         AND TIMESTAMP(fecha, COALESCE(hora_agendamiento, '00:00:00')) < TIMESTAMP(?, ?)
-         AND TIMESTAMP(COALESCE(hora_fin_date, fecha), COALESCE(hora_fin, '23:59:59')) > TIMESTAMP(?, ?)`,
-        [paciente_id, finalFechaFin, finalHoraFin, fecha, horaAgendamiento]
-      );
-      if ((dupCheck[0]?.cnt || 0) > 0) {
-        throw new Error('Este paciente ya tiene una cita que se superpone con este horario en Electrodiagnóstico.');
-      }
+    // Verificaciones de capacidad SIN FOR UPDATE para evitar deadlocks
+    const dupCheck = await db.query(
+      `SELECT COUNT(*) as cnt FROM citas_electro
+       WHERE paciente_id = ? AND estado IN ('Programado', 'Confirmado', 'En Sala', 'En Estudio', 'Pausado') AND deleted_at IS NULL
+       AND TIMESTAMP(fecha, COALESCE(hora_agendamiento, '00:00:00')) < TIMESTAMP(?, ?)
+       AND TIMESTAMP(COALESCE(hora_fin_date, fecha), COALESCE(hora_fin, '23:59:59')) > TIMESTAMP(?, ?)`,
+      [paciente_id, finalFechaFin, finalHoraFin, fecha, horaAgendamiento]
+    );
+    if ((dupCheck[0]?.cnt || 0) > 0) {
+      return res.status(409).json({ error: 'Este paciente ya tiene una cita que se superpone con este horario en Electrodiagnóstico.' });
+    }
 
-      const overlapCitas = await transactions.selectForUpdate(conn,
-        `SELECT COUNT(*) as overlap_count FROM citas_electro
-         WHERE estado IN ('Programado', 'Confirmado', 'En Sala', 'En Estudio', 'Pausado')
-         AND deleted_at IS NULL
-         AND TIMESTAMP(fecha, COALESCE(hora_agendamiento, '00:00:00')) <= TIMESTAMP(?, ?)
-         AND TIMESTAMP(COALESCE(hora_fin_date, fecha), COALESCE(hora_fin, '23:59:59')) > TIMESTAMP(?, ?)`,
-        [fecha, horaAgendamiento, fecha, horaAgendamiento]
-      );
+    const overlapCitas = await db.query(
+      `SELECT COUNT(*) as overlap_count FROM citas_electro
+       WHERE estado IN ('Programado', 'Confirmado', 'En Sala', 'En Estudio', 'Pausado')
+       AND deleted_at IS NULL
+       AND TIMESTAMP(fecha, COALESCE(hora_agendamiento, '00:00:00')) < TIMESTAMP(?, ?)
+       AND TIMESTAMP(COALESCE(hora_fin_date, fecha), COALESCE(hora_fin, '23:59:59')) > TIMESTAMP(?, ?)`,
+      [finalFechaFin, finalHoraFin, fecha, horaAgendamiento]
+    );
 
-      const overlapCount = overlapCitas[0]?.overlap_count || 0;
-      const maxCuposRows = await transactions.selectForUpdate(conn, `SELECT COUNT(*) as total FROM equipos_electro WHERE activo = 1`);
-      const maxCupos = parseInt(maxCuposRows[0]?.total, 10) || 0;
+    const overlapCount = overlapCitas[0]?.overlap_count || 0;
+    const maxCuposRows = await db.query(`SELECT COUNT(*) as total FROM equipos_electro WHERE activo = 1`);
+    const maxCupos = parseInt(maxCuposRows[0]?.total, 10) || 0;
 
-      if (overlapCount >= maxCupos) {
-        throw new Error(`Sin capacidad disponible en este horario. Hay ${overlapCount} cupos ocupados. Máximo: ${maxCupos}`);
-      }
+    if (overlapCount >= maxCupos) {
+      return res.status(409).json({ error: `Sin capacidad disponible en este horario. Hay ${overlapCount} cupos ocupados. Máximo: ${maxCupos}`, details: `overlap: ${overlapCount}, max: ${maxCupos}`, capacity: { max: maxCupos } });
+    }
 
-      const duracionMinutosDB = duracion ? parseInt(duracion, 10) : null;
-      const insertResult = await conn.execute(`
-        INSERT INTO citas_electro (equipo_id, paciente_id, fecha, hora_agendamiento, hora_inicio, hora_fin, hora_fin_date, estudio, observaciones, diagnostico_id, estado, programado_por_nombre, duracion_minutos, entidad)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `, [
-        equipo_id || null, paciente_id, fecha, horaAgendamiento, null,
-        finalHoraFin, finalFechaFin, estudio || null, observaciones || null,
-        diagnostico_id || null, estado || 'Programado', programado_por_nombre || 'Sistema',
-        duracionMinutosDB, entidad ? String(entidad).trim() : null
-      ]);
+    const duracionMinutosDB = duracion ? parseInt(duracion, 10) : null;
+    const insertResult = await db.execute(`
+      INSERT INTO citas_electro (equipo_id, paciente_id, fecha, hora_agendamiento, hora_inicio, hora_fin, hora_fin_date, estudio, observaciones, diagnostico_id, estado, programado_por_nombre, duracion_minutos, entidad)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      equipo_id || null, paciente_id, fecha, horaAgendamiento, null,
+      finalHoraFin, finalFechaFin, estudio || null, observaciones || null,
+      diagnostico_id || null, estado || 'Programado', programado_por_nombre || 'Sistema',
+      duracionMinutosDB, entidad ? String(entidad).trim() : null
+    ]);
 
-      return { insertId: insertResult[0].insertId, overlapCount, maxCupos, finalHoraFin, finalFechaFin };
-    });
-
-    emitSocket('electro:cita-creada', { id: result.insertId, paciente_id, fecha, hora_agendamiento: horaAgendamiento, hora_fin: result.finalHoraFin, estudio, estado: estado || 'Programado', telefono: telefono || null });
-    emitSocket('electro:actualizar-lista', { type: 'creada', id: result.insertId });
-    res.json({ ok: true, id: result.insertId, capacity_info: { active_studies: result.overlapCount, max: result.maxCupos, available: Math.max(0, result.maxCupos - result.overlapCount - 1) } });
+    const insertId = insertResult[0]?.insertId ?? insertResult.insertId;
+    emitSocket('electro:cita-creada', { id: insertId, paciente_id, fecha, hora_agendamiento: horaAgendamiento, hora_fin: finalHoraFin, estudio, estado: estado || 'Programado', telefono: telefono || null });
+    emitSocket('electro:actualizar-lista', { type: 'creada', id: insertId });
+    res.json({ ok: true, id: insertId, capacity_info: { active_studies: overlapCount, max: maxCupos, available: Math.max(0, maxCupos - overlapCount - 1) } });
   } catch (e) {
     if (e.message.includes('Sin capacidad')) {
       return res.status(409).json({ error: e.message, details: e.message, capacity: { max: null } });
+    }
+    if (e.message.includes('superpone')) {
+      return res.status(409).json({ error: e.message });
     }
     logger.error('Error creando cita electro', { error: e.message, paciente_id });
     res.status(500).json({ error: safeError(e) });
@@ -747,6 +904,15 @@ router.patch('/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin',
       if (esInicioEstudio) {
         const checkHora = hora_agendamiento || (typeof citaActual.hora_agendamiento === 'string' ? citaActual.hora_agendamiento : String(citaActual.hora_agendamiento));
         const checkFecha = fecha || (typeof citaActual.fecha === 'string' && citaActual.fecha.length <= 10 ? citaActual.fecha : new Date(citaActual.fecha).toISOString().slice(0, 10));
+        let checkHoraFin = hora_fin || citaActual.hora_fin || checkHora;
+        let checkFechaFin = req.body.hora_fin_date || citaActual.hora_fin_date || checkFecha;
+        if (!hora_fin && duracion_minutos && checkFecha && checkHora) {
+          const [hh, mm] = checkHora.split(':').map(x => parseInt(x, 10));
+          const startDate = new Date(`${checkFecha}T${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:00`);
+          const endDate = new Date(startDate.getTime() + (parseInt(duracion_minutos, 10) * 60000));
+          checkHoraFin = `${String(endDate.getHours()).padStart(2, '0')}:${String(endDate.getMinutes()).padStart(2, '0')}`;
+          checkFechaFin = `${endDate.getFullYear()}-${String(endDate.getMonth() + 1).padStart(2, '0')}-${String(endDate.getDate()).padStart(2, '0')}`;
+        }
         // Auto-completar SOLO estudios de días anteriores (mismo criterio que al crear).
         // No se cierran estudios del día actual aunque su hora_fin planeada haya pasado,
         // porque la duración real puede exceder la duración programada.
@@ -762,7 +928,7 @@ router.patch('/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin',
           WHERE id != ? AND estado IN ('Programado', 'Confirmado', 'En Sala', 'En Estudio', 'Pausado') AND deleted_at IS NULL
           AND TIMESTAMP(fecha, COALESCE(hora_agendamiento, '00:00:00')) < TIMESTAMP(?, ?)
           AND TIMESTAMP(COALESCE(hora_fin_date, fecha), COALESCE(hora_fin, '23:59:59')) > TIMESTAMP(?, ?)
-        `, [id, checkFecha, checkHora, checkFecha, checkHora]);
+        `, [id, checkFechaFin, checkHoraFin, checkFecha, checkHora]);
         const overlapCount = overlapCitas[0]?.overlap_count || 0;
         const maxCuposRows = await db.query(`SELECT COUNT(*) as total FROM equipos_electro WHERE activo = 1`);
         const maxCupos = parseInt(maxCuposRows[0]?.total, 10) || 0;

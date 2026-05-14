@@ -21,6 +21,55 @@ function escapeHtml(str) {
     .replace(/'/g, '&#39;');
 }
 
+// --- Alias de estudios para filtrado flexible ---
+const ESTUDIO_ALIAS_GROUPS = [
+  {
+    keywords: ['psg basica', 'psg básica', 'psg b', 'polisomnografia', 'polisomnografía', 'polisomnografia basica', 'polisomnografía básica'],
+    patterns: ['PSG B%sica', 'Polisomnograf%a']
+  },
+  {
+    keywords: ['psg cpap', 'psg titulacion cpap', 'psg titulación cpap', 'cpap'],
+    patterns: ['%Titulaci%n%CPAP%', '%PSG%CPAP%']
+  },
+  {
+    keywords: ['psg bpap', 'psg titulacion bpap', 'psg titulación bpap', 'bpap'],
+    patterns: ['%Titulaci%n%BPAP%', '%PSG%BPAP%']
+  },
+  {
+    keywords: ['psg noche dividida', 'noche dividida', 'split night'],
+    patterns: ['%Noche Dividida%', '%split night%']
+  },
+  {
+    keywords: ['eeg', 'electroencefalograma', 'electroencefalograma computarizado', 'electroencefalograma convencional'],
+    patterns: ['Electroencefalograma%']
+  },
+  {
+    keywords: ['vtm', 'monitorizacion', 'monitorización', 'video eeg', 'video-eeg', 'monitorizacion eeg', 'monitorización eeg'],
+    patterns: ['Monitorizaci%n%']
+  },
+  {
+    keywords: ['mslt', 'tlm', 'test de latencia', 'latencia multiple', 'latencia múltiple'],
+    patterns: ['%Latencia M%ltiple%']
+  }
+];
+
+function expandTipoServicioFilter(values) {
+  const expanded = new Set();
+  for (const val of values) {
+    const norm = val.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+    let matched = false;
+    for (const group of ESTUDIO_ALIAS_GROUPS) {
+      if (group.keywords.some(k => k.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase() === norm)) {
+        group.patterns.forEach(p => expanded.add(p));
+        matched = true;
+        break;
+      }
+    }
+    if (!matched) expanded.add(val);
+  }
+  return [...expanded];
+}
+
 // --- Servicios ---
 
 router.get('/servicios', requireAuth, async (req, res) => {
@@ -200,8 +249,14 @@ router.get('/recibos/opciones', requireAuth, async (req, res) => {
     const catalogoSet = new Set(catalogoRows.map(r => r.valor.toUpperCase()));
     const extras = usadasRows.filter(r => !catalogoSet.has((r.valor || '').toUpperCase()));
     const entidades = [...catalogoRows.map(r => r.valor), ...extras.map(r => r.valor)].sort((a, b) => a.localeCompare(b));
-    const estudiosRows = await db.query('SELECT DISTINCT nombre AS valor FROM estudio_duraciones WHERE nombre IS NOT NULL AND nombre <> "" ORDER BY nombre ASC').catch(() => []);
-    res.json({ entidades, estudios: estudiosRows.map(r => r.valor) });
+    const [serviciosRows, usadosTipoRows] = await Promise.all([
+      db.query('SELECT DISTINCT nombre AS valor FROM servicios_recibo WHERE activo=1 AND nombre IS NOT NULL AND nombre <> "" ORDER BY nombre ASC').catch(() => []),
+      db.query('SELECT DISTINCT TRIM(tipo_servicio) AS valor FROM recibos WHERE tipo_servicio IS NOT NULL AND TRIM(tipo_servicio) <> "" ORDER BY valor ASC').catch(() => [])
+    ]);
+    const serviciosSet = new Set(serviciosRows.map(r => (r.valor || '').toUpperCase()));
+    const extrasEstudios = usadosTipoRows.filter(r => !serviciosSet.has((r.valor || '').toUpperCase()));
+    const estudios = [...serviciosRows.map(r => r.valor), ...extrasEstudios.map(r => r.valor)].sort((a, b) => a.localeCompare(b));
+    res.json({ entidades, estudios });
   } catch (err) { res.status(500).json({ error: safeError(err) }); }
 });
 
@@ -274,13 +329,14 @@ router.get('/recibos', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'a
     }
     if (nombre_entidad) {
       const arr = nombre_entidad.split(',').filter(Boolean);
-      if (arr.length === 1) { conditions.push('nombre_entidad = ?'); params.push(arr[0]); }
-      else if (arr.length > 1) { conditions.push(`nombre_entidad IN (${arr.map(() => '?').join(',')})`); params.push(...arr); }
+      if (arr.length === 1) { conditions.push('UPPER(TRIM(nombre_entidad)) = UPPER(TRIM(?))'); params.push(arr[0]); }
+      else if (arr.length > 1) { conditions.push(`UPPER(TRIM(nombre_entidad)) IN (${arr.map(() => 'UPPER(TRIM(?))').join(',')})`); params.push(...arr); }
     }
     if (tipo_servicio) {
-      const arr = tipo_servicio.split(',').filter(Boolean);
-      if (arr.length === 1) { conditions.push('tipo_servicio LIKE ?'); params.push(`%${arr[0]}%`); }
-      else if (arr.length > 1) { conditions.push(`(${arr.map(() => 'tipo_servicio LIKE ?').join(' OR ')})`); params.push(...arr.map(v => `%${v}%`)); }
+      const raw = tipo_servicio.split(',').filter(Boolean);
+      const expanded = expandTipoServicioFilter(raw);
+      if (expanded.length === 1) { conditions.push('tipo_servicio LIKE ?'); params.push(expanded[0].includes('%') ? expanded[0] : `%${expanded[0]}%`); }
+      else if (expanded.length > 1) { conditions.push(`(${expanded.map(() => 'tipo_servicio LIKE ?').join(' OR ')})`); params.push(...expanded.map(v => v.includes('%') ? v : `%${v}%`)); }
     }
     if (estado_pago && (estado_pago === 'PAGADO' || estado_pago === 'PENDIENTE')) { conditions.push('estado_pago = ?'); params.push(estado_pago); }
     if (q) {
@@ -289,9 +345,8 @@ router.get('/recibos', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'a
       params.push(like, like, like, like, like, like, like);
     }
     const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
-    // safeLimit/safeOffset están sanitizados como enteros, interpolación segura
     const rows = await db.query(
-      `SELECT id, numero, cliente, fecha, total, tipo_pago, nombre_entidad, medico_id, medico_nombre, tipo_servicio, generado_por_id, generado_por_nombre, observaciones, turno_id, cita_electro_id, creado_en, data, estado_pago, fecha_pago, pagado_por_nombre FROM recibos ${where} ORDER BY id DESC LIMIT ${safeLimit} OFFSET ${safeOffset}`,
+      `SELECT id, numero, cliente, fecha, total, tipo_pago, nombre_entidad, medico_id, medico_nombre, tipo_servicio, generado_por_id, generado_por_nombre, observaciones, turno_id, cita_electro_id, creado_en, data, estado_pago, fecha_pago, pagado_por_nombre, anulado, anulado_razon, anulado_por_nombre, anulado_en FROM recibos ${where} ORDER BY id DESC LIMIT ${safeLimit} OFFSET ${safeOffset}`,
       params
     );
     res.json(rows || []);
@@ -327,13 +382,14 @@ router.get('/recibos/export/xlsx', requireAuth, requireRoleOrPerm(['superadmin',
     }
     if (nombre_entidad) {
       const arr = nombre_entidad.split(',').filter(Boolean);
-      if (arr.length === 1) { conditions.push('nombre_entidad = ?'); params.push(arr[0]); }
-      else if (arr.length > 1) { conditions.push(`nombre_entidad IN (${arr.map(() => '?').join(',')})`); params.push(...arr); }
+      if (arr.length === 1) { conditions.push('UPPER(TRIM(nombre_entidad)) = UPPER(TRIM(?))'); params.push(arr[0]); }
+      else if (arr.length > 1) { conditions.push(`UPPER(TRIM(nombre_entidad)) IN (${arr.map(() => 'UPPER(TRIM(?))').join(',')})`); params.push(...arr); }
     }
     if (tipo_servicio) {
-      const arr = tipo_servicio.split(',').filter(Boolean);
-      if (arr.length === 1) { conditions.push('tipo_servicio LIKE ?'); params.push(`%${arr[0]}%`); }
-      else if (arr.length > 1) { conditions.push(`(${arr.map(() => 'tipo_servicio LIKE ?').join(' OR ')})`); params.push(...arr.map(v => `%${v}%`)); }
+      const raw = tipo_servicio.split(',').filter(Boolean);
+      const expanded = expandTipoServicioFilter(raw);
+      if (expanded.length === 1) { conditions.push('tipo_servicio LIKE ?'); params.push(expanded[0].includes('%') ? expanded[0] : `%${expanded[0]}%`); }
+      else if (expanded.length > 1) { conditions.push(`(${expanded.map(() => 'tipo_servicio LIKE ?').join(' OR ')})`); params.push(...expanded.map(v => v.includes('%') ? v : `%${v}%`)); }
     }
     if (estado_pago && (estado_pago === 'PAGADO' || estado_pago === 'PENDIENTE')) { conditions.push('estado_pago = ?'); params.push(estado_pago); }
     if (q) {

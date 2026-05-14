@@ -101,6 +101,19 @@ router.post('/pacientes', requireAuth, requireRoleOrPerm(['superadmin', 'admin',
   }
 
   try {
+    if (documento) {
+      const existente = await db.queryOne('SELECT id FROM pacientes WHERE documento = ?', [documento]);
+      if (existente) {
+        await db.execute(
+          `UPDATE pacientes
+           SET nombre = ?, telefono = COALESCE(?, telefono), telefono2 = COALESCE(?, telefono2), email = COALESCE(?, email)
+           WHERE id = ?`,
+          [nombre, telefono || null, telefono2 || null, email || null, existente.id]
+        );
+        return res.json({ ok: true, id: existente.id, existing: true });
+      }
+    }
+
     const result = await db.execute(
       'INSERT INTO pacientes (nombre, documento, telefono, telefono2, email) VALUES (?, ?, ?, ?, ?)',
       [nombre, documento || null, telefono || null, telefono2 || null, email || null]

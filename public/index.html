@@ -163,6 +163,13 @@
             <span class="menu-card-desc">Agenda de los 4 equipos</span>
           </span>
         </button>
+        <button class="menu-card" data-module="monitor-equipos" data-rol="superadmin admin admin_recepcion recepcion admin_electro electro tecnico_electro">
+          <span class="menu-card-icon"><svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01"/></svg></span>
+          <span class="menu-card-label">
+            <span class="menu-card-title">Monitor de Equipos</span>
+            <span class="menu-card-desc">Estado en tiempo real</span>
+          </span>
+        </button>
         <button class="menu-card" data-module="ucqn" data-rol="superadmin admin admin_recepcion recepcion admin_electro electro contabilidad">
           <span class="menu-card-icon"><span class="ucqn-icon-text">U C Q N</span></span>
           <span class="menu-card-label">
@@ -2959,6 +2966,46 @@
       <div style="display:flex;gap:12px;justify-content:center">
         <button type="button" id="btnConfirmReprogramacionSi" class="btn-info">Sí, Reprogramar</button>
         <button type="button" id="btnConfirmReprogramacionNo" class="btn-secondary">No</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== MÓDULO MONITOR DE EQUIPOS ========== -->
+  <div id="view-monitor-equipos" class="view-module hidden">
+    <div class="meq-fullpage">
+      <nav class="meq-topbar">
+        <div class="meq-topbar-left">
+          <img src="/images/logo.webp" alt="Logo" class="meq-topbar-logo" width="305" height="100" loading="lazy" />
+          <div class="meq-topbar-divider"></div>
+          <button id="btnVolverMonitorEquipos" class="meq-back-btn">
+            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+            Volver al menú
+          </button>
+        </div>
+        <div class="meq-topbar-center">
+          <span class="meq-topbar-title">Monitor de Equipos</span>
+        </div>
+        <div class="meq-topbar-right">
+          <span id="monitorLastUpdate" style="font-size:.78rem;color:#94a3b8"></span>
+          <button id="btnRefreshMonitor" class="meq-refresh-btn" title="Refrescar">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+          </button>
+        </div>
+      </nav>
+      <div class="meq-page-body">
+        <div class="meq-stats-bar">
+          <div class="meq-stat-chip meq-sc-activo"><span class="meq-sc-num" id="monitorCountActivos">-</span><span class="meq-sc-label">Activos</span></div>
+          <div class="meq-stat-chip meq-sc-ocupado"><span class="meq-sc-num" id="monitorCountOcupados">-</span><span class="meq-sc-label">Ocupados</span></div>
+          <div class="meq-stat-chip meq-sc-libre"><span class="meq-sc-num" id="monitorCountLibres">-</span><span class="meq-sc-label">Libres</span></div>
+          <div class="meq-stat-chip meq-sc-inactivo"><span class="meq-sc-num" id="monitorCountInactivos">-</span><span class="meq-sc-label">Inactivos</span></div>
+        </div>
+        <div id="monitorEquiposGrid" class="meq-grid">
+          <div style="text-align:center;padding:60px 20px;color:#94a3b8">Cargando equipos...</div>
+        </div>
+        <div id="monitorSinEquipo" style="display:none;margin-top:24px">
+          <h3 style="font-size:1rem;color:#64748b;margin:0 0 12px;font-weight:600">Estudios sin equipo asignado</h3>
+          <div id="monitorSinEquipoList" class="meq-sin-equipo-list"></div>
+        </div>
       </div>
     </div>
   </div>
