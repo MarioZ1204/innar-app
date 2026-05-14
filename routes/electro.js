@@ -113,6 +113,53 @@ router.get('/equipos-electro', requireAuth, async (req, res) => {
   }
 });
 
+// GET /api/equipos-electro/todos (incluye inactivos, solo superadmin)
+router.get('/equipos-electro/todos', requireAuth, requireRoleOrPerm(['superadmin']), async (req, res) => {
+  try {
+    const equipos = await db.query('SELECT * FROM equipos_electro ORDER BY activo DESC, nombre ASC');
+    res.json(equipos);
+  } catch (e) { res.status(500).json({ error: safeError(e) }); }
+});
+
+// PATCH /api/equipos-electro/:id (editar equipo - superadmin)
+router.patch('/equipos-electro/:id', requireAuth, requireRoleOrPerm(['superadmin']), async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!id) return res.status(400).json({ error: 'ID inválido' });
+  const { nombre, descripcion, activo } = req.body || {};
+  try {
+    const exists = await db.queryOne('SELECT id FROM equipos_electro WHERE id = ?', [id]);
+    if (!exists) return res.status(404).json({ error: 'Equipo no encontrado' });
+    const updates = [];
+    const values = [];
+    if (nombre !== undefined) {
+      if (!nombre || !String(nombre).trim()) return res.status(400).json({ error: 'El nombre es obligatorio' });
+      updates.push('nombre = ?'); values.push(String(nombre).trim());
+    }
+    if (descripcion !== undefined) { updates.push('descripcion = ?'); values.push(descripcion ? String(descripcion).trim() : null); }
+    if (activo !== undefined) { updates.push('activo = ?'); values.push(activo ? 1 : 0); }
+    if (updates.length === 0) return res.status(400).json({ error: 'No se proporcionaron campos para actualizar' });
+    values.push(id);
+    await db.execute(`UPDATE equipos_electro SET ${updates.join(', ')} WHERE id = ?`, values);
+    emitSocket('electro:actualizar-lista', { type: 'equipo-editado', id });
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: safeError(e) }); }
+});
+
+// POST /api/equipos-electro (crear equipo - superadmin)
+router.post('/equipos-electro', requireAuth, requireRoleOrPerm(['superadmin']), async (req, res) => {
+  const { nombre, descripcion } = req.body || {};
+  if (!nombre || !String(nombre).trim()) return res.status(400).json({ error: 'El nombre es obligatorio' });
+  try {
+    const result = await db.execute(
+      'INSERT INTO equipos_electro (nombre, descripcion, activo) VALUES (?, ?, 1)',
+      [String(nombre).trim(), descripcion ? String(descripcion).trim() : null]
+    );
+    const insertId = result[0]?.insertId ?? result.insertId;
+    emitSocket('electro:actualizar-lista', { type: 'equipo-creado', id: insertId });
+    res.json({ ok: true, id: insertId });
+  } catch (e) { res.status(500).json({ error: safeError(e) }); }
+});
+
 // GET /api/equipos-electro/monitor
 router.get('/equipos-electro/monitor', requireAuth, async (req, res) => {
   try {
@@ -847,6 +894,19 @@ router.post('/citas-electro', requireAuth, requireRoleOrPerm(['superadmin', 'adm
       return res.status(409).json({ error: `Sin capacidad disponible en este horario. Hay ${overlapCount} cupos ocupados. Máximo: ${maxCupos}`, details: `overlap: ${overlapCount}, max: ${maxCupos}`, capacity: { max: maxCupos } });
     }
 
+    if (equipo_id) {
+      const ocupado = await db.query(
+        `SELECT id, estudio FROM citas_electro
+         WHERE equipo_id = ? AND estado = 'En Estudio' AND deleted_at IS NULL LIMIT 1`,
+        [parseInt(equipo_id, 10)]
+      );
+      if (ocupado.length > 0) {
+        const eqRows = await db.query('SELECT nombre FROM equipos_electro WHERE id = ?', [parseInt(equipo_id, 10)]);
+        const eqNombre = eqRows[0]?.nombre || `Equipo ${equipo_id}`;
+        return res.status(409).json({ error: `${eqNombre} está ocupado con "${ocupado[0].estudio}". Espere a que finalice.` });
+      }
+    }
+
     const duracionMinutosDB = duracion ? parseInt(duracion, 10) : null;
     const insertResult = await db.execute(`
       INSERT INTO citas_electro (equipo_id, paciente_id, fecha, hora_agendamiento, hora_inicio, hora_fin, hora_fin_date, estudio, observaciones, diagnostico_id, estado, programado_por_nombre, duracion_minutos, entidad)
@@ -945,8 +1005,26 @@ router.patch('/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin',
     if (equipo_id !== undefined && estudioActivo) {
       const equipoActualNorm = citaActual.equipo_id === null ? null : parseInt(citaActual.equipo_id, 10);
       const equipoNuevoNorm = equipo_id === null || equipo_id === '' ? null : parseInt(equipo_id, 10);
-      if (equipoNuevoNorm !== equipoActualNorm) {
-        return res.status(409).json({ error: 'No se puede cambiar el equipo mientras el estudio está activo' });
+      if (equipoNuevoNorm !== equipoActualNorm && req.user?.rol !== 'superadmin') {
+        return res.status(409).json({ error: 'No se puede cambiar el equipo mientras el estudio está activo. Solo el superadmin puede hacerlo.' });
+      }
+    }
+
+    // Validar que el equipo no esté ocupado por otro estudio "En Estudio"
+    if (equipo_id !== undefined && equipo_id !== null && equipo_id !== '') {
+      const eqId = parseInt(equipo_id, 10);
+      const ocupado = await db.query(
+        `SELECT id, estudio FROM citas_electro
+         WHERE equipo_id = ? AND id != ? AND estado = 'En Estudio' AND deleted_at IS NULL
+         LIMIT 1`,
+        [eqId, id]
+      );
+      if (ocupado.length > 0) {
+        const eqRows = await db.query('SELECT nombre FROM equipos_electro WHERE id = ?', [eqId]);
+        const eqNombre = eqRows[0]?.nombre || `Equipo ${eqId}`;
+        return res.status(409).json({
+          error: `${eqNombre} está ocupado con el estudio "${ocupado[0].estudio || 'Sin tipo'}". Espere a que finalice.`
+        });
       }
     }
 

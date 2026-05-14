@@ -5218,10 +5218,13 @@ async function initElectro() {
       const opt = document.createElement('option');
       opt.value = e.id;
       opt.textContent = e.nombre;
-      // Si el equipo est├í en uso (En Estudio), deshabilitarlo
       if (e.en_uso) {
-        opt.disabled = true;
-        opt.textContent += ' (En uso)';
+        if (currentUser?.rol === 'superadmin') {
+          opt.textContent += ' (En uso - cambiar)';
+        } else {
+          opt.disabled = true;
+          opt.textContent += ' (En uso)';
+        }
       }
       equipoSelect.appendChild(opt);
     });
@@ -5417,8 +5420,8 @@ async function initElectro() {
     const equipoIdActual = citaElectroSeleccionada.equipo_id || '';
     const estadoActual = citaElectroSeleccionada.estado || '';
 
-    if (estadoActual === 'En Estudio' || estadoActual === 'Pausado') {
-      showToast('No puedes cambiar el equipo mientras el estudio est├í activo', 'error');
+    if ((estadoActual === 'En Estudio' || estadoActual === 'Pausado') && currentUser?.rol !== 'superadmin') {
+      showToast('No puedes cambiar el equipo mientras el estudio está activo. Solo el superadmin puede hacerlo.', 'error');
       e.target.value = equipoIdActual;
       return;
     }
