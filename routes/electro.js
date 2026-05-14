@@ -203,22 +203,7 @@ router.get('/equipos-electro/monitor', requireAuth, async (req, res) => {
       return String(v);
     };
 
-    const calcProgreso = (cita) => {
-      const hi = toHM(cita.hora_inicio || cita.hora_agendamiento);
-      const hf = toHM(cita.hora_fin);
-      if (!hi || !hf) return null;
-      const fechaStr = toDateStr(cita.fecha) || now.toISOString().slice(0, 10);
-      const fechaFinStr = toDateStr(cita.hora_fin_date) || fechaStr;
-      const [hI, mI] = hi.split(':').map(Number);
-      const [hF, mF] = hf.split(':').map(Number);
-      const start = new Date(`${fechaStr}T${String(hI).padStart(2,'0')}:${String(mI).padStart(2,'0')}:00`);
-      const end = new Date(`${fechaFinStr}T${String(hF).padStart(2,'0')}:${String(mF).padStart(2,'0')}:00`);
-      if (end <= start) end.setDate(end.getDate() + 1);
-      const total = end - start;
-      const elapsed = now - start;
-      if (total <= 0) return 0;
-      return Math.max(0, Math.min(100, Math.round((elapsed / total) * 100)));
-    };
+    // Progress is now calculated client-side to avoid timezone mismatch
 
     const proximosPorEquipo = {};
     for (const c of proximosEstudios) {
@@ -263,8 +248,7 @@ router.get('/equipos-electro/monitor', requireAuth, async (req, res) => {
           hora_inicio: toHM(actual.hora_inicio || actual.hora_agendamiento),
           hora_fin: toHM(actual.hora_fin), fecha: toDateStr(actual.fecha),
           hora_fin_date: toDateStr(actual.hora_fin_date),
-          duracion_minutos: actual.duracion_minutos, entidad: actual.entidad,
-          progreso_pct: calcProgreso(actual)
+          duracion_minutos: actual.duracion_minutos, entidad: actual.entidad
         } : null,
         proximo_estudio: proximo ? {
           id: proximo.id, estudio: proximo.estudio, estado: proximo.estado,
