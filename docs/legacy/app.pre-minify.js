@@ -5219,7 +5219,7 @@ async function initElectro() {
       opt.value = e.id;
       opt.textContent = e.nombre;
       if (e.en_uso) {
-        if (currentUser?.rol === 'superadmin') {
+        if (currentUser && String(currentUser.rol || '').toLowerCase() === 'superadmin') {
           opt.textContent += ' (En uso - cambiar)';
         } else {
           opt.disabled = true;
@@ -5420,7 +5420,7 @@ async function initElectro() {
     const equipoIdActual = citaElectroSeleccionada.equipo_id || '';
     const estadoActual = citaElectroSeleccionada.estado || '';
 
-    if ((estadoActual === 'En Estudio' || estadoActual === 'Pausado') && currentUser?.rol !== 'superadmin') {
+    if ((estadoActual === 'En Estudio' || estadoActual === 'Pausado') && String(currentUser?.rol || '').toLowerCase() !== 'superadmin') {
       showToast('No puedes cambiar el equipo mientras el estudio está activo. Solo el superadmin puede hacerlo.', 'error');
       e.target.value = equipoIdActual;
       return;
@@ -10048,8 +10048,9 @@ function renderFlujoEstado(cita) {
   // Ocultar botones Iniciar/Finalizar del bloque separado (se muestran dentro del flujo)
   if (accionesEl) accionesEl.style.display = 'none';
 
-  // Control de equipo: bloqueado si En Estudio o Pausado
-  const equipoBloqueado = estado === 'En Estudio' || estado === 'Pausado' || estado === 'Completado';
+  // Control de equipo: bloqueado si En Estudio o Pausado (superadmin puede cambiar equipo en activo)
+  const esSuperadmin = currentUser && String(currentUser.rol || '').toLowerCase() === 'superadmin';
+  const equipoBloqueado = estado === 'Completado' || ((estado === 'En Estudio' || estado === 'Pausado') && !esSuperadmin);
   if (equipoSelect) {
     equipoSelect.disabled = equipoBloqueado;
     equipoSelect.style.opacity = equipoBloqueado ? '0.5' : '1';

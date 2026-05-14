@@ -1005,7 +1005,8 @@ router.patch('/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin',
     if (equipo_id !== undefined && estudioActivo) {
       const equipoActualNorm = citaActual.equipo_id === null ? null : parseInt(citaActual.equipo_id, 10);
       const equipoNuevoNorm = equipo_id === null || equipo_id === '' ? null : parseInt(equipo_id, 10);
-      if (equipoNuevoNorm !== equipoActualNorm && req.user?.rol !== 'superadmin') {
+      const rolSesion = (req.session?.rol && String(req.session.rol).toLowerCase()) || '';
+      if (equipoNuevoNorm !== equipoActualNorm && rolSesion !== 'superadmin') {
         return res.status(409).json({ error: 'No se puede cambiar el equipo mientras el estudio está activo. Solo el superadmin puede hacerlo.' });
       }
     }
