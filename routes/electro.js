@@ -116,45 +116,85 @@ router.get('/equipos-electro', requireAuth, async (req, res) => {
 // GET /api/equipos-electro/monitor
 router.get('/equipos-electro/monitor', requireAuth, async (req, res) => {
   try {
+    const now = new Date();
+    const hoy = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+    const fechaParam = req.query.fecha && /^\d{4}-\d{2}-\d{2}$/.test(req.query.fecha) ? req.query.fecha : null;
+    const esHoy = !fechaParam || fechaParam === hoy;
+    const fechaConsulta = fechaParam || hoy;
+
     const equipos = await db.query('SELECT id, nombre, descripcion, activo FROM equipos_electro ORDER BY activo DESC, nombre ASC');
 
-    const estudiosActuales = await db.query(`
-      SELECT c.id, c.equipo_id, c.estudio, c.estado, c.fecha,
-             c.hora_agendamiento, c.hora_inicio, c.hora_fin, c.hora_fin_date,
-             c.duracion_minutos, c.entidad,
-             p.nombre AS paciente_nombre, p.documento AS paciente_documento
-      FROM citas_electro c
-      JOIN pacientes p ON p.id = c.paciente_id
-      WHERE c.estado = 'En Estudio' AND c.equipo_id IS NOT NULL AND c.deleted_at IS NULL
-      ORDER BY c.fecha, c.hora_agendamiento
-    `);
+    let estudiosActuales, proximosEstudios, citasSinEquipo, completadosRows, totalDiaRows;
 
-    const proximosEstudios = await db.query(`
-      SELECT c.id, c.equipo_id, c.estudio, c.estado, c.fecha,
-             c.hora_agendamiento, c.duracion_minutos, c.entidad,
-             p.nombre AS paciente_nombre, p.documento AS paciente_documento
-      FROM citas_electro c
-      JOIN pacientes p ON p.id = c.paciente_id
-      WHERE c.estado IN ('Programado','Confirmado','En Sala')
-        AND c.equipo_id IS NOT NULL AND c.deleted_at IS NULL
-        AND c.fecha >= CURDATE()
-      ORDER BY c.fecha ASC, c.hora_agendamiento ASC
-    `);
+    if (esHoy) {
+      estudiosActuales = await db.query(`
+        SELECT c.id, c.equipo_id, c.estudio, c.estado, c.fecha,
+               c.hora_agendamiento, c.hora_inicio, c.hora_fin, c.hora_fin_date,
+               c.duracion_minutos, c.entidad,
+               p.nombre AS paciente_nombre, p.documento AS paciente_documento
+        FROM citas_electro c
+        JOIN pacientes p ON p.id = c.paciente_id
+        WHERE c.estado = 'En Estudio' AND c.equipo_id IS NOT NULL AND c.deleted_at IS NULL
+        ORDER BY c.fecha, c.hora_agendamiento
+      `);
+      proximosEstudios = await db.query(`
+        SELECT c.id, c.equipo_id, c.estudio, c.estado, c.fecha,
+               c.hora_agendamiento, c.duracion_minutos, c.entidad,
+               p.nombre AS paciente_nombre, p.documento AS paciente_documento
+        FROM citas_electro c
+        JOIN pacientes p ON p.id = c.paciente_id
+        WHERE c.estado IN ('Programado','Confirmado','En Sala')
+          AND c.equipo_id IS NOT NULL AND c.deleted_at IS NULL
+          AND c.fecha >= CURDATE()
+        ORDER BY c.fecha ASC, c.hora_agendamiento ASC
+      `);
+      citasSinEquipo = await db.query(`
+        SELECT c.id, c.estudio, c.estado, c.fecha, c.hora_agendamiento,
+               c.hora_inicio, c.hora_fin, c.hora_fin_date, c.duracion_minutos, c.entidad,
+               p.nombre AS paciente_nombre, p.documento AS paciente_documento
+        FROM citas_electro c
+        JOIN pacientes p ON p.id = c.paciente_id
+        WHERE c.estado IN ('En Estudio','Programado','Confirmado','En Sala')
+          AND (c.equipo_id IS NULL OR c.equipo_id = 0) AND c.deleted_at IS NULL
+          AND c.fecha >= CURDATE()
+        ORDER BY c.fecha ASC, c.hora_agendamiento ASC
+        LIMIT 20
+      `);
+    } else {
+      estudiosActuales = await db.query(`
+        SELECT c.id, c.equipo_id, c.estudio, c.estado, c.fecha,
+               c.hora_agendamiento, c.hora_inicio, c.hora_fin, c.hora_fin_date,
+               c.duracion_minutos, c.entidad,
+               p.nombre AS paciente_nombre, p.documento AS paciente_documento
+        FROM citas_electro c
+        JOIN pacientes p ON p.id = c.paciente_id
+        WHERE c.equipo_id IS NOT NULL AND c.deleted_at IS NULL
+          AND c.fecha <= ? AND COALESCE(c.hora_fin_date, c.fecha) >= ?
+        ORDER BY c.hora_agendamiento ASC
+      `, [fechaConsulta, fechaConsulta]);
+      proximosEstudios = [];
+      citasSinEquipo = await db.query(`
+        SELECT c.id, c.estudio, c.estado, c.fecha, c.hora_agendamiento,
+               c.hora_inicio, c.hora_fin, c.hora_fin_date, c.duracion_minutos, c.entidad,
+               p.nombre AS paciente_nombre, p.documento AS paciente_documento
+        FROM citas_electro c
+        JOIN pacientes p ON p.id = c.paciente_id
+        WHERE (c.equipo_id IS NULL OR c.equipo_id = 0) AND c.deleted_at IS NULL
+          AND c.fecha <= ? AND COALESCE(c.hora_fin_date, c.fecha) >= ?
+        ORDER BY c.hora_agendamiento ASC
+        LIMIT 20
+      `, [fechaConsulta, fechaConsulta]);
+    }
 
-    const citasSinEquipo = await db.query(`
-      SELECT c.id, c.estudio, c.estado, c.fecha, c.hora_agendamiento,
-             c.hora_inicio, c.hora_fin, c.hora_fin_date, c.duracion_minutos, c.entidad,
-             p.nombre AS paciente_nombre, p.documento AS paciente_documento
-      FROM citas_electro c
-      JOIN pacientes p ON p.id = c.paciente_id
-      WHERE c.estado IN ('En Estudio','Programado','Confirmado','En Sala')
-        AND (c.equipo_id IS NULL OR c.equipo_id = 0) AND c.deleted_at IS NULL
-        AND c.fecha >= CURDATE()
-      ORDER BY c.fecha ASC, c.hora_agendamiento ASC
-      LIMIT 20
-    `);
+    completadosRows = await db.query(
+      `SELECT COUNT(*) AS total FROM citas_electro WHERE deleted_at IS NULL AND estado = 'Completado' AND fecha <= ? AND COALESCE(hora_fin_date, fecha) >= ?`,
+      [fechaConsulta, fechaConsulta]
+    );
+    totalDiaRows = await db.query(
+      `SELECT COUNT(*) AS total FROM citas_electro WHERE deleted_at IS NULL AND fecha <= ? AND COALESCE(hora_fin_date, fecha) >= ?`,
+      [fechaConsulta, fechaConsulta]
+    );
 
-    const now = new Date();
     const toHM = (v) => { if (!v) return null; const s = String(v); return s.length >= 5 ? s.slice(0, 5) : s; };
     const toDateStr = (v) => {
       if (!v) return null;
@@ -187,39 +227,52 @@ router.get('/equipos-electro/monitor', requireAuth, async (req, res) => {
     }
 
     const actualesPorEquipo = {};
-    for (const c of estudiosActuales) {
-      actualesPorEquipo[String(c.equipo_id)] = c;
+    if (esHoy) {
+      for (const c of estudiosActuales) { actualesPorEquipo[String(c.equipo_id)] = c; }
+    } else {
+      for (const c of estudiosActuales) {
+        const eid = String(c.equipo_id);
+        if (!actualesPorEquipo[eid]) actualesPorEquipo[eid] = [];
+        actualesPorEquipo[eid].push(c);
+      }
     }
 
     const resultado = equipos.map(eq => {
       const eid = String(eq.id);
-      const actual = actualesPorEquipo[eid] || null;
+      let actual = null, estudios_dia = null;
+      if (esHoy) {
+        actual = actualesPorEquipo[eid] || null;
+      } else {
+        const arr = actualesPorEquipo[eid] || [];
+        estudios_dia = arr.map(c => ({
+          id: c.id, estudio: c.estudio, estado: c.estado,
+          paciente_nombre: c.paciente_nombre, paciente_documento: c.paciente_documento,
+          hora_inicio: toHM(c.hora_inicio || c.hora_agendamiento),
+          hora_fin: toHM(c.hora_fin),
+          fecha: toDateStr(c.fecha),
+          duracion_minutos: c.duracion_minutos, entidad: c.entidad
+        }));
+      }
       const proximo = proximosPorEquipo[eid] || null;
 
       return {
-        id: eq.id,
-        nombre: eq.nombre,
-        descripcion: eq.descripcion,
-        activo: !!eq.activo,
+        id: eq.id, nombre: eq.nombre, descripcion: eq.descripcion, activo: !!eq.activo,
         estudio_actual: actual ? {
           id: actual.id, estudio: actual.estudio, estado: actual.estado,
-          paciente_nombre: actual.paciente_nombre,
-          paciente_documento: actual.paciente_documento,
+          paciente_nombre: actual.paciente_nombre, paciente_documento: actual.paciente_documento,
           hora_inicio: toHM(actual.hora_inicio || actual.hora_agendamiento),
-          hora_fin: toHM(actual.hora_fin),
-          fecha: toDateStr(actual.fecha),
+          hora_fin: toHM(actual.hora_fin), fecha: toDateStr(actual.fecha),
           hora_fin_date: toDateStr(actual.hora_fin_date),
-          duracion_minutos: actual.duracion_minutos,
-          entidad: actual.entidad,
+          duracion_minutos: actual.duracion_minutos, entidad: actual.entidad,
           progreso_pct: calcProgreso(actual)
         } : null,
         proximo_estudio: proximo ? {
           id: proximo.id, estudio: proximo.estudio, estado: proximo.estado,
           paciente_nombre: proximo.paciente_nombre,
           hora_agendamiento: toHM(proximo.hora_agendamiento),
-          fecha: toDateStr(proximo.fecha),
-          entidad: proximo.entidad
-        } : null
+          fecha: toDateStr(proximo.fecha), entidad: proximo.entidad
+        } : null,
+        estudios_dia: estudios_dia
       };
     });
 
@@ -227,13 +280,21 @@ router.get('/equipos-electro/monitor', requireAuth, async (req, res) => {
       id: c.id, estudio: c.estudio, estado: c.estado,
       paciente_nombre: c.paciente_nombre,
       hora_agendamiento: toHM(c.hora_agendamiento),
-      hora_inicio: toHM(c.hora_inicio),
-      hora_fin: toHM(c.hora_fin),
-      fecha: toDateStr(c.fecha),
-      duracion_minutos: c.duracion_minutos
+      hora_inicio: toHM(c.hora_inicio), hora_fin: toHM(c.hora_fin),
+      fecha: toDateStr(c.fecha), duracion_minutos: c.duracion_minutos
     }));
 
-    res.json({ equipos: resultado, sin_equipo: sinEquipo });
+    res.json({
+      fecha: fechaConsulta, es_hoy: esHoy,
+      resumen: {
+        total_estudios: parseInt(totalDiaRows[0]?.total,10) || 0,
+        completados: parseInt(completadosRows[0]?.total,10) || 0,
+        en_estudio: esHoy ? estudiosActuales.length : estudiosActuales.filter(c => c.estado === 'En Estudio').length,
+        pendientes: esHoy ? proximosEstudios.length : estudiosActuales.filter(c => ['Programado','Confirmado','En Sala'].includes(c.estado)).length,
+        sin_equipo: citasSinEquipo.length
+      },
+      equipos: resultado, sin_equipo: sinEquipo
+    });
   } catch (e) {
     logger.error('Error en monitor de equipos:', e);
     res.status(500).json({ error: safeError(e) });
@@ -717,6 +778,20 @@ router.get('/citas-electro', requireAuth, async (req, res) => {
     `;
     let params = [fecha, fecha];
     if (equipo_id) { query += ` AND c.equipo_id = ?`; params.push(equipo_id); }
+    const { estado, entidad, estudio } = req.query;
+    if (estado) {
+      const arr = estado.split(',').filter(Boolean);
+      if (arr.length === 1) { query += ' AND c.estado = ?'; params.push(arr[0]); }
+      else if (arr.length > 1) { query += ` AND c.estado IN (${arr.map(() => '?').join(',')})`; params.push(...arr); }
+    }
+    if (entidad) {
+      query += ' AND UPPER(TRIM(c.entidad)) = UPPER(TRIM(?))';
+      params.push(entidad);
+    }
+    if (estudio) {
+      query += ' AND c.estudio = ?';
+      params.push(estudio);
+    }
     query += ` ORDER BY c.hora_agendamiento ASC, c.hora_inicio ASC, c.id ASC`;
     const citas = await db.query(query, params);
     res.json(citas);

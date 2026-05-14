@@ -1931,8 +1931,7 @@ function initRecibos() {
   if ($('btnExportarCSV')) $('btnExportarCSV').onclick = exportarReciboCSV;
   if ($('btnExportarPDF')) $('btnExportarPDF').onclick = exportarReciboPDF;
 
-  // Auto-aplicar filtros al cambiar fecha
-  ['filtroFechaDesde', 'filtroFechaHasta'].forEach(id => {
+  ['filtroFechaDesde', 'filtroFechaHasta', 'filtroEstadoPago', 'filtroAnulado'].forEach(id => {
     const el = $(id);
     if (el) el.addEventListener('change', () => aplicarFiltrosRecibos());
   });
@@ -6339,6 +6338,7 @@ const PERMISOS_DEFS = [
   { key: 'modulo.usuarios',         label: 'M├│dulo: Gesti├│n de Usuarios',         grupo: 'Acceso a M├│dulos' },
   { key: 'modulo.diagnosticos',     label: 'M├│dulo: Diagn├│sticos',                grupo: 'Acceso a M├│dulos' },
   { key: 'modulo.gestion_datos',    label: 'M├│dulo: Gesti├│n de Datos',            grupo: 'Acceso a M├│dulos' },
+  { key: 'modulo.monitor_equipos',  label: 'M├│dulo: Monitor de Equipos',           grupo: 'Acceso a M├│dulos' },
   // ÔöÇÔöÇ Recibos ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
   { key: 'recibos.crear',           label: 'Recibos: Crear nuevo recibo',         grupo: 'Recibos' },
   { key: 'recibos.ver',             label: 'Recibos: Ver lista de recibos',       grupo: 'Recibos' },
@@ -6398,7 +6398,7 @@ const PERMISOS_ROL_DEFAULTS = {
   superadmin: null,
   admin: null,
   admin_recepcion: [
-    'modulo.recibos','modulo.agenda_medica','modulo.electrodiag','modulo.ucqn','modulo.dashboard',
+    'modulo.recibos','modulo.agenda_medica','modulo.electrodiag','modulo.ucqn','modulo.dashboard','modulo.monitor_equipos',
     'recibos.crear','recibos.ver','recibos.exportar',
     'agenda.ver','agenda.crear','agenda.editar','agenda.eliminar','agenda.cambiar_estado',
     'agenda.llamar_siguiente','agenda.marcar_atendido','agenda.aviso_doctor','agenda.disponibilidad',
@@ -6407,7 +6407,7 @@ const PERMISOS_ROL_DEFAULTS = {
     'sistema.dashboard',
   ],
   recepcion: [
-    'modulo.recibos','modulo.agenda_medica','modulo.electrodiag','modulo.ucqn','modulo.dashboard',
+    'modulo.recibos','modulo.agenda_medica','modulo.electrodiag','modulo.ucqn','modulo.dashboard','modulo.monitor_equipos',
     'recibos.crear','recibos.ver',
     'agenda.ver','agenda.crear','agenda.editar','agenda.eliminar','agenda.cambiar_estado',
     'agenda.llamar_siguiente','agenda.marcar_atendido','agenda.aviso_doctor',
@@ -6428,21 +6428,21 @@ const PERMISOS_ROL_DEFAULTS = {
     'sistema.dashboard',
   ],
   admin_electro: [
-    'modulo.electrodiag','modulo.ucqn','modulo.agenda_medica','modulo.dashboard',
+    'modulo.electrodiag','modulo.ucqn','modulo.agenda_medica','modulo.dashboard','modulo.monitor_equipos',
     'electro.ver','electro.crear','electro.editar','electro.eliminar','electro.cambiar_estado','electro.subir_archivo','electro.ver_archivo','electro.aviso_doctor',
     'agenda.ver','agenda.editar','agenda.aviso_doctor',
     'ucqn.ver','ucqn.editar_estado',
     'sistema.dashboard',
   ],
   electro: [
-    'modulo.electrodiag','modulo.ucqn','modulo.agenda_medica','modulo.dashboard',
+    'modulo.electrodiag','modulo.ucqn','modulo.agenda_medica','modulo.dashboard','modulo.monitor_equipos',
     'electro.ver','electro.crear','electro.editar','electro.eliminar','electro.cambiar_estado','electro.subir_archivo','electro.ver_archivo','electro.aviso_doctor',
     'agenda.ver','agenda.editar','agenda.aviso_doctor',
     'ucqn.ver','ucqn.editar_estado',
     'sistema.dashboard',
   ],
   tecnico_electro: [
-    'modulo.electrodiag','modulo.agenda_medica',
+    'modulo.electrodiag','modulo.agenda_medica','modulo.monitor_equipos',
     'electro.ver','electro.crear','electro.editar','electro.cambiar_estado','electro.subir_archivo','electro.ver_archivo',
     'agenda.ver','agenda.editar','agenda.aviso_doctor',
   ],
@@ -8137,6 +8137,7 @@ async function aplicarFiltrosRecibos() {
     const tipoConsulta= getMultiSelectValue($('filtroTipoConsulta'));
     const tipoEstudio = getMultiSelectValue($('filtroEstudio'));
     const estadoPago  = $('filtroEstadoPago')?.value || '';
+    const anulado     = $('filtroAnulado')?.value || '';
     const palabraClave= $('filtroPalabraClave')?.value?.trim() || '';
 
     const params = new URLSearchParams();
@@ -8144,15 +8145,15 @@ async function aplicarFiltrosRecibos() {
     if (hasta)        params.set('fecha_hasta',      hasta);
     if (tipoPago)     params.set('tipo_pago',        tipoPago);
     if (medicoId && medicoId === 'ELECTRODIAGNOSTICOS') {
-      params.set('medico_nombre', 'ELECTRODIAGN├ôSTICOS');
+      params.set('medico_nombre', 'ELECTRODIAGN\u00d3STICOS');
     } else if (medicoId) {
       params.set('medico_id', medicoId);
     }
     if (genPor)       params.set('generado_por_id',  genPor);
     if (entidad)      params.set('nombre_entidad',   entidad);
     if (estadoPago)   params.set('estado_pago',      estadoPago);
+    if (anulado)      params.set('anulado',           anulado);
     if (palabraClave) params.set('q',                palabraClave);
-    // Tipo de consulta y estudio filtran la misma columna tipo_servicio
     const tipoServicio = tipoConsulta || tipoEstudio;
     if (tipoServicio) params.set('tipo_servicio',    tipoServicio);
     _recibosLastParams = params.toString();
@@ -8176,8 +8177,8 @@ function limpiarFiltrosRecibos() {
   clearMultiSelect($('filtroTipoConsulta'));
   clearMultiSelect($('filtroEstudio'));
   if ($('filtroEstadoPago'))    $('filtroEstadoPago').value    = '';
+  if ($('filtroAnulado'))       $('filtroAnulado').value       = '';
   if ($('filtroPalabraClave'))  $('filtroPalabraClave').value  = '';
-  // Ocultar tipo de consulta al limpiar
   const wrap = $('filtroTipoConsultaWrap');
   if (wrap) wrap.style.display = 'none';
   _recibosLastParams = '';
@@ -8211,8 +8212,14 @@ async function cargarLista(queryString) {
       updateStats([]);
       return;
     }
-    const recibos = await res.json();
-    updateStats(Array.isArray(recibos) ? recibos : []);
+    const jsonResp = await res.json();
+    const recibos = jsonResp.rows || (Array.isArray(jsonResp) ? jsonResp : []);
+    const totalCount = jsonResp.totalCount || recibos.length;
+    updateStats(recibos);
+    const countInfo = $('recibosCountInfo');
+    if (countInfo) {
+      countInfo.textContent = totalCount > 0 ? `Mostrando ${recibos.length} de ${totalCount} recibos` : '';
+    }
     const tbody = document.getElementById('savedItems');
     if (!tbody) return;
     tbody.innerHTML = '';
@@ -8220,12 +8227,11 @@ async function cargarLista(queryString) {
     const resumenCard = document.getElementById('reciboResumenCard');
 
     if (!recibos || !recibos.length) {
-      tbody.innerHTML = '<tr><td colspan="11"><div class="empty-state"><div class="empty-state-icon">­ƒôï</div><p class="empty-state-title">Sin resultados</p><p class="empty-state-subtitle">No hay recibos con los filtros aplicados</p></div></td></tr>';
+      tbody.innerHTML = '<tr><td colspan="11"><div class="empty-state"><div class="empty-state-icon">\uD83D\uDCCB</div><p class="empty-state-title">Sin resultados</p><p class="empty-state-subtitle">No hay recibos con los filtros aplicados</p></div></td></tr>';
       if (resumenCard) resumenCard.classList.add('hidden');
       return;
     }
 
-    // Resumen (excluir anulados del total)
     const recibosActivos = recibos.filter(r => r.anulado != 1);
     const totalMonto = recibosActivos.reduce((s, r) => s + Number(r.total||0), 0);
     const recibosPendientes = recibosActivos.filter(r => r.estado_pago === 'PENDIENTE');
@@ -12192,13 +12198,70 @@ function eliminarSeleccionadosGestion() {
 // ========== MONITOR DE EQUIPOS ==========
 let initMonitorEquiposDone = false;
 let _monitorRefreshTimer = null;
+let _monitorFechaActual = null; // null = hoy
+
+function _monitorGetHoy() {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+
+function _monitorEsHoy() {
+  return !_monitorFechaActual || _monitorFechaActual === _monitorGetHoy();
+}
+
+function _monitorFormatDateLabel(fecha) {
+  if (!fecha) return 'Hoy';
+  const hoy = _monitorGetHoy();
+  if (fecha === hoy) return 'Hoy';
+  const DIAS = ['Domingo','Lunes','Martes','Mi\u00e9rcoles','Jueves','Viernes','S\u00e1bado'];
+  const MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  const parts = fecha.split('-').map(Number);
+  const d = new Date(parts[0], parts[1]-1, parts[2]);
+  return DIAS[d.getDay()] + ' ' + parts[2] + ' ' + MESES[parts[1]-1] + ' ' + parts[0];
+}
+
+function _monitorCambiarFecha(offset) {
+  const base = _monitorFechaActual || _monitorGetHoy();
+  const parts = base.split('-').map(Number);
+  const d = new Date(parts[0], parts[1]-1, parts[2] + offset);
+  _monitorFechaActual = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  _monitorSyncDateUI();
+  cargarMonitorEquipos();
+}
+
+function _monitorIrAHoy() {
+  _monitorFechaActual = null;
+  _monitorSyncDateUI();
+  cargarMonitorEquipos();
+}
+
+function _monitorSyncDateUI() {
+  const picker = $('monitorDatePicker');
+  const label = $('monitorDateLabel');
+  const btnHoy = $('monitorDateHoy');
+  const fecha = _monitorFechaActual || _monitorGetHoy();
+  if (picker) picker.value = fecha;
+  if (label) label.textContent = _monitorFormatDateLabel(fecha);
+  if (btnHoy) btnHoy.style.display = _monitorEsHoy() ? 'none' : '';
+  const badge = $('monitorHistBadge');
+  if (badge) badge.style.display = _monitorEsHoy() ? 'none' : '';
+}
 
 function initMonitorEquipos() {
   if (initMonitorEquiposDone) { cargarMonitorEquipos(); return; }
   initMonitorEquiposDone = true;
 
   $('btnVolverMonitorEquipos')?.addEventListener('click', goToMenu);
-  $('btnRefreshMonitor')?.addEventListener('click', cargarMonitorEquipos);
+  $('btnRefreshMonitor')?.addEventListener('click', () => cargarMonitorEquipos());
+  $('monitorDatePrev')?.addEventListener('click', () => _monitorCambiarFecha(-1));
+  $('monitorDateNext')?.addEventListener('click', () => _monitorCambiarFecha(1));
+  $('monitorDateHoy')?.addEventListener('click', _monitorIrAHoy);
+  const picker = $('monitorDatePicker');
+  if (picker) picker.addEventListener('change', function() {
+    _monitorFechaActual = this.value || null;
+    _monitorSyncDateUI();
+    cargarMonitorEquipos();
+  });
 
   if (window.socket) {
     window.socket.on('electro:cita-actualizada', () => {
@@ -12209,20 +12272,25 @@ function initMonitorEquipos() {
     });
   }
 
+  _monitorSyncDateUI();
   cargarMonitorEquipos();
 
   if (_monitorRefreshTimer) clearInterval(_monitorRefreshTimer);
   _monitorRefreshTimer = setInterval(() => {
-    if (window.currentModule === 'monitor-equipos') cargarMonitorEquipos();
+    if (window.currentModule === 'monitor-equipos' && _monitorEsHoy()) cargarMonitorEquipos();
   }, 30000);
 }
 
 async function cargarMonitorEquipos() {
   try {
-    const res = await apiFetch('/api/equipos-electro/monitor');
+    let url = '/api/equipos-electro/monitor';
+    if (_monitorFechaActual && _monitorFechaActual !== _monitorGetHoy()) {
+      url += '?fecha=' + encodeURIComponent(_monitorFechaActual);
+    }
+    const res = await apiFetch(url);
     const data = await res.json();
     if (data && data.equipos) {
-      renderMonitorEquipos(data.equipos, data.sin_equipo || []);
+      renderMonitorEquipos(data);
     }
     const ts = $('monitorLastUpdate');
     if (ts) {
@@ -12232,53 +12300,169 @@ async function cargarMonitorEquipos() {
   } catch (e) {
     console.error('[MONITOR] Error:', e);
     const grid = $('monitorEquiposGrid');
-    if (grid) grid.innerHTML = '<div class="meq-empty">Error cargando equipos</div>';
+    if (grid) grid.innerHTML = '<div class="meq-empty-cell" style="text-align:center;padding:60px 20px">Error cargando equipos</div>';
   }
 }
 
-function renderMonitorEquipos(equipos, sinEquipo) {
+function renderMonitorEquipos(data) {
+  const equipos = data.equipos || [];
+  const sinEquipo = data.sin_equipo || [];
+  const esHoy = data.es_hoy !== false;
+  const resumen = data.resumen || {};
   const grid = $('monitorEquiposGrid');
   if (!grid) return;
+
   let activos = 0, ocupados = 0, libres = 0, inactivos = 0;
   const svgMonitor = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>';
+  const svgBrain = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9.5 2A5.5 5.5 0 005 7.5c0 .68.12 1.33.34 1.93a4.5 4.5 0 00.16 7.07A4.5 4.5 0 009.5 22h1V2h-1z"/><path d="M14.5 2A5.5 5.5 0 0120 7.5c0 .68-.12 1.33-.34 1.93a4.5 4.5 0 00-.16 7.07A4.5 4.5 0 0114.5 22h-1V2h1z"/></svg>';
+  const svgSleep = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>';
+  const svgActivity = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>';
   const svgUser = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>';
   const svgClock = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>';
+  const svgDoc = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>';
 
-  const cards = equipos.map(eq => {
+  function getEquipIcon(nombre) {
+    const n = (nombre || '').toLowerCase();
+    if (n.includes('psg') || n.includes('polisomno') || n.includes('sue\u00f1o') || n.includes('sleep')) return svgSleep;
+    if (n.includes('eeg') || n.includes('electro') || n.includes('cerebr') || n.includes('neuro')) return svgBrain;
+    if (n.includes('emg') || n.includes('conducci') || n.includes('nerve') || n.includes('electrom')) return svgActivity;
+    return svgMonitor;
+  }
+
+  function histEstadoClass(estado) {
+    const s = (estado || '').toLowerCase();
+    if (s === 'completado') return 'st-completado';
+    if (s === 'en estudio') return 'st-en-estudio';
+    if (s.includes('programa') || s.includes('confirma') || s.includes('sala')) return 'st-programado';
+    if (s.includes('cancel') || s.includes('no asis')) return 'st-cancelado';
+    return 'st-other';
+  }
+
+  let html = '<div class="meq-list-wrap">';
+  if (esHoy) {
+    html += '<div class="meq-header-row"><div class="meq-col meq-col-equipo">Equipo</div><div class="meq-col meq-col-actual">Estudio Actual</div><div class="meq-col meq-col-sep"></div><div class="meq-col meq-col-next">Siguiente Estudio</div></div>';
+  } else {
+    html += '<div class="meq-header-row"><div class="meq-col meq-col-equipo">Equipo</div><div class="meq-col" style="grid-column:2/5">Estudios del d\u00eda</div></div>';
+  }
+
+  equipos.forEach(function(eq) {
     if (!eq.activo) {
       inactivos++;
-      return '<div class="meq-card meq-inactivo"><div class="meq-card-header"><span class="meq-card-name">' + svgMonitor + escapeHtml(eq.nombre) + '</span><span class="meq-badge meq-badge-inactivo">Inactivo</span></div><div class="meq-card-body"><div class="meq-inactivo-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg></div><div class="meq-inactivo-text">Desactivado temporalmente</div></div></div>';
+      html += '<div class="meq-row meq-inactivo meq-st-inactivo">';
+      html += '<div class="meq-col meq-col-equipo"><div class="meq-eq-icon">' + getEquipIcon(eq.nombre) + '</div><span>' + escapeHtml(eq.nombre) + '</span></div>';
+      if (esHoy) {
+        html += '<div class="meq-col meq-col-actual"><span class="meq-inactivo-cell"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg> Desactivado temporalmente</span></div>';
+        html += '<div class="meq-col meq-col-sep">&middot;</div>';
+        html += '<div class="meq-col meq-col-next"><span class="meq-inactivo-cell">\u2014</span></div>';
+      } else {
+        html += '<div class="meq-col" style="grid-column:2/5"><span class="meq-inactivo-cell"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg> Desactivado</span></div>';
+      }
+      html += '</div>';
+      return;
     }
+
     activos++;
-    const actual = eq.estudio_actual;
-    const proximo = eq.proximo_estudio;
-    let estadoClass = 'meq-libre', badgeHTML = '<span class="meq-badge meq-badge-libre">Libre</span>';
-    if (actual) { estadoClass = 'meq-ocupado'; badgeHTML = '<span class="meq-badge meq-badge-ocupado">Ocupado</span>'; ocupados++; }
-    else if (proximo) { estadoClass = 'meq-pendiente'; badgeHTML = '<span class="meq-badge meq-badge-pendiente">Pendiente</span>'; libres++; }
-    else { libres++; }
-    let bodyHTML = '';
-    if (actual) {
-      const pct = actual.progreso_pct || 0;
-      const progClass = pct >= 80 ? 'meq-prog-high' : '';
-      const entTag = actual.entidad ? ' <span class="meq-entidad-tag">' + escapeHtml(actual.entidad) + '</span>' : '';
-      bodyHTML += '<div class="meq-section"><div class="meq-section-title"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#f97316" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> Estudio Actual</div><div class="meq-study-name">' + escapeHtml(actual.estudio || 'Sin tipo') + entTag + '</div><div class="meq-study-patient">' + svgUser + escapeHtml(actual.paciente_nombre || '-') + '</div><div class="meq-study-time">' + svgClock + formatearHora(actual.hora_inicio || '') + ' \u2013 ' + formatearHora(actual.hora_fin || '') + '</div><div class="meq-progress-bar"><div class="meq-progress-fill ' + progClass + '" style="width:' + pct + '%"></div></div><div class="meq-progress-text">' + pct + '% completado</div></div>';
+
+    if (esHoy) {
+      var actual = eq.estudio_actual;
+      var proximo = eq.proximo_estudio;
+      var stClass = actual ? 'meq-st-ocupado' : (proximo ? 'meq-st-pendiente' : 'meq-st-libre');
+      if (actual) ocupados++; else libres++;
+
+      html += '<div class="meq-row ' + stClass + '">';
+      html += '<div class="meq-col meq-col-equipo"><div class="meq-eq-icon">' + getEquipIcon(eq.nombre) + '</div><div><span>' + escapeHtml(eq.nombre) + '</span>';
+      if (eq.descripcion) html += '<div style="font-size:.68rem;color:#94a3b8;font-weight:400;margin-top:1px">' + escapeHtml(eq.descripcion) + '</div>';
+      html += '</div></div>';
+
+      // Actual column
+      html += '<div class="meq-col meq-col-actual">';
+      if (actual) {
+        var pct = actual.progreso_pct || 0;
+        var entTag = actual.entidad ? ' <span class="meq-entidad-tag">' + escapeHtml(actual.entidad) + '</span>' : '';
+        var durTag = actual.duracion_minutos ? ' <span class="meq-dur-tag">' + svgClock + ' ' + actual.duracion_minutos + 'min</span>' : '';
+        html += '<div class="meq-study-block"><div class="meq-study-label meq-sl-actual"><span class="meq-pulse-dot"></span>EN ESTUDIO</div>';
+        html += '<div class="meq-study-title">' + escapeHtml(actual.estudio || 'Sin tipo') + entTag + '</div>';
+        html += '<div class="meq-study-meta">' + svgUser + ' ' + escapeHtml(actual.paciente_nombre || '-');
+        if (actual.paciente_documento) html += ' <span class="meq-doc-tag">' + svgDoc + ' ' + escapeHtml(actual.paciente_documento) + '</span>';
+        html += '</div>';
+        html += '<div class="meq-study-meta"><span class="meq-time-pill meq-tp-active">' + svgClock + ' ' + formatearHora(actual.hora_inicio || '') + ' \u2013 ' + formatearHora(actual.hora_fin || '') + '</span>' + durTag;
+        html += ' <div class="meq-progress-inline"><div class="meq-pf' + (pct >= 90 ? ' meq-ph' : '') + '" style="width:' + pct + '%"></div></div> <span class="meq-pct-label">' + pct + '%</span>';
+        html += '</div></div>';
+      } else {
+        html += '<span class="meq-empty-cell">Sin estudio activo</span>';
+      }
+      html += '</div>';
+      html += '<div class="meq-col meq-col-sep"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg></div>';
+
+      // Next column
+      html += '<div class="meq-col meq-col-next">';
+      if (proximo) {
+        var hoy = _monitorGetHoy();
+        var fechaLabel = (proximo.fecha || '') === hoy ? 'Hoy' : (proximo.fecha || '');
+        html += '<div class="meq-study-block"><div class="meq-study-label meq-sl-next">SIGUIENTE</div>';
+        html += '<div class="meq-study-title">' + escapeHtml(proximo.estudio || 'Sin tipo') + '</div>';
+        html += '<div class="meq-study-meta">' + svgUser + ' ' + escapeHtml(proximo.paciente_nombre || '-') + '</div>';
+        html += '<div class="meq-study-meta"><span class="meq-time-pill meq-tp-next">' + svgClock + ' ' + fechaLabel + ' ' + formatearHora(proximo.hora_agendamiento || '') + '</span></div>';
+        html += '</div>';
+      } else {
+        html += '<span class="meq-empty-cell">Sin estudios pendientes</span>';
+      }
+      html += '</div></div>';
+
+    } else {
+      // Historical view: show all studies for the day
+      var estudios = eq.estudios_dia || [];
+      var stClass2 = estudios.length > 0 ? 'meq-st-completado' : 'meq-st-libre';
+      if (estudios.some(function(s) { return s.estado === 'En Estudio'; })) stClass2 = 'meq-st-ocupado';
+      if (estudios.length > 0) ocupados++; else libres++;
+
+      html += '<div class="meq-row ' + stClass2 + '">';
+      html += '<div class="meq-col meq-col-equipo"><div class="meq-eq-icon">' + getEquipIcon(eq.nombre) + '</div><div><span>' + escapeHtml(eq.nombre) + '</span>';
+      if (eq.descripcion) html += '<div style="font-size:.68rem;color:#94a3b8;font-weight:400;margin-top:1px">' + escapeHtml(eq.descripcion) + '</div>';
+      html += '</div></div>';
+      html += '<div class="meq-col" style="grid-column:2/5">';
+      if (estudios.length === 0) {
+        html += '<span class="meq-empty-cell">Sin estudios este d\u00eda</span>';
+      } else {
+        html += '<div class="meq-hist-studies">';
+        estudios.forEach(function(s) {
+          var entTag2 = s.entidad ? ' <span class="meq-entidad-tag">' + escapeHtml(s.entidad) + '</span>' : '';
+          html += '<div class="meq-hist-item">';
+          html += '<span class="meq-hist-estado ' + histEstadoClass(s.estado) + '">' + escapeHtml(s.estado || '-') + '</span>';
+          html += '<span class="meq-study-title" style="max-width:200px">' + escapeHtml(s.estudio || 'Sin tipo') + entTag2 + '</span>';
+          html += '<span class="meq-study-meta" style="margin:0">' + svgUser + ' ' + escapeHtml(s.paciente_nombre || '-') + '</span>';
+          html += '<span class="meq-time-pill meq-tp-hist">' + svgClock + ' ' + formatearHora(s.hora_inicio || '') + ' \u2013 ' + formatearHora(s.hora_fin || '') + '</span>';
+          if (s.duracion_minutos) html += '<span class="meq-dur-tag">' + s.duracion_minutos + 'min</span>';
+          html += '</div>';
+        });
+        html += '</div>';
+      }
+      html += '</div></div>';
     }
-    if (proximo) {
-      const hoy = new Date().toISOString().slice(0, 10);
-      const fechaLabel = (proximo.fecha || '') === hoy ? 'Hoy' : (proximo.fecha || '');
-      bodyHTML += '<div class="meq-section"><div class="meq-section-title"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg> Siguiente Estudio</div><div class="meq-study-name">' + escapeHtml(proximo.estudio || 'Sin tipo') + '</div><div class="meq-study-patient">' + svgUser + escapeHtml(proximo.paciente_nombre || '-') + '</div><div class="meq-next-badge">' + svgClock + fechaLabel + ' a las ' + formatearHora(proximo.hora_agendamiento || '') + '</div></div>';
-    }
-    if (!actual && !proximo) {
-      bodyHTML = '<div class="meq-empty"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>Sin estudio activo</div>';
-    }
-    return '<div class="meq-card ' + estadoClass + '"><div class="meq-card-header"><span class="meq-card-name">' + svgMonitor + escapeHtml(eq.nombre) + '</span>' + badgeHTML + '</div><div class="meq-card-body">' + bodyHTML + '</div></div>';
-  }).join('');
-  grid.innerHTML = cards;
-  const cA = $('monitorCountActivos'), cO = $('monitorCountOcupados'), cL = $('monitorCountLibres'), cI = $('monitorCountInactivos');
-  if (cA) cA.textContent = activos; if (cO) cO.textContent = ocupados; if (cL) cL.textContent = libres; if (cI) cI.textContent = inactivos;
-  const sinEqC = $('monitorSinEquipo'), sinEqL = $('monitorSinEquipoList');
+  });
+  html += '</div>';
+  grid.innerHTML = html;
+
+  // Update stats
+  var cA = $('monitorCountActivos'), cO = $('monitorCountOcupados'), cL = $('monitorCountLibres'), cI = $('monitorCountInactivos');
+  var cT = $('monitorCountTotal'), cComp = $('monitorCountCompletados');
+  if (cA) cA.textContent = activos;
+  if (cO) cO.textContent = esHoy ? ocupados : (resumen.en_estudio || 0);
+  if (cL) cL.textContent = libres;
+  if (cI) cI.textContent = inactivos;
+  if (cT) cT.textContent = resumen.total_estudios || 0;
+  if (cComp) cComp.textContent = resumen.completados || 0;
+
+  // Sin equipo section
+  var sinEqC = $('monitorSinEquipo'), sinEqL = $('monitorSinEquipoList');
   if (sinEquipo && sinEquipo.length > 0 && sinEqC && sinEqL) {
     sinEqC.style.display = '';
-    sinEqL.innerHTML = sinEquipo.map(function(c) { return '<div class="meq-sin-equipo-card"><div class="meq-study-name">' + escapeHtml(c.estudio || 'Sin tipo') + '</div><div class="meq-study-patient">' + svgUser + escapeHtml(c.paciente_nombre || '-') + '</div><div style="font-size:.78rem;color:#a16207;margin-top:4px">' + (c.fecha || '') + ' ' + formatearHora(c.hora_agendamiento || '') + ' &middot; ' + escapeHtml(c.estado || '') + '</div></div>'; }).join('');
+    sinEqL.innerHTML = sinEquipo.map(function(c) {
+      return '<div class="meq-sin-equipo-card">' +
+        '<div class="meq-study-block"><div class="meq-study-title">' + escapeHtml(c.estudio || 'Sin tipo') + '</div>' +
+        '<div class="meq-study-meta">' + svgUser + ' ' + escapeHtml(c.paciente_nombre || '-') + '</div></div>' +
+        '<div class="meq-study-meta" style="color:#a16207">' + svgClock + ' ' + (c.fecha || '') + ' ' + formatearHora(c.hora_agendamiento || '') + ' &middot; ' + escapeHtml(c.estado || '') + '</div>' +
+      '</div>';
+    }).join('');
   } else if (sinEqC) { sinEqC.style.display = 'none'; }
 }

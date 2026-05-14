@@ -94,7 +94,7 @@ router.get('/turnos/calendario', requireAuth, async (req, res) => {
 
 // GET /api/turnos
 router.get('/turnos', requireAuth, async (req, res) => {
-  const { fecha, doctor_id, buscar } = req.query;
+  const { fecha, doctor_id, buscar, estado, entidad, tipo_consulta } = req.query;
 
   const COLS = `id, numero_turno, doctor_id, paciente_nombre, paciente_documento,
                 paciente_telefono, paciente_telefono2, estado, fecha, hora, tipo_consulta,
@@ -120,24 +120,26 @@ router.get('/turnos', requireAuth, async (req, res) => {
   }
 
   try {
-    const query = doctor_id
-      ? `SELECT ${COLS} FROM turnos
-         WHERE fecha = ? AND doctor_id = ?
-         ORDER BY CASE WHEN hora IS NULL OR hora = '' THEN 1 ELSE 0 END,
-                  hora ASC,
-                  numero_turno ASC,
-                  id ASC
-         LIMIT 500`
-      : `SELECT ${COLS} FROM turnos
-         WHERE fecha = ?
-         ORDER BY CASE WHEN hora IS NULL OR hora = '' THEN 1 ELSE 0 END,
-                  hora ASC,
-                  numero_turno ASC,
-                  id ASC
-         LIMIT 500`;
+    let sql = `SELECT ${COLS} FROM turnos WHERE fecha = ?`;
+    let params = [fecha];
+    if (doctor_id) { sql += ' AND doctor_id = ?'; params.push(doctor_id); }
+    if (estado) {
+      const arr = estado.split(',').filter(Boolean);
+      if (arr.length === 1) { sql += ' AND estado = ?'; params.push(arr[0]); }
+      else if (arr.length > 1) { sql += ` AND estado IN (${arr.map(() => '?').join(',')})`; params.push(...arr); }
+    }
+    if (entidad) {
+      sql += ' AND UPPER(TRIM(entidad)) = UPPER(TRIM(?))';
+      params.push(entidad);
+    }
+    if (tipo_consulta) {
+      sql += ' AND tipo_consulta = ?';
+      params.push(tipo_consulta);
+    }
+    sql += ` ORDER BY CASE WHEN hora IS NULL OR hora = '' THEN 1 ELSE 0 END,
+                  hora ASC, numero_turno ASC, id ASC LIMIT 500`;
 
-    const params = doctor_id ? [fecha, doctor_id] : [fecha];
-    const turnos = await db.query(query, params);
+    const turnos = await db.query(sql, params);
     res.json(turnos);
   } catch (e) {
     logger.error(e.message, { error: e });
@@ -147,20 +149,23 @@ router.get('/turnos', requireAuth, async (req, res) => {
 
 // GET /api/turnos/export
 router.get('/turnos/export', requireAuth, async (req, res) => {
-  const { fecha, doctor_id } = req.query;
+  const { fecha, doctor_id, estado, entidad, tipo_consulta } = req.query;
   if (!fecha) return res.status(400).json({ error: 'fecha es obligatoria' });
   try {
-    const params = doctor_id ? [fecha, doctor_id] : [fecha];
-    const whereClause = doctor_id
-      ? 'WHERE fecha = ? AND doctor_id = ?'
-      : 'WHERE fecha = ?';
-    const rows = await db.query(
-      `SELECT numero_turno, paciente_nombre, paciente_documento, paciente_telefono,
+    let sql = `SELECT numero_turno, paciente_nombre, paciente_documento, paciente_telefono,
               estado, hora, tipo_consulta, entidad, notas, fecha
-       FROM turnos ${whereClause}
-       ORDER BY hora ASC, numero_turno ASC`,
-      params
-    );
+       FROM turnos WHERE fecha = ?`;
+    let params = [fecha];
+    if (doctor_id) { sql += ' AND doctor_id = ?'; params.push(doctor_id); }
+    if (estado) {
+      const arr = estado.split(',').filter(Boolean);
+      if (arr.length === 1) { sql += ' AND estado = ?'; params.push(arr[0]); }
+      else if (arr.length > 1) { sql += ` AND estado IN (${arr.map(() => '?').join(',')})`; params.push(...arr); }
+    }
+    if (entidad) { sql += ' AND UPPER(TRIM(entidad)) = UPPER(TRIM(?))'; params.push(entidad); }
+    if (tipo_consulta) { sql += ' AND tipo_consulta = ?'; params.push(tipo_consulta); }
+    sql += ' ORDER BY hora ASC, numero_turno ASC';
+    const rows = await db.query(sql, params);
     const headers = ['N° Turno', 'Paciente', 'Documento', 'Teléfono', 'Estado',
       'Hora', 'Tipo Consulta', 'Entidad', 'Notas', 'Fecha'];
     const escape = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
