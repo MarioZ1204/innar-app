@@ -1968,12 +1968,13 @@ function initRecibos() {
   cargarFiltrosMedicos().then(() => {
     const el = $('filtroMedico');
     if (el) {
-      initMultiSelect(el, { placeholder: 'Todos los m├®dicos', onChange: async (vals) => {
-        // Cargar tipos de consulta si hay exactamente 1 m├®dico (no Electro)
+      initMultiSelect(el, { placeholder: 'Todos los m\u00e9dicos', onChange: async (vals) => {
         const wrap = $('filtroTipoConsultaWrap');
         const sel  = $('filtroTipoConsulta');
+        const selEstudio = $('filtroEstudio');
+        const esElectro = vals.length === 1 && vals[0] === 'ELECTRODIAGNOSTICOS';
         if (wrap && sel) {
-          if (vals.length === 1 && vals[0] !== 'ELECTRODIAGNOSTICOS') {
+          if (vals.length === 1 && !esElectro) {
             sel.innerHTML = '<option value="">Todos</option>';
             try {
               const tipos = await apiFetch(`/api/tipos-consulta?medico_id=${encodeURIComponent(vals[0])}`).then(r => r.json()).catch(() => []);
@@ -1986,6 +1987,18 @@ function initRecibos() {
             wrap.style.display = 'none';
             clearMultiSelect(sel);
           }
+        }
+        if (selEstudio && esElectro) {
+          try {
+            const srvRes = await apiFetch('/api/servicios').then(r => r.json()).catch(() => []);
+            selEstudio.innerHTML = '<option value="">Todos</option>';
+            srvRes.forEach(s => { const opt = document.createElement('option'); opt.value = s.nombre; opt.textContent = s.nombre; selEstudio.appendChild(opt); });
+            if (selEstudio._ms) selEstudio._ms.refresh();
+          } catch (e) { console.warn('[filtroEstudio electro] Error:', e.message); }
+        } else if (selEstudio && !esElectro && window._allEstudiosOpciones) {
+          selEstudio.innerHTML = '<option value="">Todos</option>';
+          window._allEstudiosOpciones.forEach(v => { const opt = document.createElement('option'); opt.value = v; opt.textContent = v; selEstudio.appendChild(opt); });
+          if (selEstudio._ms) selEstudio._ms.refresh();
         }
         aplicarFiltrosRecibos();
       }});
@@ -2005,9 +2018,62 @@ function initRecibos() {
       observeSelectForMulti(elEst);
     }
   });
-  // Tipo de pago (opciones est├íticas)
+  // Tipo de pago (opciones estáticas)
   const elTP = $('filtroTipoPago');
   if (elTP) initMultiSelect(elTP, { placeholder: 'Todos', onChange: () => aplicarFiltrosRecibos() });
+
+  // Especialidad -> filtra médicos y carga tipos de consulta
+  const elEsp = $('filtroEspecialidad');
+  if (elEsp && !elEsp._espBound) {
+    elEsp._espBound = true;
+    elEsp.addEventListener('change', async function () {
+      const espId = this.value;
+      const selMedico = $('filtroMedico');
+      if (selMedico && window._filtroMedicos) {
+        selMedico.innerHTML = '<option value="">Todos los médicos</option>';
+        window._filtroMedicos
+          .filter(m => !espId || String(m.especialidad_id) === espId)
+          .forEach(m => {
+            const opt = document.createElement('option');
+            opt.value = m.id;
+            opt.textContent = m.nombre || m.usuario;
+            if (m.especialidad_id) opt.dataset.especialidadId = m.especialidad_id;
+            if (m.especialidad) opt.dataset.especialidadNombre = m.especialidad;
+            selMedico.appendChild(opt);
+          });
+        if (!espId) {
+          const optElectro = document.createElement('option');
+          optElectro.value = 'ELECTRODIAGNOSTICOS';
+          optElectro.textContent = 'ELECTRODIAGNÓSTICOS';
+          selMedico.appendChild(optElectro);
+        }
+        if (selMedico._ms) selMedico._ms.refresh();
+        clearMultiSelect(selMedico);
+      }
+      const wrapTC = $('filtroTipoConsultaWrap');
+      const selTC = $('filtroTipoConsulta');
+      if (wrapTC && selTC) {
+        if (espId) {
+          try {
+            const tipos = await apiFetch('/api/tipos-consulta?especialidad_id=' + encodeURIComponent(espId)).then(r => r.json());
+            selTC.innerHTML = '<option value="">Todos</option>';
+            (Array.isArray(tipos) ? tipos : []).forEach(t => {
+              const opt = document.createElement('option');
+              opt.value = t.nombre; opt.textContent = t.nombre;
+              selTC.appendChild(opt);
+            });
+            if (selTC._ms) selTC._ms.refresh();
+            else initMultiSelect(selTC, { placeholder: 'Todos', onChange: () => { clearMultiSelect($('filtroEstudio')); aplicarFiltrosRecibos(); } });
+            wrapTC.style.display = '';
+          } catch (_) { wrapTC.style.display = 'none'; clearMultiSelect(selTC); }
+        } else {
+          wrapTC.style.display = 'none';
+          clearMultiSelect(selTC);
+        }
+      }
+      aplicarFiltrosRecibos();
+    });
+  }
 
   // Socket: cuando admin modifica tipos de consulta, refrescar el dropdown activo
   if (window.socket && !window.socketRecibosTiposListenerAdded) {
@@ -2100,11 +2166,14 @@ async function cargarFiltrosMedicos() {
     const res = await apiFetch('/api/medicos');
     const medicos = res.ok ? await res.json() : [];
     if (!Array.isArray(medicos)) { console.warn('[cargarFiltrosMedicos] Respuesta no es array'); return; }
-    sel.innerHTML = '<option value="">Todos los m├®dicos</option>';
+    window._filtroMedicos = medicos;
+    sel.innerHTML = '<option value="">Todos los médicos</option>';
     medicos.forEach(m => {
       const opt = document.createElement('option');
       opt.value = m.id;
       opt.textContent = m.nombre || m.usuario;
+      if (m.especialidad_id) opt.dataset.especialidadId = m.especialidad_id;
+      if (m.especialidad) opt.dataset.especialidadNombre = m.especialidad;
       sel.appendChild(opt);
     });
     // Opci├│n especial para filtrar recibos de electrodiagn├│sticos
@@ -2148,9 +2217,11 @@ async function cargarFiltrosOpciones() {
       });
     }
     const selEstudio = $('filtroEstudio');
+    const estudiosArr = Array.isArray(data.estudios) ? data.estudios : [];
+    window._allEstudiosOpciones = estudiosArr;
     if (selEstudio) {
       selEstudio.innerHTML = '<option value="">Todos</option>';
-      (Array.isArray(data.estudios) ? data.estudios : []).forEach(v => {
+      estudiosArr.forEach(v => {
         const opt = document.createElement('option');
         opt.value = v; opt.textContent = v;
         selEstudio.appendChild(opt);
@@ -8145,9 +8216,14 @@ async function aplicarFiltrosRecibos() {
     if (hasta)        params.set('fecha_hasta',      hasta);
     if (tipoPago)     params.set('tipo_pago',        tipoPago);
     if (medicoId && medicoId === 'ELECTRODIAGNOSTICOS') {
-      params.set('medico_nombre', 'ELECTRODIAGN\u00d3STICOS');
+      params.set('medico_nombre', 'ELECTRODIAGNÓSTICOS');
     } else if (medicoId) {
       params.set('medico_id', medicoId);
+    } else if ($('filtroEspecialidad')?.value) {
+      const espMedIds = (window._filtroMedicos || [])
+        .filter(m => String(m.especialidad_id) === $('filtroEspecialidad').value)
+        .map(m => m.id).join(',');
+      if (espMedIds) params.set('medico_id', espMedIds);
     }
     if (genPor)       params.set('generado_por_id',  genPor);
     if (entidad)      params.set('nombre_entidad',   entidad);
@@ -8179,6 +8255,7 @@ function limpiarFiltrosRecibos() {
   if ($('filtroEstadoPago'))    $('filtroEstadoPago').value    = '';
   if ($('filtroAnulado'))       $('filtroAnulado').value       = '';
   if ($('filtroPalabraClave'))  $('filtroPalabraClave').value  = '';
+  if ($('filtroEspecialidad'))   $('filtroEspecialidad').value   = '';
   const wrap = $('filtroTipoConsultaWrap');
   if (wrap) wrap.style.display = 'none';
   _recibosLastParams = '';
