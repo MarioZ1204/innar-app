@@ -782,22 +782,21 @@ function escapeHtml(str) {
 // Abreviar nombres largos de estudios para la tabla
 function abreviarEstudio(nombre) {
   if (!nombre) return '-';
-  const abreviaturas = {
-    'Monitorizaci├│n Electroencefalografica por Video y Radio': 'Monit. EEG Video',
-    'POLISOMNOGRAFIA': 'PSG',
-    'PSG B├ísica': 'PSG B├ísica',
-    'PSG CPAP': 'PSG CPAP',
-    'POLISOMNOGRAFIA CPAP': 'PSG CPAP',
-    'VTM': 'VTM',
-  };
-  // Coincidencia exacta
-  if (abreviaturas[nombre]) return abreviaturas[nombre];
-  // Coincidencia parcial (inicio)
-  for (const [key, val] of Object.entries(abreviaturas)) {
-    if (nombre.toUpperCase().startsWith(key.toUpperCase())) return val;
+  const n = String(nombre).trim();
+  const u = n.toUpperCase();
+  if (u.includes('MONITORIZ') && (u.includes('VIDEO') || u.includes('RADIO') || u.includes('EEG') || u.includes('ELECTRO'))) {
+    return 'Monit. EEG Video';
   }
-  // Si es muy largo, truncar
-  return nombre.length > 22 ? nombre.substring(0, 20) + 'ÔÇª' : nombre;
+  if (u.includes('POLISOMNOGRAF') || u === 'PSG' || u.startsWith('PSG ')) {
+    if (u.includes('CPAP') || u.includes('BPAP')) return 'PSG CPAP/BPAP';
+    if (u.includes('BASICA') || u.includes('B\u00c1SICA')) return 'PSG B\u00e1sica';
+    return 'PSG';
+  }
+  if (u.includes('TITULAC') || u.includes('CPAP')) return 'PSG CPAP/BPAP';
+  if (u.includes('ELECTROENCEFALOGRAMA') || (u.includes('EEG') && !u.includes('MONITORIZ'))) return 'EEG';
+  if (u.includes('LATENCIA')) return 'Test Latencia';
+  if (u === 'VTM') return 'VTM';
+  return n.length > 22 ? n.substring(0, 20) + '\u2026' : n;
 }
 
 // Genera un badge de color seg├║n el estado de la cita electro
@@ -3990,8 +3989,8 @@ function renderTurnoRowMedica(tbody, t, animateTargetId, hayEnAtencion) {
         <td class="col-mobile-hide">${escapeHtml(t.tipo_consulta || '')}</td>
         <td class="col-mobile-hide">${escapeHtml(t.paciente_documento||'')}</td>
         <td class="col-mobile-hide">${escapeHtml(t.entidad||'')}</td>
-        <td class="col-mobile-hide">${escapeHtml(t.notas || '')}</td>
-        <td>${estadoBadgeMedica(t.estado)}</td>
+        <td class="col-mobile-hide col-notas-cell"><span class="turno-notas-cell" title="${escapeHtml(t.notas || '')}">${escapeHtml(t.notas || '')}</span></td>
+        <td class="col-estado-cell">${estadoBadgeMedica(t.estado)}</td>
         <td>${escapeHtml(t.programado_por || '-')}</td>
       `;
       if (animateTargetId && t.id === animateTargetId) {
@@ -4006,9 +4005,9 @@ function renderTurnoRowMedica(tbody, t, animateTargetId, hayEnAtencion) {
         <td class="col-mobile-hide">${escapeHtml(t.tipo_consulta || '')}</td>
         <td class="col-mobile-hide">${escapeHtml(t.paciente_documento||'')}</td>
         <td class="col-mobile-hide">${escapeHtml(t.entidad||'')}</td>
-        <td class="col-mobile-hide">${escapeHtml(t.notas || '')}</td>
-        <td>${estadoBadgeMedica(t.estado)}</td>
-        <td class="td-acciones">${accionesCell}</td>
+        <td class="col-mobile-hide col-notas-cell"><span class="turno-notas-cell" title="${escapeHtml(t.notas || '')}">${escapeHtml(t.notas || '')}</span></td>
+        <td class="col-estado-cell">${estadoBadgeMedica(t.estado)}</td>
+        <td class="td-acciones col-acciones-cell">${accionesCell}</td>
       `;
     }
   // Abrir modal al hacer clic en la fila
@@ -5980,6 +5979,71 @@ function calcularFechaFinEstudio(cita) {
   return dateFin;
 }
 
+function obtenerFechaHoraFinCitaElectro(cita) {
+  if (!cita) return null;
+  const fechaRaw = cita.fecha;
+  if (!fechaRaw) return null;
+  const fechaBase = typeof fechaRaw === 'string' && fechaRaw.length > 10 ? fechaRaw.slice(0, 10) : String(fechaRaw).slice(0, 10);
+  const horaInicioStr = cita.hora_inicio || cita.hora_agendamiento;
+  if (!horaInicioStr) return null;
+
+  const parseHm = (h) => {
+    const [hh, mm] = String(h).slice(0, 5).split(':').map(Number);
+    return { hh, mm };
+  };
+
+  if (cita.hora_fin) {
+    const { hh: hfH, mm: hfM } = parseHm(cita.hora_fin);
+    const horaFinDateRaw = cita.hora_fin_date;
+    const fechaFin = horaFinDateRaw
+      ? (typeof horaFinDateRaw === 'string' && horaFinDateRaw.length > 10 ? horaFinDateRaw.slice(0, 10) : String(horaFinDateRaw).slice(0, 10))
+      : fechaBase;
+    const dateFin = new Date(`${fechaFin}T${String(hfH).padStart(2, '0')}:${String(hfM).padStart(2, '0')}:00`);
+    if (!horaFinDateRaw) {
+      const { hh: hiH, mm: hiM } = parseHm(horaInicioStr);
+      const dateInicio = new Date(`${fechaBase}T${String(hiH).padStart(2, '0')}:${String(hiM).padStart(2, '0')}:00`);
+      if (dateFin <= dateInicio) dateFin.setDate(dateFin.getDate() + 1);
+    }
+    return dateFin;
+  }
+
+  if (cita.duracion_minutos && cita.duracion_minutos > 0) {
+    const { hh: hiH, mm: hiM } = parseHm(horaInicioStr);
+    const dateInicio = new Date(`${fechaBase}T${String(hiH).padStart(2, '0')}:${String(hiM).padStart(2, '0')}:00`);
+    return new Date(dateInicio.getTime() + cita.duracion_minutos * 60000);
+  }
+
+  return null;
+}
+
+function formatearFinEstudioElectroLabel(date) {
+  if (!date || isNaN(date.getTime())) return '';
+  const meses = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+  const dia = date.getDate();
+  const mes = meses[date.getMonth()];
+  const anio = date.getFullYear();
+  let h = date.getHours();
+  const m = date.getMinutes();
+  const esPm = h >= 12;
+  if (h > 12) h -= 12;
+  if (h === 0) h = 12;
+  const horaStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')} ${esPm ? 'p.m.' : 'a.m.'}`;
+  return `${dia} ${mes} ${anio} - ${horaStr}`;
+}
+
+function debeMostrarFinEstudioEnCard(cita, dateFin) {
+  if (!cita || !dateFin) return false;
+  if (cita.duracion_minutos && cita.duracion_minutos >= 60) return true;
+  const fechaRaw = cita.fecha;
+  if (!fechaRaw) return false;
+  const fechaBase = typeof fechaRaw === 'string' && fechaRaw.length > 10 ? fechaRaw.slice(0, 10) : String(fechaRaw).slice(0, 10);
+  const y = dateFin.getFullYear();
+  const mo = String(dateFin.getMonth() + 1).padStart(2, '0');
+  const d = String(dateFin.getDate()).padStart(2, '0');
+  const fechaFinStr = `${y}-${mo}-${d}`;
+  return fechaFinStr !== fechaBase;
+}
+
 async function sincronizarEstadosPorTiempo(citas = []) {
   if (!Array.isArray(citas) || citas.length === 0) return citas;
 
@@ -6072,7 +6136,7 @@ async function cargarCitasElectro() {
       const partes = [`${total} cita${total !== 1 ? 's' : ''}`];
       if (enEstudio > 0) partes.push(`${enEstudio} en estudio`);
       if (completadas > 0) partes.push(`${completadas} completada${completadas !== 1 ? 's' : ''}`);
-      contador.textContent = partes.join(' ┬À ');
+      contador.textContent = partes.join(' \u00B7 ');
     }
 
     renderCitasElectroKanban(citasFiltradas);
@@ -6138,6 +6202,13 @@ function renderCitaElectroCard(container, c) {
     duracionTxt = dHrs > 0 ? (dMin > 0 ? dHrs + 'h ' + dMin + 'm' : dHrs + 'h') : dMin + 'm';
   }
   const t = 'di' + 'v';
+  const finDate = obtenerFechaHoraFinCitaElectro(c);
+  let finEstudioHtml = '';
+  if (finDate && debeMostrarFinEstudioEnCard(c, finDate)) {
+    const finLabel = formatearFinEstudioElectroLabel(finDate);
+    finEstudioHtml =
+      '<' + t + ' class="electro-cita-card-fin">Fin del estudio: ' + escapeHtml(finLabel) + '</' + t + '>';
+  }
   card.innerHTML =
     '<' + t + ' class="electro-cita-card-top">' +
       '<span class="electro-cita-card-hora">' + formatearHora(c.hora_agendamiento) + '</span>' +
@@ -6149,7 +6220,8 @@ function renderCitaElectroCard(container, c) {
       (equipoDisplay !== '\u2014' ? '<span>' + equipoDisplay + '</span>' : '') +
       (duracionTxt ? '<span>' + duracionTxt + '</span>' : '') +
     '</' + t + '>' +
-    '<' + t + ' class="electro-cita-card-estudio" title="' + escapeHtml(c.estudio || '') + '">' + escapeHtml(estudioCorto) + '</' + t + '>';
+    '<' + t + ' class="electro-cita-card-estudio" title="' + escapeHtml(c.estudio || '') + '">' + escapeHtml(estudioCorto) + '</' + t + '>' +
+    finEstudioHtml;
   card.addEventListener('click', () => {
     if (!tienePermiso('electro.editar') && !tienePermiso('electro.cambiar_estado')) return;
     if (estado === 'Completado' && !tienePermiso('electro.eliminar')) {
