@@ -756,8 +756,16 @@
                   </button>
                 </div>
               </div>
-              <div class="table-wrapper">
-              <table id="turnosTableMedica" class="modern-table">
+              <div class="medica-agenda-split">
+                <div class="medica-agenda-block medica-agenda-block-activos">
+                  <div class="medica-agenda-block-header medica-agenda-header-activos">
+                    <div class="medica-agenda-block-head-left">
+                      <span class="medica-agenda-block-title">En curso</span>
+                    </div>
+                    <span class="medica-agenda-block-count" id="medicaCountActivos">0</span>
+                  </div>
+                  <div class="table-wrapper">
+              <table id="turnosTableMedica" class="modern-table medica-turnos-table">
                   <colgroup>
                     <col class="col-turno">
                     <col class="col-hora col-mobile-hide">
@@ -786,6 +794,47 @@
                     <tr><td colspan="9" style="padding:20px;text-align:center;color:#999">Selecciona fecha y consultorio para ver las citas</td></tr>
                   </tbody>
                 </table>
+                  </div>
+                </div>
+                <div class="medica-agenda-block medica-agenda-block-completados">
+                  <div class="medica-agenda-block-header medica-agenda-header-completados">
+                    <div class="medica-agenda-block-head-left">
+                      <span class="medica-agenda-block-title">Completados</span>
+                    </div>
+                    <span class="medica-agenda-block-count" id="medicaCountCompletados">0</span>
+                  </div>
+                  <div class="table-wrapper">
+                    <table id="turnosTableMedicaCompletados" class="modern-table medica-turnos-table">
+                      <colgroup>
+                        <col class="col-turno">
+                        <col class="col-hora col-mobile-hide">
+                        <col class="col-paciente">
+                        <col class="col-tipo col-mobile-hide">
+                        <col class="col-doc col-mobile-hide">
+                        <col class="col-entidad col-mobile-hide">
+                        <col class="col-notas col-mobile-hide">
+                        <col class="col-estado">
+                        <col class="col-acciones">
+                      </colgroup>
+                      <thead>
+                        <tr>
+                          <th>Turno</th>
+                          <th class="col-hora col-mobile-hide">Hora</th>
+                          <th>Paciente</th>
+                          <th class="col-mobile-hide">Tipo consulta</th>
+                          <th class="col-mobile-hide">Documento</th>
+                          <th class="col-mobile-hide">Entidad</th>
+                          <th class="col-mobile-hide">Notas</th>
+                          <th>Estado</th>
+                          <th>Acciones</th>
+                        </tr>
+                      </thead>
+                      <tbody id="turnosTableBodyMedicaCompletados">
+                        <tr><td colspan="9" style="padding:16px;text-align:center;color:#9ca3af">—</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               </div>
               <div id="turnosTableMedicaControls"></div>
             </section>
