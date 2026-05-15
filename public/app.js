@@ -36,7 +36,7 @@ function hashPassword(password) {
 function updateRequirementItem(elementId, isMet, text) {
   const element = $(elementId);
   if (element) {
-    element.textContent = (isMet ? '[✓]' : '[Ô£ù]') + ' ' + text;
+    element.textContent = (isMet ? '[✓]' : '[✗]') + ' ' + text;
     element.style.color = isMet ? '#059669' : '#dc2626';
   }
 }
@@ -507,7 +507,7 @@ async function doLogin(usuario, password) {
       const tiempoBloqueoMs = tiempoBloqueoSegundos * 1000; // Convertir de segundos a milisegundos
       const ahora = Date.now();
       const minutos = Math.ceil((tiempoBloqueoMs - ahora) / 60000);
-      errorRetry.innerHTML = `<strong>­ƒöÆ Cuenta bloqueada</strong><br/>Intenta de nuevo en ${Math.max(minutos, 1)} minuto${Math.max(minutos, 1) !== 1 ? 's' : ''}`;
+      errorRetry.innerHTML = `<strong>🔒 Cuenta bloqueada</strong><br/>Intenta de nuevo en ${Math.max(minutos, 1)} minuto${Math.max(minutos, 1) !== 1 ? 's' : ''}`;
       errorRetry.style.marginTop = '8px';
     } else if (res.status === 401) {
       errorRetry.textContent = '';
@@ -656,7 +656,7 @@ function setupMenuHandlers() {
     });
   }
 
-  // ÔöÇÔöÇ Swipe derecha en móvil = botón Volver ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+  // ── Swipe derecha en móvil = botón Volver ────────────────────────────────
   // Solo interceptamos si el gesto empieza desde el borde izquierdo (<50px),
   // es predominantemente horizontal y ocurre dentro de un módulo activo.
   if (!window._swipeBackSetup) {
@@ -701,7 +701,7 @@ function setupMenuHandlers() {
       }
     }, { passive: true });
   }
-  // ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+  // ────────────────────────────────────────────────────────────────────────
   // Sidebar recibos
   document.querySelectorAll('#view-recibos .sidebar-btn').forEach(btn => {
     btn.addEventListener('click', function() {
@@ -1369,7 +1369,7 @@ function showLoader(show = true, msg = 'Procesando...') {
 }
 
 // Iconos por tipo de toast
-const _TOAST_ICONS = { success: '✓', error: 'Ô£ò', warning: '⚠', info: 'Ôä╣' };
+const _TOAST_ICONS = { success: '✓', error: '✕', warning: '⚠', info: 'ℹ' };
 
 // Mostrar toast apilado con icono y botón de cierre
 function showToast(msg, type = 'info', duration = 4000) {
@@ -1381,7 +1381,7 @@ function showToast(msg, type = 'info', duration = 4000) {
   }
   const toast = document.createElement('div');
   toast.className = `app-toast app-toast-${type}`;
-  const icon = _TOAST_ICONS[type] || 'Ôä╣';
+  const icon = _TOAST_ICONS[type] || 'ℹ';
   toast.innerHTML =
     `<span class="toast-icon">${icon}</span>` +
     `<span class="toast-body">${msg}</span>` +
@@ -1483,7 +1483,7 @@ function showSessionExpiredBanner() {
   toast.id = 'session-expired-toast';
   toast.innerHTML = `
     <div class="session-expired-toast-content">
-      <span class="session-expired-toast-icon">­ƒöÆ</span>
+      <span class="session-expired-toast-icon">🔒</span>
       <div class="session-expired-toast-text">
         <strong>Sesión expirada</strong>
         <span>Tu sesión ha terminado</span>
@@ -3281,7 +3281,7 @@ function deleteCalDay() {
   } catch (e) {
     showToast('Error: ' + e.message, 'error');
   }
-  }, { okText: 'Limpiar', icon: '­ƒùô´©Å' });
+  }, { okText: 'Limpiar', icon: '🗑️' });
 }
 
 function renderCalResumen() {
@@ -3431,7 +3431,7 @@ function showExcelViewer(workbook, filename) {
   header.appendChild(titlePart);
   
   const btnClose = document.createElement('button');
-  btnClose.textContent = 'Ô£ò';
+  btnClose.textContent = '✕';
   btnClose.style.fontSize = '1.5rem';
   btnClose.style.background = 'none';
   btnClose.style.border = 'none';
@@ -5726,7 +5726,7 @@ async function initElectro() {
     cargarCitasElectro();
   }, 30000);
 
-  // ÔöÇÔöÇ Sidebar navegación por páginas ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+  // ── Sidebar navegación por páginas ──────────────────────────────────────
   document.querySelectorAll('#view-electro .electro-page-btn').forEach(btn => {
     btn.addEventListener('click', function() {
       const page = this.dataset.page;
@@ -6608,7 +6608,7 @@ async function crearCitaElectro() {
 
 // Definición completa de todos los permisos del sistema
 const PERMISOS_DEFS = [
-  // ÔöÇÔöÇ Acceso a Módulos ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+  // ── Acceso a Módulos ───────────────────────────────────────────────────────
   { key: 'modulo.recibos',          label: 'Módulo: Recibos',                     grupo: 'Acceso a Módulos' },
   { key: 'modulo.agenda_medica',    label: 'Módulo: Agenda Médica',               grupo: 'Acceso a Módulos' },
   { key: 'modulo.electrodiag',      label: 'Módulo: Electrodiagnóstico',          grupo: 'Acceso a Módulos' },
@@ -6618,7 +6618,7 @@ const PERMISOS_DEFS = [
   { key: 'modulo.diagnosticos',     label: 'Módulo: Diagnósticos',                grupo: 'Acceso a Módulos' },
   { key: 'modulo.gestion_datos',    label: 'Módulo: Gestión de Datos',            grupo: 'Acceso a Módulos' },
   { key: 'modulo.monitor_equipos',  label: 'Módulo: Monitor de Equipos',           grupo: 'Acceso a Módulos' },
-  // ÔöÇÔöÇ Recibos ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+  // ── Recibos ───────────────────────────────────────────────────────────────
   { key: 'recibos.crear',           label: 'Recibos: Crear nuevo recibo',         grupo: 'Recibos' },
   { key: 'recibos.ver',             label: 'Recibos: Ver lista de recibos',       grupo: 'Recibos' },
   { key: 'recibos.editar',          label: 'Recibos: Editar recibo existente',    grupo: 'Recibos' },
@@ -6627,7 +6627,7 @@ const PERMISOS_DEFS = [
   { key: 'recibos.exportar',        label: 'Recibos: Exportar Excel / PDF',       grupo: 'Recibos' },
   { key: 'recibos.gestionar_servicios', label: 'Recibos: Gestionar servicios',    grupo: 'Recibos' },
   { key: 'recibos.resetear',        label: 'Recibos: Resetear consecutivos',      grupo: 'Recibos' },
-  // ÔöÇÔöÇ Agenda Médica ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+  // ── Agenda Médica ──────────────────────────────────────────────────────────
   { key: 'agenda.ver',              label: 'Agenda: Ver turnos del día',          grupo: 'Agenda Médica' },
   { key: 'agenda.crear',            label: 'Agenda: Crear / Programar citas',     grupo: 'Agenda Médica' },
   { key: 'agenda.editar',           label: 'Agenda: Editar citas',                grupo: 'Agenda Médica' },
@@ -6637,7 +6637,7 @@ const PERMISOS_DEFS = [
   { key: 'agenda.marcar_atendido',  label: 'Agenda: Marcar como atendido',        grupo: 'Agenda Médica' },
   { key: 'agenda.aviso_doctor',     label: 'Agenda: Enviar aviso al doctor',      grupo: 'Agenda Médica' },
   { key: 'agenda.disponibilidad',   label: 'Agenda: Programar disponibilidad',    grupo: 'Agenda Médica' },
-  // ÔöÇÔöÇ Electrodiagnóstico ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+  // ── Electrodiagnóstico ────────────────────────────────────────────────────
   { key: 'electro.ver',             label: 'Electro: Ver citas',                  grupo: 'Electrodiagnóstico' },
   { key: 'electro.crear',           label: 'Electro: Crear cita',                grupo: 'Electrodiagnóstico' },
   { key: 'electro.editar',          label: 'Electro: Editar cita',                grupo: 'Electrodiagnóstico' },
@@ -6646,10 +6646,10 @@ const PERMISOS_DEFS = [
   { key: 'electro.subir_archivo',   label: 'Electro: Subir archivos de estudios', grupo: 'Electrodiagnóstico' },
   { key: 'electro.ver_archivo',     label: 'Electro: Ver/descargar archivos',     grupo: 'Electrodiagnóstico' },
   { key: 'electro.aviso_doctor',    label: 'Electro: Enviar aviso al doctor',     grupo: 'Electrodiagnóstico' },
-  // ÔöÇÔöÇ UCQN ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+  // ── UCQN ───────────────────────────────────────────────────────────────────
   { key: 'ucqn.ver',                label: 'UCQN: Ver estudios',                   grupo: 'UCQN' },
   { key: 'ucqn.editar_estado',      label: 'UCQN: Cambiar estado',                 grupo: 'UCQN' },
-  // ÔöÇÔöÇ Usuarios ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+  // ── Usuarios ─────────────────────────────────────────────────────────────
   { key: 'usuarios.ver',            label: 'Usuarios: Ver lista de usuarios',     grupo: 'Gestión de Usuarios' },
   { key: 'usuarios.crear',          label: 'Usuarios: Crear usuario',             grupo: 'Gestión de Usuarios' },
   { key: 'usuarios.editar',         label: 'Usuarios: Editar usuario',            grupo: 'Gestión de Usuarios' },
@@ -6657,12 +6657,12 @@ const PERMISOS_DEFS = [
   { key: 'usuarios.eliminar',       label: 'Usuarios: Eliminar usuario',          grupo: 'Gestión de Usuarios' },
   { key: 'usuarios.auditoria',      label: 'Usuarios: Ver auditoría de accesos',  grupo: 'Gestión de Usuarios' },
   { key: 'usuarios.permisos',       label: 'Usuarios: Gestionar permisos (superadmin)', grupo: 'Gestión de Usuarios' },
-  // ÔöÇÔöÇ Diagnósticos ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+  // ── Diagnósticos ──────────────────────────────────────────────────────────
   { key: 'diagnosticos.ver',        label: 'Diagnósticos: Ver lista',             grupo: 'Diagnósticos' },
   { key: 'diagnosticos.crear',      label: 'Diagnósticos: Crear diagnóstico',     grupo: 'Diagnósticos' },
   { key: 'diagnosticos.editar',     label: 'Diagnósticos: Editar diagnóstico',    grupo: 'Diagnósticos' },
   { key: 'diagnosticos.eliminar',   label: 'Diagnósticos: Eliminar diagnóstico',  grupo: 'Diagnósticos' },
-  // ÔöÇÔöÇ Sistema ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+  // ── Sistema ───────────────────────────────────────────────────────────────
   { key: 'sistema.backups',         label: 'Sistema: Gestión de backups',         grupo: 'Sistema' },
   { key: 'sistema.exportar_datos',  label: 'Sistema: Exportar datos del sistema', grupo: 'Sistema' },
   { key: 'sistema.dashboard',       label: 'Sistema: Ver dashboard estadísticas', grupo: 'Sistema' },
@@ -7047,15 +7047,15 @@ async function _restablecerPermisos() {
         showToast(data.error || 'Error al restablecer', 'error');
       }
     } catch(e) { showToast('Error de conexión', 'error'); }
-    finally { setLoading(btn, false, 'Ôå║ Restablecer al rol'); }
-  }, { okText: 'Restablecer', icon: 'Ôå║' });
+    finally { setLoading(btn, false, '↺ Restablecer al rol'); }
+  }, { okText: 'Restablecer', icon: '↺' });
 }
 
 // ========== GESTIÓN DE USUARIOS (solo admin) ==========
 async function initUsuarios() {
   $('crearUsuario').addEventListener('click', crearUsuario);
 
-  // ÔöÇÔöÇ Navegación lateral por páginas ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+  // ── Navegación lateral por páginas ────────────────────────────────────────
   document.querySelectorAll('#view-usuarios .usuarios-page-btn').forEach(btn => {
     btn.addEventListener('click', function() {
       const page = this.dataset.page;
@@ -7101,11 +7101,11 @@ async function initUsuarios() {
         
         // Actualizar requisitos
         const checks = {
-          'length': validation.issues.includes('length') ? '[Ô£ù]' : '[✓]',
-          'upper': validation.issues.includes('upper') ? '[Ô£ù]' : '[✓]',
-          'lower': validation.issues.includes('lower') ? '[Ô£ù]' : '[✓]',
-          'number': validation.issues.includes('number') ? '[Ô£ù]' : '[✓]',
-          'special': validation.issues.includes('special') ? '[Ô£ù]' : '[✓]'
+          'length': validation.issues.includes('length') ? '[✗]' : '[✓]',
+          'upper': validation.issues.includes('upper') ? '[✗]' : '[✓]',
+          'lower': validation.issues.includes('lower') ? '[✗]' : '[✓]',
+          'number': validation.issues.includes('number') ? '[✗]' : '[✓]',
+          'special': validation.issues.includes('special') ? '[✗]' : '[✓]'
         };
         
         $('req-length')?.textContent  && ($('req-length').textContent  = checks.length  + ' Mínimo 8 caracteres');
@@ -7184,7 +7184,7 @@ async function cargarUsuarios() {
     const usuarios = await res.json();
     
     if (!usuarios.length) {
-      tbody.innerHTML = '<tr><td colspan="6"><div class="empty-state"><div class="empty-state-icon">­ƒæñ</div><p class="empty-state-title">Sin usuarios</p><p class="empty-state-subtitle">No hay usuarios registrados en el sistema</p></div></td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6"><div class="empty-state"><div class="empty-state-icon">👤</div><p class="empty-state-title">Sin usuarios</p><p class="empty-state-subtitle">No hay usuarios registrados en el sistema</p></div></td></tr>';
       return;
     }
 
@@ -7250,7 +7250,7 @@ function renderUsuarioRow(tbody, u) {
         const d = await r.json();
         if (d.ok) { verResetPassword(d); } else showToast(d.error||'Error', 'error');
       } catch (x) { showToast('Error', 'error'); }
-    }, { okText: 'Resetear', icon: '­ƒöæ' });
+    }, { okText: 'Resetear', icon: '🔑' });
   });
   tr.querySelector('[data-toggle]')?.addEventListener('click', (e) => {
     const newState = u.activo ? 'desactivar' : 'activar';
@@ -7262,7 +7262,7 @@ function renderUsuarioRow(tbody, u) {
         if (d.ok) { showToast(`Usuario ${d.activo ? 'activado' : 'desactivado'}`, 'success'); cargarUsuarios(); }
         else showToast(d.error||'Error', 'error');
       } catch (x) { showToast('Error', 'error'); }
-    }, { okText: label, danger: u.activo, icon: u.activo ? '­ƒÜ½' : 'Ô£à' });
+    }, { okText: label, danger: u.activo, icon: u.activo ? '🚫' : '✅' });
   });
   tr.querySelector('[data-del]')?.addEventListener('click', (e) => {
     showConfirm('¿Eliminar este usuario permanentemente?', async () => {
@@ -7382,11 +7382,11 @@ async function verHistorialAuditoria(usuarioId, usuarioNombre) {
       
       historial.forEach(h => {
         const iconos = {
-          'CREAR': 'Ô£¿',
-          'ACTUALIZAR': 'Ô£Å´©Å',
-          'ELIMINAR': '­ƒùæ´©Å',
-          'ACTIVAR': '­ƒƒó',
-          'DESACTIVAR': '­ƒö┤'
+          'CREAR': '✨',
+          'ACTUALIZAR': '✏️',
+          'ELIMINAR': '🗑️',
+          'ACTIVAR': '🟢',
+          'DESACTIVAR': '🔴'
         };
         const icon = iconos[h.accion] || '•';
         const cambios = h.cambios ? JSON.parse(h.cambios) : {};
@@ -7637,14 +7637,14 @@ function renderAuditoriaRow(tbody, r) {
   const tr = document.createElement('tr');
   
   const iconos = {
-    'CREAR': 'Ô£¿',
-    'ACTUALIZAR': 'Ô£Å´©Å',
-    'ELIMINAR': '­ƒùæ´©Å',
-    'ACTIVAR': '­ƒƒó',
-    'DESACTIVAR': '­ƒö┤',
-    'RESET_PASSWORD': '­ƒöæ',
-    'LOGIN': '­ƒöô',
-    'LOGOUT': '­ƒöÆ'
+    'CREAR': '✨',
+    'ACTUALIZAR': '✏️',
+    'ELIMINAR': '🗑️',
+    'ACTIVAR': '🟢',
+    'DESACTIVAR': '🔴',
+    'RESET_PASSWORD': '🔑',
+    'LOGIN': '🔓',
+    'LOGOUT': '🔒'
   };
   
   const icon = iconos[r.accion] || '•';
@@ -8055,7 +8055,7 @@ async function addRow(desc='', price=0){
   tr.innerHTML = `
     <td>${descSelect}</td>
     <td><input class="item-price" type="text" placeholder="0" value="${formattedPrice}"/></td>
-    <td><button class="remove" type="button">Ô£ò</button></td>
+    <td><button class="remove" type="button">✕</button></td>
   `;
   tbody.appendChild(tr);
   
@@ -8619,7 +8619,7 @@ async function cargarLista(queryString) {
             showToast(jr.error || 'Error al marcar como pagado', 'error');
           }
         } catch (_) { showToast('Error marcando como pagado', 'error'); }
-      }, { okText: 'Pagado', cancelText: 'Cancelar', danger: false, icon: 'Ô£à' });
+      }, { okText: 'Pagado', cancelText: 'Cancelar', danger: false, icon: '✅' });
     }));
 
     // Listener: Anular recibo
@@ -8635,7 +8635,7 @@ async function cargarLista(queryString) {
           if (jr.ok) { showToast('Recibo anulado correctamente', 'success'); cargarLista(_recibosLastParams); }
           else showToast(jr.error || 'Error al anular', 'error');
         } catch (_) { showToast('Error anulando recibo', 'error'); }
-      }, { okText: 'Anular Recibo', cancelText: 'Cancelar', danger: true, icon: '­ƒÜ½', placeholder: 'Ej: Error en el monto, duplicado, etc.' });
+      }, { okText: 'Anular Recibo', cancelText: 'Cancelar', danger: true, icon: '🚫', placeholder: 'Ej: Error en el monto, duplicado, etc.' });
     }));
 
     tbody.querySelectorAll('.btn-eliminar.delete').forEach(b => b.addEventListener('click', e => {
@@ -8672,7 +8672,7 @@ async function showEditReciboModal({ id, medico, servicio, entidad, cliente }) {
   backdrop.className = 'confirm-backdrop';
   backdrop.innerHTML = `
     <div class="confirm-box" style="max-width:480px;width:92%">
-      <div class="confirm-icon">Ô£Å´©Å</div>
+      <div class="confirm-icon">✏️</div>
       <div class="confirm-msg" style="font-size:1rem;margin-bottom:14px">Editar Recibo</div>
       <div style="text-align:left;display:flex;flex-direction:column;gap:12px">
         <label style="font-size:0.85rem;font-weight:600;color:#374151">
@@ -8764,7 +8764,7 @@ function resetAllRecibos(){
       showToast('Error al resetear', 'error');
       console.error(e);
     }
-  }, { okText: 'Eliminar todo', icon: '­ƒùæ´©Å' });
+  }, { okText: 'Eliminar todo', icon: '🗑️' });
 }
 
 // (setDefaultReportDates, generarReporteDiario, generarReporteMensual eliminados — reemplazados por filtros en Ver Recibos)
@@ -8855,7 +8855,7 @@ function closeCambiarContrasenaModal() {
 // Event listeners para el modal Mi Cuenta y otros modales
 document.addEventListener('DOMContentLoaded', () => {
 
-  // ÔöÇÔöÇ Mi Cuenta: cerrar, cancelar, tabs ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+  // ── Mi Cuenta: cerrar, cancelar, tabs ───────────────────────────────────────────
   const modalCC = $('modalCambiarContrasena');
   if (modalCC) {
     modalCC.querySelector('button.btn-close-modal')?.addEventListener('click', closeCambiarContrasenaModal);
@@ -8874,7 +8874,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // ÔöÇÔöÇ Formulario: cambiar nombre ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+  // ── Formulario: cambiar nombre ──────────────────────────────────────────────
   const formNombre = $('formCambiarNombre');
   if (formNombre) {
     formNombre.addEventListener('submit', async (e) => {
@@ -8909,7 +8909,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // ÔöÇÔöÇ Formulario: cambiar contraseña ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+  // ── Formulario: cambiar contraseña ───────────────────────────────────────────
   const formPwd = $('formCambiarContrasena');
   if (formPwd) {
     formPwd.addEventListener('submit', async (e) => {
@@ -8949,7 +8949,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // ÔöÇÔöÇ Toggle contraseñas (Mi Cuenta) ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+  // ── Toggle contraseñas (Mi Cuenta) ───────────────────────────────────────────
   [['toggleContrasenaActual', 'contrasenaActual'],
    ['toggleNuevaContrasena',  'nuevaContrasena'],
    ['toggleConfirmarContrasena', 'confirmarContrasena'],
@@ -8963,7 +8963,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // ÔöÇÔöÇ Requisitos de contraseña en tiempo real ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+  // ── Requisitos de contraseña en tiempo real ─────────────────────────────────
   const pwdInput = $('nuevaContrasena'), reqBox = $('cambiarContrasenaRequirements');
   if (pwdInput && reqBox) {
     pwdInput.addEventListener('input', () => {
@@ -8978,7 +8978,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // ÔöÇÔöÇ Modal Editar Usuario ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+  // ── Modal Editar Usuario ─────────────────────────────────────────────────────
   const modalEditarUsuario = $('modalEditarUsuario');
   if (modalEditarUsuario) {
     modalEditarUsuario.querySelector('button.btn-close-modal')?.addEventListener('click', closeEditarUsuarioModal);
@@ -8996,7 +8996,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // ÔöÇÔöÇ Modal Historial ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+  // ── Modal Historial ─────────────────────────────────────────────────────────────
   const modalHistorial = $('modalHistorial');
   if (modalHistorial) {
     modalHistorial.querySelector('button.btn-close-modal')?.addEventListener('click', closeHistorialModal);
@@ -9005,7 +9005,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // ÔöÇÔöÇ Modal Reset Password ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+  // ── Modal Reset Password ─────────────────────────────────────────────────────
   const modalResetPassword = $('modalResetPassword');
   if (modalResetPassword) {
     modalResetPassword.querySelector('button.btn-close-modal')?.addEventListener('click', closeResetPasswordModal);
@@ -9090,7 +9090,7 @@ async function cargarListaDiagnosticos() {
     const diagnosticos = await res.json();
 
     if (diagnosticos.length === 0) {
-      if (tbody) tbody.innerHTML = '<tr><td colspan="5"><div class="empty-state"><div class="empty-state-icon">­ƒÆ¼</div><p class="empty-state-title">Sin diagnósticos</p><p class="empty-state-subtitle">No hay diagnósticos cargados en el sistema</p></div></td></tr>';
+      if (tbody) tbody.innerHTML = '<tr><td colspan="5"><div class="empty-state"><div class="empty-state-icon">💬</div><p class="empty-state-title">Sin diagnósticos</p><p class="empty-state-subtitle">No hay diagnósticos cargados en el sistema</p></div></td></tr>';
       return;
     }
 
@@ -9145,7 +9145,7 @@ async function iniciarEstudioModal() {
   // VALIDACIÓN: usar FECHA+HORA real de la cita.
   const validInicio = validarInicioElectroSegunFechaHora(citaElectroSeleccionada);
   if (!validInicio.ok) {
-    showToast(`ÔØî El estudio está agendado para las ${validInicio.horaAgendada}. Faltan ${validInicio.faltanMinutos} minutos para poder iniciarlo.`, 'error');
+    showToast(`❌ El estudio está agendado para las ${validInicio.horaAgendada}. Faltan ${validInicio.faltanMinutos} minutos para poder iniciarlo.`, 'error');
     return;
   }
   
@@ -9374,14 +9374,14 @@ async function confirmarDuracionEstudio() {
   // VALIDACIÓN: usar FECHA+HORA real de la cita (evita falsos bloqueos de citas de días previos).
   const validInicio = validarInicioElectroSegunFechaHora(citaElectroSeleccionada);
   if (!validInicio.ok) {
-    showToast(`ÔØî El estudio está agendado para las ${validInicio.horaAgendada}. Faltan ${validInicio.faltanMinutos} minutos para poder iniciarlo.`, 'error');
+    showToast(`❌ El estudio está agendado para las ${validInicio.horaAgendada}. Faltan ${validInicio.faltanMinutos} minutos para poder iniciarlo.`, 'error');
     return;
   }
   
   // VALIDAR QUE SE HAYA SELECCIONADO UN EQUIPO
   const equipoSelect = $('modalEquipo');
   if (!equipoSelect || !equipoSelect.value) {
-    showToast('ÔØî Debes seleccionar un equipo antes de iniciar el estudio', 'error');
+    showToast('❌ Debes seleccionar un equipo antes de iniciar el estudio', 'error');
     return;
   }
   
@@ -9490,7 +9490,7 @@ async function iniciarEstudioSinDuracion() {
   // VALIDACIÓN: usar FECHA+HORA real de la cita.
   const validInicio = validarInicioElectroSegunFechaHora(citaElectroSeleccionada);
   if (!validInicio.ok) {
-    showToast(`ÔØî El estudio está agendado para las ${validInicio.horaAgendada}. Faltan ${validInicio.faltanMinutos} minutos para poder iniciarlo.`, 'error');
+    showToast(`❌ El estudio está agendado para las ${validInicio.horaAgendada}. Faltan ${validInicio.faltanMinutos} minutos para poder iniciarlo.`, 'error');
     return;
   }
 
@@ -9499,7 +9499,7 @@ async function iniciarEstudioSinDuracion() {
   // VALIDAR QUE SE HAYA SELECCIONADO UN EQUIPO
   const equipoSelect = $('modalEquipo');
   if (!equipoSelect || !equipoSelect.value) {
-    showToast('ÔØî Debes seleccionar un equipo antes de iniciar el estudio', 'error');
+    showToast('❌ Debes seleccionar un equipo antes de iniciar el estudio', 'error');
     return;
   }
   
@@ -10788,14 +10788,14 @@ function construirMensajeRecordatorioMedica(turno, especialidadDoctor) {
   const especialidadTexto = especialidadDoctor || 'Neuropsicología';
   const nombreEspecialista = obtenerNombreEspecialistaRecordatorio();
   const lineaEspecialista = especialidadIncluyeEspecialista(especialidadTexto)
-    ? `\nÔùë Especialista: ${nombreEspecialista || 'Por confirmar'}`
+    ? `\n▸ Especialista: ${nombreEspecialista || 'Por confirmar'}`
     : '';
   return `¡Hola, buen día!. Le recordamos su cita de ${especialidadTexto} en el Instituto Neurociencias de Nariño IPS S.A.S:
-Ôùë Paciente: ${nombre}
-Ôùë Fecha: ${fecha}
-Ôùë Hora: ${hora}
+▸ Paciente: ${nombre}
+▸ Fecha: ${fecha}
+▸ Hora: ${hora}
 ${lineaEspecialista}
-Ôùë Ubicación: Carrera 33 #13 - 84 "Casa Verde" (https://maps.app.goo.gl/YU5GheUmVMDAHFbq8)
+▸ Ubicación: Carrera 33 #13 - 84 "Casa Verde" (https://maps.app.goo.gl/YU5GheUmVMDAHFbq8)
 Cualquier novedad, no dude en comunicarse con nosotros.
 
 NOTA: Por favor confirmar su asistencia lo antes posible. Muchas gracias.`;
@@ -11302,7 +11302,7 @@ $('modalReprogramarMedica')?.addEventListener('click', (e) => {
   }
 });
 
-// ÔöÇÔöÇ Editar paciente en modal médica ÔöÇÔöÇ
+// ── Editar paciente en modal médica ──
 document.getElementById('btnEditarMedicaModal')?.addEventListener('click', () => {
   const panel = document.getElementById('editarMedicaPanel');
   if (!panel) return;
@@ -11364,7 +11364,7 @@ document.getElementById('btnGuardarEditarMedica')?.addEventListener('click', asy
   }
 });
 
-// ÔöÇÔöÇ Editar tipo de consulta en citas ATENDIDAS (solo superadmin) ÔöÇÔöÇ
+// ── Editar tipo de consulta en citas ATENDIDAS (solo superadmin) ──
 document.getElementById('btnEditTipoConsultaAtendida')?.addEventListener('click', async () => {
   const wrap = document.getElementById('editTipoConsultaAtendidaWrap');
   const sel = document.getElementById('editTipoConsultaAtendidaSel');
@@ -11449,7 +11449,7 @@ async function buscarCitasPorDocumento() {
     const citas = await res.json();
     
     if (!citas || citas.length === 0) {
-      if (tbody) tbody.innerHTML = `<tr><td colspan="7" style="padding:20px;text-align:center;color:#7f1d1d">ÔØî No se encontraron citas para el documento "<strong>${escapeHtml(documento)}</strong>"</td></tr>`;
+      if (tbody) tbody.innerHTML = `<tr><td colspan="7" style="padding:20px;text-align:center;color:#7f1d1d">❌ No se encontraron citas para el documento "<strong>${escapeHtml(documento)}</strong>"</td></tr>`;
       if (conteo) conteo.textContent = '0 resultados';
       return;
     }
@@ -11505,7 +11505,7 @@ async function buscarEstudiosPorDocumento() {
     const citas = await res.json();
 
     if (!citas || citas.length === 0) {
-      if (tbody) tbody.innerHTML = `<tr><td colspan="7" style="padding:20px;text-align:center;color:#7f1d1d">ÔØî No se encontraron estudios para el documento "<strong>${escapeHtml(documento)}</strong>"</td></tr>`;
+      if (tbody) tbody.innerHTML = `<tr><td colspan="7" style="padding:20px;text-align:center;color:#7f1d1d">❌ No se encontraron estudios para el documento "<strong>${escapeHtml(documento)}</strong>"</td></tr>`;
       if (conteo) conteo.textContent = '0 resultados';
       return;
     }

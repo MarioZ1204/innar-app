@@ -1,30 +1,53 @@
 /**
- * Corrige texto UTF-8 mal interpretado (mojibake) en fuentes JS del frontend.
+ * Corrige texto UTF-8 mal interpretado (mojibake) en fuentes del frontend.
  * Uso: node scripts/fix-mojibake.js
  */
 const fs = require('fs');
 const path = require('path');
 
+const ROOT = path.join(__dirname, '..');
 const FILES = [
-  path.join(__dirname, '..', 'docs', 'legacy', 'app.pre-minify.js'),
-  path.join(__dirname, '..', 'public', 'app.js')
-];
+  path.join(ROOT, 'docs', 'legacy', 'app.pre-minify.js'),
+  path.join(ROOT, 'public', 'app.js'),
+  path.join(ROOT, 'public', 'dashboard-citas.js')
+].filter((f) => fs.existsSync(f));
 
+/** Sustituciones (más largas primero). */
 const REPLACEMENTS = [
-  ['┬í', '¡'],
-  ['┬┐', '¿'],
-  ['┬½', '«'],
-  ['┬╗', '»'],
-  ['├ù', '×'],
-  ['ÔÇó', '•'],
-  ['ÔÇØ', '"'],
-  ['ÔÇ£', '"'],
-  ['N┬░', 'N°'],
-  ['┬░', '°'],
   ['ÔÜá´©Å', '⚠️'],
-  ['ÔÜá', '⚠'],
+  ['Ô£Å´©Å', '✏️'],
+  ['­ƒÜ½', '🚫'],
+  ['­ƒôï', '📋'],
+  ['­ƒôØ', '📝'],
+  ['­ƒöÆ', '🔒'],
+  ['­ƒöô', '🔓'],
+  ['­ƒæñ', '👤'],
+  ['­ƒæÑ', '👥'],
+  ['­ƒôà', '📅'],
+  ['­ƒôè', '📊'],
+  ['­ƒÆ░', '💰'],
+  ['­ƒÆí', '💡'],
+  ['­ƒÜÇ', '🚀'],
+  ['­ƒùô´©Å', '🗑️'],
+  ['­ƒùæ´©Å', '🗑️'],
+  ['­ƒöæ', '🔑'],
+  ['­ƒƒó', '🟢'],
+  ['­ƒö┤', '🔴'],
+  ['­ƒÆ¼', '💬'],
   ['Ô£ô', '✓'],
+  ['Ô£ò', '✕'],
+  ['Ô£ù', '✗'],
+  ['Ô£à', '✅'],
+  ['Ô£¿', '✨'],
+  ['Ôä╣', 'ℹ'],
+  ['ÔØî', '❌'],
+  ['Ôùë', '▸'],
+  ['Ôå║', '↺'],
   ['ÔÅ│', '⏳'],
+  ['ÔåÆ', '→'],
+  ['Ôåô', '↓'],
+  ['Ôåæ', '↑'],
+  ['ÔÇó', '•'],
   ['ÔÇª', '…'],
   ['ÔÇö', '—'],
   ['ÔÇô', '–'],
@@ -32,31 +55,18 @@ const REPLACEMENTS = [
   ['ÔÇ¥', '"'],
   ['ÔÇÖ', "'"],
   ['ÔÇÜ', "'"],
-  ['ÔåÆ', '→'],
-  ['Ôåô', '↓'],
-  ['Ôåæ', '↑'],
   ['ÔÇ╣', '‹'],
   ['ÔÇ║', '›'],
+  ['ÔÜá', '⚠'],
+  ['ÔöÇ', '─'],
+  ['┬í', '¡'],
+  ['┬┐', '¿'],
+  ['┬½', '«'],
+  ['┬╗', '»'],
+  ['┬░', '°'],
   ['┬À', '·'],
-  ['├│n', 'ón'],
-  ['├®n', 'én'],
-  ['├¡n', 'ín'],
-  ['├¡a', 'ía'],
-  ['├║', 'ú'],
-  ['├╝', 'ü'],
-  ['├│', 'ó'],
-  ['├¡', 'í'],
-  ['├®', 'é'],
-  ['├í', 'á'],
-  ['├▒', 'ñ'],
-  ['├æ', 'Ñ'],
-  ['├ü', 'Á'],
-  ['├ë', 'É'],
-  ['├ì', 'Í'],
-  ['├ô', 'Ó'],
-  ['├Ü', 'Ú'],
-  ['├º', 'ç'],
-  ['├¡', 'í'],
+  ['├ù', '×'],
+  ['N┬░', 'N°'],
   ['M├®dica', 'Médica'],
   ['m├®dica', 'médica'],
   ['Electrodiagn├│stico', 'Electrodiagnóstico'],
@@ -99,7 +109,6 @@ const REPLACEMENTS = [
   ['├║nicamente', 'únicamente'],
   ['espec├¡ficos', 'específicos'],
   ['espec├¡fico', 'específico'],
-  ['caracteres', 'caracteres'],
   ['m├│dulo', 'módulo'],
   ['M├│dulo', 'Módulo'],
   ['├¡ndice', 'índice'],
@@ -128,7 +137,6 @@ const REPLACEMENTS = [
   ['podr├í', 'podrá'],
   ['habr├í', 'habrá'],
   ['est├®n', 'estén'],
-  ['est├®', 'esté'],
   ['est├ís', 'estás'],
   ['est├ín', 'están'],
   ['├║til', 'útil'],
@@ -149,12 +157,26 @@ const REPLACEMENTS = [
   ['seg├║n', 'según'],
   ['├¡cono', 'ícono'],
   ['├¡conos', 'íconos'],
-  ['├¡ndice', 'índice'],
   ['├¡tems', 'ítems'],
   ['├¡tem', 'ítem'],
+  ['├│n', 'ón'],
+  ['├®n', 'én'],
+  ['├¡n', 'ín'],
+  ['├¡a', 'ía'],
+  ['├║', 'ú'],
+  ['├╝', 'ü'],
+  ['├│', 'ó'],
   ['├¡', 'í'],
-  ['ÔÇö', '—'],
-  ['ÔÇö', '—']
+  ['├®', 'é'],
+  ['├í', 'á'],
+  ['├▒', 'ñ'],
+  ['├æ', 'Ñ'],
+  ['├ü', 'Á'],
+  ['├ë', 'É'],
+  ['├ì', 'Í'],
+  ['├ô', 'Ó'],
+  ['├Ü', 'Ú'],
+  ['├º', 'ç']
 ].sort((a, b) => b[0].length - a[0].length);
 
 function fixContent(text) {
@@ -172,17 +194,22 @@ function fixContent(text) {
   return { out, changed };
 }
 
+function countBad(text) {
+  return (text.match(/Ô|├[^a-zA-Z]|┬[^a-zA-Z]|­ƒ/g) || []).length;
+}
+
+let total = 0;
 for (const file of FILES) {
-  if (!fs.existsSync(file)) {
-    console.warn('No existe:', file);
-    continue;
-  }
   const raw = fs.readFileSync(file, 'utf8');
+  const before = countBad(raw);
   const { out, changed } = fixContent(raw);
-  if (changed > 0) {
+  const after = countBad(out);
+  if (changed > 0 || out !== raw) {
     fs.writeFileSync(file, out, 'utf8');
-    console.log(`✓ ${path.basename(file)}: ${changed} reemplazos`);
+    console.log(`${path.relative(ROOT, file)}: ${changed} reemplazos (restos: ${before} -> ${after})`);
+    total += changed;
   } else {
-    console.log(`- ${path.basename(file)}: sin cambios`);
+    console.log(`${path.relative(ROOT, file)}: sin cambios`);
   }
 }
+console.log(`Total: ${total} reemplazos`);
