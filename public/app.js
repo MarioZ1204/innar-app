@@ -3708,11 +3708,13 @@ function _ordenarTurnosMedica(turnos) {
   });
 }
 
-function _construirDisplayListMedica(turnosOrdenados, dispCtx) {
+function _construirDisplayListMedica(turnosDiaOrdenCronologico, dispCtx) {
   const { dispManana, dispTarde, intervalosBloqueados, INTERVALO_MIN } = dispCtx;
   const rangosDisponibles = [];
   if (dispManana) rangosDisponibles.push({ inicio: 8 * 60, fin: 12 * 60 });
   if (dispTarde) rangosDisponibles.push({ inicio: 14 * 60, fin: 18 * 60 });
+
+  const esTurnoEnTablaActivos = (t) => !MEDICA_ESTADOS_FINALES.includes(t.estado);
 
   function minutoDentroDeDisponibilidad(m) {
     const enRango = rangosDisponibles.some((r) => m >= r.inicio && m < r.fin);
@@ -3735,7 +3737,8 @@ function _construirDisplayListMedica(turnosOrdenados, dispCtx) {
   }
 
   const displayList = [];
-  const horasTurnos = turnosOrdenados.map((t) => horaAMinutos(t.hora)).filter((m) => m !== null);
+  const lista = turnosDiaOrdenCronologico;
+  const horasTurnos = lista.map((t) => horaAMinutos(t.hora)).filter((m) => m !== null);
 
   if (horasTurnos.length === 0) {
     for (const rango of rangosDisponibles) {
@@ -3750,11 +3753,14 @@ function _construirDisplayListMedica(turnosOrdenados, dispCtx) {
         displayList.push(...generarSlotsEnRango(rango.inicio, primerTurno));
       }
     }
-    for (let i = 0; i < turnosOrdenados.length; i++) {
-      displayList.push({ tipo: 'turno', data: turnosOrdenados[i] });
-      if (i < turnosOrdenados.length - 1) {
-        const mActual = horaAMinutos(turnosOrdenados[i].hora);
-        const mSiguiente = horaAMinutos(turnosOrdenados[i + 1].hora);
+    for (let i = 0; i < lista.length; i++) {
+      const t = lista[i];
+      if (esTurnoEnTablaActivos(t)) {
+        displayList.push({ tipo: 'turno', data: t });
+      }
+      if (i < lista.length - 1) {
+        const mActual = horaAMinutos(lista[i].hora);
+        const mSiguiente = horaAMinutos(lista[i + 1].hora);
         if (mActual !== null && mSiguiente !== null) {
           displayList.push(...generarSlotsEnRango(mActual + INTERVALO_MIN, mSiguiente));
         }
@@ -3873,7 +3879,7 @@ async function cargarTurnosMedica() {
       }
     } catch (e) { console.warn('Error obteniendo disponibilidad:', e.message); }
 
-    const displayList = _construirDisplayListMedica(turnosActivos, {
+    const displayList = _construirDisplayListMedica(turnosOrdenados, {
       dispManana, dispTarde, intervalosBloqueados, INTERVALO_MIN
     });
 
@@ -3903,6 +3909,7 @@ async function cargarTurnosMedica() {
 
     adjustColumnsForRole();
     _applySlotVacioVisibility();
+    _medicaUltimaKeyAgenda = agendaKeyMedica;
   } catch (e) {
     showToast('Error cargando citas', 'error');
   } finally {
