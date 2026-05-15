@@ -3865,6 +3865,7 @@ async function cargarTurnosMedica() {
     // adjustColumnsForRole
     // Ajustar columnas según rol (una sola vez después de renderizar todas las filas)
     adjustColumnsForRole();
+    _applySlotVacioVisibility();
   } catch (e) {
     showToast('Error cargando citas', 'error');
   } finally {
@@ -3899,6 +3900,23 @@ function crearFilaTurnoHueco(tbody, colspan) {
   tr.style.cssText = 'opacity:0.55;background:repeating-linear-gradient(90deg,#f0f4f8 0px,#f0f4f8 8px,transparent 8px,transparent 16px)';
   tr.innerHTML = `<td colspan="${colspan}" style="padding:5px 12px;border:none;color:#9ca3af;font-size:0.78rem;font-style:italic;letter-spacing:0.02em">&#x2015; Consulta extendida &#x2015;</td>`;
   tbody.appendChild(tr);
+}
+
+let _mostrarSlotVacio = localStorage.getItem('agenda_mostrar_slots') !== '0';
+
+function toggleSlotVacio() {
+  _mostrarSlotVacio = !_mostrarSlotVacio;
+  localStorage.setItem('agenda_mostrar_slots', _mostrarSlotVacio ? '1' : '0');
+  _applySlotVacioVisibility();
+}
+
+function _applySlotVacioVisibility() {
+  const rows = document.querySelectorAll('#turnosTableBodyMedica .turno-slot-vacio');
+  rows.forEach(r => { r.style.display = _mostrarSlotVacio ? '' : 'none'; });
+  const btn = document.getElementById('btnToggleSlotVacio');
+  if (btn) btn.style.display = rows.length > 0 ? 'inline-flex' : 'none';
+  const lbl = document.getElementById('lblToggleSlot');
+  if (lbl) lbl.textContent = _mostrarSlotVacio ? 'Ocultar libres' : 'Mostrar libres';
 }
 
 // Fila visual de slot vacío con hora tentativa (rojo claro suave)
@@ -3985,10 +4003,10 @@ function renderTurnoRowMedica(tbody, t, animateTargetId, hayEnAtencion) {
       tr.innerHTML = `
         <td>${numCellHtml}</td>
         <td class="col-hora col-mobile-hide">${formatearHora(t.hora)}</td>
-        <td><span class="turno-cell-2lines">${escapeHtml(t.paciente_nombre)}</span></td>
-        <td class="col-mobile-hide col-wrap-cell col-tipo-cell"><span class="turno-cell-2lines">${escapeHtml(t.tipo_consulta || '')}</span></td>
+        <td class="col-paciente-cell"><span class="turno-cell-2lines" title="${escapeHtml(t.paciente_nombre)}">${escapeHtml(t.paciente_nombre)}</span></td>
+        <td class="col-mobile-hide col-wrap-cell col-tipo-cell"><span class="turno-cell-2lines" title="${escapeHtml(t.tipo_consulta || '')}">${escapeHtml(t.tipo_consulta || '')}</span></td>
         <td class="col-mobile-hide col-wrap-cell col-doc-cell"><span class="turno-cell-2lines">${escapeHtml(t.paciente_documento||'')}</span></td>
-        <td class="col-mobile-hide col-wrap-cell">${escapeHtml(t.entidad||'')}</td>
+        <td class="col-mobile-hide col-wrap-cell col-entidad-cell"><span class="turno-cell-2lines">${escapeHtml(t.entidad||'')}</span></td>
         <td class="col-mobile-hide col-notas-cell"><span class="turno-notas-cell" title="${escapeHtml(t.notas || '')}">${escapeHtml(t.notas || '')}</span></td>
         <td class="col-estado-cell">${estadoBadgeMedica(t.estado)}</td>
         <td>${escapeHtml(t.programado_por || '-')}</td>
@@ -4001,10 +4019,10 @@ function renderTurnoRowMedica(tbody, t, animateTargetId, hayEnAtencion) {
       tr.innerHTML = `
         <td>${numCellHtml}</td>
         <td class="col-hora col-mobile-hide">${formatearHora(t.hora)}</td>
-        <td><span class="turno-cell-2lines">${escapeHtml(t.paciente_nombre)}</span></td>
-        <td class="col-mobile-hide col-wrap-cell col-tipo-cell"><span class="turno-cell-2lines">${escapeHtml(t.tipo_consulta || '')}</span></td>
+        <td class="col-paciente-cell"><span class="turno-cell-2lines" title="${escapeHtml(t.paciente_nombre)}">${escapeHtml(t.paciente_nombre)}</span></td>
+        <td class="col-mobile-hide col-wrap-cell col-tipo-cell"><span class="turno-cell-2lines" title="${escapeHtml(t.tipo_consulta || '')}">${escapeHtml(t.tipo_consulta || '')}</span></td>
         <td class="col-mobile-hide col-wrap-cell col-doc-cell"><span class="turno-cell-2lines">${escapeHtml(t.paciente_documento||'')}</span></td>
-        <td class="col-mobile-hide col-wrap-cell">${escapeHtml(t.entidad||'')}</td>
+        <td class="col-mobile-hide col-wrap-cell col-entidad-cell"><span class="turno-cell-2lines">${escapeHtml(t.entidad||'')}</span></td>
         <td class="col-mobile-hide col-notas-cell"><span class="turno-notas-cell" title="${escapeHtml(t.notas || '')}">${escapeHtml(t.notas || '')}</span></td>
         <td class="col-estado-cell">${estadoBadgeMedica(t.estado)}</td>
         <td class="td-acciones col-acciones-cell">${accionesCell}</td>
