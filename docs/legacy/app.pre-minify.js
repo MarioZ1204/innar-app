@@ -122,6 +122,8 @@ let lastTurnoNumber1Id = null;
 let globalHayEnAtencion = false;
 let _cargandoTurnosMedica = false;
 let _pendienteTurnosMedica = false;
+/** Clave "fecha|doctorId" tras última carga OK; misma clave => sin skeleton (polling/sockets). */
+let _medicaUltimaKeyAgenda = null;
 let _cargandoCitasElectro = false;
 let _pendienteCitasElectro = false;
 let _citasElectroReqId = 0;
@@ -3815,10 +3817,14 @@ async function cargarTurnosMedica() {
     }
     return;
   }
+  const agendaKeyMedica = `${fecha}|${doctorId}`;
   const tbodyActivos = $('turnosTableBodyMedica');
   const tbodyCompletados = $('turnosTableBodyMedicaCompletados');
-  showSkeletonRows(tbodyActivos, 8, 6);
-  if (tbodyCompletados) showSkeletonRows(tbodyCompletados, 9, 4);
+  const mismoContextoUltimaVista = _medicaUltimaKeyAgenda === agendaKeyMedica;
+  if (!mismoContextoUltimaVista) {
+    showSkeletonRows(tbodyActivos, 8, 6);
+    if (tbodyCompletados) showSkeletonRows(tbodyCompletados, 9, 4);
+  }
   try {
     const res = await apiFetch(`/api/turnos?fecha=${fecha}&doctor_id=${doctorId}`);
     const turnos = await res.json();
@@ -3897,6 +3903,7 @@ async function cargarTurnosMedica() {
 
     adjustColumnsForRole();
     _applySlotVacioVisibility();
+    _medicaUltimaKeyAgenda = agendaKeyMedica;
   } catch (e) {
     showToast('Error cargando citas', 'error');
   } finally {
