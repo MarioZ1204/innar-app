@@ -3851,13 +3851,13 @@ async function cargarTurnosMedica() {
     const es25min = espLower.includes('epileptolog') || espLower.includes('neurolog');
     const INTERVALO_MIN = es25min ? 25 : 40;
 
-    let dispManana = true, dispTarde = true, intervalosBloqueados = [];
+    let dispManana = false, dispTarde = false, intervalosBloqueados = [];
     try {
       const dispRes = await apiFetch(`/api/doctor-disponibilidad?doctor_id=${doctorId}&fecha=${fecha}`);
       const dispData = await dispRes.json();
       if (dispData.ok) {
-        dispManana = dispData.disponible_manana;
-        dispTarde = dispData.disponible_tarde;
+        dispManana = Boolean(dispData.disponible_manana);
+        dispTarde = Boolean(dispData.disponible_tarde);
         if (dispData.tiene_intervalos && dispData.intervalos) {
           intervalosBloqueados = dispData.intervalos.map((i) => ({
             inicio: horaAMinutos(i.hora_inicio),
@@ -3933,7 +3933,7 @@ function crearFilaTurnoHueco(tbody, colspan) {
   tbody.appendChild(tr);
 }
 
-let _mostrarSlotVacio = localStorage.getItem('agenda_mostrar_slots') !== '0';
+let _mostrarSlotVacio = localStorage.getItem('agenda_mostrar_slots') === '1';
 
 function toggleSlotVacio() {
   _mostrarSlotVacio = !_mostrarSlotVacio;
@@ -3942,10 +3942,15 @@ function toggleSlotVacio() {
 }
 
 function _applySlotVacioVisibility() {
-  const rows = document.querySelectorAll('#turnosTableBodyMedica .turno-slot-vacio');
-  rows.forEach(r => { r.style.display = _mostrarSlotVacio ? '' : 'none'; });
+  const rows = document.querySelectorAll('#turnosTableBodyMedica tr.turno-slot-vacio');
+  rows.forEach((r) => {
+    r.style.display = _mostrarSlotVacio ? '' : 'none';
+  });
   const btn = document.getElementById('btnToggleSlotVacio');
-  if (btn) btn.style.display = rows.length > 0 ? 'inline-flex' : 'none';
+  if (btn) {
+    btn.style.display = rows.length > 0 ? 'inline-flex' : 'none';
+    btn.setAttribute('aria-pressed', _mostrarSlotVacio ? 'true' : 'false');
+  }
   const lbl = document.getElementById('lblToggleSlot');
   if (lbl) lbl.textContent = _mostrarSlotVacio ? 'Ocultar libres' : 'Mostrar libres';
 }
@@ -12666,6 +12671,39 @@ function initMonitorEquipos() {
   _monitorRefreshTimer = setInterval(() => {
     if (window.currentModule === 'monitor-equipos' && _monitorEsHoy()) cargarMonitorEquipos();
   }, 30000);
+
+  if (!window._monitorCitaClickBound) {
+    window._monitorCitaClickBound = true;
+    document.addEventListener('click', async function _monitorCitaClickHandler(ev) {
+      const bar = ev.target.closest('.meq-timeline-bar[data-cita-id]');
+      const card = ev.target.closest('.meq-sin-equipo-card[data-cita-id]');
+      const el = bar || card;
+      if (!el) return;
+      const view = $('view-monitor-equipos');
+      if (!view || view.classList.contains('hidden')) return;
+      const id = el.getAttribute('data-cita-id');
+      if (!id) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      try {
+        const res = await apiFetch('/api/citas-electro/' + encodeURIComponent(id));
+        if (!res.ok) {
+          let msg = 'No se pudo cargar el estudio';
+          try {
+            const err = await res.json();
+            if (err && err.error) msg = err.error;
+          } catch (e2) { /* ignore */ }
+          showToast(msg, 'error');
+          return;
+        }
+        const cita = await res.json();
+        abrirModalDetallesCita(cita);
+      } catch (e) {
+        console.error('[MONITOR] detalle cita:', e);
+        showToast('Error al cargar el estudio', 'error');
+      }
+    });
+  }
 }
 
 async function cargarMonitorEquipos() {
@@ -12785,7 +12823,8 @@ function renderMonitorEquipos(data) {
       const tip = (seg.estudio || 'Estudio') + ' \u2014 ' + (seg.paciente_nombre || '') +
         ' (' + formatearHora(seg.hora_inicio || '') + '\u2013' + formatearHora(seg.hora_fin || '') + ')';
       const label = (seg.hora_inicio || '') + ' ' + (seg.estudio || '');
-      html += '<div class="meq-timeline-bar ' + timelineBarClass(seg) + '" style="left:' + (seg.left_pct || 0) + '%;width:' + w + '%" title="' + escapeHtml(tip) + '">';
+      const cid = seg.id != null ? String(seg.id) : '';
+      html += '<div class="meq-timeline-bar ' + timelineBarClass(seg) + '" data-cita-id="' + escapeHtml(cid) + '" style="left:' + (seg.left_pct || 0) + '%;width:' + w + '%" title="' + escapeHtml(tip) + ' (clic para detalle)">';
       if (w >= 4) html += '<span class="meq-bar-label">' + escapeHtml(label.length > 28 ? label.slice(0, 26) + '\u2026' : label) + '</span>';
       html += '</div>';
     });
@@ -12811,7 +12850,8 @@ function renderMonitorEquipos(data) {
   if (sinEquipo && sinEquipo.length > 0 && sinEqC && sinEqL) {
     sinEqC.style.display = '';
     sinEqL.innerHTML = sinEquipo.map(function(c) {
-      return '<div class="meq-sin-equipo-card">' +
+      const sid = c.id != null ? String(c.id) : '';
+      return '<div class="meq-sin-equipo-card" data-cita-id="' + escapeHtml(sid) + '" title="Clic para ver detalle">' +
         '<div class="meq-study-block"><div class="meq-study-title">' + escapeHtml(c.estudio || 'Sin tipo') + '</div>' +
         '<div class="meq-study-meta">' + svgUser + ' ' + escapeHtml(c.paciente_nombre || '-') + '</div></div>' +
         '<div class="meq-study-meta" style="color:#a16207">' + svgClock + ' ' + (c.fecha || '') + ' ' + formatearHora(c.hora_agendamiento || '') + ' &middot; ' + escapeHtml(c.estado || '') + '</div>' +
