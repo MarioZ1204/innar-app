@@ -11,6 +11,7 @@ const {
   safeError, emitSocket
 } = require('../middleware/index');
 const { validateSchema } = require('../modules/validation-schemas');
+const { peakConcurrentCitasElectro, hayCupoElectroParaRango } = require('./electro-capacity');
 
 function normalizeHora(str) {
   if (!str) return '';
@@ -413,9 +414,10 @@ router.get('/equipos-electro/disponibilidad', requireAuth, async (req, res) => {
       ORDER BY c.fecha, c.hora_agendamiento
     `, [fechaFin, horaFin, fecha, hora]);
 
-    const cuposOcupados = citasOcupadas.length;
-    const cuposaDisponibles = Math.max(0, maxCupos - cuposOcupados);
-    const hayDisponibilidad = cuposaDisponibles > 0;
+    const cupoCheck = hayCupoElectroParaRango(citasOcupadas, fechaHoraInicio, fechaHoraFin, maxCupos);
+    const cuposOcupados = cupoCheck.peak;
+    const cuposaDisponibles = cupoCheck.disponibles;
+    const hayDisponibilidad = cupoCheck.ok;
 
     const equiposEnUso = citasOcupadas
       .filter(c => c.equipo_id)
@@ -877,8 +879,8 @@ router.post('/citas-electro', requireAuth, requireRoleOrPerm(['superadmin', 'adm
       return res.status(409).json({ error: 'Este paciente ya tiene una cita que se superpone con este horario en Electrodiagnóstico.' });
     }
 
-    const overlapCitas = await db.query(
-      `SELECT COUNT(*) as overlap_count FROM citas_electro
+    const overlapRows = await db.query(
+      `SELECT fecha, hora_agendamiento, hora_inicio, hora_fin, hora_fin_date, duracion_minutos FROM citas_electro
        WHERE estado IN ('Programado', 'Confirmado', 'En Sala', 'En Estudio', 'Pausado')
        AND deleted_at IS NULL
        AND TIMESTAMP(fecha, COALESCE(hora_agendamiento, '00:00:00')) < TIMESTAMP(?, ?)
@@ -886,13 +888,22 @@ router.post('/citas-electro', requireAuth, requireRoleOrPerm(['superadmin', 'adm
       [finalFechaFin, finalHoraFin, fecha, horaAgendamiento]
     );
 
-    const overlapCount = overlapCitas[0]?.overlap_count || 0;
     const maxCuposRows = await db.query(`SELECT COUNT(*) as total FROM equipos_electro WHERE activo = 1`);
     const maxCupos = parseInt(maxCuposRows[0]?.total, 10) || 0;
+    const [hhS, mmS] = horaAgendamiento.split(':').map((x) => parseInt(x, 10));
+    const rangeStart = new Date(`${fecha}T${String(hhS).padStart(2, '0')}:${String(mmS).padStart(2, '0')}:00`);
+    const [hhE, mmE] = finalHoraFin.split(':').map((x) => parseInt(x, 10));
+    const rangeEnd = new Date(`${finalFechaFin}T${String(hhE).padStart(2, '0')}:${String(mmE).padStart(2, '0')}:00`);
+    const cupoCheck = hayCupoElectroParaRango(overlapRows, rangeStart, rangeEnd, maxCupos);
 
-    if (overlapCount >= maxCupos) {
-      return res.status(409).json({ error: `Sin capacidad disponible en este horario. Hay ${overlapCount} cupos ocupados. Máximo: ${maxCupos}`, details: `overlap: ${overlapCount}, max: ${maxCupos}`, capacity: { max: maxCupos } });
+    if (!cupoCheck.ok) {
+      return res.status(409).json({
+        error: `Sin capacidad disponible en este horario. Pico simultáneo: ${cupoCheck.peak}/${maxCupos} equipos.`,
+        details: `peak: ${cupoCheck.peak}, max: ${maxCupos}`,
+        capacity: { max: maxCupos, peak: cupoCheck.peak }
+      });
     }
+    const overlapCount = cupoCheck.peak;
 
     if (equipo_id) {
       const ocupado = await db.query(
@@ -1068,17 +1079,25 @@ router.patch('/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin',
         // Con equipo asignado, la capacidad la define el equipo (validado arriba).
         // El cupo global por solapamiento de rango largo (p. ej. PSG 72 h) bloqueaba inicios legítimos.
         if (!tieneEquipoAsignado) {
-          const overlapCitas = await db.query(`
-            SELECT COUNT(*) as overlap_count FROM citas_electro
+          const overlapRows = await db.query(`
+            SELECT fecha, hora_agendamiento, hora_inicio, hora_fin, hora_fin_date, duracion_minutos FROM citas_electro
             WHERE id != ? AND estado IN ('Programado', 'Confirmado', 'En Sala', 'En Estudio', 'Pausado') AND deleted_at IS NULL
             AND TIMESTAMP(fecha, COALESCE(hora_agendamiento, '00:00:00')) < TIMESTAMP(?, ?)
             AND TIMESTAMP(COALESCE(hora_fin_date, fecha), COALESCE(hora_fin, '23:59:59')) > TIMESTAMP(?, ?)
           `, [id, checkFechaFin, checkHoraFin, checkFecha, checkHora]);
-          const overlapCount = overlapCitas[0]?.overlap_count || 0;
           const maxCuposRows = await db.query(`SELECT COUNT(*) as total FROM equipos_electro WHERE activo = 1`);
           const maxCupos = parseInt(maxCuposRows[0]?.total, 10) || 0;
-          if (overlapCount >= maxCupos) {
-            return res.status(409).json({ error: 'Sin capacidad disponible en este horario', details: `Hay ${overlapCount} cupos ocupados. Máximo: ${maxCupos}`, capacity: { active: overlapCount, max: maxCupos } });
+          const [hhI, mmI] = checkHora.split(':').map((x) => parseInt(x, 10));
+          const rangeStart = new Date(`${checkFecha}T${String(hhI).padStart(2, '0')}:${String(mmI).padStart(2, '0')}:00`);
+          const [hhF, mmF] = checkHoraFin.split(':').map((x) => parseInt(x, 10));
+          const rangeEnd = new Date(`${checkFechaFin}T${String(hhF).padStart(2, '0')}:${String(mmF).padStart(2, '0')}:00`);
+          const cupoCheck = hayCupoElectroParaRango(overlapRows, rangeStart, rangeEnd, maxCupos);
+          if (!cupoCheck.ok) {
+            return res.status(409).json({
+              error: 'Sin capacidad disponible en este horario',
+              details: `Pico simultáneo: ${cupoCheck.peak}/${maxCupos}`,
+              capacity: { active: cupoCheck.peak, max: maxCupos }
+            });
           }
         }
       }

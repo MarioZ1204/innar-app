@@ -17,7 +17,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
   const modals = document.querySelectorAll('.modal-overlay:not(.hidden), .modal:not(.hidden)');
   if (modals.length === 0) return;
-  // Cerrar el de mayor z-index (├║ltimo abierto)
+  // Cerrar el de mayor z-index (último abierto)
   let top = null, maxZ = -1;
   modals.forEach(m => {
     const z = parseInt(getComputedStyle(m).zIndex) || 0;
@@ -26,17 +26,17 @@ document.addEventListener('keydown', (e) => {
   if (top) top.classList.add('hidden');
 });
 
-// ========== FUNCI├ôN DE HASHING SHA512 ==========
+// ========== FUNCIÓN DE HASHING SHA512 ==========
 function hashPassword(password) {
   if (!password) return '';
   return CryptoJS.SHA512(password).toString();
 }
 
-// ========== FUNCI├ôN AUXILIAR PARA ACTUALIZAR REQUISITOS ==========
+// ========== FUNCIÓN AUXILIAR PARA ACTUALIZAR REQUISITOS ==========
 function updateRequirementItem(elementId, isMet, text) {
   const element = $(elementId);
   if (element) {
-    element.textContent = (isMet ? '[Ô£ô]' : '[Ô£ù]') + ' ' + text;
+    element.textContent = (isMet ? '[✓]' : '[Ô£ù]') + ' ' + text;
     element.style.color = isMet ? '#059669' : '#dc2626';
   }
 }
@@ -48,71 +48,71 @@ let lastReciboId = null;
 let currentUser = null;
 let currentModule = null;
 let selectedDoctorId = null;
-/** Token CSRF (tambi├®n viene en JSON de /api/sesion y login; la cookie puede no leerse en document.cookie) */
+/** Token CSRF (también viene en JSON de /api/sesion y login; la cookie puede no leerse en document.cookie) */
 let innarCsrfToken = '';
 let citaElectroSeleccionada = null;
-let isInitializingElectroModal = false; // Flag para evitar cambios autom├íticos al cargar modal
-let citaReprogramarAdelantarActual = null; // Almacena la cita cuando se abre modal de reprogramaci├│n/adelanto
+let isInitializingElectroModal = false; // Flag para evitar cambios automáticos al cargar modal
+let citaReprogramarAdelantarActual = null; // Almacena la cita cuando se abre modal de reprogramación/adelanto
 let selectedDoctorEspecialidad = null;
 let selectedDiagnosticoElectroId = null;
 let selectedEquipoElectroId = null;
-let selectedEstudioDuracion = null; // Duraci├│n en minutos del estudio seleccionado
+let selectedEstudioDuracion = null; // Duración en minutos del estudio seleccionado
 let filtroEstudiosElectro = []; // vacío = todos los tipos de estudio
 let filtroEquipoSeleccionado = null; // Filtro de equipo en tabla de citas
 let intervaloProgreso = null; // Intervalo para actualizar barra de progreso del estudio
 let intervaloProgresoPanel = null; // Intervalo para mini-barras en panel de equipos
-let intervaloAutoSyncElectro = null; // Intervalo para refresco/sincronizaci├│n autom├ítica
+let intervaloAutoSyncElectro = null; // Intervalo para refresco/sincronización automática
 
 // Mapeo de especialidades a tipos de consulta
 const ESPECIALIDAD_TIPOS_CONSULTA = {
-  'Neurolog├¡a': [
-    'Consulta de Primera Vez por Neurolog├¡a',
-    'Consulta de Control por Neurolog├¡a',
-    'Consulta Virtual de Primera Vez por Neurolog├¡a',
-    'Consulta Virtual de Control por Neurolog├¡a',
-    'Aplicaci├│n de Toxina Botul├¡nica (Botox)',
-    'Control de Toxina Botul├¡nica (Botox)',
-    'Actigraf├¡a',
+  'Neurología': [
+    'Consulta de Primera Vez por Neurología',
+    'Consulta de Control por Neurología',
+    'Consulta Virtual de Primera Vez por Neurología',
+    'Consulta Virtual de Control por Neurología',
+    'Aplicación de Toxina Botulínica (Botox)',
+    'Control de Toxina Botulínica (Botox)',
+    'Actigrafía',
     'Rev. Neuroestimulador',
-    'Agente Anest├®sico',
+    'Agente Anestésico',
     'Particular',
     'Otra'
   ],
-  'Epileptolog├¡a': [
-    'Consulta de Primera Vez por Epileptolog├¡a',
-    'Consulta de Control por Epileptolog├¡a',
-    'Consulta Virtual de Primera Vez por Epileptolog├¡a',
-    'Consulta Virtual de Control por Epileptolog├¡a',
-    'Consulta de Primera Vez por Neurolog├¡a',
-    'Consulta de Control por Neurolog├¡a',
-    'Consulta Virtual de Primera Vez por Neurolog├¡a',
-    'Consulta Virtual de Control por Neurolog├¡a',
-    'Aplicaci├│n de Toxina Botul├¡nica (Botox)',
-    'Control de Toxina Botul├¡nica (Botox)',
-    'Actigraf├¡a',
+  'Epileptología': [
+    'Consulta de Primera Vez por Epileptología',
+    'Consulta de Control por Epileptología',
+    'Consulta Virtual de Primera Vez por Epileptología',
+    'Consulta Virtual de Control por Epileptología',
+    'Consulta de Primera Vez por Neurología',
+    'Consulta de Control por Neurología',
+    'Consulta Virtual de Primera Vez por Neurología',
+    'Consulta Virtual de Control por Neurología',
+    'Aplicación de Toxina Botulínica (Botox)',
+    'Control de Toxina Botulínica (Botox)',
+    'Actigrafía',
     'Rev. Neuroestimulador',
     'Bloqueo Mioneural',
     'Particular',
     'Otra'
   ],
-  'Psicolog├¡a': [
-    'Consulta de Primera Vez por Psicolog├¡a',
-    'Consulta de Control por Psicolog├¡a',
+  'Psicología': [
+    'Consulta de Primera Vez por Psicología',
+    'Consulta de Control por Psicología',
     'Otra'
   ],
-  'Neuropsicolog├¡a': [
-    'Consulta de Primera Vez por Neuropsicolog├¡a',
-    'Consulta de Control por Neuropsicolog├¡a',
+  'Neuropsicología': [
+    'Consulta de Primera Vez por Neuropsicología',
+    'Consulta de Control por Neuropsicología',
     'Otra'
   ],
-  'Psiquiatr├¡a': [
-    'Consulta de Primera Vez por Psiquiatr├¡a',
-    'Consulta de Control por Psiquiatr├¡a',
+  'Psiquiatría': [
+    'Consulta de Primera Vez por Psiquiatría',
+    'Consulta de Control por Psiquiatría',
     'Otra'
   ]
 };
 
-// Intervalo de auto-refresh para Agenda M├®dica
+// Intervalo de auto-refresh para Agenda Médica
 let agendaMedicaInterval = null;
 let originalHoraTHHtml = null;
 let originalAccionesTHHtml = null;
@@ -141,7 +141,7 @@ function esMonitorizacionVideoRadio(estudioNombre) {
   return s.includes('monitorizacion') && s.includes('video') && s.includes('radio');
 }
 
-// ========= POL├ìTICA CENTRAL: AGENDA M├ëDICA =========
+// ========= POLÍTICA CENTRAL: AGENDA MÉDICA =========
 // Objetivo: evitar reglas duplicadas entre tabla / panel / modal.
 function agendaMedicaEsEstadoFinal(estado) {
   return ['ATENDIDO', 'NO_ASISTIO', 'CANCELADO', 'REPROGRAMADO'].includes(estado);
@@ -169,44 +169,44 @@ function agendaMedicaPolicy(turno, opts = {}) {
   const esEnSala = estado === 'EN_SALA';
   const esPendiente = estado === 'PENDIENTE' || estado === 'EN_ESPERA';
 
-  // Regla de negocio/UI: la existencia de un turno EN_ATENCION s├│lo ÔÇ£bloqueaÔÇØ otras filas para el doctor.
+  // Regla de negocio/UI: la existencia de un turno EN_ATENCION sólo "bloquea" otras filas para el doctor.
   const bloqueadoPorAtencionGlobal = esDoctorRol && hayEnAtencion && !esEnAtencion;
 
   // Tabla: acciones por fila (editar/eliminar/prioridad)
   // - Admin no se bloquea por EN_ATENCION global
-  // - Cualquiera se bloquea si est├í FINAL
+  // - Cualquiera se bloquea si está FINAL
   const rowBloqueada = esFinal || (!esAdminRol && bloqueadoPorAtencionGlobal);
   const row = {
     puedeVerDetalle: perms.ver,
     puedeEditar: perms.editar && !rowBloqueada,
     puedeEliminar: perms.eliminar && !rowBloqueada,
-    puedePrioridad: perms.cambiarEstado && !rowBloqueada, // la prioridad se maneja como ÔÇ£cambiar estadoÔÇØ hoy
+    puedePrioridad: perms.cambiarEstado && !rowBloqueada, // la prioridad se maneja como "cambiar estado" hoy
     deshabilitarBotones: !(perms.editar || perms.cambiarEstado) || rowBloqueada,
   };
 
-  // Panel de edici├│n lateral (guardar nombre)
-  // Mantener simple y coherente: se puede editar si tiene permiso y el turno NO est├í FINAL.
+  // Panel de edición lateral (guardar nombre)
+  // Mantener simple y coherente: se puede editar si tiene permiso y el turno NO está FINAL.
   const panel = {
     puedeEditarNombre: perms.editar && !esFinal,
   };
 
-  // Modal: matriz expl├¡cita de visibilidad por estado/rol para evitar inconsistencias.
+  // Modal: matriz explícita de visibilidad por estado/rol para evitar inconsistencias.
   const puedeGestionarComoRecepcion = !esDoctorRol && perms.cambiarEstado;
   const puedeGestionarComoDoctor = esDoctorRol && (perms.llamarSiguiente || perms.marcarAtendido || perms.cambiarEstado);
 
   const modal = {
-    // Edici├│n de datos dentro del modal
+    // Edición de datos dentro del modal
     bloquearEdicion: esDoctorRol && esEnAtencion,
 
     // Footer
-    // RECEPCI├ôN/ADMIN:
+    // RECEPCIÓN/ADMIN:
     // - PENDIENTE -> EN SALA, NO ASISTIO
     // - EN_SALA   -> LLAMAR, EN_ATENCION, ATENDIDO
     // - EN_ATENCION -> ATENDIDO
     showEnSala: puedeGestionarComoRecepcion && esPendiente,
     showReprogramarNoAsistio: puedeGestionarComoRecepcion && estado === 'NO_ASISTIO',
 
-    // LLAMAR solo cuando est├í EN_SALA (doctor o recepci├│n con permisos)
+    // LLAMAR solo cuando está EN_SALA (doctor o recepción con permisos)
     showLlamar: !esFinal && esEnSala && (
       (esDoctorRol && perms.llamarSiguiente) ||
       puedeGestionarComoRecepcion
@@ -214,8 +214,8 @@ function agendaMedicaPolicy(turno, opts = {}) {
     llamarDisabled: esFinal,
 
     // EN_ATENCION:
-    // - Doctor: solo cuando est├í EN_SALA
-    // - Recepci├│n/Admin: solo cuando est├í EN_SALA
+    // - Doctor: solo cuando está EN_SALA
+    // - Recepción/Admin: solo cuando está EN_SALA
     showEnAtencion: !esFinal && esEnSala && (
       (esDoctorRol && perms.marcarAtendido) ||
       puedeGestionarComoRecepcion
@@ -223,8 +223,8 @@ function agendaMedicaPolicy(turno, opts = {}) {
     enAtencionDisabled: esFinal || esEnAtencion,
 
     // ATENDIDO:
-    // - Doctor: solo cuando est├í EN_ATENCION
-    // - Recepci├│n/Admin: cuando est├í EN_SALA o EN_ATENCION
+    // - Doctor: solo cuando está EN_ATENCION
+    // - Recepción/Admin: cuando está EN_SALA o EN_ATENCION
     showAtendido: !esFinal && (
       (esDoctorRol && perms.marcarAtendido && esEnAtencion) ||
       (puedeGestionarComoRecepcion && (esEnSala || esEnAtencion))
@@ -233,13 +233,13 @@ function agendaMedicaPolicy(turno, opts = {}) {
 
     // NO_ASISTIO:
     // - Doctor: solo en PENDIENTE
-    // - Recepci├│n/Admin: solo en PENDIENTE
+    // - Recepción/Admin: solo en PENDIENTE
     showNoAsistio: !esFinal && esPendiente && (
       puedeGestionarComoDoctor || puedeGestionarComoRecepcion
     ),
     noAsistioDisabled: esFinal,
 
-    // Men├║ 3 puntos (recepci├│n/admin)
+    // Menú 3 puntos (recepción/admin)
     showMenu3Puntos: (perms.cambiarEstado || perms.llamarSiguiente || perms.marcarAtendido) && !esDoctorRol && !esFinal,
   };
 
@@ -271,7 +271,7 @@ function normalizeFetchHeaders(input) {
   return new Headers();
 }
 
-// Fetch con credenciales para sesi├│n
+// Fetch con credenciales para sesión
 function apiFetch(url, opts = {}) {
   return (async () => {
     const method = ((opts.method || 'GET') + '').toUpperCase();
@@ -294,7 +294,7 @@ function apiFetch(url, opts = {}) {
       let res = await oneFetch();
       let didCsrfRefresh = false;
 
-      // Reintento: cookie CSRF ausente o sesi├│n previa al despliegue ÔåÆ GET /api/sesion emite token
+      // Reintento: cookie CSRF ausente o sesión previa al despliegue → GET /api/sesion emite token
       if (res.status === 403 && mutating && typeof url === 'string' && url.startsWith('/api/')) {
         const data403 = await parseJsonSafe(res);
         if (data403 && data403.code === 'CSRF_INVALID') {
@@ -314,9 +314,9 @@ function apiFetch(url, opts = {}) {
       if (res.status === 403) {
         const data = await parseJsonSafe(res);
         if (data && data.code === 'CSRF_INVALID' && !didCsrfRefresh) {
-          showToast('Sesi├│n de seguridad desactualizada. Intenta de nuevo.', 'warning');
+          showToast('Sesión de seguridad desactualizada. Intenta de nuevo.', 'warning');
         } else if (data && data.code === 'CSRF_INVALID' && didCsrfRefresh) {
-          showToast('No se pudo validar la solicitud (CSRF). Recarga la p├ígina.', 'error');
+          showToast('No se pudo validar la solicitud (CSRF). Recarga la página.', 'error');
         } else {
           showToast('Acceso denegado o bloqueado por seguridad del servidor.', 'error');
         }
@@ -327,7 +327,7 @@ function apiFetch(url, opts = {}) {
       return res;
     } catch (err) {
       if (!navigator.onLine) {
-        showToast('Sin conexi├│n a internet.', 'error');
+        showToast('Sin conexión a internet.', 'error');
       } else {
         showToast('Error de red. Intenta nuevamente.', 'error');
       }
@@ -350,14 +350,14 @@ function mostrarSaludoDoctor() {
   
   if (currentUser?.rol === 'doctor') {
     const nombre = currentUser?.nombre || currentUser?.usuario || 'Doctor';
-    greeting.textContent = `┬íHola Dr. ${nombre}!`;
+    greeting.textContent = `¡Hola Dr. ${nombre}!`;
     greeting.classList.remove('hidden');
   } else {
     greeting.classList.add('hidden');
   }
 }
 
-// ========== LOGIN Y NAVEGACI├ôN ==========
+// ========== LOGIN Y NAVEGACIÓN ==========
 function showView(id) {
   document.querySelectorAll('[id^="view-"]').forEach(v => v.classList.add('hidden'));
   const el = document.getElementById(id);
@@ -371,7 +371,7 @@ function updateSidebarUser(user) {
   const initials = (words.length >= 2
     ? words[0][0] + words[words.length - 1][0]
     : name.substring(0, 2)).toUpperCase();
-  const roleMap = { superadmin: 'Super Admin', admin: 'Administrador', admin_recepcion: 'Admin Recepci├│n', recepcion: 'Recepci├│n', admin_electro: 'Admin Electro', electro: 'Electrodiagn├│stico', tecnico_electro: 'T├®cnico Electro', auxiliar_recepcion: 'Auxiliar Recepci├│n', doctor: 'Doctor', contabilidad: 'Contabilidad' };
+  const roleMap = { superadmin: 'Super Admin', admin: 'Administrador', admin_recepcion: 'Admin Recepción', recepcion: 'Recepción', admin_electro: 'Admin Electro', electro: 'Electrodiagnóstico', tecnico_electro: 'Técnico Electro', auxiliar_recepcion: 'Auxiliar Recepción', doctor: 'Doctor', contabilidad: 'Contabilidad' };
   const roleLabel = roleMap[user.rol] || user.rol || '-';
   document.querySelectorAll('.sidebar-user-avatar').forEach(el => el.textContent = initials);
   document.querySelectorAll('.sidebar-user-name').forEach(el => el.textContent = name);
@@ -391,13 +391,13 @@ function updateMenuByRole() {
     if (r === 'superadmin' || r === 'admin') return true;
     const p = perms;
     if (Array.isArray(p)) return p.includes(permKey);
-    // Sin permisos personalizados ÔåÆ verificar defaults del rol
+    // Sin permisos personalizados → verificar defaults del rol
     const defaults = typeof PERMISOS_ROL_DEFAULTS !== 'undefined' ? PERMISOS_ROL_DEFAULTS[r] : null;
     if (defaults === null || defaults === undefined) return true; // rol sin restricciones
     return Array.isArray(defaults) && defaults.includes(permKey);
   };
 
-  // Maps data-module HTML attribute ÔåÆ modulo.* permission key
+  // Maps data-module HTML attribute → modulo.* permission key
   const MODULE_PERM_MAP = {
     'recibos':        'modulo.recibos',
     'agenda-medica':  'modulo.agenda_medica',
@@ -416,7 +416,7 @@ function updateMenuByRole() {
     let allowed = permKey ? tienePermiso(permKey) : (card.dataset.rol || '').split(' ').includes(rol);
     card.style.display = allowed ? '' : 'none';
   });
-  // Sidebar recibos: mostrar/ocultar seg├║n permisos
+  // Sidebar recibos: mostrar/ocultar según permisos
   document.querySelectorAll('[data-perm-recibos]').forEach(btn => {
     const permKey = btn.dataset.permRecibos || '';
     btn.style.display = tienePermiso(permKey) ? '' : 'none';
@@ -435,10 +435,10 @@ async function checkSession() {
       updateSidebarUser(currentUser);
       updateMenuByRole();
       mostrarSaludoDoctor();
-      initSocket();        // Inicializar socket al restaurar sesi├│n (recarga de p├ígina)
+      initSocket();        // Inicializar socket al restaurar sesión (recarga de página)
       setupMenuHandlers(); // Configurar handlers (incluyendo mobile sidebar)
-      _initAudioStatusBtn(); // Mostrar bot├│n de audio (requiere clic manual al recargar)
-      // Restaurar m├│dulo anterior si existe (sessionStorage = solo esta pesta├▒a)
+      _initAudioStatusBtn(); // Mostrar botón de audio (requiere clic manual al recargar)
+      // Restaurar módulo anterior si existe (sessionStorage = solo esta pestaña)
       const savedModule = sessionStorage.getItem(lsKeyCurrentModule);
       // Restaurar doctor seleccionado si existe (para RECEPCIONISTA)
       const savedDoctor = sessionStorage.getItem(lsKeySelectedDoctor);
@@ -461,7 +461,7 @@ async function checkSession() {
 
 async function doLogin(usuario, password) {
   try {
-    // Hashear contrase├▒a con SHA512
+    // Hashear contraseña con SHA512
     const hashedPassword = hashPassword(password);
     
     const res = await apiFetch('/api/login', {
@@ -473,7 +473,7 @@ async function doLogin(usuario, password) {
     if (data.ok) {
       if (data.csrfToken) innarCsrfToken = data.csrfToken;
       currentUser = data.usuario;
-      // Limpiar cualquier flag de sesi├│n expirada residual
+      // Limpiar cualquier flag de sesión expirada residual
       sessionStorage.removeItem('session_expired');
       _sessionBannerShown = false;
       const expiredToast = document.getElementById('session-expired-toast');
@@ -499,9 +499,9 @@ async function doLogin(usuario, password) {
     // Mostrar error de login
     const errorText = $('loginErrorText');
     const errorRetry = $('loginErrorRetry');
-    errorText.textContent = data.error || 'Error al iniciar sesi├│n';
+    errorText.textContent = data.error || 'Error al iniciar sesión';
     
-    // Si est├í bloqueado por rate limiting
+    // Si está bloqueado por rate limiting
     if (res.status === 429 && data.bloqueado_hasta) {
       const tiempoBloqueoSegundos = data.bloqueado_hasta;
       const tiempoBloqueoMs = tiempoBloqueoSegundos * 1000; // Convertir de segundos a milisegundos
@@ -516,7 +516,7 @@ async function doLogin(usuario, password) {
     $('loginError').classList.remove('hidden');
     return false;
   } catch (e) {
-    $('loginErrorText').textContent = 'Error de conexi├│n';
+    $('loginErrorText').textContent = 'Error de conexión';
     $('loginErrorRetry').textContent = '';
     $('loginError').classList.remove('hidden');
     return false;
@@ -539,7 +539,7 @@ async function doLogout() {
   _hideAudioStatusBtn();
   showView('view-login');
   history.pushState({view: 'login'}, '', '#login');
-  // Limpiar campos de login despu├®s del cambio de vista
+  // Limpiar campos de login después del cambio de vista
   const formLogin = document.getElementById('formLogin');
   if (formLogin) formLogin.reset();
   const u = $('loginUsuario'), p = $('loginPassword');
@@ -560,7 +560,7 @@ function goToModule(moduleId) {
       initAgendaMedica();
       initAgendaDone = true;
     } else {
-      // Al reingresar al m├│dulo, refrescar contra el doctor actualmente seleccionado
+      // Al reingresar al módulo, refrescar contra el doctor actualmente seleccionado
       // y volver a la subvista principal de citas.
       document.querySelectorAll('.agenda-page-btn').forEach(b => b.classList.remove('active'));
       const citasBtn = document.querySelector('.agenda-page-btn[data-page="citas"]');
@@ -596,24 +596,24 @@ function goToMenu() {
   window.currentModule = null;  // Limpiar para sockets
   sessionStorage.removeItem(lsKeyCurrentModule);
   stopAgendaMedicaAutoRefresh();
-  // Resetear flags de inicializaci├│n para permitir reinicializaci├│n
+  // Resetear flags de inicialización para permitir reinicialización
   initAgendaDone = false;
   initElectroDone = false;
   initDashboardCitasDone = false;
-  // initRecibosDone: NO resetear ÔÇö initRecibos usa addEventListener (acumular├¡a duplicados)
-  // el m├│dulo recibos maneja refresh via el branch `else cargarLista()` en goToModule
+  // initRecibosDone: NO resetear — initRecibos usa addEventListener (acumularía duplicados)
+  // el módulo recibos maneja refresh via el branch `else cargarLista()` en goToModule
   initUsuariosDone = false;
   initDiagnosticosDone = false;
   initGestionDatosDone = false;
   initUcqnDone = false;
   // Resetear calendario de citas integrado
   if (typeof _citasCalIniciado !== 'undefined') _citasCalIniciado = false;
-  // Resetear cach├® de cat├ílogos para recargar al volver a entrar
+  // Resetear caché de catálogos para recargar al volver a entrar
   invalidarCacheEntidades();
   invalidarCacheEstudios();
   // Resetear flag de listeners de socket-electro
   window.listenersConfigured = false;
-  // Limpiar selectedDoctorId cuando se vuelve al men├║
+  // Limpiar selectedDoctorId cuando se vuelve al menú
   selectedDoctorId = null;
   sessionStorage.removeItem(lsKeySelectedDoctor);
   history.pushState({view: 'menu'}, '', '#menu');
@@ -626,7 +626,7 @@ function setupMenuHandlers() {
   $('btnCambiarContrasena').addEventListener('click', openCambiarContrasenaModal);
   document.querySelectorAll('.menu-card').forEach(card => {
     card.addEventListener('click', () => {
-      // Si NO es doctor y hace clic en AGENDA M├ëDICA, mostrar selecci├│n de doctor
+      // Si NO es doctor y hace clic en AGENDA MÉDICA, mostrar selección de doctor
       if (card.dataset.module === 'agenda-medica' && currentUser?.rol !== 'doctor') {
         showDoctorSelectionModal();
       } else {
@@ -642,7 +642,7 @@ function setupMenuHandlers() {
   if ($('btnVolverGestionDatos')) $('btnVolverGestionDatos').addEventListener('click', goToMenu);
   if ($('btnVolverUcqn')) $('btnVolverUcqn').addEventListener('click', goToMenu);
 
-  // Manejar bot├│n atr├ís del navegador (solo una vez)
+  // Manejar botón atrás del navegador (solo una vez)
   if (!window._popstateSetup) {
     window._popstateSetup = true;
     window.addEventListener('popstate', (e) => {
@@ -656,20 +656,20 @@ function setupMenuHandlers() {
     });
   }
 
-  // ÔöÇÔöÇ Swipe derecha en m├│vil = bot├│n Volver ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+  // ÔöÇÔöÇ Swipe derecha en móvil = botón Volver ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
   // Solo interceptamos si el gesto empieza desde el borde izquierdo (<50px),
-  // es predominantemente horizontal y ocurre dentro de un m├│dulo activo.
+  // es predominantemente horizontal y ocurre dentro de un módulo activo.
   if (!window._swipeBackSetup) {
     window._swipeBackSetup = true;
     let _swipeStartX = 0, _swipeStartY = 0, _swipeTracking = false;
     const EDGE_ZONE   = 50;   // px desde el borde izquierdo para activar
-    const MIN_DIST    = 80;   // desplazamiento horizontal m├¡nimo para disparar
-    const MAX_VER     = 60;   // m├íximo vertical permitido (evita confundir con scroll)
+    const MIN_DIST    = 80;   // desplazamiento horizontal mínimo para disparar
+    const MAX_VER     = 60;   // máximo vertical permitido (evita confundir con scroll)
 
     document.addEventListener('touchstart', (e) => {
       const touch = e.touches[0];
       // Solo activar si el dedo empieza cerca del borde izquierdo
-      // y el usuario est├í en un m├│dulo (no en men├║ ni login)
+      // y el usuario está en un módulo (no en menú ni login)
       if (touch.clientX <= EDGE_ZONE && currentModule) {
         _swipeStartX = touch.clientX;
         _swipeStartY = touch.clientY;
@@ -684,9 +684,9 @@ function setupMenuHandlers() {
       const touch = e.touches[0];
       const dx = touch.clientX - _swipeStartX;
       const dy = Math.abs(touch.clientY - _swipeStartY);
-      // Si el movimiento vertical supera el l├¡mite, cancelar ÔÇö es un scroll
+      // Si el movimiento vertical supera el límite, cancelar — es un scroll
       if (dy > MAX_VER) { _swipeTracking = false; return; }
-      // Si ya alcanz├│ el umbral horizontal, prevenir navegaci├│n nativa del browser
+      // Si ya alcanzó el umbral horizontal, prevenir navegación nativa del browser
       if (dx > MIN_DIST) e.preventDefault();
     }, { passive: false });
 
@@ -741,7 +741,7 @@ function setupMobileSidebars() {
     });
   }
 
-  // Inyectar backdrop y bot├│n en cada m├│dulo
+  // Inyectar backdrop y botón en cada módulo
   document.querySelectorAll('.main-layout').forEach(layout => {
     const sidebar = layout.querySelector(':scope > .sidebar');
     const mainContent = layout.querySelector(':scope > .main-content');
@@ -753,16 +753,16 @@ function setupMobileSidebars() {
     layout.appendChild(backdrop);
     backdrop.addEventListener('click', () => closeSidebar(sidebar, backdrop));
 
-    // Bot├│n hamburguesa antes del main-content
+    // Botón hamburguesa antes del main-content
     const btn = document.createElement('button');
     btn.className = 'mobile-menu-btn no-print';
-    btn.setAttribute('aria-label', 'Abrir navegaci├│n');
+    btn.setAttribute('aria-label', 'Abrir navegación');
     btn.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>`;
     layout.insertBefore(btn, mainContent);
     btn.addEventListener('click', () => openSidebar(sidebar, backdrop));
   });
 
-  // Cerrar sidebar al elegir opci├│n o volver
+  // Cerrar sidebar al elegir opción o volver
   document.addEventListener('click', e => {
     if (e.target.closest('.btn-volver') || e.target.closest('.sidebar-btn')) {
       closeAll();
@@ -799,7 +799,7 @@ function abreviarEstudio(nombre) {
   return n.length > 22 ? n.substring(0, 20) + '\u2026' : n;
 }
 
-// Genera un badge de color seg├║n el estado de la cita electro
+// Genera un badge de color según el estado de la cita electro
 function normalizarEstadoElectro(estado) {
   const raw = String(estado || '').trim();
   if (!raw) return 'Programado';
@@ -818,7 +818,7 @@ function normalizarEstadoElectro(estado) {
     'pausado': 'Pausado',
     'completado': 'Completado',
     'cancelado': 'Cancelado',
-    'no asistio': 'No Asisti├│',
+    'no asistio': 'No Asistió',
     'reprogramado': 'Reprogramado',
     'adelantado': 'Adelantado'
   };
@@ -833,7 +833,7 @@ function estadoBadge(estado) {
     'En Estudio':   { bg: '#ffedd5', color: '#c2410c', border: '#fdba74' },
     'Completado':   { bg: '#dcfce7', color: '#15803d', border: '#86efac' },
     'Cancelado':    { bg: '#fee2e2', color: '#991b1b', border: '#fca5a5' },
-    'No Asisti├│':   { bg: '#f3e8ff', color: '#6b21a8', border: '#d8b4fe' },
+    'No Asistió':   { bg: '#f3e8ff', color: '#6b21a8', border: '#d8b4fe' },
     'Reprogramado': { bg: '#e0f2fe', color: '#0369a1', border: '#7dd3fc' },
     'Adelantado':   { bg: '#ecfdf5', color: '#047857', border: '#6ee7b7' },
     'Pausado':      { bg: '#fef3c7', color: '#92400e', border: '#fcd34d' },
@@ -847,7 +847,7 @@ function estadoBadge(estado) {
  * Formatea una hora al formato HH:MM AM/PM (12 horas)
  * Maneja: null, undefined, '', 'null', HH:MM, HH:MM:SS
  * @param {string|null} valor - La hora a formatear
- * @returns {string} Hora en formato H:MM AM/PM o '-' si es inv├ílida
+ * @returns {string} Hora en formato H:MM AM/PM o '-' si es inválida
  */
 /**
  * Formatea una fecha ISO (ej: 2026-03-03T05:00:00.000Z) a formato DD/MM/YYYY
@@ -858,7 +858,7 @@ function formatearFecha(fecha) {
   if (!fecha) return '-';
   try {
     const date = new Date(fecha);
-    if (isNaN(date)) return fecha; // Si no es una fecha v├ílida, devuelve original
+    if (isNaN(date)) return fecha; // Si no es una fecha válida, devuelve original
     const dia = String(date.getDate()).padStart(2, '0');
     const mes = String(date.getMonth() + 1).padStart(2, '0');
     const anio = date.getFullYear();
@@ -895,7 +895,7 @@ function formatearHora(valor) {
 }
 
 // Convierte una cadena de hora "HH:MM" o "HH:MM:SS" a minutos totales desde medianoche.
-// Retorna null si el valor no es v├ílido.
+// Retorna null si el valor no es válido.
 function horaAMinutos(h) {
   if (!h || typeof h !== 'string') return null;
   const parts = h.slice(0, 5).split(':').map(Number);
@@ -931,13 +931,13 @@ function parseHora12a24(str) {
 /**
  * Formatea una fecha ISO (2026-03-03T05:00:00.000Z) a YYYY-MM-DD
  * @param {string} fecha - Fecha en formato ISO o YYYY-MM-DD
- * @returns {string} Fecha en formato YYYY-MM-DD o la fecha original si es v├ílida
+ * @returns {string} Fecha en formato YYYY-MM-DD o la fecha original si es válida
  */
 function formatearFechaISO(fecha) {
   if (!fecha) return '';
   const strFecha = String(fecha).trim();
   
-  // Si ya est├í en formato YYYY-MM-DD, devolverlo tal cual
+  // Si ya está en formato YYYY-MM-DD, devolverlo tal cual
   if (/^\d{4}-\d{2}-\d{2}$/.test(strFecha)) {
     return strFecha;
   }
@@ -967,14 +967,14 @@ function hoyColombiaISO() {
 const serviciosDefault = [
   { id: null, nombre: 'Electroencefalograma Computarizado' },
   { id: null, nombre: 'Electroencefalograma Convencional'},
-  { id: null, nombre: 'Monitorizaci├│n Electroencefalogr├ífica por video y radio'},
-  { id: null, nombre: 'Polisomnograf├¡a'},
-  { id: null, nombre: 'Polisomnograma en Titulaci├│n de CPAP/BPAP' },
-  { id: null, nombre: 'Test de Latencia M├║ltiple'},
+  { id: null, nombre: 'Monitorización Electroencefalográfica por video y radio'},
+  { id: null, nombre: 'Polisomnografía'},
+  { id: null, nombre: 'Polisomnograma en Titulación de CPAP/BPAP' },
+  { id: null, nombre: 'Test de Latencia Múltiple'},
   { id: null, nombre: 'Polisomnograma Noche Dividida' }
 ];
 
-// Cach├® en memoria de servicios (se carga desde el servidor)
+// Caché en memoria de servicios (se carga desde el servidor)
 let _serviciosCache = null;
 
 async function getServicios() {
@@ -1031,23 +1031,23 @@ async function confirmarEditarServicio() {
     } else {
       showToast(data.error || 'Error al editar', 'error');
     }
-  } catch(_) { showToast('Error de conexi├│n', 'error'); }
+  } catch(_) { showToast('Error de conexión', 'error'); }
   cerrarModalEditarServicio();
 }
 
 // ============================================
-// SISTEMA GEN├ëRICO DE PAGINACI├ôN
+// SISTEMA GENÉRICO DE PAGINACIÓN
 // ============================================
 
-// Almacenar estado de paginaci├│n de cada tabla
+// Almacenar estado de paginación de cada tabla
 window.paginationState = {};
 
 /**
- * Configura paginaci├│n para una tabla
- * @param {string} tableId - ID ├║nico para la tabla (ej: 'usuarios', 'citasElectro', etc)
+ * Configura paginación para una tabla
+ * @param {string} tableId - ID único para la tabla (ej: 'usuarios', 'citasElectro', etc)
  * @param {Array} data - Array de datos a paginar
- * @param {Function} renderFunction - Funci├│n que renderiza una fila (recibe el tbody y un elemento de data)
- * @param {Object} options - Opciones de configuraci├│n
+ * @param {Function} renderFunction - Función que renderiza una fila (recibe el tbody y un elemento de data)
+ * @param {Object} options - Opciones de configuración
  */
 function setupPagination(tableId, data, renderFunction, options = {}) {
   const {
@@ -1083,14 +1083,14 @@ function setupPagination(tableId, data, renderFunction, options = {}) {
   // Renderizar tabla
   renderPaginatedTable(tableId, renderFunction, tbodyId);
 
-  // Crear controles de paginaci├│n si el contenedor existe
+  // Crear controles de paginación si el contenedor existe
   if (containerSelector) {
     createPaginationControls(tableId, containerSelector, itemsPerPageOptions, renderFunction, tbodyId);
   }
 }
 
 /**
- * Renderiza una p├ígina de la tabla paginada
+ * Renderiza una página de la tabla paginada
  */
 function _getScrollSnapshot(el) {
   if (!el) return { winX: window.scrollX, winY: window.scrollY, parent: null, top: 0, left: 0 };
@@ -1126,13 +1126,13 @@ function renderPaginatedTable(tableId, renderFunction, tbodyId) {
 
   tbody.innerHTML = '';
 
-  // Calcular ├¡ndices de items a mostrar
+  // Calcular índices de items a mostrar
   const startIdx = (state.currentPage - 1) * state.itemsPerPage;
   const endIdx = startIdx + state.itemsPerPage;
   const paginatedData = state.data.slice(startIdx, endIdx);
 
   if (paginatedData.length === 0) {
-    const colCount = 6; // Ajustar seg├║n la tabla
+    const colCount = 6; // Ajustar según la tabla
     tbody.innerHTML = `<tr><td colspan="${colCount}" style="padding:20px;text-align:center;color:#999">No hay datos para mostrar</td></tr>`;
     return;
   }
@@ -1149,7 +1149,7 @@ function renderPaginatedTable(tableId, renderFunction, tbodyId) {
 }
 
 /**
- * Crea controles de paginaci├│n (selector de items por p├ígina + navegaci├│n)
+ * Crea controles de paginación (selector de items por página + navegación)
  */
 function createPaginationControls(tableId, containerSelector, itemsPerPageOptions, renderFunction, tbodyId) {
   const container = document.querySelector(containerSelector) || document.getElementById(containerSelector);
@@ -1176,7 +1176,7 @@ function createPaginationControls(tableId, containerSelector, itemsPerPageOption
     flex-wrap: wrap;
   `;
 
-  // Selector de items por p├ígina
+  // Selector de items por página
   const itemsSelectDiv = document.createElement('div');
   itemsSelectDiv.style.cssText = 'display: flex; align-items: center; gap: 8px;';
   itemsSelectDiv.innerHTML = `<label>Mostrar:</label><select></select>`;
@@ -1198,19 +1198,19 @@ function createPaginationControls(tableId, containerSelector, itemsPerPageOption
     createPaginationControls(tableId, containerSelector, itemsPerPageOptions, renderFunction, tbodyId);
   });
 
-  // Info de p├ígina y total de registros
+  // Info de página y total de registros
   const infoDiv = document.createElement('div');
   infoDiv.style.cssText = 'font-size: 13px; color: #6b7280; text-align: center; flex-grow: 1; white-space: nowrap;';
-  infoDiv.textContent = `P├ígina ${state.currentPage} de ${state.totalPages} | Total: ${state.data.length} registros`;
+  infoDiv.textContent = `Página ${state.currentPage} de ${state.totalPages} | Total: ${state.data.length} registros`;
 
-  // N├║meros de p├ígina
+  // Números de página
   const pageNumbersDiv = document.createElement('div');
   pageNumbersDiv.style.cssText = 'display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end;';
   
-  // Bot├│n "Primera"
+  // Botón "Primera"
   if (state.currentPage > 1) {
     const firstBtn = document.createElement('button');
-    firstBtn.textContent = '┬½';
+    firstBtn.textContent = '«';
     firstBtn.className = 'pg-nav';
     firstBtn.addEventListener('click', () => {
       state.currentPage = 1;
@@ -1220,10 +1220,10 @@ function createPaginationControls(tableId, containerSelector, itemsPerPageOption
     pageNumbersDiv.appendChild(firstBtn);
   }
 
-  // Bot├│n "Anterior"
+  // Botón "Anterior"
   if (state.currentPage > 1) {
     const prevBtn = document.createElement('button');
-    prevBtn.textContent = 'ÔÇ╣';
+    prevBtn.textContent = '‹';
     prevBtn.className = 'pg-nav';
     prevBtn.addEventListener('click', () => {
       state.currentPage--;
@@ -1233,7 +1233,7 @@ function createPaginationControls(tableId, containerSelector, itemsPerPageOption
     pageNumbersDiv.appendChild(prevBtn);
   }
 
-  // N├║meros de p├ígina (mostrar hasta 5 n├║meros)
+  // Números de página (mostrar hasta 5 números)
   const maxPageButtons = 5;
   const startPage = Math.max(1, state.currentPage - Math.floor(maxPageButtons / 2));
   const endPage = Math.min(state.totalPages, startPage + maxPageButtons - 1);
@@ -1256,10 +1256,10 @@ function createPaginationControls(tableId, containerSelector, itemsPerPageOption
     pageNumbersDiv.appendChild(pageBtn);
   }
 
-  // Bot├│n "Siguiente"
+  // Botón "Siguiente"
   if (state.currentPage < state.totalPages) {
     const nextBtn = document.createElement('button');
-    nextBtn.textContent = 'ÔÇ║';
+    nextBtn.textContent = '›';
     nextBtn.className = 'pg-nav';
     nextBtn.addEventListener('click', () => {
       state.currentPage++;
@@ -1269,10 +1269,10 @@ function createPaginationControls(tableId, containerSelector, itemsPerPageOption
     pageNumbersDiv.appendChild(nextBtn);
   }
 
-  // Bot├│n "├Ültima"
+  // Botón "Última"
   if (state.currentPage < state.totalPages) {
     const lastBtn = document.createElement('button');
-    lastBtn.textContent = '┬╗';
+    lastBtn.textContent = '»';
     lastBtn.className = 'pg-nav';
     lastBtn.addEventListener('click', () => {
       state.currentPage = state.totalPages;
@@ -1310,7 +1310,7 @@ async function renderServiciosList() {
     btnDel.className = 'btn-danger btn-sm';
     btnDel.style.marginLeft = '6px';
     btnDel.addEventListener('click', () => {
-      showConfirm(`┬┐Eliminar el servicio "${s.nombre}"?`, async () => {
+      showConfirm(`¿Eliminar el servicio "${s.nombre}"?`, async () => {
         try {
           const res = await apiFetch(`/api/servicios/${s.id}`, { method: 'DELETE' });
           const data = await res.json();
@@ -1369,9 +1369,9 @@ function showLoader(show = true, msg = 'Procesando...') {
 }
 
 // Iconos por tipo de toast
-const _TOAST_ICONS = { success: 'Ô£ô', error: 'Ô£ò', warning: 'ÔÜá', info: 'Ôä╣' };
+const _TOAST_ICONS = { success: '✓', error: 'Ô£ò', warning: '⚠', info: 'Ôä╣' };
 
-// Mostrar toast apilado con icono y bot├│n de cierre
+// Mostrar toast apilado con icono y botón de cierre
 function showToast(msg, type = 'info', duration = 4000) {
   let container = document.getElementById('toast-container');
   if (!container) {
@@ -1385,7 +1385,7 @@ function showToast(msg, type = 'info', duration = 4000) {
   toast.innerHTML =
     `<span class="toast-icon">${icon}</span>` +
     `<span class="toast-body">${msg}</span>` +
-    `<button class="toast-close" aria-label="Cerrar">├ù</button>`;
+    `<button class="toast-close" aria-label="Cerrar">×</button>`;
   toast.querySelector('.toast-close').addEventListener('click', () => _removeToast(toast));
   container.appendChild(toast);
   setTimeout(() => _removeToast(toast), duration);
@@ -1397,7 +1397,7 @@ function _removeToast(toast) {
   setTimeout(() => toast.remove(), 280);
 }
 
-// Bot├│n con estado de carga
+// Botón con estado de carga
 function setLoading(btn, loading, loadingText = 'Guardando...') {
   if (!btn) return;
   if (loading) {
@@ -1468,9 +1468,9 @@ function _speak(text, rate = 1, onEnd = null) {
   window.speechSynthesis.speak(utter);
 }
 
-// Reproducir n├║mero de consultorio por voz
+// Reproducir número de consultorio por voz
 function speakConsultorio(numero) {
-  _speak(`Consultorio n├║mero ${numero}`, 1, () => showToast(`Consultorio ${numero} anunciado`, 'success'));
+  _speak(`Consultorio número ${numero}`, 1, () => showToast(`Consultorio ${numero} anunciado`, 'success'));
 }
 
 // ========== SESSION EXPIRADA ==========
@@ -1485,10 +1485,10 @@ function showSessionExpiredBanner() {
     <div class="session-expired-toast-content">
       <span class="session-expired-toast-icon">­ƒöÆ</span>
       <div class="session-expired-toast-text">
-        <strong>Sesi├│n expirada</strong>
-        <span>Tu sesi├│n ha terminado</span>
+        <strong>Sesión expirada</strong>
+        <span>Tu sesión ha terminado</span>
       </div>
-      <button class="session-expired-toast-btn" id="btnGoLogin">Iniciar sesi├│n</button>
+      <button class="session-expired-toast-btn" id="btnGoLogin">Iniciar sesión</button>
       <button class="session-expired-toast-close" aria-label="Cerrar">&times;</button>
     </div>`;
   document.body.appendChild(toast);
@@ -1510,7 +1510,7 @@ function showSessionExpiredBanner() {
 }
 
 // ========== CONFIRM MODAL ==========
-function showConfirm(msg, onOk, { okText = 'Eliminar', cancelText = 'Cancelar', danger = true, icon = 'ÔÜá´©Å' } = {}) {
+function showConfirm(msg, onOk, { okText = 'Eliminar', cancelText = 'Cancelar', danger = true, icon = '⚠️' } = {}) {
   const backdrop = document.createElement('div');
   backdrop.className = 'confirm-backdrop';
   backdrop.innerHTML = `
@@ -1528,7 +1528,7 @@ function showConfirm(msg, onOk, { okText = 'Eliminar', cancelText = 'Cancelar', 
   backdrop.addEventListener('click', e => { if (e.target === backdrop) backdrop.remove(); });
 }
 
-function showPrompt(msg, onOk, { okText = 'Confirmar', cancelText = 'Cancelar', danger = true, icon = 'ÔÜá´©Å', placeholder = '' } = {}) {
+function showPrompt(msg, onOk, { okText = 'Confirmar', cancelText = 'Cancelar', danger = true, icon = '⚠️', placeholder = '' } = {}) {
   const backdrop = document.createElement('div');
   backdrop.className = 'confirm-backdrop';
   backdrop.innerHTML = `
@@ -1563,7 +1563,7 @@ function showSkeletonRows(tbody, cols, count = 5) {
   ).join('');
 }
 
-// ========== FIELD ERROR (validaci├│n inline) ==========
+// ========== FIELD ERROR (validación inline) ==========
 function markFieldError(input, msg) {
   if (!input) return;
   input.classList.add('field-error-input');
@@ -1594,7 +1594,7 @@ function setupLoginForm() {
   const toggleBtn = $('togglePassword');
   const capsWarning = $('capsLockWarning');
 
-  // Toggle mostrar/ocultar contrase├▒a
+  // Toggle mostrar/ocultar contraseña
   if (toggleBtn) {
     toggleBtn.addEventListener('click', (e) => {
       e.preventDefault();
@@ -1637,31 +1637,31 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   // SIEMPRE registrar el handler del formulario de login (antes de cualquier return)
   setupLoginForm();
   
-  // Si la p├ígina se refresca con sesi├│n expirada pendiente, hacer logout en servidor
+  // Si la página se refresca con sesión expirada pendiente, hacer logout en servidor
   if (sessionStorage.getItem('session_expired')) {
     sessionStorage.removeItem('session_expired');
     try { await fetch('/api/logout', { method: 'POST', credentials: 'include' }); } catch(_) {}
     showView('view-login');
     return;
   }
-  // Verificar sesi├│n al cargar
+  // Verificar sesión al cargar
   const autenticado = await checkSession();
   if (!autenticado) {
     return;
   }
 
   setupMenuHandlers();
-  // initRecibos() solo al entrar al m├│dulo Recibos (goToModule) ÔÇö evita GET /api/recibos y 403 en usuarios sin recibos.ver
+  // initRecibos() solo al entrar al módulo Recibos (goToModule) — evita GET /api/recibos y 403 en usuarios sin recibos.ver
 });
 
-// ========== MODAL SELECCI├ôN DE DOCTOR ==========
+// ========== MODAL SELECCIÓN DE DOCTOR ==========
 async function showDoctorSelectionModal() {
   const medicos = await apiFetch('/api/medicos').then(r=>r.json()).catch(()=>[]);
   const container = $('medicosListContainer');
   container.innerHTML = '';
   
   if (medicos.length === 0) {
-    container.innerHTML = '<p style="color:#999;text-align:center">No hay m├®dicos disponibles</p>';
+    container.innerHTML = '<p style="color:#999;text-align:center">No hay médicos disponibles</p>';
   } else {
     medicos.forEach(med => {
       const btn = document.createElement('button');
@@ -1686,15 +1686,15 @@ function selectDoctor(doctorId, doctorName, especialidad) {
   sessionStorage.setItem(lsKeySelectedDoctor, doctorId);
   sessionStorage.setItem('selected_doctor_especialidad', especialidad || '');
   closeDoctorSelectionModal();
-  // Resetear estado visual interno de Agenda para evitar arrastrar el doctor/p├ígina anterior
+  // Resetear estado visual interno de Agenda para evitar arrastrar el doctor/página anterior
   if (typeof calSelectedDate !== 'undefined') calSelectedDate = null;
   if (typeof calLoadReqId !== 'undefined') calLoadReqId++;
   if (typeof window !== 'undefined') window._agendaCalendarSetup = false;
   // Actualizar horas disponibles con el nuevo doctor
   actualizarHorasDisponibles();
-  // Cargar tipos de consulta seg├║n especialidad
+  // Cargar tipos de consulta según especialidad
   cargarTiposConsultaSegunEspecialidad(especialidad);
-  // Forzar reinicializaci├│n del m├│dulo agenda m├®dica cuando se cambiadel doctor
+  // Forzar reinicialización del módulo agenda médica cuando se cambiadel doctor
   initAgendaDone = false;
   goToModule('agenda-medica');
 }
@@ -1788,20 +1788,20 @@ function agregarConsultaPersonalizada() {
     return;
   }
   
-  // Agregar la nueva opci├│n al select
+  // Agregar la nueva opción al select
   const option = document.createElement('option');
   option.value = nuevaConsulta;
   option.textContent = nuevaConsulta;
   selectTipo.appendChild(option);
   
-  // Seleccionar la nueva opci├│n
+  // Seleccionar la nueva opción
   selectTipo.value = nuevaConsulta;
   
   // Limpiar input y ocultar fila
   otraConsultaInput.value = '';
   $('otraConsultaRow').style.display = 'none';
   
-  // Mostrar confirmaci├│n
+  // Mostrar confirmación
   showToast(`Consulta agregada: ${nuevaConsulta}`, 'success');
 }
 
@@ -1814,7 +1814,7 @@ function manejarEnterConsulta(e) {
 
 function closeDoctorSelectionModal() {
   $('modalSelectDoctor').classList.add('hidden');
-  // NO limpiar selectedDoctorId aqu├¡ - debe persistir mientras se usa la agenda
+  // NO limpiar selectedDoctorId aquí - debe persistir mientras se usa la agenda
 }
 
 function initRecibos() {
@@ -1834,18 +1834,18 @@ function initRecibos() {
     if (recibosPage) { recibosPage.classList.add('active'); }
     cargarLista();
   } else {
-    // Solo usuarios con permiso de creaci├│n necesitan el consecutivo
+    // Solo usuarios con permiso de creación necesitan el consecutivo
     nextNumber();
   }
 
-  // Cargar m├®dicos en el select
+  // Cargar médicos en el select
   cargarMedicosEnRecibo();
   // Cargar servicios en el select de tipo estudio
   cargarServiciosEnRecibo();
   // Mostrar usuario actual como "generado por"
   const gpEl = $('reciboGeneradoPorDisplay');
   if (gpEl) {
-    const nombre = sessionStorage.getItem('nombre_usuario') || currentUser?.nombre || currentUser?.usuario || 'ÔÇö';
+    const nombre = sessionStorage.getItem('nombre_usuario') || currentUser?.nombre || currentUser?.usuario || '—';
     gpEl.textContent = nombre;
   }
 
@@ -1875,7 +1875,7 @@ function initRecibos() {
         if ($('reciboTipoServicio')) $('reciboTipoServicio').value = '';
         const medicoSel = $('reciboMedico');
         let medicoId = medicoSel ? medicoSel.value : '';
-        // Auto-seleccionar el primer m├®dico disponible si ninguno est├í elegido
+        // Auto-seleccionar el primer médico disponible si ninguno está elegido
         if (!medicoId && medicoSel && medicoSel.options.length > 1) {
           const firstOpt = Array.from(medicoSel.options).find(o => o.value !== '');
           if (firstOpt) { medicoSel.value = firstOpt.value; medicoId = firstOpt.value; }
@@ -1897,7 +1897,7 @@ function initRecibos() {
     });
   });
 
-  // Al cambiar m├®dico en el formulario de recibo, cargar tipos de consulta
+  // Al cambiar médico en el formulario de recibo, cargar tipos de consulta
   const reciboMedicoSel = $('reciboMedico');
   if (reciboMedicoSel) {
     reciboMedicoSel.addEventListener('change', async function() {
@@ -1905,7 +1905,7 @@ function initRecibos() {
     });
   }
 
-  // Buscar cita del d├¡a
+  // Buscar cita del día
   const btnBuscar = $('btnReciboBuscar');
   if (btnBuscar) btnBuscar.onclick = buscarCitaParaRecibo;
   const buscarInput = $('reciboBuscarInput');
@@ -1917,13 +1917,13 @@ function initRecibos() {
   if ($('generate')) $('generate').addEventListener('click', generatePreview);
   if ($('btnNuevoRecibo')) $('btnNuevoRecibo').addEventListener('click', resetFormulario);
   if ($('print')) $('print').addEventListener('click', abrirPDF);
-  // Bot├│n sidebar: resetear consecutivos (solo admin)
+  // Botón sidebar: resetear consecutivos (solo admin)
   const btnResetCons = document.getElementById('btnResetarConsecutivos');
   if (btnResetCons) btnResetCons.addEventListener('click', resetAllRecibos);
 
   if ($('resetAll')) $('resetAll').addEventListener('click', resetAllRecibos);
 
-  // Filtros + exportar (p├ígina Ver Recibos)
+  // Filtros + exportar (página Ver Recibos)
   if ($('btnAplicarFiltros')) $('btnAplicarFiltros').onclick = aplicarFiltrosRecibos;
   if ($('btnLimpiarFiltros')) $('btnLimpiarFiltros').onclick = limpiarFiltrosRecibos;
   if ($('filtroPalabraClave')) $('filtroPalabraClave').addEventListener('keydown', e => { if (e.key === 'Enter') aplicarFiltrosRecibos(); });
@@ -1956,10 +1956,10 @@ function initRecibos() {
       } else {
         showToast(data.error || 'Error al agregar', 'error');
       }
-    } catch (_) { showToast('Error de conexi├│n', 'error'); }
+    } catch (_) { showToast('Error de conexión', 'error'); }
   });
 
-  // S├│lo n├║meros en documento
+  // Sólo números en documento
   const docCliente = document.getElementById('docCliente');
   if (docCliente) docCliente.addEventListener('input', function() { this.value = this.value.replace(/[^0-9]/g, ''); });
 
@@ -2077,8 +2077,8 @@ function initRecibos() {
   // Socket: cuando admin modifica tipos de consulta, refrescar el dropdown activo
   if (window.socket && !window.socketRecibosTiposListenerAdded) {
     window.socket.on('tipos-consulta:actualizado', () => {
-      _tiposConsultaCache = {};                     // invalidar cach├® de agenda/turnos
-      window._reciboCurrentTipos = [];              // invalidar cach├® del formulario
+      _tiposConsultaCache = {};                     // invalidar caché de agenda/turnos
+      window._reciboCurrentTipos = [];              // invalidar caché del formulario
       const medicoId = $('reciboMedico')?.value;
       if (medicoId) cargarTiposConsultaEnRecibo(medicoId);
     });
@@ -2088,7 +2088,7 @@ function initRecibos() {
   initRecibosDone = true;
 }
 
-// ---- Cargar m├®dicos en el select del formulario ----
+// ---- Cargar médicos en el select del formulario ----
 async function cargarMedicosEnRecibo() {
   const sel = $('reciboMedico');
   const filtro = $('filtroMedico');
@@ -2107,7 +2107,7 @@ async function cargarMedicosEnRecibo() {
       sel.appendChild(opt);
     });
     if (filtro) {
-      filtro.innerHTML = '<option value="">Todos los m├®dicos</option>';
+      filtro.innerHTML = '<option value="">Todos los médicos</option>';
       medicos.forEach(m => {
         const opt = document.createElement('option');
         opt.value = m.id;
@@ -2115,21 +2115,21 @@ async function cargarMedicosEnRecibo() {
         filtro.appendChild(opt);
       });
     }
-  } catch (e) { console.warn('[cargarMedicos] Error cargando m├®dicos:', e.message); }
+  } catch (e) { console.warn('[cargarMedicos] Error cargando médicos:', e.message); }
 }
 
-// ---- Cargar tipos de consulta seg├║n el m├®dico seleccionado (formulario recibo) ----
+// ---- Cargar tipos de consulta según el médico seleccionado (formulario recibo) ----
 async function cargarTiposConsultaEnRecibo(medicoId) {
   const sel = $('reciboTipoConsulta');
   if (!sel) return;
   sel.innerHTML = '<option value="">Seleccionar tipo</option>';
   if (!medicoId) return;
   try {
-    // El servidor resuelve la especialidad del m├®dico y devuelve tipos de la BD
+    // El servidor resuelve la especialidad del médico y devuelve tipos de la BD
     const res = await apiFetch(`/api/tipos-consulta?medico_id=${encodeURIComponent(medicoId)}`);
     const tipos = await res.json().catch(() => []);
 
-    // Confiar 100% en la BD ÔÇö si est├í vac├¡o es porque no hay tipos configurados
+    // Confiar 100% en la BD — si está vacío es porque no hay tipos configurados
     tipos.forEach(t => {
       const opt = document.createElement('option');
       opt.value = t.nombre;
@@ -2157,7 +2157,7 @@ async function cargarServiciosEnRecibo() {
   } catch (e) { console.warn('[cargarServiciosEnRecibo] Error:', e.message); }
 }
 
-// ---- Cargar m├®dicos en filtro ----
+// ---- Cargar médicos en filtro ----
 async function cargarFiltrosMedicos() {
   const sel = $('filtroMedico');
   if (!sel) return;
@@ -2175,10 +2175,10 @@ async function cargarFiltrosMedicos() {
       if (m.especialidad) opt.dataset.especialidadNombre = m.especialidad;
       sel.appendChild(opt);
     });
-    // Opci├│n especial para filtrar recibos de electrodiagn├│sticos
+    // Opción especial para filtrar recibos de electrodiagnósticos
     const optElectro = document.createElement('option');
     optElectro.value = 'ELECTRODIAGNOSTICOS';
-    optElectro.textContent = 'ELECTRODIAGN├ôSTICOS';
+    optElectro.textContent = 'ELECTRODIAGNÓSTICOS';
     sel.appendChild(optElectro);
   } catch (e) { console.warn('[cargarFiltrosMedicos] Error:', e.message); }
 }
@@ -2238,7 +2238,7 @@ async function buscarCitaParaRecibo() {
   try {
     const resultados = await apiFetch(`/api/recibos/buscar-cita?q=${encodeURIComponent(q)}`).then(r => r.json());
     if (!resultados.length) {
-      contenedor.innerHTML = '<div style="padding:12px;color:#6b7280;text-align:center">No se encontraron citas completadas en los ├║ltimos 7 d├¡as.</div>';
+      contenedor.innerHTML = '<div style="padding:12px;color:#6b7280;text-align:center">No se encontraron citas completadas en los últimos 7 días.</div>';
       return;
     }
     contenedor.innerHTML = resultados.map((c, i) => {
@@ -2248,15 +2248,15 @@ async function buscarCitaParaRecibo() {
       return `<div class="recibo-buscar-item" data-idx="${i}">
         <div>
           <div class="rci-nombre">${escapeHtml(c.paciente_nombre || '-')}</div>
-          <div class="rci-meta">Doc: ${escapeHtml(c.paciente_documento || '-')} ┬À ${escapeHtml(String(c.fecha||'').slice(0,10))} ┬À ${escapeHtml(c.hora||'')}
-            ${c.medico_nombre ? ` ┬À Dr. ${escapeHtml(c.medico_nombre)}` : ''}
-            ${c.tipo_consulta ? ` ┬À ${escapeHtml(c.tipo_consulta)}` : ''}
-            ${c.entidad ? ` ┬À ${escapeHtml(c.entidad)}` : ''}
+          <div class="rci-meta">Doc: ${escapeHtml(c.paciente_documento || '-')} · ${escapeHtml(String(c.fecha||'').slice(0,10))} · ${escapeHtml(c.hora||'')}
+            ${c.medico_nombre ? ` · Dr. ${escapeHtml(c.medico_nombre)}` : ''}
+            ${c.tipo_consulta ? ` · ${escapeHtml(c.tipo_consulta)}` : ''}
+            ${c.entidad ? ` · ${escapeHtml(c.entidad)}` : ''}
           </div>
         </div>
         <div style="display:flex;align-items:center;gap:6px">
           <span class="rci-badge ${badgeClass}">${badgeText}</span>
-          <span class="recibo-buscar-accion">Ôåæ Usar</span>
+          <span class="recibo-buscar-accion">↑ Usar</span>
         </div>
       </div>`;
     }).join('');
@@ -2285,10 +2285,10 @@ async function preLlenarReciboDesdeCita(cita) {
 
   // Entidad: pre-seleccionar si existe en el select
   if ($('reciboEntidad') && cita.entidad) {
-    $('reciboEntidad').value = cita.entidad; // intentar├í coincidir con la opci├│n
+    $('reciboEntidad').value = cita.entidad; // intentará coincidir con la opción
   }
 
-  // Tipo de recibo: si hay m├®dico -> seleccionar 'doctor', si hay tipo de estudio -> 'estudio'
+  // Tipo de recibo: si hay médico -> seleccionar 'doctor', si hay tipo de estudio -> 'estudio'
   if (cita.medico_id) {
     const docRadio = document.querySelector('input[name="reciboTipo"][value="doctor"]');
     if (docRadio) { docRadio.checked = true; docRadio.dispatchEvent(new Event('change')); }
@@ -2312,7 +2312,7 @@ async function preLlenarReciboDesdeCita(cita) {
   showToast('Formulario pre-llenado con datos de la cita', 'success');
 }
 
-// ========== CARGA DIN├üMICA DE CAT├üLOGOS ==========
+// ========== CARGA DINÁMICA DE CATÁLOGOS ==========
 let _entidadesCache = null;
 let _estudiosCache = null;
 
@@ -2440,7 +2440,7 @@ function renderCitasElectroKanban(citas) {
 function invalidarCacheEntidades() { _entidadesCache = null; }
 function invalidarCacheEstudios() { _estudiosCache = null; }
 
-// ========== AGENDA M├ëDICA (Citas) ==========
+// ========== AGENDA MÉDICA (Citas) ==========
 async function initAgendaMedica() {
   const hoy = new Date().toISOString().slice(0,10);
   $('agendaMedicaFecha').value = hoy;
@@ -2449,17 +2449,17 @@ async function initAgendaMedica() {
   // Cargar entidades desde la base de datos
   await cargarEntidadesEnSelect('nuevoTurnoEntidadMedica');
   
-  // Cargar lista de m├®dicos
+  // Cargar lista de médicos
   const medicos = await apiFetch('/api/medicos').then(r=>r.json()).catch(()=>[]);
   
-  // Mostrar m├®dico seleccionado
+  // Mostrar médico seleccionado
   if (selectedDoctorId) {
     const medico = medicos.find(m => m.id == selectedDoctorId);
     if (medico) {
       $('agendaMedicaDoctorDisplay').textContent = medico.nombre;
       selectedDoctorEspecialidad = medico.especialidad;
       sessionStorage.setItem('selected_doctor_especialidad', medico.especialidad || '');
-      // Cargar tipos de consulta seg├║n especialidad
+      // Cargar tipos de consulta según especialidad
       cargarTiposConsultaSegunEspecialidad(medico.especialidad);
     } else {
       $('agendaMedicaDoctorDisplay').textContent = '-';
@@ -2471,18 +2471,18 @@ async function initAgendaMedica() {
     $('agendaMedicaDoctorDisplay').textContent = currentUser?.nombre || currentUser?.usuario || '-';
     cargarTiposConsultaSegunEspecialidad(currentUser?.especialidad);
   } else {
-    // Sin doctor seleccionado (roles no doctor): mantener vac├¡o hasta seleccionar uno desde men├║
+    // Sin doctor seleccionado (roles no doctor): mantener vacío hasta seleccionar uno desde menú
     $('agendaMedicaDoctorDisplay').textContent = '-';
   }
 
-  // Sincronizar el calendario de programaci├│n con el doctor activo actual
-  // incluso si ya hab├¡a sido inicializado antes.
+  // Sincronizar el calendario de programación con el doctor activo actual
+  // incluso si ya había sido inicializado antes.
   if (typeof calDoctorIdForCal !== 'undefined') {
     calDoctorIdForCal = selectedDoctorId || currentUser?.id || null;
   }
   
   // Validar disponibilidad del doctor cuando se selecciona una fecha
-  // SIEMPRE aplicar validaci├│n si hay un doctor seleccionado
+  // SIEMPRE aplicar validación si hay un doctor seleccionado
   if (typeof crearDatepickerConDisponibilidad === 'function' && selectedDoctorId) {
     crearDatepickerConDisponibilidad($('agendaMedicaFecha'), selectedDoctorId);
   }
@@ -2495,7 +2495,7 @@ async function initAgendaMedica() {
   if (tienePermiso('agenda.crear')) {
     $('nuevoPacienteNombresMedica')?.addEventListener('input', debounceBuscarPacientesMedica);
   }
-  // Forzar solo d├¡gitos y m├íximo 10 en los tel├®fonos de cita m├®dica
+  // Forzar solo dígitos y máximo 10 en los teléfonos de cita médica
   const limitarTelMedica = (e) => {
     e.target.value = e.target.value.replace(/\D/g, '').slice(0, 10);
   };
@@ -2515,7 +2515,7 @@ async function initAgendaMedica() {
       cargarTurnosMedica();
     });
     
-    // ========= Listeners para Turnos M├®dicos (Agenda M├®dica) =========
+    // ========= Listeners para Turnos Médicos (Agenda Médica) =========
     window.socket.on('turno-medico:estado-actualizado', (data) => {
       cargarTurnosMedica();
     });
@@ -2530,7 +2530,7 @@ async function initAgendaMedica() {
     
     window.socketAgendaMedicaListenerAdded = true;
   }
-  // ajustar columnas seg├║n rol
+  // ajustar columnas según rol
   // guardar HTML original del TH de Hora para poder reinsertarlo si el rol cambia
   try {
     const headerRow = document.querySelector('#turnosTableMedica thead tr');
@@ -2542,12 +2542,12 @@ async function initAgendaMedica() {
   adjustColumnsForRole();
   
   // === PAGE NAVIGATION (Citas / Programar Agenda) ===
-  // Mostrar/ocultar bot├│n "Programar Agenda" seg├║n rol
+  // Mostrar/ocultar botón "Programar Agenda" según rol
   const canAgendaProgram = tienePermiso('agenda.disponibilidad') || tienePermiso('agenda.crear');
   const btnProgramar = document.querySelector('[data-page="programar"]');
   if (btnProgramar) {
     btnProgramar.style.display = canAgendaProgram ? '' : 'none';
-    // Cambiar texto del bot├│n seg├║n rol (preservar SVG)
+    // Cambiar texto del botón según rol (preservar SVG)
     const btnProgramarText = btnProgramar.querySelector('span:last-child');
     if (btnProgramarText) btnProgramarText.textContent = currentUser?.rol === 'doctor' ? 'Programar Agenda' : 'Agenda';
   }
@@ -2561,21 +2561,21 @@ async function initAgendaMedica() {
     loadCalendarData();
   }
   
-  // Sidebar button listeners para cambio de p├ígina
+  // Sidebar button listeners para cambio de página
   document.querySelectorAll('.agenda-page-btn').forEach(btn => {
     btn.addEventListener('click', function() {
       const page = this.dataset.page;
-      // marcar bot├│n como activo
+      // marcar botón como activo
       document.querySelectorAll('.agenda-page-btn').forEach(b => b.classList.remove('active'));
       this.classList.add('active');
-      // cambiar p├ígina visible
+      // cambiar página visible
       document.querySelectorAll('.agenda-page').forEach(p => p.classList.remove('active'));
       const pgEl = document.querySelector(`.agenda-page[data-agenda-page="${page}"]`);
       if (pgEl) pgEl.classList.add('active');
       
-      // mostrar/ocultar secciones dentro de p├ígina seg├║n rol
+      // mostrar/ocultar secciones dentro de página según rol
       if (page === 'citas') {
-        // Recargar calendario al volver a la pesta├▒a de citas
+        // Recargar calendario al volver a la pestaña de citas
         if (typeof cargarCitasCalendario === 'function') cargarCitasCalendario();
       } else if (page === 'programar') {
         const titleHeader = document.getElementById('agendaTitleHeader');
@@ -2590,14 +2590,14 @@ async function initAgendaMedica() {
     });
   });
   
-  // Mostrar p├ígina inicial de citas (ya tienen clase active en HTML)
-  // pero asegurar que el bot├│n de citas tenga clase active
+  // Mostrar página inicial de citas (ya tienen clase active en HTML)
+  // pero asegurar que el botón de citas tenga clase active
   document.querySelectorAll('.agenda-page-btn').forEach(b => b.classList.remove('active'));
   const citasBtn = document.querySelector('.agenda-page-btn[data-page="citas"]');
   if (citasBtn) citasBtn.classList.add('active');
 
-  // Resetear tambi├®n las p├íginas visibles para no conservar la vista anterior
-  // cuando se cambia de doctor desde el men├║ principal.
+  // Resetear también las páginas visibles para no conservar la vista anterior
+  // cuando se cambia de doctor desde el menú principal.
   document.querySelectorAll('.agenda-page').forEach(p => p.classList.remove('active'));
   const citasPage = document.querySelector('.agenda-page[data-agenda-page="citas"]');
   if (citasPage) citasPage.classList.add('active');
@@ -2607,9 +2607,9 @@ async function initAgendaMedica() {
   if (progSection) progSection.style.display = 'none';
   
   const doctorAcciones = $('agendaDoctorAcciones');
-  if (doctorAcciones) doctorAcciones.style.display = 'none'; // removed ÔÇö acciones ahora en modal por fila
+  if (doctorAcciones) doctorAcciones.style.display = 'none'; // removed — acciones ahora en modal por fila
 
-  // Bot├│n "Nueva Cita" y modal
+  // Botón "Nueva Cita" y modal
   const btnNuevaCita = $('btnNuevaCitaMedica');
   const canCrearCita = tienePermiso('agenda.crear');
   if (btnNuevaCita) btnNuevaCita.style.display = canCrearCita ? 'inline-flex' : 'none';
@@ -2630,7 +2630,7 @@ async function initAgendaMedica() {
     $('crearTurnoMedica')?.addEventListener('click', crearTurnoMedica);
   }
 
-  // Secci├│n de aviso al doctor (visible para admin_recepcion, aux_recepcion, admin_electro)
+  // Sección de aviso al doctor (visible para admin_recepcion, aux_recepcion, admin_electro)
   const recepcionAcciones = $('agendaRecepcionAcciones');
   const canAvisar = tienePermiso('agenda.aviso_doctor');
   if (recepcionAcciones) recepcionAcciones.style.display = canAvisar ? '' : 'none';
@@ -2640,7 +2640,7 @@ async function initAgendaMedica() {
   
   $('btnDescargarAgendaPDF')?.addEventListener('click', descargarAgendaPDF);
 
-  // Modal de edici├│n solo para admin/recepci├│n
+  // Modal de edición solo para admin/recepción
   const editSection = $('agendaEditPacienteSection');
   if (editSection) {
     // Modal empieza oculto
@@ -2656,7 +2656,7 @@ async function initAgendaMedica() {
       editSection.classList.add('hidden');
     }
   }
-  // Bot├│n "Cargar Pacientes" (solo admin/recepci├│n)
+  // Botón "Cargar Pacientes" (solo admin/recepción)
   const btnCargarPacMedica = $('btnCargarPacientesMedica');
   if (btnCargarPacMedica && tienePermiso('agenda.crear')) {
     btnCargarPacMedica.style.display = '';
@@ -2691,16 +2691,16 @@ function adjustColumnsForRole(){
   if (!headerRow) return;
   
   if (currentUser?.rol === 'doctor') {
-    // Para DOCTOR: mantener Hora visible, cambiar Acciones por "Quien Program├│"
+    // Para DOCTOR: mantener Hora visible, cambiar Acciones por "Quien Programó"
     const colHora = document.querySelector('#turnosTableMedica colgroup .col-hora');
     if (colHora) colHora.style.display = '';
     
     const lastTh = headerRow.querySelector('th:last-child');
     if (lastTh && lastTh.textContent.includes('Acciones')) {
-      lastTh.textContent = 'Quien Program├│';
+      lastTh.textContent = 'Quien Programó';
     }
   } else {
-    // Para RECEPCION/ADMIN: asegurar Hora visible, cambiar "Quien Program├│" por "Acciones"
+    // Para RECEPCION/ADMIN: asegurar Hora visible, cambiar "Quien Programó" por "Acciones"
     const colHora = document.querySelector('#turnosTableMedica colgroup .col-hora');
     if (colHora) colHora.style.display = '';
     
@@ -2713,7 +2713,7 @@ function adjustColumnsForRole(){
     }
     
     const lastTh = headerRow.querySelector('th:last-child');
-    if (lastTh && (lastTh.textContent.includes('Quien') || lastTh.textContent.includes('Program├│'))) {
+    if (lastTh && (lastTh.textContent.includes('Quien') || lastTh.textContent.includes('Programó'))) {
       lastTh.textContent = 'Acciones';
     }
   }
@@ -2730,7 +2730,7 @@ function updateAgendaFechaDisplay(){
 function formatDateSpanish(dateStr){
   try{
     const d = new Date(dateStr + 'T00:00:00');
-    const dias = ['domingo','lunes','martes','mi├®rcoles','jueves','viernes','s├íbado'];
+    const dias = ['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
     const meses = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
     const diaSemana = dias[d.getDay()];
     const dia = d.getDate();
@@ -2760,7 +2760,7 @@ function populateTurnoHoras(selectId, from='07:00', to='18:00', stepMinutes=20){
   }
 }
 
-// Actualizar horas disponibles seg├║n disponibilidad del doctor
+// Actualizar horas disponibles según disponibilidad del doctor
 async function actualizarHorasDisponibles() {
   const doctorId = selectedDoctorId;
   const fecha = $('modalNuevaCitaFecha')?.value || $('agendaMedicaFecha')?.value;
@@ -2786,20 +2786,20 @@ async function actualizarHorasDisponibles() {
     const disponibleTarde = data.disponible_tarde;
 
     if (!disponibleManana && !disponibleTarde) {
-      mensajeDiv.innerHTML = 'ÔÜá´©Å El doctor no est├í disponible este d├¡a.';
+      mensajeDiv.innerHTML = '⚠️ El doctor no está disponible este día.';
       mensajeDiv.style.display = 'block';
       return;
     }
 
     const lineas = [];
-    if (disponibleManana) lineas.push('Ma├▒ana: 8:00 AM ÔÇô 12:00 PM');
-    if (disponibleTarde) lineas.push('Tarde: 2:00 PM ÔÇô 6:00 PM');
-    if (!disponibleManana) lineas.push('ÔÜá´©Å No estar├í disponible en el horario de la ma├▒ana');
-    if (!disponibleTarde) lineas.push('ÔÜá´©Å No estar├í disponible en el horario de la tarde');
+    if (disponibleManana) lineas.push('Mañana: 8:00 AM – 12:00 PM');
+    if (disponibleTarde) lineas.push('Tarde: 2:00 PM – 6:00 PM');
+    if (!disponibleManana) lineas.push('⚠️ No estará disponible en el horario de la mañana');
+    if (!disponibleTarde) lineas.push('⚠️ No estará disponible en el horario de la tarde');
 
     if (data.tiene_intervalos && data.intervalos && data.intervalos.length > 0) {
       const bloqueados = data.intervalos.map(i =>
-        `${formatearHora(i.hora_inicio)}ÔÇô${formatearHora(i.hora_fin)}${i.razon ? ': ' + i.razon : ''}`
+        `${formatearHora(i.hora_inicio)}–${formatearHora(i.hora_fin)}${i.razon ? ': ' + i.razon : ''}`
       );
       lineas.push('<strong>Bloqueados:</strong> ' + bloqueados.join(', '));
     }
@@ -2824,7 +2824,7 @@ let calLoadReqId = 0;
 
 function obtenerEstadoDiaAgenda(dateStr) {
   const disp = calDisponibilidad[dateStr];
-  if (disp && (disp.disponible === false || disp.disponible === 0 || disp.disponible === '0' || disp.disponible === 'false')) return 'unavailable'; // Prioridad m├íxima
+  if (disp && (disp.disponible === false || disp.disponible === 0 || disp.disponible === '0' || disp.disponible === 'false')) return 'unavailable'; // Prioridad máxima
 
   const daySlots = calSlots.filter(s => (s.fecha || '').slice(0, 10) === dateStr && s.disponible);
   const normalizedSlots = daySlots
@@ -2841,7 +2841,7 @@ function obtenerEstadoDiaAgenda(dateStr) {
   if (tieneJornadaCompleta) return 'full';
   if (tieneMediaJornada) return 'partial';
 
-  // Fallback cuando no hay slots espec├¡ficos, usando disponibilidad mensual.
+  // Fallback cuando no hay slots específicos, usando disponibilidad mensual.
   if (disp) {
     if (disp.disponible_manana && disp.disponible_tarde) return 'full';
     if (disp.disponible_manana || disp.disponible_tarde) return 'partial';
@@ -2856,7 +2856,7 @@ function setupAgendaCalendar() {
   calDoctorIdForCal = selectedDoctorId || currentUser?.id;
   if (!calDoctorIdForCal) return;
 
-  // El doctor se selecciona desde el men├║ principal para roles no doctor.
+  // El doctor se selecciona desde el menú principal para roles no doctor.
   // En esta vista solo se permite visualizar/editar la agenda del doctor ya seleccionado.
   const selectorDiv = $('agendaCalDoctorSelector');
   if (selectorDiv) {
@@ -2897,7 +2897,7 @@ function setupAgendaCalendar() {
   $('calModalSave')?.addEventListener('click', saveCalDay);
   $('calModalClear')?.addEventListener('click', deleteCalDay);
 
-  // Motivo de ausencia: mostrar/ocultar campo libre seg├║n selecci├│n
+  // Motivo de ausencia: mostrar/ocultar campo libre según selección
   $('calModalMotivoSelect')?.addEventListener('change', function() {
     const inputOtro = $('calModalMotivoOtro');
     if (inputOtro) inputOtro.style.display = this.value === 'Otro' ? '' : 'none';
@@ -2938,7 +2938,7 @@ function openCalModal(dateStr) {
 
   // Title
   const d = new Date(dateStr + 'T12:00:00');
-  const diasSemana = ['Domingo','Lunes','Martes','Mi├®rcoles','Jueves','Viernes','S├íbado'];
+  const diasSemana = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
   const meses = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
   const titulo = $('calModalTitle');
   const sub = $('calModalDateSub');
@@ -2963,7 +2963,7 @@ function openCalModal(dateStr) {
   } else {
     setCalToggle(true, isFullDayConfigured);
     if (isFullDayConfigured) {
-      // "Todo el d├¡a" se guarda como dos slots: 08:00-12:00 y 14:00-18:00.
+      // "Todo el día" se guarda como dos slots: 08:00-12:00 y 14:00-18:00.
     } else if (daySlots.length > 0) {
       daySlots.forEach(s => addCalHoraRow(s.hora_inicio?.slice(0, 5), s.hora_fin?.slice(0, 5)));
     } else if (disp) {
@@ -2975,12 +2975,12 @@ function openCalModal(dateStr) {
     }
   }
 
-  // Cargar observaci├│n existente (aplica para todos los estados)
+  // Cargar observación existente (aplica para todos los estados)
   const selectMotivo = $('calModalMotivoSelect');
   const inputOtro = $('calModalMotivoOtro');
   if (selectMotivo) {
     const motivo = disp?.motivo_ausencia || '';
-    const opciones = ['', 'UCQN', 'Hospital departamental', 'Cita m├®dica personal', 'Vacaciones', 'Capacitaci├│n'];
+    const opciones = ['', 'UCQN', 'Hospital departamental', 'Cita médica personal', 'Vacaciones', 'Capacitación'];
     if (opciones.includes(motivo)) {
       selectMotivo.value = motivo;
       if (inputOtro) inputOtro.style.display = 'none';
@@ -3133,7 +3133,7 @@ function addCalHoraRow(inicio, fin) {
 async function saveCalDay() {
   if (!calSelectedDate || !calDoctorIdForCal) return;
 
-  // Detectar si el bot├│n "No asistir├®" est├í activo
+  // Detectar si el botón "No asistiré" está activo
   const noAsistireActivo = $('calToggleNo')?.classList.contains('cal-toggle-active-no');
   let disponible = true;
   let slots = [];
@@ -3145,7 +3145,7 @@ async function saveCalDay() {
     slots = [];
     hasManana = false;
     hasTarde = false;
-    // Leer observaci├│n
+    // Leer observación
     const selectMotivo = $('calModalMotivoSelect');
     const inputOtro = $('calModalMotivoOtro');
     if (selectMotivo) {
@@ -3189,7 +3189,7 @@ async function saveCalDay() {
     }
   }
 
-  // Leer observaci├│n (aplica para todos los estados)
+  // Leer observación (aplica para todos los estados)
   if (motivoAusencia === null) {
     const selectMotivo = $('calModalMotivoSelect');
     const inputOtro = $('calModalMotivoOtro');
@@ -3240,7 +3240,7 @@ async function saveCalDay() {
       throw new Error(errData2.error || `Error ${r2.status} guardando horarios`);
     }
 
-    // Actualizar cach├® local inmediatamente para que renderCalendar() refleje el cambio al cerrar modal
+    // Actualizar caché local inmediatamente para que renderCalendar() refleje el cambio al cerrar modal
     const savedDate = calSelectedDate; // capturar antes de que closeCalModal lo anule
     calDisponibilidad[savedDate] = {
       disponible: disponible,
@@ -3248,11 +3248,11 @@ async function saveCalDay() {
       disponible_tarde: disponible ? (hasTarde || (!hasManana && !hasTarde)) : false,
       motivo_ausencia: motivoAusencia
     };
-    // Actualizar tambi├®n los slots locales
+    // Actualizar también los slots locales
     calSlots = calSlots.filter(s => (s.fecha || '').slice(0, 10) !== savedDate);
     slots.forEach(s => calSlots.push(s));
 
-    showToast('D├¡a guardado correctamente', 'success');
+    showToast('Día guardado correctamente', 'success');
     closeCalModal();
     await loadCalendarData();
   } catch (e) {
@@ -3264,7 +3264,7 @@ async function saveCalDay() {
 
 function deleteCalDay() {
   if (!calSelectedDate || !calDoctorIdForCal) return;
-  showConfirm('┬┐Limpiar la configuraci├│n del d├¡a seleccionado?', async () => {
+  showConfirm('¿Limpiar la configuración del día seleccionado?', async () => {
     try {
       const r = await apiFetch('/api/doctor-disponibilidad/eliminar-dia', {
       method: 'POST',
@@ -3273,9 +3273,9 @@ function deleteCalDay() {
     });
     if (!r.ok) {
       const errData = await r.json().catch(() => ({}));
-      throw new Error(errData.error || `Error ${r.status} limpiando d├¡a`);
+      throw new Error(errData.error || `Error ${r.status} limpiando día`);
     }
-    showToast('D├¡a limpiado', 'success');
+    showToast('Día limpiado', 'success');
     closeCalModal();
     await loadCalendarData();
   } catch (e) {
@@ -3291,7 +3291,7 @@ function renderCalResumen() {
   const daysInMonth = new Date(calCurrentYear, calCurrentMonth + 1, 0).getDate();
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const diasSemana = ['Dom','Lun','Mar','Mi├®','Jue','Vie','S├íb'];
+  const diasSemana = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
   let html = '';
   let configured = 0;
 
@@ -3313,7 +3313,7 @@ function renderCalResumen() {
     if (estadoDia === 'unavailable') {
       estadoHtml = '<span class="cal-resumen-estado">No asiste</span>';
     } else if (estadoDia === 'full' || estadoDia === 'partial') {
-      estadoHtml = `<span class="cal-resumen-estado">${estadoDia === 'full' ? 'Todo el d├¡a' : 'Medio d├¡a'}</span>`;
+      estadoHtml = `<span class="cal-resumen-estado">${estadoDia === 'full' ? 'Todo el día' : 'Medio día'}</span>`;
       if (daySlots.length > 0) {
         const normalizedSlots = daySlots
           .map(s => `${(s.hora_inicio || '').slice(0, 5)}-${(s.hora_fin || '').slice(0, 5)}`)
@@ -3322,14 +3322,14 @@ function renderCalResumen() {
           && normalizedSlots[0] === '08:00-12:00'
           && normalizedSlots[1] === '14:00-18:00';
         if (isFullDayConfigured) {
-          horasHtml = '<span class="cal-resumen-horas">Todo el d├¡a</span>';
+          horasHtml = '<span class="cal-resumen-horas">Todo el día</span>';
         } else {
-          const horas = daySlots.map(s => `${(s.hora_inicio || '').slice(0, 5)}ÔÇô${(s.hora_fin || '').slice(0, 5)}`).join(', ');
+          const horas = daySlots.map(s => `${(s.hora_inicio || '').slice(0, 5)}–${(s.hora_fin || '').slice(0, 5)}`).join(', ');
           horasHtml = `<span class="cal-resumen-horas">${escapeHtml(horas)}</span>`;
         }
       } else if (disp) {
         const partes = [];
-        if (disp.disponible_manana) partes.push('Ma├▒ana');
+        if (disp.disponible_manana) partes.push('Mañana');
         if (disp.disponible_tarde) partes.push('Tarde');
         if (partes.length) horasHtml = `<span class="cal-resumen-horas">${partes.join(', ')}</span>`;
       }
@@ -3343,7 +3343,7 @@ function renderCalResumen() {
   }
 
   if (!configured) {
-    cont.innerHTML = '<div style="color:#9ca3af;padding:8px 0">No hay d├¡as configurados este mes</div>';
+    cont.innerHTML = '<div style="color:#9ca3af;padding:8px 0">No hay días configurados este mes</div>';
   } else {
     cont.innerHTML = html;
   }
@@ -3371,7 +3371,7 @@ function showExcelViewer(workbook, filename) {
   container.style.overflow = 'auto';
   container.style.padding = '20px';
   
-  // Header con t├¡tulo y bot├│n cerrar
+  // Header con título y botón cerrar
   const header = document.createElement('div');
   header.style.display = 'flex';
   header.style.justifyContent = 'space-between';
@@ -3473,7 +3473,7 @@ function renderSheet(workbook, sheetName, container) {
   const html = XLSX.utils.sheet_to_html(worksheet);
   
   if (!html) {
-    container.innerHTML = '<p style="color:#999;padding:20px">La hoja est├í vac├¡a</p>';
+    container.innerHTML = '<p style="color:#999;padding:20px">La hoja está vacía</p>';
     return;
   }
   
@@ -3522,7 +3522,7 @@ function setupAgendaVerMedicos() {
   if (!sel || !cont) return;
   sel.innerHTML = '<option value="">Cargando...</option>';
   apiFetch('/api/medicos').then(r=>r.json()).then(list=>{
-    sel.innerHTML = '<option value="">Seleccionar m├®dico</option>';
+    sel.innerHTML = '<option value="">Seleccionar médico</option>';
     list.forEach(m => { const o = document.createElement('option'); o.value = m.id; o.textContent = m.nombre || m.usuario; sel.appendChild(o); });
   }).catch(()=>{ sel.innerHTML = '<option value="">Error cargando</option>'; });
   
@@ -3552,7 +3552,7 @@ function setupAgendaVerMedicos() {
         const tb = document.createElement('tbody');
         slots.forEach(r => { 
           const tr = document.createElement('tr'); 
-          tr.innerHTML = `<td style="padding:8px;border:1px solid #ddd">${escapeHtml(r.fecha)}</td><td style="padding:8px;border:1px solid #ddd">${formatearHora(r.hora_inicio)}</td><td style="padding:8px;border:1px solid #ddd">${formatearHora(r.hora_fin)}</td><td style="padding:8px;border:1px solid #ddd">${r.disponible? 'S├¡':'No'}</td>`; 
+          tr.innerHTML = `<td style="padding:8px;border:1px solid #ddd">${escapeHtml(r.fecha)}</td><td style="padding:8px;border:1px solid #ddd">${formatearHora(r.hora_inicio)}</td><td style="padding:8px;border:1px solid #ddd">${formatearHora(r.hora_fin)}</td><td style="padding:8px;border:1px solid #ddd">${r.disponible? 'Sí':'No'}</td>`; 
           tb.appendChild(tr); 
         });
         tbl.appendChild(tb);
@@ -3561,11 +3561,11 @@ function setupAgendaVerMedicos() {
         const noSlots = document.createElement('div');
         noSlots.style.padding = '12px';
         noSlots.style.color = '#999';
-        noSlots.textContent = 'No hay programaci├│n de disponibilidad';
+        noSlots.textContent = 'No hay programación de disponibilidad';
         cont.appendChild(noSlots);
       }
       
-      // Mostrar archivos subidos (solo para recepci├│n)
+      // Mostrar archivos subidos (solo para recepción)
       const filesSection = document.createElement('div');
       filesSection.style.marginTop = '16px';
       filesSection.style.paddingTop = '16px';
@@ -3615,7 +3615,7 @@ function setupAgendaVerMedicos() {
           
           li.appendChild(linkContainer);
           
-          // Bot├│n Ver para Excel
+          // Botón Ver para Excel
           const isExcel = /\.(xlsx?|xls)$/i.test(f.filename);
           if (isExcel) {
             const btnView = document.createElement('button');
@@ -3699,7 +3699,7 @@ async function cargarTurnosMedica() {
   if (!fecha || !doctorId) {
     _cargandoTurnosMedica = false;
     if (window.currentModule === 'agenda-medica') {
-      showToast('Selecciona fecha y m├®dico', 'error');
+      showToast('Selecciona fecha y médico', 'error');
     }
     return;
   }
@@ -3709,7 +3709,7 @@ async function cargarTurnosMedica() {
     const turnos = await res.json();
     const tbody = $('turnosTableBodyMedica');
 
-    // Todos los turnos ordenados por hora (mantener orden cronol├│gico siempre)
+    // Todos los turnos ordenados por hora (mantener orden cronológico siempre)
     const ESTADOS_FINALES = ['ATENDIDO', 'NO_ASISTIO', 'CANCELADO', 'REPROGRAMADO'];
     const turnosOrdenados = [...turnos].sort((a, b) => {
       const ma = horaAMinutos(a.hora) ?? 9999;
@@ -3741,7 +3741,7 @@ async function cargarTurnosMedica() {
     const hayEnAtencion = turnosOrdenados.some(t => t.estado === 'EN_ATENCION');
     globalHayEnAtencion = hayEnAtencion;
 
-    // Umbral de hueco din├ímico seg├║n especialidad del doctor
+    // Umbral de hueco dinámico según especialidad del doctor
     const espLower = (selectedDoctorEspecialidad || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     const es25min = espLower.includes('epileptolog') || espLower.includes('neurolog');
     const INTERVALO_MIN = es25min ? 25 : 40;
@@ -3768,8 +3768,8 @@ async function cargarTurnosMedica() {
     if (dispManana) rangosDisponibles.push({ inicio: 8 * 60, fin: 12 * 60 }); // 8:00 - 12:00
     if (dispTarde)  rangosDisponibles.push({ inicio: 14 * 60, fin: 18 * 60 }); // 14:00 - 18:00
 
-    // Funci├│n para verificar si un minuto est├í dentro de los rangos disponibles
-    // y no est├í en un intervalo bloqueado
+    // Función para verificar si un minuto está dentro de los rangos disponibles
+    // y no está en un intervalo bloqueado
     function minutoDentroDeDisponibilidad(m) {
       const enRango = rangosDisponibles.some(r => m >= r.inicio && m < r.fin);
       if (!enRango) return false;
@@ -3777,8 +3777,8 @@ async function cargarTurnosMedica() {
       return !bloqueado;
     }
 
-    // Construir lista de visualizaci├│n: insertar filas de slot vac├¡o con hora
-    // tanto en los huecos entre citas como antes/despu├®s, respetando disponibilidad
+    // Construir lista de visualización: insertar filas de slot vacío con hora
+    // tanto en los huecos entre citas como antes/después, respetando disponibilidad
     const displayList = [];
 
     // Helper: generar todos los slots disponibles en los rangos del doctor
@@ -3827,7 +3827,7 @@ async function cargarTurnosMedica() {
         }
       }
 
-      // (c) Slots despu├®s del ├║ltimo turno hasta fin de disponibilidad
+      // (c) Slots después del último turno hasta fin de disponibilidad
       const ultimoTurno = Math.max(...horasTurnos);
       let inicio = ultimoTurno + INTERVALO_MIN;
       for (const rango of rangosDisponibles) {
@@ -3860,10 +3860,10 @@ async function cargarTurnosMedica() {
       countEl.textContent = totalCitas > 0 ? totalCitas + ' cita' + (totalCitas !== 1 ? 's' : '') : '';
     }
     
-    // Actualizar estado del bot├│n "Marcar como atendido"
+    // Actualizar estado del botón "Marcar como atendido"
     // (eliminado: ahora el cambio de estado se hace desde el modal al clickear el paciente)
     // adjustColumnsForRole
-    // Ajustar columnas seg├║n rol (una sola vez despu├®s de renderizar todas las filas)
+    // Ajustar columnas según rol (una sola vez después de renderizar todas las filas)
     adjustColumnsForRole();
   } catch (e) {
     showToast('Error cargando citas', 'error');
@@ -3876,13 +3876,13 @@ async function cargarTurnosMedica() {
   }
 }
 
-// Funci├│n para crear una fila vac├¡a de turno
+// Función para crear una fila vacía de turno
 function crearFilaTurnoVacia(tbody, colspan, esDoctor) {
   const tr = document.createElement('tr');
   tr.className = 'turno-row estado-vacio';
   tr.style.opacity = '0.4';
   
-  // Crear celdas vac├¡as seg├║n si es doctor o no
+  // Crear celdas vacías según si es doctor o no
   const columnas = 9;
   let html = '';
   for (let i = 0; i < columnas; i++) {
@@ -3901,7 +3901,7 @@ function crearFilaTurnoHueco(tbody, colspan) {
   tbody.appendChild(tr);
 }
 
-// Fila visual de slot vac├¡o con hora tentativa (rojo claro suave)
+// Fila visual de slot vacío con hora tentativa (rojo claro suave)
 function crearFilaSlotVacio(tbody, colspan, hora) {
   const tr = document.createElement('tr');
   tr.className = 'turno-row turno-slot-vacio';
@@ -3929,11 +3929,11 @@ function estadoBadgeMedica(estado) {
   const map = {
     'EN_ESPERA':    { bg: '#dbeafe', color: '#1d4ed8', border: '#93c5fd',  label: 'En Espera' },
     'EN_SALA':      { bg: '#fef9c3', color: '#92400e', border: '#fde047',  label: 'En Sala' },
-    'EN_ATENCION':  { bg: '#ffedd5', color: '#c2410c', border: '#fdba74',  label: 'En Atenci├│n' },
+    'EN_ATENCION':  { bg: '#ffedd5', color: '#c2410c', border: '#fdba74',  label: 'En Atención' },
     'ATENDIDO':     { bg: '#dcfce7', color: '#15803d', border: '#86efac',  label: 'Atendido' },
     'CANCELADO':    { bg: '#fee2e2', color: '#991b1b', border: '#fca5a5',  label: 'Cancelado' },
     'REPROGRAMADO': { bg: '#e0f2fe', color: '#0369a1', border: '#7dd3fc',  label: 'Reprogramado' },
-    'NO_ASISTIO':   { bg: '#f3e8ff', color: '#6b21a8', border: '#d8b4fe',  label: 'No Asisti├│' },
+    'NO_ASISTIO':   { bg: '#f3e8ff', color: '#6b21a8', border: '#d8b4fe',  label: 'No Asistió' },
   };
   const s = map[estado] || { bg: '#f3f4f6', color: '#374151', border: '#d1d5db', label: estado || '-' };
   return `<span style="display:inline-block;padding:3px 10px;border-radius:12px;font-size:0.78rem;font-weight:600;background:${s.bg};color:${s.color};border:1px solid ${s.border};white-space:nowrap">${escapeHtml(s.label)}</span>`;
@@ -3959,10 +3959,10 @@ function renderTurnoRowMedica(tbody, t, animateTargetId, hayEnAtencion) {
   const btnEditDisabled = pol.row.puedeEditar ? '' : 'disabled';
   const btnDeleteDisabled = pol.row.puedeEliminar ? '' : 'disabled';
   
-  // Guardar estado de deshabilitaci├│n en data attributes para que los event listeners puedan acceder
+  // Guardar estado de deshabilitación en data attributes para que los event listeners puedan acceder
   const dataDeshabilitado = (!pol.row.puedeEditar && !pol.row.puedeEliminar && !pol.row.puedePrioridad) ? 'data-deshabilitado="true"' : 'data-deshabilitado="false"';
   
-  const prioridadBtns = pol.perms.cambiarEstado ? `<button class="btn-prioridad-up" data-up="${t.id}" title="Subir prioridad" ${btnUpDisabled} ${dataDeshabilitado}><img src="images/up.svg" alt="Ôåæ"/></button><button class="btn-prioridad-down" data-down="${t.id}" title="Bajar prioridad" ${btnDownDisabled} ${dataDeshabilitado}><img src="images/down.svg" alt="Ôåô"/></button>` : '';
+  const prioridadBtns = pol.perms.cambiarEstado ? `<button class="btn-prioridad-up" data-up="${t.id}" title="Subir prioridad" ${btnUpDisabled} ${dataDeshabilitado}><img src="images/up.svg" alt="↑"/></button><button class="btn-prioridad-down" data-down="${t.id}" title="Bajar prioridad" ${btnDownDisabled} ${dataDeshabilitado}><img src="images/down.svg" alt="↓"/></button>` : '';
   const accionesCell = (pol.perms.editar || pol.perms.eliminar)
     ? `<div class="table-actions">${prioridadBtns}${pol.perms.editar ? `<button class="btn-editar" data-edit="${t.id}" title="Editar" ${btnEditDisabled} ${dataDeshabilitado}><img src="images/edit.svg" alt="Editar"/></button>` : ''}${pol.perms.eliminar ? `<button class="btn-eliminar" data-delete="${t.id}" title="Eliminar" ${btnDeleteDisabled} ${dataDeshabilitado}><img src="images/delete.svg" alt="Eliminar"/></button>` : ''}</div>`
     : '-';
@@ -3986,9 +3986,9 @@ function renderTurnoRowMedica(tbody, t, animateTargetId, hayEnAtencion) {
         <td>${numCellHtml}</td>
         <td class="col-hora col-mobile-hide">${formatearHora(t.hora)}</td>
         <td>${escapeHtml(t.paciente_nombre)}</td>
-        <td class="col-mobile-hide">${escapeHtml(t.tipo_consulta || '')}</td>
-        <td class="col-mobile-hide">${escapeHtml(t.paciente_documento||'')}</td>
-        <td class="col-mobile-hide">${escapeHtml(t.entidad||'')}</td>
+        <td class="col-mobile-hide col-wrap-cell col-tipo-cell">${escapeHtml(t.tipo_consulta || '')}</td>
+        <td class="col-mobile-hide col-wrap-cell col-doc-cell">${escapeHtml(t.paciente_documento||'')}</td>
+        <td class="col-mobile-hide col-wrap-cell">${escapeHtml(t.entidad||'')}</td>
         <td class="col-mobile-hide col-notas-cell"><span class="turno-notas-cell" title="${escapeHtml(t.notas || '')}">${escapeHtml(t.notas || '')}</span></td>
         <td class="col-estado-cell">${estadoBadgeMedica(t.estado)}</td>
         <td>${escapeHtml(t.programado_por || '-')}</td>
@@ -4002,9 +4002,9 @@ function renderTurnoRowMedica(tbody, t, animateTargetId, hayEnAtencion) {
         <td>${numCellHtml}</td>
         <td class="col-hora col-mobile-hide">${formatearHora(t.hora)}</td>
         <td>${escapeHtml(t.paciente_nombre)}</td>
-        <td class="col-mobile-hide">${escapeHtml(t.tipo_consulta || '')}</td>
-        <td class="col-mobile-hide">${escapeHtml(t.paciente_documento||'')}</td>
-        <td class="col-mobile-hide">${escapeHtml(t.entidad||'')}</td>
+        <td class="col-mobile-hide col-wrap-cell col-tipo-cell">${escapeHtml(t.tipo_consulta || '')}</td>
+        <td class="col-mobile-hide col-wrap-cell col-doc-cell">${escapeHtml(t.paciente_documento||'')}</td>
+        <td class="col-mobile-hide col-wrap-cell">${escapeHtml(t.entidad||'')}</td>
         <td class="col-mobile-hide col-notas-cell"><span class="turno-notas-cell" title="${escapeHtml(t.notas || '')}">${escapeHtml(t.notas || '')}</span></td>
         <td class="col-estado-cell">${estadoBadgeMedica(t.estado)}</td>
         <td class="td-acciones col-acciones-cell">${accionesCell}</td>
@@ -4020,7 +4020,7 @@ function renderTurnoRowMedica(tbody, t, animateTargetId, hayEnAtencion) {
       abrirModalEstadoCitaMedica(t);
     });
     
-    // Bot├│n de Editar
+    // Botón de Editar
     const btnEdit = tr.querySelector('[data-edit]');
     btnEdit?.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -4031,7 +4031,7 @@ function renderTurnoRowMedica(tbody, t, animateTargetId, hayEnAtencion) {
     });
   }
 
-  // A├▒adir botones de prioridad
+  // Añadir botones de prioridad
   if (pol.perms.cambiarEstado) {
     const upBtn = tr.querySelector('[data-up]');
     const downBtn = tr.querySelector('[data-down]');
@@ -4076,7 +4076,7 @@ function renderTurnoRowMedica(tbody, t, animateTargetId, hayEnAtencion) {
       const btn = e.target.closest('[data-delete]');
       const deshabilitado = btn?.getAttribute('data-deshabilitado') === 'true';
       if (btn?.disabled || deshabilitado) return;
-      showConfirm('┬┐Eliminar esta cita?', async () => {
+      showConfirm('¿Eliminar esta cita?', async () => {
       try {
         const deleteId = btn?.dataset.delete || e.target.dataset.delete;
         const res = await apiFetch(`/api/turnos/${deleteId}`, { method:'DELETE' });
@@ -4118,7 +4118,7 @@ async function avisoDoctor(doctorIdParam) {
 async function llamarSiguientePaciente() {
   const fecha = $('agendaMedicaFecha').value;
   const doctorId = selectedDoctorId || ((currentUser?.rol === 'doctor' ? currentUser?.id : null));
-  if (!fecha || !doctorId) { showToast('Selecciona fecha y m├®dico', 'error'); return; }
+  if (!fecha || !doctorId) { showToast('Selecciona fecha y médico', 'error'); return; }
   try {
     const res = await apiFetch('/api/turnos/llamar-siguiente', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({fecha, doctor_id:doctorId}) });
     const data = await res.json();
@@ -4126,7 +4126,7 @@ async function llamarSiguientePaciente() {
       const nombre = data.turno.paciente_nombre || '';
       const consultorio = data.turno.numero_consultorio;
       showToast('Paciente llamado: ' + nombre, 'success'); 
-      // El anuncio de voz es recibido por recepci├│n/electro v├¡a socket (agenda:turno-llamar-siguiente)
+      // El anuncio de voz es recibido por recepción/electro vía socket (agenda:turno-llamar-siguiente)
       cargarTurnosMedica(); 
     } else {
       showToast(data.error||'Error', 'error');
@@ -4139,13 +4139,13 @@ async function marcarAtendido() {
   const doctorId = selectedDoctorId || ((currentUser?.rol === 'doctor' ? currentUser?.id : null));
   
   try {
-    // Buscar el turno en atenci├│n
+    // Buscar el turno en atención
     const res = await apiFetch(`/api/turnos?fecha=${fecha}&doctor_id=${doctorId}`);
     const turnos = await res.json();
     const turnoEnAtencion = turnos.find(t => t.estado === 'EN_ATENCION');
     
     if (!turnoEnAtencion) {
-      showToast('No hay paciente en atenci├│n', 'error');
+      showToast('No hay paciente en atención', 'error');
       return;
     }
     
@@ -4253,16 +4253,16 @@ function seleccionarTurnoMedica(tr, t) {
   tr.classList.add('turno-selected');
   const info = $('agendaEditInfo');
   if (info) {
-    info.textContent = `Cita actual: ${t.numero_turno || '-'} ┬À Estado: ${(t.estado || '').replace(/_/g,' ')} ┬À Consultorio: ${t.consultorio_nombre || ''}`;
+    info.textContent = `Cita actual: ${t.numero_turno || '-'} · Estado: ${(t.estado || '').replace(/_/g,' ')} · Consultorio: ${t.consultorio_nombre || ''}`;
   }
   const inputNombre = $('editPacienteNombreMedica');
   if (inputNombre) {
     inputNombre.value = t.paciente_nombre || '';
   }
   
-  // Deshabilitar bot├│n de guardar nombre seg├║n rol:
-  // ADMIN: puede editar si hay EN_ATENCION en otro turno, pero NO si est├í ATENDIDO
-  // RECEPCION: no puede editar si est├í ATENDIDO o hay EN_ATENCION
+  // Deshabilitar botón de guardar nombre según rol:
+  // ADMIN: puede editar si hay EN_ATENCION en otro turno, pero NO si está ATENDIDO
+  // RECEPCION: no puede editar si está ATENDIDO o hay EN_ATENCION
   const btnGuardar = $('btnGuardarNombreMedica');
   if (btnGuardar) {
     const pol = agendaMedicaPolicy(t);
@@ -4278,7 +4278,7 @@ function seleccionarTurnoMedica(tr, t) {
 }
 
 async function guardarNombrePacienteMedica() {
-  // Prevenir edici├│n seg├║n permisos y estado:
+  // Prevenir edición según permisos y estado:
   if (!tienePermiso('agenda.editar')) {
     showToast('No tienes permiso para editar', 'error');
     return;
@@ -4324,7 +4324,7 @@ async function guardarNumeroTurnoMedica() {
   const val = $('editTurnoNumeroMedica').value;
   const numero = parseInt(val, 10);
   if (!numero || numero < 1) {
-    showToast('N├║mero de cita inv├ílido', 'error');
+    showToast('Número de cita inválido', 'error');
     return;
   }
   try {
@@ -4335,7 +4335,7 @@ async function guardarNumeroTurnoMedica() {
     });
     const data = await res.json();
     if (data.ok) {
-      showToast('N├║mero de cita actualizado', 'success');
+      showToast('Número de cita actualizado', 'success');
       cargarTurnosMedica();
     } else {
       showToast(data.error || 'Error actualizando cita', 'error');
@@ -4371,50 +4371,50 @@ async function crearTurnoMedica() {
     return;
   }
 
-  // 2. Validar nombre: m├¡nimo 3 caracteres
+  // 2. Validar nombre: mínimo 3 caracteres
   if (nombre.length < 3) {
     showToast('El nombre debe tener al menos 3 caracteres', 'error');
     return;
   }
 
-  // 3. Validar documento: solo n├║meros, 6-15 caracteres
+  // 3. Validar documento: solo números, 6-15 caracteres
   if (!/^\d{6,15}$/.test(doc)) {
-    showToast('Documento inv├ílido. Solo n├║meros, 6-15 d├¡gitos', 'error');
+    showToast('Documento inválido. Solo números, 6-15 dígitos', 'error');
     return;
   }
 
-  // 4. Validar tel├®fono 1: exactamente 10 d├¡gitos
+  // 4. Validar teléfono 1: exactamente 10 dígitos
   if (!telefono1 || !/^\d{10}$/.test(telefono1)) {
-    showToast('Tel├®fono 1 debe tener exactamente 10 d├¡gitos', 'error');
+    showToast('Teléfono 1 debe tener exactamente 10 dígitos', 'error');
     $('nuevoPacienteTelefonoMedica')?.focus();
     return;
   }
 
-  // 5. Validar tel├®fono 2: exactamente 10 d├¡gitos
+  // 5. Validar teléfono 2: exactamente 10 dígitos
   if (!telefono2 || !/^\d{10}$/.test(telefono2)) {
-    showToast('Tel├®fono 2 debe tener exactamente 10 d├¡gitos', 'error');
+    showToast('Teléfono 2 debe tener exactamente 10 dígitos', 'error');
     $('nuevoPacienteTelefonoMedica2')?.focus();
     return;
   }
 
-  // 6. Tel├®fono 2 no puede ser igual al 1
+  // 6. Teléfono 2 no puede ser igual al 1
   if (telefono1 === telefono2) {
-    showToast('El Tel├®fono 2 no puede ser igual al Tel├®fono 1', 'error');
+    showToast('El Teléfono 2 no puede ser igual al Teléfono 1', 'error');
     $('nuevoPacienteTelefonoMedica2')?.focus();
     return;
   }
 
   try {
-    // Validaci├│n r├ípida en cliente: si el d├¡a est├í marcado como NO ASISTE, no permitir crear.
+    // Validación rápida en cliente: si el día está marcado como NO ASISTE, no permitir crear.
     const dispRes = await apiFetch(`/api/doctor-disponibilidad?doctor_id=${doctorId}&fecha=${fecha}`);
     const dispData = await dispRes.json().catch(() => null);
     if (dispData?.ok && dispData.disponible_manana === false && dispData.disponible_tarde === false) {
-      showToast('No se puede agendar: el doctor est├í marcado como no asistir├í ese d├¡a', 'error');
+      showToast('No se puede agendar: el doctor está marcado como no asistirá ese día', 'error');
       return;
     }
 
-    // Validaciones completadas - permitir m├║ltiples pacientes en la misma hora
-    // (no hay validaci├│n de duplicados por hora, se permite hasta 20 pacientes)
+    // Validaciones completadas - permitir múltiples pacientes en la misma hora
+    // (no hay validación de duplicados por hora, se permite hasta 20 pacientes)
 
     const body = {
       doctor_id: parseInt(doctorId, 10),
@@ -4459,7 +4459,7 @@ async function crearTurnoMedica() {
   }
 }
 
-// ========== CARGAR PACIENTES DESDE EXCEL (Agenda M├®dica) ==========
+// ========== CARGAR PACIENTES DESDE EXCEL (Agenda Médica) ==========
 
 function descargarPlantillaMedica() {
   const doctorId = selectedDoctorId || ((currentUser?.rol === 'doctor' ? currentUser?.id : null));
@@ -4525,7 +4525,7 @@ function excelDateToString(v) {
   if (match) return `${match[3]}-${match[2].padStart(2,'0')}-${match[1].padStart(2,'0')}`;
   // yyyy-mm-dd
   if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
-  // Fecha textual en espa├▒ol: "Jueves: 02 de abril 2026" o "Viernes; 03 de abril de 2026"
+  // Fecha textual en español: "Jueves: 02 de abril 2026" o "Viernes; 03 de abril de 2026"
   const mesesEs = { enero:1, febrero:2, marzo:3, abril:4, mayo:5, junio:6, julio:7, agosto:8, septiembre:9, octubre:10, noviembre:11, diciembre:12 };
   const matchEs = s.match(/(\d{1,2})\s+de\s+(\w+)\s+(?:de\s+)?(\d{4})/);
   if (matchEs) {
@@ -4539,7 +4539,7 @@ function excelDateToString(v) {
 function excelTimeToString(v) {
   if (!v) return '';
   if (typeof v === 'number') {
-    // Fracci├│n de d├¡a
+    // Fracción de día
     const totalMin = Math.round(v * 24 * 60);
     const hh = String(Math.floor(totalMin / 60)).padStart(2, '0');
     const mm = String(totalMin % 60).padStart(2, '0');
@@ -4564,7 +4564,7 @@ function procesarExcelPacientesMedica(file) {
       const workbook = XLSX.read(e.target.result, { type: 'array' });
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json(sheet);
-      if (!rows.length) { errorDiv.textContent = 'El archivo est├í vac├¡o'; errorDiv.style.display = 'block'; return; }
+      if (!rows.length) { errorDiv.textContent = 'El archivo está vacío'; errorDiv.style.display = 'block'; return; }
 
       const headers = Object.keys(rows[0]);
       const colFecha = encontrarColumnaExcel(headers, ['fecha', 'date']);
@@ -4598,7 +4598,7 @@ function procesarExcelPacientesMedica(file) {
 
       function crearSelectOpciones(opciones, valorActual, rowIdx, campo) {
         const normalizado = (valorActual || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-        let optionsHtml = '<option value="">ÔÇö Seleccionar ÔÇö</option>';
+        let optionsHtml = '<option value="">— Seleccionar —</option>';
         let encontrado = false;
         for (const opc of opciones) {
           const opcNorm = opc.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
@@ -4606,9 +4606,9 @@ function procesarExcelPacientesMedica(file) {
           if (sel) encontrado = true;
           optionsHtml += `<option value="${escapeHtml(opc)}"${sel}>${escapeHtml(opc)}</option>`;
         }
-        // Si el valor del Excel no coincide con ninguna opci├│n, agregarlo como opci├│n extra
+        // Si el valor del Excel no coincide con ninguna opción, agregarlo como opción extra
         if (valorActual && !encontrado) {
-          optionsHtml += `<option value="${escapeHtml(valorActual)}" selected>${escapeHtml(valorActual)} ÔÜá´©Å</option>`;
+          optionsHtml += `<option value="${escapeHtml(valorActual)}" selected>${escapeHtml(valorActual)} ⚠️</option>`;
         }
         return `<select data-row="${rowIdx}" data-campo="${campo}" style="width:100%;padding:4px 6px;border:1px solid #d1d5db;border-radius:6px;font-size:0.82rem">${optionsHtml}</select>`;
       }
@@ -4651,7 +4651,7 @@ function procesarExcelPacientesMedica(file) {
         }
       });
 
-      if (!parsed.length) { errorDiv.textContent = 'No se encontraron filas v├ílidas con los datos requeridos'; errorDiv.style.display = 'block'; return; }
+      if (!parsed.length) { errorDiv.textContent = 'No se encontraron filas válidas con los datos requeridos'; errorDiv.style.display = 'block'; return; }
 
       $('cargarPacientesMedicaCount').textContent = parsed.length;
       previewDiv.style.display = 'block';
@@ -4717,7 +4717,7 @@ async function confirmarCargarPacientesMedica() {
   }
 }
 
-// ========== CARGAR PACIENTES DESDE EXCEL (Electrodiagn├│stico) ==========
+// ========== CARGAR PACIENTES DESDE EXCEL (Electrodiagnóstico) ==========
 async function procesarExcelPacientesElectro(file) {
   const errorDiv   = $('cargarPacientesElectroError');
   const previewDiv = $('cargarPacientesElectroPreview');
@@ -4730,7 +4730,7 @@ async function procesarExcelPacientesElectro(file) {
 
   // 1. Cargar tipos de estudio para el dropdown
   let opcionesEstudio = [];
-  // Cache de info de duraci├│n por estudio { [nombre]: { esVariable, duracion_minutos, duracion_min, duracion_max } }
+  // Cache de info de duración por estudio { [nombre]: { esVariable, duracion_minutos, duracion_min, duracion_max } }
   if (!window._duracionCacheElectro) window._duracionCacheElectro = {};
   const _duracionCache = window._duracionCacheElectro;
   try {
@@ -4739,7 +4739,7 @@ async function procesarExcelPacientesElectro(file) {
     opcionesEstudio = (Array.isArray(d) ? d : (d.registros || d.estudios || [])).map(e => e.nombre || e);
   } catch (_) { console.warn('[cargarPacientesElectro] Failed to load studies list'); }
 
-  // Precargar duraci├│n de todos los estudios
+  // Precargar duración de todos los estudios
   async function obtenerDuracionEstudio(nombre) {
     if (_duracionCache[nombre]) return _duracionCache[nombre];
     try {
@@ -4751,8 +4751,8 @@ async function procesarExcelPacientesElectro(file) {
   }
 
   function crearCeldaDuracion(estudio, rowIdx) {
-    // Se llena din├ímicamente despu├®s ÔÇö inicializar vac├¡o
-    return `<td class="cell-duracion-${rowIdx}" style="min-width:80px"><span style="color:#6b7280;font-size:0.8rem">ÔÇö</span></td>`;
+    // Se llena dinámicamente después — inicializar vacío
+    return `<td class="cell-duracion-${rowIdx}" style="min-width:80px"><span style="color:#6b7280;font-size:0.8rem">—</span></td>`;
   }
 
   async function actualizarCeldaDuracion(rowIdx) {
@@ -4763,14 +4763,14 @@ async function procesarExcelPacientesElectro(file) {
     if (!cell) return;
 
     if (!p.estudio) {
-      cell.innerHTML = '<span style="color:#6b7280;font-size:0.8rem">ÔÇö</span>';
+      cell.innerHTML = '<span style="color:#6b7280;font-size:0.8rem">—</span>';
       p.duracion_horas = null;
       return;
     }
 
     const info = await obtenerDuracionEstudio(p.estudio);
     if (!info) {
-      cell.innerHTML = '<span style="color:#6b7280;font-size:0.8rem">ÔÇö</span>';
+      cell.innerHTML = '<span style="color:#6b7280;font-size:0.8rem">—</span>';
       p.duracion_horas = null;
       return;
     }
@@ -4782,14 +4782,14 @@ async function procesarExcelPacientesElectro(file) {
     } else {
       const horas = info.duracion_minutos ? (info.duracion_minutos / 60) : null;
       p.duracion_horas = horas;
-      cell.innerHTML = horas ? `<span style="font-size:0.82rem;color:#374151">${horas}h</span>` : '<span style="color:#6b7280;font-size:0.8rem">ÔÇö</span>';
+      cell.innerHTML = horas ? `<span style="font-size:0.82rem;color:#374151">${horas}h</span>` : '<span style="color:#6b7280;font-size:0.8rem">—</span>';
     }
   }
 
   function crearSelectEstudio(valorActual, rowIdx) {
     if (!opcionesEstudio.length) return escapeHtml(valorActual);
     const normalizado = (valorActual || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    let optHtml = '<option value="">ÔÇö Tipo de estudio ÔÇö</option>';
+    let optHtml = '<option value="">— Tipo de estudio —</option>';
     let encontrado = false;
     for (const opc of opcionesEstudio) {
       const opcNorm = opc.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
@@ -4798,12 +4798,12 @@ async function procesarExcelPacientesElectro(file) {
       optHtml += `<option value="${escapeHtml(opc)}"${sel}>${escapeHtml(opc)}</option>`;
     }
     if (valorActual && !encontrado)
-      optHtml += `<option value="${escapeHtml(valorActual)}" selected>${escapeHtml(valorActual)} ÔÜá´©Å</option>`;
+      optHtml += `<option value="${escapeHtml(valorActual)}" selected>${escapeHtml(valorActual)} ⚠️</option>`;
     return `<select data-row="${rowIdx}" data-campo="estudio" style="width:100%;padding:4px 6px;border:1px solid #d1d5db;border-radius:6px;font-size:0.82rem">${optHtml}</select>`;
   }
 
   function crearInputDiagnostico(valorActual, rowIdx) {
-    return `<div style="position:relative"><input type="text" data-row="${rowIdx}" data-campo="diagnostico" value="${escapeHtml(valorActual)}" placeholder="Buscar diagn├│stico..." autocomplete="off" style="width:100%;padding:4px 6px;border:1px solid #d1d5db;border-radius:6px;font-size:0.82rem"><div class="diag-suggestions-${rowIdx}" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:100;background:#fff;border:1px solid #d1d5db;border-radius:0 0 6px 6px;max-height:150px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,0.15)"></div></div>`;
+    return `<div style="position:relative"><input type="text" data-row="${rowIdx}" data-campo="diagnostico" value="${escapeHtml(valorActual)}" placeholder="Buscar diagnóstico..." autocomplete="off" style="width:100%;padding:4px 6px;border:1px solid #d1d5db;border-radius:6px;font-size:0.82rem"><div class="diag-suggestions-${rowIdx}" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:100;background:#fff;border:1px solid #d1d5db;border-radius:0 0 6px 6px;max-height:150px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,0.15)"></div></div>`;
   }
 
   async function validarDisponibilidadFila(ri) {
@@ -4813,13 +4813,13 @@ async function procesarExcelPacientesElectro(file) {
     const cell = document.querySelector(`.cell-disp-${ri}`);
     if (!cell) return;
     if (!p.estudio || !p.fecha || !p.hora) {
-      cell.innerHTML = '<span style="color:#6b7280;font-size:0.8rem">ÔÇö</span>';
+      cell.innerHTML = '<span style="color:#6b7280;font-size:0.8rem">—</span>';
       return;
     }
-    cell.innerHTML = '<span style="color:#6b7280;font-size:0.8rem">ÔÅ│</span>';
+    cell.innerHTML = '<span style="color:#6b7280;font-size:0.8rem">⏳</span>';
     try {
       const params = new URLSearchParams({ fecha: p.fecha, hora: parseHora12a24(p.hora), estudio: p.estudio });
-      // Si el estudio tiene duraci├│n variable, pasar la duraci├│n manual en minutos
+      // Si el estudio tiene duración variable, pasar la duración manual en minutos
       if (p.duracion_horas) {
         params.set('duracion_manual', Math.round(parseFloat(p.duracion_horas) * 60));
       }
@@ -4828,12 +4828,12 @@ async function procesarExcelPacientesElectro(file) {
       const cap  = info.capacidad || {};
       if (cap.hayDisponibilidad) {
         const cupos = cap.cuposaDisponibles ?? cap.cuposDisponibles ?? cap.cuposADisponibles ?? '';
-        cell.innerHTML = `<span style="color:#16a34a;font-size:0.8rem" title="${cupos} cupo(s)">Ô£ô OK</span>`;
+        cell.innerHTML = `<span style="color:#16a34a;font-size:0.8rem" title="${cupos} cupo(s)">✓ OK</span>`;
         p._equipoOk = true;
       } else {
         const prox = info.proximaDisponibilidad
-          ? ` Pr├│x: ${escapeHtml(info.proximaDisponibilidad)}` : '';
-        cell.innerHTML = `<span style="color:#dc2626;font-size:0.8rem" title="${escapeHtml(info.mensaje || 'Sin cupos')}">ÔÜá´©Å Sin cupo${prox ? '<br><small>' + prox + '</small>' : ''}</span>`;
+          ? ` Próx: ${escapeHtml(info.proximaDisponibilidad)}` : '';
+        cell.innerHTML = `<span style="color:#dc2626;font-size:0.8rem" title="${escapeHtml(info.mensaje || 'Sin cupos')}">⚠️ Sin cupo${prox ? '<br><small>' + prox + '</small>' : ''}</span>`;
         p._equipoOk = false;
       }
     } catch (_) {
@@ -4861,7 +4861,7 @@ async function procesarExcelPacientesElectro(file) {
       const cell = document.querySelector(`.cell-disp-${ri}`);
       if (!cell || !p?.fecha || !p?.hora || !p?.estudio) continue;
 
-      cell.innerHTML = '<span style="color:#6b7280;font-size:0.8rem">ÔÅ│</span>';
+      cell.innerHTML = '<span style="color:#6b7280;font-size:0.8rem">⏳</span>';
       try {
         const params = new URLSearchParams({ fecha: p.fecha, hora: parseHora12a24(p.hora), estudio: p.estudio });
         if (p.duracion_horas) params.set('duracion_manual', Math.round(parseFloat(p.duracion_horas) * 60));
@@ -4878,10 +4878,10 @@ async function procesarExcelPacientesElectro(file) {
 
         if (hayCupoReal) {
           reservasSimuladas.push({ inicio, fin });
-          cell.innerHTML = `<span style="color:#16a34a;font-size:0.8rem" title="Disponible considerando el archivo">Ô£ô OK</span>`;
+          cell.innerHTML = `<span style="color:#16a34a;font-size:0.8rem" title="Disponible considerando el archivo">✓ OK</span>`;
           p._equipoOk = true;
         } else {
-          cell.innerHTML = `<span style="color:#dc2626;font-size:0.8rem" title="Sin cupo real al cargar este archivo">ÔÜá´©Å Sin cupo</span>`;
+          cell.innerHTML = `<span style="color:#dc2626;font-size:0.8rem" title="Sin cupo real al cargar este archivo">⚠️ Sin cupo</span>`;
           p._equipoOk = false;
         }
       } catch (_) {
@@ -4897,7 +4897,7 @@ async function procesarExcelPacientesElectro(file) {
       const workbook = XLSX.read(ev.target.result, { type: 'array' });
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
       const rows  = XLSX.utils.sheet_to_json(sheet);
-      if (!rows.length) { errorDiv.textContent = 'El archivo est├í vac├¡o'; errorDiv.style.display = 'block'; return; }
+      if (!rows.length) { errorDiv.textContent = 'El archivo está vacío'; errorDiv.style.display = 'block'; return; }
 
       const headers  = Object.keys(rows[0]);
       const colFecha  = encontrarColumnaExcel(headers, ['fecha', 'date']);
@@ -4937,7 +4937,7 @@ async function procesarExcelPacientesElectro(file) {
         const idx = parsed.length - 1;
         const tr  = document.createElement('tr');
         tr.dataset.rowIdx = idx;
-        tr.innerHTML = `<td>${escapeHtml(fecha)}</td><td>${escapeHtml(hora)}</td><td>${escapeHtml(documento)}</td><td>${escapeHtml(nombres)}</td><td>${escapeHtml(apellidos)}</td><td>${crearSelectEstudio(estudio, idx)}</td>${crearCeldaDuracion(estudio, idx)}<td>${crearInputDiagnostico(diagnostico, idx)}</td><td>${escapeHtml(tel1)}</td><td>${escapeHtml(tel2)}</td><td class="cell-disp-${idx}"><span style="color:#6b7280;font-size:0.8rem">ÔÇö</span></td>`;
+        tr.innerHTML = `<td>${escapeHtml(fecha)}</td><td>${escapeHtml(hora)}</td><td>${escapeHtml(documento)}</td><td>${escapeHtml(nombres)}</td><td>${escapeHtml(apellidos)}</td><td>${crearSelectEstudio(estudio, idx)}</td>${crearCeldaDuracion(estudio, idx)}<td>${crearInputDiagnostico(diagnostico, idx)}</td><td>${escapeHtml(tel1)}</td><td>${escapeHtml(tel2)}</td><td class="cell-disp-${idx}"><span style="color:#6b7280;font-size:0.8rem">—</span></td>`;
         tbody.appendChild(tr);
       }
 
@@ -4955,14 +4955,14 @@ async function procesarExcelPacientesElectro(file) {
         }
       });
 
-      // Buscador de diagn├│sticos con debounce
+      // Buscador de diagnósticos con debounce
       let _diagTimer = null;
       let _duracionTimer = null;
       tbody.addEventListener('input', function(ev2) {
         const inp = ev2.target;
         if (inp.tagName !== 'INPUT') return;
         
-        // Handler para campo de duraci├│n
+        // Handler para campo de duración
         if (inp.dataset.campo === 'duracion') {
           const ri = parseInt(inp.dataset.row, 10);
           if (isNaN(ri)) return;
@@ -5004,7 +5004,7 @@ async function procesarExcelPacientesElectro(file) {
         }, 300);
       });
 
-      // Seleccionar diagn├│stico de las sugerencias
+      // Seleccionar diagnóstico de las sugerencias
       tbody.addEventListener('click', function(ev2) {
         const item = ev2.target.closest('[data-id]');
         if (!item || !item.closest('[class^="diag-suggestions-"]')) return;
@@ -5034,7 +5034,7 @@ async function procesarExcelPacientesElectro(file) {
       });
 
       if (!parsed.length) {
-        errorDiv.textContent = 'No se encontraron filas v├ílidas con los datos requeridos';
+        errorDiv.textContent = 'No se encontraron filas válidas con los datos requeridos';
         errorDiv.style.display = 'block';
         return;
       }
@@ -5044,7 +5044,7 @@ async function procesarExcelPacientesElectro(file) {
       btnConfirm.disabled = false;
       window._cargarPacientesElectroData = parsed;
 
-      // 2. Auto-buscar diagn├│sticos del Excel para pre-asignar ID
+      // 2. Auto-buscar diagnósticos del Excel para pre-asignar ID
       await Promise.all(parsed.map(async (p, ri) => {
         if (!p.diagnostico || p.diagnostico.length < 2) return;
         try {
@@ -5062,7 +5062,7 @@ async function procesarExcelPacientesElectro(file) {
         } catch (_) { console.warn('[cargarPacientesExcelData] Failed to search diagnostico:', p.diagnostico); }
       }));
 
-      // 2.5. Actualizar celdas de duraci├│n (muestra input para estudios variables)
+      // 2.5. Actualizar celdas de duración (muestra input para estudios variables)
       await Promise.all(parsed.map((_, ri) => actualizarCeldaDuracion(ri)));
 
       // 3. Validar disponibilidad de equipos en paralelo
@@ -5089,10 +5089,10 @@ async function confirmarCargarPacientesElectro() {
   for (let i = 0; i < data.length; i++) {
     const p = data[i];
     
-    // Validar duraci├│n requerida para estudios variables
+    // Validar duración requerida para estudios variables
     const durInfo = window._duracionCacheElectro?.[p.estudio];
     if (durInfo && durInfo.esVariable && !p.duracion_horas) {
-      errores.push(`Fila ${i+1}: Duraci├│n requerida para "${p.estudio}"`);
+      errores.push(`Fila ${i+1}: Duración requerida para "${p.estudio}"`);
       continue;
     }
     
@@ -5104,7 +5104,7 @@ async function confirmarCargarPacientesElectro() {
       if (!dataP.ok && !dataP.id) { errores.push(`Fila ${i+1}: Error creando paciente`); continue; }
       const pacienteId = dataP.id;
 
-      // Calcular duraci├│n en minutos
+      // Calcular duración en minutos
       let duracionMinutos = null;
       if (p.duracion_horas) {
         duracionMinutos = Math.round(parseFloat(p.duracion_horas) * 60);
@@ -5118,7 +5118,7 @@ async function confirmarCargarPacientesElectro() {
         hora: parseHora12a24(p.hora),
         telefono: p.tel1 || null,
         telefono2: p.tel2 || null,
-        estudio: p.estudio || 'PSG B├ísica',
+        estudio: p.estudio || 'PSG Básica',
         entidad: p.entidad || null,
         diagnostico_id: p.diagnostico_id || null,
         estado: 'Programado',
@@ -5181,7 +5181,7 @@ async function cargarUcqn() {
         <span class="estado-badge-ucqn estado-${String(r.estado || '').toLowerCase()}">${escapeHtml(r.estado || '-')}</span>
         ${canEdit ? (
           r.estado === 'PENDIENTE'
-            ? `<button class="btn-primary btn-ucqn-estado" data-ucqn-id="${r.id}" data-next-estado="LEIDO" style="margin-left:8px;padding:4px 10px;font-size:0.78rem">Marcar le├¡do</button>`
+            ? `<button class="btn-primary btn-ucqn-estado" data-ucqn-id="${r.id}" data-next-estado="LEIDO" style="margin-left:8px;padding:4px 10px;font-size:0.78rem">Marcar leído</button>`
             : r.estado === 'LEIDO'
               ? `<button class="btn-primary btn-ucqn-estado" data-ucqn-id="${r.id}" data-next-estado="FACTURADO" style="margin-left:8px;padding:4px 10px;font-size:0.78rem">Facturar</button>`
               : ''
@@ -5224,12 +5224,12 @@ async function initUcqn() {
 }
 
 // ========== DASHBOARD (Admin solo) ==========
-// ========== AGENDA ELECTRODIAGN├ôSTICO =========
+// ========== AGENDA ELECTRODIAGNÓSTICO =========
 async function initElectro() {
   const hoy = hoyColombiaISO();
   $('electroFecha').value = hoy;
   
-  // Cargar estudios desde BD para el select y las pesta├▒as
+  // Cargar estudios desde BD para el select y las pestañas
   await cargarEstudiosEnSelect('electroEstudio');
   initFiltroEstudiosElectro(_estudiosCache || []);
   
@@ -5240,12 +5240,12 @@ async function initElectro() {
   // Generar intervalos de hora (texto libre con formato HH:MM AM/PM)
   // No se genera select, el usuario escribe la hora directamente
   
-  // Mostrar usuario actual que programar├í
+  // Mostrar usuario actual que programará
   if (currentUser) {
     $('electroProgramadoPor').textContent = currentUser.nombre || currentUser.usuario || '-';
   }
   
-  // Cargar equipos SOLO para el modal (para seleccionar despu├®s)
+  // Cargar equipos SOLO para el modal (para seleccionar después)
   try {
     const res = await apiFetch('/api/equipos-electro');
     const equipos = await res.json();
@@ -5269,7 +5269,7 @@ async function initElectro() {
     console.error('Error cargando equipos para modal:', e);
   }
   
-  // Event listener para cambiar fecha y cargar citas autom├íticamente
+  // Event listener para cambiar fecha y cargar citas automáticamente
   if ($('electroFecha')) $('electroFecha').onchange = async () => {
     await cargarCitasElectro();
     await checkEquiposDisponibilidad();
@@ -5293,12 +5293,12 @@ async function initElectro() {
     await checkEquiposDisponibilidad();
   };
   
-  // Event listener para quitar el border rojo cuando se selecciona estudio y auto-completar duraci├│n
+  // Event listener para quitar el border rojo cuando se selecciona estudio y auto-completar duración
   $('electroEstudio')?.addEventListener('change', async (e) => {
     if (e.target.value) {
       e.target.style.borderColor = '';
       
-      // Obtener duraci├│n del estudio
+      // Obtener duración del estudio
       try {
         const res = await apiFetch(`/api/estudios/duracion?nombre=${encodeURIComponent(e.target.value)}`);
         const data = await res.json();
@@ -5308,38 +5308,38 @@ async function initElectro() {
         
         if (data.ok) {
           if (data.esVariable) {
-            // Estudio variable: mostrar campo para que usuario ingrese duraci├│n en HORAS
+            // Estudio variable: mostrar campo para que usuario ingrese duración en HORAS
             duracionCol.style.display = '';
             durationInput.value = '';
             durationInput.min = Math.round(data.duracion_min / 60);  // Convertir a horas
             durationInput.max = Math.round(data.duracion_max / 60);  // Convertir a horas
-            durationInput.placeholder = `ÔÜá´©Å REQUERIDO: Duraci├│n (${Math.round(data.duracion_min / 60)}-${Math.round(data.duracion_max / 60)} horas)`;
+            durationInput.placeholder = `⚠️ REQUERIDO: Duración (${Math.round(data.duracion_min / 60)}-${Math.round(data.duracion_max / 60)} horas)`;
             durationInput.style.borderColor = ''; // Reset any previous error
-            selectedEstudioDuracion = null; // No hay duraci├│n predeterminada
+            selectedEstudioDuracion = null; // No hay duración predeterminada
           } else {
-            // Estudio fijo: guardar duraci├│n y ocultarla
+            // Estudio fijo: guardar duración y ocultarla
             duracionCol.style.display = 'none';
             durationInput.value = '';
-            selectedEstudioDuracion = data.duracion_minutos; // Guardar duraci├│n en minutos
+            selectedEstudioDuracion = data.duracion_minutos; // Guardar duración en minutos
           }
         } else if (esMonitorizacionVideoRadio(e.target.value)) {
-          // Fallback: este estudio siempre debe pedir duraci├│n manual.
+          // Fallback: este estudio siempre debe pedir duración manual.
           duracionCol.style.display = '';
           durationInput.value = '';
           durationInput.min = 1;
           durationInput.max = 168;
-          durationInput.placeholder = 'ÔÜá´©Å REQUERIDO: Duraci├│n (1-168 horas)';
+          durationInput.placeholder = '⚠️ REQUERIDO: Duración (1-168 horas)';
           durationInput.style.borderColor = '';
           selectedEstudioDuracion = null;
         }
       } catch (e) {
-        console.error('Error obteniendo duraci├│n:', e);
+        console.error('Error obteniendo duración:', e);
         if (esMonitorizacionVideoRadio(e.target.value)) {
           duracionCol.style.display = '';
           durationInput.value = '';
           durationInput.min = 1;
           durationInput.max = 168;
-          durationInput.placeholder = 'ÔÜá´©Å REQUERIDO: Duraci├│n (1-168 horas)';
+          durationInput.placeholder = '⚠️ REQUERIDO: Duración (1-168 horas)';
           durationInput.style.borderColor = '';
           selectedEstudioDuracion = null;
         } else {
@@ -5352,7 +5352,7 @@ async function initElectro() {
     await checkEquiposDisponibilidad();
   });
 
-  // Event listener para cambio en hora (type=time dispara 'change' al completar la selecci├│n)
+  // Event listener para cambio en hora (type=time dispara 'change' al completar la selección)
   const _onElectroHoraChange = async () => {
     const v = $('electroHora').value;
     if (v) await checkEquiposDisponibilidad();
@@ -5360,38 +5360,38 @@ async function initElectro() {
   $('electroHora')?.addEventListener('change', _onElectroHoraChange);
   $('electroHora')?.addEventListener('input', _onElectroHoraChange);
 
-  // Event listener para cambio en duraci├│n
+  // Event listener para cambio en duración
   $('electroDuracion')?.addEventListener('change', async () => {
     await checkEquiposDisponibilidad();
   });
   
-  // Event listener para autocompletado de diagn├│sticos (b├║squeda din├ímica, sin opciones iniciales)
+  // Event listener para autocompletado de diagnósticos (búsqueda dinámica, sin opciones iniciales)
   $('electroDiagnostico')?.addEventListener('input', debounce(buscarDiagnosticosElectro, 300));
   
   // Validadores en tiempo real
   // Nombre: Solo letras y espacios
   const _sanitizarNombreElectro = (e) => {
     const valor = e.target.value;
-    if (valor && !/^[a-zA-Z├í├®├¡├│├║├ü├ë├ì├ô├Ü├▒├æ\s]*$/.test(valor)) {
-      e.target.value = valor.replace(/[^a-zA-Z├í├®├¡├│├║├ü├ë├ì├ô├Ü├▒├æ\s]/g, '');
+    if (valor && !/^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]*$/.test(valor)) {
+      e.target.value = valor.replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑ\s]/g, '');
     }
     e.target.style.borderColor = '';
   };
   $('electroPacienteNombres')?.addEventListener('input', _sanitizarNombreElectro);
   $('electroPacienteApellidos')?.addEventListener('input', _sanitizarNombreElectro);
   
-  // Documento: Solo n├║meros + buscar paciente
+  // Documento: Solo números + buscar paciente
   $('electroDocumento')?.addEventListener('input', debounce((e) => {
     const valor = e.target.value;
     if (valor && !/^\d*$/.test(valor)) {
-      // Remover caracteres no num├®ricos
+      // Remover caracteres no numéricos
       e.target.value = valor.replace(/\D/g, '');
     }
     // Buscar paciente por documento
     buscarPacientePorDocumento();
   }, 300));
   
-  // Tel├®fono: Solo n├║meros, m├íximo 10 d├¡gitos
+  // Teléfono: Solo números, máximo 10 dígitos
   const limitarTel = (e) => {
     e.target.value = e.target.value.replace(/\D/g, '').slice(0, 10);
   };
@@ -5401,7 +5401,7 @@ async function initElectro() {
   // tecnico_electro y doctor NO pueden crear citas
   const canCreateElectro = tienePermiso('electro.crear');
 
-  // Bot├│n "Nuevo Estudio" y modal
+  // Botón "Nuevo Estudio" y modal
   const btnNuevoEstudio = $('btnNuevoEstudioElectro');
   if (btnNuevoEstudio) btnNuevoEstudio.style.display = canCreateElectro ? 'inline-flex' : 'none';
   if (canCreateElectro) {
@@ -5426,7 +5426,7 @@ async function initElectro() {
     esperaBtnSidebar.style.display = 'none';
   }
 
-  // Bot├│n aviso al doctor en m├│dulo electro (para admin_electro y tecnico_electro)
+  // Botón aviso al doctor en módulo electro (para admin_electro y tecnico_electro)
   const canAvisarElectro = tienePermiso('electro.aviso_doctor');
   const avisoBtnElectro = $('btnAvisarDoctorElectro');
   if (avisoBtnElectro) {
@@ -5463,7 +5463,7 @@ async function initElectro() {
       return;
     }
     
-    // Si el equipo no cambi├│, no hacer nada
+    // Si el equipo no cambió, no hacer nada
     if (String(nuevoEquipoId) === String(equipoIdActual)) return;
     
     try {
@@ -5514,7 +5514,7 @@ async function initElectro() {
     
     // No procesar cambios si estamos inicializando el modal
     if (isInitializingElectroModal) {
-      console.log('[MODAL_ESTADO_CHANGE] Ignorando cambio durante inicializaci├│n del modal');
+      console.log('[MODAL_ESTADO_CHANGE] Ignorando cambio durante inicialización del modal');
       return;
     }
     
@@ -5593,7 +5593,7 @@ async function initElectro() {
     };
     $('btnCancelarEditarPaciente').onclick = () => { editPanel.style.display = 'none'; };
     $('btnGuardarEditarPaciente').onclick = () => guardarEdicionPaciente();
-    // Solo d├¡gitos y max 10 en el tel├®fono del panel de edici├│n
+    // Solo dígitos y max 10 en el teléfono del panel de edición
     $('editTelefonoPaciente').addEventListener('input', (e) => {
       e.target.value = e.target.value.replace(/\D/g, '').slice(0, 10);
     });
@@ -5614,7 +5614,7 @@ async function initElectro() {
     $('modalConfirmarEliminarCita').classList.add('hidden');
   });
 
-  // Event listeners para modales de reprogramaci├│n y adelanto
+  // Event listeners para modales de reprogramación y adelanto
   const btnConfRep = $('btnConfirmarReprogramar');
   const btnCancelRep = $('btnCancelarReprogramar');
   const cerrarRep = $('cerrarModalReprogramar');
@@ -5651,7 +5651,7 @@ async function initElectro() {
     }
   });
 
-  // Las pesta├▒as de estudios se generan din├ímicamente en generarTabsElectro() con sus propios event listeners
+  // Las pestañas de estudios se generan dinámicamente en generarTabsElectro() con sus propios event listeners
 
   // Configurar listeners de socket para ver cambios en tiempo real
   if (window.socket && !window.socketElectroListenerAdded) {
@@ -5670,7 +5670,7 @@ async function initElectro() {
     window.socketElectroListenerAdded = true;
   }
 
-  // Bot├│n "Cargar Pacientes" (solo admin_electro, admin, recepcion)
+  // Botón "Cargar Pacientes" (solo admin_electro, admin, recepcion)
   const btnCargarPacElectro = $('btnCargarPacientesElectro');
   if (btnCargarPacElectro && canCreateElectro) {
     btnCargarPacElectro.style.display = '';
@@ -5701,7 +5701,7 @@ async function initElectro() {
     cargarCitasElectro();
   }, 30000);
 
-  // ÔöÇÔöÇ Sidebar navegaci├│n por p├íginas ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+  // ÔöÇÔöÇ Sidebar navegación por páginas ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
   document.querySelectorAll('#view-electro .electro-page-btn').forEach(btn => {
     btn.addEventListener('click', function() {
       const page = this.dataset.page;
@@ -5745,14 +5745,14 @@ async function checkEquiposDisponibilidad() {
   }
 
   try {
-    // Determinar duraci├│n en MINUTOS
+    // Determinar duración en MINUTOS
     let duracionMinutos = null;
     
     if (duracionHoras) {
-      // Usuario ingres├│ duraci├│n (Monitorizaci├│n): convertir HORAS a MINUTOS
+      // Usuario ingresó duración (Monitorización): convertir HORAS a MINUTOS
       duracionMinutos = Math.round(parseFloat(duracionHoras) * 60);
     } else if (selectedEstudioDuracion) {
-      // Estudio fijo con duraci├│n predeterminada (ya en minutos)
+      // Estudio fijo con duración predeterminada (ya en minutos)
       duracionMinutos = selectedEstudioDuracion;
     }
 
@@ -5827,7 +5827,7 @@ async function checkEquiposDisponibilidad() {
       const barraId = enEstudio ? `cupo-barra-${i}` : '';
       const tiempoId = enEstudio ? `cupo-tiempo-${i}` : '';
       const barraHtml = enEstudio ? `
-        <div class="cupo-mini-barra-wrap" title="${fmtHora(cita.horaInicioReal)} ÔåÆ ${fmtHora(cita.horaFin)}">
+        <div class="cupo-mini-barra-wrap" title="${fmtHora(cita.horaInicioReal)} → ${fmtHora(cita.horaFin)}">
           <div class="cupo-mini-barra" id="${barraId}" style="width:0%"></div>
         </div>
         <div class="cupo-tiempo" id="${tiempoId}">00:00</div>` : (ocupado ? `<div class="cupo-mini-barra-wrap"><div class="cupo-mini-barra" style="width:100%;opacity:0.3"></div></div>` : '');
@@ -5841,7 +5841,7 @@ async function checkEquiposDisponibilidad() {
     }
     html += `</div>`;
 
-    // Iniciar actualizaci├│n de barras de progreso (cada segundo)
+    // Iniciar actualización de barras de progreso (cada segundo)
     if (intervaloProgresoPanel) clearInterval(intervaloProgresoPanel);
     if (citasEnEstudio.length > 0) {
       const actualizarBarras = () => {
@@ -5884,17 +5884,17 @@ async function checkEquiposDisponibilidad() {
     if (data.citasEnRango && data.citasEnRango.length > 0) {
       html += `<div class="cupos-estudios"><div class="cupos-estudios-title">Estudios en este rango</div>`;
       data.citasEnRango.forEach(cita => {
-        html += `<div class="cupos-estudio-item">${cita.estudio || 'Sin estudio'} &nbsp;<span style="color:#94a3b8">${fmtFecha(cita.fechaInicio)} ${fmtHora(cita.horaInicio)} ÔåÆ ${fmtFecha(cita.fechaFin)} ${fmtHora(cita.horaFin)}</span></div>`;
+        html += `<div class="cupos-estudio-item">${cita.estudio || 'Sin estudio'} &nbsp;<span style="color:#94a3b8">${fmtFecha(cita.fechaInicio)} ${fmtHora(cita.horaInicio)} → ${fmtFecha(cita.fechaFin)} ${fmtHora(cita.horaFin)}</span></div>`;
       });
       html += `</div>`;
     }
 
-    // Pr├│xima disponibilidad
+    // Próxima disponibilidad
     if (!esDisponible && data.proximaDisponibilidad) {
       html += `
         <div class="cupos-proxima">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="flex-shrink:0"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm.5 5H11v6l5.25 3.15.75-1.23-4.5-2.67V7z"/></svg>
-          <span>Pr├│xima disponibilidad: <strong>${data.proximaDisponibilidad}</strong></span>
+          <span>Próxima disponibilidad: <strong>${data.proximaDisponibilidad}</strong></span>
         </div>`;
     }
 
@@ -5906,7 +5906,7 @@ async function checkEquiposDisponibilidad() {
   }
 }
 
-// Buscar paciente por documento y auto-completar nombre y tel├®fono
+// Buscar paciente por documento y auto-completar nombre y teléfono
 async function buscarPacientePorDocumento() {
   // Eliminado autocompletado por documento. No hacer nada.
 }
@@ -5938,7 +5938,7 @@ async function buscarDiagnosticosElectro() {
   }
 }
 
-// Listener para cuando se selecciona un diagn├│stico del datalist
+// Listener para cuando se selecciona un diagnóstico del datalist
 $('electroDiagnostico').addEventListener('input', function() {
   const selectedValue = this.value.trim();
   if (selectedValue) {
@@ -6141,10 +6141,10 @@ async function cargarCitasElectro() {
 
     renderCitasElectroKanban(citasFiltradas);
     
-    // Actualizar informaci├│n de usuario (del primer registro filtrado)
+    // Actualizar información de usuario (del primer registro filtrado)
     if (citasFiltradas.length > 0) {
       $('electroUsuarioProgramo').textContent = citasFiltradas[0].programado_por_nombre || citasFiltradas[0].usuario_programo || '-';
-      $('electroUsuarioEdito').textContent = citasFiltradas[0].editado_por_nombre || citasFiltradas[0].usuario_edito || citasFiltradas[0].programado_por_nombre || citasFiltradas[0].usuario_programo || 'Quien program├│';
+      $('electroUsuarioEdito').textContent = citasFiltradas[0].editado_por_nombre || citasFiltradas[0].usuario_edito || citasFiltradas[0].programado_por_nombre || citasFiltradas[0].usuario_programo || 'Quien programó';
     }
     
     // Refrescar panel de disponibilidad de equipos
@@ -6243,7 +6243,7 @@ function renderCitaElectroRow(tbody, c) {
   tr.style.cursor = 'pointer';
   tr.dataset.citaId = String(c.id || '');
   
-  const equipoDisplay = c.equipo_nombre ? escapeHtml(c.equipo_nombre) : (c.equipo_id ? `Equipo ${c.equipo_id}` : '<span style="color:#9ca3af">ÔÇö</span>');
+  const equipoDisplay = c.equipo_nombre ? escapeHtml(c.equipo_nombre) : (c.equipo_id ? `Equipo ${c.equipo_id}` : '<span style="color:#9ca3af">—</span>');
   
   // Mostrar hora_fin con fecha SOLO si cruza medianoche
   let horaFinDisplay = formatearHora(c.hora_fin);
@@ -6252,8 +6252,8 @@ function renderCitaElectroRow(tbody, c) {
     horaFinDisplay = `${formatearHora(c.hora_fin)} <span style="color:#dc2626;font-size:0.72rem;font-weight:600;">(${fechaFormateada})</span>`;
   }
   
-  // Formatear duraci├│n
-  let duracionDisplay = '<span style="color:#9ca3af">ÔÇö</span>';
+  // Formatear duración
+  let duracionDisplay = '<span style="color:#9ca3af">—</span>';
   if (c.duracion_minutos) {
     const dHrs = Math.floor(c.duracion_minutos / 60);
     const dMin = c.duracion_minutos % 60;
@@ -6270,14 +6270,14 @@ function renderCitaElectroRow(tbody, c) {
     }
   }
   
-  // Colorear fila seg├║n estado
+  // Colorear fila según estado
   const estadoClasses = {
     'En Sala': 'estado-en-sala',
     'En Estudio': 'estado-en-estudio',
     'Pausado': 'estado-pausado',
     'Completado': 'estado-completado',
     'Cancelado': 'estado-cancelado',
-    'No Asisti├│': 'estado-no-asistio'
+    'No Asistió': 'estado-no-asistio'
   };
   if (estadoClasses[c.estado]) tr.classList.add(estadoClasses[c.estado]);
   
@@ -6304,14 +6304,14 @@ function renderCitaElectroRow(tbody, c) {
     if (!tienePermiso('electro.editar') && !tienePermiso('electro.cambiar_estado')) return;
     if (c.estado === 'Completado') {
       if (!tienePermiso('electro.eliminar')) {
-        showToast('Esta cita ya est├í completada - No se puede modificar', 'info');
+        showToast('Esta cita ya está completada - No se puede modificar', 'info');
         return;
       }
     }
     abrirModalDetallesCita(c);
   });
   
-  // Cambiar apariencia visual si est├í completado
+  // Cambiar apariencia visual si está completado
   if (c.estado === 'Completado') {
     tr.style.opacity = '0.55';
     tr.style.cursor = tienePermiso('electro.eliminar') ? 'pointer' : 'not-allowed';
@@ -6323,25 +6323,25 @@ function renderCitaElectroRow(tbody, c) {
 /**
  * Valida que un nombre solo contenga letras y espacios
  * @param {string} nombre - El nombre a validar
- * @returns {boolean} true si es v├ílido
+ * @returns {boolean} true si es válido
  */
 function validarNombre(nombre) {
-  return /^[a-zA-Z├í├®├¡├│├║├ü├ë├ì├ô├Ü├▒├æ\s]+$/.test(nombre);
+  return /^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$/.test(nombre);
 }
 
 /**
- * Valida que un documento solo contenga n├║meros
+ * Valida que un documento solo contenga números
  * @param {string} doc - El documento a validar
- * @returns {boolean} true si es v├ílido
+ * @returns {boolean} true si es válido
  */
 function validarDocumento(doc) {
   return /^\d+$/.test(doc);
 }
 
 /**
- * Valida que un tel├®fono tenga exactamente 10 d├¡gitos
- * @param {string} telefono - El tel├®fono a validar
- * @returns {boolean} true si es v├ílido
+ * Valida que un teléfono tenga exactamente 10 dígitos
+ * @param {string} telefono - El teléfono a validar
+ * @returns {boolean} true si es válido
  */
 function validarTelefono(telefono) {
   return /^\d{10}$/.test(telefono);
@@ -6379,13 +6379,13 @@ async function crearCitaElectro() {
   
   // Validar nombre (solo letras y espacios)
   if (!validarNombre(electroNombres)) {
-    showToast('Los nombres no pueden contener n├║meros o caracteres especiales', 'error');
+    showToast('Los nombres no pueden contener números o caracteres especiales', 'error');
     $('electroPacienteNombres').focus();
     $('electroPacienteNombres').style.borderColor = '#dc2626';
     return;
   }
   if (!validarNombre(electroApellidos)) {
-    showToast('Los apellidos no pueden contener n├║meros o caracteres especiales', 'error');
+    showToast('Los apellidos no pueden contener números o caracteres especiales', 'error');
     $('electroPacienteApellidos').focus();
     $('electroPacienteApellidos').style.borderColor = '#dc2626';
     return;
@@ -6393,54 +6393,54 @@ async function crearCitaElectro() {
   $('electroPacienteNombres').style.borderColor = '';
   $('electroPacienteApellidos').style.borderColor = '';
   
-  // Validar documento (solo n├║meros)
+  // Validar documento (solo números)
   if (!validarDocumento(doc)) {
-    showToast('El documento solo puede contener n├║meros', 'error');
+    showToast('El documento solo puede contener números', 'error');
     $('electroDocumento').focus();
     $('electroDocumento').style.borderColor = '#dc2626';
     return;
   }
   $('electroDocumento').style.borderColor = '';
   
-  // Validar tel├®fono (exactamente 10 d├¡gitos)
+  // Validar teléfono (exactamente 10 dígitos)
   if (!validarTelefono(telefono)) {
-    showToast('El tel├®fono debe tener exactamente 10 d├¡gitos', 'error');
+    showToast('El teléfono debe tener exactamente 10 dígitos', 'error');
     $('electroTelefono').focus();
     $('electroTelefono').style.borderColor = '#dc2626';
     return;
   }
   $('electroTelefono').style.borderColor = '';
   
-  // Validar tel├®fono 2 (exactamente 10 d├¡gitos)
+  // Validar teléfono 2 (exactamente 10 dígitos)
   if (!validarTelefono(telefono2)) {
-    showToast('El tel├®fono 2 debe tener exactamente 10 d├¡gitos', 'error');
+    showToast('El teléfono 2 debe tener exactamente 10 dígitos', 'error');
     $('electroTelefono2').focus();
     $('electroTelefono2').style.borderColor = '#dc2626';
     return;
   }
   $('electroTelefono2').style.borderColor = '';
 
-  // Tel├®fono 2 no puede ser igual al 1
+  // Teléfono 2 no puede ser igual al 1
   if (telefono === telefono2) {
-    showToast('El Tel├®fono 2 no puede ser igual al Tel├®fono 1', 'error');
+    showToast('El Teléfono 2 no puede ser igual al Teléfono 1', 'error');
     $('electroTelefono2').focus();
     $('electroTelefono2').style.borderColor = '#dc2626';
     return;
   }
   
-  // Validar duraci├│n si es Monitorizaci├│n EEG por Video y Radio
+  // Validar duración si es Monitorización EEG por Video y Radio
   if (esMonitorizacionVideoRadio(estudio) && !duracion) {
-    showToast('Debe especificar la duraci├│n del estudio (en horas)', 'error');
+    showToast('Debe especificar la duración del estudio (en horas)', 'error');
     $('electroDuracion').focus();
     $('electroDuracion').style.borderColor = '#dc2626';
     return;
   }
   
-  // Validar que duraci├│n sea un n├║mero v├ílido si es Monitorizaci├│n
+  // Validar que duración sea un número válido si es Monitorización
   if (esMonitorizacionVideoRadio(estudio) && duracion) {
     const duracionNum = parseFloat(duracion);
     if (isNaN(duracionNum) || duracionNum < 1 || duracionNum > 168) {
-      showToast('La duraci├│n debe estar entre 1 y 168 horas', 'error');
+      showToast('La duración debe estar entre 1 y 168 horas', 'error');
       $('electroDuracion').focus();
       $('electroDuracion').style.borderColor = '#dc2626';
       return;
@@ -6461,14 +6461,14 @@ async function crearCitaElectro() {
     pacienteId = dataP.id;
   }
   
-  // Buscar ID del diagn├│stico si fue seleccionado
+  // Buscar ID del diagnóstico si fue seleccionado
   let diagnosticoId = selectedDiagnosticoElectroId;
   if (!diagnosticoId && diagnostico) {
-    // Fallback: buscar la opci├│n que coincida con el valor ingresado
+    // Fallback: buscar la opción que coincida con el valor ingresado
     const dl = $('diagnosticosListElectro');
     const opciones = dl.querySelectorAll('option');
     for (let opt of opciones) {
-      // Buscar coincidia exacta o parcial con el value o el dataset.codigo
+      // Buscar coincidía exacta o parcial con el value o el dataset.codigo
       if (opt.value === diagnostico || opt.dataset.codigo === diagnostico || opt.dataset.nombre === diagnostico) {
         diagnosticoId = parseInt(opt.dataset.id, 10);
         break;
@@ -6476,10 +6476,10 @@ async function crearCitaElectro() {
     }
   }
   
-  // Nota: El equipo se selecciona despu├®s en el modal cuando se inicia el estudio
+  // Nota: El equipo se selecciona después en el modal cuando se inicia el estudio
   let equipoId = null;
 
-  // Mostrar spinner en el bot├│n
+  // Mostrar spinner en el botón
   const btnCrear = $('crearCitaElectro');
   setLoading(btnCrear, true, 'Guardando...');
 
@@ -6496,14 +6496,14 @@ async function crearCitaElectro() {
       programado_por_nombre: currentUser ? (currentUser.nombre || currentUser.usuario) : 'Sistema'
     };
     
-    // Determinar duraci├│n en minutos
+    // Determinar duración en minutos
     let duracionMinutos = null;
     
     if (duracion) {
-      // Usuario ingres├│ duraci├│n (es Monitorizaci├│n): convertir HORAS a MINUTOS
+      // Usuario ingresó duración (es Monitorización): convertir HORAS a MINUTOS
       duracionMinutos = Math.round(parseFloat(duracion) * 60);
     } else if (selectedEstudioDuracion) {
-      // Estudio fijo con duraci├│n predeterminada (ya en minutos)
+      // Estudio fijo con duración predeterminada (ya en minutos)
       duracionMinutos = selectedEstudioDuracion;
     }
     
@@ -6511,7 +6511,7 @@ async function crearCitaElectro() {
       body.duracion = duracionMinutos;
     }
     
-    // Agregar diagn├│stico si fue seleccionado
+    // Agregar diagnóstico si fue seleccionado
     if (diagnosticoId) {
       body.diagnostico_id = diagnosticoId;
     }
@@ -6556,20 +6556,20 @@ async function crearCitaElectro() {
   }
 }
 
-// ========== M├ôDULO DE PERMISOS (solo superadmin) ==========
+// ========== MÓDULO DE PERMISOS (solo superadmin) ==========
 
-// Definici├│n completa de todos los permisos del sistema
+// Definición completa de todos los permisos del sistema
 const PERMISOS_DEFS = [
-  // ÔöÇÔöÇ Acceso a M├│dulos ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
-  { key: 'modulo.recibos',          label: 'M├│dulo: Recibos',                     grupo: 'Acceso a M├│dulos' },
-  { key: 'modulo.agenda_medica',    label: 'M├│dulo: Agenda M├®dica',               grupo: 'Acceso a M├│dulos' },
-  { key: 'modulo.electrodiag',      label: 'M├│dulo: Electrodiagn├│stico',          grupo: 'Acceso a M├│dulos' },
-  { key: 'modulo.ucqn',             label: 'M├│dulo: UCQN',                         grupo: 'Acceso a M├│dulos' },
-  { key: 'modulo.dashboard',        label: 'M├│dulo: Dashboard de Citas',          grupo: 'Acceso a M├│dulos' },
-  { key: 'modulo.usuarios',         label: 'M├│dulo: Gesti├│n de Usuarios',         grupo: 'Acceso a M├│dulos' },
-  { key: 'modulo.diagnosticos',     label: 'M├│dulo: Diagn├│sticos',                grupo: 'Acceso a M├│dulos' },
-  { key: 'modulo.gestion_datos',    label: 'M├│dulo: Gesti├│n de Datos',            grupo: 'Acceso a M├│dulos' },
-  { key: 'modulo.monitor_equipos',  label: 'M├│dulo: Monitor de Equipos',           grupo: 'Acceso a M├│dulos' },
+  // ÔöÇÔöÇ Acceso a Módulos ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+  { key: 'modulo.recibos',          label: 'Módulo: Recibos',                     grupo: 'Acceso a Módulos' },
+  { key: 'modulo.agenda_medica',    label: 'Módulo: Agenda Médica',               grupo: 'Acceso a Módulos' },
+  { key: 'modulo.electrodiag',      label: 'Módulo: Electrodiagnóstico',          grupo: 'Acceso a Módulos' },
+  { key: 'modulo.ucqn',             label: 'Módulo: UCQN',                         grupo: 'Acceso a Módulos' },
+  { key: 'modulo.dashboard',        label: 'Módulo: Dashboard de Citas',          grupo: 'Acceso a Módulos' },
+  { key: 'modulo.usuarios',         label: 'Módulo: Gestión de Usuarios',         grupo: 'Acceso a Módulos' },
+  { key: 'modulo.diagnosticos',     label: 'Módulo: Diagnósticos',                grupo: 'Acceso a Módulos' },
+  { key: 'modulo.gestion_datos',    label: 'Módulo: Gestión de Datos',            grupo: 'Acceso a Módulos' },
+  { key: 'modulo.monitor_equipos',  label: 'Módulo: Monitor de Equipos',           grupo: 'Acceso a Módulos' },
   // ÔöÇÔöÇ Recibos ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
   { key: 'recibos.crear',           label: 'Recibos: Crear nuevo recibo',         grupo: 'Recibos' },
   { key: 'recibos.ver',             label: 'Recibos: Ver lista de recibos',       grupo: 'Recibos' },
@@ -6579,52 +6579,52 @@ const PERMISOS_DEFS = [
   { key: 'recibos.exportar',        label: 'Recibos: Exportar Excel / PDF',       grupo: 'Recibos' },
   { key: 'recibos.gestionar_servicios', label: 'Recibos: Gestionar servicios',    grupo: 'Recibos' },
   { key: 'recibos.resetear',        label: 'Recibos: Resetear consecutivos',      grupo: 'Recibos' },
-  // ÔöÇÔöÇ Agenda M├®dica ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
-  { key: 'agenda.ver',              label: 'Agenda: Ver turnos del d├¡a',          grupo: 'Agenda M├®dica' },
-  { key: 'agenda.crear',            label: 'Agenda: Crear / Programar citas',     grupo: 'Agenda M├®dica' },
-  { key: 'agenda.editar',           label: 'Agenda: Editar citas',                grupo: 'Agenda M├®dica' },
-  { key: 'agenda.eliminar',         label: 'Agenda: Eliminar citas',              grupo: 'Agenda M├®dica' },
-  { key: 'agenda.cambiar_estado',   label: 'Agenda: Cambiar estado de turno',     grupo: 'Agenda M├®dica' },
-  { key: 'agenda.llamar_siguiente', label: 'Agenda: Llamar siguiente paciente',   grupo: 'Agenda M├®dica' },
-  { key: 'agenda.marcar_atendido',  label: 'Agenda: Marcar como atendido',        grupo: 'Agenda M├®dica' },
-  { key: 'agenda.aviso_doctor',     label: 'Agenda: Enviar aviso al doctor',      grupo: 'Agenda M├®dica' },
-  { key: 'agenda.disponibilidad',   label: 'Agenda: Programar disponibilidad',    grupo: 'Agenda M├®dica' },
-  // ÔöÇÔöÇ Electrodiagn├│stico ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
-  { key: 'electro.ver',             label: 'Electro: Ver citas',                  grupo: 'Electrodiagn├│stico' },
-  { key: 'electro.crear',           label: 'Electro: Crear cita',                grupo: 'Electrodiagn├│stico' },
-  { key: 'electro.editar',          label: 'Electro: Editar cita',                grupo: 'Electrodiagn├│stico' },
-  { key: 'electro.eliminar',        label: 'Electro: Eliminar cita',              grupo: 'Electrodiagn├│stico' },
-  { key: 'electro.cambiar_estado',  label: 'Electro: Cambiar estado de cita',     grupo: 'Electrodiagn├│stico' },
-  { key: 'electro.subir_archivo',   label: 'Electro: Subir archivos de estudios', grupo: 'Electrodiagn├│stico' },
-  { key: 'electro.ver_archivo',     label: 'Electro: Ver/descargar archivos',     grupo: 'Electrodiagn├│stico' },
-  { key: 'electro.aviso_doctor',    label: 'Electro: Enviar aviso al doctor',     grupo: 'Electrodiagn├│stico' },
+  // ÔöÇÔöÇ Agenda Médica ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+  { key: 'agenda.ver',              label: 'Agenda: Ver turnos del día',          grupo: 'Agenda Médica' },
+  { key: 'agenda.crear',            label: 'Agenda: Crear / Programar citas',     grupo: 'Agenda Médica' },
+  { key: 'agenda.editar',           label: 'Agenda: Editar citas',                grupo: 'Agenda Médica' },
+  { key: 'agenda.eliminar',         label: 'Agenda: Eliminar citas',              grupo: 'Agenda Médica' },
+  { key: 'agenda.cambiar_estado',   label: 'Agenda: Cambiar estado de turno',     grupo: 'Agenda Médica' },
+  { key: 'agenda.llamar_siguiente', label: 'Agenda: Llamar siguiente paciente',   grupo: 'Agenda Médica' },
+  { key: 'agenda.marcar_atendido',  label: 'Agenda: Marcar como atendido',        grupo: 'Agenda Médica' },
+  { key: 'agenda.aviso_doctor',     label: 'Agenda: Enviar aviso al doctor',      grupo: 'Agenda Médica' },
+  { key: 'agenda.disponibilidad',   label: 'Agenda: Programar disponibilidad',    grupo: 'Agenda Médica' },
+  // ÔöÇÔöÇ Electrodiagnóstico ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+  { key: 'electro.ver',             label: 'Electro: Ver citas',                  grupo: 'Electrodiagnóstico' },
+  { key: 'electro.crear',           label: 'Electro: Crear cita',                grupo: 'Electrodiagnóstico' },
+  { key: 'electro.editar',          label: 'Electro: Editar cita',                grupo: 'Electrodiagnóstico' },
+  { key: 'electro.eliminar',        label: 'Electro: Eliminar cita',              grupo: 'Electrodiagnóstico' },
+  { key: 'electro.cambiar_estado',  label: 'Electro: Cambiar estado de cita',     grupo: 'Electrodiagnóstico' },
+  { key: 'electro.subir_archivo',   label: 'Electro: Subir archivos de estudios', grupo: 'Electrodiagnóstico' },
+  { key: 'electro.ver_archivo',     label: 'Electro: Ver/descargar archivos',     grupo: 'Electrodiagnóstico' },
+  { key: 'electro.aviso_doctor',    label: 'Electro: Enviar aviso al doctor',     grupo: 'Electrodiagnóstico' },
   // ÔöÇÔöÇ UCQN ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
   { key: 'ucqn.ver',                label: 'UCQN: Ver estudios',                   grupo: 'UCQN' },
   { key: 'ucqn.editar_estado',      label: 'UCQN: Cambiar estado',                 grupo: 'UCQN' },
   // ÔöÇÔöÇ Usuarios ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
-  { key: 'usuarios.ver',            label: 'Usuarios: Ver lista de usuarios',     grupo: 'Gesti├│n de Usuarios' },
-  { key: 'usuarios.crear',          label: 'Usuarios: Crear usuario',             grupo: 'Gesti├│n de Usuarios' },
-  { key: 'usuarios.editar',         label: 'Usuarios: Editar usuario',            grupo: 'Gesti├│n de Usuarios' },
-  { key: 'usuarios.cambiar_clave',  label: 'Usuarios: Cambiar contrase├▒a',        grupo: 'Gesti├│n de Usuarios' },
-  { key: 'usuarios.eliminar',       label: 'Usuarios: Eliminar usuario',          grupo: 'Gesti├│n de Usuarios' },
-  { key: 'usuarios.auditoria',      label: 'Usuarios: Ver auditor├¡a de accesos',  grupo: 'Gesti├│n de Usuarios' },
-  { key: 'usuarios.permisos',       label: 'Usuarios: Gestionar permisos (superadmin)', grupo: 'Gesti├│n de Usuarios' },
-  // ÔöÇÔöÇ Diagn├│sticos ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
-  { key: 'diagnosticos.ver',        label: 'Diagn├│sticos: Ver lista',             grupo: 'Diagn├│sticos' },
-  { key: 'diagnosticos.crear',      label: 'Diagn├│sticos: Crear diagn├│stico',     grupo: 'Diagn├│sticos' },
-  { key: 'diagnosticos.editar',     label: 'Diagn├│sticos: Editar diagn├│stico',    grupo: 'Diagn├│sticos' },
-  { key: 'diagnosticos.eliminar',   label: 'Diagn├│sticos: Eliminar diagn├│stico',  grupo: 'Diagn├│sticos' },
+  { key: 'usuarios.ver',            label: 'Usuarios: Ver lista de usuarios',     grupo: 'Gestión de Usuarios' },
+  { key: 'usuarios.crear',          label: 'Usuarios: Crear usuario',             grupo: 'Gestión de Usuarios' },
+  { key: 'usuarios.editar',         label: 'Usuarios: Editar usuario',            grupo: 'Gestión de Usuarios' },
+  { key: 'usuarios.cambiar_clave',  label: 'Usuarios: Cambiar contraseña',        grupo: 'Gestión de Usuarios' },
+  { key: 'usuarios.eliminar',       label: 'Usuarios: Eliminar usuario',          grupo: 'Gestión de Usuarios' },
+  { key: 'usuarios.auditoria',      label: 'Usuarios: Ver auditoría de accesos',  grupo: 'Gestión de Usuarios' },
+  { key: 'usuarios.permisos',       label: 'Usuarios: Gestionar permisos (superadmin)', grupo: 'Gestión de Usuarios' },
+  // ÔöÇÔöÇ Diagnósticos ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+  { key: 'diagnosticos.ver',        label: 'Diagnósticos: Ver lista',             grupo: 'Diagnósticos' },
+  { key: 'diagnosticos.crear',      label: 'Diagnósticos: Crear diagnóstico',     grupo: 'Diagnósticos' },
+  { key: 'diagnosticos.editar',     label: 'Diagnósticos: Editar diagnóstico',    grupo: 'Diagnósticos' },
+  { key: 'diagnosticos.eliminar',   label: 'Diagnósticos: Eliminar diagnóstico',  grupo: 'Diagnósticos' },
   // ÔöÇÔöÇ Sistema ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
-  { key: 'sistema.backups',         label: 'Sistema: Gesti├│n de backups',         grupo: 'Sistema' },
+  { key: 'sistema.backups',         label: 'Sistema: Gestión de backups',         grupo: 'Sistema' },
   { key: 'sistema.exportar_datos',  label: 'Sistema: Exportar datos del sistema', grupo: 'Sistema' },
-  { key: 'sistema.dashboard',       label: 'Sistema: Ver dashboard estad├¡sticas', grupo: 'Sistema' },
+  { key: 'sistema.dashboard',       label: 'Sistema: Ver dashboard estadísticas', grupo: 'Sistema' },
   { key: 'sistema.reportes',        label: 'Sistema: Ver reportes de recibos',    grupo: 'Sistema' },
 ];
 
 // Permisos predeterminados por rol (null = sin restricciones / todo permitido)
 // IMPORTANTE: Estos defaults DEBEN incluir todos los permisos que el rol obtiene
-// por defecto en requireRoleOrPerm del servidor. Si un permiso falta aqu├¡,
-// al guardar permisos personalizados el usuario perder├¡a acceso a esa acci├│n.
+// por defecto en requireRoleOrPerm del servidor. Si un permiso falta aquí,
+// al guardar permisos personalizados el usuario perdería acceso a esa acción.
 const PERMISOS_ROL_DEFAULTS = {
   superadmin: null,
   admin: null,
@@ -6754,7 +6754,7 @@ function _permisosRefreshStats() {
   const line = document.getElementById('permisosStatsLine');
   if (!line) return;
   const chks = document.querySelectorAll('#permisosChecklistContainer input[type=checkbox][data-key]');
-  if (!chks.length) { line.textContent = 'ÔÇö'; return; }
+  if (!chks.length) { line.textContent = '—'; return; }
   const tot = chks.length;
   const c = document.querySelectorAll('#permisosChecklistContainer input[type=checkbox][data-key]:checked').length;
   line.textContent = `${c} de ${tot} permisos activos`;
@@ -6786,7 +6786,7 @@ async function initPermisosPage() {
 
   await _cargarPermisosUserList();
 
-  // Socket: refrescar sesi├│n del usuario actual si le cambiaron permisos
+  // Socket: refrescar sesión del usuario actual si le cambiaron permisos
   if (window.socket && !window._socketPermisosListener) {
     window.socket.on('usuario:permisos-cambiados', (data) => {
       if (data?.userId === currentUser?.id) {
@@ -6800,18 +6800,18 @@ async function initPermisosPage() {
 async function _cargarPermisosUserList() {
   const container = document.getElementById('permisosUserList');
   if (!container) return;
-  container.innerHTML = '<option value="" disabled selected>CargandoÔÇª</option>';
+  container.innerHTML = '<option value="" disabled selected>Cargando…</option>';
   try {
     const res = await apiFetch('/api/usuarios');
     const usuarios = await res.json();
     _permisosUsuariosCache = usuarios.filter(u => u.rol !== 'superadmin');
     container.removeAttribute('size');
-    container.innerHTML = '<option value="">ÔÇö Seleccionar usuario ÔÇö</option>';
+    container.innerHTML = '<option value="">— Seleccionar usuario —</option>';
     _permisosUsuariosCache.forEach(u => {
       const opt = document.createElement('option');
       opt.value = u.id;
       const badge = u.permisos ? ' (personalizado)' : '';
-      const label = `${u.nombre || u.usuario} ÔÇö ${_rolLabel(u.rol)}${badge}`;
+      const label = `${u.nombre || u.usuario} — ${_rolLabel(u.rol)}${badge}`;
       opt.textContent = label;
       opt.setAttribute('data-user-text', `${(u.nombre || '').toLowerCase()} ${(u.usuario || '').toLowerCase()} ${_rolLabel(u.rol).toLowerCase()}`);
       if (_permisosUsuarioSeleccionado && _permisosUsuarioSeleccionado.id === u.id) opt.selected = true;
@@ -6826,7 +6826,7 @@ async function _cargarPermisosUserList() {
 }
 
 function _rolLabel(rol) {
-  const map = { admin:'Administrador', admin_recepcion:'Admin Recepci├│n', recepcion:'Recepci├│n', auxiliar_recepcion:'Auxiliar Recepci├│n', admin_electro:'Admin Electro', electro:'Electrodiagn├│stico', tecnico_electro:'T├®cnico Electro', doctor:'Doctor', contabilidad:'Contabilidad' };
+  const map = { admin:'Administrador', admin_recepcion:'Admin Recepción', recepcion:'Recepción', auxiliar_recepcion:'Auxiliar Recepción', admin_electro:'Admin Electro', electro:'Electrodiagnóstico', tecnico_electro:'Técnico Electro', doctor:'Doctor', contabilidad:'Contabilidad' };
   return map[rol] || rol;
 }
 
@@ -6973,13 +6973,13 @@ async function _guardarPermisos() {
     } else {
       showToast(data.error || 'Error al guardar permisos', 'error');
     }
-  } catch(e) { showToast('Error de conexi├│n', 'error'); }
+  } catch(e) { showToast('Error de conexión', 'error'); }
   finally { setLoading(btn, false, 'Guardar cambios'); }
 }
 
 async function _restablecerPermisos() {
   if (!_permisosUsuarioSeleccionado) return;
-  showConfirm(`┬┐Restablecer los permisos de "${_permisosUsuarioSeleccionado.nombre || _permisosUsuarioSeleccionado.usuario}" al predeterminado de su rol?\nSe eliminar├ín los permisos personalizados.`, async () => {
+  showConfirm(`¿Restablecer los permisos de "${_permisosUsuarioSeleccionado.nombre || _permisosUsuarioSeleccionado.usuario}" al predeterminado de su rol?\nSe eliminarán los permisos personalizados.`, async () => {
     const btn = document.getElementById('btnPermisosRestablecer');
     setLoading(btn, true, 'Restableciendo...');
     try {
@@ -6998,16 +6998,16 @@ async function _restablecerPermisos() {
       } else {
         showToast(data.error || 'Error al restablecer', 'error');
       }
-    } catch(e) { showToast('Error de conexi├│n', 'error'); }
+    } catch(e) { showToast('Error de conexión', 'error'); }
     finally { setLoading(btn, false, 'Ôå║ Restablecer al rol'); }
   }, { okText: 'Restablecer', icon: 'Ôå║' });
 }
 
-// ========== GESTI├ôN DE USUARIOS (solo admin) ==========
+// ========== GESTIÓN DE USUARIOS (solo admin) ==========
 async function initUsuarios() {
   $('crearUsuario').addEventListener('click', crearUsuario);
 
-  // ÔöÇÔöÇ Navegaci├│n lateral por p├íginas ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+  // ÔöÇÔöÇ Navegación lateral por páginas ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
   document.querySelectorAll('#view-usuarios .usuarios-page-btn').forEach(btn => {
     btn.addEventListener('click', function() {
       const page = this.dataset.page;
@@ -7025,11 +7025,11 @@ async function initUsuarios() {
   const btnTabPermisos = document.getElementById('btnSidebarPermisos');
   if (btnTabPermisos && currentUser?.rol === 'superadmin') btnTabPermisos.style.display = '';
 
-  // Cargar especialidades en los selects al abrir el m├│dulo
+  // Cargar especialidades en los selects al abrir el módulo
   await cargarOpcionesEspecialidad('newUserEspecialidad');
   await cargarOpcionesEspecialidad('editEspecialidad');
 
-  // Validador de contrase├▒a en tiempo real
+  // Validador de contraseña en tiempo real
   const passwordInput = $('newUserPassword');
   const strengthBar = $('passwordStrengthBar');
   const strengthFill = $('passwordStrengthFill');
@@ -7053,18 +7053,18 @@ async function initUsuarios() {
         
         // Actualizar requisitos
         const checks = {
-          'length': validation.issues.includes('length') ? '[Ô£ù]' : '[Ô£ô]',
-          'upper': validation.issues.includes('upper') ? '[Ô£ù]' : '[Ô£ô]',
-          'lower': validation.issues.includes('lower') ? '[Ô£ù]' : '[Ô£ô]',
-          'number': validation.issues.includes('number') ? '[Ô£ù]' : '[Ô£ô]',
-          'special': validation.issues.includes('special') ? '[Ô£ù]' : '[Ô£ô]'
+          'length': validation.issues.includes('length') ? '[Ô£ù]' : '[✓]',
+          'upper': validation.issues.includes('upper') ? '[Ô£ù]' : '[✓]',
+          'lower': validation.issues.includes('lower') ? '[Ô£ù]' : '[✓]',
+          'number': validation.issues.includes('number') ? '[Ô£ù]' : '[✓]',
+          'special': validation.issues.includes('special') ? '[Ô£ù]' : '[✓]'
         };
         
-        $('req-length')?.textContent  && ($('req-length').textContent  = checks.length  + ' M├¡nimo 8 caracteres');
-        $('req-upper')?.textContent   && ($('req-upper').textContent   = checks.upper   + ' Al menos una may├║scula (A-Z)');
-        $('req-lower')?.textContent   && ($('req-lower').textContent   = checks.lower   + ' Al menos una min├║scula (a-z)');
-        $('req-number')?.textContent  && ($('req-number').textContent  = checks.number  + ' Al menos un n├║mero (0-9)');
-        if ($('req-special')) $('req-special').textContent = checks.special + ' Al menos un s├¡mbolo (!@#$%^&* etc)';
+        $('req-length')?.textContent  && ($('req-length').textContent  = checks.length  + ' Mínimo 8 caracteres');
+        $('req-upper')?.textContent   && ($('req-upper').textContent   = checks.upper   + ' Al menos una mayúscula (A-Z)');
+        $('req-lower')?.textContent   && ($('req-lower').textContent   = checks.lower   + ' Al menos una minúscula (a-z)');
+        $('req-number')?.textContent  && ($('req-number').textContent  = checks.number  + ' Al menos un número (0-9)');
+        if ($('req-special')) $('req-special').textContent = checks.special + ' Al menos un símbolo (!@#$%^&* etc)';
       } else {
         strengthBar.style.display = 'none';
         strengthText.style.display = 'none';
@@ -7073,7 +7073,7 @@ async function initUsuarios() {
     });
   }
   
-  // Mostrar/ocultar especialidad y consultorio seg├║n rol
+  // Mostrar/ocultar especialidad y consultorio según rol
   $('newUserRol').addEventListener('change', function() {
     const consultorioCol = $('consultorioCol');
     const especialidadCol = $('especialidadCol');
@@ -7104,19 +7104,19 @@ async function initUsuarios() {
     }
   });
   
-  // Event listener para el bot├│n de Auditor├¡a
+  // Event listener para el botón de Auditoría
   const btnAuditoria = document.querySelector('button[onclick="abrirBusquedaAuditoria()"]');
   if (btnAuditoria) {
     btnAuditoria.addEventListener('click', function(e) {
       e.preventDefault();
       abrirBusquedaAuditoria();
     });
-    console.log('[AUDIT] Event listener agregado al bot├│n de Auditor├¡a');
+    console.log('[AUDIT] Event listener agregado al botón de Auditoría');
   } else {
-    console.warn('[AUDIT] No se encontr├│ el bot├│n de Auditor├¡a');
+    console.warn('[AUDIT] No se encontró el botón de Auditoría');
   }
   
-  // Socket: cuando cualquier usuario cambia su nombre, refrescar lista de usuarios (si est├í visible)
+  // Socket: cuando cualquier usuario cambia su nombre, refrescar lista de usuarios (si está visible)
   if (window.socket && !window.socketUsuariosNombreListenerAdded) {
     window.socket.on('usuario:nombre-actualizado', () => {
       if ($('view-usuarios') && !$('view-usuarios').classList.contains('hidden')) cargarUsuarios();
@@ -7140,7 +7140,7 @@ async function cargarUsuarios() {
       return;
     }
 
-    // Usar setupPagination para renderizar con paginaci├│n
+    // Usar setupPagination para renderizar con paginación
     setupPagination('usuarios', usuarios, renderUsuarioRow, {
       itemsPerPageDefault: 20,
       tbodyId: 'usuariosTableBody',
@@ -7196,7 +7196,7 @@ function renderUsuarioRow(tbody, u) {
   tr.querySelector('[data-speak]')?.addEventListener('click', (e) => speakConsultorio(e.target.closest('[data-speak]').dataset.speak));
   tr.querySelector('[data-historial]')?.addEventListener('click', () => verHistorialAuditoria(u.id, u.usuario));
   tr.querySelector('[data-reset]')?.addEventListener('click', (e) => {
-    showConfirm(`┬┐Resetear contrase├▒a para ${u.usuario}?`, async () => {
+    showConfirm(`¿Resetear contraseña para ${u.usuario}?`, async () => {
       try {
         const r = await apiFetch(`/api/usuarios/${e.target.closest('[data-reset]').dataset.reset}/reset-password`, { method: 'PATCH' });
         const d = await r.json();
@@ -7207,7 +7207,7 @@ function renderUsuarioRow(tbody, u) {
   tr.querySelector('[data-toggle]')?.addEventListener('click', (e) => {
     const newState = u.activo ? 'desactivar' : 'activar';
     const label = newState.charAt(0).toUpperCase() + newState.slice(1);
-    showConfirm(`┬┐${label} este usuario?`, async () => {
+    showConfirm(`¿${label} este usuario?`, async () => {
       try {
         const r = await apiFetch(`/api/usuarios/${e.target.closest('[data-toggle]').dataset.toggle}/toggle-estado`, { method: 'PATCH' });
         const d = await r.json();
@@ -7217,7 +7217,7 @@ function renderUsuarioRow(tbody, u) {
     }, { okText: label, danger: u.activo, icon: u.activo ? '­ƒÜ½' : 'Ô£à' });
   });
   tr.querySelector('[data-del]')?.addEventListener('click', (e) => {
-    showConfirm('┬┐Eliminar este usuario permanentemente?', async () => {
+    showConfirm('¿Eliminar este usuario permanentemente?', async () => {
       try {
         const r = await apiFetch(`/api/usuarios/${e.target.closest('[data-del]').dataset.del}`, { method: 'DELETE' });
         const d = await r.json();
@@ -7233,7 +7233,7 @@ function renderUsuarioRow(tbody, u) {
 // Variable global para guardar el usuario siendo editado
 let usuarioEnEdicion = null;
 
-// Abrir modal de edici├│n de usuario
+// Abrir modal de edición de usuario
 function editarUsuario(u) {
   usuarioEnEdicion = u;
   $('editUsu').value = u.usuario;
@@ -7242,15 +7242,15 @@ function editarUsuario(u) {
   $('editPassword').value = '';
   $('editarUsuarioError').classList.add('hidden');
   
-  // Mostrar/ocultar consultorio y especialidad seg├║n rol
+  // Mostrar/ocultar consultorio y especialidad según rol
   mostrarConsultorioEdicion(u.rol);
   $('editConsultorio').value = u.numero_consultorio || '';
   
-  // Mostrar/ocultar especialidad seg├║n rol
+  // Mostrar/ocultar especialidad según rol
   mostrarEspecialidadEdicion(u.rol, u.especialidad);
   
-  // Cambiar rol autom├íticamente muestra/oculta consultorio y especialidad
-  // Usamos onchange (no addEventListener) para evitar acumulaci├│n de listeners al reabrir el modal
+  // Cambiar rol automáticamente muestra/oculta consultorio y especialidad
+  // Usamos onchange (no addEventListener) para evitar acumulación de listeners al reabrir el modal
   $('editRol').onchange = function() {
     mostrarConsultorioEdicion(this.value);
     mostrarEspecialidadEdicion(this.value, null);
@@ -7330,7 +7330,7 @@ async function verHistorialAuditoria(usuarioId, usuarioNombre) {
     } else {
       let html = `<h4 style="margin:0 0 16px 0;color:#374151">Usuario: <strong>${escapeHtml(usuarioNombre)}</strong></h4>`;
       html += '<table style="width:100%;border-collapse:collapse">';
-      html += '<tr style="background:#f3f4f6"><th style="padding:12px;border:1px solid #e5e7eb;text-align:left;font-weight:600">Fecha</th><th style="padding:12px;border:1px solid #e5e7eb;text-align:left;font-weight:600">Acci├│n</th><th style="padding:12px;border:1px solid #e5e7eb;text-align:left;font-weight:600">Realizado por</th><th style="padding:12px;border:1px solid #e5e7eb;text-align:left;font-weight:600">Cambios</th></tr>';
+      html += '<tr style="background:#f3f4f6"><th style="padding:12px;border:1px solid #e5e7eb;text-align:left;font-weight:600">Fecha</th><th style="padding:12px;border:1px solid #e5e7eb;text-align:left;font-weight:600">Acción</th><th style="padding:12px;border:1px solid #e5e7eb;text-align:left;font-weight:600">Realizado por</th><th style="padding:12px;border:1px solid #e5e7eb;text-align:left;font-weight:600">Cambios</th></tr>';
       
       historial.forEach(h => {
         const iconos = {
@@ -7340,7 +7340,7 @@ async function verHistorialAuditoria(usuarioId, usuarioNombre) {
           'ACTIVAR': '­ƒƒó',
           'DESACTIVAR': '­ƒö┤'
         };
-        const icon = iconos[h.accion] || 'ÔÇó';
+        const icon = iconos[h.accion] || '•';
         const cambios = h.cambios ? JSON.parse(h.cambios) : {};
         let cambiosHtml = '';
         
@@ -7352,10 +7352,10 @@ async function verHistorialAuditoria(usuarioId, usuarioNombre) {
             'numero_consultorio': 'Consultorio',
             'especialidad': 'Especialidad',
             'activo': 'Estado',
-            'password': 'Contrase├▒a'
+            'password': 'Contraseña'
           }[campo] || campo;
           
-          cambiosHtml += `<div style="font-size:12px;margin:4px 0"><strong>${label}:</strong> ${valores.antes || '-'} ÔåÆ ${valores.despues || '-'}</div>`;
+          cambiosHtml += `<div style="font-size:12px;margin:4px 0"><strong>${label}:</strong> ${valores.antes || '-'} → ${valores.despues || '-'}</div>`;
         });
         
         if (!cambiosHtml) cambiosHtml = '<div style="font-size:12px;color:#999">Sin detalles</div>';
@@ -7383,7 +7383,7 @@ function closeHistorialModal() {
   $('modalHistorialAuditoria').classList.add('hidden');
 }
 
-// Mostrar contrase├▒a temporal de reset password
+// Mostrar contraseña temporal de reset password
 function verResetPassword(data) {
   const modal = $('modalResetPassword');
   $('resetPasswordUser').textContent = escapeHtml(data.usuario);
@@ -7394,7 +7394,7 @@ function verResetPassword(data) {
   // Copiar al portapapeles
   $('btnCopyPassword').addEventListener('click', () => {
     navigator.clipboard.writeText(data.passwordTemporal).then(() => {
-      showToast('Contrase├▒a copiada al portapapeles', 'success');
+      showToast('Contraseña copiada al portapapeles', 'success');
     }).catch(() => {
       showToast('No se pudo copiar', 'error');
     });
@@ -7405,17 +7405,17 @@ function closeResetPasswordModal() {
   $('modalResetPassword').classList.add('hidden');
 }
 
-// ========== B├ÜSQUEDA AVANZADA DE AUDITOR├ìA ==========
+// ========== BÚSQUEDA AVANZADA DE AUDITORÍA ==========
 function abrirBusquedaAuditoria() {
-  console.log('[AUDIT] Abriendo b├║squeda de auditor├¡a');
+  console.log('[AUDIT] Abriendo búsqueda de auditoría');
   
   // Asegurar que el modal existe
   const modal = document.getElementById('modalBusquedaAuditoria');
   console.log('[AUDIT] Modal encontrado:', !!modal);
   
   if (!modal) {
-    console.error('[AUDIT] Modal de auditor├¡a NO encontrado en el DOM');
-    alert('Error: No se encontr├│ el modal de auditor├¡a');
+    console.error('[AUDIT] Modal de auditoría NO encontrado en el DOM');
+    alert('Error: No se encontró el modal de auditoría');
     return;
   }
   
@@ -7424,45 +7424,45 @@ function abrirBusquedaAuditoria() {
   // Remover clase hidden
   modal.classList.remove('hidden');
   
-  console.log('[AUDIT] Clases despu├®s de remove:', modal.className);
+  console.log('[AUDIT] Clases después de remove:', modal.className);
   console.log('[AUDIT] Display style:', window.getComputedStyle(modal).display);
   
   // Configurar event listeners para botones del modal
   setTimeout(() => {
     console.log('[AUDIT] Configurando event listeners del modal');
     
-    // Bot├│n de cerrar X
+    // Botón de cerrar X
     const btnCerrar = modal.querySelector('.btn-close-modal');
     if (btnCerrar) {
       btnCerrar.removeEventListener('click', closeBusquedaAuditoriaModal);
       btnCerrar.addEventListener('click', closeBusquedaAuditoriaModal);
-      console.log('[AUDIT] Event listener agregado al bot├│n de cerrar');
+      console.log('[AUDIT] Event listener agregado al botón de cerrar');
     } else {
-      console.warn('[AUDIT] Bot├│n de cerrar no encontrado');
+      console.warn('[AUDIT] Botón de cerrar no encontrado');
     }
     
-    // Bot├│n Buscar
+    // Botón Buscar
     const btnBuscar = modal.querySelector('.btn-buscar-auditoria');
     if (btnBuscar) {
       btnBuscar.removeEventListener('click', buscarAuditoria);
       btnBuscar.addEventListener('click', buscarAuditoria);
-      console.log('[AUDIT] Event listener agregado al bot├│n Buscar');
+      console.log('[AUDIT] Event listener agregado al botón Buscar');
     }
     
-    // Bot├│n Limpiar
+    // Botón Limpiar
     const btnLimpiar = modal.querySelector('.btn-limpiar-auditoria');
     if (btnLimpiar) {
       btnLimpiar.removeEventListener('click', limpiarFiltrosAuditoria);
       btnLimpiar.addEventListener('click', limpiarFiltrosAuditoria);
-      console.log('[AUDIT] Event listener agregado al bot├│n Limpiar');
+      console.log('[AUDIT] Event listener agregado al botón Limpiar');
     }
     
-    // Bot├│n Exportar
+    // Botón Exportar
     const btnExportar = modal.querySelector('.btn-exportar-auditoria');
     if (btnExportar) {
       btnExportar.removeEventListener('click', exportarAuditoriaCSV);
       btnExportar.addEventListener('click', exportarAuditoriaCSV);
-      console.log('[AUDIT] Event listener agregado al bot├│n Exportar');
+      console.log('[AUDIT] Event listener agregado al botón Exportar');
     }
     
     // Inicializar multi-select de acciones
@@ -7478,7 +7478,7 @@ function abrirBusquedaAuditoria() {
 }
 
 function closeBusquedaAuditoriaModal() {
-  console.log('[AUDIT] Cerrando modal de auditor├¡a');
+  console.log('[AUDIT] Cerrando modal de auditoría');
   const modal = document.getElementById('modalBusquedaAuditoria');
   if (modal) {
     modal.classList.add('hidden');
@@ -7490,7 +7490,7 @@ function closeBusquedaAuditoriaModal() {
 
 async function buscarAuditoria() {
   try {
-    console.log('[AUDIT SEARCH] Iniciando b├║squeda de auditor├¡a');
+    console.log('[AUDIT SEARCH] Iniciando búsqueda de auditoría');
     
     // Obtener elementos del DOM
     const containerEl = document.getElementById('busquedaResultados');
@@ -7500,7 +7500,7 @@ async function buscarAuditoria() {
     
     if (!containerEl) {
       console.error('[AUDIT SEARCH] Container no encontrado');
-      showToast('Error: No se encontr├│ el contenedor de resultados', 'error');
+      showToast('Error: No se encontró el contenedor de resultados', 'error');
       return;
     }
     
@@ -7510,20 +7510,20 @@ async function buscarAuditoria() {
     const desde = desdeEl?.value || '';
     const hasta = hastaEl?.value || '';
     
-    // Construir URL con par├ímetros
+    // Construir URL con parámetros
     const params = new URLSearchParams();
     if (accion) params.append('accion', accion);
     if (desde) params.append('desde', desde);
     if (hasta) params.append('hasta', hasta);
     params.append('limit', 500);
     
-    console.log('[AUDIT SEARCH] Par├ímetros:', {accion, desde, hasta});
+    console.log('[AUDIT SEARCH] Parámetros:', {accion, desde, hasta});
     
     const res = await apiFetch(`/api/auditoria/buscar?${params.toString()}`);
     
     if (!res.ok) {
       const errorData = await res.json();
-      throw new Error(errorData.error || 'Error en la b├║squeda');
+      throw new Error(errorData.error || 'Error en la búsqueda');
     }
     
     const data = await res.json();
@@ -7531,8 +7531,8 @@ async function buscarAuditoria() {
     console.log('[AUDIT SEARCH RESPONSE] Recibidos', data.results?.length || 0, 'registros');
     
     if (!data || !data.results) {
-      showToast('Error: Respuesta inv├ílida del servidor', 'error');
-      containerEl.innerHTML = '<p style="text-align:center;color:#dc2626;padding:20px">Error en la b├║squeda</p>';
+      showToast('Error: Respuesta inválida del servidor', 'error');
+      containerEl.innerHTML = '<p style="text-align:center;color:#dc2626;padding:20px">Error en la búsqueda</p>';
       return;
     }
     
@@ -7549,7 +7549,7 @@ async function buscarAuditoria() {
         <thead>
           <tr>
             <th>Fecha</th>
-            <th>Acci├│n</th>
+            <th>Acción</th>
             <th>Usuario</th>
             <th>Admin</th>
             <th>Cambios</th>
@@ -7560,7 +7560,7 @@ async function buscarAuditoria() {
       </table>
     `;
 
-    // Usar setupPagination para renderizar con paginaci├│n
+    // Usar setupPagination para renderizar con paginación
     setupPagination('auditoria', results, renderAuditoriaRow, {
       itemsPerPageDefault: 20,
       tbodyId: 'bodyAuditoriaTemporary',
@@ -7574,7 +7574,7 @@ async function buscarAuditoria() {
     
   } catch (e) {
     console.error('[AUDIT SEARCH ERROR]', e.message);
-    showToast('Error buscando auditor├¡a: ' + e.message, 'error');
+    showToast('Error buscando auditoría: ' + e.message, 'error');
     const containerEl = document.getElementById('busquedaResultados');
     if (containerEl) {
       containerEl.innerHTML = `<p style="text-align:center;color:#dc2626;padding:20px">Error: ${escapeHtml(e.message)}</p>`;
@@ -7583,7 +7583,7 @@ async function buscarAuditoria() {
 }
 
 /**
- * Renderiza una fila de auditor├¡a en la tabla
+ * Renderiza una fila de auditoría en la tabla
  */
 function renderAuditoriaRow(tbody, r) {
   const tr = document.createElement('tr');
@@ -7599,7 +7599,7 @@ function renderAuditoriaRow(tbody, r) {
     'LOGOUT': '­ƒöÆ'
   };
   
-  const icon = iconos[r.accion] || 'ÔÇó';
+  const icon = iconos[r.accion] || '•';
   const fecha = new Date(r.fecha_cambio).toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' });
   const cambiosHtml = formatearCambios(r.cambios);
   
@@ -7627,7 +7627,7 @@ function formatearCambios(cambios) {
       }
     }
     
-    // Si no hay propiedades, retornar vac├¡o
+    // Si no hay propiedades, retornar vacío
     if (!cambios || Object.keys(cambios).length === 0) {
       return '<span style="color:#999">Sin cambios</span>';
     }
@@ -7637,7 +7637,7 @@ function formatearCambios(cambios) {
       if (changes && typeof changes === 'object') {
         const antes = escapeHtml(String(changes.antes || ''));
         const despues = escapeHtml(String(changes.despues || ''));
-        html += `<div style="font-size:0.8rem;margin:4px 0;padding:4px;background:#f5f5f5;border-radius:3px"><strong>${escapeHtml(field)}:</strong> <span style="color:#999">${antes}</span> ÔåÆ <span style="color:#0369a1">${despues}</span></div>`;
+        html += `<div style="font-size:0.8rem;margin:4px 0;padding:4px;background:#f5f5f5;border-radius:3px"><strong>${escapeHtml(field)}:</strong> <span style="color:#999">${antes}</span> → <span style="color:#0369a1">${despues}</span></div>`;
       }
     }
     
@@ -7650,7 +7650,7 @@ function formatearCambios(cambios) {
 }
 
 function limpiarFiltrosAuditoria() {
-  console.log('[AUDIT] Limpiando filtros de auditor├¡a');
+  console.log('[AUDIT] Limpiando filtros de auditoría');
   
   try {
     const filtroAccion = document.getElementById('filtroAccion');
@@ -7660,7 +7660,7 @@ function limpiarFiltrosAuditoria() {
     if (filtroAccion) {
       if (typeof clearMultiSelect === 'function') clearMultiSelect(filtroAccion);
       else filtroAccion.value = '';
-      console.log('[AUDIT] Filter Acci├│n limpio');
+      console.log('[AUDIT] Filter Acción limpio');
     }
     if (filtroDesde) {
       filtroDesde.value = '';
@@ -7673,10 +7673,10 @@ function limpiarFiltrosAuditoria() {
     
     window.ultimosBusquedasAuditoria = [];
     
-    console.log('[AUDIT] Esperando para ejecutar b├║squeda...');
-    // Cargar ├║ltimos registros por defecto despu├®s de un peque├▒o delay
+    console.log('[AUDIT] Esperando para ejecutar búsqueda...');
+    // Cargar últimos registros por defecto después de un pequeño delay
     setTimeout(() => {
-      console.log('[AUDIT] Ejecutando b├║squeda despu├®s de limpiar filtros');
+      console.log('[AUDIT] Ejecutando búsqueda después de limpiar filtros');
       buscarAuditoria();
     }, 200);
     
@@ -7688,18 +7688,18 @@ function limpiarFiltrosAuditoria() {
 
 function exportarAuditoriaCSV() {
   try {
-    console.log('[AUDIT EXPORT] Iniciando exportaci├│n a CSV');
+    console.log('[AUDIT EXPORT] Iniciando exportación a CSV');
     
     const results = window.ultimosBusquedasAuditoria || [];
     if (results.length === 0) {
-      showToast('No hay datos para exportar (ejecuta una b├║squeda primero)', 'warning');
+      showToast('No hay datos para exportar (ejecuta una búsqueda primero)', 'warning');
       return;
     }
     
     console.log('[AUDIT EXPORT] Exportando', results.length, 'registros');
     
     // Headers del CSV
-    const headers = ['Fecha', 'Acci├│n', 'Usuario Afectado', 'Admin', 'Cambios'];
+    const headers = ['Fecha', 'Acción', 'Usuario Afectado', 'Admin', 'Cambios'];
     let csv = headers.join(',') + '\n';
     
     // Datos
@@ -7708,7 +7708,7 @@ function exportarAuditoriaCSV() {
       const usuario = (r.usuario || '-').replace(/"/g, '""').replace(/,/g, ' ');
       const admin = (r.usuario_admin || '-').replace(/"/g, '""').replace(/,/g, ' ');
       
-      // Serializar cambios de manera m├ís legible
+      // Serializar cambios de manera más legible
       let cambiosStr = '-';
       if (r.cambios && Object.keys(r.cambios).length > 0) {
         const cambiosParts = [];
@@ -7722,7 +7722,7 @@ function exportarAuditoriaCSV() {
       csv += `"${fecha}","${r.accion}","${usuario}","${admin}","${cambiosStr}"\n`;
     });
     
-    console.log('[AUDIT EXPORT] CSV generado, tama├▒o:', csv.length);
+    console.log('[AUDIT EXPORT] CSV generado, tamaño:', csv.length);
     
     // Crear descarga
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -7735,12 +7735,12 @@ function exportarAuditoriaCSV() {
     link.click();
     document.body.removeChild(link);
     
-    showToast('Auditor├¡a exportada a CSV - ' + results.length + ' registros', 'success');
-    console.log('[AUDIT EXPORT] Exportaci├│n completada');
+    showToast('Auditoría exportada a CSV - ' + results.length + ' registros', 'success');
+    console.log('[AUDIT EXPORT] Exportación completada');
     
   } catch (e) {
     console.error('[AUDIT EXPORT ERROR]', e.message);
-    showToast('Error exportando auditor├¡a: ' + e.message, 'error');
+    showToast('Error exportando auditoría: ' + e.message, 'error');
   }
 }
 
@@ -7760,13 +7760,13 @@ async function guardarCambiosUsuario(e) {
   
   const rolesValidos = ['superadmin','admin','admin_recepcion','recepcion','admin_electro','electro','tecnico_electro','auxiliar_recepcion','doctor','contabilidad'];
   if (!rolesValidos.includes(rol)) {
-    mostrarErrorEdicion('Rol inv├ílido');
+    mostrarErrorEdicion('Rol inválido');
     return;
   }
   
   const body = { nombre, rol };
   
-  // Si el nuevo rol es doctor, pedir el n├║mero de consultorio
+  // Si el nuevo rol es doctor, pedir el número de consultorio
   if (rol === 'doctor') {
     const consultorio = $('editConsultorio').value.trim();
     if (!consultorio) {
@@ -7775,7 +7775,7 @@ async function guardarCambiosUsuario(e) {
     }
     const numero = parseInt(consultorio, 10);
     if (isNaN(numero) || numero < 1) {
-      mostrarErrorEdicion('Consultorio debe ser un n├║mero v├ílido');
+      mostrarErrorEdicion('Consultorio debe ser un número válido');
       return;
     }
     body.numero_consultorio = numero;
@@ -7842,7 +7842,7 @@ async function crearUsuario() {
   let numero_consultorio = null;
   let especialidad = null;
   
-  // Validar campos vac├¡os
+  // Validar campos vacíos
   if (!usuario || !password || !nombre || !rol) { 
     showToast('Completa todos los campos', 'error'); 
     return; 
@@ -7855,15 +7855,15 @@ async function crearUsuario() {
     return;
   }
 
-  // Validar contrase├▒a
+  // Validar contraseña
   const passwordValidation = validatePasswordStrength(password);
   if (!passwordValidation.isValid) {
     const mensaje = passwordValidation.issues.length > 0 
-      ? 'Contrase├▒a incompleta: ' + passwordValidation.issues.map(i => {
-          const labels = { length: '8+ caracteres', upper: 'may├║scula', lower: 'min├║scula', number: 'n├║mero', special: 's├¡mbolo' };
+      ? 'Contraseña incompleta: ' + passwordValidation.issues.map(i => {
+          const labels = { length: '8+ caracteres', upper: 'mayúscula', lower: 'minúscula', number: 'número', special: 'símbolo' };
           return labels[i];
         }).join(', ')
-      : 'Contrase├▒a no v├ílida';
+      : 'Contraseña no válida';
     showToast(mensaje, 'error');
     return;
   }
@@ -7871,12 +7871,12 @@ async function crearUsuario() {
   if (rol === 'doctor') {
     const consultorioValue = $('newUserConsultorio').value.trim();
     if (!consultorioValue) {
-      showToast('El n├║mero de consultorio es obligatorio para DOCTOR', 'error');
+      showToast('El número de consultorio es obligatorio para DOCTOR', 'error');
       return;
     }
     numero_consultorio = parseInt(consultorioValue, 10);
     if (isNaN(numero_consultorio) || numero_consultorio < 1) {
-      showToast('El n├║mero de consultorio debe ser un n├║mero v├ílido', 'error');
+      showToast('El número de consultorio debe ser un número válido', 'error');
       return;
     }
     
@@ -7922,12 +7922,12 @@ async function crearUsuario() {
       $('passwordRequirements').style.display = 'none';
       cargarUsuarios(); 
     } else if (data.details) {
-      // Error con detalles de validaci├│n
+      // Error con detalles de validación
       showToast(data.details[0] || data.error || 'Error', 'error');
     } else {
       showToast(data.error || 'Error al crear usuario', 'error');
     }
-  } catch (e) { showToast('Error de conexi├│n', 'error'); }
+  } catch (e) { showToast('Error de conexión', 'error'); }
 }
 
 function formatMoney(n){ 
@@ -7935,13 +7935,13 @@ function formatMoney(n){
   return '$ ' + formatted.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
 
-// Devuelve los tipos de consulta cacheados para el m├®dico actualmente seleccionado.
-// La BD es la ├║nica fuente de verdad; _reciboCurrentTipos se llena en cargarTiposConsultaEnRecibo.
+// Devuelve los tipos de consulta cacheados para el médico actualmente seleccionado.
+// La BD es la única fuente de verdad; _reciboCurrentTipos se llena en cargarTiposConsultaEnRecibo.
 function _getTiposParaDoctor(medicoId) {
   if (Array.isArray(window._reciboCurrentTipos) && window._reciboCurrentTipos.length > 0) {
     return window._reciboCurrentTipos;
   }
-  return []; // sin cach├® ÔåÆ se esperar├í a que cargarTiposConsultaEnRecibo finalice
+  return []; // sin caché → se esperará a que cargarTiposConsultaEnRecibo finalice
 }
 
 async function refreshConceptosRows() {
@@ -7955,11 +7955,11 @@ async function refreshConceptosRows() {
     if (Array.isArray(window._reciboCurrentTipos) && window._reciboCurrentTipos.length > 0) {
       opciones = window._reciboCurrentTipos;
     } else if (medicoId) {
-      // _reciboCurrentTipos vac├¡o con m├®dico seleccionado: cargar y dejar que ese m├®todo llame refreshConceptosRows de nuevo
+      // _reciboCurrentTipos vacío con médico seleccionado: cargar y dejar que ese método llame refreshConceptosRows de nuevo
       await cargarTiposConsultaEnRecibo(medicoId);
       return;
     }
-    // si no hay m├®dico a├║n, opciones queda vac├¡o (se mostrar├í solo el placeholder)
+    // si no hay médico aún, opciones queda vacío (se mostrará solo el placeholder)
   } else {
     opciones = (Array.isArray(window._reciboCurrentTipos) && window._reciboCurrentTipos.length > 0)
       ? window._reciboCurrentTipos
@@ -7987,9 +7987,9 @@ async function addRow(desc='', price=0){
     placeholderDesc = 'Seleccionar tipo de consulta';
     const medicoId = $('reciboMedico')?.value || '';
     opciones = _getTiposParaDoctor(medicoId);
-    // Si no hay tipos a├║n y hay m├®dico, dispara la carga asincr├│nica
+    // Si no hay tipos aún y hay médico, dispara la carga asincrónica
     if (opciones.length === 0 && medicoId) {
-      cargarTiposConsultaEnRecibo(medicoId); // no await: actualizar├í la fila cuando termine
+      cargarTiposConsultaEnRecibo(medicoId); // no await: actualizará la fila cuando termine
     }
   } else {
     opciones = await getServicios();
@@ -8014,7 +8014,7 @@ async function addRow(desc='', price=0){
   // Event listener para el input de precio con formateo de miles
   const priceInput = tr.querySelector('.item-price');
   priceInput.addEventListener('input', function(){
-    // Remover caracteres que no sean d├¡gitos o punto decimal
+    // Remover caracteres que no sean dígitos o punto decimal
     let value = this.value.replace(/[^\d.]/g, '');
     
     // Asegurar solo un punto decimal
@@ -8036,18 +8036,18 @@ async function addRow(desc='', price=0){
     recalc();
   });
   
-  // Event listener para el select de descripci├│n
+  // Event listener para el select de descripción
   const descSelect_el = tr.querySelector('.item-desc');
   descSelect_el.addEventListener('change', function(){
     const valor = this.value;
     if(valor === 'custom') {
       // Reemplazar select con input de texto personalizado
-      const customDescInput = `<input class="item-desc-custom" type="text" placeholder="Descripci├│n personalizada" style="width:100%;padding:4px;border:1px solid #ccc;box-sizing:border-box" />`;
+      const customDescInput = `<input class="item-desc-custom" type="text" placeholder="Descripción personalizada" style="width:100%;padding:4px;border:1px solid #ccc;box-sizing:border-box" />`;
       tr.querySelector('td:first-child').innerHTML = customDescInput;
       tr.querySelector('.item-desc-custom').focus();
-      // Dejar que el usuario ingrese la descripci├│n, el precio lo puede editar directamente en la columna de precio
+      // Dejar que el usuario ingrese la descripción, el precio lo puede editar directamente en la columna de precio
     } else if(valor) {
-      // Ya NO asignamos el precio autom├íticamente
+      // Ya NO asignamos el precio automáticamente
       // El usuario debe ingresar el precio manualmente
     }
   });
@@ -8066,7 +8066,7 @@ function recalc(){
   let subtotal = 0;
   rows.forEach(r=>{
     const priceValue = r.querySelector('.item-price').value || '0';
-    // Remover comas antes de convertir a n├║mero
+    // Remover comas antes de convertir a número
     const price = Number(priceValue.replace(/,/g, ''));
     subtotal += price;
   });
@@ -8128,7 +8128,7 @@ function collectFormData(){
   const medicoId  = (reciboTipo === 'doctor' && medicoSel && medicoSel.value) ? parseInt(medicoSel.value, 10) : null;
   const medicoNombre = (reciboTipo === 'doctor' && medicoSel && medicoSel.value)
     ? (medicoSel.options[medicoSel.selectedIndex]?.text || null)
-    : (reciboTipo === 'estudio' ? 'ELECTRODIAGN├ôSTICOS' : null);
+    : (reciboTipo === 'estudio' ? 'ELECTRODIAGNÓSTICOS' : null);
 
   const consultaSel = $('reciboTipoConsulta');
   const tipoConsulta = (reciboTipo === 'doctor' && consultaSel && consultaSel.value) ? consultaSel.value : null;
@@ -8137,7 +8137,7 @@ function collectFormData(){
   const tipoEstudio = (reciboTipo === 'estudio' && servSel && servSel.value) ? servSel.value : null;
 
   // tipoServicio unificado para guardar en BD.
-  // Fallback: si ning├║n selector tiene valor, usar la descripci├│n del primer ├¡tem.
+  // Fallback: si ningún selector tiene valor, usar la descripción del primer ítem.
   const firstItemDesc = items.find(it => it.desc && it.desc.trim())?.desc?.trim() || null;
   const tipoServicio = tipoConsulta || tipoEstudio || firstItemDesc;
 
@@ -8211,9 +8211,9 @@ function validarFormulario(){
   const reciboTipoVal = document.querySelector('input[name="reciboTipo"]:checked')?.value;
   if (!reciboTipoVal) { showToast('Selecciona el tipo de recibo (Doctor o Estudio)', 'error'); return false; }
   if (reciboTipoVal === 'doctor' && !$('reciboMedico')?.value) {
-    showToast('Selecciona el m├®dico que realiz├│ la consulta', 'error'); return false;
+    showToast('Selecciona el médico que realizó la consulta', 'error'); return false;
   }
-  // Para 'estudio' no se valida reciboTipoServicio (est├í oculto);
+  // Para 'estudio' no se valida reciboTipoServicio (está oculto);
   // el servicio se elige directamente en los conceptos del cobro.
 
   const items = document.querySelectorAll('#itemsTable tbody tr');
@@ -8224,7 +8224,7 @@ function validarFormulario(){
     const price = Number(priceValue.replace(/,/g, ''));
     if (descEl?.value.trim() && price > 0) hayItemValido = true;
   });
-  if (!hayItemValido) { showToast('Agrega al menos un concepto con descripci├│n y valor', 'error'); return false; }
+  if (!hayItemValido) { showToast('Agrega al menos un concepto con descripción y valor', 'error'); return false; }
   return true;
 }
 
@@ -8232,7 +8232,7 @@ async function saveToDatabase(){
   const payload = collectFormData();
   try {
     const body = {
-      // numero no se env├¡a: el servidor lo asigna at├│micamente
+      // numero no se envía: el servidor lo asigna atómicamente
       cliente: payload.cliente,
       fecha: payload.fecha,
       total: payload.total,
@@ -8240,7 +8240,7 @@ async function saveToDatabase(){
       tipo_pago: payload.tipoPago || null,
       nombre_entidad: payload.nombreEntidad || null,
       medico_id: payload.medicoId || null,
-      medico_nombre: payload.medicoNombre || (payload.citaElectroId ? 'ELECTRODIAGN├ôSTICOS' : null),
+      medico_nombre: payload.medicoNombre || (payload.citaElectroId ? 'ELECTRODIAGNÓSTICOS' : null),
       tipo_servicio: payload.tipoServicio || null,
       turno_id: payload.turnoId ? parseInt(payload.turnoId, 10) : null,
       cita_electro_id: payload.citaElectroId ? parseInt(payload.citaElectroId, 10) : null,
@@ -8254,13 +8254,13 @@ async function saveToDatabase(){
     });
     const json = await res.json();
     if (json.ok) {
-      // Actualizar el n├║mero con el asignado realmente por el servidor (evita duplicados concurrentes)
+      // Actualizar el número con el asignado realmente por el servidor (evita duplicados concurrentes)
       if (json.numero) {
         $('numero').value = json.numero;
         const rNum = document.getElementById('r_num');
         if (rNum) rNum.textContent = json.numero;
       }
-      showToast('Ô£ô Recibo guardado', 'success');
+      showToast('✓ Recibo guardado', 'success');
       updateSavedCount();
       nextNumber();
       cargarFiltrosUsuarios();
@@ -8269,7 +8269,7 @@ async function saveToDatabase(){
     }
   } catch(e) {
     console.error(e);
-    showToast('Error de conexi├│n al guardar recibo', 'error');
+    showToast('Error de conexión al guardar recibo', 'error');
   }
 }
 
@@ -8285,7 +8285,7 @@ function resetFormulario() {
   document.getElementById('radioPagoTCard')?.classList.remove('selected');
   if ($('reciboEntidad')) $('reciboEntidad').value = '';
 
-  // Limpiar m├®dico, tipo de consulta y estudio
+  // Limpiar médico, tipo de consulta y estudio
   document.querySelectorAll('input[name="reciboTipo"]').forEach(r => { r.checked = false; });
   document.getElementById('reciboTipoDocCard')?.classList.remove('selected');
   document.getElementById('reciboTipoEstCard')?.classList.remove('selected');
@@ -8295,7 +8295,7 @@ function resetFormulario() {
   if ($('reciboTipoConsulta')) $('reciboTipoConsulta').innerHTML = '<option value="">Seleccionar tipo</option>';
   if ($('reciboTipoServicio')) $('reciboTipoServicio').value = '';
 
-  // Limpiar vinculaci├│n
+  // Limpiar vinculación
   if ($('reciboTurnoId')) $('reciboTurnoId').value = '';
   if ($('reciboCitaElectroId')) $('reciboCitaElectroId').value = '';
 
@@ -8329,7 +8329,7 @@ async function abrirPDF(){
       showToast('Genera un recibo primero', 'error');
       return;
     }
-    // Abrir el recibo con el ID m├ís alto (el m├ís reciente)
+    // Abrir el recibo con el ID más alto (el más reciente)
     let lastRecibo = arr[0];
     arr.forEach(r => {
       if(r.id > lastRecibo.id) {
@@ -8340,7 +8340,7 @@ async function abrirPDF(){
     
     const pdfWindow = window.open(`/api/recibos/${lastRecibo.id}/pdf`, '_blank');
     if (!pdfWindow) {
-      showToast('El navegador bloque├│ la ventana emergente. Permite los popups para este sitio y vuelve a intentarlo.', 'warn');
+      showToast('El navegador bloqueó la ventana emergente. Permite los popups para este sitio y vuelve a intentarlo.', 'warn');
       return;
     }
   } catch(e){
@@ -8350,9 +8350,9 @@ async function abrirPDF(){
   }
 }
 
-// descargarPDFAnterior removed ÔÇö #downloadPDF button no longer exists in the new Recibos UI
+// descargarPDFAnterior removed — #downloadPDF button no longer exists in the new Recibos UI
 
-// ---- Filtros activos para exportaci├│n ----
+// ---- Filtros activos para exportación ----
 let _recibosLastParams = '';
 
 async function aplicarFiltrosRecibos() {
@@ -8498,7 +8498,7 @@ async function cargarLista(queryString) {
         tr.classList.add('recibo-row-anulado');
       }
 
-      // --- Botones de acci├│n (estilo agenda m├®dica) ---
+      // --- Botones de acción (estilo agenda médica) ---
       let acciones = `<div class="table-actions">`;
       acciones += `<a href="/api/recibos/${r.id}/pdf" target="_blank" class="btn-recibo-pdf" title="Ver PDF">
         <img src="images/pdf.svg" alt="PDF"/></a>`;
@@ -8535,7 +8535,7 @@ async function cargarLista(queryString) {
           </span>
         </td>
         <td>${escapeHtml(r.nombre_entidad||'-')}</td>
-        <td>${escapeHtml(r.medico_nombre || (r.cita_electro_id ? 'ELECTRODIAGN├ôSTICOS' : '-'))}</td>
+        <td>${escapeHtml(r.medico_nombre || (r.cita_electro_id ? 'ELECTRODIAGNÓSTICOS' : '-'))}</td>
         <td>${escapeHtml(r.tipo_servicio||'-')}</td>
         <td style="text-align:right;font-weight:600;color:${esAnulado ? '#991b1b' : '#2d4a47'}">$ ${escapeHtml(total)}</td>
         <td>${estadoPagoBadge}</td>
@@ -8558,7 +8558,7 @@ async function cargarLista(queryString) {
     // Listener: Marcar como pagado
     tbody.querySelectorAll('.marcar-pagado').forEach(b => b.addEventListener('click', e => {
       const reciboId = e.target.closest('.marcar-pagado').dataset.id;
-      showConfirm('┬┐Marcar este recibo como pagado?', async () => {
+      showConfirm('¿Marcar este recibo como pagado?', async () => {
         try {
           const jr = await apiFetch(`/api/recibos/${reciboId}/pagar`, {
             method: 'PATCH',
@@ -8577,7 +8577,7 @@ async function cargarLista(queryString) {
     // Listener: Anular recibo
     tbody.querySelectorAll('.anular-recibo').forEach(b => b.addEventListener('click', e => {
       const reciboId = e.target.closest('.anular-recibo').dataset.id;
-      showPrompt('Ingrese la raz├│n de anulaci├│n de este recibo:', async (razon) => {
+      showPrompt('Ingrese la razón de anulación de este recibo:', async (razon) => {
         try {
           const jr = await apiFetch(`/api/recibos/${reciboId}/anular`, {
             method: 'PATCH',
@@ -8591,7 +8591,7 @@ async function cargarLista(queryString) {
     }));
 
     tbody.querySelectorAll('.btn-eliminar.delete').forEach(b => b.addEventListener('click', e => {
-      showConfirm('┬┐Eliminar este recibo?', async () => {
+      showConfirm('¿Eliminar este recibo?', async () => {
         try {
           const jr = await apiFetch(`/api/recibos/${e.target.closest('.btn-eliminar').dataset.id}`, { method: 'DELETE' }).then(r => r.json());
           if (jr.ok) { showToast('Recibo eliminado', 'success'); cargarLista(_recibosLastParams); }
@@ -8632,7 +8632,7 @@ async function showEditReciboModal({ id, medico, servicio, entidad, cliente }) {
           <input type="text" id="editReciboCliente" value="${escapeHtml(cliente)}" style="${inputStyle}" />
         </label>
         <label style="font-size:0.85rem;font-weight:600;color:#374151">
-          M├®dico
+          Médico
           <select id="editReciboMedico" style="${inputStyle}">
             <option value="">-- Seleccionar --</option>
             ${medicoOpts}
@@ -8700,7 +8700,7 @@ function updateStats(recibos) {
 }
 
 function resetAllRecibos(){
-  showConfirm('┬┐Eliminar TODOS los recibos guardados?\nEsta acci├│n no se puede deshacer.\nSolo los administradores pueden realizar esta operaci├│n.', async () => {
+  showConfirm('¿Eliminar TODOS los recibos guardados?\nEsta acción no se puede deshacer.\nSolo los administradores pueden realizar esta operación.', async () => {
     showLoader(true, 'Eliminando todos los recibos...');
     try {
       const res = await apiFetch('/api/recibos/reset', { method: 'DELETE' });
@@ -8719,13 +8719,13 @@ function resetAllRecibos(){
   }, { okText: 'Eliminar todo', icon: '­ƒùæ´©Å' });
 }
 
-// (setDefaultReportDates, generarReporteDiario, generarReporteMensual eliminados ÔÇö reemplazados por filtros en Ver Recibos)
+// (setDefaultReportDates, generarReporteDiario, generarReporteMensual eliminados — reemplazados por filtros en Ver Recibos)
 
 // ============================================
-// GESTIONAR CUENTA ÔÇö Mi Cuenta
+// GESTIONAR CUENTA — Mi Cuenta
 // ============================================
 const MC_ROL_LABELS = {
-  admin: 'Administrador', recepcion: 'Recepci├│n', electro: 'Electro',
+  admin: 'Administrador', recepcion: 'Recepción', electro: 'Electro',
   doctor: 'Doctor', contabilidad: 'Contabilidad'
 };
 
@@ -8761,19 +8761,19 @@ async function openCambiarContrasenaModal() {
     if ($('mcAvatar')) $('mcAvatar').textContent = iniciales;
 
     // Header
-    if ($('mcHeaderName')) $('mcHeaderName').textContent = d.nombre || d.usuario || 'ÔÇö';
+    if ($('mcHeaderName')) $('mcHeaderName').textContent = d.nombre || d.usuario || '—';
     if ($('mcHeaderAt'))   $('mcHeaderAt').textContent   = '@' + (d.usuario || '');
-    if ($('mcRolBadge'))   $('mcRolBadge').textContent   = MC_ROL_LABELS[d.rol] || d.rol || 'ÔÇö';
+    if ($('mcRolBadge'))   $('mcRolBadge').textContent   = MC_ROL_LABELS[d.rol] || d.rol || '—';
 
     // Info cards
-    if ($('mcInfoUsuario')) $('mcInfoUsuario').textContent = '@' + (d.usuario || 'ÔÇö');
-    if ($('mcInfoRol'))     $('mcInfoRol').textContent     = MC_ROL_LABELS[d.rol] || d.rol || 'ÔÇö';
+    if ($('mcInfoUsuario')) $('mcInfoUsuario').textContent = '@' + (d.usuario || '—');
+    if ($('mcInfoRol'))     $('mcInfoRol').textContent     = MC_ROL_LABELS[d.rol] || d.rol || '—';
 
-    // Especialidad / consultorio ÔÇö solo doctores
+    // Especialidad / consultorio — solo doctores
     const espCard = $('mcInfoEspCard'), consCard = $('mcInfoConsCard');
     if (d.rol === 'doctor') {
-      if (espCard)  { espCard.style.display  = ''; if ($('mcInfoEspecialidad')) $('mcInfoEspecialidad').textContent = d.especialidad || 'ÔÇö'; }
-      if (consCard) { consCard.style.display = ''; if ($('mcInfoConsultorio'))  $('mcInfoConsultorio').textContent  = d.numero_consultorio ? 'N┬░ ' + d.numero_consultorio : 'ÔÇö'; }
+      if (espCard)  { espCard.style.display  = ''; if ($('mcInfoEspecialidad')) $('mcInfoEspecialidad').textContent = d.especialidad || '—'; }
+      if (consCard) { consCard.style.display = ''; if ($('mcInfoConsultorio'))  $('mcInfoConsultorio').textContent  = d.numero_consultorio ? 'N° ' + d.numero_consultorio : '—'; }
     } else {
       if (espCard)  espCard.style.display  = 'none';
       if (consCard) consCard.style.display = 'none';
@@ -8781,14 +8781,14 @@ async function openCambiarContrasenaModal() {
 
     // Fechas formateadas
     const fmtDate = (iso) => {
-      if (!iso) return 'ÔÇö';
+      if (!iso) return '—';
       const dt = new Date(iso), hoy = new Date();
       if (dt.toDateString() === hoy.toDateString())
         return 'Hoy ' + dt.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
       return dt.toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' });
     };
     if ($('mcInfoCreado')) $('mcInfoCreado').textContent = fmtDate(d.creado_en);
-    if ($('mcInfoAcceso')) $('mcInfoAcceso').textContent = d.ultimo_acceso ? fmtDate(d.ultimo_acceso) : 'Esta sesi├│n';
+    if ($('mcInfoAcceso')) $('mcInfoAcceso').textContent = d.ultimo_acceso ? fmtDate(d.ultimo_acceso) : 'Esta sesión';
 
     // Pre-llenar campo de nombre
     if ($('cuentaNombreActual')) $('cuentaNombreActual').value = d.nombre || '';
@@ -8834,7 +8834,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const nombre = $('cuentaNombreActual')?.value.trim() || '';
       const errDiv = $('cambiarNombreError');
       const showErr = (msg) => { if (errDiv) { errDiv.textContent = msg; errDiv.classList.remove('hidden'); } };
-      if (!nombre) return showErr('El nombre no puede estar vac├¡o');
+      if (!nombre) return showErr('El nombre no puede estar vacío');
 
       const btn = formNombre.querySelector('button[type="submit"]');
       setLoading(btn, true, 'Guardando...');
@@ -8856,12 +8856,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (errDiv) errDiv.classList.add('hidden');
         updateSidebarUser({ ...currentUser, nombre });
         if (currentUser) currentUser.nombre = nombre;
-      } catch (_) { showErr('Error de conexi├│n'); }
+      } catch (_) { showErr('Error de conexión'); }
       finally { setLoading(btn, false); }
     });
   }
 
-  // ÔöÇÔöÇ Formulario: cambiar contrase├▒a ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+  // ÔöÇÔöÇ Formulario: cambiar contraseña ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
   const formPwd = $('formCambiarContrasena');
   if (formPwd) {
     formPwd.addEventListener('submit', async (e) => {
@@ -8872,11 +8872,11 @@ document.addEventListener('DOMContentLoaded', () => {
       const errDiv = $('cambiarContrasenaError');
       const showErr = (msg) => { if (errDiv) { errDiv.textContent = msg; errDiv.classList.remove('hidden'); } };
 
-      if (!contrasenaActual)  return showErr('Ingresa tu contrase├▒a actual');
-      if (!nuevaContrasena)   return showErr('Ingresa la nueva contrase├▒a');
-      if (!confirmarContrasena) return showErr('Confirma la nueva contrase├▒a');
-      if (nuevaContrasena !== confirmarContrasena) return showErr('Las contrase├▒as no coinciden');
-      if (nuevaContrasena.length < 6) return showErr('La contrase├▒a debe tener al menos 6 caracteres');
+      if (!contrasenaActual)  return showErr('Ingresa tu contraseña actual');
+      if (!nuevaContrasena)   return showErr('Ingresa la nueva contraseña');
+      if (!confirmarContrasena) return showErr('Confirma la nueva contraseña');
+      if (nuevaContrasena !== confirmarContrasena) return showErr('Las contraseñas no coinciden');
+      if (nuevaContrasena.length < 6) return showErr('La contraseña debe tener al menos 6 caracteres');
 
       const btn = formPwd.querySelector('button[type="submit"]');
       setLoading(btn, true, 'Actualizando...');
@@ -8891,17 +8891,17 @@ document.addEventListener('DOMContentLoaded', () => {
           })
         });
         const data = await res.json();
-        if (!res.ok) return showErr(data.error || 'Error al actualizar contrase├▒a');
-        showToast('Contrase├▒a actualizada correctamente', 'success');
+        if (!res.ok) return showErr(data.error || 'Error al actualizar contraseña');
+        showToast('Contraseña actualizada correctamente', 'success');
         formPwd.reset();
         if ($('cambiarContrasenaRequirements')) $('cambiarContrasenaRequirements').style.display = 'none';
         if (errDiv) errDiv.classList.add('hidden');
-      } catch (_) { showErr('Error de conexi├│n'); }
+      } catch (_) { showErr('Error de conexión'); }
       finally { setLoading(btn, false); }
     });
   }
 
-  // ÔöÇÔöÇ Toggle contrase├▒as (Mi Cuenta) ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+  // ÔöÇÔöÇ Toggle contraseñas (Mi Cuenta) ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
   [['toggleContrasenaActual', 'contrasenaActual'],
    ['toggleNuevaContrasena',  'nuevaContrasena'],
    ['toggleConfirmarContrasena', 'confirmarContrasena'],
@@ -8915,17 +8915,17 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // ÔöÇÔöÇ Requisitos de contrase├▒a en tiempo real ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+  // ÔöÇÔöÇ Requisitos de contraseña en tiempo real ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
   const pwdInput = $('nuevaContrasena'), reqBox = $('cambiarContrasenaRequirements');
   if (pwdInput && reqBox) {
     pwdInput.addEventListener('input', () => {
       const p = pwdInput.value;
       reqBox.style.display = p ? 'block' : 'none';
       if (p) {
-        updateRequirementItem('cambiar-req-length', p.length >= 8,   'M├¡nimo 8 caracteres');
-        updateRequirementItem('cambiar-req-upper',  /[A-Z]/.test(p), 'Al menos una may├║scula (A-Z)');
-        updateRequirementItem('cambiar-req-lower',  /[a-z]/.test(p), 'Al menos una min├║scula (a-z)');
-        updateRequirementItem('cambiar-req-number', /[0-9]/.test(p), 'Al menos un n├║mero (0-9)');
+        updateRequirementItem('cambiar-req-length', p.length >= 8,   'Mínimo 8 caracteres');
+        updateRequirementItem('cambiar-req-upper',  /[A-Z]/.test(p), 'Al menos una mayúscula (A-Z)');
+        updateRequirementItem('cambiar-req-lower',  /[a-z]/.test(p), 'Al menos una minúscula (a-z)');
+        updateRequirementItem('cambiar-req-number', /[0-9]/.test(p), 'Al menos un número (0-9)');
       }
     });
   }
@@ -8968,7 +8968,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 
-// ========== GESTI├ôN DE DIAGN├ôSTICOS (solo admin) ==========
+// ========== GESTIÓN DE DIAGNÓSTICOS (solo admin) ==========
 async function initDiagnosticos() {
   $('btnVolverDiagnosticos')?.addEventListener('click', goToMenu);
   $('importarDiagnosticosBtn')?.addEventListener('click', importarDiagnosticosExcel);
@@ -9011,7 +9011,7 @@ async function importarDiagnosticosExcel() {
 
     if (!res.ok) {
       progressDiv.style.display = 'none';
-      showToast(data.error || 'Error importando diagn├│sticos', 'error');
+      showToast(data.error || 'Error importando diagnósticos', 'error');
       return;
     }
 
@@ -9042,24 +9042,24 @@ async function cargarListaDiagnosticos() {
     const diagnosticos = await res.json();
 
     if (diagnosticos.length === 0) {
-      if (tbody) tbody.innerHTML = '<tr><td colspan="5"><div class="empty-state"><div class="empty-state-icon">­ƒÆ¼</div><p class="empty-state-title">Sin diagn├│sticos</p><p class="empty-state-subtitle">No hay diagn├│sticos cargados en el sistema</p></div></td></tr>';
+      if (tbody) tbody.innerHTML = '<tr><td colspan="5"><div class="empty-state"><div class="empty-state-icon">­ƒÆ¼</div><p class="empty-state-title">Sin diagnósticos</p><p class="empty-state-subtitle">No hay diagnósticos cargados en el sistema</p></div></td></tr>';
       return;
     }
 
-    // Usar setupPagination para renderizar con paginaci├│n
+    // Usar setupPagination para renderizar con paginación
     setupPagination('diagnosticos', diagnosticos, renderDiagnosticoRow, {
       itemsPerPageDefault: 20,
       tbodyId: 'diagnosticosTableBody',
       containerSelector: '#diagnosticosTableControls'
     });
   } catch (e) {
-    console.error('Error cargando diagn├│sticos:', e);
-    if (tbody) tbody.innerHTML = '<tr><td colspan="5"><div class="empty-state"><div class="empty-state-icon">ÔÜá´©Å</div><p class="empty-state-title" style="color:#dc2626">Error cargando diagn├│sticos</p></div></td></tr>';
+    console.error('Error cargando diagnósticos:', e);
+    if (tbody) tbody.innerHTML = '<tr><td colspan="5"><div class="empty-state"><div class="empty-state-icon">⚠️</div><p class="empty-state-title" style="color:#dc2626">Error cargando diagnósticos</p></div></td></tr>';
   }
 }
 
 /**
- * Renderiza una fila de diagn├│stico en la tabla
+ * Renderiza una fila de diagnóstico en la tabla
  */
 function renderDiagnosticoRow(tbody, d) {
   const tr = document.createElement('tr');
@@ -9076,13 +9076,13 @@ function renderDiagnosticoRow(tbody, d) {
   
   tr.querySelector('.btn-eliminar-diag')?.addEventListener('click', (e) => {
     const id = e.target.dataset.id;
-    showConfirm('┬┐Eliminar este diagn├│stico?', async () => {
+    showConfirm('¿Eliminar este diagnóstico?', async () => {
       try {
         await apiFetch(`/api/diagnosticos/${id}`, { method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({activo: 0}) });
-        showToast('Diagn├│stico eliminado', 'success');
+        showToast('Diagnóstico eliminado', 'success');
         cargarListaDiagnosticos();
       } catch (x) {
-        showToast('Error eliminando diagn├│stico', 'error');
+        showToast('Error eliminando diagnóstico', 'error');
       }
     });
   });
@@ -9090,25 +9090,25 @@ function renderDiagnosticoRow(tbody, d) {
   tbody.appendChild(tr);
 }
 
-// ========== FUNCIONES DEL MODAL DE DETALLES DE CITA ELECTRODIAGN├ôSTICO ==========
+// ========== FUNCIONES DEL MODAL DE DETALLES DE CITA ELECTRODIAGNÓSTICO ==========
 async function iniciarEstudioModal() {
   if (!citaElectroSeleccionada) return;
   
-  // VALIDACI├ôN: usar FECHA+HORA real de la cita.
+  // VALIDACIÓN: usar FECHA+HORA real de la cita.
   const validInicio = validarInicioElectroSegunFechaHora(citaElectroSeleccionada);
   if (!validInicio.ok) {
-    showToast(`ÔØî El estudio est├í agendado para las ${validInicio.horaAgendada}. Faltan ${validInicio.faltanMinutos} minutos para poder iniciarlo.`, 'error');
+    showToast(`ÔØî El estudio está agendado para las ${validInicio.horaAgendada}. Faltan ${validInicio.faltanMinutos} minutos para poder iniciarlo.`, 'error');
     return;
   }
   
-  // Mostrar modal de confirmaci├│n
+  // Mostrar modal de confirmación
   abrirModalConfirmarDuracion();
 }
 
 async function finalizarEstudioModal() {
   if (!citaElectroSeleccionada) return;
   
-  // Mostrar modal de confirmaci├│n
+  // Mostrar modal de confirmación
   const modal = $('modalConfirmarFinalizarEstudio');
   if (modal) {
     modal.classList.remove('hidden');
@@ -9118,7 +9118,7 @@ async function finalizarEstudioModal() {
 async function confirmarFinalizarEstudio() {
   if (!citaElectroSeleccionada) return;
   
-  // Cerrar modal de confirmaci├│n
+  // Cerrar modal de confirmación
   const modal = $('modalConfirmarFinalizarEstudio');
   if (modal) {
     modal.classList.add('hidden');
@@ -9162,7 +9162,7 @@ async function confirmarFinalizarEstudio() {
       citaElectroSeleccionada.estado = 'Completado';
       citaElectroSeleccionada.hora_fin = horaFinFinal;
       
-      // Habilitar el select de estado ahora que se cambi├│ a "Completado"
+      // Habilitar el select de estado ahora que se cambió a "Completado"
       const selectEstado = $('modalEstado');
       if (selectEstado) {
         selectEstado.disabled = false;
@@ -9189,7 +9189,7 @@ async function confirmarFinalizarEstudio() {
         });
       }
       
-      // El servidor tambi├®n emitir├í el socket event
+      // El servidor también emitirá el socket event
       cargarCitasElectro();
       cerrarModalDetallesCita();
     } else {
@@ -9208,7 +9208,7 @@ function cancelarFinalizarEstudio() {
   }
 }
 
-// ===== FUNCIONES PARA DURACI├ôN DEL ESTUDIO =====
+// ===== FUNCIONES PARA DURACIÓN DEL ESTUDIO =====
 
 function abrirModalConfirmarDuracion() {
   const modal = $('modalConfirmarDuracion');
@@ -9238,7 +9238,7 @@ function abrirModalDuracionEstudio() {
         })();
     $('horaEstudioInicio').value = horaAgendada;
     
-    // Duraci├│n predeterminada HH:MM desde duracion_minutos de la cita
+    // Duración predeterminada HH:MM desde duracion_minutos de la cita
     const durPredMin = (citaElectroSeleccionada && citaElectroSeleccionada.duracion_minutos)
       ? citaElectroSeleccionada.duracion_minutos
       : (selectedEstudioDuracion || 480);
@@ -9270,18 +9270,18 @@ function actualizarHoraFinCalculada() {
   const [hhI, mmI] = horaInicio.split(':').map(Number);
   const duracionMinutos = hhDur * 60 + mmDur;
   
-  // Usar Date para calcular correctamente estudios multi-d├¡a
+  // Usar Date para calcular correctamente estudios multi-día
   const start = new Date(2000, 0, 1, hhI, mmI);
   start.setMinutes(start.getMinutes() + duracionMinutos);
   
   const hhFin = String(start.getHours()).padStart(2, '0');
   const mmFin = String(start.getMinutes()).padStart(2, '0');
   const diasExtra = Math.floor((hhI * 60 + mmI + duracionMinutos) / (24 * 60));
-  // Restar el d├¡a base si no cruz├│ medianoche
+  // Restar el día base si no cruzó medianoche
   const diasCruce = diasExtra > 0 ? diasExtra : 0;
   
   if (display) {
-    display.textContent = `${hhFin}:${mmFin}${diasCruce > 0 ? ` (+${diasCruce} d├¡a${diasCruce > 1 ? 's' : ''})` : ''}`;
+    display.textContent = `${hhFin}:${mmFin}${diasCruce > 0 ? ` (+${diasCruce} día${diasCruce > 1 ? 's' : ''})` : ''}`;
   }
 }
 
@@ -9322,10 +9322,10 @@ async function confirmarDuracionEstudio() {
     return;
   }
   
-  // VALIDACI├ôN: usar FECHA+HORA real de la cita (evita falsos bloqueos de citas de d├¡as previos).
+  // VALIDACIÓN: usar FECHA+HORA real de la cita (evita falsos bloqueos de citas de días previos).
   const validInicio = validarInicioElectroSegunFechaHora(citaElectroSeleccionada);
   if (!validInicio.ok) {
-    showToast(`ÔØî El estudio est├í agendado para las ${validInicio.horaAgendada}. Faltan ${validInicio.faltanMinutos} minutos para poder iniciarlo.`, 'error');
+    showToast(`ÔØî El estudio está agendado para las ${validInicio.horaAgendada}. Faltan ${validInicio.faltanMinutos} minutos para poder iniciarlo.`, 'error');
     return;
   }
   
@@ -9347,11 +9347,11 @@ async function confirmarDuracionEstudio() {
       return;
     }
     if (duracionMinutos <= 0) {
-      showToast('Ingresa una duraci├│n v├ílida (HH y/o MM)', 'error');
+      showToast('Ingresa una duración válida (HH y/o MM)', 'error');
       return;
     }
     
-    // Calcular hora_fin a partir de inicio + duraci├│n usando Date (soporta multi-d├¡a)
+    // Calcular hora_fin a partir de inicio + duración usando Date (soporta multi-día)
     const [hhI, mmI] = horaInicio.split(':').map(Number);
     const fechaCitaRaw = citaElectroSeleccionada.fecha || new Date().toISOString().slice(0, 10);
     const fechaCita = typeof fechaCitaRaw === 'string' && fechaCitaRaw.length > 10 ? fechaCitaRaw.slice(0, 10) : fechaCitaRaw;
@@ -9361,7 +9361,7 @@ async function confirmarDuracionEstudio() {
     const horaFinDate = `${startDate.getFullYear()}-${String(startDate.getMonth()+1).padStart(2,'0')}-${String(startDate.getDate()).padStart(2,'0')}`;
     const cruceMedianoche = horaFinDate !== fechaCita;
     
-    console.log(`[DURACION] Iniciando estudio: ${horaInicio} ÔåÆ ${horaFin} (${duracionMinutos} min${cruceMedianoche ? `, fin: ${horaFinDate}` : ''})`);
+    console.log(`[DURACION] Iniciando estudio: ${horaInicio} → ${horaFin} (${duracionMinutos} min${cruceMedianoche ? `, fin: ${horaFinDate}` : ''})`);
     
     const equipoId = equipoSelect.value;
     const cambios = {
@@ -9392,7 +9392,7 @@ async function confirmarDuracionEstudio() {
       citaElectroSeleccionada.hora_fin_date = horaFinDate;
       citaElectroSeleccionada.duracion_minutos = duracionMinutos;
       
-      // BLOQUEAR el select de estado mientras est├í en "En Estudio"
+      // BLOQUEAR el select de estado mientras está en "En Estudio"
       const selectEstado = $('modalEstado');
       if (selectEstado) {
         selectEstado.disabled = true;
@@ -9401,7 +9401,7 @@ async function confirmarDuracionEstudio() {
         selectEstado.value = 'En Estudio';
       }
       
-      // BLOQUEAR el men├║ de "M├ís opciones" mientras est├í en "En Estudio"
+      // BLOQUEAR el menú de "Más opciones" mientras está en "En Estudio"
       const btnMasOpciones = $('btnMasOpciones');
       const menuMasOpciones = $('menuMasOpciones');
       if (btnMasOpciones) {
@@ -9421,7 +9421,7 @@ async function confirmarDuracionEstudio() {
         });
       }
       
-      // El servidor tambi├®n emitir├í el socket event
+      // El servidor también emitirá el socket event
       cargarCitasElectro();
       cerrarModalDetallesCita();
       cerrarModalDuracionEstudio();
@@ -9438,10 +9438,10 @@ async function iniciarEstudioSinDuracion() {
   
   if (!citaElectroSeleccionada) return;
   
-  // VALIDACI├ôN: usar FECHA+HORA real de la cita.
+  // VALIDACIÓN: usar FECHA+HORA real de la cita.
   const validInicio = validarInicioElectroSegunFechaHora(citaElectroSeleccionada);
   if (!validInicio.ok) {
-    showToast(`ÔØî El estudio est├í agendado para las ${validInicio.horaAgendada}. Faltan ${validInicio.faltanMinutos} minutos para poder iniciarlo.`, 'error');
+    showToast(`ÔØî El estudio está agendado para las ${validInicio.horaAgendada}. Faltan ${validInicio.faltanMinutos} minutos para poder iniciarlo.`, 'error');
     return;
   }
 
@@ -9455,12 +9455,12 @@ async function iniciarEstudioSinDuracion() {
   }
   
   try {
-    // Obtener la duraci├│n predeterminada de la cita (en minutos)
+    // Obtener la duración predeterminada de la cita (en minutos)
     const duracionMinutos = citaElectroSeleccionada.duracion_minutos || 480;
     
-    console.log(`[DURACION_SIN] Usando duraci├│n predeterminada: ${duracionMinutos} minutos`);
+    console.log(`[DURACION_SIN] Usando duración predeterminada: ${duracionMinutos} minutos`);
     
-    // Calcular hora_fin usando Date (soporta multi-d├¡a)
+    // Calcular hora_fin usando Date (soporta multi-día)
     const horaInicio = horaAgendada;
     const [hh_inicio, mm_inicio] = horaInicio.split(':').map(Number);
     const fechaCitaRaw = citaElectroSeleccionada.fecha || new Date().toISOString().slice(0, 10);
@@ -9498,7 +9498,7 @@ async function iniciarEstudioSinDuracion() {
       if (horas > 0) textoHora += `${horas}h`;
       if (mins > 0) textoHora += `${mins}m`;
       
-      showToast(`Estudio iniciado a las ${horaInicio} (duraci├│n: ${textoHora})`, 'success');
+      showToast(`Estudio iniciado a las ${horaInicio} (duración: ${textoHora})`, 'success');
       
       // Actualizar el objeto de la cita localmente
       citaElectroSeleccionada.estado = 'En Estudio';
@@ -9507,7 +9507,7 @@ async function iniciarEstudioSinDuracion() {
       citaElectroSeleccionada.hora_fin_date = horaFinDate;
       citaElectroSeleccionada.duracion_minutos = duracionMinutos;
       
-      // BLOQUEAR el select de estado mientras est├í en "En Estudio"
+      // BLOQUEAR el select de estado mientras está en "En Estudio"
       const selectEstado = $('modalEstado');
       if (selectEstado) {
         selectEstado.disabled = true;
@@ -9516,7 +9516,7 @@ async function iniciarEstudioSinDuracion() {
         selectEstado.value = 'En Estudio';
       }
       
-      // BLOQUEAR el men├║ de "M├ís opciones" mientras est├í en "En Estudio"
+      // BLOQUEAR el menú de "Más opciones" mientras está en "En Estudio"
       const btnMasOpciones = $('btnMasOpciones');
       const menuMasOpciones = $('menuMasOpciones');
       if (btnMasOpciones) {
@@ -9547,7 +9547,7 @@ async function iniciarEstudioSinDuracion() {
   }
 }
 
-// Funci├│n para actualizar progreso del estudio en tiempo real
+// Función para actualizar progreso del estudio en tiempo real
 function actualizarProgresoEstudio() {
   if (!citaElectroSeleccionada || citaElectroSeleccionada.estado !== 'En Estudio') {
     return;
@@ -9579,15 +9579,15 @@ function actualizarProgresoEstudio() {
   const [hfH, hfM] = horaFin.split(':').map(Number);
   
   if (fechaFin && fechaFin !== fechaBase) {
-    // Multi-d├¡a: tenemos la fecha de fin expl├¡cita
+    // Multi-día: tenemos la fecha de fin explícita
     dateFin = new Date(`${fechaFin}T${String(hfH).padStart(2,'0')}:${String(hfM).padStart(2,'0')}:00`);
   } else if (citaElectroSeleccionada.duracion_minutos && citaElectroSeleccionada.duracion_minutos > 0) {
-    // Usar duraci├│n para calcular fin
+    // Usar duración para calcular fin
     dateFin = new Date(dateInicio.getTime() + citaElectroSeleccionada.duracion_minutos * 60000);
   } else {
-    // Mismo d├¡a, calcular normalmente
+    // Mismo día, calcular normalmente
     dateFin = new Date(`${fechaBase}T${String(hfH).padStart(2,'0')}:${String(hfM).padStart(2,'0')}:00`);
-    // Si hora_fin <= hora_inicio, asumir que cruza medianoche (+1 d├¡a)
+    // Si hora_fin <= hora_inicio, asumir que cruza medianoche (+1 día)
     if (dateFin <= dateInicio) {
       dateFin.setDate(dateFin.getDate() + 1);
     }
@@ -9596,11 +9596,11 @@ function actualizarProgresoEstudio() {
   const duracionTotalMs = dateFin.getTime() - dateInicio.getTime();
   
   if (duracionTotalMs <= 0) {
-    console.warn('[PROGRESO] Duraci├│n <= 0, no se puede calcular progreso');
+    console.warn('[PROGRESO] Duración <= 0, no se puede calcular progreso');
     return;
   }
   
-  // Mostrar duraci├│n total formateada en la barra
+  // Mostrar duración total formateada en la barra
   const durTotalMin = Math.round(duracionTotalMs / 60000);
   const durDias = Math.floor(durTotalMin / (24 * 60));
   const durHrs = Math.floor((durTotalMin % (24 * 60)) / 60);
@@ -9619,7 +9619,7 @@ function actualizarProgresoEstudio() {
   const horaInicioEl = $('estudioHoraInicio');
   if (horaInicioEl) horaInicioEl.textContent = formatearHora(horaInicio);
   const restanteEl = $('estudioTiempoRestante');
-  if (restanteEl) restanteEl.textContent = durLabel ? `Duraci├│n ${durLabel}` : '--';
+  if (restanteEl) restanteEl.textContent = durLabel ? `Duración ${durLabel}` : '--';
   
   let _lastSocketEmit = 0;
   
@@ -9668,7 +9668,7 @@ function actualizarProgresoEstudio() {
     
     if (barraLlena) barraLlena.style.width = porcentaje + '%';
     if (progreso) progreso.textContent = Math.round(porcentaje);
-    if (tiempoTranscurrido) tiempoTranscurrido.textContent = `${tiempoFormato} ┬À Faltan: ${restoFormato}`;
+    if (tiempoTranscurrido) tiempoTranscurrido.textContent = `${tiempoFormato} · Faltan: ${restoFormato}`;
     if (tiempoRestante) tiempoRestante.textContent = `Faltan ${restoFormato}`;
     
     // Emitir socket cada 15s
@@ -9682,7 +9682,7 @@ function actualizarProgresoEstudio() {
       });
     }
     
-    // Si lleg├│ al 100%, finalizar autom├íticamente
+    // Si llegó al 100%, finalizar automáticamente
     if (porcentaje >= 100) {
       clearInterval(intervaloProgreso);
       intervaloProgreso = null;
@@ -9707,7 +9707,7 @@ function actualizarProgresoEstudio() {
         const data = await res.json();
         
         if (data && data.ok) {
-          showToast(`Estudio completado autom├íticamente a las ${horaActual}`, 'success');
+          showToast(`Estudio completado automáticamente a las ${horaActual}`, 'success');
           citaElectroSeleccionada.estado = 'Completado';
           citaElectroSeleccionada.hora_fin = horaActual;
           
@@ -9726,13 +9726,13 @@ function actualizarProgresoEstudio() {
         }
       } catch (error) {
         console.error('[PROGRESO] Error finalizando estudio:', error);
-        showToast('Error finalizando estudio autom├íticamente', 'error');
+        showToast('Error finalizando estudio automáticamente', 'error');
       }
     }
   }, 1000);
 }
 
-// Funci├│n para guardar edici├│n de datos del paciente desde el modal
+// Función para guardar edición de datos del paciente desde el modal
 async function guardarEdicionPaciente() {
   if (!citaElectroSeleccionada?.paciente_id) {
     showToast('No se puede identificar al paciente', 'error');
@@ -9742,9 +9742,9 @@ async function guardarEdicionPaciente() {
   const documento = $('editDocumentoPaciente').value.trim();
   const telefono = $('editTelefonoPaciente').value.trim();
 
-  if (!nombre) { showToast('El nombre no puede estar vac├¡o', 'error'); return; }
-  if (documento && !/^\d+$/.test(documento)) { showToast('El documento solo puede contener n├║meros', 'error'); return; }
-  if (telefono && !/^\d{10}$/.test(telefono)) { showToast('El tel├®fono debe tener exactamente 10 d├¡gitos', 'error'); return; }
+  if (!nombre) { showToast('El nombre no puede estar vacío', 'error'); return; }
+  if (documento && !/^\d+$/.test(documento)) { showToast('El documento solo puede contener números', 'error'); return; }
+  if (telefono && !/^\d{10}$/.test(telefono)) { showToast('El teléfono debe tener exactamente 10 dígitos', 'error'); return; }
 
   try {
     const res = await apiFetch(`/api/pacientes/${citaElectroSeleccionada.paciente_id}`, {
@@ -9770,17 +9770,17 @@ async function guardarEdicionPaciente() {
   }
 }
 
-// Funci├│n para enviar recomendaciones por WhatsApp
+// Función para enviar recomendaciones por WhatsApp
 function enviarRecomendacionesWhatsApp(cita) {
   if (!cita) { showToast('Error: No hay cita seleccionada', 'error'); return; }
-  if (!cita.telefono) { showToast('El paciente no tiene tel├®fono registrado', 'error'); return; }
+  if (!cita.telefono) { showToast('El paciente no tiene teléfono registrado', 'error'); return; }
   mostrarModalEnviarWhatsApp(cita);
 }
 
-// Variable global para guardar la informaci├│n temporalmente
+// Variable global para guardar la información temporalmente
 let citaParaWhatsApp = null;
 
-// Funci├│n para mostrar modal de confirmaci├│n
+// Función para mostrar modal de confirmación
 function mostrarModalEnviarWhatsApp(cita) {
   citaParaWhatsApp = { cita };
   // Crear modal si no existe
@@ -9798,16 +9798,16 @@ function mostrarModalEnviarWhatsApp(cita) {
         </div>
 
         <div style="margin-bottom:20px;padding:16px;background:#f3f4f6;border-radius:8px">
-          <p style="margin:0 0 12px 0;font-size:0.85rem;color:#6b7280;font-weight:600">INFORMACI├ôN DEL PACIENTE</p>
+          <p style="margin:0 0 12px 0;font-size:0.85rem;color:#6b7280;font-weight:600">INFORMACIÓN DEL PACIENTE</p>
           <div style="display:grid;gap:8px;font-size:0.95rem">
             <div><strong>Nombre:</strong> <span id="whatsappNombrePaciente">-</span></div>
             <div><strong>Documento:</strong> <span id="whatsappDocumento">-</span></div>
-            <div><strong>Tel├®fono:</strong> <span id="whatsappTelefono">-</span></div>
+            <div><strong>Teléfono:</strong> <span id="whatsappTelefono">-</span></div>
           </div>
         </div>
 
         <div style="margin-bottom:16px;padding:12px 16px;background:#fffbeb;border-left:4px solid #f59e0b;border-radius:0 8px 8px 0;font-size:0.88rem;color:#92400e">
-          ÔÜá´©Å WhatsApp Web no permite adjuntar archivos por enlace. Despu├®s de abrir el chat, adjunta el PDF de recomendaciones manualmente.
+          ⚠️ WhatsApp Web no permite adjuntar archivos por enlace. Después de abrir el chat, adjunta el PDF de recomendaciones manualmente.
         </div>
 
         <div style="margin-bottom:20px">
@@ -9840,10 +9840,10 @@ function mostrarModalEnviarWhatsApp(cita) {
   modal.style.display = 'flex';
 }
 
-// Funci├│n para enviar por WhatsApp
+// Función para enviar por WhatsApp
 function enviarPorWhatsApp() {
   if (!citaParaWhatsApp) {
-    showToast('Error: No hay informaci├│n para enviar', 'error');
+    showToast('Error: No hay información para enviar', 'error');
     return;
   }
 
@@ -9857,7 +9857,7 @@ function enviarPorWhatsApp() {
     
     // Intentar parsear la fecha de diferentes formas
     if (typeof cita.fecha === 'string') {
-      // Eliminar hora si est├í incluida (formato ISO: YYYY-MM-DD HH:MM:SS)
+      // Eliminar hora si está incluida (formato ISO: YYYY-MM-DD HH:MM:SS)
       const soloFecha = cita.fecha.split(' ')[0];
       
       if (soloFecha.includes('-')) {
@@ -9873,20 +9873,20 @@ function enviarPorWhatsApp() {
         fechaObj = new Date(cita.fecha);
       }
     } else {
-      // Si es un n├║mero (timestamp)
+      // Si es un número (timestamp)
       fechaObj = new Date(cita.fecha);
     }
     
-    // Validar que sea una fecha v├ílida
+    // Validar que sea una fecha válida
     if (isNaN(fechaObj.getTime())) {
-      console.error('Fecha inv├ílida despu├®s del parseo:', cita.fecha);
-      throw new Error('Fecha inv├ílida');
+      console.error('Fecha inválida después del parseo:', cita.fecha);
+      throw new Error('Fecha inválida');
     }
     
     console.log('Fecha parseada correctamente:', fechaObj);
   } catch (e) {
     console.error('Error parsing fecha:', e);
-    showToast('Error: Formato de fecha inv├ílido', 'error');
+    showToast('Error: Formato de fecha inválido', 'error');
     return;
   }
 
@@ -9898,22 +9898,22 @@ function enviarPorWhatsApp() {
   const fechaCapitalizada = fechaFormato.charAt(0).toUpperCase() + fechaFormato.slice(1);
 
   // Mensaje predeterminado del instituto
-  let mensaje = `HOLA, ${(cita.paciente_nombre || '').toUpperCase()}, INSTITUTO NEUROCIENCIAS DE NARI├æO LE INFORMA QUE:\n\n`;
+  let mensaje = `HOLA, ${(cita.paciente_nombre || '').toUpperCase()}, INSTITUTO NEUROCIENCIAS DE NARIÑO LE INFORMA QUE:\n\n`;
   mensaje += `Tiene programada su cita para la toma de su ${cita.estudio || 'ESTUDIO'}\n`;
-  mensaje += `D├ìA:  ${fechaCapitalizada.toUpperCase()}\n`;
+  mensaje += `DÍA:  ${fechaCapitalizada.toUpperCase()}\n`;
   mensaje += `HORA:  ${cita.hora_agendamiento || '-'}\n\n`;
-  mensaje += `Le recordamos que ser├í atendido por una t├®cnica especializada en electrodiagnostico.\n`;
-  mensaje += `Anexo a este mensaje le enviamos las recomendaciones que debe tener en cuenta, le recordamos la direcci├│n: Carrera 34 #13-80, Barrio San Ignacio.\n`;
-  mensaje += `Tel├®fonos 3053560651- 6027238141\n\n`;
-  mensaje += `NOTA: no olvide traer su orden de servicio, copia de su documento de identificaci├│n y epicrisis o historia cl├¡nica.\n\n`;
+  mensaje += `Le recordamos que será atendido por una técnica especializada en electrodiagnostico.\n`;
+  mensaje += `Anexo a este mensaje le enviamos las recomendaciones que debe tener en cuenta, le recordamos la dirección: Carrera 34 #13-80, Barrio San Ignacio.\n`;
+  mensaje += `Teléfonos 3053560651- 6027238141\n\n`;
+  mensaje += `NOTA: no olvide traer su orden de servicio, copia de su documento de identificación y epicrisis o historia clínica.\n\n`;
   mensaje += `Le solicitamos confirmar su asistencia.\n`;
-  mensaje += `Recuerde acercarse al centro comercial Valle de Atriz 2do piso y hacer la respectiva facturaci├│n con sello. Muchas Gracias.`;
+  mensaje += `Recuerde acercarse al centro comercial Valle de Atriz 2do piso y hacer la respectiva facturación con sello. Muchas Gracias.`;
 
   if (mensajePersonalizado) {
     mensaje += `\n\n${mensajePersonalizado}`;
   }
 
-  // Formatear el n├║mero de tel├®fono para WhatsApp
+  // Formatear el número de teléfono para WhatsApp
   let numeroWhatsApp = cita.telefono.replace(/\D/g, '');
   
   if (!numeroWhatsApp.startsWith('+')) {
@@ -9944,18 +9944,18 @@ function abrirModalDetallesCita(cita) {
   const puedeEditarElectro = tienePermiso('electro.editar');
   const puedeCambiarEstadoElectro = tienePermiso('electro.cambiar_estado') || puedeEditarElectro;
   
-  // Activar flag para evitar cambios autom├íticos
+  // Activar flag para evitar cambios automáticos
   isInitializingElectroModal = true;
   
   // Rellenar datos de paciente
   $('modalPacienteNombre').textContent = escapeHtml(cita.paciente_nombre || '-');
   $('modalPacienteDocumento').textContent = escapeHtml(cita.paciente_documento || '-');
   
-  // Rellenar usuario que program├│ y edit├│
+  // Rellenar usuario que programó y editó
   $('modalUsuarioProgramo').textContent = escapeHtml(cita.programado_por_nombre || '-');
   $('modalUsuarioEdito').textContent = escapeHtml(cita.editado_por_nombre || cita.programado_por_nombre || '-');
 
-  // Nuevos campos de informaci├│n de la cita
+  // Nuevos campos de información de la cita
   const $estudioEl = document.getElementById('modalEstudioDisplay');
   if ($estudioEl) $estudioEl.textContent = cita.estudio || '-';
   const $fechaEl = document.getElementById('modalFechaDisplay');
@@ -9963,11 +9963,11 @@ function abrirModalDetallesCita(cita) {
   const $horaEl = document.getElementById('modalHoraDisplay');
   if ($horaEl) $horaEl.textContent = cita.hora_agendamiento ? formatearHora(cita.hora_agendamiento) : '-';
   const $diagEl = document.getElementById('modalDiagnosticoDisplay');
-  if ($diagEl) $diagEl.textContent = cita.diagnostico_codigo ? `${cita.diagnostico_codigo}${cita.diagnostico_nombre ? ' ÔÇô ' + cita.diagnostico_nombre : ''}` : (cita.diagnostico_nombre || '-');
+  if ($diagEl) $diagEl.textContent = cita.diagnostico_codigo ? `${cita.diagnostico_codigo}${cita.diagnostico_nombre ? ' – ' + cita.diagnostico_nombre : ''}` : (cita.diagnostico_nombre || '-');
   const $telEl = document.getElementById('modalTelefonoDisplay');
   if ($telEl) $telEl.textContent = cita.telefono || '-';
   
-  // Duraci├│n
+  // Duración
   const $durEl = document.getElementById('modalDuracionDisplay');
   if ($durEl) {
     if (cita.duracion_minutos) {
@@ -10023,7 +10023,7 @@ function abrirModalDetallesCita(cita) {
   
   // Rellenar selector de equipo
   $('modalEquipo').value = cita.equipo_id || '';
-  // Equipo solo editable con permiso de edici├│n.
+  // Equipo solo editable con permiso de edición.
   if ($('modalEquipo')) {
     $('modalEquipo').disabled = !puedeEditarElectro;
     $('modalEquipo').style.opacity = !puedeEditarElectro ? '0.5' : '1';
@@ -10036,7 +10036,7 @@ function abrirModalDetallesCita(cita) {
   // Renderizar flujo contextual de estado
   renderFlujoEstado(citaElectroSeleccionada);
   
-  // Eliminar se maneja desde men├║ de 3 puntos
+  // Eliminar se maneja desde menú de 3 puntos
   const btnEliminar = $('btnEliminarCita');
   if (btnEliminar) btnEliminar.style.display = 'none';
   const btnEliminarMenu = $('btnEliminarCitaMenu');
@@ -10050,7 +10050,7 @@ function abrirModalDetallesCita(cita) {
     if (btnEliminarMenu) btnEliminarMenu.style.display = 'none';
   }
   
-  // Agregar listeners para los botones de reprogramaci├│n y adelanto
+  // Agregar listeners para los botones de reprogramación y adelanto
   const btnRep = $('btnReprogramarCita');
   const btnAde = $('btnAdelantarCita');
   
@@ -10071,7 +10071,7 @@ function abrirModalDetallesCita(cita) {
     btnAde.style.display = 'none';
   }
   
-  // Configurar el men├║ de "M├ís opciones"
+  // Configurar el menú de "Más opciones"
   const btnMasOpciones = $('btnMasOpciones');
   const menuMasOpciones = $('menuMasOpciones');
   const btnRepProgramarMenu = $('btnReprogramarCitaMenu');
@@ -10090,7 +10090,7 @@ function abrirModalDetallesCita(cita) {
     };
   }
   
-  // Cerrar men├║ al hacer click afuera (se registra una sola vez con flag)
+  // Cerrar menú al hacer click afuera (se registra una sola vez con flag)
   if (!document._menuMasOpcionesListener) {
     document._menuMasOpcionesListener = (e) => {
       const menu = $('menuMasOpciones');
@@ -10102,7 +10102,7 @@ function abrirModalDetallesCita(cita) {
     document.addEventListener('click', document._menuMasOpcionesListener);
   }
   
-  // Agregar listeners a los items del men├║ (onclick para evitar acumulaci├│n)
+  // Agregar listeners a los items del menú (onclick para evitar acumulación)
   if (btnRepProgramarMenu && puedeEditarElectro) {
     btnRepProgramarMenu.onclick = () => {
       menuMasOpciones.style.display = 'none';
@@ -10145,7 +10145,7 @@ function abrirModalDetallesCita(cita) {
     btnMasOpciones.style.display = 'none';
   }
   
-  // Bloquear men├║ si el estado es "En Estudio"
+  // Bloquear menú si el estado es "En Estudio"
   if (cita.estado === 'En Estudio') {
     if (btnMasOpciones) {
       btnMasOpciones.disabled = true;
@@ -10172,7 +10172,7 @@ function abrirModalDetallesCita(cita) {
       if (restanteEl) restanteEl.textContent = '--';
       $('estudioBarraLlena').style.width = '0%';
     }
-    // Iniciar actualizaci├│n de progreso
+    // Iniciar actualización de progreso
     actualizarProgresoEstudio();
   } else {
     if (estudioBarra) {
@@ -10185,7 +10185,7 @@ function abrirModalDetallesCita(cita) {
     }
   }
   
-  // Desactivar flag de inicializaci├│n - Ahora es seguro procesar cambios del usuario
+  // Desactivar flag de inicialización - Ahora es seguro procesar cambios del usuario
   isInitializingElectroModal = false;
   
   // Mostrar modal
@@ -10259,7 +10259,7 @@ function renderFlujoEstado(cita) {
         </div>
       </div>`;
     document.getElementById('flujo-btn-ensala').onclick = (ev) => cambiarEstadoCita('En Sala', ev.currentTarget);
-    document.getElementById('flujo-btn-noasistio').onclick = (ev) => cambiarEstadoCita('No Asisti├│', ev.currentTarget);
+    document.getElementById('flujo-btn-noasistio').onclick = (ev) => cambiarEstadoCita('No Asistió', ev.currentTarget);
 
   } else if (estado === 'En Sala') {
     // Equipo habilitado
@@ -10273,7 +10273,7 @@ function renderFlujoEstado(cita) {
         </div>
       </div>`;
     document.getElementById('flujo-btn-iniciar').onclick = () => iniciarEstudioModal();
-    document.getElementById('flujo-btn-noasistio2').onclick = (ev) => cambiarEstadoCita('No Asisti├│', ev.currentTarget);
+    document.getElementById('flujo-btn-noasistio2').onclick = (ev) => cambiarEstadoCita('No Asistió', ev.currentTarget);
 
   } else if (estado === 'En Estudio') {
     flujoEl.innerHTML = `
@@ -10361,7 +10361,7 @@ async function cambiarEstadoCita(nuevoEstado, triggerBtn = null) {
   }
   try {
     // Usar endpoint general para unificar exactamente el mismo flujo que ya funciona
-    // en el resto del m├│dulo (equipos, inicio/fin estudio, etc.).
+    // en el resto del módulo (equipos, inicio/fin estudio, etc.).
     const res = await apiFetch(`/api/citas-electro/${citaElectroSeleccionada.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -10380,7 +10380,7 @@ async function cambiarEstadoCita(nuevoEstado, triggerBtn = null) {
       if ($badgeEl) $badgeEl.innerHTML = estadoBadge(estadoPersistido);
       renderFlujoEstado(citaElectroSeleccionada);
       if (estadoPersistido !== estadoObjetivo) {
-        showToast(`El servidor conserv├│ el estado "${estadoPersistido}"`, 'warning');
+        showToast(`El servidor conservó el estado "${estadoPersistido}"`, 'warning');
       } else {
         showToast(`Estado: ${estadoPersistido}`, 'success');
       }
@@ -10407,9 +10407,9 @@ function confirmarCancelacionCitaElectro() {
   if (!citaElectroSeleccionada) return;
   const nombre = (citaElectroSeleccionada.paciente_nombre || '').trim() || 'este paciente';
   showConfirm(
-    `┬┐Seguro que deseas cancelar la cita de ${nombre}?`,
+    `¿Seguro que deseas cancelar la cita de ${nombre}?`,
     async () => { await cambiarEstadoCita('Cancelado'); },
-    { okText: 'S├¡, cancelar cita', cancelText: 'No', danger: true, icon: 'ÔÜá´©Å' }
+    { okText: 'Sí, cancelar cita', cancelText: 'No', danger: true, icon: '⚠️' }
   );
 }
 
@@ -10428,7 +10428,7 @@ function cerrarModalDetallesCita() {
 async function eliminarCitaElectro() {
   if (!citaElectroSeleccionada) return;
   
-  // Verificar permisos: admin/superadmin siempre; admin_electro solo si no est├í Completado
+  // Verificar permisos: admin/superadmin siempre; admin_electro solo si no está Completado
   const rol = currentUser?.rol;
   const esAdminGlobal = rol === 'admin' || rol === 'administrador' || rol === 'superadmin';
   const esAdminElectro = rol === 'admin_electro';
@@ -10469,13 +10469,13 @@ async function guardarCambiosCitaElectro() {
   try {
     const estadoActual = citaElectroSeleccionada.estado || '';
     if (estadoActual === 'En Estudio' || estadoActual === 'Pausado') {
-      showToast('No puedes cambiar el equipo mientras el estudio est├í activo', 'error');
+      showToast('No puedes cambiar el equipo mientras el estudio está activo', 'error');
       return;
     }
 
     const equipoNuevo = $('modalEquipo').value;
     
-    // Solo manejar cambio de equipo ÔÇö los cambios de estado se manejan
+    // Solo manejar cambio de equipo — los cambios de estado se manejan
     // exclusivamente por los botones de flujo (cambiarEstadoCita, iniciarEstudioModal, etc.)
     const cambios = {};
     
@@ -10504,7 +10504,7 @@ async function guardarCambiosCitaElectro() {
           });
         }
         
-        // El servidor tambi├®n emite el socket event
+        // El servidor también emite el socket event
         cargarCitasElectro();
         cerrarModalDetallesCita();
       } else {
@@ -10542,7 +10542,7 @@ function abrirModalReprogramar() {
   // Cerrar modal de detalles
   cerrarModalDetallesCita();
   
-  // Abrir modal de reprogramaci├│n
+  // Abrir modal de reprogramación
   $('modalReprogramarCita').classList.remove('hidden');
 }
 
@@ -10680,7 +10680,7 @@ async function confirmarAdelantarCita() {
   }
 }
 
-// ===== Event Listeners para Modal de Duraci├│n =====
+// ===== Event Listeners para Modal de Duración =====
 $('btnConfirmarDuracionSi')?.addEventListener('click', () => {
   cerrarModalConfirmarDuracion();
   abrirModalDuracionEstudio();
@@ -10695,11 +10695,11 @@ $('cerrarModalDuracion')?.addEventListener('click', cerrarModalDuracionEstudio);
 $('btnCancelarDuracion')?.addEventListener('click', cerrarModalDuracionEstudio);
 $('btnConfirmarDuracion')?.addEventListener('click', confirmarDuracionEstudio);
 
-// Event listeners para confirmaci├│n de finalizar estudio
+// Event listeners para confirmación de finalizar estudio
 $('btnConfirmarFinalizarSi')?.addEventListener('click', confirmarFinalizarEstudio);
 $('btnConfirmarFinalizarNo')?.addEventListener('click', cancelarFinalizarEstudio);
 
-// ========== FUNCIONES PARA MODAL DE ESTADO DE CITAS M├ëDICAS ==========
+// ========== FUNCIONES PARA MODAL DE ESTADO DE CITAS MÉDICAS ==========
 
 let currentTurnoMedicaData = null;
 let currentEstadoAction = null;
@@ -10736,17 +10736,17 @@ function construirMensajeRecordatorioMedica(turno, especialidadDoctor) {
   const nombre = turno?.paciente_nombre || '';
   const fecha = turno?.fecha ? formatearFechaISO(turno.fecha) : '-';
   const hora = turno?.hora ? formatearHora(turno.hora) : '-';
-  const especialidadTexto = especialidadDoctor || 'Neuropsicolog├¡a';
+  const especialidadTexto = especialidadDoctor || 'Neuropsicología';
   const nombreEspecialista = obtenerNombreEspecialistaRecordatorio();
   const lineaEspecialista = especialidadIncluyeEspecialista(especialidadTexto)
     ? `\nÔùë Especialista: ${nombreEspecialista || 'Por confirmar'}`
     : '';
-  return `┬íHola, buen d├¡a!. Le recordamos su cita de ${especialidadTexto} en el Instituto Neurociencias de Nari├▒o IPS S.A.S:
+  return `¡Hola, buen día!. Le recordamos su cita de ${especialidadTexto} en el Instituto Neurociencias de Nariño IPS S.A.S:
 Ôùë Paciente: ${nombre}
 Ôùë Fecha: ${fecha}
 Ôùë Hora: ${hora}
 ${lineaEspecialista}
-Ôùë Ubicaci├│n: Carrera 33 #13 - 84 "Casa Verde" (https://maps.app.goo.gl/YU5GheUmVMDAHFbq8)
+Ôùë Ubicación: Carrera 33 #13 - 84 "Casa Verde" (https://maps.app.goo.gl/YU5GheUmVMDAHFbq8)
 Cualquier novedad, no dude en comunicarse con nosotros.
 
 NOTA: Por favor confirmar su asistencia lo antes posible. Muchas gracias.`;
@@ -10756,7 +10756,7 @@ function enviarRecordatorioWhatsAppMedica(turno) {
   if (!turno) return;
   const telefono = String(turno.paciente_telefono || '').replace(/\D/g, '');
   if (!telefono || telefono.length < 7) {
-    showToast('La cita no tiene un tel├®fono #1 v├ílido para enviar recordatorio', 'error');
+    showToast('La cita no tiene un teléfono #1 válido para enviar recordatorio', 'error');
     return;
   }
   const numeroWhatsApp = telefono.startsWith('57') ? telefono : `57${telefono}`;
@@ -10769,7 +10769,7 @@ function enviarRecordatorioWhatsAppMedica(turno) {
 function abrirModalEstadoCitaMedica(turno) {
   currentTurnoMedicaData = turno;
 
-  // Cerrar men├║ y panel de edici├│n si estaban abiertos
+  // Cerrar menú y panel de edición si estaban abiertos
   const menuMed = document.getElementById('menuMasOpcionesMedica');
   if (menuMed) menuMed.style.display = 'none';
   const editPanelMed = document.getElementById('editarMedicaPanel');
@@ -10800,13 +10800,13 @@ function abrirModalEstadoCitaMedica(turno) {
     btnRecordatorio.onclick = () => enviarRecordatorioWhatsAppMedica(currentTurnoMedicaData);
   }
 
-  // Bloquear edici├│n en modal seg├║n pol├¡tica
+  // Bloquear edición en modal según política
   const editBtnMed = el('btnEditarMedicaModal');
   if (editBtnMed) {
     editBtnMed.disabled = pol.modal.bloquearEdicion;
     editBtnMed.style.opacity = pol.modal.bloquearEdicion ? '0.4' : '';
     editBtnMed.title = pol.modal.bloquearEdicion
-      ? 'No es posible editar mientras el paciente est├í en atenci├│n'
+      ? 'No es posible editar mientras el paciente está en atención'
       : 'Editar datos del paciente';
   }
 
@@ -10824,7 +10824,7 @@ function abrirModalEstadoCitaMedica(turno) {
     if (b) b.style.display = 'none';
   });
 
-  // --- BOTONES FOOTER (desde pol├¡tica) ---
+  // --- BOTONES FOOTER (desde política) ---
   const btnEnSala = el('btnEstadoEnSala');
   if (btnEnSala) btnEnSala.style.display = pol.modal.showEnSala ? '' : 'none';
 
@@ -10859,12 +10859,12 @@ function abrirModalEstadoCitaMedica(turno) {
     btnNoAsistioMod.style.opacity = btnNoAsistioMod.disabled ? '0.4' : '';
   }
 
-  // --- MEN├Ü 3 PUNTOS + EDITAR (desde pol├¡tica) ---
+  // --- MENÚ 3 PUNTOS + EDITAR (desde política) ---
   const btn3dots = el('btnMasOpcionesMedica');
   if (btn3dots) btn3dots.style.display = pol.modal.showMenu3Puntos ? '' : 'none';
 
   if (editBtnMed) {
-    // Editar: solo recepci├│n/admin (NO doctor), y no en estados finales
+    // Editar: solo recepción/admin (NO doctor), y no en estados finales
     editBtnMed.style.display = (pol.perms.editar && currentUser?.rol !== 'doctor' && !pol.meta.esFinal) ? '' : 'none';
   }
 
@@ -10882,27 +10882,27 @@ function abrirModalEstadoCitaMedica(turno) {
 
 function cerrarModalEstadoCitaMedica() {
   $('modalEstadoCitaMedica').classList.add('hidden');
-  // NO limpiar currentTurnoMedicaData ni currentEstadoAction aqu├¡ 
-  // Se necesitan para el modal de confirmaci├│n
+  // NO limpiar currentTurnoMedicaData ni currentEstadoAction aquí 
+  // Se necesitan para el modal de confirmación
   // currentTurnoMedicaData = null;
   // currentEstadoAction = null;
 }
 
 function cerrarModalReprogramarMedica() {
   $('modalReprogramarMedica').classList.add('hidden');
-  // Limpiar datos despu├®s de reprogramar
+  // Limpiar datos después de reprogramar
   currentTurnoMedicaData = null;
   currentEstadoAction = null;
 }
 
 function cerrarModalConfirmReprogramacion() {
   $('modalConfirmReprogramacion').classList.add('hidden');
-  // Limpiar datos despu├®s de cerrar confirmaci├│n
+  // Limpiar datos después de cerrar confirmación
   currentTurnoMedicaData = null;
   currentEstadoAction = null;
 }
 
-// Bot├│n: En Sala (admin/recepcion)
+// Botón: En Sala (admin/recepcion)
 $('btnEstadoEnSala')?.addEventListener('click', async (e) => {
   e.preventDefault(); e.stopPropagation();
   if (!currentTurnoMedicaData) return;
@@ -10917,7 +10917,7 @@ $('btnEstadoEnSala')?.addEventListener('click', async (e) => {
   } catch (err) { showToast('Error al actualizar estado', 'error'); console.error(err); }
 });
 
-// Bot├│n: LLAMAR AL PACIENTE ÔåÆ Emitir anuncio por socket (solo recepci├│n escucha)
+// Botón: LLAMAR AL PACIENTE → Emitir anuncio por socket (solo recepción escucha)
 $('btnModalLlamarPaciente')?.addEventListener('click', async (e) => {
   e.preventDefault(); e.stopPropagation();
   if (!currentTurnoMedicaData) return;
@@ -10925,7 +10925,7 @@ $('btnModalLlamarPaciente')?.addEventListener('click', async (e) => {
   const nombrePaciente = currentTurnoMedicaData.paciente_nombre || 'el paciente';
   const consultorio = currentUser?.numero_consultorio;
   
-  // 1) Emitir anuncio por socket (solo recepci├│n reproduce la voz)
+  // 1) Emitir anuncio por socket (solo recepción reproduce la voz)
   if (typeof socket !== 'undefined' && socket) {
     socket.emit('agenda:anunciar-paciente', {
       paciente_nombre: nombrePaciente,
@@ -10935,7 +10935,7 @@ $('btnModalLlamarPaciente')?.addEventListener('click', async (e) => {
   showToast('Paciente llamado: ' + nombrePaciente, 'success');
 });
 
-// Bot├│n: EN ATENCI├ôN ÔÇö equivalente a "S├¡, lleg├│"
+// Botón: EN ATENCIÓN — equivalente a "Sí, llegó"
 $('btnModalEnAtencion')?.addEventListener('click', async (e) => {
   e.preventDefault(); e.stopPropagation();
   if (!currentTurnoMedicaData) return;
@@ -10946,12 +10946,12 @@ $('btnModalEnAtencion')?.addEventListener('click', async (e) => {
       body: JSON.stringify({ estado: 'EN_ATENCION' })
     });
     const data = await res.json();
-    if (data.ok) { showToast('Paciente en atenci├│n: ' + nombrePaciente, 'success'); cerrarModalEstadoCitaMedica(); cargarTurnosMedica(); }
+    if (data.ok) { showToast('Paciente en atención: ' + nombrePaciente, 'success'); cerrarModalEstadoCitaMedica(); cargarTurnosMedica(); }
     else showToast(data.error || 'Error al actualizar', 'error');
   } catch (err) { showToast('Error al actualizar estado', 'error'); console.error(err); }
 });
 
-// Bot├│n: ATENDIDO ÔÇö usa marcar-atendido para renumerar turnos (el siguiente pasa a ser #1)
+// Botón: ATENDIDO — usa marcar-atendido para renumerar turnos (el siguiente pasa a ser #1)
 $('btnModalAtendido')?.addEventListener('click', async (e) => {
   e.preventDefault(); e.stopPropagation();
   if (!currentTurnoMedicaData) return;
@@ -10972,7 +10972,7 @@ $('btnModalAtendido')?.addEventListener('click', async (e) => {
   } catch (err) { showToast('Error al actualizar estado', 'error'); console.error(err); }
 });
 
-// Bot├│n: NO ASISTI├ô
+// Botón: NO ASISTIÓ
 $('btnModalNoAsistio')?.addEventListener('click', (e) => {
   e.preventDefault(); e.stopPropagation();
   if (!currentTurnoMedicaData) return;
@@ -10980,19 +10980,19 @@ $('btnModalNoAsistio')?.addEventListener('click', (e) => {
   if (menu) menu.style.display = 'none';
   currentEstadoAction = 'no-asistio';
   cerrarModalEstadoCitaMedica();
-  $('modalConfirmReprogramacionTitle').textContent = '┬┐Desea reprogramar esta cita?';
-  $('modalConfirmReprogramacionMessage').textContent = 'El paciente no asisti├│. ┬┐Desea reprogramarla para otro d├¡a?';
+  $('modalConfirmReprogramacionTitle').textContent = '¿Desea reprogramar esta cita?';
+  $('modalConfirmReprogramacionMessage').textContent = 'El paciente no asistió. ¿Desea reprogramarla para otro día?';
   $('modalConfirmReprogramacion').classList.remove('hidden');
 });
 
-// Men├║ 3 puntos: abrir/cerrar
+// Menú 3 puntos: abrir/cerrar
 document.getElementById('btnMasOpcionesMedica')?.addEventListener('click', (e) => {
   e.stopPropagation();
   const menu = document.getElementById('menuMasOpcionesMedica');
   if (menu) menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
 });
 
-// Men├║: Reprogramar
+// Menú: Reprogramar
 document.getElementById('btnReprogramarMedicaMenu')?.addEventListener('click', (e) => {
   e.preventDefault();
   e.stopPropagation();
@@ -11005,7 +11005,7 @@ document.getElementById('btnReprogramarMedicaMenu')?.addEventListener('click', (
   $('modalReprogramarMedicaHora').value = (currentTurnoMedicaData.hora || '').substring(0, 5);
 });
 
-// Bot├│n Reprogramar (admin/recepcion) para NO_ASISTIO
+// Botón Reprogramar (admin/recepcion) para NO_ASISTIO
 document.getElementById('btnModalReprogramarNoAsistio')?.addEventListener('click', (e) => {
   e.preventDefault();
   e.stopPropagation();
@@ -11017,7 +11017,7 @@ document.getElementById('btnModalReprogramarNoAsistio')?.addEventListener('click
   $('modalReprogramarMedicaHora').value = (currentTurnoMedicaData.hora || '').substring(0, 5);
 });
 
-// Men├║: Cancelado por Paciente
+// Menú: Cancelado por Paciente
 document.getElementById('btnCanceladoPacienteMedicaMenu')?.addEventListener('click', (e) => {
   e.preventDefault();
   e.stopPropagation();
@@ -11025,12 +11025,12 @@ document.getElementById('btnCanceladoPacienteMedicaMenu')?.addEventListener('cli
   document.getElementById('menuMasOpcionesMedica').style.display = 'none';
   currentEstadoAction = 'cancelado-paciente';
   cerrarModalEstadoCitaMedica();
-  $('modalConfirmReprogramacionTitle').textContent = '┬┐Desea reprogramar esta cita?';
-  $('modalConfirmReprogramacionMessage').textContent = 'El paciente cancel├│ la cita. ┬┐Desea reprogramarla para otro d├¡a?';
+  $('modalConfirmReprogramacionTitle').textContent = '¿Desea reprogramar esta cita?';
+  $('modalConfirmReprogramacionMessage').textContent = 'El paciente canceló la cita. ¿Desea reprogramarla para otro día?';
   $('modalConfirmReprogramacion').classList.remove('hidden');
 });
 
-// Men├║: No Asisti├│
+// Menú: No Asistió
 document.getElementById('btnNoAsistioMedicaMenu')?.addEventListener('click', (e) => {
   e.preventDefault();
   e.stopPropagation();
@@ -11038,39 +11038,39 @@ document.getElementById('btnNoAsistioMedicaMenu')?.addEventListener('click', (e)
   document.getElementById('menuMasOpcionesMedica').style.display = 'none';
   currentEstadoAction = 'no-asistio';
   cerrarModalEstadoCitaMedica();
-  $('modalConfirmReprogramacionTitle').textContent = '┬┐Desea reprogramar esta cita?';
-  $('modalConfirmReprogramacionMessage').textContent = 'El paciente no asisti├│. ┬┐Desea reprogramarla para otro d├¡a?';
+  $('modalConfirmReprogramacionTitle').textContent = '¿Desea reprogramar esta cita?';
+  $('modalConfirmReprogramacionMessage').textContent = 'El paciente no asistió. ¿Desea reprogramarla para otro día?';
   $('modalConfirmReprogramacion').classList.remove('hidden');
 });
 
-// Delegaci├│n de eventos para los botones del modal de confirmaci├│n de reprogramaci├│n
+// Delegación de eventos para los botones del modal de confirmación de reprogramación
 document.addEventListener('click', async (e) => {
   const btnSi = e.target.closest('#btnConfirmReprogramacionSi');
   const btnNo = e.target.closest('#btnConfirmReprogramacionNo');
   
-  // Bot├│n: Confirmar Reprogramaci├│n - S├ì
+  // Botón: Confirmar Reprogramación - SÍ
   if (btnSi) {
     e.preventDefault();
     e.stopPropagation();
-    console.log('[CONFIRM_SI] Bot├│n clickeado');
+    console.log('[CONFIRM_SI] Botón clickeado');
     // Guardar datos antes de cerrar (cerrarModalConfirmReprogramacion los limpia)
     const savedTurnoData = currentTurnoMedicaData;
     cerrarModalConfirmReprogramacion();
-    // Restaurar datos para el modal de reprogramaci├│n
+    // Restaurar datos para el modal de reprogramación
     currentTurnoMedicaData = savedTurnoData;
     
-    // Abrir modal de reprogramaci├│n
+    // Abrir modal de reprogramación
     $('modalReprogramarMedica').classList.remove('hidden');
     // Pre-llenar con la fecha/hora actuales de la cita como punto de partida
     $('modalReprogramarMedicaFecha').value = savedTurnoData?.fecha || '';
     $('modalReprogramarMedicaHora').value = (savedTurnoData?.hora || '').substring(0, 5);
   }
   
-  // Bot├│n: Confirmar Reprogramaci├│n - NO
+  // Botón: Confirmar Reprogramación - NO
   if (btnNo) {
     e.preventDefault();
     e.stopPropagation();
-    console.log('[CONFIRM_NO] Bot├│n clickeado');
+    console.log('[CONFIRM_NO] Botón clickeado');
     
     if (!currentTurnoMedicaData) {
       console.log('[CONFIRM_NO] No hay turno seleccionado');
@@ -11081,7 +11081,7 @@ document.addEventListener('click', async (e) => {
     const turnoData = currentTurnoMedicaData;
     const accion = currentEstadoAction;
     
-    console.log('[CONFIRM_NO] Acci├│n:', accion);
+    console.log('[CONFIRM_NO] Acción:', accion);
     console.log('[CONFIRM_NO] Turno ID:', turnoData?.id);
     
     cerrarModalConfirmReprogramacion();
@@ -11097,8 +11097,8 @@ document.addEventListener('click', async (e) => {
       }
       
       if (!estadoFinal) {
-        console.error('[CONFIRM_NO] Acci├│n desconocida:', accion);
-        showToast('Error: no se especific├│ acci├│n v├ílida', 'error');
+        console.error('[CONFIRM_NO] Acción desconocida:', accion);
+        showToast('Error: no se especificó acción válida', 'error');
         return;
       }
       
@@ -11142,7 +11142,7 @@ document.addEventListener('click', async (e) => {
           }
         }
         
-        // Recargar para asegurar que todo est├í sincronizado
+        // Recargar para asegurar que todo está sincronizado
         cargarTurnosMedica();
       } else {
         console.error('[CONFIRM_NO] Error en respuesta:', data.error);
@@ -11155,7 +11155,7 @@ document.addEventListener('click', async (e) => {
   }
 });
 
-// Modal: Confirmar Reprogramaci├│n
+// Modal: Confirmar Reprogramación
 $('btnConfirmarReprogramarMedica')?.addEventListener('click', async (e) => {
   e.preventDefault();
   e.stopPropagation();
@@ -11170,7 +11170,7 @@ $('btnConfirmarReprogramarMedica')?.addEventListener('click', async (e) => {
   }
   
   try {
-    // Determinar el estado final del turno original seg├║n la acci├│n
+    // Determinar el estado final del turno original según la acción
     let estadoOriginal = 'REPROGRAMADO';
     if (currentEstadoAction === 'no-asistio') estadoOriginal = 'NO_ASISTIO';
     else if (currentEstadoAction === 'cancelado-paciente') estadoOriginal = 'CANCELADO';
@@ -11241,7 +11241,7 @@ $('modalEstadoCitaMedica')?.addEventListener('click', (e) => {
   if (e.target === $('modalEstadoCitaMedica')) {
     cerrarModalEstadoCitaMedica();
   }
-  // Cerrar men├║ desplegable si se hace clic fuera de ├®l
+  // Cerrar menú desplegable si se hace clic fuera de él
   if (!e.target.closest('#btnMasOpcionesMedica') && !e.target.closest('#menuMasOpcionesMedica')) {
     const menu = document.getElementById('menuMasOpcionesMedica');
     if (menu) menu.style.display = 'none';
@@ -11253,7 +11253,7 @@ $('modalReprogramarMedica')?.addEventListener('click', (e) => {
   }
 });
 
-// ÔöÇÔöÇ Editar paciente en modal m├®dica ÔöÇÔöÇ
+// ÔöÇÔöÇ Editar paciente en modal médica ÔöÇÔöÇ
 document.getElementById('btnEditarMedicaModal')?.addEventListener('click', () => {
   const panel = document.getElementById('editarMedicaPanel');
   if (!panel) return;
@@ -11490,9 +11490,9 @@ async function buscarEstudiosPorDocumento() {
   }
 }
 
-// buscarRecibosPorDocumento removed ÔÇö replaced by buscarCitaParaRecibo in new Recibos UI
+// buscarRecibosPorDocumento removed — replaced by buscarCitaParaRecibo in new Recibos UI
 
-// Event listeners para buscadores (p├íginas dedicadas en sidebar)
+// Event listeners para buscadores (páginas dedicadas en sidebar)
 $('btnBuscarCitaDocumento')?.addEventListener('click', buscarCitasPorDocumento);
 $('buscarCitaDocumento')?.addEventListener('keydown', e => { if (e.key === 'Enter') buscarCitasPorDocumento(); });
 $('btnLimpiarCitaDocumento')?.addEventListener('click', () => {
@@ -11511,20 +11511,20 @@ $('btnLimpiarEstudioDocumento')?.addEventListener('click', () => {
   if (sec) sec.style.display = 'none';
 });
 
-// Old recibo document search listeners removed ÔÇö those IDs no longer exist in the new HTML
+// Old recibo document search listeners removed — those IDs no longer exist in the new HTML
 
 // ============================================================
-// PACIENTES EN ESPERA ÔÇö ELECTRODIAGN├ôSTICO
+// PACIENTES EN ESPERA — ELECTRODIAGNÓSTICO
 // ============================================================
 
-let esperaData = [];   // cach├® local de registros
+let esperaData = [];   // caché local de registros
 
-let _esperaPendienteId = null;  // id esperando confirmaci├│n de eliminaci├│n
+let _esperaPendienteId = null;  // id esperando confirmación de eliminación
 
 function initEsperaElectro() {
   $('btnAgregarEspera')?.addEventListener('click', agregarPacienteEspera);
 
-  // Cargar entidades din├ímicamente
+  // Cargar entidades dinámicamente
   (async () => {
     try {
       const el = $('esperaFiltroEntidad');
@@ -11550,7 +11550,7 @@ function initEsperaElectro() {
     } catch (e) { console.warn('No se pudieron cargar entidades para espera:', e.message); }
   })();
 
-  // Inicializar multi-select de prioridad (opciones est├íticas)
+  // Inicializar multi-select de prioridad (opciones estáticas)
   const elPrio = $('esperaFiltroPrioridad');
   if (elPrio && typeof initMultiSelect === 'function') {
     initMultiSelect(elPrio, { placeholder: 'Todas', onChange: () => renderEsperaTable() });
@@ -11562,7 +11562,7 @@ function initEsperaElectro() {
     $(id)?.addEventListener('change', renderEsperaTable);
   });
 
-  // Botones del modal de confirmaci├│n de eliminaci├│n
+  // Botones del modal de confirmación de eliminación
   $('btnConfirmarEliminarEspera')?.addEventListener('click', async () => {
     cerrarModalEliminarEspera();
     if (!_esperaPendienteId) return;
@@ -11678,7 +11678,7 @@ async function agregarPacienteEspera() {
     return;
   }
   if (!/^\d{4,15}$/.test(documento)) {
-    showToast('El documento debe tener entre 4 y 15 d├¡gitos num├®ricos', 'error');
+    showToast('El documento debe tener entre 4 y 15 dígitos numéricos', 'error');
     $('esperaDocumento').focus();
     return;
   }
@@ -11717,7 +11717,7 @@ async function agregarPacienteEspera() {
 }
 
 function eliminarPacienteEspera(id) {
-  // Buscar nombre del paciente en cach├® para mostrarlo en el modal
+  // Buscar nombre del paciente en caché para mostrarlo en el modal
   const paciente = esperaData.find(p => p.id === id);
   const nombre = paciente
     ? `${paciente.nombres || ''} ${paciente.apellidos || ''}`.trim() || 'este paciente'
@@ -11733,10 +11733,10 @@ function eliminarPacienteEspera(id) {
 }
 
 // ============================================================
-// ESPECIALIDADES Y TIPOS DE CONSULTA ÔÇö M├ôDULO USUARIOS
+// ESPECIALIDADES Y TIPOS DE CONSULTA — MÓDULO USUARIOS
 // ============================================================
 
-// Cach├® para evitar re-fetches innecesarios
+// Caché para evitar re-fetches innecesarios
 let _especialidadesCache = null;
 let _tiposConsultaCache  = {};   // clave: nombre de especialidad
 let _especialidadSelId   = null; // id de especialidad abierta en el panel de tipos
@@ -11751,7 +11751,7 @@ async function cargarOpcionesEspecialidad(selectId) {
       const res = await apiFetch('/api/especialidades');
       _especialidadesCache = await res.json();
     }
-    // Conservar primera opci├│n (vac├¡a) y "Otra" al final
+    // Conservar primera opción (vacía) y "Otra" al final
     const primeraOpcion = sel.options[0];
     sel.innerHTML = '';
     sel.appendChild(primeraOpcion);
@@ -11786,8 +11786,8 @@ async function cargarEspecialidades() {
   try {
     const res = await apiFetch('/api/especialidades');
     const data = await res.json();
-    _especialidadesCache = data;   // actualizar cach├®
-    _tiposConsultaCache  = {};     // invalidar cach├® de tipos
+    _especialidadesCache = data;   // actualizar caché
+    _tiposConsultaCache  = {};     // invalidar caché de tipos
     renderEspecialidadesTable(data);
   } catch (e) {
     showToast('Error cargando especialidades', 'error');
@@ -11864,7 +11864,7 @@ async function editarEspecialidad(id, nombreActual) {
 }
 
 function eliminarEspecialidad(id, nombre) {
-  showConfirm(`┬┐Eliminar la especialidad "${nombre}" y todos sus tipos de consulta?\nEsta acci├│n no se puede deshacer.`, async () => {
+  showConfirm(`¿Eliminar la especialidad "${nombre}" y todos sus tipos de consulta?\nEsta acción no se puede deshacer.`, async () => {
   try {
     const res = await apiFetch(`/api/especialidades/${id}`, { method: 'DELETE' });
     const data = await res.json();
@@ -11906,7 +11906,7 @@ async function cargarTiposConsultaPanel() {
     const res = await apiFetch(`/api/tipos-consulta?especialidad_id=${_especialidadSelId}`);
     const data = await res.json();
     renderTiposConsultaPanel(data);
-    // Invalidar cach├® de agenda para esta especialidad
+    // Invalidar caché de agenda para esta especialidad
     if (_especialidadesCache) {
       const esp = _especialidadesCache.find(e => e.id === _especialidadSelId);
       if (esp) delete _tiposConsultaCache[esp.nombre];
@@ -11975,7 +11975,7 @@ async function editarTipoConsulta(id, nombreActual) {
 }
 
 function eliminarTipoConsulta(id) {
-  showConfirm('┬┐Eliminar este tipo de consulta?', async () => {
+  showConfirm('¿Eliminar este tipo de consulta?', async () => {
     try {
       const res = await apiFetch(`/api/tipos-consulta/${id}`, { method: 'DELETE' });
       const data = await res.json();
@@ -11986,18 +11986,18 @@ function eliminarTipoConsulta(id) {
   });
 }
 
-// ========== M├ôDULO GESTI├ôN DE DATOS ==========
+// ========== MÓDULO GESTIÓN DE DATOS ==========
 
 let _gestionTipoActual = 'citas_electro';
 
 const _gestionTitulos = {
-  citas_electro:     'Citas Electrodiagn├│stico',
-  turnos:            'Turnos M├®dicos',
+  citas_electro:     'Citas Electrodiagnóstico',
+  turnos:            'Turnos Médicos',
   recibos:           'Recibos',
   estudio_duraciones:'Tipos de Estudio',
   especialidades:    'Especialidades',
   tipos_consulta:    'Tipos de Consulta',
-  diagnosticos:      'Diagn├│sticos',
+  diagnosticos:      'Diagnósticos',
   entidades:         'Entidades'
 };
 
@@ -12022,7 +12022,7 @@ const _gestionColumnas = {
   ],
   recibos: [
     { key: 'id',         label: 'ID' },
-    { key: 'numero',     label: 'N┬░' },
+    { key: 'numero',     label: 'N°' },
     { key: 'cliente',    label: 'Cliente' },
     { key: 'fecha',      label: 'Fecha' },
     { key: 'total',      label: 'Total' },
@@ -12032,29 +12032,29 @@ const _gestionColumnas = {
   estudio_duraciones: [
     { key: 'id',                label: 'ID' },
     { key: 'nombre',            label: 'Nombre' },
-    { key: 'duracion_minutos',  label: 'Duraci├│n (min)' }
+    { key: 'duracion_minutos',  label: 'Duración (min)' }
   ],
   especialidades: [
     { key: 'id',     label: 'ID' },
     { key: 'nombre', label: 'Nombre' },
-    { key: 'activo', label: 'Activo', format: v => v ? 'S├¡' : 'No' }
+    { key: 'activo', label: 'Activo', format: v => v ? 'Sí' : 'No' }
   ],
   tipos_consulta: [
     { key: 'id',          label: 'ID' },
     { key: 'nombre',      label: 'Nombre' },
     { key: 'especialidad',label: 'Especialidad' },
-    { key: 'activo',      label: 'Activo', format: v => v ? 'S├¡' : 'No' }
+    { key: 'activo',      label: 'Activo', format: v => v ? 'Sí' : 'No' }
   ],
   diagnosticos: [
     { key: 'id',     label: 'ID' },
     { key: 'nombre', label: 'Nombre' },
-    { key: 'codigo', label: 'C├│digo' },
-    { key: 'activo', label: 'Activo', format: v => v ? 'S├¡' : 'No' }
+    { key: 'codigo', label: 'Código' },
+    { key: 'activo', label: 'Activo', format: v => v ? 'Sí' : 'No' }
   ],
   entidades: [
     { key: 'id',     label: 'ID' },
     { key: 'nombre', label: 'Nombre' },
-    { key: 'activo', label: 'Activo', format: v => v ? 'S├¡' : 'No' }
+    { key: 'activo', label: 'Activo', format: v => v ? 'Sí' : 'No' }
   ]
 };
 
@@ -12099,7 +12099,7 @@ function initGestionDatos() {
       _gestionSeleccionados = new Set();
       _actualizarConteoGestion();
       _gestionActualizarFiltros();
-      // Mostrar/ocultar bot├│n Agregar seg├║n tipo
+      // Mostrar/ocultar botón Agregar según tipo
       const btnAgregar = $('btnAgregarGestion');
       if (btnAgregar) btnAgregar.style.display = _GESTION_TIPOS_AGREGAR.includes(_gestionTipoActual) ? '' : 'none';
       buscarGestionDatos();
@@ -12125,7 +12125,7 @@ function initGestionDatos() {
   }
 
   _gestionActualizarFiltros();
-  // Visibilidad inicial del bot├│n Agregar
+  // Visibilidad inicial del botón Agregar
   const btnAgregar = $('btnAgregarGestion');
   if (btnAgregar) btnAgregar.style.display = _GESTION_TIPOS_AGREGAR.includes(_gestionTipoActual) ? '' : 'none';
   buscarGestionDatos();
@@ -12206,7 +12206,7 @@ async function buscarGestionDatos() {
   try {
     const res = await apiFetch(`/api/admin/datos/${tipo}?${params}`);
     if (res.status === 403) {
-      if (tbody) tbody.innerHTML = `<tr><td colspan="10" style="padding:20px;text-align:center;color:#dc2626">Sin permisos para realizar esta acci├│n</td></tr>`;
+      if (tbody) tbody.innerHTML = `<tr><td colspan="10" style="padding:20px;text-align:center;color:#dc2626">Sin permisos para realizar esta acción</td></tr>`;
       return;
     }
     const data = await res.json();
@@ -12242,18 +12242,18 @@ function _gestionRenderPaginacion() {
   if (total === 0) { ctrl.textContent = '0 registros'; return; }
 
   let html = `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 0">
-    <span style="font-size:13px;color:#627371">${total} registro${total !== 1 ? 's' : ''} ÔÇö mostrando ${inicio}ÔÇô${fin}</span>`;
+    <span style="font-size:13px;color:#627371">${total} registro${total !== 1 ? 's' : ''} — mostrando ${inicio}–${fin}</span>`;
   if (pages > 1) {
     html += `<div style="display:flex;gap:4px;align-items:center">`;
-    html += `<button onclick="_gestionIrPagina(${pag - 1})" ${pag <= 1 ? 'disabled' : ''} style="padding:4px 10px;border:1px solid #d1d5db;border-radius:4px;background:#fff;cursor:pointer;font-size:13px">ÔÇ╣</button>`;
+    html += `<button onclick="_gestionIrPagina(${pag - 1})" ${pag <= 1 ? 'disabled' : ''} style="padding:4px 10px;border:1px solid #d1d5db;border-radius:4px;background:#fff;cursor:pointer;font-size:13px">‹</button>`;
     const start = Math.max(1, pag - 2), end = Math.min(pages, pag + 2);
-    if (start > 1) html += `<button onclick="_gestionIrPagina(1)" style="padding:4px 8px;border:1px solid #d1d5db;border-radius:4px;background:#fff;cursor:pointer;font-size:13px">1</button>${start > 2 ? '<span style="padding:0 4px">ÔÇª</span>' : ''}`;
+    if (start > 1) html += `<button onclick="_gestionIrPagina(1)" style="padding:4px 8px;border:1px solid #d1d5db;border-radius:4px;background:#fff;cursor:pointer;font-size:13px">1</button>${start > 2 ? '<span style="padding:0 4px">…</span>' : ''}`;
     for (let i = start; i <= end; i++) {
       const active = i === pag ? 'background:#627371;color:#fff;border-color:#627371' : 'background:#fff';
       html += `<button onclick="_gestionIrPagina(${i})" style="padding:4px 8px;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;font-size:13px;${active}">${i}</button>`;
     }
-    if (end < pages) html += `${end < pages - 1 ? '<span style="padding:0 4px">ÔÇª</span>' : ''}<button onclick="_gestionIrPagina(${pages})" style="padding:4px 8px;border:1px solid #d1d5db;border-radius:4px;background:#fff;cursor:pointer;font-size:13px">${pages}</button>`;
-    html += `<button onclick="_gestionIrPagina(${pag + 1})" ${pag >= pages ? 'disabled' : ''} style="padding:4px 10px;border:1px solid #d1d5db;border-radius:4px;background:#fff;cursor:pointer;font-size:13px">ÔÇ║</button>`;
+    if (end < pages) html += `${end < pages - 1 ? '<span style="padding:0 4px">…</span>' : ''}<button onclick="_gestionIrPagina(${pages})" style="padding:4px 8px;border:1px solid #d1d5db;border-radius:4px;background:#fff;cursor:pointer;font-size:13px">${pages}</button>`;
+    html += `<button onclick="_gestionIrPagina(${pag + 1})" ${pag >= pages ? 'disabled' : ''} style="padding:4px 10px;border:1px solid #d1d5db;border-radius:4px;background:#fff;cursor:pointer;font-size:13px">›</button>`;
     html += `</div>`;
   }
   html += `</div>`;
@@ -12279,9 +12279,9 @@ async function abrirModalAgregarGestion() {
   if (!modal) return;
 
   const titulo = $('modalAgregarGestionTitulo');
-  if (titulo) titulo.textContent = `Agregar ÔÇö ${_gestionTitulos[tipo] || tipo}`;
+  if (titulo) titulo.textContent = `Agregar — ${_gestionTitulos[tipo] || tipo}`;
 
-  // Construir formulario din├ímico
+  // Construir formulario dinámico
   const form = $('formAgregarGestion');
   if (!form) return;
   let camposHtml = '';
@@ -12289,21 +12289,21 @@ async function abrirModalAgregarGestion() {
     camposHtml = `
       <div style="margin-bottom:14px">
         <label style="display:block;margin-bottom:6px;font-weight:500;font-size:14px">Nombre del estudio *</label>
-        <input id="agrGestionNombre" type="text" required maxlength="120" placeholder="Ej: Electromiograf├¡a" style="width:100%;padding:9px 12px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;font-size:14px" />
+        <input id="agrGestionNombre" type="text" required maxlength="120" placeholder="Ej: Electromiografía" style="width:100%;padding:9px 12px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;font-size:14px" />
       </div>
       <div style="margin-bottom:14px">
-        <label style="display:block;margin-bottom:6px;font-weight:500;font-size:14px">Duraci├│n en minutos *</label>
+        <label style="display:block;margin-bottom:6px;font-weight:500;font-size:14px">Duración en minutos *</label>
         <input id="agrGestionDuracion" type="number" required min="1" max="480" placeholder="Ej: 45" style="width:100%;padding:9px 12px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;font-size:14px" />
       </div>`;
   } else if (tipo === 'especialidades') {
     camposHtml = `
       <div style="margin-bottom:14px">
         <label style="display:block;margin-bottom:6px;font-weight:500;font-size:14px">Nombre de la especialidad *</label>
-        <input id="agrGestionNombre" type="text" required maxlength="120" placeholder="Ej: Cardiolog├¡a" style="width:100%;padding:9px 12px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;font-size:14px" />
+        <input id="agrGestionNombre" type="text" required maxlength="120" placeholder="Ej: Cardiología" style="width:100%;padding:9px 12px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;font-size:14px" />
       </div>`;
   } else if (tipo === 'tipos_consulta') {
     // Cargar especialidades para el select
-    let espOptions = '<option value="">Seleccionar especialidadÔÇª</option>';
+    let espOptions = '<option value="">Seleccionar especialidad…</option>';
     try {
       const res = await apiFetch('/api/especialidades');
       if (res.ok) {
@@ -12324,22 +12324,22 @@ async function abrirModalAgregarGestion() {
     camposHtml = `
       <div style="margin-bottom:14px">
         <label style="display:block;margin-bottom:6px;font-weight:500;font-size:14px">Nombre *</label>
-        <input id="agrGestionNombre" type="text" required maxlength="200" placeholder="Nombre del diagn├│stico" style="width:100%;padding:9px 12px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;font-size:14px" />
+        <input id="agrGestionNombre" type="text" required maxlength="200" placeholder="Nombre del diagnóstico" style="width:100%;padding:9px 12px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;font-size:14px" />
       </div>
       <div style="margin-bottom:14px">
-        <label style="display:block;margin-bottom:6px;font-weight:500;font-size:14px">C├│digo (opcional)</label>
+        <label style="display:block;margin-bottom:6px;font-weight:500;font-size:14px">Código (opcional)</label>
         <input id="agrGestionCodigo" type="text" maxlength="20" placeholder="Ej: A00.1" style="width:100%;padding:9px 12px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;font-size:14px" />
       </div>
       <div style="margin-bottom:14px">
-        <label style="display:block;margin-bottom:6px;font-weight:500;font-size:14px">Descripci├│n (opcional)</label>
-        <textarea id="agrGestionDescripcion" rows="3" maxlength="500" placeholder="Descripci├│n adicionalÔÇª" style="width:100%;padding:9px 12px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;font-size:14px;resize:vertical"></textarea>
+        <label style="display:block;margin-bottom:6px;font-weight:500;font-size:14px">Descripción (opcional)</label>
+        <textarea id="agrGestionDescripcion" rows="3" maxlength="500" placeholder="Descripción adicional…" style="width:100%;padding:9px 12px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;font-size:14px;resize:vertical"></textarea>
       </div>`;
   } else if (tipo === 'entidades') {
     camposHtml = `
       <div style="margin-bottom:14px">
         <label style="display:block;margin-bottom:6px;font-weight:500;font-size:14px">Nombre de la entidad *</label>
         <input id="agrGestionNombre" type="text" required maxlength="200" placeholder="Ej: NUEVA EPS" style="width:100%;padding:9px 12px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;font-size:14px" />
-        <span style="font-size:0.78rem;color:#6b7280;margin-top:4px;display:block">Se guardar├í en may├║sculas autom├íticamente</span>
+        <span style="font-size:0.78rem;color:#6b7280;margin-top:4px;display:block">Se guardará en mayúsculas automáticamente</span>
       </div>`;
   }
   form.innerHTML = camposHtml +
@@ -12373,7 +12373,7 @@ async function guardarAgregarGestion(e) {
     if (!data.ok) { showToast(data.error || 'Error al guardar', 'error'); return; }
     showToast('Registro agregado exitosamente', 'success');
     $('modalAgregarGestion').classList.add('hidden');
-    // Invalidar cach├® para que otros m├│dulos recarguen datos actualizados
+    // Invalidar caché para que otros módulos recarguen datos actualizados
     if (tipo === 'entidades') invalidarCacheEntidades();
     if (tipo === 'estudio_duraciones') invalidarCacheEstudios();
     buscarGestionDatos();
@@ -12382,13 +12382,13 @@ async function guardarAgregarGestion(e) {
 
 function confirmarEliminarGestion(tipo, id) {
   const titulo = _gestionTitulos[tipo] || tipo;
-  showConfirm(`┬┐Eliminar este registro de "${titulo}"?\nEsta acci├│n es permanente e irreversible.`, async () => {
+  showConfirm(`¿Eliminar este registro de "${titulo}"?\nEsta acción es permanente e irreversible.`, async () => {
   try {
     const res  = await apiFetch(`/api/admin/datos/${tipo}/${id}`, { method: 'DELETE' });
     const data = await res.json();
     if (!data.ok) { showToast(data.error || 'Error al eliminar', 'error'); return; }
     showToast('Registro eliminado', 'success');
-    // Invalidar cach├® para que otros m├│dulos recarguen datos actualizados
+    // Invalidar caché para que otros módulos recarguen datos actualizados
     if (tipo === 'entidades') invalidarCacheEntidades();
     if (tipo === 'estudio_duraciones') invalidarCacheEstudios();
     buscarGestionDatos();
@@ -12402,7 +12402,7 @@ function eliminarSeleccionadosGestion() {
   const tipo   = _gestionTipoActual;
   const titulo = _gestionTitulos[tipo] || tipo;
   const n      = ids.length;
-  showConfirm(`┬┐Eliminar ${n} registro${n !== 1 ? 's' : ''} de "${titulo}"?\nEsta acci├│n es permanente e irreversible.`, async () => {
+  showConfirm(`¿Eliminar ${n} registro${n !== 1 ? 's' : ''} de "${titulo}"?\nEsta acción es permanente e irreversible.`, async () => {
   try {
     const res  = await apiFetch(`/api/admin/datos/${tipo}/bulk`, {
       method: 'DELETE',
@@ -12413,7 +12413,7 @@ function eliminarSeleccionadosGestion() {
     if (!data.ok) { showToast(data.error || 'Error al eliminar', 'error'); return; }
     const eliminados = data.eliminados ?? n;
     showToast(`${eliminados} registro${eliminados !== 1 ? 's' : ''} eliminado${eliminados !== 1 ? 's' : ''}`, 'success');
-    // Invalidar cach├® para que otros m├│dulos recarguen datos actualizados
+    // Invalidar caché para que otros módulos recarguen datos actualizados
     if (tipo === 'entidades') invalidarCacheEntidades();
     if (tipo === 'estudio_duraciones') invalidarCacheEstudios();
     buscarGestionDatos();
