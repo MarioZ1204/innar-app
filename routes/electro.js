@@ -160,6 +160,63 @@ router.post('/equipos-electro', requireAuth, requireRoleOrPerm(['superadmin']), 
   } catch (e) { res.status(500).json({ error: safeError(e) }); }
 });
 
+const monitorToHM = (v) => {
+  if (!v) return null;
+  const s = String(v);
+  return s.length >= 5 ? s.slice(0, 5) : s;
+};
+const monitorToDateStr = (v) => {
+  if (!v) return null;
+  if (typeof v === 'string') return v.length > 10 ? v.slice(0, 10) : v;
+  if (v instanceof Date) return v.toISOString().slice(0, 10);
+  return String(v);
+};
+const monitorParseMinutes = (hm) => {
+  if (!hm) return 0;
+  const [hh, mm] = String(hm).split(':').map((x) => parseInt(x, 10));
+  return (hh || 0) * 60 + (mm || 0);
+};
+const monitorCitaToTimeline = (cita, fechaDia) => {
+  const fecha = monitorToDateStr(cita.fecha);
+  const fechaFin = monitorToDateStr(cita.hora_fin_date || cita.fecha);
+  const startHM = monitorToHM(cita.hora_inicio || cita.hora_agendamiento || '00:00') || '00:00';
+  let endHM = monitorToHM(cita.hora_fin) || startHM;
+  let startMin = fecha < fechaDia ? 0 : monitorParseMinutes(startHM);
+  let endMin = fechaFin > fechaDia ? 1440 : monitorParseMinutes(endHM);
+  if (fecha === fechaDia && fechaFin === fechaDia && endMin <= startMin) {
+    const dur = parseInt(cita.duracion_minutos, 10);
+    endMin = Math.min(1440, startMin + (Number.isFinite(dur) && dur > 0 ? dur : 60));
+    endHM = `${String(Math.floor(endMin / 60)).padStart(2, '0')}:${String(endMin % 60).padStart(2, '0')}`;
+  }
+  if (endMin <= startMin) endMin = Math.min(1440, startMin + 30);
+  startMin = Math.max(0, Math.min(1439, startMin));
+  endMin = Math.max(startMin + 5, Math.min(1440, endMin));
+  const span = endMin - startMin;
+  return {
+    id: cita.id,
+    estudio: cita.estudio,
+    estado: cita.estado,
+    paciente_nombre: cita.paciente_nombre,
+    paciente_documento: cita.paciente_documento,
+    entidad: cita.entidad,
+    duracion_minutos: cita.duracion_minutos,
+    hora_inicio: startHM,
+    hora_fin: endHM,
+    start_min: startMin,
+    end_min: endMin,
+    left_pct: (startMin / 1440) * 100,
+    width_pct: (span / 1440) * 100,
+    bar_kind: monitorBarKind(cita.estado)
+  };
+};
+const monitorBarKind = (estado) => {
+  const s = (estado || '').toLowerCase();
+  if (s === 'completado') return 'pasado';
+  if (s === 'en estudio' || s === 'pausado') return 'activo';
+  if (['programado', 'confirmado', 'en sala', 'reprogramado', 'adelantado'].some((k) => s.includes(k))) return 'futuro';
+  return 'otro';
+};
+
 // GET /api/equipos-electro/monitor
 router.get('/equipos-electro/monitor', requireAuth, async (req, res) => {
   try {
@@ -171,157 +228,101 @@ router.get('/equipos-electro/monitor', requireAuth, async (req, res) => {
 
     const equipos = await db.query('SELECT id, nombre, descripcion, activo FROM equipos_electro ORDER BY activo DESC, nombre ASC');
 
-    let estudiosActuales, proximosEstudios, citasSinEquipo, completadosRows, totalDiaRows;
+    const citasDiaRows = await db.query(`
+      SELECT c.id, c.equipo_id, c.estudio, c.estado, c.fecha,
+             c.hora_agendamiento, c.hora_inicio, c.hora_fin, c.hora_fin_date,
+             c.duracion_minutos, c.entidad,
+             p.nombre AS paciente_nombre, p.documento AS paciente_documento
+      FROM citas_electro c
+      JOIN pacientes p ON p.id = c.paciente_id
+      WHERE c.equipo_id IS NOT NULL AND c.deleted_at IS NULL
+        AND c.fecha <= ? AND COALESCE(c.hora_fin_date, c.fecha) >= ?
+        AND c.estado NOT IN ('Cancelado')
+      ORDER BY c.equipo_id, COALESCE(c.hora_inicio, c.hora_agendamiento) ASC, c.id ASC
+    `, [fechaConsulta, fechaConsulta]);
 
+    const timelinePorEquipo = {};
+    const estudiosActuales = [];
+    const proximosEstudios = [];
+    for (const c of citasDiaRows) {
+      const eid = String(c.equipo_id);
+      if (!timelinePorEquipo[eid]) timelinePorEquipo[eid] = [];
+      timelinePorEquipo[eid].push(monitorCitaToTimeline(c, fechaConsulta));
+      if (c.estado === 'En Estudio' || c.estado === 'Pausado') {
+        if (!estudiosActuales.some((x) => String(x.equipo_id) === eid)) estudiosActuales.push(c);
+      }
+    }
     if (esHoy) {
-      estudiosActuales = await db.query(`
-        SELECT c.id, c.equipo_id, c.estudio, c.estado, c.fecha,
-               c.hora_agendamiento, c.hora_inicio, c.hora_fin, c.hora_fin_date,
-               c.duracion_minutos, c.entidad,
-               p.nombre AS paciente_nombre, p.documento AS paciente_documento
-        FROM citas_electro c
-        JOIN pacientes p ON p.id = c.paciente_id
-        WHERE c.estado = 'En Estudio' AND c.equipo_id IS NOT NULL AND c.deleted_at IS NULL
-        ORDER BY c.fecha, c.hora_agendamiento
-      `);
-      proximosEstudios = await db.query(`
-        SELECT c.id, c.equipo_id, c.estudio, c.estado, c.fecha,
-               c.hora_agendamiento, c.duracion_minutos, c.entidad,
-               p.nombre AS paciente_nombre, p.documento AS paciente_documento
-        FROM citas_electro c
-        JOIN pacientes p ON p.id = c.paciente_id
-        WHERE c.estado IN ('Programado','Confirmado','En Sala')
-          AND c.equipo_id IS NOT NULL AND c.deleted_at IS NULL
-          AND c.fecha >= CURDATE()
-        ORDER BY c.fecha ASC, c.hora_agendamiento ASC
-      `);
-      citasSinEquipo = await db.query(`
-        SELECT c.id, c.estudio, c.estado, c.fecha, c.hora_agendamiento,
-               c.hora_inicio, c.hora_fin, c.hora_fin_date, c.duracion_minutos, c.entidad,
-               p.nombre AS paciente_nombre, p.documento AS paciente_documento
-        FROM citas_electro c
-        JOIN pacientes p ON p.id = c.paciente_id
-        WHERE c.estado IN ('En Estudio','Programado','Confirmado','En Sala')
-          AND (c.equipo_id IS NULL OR c.equipo_id = 0) AND c.deleted_at IS NULL
-          AND c.fecha >= CURDATE()
-        ORDER BY c.fecha ASC, c.hora_agendamiento ASC
-        LIMIT 20
-      `);
-    } else {
-      estudiosActuales = await db.query(`
-        SELECT c.id, c.equipo_id, c.estudio, c.estado, c.fecha,
-               c.hora_agendamiento, c.hora_inicio, c.hora_fin, c.hora_fin_date,
-               c.duracion_minutos, c.entidad,
-               p.nombre AS paciente_nombre, p.documento AS paciente_documento
-        FROM citas_electro c
-        JOIN pacientes p ON p.id = c.paciente_id
-        WHERE c.equipo_id IS NOT NULL AND c.deleted_at IS NULL
-          AND c.fecha <= ? AND COALESCE(c.hora_fin_date, c.fecha) >= ?
-        ORDER BY c.hora_agendamiento ASC
-      `, [fechaConsulta, fechaConsulta]);
-      proximosEstudios = [];
-      citasSinEquipo = await db.query(`
-        SELECT c.id, c.estudio, c.estado, c.fecha, c.hora_agendamiento,
-               c.hora_inicio, c.hora_fin, c.hora_fin_date, c.duracion_minutos, c.entidad,
-               p.nombre AS paciente_nombre, p.documento AS paciente_documento
-        FROM citas_electro c
-        JOIN pacientes p ON p.id = c.paciente_id
-        WHERE (c.equipo_id IS NULL OR c.equipo_id = 0) AND c.deleted_at IS NULL
-          AND c.fecha <= ? AND COALESCE(c.hora_fin_date, c.fecha) >= ?
-        ORDER BY c.hora_agendamiento ASC
-        LIMIT 20
-      `, [fechaConsulta, fechaConsulta]);
+      for (const c of citasDiaRows) {
+        const eid = String(c.equipo_id);
+        if (['Programado', 'Confirmado', 'En Sala', 'Reprogramado', 'Adelantado'].includes(c.estado)) {
+          if (!proximosEstudios.some((x) => String(x.equipo_id) === eid)) proximosEstudios.push(c);
+        }
+      }
     }
 
-    completadosRows = await db.query(
+    const citasSinEquipo = await db.query(`
+        SELECT c.id, c.estudio, c.estado, c.fecha, c.hora_agendamiento,
+               c.hora_inicio, c.hora_fin, c.hora_fin_date, c.duracion_minutos, c.entidad,
+               p.nombre AS paciente_nombre, p.documento AS paciente_documento
+        FROM citas_electro c
+        JOIN pacientes p ON p.id = c.paciente_id
+        WHERE c.estado IN ('En Estudio','Programado','Confirmado','En Sala','Pausado')
+          AND (c.equipo_id IS NULL OR c.equipo_id = 0) AND c.deleted_at IS NULL
+          AND c.fecha <= ? AND COALESCE(c.hora_fin_date, c.fecha) >= ?
+        ORDER BY c.fecha ASC, c.hora_agendamiento ASC
+        LIMIT 20
+      `, [fechaConsulta, fechaConsulta]);
+
+    const completadosRows = await db.query(
       `SELECT COUNT(*) AS total FROM citas_electro WHERE deleted_at IS NULL AND estado = 'Completado' AND fecha <= ? AND COALESCE(hora_fin_date, fecha) >= ?`,
       [fechaConsulta, fechaConsulta]
     );
-    totalDiaRows = await db.query(
+    const totalDiaRows = await db.query(
       `SELECT COUNT(*) AS total FROM citas_electro WHERE deleted_at IS NULL AND fecha <= ? AND COALESCE(hora_fin_date, fecha) >= ?`,
       [fechaConsulta, fechaConsulta]
     );
-
-    const toHM = (v) => { if (!v) return null; const s = String(v); return s.length >= 5 ? s.slice(0, 5) : s; };
-    const toDateStr = (v) => {
-      if (!v) return null;
-      if (typeof v === 'string') return v.length > 10 ? v.slice(0, 10) : v;
-      if (v instanceof Date) return v.toISOString().slice(0, 10);
-      return String(v);
-    };
-
-    // Progress is now calculated client-side to avoid timezone mismatch
 
     const proximosPorEquipo = {};
     for (const c of proximosEstudios) {
       const eid = String(c.equipo_id);
       if (!proximosPorEquipo[eid]) proximosPorEquipo[eid] = c;
     }
-
     const actualesPorEquipo = {};
-    if (esHoy) {
-      for (const c of estudiosActuales) { actualesPorEquipo[String(c.equipo_id)] = c; }
-    } else {
-      for (const c of estudiosActuales) {
-        const eid = String(c.equipo_id);
-        if (!actualesPorEquipo[eid]) actualesPorEquipo[eid] = [];
-        actualesPorEquipo[eid].push(c);
-      }
-    }
+    for (const c of estudiosActuales) actualesPorEquipo[String(c.equipo_id)] = c;
 
-    const resultado = equipos.map(eq => {
+    const mapCitaResumen = (c) => ({
+      id: c.id, estudio: c.estudio, estado: c.estado,
+      paciente_nombre: c.paciente_nombre, paciente_documento: c.paciente_documento,
+      hora_inicio: monitorToHM(c.hora_inicio || c.hora_agendamiento),
+      hora_fin: monitorToHM(c.hora_fin),
+      hora_agendamiento: monitorToHM(c.hora_agendamiento),
+      fecha: monitorToDateStr(c.fecha),
+      hora_fin_date: monitorToDateStr(c.hora_fin_date),
+      duracion_minutos: c.duracion_minutos, entidad: c.entidad
+    });
+
+    const resultado = equipos.map((eq) => {
       const eid = String(eq.id);
-      let actual = null, estudios_dia = null;
-      if (esHoy) {
-        actual = actualesPorEquipo[eid] || null;
-      } else {
-        const arr = actualesPorEquipo[eid] || [];
-        estudios_dia = arr.map(c => ({
-          id: c.id, estudio: c.estudio, estado: c.estado,
-          paciente_nombre: c.paciente_nombre, paciente_documento: c.paciente_documento,
-          hora_inicio: toHM(c.hora_inicio || c.hora_agendamiento),
-          hora_fin: toHM(c.hora_fin),
-          fecha: toDateStr(c.fecha),
-          duracion_minutos: c.duracion_minutos, entidad: c.entidad
-        }));
-      }
+      const actual = actualesPorEquipo[eid] || null;
       const proximo = proximosPorEquipo[eid] || null;
-
       return {
         id: eq.id, nombre: eq.nombre, descripcion: eq.descripcion, activo: !!eq.activo,
-        estudio_actual: actual ? {
-          id: actual.id, estudio: actual.estudio, estado: actual.estado,
-          paciente_nombre: actual.paciente_nombre, paciente_documento: actual.paciente_documento,
-          hora_inicio: toHM(actual.hora_inicio || actual.hora_agendamiento),
-          hora_fin: toHM(actual.hora_fin), fecha: toDateStr(actual.fecha),
-          hora_fin_date: toDateStr(actual.hora_fin_date),
-          duracion_minutos: actual.duracion_minutos, entidad: actual.entidad
-        } : null,
-        proximo_estudio: proximo ? {
-          id: proximo.id, estudio: proximo.estudio, estado: proximo.estado,
-          paciente_nombre: proximo.paciente_nombre,
-          hora_agendamiento: toHM(proximo.hora_agendamiento),
-          fecha: toDateStr(proximo.fecha), entidad: proximo.entidad
-        } : null,
-        estudios_dia: estudios_dia
+        estudios_timeline: timelinePorEquipo[eid] || [],
+        estudio_actual: actual ? mapCitaResumen(actual) : null,
+        proximo_estudio: proximo ? mapCitaResumen(proximo) : null
       };
     });
 
-    const sinEquipo = citasSinEquipo.map(c => ({
-      id: c.id, estudio: c.estudio, estado: c.estado,
-      paciente_nombre: c.paciente_nombre,
-      hora_agendamiento: toHM(c.hora_agendamiento),
-      hora_inicio: toHM(c.hora_inicio), hora_fin: toHM(c.hora_fin),
-      fecha: toDateStr(c.fecha), duracion_minutos: c.duracion_minutos
-    }));
+    const sinEquipo = citasSinEquipo.map((c) => mapCitaResumen(c));
 
     res.json({
       fecha: fechaConsulta, es_hoy: esHoy,
       resumen: {
         total_estudios: parseInt(totalDiaRows[0]?.total,10) || 0,
         completados: parseInt(completadosRows[0]?.total,10) || 0,
-        en_estudio: esHoy ? estudiosActuales.length : estudiosActuales.filter(c => c.estado === 'En Estudio').length,
-        pendientes: esHoy ? proximosEstudios.length : estudiosActuales.filter(c => ['Programado','Confirmado','En Sala'].includes(c.estado)).length,
+        en_estudio: citasDiaRows.filter((c) => c.estado === 'En Estudio' || c.estado === 'Pausado').length,
+        pendientes: citasDiaRows.filter((c) => ['Programado', 'Confirmado', 'En Sala', 'Reprogramado', 'Adelantado'].includes(c.estado)).length,
         sin_equipo: citasSinEquipo.length
       },
       equipos: resultado, sin_equipo: sinEquipo

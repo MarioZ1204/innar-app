@@ -12605,119 +12605,85 @@ function renderMonitorEquipos(data) {
     return svgMonitor;
   }
 
-  function histEstadoClass(estado) {
-    const s = (estado || '').toLowerCase();
-    if (s === 'completado') return 'st-completado';
-    if (s === 'en estudio') return 'st-en-estudio';
-    if (s.includes('programa') || s.includes('confirma') || s.includes('sala')) return 'st-programado';
-    if (s.includes('cancel') || s.includes('no asis')) return 'st-cancelado';
-    return 'st-other';
+  function timelineBarClass(seg) {
+    const k = seg.bar_kind || 'otro';
+    if (k === 'pasado') return 'meq-bar-pasado';
+    if (k === 'activo') return 'meq-bar-activo';
+    if (k === 'futuro') return 'meq-bar-futuro';
+    return 'meq-bar-otro';
   }
 
-  let html = '<div class="meq-list-wrap">';
-  if (esHoy) {
-    html += '<div class="meq-header-row"><div class="meq-col meq-col-equipo">Equipo</div><div class="meq-col meq-col-actual">Estudio Actual</div><div class="meq-col meq-col-sep"></div><div class="meq-col meq-col-next">Siguiente Estudio</div></div>';
-  } else {
-    html += '<div class="meq-header-row"><div class="meq-col meq-col-equipo">Equipo</div><div class="meq-col" style="grid-column:2/5">Estudios del d\u00eda</div></div>';
-  }
+  const now = new Date();
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+  const nowPct = (nowMin / 1440) * 100;
+  const hourTicks = [0, 3, 6, 9, 12, 15, 18, 21, 24];
 
+  let html = '<div class="meq-timeline-wrap">';
+  html += '<div class="meq-timeline-legend">';
+  html += '<span class="meq-leg-item"><i class="meq-leg-swatch meq-bar-pasado"></i> Completados</span>';
+  html += '<span class="meq-leg-item"><i class="meq-leg-swatch meq-bar-activo"></i> En estudio</span>';
+  html += '<span class="meq-leg-item"><i class="meq-leg-swatch meq-bar-futuro"></i> Programados</span>';
+  if (esHoy) html += '<span class="meq-leg-item meq-leg-now"><i class="meq-leg-now-line"></i> Ahora</span>';
+  html += '</div>';
+
+  html += '<div class="meq-timeline-head">';
+  html += '<div class="meq-timeline-eq-col">Equipo</div>';
+  html += '<div class="meq-timeline-hours">';
+  hourTicks.forEach(function(h) {
+    const pct = (h / 24) * 100;
+    const lbl = h === 24 ? '24' : String(h).padStart(2, '0') + ':00';
+    html += '<span class="meq-hour-tick" style="left:' + pct + '%">' + lbl + '</span>';
+  });
+  html += '</div></div>';
+
+  html += '<div class="meq-timeline-body">';
   equipos.forEach(function(eq) {
+    const timeline = eq.estudios_timeline || [];
+    const tieneActivo = timeline.some(function(s) { return s.bar_kind === 'activo'; });
+    const tieneAlgo = timeline.length > 0;
+
     if (!eq.activo) {
       inactivos++;
-      html += '<div class="meq-row meq-inactivo meq-st-inactivo">';
-      html += '<div class="meq-col meq-col-equipo"><div class="meq-eq-icon">' + getEquipIcon(eq.nombre) + '</div><span>' + escapeHtml(eq.nombre) + '</span></div>';
-      if (esHoy) {
-        html += '<div class="meq-col meq-col-actual"><span class="meq-inactivo-cell"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg> Desactivado temporalmente</span></div>';
-        html += '<div class="meq-col meq-col-sep">&middot;</div>';
-        html += '<div class="meq-col meq-col-next"><span class="meq-inactivo-cell">\u2014</span></div>';
-      } else {
-        html += '<div class="meq-col" style="grid-column:2/5"><span class="meq-inactivo-cell"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg> Desactivado</span></div>';
-      }
+      html += '<div class="meq-timeline-row meq-inactivo">';
+      html += '<div class="meq-timeline-eq-col"><div class="meq-eq-icon">' + getEquipIcon(eq.nombre) + '</div><span>' + escapeHtml(eq.nombre) + '</span></div>';
+      html += '<div class="meq-timeline-track meq-track-inactivo"><span class="meq-inactivo-cell">Desactivado</span></div>';
       html += '</div>';
       return;
     }
 
     activos++;
+    if (tieneActivo) ocupados++;
+    else if (!tieneAlgo) libres++;
 
-    if (esHoy) {
-      var actual = eq.estudio_actual;
-      var proximo = eq.proximo_estudio;
-      var stClass = actual ? 'meq-st-ocupado' : (proximo ? 'meq-st-pendiente' : 'meq-st-libre');
-      if (actual) ocupados++; else libres++;
+    const stClass = tieneActivo ? 'meq-st-ocupado' : (tieneAlgo ? 'meq-st-completado' : 'meq-st-libre');
+    html += '<div class="meq-timeline-row ' + stClass + '">';
+    html += '<div class="meq-timeline-eq-col"><div class="meq-eq-icon">' + getEquipIcon(eq.nombre) + '</div><div class="meq-eq-name">';
+    html += '<span>' + escapeHtml(eq.nombre) + '</span>';
+    if (eq.descripcion) html += '<small>' + escapeHtml(eq.descripcion) + '</small>';
+    html += '</div></div>';
 
-      html += '<div class="meq-row ' + stClass + '">';
-      html += '<div class="meq-col meq-col-equipo"><div class="meq-eq-icon">' + getEquipIcon(eq.nombre) + '</div><div><span>' + escapeHtml(eq.nombre) + '</span>';
-      if (eq.descripcion) html += '<div style="font-size:.68rem;color:#94a3b8;font-weight:400;margin-top:1px">' + escapeHtml(eq.descripcion) + '</div>';
-      html += '</div></div>';
-
-      // Actual column
-      html += '<div class="meq-col meq-col-actual">';
-      if (actual) {
-        var pct = actual.progreso_pct || 0;
-        var entTag = actual.entidad ? ' <span class="meq-entidad-tag">' + escapeHtml(actual.entidad) + '</span>' : '';
-        var durTag = actual.duracion_minutos ? ' <span class="meq-dur-tag">' + svgClock + ' ' + actual.duracion_minutos + 'min</span>' : '';
-        html += '<div class="meq-study-block"><div class="meq-study-label meq-sl-actual"><span class="meq-pulse-dot"></span>EN ESTUDIO</div>';
-        html += '<div class="meq-study-title">' + escapeHtml(actual.estudio || 'Sin tipo') + entTag + '</div>';
-        html += '<div class="meq-study-meta">' + svgUser + ' ' + escapeHtml(actual.paciente_nombre || '-');
-        if (actual.paciente_documento) html += ' <span class="meq-doc-tag">' + svgDoc + ' ' + escapeHtml(actual.paciente_documento) + '</span>';
-        html += '</div>';
-        html += '<div class="meq-study-meta"><span class="meq-time-pill meq-tp-active">' + svgClock + ' ' + formatearHora(actual.hora_inicio || '') + ' \u2013 ' + formatearHora(actual.hora_fin || '') + '</span>' + durTag;
-        html += ' <div class="meq-progress-inline"><div class="meq-pf' + (pct >= 90 ? ' meq-ph' : '') + '" style="width:' + pct + '%"></div></div> <span class="meq-pct-label">' + pct + '%</span>';
-        html += '</div></div>';
-      } else {
-        html += '<span class="meq-empty-cell">Sin estudio activo</span>';
-      }
-      html += '</div>';
-      html += '<div class="meq-col meq-col-sep"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg></div>';
-
-      // Next column
-      html += '<div class="meq-col meq-col-next">';
-      if (proximo) {
-        var hoy = _monitorGetHoy();
-        var fechaLabel = (proximo.fecha || '') === hoy ? 'Hoy' : (proximo.fecha || '');
-        html += '<div class="meq-study-block"><div class="meq-study-label meq-sl-next">SIGUIENTE</div>';
-        html += '<div class="meq-study-title">' + escapeHtml(proximo.estudio || 'Sin tipo') + '</div>';
-        html += '<div class="meq-study-meta">' + svgUser + ' ' + escapeHtml(proximo.paciente_nombre || '-') + '</div>';
-        html += '<div class="meq-study-meta"><span class="meq-time-pill meq-tp-next">' + svgClock + ' ' + fechaLabel + ' ' + formatearHora(proximo.hora_agendamiento || '') + '</span></div>';
-        html += '</div>';
-      } else {
-        html += '<span class="meq-empty-cell">Sin estudios pendientes</span>';
-      }
-      html += '</div></div>';
-
-    } else {
-      // Historical view: show all studies for the day
-      var estudios = eq.estudios_dia || [];
-      var stClass2 = estudios.length > 0 ? 'meq-st-completado' : 'meq-st-libre';
-      if (estudios.some(function(s) { return s.estado === 'En Estudio'; })) stClass2 = 'meq-st-ocupado';
-      if (estudios.length > 0) ocupados++; else libres++;
-
-      html += '<div class="meq-row ' + stClass2 + '">';
-      html += '<div class="meq-col meq-col-equipo"><div class="meq-eq-icon">' + getEquipIcon(eq.nombre) + '</div><div><span>' + escapeHtml(eq.nombre) + '</span>';
-      if (eq.descripcion) html += '<div style="font-size:.68rem;color:#94a3b8;font-weight:400;margin-top:1px">' + escapeHtml(eq.descripcion) + '</div>';
-      html += '</div></div>';
-      html += '<div class="meq-col" style="grid-column:2/5">';
-      if (estudios.length === 0) {
-        html += '<span class="meq-empty-cell">Sin estudios este d\u00eda</span>';
-      } else {
-        html += '<div class="meq-hist-studies">';
-        estudios.forEach(function(s) {
-          var entTag2 = s.entidad ? ' <span class="meq-entidad-tag">' + escapeHtml(s.entidad) + '</span>' : '';
-          html += '<div class="meq-hist-item">';
-          html += '<span class="meq-hist-estado ' + histEstadoClass(s.estado) + '">' + escapeHtml(s.estado || '-') + '</span>';
-          html += '<span class="meq-study-title" style="max-width:200px">' + escapeHtml(s.estudio || 'Sin tipo') + entTag2 + '</span>';
-          html += '<span class="meq-study-meta" style="margin:0">' + svgUser + ' ' + escapeHtml(s.paciente_nombre || '-') + '</span>';
-          html += '<span class="meq-time-pill meq-tp-hist">' + svgClock + ' ' + formatearHora(s.hora_inicio || '') + ' \u2013 ' + formatearHora(s.hora_fin || '') + '</span>';
-          if (s.duracion_minutos) html += '<span class="meq-dur-tag">' + s.duracion_minutos + 'min</span>';
-          html += '</div>';
-        });
-        html += '</div>';
-      }
-      html += '</div></div>';
+    html += '<div class="meq-timeline-track">';
+    for (var t = 0; t < 25; t++) {
+      html += '<span class="meq-grid-line" style="left:' + ((t / 24) * 100) + '%"></span>';
     }
+    if (esHoy) {
+      html += '<span class="meq-now-line" style="left:' + nowPct + '%" title="Ahora"></span>';
+    }
+    timeline.forEach(function(seg) {
+      const w = Math.max(seg.width_pct || 0, 0.8);
+      const tip = (seg.estudio || 'Estudio') + ' \u2014 ' + (seg.paciente_nombre || '') +
+        ' (' + formatearHora(seg.hora_inicio || '') + '\u2013' + formatearHora(seg.hora_fin || '') + ')';
+      const label = (seg.hora_inicio || '') + ' ' + (seg.estudio || '');
+      html += '<div class="meq-timeline-bar ' + timelineBarClass(seg) + '" style="left:' + (seg.left_pct || 0) + '%;width:' + w + '%" title="' + escapeHtml(tip) + '">';
+      if (w >= 4) html += '<span class="meq-bar-label">' + escapeHtml(label.length > 28 ? label.slice(0, 26) + '\u2026' : label) + '</span>';
+      html += '</div>';
+    });
+    if (!tieneAlgo) html += '<span class="meq-track-empty">Sin estudios</span>';
+    html += '</div></div>';
   });
-  html += '</div>';
+  html += '</div></div>';
   grid.innerHTML = html;
+
 
   // Update stats
   var cA = $('monitorCountActivos'), cO = $('monitorCountOcupados'), cL = $('monitorCountLibres'), cI = $('monitorCountInactivos');
