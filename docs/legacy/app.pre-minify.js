@@ -57,7 +57,7 @@ let selectedDoctorEspecialidad = null;
 let selectedDiagnosticoElectroId = null;
 let selectedEquipoElectroId = null;
 let selectedEstudioDuracion = null; // Duraci├│n en minutos del estudio seleccionado
-let filtroEstudioElectro = 'todas'; // Filtro de estudio en tabla de citas
+let filtroEstudiosElectro = []; // vacío = todos los tipos de estudio
 let filtroEquipoSeleccionado = null; // Filtro de equipo en tabla de citas
 let intervaloProgreso = null; // Intervalo para actualizar barra de progreso del estudio
 let intervaloProgresoPanel = null; // Intervalo para mini-barras en panel de equipos
@@ -2358,46 +2358,84 @@ async function cargarEstudiosEnSelect(selectId) {
   }
 }
 
-function generarTabsElectro(estudios) {
-  const container = $('tabsElectroContainer');
-  if (!container) return;
-  // Mantener solo el bot├│n "Todas"
-  container.innerHTML = '';
-  // Bot├│n "Todas" con su listener
-  const btnTodas = document.createElement('button');
-  btnTodas.className = 'tab-electro-btn active';
-  btnTodas.dataset.estudio = 'todas';
-  btnTodas.textContent = 'Todas';
-  btnTodas.addEventListener('click', (e) => {
-    filtroEstudioElectro = 'todas';
-    container.querySelectorAll('.tab-electro-btn').forEach(b => b.classList.remove('active'));
-    e.target.classList.add('active');
-    cargarCitasElectro();
+function getFiltroEstudiosElectroActivos() {
+  const sel = $('filtroEstudiosElectro');
+  if (!sel) return [];
+  if (sel._ms) return sel._ms.getValues();
+  return Array.from(sel.selectedOptions).map((o) => o.value).filter(Boolean);
+}
+
+function initFiltroEstudiosElectro(estudios) {
+  const sel = $('filtroEstudiosElectro');
+  if (!sel) return;
+  sel.innerHTML = '';
+  (estudios || []).forEach((nombre) => {
+    const opt = document.createElement('option');
+    opt.value = nombre;
+    opt.textContent = nombre;
+    sel.appendChild(opt);
   });
-  container.appendChild(btnTodas);
-  // Etiquetas cortas para tabs
-  const labelCorto = (nombre) => {
-    if (!nombre) return nombre;
-    if (nombre.toLowerCase().includes('monitorizaci├│n') || nombre.toLowerCase().includes('monitorizacion')) return 'Monit. EEG';
-    if (nombre.toLowerCase().includes('titulaci├│n') || nombre.toLowerCase().includes('titulacion') || nombre.toLowerCase().includes('cpap')) return 'PSG CPAP/BPAP';
-    if (nombre.toLowerCase().includes('electroencefalograma')) return 'EEG';
-    if (nombre.toLowerCase().includes('test de latencia')) return 'Test Latencia';
-    // Para nombres cortos, usar tal cual; para largos, abreviar
-    return nombre.length > 15 ? nombre.substring(0, 15) + 'ÔÇª' : nombre;
+  if (typeof initMultiSelect === 'function') {
+    if (!sel._ms) {
+      initMultiSelect(sel, {
+        placeholder: 'Todos los estudios',
+        onChange: () => cargarCitasElectro()
+      });
+    } else if (sel._ms.refresh) {
+      sel._ms.refresh();
+    }
+  }
+}
+
+const ELECTRO_COL_ACTIVOS = new Set(['En Estudio', 'Pausado']);
+const ELECTRO_COL_COMPLETADOS = new Set(['Completado']);
+
+function columnaElectroCita(estado) {
+  if (ELECTRO_COL_ACTIVOS.has(estado)) return 'activos';
+  if (ELECTRO_COL_COMPLETADOS.has(estado)) return 'completados';
+  return 'pendientes';
+}
+
+function sortCitasElectro(a, b) {
+  const ha = String(a.hora_agendamiento || '').slice(0, 5);
+  const hb = String(b.hora_agendamiento || '').slice(0, 5);
+  return ha.localeCompare(hb);
+}
+
+function showElectroKanbanLoading() {
+  const t = 'di' + 'v';
+  const loadingHtml = '<' + t + ' class="electro-kanban-empty">Cargando\u2026</' + t + '>';
+  ['citasElectroBodyPendientes', 'citasElectroBodyActivos', 'citasElectroBodyCompletados'].forEach((id) => {
+    const el = typeof $ === 'function' ? $(id) : document.getElementById(id);
+    if (el) el.innerHTML = loadingHtml;
+  });
+}
+
+function renderCitasElectroKanban(citas) {
+  const bodies = {
+    pendientes: $('citasElectroBodyPendientes'),
+    activos: $('citasElectroBodyActivos'),
+    completados: $('citasElectroBodyCompletados')
   };
-  (estudios || []).forEach(nombre => {
-    const btn = document.createElement('button');
-    btn.className = 'tab-electro-btn';
-    btn.dataset.estudio = nombre;
-    btn.textContent = labelCorto(nombre);
-    btn.addEventListener('click', (e) => {
-      filtroEstudioElectro = e.target.dataset.estudio;
-      container.querySelectorAll('.tab-electro-btn').forEach(b => b.classList.remove('active'));
-      e.target.classList.add('active');
-      cargarCitasElectro();
-    });
-    container.appendChild(btn);
+  const counts = { pendientes: 0, activos: 0, completados: 0 };
+  Object.values(bodies).forEach((b) => { if (b) b.innerHTML = ''; });
+  const sorted = [...(citas || [])].sort(sortCitasElectro);
+  sorted.forEach((c) => {
+    const col = columnaElectroCita(c.estado || 'Programado');
+    const body = bodies[col];
+    if (body) {
+      renderCitaElectroCard(body, c);
+      counts[col]++;
+    }
   });
+  Object.entries(bodies).forEach(([col, body]) => {
+    if (!body || counts[col] > 0) return;
+    body.innerHTML = '<div class="electro-kanban-empty">Sin citas</div>';
+  });
+  const setCount = (id, n) => { const el = $(id); if (el) el.textContent = String(n); };
+  setCount('electroKanbanCountPendientes', counts.pendientes);
+  setCount('electroKanbanCountActivos', counts.activos);
+  setCount('electroKanbanCountCompletados', counts.completados);
 }
 
 function invalidarCacheEntidades() { _entidadesCache = null; }
@@ -5194,7 +5232,7 @@ async function initElectro() {
   
   // Cargar estudios desde BD para el select y las pesta├▒as
   await cargarEstudiosEnSelect('electroEstudio');
-  generarTabsElectro(_estudiosCache || []);
+  initFiltroEstudiosElectro(_estudiosCache || []);
   
   // Cargar entidades desde BD para pacientes en espera
   await cargarEntidadesEnSelect('esperaEntidad');
@@ -5989,7 +6027,7 @@ async function cargarCitasElectro() {
     showToast('Selecciona una fecha', 'error');
     return;
   }
-  showSkeletonRows($('citasElectroBody'), 10, 6);
+  showElectroKanbanLoading();
   try {
     const res = await apiFetch(`/api/citas-electro?fecha=${encodeURIComponent(fecha)}&_t=${Date.now()}`, {
       cache: 'no-store'
@@ -6004,18 +6042,18 @@ async function cargarCitasElectro() {
     const citasNormalizadas = await sincronizarEstadosPorTiempo(citasNormalizadasEstado);
     if (reqId !== _citasElectroReqId) return; // respuesta vieja
     
-    // Filtrar por estudio si es necesario
+    const estudiosFiltro = getFiltroEstudiosElectroActivos();
     let citasFiltradas = citasNormalizadas;
-    if (filtroEstudioElectro !== 'todas') {
-      citasFiltradas = citasNormalizadas.filter(c => c.estudio === filtroEstudioElectro);
+    if (estudiosFiltro.length > 0) {
+      citasFiltradas = citasNormalizadas.filter((c) => estudiosFiltro.includes(c.estudio));
     }
+    window._citasElectroAllData = citasNormalizadas;
+    window._citasElectroKanbanData = citasFiltradas;
     
     if (citasFiltradas.length === 0) {
-      const tbody = $('citasElectroBody');
-      const mensajeEstudio = filtroEstudioElectro === 'todas' ? '' : ` para ${filtroEstudioElectro}`;
-      tbody.innerHTML = `<tr><td colspan="12"><div class="empty-state"><div class="empty-state-icon">­ƒôà</div><p class="empty-state-title">Sin citas</p><p class="empty-state-subtitle">No hay citas registradas para esta fecha${mensajeEstudio}</p></div></td></tr>`;
+      renderCitasElectroKanban([]);
       const contador = $('citasElectroContador');
-      if (contador) contador.textContent = '';
+      if (contador) contador.textContent = 'Sin citas';
       $('electroUsuarioProgramo').textContent = '-';
       $('electroUsuarioEdito').textContent = '-';
       actualizarStatsElectro(citasNormalizadas);
@@ -6037,12 +6075,7 @@ async function cargarCitasElectro() {
       contador.textContent = partes.join(' ┬À ');
     }
 
-    // Usar setupPagination para renderizar con paginaci├│n
-    setupPagination('citasElectro', citasFiltradas, renderCitaElectroRow, {
-      itemsPerPageDefault: 20,
-      tbodyId: 'citasElectroBody',
-      containerSelector: '#citasElectroTableControls'
-    });
+    renderCitasElectroKanban(citasFiltradas);
     
     // Actualizar informaci├│n de usuario (del primer registro filtrado)
     if (citasFiltradas.length > 0) {
@@ -6078,6 +6111,58 @@ function actualizarStatsElectro(citas) {
   if (elEstudio) elEstudio.textContent = enEstudio;
   if (elComp) elComp.textContent = completados;
   if (elPend) elPend.textContent = pendientes;
+}
+
+
+function renderCitaElectroCard(container, c) {
+  if (!container) return;
+  const card = document.createElement('article');
+  card.className = 'electro-cita-card';
+  card.dataset.citaId = String(c.id || '');
+  const estado = c.estado || 'Programado';
+  const estadoClasses = {
+    'En Sala': 'estado-en-sala',
+    'En Estudio': 'estado-en-estudio',
+    'Pausado': 'estado-pausado',
+    'Completado': 'estado-completado',
+    'Cancelado': 'estado-cancelado',
+    'No Asisti\u00f3': 'estado-no-asistio'
+  };
+  if (estadoClasses[estado]) card.classList.add(estadoClasses[estado]);
+  const equipoDisplay = c.equipo_nombre ? escapeHtml(c.equipo_nombre) : (c.equipo_id ? 'Equipo ' + c.equipo_id : '\u2014');
+  const estudioCorto = abreviarEstudio(c.estudio);
+  let duracionTxt = '';
+  if (c.duracion_minutos) {
+    const dHrs = Math.floor(c.duracion_minutos / 60);
+    const dMin = c.duracion_minutos % 60;
+    duracionTxt = dHrs > 0 ? (dMin > 0 ? dHrs + 'h ' + dMin + 'm' : dHrs + 'h') : dMin + 'm';
+  }
+  const t = 'di' + 'v';
+  card.innerHTML =
+    '<' + t + ' class="electro-cita-card-top">' +
+      '<span class="electro-cita-card-hora">' + formatearHora(c.hora_agendamiento) + '</span>' +
+      estadoBadge(estado) +
+    '</' + t + '>' +
+    '<' + t + ' class="electro-cita-card-paciente">' + escapeHtml(c.paciente_nombre || '-') + '</' + t + '>' +
+    '<' + t + ' class="electro-cita-card-meta">' +
+      '<span>' + escapeHtml(c.paciente_documento || '-') + '</span>' +
+      (equipoDisplay !== '\u2014' ? '<span>' + equipoDisplay + '</span>' : '') +
+      (duracionTxt ? '<span>' + duracionTxt + '</span>' : '') +
+    '</' + t + '>' +
+    '<' + t + ' class="electro-cita-card-estudio" title="' + escapeHtml(c.estudio || '') + '">' + escapeHtml(estudioCorto) + '</' + t + '>';
+  card.addEventListener('click', () => {
+    if (!tienePermiso('electro.editar') && !tienePermiso('electro.cambiar_estado')) return;
+    if (estado === 'Completado' && !tienePermiso('electro.eliminar')) {
+      showToast('Esta cita ya est\u00e1 completada - No se puede modificar', 'info');
+      return;
+    }
+    abrirModalDetallesCita(c);
+  });
+  if (estado === 'Completado') {
+    card.classList.add('electro-cita-card-done');
+    if (!tienePermiso('electro.eliminar')) card.style.cursor = 'not-allowed';
+  }
+  container.appendChild(card);
 }
 
 function renderCitaElectroRow(tbody, c) {
@@ -10157,49 +10242,38 @@ function renderFlujoEstado(cita) {
 }
 
 function actualizarEstadoFilaTablaElectro(citaId, nuevoEstado) {
-  const st = window.paginationState && window.paginationState.citasElectro;
-  if (!st || !Array.isArray(st.data)) return;
+  const data = window._citasElectroKanbanData;
+  if (!data) return;
   const idStr = String(citaId);
-  const idx = st.data.findIndex((c) => String(c.id) === idStr);
+  const idx = data.findIndex((c) => String(c.id) === idStr);
   if (idx < 0) return;
-  const norm = normalizarEstadoElectro(nuevoEstado);
-  st.data[idx] = { ...st.data[idx], estado: norm };
-  renderPaginatedTable('citasElectro', renderCitaElectroRow, 'citasElectroBody');
-  const containerSel = '#citasElectroTableControls';
-  const container = document.querySelector(containerSel);
-  if (container) {
-    createPaginationControls('citasElectro', containerSel, [5, 10, 15, 20, 50], renderCitaElectroRow, 'citasElectroBody');
-  }
+  data[idx] = { ...data[idx], estado: normalizarEstadoElectro(nuevoEstado) };
+  renderCitasElectroKanban(data);
+  if (window._citasElectroAllData) actualizarStatsElectro(window._citasElectroAllData);
 }
 
 function aplicarCambioCitaElectroRealtime(payload = {}) {
-  const st = window.paginationState && window.paginationState.citasElectro;
-  if (!st || !Array.isArray(st.data)) return;
+  const data = window._citasElectroKanbanData;
+  if (!data) return;
   const id = payload?.id;
   if (!id) return;
   const idStr = String(id);
-  const idx = st.data.findIndex((c) => String(c.id) === idStr);
+  const idx = data.findIndex((c) => String(c.id) === idStr);
 
   if (payload.type === 'eliminada' || payload.type === 'eliminado') {
-    if (idx >= 0) st.data.splice(idx, 1);
+    if (idx >= 0) data.splice(idx, 1);
   } else {
     const cambios = payload.cambios || payload;
     const next = {
-      ...(idx >= 0 ? st.data[idx] : { id }),
+      ...(idx >= 0 ? data[idx] : { id }),
       ...cambios
     };
     if (next.estado !== undefined) next.estado = normalizarEstadoElectro(next.estado);
-    if (idx >= 0) st.data[idx] = next;
-    else st.data.push(next);
+    if (idx >= 0) data[idx] = next;
+    else data.push(next);
   }
-
-  st.totalPages = Math.max(1, Math.ceil(st.data.length / st.itemsPerPage));
-  st.currentPage = Math.min(st.currentPage || 1, st.totalPages);
-  renderPaginatedTable('citasElectro', renderCitaElectroRow, 'citasElectroBody');
-  const containerSel = '#citasElectroTableControls';
-  if (document.querySelector(containerSel)) {
-    createPaginationControls('citasElectro', containerSel, [5, 10, 15, 20, 50], renderCitaElectroRow, 'citasElectroBody');
-  }
+  renderCitasElectroKanban(data);
+  if (window._citasElectroAllData) actualizarStatsElectro(window._citasElectroAllData);
 }
 
 window.aplicarCambioCitaElectroRealtime = aplicarCambioCitaElectroRealtime;

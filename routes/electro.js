@@ -1061,17 +1061,25 @@ router.patch('/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin',
             AND deleted_at IS NULL
             AND fecha < CURDATE()
         `, [id]);
-        const overlapCitas = await db.query(`
-          SELECT COUNT(*) as overlap_count FROM citas_electro
-          WHERE id != ? AND estado IN ('Programado', 'Confirmado', 'En Sala', 'En Estudio', 'Pausado') AND deleted_at IS NULL
-          AND TIMESTAMP(fecha, COALESCE(hora_agendamiento, '00:00:00')) < TIMESTAMP(?, ?)
-          AND TIMESTAMP(COALESCE(hora_fin_date, fecha), COALESCE(hora_fin, '23:59:59')) > TIMESTAMP(?, ?)
-        `, [id, checkFechaFin, checkHoraFin, checkFecha, checkHora]);
-        const overlapCount = overlapCitas[0]?.overlap_count || 0;
-        const maxCuposRows = await db.query(`SELECT COUNT(*) as total FROM equipos_electro WHERE activo = 1`);
-        const maxCupos = parseInt(maxCuposRows[0]?.total, 10) || 0;
-        if (overlapCount >= maxCupos) {
-          return res.status(409).json({ error: 'Sin capacidad disponible en este horario', details: `Hay ${overlapCount} cupos ocupados. Máximo: ${maxCupos}`, capacity: { active: overlapCount, max: maxCupos } });
+        const eqIdInicio = (equipo_id !== undefined && equipo_id !== null && equipo_id !== '')
+          ? parseInt(equipo_id, 10)
+          : (citaActual.equipo_id ? parseInt(citaActual.equipo_id, 10) : null);
+        const tieneEquipoAsignado = eqIdInicio && !Number.isNaN(eqIdInicio);
+        // Con equipo asignado, la capacidad la define el equipo (validado arriba).
+        // El cupo global por solapamiento de rango largo (p. ej. PSG 72 h) bloqueaba inicios legítimos.
+        if (!tieneEquipoAsignado) {
+          const overlapCitas = await db.query(`
+            SELECT COUNT(*) as overlap_count FROM citas_electro
+            WHERE id != ? AND estado IN ('Programado', 'Confirmado', 'En Sala', 'En Estudio', 'Pausado') AND deleted_at IS NULL
+            AND TIMESTAMP(fecha, COALESCE(hora_agendamiento, '00:00:00')) < TIMESTAMP(?, ?)
+            AND TIMESTAMP(COALESCE(hora_fin_date, fecha), COALESCE(hora_fin, '23:59:59')) > TIMESTAMP(?, ?)
+          `, [id, checkFechaFin, checkHoraFin, checkFecha, checkHora]);
+          const overlapCount = overlapCitas[0]?.overlap_count || 0;
+          const maxCuposRows = await db.query(`SELECT COUNT(*) as total FROM equipos_electro WHERE activo = 1`);
+          const maxCupos = parseInt(maxCuposRows[0]?.total, 10) || 0;
+          if (overlapCount >= maxCupos) {
+            return res.status(409).json({ error: 'Sin capacidad disponible en este horario', details: `Hay ${overlapCount} cupos ocupados. Máximo: ${maxCupos}`, capacity: { active: overlapCount, max: maxCupos } });
+          }
         }
       }
     }

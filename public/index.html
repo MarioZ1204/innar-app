@@ -1440,38 +1440,43 @@
           <!-- Tabla de Citas -->
           <section class="card">
             <h3>Citas del Día</h3>
-            <!-- PESTAÑAS DE ESTUDIOS -->
-            <div class="tabs-container" id="tabsElectroContainer">
-              <button class="tab-electro-btn active" data-estudio="todas">Todas</button>
+                        <div class="electro-filtros-bar">
+              <label for="filtroEstudiosElectro" class="electro-filtro-label">Tipo de estudio</label>
+              <select id="filtroEstudiosElectro" multiple style="display:none" aria-label="Filtrar por tipo de estudio"></select>
             </div>
 
             <!-- Contador de citas -->
             <div id="citasElectroContador" style="padding:6px 0 10px 2px;font-size:.875rem;color:#6b7280;font-weight:500;min-height:22px"></div>
 
-            <div class="table-wrapper">
-              <table id="citasElectroTable" class="modern-table">
-                <thead>
-                  <tr>
-                    <th>Hora</th>
-                    <th class="col-mobile-hide">Inicio</th>
-                    <th class="col-mobile-hide">Equipo</th>
-                    <th>Paciente</th>
-                    <th>Documento</th>
-                    <th class="col-mobile-hide">Teléfono</th>
-                    <th>Estudio</th>
-                    <th class="col-mobile-hide">Entidad</th>
-                    <th class="col-mobile-hide">Duración</th>
-                    <th class="col-mobile-hide">Diagnóstico</th>
-                    <th>Estado</th>
-                    <th class="col-mobile-hide">Fin</th>
-                  </tr>
-                </thead>
-                <tbody id="citasElectroBody">
-                  <tr><td colspan="11" style="padding:20px;text-align:center;color:#999">Selecciona una fecha para ver las citas</td></tr>
-                </tbody>
-              </table>
+                        <div class="electro-kanban" id="electroKanban">
+              <div class="electro-kanban-col electro-kanban-col-pendientes">
+                <div class="electro-kanban-header">
+                  <span class="electro-kanban-title">Pendientes</span>
+                  <span class="electro-kanban-count" id="electroKanbanCountPendientes">0</span>
+                </div>
+                <div class="electro-kanban-body" id="citasElectroBodyPendientes">
+                  <div class="electro-kanban-empty">Selecciona una fecha para ver las citas</div>
+                </div>
+              </div>
+              <div class="electro-kanban-col electro-kanban-col-activos">
+                <div class="electro-kanban-header">
+                  <span class="electro-kanban-title">En estudio</span>
+                  <span class="electro-kanban-count" id="electroKanbanCountActivos">0</span>
+                </div>
+                <div class="electro-kanban-body" id="citasElectroBodyActivos">
+                  <div class="electro-kanban-empty">—</div>
+                </div>
+              </div>
+              <div class="electro-kanban-col electro-kanban-col-completados">
+                <div class="electro-kanban-header">
+                  <span class="electro-kanban-title">Completados</span>
+                  <span class="electro-kanban-count" id="electroKanbanCountCompletados">0</span>
+                </div>
+                <div class="electro-kanban-body" id="citasElectroBodyCompletados">
+                  <div class="electro-kanban-empty">—</div>
+                </div>
+              </div>
             </div>
-            <div id="citasElectroTableControls"></div>
 
             <!-- Información de Usuario Programó / Editó (abajo de la tabla) -->
             <div style="margin-top:20px;padding:16px;background:#f9fafb;border-radius:8px;border:1px solid #e5e7eb;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap">
