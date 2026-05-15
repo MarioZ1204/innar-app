@@ -255,15 +255,15 @@
 
 .medica-turnos-table,#turnosTableMedica{table-layout:fixed;width:100%;border-collapse:separate;border-spacing:0;background:#fff}
 .medica-agenda-block-completados .medica-turnos-table{background:#fafbfc}
-.medica-turnos-table col.col-turno,#turnosTableMedica col.col-turno{width:5%}
+.medica-turnos-table col.col-turno,#turnosTableMedica col.col-turno{width:11%}
 .medica-turnos-table col.col-hora,#turnosTableMedica col.col-hora{width:6%}
 .medica-turnos-table col.col-paciente,#turnosTableMedica col.col-paciente{width:15%}
 .medica-turnos-table col.col-tipo,#turnosTableMedica col.col-tipo{width:13%}
 .medica-turnos-table col.col-doc,#turnosTableMedica col.col-doc{width:11%}
 .medica-turnos-table col.col-entidad,#turnosTableMedica col.col-entidad{width:9%}
-.medica-turnos-table col.col-notas,#turnosTableMedica col.col-notas{width:20%}
+.medica-turnos-table col.col-notas,#turnosTableMedica col.col-notas{width:17%}
 .medica-turnos-table col.col-estado,#turnosTableMedica col.col-estado{width:10%}
-.medica-turnos-table col.col-acciones,#turnosTableMedica col.col-acciones{width:11%}
+.medica-turnos-table col.col-acciones,#turnosTableMedica col.col-acciones{width:8%}
 
 /* Cabecera de columnas — aspecto tablero moderno */
 .medica-turnos-table thead th,#turnosTableMedica thead th{
@@ -290,6 +290,8 @@
   transition:background-color .12s ease,color .12s ease
 }
 .medica-turnos-table tbody td:first-child,#turnosTableMedica tbody td:first-child{padding-left:16px;text-align:center;font-weight:600;font-variant-numeric:tabular-nums;color:#475569;font-size:.8125rem}
+.medica-turnos-table tbody td.col-turno-cell,#turnosTableMedica tbody td.col-turno-cell{overflow:visible;white-space:normal;word-break:normal;vertical-align:middle;padding-left:12px;padding-right:10px;line-height:1.25;min-width:6.75rem}
+.medica-turnos-table tbody td.col-turno-cell .badge-siguiente,.medica-turnos-table tbody td.col-turno-cell .badge-en-atencion,#turnosTableMedica tbody td.col-turno-cell .badge-siguiente,#turnosTableMedica tbody td.col-turno-cell .badge-en-atencion{display:inline-block;box-sizing:border-box;max-width:100%;white-space:normal;text-align:center;line-height:1.25;padding:5px 8px;font-size:.72rem;font-weight:700}
 .medica-turnos-table tbody td:last-child,#turnosTableMedica tbody td:last-child{padding-right:16px}
 .medica-turnos-table tbody td+td,#turnosTableMedica tbody td+td{border-left:1px solid rgba(241,245,249,.85)}
 .medica-turnos-table tbody tr:hover:not(.skeleton-row):not(.estado-vacio),#turnosTableMedica tbody tr:hover:not(.skeleton-row):not(.estado-vacio){background:#f8fafc}

@@ -4032,7 +4032,7 @@ function renderTurnoRowMedica(tbody, t, animateTargetId, hayEnAtencion) {
 
     if (currentUser?.rol === 'doctor') {
       tr.innerHTML = `
-        <td>${numCellHtml}</td>
+        <td class="col-turno-cell">${numCellHtml}</td>
         <td class="col-hora col-mobile-hide">${formatearHora(t.hora)}</td>
         <td class="col-paciente-cell"><span class="turno-cell-2lines" title="${escapeHtml(t.paciente_nombre)}">${escapeHtml(t.paciente_nombre)}</span></td>
         <td class="col-mobile-hide col-wrap-cell col-tipo-cell"><span class="turno-cell-2lines" title="${escapeHtml(t.tipo_consulta || '')}">${escapeHtml(t.tipo_consulta || '')}</span></td>
@@ -4048,7 +4048,7 @@ function renderTurnoRowMedica(tbody, t, animateTargetId, hayEnAtencion) {
       }
     } else {
       tr.innerHTML = `
-        <td>${numCellHtml}</td>
+        <td class="col-turno-cell">${numCellHtml}</td>
         <td class="col-hora col-mobile-hide">${formatearHora(t.hora)}</td>
         <td class="col-paciente-cell"><span class="turno-cell-2lines" title="${escapeHtml(t.paciente_nombre)}">${escapeHtml(t.paciente_nombre)}</span></td>
         <td class="col-mobile-hide col-wrap-cell col-tipo-cell"><span class="turno-cell-2lines" title="${escapeHtml(t.tipo_consulta || '')}">${escapeHtml(t.tipo_consulta || '')}</span></td>
