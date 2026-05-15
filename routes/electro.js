@@ -97,11 +97,10 @@ async function sincronizarUcqnDesdeElectro() {
 router.get('/equipos-electro', requireAuth, async (req, res) => {
   try {
     const equipos = await db.query('SELECT * FROM equipos_electro WHERE activo = 1 ORDER BY nombre ASC');
+    // En uso = estudio activo en el equipo (sin ventana horaria agendada).
     const equiposEnUso = await db.query(
       `SELECT DISTINCT equipo_id FROM citas_electro
-       WHERE estado = 'En Estudio' AND equipo_id IS NOT NULL AND deleted_at IS NULL
-       AND TIMESTAMP(fecha, COALESCE(hora_agendamiento, '00:00:00')) <= NOW()
-       AND TIMESTAMP(COALESCE(hora_fin_date, fecha), COALESCE(hora_fin, '23:59:59')) >= NOW()`
+       WHERE estado IN ('En Estudio', 'Pausado') AND equipo_id IS NOT NULL AND deleted_at IS NULL`
     );
     const equiposEnUsoIds = equiposEnUso.map(e => e.equipo_id);
     const vistosIds = new Set();

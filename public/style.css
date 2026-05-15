@@ -214,9 +214,11 @@
 #turnosTableMedica col.col-notas{width:20%}
 #turnosTableMedica col.col-estado{width:10%}
 #turnosTableMedica col.col-acciones{width:11%}
-#turnosTableMedica td,#turnosTableMedica th{padding:8px 7px;vertical-align:top;line-height:1.35;font-size:.84rem}
-#turnosTableMedica .col-wrap-cell{word-break:break-word;overflow:hidden;line-height:1.35}
+#turnosTableMedica tbody tr{min-height:54px}
+#turnosTableMedica td,#turnosTableMedica th{padding:10px 7px;vertical-align:top;line-height:1.35;font-size:.84rem}
+#turnosTableMedica .col-wrap-cell{overflow:hidden}
 #turnosTableMedica .col-notas-cell{vertical-align:top}
-#turnosTableMedica .turno-notas-cell{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;white-space:normal;word-break:break-word;line-height:1.35;font-size:.8rem;max-height:2.8em}
+#turnosTableMedica .turno-cell-2lines,#turnosTableMedica .turno-notas-cell{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;white-space:normal;word-break:break-word;line-height:1.35;max-height:2.75em}
+#turnosTableMedica .turno-notas-cell{font-size:.8rem}
 #turnosTableMedica .col-estado-cell,#turnosTableMedica .col-acciones-cell,#turnosTableMedica .td-acciones{white-space:nowrap;vertical-align:middle}
 #turnosTableMedica .table-actions{flex-wrap:nowrap;justify-content:flex-end}

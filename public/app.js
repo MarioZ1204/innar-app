@@ -3985,9 +3985,9 @@ function renderTurnoRowMedica(tbody, t, animateTargetId, hayEnAtencion) {
       tr.innerHTML = `
         <td>${numCellHtml}</td>
         <td class="col-hora col-mobile-hide">${formatearHora(t.hora)}</td>
-        <td>${escapeHtml(t.paciente_nombre)}</td>
-        <td class="col-mobile-hide col-wrap-cell col-tipo-cell">${escapeHtml(t.tipo_consulta || '')}</td>
-        <td class="col-mobile-hide col-wrap-cell col-doc-cell">${escapeHtml(t.paciente_documento||'')}</td>
+        <td><span class="turno-cell-2lines">${escapeHtml(t.paciente_nombre)}</span></td>
+        <td class="col-mobile-hide col-wrap-cell col-tipo-cell"><span class="turno-cell-2lines">${escapeHtml(t.tipo_consulta || '')}</span></td>
+        <td class="col-mobile-hide col-wrap-cell col-doc-cell"><span class="turno-cell-2lines">${escapeHtml(t.paciente_documento||'')}</span></td>
         <td class="col-mobile-hide col-wrap-cell">${escapeHtml(t.entidad||'')}</td>
         <td class="col-mobile-hide col-notas-cell"><span class="turno-notas-cell" title="${escapeHtml(t.notas || '')}">${escapeHtml(t.notas || '')}</span></td>
         <td class="col-estado-cell">${estadoBadgeMedica(t.estado)}</td>
@@ -4001,9 +4001,9 @@ function renderTurnoRowMedica(tbody, t, animateTargetId, hayEnAtencion) {
       tr.innerHTML = `
         <td>${numCellHtml}</td>
         <td class="col-hora col-mobile-hide">${formatearHora(t.hora)}</td>
-        <td>${escapeHtml(t.paciente_nombre)}</td>
-        <td class="col-mobile-hide col-wrap-cell col-tipo-cell">${escapeHtml(t.tipo_consulta || '')}</td>
-        <td class="col-mobile-hide col-wrap-cell col-doc-cell">${escapeHtml(t.paciente_documento||'')}</td>
+        <td><span class="turno-cell-2lines">${escapeHtml(t.paciente_nombre)}</span></td>
+        <td class="col-mobile-hide col-wrap-cell col-tipo-cell"><span class="turno-cell-2lines">${escapeHtml(t.tipo_consulta || '')}</span></td>
+        <td class="col-mobile-hide col-wrap-cell col-doc-cell"><span class="turno-cell-2lines">${escapeHtml(t.paciente_documento||'')}</span></td>
         <td class="col-mobile-hide col-wrap-cell">${escapeHtml(t.entidad||'')}</td>
         <td class="col-mobile-hide col-notas-cell"><span class="turno-notas-cell" title="${escapeHtml(t.notas || '')}">${escapeHtml(t.notas || '')}</span></td>
         <td class="col-estado-cell">${estadoBadgeMedica(t.estado)}</td>
@@ -5225,6 +5225,37 @@ async function initUcqn() {
 
 // ========== DASHBOARD (Admin solo) ==========
 // ========== AGENDA ELECTRODIAGNÓSTICO =========
+async function cargarEquiposElectroSelect(valorPreferido) {
+  const equipoSelect = $('modalEquipo');
+  if (!equipoSelect) return;
+  const prev = valorPreferido !== undefined && valorPreferido !== null
+    ? String(valorPreferido)
+    : (equipoSelect.value || '');
+  try {
+    const res = await apiFetch('/api/equipos-electro');
+    const equipos = await res.json();
+    if (!res.ok || !Array.isArray(equipos)) return;
+    equipoSelect.innerHTML = '<option value="">Seleccionar equipo</option>';
+    equipos.forEach(e => {
+      const opt = document.createElement('option');
+      opt.value = e.id;
+      opt.textContent = e.nombre;
+      if (e.en_uso) {
+        if (currentUser && String(currentUser.rol || '').toLowerCase() === 'superadmin') {
+          opt.textContent += ' (En uso - cambiar)';
+        } else {
+          opt.disabled = true;
+          opt.textContent += ' (En uso)';
+        }
+      }
+      equipoSelect.appendChild(opt);
+    });
+    if (prev) equipoSelect.value = prev;
+  } catch (e) {
+    console.error('Error cargando equipos para modal:', e);
+  }
+}
+
 async function initElectro() {
   const hoy = hoyColombiaISO();
   $('electroFecha').value = hoy;
@@ -5245,29 +5276,7 @@ async function initElectro() {
     $('electroProgramadoPor').textContent = currentUser.nombre || currentUser.usuario || '-';
   }
   
-  // Cargar equipos SOLO para el modal (para seleccionar después)
-  try {
-    const res = await apiFetch('/api/equipos-electro');
-    const equipos = await res.json();
-    const equipoSelect = $('modalEquipo');
-    equipoSelect.innerHTML = '<option value="">Seleccionar equipo</option>';
-    equipos.forEach(e => {
-      const opt = document.createElement('option');
-      opt.value = e.id;
-      opt.textContent = e.nombre;
-      if (e.en_uso) {
-        if (currentUser && String(currentUser.rol || '').toLowerCase() === 'superadmin') {
-          opt.textContent += ' (En uso - cambiar)';
-        } else {
-          opt.disabled = true;
-          opt.textContent += ' (En uso)';
-        }
-      }
-      equipoSelect.appendChild(opt);
-    });
-  } catch (e) {
-    console.error('Error cargando equipos para modal:', e);
-  }
+  await cargarEquiposElectroSelect();
   
   // Event listener para cambiar fecha y cargar citas automáticamente
   if ($('electroFecha')) $('electroFecha').onchange = async () => {
@@ -5655,18 +5664,16 @@ async function initElectro() {
 
   // Configurar listeners de socket para ver cambios en tiempo real
   if (window.socket && !window.socketElectroListenerAdded) {
-    window.socket.on('electro:actualizar-lista', () => {
+    const refrescarElectroVista = () => {
       cargarCitasElectro();
-    });
-    window.socket.on('electro:nueva-cita', () => {
-      cargarCitasElectro();
-    });
-    window.socket.on('electro:cita-cambio-estado', () => {
-      cargarCitasElectro();
-    });
-    window.socket.on('electro:cita-removida', () => {
-      cargarCitasElectro();
-    });
+      cargarEquiposElectroSelect();
+    };
+    window.socket.on('electro:actualizar-lista', refrescarElectroVista);
+    window.socket.on('electro:nueva-cita', refrescarElectroVista);
+    window.socket.on('electro:cita-cambio-estado', refrescarElectroVista);
+    window.socket.on('electro:cita-removida', refrescarElectroVista);
+    window.socket.on('electro:estudio-iniciado', refrescarElectroVista);
+    window.socket.on('electro:estudio-finalizado', refrescarElectroVista);
     window.socketElectroListenerAdded = true;
   }
 
@@ -5805,13 +5812,30 @@ async function checkEquiposDisponibilidad() {
     // Citas "En Estudio" con hora_inicio real (para barra de progreso)
     const citasEnEstudio = data.citasEnRango.filter(c => c.estado === 'En Estudio' && c.horaInicioReal);
 
-    // Grid de cupos
+    let equiposLista = [];
+    try {
+      const resEq = await apiFetch('/api/equipos-electro');
+      const eqJson = await resEq.json();
+      if (resEq.ok && Array.isArray(eqJson)) equiposLista = eqJson;
+    } catch (_) { /* ignore */ }
+
+    // Grid de cupos (una tarjeta por equipo real)
     html += `<div class="cupos-grid">`;
     const maxCupos = data?.capacidad?.maxCupos || 4;
-    for (let i = 1; i <= maxCupos; i++) {
-      const cita = data.citasEnRango[i - 1] || null;
-      const ocupado = i <= data.capacidad.cuposOcupados;
-      const enEstudio = ocupado && cita && cita.estado === 'En Estudio' && cita.horaInicioReal;
+    if (equiposLista.length === 0) {
+      equiposLista = Array.from({ length: maxCupos }, (_, idx) => ({
+        id: idx + 1,
+        nombre: `Equipo ${idx + 1}`,
+        en_uso: false
+      }));
+    }
+    equiposLista.forEach((eq, i) => {
+      const slot = i + 1;
+      const eqId = String(eq.id);
+      const cita = data.citasEnRango.find(c => c.equipo_id != null && String(c.equipo_id) === eqId) || null;
+      const enUsoActivo = !!eq.en_uso;
+      const ocupado = !!cita || enUsoActivo;
+      const enEstudio = (cita && (cita.estado === 'En Estudio' || cita.estado === 'Pausado')) || enUsoActivo;
       const tipoCard = ocupado ? 'ocupado' : 'libre';
       const icono = ocupado
         ? `<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/></svg>`
@@ -5824,22 +5848,26 @@ async function checkEquiposDisponibilidad() {
             : 'Ocupado')
           : 'Libre';
 
-      const barraId = enEstudio ? `cupo-barra-${i}` : '';
-      const tiempoId = enEstudio ? `cupo-tiempo-${i}` : '';
-      const barraHtml = enEstudio ? `
-        <div class="cupo-mini-barra-wrap" title="${fmtHora(cita.horaInicioReal)} → ${fmtHora(cita.horaFin)}">
+      const citaProgreso = cita && cita.estado === 'En Estudio' && cita.horaInicioReal ? cita : null;
+      const barraId = citaProgreso ? `cupo-barra-${slot}` : '';
+      const tiempoId = citaProgreso ? `cupo-tiempo-${slot}` : '';
+      const barraHtml = citaProgreso ? `
+        <div class="cupo-mini-barra-wrap" title="${fmtHora(citaProgreso.horaInicioReal)} → ${fmtHora(citaProgreso.horaFin)}">
           <div class="cupo-mini-barra" id="${barraId}" style="width:0%"></div>
         </div>
         <div class="cupo-tiempo" id="${tiempoId}">00:00</div>` : (ocupado ? `<div class="cupo-mini-barra-wrap"><div class="cupo-mini-barra" style="width:100%;opacity:0.3"></div></div>` : '');
 
       html += `
-        <div class="cupo-card ${tipoCard}">
+        <div class="cupo-card ${tipoCard}" title="${escapeHtml(eq.nombre || '')}">
           <div class="cupo-card-icon">${icono}</div>
           <div class="cupo-card-label">${estadoLabel}</div>
           ${barraHtml}
         </div>`;
-    }
+    });
     html += `</div>`;
+
+    const slotPorEquipoId = {};
+    equiposLista.forEach((eq, idx) => { slotPorEquipoId[String(eq.id)] = idx + 1; });
 
     // Iniciar actualización de barras de progreso (cada segundo)
     if (intervaloProgresoPanel) clearInterval(intervaloProgresoPanel);
@@ -5847,10 +5875,12 @@ async function checkEquiposDisponibilidad() {
       const actualizarBarras = () => {
         const ahora = new Date();
         const segsAhora = ahora.getHours() * 3600 + ahora.getMinutes() * 60 + ahora.getSeconds();
-        data.citasEnRango.forEach((cita, idx) => {
+        data.citasEnRango.forEach((cita) => {
           if (cita.estado !== 'En Estudio' || !cita.horaInicioReal) return;
-          const barra = $(`cupo-barra-${idx + 1}`);
-          const tiempoEl = $(`cupo-tiempo-${idx + 1}`);
+          const slotIdx = slotPorEquipoId[String(cita.equipo_id)];
+          if (!slotIdx) return;
+          const barra = $(`cupo-barra-${slotIdx}`);
+          const tiempoEl = $(`cupo-tiempo-${slotIdx}`);
           const parseHora = h => { const [hh, mm] = h.substring(0,5).split(':').map(Number); return hh * 3600 + mm * 60; };
           let segsInicio = parseHora(cita.horaInicioReal);
           let segsFin = parseHora(cita.horaFin);
@@ -9191,6 +9221,7 @@ async function confirmarFinalizarEstudio() {
       
       // El servidor también emitirá el socket event
       cargarCitasElectro();
+      cargarEquiposElectroSelect();
       cerrarModalDetallesCita();
     } else {
       showToast(data?.error || 'Error finalizando estudio', 'error');
@@ -9939,7 +9970,7 @@ function enviarPorWhatsApp() {
   showToast('WhatsApp abierto. Recuerda adjuntar el PDF de recomendaciones manualmente.', 'success');
 }
 
-function abrirModalDetallesCita(cita) {
+async function abrirModalDetallesCita(cita) {
   citaElectroSeleccionada = { ...cita, estado: normalizarEstadoElectro(cita?.estado) };
   const puedeEditarElectro = tienePermiso('electro.editar');
   const puedeCambiarEstadoElectro = tienePermiso('electro.cambiar_estado') || puedeEditarElectro;
@@ -10021,8 +10052,8 @@ function abrirModalDetallesCita(cita) {
     }
   }
   
-  // Rellenar selector de equipo
-  $('modalEquipo').value = cita.equipo_id || '';
+  // Rellenar selector de equipo (estado en uso actualizado)
+  await cargarEquiposElectroSelect(cita.equipo_id || '');
   // Equipo solo editable con permiso de edición.
   if ($('modalEquipo')) {
     $('modalEquipo').disabled = !puedeEditarElectro;
