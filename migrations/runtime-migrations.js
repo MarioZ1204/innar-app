@@ -323,6 +323,72 @@ const runtimeMigrations = [
         ADD COLUMN IF NOT EXISTS pagado_por_nombre VARCHAR(200) NULL
       `);
     }
+  },
+  {
+    name: 'rt_entidades_cleanup',
+    description: 'Elimina entidades de prueba, corrige typos y unifica codificación utf8mb4',
+    run: async (db) => {
+      if (await tableExists(db, 'entidades')) {
+        await db.execute('ALTER TABLE entidades CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci');
+        await db.execute(`DELETE FROM entidades WHERE UPPER(TRIM(nombre)) IN ('ABOGADO', 'ABOGADO 2')`);
+      }
+      const fixes = [
+        ['FIDUPREVISORA', 'FIDUPREVISRA'],
+        ['PARTICULAR', 'Particular'],
+        ['PARTICULAR', 'particular']
+      ];
+      for (const [canon, typo] of fixes) {
+        if (await tableExists(db, 'turnos')) {
+          await db.execute(
+            'UPDATE turnos SET entidad = ? WHERE TRIM(entidad) = ?',
+            [canon, typo]
+          );
+        }
+        if (await tableExists(db, 'recibos')) {
+          await db.execute(
+            'UPDATE recibos SET nombre_entidad = ? WHERE TRIM(nombre_entidad) = ?',
+            [canon, typo]
+          );
+        }
+        if (await tableExists(db, 'citas_electro')) {
+          await db.execute(
+            'UPDATE citas_electro SET entidad = ? WHERE TRIM(entidad) = ?',
+            [canon, typo]
+          );
+        }
+      }
+      const agregar = ['PROTEGEMOS', 'MEDICINA PARA TODOS'];
+      for (const nombre of agregar) {
+        await db.execute('INSERT IGNORE INTO entidades (nombre, activo) VALUES (?, 1)', [nombre]);
+      }
+    }
+  },
+  {
+    name: 'rt_entidades_historico_cleanup',
+    description: 'Reasigna entidades de prueba en turnos/recibos históricos a PARTICULAR',
+    run: async (db) => {
+      const excluidas = ['ABOGADO', 'ABOGADO 2'];
+      for (const typo of excluidas) {
+        if (await tableExists(db, 'turnos')) {
+          await db.execute(
+            'UPDATE turnos SET entidad = ? WHERE UPPER(TRIM(entidad)) = UPPER(TRIM(?))',
+            ['PARTICULAR', typo]
+          );
+        }
+        if (await tableExists(db, 'recibos')) {
+          await db.execute(
+            'UPDATE recibos SET nombre_entidad = ? WHERE UPPER(TRIM(nombre_entidad)) = UPPER(TRIM(?))',
+            ['PARTICULAR', typo]
+          );
+        }
+        if (await tableExists(db, 'citas_electro')) {
+          await db.execute(
+            'UPDATE citas_electro SET entidad = ? WHERE UPPER(TRIM(entidad)) = UPPER(TRIM(?))',
+            ['PARTICULAR', typo]
+          );
+        }
+      }
+    }
   }
 ];
 

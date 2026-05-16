@@ -282,9 +282,10 @@ router.get('/reportes/mensual', requireAuth, requireRoleOrPerm(['superadmin', 'a
 // GET /api/dashboard/citas-auditoria
 router.get('/dashboard/citas-auditoria', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro', 'doctor', 'contabilidad'], 'sistema.dashboard'), async (req, res) => {
   try {
-    const { tipo_cita, fecha_desde, fecha_hasta, programado_por, tipo_estudio, entidad, doctor_id, estado, especialidad_id } = req.query;
+    const { tipo_cita, fecha_desde, fecha_hasta, programado_por, tipo_estudio, tipo_consulta, entidad, doctor_id, estado, especialidad_id } = req.query;
 
     const entidadArr = entidad ? entidad.split(',').filter(Boolean) : [];
+    const tipoConsultaArr = tipo_consulta ? tipo_consulta.split(',').filter(Boolean) : [];
     const tipoEstudioArr = tipo_estudio ? tipo_estudio.split(',').filter(Boolean) : [];
 
     // ── Citas Médicas ──────────────────────────────────────────────────
@@ -298,8 +299,8 @@ router.get('/dashboard/citas-auditoria', requireAuth, requireRoleOrPerm(['supera
     if (especialidad_id) { medConditions.push('e.id = ?'); medParams.push(parseInt(especialidad_id, 10)); }
     if (entidadArr.length === 1) { medConditions.push('t.entidad = ?'); medParams.push(entidadArr[0]); }
     else if (entidadArr.length > 1) { medConditions.push(`t.entidad IN (${entidadArr.map(() => '?').join(',')})`); medParams.push(...entidadArr); }
-    if (tipoEstudioArr.length === 1) { medConditions.push('t.tipo_consulta = ?'); medParams.push(tipoEstudioArr[0]); }
-    else if (tipoEstudioArr.length > 1) { medConditions.push(`t.tipo_consulta IN (${tipoEstudioArr.map(() => '?').join(',')})`); medParams.push(...tipoEstudioArr); }
+    if (tipoConsultaArr.length === 1) { medConditions.push('t.tipo_consulta = ?'); medParams.push(tipoConsultaArr[0]); }
+    else if (tipoConsultaArr.length > 1) { medConditions.push(`t.tipo_consulta IN (${tipoConsultaArr.map(() => '?').join(',')})`); medParams.push(...tipoConsultaArr); }
 
     const citasMedicas = await db.query(`
       SELECT

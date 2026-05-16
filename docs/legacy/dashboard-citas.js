@@ -27,9 +27,12 @@ function getDashboardFiltrosContext() {
   return { tipoCita, medicoId, especialidadId };
 }
 
-function recargarTiposEstudioFiltroDashboard() {
-  const { tipoCita, medicoId, especialidadId } = getDashboardFiltrosContext();
-  return cargarTiposEstudioFiltro(tipoCita, especialidadId, medicoId);
+function recargarFiltrosTipoDashboard() {
+  const { medicoId, especialidadId } = getDashboardFiltrosContext();
+  return Promise.all([
+    cargarTipoConsultaFiltro(medicoId, especialidadId),
+    cargarTipoEstudioFiltro()
+  ]);
 }
 
 function initDashboardCitas() {
@@ -55,7 +58,7 @@ function initDashboardCitas() {
       }
       dashboardTipoCitaChangeHandler = function () {
         actualizarVisibilidadFiltrosMedico(this.value);
-        recargarTiposEstudioFiltroDashboard();
+        recargarFiltrosTipoDashboard();
       };
       selTipoCita.addEventListener('change', dashboardTipoCitaChangeHandler);
     }
@@ -67,7 +70,7 @@ function initDashboardCitas() {
         const espId = opt?.dataset?.especialidadId || '';
         const selEsp = document.getElementById('dashboardEspecialidad');
         if (selEsp && espId) selEsp.value = espId;
-        recargarTiposEstudioFiltroDashboard();
+        cargarTipoConsultaFiltro(this.value || '', espId);
       });
     }
 
@@ -94,14 +97,17 @@ function initDashboardCitas() {
             selMed.value = prevMed;
           }
         }
-        recargarTiposEstudioFiltroDashboard();
+        cargarTipoConsultaFiltro(
+          document.getElementById('dashboardMedico')?.value || '',
+          espId
+        );
       });
     }
 
     cargarMedicosFiltro();
     cargarEspecialidadesFiltro();
     cargarEntidadesFiltroAuditoria();
-    recargarTiposEstudioFiltroDashboard();
+    recargarFiltrosTipoDashboard();
 
     const hoy = new Date();
     const hace30 = new Date(hoy);
@@ -125,7 +131,10 @@ function initDashboardCitas() {
         window.socket.on(ev, () => scheduleBuscarCitasAuditoria(250));
       });
       window.socket.off('tipos-consulta:actualizado');
-      window.socket.on('tipos-consulta:actualizado', () => recargarTiposEstudioFiltroDashboard());
+      window.socket.on('tipos-consulta:actualizado', () => {
+        const { medicoId, especialidadId } = getDashboardFiltrosContext();
+        cargarTipoConsultaFiltro(medicoId, especialidadId);
+      });
     }
   } catch (e) {
     console.error('[DASHBOARD CITAS] Error en inicialización:', e.message);
@@ -136,14 +145,27 @@ function initDashboardCitas() {
 function actualizarVisibilidadFiltrosMedico(tipoCita) {
   const colMed = document.getElementById('dashboardMedicoCol');
   const colEsp = document.getElementById('dashboardEspecialidadCol');
+  const colConsulta = document.getElementById('dashboardTipoConsultaCol');
+  const colEstudio = document.getElementById('dashboardTipoEstudioCol');
+  const selConsulta = document.getElementById('dashboardTipoConsulta');
+  const selEstudio = document.getElementById('dashboardTipoEstudio');
   const esElectro = tipoCita === 'ELECTRODIAGNOSTICO';
+  const esMedica = tipoCita === 'AGENDA_MEDICA';
+
   if (colMed) colMed.style.display = esElectro ? 'none' : '';
   if (colEsp) colEsp.style.display = esElectro ? 'none' : '';
+  if (colConsulta) colConsulta.style.display = esElectro ? 'none' : '';
+  if (colEstudio) colEstudio.style.display = esMedica ? 'none' : '';
+
   if (esElectro) {
     const selMed = document.getElementById('dashboardMedico');
     const selEsp = document.getElementById('dashboardEspecialidad');
     if (selMed) selMed.value = '';
     if (selEsp) selEsp.value = '';
+    if (selConsulta && window.clearMultiSelect) window.clearMultiSelect(selConsulta);
+  }
+  if (esMedica && selEstudio && window.clearMultiSelect) {
+    window.clearMultiSelect(selEstudio);
   }
 }
 
@@ -217,7 +239,7 @@ async function fetchEstudiosDashboard() {
   return data.registros || data.estudios || [];
 }
 
-function appendOpcionesTipoEstudio(sel, items) {
+function appendOpcionesSelect(sel, items) {
   (Array.isArray(items) ? items : []).forEach((item) => {
     const nombre = typeof item === 'string' ? item : item?.nombre;
     if (!nombre) return;
@@ -228,7 +250,8 @@ function appendOpcionesTipoEstudio(sel, items) {
   });
 }
 
-function refreshDashboardTipoEstudioMulti(sel) {
+function refreshDashboardSelectMulti(sel) {
+  if (!sel) return;
   if (sel._ms) sel._ms.refresh();
   else {
     window.initMultiSelect(sel);
@@ -236,70 +259,60 @@ function refreshDashboardTipoEstudioMulti(sel) {
   }
 }
 
-async function cargarTiposEstudioFiltro(tipoCita, especialidadId, medicoId) {
-  const sel = document.getElementById('dashboardTipoEstudio');
+/** Tipos de consulta médica (agenda), según médico o especialidad */
+async function cargarTipoConsultaFiltro(medicoId, especialidadId) {
+  const sel = document.getElementById('dashboardTipoConsulta');
   if (!sel) return;
-  const label = document.getElementById('dashboardTipoEstudioLabel');
   const prevVal = sel.value;
-
   sel.innerHTML = '<option value="">Todos</option>';
 
   try {
-    if (tipoCita && tipoCita !== 'TODOS') {
-      if (tipoCita === 'ELECTRODIAGNOSTICO') {
-        if (label) label.textContent = 'Tipo de Estudio';
-        appendOpcionesTipoEstudio(sel, await fetchEstudiosDashboard());
-      } else {
-        if (label) label.textContent = 'Tipo de Consulta';
-        if (!medicoId && !especialidadId) {
-          const hint = document.createElement('option');
-          hint.disabled = true;
-          hint.textContent = 'Seleccione médico o especialidad';
-          sel.appendChild(hint);
-        } else {
-          const tipos = await fetchTiposConsultaDashboard(medicoId, especialidadId);
-          appendOpcionesTipoEstudio(sel, tipos);
-        }
-      }
-    } else {
-      if (label) label.textContent = 'Tipo de Consulta / Estudio';
-
-      const estudios = await fetchEstudiosDashboard();
-      if (estudios.length) {
-        const grpElectro = document.createElement('optgroup');
-        grpElectro.label = 'Electrodiagnóstico';
-        estudios.forEach((s) => {
-          const nombre = s.nombre || s;
-          const opt = document.createElement('option');
-          opt.value = nombre;
-          opt.textContent = nombre;
-          grpElectro.appendChild(opt);
-        });
-        sel.appendChild(grpElectro);
-      }
-
-      let tiposAgenda = await fetchTiposConsultaDashboard(medicoId, especialidadId);
-      if (tiposAgenda === null) {
-        const res = await apiFetch('/api/tipos-consulta');
-        tiposAgenda = res.ok ? res.json() : [];
-      }
-      tiposAgenda = Array.isArray(tiposAgenda) ? tiposAgenda : (tiposAgenda?.registros || []);
-      if (tiposAgenda.length) {
-        const grpMed = document.createElement('optgroup');
-        grpMed.label = 'Agenda Médica';
-        tiposAgenda.forEach((t) => {
-          const nombre = t.nombre || t;
-          const opt = document.createElement('option');
-          opt.value = nombre;
-          opt.textContent = nombre;
-          grpMed.appendChild(opt);
-        });
-        sel.appendChild(grpMed);
-      }
+    const tipoCita = document.getElementById('dashboardTipoCita')?.value || 'TODOS';
+    if (tipoCita === 'ELECTRODIAGNOSTICO') {
+      refreshDashboardSelectMulti(sel);
+      return;
     }
 
+    let tipos = await fetchTiposConsultaDashboard(medicoId, especialidadId);
+    if (tipos === null) {
+      if (tipoCita === 'TODOS') {
+        const res = await apiFetch('/api/tipos-consulta');
+        tipos = res.ok ? res.json() : [];
+      } else {
+        const hint = document.createElement('option');
+        hint.disabled = true;
+        hint.textContent = 'Seleccione médico o especialidad';
+        sel.appendChild(hint);
+        refreshDashboardSelectMulti(sel);
+        return;
+      }
+    }
+    appendOpcionesSelect(sel, tipos);
+
     if (prevVal) sel.value = prevVal;
-    refreshDashboardTipoEstudioMulti(sel);
+    refreshDashboardSelectMulti(sel);
+  } catch (e) {
+    console.warn('[DASHBOARD CITAS] No se pudieron cargar tipos de consulta:', e.message);
+  }
+}
+
+/** Tipos de estudio de electrodiagnóstico (catálogo independiente) */
+async function cargarTipoEstudioFiltro() {
+  const sel = document.getElementById('dashboardTipoEstudio');
+  if (!sel) return;
+  const prevVal = sel.value;
+  sel.innerHTML = '<option value="">Todos</option>';
+
+  try {
+    const tipoCita = document.getElementById('dashboardTipoCita')?.value || 'TODOS';
+    if (tipoCita === 'AGENDA_MEDICA') {
+      refreshDashboardSelectMulti(sel);
+      return;
+    }
+
+    appendOpcionesSelect(sel, await fetchEstudiosDashboard());
+    if (prevVal) sel.value = prevVal;
+    refreshDashboardSelectMulti(sel);
   } catch (e) {
     console.warn('[DASHBOARD CITAS] No se pudieron cargar tipos de estudio:', e.message);
   }
@@ -326,6 +339,7 @@ async function buscarCitasAuditoria() {
     const especialidadId = document.getElementById('dashboardEspecialidad')?.value || '';
     const estado = document.getElementById('dashboardEstado')?.value || '';
     const entidad = window.getMultiSelectValue(document.getElementById('dashboardEntidad'));
+    const tipoConsulta = window.getMultiSelectValue(document.getElementById('dashboardTipoConsulta'));
     const tipoEstudio = window.getMultiSelectValue(document.getElementById('dashboardTipoEstudio'));
 
     const params = new URLSearchParams();
@@ -337,6 +351,7 @@ async function buscarCitasAuditoria() {
     if (especialidadId) params.append('especialidad_id', especialidadId);
     if (estado) params.append('estado', estado);
     if (entidad) params.append('entidad', entidad);
+    if (tipoConsulta) params.append('tipo_consulta', tipoConsulta);
     if (tipoEstudio) params.append('tipo_estudio', tipoEstudio);
 
     const res = await apiFetch(`/api/dashboard/citas-auditoria?${params.toString()}`);
@@ -512,6 +527,7 @@ function limpiarFiltrosDashboard() {
     }
 
     window.clearMultiSelect(document.getElementById('dashboardEntidad'));
+    window.clearMultiSelect(document.getElementById('dashboardTipoConsulta'));
     window.clearMultiSelect(document.getElementById('dashboardTipoEstudio'));
 
     const selTipo = document.getElementById('dashboardTipoCita');
@@ -528,7 +544,7 @@ function limpiarFiltrosDashboard() {
     if (inpDesde) inpDesde.value = localDateStrDash(hace30);
     if (inpHasta) inpHasta.value = localDateStrDash(hoy);
 
-    recargarTiposEstudioFiltroDashboard();
+    recargarFiltrosTipoDashboard();
     setTimeout(buscarCitasAuditoria, 150);
   } catch (e) {
     console.error('[DASHBOARD CITAS] Error limpiando filtros:', e.message);

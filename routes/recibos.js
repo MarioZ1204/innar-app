@@ -9,6 +9,7 @@ const {
   requireAuth, requireRoleOrPerm,
   safeError, emitSocket, parseReciboId
 } = require('../middleware/index');
+const { fusionarListaEntidades, normalizarNombreEntidad } = require('../utils/catalogo-entidades');
 
 // Helper local
 function escapeHtml(str) {
@@ -167,7 +168,7 @@ router.get('/entidades', requireAuth, async (req, res) => {
 });
 
 router.post('/entidades', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'modulo.gestion_datos'), async (req, res) => {
-  const nombre = (req.body.nombre || '').trim().toUpperCase();
+  const nombre = normalizarNombreEntidad(req.body?.nombre).toUpperCase();
   if (!nombre) return res.status(400).json({ error: 'Nombre requerido' });
   try {
     const result = await db.execute('INSERT INTO entidades (nombre, activo) VALUES (?, 1)', [nombre]);
@@ -180,7 +181,7 @@ router.post('/entidades', requireAuth, requireRoleOrPerm(['superadmin', 'admin']
 
 router.put('/entidades/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'modulo.gestion_datos'), async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  const nombre = (req.body.nombre || '').trim().toUpperCase();
+  const nombre = normalizarNombreEntidad(req.body?.nombre).toUpperCase();
   if (!nombre || isNaN(id)) return res.status(400).json({ error: 'Datos inválidos' });
   try {
     await db.execute('UPDATE entidades SET nombre=? WHERE id=?', [nombre, id]);
@@ -290,9 +291,10 @@ router.get('/recibos/opciones', requireAuth, async (req, res) => {
         ) AS t ORDER BY valor ASC
       `)
     ]);
-    const catalogoSet = new Set(catalogoRows.map(r => r.valor.toUpperCase()));
-    const extras = usadasRows.filter(r => !catalogoSet.has((r.valor || '').toUpperCase()));
-    const entidades = [...catalogoRows.map(r => r.valor), ...extras.map(r => r.valor)].sort((a, b) => a.localeCompare(b));
+    const entidades = fusionarListaEntidades(
+      catalogoRows.map((r) => r.valor),
+      usadasRows.map((r) => r.valor)
+    );
     const [serviciosRows, usadosTipoRows] = await Promise.all([
       db.query('SELECT DISTINCT nombre AS valor FROM servicios_recibo WHERE activo=1 AND nombre IS NOT NULL AND nombre <> "" ORDER BY nombre ASC').catch(() => []),
       db.query('SELECT DISTINCT TRIM(tipo_servicio) AS valor FROM recibos WHERE tipo_servicio IS NOT NULL AND TRIM(tipo_servicio) <> "" ORDER BY valor ASC').catch(() => [])

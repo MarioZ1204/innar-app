@@ -2232,10 +2232,24 @@ function _poblarSelectEntidades(sel, entidades, opts = {}) {
   } = opts;
   const seen = new Set();
   const ordenadas = [];
+  const normEntidadKey = (raw) => String(raw || '')
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .toUpperCase();
+  const EXCLUIR_ENTIDAD = new Set(['ABOGADO', 'ABOGADO 2']);
   const pushNombre = (raw) => {
-    const n = (raw || '').trim();
+    const n = (raw || '').trim().replace(/\s+/g, ' ');
     if (!n) return;
-    const key = n.toUpperCase();
+    const key = normEntidadKey(n);
+    if (EXCLUIR_ENTIDAD.has(key)) return;
+    if (key === 'FIDUPREVISRA') {
+      if (seen.has('FIDUPREVISORA')) return;
+      seen.add('FIDUPREVISORA');
+      ordenadas.push('FIDUPREVISORA');
+      return;
+    }
     if (seen.has(key)) return;
     seen.add(key);
     ordenadas.push(n);
@@ -9605,7 +9619,8 @@ async function confirmarDuracionEstudio() {
       cerrarModalDetallesCita();
       cerrarModalDuracionEstudio();
     } else {
-      showToast(data?.error || 'Error iniciando estudio', 'error');
+      const msg = data?.details ? `${data.error || 'Error'} (${data.details})` : (data?.error || 'Error iniciando estudio');
+      showToast(msg, 'error');
     }
   } catch (e) {
     console.error('[DURACION] Error:', e);
@@ -9719,7 +9734,8 @@ async function iniciarEstudioSinDuracion() {
       cargarCitasElectro();
       cerrarModalDetallesCita();
     } else {
-      showToast(data?.error || 'Error iniciando estudio', 'error');
+      const msg = data?.details ? `${data.error || 'Error'} (${data.details})` : (data?.error || 'Error iniciando estudio');
+      showToast(msg, 'error');
     }
   } catch (e) {
     showToast('Error iniciando estudio', 'error');
@@ -10541,10 +10557,15 @@ async function cambiarEstadoCita(nuevoEstado, triggerBtn = null) {
   try {
     // Usar endpoint general para unificar exactamente el mismo flujo que ya funciona
     // en el resto del módulo (equipos, inicio/fin estudio, etc.).
+    const cambios = { estado: estadoObjetivo };
+    if (estadoObjetivo === 'En Estudio') {
+      const eqId = $('modalEquipo')?.value || citaElectroSeleccionada.equipo_id;
+      if (eqId) cambios.equipo_id = eqId;
+    }
     const res = await apiFetch(`/api/citas-electro/${citaElectroSeleccionada.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ estado: estadoObjetivo })
+      body: JSON.stringify(cambios)
     });
     const data = await res.json();
     if (data && data.ok) {
