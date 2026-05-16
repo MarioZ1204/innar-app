@@ -1844,6 +1844,7 @@ function initRecibos() {
   cargarMedicosEnRecibo();
   // Cargar servicios en el select de tipo estudio
   cargarServiciosEnRecibo();
+  cargarEntidadesEnRecibo();
   // Mostrar usuario actual como "generado por"
   const gpEl = $('reciboGeneradoPorDisplay');
   if (gpEl) {
@@ -2204,10 +2205,66 @@ async function cargarFiltrosUsuarios() {
 }
 
 // ---- Cargar entidades y tipos de servicio/estudio usados en recibos ----
+async function _fetchEntidadesOpcionesRecibo() {
+  const res = await apiFetch('/api/recibos/opciones');
+  const data = res.ok ? await res.json() : { entidades: [], estudios: [] };
+  return {
+    entidades: Array.isArray(data.entidades) ? data.entidades : [],
+    estudios: Array.isArray(data.estudios) ? data.estudios : []
+  };
+}
+
+function _poblarSelectEntidadesRecibo(sel, entidades, { valorPrevio } = {}) {
+  if (!sel) return;
+  const seen = new Set();
+  const ordenadas = [];
+  const pushNombre = (raw) => {
+    const n = (raw || '').trim();
+    if (!n) return;
+    const key = n.toUpperCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    ordenadas.push(n);
+  };
+  pushNombre('Particular');
+  entidades.forEach(pushNombre);
+  ordenadas.sort((a, b) => {
+    if (a.toUpperCase() === 'PARTICULAR') return -1;
+    if (b.toUpperCase() === 'PARTICULAR') return 1;
+    return a.localeCompare(b, 'es');
+  });
+  const prev = valorPrevio != null ? String(valorPrevio) : sel.value;
+  sel.innerHTML = '<option value="">Seleccionar entidad</option>';
+  ordenadas.forEach((nombre) => {
+    const opt = document.createElement('option');
+    opt.value = nombre;
+    opt.textContent = nombre;
+    sel.appendChild(opt);
+  });
+  if (prev && !seen.has(prev.toUpperCase())) {
+    const opt = document.createElement('option');
+    opt.value = prev;
+    opt.textContent = prev;
+    sel.appendChild(opt);
+  }
+  if (prev) sel.value = prev;
+}
+
+async function cargarEntidadesEnRecibo() {
+  const sel = $('reciboEntidad');
+  if (!sel) return;
+  try {
+    const { entidades } = await _fetchEntidadesOpcionesRecibo();
+    _poblarSelectEntidadesRecibo(sel, entidades, { valorPrevio: sel.value });
+  } catch (e) {
+    console.warn('[cargarEntidadesEnRecibo] Error:', e.message);
+  }
+}
+
 async function cargarFiltrosOpciones() {
   try {
-    const res = await apiFetch('/api/recibos/opciones');
-    const data = res.ok ? await res.json() : { entidades: [], estudios: [] };
+    const { entidades, estudios } = await _fetchEntidadesOpcionesRecibo();
+    const data = { entidades, estudios };
     const selEnt = $('filtroEntidad');
     if (selEnt) {
       selEnt.innerHTML = '<option value="">Todas</option>';
@@ -2444,7 +2501,10 @@ function renderCitasElectroKanban(citas) {
   setCount('electroKanbanCountCompletados', counts.completados);
 }
 
-function invalidarCacheEntidades() { _entidadesCache = null; }
+function invalidarCacheEntidades() {
+  _entidadesCache = null;
+  if (initRecibosDone && $('reciboEntidad')) cargarEntidadesEnRecibo();
+}
 function invalidarCacheEstudios() { _estudiosCache = null; }
 
 // ========== AGENDA MÉDICA (Citas) ==========
