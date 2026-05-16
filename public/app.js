@@ -2204,18 +2204,32 @@ async function cargarFiltrosUsuarios() {
   } catch (e) { console.warn('[cargarFiltrosUsuarios] Error:', e.message); }
 }
 
-// ---- Cargar entidades y tipos de servicio/estudio usados en recibos ----
-async function _fetchEntidadesOpcionesRecibo() {
-  const res = await apiFetch('/api/recibos/opciones');
-  const data = res.ok ? await res.json() : { entidades: [], estudios: [] };
-  return {
-    entidades: Array.isArray(data.entidades) ? data.entidades : [],
-    estudios: Array.isArray(data.estudios) ? data.estudios : []
-  };
+// ---- Catálogo de entidades (tabla entidades + usadas en turnos/recibos) ----
+let _catalogoEntidadesOpcionesCache = null;
+
+async function fetchCatalogoEntidadesOpciones({ force = false } = {}) {
+  if (!force && _catalogoEntidadesOpcionesCache) return _catalogoEntidadesOpcionesCache;
+  try {
+    const res = await apiFetch('/api/recibos/opciones');
+    const data = res.ok ? await res.json() : { entidades: [], estudios: [] };
+    _catalogoEntidadesOpcionesCache = {
+      entidades: Array.isArray(data.entidades) ? data.entidades : [],
+      estudios: Array.isArray(data.estudios) ? data.estudios : []
+    };
+  } catch (e) {
+    console.warn('[fetchCatalogoEntidadesOpciones] Error:', e.message);
+    _catalogoEntidadesOpcionesCache = { entidades: [], estudios: [] };
+  }
+  return _catalogoEntidadesOpcionesCache;
 }
 
-function _poblarSelectEntidadesRecibo(sel, entidades, { valorPrevio } = {}) {
+function _poblarSelectEntidades(sel, entidades, opts = {}) {
   if (!sel) return;
+  const {
+    placeholder = 'Seleccionar',
+    incluirParticular = true,
+    valorPrevio = null
+  } = opts;
   const seen = new Set();
   const ordenadas = [];
   const pushNombre = (raw) => {
@@ -2226,15 +2240,15 @@ function _poblarSelectEntidadesRecibo(sel, entidades, { valorPrevio } = {}) {
     seen.add(key);
     ordenadas.push(n);
   };
-  pushNombre('Particular');
-  entidades.forEach(pushNombre);
+  if (incluirParticular) pushNombre('Particular');
+  (entidades || []).forEach((v) => pushNombre(typeof v === 'string' ? v : v?.nombre));
   ordenadas.sort((a, b) => {
     if (a.toUpperCase() === 'PARTICULAR') return -1;
     if (b.toUpperCase() === 'PARTICULAR') return 1;
     return a.localeCompare(b, 'es');
   });
   const prev = valorPrevio != null ? String(valorPrevio) : sel.value;
-  sel.innerHTML = '<option value="">Seleccionar entidad</option>';
+  sel.innerHTML = `<option value="">${escapeHtml(placeholder)}</option>`;
   ordenadas.forEach((nombre) => {
     const opt = document.createElement('option');
     opt.value = nombre;
@@ -2250,32 +2264,41 @@ function _poblarSelectEntidadesRecibo(sel, entidades, { valorPrevio } = {}) {
   if (prev) sel.value = prev;
 }
 
-async function cargarEntidadesEnRecibo() {
-  const sel = $('reciboEntidad');
+async function cargarEntidadesEnSelect(selectId, opts = {}) {
+  const sel = $(selectId);
   if (!sel) return;
   try {
-    const { entidades } = await _fetchEntidadesOpcionesRecibo();
-    _poblarSelectEntidadesRecibo(sel, entidades, { valorPrevio: sel.value });
-  } catch (e) {
-    console.warn('[cargarEntidadesEnRecibo] Error:', e.message);
+    const { entidades } = await fetchCatalogoEntidadesOpciones();
+    _poblarSelectEntidades(sel, entidades, {
+      placeholder: opts.placeholder || 'Seleccionar',
+      incluirParticular: opts.incluirParticular !== false,
+      valorPrevio: opts.valorPrevio != null ? opts.valorPrevio : sel.value
+    });
+  } catch (err) {
+    console.warn('[cargarEntidadesEnSelect] Error:', err.message);
   }
+}
+
+async function cargarEntidadesEnRecibo() {
+  await cargarEntidadesEnSelect('reciboEntidad', {
+    placeholder: 'Seleccionar entidad',
+    incluirParticular: true
+  });
 }
 
 async function cargarFiltrosOpciones() {
   try {
-    const { entidades, estudios } = await _fetchEntidadesOpcionesRecibo();
-    const data = { entidades, estudios };
+    const { entidades, estudios } = await fetchCatalogoEntidadesOpciones();
     const selEnt = $('filtroEntidad');
     if (selEnt) {
-      selEnt.innerHTML = '<option value="">Todas</option>';
-      (Array.isArray(data.entidades) ? data.entidades : []).forEach(v => {
-        const opt = document.createElement('option');
-        opt.value = v; opt.textContent = v;
-        selEnt.appendChild(opt);
+      _poblarSelectEntidades(selEnt, entidades, {
+        placeholder: 'Todas',
+        incluirParticular: true,
+        valorPrevio: selEnt.value
       });
     }
     const selEstudio = $('filtroEstudio');
-    const estudiosArr = Array.isArray(data.estudios) ? data.estudios : [];
+    const estudiosArr = Array.isArray(estudios) ? estudios : [];
     window._allEstudiosOpciones = estudiosArr;
     if (selEstudio) {
       selEstudio.innerHTML = '<option value="">Todos</option>';
@@ -2372,53 +2395,45 @@ async function preLlenarReciboDesdeCita(cita) {
 }
 
 // ========== CARGA DINÁMICA DE CATÁLOGOS ==========
-let _entidadesCache = null;
 let _estudiosCache = null;
 
-async function cargarEntidadesEnSelect(selectId) {
+async function cargarEstudiosEnSelect(selectId, opts = {}) {
   const sel = $(selectId);
   if (!sel) return;
-  try {
-    if (!_entidadesCache) {
-      const res = await apiFetch('/api/entidades');
-      _entidadesCache = await res.json();
-    }
-    sel.innerHTML = '<option value="">Seleccionar</option>';
-    const lista = Array.isArray(_entidadesCache)
-      ? _entidadesCache
-      : (_entidadesCache.entidades || _entidadesCache.registros || []);
-    lista.forEach((e) => {
-      const nombre = typeof e === 'string' ? e : e.nombre;
-      if (!nombre) return;
-      const opt = document.createElement('option');
-      opt.value = nombre;
-      opt.textContent = nombre;
-      sel.appendChild(opt);
-    });
-  } catch (err) {
-    console.warn('[cargarEntidadesEnSelect] Error:', err.message);
-  }
-}
-
-async function cargarEstudiosEnSelect(selectId) {
-  const sel = $(selectId);
-  if (!sel) return;
+  const placeholder = opts.placeholder || 'Seleccionar estudio';
   try {
     if (!_estudiosCache) {
-      const res = await apiFetch('/api/estudios/lista');
-      const data = await res.json();
-      _estudiosCache = (Array.isArray(data) ? data : (data.registros || data.estudios || [])).map(e => e.nombre || e);
+      const { estudios } = await fetchCatalogoEntidadesOpciones();
+      if (estudios && estudios.length) {
+        _estudiosCache = estudios;
+      } else {
+        const res = await apiFetch('/api/estudios/lista');
+        const data = await res.json();
+        _estudiosCache = (Array.isArray(data) ? data : (data.registros || data.estudios || [])).map(e => e.nombre || e);
+      }
     }
-    sel.innerHTML = '<option value="">Seleccionar estudio</option>';
+    const prev = opts.valorPrevio != null ? opts.valorPrevio : sel.value;
+    sel.innerHTML = `<option value="">${escapeHtml(placeholder)}</option>`;
     (_estudiosCache || []).forEach(nombre => {
       const opt = document.createElement('option');
       opt.value = nombre;
       opt.textContent = nombre;
       sel.appendChild(opt);
     });
+    if (prev) sel.value = prev;
   } catch (err) {
     console.warn('[cargarEstudiosEnSelect] Error:', err.message);
   }
+}
+
+function invalidarCacheEstudios() {
+  _estudiosCache = null;
+  _catalogoEntidadesOpcionesCache = null;
+  const recargar = [
+    ['electroEstudio', () => cargarEstudiosEnSelect('electroEstudio')],
+    ['filtroEstudio', () => cargarFiltrosOpciones()]
+  ];
+  recargar.forEach(([id, fn]) => { if ($(id)) fn(); });
 }
 
 function getFiltroEstudiosElectroActivos() {
@@ -2502,10 +2517,18 @@ function renderCitasElectroKanban(citas) {
 }
 
 function invalidarCacheEntidades() {
-  _entidadesCache = null;
-  if (initRecibosDone && $('reciboEntidad')) cargarEntidadesEnRecibo();
+  _catalogoEntidadesOpcionesCache = null;
+  const recargar = [
+    ['reciboEntidad', () => cargarEntidadesEnRecibo()],
+    ['nuevoTurnoEntidadMedica', () => cargarEntidadesEnSelect('nuevoTurnoEntidadMedica')],
+    ['electroEntidad', () => cargarEntidadesEnSelect('electroEntidad', { placeholder: 'Seleccionar entidad' })],
+    ['esperaEntidad', () => cargarEntidadesEnSelect('esperaEntidad')],
+    ['esperaFiltroEntidad', () => cargarEntidadesEnSelect('esperaFiltroEntidad', { placeholder: 'Todas' })],
+    ['filtroEntidad', () => cargarFiltrosOpciones()]
+  ];
+  recargar.forEach(([id, fn]) => { if ($(id)) fn(); });
+  if (typeof cargarEntidadesFiltroAuditoria === 'function') cargarEntidadesFiltroAuditoria();
 }
-function invalidarCacheEstudios() { _estudiosCache = null; }
 
 // ========== AGENDA MÉDICA (Citas) ==========
 async function initAgendaMedica() {
@@ -4711,7 +4734,7 @@ function procesarExcelPacientesMedica(file) {
       // Cargar opciones de entidad y tipo de consulta para dropdowns en preview
       let opcionesEntidad = [], opcionesTipo = [];
       try {
-        const opcData = await apiFetch('/api/recibos/opciones').then(r => r.json()).catch(() => ({ entidades: [] }));
+        const opcData = await fetchCatalogoEntidadesOpciones();
         opcionesEntidad = opcData.entidades || [];
       } catch (_) { console.warn('[cargarPacientesExcelData] Failed to load entity options'); }
       const doctorIdPlantilla = selectedDoctorId || ((currentUser?.rol === 'doctor' ? currentUser?.id : null));
@@ -8761,14 +8784,14 @@ async function cargarLista(queryString) {
 
 async function showEditReciboModal({ id, medico, servicio, entidad, cliente }) {
   // Cargar opciones en paralelo
-  const [medicosRes, serviciosArr, entidadesRes] = await Promise.all([
+  const [medicosRes, serviciosArr, entidadesCatalogo] = await Promise.all([
     apiFetch('/api/medicos').then(r => r.json()).catch(() => []),
     getServicios().catch(() => []),
-    apiFetch('/api/entidades').then(r => r.json()).catch(() => [])
+    fetchCatalogoEntidadesOpciones().then((d) => d.entidades || []).catch(() => [])
   ]);
   const medicos = Array.isArray(medicosRes) ? medicosRes : [];
   const servicios = Array.isArray(serviciosArr) ? serviciosArr : [];
-  const entidades = Array.isArray(entidadesRes) ? entidadesRes : [];
+  const entidades = (entidadesCatalogo || []).map((nombre) => ({ nombre }));
 
   const medicoOpts = medicos.map(m => `<option value="${escapeHtml(m.nombre)}"${m.nombre===medico?' selected':''}>${escapeHtml(m.nombre)}</option>`).join('');
   const servicioOpts = servicios.map(s => `<option value="${escapeHtml(s.nombre)}"${s.nombre===servicio?' selected':''}>${escapeHtml(s.nombre)}</option>`).join('');
@@ -11762,31 +11785,17 @@ let _esperaPendienteId = null;  // id esperando confirmación de eliminación
 function initEsperaElectro() {
   $('btnAgregarEspera')?.addEventListener('click', agregarPacienteEspera);
 
-  // Cargar entidades dinámicamente
-  (async () => {
-    try {
-      const el = $('esperaFiltroEntidad');
-      if (el) {
-        el.innerHTML = '<option value="">Todas</option>';
-        const resp = await apiFetch('/api/entidades');
-        if (resp.ok) {
-          const data = await resp.json();
-          const entidades = Array.isArray(data) ? data : (data.registros || []);
-          entidades.filter(e => e.activo !== 0).forEach(e => {
-            const o = document.createElement('option');
-            o.value = e.nombre;
-            o.textContent = e.nombre;
-            el.appendChild(o);
-          });
-        }
-        // Inicializar multi-select
-        if (typeof initMultiSelect === 'function') {
-          initMultiSelect(el, { placeholder: 'Todas', onChange: () => renderEsperaTable() });
-          if (typeof observeSelectForMulti === 'function') observeSelectForMulti(el);
-        }
+  cargarEntidadesEnSelect('esperaFiltroEntidad', { placeholder: 'Todas' }).then(() => {
+    const el = $('esperaFiltroEntidad');
+    if (el && typeof initMultiSelect === 'function') {
+      if (!el._ms) {
+        initMultiSelect(el, { placeholder: 'Todas', onChange: () => renderEsperaTable() });
+        if (typeof observeSelectForMulti === 'function') observeSelectForMulti(el);
+      } else if (el._ms.refresh) {
+        el._ms.refresh();
       }
-    } catch (e) { console.warn('No se pudieron cargar entidades para espera:', e.message); }
-  })();
+    }
+  });
 
   // Inicializar multi-select de prioridad (opciones estáticas)
   const elPrio = $('esperaFiltroPrioridad');
