@@ -227,16 +227,11 @@ async function fetchTiposConsultaDashboard(medicoId, especialidadId) {
 }
 
 async function fetchEstudiosDashboard() {
-  if (typeof fetchCatalogoEntidadesOpciones === 'function') {
-    try {
-      const { estudios } = await fetchCatalogoEntidadesOpciones();
-      if (estudios?.length) return estudios.map((n) => ({ nombre: typeof n === 'string' ? n : n }));
-    } catch (_) { /* fallback */ }
-  }
   const res = await apiFetch('/api/estudios/lista');
   if (!res.ok) return [];
   const data = await res.json();
-  return data.registros || data.estudios || [];
+  const lista = Array.isArray(data) ? data : (data.registros || data.estudios || []);
+  return lista.map((e) => ({ nombre: typeof e === 'string' ? e : e?.nombre })).filter((e) => e.nombre);
 }
 
 function appendOpcionesSelect(sel, items) {

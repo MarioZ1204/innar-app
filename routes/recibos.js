@@ -9,7 +9,7 @@ const {
   requireAuth, requireRoleOrPerm,
   safeError, emitSocket, parseReciboId
 } = require('../middleware/index');
-const { fusionarListaEntidades, normalizarNombreEntidad } = require('../utils/catalogo-entidades');
+const { listarEntidadesCatalogo, normalizarNombreEntidad } = require('../utils/catalogo-entidades');
 
 // Helper local
 function escapeHtml(str) {
@@ -281,20 +281,8 @@ router.get('/recibos/generadores', requireAuth, async (req, res) => {
 // GET /api/recibos/opciones — BEFORE /:id
 router.get('/recibos/opciones', requireAuth, async (req, res) => {
   try {
-    const [catalogoRows, usadasRows] = await Promise.all([
-      db.query('SELECT nombre AS valor FROM entidades WHERE activo=1 ORDER BY nombre ASC'),
-      db.query(`
-        SELECT DISTINCT valor FROM (
-          SELECT TRIM(entidad) AS valor FROM turnos WHERE entidad IS NOT NULL AND TRIM(entidad) <> ''
-          UNION
-          SELECT TRIM(nombre_entidad) AS valor FROM recibos WHERE nombre_entidad IS NOT NULL AND TRIM(nombre_entidad) <> ''
-        ) AS t ORDER BY valor ASC
-      `)
-    ]);
-    const entidades = fusionarListaEntidades(
-      catalogoRows.map((r) => r.valor),
-      usadasRows.map((r) => r.valor)
-    );
+    const catalogoRows = await db.query('SELECT nombre AS valor FROM entidades WHERE activo=1 ORDER BY nombre ASC');
+    const entidades = listarEntidadesCatalogo(catalogoRows.map((r) => r.valor));
     const [serviciosRows, usadosTipoRows] = await Promise.all([
       db.query('SELECT DISTINCT nombre AS valor FROM servicios_recibo WHERE activo=1 AND nombre IS NOT NULL AND nombre <> "" ORDER BY nombre ASC').catch(() => []),
       db.query('SELECT DISTINCT TRIM(tipo_servicio) AS valor FROM recibos WHERE tipo_servicio IS NOT NULL AND TRIM(tipo_servicio) <> "" ORDER BY valor ASC').catch(() => [])

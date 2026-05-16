@@ -389,6 +389,57 @@ const runtimeMigrations = [
         }
       }
     }
+  },
+  {
+    name: 'rt_entidades_catalogo_estricto',
+    description: 'Desactiva entidades fuera del catálogo oficial y normaliza histórico',
+    run: async (db) => {
+      const {
+        CATALOGO_ENTIDADES,
+        claveEntidad,
+        mapearEntidadHistorica,
+        repararCodificacionTexto
+      } = require('../utils/catalogo-entidades');
+      const catalogoKeys = new Set(CATALOGO_ENTIDADES.map((n) => claveEntidad(n)));
+
+      if (await tableExists(db, 'entidades')) {
+        const rows = await db.query('SELECT id, nombre FROM entidades');
+        for (const row of rows) {
+          const nombreReparado = repararCodificacionTexto(row.nombre).trim();
+          const key = claveEntidad(nombreReparado);
+          const canon = mapearEntidadHistorica(nombreReparado);
+          if (catalogoKeys.has(key)) {
+            await db.execute(
+              'UPDATE entidades SET nombre = ?, activo = 1 WHERE id = ?',
+              [canon, row.id]
+            );
+          } else {
+            await db.execute('UPDATE entidades SET activo = 0 WHERE id = ?', [row.id]);
+          }
+        }
+        for (const nombre of CATALOGO_ENTIDADES) {
+          await db.execute('INSERT IGNORE INTO entidades (nombre, activo) VALUES (?, 1)', [nombre]);
+        }
+      }
+
+      const tablas = [
+        ['turnos', 'entidad'],
+        ['recibos', 'nombre_entidad'],
+        ['citas_electro', 'entidad']
+      ];
+      for (const [tabla, col] of tablas) {
+        if (!(await tableExists(db, tabla))) continue;
+        const distintos = await db.query(
+          `SELECT DISTINCT TRIM(${col}) AS valor FROM ${tabla} WHERE ${col} IS NOT NULL AND TRIM(${col}) <> ''`
+        );
+        for (const { valor } of distintos) {
+          const canon = mapearEntidadHistorica(valor);
+          if (canon && canon !== valor) {
+            await db.execute(`UPDATE ${tabla} SET ${col} = ? WHERE TRIM(${col}) = ?`, [canon, valor]);
+          }
+        }
+      }
+    }
   }
 ];
 

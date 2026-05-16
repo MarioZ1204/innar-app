@@ -2238,7 +2238,7 @@ function _poblarSelectEntidades(sel, entidades, opts = {}) {
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/\s+/g, ' ')
     .toUpperCase();
-  const EXCLUIR_ENTIDAD = new Set(['ABOGADO', 'ABOGADO 2']);
+  const EXCLUIR_ENTIDAD = new Set(['ABOGADO', 'ABOGADO 2', 'OTRA']);
   const pushNombre = (raw) => {
     const n = (raw || '').trim().replace(/\s+/g, ' ');
     if (!n) return;
@@ -2254,8 +2254,8 @@ function _poblarSelectEntidades(sel, entidades, opts = {}) {
     seen.add(key);
     ordenadas.push(n);
   };
-  if (incluirParticular) pushNombre('Particular');
   (entidades || []).forEach((v) => pushNombre(typeof v === 'string' ? v : v?.nombre));
+  if (incluirParticular && !seen.has('PARTICULAR')) pushNombre('PARTICULAR');
   ordenadas.sort((a, b) => {
     if (a.toUpperCase() === 'PARTICULAR') return -1;
     if (b.toUpperCase() === 'PARTICULAR') return 1;
@@ -2409,31 +2409,45 @@ async function preLlenarReciboDesdeCita(cita) {
 }
 
 // ========== CARGA DINÁMICA DE CATÁLOGOS ==========
-let _estudiosCache = null;
+/** Solo estudios de electrodiagnóstico (tabla estudio_duraciones), no tipos de consulta médica */
+let _estudiosElectroCache = null;
+
+async function fetchEstudiosElectroOpciones({ force = false } = {}) {
+  if (!force && _estudiosElectroCache) return _estudiosElectroCache;
+  try {
+    const res = await apiFetch('/api/estudios/lista');
+    const data = res.ok ? await res.json() : {};
+    _estudiosElectroCache = (Array.isArray(data) ? data : (data.registros || data.estudios || []))
+      .map((e) => (typeof e === 'string' ? e : e?.nombre))
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
+  } catch (e) {
+    console.warn('[fetchEstudiosElectroOpciones] Error:', e.message);
+    _estudiosElectroCache = [];
+  }
+  return _estudiosElectroCache;
+}
 
 async function cargarEstudiosEnSelect(selectId, opts = {}) {
   const sel = $(selectId);
   if (!sel) return;
   const placeholder = opts.placeholder || 'Seleccionar estudio';
   try {
-    if (!_estudiosCache) {
-      const { estudios } = await fetchCatalogoEntidadesOpciones();
-      if (estudios && estudios.length) {
-        _estudiosCache = estudios;
-      } else {
-        const res = await apiFetch('/api/estudios/lista');
-        const data = await res.json();
-        _estudiosCache = (Array.isArray(data) ? data : (data.registros || data.estudios || [])).map(e => e.nombre || e);
-      }
-    }
+    const estudios = await fetchEstudiosElectroOpciones({ force: opts.force });
     const prev = opts.valorPrevio != null ? opts.valorPrevio : sel.value;
     sel.innerHTML = `<option value="">${escapeHtml(placeholder)}</option>`;
-    (_estudiosCache || []).forEach(nombre => {
+    estudios.forEach((nombre) => {
       const opt = document.createElement('option');
       opt.value = nombre;
       opt.textContent = nombre;
       sel.appendChild(opt);
     });
+    if (prev && prev !== '' && ![...sel.options].some((o) => o.value === prev)) {
+      const opt = document.createElement('option');
+      opt.value = prev;
+      opt.textContent = prev;
+      sel.appendChild(opt);
+    }
     if (prev) sel.value = prev;
   } catch (err) {
     console.warn('[cargarEstudiosEnSelect] Error:', err.message);
@@ -2441,11 +2455,10 @@ async function cargarEstudiosEnSelect(selectId, opts = {}) {
 }
 
 function invalidarCacheEstudios() {
-  _estudiosCache = null;
-  _catalogoEntidadesOpcionesCache = null;
+  _estudiosElectroCache = null;
   const recargar = [
-    ['electroEstudio', () => cargarEstudiosEnSelect('electroEstudio')],
-    ['filtroEstudio', () => cargarFiltrosOpciones()]
+    ['electroEstudio', () => cargarEstudiosEnSelect('electroEstudio', { force: true })],
+    ['filtroEstudiosElectro', () => fetchEstudiosElectroOpciones({ force: true }).then((lista) => initFiltroEstudiosElectro(lista))]
   ];
   recargar.forEach(([id, fn]) => { if ($(id)) fn(); });
 }
@@ -5424,7 +5437,7 @@ async function initElectro() {
   
   // Cargar estudios desde BD para el select y las pestañas
   await cargarEstudiosEnSelect('electroEstudio');
-  initFiltroEstudiosElectro(_estudiosCache || []);
+  initFiltroEstudiosElectro(await fetchEstudiosElectroOpciones());
   
   // Cargar entidades desde BD para pacientes en espera
   await cargarEntidadesEnSelect('esperaEntidad');
