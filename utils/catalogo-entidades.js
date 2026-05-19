@@ -98,9 +98,51 @@ function mapearEntidadHistorica(raw) {
   return canon.toUpperCase();
 }
 
+/** Typos que se unifican en un solo ítem del select (sin colapsar otras filas de BD). */
+const ALIAS_SELECT_ENTIDAD = {
+  FIDUPREVISRA: 'FIDUPREVISORA',
+  FIDUPREVISOR: 'FIDUPREVISORA',
+  PARTICULAR: 'PARTICULAR'
+};
+
 /**
- * Lista para selects: prioriza entidades activas en BD; si no hay filas, usa catálogo por defecto.
+ * Nombre tal como debe mostrarse en selects, respetando filas activas de la tabla entidades.
  */
+function nombreEntidadParaSelect(raw) {
+  const s = repararCodificacionTexto(raw).trim().replace(/\s+/g, ' ');
+  if (!s) return '';
+  const key = claveEntidad(s);
+  if (ENTIDADES_EXCLUIDAS.has(key)) return '';
+  if (ALIAS_SELECT_ENTIDAD[key]) return ALIAS_SELECT_ENTIDAD[key];
+  return s;
+}
+
+function ordenarEntidades(lista) {
+  return [...lista].sort((a, b) => {
+    if (claveEntidad(a) === 'PARTICULAR') return -1;
+    if (claveEntidad(b) === 'PARTICULAR') return 1;
+    return a.localeCompare(b, 'es', { sensitivity: 'base' });
+  });
+}
+
+/**
+ * Lista para selects: todas las entidades activo=1 en BD (sin colapsar a PARTICULAR).
+ */
+function listarEntidadesActivasDesdeBd(nombresDb = []) {
+  const map = new Map();
+  (nombresDb || []).forEach((raw) => {
+    const nombre = nombreEntidadParaSelect(raw);
+    if (!nombre) return;
+    const key = claveEntidad(nombre);
+    if (!map.has(key)) map.set(key, nombre);
+  });
+  if (map.size === 0) {
+    CATALOGO_ENTIDADES.forEach((n) => map.set(claveEntidad(n), n));
+  }
+  return ordenarEntidades([...map.values()]);
+}
+
+/** Limpieza histórica / migraciones (aplica alias agresivos). */
 function listarEntidadesCatalogo(nombresDb = []) {
   const map = new Map();
   const push = (raw) => {
@@ -112,18 +154,11 @@ function listarEntidadesCatalogo(nombresDb = []) {
   };
   (nombresDb || []).forEach(push);
   if (map.size === 0) CATALOGO_ENTIDADES.forEach(push);
-  return [...map.values()].sort((a, b) => {
-    if (a === 'PARTICULAR') return -1;
-    if (b === 'PARTICULAR') return 1;
-    return a.localeCompare(b, 'es', { sensitivity: 'base' });
-  });
+  return ordenarEntidades([...map.values()]);
 }
 
-/**
- * @deprecated Usar listarEntidadesCatalogo. Mantenido por compatibilidad interna.
- */
-function fusionarListaEntidades(catalogoNombres, extrasNombres = []) {
-  return listarEntidadesCatalogo(catalogoNombres);
+function fusionarListaEntidades(catalogoNombres) {
+  return listarEntidadesActivasDesdeBd(catalogoNombres);
 }
 
 module.exports = {
@@ -133,8 +168,10 @@ module.exports = {
   ENTIDADES_EXCLUIDAS,
   repararCodificacionTexto,
   normalizarNombreEntidad,
+  nombreEntidadParaSelect,
   claveEntidad,
   mapearEntidadHistorica,
+  listarEntidadesActivasDesdeBd,
   listarEntidadesCatalogo,
   fusionarListaEntidades
 };

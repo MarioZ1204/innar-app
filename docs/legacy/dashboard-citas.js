@@ -547,14 +547,23 @@ function limpiarFiltrosDashboard() {
   }
 }
 
-async function cargarEntidadesFiltroAuditoria() {
+async function cargarEntidadesFiltroAuditoria({ force = false } = {}) {
   const sel = document.getElementById('dashboardEntidad');
   if (!sel) return;
   try {
     if (typeof cargarEntidadesEnSelect === 'function') {
-      await cargarEntidadesEnSelect('dashboardEntidad', { placeholder: 'Todas' });
+      await cargarEntidadesEnSelect('dashboardEntidad', { placeholder: 'Todas', force: !!force });
+    } else if (typeof fetchEntidadesDesdeBd === 'function') {
+      const entidades = await fetchEntidadesDesdeBd({ force: !!force });
+      sel.innerHTML = '<option value="">Todas</option>';
+      (entidades || []).forEach((nombre) => {
+        const opt = document.createElement('option');
+        opt.value = nombre;
+        opt.textContent = nombre;
+        sel.appendChild(opt);
+      });
     } else if (typeof fetchCatalogoEntidadesOpciones === 'function') {
-      const { entidades } = await fetchCatalogoEntidadesOpciones();
+      const { entidades } = await fetchCatalogoEntidadesOpciones({ force: !!force });
       sel.innerHTML = '<option value="">Todas</option>';
       (entidades || []).forEach((nombre) => {
         const opt = document.createElement('option');

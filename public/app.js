@@ -556,7 +556,12 @@ function goToModule(moduleId) {
   window.currentModule = moduleId;  // Exponer para sockets
   sessionStorage.setItem(lsKeyCurrentModule, moduleId);
   history.pushState({view: moduleId}, '', `#${moduleId}`);
-  if (moduleId === 'recibos') { if (!initRecibosDone) initRecibos(); else cargarLista(_recibosLastParams || ''); }
+  if (moduleId === 'recibos') {
+    if (!initRecibosDone) initRecibos();
+    else cargarLista(_recibosLastParams || '');
+    recargarSelectsEntidadModulo('recibos', { force: true });
+    if ($('filtroEntidad')) cargarFiltrosOpciones({ force: true });
+  }
   if (moduleId === 'agenda-medica') { 
     if (!initAgendaDone) {
       initAgendaMedica();
@@ -578,7 +583,7 @@ function goToModule(moduleId) {
       if (typeof loadCalendarData === 'function' && (selectedDoctorId || currentUser?.id)) loadCalendarData();
       if (typeof cargarTurnosMedica === 'function') cargarTurnosMedica();
       if (typeof actualizarHorasDisponibles === 'function') actualizarHorasDisponibles();
-      cargarEntidadesEnSelect('nuevoTurnoEntidadMedica', { force: true });
+      recargarSelectsEntidadModulo('agenda-medica', { force: true });
     }
     // Socket.IO maneja los cambios en tiempo real, no necesitamos auto-refresh
   } else {
@@ -586,14 +591,17 @@ function goToModule(moduleId) {
   }
   if (moduleId === 'electro') {
     if (!initElectroDone) { initElectro(); initElectroDone = true; }
-    else {
-      cargarEntidadesEnSelect('electroEntidad', { placeholder: 'Seleccionar entidad', force: true });
-      cargarEntidadesEnSelect('esperaEntidad', { force: true });
-    }
+    else recargarSelectsEntidadModulo('electro', { force: true });
   }
   if (moduleId === 'usuarios') { if (!initUsuariosDone) initUsuarios(); initUsuariosDone = true; }
   if (moduleId === 'diagnosticos') { if (!initDiagnosticosDone) initDiagnosticos(); initDiagnosticosDone = true; }
-  if (moduleId === 'dashboard-citas') { if (!initDashboardCitasDone) initDashboardCitas(); initDashboardCitasDone = true; }
+  if (moduleId === 'dashboard-citas') {
+    if (!initDashboardCitasDone) initDashboardCitas();
+    else if (typeof cargarEntidadesFiltroAuditoria === 'function') {
+      cargarEntidadesFiltroAuditoria({ force: true });
+    }
+    initDashboardCitasDone = true;
+  }
   if (moduleId === 'gestion-datos') { if (!initGestionDatosDone) initGestionDatos(); initGestionDatosDone = true; }
   if (moduleId === 'ucqn') { if (!initUcqnDone) initUcqn(); initUcqnDone = true; }
   if (moduleId === 'monitor-equipos') { initMonitorEquipos(); }
@@ -2215,9 +2223,28 @@ async function cargarFiltrosUsuarios() {
 let _catalogoEntidadesOpcionesCache = null;
 let _entidadesBdCache = null;
 
+/** Selects de entidad por módulo (id del elemento en index.html). */
+const ENTIDAD_SELECTS_POR_MODULO = {
+  recibos: [
+    { id: 'reciboEntidad', placeholder: 'Seleccionar entidad' }
+  ],
+  'agenda-medica': [
+    { id: 'nuevoTurnoEntidadMedica' },
+    { id: 'editMedicaEntidad', placeholder: 'Seleccionar' }
+  ],
+  electro: [
+    { id: 'electroEntidad', placeholder: 'Seleccionar entidad' },
+    { id: 'esperaEntidad' },
+    { id: 'esperaFiltroEntidad', placeholder: 'Todas' }
+  ],
+  'dashboard-citas': [
+    { id: 'dashboardEntidad', placeholder: 'Todas' }
+  ]
+};
+
 /** Entidades activas desde tabla `entidades` (fuente principal para selects). */
 async function fetchEntidadesDesdeBd({ force = false } = {}) {
-  if (!force && _entidadesBdCache && _entidadesBdCache.length) return _entidadesBdCache;
+  if (!force && _entidadesBdCache) return _entidadesBdCache;
   const res = await apiFetch('/api/entidades');
   if (!res.ok) throw new Error('No se pudieron cargar las entidades');
   const data = await res.json();
@@ -2332,16 +2359,38 @@ async function cargarEntidadesEnSelect(selectId, opts = {}) {
   }
 }
 
-async function cargarEntidadesEnRecibo() {
+async function recargarSelectsEntidadModulo(moduleId, { force = true } = {}) {
+  const configs = ENTIDAD_SELECTS_POR_MODULO[moduleId] || [];
+  await Promise.all(configs.map((cfg) => {
+    if (!$(cfg.id)) return Promise.resolve();
+    return cargarEntidadesEnSelect(cfg.id, { ...cfg, force });
+  }));
+}
+
+async function recargarTodosSelectsEntidad({ force = true } = {}) {
+  const vistos = new Set();
+  const tareas = [];
+  Object.values(ENTIDAD_SELECTS_POR_MODULO).forEach((configs) => {
+    configs.forEach((cfg) => {
+      if (vistos.has(cfg.id) || !$(cfg.id)) return;
+      vistos.add(cfg.id);
+      tareas.push(cargarEntidadesEnSelect(cfg.id, { ...cfg, force }));
+    });
+  });
+  await Promise.all(tareas);
+}
+
+async function cargarEntidadesEnRecibo(opts = {}) {
   await cargarEntidadesEnSelect('reciboEntidad', {
     placeholder: 'Seleccionar entidad',
-    incluirParticular: true
+    incluirParticular: true,
+    force: opts.force !== false
   });
 }
 
-async function cargarFiltrosOpciones() {
+async function cargarFiltrosOpciones({ force = false } = {}) {
   try {
-    const { entidades, estudios } = await fetchCatalogoEntidadesOpciones();
+    const { entidades, estudios } = await fetchCatalogoEntidadesOpciones({ force });
     const selEnt = $('filtroEntidad');
     if (selEnt) {
       _poblarSelectEntidades(selEnt, entidades, {
@@ -2585,16 +2634,11 @@ function renderCitasElectroKanban(citas) {
 function invalidarCacheEntidades() {
   _catalogoEntidadesOpcionesCache = null;
   _entidadesBdCache = null;
-  const recargar = [
-    ['reciboEntidad', () => cargarEntidadesEnRecibo()],
-    ['nuevoTurnoEntidadMedica', () => cargarEntidadesEnSelect('nuevoTurnoEntidadMedica', { force: true })],
-    ['electroEntidad', () => cargarEntidadesEnSelect('electroEntidad', { placeholder: 'Seleccionar entidad', force: true })],
-    ['esperaEntidad', () => cargarEntidadesEnSelect('esperaEntidad', { force: true })],
-    ['esperaFiltroEntidad', () => cargarEntidadesEnSelect('esperaFiltroEntidad', { placeholder: 'Todas', force: true })],
-    ['filtroEntidad', () => cargarFiltrosOpciones()]
-  ];
-  recargar.forEach(([id, fn]) => { if ($(id)) fn(); });
-  if (typeof cargarEntidadesFiltroAuditoria === 'function') cargarEntidadesFiltroAuditoria();
+  recargarTodosSelectsEntidad({ force: true });
+  if ($('filtroEntidad')) cargarFiltrosOpciones({ force: true });
+  if (typeof cargarEntidadesFiltroAuditoria === 'function') {
+    cargarEntidadesFiltroAuditoria({ force: true });
+  }
 }
 
 // ========== AGENDA MÉDICA (Citas) ==========
@@ -2603,8 +2647,7 @@ async function initAgendaMedica() {
   $('agendaMedicaFecha').value = hoy;
   updateAgendaFechaDisplay();
   
-  // Cargar entidades desde la base de datos
-  await cargarEntidadesEnSelect('nuevoTurnoEntidadMedica');
+  await recargarSelectsEntidadModulo('agenda-medica', { force: true });
   
   // Cargar lista de médicos
   const medicos = await apiFetch('/api/medicos').then(r=>r.json()).catch(()=>[]);
@@ -4801,8 +4844,7 @@ function procesarExcelPacientesMedica(file) {
       // Cargar opciones de entidad y tipo de consulta para dropdowns en preview
       let opcionesEntidad = [], opcionesTipo = [];
       try {
-        const opcData = await fetchCatalogoEntidadesOpciones();
-        opcionesEntidad = opcData.entidades || [];
+        opcionesEntidad = await fetchEntidadesDesdeBd({ force: true });
       } catch (_) { console.warn('[cargarPacientesExcelData] Failed to load entity options'); }
       const doctorIdPlantilla = selectedDoctorId || ((currentUser?.rol === 'doctor' ? currentUser?.id : null));
       if (doctorIdPlantilla) {
@@ -5479,9 +5521,7 @@ async function initElectro() {
   await cargarEstudiosEnSelect('electroEstudio');
   initFiltroEstudiosElectro(await fetchEstudiosElectroOpciones());
   
-  // Cargar entidades desde BD para pacientes en espera
-  await cargarEntidadesEnSelect('esperaEntidad');
-  await cargarEntidadesEnSelect('electroEntidad');
+  await recargarSelectsEntidadModulo('electro', { force: true });
   
   // Generar intervalos de hora (texto libre con formato HH:MM AM/PM)
   // No se genera select, el usuario escribe la hora directamente
@@ -8854,7 +8894,7 @@ async function showEditReciboModal({ id, medico, servicio, entidad, cliente }) {
   const [medicosRes, serviciosArr, entidadesCatalogo] = await Promise.all([
     apiFetch('/api/medicos').then(r => r.json()).catch(() => []),
     getServicios().catch(() => []),
-    fetchCatalogoEntidadesOpciones().then((d) => d.entidades || []).catch(() => [])
+    fetchEntidadesDesdeBd({ force: true }).catch(() => [])
   ]);
   const medicos = Array.isArray(medicosRes) ? medicosRes : [];
   const servicios = Array.isArray(serviciosArr) ? serviciosArr : [];
@@ -11570,7 +11610,7 @@ document.getElementById('btnEditarMedicaModal')?.addEventListener('click', async
   set('editMedicaNotas', t.notas || '');
 
   await _poblarEditMedicaTipoConsulta(t);
-  await cargarEntidadesEnSelect('editMedicaEntidad');
+  await cargarEntidadesEnSelect('editMedicaEntidad', { force: true });
   const selEnt = document.getElementById('editMedicaEntidad');
   if (selEnt && t.entidad) _medicaAsegurarOpcionEntidad(selEnt, t.entidad);
 

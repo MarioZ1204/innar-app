@@ -9,7 +9,11 @@ const {
   requireAuth, requireRoleOrPerm,
   safeError, emitSocket, parseReciboId
 } = require('../middleware/index');
-const { listarEntidadesCatalogo, normalizarNombreEntidad } = require('../utils/catalogo-entidades');
+const {
+  listarEntidadesActivasDesdeBd,
+  nombreEntidadParaSelect,
+  normalizarNombreEntidad
+} = require('../utils/catalogo-entidades');
 
 // Helper local
 function escapeHtml(str) {
@@ -163,13 +167,13 @@ router.delete('/servicios/:id', requireAuth, requireRoleOrPerm(['superadmin', 'a
 router.get('/entidades', requireAuth, async (req, res) => {
   try {
     const rows = await db.query('SELECT id, nombre FROM entidades WHERE activo=1 ORDER BY nombre ASC');
-    const entidades = listarEntidadesCatalogo(rows.map((r) => r.nombre));
+    const entidades = listarEntidadesActivasDesdeBd(rows.map((r) => r.nombre));
     res.json({ ok: true, entidades, registros: rows });
   } catch (err) { res.status(500).json({ error: safeError(err) }); }
 });
 
 router.post('/entidades', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'modulo.gestion_datos'), async (req, res) => {
-  const nombre = normalizarNombreEntidad(req.body?.nombre).toUpperCase();
+  const nombre = nombreEntidadParaSelect(req.body?.nombre);
   if (!nombre) return res.status(400).json({ error: 'Nombre requerido' });
   try {
     const result = await db.execute('INSERT INTO entidades (nombre, activo) VALUES (?, 1)', [nombre]);
@@ -182,7 +186,7 @@ router.post('/entidades', requireAuth, requireRoleOrPerm(['superadmin', 'admin']
 
 router.put('/entidades/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'modulo.gestion_datos'), async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  const nombre = normalizarNombreEntidad(req.body?.nombre).toUpperCase();
+  const nombre = nombreEntidadParaSelect(req.body?.nombre);
   if (!nombre || isNaN(id)) return res.status(400).json({ error: 'Datos inválidos' });
   try {
     await db.execute('UPDATE entidades SET nombre=? WHERE id=?', [nombre, id]);
@@ -283,7 +287,7 @@ router.get('/recibos/generadores', requireAuth, async (req, res) => {
 router.get('/recibos/opciones', requireAuth, async (req, res) => {
   try {
     const catalogoRows = await db.query('SELECT nombre AS valor FROM entidades WHERE activo=1 ORDER BY nombre ASC');
-    const entidades = listarEntidadesCatalogo(catalogoRows.map((r) => r.valor));
+    const entidades = listarEntidadesActivasDesdeBd(catalogoRows.map((r) => r.valor));
     const [serviciosRows, usadosTipoRows] = await Promise.all([
       db.query('SELECT DISTINCT nombre AS valor FROM servicios_recibo WHERE activo=1 AND nombre IS NOT NULL AND nombre <> "" ORDER BY nombre ASC').catch(() => []),
       db.query('SELECT DISTINCT TRIM(tipo_servicio) AS valor FROM recibos WHERE tipo_servicio IS NOT NULL AND TRIM(tipo_servicio) <> "" ORDER BY valor ASC').catch(() => [])
