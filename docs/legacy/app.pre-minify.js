@@ -6914,6 +6914,7 @@ const PERMISOS_DEFS = [
   { key: 'agenda.marcar_atendido',  label: 'Agenda: Marcar como atendido',        grupo: 'Agenda Médica' },
   { key: 'agenda.aviso_doctor',     label: 'Agenda: Enviar aviso al doctor',      grupo: 'Agenda Médica' },
   { key: 'agenda.disponibilidad',   label: 'Agenda: Programar disponibilidad',    grupo: 'Agenda Médica' },
+  { key: 'agenda.editar_siempre',   label: 'Agenda: Editar citas en cualquier estado', grupo: 'Agenda Médica' },
   // ── Electrodiagnóstico ────────────────────────────────────────────────────
   { key: 'electro.ver',             label: 'Electro: Ver citas',                  grupo: 'Electrodiagnóstico' },
   { key: 'electro.crear',           label: 'Electro: Crear cita',                grupo: 'Electrodiagnóstico' },
@@ -7129,7 +7130,7 @@ async function _cargarPermisosUserList() {
   try {
     const res = await apiFetch('/api/usuarios');
     const usuarios = await res.json();
-    _permisosUsuariosCache = usuarios.filter(u => u.rol !== 'superadmin');
+    _permisosUsuariosCache = usuarios.filter(u => u.rol !== 'superadmin' && u.rol !== 'admin');
     container.removeAttribute('size');
     container.innerHTML = '<option value="">— Seleccionar usuario —</option>';
     _permisosUsuariosCache.forEach(u => {
@@ -7290,7 +7291,11 @@ async function _guardarPermisos() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ permisos })
     });
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      showToast(data.error || 'Error al guardar permisos', 'error');
+      return;
+    }
     if (data.ok) {
       showToast('Permisos guardados correctamente', 'success');
       _permisosUsuarioSeleccionado.permisos = permisos;
@@ -11040,7 +11045,20 @@ function obtenerNombreEspecialistaRecordatorio() {
   return (currentUser?.nombre || currentUser?.usuario || '').trim();
 }
 
-function construirMensajeRecordatorioMedica(turno, especialidadDoctor) {
+const SEDES_RECORDATORIO_MEDICA = {
+  '1': {
+    titulo: 'Sede Principal',
+    subtitulo: 'Carrera 34 #13-80, Barrio San Ignacio',
+    ubicacion: 'Carrera 34 #13-80, Barrio San Ignacio, Pasto, Nariño · https://maps.app.goo.gl/6cX18NUY8i8p5KQe9'
+  },
+  '2': {
+    titulo: 'Sede Servicios Complementarios',
+    subtitulo: 'Centro comercial Valle de Atriz, 2do piso',
+    ubicacion: 'Centro comercial Valle de Atriz, 2do piso, Pasto, Nariño · https://maps.app.goo.gl/YU5GheUmVMDAHFbq8'
+  }
+};
+
+function construirMensajeRecordatorioMedica(turno, especialidadDoctor, sedeId) {
   const nombre = turno?.paciente_nombre || '';
   const fecha = turno?.fecha ? formatearFechaISO(turno.fecha) : '-';
   const hora = turno?.hora ? formatearHora(turno.hora) : '-';
@@ -11049,29 +11067,99 @@ function construirMensajeRecordatorioMedica(turno, especialidadDoctor) {
   const lineaEspecialista = especialidadIncluyeEspecialista(especialidadTexto)
     ? `\n▸ Especialista: ${nombreEspecialista || 'Por confirmar'}`
     : '';
+  const sede = SEDES_RECORDATORIO_MEDICA[sedeId] || SEDES_RECORDATORIO_MEDICA['1'];
   return `¡Hola, buen día!. Le recordamos su cita de ${especialidadTexto} en el Instituto Neurociencias de Nariño IPS S.A.S:
 ▸ Paciente: ${nombre}
 ▸ Fecha: ${fecha}
 ▸ Hora: ${hora}
 ${lineaEspecialista}
-▸ Ubicación: Carrera 33 #13 - 84 "Casa Verde" (https://maps.app.goo.gl/YU5GheUmVMDAHFbq8)
+▸ Ubicación: ${sede.ubicacion}
 Cualquier novedad, no dude en comunicarse con nosotros.
 
 NOTA: Por favor confirmar su asistencia lo antes posible. Muchas gracias.`;
 }
 
-function enviarRecordatorioWhatsAppMedica(turno) {
-  if (!turno) return;
-  const telefono = String(turno.paciente_telefono || '').replace(/\D/g, '');
+function _asegurarModalSedeRecordatorio() {
+  let modal = document.getElementById('modalSedeRecordatorio');
+  if (modal) return modal;
+
+  modal = document.createElement('div');
+  modal.id = 'modalSedeRecordatorio';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;z-index:10050;padding:20px';
+
+  const box = document.createElement('div');
+  box.style.cssText = 'background:#fff;border-radius:12px;padding:28px;max-width:420px;width:100%;box-shadow:0 20px 25px -5px rgba(0,0,0,.2)';
+
+  const h3 = document.createElement('h3');
+  h3.style.cssText = 'margin:0 0 8px;color:#1f2937;font-size:1.1rem';
+  h3.textContent = '¿A cuál sede va el paciente?';
+
+  const p = document.createElement('p');
+  p.style.cssText = 'margin:0 0 20px;color:#6b7280;font-size:0.9rem';
+  p.textContent = 'Selecciona la sede para incluir la dirección correcta en el recordatorio.';
+
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'display:flex;flex-direction:column;gap:12px';
+
+  const mkBtn = (id, color, sedeKey) => {
+    const sede = SEDES_RECORDATORIO_MEDICA[sedeKey];
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.id = id;
+    b.style.cssText = `padding:14px 20px;background:${color};color:#fff;border:none;border-radius:8px;font-size:1rem;cursor:pointer;font-weight:600;text-align:center`;
+    b.innerHTML = `${sede.titulo}<br><small style="font-weight:400;opacity:.9">${sede.subtitulo}</small>`;
+    return b;
+  };
+
+  const btn1 = mkBtn('sedeRBtn1', '#10b981', '1');
+  const btn2 = mkBtn('sedeRBtn2', '#3b82f6', '2');
+  const btnCancel = document.createElement('button');
+  btnCancel.type = 'button';
+  btnCancel.id = 'sedeRBtnCancel';
+  btnCancel.style.cssText = 'padding:10px;background:#f3f4f6;color:#374151;border:none;border-radius:8px;font-size:0.9rem;cursor:pointer';
+  btnCancel.textContent = 'Cancelar';
+
+  wrap.appendChild(btn1);
+  wrap.appendChild(btn2);
+  wrap.appendChild(btnCancel);
+  box.appendChild(h3);
+  box.appendChild(p);
+  box.appendChild(wrap);
+  box.addEventListener('click', (e) => e.stopPropagation());
+  modal.appendChild(box);
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) modal.style.display = 'none';
+  });
+  document.body.appendChild(modal);
+  return modal;
+}
+
+function mostrarModalSedeRecordatorio(turno) {
+  const telefono = String(turno?.paciente_telefono || '').replace(/\D/g, '');
   if (!telefono || telefono.length < 7) {
-    showToast('La cita no tiene un teléfono #1 válido para enviar recordatorio', 'error');
+    showToast('La cita no tiene un teléfono válido para enviar recordatorio', 'error');
     return;
   }
-  const numeroWhatsApp = telefono.startsWith('57') ? telefono : `57${telefono}`;
-  const especialidadActual = selectedDoctorEspecialidad || currentUser?.especialidad || '';
-  const mensaje = construirMensajeRecordatorioMedica(turno, especialidadActual);
-  window.open(`https://wa.me/${numeroWhatsApp}?text=${encodeURIComponent(mensaje)}`, '_blank');
-  showToast('Recordatorio listo para enviar por WhatsApp', 'success');
+  const modal = _asegurarModalSedeRecordatorio();
+  modal.style.display = 'flex';
+
+  const enviar = (sedeId) => {
+    const especialidadActual = selectedDoctorEspecialidad || currentUser?.especialidad || '';
+    const mensaje = construirMensajeRecordatorioMedica(turno, especialidadActual, sedeId);
+    const numero = telefono.startsWith('57') ? telefono : `57${telefono}`;
+    window.open(`https://wa.me/${numero}?text=${encodeURIComponent(mensaje)}`, '_blank');
+    showToast('Recordatorio listo para enviar por WhatsApp', 'success');
+    modal.style.display = 'none';
+  };
+
+  document.getElementById('sedeRBtn1').onclick = () => enviar('1');
+  document.getElementById('sedeRBtn2').onclick = () => enviar('2');
+  document.getElementById('sedeRBtnCancel').onclick = () => { modal.style.display = 'none'; };
+}
+
+function enviarRecordatorioWhatsAppMedica(turno) {
+  if (!turno) return;
+  mostrarModalSedeRecordatorio(turno);
 }
 
 function abrirModalEstadoCitaMedica(turno) {

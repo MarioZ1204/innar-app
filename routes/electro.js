@@ -218,7 +218,10 @@ const monitorBarKind = (estado) => {
 };
 
 // GET /api/equipos-electro/monitor
-router.get('/equipos-electro/monitor', requireAuth, async (req, res) => {
+router.get('/equipos-electro/monitor', requireAuth, requireRoleOrPerm(
+  ['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro', 'tecnico_electro'],
+  'modulo.monitor_equipos'
+), async (req, res) => {
   try {
     const now = new Date();
     const hoy = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;

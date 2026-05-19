@@ -5,7 +5,7 @@ const db = require('../utils/db-mysql');
 const auditLog = require('../modules/audit-log');
 const validation = require('../modules/validation');
 const logger = require('../utils/logger');
-const { requireAuth, requireRoleOrPerm, safeError, emitSocket } = require('../middleware');
+const { requireAuth, requireRoleOrPerm, requireSuperAdmin, safeError, emitSocket } = require('../middleware');
 const {
   isValidClientHash,
   hashForStorage,
@@ -19,6 +19,7 @@ const ROLES_VALIDOS = ['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'a
 const PERMISOS_VALIDOS = new Set([
   'modulo.recibos', 'modulo.agenda_medica', 'modulo.electrodiag', 'modulo.ucqn',
   'modulo.dashboard', 'modulo.usuarios', 'modulo.diagnosticos', 'modulo.gestion_datos',
+  'modulo.monitor_equipos',
   'recibos.crear', 'recibos.ver', 'recibos.editar', 'recibos.anular', 'recibos.eliminar',
   'recibos.exportar', 'recibos.gestionar_servicios', 'recibos.resetear',
   'agenda.ver', 'agenda.crear', 'agenda.editar', 'agenda.eliminar', 'agenda.cambiar_estado',
@@ -212,7 +213,7 @@ router.patch('/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'us
 });
 
 // ── Permisos granulares ──────────────────────────────────────────────────────
-router.get('/:id/permisos', requireAuth, requireRoleOrPerm(['superadmin'], 'usuarios.permisos'), async (req, res) => {
+router.get('/:id/permisos', requireAuth, requireSuperAdmin, async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (isNaN(id)) return res.status(400).json({ error: 'ID inválido' });
   try {
@@ -227,7 +228,7 @@ router.get('/:id/permisos', requireAuth, requireRoleOrPerm(['superadmin'], 'usua
   } catch (e) { res.status(500).json({ error: safeError(e) }); }
 });
 
-router.put('/:id/permisos', requireAuth, requireRoleOrPerm(['superadmin'], 'usuarios.permisos'), async (req, res) => {
+router.put('/:id/permisos', requireAuth, requireSuperAdmin, async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (isNaN(id)) return res.status(400).json({ error: 'ID inválido' });
   const { permisos } = req.body;
@@ -247,6 +248,7 @@ router.put('/:id/permisos', requireAuth, requireRoleOrPerm(['superadmin'], 'usua
     const rows = await db.query('SELECT rol FROM usuarios WHERE id = ?', [id]);
     if (!rows.length) return res.status(404).json({ error: 'Usuario no encontrado' });
     if (rows[0].rol === 'superadmin') return res.status(403).json({ error: 'No se pueden modificar permisos del superadmin' });
+    if (rows[0].rol === 'admin') return res.status(403).json({ error: 'No se pueden modificar permisos del administrador' });
     const value = permisos === null ? null : JSON.stringify(permisos);
     await db.execute('UPDATE usuarios SET permisos = ? WHERE id = ?', [value, id]);
     emitSocket('usuario:permisos-cambiados', { userId: id });

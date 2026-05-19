@@ -27,6 +27,13 @@ function requireAdmin(req, res, next) {
   return res.status(403).json({ error: 'Solo super administradores pueden realizar esta acción' });
 }
 
+/** Solo superadmin (el rol admin no hereda estas rutas). */
+function requireSuperAdmin(req, res, next) {
+  if (!req.session?.usuarioId) return res.status(401).json({ error: 'No autenticado' });
+  if (req.session.rol === 'superadmin') return next();
+  return res.status(403).json({ error: 'Solo el Super Administrador puede realizar esta acción' });
+}
+
 function requireRole(roles) {
   return (req, res, next) => {
     if (req.session && req.session.usuarioId && roles.includes(req.session.rol)) return next();
@@ -85,6 +92,6 @@ function emitSocket(eventName, data) {
 
 module.exports = {
   isAdminRol, isRecepcionRol, isElectroRol, canViewAuditoriaCitas,
-  requireAuth, requireAdmin, requireRole, requirePermiso, requireRoleOrPerm,
+  requireAuth, requireAdmin, requireSuperAdmin, requireRole, requirePermiso, requireRoleOrPerm,
   safeError, parseReciboId, emitSocket
 };
