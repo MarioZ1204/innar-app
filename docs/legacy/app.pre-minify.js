@@ -13012,6 +13012,7 @@ async function cargarMonitorEquipos() {
 function renderMonitorEquipos(data) {
   const equipos = data.equipos || [];
   const sinEquipo = data.sin_equipo || [];
+  const sinCupoProvision = data.sin_cupo_provision || [];
   const esHoy = data.es_hoy !== false;
   const resumen = data.resumen || {};
   const grid = $('monitorEquiposGrid');
@@ -13034,34 +13035,67 @@ function renderMonitorEquipos(data) {
     return svgMonitor;
   }
 
-  function timelineBarClass(seg) {
+  function timelineBarClasses(seg) {
+    const color = seg.estudio_color || 'otro';
+    const classes = ['meq-est-' + color];
     const k = seg.bar_kind || 'otro';
-    if (k === 'pasado') return 'meq-bar-pasado';
-    if (k === 'activo') return 'meq-bar-activo';
-    if (k === 'futuro') return 'meq-bar-futuro';
-    return 'meq-bar-otro';
+    if (seg.es_provision) classes.push('meq-bar-provision');
+    if (k === 'pasado') classes.push('meq-bar-pasado');
+    else if (k === 'activo') classes.push('meq-bar-activo');
+    else if (k === 'provision' || k === 'futuro') classes.push('meq-bar-futuro');
+    else classes.push('meq-bar-otro');
+    return classes.join(' ');
   }
 
-  const now = new Date();
-  const nowMin = now.getHours() * 60 + now.getMinutes();
-  const nowPct = (nowMin / 1440) * 100;
-  const hourTicks = [0, 3, 6, 9, 12, 15, 18, 21, 24];
+  function rowStatusClass(eq) {
+    const f = eq.estado_fila;
+    if (f === 'ocupado') return 'meq-st-ocupado';
+    if (f === 'reservado') return 'meq-st-reservado';
+    if (f === 'programado') return 'meq-st-completado';
+    return 'meq-st-libre';
+  }
+
+  const fechaVista = data.fecha || _monitorFechaActual || _monitorGetHoy();
+  const ventanaLbl = (data.ventana_horaria && data.ventana_horaria.etiqueta) ? data.ventana_horaria.etiqueta : (fechaVista + ' 06:00 \u2013 06:00');
+  const hourTicks = [
+    { axisMin: 0, label: '06:00' },
+    { axisMin: 180, label: '09:00' },
+    { axisMin: 360, label: '12:00' },
+    { axisMin: 540, label: '15:00' },
+    { axisMin: 720, label: '18:00' },
+    { axisMin: 900, label: '21:00' },
+    { axisMin: 1080, label: '00:00' },
+    { axisMin: 1260, label: '03:00' },
+    { axisMin: 1440, label: '06:00' }
+  ];
+  let nowPct = null;
+  if (esHoy) {
+    const p = fechaVista.split('-').map(Number);
+    const winStart = new Date(p[0], p[1] - 1, p[2], 6, 0, 0);
+    const winEnd = new Date(winStart.getTime() + 24 * 60 * 60000);
+    const now = new Date();
+    if (now >= winStart && now < winEnd) {
+      nowPct = ((now - winStart) / 60000 / 1440) * 100;
+    }
+  }
 
   let html = '<div class="meq-timeline-wrap">';
+  html += '<div class="meq-ventana-bar"><span class="meq-ventana-label">Jornada: ' + escapeHtml(ventanaLbl) + '</span></div>';
   html += '<div class="meq-timeline-legend">';
-  html += '<span class="meq-leg-item"><i class="meq-leg-swatch meq-bar-pasado"></i> Completados</span>';
-  html += '<span class="meq-leg-item"><i class="meq-leg-swatch meq-bar-activo"></i> En estudio</span>';
-  html += '<span class="meq-leg-item"><i class="meq-leg-swatch meq-bar-futuro"></i> Programados</span>';
-  if (esHoy) html += '<span class="meq-leg-item meq-leg-now"><i class="meq-leg-now-line"></i> Ahora</span>';
+  html += '<span class="meq-leg-item"><i class="meq-leg-swatch meq-est-psg"></i> PSG / Polisomnograf\u00eda</span>';
+  html += '<span class="meq-leg-item"><i class="meq-leg-swatch meq-est-eeg"></i> EEG</span>';
+  html += '<span class="meq-leg-item"><i class="meq-leg-swatch meq-est-vtm"></i> VTM</span>';
+  html += '<span class="meq-leg-item"><i class="meq-leg-swatch meq-bar-provision meq-est-psg"></i> Provisi\u00f3n (sin equipo)</span>';
+  html += '<span class="meq-leg-item"><i class="meq-leg-swatch meq-bar-activo meq-est-eeg"></i> En estudio</span>';
+  if (nowPct != null) html += '<span class="meq-leg-item meq-leg-now"><i class="meq-leg-now-line"></i> Ahora</span>';
   html += '</div>';
 
   html += '<div class="meq-timeline-head">';
   html += '<div class="meq-timeline-eq-col">Equipo</div>';
   html += '<div class="meq-timeline-hours">';
-  hourTicks.forEach(function(h) {
-    const pct = (h / 24) * 100;
-    const lbl = h === 24 ? '24' : String(h).padStart(2, '0') + ':00';
-    html += '<span class="meq-hour-tick" style="left:' + pct + '%">' + lbl + '</span>';
+  hourTicks.forEach(function(t) {
+    const pct = (t.axisMin / 1440) * 100;
+    html += '<span class="meq-hour-tick" style="left:' + pct + '%">' + t.label + '</span>';
   });
   html += '</div></div>';
 
@@ -13081,11 +13115,11 @@ function renderMonitorEquipos(data) {
     }
 
     activos++;
-    if (tieneActivo) ocupados++;
-    else if (!tieneAlgo) libres++;
+    const estadoFila = eq.estado_fila || (tieneActivo ? 'ocupado' : (tieneAlgo ? 'programado' : 'libre'));
+    if (estadoFila === 'ocupado') ocupados++;
+    else if (estadoFila === 'libre') libres++;
 
-    const stClass = tieneActivo ? 'meq-st-ocupado' : (tieneAlgo ? 'meq-st-completado' : 'meq-st-libre');
-    html += '<div class="meq-timeline-row ' + stClass + '">';
+    html += '<div class="meq-timeline-row ' + rowStatusClass(eq) + '">';
     html += '<div class="meq-timeline-eq-col"><div class="meq-eq-icon">' + getEquipIcon(eq.nombre) + '</div><div class="meq-eq-name">';
     html += '<span>' + escapeHtml(eq.nombre) + '</span>';
     if (eq.descripcion) html += '<small>' + escapeHtml(eq.descripcion) + '</small>';
@@ -13095,16 +13129,17 @@ function renderMonitorEquipos(data) {
     for (var t = 0; t < 25; t++) {
       html += '<span class="meq-grid-line" style="left:' + ((t / 24) * 100) + '%"></span>';
     }
-    if (esHoy) {
+    if (nowPct != null) {
       html += '<span class="meq-now-line" style="left:' + nowPct + '%" title="Ahora"></span>';
     }
     timeline.forEach(function(seg) {
       const w = Math.max(seg.width_pct || 0, 0.8);
-      const tip = (seg.estudio || 'Estudio') + ' \u2014 ' + (seg.paciente_nombre || '') +
+      const pref = seg.es_provision ? '[Provisi\u00f3n] ' : '';
+      const tip = pref + (seg.estudio || 'Estudio') + ' \u2014 ' + (seg.paciente_nombre || '') +
         ' (' + formatearHora(seg.hora_inicio || '') + '\u2013' + formatearHora(seg.hora_fin || '') + ')';
       const label = (seg.hora_inicio || '') + ' ' + (seg.estudio || '');
       const cid = seg.id != null ? String(seg.id) : '';
-      html += '<div class="meq-timeline-bar ' + timelineBarClass(seg) + '" data-cita-id="' + escapeHtml(cid) + '" style="left:' + (seg.left_pct || 0) + '%;width:' + w + '%" title="' + escapeHtml(tip) + ' (clic para detalle)">';
+      html += '<div class="meq-timeline-bar ' + timelineBarClasses(seg) + '" data-cita-id="' + escapeHtml(cid) + '" style="left:' + (seg.left_pct || 0) + '%;width:' + w + '%" title="' + escapeHtml(tip) + ' (clic para detalle)">';
       if (w >= 4) html += '<span class="meq-bar-label">' + escapeHtml(label.length > 28 ? label.slice(0, 26) + '\u2026' : label) + '</span>';
       html += '</div>';
     });
@@ -13138,4 +13173,26 @@ function renderMonitorEquipos(data) {
       '</div>';
     }).join('');
   } else if (sinEqC) { sinEqC.style.display = 'none'; }
+
+  var sinCupoC = $('monitorSinCupoProvision');
+  if (!sinCupoC && grid && grid.parentNode) {
+    sinCupoC = document.createElement('div');
+    sinCupoC.id = 'monitorSinCupoProvision';
+    sinCupoC.style.display = 'none';
+    sinCupoC.style.marginTop = '24px';
+    sinCupoC.innerHTML = '<h3 style="font-size:1rem;color:#64748b;margin:0 0 12px;font-weight:600">Programados sin cupo en equipos</h3><div id="monitorSinCupoList"></div>';
+    grid.parentNode.insertBefore(sinCupoC, $('monitorSinEquipo') || null);
+  }
+  var sinCupoL = $('monitorSinCupoList');
+  if (sinCupoProvision.length > 0 && sinCupoC && sinCupoL) {
+    sinCupoC.style.display = '';
+    sinCupoL.innerHTML = sinCupoProvision.map(function(c) {
+      const sid = c.id != null ? String(c.id) : '';
+      return '<div class="meq-sin-equipo-card" data-cita-id="' + escapeHtml(sid) + '" title="Clic para ver detalle">' +
+        '<div class="meq-study-block"><div class="meq-study-title">' + escapeHtml(c.estudio || 'Sin tipo') + '</div>' +
+        '<div class="meq-study-meta">' + svgUser + ' ' + escapeHtml(c.paciente_nombre || '-') + '</div></div>' +
+        '<div class="meq-study-meta" style="color:#b45309">' + svgClock + ' ' + formatearHora(c.hora_agendamiento || c.hora_inicio || '') + ' &middot; Sin cupo para provisi\u00f3n</div>' +
+      '</div>';
+    }).join('');
+  } else if (sinCupoC) { sinCupoC.style.display = 'none'; }
 }

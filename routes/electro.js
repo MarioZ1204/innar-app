@@ -12,6 +12,7 @@ const {
 } = require('../middleware/index');
 const { validateSchema } = require('../modules/validation-schemas');
 const { hayCupoElectroParaAgendar, hayCupoElectroParaIniciar } = require('./electro-capacity');
+const { buildMonitorEquiposView, citaOverlapsMonitorWindow } = require('../utils/electro-monitor');
 
 function normalizeHora(str) {
   if (!str) return '';
@@ -160,63 +161,6 @@ router.post('/equipos-electro', requireAuth, requireRoleOrPerm(['superadmin']), 
   } catch (e) { res.status(500).json({ error: safeError(e) }); }
 });
 
-const monitorToHM = (v) => {
-  if (!v) return null;
-  const s = String(v);
-  return s.length >= 5 ? s.slice(0, 5) : s;
-};
-const monitorToDateStr = (v) => {
-  if (!v) return null;
-  if (typeof v === 'string') return v.length > 10 ? v.slice(0, 10) : v;
-  if (v instanceof Date) return v.toISOString().slice(0, 10);
-  return String(v);
-};
-const monitorParseMinutes = (hm) => {
-  if (!hm) return 0;
-  const [hh, mm] = String(hm).split(':').map((x) => parseInt(x, 10));
-  return (hh || 0) * 60 + (mm || 0);
-};
-const monitorCitaToTimeline = (cita, fechaDia) => {
-  const fecha = monitorToDateStr(cita.fecha);
-  const fechaFin = monitorToDateStr(cita.hora_fin_date || cita.fecha);
-  const startHM = monitorToHM(cita.hora_inicio || cita.hora_agendamiento || '00:00') || '00:00';
-  let endHM = monitorToHM(cita.hora_fin) || startHM;
-  let startMin = fecha < fechaDia ? 0 : monitorParseMinutes(startHM);
-  let endMin = fechaFin > fechaDia ? 1440 : monitorParseMinutes(endHM);
-  if (fecha === fechaDia && fechaFin === fechaDia && endMin <= startMin) {
-    const dur = parseInt(cita.duracion_minutos, 10);
-    endMin = Math.min(1440, startMin + (Number.isFinite(dur) && dur > 0 ? dur : 60));
-    endHM = `${String(Math.floor(endMin / 60)).padStart(2, '0')}:${String(endMin % 60).padStart(2, '0')}`;
-  }
-  if (endMin <= startMin) endMin = Math.min(1440, startMin + 30);
-  startMin = Math.max(0, Math.min(1439, startMin));
-  endMin = Math.max(startMin + 5, Math.min(1440, endMin));
-  const span = endMin - startMin;
-  return {
-    id: cita.id,
-    estudio: cita.estudio,
-    estado: cita.estado,
-    paciente_nombre: cita.paciente_nombre,
-    paciente_documento: cita.paciente_documento,
-    entidad: cita.entidad,
-    duracion_minutos: cita.duracion_minutos,
-    hora_inicio: startHM,
-    hora_fin: endHM,
-    start_min: startMin,
-    end_min: endMin,
-    left_pct: (startMin / 1440) * 100,
-    width_pct: (span / 1440) * 100,
-    bar_kind: monitorBarKind(cita.estado)
-  };
-};
-const monitorBarKind = (estado) => {
-  const s = (estado || '').toLowerCase();
-  if (s === 'completado') return 'pasado';
-  if (s === 'en estudio' || s === 'pausado') return 'activo';
-  if (['programado', 'confirmado', 'en sala', 'reprogramado', 'adelantado'].some((k) => s.includes(k))) return 'futuro';
-  return 'otro';
-};
-
 // GET /api/equipos-electro/monitor
 router.get('/equipos-electro/monitor', requireAuth, requireRoleOrPerm(
   ['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro', 'tecnico_electro'],
@@ -231,6 +175,16 @@ router.get('/equipos-electro/monitor', requireAuth, requireRoleOrPerm(
 
     const equipos = await db.query('SELECT id, nombre, descripcion, activo FROM equipos_electro ORDER BY activo DESC, nombre ASC');
 
+    const [yC, mC, dC] = fechaConsulta.split('-').map(Number);
+    const fechaAnterior = (() => {
+      const dt = new Date(yC, mC - 1, dC - 1);
+      return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+    })();
+    const fechaSiguiente = (() => {
+      const dt = new Date(yC, mC - 1, dC + 1);
+      return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+    })();
+
     const citasDiaRows = await db.query(`
       SELECT c.id, c.equipo_id, c.estudio, c.estado, c.fecha,
              c.hora_agendamiento, c.hora_inicio, c.hora_fin, c.hora_fin_date,
@@ -238,97 +192,37 @@ router.get('/equipos-electro/monitor', requireAuth, requireRoleOrPerm(
              p.nombre AS paciente_nombre, p.documento AS paciente_documento
       FROM citas_electro c
       JOIN pacientes p ON p.id = c.paciente_id
-      WHERE c.equipo_id IS NOT NULL AND c.deleted_at IS NULL
-        AND c.fecha <= ? AND COALESCE(c.hora_fin_date, c.fecha) >= ?
+      WHERE c.deleted_at IS NULL
         AND c.estado NOT IN ('Cancelado')
-      ORDER BY c.equipo_id, COALESCE(c.hora_inicio, c.hora_agendamiento) ASC, c.id ASC
-    `, [fechaConsulta, fechaConsulta]);
+        AND c.fecha <= ?
+        AND COALESCE(c.hora_fin_date, c.fecha) >= ?
+      ORDER BY COALESCE(c.hora_inicio, c.hora_agendamiento) ASC, c.id ASC
+    `, [fechaSiguiente, fechaAnterior]);
 
-    const timelinePorEquipo = {};
-    const estudiosActuales = [];
-    const proximosEstudios = [];
-    for (const c of citasDiaRows) {
-      const eid = String(c.equipo_id);
-      if (!timelinePorEquipo[eid]) timelinePorEquipo[eid] = [];
-      timelinePorEquipo[eid].push(monitorCitaToTimeline(c, fechaConsulta));
-      if (c.estado === 'En Estudio' || c.estado === 'Pausado') {
-        if (!estudiosActuales.some((x) => String(x.equipo_id) === eid)) estudiosActuales.push(c);
-      }
-    }
-    if (esHoy) {
-      for (const c of citasDiaRows) {
-        const eid = String(c.equipo_id);
-        if (['Programado', 'Confirmado', 'En Sala', 'Reprogramado', 'Adelantado'].includes(c.estado)) {
-          if (!proximosEstudios.some((x) => String(x.equipo_id) === eid)) proximosEstudios.push(c);
-        }
-      }
-    }
-
-    const citasSinEquipo = await db.query(`
-        SELECT c.id, c.estudio, c.estado, c.fecha, c.hora_agendamiento,
-               c.hora_inicio, c.hora_fin, c.hora_fin_date, c.duracion_minutos, c.entidad,
-               p.nombre AS paciente_nombre, p.documento AS paciente_documento
-        FROM citas_electro c
-        JOIN pacientes p ON p.id = c.paciente_id
-        WHERE c.estado IN ('En Estudio','Programado','Confirmado','En Sala','Pausado')
-          AND (c.equipo_id IS NULL OR c.equipo_id = 0) AND c.deleted_at IS NULL
-          AND c.fecha <= ? AND COALESCE(c.hora_fin_date, c.fecha) >= ?
-        ORDER BY c.fecha ASC, c.hora_agendamiento ASC
-        LIMIT 20
-      `, [fechaConsulta, fechaConsulta]);
-
-    const completadosRows = await db.query(
-      `SELECT COUNT(*) AS total FROM citas_electro WHERE deleted_at IS NULL AND estado = 'Completado' AND fecha <= ? AND COALESCE(hora_fin_date, fecha) >= ?`,
-      [fechaConsulta, fechaConsulta]
-    );
-    const totalDiaRows = await db.query(
-      `SELECT COUNT(*) AS total FROM citas_electro WHERE deleted_at IS NULL AND fecha <= ? AND COALESCE(hora_fin_date, fecha) >= ?`,
-      [fechaConsulta, fechaConsulta]
-    );
-
-    const proximosPorEquipo = {};
-    for (const c of proximosEstudios) {
-      const eid = String(c.equipo_id);
-      if (!proximosPorEquipo[eid]) proximosPorEquipo[eid] = c;
-    }
-    const actualesPorEquipo = {};
-    for (const c of estudiosActuales) actualesPorEquipo[String(c.equipo_id)] = c;
-
-    const mapCitaResumen = (c) => ({
-      id: c.id, estudio: c.estudio, estado: c.estado,
-      paciente_nombre: c.paciente_nombre, paciente_documento: c.paciente_documento,
-      hora_inicio: monitorToHM(c.hora_inicio || c.hora_agendamiento),
-      hora_fin: monitorToHM(c.hora_fin),
-      hora_agendamiento: monitorToHM(c.hora_agendamiento),
-      fecha: monitorToDateStr(c.fecha),
-      hora_fin_date: monitorToDateStr(c.hora_fin_date),
-      duracion_minutos: c.duracion_minutos, entidad: c.entidad
-    });
-
-    const resultado = equipos.map((eq) => {
-      const eid = String(eq.id);
-      const actual = actualesPorEquipo[eid] || null;
-      const proximo = proximosPorEquipo[eid] || null;
-      return {
-        id: eq.id, nombre: eq.nombre, descripcion: eq.descripcion, activo: !!eq.activo,
-        estudios_timeline: timelinePorEquipo[eid] || [],
-        estudio_actual: actual ? mapCitaResumen(actual) : null,
-        proximo_estudio: proximo ? mapCitaResumen(proximo) : null
-      };
-    });
-
-    const sinEquipo = citasSinEquipo.map((c) => mapCitaResumen(c));
+    const vista = buildMonitorEquiposView(citasDiaRows, equipos, fechaConsulta, esHoy);
+    const citasEnVentana = citasDiaRows.filter((c) => citaOverlapsMonitorWindow(c, fechaConsulta));
+    const provisionCount = citasEnVentana.filter((c) => {
+      const sinEq = c.equipo_id == null || c.equipo_id === '' || Number(c.equipo_id) === 0;
+      return sinEq;
+    }).length;
 
     res.json({
-      fecha: fechaConsulta, es_hoy: esHoy,
+      fecha: fechaConsulta,
+      es_hoy: esHoy,
+      ventana_horaria: vista.ventana_horaria,
       resumen: {
-        total_estudios: parseInt(totalDiaRows[0]?.total,10) || 0,
-        completados: parseInt(completadosRows[0]?.total,10) || 0,
-        en_estudio: citasDiaRows.filter((c) => c.estado === 'En Estudio' || c.estado === 'Pausado').length,
-        pendientes: citasDiaRows.filter((c) => ['Programado', 'Confirmado', 'En Sala', 'Reprogramado', 'Adelantado'].includes(c.estado)).length,
-        sin_equipo: citasSinEquipo.length
+        total_estudios: vista.total_en_ventana || citasEnVentana.length,
+        completados: citasEnVentana.filter((c) => c.estado === 'Completado').length,
+        en_estudio: citasEnVentana.filter((c) => c.estado === 'En Estudio' || c.estado === 'Pausado').length,
+        pendientes: citasEnVentana.filter((c) => ['Programado', 'Confirmado', 'En Sala', 'Reprogramado', 'Adelantado'].includes(c.estado)).length,
+        sin_equipo: vista.sin_equipo.length,
+        sin_cupo_provision: vista.sin_cupo_provision.length,
+        con_provision: provisionCount - vista.sin_cupo_provision.length,
+        en_ventana: vista.total_en_ventana || 0
       },
-      equipos: resultado, sin_equipo: sinEquipo
+      equipos: vista.equipos,
+      sin_equipo: vista.sin_equipo,
+      sin_cupo_provision: vista.sin_cupo_provision
     });
   } catch (e) {
     logger.error('Error en monitor de equipos:', e);
