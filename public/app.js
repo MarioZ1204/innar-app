@@ -390,7 +390,8 @@ function updateMenuByRole() {
   // Helper global: verifica si el usuario tiene un permiso granular
   window.tienePermiso = function(permKey) {
     const r = currentUser?.rol || '';
-    if (r === 'superadmin' || r === 'admin') return true;
+    if (r === 'superadmin') return true;
+    if (r === 'admin' && !Array.isArray(perms)) return true;
     const p = perms;
     if (Array.isArray(p)) return p.includes(permKey);
     // Sin permisos personalizados → verificar defaults del rol
@@ -7130,7 +7131,7 @@ async function _cargarPermisosUserList() {
   try {
     const res = await apiFetch('/api/usuarios');
     const usuarios = await res.json();
-    _permisosUsuariosCache = usuarios.filter(u => u.rol !== 'superadmin' && u.rol !== 'admin');
+    _permisosUsuariosCache = usuarios.filter(u => u.rol !== 'superadmin');
     container.removeAttribute('size');
     container.innerHTML = '<option value="">— Seleccionar usuario —</option>';
     _permisosUsuariosCache.forEach(u => {

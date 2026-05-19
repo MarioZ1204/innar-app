@@ -285,7 +285,6 @@ router.put('/:id/permisos', requireAuth, requireSuperAdmin, async (req, res) => 
     const rows = await db.query('SELECT rol FROM usuarios WHERE id = ?', [id]);
     if (!rows.length) return res.status(404).json({ error: 'Usuario no encontrado' });
     if (rows[0].rol === 'superadmin') return res.status(403).json({ error: 'No se pueden modificar permisos del superadmin' });
-    if (rows[0].rol === 'admin') return res.status(403).json({ error: 'No se pueden modificar permisos del administrador' });
     const value = permisos === null ? null : JSON.stringify(permisos);
     await db.execute('UPDATE usuarios SET permisos = ? WHERE id = ?', [value, id]);
     emitSocket('usuario:permisos-cambiados', { userId: id });

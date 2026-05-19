@@ -44,7 +44,8 @@ function requireRole(roles) {
 function requirePermiso(permiso) {
   return (req, res, next) => {
     const rol = req.session?.rol;
-    if (rol === 'superadmin' || rol === 'admin') return next();
+    if (rol === 'superadmin') return next();
+    if (rol === 'admin' && (req.session?.permisos === null || req.session?.permisos === undefined)) return next();
     const perms = req.session?.permisos;
     if (perms === null || perms === undefined) return next();
     if (Array.isArray(perms) && perms.includes(permiso)) return next();
@@ -58,7 +59,8 @@ function requireRoleOrPerm(roles, permiso) {
     if (!req.session?.usuarioId) return res.status(401).json({ error: 'No autenticado' });
     const rol = req.session.rol;
     const perms = req.session?.permisos;
-    if (rol === 'superadmin' || rol === 'admin') return next();
+    if (rol === 'superadmin') return next();
+    if (rol === 'admin' && (perms === null || perms === undefined)) return next();
     if (roles.includes(rol)) {
       if (perms === null || perms === undefined) return next();
       if (Array.isArray(perms) && permisos.some(p => perms.includes(p))) return next();
