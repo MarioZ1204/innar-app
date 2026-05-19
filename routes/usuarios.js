@@ -34,15 +34,53 @@ const PERMISOS_VALIDOS = new Set([
   'sistema.backups', 'sistema.exportar_datos', 'sistema.dashboard', 'sistema.reportes'
 ]);
 
+const USUARIOS_COL_CACHE = { checked: false, cols: new Set(['id', 'usuario', 'nombre', 'rol', 'activo']) };
+
+async function refrescarColumnasUsuarios() {
+  if (USUARIOS_COL_CACHE.checked) return USUARIOS_COL_CACHE.cols;
+  const rows = await db.query(
+    `SELECT COLUMN_NAME AS col FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'usuarios'`
+  );
+  const found = new Set((rows || []).map((r) => r.col));
+  USUARIOS_COL_CACHE.cols = found;
+  USUARIOS_COL_CACHE.checked = true;
+  return found;
+}
+
+async function listarUsuariosDesdeDb() {
+  const cols = await refrescarColumnasUsuarios();
+  const select = ['id', 'usuario', 'nombre', 'rol', 'activo']
+    .concat(['numero_consultorio', 'especialidad', 'permisos'].filter((c) => cols.has(c)));
+  return db.query(`SELECT ${select.join(', ')} FROM usuarios ORDER BY usuario ASC`);
+}
+
+async function insertarUsuarioEnDb({ usuario, hash, nombre, rol, consultorioFinal, especialidadFinal }) {
+  const cols = await refrescarColumnasUsuarios();
+  const fields = ['usuario', 'password_hash', 'nombre', 'rol'];
+  const values = [usuario, hash, nombre, rol];
+  if (cols.has('numero_consultorio')) {
+    fields.push('numero_consultorio');
+    values.push(consultorioFinal);
+  }
+  if (cols.has('especialidad')) {
+    fields.push('especialidad');
+    values.push(especialidadFinal);
+  }
+  const placeholders = fields.map(() => '?').join(', ');
+  return db.execute(
+    `INSERT INTO usuarios (${fields.join(', ')}) VALUES (${placeholders})`,
+    values
+  );
+}
+
 // ── Listar usuarios ──────────────────────────────────────────────────────────
 router.get('/', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'usuarios.ver'), async (req, res) => {
   try {
-    const usuarios = await db.query(
-      'SELECT id, usuario, nombre, rol, activo, numero_consultorio, especialidad, permisos FROM usuarios ORDER BY usuario ASC'
-    );
+    const usuarios = await listarUsuariosDesdeDb();
     res.json(usuarios);
   } catch (e) {
-    logger.error(e.message, { error: e });
+    logger.error('[USUARIOS] GET lista:', e.message, { error: e });
     res.status(500).json({ error: safeError(e) });
   }
 });
@@ -88,10 +126,9 @@ router.post('/', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'usuari
 
   try {
     const hash = hashForStorage(password);
-    const result = await db.execute(
-      'INSERT INTO usuarios (usuario, password_hash, nombre, rol, numero_consultorio, especialidad) VALUES (?, ?, ?, ?, ?, ?)',
-      [usuario, hash, nombre, rol, consultorioFinal, especialidadFinal]
-    );
+    const result = await insertarUsuarioEnDb({
+      usuario, hash, nombre, rol, consultorioFinal, especialidadFinal
+    });
 
     await auditLog.registrarAuditoria({
       usuarioId: result.insertId,

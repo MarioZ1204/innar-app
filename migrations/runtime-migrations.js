@@ -177,6 +177,24 @@ const runtimeMigrations = [
     }
   },
   {
+    name: 'rt_usuarios_numero_consultorio',
+    description: 'usuarios.numero_consultorio para doctores',
+    run: async (db) => {
+      if (!(await columnExists(db, 'usuarios', 'numero_consultorio'))) {
+        await db.execute('ALTER TABLE usuarios ADD COLUMN numero_consultorio INT NULL DEFAULT NULL');
+      }
+    }
+  },
+  {
+    name: 'rt_usuarios_especialidad',
+    description: 'usuarios.especialidad para doctores',
+    run: async (db) => {
+      if (!(await columnExists(db, 'usuarios', 'especialidad'))) {
+        await db.execute('ALTER TABLE usuarios ADD COLUMN especialidad VARCHAR(100) NULL DEFAULT NULL');
+      }
+    }
+  },
+  {
     name: 'rt_usuarios_ultimo_acceso',
     description: 'usuarios.ultimo_acceso',
     run: async (db) => {

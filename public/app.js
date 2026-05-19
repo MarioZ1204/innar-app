@@ -7463,7 +7463,16 @@ async function cargarUsuarios() {
   try {
     const res = await apiFetch('/api/usuarios');
     if (res.status === 403) { showToast('No tienes permiso', 'error'); return; }
-    const usuarios = await res.json();
+    const usuarios = await res.json().catch(() => null);
+    if (!res.ok) {
+      showToast((usuarios && usuarios.error) || 'Error cargando usuarios', 'error');
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#b91c1c;padding:16px">No se pudo cargar la lista de usuarios</td></tr>';
+      return;
+    }
+    if (!Array.isArray(usuarios)) {
+      showToast('Respuesta inválida del servidor', 'error');
+      return;
+    }
     
     if (!usuarios.length) {
       tbody.innerHTML = '<tr><td colspan="6"><div class="empty-state"><div class="empty-state-icon">👤</div><p class="empty-state-title">Sin usuarios</p><p class="empty-state-subtitle">No hay usuarios registrados en el sistema</p></div></td></tr>';
@@ -8238,7 +8247,11 @@ async function crearUsuario() {
       headers: { 'Content-Type': 'application/json' }, 
       body: JSON.stringify(body) 
     });
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      showToast(data.error || data.details?.[0]?.message || 'Error al crear usuario', 'error');
+      return;
+    }
     if (data.ok) { 
       showToast('Usuario creado exitosamente', 'success'); 
       $('newUserUsuario').value=''; 
@@ -11079,59 +11092,9 @@ Cualquier novedad, no dude en comunicarse con nosotros.
 NOTA: Por favor confirmar su asistencia lo antes posible. Muchas gracias.`;
 }
 
-function _asegurarModalSedeRecordatorio() {
-  let modal = document.getElementById('modalSedeRecordatorio');
-  if (modal) return modal;
-
-  modal = document.createElement('div');
-  modal.id = 'modalSedeRecordatorio';
-  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;z-index:10050;padding:20px';
-
-  const box = document.createElement('div');
-  box.style.cssText = 'background:#fff;border-radius:12px;padding:28px;max-width:420px;width:100%;box-shadow:0 20px 25px -5px rgba(0,0,0,.2)';
-
-  const h3 = document.createElement('h3');
-  h3.style.cssText = 'margin:0 0 8px;color:#1f2937;font-size:1.1rem';
-  h3.textContent = '¿A cuál sede va el paciente?';
-
-  const p = document.createElement('p');
-  p.style.cssText = 'margin:0 0 20px;color:#6b7280;font-size:0.9rem';
-  p.textContent = 'Selecciona la sede para incluir la dirección correcta en el recordatorio.';
-
-  const wrap = document.createElement('div');
-  wrap.style.cssText = 'display:flex;flex-direction:column;gap:12px';
-
-  const mkBtn = (id, color, sedeKey) => {
-    const sede = SEDES_RECORDATORIO_MEDICA[sedeKey];
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.id = id;
-    b.style.cssText = `padding:14px 20px;background:${color};color:#fff;border:none;border-radius:8px;font-size:1rem;cursor:pointer;font-weight:600;text-align:center`;
-    b.innerHTML = `${sede.titulo}<br><small style="font-weight:400;opacity:.9">${sede.subtitulo}</small>`;
-    return b;
-  };
-
-  const btn1 = mkBtn('sedeRBtn1', '#10b981', '1');
-  const btn2 = mkBtn('sedeRBtn2', '#3b82f6', '2');
-  const btnCancel = document.createElement('button');
-  btnCancel.type = 'button';
-  btnCancel.id = 'sedeRBtnCancel';
-  btnCancel.style.cssText = 'padding:10px;background:#f3f4f6;color:#374151;border:none;border-radius:8px;font-size:0.9rem;cursor:pointer';
-  btnCancel.textContent = 'Cancelar';
-
-  wrap.appendChild(btn1);
-  wrap.appendChild(btn2);
-  wrap.appendChild(btnCancel);
-  box.appendChild(h3);
-  box.appendChild(p);
-  box.appendChild(wrap);
-  box.addEventListener('click', (e) => e.stopPropagation());
-  modal.appendChild(box);
-  modal.addEventListener('click', (e) => {
-    if (e.target === modal) modal.style.display = 'none';
-  });
-  document.body.appendChild(modal);
-  return modal;
+function cerrarModalSedeRecordatorio() {
+  const modal = document.getElementById('modalSedeRecordatorio');
+  if (modal) modal.classList.add('hidden');
 }
 
 function mostrarModalSedeRecordatorio(turno) {
@@ -11140,8 +11103,11 @@ function mostrarModalSedeRecordatorio(turno) {
     showToast('La cita no tiene un teléfono válido para enviar recordatorio', 'error');
     return;
   }
-  const modal = _asegurarModalSedeRecordatorio();
-  modal.style.display = 'flex';
+  const modal = document.getElementById('modalSedeRecordatorio');
+  if (!modal) {
+    showToast('No se pudo abrir el selector de sede', 'error');
+    return;
+  }
 
   const enviar = (sedeId) => {
     const especialidadActual = selectedDoctorEspecialidad || currentUser?.especialidad || '';
@@ -11149,12 +11115,26 @@ function mostrarModalSedeRecordatorio(turno) {
     const numero = telefono.startsWith('57') ? telefono : `57${telefono}`;
     window.open(`https://wa.me/${numero}?text=${encodeURIComponent(mensaje)}`, '_blank');
     showToast('Recordatorio listo para enviar por WhatsApp', 'success');
-    modal.style.display = 'none';
+    cerrarModalSedeRecordatorio();
   };
 
-  document.getElementById('sedeRBtn1').onclick = () => enviar('1');
-  document.getElementById('sedeRBtn2').onclick = () => enviar('2');
-  document.getElementById('sedeRBtnCancel').onclick = () => { modal.style.display = 'none'; };
+  const btn1 = document.getElementById('sedeRBtn1');
+  const btn2 = document.getElementById('sedeRBtn2');
+  const btnCancel = document.getElementById('sedeRBtnCancel');
+  if (btn1) btn1.onclick = () => enviar('1');
+  if (btn2) btn2.onclick = () => enviar('2');
+  if (btnCancel) btnCancel.onclick = cerrarModalSedeRecordatorio;
+
+  if (!modal.dataset.sedeOverlayBound) {
+    modal.dataset.sedeOverlayBound = '1';
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) cerrarModalSedeRecordatorio();
+    });
+    const dialog = modal.querySelector('.sede-recordatorio-dialog');
+    if (dialog) dialog.addEventListener('click', (e) => e.stopPropagation());
+  }
+
+  modal.classList.remove('hidden');
 }
 
 function enviarRecordatorioWhatsAppMedica(turno) {
