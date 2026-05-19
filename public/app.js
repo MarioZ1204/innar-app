@@ -578,12 +578,19 @@ function goToModule(moduleId) {
       if (typeof loadCalendarData === 'function' && (selectedDoctorId || currentUser?.id)) loadCalendarData();
       if (typeof cargarTurnosMedica === 'function') cargarTurnosMedica();
       if (typeof actualizarHorasDisponibles === 'function') actualizarHorasDisponibles();
+      cargarEntidadesEnSelect('nuevoTurnoEntidadMedica', { force: true });
     }
     // Socket.IO maneja los cambios en tiempo real, no necesitamos auto-refresh
   } else {
     stopAgendaMedicaAutoRefresh();
   }
-  if (moduleId === 'electro') { if (!initElectroDone) initElectro(); initElectroDone = true; }
+  if (moduleId === 'electro') {
+    if (!initElectroDone) { initElectro(); initElectroDone = true; }
+    else {
+      cargarEntidadesEnSelect('electroEntidad', { placeholder: 'Seleccionar entidad', force: true });
+      cargarEntidadesEnSelect('esperaEntidad', { force: true });
+    }
+  }
   if (moduleId === 'usuarios') { if (!initUsuariosDone) initUsuarios(); initUsuariosDone = true; }
   if (moduleId === 'diagnosticos') { if (!initDiagnosticosDone) initDiagnosticos(); initDiagnosticosDone = true; }
   if (moduleId === 'dashboard-citas') { if (!initDashboardCitasDone) initDashboardCitas(); initDashboardCitasDone = true; }
@@ -2204,20 +2211,47 @@ async function cargarFiltrosUsuarios() {
   } catch (e) { console.warn('[cargarFiltrosUsuarios] Error:', e.message); }
 }
 
-// ---- Catálogo de entidades (tabla entidades + usadas en turnos/recibos) ----
+// ---- Catálogo de entidades (tabla entidades en BD) ----
 let _catalogoEntidadesOpcionesCache = null;
+let _entidadesBdCache = null;
+
+/** Entidades activas desde tabla `entidades` (fuente principal para selects). */
+async function fetchEntidadesDesdeBd({ force = false } = {}) {
+  if (!force && _entidadesBdCache && _entidadesBdCache.length) return _entidadesBdCache;
+  const res = await apiFetch('/api/entidades');
+  if (!res.ok) throw new Error('No se pudieron cargar las entidades');
+  const data = await res.json();
+  let lista = [];
+  if (Array.isArray(data)) {
+    lista = data.map((e) => (typeof e === 'string' ? e : e?.nombre)).filter(Boolean);
+  } else if (Array.isArray(data.entidades)) {
+    lista = data.entidades;
+  } else if (Array.isArray(data.registros)) {
+    lista = data.registros.map((e) => e?.nombre).filter(Boolean);
+  }
+  _entidadesBdCache = lista;
+  return lista;
+}
 
 async function fetchCatalogoEntidadesOpciones({ force = false } = {}) {
   if (!force && _catalogoEntidadesOpcionesCache) return _catalogoEntidadesOpcionesCache;
   try {
-    const res = await apiFetch('/api/recibos/opciones');
-    const data = res.ok ? await res.json() : { entidades: [], estudios: [] };
+    const [entidades, opcionesRes] = await Promise.all([
+      fetchEntidadesDesdeBd({ force }),
+      apiFetch('/api/recibos/opciones').catch(() => null)
+    ]);
+    let estudios = [];
+    if (opcionesRes && opcionesRes.ok) {
+      const data = await opcionesRes.json();
+      estudios = Array.isArray(data.estudios) ? data.estudios : [];
+    }
     _catalogoEntidadesOpcionesCache = {
-      entidades: Array.isArray(data.entidades) ? data.entidades : [],
-      estudios: Array.isArray(data.estudios) ? data.estudios : []
+      entidades: Array.isArray(entidades) ? entidades : [],
+      estudios
     };
   } catch (e) {
     console.warn('[fetchCatalogoEntidadesOpciones] Error:', e.message);
+    if (force) throw e;
     _catalogoEntidadesOpcionesCache = { entidades: [], estudios: [] };
   }
   return _catalogoEntidadesOpcionesCache;
@@ -2282,7 +2316,7 @@ async function cargarEntidadesEnSelect(selectId, opts = {}) {
   const sel = $(selectId);
   if (!sel) return;
   try {
-    const { entidades } = await fetchCatalogoEntidadesOpciones();
+    const entidades = await fetchEntidadesDesdeBd({ force: !!opts.force });
     _poblarSelectEntidades(sel, entidades, {
       placeholder: opts.placeholder || 'Seleccionar',
       incluirParticular: opts.incluirParticular !== false,
@@ -2290,6 +2324,11 @@ async function cargarEntidadesEnSelect(selectId, opts = {}) {
     });
   } catch (err) {
     console.warn('[cargarEntidadesEnSelect] Error:', err.message);
+    _poblarSelectEntidades(sel, [], {
+      placeholder: opts.placeholder || 'Seleccionar',
+      incluirParticular: opts.incluirParticular !== false,
+      valorPrevio: opts.valorPrevio != null ? opts.valorPrevio : sel.value
+    });
   }
 }
 
@@ -2545,12 +2584,13 @@ function renderCitasElectroKanban(citas) {
 
 function invalidarCacheEntidades() {
   _catalogoEntidadesOpcionesCache = null;
+  _entidadesBdCache = null;
   const recargar = [
     ['reciboEntidad', () => cargarEntidadesEnRecibo()],
-    ['nuevoTurnoEntidadMedica', () => cargarEntidadesEnSelect('nuevoTurnoEntidadMedica')],
-    ['electroEntidad', () => cargarEntidadesEnSelect('electroEntidad', { placeholder: 'Seleccionar entidad' })],
-    ['esperaEntidad', () => cargarEntidadesEnSelect('esperaEntidad')],
-    ['esperaFiltroEntidad', () => cargarEntidadesEnSelect('esperaFiltroEntidad', { placeholder: 'Todas' })],
+    ['nuevoTurnoEntidadMedica', () => cargarEntidadesEnSelect('nuevoTurnoEntidadMedica', { force: true })],
+    ['electroEntidad', () => cargarEntidadesEnSelect('electroEntidad', { placeholder: 'Seleccionar entidad', force: true })],
+    ['esperaEntidad', () => cargarEntidadesEnSelect('esperaEntidad', { force: true })],
+    ['esperaFiltroEntidad', () => cargarEntidadesEnSelect('esperaFiltroEntidad', { placeholder: 'Todas', force: true })],
     ['filtroEntidad', () => cargarFiltrosOpciones()]
   ];
   recargar.forEach(([id, fn]) => { if ($(id)) fn(); });

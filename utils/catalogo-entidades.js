@@ -99,17 +99,19 @@ function mapearEntidadHistorica(raw) {
 }
 
 /**
- * Lista para selects: solo catálogo oficial activo.
+ * Lista para selects: prioriza entidades activas en BD; si no hay filas, usa catálogo por defecto.
  */
 function listarEntidadesCatalogo(nombresDb = []) {
   const map = new Map();
-  CATALOGO_ENTIDADES.forEach((n) => map.set(claveEntidad(n), n));
-  (nombresDb || []).forEach((raw) => {
+  const push = (raw) => {
     const canon = normalizarNombreEntidad(raw);
     if (!canon) return;
     const key = claveEntidad(canon);
-    if (CATALOGO_KEYS.has(key)) map.set(key, CATALOGO_ENTIDADES.find((n) => claveEntidad(n) === key));
-  });
+    if (ENTIDADES_EXCLUIDAS.has(key)) return;
+    map.set(key, canon);
+  };
+  (nombresDb || []).forEach(push);
+  if (map.size === 0) CATALOGO_ENTIDADES.forEach(push);
   return [...map.values()].sort((a, b) => {
     if (a === 'PARTICULAR') return -1;
     if (b === 'PARTICULAR') return 1;

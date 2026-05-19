@@ -163,7 +163,8 @@ router.delete('/servicios/:id', requireAuth, requireRoleOrPerm(['superadmin', 'a
 router.get('/entidades', requireAuth, async (req, res) => {
   try {
     const rows = await db.query('SELECT id, nombre FROM entidades WHERE activo=1 ORDER BY nombre ASC');
-    res.json(rows);
+    const entidades = listarEntidadesCatalogo(rows.map((r) => r.nombre));
+    res.json({ ok: true, entidades, registros: rows });
   } catch (err) { res.status(500).json({ error: safeError(err) }); }
 });
 
