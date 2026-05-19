@@ -6240,62 +6240,98 @@ $('electroDiagnostico').addEventListener('input', function() {
   }
 });
 
-function calcularFechaFinEstudio(cita) {
-  if (!cita || cita.estado !== 'En Estudio' || !cita.hora_inicio || !cita.hora_fin) return null;
-  const fechaRaw = cita.fecha || new Date().toISOString().slice(0, 10);
-  const fechaBase = typeof fechaRaw === 'string' && fechaRaw.length > 10 ? fechaRaw.slice(0, 10) : String(fechaRaw);
-  const [hiH, hiM] = cita.hora_inicio.split(':').map(Number);
-  const dateInicio = new Date(`${fechaBase}T${String(hiH).padStart(2, '0')}:${String(hiM).padStart(2, '0')}:00`);
+function obtenerFechaElectroBase10(fechaRaw) {
+  if (!fechaRaw) return null;
+  return typeof fechaRaw === 'string' && fechaRaw.length > 10 ? fechaRaw.slice(0, 10) : String(fechaRaw).slice(0, 10);
+}
 
-  const horaFinDateRaw = cita.hora_fin_date;
-  const fechaFin = horaFinDateRaw
-    ? (typeof horaFinDateRaw === 'string' && horaFinDateRaw.length > 10 ? horaFinDateRaw.slice(0, 10) : String(horaFinDateRaw))
-    : null;
-  const [hfH, hfM] = cita.hora_fin.split(':').map(Number);
+function construirDateHoraElectro(fechaBase, horaStr) {
+  if (!fechaBase || !horaStr) return null;
+  const [hh, mm] = String(horaStr).slice(0, 5).split(':').map(Number);
+  if (Number.isNaN(hh) || Number.isNaN(mm)) return null;
+  const d = new Date(`${fechaBase}T${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:00`);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
 
-  if (fechaFin && fechaFin !== fechaBase) {
-    return new Date(`${fechaFin}T${String(hfH).padStart(2, '0')}:${String(hfM).padStart(2, '0')}:00`);
+/** Hora de inicio al abrir/iniciar estudio: la mayor entre agendada y ahora (mismo día). */
+function obtenerHoraInicioRecomendadaParaEstudio(cita) {
+  const ahora = new Date();
+  const horaAhora = `${String(ahora.getHours()).padStart(2, '0')}:${String(ahora.getMinutes()).padStart(2, '0')}`;
+  const horaAgendada = String(cita?.hora_agendamiento || '').slice(0, 5);
+  if (!/^\d{2}:\d{2}$/.test(horaAgendada)) return horaAhora;
+
+  const fechaBase = obtenerFechaElectroBase10(cita?.fecha);
+  const hoy = ahora.toISOString().slice(0, 10);
+  if (!fechaBase || fechaBase !== hoy) return horaAgendada;
+
+  const [ah, am] = horaAhora.split(':').map(Number);
+  const [gh, gm] = horaAgendada.split(':').map(Number);
+  if (ah * 60 + am > gh * 60 + gm) return horaAhora;
+  return horaAgendada;
+}
+
+/**
+ * Fin calculado desde hora_inicio real (+ duración). Ignora ventana agendada si hay duración.
+ */
+function obtenerFechaHoraFinDesdeInicioReal(cita) {
+  const horaInicioStr = String(cita?.hora_inicio || '').slice(0, 5);
+  if (!/^\d{2}:\d{2}$/.test(horaInicioStr)) return null;
+
+  const fechaBase = obtenerFechaElectroBase10(cita?.fecha) || new Date().toISOString().slice(0, 10);
+  const dateInicio = construirDateHoraElectro(fechaBase, horaInicioStr);
+  if (!dateInicio) return null;
+
+  const durMin = parseInt(cita?.duracion_minutos, 10);
+  if (durMin > 0) {
+    return new Date(dateInicio.getTime() + durMin * 60000);
   }
-  if (cita.duracion_minutos && cita.duracion_minutos > 0) {
-    return new Date(dateInicio.getTime() + cita.duracion_minutos * 60000);
+
+  if (!cita?.hora_fin) return null;
+  const fechaFin = obtenerFechaElectroBase10(cita.hora_fin_date) || fechaBase;
+  const dateFin = construirDateHoraElectro(fechaFin, cita.hora_fin);
+  if (!dateFin) return null;
+  if (!cita.hora_fin_date && dateFin <= dateInicio) {
+    dateFin.setDate(dateFin.getDate() + 1);
   }
-  const dateFin = new Date(`${fechaBase}T${String(hfH).padStart(2, '0')}:${String(hfM).padStart(2, '0')}:00`);
-  if (dateFin <= dateInicio) dateFin.setDate(dateFin.getDate() + 1);
+  if (dateFin <= dateInicio) return null;
   return dateFin;
+}
+
+function obtenerFechaHoraFinEstudioActivo(cita) {
+  if (!cita || cita.estado !== 'En Estudio') return null;
+  return obtenerFechaHoraFinDesdeInicioReal(cita);
+}
+
+function calcularFechaFinEstudio(cita) {
+  return obtenerFechaHoraFinEstudioActivo(cita);
 }
 
 function obtenerFechaHoraFinCitaElectro(cita) {
   if (!cita) return null;
-  const fechaRaw = cita.fecha;
-  if (!fechaRaw) return null;
-  const fechaBase = typeof fechaRaw === 'string' && fechaRaw.length > 10 ? fechaRaw.slice(0, 10) : String(fechaRaw).slice(0, 10);
+  if ((cita.estado === 'En Estudio' || cita.estado === 'Pausado') && cita.hora_inicio) {
+    const finActivo = obtenerFechaHoraFinDesdeInicioReal(cita);
+    if (finActivo) return finActivo;
+  }
+
+  const fechaBase = obtenerFechaElectroBase10(cita.fecha);
+  if (!fechaBase) return null;
   const horaInicioStr = cita.hora_inicio || cita.hora_agendamiento;
   if (!horaInicioStr) return null;
 
-  const parseHm = (h) => {
-    const [hh, mm] = String(h).slice(0, 5).split(':').map(Number);
-    return { hh, mm };
-  };
-
-  if (cita.hora_fin) {
-    const { hh: hfH, mm: hfM } = parseHm(cita.hora_fin);
-    const horaFinDateRaw = cita.hora_fin_date;
-    const fechaFin = horaFinDateRaw
-      ? (typeof horaFinDateRaw === 'string' && horaFinDateRaw.length > 10 ? horaFinDateRaw.slice(0, 10) : String(horaFinDateRaw).slice(0, 10))
-      : fechaBase;
-    const dateFin = new Date(`${fechaFin}T${String(hfH).padStart(2, '0')}:${String(hfM).padStart(2, '0')}:00`);
-    if (!horaFinDateRaw) {
-      const { hh: hiH, mm: hiM } = parseHm(horaInicioStr);
-      const dateInicio = new Date(`${fechaBase}T${String(hiH).padStart(2, '0')}:${String(hiM).padStart(2, '0')}:00`);
-      if (dateFin <= dateInicio) dateFin.setDate(dateFin.getDate() + 1);
-    }
-    return dateFin;
+  const dateInicio = construirDateHoraElectro(fechaBase, horaInicioStr);
+  const durMin = parseInt(cita.duracion_minutos, 10);
+  if (dateInicio && durMin > 0) {
+    return new Date(dateInicio.getTime() + durMin * 60000);
   }
 
-  if (cita.duracion_minutos && cita.duracion_minutos > 0) {
-    const { hh: hiH, mm: hiM } = parseHm(horaInicioStr);
-    const dateInicio = new Date(`${fechaBase}T${String(hiH).padStart(2, '0')}:${String(hiM).padStart(2, '0')}:00`);
-    return new Date(dateInicio.getTime() + cita.duracion_minutos * 60000);
+  if (cita.hora_fin) {
+    const fechaFin = obtenerFechaElectroBase10(cita.hora_fin_date) || fechaBase;
+    const dateFin = construirDateHoraElectro(fechaFin, cita.hora_fin);
+    if (!dateFin) return null;
+    if (!cita.hora_fin_date && dateInicio && dateFin <= dateInicio) {
+      dateFin.setDate(dateFin.getDate() + 1);
+    }
+    return dateFin;
   }
 
   return null;
@@ -6336,7 +6372,11 @@ async function sincronizarEstadosPorTiempo(citas = []) {
   const hh = String(ahora.getHours()).padStart(2, '0');
   const mm = String(ahora.getMinutes()).padStart(2, '0');
   const horaActual = `${hh}:${mm}`;
-  const vencidas = citas.filter((c) => c?.estado === 'En Estudio' && calcularFechaFinEstudio(c) && ahora >= calcularFechaFinEstudio(c));
+  const vencidas = citas.filter((c) => {
+    if (c?.estado !== 'En Estudio') return false;
+    const fin = calcularFechaFinEstudio(c);
+    return fin && ahora >= fin;
+  });
   if (!vencidas.length) return citas;
 
   const actualizadas = [...citas];
@@ -9515,14 +9555,14 @@ function abrirModalDuracionEstudio() {
   if (modal) {
     modal.classList.remove('hidden');
     
-    // Hora inicio: hora agendada de la cita (fija, no editable)
-    const horaAgendada = citaElectroSeleccionada && citaElectroSeleccionada.hora_agendamiento
-      ? citaElectroSeleccionada.hora_agendamiento.substring(0, 5)
+    // Hora inicio: agendada o ahora si el estudio se inicia tarde (evita cierre anticipado)
+    const horaInicioRecomendada = citaElectroSeleccionada
+      ? obtenerHoraInicioRecomendadaParaEstudio(citaElectroSeleccionada)
       : (() => {
           const a = new Date();
           return `${String(a.getHours()).padStart(2,'0')}:${String(a.getMinutes()).padStart(2,'0')}`;
         })();
-    $('horaEstudioInicio').value = horaAgendada;
+    $('horaEstudioInicio').value = horaInicioRecomendada;
     
     // Duración predeterminada HH:MM desde duracion_minutos de la cita
     const durPredMin = (citaElectroSeleccionada && citaElectroSeleccionada.duracion_minutos)
@@ -9732,8 +9772,6 @@ async function iniciarEstudioSinDuracion() {
     return;
   }
 
-  const horaAgendada = String(citaElectroSeleccionada.hora_agendamiento || '').slice(0, 5);
-  
   // VALIDAR QUE SE HAYA SELECCIONADO UN EQUIPO
   const equipoSelect = $('modalEquipo');
   if (!equipoSelect || !equipoSelect.value) {
@@ -9744,11 +9782,11 @@ async function iniciarEstudioSinDuracion() {
   try {
     // Obtener la duración predeterminada de la cita (en minutos)
     const duracionMinutos = citaElectroSeleccionada.duracion_minutos || 480;
+    const horaInicio = obtenerHoraInicioRecomendadaParaEstudio(citaElectroSeleccionada);
     
     console.log(`[DURACION_SIN] Usando duración predeterminada: ${duracionMinutos} minutos`);
     
     // Calcular hora_fin usando Date (soporta multi-día)
-    const horaInicio = horaAgendada;
     const [hh_inicio, mm_inicio] = horaInicio.split(':').map(Number);
     const fechaCitaRaw = citaElectroSeleccionada.fecha || new Date().toISOString().slice(0, 10);
     const fechaCita = typeof fechaCitaRaw === 'string' && fechaCitaRaw.length > 10 ? fechaCitaRaw.slice(0, 10) : String(fechaCitaRaw);
@@ -9847,39 +9885,16 @@ function actualizarProgresoEstudio() {
     intervaloProgreso = null;
   }
   
-  const horaInicio = citaElectroSeleccionada.hora_inicio; // "HH:MM"
-  const horaFin = citaElectroSeleccionada.hora_fin; // "HH:MM"
-  
-  if (!horaInicio || !horaFin) {
-    return;
-  }
-  
-  // Construir fechas absolutas de inicio y fin
-  const fechaRaw = citaElectroSeleccionada.fecha || new Date().toISOString().slice(0, 10);
-  const fechaBase = typeof fechaRaw === 'string' && fechaRaw.length > 10 ? fechaRaw.slice(0, 10) : String(fechaRaw);
-  const [hiH, hiM] = horaInicio.split(':').map(Number);
-  const dateInicio = new Date(`${fechaBase}T${String(hiH).padStart(2,'0')}:${String(hiM).padStart(2,'0')}:00`);
-  
-  // Fecha de fin: usar hora_fin_date si existe, sino calcular con duracion_minutos
-  let dateFin;
-  const horaFinDateRaw = citaElectroSeleccionada.hora_fin_date;
-  const fechaFin = horaFinDateRaw ? (typeof horaFinDateRaw === 'string' && horaFinDateRaw.length > 10 ? horaFinDateRaw.slice(0, 10) : String(horaFinDateRaw)) : null;
-  const [hfH, hfM] = horaFin.split(':').map(Number);
-  
-  if (fechaFin && fechaFin !== fechaBase) {
-    // Multi-día: tenemos la fecha de fin explícita
-    dateFin = new Date(`${fechaFin}T${String(hfH).padStart(2,'0')}:${String(hfM).padStart(2,'0')}:00`);
-  } else if (citaElectroSeleccionada.duracion_minutos && citaElectroSeleccionada.duracion_minutos > 0) {
-    // Usar duración para calcular fin
-    dateFin = new Date(dateInicio.getTime() + citaElectroSeleccionada.duracion_minutos * 60000);
-  } else {
-    // Mismo día, calcular normalmente
-    dateFin = new Date(`${fechaBase}T${String(hfH).padStart(2,'0')}:${String(hfM).padStart(2,'0')}:00`);
-    // Si hora_fin <= hora_inicio, asumir que cruza medianoche (+1 día)
-    if (dateFin <= dateInicio) {
-      dateFin.setDate(dateFin.getDate() + 1);
-    }
-  }
+  const horaInicio = citaElectroSeleccionada.hora_inicio;
+  if (!horaInicio) return;
+
+  const fechaBase = obtenerFechaElectroBase10(citaElectroSeleccionada.fecha) || new Date().toISOString().slice(0, 10);
+  const dateInicio = construirDateHoraElectro(fechaBase, horaInicio);
+  const dateFin = obtenerFechaHoraFinEstudioActivo(citaElectroSeleccionada);
+  if (!dateInicio || !dateFin) return;
+
+  const finHoraStr = `${String(dateFin.getHours()).padStart(2, '0')}:${String(dateFin.getMinutes()).padStart(2, '0')}`;
+  const finFechaStr = `${dateFin.getFullYear()}-${String(dateFin.getMonth() + 1).padStart(2, '0')}-${String(dateFin.getDate()).padStart(2, '0')}`;
   
   const duracionTotalMs = dateFin.getTime() - dateInicio.getTime();
   
@@ -9901,8 +9916,8 @@ function actualizarProgresoEstudio() {
   
   const horaFinEl = $('estudioHoraFin');
   if (horaFinEl) {
-    const finText = formatearHora(horaFin);
-    horaFinEl.textContent = fechaFin && fechaFin !== fechaBase ? `${finText} (${fechaFin})` : finText;
+    const finText = formatearHora(finHoraStr);
+    horaFinEl.textContent = finFechaStr !== fechaBase ? `${finText} (${finFechaStr})` : finText;
   }
   const horaInicioEl = $('estudioHoraInicio');
   if (horaInicioEl) horaInicioEl.textContent = formatearHora(horaInicio);
