@@ -32,7 +32,8 @@
 .sop-btn-primary,
 .sop-btn-ghost,
 .sop-btn-teal,
-.sop-btn-sm {
+.sop-btn-sm,
+.cita-modal-footer-btn {
   display: inline-flex !important;
   align-items: center;
   justify-content: center;
@@ -357,19 +358,185 @@ button:disabled {
   box-shadow: var(--btn-shadow-hover) !important;
 }
 
-/* Flujo agenda */
+/* Flujo agenda — conservar colores por estado (no forzar primario) */
 .flujo-btn-sm {
   border-radius: var(--btn-radius-sm) !important;
   font-weight: 600 !important;
   transition: box-shadow 0.15s, transform 0.1s !important;
+  background: #fff !important;
+  color: inherit !important;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06) !important;
+  border: 1.5px solid #d1d5db !important;
+  padding: 10px 14px !important;
 }
 
 .flujo-btn-sm:hover {
   box-shadow: var(--btn-shadow) !important;
 }
 
+.flujo-btn-sm.confirmado {
+  border-color: #93c5fd !important;
+  color: #1d4ed8 !important;
+  background: #eff6ff !important;
+}
+
+.flujo-btn-sm.en-sala {
+  border-color: #67e8f9 !important;
+  color: #0e7490 !important;
+  background: #ecfeff !important;
+}
+
+.flujo-btn-sm.iniciar {
+  border-color: #fdba74 !important;
+  color: #c2410c !important;
+  background: #fff7ed !important;
+}
+
+.flujo-btn-sm.cancelar {
+  border-color: #fca5a5 !important;
+  color: #dc2626 !important;
+  background: #fff !important;
+}
+
+.flujo-btn-sm.no-asistio {
+  border-color: #d1d5db !important;
+  color: #6b7280 !important;
+  background: #fff !important;
+}
+
+.flujo-btn-sm.pausar {
+  background: #f59e0b !important;
+  color: #78350f !important;
+  border: none !important;
+}
+
+/* Iconos modal cita (editar, más opciones, cerrar) */
+.cita-modal-icon-btn {
+  background: rgba(255, 255, 255, 0.95) !important;
+  color: #475569 !important;
+  border: 1px solid #d1d5db !important;
+  border-radius: 8px !important;
+  width: 34px !important;
+  height: 34px !important;
+  min-width: 34px !important;
+  padding: 0 !important;
+  box-shadow: none !important;
+}
+
+.cita-modal-icon-btn:hover {
+  background: #fff !important;
+  color: #1f3634 !important;
+  border-color: var(--c-primary) !important;
+}
+
+.cita-modal-icon-btn svg {
+  display: block !important;
+  flex-shrink: 0 !important;
+  color: inherit !important;
+}
+
+.cita-modal-icon-btn svg [fill]:not([fill="none"]) {
+  fill: currentColor !important;
+}
+
+.cita-modal-icon-btn svg [stroke] {
+  stroke: currentColor !important;
+}
+
+.cita-modal-close-btn:hover {
+  color: #dc2626 !important;
+  border-color: #fca5a5 !important;
+}
+
+/* Botones de acción en pie del modal — colores semánticos */
+.cita-modal-footer-actions .cita-modal-footer-btn {
+  min-width: 120px !important;
+  border: 0 !important;
+  color: #fff !important;
+  font-weight: 600 !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12) !important;
+}
+
+.cita-modal-footer-actions .cita-modal-footer-btn:hover:not(:disabled) {
+  filter: brightness(1.06);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.16) !important;
+}
+
+.cita-modal-footer-actions .cita-modal-footer-btn:disabled {
+  opacity: 0.5 !important;
+  cursor: not-allowed !important;
+  filter: none !important;
+}
+
+.cita-modal-btn-teal {
+  background: linear-gradient(135deg, #14b8a6, #0d9488) !important;
+}
+
+.cita-modal-btn-amber {
+  background: linear-gradient(135deg, #fbbf24, #f59e0b) !important;
+  color: #78350f !important;
+}
+
+.cita-modal-btn-blue {
+  background: linear-gradient(135deg, #3b82f6, #2563eb) !important;
+}
+
+.cita-modal-btn-orange {
+  background: linear-gradient(135deg, #fb923c, #f97316) !important;
+}
+
+.cita-modal-btn-green {
+  background: linear-gradient(135deg, #22c55e, #16a34a) !important;
+}
+
+.cita-modal-btn-red {
+  background: linear-gradient(135deg, #ef4444, #dc2626) !important;
+}
+
+/* Multi-select — mismo aspecto que select nativo */
+.ms-trigger {
+  width: 100% !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 8px !important;
+  padding: 10px 36px 10px 12px !important;
+  background: #fff !important;
+  background-image: none !important;
+  border: 2px solid var(--innar-border, #e2e8f0) !important;
+  border-radius: var(--innar-radius, 10px) !important;
+  font-size: 0.9rem !important;
+  font-weight: 500 !important;
+  color: #374151 !important;
+  cursor: pointer !important;
+  text-align: left !important;
+  box-shadow: none !important;
+  min-height: var(--innar-control-h, 44px) !important;
+  box-sizing: border-box !important;
+}
+
+.ms-trigger:hover {
+  border-color: var(--c-primary) !important;
+  background: #fff !important;
+  color: #374151 !important;
+}
+
+.ms-trigger.ms-has-value {
+  border-color: var(--c-primary) !important;
+  background: #f8fafc !important;
+}
+
+.ms-arrow {
+  color: #64748b !important;
+  flex-shrink: 0 !important;
+}
+
+.ms-open .ms-arrow {
+  color: var(--c-dark, #2d4a47) !important;
+}
+
 /* Tag `button` genérico sin clase de icono — alinear a primario si queda suelto */
-button:not(.menu-card):not(.btn-close-x):not(.btn-close-modal):not(.btn-editar):not(.btn-eliminar):not(.btn-prioridad-up):not(.btn-prioridad-down):not(.btn-recibo-anular):not(.btn-recibo-pdf):not(.btn-recibo-pagar):not(.btn-usr-del):not(.btn-usr-edit):not(.btn-usr-hist):not(.btn-usr-reset):not(.btn-usr-speak):not(.btn-usr-toggle):not(.btn-estado):not(.btn-estado-small):not(.sidebar-btn):not(.agenda-page-btn):not(.electro-page-btn):not(.card-collapse-btn):not(.toggle-password-btn):not(.meq-back-btn):not(.meq-date-nav):not(.meq-refresh-btn):not(.meq-date-hoy):not(.ccal-nav-btn):not(.cal-nav-btn):not(.recibo-export-btn):not(.flujo-btn-sm):not(.btn-dropdown-item):not(.btn-estado-opcion):not([class*="btn-"]):not([id^="monitorDate"]):not(#btnRefreshMonitor) {
+button:not(.menu-card):not(.btn-close-x):not(.btn-close-modal):not(.btn-editar):not(.btn-eliminar):not(.btn-prioridad-up):not(.btn-prioridad-down):not(.btn-recibo-anular):not(.btn-recibo-pdf):not(.btn-recibo-pagar):not(.btn-usr-del):not(.btn-usr-edit):not(.btn-usr-hist):not(.btn-usr-reset):not(.btn-usr-speak):not(.btn-usr-toggle):not(.btn-estado):not(.btn-estado-small):not(.sidebar-btn):not(.agenda-page-btn):not(.electro-page-btn):not(.card-collapse-btn):not(.toggle-password-btn):not(.meq-back-btn):not(.meq-date-nav):not(.meq-refresh-btn):not(.meq-date-hoy):not(.ccal-nav-btn):not(.cal-nav-btn):not(.recibo-export-btn):not(.flujo-btn-sm):not(.btn-dropdown-item):not(.btn-estado-opcion):not(.cita-modal-icon-btn):not(.ms-trigger):not([class*="btn-"]):not([id^="monitorDate"]):not(#btnRefreshMonitor) {
   background: linear-gradient(135deg, var(--c-primary) 0%, var(--c-primary-hover) 100%) !important;
   color: #fff !important;
   border: 0 !important;
@@ -379,7 +546,7 @@ button:not(.menu-card):not(.btn-close-x):not(.btn-close-modal):not(.btn-editar):
   box-shadow: 0 4px 12px rgba(138, 166, 161, 0.35) !important;
 }
 
-button:not(.menu-card):not(.btn-close-x):not(.meq-date-nav):not(.meq-refresh-btn):not(.meq-date-hoy):not([class*="btn-"]):not([id^="monitorDate"]):not(#btnRefreshMonitor):hover {
+button:not(.menu-card):not(.btn-close-x):not(.meq-date-nav):not(.meq-refresh-btn):not(.meq-date-hoy):not(.cita-modal-icon-btn):not(.ms-trigger):not([class*="btn-"]):not([id^="monitorDate"]):not(#btnRefreshMonitor):hover {
   box-shadow: 0 6px 16px rgba(138, 166, 161, 0.45) !important;
 }
 

@@ -2061,12 +2061,21 @@ function initRecibos() {
   const elTP = $('filtroTipoPago');
   if (elTP) initMultiSelect(elTP, { placeholder: 'Todos', onChange: () => aplicarFiltrosRecibos() });
 
+  const elEstadoPago = $('filtroEstadoPago');
+  if (elEstadoPago) initMultiSelect(elEstadoPago, { placeholder: 'Todos', onChange: () => aplicarFiltrosRecibos() });
+
+  const elAnulado = $('filtroAnulado');
+  if (elAnulado) {
+    initMultiSelect(elAnulado, { placeholder: 'Todos', onChange: () => aplicarFiltrosRecibos() });
+    if (elAnulado._ms) elAnulado._ms.setValues(['no']);
+  }
+
   // Especialidad -> filtra médicos y carga tipos de consulta
   const elEsp = $('filtroEspecialidad');
-  if (elEsp && !elEsp._espBound) {
-    elEsp._espBound = true;
-    elEsp.addEventListener('change', async function () {
-      const espId = this.value;
+  if (elEsp) {
+    initMultiSelect(elEsp, { placeholder: 'Todas las especialidades', onChange: async function () {
+      const vals = elEsp._ms ? elEsp._ms.getValues() : [];
+      const espId = vals[0] || '';
       const selMedico = $('filtroMedico');
       if (selMedico && window._filtroMedicos) {
         selMedico.innerHTML = '<option value="">Todos los médicos</option>';
@@ -2111,7 +2120,7 @@ function initRecibos() {
         }
       }
       aplicarFiltrosRecibos();
-    });
+    }});
   }
 
   // Socket: cuando admin modifica tipos de consulta, refrescar el dropdown activo
@@ -8752,8 +8761,8 @@ async function aplicarFiltrosRecibos() {
     const entidad     = getMultiSelectValue($('filtroEntidad'));
     const tipoConsulta= getMultiSelectValue($('filtroTipoConsulta'));
     const tipoEstudio = getMultiSelectValue($('filtroEstudio'));
-    const estadoPago  = $('filtroEstadoPago')?.value || '';
-    const anulado     = $('filtroAnulado')?.value || '';
+    const estadoPago  = getMultiSelectValue($('filtroEstadoPago')) || $('filtroEstadoPago')?.value || '';
+    const anulado     = getMultiSelectValue($('filtroAnulado')) || $('filtroAnulado')?.value || '';
     const palabraClave= $('filtroPalabraClave')?.value?.trim() || '';
 
     const params = new URLSearchParams();
@@ -8764,9 +8773,10 @@ async function aplicarFiltrosRecibos() {
       params.set('medico_nombre', 'ELECTRODIAGNÓSTICOS');
     } else if (medicoId) {
       params.set('medico_id', medicoId);
-    } else if ($('filtroEspecialidad')?.value) {
+    } else if (getMultiSelectValue($('filtroEspecialidad'))) {
+      const espFiltro = getMultiSelectValue($('filtroEspecialidad'));
       const espMedIds = (window._filtroMedicos || [])
-        .filter(m => String(m.especialidad_id) === $('filtroEspecialidad').value)
+        .filter(m => String(m.especialidad_id) === espFiltro)
         .map(m => m.id).join(',');
       if (espMedIds) params.set('medico_id', espMedIds);
     }
@@ -8797,8 +8807,11 @@ function limpiarFiltrosRecibos() {
   clearMultiSelect($('filtroEntidad'));
   clearMultiSelect($('filtroTipoConsulta'));
   clearMultiSelect($('filtroEstudio'));
-  if ($('filtroEstadoPago'))    $('filtroEstadoPago').value    = '';
-  if ($('filtroAnulado'))       $('filtroAnulado').value       = '';
+  clearMultiSelect($('filtroEspecialidad'));
+  clearMultiSelect($('filtroEstadoPago'));
+  const elAnul = $('filtroAnulado');
+  if (elAnul?._ms) elAnul._ms.setValues(['no']);
+  else if (elAnul) elAnul.value = 'no';
   if ($('filtroPalabraClave'))  $('filtroPalabraClave').value  = '';
   if ($('filtroEspecialidad'))   $('filtroEspecialidad').value   = '';
   const wrap = $('filtroTipoConsultaWrap');
