@@ -223,7 +223,7 @@ function agendaMedicaPolicy(turno, opts = {}) {
     // EN_ATENCION: atendido
     showRecordatorio: esPendiente,
     showEnSala: puedeGestionarComoRecepcion && esPendiente,
-    showReprogramar: puedeGestionarComoRecepcion && (esPendiente || estado === 'NO_ASISTIO'),
+    showReprogramar: (puedeGestionarComoRecepcion || (perms.editar && !esDoctorRol)) && (esPendiente || estado === 'NO_ASISTIO'),
     showReprogramarNoAsistio: puedeGestionarComoRecepcion && estado === 'NO_ASISTIO',
 
     // LLAMAR solo cuando está EN_SALA (doctor o recepción con permisos)

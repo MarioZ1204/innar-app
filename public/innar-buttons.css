@@ -409,104 +409,6 @@ button:disabled {
   border: none !important;
 }
 
-/* Iconos modal cita (editar, más opciones, cerrar) */
-.cita-modal-icon-btn {
-  background: rgba(255, 255, 255, 0.95) !important;
-  color: #475569 !important;
-  border: 1px solid #d1d5db !important;
-  border-radius: 8px !important;
-  width: 34px !important;
-  height: 34px !important;
-  min-width: 34px !important;
-  padding: 0 !important;
-  box-shadow: none !important;
-}
-
-.cita-modal-icon-btn:hover {
-  background: #fff !important;
-  color: #1f3634 !important;
-  border-color: var(--c-primary) !important;
-}
-
-.cita-modal-icon-btn svg {
-  display: block !important;
-  flex-shrink: 0 !important;
-  color: inherit !important;
-}
-
-.cita-modal-icon-btn svg [fill]:not([fill="none"]) {
-  fill: currentColor !important;
-}
-
-.cita-modal-icon-btn svg [stroke] {
-  stroke: currentColor !important;
-}
-
-.cita-modal-close-btn:hover {
-  color: #dc2626 !important;
-  border-color: #fca5a5 !important;
-}
-
-/* Botones de acción en pie del modal — colores semánticos */
-.cita-modal-footer-actions .cita-modal-footer-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 10px 18px;
-  border-radius: var(--btn-radius);
-  font-size: 0.88rem;
-  font-weight: var(--btn-font-weight);
-  line-height: 1.25;
-  cursor: pointer;
-  box-sizing: border-box;
-  min-width: 120px !important;
-  border: 0 !important;
-  color: #fff !important;
-  font-weight: 600 !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12) !important;
-}
-
-.cita-modal-footer-actions .cita-modal-footer-btn:hover:not(:disabled) {
-  filter: brightness(1.06);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.16) !important;
-}
-
-.cita-modal-footer-actions .cita-modal-footer-btn:disabled {
-  opacity: 0.5 !important;
-  cursor: not-allowed !important;
-  filter: none !important;
-}
-
-.cita-modal-footer-actions .cita-modal-footer-btn[hidden] {
-  display: none !important;
-}
-
-.cita-modal-btn-teal {
-  background: linear-gradient(135deg, #14b8a6, #0d9488) !important;
-}
-
-.cita-modal-btn-amber {
-  background: linear-gradient(135deg, #fbbf24, #f59e0b) !important;
-  color: #78350f !important;
-}
-
-.cita-modal-btn-blue {
-  background: linear-gradient(135deg, #3b82f6, #2563eb) !important;
-}
-
-.cita-modal-btn-orange {
-  background: linear-gradient(135deg, #fb923c, #f97316) !important;
-}
-
-.cita-modal-btn-green {
-  background: linear-gradient(135deg, #22c55e, #16a34a) !important;
-}
-
-.cita-modal-btn-red {
-  background: linear-gradient(135deg, #ef4444, #dc2626) !important;
-}
-
 /* Multi-select — mismo aspecto que select nativo */
 .ms-trigger {
   width: 100% !important;
@@ -550,7 +452,7 @@ button:disabled {
 }
 
 /* Tag `button` genérico sin clase de icono — alinear a primario si queda suelto */
-button:not(.menu-card):not(.btn-close-x):not(.btn-close-modal):not(.btn-editar):not(.btn-eliminar):not(.btn-prioridad-up):not(.btn-prioridad-down):not(.btn-recibo-anular):not(.btn-recibo-pdf):not(.btn-recibo-pagar):not(.btn-usr-del):not(.btn-usr-edit):not(.btn-usr-hist):not(.btn-usr-reset):not(.btn-usr-speak):not(.btn-usr-toggle):not(.btn-estado):not(.btn-estado-small):not(.sidebar-btn):not(.agenda-page-btn):not(.electro-page-btn):not(.card-collapse-btn):not(.toggle-password-btn):not(.meq-back-btn):not(.meq-date-nav):not(.meq-refresh-btn):not(.meq-date-hoy):not(.ccal-nav-btn):not(.cal-nav-btn):not(.recibo-export-btn):not(.flujo-btn-sm):not(.btn-dropdown-item):not(.btn-estado-opcion):not(.cita-modal-icon-btn):not(.ms-trigger):not([class*="btn-"]):not([id^="monitorDate"]):not(#btnRefreshMonitor) {
+button:not(.menu-card):not(.btn-close-x):not(.btn-close-modal):not(.btn-editar):not(.btn-eliminar):not(.btn-prioridad-up):not(.btn-prioridad-down):not(.btn-recibo-anular):not(.btn-recibo-pdf):not(.btn-recibo-pagar):not(.btn-usr-del):not(.btn-usr-edit):not(.btn-usr-hist):not(.btn-usr-reset):not(.btn-usr-speak):not(.btn-usr-toggle):not(.btn-estado):not(.btn-estado-small):not(.sidebar-btn):not(.agenda-page-btn):not(.electro-page-btn):not(.card-collapse-btn):not(.toggle-password-btn):not(.meq-back-btn):not(.meq-date-nav):not(.meq-refresh-btn):not(.meq-date-hoy):not(.ccal-nav-btn):not(.cal-nav-btn):not(.recibo-export-btn):not(.flujo-btn-sm):not(.btn-dropdown-item):not(.btn-estado-opcion):not(.cita-modal-icon-btn):not(.cita-modal-footer-btn):not([class*="cita-modal-btn-"]):not(.ms-trigger):not([class*="btn-"]):not([id^="monitorDate"]):not(#btnRefreshMonitor) {
   background: linear-gradient(135deg, var(--c-primary) 0%, var(--c-primary-hover) 100%) !important;
   color: #fff !important;
   border: 0 !important;
@@ -560,8 +462,116 @@ button:not(.menu-card):not(.btn-close-x):not(.btn-close-modal):not(.btn-editar):
   box-shadow: 0 4px 12px rgba(138, 166, 161, 0.35) !important;
 }
 
-button:not(.menu-card):not(.btn-close-x):not(.meq-date-nav):not(.meq-refresh-btn):not(.meq-date-hoy):not(.cita-modal-icon-btn):not(.ms-trigger):not([class*="btn-"]):not([id^="monitorDate"]):not(#btnRefreshMonitor):hover {
+button:not(.menu-card):not(.btn-close-x):not(.meq-date-nav):not(.meq-refresh-btn):not(.meq-date-hoy):not(.cita-modal-icon-btn):not(.cita-modal-footer-btn):not([class*="cita-modal-btn-"]):not(.ms-trigger):not([class*="btn-"]):not([id^="monitorDate"]):not(#btnRefreshMonitor):hover {
   box-shadow: 0 6px 16px rgba(138, 166, 161, 0.45) !important;
+}
+
+/* ── Modal cita médica (después del botón genérico para no ser pisado) ───── */
+button.cita-modal-icon-btn {
+  background: rgba(255, 255, 255, 0.95) !important;
+  color: #475569 !important;
+  border: 1px solid #d1d5db !important;
+  border-radius: 8px !important;
+  width: 34px !important;
+  height: 34px !important;
+  min-width: 34px !important;
+  padding: 0 !important;
+  box-shadow: none !important;
+}
+
+button.cita-modal-icon-btn:hover {
+  background: #fff !important;
+  color: #1f3634 !important;
+  border-color: var(--c-primary) !important;
+}
+
+button.cita-modal-icon-btn svg {
+  display: block !important;
+  flex-shrink: 0 !important;
+  pointer-events: none;
+}
+
+button.cita-modal-icon-btn svg,
+button.cita-modal-icon-btn svg * {
+  color: inherit !important;
+  stroke: currentColor !important;
+}
+
+button.cita-modal-icon-btn svg circle[fill="currentColor"],
+button.cita-modal-icon-btn svg [fill="currentColor"] {
+  fill: currentColor !important;
+}
+
+button.cita-modal-icon-btn.cita-modal-close-btn:hover {
+  color: #dc2626 !important;
+  border-color: #fca5a5 !important;
+}
+
+.cita-modal-footer-actions .cita-modal-footer-btn {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 8px !important;
+  padding: 10px 18px !important;
+  border-radius: var(--btn-radius) !important;
+  font-size: 0.88rem !important;
+  font-weight: 600 !important;
+  line-height: 1.25 !important;
+  cursor: pointer !important;
+  box-sizing: border-box !important;
+  min-width: 120px !important;
+  border: 0 !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12) !important;
+}
+
+.cita-modal-footer-actions .cita-modal-footer-btn svg {
+  flex-shrink: 0 !important;
+  display: block !important;
+}
+
+.cita-modal-footer-actions .cita-modal-footer-btn:hover:not(:disabled) {
+  filter: brightness(1.06);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.16) !important;
+}
+
+.cita-modal-footer-actions .cita-modal-footer-btn:disabled {
+  opacity: 0.5 !important;
+  cursor: not-allowed !important;
+  filter: none !important;
+}
+
+.cita-modal-footer-actions .cita-modal-footer-btn[hidden] {
+  display: none !important;
+}
+
+.cita-modal-footer-actions .cita-modal-footer-btn.cita-modal-btn-teal {
+  background: linear-gradient(135deg, #14b8a6, #0d9488) !important;
+  color: #fff !important;
+}
+
+.cita-modal-footer-actions .cita-modal-footer-btn.cita-modal-btn-amber {
+  background: linear-gradient(135deg, #fbbf24, #f59e0b) !important;
+  color: #78350f !important;
+}
+
+.cita-modal-footer-actions .cita-modal-footer-btn.cita-modal-btn-blue {
+  background: linear-gradient(135deg, #3b82f6, #2563eb) !important;
+  color: #fff !important;
+}
+
+.cita-modal-footer-actions .cita-modal-footer-btn.cita-modal-btn-orange {
+  background: linear-gradient(135deg, #fb923c, #f97316) !important;
+  color: #fff !important;
+}
+
+.cita-modal-footer-actions .cita-modal-footer-btn.cita-modal-btn-green {
+  background: linear-gradient(135deg, #22c55e, #16a34a) !important;
+  color: #fff !important;
+}
+
+.cita-modal-footer-actions .cita-modal-footer-btn.cita-modal-btn-red {
+  background: linear-gradient(135deg, #ef4444, #dc2626) !important;
+  color: #fff !important;
 }
 
 /* Loading state */

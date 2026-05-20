@@ -19,23 +19,28 @@ function staticCacheHeaders(res, filePath) {
   }
 }
 
+/** Añade ?v=APP_VERSION a CSS/JS locales (cache bust tras deploy). */
+function injectAssetVersion(html, appVersion) {
+  const vTag = `?v=${appVersion}`;
+  const withTag = (url) => (url.includes('?v=') ? url : `${url}${vTag}`);
+
+  html = html.replace(
+    /href="(?!https?:\/\/)([^"?]+\.css)"/g,
+    (match, asset) => `href="${withTag(asset)}"`
+  );
+  html = html.replace(
+    /src="(?!https?:\/\/|\/libs\/)([^"?]+\.js)"/g,
+    (match, asset) => `src="${withTag(asset)}"`
+  );
+  return html;
+}
+
 function buildIndexHandler(publicDir, appVersion) {
   return function indexHandler(req, res) {
     const htmlPath = path.join(publicDir, 'index.html');
     let html = fs.readFileSync(htmlPath, 'utf8');
-    const vTag = `?v=${appVersion}`;
+    html = injectAssetVersion(html, appVersion);
     html = html
-      .replace('href="style.css"', `href="style.css${vTag}"`)
-      .replace('href="style.css"', `href="style.css${vTag}"`)
-      .replace('src="multiselect.js"', `src="multiselect.js${vTag}"`)
-      .replace('src="socket-client.js"', `src="socket-client.js${vTag}"`)
-      .replace('src="socket-electro.js"', `src="socket-electro.js${vTag}"`)
-      .replace('src="dashboard-citas.js"', `src="dashboard-citas.js${vTag}"`)
-      .replace('src="calendario-agenda.js"', `src="calendario-agenda.js${vTag}"`)
-      .replace('src="app.js"', `src="app.js${vTag}"`)
-      .replace('src="calendario-bloqueado.js"', `src="calendario-bloqueado.js${vTag}"`)
-      .replace('src="validation-client.js"', `src="validation-client.js${vTag}"`)
-      .replace('src="splash.js"', `src="splash.js${vTag}"`)
       .replace('</head>', `<script>window.APP_VERSION="${appVersion}";window.INNAR_REALTIME_MODE="http-poll";</script>\n</head>`);
     res.setHeader('Content-Type', 'text/html');
     res.setHeader('Cache-Control', 'no-cache, must-revalidate');
@@ -66,4 +71,4 @@ function applyStaticFiles(app, { publicDir, appVersion }) {
   });
 }
 
-module.exports = { applyStaticFiles, staticCacheHeaders, buildIndexHandler };
+module.exports = { applyStaticFiles, staticCacheHeaders, buildIndexHandler, injectAssetVersion };
