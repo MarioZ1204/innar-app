@@ -1,0 +1,444 @@
+/**
+ * Innar — Sistema de motion (Fases 1–3)
+ * Tokens, modales, toasts, agenda, filas y micro-interacciones.
+ * Solo transform + opacity (GPU-friendly).
+ */
+
+:root {
+  --motion-fast: 150ms;
+  --motion-normal: 240ms;
+  --motion-slow: 320ms;
+  --motion-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --motion-ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --motion-toast-exit: 220ms;
+  --motion-stagger-step: 45ms;
+}
+
+/* ── Keyframes ─────────────────────────────────────────────────────────────── */
+@keyframes innar-overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes innar-overlay-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes innar-panel-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes innar-panel-out {
+  from {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translate3d(0, 6px, 0) scale(0.98);
+  }
+}
+
+@keyframes innar-toast-in {
+  from {
+    opacity: 0;
+    transform: translate3d(12px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes innar-toast-out {
+  from {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translate3d(10px, 0, 0) scale(0.96);
+  }
+}
+
+@keyframes innar-view-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes innar-agenda-cal-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes innar-agenda-day-in {
+  from {
+    opacity: 0;
+    transform: translate3d(12px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes innar-agenda-day-out {
+  from {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    opacity: 0;
+    transform: translate3d(-10px, 0, 0);
+  }
+}
+
+@keyframes innar-agenda-cal-out {
+  from {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translate3d(0, 6px, 0) scale(0.99);
+  }
+}
+
+@keyframes innar-footer-stagger-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes innar-row-flash {
+  0% {
+    background-color: rgba(138, 166, 161, 0.38);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+@keyframes innar-row-primero-in {
+  0% {
+    opacity: 0;
+    transform: translate3d(-10px, 0, 0) scale(0.99);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes innar-vt-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes innar-vt-fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes innar-kanban-card-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes innar-kanban-pop {
+  0% { transform: scale(1); }
+  45% { transform: scale(1.015); }
+  100% { transform: scale(1); }
+}
+
+@keyframes innar-dot-pulse-brand {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.65; transform: scale(1.15); }
+}
+
+@keyframes innar-dot-pulse-attention {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.55; transform: scale(1.2); }
+}
+
+@keyframes innar-estudio-ring {
+  0%, 100% { box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06); }
+  50% { box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.22); }
+}
+
+/* ── Pausa global (refresh masivo, filtros pesados) ─────────────────────────── */
+html.innar-motion-off *,
+html.innar-motion-off *::before,
+html.innar-motion-off *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+}
+
+/* ── Modales (overlay + panel al abrir) ─────────────────────────────────────── */
+.modal-overlay:not(.hidden),
+.modal:not(.hidden) {
+  animation: innar-overlay-in var(--motion-normal) var(--motion-ease-out) both;
+}
+
+.modal-overlay:not(.hidden) > .modal-box,
+.modal-overlay:not(.hidden) > .cita-modal-card,
+.modal:not(.hidden) > .modal-box,
+.modal:not(.hidden) > .modal-content,
+.modal:not(.hidden) > .cita-modal-card {
+  animation: innar-panel-in var(--motion-normal) var(--motion-ease-out) both;
+  animation-delay: 35ms;
+}
+
+.modal.innar-modal-closing,
+.modal-overlay.innar-modal-closing {
+  animation: innar-overlay-out var(--motion-fast) var(--motion-ease-in) both;
+  pointer-events: none;
+}
+
+.modal.innar-modal-closing > .modal-box,
+.modal.innar-modal-closing > .modal-content,
+.modal.innar-modal-closing > .cita-modal-card,
+.modal-overlay.innar-modal-closing > .modal-box,
+.modal-overlay.innar-modal-closing > .cita-modal-card {
+  animation: innar-panel-out var(--motion-fast) var(--motion-ease-in) both;
+}
+
+/* Confirm / prompt dinámicos */
+.confirm-backdrop {
+  animation: innar-overlay-in var(--motion-normal) var(--motion-ease-out) both !important;
+}
+
+.confirm-backdrop > .confirm-box {
+  animation: innar-panel-in var(--motion-normal) var(--motion-ease-out) both !important;
+  animation-delay: 35ms !important;
+}
+
+.confirm-backdrop.innar-modal-closing {
+  animation: innar-overlay-out var(--motion-fast) var(--motion-ease-in) both !important;
+}
+
+.confirm-backdrop.innar-modal-closing > .confirm-box {
+  animation: innar-panel-out var(--motion-fast) var(--motion-ease-in) both !important;
+}
+
+/* Loader */
+.app-loader-overlay {
+  animation: innar-overlay-in var(--motion-fast) var(--motion-ease-out) both;
+}
+
+.app-loader-overlay .app-loader-box {
+  animation: innar-panel-in var(--motion-normal) var(--motion-ease-out) both;
+  animation-delay: 30ms;
+}
+
+/* ── Toasts ─────────────────────────────────────────────────────────────────── */
+#toast-container .app-toast {
+  animation: innar-toast-in var(--motion-normal) var(--motion-ease-out) both !important;
+  will-change: transform, opacity;
+}
+
+.app-toast.removing {
+  animation: innar-toast-out var(--motion-toast-exit) var(--motion-ease-in) forwards !important;
+}
+
+/* ── Botones (micro-interacción, complementa innar-buttons.css) ─────────────── */
+@media (prefers-reduced-motion: no-preference) {
+  .btn-primary:not(:disabled):not(.btn-loading),
+  .btn-secondary:not(:disabled):not(.btn-loading),
+  .btn-success:not(:disabled):not(.btn-loading),
+  .btn-danger:not(:disabled):not(.btn-loading),
+  .btn-warning:not(:disabled):not(.btn-loading),
+  .btn-info:not(:disabled):not(.btn-loading),
+  .btn-login:not(:disabled),
+  .cita-modal-footer-btn:not(:disabled),
+  .recibo-export-btn,
+  .sop-btn:not(:disabled) {
+    transition:
+      transform var(--motion-fast) var(--motion-ease-out),
+      box-shadow var(--motion-fast) var(--motion-ease-out),
+      filter var(--motion-fast) var(--motion-ease-out),
+      background var(--motion-fast) var(--motion-ease-out),
+      border-color var(--motion-fast) var(--motion-ease-out) !important;
+  }
+
+  .btn-primary:not(:disabled):not(.btn-loading):hover,
+  .btn-secondary:not(:disabled):not(.btn-loading):hover,
+  .btn-success:not(:disabled):not(.btn-loading):hover,
+  .btn-danger:not(:disabled):not(.btn-loading):hover,
+  .btn-warning:not(:disabled):not(.btn-loading):hover,
+  .btn-info:not(:disabled):not(.btn-loading):hover,
+  .cita-modal-footer-btn:not(:disabled):hover,
+  .recibo-export-btn:hover,
+  .sop-btn:not(:disabled):hover {
+    transform: translateY(-1px);
+  }
+
+  button.cita-modal-icon-btn:not(:disabled):hover {
+    transition:
+      background var(--motion-fast) var(--motion-ease-out),
+      border-color var(--motion-fast) var(--motion-ease-out),
+      color var(--motion-fast) var(--motion-ease-out),
+      transform var(--motion-fast) var(--motion-ease-out) !important;
+    transform: translateY(-1px);
+  }
+
+  .ms-trigger {
+    transition:
+      border-color var(--motion-fast) var(--motion-ease-out),
+      box-shadow var(--motion-fast) var(--motion-ease-out),
+      background var(--motion-fast) var(--motion-ease-out) !important;
+  }
+}
+
+/* ── Fase 2: módulos y agenda ───────────────────────────────────────────────── */
+.view-module.innar-view-enter {
+  animation: innar-view-in var(--motion-normal) var(--motion-ease-out) both;
+}
+
+#agendaCalView.agenda-cal-view-enter {
+  animation: innar-agenda-cal-in var(--motion-slow) var(--motion-ease-out) both !important;
+}
+
+#agendaCalView.agenda-cal-view-exit {
+  animation: innar-agenda-cal-out var(--motion-fast) var(--motion-ease-in) both !important;
+}
+
+#agendaDayView.agenda-day-view-enter {
+  animation: innar-agenda-day-in var(--motion-slow) var(--motion-ease-out) both !important;
+}
+
+#agendaDayView.agenda-day-view-exit {
+  animation: innar-agenda-day-out var(--motion-fast) var(--motion-ease-in) both !important;
+}
+
+/* Highlight al cambiar ESTADO en tabla médica */
+#turnosTableMedica tr.turno-row.innar-row-updated,
+#turnosTableMedicaCompletados tr.turno-row.innar-row-updated {
+  animation: innar-row-flash 0.7s var(--motion-ease-out) both;
+}
+
+/* Turno #1 nuevo (más ligero que entradaPrimero legacy) */
+#turnosTableMedica tr.turno-row.animate-nuevo-primero {
+  animation:
+    innar-row-primero-in var(--motion-slow) var(--motion-ease-out) both,
+    innar-row-flash 0.85s var(--motion-ease-out) 0.12s both !important;
+}
+
+/* Stagger botones pie modal cita médica */
+.cita-modal-footer-actions.innar-footer-stagger-active .cita-modal-footer-btn:not([hidden]).innar-footer-stagger {
+  animation: innar-footer-stagger-in var(--motion-normal) var(--motion-ease-out) both;
+}
+
+/* ── Fase 3: View Transitions, badges críticos, Kanban electro ───────────────── */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: var(--motion-normal);
+  animation-timing-function: var(--motion-ease-out);
+}
+
+::view-transition-old(root) {
+  animation-name: innar-vt-fade-out;
+}
+
+::view-transition-new(root) {
+  animation-name: innar-vt-fade-in;
+}
+
+/* Kanban electro — entrada de tarjetas */
+.electro-kanban-body .electro-cita-card.innar-kanban-enter {
+  animation: innar-kanban-card-in var(--motion-normal) var(--motion-ease-out) both;
+}
+
+.electro-cita-card.innar-electro-updated:not(.innar-kanban-enter) {
+  animation:
+    innar-row-flash 0.75s var(--motion-ease-out) both,
+    innar-kanban-pop 0.45s var(--motion-ease-out) both;
+}
+
+/* Pulso solo en estados críticos (en estudio activo) */
+.electro-cita-card.innar-pulse-estudio:not(.electro-cita-card-done):not(.innar-kanban-enter) {
+  animation: innar-estudio-ring 2.8s var(--motion-ease-out) infinite;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .badge-siguiente::before {
+    animation: innar-dot-pulse-brand 2.2s ease-in-out infinite !important;
+  }
+
+  .badge-en-atencion::before {
+    animation: innar-dot-pulse-attention 2.2s ease-in-out infinite !important;
+  }
+
+  .badge-siguiente,
+  .badge-en-atencion {
+    animation: none !important;
+  }
+}
+
+/* ── Accesibilidad ──────────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-fast: 0.01ms;
+    --motion-normal: 0.01ms;
+    --motion-slow: 0.01ms;
+    --motion-toast-exit: 0.01ms;
+  }
+
+  .modal-overlay:not(.hidden),
+  .modal:not(.hidden),
+  .confirm-backdrop,
+  #toast-container .app-toast,
+  .app-loader-overlay,
+  .view-module.innar-view-enter,
+  #agendaCalView.agenda-cal-view-enter,
+  #agendaDayView.agenda-day-view-enter,
+  #turnosTableMedica tr.turno-row.innar-row-updated,
+  #turnosTableMedica tr.turno-row.animate-nuevo-primero,
+  .cita-modal-footer-actions .cita-modal-footer-btn.innar-footer-stagger,
+  .electro-kanban-body .electro-cita-card.innar-kanban-enter,
+  .electro-cita-card.innar-electro-updated,
+  .electro-cita-card.innar-pulse-estudio,
+  .badge-siguiente::before,
+  .badge-en-atencion::before {
+    animation: none !important;
+  }
+
+  .btn-primary:not(:disabled):hover,
+  .btn-secondary:not(:disabled):hover,
+  .cita-modal-footer-btn:not(:disabled):hover,
+  button.cita-modal-icon-btn:not(:disabled):hover {
+    transform: none !important;
+  }
+}

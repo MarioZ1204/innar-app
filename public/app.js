@@ -23,7 +23,10 @@ document.addEventListener('keydown', (e) => {
     const z = parseInt(getComputedStyle(m).zIndex) || 0;
     if (z >= maxZ) { maxZ = z; top = m; }
   });
-  if (top) top.classList.add('hidden');
+  if (top) {
+    if (typeof window.innarCloseModal === 'function') window.innarCloseModal(top);
+    else top.classList.add('hidden');
+  }
 });
 
 // ========== FUNCIÓN DE HASHING SHA512 ==========
@@ -376,10 +379,59 @@ function mostrarSaludoDoctor() {
 }
 
 // ========== LOGIN Y NAVEGACIÓN ==========
+let _innarPendingTurnoHighlightId = null;
+let _innarPendingElectroHighlightId = null;
+let _innarSkipNextKanbanEnter = false;
+
+function innarSkipKanbanEnterOnce() {
+  _innarSkipNextKanbanEnter = true;
+}
+
+function innarQueueTurnoHighlight(turnoId) {
+  if (turnoId != null && turnoId !== '') _innarPendingTurnoHighlightId = turnoId;
+}
+
+function innarQueueElectroHighlight(citaId) {
+  if (citaId != null && citaId !== '') _innarPendingElectroHighlightId = citaId;
+}
+
+function _innarFlushElectroHighlight() {
+  const id = _innarPendingElectroHighlightId;
+  _innarPendingElectroHighlightId = null;
+  if (id != null && typeof window.innarHighlightElectroCard === 'function') {
+    requestAnimationFrame(() => window.innarHighlightElectroCard(id));
+  }
+}
+
+function _innarFlushTurnoHighlight() {
+  const id = _innarPendingTurnoHighlightId;
+  _innarPendingTurnoHighlightId = null;
+  if (id != null && typeof window.innarHighlightTurnoRow === 'function') {
+    requestAnimationFrame(() => window.innarHighlightTurnoRow(id));
+  }
+}
+
 function showView(id) {
-  document.querySelectorAll('[id^="view-"]').forEach(v => v.classList.add('hidden'));
-  const el = document.getElementById(id);
-  if (el) el.classList.remove('hidden');
+  const apply = () => {
+    document.querySelectorAll('[id^="view-"]').forEach((v) => {
+      if (v.id === id) return;
+      v.classList.remove('innar-view-enter');
+      v.classList.add('hidden');
+    });
+    const el = document.getElementById(id);
+    if (el) el.classList.remove('hidden');
+  };
+  let usedViewTransition = false;
+  if (typeof window.innarRunViewSwitch === 'function') {
+    usedViewTransition = window.innarRunViewSwitch(apply);
+  } else {
+    apply();
+  }
+  if (!usedViewTransition) {
+    const el = document.getElementById(id);
+    if (el && typeof window.innarAnimateViewIn === 'function') window.innarAnimateViewIn(el);
+    else if (el) el.classList.add('innar-view-enter');
+  }
 }
 
 function updateSidebarUser(user) {
@@ -1432,7 +1484,8 @@ function showToast(msg, type = 'info', duration = 4000) {
 function _removeToast(toast) {
   if (!toast || toast.classList.contains('removing')) return;
   toast.classList.add('removing');
-  setTimeout(() => toast.remove(), 280);
+  const exitMs = typeof window.INNAR_TOAST_EXIT_MS === 'number' ? window.INNAR_TOAST_EXIT_MS : 220;
+  setTimeout(() => toast.remove(), exitMs);
 }
 
 // Botón con estado de carga
@@ -1561,9 +1614,20 @@ function showConfirm(msg, onOk, { okText = 'Eliminar', cancelText = 'Cancelar', 
       </div>
     </div>`;
   document.body.appendChild(backdrop);
-  backdrop.querySelector('.btn-cancel').addEventListener('click', () => backdrop.remove());
-  backdrop.querySelector('.btn-ok').addEventListener('click', () => { backdrop.remove(); onOk(); });
-  backdrop.addEventListener('click', e => { if (e.target === backdrop) backdrop.remove(); });
+  const closeConfirm = () => {
+    if (typeof window.innarCloseConfirm === 'function') window.innarCloseConfirm(backdrop);
+    else backdrop.remove();
+  };
+  backdrop.querySelector('.btn-cancel').addEventListener('click', closeConfirm);
+  backdrop.querySelector('.btn-ok').addEventListener('click', () => {
+    if (typeof window.innarCloseConfirm === 'function') {
+      window.innarCloseConfirm(backdrop, onOk);
+    } else {
+      backdrop.remove();
+      onOk();
+    }
+  });
+  backdrop.addEventListener('click', e => { if (e.target === backdrop) closeConfirm(); });
 }
 
 function showPrompt(msg, onOk, { okText = 'Confirmar', cancelText = 'Cancelar', danger = true, icon = '⚠️', placeholder = '' } = {}) {
@@ -1582,13 +1646,22 @@ function showPrompt(msg, onOk, { okText = 'Confirmar', cancelText = 'Cancelar', 
   document.body.appendChild(backdrop);
   const input = backdrop.querySelector('.prompt-input');
   input.focus();
-  backdrop.querySelector('.btn-cancel').addEventListener('click', () => backdrop.remove());
+  const closePrompt = () => {
+    if (typeof window.innarCloseConfirm === 'function') window.innarCloseConfirm(backdrop);
+    else backdrop.remove();
+  };
+  backdrop.querySelector('.btn-cancel').addEventListener('click', closePrompt);
   backdrop.querySelector('.btn-ok').addEventListener('click', () => {
     const val = input.value.trim();
     if (!val) { input.style.borderColor = '#ef4444'; input.focus(); return; }
-    backdrop.remove(); onOk(val);
+    if (typeof window.innarCloseConfirm === 'function') {
+      window.innarCloseConfirm(backdrop, () => onOk(val));
+    } else {
+      backdrop.remove();
+      onOk(val);
+    }
   });
-  backdrop.addEventListener('click', e => { if (e.target === backdrop) backdrop.remove(); });
+  backdrop.addEventListener('click', e => { if (e.target === backdrop) closePrompt(); });
 }
 
 // ========== SKELETON ROWS ==========
@@ -2659,6 +2732,12 @@ function renderCitasElectroKanban(citas) {
   setCount('electroKanbanCountPendientes', counts.pendientes);
   setCount('electroKanbanCountActivos', counts.activos);
   setCount('electroKanbanCountCompletados', counts.completados);
+  const skipKanbanEnter = _innarSkipNextKanbanEnter;
+  _innarSkipNextKanbanEnter = false;
+  if (!skipKanbanEnter && typeof window.innarAnimateKanbanCards === 'function') {
+    requestAnimationFrame(() => window.innarAnimateKanbanCards());
+  }
+  _innarFlushElectroHighlight();
 }
 
 function invalidarCacheEntidades() {
@@ -4051,6 +4130,7 @@ async function cargarTurnosMedica() {
   const tbodyCompletados = $('turnosTableBodyMedicaCompletados');
   const mismoContextoUltimaVista = _medicaUltimaKeyAgenda === agendaKeyMedica;
   if (!mismoContextoUltimaVista) {
+    if (typeof window.innarMotionPause === 'function') window.innarMotionPause(380);
     showSkeletonRows(tbodyActivos, 8, 6);
     if (tbodyCompletados) showSkeletonRows(tbodyCompletados, 9, 4);
   }
@@ -4133,6 +4213,7 @@ async function cargarTurnosMedica() {
     adjustColumnsForRole();
     _applySlotVacioVisibility();
     _medicaUltimaKeyAgenda = agendaKeyMedica;
+    _innarFlushTurnoHighlight();
   } catch (e) {
     showToast('Error cargando citas', 'error');
   } finally {
@@ -6446,6 +6527,7 @@ async function cargarCitasElectro() {
     showToast('Selecciona una fecha', 'error');
     return;
   }
+  if (typeof window.innarMotionPause === 'function') window.innarMotionPause(420);
   showElectroKanbanLoading();
   try {
     const res = await apiFetch(`/api/citas-electro?fecha=${encodeURIComponent(fecha)}&_t=${Date.now()}`, {
@@ -6548,6 +6630,7 @@ function renderCitaElectroCard(container, c) {
     'No Asisti\u00f3': 'estado-no-asistio'
   };
   if (estadoClasses[estado]) card.classList.add(estadoClasses[estado]);
+  if (estado === 'En Estudio') card.classList.add('innar-pulse-estudio');
   const equipoDisplay = c.equipo_nombre ? escapeHtml(c.equipo_nombre) : (c.equipo_id ? 'Equipo ' + c.equipo_id : '\u2014');
   const estudioCorto = abreviarEstudio(c.estudio);
   let duracionTxt = '';
@@ -10695,6 +10778,7 @@ function actualizarEstadoFilaTablaElectro(citaId, nuevoEstado) {
   const idx = data.findIndex((c) => String(c.id) === idStr);
   if (idx < 0) return;
   data[idx] = { ...data[idx], estado: normalizarEstadoElectro(nuevoEstado) };
+  innarQueueElectroHighlight(citaId);
   renderCitasElectroKanban(data);
   if (window._citasElectroAllData) actualizarStatsElectro(window._citasElectroAllData);
 }
@@ -10768,6 +10852,7 @@ async function cambiarEstadoCita(nuevoEstado, triggerBtn = null) {
       if (window.socket && window.socket.connected) {
         window.socket.emit('electro:cambios-guardados', { id: citaElectroSeleccionada.id, cambios: { estado: estadoPersistido } });
       }
+      innarSkipKanbanEnterOnce();
       await cargarCitasElectro();
     } else {
       showToast(data?.error || 'Error actualizando estado', 'error');
@@ -11301,11 +11386,18 @@ function abrirModalEstadoCitaMedica(turno) {
   if (editTipoWrap) editTipoWrap.style.display = 'none';
 
   // Mostrar modal
-  $('modalEstadoCitaMedica').classList.remove('hidden');
+  const modal = $('modalEstadoCitaMedica');
+  if (typeof window.innarOpenModal === 'function') window.innarOpenModal(modal);
+  else modal?.classList.remove('hidden');
+  if (typeof window.innarStaggerModalFooter === 'function') {
+    requestAnimationFrame(() => window.innarStaggerModalFooter(modal));
+  }
 }
 
 function cerrarModalEstadoCitaMedica() {
-  $('modalEstadoCitaMedica').classList.add('hidden');
+  const modal = $('modalEstadoCitaMedica');
+  if (typeof window.innarCloseModal === 'function') window.innarCloseModal(modal);
+  else modal?.classList.add('hidden');
   // NO limpiar currentTurnoMedicaData ni currentEstadoAction aquí 
   // Se necesitan para el modal de confirmación
   // currentTurnoMedicaData = null;
@@ -11336,7 +11428,12 @@ $('btnEstadoEnSala')?.addEventListener('click', async (e) => {
       body: JSON.stringify({ estado: 'EN_SALA' })
     });
     const data = await res.json();
-    if (data.ok) { showToast('Paciente marcado como En Sala', 'success'); cerrarModalEstadoCitaMedica(); cargarTurnosMedica(); }
+    if (data.ok) {
+      showToast('Paciente marcado como En Sala', 'success');
+      innarQueueTurnoHighlight(currentTurnoMedicaData.id);
+      cerrarModalEstadoCitaMedica();
+      cargarTurnosMedica();
+    }
     else showToast(data.error || 'Error al actualizar', 'error');
   } catch (err) { showToast('Error al actualizar estado', 'error'); console.error(err); }
 });
@@ -11370,7 +11467,12 @@ $('btnModalEnAtencion')?.addEventListener('click', async (e) => {
       body: JSON.stringify({ estado: 'EN_ATENCION' })
     });
     const data = await res.json();
-    if (data.ok) { showToast('Paciente en atención: ' + nombrePaciente, 'success'); cerrarModalEstadoCitaMedica(); cargarTurnosMedica(); }
+    if (data.ok) {
+      showToast('Paciente en atención: ' + nombrePaciente, 'success');
+      innarQueueTurnoHighlight(currentTurnoMedicaData.id);
+      cerrarModalEstadoCitaMedica();
+      cargarTurnosMedica();
+    }
     else showToast(data.error || 'Error al actualizar', 'error');
   } catch (err) { showToast('Error al actualizar estado', 'error'); console.error(err); }
 });
@@ -11391,7 +11493,12 @@ $('btnModalAtendido')?.addEventListener('click', async (e) => {
           body: JSON.stringify({ estado: 'ATENDIDO' })
         });
     const data = await res.json();
-    if (data.ok) { showToast('Paciente marcado como atendido', 'success'); cerrarModalEstadoCitaMedica(); cargarTurnosMedica(); }
+    if (data.ok) {
+      showToast('Paciente marcado como atendido', 'success');
+      innarQueueTurnoHighlight(currentTurnoMedicaData.id);
+      cerrarModalEstadoCitaMedica();
+      cargarTurnosMedica();
+    }
     else showToast(data.error || 'Error al actualizar', 'error');
   } catch (err) { showToast('Error al actualizar estado', 'error'); console.error(err); }
 });
