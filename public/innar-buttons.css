@@ -32,8 +32,7 @@
 .sop-btn-primary,
 .sop-btn-ghost,
 .sop-btn-teal,
-.sop-btn-sm,
-.cita-modal-footer-btn {
+.sop-btn-sm {
   display: inline-flex !important;
   align-items: center;
   justify-content: center;
@@ -450,6 +449,17 @@ button:disabled {
 
 /* Botones de acción en pie del modal — colores semánticos */
 .cita-modal-footer-actions .cita-modal-footer-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border-radius: var(--btn-radius);
+  font-size: 0.88rem;
+  font-weight: var(--btn-font-weight);
+  line-height: 1.25;
+  cursor: pointer;
+  box-sizing: border-box;
   min-width: 120px !important;
   border: 0 !important;
   color: #fff !important;
@@ -466,6 +476,10 @@ button:disabled {
   opacity: 0.5 !important;
   cursor: not-allowed !important;
   filter: none !important;
+}
+
+.cita-modal-footer-actions .cita-modal-footer-btn[hidden] {
+  display: none !important;
 }
 
 .cita-modal-btn-teal {

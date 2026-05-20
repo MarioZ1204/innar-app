@@ -217,12 +217,13 @@ function agendaMedicaPolicy(turno, opts = {}) {
     // Edición de datos dentro del modal
     bloquearEdicion: esDoctorRol && esEnAtencion,
 
-    // Footer
-    // RECEPCIÓN/ADMIN:
-    // - PENDIENTE -> EN SALA, NO ASISTIO
-    // - EN_SALA   -> LLAMAR, EN_ATENCION, ATENDIDO
-    // - EN_ATENCION -> ATENDIDO
+    // Footer (visibilidad estricta por ESTADO)
+    // PENDIENTE: recordatorio, en sala, no asistió, reprogramar
+    // EN_SALA: llamar paciente, en atención
+    // EN_ATENCION: atendido
+    showRecordatorio: esPendiente,
     showEnSala: puedeGestionarComoRecepcion && esPendiente,
+    showReprogramar: puedeGestionarComoRecepcion && (esPendiente || estado === 'NO_ASISTIO'),
     showReprogramarNoAsistio: puedeGestionarComoRecepcion && estado === 'NO_ASISTIO',
 
     // LLAMAR solo cuando está EN_SALA (doctor o recepción con permisos)
@@ -241,12 +242,10 @@ function agendaMedicaPolicy(turno, opts = {}) {
     ),
     enAtencionDisabled: esFinal || esEnAtencion,
 
-    // ATENDIDO:
-    // - Doctor: solo cuando está EN_ATENCION
-    // - Recepción/Admin: cuando está EN_SALA o EN_ATENCION
-    showAtendido: !esFinal && (
-      (esDoctorRol && perms.marcarAtendido && esEnAtencion) ||
-      (puedeGestionarComoRecepcion && (esEnSala || esEnAtencion))
+    // ATENDIDO: solo cuando está EN_ATENCION
+    showAtendido: !esFinal && esEnAtencion && (
+      (esDoctorRol && perms.marcarAtendido) ||
+      puedeGestionarComoRecepcion
     ),
     atendidoDisabled: esFinal || (!esEnAtencion && !puedeGestionarComoRecepcion),
 
@@ -11225,8 +11224,8 @@ function abrirModalEstadoCitaMedica(turno) {
   const btnRecordatorio = el('btnEnviarRecordatorioMedica');
   if (btnRecordatorio) {
     const especialidadActual = selectedDoctorEspecialidad || currentUser?.especialidad || '';
-    const visible = esEspecialidadRecordatorio(especialidadActual);
-    btnRecordatorio.style.display = visible ? '' : 'none';
+    const visible = pol.modal.showRecordatorio && esEspecialidadRecordatorio(especialidadActual);
+    btnRecordatorio.hidden = !visible;
     btnRecordatorio.disabled = !visible;
     btnRecordatorio.onclick = () => enviarRecordatorioWhatsAppMedica(currentTurnoMedicaData);
   }
@@ -11242,50 +11241,44 @@ function abrirModalEstadoCitaMedica(turno) {
   }
 
   // --- RESET footer para evitar estados residuales ---
-  const footerBtnIds = [
-    'btnEstadoEnSala',
-    'btnModalLlamarPaciente',
-    'btnModalEnAtencion',
-    'btnModalAtendido',
-    'btnModalNoAsistio',
-    'btnModalReprogramarNoAsistio',
-  ];
-  footerBtnIds.forEach((id) => {
+  const setFooterBtnVisible = (id, visible) => {
     const b = el(id);
-    if (b) b.style.display = 'none';
-  });
+    if (!b) return;
+    b.hidden = !visible;
+    if (visible) b.style.removeProperty('display');
+  };
 
-  // --- BOTONES FOOTER (desde política) ---
-  const btnEnSala = el('btnEstadoEnSala');
-  if (btnEnSala) btnEnSala.style.display = pol.modal.showEnSala ? '' : 'none';
-
-  const btnReprogramarNA = el('btnModalReprogramarNoAsistio');
-  if (btnReprogramarNA) btnReprogramarNA.style.display = pol.modal.showReprogramarNoAsistio ? '' : 'none';
+  // --- BOTONES FOOTER (desde política / columna ESTADO) ---
+  setFooterBtnVisible('btnEstadoEnSala', pol.modal.showEnSala);
+  setFooterBtnVisible(
+    'btnModalReprogramarNoAsistio',
+    pol.modal.showReprogramar || pol.modal.showReprogramarNoAsistio
+  );
 
   const btnLlamarMod = el('btnModalLlamarPaciente');
   if (btnLlamarMod) {
-    btnLlamarMod.style.display = pol.modal.showLlamar ? '' : 'none';
+    btnLlamarMod.hidden = !pol.modal.showLlamar;
     btnLlamarMod.disabled = pol.modal.llamarDisabled;
     btnLlamarMod.style.opacity = btnLlamarMod.disabled ? '0.4' : '';
   }
 
   const btnEnAtencionMod = el('btnModalEnAtencion');
   if (btnEnAtencionMod) {
-    btnEnAtencionMod.style.display = pol.modal.showEnAtencion ? '' : 'none';
+    btnEnAtencionMod.hidden = !pol.modal.showEnAtencion;
     btnEnAtencionMod.disabled = pol.modal.enAtencionDisabled;
     btnEnAtencionMod.style.opacity = btnEnAtencionMod.disabled ? '0.4' : '';
   }
 
   const btnAtendidoMod = el('btnModalAtendido');
   if (btnAtendidoMod) {
-    btnAtendidoMod.style.display = pol.modal.showAtendido ? '' : 'none';
+    btnAtendidoMod.hidden = !pol.modal.showAtendido;
     btnAtendidoMod.disabled = pol.modal.atendidoDisabled;
     btnAtendidoMod.style.opacity = btnAtendidoMod.disabled ? '0.4' : '';
   }
 
   const btnNoAsistioMod = el('btnModalNoAsistio');
   if (btnNoAsistioMod) {
-    btnNoAsistioMod.style.display = pol.modal.showNoAsistio ? '' : 'none';
+    btnNoAsistioMod.hidden = !pol.modal.showNoAsistio;
     btnNoAsistioMod.disabled = pol.modal.noAsistioDisabled;
     btnNoAsistioMod.style.opacity = btnNoAsistioMod.disabled ? '0.4' : '';
   }
