@@ -1,0 +1,338 @@
+/**
+ * Innar — Tema visual unificado (colores marca, simetría, superficies)
+ * Sobrescribe fragmentos legacy (p. ej. morado en monitor) hacia paleta --c-*.
+ */
+
+:root {
+  --innar-accent: var(--c-dark);
+  --innar-accent-hover: var(--c-darker);
+  --innar-accent-soft: #e8f0ef;
+  --innar-accent-border: #b8ccc8;
+  --innar-surface: #ffffff;
+  --innar-surface-muted: #f4f7f6;
+  --innar-page-bg: linear-gradient(145deg, #f6f8f7 0%, #eef2f1 50%, #e8eeec 100%);
+  --innar-border: #e2e8e7;
+  --innar-border-strong: #cbd5d3;
+  --innar-text: #0f172a;
+  --innar-text-muted: #64748b;
+  --innar-radius: 12px;
+  --innar-radius-lg: 16px;
+  --innar-control-h: 44px;
+  --innar-shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.06);
+  --innar-shadow-md: 0 4px 20px rgba(15, 23, 42, 0.08);
+  --innar-focus-ring: 0 0 0 3px rgba(138, 166, 161, 0.35);
+}
+
+/* ── Formularios globales ─────────────────────────────────────────────────── */
+.form-input,
+input[type="text"],
+input[type="password"],
+input[type="number"],
+input[type="date"],
+input[type="time"],
+input[type="search"],
+input[type="email"],
+select,
+textarea {
+  border: 2px solid var(--innar-border) !important;
+  border-radius: var(--innar-radius) !important;
+  transition: border-color 0.15s, box-shadow 0.15s !important;
+}
+
+.form-input:focus,
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none !important;
+  border-color: var(--c-primary) !important;
+  box-shadow: var(--innar-focus-ring) !important;
+}
+
+/* ── Módulos con fondo ────────────────────────────────────────────────────── */
+.view-module::before {
+  opacity: 0.35;
+}
+
+.sop-shell,
+.meq-fullpage {
+  background: var(--innar-page-bg) !important;
+}
+
+/* ── Menú principal — tarjetas coherentes con marca ───────────────────────── */
+.menu-card[data-module="monitor-equipos"] {
+  --mc: var(--c-mid) !important;
+}
+
+.menu-card[data-module="reportes-pdx"] {
+  --mc: #4a6fa5 !important;
+}
+
+.menu-card[data-module="armado-soportes"] {
+  --mc: var(--c-dark) !important;
+}
+
+.menu-card {
+  border-radius: var(--innar-radius-lg) !important;
+  box-shadow: var(--innar-shadow-md) !important;
+}
+
+.menu-card:hover {
+  box-shadow: 0 10px 32px rgba(45, 74, 71, 0.18) !important;
+}
+
+/* ── Sidebar ──────────────────────────────────────────────────────────────── */
+.sidebar-btn.active,
+.agenda-page-btn.active,
+.electro-page-btn.active {
+  background: rgba(255, 255, 255, 0.14) !important;
+  box-shadow: inset 3px 0 0 var(--c-primary) !important;
+}
+
+/* ── Monitor de equipos (paleta marca, barra fecha simétrica) ─────────────── */
+.menu-card[data-module="monitor-equipos"] {
+  --mc: var(--c-dark);
+}
+
+.meq-topbar-title {
+  color: var(--innar-text) !important;
+}
+
+#monitorLastUpdate {
+  color: var(--innar-text-muted) !important;
+}
+
+.meq-date-bar {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  flex-wrap: wrap !important;
+  gap: 12px !important;
+  padding: 14px 20px !important;
+  margin-bottom: 20px !important;
+  background: var(--innar-surface) !important;
+  border: 1px solid var(--innar-border) !important;
+  border-radius: var(--innar-radius-lg) !important;
+  box-shadow: var(--innar-shadow-md) !important;
+}
+
+.meq-date-center {
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  flex-wrap: nowrap !important;
+}
+
+.meq-date-nav,
+.meq-refresh-btn,
+#monitorDatePrev,
+#monitorDateNext,
+#btnRefreshMonitor {
+  width: var(--innar-control-h) !important;
+  height: var(--innar-control-h) !important;
+  min-width: var(--innar-control-h) !important;
+  min-height: var(--innar-control-h) !important;
+  padding: 0 !important;
+  border-radius: var(--innar-radius) !important;
+  border: 2px solid var(--innar-accent-border) !important;
+  background: var(--innar-accent-soft) !important;
+  color: var(--innar-accent) !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+  box-shadow: var(--innar-shadow-sm) !important;
+  transition: background 0.15s, border-color 0.15s, color 0.15s, transform 0.12s, box-shadow 0.15s !important;
+  flex-shrink: 0 !important;
+}
+
+.meq-date-nav:hover,
+.meq-refresh-btn:hover,
+#monitorDatePrev:hover,
+#monitorDateNext:hover,
+#btnRefreshMonitor:hover {
+  background: var(--innar-accent) !important;
+  border-color: var(--innar-accent) !important;
+  color: #fff !important;
+  box-shadow: 0 4px 14px rgba(45, 74, 71, 0.28) !important;
+  transform: scale(1.04);
+}
+
+.meq-date-nav:hover svg,
+.meq-refresh-btn:hover svg {
+  stroke: #fff !important;
+}
+
+.meq-refresh-btn:hover {
+  transform: rotate(90deg) scale(1.04) !important;
+}
+
+.meq-date-nav svg,
+.meq-refresh-btn svg {
+  width: 22px !important;
+  height: 22px !important;
+  stroke: currentColor !important;
+  display: block !important;
+}
+
+.meq-date-input {
+  height: var(--innar-control-h) !important;
+  min-height: var(--innar-control-h) !important;
+  padding: 0 16px !important;
+  font-size: 0.9rem !important;
+  font-weight: 600 !important;
+  color: var(--innar-text) !important;
+  border: 2px solid var(--innar-border) !important;
+  border-radius: var(--innar-radius) !important;
+  background: var(--innar-surface) !important;
+  min-width: 168px !important;
+  box-sizing: border-box !important;
+}
+
+.meq-date-input:focus {
+  border-color: var(--c-primary) !important;
+  box-shadow: var(--innar-focus-ring) !important;
+}
+
+.meq-date-label {
+  height: var(--innar-control-h) !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  padding: 0 14px !important;
+  font-size: 0.8rem !important;
+  font-weight: 700 !important;
+  color: var(--innar-accent) !important;
+  background: var(--innar-accent-soft) !important;
+  border: 1px solid var(--innar-accent-border) !important;
+  border-radius: 999px !important;
+  box-sizing: border-box !important;
+}
+
+.meq-date-hoy,
+#monitorDateHoy {
+  height: var(--innar-control-h) !important;
+  min-height: var(--innar-control-h) !important;
+  padding: 0 20px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-size: 0.88rem !important;
+  font-weight: 700 !important;
+  color: var(--innar-accent) !important;
+  background: var(--innar-surface) !important;
+  border: 2px solid var(--innar-accent-border) !important;
+  border-radius: var(--innar-radius) !important;
+  cursor: pointer !important;
+  box-shadow: var(--innar-shadow-sm) !important;
+  transition: background 0.15s, color 0.15s, border-color 0.15s !important;
+  white-space: nowrap !important;
+  box-sizing: border-box !important;
+}
+
+.meq-date-hoy:hover,
+#monitorDateHoy:hover {
+  background: var(--innar-accent) !important;
+  border-color: var(--innar-accent) !important;
+  color: #fff !important;
+}
+
+.meq-stat-chip {
+  border-radius: var(--innar-radius) !important;
+  border-color: var(--innar-border) !important;
+}
+
+.meq-sc-total svg { color: var(--c-primary); }
+.meq-sc-activo svg { color: var(--c-success); }
+.meq-sc-ocupado svg { color: var(--c-warning); }
+.meq-sc-completado svg { color: var(--c-success); }
+.meq-sc-libre svg { color: #4a6fa5; }
+.meq-sc-inactivo svg { color: var(--innar-text-muted); }
+
+/* Estudios monitor: acentos alineados a marca (menos morado) */
+.meq-st-reservado .meq-eq-icon {
+  background: var(--innar-accent-soft) !important;
+  color: var(--innar-accent) !important;
+  box-shadow: 0 0 0 3px rgba(138, 166, 161, 0.15) !important;
+}
+
+.meq-study-label.meq-sl-hist,
+.meq-time-pill.meq-tp-hist {
+  color: var(--c-mid) !important;
+}
+
+.meq-time-pill.meq-tp-hist {
+  background: var(--innar-accent-soft) !important;
+}
+
+/* ── Calendario (agenda) — nav coherente ──────────────────────────────────── */
+.ccal-nav-btn,
+.cal-nav-btn {
+  width: 40px !important;
+  height: 40px !important;
+  border: 2px solid var(--innar-border) !important;
+  background: var(--innar-surface) !important;
+  color: var(--innar-accent) !important;
+  border-radius: var(--innar-radius) !important;
+}
+
+.ccal-nav-btn:hover,
+.cal-nav-btn:hover {
+  background: var(--innar-accent-soft) !important;
+  border-color: var(--c-primary) !important;
+}
+
+/* ── Modales ──────────────────────────────────────────────────────────────── */
+.modal-box {
+  border-radius: var(--innar-radius-lg) !important;
+  box-shadow: 0 24px 64px rgba(15, 23, 42, 0.18) !important;
+  border: 1px solid var(--innar-border) !important;
+}
+
+/* ── Tablas ───────────────────────────────────────────────────────────────── */
+table thead th {
+  background: var(--innar-surface-muted) !important;
+  color: var(--innar-text-muted) !important;
+  font-weight: 600 !important;
+}
+
+table tbody tr:hover td {
+  background: #fafcfb !important;
+}
+
+/* ── Soportes — alinear con tema ──────────────────────────────────────────── */
+.sop-topbar {
+  border-bottom-color: var(--innar-border) !important;
+}
+
+.sop-panel {
+  border-color: var(--innar-border) !important;
+  box-shadow: var(--innar-shadow-md) !important;
+}
+
+.sop-pdx-theme .sop-btn-primary {
+  background: linear-gradient(135deg, var(--c-dark), var(--c-darker)) !important;
+}
+
+.sop-arm-theme .sop-btn-teal {
+  background: linear-gradient(135deg, var(--c-mid), var(--c-dark)) !important;
+}
+
+/* ── Login ────────────────────────────────────────────────────────────────── */
+.login-box {
+  border-radius: var(--innar-radius-lg) !important;
+  box-shadow: var(--innar-shadow-md) !important;
+}
+
+/* Electro estado pausado — marca en lugar de morado */
+.electro-cita-card.estado-pausado {
+  border-left-color: var(--c-mid) !important;
+}
+
+@media (max-width: 640px) {
+  .meq-date-bar {
+    padding: 12px !important;
+    gap: 10px !important;
+  }
+  .meq-date-input {
+    min-width: 140px !important;
+  }
+}

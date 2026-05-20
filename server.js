@@ -229,6 +229,7 @@ app.use('/api', require('./routes/electro'));
 app.use('/api', require('./routes/recibos'));
 app.use('/api', require('./routes/pdf'));
 app.use('/api', require('./routes/admin'));
+app.use('/api', require('./routes/soportes'));
 
 const PORT = process.env.PORT || 3000;
 

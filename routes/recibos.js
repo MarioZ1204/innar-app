@@ -675,7 +675,7 @@ router.get('/recibos/:id/pdf', requireAuth, requireRoleOrPerm(['superadmin', 'ad
   <div class="company-info">
     <h1>INSTITUTO NEUROCIENCIAS</h1>
     <p><strong>NIT:</strong> 901164565-1</p>
-    <p><strong>Dirección:</strong> Carrera 34 #13-80. B/San Ignacio</p>
+    <p><strong>Dirección:</strong> Calle 14A #34-13, Barrio San Ignacio, Pasto, Nariño</p>
     <p><strong>Teléfono:</strong> 305-356-0651 &nbsp;|&nbsp; <strong>Ciudad:</strong> Pasto, Colombia</p>
   </div>
   <div class="receipt-number">Recibo N° ${escapeHtml(row.numero)}</div>

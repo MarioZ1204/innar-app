@@ -11,6 +11,7 @@
 
 - [`SYSTEM-ARCHITECTURE.md`](SYSTEM-ARCHITECTURE.md) — diseño general del sistema.
 - [`FRONTEND-REFACTOR.md`](FRONTEND-REFACTOR.md) — plan de modularización del frontend.
+- [`ESPECIFICACION-SOPORTES-RADICACION.md`](ESPECIFICACION-SOPORTES-RADICACION.md) — módulos Reportes PDX y Armado de soportes (facturación).
 
 ## Calidad y seguridad
 

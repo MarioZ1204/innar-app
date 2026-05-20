@@ -1,0 +1,391 @@
+/**
+ * Innar — Sistema de botones unificado (diseño moderno v1.4)
+ * Carga después de style.css para sobrescribir variantes legacy.
+ */
+
+:root {
+  --btn-radius: 10px;
+  --btn-radius-sm: 8px;
+  --btn-font-weight: 600;
+  --btn-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
+  --btn-shadow-hover: 0 6px 18px rgba(15, 23, 42, 0.12);
+}
+
+/* ── Base compartida (acciones estándar) ─────────────────────────────────── */
+.btn-primary,
+.btn-secondary,
+.btn-success,
+.btn-danger,
+.btn-warning,
+.btn-info,
+.btn-login,
+.btn-logout,
+.btn-ok,
+.btn-cancel,
+.confirm-actions .btn-ok,
+.confirm-actions .btn-cancel,
+.cita-modal-action-btn,
+.btn-dropdown-item,
+.recibo-export-btn,
+.session-expired-toast-btn,
+.sop-btn,
+.sop-btn-primary,
+.sop-btn-ghost,
+.sop-btn-teal,
+.sop-btn-sm {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 18px !important;
+  border-radius: var(--btn-radius) !important;
+  font-size: 0.88rem !important;
+  font-weight: var(--btn-font-weight) !important;
+  line-height: 1.25 !important;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  border: none;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: transform 0.12s ease, box-shadow 0.18s ease, background 0.18s ease, border-color 0.18s ease, color 0.18s ease !important;
+  box-sizing: border-box;
+}
+
+.btn-primary:active,
+.btn-secondary:active,
+.btn-success:active,
+.btn-danger:active,
+.btn-warning:active,
+.btn-info:active,
+.sop-btn:active {
+  transform: scale(0.98);
+}
+
+.btn-primary:disabled,
+.btn-secondary:disabled,
+.btn-success:disabled,
+.btn-danger:disabled,
+.btn-warning:disabled,
+.btn-info:disabled,
+button:disabled {
+  opacity: 0.55 !important;
+  cursor: not-allowed !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+/* Tamaño pequeño */
+.btn-sm,
+.sop-btn-sm {
+  padding: 7px 14px !important;
+  font-size: 0.8rem !important;
+  border-radius: var(--btn-radius-sm) !important;
+}
+
+/* ── Primario (marca Innar) ─────────────────────────────────────────────── */
+.btn-primary,
+.btn-ok:not(.danger),
+.confirm-actions .btn-ok:not(.danger),
+.sop-btn-primary {
+  background: linear-gradient(135deg, var(--c-dark) 0%, var(--c-darker) 100%) !important;
+  color: #fff !important;
+  border: 0 !important;
+  box-shadow: 0 4px 14px rgba(45, 74, 71, 0.35) !important;
+}
+
+.btn-primary:hover,
+.btn-ok:not(.danger):hover,
+.confirm-actions .btn-ok:not(.danger):hover,
+.sop-btn-primary:hover {
+  background: linear-gradient(135deg, var(--c-darker) 0%, #152a28 100%) !important;
+  box-shadow: 0 6px 20px rgba(45, 74, 71, 0.45) !important;
+}
+
+/* ── Secundario / ghost ─────────────────────────────────────────────────── */
+.btn-secondary,
+.btn-cancel,
+.confirm-actions .btn-cancel,
+.sop-btn-ghost {
+  background: #fff !important;
+  color: #334155 !important;
+  border: 2px solid #e2e8f0 !important;
+  box-shadow: var(--btn-shadow) !important;
+}
+
+.btn-secondary:hover,
+.btn-cancel:hover,
+.confirm-actions .btn-cancel:hover,
+.sop-btn-ghost:hover {
+  background: #f8fafc !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+  box-shadow: var(--btn-shadow-hover) !important;
+}
+
+/* ── Semánticos ─────────────────────────────────────────────────────────── */
+.btn-success {
+  background: linear-gradient(135deg, var(--c-success) 0%, var(--c-success-dark) 100%) !important;
+  color: #fff !important;
+  box-shadow: 0 4px 14px rgba(5, 150, 105, 0.35) !important;
+}
+
+.btn-success:hover {
+  box-shadow: 0 6px 20px rgba(5, 150, 105, 0.45) !important;
+}
+
+.btn-danger,
+.btn-ok.danger,
+.confirm-actions .btn-ok.danger {
+  background: linear-gradient(135deg, var(--c-danger) 0%, var(--c-danger-dark) 100%) !important;
+  color: #fff !important;
+  box-shadow: 0 4px 14px rgba(220, 38, 38, 0.35) !important;
+}
+
+.btn-danger:hover,
+.btn-ok.danger:hover {
+  box-shadow: 0 6px 20px rgba(220, 38, 38, 0.45) !important;
+}
+
+.btn-warning {
+  background: linear-gradient(135deg, var(--c-warning) 0%, var(--c-warning-dark) 100%) !important;
+  color: #1f2937 !important;
+  box-shadow: 0 4px 14px rgba(245, 158, 11, 0.35) !important;
+}
+
+.btn-warning:hover {
+  box-shadow: 0 6px 20px rgba(245, 158, 11, 0.45) !important;
+}
+
+.btn-info,
+.sop-btn-teal {
+  background: linear-gradient(135deg, var(--c-info) 0%, var(--c-info-hover) 100%) !important;
+  color: #fff !important;
+  box-shadow: 0 4px 14px rgba(3, 105, 161, 0.35) !important;
+}
+
+.btn-info:hover,
+.sop-btn-teal:hover {
+  box-shadow: 0 6px 20px rgba(3, 105, 161, 0.45) !important;
+}
+
+/* Teal armado soportes */
+.sop-btn-teal {
+  background: linear-gradient(135deg, #0d9488 0%, #0f766e 100%) !important;
+  box-shadow: 0 4px 14px rgba(13, 148, 136, 0.35) !important;
+}
+
+.sop-btn-teal:hover {
+  box-shadow: 0 6px 20px rgba(13, 148, 136, 0.45) !important;
+}
+
+/* ── Login / menú superior ────────────────────────────────────────────────── */
+.btn-login {
+  width: 100%;
+  padding: 13px 18px !important;
+  font-size: 1rem !important;
+  background: linear-gradient(135deg, var(--c-dark) 0%, var(--c-darker) 100%) !important;
+  color: #fff !important;
+  box-shadow: 0 6px 20px rgba(45, 74, 71, 0.4) !important;
+  border-radius: 12px !important;
+}
+
+.btn-login:hover {
+  box-shadow: 0 8px 24px rgba(45, 74, 71, 0.5) !important;
+}
+
+.btn-logout {
+  padding: 8px 16px !important;
+  background: #fff !important;
+  color: #475569 !important;
+  border: 2px solid #e2e8f0 !important;
+  box-shadow: var(--btn-shadow) !important;
+}
+
+.btn-logout:hover {
+  background: #f8fafc !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+
+/* ── Volver (sidebar) ───────────────────────────────────────────────────── */
+.btn-volver {
+  border-radius: var(--btn-radius) !important;
+  font-weight: var(--btn-font-weight) !important;
+  transition: background 0.15s, box-shadow 0.15s, color 0.15s !important;
+}
+
+.btn-volver:hover {
+  background: rgba(255, 255, 255, 0.14) !important;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08) !important;
+}
+
+/* ── Exportar recibos ─────────────────────────────────────────────────────── */
+.recibo-export-btn {
+  padding: 9px 16px !important;
+  background: #fff !important;
+  color: var(--c-dark) !important;
+  border: 2px solid #d1d5db !important;
+  font-weight: 600 !important;
+}
+
+.recibo-export-btn:hover {
+  border-color: var(--c-primary) !important;
+  background: #f0f9f7 !important;
+  box-shadow: 0 4px 12px rgba(138, 166, 161, 0.25) !important;
+}
+
+.recibo-export-excel:hover {
+  border-color: #16a34a !important;
+  background: #f0fdf4 !important;
+}
+
+.recibo-export-pdf:hover {
+  border-color: #dc2626 !important;
+  background: #fef2f2 !important;
+}
+
+/* ── Dropdown menú cita ─────────────────────────────────────────────────── */
+.btn-dropdown-item {
+  width: 100%;
+  justify-content: flex-start !important;
+  padding: 12px 16px !important;
+  background: transparent !important;
+  color: #1f2937 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  font-weight: 500 !important;
+}
+
+.btn-dropdown-item:hover {
+  background: #f1f5f9 !important;
+  transform: none !important;
+}
+
+/* ── Botones de icono (tablas) — pulido sin cambiar tamaño ───────────────── */
+.btn-editar,
+.btn-eliminar,
+.btn-prioridad-up,
+.btn-prioridad-down,
+.btn-recibo-anular,
+.btn-recibo-pdf,
+.btn-recibo-pagar,
+.btn-usr-del,
+.btn-usr-edit,
+.btn-usr-hist,
+.btn-usr-reset,
+.btn-usr-speak,
+.btn-usr-toggle {
+  border-radius: var(--btn-radius-sm) !important;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s, transform 0.1s !important;
+}
+
+.btn-editar:hover:not(:disabled),
+.btn-eliminar:hover:not(:disabled),
+.btn-prioridad-up:hover:not(:disabled),
+.btn-prioridad-down:hover:not(:disabled),
+.btn-recibo-pdf:hover,
+.btn-recibo-pagar:hover,
+.btn-recibo-anular:hover:not(:disabled),
+.btn-usr-edit:hover,
+.btn-usr-del:hover,
+.btn-usr-hist:hover,
+.btn-usr-reset:hover {
+  transform: translateY(-1px);
+}
+
+/* Cerrar modal */
+.btn-close-x,
+.btn-close-modal {
+  border-radius: var(--btn-radius-sm) !important;
+  transition: background 0.15s, color 0.15s !important;
+}
+
+.btn-close-x:hover,
+.btn-close-modal:hover {
+  background: #f1f5f9 !important;
+  color: #0f172a !important;
+}
+
+/* Sidebar navegación — radio y hover suave */
+.sidebar-btn,
+.sidebar-btn-danger,
+.agenda-page-btn,
+.electro-page-btn {
+  border-radius: var(--btn-radius) !important;
+  transition: background 0.15s, box-shadow 0.15s, color 0.15s !important;
+}
+
+.sidebar-btn.active,
+.agenda-page-btn.active,
+.electro-page-btn.active {
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12) !important;
+}
+
+/* Calendario nav */
+.ccal-nav-btn,
+.cal-nav-btn {
+  border-radius: var(--btn-radius-sm) !important;
+  transition: background 0.15s, box-shadow 0.15s !important;
+}
+
+.ccal-nav-btn:hover,
+.cal-nav-btn:hover {
+  box-shadow: var(--btn-shadow) !important;
+}
+
+/* Monitor equipos */
+.meq-back-btn,
+.meq-date-hoy {
+  border-radius: var(--btn-radius) !important;
+  font-weight: 600 !important;
+  transition: background 0.15s, box-shadow 0.15s, transform 0.1s !important;
+}
+
+.meq-back-btn:hover {
+  transform: translateX(-2px);
+}
+
+/* Estado cita (pills) */
+.btn-estado-opcion {
+  border-radius: 12px !important;
+  transition: filter 0.15s, box-shadow 0.15s, transform 0.1s !important;
+}
+
+.btn-estado-opcion:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--btn-shadow-hover) !important;
+}
+
+/* Flujo agenda */
+.flujo-btn-sm {
+  border-radius: var(--btn-radius-sm) !important;
+  font-weight: 600 !important;
+  transition: box-shadow 0.15s, transform 0.1s !important;
+}
+
+.flujo-btn-sm:hover {
+  box-shadow: var(--btn-shadow) !important;
+}
+
+/* Tag `button` genérico sin clase de icono — alinear a primario si queda suelto */
+button:not(.menu-card):not(.btn-close-x):not(.btn-close-modal):not(.btn-editar):not(.btn-eliminar):not(.btn-prioridad-up):not(.btn-prioridad-down):not(.btn-recibo-anular):not(.btn-recibo-pdf):not(.btn-recibo-pagar):not(.btn-usr-del):not(.btn-usr-edit):not(.btn-usr-hist):not(.btn-usr-reset):not(.btn-usr-speak):not(.btn-usr-toggle):not(.btn-estado):not(.btn-estado-small):not(.sidebar-btn):not(.agenda-page-btn):not(.electro-page-btn):not(.card-collapse-btn):not(.toggle-password-btn):not(.meq-back-btn):not(.meq-date-nav):not(.meq-refresh-btn):not(.meq-date-hoy):not(.ccal-nav-btn):not(.cal-nav-btn):not(.recibo-export-btn):not(.flujo-btn-sm):not(.btn-dropdown-item):not(.btn-estado-opcion):not([class*="btn-"]):not([id^="monitorDate"]):not(#btnRefreshMonitor) {
+  background: linear-gradient(135deg, var(--c-primary) 0%, var(--c-primary-hover) 100%) !important;
+  color: #fff !important;
+  border: 0 !important;
+  border-radius: var(--btn-radius) !important;
+  padding: 10px 18px !important;
+  font-weight: var(--btn-font-weight) !important;
+  box-shadow: 0 4px 12px rgba(138, 166, 161, 0.35) !important;
+}
+
+button:not(.menu-card):not(.btn-close-x):not(.meq-date-nav):not(.meq-refresh-btn):not(.meq-date-hoy):not([class*="btn-"]):not([id^="monitorDate"]):not(#btnRefreshMonitor):hover {
+  box-shadow: 0 6px 16px rgba(138, 166, 161, 0.45) !important;
+}
+
+/* Loading state */
+.btn-loading {
+  position: relative !important;
+  color: transparent !important;
+  pointer-events: none !important;
+}

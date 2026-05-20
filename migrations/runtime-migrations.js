@@ -458,6 +458,113 @@ const runtimeMigrations = [
         }
       }
     }
+  },
+  {
+    name: 'rt_sop_soportes_radicacion',
+    description: 'Tablas módulos Reportes PDX y Armado de soportes',
+    run: async (db) => {
+      if (await tableExists(db, 'sop_pdx_carpetas')) return;
+      await db.execute(`CREATE TABLE sop_pdx_carpetas (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        periodo CHAR(7) NOT NULL COMMENT 'YYYY-MM',
+        nombre_display VARCHAR(160) NOT NULL,
+        color_tema VARCHAR(20) NULL,
+        estado_visibilidad ENUM('activa','gracia','archivo') NOT NULL DEFAULT 'activa',
+        creado_por INT NULL,
+        creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uk_sop_pdx_periodo_nombre (periodo, nombre_display),
+        INDEX idx_sop_pdx_periodo (periodo),
+        INDEX idx_sop_pdx_vis (estado_visibilidad)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+      await db.execute(`CREATE TABLE sop_pdx_archivos (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        carpeta_id INT NOT NULL,
+        apellidos VARCHAR(120) NULL,
+        nombres VARCHAR(120) NULL,
+        paciente_nombre VARCHAR(200) NOT NULL,
+        paciente_nombre_norm VARCHAR(220) NOT NULL,
+        paciente_documento VARCHAR(30) NULL,
+        fecha_estudio DATE NULL,
+        marca_tiempo VARCHAR(40) NULL,
+        sufijo_numero VARCHAR(10) NULL,
+        estudio_texto VARCHAR(120) NULL,
+        nombre_archivo_original VARCHAR(255) NOT NULL,
+        nombre_archivo_display VARCHAR(255) NULL,
+        ruta_relativa VARCHAR(500) NOT NULL,
+        mime_type VARCHAR(80) DEFAULT 'application/pdf',
+        tamano_bytes INT UNSIGNED NOT NULL,
+        subido_por INT NULL,
+        cita_electro_id INT NULL,
+        creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT fk_sop_pdx_carpeta FOREIGN KEY (carpeta_id) REFERENCES sop_pdx_carpetas(id) ON DELETE CASCADE,
+        INDEX idx_sop_pdx_nom (paciente_nombre_norm),
+        INDEX idx_sop_pdx_doc (paciente_documento),
+        INDEX idx_sop_pdx_carpeta (carpeta_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+      await db.execute(`CREATE TABLE sop_periodos (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        periodo CHAR(7) NOT NULL UNIQUE,
+        etiqueta VARCHAR(80) NOT NULL,
+        estado_visibilidad ENUM('activa','gracia','archivo') NOT NULL DEFAULT 'activa',
+        creado_por INT NULL,
+        creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_sop_per_vis (estado_visibilidad)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+      await db.execute(`CREATE TABLE sop_dias (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        periodo_id INT NOT NULL,
+        dia TINYINT UNSIGNED NOT NULL,
+        fecha DATE NOT NULL,
+        creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uk_sop_dia (periodo_id, dia),
+        CONSTRAINT fk_sop_dia_periodo FOREIGN KEY (periodo_id) REFERENCES sop_periodos(id) ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+      await db.execute(`CREATE TABLE sop_expedientes (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        dia_id INT NOT NULL,
+        codigo VARCHAR(32) NOT NULL,
+        numero_factura INT UNSIGNED NOT NULL,
+        paciente_nombre VARCHAR(200) NOT NULL,
+        paciente_documento VARCHAR(30) NULL,
+        tipo_servicio ENUM('electro','consulta') NOT NULL,
+        fev_externa_verificada TINYINT(1) NOT NULL DEFAULT 0,
+        listo_radicacion TINYINT(1) NOT NULL DEFAULT 0,
+        notas TEXT NULL,
+        creado_por INT NULL,
+        creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uk_sop_exp_codigo (dia_id, codigo),
+        INDEX idx_sop_exp_factura (numero_factura),
+        INDEX idx_sop_exp_pac (paciente_documento),
+        CONSTRAINT fk_sop_exp_dia FOREIGN KEY (dia_id) REFERENCES sop_dias(id) ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+      await db.execute(`CREATE TABLE sop_exp_archivos (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        expediente_id INT NOT NULL,
+        tipo ENUM('OPF','CRC','FEV','PDX','HEV') NOT NULL,
+        nombre_archivo VARCHAR(255) NOT NULL,
+        ruta_relativa VARCHAR(500) NOT NULL,
+        mime_type VARCHAR(80) DEFAULT 'application/pdf',
+        tamano_bytes INT UNSIGNED NOT NULL,
+        origen ENUM('upload','copia_pdx') NOT NULL DEFAULT 'upload',
+        pdx_archivo_id INT NULL,
+        subido_por INT NULL,
+        creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uk_sop_exp_tipo (expediente_id, tipo),
+        CONSTRAINT fk_sop_exp_arch_exp FOREIGN KEY (expediente_id) REFERENCES sop_expedientes(id) ON DELETE CASCADE,
+        CONSTRAINT fk_sop_exp_arch_pdx FOREIGN KEY (pdx_archivo_id) REFERENCES sop_pdx_archivos(id) ON DELETE SET NULL,
+        INDEX idx_sop_exp_arch_tipo (tipo)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+      await db.execute(`CREATE TABLE sop_transferencias (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        pdx_archivo_id INT NOT NULL,
+        expediente_id INT NOT NULL,
+        slot_tipo ENUM('PDX') NOT NULL DEFAULT 'PDX',
+        usuario_id INT NULL,
+        creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_sop_trf_pdx (pdx_archivo_id),
+        INDEX idx_sop_trf_exp (expediente_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+    }
   }
 ];
 

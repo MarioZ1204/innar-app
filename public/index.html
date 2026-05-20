@@ -10,7 +10,11 @@
   <link rel="preload" as="image" href="/images/logo3.webp" fetchpriority="high">
   <link rel="preload" as="style" href="style.css">
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="innar-buttons.css">
+  <link rel="stylesheet" href="innar-theme.css">
   <link rel="stylesheet" href="sede-recordatorio.css">
+  <link rel="stylesheet" href="soportes.css">
+  <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js" defer></script>
   <style>
     @keyframes moveUp {
       0% { transform: translateY(8px); opacity: 0.0; }
@@ -204,6 +208,20 @@
           <span class="menu-card-label">
             <span class="menu-card-title">Gestión de Datos</span>
             <span class="menu-card-desc">Administrar registros del sistema</span>
+          </span>
+        </button>
+        <button class="menu-card" data-module="reportes-pdx" data-rol="superadmin admin admin_recepcion recepcion contabilidad admin_electro electro tecnico_electro">
+          <span class="menu-card-icon"><svg width="56" height="55" viewBox="0 0 56 55" fill="none"><rect x="6" y="8" width="44" height="36" rx="4" fill="#dbeafe" stroke="#2563eb" stroke-width="2"/><path d="M14 20h28M14 28h20M14 36h24" stroke="#2563eb" stroke-width="2" stroke-linecap="round"/></svg></span>
+          <span class="menu-card-label">
+            <span class="menu-card-title">Reportes PDX</span>
+            <span class="menu-card-desc">Depósito de reportes electro</span>
+          </span>
+        </button>
+        <button class="menu-card" data-module="armado-soportes" data-rol="superadmin admin admin_recepcion recepcion contabilidad admin_electro electro tecnico_electro">
+          <span class="menu-card-icon"><svg width="56" height="55" viewBox="0 0 56 55" fill="none"><rect x="8" y="6" width="40" height="42" rx="4" fill="#ccfbf1" stroke="#0d9488" stroke-width="2"/><rect x="14" y="14" width="12" height="10" rx="2" fill="#0d9488" opacity=".3"/><rect x="30" y="14" width="12" height="10" rx="2" fill="#0d9488" opacity=".3"/><rect x="14" y="30" width="28" height="10" rx="2" fill="#0d9488" opacity=".2"/></svg></span>
+          <span class="menu-card-label">
+            <span class="menu-card-title">Armado de Soportes</span>
+            <span class="menu-card-desc">Paquetes FE para radicación</span>
           </span>
         </button>
 
@@ -429,7 +447,7 @@
             <section id="receiptPreview" class="card" style="display:none">
               <div id="previewContent">
                 <div class="receipt-header">
-                  <div><strong>Instituto Neurociencias</strong><br/><small>Carrera 34 #13 - 80 · 305-356-0651</small></div>
+                  <div><strong>Instituto Neurociencias</strong><br/><small>Calle 14A #34-13, Barrio San Ignacio · 305-356-0651</small></div>
                   <div style="text-align:right">
                     <div>Recibo Nº <strong id="r_num">0001</strong></div>
                     <div id="r_fecha">Fecha</div>
@@ -2821,8 +2839,8 @@
       <h3 id="sedeRecordatorioTitulo" class="sede-recordatorio-title">¿A cuál sede va el paciente?</h3>
       <p class="sede-recordatorio-subtitle">Selecciona la sede para incluir la dirección correcta en el recordatorio.</p>
       <div class="sede-recordatorio-actions">
-        <button type="button" id="sedeRBtn1" class="sede-recordatorio-btn sede-recordatorio-btn--principal">SEDE PRINCIPAL</button>
-        <button type="button" id="sedeRBtn2" class="sede-recordatorio-btn sede-recordatorio-btn--complementaria">SEDE SERVICIOS COMPLEMENTARIOS</button>
+        <button type="button" id="sedeRBtn1" class="sede-recordatorio-btn sede-recordatorio-btn--principal">SEDE PRINCIPAL<span class="sede-recordatorio-btn-dir">Calle 14A #34-13, Barrio San Ignacio, Pasto</span></button>
+        <button type="button" id="sedeRBtn2" class="sede-recordatorio-btn sede-recordatorio-btn--complementaria">SEDE SERVICIOS COMPLEMENTARIOS<span class="sede-recordatorio-btn-dir">Carrera 33 #13-84, Barrio San Ignacio ("Casa Verde")</span></button>
         <button type="button" id="sedeRBtnCancel" class="sede-recordatorio-btn-cancel">Cancelar</button>
       </div>
     </div>
@@ -3055,25 +3073,25 @@
         </div>
         <div class="meq-topbar-right">
           <span id="monitorLastUpdate" style="font-size:.78rem;color:#94a3b8"></span>
-          <button id="btnRefreshMonitor" title="Refrescar" style="width:48px;height:48px;min-width:48px;border-radius:12px;border:2.5px solid #7c3aed;background:#ede9fe;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;color:#7c3aed;font-weight:700;box-shadow:0 3px 10px rgba(124,58,237,.25);transition:all .2s;padding:0">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+          <button type="button" id="btnRefreshMonitor" class="meq-refresh-btn" title="Refrescar">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
           </button>
         </div>
       </nav>
       <div class="meq-page-body">
         <!-- Date navigation bar -->
         <div class="meq-date-bar">
-          <button id="monitorDatePrev" title="Día anterior" style="width:48px;height:48px;min-width:48px;border-radius:12px;border:2.5px solid #7c3aed;background:#ede9fe;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 3px 10px rgba(124,58,237,.25);padding:0">
-            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="3"><path d="M15 18l-6-6 6-6"/></svg>
+          <button type="button" id="monitorDatePrev" class="meq-date-nav" title="Día anterior" aria-label="Día anterior">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M15 18l-6-6 6-6"/></svg>
           </button>
           <div class="meq-date-center">
-            <input type="date" id="monitorDatePicker" class="meq-date-input" />
+            <input type="date" id="monitorDatePicker" class="meq-date-input" aria-label="Fecha" />
             <span id="monitorDateLabel" class="meq-date-label">Hoy</span>
           </div>
-          <button id="monitorDateNext" title="Día siguiente" style="width:48px;height:48px;min-width:48px;border-radius:12px;border:2.5px solid #7c3aed;background:#ede9fe;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 3px 10px rgba(124,58,237,.25);padding:0">
-            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="3"><path d="M9 18l6-6-6-6"/></svg>
+          <button type="button" id="monitorDateHoy" class="meq-date-hoy" title="Ir a hoy">Hoy</button>
+          <button type="button" id="monitorDateNext" class="meq-date-nav" title="Día siguiente" aria-label="Día siguiente">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>
           </button>
-          <button id="monitorDateHoy" class="meq-date-hoy" title="Ir a hoy">Hoy</button>
         </div>
         <!-- Stats bar -->
         <div class="meq-stats-bar">
@@ -3122,6 +3140,129 @@
     </div>
   </div>
 
+  <!-- ========== MÓDULO REPORTES PDX ========== -->
+  <div id="view-reportes-pdx" class="view-module hidden">
+    <div class="sop-shell sop-pdx-theme">
+      <header class="sop-topbar">
+        <div class="sop-topbar-left">
+          <img src="/images/logo.webp" alt="Innar" class="sop-topbar-logo" width="120" height="40" loading="lazy" />
+          <span class="sop-topbar-divider"></span>
+          <button type="button" id="btnVolverReportesPdx" class="sop-btn sop-btn-ghost sop-btn-sm">
+            <i data-lucide="arrow-left"></i> Menú
+          </button>
+        </div>
+        <div style="text-align:center">
+          <div class="sop-topbar-title">Reportes PDX</div>
+          <div class="sop-topbar-sub">Depósito de reportes electrodiagnóstico</div>
+        </div>
+        <div class="sop-topbar-right">
+          <label class="sop-toggle"><input type="checkbox" id="sopPdxIncluirArchivo"> Archivo</label>
+          <button type="button" id="btnSopPdxNuevaCarpeta" class="sop-btn sop-btn-primary">
+            <i data-lucide="folder-plus"></i> Nueva carpeta
+          </button>
+        </div>
+      </header>
+      <main class="sop-body">
+        <div id="sopPdxVistaLista">
+          <div class="sop-panel">
+            <div class="sop-panel-head">
+              <div class="sop-search-wrap">
+                <i data-lucide="search"></i>
+                <input type="search" id="sopPdxBuscar" class="sop-search" placeholder="Buscar paciente (mín. 2 caracteres)…">
+              </div>
+              <button type="button" id="btnSopPdxBuscar" class="sop-btn sop-btn-ghost">
+                <i data-lucide="search"></i> Buscar
+              </button>
+            </div>
+            <div class="sop-panel-body">
+              <div id="sopPdxChipPeriodo" class="sop-chip-row"></div>
+              <div id="sopPdxResultados" class="hidden" style="margin-bottom:20px"></div>
+              <div id="sopPdxLista"><div class="sop-empty"><i data-lucide="loader" class="sop-empty-icon"></i>Cargando carpetas…</div></div>
+            </div>
+          </div>
+        </div>
+        <div id="sopPdxVistaDetalle" class="hidden">
+          <button type="button" id="btnSopPdxVolver" class="sop-breadcrumb">
+            <i data-lucide="chevron-left"></i> Volver a carpetas
+          </button>
+          <div class="sop-panel">
+            <div class="sop-panel-head">
+              <div>
+                <h3 id="sopPdxDetalleTitulo" style="margin:0 0 4px"></h3>
+                <div id="sopPdxDetalleMeta"></div>
+              </div>
+            </div>
+            <div class="sop-panel-body">
+              <div id="sopPdxDropzone" class="sop-dropzone">
+                <div class="sop-dropzone-icon"><i data-lucide="upload-cloud" style="width:40px;height:40px"></i></div>
+                <div style="font-weight:600;color:#334155">Arrastra PDFs aquí o haz clic para subir</div>
+                <div style="font-size:.8rem;color:#94a3b8;margin-top:4px">Formato esperado: Apellido, Nombre  YYYY-MM-DD …</div>
+                <input type="file" id="sopPdxUploadInput" class="sop-file-input-hidden" accept=".pdf" multiple>
+              </div>
+              <div class="sop-table-wrap">
+                <table class="sop-table">
+                  <thead><tr><th>Paciente</th><th>Fecha</th><th>Estudio</th><th style="width:140px">Acciones</th></tr></thead>
+                  <tbody id="sopPdxArchivosBody"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- ========== MÓDULO ARMADO DE SOPORTES ========== -->
+  <div id="view-armado-soportes" class="view-module hidden">
+    <div class="sop-shell sop-arm-theme">
+      <header class="sop-topbar">
+        <div class="sop-topbar-left">
+          <img src="/images/logo.webp" alt="Innar" class="sop-topbar-logo" width="120" height="40" loading="lazy" />
+          <span class="sop-topbar-divider"></span>
+          <button type="button" id="btnVolverArmadoSoportes" class="sop-btn sop-btn-ghost sop-btn-sm">
+            <i data-lucide="arrow-left"></i> Menú
+          </button>
+        </div>
+        <div style="text-align:center">
+          <div class="sop-topbar-title">Armado de soportes</div>
+          <div class="sop-topbar-sub">Paquetes FE para radicación EPS</div>
+        </div>
+        <div class="sop-topbar-right">
+          <label class="sop-toggle"><input type="checkbox" id="sopArmIncluirArchivo"> Archivo</label>
+          <button type="button" id="btnSopArmNuevoDia" class="sop-btn sop-btn-ghost">
+            <i data-lucide="calendar-plus"></i> Día
+          </button>
+          <button type="button" id="btnSopArmNuevoPeriodo" class="sop-btn sop-btn-teal">
+            <i data-lucide="calendar-range"></i> Nuevo mes
+          </button>
+        </div>
+      </header>
+      <main class="sop-body sop-layout-armado">
+        <aside class="sop-panel">
+          <div class="sop-panel-head"><h3 style="margin:0;font-size:1rem">Navegación</h3></div>
+          <div class="sop-panel-body" style="padding-top:12px">
+            <div class="sop-nav-block">
+              <div class="sop-nav-label">Periodos</div>
+              <div id="sopArmPeriodos" class="sop-nav-list"><div class="sop-empty" style="padding:16px">Cargando…</div></div>
+            </div>
+            <div class="sop-nav-block">
+              <div class="sop-nav-label">Días del mes</div>
+              <div id="sopArmDias" class="sop-nav-list"><div class="sop-empty" style="padding:16px">Seleccione un periodo</div></div>
+            </div>
+          </div>
+        </aside>
+        <section id="sopArmExpedientePanel" class="sop-panel">
+          <div class="sop-panel-body">
+            <div class="sop-empty">
+              <i data-lucide="layers" class="sop-empty-icon"></i>
+              Seleccione un periodo y un día para ver expedientes FE
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
   <!-- ========== FOOTER ========== -->
   <footer class="app-footer">
     <div class="footer-content">
@@ -3138,6 +3279,7 @@
   <script src="dashboard-citas.js"></script>
   <script src="calendario-agenda.js"></script>
   <script src="app.js"></script>
+  <script src="soportes.js"></script>
   <script src="calendario-bloqueado.js"></script>
   <script src="validation-client.js"></script>
   <script src="splash.js" defer></script>

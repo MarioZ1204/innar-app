@@ -42,6 +42,23 @@ function updateRequirementItem(elementId, isMet, text) {
 }
 
 const lsKeySelectedDoctor = 'selected_doctor_v1';
+
+/** Direcciones oficiales de las sedes (recordatorios WhatsApp, documentos) */
+const SEDES_INNAR = {
+  principal: {
+    id: '1',
+    titulo: 'Sede Principal',
+    corta: 'Calle 14A #34-13, Barrio San Ignacio',
+    completa: 'Calle 14A #34-13, Barrio San Ignacio, Pasto, Nariño'
+  },
+  complementaria: {
+    id: '2',
+    titulo: 'Sede Servicios Complementarios',
+    corta: 'Carrera 33 #13-84, Barrio San Ignacio ("Casa Verde")',
+    completa: 'Carrera 33 #13-84, Barrio San Ignacio, Pasto, Nariño ("Casa Verde")'
+  }
+};
+
 let lastReciboId = null;
 
 // Usuario actual (rol: admin, recepcion, electro, doctor)
@@ -411,6 +428,8 @@ function updateMenuByRole() {
     'dashboard-citas':'modulo.dashboard',
     'gestion-datos':  'modulo.gestion_datos',
     'monitor-equipos':'modulo.monitor_equipos',
+    'reportes-pdx':     'modulo.reportes_pdx',
+    'armado-soportes':  'modulo.armado_soportes',
   };
 
   document.querySelectorAll('.menu-card').forEach(card => {
@@ -606,6 +625,8 @@ function goToModule(moduleId) {
   if (moduleId === 'gestion-datos') { if (!initGestionDatosDone) initGestionDatos(); initGestionDatosDone = true; }
   if (moduleId === 'ucqn') { if (!initUcqnDone) initUcqn(); initUcqnDone = true; }
   if (moduleId === 'monitor-equipos') { initMonitorEquipos(); }
+  if (moduleId === 'reportes-pdx' && typeof initReportesPdx === 'function') initReportesPdx();
+  if (moduleId === 'armado-soportes' && typeof initArmadoSoportes === 'function') initArmadoSoportes();
 }
 
 function goToMenu() {
@@ -6896,6 +6917,16 @@ const PERMISOS_DEFS = [
   { key: 'modulo.diagnosticos',     label: 'Módulo: Diagnósticos',                grupo: 'Acceso a Módulos' },
   { key: 'modulo.gestion_datos',    label: 'Módulo: Gestión de Datos',            grupo: 'Acceso a Módulos' },
   { key: 'modulo.monitor_equipos',  label: 'Módulo: Monitor de Equipos',           grupo: 'Acceso a Módulos' },
+  { key: 'modulo.reportes_pdx',     label: 'Módulo: Reportes PDX',                 grupo: 'Acceso a Módulos' },
+  { key: 'modulo.armado_soportes', label: 'Módulo: Armado de Soportes',           grupo: 'Acceso a Módulos' },
+  // ── Soportes de radicación ────────────────────────────────────────────────
+  { key: 'soportes.pdx.subir',           label: 'PDX: Subir archivos y crear carpetas', grupo: 'Soportes Radicación' },
+  { key: 'soportes.pdx.eliminar',        label: 'PDX: Eliminar archivos',               grupo: 'Soportes Radicación' },
+  { key: 'soportes.armado.crear_estructura', label: 'Armado: Crear mes/día/FE',         grupo: 'Soportes Radicación' },
+  { key: 'soportes.armado.subir',        label: 'Armado: Subir OPF/CRC/HEV',            grupo: 'Soportes Radicación' },
+  { key: 'soportes.armado.importar_pdx', label: 'Armado: Importar PDX a expediente',    grupo: 'Soportes Radicación' },
+  { key: 'soportes.descargar_zip',       label: 'Armado: Descargar ZIP del expediente', grupo: 'Soportes Radicación' },
+  { key: 'soportes.ver_archivo',         label: 'Soportes: Ver periodos en archivo',    grupo: 'Soportes Radicación' },
   // ── Recibos ───────────────────────────────────────────────────────────────
   { key: 'recibos.crear',           label: 'Recibos: Crear nuevo recibo',         grupo: 'Recibos' },
   { key: 'recibos.ver',             label: 'Recibos: Ver lista de recibos',       grupo: 'Recibos' },
@@ -6957,6 +6988,8 @@ const PERMISOS_ROL_DEFAULTS = {
   admin: null,
   admin_recepcion: [
     'modulo.recibos','modulo.agenda_medica','modulo.electrodiag','modulo.ucqn','modulo.dashboard','modulo.monitor_equipos',
+    'modulo.reportes_pdx','modulo.armado_soportes',
+    'soportes.pdx.subir','soportes.armado.crear_estructura','soportes.armado.subir','soportes.armado.importar_pdx','soportes.descargar_zip',
     'recibos.crear','recibos.ver','recibos.exportar',
     'agenda.ver','agenda.crear','agenda.editar','agenda.eliminar','agenda.cambiar_estado',
     'agenda.llamar_siguiente','agenda.marcar_atendido','agenda.aviso_doctor','agenda.disponibilidad',
@@ -6966,6 +6999,8 @@ const PERMISOS_ROL_DEFAULTS = {
   ],
   recepcion: [
     'modulo.recibos','modulo.agenda_medica','modulo.electrodiag','modulo.ucqn','modulo.dashboard','modulo.monitor_equipos',
+    'modulo.reportes_pdx','modulo.armado_soportes',
+    'soportes.pdx.subir','soportes.armado.crear_estructura','soportes.armado.subir','soportes.armado.importar_pdx','soportes.descargar_zip',
     'recibos.crear','recibos.ver',
     'agenda.ver','agenda.crear','agenda.editar','agenda.eliminar','agenda.cambiar_estado',
     'agenda.llamar_siguiente','agenda.marcar_atendido','agenda.aviso_doctor',
@@ -6987,6 +7022,8 @@ const PERMISOS_ROL_DEFAULTS = {
   ],
   admin_electro: [
     'modulo.electrodiag','modulo.ucqn','modulo.agenda_medica','modulo.dashboard','modulo.monitor_equipos',
+    'modulo.reportes_pdx','modulo.armado_soportes',
+    'soportes.pdx.subir','soportes.armado.crear_estructura','soportes.armado.subir','soportes.armado.importar_pdx','soportes.descargar_zip',
     'electro.ver','electro.crear','electro.editar','electro.eliminar','electro.cambiar_estado','electro.subir_archivo','electro.ver_archivo','electro.aviso_doctor',
     'agenda.ver','agenda.editar','agenda.aviso_doctor',
     'ucqn.ver','ucqn.editar_estado',
@@ -6994,6 +7031,8 @@ const PERMISOS_ROL_DEFAULTS = {
   ],
   electro: [
     'modulo.electrodiag','modulo.ucqn','modulo.agenda_medica','modulo.dashboard','modulo.monitor_equipos',
+    'modulo.reportes_pdx','modulo.armado_soportes',
+    'soportes.pdx.subir','soportes.armado.crear_estructura','soportes.armado.subir','soportes.armado.importar_pdx','soportes.descargar_zip',
     'electro.ver','electro.crear','electro.editar','electro.eliminar','electro.cambiar_estado','electro.subir_archivo','electro.ver_archivo','electro.aviso_doctor',
     'agenda.ver','agenda.editar','agenda.aviso_doctor',
     'ucqn.ver','ucqn.editar_estado',
@@ -7006,6 +7045,8 @@ const PERMISOS_ROL_DEFAULTS = {
   ],
   contabilidad: [
     'modulo.recibos','modulo.ucqn','modulo.dashboard',
+    'modulo.reportes_pdx','modulo.armado_soportes',
+    'soportes.pdx.subir','soportes.armado.crear_estructura','soportes.armado.subir','soportes.armado.importar_pdx','soportes.descargar_zip','soportes.ver_archivo',
     'recibos.ver','recibos.exportar',
     'ucqn.ver','ucqn.editar_estado',
     'sistema.dashboard','sistema.reportes',
@@ -10225,11 +10266,11 @@ function enviarPorWhatsApp() {
   mensaje += `DÍA:  ${fechaCapitalizada.toUpperCase()}\n`;
   mensaje += `HORA:  ${cita.hora_agendamiento || '-'}\n\n`;
   mensaje += `Le recordamos que será atendido por una técnica especializada en electrodiagnostico.\n`;
-  mensaje += `Anexo a este mensaje le enviamos las recomendaciones que debe tener en cuenta, le recordamos la dirección: Carrera 34 #13-80, Barrio San Ignacio.\n`;
+  mensaje += `Anexo a este mensaje le enviamos las recomendaciones que debe tener en cuenta, le recordamos la dirección: ${SEDES_INNAR.complementaria.completa}.\n`;
   mensaje += `Teléfonos 3053560651- 6027238141\n\n`;
   mensaje += `NOTA: no olvide traer su orden de servicio, copia de su documento de identificación y epicrisis o historia clínica.\n\n`;
   mensaje += `Le solicitamos confirmar su asistencia.\n`;
-  mensaje += `Recuerde acercarse al centro comercial Valle de Atriz 2do piso y hacer la respectiva facturación con sello. Muchas Gracias.`;
+  mensaje += `Recuerde acercarse a la ${SEDES_INNAR.complementaria.titulo} (${SEDES_INNAR.complementaria.corta}) para la respectiva facturación con sello. Muchas Gracias.`;
 
   if (mensajePersonalizado) {
     mensaje += `\n\n${mensajePersonalizado}`;
@@ -11061,14 +11102,14 @@ function obtenerNombreEspecialistaRecordatorio() {
 
 const SEDES_RECORDATORIO_MEDICA = {
   '1': {
-    titulo: 'Sede Principal',
-    subtitulo: 'Carrera 34 #13-80, Barrio San Ignacio',
-    ubicacion: 'Carrera 34 #13-80, Barrio San Ignacio, Pasto, Nariño · https://maps.app.goo.gl/6cX18NUY8i8p5KQe9'
+    titulo: SEDES_INNAR.principal.titulo,
+    subtitulo: SEDES_INNAR.principal.corta,
+    ubicacion: SEDES_INNAR.principal.completa
   },
   '2': {
-    titulo: 'Sede Servicios Complementarios',
-    subtitulo: 'Centro comercial Valle de Atriz, 2do piso',
-    ubicacion: 'Centro comercial Valle de Atriz, 2do piso, Pasto, Nariño · https://maps.app.goo.gl/YU5GheUmVMDAHFbq8'
+    titulo: SEDES_INNAR.complementaria.titulo,
+    subtitulo: SEDES_INNAR.complementaria.corta,
+    ubicacion: SEDES_INNAR.complementaria.completa
   }
 };
 
