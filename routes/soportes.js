@@ -18,7 +18,13 @@ const {
   diasRestantesGracia
 } = require('../utils/soportes-visibilidad');
 const { detectarTemaCarpeta } = require('../utils/soportes-temas');
-const { parseNombrePdx, fechaEnPeriodo, temaCoincideCarpeta } = require('../utils/soportes-pdx-parse');
+const { parseNombrePdx, fechaEnPeriodo, temaCoincideCarpeta, normalizarNombreBusqueda } = require('../utils/soportes-pdx-parse');
+const {
+  buildMetaFromUpload,
+  finalizePdxFileOnDisk,
+  movePdxFileOnDisk,
+  collectPdxWarnings
+} = require('../utils/soportes-pdx-upload');
 const {
   getPdxDir,
   getArmadoExpedienteDir,
@@ -88,6 +94,35 @@ const uploadPdx = multer({
 
 // ─── PDX: carpetas ─────────────────────────────────────────────────────────
 
+async function logPdxArchivo(archivoId, tipo, usuarioId, detalle) {
+  try {
+    await db.execute(
+      'INSERT INTO sop_pdx_archivo_log (archivo_id, tipo, usuario_id, detalle) VALUES (?,?,?,?)',
+      [archivoId, tipo, usuarioId || null, detalle ? String(detalle).slice(0, 500) : null]
+    );
+  } catch (_) { /* log opcional si migración pendiente */ }
+}
+
+const uploadPdxReemplazar = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => {
+      db.query('SELECT carpeta_id FROM sop_pdx_archivos WHERE id = ?', [req.params.id])
+        .then((rows) => {
+          if (!rows.length) return cb(new Error('Archivo no encontrado'));
+          cb(null, getPdxDir(rows[0].carpeta_id));
+        })
+        .catch((e) => cb(e));
+    },
+    filename: (req, file, cb) => cb(null, safeFilename(file.originalname))
+  }),
+  limits: { fileSize: 20 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (ext === '.pdf') cb(null, true);
+    else cb(new Error('Solo se permiten archivos PDF'));
+  }
+});
+
 router.get('/soportes/pdx/carpetas', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'modulo.reportes_pdx'), async (req, res) => {
   try {
     const incluirArchivo = puedeVerArchivo(req) && req.query.archivo === '1';
@@ -138,6 +173,73 @@ router.post('/soportes/pdx/carpetas', requireAuth, requireRoleOrPerm(ROLES_SOPOR
   }
 });
 
+router.patch('/soportes/pdx/carpetas/:id', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, ['modulo.reportes_pdx', 'soportes.pdx.subir']), async (req, res) => {
+  try {
+    const rows = await db.query('SELECT * FROM sop_pdx_carpetas WHERE id = ?', [req.params.id]);
+    if (!rows.length) return res.status(404).json({ error: 'Carpeta no encontrada' });
+    const prev = rows[0];
+    const vis = calcularVisibilidadPeriodo(prev.periodo);
+    if (vis === 'archivo') return res.status(403).json({ error: 'Carpeta en archivo: no editable' });
+
+    const periodo = req.body?.periodo != null ? String(req.body.periodo).trim() : prev.periodo;
+    const nombre = req.body?.nombre_display != null ? String(req.body.nombre_display).trim() : prev.nombre_display;
+    if (!/^\d{4}-\d{2}$/.test(periodo)) return res.status(400).json({ error: 'periodo inválido (YYYY-MM)' });
+    if (nombre.length < 3) return res.status(400).json({ error: 'nombre de carpeta requerido' });
+
+    const tema = detectarTemaCarpeta(nombre);
+    const estado = calcularVisibilidadPeriodo(periodo);
+    await db.execute(
+      'UPDATE sop_pdx_carpetas SET periodo = ?, nombre_display = ?, color_tema = ?, estado_visibilidad = ? WHERE id = ?',
+      [periodo, nombre, tema, estado, req.params.id]
+    );
+    const countRows = await db.query('SELECT COUNT(*) AS n FROM sop_pdx_archivos WHERE carpeta_id = ?', [req.params.id]);
+    const updated = await db.query('SELECT * FROM sop_pdx_carpetas WHERE id = ?', [req.params.id]);
+    res.json({
+      ok: true,
+      carpeta: mapCarpetaPdx({ ...updated[0], archivos_count: countRows[0]?.n || 0 })
+    });
+  } catch (e) {
+    if (String(e.message || '').includes('uk_sop_pdx')) {
+      return res.status(409).json({ error: 'Ya existe una carpeta con ese nombre en el periodo' });
+    }
+    logger.error('[SOPORTES] editar carpeta pdx:', e);
+    res.status(500).json({ error: safeError(e) });
+  }
+});
+
+router.delete('/soportes/pdx/carpetas/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'soportes.pdx.eliminar'), async (req, res) => {
+  try {
+    const rows = await db.query('SELECT * FROM sop_pdx_carpetas WHERE id = ?', [req.params.id]);
+    if (!rows.length) return res.status(404).json({ error: 'Carpeta no encontrada' });
+    const archivos = await db.query('SELECT id, ruta_relativa FROM sop_pdx_archivos WHERE carpeta_id = ?', [req.params.id]);
+    const usados = await db.query(
+      'SELECT COUNT(*) AS n FROM sop_exp_archivos WHERE pdx_archivo_id IN (SELECT id FROM sop_pdx_archivos WHERE carpeta_id = ?)',
+      [req.params.id]
+    );
+    if (usados[0]?.n > 0 && req.query.force !== '1') {
+      return res.status(409).json({
+        error: 'Hay archivos de esta carpeta vinculados a expedientes FE. No se puede eliminar.',
+        vinculados: usados[0].n
+      });
+    }
+    for (const a of archivos) {
+      const fp = resolveStoragePath(a.ruta_relativa);
+      if (fp && fs.existsSync(fp)) {
+        try { fs.unlinkSync(fp); } catch (_) { /* ignore */ }
+      }
+    }
+    await db.execute('DELETE FROM sop_pdx_carpetas WHERE id = ?', [req.params.id]);
+    try {
+      const dir = getPdxDir(req.params.id);
+      if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
+    } catch (_) { /* ignore */ }
+    res.json({ ok: true, eliminados: archivos.length });
+  } catch (e) {
+    logger.error('[SOPORTES] eliminar carpeta pdx:', e);
+    res.status(500).json({ error: safeError(e) });
+  }
+});
+
 router.get('/soportes/pdx/carpetas/:id/archivos', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'modulo.reportes_pdx'), async (req, res) => {
   try {
     const carpeta = await db.query('SELECT * FROM sop_pdx_carpetas WHERE id = ?', [req.params.id]);
@@ -147,7 +249,11 @@ router.get('/soportes/pdx/carpetas/:id/archivos', requireAuth, requireRoleOrPerm
       return res.status(403).json({ error: 'Carpeta en archivo' });
     }
     const archivos = await db.query(
-      'SELECT * FROM sop_pdx_archivos WHERE carpeta_id = ? ORDER BY paciente_nombre ASC, id DESC',
+      `SELECT a.*, us.nombre AS subido_por_nombre, ue.nombre AS editado_por_nombre
+       FROM sop_pdx_archivos a
+       LEFT JOIN usuarios us ON us.id = a.subido_por
+       LEFT JOIN usuarios ue ON ue.id = a.editado_por
+       WHERE a.carpeta_id = ? ORDER BY a.paciente_nombre ASC, a.id DESC`,
       [req.params.id]
     );
     res.json({ carpeta: mapCarpetaPdx({ ...carpeta[0], archivos_count: archivos.length }), archivos });
@@ -171,37 +277,21 @@ router.post(
       const vis = calcularVisibilidadPeriodo(carpeta.periodo);
       if (vis === 'archivo') return res.status(403).json({ error: 'Carpeta cerrada para carga' });
 
-      const parsed = parseNombrePdx(req.file.originalname);
-      if (!parsed.ok && !(req.body.apellidos && req.body.nombres && req.body.fecha_estudio)) {
+      const meta = buildMetaFromUpload(req.file.originalname, req.body);
+      if (!meta.ok) {
         return res.status(400).json({
-          error: 'No se pudo leer el nombre del archivo. Confirme apellidos, nombres y fecha.',
+          error: 'Complete apellidos, nombres, fecha y nombre del estudio.',
           requiere_confirmacion: true
         });
       }
 
-      const meta = parsed.ok ? parsed : {
-        ok: true,
-        apellidos: req.body.apellidos,
-        nombres: req.body.nombres,
-        paciente_nombre: `${req.body.apellidos}, ${req.body.nombres}`,
-        paciente_nombre_norm: `${req.body.apellidos} ${req.body.nombres}`.toLowerCase(),
-        fecha_estudio: req.body.fecha_estudio,
-        marca_tiempo: req.body.marca_tiempo || '',
-        sufijo_numero: req.body.sufijo_numero || '',
-        estudio_texto: req.body.estudio_texto || '',
-        estudio_tema: detectarTemaCarpeta(req.body.estudio_texto || ''),
-        nombre_display: req.file.originalname
-      };
+      const warnings = collectPdxWarnings(meta, carpeta);
+      const { rutaRelativa, nombre_archivo_display } = finalizePdxFileOnDisk(
+        carpeta.id,
+        req.file.filename,
+        meta
+      );
 
-      const warnings = [];
-      if (!fechaEnPeriodo(meta.fecha_estudio, carpeta.periodo)) {
-        warnings.push(`La fecha del estudio (${meta.fecha_estudio}) no pertenece al mes ${carpeta.periodo}`);
-      }
-      if (!temaCoincideCarpeta(meta.estudio_tema, carpeta.color_tema)) {
-        warnings.push('El tipo de estudio del archivo no coincide con el tema de la carpeta');
-      }
-
-      const rutaRelativa = path.join('soportes', 'pdx', String(carpeta.id), req.file.filename).replace(/\\/g, '/');
       const ins = await db.execute(
         `INSERT INTO sop_pdx_archivos (
           carpeta_id, apellidos, nombres, paciente_nombre, paciente_nombre_norm, paciente_documento,
@@ -211,11 +301,12 @@ router.post(
         [
           carpeta.id, meta.apellidos, meta.nombres, meta.paciente_nombre, meta.paciente_nombre_norm,
           req.body.paciente_documento || null, meta.fecha_estudio, meta.marca_tiempo, meta.sufijo_numero,
-          meta.estudio_texto, req.file.originalname, meta.nombre_display || null, rutaRelativa,
+          meta.estudio_texto, req.file.originalname, nombre_archivo_display, rutaRelativa,
           req.file.size, req.session.usuarioId
         ]
       );
 
+      await logPdxArchivo(ins.insertId, 'subida', req.session.usuarioId, req.file.originalname);
       const row = await db.query('SELECT * FROM sop_pdx_archivos WHERE id = ?', [ins.insertId]);
       res.status(201).json({ ok: true, archivo: row[0], warnings });
     } catch (e) {
@@ -261,6 +352,103 @@ router.get('/soportes/pdx/buscar', requireAuth, requireRoleOrPerm(ROLES_SOPORTES
   }
 });
 
+router.patch('/soportes/pdx/archivos/:id', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, ['modulo.reportes_pdx', 'soportes.pdx.subir']), async (req, res) => {
+  try {
+    const rows = await db.query(
+      `SELECT a.*, c.periodo, c.color_tema AS carpeta_tema FROM sop_pdx_archivos a
+       JOIN sop_pdx_carpetas c ON c.id = a.carpeta_id WHERE a.id = ?`,
+      [req.params.id]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Archivo no encontrado' });
+    const prev = rows[0];
+    const vis = calcularVisibilidadPeriodo(prev.periodo);
+    if (vis === 'archivo') return res.status(403).json({ error: 'Carpeta en archivo: no editable' });
+
+    const apellidos = req.body?.apellidos != null ? String(req.body.apellidos).trim() : prev.apellidos;
+    const nombres = req.body?.nombres != null ? String(req.body.nombres).trim() : prev.nombres;
+    const fecha = req.body?.fecha_estudio != null ? req.body.fecha_estudio : prev.fecha_estudio;
+    const estudio = req.body?.estudio_texto != null ? String(req.body.estudio_texto).trim() : prev.estudio_texto;
+    if (!apellidos || !nombres || !fecha || !estudio) {
+      return res.status(400).json({ error: 'Apellidos, nombres, fecha y estudio son obligatorios' });
+    }
+
+    const pacienteNombre = `${apellidos}, ${nombres}`;
+    const { normalizarNombreBusqueda } = require('../utils/soportes-pdx-parse');
+    const { movePdxFileOnDisk } = require('../utils/soportes-pdx-upload');
+
+    let carpetaId = prev.carpeta_id;
+    let rutaRelativa = prev.ruta_relativa;
+    let nombreDisplay = prev.nombre_archivo_display;
+    const warnings = [];
+    let destCarpeta = null;
+
+    const newCarpetaId = req.body?.carpeta_id != null ? parseInt(req.body.carpeta_id, 10) : null;
+    if (newCarpetaId && newCarpetaId !== prev.carpeta_id) {
+      const destRows = await db.query('SELECT * FROM sop_pdx_carpetas WHERE id = ?', [newCarpetaId]);
+      if (!destRows.length) return res.status(404).json({ error: 'Carpeta destino no encontrada' });
+      destCarpeta = destRows[0];
+      const visDest = calcularVisibilidadPeriodo(destCarpeta.periodo);
+      if (visDest === 'archivo') return res.status(403).json({ error: 'Carpeta destino en archivo' });
+      const moved = movePdxFileOnDisk(prev.carpeta_id, newCarpetaId, prev.ruta_relativa, {
+        apellidos,
+        nombres,
+        fecha_estudio: fecha,
+        marca_tiempo: prev.marca_tiempo,
+        sufijo_numero: prev.sufijo_numero,
+        estudio_texto: estudio,
+        nombre_archivo_display: prev.nombre_archivo_display
+      });
+      carpetaId = newCarpetaId;
+      rutaRelativa = moved.rutaRelativa;
+      if (!fechaEnPeriodo(fecha, destCarpeta.periodo)) {
+        warnings.push(`La fecha (${fecha}) no pertenece al mes ${destCarpeta.periodo}`);
+      }
+      if (!temaCoincideCarpeta(detectarTemaCarpeta(estudio), destCarpeta.color_tema)) {
+        warnings.push('El estudio no coincide con el tema de la carpeta destino');
+      }
+    } else {
+      if (!fechaEnPeriodo(fecha, prev.periodo)) {
+        warnings.push(`La fecha (${fecha}) no pertenece al mes ${prev.periodo}`);
+      }
+      if (!temaCoincideCarpeta(detectarTemaCarpeta(estudio), prev.carpeta_tema)) {
+        warnings.push('El estudio no coincide con el tema de la carpeta');
+      }
+    }
+
+    await db.execute(
+      `UPDATE sop_pdx_archivos SET
+        carpeta_id = ?, apellidos = ?, nombres = ?, paciente_nombre = ?, paciente_nombre_norm = ?,
+        paciente_documento = ?, fecha_estudio = ?, estudio_texto = ?,
+        ruta_relativa = ?, nombre_archivo_display = ?, editado_por = ?, editado_en = NOW()
+       WHERE id = ?`,
+      [
+        carpetaId,
+        apellidos,
+        nombres,
+        pacienteNombre,
+        normalizarNombreBusqueda(pacienteNombre),
+        req.body.paciente_documento != null ? req.body.paciente_documento : prev.paciente_documento,
+        fecha,
+        estudio,
+        rutaRelativa,
+        nombreDisplay,
+        req.session.usuarioId,
+        req.params.id
+      ]
+    );
+    const logTipo = newCarpetaId && newCarpetaId !== prev.carpeta_id ? 'movimiento' : 'edicion';
+    const logDetalle = logTipo === 'movimiento'
+      ? `Carpeta ${prev.carpeta_id} → ${carpetaId}`
+      : 'Metadatos actualizados';
+    await logPdxArchivo(req.params.id, logTipo, req.session.usuarioId, logDetalle);
+    const updated = await db.query('SELECT * FROM sop_pdx_archivos WHERE id = ?', [req.params.id]);
+    res.json({ ok: true, archivo: updated[0], warnings, movido: logTipo === 'movimiento' });
+  } catch (e) {
+    logger.error('[SOPORTES] editar archivo pdx:', e);
+    res.status(500).json({ error: safeError(e) });
+  }
+});
+
 router.delete('/soportes/pdx/archivos/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'soportes.pdx.eliminar'), async (req, res) => {
   try {
     const rows = await db.query('SELECT * FROM sop_pdx_archivos WHERE id = ?', [req.params.id]);
@@ -291,6 +479,104 @@ router.get('/soportes/pdx/archivos/:id/descargar', requireAuth, requireRoleOrPer
   }
 });
 
+router.get('/soportes/pdx/archivos/:id/ver', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'modulo.reportes_pdx'), async (req, res) => {
+  try {
+    const rows = await db.query(
+      `SELECT a.*, c.periodo FROM sop_pdx_archivos a JOIN sop_pdx_carpetas c ON c.id = a.carpeta_id WHERE a.id = ?`,
+      [req.params.id]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'No encontrado' });
+    const vis = calcularVisibilidadPeriodo(rows[0].periodo);
+    if (vis === 'archivo' && !puedeVerArchivo(req)) return res.status(403).json({ error: 'Archivo en carpeta cerrada' });
+    const fp = resolveStoragePath(rows[0].ruta_relativa);
+    if (!fp || !fs.existsSync(fp)) return res.status(404).json({ error: 'Archivo no en disco' });
+    const name = rows[0].nombre_archivo_display || rows[0].nombre_archivo_original;
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(name)}"`);
+    fs.createReadStream(fp).pipe(res);
+  } catch (e) {
+    res.status(500).json({ error: safeError(e) });
+  }
+});
+
+router.get('/soportes/pdx/archivos/:id/historial', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'modulo.reportes_pdx'), async (req, res) => {
+  try {
+    const rows = await db.query(
+      `SELECT l.*, u.nombre AS usuario_nombre
+       FROM sop_pdx_archivo_log l
+       LEFT JOIN usuarios u ON u.id = l.usuario_id
+       WHERE l.archivo_id = ? ORDER BY l.creado_en DESC LIMIT 50`,
+      [req.params.id]
+    );
+    res.json({ eventos: rows });
+  } catch (e) {
+    res.json({ eventos: [] });
+  }
+});
+
+router.post(
+  '/soportes/pdx/archivos/:id/reemplazar',
+  requireAuth,
+  requireRoleOrPerm(ROLES_SOPORTES, ['modulo.reportes_pdx', 'soportes.pdx.subir']),
+  uploadPdxReemplazar.single('file'),
+  validateMagicBytes,
+  async (req, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ error: 'Archivo PDF requerido' });
+      const rows = await db.query(
+        `SELECT a.*, c.periodo, c.color_tema FROM sop_pdx_archivos a
+         JOIN sop_pdx_carpetas c ON c.id = a.carpeta_id WHERE a.id = ?`,
+        [req.params.id]
+      );
+      if (!rows.length) return res.status(404).json({ error: 'Archivo no encontrado' });
+      const prev = rows[0];
+      const vis = calcularVisibilidadPeriodo(prev.periodo);
+      if (vis === 'archivo') return res.status(403).json({ error: 'Carpeta cerrada' });
+
+      const meta = buildMetaFromUpload(req.file.originalname, req.body);
+      if (!meta.ok) {
+        return res.status(400).json({
+          error: 'Complete apellidos, nombres, fecha y nombre del estudio.',
+          requiere_confirmacion: true
+        });
+      }
+
+      const warnings = collectPdxWarnings(meta, { periodo: prev.periodo, color_tema: prev.color_tema });
+      const oldFp = resolveStoragePath(prev.ruta_relativa);
+      if (oldFp && fs.existsSync(oldFp)) {
+        try { fs.unlinkSync(oldFp); } catch (_) { /* ignore */ }
+      }
+
+      const { rutaRelativa, nombre_archivo_display } = finalizePdxFileOnDisk(
+        prev.carpeta_id,
+        req.file.filename,
+        meta
+      );
+
+      await db.execute(
+        `UPDATE sop_pdx_archivos SET
+          apellidos = ?, nombres = ?, paciente_nombre = ?, paciente_nombre_norm = ?,
+          fecha_estudio = ?, marca_tiempo = ?, sufijo_numero = ?, estudio_texto = ?,
+          nombre_archivo_original = ?, nombre_archivo_display = ?, ruta_relativa = ?,
+          tamano_bytes = ?, editado_por = ?, editado_en = NOW()
+         WHERE id = ?`,
+        [
+          meta.apellidos, meta.nombres, meta.paciente_nombre, meta.paciente_nombre_norm,
+          meta.fecha_estudio, meta.marca_tiempo, meta.sufijo_numero, meta.estudio_texto,
+          req.file.originalname, nombre_archivo_display, rutaRelativa, req.file.size,
+          req.session.usuarioId, req.params.id
+        ]
+      );
+      await logPdxArchivo(req.params.id, 'reemplazo', req.session.usuarioId, req.file.originalname);
+      const updated = await db.query('SELECT * FROM sop_pdx_archivos WHERE id = ?', [req.params.id]);
+      res.json({ ok: true, archivo: updated[0], warnings });
+    } catch (e) {
+      logger.error('[SOPORTES] reemplazar pdx:', e);
+      res.status(500).json({ error: safeError(e) });
+    }
+  }
+);
+
 // ─── Armado: períodos / días / expedientes ───────────────────────────────────
 
 function mapPeriodo(row) {
@@ -307,7 +593,7 @@ function mapPeriodo(row) {
 
 router.get('/soportes/armado/periodos', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'modulo.armado_soportes'), async (req, res) => {
   try {
-    const incluirArchivo = puedeVerArchivo(req);
+    const incluirArchivo = puedeVerArchivo(req) && req.query.archivo === '1';
     const rows = await db.query(`
       SELECT p.*, COUNT(DISTINCT e.id) AS expedientes_count
       FROM sop_periodos p

@@ -253,6 +253,25 @@ html.innar-motion-off *::after {
   animation: innar-panel-out var(--motion-fast) var(--motion-ease-in) both !important;
 }
 
+/* Modales soportes (PDX / Armado) */
+.sop-dialog-backdrop {
+  animation: innar-overlay-in var(--motion-normal) var(--motion-ease-out) both !important;
+}
+
+.sop-dialog-backdrop > .sop-dialog {
+  animation: innar-panel-in var(--motion-normal) var(--motion-ease-out) both !important;
+  animation-delay: 35ms !important;
+}
+
+.sop-dialog-backdrop.innar-modal-closing {
+  animation: innar-overlay-out var(--motion-fast) var(--motion-ease-in) both !important;
+  pointer-events: none;
+}
+
+.sop-dialog-backdrop.innar-modal-closing > .sop-dialog {
+  animation: innar-panel-out var(--motion-fast) var(--motion-ease-in) both !important;
+}
+
 /* Loader */
 .app-loader-overlay {
   animation: innar-overlay-in var(--motion-fast) var(--motion-ease-out) both;
@@ -419,6 +438,7 @@ html.innar-motion-off *::after {
   .modal-overlay:not(.hidden),
   .modal:not(.hidden),
   .confirm-backdrop,
+  .sop-dialog-backdrop,
   #toast-container .app-toast,
   .app-loader-overlay,
   .view-module.innar-view-enter,

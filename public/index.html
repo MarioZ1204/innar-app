@@ -214,8 +214,8 @@
         <button class="menu-card" data-module="reportes-pdx" data-rol="superadmin admin admin_recepcion recepcion contabilidad admin_electro electro tecnico_electro">
           <span class="menu-card-icon"><svg width="56" height="55" viewBox="0 0 56 55" fill="none"><rect x="6" y="8" width="44" height="36" rx="4" fill="#dbeafe" stroke="#2563eb" stroke-width="2"/><path d="M14 20h28M14 28h20M14 36h24" stroke="#2563eb" stroke-width="2" stroke-linecap="round"/></svg></span>
           <span class="menu-card-label">
-            <span class="menu-card-title">Reportes PDX</span>
-            <span class="menu-card-desc">Depósito de reportes electro</span>
+            <span class="menu-card-title">Cargar reportes</span>
+            <span class="menu-card-desc">Subir PDFs al depósito por mes y estudio</span>
           </span>
         </button>
         <button class="menu-card" data-module="armado-soportes" data-rol="superadmin admin admin_recepcion recepcion contabilidad admin_electro electro tecnico_electro">
@@ -3173,12 +3173,16 @@
             <i data-lucide="arrow-left"></i> Menú
           </button>
         </div>
-        <div style="text-align:center">
-          <div class="sop-topbar-title">Reportes PDX</div>
-          <div class="sop-topbar-sub">Depósito de reportes electrodiagnóstico</div>
+        <div class="sop-topbar-center">
+          <div class="sop-topbar-title">Cargar reportes</div>
+          <div class="sop-topbar-sub">Depósito de reportes electrodiagnóstico (PDX)</div>
         </div>
         <div class="sop-topbar-right">
-          <label class="sop-toggle"><input type="checkbox" id="sopPdxIncluirArchivo"> Archivo</label>
+          <label class="sop-toggle sop-toggle-hint" title="Muestra carpetas de periodos en archivo (ocultas por defecto tras 5 días del mes siguiente).">
+            <input type="checkbox" id="sopPdxIncluirArchivo" aria-describedby="sopPdxArchivoHint">
+            <span>Archivo</span>
+            <span id="sopPdxArchivoHint" class="sop-hint-badge" tabindex="0" aria-label="Ayuda: incluir periodos en archivo">?</span>
+          </label>
           <button type="button" id="btnSopPdxNuevaCarpeta" class="sop-btn sop-btn-primary">
             <i data-lucide="folder-plus"></i> Nueva carpeta
           </button>
@@ -3186,6 +3190,7 @@
       </header>
       <main class="sop-body">
         <div id="sopPdxVistaLista">
+          <nav id="sopPdxBreadcrumbLista" class="sop-breadcrumbs" aria-label="Ubicación"></nav>
           <div class="sop-panel">
             <div class="sop-panel-head">
               <div class="sop-search-wrap">
@@ -3198,32 +3203,64 @@
             </div>
             <div class="sop-panel-body">
               <div id="sopPdxChipPeriodo" class="sop-chip-row"></div>
-              <div id="sopPdxResultados" class="hidden" style="margin-bottom:20px"></div>
+              <div id="sopPdxFiltrosBar" class="sop-pdx-filtros" aria-label="Filtros de carpetas">
+                <div class="sop-search-wrap sop-pdx-filtro-texto">
+                  <i data-lucide="filter"></i>
+                  <input type="search" id="sopPdxFiltroTexto" class="sop-search" placeholder="Filtrar por nombre de carpeta…" autocomplete="off">
+                </div>
+                <select id="sopPdxFiltroPeriodo" class="sop-select sop-pdx-filtro-sel" aria-label="Periodo">
+                  <option value="">Todos los periodos</option>
+                </select>
+                <select id="sopPdxFiltroTema" class="sop-select sop-pdx-filtro-sel" aria-label="Modalidad">
+                  <option value="">Todas las modalidades</option>
+                  <option value="vtm">VTM</option>
+                  <option value="psg">PSG</option>
+                  <option value="eeg">EEG</option>
+                  <option value="actigrafia">Actigrafía</option>
+                  <option value="neutral">Otro / neutro</option>
+                </select>
+                <select id="sopPdxFiltroOrden" class="sop-select sop-pdx-filtro-sel" aria-label="Orden">
+                  <option value="periodo_desc">Periodo (más reciente)</option>
+                  <option value="periodo_asc">Periodo (más antiguo)</option>
+                  <option value="nombre_asc">Nombre A → Z</option>
+                  <option value="nombre_desc">Nombre Z → A</option>
+                  <option value="archivos_desc">Más archivos</option>
+                </select>
+              </div>
+              <div id="sopPdxTemaLegend" class="sop-tema-legend" aria-label="Leyenda de modalidades"></div>
+              <div id="sopPdxResultados" class="sop-search-results hidden"></div>
               <div id="sopPdxLista"><div class="sop-empty"><i data-lucide="loader" class="sop-empty-icon"></i>Cargando carpetas…</div></div>
             </div>
           </div>
         </div>
         <div id="sopPdxVistaDetalle" class="hidden">
-          <button type="button" id="btnSopPdxVolver" class="sop-breadcrumb">
-            <i data-lucide="chevron-left"></i> Volver a carpetas
-          </button>
+          <nav id="sopPdxBreadcrumbDetalle" class="sop-breadcrumbs" aria-label="Ubicación"></nav>
           <div class="sop-panel">
             <div class="sop-panel-head">
-              <div>
+              <div style="flex:1;min-width:0">
                 <h3 id="sopPdxDetalleTitulo" style="margin:0 0 4px"></h3>
                 <div id="sopPdxDetalleMeta"></div>
               </div>
+              <div id="sopPdxDetalleAcciones" class="sop-panel-head-actions"></div>
             </div>
             <div class="sop-panel-body">
+              <div class="sop-pdx-format-help" role="note">
+                <div class="sop-pdx-format-title"><i data-lucide="info"></i> Estructura del nombre del PDF</div>
+                <p class="sop-pdx-format-pattern"><code>Apellido, Nombre &nbsp; YYYY-MM-DD &nbsp; HH-mm-ss &nbsp; N. &nbsp; TIPO ESTUDIO.pdf</code></p>
+                <p class="sop-pdx-format-ejemplo"><strong>Ejemplo:</strong> Arcos Enriquez, Nancy Del Carmen &nbsp; 2026-03-14 &nbsp; 21-21-12 &nbsp; 1. &nbsp; PSG BASAL.pdf</p>
+                <p class="sop-pdx-format-nota">Si el archivo ya trae ese formato, el sistema lee paciente, fecha y estudio automáticamente. Si no, le pediremos los datos al subir.</p>
+              </div>
               <div id="sopPdxDropzone" class="sop-dropzone">
                 <div class="sop-dropzone-icon"><i data-lucide="upload-cloud" style="width:40px;height:40px"></i></div>
-                <div style="font-weight:600;color:#334155">Arrastra PDFs aquí o haz clic para subir</div>
-                <div style="font-size:.8rem;color:#94a3b8;margin-top:4px">Formato esperado: Apellido, Nombre  YYYY-MM-DD …</div>
+                <div class="sop-dropzone-label">Arrastra PDFs aquí o haz clic para subir</div>
+                <div class="sop-dropzone-hint">Solo archivos .pdf — varios archivos: una sola confirmación en lote</div>
                 <input type="file" id="sopPdxUploadInput" class="sop-file-input-hidden" accept=".pdf" multiple>
               </div>
               <div class="sop-table-wrap">
-                <table class="sop-table">
-                  <thead><tr><th>Paciente</th><th>Fecha</th><th>Estudio</th><th style="width:140px">Acciones</th></tr></thead>
+                <table class="sop-table sop-table-pdx-archivos">
+                  <thead><tr>
+                    <th>Paciente</th><th>Fecha</th><th>Estudio</th><th>Archivo</th><th style="min-width:200px">Acciones</th>
+                  </tr></thead>
                   <tbody id="sopPdxArchivosBody"></tbody>
                 </table>
               </div>
@@ -3244,13 +3281,20 @@
           <button type="button" id="btnVolverArmadoSoportes" class="sop-btn sop-btn-ghost sop-btn-sm">
             <i data-lucide="arrow-left"></i> Menú
           </button>
+          <button type="button" id="btnSopArmToggleNav" class="sop-btn sop-btn-ghost sop-btn-sm sop-mobile-only" aria-expanded="false" aria-controls="sopArmNavPanel">
+            <i data-lucide="panel-left"></i> Navegación
+          </button>
         </div>
-        <div style="text-align:center">
+        <div class="sop-topbar-center">
           <div class="sop-topbar-title">Armado de soportes</div>
           <div class="sop-topbar-sub">Paquetes FE para radicación EPS</div>
         </div>
         <div class="sop-topbar-right">
-          <label class="sop-toggle"><input type="checkbox" id="sopArmIncluirArchivo"> Archivo</label>
+          <label class="sop-toggle sop-toggle-hint" title="Muestra periodos de armado en archivo (ocultos por defecto tras el periodo de gracia).">
+            <input type="checkbox" id="sopArmIncluirArchivo" aria-describedby="sopArmArchivoHint">
+            <span>Archivo</span>
+            <span id="sopArmArchivoHint" class="sop-hint-badge" tabindex="0" aria-label="Ayuda: incluir periodos en archivo">?</span>
+          </label>
           <button type="button" id="btnSopArmNuevoDia" class="sop-btn sop-btn-ghost">
             <i data-lucide="calendar-plus"></i> Día
           </button>
@@ -3259,10 +3303,13 @@
           </button>
         </div>
       </header>
-      <main class="sop-body sop-layout-armado">
-        <aside class="sop-panel">
+      <main class="sop-body sop-layout-armado" id="sopArmLayout">
+        <nav id="sopArmContextBar" class="sop-context-bar sop-context-bar-full" aria-label="Contexto de navegación"></nav>
+        <div id="sopArmNavBackdrop" class="sop-nav-backdrop hidden" aria-hidden="true"></div>
+        <aside id="sopArmNavPanel" class="sop-panel sop-arm-nav-panel">
           <div class="sop-panel-head"><h3 style="margin:0;font-size:1rem">Navegación</h3></div>
           <div class="sop-panel-body" style="padding-top:12px">
+            <div id="sopArmPeriodoSummary" class="sop-summary-row hidden"></div>
             <div class="sop-nav-block">
               <div class="sop-nav-label">Periodos</div>
               <div id="sopArmPeriodos" class="sop-nav-list"><div class="sop-empty" style="padding:16px">Cargando…</div></div>

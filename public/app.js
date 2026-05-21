@@ -7008,7 +7008,7 @@ const PERMISOS_DEFS = [
   { key: 'modulo.diagnosticos',     label: 'Módulo: Diagnósticos',                grupo: 'Acceso a Módulos' },
   { key: 'modulo.gestion_datos',    label: 'Módulo: Gestión de Datos',            grupo: 'Acceso a Módulos' },
   { key: 'modulo.monitor_equipos',  label: 'Módulo: Monitor de Equipos',           grupo: 'Acceso a Módulos' },
-  { key: 'modulo.reportes_pdx',     label: 'Módulo: Reportes PDX',                 grupo: 'Acceso a Módulos' },
+  { key: 'modulo.reportes_pdx',     label: 'Módulo: Cargar reportes',              grupo: 'Acceso a Módulos' },
   { key: 'modulo.armado_soportes', label: 'Módulo: Armado de Soportes',           grupo: 'Acceso a Módulos' },
   // ── Soportes de radicación ────────────────────────────────────────────────
   { key: 'soportes.pdx.subir',           label: 'PDX: Subir archivos y crear carpetas', grupo: 'Soportes Radicación' },

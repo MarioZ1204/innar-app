@@ -361,6 +361,26 @@ table tbody tr:hover td {
   border-left-color: var(--c-mid) !important;
 }
 
+/* ── Soportes PDX / Armado — coherencia marca ─────────────────────────────── */
+.sop-topbar {
+  border-bottom-color: var(--innar-border) !important;
+}
+
+.sop-pdx-theme .sop-btn-primary,
+.sop-pdx-theme .sop-search:focus {
+  --sop-accent-local: var(--c-mid);
+}
+
+.sop-arm-theme .sop-btn-teal {
+  background: linear-gradient(135deg, var(--c-mid), var(--c-dark)) !important;
+  border-color: var(--c-dark) !important;
+}
+
+.sop-import-item.selected {
+  outline-color: var(--c-primary) !important;
+  background: var(--innar-accent-soft) !important;
+}
+
 @media (max-width: 640px) {
   .meq-date-bar {
     padding: 12px !important;

@@ -565,6 +565,29 @@ const runtimeMigrations = [
         INDEX idx_sop_trf_exp (expediente_id)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
     }
+  },
+  {
+    name: 'rt_sop_pdx_archivo_log',
+    description: 'Auditoría PDX: editado_por y log de eventos',
+    run: async (db) => {
+      if (!(await tableExists(db, 'sop_pdx_archivo_log'))) {
+        await db.execute(`CREATE TABLE sop_pdx_archivo_log (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          archivo_id INT NOT NULL,
+          tipo ENUM('subida','edicion','reemplazo','movimiento') NOT NULL,
+          usuario_id INT NULL,
+          detalle VARCHAR(500) NULL,
+          creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          CONSTRAINT fk_sop_pdx_log_arch FOREIGN KEY (archivo_id) REFERENCES sop_pdx_archivos(id) ON DELETE CASCADE,
+          INDEX idx_sop_pdx_log_arch (archivo_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+      }
+      if (await tableExists(db, 'sop_pdx_archivos') && !(await columnExists(db, 'sop_pdx_archivos', 'editado_por'))) {
+        await db.execute(
+          'ALTER TABLE sop_pdx_archivos ADD COLUMN editado_por INT NULL, ADD COLUMN editado_en TIMESTAMP NULL'
+        );
+      }
+    }
   }
 ];
 
