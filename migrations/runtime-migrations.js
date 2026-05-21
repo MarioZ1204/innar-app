@@ -588,6 +588,170 @@ const runtimeMigrations = [
         );
       }
     }
+  },
+  {
+    name: 'rt_sop_estructura_carpetas_v2',
+    description: 'Soportes: carpetas día, RIPS/SOPORTES y FE por contenedor',
+    run: async (db) => {
+      if (!(await tableExists(db, 'sop_dias'))) return;
+
+      if (!(await columnExists(db, 'sop_dias', 'nombre_display'))) {
+        await db.execute(
+          "ALTER TABLE sop_dias ADD COLUMN nombre_display VARCHAR(80) NULL AFTER dia, ADD COLUMN estado_facturacion ENUM('facturados','a_facturar') NOT NULL DEFAULT 'a_facturar' AFTER nombre_display"
+        );
+      }
+      await db.execute(
+        "UPDATE sop_dias SET nombre_display = CONCAT('Día ', dia) WHERE nombre_display IS NULL OR nombre_display = ''"
+      );
+
+      try {
+        await db.execute('ALTER TABLE sop_dias DROP INDEX uk_sop_dia');
+      } catch (_) { /* ya eliminado */ }
+      try {
+        await db.execute('ALTER TABLE sop_dias ADD UNIQUE KEY uk_sop_dia_nombre (periodo_id, nombre_display)');
+      } catch (_) { /* ya existe */ }
+
+      if (!(await tableExists(db, 'sop_contenedores'))) {
+        await db.execute(`CREATE TABLE sop_contenedores (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          dia_id INT NOT NULL,
+          tipo ENUM('rips','soportes') NOT NULL,
+          creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE KEY uk_sop_contenedor (dia_id, tipo),
+          CONSTRAINT fk_sop_cont_dia FOREIGN KEY (dia_id) REFERENCES sop_dias(id) ON DELETE CASCADE,
+          INDEX idx_sop_cont_dia (dia_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+      }
+
+      const dias = await db.query('SELECT id FROM sop_dias');
+      for (const d of dias) {
+        for (const tipo of ['rips', 'soportes']) {
+          const ex = await db.query('SELECT id FROM sop_contenedores WHERE dia_id = ? AND tipo = ?', [d.id, tipo]);
+          if (!ex.length) {
+            await db.execute('INSERT INTO sop_contenedores (dia_id, tipo) VALUES (?,?)', [d.id, tipo]);
+          }
+        }
+      }
+
+      if (await tableExists(db, 'sop_expedientes') && !(await columnExists(db, 'sop_expedientes', 'contenedor_id'))) {
+        await db.execute('ALTER TABLE sop_expedientes ADD COLUMN contenedor_id INT NULL AFTER dia_id');
+      }
+
+      const sinCont = await db.query('SELECT e.id, e.dia_id FROM sop_expedientes e WHERE e.contenedor_id IS NULL');
+      for (const row of sinCont) {
+        const c = await db.query(
+          "SELECT id FROM sop_contenedores WHERE dia_id = ? AND tipo = 'soportes' LIMIT 1",
+          [row.dia_id]
+        );
+        if (c.length) {
+          await db.execute('UPDATE sop_expedientes SET contenedor_id = ? WHERE id = ?', [c[0].id, row.id]);
+        }
+      }
+
+      try {
+        await db.execute('ALTER TABLE sop_expedientes DROP INDEX uk_sop_exp_codigo');
+      } catch (_) { /* ignore */ }
+      try {
+        await db.execute('ALTER TABLE sop_expedientes ADD UNIQUE KEY uk_sop_exp_cont_codigo (contenedor_id, codigo)');
+      } catch (_) { /* ignore */ }
+
+      try {
+        await db.execute(
+          'ALTER TABLE sop_expedientes MODIFY paciente_nombre VARCHAR(200) NULL DEFAULT NULL'
+        );
+      } catch (_) { /* ignore */ }
+    }
+  },
+  {
+    name: 'rt_sop_exp_paciente_factura',
+    description: 'Expedientes por paciente: índice por contenedor y factura pendiente NULL',
+    run: async (db) => {
+      if (!(await tableExists(db, 'sop_expedientes'))) return;
+
+      if (await tableExists(db, 'sop_dias')) {
+        const dias = await db.query('SELECT id FROM sop_dias');
+        for (const d of dias) {
+          for (const tipo of ['rips', 'soportes']) {
+            const ex = await db.query('SELECT id FROM sop_contenedores WHERE dia_id = ? AND tipo = ?', [d.id, tipo]);
+            if (!ex.length) {
+              await db.execute('INSERT INTO sop_contenedores (dia_id, tipo) VALUES (?,?)', [d.id, tipo]);
+            }
+          }
+        }
+      }
+
+      const sinCont = await db.query('SELECT e.id, e.dia_id FROM sop_expedientes e WHERE e.contenedor_id IS NULL');
+      for (const row of sinCont) {
+        const c = await db.query(
+          "SELECT id FROM sop_contenedores WHERE dia_id = ? AND tipo = 'soportes' LIMIT 1",
+          [row.dia_id]
+        );
+        if (c.length) {
+          await db.execute('UPDATE sop_expedientes SET contenedor_id = ? WHERE id = ?', [c[0].id, row.id]);
+        }
+      }
+
+      try {
+        await db.execute('ALTER TABLE sop_expedientes DROP INDEX uk_sop_exp_codigo');
+      } catch (_) { /* ignore */ }
+      try {
+        await db.execute('ALTER TABLE sop_expedientes DROP INDEX uk_sop_exp_cont_codigo');
+      } catch (_) { /* ignore */ }
+      try {
+        await db.execute(
+          'ALTER TABLE sop_expedientes ADD UNIQUE KEY uk_sop_exp_cont_codigo (contenedor_id, codigo)'
+        );
+      } catch (_) { /* ignore */ }
+
+      try {
+        await db.execute(
+          'ALTER TABLE sop_expedientes MODIFY numero_factura INT UNSIGNED NULL DEFAULT NULL'
+        );
+      } catch (_) { /* ignore */ }
+      try {
+        await db.execute(
+          'ALTER TABLE sop_expedientes MODIFY paciente_nombre VARCHAR(200) NULL DEFAULT NULL'
+        );
+      } catch (_) { /* ignore */ }
+    }
+  },
+  {
+    name: 'rt_sop_rips_archivos',
+    description: 'Archivos RIPS JSON (integración World Office)',
+    run: async (db) => {
+      if (!(await tableExists(db, 'sop_rips_archivos'))) {
+        await db.execute(`CREATE TABLE sop_rips_archivos (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          expediente_id INT NOT NULL,
+          contenedor_id INT NOT NULL,
+          slot ENUM('json_1','json_2','xml') NOT NULL,
+          nombre_archivo VARCHAR(255) NOT NULL,
+          nombre_original VARCHAR(500) NULL,
+          ruta_relativa VARCHAR(500) NOT NULL,
+          tamano_bytes INT UNSIGNED NOT NULL,
+          hash_sha256 CHAR(64) NULL,
+          origen ENUM('worldoffice_api','manual') NOT NULL DEFAULT 'worldoffice_api',
+          subido_por INT NULL,
+          creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          actualizado_en TIMESTAMP NULL ON UPDATE CURRENT_TIMESTAMP,
+          CONSTRAINT fk_sop_rips_exp FOREIGN KEY (expediente_id) REFERENCES sop_expedientes(id) ON DELETE CASCADE,
+          CONSTRAINT fk_sop_rips_cont FOREIGN KEY (contenedor_id) REFERENCES sop_contenedores(id) ON DELETE CASCADE,
+          UNIQUE KEY uk_sop_rips_exp_slot (expediente_id, slot),
+          INDEX idx_sop_rips_cont (contenedor_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+      }
+      if (await tableExists(db, 'sop_rips_archivos') && !(await columnExists(db, 'sop_rips_archivos', 'slot'))) {
+        await db.execute(
+          "ALTER TABLE sop_rips_archivos ADD COLUMN slot ENUM('json_1','json_2','xml') NOT NULL DEFAULT 'json_1' AFTER contenedor_id"
+        );
+      }
+      if (await tableExists(db, 'sop_rips_archivos') && !(await columnExists(db, 'sop_rips_archivos', 'nombre_original'))) {
+        await db.execute('ALTER TABLE sop_rips_archivos ADD COLUMN nombre_original VARCHAR(500) NULL AFTER nombre_archivo');
+      }
+      if (await columnExists(db, 'sop_exp_archivos', 'nombre_archivo') && !(await columnExists(db, 'sop_exp_archivos', 'nombre_original'))) {
+        await db.execute('ALTER TABLE sop_exp_archivos ADD COLUMN nombre_original VARCHAR(500) NULL AFTER nombre_archivo');
+      }
+    }
   }
 ];
 

@@ -358,6 +358,7 @@ function apiFetch(url, opts = {}) {
 }
 
 function isAdmin() { return currentUser && (currentUser.rol === 'admin' || currentUser.rol === 'superadmin'); }
+function isSuperadmin() { return currentUser && currentUser.rol === 'superadmin'; }
 function isRecepcion() { return currentUser && (currentUser.rol === 'recepcion' || currentUser.rol === 'auxiliar_recepcion' || currentUser.rol === 'admin_recepcion'); }
 function isElectro() { return currentUser && (currentUser.rol === 'electro' || currentUser.rol === 'admin_electro' || currentUser.rol === 'tecnico_electro'); }
 function isDoctor() { return currentUser && currentUser.rol === 'doctor'; }
@@ -7009,7 +7010,7 @@ const PERMISOS_DEFS = [
   { key: 'modulo.gestion_datos',    label: 'Módulo: Gestión de Datos',            grupo: 'Acceso a Módulos' },
   { key: 'modulo.monitor_equipos',  label: 'Módulo: Monitor de Equipos',           grupo: 'Acceso a Módulos' },
   { key: 'modulo.reportes_pdx',     label: 'Módulo: Cargar reportes',              grupo: 'Acceso a Módulos' },
-  { key: 'modulo.armado_soportes', label: 'Módulo: Armado de Soportes',           grupo: 'Acceso a Módulos' },
+  { key: 'modulo.armado_soportes', label: 'Módulo: Soportes',                    grupo: 'Acceso a Módulos' },
   // ── Soportes de radicación ────────────────────────────────────────────────
   { key: 'soportes.pdx.subir',           label: 'PDX: Subir archivos y crear carpetas', grupo: 'Soportes Radicación' },
   { key: 'soportes.pdx.eliminar',        label: 'PDX: Eliminar archivos',               grupo: 'Soportes Radicación' },
@@ -9003,6 +9004,10 @@ async function cargarLista(queryString) {
         acciones += `<button class="btn-eliminar delete" data-id="${r.id}" title="Eliminar">
           <img src="images/delete.svg" alt="Eliminar"/></button>`;
       }
+      if (isSuperadmin() && !esAnulado) {
+        acciones += `<button class="btn-editar-obs" data-id="${r.id}" data-numero="${escapeHtml(r.numero || '')}" title="Editar observaciones">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M12 18v-6M9 15h6"/></svg></button>`;
+      }
       acciones += `</div>`;
 
       tr.innerHTML = `
@@ -9023,6 +9028,11 @@ async function cargarLista(queryString) {
         <td style="text-align:center">${acciones}</td>`;
       tbody.appendChild(tr);
     });
+
+    tbody.querySelectorAll('.btn-editar-obs').forEach((b) => b.addEventListener('click', (e) => {
+      const btn = e.target.closest('.btn-editar-obs');
+      showEditObservacionesReciboModal(btn.dataset.id, btn.dataset.numero);
+    }));
 
     // Listener: Editar recibo (superadmin)
     tbody.querySelectorAll('.btn-editar').forEach(b => b.addEventListener('click', e => {
@@ -9082,6 +9092,62 @@ async function cargarLista(queryString) {
     console.error(e);
     showToast('Error cargando lista', 'error');
   }
+}
+
+async function showEditObservacionesReciboModal(reciboId, numero) {
+  let obsActual = '';
+  try {
+    const rec = await apiFetch(`/api/recibos/${reciboId}`).then((r) => r.json());
+    if (rec.error) {
+      showToast(rec.error, 'error');
+      return;
+    }
+    obsActual = rec.observaciones || '';
+  } catch (_) {
+    showToast('No se pudo cargar el recibo', 'error');
+    return;
+  }
+
+  const inputStyle = 'width:100%;margin-top:4px;padding:9px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:0.9rem;background:#fff';
+  const backdrop = document.createElement('div');
+  backdrop.className = 'confirm-backdrop';
+  backdrop.innerHTML = `
+    <div class="confirm-box" style="max-width:520px;width:92%">
+      <div class="confirm-icon">📝</div>
+      <div class="confirm-msg" style="font-size:1rem;margin-bottom:14px">Observaciones — Recibo ${escapeHtml(numero || reciboId)}</div>
+      <p style="font-size:.8rem;color:#64748b;margin:-8px 0 12px">Solo superadministrador puede modificar este campo.</p>
+      <label style="font-size:0.85rem;font-weight:600;color:#374151;display:block">
+        Observaciones
+        <textarea id="editReciboObs" rows="5" style="${inputStyle};resize:vertical;min-height:100px">${escapeHtml(obsActual)}</textarea>
+      </label>
+      <div class="confirm-actions" style="margin-top:18px">
+        <button class="btn-cancel">Cancelar</button>
+        <button class="btn-ok" style="background:#2d4a47">Guardar observaciones</button>
+      </div>
+    </div>`;
+  document.body.appendChild(backdrop);
+  backdrop.querySelector('#editReciboObs').focus();
+  backdrop.querySelector('.btn-cancel').addEventListener('click', () => backdrop.remove());
+  backdrop.querySelector('.btn-ok').addEventListener('click', async () => {
+    const observaciones = backdrop.querySelector('#editReciboObs').value;
+    try {
+      const jr = await apiFetch(`/api/recibos/${reciboId}/observaciones`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ observaciones })
+      }).then((r) => r.json());
+      if (jr.ok) {
+        backdrop.remove();
+        showToast('Observaciones guardadas', 'success');
+        cargarLista(_recibosLastParams);
+      } else {
+        showToast(jr.error || 'Error al guardar', 'error');
+      }
+    } catch (_) {
+      showToast('Error al guardar observaciones', 'error');
+    }
+  });
+  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) backdrop.remove(); });
 }
 
 async function showEditReciboModal({ id, medico, servicio, entidad, cliente }) {

@@ -24,6 +24,13 @@
 }
 
 /* ── Formularios globales ─────────────────────────────────────────────────── */
+.sop-dialog-backdrop .sop-field input,
+.sop-dialog-backdrop .sop-field select,
+.sop-dialog-backdrop .sop-field textarea {
+  border-radius: 10px !important;
+  min-height: var(--innar-control-h) !important;
+}
+
 .form-input,
 input[type="text"],
 input[type="password"],

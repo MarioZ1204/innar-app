@@ -34,6 +34,14 @@ describe('validateMagicBytes', () => {
     expect(r.req.file).not.toBeNull();
   });
 
+  test('acepta PDF con bytes iniciales antes de %PDF', async () => {
+    const bytes = [0x20, 0x20, 0x25, 0x50, 0x44, 0x46, 0x2D, 0x31];
+    const f = makeFile('escaneo.pdf', bytes);
+    const r = await runMw(f, 'escaneo.pdf');
+    expect(r.status).toBe(200);
+    expect(r.req.file).not.toBeNull();
+  });
+
   test('rechaza PDF con extensión engañosa (en realidad PNG)', async () => {
     const f = makeFile('fake.pdf', [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
     const r = await runMw(f, 'fake.pdf');

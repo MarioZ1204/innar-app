@@ -13,10 +13,25 @@ function getPdxDir(carpetaId) {
   return dir;
 }
 
+/** @deprecated Use getArmadoFeDirAbs from soportes-armado-structure */
 function getArmadoExpedienteDir(periodo, dia, codigo) {
   const dir = path.join(SOPORTES_ROOT, 'armado', periodo, String(dia), codigo);
   ['OPF', 'CRC', 'FEV', 'PDX', 'HEV'].forEach((sub) => ensureDir(path.join(dir, sub)));
   return dir;
+}
+
+function getArmadoFeDirFromContext(ctx, codigo) {
+  const {
+    getArmadoFeDirAbs
+  } = require('./soportes-armado-structure');
+  return getArmadoFeDirAbs(
+    SOPORTES_ROOT,
+    ctx.periodo,
+    ctx.nombre_display || `Día ${ctx.dia}`,
+    ctx.estado_facturacion || 'a_facturar',
+    ctx.contenedor_tipo || ctx.tipo || 'soportes',
+    codigo
+  );
 }
 
 function safeFilename(original) {
@@ -40,6 +55,7 @@ module.exports = {
   SOPORTES_ROOT,
   getPdxDir,
   getArmadoExpedienteDir,
+  getArmadoFeDirFromContext,
   safeFilename,
   resolveStoragePath,
   ensureDir

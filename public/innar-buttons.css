@@ -178,6 +178,16 @@ button:disabled {
   box-shadow: 0 6px 20px rgba(13, 148, 136, 0.45) !important;
 }
 
+.sop-btn-danger {
+  background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%) !important;
+  color: #fff !important;
+  box-shadow: 0 4px 14px rgba(220, 38, 38, 0.35) !important;
+}
+
+.sop-btn-danger:hover {
+  box-shadow: 0 6px 20px rgba(220, 38, 38, 0.45) !important;
+}
+
 /* ── Login / menú superior ────────────────────────────────────────────────── */
 .btn-login {
   width: 100%;

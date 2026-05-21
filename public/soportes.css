@@ -455,6 +455,59 @@
   align-items: center;
 }
 
+.sop-contenedores-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 14px;
+}
+.sop-contenedor-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 18px 16px;
+  cursor: pointer;
+  background: #fff;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.sop-contenedor-card:hover {
+  border-color: color-mix(in srgb, var(--c-mid) 40%, #e2e8f0);
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.06);
+}
+.sop-contenedor-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--c-mid) 12%, #f8fafc);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--c-mid);
+  margin-bottom: 10px;
+}
+.sop-contenedor-title {
+  font-weight: 700;
+  font-size: 1.05rem;
+  color: #0f172a;
+}
+.sop-contenedor-meta {
+  font-size: 0.8rem;
+  color: #64748b;
+  margin-top: 4px;
+}
+
+.sop-dropzone-compact {
+  padding: 16px 20px;
+  min-height: auto;
+}
+.sop-dropzone-compact .sop-dropzone-label {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #334155;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
 .sop-pdx-format-help {
   margin-bottom: 16px;
   padding: 14px 16px;
@@ -1026,6 +1079,28 @@
   font-weight: 600;
 }
 
+.sop-nav-item-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.sop-nav-item-actions {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.sop-nav-item-actions .sop-btn-sm {
+  padding: 2px 6px;
+}
+
+.sop-nav-item-actions [data-dia-del] {
+  color: #dc2626;
+}
+
 .sop-slots {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
@@ -1097,11 +1172,17 @@
   border: 1px solid #e2e8f0;
 }
 
+/* Modales en body: tokens propios (fuera de #view-armado-soportes) */
 .sop-dialog-backdrop {
+  --sop-dialog-bg: #ffffff;
+  --sop-dialog-text: #0f172a;
+  --sop-dialog-muted: #475569;
+  --sop-dialog-border: #e2e8f0;
+  --sop-dialog-focus: var(--c-primary, #5a7d78);
   position: fixed;
   inset: 0;
-  background: rgba(15, 23, 42, 0.45);
-  backdrop-filter: blur(6px);
+  background: rgba(15, 23, 42, 0.52);
+  backdrop-filter: blur(4px);
   z-index: 10050;
   display: flex;
   align-items: center;
@@ -1109,22 +1190,133 @@
   padding: 20px;
 }
 
-.sop-dialog {
-  background: var(--sop-surface);
-  border-radius: var(--innar-radius-lg, 18px);
-  padding: 28px;
-  max-width: 440px;
+.sop-dialog-backdrop .sop-dialog {
+  background: var(--sop-dialog-bg);
+  color: var(--sop-dialog-text);
+  border-radius: 16px;
+  padding: 24px 24px 20px;
+  max-width: 420px;
   width: 100%;
   max-height: 90vh;
   overflow-y: auto;
-  box-shadow: 0 24px 64px rgba(15, 23, 42, 0.2);
-  border: 1px solid var(--sop-border);
+  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.22), 0 0 0 1px rgba(15, 23, 42, 0.06);
+  border: 1px solid var(--sop-dialog-border);
 }
 
-.sop-dialog h3 {
-  margin: 0 0 20px;
-  font-size: 1.2rem;
+.sop-dialog-backdrop .sop-dialog h3 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 12px;
+  font-size: 1.125rem;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--sop-dialog-text);
+}
+
+.sop-dialog-backdrop .sop-dialog h3 [data-lucide],
+.sop-dialog-backdrop .sop-dialog h3 svg {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  color: var(--c-dark, #2d4a47);
+}
+
+.sop-dialog-lead {
+  margin: 0 0 18px;
+  padding: 12px 14px;
+  background: #f8fafc;
+  border: 1px solid var(--sop-dialog-border);
+  border-radius: 10px;
+  font-size: 0.875rem;
+  line-height: 1.55;
+  color: var(--sop-dialog-muted);
+}
+
+.sop-dialog-lead strong {
+  color: var(--sop-dialog-text);
+  font-weight: 700;
+}
+
+.sop-dialog-lead code {
+  font-size: 0.8125rem;
+  font-weight: 600;
   color: #0f172a;
+  background: #e2e8f0;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.sop-dialog-backdrop .sop-field {
+  margin-bottom: 0;
+}
+
+.sop-dialog-backdrop .sop-field label {
+  display: block;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--sop-dialog-text);
+  margin-bottom: 8px;
+}
+
+.sop-dialog-backdrop .sop-field label .sop-label-opt {
+  font-weight: 500;
+  color: var(--sop-dialog-muted);
+}
+
+.sop-dialog-backdrop .sop-field input,
+.sop-dialog-backdrop .sop-field select,
+.sop-dialog-backdrop .sop-field textarea {
+  width: 100%;
+  padding: 11px 14px !important;
+  border: 1.5px solid #cbd5e1 !important;
+  border-radius: 10px !important;
+  font-size: 0.9375rem !important;
+  font-weight: 500 !important;
+  color: var(--sop-dialog-text) !important;
+  background: #fff !important;
+  min-height: 44px;
+  box-sizing: border-box;
+}
+
+.sop-dialog-backdrop .sop-field input::placeholder {
+  color: #94a3b8 !important;
+  font-weight: 400 !important;
+}
+
+.sop-dialog-backdrop .sop-field input:focus,
+.sop-dialog-backdrop .sop-field select:focus,
+.sop-dialog-backdrop .sop-field textarea:focus {
+  outline: none !important;
+  border-color: var(--sop-dialog-focus) !important;
+  box-shadow: 0 0 0 3px rgba(90, 125, 120, 0.28) !important;
+}
+
+.sop-dialog-backdrop .sop-dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--sop-dialog-border);
+}
+
+.sop-dialog-backdrop .sop-dialog-actions .sop-btn {
+  min-height: 40px;
+  padding: 9px 18px;
+  border-radius: 10px;
+  font-weight: 600;
+  font-size: 0.875rem;
+}
+
+/* Compat: reglas sin backdrop (por si se usan dentro del módulo) */
+.sop-dialog {
+  background: var(--sop-surface, #fff);
+  border-radius: var(--innar-radius-lg, 16px);
+  padding: 24px;
+  max-width: 440px;
+  width: 100%;
 }
 
 .sop-field {
@@ -1133,9 +1325,9 @@
 
 .sop-field label {
   display: block;
-  font-size: 0.8rem;
+  font-size: 0.8125rem;
   font-weight: 600;
-  color: #64748b;
+  color: #334155;
   margin-bottom: 6px;
 }
 
@@ -1143,17 +1335,17 @@
 .sop-field select {
   width: 100%;
   padding: 11px 14px;
-  border: 2px solid #e2e8f0;
+  border: 1.5px solid #cbd5e1;
   border-radius: 10px;
-  font-size: 0.95rem;
+  font-size: 0.9375rem;
   box-sizing: border-box;
 }
 
 .sop-field input:focus,
 .sop-field select:focus {
   outline: none;
-  border-color: var(--sop-focus);
-  box-shadow: var(--sop-focus-ring);
+  border-color: var(--sop-focus, #5a7d78);
+  box-shadow: var(--sop-focus-ring, 0 0 0 3px rgba(90, 125, 120, 0.28));
 }
 
 .sop-dialog-actions {

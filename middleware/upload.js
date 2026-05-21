@@ -46,6 +46,33 @@ const upload = multer({
  * Si no, borra el archivo y devuelve 400.
  * CSV se acepta por extensión (sin magic bytes).
  */
+/** Busca la firma %PDF en los primeros bytes (algunos escáneres dejan espacios/BOM al inicio). */
+function findPdfMagicOffset(buf) {
+  const max = Math.min(buf.length - 4, 1024);
+  for (let i = 0; i <= max; i++) {
+    if (buf[i] === 0x25 && buf[i + 1] === 0x50 && buf[i + 2] === 0x44 && buf[i + 3] === 0x46) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+function bufferLooksLikePdf(buf) {
+  return findPdfMagicOffset(buf) >= 0;
+}
+
+function fileLooksLikePdf(filePath) {
+  try {
+    const fd = fs.openSync(filePath, 'r');
+    const buf = Buffer.alloc(1024);
+    const bytesRead = fs.readSync(fd, buf, 0, 1024, 0);
+    fs.closeSync(fd);
+    return bufferLooksLikePdf(buf.subarray(0, bytesRead));
+  } catch (_) {
+    return false;
+  }
+}
+
 function validateMagicBytes(req, res, next) {
   if (!req.file) return next();
   const filePath = req.file.path;
@@ -54,8 +81,9 @@ function validateMagicBytes(req, res, next) {
 
   try {
     const fd = fs.openSync(filePath, 'r');
-    const buf = Buffer.alloc(12);
-    const bytesRead = fs.readSync(fd, buf, 0, 12, 0);
+    const scanLen = EXT_PDF.includes(ext) ? 1024 : 12;
+    const buf = Buffer.alloc(scanLen);
+    const bytesRead = fs.readSync(fd, buf, 0, scanLen, 0);
     fs.closeSync(fd);
 
     const matches = detectByMagic(buf.subarray(0, bytesRead), ext);
@@ -81,9 +109,9 @@ function validateMagicBytes(req, res, next) {
 function detectByMagic(buf, ext) {
   if (buf.length < 4) return false;
 
-  // PDF: "%PDF-"
+  // PDF: "%PDF-" (puede no estar en el byte 0)
   if (EXT_PDF.includes(ext)) {
-    return buf[0] === 0x25 && buf[1] === 0x50 && buf[2] === 0x44 && buf[3] === 0x46;
+    return bufferLooksLikePdf(buf);
   }
   // PNG: 89 50 4E 47 0D 0A 1A 0A
   if (EXT_PNG.includes(ext)) {
@@ -107,4 +135,32 @@ function detectByMagic(buf, ext) {
   return false;
 }
 
-module.exports = { upload, validateMagicBytes };
+const uploadArmadoSoportes = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, uploadDir),
+    filename: (req, file, cb) => {
+      const safeName = `${Date.now()}-${file.originalname.replace(/[^a-zA-Z0-9.\-_]/g, '_')}`;
+      cb(null, safeName);
+    }
+  }),
+  limits: { fileSize: 20 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    const mime = (file.mimetype || '').toLowerCase();
+    if (ext === '.pdf' || mime === 'application/pdf') {
+      return cb(null, true);
+    }
+    if (ext === '.json' || ext === '.xml') {
+      return cb(null, true);
+    }
+    cb(new Error('Solo se permiten archivos PDF (SOPORTES) o JSON/XML (RIPS). Use extensión .pdf'));
+  }
+});
+
+module.exports = {
+  upload,
+  uploadArmadoSoportes,
+  validateMagicBytes,
+  fileLooksLikePdf,
+  bufferLooksLikePdf
+};

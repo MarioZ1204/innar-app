@@ -11,7 +11,7 @@ const router = express.Router();
 const db = require('../utils/db-mysql');
 const logger = require('../utils/logger');
 const { requireAuth, requireRoleOrPerm, safeError } = require('../middleware/index');
-const { upload, validateMagicBytes } = require('../middleware/upload');
+const { upload, uploadArmadoSoportes, validateMagicBytes } = require('../middleware/upload');
 const {
   periodoFromDate,
   calcularVisibilidadPeriodo,
@@ -26,8 +26,20 @@ const {
   collectPdxWarnings
 } = require('../utils/soportes-pdx-upload');
 const {
+  ensureContenedoresForDia,
+  ensureFeParEnContenedorHermano,
+  parseFeCodigo
+} = require('../utils/soportes-armado-structure');
+const { ingestFeArchivo } = require('../utils/soportes-fe-upload');
+const { slotRequirements, buildCanonicalName, getNitObligado, fevFilenameHint } = require('../utils/soportes-archivo-detect');
+const { parseListaPacientes, parseLineaPaciente } = require('../utils/soportes-pacientes-parse');
+const { actualizarExpediente, eliminarExpediente } = require('../utils/soportes-expediente-admin');
+const { actualizarDia, eliminarDia } = require('../utils/soportes-dia-admin');
+const {
   getPdxDir,
   getArmadoExpedienteDir,
+  getArmadoFeDirFromContext,
+  ensureDir,
   safeFilename,
   resolveStoragePath
 } = require('../utils/soportes-storage');
@@ -577,7 +589,57 @@ router.post(
   }
 );
 
-// ─── Armado: períodos / días / expedientes ───────────────────────────────────
+// ─── Soportes (armado): mes → día → RIPS|SOPORTES → FE{n} ───────────────────
+
+async function resolveExpedienteContext(expedienteId) {
+  const rows = await db.query(
+    `SELECT e.*, c.tipo AS contenedor_tipo, c.id AS contenedor_id,
+            d.id AS dia_id, d.dia, d.nombre_display, d.estado_facturacion,
+            p.periodo, p.etiqueta AS periodo_etiqueta
+     FROM sop_expedientes e
+     LEFT JOIN sop_contenedores c ON c.id = e.contenedor_id
+     LEFT JOIN sop_dias d ON d.id = COALESCE(c.dia_id, e.dia_id)
+     LEFT JOIN sop_periodos p ON p.id = d.periodo_id
+     WHERE e.id = ?`,
+    [expedienteId]
+  );
+  return rows[0] || null;
+}
+
+async function resolveContenedorContext(contenedorId) {
+  const rows = await db.query(
+    `SELECT c.*, c.tipo AS contenedor_tipo, d.dia, d.nombre_display, d.estado_facturacion, d.periodo_id, p.periodo, p.etiqueta AS periodo_etiqueta
+     FROM sop_contenedores c
+     JOIN sop_dias d ON d.id = c.dia_id
+     JOIN sop_periodos p ON p.id = d.periodo_id
+     WHERE c.id = ?`,
+    [contenedorId]
+  );
+  return rows[0] || null;
+}
+
+function mapDia(row) {
+  return {
+    id: row.id,
+    periodo_id: row.periodo_id,
+    dia: row.dia,
+    fecha: row.fecha,
+    nombre_display: row.nombre_display || `Día ${row.dia}`,
+    estado_facturacion: row.estado_facturacion || 'a_facturar',
+    expedientes_count: row.expedientes_count || 0,
+    creado_en: row.creado_en
+  };
+}
+
+function mapContenedor(row) {
+  return {
+    id: row.id,
+    dia_id: row.dia_id,
+    tipo: row.tipo,
+    expedientes_count: row.expedientes_count || 0,
+    creado_en: row.creado_en
+  };
+}
 
 function mapPeriodo(row) {
   const periodo = row.periodo;
@@ -598,7 +660,7 @@ router.get('/soportes/armado/periodos', requireAuth, requireRoleOrPerm(ROLES_SOP
       SELECT p.*, COUNT(DISTINCT e.id) AS expedientes_count
       FROM sop_periodos p
       LEFT JOIN sop_dias d ON d.periodo_id = p.id
-      LEFT JOIN sop_expedientes e ON e.dia_id = d.id
+      LEFT JOIN sop_expedientes e ON e.dia_id = d.id OR e.contenedor_id IN (SELECT id FROM sop_contenedores WHERE dia_id = d.id)
       GROUP BY p.id ORDER BY p.periodo DESC
     `);
     const lista = rows.map(mapPeriodo).filter((p) => p.estado_visibilidad !== 'archivo' || incluirArchivo);
@@ -631,12 +693,13 @@ router.get('/soportes/armado/periodos/:id/dias', requireAuth, requireRoleOrPerm(
     const dias = await db.query(
       `SELECT d.*, COUNT(e.id) AS expedientes_count
        FROM sop_dias d
-       LEFT JOIN sop_expedientes e ON e.dia_id = d.id
+       LEFT JOIN sop_contenedores c ON c.dia_id = d.id
+       LEFT JOIN sop_expedientes e ON e.contenedor_id = c.id
        WHERE d.periodo_id = ?
-       GROUP BY d.id ORDER BY d.dia ASC`,
+       GROUP BY d.id ORDER BY d.nombre_display ASC, d.id ASC`,
       [req.params.id]
     );
-    res.json({ dias });
+    res.json({ dias: dias.map(mapDia) });
   } catch (e) {
     res.status(500).json({ error: safeError(e) });
   }
@@ -644,27 +707,118 @@ router.get('/soportes/armado/periodos/:id/dias', requireAuth, requireRoleOrPerm(
 
 router.post('/soportes/armado/periodos/:id/dias', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'soportes.armado.crear_estructura'), async (req, res) => {
   try {
-    const dia = parseInt(req.body.dia, 10);
-    const fecha = req.body.fecha;
-    if (!dia || dia < 1 || dia > 31) return res.status(400).json({ error: 'dia inválido (1-31)' });
+    const nombre_display = String(req.body.nombre_display || '').trim();
+    const estado_facturacion = req.body.estado_facturacion === 'facturados' ? 'facturados' : 'a_facturar';
+    if (!nombre_display) return res.status(400).json({ error: 'Indique el nombre de la carpeta del día (ej: MAYO 1, MAYO 2-3)' });
     const periodo = await db.query('SELECT periodo FROM sop_periodos WHERE id = ?', [req.params.id]);
     if (!periodo.length) return res.status(404).json({ error: 'Periodo no encontrado' });
-    const fechaDate = fecha || `${periodo[0].periodo}-${String(dia).padStart(2, '0')}`;
+    const fechaDate = req.body.fecha || `${periodo[0].periodo}-01`;
     const r = await db.execute(
-      'INSERT INTO sop_dias (periodo_id, dia, fecha) VALUES (?,?,?)',
-      [req.params.id, dia, fechaDate]
+      'INSERT INTO sop_dias (periodo_id, dia, fecha, nombre_display, estado_facturacion) VALUES (?,?,?,?,?)',
+      [req.params.id, 0, fechaDate, nombre_display, estado_facturacion]
     );
-    const row = await db.query('SELECT * FROM sop_dias WHERE id = ?', [r.insertId]);
-    res.status(201).json({ ok: true, dia: row[0] });
+    const diaId = r.insertId;
+    await ensureContenedoresForDia(db, diaId);
+    const contenedores = await db.query('SELECT * FROM sop_contenedores WHERE dia_id = ? ORDER BY tipo', [diaId]);
+    const row = await db.query('SELECT * FROM sop_dias WHERE id = ?', [diaId]);
+    res.status(201).json({
+      ok: true,
+      dia: mapDia({ ...row[0], expedientes_count: 0 }),
+      contenedores: contenedores.map(mapContenedor)
+    });
   } catch (e) {
-    if (String(e.message).includes('uk_sop_dia')) return res.status(409).json({ error: 'El día ya existe' });
+    if (String(e.message).includes('uk_sop_dia_nombre')) return res.status(409).json({ error: 'Ya existe una carpeta con ese nombre en el mes' });
+    res.status(500).json({ error: safeError(e) });
+  }
+});
+
+router.patch('/soportes/armado/dias/:id', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'soportes.armado.crear_estructura'), async (req, res) => {
+  try {
+    const result = await actualizarDia(req.params.id, req.body || {});
+    if (result.error) return res.status(result.status || 400).json({ error: result.error });
+    const contenedores = await db.query(
+      `SELECT c.*, COUNT(e.id) AS expedientes_count
+       FROM sop_contenedores c
+       LEFT JOIN sop_expedientes e ON e.contenedor_id = c.id
+       WHERE c.dia_id = ?
+       GROUP BY c.id ORDER BY FIELD(c.tipo, 'rips', 'soportes')`,
+      [req.params.id]
+    );
+    res.json({
+      ok: true,
+      dia: mapDia({ ...result.dia, expedientes_count: contenedores.reduce((s, c) => s + (c.expedientes_count || 0), 0) }),
+      contenedores: contenedores.map(mapContenedor)
+    });
+  } catch (e) {
+    logger.error('[SOPORTES] PATCH dia:', e);
+    res.status(500).json({ error: safeError(e) });
+  }
+});
+
+router.delete('/soportes/armado/dias/:id', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'soportes.armado.crear_estructura'), async (req, res) => {
+  try {
+    const result = await eliminarDia(req.params.id);
+    if (result.error) return res.status(result.status || 400).json({ error: result.error });
+    res.json(result);
+  } catch (e) {
+    logger.error('[SOPORTES] DELETE dia:', e);
+    res.status(500).json({ error: safeError(e) });
+  }
+});
+
+router.get('/soportes/armado/dias/:id/contenedores', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'modulo.armado_soportes'), async (req, res) => {
+  try {
+    const dia = await db.query('SELECT * FROM sop_dias WHERE id = ?', [req.params.id]);
+    if (!dia.length) return res.status(404).json({ error: 'Carpeta de día no encontrada' });
+    await ensureContenedoresForDia(db, req.params.id);
+    const contenedores = await db.query(
+      `SELECT c.*, COUNT(e.id) AS expedientes_count
+       FROM sop_contenedores c
+       LEFT JOIN sop_expedientes e ON e.contenedor_id = c.id
+       WHERE c.dia_id = ?
+       GROUP BY c.id ORDER BY FIELD(c.tipo, 'rips', 'soportes')`,
+      [req.params.id]
+    );
+    res.json({ dia: mapDia({ ...dia[0], expedientes_count: contenedores.reduce((s, c) => s + (c.expedientes_count || 0), 0) }), contenedores: contenedores.map(mapContenedor) });
+  } catch (e) {
     res.status(500).json({ error: safeError(e) });
   }
 });
 
 async function buildExpedienteDetail(expId) {
-  const exp = await db.query('SELECT * FROM sop_expedientes WHERE id = ?', [expId]);
-  if (!exp.length) return null;
+  const ctx = await resolveExpedienteContext(expId);
+  if (!ctx) return null;
+  const e = ctx;
+  const nit = getNitObligado();
+  const req = slotRequirements(e.contenedor_tipo, e.tipo_servicio);
+
+  if (e.contenedor_tipo === 'rips') {
+    const archivos = await db.query('SELECT * FROM sop_rips_archivos WHERE expediente_id = ?', [expId]);
+    const slotMap = {
+      RIPS_JSON_1: { completo: false },
+      RIPS_JSON_2: { completo: false },
+      RIPS_XML: { completo: false }
+    };
+    const slotKey = { json_1: 'RIPS_JSON_1', json_2: 'RIPS_JSON_2', xml: 'RIPS_XML' };
+    for (const a of archivos) {
+      const key = slotKey[a.slot] || a.slot;
+      slotMap[key] = {
+        completo: true,
+        archivo_id: a.id,
+        nombre_archivo: a.nombre_archivo,
+        nombre_original: a.nombre_original,
+        origen: a.origen
+      };
+    }
+    return {
+      ...e,
+      nit_obligado: nit,
+      requisitos: req,
+      slots: slotMap,
+      paquete_completo: !!(slotMap.RIPS_JSON_1.completo && slotMap.RIPS_JSON_2.completo && slotMap.RIPS_XML.completo)
+    };
+  }
+
   const archivos = await db.query('SELECT * FROM sop_exp_archivos WHERE expediente_id = ?', [expId]);
   const slots = { OPF: null, CRC: null, FEV: null, PDX: null, HEV: null };
   for (const a of archivos) {
@@ -672,29 +826,51 @@ async function buildExpedienteDetail(expId) {
       completo: true,
       archivo_id: a.id,
       nombre_archivo: a.nombre_archivo,
+      nombre_original: a.nombre_original,
       origen: a.origen,
       pdx_archivo_id: a.pdx_archivo_id
     };
   }
-  const e = exp[0];
-  const hevOn = e.tipo_servicio === 'consulta';
+  const hasPdx = !!slots.PDX?.completo;
+  const hasHev = !!slots.HEV?.completo;
+  const tipoPendiente = !hasPdx && !hasHev;
+  const slotState = {
+    OPF: slots.OPF || { completo: false },
+    CRC: slots.CRC || { completo: false },
+    FEV: { completo: !!(e.fev_externa_verificada || slots.FEV), externa: true, archivo: slots.FEV },
+    PDX: tipoPendiente
+      ? { completo: false, habilitado: true }
+      : hasHev
+        ? { completo: false, habilitado: false }
+        : (slots.PDX || { completo: false, habilitado: true }),
+    HEV: tipoPendiente
+      ? { completo: false, habilitado: true }
+      : hasPdx
+        ? { completo: false, habilitado: false }
+        : (slots.HEV || { completo: false, habilitado: true })
+  };
+  const estudioOk = hasPdx || hasHev;
+  const paquete = slotState.OPF.completo && slotState.CRC.completo && slotState.FEV.completo && estudioOk;
   return {
     ...e,
-    slots: {
-      OPF: slots.OPF || { completo: false },
-      CRC: slots.CRC || { completo: false },
-      FEV: { completo: !!e.fev_externa_verificada, externa: true, archivo: slots.FEV },
-      PDX: hevOn ? { completo: false, habilitado: false } : (slots.PDX || { completo: false, habilitado: true }),
-      HEV: hevOn ? (slots.HEV || { completo: false, habilitado: true }) : { completo: false, habilitado: false }
-    },
-    paquete_completo: !!e.listo_radicacion
+    nit_obligado: nit,
+    fev_nombre_ejemplo: fevFilenameHint(
+      e.numero_factura != null && Number(e.numero_factura) > 0 ? e.numero_factura : '14726'
+    ),
+    requisitos: req,
+    slots: slotState,
+    paquete_completo: paquete && !!e.listo_radicacion
   };
 }
 
 router.get('/soportes/armado/dias/:id/expedientes', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'modulo.armado_soportes'), async (req, res) => {
   try {
     const rows = await db.query(
-      'SELECT id, codigo, numero_factura, paciente_nombre, tipo_servicio, listo_radicacion FROM sop_expedientes WHERE dia_id = ? ORDER BY numero_factura ASC',
+      `SELECT e.id, e.codigo, e.numero_factura, e.listo_radicacion, c.tipo AS contenedor_tipo
+       FROM sop_expedientes e
+       JOIN sop_contenedores c ON c.id = e.contenedor_id
+       WHERE c.dia_id = ?
+       ORDER BY c.tipo, e.numero_factura ASC`,
       [req.params.id]
     );
     res.json({ expedientes: rows });
@@ -703,64 +879,194 @@ router.get('/soportes/armado/dias/:id/expedientes', requireAuth, requireRoleOrPe
   }
 });
 
-router.post('/soportes/armado/dias/:id/expedientes', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'soportes.armado.crear_estructura'), async (req, res) => {
+router.get('/soportes/armado/contenedores/:id/expedientes', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'modulo.armado_soportes'), async (req, res) => {
   try {
-    const { numero_factura, paciente_nombre, paciente_documento, tipo_servicio } = req.body || {};
-    const num = parseInt(numero_factura, 10);
-    if (!num || num < 1) return res.status(400).json({ error: 'numero_factura requerido' });
-    if (!paciente_nombre) return res.status(400).json({ error: 'paciente_nombre requerido' });
-    const ts = tipo_servicio === 'consulta' ? 'consulta' : 'electro';
-    const codigo = `FE${num}`;
-    const diaRow = await db.query(
-      `SELECT d.*, p.periodo FROM sop_dias d JOIN sop_periodos p ON p.id = d.periodo_id WHERE d.id = ?`,
+    const ctx = await resolveContenedorContext(req.params.id);
+    if (!ctx) return res.status(404).json({ error: 'Contenedor no encontrado' });
+    const rows = await db.query(
+      `SELECT id, codigo, numero_factura, paciente_nombre, listo_radicacion
+       FROM sop_expedientes WHERE contenedor_id = ?
+       ORDER BY (numero_factura = 0) DESC, paciente_nombre ASC, numero_factura ASC`,
       [req.params.id]
     );
-    if (!diaRow.length) return res.status(404).json({ error: 'Día no encontrado' });
-    getArmadoExpedienteDir(diaRow[0].periodo, diaRow[0].dia, codigo);
-    const r = await db.execute(
-      `INSERT INTO sop_expedientes (dia_id, codigo, numero_factura, paciente_nombre, paciente_documento, tipo_servicio, creado_por)
-       VALUES (?,?,?,?,?,?,?)`,
-      [req.params.id, codigo, num, paciente_nombre, paciente_documento || null, ts, req.session.usuarioId]
-    );
-    const detail = await buildExpedienteDetail(r.insertId);
-    res.status(201).json({ ok: true, expediente: detail });
+    res.json({ contenedor: mapContenedor({ ...ctx, expedientes_count: rows.length }), expedientes: rows });
   } catch (e) {
-    if (String(e.message).includes('uk_sop_exp')) return res.status(409).json({ error: 'Código FE ya existe en este día' });
+    res.status(500).json({ error: safeError(e) });
+  }
+});
+
+async function codigoDisponibleEnContenedor(contenedorId, codigo, excludeId = null) {
+  const params = [contenedorId, codigo];
+  let sql = 'SELECT id FROM sop_expedientes WHERE contenedor_id = ? AND codigo = ?';
+  if (excludeId) {
+    sql += ' AND id <> ?';
+    params.push(excludeId);
+  }
+  const rows = await db.query(sql, params);
+  return rows.length === 0;
+}
+
+async function crearExpedienteEnContenedor(contenedorId, body, usuarioId) {
+  const ctx = await resolveContenedorContext(contenedorId);
+  if (!ctx) return { error: 'Contenedor no encontrado', status: 404 };
+
+  let codigo;
+  let numero;
+  let pacienteNombre = body.paciente_nombre ? String(body.paciente_nombre).trim() : null;
+
+  if (body.paciente_linea || pacienteNombre) {
+    const parsed = parseLineaPaciente(body.paciente_linea || pacienteNombre);
+    if (!parsed) {
+      return { error: 'Indique nombre y apellido (ej. Juan Pérez o Pérez, Juan)', status: 400 };
+    }
+    codigo = body.codigo || parsed.codigo;
+    pacienteNombre = parsed.paciente_nombre;
+    numero = null;
+  } else if (body.codigo) {
+    const parsed = parseFeCodigo(body.codigo);
+    if (parsed.ok) {
+      codigo = parsed.codigo;
+      numero = parsed.numero;
+    } else {
+      codigo = String(body.codigo).trim().slice(0, 32);
+      numero = parseInt(body.numero_factura, 10) || 0;
+      pacienteNombre = pacienteNombre || codigo;
+    }
+  } else {
+    const num = parseInt(body.numero_factura, 10);
+    if (!num || num < 1) return { error: 'Indique paciente (nombre apellido) o FE{número}', status: 400 };
+    codigo = `FE${num}`;
+    numero = num;
+  }
+
+  if (!(await codigoDisponibleEnContenedor(contenedorId, codigo))) {
+    return { error: `Ya existe la carpeta "${codigo}" en este contenedor`, status: 409 };
+  }
+
+  await ensureContenedoresForDia(db, ctx.dia_id);
+  getArmadoFeDirFromContext(ctx, codigo);
+  const ts = 'electro';
+  const r = await db.execute(
+    `INSERT INTO sop_expedientes (dia_id, contenedor_id, codigo, numero_factura, paciente_nombre, paciente_documento, tipo_servicio, creado_por)
+     VALUES (?,?,?,?,?,?,?,?)`,
+    [ctx.dia_id, contenedorId, codigo, numero, pacienteNombre, null, ts, usuarioId]
+  );
+  try {
+    await ensureFeParEnContenedorHermano(db, ctx.dia_id, contenedorId, codigo, numero, ts, usuarioId, pacienteNombre);
+  } catch (e) {
+    logger.warn('[SOPORTES] carpeta par RIPS/SOPORTES:', e.message);
+  }
+  const detail = await buildExpedienteDetail(r.insertId);
+  return { ok: true, expediente: detail, codigo, par_creado: true };
+}
+
+async function crearExpedientesLote(contenedorId, body, usuarioId) {
+  const lista = parseListaPacientes(body.lista || body.texto || '');
+  if (!lista.length) {
+    return { error: 'No se encontraron líneas válidas. Use una línea por paciente: Nombre Apellido', status: 400 };
+  }
+  const creados = [];
+  const errores = [];
+  for (const p of lista) {
+    try {
+      const result = await crearExpedienteEnContenedor(
+        contenedorId,
+        { paciente_nombre: p.paciente_nombre, codigo: p.codigo },
+        usuarioId
+      );
+      if (result.ok) {
+        creados.push({
+          id: result.expediente?.id,
+          codigo: result.codigo,
+          paciente_nombre: p.paciente_nombre
+        });
+      } else {
+        errores.push({ paciente: p.paciente_nombre, error: result.error });
+      }
+    } catch (e) {
+      logger.error('[SOPORTES] lote expediente:', e);
+      errores.push({ paciente: p.paciente_nombre, error: safeError(e) });
+    }
+  }
+  return { ok: true, creados, errores, total: lista.length };
+}
+
+router.post('/soportes/armado/contenedores/:id/expedientes', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'soportes.armado.crear_estructura'), async (req, res) => {
+  try {
+    const result = await crearExpedienteEnContenedor(req.params.id, req.body || {}, req.session.usuarioId);
+    if (result.error) return res.status(result.status || 400).json({ error: result.error });
+    res.status(201).json(result);
+  } catch (e) {
+    if (String(e.message).includes('uk_sop_exp_cont')) return res.status(409).json({ error: 'Ese código FE ya existe en esta carpeta' });
+    res.status(500).json({ error: safeError(e) });
+  }
+});
+
+router.post('/soportes/armado/contenedores/:id/expedientes/lote', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'soportes.armado.crear_estructura'), async (req, res) => {
+  try {
+    const result = await crearExpedientesLote(req.params.id, req.body || {}, req.session.usuarioId);
+    if (result.error) return res.status(result.status || 400).json({ error: result.error });
+    res.status(201).json(result);
+  } catch (e) {
+    res.status(500).json({ error: safeError(e) });
+  }
+});
+
+router.post('/soportes/armado/contenedores/:id/expedientes/siguiente', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'soportes.armado.crear_estructura'), async (req, res) => {
+  try {
+    const ctx = await resolveContenedorContext(req.params.id);
+    if (!ctx) return res.status(404).json({ error: 'Contenedor no encontrado' });
+    const maxRows = await db.query(
+      'SELECT MAX(numero_factura) AS mx FROM sop_expedientes WHERE contenedor_id = ?',
+      [req.params.id]
+    );
+    const siguiente = (parseInt(maxRows[0]?.mx, 10) || 0) + 1;
+    const result = await crearExpedienteEnContenedor(
+      req.params.id,
+      { ...req.body, numero_factura: req.body?.numero_factura || siguiente },
+      req.session.usuarioId
+    );
+    if (result.error) return res.status(result.status || 400).json({ error: result.error });
+    res.status(201).json({ ...result, numero_sugerido: siguiente });
+  } catch (e) {
+    if (String(e.message).includes('uk_sop_exp_cont')) return res.status(409).json({ error: 'Ese código FE ya existe en esta carpeta' });
+    res.status(500).json({ error: safeError(e) });
+  }
+});
+
+router.post('/soportes/armado/dias/:id/expedientes', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'soportes.armado.crear_estructura'), async (req, res) => {
+  try {
+    const tipo = req.body?.contenedor === 'rips' ? 'rips' : 'soportes';
+    const c = await db.query('SELECT id FROM sop_contenedores WHERE dia_id = ? AND tipo = ?', [req.params.id, tipo]);
+    if (!c.length) return res.status(404).json({ error: 'Contenedor no encontrado' });
+    const result = await crearExpedienteEnContenedor(c[0].id, req.body || {}, req.session.usuarioId);
+    if (result.error) return res.status(result.status || 400).json({ error: result.error });
+    res.status(201).json(result);
+  } catch (e) {
+    if (String(e.message).includes('uk_sop_exp_cont')) return res.status(409).json({ error: 'Ese código FE ya existe en esta carpeta' });
     res.status(500).json({ error: safeError(e) });
   }
 });
 
 router.post('/soportes/armado/dias/:id/expedientes/siguiente', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'soportes.armado.crear_estructura'), async (req, res) => {
   try {
-    const diaId = req.params.id;
-    const diaRow = await db.query(
-      `SELECT d.*, p.id AS periodo_id, p.periodo FROM sop_dias d JOIN sop_periodos p ON p.id = d.periodo_id WHERE d.id = ?`,
-      [diaId]
-    );
-    if (!diaRow.length) return res.status(404).json({ error: 'Día no encontrado' });
+    const tipo = req.body?.contenedor === 'rips' ? 'rips' : 'soportes';
+    const c = await db.query('SELECT id FROM sop_contenedores WHERE dia_id = ? AND tipo = ?', [req.params.id, tipo]);
+    if (!c.length) return res.status(404).json({ error: 'Contenedor no encontrado' });
     const maxRows = await db.query(
-      `SELECT MAX(e.numero_factura) AS mx FROM sop_expedientes e
-       JOIN sop_dias d ON d.id = e.dia_id WHERE d.periodo_id = ?`,
-      [diaRow[0].periodo_id]
+      'SELECT MAX(numero_factura) AS mx FROM sop_expedientes WHERE contenedor_id = ?',
+      [c[0].id]
     );
     const siguiente = (parseInt(maxRows[0]?.mx, 10) || 0) + 1;
-    req.body = { ...req.body, numero_factura: req.body.numero_factura || siguiente };
-    const { numero_factura, paciente_nombre, paciente_documento, tipo_servicio } = req.body || {};
-    const num = parseInt(numero_factura, 10);
-    if (!num || num < 1) return res.status(400).json({ error: 'numero_factura requerido' });
-    if (!paciente_nombre) return res.status(400).json({ error: 'paciente_nombre requerido' });
-    const ts = tipo_servicio === 'consulta' ? 'consulta' : 'electro';
-    const codigo = `FE${num}`;
-    getArmadoExpedienteDir(diaRow[0].periodo, diaRow[0].dia, codigo);
-    const r = await db.execute(
-      `INSERT INTO sop_expedientes (dia_id, codigo, numero_factura, paciente_nombre, paciente_documento, tipo_servicio, creado_por)
-       VALUES (?,?,?,?,?,?,?)`,
-      [diaId, codigo, num, paciente_nombre, paciente_documento || null, ts, req.session.usuarioId]
+    const result = await crearExpedienteEnContenedor(
+      c[0].id,
+      { ...req.body, numero_factura: req.body?.numero_factura || siguiente },
+      req.session.usuarioId
     );
-    const detail = await buildExpedienteDetail(r.insertId);
-    res.status(201).json({ ok: true, expediente: detail, numero_sugerido: siguiente });
+    if (result.error) return res.status(result.status || 400).json({ error: result.error });
+    res.status(201).json({ ...result, numero_sugerido: siguiente });
   } catch (e) {
-    if (String(e.message).includes('uk_sop_exp')) return res.status(409).json({ error: 'Código FE ya existe en este día' });
+    if (String(e.message).includes('uk_sop_exp_cont')) return res.status(409).json({ error: 'Ese código FE ya existe en esta carpeta' });
     res.status(500).json({ error: safeError(e) });
   }
 });
@@ -777,27 +1083,22 @@ router.get('/soportes/armado/expedientes/:id', requireAuth, requireRoleOrPerm(RO
 
 router.patch('/soportes/armado/expedientes/:id', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'soportes.armado.subir'), async (req, res) => {
   try {
-    const { fev_externa_verificada, listo_radicacion, paciente_nombre, paciente_documento, notas } = req.body || {};
-    await db.execute(
-      `UPDATE sop_expedientes SET
-        fev_externa_verificada = COALESCE(?, fev_externa_verificada),
-        listo_radicacion = COALESCE(?, listo_radicacion),
-        paciente_nombre = COALESCE(?, paciente_nombre),
-        paciente_documento = COALESCE(?, paciente_documento),
-        notas = COALESCE(?, notas)
-       WHERE id = ?`,
-      [
-        fev_externa_verificada != null ? (fev_externa_verificada ? 1 : 0) : null,
-        listo_radicacion != null ? (listo_radicacion ? 1 : 0) : null,
-        paciente_nombre || null,
-        paciente_documento || null,
-        notas != null ? notas : null,
-        req.params.id
-      ]
-    );
+    const result = await actualizarExpediente(req.params.id, req.body || {});
+    if (result.error) return res.status(result.status || 400).json({ error: result.error });
     const detail = await buildExpedienteDetail(req.params.id);
     res.json({ ok: true, expediente: detail });
   } catch (e) {
+    res.status(500).json({ error: safeError(e) });
+  }
+});
+
+router.delete('/soportes/armado/expedientes/:id', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'soportes.armado.crear_estructura'), async (req, res) => {
+  try {
+    const result = await eliminarExpediente(req.params.id);
+    if (result.error) return res.status(result.status || 400).json({ error: result.error });
+    res.json(result);
+  } catch (e) {
+    logger.error('[SOPORTES] eliminar expediente:', e);
     res.status(500).json({ error: safeError(e) });
   }
 });
@@ -806,13 +1107,10 @@ router.post('/soportes/armado/expedientes/:id/importar-pdx', requireAuth, requir
   try {
     const pdxId = parseInt(req.body.pdx_archivo_id, 10);
     if (!pdxId) return res.status(400).json({ error: 'pdx_archivo_id requerido' });
-    const exp = await db.query(
-      `SELECT e.*, d.dia, p.periodo FROM sop_expedientes e
-       JOIN sop_dias d ON d.id = e.dia_id JOIN sop_periodos p ON p.id = d.periodo_id WHERE e.id = ?`,
-      [req.params.id]
-    );
-    if (!exp.length) return res.status(404).json({ error: 'Expediente no encontrado' });
-    if (exp[0].tipo_servicio !== 'electro') return res.status(400).json({ error: 'Solo expedientes electro admiten PDX' });
+    const exp = await resolveExpedienteContext(req.params.id);
+    if (!exp) return res.status(404).json({ error: 'Expediente no encontrado' });
+    const hev = await db.query('SELECT id FROM sop_exp_archivos WHERE expediente_id = ? AND tipo = ?', [req.params.id, 'HEV']);
+    if (hev.length) return res.status(400).json({ error: 'Ya existe HEV en este expediente; no puede importar PDX' });
 
     const pdx = await db.query(
       `SELECT a.*, c.periodo FROM sop_pdx_archivos a JOIN sop_pdx_carpetas c ON c.id = a.carpeta_id WHERE a.id = ?`,
@@ -821,25 +1119,29 @@ router.post('/soportes/armado/expedientes/:id/importar-pdx', requireAuth, requir
     if (!pdx.length) return res.status(404).json({ error: 'PDX no encontrado' });
 
     const warnings = [];
-    if (pdx[0].periodo !== exp[0].periodo) {
-      warnings.push(`PDX del mes ${pdx[0].periodo} → expediente en periodo ${exp[0].periodo}`);
+    if (pdx[0].periodo !== exp.periodo) {
+      warnings.push(`PDX del mes ${pdx[0].periodo} → expediente en periodo ${exp.periodo}`);
     }
 
     const src = resolveStoragePath(pdx[0].ruta_relativa);
     if (!src || !fs.existsSync(src)) return res.status(404).json({ error: 'Archivo PDX no en disco' });
 
-    const codigo = exp[0].codigo;
-    const destDir = getArmadoExpedienteDir(exp[0].periodo, exp[0].dia, codigo);
-    const destName = safeFilename(pdx[0].nombre_archivo_original);
-    const destPath = path.join(destDir, 'PDX', destName);
-    fs.copyFileSync(src, destPath);
-    const rutaRelativa = path.relative(path.join(__dirname, '..', 'public', 'uploads'), destPath).replace(/\\/g, '/');
-
-    await db.execute('DELETE FROM sop_exp_archivos WHERE expediente_id = ? AND tipo = ?', [req.params.id, 'PDX']);
+    const { saveSoportesArchivo } = require('../utils/soportes-fe-upload');
+    const tmpCopy = path.join(require('os').tmpdir(), `innar-pdx-${Date.now()}.pdf`);
+    fs.copyFileSync(src, tmpCopy);
+    await saveSoportesArchivo(
+      exp,
+      exp,
+      'PDX',
+      tmpCopy,
+      pdx[0].nombre_archivo_original,
+      req.session.usuarioId,
+      'copia_pdx'
+    );
+    try { fs.unlinkSync(tmpCopy); } catch (_) { /* ignore */ }
     await db.execute(
-      `INSERT INTO sop_exp_archivos (expediente_id, tipo, nombre_archivo, ruta_relativa, tamano_bytes, origen, pdx_archivo_id, subido_por)
-       VALUES (?,?,?,?,?,?,?,?)`,
-      [req.params.id, 'PDX', pdx[0].nombre_archivo_original, rutaRelativa, pdx[0].tamano_bytes, 'copia_pdx', pdxId, req.session.usuarioId]
+      'UPDATE sop_exp_archivos SET pdx_archivo_id = ? WHERE expediente_id = ? AND tipo = ?',
+      [pdxId, req.params.id, 'PDX']
     );
     await db.execute(
       'INSERT INTO sop_transferencias (pdx_archivo_id, expediente_id, usuario_id) VALUES (?,?,?)',
@@ -854,42 +1156,106 @@ router.post('/soportes/armado/expedientes/:id/importar-pdx', requireAuth, requir
   }
 });
 
-// Expediente slot upload
+router.get('/soportes/armado/expedientes/:id/requisitos', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'modulo.armado_soportes'), async (req, res) => {
+  try {
+    const exp = await resolveExpedienteContext(req.params.id);
+    if (!exp) return res.status(404).json({ error: 'No encontrado' });
+    const reqSlots = slotRequirements(exp.contenedor_tipo, exp.tipo_servicio);
+    res.json({
+      codigo_fe: exp.codigo,
+      numero_factura: exp.numero_factura,
+      nit_obligado: getNitObligado(),
+      ...reqSlots,
+      fev_nombre_ejemplo: fevFilenameHint(exp.numero_factura > 0 ? exp.numero_factura : '14726'),
+      ejemplos_nombre: {
+        OPF: buildCanonicalName('OPF', exp.numero_factura || 'FE14726', '.pdf'),
+        CRC: buildCanonicalName('CRC', exp.numero_factura || 'FE14726', '.pdf'),
+        FEV: buildCanonicalName('FEV', exp.numero_factura || 'FE14726', '.pdf'),
+        PDX: buildCanonicalName('PDX', exp.numero_factura || 'FE14726', '.pdf'),
+        HEV: buildCanonicalName('HEV', exp.numero_factura || 'FE14726', '.pdf')
+      }
+    });
+  } catch (e) {
+    res.status(500).json({ error: safeError(e) });
+  }
+});
+
+function armadoUploadError(err, req, res, next) {
+  if (!err) return next();
+  if (err.code === 'LIMIT_FILE_SIZE') {
+    return res.status(400).json({ error: 'El archivo supera el tamaño máximo (20 MB).' });
+  }
+  const msg = err.message || 'Error al subir el archivo';
+  if (err.code === 'LIMIT_UNEXPECTED_FILE' || /permiten|PDF/i.test(msg)) {
+    return res.status(400).json({ error: msg });
+  }
+  next(err);
+}
+
+/** Subida: OPF/CRC/… conservan nombre; FEV_{NIT}_{n}.pdf renombra carpeta y archivos */
+router.post(
+  '/soportes/armado/expedientes/:id/upload',
+  requireAuth,
+  requireRoleOrPerm(ROLES_SOPORTES, 'soportes.armado.subir'),
+  (req, res, next) => {
+    uploadArmadoSoportes.single('file')(req, res, (err) => {
+      if (err) return armadoUploadError(err, req, res, next);
+      next();
+    });
+  },
+  validateMagicBytes,
+  async (req, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ error: 'Archivo requerido' });
+      const exp = await resolveExpedienteContext(req.params.id);
+      if (!exp) return res.status(404).json({ error: 'Expediente no encontrado' });
+      const tipoManual = req.body?.tipo ? String(req.body.tipo).toUpperCase() : null;
+      const result = await ingestFeArchivo(
+        exp,
+        exp,
+        req.file.path,
+        req.file.originalname,
+        req.session.usuarioId,
+        tipoManual
+      );
+      if (!result.ok) {
+        return res.status(result.status || 400).json(result);
+      }
+      const detail = await buildExpedienteDetail(req.params.id);
+      res.json({
+        ok: true,
+        message: result.message || `Archivo ${result.tipo_detectado} guardado`,
+        ...result,
+        expediente: detail
+      });
+    } catch (e) {
+      logger.error('[SOPORTES] upload smart:', e);
+      res.status(500).json({ error: safeError(e) });
+    }
+  }
+);
+
 router.post(
   '/soportes/armado/expedientes/:id/archivos/:tipo',
   requireAuth,
   requireRoleOrPerm(ROLES_SOPORTES, 'soportes.armado.subir'),
-  upload.single('file'),
+  (req, res, next) => {
+    uploadArmadoSoportes.single('file')(req, res, (err) => {
+      if (err) return armadoUploadError(err, req, res, next);
+      next();
+    });
+  },
   validateMagicBytes,
   async (req, res) => {
     try {
       const tipo = String(req.params.tipo || '').toUpperCase();
-      if (!['OPF', 'CRC', 'FEV', 'HEV'].includes(tipo)) {
-        return res.status(400).json({ error: 'tipo inválido (OPF, CRC, FEV, HEV)' });
-      }
       if (!req.file) return res.status(400).json({ error: 'Archivo requerido' });
-      const exp = await db.query(
-        `SELECT e.*, d.dia, p.periodo FROM sop_expedientes e
-         JOIN sop_dias d ON d.id = e.dia_id JOIN sop_periodos p ON p.id = d.periodo_id WHERE e.id = ?`,
-        [req.params.id]
-      );
-      if (!exp.length) return res.status(404).json({ error: 'Expediente no encontrado' });
-      if (tipo === 'HEV' && exp[0].tipo_servicio !== 'consulta') {
-        return res.status(400).json({ error: 'HEV solo para consulta' });
-      }
-      const destDir = getArmadoExpedienteDir(exp[0].periodo, exp[0].dia, exp[0].codigo);
-      const fname = safeFilename(req.file.originalname);
-      const destPath = path.join(destDir, tipo, fname);
-      fs.renameSync(req.file.path, destPath);
-      const rutaRelativa = path.relative(path.join(__dirname, '..', 'public', 'uploads'), destPath).replace(/\\/g, '/');
-      await db.execute('DELETE FROM sop_exp_archivos WHERE expediente_id = ? AND tipo = ?', [req.params.id, tipo]);
-      await db.execute(
-        `INSERT INTO sop_exp_archivos (expediente_id, tipo, nombre_archivo, ruta_relativa, tamano_bytes, origen, subido_por)
-         VALUES (?,?,?,?,?,?,?)`,
-        [req.params.id, tipo, req.file.originalname, rutaRelativa, req.file.size, 'upload', req.session.usuarioId]
-      );
+      const exp = await resolveExpedienteContext(req.params.id);
+      if (!exp) return res.status(404).json({ error: 'Expediente no encontrado' });
+      const result = await ingestFeArchivo(exp, exp, req.file.path, req.file.originalname, req.session.usuarioId, tipo);
+      if (!result.ok) return res.status(result.status || 400).json(result);
       const detail = await buildExpedienteDetail(req.params.id);
-      res.json({ ok: true, expediente: detail });
+      res.json({ ok: true, expediente: detail, ...result });
     } catch (e) {
       res.status(500).json({ error: safeError(e) });
     }
@@ -898,21 +1264,25 @@ router.post(
 
 router.get('/soportes/armado/expedientes/:id/zip', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'soportes.descargar_zip'), async (req, res) => {
   try {
-    const exp = await db.query(
-      `SELECT e.*, d.dia, p.periodo FROM sop_expedientes e
-       JOIN sop_dias d ON d.id = e.dia_id JOIN sop_periodos p ON p.id = d.periodo_id WHERE e.id = ?`,
-      [req.params.id]
-    );
-    if (!exp.length) return res.status(404).json({ error: 'No encontrado' });
+    const exp = await resolveExpedienteContext(req.params.id);
+    if (!exp) return res.status(404).json({ error: 'No encontrado' });
     const archivos = await db.query('SELECT * FROM sop_exp_archivos WHERE expediente_id = ?', [req.params.id]);
+    let ripsArchivos = [];
+    try {
+      ripsArchivos = await db.query('SELECT * FROM sop_rips_archivos WHERE expediente_id = ?', [req.params.id]);
+    } catch (_) { /* ignore */ }
     res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Disposition', `attachment; filename="${exp[0].codigo}.zip"`);
+    res.setHeader('Content-Disposition', `attachment; filename="${exp.codigo}.zip"`);
     const archive = archiver('zip', { zlib: { level: 9 } });
     archive.on('error', (err) => { throw err; });
     archive.pipe(res);
     for (const a of archivos) {
-      const fp = resolveStoragePath(a.ruta_relativa);
-      if (fp && fs.existsSync(fp)) archive.file(fp, { name: `${a.tipo}/${a.nombre_archivo}` });
+      const fp = resolveStoragePath(path.join('soportes', a.ruta_relativa));
+      if (fp && fs.existsSync(fp)) archive.file(fp, { name: a.nombre_archivo });
+    }
+    for (const a of ripsArchivos) {
+      const fp = resolveStoragePath(path.join('soportes', a.ruta_relativa));
+      if (fp && fs.existsSync(fp)) archive.file(fp, { name: a.nombre_archivo });
     }
     archive.finalize();
   } catch (e) {
@@ -925,9 +1295,10 @@ router.get('/soportes/armado/expedientes-select', requireAuth, requireRoleOrPerm
   try {
     const periodo = req.query.periodo;
     let sql = `
-      SELECT e.id, e.codigo, e.paciente_nombre, d.dia, p.periodo
+      SELECT e.id, e.codigo, d.nombre_display AS dia_nombre, c.tipo AS contenedor_tipo, p.periodo
       FROM sop_expedientes e
-      JOIN sop_dias d ON d.id = e.dia_id
+      JOIN sop_contenedores c ON c.id = e.contenedor_id
+      JOIN sop_dias d ON d.id = c.dia_id
       JOIN sop_periodos p ON p.id = d.periodo_id
       WHERE e.tipo_servicio = 'electro'`;
     const params = [];

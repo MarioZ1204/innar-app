@@ -530,6 +530,30 @@ router.put('/recibos/:id', requireAuth, requireRoleOrPerm(['superadmin'], 'recib
   } catch (err) { res.status(500).json({ error: safeError(err) }); }
 });
 
+// PATCH /api/recibos/:id/observaciones — solo superadministrador
+router.patch('/recibos/:id/observaciones', requireAuth, async (req, res) => {
+  if (req.session?.rol !== 'superadmin') {
+    return res.status(403).json({ error: 'Solo el superadministrador puede editar observaciones' });
+  }
+  const id = parseReciboId(req.params.id);
+  if (id === null) return res.status(400).json({ error: 'ID de recibo inválido' });
+  const { observaciones } = req.body || {};
+  try {
+    const rows = await db.query('SELECT id, anulado FROM recibos WHERE id=?', [id]);
+    if (!rows.length) return res.status(404).json({ error: 'Recibo no encontrado' });
+    if (rows[0].anulado) return res.status(400).json({ error: 'No se puede editar un recibo anulado' });
+    const texto = observaciones == null || observaciones === ''
+      ? null
+      : String(observaciones).trim().slice(0, 2000);
+    await db.execute('UPDATE recibos SET observaciones = ? WHERE id = ?', [texto, id]);
+    emitSocket('recibo:actualizar-lista');
+    emitSocket('stats:actualizar');
+    res.json({ ok: true, observaciones: texto });
+  } catch (err) {
+    res.status(500).json({ error: safeError(err) });
+  }
+});
+
 // PATCH /api/recibos/:id/anular
 router.patch('/recibos/:id/anular', requireAuth, requireRoleOrPerm(['superadmin'], 'recibos.anular'), async (req, res) => {
   const id = parseReciboId(req.params.id);
