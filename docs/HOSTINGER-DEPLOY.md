@@ -37,6 +37,7 @@ Configura en el panel de Node.js (o archivo `.env` en servidor):
 - `NODE_ENV=production`
 - `FRONTEND_URL=https://innarapp.neurocienciasnarino.com`
 - `PORT` (si Hostinger lo requiere; normalmente lo inyecta)
+- `SOPORTES_NIT_OBLIGADO` — NIT del prestador, solo dígitos (ej. `901164565`), para nombres de archivos en armado de soportes
 - Socket.IO queda montado en la ruta estándar **`/socket.io/`**. El proxy debe reenviar esa ruta al proceso Node (ver punto 5).
 
 Usa `.env.hostinger.example` como plantilla. Nunca subas secretos reales.
