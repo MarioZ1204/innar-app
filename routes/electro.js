@@ -13,6 +13,16 @@ const {
 const { validateSchema } = require('../modules/validation-schemas');
 const { hayCupoElectroParaAgendar, hayCupoElectroParaIniciar } = require('./electro-capacity');
 const { buildMonitorEquiposView, citaOverlapsMonitorWindow } = require('../utils/electro-monitor');
+const { extraerFechaYmd, sumarMinutosAHoraYFecha, fechaFinSiCruzaMedianoche } = require('../utils/electro-fechas');
+
+const CITAS_ELECTRO_SELECT = `
+  c.id, c.equipo_id, c.paciente_id,
+  DATE_FORMAT(c.fecha, '%Y-%m-%d') AS fecha,
+  c.hora_agendamiento, c.hora_inicio, c.hora_fin,
+  DATE_FORMAT(c.hora_fin_date, '%Y-%m-%d') AS hora_fin_date,
+  c.estudio, c.observaciones, c.diagnostico_id, c.estado,
+  c.programado_por_nombre, c.editado_por_nombre, c.editado_en, c.creado_en, c.actualizado_en,
+  c.duracion_minutos, c.entidad`;
 
 function normalizeHora(str) {
   if (!str) return '';
@@ -673,9 +683,7 @@ router.get('/citas-electro', requireAuth, async (req, res) => {
   if (buscar && !fecha) {
     try {
       const citas = await db.query(`
-        SELECT c.id, c.equipo_id, c.paciente_id, c.fecha, c.hora_agendamiento, c.hora_inicio, c.hora_fin, c.hora_fin_date,
-               c.estudio, c.observaciones, c.diagnostico_id, c.estado, c.programado_por_nombre, c.editado_por_nombre, c.editado_en, c.creado_en, c.actualizado_en,
-               c.duracion_minutos, c.entidad,
+        SELECT ${CITAS_ELECTRO_SELECT},
                p.nombre AS paciente_nombre, p.documento AS paciente_documento, p.telefono AS telefono,
                d.nombre AS diagnostico_nombre, d.codigo AS diagnostico_codigo, e.nombre AS equipo_nombre
         FROM citas_electro c
@@ -695,18 +703,16 @@ router.get('/citas-electro', requireAuth, async (req, res) => {
 
   try {
     let query = `
-      SELECT c.id, c.equipo_id, c.paciente_id, c.fecha, c.hora_agendamiento, c.hora_inicio, c.hora_fin, c.hora_fin_date,
-             c.estudio, c.observaciones, c.diagnostico_id, c.estado, c.programado_por_nombre, c.editado_por_nombre, c.editado_en, c.creado_en, c.actualizado_en,
-             c.duracion_minutos, c.entidad,
+      SELECT ${CITAS_ELECTRO_SELECT},
              p.nombre AS paciente_nombre, p.documento AS paciente_documento, p.telefono AS telefono,
              d.nombre AS diagnostico_nombre, d.codigo AS diagnostico_codigo, e.nombre AS equipo_nombre
       FROM citas_electro c
       JOIN pacientes p ON p.id = c.paciente_id
       LEFT JOIN diagnosticos d ON d.id = c.diagnostico_id
       LEFT JOIN equipos_electro e ON e.id = c.equipo_id
-      WHERE c.deleted_at IS NULL AND c.fecha <= ? AND COALESCE(c.hora_fin_date, c.fecha) >= ?
+      WHERE c.deleted_at IS NULL AND c.fecha = ?
     `;
-    let params = [fecha, fecha];
+    let params = [fecha];
     if (equipo_id) { query += ` AND c.equipo_id = ?`; params.push(equipo_id); }
     const { estado, entidad, estudio } = req.query;
     if (estado) {
@@ -748,11 +754,13 @@ router.post('/citas-electro', requireAuth, requireRoleOrPerm(['superadmin', 'adm
     let finalFechaFin = fecha;
     if (!hora_fin) {
       const duracionMinutos = duracion ? parseInt(duracion, 10) : 30;
-      const [hh, mm] = horaAgendamiento.split(':').map(x => parseInt(x, 10));
-      const startDate = new Date(`${fecha}T${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:00`);
-      const endDate = new Date(startDate.getTime() + (duracionMinutos * 60000));
-      finalHoraFin = `${String(endDate.getHours()).padStart(2, '0')}:${String(endDate.getMinutes()).padStart(2, '0')}`;
-      finalFechaFin = `${endDate.getFullYear()}-${String(endDate.getMonth() + 1).padStart(2, '0')}-${String(endDate.getDate()).padStart(2, '0')}`;
+      const finCalc = sumarMinutosAHoraYFecha(fecha, horaAgendamiento, duracionMinutos);
+      if (finCalc) {
+        finalHoraFin = finCalc.horaFin;
+        finalFechaFin = finCalc.fechaFin;
+      }
+    } else {
+      finalFechaFin = extraerFechaYmd(req.body.hora_fin_date) || fechaFinSiCruzaMedianoche(fecha, horaAgendamiento, hora_fin) || fecha;
     }
 
     // Auto-completar estudios de días anteriores FUERA de la transacción para no bloquear
@@ -858,7 +866,10 @@ router.get('/citas-electro/:id', requireAuth, async (req, res) => {
       WHERE c.id = ? AND c.deleted_at IS NULL
     `, [id]);
     if (!rows.length) return res.status(404).json({ error: 'Cita no encontrada' });
-    res.json(rows[0]);
+    const row = rows[0];
+    row.fecha = extraerFechaYmd(row.fecha) || normalizeFecha(row.fecha);
+    if (row.hora_fin_date) row.hora_fin_date = extraerFechaYmd(row.hora_fin_date) || normalizeFecha(row.hora_fin_date);
+    res.json(row);
   } catch (e) {
     res.status(500).json({ error: safeError(e) });
   }
@@ -894,7 +905,8 @@ router.patch('/citas-electro/:id/estado', requireAuth, requireRoleOrPerm(['super
 // PATCH /api/citas-electro/:id
 router.patch('/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro', 'tecnico_electro'], ['electro.editar', 'electro.cambiar_estado']), async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  const { equipo_id, estado, hora_inicio, hora_fin, hora_agendamiento, fecha, duracion_minutos, entidad } = req.body || {};
+  const { equipo_id, estado, hora_inicio, hora_fin, hora_agendamiento, fecha: rawFechaPatch, duracion_minutos, entidad, estudio } = req.body || {};
+  const fecha = rawFechaPatch !== undefined ? normalizeFecha(rawFechaPatch) : undefined;
   if (!id) return res.status(400).json({ error: 'id es obligatorio' });
   if (estado !== undefined && !ESTADOS_VALIDOS_ELECTRO.includes(estado)) {
     return res.status(400).json({ error: `Estado inválido: "${estado}". Valores permitidos: ${ESTADOS_VALIDOS_ELECTRO.join(', ')}` });
@@ -949,15 +961,15 @@ router.patch('/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin',
 
       if (esInicioEstudio) {
         const checkHora = hora_agendamiento || (typeof citaActual.hora_agendamiento === 'string' ? citaActual.hora_agendamiento : String(citaActual.hora_agendamiento));
-        const checkFecha = fecha || (typeof citaActual.fecha === 'string' && citaActual.fecha.length <= 10 ? citaActual.fecha : new Date(citaActual.fecha).toISOString().slice(0, 10));
+        const checkFecha = fecha || extraerFechaYmd(citaActual.fecha) || normalizeFecha(citaActual.fecha);
         let checkHoraFin = hora_fin || citaActual.hora_fin || checkHora;
         let checkFechaFin = req.body.hora_fin_date || citaActual.hora_fin_date || checkFecha;
         if (!hora_fin && duracion_minutos && checkFecha && checkHora) {
-          const [hh, mm] = checkHora.split(':').map(x => parseInt(x, 10));
-          const startDate = new Date(`${checkFecha}T${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:00`);
-          const endDate = new Date(startDate.getTime() + (parseInt(duracion_minutos, 10) * 60000));
-          checkHoraFin = `${String(endDate.getHours()).padStart(2, '0')}:${String(endDate.getMinutes()).padStart(2, '0')}`;
-          checkFechaFin = `${endDate.getFullYear()}-${String(endDate.getMonth() + 1).padStart(2, '0')}-${String(endDate.getDate()).padStart(2, '0')}`;
+          const finCalc = sumarMinutosAHoraYFecha(checkFecha, checkHora, duracion_minutos);
+          if (finCalc) {
+            checkHoraFin = finCalc.horaFin;
+            checkFechaFin = finCalc.fechaFin;
+          }
         }
         // Auto-completar SOLO estudios de días anteriores (mismo criterio que al crear).
         // No se cierran estudios del día actual aunque su hora_fin planeada haya pasado,
@@ -1007,25 +1019,23 @@ router.patch('/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin',
       updates.push('hora_fin_date = ?'); values.push(req.body.hora_fin_date);
     } else if (hora_fin !== undefined) {
       const horaInicio = hora_inicio || citaActual.hora_inicio || citaActual.hora_agendamiento;
-      const fechaEstudio = fecha || citaActual.fecha;
+      const fechaEstudio = fecha || extraerFechaYmd(citaActual.fecha) || normalizeFecha(citaActual.fecha);
       const durMin = duracion_minutos || citaActual.duracion_minutos;
-      if (durMin && horaInicio && fechaEstudio) {
-        const fechaStr = typeof fechaEstudio === 'string' ? fechaEstudio : new Date(fechaEstudio).toISOString().slice(0, 10);
-        const horaStr = typeof horaInicio === 'string' ? horaInicio : String(horaInicio);
-        const [hhS, mmS] = horaStr.split(':').map(Number);
-        const startDate = new Date(`${fechaStr}T${String(hhS).padStart(2, '0')}:${String(mmS).padStart(2, '0')}:00`);
-        const endDate = new Date(startDate.getTime() + (parseInt(durMin, 10) * 60000));
-        const horaFinDate = `${endDate.getFullYear()}-${String(endDate.getMonth() + 1).padStart(2, '0')}-${String(endDate.getDate()).padStart(2, '0')}`;
-        updates.push('hora_fin_date = ?'); values.push(horaFinDate);
-      } else {
-        const [hiI, miI] = (horaInicio || '00:00').split(':').map(Number);
-        const [hiF, miF] = hora_fin.split(':').map(Number);
-        if (hiF * 60 + miF < hiI * 60 + miI) {
-          const fechaObj = new Date(fechaEstudio || citaActual.fecha);
-          fechaObj.setDate(fechaObj.getDate() + 1);
-          updates.push('hora_fin_date = ?'); values.push(fechaObj.toISOString().split('T')[0]);
+      const horaStr = typeof horaInicio === 'string' ? horaInicio.slice(0, 5) : String(horaInicio).slice(0, 5);
+      if (durMin && horaStr && fechaEstudio) {
+        const finCalc = sumarMinutosAHoraYFecha(fechaEstudio, horaStr, durMin);
+        if (finCalc) {
+          updates.push('hora_fin_date = ?');
+          values.push(finCalc.fechaFin);
+        }
+      } else if (hora_fin && fechaEstudio) {
+        const finDate = fechaFinSiCruzaMedianoche(fechaEstudio, horaStr, hora_fin);
+        if (finDate && finDate !== fechaEstudio) {
+          updates.push('hora_fin_date = ?');
+          values.push(finDate);
         } else {
-          updates.push('hora_fin_date = NULL');
+          updates.push('hora_fin_date = ?');
+          values.push(fechaEstudio);
         }
       }
     }
@@ -1034,6 +1044,13 @@ router.patch('/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin',
     if (fecha !== undefined) { updates.push('fecha = ?'); values.push(fecha); cambios.fecha = fecha; }
     if (duracion_minutos !== undefined) { updates.push('duracion_minutos = ?'); values.push(duracion_minutos); cambios.duracion_minutos = duracion_minutos; }
     if (entidad !== undefined) { updates.push('entidad = ?'); values.push(entidad ? String(entidad).trim() : null); }
+    if (estudio !== undefined) {
+      const nombreEstudio = String(estudio).trim();
+      if (!nombreEstudio) return res.status(400).json({ error: 'El tipo de estudio no puede estar vacío' });
+      updates.push('estudio = ?');
+      values.push(nombreEstudio);
+      cambios.estudio = nombreEstudio;
+    }
 
     if (updates.length === 0) return res.json({ ok: true });
 

@@ -899,18 +899,27 @@ function estadoBadge(estado) {
  * @param {string} fecha - Fecha en formato ISO
  * @returns {string} Fecha en formato DD/MM/YYYY o la fecha original si no es ISO
  */
+/** Fecha calendario YYYY-MM-DD sin desfase UTC (Colombia). */
+function extraerFechaYmdCalendario(valor) {
+  if (!valor) return '';
+  const s = String(valor).trim();
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return '';
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Bogota',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).format(d);
+}
+
 function formatearFecha(fecha) {
-  if (!fecha) return '-';
-  try {
-    const date = new Date(fecha);
-    if (isNaN(date)) return fecha; // Si no es una fecha válida, devuelve original
-    const dia = String(date.getDate()).padStart(2, '0');
-    const mes = String(date.getMonth() + 1).padStart(2, '0');
-    const anio = date.getFullYear();
-    return `${dia}/${mes}/${anio}`;
-  } catch (e) {
-    return fecha;
-  }
+  const ymd = extraerFechaYmdCalendario(fecha);
+  if (!ymd) return '-';
+  const [y, m, d] = ymd.split('-');
+  return `${d}/${m}/${y}`;
 }
 
 function formatearHora(valor) {
@@ -979,20 +988,7 @@ function parseHora12a24(str) {
  * @returns {string} Fecha en formato YYYY-MM-DD o la fecha original si es válida
  */
 function formatearFechaISO(fecha) {
-  if (!fecha) return '';
-  const strFecha = String(fecha).trim();
-  
-  // Si ya está en formato YYYY-MM-DD, devolverlo tal cual
-  if (/^\d{4}-\d{2}-\d{2}$/.test(strFecha)) {
-    return strFecha;
-  }
-  
-  // Si es un ISO string, extraer la parte de la fecha
-  if (strFecha.includes('T')) {
-    return strFecha.split('T')[0];
-  }
-  
-  return strFecha;
+  return extraerFechaYmdCalendario(fecha) || '';
 }
 
 function hoyColombiaISO() {
@@ -2606,6 +2602,9 @@ function invalidarCacheEstudios() {
     ['electroEstudio', () => cargarEstudiosEnSelect('electroEstudio', { force: true })],
     ['filtroEstudiosElectro', () => fetchEstudiosElectroOpciones({ force: true }).then((lista) => initFiltroEstudiosElectro(lista))]
   ];
+  if ($('modalEstudio')) {
+    recargar.push(['modalEstudio', () => cargarEstudiosEnSelect('modalEstudio', { force: true, valorPrevio: citaElectroSeleccionada?.estudio })]);
+  }
   recargar.forEach(([id, fn]) => { if ($(id)) fn(); });
 }
 
@@ -5775,6 +5774,56 @@ async function initElectro() {
   
   // Event listeners para cambios en el modal (equipo y estado)
   const modalEquipoEl = $('modalEquipo');
+  const modalEstudioEl = $('modalEstudio');
+  if (modalEstudioEl && !modalEstudioEl.dataset.boundChange) {
+    modalEstudioEl.dataset.boundChange = '1';
+    modalEstudioEl.addEventListener('change', async (e) => {
+      if (!citaElectroSeleccionada || isInitializingElectroModal) return;
+      if (!tienePermiso('electro.editar')) return;
+      if (citaElectroSeleccionada.estado === 'Completado') {
+        showToast('No se puede cambiar el estudio de una cita completada', 'error');
+        e.target.value = citaElectroSeleccionada.estudio || '';
+        return;
+      }
+      const nuevoEstudio = e.target.value.trim();
+      if (!nuevoEstudio || nuevoEstudio === (citaElectroSeleccionada.estudio || '')) return;
+      try {
+        let duracionMinutos = citaElectroSeleccionada.duracion_minutos;
+        try {
+          const dr = await apiFetch(`/api/estudios/duracion?nombre=${encodeURIComponent(nuevoEstudio)}`);
+          const dj = await dr.json();
+          if (dj && dj.duracion_minutos) duracionMinutos = dj.duracion_minutos;
+        } catch (_) { /* mantener duración actual */ }
+        const cambios = { estudio: nuevoEstudio };
+        if (duracionMinutos) cambios.duracion_minutos = duracionMinutos;
+        const res = await apiFetch(`/api/citas-electro/${citaElectroSeleccionada.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(cambios)
+        });
+        const data = await res.json();
+        if (data && data.ok) {
+          citaElectroSeleccionada.estudio = nuevoEstudio;
+          if (duracionMinutos) citaElectroSeleccionada.duracion_minutos = duracionMinutos;
+          const $durEl = document.getElementById('modalDuracionDisplay');
+          if ($durEl && duracionMinutos) {
+            const dHrs = Math.floor(duracionMinutos / 60);
+            const dMin = duracionMinutos % 60;
+            $durEl.textContent = dHrs > 0 && dMin > 0 ? `${dHrs}h ${dMin}min` : (dHrs > 0 ? `${dHrs} horas` : `${dMin} min`);
+          }
+          showToast('Tipo de estudio actualizado', 'success');
+          cargarCitasElectro();
+        } else {
+          showToast(data?.error || 'Error al actualizar estudio', 'error');
+          e.target.value = citaElectroSeleccionada.estudio || '';
+        }
+      } catch (err) {
+        showToast('Error al actualizar estudio', 'error');
+        e.target.value = citaElectroSeleccionada.estudio || '';
+      }
+    });
+  }
+
   if (modalEquipoEl && !modalEquipoEl.dataset.boundChange) modalEquipoEl.addEventListener('change', async (e) => {
     if (!citaElectroSeleccionada) return;
     
@@ -6307,8 +6356,8 @@ $('electroDiagnostico').addEventListener('input', function() {
 });
 
 function obtenerFechaElectroBase10(fechaRaw) {
-  if (!fechaRaw) return null;
-  return typeof fechaRaw === 'string' && fechaRaw.length > 10 ? fechaRaw.slice(0, 10) : String(fechaRaw).slice(0, 10);
+  const ymd = extraerFechaYmdCalendario(fechaRaw);
+  return ymd || null;
 }
 
 function construirDateHoraElectro(fechaBase, horaStr) {
@@ -6335,7 +6384,7 @@ function obtenerHoraInicioRecomendadaParaEstudio(cita) {
   if (!/^\d{2}:\d{2}$/.test(horaAgendada)) return horaAhora;
 
   const fechaBase = obtenerFechaElectroBase10(cita?.fecha);
-  const hoy = ahora.toISOString().slice(0, 10);
+  const hoy = hoyColombiaISO();
   if (!fechaBase || fechaBase !== hoy) return horaAgendada;
 
   const [ah, am] = horaAhora.split(':').map(Number);
@@ -6648,7 +6697,7 @@ function renderCitaElectroRow(tbody, c) {
   
   // Mostrar hora_fin con fecha SOLO si cruza medianoche
   let horaFinDisplay = formatearHora(c.hora_fin);
-  if (c.hora_fin_date && c.hora_fin_date !== c.fecha) {
+  if (c.hora_fin_date && extraerFechaYmdCalendario(c.hora_fin_date) !== extraerFechaYmdCalendario(c.fecha)) {
     const fechaFormateada = formatearFechaISO(c.hora_fin_date);
     horaFinDisplay = `${formatearHora(c.hora_fin)} <span style="color:#dc2626;font-size:0.72rem;font-weight:600;">(${fechaFormateada})</span>`;
   }
@@ -9872,7 +9921,7 @@ function validarInicioElectroSegunFechaHora(cita) {
     return { ok: true, horaAgendada: horaAgendadaRaw };
   }
 
-  const fechaRaw = cita?.fecha ? String(cita.fecha).slice(0, 10) : '';
+  const fechaRaw = extraerFechaYmdCalendario(cita?.fecha) || '';
   if (!/^\d{4}-\d{2}-\d{2}$/.test(fechaRaw)) {
     return { ok: true, horaAgendada: horaAgendadaRaw };
   }
@@ -10410,25 +10459,11 @@ function enviarPorWhatsApp() {
   try {
     console.log('Fecha recibida:', cita.fecha, 'Tipo:', typeof cita.fecha);
     
-    // Intentar parsear la fecha de diferentes formas
-    if (typeof cita.fecha === 'string') {
-      // Eliminar hora si está incluida (formato ISO: YYYY-MM-DD HH:MM:SS)
-      const soloFecha = cita.fecha.split(' ')[0];
-      
-      if (soloFecha.includes('-')) {
-        // Formato YYYY-MM-DD
-        const [year, month, day] = soloFecha.split('-');
-        fechaObj = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
-      } else if (soloFecha.includes('/')) {
-        // Formato DD/MM/YYYY
-        const [day, month, year] = soloFecha.split('/');
-        fechaObj = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
-      } else {
-        // Intentar parseo directo
-        fechaObj = new Date(cita.fecha);
-      }
+    const ymd = extraerFechaYmdCalendario(cita.fecha);
+    if (ymd) {
+      const [year, month, day] = ymd.split('-').map(Number);
+      fechaObj = new Date(year, month - 1, day);
     } else {
-      // Si es un número (timestamp)
       fechaObj = new Date(cita.fecha);
     }
     
@@ -10510,9 +10545,14 @@ async function abrirModalDetallesCita(cita) {
   $('modalUsuarioProgramo').textContent = escapeHtml(cita.programado_por_nombre || '-');
   $('modalUsuarioEdito').textContent = escapeHtml(cita.editado_por_nombre || cita.programado_por_nombre || '-');
 
-  // Nuevos campos de información de la cita
-  const $estudioEl = document.getElementById('modalEstudioDisplay');
-  if ($estudioEl) $estudioEl.textContent = cita.estudio || '-';
+  const modalEstudioEl = $('modalEstudio');
+  if (modalEstudioEl) {
+    await cargarEstudiosEnSelect('modalEstudio', { valorPrevio: cita.estudio || '', force: false });
+    const puedeEditarEstudio = puedeEditarElectro && citaElectroSeleccionada.estado !== 'Completado';
+    modalEstudioEl.disabled = !puedeEditarEstudio;
+    modalEstudioEl.style.opacity = !puedeEditarEstudio ? '0.6' : '1';
+    modalEstudioEl.style.cursor = !puedeEditarEstudio ? 'not-allowed' : 'pointer';
+  }
   const $fechaEl = document.getElementById('modalFechaDisplay');
   if ($fechaEl) $fechaEl.textContent = cita.fecha ? formatearFechaISO(cita.fecha) : '-';
   const $horaEl = document.getElementById('modalHoraDisplay');
@@ -10549,7 +10589,7 @@ async function abrirModalDetallesCita(cita) {
   if ($hfInfoEl) {
     if (cita.hora_fin) {
       let hfText = formatearHora(cita.hora_fin);
-      if (cita.hora_fin_date && cita.hora_fin_date !== cita.fecha) {
+      if (cita.hora_fin_date && extraerFechaYmdCalendario(cita.hora_fin_date) !== extraerFechaYmdCalendario(cita.fecha)) {
         hfText += ` (${formatearFechaISO(cita.hora_fin_date)})`;
       }
       $hfInfoEl.textContent = hfText;
@@ -11036,14 +11076,15 @@ async function guardarCambiosCitaElectro() {
     }
 
     const equipoNuevo = $('modalEquipo').value;
-    
-    // Solo manejar cambio de equipo — los cambios de estado se manejan
-    // exclusivamente por los botones de flujo (cambiarEstadoCita, iniciarEstudioModal, etc.)
+    const estudioNuevo = ($('modalEstudio')?.value || '').trim();
+
     const cambios = {};
-    
-    // Comparar equipo (convertir ambos a string para comparar)
+
     if (String(equipoNuevo) !== String(citaElectroSeleccionada.equipo_id || '')) {
       cambios.equipo_id = equipoNuevo ? parseInt(equipoNuevo) : null;
+    }
+    if (estudioNuevo && estudioNuevo !== (citaElectroSeleccionada.estudio || '')) {
+      cambios.estudio = estudioNuevo;
     }
     
     if (Object.keys(cambios).length > 0) {
