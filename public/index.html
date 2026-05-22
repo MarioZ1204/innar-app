@@ -13,6 +13,7 @@
   <link rel="stylesheet" href="innar-buttons.css">
   <link rel="stylesheet" href="innar-theme.css">
   <link rel="stylesheet" href="innar-motion.css">
+  <link rel="stylesheet" href="innar-sidebar.css">
   <link rel="stylesheet" href="sede-recordatorio.css">
   <link rel="stylesheet" href="soportes.css">
   <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js" defer></script>
@@ -228,6 +229,25 @@
       </div>
     </div>
   </div>
+
+  <!-- Plantilla: marca sidebar (logo mini + expandido) -->
+  <template id="tplInnarSidebarBrand">
+    <div class="sidebar-logo-mini"><img src="/images/logo.webp" alt="Logo Innar" width="305" height="100" loading="lazy" /></div>
+    <div class="sidebar-logo"><img src="/images/logo.webp" alt="Logo Innar" width="305" height="100" style="height:58px;width:auto;object-fit:contain" loading="lazy" /></div>
+  </template>
+
+  <!-- Plantilla: pie común de sidebar (inyectado por innar-sidebar.js si falta) -->
+  <template id="tplInnarSidebarFooter">
+    <div class="sidebar-footer">
+      <div class="sidebar-user">
+        <div class="sidebar-user-avatar">--</div>
+        <div>
+          <div class="sidebar-user-name">Cargando...</div>
+          <div class="sidebar-user-role">-</div>
+        </div>
+      </div>
+    </div>
+  </template>
 
   <!-- ========== MÓDULO RECIBOS ========== -->
   <div id="view-recibos" class="view-module hidden">
@@ -1810,6 +1830,15 @@
           <h2>UCQN</h2>
           <p class="sidebar-desc">Seguimiento de estudios UCQN</p>
         </div>
+        <div class="sidebar-footer">
+          <div class="sidebar-user">
+            <div class="sidebar-user-avatar">--</div>
+            <div>
+              <div class="sidebar-user-name">Cargando...</div>
+              <div class="sidebar-user-role">-</div>
+            </div>
+          </div>
+        </div>
       </div>
       <div class="main-content">
         <div class="container">
@@ -2168,8 +2197,8 @@
   <!-- Modal Confirmación Duración -->
   <div id="modalConfirmarDuracion" class="modal hidden" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);align-items:center;justify-content:center;z-index:1002;padding:20px">
     <div class="modal-content" style="background:white;border-radius:12px;padding:32px;max-width:400px;width:100%;box-shadow:0 20px 25px -5px rgba(0,0,0,0.1);text-align:center">
-      <h2 style="margin:0 0 16px 0">¿Desea incluir duración del estudio?</h2>
-      <p style="color:#6b7280;margin:0 0 32px 0;font-size:.95rem">Podrá establecer una duración personalizada</p>
+      <h2 style="margin:0 0 16px 0">¿Desea cambiar la hora de inicio?</h2>
+      <p style="color:#6b7280;margin:0 0 32px 0;font-size:.95rem">Si responde <strong>No</strong>, el estudio iniciará a la hora en que fue agendado.</p>
       
       <div style="display:flex;gap:12px;justify-content:center">
         <button id="btnConfirmarDuracionNo" class="btn-secondary">No</button>
@@ -3301,12 +3330,11 @@
           </button>
         </div>
       </header>
-      <main class="sop-body sop-layout-armado" id="sopArmLayout">
-        <nav id="sopArmContextBar" class="sop-context-bar sop-context-bar-full" aria-label="Contexto de navegación"></nav>
+      <main class="sop-body sop-armado-layout" id="sopArmLayout">
         <div id="sopArmNavBackdrop" class="sop-nav-backdrop hidden" aria-hidden="true"></div>
-        <aside id="sopArmNavPanel" class="sop-panel sop-arm-nav-panel">
-          <div class="sop-panel-head"><h3 style="margin:0;font-size:1rem">Navegación</h3></div>
-          <div class="sop-panel-body" style="padding-top:12px">
+        <aside id="sopArmNavPanel" class="sop-arm-sidebar" aria-label="Navegación soportes">
+          <div class="sop-arm-sidebar-head"><h3>Navegación</h3></div>
+          <div class="sop-arm-sidebar-body">
             <div id="sopArmPeriodoSummary" class="sop-summary-row hidden"></div>
             <div class="sop-nav-block">
               <div class="sop-nav-label">Periodos</div>
@@ -3318,14 +3346,17 @@
             </div>
           </div>
         </aside>
-        <section id="sopArmExpedientePanel" class="sop-panel">
-          <div class="sop-panel-body">
-            <div class="sop-empty">
-              <i data-lucide="layers" class="sop-empty-icon"></i>
-              Seleccione un mes, una carpeta de día y RIPS o SOPORTES
+        <div class="sop-arm-main">
+          <nav id="sopArmContextBar" class="sop-context-bar" aria-label="Contexto de navegación"></nav>
+          <section id="sopArmExpedientePanel" class="sop-panel sop-arm-content-panel">
+            <div class="sop-panel-body">
+              <div class="sop-empty">
+                <i data-lucide="layers" class="sop-empty-icon"></i>
+                Seleccione un mes, una carpeta de día y RIPS o SOPORTES
+              </div>
             </div>
-          </div>
-        </section>
+          </section>
+        </div>
       </main>
     </div>
   </div>
@@ -3341,6 +3372,7 @@
   <script src="/libs/xlsx.full.min.js"></script>
   <script src="/libs/crypto-js.min.js"></script>
   <script src="innar-motion.js"></script>
+  <script src="innar-sidebar.js"></script>
   <script src="multiselect.js"></script>
   <script src="socket-client.js"></script>
   <script src="socket-electro.js"></script>

@@ -421,6 +421,7 @@ function showView(id) {
     });
     const el = document.getElementById(id);
     if (el) el.classList.remove('hidden');
+    if (typeof window.innarSidebarRefresh === 'function') window.innarSidebarRefresh();
   };
   let usedViewTransition = false;
   if (typeof window.innarRunViewSwitch === 'function') {
@@ -447,6 +448,7 @@ function updateSidebarUser(user) {
   document.querySelectorAll('.sidebar-user-avatar').forEach(el => el.textContent = initials);
   document.querySelectorAll('.sidebar-user-name').forEach(el => el.textContent = name);
   document.querySelectorAll('.sidebar-user-role').forEach(el => el.textContent = roleLabel);
+  if (typeof window.innarSidebarRefresh === 'function') window.innarSidebarRefresh();
 }
 
 function updateMenuByRole() {
@@ -679,6 +681,7 @@ function goToModule(moduleId) {
   if (moduleId === 'monitor-equipos') { initMonitorEquipos(); }
   if (moduleId === 'reportes-pdx' && typeof initReportesPdx === 'function') initReportesPdx();
   if (moduleId === 'armado-soportes' && typeof initArmadoSoportes === 'function') initArmadoSoportes();
+  if (typeof window.innarSidebarRefresh === 'function') window.innarSidebarRefresh();
 }
 
 function goToMenu() {
@@ -807,58 +810,9 @@ function setupMenuHandlers() {
     });
   });
 
-  setupMobileSidebars();
-}
-
-function setupMobileSidebars() {
-  if (window._mobileSidebarSetup) return;
-  window._mobileSidebarSetup = true;
-
-  function openSidebar(sidebar, backdrop) {
-    sidebar.classList.add('mobile-open');
-    backdrop.classList.add('active');
+  if (typeof window.innarSidebarInit === 'function') {
+    window.innarSidebarInit();
   }
-
-  function closeSidebar(sidebar, backdrop) {
-    sidebar.classList.remove('mobile-open');
-    backdrop.classList.remove('active');
-  }
-
-  function closeAll() {
-    document.querySelectorAll('.sidebar.mobile-open').forEach(s => {
-      const layout = s.closest('.main-layout');
-      const bd = layout && layout.querySelector('.mobile-sidebar-backdrop');
-      closeSidebar(s, bd || { classList: { remove: () => {} } });
-    });
-  }
-
-  // Inyectar backdrop y botón en cada módulo
-  document.querySelectorAll('.main-layout').forEach(layout => {
-    const sidebar = layout.querySelector(':scope > .sidebar');
-    const mainContent = layout.querySelector(':scope > .main-content');
-    if (!sidebar || !mainContent) return;
-
-    // Backdrop dentro del mismo layout (mismo stacking context que el sidebar)
-    const backdrop = document.createElement('div');
-    backdrop.className = 'mobile-sidebar-backdrop';
-    layout.appendChild(backdrop);
-    backdrop.addEventListener('click', () => closeSidebar(sidebar, backdrop));
-
-    // Botón hamburguesa antes del main-content
-    const btn = document.createElement('button');
-    btn.className = 'mobile-menu-btn no-print';
-    btn.setAttribute('aria-label', 'Abrir navegación');
-    btn.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>`;
-    layout.insertBefore(btn, mainContent);
-    btn.addEventListener('click', () => openSidebar(sidebar, backdrop));
-  });
-
-  // Cerrar sidebar al elegir opción o volver
-  document.addEventListener('click', e => {
-    if (e.target.closest('.btn-volver') || e.target.closest('.sidebar-btn')) {
-      closeAll();
-    }
-  }, true);
 }
 
 // Escapar HTML para evitar XSS al insertar en innerHTML
@@ -6365,7 +6319,15 @@ function construirDateHoraElectro(fechaBase, horaStr) {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
-/** Hora de inicio al abrir/iniciar estudio: la mayor entre agendada y ahora (mismo día). */
+/** Hora de inicio al pulsar "No" (sin ajustar): siempre la hora agendada. */
+function obtenerHoraInicioAgendadaElectro(cita) {
+  const horaAgendada = String(cita?.hora_agendamiento || '').slice(0, 5);
+  if (/^\d{2}:\d{2}$/.test(horaAgendada)) return horaAgendada;
+  const ahora = new Date();
+  return `${String(ahora.getHours()).padStart(2, '0')}:${String(ahora.getMinutes()).padStart(2, '0')}`;
+}
+
+/** Hora de inicio al abrir modal de duración: la mayor entre agendada y ahora (mismo día). */
 function obtenerHoraInicioRecomendadaParaEstudio(cita) {
   const ahora = new Date();
   const horaAhora = `${String(ahora.getHours()).padStart(2, '0')}:${String(ahora.getMinutes()).padStart(2, '0')}`;
@@ -8984,7 +8946,7 @@ async function cargarLista(queryString) {
       acciones += `<a href="/api/recibos/${r.id}/pdf" target="_blank" class="btn-recibo-pdf" title="Ver PDF">
         <img src="images/pdf.svg" alt="PDF"/></a>`;
       if (tienePermiso('recibos.editar') && !esAnulado) {
-        acciones += `<button class="btn-editar" data-id="${r.id}" data-medico="${escapeHtml(r.medico_nombre||'')}" data-servicio="${escapeHtml(r.tipo_servicio||'')}" data-entidad="${escapeHtml(r.nombre_entidad||'')}" data-cliente="${escapeHtml(r.cliente||'')}" title="Editar">
+        acciones += `<button class="btn-editar" data-id="${r.id}" data-medico="${escapeHtml(r.medico_nombre||'')}" data-servicio="${escapeHtml(r.tipo_servicio||'')}" data-entidad="${escapeHtml(r.nombre_entidad||'')}" data-cliente="${escapeHtml(r.cliente||'')}" data-tipo-pago="${escapeHtml(r.tipo_pago||'')}" title="Editar">
           <img src="images/edit.svg" alt="Editar"/></button>`;
       }
       if (tienePermiso('recibos.editar') && esPendiente) {
@@ -9005,8 +8967,8 @@ async function cargarLista(queryString) {
           <img src="images/delete.svg" alt="Eliminar"/></button>`;
       }
       if (isSuperadmin() && !esAnulado) {
-        acciones += `<button class="btn-editar-obs" data-id="${r.id}" data-numero="${escapeHtml(r.numero || '')}" title="Editar observaciones">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M12 18v-6M9 15h6"/></svg></button>`;
+        acciones += `<button class="btn-recibo-obs" data-id="${r.id}" data-numero="${escapeHtml(r.numero || '')}" title="Editar observaciones">
+          <img src="images/edit.svg" alt="Observaciones"/></button>`;
       }
       acciones += `</div>`;
 
@@ -9029,8 +8991,8 @@ async function cargarLista(queryString) {
       tbody.appendChild(tr);
     });
 
-    tbody.querySelectorAll('.btn-editar-obs').forEach((b) => b.addEventListener('click', (e) => {
-      const btn = e.target.closest('.btn-editar-obs');
+    tbody.querySelectorAll('.btn-recibo-obs').forEach((b) => b.addEventListener('click', (e) => {
+      const btn = e.target.closest('.btn-recibo-obs');
       showEditObservacionesReciboModal(btn.dataset.id, btn.dataset.numero);
     }));
 
@@ -9042,7 +9004,8 @@ async function cargarLista(queryString) {
       const servicio = btn.dataset.servicio || '';
       const entidad  = btn.dataset.entidad  || '';
       const cliente  = btn.dataset.cliente  || '';
-      showEditReciboModal({ id: reciboId, medico, servicio, entidad, cliente });
+      const tipoPago = btn.dataset.tipoPago || '';
+      showEditReciboModal({ id: reciboId, medico, servicio, entidad, cliente, tipoPago });
     }));
 
     // Listener: Marcar como pagado
@@ -9150,7 +9113,7 @@ async function showEditObservacionesReciboModal(reciboId, numero) {
   backdrop.addEventListener('click', (e) => { if (e.target === backdrop) backdrop.remove(); });
 }
 
-async function showEditReciboModal({ id, medico, servicio, entidad, cliente }) {
+async function showEditReciboModal({ id, medico, servicio, entidad, cliente, tipoPago }) {
   // Cargar opciones en paralelo
   const [medicosRes, serviciosArr, entidadesCatalogo] = await Promise.all([
     apiFetch('/api/medicos').then(r => r.json()).catch(() => []),
@@ -9201,6 +9164,15 @@ async function showEditReciboModal({ id, medico, servicio, entidad, cliente }) {
             ${entidad && !entidades.find(e=>e.nombre===entidad) ? `<option value="${escapeHtml(entidad)}" selected>${escapeHtml(entidad)}</option>` : ''}
           </select>
         </label>
+        <label style="font-size:0.85rem;font-weight:600;color:#374151">
+          Forma de pago
+          <select id="editReciboTipoPago" style="${inputStyle}">
+            <option value="">-- Seleccionar --</option>
+            <option value="Efectivo"${tipoPago==='Efectivo'?' selected':''}>Efectivo</option>
+            <option value="Transferencia"${tipoPago==='Transferencia'?' selected':''}>Transferencia</option>
+            ${tipoPago && tipoPago !== 'Efectivo' && tipoPago !== 'Transferencia' ? `<option value="${escapeHtml(tipoPago)}" selected>${escapeHtml(tipoPago)}</option>` : ''}
+          </select>
+        </label>
       </div>
       <div class="confirm-actions" style="margin-top:18px">
         <button class="btn-cancel">Cancelar</button>
@@ -9215,7 +9187,8 @@ async function showEditReciboModal({ id, medico, servicio, entidad, cliente }) {
       cliente:        backdrop.querySelector('#editReciboCliente').value.trim(),
       medico_nombre:  backdrop.querySelector('#editReciboMedico').value,
       tipo_servicio:  backdrop.querySelector('#editReciboServicio').value,
-      nombre_entidad: backdrop.querySelector('#editReciboEntidad').value
+      nombre_entidad: backdrop.querySelector('#editReciboEntidad').value,
+      tipo_pago:      backdrop.querySelector('#editReciboTipoPago').value
     };
     try {
       const jr = await apiFetch(`/api/recibos/${id}`, {
@@ -10003,9 +9976,9 @@ async function iniciarEstudioSinDuracion() {
   try {
     // Obtener la duración predeterminada de la cita (en minutos)
     const duracionMinutos = citaElectroSeleccionada.duracion_minutos || 480;
-    const horaInicio = obtenerHoraInicioRecomendadaParaEstudio(citaElectroSeleccionada);
+    const horaInicio = obtenerHoraInicioAgendadaElectro(citaElectroSeleccionada);
     
-    console.log(`[DURACION_SIN] Usando duración predeterminada: ${duracionMinutos} minutos`);
+    console.log(`[DURACION_SIN] Inicio con hora agendada: ${horaInicio}, duración: ${duracionMinutos} min`);
     
     // Calcular hora_fin usando Date (soporta multi-día)
     const [hh_inicio, mm_inicio] = horaInicio.split(':').map(Number);

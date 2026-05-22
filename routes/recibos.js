@@ -511,7 +511,7 @@ router.delete('/recibos/reset', requireAuth, requireRoleOrPerm(['superadmin', 'a
 router.put('/recibos/:id', requireAuth, requireRoleOrPerm(['superadmin'], 'recibos.editar'), async (req, res) => {
   const id = parseReciboId(req.params.id);
   if (id === null) return res.status(400).json({ error: 'ID de recibo inválido' });
-  const { cliente, medico_nombre, tipo_servicio, nombre_entidad } = req.body || {};
+  const { cliente, medico_nombre, tipo_servicio, nombre_entidad, tipo_pago } = req.body || {};
   try {
     const rows = await db.query('SELECT id, anulado FROM recibos WHERE id=?', [id]);
     if (!rows.length) return res.status(404).json({ error: 'Recibo no encontrado' });
@@ -522,6 +522,14 @@ router.put('/recibos/:id', requireAuth, requireRoleOrPerm(['superadmin'], 'recib
     if (medico_nombre !== undefined) { updates.push('medico_nombre = ?'); params.push(String(medico_nombre).trim()); }
     if (tipo_servicio !== undefined) { updates.push('tipo_servicio = ?'); params.push(String(tipo_servicio).trim()); }
     if (nombre_entidad !== undefined) { updates.push('nombre_entidad = ?'); params.push(String(nombre_entidad).trim()); }
+    if (tipo_pago !== undefined) {
+      const tp = String(tipo_pago || '').trim();
+      if (tp && !['Efectivo', 'Transferencia'].includes(tp)) {
+        return res.status(400).json({ error: 'Tipo de pago inválido (use Efectivo o Transferencia)' });
+      }
+      updates.push('tipo_pago = ?');
+      params.push(tp || null);
+    }
     if (!updates.length) return res.status(400).json({ error: 'No hay campos para actualizar' });
     params.push(id);
     await db.execute(`UPDATE recibos SET ${updates.join(', ')} WHERE id = ?`, params);
