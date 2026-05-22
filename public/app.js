@@ -8948,6 +8948,13 @@ async function cargarLista(queryString) {
       if (tienePermiso('recibos.editar') && !esAnulado) {
         acciones += `<button class="btn-editar" data-id="${r.id}" data-medico="${escapeHtml(r.medico_nombre||'')}" data-servicio="${escapeHtml(r.tipo_servicio||'')}" data-entidad="${escapeHtml(r.nombre_entidad||'')}" data-cliente="${escapeHtml(r.cliente||'')}" data-tipo-pago="${escapeHtml(r.tipo_pago||'')}" title="Editar">
           <img src="images/edit.svg" alt="Editar"/></button>`;
+        acciones += `<button class="btn-recibo-tipo-pago" data-id="${r.id}" data-numero="${escapeHtml(r.numero || '')}" data-tipo-pago="${escapeHtml(r.tipo_pago||'')}" title="Cambiar forma de pago" aria-label="Cambiar forma de pago">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="2" y="5" width="20" height="14" rx="2"/>
+            <path d="M2 10h20"/>
+            <path d="M6 15h4"/>
+          </svg>
+        </button>`;
       }
       if (tienePermiso('recibos.editar') && esPendiente) {
         acciones += `<button class="btn-recibo-pagar marcar-pagado" data-id="${r.id}" title="Marcar como pagado" aria-label="Marcar como pagado">
@@ -8994,6 +9001,11 @@ async function cargarLista(queryString) {
     tbody.querySelectorAll('.btn-recibo-obs').forEach((b) => b.addEventListener('click', (e) => {
       const btn = e.target.closest('.btn-recibo-obs');
       showEditObservacionesReciboModal(btn.dataset.id, btn.dataset.numero);
+    }));
+
+    tbody.querySelectorAll('.btn-recibo-tipo-pago').forEach((b) => b.addEventListener('click', (e) => {
+      const btn = e.target.closest('.btn-recibo-tipo-pago');
+      showEditTipoPagoReciboModal(btn.dataset.id, btn.dataset.numero, btn.dataset.tipoPago || '');
     }));
 
     // Listener: Editar recibo (superadmin)
@@ -9055,6 +9067,52 @@ async function cargarLista(queryString) {
     console.error(e);
     showToast('Error cargando lista', 'error');
   }
+}
+
+function showEditTipoPagoReciboModal(reciboId, numero, tipoPagoActual) {
+  const inputStyle = 'width:100%;margin-top:4px;padding:9px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:0.9rem;background:#fff';
+  const tp = tipoPagoActual || '';
+  const backdrop = document.createElement('div');
+  backdrop.className = 'confirm-backdrop';
+  backdrop.innerHTML = `
+    <div class="confirm-box" style="max-width:400px;width:92%">
+      <div class="confirm-icon">💳</div>
+      <div class="confirm-msg" style="font-size:1rem;margin-bottom:14px">Forma de pago — Recibo ${escapeHtml(numero || reciboId)}</div>
+      <label style="font-size:0.85rem;font-weight:600;color:#374151;display:block;text-align:left">
+        Tipo de pago
+        <select id="editReciboSoloTipoPago" style="${inputStyle}">
+          <option value="Efectivo"${tp === 'Efectivo' ? ' selected' : ''}>Efectivo</option>
+          <option value="Transferencia"${tp === 'Transferencia' ? ' selected' : ''}>Transferencia</option>
+        </select>
+      </label>
+      <div class="confirm-actions" style="margin-top:18px">
+        <button class="btn-cancel">Cancelar</button>
+        <button class="btn-ok" style="background:#2d4a47">Guardar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(backdrop);
+  backdrop.querySelector('#editReciboSoloTipoPago').focus();
+  backdrop.querySelector('.btn-cancel').addEventListener('click', () => backdrop.remove());
+  backdrop.querySelector('.btn-ok').addEventListener('click', async () => {
+    const tipo_pago = backdrop.querySelector('#editReciboSoloTipoPago').value;
+    try {
+      const jr = await apiFetch(`/api/recibos/${reciboId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tipo_pago })
+      }).then((r) => r.json());
+      if (jr.ok) {
+        backdrop.remove();
+        showToast('Forma de pago actualizada', 'success');
+        cargarLista(_recibosLastParams);
+      } else {
+        showToast(jr.error || 'Error al guardar', 'error');
+      }
+    } catch (_) {
+      showToast('Error al guardar forma de pago', 'error');
+    }
+  });
+  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) backdrop.remove(); });
 }
 
 async function showEditObservacionesReciboModal(reciboId, numero) {

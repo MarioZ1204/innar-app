@@ -1434,7 +1434,6 @@
         ${sopPerm('soportes.armado.crear_estructura') ? `<button type="button" class="sop-btn sop-btn-teal" id="btnSopArmNuevoFe"><i data-lucide="folder-plus"></i> Nuevas carpetas</button>` : ''}
       </div>
       <div class="sop-panel-body">
-        <p class="sop-pdx-format-nota" style="margin:0 0 12px">Carpetas por <strong>nombre y apellido</strong>. Si sube la <strong>FEV primero</strong>, la carpeta pasa a <code>FE14726</code> y los soportes que agregue después ya llevan nombre canónico. Si sube soportes antes, conservan su nombre hasta vincular la FEV.</p>
         <div id="sopArmContenedorSummary"></div>
         <div class="sop-table-wrap"><table class="sop-table"><thead><tr>
           <th>Carpeta / Paciente</th><th>Factura</th><th style="width:200px">Acciones</th></tr></thead>
@@ -1594,7 +1593,6 @@
     const tipoLabel = labelContenedorArmado(armState.contenedorTipo);
     const esRips = e.contenedor_tipo === 'rips';
     const nit = e.nit_obligado || '—';
-    const fevEjemplo = e.fev_nombre_ejemplo || `FEV_${nit}_FE14726.pdf`;
     const slots = e.slots || {};
 
     let slotsHtml = '';
@@ -1629,7 +1627,6 @@
         ${!esRips ? htmlExpedienteProgress(e, slots) : ''}
         <div class="sop-pdx-format-help" style="margin-bottom:14px">
           <div class="sop-pdx-format-title"><i data-lucide="sparkles"></i> Subida inteligente</div>
-          <p class="sop-pdx-format-nota" style="margin:0 0 10px"><strong>Sin factura aún:</strong> OPF, CRC, PDX y HEV guardan el nombre original. <strong>Con factura vinculada</strong> (o si sube la FEV primero): los nuevos soportes usan <code>OPF_${escapeHtml(nit)}_FE…</code>, etc. La FEV debe llamarse <code>${escapeHtml(fevEjemplo)}</code>.</p>
           <div id="sopFeDropzone" class="sop-dropzone sop-dropzone-compact">
             <div class="sop-dropzone-label"><i data-lucide="upload-cloud"></i> Subir PDF</div>
             <input type="file" id="sopFeUploadInput" class="sop-file-input-hidden" accept=".pdf,application/pdf">
@@ -1851,7 +1848,6 @@
       <div class="sop-field">
         <label for="sopFeLista">Lista de pacientes <span class="sop-label-opt">(un nombre por línea)</span></label>
         <textarea id="sopFeLista" rows="8" placeholder="Juan Pérez&#10;María García&#10;Pérez, Luis"></textarea>
-        <p class="sop-pdx-format-nota" style="margin:8px 0 0">Formato: <code>Nombre Apellido</code> o <code>Apellido, Nombre</code>. Luego suba la factura como <code>FEV_{NIT}_FE14726.pdf</code>.</p>
       </div>
       <div class="sop-field" style="border-top:1px solid var(--sop-border,#e2e8f0);padding-top:12px">
         <label for="sopFeUnPaciente">Un solo paciente <span class="sop-label-opt">(opcional)</span></label>
