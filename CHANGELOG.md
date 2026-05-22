@@ -3,6 +3,14 @@
 Todos los cambios importantes a la aplicación se documentan aquí. El formato
 sigue (informalmente) [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
+## [1.5.2] — 2026-05-19
+
+### Cambiado
+
+- UI Soportes: textos largos de FEV/nombres canónicos eliminados en armado.
+- Recibos: botón dedicado para cambiar forma de pago (Efectivo/Transferencia).
+- Cache bust: subir `APP_BUILD_VERSION` o `package.json` tras deploy (`?v=1.5.2` en assets).
+
 ## [1.3.1] — 2026-05-11
 
 Hotfix de regresiones reportadas en producción tras el deploy de 1.3.0.
