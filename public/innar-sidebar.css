@@ -32,6 +32,11 @@ html.innar-shell-light .view-module .main-content .card {
   -webkit-overflow-scrolling: touch;
 }
 
+/* Recibos: scroll solo en .table-wrapper (sticky en columna Acciones) */
+html.innar-shell-light #savedList.card {
+  overflow-x: visible;
+}
+
 html.innar-shell-light .view-module .main-content .card > table,
 html.innar-shell-light .view-module .main-content table {
   min-width: max-content;
@@ -675,6 +680,52 @@ html.innar-shell-light #view-monitor-equipos .meq-page-body {
     border: 1px solid var(--innar-sidebar-border, #e2e8e7) !important;
     border-radius: 0 0 10px 0 !important;
     box-shadow: var(--innar-sidebar-shadow) !important;
+  }
+
+  /* Contenido no queda debajo del botón hamburguesa */
+  html.innar-shell-light .view-module .main-layout > .main-content {
+    padding-top: 52px !important;
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+  }
+
+  html.innar-shell-light .view-module .main-content .container {
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  #page-recibos .recibo-filtros-grid {
+    grid-template-columns: 1fr;
+  }
+
+  #page-recibos .recibo-filtros-card > div:last-child {
+    flex-direction: column !important;
+    align-items: stretch !important;
+  }
+
+  #page-recibos .recibo-filtros-card > div:last-child .btn-primary,
+  #page-recibos .recibo-filtros-card > div:last-child .btn-secondary {
+    width: 100%;
+  }
+
+  #page-recibos #recibosCountInfo {
+    margin-left: 0 !important;
+    text-align: center;
+  }
+
+  #page-recibos .recibo-resumen-card > div {
+    flex-direction: column;
+    align-items: stretch !important;
+  }
+
+  #page-recibos .recibo-resumen-card > div > div:last-child {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  #page-recibos .recibo-export-btn {
+    flex: 1;
+    justify-content: center;
   }
 }
 

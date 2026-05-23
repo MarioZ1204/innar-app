@@ -496,10 +496,9 @@
     if (ordenSel) ordenSel.value = pdxState.filtros.orden;
   }
 
-  async function cargarCarpetasPdx(incluirArchivo) {
+  async function cargarCarpetasPdx() {
     showSkeletonFolderGrid($('sopPdxLista'), 6);
-    const q = incluirArchivo ? '?archivo=1' : '';
-    const res = await apiFetch(`/api/soportes/pdx/carpetas${q}`);
+    const res = await apiFetch('/api/soportes/pdx/carpetas');
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Error al cargar carpetas');
     pdxState.carpetas = data.carpetas || [];
@@ -693,7 +692,7 @@
     sopToast('Carpeta eliminada', 'success');
     if (pdxState.carpetaId === carpeta.id) volverListaPdx();
     else {
-      await cargarCarpetasPdx($('sopPdxIncluirArchivo')?.checked);
+      await cargarCarpetasPdx();
       renderListaCarpetasPdx();
     }
   }
@@ -722,7 +721,7 @@
       if (!res.ok) { sopToast(data.error || 'Error', 'error'); return; }
       closeSopModal(modal);
       sopToast('Carpeta actualizada', 'success');
-      await cargarCarpetasPdx($('sopPdxIncluirArchivo')?.checked);
+      await cargarCarpetasPdx();
       if (pdxState.carpetaId === carpeta.id) abrirCarpetaPdx(carpeta.id);
       else renderListaCarpetasPdx();
     };
@@ -843,7 +842,7 @@
 
   async function modalMoverCarpetaPdx(archivo) {
     if (!pdxState.carpetas.length) {
-      await cargarCarpetasPdx($('sopPdxIncluirArchivo')?.checked);
+      await cargarCarpetasPdx();
     }
     const opts = pdxState.carpetas
       .filter((c) => c.id !== archivo.carpeta_id && c.estado_visibilidad !== 'archivo')
@@ -925,7 +924,7 @@
     pdxState.carpetaActual = null;
     $('sopPdxVistaDetalle')?.classList.add('hidden');
     $('sopPdxVistaLista')?.classList.remove('hidden');
-    cargarCarpetasPdx($('sopPdxIncluirArchivo')?.checked).then(renderListaCarpetasPdx).catch((e) => sopToast(e.message, 'error'));
+    cargarCarpetasPdx().then(renderListaCarpetasPdx).catch((e) => sopToast(e.message, 'error'));
     sopIcons($('view-reportes-pdx'));
   }
 
@@ -953,7 +952,7 @@
       if (!res.ok) { sopToast(data.error || 'Error', 'error'); return; }
       closeSopModal(modal);
       sopToast('Carpeta creada', 'success');
-      await cargarCarpetasPdx($('sopPdxIncluirArchivo')?.checked);
+      await cargarCarpetasPdx();
       renderListaCarpetasPdx();
     };
   }
@@ -1242,7 +1241,7 @@
     sopIcons($('view-reportes-pdx'));
     sopAnimateModuleIn('view-reportes-pdx');
     if (initPdxDone) {
-      cargarCarpetasPdx($('sopPdxIncluirArchivo')?.checked).then(renderListaCarpetasPdx).catch(console.error);
+      cargarCarpetasPdx().then(renderListaCarpetasPdx).catch(console.error);
       return;
     }
     initPdxDone = true;
@@ -1252,10 +1251,6 @@
     $('btnSopPdxNuevaCarpeta')?.addEventListener('click', modalNuevaCarpetaPdx);
     $('btnSopPdxBuscar')?.addEventListener('click', buscarPdx);
     $('sopPdxBuscar')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') buscarPdx(); });
-    $('sopPdxIncluirArchivo')?.addEventListener('change', () => {
-      cerrarResultadosPdx();
-      cargarCarpetasPdx($('sopPdxIncluirArchivo').checked).then(renderListaCarpetasPdx);
-    });
     renderPdxTemaLegend();
     $('sopPdxUploadInput')?.addEventListener('change', async (e) => {
       const files = e.target.files;
@@ -1271,8 +1266,7 @@
 
   async function cargarPeriodosArmado() {
     showSkeletonNavList($('sopArmPeriodos'), 5);
-    const incluir = $('sopArmIncluirArchivo')?.checked ? '?archivo=1' : '';
-    const res = await apiFetch(`/api/soportes/armado/periodos${incluir}`);
+    const res = await apiFetch('/api/soportes/armado/periodos');
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Error');
     armState.periodos = data.periodos || [];
@@ -2041,14 +2035,6 @@
     $('sopArmNavBackdrop')?.addEventListener('click', () => sopArmNavOpen(false));
     $('btnSopArmNuevoPeriodo')?.addEventListener('click', modalNuevoPeriodoArmado);
     $('btnSopArmNuevoDia')?.addEventListener('click', modalNuevoDiaArmado);
-    $('sopArmIncluirArchivo')?.addEventListener('change', () => {
-      armState.periodoId = null;
-      armState.diaId = null;
-      armState.contenedorId = null;
-      $('sopArmDias').innerHTML = '<div class="sop-empty" style="padding:16px;font-size:.85rem">Seleccione un mes</div>';
-      renderArmadoPlaceholder('Seleccione un mes y una carpeta de día');
-      cargarPeriodosArmado().then(renderPeriodosArmado);
-    });
     renderArmadoContextBar();
     cargarPeriodosArmado().then(renderPeriodosArmado).catch((e) => sopToast(e.message, 'error'));
   };

@@ -1455,3 +1455,202 @@
   opacity: 0;
   pointer-events: none;
 }
+
+/* ── Móvil: topbar, paneles y tablas (PDX + Armado) ───────────────────────── */
+@media (max-width: 768px) {
+  .sop-topbar {
+    flex-wrap: wrap;
+    align-items: center;
+    height: auto;
+    min-height: 56px;
+    padding: 8px 12px;
+    gap: 8px 10px;
+  }
+
+  .sop-topbar-left {
+    flex: 1 1 auto;
+    min-width: 0;
+    gap: 8px;
+  }
+
+  .sop-topbar-logo,
+  .sop-topbar-divider {
+    display: none;
+  }
+
+  .sop-topbar-center {
+    order: 3;
+    flex: 1 1 100%;
+    text-align: left;
+    padding-top: 2px;
+  }
+
+  .sop-topbar-sub {
+    display: none;
+  }
+
+  .sop-topbar-title {
+    font-size: 0.95rem;
+  }
+
+  .sop-topbar-right {
+    flex: 0 0 auto;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 6px;
+    max-width: 100%;
+  }
+
+  .sop-topbar-right .sop-btn {
+    font-size: 0;
+    line-height: 0;
+    padding: 10px;
+    min-width: 40px;
+    min-height: 40px;
+    gap: 0;
+  }
+
+  .sop-topbar-right .sop-btn svg {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+  }
+
+  .sop-topbar-left .sop-btn.sop-btn-sm {
+    padding: 8px 10px;
+    font-size: 0.82rem;
+    line-height: 1.2;
+    min-width: 0;
+    min-height: 40px;
+  }
+
+  .sop-body {
+    padding: 14px 12px 28px;
+  }
+
+  .sop-panel-head {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 14px;
+  }
+
+  .sop-panel-head-actions {
+    width: 100%;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .sop-panel-body {
+    padding: 14px;
+  }
+
+  .sop-grid,
+  .sop-folder-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .sop-folder-card {
+    padding: 14px;
+  }
+
+  .sop-folder-actions {
+    flex-wrap: wrap;
+  }
+
+  .sop-search-wrap {
+    width: 100%;
+  }
+
+  .sop-panel-head .sop-btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .sop-table-wrap {
+    margin: 0 -2px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .sop-table-wrap::before {
+    content: "← Desliza la tabla →";
+    display: block;
+    text-align: center;
+    font-size: 0.72rem;
+    color: #5a7d78;
+    padding: 6px 8px 4px;
+    font-weight: 600;
+    background: #f0f7f6;
+    border-radius: 12px 12px 0 0;
+  }
+
+  .sop-table {
+    min-width: 520px;
+  }
+
+  .sop-table-pdx-archivos th:nth-child(4),
+  .sop-table-pdx-archivos td:nth-child(4) {
+    display: none;
+  }
+
+  .sop-table th,
+  .sop-table td {
+    padding: 10px 12px;
+    font-size: 0.82rem;
+  }
+
+  .sop-pdx-format-help {
+    font-size: 0.85rem;
+  }
+
+  .sop-pdx-format-pattern code {
+    font-size: 0.72rem;
+    word-break: break-word;
+  }
+
+  .sop-dropzone {
+    padding: 20px 14px;
+  }
+
+  .sop-slots {
+    grid-template-columns: 1fr;
+  }
+
+  .sop-dialog-backdrop {
+    padding: 12px;
+    align-items: flex-end;
+  }
+
+  .sop-dialog-backdrop .sop-dialog {
+    max-height: 92vh;
+    border-radius: 16px 16px 0 0;
+  }
+
+  .sop-breadcrumbs {
+    font-size: 0.78rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .sop-topbar-left .sop-btn.sop-btn-sm {
+    font-size: 0;
+    line-height: 0;
+    padding: 10px;
+    min-width: 40px;
+  }
+
+  .sop-topbar-left .sop-btn.sop-btn-sm svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .sop-topbar-right {
+    flex: 1 1 100%;
+    justify-content: stretch;
+  }
+
+  .sop-topbar-right .sop-btn {
+    flex: 1;
+    justify-content: center;
+  }
+}

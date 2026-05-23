@@ -640,7 +640,7 @@
                       <th style="text-align:right">Total</th>
                       <th>Estado Pago</th>
                       <th>Generado por</th>
-                      <th style="text-align:center">Acciones</th>
+                      <th class="col-recibo-acciones" style="text-align:center">Acciones</th>
                     </tr>
                   </thead>
                   <tbody id="savedItems">
@@ -3208,11 +3208,6 @@
           <div class="sop-topbar-sub">Depósito de reportes electrodiagnóstico (PDX)</div>
         </div>
         <div class="sop-topbar-right">
-          <label class="sop-toggle sop-toggle-hint" title="Muestra carpetas de periodos en archivo (ocultas por defecto tras 5 días del mes siguiente).">
-            <input type="checkbox" id="sopPdxIncluirArchivo" aria-describedby="sopPdxArchivoHint">
-            <span>Archivo</span>
-            <span id="sopPdxArchivoHint" class="sop-hint-badge" tabindex="0" aria-label="Ayuda: incluir periodos en archivo">?</span>
-          </label>
           <button type="button" id="btnSopPdxNuevaCarpeta" class="sop-btn sop-btn-primary">
             <i data-lucide="folder-plus"></i> Nueva carpeta
           </button>
@@ -3319,11 +3314,6 @@
           <div class="sop-topbar-title">Soportes</div>
         </div>
         <div class="sop-topbar-right">
-          <label class="sop-toggle sop-toggle-hint" title="Muestra periodos de armado en archivo (ocultos por defecto tras el periodo de gracia).">
-            <input type="checkbox" id="sopArmIncluirArchivo" aria-describedby="sopArmArchivoHint">
-            <span>Archivo</span>
-            <span id="sopArmArchivoHint" class="sop-hint-badge" tabindex="0" aria-label="Ayuda: incluir periodos en archivo">?</span>
-          </label>
           <button type="button" id="btnSopArmNuevoDia" class="sop-btn sop-btn-ghost">
             <i data-lucide="folder-plus"></i> Carpeta de día
           </button>
