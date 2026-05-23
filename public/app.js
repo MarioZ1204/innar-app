@@ -6652,12 +6652,24 @@ function actualizarStatsElectro(citas) {
 }
 
 
+function obtenerEtiquetaRangoEstudioElectro(c) {
+  const fechaInicio = extraerFechaYmdCalendario(c?.fecha);
+  const fechaFin = extraerFechaYmdCalendario(c?.hora_fin_date) || fechaInicio;
+  if (!fechaInicio || !fechaFin || fechaInicio === fechaFin) return '';
+  if (c.estado !== 'En Estudio' && c.estado !== 'Pausado') return '';
+  return `Del ${formatearFechaISO(fechaInicio)} al ${formatearFechaISO(fechaFin)}`;
+}
+
 function renderCitaElectroCard(container, c) {
   if (!container) return;
   const card = document.createElement('article');
   card.className = 'electro-cita-card';
   card.dataset.citaId = String(c.id || '');
   const estado = c.estado || 'Programado';
+  const fechaVista = $('electroFecha')?.value || '';
+  const fechaInicioCita = extraerFechaYmdCalendario(c.fecha);
+  const esContinuacion = (estado === 'En Estudio' || estado === 'Pausado')
+    && fechaVista && fechaInicioCita && fechaInicioCita !== fechaVista;
   const estadoClasses = {
     'En Sala': 'estado-en-sala',
     'En Estudio': 'estado-en-estudio',
@@ -6668,7 +6680,9 @@ function renderCitaElectroCard(container, c) {
   };
   if (estadoClasses[estado]) card.classList.add(estadoClasses[estado]);
   if (estado === 'En Estudio') card.classList.add('innar-pulse-estudio');
+  if (esContinuacion) card.classList.add('electro-cita-card-continuacion');
   const equipoDisplay = c.equipo_nombre ? escapeHtml(c.equipo_nombre) : (c.equipo_id ? 'Equipo ' + c.equipo_id : '\u2014');
+  const rangoEstudio = obtenerEtiquetaRangoEstudioElectro(c);
   const estudioCorto = abreviarEstudio(c.estudio);
   let duracionTxt = '';
   if (c.duracion_minutos) {
@@ -6684,11 +6698,17 @@ function renderCitaElectroCard(container, c) {
     finEstudioHtml =
       '<' + t + ' class="electro-cita-card-fin">Fin del estudio: ' + escapeHtml(finLabel) + '</' + t + '>';
   }
+  const rangoHtml = rangoEstudio
+    ? '<' + t + ' class="electro-cita-card-rango" title="Estudio prolongado">' + escapeHtml(rangoEstudio) + '</' + t + '>'
+    : (esContinuacion
+      ? '<' + t + ' class="electro-cita-card-rango">Inicio: ' + escapeHtml(formatearFechaISO(fechaInicioCita)) + '</' + t + '>'
+      : '');
   card.innerHTML =
     '<' + t + ' class="electro-cita-card-top">' +
       '<span class="electro-cita-card-hora">' + formatearHora(c.hora_agendamiento) + '</span>' +
       estadoBadge(estado) +
     '</' + t + '>' +
+    rangoHtml +
     '<' + t + ' class="electro-cita-card-paciente">' + escapeHtml(c.paciente_nombre || '-') + '</' + t + '>' +
     '<' + t + ' class="electro-cita-card-meta">' +
       '<span>' + escapeHtml(c.paciente_documento || '-') + '</span>' +

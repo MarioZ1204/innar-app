@@ -1,0 +1,242 @@
+/**
+ * Innar — Ajustes móvil globales (todos los módulos con main-layout + vistas propias)
+ */
+
+@media (max-width: 768px) {
+  /* ── Layout principal (sidebar + contenido) ───────────────────────────── */
+  html.innar-shell-light .view-module .main-layout > .main-content {
+    padding-top: 52px !important;
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+    padding-bottom: 20px !important;
+    overflow-x: clip;
+  }
+
+  html.innar-shell-light .view-module .main-content .container {
+    padding-left: 0;
+    padding-right: 0;
+    max-width: 100% !important;
+  }
+
+  html.innar-shell-light .view-module .main-content .card {
+    overflow-x: visible;
+  }
+
+  html.innar-shell-light .view-module header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  html.innar-shell-light .view-module header h2 {
+    font-size: 1.15rem;
+    line-height: 1.3;
+  }
+
+  /* Filas de controles inline en cards */
+  html.innar-shell-light .view-module .card .col,
+  html.innar-shell-light .view-module .card [class*="filtro"],
+  html.innar-shell-light .view-module .card .form-row {
+    min-width: 0;
+  }
+
+  html.innar-shell-light .view-module .card > div[style*="display:flex"],
+  html.innar-shell-light .view-module .card > div[style*="display: flex"] {
+    flex-wrap: wrap !important;
+    gap: 10px !important;
+  }
+
+  /* ── Tablas ───────────────────────────────────────────────────────────── */
+  html.innar-shell-light .view-module .table-wrapper {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-gutter: stable;
+    margin-left: -2px;
+    margin-right: -2px;
+  }
+
+  html.innar-shell-light .view-module .table-wrapper::before {
+    content: "← Desliza la tabla →";
+    display: block;
+    text-align: center;
+    font-size: 0.72rem;
+    color: #5a7d78;
+    padding: 6px 8px 4px;
+    font-weight: 600;
+    background: #f0f7f6;
+    border-radius: 6px 6px 0 0;
+  }
+
+  html.innar-shell-light .view-module .modern-table {
+    width: max-content;
+    min-width: 100%;
+  }
+
+  html.innar-shell-light .view-module .modern-table th,
+  html.innar-shell-light .view-module .modern-table td {
+    padding: 10px 8px;
+    font-size: 0.8rem;
+  }
+
+  /* Agenda médica: ocultar columnas secundarias */
+  #turnosTableMedica .col-mobile-hide,
+  .medica-turnos-table .col-mobile-hide {
+    display: none !important;
+  }
+
+  .medica-agenda-block-activos .table-wrapper,
+  .medica-agenda-block-completados .table-wrapper {
+    max-height: min(55vh, 480px);
+  }
+
+  /* ── Electrodiagnóstico ───────────────────────────────────────────────── */
+  .electro-stats-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 8px !important;
+  }
+
+  .electro-stat-card {
+    padding: 12px 10px !important;
+  }
+
+  .electro-stat-value {
+    font-size: 1.35rem !important;
+  }
+
+  .electro-kanban {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+
+  .electro-kanban-col {
+    min-height: 200px;
+    max-height: min(50vh, 420px);
+  }
+
+  .electro-toolbar,
+  .electro-filtros-row,
+  #electroFiltrosBar {
+    flex-direction: column !important;
+    align-items: stretch !important;
+  }
+
+  .electro-toolbar .col,
+  .electro-filtros-row > * {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  /* ── Dashboard citas ──────────────────────────────────────────────────── */
+  .dash-citas-grid,
+  .dashboard-metrics {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* ── Usuarios / permisos ────────────────────────────────────────────── */
+  .permisos-page-layout {
+    grid-template-columns: 1fr !important;
+  }
+
+  .permisos-user-list,
+  .permisos-def-list {
+    max-height: 40vh;
+  }
+
+  /* ── UCQN ───────────────────────────────────────────────────────────── */
+  .ucqn-layout,
+  .ucqn-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* ── Gestión de datos ───────────────────────────────────────────────── */
+  .gestion-datos-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* ── Monitor equipos ────────────────────────────────────────────────── */
+  .meq-page-body {
+    padding: 12px !important;
+  }
+
+  .meq-topbar {
+    flex-wrap: wrap;
+    height: auto;
+    min-height: 56px;
+    padding: 8px 12px !important;
+    gap: 8px;
+  }
+
+  .meq-stats-bar {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .meq-date-bar {
+    flex-wrap: wrap;
+  }
+
+  /* ── Calendarios ────────────────────────────────────────────────────── */
+  .cal-grid {
+    gap: 4px;
+  }
+
+  .cal-header {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  /* ── Modales ──────────────────────────────────────────────────────────── */
+  .modal-box {
+    max-width: 95vw !important;
+    width: 100% !important;
+    margin: 12px !important;
+    max-height: calc(100svh - 24px);
+    overflow-y: auto;
+  }
+
+  .modal-footer,
+  .cita-modal-footer {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .modal-footer button,
+  .cita-modal-footer button {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+}
+
+@media (max-width: 480px) {
+  .electro-stats-grid {
+    grid-template-columns: 1fr 1fr !important;
+  }
+
+  .menu-cards {
+    grid-template-columns: 1fr !important;
+  }
+
+  html.innar-shell-light .view-module .main-layout > .main-content {
+    padding-left: 10px !important;
+    padding-right: 10px !important;
+  }
+}
+
+/* Estudio electro prolongado — badge en kanban */
+.electro-cita-card-rango {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #1d4ed8;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  padding: 5px 8px;
+  margin: 0 0 6px;
+  line-height: 1.35;
+}
+
+.electro-cita-card-continuacion {
+  border-left-width: 4px !important;
+  border-left-color: #2563eb !important;
+  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.12);
+}

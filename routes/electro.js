@@ -13,7 +13,13 @@ const {
 const { validateSchema } = require('../modules/validation-schemas');
 const { hayCupoElectroParaAgendar, hayCupoElectroParaIniciar } = require('./electro-capacity');
 const { buildMonitorEquiposView, citaOverlapsMonitorWindow } = require('../utils/electro-monitor');
-const { extraerFechaYmd, sumarMinutosAHoraYFecha, fechaFinSiCruzaMedianoche } = require('../utils/electro-fechas');
+const {
+  extraerFechaYmd,
+  sumarMinutosAHoraYFecha,
+  fechaFinSiCruzaMedianoche,
+  sqlCitaElectroVisibleEnFecha,
+  paramsCitaElectroVisibleEnFecha
+} = require('../utils/electro-fechas');
 
 const CITAS_ELECTRO_SELECT = `
   c.id, c.equipo_id, c.paciente_id,
@@ -710,9 +716,9 @@ router.get('/citas-electro', requireAuth, async (req, res) => {
       JOIN pacientes p ON p.id = c.paciente_id
       LEFT JOIN diagnosticos d ON d.id = c.diagnostico_id
       LEFT JOIN equipos_electro e ON e.id = c.equipo_id
-      WHERE c.deleted_at IS NULL AND c.fecha = ?
+      WHERE c.deleted_at IS NULL AND ${sqlCitaElectroVisibleEnFecha('c')}
     `;
-    let params = [fecha];
+    let params = [...paramsCitaElectroVisibleEnFecha(fecha)];
     if (equipo_id) { query += ` AND c.equipo_id = ?`; params.push(equipo_id); }
     const { estado, entidad, estudio } = req.query;
     if (estado) {

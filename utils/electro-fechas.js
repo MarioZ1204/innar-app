@@ -41,4 +41,30 @@ function fechaFinSiCruzaMedianoche(fechaYmd, horaInicio, horaFin) {
   return `${next.getUTCFullYear()}-${String(next.getUTCMonth() + 1).padStart(2, '0')}-${String(next.getUTCDate()).padStart(2, '0')}`;
 }
 
-module.exports = { extraerFechaYmd, sumarMinutosAHoraYFecha, fechaFinSiCruzaMedianoche };
+/**
+ * Citas visibles en un día Y: agendadas ese día o estudios activos (En Estudio/Pausado)
+ * cuyo rango [fecha, hora_fin_date] incluye Y.
+ */
+function sqlCitaElectroVisibleEnFecha(alias = 'c') {
+  const a = alias;
+  return `(
+    ${a}.fecha = ?
+    OR (
+      ${a}.estado IN ('En Estudio', 'Pausado')
+      AND ? >= ${a}.fecha
+      AND ? <= COALESCE(${a}.hora_fin_date, ${a}.fecha)
+    )
+  )`;
+}
+
+function paramsCitaElectroVisibleEnFecha(fechaYmd) {
+  return [fechaYmd, fechaYmd, fechaYmd];
+}
+
+module.exports = {
+  extraerFechaYmd,
+  sumarMinutosAHoraYFecha,
+  fechaFinSiCruzaMedianoche,
+  sqlCitaElectroVisibleEnFecha,
+  paramsCitaElectroVisibleEnFecha
+};
