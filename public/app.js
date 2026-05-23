@@ -6431,35 +6431,34 @@ function calcularHoraFinElectroDesdeInicio(fechaBase, horaInicio, duracionMinuto
 }
 
 function obtenerFechaHoraFinDesdeInicioReal(cita) {
-  const horaInicioStr = obtenerHoraInicioCalculoFinElectro(cita);
-  if (!horaInicioStr) return null;
+  const fechaBase = obtenerFechaElectroBase10(cita?.fecha);
+  if (!fechaBase) return null;
 
-  const fechaBase = obtenerFechaElectroBase10(cita?.fecha) || new Date().toISOString().slice(0, 10);
-  const dateInicio = construirDateHoraElectro(fechaBase, horaInicioStr);
-  if (!dateInicio) return null;
-
-  let dateFinDuracion = null;
+  const horaInicioStr = String(cita?.hora_inicio || cita?.hora_agendamiento || '').slice(0, 5);
   const durMin = parseInt(cita?.duracion_minutos, 10);
-  if (durMin > 0) {
-    dateFinDuracion = new Date(dateInicio.getTime() + durMin * 60000);
+
+  if (/^\d{2}:\d{2}$/.test(horaInicioStr) && durMin > 0) {
+    const dateInicio = construirDateHoraElectro(fechaBase, horaInicioStr);
+    if (dateInicio) return new Date(dateInicio.getTime() + durMin * 60000);
   }
 
-  let dateFinExplicit = null;
+  if (cita?.hora_fin && cita?.hora_fin_date) {
+    const fechaFin = obtenerFechaElectroBase10(cita.hora_fin_date);
+    return construirDateHoraElectro(fechaFin, cita.hora_fin);
+  }
+
   if (cita?.hora_fin) {
-    const fechaFin = obtenerFechaElectroBase10(cita.hora_fin_date) || fechaBase;
-    dateFinExplicit = construirDateHoraElectro(fechaFin, cita.hora_fin);
-    if (dateFinExplicit && !cita.hora_fin_date && dateFinExplicit <= dateInicio) {
-      dateFinExplicit.setDate(dateFinExplicit.getDate() + 1);
+    const dateInicio = /^\d{2}:\d{2}$/.test(horaInicioStr)
+      ? construirDateHoraElectro(fechaBase, horaInicioStr)
+      : null;
+    let dateFin = construirDateHoraElectro(fechaBase, cita.hora_fin);
+    if (dateFin && dateInicio && dateFin <= dateInicio) {
+      dateFin.setDate(dateFin.getDate() + 1);
     }
-    if (dateFinExplicit && dateFinExplicit <= dateInicio) {
-      dateFinExplicit = null;
-    }
+    return dateFin;
   }
 
-  if (dateFinDuracion && dateFinExplicit) {
-    return dateFinExplicit > dateFinDuracion ? dateFinExplicit : dateFinDuracion;
-  }
-  return dateFinDuracion || dateFinExplicit;
+  return null;
 }
 
 function obtenerFechaHoraFinEstudioActivo(cita) {
@@ -6530,48 +6529,9 @@ function debeMostrarFinEstudioEnCard(cita, dateFin) {
   return fechaFinStr !== fechaBase;
 }
 
+/** No auto-completa en cliente: el cierre lo hace el usuario o el servidor (fin programado vencido). */
 async function sincronizarEstadosPorTiempo(citas = []) {
-  if (!Array.isArray(citas) || citas.length === 0) return citas;
-
-  const ahora = new Date();
-  const hh = String(ahora.getHours()).padStart(2, '0');
-  const mm = String(ahora.getMinutes()).padStart(2, '0');
-  const horaActual = `${hh}:${mm}`;
-  const hoy = hoyColombiaISO();
-  // No usar c.fecha < hoy: en estudios multi-día la fecha es el día de INICIO.
-  // Solo cerrar si la fecha de FIN ya pasó (antes de hoy) y la hora de fin ya venció.
-  const vencidas = citas.filter((c) => {
-    if (c?.estado !== 'En Estudio' && c?.estado !== 'Pausado') return false;
-    const fin = calcularFechaFinEstudio(c);
-    if (!fin || ahora < fin) return false;
-    const finYmd = fechaYmdDesdeDate(fin);
-    if (!finYmd || finYmd >= hoy) return false;
-    return true;
-  });
-  if (!vencidas.length) return citas;
-
-  const actualizadas = [...citas];
-  for (const cita of vencidas) {
-    try {
-      const res = await apiFetch(`/api/citas-electro/${cita.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ estado: 'Completado', hora_fin: cita.hora_fin || horaActual })
-      });
-      const data = await res.json();
-      if (!data?.ok) continue;
-
-      const idx = actualizadas.findIndex((x) => x.id === cita.id);
-      if (idx >= 0) actualizadas[idx] = { ...actualizadas[idx], estado: 'Completado', hora_fin: cita.hora_fin || horaActual };
-
-      if (window.socket && window.socket.connected) {
-        window.socket.emit('electro:estudio-finalizado', { id: cita.id, hora_fin: cita.hora_fin || horaActual });
-      }
-    } catch (e) {
-      console.error('[AUTO_SYNC_ELECTRO] Error actualizando estado por tiempo:', e);
-    }
-  }
-  return actualizadas;
+  return Array.isArray(citas) ? citas : [];
 }
 
 async function cargarCitasElectro() {
@@ -10152,17 +10112,16 @@ async function iniciarEstudioSinDuracion() {
     // Obtener la duración predeterminada de la cita (en minutos)
     const duracionMinutos = citaElectroSeleccionada.duracion_minutos || 480;
     const horaInicioRegistro = obtenerHoraInicioAgendadaElectro(citaElectroSeleccionada);
-    const horaInicioCalculo = obtenerHoraInicioRecomendadaParaEstudio(citaElectroSeleccionada);
     const fechaCitaRaw = citaElectroSeleccionada.fecha || new Date().toISOString().slice(0, 10);
     const fechaCita = typeof fechaCitaRaw === 'string' && fechaCitaRaw.length > 10 ? fechaCitaRaw.slice(0, 10) : String(fechaCitaRaw);
-    const finCalc = calcularHoraFinElectroDesdeInicio(fechaCita, horaInicioCalculo, duracionMinutos);
+    const finCalc = calcularHoraFinElectroDesdeInicio(fechaCita, horaInicioRegistro, duracionMinutos);
     if (!finCalc) {
       showToast('No se pudo calcular la hora de fin del estudio', 'error');
       return;
     }
     const { horaFin, horaFinDate } = finCalc;
 
-    console.log(`[DURACION_SIN] Inicio registro: ${horaInicioRegistro}, cálculo fin desde: ${horaInicioCalculo}, duración: ${duracionMinutos} min → ${horaFin}`);
+    console.log(`[DURACION_SIN] Inicio: ${horaInicioRegistro}, duración: ${duracionMinutos} min → ${horaFin} (${horaFinDate})`);
     
     const equipoId = equipoSelect.value;
     const cambios = {

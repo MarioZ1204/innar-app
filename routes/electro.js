@@ -18,8 +18,25 @@ const {
   sumarMinutosAHoraYFecha,
   fechaFinSiCruzaMedianoche,
   sqlCitaElectroVisibleEnFecha,
-  paramsCitaElectroVisibleEnFecha
+  paramsCitaElectroVisibleEnFecha,
+  horaInicioCitaElectro,
+  sqlEstudioElectroFinProgramadoVencido
 } = require('../utils/electro-fechas');
+
+/** Cierra solo estudios cuyo fin programado (hora_fin_date + hora_fin) ya venció — no por fecha de inicio. */
+async function autoCompletarEstudiosElectroVencidos(excludeId = null) {
+  const condId = excludeId ? ' AND id != ?' : '';
+  const params = excludeId ? [excludeId] : [];
+  const sqlVencido = sqlEstudioElectroFinProgramadoVencido();
+  await db.execute(`
+    UPDATE citas_electro
+    SET estado = 'Completado', editado_por_nombre = 'Sistema (Auto)', editado_en = NOW()
+    WHERE estado IN ('En Estudio', 'Pausado')
+      AND deleted_at IS NULL
+      AND ${sqlVencido}
+      ${condId}
+  `, params).catch((err) => logger.warn('Auto-completar estudios vencidos falló (no crítico):', err.message));
+}
 
 const CITAS_ELECTRO_SELECT = `
   c.id, c.equipo_id, c.paciente_id,
@@ -769,14 +786,7 @@ router.post('/citas-electro', requireAuth, requireRoleOrPerm(['superadmin', 'adm
       finalFechaFin = extraerFechaYmd(req.body.hora_fin_date) || fechaFinSiCruzaMedianoche(fecha, horaAgendamiento, hora_fin) || fecha;
     }
 
-    // Auto-completar estudios de días anteriores FUERA de la transacción para no bloquear
-    await db.execute(`
-      UPDATE citas_electro
-      SET estado = 'Completado', editado_por_nombre = 'Sistema (Auto)', editado_en = NOW()
-      WHERE estado = 'En Estudio'
-        AND deleted_at IS NULL
-        AND fecha < CURDATE()
-    `).catch(err => logger.warn('Auto-completar estudios previos falló (no crítico):', err.message));
+    await autoCompletarEstudiosElectroVencidos();
 
     // Verificaciones de capacidad SIN FOR UPDATE para evitar deadlocks
     const dupCheck = await db.query(
@@ -927,6 +937,7 @@ router.patch('/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin',
     const citaActual = citasResult[0];
     const estadoActual = citaActual.estado;
     const estudioActivo = estadoActual === 'En Estudio' || estadoActual === 'Pausado';
+    let forzarCamposInicioEstudio = null;
 
     if (equipo_id !== undefined && estudioActivo) {
       const equipoActualNorm = citaActual.equipo_id === null ? null : parseInt(citaActual.equipo_id, 10);
@@ -958,35 +969,29 @@ router.patch('/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin',
     if (estado && estado !== estadoActual) {
       const estadosManuales = ['Confirmado', 'En Sala', 'No Asistió', 'Reprogramado', 'Cancelado', 'Adelantado', 'Pausado'];
       const esManual = estadosManuales.includes(estado);
-      const esInicioEstudio = ['Programado', 'Confirmado', 'En Sala', 'Reprogramado', 'Adelantado', 'Pausado'].includes(estadoActual) && estado === 'En Estudio';
-      const esFinEstudio = estadoActual === 'En Estudio' && estado === 'Completado';
+      const esReanudarEstudio = estadoActual === 'Pausado' && estado === 'En Estudio';
+      const esInicioEstudioNuevo = ['Programado', 'Confirmado', 'En Sala', 'Reprogramado', 'Adelantado'].includes(estadoActual) && estado === 'En Estudio';
+      const esInicioEstudio = esInicioEstudioNuevo || esReanudarEstudio;
+      const esFinEstudio = (estadoActual === 'En Estudio' || estadoActual === 'Pausado') && estado === 'Completado';
 
       if (!esManual && !esInicioEstudio && !esFinEstudio) {
         return res.status(400).json({ error: `Transición de estado inválida: ${estadoActual} → ${estado}` });
       }
 
       if (esInicioEstudio) {
-        const checkHora = hora_agendamiento || (typeof citaActual.hora_agendamiento === 'string' ? citaActual.hora_agendamiento : String(citaActual.hora_agendamiento));
+        const checkHora = hora_inicio || hora_agendamiento || horaInicioCitaElectro(citaActual);
         const checkFecha = fecha || extraerFechaYmd(citaActual.fecha) || normalizeFecha(citaActual.fecha);
+        const durCheck = parseInt(duracion_minutos ?? citaActual.duracion_minutos, 10);
         let checkHoraFin = hora_fin || citaActual.hora_fin || checkHora;
         let checkFechaFin = req.body.hora_fin_date || citaActual.hora_fin_date || checkFecha;
-        if (!hora_fin && duracion_minutos && checkFecha && checkHora) {
-          const finCalc = sumarMinutosAHoraYFecha(checkFecha, checkHora, duracion_minutos);
+        if (checkFecha && checkHora && durCheck > 0) {
+          const finCalc = sumarMinutosAHoraYFecha(checkFecha, checkHora, durCheck);
           if (finCalc) {
             checkHoraFin = finCalc.horaFin;
             checkFechaFin = finCalc.fechaFin;
           }
         }
-        // Auto-completar SOLO estudios de días anteriores (mismo criterio que al crear).
-        // No se cierran estudios del día actual aunque su hora_fin planeada haya pasado,
-        // porque la duración real puede exceder la duración programada.
-        await db.execute(`
-          UPDATE citas_electro
-          SET estado = 'Completado', editado_por_nombre = 'Sistema (Auto)', editado_en = NOW()
-          WHERE id != ? AND estado = 'En Estudio'
-            AND deleted_at IS NULL
-            AND fecha < CURDATE()
-        `, [id]);
+        await autoCompletarEstudiosElectroVencidos(id);
         const eqIdInicio = (equipo_id !== undefined && equipo_id !== null && equipo_id !== '')
           ? parseInt(equipo_id, 10)
           : (citaActual.equipo_id ? parseInt(citaActual.equipo_id, 10) : null);
@@ -1010,6 +1015,23 @@ router.patch('/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin',
             });
           }
         }
+        if (esInicioEstudioNuevo) {
+          const fechaIni = fecha || extraerFechaYmd(citaActual.fecha) || normalizeFecha(citaActual.fecha);
+          const horaIniRaw = hora_inicio ?? hora_agendamiento ?? horaInicioCitaElectro(citaActual);
+          const horaIniStr = horaIniRaw != null ? String(horaIniRaw).trim().slice(0, 5) : '';
+          const durIni = parseInt(duracion_minutos ?? citaActual.duracion_minutos, 10);
+          if (fechaIni && /^\d{2}:\d{2}$/.test(horaIniStr) && durIni > 0) {
+            const finIni = sumarMinutosAHoraYFecha(fechaIni, horaIniStr, durIni);
+            if (finIni) {
+              forzarCamposInicioEstudio = {
+                hora_inicio: horaIniStr,
+                hora_fin: finIni.horaFin,
+                hora_fin_date: finIni.fechaFin,
+                duracion_minutos: durIni
+              };
+            }
+          }
+        }
       }
     }
 
@@ -1018,15 +1040,25 @@ router.patch('/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin',
     const cambios = {};
     if (equipo_id !== undefined) { updates.push('equipo_id = ?'); values.push(equipo_id); cambios.equipo_id = equipo_id; }
     if (estado !== undefined) { updates.push('estado = ?'); values.push(estado); cambios.estado = estado; }
-    if (hora_inicio !== undefined) { updates.push('hora_inicio = ?'); values.push(hora_inicio); cambios.hora_inicio = hora_inicio; }
-    if (hora_fin !== undefined) { updates.push('hora_fin = ?'); values.push(hora_fin); cambios.hora_fin = hora_fin; }
 
-    if (req.body.hora_fin_date !== undefined) {
-      updates.push('hora_fin_date = ?'); values.push(req.body.hora_fin_date);
-    } else if (hora_fin !== undefined) {
-      const horaInicio = hora_inicio || citaActual.hora_inicio || citaActual.hora_agendamiento;
+    const horaInicioPatch = forzarCamposInicioEstudio?.hora_inicio ?? hora_inicio;
+    const horaFinPatch = forzarCamposInicioEstudio?.hora_fin ?? hora_fin;
+    const horaFinDatePatch = forzarCamposInicioEstudio?.hora_fin_date ?? req.body.hora_fin_date;
+    const duracionPatch = forzarCamposInicioEstudio?.duracion_minutos ?? duracion_minutos;
+
+    if (horaInicioPatch !== undefined) {
+      updates.push('hora_inicio = ?'); values.push(horaInicioPatch); cambios.hora_inicio = horaInicioPatch;
+    }
+    if (horaFinPatch !== undefined) {
+      updates.push('hora_fin = ?'); values.push(horaFinPatch); cambios.hora_fin = horaFinPatch;
+    }
+
+    if (horaFinDatePatch !== undefined) {
+      updates.push('hora_fin_date = ?'); values.push(horaFinDatePatch); cambios.hora_fin_date = horaFinDatePatch;
+    } else if (horaFinPatch !== undefined) {
+      const horaInicio = horaInicioPatch || citaActual.hora_inicio || citaActual.hora_agendamiento;
       const fechaEstudio = fecha || extraerFechaYmd(citaActual.fecha) || normalizeFecha(citaActual.fecha);
-      const durMin = duracion_minutos || citaActual.duracion_minutos;
+      const durMin = duracionPatch || citaActual.duracion_minutos;
       const horaStr = typeof horaInicio === 'string' ? horaInicio.slice(0, 5) : String(horaInicio).slice(0, 5);
       if (durMin && horaStr && fechaEstudio) {
         const finCalc = sumarMinutosAHoraYFecha(fechaEstudio, horaStr, durMin);
@@ -1034,8 +1066,8 @@ router.patch('/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin',
           updates.push('hora_fin_date = ?');
           values.push(finCalc.fechaFin);
         }
-      } else if (hora_fin && fechaEstudio) {
-        const finDate = fechaFinSiCruzaMedianoche(fechaEstudio, horaStr, hora_fin);
+      } else if (horaFinPatch && fechaEstudio) {
+        const finDate = fechaFinSiCruzaMedianoche(fechaEstudio, horaStr, horaFinPatch);
         if (finDate && finDate !== fechaEstudio) {
           updates.push('hora_fin_date = ?');
           values.push(finDate);
@@ -1048,7 +1080,7 @@ router.patch('/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin',
 
     if (hora_agendamiento !== undefined) { updates.push('hora_agendamiento = ?'); values.push(hora_agendamiento); cambios.hora_agendamiento = hora_agendamiento; }
     if (fecha !== undefined) { updates.push('fecha = ?'); values.push(fecha); cambios.fecha = fecha; }
-    if (duracion_minutos !== undefined) { updates.push('duracion_minutos = ?'); values.push(duracion_minutos); cambios.duracion_minutos = duracion_minutos; }
+    if (duracionPatch !== undefined) { updates.push('duracion_minutos = ?'); values.push(duracionPatch); cambios.duracion_minutos = duracionPatch; }
     if (entidad !== undefined) { updates.push('entidad = ?'); values.push(entidad ? String(entidad).trim() : null); }
     if (estudio !== undefined) {
       const nombreEstudio = String(estudio).trim();

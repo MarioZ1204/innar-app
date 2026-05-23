@@ -61,10 +61,56 @@ function paramsCitaElectroVisibleEnFecha(fechaYmd) {
   return [fechaYmd, fechaYmd, fechaYmd];
 }
 
+/** Hora HH:MM desde hora_inicio, hora_agendamiento o columna TIME. */
+function horaInicioCitaElectro(cita) {
+  const raw = cita?.hora_inicio ?? cita?.hora_agendamiento;
+  if (raw == null || raw === '') return null;
+  const h = String(raw).trim().slice(0, 5);
+  return /^\d{2}:\d{2}$/.test(h) ? h : null;
+}
+
+/**
+ * Fin programado del estudio (UTC calendario, sin TZ local).
+ * Prioriza hora_inicio + duracion_minutos; si no hay duración, usa hora_fin + hora_fin_date.
+ */
+function finProgramadoCitaElectro(cita) {
+  if (!cita) return null;
+  const fechaInicio = extraerFechaYmd(cita.fecha);
+  const horaInicio = horaInicioCitaElectro(cita);
+  const durMin = parseInt(cita.duracion_minutos, 10);
+  if (fechaInicio && horaInicio && durMin > 0) {
+    return sumarMinutosAHoraYFecha(fechaInicio, horaInicio, durMin);
+  }
+  const fechaFin = extraerFechaYmd(cita.hora_fin_date) || fechaInicio;
+  const horaFin = String(cita.hora_fin || '').trim().slice(0, 5);
+  if (!fechaFin || !/^\d{2}:\d{2}$/.test(horaFin)) return null;
+  return { horaFin, fechaFin };
+}
+
+/** true si el fin programado ya pasó (comparación UTC coherente con sumarMinutosAHoraYFecha). */
+function estudioElectroFinProgramadoVencido(cita, ahora = new Date()) {
+  const fin = finProgramadoCitaElectro(cita);
+  if (!fin) return false;
+  const [y, mo, d] = fin.fechaFin.split('-').map(Number);
+  const [hh, mm] = fin.horaFin.split(':').map(Number);
+  const finMs = Date.UTC(y, mo - 1, d, hh, mm, 0);
+  return finMs <= ahora.getTime();
+}
+
+/** SQL: estudios activos cuyo fin programado (hora_fin_date + hora_fin) ya pasó. */
+function sqlEstudioElectroFinProgramadoVencido(alias) {
+  const p = alias ? `${alias}.` : '';
+  return `TIMESTAMP(COALESCE(${p}hora_fin_date, ${p}fecha), COALESCE(${p}hora_fin, '23:59:59')) < NOW()`;
+}
+
 module.exports = {
   extraerFechaYmd,
   sumarMinutosAHoraYFecha,
   fechaFinSiCruzaMedianoche,
   sqlCitaElectroVisibleEnFecha,
-  paramsCitaElectroVisibleEnFecha
+  paramsCitaElectroVisibleEnFecha,
+  horaInicioCitaElectro,
+  finProgramadoCitaElectro,
+  estudioElectroFinProgramadoVencido,
+  sqlEstudioElectroFinProgramadoVencido
 };
