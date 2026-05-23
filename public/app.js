@@ -6376,6 +6376,28 @@ function obtenerHoraInicioAgendadaElectro(cita) {
   return `${String(ahora.getHours()).padStart(2, '0')}:${String(ahora.getMinutes()).padStart(2, '0')}`;
 }
 
+/** Hora base para calcular fin real (En Estudio): no usar inicio agendado si ya pasó hoy. */
+function obtenerHoraInicioCalculoFinElectro(cita) {
+  const horaInicio = String(cita?.hora_inicio || '').slice(0, 5);
+  const horaAg = String(cita?.hora_agendamiento || '').slice(0, 5);
+  const base = /^\d{2}:\d{2}$/.test(horaInicio) ? horaInicio : horaAg;
+  if (!/^\d{2}:\d{2}$/.test(base)) return null;
+  const fechaBase = obtenerFechaElectroBase10(cita?.fecha);
+  const hoy = hoyColombiaISO();
+  if ((cita?.estado === 'En Estudio' || cita?.estado === 'Pausado') && fechaBase === hoy) {
+    return obtenerHoraInicioRecomendadaParaEstudio({
+      fecha: cita.fecha,
+      hora_agendamiento: base
+    });
+  }
+  return base;
+}
+
+function fechaYmdDesdeDate(d) {
+  if (!d || Number.isNaN(d.getTime())) return '';
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 /** Hora de inicio al abrir modal de duración: la mayor entre agendada y ahora (mismo día). */
 function obtenerHoraInicioRecomendadaParaEstudio(cita) {
   const ahora = new Date();
@@ -6409,8 +6431,8 @@ function calcularHoraFinElectroDesdeInicio(fechaBase, horaInicio, duracionMinuto
 }
 
 function obtenerFechaHoraFinDesdeInicioReal(cita) {
-  const horaInicioStr = String(cita?.hora_inicio || '').slice(0, 5);
-  if (!/^\d{2}:\d{2}$/.test(horaInicioStr)) return null;
+  const horaInicioStr = obtenerHoraInicioCalculoFinElectro(cita);
+  if (!horaInicioStr) return null;
 
   const fechaBase = obtenerFechaElectroBase10(cita?.fecha) || new Date().toISOString().slice(0, 10);
   const dateInicio = construirDateHoraElectro(fechaBase, horaInicioStr);
@@ -6441,7 +6463,7 @@ function obtenerFechaHoraFinDesdeInicioReal(cita) {
 }
 
 function obtenerFechaHoraFinEstudioActivo(cita) {
-  if (!cita || cita.estado !== 'En Estudio') return null;
+  if (!cita || (cita.estado !== 'En Estudio' && cita.estado !== 'Pausado')) return null;
   return obtenerFechaHoraFinDesdeInicioReal(cita);
 }
 
@@ -6516,14 +6538,15 @@ async function sincronizarEstadosPorTiempo(citas = []) {
   const mm = String(ahora.getMinutes()).padStart(2, '0');
   const horaActual = `${hh}:${mm}`;
   const hoy = hoyColombiaISO();
-  // Solo auto-cerrar estudios de días anteriores (mismo criterio que el servidor).
-  // Los del día actual deben finalizarse manualmente aunque pase la hora_fin planeada.
+  // No usar c.fecha < hoy: en estudios multi-día la fecha es el día de INICIO.
+  // Solo cerrar si la fecha de FIN ya pasó (antes de hoy) y la hora de fin ya venció.
   const vencidas = citas.filter((c) => {
-    if (c?.estado !== 'En Estudio') return false;
-    const fechaCita = obtenerFechaElectroBase10(c?.fecha);
-    if (!fechaCita || fechaCita >= hoy) return false;
+    if (c?.estado !== 'En Estudio' && c?.estado !== 'Pausado') return false;
     const fin = calcularFechaFinEstudio(c);
-    return fin && ahora >= fin;
+    if (!fin || ahora < fin) return false;
+    const finYmd = fechaYmdDesdeDate(fin);
+    if (!finYmd || finYmd >= hoy) return false;
+    return true;
   });
   if (!vencidas.length) return citas;
 
@@ -10199,8 +10222,9 @@ async function iniciarEstudioSinDuracion() {
       if (window.socket && window.socket.connected) {
         window.socket.emit('electro:estudio-iniciado', {
           id: citaElectroSeleccionada.id,
-          hora_inicio: horaInicio,
+          hora_inicio: horaInicioRegistro,
           hora_fin: horaFin,
+          hora_fin_date: horaFinDate,
           duracion_minutos: duracionMinutos
         });
       }
