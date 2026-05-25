@@ -15,6 +15,7 @@
   <link rel="stylesheet" href="innar-motion.css">
   <link rel="stylesheet" href="innar-sidebar.css">
   <link rel="stylesheet" href="innar-mobile.css">
+  <link rel="stylesheet" href="innar-agenda-cal.css">
   <link rel="stylesheet" href="sede-recordatorio.css">
   <link rel="stylesheet" href="soportes.css">
   <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js" defer></script>
@@ -1017,33 +1018,41 @@
   </div>
 
   <!-- Modal Flotante: Configurar Día (Calendario) -->
-  <div id="calDayModal" class="cal-modal-overlay">
-    <div class="cal-modal">
+  <div id="calDayModal" class="cal-modal-overlay hidden" aria-hidden="true">
+    <div class="cal-modal" role="dialog" aria-labelledby="calModalTitle">
       <div class="cal-modal-head">
         <div>
           <h3 id="calModalTitle">Configurar día</h3>
           <div id="calModalDateSub" class="cal-modal-date-sub"></div>
         </div>
-        <button id="calModalClose" class="cal-modal-close" title="Cerrar">
+        <button type="button" id="calModalClose" class="cal-modal-close" title="Cerrar" aria-label="Cerrar">
           <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg>
         </button>
       </div>
       <div class="cal-modal-body">
-        <div class="cal-toggle-group" id="calToggleGroup">
-          <button type="button" class="cal-toggle-btn cal-toggle-active-yes" id="calToggleYes">
-            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="10"/></svg>
-            Asistiré
+        <p class="cal-asistencia-pregunta">¿El médico asistirá este día?</p>
+        <div class="cal-asistencia-cards" id="calAsistenciaCards">
+          <button type="button" class="cal-asistencia-card" id="calCardAttend" data-cal-mode="attend">
+            <span class="cal-asistencia-card-icon cal-asistencia-card-icon--yes" aria-hidden="true">✓</span>
+            <span class="cal-asistencia-card-title">Sí asiste</span>
+            <span class="cal-asistencia-card-desc">Atiende en uno o más horarios</span>
           </button>
-          <button type="button" class="cal-toggle-btn" id="calToggleFullDay">
-            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="8" y1="2.5" x2="8" y2="6"/><line x1="16" y1="2.5" x2="16" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-            Todo el día
-          </button>
-          <button type="button" class="cal-toggle-btn" id="calToggleNo">
-            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg>
-            No asistiré
+          <button type="button" class="cal-asistencia-card" id="calCardAbsent" data-cal-mode="absent">
+            <span class="cal-asistencia-card-icon cal-asistencia-card-icon--no" aria-hidden="true">✕</span>
+            <span class="cal-asistencia-card-title">No asiste</span>
+            <span class="cal-asistencia-card-desc">Día bloqueado para citas</span>
           </button>
         </div>
-        <div id="calModalHorasContainer" class="cal-hora-section">
+
+        <div id="calAttendOptions" class="cal-attend-options hidden">
+          <span class="cal-attend-options-label">Tipo de jornada</span>
+          <div class="cal-attend-chips">
+            <button type="button" class="cal-attend-chip" id="calChipPartial" data-cal-submode="partial">Horario personalizado</button>
+            <button type="button" class="cal-attend-chip" id="calChipFullDay" data-cal-submode="full">Todo el día (8–12 y 14–18)</button>
+          </div>
+        </div>
+
+        <div id="calModalHorasContainer" class="cal-hora-section hidden">
           <span class="cal-hora-section-label">Horarios de atención</span>
           <div id="calModalHorasList"></div>
           <button type="button" id="calModalAddHora" class="cal-add-hora-btn">
@@ -1051,10 +1060,24 @@
             Agregar horario
           </button>
         </div>
-        <!-- Observación: visible siempre (tanto para "Asistiré" como "No asistiré") -->
-        <div id="calModalObsContainer" style="margin-bottom:16px">
-          <label class="cal-motivo-label">Observación</label>
-          <select id="calModalMotivoSelect" class="cal-motivo-select">
+
+        <div id="calModalObsAbsent" class="cal-obs-absent hidden">
+          <label class="cal-motivo-label" for="calModalMotivoSelectAbsent">Motivo de ausencia</label>
+          <select id="calModalMotivoSelectAbsent" class="cal-motivo-select">
+            <option value="">Seleccionar motivo</option>
+            <option value="UCQN">UCQN</option>
+            <option value="Hospital departamental">Hospital departamental</option>
+            <option value="Cita médica personal">Cita médica personal</option>
+            <option value="Vacaciones">Vacaciones</option>
+            <option value="Capacitación">Capacitación</option>
+            <option value="Otro">Otro (especificar)</option>
+          </select>
+          <input type="text" id="calModalMotivoOtroAbsent" class="cal-motivo-input" placeholder="Escribe el motivo..." maxlength="200" />
+        </div>
+
+        <div id="calModalObsAttend" class="cal-obs-attend hidden">
+          <label class="cal-motivo-label" for="calModalMotivoSelectAttend">Observación (opcional)</label>
+          <select id="calModalMotivoSelectAttend" class="cal-motivo-select">
             <option value="">Sin observación</option>
             <option value="UCQN">UCQN</option>
             <option value="Hospital departamental">Hospital departamental</option>
@@ -1063,11 +1086,12 @@
             <option value="Capacitación">Capacitación</option>
             <option value="Otro">Otro (especificar)</option>
           </select>
-          <input type="text" id="calModalMotivoOtro" class="cal-motivo-input" placeholder="Escribe la observación..." style="display:none;margin-top:8px" maxlength="200" />
+          <input type="text" id="calModalMotivoOtroAttend" class="cal-motivo-input cal-motivo-input--hidden" placeholder="Escribe la observación..." maxlength="200" />
         </div>
+
         <div class="cal-modal-actions">
-          <button type="button" id="calModalSave" class="cal-btn-save">Guardar</button>
-          <button type="button" id="calModalClear" class="cal-btn-clear">Limpiar</button>
+          <button type="button" id="calModalSave" class="cal-btn-save">Guardar configuración</button>
+          <button type="button" id="calModalClear" class="cal-btn-clear">Limpiar día</button>
         </div>
       </div>
     </div>

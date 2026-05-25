@@ -338,104 +338,110 @@ async function obtenerDisponibilidadMensual(doctorId, mes = null, db) {
   }
 }
 
+function horaAMinutos(hora) {
+  const [h, m] = String(hora || '').slice(0, 5).split(':').map((x) => parseInt(x, 10));
+  if (Number.isNaN(h) || Number.isNaN(m)) return null;
+  return h * 60 + m;
+}
+
+function horaCaeEnSlotAgenda(hora, slot) {
+  const t = horaAMinutos(hora);
+  const ini = horaAMinutos(slot.hora_inicio);
+  const fin = horaAMinutos(slot.hora_fin);
+  if (t === null || ini === null || fin === null) return false;
+  return t >= ini && t < fin;
+}
+
+async function consultarSlotsAgendaDia(doctorId, fecha, db) {
+  const fechaFormato = typeof fecha === 'string' ? fecha : fecha.toISOString().split('T')[0];
+  const rows = await db.execute(
+    `SELECT hora_inicio, hora_fin FROM doctor_agenda
+     WHERE doctor_id = ? AND fecha = ? AND disponible = 1
+     ORDER BY hora_inicio ASC`,
+    [doctorId, fechaFormato]
+  );
+  return rows || [];
+}
+
+function parseFlagDisponible(val) {
+  if (val === true || val === 1 || val === '1') return true;
+  if (val === false || val === 0 || val === '0' || val === 'false') return false;
+  return null;
+}
+
 /**
- * Verifica si un doctor tiene disponibilidad en una fecha específica con validación de horario
- * Validación COMBINADA: MAÑANA/TARDE obligatorio, luego intervalos específicos como refinamiento
- * 
- * Proceso:
- * 1. Verficiar que el día esté disponible enn general (MAÑANA/TARDE)
- * 2. Verificar que la hora NO caiga en un intervalo bloqueado
+ * Verifica disponibilidad por hora: día disponible, slots de agenda (si existen), mañana/tarde, intervalos bloqueados.
  */
 async function validarDisponibilidadPorHora(doctorId, fecha, hora, db) {
   try {
     const fechaFormato = typeof fecha === 'string' ? fecha : fecha.toISOString().split('T')[0];
-    
+
     const result = await db.execute(
-      `SELECT disponible_manana, disponible_tarde FROM doctor_disponibilidad_mensual
+      `SELECT disponible, disponible_manana, disponible_tarde FROM doctor_disponibilidad_mensual
        WHERE doctor_id = ? AND fecha = ?`,
       [doctorId, fechaFormato]
     );
-    
-    // Si no existe registro, asumir que está disponible todo el día
+
     if (result.length === 0) {
-      console.log(`[DISPONIBILIDAD] Sin registro para doctor=${doctorId}, fecha=${fechaFormato} - permitiendo`);
       return { valido: true, razon: null };
     }
 
     const registro = result[0];
-    // NULL en columna = "no especificado" → tratar como disponible (igual que día sin fila en UI)
-    const disponibleManana = (registro.disponible_manana === null || registro.disponible_manana === undefined)
-      ? true
-      : Boolean(registro.disponible_manana);
-    const disponibleTarde = (registro.disponible_tarde === null || registro.disponible_tarde === undefined)
-      ? true
-      : Boolean(registro.disponible_tarde);
+    const dispDia = parseFlagDisponible(registro.disponible);
+    if (dispDia === false) {
+      return { valido: false, razon: 'El doctor no asistirá en esta fecha' };
+    }
 
-    console.log(`[DISPONIBILIDAD] Registro completo:`, JSON.stringify(registro));
-    console.log(`[DISPONIBILIDAD] Doctor ${doctorId}, fecha ${fechaFormato}: Mañana=${disponibleManana} (raw: ${registro.disponible_manana}), Tarde=${disponibleTarde} (raw: ${registro.disponible_tarde})`);
+    const disponibleManana = parseFlagDisponible(registro.disponible_manana) === true;
+    const disponibleTarde = parseFlagDisponible(registro.disponible_tarde) === true;
 
-    // PASO 1: Validar que el turno esté disponible en general
     if (!disponibleManana && !disponibleTarde) {
-      console.log(`[DISPONIBILIDAD] Rechazando: ambos turnos NO disponibles`);
-      return { 
-        valido: false, 
-        razon: 'El doctor no está disponible en esta fecha' 
-      };
+      return { valido: false, razon: 'El doctor no está disponible en esta fecha' };
     }
 
-    // Parsear hora (formato HH:MM)
-    const [horaStr, minStr] = (hora || '').split(':');
-    const horaNum = parseInt(horaStr, 10);
-    const minNum = parseInt(minStr || '0', 10);
-
-    console.log(`[DISPONIBILIDAD] Validando hora ${horaNum}:${(minStr || '00').padStart(2, '0')}`);
-
-    // Validar horario de la mañana (7:00-12:59) - INCLUSIVE hasta las 12:59
-    if ((horaNum === 7 || horaNum === 8 || horaNum === 9 || horaNum === 10 || horaNum === 11) || (horaNum === 12 && minNum <= 59)) {
-      console.log(`[DISPONIBILIDAD] Hora está en rango MAÑANA (7:00-12:59). Disponible mañana: ${disponibleManana}`);
-      if (!disponibleManana) {
-        console.log(`[DISPONIBILIDAD] Rechazando: no disponible en la mañana`);
-        return { 
-          valido: false, 
-          razon: 'El doctor no está disponible en la mañana (7:00-12:00) en esta fecha' 
+    const slots = await consultarSlotsAgendaDia(doctorId, fechaFormato, db);
+    if (slots.length > 0) {
+      const enSlot = slots.some((s) => horaCaeEnSlotAgenda(hora, s));
+      if (!enSlot) {
+        const rangos = slots.map((s) => `${String(s.hora_inicio).slice(0, 5)}-${String(s.hora_fin).slice(0, 5)}`).join(', ');
+        return {
+          valido: false,
+          razon: `La hora no está dentro de los horarios configurados (${rangos})`
         };
       }
-    } 
-    // Validar horario de la tarde (14:00-18:59) - INCLUSIVE hasta las 18:59
-    else if ((horaNum === 14 || horaNum === 15 || horaNum === 16 || horaNum === 17) || (horaNum === 18 && minNum <= 59)) {
-      console.log(`[DISPONIBILIDAD] Hora está en rango TARDE (14:00-18:59). Disponible tarde: ${disponibleTarde}`);
-      if (!disponibleTarde) {
-        console.log(`[DISPONIBILIDAD] Rechazando: no disponible en la tarde`);
-        return { 
-          valido: false, 
-          razon: 'El doctor no está disponible en la tarde (14:00-18:00) en esta fecha' 
+    } else {
+      const [horaStr, minStr] = (hora || '').split(':');
+      const horaNum = parseInt(horaStr, 10);
+      const minNum = parseInt(minStr || '0', 10);
+
+      if ((horaNum >= 7 && horaNum <= 11) || (horaNum === 12 && minNum <= 59)) {
+        if (!disponibleManana) {
+          return { valido: false, razon: 'El doctor no está disponible en la mañana (7:00-12:00) en esta fecha' };
+        }
+      } else if ((horaNum >= 14 && horaNum <= 17) || (horaNum === 18 && minNum <= 59)) {
+        if (!disponibleTarde) {
+          return { valido: false, razon: 'El doctor no está disponible en la tarde (14:00-18:00) en esta fecha' };
+        }
+      } else {
+        return {
+          valido: false,
+          razon: 'Hora fuera del rango disponible. Horarios: Mañana (7:00-12:00) o Tarde (14:00-18:00)'
         };
       }
-    } 
-    // Rango fuera de horario (13:00-13:59 es descanso/almuerzo)
-    else {
-      console.log(`[DISPONIBILIDAD] Hora ${horaNum}:${(minStr || '00').padStart(2, '0')} está fuera del rango permitido`);
-      return { 
-        valido: false, 
-        razon: 'Hora fuera del rango disponible. Horarios: Mañana (7:00-12:00) o Tarde (14:00-18:00)' 
-      };
     }
 
-    // PASO 2: Validar que la hora NO caiga en un intervalo bloqueado
-    const {intervalos, existe_registro: tiene_intervalos} = await consultarIntervalosNoDisponibles(doctorId, fechaFormato, db);
+    const { intervalos, existe_registro: tiene_intervalos } = await consultarIntervalosNoDisponibles(doctorId, fechaFormato, db);
     if (tiene_intervalos) {
-      const {bloqueado, razon} = esHoraBloqueada(hora, intervalos);
+      const { bloqueado, razon } = esHoraBloqueada(hora, intervalos);
       if (bloqueado) {
-        console.log(`[DISPONIBILIDAD] Rechazando: hora ${hora} cae en intervalo bloqueado: ${razon}`);
         return { valido: false, razon };
       }
     }
 
-    console.log(`[DISPONIBILIDAD] Permitiendo cita: validación pasada (turno disponible, no está en intervalo bloqueado)`);
     return { valido: true, razon: null };
   } catch (error) {
     console.error('[DISPONIBILIDAD] Error validando disponibilidad por hora:', error.message);
-    return { valido: true, razon: null }; // En caso de error, permitir
+    return { valido: false, razon: 'No se pudo validar la disponibilidad. Intente de nuevo.' };
   }
 }
 
@@ -445,37 +451,34 @@ async function validarDisponibilidadPorHora(doctorId, fecha, hora, db) {
 async function tieneDisponibilidad(doctorId, fecha, db) {
   try {
     const fechaFormato = typeof fecha === 'string' ? fecha : fecha.toISOString().split('T')[0];
-    
+
     const result = await db.execute(
-      `SELECT disponible_manana, disponible_tarde FROM doctor_disponibilidad_mensual
+      `SELECT disponible, disponible_manana, disponible_tarde FROM doctor_disponibilidad_mensual
        WHERE doctor_id = ? AND fecha = ?`,
       [doctorId, fechaFormato]
     );
-    
+
     if (result.length === 0) {
-      // Si no existe registro, asumir que está disponible
       return { disponible: true, razon: 'Sin restricciones' };
     }
 
     const registro = result[0];
-    const disponibleManana = (registro.disponible_manana === null || registro.disponible_manana === undefined)
-      ? true
-      : Boolean(registro.disponible_manana);
-    const disponibleTarde = (registro.disponible_tarde === null || registro.disponible_tarde === undefined)
-      ? true
-      : Boolean(registro.disponible_tarde);
-    
-    // Disponible si al menos uno de los turnos está disponible
+    if (parseFlagDisponible(registro.disponible) === false) {
+      return { disponible: false, razon: 'El doctor no asistirá en esta fecha' };
+    }
+
+    const disponibleManana = parseFlagDisponible(registro.disponible_manana) === true;
+    const disponibleTarde = parseFlagDisponible(registro.disponible_tarde) === true;
     const disponible = disponibleManana || disponibleTarde;
-    
+
     return {
-      disponible: disponible,
+      disponible,
       totalPacientes: null,
       razon: !disponible ? 'Doctor no disponible' : null
     };
   } catch (error) {
     console.error('[AGENDA] Error verificando disponibilidad:', error.message);
-    return { disponible: true, razon: null };
+    return { disponible: false, razon: 'No se pudo verificar la disponibilidad' };
   }
 }
 
@@ -574,6 +577,8 @@ module.exports = {
   obtenerDisponibilidadMensual,
   tieneDisponibilidad,
   validarDisponibilidadPorHora,
+  consultarSlotsAgendaDia,
+  horaCaeEnSlotAgenda,
   consultarIntervalosNoDisponibles,
   esHoraBloqueada,
   limpiarDisponibilidad,

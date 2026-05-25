@@ -317,6 +317,90 @@ router.post('/doctor-disponibilidad/validar', requireAuth, async (req, res) => {
   }
 });
 
+/** Guarda disponibilidad + slots del día en una sola transacción (modal Programar Agenda). */
+router.post('/doctor-disponibilidad/guardar-dia-completo', requireAuth, async (req, res) => {
+  try {
+    const {
+      doctor_id,
+      fecha,
+      disponible,
+      disponible_manana,
+      disponible_tarde,
+      motivo_ausencia,
+      slots
+    } = req.body || {};
+    const doctorId = parseInt(doctor_id || req.session.usuarioId, 10);
+    if (!doctorId || !fecha) return res.status(400).json({ error: 'doctor_id y fecha son requeridos' });
+
+    const isAdminUser = isAdminRol(req.session.rol) || isRecepcionRol(req.session.rol);
+    const isDoctorUser = req.session.rol === 'doctor' && doctorId === parseInt(req.session.usuarioId, 10);
+    if (!isAdminUser && !isDoctorUser) return res.status(403).json({ error: 'Sin permiso' });
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return res.status(400).json({ error: 'Formato de fecha inválido' });
+
+    const slotsArr = Array.isArray(slots) ? slots : [];
+    const slotsValidos = [];
+    for (const s of slotsArr) {
+      const hi = String(s.hora_inicio || '').slice(0, 5);
+      const hf = String(s.hora_fin || '').slice(0, 5);
+      if (!/^\d{2}:\d{2}$/.test(hi) || !/^\d{2}:\d{2}$/.test(hf)) {
+        return res.status(400).json({ error: `Horario inválido: ${hi} - ${hf}` });
+      }
+      if (hi >= hf) {
+        return res.status(400).json({ error: `La hora de inicio debe ser menor que la de fin (${hi} - ${hf})` });
+      }
+      slotsValidos.push({
+        hora_inicio: hi,
+        hora_fin: hf,
+        disponible: s.disponible ? 1 : 0
+      });
+    }
+
+    const motivoLimpio = (typeof motivo_ausencia === 'string' && motivo_ausencia.trim())
+      ? motivo_ausencia.trim().substring(0, 200)
+      : null;
+
+    await db.transaction(async (conn) => {
+      await conn.execute(
+        `INSERT INTO doctor_disponibilidad_mensual (doctor_id, fecha, disponible, disponible_manana, disponible_tarde, motivo_ausencia)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE disponible = VALUES(disponible), disponible_manana = VALUES(disponible_manana),
+           disponible_tarde = VALUES(disponible_tarde), motivo_ausencia = VALUES(motivo_ausencia)`,
+        [
+          doctorId,
+          fecha,
+          disponible ? 1 : 0,
+          disponible_manana ? 1 : 0,
+          disponible_tarde ? 1 : 0,
+          motivoLimpio
+        ]
+      );
+      await conn.execute('DELETE FROM doctor_agenda WHERE doctor_id = ? AND fecha = ?', [doctorId, fecha]);
+      for (const s of slotsValidos) {
+        await conn.execute(
+          'INSERT INTO doctor_agenda (doctor_id, fecha, hora_inicio, hora_fin, disponible) VALUES (?, ?, ?, ?, ?)',
+          [doctorId, fecha, s.hora_inicio, s.hora_fin, s.disponible]
+        );
+      }
+    });
+
+    logger.info(`[DISPONIBILIDAD] Día completo guardado: doctor=${doctorId}, fecha=${fecha}, slots=${slotsValidos.length}`, { type: 'API' });
+    emitSocket('agenda:disponibilidad-actualizada', { doctor_id: doctorId, fecha, source: 'guardar-dia-completo' });
+    res.json({
+      ok: true,
+      fecha,
+      disponible: Boolean(disponible),
+      disponible_manana: Boolean(disponible_manana),
+      disponible_tarde: Boolean(disponible_tarde),
+      motivo_ausencia: motivoLimpio,
+      slots: slotsValidos.map((s) => ({ fecha, ...s }))
+    });
+  } catch (e) {
+    logger.error('[DISPONIBILIDAD] Error guardando día completo:', e.message);
+    res.status(500).json({ error: safeError(e) });
+  }
+});
+
 router.post('/doctor-disponibilidad/guardar-dia', requireAuth, async (req, res) => {
   try {
     const { doctor_id, fecha, disponible, disponible_manana, disponible_tarde, motivo_ausencia } = req.body || {};

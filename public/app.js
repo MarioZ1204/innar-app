@@ -3085,12 +3085,29 @@ let calSelectedDate = null; // 'YYYY-MM-DD'
 let calDisponibilidad = {}; // { 'YYYY-MM-DD': { disponible, disponible_manana, disponible_tarde } }
 let calSlots = []; // [{ fecha, hora_inicio, hora_fin, disponible }]
 let calDoctorIdForCal = null;
-let calModoTodoDia = false;
+/** 'attend-partial' | 'attend-full' | 'absent' */
+let calModoAsistencia = 'attend-partial';
 let calLoadReqId = 0;
+/** Evita que un refresh tardío (Hostinger) pise el color recién guardado */
+let calSavedSnapshot = null;
+
+function normalizarFilaDisponibilidadCal(d) {
+  const fecha = (d.fecha || '').slice(0, 10);
+  let disponible = null;
+  if (d.disponible === true || d.disponible === 1 || d.disponible === '1') disponible = true;
+  else if (d.disponible === false || d.disponible === 0 || d.disponible === '0' || d.disponible === 'false') disponible = false;
+  const disponible_manana = d.disponible_manana === true || d.disponible_manana === 1 || d.disponible_manana === '1';
+  const disponible_tarde = d.disponible_tarde === true || d.disponible_tarde === 1 || d.disponible_tarde === '1';
+  if (disponible === null) {
+    if (!disponible_manana && !disponible_tarde) disponible = false;
+    else if (disponible_manana || disponible_tarde) disponible = true;
+  }
+  return { ...d, fecha, disponible, disponible_manana, disponible_tarde };
+}
 
 function obtenerEstadoDiaAgenda(dateStr) {
   const disp = calDisponibilidad[dateStr];
-  if (disp && (disp.disponible === false || disp.disponible === 0 || disp.disponible === '0' || disp.disponible === 'false')) return 'unavailable'; // Prioridad máxima
+  if (disp && disp.disponible === false) return 'unavailable';
 
   const daySlots = calSlots.filter(s => (s.fecha || '').slice(0, 10) === dateStr && s.disponible);
   const normalizedSlots = daySlots
@@ -3156,18 +3173,31 @@ function setupAgendaCalendar() {
   // Modal events
   $('calModalClose')?.addEventListener('click', closeCalModal);
   $('calDayModal')?.addEventListener('click', (e) => { if (e.target.id === 'calDayModal') closeCalModal(); });
-  $('calToggleYes')?.addEventListener('click', () => setCalToggle(true));
-  $('calToggleFullDay')?.addEventListener('click', () => setCalToggle(true, true));
-  $('calToggleNo')?.addEventListener('click', () => setCalToggle(false));
+  $('calCardAttend')?.addEventListener('click', () => setCalModoAsistencia('attend-partial'));
+  $('calCardAbsent')?.addEventListener('click', () => setCalModoAsistencia('absent'));
+  $('calChipPartial')?.addEventListener('click', () => setCalModoAsistencia('attend-partial'));
+  $('calChipFullDay')?.addEventListener('click', () => setCalModoAsistencia('attend-full'));
   $('calModalAddHora')?.addEventListener('click', () => addCalHoraRow('', ''));
   $('calModalSave')?.addEventListener('click', saveCalDay);
   $('calModalClear')?.addEventListener('click', deleteCalDay);
 
-  // Motivo de ausencia: mostrar/ocultar campo libre según selección
-  $('calModalMotivoSelect')?.addEventListener('change', function() {
-    const inputOtro = $('calModalMotivoOtro');
-    if (inputOtro) inputOtro.style.display = this.value === 'Otro' ? '' : 'none';
-  });
+  const bindMotivoOtro = (selectId, inputId) => {
+    const sel = $(selectId);
+    const inp = $(inputId);
+    if (!sel || sel.dataset.boundCalMotivo) return;
+    sel.addEventListener('change', function () {
+      if (!inp) return;
+      if (this.value === 'Otro') {
+        inp.classList.remove('cal-motivo-input--hidden');
+      } else {
+        inp.classList.add('cal-motivo-input--hidden');
+        inp.value = '';
+      }
+    });
+    sel.dataset.boundCalMotivo = '1';
+  };
+  bindMotivoOtro('calModalMotivoSelectAbsent', 'calModalMotivoOtroAbsent');
+  bindMotivoOtro('calModalMotivoSelectAttend', 'calModalMotivoOtroAttend');
 
   // ESC to close modal
   document.addEventListener('keydown', (e) => {
@@ -3177,23 +3207,68 @@ function setupAgendaCalendar() {
   loadCalendarData();
 }
 
-function setCalToggle(asistire, todoDia = false) {
-  const btnYes = $('calToggleYes');
-  const btnFullDay = $('calToggleFullDay');
-  const btnNo = $('calToggleNo');
+function setCalModoAsistencia(modo) {
+  calModoAsistencia = modo;
+  const cardAttend = $('calCardAttend');
+  const cardAbsent = $('calCardAbsent');
+  const attendOpts = $('calAttendOptions');
   const horasC = $('calModalHorasContainer');
-  if (asistire) {
-    calModoTodoDia = Boolean(todoDia);
-    btnYes.classList.add('cal-toggle-active-yes');
-    btnFullDay?.classList.toggle('cal-toggle-active-full', calModoTodoDia);
-    btnNo.classList.remove('cal-toggle-active-no');
-    if (horasC) horasC.style.display = calModoTodoDia ? 'none' : '';
+  const obsAbsent = $('calModalObsAbsent');
+  const obsAttend = $('calModalObsAttend');
+  const chipPartial = $('calChipPartial');
+  const chipFull = $('calChipFullDay');
+
+  const esAusente = modo === 'absent';
+  cardAttend?.classList.toggle('is-selected', !esAusente);
+  cardAbsent?.classList.toggle('is-selected', esAusente);
+  attendOpts?.classList.toggle('hidden', esAusente);
+  obsAbsent?.classList.toggle('hidden', !esAusente);
+  obsAttend?.classList.toggle('hidden', esAusente);
+
+  if (esAusente) {
+    horasC?.classList.add('hidden');
+    return;
+  }
+
+  const esFull = modo === 'attend-full';
+  chipPartial?.classList.toggle('is-selected', !esFull);
+  chipFull?.classList.toggle('is-selected', esFull);
+  horasC?.classList.toggle('hidden', esFull);
+
+  if (esFull) {
+    const horasList = $('calModalHorasList');
+    if (horasList) horasList.innerHTML = '';
+  } else if ($('calModalHorasList') && !$('calModalHorasList').children.length) {
+    addCalHoraRow('', '');
+  }
+}
+
+function leerMotivoCalModal(esAusente) {
+  const select = $(esAusente ? 'calModalMotivoSelectAbsent' : 'calModalMotivoSelectAttend');
+  const inp = $(esAusente ? 'calModalMotivoOtroAbsent' : 'calModalMotivoOtroAttend');
+  if (!select) return null;
+  const valSelect = select.value;
+  if (valSelect === 'Otro') return (inp?.value || '').trim() || null;
+  return valSelect || null;
+}
+
+function cargarMotivoEnCalModal(motivo, esAusente) {
+  const select = $(esAusente ? 'calModalMotivoSelectAbsent' : 'calModalMotivoSelectAttend');
+  const inputOtro = $(esAusente ? 'calModalMotivoOtroAbsent' : 'calModalMotivoOtroAttend');
+  if (!select) return;
+  const opciones = ['', 'UCQN', 'Hospital departamental', 'Cita médica personal', 'Vacaciones', 'Capacitación'];
+  if (opciones.includes(motivo)) {
+    select.value = motivo;
+    if (inputOtro) inputOtro.classList.add('cal-motivo-input--hidden');
+  } else if (motivo) {
+    select.value = 'Otro';
+    if (inputOtro) {
+      inputOtro.classList.remove('cal-motivo-input--hidden');
+      inputOtro.value = motivo;
+    }
   } else {
-    calModoTodoDia = false;
-    btnYes.classList.remove('cal-toggle-active-yes');
-    btnFullDay?.classList.remove('cal-toggle-active-full');
-    btnNo.classList.add('cal-toggle-active-no');
-    if (horasC) horasC.style.display = 'none';
+    select.value = esAusente ? '' : '';
+    if (inputOtro) inputOtro.classList.add('cal-motivo-input--hidden');
   }
 }
 
@@ -3224,13 +3299,15 @@ function openCalModal(dateStr) {
   const horasList = $('calModalHorasList');
   if (horasList) horasList.innerHTML = '';
 
-  if (disp && !disp.disponible) {
-    setCalToggle(false);
+  if (disp && disp.disponible === false) {
+    setCalModoAsistencia('absent');
+    cargarMotivoEnCalModal(disp.motivo_ausencia || '', true);
+  } else if (isFullDayConfigured) {
+    setCalModoAsistencia('attend-full');
+    cargarMotivoEnCalModal(disp?.motivo_ausencia || '', false);
   } else {
-    setCalToggle(true, isFullDayConfigured);
-    if (isFullDayConfigured) {
-      // "Todo el día" se guarda como dos slots: 08:00-12:00 y 14:00-18:00.
-    } else if (daySlots.length > 0) {
+    setCalModoAsistencia('attend-partial');
+    if (daySlots.length > 0) {
       daySlots.forEach(s => addCalHoraRow(s.hora_inicio?.slice(0, 5), s.hora_fin?.slice(0, 5)));
     } else if (disp) {
       if (disp.disponible_manana) addCalHoraRow('08:00', '12:00');
@@ -3239,38 +3316,35 @@ function openCalModal(dateStr) {
     } else {
       addCalHoraRow('', '');
     }
+    cargarMotivoEnCalModal(disp?.motivo_ausencia || '', false);
   }
 
-  // Cargar observación existente (aplica para todos los estados)
-  const selectMotivo = $('calModalMotivoSelect');
-  const inputOtro = $('calModalMotivoOtro');
-  if (selectMotivo) {
-    const motivo = disp?.motivo_ausencia || '';
-    const opciones = ['', 'UCQN', 'Hospital departamental', 'Cita médica personal', 'Vacaciones', 'Capacitación'];
-    if (opciones.includes(motivo)) {
-      selectMotivo.value = motivo;
-      if (inputOtro) inputOtro.style.display = 'none';
-    } else if (motivo) {
-      selectMotivo.value = 'Otro';
-      if (inputOtro) { inputOtro.style.display = ''; inputOtro.value = motivo; }
-    } else {
-      selectMotivo.value = '';
-      if (inputOtro) inputOtro.style.display = 'none';
-    }
-  }
-
-  // Show with animation
-  requestAnimationFrame(() => {
-    overlay.classList.add('active');
-  });
+  overlay.classList.remove('hidden');
+  overlay.setAttribute('aria-hidden', 'false');
+  requestAnimationFrame(() => overlay.classList.add('active'));
   renderCalendar();
 }
 
 function closeCalModal() {
   const overlay = $('calDayModal');
-  if (overlay) overlay.classList.remove('active');
+  if (overlay) {
+    overlay.classList.remove('active');
+    overlay.classList.add('hidden');
+    overlay.setAttribute('aria-hidden', 'true');
+  }
   calSelectedDate = null;
   renderCalendar();
+}
+
+function aplicarCalSavedSnapshotEnCache() {
+  if (!calSavedSnapshot || Date.now() - calSavedSnapshot.at > 5000) {
+    calSavedSnapshot = null;
+    return;
+  }
+  const { date, disp, slots } = calSavedSnapshot;
+  calDisponibilidad[date] = disp;
+  calSlots = calSlots.filter((s) => (s.fecha || '').slice(0, 10) !== date);
+  slots.forEach((s) => calSlots.push(s));
 }
 
 async function loadCalendarData() {
@@ -3289,29 +3363,20 @@ async function loadCalendarData() {
     if (reqId !== calLoadReqId) return; // respuesta vieja
     calDisponibilidad = {};
     if (dataDisp.ok && Array.isArray(dataDisp.disponibilidad)) {
-      dataDisp.disponibilidad.forEach(d => {
-        const fecha = (d.fecha || '').slice(0, 10);
-        let dispDia = false;
-        if (d.disponible === true || d.disponible === 1 || d.disponible === '1') dispDia = true;
-        if (d.disponible === false || d.disponible === 0 || d.disponible === '0' || d.disponible === 'false') dispDia = false;
-        const dispManana = d.disponible_manana === true || d.disponible_manana === 1 || d.disponible_manana === '1';
-        const dispTarde = d.disponible_tarde === true || d.disponible_tarde === 1 || d.disponible_tarde === '1';
-        calDisponibilidad[fecha] = {
-          ...d,
-          disponible: dispDia,
-          disponible_manana: dispManana,
-          disponible_tarde: dispTarde
-        };
+      dataDisp.disponibilidad.forEach((d) => {
+        const row = normalizarFilaDisponibilidadCal(d);
+        if (row.fecha) calDisponibilidad[row.fecha] = row;
       });
     }
 
-    // Cargar slots de agenda
     const resSlots = await apiFetch(`/api/doctor-agenda?doctor_id=${calDoctorIdForCal}&_t=${Date.now()}`, {
       cache: 'no-store'
     });
     const slotsData = await resSlots.json();
-    if (reqId !== calLoadReqId) return; // respuesta vieja
+    if (reqId !== calLoadReqId) return;
     calSlots = Array.isArray(slotsData) ? slotsData : [];
+
+    aplicarCalSavedSnapshotEnCache();
   } catch (e) {
     console.error('Error cargando datos del calendario:', e);
   }
@@ -3399,128 +3464,83 @@ function addCalHoraRow(inicio, fin) {
 async function saveCalDay() {
   if (!calSelectedDate || !calDoctorIdForCal) return;
 
-  // Detectar si el botón "No asistiré" está activo
-  const noAsistireActivo = $('calToggleNo')?.classList.contains('cal-toggle-active-no');
-  let disponible = true;
+  const esAusente = calModoAsistencia === 'absent';
+  let disponible = !esAusente;
   let slots = [];
-  let hasManana = false, hasTarde = false;
-  let motivoAusencia = null;
+  let hasManana = false;
+  let hasTarde = false;
+  const motivoAusencia = leerMotivoCalModal(esAusente);
 
-  if (noAsistireActivo) {
-    disponible = false;
+  if (esAusente) {
     slots = [];
-    hasManana = false;
-    hasTarde = false;
-    // Leer observación
-    const selectMotivo = $('calModalMotivoSelect');
-    const inputOtro = $('calModalMotivoOtro');
-    if (selectMotivo) {
-      const valSelect = selectMotivo.value;
-      if (valSelect === 'Otro') {
-        motivoAusencia = (inputOtro?.value || '').trim() || null;
-      } else {
-        motivoAusencia = valSelect || null;
-      }
-    }
+  } else if (calModoAsistencia === 'attend-full') {
+    slots.push({ fecha: calSelectedDate, hora_inicio: '08:00', hora_fin: '12:00', disponible: 1 });
+    slots.push({ fecha: calSelectedDate, hora_inicio: '14:00', hora_fin: '18:00', disponible: 1 });
+    hasManana = true;
+    hasTarde = true;
   } else {
-    disponible = Boolean(
-      calModoTodoDia
-      || $('calToggleYes')?.classList.contains('cal-toggle-active-yes')
-      || $('calToggleFullDay')?.classList.contains('cal-toggle-active-full')
-    );
     const horasRows = document.querySelectorAll('#calModalHorasList .cal-hora-row');
-    if (disponible) {
-      if (calModoTodoDia) {
-        slots.push({ fecha: calSelectedDate, hora_inicio: '08:00', hora_fin: '12:00', disponible: 1 });
-        slots.push({ fecha: calSelectedDate, hora_inicio: '14:00', hora_fin: '18:00', disponible: 1 });
-        hasManana = true;
-        hasTarde = true;
-      } else {
-        let valid = true;
-        horasRows.forEach(row => {
-          const hi = row.querySelector('.cal-hora-inicio')?.value;
-          const hf = row.querySelector('.cal-hora-fin')?.value;
-          if (!hi || !hf) { valid = false; return; }
-          if (hi >= hf) { valid = false; return; }
-          slots.push({ fecha: calSelectedDate, hora_inicio: hi, hora_fin: hf, disponible: 1 });
-          const h = parseInt(hi.split(':')[0], 10);
-          if (h < 12) hasManana = true;
-          if (h >= 12) hasTarde = true;
-        });
-        if (!valid || slots.length === 0) {
-          showToast('Completa todos los horarios correctamente (inicio < fin)', 'error');
-          return;
-        }
-      }
-    }
-  }
-
-  // Leer observación (aplica para todos los estados)
-  if (motivoAusencia === null) {
-    const selectMotivo = $('calModalMotivoSelect');
-    const inputOtro = $('calModalMotivoOtro');
-    if (selectMotivo) {
-      const valSelect = selectMotivo.value;
-      if (valSelect === 'Otro') {
-        motivoAusencia = (inputOtro?.value || '').trim() || null;
-      } else {
-        motivoAusencia = valSelect || null;
-      }
+    let valid = true;
+    horasRows.forEach((row) => {
+      const hi = row.querySelector('.cal-hora-inicio')?.value;
+      const hf = row.querySelector('.cal-hora-fin')?.value;
+      if (!hi || !hf) { valid = false; return; }
+      if (hi >= hf) { valid = false; return; }
+      slots.push({ fecha: calSelectedDate, hora_inicio: hi, hora_fin: hf, disponible: 1 });
+      const h = parseInt(hi.split(':')[0], 10);
+      if (h < 12) hasManana = true;
+      if (h >= 12) hasTarde = true;
+    });
+    if (!valid || slots.length === 0) {
+      showToast('Completa todos los horarios correctamente (inicio debe ser menor que fin)', 'error');
+      return;
     }
   }
 
   const saveBtn = $('calModalSave');
   setLoading(saveBtn, true, 'Guardando...');
+  const savedDate = calSelectedDate;
 
   try {
-    // 1. Save availability in doctor_disponibilidad_mensual
-    const r1 = await apiFetch('/api/doctor-disponibilidad/guardar-dia', {
+    const res = await apiFetch('/api/doctor-disponibilidad/guardar-dia-completo', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         doctor_id: calDoctorIdForCal,
-        fecha: calSelectedDate,
+        fecha: savedDate,
         disponible,
         disponible_manana: disponible ? (hasManana || (!hasManana && !hasTarde)) : false,
         disponible_tarde: disponible ? (hasTarde || (!hasManana && !hasTarde)) : false,
-        motivo_ausencia: motivoAusencia
-      })
-    });
-    if (!r1.ok) {
-      const errData = await r1.json().catch(() => ({}));
-      throw new Error(errData.error || `Error ${r1.status} guardando disponibilidad`);
-    }
-
-    // 2. Save specific slots in doctor_agenda (replace day's slots)
-    const r2 = await apiFetch('/api/doctor-agenda/guardar-dia', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        doctor_id: calDoctorIdForCal,
-        fecha: calSelectedDate,
+        motivo_ausencia: motivoAusencia,
         slots
       })
     });
-    if (!r2.ok) {
-      const errData2 = await r2.json().catch(() => ({}));
-      throw new Error(errData2.error || `Error ${r2.status} guardando horarios`);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) {
+      throw new Error(data.error || `Error ${res.status} guardando el día`);
     }
 
-    // Actualizar caché local inmediatamente para que renderCalendar() refleje el cambio al cerrar modal
-    const savedDate = calSelectedDate; // capturar antes de que closeCalModal lo anule
-    calDisponibilidad[savedDate] = {
-      disponible: disponible,
+    const dispCache = {
+      disponible,
       disponible_manana: disponible ? (hasManana || (!hasManana && !hasTarde)) : false,
       disponible_tarde: disponible ? (hasTarde || (!hasManana && !hasTarde)) : false,
-      motivo_ausencia: motivoAusencia
+      motivo_ausencia: motivoAusencia,
+      fecha: savedDate
     };
-    // Actualizar también los slots locales
-    calSlots = calSlots.filter(s => (s.fecha || '').slice(0, 10) !== savedDate);
-    slots.forEach(s => calSlots.push(s));
+    const slotsCache = slots.map((s) => ({ ...s, fecha: savedDate }));
+
+    calDisponibilidad[savedDate] = dispCache;
+    calSlots = calSlots.filter((s) => (s.fecha || '').slice(0, 10) !== savedDate);
+    slotsCache.forEach((s) => calSlots.push(s));
+
+    calSavedSnapshot = { at: Date.now(), date: savedDate, disp: dispCache, slots: slotsCache };
+
+    renderCalendar();
+    renderCalResumen();
 
     showToast('Día guardado correctamente', 'success');
-    closeCalModal();
     await loadCalendarData();
+    closeCalModal();
   } catch (e) {
     showToast('Error guardando: ' + e.message, 'error');
   } finally {
@@ -3541,9 +3561,10 @@ function deleteCalDay() {
       const errData = await r.json().catch(() => ({}));
       throw new Error(errData.error || `Error ${r.status} limpiando día`);
     }
+    calSavedSnapshot = null;
     showToast('Día limpiado', 'success');
-    closeCalModal();
     await loadCalendarData();
+    closeCalModal();
   } catch (e) {
     showToast('Error: ' + e.message, 'error');
   }
@@ -3576,7 +3597,7 @@ function renderCalResumen() {
     const dayName = diasSemana[dateObj.getDay()];
     let estadoHtml = '', horasHtml = '';
 
-    if (estadoDia === 'unavailable') {
+    if (estadoDia === 'unavailable' || (disp && disp.disponible === false)) {
       estadoHtml = '<span class="cal-resumen-estado">No asiste</span>';
     } else if (estadoDia === 'full' || estadoDia === 'partial') {
       estadoHtml = `<span class="cal-resumen-estado">${estadoDia === 'full' ? 'Todo el día' : 'Medio día'}</span>`;
