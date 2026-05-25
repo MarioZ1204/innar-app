@@ -14,100 +14,107 @@
   display: flex;
 }
 
-.cal-asistencia-pregunta {
-  margin: 0 0 12px;
+.cal-step.hidden {
+  display: none !important;
+}
+
+.cal-step-intro {
+  margin: 0 0 20px;
   font-size: 0.95rem;
-  font-weight: 600;
-  color: #334155;
+  font-weight: 500;
+  color: #64748b;
+  text-align: center;
 }
 
-.cal-asistencia-cards {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-  margin-bottom: 16px;
-}
-
-.cal-asistencia-card {
+.cal-choice-btns {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
-  padding: 14px 14px 12px;
-  border: 2px solid #e2e8f0;
-  border-radius: 14px;
-  background: #f8fafc;
-  cursor: pointer;
-  text-align: left;
-  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
-}
-.cal-asistencia-card:hover {
-  border-color: #cbd5e1;
-  background: #fff;
-}
-.cal-asistencia-card.is-selected[data-cal-mode="attend"] {
-  border-color: #16a34a;
-  background: linear-gradient(180deg, #f0fdf4 0%, #fff 100%);
-  box-shadow: 0 0 0 1px rgba(22, 163, 74, 0.25);
-}
-.cal-asistencia-card.is-selected[data-cal-mode="absent"] {
-  border-color: #dc2626;
-  background: linear-gradient(180deg, #fef2f2 0%, #fff 100%);
-  box-shadow: 0 0 0 1px rgba(220, 38, 38, 0.2);
+  gap: 12px;
 }
 
-.cal-asistencia-card-icon {
-  width: 32px;
-  height: 32px;
-  border-radius: 10px;
+.cal-choice-btn {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  font-size: 1rem;
+  gap: 4px;
+  width: 100%;
+  padding: 18px 20px;
+  border-radius: 14px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.15s ease, background 0.15s;
+}
+.cal-choice-btn:active {
+  transform: scale(0.98);
+}
+.cal-choice-btn-title {
+  font-size: 1.1rem;
   font-weight: 700;
+  letter-spacing: 0.01em;
 }
-.cal-asistencia-card-icon--yes {
-  background: #dcfce7;
-  color: #15803d;
-}
-.cal-asistencia-card-icon--no {
-  background: #fee2e2;
-  color: #b91c1c;
+.cal-choice-btn-desc {
+  font-size: 0.8rem;
+  font-weight: 500;
+  opacity: 0.85;
 }
 
-.cal-asistencia-card-title {
-  font-size: 1rem;
-  font-weight: 700;
-  color: #0f172a;
+.cal-choice-btn--no {
+  background: linear-gradient(180deg, #fef2f2 0%, #fff5f5 100%);
+  border-color: #fca5a5;
+  color: #991b1b;
 }
-.cal-asistencia-card-desc {
-  font-size: 0.78rem;
+.cal-choice-btn--no:hover {
+  background: #fee2e2;
+  box-shadow: 0 4px 14px rgba(220, 38, 38, 0.15);
+}
+
+.cal-choice-btn--config {
+  background: linear-gradient(180deg, #eff6ff 0%, #f8fafc 100%);
+  border-color: #93c5fd;
+  color: #1e40af;
+}
+.cal-choice-btn--config:hover {
+  background: #dbeafe;
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.12);
+}
+
+.cal-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 14px;
+  padding: 6px 0;
+  border: none;
+  background: none;
+  font-size: 0.88rem;
+  font-weight: 600;
   color: #64748b;
-  line-height: 1.35;
+  cursor: pointer;
+}
+.cal-back-btn:hover {
+  color: #334155;
 }
 
 .cal-attend-options {
   margin-bottom: 14px;
   padding: 12px 14px;
   border-radius: 12px;
-  background: #f1f5f9;
+  background: #f8fafc;
   border: 1px solid #e2e8f0;
 }
-.cal-attend-options.hidden,
-.cal-hora-section.hidden,
-.cal-obs-absent.hidden,
-.cal-obs-attend.hidden {
+.cal-hora-section.hidden {
   display: none !important;
 }
 
-.cal-attend-options-label {
+.cal-attend-options-label,
+.cal-hora-section-label {
   display: block;
-  font-size: 0.8rem;
-  font-weight: 600;
+  font-size: 0.75rem;
+  font-weight: 700;
   color: #64748b;
   margin-bottom: 8px;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.05em;
 }
 
 .cal-attend-chips {
@@ -133,33 +140,32 @@
   color: #1d4ed8;
 }
 
-.cal-obs-absent {
-  padding: 14px;
-  border-radius: 12px;
-  background: #fef2f2;
-  border: 1px solid #fecaca;
+.cal-obs-attend {
   margin-bottom: 16px;
-}
-.cal-obs-absent .cal-motivo-label {
-  color: #991b1b;
 }
 
 .cal-motivo-input--hidden {
   display: none;
-  margin-top: 8px;
 }
 .cal-motivo-input:not(.cal-motivo-input--hidden) {
   display: block;
   margin-top: 8px;
   width: 100%;
+  box-sizing: border-box;
+}
+
+.cal-modal-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
 }
 
 .cal-btn-save {
   font-weight: 700;
 }
 
-@media (max-width: 520px) {
-  .cal-asistencia-cards {
-    grid-template-columns: 1fr;
-  }
+.cal-choice-btn:disabled {
+  opacity: 0.65;
+  cursor: wait;
 }
