@@ -3173,9 +3173,11 @@ function setupAgendaCalendar() {
   // Modal events
   $('calModalClose')?.addEventListener('click', closeCalModal);
   $('calDayModal')?.addEventListener('click', (e) => { if (e.target.id === 'calDayModal') closeCalModal(); });
-  $('calBtnNoAsiste')?.addEventListener('click', marcarCalDiaNoAsiste);
+  $('calBtnNoAsiste')?.addEventListener('click', abrirCalPasoNoAsiste);
+  $('calBtnConfirmarNoAsiste')?.addEventListener('click', confirmarCalDiaNoAsiste);
   $('calBtnConfigurar')?.addEventListener('click', abrirCalPasoConfigurar);
   $('calBtnVolver')?.addEventListener('click', () => showCalModalStep('choice'));
+  $('calBtnVolverAbsent')?.addEventListener('click', () => showCalModalStep('choice'));
   $('calChipPartial')?.addEventListener('click', () => setCalJornada('attend-partial'));
   $('calChipFullDay')?.addEventListener('click', () => setCalJornada('attend-full'));
   $('calModalAddHora')?.addEventListener('click', () => addCalHoraRow('', ''));
@@ -3195,6 +3197,19 @@ function setupAgendaCalendar() {
     });
     selMotivoAttend.dataset.boundCalMotivo = '1';
   }
+  const selMotivoAbsent = $('calModalMotivoSelectAbsent');
+  const inpMotivoAbsent = $('calModalMotivoOtroAbsent');
+  if (selMotivoAbsent && !selMotivoAbsent.dataset.boundCalMotivo) {
+    selMotivoAbsent.addEventListener('change', function () {
+      if (!inpMotivoAbsent) return;
+      if (this.value === 'Otro') inpMotivoAbsent.classList.remove('cal-motivo-input--hidden');
+      else {
+        inpMotivoAbsent.classList.add('cal-motivo-input--hidden');
+        inpMotivoAbsent.value = '';
+      }
+    });
+    selMotivoAbsent.dataset.boundCalMotivo = '1';
+  }
 
   // ESC to close modal
   document.addEventListener('keydown', (e) => {
@@ -3207,8 +3222,45 @@ function setupAgendaCalendar() {
 function showCalModalStep(step) {
   const choice = $('calStepChoice');
   const config = $('calStepConfig');
+  const absent = $('calStepAbsent');
   if (choice) choice.classList.toggle('hidden', step !== 'choice');
   if (config) config.classList.toggle('hidden', step !== 'config');
+  if (absent) absent.classList.toggle('hidden', step !== 'absent');
+}
+
+function leerMotivoCalAbsent() {
+  const select = $('calModalMotivoSelectAbsent');
+  const inp = $('calModalMotivoOtroAbsent');
+  if (!select) return null;
+  if (select.value === 'Otro') return (inp?.value || '').trim() || null;
+  return select.value || null;
+}
+
+function cargarMotivoCalAbsent(motivo) {
+  const select = $('calModalMotivoSelectAbsent');
+  const inputOtro = $('calModalMotivoOtroAbsent');
+  if (!select) return;
+  const opciones = ['', 'UCQN', 'Hospital departamental', 'Cita médica personal', 'Vacaciones', 'Capacitación'];
+  if (opciones.includes(motivo)) {
+    select.value = motivo;
+    if (inputOtro) inputOtro.classList.add('cal-motivo-input--hidden');
+  } else if (motivo) {
+    select.value = 'Otro';
+    if (inputOtro) {
+      inputOtro.classList.remove('cal-motivo-input--hidden');
+      inputOtro.value = motivo;
+    }
+  } else {
+    select.value = '';
+    if (inputOtro) inputOtro.classList.add('cal-motivo-input--hidden');
+  }
+}
+
+function abrirCalPasoNoAsiste() {
+  if (!calSelectedDate) return;
+  const disp = calDisponibilidad[calSelectedDate];
+  cargarMotivoCalAbsent(disp?.disponible === false ? (disp.motivo_ausencia || '') : '');
+  showCalModalStep('absent');
 }
 
 function setCalJornada(modo) {
@@ -3332,11 +3384,12 @@ async function persistirCalDia(payload) {
   await loadCalendarData();
 }
 
-async function marcarCalDiaNoAsiste() {
+async function confirmarCalDiaNoAsiste() {
   if (!calSelectedDate || !calDoctorIdForCal) return;
-  const btn = $('calBtnNoAsiste');
+  const btn = $('calBtnConfirmarNoAsiste');
   if (btn) btn.disabled = true;
   const savedDate = calSelectedDate;
+  const motivoAusencia = leerMotivoCalAbsent();
   try {
     await persistirCalDia({
       savedDate,
@@ -3344,7 +3397,7 @@ async function marcarCalDiaNoAsiste() {
       slots: [],
       hasManana: false,
       hasTarde: false,
-      motivoAusencia: null
+      motivoAusencia
     });
     showToast('Día marcado como no asiste', 'success');
     closeCalModal();
@@ -3369,11 +3422,14 @@ function openCalModal(dateStr) {
   if (titulo) titulo.textContent = `${diasSemana[d.getDay()]} ${d.getDate()} de ${meses[d.getMonth()]}`;
   if (sub) sub.textContent = `${calCurrentYear}`;
 
+  cargarMotivoCalAbsent('');
   showCalModalStep('choice');
   const btnNo = $('calBtnNoAsiste');
   const btnCfg = $('calBtnConfigurar');
+  const btnConf = $('calBtnConfirmarNoAsiste');
   if (btnNo) btnNo.disabled = false;
   if (btnCfg) btnCfg.disabled = false;
+  if (btnConf) btnConf.disabled = false;
 
   overlay.classList.remove('hidden');
   overlay.setAttribute('aria-hidden', 'false');

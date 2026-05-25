@@ -14,6 +14,50 @@
   display: flex;
 }
 
+/* Cabecera y botón cerrar siempre visibles */
+.cal-modal {
+  position: relative;
+  overflow: visible;
+}
+.cal-modal-head {
+  position: relative;
+  z-index: 5;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 20px 22px 0;
+  flex-shrink: 0;
+}
+.cal-modal-close {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #fff;
+  color: #475569;
+  font-size: 1.5rem;
+  line-height: 1;
+  font-weight: 400;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.cal-modal-close:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+  border-color: #cbd5e1;
+}
+.cal-modal-close svg {
+  display: none;
+}
+
 .cal-step.hidden {
   display: none !important;
 }
@@ -24,6 +68,28 @@
   font-weight: 500;
   color: #64748b;
   text-align: center;
+}
+.cal-step-intro--left {
+  text-align: left;
+  margin-bottom: 14px;
+}
+
+.cal-obs-absent-form {
+  margin-bottom: 16px;
+  padding: 14px;
+  border-radius: 12px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+}
+.cal-obs-absent-form .cal-motivo-label {
+  color: #991b1b;
+  font-weight: 600;
+  display: block;
+  margin-bottom: 8px;
+}
+
+.cal-btn-confirm-absent {
+  margin-top: 4px;
 }
 
 .cal-choice-btns {
