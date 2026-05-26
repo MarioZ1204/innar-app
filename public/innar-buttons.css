@@ -523,7 +523,7 @@ html:not(.innar-shell-light) .electro-page-btn.active {
 }
 
 /* Tag `button` genérico sin clase de icono — alinear a primario si queda suelto */
-button:not(.menu-card):not(.btn-close-x):not(.btn-close-modal):not(.btn-editar):not(.btn-eliminar):not(.btn-prioridad-up):not(.btn-prioridad-down):not(.btn-recibo-anular):not(.btn-recibo-pdf):not(.btn-recibo-pagar):not(.btn-recibo-tipo-pago):not(.btn-recibo-obs):not(.btn-usr-del):not(.btn-usr-edit):not(.btn-usr-hist):not(.btn-usr-reset):not(.btn-usr-speak):not(.btn-usr-toggle):not(.btn-estado):not(.btn-estado-small):not(.sidebar-btn):not(.agenda-page-btn):not(.electro-page-btn):not(.card-collapse-btn):not(.toggle-password-btn):not(.meq-back-btn):not(.meq-date-nav):not(.meq-refresh-btn):not(.meq-date-hoy):not(.ccal-nav-btn):not(.cal-nav-btn):not(.recibo-export-btn):not(.flujo-btn-sm):not(.btn-dropdown-item):not(.btn-estado-opcion):not(.cita-modal-icon-btn):not(.cita-modal-footer-btn):not([class*="cita-modal-btn-"]):not(.ms-trigger):not([class*="btn-"]):not([id^="monitorDate"]):not(#btnRefreshMonitor) {
+button:not(.menu-card):not(.btn-close-x):not(.btn-close-modal):not(.btn-editar):not(.btn-eliminar):not(.btn-prioridad-up):not(.btn-prioridad-down):not(.btn-recibo-anular):not(.btn-recibo-pdf):not(.btn-recibo-pagar):not(.btn-recibo-tipo-pago):not(.btn-recibo-obs):not(.btn-usr-del):not(.btn-usr-edit):not(.btn-usr-hist):not(.btn-usr-reset):not(.btn-usr-speak):not(.btn-usr-toggle):not(.btn-estado):not(.btn-estado-small):not(.sidebar-btn):not(.agenda-page-btn):not(.electro-page-btn):not(.card-collapse-btn):not(.toggle-password-btn):not(.meq-back-btn):not(.meq-date-nav):not(.meq-refresh-btn):not(.meq-date-hoy):not(.ccal-nav-btn):not(.cal-nav-btn):not(.recibo-export-btn):not(.flujo-btn-sm):not(.btn-dropdown-item):not(.btn-estado-opcion):not(.cita-modal-icon-btn):not(.cita-modal-footer-btn):not(.medico-select-btn):not([class*="cita-modal-btn-"]):not(.ms-trigger):not([class*="btn-"]):not([id^="monitorDate"]):not(#btnRefreshMonitor) {
   background: linear-gradient(135deg, var(--c-primary) 0%, var(--c-primary-hover) 100%) !important;
   color: #fff !important;
   border: 0 !important;
@@ -533,7 +533,7 @@ button:not(.menu-card):not(.btn-close-x):not(.btn-close-modal):not(.btn-editar):
   box-shadow: 0 4px 12px rgba(138, 166, 161, 0.35) !important;
 }
 
-button:not(.menu-card):not(.btn-close-x):not(.meq-date-nav):not(.meq-refresh-btn):not(.meq-date-hoy):not(.cita-modal-icon-btn):not(.cita-modal-footer-btn):not([class*="cita-modal-btn-"]):not(.ms-trigger):not([class*="btn-"]):not([id^="monitorDate"]):not(#btnRefreshMonitor):hover {
+button:not(.menu-card):not(.btn-close-x):not(.meq-date-nav):not(.meq-refresh-btn):not(.meq-date-hoy):not(.cita-modal-icon-btn):not(.cita-modal-footer-btn):not(.medico-select-btn):not([class*="cita-modal-btn-"]):not(.ms-trigger):not([class*="btn-"]):not([id^="monitorDate"]):not(#btnRefreshMonitor):hover {
   box-shadow: 0 6px 16px rgba(138, 166, 161, 0.45) !important;
 }
 

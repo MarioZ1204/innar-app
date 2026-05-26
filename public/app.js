@@ -1728,10 +1728,8 @@ async function showDoctorSelectionModal() {
     medicos.forEach(med => {
       const btn = document.createElement('button');
       btn.type = 'button';
-      btn.style.cssText = 'padding:12px;text-align:left;border:1px solid #ddd;border-radius:6px;background:white;cursor:pointer;transition:all 0.2s;color:#627371;font-weight:500';
+      btn.className = 'medico-select-btn';
       btn.textContent = med.nombre;
-      btn.onmouseover = () => btn.style.background = '#f3f4f6';
-      btn.onmouseout = () => btn.style.background = 'white';
       btn.addEventListener('click', () => selectDoctor(med.id, med.nombre, med.especialidad));
       container.appendChild(btn);
     });

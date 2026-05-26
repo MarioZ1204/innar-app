@@ -40,6 +40,213 @@ svg {
   max-width: 95vw;
 }
 
+.modal-box--select-doctor {
+  width: min(100%, 400px);
+  max-width: min(92vw, 400px);
+  padding: 0;
+  overflow: hidden;
+}
+
+.modal-select-doctor-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 18px 12px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.modal-select-doctor-head h3 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #1e293b;
+  line-height: 1.3;
+}
+
+.medicos-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 16px;
+  max-height: min(55vh, 420px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.medico-select-btn {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px 14px;
+  text-align: left;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #fff;
+  color: #334155;
+  font-weight: 600;
+  font-size: 0.92rem;
+  line-height: 1.35;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+  box-shadow: none !important;
+}
+
+.medico-select-btn:hover {
+  background: #f0f7f6;
+  border-color: #8aa6a1;
+}
+
+.medico-select-btn:active {
+  background: #e8f2f1;
+}
+
+.modal-select-doctor-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 16px 16px;
+  border-top: 1px solid #f1f5f9;
+}
+
+/* Modales centrados (por defecto en móvil) */
+.modal-overlay--center {
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 16px;
+}
+
+/* Bottom-sheet solo en modales explícitamente anchos */
+.modal-overlay--sheet {
+  align-items: flex-end !important;
+  justify-content: center !important;
+  padding: 10px 10px 0 !important;
+}
+
+/* ── Diálogos .modal (electro, confirmaciones en HTML) ───────────────── */
+.innar-modal-backdrop,
+.modal:not(.hidden) {
+  position: fixed !important;
+  inset: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 16px !important;
+  box-sizing: border-box !important;
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch;
+  background: rgba(0, 0, 0, 0.55) !important;
+  z-index: 1000;
+}
+
+.modal-dialog-panel,
+.modal:not(.hidden) > .modal-content,
+.modal:not(.hidden) > div:not(.cita-modal-card) {
+  width: min(100%, 520px);
+  max-width: min(92vw, 520px);
+  margin: auto;
+  box-sizing: border-box;
+  background: #fff;
+  border-radius: 14px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.18);
+}
+
+.modal-dialog-panel--sm {
+  max-width: min(92vw, 420px);
+}
+
+.modal-dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+  align-items: center;
+}
+
+.modal-dialog-actions--end {
+  justify-content: flex-end;
+}
+
+.modal-dialog-actions .btn-secondary,
+.modal-dialog-actions .btn-danger,
+.modal-dialog-actions .btn-warning,
+.modal-dialog-actions .btn-info,
+.modal-dialog-actions .btn-primary,
+.modal:not(.hidden) .modal-dialog-actions .btn-secondary,
+.modal:not(.hidden) .modal-dialog-actions .btn-danger {
+  width: auto !important;
+  flex: 1 1 8.5rem;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.modal .cita-modal-card {
+  width: min(100%, 580px);
+  max-width: min(92vw, 580px);
+  max-height: calc(100dvh - 32px);
+  margin: auto;
+}
+
+/* Confirmaciones dinámicas (app.js) */
+.confirm-backdrop {
+  position: fixed !important;
+  inset: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 16px !important;
+  box-sizing: border-box;
+  background: rgba(0, 0, 0, 0.45) !important;
+  z-index: 10050;
+  overflow-y: auto;
+}
+
+.confirm-box {
+  width: min(100%, 520px) !important;
+  max-width: min(92vw, 520px) !important;
+  margin: auto;
+  box-sizing: border-box;
+}
+
+.confirm-actions {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 10px !important;
+  justify-content: stretch !important;
+}
+
+.confirm-actions .btn-cancel,
+.confirm-actions .btn-ok {
+  width: auto !important;
+  flex: 1 1 calc(50% - 5px) !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
+
+#modalEditarServicio {
+  display: none;
+  position: fixed;
+  inset: 0;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 10000;
+  box-sizing: border-box;
+  overflow-y: auto;
+}
+
+#modalEditarServicio[style*="display: flex"],
+#modalEditarServicio[style*="display:flex"] {
+  display: flex !important;
+}
+
+#modalEditarServicio > div {
+  width: min(100%, 460px);
+  max-width: min(92vw, 460px);
+  box-sizing: border-box;
+}
+
 /* Tablas sin wrapper heredan scroll */
 .card .table-wrapper--auto,
 .table-scroll-host {
@@ -137,15 +344,18 @@ svg {
     gap: 10px !important;
   }
 
-  /* Botones: no forzar 100% en toda la app (style.css legacy) */
+  /* Anula style.css legacy: `button { width: 100% }` en móvil */
   button {
+    width: auto !important;
     max-width: 100%;
+    box-sizing: border-box;
   }
 
-  button.btn-primary,
-  button.btn-secondary,
-  button.btn-danger,
-  button.btn-success,
+  /* Botones que SÍ deben ir a ancho completo (formularios / CTAs) */
+  html.innar-shell-light .view-module .card .btn-primary:not(.btn-sm),
+  html.innar-shell-light .view-module .card .btn-secondary:not(.btn-sm),
+  html.innar-shell-light .view-module .card .btn-danger:not(.btn-sm),
+  html.innar-shell-light .view-module .card .btn-success:not(.btn-sm),
   .modal-footer button,
   .cita-modal-footer button,
   .card > .row > .col > button.btn-primary,
@@ -154,9 +364,56 @@ svg {
   #crearUsuario,
   #resetAll,
   .cal-btn-save,
-  .cal-choice-btn {
+  .cal-choice-btn,
+  #generate,
+  #btnLogin,
+  .btn-login {
     width: 100% !important;
-    box-sizing: border-box;
+  }
+
+  /* Excepciones: menú, listas, iconos, tablas */
+  .menu-card,
+  .btn-logout,
+  .btn-close-x,
+  .btn-close-modal,
+  .medico-select-btn,
+  #medicosListContainer button,
+  .btn-cancel,
+  .btn-ok,
+  .btn-warning,
+  .btn-info,
+  .confirm-actions button,
+  .modal-dialog-actions button,
+  .modal:not(.hidden) .btn-secondary,
+  .modal:not(.hidden) .btn-danger,
+  .modal:not(.hidden) .btn-warning,
+  .modal:not(.hidden) .btn-info,
+  .btn-sm,
+  .btn-editar,
+  .btn-eliminar,
+  .btn-estado,
+  .btn-estado-small,
+  .sidebar-btn,
+  .agenda-page-btn,
+  .electro-page-btn,
+  .cita-modal-icon-btn,
+  .cita-modal-footer-btn,
+  .meq-date-nav,
+  .meq-refresh-btn,
+  .meq-date-hoy,
+  .ccal-nav-btn,
+  .cal-nav-btn,
+  .ms-trigger,
+  .servicio-item button,
+  .table-actions button,
+  .pg-nav,
+  .pg-page,
+  .pg-active {
+    width: auto !important;
+  }
+
+  .medico-select-btn {
+    width: 100% !important;
   }
 
   /* Tablas: min-width razonables + scroll */
@@ -248,27 +505,114 @@ svg {
     max-height: 38vh;
   }
 
-  /* Modales */
+  /* Modales overlay: por defecto centrados en todos los módulos */
   .modal-overlay {
-    padding: 10px;
-    align-items: flex-end;
+    padding: 16px !important;
+    align-items: center !important;
+    justify-content: center !important;
   }
 
-  .modal-box,
-  .modal-content {
-    max-width: 100% !important;
+  .modal-overlay .modal-box,
+  .modal-overlay .modal-content {
+    width: min(100%, 520px) !important;
+    max-width: min(92vw, 520px) !important;
+    margin: auto !important;
+    max-height: calc(100dvh - 32px) !important;
+    border-radius: 14px !important;
+    overflow-y: auto;
+    box-sizing: border-box;
+  }
+
+  .modal-overlay .modal-box--select-doctor {
+    width: min(100%, 400px) !important;
+    max-width: min(92vw, 400px) !important;
+  }
+
+  .modal-select-doctor-foot .btn-secondary {
+    width: auto !important;
+    min-width: 7rem;
+  }
+
+  /* Solo modales anchos (Excel, auditoría): bottom-sheet */
+  .modal-overlay--sheet {
+    padding: 10px 10px 0 !important;
+    align-items: flex-end !important;
+  }
+
+  .modal-overlay--sheet .modal-box,
+  .modal-overlay--sheet .modal-content,
+  .modal-overlay--sheet .modal-box--wide,
+  .modal-overlay--sheet .modal-box--lg {
     width: 100% !important;
+    max-width: 100% !important;
     margin: 0 !important;
     max-height: calc(100dvh - 20px) !important;
     border-radius: 16px 16px 0 0 !important;
-    overflow-y: auto;
   }
 
-  .modal-box--wide,
-  .modal-box[style*="width:1200"],
-  .modal-box[style*="width: 1200"] {
+  /* Diálogos .modal (electro, etc.) */
+  .innar-modal-backdrop,
+  .modal:not(.hidden) {
+    padding: 12px !important;
+    align-items: center !important;
+  }
+
+  .modal:not(.hidden) > .modal-content,
+  .modal:not(.hidden) > .modal-dialog-panel,
+  .modal:not(.hidden) > div:not(.cita-modal-card) {
+    width: min(100%, 520px) !important;
+    max-width: min(92vw, 520px) !important;
+    padding: 20px 18px !important;
+  }
+
+  .modal:not(.hidden) .cita-modal-card,
+  #modalDetallesCitaElectro:not(.hidden) .cita-modal-card,
+  #modalEstadoCitaMedica:not(.hidden) .cita-modal-card {
     width: 100% !important;
     max-width: 100% !important;
+    max-height: calc(100dvh - 16px) !important;
+    border-radius: 16px 16px 0 0 !important;
+  }
+
+  #modalDetallesCitaElectro:not(.hidden),
+  #modalEstadoCitaMedica:not(.hidden) {
+    align-items: flex-end !important;
+    padding: 12px 12px 0 !important;
+  }
+
+  .modal-dialog-actions,
+  .modal:not(.hidden) div[style*="justify-content:center"],
+  .modal:not(.hidden) div[style*="justify-content: flex-end"],
+  .modal:not(.hidden) div[style*="justify-content:flex-end"] {
+    flex-direction: column !important;
+    align-items: stretch !important;
+  }
+
+  .modal-dialog-actions .btn-secondary,
+  .modal-dialog-actions .btn-danger,
+  .modal-dialog-actions .btn-warning,
+  .modal-dialog-actions .btn-info,
+  .modal:not(.hidden) .btn-secondary,
+  .modal:not(.hidden) .btn-danger,
+  .modal:not(.hidden) .btn-warning,
+  .modal:not(.hidden) .btn-info {
+    width: 100% !important;
+    flex: 1 1 auto !important;
+  }
+
+  .confirm-actions {
+    flex-direction: column !important;
+  }
+
+  .confirm-actions .btn-cancel,
+  .confirm-actions .btn-ok {
+    width: 100% !important;
+    flex: 1 1 auto !important;
+  }
+
+  #modalDuracionEstudio .modal-content > div[style*="grid-template-columns: 1fr 1fr"],
+  #modalDuracionEstudio .modal-content > div[style*="grid-template-columns:1fr 1fr"] {
+    grid-template-columns: 1fr !important;
   }
 
   .cita-modal-info-grid {
@@ -420,20 +764,44 @@ svg {
   /* ══ Menú principal ═══════════════════════════════════════════════════ */
   .menu-header {
     flex-wrap: wrap;
-    gap: 10px;
-    padding: 12px 16px;
+    gap: 10px 12px;
+    padding: 10px 14px;
+    height: auto;
+    min-height: 56px;
+    align-items: center;
   }
 
   .menu-logo {
-    max-height: 48px;
+    max-height: 42px;
     width: auto;
+    max-width: min(52vw, 200px);
+    object-fit: contain;
   }
 
   .menu-user {
-    width: 100%;
+    width: auto;
+    max-width: 100%;
+    margin-left: auto;
     justify-content: flex-end;
     flex-wrap: wrap;
     gap: 8px;
+    align-items: center;
+  }
+
+  #view-menu .btn-logout {
+    width: auto !important;
+    flex: 0 0 auto;
+    padding: 8px 14px !important;
+    font-size: 0.82rem !important;
+    white-space: nowrap;
+  }
+
+  #menuUserName {
+    font-size: 0.85rem;
+    max-width: 42vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .doctor-greeting {
@@ -784,6 +1152,30 @@ svg {
     min-width: 40px;
     min-height: 40px;
     font-size: 1.5rem;
+  }
+
+  .menu-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .menu-user {
+    width: 100%;
+    margin-left: 0;
+    justify-content: stretch;
+  }
+
+  #view-menu .btn-logout {
+    flex: 1 1 calc(50% - 4px);
+    text-align: center;
+    min-width: 0;
+  }
+
+  #menuUserName {
+    flex: 1 1 100%;
+    max-width: 100%;
+    text-align: center;
+    margin-bottom: 4px;
   }
 }
 
