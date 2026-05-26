@@ -235,3 +235,26 @@
   opacity: 0.65;
   cursor: wait;
 }
+
+@media (max-width: 768px) {
+  .cal-modal-overlay {
+    padding: 12px;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .cal-modal {
+    width: calc(100vw - 24px) !important;
+    max-width: 100% !important;
+    max-height: calc(100dvh - 24px);
+    overflow-y: auto;
+  }
+
+  .cal-modal-head {
+    padding: 16px 16px 0;
+  }
+
+  .cal-modal-body {
+    padding: 14px 16px 20px;
+  }
+}

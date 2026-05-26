@@ -1,0 +1,804 @@
+/**
+ * Innar — Responsive global (carga al final del <head>)
+ * Complementa style.css + innar-mobile.css en todos los módulos.
+ */
+
+/* ── Base: evitar scroll horizontal en toda la app ─────────────────────── */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  overflow-x: clip;
+  max-width: 100%;
+}
+
+.view-module,
+.view-menu,
+#view-monitor-equipos,
+.view-soporte {
+  max-width: 100%;
+  overflow-x: clip;
+}
+
+img,
+video,
+svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Modales anchos (sustituyen width inline en HTML) */
+.modal-box--wide {
+  width: min(1200px, 95vw);
+  max-width: 95vw;
+}
+
+.modal-box--lg {
+  width: min(900px, 95vw);
+  max-width: 95vw;
+}
+
+/* Tablas sin wrapper heredan scroll */
+.card .table-wrapper--auto,
+.table-scroll-host {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin-bottom: 12px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   TABLET Y MÓVIL ≤ 1024px
+   ═══════════════════════════════════════════════════════════════════════ */
+@media (max-width: 1024px) {
+  .view-module .main-content .container,
+  html.innar-shell-light .view-module .main-content .container {
+    max-width: 100% !important;
+    width: 100% !important;
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  .col {
+    min-width: 0 !important;
+    flex: 1 1 100%;
+    max-width: 100%;
+  }
+
+  .row {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .modal-box--wide,
+  .modal-box--lg,
+  .modal-box[style*="1200"],
+  .modal-box[style*="900px"] {
+    width: 100% !important;
+    max-width: min(95vw, 100%) !important;
+  }
+
+  .menu-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   MÓVIL ≤ 768px
+   ═══════════════════════════════════════════════════════════════════════ */
+@media (max-width: 768px) {
+  /* Contenedor módulos (anula max-width 80% de style.css) */
+  .view-module .main-content .container,
+  html.innar-shell-light .view-module .main-content .container {
+    max-width: 100% !important;
+    width: 100% !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  html.innar-shell-light .view-module .main-layout > .main-content {
+    padding-top: 52px !important;
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+    padding-bottom: 24px !important;
+    overflow-x: clip;
+  }
+
+  html.innar-shell-light .view-module header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  html.innar-shell-light .view-module header h2 {
+    font-size: 1.15rem;
+    line-height: 1.35;
+  }
+
+  /* Filas / columnas formulario */
+  .row {
+    flex-direction: column !important;
+    align-items: stretch !important;
+  }
+
+  .col,
+  html.innar-shell-light .view-module .card .col {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    flex: 1 1 auto !important;
+  }
+
+  html.innar-shell-light .view-module .card > div[style*="display:flex"],
+  html.innar-shell-light .view-module .card > div[style*="display: flex"] {
+    flex-wrap: wrap !important;
+    gap: 10px !important;
+  }
+
+  /* Botones: no forzar 100% en toda la app (style.css legacy) */
+  button {
+    max-width: 100%;
+  }
+
+  button.btn-primary,
+  button.btn-secondary,
+  button.btn-danger,
+  button.btn-success,
+  .modal-footer button,
+  .cita-modal-footer button,
+  .card > .row > .col > button.btn-primary,
+  .card > .row > .col > button.btn-secondary,
+  #crearTurnoMedica,
+  #crearUsuario,
+  #resetAll,
+  .cal-btn-save,
+  .cal-choice-btn {
+    width: 100% !important;
+    box-sizing: border-box;
+  }
+
+  /* Tablas: min-width razonables + scroll */
+  html.innar-shell-light .view-module .table-wrapper,
+  .table-wrapper--auto,
+  .table-scroll-host {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    width: 100%;
+    max-width: 100%;
+  }
+
+  #tablaSavedItems {
+    min-width: 520px !important;
+  }
+
+  #usuariosTable {
+    min-width: 480px !important;
+  }
+
+  #diagnosticosTable {
+    min-width: 420px !important;
+  }
+
+  #citasElectroTable {
+    min-width: 400px !important;
+  }
+
+  #tablaCitasAuditoria {
+    min-width: 500px !important;
+  }
+
+  html.innar-shell-light .view-module .modern-table,
+  .table-wrapper table {
+    font-size: 0.8rem;
+  }
+
+  html.innar-shell-light .view-module .modern-table th,
+  html.innar-shell-light .view-module .modern-table td {
+    padding: 8px 6px;
+  }
+
+  /* Agenda médica */
+  #turnosTableMedica .col-mobile-hide,
+  .medica-turnos-table .col-mobile-hide {
+    display: none !important;
+  }
+
+  .medica-agenda-block-activos .table-wrapper,
+  .medica-agenda-block-completados .table-wrapper {
+    max-height: min(55vh, 480px);
+  }
+
+  /* Electro */
+  .electro-stats-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 8px !important;
+  }
+
+  .electro-kanban {
+    grid-template-columns: 1fr !important;
+  }
+
+  .electro-kanban-col {
+    max-height: min(50vh, 420px);
+  }
+
+  .electro-toolbar,
+  .electro-filtros-row,
+  #electroFiltrosBar {
+    flex-direction: column !important;
+    align-items: stretch !important;
+  }
+
+  .electro-filtros-bar .ms-wrap,
+  .electro-toolbar .col {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  /* Permisos */
+  .permisos-page-layout {
+    grid-template-columns: 1fr !important;
+  }
+
+  .permisos-user-list,
+  .permisos-def-list {
+    max-height: 38vh;
+  }
+
+  /* Modales */
+  .modal-overlay {
+    padding: 10px;
+    align-items: flex-end;
+  }
+
+  .modal-box,
+  .modal-content {
+    max-width: 100% !important;
+    width: 100% !important;
+    margin: 0 !important;
+    max-height: calc(100dvh - 20px) !important;
+    border-radius: 16px 16px 0 0 !important;
+    overflow-y: auto;
+  }
+
+  .modal-box--wide,
+  .modal-box[style*="width:1200"],
+  .modal-box[style*="width: 1200"] {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  .cita-modal-info-grid {
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+  }
+
+  .cita-modal-footer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .cita-modal-footer button {
+    width: 100% !important;
+  }
+
+  /* Calendario programar agenda */
+  .cal-modal {
+    width: min(100%, 100vw - 24px) !important;
+    max-height: calc(100dvh - 24px);
+    margin: 12px auto;
+  }
+
+  .cal-grid {
+    gap: 3px;
+  }
+
+  .cal-day {
+    min-height: 58px;
+    font-size: 0.85rem;
+  }
+
+  /* Monitor equipos */
+  #view-monitor-equipos {
+    overflow-x: clip;
+  }
+
+  .meq-page-body {
+    padding: 12px !important;
+  }
+
+  .meq-topbar {
+    flex-wrap: wrap;
+    height: auto;
+    min-height: 52px;
+    padding: 8px 12px !important;
+    gap: 8px;
+  }
+
+  .meq-stats-bar,
+  .meq-date-bar {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .meq-timeline-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    border-radius: 10px;
+  }
+
+  .meq-timeline-head,
+  .meq-timeline-row {
+    min-width: min(100%, 640px) !important;
+  }
+
+  /* Menú principal */
+  .menu-content {
+    padding: 24px 16px 40px;
+  }
+
+  .menu-cards {
+    grid-template-columns: 1fr !important;
+    gap: 12px;
+  }
+
+  .menu-card {
+    padding: 20px 16px;
+  }
+
+  /* Banner actualización */
+  #updateBanner > div {
+    max-width: 100% !important;
+    padding: 0 8px;
+  }
+
+  /* Inputs táctiles (iOS) */
+  input,
+  select,
+  textarea,
+  .form-input {
+    font-size: max(16px, 1rem);
+  }
+
+  input[type="date"],
+  input[type="time"],
+  input[type="month"] {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box;
+  }
+
+  /* Recibos header */
+  .receipt-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  /* Tabs electro / agenda */
+  .tabs-row,
+  .electro-tabs,
+  .agenda-tabs {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  /* UCQN / gestión — grids genéricos en cards */
+  .card .row + .table-wrapper,
+  #view-ucqn .card,
+  #view-gestion-datos .card {
+    overflow-x: visible;
+  }
+
+  /* ══ Login ══════════════════════════════════════════════════════════════ */
+  #view-login {
+    padding: 16px;
+    align-items: flex-start;
+    overflow-y: auto;
+  }
+
+  .login-box {
+    width: min(100%, 420px) !important;
+    max-width: 100%;
+    margin: 0 auto;
+    box-sizing: border-box;
+  }
+
+  .login-header h1 {
+    font-size: 1.05rem;
+    line-height: 1.35;
+  }
+
+  .login-logo {
+    max-width: min(280px, 85vw);
+    height: auto;
+  }
+
+  /* ══ Menú principal ═══════════════════════════════════════════════════ */
+  .menu-header {
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 12px 16px;
+  }
+
+  .menu-logo {
+    max-height: 48px;
+    width: auto;
+  }
+
+  .menu-user {
+    width: 100%;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .doctor-greeting {
+    margin: 0 16px;
+    font-size: 0.9rem;
+  }
+
+  /* ══ Recibos ══════════════════════════════════════════════════════════ */
+  #view-recibos header,
+  #view-recibos .card > div[style*="justify-content:space-between"] {
+    flex-direction: column !important;
+    align-items: stretch !important;
+  }
+
+  #view-recibos #recibosCountInfo {
+    margin-left: 0 !important;
+    width: 100%;
+  }
+
+  #generate {
+    min-width: 0 !important;
+    width: 100% !important;
+  }
+
+  .recibo-form-grid-2 {
+    grid-template-columns: 1fr !important;
+  }
+
+  #itemsTable,
+  #r_table {
+    min-width: 360px !important;
+  }
+
+  /* ══ Agenda médica ════════════════════════════════════════════════════ */
+  #agendaCalDoctorSelector {
+    display: flex !important;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  #agendaCalDoctorSelector label {
+    margin-right: 0 !important;
+  }
+
+  .agenda-cal-doctor-select,
+  #agendaCalDoctorSelect {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+  }
+
+  .ccal-header {
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+  }
+
+  .ccal-legend {
+    flex-wrap: wrap;
+    gap: 6px 10px;
+    justify-content: center;
+  }
+
+  .citas-cal-grid {
+    gap: 4px;
+  }
+
+  #view-agenda-medica .card > div[style*="text-align:right"] {
+    text-align: left !important;
+  }
+
+  /* ══ Electrodiagnóstico ═══════════════════════════════════════════════ */
+  #view-electro header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  #view-electro .card > div[style*="justify-content:space-between"] {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+  }
+
+  #view-electro .card > div[style*="text-align:right"] {
+    text-align: left !important;
+  }
+
+  #esperaTable {
+    min-width: 640px !important;
+  }
+
+  #buscarEstudioResultadosSection .modern-table {
+    min-width: 480px !important;
+  }
+
+  /* ══ UCQN ═════════════════════════════════════════════════════════════ */
+  #ucqnTable {
+    min-width: 520px !important;
+  }
+
+  #ucqnTable .col-mobile-hide {
+    display: none !important;
+  }
+
+  /* ══ Auditoría de citas (dashboard) ═══════════════════════════════════ */
+  #view-dashboard-citas .dashboard-stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  #view-dashboard-citas .dashboard-toolbar-row {
+    flex-direction: column !important;
+    align-items: stretch !important;
+  }
+
+  #view-dashboard-citas .dashboard-toolbar-row > span[style*="margin-left:auto"] {
+    margin-left: 0 !important;
+  }
+
+  #view-dashboard-citas .dashboard-toolbar-row .btn-secondary,
+  #view-dashboard-citas .dashboard-toolbar-row .btn-primary {
+    width: 100%;
+  }
+
+  /* ══ Gestión de datos ═════════════════════════════════════════════════ */
+  #tablaGestionDatos {
+    min-width: 480px !important;
+  }
+
+  #gestionAccionesMasivas .btn-danger {
+    width: 100%;
+  }
+
+  /* ══ Usuarios / permisos ══════════════════════════════════════════════ */
+  #view-usuarios .col[style*="max-width"] {
+    max-width: 100% !important;
+    width: 100% !important;
+  }
+
+  #view-usuarios .card > div[style*="justify-content:space-between"] {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 10px;
+  }
+
+  #especialidadesTable,
+  #tiposConsultaTable {
+    min-width: 380px !important;
+  }
+
+  .permisos-editor-toolbar {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 12px;
+  }
+
+  .permisos-editor-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 100%;
+  }
+
+  .permisos-editor-actions .btn-primary,
+  .permisos-editor-actions .btn-secondary {
+    width: 100% !important;
+  }
+
+  /* ══ Diagnósticos ═════════════════════════════════════════════════════ */
+  #importarDiagnosticosBtn {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  /* ══ Modales de cita (electro + médica) ═══════════════════════════════ */
+  #modalDetallesCitaElectro,
+  #modalDetallesCitaMedica {
+    padding: 8px !important;
+    align-items: flex-end !important;
+  }
+
+  .cita-modal-card {
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: calc(100dvh - 16px) !important;
+    border-radius: 16px 16px 0 0 !important;
+    overflow-y: auto;
+  }
+
+  .cita-modal-header {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .cita-modal-header-right {
+    margin-left: auto;
+  }
+
+  .cita-modal-patient {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  #editarPacientePanel > div[style*="grid-template-columns: 1fr 1fr"],
+  #editarPacientePanel > div[style*="grid-template-columns:1fr 1fr"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  .cita-modal-footer-actions {
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .cita-modal-footer-actions .cita-modal-footer-btn {
+    width: 100% !important;
+  }
+
+  /* ══ Monitor de equipos ═══════════════════════════════════════════════ */
+  .meq-topbar-left,
+  .meq-topbar-center,
+  .meq-topbar-right {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .meq-topbar-center {
+    order: 3;
+    flex-basis: 100%;
+    text-align: center;
+  }
+
+  .meq-topbar-title {
+    font-size: 0.95rem;
+  }
+
+  .meq-timeline-head,
+  .meq-timeline-row {
+    grid-template-columns: minmax(90px, 112px) minmax(520px, 1fr) !important;
+    min-width: 600px !important;
+  }
+
+  .meq-timeline-eq-col {
+    padding: 8px 10px !important;
+    font-size: 0.78rem !important;
+    gap: 6px !important;
+  }
+
+  .meq-timeline-legend {
+    gap: 8px 12px;
+  }
+
+  .meq-sin-equipo-card {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 10px !important;
+  }
+
+  /* ══ Soportes (PDX + armado) ══════════════════════════════════════════ */
+  .sop-topbar-center {
+    order: 3;
+    flex-basis: 100%;
+  }
+
+  .sop-panel-head {
+    flex-direction: column !important;
+    align-items: stretch !important;
+  }
+
+  .sop-panel-head-actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .sop-pdx-filtros {
+    flex-direction: column !important;
+    align-items: stretch !important;
+  }
+
+  .sop-pdx-filtro-texto,
+  .sop-pdx-filtro-sel {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  .sop-table-pdx-archivos {
+    min-width: 520px;
+  }
+
+  .sop-pdx-format-pattern,
+  .sop-pdx-format-ejemplo {
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+}
+
+/* Reglas espejo (sin depender solo de html.innar-shell-light) */
+@media (max-width: 768px) {
+  .view-module .main-layout > .main-content {
+    padding-top: 52px !important;
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+    overflow-x: clip;
+  }
+
+  .view-module .main-content .container {
+    max-width: 100% !important;
+    width: 100% !important;
+  }
+
+  .view-module header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   MÓVIL PEQUEÑO ≤ 480px
+   ═══════════════════════════════════════════════════════════════════════ */
+@media (max-width: 480px) {
+  html.innar-shell-light .view-module .main-layout > .main-content {
+    padding-left: 10px !important;
+    padding-right: 10px !important;
+  }
+
+  .electro-stats-grid {
+    grid-template-columns: 1fr 1fr !important;
+  }
+
+  .cal-choice-btns {
+    gap: 10px;
+  }
+
+  .cal-choice-btn {
+    padding: 16px 14px;
+  }
+
+  .meq-stat-chip {
+    font-size: 0.75rem;
+    padding: 6px 10px;
+  }
+
+  .menu-welcome h2 {
+    font-size: 1.2rem;
+  }
+
+  .btn-close-x {
+    min-width: 40px;
+    min-height: 40px;
+    font-size: 1.5rem;
+  }
+}
+
+/* Soportes: refuerzo si viewport estrecho con sidebar propio */
+@media (max-width: 768px) {
+  .sop-shell {
+    overflow-x: clip;
+  }
+
+  .sop-topbar {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .sop-main {
+    padding: 12px !important;
+  }
+}

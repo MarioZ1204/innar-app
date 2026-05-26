@@ -5595,10 +5595,10 @@ async function cargarUcqn() {
       <td>${escapeHtml(r.fecha_estudio || '-')}</td>
       <td>${escapeHtml((r.hora_estudio || '').substring(0,5) || '-')}</td>
       <td>${escapeHtml(r.paciente_nombres || '-')}</td>
-      <td>${escapeHtml(r.paciente_apellidos || '-')}</td>
+      <td class="col-mobile-hide">${escapeHtml(r.paciente_apellidos || '-')}</td>
       <td>${escapeHtml(r.paciente_documento || '-')}</td>
       <td>${escapeHtml(r.tipo_estudio || '-')}</td>
-      <td>${escapeHtml(r.entidad || '-')}</td>
+      <td class="col-mobile-hide">${escapeHtml(r.entidad || '-')}</td>
       <td>
         <span class="estado-badge-ucqn estado-${String(r.estado || '').toLowerCase()}">${escapeHtml(r.estado || '-')}</span>
         ${canEdit ? (
