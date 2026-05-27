@@ -2932,7 +2932,11 @@
               <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
             </button>
             <div id="menuMasOpcionesMedica" style="position:absolute;top:calc(100% + 6px);right:0;background:white;border:1px solid #e5e7eb;border-radius:10px;box-shadow:0 10px 25px rgba(0,0,0,0.12);min-width:200px;display:none;z-index:10001;overflow:hidden">
-              <button id="btnReprogramarMedicaMenu" class="btn-dropdown-item" style="display:flex;align-items:center;gap:8px">
+              <button id="btnCambiarDoctorMedicaMenu" class="btn-dropdown-item" style="display:flex;align-items:center;gap:8px">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                Cambiar médico
+              </button>
+              <button id="btnReprogramarMedicaMenu" class="btn-dropdown-item" style="border-top:1px solid #f3f4f6;display:flex;align-items:center;gap:8px">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
                 Reprogramar
               </button>
@@ -3050,6 +3054,10 @@
           <div id="detMedicaEntidad" class="cita-modal-info-value">-</div>
         </div>
         <div class="cita-modal-info-item">
+          <div class="cita-modal-info-label">Médico</div>
+          <div id="detMedicaMedico" class="cita-modal-info-value">-</div>
+        </div>
+        <div class="cita-modal-info-item">
           <div class="cita-modal-info-label">Fecha</div>
           <div id="detMedicaFecha" class="cita-modal-info-value">-</div>
         </div>
@@ -3100,6 +3108,34 @@
         <button type="button" id="btnCancelarEstadoMedica" class="btn-secondary cita-modal-footer-close">Cerrar</button>
       </div>
 
+    </div>
+  </div>
+
+  <!-- ========== MODAL CAMBIAR MÉDICO CITA MÉDICA ========== -->
+  <div id="modalCambiarDoctorMedica" class="modal-overlay modal-overlay--center hidden">
+    <div class="modal-box" style="max-width:500px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;padding-bottom:16px;border-bottom:2px solid #e5e7eb">
+        <h3 style="margin:0;color:#627371;font-size:20px;font-weight:600">Cambiar médico</h3>
+        <button type="button" id="btnCerrarCambiarDoctorMedica" class="btn-close-modal" style="background:none;border:none;font-size:24px;cursor:pointer;color:#627371;transition:color 0.2s;padding:8px;line-height:1;width:32px;height:32px;display:flex;align-items:center;justify-content:center">✕</button>
+      </div>
+
+      <div style="display:grid;gap:16px;margin-bottom:24px">
+        <div>
+          <label style="display:block;font-size:.875rem;color:#6b7280;font-weight:600;margin-bottom:6px">Nuevo médico</label>
+          <select id="modalCambiarDoctorMedicaSelect" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:.95rem;background:white">
+            <option value="">Cargando médicos...</option>
+          </select>
+        </div>
+        <div style="padding:12px;background:#f0fdf4;border-left:4px solid #16a34a;border-radius:6px">
+          <div style="font-size:.875rem;color:#6b7280;font-weight:600;margin-bottom:4px">Cita (fecha y hora se mantienen):</div>
+          <div id="modalCambiarDoctorMedicaResumen" style="font-size:.95rem;color:#1f2937">-</div>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:12px;justify-content:flex-end">
+        <button type="button" id="btnCancelarCambiarDoctorMedica" class="btn-secondary">Cancelar</button>
+        <button type="button" id="btnConfirmarCambiarDoctorMedica" class="btn-primary">Guardar cambio</button>
+      </div>
     </div>
   </div>
 

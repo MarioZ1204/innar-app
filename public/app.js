@@ -215,6 +215,7 @@ function agendaMedicaPolicy(turno, opts = {}) {
   // Modal: matriz explícita de visibilidad por estado/rol para evitar inconsistencias.
   const puedeGestionarComoRecepcion = !esDoctorRol && perms.cambiarEstado;
   const puedeGestionarComoDoctor = esDoctorRol && (perms.llamarSiguiente || perms.marcarAtendido || perms.cambiarEstado);
+  const puedeCambiarDoctor = perms.editar && !esDoctorRol && !esFinal && !esEnAtencion && (esPendiente || esEnSala);
 
   const modal = {
     // Edición de datos dentro del modal
@@ -261,7 +262,12 @@ function agendaMedicaPolicy(turno, opts = {}) {
     noAsistioDisabled: esFinal,
 
     // Menú 3 puntos (recepción/admin)
-    showMenu3Puntos: (perms.cambiarEstado || perms.llamarSiguiente || perms.marcarAtendido) && !esDoctorRol && !esFinal,
+    showMenu3Puntos: !esDoctorRol && !esFinal && (
+      perms.cambiarEstado || perms.llamarSiguiente || perms.marcarAtendido || puedeCambiarDoctor
+    ),
+
+    // Transferir cita a otro médico (misma fecha/hora)
+    showCambiarDoctor: puedeCambiarDoctor,
   };
 
   return { perms, row, panel, modal, meta: { rol, esFinal, esEnAtencion, esEnSala, hayEnAtencion } };
@@ -4348,6 +4354,27 @@ function updateMarcarAtendidoButton(_turnos) { /* no-op: replaced by per-row mod
 
 let selectedTurnoMedica = null;
 
+let _cacheMedicosAgenda = null;
+
+async function obtenerMedicosAgenda() {
+  if (_cacheMedicosAgenda) return _cacheMedicosAgenda;
+  const list = await apiFetch('/api/medicos').then((r) => r.json()).catch(() => []);
+  _cacheMedicosAgenda = Array.isArray(list) ? list : [];
+  return _cacheMedicosAgenda;
+}
+
+function nombreMedicoPorId(id, list) {
+  const m = (list || []).find((x) => String(x.id) === String(id));
+  if (m) return m.nombre || m.usuario || `Médico #${id}`;
+  return id ? `Médico #${id}` : '-';
+}
+
+function esConsultaBotox(tipo) {
+  if (!tipo) return false;
+  const s = String(tipo).toLowerCase();
+  return s.includes('botox') || s.includes('botulínica') || s.includes('botulinica');
+}
+
 function estadoBadgeMedica(estado) {
   const map = {
     'EN_ESPERA':    { bg: '#dbeafe', color: '#1d4ed8', border: '#93c5fd',  label: 'En Espera' },
@@ -4369,6 +4396,7 @@ function renderTurnoRowMedica(tbody, t, animateTargetId, hayEnAtencion) {
   }
   const tr = document.createElement('tr');
   tr.className = 'turno-row';
+  if (esConsultaBotox(t.tipo_consulta)) tr.classList.add('turno-tipo-botox');
   const pol = agendaMedicaPolicy(t, { hayEnAtencion });
   const puedeVerDetalle = pol.row.puedeVerDetalle;
   tr.style.cursor = puedeVerDetalle ? 'pointer' : 'default';
@@ -11524,6 +11552,14 @@ function abrirModalEstadoCitaMedica(turno) {
   if (el('detMedicaEntidad')) el('detMedicaEntidad').textContent = turno.entidad || '-';
   if (el('detMedicaFecha')) el('detMedicaFecha').textContent = turno.fecha ? formatearFechaISO(turno.fecha) : '-';
   if (el('detMedicaHora')) el('detMedicaHora').textContent = turno.hora ? formatearHora(turno.hora) : '-';
+  const medicoIdDet = turno.doctor_id || selectedDoctorId;
+  if (el('detMedicaMedico')) {
+    el('detMedicaMedico').textContent = '-';
+    obtenerMedicosAgenda().then((list) => {
+      const det = document.getElementById('detMedicaMedico');
+      if (det) det.textContent = nombreMedicoPorId(medicoIdDet, list);
+    });
+  }
   if (el('detMedicaProgramadoPor')) el('detMedicaProgramadoPor').textContent = escapeHtml(turno.programado_por || '-');
   if (el('detMedicaNotas')) el('detMedicaNotas').textContent = turno.notas || '';
   $('modalReprogramarMedicaFechaActual').innerHTML = `<strong>${formatearFecha(turno.fecha)}</strong> a las <strong>${formatearHora(turno.hora)}</strong>`;
@@ -11595,6 +11631,9 @@ function abrirModalEstadoCitaMedica(turno) {
   const btn3dots = el('btnMasOpcionesMedica');
   if (btn3dots) btn3dots.style.display = pol.modal.showMenu3Puntos ? '' : 'none';
 
+  const btnCambiarDocMenu = document.getElementById('btnCambiarDoctorMedicaMenu');
+  if (btnCambiarDocMenu) btnCambiarDocMenu.style.display = pol.modal.showCambiarDoctor ? '' : 'none';
+
   if (editBtnMed) {
     // Editar: solo recepción/admin (NO doctor), y no en estados finales
     editBtnMed.style.display = (pol.perms.editar && currentUser?.rol !== 'doctor' && !pol.meta.esFinal) ? '' : 'none';
@@ -11632,6 +11671,44 @@ function cerrarModalReprogramarMedica() {
   // Limpiar datos después de reprogramar
   currentTurnoMedicaData = null;
   currentEstadoAction = null;
+}
+
+async function abrirModalCambiarDoctorMedica() {
+  if (!currentTurnoMedicaData) return;
+  const turno = currentTurnoMedicaData;
+  const menu = document.getElementById('menuMasOpcionesMedica');
+  if (menu) menu.style.display = 'none';
+  cerrarModalEstadoCitaMedica();
+
+  const select = $('modalCambiarDoctorMedicaSelect');
+  const resumen = $('modalCambiarDoctorMedicaResumen');
+  if (resumen) {
+    const fechaTxt = turno.fecha ? formatearFechaISO(turno.fecha) : '-';
+    const horaTxt = turno.hora ? formatearHora(turno.hora) : '-';
+    resumen.textContent = `${turno.paciente_nombre || 'Paciente'} · ${fechaTxt} ${horaTxt}`;
+  }
+
+  if (select) {
+    select.innerHTML = '<option value="">Cargando...</option>';
+    select.disabled = true;
+    const medicos = await obtenerMedicosAgenda();
+    select.innerHTML = '<option value="">Seleccionar médico</option>';
+    medicos.forEach((m) => {
+      const o = document.createElement('option');
+      o.value = String(m.id);
+      o.textContent = m.nombre || m.usuario || `Médico ${m.id}`;
+      select.appendChild(o);
+    });
+    const actualId = String(turno.doctor_id || selectedDoctorId || '');
+    if (actualId) select.value = actualId;
+    select.disabled = false;
+  }
+
+  $('modalCambiarDoctorMedica')?.classList.remove('hidden');
+}
+
+function cerrarModalCambiarDoctorMedica() {
+  $('modalCambiarDoctorMedica')?.classList.add('hidden');
 }
 
 function cerrarModalConfirmReprogramacion() {
@@ -11744,6 +11821,14 @@ document.getElementById('btnMasOpcionesMedica')?.addEventListener('click', (e) =
   e.stopPropagation();
   const menu = document.getElementById('menuMasOpcionesMedica');
   if (menu) menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+});
+
+// Menú: Cambiar médico
+document.getElementById('btnCambiarDoctorMedicaMenu')?.addEventListener('click', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  if (!currentTurnoMedicaData) return;
+  abrirModalCambiarDoctorMedica();
 });
 
 // Menú: Reprogramar
@@ -11986,6 +12071,60 @@ $('btnCerrarEstadoMedica')?.addEventListener('click', cerrarModalEstadoCitaMedic
 $('btnCancelarEstadoMedica')?.addEventListener('click', cerrarModalEstadoCitaMedica);
 $('btnCerrarReprogramarMedica')?.addEventListener('click', cerrarModalReprogramarMedica);
 $('btnCancelarReprogramarMedica')?.addEventListener('click', cerrarModalReprogramarMedica);
+
+$('btnConfirmarCambiarDoctorMedica')?.addEventListener('click', async (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  if (!currentTurnoMedicaData) return;
+
+  const nuevoDoctorId = parseInt($('modalCambiarDoctorMedicaSelect')?.value, 10);
+  if (!nuevoDoctorId) {
+    showToast('Selecciona el médico destino', 'error');
+    return;
+  }
+
+  const actualId = parseInt(currentTurnoMedicaData.doctor_id || selectedDoctorId, 10);
+  if (nuevoDoctorId === actualId) {
+    showToast('La cita ya está asignada a ese médico', 'info');
+    return;
+  }
+
+  const btn = $('btnConfirmarCambiarDoctorMedica');
+  if (btn) btn.disabled = true;
+
+  try {
+    const res = await apiFetch(`/api/turnos/${currentTurnoMedicaData.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ doctor_id: nuevoDoctorId })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      showToast('Médico de la cita actualizado', 'success');
+      const turnoId = currentTurnoMedicaData.id;
+      cerrarModalCambiarDoctorMedica();
+      currentTurnoMedicaData = null;
+      if (String(selectedDoctorId) === String(actualId) && String(nuevoDoctorId) !== String(actualId)) {
+        showToast('La cita ya no aparece en la agenda del médico actual', 'info');
+      }
+      cargarTurnosMedica();
+      innarQueueTurnoHighlight(turnoId);
+    } else {
+      showToast(data.error || 'No se pudo cambiar el médico', 'error');
+    }
+  } catch (err) {
+    showToast('Error al cambiar el médico', 'error');
+    console.error(err);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+});
+
+$('btnCerrarCambiarDoctorMedica')?.addEventListener('click', cerrarModalCambiarDoctorMedica);
+$('btnCancelarCambiarDoctorMedica')?.addEventListener('click', cerrarModalCambiarDoctorMedica);
+$('modalCambiarDoctorMedica')?.addEventListener('click', (e) => {
+  if (e.target === $('modalCambiarDoctorMedica')) cerrarModalCambiarDoctorMedica();
+});
 $('modalConfirmReprogramacion')?.addEventListener('click', (e) => {
   if (e.target === $('modalConfirmReprogramacion')) {
     cerrarModalConfirmReprogramacion();

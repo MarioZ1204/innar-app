@@ -275,6 +275,7 @@ const schemas = {
     entidad: Joi.string().max(100).optional().allow(null, ''),
     notas: Joi.string().max(2000).optional().allow(null, ''),
     tipo_consulta: Joi.string().max(200).optional().allow(null, ''),
+    doctor_id: Joi.number().integer().positive().optional(),
     fecha: fechaApi.optional(),
     hora: horaApi.optional(),
     estado: Joi.string().valid(...ESTADOS_TURNOS).optional(),

@@ -428,3 +428,24 @@
     background:#f0f7f6;
   }
 }
+
+/* Citas BOTOX — color distintivo en agenda médica */
+.medica-turnos-table tbody tr.turno-tipo-botox,
+#turnosTableMedica tbody tr.turno-tipo-botox,
+#turnosTableMedicaCompletados tbody tr.turno-tipo-botox{
+  background:linear-gradient(90deg,#fae8ff 0%,#fdf4ff 100%);
+  box-shadow:inset 3px 0 0 #c026d3;
+}
+.medica-turnos-table tbody tr.turno-tipo-botox:hover:not(.skeleton-row):not(.estado-vacio),
+#turnosTableMedica tbody tr.turno-tipo-botox:hover:not(.skeleton-row):not(.estado-vacio),
+#turnosTableMedicaCompletados tbody tr.turno-tipo-botox:hover:not(.skeleton-row):not(.estado-vacio){
+  background:linear-gradient(90deg,#f5d0fe 0%,#fae8ff 100%);
+}
+.medica-agenda-block-completados .medica-turnos-table tbody tr.turno-tipo-botox{
+  background:linear-gradient(90deg,#f3e8ff 0%,#faf5ff 100%);
+}
+.medica-turnos-table tbody tr.turno-tipo-botox.turno-selected,
+#turnosTableMedica tbody tr.turno-tipo-botox.turno-selected{
+  background:linear-gradient(90deg,#f3d4fe 0%,#eff6ff 100%);
+  box-shadow:inset 3px 0 0 #a21caf;
+}

@@ -298,6 +298,7 @@ function registerDefaultRealtimeHandlers() {
   });
   subscribe('agenda:turno-marcar-atendido', () => refreshActiveModuleData());
   subscribe('agenda:turno-cambio-paciente', () => refreshActiveModuleData());
+  subscribe('agenda:turno-doctor-cambio', () => refreshActiveModuleData());
   subscribe('agenda:actualizar-lista', () => refreshActiveModuleData());
   subscribe('agenda:actualizar-consultorio', () => refreshActiveModuleData());
 

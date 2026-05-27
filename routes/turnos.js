@@ -395,14 +395,14 @@ router.post('/turnos', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'a
 // PATCH /api/turnos/:id
 router.patch('/turnos/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion', 'doctor'], 'agenda.editar'), validateSchema('apiActualizarTurno'), async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  const { paciente_nombre, paciente_telefono, paciente_documento, paciente_telefono2, entidad, notas, tipo_consulta, fecha, hora, estado, observaciones } = req.body;
+  const { paciente_nombre, paciente_telefono, paciente_documento, paciente_telefono2, entidad, notas, tipo_consulta, doctor_id, fecha, hora, estado, observaciones } = req.body;
 
   if (!id) {
     return res.status(400).json({ error: 'ID inválido' });
   }
 
   try {
-    const turnos = await db.query('SELECT id, estado, doctor_id, fecha, paciente_nombre FROM turnos WHERE id = ?', [id]);
+    const turnos = await db.query('SELECT id, estado, doctor_id, fecha, hora, paciente_nombre FROM turnos WHERE id = ?', [id]);
     const turno = turnos.length > 0 ? turnos[0] : null;
     if (!turno) {
       return res.status(404).json({ error: 'Turno no encontrado' });
@@ -424,6 +424,55 @@ router.patch('/turnos/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin
 
     const updates = [];
     const values = [];
+    let doctorIdEmit = turno.doctor_id;
+    let doctorIdAnterior = turno.doctor_id;
+    let cambioDoctor = false;
+
+    if (doctor_id !== undefined) {
+      if (userRole === 'doctor') {
+        return res.status(403).json({ error: 'Los médicos no pueden transferir citas a otro médico' });
+      }
+      const nuevoDoctorId = parseInt(doctor_id, 10);
+      if (!nuevoDoctorId) {
+        return res.status(400).json({ error: 'Médico destino inválido' });
+      }
+      if (nuevoDoctorId !== parseInt(turno.doctor_id, 10)) {
+        if (turno.estado === 'EN_ATENCION') {
+          return res.status(400).json({ error: 'No se puede cambiar el médico mientras el paciente está en atención' });
+        }
+        const medicos = await db.query(
+          'SELECT id FROM usuarios WHERE id = ? AND rol = ? AND activo = 1',
+          [nuevoDoctorId, 'doctor']
+        );
+        if (!medicos.length) {
+          return res.status(400).json({ error: 'El médico seleccionado no existe o no está activo' });
+        }
+        const fechaVal = fecha !== undefined ? fecha : turno.fecha;
+        const horaVal = hora !== undefined ? hora : turno.hora;
+        if (!fechaVal || !horaVal) {
+          return res.status(400).json({ error: 'La cita debe tener fecha y hora para asignar otro médico' });
+        }
+        const validacion = await procesarAgendaExcel.validarDisponibilidadPorHora(nuevoDoctorId, fechaVal, horaVal, db);
+        if (!validacion.valido) {
+          return res.status(400).json({ error: validacion.razon || 'El médico no tiene disponibilidad en ese horario', valido: false });
+        }
+        const conflictos = await db.query(`
+          SELECT id FROM turnos
+          WHERE doctor_id = ? AND fecha = ? AND hora = ? AND id != ?
+            AND estado NOT IN ('CANCELADO', 'REPROGRAMADO', 'NO_ASISTIO')
+          LIMIT 1
+        `, [nuevoDoctorId, fechaVal, horaVal, id]);
+        if (conflictos.length > 0) {
+          return res.status(400).json({ error: 'Ya existe otra cita activa para ese médico en la misma fecha y hora' });
+        }
+        updates.push('doctor_id = ?');
+        values.push(nuevoDoctorId);
+        updates.push('numero_turno = NULL');
+        doctorIdEmit = nuevoDoctorId;
+        doctorIdAnterior = turno.doctor_id;
+        cambioDoctor = true;
+      }
+    }
 
     if (paciente_nombre !== undefined) { updates.push('paciente_nombre = ?'); values.push(paciente_nombre); }
     if (paciente_telefono !== undefined) { updates.push('paciente_telefono = ?'); values.push(paciente_telefono); }
@@ -445,24 +494,34 @@ router.patch('/turnos/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin
     const query = `UPDATE turnos SET ${updates.join(', ')} WHERE id = ?`;
     await db.execute(query, values);
 
+    const fechaEmit = fecha !== undefined ? fecha : turno.fecha;
+
     if (paciente_nombre !== undefined || paciente_telefono !== undefined || paciente_documento !== undefined || paciente_telefono2 !== undefined || entidad !== undefined || notas !== undefined || tipo_consulta !== undefined) {
       emitSocket('agenda:turno-cambio-paciente', {
         id,
         paciente_nombre: paciente_nombre || turno.paciente_nombre,
-        doctor_id: turno.doctor_id,
-        fecha: turno.fecha
+        doctor_id: doctorIdEmit,
+        fecha: fechaEmit
+      });
+    }
+    if (cambioDoctor) {
+      emitSocket('agenda:turno-doctor-cambio', {
+        id,
+        doctor_id: doctorIdEmit,
+        doctor_id_anterior: doctorIdAnterior,
+        fecha: fechaEmit
       });
     }
     if (fecha !== undefined || hora !== undefined || estado !== undefined) {
       emitSocket('agenda:turno-estado-cambio', {
         id,
         estado: estado || turno.estado,
-        doctor_id: turno.doctor_id,
-        fecha: fecha || turno.fecha
+        doctor_id: doctorIdEmit,
+        fecha: fechaEmit
       });
     }
 
-    res.json({ ok: true });
+    res.json({ ok: true, doctor_id: doctorIdEmit });
   } catch (e) {
     logger.error(e.message, { error: e });
     res.status(500).json({ error: safeError(e) });
