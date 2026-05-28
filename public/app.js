@@ -6821,6 +6821,7 @@ function renderCitaElectroCard(container, c) {
     '<' + t + ' class="electro-cita-card-paciente">' + escapeHtml(c.paciente_nombre || '-') + '</' + t + '>' +
     '<' + t + ' class="electro-cita-card-meta">' +
       '<span>' + escapeHtml(c.paciente_documento || '-') + '</span>' +
+      (c.entidad ? '<span title="Entidad">' + escapeHtml(c.entidad) + '</span>' : '') +
       (equipoDisplay !== '\u2014' ? '<span>' + equipoDisplay + '</span>' : '') +
       (duracionTxt ? '<span>' + duracionTxt + '</span>' : '') +
     '</' + t + '>' +
@@ -10672,6 +10673,8 @@ async function abrirModalDetallesCita(cita) {
   if ($horaEl) $horaEl.textContent = cita.hora_agendamiento ? formatearHora(cita.hora_agendamiento) : '-';
   const $diagEl = document.getElementById('modalDiagnosticoDisplay');
   if ($diagEl) $diagEl.textContent = cita.diagnostico_codigo ? `${cita.diagnostico_codigo}${cita.diagnostico_nombre ? ' – ' + cita.diagnostico_nombre : ''}` : (cita.diagnostico_nombre || '-');
+  const $entEl = document.getElementById('modalEntidadDisplay');
+  if ($entEl) $entEl.textContent = (cita.entidad && String(cita.entidad).trim()) ? String(cita.entidad).trim() : '-';
   const $telEl = document.getElementById('modalTelefonoDisplay');
   if ($telEl) $telEl.textContent = cita.telefono || '-';
   
