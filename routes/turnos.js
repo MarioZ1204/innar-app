@@ -447,24 +447,6 @@ router.patch('/turnos/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin
         if (!medicos.length) {
           return res.status(400).json({ error: 'El médico seleccionado no existe o no está activo' });
         }
-        const fechaVal = fecha !== undefined ? fecha : turno.fecha;
-        const horaVal = hora !== undefined ? hora : turno.hora;
-        if (!fechaVal || !horaVal) {
-          return res.status(400).json({ error: 'La cita debe tener fecha y hora para asignar otro médico' });
-        }
-        const validacion = await procesarAgendaExcel.validarDisponibilidadPorHora(nuevoDoctorId, fechaVal, horaVal, db);
-        if (!validacion.valido) {
-          return res.status(400).json({ error: validacion.razon || 'El médico no tiene disponibilidad en ese horario', valido: false });
-        }
-        const conflictos = await db.query(`
-          SELECT id FROM turnos
-          WHERE doctor_id = ? AND fecha = ? AND hora = ? AND id != ?
-            AND estado NOT IN ('CANCELADO', 'REPROGRAMADO', 'NO_ASISTIO')
-          LIMIT 1
-        `, [nuevoDoctorId, fechaVal, horaVal, id]);
-        if (conflictos.length > 0) {
-          return res.status(400).json({ error: 'Ya existe otra cita activa para ese médico en la misma fecha y hora' });
-        }
         updates.push('doctor_id = ?');
         values.push(nuevoDoctorId);
         updates.push('numero_turno = NULL');

@@ -47,7 +47,15 @@ function detectarTemaCarpeta(nombreCarpeta) {
     return 'eeg';
   }
 
+  if (/\bordenes\b/.test(u)) {
+    return 'ordenes';
+  }
+
   return 'neutral';
+}
+
+function esCarpetaOrdenes(nombreCarpeta) {
+  return detectarTemaCarpeta(nombreCarpeta) === 'ordenes';
 }
 
 const TEMA_LABELS = {
@@ -55,11 +63,13 @@ const TEMA_LABELS = {
   psg: 'PSG',
   eeg: 'EEG',
   actigrafia: 'Actigrafía',
+  ordenes: 'Órdenes',
   neutral: 'General'
 };
 
 module.exports = {
   detectarTemaCarpeta,
+  esCarpetaOrdenes,
   TEMA_LABELS,
   normalizarTexto
 };

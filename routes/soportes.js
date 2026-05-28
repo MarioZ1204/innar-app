@@ -21,10 +21,12 @@ const { detectarTemaCarpeta } = require('../utils/soportes-temas');
 const { parseNombrePdx, fechaEnPeriodo, temaCoincideCarpeta, normalizarNombreBusqueda } = require('../utils/soportes-pdx-parse');
 const {
   buildMetaFromUpload,
+  cargarEstudiosParaOrdenes,
   finalizePdxFileOnDisk,
   movePdxFileOnDisk,
   collectPdxWarnings
 } = require('../utils/soportes-pdx-upload');
+const { esCarpetaOrdenes } = require('../utils/soportes-temas');
 const {
   ensureContenedoresForDia,
   ensureFeParEnContenedorHermano,
@@ -289,10 +291,16 @@ router.post(
       const vis = calcularVisibilidadPeriodo(carpeta.periodo);
       if (vis === 'archivo') return res.status(403).json({ error: 'Carpeta cerrada para carga' });
 
-      const meta = buildMetaFromUpload(req.file.originalname, req.body);
+      const esOrdenes = esCarpetaOrdenes(carpeta.nombre_display);
+      if (esOrdenes) {
+        carpeta._estudiosLista = await cargarEstudiosParaOrdenes(db);
+      }
+      const meta = buildMetaFromUpload(req.file.originalname, req.body, carpeta);
       if (!meta.ok) {
         return res.status(400).json({
-          error: 'Complete apellidos, nombres, fecha y nombre del estudio.',
+          error: esOrdenes
+            ? 'Complete apellidos, nombres, documento, fecha y tipo de examen.'
+            : 'Complete apellidos, nombres, fecha y nombre del estudio.',
           requiere_confirmacion: true
         });
       }
@@ -367,7 +375,7 @@ router.get('/soportes/pdx/buscar', requireAuth, requireRoleOrPerm(ROLES_SOPORTES
 router.patch('/soportes/pdx/archivos/:id', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, ['modulo.reportes_pdx', 'soportes.pdx.subir']), async (req, res) => {
   try {
     const rows = await db.query(
-      `SELECT a.*, c.periodo, c.color_tema AS carpeta_tema FROM sop_pdx_archivos a
+      `SELECT a.*, c.periodo, c.color_tema AS carpeta_tema, c.nombre_display AS carpeta_nombre FROM sop_pdx_archivos a
        JOIN sop_pdx_carpetas c ON c.id = a.carpeta_id WHERE a.id = ?`,
       [req.params.id]
     );
@@ -380,8 +388,14 @@ router.patch('/soportes/pdx/archivos/:id', requireAuth, requireRoleOrPerm(ROLES_
     const nombres = req.body?.nombres != null ? String(req.body.nombres).trim() : prev.nombres;
     const fecha = req.body?.fecha_estudio != null ? req.body.fecha_estudio : prev.fecha_estudio;
     const estudio = req.body?.estudio_texto != null ? String(req.body.estudio_texto).trim() : prev.estudio_texto;
+    const documento = req.body?.paciente_documento != null
+      ? String(req.body.paciente_documento).trim().replace(/\s/g, '')
+      : (prev.paciente_documento || '');
     if (!apellidos || !nombres || !fecha || !estudio) {
       return res.status(400).json({ error: 'Apellidos, nombres, fecha y estudio son obligatorios' });
+    }
+    if (esCarpetaOrdenes(prev.carpeta_nombre) && !documento) {
+      return res.status(400).json({ error: 'El número de documento es obligatorio en carpetas Órdenes' });
     }
 
     const pacienteNombre = `${apellidos}, ${nombres}`;
@@ -439,7 +453,7 @@ router.patch('/soportes/pdx/archivos/:id', requireAuth, requireRoleOrPerm(ROLES_
         nombres,
         pacienteNombre,
         normalizarNombreBusqueda(pacienteNombre),
-        req.body.paciente_documento != null ? req.body.paciente_documento : prev.paciente_documento,
+        documento || null,
         fecha,
         estudio,
         rutaRelativa,
@@ -536,7 +550,7 @@ router.post(
     try {
       if (!req.file) return res.status(400).json({ error: 'Archivo PDF requerido' });
       const rows = await db.query(
-        `SELECT a.*, c.periodo, c.color_tema FROM sop_pdx_archivos a
+        `SELECT a.*, c.periodo, c.color_tema, c.nombre_display FROM sop_pdx_archivos a
          JOIN sop_pdx_carpetas c ON c.id = a.carpeta_id WHERE a.id = ?`,
         [req.params.id]
       );
@@ -545,15 +559,22 @@ router.post(
       const vis = calcularVisibilidadPeriodo(prev.periodo);
       if (vis === 'archivo') return res.status(403).json({ error: 'Carpeta cerrada' });
 
-      const meta = buildMetaFromUpload(req.file.originalname, req.body);
+      const carpetaCtx = { periodo: prev.periodo, color_tema: prev.color_tema, nombre_display: prev.nombre_display };
+      const esOrdenes = esCarpetaOrdenes(prev.nombre_display);
+      if (esOrdenes) {
+        carpetaCtx._estudiosLista = await cargarEstudiosParaOrdenes(db);
+      }
+      const meta = buildMetaFromUpload(req.file.originalname, req.body, carpetaCtx);
       if (!meta.ok) {
         return res.status(400).json({
-          error: 'Complete apellidos, nombres, fecha y nombre del estudio.',
+          error: esOrdenes
+            ? 'Complete apellidos, nombres, documento, fecha y tipo de examen.'
+            : 'Complete apellidos, nombres, fecha y nombre del estudio.',
           requiere_confirmacion: true
         });
       }
 
-      const warnings = collectPdxWarnings(meta, { periodo: prev.periodo, color_tema: prev.color_tema });
+      const warnings = collectPdxWarnings(meta, carpetaCtx);
       const oldFp = resolveStoragePath(prev.ruta_relativa);
       if (oldFp && fs.existsSync(oldFp)) {
         try { fs.unlinkSync(oldFp); } catch (_) { /* ignore */ }
@@ -568,12 +589,13 @@ router.post(
       await db.execute(
         `UPDATE sop_pdx_archivos SET
           apellidos = ?, nombres = ?, paciente_nombre = ?, paciente_nombre_norm = ?,
-          fecha_estudio = ?, marca_tiempo = ?, sufijo_numero = ?, estudio_texto = ?,
+          paciente_documento = ?, fecha_estudio = ?, marca_tiempo = ?, sufijo_numero = ?, estudio_texto = ?,
           nombre_archivo_original = ?, nombre_archivo_display = ?, ruta_relativa = ?,
           tamano_bytes = ?, editado_por = ?, editado_en = NOW()
          WHERE id = ?`,
         [
           meta.apellidos, meta.nombres, meta.paciente_nombre, meta.paciente_nombre_norm,
+          meta.paciente_documento || null,
           meta.fecha_estudio, meta.marca_tiempo, meta.sufijo_numero, meta.estudio_texto,
           req.file.originalname, nombre_archivo_display, rutaRelativa, req.file.size,
           req.session.usuarioId, req.params.id

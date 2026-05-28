@@ -219,7 +219,6 @@
           <span class="menu-card-icon"><svg width="56" height="55" viewBox="0 0 56 55" fill="none"><rect x="6" y="8" width="44" height="36" rx="4" fill="#dbeafe" stroke="#2563eb" stroke-width="2"/><path d="M14 20h28M14 28h20M14 36h24" stroke="#2563eb" stroke-width="2" stroke-linecap="round"/></svg></span>
           <span class="menu-card-label">
             <span class="menu-card-title">Cargar reportes</span>
-            <span class="menu-card-desc">Subir PDFs al depósito por mes y estudio</span>
           </span>
         </button>
         <button class="menu-card" data-module="armado-soportes" data-rol="superadmin admin admin_recepcion recepcion contabilidad admin_electro electro tecnico_electro">
@@ -3279,7 +3278,6 @@
         </div>
         <div class="sop-topbar-center">
           <div class="sop-topbar-title">Cargar reportes</div>
-          <div class="sop-topbar-sub">Depósito de reportes electrodiagnóstico (PDX)</div>
         </div>
         <div class="sop-topbar-right">
           <button type="button" id="btnSopPdxNuevaCarpeta" class="sop-btn sop-btn-primary">
@@ -3316,6 +3314,7 @@
                   <option value="psg">PSG</option>
                   <option value="eeg">EEG</option>
                   <option value="actigrafia">Actigrafía</option>
+                  <option value="ordenes">Órdenes</option>
                   <option value="neutral">Otro / neutro</option>
                 </select>
                 <select id="sopPdxFiltroOrden" class="sop-select sop-pdx-filtro-sel" aria-label="Orden">
@@ -3343,7 +3342,7 @@
               <div id="sopPdxDetalleAcciones" class="sop-panel-head-actions"></div>
             </div>
             <div class="sop-panel-body">
-              <div class="sop-pdx-format-help" role="note">
+              <div id="sopPdxFormatHelp" class="sop-pdx-format-help" role="note">
                 <div class="sop-pdx-format-title"><i data-lucide="info"></i> Estructura del nombre del PDF</div>
                 <p class="sop-pdx-format-pattern"><code>Apellido, Nombre &nbsp; YYYY-MM-DD &nbsp; HH-mm-ss &nbsp; N. &nbsp; TIPO ESTUDIO.pdf</code></p>
                 <p class="sop-pdx-format-ejemplo"><strong>Ejemplo:</strong> Arcos Enriquez, Nancy Del Carmen &nbsp; 2026-03-14 &nbsp; 21-21-12 &nbsp; 1. &nbsp; PSG BASAL.pdf</p>

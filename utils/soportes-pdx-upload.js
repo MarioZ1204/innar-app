@@ -3,11 +3,85 @@
  */
 const path = require('path');
 const fs = require('fs');
-const { parseNombrePdx, normalizarNombrePdx, normalizarNombreBusqueda, fechaEnPeriodo, temaCoincideCarpeta } = require('./soportes-pdx-parse');
-const { detectarTemaCarpeta } = require('./soportes-temas');
+const {
+  parseNombrePdx,
+  parseNombreOrdenes,
+  normalizarNombrePdx,
+  normalizarNombreOrdenes,
+  normalizarNombreBusqueda,
+  fechaEnPeriodo,
+  temaCoincideCarpeta,
+  resolverEstudioDesdeLista
+} = require('./soportes-pdx-parse');
+const { detectarTemaCarpeta, esCarpetaOrdenes } = require('./soportes-temas');
 const { getPdxDir } = require('./soportes-storage');
 
-function buildMetaFromUpload(originalName, body = {}) {
+async function cargarEstudiosParaOrdenes(db) {
+  try {
+    return await db.query('SELECT id, nombre FROM estudio_duraciones ORDER BY nombre ASC');
+  } catch (_) {
+    return [];
+  }
+}
+
+function buildMetaFromUploadOrdenes(originalName, body = {}, estudios = []) {
+  const parsed = parseNombreOrdenes(originalName, estudios);
+  const estudioManual = resolverEstudioDesdeLista(body.estudio_texto, estudios);
+  if (!parsed.ok) {
+    const doc = String(body.paciente_documento || '').trim().replace(/\s/g, '');
+    if (!(body.apellidos && body.nombres && doc && body.fecha_estudio && estudioManual)) {
+      return { ok: false, requiere_confirmacion: true };
+    }
+    const apellidos = String(body.apellidos).trim();
+    const nombres = String(body.nombres).trim();
+    return {
+      ok: true,
+      apellidos,
+      nombres,
+      paciente_documento: doc,
+      paciente_nombre: `${apellidos}, ${nombres}`,
+      paciente_nombre_norm: normalizarNombreBusqueda(`${apellidos}, ${nombres}`),
+      fecha_estudio: body.fecha_estudio,
+      marca_tiempo: '',
+      sufijo_numero: '',
+      estudio_texto: estudioManual,
+      estudio_tema: 'ordenes',
+      nombre_archivo_original: originalName,
+      nombre_archivo_display: normalizarNombreOrdenes({
+        apellidos,
+        nombres,
+        paciente_documento: doc,
+        fecha: body.fecha_estudio,
+        estudio: estudioManual
+      })
+    };
+  }
+  const estudio = estudioManual || parsed.estudio_texto;
+  const doc = String(body.paciente_documento || parsed.paciente_documento || '').trim().replace(/\s/g, '') || parsed.paciente_documento;
+  const fecha = body.fecha_estudio || parsed.fecha_estudio;
+  const display = normalizarNombreOrdenes({
+    apellidos: parsed.apellidos,
+    nombres: parsed.nombres,
+    paciente_documento: doc,
+    fecha,
+    estudio
+  });
+  return {
+    ok: true,
+    ...parsed,
+    paciente_documento: doc,
+    fecha_estudio: fecha,
+    estudio_texto: estudio,
+    estudio_tema: 'ordenes',
+    nombre_archivo_original: originalName,
+    nombre_archivo_display: display
+  };
+}
+
+function buildMetaFromUpload(originalName, body = {}, carpeta = null) {
+  if (carpeta && esCarpetaOrdenes(carpeta.nombre_display)) {
+    return buildMetaFromUploadOrdenes(originalName, body, carpeta._estudiosLista || []);
+  }
   const parsed = parseNombrePdx(originalName);
   const estudioManual = String(body.estudio_texto || '').trim();
   if (!parsed.ok) {
@@ -98,6 +172,9 @@ function movePdxFileOnDisk(fromCarpetaId, toCarpetaId, oldRutaRelativa, meta) {
 
 function collectPdxWarnings(meta, carpeta) {
   const warnings = [];
+  if (carpeta && esCarpetaOrdenes(carpeta.nombre_display)) {
+    return warnings;
+  }
   if (carpeta && meta.fecha_estudio && !fechaEnPeriodo(meta.fecha_estudio, carpeta.periodo)) {
     warnings.push(`La fecha del estudio (${meta.fecha_estudio}) no pertenece al mes ${carpeta.periodo}`);
   }
@@ -109,6 +186,8 @@ function collectPdxWarnings(meta, carpeta) {
 
 module.exports = {
   buildMetaFromUpload,
+  buildMetaFromUploadOrdenes,
+  cargarEstudiosParaOrdenes,
   pdxDiskFilename,
   finalizePdxFileOnDisk,
   movePdxFileOnDisk,
