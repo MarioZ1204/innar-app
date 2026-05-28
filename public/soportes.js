@@ -35,9 +35,18 @@
 
   async function obtenerEstudiosPdx() {
     if (_cacheEstudiosPdx) return _cacheEstudiosPdx;
-    const rows = await apiFetch('/api/estudios/lista').then((r) => r.json()).catch(() => []);
-    _cacheEstudiosPdx = Array.isArray(rows) ? rows : [];
-    return _cacheEstudiosPdx;
+    try {
+      const res = await apiFetch('/api/estudios/lista');
+      const data = res.ok ? await res.json() : {};
+      const lista = (Array.isArray(data) ? data : (data.registros || data.estudios || []))
+        .map((e) => (typeof e === 'string' ? { nombre: e } : e))
+        .filter((e) => e?.nombre)
+        .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre), 'es', { sensitivity: 'base' }));
+      _cacheEstudiosPdx = lista.length ? lista : null;
+    } catch (_) {
+      _cacheEstudiosPdx = null;
+    }
+    return _cacheEstudiosPdx || [];
   }
 
   async function poblarSelectEstudioPdx(selectEl, selected) {
