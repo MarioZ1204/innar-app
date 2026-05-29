@@ -24,16 +24,144 @@
 
   const RE_REPORTE_BASE_CLIENT = /^(.+?),\s*(.+?)\s+(\d{4}-\d{2}-\d{2})(?:\s+.+)?\.pdf$/i;
   const RE_PDX_EXT_CLIENT = /^(.+?),\s*(.+?)\s+(\d{4}-\d{2}-\d{2})\s+([\d-]+)\s+(\d+)\.\s*(.+?)\.pdf$/i;
-  const RE_ORDENES_CLIENT = /^(.+?),\s*(.+?),\s*([\d.\-]+),\s*(\d{4}-\d{2}-\d{2}),\s*(.+?)\.pdf$/i;
-  const MSG_FORMATO_REPORTE_CLIENT =
-    'El archivo debe llamarse: Apellido, Nombre   YYYY-MM-DD.pdf (puede incluir hora, número y estudio después de la fecha).';
+  const SEP_CLIENT = '\\s*-\\s*';
+  const RE_ORDEN_HC_CLIENT = new RegExp(
+    `^ORDEN\\s*\\+\\s*HC${SEP_CLIENT}(.+?)${SEP_CLIENT}(.+?)${SEP_CLIENT}(.+?)${SEP_CLIENT}([\\d.\\-]+)${SEP_CLIENT}(\\d{4}-\\d{2}-\\d{2})${SEP_CLIENT}(.+?)\\.pdf$`,
+    'i'
+  );
+  const RE_COMPROBANTE_CLIENT = new RegExp(
+    `^COMPROBANTE${SEP_CLIENT}(.+?)${SEP_CLIENT}(.+?)${SEP_CLIENT}(.+?)${SEP_CLIENT}([\\d.\\-]+)${SEP_CLIENT}(\\d{4}-\\d{2}-\\d{2})${SEP_CLIENT}(.+?)\\.pdf$`,
+    'i'
+  );
+  const RE_CONSENTIMIENTO_CLIENT = new RegExp(
+    `^(.+?)${SEP_CLIENT}(.+?)${SEP_CLIENT}(.+?)${SEP_CLIENT}([\\d.\\-]+)${SEP_CLIENT}(\\d{4}-\\d{2}-\\d{2})${SEP_CLIENT}(.+?)\\.pdf$`,
+    'i'
+  );
 
-  let _cacheEstudiosPdx = null;
+  const FORMATOS_AYUDA_CLIENT = {
+    vtm: {
+      pattern: 'Apellidos, Nombres   YYYY-MM-DD.pdf',
+      ejemplo: 'García López, Juan Carlos   2026-05-27.pdf',
+      nota: 'Al descargar se añade el tipo de estudio (VTM) al nombre del archivo.'
+    },
+    eeg: {
+      pattern: 'Apellidos, Nombres   YYYY-MM-DD.pdf',
+      ejemplo: 'García López, Juan Carlos   2026-05-27.pdf',
+      nota: 'Al descargar se añade el tipo de estudio (EEG) al nombre del archivo.'
+    },
+    psg: {
+      pattern: 'Apellidos, Nombres   YYYY-MM-DD.pdf',
+      ejemplo: 'García López, Juan Carlos   2026-05-27.pdf',
+      nota: 'Al descargar se añade el tipo de estudio (PSG Básica, PSG CPAP o PSG BPAP según la carpeta).'
+    },
+    actigrafia: {
+      pattern: 'Apellidos, Nombres   YYYY-MM-DD.pdf',
+      ejemplo: 'García López, Juan Carlos   2026-05-27.pdf',
+      nota: 'Al descargar se añade el tipo de estudio al nombre del archivo.'
+    },
+    ordenes: {
+      pattern: 'ORDEN + HC - APELLIDOS - NOMBRES - TIPO DE DOCUMENTO - DOCUMENTO - FECHA - TIPO DE ESTUDIO.pdf',
+      ejemplo: 'ORDEN + HC - García López - Juan Carlos - CC - 1234567890 - 2026-05-27 - PSG Basal.pdf'
+    },
+    comprobantes: {
+      pattern: 'COMPROBANTE - APELLIDOS - NOMBRES - TIPO DE DOCUMENTO - DOCUMENTO - FECHA - TIPO DE ESTUDIO.pdf',
+      ejemplo: 'COMPROBANTE - García López - Juan Carlos - CC - 1234567890 - 2026-05-27 - PSG Basal.pdf'
+    },
+    consentimientos: {
+      pattern: 'APELLIDOS - NOMBRES - TIPO DE DOCUMENTO - DOCUMENTO - FECHA - TIPO DE ESTUDIO.pdf',
+      ejemplo: 'García López - Juan Carlos - CC - 1234567890 - 2026-05-27 - PSG Basal.pdf'
+    },
+    neutral: {
+      pattern: 'Apellidos, Nombres   YYYY-MM-DD.pdf',
+      ejemplo: 'García López, Juan Carlos   2026-05-27.pdf'
+    }
+  };
+
+  function detectarTemaCarpetaCliente(nombreCarpeta) {
+    const u = String(nombreCarpeta || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    if (/\bcomprobante/.test(u)) return 'comprobantes';
+    if (/\bconsentimiento/.test(u)) return 'consentimientos';
+    if (/\bordenes\b/.test(u)) return 'ordenes';
+    if (/\bvtm\b/.test(u) || u.includes('videotelemetria') || u.includes('telemetria')) return 'vtm';
+    if (u.includes('actigraf')) return 'actigrafia';
+    if (u.includes('polisomnog') || /\bpsg\b/.test(u) || u.startsWith('psg ') || u.includes('cpap') || u.includes('bpap')) return 'psg';
+    if (u.includes('electroencefalog') || (/\beeg\b/.test(u) && !u.includes('monitoriz'))) return 'eeg';
+    return 'neutral';
+  }
+
+  function esCarpetaEstructuradaPdx(carpetaOrNombre) {
+    const t = detectarTemaCarpetaCliente(typeof carpetaOrNombre === 'string' ? carpetaOrNombre : carpetaOrNombre?.nombre_display);
+    return ['ordenes', 'comprobantes', 'consentimientos'].includes(t);
+  }
 
   function esCarpetaOrdenesPdx(carpetaOrNombre) {
-    const n = typeof carpetaOrNombre === 'string' ? carpetaOrNombre : carpetaOrNombre?.nombre_display;
-    const u = String(n || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    return /\bordenes\b/.test(u);
+    return detectarTemaCarpetaCliente(typeof carpetaOrNombre === 'string' ? carpetaOrNombre : carpetaOrNombre?.nombre_display) === 'ordenes';
+  }
+
+  function ayudaFormatoCliente(tema) {
+    return FORMATOS_AYUDA_CLIENT[tema] || FORMATOS_AYUDA_CLIENT.neutral;
+  }
+
+  function mensajeErrorFormatoCliente(tema) {
+    const ayuda = ayudaFormatoCliente(tema);
+    return `El archivo no cumple la estructura requerida. Formato: ${ayuda.pattern}`;
+  }
+
+  function inferirEstudioCliente(carpeta) {
+    const nombre = carpeta?.nombre_display || '';
+    const tema = detectarTemaCarpetaCliente(nombre);
+    if (tema === 'eeg') return 'EEG';
+    if (tema === 'vtm') return 'VTM';
+    if (tema === 'actigrafia') return 'Actigrafía';
+    if (tema === 'psg') {
+      const u = nombre.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      if (u.includes('cpap')) return 'PSG CPAP';
+      if (u.includes('bpap')) return 'PSG BPAP';
+      if (u.includes('basal') || u.includes('basica')) return 'PSG Basal';
+      return 'PSG Básica';
+    }
+    return '';
+  }
+
+  function parseNombreEstructuradoCliente(originalName, regex, tema) {
+    const base = String(originalName || '').trim();
+    const m = base.match(regex);
+    if (!m) return { ok: false, original: base, error: mensajeErrorFormatoCliente(tema) };
+    const apellidos = m[1].trim();
+    const nombres = m[2].trim();
+    return {
+      ok: true,
+      original: base,
+      apellidos,
+      nombres,
+      tipo_documento: m[3].trim(),
+      paciente_documento: m[4].trim().replace(/\s/g, ''),
+      fecha_estudio: m[5],
+      estudio_texto: m[6].trim(),
+      paciente_nombre: `${apellidos}, ${nombres}`
+    };
+  }
+
+  function parseNombreOrdenesCliente(originalName) {
+    return parseNombreEstructuradoCliente(originalName, RE_ORDEN_HC_CLIENT, 'ordenes');
+  }
+
+  function parseNombreComprobanteCliente(originalName) {
+    return parseNombreEstructuradoCliente(originalName, RE_COMPROBANTE_CLIENT, 'comprobantes');
+  }
+
+  function parseNombreConsentimientoCliente(originalName) {
+    return parseNombreEstructuradoCliente(originalName, RE_CONSENTIMIENTO_CLIENT, 'consentimientos');
+  }
+
+  function parseNombrePorCarpetaCliente(originalName, carpeta) {
+    const tema = detectarTemaCarpetaCliente(carpeta?.nombre_display || '');
+    switch (tema) {
+      case 'ordenes': return parseNombreOrdenesCliente(originalName);
+      case 'comprobantes': return parseNombreComprobanteCliente(originalName);
+      case 'consentimientos': return parseNombreConsentimientoCliente(originalName);
+      default: return parseNombrePdxCliente(originalName);
+    }
   }
 
   async function obtenerEstudiosPdx() {
@@ -66,28 +194,16 @@
   function actualizarAyudaFormatoPdx() {
     const el = $('sopPdxFormatHelp');
     if (!el) return;
+    const tema = detectarTemaCarpetaCliente(pdxState.carpetaActual?.nombre_display || '');
+    const ayuda = ayudaFormatoCliente(tema);
     el.innerHTML = `
-      <p class="sop-pdx-format-ejemplo"><strong>Ejemplo:</strong> García López, Juan Carlos &nbsp; 2026-05-27.pdf</p>`;
+      <p class="sop-pdx-format-pattern"><strong>Estructura requerida:</strong> <code>${escapeHtml(ayuda.pattern)}</code></p>
+      <p class="sop-pdx-format-ejemplo"><strong>Ejemplo:</strong> ${escapeHtml(ayuda.ejemplo)}</p>
+      ${ayuda.nota ? `<p class="sop-pdx-format-nota" style="margin:6px 0 0;font-size:.82rem;color:#64748b">${escapeHtml(ayuda.nota)}</p>` : ''}`;
     sopIcons(el);
   }
 
-  function parseNombreOrdenesCliente(originalName) {
-    const base = String(originalName || '').trim();
-    const m = base.match(RE_ORDENES_CLIENT);
-    if (!m) return { ok: false, original: base };
-    const apellidos = m[1].trim();
-    const nombres = m[2].trim();
-    return {
-      ok: true,
-      original: base,
-      apellidos,
-      nombres,
-      paciente_documento: m[3].trim().replace(/\s/g, ''),
-      fecha_estudio: m[4],
-      estudio_texto: m[5].trim(),
-      paciente_nombre: `${apellidos}, ${nombres}`
-    };
-  }
+  let _cacheEstudiosPdx = null;
 
   function parseNombrePdxCliente(originalName) {
     const base = String(originalName || '').trim();
@@ -108,7 +224,7 @@
       estudio = mExt[6].trim();
     } else {
       const m = base.match(RE_REPORTE_BASE_CLIENT);
-      if (!m) return { ok: false, original: base, error: MSG_FORMATO_REPORTE_CLIENT };
+      if (!m) return { ok: false, original: base, error: mensajeErrorFormatoCliente('neutral') };
       apellidos = m[1].trim();
       nombres = m[2].trim();
       fecha = m[3];
@@ -144,13 +260,16 @@
 
   function htmlEstudioBadge(texto, tema) {
     const t = tema || 'neutral';
-    const colors = { vtm: '#2563eb', psg: '#7c3aed', eeg: '#ca8a04', actigrafia: '#0891b2', ordenes: '#0d9488', neutral: '#64748b' };
+    const colors = {
+      vtm: '#2563eb', psg: '#7c3aed', eeg: '#ca8a04', actigrafia: '#0891b2',
+      ordenes: '#0d9488', comprobantes: '#ea580c', consentimientos: '#9333ea', neutral: '#64748b'
+    };
     return `<span class="sop-estudio-badge" style="--sop-estudio-color:${colors[t] || colors.neutral}">${escapeHtml(texto || '—')}</span>`;
   }
 
   function pdxUploadWarnings(parsed, carpeta) {
     const w = [];
-    if (esCarpetaOrdenesPdx(carpeta)) return w;
+    if (esCarpetaEstructuradaPdx(carpeta)) return w;
     if (carpeta && parsed.fecha_estudio && !fechaEnPeriodoCliente(parsed.fecha_estudio, carpeta.periodo)) {
       w.push(`La fecha del estudio (${parsed.fecha_estudio}) no corresponde al mes de la carpeta (${carpeta.periodo}).`);
     }
@@ -301,7 +420,7 @@
     if (!wrap || !carpeta) return;
     const enArchivo = carpeta.estado_visibilidad === 'archivo';
     wrap.innerHTML = `
-      ${sopPerm('soportes.pdx.subir') && !enArchivo ? '<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="btnSopPdxEditCarpeta"><i data-lucide="pencil"></i> Editar carpeta</button>' : ''}
+      ${sopPerm('soportes.pdx.editar') && !enArchivo ? '<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="btnSopPdxEditCarpeta"><i data-lucide="pencil"></i> Editar carpeta</button>' : ''}
       ${sopPerm('soportes.pdx.eliminar') ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="btnSopPdxDelCarpeta" style="color:#dc2626"><i data-lucide="trash-2"></i> Eliminar carpeta</button>` : ''}`;
     wrap.querySelector('#btnSopPdxEditCarpeta')?.addEventListener('click', () => modalEditarCarpetaPdx(carpeta));
     wrap.querySelector('#btnSopPdxDelCarpeta')?.addEventListener('click', () => eliminarCarpetaPdx(carpeta));
@@ -314,6 +433,8 @@
     eeg: 'activity',
     actigrafia: 'watch',
     ordenes: 'clipboard-list',
+    comprobantes: 'receipt',
+    consentimientos: 'file-signature',
     neutral: 'folder'
   };
 
@@ -323,13 +444,15 @@
     eeg: 'EEG',
     actigrafia: 'Actigrafía',
     ordenes: 'Órdenes',
+    comprobantes: 'Comprobantes',
+    consentimientos: 'Consentimientos',
     neutral: 'General'
   };
 
   function renderPdxTemaLegend() {
     const el = $('sopPdxTemaLegend');
     if (!el) return;
-    const temas = ['vtm', 'psg', 'eeg', 'actigrafia', 'ordenes', 'neutral'];
+    const temas = ['vtm', 'psg', 'eeg', 'actigrafia', 'ordenes', 'comprobantes', 'consentimientos', 'neutral'];
     el.innerHTML = `<span class="sop-tema-legend-title">Modalidades:</span>${temas.map((t) =>
       `<span class="sop-tema-legend-item" data-tema="${t}">${TEMA_LABEL[t]}</span>`
     ).join('')}`;
@@ -412,7 +535,12 @@
   }
 
   function sopPerm(key) {
-    return typeof window.tienePermiso === 'function' && window.tienePermiso(key);
+    if (typeof window.tienePermiso !== 'function') return false;
+    if (window.tienePermiso(key)) return true;
+    if (key === 'soportes.pdx.ver' || key === 'soportes.pdx.crear_carpeta' || key === 'soportes.pdx.editar') {
+      return window.tienePermiso('soportes.pdx.subir');
+    }
+    return false;
   }
 
   function periodoActual() {
@@ -622,7 +750,7 @@
       sopIcons(el);
       return;
     }
-    const canEdit = sopPerm('soportes.pdx.subir');
+    const canEdit = sopPerm('soportes.pdx.editar');
     const canDel = sopPerm('soportes.pdx.eliminar');
     el.innerHTML = `<div class="sop-grid">${lista.map((c) => {
       const tema = c.color_tema || 'neutral';
@@ -696,7 +824,9 @@
       return;
     }
     const canDelete = sopPerm('soportes.pdx.eliminar');
-    const canEdit = sopPerm('soportes.pdx.subir');
+    const canEdit = sopPerm('soportes.pdx.editar');
+    const canVer = sopPerm('soportes.pdx.ver');
+    const canSubir = sopPerm('soportes.pdx.subir');
     const enArchivo = c.estado_visibilidad === 'archivo';
     const temaCarpeta = c.color_tema || 'neutral';
     tbody.innerHTML = pdxState.archivos.map((a) => {
@@ -713,12 +843,12 @@
       <td>${htmlEstudioBadge(a.estudio_texto, temaCarpeta)}</td>
       <td><span class="sop-pdx-archivo-nombre" title="${escapeHtml(nomArch)}">${escapeHtml(nomArch)}</span></td>
       <td><div class="sop-actions-row">
-        <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-pdx-ver="${a.id}" title="Vista previa"><i data-lucide="eye"></i></button>
-        <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-pdx-dl="${a.id}" title="Descargar"><i data-lucide="download"></i></button>
+        ${canVer ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-pdx-ver="${a.id}" title="Vista previa"><i data-lucide="eye"></i></button>
+        <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-pdx-dl="${a.id}" title="Descargar"><i data-lucide="download"></i></button>` : ''}
         ${canEdit && !enArchivo ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-pdx-edit-arch="${a.id}" title="Editar datos"><i data-lucide="pencil"></i></button>` : ''}
         ${canEdit && !enArchivo ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-pdx-replace="${a.id}" title="Reemplazar PDF"><i data-lucide="file-up"></i></button>` : ''}
         ${canEdit && !enArchivo ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-pdx-move="${a.id}" title="Mover a otra carpeta"><i data-lucide="folder-input"></i></button>` : ''}
-        <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-pdx-hist="${a.id}" title="Historial"><i data-lucide="history"></i></button>
+        ${canVer ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-pdx-hist="${a.id}" title="Historial"><i data-lucide="history"></i></button>` : ''}
         ${sopPerm('soportes.armado.importar_pdx') ? `<button type="button" class="sop-btn sop-btn-primary sop-btn-sm" data-pdx-link="${a.id}" title="Vincular FE"><i data-lucide="link-2"></i></button>` : ''}
         ${canDelete ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-pdx-del="${a.id}" title="Eliminar" style="color:#dc2626"><i data-lucide="trash-2"></i></button>` : ''}
       </div></td>
@@ -764,8 +894,12 @@
     });
     const zone = $('sopPdxDropzone');
     const inputUp = $('sopPdxUploadInput');
-    if (zone) zone.classList.toggle('sop-dropzone-disabled', enArchivo);
-    if (inputUp) inputUp.disabled = enArchivo;
+    const dropDisabled = enArchivo || !canSubir;
+    if (zone) {
+      zone.classList.toggle('sop-dropzone-disabled', dropDisabled);
+      zone.style.display = canSubir ? '' : 'none';
+    }
+    if (inputUp) inputUp.disabled = dropDisabled;
     sopIcons($('sopPdxVistaDetalle'));
   }
 
@@ -870,51 +1004,19 @@
   }
 
   function modalReemplazarPdx(archivo) {
+    const carpeta = pdxState.carpetaActual;
+    const esEstruct = esCarpetaEstructuradaPdx(carpeta);
     const modal = openSopModal(`
       <h3><i data-lucide="file-up"></i> Reemplazar PDF</h3>
       <p style="font-size:.85rem;color:#64748b">Se actualiza el mismo registro (${escapeHtml(archivo.paciente_nombre)}). El PDF anterior se elimina del disco.</p>
       <div class="sop-field"><label>Nuevo archivo PDF</label><input type="file" id="sopPdxRepFile" accept=".pdf"></div>
-      <div id="sopPdxRepManual" class="hidden">
-        <p style="font-size:.8rem;color:#64748b">El nombre no tiene formato estándar; indique metadatos:</p>
-        <div class="sop-field"><label>Apellidos</label><input type="text" id="sopPdxRepApe" value="${escapeHtml(archivo.apellidos || '')}"></div>
-        <div class="sop-field"><label>Nombres</label><input type="text" id="sopPdxRepNom" value="${escapeHtml(archivo.nombres || '')}"></div>
-        <div class="sop-field"><label>Fecha estudio</label><input type="date" id="sopPdxRepFecha" value="${escapeHtml(archivo.fecha_estudio || '')}"></div>
-        <div class="sop-field"><label>Estudio</label><input type="text" id="sopPdxRepEstMan" value="${escapeHtml(archivo.estudio_texto || '')}"></div>
-      </div>
-      <label class="sop-toggle sop-pdx-rep-opt" style="margin:8px 0"><input type="checkbox" id="sopPdxRepCorregir"> Corregir nombre del estudio</label>
-      <div class="sop-field hidden sop-pdx-rep-opt" id="sopPdxRepEstWrap"><input type="text" id="sopPdxRepEst" value="${escapeHtml(archivo.estudio_texto || '')}" placeholder="PSG BASAL…"></div>
+      ${esEstruct ? '' : `<label class="sop-toggle sop-pdx-rep-opt" style="margin:8px 0"><input type="checkbox" id="sopPdxRepCorregir"> Corregir nombre del estudio</label>
+      <div class="sop-field hidden sop-pdx-rep-opt" id="sopPdxRepEstWrap"><input type="text" id="sopPdxRepEst" value="${escapeHtml(archivo.estudio_texto || '')}" placeholder="PSG BASAL…"></div>`}
       <div class="sop-dialog-actions">
         <button type="button" class="sop-btn sop-btn-ghost" id="sopPdxRepCancel">Cancelar</button>
         <button type="button" class="sop-btn sop-btn-primary" id="sopPdxRepOk">Reemplazar</button>
       </div>`);
-    const manualWrap = modal.querySelector('#sopPdxRepManual');
     const repFile = modal.querySelector('#sopPdxRepFile');
-    const esOrd = esCarpetaOrdenesPdx(pdxState.carpetaActual);
-    if (esOrd && manualWrap) {
-      manualWrap.innerHTML = `
-        <p style="font-size:.8rem;color:#64748b">El nombre no tiene formato de órdenes; indique metadatos:</p>
-        <div class="sop-field"><label>Apellidos</label><input type="text" id="sopPdxRepApe" value="${escapeHtml(archivo.apellidos || '')}"></div>
-        <div class="sop-field"><label>Nombres</label><input type="text" id="sopPdxRepNom" value="${escapeHtml(archivo.nombres || '')}"></div>
-        <div class="sop-field"><label>Documento</label><input type="text" id="sopPdxRepDoc" value="${escapeHtml(archivo.paciente_documento || '')}"></div>
-        <div class="sop-field"><label>Fecha</label><input type="date" id="sopPdxRepFecha" value="${escapeHtml(archivo.fecha_estudio || '')}"></div>
-        <div class="sop-field"><label>Tipo de examen</label><select id="sopPdxRepEstMan"></select></div>`;
-      poblarSelectEstudioPdx(manualWrap.querySelector('#sopPdxRepEstMan'), archivo.estudio_texto);
-      modal.querySelectorAll('.sop-pdx-rep-opt').forEach((el) => el.classList.add('hidden'));
-    }
-    const syncRepUi = () => {
-      const file = repFile?.files?.[0];
-      const parsed = file
-        ? (esOrd ? parseNombreOrdenesCliente(file.name) : parseNombrePdxCliente(file.name))
-        : null;
-      const manual = file && !parsed?.ok;
-      manualWrap?.classList.toggle('hidden', !manual);
-      if (!esOrd) {
-        modal.querySelectorAll('.sop-pdx-rep-opt').forEach((el) => {
-          el.classList.toggle('hidden', manual);
-        });
-      }
-    };
-    repFile?.addEventListener('change', syncRepUi);
     modal.querySelector('#sopPdxRepCorregir')?.addEventListener('change', (e) => {
       modal.querySelector('#sopPdxRepEstWrap')?.classList.toggle('hidden', !e.target.checked);
     });
@@ -922,26 +1024,13 @@
     modal.querySelector('#sopPdxRepOk').onclick = async () => {
       const file = repFile?.files?.[0];
       if (!file) return sopToast('Seleccione un PDF', 'warning');
+      const parsed = parseNombrePorCarpetaCliente(file.name, carpeta);
+      if (!parsed.ok) {
+        return sopToast(parsed.error || mensajeErrorFormatoCliente(detectarTemaCarpetaCliente(carpeta?.nombre_display)), 'error');
+      }
       const fd = new FormData();
       fd.append('file', file);
-      const parsed = esOrd ? parseNombreOrdenesCliente(file.name) : parseNombrePdxCliente(file.name);
-      if (!parsed.ok) {
-        if (!esOrd) {
-          return sopToast(parsed.error || MSG_FORMATO_REPORTE_CLIENT, 'error');
-        }
-        const body = {
-          apellidos: modal.querySelector('#sopPdxRepApe')?.value?.trim(),
-          nombres: modal.querySelector('#sopPdxRepNom')?.value?.trim(),
-          fecha_estudio: modal.querySelector('#sopPdxRepFecha')?.value,
-          estudio_texto: modal.querySelector('#sopPdxRepEstMan')?.value?.trim(),
-          paciente_documento: modal.querySelector('#sopPdxRepDoc')?.value?.trim().replace(/\s/g, '')
-        };
-        const msg = 'Complete apellidos, nombres, documento, fecha y tipo de examen';
-        if (!body.apellidos || !body.nombres || !body.fecha_estudio || !body.estudio_texto || !body.paciente_documento) {
-          return sopToast(msg, 'warning');
-        }
-        Object.keys(body).forEach((k) => fd.append(k, body[k]));
-      } else if (modal.querySelector('#sopPdxRepCorregir')?.checked) {
+      if (!esEstruct && modal.querySelector('#sopPdxRepCorregir')?.checked) {
         const est = modal.querySelector('#sopPdxRepEst')?.value?.trim();
         if (est) fd.append('estudio_texto', est);
       }
@@ -992,22 +1081,22 @@
   }
 
   function modalEditarArchivoPdx(archivo) {
-    const esOrd = esCarpetaOrdenesPdx(pdxState.carpetaActual);
+    const esEstruct = esCarpetaEstructuradaPdx(pdxState.carpetaActual);
     const modal = openSopModal(`
       <h3><i data-lucide="pencil"></i> Editar datos del reporte</h3>
       <div class="sop-field"><label>Apellidos</label><input type="text" id="sopPdxEdApe" value="${escapeHtml(archivo.apellidos || '')}"></div>
       <div class="sop-field"><label>Nombres</label><input type="text" id="sopPdxEdNom" value="${escapeHtml(archivo.nombres || '')}"></div>
       <div class="sop-field"><label>Fecha del estudio</label><input type="date" id="sopPdxEdFecha" value="${escapeHtml(archivo.fecha_estudio || '')}"></div>
-      ${esOrd
+      ${esEstruct
         ? '<div class="sop-field"><label>Tipo de examen *</label><select id="sopPdxEdEst"></select></div>'
         : `<div class="sop-field"><label>Nombre del estudio</label><input type="text" id="sopPdxEdEst" value="${escapeHtml(archivo.estudio_texto || '')}" placeholder="PSG BASAL, EEG, VTM…"></div>`}
-      <div class="sop-field"><label>Documento${esOrd ? ' *' : ' (opcional)'}</label><input type="text" id="sopPdxEdDoc" value="${escapeHtml(archivo.paciente_documento || '')}"></div>
+      <div class="sop-field"><label>Documento${esEstruct ? ' *' : ' (opcional)'}</label><input type="text" id="sopPdxEdDoc" value="${escapeHtml(archivo.paciente_documento || '')}"></div>
       <p style="margin:8px 0 0"><button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="sopPdxEdHist"><i data-lucide="history"></i> Ver historial</button></p>
       <div class="sop-dialog-actions">
         <button type="button" class="sop-btn sop-btn-ghost" id="sopPdxEdCancel">Cancelar</button>
         <button type="button" class="sop-btn sop-btn-primary" id="sopPdxEdOk">Guardar</button>
       </div>`);
-    if (esOrd) poblarSelectEstudioPdx(modal.querySelector('#sopPdxEdEst'), archivo.estudio_texto);
+    if (esEstruct) poblarSelectEstudioPdx(modal.querySelector('#sopPdxEdEst'), archivo.estudio_texto);
     modal.querySelector('#sopPdxEdHist')?.addEventListener('click', () => {
       closeSopModal(modal);
       modalHistorialPdx(archivo.id);
@@ -1025,7 +1114,7 @@
       if (!body.apellidos || !body.nombres || !body.fecha_estudio || !body.estudio_texto) {
         return sopToast('Complete todos los campos obligatorios', 'warning');
       }
-      if (esOrd && !body.paciente_documento) {
+      if (esEstruct && !body.paciente_documento) {
         return sopToast('El número de documento es obligatorio', 'warning');
       }
       const res = await apiFetch(`/api/soportes/pdx/archivos/${archivo.id}`, {
@@ -1057,7 +1146,7 @@
       <h3><i data-lucide="folder-plus" style="vertical-align:-3px;width:22px"></i> Nueva carpeta de reportes</h3>
       <div class="sop-field"><label>Periodo</label><input type="month" id="sopPdxNewPeriodo" value="${per}"></div>
       <div class="sop-field"><label>Nombre de carpeta</label>
-        <input type="text" id="sopPdxNewNombre" placeholder="REPORTES MES MARZO VTM u ORDENES MARZO"></div>
+        <input type="text" id="sopPdxNewNombre" placeholder="REPORTES VTM, ORDENES, COMPROBANTES o CONSENTIMIENTOS…"></div>
       <div class="sop-dialog-actions">
         <button type="button" class="sop-btn sop-btn-ghost" id="sopPdxNewCancel">Cancelar</button>
         <button type="button" class="sop-btn sop-btn-primary" id="sopPdxNewOk">Crear carpeta</button>
@@ -1094,30 +1183,34 @@
   function flujoSubidaPdx(file, carpetaId) {
     return new Promise((resolve, reject) => {
       const carpeta = pdxState.carpetaActual || pdxState.carpetas.find((c) => c.id === carpetaId);
-      if (esCarpetaOrdenesPdx(carpeta)) {
-        const parsed = parseNombreOrdenesCliente(file.name);
-        if (parsed.ok) modalSubidaOrdenesCompleto(file, carpetaId, carpeta, parsed, resolve, reject);
-        else modalSubidaOrdenesManual(file, carpetaId, carpeta, resolve, reject);
+      const tema = detectarTemaCarpetaCliente(carpeta?.nombre_display || '');
+      const parsed = parseNombrePorCarpetaCliente(file.name, carpeta);
+      if (!parsed.ok) {
+        const err = parsed.error || mensajeErrorFormatoCliente(tema);
+        sopToast(err, 'error');
+        reject(new Error(err));
         return;
       }
-      const parsed = parseNombrePdxCliente(file.name);
-      if (parsed.ok) modalSubidaPdxNombreCompleto(file, carpetaId, carpeta, parsed, resolve, reject);
-      else {
-        sopToast(parsed.error || MSG_FORMATO_REPORTE_CLIENT, 'error');
-        reject(new Error(parsed.error || MSG_FORMATO_REPORTE_CLIENT));
+      if (esCarpetaEstructuradaPdx(carpeta)) {
+        modalSubidaEstructuradaCompleto(file, carpetaId, carpeta, parsed, resolve, reject);
+        return;
       }
+      modalSubidaPdxNombreCompleto(file, carpetaId, carpeta, parsed, resolve, reject);
     });
   }
 
-  function modalSubidaOrdenesCompleto(file, carpetaId, carpeta, parsed, resolve, reject) {
+  function modalSubidaEstructuradaCompleto(file, carpetaId, carpeta, parsed, resolve, reject) {
+    const tema = detectarTemaCarpetaCliente(carpeta?.nombre_display || '');
+    const label = TEMA_LABEL[tema] || 'Documento';
     const modal = openSopModal(`
-      <h3><i data-lucide="file-check"></i> Confirmar orden</h3>
-      <p style="font-size:.85rem;color:#64748b;margin:-8px 0 12px">El nombre del archivo tiene el formato de órdenes. Revise o ajuste los datos:</p>
+      <h3><i data-lucide="file-check"></i> Confirmar ${escapeHtml(label.toLowerCase())}</h3>
+      <p style="font-size:.85rem;color:#64748b;margin:-8px 0 12px">El nombre del archivo cumple la estructura requerida. Revise o ajuste los datos:</p>
       <dl class="sop-upload-preview">
         <dt>Archivo</dt><dd>${escapeHtml(file.name)}</dd>
       </dl>
       <div class="sop-field"><label>Apellidos *</label><input type="text" id="sopPdxOrdApe" value="${escapeHtml(parsed.apellidos)}"></div>
       <div class="sop-field"><label>Nombres *</label><input type="text" id="sopPdxOrdNom" value="${escapeHtml(parsed.nombres)}"></div>
+      <div class="sop-field"><label>Tipo de documento</label><input type="text" id="sopPdxOrdTipoDoc" value="${escapeHtml(parsed.tipo_documento || '')}" readonly></div>
       <div class="sop-field"><label>Número de documento *</label><input type="text" id="sopPdxOrdDoc" value="${escapeHtml(parsed.paciente_documento || '')}" inputmode="numeric"></div>
       <div class="sop-field"><label>Fecha *</label><input type="date" id="sopPdxOrdFecha" value="${escapeHtml(parsed.fecha_estudio || '')}"></div>
       <div class="sop-field"><label>Tipo de examen *</label><select id="sopPdxOrdEst"></select></div>
@@ -1147,114 +1240,27 @@
     };
   }
 
-  function modalSubidaOrdenesManual(file, carpetaId, carpeta, resolve, reject) {
-    const modal = openSopModal(`
-      <h3><i data-lucide="file-warning"></i> Datos de la orden</h3>
-      <p style="font-size:.85rem;color:#64748b;margin:-8px 0 12px">El archivo <strong>${escapeHtml(file.name)}</strong> no tiene el formato de órdenes. Complete los datos:</p>
-      <div class="sop-pdx-format-help" style="margin-bottom:14px;padding:10px 12px">
-        <p class="sop-pdx-format-pattern" style="margin:0"><code>Apellidos, Nombres, Documento, YYYY-MM-DD, Tipo de examen.pdf</code></p>
-      </div>
-      <div class="sop-field"><label>Apellidos *</label><input type="text" id="sopPdxOrdManApe"></div>
-      <div class="sop-field"><label>Nombres *</label><input type="text" id="sopPdxOrdManNom"></div>
-      <div class="sop-field"><label>Número de documento *</label><input type="text" id="sopPdxOrdManDoc" inputmode="numeric"></div>
-      <div class="sop-field"><label>Fecha *</label><input type="date" id="sopPdxOrdManFecha"></div>
-      <div class="sop-field"><label>Tipo de examen *</label><select id="sopPdxOrdManEst"></select></div>
-      <div class="sop-dialog-actions">
-        <button type="button" class="sop-btn sop-btn-ghost" id="sopPdxOrdManCancel">Cancelar</button>
-        <button type="button" class="sop-btn sop-btn-primary" id="sopPdxOrdManOk">Subir PDF</button>
-      </div>`);
-    poblarSelectEstudioPdx(modal.querySelector('#sopPdxOrdManEst'), '');
-    modal.querySelector('#sopPdxOrdManCancel').onclick = () => { closeSopModal(modal); reject(new Error('cancelado')); };
-    modal.querySelector('#sopPdxOrdManOk').onclick = async () => {
-      const body = {
-        apellidos: modal.querySelector('#sopPdxOrdManApe')?.value?.trim(),
-        nombres: modal.querySelector('#sopPdxOrdManNom')?.value?.trim(),
-        paciente_documento: modal.querySelector('#sopPdxOrdManDoc')?.value?.trim().replace(/\s/g, ''),
-        fecha_estudio: modal.querySelector('#sopPdxOrdManFecha')?.value,
-        estudio_texto: modal.querySelector('#sopPdxOrdManEst')?.value?.trim()
-      };
-      if (!body.apellidos || !body.nombres || !body.paciente_documento || !body.fecha_estudio || !body.estudio_texto) {
-        return sopToast('Complete apellidos, nombres, documento, fecha y tipo de examen', 'warning');
-      }
-      try {
-        await subirArchivoPdx(file, carpetaId, body);
-        closeSopModal(modal);
-        sopToast('Archivo subido', 'success');
-        resolve();
-      } catch (e) { sopToast(e.message, 'error'); }
-    };
-  }
-
   function modalSubidaPdxNombreCompleto(file, carpetaId, carpeta, parsed, resolve, reject) {
     const warns = pdxUploadWarnings(parsed, carpeta);
+    const estudioInferido = parsed.estudio_texto || inferirEstudioCliente(carpeta);
     const modal = openSopModal(`
       <h3><i data-lucide="file-check"></i> Confirmar carga</h3>
-      <p style="font-size:.85rem;color:#64748b;margin:-8px 0 12px">El nombre del archivo tiene el formato completo. Revise los datos detectados:</p>
+      <p style="font-size:.85rem;color:#64748b;margin:-8px 0 12px">El nombre del archivo cumple la estructura mínima. Revise los datos detectados:</p>
       <dl class="sop-upload-preview">
         <dt>Archivo</dt><dd>${escapeHtml(file.name)}</dd>
         <dt>Paciente</dt><dd>${escapeHtml(parsed.paciente_nombre)}</dd>
         <dt>Fecha estudio</dt><dd>${escapeHtml(parsed.fecha_estudio)}</dd>
-        <dt>Estudio</dt><dd><strong>${escapeHtml(parsed.estudio_texto)}</strong></dd>
+        <dt>Estudio al descargar</dt><dd><strong>${escapeHtml(estudioInferido || '—')}</strong></dd>
       </dl>
-      ${warns.length ? `<div class="sop-upload-warn">${escapeHtml(warns.join(' '))}</div>` : '<div class="sop-upload-ok">Los datos se leyeron del nombre del archivo.</div>'}
-      <label class="sop-toggle" style="margin:12px 0 8px"><input type="checkbox" id="sopPdxCorregirEst"> Corregir nombre del estudio</label>
-      <div class="sop-field hidden" id="sopPdxEstWrap"><label>Nombre del estudio</label>
-        <input type="text" id="sopPdxEstCorregido" value="${escapeHtml(parsed.estudio_texto)}"></div>
+      ${warns.length ? `<div class="sop-upload-warn">${escapeHtml(warns.join(' '))}</div>` : '<div class="sop-upload-ok">Los datos se leyeron del nombre del archivo. El tipo de estudio se añadirá al descargar.</div>'}
       <div class="sop-dialog-actions">
         <button type="button" class="sop-btn sop-btn-ghost" id="sopPdxUpCancel">Cancelar</button>
         <button type="button" class="sop-btn sop-btn-primary" id="sopPdxUpOk">Subir PDF</button>
       </div>`);
-    const chk = modal.querySelector('#sopPdxCorregirEst');
-    const wrap = modal.querySelector('#sopPdxEstWrap');
-    chk?.addEventListener('change', () => wrap?.classList.toggle('hidden', !chk.checked));
     modal.querySelector('#sopPdxUpCancel').onclick = () => { closeSopModal(modal); reject(new Error('cancelado')); };
     modal.querySelector('#sopPdxUpOk').onclick = async () => {
-      const extra = {};
-      if (chk?.checked) {
-        const est = $('sopPdxEstCorregido')?.value?.trim();
-        if (!est) return sopToast('Indique el nombre del estudio', 'warning');
-        extra.estudio_texto = est;
-      }
       try {
-        await subirArchivoPdx(file, carpetaId, Object.keys(extra).length ? extra : undefined);
-        closeSopModal(modal);
-        sopToast('Archivo subido', 'success');
-        resolve();
-      } catch (e) { sopToast(e.message, 'error'); }
-    };
-  }
-
-  function modalSubidaPdxManual(file, carpetaId, carpeta, resolve, reject) {
-    const modal = openSopModal(`
-      <h3><i data-lucide="file-warning"></i> Datos del reporte</h3>
-      <p style="font-size:.85rem;color:#64748b;margin:-8px 0 12px">El archivo <strong>${escapeHtml(file.name)}</strong> no coincide con el formato estándar. Complete los datos:</p>
-      <div class="sop-pdx-format-help" style="margin-bottom:14px;padding:10px 12px">
-        <p class="sop-pdx-format-pattern" style="margin:0"><code>Apellido, Nombre &nbsp; YYYY-MM-DD &nbsp; HH-mm-ss &nbsp; N. &nbsp; TIPO ESTUDIO.pdf</code></p>
-      </div>
-      <div class="sop-field"><label>Apellidos *</label><input type="text" id="sopPdxConfApe"></div>
-      <div class="sop-field"><label>Nombres *</label><input type="text" id="sopPdxConfNom"></div>
-      <div class="sop-field"><label>Fecha del estudio *</label><input type="date" id="sopPdxConfFecha"></div>
-      <div class="sop-field"><label>Nombre del estudio *</label><input type="text" id="sopPdxConfEst" placeholder="Ej: PSG BASAL, EEG ROUTINE, VTM"></div>
-      <div class="sop-dialog-actions">
-        <button type="button" class="sop-btn sop-btn-ghost" id="sopPdxConfCancel">Cancelar</button>
-        <button type="button" class="sop-btn sop-btn-primary" id="sopPdxConfOk">Subir PDF</button>
-      </div>`);
-    modal.querySelector('#sopPdxConfCancel').onclick = () => { closeSopModal(modal); reject(new Error('cancelado')); };
-    modal.querySelector('#sopPdxConfOk').onclick = async () => {
-      const body = {
-        apellidos: $('sopPdxConfApe').value.trim(),
-        nombres: $('sopPdxConfNom').value.trim(),
-        fecha_estudio: $('sopPdxConfFecha').value,
-        estudio_texto: $('sopPdxConfEst').value.trim()
-      };
-      if (!body.apellidos || !body.nombres || !body.fecha_estudio || !body.estudio_texto) {
-        return sopToast('Apellidos, nombres, fecha y estudio son obligatorios', 'warning');
-      }
-      const pre = { ...body, fecha_estudio: body.fecha_estudio };
-      const warns = pdxUploadWarnings(pre, carpeta);
-      if (warns.length) sopToast(warns[0], 'warning');
-      try {
-        await subirArchivoPdx(file, carpetaId, body);
+        await subirArchivoPdx(file, carpetaId);
         closeSopModal(modal);
         sopToast('Archivo subido', 'success');
         resolve();
@@ -1264,7 +1270,8 @@
 
   function modalSubidaLotePdx(files, carpetaId) {
     const carpeta = pdxState.carpetaActual || pdxState.carpetas.find((c) => c.id === carpetaId);
-    if (esCarpetaOrdenesPdx(carpeta)) {
+    const tema = detectarTemaCarpetaCliente(carpeta?.nombre_display || '');
+    if (esCarpetaEstructuradaPdx(carpeta)) {
       return (async () => {
         for (const file of files) {
           await flujoSubidaPdx(file, carpetaId);
@@ -1272,28 +1279,31 @@
       })();
     }
     const items = files.map((file, idx) => {
-      const parsed = parseNombrePdxCliente(file.name);
+      const parsed = parseNombrePorCarpetaCliente(file.name, carpeta);
       return { idx, file, parsed, valido: parsed.ok };
     });
     const validos = items.filter((it) => it.valido);
     if (!validos.length) {
-      sopToast(MSG_FORMATO_REPORTE_CLIENT, 'error');
-      return Promise.reject(new Error(MSG_FORMATO_REPORTE_CLIENT));
+      const err = mensajeErrorFormatoCliente(tema);
+      sopToast(err, 'error');
+      return Promise.reject(new Error(err));
     }
     const filas = items.map((it) => {
       if (it.valido) {
         const w = pdxUploadWarnings(it.parsed, carpeta);
+        const est = it.parsed.estudio_texto || inferirEstudioCliente(carpeta);
         return `<tr data-lote-idx="${it.idx}">
           <td>${escapeHtml(it.file.name)}</td>
           <td>${escapeHtml(it.parsed.paciente_nombre)}</td>
           <td>${escapeHtml(it.parsed.fecha_estudio)}</td>
-          <td>${escapeHtml(it.parsed.estudio_texto || '—')}</td>
+          <td>${escapeHtml(est || '—')}</td>
           <td>${w.length ? '<span style="color:#b45309">Revisar</span>' : '<span style="color:#059669">OK</span>'}</td>
         </tr>`;
       }
+      const ayuda = ayudaFormatoCliente(tema);
       return `<tr class="sop-lote-invalid" data-lote-idx="${it.idx}">
         <td colspan="5" style="color:#dc2626">
-          <strong>${escapeHtml(it.file.name)}</strong> — no cumple el formato (Apellido, Nombre   YYYY-MM-DD.pdf). No se subirá.
+          <strong>${escapeHtml(it.file.name)}</strong> — no cumple la estructura (${escapeHtml(ayuda.pattern)}). No se subirá.
         </td>
       </tr>`;
     }).join('');
@@ -1445,6 +1455,8 @@
     initPdxDone = true;
     setupPdxFiltros();
     sopIcons($('sopPdxFiltrosBar'));
+    const btnNueva = $('btnSopPdxNuevaCarpeta');
+    if (btnNueva) btnNueva.style.display = sopPerm('soportes.pdx.crear_carpeta') ? '' : 'none';
     $('btnVolverReportesPdx')?.addEventListener('click', goToMenu);
     $('btnSopPdxNuevaCarpeta')?.addEventListener('click', modalNuevaCarpetaPdx);
     $('btnSopPdxBuscar')?.addEventListener('click', buscarPdx);

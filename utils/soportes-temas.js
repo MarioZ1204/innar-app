@@ -12,6 +12,18 @@ function normalizarTexto(s) {
 function detectarTemaCarpeta(nombreCarpeta) {
   const u = normalizarTexto(nombreCarpeta);
 
+  if (/\bcomprobante/.test(u)) {
+    return 'comprobantes';
+  }
+
+  if (/\bconsentimiento/.test(u)) {
+    return 'consentimientos';
+  }
+
+  if (/\bordenes\b/.test(u)) {
+    return 'ordenes';
+  }
+
   if (
     /\bvtm\b/.test(u) ||
     u.includes('videotelemetria') ||
@@ -22,9 +34,7 @@ function detectarTemaCarpeta(nombreCarpeta) {
     return 'vtm';
   }
 
-  if (
-    u.includes('actigraf')
-  ) {
+  if (u.includes('actigraf')) {
     return 'actigrafia';
   }
 
@@ -47,15 +57,24 @@ function detectarTemaCarpeta(nombreCarpeta) {
     return 'eeg';
   }
 
-  if (/\bordenes\b/.test(u)) {
-    return 'ordenes';
-  }
-
   return 'neutral';
 }
 
 function esCarpetaOrdenes(nombreCarpeta) {
   return detectarTemaCarpeta(nombreCarpeta) === 'ordenes';
+}
+
+function esCarpetaComprobantes(nombreCarpeta) {
+  return detectarTemaCarpeta(nombreCarpeta) === 'comprobantes';
+}
+
+function esCarpetaConsentimientos(nombreCarpeta) {
+  return detectarTemaCarpeta(nombreCarpeta) === 'consentimientos';
+}
+
+function esCarpetaFormatoSimple(nombreCarpeta) {
+  const t = detectarTemaCarpeta(nombreCarpeta);
+  return ['vtm', 'eeg', 'psg', 'actigrafia', 'neutral'].includes(t);
 }
 
 const TEMA_LABELS = {
@@ -64,12 +83,17 @@ const TEMA_LABELS = {
   eeg: 'EEG',
   actigrafia: 'Actigrafía',
   ordenes: 'Órdenes',
+  comprobantes: 'Comprobantes',
+  consentimientos: 'Consentimientos',
   neutral: 'General'
 };
 
 module.exports = {
   detectarTemaCarpeta,
   esCarpetaOrdenes,
+  esCarpetaComprobantes,
+  esCarpetaConsentimientos,
+  esCarpetaFormatoSimple,
   TEMA_LABELS,
   normalizarTexto
 };

@@ -4,17 +4,21 @@
 const path = require('path');
 const fs = require('fs');
 const {
-  parseNombrePdx,
-  parseNombreOrdenes,
-  normalizarNombrePdx,
-  normalizarNombreOrdenes,
+  parseNombrePorCarpeta,
   normalizarNombreBusqueda,
+  inferirEstudioDesdeCarpeta,
+  nombreArchivoDescarga,
   fechaEnPeriodo,
   temaCoincideCarpeta,
   resolverEstudioDesdeLista,
-  MSG_FORMATO_REPORTE
+  mensajeErrorFormato
 } = require('./soportes-pdx-parse');
-const { detectarTemaCarpeta, esCarpetaOrdenes } = require('./soportes-temas');
+const {
+  detectarTemaCarpeta,
+  esCarpetaOrdenes,
+  esCarpetaComprobantes,
+  esCarpetaConsentimientos
+} = require('./soportes-temas');
 const { getPdxDir } = require('./soportes-storage');
 
 async function cargarEstudiosParaOrdenes(db) {
@@ -25,107 +29,69 @@ async function cargarEstudiosParaOrdenes(db) {
   }
 }
 
-function buildMetaFromUploadOrdenes(originalName, body = {}, estudios = []) {
-  const parsed = parseNombreOrdenes(originalName, estudios);
-  const estudioManual = resolverEstudioDesdeLista(body.estudio_texto, estudios);
-  if (!parsed.ok) {
-    const doc = String(body.paciente_documento || '').trim().replace(/\s/g, '');
-    if (!(body.apellidos && body.nombres && doc && body.fecha_estudio && estudioManual)) {
-      return { ok: false, requiere_confirmacion: true };
-    }
-    const apellidos = String(body.apellidos).trim();
-    const nombres = String(body.nombres).trim();
-    return {
-      ok: true,
-      apellidos,
-      nombres,
-      paciente_documento: doc,
-      paciente_nombre: `${apellidos}, ${nombres}`,
-      paciente_nombre_norm: normalizarNombreBusqueda(`${apellidos}, ${nombres}`),
-      fecha_estudio: body.fecha_estudio,
-      marca_tiempo: '',
-      sufijo_numero: '',
-      estudio_texto: estudioManual,
-      estudio_tema: 'ordenes',
-      nombre_archivo_original: originalName,
-      nombre_archivo_display: normalizarNombreOrdenes({
-        apellidos,
-        nombres,
-        paciente_documento: doc,
-        fecha: body.fecha_estudio,
-        estudio: estudioManual
-      })
-    };
-  }
-  const estudio = estudioManual || parsed.estudio_texto;
-  const doc = String(body.paciente_documento || parsed.paciente_documento || '').trim().replace(/\s/g, '') || parsed.paciente_documento;
-  const fecha = body.fecha_estudio || parsed.fecha_estudio;
-  const display = normalizarNombreOrdenes({
-    apellidos: parsed.apellidos,
-    nombres: parsed.nombres,
-    paciente_documento: doc,
-    fecha,
-    estudio
-  });
-  return {
-    ok: true,
-    ...parsed,
-    paciente_documento: doc,
-    fecha_estudio: fecha,
-    estudio_texto: estudio,
-    estudio_tema: 'ordenes',
-    nombre_archivo_original: originalName,
-    nombre_archivo_display: display
-  };
+function necesitaListaEstudios(carpeta) {
+  const tema = detectarTemaCarpeta(carpeta?.nombre_display || '');
+  return ['ordenes', 'comprobantes', 'consentimientos'].includes(tema);
 }
 
 function buildMetaFromUpload(originalName, body = {}, carpeta = null) {
-  if (carpeta && esCarpetaOrdenes(carpeta.nombre_display)) {
-    return buildMetaFromUploadOrdenes(originalName, body, carpeta._estudiosLista || []);
-  }
-  const parsed = parseNombrePdx(originalName);
+  const estudios = carpeta?._estudiosLista || [];
+  const parsed = parseNombrePorCarpeta(originalName, carpeta, estudios);
+  const tema = detectarTemaCarpeta(carpeta?.nombre_display || '');
+
   if (!parsed.ok) {
-    return { ok: false, error: parsed.error || MSG_FORMATO_REPORTE };
+    return {
+      ok: false,
+      error: parsed.error || mensajeErrorFormato(tema)
+    };
   }
-  const estudioManual = String(body.estudio_texto || '').trim();
-  const estudio = estudioManual || parsed.estudio_texto;
-  const display = normalizarNombrePdx({
-    apellidos: parsed.apellidos,
-    nombres: parsed.nombres,
-    fecha: parsed.fecha_estudio,
-    marcaTiempo: parsed.marca_tiempo,
-    sufijo: parsed.sufijo_numero,
-    estudio
-  });
-  return {
+
+  let estudio = parsed.estudio_texto || '';
+  if (!estudio && ['vtm', 'eeg', 'psg', 'actigrafia'].includes(tema)) {
+    estudio = inferirEstudioDesdeCarpeta(carpeta);
+  }
+  const estudioManual = resolverEstudioDesdeLista(body.estudio_texto, estudios);
+  if (estudioManual) estudio = estudioManual;
+
+  const meta = {
     ok: true,
     ...parsed,
+    paciente_documento: parsed.paciente_documento || String(body.paciente_documento || '').trim().replace(/\s/g, '') || '',
+    fecha_estudio: body.fecha_estudio || parsed.fecha_estudio,
     estudio_texto: estudio,
-    estudio_tema: detectarTemaCarpeta(estudio),
-    nombre_archivo_original: originalName,
-    nombre_archivo_display: display
+    estudio_tema: detectarTemaCarpeta(estudio || tema),
+    nombre_archivo_original: originalName
   };
+
+  meta.nombre_archivo_display = nombreArchivoDescarga(meta, carpeta);
+  return meta;
 }
 
-function pdxDiskFilename(meta) {
-  const display = meta.nombre_archivo_display || normalizarNombrePdx({
-    apellidos: meta.apellidos,
-    nombres: meta.nombres,
-    fecha: meta.fecha_estudio,
-    marcaTiempo: meta.marca_tiempo || '',
-    sufijo: meta.sufijo_numero || '',
-    estudio: meta.estudio_texto
+function buildMetaFromUploadOrdenes(originalName, body = {}, estudios = []) {
+  return buildMetaFromUpload(originalName, body, {
+    nombre_display: 'ORDENES',
+    _estudiosLista: estudios
   });
-  const safe = String(display)
+}
+
+function sanitizeDiskName(name) {
+  return String(name)
     .replace(/[<>:"/\\|?*]/g, '_')
     .replace(/\s+/g, ' ')
-    .trim();
-  return safe || `reporte-${Date.now()}.pdf`;
+    .trim() || `reporte-${Date.now()}.pdf`;
 }
 
-function finalizePdxFileOnDisk(carpetaId, tmpFilename, meta) {
+function pdxDiskFilename(meta, carpeta = null) {
+  const tema = detectarTemaCarpeta(carpeta?.nombre_display || '');
+  if (['ordenes', 'comprobantes', 'consentimientos'].includes(tema)) {
+    return sanitizeDiskName(meta.nombre_archivo_display || meta.nombre_archivo_original || meta.original);
+  }
+  return sanitizeDiskName(meta.nombre_archivo_original || meta.original);
+}
+
+function finalizePdxFileOnDisk(carpetaId, tmpFilename, meta, carpeta = null) {
   const dir = getPdxDir(carpetaId);
-  const diskName = pdxDiskFilename(meta);
+  const diskName = pdxDiskFilename(meta, carpeta);
   const tmpPath = path.join(dir, tmpFilename);
   const finalPath = path.join(dir, diskName);
   if (fs.existsSync(tmpPath)) {
@@ -135,12 +101,16 @@ function finalizePdxFileOnDisk(carpetaId, tmpFilename, meta) {
     }
   }
   const rutaRelativa = path.join('soportes', 'pdx', String(carpetaId), diskName).replace(/\\/g, '/');
-  return { rutaRelativa, diskName, nombre_archivo_display: meta.nombre_archivo_display || diskName };
+  return {
+    rutaRelativa,
+    diskName,
+    nombre_archivo_display: meta.nombre_archivo_display || diskName
+  };
 }
 
-function movePdxFileOnDisk(fromCarpetaId, toCarpetaId, oldRutaRelativa, meta) {
+function movePdxFileOnDisk(fromCarpetaId, toCarpetaId, oldRutaRelativa, meta, carpeta = null) {
   const oldFp = path.join(getPdxDir(fromCarpetaId), path.basename(oldRutaRelativa));
-  const diskName = pdxDiskFilename(meta);
+  const diskName = pdxDiskFilename(meta, carpeta);
   const destDir = getPdxDir(toCarpetaId);
   const newFp = path.join(destDir, diskName);
   if (fs.existsSync(oldFp)) {
@@ -155,7 +125,11 @@ function movePdxFileOnDisk(fromCarpetaId, toCarpetaId, oldRutaRelativa, meta) {
 
 function collectPdxWarnings(meta, carpeta) {
   const warnings = [];
-  if (carpeta && esCarpetaOrdenes(carpeta.nombre_display)) {
+  const tema = detectarTemaCarpeta(carpeta?.nombre_display || '');
+  if (['ordenes', 'comprobantes', 'consentimientos', 'vtm', 'eeg', 'psg', 'actigrafia'].includes(tema)) {
+    if (carpeta && meta.fecha_estudio && !fechaEnPeriodo(meta.fecha_estudio, carpeta.periodo)) {
+      warnings.push(`La fecha del estudio (${meta.fecha_estudio}) no pertenece al mes ${carpeta.periodo}`);
+    }
     return warnings;
   }
   if (carpeta && meta.fecha_estudio && !fechaEnPeriodo(meta.fecha_estudio, carpeta.periodo)) {
@@ -171,8 +145,10 @@ module.exports = {
   buildMetaFromUpload,
   buildMetaFromUploadOrdenes,
   cargarEstudiosParaOrdenes,
+  necesitaListaEstudios,
   pdxDiskFilename,
   finalizePdxFileOnDisk,
   movePdxFileOnDisk,
-  collectPdxWarnings
+  collectPdxWarnings,
+  nombreArchivoDescarga
 };

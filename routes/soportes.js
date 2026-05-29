@@ -17,16 +17,29 @@ const {
   calcularVisibilidadPeriodo,
   diasRestantesGracia
 } = require('../utils/soportes-visibilidad');
-const { detectarTemaCarpeta } = require('../utils/soportes-temas');
-const { parseNombrePdx, fechaEnPeriodo, temaCoincideCarpeta, normalizarNombreBusqueda } = require('../utils/soportes-pdx-parse');
+const {
+  detectarTemaCarpeta
+} = require('../utils/soportes-temas');
+const {
+  fechaEnPeriodo,
+  temaCoincideCarpeta,
+  normalizarNombreBusqueda,
+  mensajeErrorFormato,
+  nombreArchivoDescarga,
+  parseNombrePorCarpeta,
+  normalizarNombreOrdenHc,
+  normalizarNombreComprobante,
+  normalizarNombreConsentimiento,
+  inferirEstudioDesdeCarpeta
+} = require('../utils/soportes-pdx-parse');
 const {
   buildMetaFromUpload,
   cargarEstudiosParaOrdenes,
+  necesitaListaEstudios,
   finalizePdxFileOnDisk,
   movePdxFileOnDisk,
   collectPdxWarnings
 } = require('../utils/soportes-pdx-upload');
-const { esCarpetaOrdenes } = require('../utils/soportes-temas');
 const {
   ensureContenedoresForDia,
   ensureFeParEnContenedorHermano,
@@ -137,7 +150,7 @@ const uploadPdxReemplazar = multer({
   }
 });
 
-router.get('/soportes/pdx/carpetas', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'modulo.reportes_pdx'), async (req, res) => {
+router.get('/soportes/pdx/carpetas', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, ['modulo.reportes_pdx', 'soportes.pdx.ver', 'soportes.pdx.subir']), async (req, res) => {
   try {
     const incluirArchivo = puedeVerArchivo(req) && req.query.archivo === '1';
     const rows = await db.query(`
@@ -159,7 +172,7 @@ router.get('/soportes/pdx/carpetas', requireAuth, requireRoleOrPerm(ROLES_SOPORT
   }
 });
 
-router.post('/soportes/pdx/carpetas', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, ['modulo.reportes_pdx', 'soportes.pdx.subir']), async (req, res) => {
+router.post('/soportes/pdx/carpetas', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, ['modulo.reportes_pdx', 'soportes.pdx.crear_carpeta', 'soportes.pdx.subir']), async (req, res) => {
   try {
     const { periodo, nombre_display } = req.body || {};
     if (!periodo || !/^\d{4}-\d{2}$/.test(periodo)) {
@@ -187,7 +200,7 @@ router.post('/soportes/pdx/carpetas', requireAuth, requireRoleOrPerm(ROLES_SOPOR
   }
 });
 
-router.patch('/soportes/pdx/carpetas/:id', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, ['modulo.reportes_pdx', 'soportes.pdx.subir']), async (req, res) => {
+router.patch('/soportes/pdx/carpetas/:id', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, ['modulo.reportes_pdx', 'soportes.pdx.editar', 'soportes.pdx.subir']), async (req, res) => {
   try {
     const rows = await db.query('SELECT * FROM sop_pdx_carpetas WHERE id = ?', [req.params.id]);
     if (!rows.length) return res.status(404).json({ error: 'Carpeta no encontrada' });
@@ -221,7 +234,7 @@ router.patch('/soportes/pdx/carpetas/:id', requireAuth, requireRoleOrPerm(ROLES_
   }
 });
 
-router.delete('/soportes/pdx/carpetas/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'soportes.pdx.eliminar'), async (req, res) => {
+router.delete('/soportes/pdx/carpetas/:id', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, ['modulo.reportes_pdx', 'soportes.pdx.eliminar']), async (req, res) => {
   try {
     const rows = await db.query('SELECT * FROM sop_pdx_carpetas WHERE id = ?', [req.params.id]);
     if (!rows.length) return res.status(404).json({ error: 'Carpeta no encontrada' });
@@ -254,7 +267,7 @@ router.delete('/soportes/pdx/carpetas/:id', requireAuth, requireRoleOrPerm(['sup
   }
 });
 
-router.get('/soportes/pdx/carpetas/:id/archivos', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'modulo.reportes_pdx'), async (req, res) => {
+router.get('/soportes/pdx/carpetas/:id/archivos', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, ['modulo.reportes_pdx', 'soportes.pdx.ver', 'soportes.pdx.subir']), async (req, res) => {
   try {
     const carpeta = await db.query('SELECT * FROM sop_pdx_carpetas WHERE id = ?', [req.params.id]);
     if (!carpeta.length) return res.status(404).json({ error: 'Carpeta no encontrada' });
@@ -291,16 +304,14 @@ router.post(
       const vis = calcularVisibilidadPeriodo(carpeta.periodo);
       if (vis === 'archivo') return res.status(403).json({ error: 'Carpeta cerrada para carga' });
 
-      const esOrdenes = esCarpetaOrdenes(carpeta.nombre_display);
-      if (esOrdenes) {
+      if (necesitaListaEstudios(carpeta)) {
         carpeta._estudiosLista = await cargarEstudiosParaOrdenes(db);
       }
       const meta = buildMetaFromUpload(req.file.originalname, req.body, carpeta);
       if (!meta.ok) {
+        const tema = detectarTemaCarpeta(carpeta.nombre_display);
         return res.status(400).json({
-          error: meta.error || (esOrdenes
-            ? 'Complete apellidos, nombres, documento, fecha y tipo de examen.'
-            : 'El archivo debe llamarse: Apellido, Nombre   YYYY-MM-DD.pdf (puede incluir hora, número y estudio después de la fecha).'),
+          error: meta.error || mensajeErrorFormato(tema),
           requiere_confirmacion: !!meta.requiere_confirmacion
         });
       }
@@ -309,7 +320,8 @@ router.post(
       const { rutaRelativa, nombre_archivo_display } = finalizePdxFileOnDisk(
         carpeta.id,
         req.file.filename,
-        meta
+        meta,
+        carpeta
       );
 
       const ins = await db.execute(
@@ -320,7 +332,8 @@ router.post(
         ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         [
           carpeta.id, meta.apellidos, meta.nombres, meta.paciente_nombre, meta.paciente_nombre_norm,
-          req.body.paciente_documento || null, meta.fecha_estudio, meta.marca_tiempo, meta.sufijo_numero,
+          meta.paciente_documento || req.body.paciente_documento || null,
+          meta.fecha_estudio, meta.marca_tiempo, meta.sufijo_numero,
           meta.estudio_texto, req.file.originalname, nombre_archivo_display, rutaRelativa,
           req.file.size, req.session.usuarioId
         ]
@@ -336,7 +349,7 @@ router.post(
   }
 );
 
-router.get('/soportes/pdx/buscar', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'modulo.reportes_pdx'), async (req, res) => {
+router.get('/soportes/pdx/buscar', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, ['modulo.reportes_pdx', 'soportes.pdx.ver', 'soportes.pdx.subir']), async (req, res) => {
   try {
     const q = String(req.query.q || '').trim();
     if (q.length < 2) return res.json({ resultados: [] });
@@ -372,7 +385,7 @@ router.get('/soportes/pdx/buscar', requireAuth, requireRoleOrPerm(ROLES_SOPORTES
   }
 });
 
-router.patch('/soportes/pdx/archivos/:id', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, ['modulo.reportes_pdx', 'soportes.pdx.subir']), async (req, res) => {
+router.patch('/soportes/pdx/archivos/:id', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, ['modulo.reportes_pdx', 'soportes.pdx.editar', 'soportes.pdx.subir']), async (req, res) => {
   try {
     const rows = await db.query(
       `SELECT a.*, c.periodo, c.color_tema AS carpeta_tema, c.nombre_display AS carpeta_nombre FROM sop_pdx_archivos a
@@ -391,20 +404,55 @@ router.patch('/soportes/pdx/archivos/:id', requireAuth, requireRoleOrPerm(ROLES_
     const documento = req.body?.paciente_documento != null
       ? String(req.body.paciente_documento).trim().replace(/\s/g, '')
       : (prev.paciente_documento || '');
-    if (!apellidos || !nombres || !fecha || !estudio) {
+    if (!apellidos || !nombres || !fecha) {
+      return res.status(400).json({ error: 'Apellidos, nombres y fecha son obligatorios' });
+    }
+    const temaCarpeta = detectarTemaCarpeta(prev.carpeta_nombre);
+    let estudioFinal = estudio;
+    if (!estudioFinal && ['vtm', 'eeg', 'psg', 'actigrafia'].includes(temaCarpeta)) {
+      estudioFinal = inferirEstudioDesdeCarpeta({ nombre_display: prev.carpeta_nombre });
+    }
+    if (!estudioFinal) {
       return res.status(400).json({ error: 'Apellidos, nombres, fecha y estudio son obligatorios' });
     }
-    if (esCarpetaOrdenes(prev.carpeta_nombre) && !documento) {
-      return res.status(400).json({ error: 'El número de documento es obligatorio en carpetas Órdenes' });
+    const requiereDocumento = ['ordenes', 'comprobantes', 'consentimientos'].includes(temaCarpeta);
+    if (requiereDocumento && !documento) {
+      return res.status(400).json({ error: 'El número de documento es obligatorio en esta carpeta' });
     }
 
     const pacienteNombre = `${apellidos}, ${nombres}`;
-    const { normalizarNombreBusqueda } = require('../utils/soportes-pdx-parse');
-    const { movePdxFileOnDisk } = require('../utils/soportes-pdx-upload');
 
     let carpetaId = prev.carpeta_id;
     let rutaRelativa = prev.ruta_relativa;
+    let carpetaCtx = { nombre_display: prev.carpeta_nombre, color_tema: prev.carpeta_tema, periodo: prev.periodo };
+    const reparsed = parseNombrePorCarpeta(prev.nombre_archivo_original, carpetaCtx);
+    const tipoDoc = reparsed.ok ? reparsed.tipo_documento : 'CC';
+    let metaDisplay = {
+      apellidos,
+      nombres,
+      paciente_documento: documento,
+      tipo_documento: tipoDoc,
+      fecha_estudio: fecha,
+      estudio_texto: estudioFinal,
+      nombre_archivo_original: prev.nombre_archivo_original
+    };
     let nombreDisplay = prev.nombre_archivo_display;
+    if (temaCarpeta === 'ordenes') {
+      nombreDisplay = normalizarNombreOrdenHc({
+        apellidos, nombres, tipo_documento: tipoDoc, paciente_documento: documento, fecha, estudio: estudioFinal
+      });
+    } else if (temaCarpeta === 'comprobantes') {
+      nombreDisplay = normalizarNombreComprobante({
+        apellidos, nombres, tipo_documento: tipoDoc, paciente_documento: documento, fecha, estudio: estudioFinal
+      });
+    } else if (temaCarpeta === 'consentimientos') {
+      nombreDisplay = normalizarNombreConsentimiento({
+        apellidos, nombres, tipo_documento: tipoDoc, paciente_documento: documento, fecha, estudio: estudioFinal
+      });
+    } else {
+      nombreDisplay = nombreArchivoDescarga(metaDisplay, carpetaCtx);
+    }
+    metaDisplay.nombre_archivo_display = nombreDisplay;
     const warnings = [];
     let destCarpeta = null;
 
@@ -415,28 +463,39 @@ router.patch('/soportes/pdx/archivos/:id', requireAuth, requireRoleOrPerm(ROLES_
       destCarpeta = destRows[0];
       const visDest = calcularVisibilidadPeriodo(destCarpeta.periodo);
       if (visDest === 'archivo') return res.status(403).json({ error: 'Carpeta destino en archivo' });
-      const moved = movePdxFileOnDisk(prev.carpeta_id, newCarpetaId, prev.ruta_relativa, {
-        apellidos,
-        nombres,
-        fecha_estudio: fecha,
-        marca_tiempo: prev.marca_tiempo,
-        sufijo_numero: prev.sufijo_numero,
-        estudio_texto: estudio,
-        nombre_archivo_display: prev.nombre_archivo_display
-      });
+      const moved = movePdxFileOnDisk(prev.carpeta_id, newCarpetaId, prev.ruta_relativa, metaDisplay, destCarpeta);
+      const destTema = detectarTemaCarpeta(destCarpeta.nombre_display);
+      if (destTema === 'ordenes') {
+        nombreDisplay = normalizarNombreOrdenHc({
+          apellidos, nombres, tipo_documento: tipoDoc, paciente_documento: documento, fecha, estudio: estudioFinal
+        });
+      } else if (destTema === 'comprobantes') {
+        nombreDisplay = normalizarNombreComprobante({
+          apellidos, nombres, tipo_documento: tipoDoc, paciente_documento: documento, fecha, estudio: estudioFinal
+        });
+      } else if (destTema === 'consentimientos') {
+        nombreDisplay = normalizarNombreConsentimiento({
+          apellidos, nombres, tipo_documento: tipoDoc, paciente_documento: documento, fecha, estudio: estudioFinal
+        });
+      } else {
+        nombreDisplay = nombreArchivoDescarga(metaDisplay, destCarpeta);
+      }
+      metaDisplay.nombre_archivo_display = nombreDisplay;
       carpetaId = newCarpetaId;
       rutaRelativa = moved.rutaRelativa;
       if (!fechaEnPeriodo(fecha, destCarpeta.periodo)) {
         warnings.push(`La fecha (${fecha}) no pertenece al mes ${destCarpeta.periodo}`);
       }
-      if (!temaCoincideCarpeta(detectarTemaCarpeta(estudio), destCarpeta.color_tema)) {
+      if (!temaCoincideCarpeta(detectarTemaCarpeta(estudioFinal), destCarpeta.color_tema)) {
         warnings.push('El estudio no coincide con el tema de la carpeta destino');
       }
     } else {
+      const moved = movePdxFileOnDisk(prev.carpeta_id, prev.carpeta_id, prev.ruta_relativa, metaDisplay, carpetaCtx);
+      rutaRelativa = moved.rutaRelativa;
       if (!fechaEnPeriodo(fecha, prev.periodo)) {
         warnings.push(`La fecha (${fecha}) no pertenece al mes ${prev.periodo}`);
       }
-      if (!temaCoincideCarpeta(detectarTemaCarpeta(estudio), prev.carpeta_tema)) {
+      if (!temaCoincideCarpeta(detectarTemaCarpeta(estudioFinal), prev.carpeta_tema)) {
         warnings.push('El estudio no coincide con el tema de la carpeta');
       }
     }
@@ -455,7 +514,7 @@ router.patch('/soportes/pdx/archivos/:id', requireAuth, requireRoleOrPerm(ROLES_
         normalizarNombreBusqueda(pacienteNombre),
         documento || null,
         fecha,
-        estudio,
+        estudioFinal,
         rutaRelativa,
         nombreDisplay,
         req.session.usuarioId,
@@ -475,7 +534,7 @@ router.patch('/soportes/pdx/archivos/:id', requireAuth, requireRoleOrPerm(ROLES_
   }
 });
 
-router.delete('/soportes/pdx/archivos/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'soportes.pdx.eliminar'), async (req, res) => {
+router.delete('/soportes/pdx/archivos/:id', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, ['modulo.reportes_pdx', 'soportes.pdx.eliminar']), async (req, res) => {
   try {
     const rows = await db.query('SELECT * FROM sop_pdx_archivos WHERE id = ?', [req.params.id]);
     if (!rows.length) return res.status(404).json({ error: 'No encontrado' });
@@ -488,24 +547,29 @@ router.delete('/soportes/pdx/archivos/:id', requireAuth, requireRoleOrPerm(['sup
   }
 });
 
-router.get('/soportes/pdx/archivos/:id/descargar', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'modulo.reportes_pdx'), async (req, res) => {
+router.get('/soportes/pdx/archivos/:id/descargar', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, ['modulo.reportes_pdx', 'soportes.pdx.ver', 'soportes.pdx.subir']), async (req, res) => {
   try {
     const rows = await db.query(
-      `SELECT a.*, c.periodo FROM sop_pdx_archivos a JOIN sop_pdx_carpetas c ON c.id = a.carpeta_id WHERE a.id = ?`,
+      `SELECT a.*, c.periodo, c.nombre_display AS carpeta_nombre FROM sop_pdx_archivos a
+       JOIN sop_pdx_carpetas c ON c.id = a.carpeta_id WHERE a.id = ?`,
       [req.params.id]
     );
     if (!rows.length) return res.status(404).json({ error: 'No encontrado' });
-    const vis = calcularVisibilidadPeriodo(rows[0].periodo);
+    const row = rows[0];
+    const vis = calcularVisibilidadPeriodo(row.periodo);
     if (vis === 'archivo' && !puedeVerArchivo(req)) return res.status(403).json({ error: 'Archivo en carpeta cerrada' });
-    const fp = resolveStoragePath(rows[0].ruta_relativa);
+    const fp = resolveStoragePath(row.ruta_relativa);
     if (!fp || !fs.existsSync(fp)) return res.status(404).json({ error: 'Archivo no en disco' });
-    res.download(fp, rows[0].nombre_archivo_original);
+    const downloadName = row.nombre_archivo_display
+      || nombreArchivoDescarga(row, { nombre_display: row.carpeta_nombre })
+      || row.nombre_archivo_original;
+    res.download(fp, downloadName);
   } catch (e) {
     res.status(500).json({ error: safeError(e) });
   }
 });
 
-router.get('/soportes/pdx/archivos/:id/ver', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'modulo.reportes_pdx'), async (req, res) => {
+router.get('/soportes/pdx/archivos/:id/ver', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, ['modulo.reportes_pdx', 'soportes.pdx.ver', 'soportes.pdx.subir']), async (req, res) => {
   try {
     const rows = await db.query(
       `SELECT a.*, c.periodo FROM sop_pdx_archivos a JOIN sop_pdx_carpetas c ON c.id = a.carpeta_id WHERE a.id = ?`,
@@ -525,7 +589,7 @@ router.get('/soportes/pdx/archivos/:id/ver', requireAuth, requireRoleOrPerm(ROLE
   }
 });
 
-router.get('/soportes/pdx/archivos/:id/historial', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'modulo.reportes_pdx'), async (req, res) => {
+router.get('/soportes/pdx/archivos/:id/historial', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, ['modulo.reportes_pdx', 'soportes.pdx.ver', 'soportes.pdx.subir']), async (req, res) => {
   try {
     const rows = await db.query(
       `SELECT l.*, u.nombre AS usuario_nombre
@@ -543,7 +607,7 @@ router.get('/soportes/pdx/archivos/:id/historial', requireAuth, requireRoleOrPer
 router.post(
   '/soportes/pdx/archivos/:id/reemplazar',
   requireAuth,
-  requireRoleOrPerm(ROLES_SOPORTES, ['modulo.reportes_pdx', 'soportes.pdx.subir']),
+  requireRoleOrPerm(ROLES_SOPORTES, ['modulo.reportes_pdx', 'soportes.pdx.editar', 'soportes.pdx.subir']),
   uploadPdxReemplazar.single('file'),
   validateMagicBytes,
   async (req, res) => {
@@ -560,16 +624,14 @@ router.post(
       if (vis === 'archivo') return res.status(403).json({ error: 'Carpeta cerrada' });
 
       const carpetaCtx = { periodo: prev.periodo, color_tema: prev.color_tema, nombre_display: prev.nombre_display };
-      const esOrdenes = esCarpetaOrdenes(prev.nombre_display);
-      if (esOrdenes) {
+      if (necesitaListaEstudios(carpetaCtx)) {
         carpetaCtx._estudiosLista = await cargarEstudiosParaOrdenes(db);
       }
       const meta = buildMetaFromUpload(req.file.originalname, req.body, carpetaCtx);
       if (!meta.ok) {
+        const tema = detectarTemaCarpeta(prev.nombre_display);
         return res.status(400).json({
-          error: meta.error || (esOrdenes
-            ? 'Complete apellidos, nombres, documento, fecha y tipo de examen.'
-            : 'El archivo debe llamarse: Apellido, Nombre   YYYY-MM-DD.pdf (puede incluir hora, número y estudio después de la fecha).'),
+          error: meta.error || mensajeErrorFormato(tema),
           requiere_confirmacion: !!meta.requiere_confirmacion
         });
       }
@@ -583,7 +645,8 @@ router.post(
       const { rutaRelativa, nombre_archivo_display } = finalizePdxFileOnDisk(
         prev.carpeta_id,
         req.file.filename,
-        meta
+        meta,
+        carpetaCtx
       );
 
       await db.execute(

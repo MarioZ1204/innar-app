@@ -7199,9 +7199,13 @@ const PERMISOS_DEFS = [
   { key: 'modulo.monitor_equipos',  label: 'Módulo: Monitor de Equipos',           grupo: 'Acceso a Módulos' },
   { key: 'modulo.reportes_pdx',     label: 'Módulo: Cargar reportes',              grupo: 'Acceso a Módulos' },
   { key: 'modulo.armado_soportes', label: 'Módulo: Soportes',                    grupo: 'Acceso a Módulos' },
-  // ── Soportes de radicación ────────────────────────────────────────────────
-  { key: 'soportes.pdx.subir',           label: 'PDX: Subir archivos y crear carpetas', grupo: 'Soportes Radicación' },
-  { key: 'soportes.pdx.eliminar',        label: 'PDX: Eliminar archivos',               grupo: 'Soportes Radicación' },
+  // ── Cargar reportes (PDX) ─────────────────────────────────────────────────
+  { key: 'soportes.pdx.ver',             label: 'Reportes: Ver carpetas y archivos',     grupo: 'Cargar reportes' },
+  { key: 'soportes.pdx.crear_carpeta',   label: 'Reportes: Crear carpetas',              grupo: 'Cargar reportes' },
+  { key: 'soportes.pdx.subir',           label: 'Reportes: Subir archivos PDF',          grupo: 'Cargar reportes' },
+  { key: 'soportes.pdx.editar',          label: 'Reportes: Editar, reemplazar y mover',  grupo: 'Cargar reportes' },
+  { key: 'soportes.pdx.eliminar',        label: 'Reportes: Eliminar archivos y carpetas', grupo: 'Cargar reportes' },
+  // ── Armado de soportes ────────────────────────────────────────────────────
   { key: 'soportes.armado.crear_estructura', label: 'Armado: Crear mes/día/FE',         grupo: 'Soportes Radicación' },
   { key: 'soportes.armado.subir',        label: 'Armado: Subir OPF/CRC/HEV',            grupo: 'Soportes Radicación' },
   { key: 'soportes.armado.importar_pdx', label: 'Armado: Importar PDX a expediente',    grupo: 'Soportes Radicación' },
@@ -7269,7 +7273,8 @@ const PERMISOS_ROL_DEFAULTS = {
   admin_recepcion: [
     'modulo.recibos','modulo.agenda_medica','modulo.electrodiag','modulo.ucqn','modulo.dashboard','modulo.monitor_equipos',
     'modulo.reportes_pdx','modulo.armado_soportes',
-    'soportes.pdx.subir','soportes.armado.crear_estructura','soportes.armado.subir','soportes.armado.importar_pdx','soportes.descargar_zip',
+    'soportes.pdx.ver','soportes.pdx.crear_carpeta','soportes.pdx.subir','soportes.pdx.editar',
+    'soportes.armado.crear_estructura','soportes.armado.subir','soportes.armado.importar_pdx','soportes.descargar_zip',
     'recibos.crear','recibos.ver','recibos.exportar',
     'agenda.ver','agenda.crear','agenda.editar','agenda.eliminar','agenda.cambiar_estado',
     'agenda.llamar_siguiente','agenda.marcar_atendido','agenda.aviso_doctor','agenda.disponibilidad',
@@ -7280,7 +7285,8 @@ const PERMISOS_ROL_DEFAULTS = {
   recepcion: [
     'modulo.recibos','modulo.agenda_medica','modulo.electrodiag','modulo.ucqn','modulo.dashboard','modulo.monitor_equipos',
     'modulo.reportes_pdx','modulo.armado_soportes',
-    'soportes.pdx.subir','soportes.armado.crear_estructura','soportes.armado.subir','soportes.armado.importar_pdx','soportes.descargar_zip',
+    'soportes.pdx.ver','soportes.pdx.crear_carpeta','soportes.pdx.subir','soportes.pdx.editar',
+    'soportes.armado.crear_estructura','soportes.armado.subir','soportes.armado.importar_pdx','soportes.descargar_zip',
     'recibos.crear','recibos.ver',
     'agenda.ver','agenda.crear','agenda.editar','agenda.eliminar','agenda.cambiar_estado',
     'agenda.llamar_siguiente','agenda.marcar_atendido','agenda.aviso_doctor',
@@ -7303,7 +7309,8 @@ const PERMISOS_ROL_DEFAULTS = {
   admin_electro: [
     'modulo.electrodiag','modulo.ucqn','modulo.agenda_medica','modulo.dashboard','modulo.monitor_equipos',
     'modulo.reportes_pdx','modulo.armado_soportes',
-    'soportes.pdx.subir','soportes.armado.crear_estructura','soportes.armado.subir','soportes.armado.importar_pdx','soportes.descargar_zip',
+    'soportes.pdx.ver','soportes.pdx.crear_carpeta','soportes.pdx.subir','soportes.pdx.editar',
+    'soportes.armado.crear_estructura','soportes.armado.subir','soportes.armado.importar_pdx','soportes.descargar_zip',
     'electro.ver','electro.crear','electro.editar','electro.eliminar','electro.cambiar_estado','electro.subir_archivo','electro.ver_archivo','electro.aviso_doctor',
     'agenda.ver','agenda.editar','agenda.aviso_doctor',
     'ucqn.ver','ucqn.editar_estado',
@@ -7312,7 +7319,8 @@ const PERMISOS_ROL_DEFAULTS = {
   electro: [
     'modulo.electrodiag','modulo.ucqn','modulo.agenda_medica','modulo.dashboard','modulo.monitor_equipos',
     'modulo.reportes_pdx','modulo.armado_soportes',
-    'soportes.pdx.subir','soportes.armado.crear_estructura','soportes.armado.subir','soportes.armado.importar_pdx','soportes.descargar_zip',
+    'soportes.pdx.ver','soportes.pdx.crear_carpeta','soportes.pdx.subir','soportes.pdx.editar',
+    'soportes.armado.crear_estructura','soportes.armado.subir','soportes.armado.importar_pdx','soportes.descargar_zip',
     'electro.ver','electro.crear','electro.editar','electro.eliminar','electro.cambiar_estado','electro.subir_archivo','electro.ver_archivo','electro.aviso_doctor',
     'agenda.ver','agenda.editar','agenda.aviso_doctor',
     'ucqn.ver','ucqn.editar_estado',
@@ -7326,7 +7334,8 @@ const PERMISOS_ROL_DEFAULTS = {
   contabilidad: [
     'modulo.recibos','modulo.ucqn','modulo.dashboard',
     'modulo.reportes_pdx','modulo.armado_soportes',
-    'soportes.pdx.subir','soportes.armado.crear_estructura','soportes.armado.subir','soportes.armado.importar_pdx','soportes.descargar_zip','soportes.ver_archivo',
+    'soportes.pdx.ver','soportes.pdx.crear_carpeta','soportes.pdx.subir','soportes.pdx.editar',
+    'soportes.armado.crear_estructura','soportes.armado.subir','soportes.armado.importar_pdx','soportes.descargar_zip','soportes.ver_archivo',
     'recibos.ver','recibos.exportar',
     'ucqn.ver','ucqn.editar_estado',
     'sistema.dashboard','sistema.reportes',
