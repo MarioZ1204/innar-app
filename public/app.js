@@ -2292,6 +2292,7 @@ const ENTIDAD_SELECTS_POR_MODULO = {
   ],
   electro: [
     { id: 'electroEntidad', placeholder: 'Seleccionar entidad' },
+    { id: 'modalEntidad', placeholder: '—', incluirParticular: true },
     { id: 'esperaEntidad' },
     { id: 'esperaFiltroEntidad', placeholder: 'Todas' }
   ],
@@ -6660,6 +6661,13 @@ async function sincronizarEstadosPorTiempo(citas = []) {
   return Array.isArray(citas) ? citas : [];
 }
 
+/** Entidad mostrada en agenda electro (columna cita, espera o recibo). */
+function obtenerEntidadCitaElectro(cita) {
+  const raw = cita?.entidad ?? cita?.nombre_entidad ?? '';
+  const t = String(raw).trim();
+  return t || '';
+}
+
 async function cargarCitasElectro() {
   if (_cargandoCitasElectro) {
     _pendienteCitasElectro = true;
@@ -6821,7 +6829,7 @@ function renderCitaElectroCard(container, c) {
     '<' + t + ' class="electro-cita-card-paciente">' + escapeHtml(c.paciente_nombre || '-') + '</' + t + '>' +
     '<' + t + ' class="electro-cita-card-meta">' +
       '<span>' + escapeHtml(c.paciente_documento || '-') + '</span>' +
-      (c.entidad ? '<span title="Entidad">' + escapeHtml(c.entidad) + '</span>' : '') +
+      (obtenerEntidadCitaElectro(c) ? '<span title="Entidad">' + escapeHtml(obtenerEntidadCitaElectro(c)) + '</span>' : '') +
       (equipoDisplay !== '\u2014' ? '<span>' + equipoDisplay + '</span>' : '') +
       (duracionTxt ? '<span>' + duracionTxt + '</span>' : '') +
     '</' + t + '>' +
@@ -6897,7 +6905,7 @@ function renderCitaElectroRow(tbody, c) {
     <td>${escapeHtml(c.paciente_documento || '-')}</td>
     <td class="col-mobile-hide">${escapeHtml(c.telefono || '-')}</td>
     <td><span title="${escapeHtml(c.estudio || '')}">${escapeHtml(estudioCorto)}</span></td>
-    <td class="col-mobile-hide">${escapeHtml(c.entidad || '-')}</td>
+    <td class="col-mobile-hide">${escapeHtml(obtenerEntidadCitaElectro(c) || '-')}</td>
     <td class="col-mobile-hide">${duracionDisplay}</td>
     <td class="col-mobile-hide">${escapeHtml(c.diagnostico_codigo || '-')}</td>
     <td>${estadoBadge(c.estado || 'Programado')}</td>
@@ -10644,7 +10652,24 @@ function enviarPorWhatsApp() {
 }
 
 async function abrirModalDetallesCita(cita) {
-  citaElectroSeleccionada = { ...cita, estado: normalizarEstadoElectro(cita?.estado) };
+  let citaData = { ...cita, estado: normalizarEstadoElectro(cita?.estado) };
+  if (cita?.id) {
+    try {
+      const resFresh = await apiFetch(`/api/citas-electro/${cita.id}?_t=${Date.now()}`, { cache: 'no-store' });
+      if (resFresh.ok) {
+        const fresh = await resFresh.json();
+        citaData = {
+          ...citaData,
+          ...fresh,
+          estado: normalizarEstadoElectro(fresh.estado ?? citaData.estado)
+        };
+      }
+    } catch (e) {
+      console.warn('[abrirModalDetallesCita] No se pudo refrescar cita:', e.message);
+    }
+  }
+  cita = citaData;
+  citaElectroSeleccionada = { ...cita };
   const puedeEditarElectro = tienePermiso('electro.editar');
   const puedeCambiarEstadoElectro = tienePermiso('electro.cambiar_estado') || puedeEditarElectro;
   
@@ -10673,8 +10698,20 @@ async function abrirModalDetallesCita(cita) {
   if ($horaEl) $horaEl.textContent = cita.hora_agendamiento ? formatearHora(cita.hora_agendamiento) : '-';
   const $diagEl = document.getElementById('modalDiagnosticoDisplay');
   if ($diagEl) $diagEl.textContent = cita.diagnostico_codigo ? `${cita.diagnostico_codigo}${cita.diagnostico_nombre ? ' – ' + cita.diagnostico_nombre : ''}` : (cita.diagnostico_nombre || '-');
-  const $entEl = document.getElementById('modalEntidadDisplay');
-  if ($entEl) $entEl.textContent = (cita.entidad && String(cita.entidad).trim()) ? String(cita.entidad).trim() : '-';
+  const entidadCita = obtenerEntidadCitaElectro(cita);
+  const modalEntidadEl = $('modalEntidad');
+  if (modalEntidadEl) {
+    await cargarEntidadesEnSelect('modalEntidad', {
+      valorPrevio: entidadCita,
+      placeholder: '—',
+      incluirParticular: true
+    });
+    const puedeEditarEntidad = puedeEditarElectro && citaElectroSeleccionada.estado !== 'Completado';
+    modalEntidadEl.disabled = !puedeEditarEntidad;
+    modalEntidadEl.style.opacity = !puedeEditarEntidad ? '0.65' : '1';
+    modalEntidadEl.style.cursor = !puedeEditarEntidad ? 'not-allowed' : 'pointer';
+    if (!entidadCita && !modalEntidadEl.value) modalEntidadEl.value = '';
+  }
   const $telEl = document.getElementById('modalTelefonoDisplay');
   if ($telEl) $telEl.textContent = cita.telefono || '-';
   
@@ -11201,6 +11238,12 @@ async function guardarCambiosCitaElectro() {
     }
     if (estudioNuevo && estudioNuevo !== (citaElectroSeleccionada.estudio || '')) {
       cambios.estudio = estudioNuevo;
+    }
+
+    const entidadNueva = ($('modalEntidad')?.value || '').trim();
+    const entidadActual = obtenerEntidadCitaElectro(citaElectroSeleccionada);
+    if (entidadNueva && entidadNueva !== entidadActual) {
+      cambios.entidad = entidadNueva;
     }
     
     if (Object.keys(cambios).length > 0) {

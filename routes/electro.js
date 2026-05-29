@@ -38,6 +38,24 @@ async function autoCompletarEstudiosElectroVencidos(excludeId = null) {
   `, params).catch((err) => logger.warn('Auto-completar estudios vencidos falló (no crítico):', err.message));
 }
 
+/** Entidad de la cita: columna propia, lista de espera o último recibo vinculado. */
+const SQL_ENTIDAD_CITA_ELECTRO = `
+  COALESCE(
+    NULLIF(TRIM(c.entidad), ''),
+    (
+      SELECT pe.entidad FROM pacientes_espera pe
+      WHERE pe.documento IS NOT NULL AND p.documento IS NOT NULL
+        AND TRIM(pe.documento) = TRIM(p.documento)
+      ORDER BY pe.id DESC LIMIT 1
+    ),
+    (
+      SELECT r.nombre_entidad FROM recibos r
+      WHERE r.cita_electro_id = c.id
+        AND r.nombre_entidad IS NOT NULL AND TRIM(r.nombre_entidad) <> ''
+      ORDER BY r.id DESC LIMIT 1
+    )
+  ) AS entidad`;
+
 const CITAS_ELECTRO_SELECT = `
   c.id, c.equipo_id, c.paciente_id,
   DATE_FORMAT(c.fecha, '%Y-%m-%d') AS fecha,
@@ -45,7 +63,7 @@ const CITAS_ELECTRO_SELECT = `
   DATE_FORMAT(c.hora_fin_date, '%Y-%m-%d') AS hora_fin_date,
   c.estudio, c.observaciones, c.diagnostico_id, c.estado,
   c.programado_por_nombre, c.editado_por_nombre, c.editado_en, c.creado_en, c.actualizado_en,
-  c.duracion_minutos, c.entidad`;
+  c.duracion_minutos, ${SQL_ENTIDAD_CITA_ELECTRO}`;
 
 function normalizeHora(str) {
   if (!str) return '';
@@ -221,7 +239,7 @@ router.get('/equipos-electro/monitor', requireAuth, requireRoleOrPerm(
     const citasDiaRows = await db.query(`
       SELECT c.id, c.equipo_id, c.estudio, c.estado, c.fecha,
              c.hora_agendamiento, c.hora_inicio, c.hora_fin, c.hora_fin_date,
-             c.duracion_minutos, c.entidad,
+             c.duracion_minutos, ${SQL_ENTIDAD_CITA_ELECTRO},
              p.nombre AS paciente_nombre, p.documento AS paciente_documento
       FROM citas_electro c
       JOIN pacientes p ON p.id = c.paciente_id
@@ -872,7 +890,8 @@ router.get('/citas-electro/:id', requireAuth, async (req, res) => {
   if (!id) return res.status(400).json({ error: 'ID inválido' });
   try {
     const rows = await db.query(`
-      SELECT c.*, p.nombre AS paciente_nombre, p.documento AS paciente_documento,
+      SELECT ${CITAS_ELECTRO_SELECT},
+             p.nombre AS paciente_nombre, p.documento AS paciente_documento,
              p.telefono AS telefono, d.nombre AS diagnostico_nombre,
              d.codigo AS diagnostico_codigo, e.nombre AS equipo_nombre
       FROM citas_electro c

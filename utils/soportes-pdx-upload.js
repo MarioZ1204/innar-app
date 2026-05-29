@@ -11,7 +11,8 @@ const {
   normalizarNombreBusqueda,
   fechaEnPeriodo,
   temaCoincideCarpeta,
-  resolverEstudioDesdeLista
+  resolverEstudioDesdeLista,
+  MSG_FORMATO_REPORTE
 } = require('./soportes-pdx-parse');
 const { detectarTemaCarpeta, esCarpetaOrdenes } = require('./soportes-temas');
 const { getPdxDir } = require('./soportes-storage');
@@ -83,28 +84,10 @@ function buildMetaFromUpload(originalName, body = {}, carpeta = null) {
     return buildMetaFromUploadOrdenes(originalName, body, carpeta._estudiosLista || []);
   }
   const parsed = parseNombrePdx(originalName);
-  const estudioManual = String(body.estudio_texto || '').trim();
   if (!parsed.ok) {
-    if (!(body.apellidos && body.nombres && body.fecha_estudio && estudioManual)) {
-      return { ok: false, requiere_confirmacion: true };
-    }
-    const apellidos = String(body.apellidos).trim();
-    const nombres = String(body.nombres).trim();
-    return {
-      ok: true,
-      apellidos,
-      nombres,
-      paciente_nombre: `${apellidos}, ${nombres}`,
-      paciente_nombre_norm: normalizarNombreBusqueda(`${apellidos}, ${nombres}`),
-      fecha_estudio: body.fecha_estudio,
-      marca_tiempo: body.marca_tiempo || '',
-      sufijo_numero: body.sufijo_numero || '',
-      estudio_texto: estudioManual,
-      estudio_tema: detectarTemaCarpeta(estudioManual),
-      nombre_archivo_original: originalName,
-      nombre_archivo_display: originalName
-    };
+    return { ok: false, error: parsed.error || MSG_FORMATO_REPORTE };
   }
+  const estudioManual = String(body.estudio_texto || '').trim();
   const estudio = estudioManual || parsed.estudio_texto;
   const display = normalizarNombrePdx({
     apellidos: parsed.apellidos,
@@ -129,8 +112,8 @@ function pdxDiskFilename(meta) {
     apellidos: meta.apellidos,
     nombres: meta.nombres,
     fecha: meta.fecha_estudio,
-    marcaTiempo: meta.marca_tiempo || '00-00-00',
-    sufijo: meta.sufijo_numero || '1',
+    marcaTiempo: meta.marca_tiempo || '',
+    sufijo: meta.sufijo_numero || '',
     estudio: meta.estudio_texto
   });
   const safe = String(display)

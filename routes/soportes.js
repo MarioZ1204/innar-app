@@ -298,10 +298,10 @@ router.post(
       const meta = buildMetaFromUpload(req.file.originalname, req.body, carpeta);
       if (!meta.ok) {
         return res.status(400).json({
-          error: esOrdenes
+          error: meta.error || (esOrdenes
             ? 'Complete apellidos, nombres, documento, fecha y tipo de examen.'
-            : 'Complete apellidos, nombres, fecha y nombre del estudio.',
-          requiere_confirmacion: true
+            : 'El archivo debe llamarse: Apellido, Nombre   YYYY-MM-DD.pdf (puede incluir hora, número y estudio después de la fecha).'),
+          requiere_confirmacion: !!meta.requiere_confirmacion
         });
       }
 
@@ -567,10 +567,10 @@ router.post(
       const meta = buildMetaFromUpload(req.file.originalname, req.body, carpetaCtx);
       if (!meta.ok) {
         return res.status(400).json({
-          error: esOrdenes
+          error: meta.error || (esOrdenes
             ? 'Complete apellidos, nombres, documento, fecha y tipo de examen.'
-            : 'Complete apellidos, nombres, fecha y nombre del estudio.',
-          requiere_confirmacion: true
+            : 'El archivo debe llamarse: Apellido, Nombre   YYYY-MM-DD.pdf (puede incluir hora, número y estudio después de la fecha).'),
+          requiere_confirmacion: !!meta.requiere_confirmacion
         });
       }
 

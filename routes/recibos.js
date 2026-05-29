@@ -325,7 +325,13 @@ router.get('/recibos/buscar-cita', requireAuth, requireRoleOrPerm(['superadmin',
     const citasE = await db.query(
       `SELECT ce.id, p.nombre AS paciente_nombre, p.documento AS paciente_documento,
               ce.fecha, ce.hora_agendamiento AS hora, ce.estudio AS tipo_consulta,
-              NULL AS entidad, NULL AS medico_nombre, NULL AS medico_id, 'electro' AS origen
+              COALESCE(NULLIF(TRIM(ce.entidad), ''), (
+                SELECT pe.entidad FROM pacientes_espera pe
+                WHERE pe.documento IS NOT NULL AND p.documento IS NOT NULL
+                  AND TRIM(pe.documento) = TRIM(p.documento)
+                ORDER BY pe.id DESC LIMIT 1
+              )) AS entidad,
+              NULL AS medico_nombre, NULL AS medico_id, 'electro' AS origen
        FROM citas_electro ce JOIN pacientes p ON p.id = ce.paciente_id
        WHERE (p.nombre LIKE ? OR p.documento LIKE ?) AND ce.estado = 'Completado' AND ce.deleted_at IS NULL AND ce.fecha >= CURDATE() - INTERVAL 7 DAY
        ORDER BY ce.fecha DESC, ce.hora_agendamiento DESC LIMIT 20`,

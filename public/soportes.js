@@ -22,8 +22,11 @@
     movimiento: 'Movido de carpeta'
   };
 
-  const RE_PDX_CLIENT = /^(.+?),\s*(.+?)\s+(\d{4}-\d{2}-\d{2})\s+([\d-]+)\s+(\d+)\.\s*(.+?)\.pdf$/i;
+  const RE_REPORTE_BASE_CLIENT = /^(.+?),\s*(.+?)\s+(\d{4}-\d{2}-\d{2})(?:\s+.+)?\.pdf$/i;
+  const RE_PDX_EXT_CLIENT = /^(.+?),\s*(.+?)\s+(\d{4}-\d{2}-\d{2})\s+([\d-]+)\s+(\d+)\.\s*(.+?)\.pdf$/i;
   const RE_ORDENES_CLIENT = /^(.+?),\s*(.+?),\s*([\d.\-]+),\s*(\d{4}-\d{2}-\d{2}),\s*(.+?)\.pdf$/i;
+  const MSG_FORMATO_REPORTE_CLIENT =
+    'El archivo debe llamarse: Apellido, Nombre   YYYY-MM-DD.pdf (puede incluir hora, número y estudio después de la fecha).';
 
   let _cacheEstudiosPdx = null;
 
@@ -72,9 +75,10 @@
     } else {
       el.innerHTML = `
         <div class="sop-pdx-format-title"><i data-lucide="info"></i> Estructura del nombre del PDF</div>
-        <p class="sop-pdx-format-pattern"><code>Apellido, Nombre &nbsp; YYYY-MM-DD &nbsp; HH-mm-ss &nbsp; N. &nbsp; TIPO ESTUDIO.pdf</code></p>
-        <p class="sop-pdx-format-ejemplo"><strong>Ejemplo:</strong> Arcos Enriquez, Nancy Del Carmen &nbsp; 2026-03-14 &nbsp; 21-21-12 &nbsp; 1. &nbsp; PSG BASAL.pdf</p>
-        <p class="sop-pdx-format-nota">Si el archivo ya trae ese formato, el sistema lee paciente, fecha y estudio automáticamente. Si no, le pediremos los datos al subir.</p>`;
+        <p class="sop-pdx-format-pattern"><code>Apellido, Nombre &nbsp; YYYY-MM-DD.pdf</code></p>
+        <p class="sop-pdx-format-ejemplo"><strong>Ejemplo mínimo:</strong> García López, Juan Carlos &nbsp; 2026-05-27.pdf</p>
+        <p class="sop-pdx-format-ejemplo"><strong>Con datos extra (opcional):</strong> García López, Juan Carlos &nbsp; 2026-05-27 &nbsp; 21-30-00 &nbsp; 1. &nbsp; PSG BASAL.pdf</p>
+        <p class="sop-pdx-format-nota">Si el nombre no cumple al menos Apellido, Nombre y fecha, el archivo no se subirá.</p>`;
     }
     sopIcons(el);
   }
@@ -99,14 +103,39 @@
 
   function parseNombrePdxCliente(originalName) {
     const base = String(originalName || '').trim();
-    const m = base.match(RE_PDX_CLIENT);
-    if (!m) return { ok: false, original: base };
-    const apellidos = m[1].trim();
-    const nombres = m[2].trim();
-    const fecha = m[3];
-    const marcaTiempo = m[4].trim();
-    const sufijo = m[5].trim();
-    const estudio = m[6].trim();
+    let apellidos;
+    let nombres;
+    let fecha;
+    let marcaTiempo = '';
+    let sufijo = '';
+    let estudio = '';
+
+    const mExt = base.match(RE_PDX_EXT_CLIENT);
+    if (mExt) {
+      apellidos = mExt[1].trim();
+      nombres = mExt[2].trim();
+      fecha = mExt[3];
+      marcaTiempo = mExt[4].trim();
+      sufijo = mExt[5].trim();
+      estudio = mExt[6].trim();
+    } else {
+      const m = base.match(RE_REPORTE_BASE_CLIENT);
+      if (!m) return { ok: false, original: base, error: MSG_FORMATO_REPORTE_CLIENT };
+      apellidos = m[1].trim();
+      nombres = m[2].trim();
+      fecha = m[3];
+      const idx = base.toLowerCase().indexOf(fecha.toLowerCase());
+      const rest = idx >= 0 ? base.slice(idx + fecha.length).replace(/\.pdf$/i, '').trim() : '';
+      const ext = rest.match(/^([\d-]+)\s+(\d+)\.\s*(.+)$/i);
+      if (ext) {
+        marcaTiempo = ext[1].trim();
+        sufijo = ext[2].trim();
+        estudio = ext[3].trim();
+      } else if (rest) {
+        estudio = rest.replace(/^\d+\.\s*/, '').trim();
+      }
+    }
+
     return {
       ok: true,
       original: base,
@@ -909,20 +938,18 @@
       fd.append('file', file);
       const parsed = esOrd ? parseNombreOrdenesCliente(file.name) : parseNombrePdxCliente(file.name);
       if (!parsed.ok) {
+        if (!esOrd) {
+          return sopToast(parsed.error || MSG_FORMATO_REPORTE_CLIENT, 'error');
+        }
         const body = {
           apellidos: modal.querySelector('#sopPdxRepApe')?.value?.trim(),
           nombres: modal.querySelector('#sopPdxRepNom')?.value?.trim(),
           fecha_estudio: modal.querySelector('#sopPdxRepFecha')?.value,
-          estudio_texto: modal.querySelector('#sopPdxRepEstMan')?.value?.trim()
+          estudio_texto: modal.querySelector('#sopPdxRepEstMan')?.value?.trim(),
+          paciente_documento: modal.querySelector('#sopPdxRepDoc')?.value?.trim().replace(/\s/g, '')
         };
-        if (esOrd) {
-          body.paciente_documento = modal.querySelector('#sopPdxRepDoc')?.value?.trim().replace(/\s/g, '');
-        }
-        const msg = esOrd
-          ? 'Complete apellidos, nombres, documento, fecha y tipo de examen'
-          : 'Complete apellidos, nombres, fecha y estudio';
-        if (!body.apellidos || !body.nombres || !body.fecha_estudio || !body.estudio_texto
-            || (esOrd && !body.paciente_documento)) {
+        const msg = 'Complete apellidos, nombres, documento, fecha y tipo de examen';
+        if (!body.apellidos || !body.nombres || !body.fecha_estudio || !body.estudio_texto || !body.paciente_documento) {
           return sopToast(msg, 'warning');
         }
         Object.keys(body).forEach((k) => fd.append(k, body[k]));
@@ -1087,7 +1114,10 @@
       }
       const parsed = parseNombrePdxCliente(file.name);
       if (parsed.ok) modalSubidaPdxNombreCompleto(file, carpetaId, carpeta, parsed, resolve, reject);
-      else modalSubidaPdxManual(file, carpetaId, carpeta, resolve, reject);
+      else {
+        sopToast(parsed.error || MSG_FORMATO_REPORTE_CLIENT, 'error');
+        reject(new Error(parsed.error || MSG_FORMATO_REPORTE_CLIENT));
+      }
     });
   }
 
@@ -1255,36 +1285,36 @@
     }
     const items = files.map((file, idx) => {
       const parsed = parseNombrePdxCliente(file.name);
-      return { idx, file, parsed, manual: !parsed.ok };
+      return { idx, file, parsed, valido: parsed.ok };
     });
+    const validos = items.filter((it) => it.valido);
+    if (!validos.length) {
+      sopToast(MSG_FORMATO_REPORTE_CLIENT, 'error');
+      return Promise.reject(new Error(MSG_FORMATO_REPORTE_CLIENT));
+    }
     const filas = items.map((it) => {
-      if (!it.manual) {
+      if (it.valido) {
         const w = pdxUploadWarnings(it.parsed, carpeta);
         return `<tr data-lote-idx="${it.idx}">
           <td>${escapeHtml(it.file.name)}</td>
           <td>${escapeHtml(it.parsed.paciente_nombre)}</td>
           <td>${escapeHtml(it.parsed.fecha_estudio)}</td>
-          <td>${escapeHtml(it.parsed.estudio_texto)}</td>
+          <td>${escapeHtml(it.parsed.estudio_texto || '—')}</td>
           <td>${w.length ? '<span style="color:#b45309">Revisar</span>' : '<span style="color:#059669">OK</span>'}</td>
         </tr>`;
       }
-      return `<tr class="sop-lote-manual" data-lote-idx="${it.idx}">
-        <td colspan="5">
-          <strong>${escapeHtml(it.file.name)}</strong> — complete datos:
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
-            <input type="text" data-lote-ape="${it.idx}" placeholder="Apellidos *">
-            <input type="text" data-lote-nom="${it.idx}" placeholder="Nombres *">
-            <input type="date" data-lote-fecha="${it.idx}">
-            <input type="text" data-lote-est="${it.idx}" placeholder="Estudio *">
-          </div>
+      return `<tr class="sop-lote-invalid" data-lote-idx="${it.idx}">
+        <td colspan="5" style="color:#dc2626">
+          <strong>${escapeHtml(it.file.name)}</strong> — no cumple el formato (Apellido, Nombre   YYYY-MM-DD.pdf). No se subirá.
         </td>
       </tr>`;
     }).join('');
 
     return new Promise((resolve, reject) => {
+      const omitidos = items.length - validos.length;
       const modal = openSopModal(`
-        <h3><i data-lucide="files"></i> Confirmar carga (${items.length} PDF)</h3>
-        <p style="font-size:.85rem;color:#64748b;margin:-6px 0 12px">Carpeta: <strong>${escapeHtml(carpeta?.nombre_display || '')}</strong> — una sola confirmación para todos.</p>
+        <h3><i data-lucide="files"></i> Confirmar carga (${validos.length} PDF)</h3>
+        <p style="font-size:.85rem;color:#64748b;margin:-6px 0 12px">Carpeta: <strong>${escapeHtml(carpeta?.nombre_display || '')}</strong>${omitidos ? ` — ${omitidos} archivo(s) con nombre inválido se omitirán.` : ''}</p>
         <div style="max-height:50vh;overflow:auto">
           <table class="sop-lote-table">
             <thead><tr><th>Archivo</th><th>Paciente</th><th>Fecha</th><th>Estudio</th><th></th></tr></thead>
@@ -1293,28 +1323,11 @@
         </div>
         <div class="sop-dialog-actions" style="margin-top:14px">
           <button type="button" class="sop-btn sop-btn-ghost" id="sopPdxLoteCancel">Cancelar</button>
-          <button type="button" class="sop-btn sop-btn-primary" id="sopPdxLoteOk">Subir ${items.length} archivo(s)</button>
+          <button type="button" class="sop-btn sop-btn-primary" id="sopPdxLoteOk">Subir ${validos.length} archivo(s)</button>
         </div>`);
       modal.querySelector('#sopPdxLoteCancel').onclick = () => { closeSopModal(modal); reject(new Error('cancelado')); };
       modal.querySelector('#sopPdxLoteOk').onclick = async () => {
-        const extras = [];
-        for (const it of items) {
-          if (!it.manual) {
-            extras.push({ file: it.file, extra: undefined });
-            continue;
-          }
-          const ape = modal.querySelector(`[data-lote-ape="${it.idx}"]`)?.value?.trim();
-          const nom = modal.querySelector(`[data-lote-nom="${it.idx}"]`)?.value?.trim();
-          const fecha = modal.querySelector(`[data-lote-fecha="${it.idx}"]`)?.value;
-          const est = modal.querySelector(`[data-lote-est="${it.idx}"]`)?.value?.trim();
-          if (!ape || !nom || !fecha || !est) {
-            return sopToast(`Complete datos de «${it.file.name}»`, 'warning');
-          }
-          extras.push({
-            file: it.file,
-            extra: { apellidos: ape, nombres: nom, fecha_estudio: fecha, estudio_texto: est }
-          });
-        }
+        const extras = validos.map((it) => ({ file: it.file, extra: undefined }));
         const btn = modal.querySelector('#sopPdxLoteOk');
         btn.disabled = true;
         let ok = 0;
