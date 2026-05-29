@@ -431,7 +431,12 @@ function showView(id) {
   };
   let usedViewTransition = false;
   if (typeof window.innarRunViewSwitch === 'function') {
-    usedViewTransition = window.innarRunViewSwitch(apply);
+    try {
+      usedViewTransition = window.innarRunViewSwitch(apply);
+    } catch (e) {
+      console.warn('[showView] View transition falló, aplicando vista directa:', e);
+      apply();
+    }
   } else {
     apply();
   }
@@ -512,7 +517,8 @@ async function checkSession() {
     if (data.autenticado) {
       if (data.csrfToken) innarCsrfToken = data.csrfToken;
       currentUser = data.usuario;
-      $('menuUserName').textContent = currentUser?.nombre || currentUser?.usuario || 'Usuario';
+      const menuUser = $('menuUserName');
+      if (menuUser) menuUser.textContent = currentUser?.nombre || currentUser?.usuario || 'Usuario';
       sessionStorage.setItem('nombre_usuario', currentUser?.nombre || '');
       updateSidebarUser(currentUser);
       updateMenuByRole();
@@ -564,7 +570,8 @@ async function doLogin(usuario, password) {
       $('loginErrorText').textContent = '';
       $('loginErrorRetry').textContent = '';
       showView('view-menu');
-      $('menuUserName').textContent = currentUser?.nombre || currentUser?.usuario || 'Usuario';
+      const menuUser = $('menuUserName');
+      if (menuUser) menuUser.textContent = currentUser?.nombre || currentUser?.usuario || 'Usuario';
       sessionStorage.setItem('nombre_usuario', currentUser?.nombre || '');
       updateSidebarUser(currentUser);
       updateMenuByRole();
@@ -722,8 +729,8 @@ function goToMenu() {
 function setupMenuHandlers() {
   if (window._menuHandlersSetup) return;
   window._menuHandlersSetup = true;
-  $('btnLogout').addEventListener('click', doLogout);
-  $('btnCambiarContrasena').addEventListener('click', openCambiarContrasenaModal);
+  $('btnLogout')?.addEventListener('click', doLogout);
+  $('btnCambiarContrasena')?.addEventListener('click', openCambiarContrasenaModal);
   document.querySelectorAll('.menu-card').forEach(card => {
     card.addEventListener('click', () => {
       // Si NO es doctor y hace clic en AGENDA MÉDICA, mostrar selección de doctor
@@ -734,9 +741,9 @@ function setupMenuHandlers() {
       }
     });
   });
-  $('btnVolverRecibos').addEventListener('click', goToMenu);
-  $('btnVolverAgenda').addEventListener('click', goToMenu);
-  $('btnVolverElectro').addEventListener('click', goToMenu);
+  $('btnVolverRecibos')?.addEventListener('click', goToMenu);
+  $('btnVolverAgenda')?.addEventListener('click', goToMenu);
+  $('btnVolverElectro')?.addEventListener('click', goToMenu);
   if ($('btnVolverUsuarios')) $('btnVolverUsuarios').addEventListener('click', goToMenu);
   if ($('btnVolverDashboardCitas')) $('btnVolverDashboardCitas').addEventListener('click', goToMenu);
   if ($('btnVolverGestionDatos')) $('btnVolverGestionDatos').addEventListener('click', goToMenu);
@@ -1689,7 +1696,9 @@ function setupLoginForm() {
   }
 
   // Login form submit
-  $('formLogin').addEventListener('submit', async (e) => {
+  const formLogin = $('formLogin');
+  if (!formLogin) return;
+  formLogin.addEventListener('submit', async (e) => {
     e.preventDefault();
     const usuario = $('loginUsuario').value.trim();
     const password = $('loginPassword').value;
@@ -1702,24 +1711,29 @@ function setupLoginForm() {
 
 // init
 document.addEventListener('DOMContentLoaded', async ()=>{
-  // SIEMPRE registrar el handler del formulario de login (antes de cualquier return)
-  setupLoginForm();
-  
-  // Si la página se refresca con sesión expirada pendiente, hacer logout en servidor
-  if (sessionStorage.getItem('session_expired')) {
-    sessionStorage.removeItem('session_expired');
-    try { await fetch('/api/logout', { method: 'POST', credentials: 'include' }); } catch(_) {}
-    showView('view-login');
-    return;
-  }
-  // Verificar sesión al cargar
-  const autenticado = await checkSession();
-  if (!autenticado) {
-    return;
-  }
+  try {
+    // SIEMPRE registrar el handler del formulario de login (antes de cualquier return)
+    setupLoginForm();
 
-  setupMenuHandlers();
-  // initRecibos() solo al entrar al módulo Recibos (goToModule) — evita GET /api/recibos y 403 en usuarios sin recibos.ver
+    // Si la página se refresca con sesión expirada pendiente, hacer logout en servidor
+    if (sessionStorage.getItem('session_expired')) {
+      sessionStorage.removeItem('session_expired');
+      try { await fetch('/api/logout', { method: 'POST', credentials: 'include' }); } catch (_) {}
+      showView('view-login');
+      return;
+    }
+    // Verificar sesión al cargar
+    const autenticado = await checkSession();
+    if (!autenticado) {
+      return;
+    }
+
+    setupMenuHandlers();
+    // initRecibos() solo al entrar al módulo Recibos (goToModule) — evita GET /api/recibos y 403 en usuarios sin recibos.ver
+  } catch (e) {
+    console.error('[DOMContentLoaded] Error al iniciar la aplicación:', e);
+    try { showView('view-login'); } catch (_) {}
+  }
 });
 
 // ========== MODAL SELECCIÓN DE DOCTOR ==========
@@ -2292,7 +2306,7 @@ const ENTIDAD_SELECTS_POR_MODULO = {
   ],
   electro: [
     { id: 'electroEntidad', placeholder: 'Seleccionar entidad' },
-    { id: 'modalEntidad', placeholder: '—', incluirParticular: true },
+    { id: 'modalEntidad', placeholder: 'Seleccionar entidad', incluirParticular: true },
     { id: 'esperaEntidad' },
     { id: 'esperaFiltroEntidad', placeholder: 'Todas' }
   ],
@@ -10703,7 +10717,7 @@ async function abrirModalDetallesCita(cita) {
   if (modalEntidadEl) {
     await cargarEntidadesEnSelect('modalEntidad', {
       valorPrevio: entidadCita,
-      placeholder: '—',
+      placeholder: 'Seleccionar entidad',
       incluirParticular: true
     });
     const puedeEditarEntidad = puedeEditarElectro && citaElectroSeleccionada.estado !== 'Completado';

@@ -63,23 +63,11 @@
       }).join('');
   }
 
-  function actualizarAyudaFormatoPdx(carpeta) {
+  function actualizarAyudaFormatoPdx() {
     const el = $('sopPdxFormatHelp');
     if (!el) return;
-    if (esCarpetaOrdenesPdx(carpeta)) {
-      el.innerHTML = `
-        <div class="sop-pdx-format-title"><i data-lucide="info"></i> Carpeta de órdenes — nombre del PDF</div>
-        <p class="sop-pdx-format-pattern"><code>Apellidos, Nombres, Documento, YYYY-MM-DD, Tipo de examen.pdf</code></p>
-        <p class="sop-pdx-format-ejemplo"><strong>Ejemplo:</strong> García López, Juan Carlos, 1234567890, 2026-03-20, PSG BASAL.pdf</p>
-        <p class="sop-pdx-format-nota">El tipo de examen debe coincidir con un estudio registrado en el sistema. La fecha puede ser distinta a la de hoy. Si el nombre no trae todos los datos, se pedirán al subir.</p>`;
-    } else {
-      el.innerHTML = `
-        <div class="sop-pdx-format-title"><i data-lucide="info"></i> Estructura del nombre del PDF</div>
-        <p class="sop-pdx-format-pattern"><code>Apellido, Nombre &nbsp; YYYY-MM-DD.pdf</code></p>
-        <p class="sop-pdx-format-ejemplo"><strong>Ejemplo mínimo:</strong> García López, Juan Carlos &nbsp; 2026-05-27.pdf</p>
-        <p class="sop-pdx-format-ejemplo"><strong>Con datos extra (opcional):</strong> García López, Juan Carlos &nbsp; 2026-05-27 &nbsp; 21-30-00 &nbsp; 1. &nbsp; PSG BASAL.pdf</p>
-        <p class="sop-pdx-format-nota">Si el nombre no cumple al menos Apellido, Nombre y fecha, el archivo no se subirá.</p>`;
-    }
+    el.innerHTML = `
+      <p class="sop-pdx-format-ejemplo"><strong>Ejemplo:</strong> García López, Juan Carlos &nbsp; 2026-05-27.pdf</p>`;
     sopIcons(el);
   }
 
@@ -701,7 +689,7 @@
     $('sopPdxDetalleTitulo').textContent = c.nombre_display;
     $('sopPdxDetalleMeta').innerHTML = `${escapeHtml(c.periodo)} ${badgeVis(c.estado_visibilidad, c.dias_restantes_gracia)}`;
     sopIcons($('sopPdxDetalleMeta'));
-    actualizarAyudaFormatoPdx(c);
+    actualizarAyudaFormatoPdx();
     const tbody = $('sopPdxArchivosBody');
     if (!pdxState.archivos.length) {
       tbody.innerHTML = '<tr><td colspan="5" class="sop-empty" style="padding:24px">Sin archivos en esta carpeta</td></tr>';

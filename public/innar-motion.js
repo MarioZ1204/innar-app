@@ -98,12 +98,16 @@
   };
 
   window.innarRunViewSwitch = function innarRunViewSwitch(applyFn) {
-    if (typeof applyFn !== 'function') return;
+    if (typeof applyFn !== 'function') return false;
     if (window.innarSupportsViewTransition()) {
-      document.startViewTransition(() => {
-        applyFn();
-      });
-      return true;
+      try {
+        document.startViewTransition(() => {
+          applyFn();
+        });
+        return true;
+      } catch (e) {
+        console.warn('[innar-motion] startViewTransition falló:', e);
+      }
     }
     applyFn();
     return false;
