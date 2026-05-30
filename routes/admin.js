@@ -61,7 +61,8 @@ router.get('/admin/datos/:tipo', requireAuth, requireRoleOrPerm(['superadmin', '
       rows = await db.query('SELECT id, nombre, activo FROM especialidades ORDER BY nombre ASC');
     } else if (tipo === 'tipos_consulta') {
       rows = await db.query(`
-        SELECT tc.id, tc.nombre, e.nombre AS especialidad, tc.activo
+        SELECT tc.id, tc.nombre, e.nombre AS especialidad, tc.activo,
+               COALESCE(tc.permite_sesiones_multiples, 0) AS permite_sesiones_multiples
         FROM tipos_consulta tc LEFT JOIN especialidades e ON e.id=tc.especialidad_id
         ORDER BY e.nombre ASC, tc.nombre ASC`);
     } else if (tipo === 'diagnosticos') {
@@ -106,7 +107,7 @@ router.post('/admin/datos/:tipo', requireAuth, requireRoleOrPerm(['superadmin', 
       const result = await db.execute('INSERT INTO especialidades (nombre) VALUES (?)', [nombre.trim()]);
       res.json({ ok: true, id: result.insertId });
     } else if (tipo === 'tipos_consulta') {
-      const { especialidad_id, nombre } = body;
+      const { especialidad_id, nombre, permite_sesiones_multiples } = body;
       if (!especialidad_id || !nombre || !nombre.trim())
         return res.status(400).json({ error: 'Especialidad y nombre son obligatorios' });
       const ordenRows = await db.query(
@@ -114,9 +115,10 @@ router.post('/admin/datos/:tipo', requireAuth, requireRoleOrPerm(['superadmin', 
         [especialidad_id]
       );
       const orden = ordenRows[0]?.sig ?? 0;
+      const flagSesiones = permite_sesiones_multiples ? 1 : 0;
       const result = await db.execute(
-        'INSERT INTO tipos_consulta (especialidad_id, nombre, orden) VALUES (?,?,?)',
-        [especialidad_id, nombre.trim(), orden]
+        'INSERT INTO tipos_consulta (especialidad_id, nombre, orden, permite_sesiones_multiples) VALUES (?,?,?,?)',
+        [especialidad_id, nombre.trim(), orden, flagSesiones]
       );
       emitSocket('tipos-consulta:actualizado', { especialidad_id });
       res.json({ ok: true, id: result.insertId });

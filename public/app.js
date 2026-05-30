@@ -1800,8 +1800,12 @@ async function cargarTiposConsultaSegunEspecialidad(especialidad) {
     if (tipos.length > 0) {
       tipos.forEach(t => {
         const opt = document.createElement('option');
-        opt.value = t.nombre;
-        opt.textContent = t.nombre;
+        const nombre = typeof t === 'string' ? t : t.nombre;
+        opt.value = nombre;
+        opt.textContent = nombre;
+        if (typeof t === 'object' && t.permite_sesiones_multiples) {
+          opt.dataset.sesionesMultiples = '1';
+        }
         selectTipo.appendChild(opt);
       });
     } else {
@@ -1827,8 +1831,83 @@ async function cargarTiposConsultaSegunEspecialidad(especialidad) {
   selectTipo.addEventListener('change', manejarCambioTipoConsulta);
 }
 
+function tipoConsultaPermiteSesionesMultiples(selectEl) {
+  const opt = selectEl?.selectedOptions?.[0];
+  if (opt?.dataset?.sesionesMultiples === '1') return true;
+  const nombre = (selectEl?.value || '').toLowerCase();
+  return nombre.includes('rehabilitación cognitiva') || nombre.includes('rehabilitacion cognitiva');
+}
+
+function obtenerDiasSemanaSesiones() {
+  return [...document.querySelectorAll('.sesion-dia-check:checked')].map(el => parseInt(el.value, 10));
+}
+
+function generarFechasSesiones(fechaInicio, cantidad, diasSemana) {
+  if (!fechaInicio || !cantidad || cantidad < 1 || !diasSemana.length) return [];
+  const fechas = [];
+  const cursor = new Date(fechaInicio + 'T12:00:00');
+  let guard = 0;
+  while (fechas.length < cantidad && guard < 400) {
+    if (diasSemana.includes(cursor.getDay())) {
+      fechas.push(cursor.toISOString().slice(0, 10));
+    }
+    cursor.setDate(cursor.getDate() + 1);
+    guard += 1;
+  }
+  return fechas;
+}
+
+function formatearFechaCorta(iso) {
+  if (!iso) return '';
+  const [y, m, d] = iso.split('-');
+  const meses = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+  return `${parseInt(d, 10)} ${meses[parseInt(m, 10) - 1]} ${y}`;
+}
+
+function actualizarPreviewSesionesMultiples() {
+  const panel = $('sesionesMultiplesRow');
+  const preview = $('sesionesMultiplesPreview');
+  const btn = $('crearTurnoMedica');
+  if (!panel || panel.style.display === 'none') {
+    if (btn) btn.textContent = 'Crear Cita';
+    return;
+  }
+  const fecha = $('modalNuevaCitaFecha')?.value;
+  const cantidad = Math.min(52, Math.max(2, parseInt($('sesionesMultiplesCantidad')?.value || '2', 10)));
+  const dias = obtenerDiasSemanaSesiones();
+  if ($('sesionesMultiplesCantidad') && String(cantidad) !== $('sesionesMultiplesCantidad').value) {
+    $('sesionesMultiplesCantidad').value = String(cantidad);
+  }
+  if (!fecha || !dias.length) {
+    if (preview) preview.innerHTML = '<span style="color:#b45309">Seleccione al menos un día de la semana.</span>';
+    if (btn) btn.textContent = 'Agendar sesiones';
+    return;
+  }
+  const fechas = generarFechasSesiones(fecha, cantidad, dias);
+  if (fechas.length < cantidad) {
+    if (preview) preview.innerHTML = `<span style="color:#b45309">Solo se encontraron ${fechas.length} fechas en el rango permitido (1 año).</span>`;
+  } else if (preview) {
+    preview.innerHTML = fechas.map((f, i) => `<span style="display:inline-block;margin:0 8px 4px 0">${i + 1}. ${formatearFechaCorta(f)}</span>`).join('');
+  }
+  if (btn) btn.textContent = `Agendar ${fechas.length} sesiones`;
+}
+
+function togglePanelSesionesMultiples(visible) {
+  const panel = $('sesionesMultiplesRow');
+  if (!panel) return;
+  panel.style.display = visible ? '' : 'none';
+  if (visible) actualizarPreviewSesionesMultiples();
+  else {
+    const btn = $('crearTurnoMedica');
+    if (btn) btn.textContent = 'Crear Cita';
+    const preview = $('sesionesMultiplesPreview');
+    if (preview) preview.innerHTML = '';
+  }
+}
+
 function manejarCambioTipoConsulta(e) {
   manejarOtraConsulta(e.target.value);
+  togglePanelSesionesMultiples(tipoConsultaPermiteSesionesMultiples(e.target));
 }
 
 function manejarOtraConsulta(tipoSeleccionado) {
@@ -2914,11 +2993,26 @@ async function initAgendaMedica() {
       const prog = $('nuevoTurnoProgramadoPor');
       if (prog) prog.textContent = (currentUser && (currentUser.nombre || currentUser.usuario)) || '-';
       actualizarHorasDisponibles();
+      togglePanelSesionesMultiples(tipoConsultaPermiteSesionesMultiples($('nuevoTurnoTipoMedica')));
       $('modalNuevaCitaMedica')?.classList.remove('hidden');
     });
-    $('btnCerrarNuevaCitaModal')?.addEventListener('click', () => $('modalNuevaCitaMedica')?.classList.add('hidden'));
-    $('btnCancelarNuevaCitaModal')?.addEventListener('click', () => $('modalNuevaCitaMedica')?.classList.add('hidden'));
-    $('modalNuevaCitaFecha')?.addEventListener('change', actualizarHorasDisponibles);
+    $('btnCerrarNuevaCitaModal')?.addEventListener('click', () => {
+      $('modalNuevaCitaMedica')?.classList.add('hidden');
+      togglePanelSesionesMultiples(false);
+    });
+    $('btnCancelarNuevaCitaModal')?.addEventListener('click', () => {
+      $('modalNuevaCitaMedica')?.classList.add('hidden');
+      togglePanelSesionesMultiples(false);
+    });
+    $('modalNuevaCitaFecha')?.addEventListener('change', () => {
+      actualizarHorasDisponibles();
+      actualizarPreviewSesionesMultiples();
+    });
+    $('sesionesMultiplesCantidad')?.addEventListener('input', actualizarPreviewSesionesMultiples);
+    $('sesionesMultiplesCantidad')?.addEventListener('change', actualizarPreviewSesionesMultiples);
+    document.querySelectorAll('.sesion-dia-check').forEach(cb => {
+      cb.addEventListener('change', actualizarPreviewSesionesMultiples);
+    });
     $('crearTurnoMedica')?.addEventListener('click', crearTurnoMedica);
   }
 
@@ -4879,24 +4973,40 @@ async function crearTurnoMedica() {
   }
 
   try {
-    // Validación rápida en cliente: si el día está marcado como NO ASISTE, no permitir crear.
-    const dispRes = await apiFetch(`/api/doctor-disponibilidad?doctor_id=${doctorId}&fecha=${fecha}`);
-    const dispData = await dispRes.json().catch(() => null);
-    if (dispData?.ok && dispData.disponible_manana === false && dispData.disponible_tarde === false) {
-      showToast('No se puede agendar: el doctor está marcado como no asistirá ese día', 'error');
-      return;
+    const esMulti = tipoConsultaPermiteSesionesMultiples($('nuevoTurnoTipoMedica'));
+    const diasSemana = esMulti ? obtenerDiasSemanaSesiones() : [];
+    const cantidadSesiones = esMulti
+      ? Math.min(52, Math.max(2, parseInt($('sesionesMultiplesCantidad')?.value || '2', 10)))
+      : 1;
+    const fechasSesiones = esMulti ? generarFechasSesiones(fecha, cantidadSesiones, diasSemana) : [fecha];
+
+    if (esMulti) {
+      if (!diasSemana.length) {
+        showToast('Seleccione al menos un día de la semana para las sesiones', 'error');
+        return;
+      }
+      if (fechasSesiones.length < cantidadSesiones) {
+        showToast(`Solo se pudieron generar ${fechasSesiones.length} fechas. Ajuste cantidad o días.`, 'error');
+        return;
+      }
     }
 
-    // Validaciones completadas - permitir múltiples pacientes en la misma hora
-    // (no hay validación de duplicados por hora, se permite hasta 20 pacientes)
+    // Validación rápida en cliente: si el día está marcado como NO ASISTE, no permitir crear.
+    for (const fSes of fechasSesiones) {
+      const dispRes = await apiFetch(`/api/doctor-disponibilidad?doctor_id=${doctorId}&fecha=${fSes}`);
+      const dispData = await dispRes.json().catch(() => null);
+      if (dispData?.ok && dispData.disponible_manana === false && dispData.disponible_tarde === false) {
+        showToast(`No se puede agendar: el doctor no asiste el ${formatearFechaCorta(fSes)}`, 'error');
+        return;
+      }
+    }
 
-    const body = {
+    const bodyBase = {
       doctor_id: parseInt(doctorId, 10),
       paciente_nombre: nombre,
       paciente_documento: doc || null,
       paciente_telefono: telefono1,
       paciente_telefono2: telefono2,
-      fecha,
       hora,
       tipo_consulta: tipoConsulta || null,
       entidad: entidad || null,
@@ -4905,16 +5015,32 @@ async function crearTurnoMedica() {
       programado_por: (currentUser && (currentUser.nombre || currentUser.usuario)) || null
     };
 
-    const res = await apiFetch('/api/turnos', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    });
+    let res;
+    if (esMulti && fechasSesiones.length > 1) {
+      res = await apiFetch('/api/turnos/lote', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...bodyBase,
+          sesiones: fechasSesiones.map((f, i) => ({ fecha: f, sesion_numero: i + 1 }))
+        })
+      });
+    } else {
+      res = await apiFetch('/api/turnos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...bodyBase, fecha })
+      });
+    }
     const data = await res.json();
 
     if (data.ok) {
-      showToast('Cita creada correctamente', 'success');
+      const msg = esMulti && fechasSesiones.length > 1
+        ? `${data.creados || fechasSesiones.length} sesiones agendadas correctamente`
+        : 'Cita creada correctamente';
+      showToast(msg, 'success');
       $('modalNuevaCitaMedica')?.classList.add('hidden');
+      togglePanelSesionesMultiples(false);
       $('nuevoPacienteNombresMedica').value = '';
       $('nuevoPacienteApellidosMedica').value = '';
       const docReset = $('nuevoPacienteDocMedica');
@@ -4929,7 +5055,12 @@ async function crearTurnoMedica() {
       $('nuevoTurnoTipoMedica').value = '';
       cargarTurnosMedica();
     } else {
-      showToast(data.error || 'Error al crear la cita', 'error');
+      if (data.errores?.length) {
+        const detalle = data.errores.slice(0, 3).map(e => `${formatearFechaCorta(e.fecha)}: ${e.error}`).join('; ');
+        showToast((data.error || 'Error al agendar sesiones') + (detalle ? ` (${detalle})` : ''), 'error');
+      } else {
+        showToast(data.error || 'Error al crear la cita', 'error');
+      }
     }
   } catch (e) {
     showToast('Error creando cita: ' + e.message, 'error');
@@ -13041,7 +13172,7 @@ function cerrarTiposConsultaPanel() {
 async function cargarTiposConsultaPanel() {
   if (!_especialidadSelId) return;
   const tbody = $('tiposConsultaTableBody');
-  if (tbody) tbody.innerHTML = '<tr><td colspan="2" style="padding:16px;text-align:center;color:#999">Cargando...</td></tr>';
+  if (tbody) tbody.innerHTML = '<tr><td colspan="3" style="padding:16px;text-align:center;color:#999">Cargando...</td></tr>';
   try {
     const res = await apiFetch(`/api/tipos-consulta?especialidad_id=${_especialidadSelId}`);
     const data = await res.json();
@@ -13058,13 +13189,20 @@ function renderTiposConsultaPanel(lista) {
   const tbody = $('tiposConsultaTableBody');
   if (!tbody) return;
   if (!lista || lista.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="2" style="padding:16px;text-align:center;color:#999">Sin tipos de consulta. Agrega el primero.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="3" style="padding:16px;text-align:center;color:#999">Sin tipos de consulta. Agrega el primero.</td></tr>';
     return;
   }
   tbody.innerHTML = lista.map(t => {
     const n = escapeHtml(t.nombre).replace(/'/g, "\\'");
+    const multi = t.permite_sesiones_multiples ? 1 : 0;
     return `<tr>
       <td>${escapeHtml(t.nombre)}</td>
+      <td style="text-align:center">
+        <label style="cursor:pointer;font-size:.85rem" title="Permite agendar varias sesiones por días de la semana">
+          <input type="checkbox" ${multi ? 'checked' : ''} onchange="toggleSesionesMultiplesTipo(${t.id}, this.checked)" />
+          Sesiones múlt.
+        </label>
+      </td>
       <td>
         <div class="table-actions">
           <button class="btn-editar" title="Editar" onclick="editarTipoConsulta(${t.id},'${n}')">
@@ -13079,6 +13217,27 @@ function renderTiposConsultaPanel(lista) {
   }).join('');
 }
 
+async function toggleSesionesMultiplesTipo(id, activo) {
+  try {
+    const res = await apiFetch(`/api/tipos-consulta/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ permite_sesiones_multiples: !!activo })
+    });
+    const data = await res.json();
+    if (!data.ok) {
+      showToast(data.error || 'Error al actualizar', 'error');
+      await cargarTiposConsultaPanel();
+      return;
+    }
+    showToast(activo ? 'Sesiones múltiples activadas' : 'Sesiones múltiples desactivadas', 'success');
+    _tiposConsultaCache = {};
+  } catch (e) {
+    showToast('Error: ' + e.message, 'error');
+    await cargarTiposConsultaPanel();
+  }
+}
+
 async function crearTipoConsulta() {
   const nombre = $('tipoConsultaNuevoNombre').value.trim();
   if (!nombre) { showToast('Escribe el nombre del tipo de consulta', 'error'); return; }
@@ -13088,7 +13247,11 @@ async function crearTipoConsulta() {
   try {
     const res = await apiFetch('/api/tipos-consulta', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ especialidad_id: _especialidadSelId, nombre })
+      body: JSON.stringify({
+        especialidad_id: _especialidadSelId,
+        nombre,
+        permite_sesiones_multiples: !!$('tipoConsultaNuevoSesionesMultiples')?.checked
+      })
     });
     const data = await res.json();
     if (!data.ok) { showToast(data.error || 'Error', 'error'); return; }
@@ -13183,6 +13346,7 @@ const _gestionColumnas = {
     { key: 'id',          label: 'ID' },
     { key: 'nombre',      label: 'Nombre' },
     { key: 'especialidad',label: 'Especialidad' },
+    { key: 'permite_sesiones_multiples', label: 'Sesiones múlt.', format: v => v ? 'Sí' : 'No' },
     { key: 'activo',      label: 'Activo', format: v => v ? 'Sí' : 'No' }
   ],
   diagnosticos: [
@@ -13459,6 +13623,12 @@ async function abrirModalAgregarGestion() {
       <div style="margin-bottom:14px">
         <label style="display:block;margin-bottom:6px;font-weight:500;font-size:14px">Nombre del tipo de consulta *</label>
         <input id="agrGestionNombre" type="text" required maxlength="120" placeholder="Ej: Consulta de control" style="width:100%;padding:9px 12px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;font-size:14px" />
+      </div>
+      <div style="margin-bottom:14px">
+        <label style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer">
+          <input type="checkbox" id="agrGestionSesionesMultiples" />
+          Permitir agendar varias sesiones (por días de la semana)
+        </label>
       </div>`;
   } else if (tipo === 'diagnosticos') {
     camposHtml = `
@@ -13498,7 +13668,10 @@ async function guardarAgregarGestion(e) {
   const nombre = $('agrGestionNombre')?.value.trim() || '';
   const body  = { nombre };
   if (tipo === 'estudio_duraciones') body.duracion_minutos = parseInt($('agrGestionDuracion')?.value || '0', 10);
-  if (tipo === 'tipos_consulta')     body.especialidad_id  = $('agrGestionEspecialidad')?.value;
+  if (tipo === 'tipos_consulta') {
+    body.especialidad_id = $('agrGestionEspecialidad')?.value;
+    body.permite_sesiones_multiples = !!$('agrGestionSesionesMultiples')?.checked;
+  }
   if (tipo === 'diagnosticos') {
     body.codigo      = $('agrGestionCodigo')?.value.trim() || undefined;
     body.descripcion = $('agrGestionDescripcion')?.value.trim() || undefined;

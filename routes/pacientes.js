@@ -281,14 +281,14 @@ router.get('/tipos-consulta', requireAuth, async (req, res) => {
         );
         if (espRows.length > 0) {
           const rows = await db.query(
-            'SELECT id, nombre, orden FROM tipos_consulta WHERE especialidad_id=? AND activo=1 ORDER BY orden ASC, id ASC',
+            'SELECT id, nombre, orden, COALESCE(permite_sesiones_multiples, 0) AS permite_sesiones_multiples FROM tipos_consulta WHERE especialidad_id=? AND activo=1 ORDER BY orden ASC, id ASC',
             [espRows[0].id]
           );
           return res.json(rows);
         }
       }
       const allRows = await db.query(
-        'SELECT id, nombre, orden FROM tipos_consulta WHERE activo=1 ORDER BY orden ASC, id ASC'
+        'SELECT id, nombre, orden, COALESCE(permite_sesiones_multiples, 0) AS permite_sesiones_multiples FROM tipos_consulta WHERE activo=1 ORDER BY orden ASC, id ASC'
       );
       return res.json(allRows);
     }
@@ -301,11 +301,11 @@ router.get('/tipos-consulta', requireAuth, async (req, res) => {
       espId = rows.length > 0 ? rows[0].id : null;
     }
     if (!espId) {
-      const rows = await db.query('SELECT id, nombre, orden FROM tipos_consulta WHERE activo=1 ORDER BY orden ASC, id ASC');
+      const rows = await db.query('SELECT id, nombre, orden, COALESCE(permite_sesiones_multiples, 0) AS permite_sesiones_multiples FROM tipos_consulta WHERE activo=1 ORDER BY orden ASC, id ASC');
       return res.json(rows);
     }
     const rows = await db.query(
-      'SELECT id, nombre, orden FROM tipos_consulta WHERE especialidad_id=? AND activo=1 ORDER BY orden ASC, id ASC',
+      'SELECT id, nombre, orden, COALESCE(permite_sesiones_multiples, 0) AS permite_sesiones_multiples FROM tipos_consulta WHERE especialidad_id=? AND activo=1 ORDER BY orden ASC, id ASC',
       [espId]
     );
     res.json(rows);
@@ -313,7 +313,7 @@ router.get('/tipos-consulta', requireAuth, async (req, res) => {
 });
 
 router.post('/tipos-consulta', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'modulo.gestion_datos'), async (req, res) => {
-  const { especialidad_id, nombre } = req.body || {};
+  const { especialidad_id, nombre, permite_sesiones_multiples } = req.body || {};
   if (!especialidad_id || !nombre || !nombre.trim())
     return res.status(400).json({ error: 'Especialidad y nombre son obligatorios' });
   try {
@@ -322,9 +322,10 @@ router.post('/tipos-consulta', requireAuth, requireRoleOrPerm(['superadmin', 'ad
       [especialidad_id]
     );
     const orden = ordenRows[0]?.sig ?? 0;
+    const flagSesiones = permite_sesiones_multiples ? 1 : 0;
     const result = await db.execute(
-      'INSERT INTO tipos_consulta (especialidad_id, nombre, orden) VALUES (?,?,?)',
-      [especialidad_id, nombre.trim(), orden]
+      'INSERT INTO tipos_consulta (especialidad_id, nombre, orden, permite_sesiones_multiples) VALUES (?,?,?,?)',
+      [especialidad_id, nombre.trim(), orden, flagSesiones]
     );
     emitSocket('tipos-consulta:actualizado', { especialidad_id });
     res.json({ ok: true, id: result.insertId });
@@ -333,11 +334,23 @@ router.post('/tipos-consulta', requireAuth, requireRoleOrPerm(['superadmin', 'ad
 
 router.patch('/tipos-consulta/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'modulo.gestion_datos'), async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  const { nombre } = req.body || {};
+  const { nombre, permite_sesiones_multiples } = req.body || {};
   if (!id) return res.status(400).json({ error: 'ID inválido' });
-  if (!nombre || !nombre.trim()) return res.status(400).json({ error: 'El nombre es obligatorio' });
+  const updates = [];
+  const values = [];
+  if (nombre !== undefined) {
+    if (!nombre || !nombre.trim()) return res.status(400).json({ error: 'El nombre es obligatorio' });
+    updates.push('nombre=?');
+    values.push(nombre.trim());
+  }
+  if (permite_sesiones_multiples !== undefined) {
+    updates.push('permite_sesiones_multiples=?');
+    values.push(permite_sesiones_multiples ? 1 : 0);
+  }
+  if (updates.length === 0) return res.status(400).json({ error: 'No hay campos para actualizar' });
   try {
-    await db.execute('UPDATE tipos_consulta SET nombre=? WHERE id=?', [nombre.trim(), id]);
+    values.push(id);
+    await db.execute(`UPDATE tipos_consulta SET ${updates.join(', ')} WHERE id=?`, values);
     emitSocket('tipos-consulta:actualizado', { id });
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: safeError(e) }); }

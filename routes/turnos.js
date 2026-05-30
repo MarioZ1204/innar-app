@@ -357,6 +357,72 @@ router.post('/turnos/marcar-atendido', requireAuth, requireRoleOrPerm(['superadm
 });
 
 // POST /api/turnos
+// POST /api/turnos/lote — varias citas (misma hora, fechas distintas; p. ej. terapias)
+router.post('/turnos/lote', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion'], 'agenda.crear'), validateSchema('apiCrearTurnosLote'), async (req, res) => {
+  const {
+    doctor_id, paciente_nombre, paciente_documento, paciente_telefono, paciente_telefono2,
+    hora, tipo_consulta, entidad, notas, oportunidad, programado_por, sesiones
+  } = req.body;
+
+  const errores = [];
+  for (let i = 0; i < sesiones.length; i += 1) {
+    const { fecha } = sesiones[i];
+    const validacion = await procesarAgendaExcel.validarDisponibilidadPorHora(doctor_id, fecha, hora, db);
+    if (!validacion.valido) {
+      errores.push({ fecha, indice: i + 1, error: validacion.razon || 'Horario no disponible' });
+    }
+  }
+  if (errores.length > 0) {
+    return res.status(400).json({
+      error: 'No se pudieron agendar todas las sesiones. Revise las fechas marcadas.',
+      errores
+    });
+  }
+
+  const total = sesiones.length;
+  const oportunidadVal = oportunidad ? parseInt(oportunidad, 10) : null;
+  const notasBase = (notas || '').trim();
+
+  try {
+    const ids = await db.transaction(async (conn) => {
+      const insertados = [];
+      for (let i = 0; i < sesiones.length; i += 1) {
+        const { fecha, sesion_numero } = sesiones[i];
+        const num = sesion_numero != null ? sesion_numero : i + 1;
+        const prefijo = `Sesión ${num} de ${total}`;
+        const notasFinales = notasBase ? `${prefijo} — ${notasBase}` : prefijo;
+        const result = await conn.execute(`
+          INSERT INTO turnos (numero_turno, doctor_id, paciente_nombre, paciente_documento, paciente_telefono, paciente_telefono2, estado, fecha, hora, tipo_consulta, entidad, notas, oportunidad, programado_por)
+          VALUES (NULL, ?, ?, ?, ?, ?, 'PENDIENTE', ?, ?, ?, ?, ?, ?, ?)
+        `, [
+          doctor_id,
+          paciente_nombre,
+          paciente_documento || null,
+          paciente_telefono || null,
+          paciente_telefono2 || null,
+          fecha,
+          hora,
+          tipo_consulta || null,
+          entidad || null,
+          notasFinales,
+          oportunidadVal,
+          programado_por || null
+        ]);
+        insertados.push(result.insertId);
+      }
+      return insertados;
+    });
+
+    for (const id of ids) {
+      emitSocket('agenda:turno-creado', { id, doctor_id, paciente_nombre, fecha: sesiones[0]?.fecha });
+    }
+    res.json({ ok: true, creados: ids.length, ids });
+  } catch (e) {
+    logger.error(e.message, { error: e });
+    res.status(500).json({ error: safeError(e) });
+  }
+});
+
 router.post('/turnos', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion'], 'agenda.crear'), validateSchema('apiCrearTurno'), async (req, res) => {
   const { doctor_id, paciente_nombre, paciente_documento, paciente_telefono, paciente_telefono2, fecha, hora, tipo_consulta, entidad, notas, oportunidad, programado_por } = req.body;
 

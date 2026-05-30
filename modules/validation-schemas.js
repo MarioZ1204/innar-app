@@ -267,6 +267,26 @@ const schemas = {
     programado_por: Joi.string().max(150).optional().allow(null, '')
   }),
 
+  apiCrearTurnosLote: Joi.object({
+    doctor_id: Joi.number().integer().positive().required(),
+    paciente_nombre: Joi.string().min(2).max(255).required(),
+    paciente_documento: Joi.string().max(30).optional().allow(null, ''),
+    paciente_telefono: Joi.string().max(20).optional().allow(null, ''),
+    paciente_telefono2: Joi.string().max(20).optional().allow(null, ''),
+    hora: horaApi.required(),
+    tipo_consulta: Joi.string().max(200).optional().allow(null, ''),
+    entidad: Joi.string().max(100).optional().allow(null, ''),
+    notas: Joi.string().max(2000).optional().allow(null, ''),
+    oportunidad: Joi.alternatives().try(Joi.number().integer(), Joi.string()).optional().allow(null, ''),
+    programado_por: Joi.string().max(150).optional().allow(null, ''),
+    sesiones: Joi.array().items(
+      Joi.object({
+        fecha: fechaApi.required(),
+        sesion_numero: Joi.number().integer().min(1).max(100).optional()
+      })
+    ).min(2).max(52).required()
+  }),
+
   apiActualizarTurno: Joi.object({
     paciente_nombre: Joi.string().min(2).max(255).optional(),
     paciente_documento: Joi.string().max(30).optional().allow(null, ''),

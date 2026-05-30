@@ -752,6 +752,44 @@ const runtimeMigrations = [
         await db.execute('ALTER TABLE sop_exp_archivos ADD COLUMN nombre_original VARCHAR(500) NULL AFTER nombre_archivo');
       }
     }
+  },
+  {
+    name: 'rt_tipos_consulta_sesiones_multiples',
+    description: 'Flag permite_sesiones_multiples en tipos_consulta y seed TRC Neuropsicología',
+    run: async (db) => {
+      if (!(await tableExists(db, 'tipos_consulta'))) return;
+      if (!(await columnExists(db, 'tipos_consulta', 'permite_sesiones_multiples'))) {
+        await db.execute(
+          'ALTER TABLE tipos_consulta ADD COLUMN permite_sesiones_multiples TINYINT(1) NOT NULL DEFAULT 0'
+        );
+      }
+      const espRows = await db.query(
+        "SELECT id FROM especialidades WHERE LOWER(TRIM(nombre)) LIKE '%neuropsicolog%' LIMIT 1"
+      );
+      if (!espRows.length) return;
+      const espId = espRows[0].id;
+      const nombreTrc = 'Terapia de Rehabilitación Cognitiva';
+      const existente = await db.query(
+        'SELECT id FROM tipos_consulta WHERE especialidad_id=? AND LOWER(TRIM(nombre))=LOWER(TRIM(?)) LIMIT 1',
+        [espId, nombreTrc]
+      );
+      if (existente.length) {
+        await db.execute(
+          'UPDATE tipos_consulta SET permite_sesiones_multiples=1 WHERE id=?',
+          [existente[0].id]
+        );
+      } else {
+        const ordenRows = await db.query(
+          'SELECT COALESCE(MAX(orden)+1, 0) AS sig FROM tipos_consulta WHERE especialidad_id=?',
+          [espId]
+        );
+        const orden = ordenRows[0]?.sig ?? 0;
+        await db.execute(
+          'INSERT INTO tipos_consulta (especialidad_id, nombre, orden, permite_sesiones_multiples) VALUES (?,?,?,1)',
+          [espId, nombreTrc, orden]
+        );
+      }
+    }
   }
 ];
 

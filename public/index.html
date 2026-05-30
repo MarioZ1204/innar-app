@@ -1002,6 +1002,26 @@
         <div class="col" style="flex:2"><label>Especificar tipo de consulta</label><input id="otraConsultaInput" type="text" placeholder="Escribir tipo de consulta personalizado" style="width:100%" /></div>
         <div class="col" style="flex:1;display:flex;align-items:flex-end"><button id="agregarOtraConsulta" type="button" class="btn-primary" style="width:100%">Agregar</button></div>
       </div>
+      <div id="sesionesMultiplesRow" style="display:none;margin-bottom:14px;padding:14px;border-radius:8px;background:#f0fdf4;border:1px solid #86efac">
+        <div style="font-weight:600;font-size:.95rem;margin-bottom:4px;color:#166534">Programar varias sesiones</div>
+        <p style="margin:0 0 12px 0;font-size:.8rem;color:#4b5563">La fecha y hora de arriba corresponden a la <strong>primera</strong> sesión. Elija cuántas sesiones y en qué días de la semana se repiten.</p>
+        <div class="row" style="margin-bottom:10px">
+          <div class="col" style="max-width:160px">
+            <label>Cantidad de sesiones</label>
+            <input type="number" id="sesionesMultiplesCantidad" min="2" max="52" value="8" style="width:100%" />
+          </div>
+        </div>
+        <label style="display:block;margin-bottom:6px;font-size:.875rem">Días de la semana</label>
+        <div id="sesionesMultiplesDias" style="display:flex;flex-wrap:wrap;gap:10px 14px;margin-bottom:12px;font-size:.875rem">
+          <label style="cursor:pointer"><input type="checkbox" class="sesion-dia-check" value="1" checked /> Lun</label>
+          <label style="cursor:pointer"><input type="checkbox" class="sesion-dia-check" value="2" checked /> Mar</label>
+          <label style="cursor:pointer"><input type="checkbox" class="sesion-dia-check" value="3" checked /> Mié</label>
+          <label style="cursor:pointer"><input type="checkbox" class="sesion-dia-check" value="4" checked /> Jue</label>
+          <label style="cursor:pointer"><input type="checkbox" class="sesion-dia-check" value="5" checked /> Vie</label>
+          <label style="cursor:pointer"><input type="checkbox" class="sesion-dia-check" value="6" /> Sáb</label>
+        </div>
+        <div id="sesionesMultiplesPreview" style="font-size:.8rem;color:#374151;max-height:100px;overflow-y:auto;line-height:1.5"></div>
+      </div>
       <div class="row" style="margin-bottom:12px">
         <div class="col"><label>Teléfono 1 <span style="color:#dc2626">*</span></label><input id="nuevoPacienteTelefonoMedica" type="tel" inputmode="numeric" maxlength="10" placeholder="10 dígitos" /></div>
         <div class="col"><label>Teléfono 2 <span style="color:#dc2626">*</span></label><input id="nuevoPacienteTelefonoMedica2" type="tel" inputmode="numeric" maxlength="10" placeholder="10 dígitos" /></div>
@@ -1297,13 +1317,19 @@
                 <button onclick="cerrarTiposConsultaPanel()" class="btn-secondary btn-sm">&times; Cerrar panel</button>
               </div>
               <div class="row no-print" style="margin-bottom:12px">
-                <div class="col"><label>Nuevo tipo de consulta <span style="color:#dc2626">*</span></label><input id="tipoConsultaNuevoNombre" type="text" placeholder="Ej: Consulta Virtual de Control" /></div>
+                <div class="col"><label>Nuevo tipo de consulta <span style="color:#dc2626">*</span></label><input id="tipoConsultaNuevoNombre" type="text" placeholder="Ej: Terapia de Rehabilitación Cognitiva" /></div>
+                <div class="col" style="display:flex;align-items:flex-end;max-width:220px">
+                  <label style="display:flex;align-items:center;gap:6px;font-size:.85rem;cursor:pointer;margin-bottom:8px">
+                    <input type="checkbox" id="tipoConsultaNuevoSesionesMultiples" />
+                    Sesiones múltiples
+                  </label>
+                </div>
                 <div class="col" style="display:flex;align-items:flex-end;max-width:160px"><button id="btnCrearTipoConsulta" class="btn-primary" style="width:100%">Agregar</button></div>
               </div>
               <div class="table-wrapper">
                 <table class="modern-table table-compact" id="tiposConsultaTable">
-                  <thead><tr><th>Tipo de Consulta</th><th>Acciones</th></tr></thead>
-                  <tbody id="tiposConsultaTableBody"><tr><td colspan="2" style="padding:16px;text-align:center;color:#999">Selecciona una especialidad para ver sus tipos</td></tr></tbody>
+                  <thead><tr><th>Tipo de Consulta</th><th>Sesiones múlt.</th><th>Acciones</th></tr></thead>
+                  <tbody id="tiposConsultaTableBody"><tr><td colspan="3" style="padding:16px;text-align:center;color:#999">Selecciona una especialidad para ver sus tipos</td></tr></tbody>
                 </table>
               </div>
             </section>
