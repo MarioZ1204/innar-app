@@ -2783,7 +2783,17 @@ async function initAgendaMedica() {
   };
   $('nuevoPacienteTelefonoMedica')?.addEventListener('input', limitarTelMedica);
   $('nuevoPacienteTelefonoMedica2')?.addEventListener('input', limitarTelMedica);
-  // (autocompletado por documento removido)
+  const docMedicaEl = $('nuevoPacienteDocMedica');
+  docMedicaEl?.addEventListener('input', (e) => {
+    e.target.value = e.target.value.replace(/\D/g, '').slice(0, 15);
+    delete e.target.dataset.pacienteId;
+  });
+  docMedicaEl?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      buscarPacientePorDocumentoDesdeFormulario('medica');
+    }
+  });
   // mostrar quien programa
   const prog = $('nuevoTurnoProgramadoPor');
   if (prog) prog.textContent = (currentUser && (currentUser.nombre || currentUser.usuario)) || '-';
@@ -4907,7 +4917,11 @@ async function crearTurnoMedica() {
       $('modalNuevaCitaMedica')?.classList.add('hidden');
       $('nuevoPacienteNombresMedica').value = '';
       $('nuevoPacienteApellidosMedica').value = '';
-      $('nuevoPacienteDocMedica').value = '';
+      const docReset = $('nuevoPacienteDocMedica');
+      if (docReset) {
+        docReset.value = '';
+        delete docReset.dataset.pacienteId;
+      }
       $('nuevoPacienteTelefonoMedica').value = '';
       $('nuevoPacienteTelefonoMedica2').value = '';
       $('nuevoTurnoNotasMedica').value = '';
@@ -5850,16 +5864,17 @@ async function initElectro() {
   $('electroPacienteNombres')?.addEventListener('input', _sanitizarNombreElectro);
   $('electroPacienteApellidos')?.addEventListener('input', _sanitizarNombreElectro);
   
-  // Documento: Solo números + buscar paciente
-  $('electroDocumento')?.addEventListener('input', debounce((e) => {
-    const valor = e.target.value;
-    if (valor && !/^\d*$/.test(valor)) {
-      // Remover caracteres no numéricos
-      e.target.value = valor.replace(/\D/g, '');
+  // Documento: solo números; Enter carga datos del paciente
+  $('electroDocumento')?.addEventListener('input', (e) => {
+    e.target.value = e.target.value.replace(/\D/g, '').slice(0, 15);
+    delete e.target.dataset.pacienteId;
+  });
+  $('electroDocumento')?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      buscarPacientePorDocumentoDesdeFormulario('electro');
     }
-    // Buscar paciente por documento
-    buscarPacientePorDocumento();
-  }, 300));
+  });
   
   // Teléfono: Solo números, máximo 10 dígitos
   const limitarTel = (e) => {
@@ -6447,9 +6462,104 @@ async function checkEquiposDisponibilidad() {
   }
 }
 
-// Buscar paciente por documento y auto-completar nombre y teléfono
+function normalizarDocumentoPaciente(val) {
+  return String(val || '').trim().replace(/\D/g, '');
+}
+
+function aplicarPacienteFormularioMedica(p) {
+  const nombres = p.nombres != null ? String(p.nombres).trim() : splitNombreApellido(p.nombre).nombres;
+  const apellidos = p.apellidos != null ? String(p.apellidos).trim() : splitNombreApellido(p.nombre).apellidos;
+  const docEl = $('nuevoPacienteDocMedica');
+  if (docEl) {
+    docEl.value = p.documento || docEl.value || '';
+    if (p.id) docEl.dataset.pacienteId = String(p.id);
+    else delete docEl.dataset.pacienteId;
+  }
+  if ($('nuevoPacienteNombresMedica')) $('nuevoPacienteNombresMedica').value = nombres;
+  if ($('nuevoPacienteApellidosMedica')) $('nuevoPacienteApellidosMedica').value = apellidos;
+  if ($('nuevoPacienteTelefonoMedica')) {
+    $('nuevoPacienteTelefonoMedica').value = String(p.telefono || '').replace(/\D/g, '').slice(0, 10);
+  }
+  if ($('nuevoPacienteTelefonoMedica2')) {
+    $('nuevoPacienteTelefonoMedica2').value = String(p.telefono2 || '').replace(/\D/g, '').slice(0, 10);
+  }
+  const entSel = $('nuevoTurnoEntidadMedica');
+  if (p.entidad && entSel) {
+    const opt = [...entSel.options].find((o) => o.value === p.entidad || o.textContent === p.entidad);
+    if (opt) entSel.value = opt.value;
+  }
+  const tipoSel = $('nuevoTurnoTipoMedica');
+  if (p.tipo_consulta && tipoSel) {
+    const opt = [...tipoSel.options].find((o) => o.value === p.tipo_consulta || o.textContent === p.tipo_consulta);
+    if (opt) tipoSel.value = opt.value;
+  }
+}
+
+function aplicarPacienteFormularioElectro(p) {
+  const nombres = p.nombres != null ? String(p.nombres).trim() : splitNombreApellido(p.nombre).nombres;
+  const apellidos = p.apellidos != null ? String(p.apellidos).trim() : splitNombreApellido(p.nombre).apellidos;
+  const docEl = $('electroDocumento');
+  if (docEl) {
+    docEl.value = p.documento || docEl.value || '';
+    if (p.id) docEl.dataset.pacienteId = String(p.id);
+    else delete docEl.dataset.pacienteId;
+  }
+  if ($('electroPacienteNombres')) $('electroPacienteNombres').value = nombres;
+  if ($('electroPacienteApellidos')) $('electroPacienteApellidos').value = apellidos;
+  if ($('electroTelefono')) $('electroTelefono').value = String(p.telefono || '').replace(/\D/g, '').slice(0, 10);
+  if ($('electroTelefono2')) $('electroTelefono2').value = String(p.telefono2 || '').replace(/\D/g, '').slice(0, 10);
+  const entSel = $('electroEntidad');
+  if (p.entidad && entSel) {
+    const opt = [...entSel.options].find((o) => o.value === p.entidad || o.textContent === p.entidad);
+    if (opt) entSel.value = opt.value;
+  }
+}
+
+async function consultarPacientePorDocumento(documento) {
+  const doc = normalizarDocumentoPaciente(documento);
+  if (doc.length < 5) {
+    return { ok: false, error: 'Ingrese al menos 5 dígitos del documento' };
+  }
+  const res = await apiFetch(`/api/pacientes/por-documento/${encodeURIComponent(doc)}`);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    return { ok: false, error: data.error || 'No se encontró un paciente con ese documento' };
+  }
+  return data;
+}
+
+async function buscarPacientePorDocumentoDesdeFormulario(contexto) {
+  const esMedica = contexto === 'medica';
+  const docEl = esMedica ? $('nuevoPacienteDocMedica') : $('electroDocumento');
+  if (!docEl) return;
+  const doc = normalizarDocumentoPaciente(docEl.value);
+  if (!doc) {
+    showToast('Escriba el número de documento', 'warning');
+    docEl.focus();
+    return;
+  }
+  docEl.disabled = true;
+  try {
+    const data = await consultarPacientePorDocumento(doc);
+    if (!data.ok) {
+      showToast(data.error || 'No encontrado', 'warning');
+      delete docEl.dataset.pacienteId;
+      return;
+    }
+    if (esMedica) aplicarPacienteFormularioMedica(data);
+    else aplicarPacienteFormularioElectro(data);
+    const fuenteLabel = { pacientes: 'registro de pacientes', turno: 'última cita médica', electro: 'último estudio', espera: 'lista de espera' };
+    showToast(`Datos cargados (${fuenteLabel[data.fuente] || data.fuente})`, 'success');
+    (esMedica ? $('nuevoPacienteNombresMedica') : $('electroPacienteNombres'))?.focus();
+  } catch (e) {
+    showToast('Error al buscar el paciente', 'error');
+  } finally {
+    docEl.disabled = false;
+  }
+}
+
 async function buscarPacientePorDocumento() {
-  // Eliminado autocompletado por documento. No hacer nada.
+  await buscarPacientePorDocumentoDesdeFormulario('electro');
 }
 
 async function buscarDiagnosticosElectro() {

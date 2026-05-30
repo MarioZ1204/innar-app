@@ -40,6 +40,100 @@ router.get('/pacientes', requireAuth, async (req, res) => {
   }
 });
 
+function splitNombrePaciente(nombre) {
+  const parts = String(nombre || '').trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return { nombres: '', apellidos: '' };
+  if (parts.length === 1) return { nombres: parts[0], apellidos: '' };
+  if (parts.length === 2) return { nombres: parts[0], apellidos: parts[1] };
+  const mid = Math.ceil(parts.length / 2);
+  return { nombres: parts.slice(0, mid).join(' '), apellidos: parts.slice(mid).join(' ') };
+}
+
+function mapPacienteRespuesta(row, fuente, extras = {}) {
+  const nombre = row.nombre || [row.nombres, row.apellidos].filter(Boolean).join(' ').trim();
+  const partes = row.nombres != null
+    ? { nombres: String(row.nombres || '').trim(), apellidos: String(row.apellidos || '').trim() }
+    : splitNombrePaciente(nombre);
+  return {
+    ok: true,
+    fuente,
+    id: row.id || null,
+    nombre,
+    nombres: partes.nombres,
+    apellidos: partes.apellidos,
+    documento: row.documento || extras.documento || null,
+    telefono: row.telefono || row.telefono1 || null,
+    telefono2: row.telefono2 || null,
+    email: row.email || null,
+    entidad: extras.entidad || row.entidad || null,
+    tipo_consulta: extras.tipo_consulta || row.tipo_consulta || row.tipo_estudio || null
+  };
+}
+
+router.get('/pacientes/por-documento/:documento', requireAuth, async (req, res) => {
+  const documento = String(req.params.documento || '').trim().replace(/\s/g, '');
+  if (!documento || documento.length < 5) {
+    return res.status(400).json({ error: 'Ingrese un documento válido (mínimo 5 dígitos)' });
+  }
+  if (!/^\d+$/.test(documento)) {
+    return res.status(400).json({ error: 'El documento solo puede contener números' });
+  }
+  try {
+    const pac = await db.queryOne(
+      'SELECT id, nombre, documento, telefono, telefono2, email FROM pacientes WHERE documento = ? LIMIT 1',
+      [documento]
+    );
+    if (pac) {
+      return res.json(mapPacienteRespuesta(pac, 'pacientes'));
+    }
+
+    const turno = await db.queryOne(
+      `SELECT paciente_nombre AS nombre, paciente_documento AS documento,
+              paciente_telefono AS telefono, paciente_telefono2 AS telefono2,
+              entidad, tipo_consulta
+       FROM turnos
+       WHERE paciente_documento = ?
+       ORDER BY fecha DESC, id DESC
+       LIMIT 1`,
+      [documento]
+    );
+    if (turno && turno.nombre) {
+      return res.json(mapPacienteRespuesta(turno, 'turno', { documento }));
+    }
+
+    const electro = await db.queryOne(
+      `SELECT p.id, p.nombre, p.documento, p.telefono, p.telefono2, p.email, c.entidad
+       FROM pacientes p
+       INNER JOIN citas_electro c ON c.paciente_id = p.id
+       WHERE p.documento = ?
+         AND (c.deleted_at IS NULL OR c.deleted_at = '0000-00-00 00:00:00')
+       ORDER BY c.fecha DESC, c.id DESC
+       LIMIT 1`,
+      [documento]
+    );
+    if (electro) {
+      return res.json(mapPacienteRespuesta(electro, 'electro'));
+    }
+
+    const espera = await db.queryOne(
+      `SELECT documento, nombres, apellidos, telefono1 AS telefono, telefono2, entidad, tipo_estudio
+       FROM pacientes_espera
+       WHERE documento = ?
+       ORDER BY id DESC
+       LIMIT 1`,
+      [documento]
+    );
+    if (espera) {
+      return res.json(mapPacienteRespuesta(espera, 'espera', { documento }));
+    }
+
+    return res.status(404).json({ ok: false, error: 'No se encontró un paciente con ese documento' });
+  } catch (e) {
+    logger.error('[PACIENTES] por-documento:', e);
+    res.status(500).json({ error: safeError(e) });
+  }
+});
+
 router.get('/pacientes/:id', requireAuth, async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (!id) return res.status(400).json({ error: 'ID inválido' });
