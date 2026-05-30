@@ -572,6 +572,58 @@ async function estaFechaBloqueada(doctorId, fecha, db) {
   return !resultado.disponible;
 }
 
+function normalizarHoraHHMM(hora) {
+  if (!hora) return null;
+  const s = String(hora).trim();
+  const m = s.match(/^(\d{1,2}):(\d{2})/);
+  if (!m) return null;
+  return `${String(parseInt(m[1], 10)).padStart(2, '0')}:${m[2]}`;
+}
+
+/** Indica si ya hay otra cita activa del médico en esa fecha y hora (HH:MM). */
+async function consultarOcupacionHora(doctorId, fecha, hora, db) {
+  const horaNorm = normalizarHoraHHMM(hora);
+  if (!horaNorm) return { ocupada: false, turnos: [] };
+  const rows = await db.query(
+    `SELECT id, paciente_nombre, hora FROM turnos
+     WHERE doctor_id = ? AND fecha = ?
+       AND estado NOT IN ('CANCELADO', 'REPROGRAMADO')
+       AND hora IS NOT NULL AND hora != ''
+       AND TIME_FORMAT(hora, '%H:%i') = ?`,
+    [doctorId, fecha, horaNorm]
+  );
+  return { ocupada: rows.length > 0, turnos: rows };
+}
+
+/** Horas libres en el día (sin cita activa y con disponibilidad del médico). */
+async function listarHorasLibresAgendaDia(doctorId, fecha, db, intervaloMin = 40) {
+  const turnosRows = await db.query(
+    `SELECT TIME_FORMAT(hora, '%H:%i') AS h FROM turnos
+     WHERE doctor_id = ? AND fecha = ?
+       AND estado NOT IN ('CANCELADO', 'REPROGRAMADO')
+       AND hora IS NOT NULL AND hora != ''`,
+    [doctorId, fecha]
+  );
+  const ocupadas = new Set(turnosRows.map((r) => r.h));
+  const libres = [];
+  const rangos = [{ inicio: 8 * 60, fin: 12 * 60 }, { inicio: 14 * 60, fin: 18 * 60 }];
+  const paso = Math.min(60, Math.max(15, parseInt(intervaloMin, 10) || 40));
+  for (const rango of rangos) {
+    let m = rango.inicio;
+    while (m < rango.fin) {
+      const hh = String(Math.floor(m / 60)).padStart(2, '0');
+      const mm = String(m % 60).padStart(2, '0');
+      const hStr = `${hh}:${mm}`;
+      if (!ocupadas.has(hStr)) {
+        const validacion = await validarDisponibilidadPorHora(doctorId, fecha, hStr, db);
+        if (validacion.valido) libres.push(hStr);
+      }
+      m += paso;
+    }
+  }
+  return libres;
+}
+
 module.exports = {
   procesarAgendaExcel,
   obtenerDisponibilidadMensual,
@@ -583,6 +635,9 @@ module.exports = {
   esHoraBloqueada,
   limpiarDisponibilidad,
   parseIntervalo,
+  normalizarHoraHHMM,
+  consultarOcupacionHora,
+  listarHorasLibresAgendaDia,
   // Compatibilidad anterior
   obtenerDiasBloqueados,
   estaFechaBloqueada

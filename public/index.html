@@ -1004,7 +1004,7 @@
       </div>
       <div id="sesionesMultiplesRow" style="display:none;margin-bottom:14px;padding:14px;border-radius:8px;background:#f0fdf4;border:1px solid #86efac">
         <div style="font-weight:600;font-size:.95rem;margin-bottom:4px;color:#166534">Programar varias sesiones</div>
-        <p style="margin:0 0 12px 0;font-size:.8rem;color:#4b5563">La fecha y hora de arriba corresponden a la <strong>primera</strong> sesión. Elija cuántas sesiones y en qué días de la semana se repiten.</p>
+        <p style="margin:0 0 12px 0;font-size:.8rem;color:#4b5563">La fecha y hora de arriba corresponden a la <strong>primera</strong> sesión. En las siguientes se verifica si esa hora está libre; si está ocupada, podrá elegir otra en la tabla.</p>
         <div class="row" style="margin-bottom:10px">
           <div class="col" style="max-width:160px">
             <label>Cantidad de sesiones</label>
@@ -1020,7 +1020,19 @@
           <label style="cursor:pointer"><input type="checkbox" class="sesion-dia-check" value="5" checked /> Vie</label>
           <label style="cursor:pointer"><input type="checkbox" class="sesion-dia-check" value="6" /> Sáb</label>
         </div>
-        <div id="sesionesMultiplesPreview" style="font-size:.8rem;color:#374151;max-height:100px;overflow-y:auto;line-height:1.5"></div>
+        <div id="sesionesMultiplesPreview" style="font-size:.8rem;color:#374151;max-height:220px;overflow-y:auto;line-height:1.5">
+          <table style="width:100%;border-collapse:collapse;font-size:.8rem">
+            <thead>
+              <tr style="border-bottom:1px solid #bbf7d0;text-align:left;color:#166534">
+                <th style="padding:4px 6px">#</th>
+                <th style="padding:4px 6px">Fecha</th>
+                <th style="padding:4px 6px">Hora</th>
+                <th style="padding:4px 6px">Estado</th>
+              </tr>
+            </thead>
+            <tbody id="sesionesMultiplesTableBody"></tbody>
+          </table>
+        </div>
       </div>
       <div class="row" style="margin-bottom:12px">
         <div class="col"><label>Teléfono 1 <span style="color:#dc2626">*</span></label><input id="nuevoPacienteTelefonoMedica" type="tel" inputmode="numeric" maxlength="10" placeholder="10 dígitos" /></div>

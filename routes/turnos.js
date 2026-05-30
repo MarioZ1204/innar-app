@@ -357,6 +357,46 @@ router.post('/turnos/marcar-atendido', requireAuth, requireRoleOrPerm(['superadm
 });
 
 // POST /api/turnos
+// POST /api/turnos/verificar-sesiones — ocupación y horas alternativas para sesiones múltiples
+router.post('/turnos/verificar-sesiones', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion'], 'agenda.crear'), async (req, res) => {
+  const { doctor_id, sesiones, intervalo_min } = req.body || {};
+  const doctorId = parseInt(doctor_id, 10);
+  if (!doctorId || !Array.isArray(sesiones) || sesiones.length === 0) {
+    return res.status(400).json({ error: 'doctor_id y sesiones son requeridos' });
+  }
+  const intervalo = Math.min(60, Math.max(15, parseInt(intervalo_min, 10) || 40));
+  try {
+    const resultados = [];
+    for (const s of sesiones) {
+      const fecha = s.fecha;
+      const hora = s.hora;
+      if (!fecha || !hora) {
+        resultados.push({ fecha, hora: hora || null, agenda_valida: false, ocupada: false, horas_alternativas: [] });
+        continue;
+      }
+      const disp = await procesarAgendaExcel.validarDisponibilidadPorHora(doctorId, fecha, hora, db);
+      const ocup = await procesarAgendaExcel.consultarOcupacionHora(doctorId, fecha, hora, db);
+      let horasAlternativas = [];
+      if (!disp.valido || ocup.ocupada) {
+        horasAlternativas = await procesarAgendaExcel.listarHorasLibresAgendaDia(doctorId, fecha, db, intervalo);
+      }
+      resultados.push({
+        fecha,
+        hora,
+        agenda_valida: disp.valido,
+        agenda_error: disp.razon || null,
+        ocupada: ocup.ocupada,
+        paciente: ocup.turnos[0]?.paciente_nombre || null,
+        horas_alternativas: horasAlternativas
+      });
+    }
+    res.json({ ok: true, sesiones: resultados });
+  } catch (e) {
+    logger.error(e.message, { error: e });
+    res.status(500).json({ error: safeError(e) });
+  }
+});
+
 // POST /api/turnos/lote — varias citas (misma hora, fechas distintas; p. ej. terapias)
 router.post('/turnos/lote', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion'], 'agenda.crear'), validateSchema('apiCrearTurnosLote'), async (req, res) => {
   const {
@@ -366,10 +406,23 @@ router.post('/turnos/lote', requireAuth, requireRoleOrPerm(['superadmin', 'admin
 
   const errores = [];
   for (let i = 0; i < sesiones.length; i += 1) {
-    const { fecha } = sesiones[i];
-    const validacion = await procesarAgendaExcel.validarDisponibilidadPorHora(doctor_id, fecha, hora, db);
+    const { fecha, hora: horaSesion } = sesiones[i];
+    const horaEff = horaSesion || hora;
+    const validacion = await procesarAgendaExcel.validarDisponibilidadPorHora(doctor_id, fecha, horaEff, db);
     if (!validacion.valido) {
       errores.push({ fecha, indice: i + 1, error: validacion.razon || 'Horario no disponible' });
+      continue;
+    }
+    const ocup = await procesarAgendaExcel.consultarOcupacionHora(doctor_id, fecha, horaEff, db);
+    if (i >= 1 && ocup.ocupada) {
+      const quien = ocup.turnos[0]?.paciente_nombre;
+      errores.push({
+        fecha,
+        indice: i + 1,
+        error: quien
+          ? `La hora ${String(horaEff).slice(0, 5)} ya está ocupada (${quien})`
+          : `La hora ${String(horaEff).slice(0, 5)} ya está ocupada por otra cita`
+      });
     }
   }
   if (errores.length > 0) {
@@ -387,7 +440,8 @@ router.post('/turnos/lote', requireAuth, requireRoleOrPerm(['superadmin', 'admin
     const ids = await db.transaction(async (conn) => {
       const insertados = [];
       for (let i = 0; i < sesiones.length; i += 1) {
-        const { fecha, sesion_numero } = sesiones[i];
+        const { fecha, sesion_numero, hora: horaSesion } = sesiones[i];
+        const horaEff = horaSesion || hora;
         const num = sesion_numero != null ? sesion_numero : i + 1;
         const prefijo = `Sesión ${num} de ${total}`;
         const notasFinales = notasBase ? `${prefijo} — ${notasBase}` : prefijo;
@@ -401,7 +455,7 @@ router.post('/turnos/lote', requireAuth, requireRoleOrPerm(['superadmin', 'admin
           paciente_telefono || null,
           paciente_telefono2 || null,
           fecha,
-          hora,
+          horaEff,
           tipo_consulta || null,
           entidad || null,
           notasFinales,

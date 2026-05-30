@@ -282,6 +282,7 @@ const schemas = {
     sesiones: Joi.array().items(
       Joi.object({
         fecha: fechaApi.required(),
+        hora: horaApi.optional(),
         sesion_numero: Joi.number().integer().min(1).max(100).optional()
       })
     ).min(2).max(52).required()
