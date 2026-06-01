@@ -146,20 +146,33 @@
   min-height: 36px;
 }
 
-@media (min-width: 1200px) {
+/* Escritorio: En curso arriba, Completados abajo (columna, como style.css base) */
+@media (min-width: 769px) {
   #view-agenda-medica .medica-agenda-split {
-    flex-direction: row;
-    align-items: flex-start;
+    flex-direction: column;
+    align-items: stretch;
   }
 
   #view-agenda-medica .medica-agenda-block {
-    flex: 1 1 0;
-    min-width: 0;
+    flex: none;
+    width: 100%;
+    max-width: 100%;
   }
 
-  #view-agenda-medica .medica-agenda-block-activos .table-wrapper,
+  #view-agenda-medica .medica-agenda-block-activos .table-wrapper {
+    max-height: min(52vh, 520px);
+  }
+
   #view-agenda-medica .medica-agenda-block-completados .table-wrapper {
-    max-height: min(65vh, 640px);
+    max-height: min(38vh, 380px);
+  }
+
+  #view-agenda-medica .medica-turnos-table,
+  #view-agenda-medica #turnosTableMedica,
+  #view-agenda-medica #turnosTableMedicaCompletados {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
   }
 }
 
