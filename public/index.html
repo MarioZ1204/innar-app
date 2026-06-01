@@ -3,7 +3,7 @@
 <html lang="es">
 <head>
   <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <title>Instituto Neurociencias de Nariño IPS S.A.S</title>
   <link rel="icon" type="image/png" href="images/icon.png">
   <!-- Preload LCP image (splash logo) -->
@@ -20,6 +20,11 @@
   <link rel="stylesheet" href="sede-recordatorio.css">
   <link rel="stylesheet" href="soportes.css">
   <link rel="stylesheet" href="innar-responsive.css">
+  <link rel="stylesheet" href="innar-responsive-shell.css">
+  <link rel="stylesheet" href="innar-responsive-recibos.css">
+  <link rel="stylesheet" href="innar-responsive-agenda-medica.css">
+  <link rel="stylesheet" href="innar-responsive-electro.css">
+  <link rel="stylesheet" href="innar-responsive-mobile-fix.css">
   <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js" defer></script>
   <style>
     @keyframes moveUp {
@@ -301,18 +306,18 @@
           <!-- ===== PÁGINA: CREAR RECIBO ===== -->
           <div class="page active" id="page-crear">
             <header>
-              <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+              <div class="recibo-crear-header">
                 <div>
-                  <h2 style="margin:0">Nuevo Recibo</h2>
+                  <h2>Nuevo Recibo</h2>
                 </div>
-                <div style="display:flex;gap:10px;font-size:13px">
-                  <div style="text-align:center;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:8px 16px">
-                    <div style="font-size:22px;font-weight:bold;color:#0369a1" id="statsRecibosHoy">0</div>
-                    <div style="color:#666">Hoy</div>
+                <div class="recibo-stats-row">
+                  <div class="recibo-stat-chip recibo-stat-chip--hoy">
+                    <strong id="statsRecibosHoy">0</strong>
+                    <span>Hoy</span>
                   </div>
-                  <div style="text-align:center;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:8px 16px">
-                    <div style="font-size:22px;font-weight:bold;color:#059669" id="statsTotalHoy">$ 0</div>
-                    <div style="color:#666">Total pagado hoy</div>
+                  <div class="recibo-stat-chip recibo-stat-chip--total">
+                    <strong id="statsTotalHoy">$ 0</strong>
+                    <span>Total pagado hoy</span>
                   </div>
                 </div>
               </div>
@@ -324,9 +329,9 @@
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                 <span>Buscar cita del día para pre-llenar</span>
               </div>
-              <div style="display:flex;gap:10px;align-items:center">
-                <input id="reciboBuscarInput" type="text" placeholder="Documento o nombre del paciente..." style="flex:1" />
-                <button id="btnReciboBuscar" class="btn-secondary">Buscar</button>
+              <div class="recibo-buscar-row">
+                <input id="reciboBuscarInput" type="text" placeholder="Documento o nombre del paciente..." />
+                <button id="btnReciboBuscar" class="btn-secondary" type="button">Buscar</button>
               </div>
               <div id="reciboBuscarResultados" class="hidden recibo-buscar-resultados"></div>
             </section>
@@ -337,12 +342,12 @@
                 <!-- Datos del paciente -->
                 <div class="recibo-form-group">
                   <h4 class="recibo-form-section-title">Paciente</h4>
-                  <div style="display:flex;gap:10px">
-                    <div style="flex:1">
+                  <div class="recibo-paciente-nombres">
+                    <div>
                       <label>Nombres <span style="color:#dc2626">*</span></label>
                       <input id="clienteNombres" placeholder="Nombres" required />
                     </div>
-                    <div style="flex:1">
+                    <div>
                       <label>Apellidos <span style="color:#dc2626">*</span></label>
                       <input id="clienteApellidos" placeholder="Apellidos" required />
                     </div>
@@ -452,10 +457,10 @@
               <input type="hidden" id="reciboCitaElectroId" value="" />
 
               <!-- Pendiente de pago -->
-              <div style="margin-top:14px;display:flex;align-items:center;gap:10px;padding:10px 14px;background:#fffbeb;border:1.5px solid #fde68a;border-radius:10px">
-                <input type="checkbox" id="reciboPendientePago" style="width:18px;height:18px;accent-color:#f59e0b;cursor:pointer" />
-                <label for="reciboPendientePago" style="font-size:.9rem;color:#92400e;font-weight:600;cursor:pointer;margin:0">Pendiente de pago</label>
-                <span style="font-size:.78rem;color:#b45309">— El paciente aún no ha realizado el pago</span>
+              <div class="recibo-pendiente-row" style="margin-top:14px">
+                <input type="checkbox" id="reciboPendientePago" style="accent-color:#f59e0b;cursor:pointer" />
+                <label for="reciboPendientePago" style="font-size:.9rem;color:#92400e;font-weight:600;cursor:pointer">Pendiente de pago</label>
+                <span class="recibo-pendiente-hint">— El paciente aún no ha realizado el pago</span>
               </div>
 
               <div class="actions" style="margin-top:18px">
@@ -589,17 +594,17 @@
                   </select>
                 </div>
               </div>
-              <div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap;align-items:center">
-                <button id="btnAplicarFiltros" class="btn-primary">Aplicar filtros</button>
-                <button id="btnLimpiarFiltros" class="btn-secondary">Limpiar</button>
-                <span id="recibosCountInfo" style="margin-left:auto;font-size:13px;color:#627371;font-weight:500"></span>
+              <div class="recibo-filtros-actions">
+                <button id="btnAplicarFiltros" class="btn-primary" type="button">Aplicar filtros</button>
+                <button id="btnLimpiarFiltros" class="btn-secondary" type="button">Limpiar</button>
+                <span id="recibosCountInfo" style="color:#627371;font-weight:500"></span>
               </div>
             </section>
 
             <!-- Resumen + exportar -->
             <section class="card no-print recibo-resumen-card hidden" id="reciboResumenCard">
-              <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
-                <div style="display:flex;gap:20px;align-items:center">
+              <div class="recibo-resumen-inner">
+                <div class="recibo-resumen-metrics">
                   <div>
                     <span style="font-size:24px;font-weight:bold;color:#2d4a47" id="resumenCantidad">0</span>
                     <span style="color:#6b7280;font-size:.9rem;margin-left:4px">pagados</span>
@@ -614,12 +619,12 @@
                     <span style="font-size:14px;font-weight:600;color:#ea580c;margin-left:6px" id="resumenPendienteTotal">$ 0</span>
                   </div>
                 </div>
-                <div style="display:flex;gap:8px">
-                  <button id="btnExportarCSV" class="recibo-export-btn recibo-export-excel">
+                <div class="recibo-resumen-export">
+                  <button id="btnExportarCSV" class="recibo-export-btn recibo-export-excel" type="button">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                     Excel (CSV)
                   </button>
-                  <button id="btnExportarPDF" class="recibo-export-btn recibo-export-pdf">
+                  <button id="btnExportarPDF" class="recibo-export-btn recibo-export-pdf" type="button">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
                     Reporte PDF
                   </button>
@@ -714,9 +719,9 @@
         <div class="container">
           <!-- PÁGINA: VER CITAS -->
           <div class="agenda-page active" data-agenda-page="citas">
-            <header style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
-              <h2 style="margin:0">Agenda de Citas</h2>
-              <button id="btnNuevaCitaMedica" class="btn-primary" style="display:none;align-items:center;gap:6px">
+            <header class="medica-page-header">
+              <h2>Agenda de Citas</h2>
+              <button id="btnNuevaCitaMedica" class="btn-primary" style="display:none">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                 Nueva Cita
               </button>
@@ -756,7 +761,7 @@
                 Volver al calendario
               </button>
             
-              <section class="card no-print">
+              <section class="card no-print medica-day-filters">
                 <div class="row" style="margin-bottom:16px">
                   <div class="col"><label>Fecha</label><input id="agendaMedicaFecha" type="date" /></div>
                   <div class="col"><label>Doctor</label><div id="agendaMedicaDoctorDisplay" style="padding:10px;background:#f3f4f6;border-radius:4px;display:flex;align-items:center;font-weight:500;color:#374151">-</div></div>
@@ -795,7 +800,7 @@
               <table id="turnosTableMedica" class="modern-table medica-turnos-table">
                   <colgroup>
                     <col class="col-turno">
-                    <col class="col-hora col-mobile-hide">
+                    <col class="col-hora">
                     <col class="col-paciente">
                     <col class="col-tipo col-mobile-hide">
                     <col class="col-doc col-mobile-hide">
@@ -807,7 +812,7 @@
                   <thead>
                     <tr>
                       <th>Turno</th>
-                      <th class="col-hora col-mobile-hide">Hora</th>
+                      <th class="col-hora">Hora</th>
                       <th>Paciente</th>
                       <th class="col-mobile-hide">Tipo consulta</th>
                       <th class="col-mobile-hide">Documento</th>
@@ -834,7 +839,7 @@
                     <table id="turnosTableMedicaCompletados" class="modern-table medica-turnos-table">
                       <colgroup>
                         <col class="col-turno">
-                        <col class="col-hora col-mobile-hide">
+                        <col class="col-hora">
                         <col class="col-paciente">
                         <col class="col-tipo col-mobile-hide">
                         <col class="col-doc col-mobile-hide">
@@ -846,7 +851,7 @@
                       <thead>
                         <tr>
                           <th>Turno</th>
-                          <th class="col-hora col-mobile-hide">Hora</th>
+                          <th class="col-hora">Hora</th>
                           <th>Paciente</th>
                           <th class="col-mobile-hide">Tipo consulta</th>
                           <th class="col-mobile-hide">Documento</th>
@@ -873,18 +878,18 @@
             <header><h2>Buscar Cita por Documento</h2></header>
             <section class="card">
               <p style="color:#6b7280;margin-bottom:16px;font-size:.95rem">Ingresa el número de documento del paciente para ver sus citas programadas y editarlas directamente.</p>
-              <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
-                <div style="flex:1;min-width:200px">
+              <div class="medica-buscar-row">
+                <div class="medica-buscar-field">
                   <label>Número de Documento</label>
-                  <input id="buscarCitaDocumento" type="text" placeholder="Ingresa aquí el número de documento" style="width:100%" />
+                  <input id="buscarCitaDocumento" type="text" placeholder="Ingresa aquí el número de documento" />
                 </div>
-                <button id="btnBuscarCitaDocumento" class="btn-primary">Buscar</button>
-                <button id="btnLimpiarCitaDocumento" class="btn-secondary">Limpiar</button>
+                <button id="btnBuscarCitaDocumento" class="btn-primary" type="button">Buscar</button>
+                <button id="btnLimpiarCitaDocumento" class="btn-secondary" type="button">Limpiar</button>
               </div>
             </section>
             <!-- Resultados inline -->
             <section class="card" id="buscarCitaResultadosSection" style="display:none">
-              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+              <div class="medica-resultados-head">
                 <h3 style="margin:0;color:#1f2937">Resultados</h3>
                 <span id="buscarCitaConteo" style="font-size:.875rem;color:#6b7280"></span>
               </div>
@@ -913,9 +918,9 @@
             <header><h2 id="agendaTitleHeader">Programar Agenda</h2></header>
 
             <!-- Selector de médico (solo recepción/admin) -->
-            <div id="agendaCalDoctorSelector" style="display:none;margin-bottom:16px">
-              <label style="font-weight:600;margin-right:8px">Médico:</label>
-              <select id="agendaCalDoctorSelect" class="agenda-cal-doctor-select" style="padding:8px 14px;border-radius:10px;border:1px solid #e2e8f0;font-size:.9rem;background:#f8fafc"></select>
+            <div id="agendaCalDoctorSelector" class="agenda-cal-doctor-bar" style="display:none">
+              <label>Médico:</label>
+              <select id="agendaCalDoctorSelect" class="agenda-cal-doctor-select"></select>
             </div>
 
             <!-- Calendario interactivo -->
@@ -1528,11 +1533,10 @@
 
           <!-- ===== PÁGINA: AGENDA ===== -->
           <div class="electro-page active" data-electro-page="agenda">
-          <header style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
-            <h2 style="margin:0">Agenda de Equipos de Electrodiagnóstico</h2>
-            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-
-              <button id="btnNuevoEstudioElectro" class="btn-primary" style="display:none;align-items:center;gap:6px">
+          <header class="electro-page-header">
+            <h2>Agenda de Equipos de Electrodiagnóstico</h2>
+            <div class="electro-page-header-actions">
+              <button id="btnNuevoEstudioElectro" class="btn-primary" style="display:none" type="button">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                 Nuevo Estudio
               </button>
@@ -1540,15 +1544,13 @@
           </header>
 
           <!-- Selector de Fecha -->
-          <section class="card no-print" style="padding:14px 20px">
-            <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
-              <div style="flex:0 0 auto">
-                <label style="font-size:.875rem;margin-bottom:4px;display:block">Fecha</label>
-                <div style="display:flex;align-items:center;gap:8px">
-                  <button type="button" id="btnElectroFechaPrev" class="btn-secondary" title="Día anterior">◀</button>
-                  <input id="electroFecha" type="date" class="electro-fecha-input" />
-                  <button type="button" id="btnElectroFechaNext" class="btn-secondary" title="Día siguiente">▶</button>
-                </div>
+          <section class="card no-print electro-date-toolbar">
+            <div class="electro-date-toolbar-inner">
+              <div class="electro-date-nav">
+                <label style="font-size:.875rem;margin-bottom:4px;display:block;width:100%">Fecha</label>
+                <button type="button" id="btnElectroFechaPrev" class="btn-secondary" title="Día anterior" aria-label="Día anterior">◀</button>
+                <input id="electroFecha" type="date" class="electro-fecha-input" />
+                <button type="button" id="btnElectroFechaNext" class="btn-secondary" title="Día siguiente" aria-label="Día siguiente">▶</button>
               </div>
             </div>
           </section>
@@ -1635,12 +1637,12 @@
             </div>
 
             <!-- Información de Usuario Programó / Editó (abajo de la tabla) -->
-            <div style="margin-top:20px;padding:16px;background:#f9fafb;border-radius:8px;border:1px solid #e5e7eb;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap">
+            <div class="electro-meta-footer">
               <div>
                 <div style="font-size:.875rem;color:#6b7280;font-weight:600;margin-bottom:4px">USUARIO QUE PROGRAMÓ</div>
                 <div style="font-size:.95rem;color:#1f2937;font-weight:500" id="electroUsuarioProgramo">-</div>
               </div>
-              <div style="text-align:right">
+              <div>
                 <div style="font-size:.875rem;color:#6b7280;font-weight:600;margin-bottom:4px">USUARIO QUE EDITÓ</div>
                 <div style="font-size:.95rem;color:#1f2937;font-weight:500" id="electroUsuarioEdito">-</div>
               </div>
@@ -1653,18 +1655,18 @@
             <header><h2>Buscar Estudio por Documento</h2></header>
             <section class="card">
               <p style="color:#6b7280;margin-bottom:16px;font-size:.95rem">Ingresa el número de documento del paciente para ver sus estudios programados y editarlos directamente.</p>
-              <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
-                <div style="flex:1;min-width:200px">
+              <div class="electro-buscar-row">
+                <div class="electro-buscar-field">
                   <label>Número de Documento</label>
-                  <input id="buscarEstudioDocumento" type="text" placeholder="Ingresa aquí el número de documento" style="width:100%" />
+                  <input id="buscarEstudioDocumento" type="text" placeholder="Ingresa aquí el número de documento" />
                 </div>
-                <button id="btnBuscarEstudioDocumento" class="btn-primary">Buscar</button>
-                <button id="btnLimpiarEstudioDocumento" class="btn-secondary">Limpiar</button>
+                <button id="btnBuscarEstudioDocumento" class="btn-primary" type="button">Buscar</button>
+                <button id="btnLimpiarEstudioDocumento" class="btn-secondary" type="button">Limpiar</button>
               </div>
             </section>
             <!-- Resultados inline -->
             <section class="card" id="buscarEstudioResultadosSection" style="display:none">
-              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+              <div class="electro-resultados-head">
                 <h3 style="margin:0;color:#1f2937">Resultados</h3>
                 <span id="buscarEstudioConteo" style="font-size:.875rem;color:#6b7280"></span>
               </div>
@@ -1738,8 +1740,8 @@
                   <input id="esperaTipoEstudio" type="text" placeholder="Ej: EMG, EEG, Holter..." maxlength="100" />
                 </div>
               </div>
-              <div style="margin-top:12px;text-align:right">
-                <button id="btnAgregarEspera" class="btn-primary">Agregar a Lista</button>
+              <div class="electro-espera-actions">
+                <button id="btnAgregarEspera" class="btn-primary" type="button">Agregar a Lista</button>
               </div>
             </section>
 
@@ -1771,7 +1773,7 @@
 
             <!-- Tabla -->
             <section class="card">
-              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+              <div class="electro-espera-list-head">
                 <h3 style="margin:0">Lista de Espera</h3>
                 <span id="esperaContador" style="font-size:.875rem;color:#6b7280;font-weight:500"></span>
               </div>

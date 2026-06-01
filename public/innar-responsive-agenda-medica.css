@@ -1,0 +1,735 @@
+/**
+ * Innar — Responsive módulo Agenda Médica (#view-agenda-medica)
+ */
+
+/* ── Cabeceras de página ────────────────────────────────────────────────────── */
+#view-agenda-medica .medica-page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+#view-agenda-medica .medica-page-header h2 {
+  margin: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+#view-agenda-medica .medica-page-header .btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--innar-touch-min, 44px);
+  flex-shrink: 0;
+}
+
+@media (max-width: 640px) {
+  #view-agenda-medica .medica-page-header .btn-primary {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+/* ── Calendario mensual (citas) ─────────────────────────────────────────────── */
+#view-agenda-medica .ccal-container {
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+#view-agenda-medica .ccal-header {
+  gap: 8px;
+}
+
+#view-agenda-medica .ccal-month-title {
+  font-size: clamp(1rem, 4vw, 1.35rem);
+  text-align: center;
+}
+
+#view-agenda-medica .ccal-legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px 12px;
+  font-size: clamp(0.65rem, 2.5vw, 0.78rem);
+}
+
+#view-agenda-medica .citas-cal-grid {
+  width: 100%;
+  max-width: 100%;
+}
+
+#view-agenda-medica .ccal-nav-btn {
+  min-width: var(--innar-touch-min, 44px);
+  min-height: var(--innar-touch-min, 44px);
+}
+
+/* ── Vista día: fecha / doctor ──────────────────────────────────────────────── */
+#view-agenda-medica .medica-day-filters .row {
+  margin-bottom: 0;
+}
+
+#view-agenda-medica #agendaMedicaFechaDisplay {
+  font-size: clamp(1rem, 3.5vw, 1.125rem);
+  word-break: break-word;
+}
+
+#view-agenda-medica .citas-table-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+#view-agenda-medica .citas-table-header > div:last-child {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ── Tablas En curso / Completados ──────────────────────────────────────────── */
+#view-agenda-medica .medica-agenda-split {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 10px;
+}
+
+#view-agenda-medica .medica-agenda-block {
+  min-width: 0;
+}
+
+#view-agenda-medica .medica-agenda-block .table-wrapper {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  max-width: 100%;
+}
+
+/* Desktop: scroll horizontal solo si hace falta */
+@media (min-width: 769px) {
+  #view-agenda-medica .medica-turnos-table {
+    min-width: 640px;
+  }
+
+  #view-agenda-medica .medica-turnos-table th:last-child,
+  #view-agenda-medica .medica-turnos-table td:last-child {
+    position: sticky;
+    right: 0;
+    z-index: 2;
+    background: #fff;
+    box-shadow: -4px 0 8px rgba(15, 23, 42, 0.06);
+  }
+
+  #view-agenda-medica .medica-turnos-table thead th:last-child {
+    background: var(--c-dark, #2d4a47);
+    color: #fff;
+    box-shadow: none;
+  }
+}
+
+#view-agenda-medica .medica-turnos-table .table-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: flex-end;
+  max-width: 100%;
+  margin: 0;
+}
+
+#view-agenda-medica .medica-turnos-table .table-actions button {
+  min-width: 36px;
+  min-height: 36px;
+}
+
+@media (min-width: 1200px) {
+  #view-agenda-medica .medica-agenda-split {
+    flex-direction: row;
+    align-items: flex-start;
+  }
+
+  #view-agenda-medica .medica-agenda-block {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  #view-agenda-medica .medica-agenda-block-activos .table-wrapper,
+  #view-agenda-medica .medica-agenda-block-completados .table-wrapper {
+    max-height: min(65vh, 640px);
+  }
+}
+
+/* ── Buscar cita ─────────────────────────────────────────────────────────────── */
+#view-agenda-medica .medica-buscar-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+#view-agenda-medica .medica-buscar-field {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+#view-agenda-medica .medica-buscar-row .btn-primary,
+#view-agenda-medica .medica-buscar-row .btn-secondary {
+  min-height: var(--innar-control-h, 44px);
+  flex: 1 1 auto;
+}
+
+@media (max-width: 640px) {
+  #view-agenda-medica .medica-buscar-row .btn-primary,
+  #view-agenda-medica .medica-buscar-row .btn-secondary {
+    width: 100%;
+  }
+}
+
+#view-agenda-medica .medica-resultados-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+#view-agenda-medica #buscarCitaResultadosSection .modern-table {
+  min-width: 560px;
+}
+
+@media (max-width: 768px) {
+  #view-agenda-medica #buscarCitaResultadosSection .modern-table th:nth-child(3),
+  #view-agenda-medica #buscarCitaResultadosSection .modern-table td:nth-child(3),
+  #view-agenda-medica #buscarCitaResultadosSection .modern-table th:nth-child(5),
+  #view-agenda-medica #buscarCitaResultadosSection .modern-table td:nth-child(5) {
+    display: none;
+  }
+
+  #view-agenda-medica #buscarCitaResultadosSection .modern-table {
+    min-width: 400px;
+  }
+}
+
+/* ── Programar agenda ───────────────────────────────────────────────────────── */
+#view-agenda-medica .agenda-cal-doctor-bar {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+#view-agenda-medica .agenda-cal-doctor-bar label {
+  margin-right: 0;
+  font-weight: 600;
+}
+
+#view-agenda-medica .agenda-cal-doctor-select,
+#view-agenda-medica #agendaCalDoctorSelect {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  box-sizing: border-box;
+}
+
+#view-agenda-medica .cal-header {
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+}
+
+#view-agenda-medica .cal-legend {
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px 12px;
+}
+
+#view-agenda-medica #agendaProgramarSection .row {
+  align-items: flex-end;
+}
+
+@media (max-width: 640px) {
+  #view-agenda-medica #btnDescargarAgendaPDF {
+    width: 100%;
+  }
+}
+
+/* ── Modales agenda ─────────────────────────────────────────────────────────── */
+#modalNuevaCitaMedica .modal-box,
+#modalCargarPacientesMedica .modal-box {
+  width: min(100%, 680px) !important;
+  max-width: min(92vw, 680px) !important;
+  max-height: calc(100dvh - 24px) !important;
+}
+
+#modalNuevaCitaMedica .modal-box > div:last-child,
+#modalCargarPacientesMedica .modal-box > div:last-child {
+  flex-wrap: wrap;
+}
+
+#modalNuevaCitaMedica .modal-box > div:last-child .btn-primary,
+#modalNuevaCitaMedica .modal-box > div:last-child .btn-secondary,
+#modalCargarPacientesMedica .modal-box > div:last-child .btn-primary,
+#modalCargarPacientesMedica .modal-box > div:last-child .btn-secondary {
+  min-height: var(--innar-touch-min, 44px);
+}
+
+@media (max-width: 640px) {
+  #modalNuevaCitaMedica #crearTurnoMedica,
+  #modalCargarPacientesMedica #btnConfirmarCargarPacientesMedica {
+    width: 100%;
+  }
+}
+
+#calDayModal .cal-modal {
+  width: min(100%, 520px);
+  max-height: calc(100dvh - 24px);
+  margin: 12px auto;
+}
+
+#calDayModal .cal-choice-btns {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+#calDayModal .cal-choice-btn {
+  min-height: var(--innar-touch-min, 44px);
+}
+
+@media (min-width: 480px) {
+  #calDayModal .cal-choice-btns {
+    flex-direction: row;
+  }
+
+  #calDayModal .cal-choice-btn {
+    flex: 1;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Móvil — Calendario mensual + tabla del día (iPhone / ≤768px)
+   ═══════════════════════════════════════════════════════════════════════════ */
+@media (max-width: 768px) {
+  #view-agenda-medica .agenda-page[data-agenda-page="citas"] {
+    min-width: 0;
+  }
+
+  /* ── Calendario ─────────────────────────────────────────────────────────── */
+  #view-agenda-medica .ccal-container {
+    padding: 12px 8px 14px;
+    border-radius: 14px;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  #view-agenda-medica .ccal-header {
+    margin-bottom: 12px;
+    gap: 6px;
+  }
+
+  #view-agenda-medica .ccal-subtitle {
+    display: none;
+  }
+
+  #view-agenda-medica .ccal-month-title {
+    font-size: 1.05rem;
+    line-height: 1.25;
+  }
+
+  #view-agenda-medica .ccal-nav-btn {
+    width: 40px;
+    height: 40px;
+    flex-shrink: 0;
+  }
+
+  #view-agenda-medica .ccal-legend {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px 10px;
+    margin-bottom: 10px;
+    justify-items: start;
+    font-size: 0.68rem;
+  }
+
+  #view-agenda-medica .ccal-legend-item {
+    white-space: normal;
+    line-height: 1.25;
+  }
+
+  #view-agenda-medica .citas-cal-grid {
+    gap: 2px;
+    width: 100%;
+    max-width: 100%;
+  }
+
+  #view-agenda-medica .ccal-weekday {
+    font-size: 0.58rem;
+    padding: 4px 0;
+    letter-spacing: 0;
+    line-height: 1.2;
+  }
+
+  #view-agenda-medica .ccal-cell {
+    min-height: 54px;
+    padding: 3px 2px 8px;
+    border-radius: 8px;
+    border-width: 1px;
+    overflow: hidden;
+  }
+
+  #view-agenda-medica .ccal-cell:hover:not(.ccal-empty) {
+    transform: none;
+    z-index: 1;
+  }
+
+  #view-agenda-medica .ccal-dia-num {
+    font-size: 0.65rem;
+    font-weight: 700;
+    line-height: 1;
+    padding: 1px 2px;
+    margin-bottom: 1px;
+  }
+
+  #view-agenda-medica .ccal-hoy .ccal-dia-num {
+    width: 20px;
+    height: 20px;
+    font-size: 0.62rem;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 2px;
+  }
+
+  #view-agenda-medica .ccal-citas-count {
+    font-size: 0.95rem !important;
+    font-weight: 800;
+    letter-spacing: 0;
+    line-height: 1.1;
+  }
+
+  #view-agenda-medica .ccal-citas-label {
+    display: none !important;
+  }
+
+  #view-agenda-medica .ccal-dia-info {
+    gap: 0;
+    align-items: center;
+    text-align: center;
+  }
+
+  #view-agenda-medica .ccal-dia-info-split .ccal-card-top {
+    min-height: 0 !important;
+    padding: 2px 1px !important;
+    gap: 2px !important;
+    border-bottom-width: 0;
+  }
+
+  #view-agenda-medica .ccal-card-num {
+    font-size: 0.7rem !important;
+    line-height: 1;
+  }
+
+  #view-agenda-medica .ccal-card-label {
+    display: none !important;
+  }
+
+  #view-agenda-medica .ccal-card-bottom {
+    display: none !important;
+  }
+
+  #view-agenda-medica .ccal-motivo-diagonal {
+    display: none !important;
+  }
+
+  #view-agenda-medica .ccal-corner-count {
+    top: 2px;
+    right: 2px;
+    font-size: 8px;
+    min-width: 14px;
+    height: 14px;
+    border-radius: 6px;
+    padding: 0 3px;
+  }
+
+  #view-agenda-medica .ccal-status-badges {
+    top: auto !important;
+    bottom: 2px !important;
+    right: 2px !important;
+    left: 2px !important;
+    max-width: none;
+    justify-content: center;
+    gap: 1px;
+  }
+
+  #view-agenda-medica .ccal-badge {
+    font-size: 7px;
+    padding: 1px 3px;
+    min-width: 10px;
+    border-radius: 3px;
+  }
+
+  #view-agenda-medica .ccal-bar {
+    bottom: 3px;
+    height: 2px;
+    width: 70%;
+  }
+
+  /* ── Vista día ──────────────────────────────────────────────────────────── */
+  #view-agenda-medica #btnVolverCalendarioCitas {
+    width: 100%;
+    justify-content: center;
+    min-height: var(--innar-touch-min, 44px);
+  }
+
+  #view-agenda-medica .medica-day-filters .row {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  #view-agenda-medica .medica-day-filters .col {
+    width: 100%;
+    min-width: 0;
+  }
+
+  #view-agenda-medica .medica-day-filters input[type="date"] {
+    width: 100%;
+    box-sizing: border-box;
+    min-height: var(--innar-touch-min, 44px);
+  }
+
+  #view-agenda-medica #agendaMedicaFechaDisplay {
+    font-size: 0.95rem !important;
+    line-height: 1.35;
+    padding: 0 4px;
+  }
+
+  #view-agenda-medica .card-tabla-citas {
+    padding: 12px 10px !important;
+    overflow: visible;
+  }
+
+  #view-agenda-medica .citas-table-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  #view-agenda-medica .citas-table-header > div:last-child {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  #view-agenda-medica .citas-table-header h3 {
+    font-size: 1rem;
+  }
+
+  #view-agenda-medica .medica-agenda-block-header {
+    padding: 10px 12px;
+  }
+
+  #view-agenda-medica .medica-agenda-block-title {
+    font-size: 0.92rem;
+  }
+
+  /* Tabla del día: todas las columnas + scroll horizontal */
+  #view-agenda-medica .medica-agenda-block {
+    overflow: visible;
+  }
+
+  #view-agenda-medica .medica-agenda-block .table-wrapper {
+    margin: 0;
+    border-radius: 0 0 12px 12px;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+    touch-action: pan-x pan-y;
+    max-height: min(52vh, 460px) !important;
+    scrollbar-gutter: stable;
+  }
+
+  #view-agenda-medica .medica-agenda-block .table-wrapper::before {
+    content: "Desliza → para ver todas las columnas";
+    display: block;
+    text-align: center;
+    font-size: 0.68rem;
+    font-weight: 600;
+    color: #64748b;
+    padding: 6px 8px;
+    background: #f1f5f9;
+    border-bottom: 1px solid #e2e8f0;
+    position: sticky;
+    left: 0;
+    z-index: 3;
+  }
+
+  #view-agenda-medica .medica-turnos-table th.col-mobile-hide,
+  #view-agenda-medica .medica-turnos-table td.col-mobile-hide,
+  #view-agenda-medica .medica-turnos-table .col-mobile-hide {
+    display: table-cell !important;
+  }
+
+  #view-agenda-medica .medica-turnos-table,
+  #view-agenda-medica #turnosTableMedica,
+  #view-agenda-medica #turnosTableMedicaCompletados {
+    width: max-content !important;
+    min-width: 940px !important;
+    max-width: none !important;
+    table-layout: fixed !important;
+    font-size: 0.8rem;
+  }
+
+  #view-agenda-medica .medica-turnos-table col.col-turno {
+    width: 92px !important;
+  }
+
+  #view-agenda-medica .medica-turnos-table col.col-hora {
+    width: 58px !important;
+  }
+
+  #view-agenda-medica .medica-turnos-table col.col-paciente {
+    width: 130px !important;
+  }
+
+  #view-agenda-medica .medica-turnos-table col.col-tipo {
+    width: 118px !important;
+  }
+
+  #view-agenda-medica .medica-turnos-table col.col-doc {
+    width: 100px !important;
+  }
+
+  #view-agenda-medica .medica-turnos-table col.col-entidad {
+    width: 88px !important;
+  }
+
+  #view-agenda-medica .medica-turnos-table col.col-notas {
+    width: 120px !important;
+  }
+
+  #view-agenda-medica .medica-turnos-table col.col-estado {
+    width: 96px !important;
+  }
+
+  #view-agenda-medica .medica-turnos-table col.col-acciones {
+    width: 128px !important;
+  }
+
+  #view-agenda-medica .medica-turnos-table thead th,
+  #view-agenda-medica .medica-turnos-table tbody td {
+    padding: 9px 8px !important;
+    vertical-align: middle;
+  }
+
+  #view-agenda-medica .medica-turnos-table thead th {
+    font-size: 0.72rem;
+    white-space: nowrap;
+  }
+
+  #view-agenda-medica .medica-turnos-table tbody td {
+    font-size: 0.78rem;
+  }
+
+  #view-agenda-medica .medica-turnos-table .col-wrap-cell,
+  #view-agenda-medica .medica-turnos-table .col-notas-cell {
+    overflow: visible;
+  }
+
+  #view-agenda-medica .medica-turnos-table .turno-cell-2lines,
+  #view-agenda-medica .medica-turnos-table .turno-notas-cell {
+    display: block;
+    -webkit-line-clamp: unset;
+    -webkit-box-orient: unset;
+    overflow: visible;
+    max-height: none;
+    white-space: normal;
+    word-break: break-word;
+    line-height: 1.35;
+  }
+
+  #view-agenda-medica .medica-turnos-table tbody td.col-turno-cell {
+    min-width: 88px !important;
+  }
+
+  #view-agenda-medica .medica-turnos-table tbody td.col-hora {
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+
+  #view-agenda-medica .medica-turnos-table .col-estado-cell {
+    white-space: normal;
+    line-height: 1.25;
+  }
+
+  #view-agenda-medica .medica-turnos-table th:last-child,
+  #view-agenda-medica .medica-turnos-table td:last-child {
+    position: sticky;
+    right: 0;
+    z-index: 2;
+    background: #fff;
+    box-shadow: -4px 0 10px rgba(15, 23, 42, 0.08);
+  }
+
+  #view-agenda-medica .medica-agenda-block-completados .medica-turnos-table td:last-child {
+    background: #fafbfc;
+  }
+
+  #view-agenda-medica .medica-turnos-table thead th:last-child {
+    background: var(--c-dark, #2d4a47) !important;
+    color: #fff !important;
+    z-index: 3;
+    box-shadow: -4px 0 10px rgba(15, 23, 42, 0.12);
+  }
+
+  #view-agenda-medica .medica-agenda-block-completados .medica-turnos-table thead th:last-child {
+    background: linear-gradient(180deg, #f4f6f8 0%, #eef2f6 100%) !important;
+    color: #0f172a !important;
+  }
+
+  #view-agenda-medica .medica-turnos-table .table-actions {
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 4px;
+    min-width: 116px;
+  }
+
+  #view-agenda-medica .medica-turnos-table .table-actions button,
+  #view-agenda-medica .medica-turnos-table .table-actions .btn-prioridad-up,
+  #view-agenda-medica .medica-turnos-table .table-actions .btn-prioridad-down {
+    width: 30px !important;
+    height: 30px !important;
+    min-width: 30px !important;
+    min-height: 30px !important;
+  }
+
+  #view-agenda-medica .medica-turnos-table .table-actions button img {
+    width: 13px !important;
+    height: 13px !important;
+  }
+}
+
+@media (max-width: 430px) {
+  #view-agenda-medica .ccal-cell {
+    min-height: 48px;
+    padding-bottom: 6px;
+  }
+
+  #view-agenda-medica .ccal-citas-count {
+    font-size: 0.85rem !important;
+  }
+
+  #view-agenda-medica .ccal-card-num {
+    font-size: 0.62rem !important;
+  }
+
+  #view-agenda-medica .ccal-legend {
+    font-size: 0.62rem;
+    gap: 4px 8px;
+  }
+}

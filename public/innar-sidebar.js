@@ -265,6 +265,8 @@
       sidebar.classList.add('mobile-open');
       backdrop.classList.add('active');
       document.body.classList.add('innar-sidebar-drawer-open');
+      /* iOS: el rail colapsado dependía de :hover; mobile-open fuerza UI expandida vía CSS */
+      sidebar.scrollTop = 0;
     }
 
     function closeSidebar(sidebar, backdrop) {
@@ -304,7 +306,19 @@
         btn.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>';
         layout.insertBefore(btn, mainContent);
       }
-      btn.addEventListener('click', () => openSidebar(sidebar, backdrop));
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (sidebar.classList.contains('mobile-open')) {
+          closeSidebar(sidebar, backdrop);
+        } else {
+          openSidebar(sidebar, backdrop);
+        }
+      });
+    });
+
+    DESKTOP_MQ.addEventListener('change', () => {
+      if (DESKTOP_MQ.matches) closeAll();
     });
 
     document.addEventListener('click', (e) => {

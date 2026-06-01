@@ -1,0 +1,377 @@
+/**
+ * Innar — Responsive módulo Electrodiagnóstico (#view-electro)
+ */
+
+/* ── Cabecera agenda ────────────────────────────────────────────────────────── */
+#view-electro .electro-page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+#view-electro .electro-page-header h2 {
+  margin: 0;
+  flex: 1 1 100%;
+  font-size: clamp(1.05rem, 3.5vw, 1.35rem);
+  line-height: 1.3;
+}
+
+#view-electro .electro-page-header-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  width: 100%;
+}
+
+#view-electro .electro-page-header .btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--innar-touch-min, 44px);
+}
+
+@media (min-width: 640px) {
+  #view-electro .electro-page-header h2 {
+    flex: 1 1 auto;
+  }
+
+  #view-electro .electro-page-header-actions {
+    width: auto;
+    margin-left: auto;
+  }
+}
+
+@media (max-width: 639px) {
+  #view-electro .electro-page-header .btn-primary {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+/* ── Selector de fecha ──────────────────────────────────────────────────────── */
+#view-electro .electro-date-toolbar {
+  padding: 14px 16px;
+}
+
+#view-electro .electro-date-toolbar-inner {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+#view-electro .electro-date-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+#view-electro .electro-date-nav .btn-secondary {
+  min-width: var(--innar-touch-min, 44px);
+  min-height: var(--innar-touch-min, 44px);
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#view-electro .electro-fecha-input {
+  min-width: 0;
+  flex: 1 1 140px;
+  max-width: 100%;
+}
+
+/* ── Stats del día ──────────────────────────────────────────────────────────── */
+#view-electro .electro-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+#view-electro .electro-stat-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  min-width: 0;
+}
+
+#view-electro .electro-stat-value {
+  font-size: clamp(1.2rem, 4vw, 1.5rem);
+}
+
+@media (max-width: 900px) {
+  #view-electro .electro-stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 400px) {
+  #view-electro .electro-stats-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (min-width: 1400px) {
+  #view-electro .electro-stats-grid {
+    gap: 16px;
+  }
+}
+
+/* ── Filtro estudios + kanban ───────────────────────────────────────────────── */
+#view-electro .electro-filtros-bar {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  width: 100%;
+  margin: 12px 0 8px;
+}
+
+#view-electro .electro-filtros-bar .ms-wrap {
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  flex: 1 1 auto;
+}
+
+#view-electro .electro-kanban {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+#view-electro .electro-kanban-col {
+  min-height: 220px;
+  max-height: min(72vh, 720px);
+  min-width: 0;
+}
+
+#view-electro .electro-kanban-body {
+  -webkit-overflow-scrolling: touch;
+}
+
+#view-electro .electro-cita-card {
+  min-width: 0;
+  word-break: break-word;
+}
+
+@media (max-width: 1100px) {
+  #view-electro .electro-kanban {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  #view-electro .electro-kanban-col {
+    max-height: min(50vh, 480px);
+  }
+}
+
+@media (min-width: 1600px) {
+  #view-electro .electro-kanban-col {
+    max-height: min(75vh, 800px);
+  }
+}
+
+/* Meta usuarios programó/editó */
+#view-electro .electro-meta-footer {
+  margin-top: 20px;
+  padding: 16px;
+  background: #f9fafb;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+#view-electro .electro-meta-footer > div {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+#view-electro .electro-meta-footer > div:last-child {
+  text-align: left;
+}
+
+@media (min-width: 640px) {
+  #view-electro .electro-meta-footer > div:last-child {
+    text-align: right;
+  }
+}
+
+/* ── Buscar estudio ─────────────────────────────────────────────────────────── */
+#view-electro .electro-buscar-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+#view-electro .electro-buscar-field {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+#view-electro .electro-buscar-row .btn-primary,
+#view-electro .electro-buscar-row .btn-secondary {
+  min-height: var(--innar-control-h, 44px);
+}
+
+@media (max-width: 640px) {
+  #view-electro .electro-buscar-row .btn-primary,
+  #view-electro .electro-buscar-row .btn-secondary {
+    width: 100%;
+  }
+}
+
+#view-electro .electro-resultados-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+#view-electro #buscarEstudioResultadosSection .modern-table {
+  min-width: 620px;
+}
+
+@media (max-width: 768px) {
+  #view-electro #buscarEstudioResultadosSection .modern-table th:nth-child(3),
+  #view-electro #buscarEstudioResultadosSection .modern-table td:nth-child(3),
+  #view-electro #buscarEstudioResultadosSection .modern-table th:nth-child(5),
+  #view-electro #buscarEstudioResultadosSection .modern-table td:nth-child(5) {
+    display: none;
+  }
+
+  #view-electro #buscarEstudioResultadosSection .modern-table {
+    min-width: 440px;
+  }
+}
+
+/* ── Pacientes en espera ────────────────────────────────────────────────────── */
+#view-electro .electro-espera-actions {
+  margin-top: 12px;
+  text-align: right;
+}
+
+#view-electro #btnAgregarEspera {
+  min-height: var(--innar-touch-min, 44px);
+}
+
+@media (max-width: 640px) {
+  #view-electro .electro-espera-actions {
+    text-align: stretch;
+  }
+
+  #view-electro #btnAgregarEspera {
+    width: 100%;
+  }
+}
+
+#view-electro .electro-espera-list-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+#view-electro #esperaTable {
+  min-width: 900px;
+}
+
+#view-electro #esperaTable th:last-child,
+#view-electro #esperaTable td:last-child {
+  position: sticky;
+  right: 0;
+  z-index: 2;
+  background: #fff;
+  box-shadow: -4px 0 8px rgba(15, 23, 42, 0.06);
+}
+
+#view-electro #esperaTable thead th:last-child {
+  background: var(--c-dark, #2d4a47);
+  color: #fff;
+}
+
+@media (max-width: 1024px) {
+  #view-electro #esperaTable th:nth-child(6),
+  #view-electro #esperaTable td:nth-child(6),
+  #view-electro #esperaTable th:nth-child(7),
+  #view-electro #esperaTable td:nth-child(7),
+  #view-electro #esperaTable th:nth-child(9),
+  #view-electro #esperaTable td:nth-child(9),
+  #view-electro #esperaTable th:nth-child(10),
+  #view-electro #esperaTable td:nth-child(10) {
+    display: none;
+  }
+
+  #view-electro #esperaTable {
+    min-width: 640px;
+  }
+}
+
+@media (max-width: 640px) {
+  #view-electro #esperaTable th:nth-child(4),
+  #view-electro #esperaTable td:nth-child(4),
+  #view-electro #esperaTable th:nth-child(5),
+  #view-electro #esperaTable td:nth-child(5),
+  #view-electro #esperaTable th:nth-child(8),
+  #view-electro #esperaTable td:nth-child(8) {
+    display: none;
+  }
+
+  #view-electro #esperaTable {
+    min-width: 480px;
+    font-size: 0.78rem;
+  }
+}
+
+/* ── Modales electro ────────────────────────────────────────────────────────── */
+#modalNuevoEstudioElectro .modal-box,
+#modalCargarPacientesElectro .modal-box {
+  width: min(100%, 680px) !important;
+  max-width: min(92vw, 680px) !important;
+  max-height: calc(100dvh - 24px) !important;
+}
+
+#modalNuevoEstudioElectro .row,
+#modalCargarPacientesElectro .row {
+  gap: 10px;
+}
+
+@media (max-width: 640px) {
+  #modalNuevoEstudioElectro #crearCitaElectro,
+  #modalCargarPacientesElectro #btnConfirmarCargarPacientesElectro,
+  #modalNuevoEstudioElectro .modal-box > div:last-child .btn-secondary {
+    width: 100%;
+  }
+
+  #modalNuevoEstudioElectro .modal-box > div:first-child {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  #modalNuevoEstudioElectro .modal-box > div:first-child input[type="date"] {
+    width: 100%;
+    box-sizing: border-box;
+  }
+}
+
+#modalCargarPacientesElectro .modal-box--wide {
+  max-width: min(95vw, 1200px) !important;
+  width: 100% !important;
+}

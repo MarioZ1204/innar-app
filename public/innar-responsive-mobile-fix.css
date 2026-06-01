@@ -1,0 +1,372 @@
+/**
+ * Innar — Correcciones móvil / iPhone (≤768px)
+ * Cargar AL FINAL del <head>. Anula layout desktop que rompe iOS Safari.
+ */
+
+@media (max-width: 768px) {
+  /* ── Sin scroll horizontal global ───────────────────────────────────────── */
+  html {
+    overflow-x: clip;
+    width: 100%;
+  }
+
+  body {
+    overflow-x: clip;
+    width: 100%;
+    max-width: 100vw;
+  }
+
+  .view-module,
+  .view-menu,
+  #view-login {
+    overflow-x: clip;
+    max-width: 100vw;
+  }
+
+  .view-module::before {
+    background-attachment: scroll !important;
+    background-size: min(100vw, 480px) !important;
+    opacity: 0.07 !important;
+  }
+
+  /* ── Módulos: sidebar OFF-canvas, contenido 100% ancho ──────────────────── */
+  .view-module .main-layout {
+    display: block !important;
+    height: auto !important;
+    min-height: 100dvh !important;
+    min-height: 100svh !important;
+    overflow-x: clip !important;
+  }
+
+  .view-module .main-layout > .sidebar,
+  html.innar-shell-light .view-module .main-layout > .sidebar,
+  .view-module .main-layout > .sidebar:not(:hover),
+  .view-module .main-layout > .sidebar:hover,
+  html.innar-shell-light .view-module .sidebar:not(:hover),
+  html.innar-shell-light .view-module .sidebar:hover {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    bottom: 0 !important;
+    width: min(86vw, 320px) !important;
+    max-width: 320px !important;
+    min-width: 0 !important;
+    height: 100dvh !important;
+    height: 100svh !important;
+    flex: none !important;
+    transform: translate3d(-110%, 0, 0) !important;
+    z-index: 360 !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+    box-shadow: 4px 0 24px rgba(15, 23, 42, 0.15) !important;
+  }
+
+  .view-module .main-layout > .sidebar.mobile-open,
+  html.innar-shell-light .view-module .main-layout > .sidebar.mobile-open {
+    transform: translate3d(0, 0, 0) !important;
+  }
+
+  .view-module .main-layout > .main-content,
+  html.innar-shell-light .view-module .main-layout > .main-content {
+    display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    flex: none !important;
+    min-height: 100dvh !important;
+    min-height: 100svh !important;
+    overflow-x: clip !important;
+    overflow-y: visible !important;
+    padding-top: calc(56px + env(safe-area-inset-top, 0px)) !important;
+    padding-right: calc(10px + env(safe-area-inset-right, 0px)) !important;
+    padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px)) !important;
+    padding-left: calc(10px + env(safe-area-inset-left, 0px)) !important;
+    box-sizing: border-box !important;
+  }
+
+  .view-module .main-content .container,
+  html.innar-shell-light .view-module .main-content .container {
+    width: 100% !important;
+    max-width: 100% !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+    margin: 0 !important;
+    box-sizing: border-box !important;
+  }
+
+  html.innar-shell-light .view-module .main-content .card {
+    overflow-x: visible !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+    padding: 14px 12px !important;
+    margin-bottom: 12px !important;
+  }
+
+  /* Hamburguesa visible y no tapada */
+  .mobile-menu-btn {
+    display: inline-flex !important;
+    position: fixed !important;
+    top: calc(6px + env(safe-area-inset-top, 0px)) !important;
+    left: calc(6px + env(safe-area-inset-left, 0px)) !important;
+    z-index: 370 !important;
+    width: 44px !important;
+    height: 44px !important;
+    border-radius: 10px !important;
+    background: #fff !important;
+    border: 1px solid #e2e8e7 !important;
+    box-shadow: 0 2px 10px rgba(15, 23, 42, 0.12) !important;
+  }
+
+  .view-module header,
+  html.innar-shell-light .view-module header {
+    flex-direction: row !important;
+    flex-wrap: wrap !important;
+    align-items: center !important;
+    padding-left: 48px !important;
+    padding-right: 0 !important;
+    gap: 12px !important;
+  }
+
+  .mobile-sidebar-backdrop {
+    z-index: 355 !important;
+  }
+
+  .view-module .main-content .container,
+  .view-module .main-content .container .permisos-page-layout {
+    max-width: 100% !important;
+  }
+
+  .view-module header h2,
+  html.innar-shell-light .view-module header h2 {
+    font-size: 1.1rem !important;
+    line-height: 1.35 !important;
+    word-break: break-word;
+  }
+
+  /* Tablas: solo el wrapper hace scroll, hint discreto */
+  html.innar-shell-light .view-module .table-wrapper::before {
+    font-size: 0.65rem;
+    padding: 4px 6px;
+    line-height: 1.3;
+  }
+
+  html.innar-shell-light .view-module .table-wrapper {
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    border-radius: 8px;
+    border: 1px solid #e2e8e7;
+  }
+
+  /* ── Menú principal (iPhone) ─────────────────────────────────────────────── */
+  #view-menu .menu-cards {
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+  }
+
+  #view-menu .menu-card {
+    aspect-ratio: unset !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    text-align: left !important;
+    padding: 14px 16px !important;
+    gap: 14px !important;
+    min-height: 76px !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  #view-menu .menu-card:hover {
+    transform: none !important;
+  }
+
+  #view-menu .menu-card-icon {
+    width: 56px !important;
+    height: 56px !important;
+    flex-shrink: 0 !important;
+  }
+
+  #view-menu .menu-card-icon .icon-img,
+  #view-menu .menu-card-icon svg {
+    width: 40px !important;
+    height: auto !important;
+    max-height: 44px !important;
+  }
+
+  #view-menu .menu-card-label {
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+  }
+
+  #view-menu .menu-card-title {
+    font-size: 1rem !important;
+    line-height: 1.25 !important;
+  }
+
+  #view-menu .menu-card-desc {
+    font-size: 0.8rem !important;
+    line-height: 1.3 !important;
+    opacity: 0.9;
+  }
+
+  #view-menu .menu-header {
+    flex-direction: row !important;
+    flex-wrap: wrap !important;
+    align-items: center !important;
+    gap: 8px 10px !important;
+    padding-bottom: 8px !important;
+  }
+
+  #view-menu .menu-logo {
+    max-height: 40px !important;
+    max-width: 45vw !important;
+  }
+
+  #view-menu .menu-user {
+    width: 100% !important;
+    margin-left: 0 !important;
+    justify-content: flex-end !important;
+    flex-wrap: wrap !important;
+    gap: 6px !important;
+  }
+
+  #view-menu #menuUserName {
+    flex: 1 1 100% !important;
+    max-width: 100% !important;
+    text-align: left !important;
+    order: -1 !important;
+    font-size: 0.88rem !important;
+  }
+
+  #view-menu .btn-logout {
+    flex: 1 1 calc(50% - 4px) !important;
+    min-height: 44px !important;
+    font-size: 0.8rem !important;
+    padding: 8px 10px !important;
+  }
+
+  #view-menu .menu-content {
+    padding-top: 8px !important;
+  }
+
+  #view-menu .menu-welcome h2 {
+    font-size: 1.2rem !important;
+  }
+
+  /* ── Recibos en móvil ───────────────────────────────────────────────────── */
+  #view-recibos .recibo-filtros-grid {
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+  }
+
+  #view-recibos .ms-wrap,
+  #view-recibos .ms-trigger {
+    max-width: 100% !important;
+  }
+
+  #view-recibos #tablaSavedItems {
+    min-width: 0 !important;
+    width: max-content;
+    min-width: 420px !important;
+  }
+
+  #view-recibos .recibo-filtros-card h3 {
+    font-size: 0.95rem !important;
+  }
+
+  #view-agenda-medica .medica-page-header {
+    padding-left: 48px !important;
+  }
+
+  /* ── Electro ─────────────────────────────────────────────────────────────── */
+  #view-electro .electro-page-header {
+    padding-left: 48px !important;
+  }
+
+  #view-electro .electro-page-header h2 {
+    font-size: 1rem !important;
+  }
+
+  #view-electro .electro-stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+  }
+
+  #view-electro .electro-stat-card {
+    padding: 10px 12px !important;
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 6px !important;
+  }
+
+  #view-electro .electro-stat-icon {
+    width: 36px !important;
+    height: 36px !important;
+  }
+
+  #view-electro .electro-stat-icon svg {
+    width: 18px !important;
+    height: 18px !important;
+  }
+
+  #view-electro .electro-stat-value {
+    font-size: 1.25rem !important;
+  }
+
+  #view-electro .electro-stat-label {
+    font-size: 0.72rem !important;
+  }
+
+  #view-electro .electro-kanban-col {
+    max-height: min(45vh, 380px) !important;
+  }
+
+  #view-electro .electro-cita-card {
+    font-size: 0.88rem !important;
+  }
+
+  #view-electro #esperaTable {
+    min-width: 520px !important;
+  }
+
+  /* Modales a pantalla casi completa (iOS) */
+  .modal-overlay,
+  .modal-overlay--center {
+    padding: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right))
+      max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left)) !important;
+  }
+
+  .modal-overlay .modal-box,
+  .modal-overlay--center .modal-box {
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 16px) !important;
+    border-radius: 14px !important;
+  }
+
+  #modalEstadoCitaMedica:not(.hidden),
+  #modalDetallesCitaElectro:not(.hidden) {
+    padding-bottom: env(safe-area-inset-bottom) !important;
+  }
+
+  .cita-modal-card {
+    max-height: calc(100dvh - env(safe-area-inset-bottom) - 8px) !important;
+  }
+}
+
+/* iPhone estándar (≤430px, incluye 11/12/13/14) */
+@media (max-width: 430px) {
+  #view-electro .electro-stats-grid {
+    grid-template-columns: 1fr 1fr !important;
+  }
+
+  #view-recibos #tablaSavedItems th:nth-child(9),
+  #view-recibos #tablaSavedItems td:nth-child(9) {
+    display: none;
+  }
+
+  #view-recibos #tablaSavedItems {
+    min-width: 360px !important;
+  }
+}

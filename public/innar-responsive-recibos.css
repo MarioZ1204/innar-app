@@ -1,0 +1,367 @@
+/**
+ * Innar — Responsive módulo Recibos (#view-recibos)
+ */
+
+/* ── Grids base ─────────────────────────────────────────────────────────────── */
+#view-recibos .recibo-form-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+#view-recibos .recibo-filtros-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr));
+  gap: 12px 14px;
+  align-items: end;
+}
+
+#view-recibos .recibo-filtros-grid > div {
+  min-width: 0;
+}
+
+#view-recibos .recibo-filtros-grid .ms-wrap {
+  width: 100%;
+  max-width: 100%;
+}
+
+/* ── Crear recibo: cabecera y stats ───────────────────────────────────────── */
+#view-recibos .recibo-crear-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+#view-recibos .recibo-crear-header h2 {
+  margin: 0;
+}
+
+#view-recibos .recibo-stats-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+#view-recibos .recibo-stat-chip {
+  text-align: center;
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-size: 13px;
+  flex: 1 1 120px;
+  min-width: 0;
+}
+
+#view-recibos .recibo-stat-chip--hoy {
+  background: #f0f9ff;
+  border: 1px solid #bae6fd;
+}
+
+#view-recibos .recibo-stat-chip--total {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+}
+
+#view-recibos .recibo-stat-chip strong {
+  display: block;
+  font-size: 1.35rem;
+  line-height: 1.2;
+}
+
+#view-recibos .recibo-stat-chip--hoy strong {
+  color: #0369a1;
+}
+
+#view-recibos .recibo-stat-chip--total strong {
+  color: #059669;
+}
+
+#view-recibos .recibo-stat-chip span:last-child {
+  color: #666;
+  font-size: 0.82rem;
+}
+
+#view-recibos #tablaSavedItems tr.recibo-row-anulado .col-recibo-acciones {
+  background: #fef2f2;
+}
+
+/* ── Buscar cita ──────────────────────────────────────────────────────────── */
+#view-recibos .recibo-buscar-row {
+  display: flex;
+  gap: 10px;
+  align-items: stretch;
+  flex-wrap: wrap;
+}
+
+#view-recibos .recibo-buscar-row input {
+  flex: 1 1 180px;
+  min-width: 0;
+}
+
+#view-recibos .recibo-buscar-row .btn-secondary {
+  flex: 0 0 auto;
+  min-height: var(--innar-control-h, 44px);
+}
+
+/* ── Tipo pago / tipo recibo (tarjetas radio) ───────────────────────────────── */
+#view-recibos .recibo-tipo-pago-group {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+#view-recibos .recibo-radio-card {
+  min-height: var(--innar-touch-min, 44px);
+}
+
+/* Paciente: nombres + apellidos */
+#view-recibos .recibo-paciente-nombres {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+#view-recibos .recibo-paciente-nombres > div {
+  flex: 1 1 140px;
+  min-width: 0;
+}
+
+/* Pendiente de pago */
+#view-recibos .recibo-pendiente-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: #fffbeb;
+  border: 1.5px solid #fde68a;
+  border-radius: 10px;
+}
+
+#view-recibos .recibo-pendiente-row input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+#view-recibos .recibo-pendiente-row label {
+  margin: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+#view-recibos .recibo-pendiente-hint {
+  font-size: 0.78rem;
+  color: #b45309;
+  flex: 1 1 100%;
+}
+
+@media (min-width: 480px) {
+  #view-recibos .recibo-pendiente-hint {
+    flex: 1 1 auto;
+  }
+}
+
+/* Acciones crear */
+#view-recibos #page-crear .actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+#view-recibos #receiptPreview .actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+/* ── Filtros reportes ─────────────────────────────────────────────────────── */
+#view-recibos .recibo-filtros-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+#view-recibos .recibo-filtros-actions .btn-primary,
+#view-recibos .recibo-filtros-actions .btn-secondary {
+  min-height: var(--innar-control-h, 44px);
+}
+
+#view-recibos #recibosCountInfo {
+  flex: 1 1 100%;
+  text-align: center;
+  font-size: 0.82rem;
+}
+
+@media (min-width: 640px) {
+  #view-recibos #recibosCountInfo {
+    flex: 1 1 auto;
+    text-align: right;
+    margin-left: auto;
+  }
+}
+
+/* ── Resumen exportar ─────────────────────────────────────────────────────── */
+#view-recibos .recibo-resumen-inner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+#view-recibos .recibo-resumen-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 20px;
+  align-items: center;
+}
+
+#view-recibos .recibo-resumen-export {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  width: 100%;
+}
+
+@media (min-width: 720px) {
+  #view-recibos .recibo-resumen-export {
+    width: auto;
+  }
+}
+
+/* ── Tabla recibos: scroll + columnas ───────────────────────────────────────── */
+#view-recibos #savedList.card {
+  overflow: visible;
+}
+
+#view-recibos #savedList .table-wrapper {
+  position: relative;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  max-width: 100%;
+}
+
+#view-recibos #tablaSavedItems {
+  min-width: 720px;
+}
+
+#view-recibos #tablaSavedItems .col-recibo-acciones {
+  position: sticky;
+  right: 0;
+  z-index: 2;
+  background: #fff;
+  box-shadow: -4px 0 8px rgba(15, 23, 42, 0.06);
+}
+
+#view-recibos #tablaSavedItems thead .col-recibo-acciones {
+  background: var(--c-dark, #2d4a47);
+  color: #fff;
+}
+
+#view-recibos #tablaSavedItems .table-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: center;
+  max-width: 140px;
+  margin: 0 auto;
+}
+
+#view-recibos #tablaSavedItems .table-actions button,
+#view-recibos #tablaSavedItems .table-actions a {
+  min-width: 36px;
+  min-height: 36px;
+}
+
+/* Tablet: ocultar columnas secundarias */
+@media (max-width: 1024px) {
+  #view-recibos #tablaSavedItems th:nth-child(5),
+  #view-recibos #tablaSavedItems td:nth-child(5),
+  #view-recibos #tablaSavedItems th:nth-child(7),
+  #view-recibos #tablaSavedItems td:nth-child(7),
+  #view-recibos #tablaSavedItems th:nth-child(10),
+  #view-recibos #tablaSavedItems td:nth-child(10) {
+    display: none;
+  }
+
+  #view-recibos #tablaSavedItems {
+    min-width: 580px;
+  }
+}
+
+/* Móvil: tabla compacta */
+@media (max-width: 640px) {
+  #view-recibos #tablaSavedItems th:nth-child(4),
+  #view-recibos #tablaSavedItems td:nth-child(4),
+  #view-recibos #tablaSavedItems th:nth-child(6),
+  #view-recibos #tablaSavedItems td:nth-child(6) {
+    display: none;
+  }
+
+  #view-recibos #tablaSavedItems {
+    min-width: 480px;
+    font-size: 0.78rem;
+  }
+
+  #view-recibos .recibo-form-grid-2 {
+    grid-template-columns: 1fr;
+  }
+
+  #view-recibos .recibo-tipo-pago-group {
+    grid-template-columns: 1fr;
+  }
+
+  #view-recibos .recibo-filtros-grid {
+    grid-template-columns: 1fr;
+  }
+
+  #view-recibos .recibo-filtros-actions .btn-primary,
+  #view-recibos .recibo-filtros-actions .btn-secondary {
+    width: 100%;
+  }
+
+  #view-recibos .recibo-resumen-export .recibo-export-btn {
+    flex: 1 1 calc(50% - 4px);
+    justify-content: center;
+  }
+
+  #view-recibos #generate,
+  #view-recibos #print,
+  #view-recibos #btnNuevoRecibo {
+    width: 100%;
+  }
+
+  #view-recibos .receipt-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  #view-recibos .receipt-header > div:last-child {
+    text-align: left !important;
+  }
+}
+
+/* Servicios */
+#view-recibos #page-servicios .card > div[style*="display:flex"] {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+#view-recibos #page-servicios #addServicio {
+  width: 100%;
+}
+
+@media (min-width: 480px) {
+  #view-recibos #page-servicios .card > div[style*="display:flex"] {
+    flex-direction: row;
+  }
+
+  #view-recibos #page-servicios #addServicio {
+    width: auto;
+  }
+}

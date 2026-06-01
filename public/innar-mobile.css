@@ -56,14 +56,14 @@
   }
 
   html.innar-shell-light .view-module .table-wrapper::before {
-    content: "← Desliza la tabla →";
+    content: "Desliza →";
     display: block;
     text-align: center;
-    font-size: 0.72rem;
-    color: #5a7d78;
-    padding: 6px 8px 4px;
+    font-size: 0.65rem;
+    color: #64748b;
+    padding: 4px 6px;
     font-weight: 600;
-    background: #f0f7f6;
+    background: #f8fafc;
     border-radius: 6px 6px 0 0;
   }
 
@@ -78,14 +78,9 @@
     font-size: 0.8rem;
   }
 
-  /* Agenda médica: ocultar columnas secundarias */
-  #turnosTableMedica .col-mobile-hide,
-  .medica-turnos-table .col-mobile-hide {
-    display: none !important;
-  }
-
-  .medica-agenda-block-activos .table-wrapper,
-  .medica-agenda-block-completados .table-wrapper {
+  /* Agenda médica: scroll horizontal con todas las columnas (ver innar-responsive-agenda-medica.css) */
+  #view-agenda-medica .medica-agenda-block-activos .table-wrapper,
+  #view-agenda-medica .medica-agenda-block-completados .table-wrapper {
     max-height: min(55vh, 480px);
   }
 

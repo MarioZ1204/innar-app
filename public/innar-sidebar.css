@@ -115,38 +115,40 @@ html.innar-shell-light .sidebar-brand .sidebar-logo img {
   opacity: 1 !important;
 }
 
-html.innar-shell-light .sidebar:not(:hover):not(.is-pinned) .sidebar-brand .sidebar-logo-mini {
+html.innar-shell-light .sidebar:not(:hover):not(.is-pinned):not(.mobile-open) .sidebar-brand .sidebar-logo-mini {
   display: flex !important;
 }
 
-html.innar-shell-light .sidebar:not(:hover):not(.is-pinned) .sidebar-brand .sidebar-logo {
+html.innar-shell-light .sidebar:not(:hover):not(.is-pinned):not(.mobile-open) .sidebar-brand .sidebar-logo {
   display: none !important;
 }
 
 html.innar-shell-light .sidebar:hover .sidebar-brand .sidebar-logo-mini,
-html.innar-shell-light .sidebar.is-pinned .sidebar-brand .sidebar-logo-mini {
+html.innar-shell-light .sidebar.is-pinned .sidebar-brand .sidebar-logo-mini,
+html.innar-shell-light .sidebar.mobile-open .sidebar-brand .sidebar-logo-mini {
   display: none !important;
 }
 
 html.innar-shell-light .sidebar:hover .sidebar-brand .sidebar-logo,
-html.innar-shell-light .sidebar.is-pinned .sidebar-brand .sidebar-logo {
+html.innar-shell-light .sidebar.is-pinned .sidebar-brand .sidebar-logo,
+html.innar-shell-light .sidebar.mobile-open .sidebar-brand .sidebar-logo {
   display: flex !important;
 }
 
-html.innar-shell-light .sidebar:not(:hover):not(.is-pinned) .sidebar-head {
+html.innar-shell-light .sidebar:not(:hover):not(.is-pinned):not(.mobile-open) .sidebar-head {
   flex-direction: column;
   align-items: center;
   gap: 6px;
   margin-bottom: 8px;
 }
 
-html.innar-shell-light .sidebar:not(:hover):not(.is-pinned) .sidebar-brand {
+html.innar-shell-light .sidebar:not(:hover):not(.is-pinned):not(.mobile-open) .sidebar-brand {
   width: 100%;
   padding: 8px 6px;
   min-height: 40px;
 }
 
-html.innar-shell-light .sidebar:not(:hover):not(.is-pinned) .sidebar-brand .sidebar-logo-mini img {
+html.innar-shell-light .sidebar:not(:hover):not(.is-pinned):not(.mobile-open) .sidebar-brand .sidebar-logo-mini img {
   max-height: 36px !important;
 }
 
@@ -163,14 +165,15 @@ html.innar-shell-light .sidebar .btn-volver {
 }
 
 html.innar-shell-light .sidebar:hover .btn-volver,
-html.innar-shell-light .sidebar.is-pinned .btn-volver {
+html.innar-shell-light .sidebar.is-pinned .btn-volver,
+html.innar-shell-light .sidebar.mobile-open .btn-volver {
   font-size: 0.85rem !important;
   width: 100% !important;
   justify-content: flex-start !important;
   padding: 9px 12px !important;
 }
 
-html.innar-shell-light .sidebar:not(:hover):not(.is-pinned) .btn-volver {
+html.innar-shell-light .sidebar:not(:hover):not(.is-pinned):not(.mobile-open) .btn-volver {
   font-size: 0 !important;
   width: 40px !important;
   min-width: 40px !important;
@@ -181,11 +184,11 @@ html.innar-shell-light .sidebar:not(:hover):not(.is-pinned) .btn-volver {
   gap: 0 !important;
 }
 
-html.innar-shell-light .sidebar:not(:hover):not(.is-pinned) .btn-volver .btn-volver-label {
+html.innar-shell-light .sidebar:not(:hover):not(.is-pinned):not(.mobile-open) .btn-volver .btn-volver-label {
   display: none !important;
 }
 
-html.innar-shell-light .sidebar:not(:hover):not(.is-pinned) .btn-volver svg {
+html.innar-shell-light .sidebar:not(:hover):not(.is-pinned):not(.mobile-open) .btn-volver svg {
   flex-shrink: 0;
   width: 18px;
   height: 18px;
@@ -198,14 +201,14 @@ html.innar-shell-light .sidebar .btn-volver:hover {
 
 /* Rail colapsado: orden vertical claro */
 @media (min-width: 769px) {
-  html.innar-shell-light .sidebar:not(:hover):not(.is-pinned) .sidebar-inner {
+  html.innar-shell-light .sidebar:not(:hover):not(.is-pinned):not(.mobile-open) .sidebar-inner {
     padding: 8px 6px 12px !important;
     align-items: center !important;
     gap: 2px !important;
     position: relative !important;
   }
 
-  html.innar-shell-light .sidebar:not(:hover):not(.is-pinned) .sidebar-btn {
+  html.innar-shell-light .sidebar:not(:hover):not(.is-pinned):not(.mobile-open) .sidebar-btn {
     font-size: 0 !important;
     width: 40px !important;
     min-width: 40px !important;
@@ -214,7 +217,7 @@ html.innar-shell-light .sidebar .btn-volver:hover {
     margin: 0 auto 4px !important;
   }
 
-  html.innar-shell-light .sidebar:not(:hover):not(.is-pinned) .sidebar-btn .sb-icon {
+  html.innar-shell-light .sidebar:not(:hover):not(.is-pinned):not(.mobile-open) .sidebar-btn .sb-icon {
     opacity: 1 !important;
     margin: 0 !important;
   }
@@ -257,7 +260,7 @@ html.innar-shell-light .sidebar .sb-icon {
   opacity: 0.85 !important;
 }
 
-html.innar-shell-light .sidebar:not(:hover):not(.is-pinned) .sidebar-btn.active {
+html.innar-shell-light .sidebar:not(:hover):not(.is-pinned):not(.mobile-open) .sidebar-btn.active {
   background: var(--innar-sidebar-active) !important;
   box-shadow: none !important;
   border-radius: 10px !important;
@@ -655,6 +658,88 @@ html.innar-shell-light #view-monitor-equipos .meq-page-body {
     transition: transform var(--motion-normal, 240ms) var(--motion-ease-out) !important;
   }
 
+  /* Drawer abierto: siempre modo expandido (iOS no tiene :hover fiable) */
+  html.innar-shell-light .sidebar.mobile-open .sidebar-head {
+    flex-direction: row !important;
+    align-items: flex-start !important;
+    justify-content: space-between !important;
+    width: 100% !important;
+    margin-bottom: 10px !important;
+  }
+
+  html.innar-shell-light .sidebar.mobile-open .sidebar-brand {
+    width: auto !important;
+    flex: 1 !important;
+    min-width: 0 !important;
+    padding: 10px 12px !important;
+    min-height: 48px !important;
+  }
+
+  html.innar-shell-light .sidebar.mobile-open .sidebar-inner {
+    padding: 16px 14px 12px !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 4px !important;
+    position: static !important;
+  }
+
+  /* Logos duplicados en inner (solo si ya están en .sidebar-brand) */
+  html.innar-shell-light .sidebar.mobile-open:has(.sidebar-brand) .sidebar-inner > .sidebar-logo-mini,
+  html.innar-shell-light .sidebar.mobile-open:has(.sidebar-brand) .sidebar-inner > .sidebar-logo {
+    display: none !important;
+  }
+
+  html.innar-shell-light .sidebar.mobile-open:not(:has(.sidebar-brand)) .sidebar-inner > .sidebar-logo-mini {
+    display: none !important;
+  }
+
+  html.innar-shell-light .sidebar.mobile-open:not(:has(.sidebar-brand)) .sidebar-inner > .sidebar-logo {
+    display: flex !important;
+    justify-content: center;
+    margin-bottom: 8px;
+  }
+
+  html.innar-shell-light .sidebar.mobile-open h2,
+  html.innar-shell-light .sidebar.mobile-open .sidebar-desc,
+  html.innar-shell-light .sidebar.mobile-open .sidebar-section-label,
+  html.innar-shell-light .sidebar.mobile-open .sidebar-title-sep {
+    display: block !important;
+  }
+
+  html.innar-shell-light .sidebar.mobile-open .sidebar-footer {
+    display: flex !important;
+  }
+
+  html.innar-shell-light .sidebar.mobile-open .btn-volver {
+    font-size: 0.85rem !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    height: auto !important;
+    padding: 9px 12px !important;
+    margin: 0 0 10px !important;
+    gap: 8px !important;
+  }
+
+  html.innar-shell-light .sidebar.mobile-open .btn-volver .btn-volver-label {
+    display: inline !important;
+  }
+
+  html.innar-shell-light .sidebar.mobile-open .sidebar-btn,
+  html.innar-shell-light .sidebar.mobile-open .agenda-page-btn,
+  html.innar-shell-light .sidebar.mobile-open .electro-page-btn {
+    font-size: 0.88rem !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    padding: 9px 12px !important;
+    justify-content: flex-start !important;
+    margin: 0 0 4px !important;
+  }
+
+  html.innar-shell-light .sidebar.mobile-open .sidebar-btn span:not(.sb-icon):not(.sidebar-badge) {
+    display: inline !important;
+  }
+
   .mobile-sidebar-backdrop {
     opacity: 0;
     transition: opacity var(--motion-normal, 240ms) var(--motion-ease-out) !important;
@@ -678,7 +763,7 @@ html.innar-shell-light #view-monitor-equipos .meq-page-body {
   html.innar-shell-light .mobile-menu-btn {
     background: var(--innar-sidebar-bg, #fff) !important;
     border: 1px solid var(--innar-sidebar-border, #e2e8e7) !important;
-    border-radius: 0 0 10px 0 !important;
+    border-radius: 10px !important;
     box-shadow: var(--innar-sidebar-shadow) !important;
   }
 

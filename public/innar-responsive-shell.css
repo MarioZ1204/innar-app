@@ -1,0 +1,260 @@
+/**
+ * Innar — Responsive shell global (login, menú, layout, modales base)
+ * Carga después de innar-responsive.css
+ */
+
+:root {
+  --innar-safe-top: env(safe-area-inset-top, 0px);
+  --innar-safe-right: env(safe-area-inset-right, 0px);
+  --innar-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --innar-safe-left: env(safe-area-inset-left, 0px);
+  --innar-touch-min: 44px;
+  --innar-content-max: 1400px;
+}
+
+/* ── Banner actualización ─────────────────────────────────────────────────── */
+#updateBanner {
+  padding-top: calc(10px + var(--innar-safe-top));
+  padding-left: calc(16px + var(--innar-safe-left));
+  padding-right: calc(16px + var(--innar-safe-right));
+}
+
+#updateBanner button {
+  min-height: var(--innar-touch-min);
+  flex-shrink: 0;
+}
+
+/* ── Splash ───────────────────────────────────────────────────────────────── */
+#splashScreen {
+  padding: var(--innar-safe-top) var(--innar-safe-right) var(--innar-safe-bottom) var(--innar-safe-left);
+}
+
+.splash-logo {
+  max-width: min(320px, 78vw);
+  height: auto;
+}
+
+/* ── Login ────────────────────────────────────────────────────────────────── */
+#view-login {
+  min-height: 100dvh;
+  min-height: 100svh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: calc(20px + var(--innar-safe-top)) calc(16px + var(--innar-safe-right))
+    calc(24px + var(--innar-safe-bottom)) calc(16px + var(--innar-safe-left));
+  box-sizing: border-box;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.login-box {
+  width: min(100%, 440px);
+  max-width: 100%;
+  margin: auto;
+  box-sizing: border-box;
+}
+
+.login-form .btn-login,
+.login-form .toggle-password-btn {
+  min-height: var(--innar-touch-min);
+}
+
+.toggle-password-btn {
+  min-width: var(--innar-touch-min);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ── Menú principal ───────────────────────────────────────────────────────── */
+#view-menu {
+  min-height: 100dvh;
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+  overflow-x: clip;
+}
+
+.menu-header {
+  flex-shrink: 0;
+  padding-top: calc(10px + var(--innar-safe-top));
+  padding-left: calc(14px + var(--innar-safe-left));
+  padding-right: calc(14px + var(--innar-safe-right));
+}
+
+.menu-content {
+  flex: 1;
+  width: 100%;
+  max-width: var(--innar-content-max);
+  margin-left: auto;
+  margin-right: auto;
+  box-sizing: border-box;
+  padding-left: calc(16px + var(--innar-safe-left));
+  padding-right: calc(16px + var(--innar-safe-right));
+  padding-bottom: calc(40px + var(--innar-safe-bottom));
+}
+
+.menu-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
+  gap: 14px;
+  width: 100%;
+}
+
+.menu-card {
+  min-height: var(--innar-touch-min);
+  text-align: left;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.menu-card-icon {
+  flex-shrink: 0;
+}
+
+.doctor-greeting {
+  padding-left: calc(16px + var(--innar-safe-left));
+  padding-right: calc(16px + var(--innar-safe-right));
+}
+
+/* ── Layout módulos + hamburguesa ─────────────────────────────────────────── */
+.view-module .main-layout {
+  position: relative;
+  min-height: 100dvh;
+  min-height: 100svh;
+}
+
+.mobile-menu-btn {
+  position: fixed;
+  top: calc(8px + var(--innar-safe-top));
+  left: calc(8px + var(--innar-safe-left));
+  z-index: 350;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--innar-touch-min);
+  height: var(--innar-touch-min);
+  padding: 0;
+  border: 1px solid var(--innar-border, #e2e8e7);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--c-dark, #2d4a47);
+  box-shadow: var(--innar-shadow-sm, 0 2px 8px rgba(15, 23, 42, 0.08));
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobile-menu-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--innar-focus-ring);
+}
+
+.mobile-sidebar-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 340;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(2px);
+}
+
+@media (max-width: 768px) {
+  .mobile-menu-btn {
+    display: inline-flex;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .mobile-sidebar-backdrop {
+    display: block;
+  }
+}
+
+/* Layout drawer: innar-responsive-mobile-fix.css (último en <head>) */
+
+/* ── Modales / confirmaciones globales ────────────────────────────────────── */
+.confirm-backdrop,
+.confirm-box {
+  max-width: min(92vw, 480px);
+  box-sizing: border-box;
+}
+
+.confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.confirm-actions .btn-cancel,
+.confirm-actions .btn-ok {
+  min-height: var(--innar-touch-min);
+  padding-left: 16px;
+  padding-right: 16px;
+}
+
+/* ── Tablet ───────────────────────────────────────────────────────────────── */
+@media (min-width: 769px) and (max-width: 1024px) {
+  .menu-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .menu-content {
+    padding-left: 24px;
+    padding-right: 24px;
+  }
+}
+
+/* ── Desktop ancho ────────────────────────────────────────────────────────── */
+@media (min-width: 1280px) {
+  .menu-cards {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1600px) {
+  .menu-content {
+    max-width: 1520px;
+  }
+
+  .menu-cards {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  html.innar-shell-light .view-module .main-content .container {
+    max-width: min(96vw, 1600px);
+    margin-left: auto;
+    margin-right: auto;
+  }
+}
+
+/* ── TV / pantallas muy anchas ────────────────────────────────────────────── */
+@media (min-width: 1920px) {
+  .menu-content {
+    max-width: 1680px;
+  }
+
+  .login-box {
+    width: min(100%, 480px);
+  }
+}
+
+/* ── Móvil pequeño ─────────────────────────────────────────────────────────── */
+@media (max-width: 480px) {
+  .menu-welcome h2 {
+    font-size: 1.25rem;
+  }
+
+  .menu-card {
+    padding: 16px 14px;
+  }
+
+  .menu-card-title {
+    font-size: 0.95rem;
+  }
+
+  #view-menu .btn-logout {
+    min-height: var(--innar-touch-min);
+  }
+}

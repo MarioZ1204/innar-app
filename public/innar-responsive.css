@@ -456,14 +456,9 @@ svg {
     padding: 8px 6px;
   }
 
-  /* Agenda médica */
-  #turnosTableMedica .col-mobile-hide,
-  .medica-turnos-table .col-mobile-hide {
-    display: none !important;
-  }
-
-  .medica-agenda-block-activos .table-wrapper,
-  .medica-agenda-block-completados .table-wrapper {
+  /* Agenda médica: columnas visibles + scroll en innar-responsive-agenda-medica.css */
+  #view-agenda-medica .medica-agenda-block-activos .table-wrapper,
+  #view-agenda-medica .medica-agenda-block-completados .table-wrapper {
     max-height: min(55vh, 480px);
   }
 

@@ -4991,7 +4991,7 @@ function crearFilaSlotVacio(tbody, colspan, hora) {
   } else {
     tr.innerHTML = `
       <td style="padding:7px 10px;color:#b0b8b6;font-size:0.82rem"></td>
-      <td class="col-hora col-mobile-hide" style="padding:7px 10px;color:#e57373;font-size:0.82rem;font-style:italic">${horaDisplay}</td>
+      <td class="col-hora" style="padding:7px 10px;color:#e57373;font-size:0.82rem;font-style:italic">${horaDisplay}</td>
       <td colspan="${colspan - 2}" style="padding:7px 10px;color:#e57373;font-size:0.8rem;font-style:italic">Disponible</td>
     `;
   }
@@ -5083,7 +5083,7 @@ function renderTurnoRowMedica(tbody, t, animateTargetId, hayEnAtencion) {
     if (currentUser?.rol === 'doctor') {
       tr.innerHTML = `
         <td class="col-turno-cell">${numCellHtml}</td>
-        <td class="col-hora col-mobile-hide">${formatearHora(t.hora)}</td>
+        <td class="col-hora">${formatearHora(t.hora)}</td>
         <td class="col-paciente-cell"><span class="turno-cell-2lines" title="${escapeHtml(t.paciente_nombre)}">${escapeHtml(t.paciente_nombre)}</span></td>
         <td class="col-mobile-hide col-wrap-cell col-tipo-cell"><span class="turno-cell-2lines" title="${escapeHtml(t.tipo_consulta || '')}">${escapeHtml(t.tipo_consulta || '')}</span></td>
         <td class="col-mobile-hide col-wrap-cell col-doc-cell"><span class="turno-cell-2lines">${escapeHtml(t.paciente_documento||'')}</span></td>
@@ -5099,7 +5099,7 @@ function renderTurnoRowMedica(tbody, t, animateTargetId, hayEnAtencion) {
     } else {
       tr.innerHTML = `
         <td class="col-turno-cell">${numCellHtml}</td>
-        <td class="col-hora col-mobile-hide">${formatearHora(t.hora)}</td>
+        <td class="col-hora">${formatearHora(t.hora)}</td>
         <td class="col-paciente-cell"><span class="turno-cell-2lines" title="${escapeHtml(t.paciente_nombre)}">${escapeHtml(t.paciente_nombre)}</span></td>
         <td class="col-mobile-hide col-wrap-cell col-tipo-cell"><span class="turno-cell-2lines" title="${escapeHtml(t.tipo_consulta || '')}">${escapeHtml(t.tipo_consulta || '')}</span></td>
         <td class="col-mobile-hide col-wrap-cell col-doc-cell"><span class="turno-cell-2lines">${escapeHtml(t.paciente_documento||'')}</span></td>

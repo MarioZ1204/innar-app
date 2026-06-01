@@ -102,6 +102,12 @@
     return String(texto || '').split(/\s+-\s+/).map((p) => p.trim()).filter(Boolean);
   }
 
+  /** Partes del nombre con guiones (ordenes, comprobantes, consentimientos). */
+  function splitPartesGuionesCliente(originalName) {
+    const sinPdf = String(originalName || '').trim().replace(/\.pdf$/i, '');
+    return splitSegmentosGuionesEspaciadosCliente(sinPdf);
+  }
+
   function esCarpetaOrdenesPdx(carpetaOrNombre) {
     return detectarTemaCarpetaCliente(typeof carpetaOrNombre === 'string' ? carpetaOrNombre : carpetaOrNombre?.nombre_display) === 'ordenes';
   }
