@@ -11,7 +11,9 @@ const {
   fechaEnPeriodo,
   temaCoincideCarpeta,
   resolverEstudioDesdeLista,
-  mensajeErrorFormato
+  mensajeErrorFormato,
+  analizarNombreArchivo,
+  buildMetaDesdeCamposManuales
 } = require('./soportes-pdx-parse');
 const {
   detectarTemaCarpeta,
@@ -34,17 +36,32 @@ function necesitaListaEstudios(carpeta) {
   return ['ordenes', 'comprobantes', 'consentimientos'].includes(tema);
 }
 
-function buildMetaFromUpload(originalName, body = {}, carpeta = null) {
-  const estudios = carpeta?._estudiosLista || [];
-  const parsed = parseNombrePorCarpeta(originalName, carpeta, estudios);
-  const tema = detectarTemaCarpeta(carpeta?.nombre_display || '');
+function esConfirmacionManual(body) {
+  const v = body?.confirmacion_manual;
+  return v === true || v === 1 || v === '1' || String(v).toLowerCase() === 'true';
+}
 
-  if (!parsed.ok) {
+function buildMetaFromUpload(originalName, body = {}, carpeta = null) {
+  if (esConfirmacionManual(body)) {
+    return buildMetaDesdeCamposManuales(originalName, body, carpeta);
+  }
+
+  const estudios = carpeta?._estudiosLista || [];
+  const analisis = analizarNombreArchivo(originalName, carpeta, estudios);
+  const tema = analisis.tema || detectarTemaCarpeta(carpeta?.nombre_display || '');
+
+  if (!analisis.ok) {
     return {
       ok: false,
-      error: parsed.error || mensajeErrorFormato(tema)
+      error: analisis.error || mensajeErrorFormato(tema),
+      requiere_confirmacion: true,
+      requiere_correccion: !!analisis.requiere_correccion,
+      motivo: analisis.motivo,
+      parcial: analisis.parcial
     };
   }
+
+  const parsed = analisis.parsed;
 
   let estudio = parsed.estudio_texto || '';
   if (!estudio && ['vtm', 'eeg', 'psg', 'actigrafia'].includes(tema)) {
@@ -144,6 +161,9 @@ function collectPdxWarnings(meta, carpeta) {
 module.exports = {
   buildMetaFromUpload,
   buildMetaFromUploadOrdenes,
+  buildMetaDesdeCamposManuales,
+  analizarNombreArchivo,
+  esConfirmacionManual,
   cargarEstudiosParaOrdenes,
   necesitaListaEstudios,
   pdxDiskFilename,

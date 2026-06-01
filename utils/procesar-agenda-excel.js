@@ -369,6 +369,16 @@ function parseFlagDisponible(val) {
   return null;
 }
 
+/** Misma semántica que GET /api/doctor-disponibilidad: null en mañana/tarde = disponible. */
+function flagsDisponibilidadMananaTarde(registro) {
+  const dm = parseFlagDisponible(registro?.disponible_manana);
+  const dt = parseFlagDisponible(registro?.disponible_tarde);
+  return {
+    mananaOk: dm === null ? true : dm === true,
+    tardeOk: dt === null ? true : dt === true
+  };
+}
+
 /**
  * Verifica disponibilidad por hora: día disponible, slots de agenda (si existen), mañana/tarde, intervalos bloqueados.
  */
@@ -392,10 +402,9 @@ async function validarDisponibilidadPorHora(doctorId, fecha, hora, db) {
       return { valido: false, razon: 'El doctor no asistirá en esta fecha' };
     }
 
-    const disponibleManana = parseFlagDisponible(registro.disponible_manana) === true;
-    const disponibleTarde = parseFlagDisponible(registro.disponible_tarde) === true;
+    const { mananaOk, tardeOk } = flagsDisponibilidadMananaTarde(registro);
 
-    if (!disponibleManana && !disponibleTarde) {
+    if (!mananaOk && !tardeOk) {
       return { valido: false, razon: 'El doctor no está disponible en esta fecha' };
     }
 
@@ -415,11 +424,11 @@ async function validarDisponibilidadPorHora(doctorId, fecha, hora, db) {
       const minNum = parseInt(minStr || '0', 10);
 
       if ((horaNum >= 7 && horaNum <= 11) || (horaNum === 12 && minNum <= 59)) {
-        if (!disponibleManana) {
+        if (!mananaOk) {
           return { valido: false, razon: 'El doctor no está disponible en la mañana (7:00-12:00) en esta fecha' };
         }
       } else if ((horaNum >= 14 && horaNum <= 17) || (horaNum === 18 && minNum <= 59)) {
-        if (!disponibleTarde) {
+        if (!tardeOk) {
           return { valido: false, razon: 'El doctor no está disponible en la tarde (14:00-18:00) en esta fecha' };
         }
       } else {
@@ -580,7 +589,10 @@ function normalizarHoraHHMM(hora) {
   return `${String(parseInt(m[1], 10)).padStart(2, '0')}:${m[2]}`;
 }
 
-/** Indica si ya hay otra cita activa del médico en esa fecha y hora (HH:MM). */
+/**
+ * Indica si ya hay otra cita activa del médico en esa fecha y hora (HH:MM).
+ * Solo informativo: la agenda médica permite varias citas a la misma hora.
+ */
 async function consultarOcupacionHora(doctorId, fecha, hora, db) {
   const horaNorm = normalizarHoraHHMM(hora);
   if (!horaNorm) return { ocupada: false, turnos: [] };
@@ -606,7 +618,7 @@ async function listarHorasLibresAgendaDia(doctorId, fecha, db, intervaloMin = 40
   );
   const ocupadas = new Set(turnosRows.map((r) => r.h));
   const libres = [];
-  const rangos = [{ inicio: 8 * 60, fin: 12 * 60 }, { inicio: 14 * 60, fin: 18 * 60 }];
+  const rangos = [{ inicio: 7 * 60, fin: 12 * 60 }, { inicio: 14 * 60, fin: 18 * 60 }];
   const paso = Math.min(60, Math.max(15, parseInt(intervaloMin, 10) || 40));
   for (const rango of rangos) {
     let m = rango.inicio;

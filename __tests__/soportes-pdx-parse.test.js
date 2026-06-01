@@ -6,8 +6,12 @@ const {
   parseNombrePorCarpeta,
   nombreArchivoDescarga,
   inferirEstudioDesdeCarpeta,
-  mensajeErrorFormato
+  mensajeErrorFormato,
+  analizarNombreArchivo,
+  buildMetaDesdeCamposManuales,
+  estudioPsgReconocido
 } = require('../utils/soportes-pdx-parse');
+const { buildMetaFromUpload } = require('../utils/soportes-pdx-upload');
 
 describe('soportes-pdx-parse — reportes simples', () => {
   test('acepta formato mínimo Apellido, Nombre   YYYY-MM-DD.pdf', () => {
@@ -93,5 +97,54 @@ describe('soportes-pdx-parse — formatos estructurados', () => {
     };
     const nombre = nombreArchivoDescarga(meta, { nombre_display: 'ORDENES MARZO' });
     expect(nombre).toContain('ORDEN + HC');
+  });
+});
+
+describe('soportes-pdx-parse — corrección manual', () => {
+  test('PSG sin sufijo de estudio requiere corrección', () => {
+    const carpeta = { nombre_display: 'PSG MARZO' };
+    const a = analizarNombreArchivo('García López, Juan Carlos   2026-05-27.pdf', carpeta);
+    expect(a.ok).toBe(false);
+    expect(a.requiere_correccion).toBe(true);
+    expect(a.motivo).toBe('falta_estudio_psg');
+  });
+
+  test('estudioPsgReconocido acepta CPAP y Básica', () => {
+    expect(estudioPsgReconocido('PSG CPAP')).toBe(true);
+    expect(estudioPsgReconocido('PSG Básica')).toBe(true);
+    expect(estudioPsgReconocido('')).toBe(false);
+  });
+
+  test('buildMetaDesdeCamposManuales con confirmación PSG', () => {
+    const meta = buildMetaDesdeCamposManuales(
+      'informe.pdf',
+      {
+        apellidos: 'García',
+        nombres: 'Juan',
+        fecha_estudio: '2026-05-27',
+        estudio_texto: 'PSG CPAP'
+      },
+      { nombre_display: 'PSG MARZO' }
+    );
+    expect(meta.ok).toBe(true);
+    expect(meta.estudio_texto).toBe('PSG CPAP');
+  });
+
+  test('buildMetaFromUpload con confirmacion_manual en órdenes', () => {
+    const meta = buildMetaFromUpload(
+      'mal-nombre.pdf',
+      {
+        confirmacion_manual: '1',
+        apellidos: 'Pérez',
+        nombres: 'Ana',
+        tipo_documento: 'CC',
+        paciente_documento: '123',
+        fecha_estudio: '2026-04-01',
+        estudio_texto: 'EEG'
+      },
+      { nombre_display: 'ORDENES ABRIL', _estudiosLista: [] }
+    );
+    expect(meta.ok).toBe(true);
+    expect(meta.nombre_display).toContain('ORDEN + HC');
   });
 });

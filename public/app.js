@@ -1962,8 +1962,7 @@ async function actualizarPreviewSesionesMultiples() {
     const info = verif.sesiones[i] || {};
     const hora = sesionesPayload[i].hora;
     const esPrimera = i === 0;
-    const conflicto = !info.agenda_valida || info.ocupada;
-    const requiereCambio = !esPrimera && conflicto;
+    const requiereCambio = !esPrimera && info.agenda_valida === false;
     return {
       numero: i + 1,
       fecha: f,
@@ -1990,11 +1989,11 @@ async function actualizarPreviewSesionesMultiples() {
         } else {
           estadoHtml = '<span style="color:#15803d">Disponible</span>';
         }
+      } else if (s.ocupada) {
+        estadoHtml = `<span style="color:#b45309">Hay otra cita a esta hora${s.paciente ? ` (${escapeHtml(s.paciente)})` : ''} — puede agendar igual</span>`;
       } else if (s.requiereCambio) {
         const alts = (s.horas_alternativas || []).filter(Boolean);
-        const msg = s.ocupada
-          ? `Ocupada${s.paciente ? ` (${escapeHtml(s.paciente)})` : ''}`
-          : escapeHtml(s.agenda_error || 'Horario no válido');
+        const msg = escapeHtml(s.agenda_error || 'Horario no válido');
         estadoHtml = `<span style="color:#b45309;display:block;margin-bottom:4px">${msg} — elija otra hora:</span>`;
         if (alts.length) {
           const cur = _sesionesHorasOverride[s.fecha] || '';
@@ -2027,15 +2026,6 @@ async function actualizarPreviewSesionesMultiples() {
       : `Agendar ${fechas.length} sesiones`;
   }
 
-  let autoRetry = false;
-  for (let i = 1; i < _sesionesMultiplesPlan.length; i += 1) {
-    const s = _sesionesMultiplesPlan[i];
-    if (s.requiereCambio && !_sesionesHorasOverride[s.fecha] && s.horas_alternativas?.length) {
-      _sesionesHorasOverride[s.fecha] = s.horas_alternativas[0];
-      autoRetry = true;
-    }
-  }
-  if (autoRetry) programarActualizarPreviewSesionesMultiples();
 }
 
 window.cambiarHoraSesionMultiple = cambiarHoraSesionMultiple;
@@ -5153,9 +5143,15 @@ async function crearTurnoMedica() {
         showToast(`Solo se pudieron generar ${fechasSesiones.length} fechas. Ajuste cantidad o días.`, 'error');
         return;
       }
+      const sinAgenda = _sesionesMultiplesPlan.filter((s) => s.agenda_valida === false);
+      if (sinAgenda.length) {
+        const ej = sinAgenda[0];
+        showToast(ej.agenda_error || `Horario no válido el ${formatearFechaCorta(ej.fecha)}`, 'error');
+        return;
+      }
       const conConflicto = planSesiones.filter((s, i) => i > 0 && _sesionesMultiplesPlan[i]?.requiereCambio);
       if (conConflicto.length) {
-        showToast(`Hay ${conConflicto.length} sesión(es) con horario ocupado. Elija otra hora en la tabla.`, 'error');
+        showToast(`Hay ${conConflicto.length} sesión(es) con horario no válido. Elija otra hora en la tabla.`, 'error');
         return;
       }
     }

@@ -413,17 +413,6 @@ router.post('/turnos/lote', requireAuth, requireRoleOrPerm(['superadmin', 'admin
       errores.push({ fecha, indice: i + 1, error: validacion.razon || 'Horario no disponible' });
       continue;
     }
-    const ocup = await procesarAgendaExcel.consultarOcupacionHora(doctor_id, fecha, horaEff, db);
-    if (i >= 1 && ocup.ocupada) {
-      const quien = ocup.turnos[0]?.paciente_nombre;
-      errores.push({
-        fecha,
-        indice: i + 1,
-        error: quien
-          ? `La hora ${String(horaEff).slice(0, 5)} ya está ocupada (${quien})`
-          : `La hora ${String(horaEff).slice(0, 5)} ya está ocupada por otra cita`
-      });
-    }
   }
   if (errores.length > 0) {
     return res.status(400).json({

@@ -107,6 +107,8 @@
     return `El archivo no cumple la estructura requerida. Formato: ${ayuda.pattern}`;
   }
 
+  const PSG_TIPOS_ESTUDIO_CLIENT = ['PSG Básica', 'PSG CPAP', 'PSG BPAP', 'PSG Basal'];
+
   function inferirEstudioCliente(carpeta) {
     const nombre = carpeta?.nombre_display || '';
     const tema = detectarTemaCarpetaCliente(nombre);
@@ -121,6 +123,113 @@
       return 'PSG Básica';
     }
     return '';
+  }
+
+  function estudioPsgReconocidoCliente(texto) {
+    if (!texto || !String(texto).trim()) return false;
+    const u = String(texto).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    return u.includes('cpap') || u.includes('bpap') || u.includes('basal') || u.includes('basica');
+  }
+
+  function extraerDatosParcialesCliente(originalName, carpeta) {
+    const base = String(originalName || '').trim();
+    const tema = detectarTemaCarpetaCliente(carpeta?.nombre_display || '');
+    const parcial = {
+      apellidos: '',
+      nombres: '',
+      tipo_documento: 'CC',
+      paciente_documento: '',
+      fecha_estudio: '',
+      estudio_texto: ''
+    };
+    const fechaMatch = base.match(/(\d{4}-\d{2}-\d{2})/);
+    if (fechaMatch) parcial.fecha_estudio = fechaMatch[1];
+
+    if (esCarpetaEstructuradaPdx(carpeta)) {
+      const sinPdf = base.replace(/\.pdf$/i, '').trim();
+      const parts = sinPdf.split(/\s*-\s*/).map((p) => p.trim()).filter(Boolean);
+      let offset = 0;
+      if (tema === 'ordenes' && parts[0] && /orden/i.test(parts[0])) offset = 1;
+      if (tema === 'comprobantes' && parts[0] && /comprobante/i.test(parts[0])) offset = 1;
+      if (parts.length > offset) parcial.apellidos = parts[offset] || '';
+      if (parts.length > offset + 1) parcial.nombres = parts[offset + 1] || '';
+      if (parts.length > offset + 2) parcial.tipo_documento = parts[offset + 2] || 'CC';
+      if (parts.length > offset + 3) parcial.paciente_documento = String(parts[offset + 3] || '').replace(/\s/g, '');
+      if (parts.length > offset + 4 && /^\d{4}-\d{2}-\d{2}$/.test(parts[offset + 4])) {
+        parcial.fecha_estudio = parts[offset + 4];
+      }
+      const ultimo = parts[parts.length - 1];
+      if (ultimo && !/^\d{4}-\d{2}-\d{2}$/.test(ultimo) && !/^(orden|comprobante)/i.test(ultimo)) {
+        parcial.estudio_texto = ultimo;
+      }
+    } else {
+      const m = base.match(RE_REPORTE_BASE_CLIENT);
+      if (m) {
+        parcial.apellidos = m[1].trim();
+        parcial.nombres = m[2].trim();
+        parcial.fecha_estudio = m[3];
+        const idx = base.toLowerCase().indexOf(m[3].toLowerCase());
+        const rest = idx >= 0 ? base.slice(idx + m[3].length).replace(/\.pdf$/i, '').trim() : '';
+        const ext = rest.match(/^([\d-]+)\s+(\d+)\.\s*(.+)$/i);
+        if (ext) parcial.estudio_texto = ext[3].trim();
+        else if (rest) parcial.estudio_texto = rest.replace(/^\d+\.\s*/, '').trim();
+      } else {
+        const coma = base.match(/^(.+?),\s*(.+?)(?:\s+\d{4}-\d{2}-\d{2})?/i);
+        if (coma) {
+          parcial.apellidos = coma[1].trim();
+          parcial.nombres = coma[2].trim().replace(/\s+\d{4}-\d{2}-\d{2}.*$/i, '').trim();
+        }
+      }
+      if (tema === 'psg' && !estudioPsgReconocidoCliente(parcial.estudio_texto)) {
+        parcial.estudio_texto = inferirEstudioCliente(carpeta);
+      } else if (!parcial.estudio_texto && ['vtm', 'eeg', 'actigrafia'].includes(tema)) {
+        parcial.estudio_texto = inferirEstudioCliente(carpeta);
+      }
+    }
+    return parcial;
+  }
+
+  function analizarNombreArchivoCliente(originalName, carpeta) {
+    const tema = detectarTemaCarpetaCliente(carpeta?.nombre_display || '');
+    const parsed = parseNombrePorCarpetaCliente(originalName, carpeta);
+    const parcial = extraerDatosParcialesCliente(originalName, carpeta);
+
+    if (!parsed.ok) {
+      return {
+        ok: false,
+        requiere_correccion: true,
+        motivo: 'formato',
+        error: parsed.error || mensajeErrorFormatoCliente(tema),
+        tema,
+        parcial
+      };
+    }
+    if (tema === 'psg' && !estudioPsgReconocidoCliente(parsed.estudio_texto)) {
+      return {
+        ok: false,
+        requiere_correccion: true,
+        motivo: 'falta_estudio_psg',
+        error: 'Falta el tipo de estudio PSG en el nombre (Básica, CPAP o BPAP).',
+        tema,
+        parcial: {
+          ...parcial,
+          apellidos: parsed.apellidos || parcial.apellidos,
+          nombres: parsed.nombres || parcial.nombres,
+          fecha_estudio: parsed.fecha_estudio || parcial.fecha_estudio,
+          estudio_texto: inferirEstudioCliente(carpeta) || 'PSG Básica'
+        }
+      };
+    }
+    return { ok: true, requiere_correccion: false, tema, parsed, parcial: parsed };
+  }
+
+  function poblarSelectEstudioPsgCliente(selectEl, selected) {
+    if (!selectEl) return;
+    const sel = String(selected || '');
+    selectEl.innerHTML = '<option value="">Seleccionar tipo PSG</option>' +
+      PSG_TIPOS_ESTUDIO_CLIENT.map((o) =>
+        `<option value="${escapeHtml(o)}"${o === sel ? ' selected' : ''}>${escapeHtml(o)}</option>`
+      ).join('');
   }
 
   function parseNombreEstructuradoCliente(originalName, regex, tema) {
@@ -1183,20 +1292,81 @@
   function flujoSubidaPdx(file, carpetaId) {
     return new Promise((resolve, reject) => {
       const carpeta = pdxState.carpetaActual || pdxState.carpetas.find((c) => c.id === carpetaId);
-      const tema = detectarTemaCarpetaCliente(carpeta?.nombre_display || '');
-      const parsed = parseNombrePorCarpetaCliente(file.name, carpeta);
-      if (!parsed.ok) {
-        const err = parsed.error || mensajeErrorFormatoCliente(tema);
-        sopToast(err, 'error');
-        reject(new Error(err));
+      const analisis = analizarNombreArchivoCliente(file.name, carpeta);
+      if (analisis.requiere_correccion) {
+        modalCorregirDatosPdx(file, carpetaId, carpeta, analisis, resolve, reject);
         return;
       }
+      const parsed = analisis.parsed;
       if (esCarpetaEstructuradaPdx(carpeta)) {
         modalSubidaEstructuradaCompleto(file, carpetaId, carpeta, parsed, resolve, reject);
         return;
       }
       modalSubidaPdxNombreCompleto(file, carpetaId, carpeta, parsed, resolve, reject);
     });
+  }
+
+  function modalCorregirDatosPdx(file, carpetaId, carpeta, analisis, resolve, reject) {
+    const tema = analisis.tema || detectarTemaCarpetaCliente(carpeta?.nombre_display || '');
+    const p = analisis.parcial || {};
+    const ayuda = ayudaFormatoCliente(tema);
+    const esEstruct = esCarpetaEstructuradaPdx(carpeta);
+    const esPsg = tema === 'psg';
+    const motivoTxt = analisis.motivo === 'falta_estudio_psg'
+      ? 'El nombre no incluye el tipo de estudio PSG (Básica, CPAP o BPAP). Complételo para continuar.'
+      : `El nombre del archivo no cumple la estructura requerida. Complételo o corríjalo para subir el PDF.`;
+
+    const modal = openSopModal(`
+      <h3><i data-lucide="file-warning"></i> Completar datos del archivo</h3>
+      <p style="font-size:.85rem;color:#64748b;margin:-8px 0 10px">${escapeHtml(motivoTxt)}</p>
+      <p style="font-size:.8rem;color:#94a3b8;margin:0 0 10px"><strong>Formato esperado:</strong> <code>${escapeHtml(ayuda.pattern)}</code></p>
+      <dl class="sop-upload-preview" style="margin-bottom:12px">
+        <dt>Archivo</dt><dd>${escapeHtml(file.name)}</dd>
+      </dl>
+      <div class="sop-field"><label>Apellidos *</label><input type="text" id="sopPdxCorrApe" value="${escapeHtml(p.apellidos || '')}"></div>
+      <div class="sop-field"><label>Nombres *</label><input type="text" id="sopPdxCorrNom" value="${escapeHtml(p.nombres || '')}"></div>
+      ${esEstruct ? `
+      <div class="sop-field"><label>Tipo de documento</label><input type="text" id="sopPdxCorrTipoDoc" value="${escapeHtml(p.tipo_documento || 'CC')}"></div>
+      <div class="sop-field"><label>Número de documento *</label><input type="text" id="sopPdxCorrDoc" value="${escapeHtml(p.paciente_documento || '')}" inputmode="numeric"></div>` : `
+      <div class="sop-field"><label>Documento (opcional)</label><input type="text" id="sopPdxCorrDoc" value="${escapeHtml(p.paciente_documento || '')}" inputmode="numeric"></div>`}
+      <div class="sop-field"><label>Fecha del estudio *</label><input type="date" id="sopPdxCorrFecha" value="${escapeHtml(p.fecha_estudio || '')}"></div>
+      ${(esEstruct || esPsg) ? '<div class="sop-field"><label>Tipo de examen *</label><select id="sopPdxCorrEst"></select></div>' : ''}
+      <div class="sop-dialog-actions">
+        <button type="button" class="sop-btn sop-btn-ghost" id="sopPdxCorrCancel">Cancelar</button>
+        <button type="button" class="sop-btn sop-btn-primary" id="sopPdxCorrOk">Subir PDF</button>
+      </div>`);
+
+    const estSel = modal.querySelector('#sopPdxCorrEst');
+    if (esPsg) poblarSelectEstudioPsgCliente(estSel, p.estudio_texto);
+    else if (esEstruct) poblarSelectEstudioPdx(estSel, p.estudio_texto);
+
+    modal.querySelector('#sopPdxCorrCancel').onclick = () => { closeSopModal(modal); reject(new Error('cancelado')); };
+    modal.querySelector('#sopPdxCorrOk').onclick = async () => {
+      const body = {
+        confirmacion_manual: '1',
+        apellidos: modal.querySelector('#sopPdxCorrApe')?.value?.trim(),
+        nombres: modal.querySelector('#sopPdxCorrNom')?.value?.trim(),
+        tipo_documento: modal.querySelector('#sopPdxCorrTipoDoc')?.value?.trim() || 'CC',
+        paciente_documento: modal.querySelector('#sopPdxCorrDoc')?.value?.trim().replace(/\s/g, '') || '',
+        fecha_estudio: modal.querySelector('#sopPdxCorrFecha')?.value,
+        estudio_texto: estSel?.value?.trim() || ''
+      };
+      if (!body.apellidos || !body.nombres || !body.fecha_estudio) {
+        return sopToast('Complete apellidos, nombres y fecha', 'warning');
+      }
+      if (esEstruct && (!body.paciente_documento || !body.estudio_texto)) {
+        return sopToast('Complete documento y tipo de examen', 'warning');
+      }
+      if (esPsg && !body.estudio_texto) {
+        return sopToast('Seleccione el tipo de estudio PSG', 'warning');
+      }
+      try {
+        await subirArchivoPdx(file, carpetaId, body);
+        closeSopModal(modal);
+        sopToast('Archivo subido', 'success');
+        resolve();
+      } catch (e) { sopToast(e.message, 'error'); }
+    };
   }
 
   function modalSubidaEstructuradaCompleto(file, carpetaId, carpeta, parsed, resolve, reject) {
@@ -1279,17 +1449,25 @@
       })();
     }
     const items = files.map((file, idx) => {
-      const parsed = parseNombrePorCarpetaCliente(file.name, carpeta);
-      return { idx, file, parsed, valido: parsed.ok };
+      const analisis = analizarNombreArchivoCliente(file.name, carpeta);
+      return {
+        idx,
+        file,
+        analisis,
+        parsed: analisis.parsed,
+        necesitaCorreccion: !!analisis.requiere_correccion
+      };
     });
-    const validos = items.filter((it) => it.valido);
-    if (!validos.length) {
-      const err = mensajeErrorFormatoCliente(tema);
-      sopToast(err, 'error');
-      return Promise.reject(new Error(err));
+    const listos = items.filter((it) => !it.necesitaCorreccion);
+    if (!listos.length) {
+      return (async () => {
+        for (const it of items) {
+          await flujoSubidaPdx(it.file, carpetaId);
+        }
+      })();
     }
     const filas = items.map((it) => {
-      if (it.valido) {
+      if (!it.necesitaCorreccion) {
         const w = pdxUploadWarnings(it.parsed, carpeta);
         const est = it.parsed.estudio_texto || inferirEstudioCliente(carpeta);
         return `<tr data-lote-idx="${it.idx}">
@@ -1302,17 +1480,17 @@
       }
       const ayuda = ayudaFormatoCliente(tema);
       return `<tr class="sop-lote-invalid" data-lote-idx="${it.idx}">
-        <td colspan="5" style="color:#dc2626">
-          <strong>${escapeHtml(it.file.name)}</strong> — no cumple la estructura (${escapeHtml(ayuda.pattern)}). No se subirá.
-        </td>
+        <td>${escapeHtml(it.file.name)}</td>
+        <td colspan="3" style="color:#b45309;font-size:.85rem">${escapeHtml(it.analisis.error || 'Datos incompletos')}</td>
+        <td><button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-lote-corregir="${it.idx}">Completar datos</button></td>
       </tr>`;
     }).join('');
 
     return new Promise((resolve, reject) => {
-      const omitidos = items.length - validos.length;
+      const pendientes = items.length - listos.length;
       const modal = openSopModal(`
-        <h3><i data-lucide="files"></i> Confirmar carga (${validos.length} PDF)</h3>
-        <p style="font-size:.85rem;color:#64748b;margin:-6px 0 12px">Carpeta: <strong>${escapeHtml(carpeta?.nombre_display || '')}</strong>${omitidos ? ` — ${omitidos} archivo(s) con nombre inválido se omitirán.` : ''}</p>
+        <h3><i data-lucide="files"></i> Confirmar carga (${listos.length} PDF)</h3>
+        <p style="font-size:.85rem;color:#64748b;margin:-6px 0 12px">Carpeta: <strong>${escapeHtml(carpeta?.nombre_display || '')}</strong>${pendientes ? ` — ${pendientes} archivo(s) requieren completar datos antes de subir.` : ''}</p>
         <div style="max-height:50vh;overflow:auto">
           <table class="sop-lote-table">
             <thead><tr><th>Archivo</th><th>Paciente</th><th>Fecha</th><th>Estudio</th><th></th></tr></thead>
@@ -1321,11 +1499,38 @@
         </div>
         <div class="sop-dialog-actions" style="margin-top:14px">
           <button type="button" class="sop-btn sop-btn-ghost" id="sopPdxLoteCancel">Cancelar</button>
-          <button type="button" class="sop-btn sop-btn-primary" id="sopPdxLoteOk">Subir ${validos.length} archivo(s)</button>
+          <button type="button" class="sop-btn sop-btn-primary" id="sopPdxLoteOk"${listos.length ? '' : ' disabled'}>Subir ${listos.length} archivo(s)</button>
         </div>`);
+      modal.querySelectorAll('[data-lote-corregir]').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          const idx = parseInt(btn.dataset.loteCorregir, 10);
+          const it = items.find((x) => x.idx === idx);
+          if (!it) return;
+          try {
+            await new Promise((res, rej) => {
+              modalCorregirDatosPdx(it.file, carpetaId, carpeta, it.analisis, res, rej);
+            });
+            btn.closest('tr')?.remove();
+            it.necesitaCorreccion = false;
+            const restantes = items.filter((x) => x.necesitaCorreccion).length;
+            const okBtn = modal.querySelector('#sopPdxLoteOk');
+            const nuevosListos = items.filter((x) => !x.necesitaCorreccion).length;
+            if (okBtn) {
+              okBtn.disabled = nuevosListos === 0;
+              okBtn.textContent = `Subir ${nuevosListos} archivo(s)`;
+            }
+            if (!restantes) {
+              closeSopModal(modal);
+              resolve();
+            }
+          } catch (e) {
+            if (e.message !== 'cancelado') sopToast(e.message, 'error');
+          }
+        });
+      });
       modal.querySelector('#sopPdxLoteCancel').onclick = () => { closeSopModal(modal); reject(new Error('cancelado')); };
       modal.querySelector('#sopPdxLoteOk').onclick = async () => {
-        const extras = validos.map((it) => ({ file: it.file, extra: undefined }));
+        const extras = listos.map((it) => ({ file: it.file, extra: undefined }));
         const btn = modal.querySelector('#sopPdxLoteOk');
         btn.disabled = true;
         let ok = 0;
