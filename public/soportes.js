@@ -50,9 +50,9 @@
       nota: 'Al descargar se añade el tipo de estudio (EEG) al nombre del archivo.'
     },
     psg: {
-      pattern: 'NOMBRES - APELLIDOS - NÚMERO DE DOCUMENTO - FECHA - [texto opcional] - TIPO DE PSG.pdf',
-      ejemplo: 'Juan Carlos - García López - 1234567890 - 2026-05-27 - PSG Básica.pdf',
-      nota: 'Entre la fecha y el tipo PSG puede haber segmentos opcionales (hora, sala, etc.). El último segmento es el tipo de estudio.'
+      pattern: 'Apellidos, Nombres   YYYY-MM-DD.pdf (también Apellidos - Nombres - YYYY-MM-DD.pdf)',
+      ejemplo: 'García López, Juan Carlos   2026-05-27.pdf',
+      nota: 'No incluya número de documento. Al descargar se añade el tipo de estudio PSG según la carpeta.'
     },
     actigrafia: {
       pattern: 'Apellidos, Nombres   YYYY-MM-DD.pdf',
@@ -100,6 +100,11 @@
 
   function splitSegmentosGuionesEspaciadosCliente(texto) {
     return String(texto || '').split(/\s+-\s+/).map((p) => p.trim()).filter(Boolean);
+  }
+
+  function esSegmentoDocumentoCliente(seg) {
+    const d = String(seg || '').replace(/\s/g, '');
+    return /^[\d.\-]{4,20}$/.test(d);
   }
 
   /** Partes del nombre con guiones (ordenes, comprobantes, consentimientos). */
@@ -159,16 +164,19 @@
     const fechaMatch = base.match(/(\d{4}-\d{2}-\d{2})/);
     if (fechaMatch) parcial.fecha_estudio = fechaMatch[1];
 
-    if (tema === 'psg') {
-      const parsedTry = parseNombrePsgCliente(base);
+    const esReporte = ['vtm', 'eeg', 'psg', 'actigrafia', 'neutral'].includes(tema);
+    if (esReporte) {
+      const parsedTry = parseNombrePdxCliente(base);
       if (parsedTry.ok) {
-        Object.assign(parcial, {
-          nombres: parsedTry.nombres,
-          apellidos: parsedTry.apellidos,
-          paciente_documento: parsedTry.paciente_documento,
-          fecha_estudio: parsedTry.fecha_estudio,
-          estudio_texto: parsedTry.estudio_texto
-        });
+        parcial.apellidos = parsedTry.apellidos;
+        parcial.nombres = parsedTry.nombres;
+        parcial.fecha_estudio = parsedTry.fecha_estudio;
+        parcial.estudio_texto = parsedTry.estudio_texto;
+      }
+      if (tema === 'psg' && !estudioPsgReconocidoCliente(parcial.estudio_texto)) {
+        parcial.estudio_texto = inferirEstudioCliente(carpeta);
+      } else if (!parcial.estudio_texto && ['vtm', 'eeg', 'actigrafia'].includes(tema)) {
+        parcial.estudio_texto = inferirEstudioCliente(carpeta);
       }
     } else if (esCarpetaEstructuradaPdx(carpeta)) {
       const parts = splitPartesGuionesCliente(base);
@@ -185,29 +193,6 @@
       const ultimo = parts[parts.length - 1];
       if (ultimo && !/^\d{4}-\d{2}-\d{2}$/.test(ultimo) && !/^(orden|comprobante)/i.test(ultimo)) {
         parcial.estudio_texto = ultimo;
-      }
-    } else {
-      const m = base.match(RE_REPORTE_BASE_CLIENT);
-      if (m) {
-        parcial.apellidos = m[1].trim();
-        parcial.nombres = m[2].trim();
-        parcial.fecha_estudio = m[3];
-        const idx = base.toLowerCase().indexOf(m[3].toLowerCase());
-        const rest = idx >= 0 ? base.slice(idx + m[3].length).replace(/\.pdf$/i, '').trim() : '';
-        const ext = rest.match(/^([\d-]+)\s+(\d+)\.\s*(.+)$/i);
-        if (ext) parcial.estudio_texto = ext[3].trim();
-        else if (rest) parcial.estudio_texto = rest.replace(/^\d+\.\s*/, '').trim();
-      } else {
-        const coma = base.match(/^(.+?),\s*(.+?)(?:\s+\d{4}-\d{2}-\d{2})?/i);
-        if (coma) {
-          parcial.apellidos = coma[1].trim();
-          parcial.nombres = coma[2].trim().replace(/\s+\d{4}-\d{2}-\d{2}.*$/i, '').trim();
-        }
-      }
-      if (tema === 'psg' && !estudioPsgReconocidoCliente(parcial.estudio_texto)) {
-        parcial.estudio_texto = inferirEstudioCliente(carpeta);
-      } else if (!parcial.estudio_texto && ['vtm', 'eeg', 'actigrafia'].includes(tema)) {
-        parcial.estudio_texto = inferirEstudioCliente(carpeta);
       }
     }
     return parcial;
@@ -229,18 +214,23 @@
       };
     }
     if (tema === 'psg' && !estudioPsgReconocidoCliente(parsed.estudio_texto)) {
+      const inferido = inferirEstudioCliente(carpeta);
+      if (estudioPsgReconocidoCliente(inferido)) {
+        parsed.estudio_texto = parsed.estudio_texto || inferido;
+        return { ok: true, requiere_correccion: false, tema, parsed, parcial: parsed };
+      }
       return {
         ok: false,
         requiere_correccion: true,
         motivo: 'falta_estudio_psg',
-        error: 'Falta el tipo de estudio PSG en el nombre (Básica, CPAP o BPAP).',
+        error: 'No se pudo determinar el tipo de estudio PSG. Selecciónelo para continuar.',
         tema,
         parcial: {
           ...parcial,
           apellidos: parsed.apellidos || parcial.apellidos,
           nombres: parsed.nombres || parcial.nombres,
           fecha_estudio: parsed.fecha_estudio || parcial.fecha_estudio,
-          estudio_texto: inferirEstudioCliente(carpeta) || 'PSG Básica'
+          estudio_texto: inferido || 'PSG Básica'
         }
       };
     }
@@ -287,56 +277,19 @@
     return parseNombreEstructuradoCliente(originalName, RE_CONSENTIMIENTO_CLIENT, 'consentimientos');
   }
 
-  function parseNombrePsgCliente(originalName) {
-    const base = String(originalName || '').trim();
-    const fechaMatch = base.match(/(\d{4}-\d{2}-\d{2})/);
-    if (!fechaMatch) {
-      return { ok: false, original: base, error: mensajeErrorFormatoCliente('psg') };
-    }
-    const fecha_estudio = fechaMatch[1];
-    const sinPdf = base.replace(/\.pdf$/i, '');
-    const beforeParts = splitSegmentosGuionesEspaciadosCliente(
-      sinPdf.slice(0, fechaMatch.index).replace(/\s*-\s*$/,'').trim()
-    );
-    const afterFecha = sinPdf.slice(fechaMatch.index + fecha_estudio.length).replace(/^\s*-\s*/, '').trim();
-    if (beforeParts.length < 3) {
-      return { ok: false, original: base, error: mensajeErrorFormatoCliente('psg') };
-    }
-    const nombres = beforeParts[0];
-    const apellidos = beforeParts[1];
-    const paciente_documento = String(beforeParts[2] || '').replace(/\s/g, '');
-    if (!/^[\d.\-]{4,20}$/.test(paciente_documento)) {
-      return { ok: false, original: base, error: mensajeErrorFormatoCliente('psg') };
-    }
-    const afterParts = afterFecha ? splitSegmentosGuionesEspaciadosCliente(afterFecha) : [];
-    if (!afterParts.length) {
-      return { ok: false, original: base, error: mensajeErrorFormatoCliente('psg') };
-    }
-    const estudio_texto = afterParts[afterParts.length - 1];
-    const marca_tiempo = afterParts.length > 1 ? afterParts.slice(0, -1).join(' - ') : '';
-    return {
-      ok: true,
-      original: base,
-      apellidos,
-      nombres,
-      paciente_nombre: `${apellidos}, ${nombres}`,
-      paciente_documento,
-      tipo_documento: '',
-      fecha_estudio,
-      marca_tiempo,
-      estudio_texto,
-      formato: 'psg'
-    };
-  }
-
   function parseNombrePorCarpetaCliente(originalName, carpeta) {
     const tema = detectarTemaCarpetaCliente(carpeta?.nombre_display || '');
     switch (tema) {
       case 'ordenes': return parseNombreOrdenesCliente(originalName);
       case 'comprobantes': return parseNombreComprobanteCliente(originalName);
       case 'consentimientos': return parseNombreConsentimientoCliente(originalName);
-      case 'psg': return parseNombrePsgCliente(originalName);
-      default: return parseNombrePdxCliente(originalName);
+      default: {
+        const parsed = parseNombrePdxCliente(originalName);
+        if (parsed.ok && ['vtm', 'eeg', 'psg', 'actigrafia'].includes(tema) && !parsed.estudio_texto) {
+          parsed.estudio_texto = inferirEstudioCliente(carpeta);
+        }
+        return parsed;
+      }
     }
   }
 
@@ -381,29 +334,14 @@
 
   let _cacheEstudiosPdx = null;
 
-  function parseNombrePdxCliente(originalName) {
-    const base = String(originalName || '').trim();
-    let apellidos;
-    let nombres;
-    let fecha;
-    let marcaTiempo = '';
-    let sufijo = '';
-    let estudio = '';
-
-    const mExt = base.match(RE_PDX_EXT_CLIENT);
-    if (mExt) {
-      apellidos = mExt[1].trim();
-      nombres = mExt[2].trim();
-      fecha = mExt[3];
-      marcaTiempo = mExt[4].trim();
-      sufijo = mExt[5].trim();
-      estudio = mExt[6].trim();
-    } else {
-      const m = base.match(RE_REPORTE_BASE_CLIENT);
-      if (!m) return { ok: false, original: base, error: mensajeErrorFormatoCliente('neutral') };
-      apellidos = m[1].trim();
-      nombres = m[2].trim();
-      fecha = m[3];
+  function finishSimpleParseCliente(base, apellidos, nombres, fecha, tail) {
+    if (!apellidos || !nombres || !fecha) {
+      return { ok: false, original: base, error: mensajeErrorFormatoCliente('neutral') };
+    }
+    let marcaTiempo = (tail && tail.marca_tiempo) || '';
+    let sufijo = (tail && tail.sufijo_numero) || '';
+    let estudio = (tail && tail.estudio_texto) || '';
+    if (!estudio && !marcaTiempo && !sufijo) {
       const idx = base.toLowerCase().indexOf(fecha.toLowerCase());
       const rest = idx >= 0 ? base.slice(idx + fecha.length).replace(/\.pdf$/i, '').trim() : '';
       const ext = rest.match(/^([\d-]+)\s+(\d+)\.\s*(.+)$/i);
@@ -411,22 +349,95 @@
         marcaTiempo = ext[1].trim();
         sufijo = ext[2].trim();
         estudio = ext[3].trim();
+      } else if (rest.includes(' - ')) {
+        const ap = splitSegmentosGuionesEspaciadosCliente(rest);
+        if (ap.length) {
+          estudio = ap[ap.length - 1].trim();
+          if (ap.length > 1) marcaTiempo = ap.slice(0, -1).join(' - ');
+        }
       } else if (rest) {
         estudio = rest.replace(/^\d+\.\s*/, '').trim();
       }
     }
-
     return {
       ok: true,
       original: base,
       apellidos,
       nombres,
       paciente_nombre: `${apellidos}, ${nombres}`,
+      paciente_documento: '',
+      tipo_documento: '',
       fecha_estudio: fecha,
       marca_tiempo: marcaTiempo,
       sufijo_numero: sufijo,
       estudio_texto: estudio
     };
+  }
+
+  function parseRestoDespuesFechaCliente(afterFecha) {
+    if (!afterFecha) return {};
+    const ext = afterFecha.match(/^([\d-]+)\s+(\d+)\.\s*(.+)$/i);
+    if (ext) {
+      return { marca_tiempo: ext[1].trim(), sufijo_numero: ext[2].trim(), estudio_texto: ext[3].trim() };
+    }
+    const ap = splitSegmentosGuionesEspaciadosCliente(afterFecha);
+    if (!ap.length) return { estudio_texto: afterFecha.replace(/^\d+\.\s*/, '').trim() };
+    return {
+      estudio_texto: ap[ap.length - 1].trim(),
+      marca_tiempo: ap.length > 1 ? ap.slice(0, -1).join(' - ') : ''
+    };
+  }
+
+  function parseNombrePdxDesdeFechaCliente(originalName) {
+    const base = String(originalName || '').trim();
+    const fechaMatch = base.match(/(\d{4}-\d{2}-\d{2})/);
+    if (!fechaMatch) {
+      return { ok: false, original: base, error: mensajeErrorFormatoCliente('neutral') };
+    }
+    const fecha = fechaMatch[1];
+    const sinPdf = base.replace(/\.pdf$/i, '');
+    const beforeFecha = sinPdf.slice(0, fechaMatch.index).replace(/[\s\-–]+$/,'').trim();
+    const afterFecha = sinPdf.slice(fechaMatch.index + fecha.length).replace(/^[\s\-–]+/,'').trim();
+    let apellidos = '';
+    let nombres = '';
+    if (beforeFecha.includes(',')) {
+      const c = beforeFecha.indexOf(',');
+      apellidos = beforeFecha.slice(0, c).trim();
+      nombres = beforeFecha.slice(c + 1).trim();
+    } else if (beforeFecha) {
+      const segs = splitSegmentosGuionesEspaciadosCliente(beforeFecha);
+      const nameSegs = segs.filter((s) => !esSegmentoDocumentoCliente(s));
+      const tuvoDocumento = segs.length > nameSegs.length;
+      if (nameSegs.length >= 2) {
+        if (tuvoDocumento || segs.length >= 3) {
+          nombres = nameSegs[0];
+          apellidos = nameSegs[1];
+        } else {
+          apellidos = nameSegs[0];
+          nombres = nameSegs[1];
+        }
+      }
+    }
+    return finishSimpleParseCliente(base, apellidos, nombres, fecha, parseRestoDespuesFechaCliente(afterFecha));
+  }
+
+  function parseNombrePdxCliente(originalName) {
+    const base = String(originalName || '').trim();
+    const mExt = base.match(RE_PDX_EXT_CLIENT);
+    if (mExt) {
+      return finishSimpleParseCliente(base, mExt[1].trim(), mExt[2].trim(), mExt[3], {
+        marca_tiempo: mExt[4].trim(),
+        sufijo_numero: mExt[5].trim(),
+        estudio_texto: mExt[6].trim()
+      });
+    }
+    const m = base.match(RE_REPORTE_BASE_CLIENT);
+    if (m) return finishSimpleParseCliente(base, m[1].trim(), m[2].trim(), m[3]);
+    const mGuion = base.match(/^([^-]+?)\s+-\s+([^-]+?)\s+-\s+(\d{4}-\d{2}-\d{2})(?:\s+.+)?\.pdf$/i);
+    if (mGuion && !esSegmentoDocumentoCliente(mGuion[1]) && !esSegmentoDocumentoCliente(mGuion[2])) {
+      return finishSimpleParseCliente(base, mGuion[1].trim(), mGuion[2].trim(), mGuion[3]);
+    }
+    return parseNombrePdxDesdeFechaCliente(originalName);
   }
 
   function fechaEnPeriodoCliente(fechaStr, periodoYYYYMM) {
@@ -725,7 +736,11 @@
   }
 
   function badgeVis(estado, dias) {
-    const labels = { activa: 'Activo', gracia: `Gracia ${dias || 0}d`, archivo: 'Archivo' };
+    const labels = {
+      activa: 'Activo',
+      gracia: `Restan ${dias || 0}d para la eliminación de esta carpeta`,
+      archivo: 'Archivo'
+    };
     const icon = estado === 'activa' ? 'circle-check' : estado === 'gracia' ? 'clock' : 'archive';
     return `<span class="sop-badge sop-badge-${estado}"><i data-lucide="${icon}" style="width:12px;height:12px"></i> ${escapeHtml(labels[estado] || estado)}</span>`;
   }
@@ -1367,10 +1382,6 @@
         return;
       }
       const parsed = analisis.parsed;
-      if (esCarpetaPsgReportePdx(carpeta)) {
-        modalSubidaPsgCompleto(file, carpetaId, carpeta, parsed, resolve, reject);
-        return;
-      }
       if (esCarpetaEstructuradaPdx(carpeta)) {
         modalSubidaEstructuradaCompleto(file, carpetaId, carpeta, parsed, resolve, reject);
         return;
@@ -1400,7 +1411,6 @@
       <div class="sop-field"><label>Nombres *</label><input type="text" id="sopPdxCorrNom" value="${escapeHtml(p.nombres || '')}"></div>
       ${esEstruct ? `
       <div class="sop-field"><label>Tipo de documento</label><input type="text" id="sopPdxCorrTipoDoc" value="${escapeHtml(p.tipo_documento || 'CC')}"></div>
-      <div class="sop-field"><label>Número de documento *</label><input type="text" id="sopPdxCorrDoc" value="${escapeHtml(p.paciente_documento || '')}" inputmode="numeric"></div>` : esPsg ? `
       <div class="sop-field"><label>Número de documento *</label><input type="text" id="sopPdxCorrDoc" value="${escapeHtml(p.paciente_documento || '')}" inputmode="numeric"></div>` : `
       <div class="sop-field"><label>Documento (opcional)</label><input type="text" id="sopPdxCorrDoc" value="${escapeHtml(p.paciente_documento || '')}" inputmode="numeric"></div>`}
       <div class="sop-field"><label>Fecha del estudio *</label><input type="date" id="sopPdxCorrFecha" value="${escapeHtml(p.fecha_estudio || '')}"></div>
@@ -1431,8 +1441,8 @@
       if (esEstruct && (!body.paciente_documento || !body.estudio_texto)) {
         return sopToast('Complete documento y tipo de examen', 'warning');
       }
-      if (esPsg && (!body.paciente_documento || !body.estudio_texto)) {
-        return sopToast('Complete documento y tipo de estudio PSG', 'warning');
+      if (esPsg && !body.estudio_texto) {
+        return sopToast('Seleccione el tipo de estudio PSG', 'warning');
       }
       try {
         await subirArchivoPdx(file, carpetaId, body);

@@ -42,10 +42,9 @@ const FORMATOS_AYUDA = {
     nota: 'Al descargar se añade el tipo de estudio (EEG) al nombre del archivo.'
   },
   psg: {
-    pattern: 'NOMBRES - APELLIDOS - NÚMERO DE DOCUMENTO - FECHA - [texto opcional] - TIPO DE PSG.pdf',
-    ejemplo: 'Juan Carlos - García López - 1234567890 - 2026-05-27 - PSG Básica.pdf',
-    ejemplo_largo: 'Juan Carlos - García López - 1234567890 - 2026-05-27 - 21-21-12 - PSG BASAL.pdf',
-    nota: 'Entre la fecha y el tipo PSG puede haber uno o más segmentos opcionales (hora, sala, etc.). El último segmento debe ser el tipo de estudio (Básica, CPAP o BPAP).'
+    pattern: 'Apellidos, Nombres   YYYY-MM-DD.pdf (también Apellidos - Nombres - YYYY-MM-DD.pdf)',
+    ejemplo: 'García López, Juan Carlos   2026-05-27.pdf',
+    nota: 'No incluya número de documento. Al descargar se añade el tipo de estudio PSG según la carpeta.'
   },
   actigrafia: {
     pattern: 'Apellidos, Nombres   YYYY-MM-DD.pdf',
@@ -136,7 +135,16 @@ function esTemaPsgReporte(tema) {
 }
 
 function esTemaFormatoGuionesCompleto(tema) {
-  return esTemaEstructurado(tema) || esTemaPsgReporte(tema);
+  return esTemaEstructurado(tema);
+}
+
+function esTemaReporteClinico(tema) {
+  return ['vtm', 'eeg', 'psg', 'actigrafia'].includes(tema);
+}
+
+function esSegmentoDocumento(seg) {
+  const d = String(seg || '').replace(/\s/g, '');
+  return /^[\d.\-]{4,20}$/.test(d);
 }
 
 /** Segmentos separados por guión con espacios (no parte de fechas ni horas 21-21-12). */
@@ -167,28 +175,31 @@ function inferirEstudioDesdeCarpeta(carpeta) {
   return '';
 }
 
-function parseNombreSimple(originalName) {
-  const base = String(originalName || '').trim();
-  const m = base.match(RE_SIMPLE_MIN);
-  if (!m) {
+function finishSimpleParse(base, apellidos, nombres, fecha, tail = {}) {
+  if (!apellidos || !nombres || !fecha) {
     return { ok: false, original: base, error: mensajeErrorFormato('neutral') };
   }
-  const apellidos = m[1].trim();
-  const nombres = m[2].trim();
-  const fecha = m[3];
-  let marca_tiempo = '';
-  let sufijo_numero = '';
-  let estudio_texto = '';
-  const idx = base.toLowerCase().indexOf(fecha.toLowerCase());
-  const rest = idx >= 0 ? base.slice(idx + fecha.length).replace(/\.pdf$/i, '').trim() : '';
-  if (rest) {
-    const ext = rest.match(/^([\d-]+)\s+(\d+)\.\s*(.+)$/i);
-    if (ext) {
-      marca_tiempo = ext[1].trim();
-      sufijo_numero = ext[2].trim();
-      estudio_texto = ext[3].trim();
-    } else {
-      estudio_texto = rest.replace(/^\d+\.\s*/, '').trim();
+  let marca_tiempo = tail.marca_tiempo || '';
+  let sufijo_numero = tail.sufijo_numero || '';
+  let estudio_texto = tail.estudio_texto || '';
+  if (!estudio_texto && !marca_tiempo && !sufijo_numero) {
+    const idx = base.toLowerCase().indexOf(fecha.toLowerCase());
+    const rest = idx >= 0 ? base.slice(idx + fecha.length).replace(/\.pdf$/i, '').trim() : '';
+    if (rest) {
+      const ext = rest.match(/^([\d-]+)\s+(\d+)\.\s*(.+)$/i);
+      if (ext) {
+        marca_tiempo = ext[1].trim();
+        sufijo_numero = ext[2].trim();
+        estudio_texto = ext[3].trim();
+      } else if (rest.includes(' - ')) {
+        const ap = splitSegmentosGuionesEspaciados(rest);
+        if (ap.length) {
+          estudio_texto = ap[ap.length - 1].trim();
+          if (ap.length > 1) marca_tiempo = ap.slice(0, -1).join(' - ');
+        }
+      } else {
+        estudio_texto = rest.replace(/^\d+\.\s*/, '').trim();
+      }
     }
   }
   const pacienteNombre = `${apellidos}, ${nombres}`;
@@ -207,6 +218,75 @@ function parseNombreSimple(originalName) {
     estudio_texto,
     formato: 'simple'
   };
+}
+
+function parseRestoDespuesFecha(afterFecha) {
+  if (!afterFecha) return {};
+  const ext = afterFecha.match(/^([\d-]+)\s+(\d+)\.\s*(.+)$/i);
+  if (ext) {
+    return { marca_tiempo: ext[1].trim(), sufijo_numero: ext[2].trim(), estudio_texto: ext[3].trim() };
+  }
+  const ap = splitSegmentosGuionesEspaciados(afterFecha);
+  if (!ap.length) return { estudio_texto: afterFecha.replace(/^\d+\.\s*/, '').trim() };
+  return {
+    estudio_texto: ap[ap.length - 1].trim(),
+    marca_tiempo: ap.length > 1 ? ap.slice(0, -1).join(' - ') : ''
+  };
+}
+
+function parseNombreSimpleDesdeFecha(originalName) {
+  const base = String(originalName || '').trim();
+  const fechaMatch = base.match(/(\d{4}-\d{2}-\d{2})/);
+  if (!fechaMatch) {
+    return { ok: false, original: base, error: mensajeErrorFormato('neutral') };
+  }
+  const fecha = fechaMatch[1];
+  const sinPdf = base.replace(/\.pdf$/i, '');
+  const beforeFecha = sinPdf.slice(0, fechaMatch.index).replace(/[\s\-–]+$/,'').trim();
+  const afterFecha = sinPdf.slice(fechaMatch.index + fecha.length).replace(/^[\s\-–]+/,'').trim();
+
+  let apellidos = '';
+  let nombres = '';
+  if (beforeFecha.includes(',')) {
+    const c = beforeFecha.indexOf(',');
+    apellidos = beforeFecha.slice(0, c).trim();
+    nombres = beforeFecha.slice(c + 1).trim();
+  } else if (beforeFecha) {
+    const segs = splitSegmentosGuionesEspaciados(beforeFecha);
+    const nameSegs = segs.filter((s) => !esSegmentoDocumento(s));
+    const tuvoDocumento = segs.length > nameSegs.length;
+    if (nameSegs.length >= 2) {
+      if (tuvoDocumento || segs.length >= 3) {
+        nombres = nameSegs[0];
+        apellidos = nameSegs[1];
+      } else {
+        apellidos = nameSegs[0];
+        nombres = nameSegs[1];
+      }
+    } else if (nameSegs.length === 1 && beforeFecha.includes(' - ')) {
+      const parts = splitSegmentosGuionesEspaciados(beforeFecha);
+      if (parts.length >= 2 && !esSegmentoDocumento(parts[0])) {
+        apellidos = parts[0];
+        nombres = parts.slice(1).filter((p) => !esSegmentoDocumento(p)).join(' - ').trim();
+      }
+    }
+  }
+
+  const tail = parseRestoDespuesFecha(afterFecha);
+  return finishSimpleParse(base, apellidos, nombres, fecha, tail);
+}
+
+function parseNombreSimple(originalName) {
+  const base = String(originalName || '').trim();
+  const m = base.match(RE_SIMPLE_MIN);
+  if (m) {
+    return finishSimpleParse(base, m[1].trim(), m[2].trim(), m[3]);
+  }
+  const mGuion = base.match(/^([^-]+?)\s+-\s+([^-]+?)\s+-\s+(\d{4}-\d{2}-\d{2})(?:\s+.+)?\.pdf$/i);
+  if (mGuion && !esSegmentoDocumento(mGuion[1]) && !esSegmentoDocumento(mGuion[2])) {
+    return finishSimpleParse(base, mGuion[1].trim(), mGuion[2].trim(), mGuion[3]);
+  }
+  return parseNombreSimpleDesdeFecha(originalName);
 }
 
 function buildStructuredOk(original, parts) {
@@ -376,10 +456,13 @@ function parseNombrePorCarpeta(originalName, carpeta, estudios = []) {
       return parseNombreComprobante(originalName, estudios);
     case 'consentimientos':
       return parseNombreConsentimiento(originalName, estudios);
-    case 'psg':
-      return parseNombrePsg(originalName, estudios);
-    default:
-      return parseNombreSimple(originalName);
+    default: {
+      const parsed = parseNombreSimple(originalName);
+      if (parsed.ok && esTemaReporteClinico(tema) && !parsed.estudio_texto) {
+        parsed.estudio_texto = inferirEstudioDesdeCarpeta(carpeta);
+      }
+      return parsed;
+    }
   }
 }
 
@@ -449,28 +532,18 @@ function extraerDatosParcialesNombre(originalName, carpeta, estudios = []) {
   const fechaMatch = base.match(/(\d{4}-\d{2}-\d{2})/);
   if (fechaMatch) parcial.fecha_estudio = fechaMatch[1];
 
-  if (tema === 'psg') {
-    const parsedTry = parseNombrePsg(base, estudios);
+  if (esTemaReporteClinico(tema) || tema === 'neutral') {
+    const parsedTry = parseNombreSimple(base);
     if (parsedTry.ok) {
-      parcial.nombres = parsedTry.nombres;
       parcial.apellidos = parsedTry.apellidos;
-      parcial.paciente_documento = parsedTry.paciente_documento;
+      parcial.nombres = parsedTry.nombres;
       parcial.fecha_estudio = parsedTry.fecha_estudio;
       parcial.estudio_texto = parsedTry.estudio_texto;
-    } else {
-      const fechaMatch = base.match(/(\d{4}-\d{2}-\d{2})/);
-      if (fechaMatch) {
-        parcial.fecha_estudio = fechaMatch[1];
-        const sinPdf = base.replace(/\.pdf$/i, '');
-        const before = sinPdf.slice(0, fechaMatch.index).replace(/\s*-\s*$/,'').trim();
-        const after = sinPdf.slice(fechaMatch.index + fechaMatch[1].length).replace(/^\s*-\s*/, '').trim();
-        const bp = splitSegmentosGuionesEspaciados(before);
-        if (bp.length >= 1) parcial.nombres = bp[0];
-        if (bp.length >= 2) parcial.apellidos = bp[1];
-        if (bp.length >= 3) parcial.paciente_documento = String(bp[2]).replace(/\s/g, '');
-        const ap = splitSegmentosGuionesEspaciados(after);
-        if (ap.length) parcial.estudio_texto = ap[ap.length - 1];
-      }
+    }
+    if (tema === 'psg' && !estudioPsgReconocido(parcial.estudio_texto)) {
+      parcial.estudio_texto = inferirEstudioDesdeCarpeta(carpeta?.nombre_display || '');
+    } else if (!parcial.estudio_texto && ['vtm', 'eeg', 'actigrafia'].includes(tema)) {
+      parcial.estudio_texto = inferirEstudioDesdeCarpeta(carpeta);
     }
   } else if (esTemaEstructurado(tema)) {
     const parts = splitPartesNombreGuiones(base);
@@ -487,29 +560,6 @@ function extraerDatosParcialesNombre(originalName, carpeta, estudios = []) {
     const ultimo = parts[parts.length - 1];
     if (ultimo && !/^\d{4}-\d{2}-\d{2}$/.test(ultimo) && !/^(orden|comprobante)/i.test(ultimo)) {
       parcial.estudio_texto = resolverEstudioDesdeLista(ultimo, estudios) || ultimo;
-    }
-  } else {
-    const m = base.match(RE_SIMPLE_MIN);
-    if (m) {
-      parcial.apellidos = m[1].trim();
-      parcial.nombres = m[2].trim();
-      parcial.fecha_estudio = m[3];
-      const idx = base.toLowerCase().indexOf(m[3].toLowerCase());
-      const rest = idx >= 0 ? base.slice(idx + m[3].length).replace(/\.pdf$/i, '').trim() : '';
-      const ext = rest.match(/^([\d-]+)\s+(\d+)\.\s*(.+)$/i);
-      if (ext) parcial.estudio_texto = ext[3].trim();
-      else if (rest) parcial.estudio_texto = rest.replace(/^\d+\.\s*/, '').trim();
-    } else {
-      const coma = base.match(/^(.+?),\s*(.+?)(?:\s+\d{4}-\d{2}-\d{2})?/i);
-      if (coma) {
-        parcial.apellidos = coma[1].trim();
-        parcial.nombres = coma[2].trim().replace(/\s+\d{4}-\d{2}-\d{2}.*$/i, '').trim();
-      }
-    }
-    if (tema === 'psg' && !estudioPsgReconocido(parcial.estudio_texto)) {
-      parcial.estudio_texto = inferirEstudioDesdeCarpeta(carpeta?.nombre_display || '');
-    } else if (!parcial.estudio_texto && ['vtm', 'eeg', 'actigrafia'].includes(tema)) {
-      parcial.estudio_texto = inferirEstudioDesdeCarpeta(carpeta);
     }
   }
 
@@ -536,18 +586,23 @@ function analizarNombreArchivo(originalName, carpeta, estudios = []) {
   }
 
   if (tema === 'psg' && !estudioPsgReconocido(parsed.estudio_texto)) {
+    const inferido = inferirEstudioDesdeCarpeta(carpeta?.nombre_display || '');
+    if (estudioPsgReconocido(inferido)) {
+      parsed.estudio_texto = parsed.estudio_texto || inferido;
+      return { ok: true, requiere_correccion: false, tema, parsed, parcial: parsed };
+    }
     return {
       ok: false,
       requiere_correccion: true,
       motivo: 'falta_estudio_psg',
-      error: 'Falta el tipo de estudio PSG en el nombre (Básica, CPAP o BPAP).',
+      error: 'No se pudo determinar el tipo de estudio PSG. Selecciónelo para continuar.',
       tema,
       parcial: {
         ...parcial,
         apellidos: parsed.apellidos || parcial.apellidos,
         nombres: parsed.nombres || parcial.nombres,
         fecha_estudio: parsed.fecha_estudio || parcial.fecha_estudio,
-        estudio_texto: inferirEstudioDesdeCarpeta(carpeta?.nombre_display || '') || 'PSG Básica'
+        estudio_texto: inferido || 'PSG Básica'
       },
       parsed
     };
@@ -579,7 +634,7 @@ function buildMetaDesdeCamposManuales(originalName, body, carpeta) {
     if (!paciente_documento) return { ok: false, error: 'El número de documento es obligatorio' };
   } else if (tema === 'psg') {
     estudio = resolverEstudioDesdeLista(estudio, estudios) || estudio;
-    if (!paciente_documento) return { ok: false, error: 'El número de documento es obligatorio' };
+    if (!estudio) estudio = inferirEstudioDesdeCarpeta(carpeta);
     if (!estudioPsgReconocido(estudio)) {
       return { ok: false, error: 'Seleccione el tipo de estudio PSG (Básica, CPAP o BPAP)' };
     }
@@ -621,15 +676,11 @@ function buildMetaDesdeCamposManuales(originalName, body, carpeta) {
     base.nombre_display = normalizarNombreConsentimiento({
       apellidos, nombres, tipo_documento, paciente_documento, fecha, estudio
     });
-  } else if (tema === 'psg') {
-    const extras = String(body.extras_opcionales || body.marca_tiempo || '').trim();
-    base.formato = 'psg';
-    base.marca_tiempo = extras;
-    base.nombre_display = normalizarNombrePsg({
-      nombres, apellidos, paciente_documento, fecha, estudio, extras
-    });
   } else {
     base.formato = 'simple';
+    if (tema === 'psg') {
+      base.marca_tiempo = String(body.extras_opcionales || body.marca_tiempo || '').trim();
+    }
   }
 
   base.nombre_archivo_display = nombreArchivoDescarga(base, carpeta);
