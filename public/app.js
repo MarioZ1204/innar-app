@@ -9880,6 +9880,10 @@ function limpiarFiltrosRecibos() {
   cargarLista();
 }
 
+function _reciboMonto(r) { return Number(r?.total) || 0; }
+function _reciboEsActivo(r) { return r.anulado != 1; }
+function _reciboEsPagado(r) { return _reciboEsActivo(r) && r.estado_pago !== 'PENDIENTE'; }
+
 function exportarReciboCSV() {
   const url = '/api/recibos/export/xlsx' + (_recibosLastParams ? '?' + _recibosLastParams : '');
   window.location.href = url;
@@ -9927,12 +9931,13 @@ async function cargarLista(queryString) {
       return;
     }
 
-    const recibosActivos = recibos.filter(r => r.anulado != 1);
-    const totalMonto = recibosActivos.reduce((s, r) => s + Number(r.total||0), 0);
+    const recibosActivos = recibos.filter(_reciboEsActivo);
+    const recibosPagados = recibosActivos.filter(_reciboEsPagado);
+    const totalPagado = recibosPagados.reduce((s, r) => s + _reciboMonto(r), 0);
     const recibosPendientes = recibosActivos.filter(r => r.estado_pago === 'PENDIENTE');
-    const totalPendiente = recibosPendientes.reduce((s, r) => s + Number(r.total||0), 0);
-    if ($('resumenCantidad')) $('resumenCantidad').textContent = recibosActivos.length;
-    if ($('resumenTotal')) $('resumenTotal').textContent = '$ ' + totalMonto.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const totalPendiente = recibosPendientes.reduce((s, r) => s + _reciboMonto(r), 0);
+    if ($('resumenCantidad')) $('resumenCantidad').textContent = recibosPagados.length;
+    if ($('resumenTotal')) $('resumenTotal').textContent = '$ ' + totalPagado.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     if ($('resumenPendienteCant')) $('resumenPendienteCant').textContent = recibosPendientes.length;
     if ($('resumenPendienteTotal')) $('resumenPendienteTotal').textContent = '$ ' + totalPendiente.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const pendientesWrap = $('resumenPendientesWrap');
@@ -9989,6 +9994,11 @@ async function cargarLista(queryString) {
           <img src="images/delete.svg" alt="Eliminar"/></button>`;
       }
       if (isSuperadmin() && !esAnulado) {
+        acciones += `<button class="btn-recibo-valor" data-id="${r.id}" data-numero="${escapeHtml(r.numero || '')}" data-total="${Number(r.total || 0)}" title="Cambiar valor del recibo" aria-label="Cambiar valor del recibo">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+          </svg>
+        </button>`;
         acciones += `<button class="btn-recibo-obs" data-id="${r.id}" data-numero="${escapeHtml(r.numero || '')}" title="Editar observaciones">
           <img src="images/edit.svg" alt="Observaciones"/></button>`;
       }
@@ -10012,6 +10022,11 @@ async function cargarLista(queryString) {
         <td class="col-recibo-acciones">${acciones}</td>`;
       tbody.appendChild(tr);
     });
+
+    tbody.querySelectorAll('.btn-recibo-valor').forEach((b) => b.addEventListener('click', (e) => {
+      const btn = e.target.closest('.btn-recibo-valor');
+      showEditValorReciboModal(btn.dataset.id, btn.dataset.numero, btn.dataset.total);
+    }));
 
     tbody.querySelectorAll('.btn-recibo-obs').forEach((b) => b.addEventListener('click', (e) => {
       const btn = e.target.closest('.btn-recibo-obs');
@@ -10186,6 +10201,56 @@ async function showEditObservacionesReciboModal(reciboId, numero) {
   backdrop.addEventListener('click', (e) => { if (e.target === backdrop) backdrop.remove(); });
 }
 
+function showEditValorReciboModal(reciboId, numero, totalActual) {
+  const valorInicial = Number(totalActual) || 0;
+  const inputStyle = 'width:100%;margin-top:4px;padding:9px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:0.9rem;background:#fff';
+  const backdrop = document.createElement('div');
+  backdrop.className = 'confirm-backdrop';
+  backdrop.innerHTML = `
+    <div class="confirm-box" style="max-width:420px;width:92%">
+      <div class="confirm-icon">💰</div>
+      <div class="confirm-msg" style="font-size:1rem;margin-bottom:14px">Cambiar valor — Recibo ${escapeHtml(numero || reciboId)}</div>
+      <p style="font-size:0.82rem;color:#6b7280;margin-bottom:10px;text-align:center">Solo superadministrador. Actualiza el total del recibo y el detalle guardado.</p>
+      <label style="font-size:0.85rem;font-weight:600;color:#374151;display:block;text-align:left">
+        Valor del recibo (COP)
+        <input type="number" id="editReciboValor" min="0" step="0.01" value="${valorInicial}" style="${inputStyle}" />
+      </label>
+      <div class="confirm-actions" style="margin-top:18px">
+        <button class="btn-cancel">Cancelar</button>
+        <button class="btn-ok" style="background:#2d4a47">Guardar valor</button>
+      </div>
+    </div>`;
+  document.body.appendChild(backdrop);
+  const input = backdrop.querySelector('#editReciboValor');
+  input.focus();
+  input.select();
+  backdrop.querySelector('.btn-cancel').addEventListener('click', () => backdrop.remove());
+  backdrop.querySelector('.btn-ok').addEventListener('click', async () => {
+    const total = Number(input.value);
+    if (!Number.isFinite(total) || total < 0) {
+      showToast('Ingrese un valor numérico válido (≥ 0)', 'error');
+      return;
+    }
+    try {
+      const jr = await apiFetch(`/api/recibos/${reciboId}/total`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ total })
+      }).then((r) => r.json());
+      if (jr.ok) {
+        backdrop.remove();
+        showToast('Valor del recibo actualizado', 'success');
+        cargarLista(_recibosLastParams);
+      } else {
+        showToast(jr.error || 'Error al actualizar valor', 'error');
+      }
+    } catch (_) {
+      showToast('Error al actualizar valor', 'error');
+    }
+  });
+  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) backdrop.remove(); });
+}
+
 async function showEditReciboModal({ id, medico, servicio, entidad, cliente, tipoPago }) {
   // Cargar opciones en paralelo
   const [medicosRes, serviciosArr, entidadesCatalogo] = await Promise.all([
@@ -10280,15 +10345,20 @@ function updateSavedCount() {
   const hoy = new Date().toISOString().slice(0,10);
   apiFetch(`/api/recibos?fecha_desde=${hoy}&fecha_hasta=${hoy}`)
     .then(r => r.ok ? r.json() : [])
-    .then(arr => updateStats(Array.isArray(arr) ? arr : []))
+    .then(json => {
+      const rows = json?.rows || (Array.isArray(json) ? json : []);
+      updateStats(rows);
+    })
     .catch(() => updateStats([]));
 }
 
 function updateStats(recibos) {
   if (!Array.isArray(recibos)) recibos = [];
-  const totalHoy = recibos.reduce((sum, r) => sum + (Number(r.total)||0), 0);
-  if ($('statsRecibosHoy')) $('statsRecibosHoy').textContent = recibos.length;
-  if ($('statsTotalHoy')) $('statsTotalHoy').textContent = '$ ' + totalHoy.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const activos = recibos.filter(_reciboEsActivo);
+  const pagados = activos.filter(_reciboEsPagado);
+  const totalPagadoHoy = pagados.reduce((sum, r) => sum + _reciboMonto(r), 0);
+  if ($('statsRecibosHoy')) $('statsRecibosHoy').textContent = activos.length;
+  if ($('statsTotalHoy')) $('statsTotalHoy').textContent = '$ ' + totalPagadoHoy.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function resetAllRecibos(){

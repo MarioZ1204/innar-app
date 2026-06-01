@@ -383,7 +383,7 @@ router.get('/recibos/export/xlsx', requireAuth, requireRoleOrPerm(['superadmin',
       'Entidad': r.nombre_entidad || '',
       'Médico': r.medico_nombre || '',
       'Servicio': r.tipo_servicio || '',
-      'Total': Number(r.total || 0),
+      'Valor recibo': Number(r.total || 0),
       'Estado': r.anulado ? 'ANULADO' : 'Activo',
       'Estado Pago': r.anulado ? '-' : (r.estado_pago || 'PAGADO'),
       'Fecha Pago': r.fecha_pago ? new Date(r.fecha_pago).toISOString().slice(0, 19).replace('T', ' ') : '',
@@ -411,13 +411,15 @@ router.get('/recibos/export/xlsx', requireAuth, requireRoleOrPerm(['superadmin',
 // GET /api/recibos/export/pdf-reporte — HTML imprimible, BEFORE /:id
 router.get('/recibos/export/pdf-reporte', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion', 'contabilidad'], 'recibos.ver'), async (req, res) => {
   try {
+    const { fecha_desde, fecha_hasta, tipo_pago } = req.query;
     const { where, params } = buildRecibosFilter(req.query);
     const rows = await db.query(
       `SELECT numero, fecha, cliente, tipo_pago, nombre_entidad, medico_nombre, tipo_servicio, total, generado_por_nombre, observaciones, anulado, anulado_razon, estado_pago FROM recibos ${where} ORDER BY numero ASC, id ASC`,
       params
     );
     const recibosActivos = rows.filter(r => !r.anulado);
-    const totalActivos = recibosActivos.reduce((s, r) => s + Number(r.total || 0), 0);
+    const recibosPagados = recibosActivos.filter(r => r.estado_pago !== 'PENDIENTE');
+    const totalPagados = recibosPagados.reduce((s, r) => s + Number(r.total || 0), 0);
     const cantAnulados = rows.length - recibosActivos.length;
     const recibosPendientes = recibosActivos.filter(r => r.estado_pago === 'PENDIENTE');
     const totalPendientes = recibosPendientes.reduce((s, r) => s + Number(r.total || 0), 0);
@@ -428,6 +430,7 @@ router.get('/recibos/export/pdf-reporte', requireAuth, requireRoleOrPerm(['super
       const esAnulado = r.anulado == 1;
       const anulTag = esAnulado ? ' <span style="background:#dc2626;color:#fff;font-size:7px;padding:1px 5px;border-radius:3px;font-weight:700;letter-spacing:0.5px">ANULADO</span>' : '';
       const esPendiente = !esAnulado && r.estado_pago === 'PENDIENTE';
+      const estadoPagoTxt = esAnulado ? 'ANULADO' : (esPendiente ? 'PENDIENTE' : 'PAGADO');
       const pendienteTag = esPendiente ? ' <span style="background:#fff7ed;color:#c2410c;font-size:7px;padding:1px 5px;border-radius:3px;font-weight:700;letter-spacing:0.5px;border:1px solid #fed7aa">PENDIENTE</span>' : '';
       const rowStyle = esAnulado ? 'background:#fef2f2;border-left:3px solid #dc2626;color:#991b1b;text-decoration:line-through' : esPendiente ? 'background:#fff7ed;border-left:3px solid #f97316' : (i % 2 === 0 ? 'background:#f9fafb' : '');
       return `<tr style="${rowStyle}">
@@ -438,7 +441,8 @@ router.get('/recibos/export/pdf-reporte', requireAuth, requireRoleOrPerm(['super
         <td>${escapeHtml(r.nombre_entidad || '-')}</td>
         <td>${escapeHtml(r.medico_nombre || '-')}</td>
         <td>${escapeHtml(r.tipo_servicio || '-')}</td>
-        <td style="text-align:right">$ ${fmt(r.total)}</td>
+        <td style="text-align:right;font-weight:600">$ ${fmt(r.total)}</td>
+        <td>${escapeHtml(estadoPagoTxt)}</td>
         <td>${escapeHtml(r.generado_por_nombre || '-')}</td>
       </tr>`;
     }).join('');
@@ -478,7 +482,7 @@ router.get('/recibos/export/pdf-reporte', requireAuth, requireRoleOrPerm(['super
     <div class="sub">
       <span>${escapeHtml(descFiltros)}</span>
       <span class="stat">${recibosActivos.length} recibos activos</span>
-      <span class="stat" style="color:#059669">Total: $ ${fmt(totalActivos)}</span>
+      <span class="stat" style="color:#059669">${recibosPagados.length} pagado${recibosPagados.length !== 1 ? 's' : ''}: $ ${fmt(totalPagados)}</span>
       ${resumenAnulados}${resumenPendientes}
     </div>
     <div class="no-print" style="margin-bottom:14px">
@@ -487,13 +491,17 @@ router.get('/recibos/export/pdf-reporte', requireAuth, requireRoleOrPerm(['super
     <table>
       <thead><tr>
         <th>N°</th><th>Fecha</th><th>Paciente</th><th>Tipo Pago</th>
-        <th>Entidad</th><th>Médico</th><th>Servicio</th><th style="text-align:right">Total</th><th>Generado por</th>
+        <th>Entidad</th><th>Médico</th><th>Servicio</th><th style="text-align:right">Valor</th><th>Estado pago</th><th>Generado por</th>
       </tr></thead>
       <tbody>${rowsHTML}
         <tr class="total-row">
-          <td colspan="7" style="text-align:right;padding-right:12px">TOTAL (activos)</td>
-          <td style="text-align:right">$ ${fmt(totalActivos)}</td><td></td>
+          <td colspan="7" style="text-align:right;padding-right:12px">TOTAL PAGADO</td>
+          <td style="text-align:right">$ ${fmt(totalPagados)}</td><td colspan="2"></td>
         </tr>
+        ${recibosPendientes.length ? `<tr class="total-row" style="background:#fff7ed;border-top:1px solid #fed7aa">
+          <td colspan="7" style="text-align:right;padding-right:12px;color:#c2410c">TOTAL PENDIENTE</td>
+          <td style="text-align:right;color:#c2410c">$ ${fmt(totalPendientes)}</td><td colspan="2"></td>
+        </tr>` : ''}
       </tbody>
     </table>
     <div class="footer">Instituto Neurociencias &middot; NIT 901164565-1 &middot; Reporte generado automáticamente</div>
@@ -542,6 +550,44 @@ router.put('/recibos/:id', requireAuth, requireRoleOrPerm(['superadmin'], 'recib
     emitSocket('recibo:actualizar-lista'); emitSocket('stats:actualizar');
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: safeError(err) }); }
+});
+
+// PATCH /api/recibos/:id/total — solo superadministrador
+router.patch('/recibos/:id/total', requireAuth, async (req, res) => {
+  if (req.session?.rol !== 'superadmin') {
+    return res.status(403).json({ error: 'Solo el superadministrador puede cambiar el valor del recibo' });
+  }
+  const id = parseReciboId(req.params.id);
+  if (id === null) return res.status(400).json({ error: 'ID de recibo inválido' });
+  const { total } = req.body || {};
+  const totalNum = Number(total);
+  if (!Number.isFinite(totalNum) || totalNum < 0) {
+    return res.status(400).json({ error: 'El valor debe ser un número mayor o igual a 0' });
+  }
+  try {
+    const rows = await db.query('SELECT id, anulado, data FROM recibos WHERE id=?', [id]);
+    if (!rows.length) return res.status(404).json({ error: 'Recibo no encontrado' });
+    if (rows[0].anulado) return res.status(400).json({ error: 'No se puede editar un recibo anulado' });
+    let dataJson = null;
+    if (rows[0].data) {
+      try {
+        dataJson = typeof rows[0].data === 'string' ? JSON.parse(rows[0].data) : rows[0].data;
+      } catch (_) { dataJson = null; }
+    }
+    if (dataJson && typeof dataJson === 'object') {
+      const iva = Number(dataJson.iva || 0);
+      dataJson.total = totalNum;
+      dataJson.subtotal = Math.max(0, totalNum - iva);
+      await db.execute('UPDATE recibos SET total = ?, data = ? WHERE id = ?', [totalNum, JSON.stringify(dataJson), id]);
+    } else {
+      await db.execute('UPDATE recibos SET total = ? WHERE id = ?', [totalNum, id]);
+    }
+    emitSocket('recibo:actualizar-lista');
+    emitSocket('stats:actualizar');
+    res.json({ ok: true, total: totalNum });
+  } catch (err) {
+    res.status(500).json({ error: safeError(err) });
+  }
 });
 
 // PATCH /api/recibos/:id/observaciones — solo superadministrador

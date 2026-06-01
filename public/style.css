@@ -398,6 +398,7 @@
   #tablaSavedItems .table-actions .btn-recibo-pdf,
   #tablaSavedItems .table-actions .btn-recibo-pagar,
   #tablaSavedItems .table-actions button.btn-recibo-tipo-pago,
+  #tablaSavedItems .table-actions button.btn-recibo-valor,
   #tablaSavedItems .table-actions button.btn-recibo-obs{
     width:28px!important;
     height:28px!important;
@@ -413,6 +414,7 @@
     height:14px!important;
   }
   #tablaSavedItems .table-actions button.btn-recibo-tipo-pago svg,
+  #tablaSavedItems .table-actions button.btn-recibo-valor svg,
   #tablaSavedItems .table-actions .btn-recibo-pagar svg{
     width:14px!important;
     height:14px!important;
