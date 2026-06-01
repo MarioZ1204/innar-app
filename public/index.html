@@ -1007,21 +1007,26 @@
       </div>
       <div id="sesionesMultiplesRow" style="display:none;margin-bottom:14px;padding:14px;border-radius:8px;background:#f0fdf4;border:1px solid #86efac">
         <div style="font-weight:600;font-size:.95rem;margin-bottom:4px;color:#166534">Programar varias sesiones</div>
-        <p style="margin:0 0 12px 0;font-size:.8rem;color:#4b5563">La fecha y hora de arriba corresponden a la <strong>primera</strong> sesión. En las siguientes se verifica si esa hora está libre; si está ocupada, podrá elegir otra en la tabla.</p>
+        <p style="margin:0 0 12px 0;font-size:.8rem;color:#4b5563">Arriba: <strong>fecha y hora de la 1.ª sesión</strong>. Abajo: <strong>fecha y hora de la 2.ª</strong> (fecha por defecto +7 días). Puede repetir el mismo día con otra hora. Del 3.º en adelante: mismos días de intervalo; ajuste la hora en la tabla si hace falta.</p>
         <div class="row" style="margin-bottom:10px">
           <div class="col" style="max-width:160px">
             <label>Cantidad de sesiones</label>
             <input type="number" id="sesionesMultiplesCantidad" min="1" max="52" value="2" style="width:100%" />
           </div>
         </div>
-        <label style="display:block;margin-bottom:6px;font-size:.875rem">Días de la semana</label>
-        <div id="sesionesMultiplesDias" style="display:flex;flex-wrap:wrap;gap:10px 14px;margin-bottom:12px;font-size:.875rem">
-          <label style="cursor:pointer"><input type="checkbox" class="sesion-dia-check" value="1" checked /> Lun</label>
-          <label style="cursor:pointer"><input type="checkbox" class="sesion-dia-check" value="2" checked /> Mar</label>
-          <label style="cursor:pointer"><input type="checkbox" class="sesion-dia-check" value="3" checked /> Mié</label>
-          <label style="cursor:pointer"><input type="checkbox" class="sesion-dia-check" value="4" checked /> Jue</label>
-          <label style="cursor:pointer"><input type="checkbox" class="sesion-dia-check" value="5" checked /> Vie</label>
-          <label style="cursor:pointer"><input type="checkbox" class="sesion-dia-check" value="6" /> Sáb</label>
+        <div class="row" id="sesionesMultiplesIntervaloRow" style="margin-bottom:10px">
+          <div class="col">
+            <label>Fecha 2.ª sesión <span style="color:#dc2626">*</span></label>
+            <input type="date" id="sesionesMultiplesFechaSegunda" style="width:100%" />
+          </div>
+          <div class="col" style="max-width:130px">
+            <label>Hora 2.ª sesión <span style="color:#dc2626">*</span></label>
+            <input type="time" id="sesionesMultiplesHoraSegunda" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:.95rem" />
+          </div>
+          <div class="col" style="max-width:140px">
+            <label>Días entre sesiones</label>
+            <input type="number" id="sesionesMultiplesIntervaloDias" min="1" max="90" value="7" style="width:100%" title="Intervalo desde la 2.ª sesión hacia las siguientes" />
+          </div>
         </div>
         <div id="sesionesMultiplesPreview" style="font-size:.8rem;color:#374151;max-height:220px;overflow-y:auto;line-height:1.5">
           <table style="width:100%;border-collapse:collapse;font-size:.8rem">
