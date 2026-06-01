@@ -790,6 +790,34 @@ const runtimeMigrations = [
         );
       }
     }
+  },
+  {
+    name: 'rt_turnos_no_asistio_a_reprogramado',
+    description: 'Corrige turnos NO_ASISTIO que en realidad fueron reprogramados (existe cita hija con [Reprogramado])',
+    run: async (db) => {
+      const result = await db.execute(`
+        UPDATE turnos t_na
+        INNER JOIN turnos t_new ON t_new.id != t_na.id
+          AND t_new.doctor_id = t_na.doctor_id
+          AND t_new.notas LIKE '%[Reprogramado]%'
+          AND (
+            (t_na.paciente_documento IS NOT NULL AND TRIM(t_na.paciente_documento) != ''
+             AND t_new.paciente_documento = t_na.paciente_documento)
+            OR TRIM(LOWER(t_new.paciente_nombre)) = TRIM(LOWER(t_na.paciente_nombre))
+          )
+          AND (
+            t_new.fecha > t_na.fecha
+            OR (t_new.fecha = t_na.fecha AND t_new.hora >= t_na.hora)
+            OR t_new.creado_en >= t_na.creado_en
+          )
+        SET t_na.estado = 'REPROGRAMADO', t_na.numero_turno = NULL
+        WHERE t_na.estado = 'NO_ASISTIO'
+      `);
+      const affected = result?.affectedRows ?? result?.[0]?.affectedRows ?? 0;
+      if (affected > 0) {
+        console.info(`[RT-MIGRATION] rt_turnos_no_asistio_a_reprogramado: ${affected} turno(s) actualizados`);
+      }
+    }
   }
 ];
 

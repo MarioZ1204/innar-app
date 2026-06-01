@@ -42,9 +42,10 @@ const FORMATOS_AYUDA = {
     nota: 'Al descargar se añade el tipo de estudio (EEG) al nombre del archivo.'
   },
   psg: {
-    pattern: 'Apellidos, Nombres   YYYY-MM-DD.pdf',
-    ejemplo: 'García López, Juan Carlos   2026-05-27.pdf',
-    nota: 'Al descargar se añade el tipo de estudio (PSG Básica, PSG CPAP o PSG BPAP según la carpeta).'
+    pattern: 'NOMBRES - APELLIDOS - NÚMERO DE DOCUMENTO - FECHA - [texto opcional] - TIPO DE PSG.pdf',
+    ejemplo: 'Juan Carlos - García López - 1234567890 - 2026-05-27 - PSG Básica.pdf',
+    ejemplo_largo: 'Juan Carlos - García López - 1234567890 - 2026-05-27 - 21-21-12 - PSG BASAL.pdf',
+    nota: 'Entre la fecha y el tipo PSG puede haber uno o más segmentos opcionales (hora, sala, etc.). El último segmento debe ser el tipo de estudio (Básica, CPAP o BPAP).'
   },
   actigrafia: {
     pattern: 'Apellidos, Nombres   YYYY-MM-DD.pdf',
@@ -128,6 +129,32 @@ function estudioPsgReconocido(texto) {
 
 function esTemaEstructurado(tema) {
   return ['ordenes', 'comprobantes', 'consentimientos'].includes(tema);
+}
+
+function esTemaPsgReporte(tema) {
+  return tema === 'psg';
+}
+
+function esTemaFormatoGuionesCompleto(tema) {
+  return esTemaEstructurado(tema) || esTemaPsgReporte(tema);
+}
+
+/** Segmentos separados por guión con espacios (no parte de fechas ni horas 21-21-12). */
+function splitSegmentosGuionesEspaciados(texto) {
+  return String(texto || '')
+    .split(/\s+-\s+/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+}
+
+function splitPartesNombreGuiones(originalName) {
+  const sinPdf = String(originalName || '').trim().replace(/\.pdf$/i, '');
+  return splitSegmentosGuionesEspaciados(sinPdf);
+}
+
+function documentoValidoPsg(doc) {
+  const d = String(doc || '').replace(/\s/g, '');
+  return /^[\d.\-]{4,20}$/.test(d);
 }
 
 function inferirEstudioDesdeCarpeta(carpeta) {
@@ -284,6 +311,62 @@ function normalizarNombreConsentimiento(parts) {
   return `${apellidos} - ${nombres} - ${tipo_documento} - ${paciente_documento} - ${fecha} - ${estudio}.pdf`;
 }
 
+/** PSG reportes: NOMBRES - APELLIDOS - DOCUMENTO - FECHA - [opcional…] - TIPO PSG */
+function normalizarNombrePsg(parts) {
+  const { nombres, apellidos, paciente_documento, fecha, estudio, extras } = parts;
+  const mid = extras ? ` - ${extras}` : '';
+  return `${nombres} - ${apellidos} - ${paciente_documento} - ${fecha}${mid} - ${estudio}.pdf`;
+}
+
+function parseNombrePsg(originalName, estudios = []) {
+  const base = String(originalName || '').trim();
+  const fechaMatch = base.match(/(\d{4}-\d{2}-\d{2})/);
+  if (!fechaMatch) {
+    return { ok: false, original: base, error: mensajeErrorFormato('psg') };
+  }
+  const fecha = fechaMatch[1];
+  const sinPdf = base.replace(/\.pdf$/i, '');
+  const idxFecha = fechaMatch.index;
+  const beforeFecha = sinPdf.slice(0, idxFecha).replace(/\s*-\s*$/,'').trim();
+  const afterFecha = sinPdf.slice(idxFecha + fecha.length).replace(/^\s*-\s*/, '').trim();
+
+  const beforeParts = splitSegmentosGuionesEspaciados(beforeFecha);
+  if (beforeParts.length < 3) {
+    return { ok: false, original: base, error: mensajeErrorFormato('psg') };
+  }
+  const nombres = beforeParts[0];
+  const apellidos = beforeParts[1];
+  const paciente_documento = String(beforeParts[2] || '').replace(/\s/g, '');
+  if (!documentoValidoPsg(paciente_documento)) {
+    return { ok: false, original: base, error: mensajeErrorFormato('psg') };
+  }
+
+  const afterParts = afterFecha ? splitSegmentosGuionesEspaciados(afterFecha) : [];
+  if (!afterParts.length) {
+    return { ok: false, original: base, error: mensajeErrorFormato('psg') };
+  }
+  const estudioRaw = afterParts[afterParts.length - 1];
+  const extras = afterParts.length > 1 ? afterParts.slice(0, -1).join(' - ') : '';
+  const estudio = resolverEstudioDesdeLista(estudioRaw, estudios) || estudioRaw.trim();
+  const pacienteNombre = `${apellidos}, ${nombres}`;
+  return {
+    ok: true,
+    original: base,
+    apellidos,
+    nombres,
+    paciente_nombre: pacienteNombre,
+    paciente_nombre_norm: normalizarNombreBusqueda(pacienteNombre),
+    paciente_documento,
+    tipo_documento: '',
+    fecha_estudio: fecha,
+    marca_tiempo: extras,
+    sufijo_numero: '',
+    estudio_texto: estudio,
+    formato: 'psg',
+    nombre_display: normalizarNombrePsg({ nombres, apellidos, paciente_documento, fecha, estudio, extras })
+  };
+}
+
 function parseNombrePorCarpeta(originalName, carpeta, estudios = []) {
   const tema = detectarTemaCarpeta(carpeta?.nombre_display || '');
   switch (tema) {
@@ -293,6 +376,8 @@ function parseNombrePorCarpeta(originalName, carpeta, estudios = []) {
       return parseNombreComprobante(originalName, estudios);
     case 'consentimientos':
       return parseNombreConsentimiento(originalName, estudios);
+    case 'psg':
+      return parseNombrePsg(originalName, estudios);
     default:
       return parseNombreSimple(originalName);
   }
@@ -327,7 +412,7 @@ function appendEstudioAlNombre(nombreArchivo, estudio) {
 function nombreArchivoDescarga(meta, carpeta) {
   const original = meta.nombre_archivo_original || meta.original || '';
   const tema = detectarTemaCarpeta(carpeta?.nombre_display || '');
-  if (['ordenes', 'comprobantes', 'consentimientos'].includes(tema)) {
+  if (esTemaFormatoGuionesCompleto(tema)) {
     return meta.nombre_archivo_display || original;
   }
   const estudio = meta.estudio_texto || inferirEstudioDesdeCarpeta(carpeta);
@@ -364,9 +449,31 @@ function extraerDatosParcialesNombre(originalName, carpeta, estudios = []) {
   const fechaMatch = base.match(/(\d{4}-\d{2}-\d{2})/);
   if (fechaMatch) parcial.fecha_estudio = fechaMatch[1];
 
-  if (esTemaEstructurado(tema)) {
-    const sinPdf = base.replace(/\.pdf$/i, '').trim();
-    const parts = sinPdf.split(/\s*-\s*/).map((p) => p.trim()).filter(Boolean);
+  if (tema === 'psg') {
+    const parsedTry = parseNombrePsg(base, estudios);
+    if (parsedTry.ok) {
+      parcial.nombres = parsedTry.nombres;
+      parcial.apellidos = parsedTry.apellidos;
+      parcial.paciente_documento = parsedTry.paciente_documento;
+      parcial.fecha_estudio = parsedTry.fecha_estudio;
+      parcial.estudio_texto = parsedTry.estudio_texto;
+    } else {
+      const fechaMatch = base.match(/(\d{4}-\d{2}-\d{2})/);
+      if (fechaMatch) {
+        parcial.fecha_estudio = fechaMatch[1];
+        const sinPdf = base.replace(/\.pdf$/i, '');
+        const before = sinPdf.slice(0, fechaMatch.index).replace(/\s*-\s*$/,'').trim();
+        const after = sinPdf.slice(fechaMatch.index + fechaMatch[1].length).replace(/^\s*-\s*/, '').trim();
+        const bp = splitSegmentosGuionesEspaciados(before);
+        if (bp.length >= 1) parcial.nombres = bp[0];
+        if (bp.length >= 2) parcial.apellidos = bp[1];
+        if (bp.length >= 3) parcial.paciente_documento = String(bp[2]).replace(/\s/g, '');
+        const ap = splitSegmentosGuionesEspaciados(after);
+        if (ap.length) parcial.estudio_texto = ap[ap.length - 1];
+      }
+    }
+  } else if (esTemaEstructurado(tema)) {
+    const parts = splitPartesNombreGuiones(base);
     let offset = 0;
     if (tema === 'ordenes' && parts[0] && /orden/i.test(parts[0])) offset = 1;
     if (tema === 'comprobantes' && parts[0] && /comprobante/i.test(parts[0])) offset = 1;
@@ -472,6 +579,7 @@ function buildMetaDesdeCamposManuales(originalName, body, carpeta) {
     if (!paciente_documento) return { ok: false, error: 'El número de documento es obligatorio' };
   } else if (tema === 'psg') {
     estudio = resolverEstudioDesdeLista(estudio, estudios) || estudio;
+    if (!paciente_documento) return { ok: false, error: 'El número de documento es obligatorio' };
     if (!estudioPsgReconocido(estudio)) {
       return { ok: false, error: 'Seleccione el tipo de estudio PSG (Básica, CPAP o BPAP)' };
     }
@@ -513,6 +621,13 @@ function buildMetaDesdeCamposManuales(originalName, body, carpeta) {
     base.nombre_display = normalizarNombreConsentimiento({
       apellidos, nombres, tipo_documento, paciente_documento, fecha, estudio
     });
+  } else if (tema === 'psg') {
+    const extras = String(body.extras_opcionales || body.marca_tiempo || '').trim();
+    base.formato = 'psg';
+    base.marca_tiempo = extras;
+    base.nombre_display = normalizarNombrePsg({
+      nombres, apellidos, paciente_documento, fecha, estudio, extras
+    });
   } else {
     base.formato = 'simple';
   }
@@ -545,6 +660,12 @@ module.exports = {
   PSG_TIPOS_ESTUDIO,
   estudioPsgReconocido,
   esTemaEstructurado,
+  esTemaPsgReporte,
+  esTemaFormatoGuionesCompleto,
+  parseNombrePsg,
+  normalizarNombrePsg,
+  splitPartesNombreGuiones,
+  documentoValidoPsg,
   extraerDatosParcialesNombre,
   analizarNombreArchivo,
   buildMetaDesdeCamposManuales,

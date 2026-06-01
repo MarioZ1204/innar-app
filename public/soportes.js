@@ -50,9 +50,9 @@
       nota: 'Al descargar se añade el tipo de estudio (EEG) al nombre del archivo.'
     },
     psg: {
-      pattern: 'Apellidos, Nombres   YYYY-MM-DD.pdf',
-      ejemplo: 'García López, Juan Carlos   2026-05-27.pdf',
-      nota: 'Al descargar se añade el tipo de estudio (PSG Básica, PSG CPAP o PSG BPAP según la carpeta).'
+      pattern: 'NOMBRES - APELLIDOS - NÚMERO DE DOCUMENTO - FECHA - [texto opcional] - TIPO DE PSG.pdf',
+      ejemplo: 'Juan Carlos - García López - 1234567890 - 2026-05-27 - PSG Básica.pdf',
+      nota: 'Entre la fecha y el tipo PSG puede haber segmentos opcionales (hora, sala, etc.). El último segmento es el tipo de estudio.'
     },
     actigrafia: {
       pattern: 'Apellidos, Nombres   YYYY-MM-DD.pdf',
@@ -92,6 +92,14 @@
   function esCarpetaEstructuradaPdx(carpetaOrNombre) {
     const t = detectarTemaCarpetaCliente(typeof carpetaOrNombre === 'string' ? carpetaOrNombre : carpetaOrNombre?.nombre_display);
     return ['ordenes', 'comprobantes', 'consentimientos'].includes(t);
+  }
+
+  function esCarpetaPsgReportePdx(carpetaOrNombre) {
+    return detectarTemaCarpetaCliente(typeof carpetaOrNombre === 'string' ? carpetaOrNombre : carpetaOrNombre?.nombre_display) === 'psg';
+  }
+
+  function splitSegmentosGuionesEspaciadosCliente(texto) {
+    return String(texto || '').split(/\s+-\s+/).map((p) => p.trim()).filter(Boolean);
   }
 
   function esCarpetaOrdenesPdx(carpetaOrNombre) {
@@ -145,9 +153,19 @@
     const fechaMatch = base.match(/(\d{4}-\d{2}-\d{2})/);
     if (fechaMatch) parcial.fecha_estudio = fechaMatch[1];
 
-    if (esCarpetaEstructuradaPdx(carpeta)) {
-      const sinPdf = base.replace(/\.pdf$/i, '').trim();
-      const parts = sinPdf.split(/\s*-\s*/).map((p) => p.trim()).filter(Boolean);
+    if (tema === 'psg') {
+      const parsedTry = parseNombrePsgCliente(base);
+      if (parsedTry.ok) {
+        Object.assign(parcial, {
+          nombres: parsedTry.nombres,
+          apellidos: parsedTry.apellidos,
+          paciente_documento: parsedTry.paciente_documento,
+          fecha_estudio: parsedTry.fecha_estudio,
+          estudio_texto: parsedTry.estudio_texto
+        });
+      }
+    } else if (esCarpetaEstructuradaPdx(carpeta)) {
+      const parts = splitPartesGuionesCliente(base);
       let offset = 0;
       if (tema === 'ordenes' && parts[0] && /orden/i.test(parts[0])) offset = 1;
       if (tema === 'comprobantes' && parts[0] && /comprobante/i.test(parts[0])) offset = 1;
@@ -263,12 +281,55 @@
     return parseNombreEstructuradoCliente(originalName, RE_CONSENTIMIENTO_CLIENT, 'consentimientos');
   }
 
+  function parseNombrePsgCliente(originalName) {
+    const base = String(originalName || '').trim();
+    const fechaMatch = base.match(/(\d{4}-\d{2}-\d{2})/);
+    if (!fechaMatch) {
+      return { ok: false, original: base, error: mensajeErrorFormatoCliente('psg') };
+    }
+    const fecha_estudio = fechaMatch[1];
+    const sinPdf = base.replace(/\.pdf$/i, '');
+    const beforeParts = splitSegmentosGuionesEspaciadosCliente(
+      sinPdf.slice(0, fechaMatch.index).replace(/\s*-\s*$/,'').trim()
+    );
+    const afterFecha = sinPdf.slice(fechaMatch.index + fecha_estudio.length).replace(/^\s*-\s*/, '').trim();
+    if (beforeParts.length < 3) {
+      return { ok: false, original: base, error: mensajeErrorFormatoCliente('psg') };
+    }
+    const nombres = beforeParts[0];
+    const apellidos = beforeParts[1];
+    const paciente_documento = String(beforeParts[2] || '').replace(/\s/g, '');
+    if (!/^[\d.\-]{4,20}$/.test(paciente_documento)) {
+      return { ok: false, original: base, error: mensajeErrorFormatoCliente('psg') };
+    }
+    const afterParts = afterFecha ? splitSegmentosGuionesEspaciadosCliente(afterFecha) : [];
+    if (!afterParts.length) {
+      return { ok: false, original: base, error: mensajeErrorFormatoCliente('psg') };
+    }
+    const estudio_texto = afterParts[afterParts.length - 1];
+    const marca_tiempo = afterParts.length > 1 ? afterParts.slice(0, -1).join(' - ') : '';
+    return {
+      ok: true,
+      original: base,
+      apellidos,
+      nombres,
+      paciente_nombre: `${apellidos}, ${nombres}`,
+      paciente_documento,
+      tipo_documento: '',
+      fecha_estudio,
+      marca_tiempo,
+      estudio_texto,
+      formato: 'psg'
+    };
+  }
+
   function parseNombrePorCarpetaCliente(originalName, carpeta) {
     const tema = detectarTemaCarpetaCliente(carpeta?.nombre_display || '');
     switch (tema) {
       case 'ordenes': return parseNombreOrdenesCliente(originalName);
       case 'comprobantes': return parseNombreComprobanteCliente(originalName);
       case 'consentimientos': return parseNombreConsentimientoCliente(originalName);
+      case 'psg': return parseNombrePsgCliente(originalName);
       default: return parseNombrePdxCliente(originalName);
     }
   }
@@ -1191,21 +1252,23 @@
 
   function modalEditarArchivoPdx(archivo) {
     const esEstruct = esCarpetaEstructuradaPdx(pdxState.carpetaActual);
+    const esPsg = esCarpetaPsgReportePdx(pdxState.carpetaActual);
     const modal = openSopModal(`
       <h3><i data-lucide="pencil"></i> Editar datos del reporte</h3>
       <div class="sop-field"><label>Apellidos</label><input type="text" id="sopPdxEdApe" value="${escapeHtml(archivo.apellidos || '')}"></div>
       <div class="sop-field"><label>Nombres</label><input type="text" id="sopPdxEdNom" value="${escapeHtml(archivo.nombres || '')}"></div>
       <div class="sop-field"><label>Fecha del estudio</label><input type="date" id="sopPdxEdFecha" value="${escapeHtml(archivo.fecha_estudio || '')}"></div>
-      ${esEstruct
+      ${esEstruct || esPsg
         ? '<div class="sop-field"><label>Tipo de examen *</label><select id="sopPdxEdEst"></select></div>'
         : `<div class="sop-field"><label>Nombre del estudio</label><input type="text" id="sopPdxEdEst" value="${escapeHtml(archivo.estudio_texto || '')}" placeholder="PSG BASAL, EEG, VTM…"></div>`}
-      <div class="sop-field"><label>Documento${esEstruct ? ' *' : ' (opcional)'}</label><input type="text" id="sopPdxEdDoc" value="${escapeHtml(archivo.paciente_documento || '')}"></div>
+      <div class="sop-field"><label>Documento${(esEstruct || esPsg) ? ' *' : ' (opcional)'}</label><input type="text" id="sopPdxEdDoc" value="${escapeHtml(archivo.paciente_documento || '')}"></div>
       <p style="margin:8px 0 0"><button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="sopPdxEdHist"><i data-lucide="history"></i> Ver historial</button></p>
       <div class="sop-dialog-actions">
         <button type="button" class="sop-btn sop-btn-ghost" id="sopPdxEdCancel">Cancelar</button>
         <button type="button" class="sop-btn sop-btn-primary" id="sopPdxEdOk">Guardar</button>
       </div>`);
-    if (esEstruct) poblarSelectEstudioPdx(modal.querySelector('#sopPdxEdEst'), archivo.estudio_texto);
+    if (esPsg) poblarSelectEstudioPsgCliente(modal.querySelector('#sopPdxEdEst'), archivo.estudio_texto);
+    else if (esEstruct) poblarSelectEstudioPdx(modal.querySelector('#sopPdxEdEst'), archivo.estudio_texto);
     modal.querySelector('#sopPdxEdHist')?.addEventListener('click', () => {
       closeSopModal(modal);
       modalHistorialPdx(archivo.id);
@@ -1298,6 +1361,10 @@
         return;
       }
       const parsed = analisis.parsed;
+      if (esCarpetaPsgReportePdx(carpeta)) {
+        modalSubidaPsgCompleto(file, carpetaId, carpeta, parsed, resolve, reject);
+        return;
+      }
       if (esCarpetaEstructuradaPdx(carpeta)) {
         modalSubidaEstructuradaCompleto(file, carpetaId, carpeta, parsed, resolve, reject);
         return;
@@ -1327,6 +1394,7 @@
       <div class="sop-field"><label>Nombres *</label><input type="text" id="sopPdxCorrNom" value="${escapeHtml(p.nombres || '')}"></div>
       ${esEstruct ? `
       <div class="sop-field"><label>Tipo de documento</label><input type="text" id="sopPdxCorrTipoDoc" value="${escapeHtml(p.tipo_documento || 'CC')}"></div>
+      <div class="sop-field"><label>Número de documento *</label><input type="text" id="sopPdxCorrDoc" value="${escapeHtml(p.paciente_documento || '')}" inputmode="numeric"></div>` : esPsg ? `
       <div class="sop-field"><label>Número de documento *</label><input type="text" id="sopPdxCorrDoc" value="${escapeHtml(p.paciente_documento || '')}" inputmode="numeric"></div>` : `
       <div class="sop-field"><label>Documento (opcional)</label><input type="text" id="sopPdxCorrDoc" value="${escapeHtml(p.paciente_documento || '')}" inputmode="numeric"></div>`}
       <div class="sop-field"><label>Fecha del estudio *</label><input type="date" id="sopPdxCorrFecha" value="${escapeHtml(p.fecha_estudio || '')}"></div>
@@ -1357,8 +1425,46 @@
       if (esEstruct && (!body.paciente_documento || !body.estudio_texto)) {
         return sopToast('Complete documento y tipo de examen', 'warning');
       }
-      if (esPsg && !body.estudio_texto) {
-        return sopToast('Seleccione el tipo de estudio PSG', 'warning');
+      if (esPsg && (!body.paciente_documento || !body.estudio_texto)) {
+        return sopToast('Complete documento y tipo de estudio PSG', 'warning');
+      }
+      try {
+        await subirArchivoPdx(file, carpetaId, body);
+        closeSopModal(modal);
+        sopToast('Archivo subido', 'success');
+        resolve();
+      } catch (e) { sopToast(e.message, 'error'); }
+    };
+  }
+
+  function modalSubidaPsgCompleto(file, carpetaId, carpeta, parsed, resolve, reject) {
+    const modal = openSopModal(`
+      <h3><i data-lucide="file-check"></i> Confirmar reporte PSG</h3>
+      <p style="font-size:.85rem;color:#64748b;margin:-8px 0 12px">El nombre cumple la estructura PSG. Revise los datos:</p>
+      <dl class="sop-upload-preview">
+        <dt>Archivo</dt><dd>${escapeHtml(file.name)}</dd>
+      </dl>
+      <div class="sop-field"><label>Nombres *</label><input type="text" id="sopPdxPsgNom" value="${escapeHtml(parsed.nombres)}"></div>
+      <div class="sop-field"><label>Apellidos *</label><input type="text" id="sopPdxPsgApe" value="${escapeHtml(parsed.apellidos)}"></div>
+      <div class="sop-field"><label>Número de documento *</label><input type="text" id="sopPdxPsgDoc" value="${escapeHtml(parsed.paciente_documento || '')}" inputmode="numeric"></div>
+      <div class="sop-field"><label>Fecha del estudio *</label><input type="date" id="sopPdxPsgFecha" value="${escapeHtml(parsed.fecha_estudio || '')}"></div>
+      <div class="sop-field"><label>Tipo de PSG *</label><select id="sopPdxPsgEst"></select></div>
+      <div class="sop-dialog-actions">
+        <button type="button" class="sop-btn sop-btn-ghost" id="sopPdxPsgUpCancel">Cancelar</button>
+        <button type="button" class="sop-btn sop-btn-primary" id="sopPdxPsgUpOk">Subir PDF</button>
+      </div>`);
+    poblarSelectEstudioPsgCliente(modal.querySelector('#sopPdxPsgEst'), parsed.estudio_texto);
+    modal.querySelector('#sopPdxPsgUpCancel').onclick = () => { closeSopModal(modal); reject(new Error('cancelado')); };
+    modal.querySelector('#sopPdxPsgUpOk').onclick = async () => {
+      const body = {
+        apellidos: modal.querySelector('#sopPdxPsgApe')?.value?.trim(),
+        nombres: modal.querySelector('#sopPdxPsgNom')?.value?.trim(),
+        paciente_documento: modal.querySelector('#sopPdxPsgDoc')?.value?.trim().replace(/\s/g, ''),
+        fecha_estudio: modal.querySelector('#sopPdxPsgFecha')?.value,
+        estudio_texto: modal.querySelector('#sopPdxPsgEst')?.value?.trim()
+      };
+      if (!body.apellidos || !body.nombres || !body.paciente_documento || !body.fecha_estudio || !body.estudio_texto) {
+        return sopToast('Complete nombres, apellidos, documento, fecha y tipo PSG', 'warning');
       }
       try {
         await subirArchivoPdx(file, carpetaId, body);

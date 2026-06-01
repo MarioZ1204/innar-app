@@ -102,9 +102,16 @@ function ymdLocal(d = new Date()) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+/** Hora programada (agendamiento) al iniciar sin cambiar hora — flujo «No» del modal. */
+function horaInicioAgendadaParaInicioEstudio(cita) {
+  const horaAg = String(cita?.hora_agendamiento || '').trim().slice(0, 5);
+  if (/^\d{2}:\d{2}$/.test(horaAg)) return horaAg;
+  return horaInicioCitaElectro(cita);
+}
+
 /**
  * Hora de inicio al pasar a En Estudio: si hoy y la agendada ya pasó, usar hora actual.
- * Evita fin programado en el pasado y auto-cierre inmediato.
+ * Solo para flujo «Sí» / solicitud cuando no se envía hora_inicio explícita.
  */
 function horaInicioEfectivaParaInicioEstudio(cita, ahora = new Date()) {
   const fechaBase = extraerFechaYmd(cita?.fecha);
@@ -145,6 +152,7 @@ module.exports = {
   paramsCitaElectroVisibleEnFecha,
   horaInicioCitaElectro,
   ymdLocal,
+  horaInicioAgendadaParaInicioEstudio,
   horaInicioEfectivaParaInicioEstudio,
   finProgramadoCitaElectro,
   estudioElectroFinProgramadoVencido,

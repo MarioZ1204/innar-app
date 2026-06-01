@@ -658,6 +658,10 @@ router.patch('/turnos/:id/estado', requireAuth, requireRoleOrPerm(['superadmin',
       return res.status(400).json({ error: 'No se puede modificar un turno ya atendido' });
     }
 
+    if (turno.estado === 'REPROGRAMADO' && estado === 'NO_ASISTIO') {
+      return res.status(400).json({ error: 'Una cita reprogramada no puede marcarse como no asistió' });
+    }
+
     if (estado === 'EN_ATENCION' && turno.estado !== 'EN_SALA') {
       return res.status(400).json({ error: 'Solo se puede pasar a EN_ATENCION desde EN_SALA' });
     }

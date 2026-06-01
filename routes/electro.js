@@ -20,6 +20,7 @@ const {
   sqlCitaElectroVisibleEnFecha,
   paramsCitaElectroVisibleEnFecha,
   horaInicioCitaElectro,
+  horaInicioAgendadaParaInicioEstudio,
   horaInicioEfectivaParaInicioEstudio,
   finProgramadoCitaElectro,
   sqlEstudioElectroFinProgramadoVencido
@@ -947,7 +948,7 @@ router.patch('/citas-electro/:id/estado', requireAuth, requireRoleOrPerm(['super
 // PATCH /api/citas-electro/:id
 router.patch('/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro', 'tecnico_electro'], ['electro.editar', 'electro.cambiar_estado']), async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  const { equipo_id, estado, hora_inicio, hora_fin, hora_agendamiento, fecha: rawFechaPatch, duracion_minutos, entidad, estudio } = req.body || {};
+  const { equipo_id, estado, hora_inicio, hora_fin, hora_agendamiento, fecha: rawFechaPatch, duracion_minutos, entidad, estudio, inicio_desde } = req.body || {};
   const fecha = rawFechaPatch !== undefined ? normalizeFecha(rawFechaPatch) : undefined;
   if (!id) return res.status(400).json({ error: 'id es obligatorio' });
   if (estado !== undefined && !ESTADOS_VALIDOS_ELECTRO.includes(estado)) {
@@ -1043,14 +1044,25 @@ router.patch('/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin',
         }
         if (esInicioEstudioNuevo) {
           const fechaIni = fecha || extraerFechaYmd(citaActual.fecha) || normalizeFecha(citaActual.fecha);
+          const modoInicio = String(inicio_desde || '').trim().toLowerCase();
           let horaIniStr;
-          if (hora_inicio != null && String(hora_inicio).trim() !== '') {
+          if (modoInicio === 'agendado') {
+            horaIniStr = horaInicioAgendadaParaInicioEstudio(citaActual) || '';
+          } else if (modoInicio === 'solicitud') {
+            if (hora_inicio != null && String(hora_inicio).trim() !== '') {
+              horaIniStr = String(hora_inicio).trim().slice(0, 5);
+            } else {
+              horaIniStr = horaInicioEfectivaParaInicioEstudio(citaActual) || '';
+            }
+          } else if (hora_inicio != null && String(hora_inicio).trim() !== '') {
             horaIniStr = String(hora_inicio).trim().slice(0, 5);
           } else {
-            horaIniStr = horaInicioEfectivaParaInicioEstudio(citaActual)
-              || (hora_agendamiento != null ? String(hora_agendamiento).trim().slice(0, 5) : '')
-              || horaInicioCitaElectro(citaActual)
+            horaIniStr = horaInicioAgendadaParaInicioEstudio(citaActual)
+              || horaInicioEfectivaParaInicioEstudio(citaActual)
               || '';
+          }
+          if (!/^\d{2}:\d{2}$/.test(horaIniStr)) {
+            return res.status(400).json({ error: 'No se pudo determinar la hora de inicio del estudio' });
           }
           const durIni = parseInt(duracion_minutos ?? citaActual.duracion_minutos, 10);
           if (fechaIni && /^\d{2}:\d{2}$/.test(horaIniStr) && durIni > 0) {

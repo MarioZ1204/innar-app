@@ -100,14 +100,53 @@ describe('soportes-pdx-parse — formatos estructurados', () => {
   });
 });
 
-describe('soportes-pdx-parse — corrección manual', () => {
-  test('PSG sin sufijo de estudio requiere corrección', () => {
-    const carpeta = { nombre_display: 'PSG MARZO' };
-    const a = analizarNombreArchivo('García López, Juan Carlos   2026-05-27.pdf', carpeta);
+describe('soportes-pdx-parse — carpeta PSG', () => {
+  test('acepta formato mínimo con guiones', () => {
+    const p = parseNombrePorCarpeta(
+      'Juan Carlos - García López - 1234567890 - 2026-05-27 - PSG Básica.pdf',
+      { nombre_display: 'REPORTES PSG MARZO' },
+      []
+    );
+    expect(p.ok).toBe(true);
+    expect(p.nombres).toBe('Juan Carlos');
+    expect(p.apellidos).toBe('García López');
+    expect(p.paciente_documento).toBe('1234567890');
+    expect(p.fecha_estudio).toBe('2026-05-27');
+    expect(p.estudio_texto).toBe('PSG Básica');
+    expect(p.formato).toBe('psg');
+  });
+
+  test('acepta segmentos opcionales entre fecha y tipo PSG', () => {
+    const p = parseNombrePorCarpeta(
+      'Nancy - Arcos Enriquez - 52987654 - 2026-03-14 - 21-21-12 - PSG BASAL.pdf',
+      { nombre_display: 'PSG MARZO' },
+      []
+    );
+    expect(p.ok).toBe(true);
+    expect(p.marca_tiempo).toBe('21-21-12');
+    expect(p.estudio_texto).toBe('PSG BASAL');
+  });
+
+  test('rechaza formato antiguo solo con coma', () => {
+    const p = parseNombrePorCarpeta(
+      'García López, Juan Carlos   2026-05-27.pdf',
+      { nombre_display: 'PSG MARZO' },
+      []
+    );
+    expect(p.ok).toBe(false);
+  });
+
+  test('analizar requiere corrección si falta tipo PSG al final', () => {
+    const a = analizarNombreArchivo(
+      'Juan - García - 1234567890 - 2026-05-27 - sala 3.pdf',
+      { nombre_display: 'PSG MARZO' }
+    );
     expect(a.ok).toBe(false);
-    expect(a.requiere_correccion).toBe(true);
     expect(a.motivo).toBe('falta_estudio_psg');
   });
+});
+
+describe('soportes-pdx-parse — corrección manual', () => {
 
   test('estudioPsgReconocido acepta CPAP y Básica', () => {
     expect(estudioPsgReconocido('PSG CPAP')).toBe(true);
@@ -121,6 +160,7 @@ describe('soportes-pdx-parse — corrección manual', () => {
       {
         apellidos: 'García',
         nombres: 'Juan',
+        paciente_documento: '1234567890',
         fecha_estudio: '2026-05-27',
         estudio_texto: 'PSG CPAP'
       },
@@ -128,6 +168,7 @@ describe('soportes-pdx-parse — corrección manual', () => {
     );
     expect(meta.ok).toBe(true);
     expect(meta.estudio_texto).toBe('PSG CPAP');
+    expect(meta.nombre_display).toBe('Juan - García - 1234567890 - 2026-05-27 - PSG CPAP.pdf');
   });
 
   test('buildMetaFromUpload con confirmacion_manual en órdenes', () => {

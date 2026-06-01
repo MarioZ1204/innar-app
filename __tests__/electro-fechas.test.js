@@ -1,6 +1,7 @@
 const {
   finProgramadoCitaElectro,
   estudioElectroFinProgramadoVencido,
+  horaInicioAgendadaParaInicioEstudio,
   horaInicioEfectivaParaInicioEstudio,
   sqlEstudioElectroFinProgramadoVencido
 } = require('../utils/electro-fechas');
@@ -43,9 +44,10 @@ describe('electro-fechas', () => {
     expect(estudioElectroFinProgramadoVencido(cita, ahora)).toBe(true);
   });
 
-  test('hora inicio efectiva usa hora actual si agendada ya pasó hoy', () => {
+  test('hora inicio agendada ignora hora actual (flujo No)', () => {
     const cita = { fecha: '2026-05-27', hora_agendamiento: '09:00' };
     const ahora = new Date('2026-05-27T11:20:00');
+    expect(horaInicioAgendadaParaInicioEstudio(cita)).toBe('09:00');
     expect(horaInicioEfectivaParaInicioEstudio(cita, ahora)).toBe('11:20');
   });
 

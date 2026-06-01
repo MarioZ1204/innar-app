@@ -645,7 +645,10 @@ function goToModule(moduleId) {
   history.pushState({view: moduleId}, '', `#${moduleId}`);
   if (moduleId === 'recibos') {
     if (!initRecibosDone) initRecibos();
-    else cargarLista(_recibosLastParams || '');
+    else {
+      cargarLista(_recibosLastParams || '');
+      if (_recibosFiltrosUI) restaurarEstadoFiltrosRecibosUI(_recibosFiltrosUI);
+    }
     recargarSelectsEntidadModulo('recibos', { force: true });
     if ($('filtroEntidad')) cargarFiltrosOpciones({ force: true });
   }
@@ -818,7 +821,7 @@ function setupMenuHandlers() {
       document.querySelectorAll('#view-recibos .page').forEach(p => p.classList.remove('active'));
       const pg = document.getElementById(`page-${page}`);
       if (pg) pg.classList.add('active');
-      if (page === 'recibos') { cargarLista(_recibosLastParams || ''); cargarFiltrosUsuarios(); if ($('resetAll')) $('resetAll').style.display = canDeleteRecibos() ? 'inline-block' : 'none'; }
+      if (page === 'recibos') { cargarLista(_recibosLastParams || ''); if ($('resetAll')) $('resetAll').style.display = canDeleteRecibos() ? 'inline-block' : 'none'; }
       if (page === 'servicios') renderServiciosList();
     });
   });
@@ -2799,6 +2802,7 @@ async function cargarServiciosEnRecibo() {
 async function cargarFiltrosMedicos() {
   const sel = $('filtroMedico');
   if (!sel) return;
+  const snapshot = estadoFiltrosRecibosParaRestaurar();
   try {
     const res = await apiFetch('/api/medicos');
     const medicos = res.ok ? await res.json() : [];
@@ -2818,13 +2822,29 @@ async function cargarFiltrosMedicos() {
     optElectro.value = 'ELECTRODIAGNOSTICOS';
     optElectro.textContent = 'ELECTRODIAGNÓSTICOS';
     sel.appendChild(optElectro);
+    if (sel._ms) sel._ms.refresh();
+    restaurarEstadoFiltrosRecibosUI(snapshot);
   } catch (e) { console.warn('[cargarFiltrosMedicos] Error:', e.message); }
+}
+
+function syncGeneradorActualEnFiltroRecibos() {
+  const sel = $('filtroGeneradoPor');
+  const uid = currentUser?.id;
+  if (!sel || uid == null) return;
+  const id = String(uid);
+  if (Array.from(sel.options).some(o => o.value === id)) return;
+  const opt = document.createElement('option');
+  opt.value = id;
+  opt.textContent = currentUser.nombre || currentUser.usuario || id;
+  sel.appendChild(opt);
+  if (sel._ms) sel._ms.refresh();
 }
 
 // ---- Cargar usuarios que han generado recibos en filtro ----
 async function cargarFiltrosUsuarios() {
   const sel = $('filtroGeneradoPor');
   if (!sel) return;
+  const snapshot = estadoFiltrosRecibosParaRestaurar();
   try {
     const res = await apiFetch('/api/recibos/generadores');
     const generadores = res.ok ? await res.json() : [];
@@ -2836,6 +2856,8 @@ async function cargarFiltrosUsuarios() {
       opt.textContent = u.nombre || String(u.id);
       sel.appendChild(opt);
     });
+    if (sel._ms) sel._ms.refresh();
+    restaurarEstadoFiltrosRecibosUI(snapshot);
   } catch (e) { console.warn('[cargarFiltrosUsuarios] Error:', e.message); }
 }
 
@@ -3010,15 +3032,18 @@ async function cargarEntidadesEnRecibo(opts = {}) {
 }
 
 async function cargarFiltrosOpciones({ force = false } = {}) {
+  const snapshot = estadoFiltrosRecibosParaRestaurar();
   try {
     const { entidades, estudios } = await fetchCatalogoEntidadesOpciones({ force });
     const selEnt = $('filtroEntidad');
     if (selEnt) {
+      const entVals = _msValues(selEnt);
       _poblarSelectEntidades(selEnt, entidades, {
         placeholder: 'Todas',
         incluirParticular: true,
-        valorPrevio: selEnt.value
+        valorPrevio: entVals[0] || selEnt.value
       });
+      if (selEnt._ms) selEnt._ms.refresh();
     }
     const selEstudio = $('filtroEstudio');
     const estudiosArr = Array.isArray(estudios) ? estudios : [];
@@ -3030,7 +3055,9 @@ async function cargarFiltrosOpciones({ force = false } = {}) {
         opt.value = v; opt.textContent = v;
         selEstudio.appendChild(opt);
       });
+      if (selEstudio._ms) selEstudio._ms.refresh();
     }
+    restaurarEstadoFiltrosRecibosUI(snapshot);
   } catch (e) { console.warn('[cargarFiltrosOpciones] Error:', e.message); }
 }
 async function buscarCitaParaRecibo() {
@@ -7289,29 +7316,26 @@ function construirDateHoraElectro(fechaBase, horaStr) {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
-/** Hora de inicio al pulsar "No" (sin ajustar): siempre la hora agendada. */
+/** Hora de inicio al pulsar «No»: solo hora_agendamiento (programada), nunca la hora actual. */
 function obtenerHoraInicioAgendadaElectro(cita) {
   const horaAgendada = String(cita?.hora_agendamiento || '').slice(0, 5);
-  if (/^\d{2}:\d{2}$/.test(horaAgendada)) return horaAgendada;
-  const ahora = new Date();
-  return `${String(ahora.getHours()).padStart(2, '0')}:${String(ahora.getMinutes()).padStart(2, '0')}`;
+  return /^\d{2}:\d{2}$/.test(horaAgendada) ? horaAgendada : null;
 }
 
-/** Hora base para calcular fin real (En Estudio): no usar inicio agendado si ya pasó hoy. */
+/** true si fin = inicio programado + duración ya pasó (relevante al elegir «No» tarde). */
+function electroFinProgramadoYaPaso(fechaCita, horaInicio, duracionMinutos) {
+  const finCalc = calcularHoraFinElectroDesdeInicio(fechaCita, horaInicio, duracionMinutos);
+  if (!finCalc) return false;
+  const finDate = construirDateHoraElectro(finCalc.horaFinDate || fechaCita, finCalc.horaFin);
+  return !!(finDate && finDate.getTime() <= Date.now());
+}
+
+/** Hora base para calcular fin real: la guardada en BD (inicio real), no la hora actual. */
 function obtenerHoraInicioCalculoFinElectro(cita) {
   const horaInicio = String(cita?.hora_inicio || '').slice(0, 5);
+  if (/^\d{2}:\d{2}$/.test(horaInicio)) return horaInicio;
   const horaAg = String(cita?.hora_agendamiento || '').slice(0, 5);
-  const base = /^\d{2}:\d{2}$/.test(horaInicio) ? horaInicio : horaAg;
-  if (!/^\d{2}:\d{2}$/.test(base)) return null;
-  const fechaBase = obtenerFechaElectroBase10(cita?.fecha);
-  const hoy = hoyColombiaISO();
-  if ((cita?.estado === 'En Estudio' || cita?.estado === 'Pausado') && fechaBase === hoy) {
-    return obtenerHoraInicioRecomendadaParaEstudio({
-      fecha: cita.fecha,
-      hora_agendamiento: base
-    });
-  }
-  return base;
+  return /^\d{2}:\d{2}$/.test(horaAg) ? horaAg : null;
 }
 
 function fechaYmdDesdeDate(d) {
@@ -7319,21 +7343,10 @@ function fechaYmdDesdeDate(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-/** Hora de inicio al abrir modal de duración: la mayor entre agendada y ahora (mismo día). */
-function obtenerHoraInicioRecomendadaParaEstudio(cita) {
+/** Hora de inicio al pulsar «Sí» en el modal: hora actual al solicitar el inicio. */
+function obtenerHoraInicioSolicitudElectro() {
   const ahora = new Date();
-  const horaAhora = `${String(ahora.getHours()).padStart(2, '0')}:${String(ahora.getMinutes()).padStart(2, '0')}`;
-  const horaAgendada = String(cita?.hora_agendamiento || '').slice(0, 5);
-  if (!/^\d{2}:\d{2}$/.test(horaAgendada)) return horaAhora;
-
-  const fechaBase = obtenerFechaElectroBase10(cita?.fecha);
-  const hoy = hoyColombiaISO();
-  if (!fechaBase || fechaBase !== hoy) return horaAgendada;
-
-  const [ah, am] = horaAhora.split(':').map(Number);
-  const [gh, gm] = horaAgendada.split(':').map(Number);
-  if (ah * 60 + am > gh * 60 + gm) return horaAhora;
-  return horaAgendada;
+  return `${String(ahora.getHours()).padStart(2, '0')}:${String(ahora.getMinutes()).padStart(2, '0')}`;
 }
 
 /**
@@ -9717,7 +9730,7 @@ async function saveToDatabase(){
       showToast('✓ Recibo guardado', 'success');
       updateSavedCount();
       nextNumber();
-      cargarFiltrosUsuarios();
+      syncGeneradorActualEnFiltroRecibos();
     } else {
       showToast('Error guardando: ' + (json.error || 'desconocido'), 'error');
     }
@@ -9808,6 +9821,74 @@ async function abrirPDF(){
 
 // ---- Filtros activos para exportación ----
 let _recibosLastParams = '';
+let _recibosFiltrosUI = null;
+
+function _msValuesRecibo(sel) {
+  if (!sel) return [];
+  if (sel._ms) return sel._ms.getValues();
+  return sel.value ? [sel.value] : [];
+}
+
+function _msSetValuesRecibo(sel, vals) {
+  if (!sel) return;
+  const arr = Array.isArray(vals) ? vals.map(String).filter(Boolean) : String(vals || '').split(',').filter(Boolean);
+  if (sel._ms) sel._ms.setValues(arr);
+  else sel.value = arr[0] || '';
+}
+
+function capturarEstadoFiltrosRecibosUI() {
+  const wrap = $('filtroTipoConsultaWrap');
+  return {
+    fechaDesde: $('filtroFechaDesde')?.value || '',
+    fechaHasta: $('filtroFechaHasta')?.value || '',
+    tipoPago: _msValuesRecibo($('filtroTipoPago')),
+    medico: _msValuesRecibo($('filtroMedico')),
+    generadoPor: _msValuesRecibo($('filtroGeneradoPor')),
+    entidad: _msValuesRecibo($('filtroEntidad')),
+    tipoConsulta: _msValuesRecibo($('filtroTipoConsulta')),
+    estudio: _msValuesRecibo($('filtroEstudio')),
+    especialidad: _msValuesRecibo($('filtroEspecialidad')),
+    estadoPago: _msValuesRecibo($('filtroEstadoPago')),
+    anulado: _msValuesRecibo($('filtroAnulado')),
+    palabraClave: $('filtroPalabraClave')?.value?.trim() || '',
+    tipoConsultaWrapVisible: wrap ? wrap.style.display !== 'none' : false
+  };
+}
+
+function _filtrosRecibosTienenSeleccion(state) {
+  if (!state) return false;
+  return !!(state.fechaDesde || state.fechaHasta || state.palabraClave ||
+    state.tipoPago?.length || state.medico?.length || state.generadoPor?.length ||
+    state.entidad?.length || state.tipoConsulta?.length || state.estudio?.length ||
+    state.especialidad?.length || state.estadoPago?.length ||
+    (state.anulado?.length && !(state.anulado.length === 1 && state.anulado[0] === 'no')));
+}
+
+function estadoFiltrosRecibosParaRestaurar() {
+  const dom = capturarEstadoFiltrosRecibosUI();
+  return _filtrosRecibosTienenSeleccion(dom) ? dom : (_recibosFiltrosUI || dom);
+}
+
+function restaurarEstadoFiltrosRecibosUI(state) {
+  if (!state) return;
+  if ($('filtroFechaDesde')) $('filtroFechaDesde').value = state.fechaDesde || '';
+  if ($('filtroFechaHasta')) $('filtroFechaHasta').value = state.fechaHasta || '';
+  if ($('filtroPalabraClave')) $('filtroPalabraClave').value = state.palabraClave || '';
+  _msSetValuesRecibo($('filtroTipoPago'), state.tipoPago);
+  _msSetValuesRecibo($('filtroMedico'), state.medico);
+  _msSetValuesRecibo($('filtroGeneradoPor'), state.generadoPor);
+  _msSetValuesRecibo($('filtroEntidad'), state.entidad);
+  _msSetValuesRecibo($('filtroEspecialidad'), state.especialidad);
+  _msSetValuesRecibo($('filtroEstadoPago'), state.estadoPago);
+  const elAnul = $('filtroAnulado');
+  if (state.anulado?.length) _msSetValuesRecibo(elAnul, state.anulado);
+  else if (elAnul?._ms) elAnul._ms.setValues(['no']);
+  else if (elAnul) elAnul.value = 'no';
+  const wrap = $('filtroTipoConsultaWrap');
+  if (wrap) wrap.style.display = state.tipoConsultaWrapVisible ? '' : 'none';
+  _msSetValuesRecibo($('filtroTipoConsulta'), state.tipoConsulta);
+  _msSetValuesRecibo($('filtroEstudio'), state.estudio);
+}
 
 async function aplicarFiltrosRecibos() {
   const btn = $('btnAplicarFiltros');
@@ -9848,6 +9929,7 @@ async function aplicarFiltrosRecibos() {
     const tipoServicio = tipoConsulta || tipoEstudio;
     if (tipoServicio) params.set('tipo_servicio',    tipoServicio);
     _recibosLastParams = params.toString();
+    _recibosFiltrosUI = capturarEstadoFiltrosRecibosUI();
 
     await cargarLista(_recibosLastParams);
   } catch (e) {
@@ -9877,6 +9959,7 @@ function limpiarFiltrosRecibos() {
   const wrap = $('filtroTipoConsultaWrap');
   if (wrap) wrap.style.display = 'none';
   _recibosLastParams = '';
+  _recibosFiltrosUI = null;
   cargarLista();
 }
 
@@ -10892,14 +10975,8 @@ function abrirModalDuracionEstudio() {
   if (modal) {
     modal.classList.remove('hidden');
     
-    // Hora inicio: agendada o ahora si el estudio se inicia tarde (evita cierre anticipado)
-    const horaInicioRecomendada = citaElectroSeleccionada
-      ? obtenerHoraInicioRecomendadaParaEstudio(citaElectroSeleccionada)
-      : (() => {
-          const a = new Date();
-          return `${String(a.getHours()).padStart(2,'0')}:${String(a.getMinutes()).padStart(2,'0')}`;
-        })();
-    $('horaEstudioInicio').value = horaInicioRecomendada;
+    // «Sí»: hora actual al solicitar el inicio (editable en el modal)
+    $('horaEstudioInicio').value = obtenerHoraInicioSolicitudElectro();
     
     // Duración predeterminada HH:MM desde duracion_minutos de la cita
     const durPredMin = (citaElectroSeleccionada && citaElectroSeleccionada.duracion_minutos)
@@ -11029,6 +11106,7 @@ async function confirmarDuracionEstudio() {
     const equipoId = equipoSelect.value;
     const cambios = {
       estado: 'En Estudio',
+      inicio_desde: 'solicitud',
       hora_inicio: horaInicio,
       hora_fin: horaFin,
       hora_fin_date: horaFinDate,
@@ -11047,46 +11125,7 @@ async function confirmarDuracionEstudio() {
     
     if (data && data.ok) {
       showToast(`Estudio iniciado: ${horaInicio} - ${horaFin}`, 'success');
-      
-      // Actualizar el objeto de la cita localmente
-      citaElectroSeleccionada.estado = 'En Estudio';
-      citaElectroSeleccionada.hora_inicio = horaInicio;
-      citaElectroSeleccionada.hora_fin = horaFin;
-      citaElectroSeleccionada.hora_fin_date = horaFinDate;
-      citaElectroSeleccionada.duracion_minutos = duracionMinutos;
-      
-      // BLOQUEAR el select de estado mientras está en "En Estudio"
-      const selectEstado = $('modalEstado');
-      if (selectEstado) {
-        selectEstado.disabled = true;
-        selectEstado.style.opacity = '0.5';
-        selectEstado.style.cursor = 'not-allowed';
-        selectEstado.value = 'En Estudio';
-      }
-      
-      // BLOQUEAR el menú de "Más opciones" mientras está en "En Estudio"
-      const btnMasOpciones = $('btnMasOpciones');
-      const menuMasOpciones = $('menuMasOpciones');
-      if (btnMasOpciones) {
-        btnMasOpciones.disabled = true;
-        btnMasOpciones.style.opacity = '0.5';
-        btnMasOpciones.style.cursor = 'not-allowed';
-        if (menuMasOpciones) menuMasOpciones.style.display = 'none';
-      }
-      
-      // Emitir evento de socket desde el cliente
-      if (window.socket && window.socket.connected) {
-        window.socket.emit('electro:estudio-iniciado', {
-          id: citaElectroSeleccionada.id,
-          hora_inicio: horaInicio,
-          hora_fin: horaFin,
-          duracion_minutos: duracionMinutos
-        });
-      }
-      
-      // El servidor también emitirá el socket event
-      cargarCitasElectro();
-      cerrarModalDetallesCita();
+      await aplicarInicioEstudioEnUI(duracionMinutos, horaInicio, horaFin, horaFinDate);
       cerrarModalDuracionEstudio();
     } else {
       const msg = data?.details ? `${data.error || 'Error'} (${data.details})` : (data?.error || 'Error iniciando estudio');
@@ -11098,114 +11137,121 @@ async function confirmarDuracionEstudio() {
   }
 }
 
-async function iniciarEstudioSinDuracion() {
-  
-  if (!citaElectroSeleccionada) return;
-  
-  // VALIDACIÓN: usar FECHA+HORA real de la cita.
-  const validInicio = validarInicioElectroSegunFechaHora(citaElectroSeleccionada);
-  if (!validInicio.ok) {
-    showToast(`❌ El estudio está agendado para las ${validInicio.horaAgendada}. Faltan ${validInicio.faltanMinutos} minutos para poder iniciarlo.`, 'error');
-    return;
+async function aplicarInicioEstudioEnUI(duracionMinutos, horaInicioRegistro, horaFin, horaFinDate) {
+  citaElectroSeleccionada.estado = 'En Estudio';
+  citaElectroSeleccionada.hora_inicio = horaInicioRegistro;
+  citaElectroSeleccionada.hora_fin = horaFin;
+  citaElectroSeleccionada.hora_fin_date = horaFinDate;
+  citaElectroSeleccionada.duracion_minutos = duracionMinutos;
+
+  const selectEstado = $('modalEstado');
+  if (selectEstado) {
+    selectEstado.disabled = true;
+    selectEstado.style.opacity = '0.5';
+    selectEstado.style.cursor = 'not-allowed';
+    selectEstado.value = 'En Estudio';
   }
 
-  // VALIDAR QUE SE HAYA SELECCIONADO UN EQUIPO
-  const equipoSelect = $('modalEquipo');
-  if (!equipoSelect || !equipoSelect.value) {
-    showToast('❌ Debes seleccionar un equipo antes de iniciar el estudio', 'error');
-    return;
+  const btnMasOpciones = $('btnMasOpciones');
+  const menuMasOpciones = $('menuMasOpciones');
+  if (btnMasOpciones) {
+    btnMasOpciones.disabled = true;
+    btnMasOpciones.style.opacity = '0.5';
+    btnMasOpciones.style.cursor = 'not-allowed';
+    if (menuMasOpciones) menuMasOpciones.style.display = 'none';
   }
-  
-  try {
-    // Obtener la duración predeterminada de la cita (en minutos)
-    const duracionMinutos = citaElectroSeleccionada.duracion_minutos || 480;
-    const horaInicioRegistro = obtenerHoraInicioRecomendadaParaEstudio(citaElectroSeleccionada);
-    const fechaCitaRaw = citaElectroSeleccionada.fecha || new Date().toISOString().slice(0, 10);
-    const fechaCita = typeof fechaCitaRaw === 'string' && fechaCitaRaw.length > 10 ? fechaCitaRaw.slice(0, 10) : String(fechaCitaRaw);
-    const finCalc = calcularHoraFinElectroDesdeInicio(fechaCita, horaInicioRegistro, duracionMinutos);
-    if (!finCalc) {
-      showToast('No se pudo calcular la hora de fin del estudio', 'error');
-      return;
-    }
-    const { horaFin, horaFinDate } = finCalc;
 
-    console.log(`[DURACION_SIN] Inicio: ${horaInicioRegistro}, duración: ${duracionMinutos} min → ${horaFin} (${horaFinDate})`);
-    
-    const equipoId = equipoSelect.value;
-    const cambios = {
-      estado: 'En Estudio',
+  if (window.socket && window.socket.connected) {
+    window.socket.emit('electro:estudio-iniciado', {
+      id: citaElectroSeleccionada.id,
       hora_inicio: horaInicioRegistro,
       hora_fin: horaFin,
       hora_fin_date: horaFinDate,
-      duracion_minutos: duracionMinutos,
-      equipo_id: equipoId
-    };
-    
-    // Actualizar en la base de datos
+      duracion_minutos: duracionMinutos
+    });
+  }
+
+  cargarCitasElectro();
+  cerrarModalDetallesCita();
+}
+
+async function ejecutarInicioEstudioAgendado(duracionMinutos, horaInicioRegistro, horaFin, horaFinDate, equipoId) {
+  try {
     const res = await apiFetch(`/api/citas-electro/${citaElectroSeleccionada.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(cambios)
+      body: JSON.stringify({
+        estado: 'En Estudio',
+        inicio_desde: 'agendado',
+        hora_inicio: horaInicioRegistro,
+        hora_fin: horaFin,
+        hora_fin_date: horaFinDate,
+        duracion_minutos: duracionMinutos,
+        equipo_id: equipoId
+      })
     });
-    
     const data = await res.json();
-    
     if (data && data.ok) {
       const horas = Math.floor(duracionMinutos / 60);
       const mins = duracionMinutos % 60;
       let textoHora = '';
       if (horas > 0) textoHora += `${horas}h`;
       if (mins > 0) textoHora += `${mins}m`;
-      
-      showToast(`Estudio iniciado a las ${horaInicioRegistro} (duración: ${textoHora})`, 'success');
-      
-      // Actualizar el objeto de la cita localmente
-      citaElectroSeleccionada.estado = 'En Estudio';
-      citaElectroSeleccionada.hora_inicio = horaInicioRegistro;
-      citaElectroSeleccionada.hora_fin = horaFin;
-      citaElectroSeleccionada.hora_fin_date = horaFinDate;
-      citaElectroSeleccionada.duracion_minutos = duracionMinutos;
-      
-      // BLOQUEAR el select de estado mientras está en "En Estudio"
-      const selectEstado = $('modalEstado');
-      if (selectEstado) {
-        selectEstado.disabled = true;
-        selectEstado.style.opacity = '0.5';
-        selectEstado.style.cursor = 'not-allowed';
-        selectEstado.value = 'En Estudio';
-      }
-      
-      // BLOQUEAR el menú de "Más opciones" mientras está en "En Estudio"
-      const btnMasOpciones = $('btnMasOpciones');
-      const menuMasOpciones = $('menuMasOpciones');
-      if (btnMasOpciones) {
-        btnMasOpciones.disabled = true;
-        btnMasOpciones.style.opacity = '0.5';
-        btnMasOpciones.style.cursor = 'not-allowed';
-        if (menuMasOpciones) menuMasOpciones.style.display = 'none';
-      }
-      
-      // Emitir evento de socket desde el cliente
-      if (window.socket && window.socket.connected) {
-        window.socket.emit('electro:estudio-iniciado', {
-          id: citaElectroSeleccionada.id,
-          hora_inicio: horaInicioRegistro,
-          hora_fin: horaFin,
-          hora_fin_date: horaFinDate,
-          duracion_minutos: duracionMinutos
-        });
-      }
-      
-      // Llamar para actualizar progreso del estudio
-      cargarCitasElectro();
-      cerrarModalDetallesCita();
+      showToast(`Estudio iniciado a las ${horaInicioRegistro} (programada)${textoHora ? ` · ${textoHora}` : ''}`, 'success');
+      await aplicarInicioEstudioEnUI(duracionMinutos, horaInicioRegistro, horaFin, horaFinDate);
     } else {
       const msg = data?.details ? `${data.error || 'Error'} (${data.details})` : (data?.error || 'Error iniciando estudio');
       showToast(msg, 'error');
     }
-  } catch (e) {
+  } catch (_) {
     showToast('Error iniciando estudio', 'error');
   }
+}
+
+async function iniciarEstudioSinDuracion() {
+  if (!citaElectroSeleccionada) return;
+
+  const validInicio = validarInicioElectroSegunFechaHora(citaElectroSeleccionada);
+  if (!validInicio.ok) {
+    showToast(`❌ El estudio está agendado para las ${validInicio.horaAgendada}. Faltan ${validInicio.faltanMinutos} minutos para poder iniciarlo.`, 'error');
+    return;
+  }
+
+  const equipoSelect = $('modalEquipo');
+  if (!equipoSelect || !equipoSelect.value) {
+    showToast('❌ Debes seleccionar un equipo antes de iniciar el estudio', 'error');
+    return;
+  }
+
+  const duracionMinutos = citaElectroSeleccionada.duracion_minutos || 480;
+  const horaInicioRegistro = obtenerHoraInicioAgendadaElectro(citaElectroSeleccionada);
+  if (!horaInicioRegistro) {
+    showToast('La cita no tiene hora de agendamiento válida', 'error');
+    return;
+  }
+
+  const fechaCitaRaw = citaElectroSeleccionada.fecha || new Date().toISOString().slice(0, 10);
+  const fechaCita = typeof fechaCitaRaw === 'string' && fechaCitaRaw.length > 10 ? fechaCitaRaw.slice(0, 10) : String(fechaCitaRaw);
+  const finCalc = calcularHoraFinElectroDesdeInicio(fechaCita, horaInicioRegistro, duracionMinutos);
+  if (!finCalc) {
+    showToast('No se pudo calcular la hora de fin del estudio', 'error');
+    return;
+  }
+  const { horaFin, horaFinDate } = finCalc;
+  const equipoId = equipoSelect.value;
+
+  const continuar = () => ejecutarInicioEstudioAgendado(duracionMinutos, horaInicioRegistro, horaFin, horaFinDate, equipoId);
+
+  if (electroFinProgramadoYaPaso(fechaCita, horaInicioRegistro, duracionMinutos)) {
+    showConfirm(
+      `Iniciará a las ${horaInicioRegistro} (hora programada). La hora de fin calculada (${horaFin}) ya pasó; el estudio podría cerrarse automáticamente. ¿Continuar?`,
+      continuar,
+      { okText: 'Sí, iniciar', cancelText: 'Cancelar', danger: true, icon: '⚠️' }
+    );
+    return;
+  }
+
+  await continuar();
 }
 
 // Función para actualizar progreso del estudio en tiempo real
@@ -12763,12 +12809,12 @@ document.getElementById('btnReprogramarMedicaMenu')?.addEventListener('click', (
   $('modalReprogramarMedicaHora').value = (currentTurnoMedicaData.hora || '').substring(0, 5);
 });
 
-// Botón Reprogramar (admin/recepcion) para NO_ASISTIO
+// Botón Reprogramar (footer): PENDIENTE o NO_ASISTIO → cita original queda REPROGRAMADO
 document.getElementById('btnModalReprogramarNoAsistio')?.addEventListener('click', (e) => {
   e.preventDefault();
   e.stopPropagation();
   if (!currentTurnoMedicaData) return;
-  currentEstadoAction = 'no-asistio'; // El turno original ya era NO_ASISTIO
+  currentEstadoAction = 'reprogramar';
   cerrarModalEstadoCitaMedica();
   $('modalReprogramarMedica').classList.remove('hidden');
   $('modalReprogramarMedicaFecha').value = currentTurnoMedicaData.fecha || '';
@@ -12928,10 +12974,9 @@ $('btnConfirmarReprogramarMedica')?.addEventListener('click', async (e) => {
   }
   
   try {
-    // Determinar el estado final del turno original según la acción
+    // Turno original: REPROGRAMADO al mover cita; CANCELADO solo si canceló el paciente
     let estadoOriginal = 'REPROGRAMADO';
-    if (currentEstadoAction === 'no-asistio') estadoOriginal = 'NO_ASISTIO';
-    else if (currentEstadoAction === 'cancelado-paciente') estadoOriginal = 'CANCELADO';
+    if (currentEstadoAction === 'cancelado-paciente') estadoOriginal = 'CANCELADO';
 
     // 1) Marcar el turno original con su estado correspondiente (se queda en su fecha original)
     await apiFetch(`/api/turnos/${currentTurnoMedicaData.id}/estado`, {
