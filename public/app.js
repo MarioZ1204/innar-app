@@ -1852,25 +1852,101 @@ function sumarDiasYmd(ymd, dias) {
   return fechaLocalYmdFromDate(d);
 }
 
-function obtenerIntervaloDiasSesiones() {
-  return Math.min(90, Math.max(1, parseInt($('sesionesMultiplesIntervaloDias')?.value || '7', 10)));
+const SESIONES_MULTI_DIAS_DEFECTO = 7;
+
+function leerCamposSesionesAdicionales() {
+  const map = {};
+  document.querySelectorAll('.sesion-multi-fecha').forEach((el) => {
+    const idx = parseInt(el.dataset.idx, 10);
+    if (!Number.isNaN(idx)) {
+      if (!map[idx]) map[idx] = {};
+      map[idx].fecha = el.value;
+    }
+  });
+  document.querySelectorAll('.sesion-multi-hora').forEach((el) => {
+    const idx = parseInt(el.dataset.idx, 10);
+    if (!Number.isNaN(idx)) {
+      if (!map[idx]) map[idx] = {};
+      map[idx].hora = el.value;
+    }
+  });
+  return map;
 }
 
-function generarFechasSesiones(fechaInicio, cantidad, fechaSegunda, intervaloDias) {
-  if (!fechaInicio || !cantidad || cantidad < 1) return [];
-  const inicio = String(fechaInicio).slice(0, 10);
-  if (cantidad === 1) return [inicio];
-
-  const intervalo = Math.min(90, Math.max(1, parseInt(intervaloDias, 10) || 7));
-  const fechas = [inicio];
-  let prev = fechaSegunda ? String(fechaSegunda).slice(0, 10) : sumarDiasYmd(inicio, intervalo);
-  fechas.push(prev);
-
-  for (let i = 2; i < cantidad; i += 1) {
-    prev = sumarDiasYmd(prev, intervalo);
-    fechas.push(prev);
+function valorDefectoSesionAdicional(idx, fecha1, hora1, built) {
+  if (idx === 1) {
+    return { fecha: sumarDiasYmd(fecha1, SESIONES_MULTI_DIAS_DEFECTO), hora: hora1 };
   }
-  return fechas;
+  const prev = built[idx - 1];
+  const prevFecha = prev?.fecha || fecha1;
+  return { fecha: sumarDiasYmd(prevFecha, SESIONES_MULTI_DIAS_DEFECTO), hora: prev?.hora || hora1 };
+}
+
+function renderCamposSesionesMultiples(forzar) {
+  const container = $('sesionesMultiplesCamposList');
+  if (!container) return;
+  const cantidad = Math.min(52, Math.max(1, parseInt($('sesionesMultiplesCantidad')?.value || '1', 10)));
+  if (!forzar && cantidad === _sesionesUltimaCantidadRender && container.querySelector('.sesion-multi-fecha')) {
+    return;
+  }
+  _sesionesUltimaCantidadRender = cantidad;
+
+  const fecha1 = $('modalNuevaCitaFecha')?.value;
+  const hora1Raw = $('nuevoTurnoHoraMedica')?.value || '';
+
+  if (cantidad < 2) {
+    container.innerHTML = '<p style="margin:0;font-size:.8rem;color:#6b7280">Use cantidad mayor a 1 para definir más sesiones.</p>';
+    return;
+  }
+
+  const prevMap = leerCamposSesionesAdicionales();
+  let html = '<div style="font-weight:600;font-size:.875rem;margin-bottom:8px;color:#166534">Siguientes sesiones</div>';
+  const built = {};
+  for (let num = 2; num <= cantidad; num += 1) {
+    const idx = num - 1;
+    let def;
+    if (_sesionesCamposManual.has(idx) && prevMap[idx]?.fecha) {
+      def = { fecha: prevMap[idx].fecha, hora: prevMap[idx].hora || hora1Raw };
+    } else {
+      def = valorDefectoSesionAdicional(idx, fecha1, hora1Raw, built);
+    }
+    built[idx] = def;
+    const hVal = String(def.hora || '').slice(0, 5);
+    html += `<div class="row sesion-multi-campo-row" data-idx="${idx}" style="margin-bottom:8px;align-items:flex-end">
+      <div class="col" style="max-width:44px;padding-bottom:8px;font-size:.8rem;font-weight:600;color:#166534">${num}</div>
+      <div class="col"><label style="font-size:.8rem">Fecha</label><input type="date" class="sesion-multi-fecha" data-idx="${idx}" value="${def.fecha || ''}" style="width:100%" /></div>
+      <div class="col" style="max-width:130px"><label style="font-size:.8rem">Hora</label><input type="time" class="sesion-multi-hora" data-idx="${idx}" value="${hVal}" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:.9rem" /></div>
+      <div class="col" style="min-width:140px;padding-bottom:8px"><span class="sesion-multi-estado" data-idx="${idx}" style="font-size:.78rem;color:#6b7280">—</span></div>
+    </div>`;
+  }
+  container.innerHTML = html;
+  container.querySelectorAll('.sesion-multi-fecha, .sesion-multi-hora').forEach((el) => {
+    const idx = parseInt(el.dataset.idx, 10);
+    const marcarManual = () => {
+      if (!Number.isNaN(idx)) _sesionesCamposManual.add(idx);
+      programarActualizarPreviewSesionesMultiples();
+    };
+    el.addEventListener('change', marcarManual);
+    el.addEventListener('input', marcarManual);
+  });
+}
+
+function obtenerTodasLasSesionesMultiples() {
+  const fecha1 = $('modalNuevaCitaFecha')?.value;
+  const hora1 = parseHora12a24($('nuevoTurnoHoraMedica')?.value || '');
+  const cantidad = Math.min(52, Math.max(1, parseInt($('sesionesMultiplesCantidad')?.value || '1', 10)));
+  const sesiones = [{ fecha: fecha1, hora: hora1, sesion_numero: 1 }];
+  for (let num = 2; num <= cantidad; num += 1) {
+    const idx = num - 1;
+    const fEl = document.querySelector(`.sesion-multi-fecha[data-idx="${idx}"]`);
+    const hEl = document.querySelector(`.sesion-multi-hora[data-idx="${idx}"]`);
+    sesiones.push({
+      fecha: fEl?.value || '',
+      hora: parseHora12a24(hEl?.value || '') || hora1,
+      sesion_numero: num
+    });
+  }
+  return sesiones;
 }
 
 function syncModalNuevaCitaFechaDesdeAgenda() {
@@ -1912,33 +1988,12 @@ function _intervaloAgendaMedicaMin() {
   return (espLower.includes('epileptolog') || espLower.includes('neurolog')) ? 25 : 40;
 }
 
-let _sesionesHorasPorIndice = {};
 let _sesionesMultiplesPlan = [];
 let _sesionesPreviewTimer = null;
 let _sesionesPreviewSeq = 0;
 let _modoSesionesMultiplesActivo = false;
-let _fechaSegundaSesionManual = false;
-let _horaSegundaSesionManual = false;
-
-function actualizarVisibilidadCamposSesionesMultiples() {
-  const cantidad = Math.min(52, Math.max(1, parseInt($('sesionesMultiplesCantidad')?.value || '1', 10)));
-  const row = $('sesionesMultiplesIntervaloRow');
-  if (row) row.style.display = cantidad >= 2 ? '' : 'none';
-}
-
-function actualizarFechaSegundaSesionPorDefecto() {
-  const f1 = $('modalNuevaCitaFecha')?.value;
-  const f2 = $('sesionesMultiplesFechaSegunda');
-  if (!f1 || !f2 || _fechaSegundaSesionManual) return;
-  f2.value = sumarDiasYmd(f1, obtenerIntervaloDiasSesiones());
-}
-
-function actualizarHoraSegundaSesionPorDefecto() {
-  const h1 = $('nuevoTurnoHoraMedica')?.value;
-  const h2 = $('sesionesMultiplesHoraSegunda');
-  if (!h1 || !h2 || _horaSegundaSesionManual) return;
-  h2.value = h1;
-}
+let _sesionesCamposManual = new Set();
+let _sesionesUltimaCantidadRender = 0;
 
 function actualizarBotonSesionesMultiples() {
   const btn = $('btnActivarSesionesMultiples');
@@ -1965,11 +2020,9 @@ function setModoSesionesMultiples(activo) {
   const panel = $('sesionesMultiplesRow');
   if (panel) panel.style.display = _modoSesionesMultiplesActivo ? '' : 'none';
   if (_modoSesionesMultiplesActivo) {
-    _fechaSegundaSesionManual = false;
-    _horaSegundaSesionManual = false;
-    actualizarVisibilidadCamposSesionesMultiples();
-    actualizarFechaSegundaSesionPorDefecto();
-    actualizarHoraSegundaSesionPorDefecto();
+    _sesionesCamposManual = new Set();
+    _sesionesUltimaCantidadRender = 0;
+    renderCamposSesionesMultiples(true);
     actualizarPreviewSesionesMultiples();
   } else {
     limpiarEstadoSesionesMultiples();
@@ -1980,13 +2033,14 @@ function setModoSesionesMultiples(activo) {
 }
 
 function limpiarEstadoSesionesMultiples() {
-  _sesionesHorasPorIndice = {};
   _sesionesMultiplesPlan = [];
-  _fechaSegundaSesionManual = false;
-  _horaSegundaSesionManual = false;
+  _sesionesCamposManual = new Set();
+  _sesionesUltimaCantidadRender = 0;
   clearTimeout(_sesionesPreviewTimer);
   const tbody = $('sesionesMultiplesTableBody');
   if (tbody) tbody.innerHTML = '';
+  const campos = $('sesionesMultiplesCamposList');
+  if (campos) campos.innerHTML = '';
 }
 
 function programarActualizarPreviewSesionesMultiples() {
@@ -1994,32 +2048,41 @@ function programarActualizarPreviewSesionesMultiples() {
   _sesionesPreviewTimer = setTimeout(() => actualizarPreviewSesionesMultiples(), 350);
 }
 
-function obtenerHoraSesionMultiple(indice, horaBase) {
-  if (_sesionesHorasPorIndice[indice] !== undefined) {
-    return parseHora12a24(_sesionesHorasPorIndice[indice]) || _sesionesHorasPorIndice[indice];
+function htmlEstadoDisponibilidadSesion(s) {
+  if (!s.fecha || !s.hora) {
+    return '<span style="color:#6b7280">Complete fecha y hora</span>';
   }
-  if (indice === 0) return horaBase;
-  if (indice === 1) {
-    const h2 = parseHora12a24($('sesionesMultiplesHoraSegunda')?.value || '');
-    return h2 || horaBase;
+  if (s.esPrimera) {
+    if (s.ocupada) {
+      return `<span style="color:#b45309">Ocupada${s.paciente ? ` (${escapeHtml(s.paciente)})` : ''}</span>`;
+    }
+    if (!s.agenda_valida) {
+      return `<span style="color:#b45309">${escapeHtml(s.agenda_error || 'Horario no válido')}</span>`;
+    }
+    return '<span style="color:#15803d">Disponible</span>';
   }
-  const h2 = parseHora12a24($('sesionesMultiplesHoraSegunda')?.value || '');
-  return h2 || horaBase;
+  if (s.ocupada) {
+    return `<span style="color:#b45309">Hay otra cita${s.paciente ? ` (${escapeHtml(s.paciente)})` : ''}</span>`;
+  }
+  if (s.requiereCambio) {
+    return `<span style="color:#dc2626">${escapeHtml(s.agenda_error || 'Horario no válido')}</span>`;
+  }
+  return '<span style="color:#15803d">Disponible</span>';
 }
 
-function cambiarHoraSesionMultiple(indice, hora) {
-  const i = parseInt(indice, 10);
-  if (hora) {
-    _sesionesHorasPorIndice[i] = hora;
-    if (i === 1) {
-      _horaSegundaSesionManual = true;
-      const h2El = $('sesionesMultiplesHoraSegunda');
-      if (h2El) h2El.value = hora;
+function actualizarEstadosCamposSesionesMultiples(plan) {
+  if (!Array.isArray(plan)) return;
+  plan.forEach((s) => {
+    if (s.esPrimera) return;
+    const el = document.querySelector(`.sesion-multi-estado[data-idx="${s.numero - 1}"]`);
+    if (el) el.innerHTML = htmlEstadoDisponibilidadSesion(s);
+    const row = document.querySelector(`.sesion-multi-campo-row[data-idx="${s.numero - 1}"]`);
+    if (row) {
+      const invalido = s.requiereCambio;
+      row.style.background = invalido ? 'rgba(254,226,226,0.35)' : '';
+      row.style.borderRadius = invalido ? '6px' : '';
     }
-  } else {
-    delete _sesionesHorasPorIndice[i];
-  }
-  programarActualizarPreviewSesionesMultiples();
+  });
 }
 
 async function actualizarPreviewSesionesMultiples() {
@@ -2034,7 +2097,6 @@ async function actualizarPreviewSesionesMultiples() {
   const horaBase = parseHora12a24($('nuevoTurnoHoraMedica')?.value || '');
   const doctorId = selectedDoctorId || ((currentUser?.rol === 'doctor' ? currentUser?.id : null));
   const cantidad = Math.min(52, Math.max(1, parseInt($('sesionesMultiplesCantidad')?.value || '1', 10)));
-  actualizarVisibilidadCamposSesionesMultiples();
   if ($('sesionesMultiplesCantidad') && String(cantidad) !== $('sesionesMultiplesCantidad').value) {
     $('sesionesMultiplesCantidad').value = String(cantidad);
   }
@@ -2046,53 +2108,35 @@ async function actualizarPreviewSesionesMultiples() {
     _sesionesMultiplesPlan = [];
     return;
   }
-  if (cantidad >= 2 && !_fechaSegundaSesionManual) {
-    actualizarFechaSegundaSesionPorDefecto();
-  }
-  if (cantidad >= 2 && !_horaSegundaSesionManual) {
-    actualizarHoraSegundaSesionPorDefecto();
-  }
-  const fechaSegunda = cantidad >= 2 ? ($('sesionesMultiplesFechaSegunda')?.value || '') : '';
-  const intervalo = obtenerIntervaloDiasSesiones();
-  if (cantidad >= 2 && !fechaSegunda) {
+
+  const todasSesiones = obtenerTodasLasSesionesMultiples();
+  if (todasSesiones.length < cantidad) {
     if (tbody) {
-      tbody.innerHTML = '<tr><td colspan="4" style="padding:8px;color:#b45309">Indique la fecha de la 2.ª sesión.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="4" style="padding:8px;color:#b45309">Complete la cantidad de sesiones indicada.</td></tr>';
     }
     if (btn) btn.textContent = 'Agendar sesiones';
     _sesionesMultiplesPlan = [];
     return;
   }
-  if (cantidad >= 2 && fechaSegunda < fecha) {
-    if (tbody) {
-      tbody.innerHTML = '<tr><td colspan="4" style="padding:8px;color:#b45309">La 2.ª sesión no puede ser anterior a la primera.</td></tr>';
+  for (let i = 1; i < todasSesiones.length; i += 1) {
+    const s = todasSesiones[i];
+    if (!s.fecha || !s.hora) {
+      if (tbody) {
+        tbody.innerHTML = `<tr><td colspan="4" style="padding:8px;color:#b45309">Complete fecha y hora de la sesión ${s.sesion_numero}.</td></tr>`;
+      }
+      if (btn) btn.textContent = 'Agendar sesiones';
+      _sesionesMultiplesPlan = [];
+      return;
     }
-    if (btn) btn.textContent = 'Agendar sesiones';
-    _sesionesMultiplesPlan = [];
-    return;
-  }
-  if (cantidad >= 2 && !parseHora12a24($('sesionesMultiplesHoraSegunda')?.value || '')) {
-    if (tbody) {
-      tbody.innerHTML = '<tr><td colspan="4" style="padding:8px;color:#b45309">Indique la hora de la 2.ª sesión.</td></tr>';
-    }
-    if (btn) btn.textContent = 'Agendar sesiones';
-    _sesionesMultiplesPlan = [];
-    return;
-  }
-  const fechas = generarFechasSesiones(fecha, cantidad, fechaSegunda, intervalo);
-  if (fechas.length < cantidad) {
-    if (tbody) tbody.innerHTML = `<tr><td colspan="4" style="padding:8px;color:#b45309">Solo se encontraron ${fechas.length} fechas en el rango permitido (1 año).</td></tr>`;
-    if (btn) btn.textContent = 'Agendar sesiones';
-    _sesionesMultiplesPlan = [];
-    return;
   }
 
   const seq = ++_sesionesPreviewSeq;
+  document.querySelectorAll('.sesion-multi-estado').forEach((el) => {
+    el.innerHTML = '<span style="color:#6b7280">Verificando…</span>';
+  });
   if (tbody) tbody.innerHTML = `<tr><td colspan="4" style="padding:8px;color:#6b7280">Verificando disponibilidad…</td></tr>`;
 
-  const sesionesPayload = fechas.map((f, i) => ({
-    fecha: f,
-    hora: obtenerHoraSesionMultiple(i, horaBase)
-  }));
+  const sesionesPayload = todasSesiones.map((s) => ({ fecha: s.fecha, hora: s.hora }));
 
   let verif = { sesiones: [] };
   if (doctorId) {
@@ -2114,14 +2158,14 @@ async function actualizarPreviewSesionesMultiples() {
   }
   if (seq !== _sesionesPreviewSeq) return;
 
-  _sesionesMultiplesPlan = fechas.map((f, i) => {
+  _sesionesMultiplesPlan = todasSesiones.map((s, i) => {
     const info = verif.sesiones[i] || {};
     const hora = sesionesPayload[i].hora;
     const esPrimera = i === 0;
     const requiereCambio = !esPrimera && info.agenda_valida === false;
     return {
-      numero: i + 1,
-      fecha: f,
+      numero: s.sesion_numero,
+      fecha: s.fecha,
       hora,
       esPrimera,
       agenda_valida: info.agenda_valida !== false,
@@ -2136,59 +2180,33 @@ async function actualizarPreviewSesionesMultiples() {
   if (tbody) {
     tbody.innerHTML = _sesionesMultiplesPlan.map((s) => {
       const horaDisplay = formatearHora(s.hora);
-      let estadoHtml;
-      if (s.esPrimera) {
-        if (s.ocupada) {
-          estadoHtml = `<span style="color:#b45309">Ocupada${s.paciente ? ` (${escapeHtml(s.paciente)})` : ''}</span>`;
-        } else if (!s.agenda_valida) {
-          estadoHtml = `<span style="color:#b45309">${escapeHtml(s.agenda_error || 'Horario no válido')}</span>`;
-        } else {
-          estadoHtml = '<span style="color:#15803d">Disponible</span>';
-        }
-      } else if (s.ocupada) {
-        estadoHtml = `<span style="color:#b45309">Hay otra cita a esta hora${s.paciente ? ` (${escapeHtml(s.paciente)})` : ''} — puede agendar igual</span>`;
-      } else if (s.requiereCambio) {
-        const msg = escapeHtml(s.agenda_error || 'Horario no válido');
-        estadoHtml = `<span style="color:#b45309">${msg}</span>`;
-      } else {
-        estadoHtml = '<span style="color:#15803d">Disponible</span>';
-      }
-      const idx = s.numero - 1;
-      const horaVal = String(s.hora || '').slice(0, 5);
-      const horaCell = s.esPrimera
-        ? `<span>${horaDisplay}</span>`
-        : `<input type="time" class="sesion-hora-input" data-sesion-idx="${idx}" value="${horaVal}" style="width:100%;max-width:110px;padding:4px 6px;font-size:.8rem" onchange="cambiarHoraSesionMultiple(${idx}, this.value)" title="Hora de la sesión ${s.numero}" />`;
+      const estadoHtml = s.esPrimera && s.ocupada && !s.requiereCambio
+        ? `${htmlEstadoDisponibilidadSesion(s)} <span style="color:#6b7280;font-size:.75rem">— puede agendar igual</span>`
+        : htmlEstadoDisponibilidadSesion(s);
       return `<tr style="border-bottom:1px solid #dcfce7">
         <td style="padding:5px 6px">${s.numero}</td>
         <td style="padding:5px 6px">${formatearFechaCorta(s.fecha)}</td>
-        <td style="padding:5px 6px">${horaCell}</td>
+        <td style="padding:5px 6px">${horaDisplay}</td>
         <td style="padding:5px 6px">${estadoHtml}</td>
       </tr>`;
     }).join('');
   }
+  actualizarEstadosCamposSesionesMultiples(_sesionesMultiplesPlan);
 
   const pendientes = _sesionesMultiplesPlan.filter((s) => s.requiereCambio).length;
   if (btn) {
     btn.textContent = pendientes > 0
       ? `Revise ${pendientes} sesión${pendientes !== 1 ? 'es' : ''} con conflicto`
-      : `Agendar ${fechas.length} sesiones`;
+      : `Agendar ${todasSesiones.length} sesiones`;
   }
 
 }
 
-window.cambiarHoraSesionMultiple = cambiarHoraSesionMultiple;
-
 function obtenerPlanSesionesMultiplesParaGuardar() {
-  const horaBase = parseHora12a24($('nuevoTurnoHoraMedica')?.value || '');
-  const fecha = $('modalNuevaCitaFecha')?.value;
-  const cantidad = Math.min(52, Math.max(1, parseInt($('sesionesMultiplesCantidad')?.value || '1', 10)));
-  const fechaSegunda = cantidad >= 2 ? ($('sesionesMultiplesFechaSegunda')?.value || '') : '';
-  const intervalo = obtenerIntervaloDiasSesiones();
-  const fechas = generarFechasSesiones(fecha, cantidad, fechaSegunda, intervalo);
-  return fechas.map((f, i) => ({
-    fecha: f,
-    hora: obtenerHoraSesionMultiple(i, horaBase),
-    sesion_numero: i + 1,
+  return obtenerTodasLasSesionesMultiples().map((s, i) => ({
+    fecha: s.fecha,
+    hora: s.hora,
+    sesion_numero: s.sesion_numero,
     requiereCambio: _sesionesMultiplesPlan[i]?.requiereCambio
   }));
 }
@@ -3309,48 +3327,25 @@ async function initAgendaMedica() {
     });
     $('modalNuevaCitaFecha')?.addEventListener('change', () => {
       actualizarHorasDisponibles();
-      if (_modoSesionesMultiplesActivo) actualizarFechaSegundaSesionPorDefecto();
+      if (_modoSesionesMultiplesActivo) renderCamposSesionesMultiples(true);
       programarActualizarPreviewSesionesMultiples();
     });
     $('nuevoTurnoHoraMedica')?.addEventListener('change', () => {
-      if (_modoSesionesMultiplesActivo) actualizarHoraSegundaSesionPorDefecto();
+      if (_modoSesionesMultiplesActivo) renderCamposSesionesMultiples(true);
       programarActualizarPreviewSesionesMultiples();
     });
     $('nuevoTurnoHoraMedica')?.addEventListener('input', () => {
-      if (_modoSesionesMultiplesActivo) actualizarHoraSegundaSesionPorDefecto();
+      if (_modoSesionesMultiplesActivo) renderCamposSesionesMultiples(true);
       programarActualizarPreviewSesionesMultiples();
     });
     $('sesionesMultiplesCantidad')?.addEventListener('input', () => {
-      actualizarVisibilidadCamposSesionesMultiples();
+      _sesionesUltimaCantidadRender = 0;
+      renderCamposSesionesMultiples(true);
       programarActualizarPreviewSesionesMultiples();
     });
     $('sesionesMultiplesCantidad')?.addEventListener('change', () => {
-      actualizarVisibilidadCamposSesionesMultiples();
-      if (parseInt($('sesionesMultiplesCantidad')?.value || '1', 10) >= 2) {
-        actualizarFechaSegundaSesionPorDefecto();
-      }
-      programarActualizarPreviewSesionesMultiples();
-    });
-    $('sesionesMultiplesFechaSegunda')?.addEventListener('change', () => {
-      _fechaSegundaSesionManual = true;
-      programarActualizarPreviewSesionesMultiples();
-    });
-    $('sesionesMultiplesHoraSegunda')?.addEventListener('change', () => {
-      _horaSegundaSesionManual = true;
-      _sesionesHorasPorIndice[1] = $('sesionesMultiplesHoraSegunda')?.value || '';
-      programarActualizarPreviewSesionesMultiples();
-    });
-    $('sesionesMultiplesHoraSegunda')?.addEventListener('input', () => {
-      _horaSegundaSesionManual = true;
-      _sesionesHorasPorIndice[1] = $('sesionesMultiplesHoraSegunda')?.value || '';
-      programarActualizarPreviewSesionesMultiples();
-    });
-    $('sesionesMultiplesIntervaloDias')?.addEventListener('input', () => {
-      if (!_fechaSegundaSesionManual) actualizarFechaSegundaSesionPorDefecto();
-      programarActualizarPreviewSesionesMultiples();
-    });
-    $('sesionesMultiplesIntervaloDias')?.addEventListener('change', () => {
-      if (!_fechaSegundaSesionManual) actualizarFechaSegundaSesionPorDefecto();
+      _sesionesUltimaCantidadRender = 0;
+      renderCamposSesionesMultiples(true);
       programarActualizarPreviewSesionesMultiples();
     });
     $('crearTurnoMedica')?.addEventListener('click', crearTurnoMedica);
@@ -5330,24 +5325,14 @@ async function crearTurnoMedica() {
     const fechasSesiones = planSesiones.map((s) => s.fecha);
 
     if (modoMulti) {
-      if (cantidadSesiones >= 2) {
-        const f2 = $('sesionesMultiplesFechaSegunda')?.value;
-        const h2 = parseHora12a24($('sesionesMultiplesHoraSegunda')?.value || '');
-        if (!f2) {
-          showToast('Indique la fecha de la 2.ª sesión', 'error');
-          return;
-        }
-        if (!h2) {
-          showToast('Indique la hora de la 2.ª sesión', 'error');
-          return;
-        }
-        if (f2 < fecha) {
-          showToast('La 2.ª sesión no puede ser anterior a la primera', 'error');
+      for (const s of planSesiones) {
+        if (!s.fecha || !s.hora) {
+          showToast(`Complete fecha y hora de la sesión ${s.sesion_numero}`, 'error');
           return;
         }
       }
       if (fechasSesiones.length < cantidadSesiones) {
-        showToast(`Solo se pudieron generar ${fechasSesiones.length} fechas. Ajuste cantidad o días.`, 'error');
+        showToast(`Defina las ${cantidadSesiones} sesiones en el formulario`, 'error');
         return;
       }
       const sinAgenda = _sesionesMultiplesPlan.filter((s) => s.agenda_valida === false);
@@ -6934,7 +6919,10 @@ async function checkEquiposDisponibilidad() {
           const parseHora = h => { const [hh, mm] = h.substring(0,5).split(':').map(Number); return hh * 3600 + mm * 60; };
           let segsInicio = parseHora(cita.horaInicioReal);
           let segsFin = parseHora(cita.horaFin);
-          if (segsFin < segsInicio) segsFin += 86400;
+          const fechaIni = String(cita.fechaInicio || '').slice(0, 10);
+          const fechaFin = String(cita.fechaFin || fechaIni).slice(0, 10);
+          if (fechaFin > fechaIni) segsFin += 86400;
+          else if (segsFin < segsInicio) segsFin += 86400;
           let segsActual = segsAhora < segsInicio ? segsAhora + 86400 : segsAhora;
           const segsTranscurridos = Math.max(0, segsActual - segsInicio);
           const pct = Math.min(100, Math.max(0, (segsTranscurridos / (segsFin - segsInicio)) * 100));
@@ -10903,7 +10891,7 @@ async function iniciarEstudioSinDuracion() {
   try {
     // Obtener la duración predeterminada de la cita (en minutos)
     const duracionMinutos = citaElectroSeleccionada.duracion_minutos || 480;
-    const horaInicioRegistro = obtenerHoraInicioAgendadaElectro(citaElectroSeleccionada);
+    const horaInicioRegistro = obtenerHoraInicioRecomendadaParaEstudio(citaElectroSeleccionada);
     const fechaCitaRaw = citaElectroSeleccionada.fecha || new Date().toISOString().slice(0, 10);
     const fechaCita = typeof fechaCitaRaw === 'string' && fechaCitaRaw.length > 10 ? fechaCitaRaw.slice(0, 10) : String(fechaCitaRaw);
     const finCalc = calcularHoraFinElectroDesdeInicio(fechaCita, horaInicioRegistro, duracionMinutos);

@@ -20,6 +20,8 @@ const {
   sqlCitaElectroVisibleEnFecha,
   paramsCitaElectroVisibleEnFecha,
   horaInicioCitaElectro,
+  horaInicioEfectivaParaInicioEstudio,
+  finProgramadoCitaElectro,
   sqlEstudioElectroFinProgramadoVencido
 } = require('../utils/electro-fechas');
 
@@ -379,16 +381,21 @@ router.get('/equipos-electro/disponibilidad', requireAuth, async (req, res) => {
     };
     const convertirHora = (h) => typeof h === 'string' ? h : String(h);
 
-    const citasEnRango = citasOcupadas.map(cita => ({
-      id: cita.id, estudio: cita.estudio,
-      fechaInicio: convertirFecha(cita.fecha),
-      horaInicio: convertirHora(cita.hora_agendamiento),
-      horaInicioReal: cita.hora_inicio ? convertirHora(cita.hora_inicio) : null,
-      fechaFin: convertirFecha(cita.hora_fin_date || cita.fecha),
-      horaFin: convertirHora(cita.hora_fin),
-      estado: cita.estado, equipo_id: cita.equipo_id, equipo_nombre: cita.equipo_nombre,
-      hora: `${convertirHora(cita.hora_agendamiento)}-${convertirHora(cita.hora_fin)}`
-    }));
+    const citasEnRango = citasOcupadas.map((cita) => {
+      const finProg = finProgramadoCitaElectro(cita);
+      const fechaFin = finProg ? finProg.fechaFin : convertirFecha(cita.hora_fin_date || cita.fecha);
+      const horaFin = finProg ? finProg.horaFin : convertirHora(cita.hora_fin);
+      return {
+        id: cita.id, estudio: cita.estudio,
+        fechaInicio: convertirFecha(cita.fecha),
+        horaInicio: convertirHora(cita.hora_agendamiento),
+        horaInicioReal: cita.hora_inicio ? convertirHora(cita.hora_inicio) : null,
+        fechaFin,
+        horaFin,
+        estado: cita.estado, equipo_id: cita.equipo_id, equipo_nombre: cita.equipo_nombre,
+        hora: `${convertirHora(cita.hora_agendamiento)}-${horaFin}`
+      };
+    });
 
     let proximaDisponibilidad = null;
     if (!hayDisponibilidad && citasOcupadas.length > 0) {
@@ -1036,8 +1043,15 @@ router.patch('/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin',
         }
         if (esInicioEstudioNuevo) {
           const fechaIni = fecha || extraerFechaYmd(citaActual.fecha) || normalizeFecha(citaActual.fecha);
-          const horaIniRaw = hora_inicio ?? hora_agendamiento ?? horaInicioCitaElectro(citaActual);
-          const horaIniStr = horaIniRaw != null ? String(horaIniRaw).trim().slice(0, 5) : '';
+          let horaIniStr;
+          if (hora_inicio != null && String(hora_inicio).trim() !== '') {
+            horaIniStr = String(hora_inicio).trim().slice(0, 5);
+          } else {
+            horaIniStr = horaInicioEfectivaParaInicioEstudio(citaActual)
+              || (hora_agendamiento != null ? String(hora_agendamiento).trim().slice(0, 5) : '')
+              || horaInicioCitaElectro(citaActual)
+              || '';
+          }
           const durIni = parseInt(duracion_minutos ?? citaActual.duracion_minutos, 10);
           if (fechaIni && /^\d{2}:\d{2}$/.test(horaIniStr) && durIni > 0) {
             const finIni = sumarMinutosAHoraYFecha(fechaIni, horaIniStr, durIni);

@@ -97,10 +97,44 @@ function estudioElectroFinProgramadoVencido(cita, ahora = new Date()) {
   return finMs <= ahora.getTime();
 }
 
-/** SQL: estudios activos cuyo fin programado (hora_fin_date + hora_fin) ya pasó. */
+/** YYYY-MM-DD en hora local del servidor (coherente con agendar/iniciar en UI). */
+function ymdLocal(d = new Date()) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/**
+ * Hora de inicio al pasar a En Estudio: si hoy y la agendada ya pasó, usar hora actual.
+ * Evita fin programado en el pasado y auto-cierre inmediato.
+ */
+function horaInicioEfectivaParaInicioEstudio(cita, ahora = new Date()) {
+  const fechaBase = extraerFechaYmd(cita?.fecha);
+  const horaAg = String(cita?.hora_agendamiento || '').trim().slice(0, 5);
+  const horaIni = String(cita?.hora_inicio || '').trim().slice(0, 5);
+  const base = /^\d{2}:\d{2}$/.test(horaIni) ? horaIni : horaAg;
+  if (!/^\d{2}:\d{2}$/.test(base) || !fechaBase) return /^\d{2}:\d{2}$/.test(base) ? base : null;
+
+  if (fechaBase !== ymdLocal(ahora)) return base;
+
+  const horaAhora = `${String(ahora.getHours()).padStart(2, '0')}:${String(ahora.getMinutes()).padStart(2, '0')}`;
+  const [ah, am] = horaAhora.split(':').map(Number);
+  const [bh, bm] = base.split(':').map(Number);
+  if (ah * 60 + am > bh * 60 + bm) return horaAhora;
+  return base;
+}
+
+/** SQL: fin programado vencido — prioriza hora_inicio + duracion_minutos (igual que finProgramadoCitaElectro). */
 function sqlEstudioElectroFinProgramadoVencido(alias) {
   const p = alias ? `${alias}.` : '';
-  return `TIMESTAMP(COALESCE(${p}hora_fin_date, ${p}fecha), COALESCE(${p}hora_fin, '23:59:59')) < NOW()`;
+  return `(
+    CASE
+      WHEN ${p}duracion_minutos > 0 AND ${p}hora_inicio IS NOT NULL AND TRIM(${p}hora_inicio) <> '' THEN
+        DATE_ADD(TIMESTAMP(${p}fecha, TIME(${p}hora_inicio)), INTERVAL ${p}duracion_minutos MINUTE)
+      WHEN ${p}duracion_minutos > 0 AND ${p}hora_agendamiento IS NOT NULL AND TRIM(${p}hora_agendamiento) <> '' THEN
+        DATE_ADD(TIMESTAMP(${p}fecha, TIME(${p}hora_agendamiento)), INTERVAL ${p}duracion_minutos MINUTE)
+      ELSE
+        TIMESTAMP(COALESCE(${p}hora_fin_date, ${p}fecha), COALESCE(${p}hora_fin, '23:59:59'))
+    END
+  ) < NOW()`;
 }
 
 module.exports = {
@@ -110,6 +144,8 @@ module.exports = {
   sqlCitaElectroVisibleEnFecha,
   paramsCitaElectroVisibleEnFecha,
   horaInicioCitaElectro,
+  ymdLocal,
+  horaInicioEfectivaParaInicioEstudio,
   finProgramadoCitaElectro,
   estudioElectroFinProgramadoVencido,
   sqlEstudioElectroFinProgramadoVencido
