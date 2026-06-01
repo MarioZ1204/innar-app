@@ -1944,7 +1944,7 @@ function renderCamposSesionesMultiples(forzar) {
     const hVal = parseHoraInputAgenda(def.hora) || String(def.hora || '').slice(0, 5);
     html += `<div class="sesion-multi-card sesion-multi-campo-row" data-idx="${idx}">
       <div class="sesion-multi-card-num">${num}</div>
-      <div class="sesion-multi-field-fecha"><label>Fecha</label><input type="date" class="sesion-multi-fecha" data-idx="${idx}" value="${def.fecha || ''}" /></div>
+      <div class="sesion-multi-field-fecha"><label>Fecha</label><div class="sesion-multi-date-input-wrap"><input type="date" class="sesion-multi-fecha" data-idx="${idx}" value="${def.fecha || ''}" /></div></div>
       <div><label>Hora</label><input type="time" class="sesion-multi-hora" data-idx="${idx}" value="${hVal}" /></div>
       <div class="sesion-multi-estado-wrap"><span class="sesion-multi-estado" data-idx="${idx}"><span class="sesion-multi-pill sesion-multi-pill--muted">—</span></span></div>
     </div>`;
