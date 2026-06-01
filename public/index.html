@@ -16,6 +16,7 @@
   <link rel="stylesheet" href="innar-sidebar.css">
   <link rel="stylesheet" href="innar-mobile.css">
   <link rel="stylesheet" href="innar-agenda-cal.css">
+  <link rel="stylesheet" href="innar-sesiones-multi.css">
   <link rel="stylesheet" href="sede-recordatorio.css">
   <link rel="stylesheet" href="soportes.css">
   <link rel="stylesheet" href="innar-responsive.css">
@@ -1005,24 +1006,36 @@
       <div style="margin-bottom:12px">
         <button type="button" id="btnActivarSesionesMultiples" class="btn-secondary" style="display:none" aria-pressed="false">Sesiones múltiples</button>
       </div>
-      <div id="sesionesMultiplesRow" style="display:none;margin-bottom:14px;padding:14px;border-radius:8px;background:#f0fdf4;border:1px solid #86efac">
-        <div style="font-weight:600;font-size:.95rem;margin-bottom:4px;color:#166534">Programar varias sesiones</div>
-        <p style="margin:0 0 12px 0;font-size:.8rem;color:#4b5563">Arriba: <strong>fecha y hora de la 1.ª sesión</strong>. Abajo indique <strong>fecha y hora de cada sesión siguiente</strong> (por defecto +7 días respecto a la anterior; puede usar el mismo día con otra hora).</p>
-        <div class="row" style="margin-bottom:10px">
-          <div class="col" style="max-width:160px">
-            <label>Cantidad de sesiones</label>
-            <input type="number" id="sesionesMultiplesCantidad" min="1" max="52" value="2" style="width:100%" />
+      <div id="sesionesMultiplesRow" class="sesiones-multi-panel" style="display:none">
+        <div class="sesiones-multi-head">
+          <div class="sesiones-multi-title">Programar varias sesiones</div>
+          <p class="sesiones-multi-hint">La <strong>1.ª sesión</strong> usa la fecha y hora del formulario de arriba. Aquí solo configura y valida las <strong>siguientes</strong> (disponibilidad al instante).</p>
+        </div>
+        <div class="sesiones-multi-toolbar">
+          <label class="sesiones-multi-cantidad-label">Cantidad de sesiones</label>
+          <input type="number" id="sesionesMultiplesCantidad" class="sesiones-multi-cantidad-input" min="1" max="52" value="2" />
+        </div>
+        <div id="sesionMultiPrimera" class="sesion-multi-primera" aria-live="polite">
+          <div class="sesion-multi-primera-num">1</div>
+          <div class="sesion-multi-primera-body">
+            <div class="sesion-multi-primera-titulo">Primera sesión <span class="sesion-multi-primera-nota">(fecha y hora del formulario de arriba — sin validar aquí)</span></div>
+            <div class="sesion-multi-primera-datos">
+              <span id="sesionMultiPrimeraFecha">—</span>
+              <span class="sesion-multi-sep">·</span>
+              <span id="sesionMultiPrimeraHora">—</span>
+            </div>
           </div>
         </div>
-        <div id="sesionesMultiplesCamposList" style="margin-bottom:12px;max-height:min(320px,40vh);overflow-y:auto"></div>
-        <div id="sesionesMultiplesPreview" style="font-size:.8rem;color:#374151;max-height:220px;overflow-y:auto;line-height:1.5">
-          <table style="width:100%;border-collapse:collapse;font-size:.8rem">
+        <div id="sesionesMultiplesCamposList" class="sesiones-multi-lista"></div>
+        <div class="sesiones-multi-resumen">
+          <div class="sesiones-multi-resumen-titulo">Resumen</div>
+          <table class="sesiones-multi-tabla">
             <thead>
-              <tr style="border-bottom:1px solid #bbf7d0;text-align:left;color:#166534">
-                <th style="padding:4px 6px">#</th>
-                <th style="padding:4px 6px">Fecha</th>
-                <th style="padding:4px 6px">Hora</th>
-                <th style="padding:4px 6px">Estado</th>
+              <tr>
+                <th>#</th>
+                <th>Fecha</th>
+                <th>Hora</th>
+                <th>Disponibilidad</th>
               </tr>
             </thead>
             <tbody id="sesionesMultiplesTableBody"></tbody>

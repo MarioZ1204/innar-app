@@ -1,0 +1,250 @@
+/* Panel sesiones múltiples — modal nueva cita */
+.sesiones-multi-panel {
+  margin-bottom: 14px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #f0fdf4 0%, #f8fafc 100%);
+  border: 1px solid #86efac;
+}
+
+.sesiones-multi-title {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: #166534;
+  margin-bottom: 4px;
+}
+
+.sesiones-multi-hint {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #4b5563;
+  line-height: 1.45;
+}
+
+.sesiones-multi-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 12px 0 10px;
+}
+
+.sesiones-multi-cantidad-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #374151;
+}
+
+.sesiones-multi-cantidad-input {
+  width: 72px;
+  padding: 8px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 0.95rem;
+}
+
+.sesion-multi-primera {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  background: #fff;
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+}
+
+.sesion-multi-primera-num {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #166534;
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.sesion-multi-primera-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.sesion-multi-primera-titulo {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #6b7280;
+}
+
+.sesion-multi-primera-nota {
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  color: #9ca3af;
+  font-size: 0.68rem;
+}
+
+.sesion-multi-primera-datos {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #111827;
+}
+
+.sesion-multi-sep {
+  margin: 0 4px;
+  color: #9ca3af;
+}
+
+.sesiones-multi-lista {
+  max-height: min(280px, 36vh);
+  overflow-y: auto;
+  margin-bottom: 12px;
+}
+
+.sesion-multi-card {
+  display: grid;
+  grid-template-columns: 28px 1fr 1fr minmax(120px, auto);
+  gap: 10px;
+  align-items: end;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.sesion-multi-card--invalid {
+  border-color: #fca5a5;
+  background: #fef2f2;
+}
+
+.sesion-multi-card--ok {
+  border-color: #86efac;
+}
+
+.sesion-multi-card-num {
+  align-self: center;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #dcfce7;
+  color: #166534;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.sesion-multi-card label {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #6b7280;
+  margin-bottom: 4px;
+}
+
+.sesion-multi-card input[type="date"],
+.sesion-multi-card input[type="time"] {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 0.88rem;
+}
+
+.sesion-multi-estado-wrap {
+  align-self: center;
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+}
+
+.sesion-multi-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.sesion-multi-pill--ok {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.sesion-multi-pill--warn {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.sesion-multi-pill--bad {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.sesion-multi-pill--muted {
+  background: #f3f4f6;
+  color: #6b7280;
+}
+
+.sesion-multi-pill--loading {
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+.sesiones-multi-resumen {
+  border-top: 1px solid #bbf7d0;
+  padding-top: 10px;
+}
+
+.sesiones-multi-resumen-titulo {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #166534;
+  margin-bottom: 6px;
+}
+
+.sesiones-multi-tabla {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.sesiones-multi-tabla th {
+  text-align: left;
+  padding: 4px 8px;
+  color: #166534;
+  font-weight: 600;
+  border-bottom: 1px solid #bbf7d0;
+}
+
+.sesiones-multi-tabla td {
+  padding: 6px 8px;
+  border-bottom: 1px solid #ecfdf5;
+  vertical-align: top;
+}
+
+@media (max-width: 560px) {
+  .sesion-multi-card {
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto auto auto;
+  }
+  .sesion-multi-card-num {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+  .sesion-multi-estado-wrap {
+    grid-column: 1 / -1;
+  }
+}
