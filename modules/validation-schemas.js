@@ -285,7 +285,7 @@ const schemas = {
         hora: horaApi.optional(),
         sesion_numero: Joi.number().integer().min(1).max(100).optional()
       })
-    ).min(2).max(52).required()
+    ).min(1).max(52).required()
   }),
 
   apiActualizarTurno: Joi.object({

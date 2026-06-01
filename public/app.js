@@ -1829,6 +1829,7 @@ async function cargarTiposConsultaSegunEspecialidad(especialidad) {
 
   selectTipo.removeEventListener('change', manejarCambioTipoConsulta);
   selectTipo.addEventListener('change', manejarCambioTipoConsulta);
+  actualizarBotonSesionesMultiples();
 }
 
 function tipoConsultaPermiteSesionesMultiples(selectEl) {
@@ -1842,19 +1843,58 @@ function obtenerDiasSemanaSesiones() {
   return [...document.querySelectorAll('.sesion-dia-check:checked')].map(el => parseInt(el.value, 10));
 }
 
+function fechaLocalYmdFromDate(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 function generarFechasSesiones(fechaInicio, cantidad, diasSemana) {
-  if (!fechaInicio || !cantidad || cantidad < 1 || !diasSemana.length) return [];
-  const fechas = [];
-  const cursor = new Date(fechaInicio + 'T12:00:00');
+  if (!fechaInicio || !cantidad || cantidad < 1) return [];
+  const inicio = String(fechaInicio).slice(0, 10);
+  if (cantidad === 1) return [inicio];
+  if (!diasSemana.length) return [inicio];
+
+  const fechas = [inicio];
+  const cursor = new Date(inicio + 'T12:00:00');
+  cursor.setDate(cursor.getDate() + 1);
   let guard = 0;
   while (fechas.length < cantidad && guard < 400) {
     if (diasSemana.includes(cursor.getDay())) {
-      fechas.push(cursor.toISOString().slice(0, 10));
+      fechas.push(fechaLocalYmdFromDate(cursor));
     }
     cursor.setDate(cursor.getDate() + 1);
     guard += 1;
   }
   return fechas;
+}
+
+function syncModalNuevaCitaFechaDesdeAgenda() {
+  const v = $('agendaMedicaFecha')?.value;
+  const m = $('modalNuevaCitaFecha');
+  if (v && m) m.value = v;
+}
+
+/** Tras crear citas, muestra en la tabla el día donde quedó la primera sesión. */
+function navegarAgendaMedicaAFecha(fechaYmd) {
+  if (!fechaYmd) {
+    cargarTurnosMedica();
+    return;
+  }
+  const el = $('agendaMedicaFecha');
+  if (!el) {
+    cargarTurnosMedica();
+    return;
+  }
+  if (el.value === fechaYmd) {
+    updateAgendaFechaDisplay();
+    cargarTurnosMedica();
+    return;
+  }
+  el.value = fechaYmd;
+  updateAgendaFechaDisplay();
+  el.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
 function formatearFechaCorta(iso) {
@@ -1873,6 +1913,41 @@ let _sesionesHorasOverride = {};
 let _sesionesMultiplesPlan = [];
 let _sesionesPreviewTimer = null;
 let _sesionesPreviewSeq = 0;
+let _modoSesionesMultiplesActivo = false;
+
+function actualizarBotonSesionesMultiples() {
+  const btn = $('btnActivarSesionesMultiples');
+  const tipo = $('nuevoTurnoTipoMedica');
+  if (!btn) return;
+  const permite = tipoConsultaPermiteSesionesMultiples(tipo);
+  btn.style.display = permite ? 'inline-flex' : 'none';
+  if (!permite && _modoSesionesMultiplesActivo) {
+    setModoSesionesMultiples(false);
+    return;
+  }
+  btn.textContent = _modoSesionesMultiplesActivo ? 'Ocultar sesiones múltiples' : 'Sesiones múltiples';
+  btn.setAttribute('aria-pressed', _modoSesionesMultiplesActivo ? 'true' : 'false');
+}
+
+function setModoSesionesMultiples(activo) {
+  _modoSesionesMultiplesActivo = !!activo;
+  const lbl = $('lblModalNuevaCitaFecha');
+  if (lbl) {
+    lbl.innerHTML = _modoSesionesMultiplesActivo
+      ? 'Fecha (1ª sesión) <span style="color:#dc2626">*</span>'
+      : 'Fecha <span style="color:#dc2626">*</span>';
+  }
+  const panel = $('sesionesMultiplesRow');
+  if (panel) panel.style.display = _modoSesionesMultiplesActivo ? '' : 'none';
+  if (_modoSesionesMultiplesActivo) {
+    actualizarPreviewSesionesMultiples();
+  } else {
+    limpiarEstadoSesionesMultiples();
+    const btn = $('crearTurnoMedica');
+    if (btn) btn.textContent = 'Crear Cita';
+  }
+  actualizarBotonSesionesMultiples();
+}
 
 function limpiarEstadoSesionesMultiples() {
   _sesionesHorasOverride = {};
@@ -1909,7 +1984,7 @@ async function actualizarPreviewSesionesMultiples() {
   const fecha = $('modalNuevaCitaFecha')?.value;
   const horaBase = parseHora12a24($('nuevoTurnoHoraMedica')?.value || '');
   const doctorId = selectedDoctorId || ((currentUser?.rol === 'doctor' ? currentUser?.id : null));
-  const cantidad = Math.min(52, Math.max(2, parseInt($('sesionesMultiplesCantidad')?.value || '2', 10)));
+  const cantidad = Math.min(52, Math.max(1, parseInt($('sesionesMultiplesCantidad')?.value || '1', 10)));
   const dias = obtenerDiasSemanaSesiones();
   if ($('sesionesMultiplesCantidad') && String(cantidad) !== $('sesionesMultiplesCantidad').value) {
     $('sesionesMultiplesCantidad').value = String(cantidad);
@@ -2033,7 +2108,7 @@ window.cambiarHoraSesionMultiple = cambiarHoraSesionMultiple;
 function obtenerPlanSesionesMultiplesParaGuardar() {
   const horaBase = parseHora12a24($('nuevoTurnoHoraMedica')?.value || '');
   const fecha = $('modalNuevaCitaFecha')?.value;
-  const cantidad = Math.min(52, Math.max(2, parseInt($('sesionesMultiplesCantidad')?.value || '2', 10)));
+  const cantidad = Math.min(52, Math.max(1, parseInt($('sesionesMultiplesCantidad')?.value || '1', 10)));
   const dias = obtenerDiasSemanaSesiones();
   const fechas = generarFechasSesiones(fecha, cantidad, dias);
   return fechas.map((f, i) => ({
@@ -2045,20 +2120,13 @@ function obtenerPlanSesionesMultiplesParaGuardar() {
 }
 
 function togglePanelSesionesMultiples(visible) {
-  const panel = $('sesionesMultiplesRow');
-  if (!panel) return;
-  panel.style.display = visible ? '' : 'none';
-  if (visible) actualizarPreviewSesionesMultiples();
-  else {
-    limpiarEstadoSesionesMultiples();
-    const btn = $('crearTurnoMedica');
-    if (btn) btn.textContent = 'Crear Cita';
-  }
+  setModoSesionesMultiples(!!visible);
 }
 
 function manejarCambioTipoConsulta(e) {
   manejarOtraConsulta(e.target.value);
-  togglePanelSesionesMultiples(tipoConsultaPermiteSesionesMultiples(e.target));
+  setModoSesionesMultiples(false);
+  actualizarBotonSesionesMultiples();
 }
 
 function manejarOtraConsulta(tipoSeleccionado) {
@@ -3002,6 +3070,10 @@ async function initAgendaMedica() {
   $('agendaMedicaFecha').addEventListener('change', () => {
     updateAgendaFechaDisplay();
     actualizarHorasDisponibles();
+    if (!$('modalNuevaCitaMedica')?.classList.contains('hidden')) {
+      syncModalNuevaCitaFechaDesdeAgenda();
+      if (_modoSesionesMultiplesActivo) programarActualizarPreviewSesionesMultiples();
+    }
     cargarTurnosMedica();
   });
   if (tienePermiso('agenda.crear')) {
@@ -3137,23 +3209,29 @@ async function initAgendaMedica() {
   if (btnNuevaCita) btnNuevaCita.style.display = canCrearCita ? 'inline-flex' : 'none';
   if (canCrearCita) {
     btnNuevaCita?.addEventListener('click', () => {
-      const fechaModal = $('modalNuevaCitaFecha');
-      if (fechaModal) fechaModal.value = $('agendaMedicaFecha')?.value || new Date().toISOString().slice(0, 10);
+      syncModalNuevaCitaFechaDesdeAgenda();
+      if (!$('modalNuevaCitaFecha')?.value) {
+        $('modalNuevaCitaFecha').value = hoyColombiaISO();
+      }
       const nomDiv = $('modalNuevaCitaDoctorNombre');
       if (nomDiv) nomDiv.textContent = $('agendaMedicaDoctorDisplay')?.textContent || '-';
       const prog = $('nuevoTurnoProgramadoPor');
       if (prog) prog.textContent = (currentUser && (currentUser.nombre || currentUser.usuario)) || '-';
       actualizarHorasDisponibles();
-      togglePanelSesionesMultiples(tipoConsultaPermiteSesionesMultiples($('nuevoTurnoTipoMedica')));
+      setModoSesionesMultiples(false);
+      actualizarBotonSesionesMultiples();
       $('modalNuevaCitaMedica')?.classList.remove('hidden');
+    });
+    $('btnActivarSesionesMultiples')?.addEventListener('click', () => {
+      setModoSesionesMultiples(!_modoSesionesMultiplesActivo);
     });
     $('btnCerrarNuevaCitaModal')?.addEventListener('click', () => {
       $('modalNuevaCitaMedica')?.classList.add('hidden');
-      togglePanelSesionesMultiples(false);
+      setModoSesionesMultiples(false);
     });
     $('btnCancelarNuevaCitaModal')?.addEventListener('click', () => {
       $('modalNuevaCitaMedica')?.classList.add('hidden');
-      togglePanelSesionesMultiples(false);
+      setModoSesionesMultiples(false);
     });
     $('modalNuevaCitaFecha')?.addEventListener('change', () => {
       actualizarHorasDisponibles();
@@ -4373,6 +4451,11 @@ function _construirDisplayListMedica(turnosDiaOrdenCronologico, dispCtx) {
   const horasTurnos = lista.map((t) => horaAMinutos(t.hora)).filter((m) => m !== null);
 
   if (horasTurnos.length === 0) {
+    for (const t of lista) {
+      if (esTurnoEnTablaActivos(t)) {
+        displayList.push({ tipo: 'turno', data: t });
+      }
+    }
     for (const rango of rangosDisponibles) {
       displayList.push(...generarSlotsEnRango(rango.inicio, rango.fin));
     }
@@ -4467,6 +4550,10 @@ async function cargarTurnosMedica() {
   try {
     const res = await apiFetch(`/api/turnos?fecha=${fecha}&doctor_id=${doctorId}`);
     const turnos = await res.json();
+    if (!res.ok || !Array.isArray(turnos)) {
+      showToast(turnos?.error || 'Error cargando citas', 'error');
+      return;
+    }
 
     const turnosOrdenados = _ordenarTurnosMedica(turnos);
     const turnosActivos = turnosOrdenados.filter((t) => !MEDICA_ESTADOS_FINALES.includes(t.estado));
@@ -5126,15 +5213,15 @@ async function crearTurnoMedica() {
   }
 
   try {
-    const esMulti = tipoConsultaPermiteSesionesMultiples($('nuevoTurnoTipoMedica'));
-    const diasSemana = esMulti ? obtenerDiasSemanaSesiones() : [];
-    const cantidadSesiones = esMulti
-      ? Math.min(52, Math.max(2, parseInt($('sesionesMultiplesCantidad')?.value || '2', 10)))
+    const modoMulti = _modoSesionesMultiplesActivo && tipoConsultaPermiteSesionesMultiples($('nuevoTurnoTipoMedica'));
+    const diasSemana = modoMulti ? obtenerDiasSemanaSesiones() : [];
+    const cantidadSesiones = modoMulti
+      ? Math.min(52, Math.max(1, parseInt($('sesionesMultiplesCantidad')?.value || '1', 10)))
       : 1;
-    const planSesiones = esMulti ? obtenerPlanSesionesMultiplesParaGuardar() : [{ fecha, hora, sesion_numero: 1 }];
+    const planSesiones = modoMulti ? obtenerPlanSesionesMultiplesParaGuardar() : [{ fecha, hora, sesion_numero: 1 }];
     const fechasSesiones = planSesiones.map((s) => s.fecha);
 
-    if (esMulti) {
+    if (modoMulti) {
       if (!diasSemana.length) {
         showToast('Seleccione al menos un día de la semana para las sesiones', 'error');
         return;
@@ -5181,7 +5268,7 @@ async function crearTurnoMedica() {
     };
 
     let res;
-    if (esMulti && fechasSesiones.length > 1) {
+    if (modoMulti && fechasSesiones.length > 1) {
       res = await apiFetch('/api/turnos/lote', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -5195,21 +5282,38 @@ async function crearTurnoMedica() {
         })
       });
     } else {
+      const fUna = modoMulti ? (planSesiones[0]?.fecha || fecha) : fecha;
+      const hUna = modoMulti ? (planSesiones[0]?.hora || hora) : hora;
       res = await apiFetch('/api/turnos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...bodyBase, fecha })
+        body: JSON.stringify({ ...bodyBase, fecha: fUna, hora: hUna })
       });
     }
     const data = await res.json();
 
+    if (!res.ok) {
+      if (data.errores?.length) {
+        const detalle = data.errores.slice(0, 3).map(e => `${formatearFechaCorta(e.fecha)}: ${e.error}`).join('; ');
+        showToast((data.error || 'Error al agendar sesiones') + (detalle ? ` (${detalle})` : ''), 'error');
+      } else {
+        showToast(data.error || 'Error al crear la cita', 'error');
+      }
+      return;
+    }
+
     if (data.ok) {
-      const msg = esMulti && fechasSesiones.length > 1
+      const fechaVer = (modoMulti && fechasSesiones.length) ? fechasSesiones[0] : (planSesiones[0]?.fecha || fecha);
+      const agendaAntes = $('agendaMedicaFecha')?.value;
+      let msg = modoMulti && fechasSesiones.length > 1
         ? `${data.creados || fechasSesiones.length} sesiones agendadas correctamente`
         : 'Cita creada correctamente';
+      if (modoMulti && fechasSesiones.length > 1 && agendaAntes && fechaVer && agendaAntes !== fechaVer) {
+        msg += `. Mostrando ${formatearFechaCorta(fechaVer)} (use el calendario para las demás fechas).`;
+      }
       showToast(msg, 'success');
       $('modalNuevaCitaMedica')?.classList.add('hidden');
-      togglePanelSesionesMultiples(false);
+      setModoSesionesMultiples(false);
       $('nuevoPacienteNombresMedica').value = '';
       $('nuevoPacienteApellidosMedica').value = '';
       const docReset = $('nuevoPacienteDocMedica');
@@ -5222,7 +5326,7 @@ async function crearTurnoMedica() {
       $('nuevoTurnoNotasMedica').value = '';
       $('nuevoTurnoEntidadMedica').value = '';
       $('nuevoTurnoTipoMedica').value = '';
-      cargarTurnosMedica();
+      navegarAgendaMedicaAFecha(fechaVer);
     } else {
       if (data.errores?.length) {
         const detalle = data.errores.slice(0, 3).map(e => `${formatearFechaCorta(e.fecha)}: ${e.error}`).join('; ');

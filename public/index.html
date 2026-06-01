@@ -980,7 +980,7 @@
       <div style="padding:10px 14px;border-radius:6px;background:#fef3c7;border:1px solid #f59e0b;display:none;font-size:.875rem;color:#92400e;margin-bottom:16px" id="mensajeDisponibilidad"></div>
       <!-- Fecha y hora -->
       <div class="row" style="margin-bottom:12px">
-        <div class="col"><label>Fecha <span style="color:#dc2626">*</span></label><input type="date" id="modalNuevaCitaFecha" style="width:100%" /></div>
+        <div class="col"><label id="lblModalNuevaCitaFecha">Fecha <span style="color:#dc2626">*</span></label><input type="date" id="modalNuevaCitaFecha" style="width:100%" /></div>
         <div class="col"><label>Hora <span style="color:#dc2626">*</span></label><input type="time" id="nuevoTurnoHoraMedica" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:.95rem" /></div>
       </div>
       <!-- Datos del paciente -->
@@ -1002,13 +1002,16 @@
         <div class="col" style="flex:2"><label>Especificar tipo de consulta</label><input id="otraConsultaInput" type="text" placeholder="Escribir tipo de consulta personalizado" style="width:100%" /></div>
         <div class="col" style="flex:1;display:flex;align-items:flex-end"><button id="agregarOtraConsulta" type="button" class="btn-primary" style="width:100%">Agregar</button></div>
       </div>
+      <div style="margin-bottom:12px">
+        <button type="button" id="btnActivarSesionesMultiples" class="btn-secondary" style="display:none" aria-pressed="false">Sesiones múltiples</button>
+      </div>
       <div id="sesionesMultiplesRow" style="display:none;margin-bottom:14px;padding:14px;border-radius:8px;background:#f0fdf4;border:1px solid #86efac">
         <div style="font-weight:600;font-size:.95rem;margin-bottom:4px;color:#166534">Programar varias sesiones</div>
         <p style="margin:0 0 12px 0;font-size:.8rem;color:#4b5563">La fecha y hora de arriba corresponden a la <strong>primera</strong> sesión. En las siguientes se verifica si esa hora está libre; si está ocupada, podrá elegir otra en la tabla.</p>
         <div class="row" style="margin-bottom:10px">
           <div class="col" style="max-width:160px">
             <label>Cantidad de sesiones</label>
-            <input type="number" id="sesionesMultiplesCantidad" min="2" max="52" value="8" style="width:100%" />
+            <input type="number" id="sesionesMultiplesCantidad" min="1" max="52" value="2" style="width:100%" />
           </div>
         </div>
         <label style="display:block;margin-bottom:6px;font-size:.875rem">Días de la semana</label>
