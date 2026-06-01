@@ -149,13 +149,35 @@
   margin-bottom: 4px;
 }
 
+.sesion-multi-field-fecha {
+  position: relative;
+  min-width: 0;
+}
+
 .sesion-multi-card input[type="date"],
 .sesion-multi-card input[type="time"] {
   width: 100%;
-  padding: 8px 10px;
+  box-sizing: border-box;
   border: 1px solid #d1d5db;
   border-radius: 6px;
   font-size: 0.88rem;
+  background: #fff;
+}
+
+.sesion-multi-card input[type="date"] {
+  padding: 8px 36px 8px 10px;
+  min-height: 38px;
+}
+
+.sesion-multi-card input[type="time"] {
+  padding: 8px 10px;
+  min-height: 38px;
+}
+
+.sesion-multi-field-fecha input[type="date"]::-webkit-calendar-picker-indicator {
+  opacity: 0.55;
+  cursor: pointer;
+  margin-left: 6px;
 }
 
 .sesion-multi-estado-wrap {

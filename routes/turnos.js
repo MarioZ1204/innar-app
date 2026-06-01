@@ -359,34 +359,51 @@ router.post('/turnos/marcar-atendido', requireAuth, requireRoleOrPerm(['superadm
 // POST /api/turnos
 // POST /api/turnos/verificar-sesiones — ocupación y horas alternativas para sesiones múltiples
 router.post('/turnos/verificar-sesiones', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion'], 'agenda.crear'), async (req, res) => {
-  const { doctor_id, sesiones, intervalo_min } = req.body || {};
+  const { doctor_id, sesiones, intervalo_min, primera_sesion, todas_sesiones } = req.body || {};
   const doctorId = parseInt(doctor_id, 10);
   if (!doctorId || !Array.isArray(sesiones) || sesiones.length === 0) {
     return res.status(400).json({ error: 'doctor_id y sesiones son requeridos' });
   }
   const intervalo = Math.min(60, Math.max(15, parseInt(intervalo_min, 10) || 40));
+  const planCompleto = Array.isArray(todas_sesiones) && todas_sesiones.length > 0 ? todas_sesiones : sesiones;
   try {
     const resultados = [];
     for (const s of sesiones) {
       const fecha = s.fecha;
-      const hora = s.hora;
+      const horaRaw = s.hora;
+      const hora = procesarAgendaExcel.normalizarHoraHHMM(horaRaw)
+        || procesarAgendaExcel.normalizarHoraDesdeTurno(horaRaw)
+        || horaRaw;
+      const sesionNumero = parseInt(s.sesion_numero, 10) || 0;
       if (!fecha || !hora) {
         resultados.push({ fecha, hora: hora || null, agenda_valida: false, ocupada: false, horas_alternativas: [] });
         continue;
       }
       const disp = await procesarAgendaExcel.validarDisponibilidadPorHora(doctorId, fecha, hora, db);
       const ocup = await procesarAgendaExcel.consultarOcupacionHora(doctorId, fecha, hora, db);
+      const enPlan = procesarAgendaExcel.conflictoSesionConOtrasEnPlan(
+        fecha, hora, sesionNumero, primera_sesion, planCompleto
+      );
+      const ocupada = ocup.ocupada || enPlan.conflicto;
       let horasAlternativas = [];
-      if (!disp.valido || ocup.ocupada) {
+      if (!disp.valido || ocupada) {
         horasAlternativas = await procesarAgendaExcel.listarHorasLibresAgendaDia(doctorId, fecha, db, intervalo);
+      }
+      let agendaError = disp.razon || null;
+      if (enPlan.conflicto && enPlan.razon) agendaError = enPlan.razon;
+      else if (ocup.ocupada && !disp.razon) {
+        agendaError = ocup.turnos[0]?.paciente_nombre
+          ? `Ya hay cita a esta hora (${ocup.turnos[0].paciente_nombre})`
+          : 'Ya hay otra cita a esta hora';
       }
       resultados.push({
         fecha,
         hora,
-        agenda_valida: disp.valido,
-        agenda_error: disp.razon || null,
-        ocupada: ocup.ocupada,
+        agenda_valida: disp.valido && !enPlan.conflicto,
+        agenda_error: agendaError,
+        ocupada,
         paciente: ocup.turnos[0]?.paciente_nombre || null,
+        duplicada_en_plan: !!enPlan.conflicto,
         horas_alternativas: horasAlternativas
       });
     }

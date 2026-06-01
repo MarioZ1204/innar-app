@@ -1944,7 +1944,7 @@ function renderCamposSesionesMultiples(forzar) {
     const hVal = parseHoraInputAgenda(def.hora) || String(def.hora || '').slice(0, 5);
     html += `<div class="sesion-multi-card sesion-multi-campo-row" data-idx="${idx}">
       <div class="sesion-multi-card-num">${num}</div>
-      <div><label>Fecha</label><input type="date" class="sesion-multi-fecha" data-idx="${idx}" value="${def.fecha || ''}" /></div>
+      <div class="sesion-multi-field-fecha"><label>Fecha</label><input type="date" class="sesion-multi-fecha" data-idx="${idx}" value="${def.fecha || ''}" /></div>
       <div><label>Hora</label><input type="time" class="sesion-multi-hora" data-idx="${idx}" value="${hVal}" /></div>
       <div class="sesion-multi-estado-wrap"><span class="sesion-multi-estado" data-idx="${idx}"><span class="sesion-multi-pill sesion-multi-pill--muted">—</span></span></div>
     </div>`;
@@ -2089,9 +2089,33 @@ function programarVerificarSesionMultiFila(idx) {
   _sesionesVerifTimers[idx] = setTimeout(() => verificarSesionMultiFila(idx), 180);
 }
 
+function payloadVerificarSesionesMultiples(sesiones) {
+  const doctorId = selectedDoctorId || (currentUser?.rol === 'doctor' ? currentUser?.id : null);
+  const todas = obtenerTodasLasSesionesMultiples();
+  return {
+    doctor_id: parseInt(doctorId, 10),
+    sesiones: sesiones.map((s) => ({
+      fecha: s.fecha,
+      hora: s.hora,
+      sesion_numero: s.sesion_numero
+    })),
+    primera_sesion: {
+      fecha: $('modalNuevaCitaFecha')?.value || '',
+      hora: obtenerHoraPrimeraSesionModal()
+    },
+    todas_sesiones: todas.map((s) => ({
+      fecha: s.fecha,
+      hora: s.hora,
+      sesion_numero: s.sesion_numero
+    })),
+    intervalo_min: _intervaloAgendaMedicaMin()
+  };
+}
+
 function planDesdeVerificacionApi(s, i, info) {
   const esPrimera = i === 0;
-  const requiereCambio = !esPrimera && info.agenda_valida === false;
+  const ocupada = !!(info.ocupada || info.duplicada_en_plan);
+  const requiereCambio = !esPrimera && (info.agenda_valida === false || ocupada);
   return {
     numero: s.sesion_numero,
     fecha: s.fecha,
@@ -2099,7 +2123,7 @@ function planDesdeVerificacionApi(s, i, info) {
     esPrimera,
     agenda_valida: info.agenda_valida !== false,
     agenda_error: info.agenda_error || null,
-    ocupada: !!info.ocupada,
+    ocupada,
     paciente: info.paciente || null,
     horas_alternativas: info.horas_alternativas || [],
     requiereCambio
@@ -2117,11 +2141,10 @@ function htmlPillEstadoSesion(s) {
     const msg = s.agenda_error || 'Complete fecha y hora';
     return `<span class="sesion-multi-pill sesion-multi-pill--muted">${escapeHtml(msg)}</span>`;
   }
-  if (s.requiereCambio) {
-    return `<span class="sesion-multi-pill sesion-multi-pill--bad">${escapeHtml(s.agenda_error || 'Horario no válido')}</span>`;
-  }
-  if (s.ocupada) {
-    return `<span class="sesion-multi-pill sesion-multi-pill--warn">Ocupada${s.paciente ? ` · ${escapeHtml(s.paciente)}` : ''}</span>`;
+  if (s.requiereCambio || s.ocupada) {
+    const msg = s.agenda_error
+      || (s.paciente ? `Ya hay cita (${s.paciente})` : 'Ya hay otra cita a esta hora');
+    return `<span class="sesion-multi-pill sesion-multi-pill--bad">${escapeHtml(msg)}</span>`;
   }
   return '<span class="sesion-multi-pill sesion-multi-pill--ok">✓ Disponible</span>';
 }
@@ -2174,11 +2197,9 @@ async function verificarSesionMultiFila(idx) {
     const res = await apiFetch('/api/turnos/verificar-sesiones', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        doctor_id: parseInt(doctorId, 10),
-        sesiones: [{ fecha, hora }],
-        intervalo_min: _intervaloAgendaMedicaMin()
-      })
+      body: JSON.stringify(payloadVerificarSesionesMultiples([
+        { fecha, hora, sesion_numero: idx + 1 }
+      ]))
     });
     const data = await res.json();
     const info = data.ok && data.sesiones?.[0] ? data.sesiones[0] : {};
@@ -2264,11 +2285,13 @@ async function actualizarPreviewSesionesMultiples() {
       const res = await apiFetch('/api/turnos/verificar-sesiones', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          doctor_id: parseInt(doctorId, 10),
-          sesiones: sesionesPayload,
-          intervalo_min: _intervaloAgendaMedicaMin()
-        })
+        body: JSON.stringify(payloadVerificarSesionesMultiples(
+          sesionesAVerificar.map((s) => ({
+            fecha: s.fecha,
+            hora: s.hora,
+            sesion_numero: s.sesion_numero
+          }))
+        ))
       });
       const data = await res.json();
       if (data.ok) verif = data;
@@ -5470,7 +5493,7 @@ async function crearTurnoMedica() {
         showToast(`Defina las ${cantidadSesiones} sesiones en el formulario`, 'error');
         return;
       }
-      const sinAgenda = _sesionesMultiplesPlan.filter((s) => !s.esPrimera && s.agenda_valida === false);
+      const sinAgenda = _sesionesMultiplesPlan.filter((s) => !s.esPrimera && (s.agenda_valida === false || s.ocupada));
       if (sinAgenda.length) {
         const ej = sinAgenda[0];
         showToast(ej.agenda_error || `Horario no válido el ${formatearFechaCorta(ej.fecha)} (sesión ${ej.numero})`, 'error');

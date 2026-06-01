@@ -589,22 +589,61 @@ function normalizarHoraHHMM(hora) {
   return `${String(parseInt(m[1], 10)).padStart(2, '0')}:${m[2]}`;
 }
 
+/** Normaliza hora guardada en turnos (TIME, 24h o 12h AM/PM). */
+function normalizarHoraDesdeTurno(val) {
+  if (val == null || val === '') return null;
+  const s = String(val).trim();
+  let h = normalizarHoraHHMM(s);
+  if (h) return h;
+  const m12 = s.match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)$/i);
+  if (m12) {
+    let hh = parseInt(m12[1], 10);
+    const mm = m12[2];
+    if (m12[3].toUpperCase() === 'AM') { if (hh === 12) hh = 0; }
+    else { if (hh !== 12) hh += 12; }
+    return `${String(hh).padStart(2, '0')}:${mm}`;
+  }
+  return null;
+}
+
+function conflictoSesionConOtrasEnPlan(fecha, horaNorm, sesionNumero, primeraSesion, todasSesiones) {
+  if (!fecha || !horaNorm) return { conflicto: false };
+  const f = String(fecha).slice(0, 10);
+  if (primeraSesion?.fecha && primeraSesion?.hora) {
+    const f1 = String(primeraSesion.fecha).slice(0, 10);
+    const h1 = normalizarHoraHHMM(primeraSesion.hora) || normalizarHoraDesdeTurno(primeraSesion.hora);
+    if (sesionNumero > 1 && f1 === f && h1 === horaNorm) {
+      return { conflicto: true, razon: 'Misma fecha y hora que la 1.ª sesión' };
+    }
+  }
+  for (const s of todasSesiones || []) {
+    const num = parseInt(s.sesion_numero, 10);
+    if (num === sesionNumero || num < 2) continue;
+    const f2 = String(s.fecha || '').slice(0, 10);
+    const h2 = normalizarHoraHHMM(s.hora) || normalizarHoraDesdeTurno(s.hora);
+    if (f2 === f && h2 === horaNorm) {
+      return { conflicto: true, razon: `Duplicada con la sesión ${num}` };
+    }
+  }
+  return { conflicto: false };
+}
+
 /**
  * Indica si ya hay otra cita activa del médico en esa fecha y hora (HH:MM).
- * Solo informativo: la agenda médica permite varias citas a la misma hora.
  */
 async function consultarOcupacionHora(doctorId, fecha, hora, db) {
-  const horaNorm = normalizarHoraHHMM(hora);
+  const horaNorm = normalizarHoraHHMM(hora) || normalizarHoraDesdeTurno(hora);
   if (!horaNorm) return { ocupada: false, turnos: [] };
+  const fechaFmt = String(fecha).slice(0, 10);
   const rows = await db.query(
     `SELECT id, paciente_nombre, hora FROM turnos
      WHERE doctor_id = ? AND fecha = ?
        AND estado NOT IN ('CANCELADO', 'REPROGRAMADO')
-       AND hora IS NOT NULL AND hora != ''
-       AND TIME_FORMAT(hora, '%H:%i') = ?`,
-    [doctorId, fecha, horaNorm]
+       AND hora IS NOT NULL AND TRIM(CAST(hora AS CHAR)) <> ''`,
+    [doctorId, fechaFmt]
   );
-  return { ocupada: rows.length > 0, turnos: rows };
+  const turnos = rows.filter((r) => normalizarHoraDesdeTurno(r.hora) === horaNorm);
+  return { ocupada: turnos.length > 0, turnos };
 }
 
 /** Horas libres en el día (sin cita activa y con disponibilidad del médico). */
@@ -616,7 +655,9 @@ async function listarHorasLibresAgendaDia(doctorId, fecha, db, intervaloMin = 40
        AND hora IS NOT NULL AND hora != ''`,
     [doctorId, fecha]
   );
-  const ocupadas = new Set(turnosRows.map((r) => r.h));
+  const ocupadas = new Set(
+    turnosRows.map((r) => normalizarHoraDesdeTurno(r.h) || String(r.h || '').slice(0, 5)).filter(Boolean)
+  );
   const libres = [];
   const rangos = [{ inicio: 7 * 60, fin: 12 * 60 }, { inicio: 14 * 60, fin: 18 * 60 }];
   const paso = Math.min(60, Math.max(15, parseInt(intervaloMin, 10) || 40));
@@ -648,6 +689,8 @@ module.exports = {
   limpiarDisponibilidad,
   parseIntervalo,
   normalizarHoraHHMM,
+  normalizarHoraDesdeTurno,
+  conflictoSesionConOtrasEnPlan,
   consultarOcupacionHora,
   listarHorasLibresAgendaDia,
   // Compatibilidad anterior
