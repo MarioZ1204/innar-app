@@ -1024,7 +1024,7 @@
       const metaUser = a.editado_por_nombre
         ? `Editado por ${escapeHtml(a.editado_por_nombre)}`
         : (a.subido_por_nombre ? `Subido por ${escapeHtml(a.subido_por_nombre)}` : '');
-      const nomArch = a.nombre_archivo_display || a.nombre_archivo_original || '';
+      const nomArch = a.nombre_descarga || a.nombre_archivo_display || a.nombre_archivo_original || '';
       return `<tr>
       <td>
         <strong>${escapeHtml(a.paciente_nombre)}</strong>
@@ -1165,8 +1165,8 @@
         if (plainMatch) filename = plainMatch[1].trim();
       }
       const row = pdxState.archivos.find((x) => x.id === archivoId);
-      if (row && (!filename || filename === 'archivo.pdf')) {
-        filename = row.nombre_archivo_display || row.nombre_archivo_original || filename;
+      if (row) {
+        filename = row.nombre_descarga || row.nombre_archivo_display || row.nombre_archivo_original || filename;
       }
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');

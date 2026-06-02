@@ -687,50 +687,98 @@ function buildMetaDesdeCamposManuales(originalName, body, carpeta) {
   return base;
 }
 
+function mergeMetaPdxDesdeRow(row, carpetaCtx) {
+  const original = String(row?.nombre_archivo_original || '').trim();
+  const reparsed = original ? parseNombrePorCarpeta(original, carpetaCtx) : { ok: false };
+  const rp = reparsed.ok ? reparsed : {};
+  return {
+    original,
+    reparsed,
+    apellidos: String(row?.apellidos || rp.apellidos || '').trim(),
+    nombres: String(row?.nombres || rp.nombres || '').trim(),
+    fecha: row?.fecha_estudio
+      ? String(row.fecha_estudio).slice(0, 10)
+      : (rp.fecha_estudio ? String(rp.fecha_estudio).slice(0, 10) : ''),
+    doc: String(row?.paciente_documento || rp.paciente_documento || '').replace(/\s/g, ''),
+    tipoDoc: String(rp.tipo_documento || 'CC').trim() || 'CC',
+    estudio: String(row?.estudio_texto || rp.estudio_texto || '').trim(),
+    marca_tiempo: String(row?.marca_tiempo || rp.marca_tiempo || '').trim(),
+    sufijo_numero: String(row?.sufijo_numero || rp.sufijo_numero || '').trim()
+  };
+}
+
+function buildNombreReporteClinicoDescarga(meta, carpetaCtx, tema) {
+  const { apellidos, nombres, fecha, estudio, marca_tiempo, sufijo_numero, original } = meta;
+  let estudioFin = estudio;
+  if (!estudioFin) estudioFin = inferirEstudioDesdeCarpeta(carpetaCtx);
+  if (tema === 'psg' && estudioFin && !estudioPsgReconocido(estudioFin)) {
+    estudioFin = inferirEstudioPsgDesdeCarpeta(carpetaCtx.nombre_display || '') || estudioFin;
+  }
+
+  let base = original;
+  if (apellidos && nombres && fecha) {
+    if (marca_tiempo && sufijo_numero && estudioFin) {
+      base = `${apellidos}, ${nombres}   ${fecha}   ${marca_tiempo}   ${sufijo_numero}.   ${estudioFin}.pdf`;
+    } else {
+      base = `${apellidos}, ${nombres}   ${fecha}.pdf`;
+    }
+  }
+
+  return nombreArchivoDescarga({
+    nombre_archivo_original: base,
+    original: base,
+    estudio_texto: estudioFin
+  }, carpetaCtx);
+}
+
 /**
  * Nombre de archivo al descargar, según tema de carpeta y metadatos guardados.
- * Recalcula el formato normalizado (órdenes, comprobantes, reportes con estudio, etc.).
+ * VTM, EEG, PSG, actigrafía, órdenes, comprobantes y consentimientos.
  */
 function buildNombreDescargaPdxDesdeRow(row, carpeta) {
   const carpetaCtx = typeof carpeta === 'string'
     ? { nombre_display: carpeta }
     : (carpeta || { nombre_display: row?.carpeta_nombre || '' });
   const tema = detectarTemaCarpeta(carpetaCtx.nombre_display || '');
-  const original = row?.nombre_archivo_original || '';
-  const apellidos = String(row?.apellidos || '').trim();
-  const nombres = String(row?.nombres || '').trim();
-  const fecha = row?.fecha_estudio ? String(row.fecha_estudio).slice(0, 10) : '';
-  const doc = String(row?.paciente_documento || '').replace(/\s/g, '');
-  let estudio = String(row?.estudio_texto || '').trim();
-  if (!estudio && ['vtm', 'eeg', 'psg', 'actigrafia'].includes(tema)) {
-    estudio = inferirEstudioDesdeCarpeta(carpetaCtx);
+  const m = mergeMetaPdxDesdeRow(row, carpetaCtx);
+
+  let estudio = m.estudio;
+  if (!estudio && m.reparsed.ok && m.reparsed.estudio_texto) {
+    estudio = String(m.reparsed.estudio_texto).trim();
+  }
+  if (!estudio && esTemaEstructurado(tema) && m.reparsed.ok) {
+    estudio = String(m.reparsed.estudio_texto || '').trim();
   }
 
-  const reparsed = original ? parseNombrePorCarpeta(original, carpetaCtx) : { ok: false };
-  const tipoDoc = (reparsed.ok && reparsed.tipo_documento) ? reparsed.tipo_documento : 'CC';
+  const partsEstruct = {
+    apellidos: m.apellidos,
+    nombres: m.nombres,
+    tipo_documento: m.tipoDoc,
+    paciente_documento: m.doc,
+    fecha: m.fecha,
+    estudio: estudio || m.estudio
+  };
 
-  if (tema === 'ordenes' && apellidos && nombres && fecha && estudio && doc) {
-    return normalizarNombreOrdenHc({
-      apellidos, nombres, tipo_documento: tipoDoc, paciente_documento: doc, fecha, estudio
-    });
+  if (tema === 'ordenes' && partsEstruct.apellidos && partsEstruct.nombres && partsEstruct.fecha && partsEstruct.estudio && partsEstruct.paciente_documento) {
+    return normalizarNombreOrdenHc(partsEstruct);
   }
-  if (tema === 'comprobantes' && apellidos && nombres && fecha && estudio && doc) {
-    return normalizarNombreComprobante({
-      apellidos, nombres, tipo_documento: tipoDoc, paciente_documento: doc, fecha, estudio
-    });
+  if (tema === 'comprobantes' && partsEstruct.apellidos && partsEstruct.nombres && partsEstruct.fecha && partsEstruct.estudio && partsEstruct.paciente_documento) {
+    return normalizarNombreComprobante(partsEstruct);
   }
-  if (tema === 'consentimientos' && apellidos && nombres && fecha && estudio && doc) {
-    return normalizarNombreConsentimiento({
-      apellidos, nombres, tipo_documento: tipoDoc, paciente_documento: doc, fecha, estudio
-    });
+  if (tema === 'consentimientos' && partsEstruct.apellidos && partsEstruct.nombres && partsEstruct.fecha && partsEstruct.estudio && partsEstruct.paciente_documento) {
+    return normalizarNombreConsentimiento(partsEstruct);
   }
 
-  return nombreArchivoDescarga({
-    nombre_archivo_original: original,
-    original,
-    estudio_texto: estudio,
-    nombre_archivo_display: row?.nombre_archivo_display
-  }, carpetaCtx);
+  if (esTemaEstructurado(tema) && m.reparsed.ok && m.reparsed.nombre_display) {
+    return m.reparsed.nombre_display;
+  }
+
+  if (['vtm', 'eeg', 'psg', 'actigrafia', 'neutral'].includes(tema)) {
+    return buildNombreReporteClinicoDescarga(m, carpetaCtx, tema);
+  }
+
+  if (m.reparsed.ok && m.reparsed.nombre_display) return m.reparsed.nombre_display;
+  return row?.nombre_archivo_display || m.original || 'archivo.pdf';
 }
 
 module.exports = {
@@ -768,6 +816,7 @@ module.exports = {
   buildMetaDesdeCamposManuales,
   nombreArchivoDescarga,
   buildNombreDescargaPdxDesdeRow,
+  mergeMetaPdxDesdeRow,
   appendEstudioAlNombre,
   normalizarNombreBusqueda,
   resolverEstudioDesdeLista,

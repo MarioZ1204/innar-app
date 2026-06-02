@@ -63,6 +63,14 @@ const {
 
 const ROLES_SOPORTES = ['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'contabilidad', 'admin_electro', 'electro', 'tecnico_electro'];
 
+function enrichArchivoPdxConNombreDescarga(archivo, carpeta) {
+  const carpetaCtx = carpeta?.nombre_display != null
+    ? carpeta
+    : { nombre_display: archivo.carpeta_nombre || '' };
+  const nombre_descarga = buildNombreDescargaPdxDesdeRow(archivo, carpetaCtx);
+  return { ...archivo, nombre_descarga };
+}
+
 function puedeVerArchivo(req) {
   const perms = req.session?.permisos;
   if (req.session?.rol === 'superadmin') return true;
@@ -285,7 +293,11 @@ router.get('/soportes/pdx/carpetas/:id/archivos', requireAuth, requireRoleOrPerm
        WHERE a.carpeta_id = ? ORDER BY a.paciente_nombre ASC, a.id DESC`,
       [req.params.id]
     );
-    res.json({ carpeta: mapCarpetaPdx({ ...carpeta[0], archivos_count: archivos.length }), archivos });
+    const carp = carpeta[0];
+    res.json({
+      carpeta: mapCarpetaPdx({ ...carp, archivos_count: archivos.length }),
+      archivos: archivos.map((a) => enrichArchivoPdxConNombreDescarga(a, carp))
+    });
   } catch (e) {
     res.status(500).json({ error: safeError(e) });
   }
@@ -343,7 +355,11 @@ router.post(
 
       await logPdxArchivo(ins.insertId, 'subida', req.session.usuarioId, req.file.originalname);
       const row = await db.query('SELECT * FROM sop_pdx_archivos WHERE id = ?', [ins.insertId]);
-      res.status(201).json({ ok: true, archivo: row[0], warnings });
+      res.status(201).json({
+        ok: true,
+        archivo: enrichArchivoPdxConNombreDescarga(row[0], carpeta),
+        warnings
+      });
     } catch (e) {
       logger.error('[SOPORTES] subir pdx:', e);
       res.status(500).json({ error: safeError(e) });
@@ -369,18 +385,22 @@ router.get('/soportes/pdx/buscar', requireAuth, requireRoleOrPerm(ROLES_SOPORTES
     const resultados = archivos.filter((a) => {
       const vis = calcularVisibilidadPeriodo(a.periodo);
       return vis !== 'archivo' || incluirArchivo;
-    }).map((a) => ({
-      archivo_id: a.id,
-      paciente_nombre: a.paciente_nombre,
-      nombre_archivo_original: a.nombre_archivo_original,
-      nombre_archivo_display: a.nombre_archivo_display,
-      fecha_estudio: a.fecha_estudio,
-      estudio_texto: a.estudio_texto,
-      carpeta_id: a.carpeta_id,
-      carpeta_nombre: a.carpeta_nombre,
-      periodo: a.periodo,
-      color_tema: a.color_tema
-    }));
+    }).map((a) => {
+      const enriched = enrichArchivoPdxConNombreDescarga(a, { nombre_display: a.carpeta_nombre });
+      return {
+        archivo_id: a.id,
+        paciente_nombre: a.paciente_nombre,
+        nombre_archivo_original: a.nombre_archivo_original,
+        nombre_archivo_display: a.nombre_archivo_display,
+        nombre_descarga: enriched.nombre_descarga,
+        fecha_estudio: a.fecha_estudio,
+        estudio_texto: a.estudio_texto,
+        carpeta_id: a.carpeta_id,
+        carpeta_nombre: a.carpeta_nombre,
+        periodo: a.periodo,
+        color_tema: a.color_tema
+      };
+    });
     res.json({ resultados });
   } catch (e) {
     res.status(500).json({ error: safeError(e) });

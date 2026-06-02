@@ -37,6 +37,50 @@ describe('soportes-pdx-parse — reportes simples', () => {
     expect(p.error).toBe(mensajeErrorFormato('neutral'));
   });
 
+  test('buildNombreDescargaPdxDesdeRow — órdenes con guiones', () => {
+    const nombre = buildNombreDescargaPdxDesdeRow(
+      {
+        apellidos: 'García López',
+        nombres: 'Juan Carlos',
+        paciente_documento: '1234567890',
+        fecha_estudio: '2026-05-27',
+        estudio_texto: 'PSG Basal',
+        nombre_archivo_original: 'mal.pdf'
+      },
+      { nombre_display: 'ORDENES MARZO' }
+    );
+    expect(nombre).toBe('ORDEN + HC - García López - Juan Carlos - CC - 1234567890 - 2026-05-27 - PSG Basal.pdf');
+  });
+
+  test('buildNombreDescargaPdxDesdeRow — comprobantes', () => {
+    const nombre = buildNombreDescargaPdxDesdeRow(
+      {
+        apellidos: 'Pérez',
+        nombres: 'Ana',
+        paciente_documento: '987654',
+        fecha_estudio: '2026-04-01',
+        estudio_texto: 'EEG',
+        nombre_archivo_original: 'x.pdf'
+      },
+      { nombre_display: 'COMPROBANTES ABRIL' }
+    );
+    expect(nombre).toContain('COMPROBANTE - Pérez - Ana');
+    expect(nombre).toContain('EEG.pdf');
+  });
+
+  test('buildNombreDescargaPdxDesdeRow — PSG con estudio inferido', () => {
+    const nombre = buildNombreDescargaPdxDesdeRow(
+      {
+        apellidos: 'López',
+        nombres: 'María',
+        fecha_estudio: '2026-03-10',
+        nombre_archivo_original: 'López, María   2026-03-10.pdf'
+      },
+      { nombre_display: 'PSG CPAP MARZO' }
+    );
+    expect(nombre).toBe('López, María   2026-03-10 PSG CPAP.pdf');
+  });
+
   test('buildNombreDescargaPdxDesdeRow añade estudio VTM al descargar', () => {
     const nombre = buildNombreDescargaPdxDesdeRow(
       {
