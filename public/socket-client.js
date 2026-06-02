@@ -31,11 +31,20 @@ function scheduleSocketRefresh(key, callback, delayMs = 120) {
   }, delayMs);
 }
 
+/** Recarga Ver Recibos manteniendo query de filtros (_recibosLastParams). */
+function refreshRecibosListaPreservandoFiltros() {
+  if (window.currentModule !== 'recibos') return;
+  if (typeof cargarLista !== 'function') return;
+  scheduleSocketRefresh('recibos:lista', () => {
+    const q = typeof window._recibosLastParams === 'string' ? window._recibosLastParams : '';
+    cargarLista(q);
+  });
+}
+
 function refreshActiveModuleData() {
   const module = window.currentModule;
-  if (module === 'recibos' && typeof cargarLista === 'function') {
-    scheduleSocketRefresh('recibos:lista', () => cargarLista());
-  }
+  // No recargar recibos aquí: eventos de agenda/electro no deben vaciar filtros del reporte.
+  // Solo los eventos recibo:* llaman refreshRecibosListaPreservandoFiltros().
   if (module === 'agenda-medica') {
     if (typeof cargarTurnosMedica === 'function') {
       scheduleSocketRefresh('agenda:turnos', () => cargarTurnosMedica());
@@ -157,36 +166,21 @@ async function pushToServer(event, data) {
 
 function registerDefaultRealtimeHandlers() {
   subscribe('recibo:actualizar-lista', () => {
-    if (typeof cargarLista === 'function') {
-      scheduleSocketRefresh('recibos:lista', () => {
-        const q = typeof window._recibosLastParams === 'string' ? window._recibosLastParams : '';
-        cargarLista(q);
-      });
-    }
+    refreshRecibosListaPreservandoFiltros();
     if (typeof updateSavedCount === 'function') updateSavedCount();
     if (typeof scheduleBuscarCitasAuditoria === 'function') {
       scheduleSocketRefresh('dashboard:citas', () => scheduleBuscarCitasAuditoria(120));
     }
   });
   subscribe('recibo:creado', () => {
-    if (typeof cargarLista === 'function') {
-      scheduleSocketRefresh('recibos:lista', () => {
-        const q = typeof window._recibosLastParams === 'string' ? window._recibosLastParams : '';
-        cargarLista(q);
-      });
-    }
+    refreshRecibosListaPreservandoFiltros();
     if (typeof updateSavedCount === 'function') updateSavedCount();
     if (typeof scheduleBuscarCitasAuditoria === 'function') {
       scheduleSocketRefresh('dashboard:citas', () => scheduleBuscarCitasAuditoria(120));
     }
   });
   subscribe('recibo:eliminado', () => {
-    if (typeof cargarLista === 'function') {
-      scheduleSocketRefresh('recibos:lista', () => {
-        const q = typeof window._recibosLastParams === 'string' ? window._recibosLastParams : '';
-        cargarLista(q);
-      });
-    }
+    refreshRecibosListaPreservandoFiltros();
     if (typeof updateSavedCount === 'function') updateSavedCount();
     if (typeof scheduleBuscarCitasAuditoria === 'function') {
       scheduleSocketRefresh('dashboard:citas', () => scheduleBuscarCitasAuditoria(120));
@@ -441,7 +435,7 @@ function initSocket() {
         void runPollIteration();
       }
       const module = window.currentModule;
-      if (module === 'recibos' && typeof cargarLista === 'function') cargarLista();
+      if (module === 'recibos') refreshRecibosListaPreservandoFiltros();
       if (module === 'agenda-medica' && typeof cargarTurnosMedica === 'function') cargarTurnosMedica();
       if (module === 'electro' && typeof cargarCitasElectro === 'function') cargarCitasElectro();
       if (module === 'usuarios' && typeof cargarUsuarios === 'function') cargarUsuarios();

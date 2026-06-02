@@ -3,6 +3,12 @@
 Todos los cambios importantes a la aplicación se documentan aquí. El formato
 sigue (informalmente) [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
+## [1.5.56] — 2026-06-02
+
+### Corregido
+
+- **Ver Recibos**: los filtros del reporte ya no se pierden cuando otro usuario cambia agenda, electro u otro módulo (el tiempo real recargaba `cargarLista()` sin parámetros).
+
 ## [1.5.55] — 2026-06-02
 
 ### Añadido

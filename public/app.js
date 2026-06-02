@@ -9865,6 +9865,13 @@ async function abrirPDF(){
 let _recibosLastParams = '';
 let _recibosFiltrosUI = null;
 
+/** Recarga la tabla de Ver Recibos respetando filtros aplicados (tiempo real / visibilidad). */
+function recargarListaRecibosPreservandoFiltros() {
+  const q = typeof window._recibosLastParams === 'string' ? window._recibosLastParams : (_recibosLastParams || '');
+  return cargarLista(q);
+}
+window.recargarListaRecibosPreservandoFiltros = recargarListaRecibosPreservandoFiltros;
+
 function _msValues(sel) {
   return _msValuesRecibo(sel);
 }
