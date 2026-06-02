@@ -1,33 +1,37 @@
 const path = require('path');
 const fs = require('fs');
-const { getUploadsRoot, getSoportesRoot, isInsideUploadsRoot } = require('../config/uploads-path');
+const { getUploadsRoot, getSoportesRoot } = require('../config/uploads-path');
 
-const SOPORTES_ROOT = getSoportesRoot();
-const UPLOADS_ROOT = getUploadsRoot();
+/** Siempre leer UPLOADS_DIR actual (no cachear al cargar el módulo). */
+function uploadsRoot() {
+  return getUploadsRoot();
+}
+
+function soportesRoot() {
+  return getSoportesRoot();
+}
 
 function ensureDir(dir) {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 }
 
 function getPdxDir(carpetaId) {
-  const dir = path.join(SOPORTES_ROOT, 'pdx', String(carpetaId));
+  const dir = path.join(soportesRoot(), 'pdx', String(carpetaId));
   ensureDir(dir);
   return dir;
 }
 
 /** @deprecated Use getArmadoFeDirAbs from soportes-armado-structure */
 function getArmadoExpedienteDir(periodo, dia, codigo) {
-  const dir = path.join(SOPORTES_ROOT, 'armado', periodo, String(dia), codigo);
+  const dir = path.join(soportesRoot(), 'armado', periodo, String(dia), codigo);
   ['OPF', 'CRC', 'FEV', 'PDX', 'HEV'].forEach((sub) => ensureDir(path.join(dir, sub)));
   return dir;
 }
 
 function getArmadoFeDirFromContext(ctx, codigo) {
-  const {
-    getArmadoFeDirAbs
-  } = require('./soportes-armado-structure');
+  const { getArmadoFeDirAbs } = require('./soportes-armado-structure');
   return getArmadoFeDirAbs(
-    SOPORTES_ROOT,
+    soportesRoot(),
     ctx.periodo,
     ctx.nombre_display || `Día ${ctx.dia}`,
     ctx.estado_facturacion || 'a_facturar',
@@ -41,33 +45,84 @@ function safeFilename(original) {
   return `${Date.now()}-${base.replace(/[^a-zA-Z0-9.\-_,() ]/g, '_')}`;
 }
 
+function stripMulterTimestamp(filename) {
+  return String(filename || '').replace(/^\d{10,}-/, '');
+}
+
+function legacyPublicUploadsRoot() {
+  return path.resolve(__dirname, '..', 'public', 'uploads');
+}
+
 function resolveStoragePath(rutaRelativa) {
   const rel = String(rutaRelativa || '').replace(/^uploads\//, '').replace(/\\/g, '/').trim();
   if (!rel) return null;
 
+  const root = uploadsRoot();
   const candidates = [];
+
   if (rel.startsWith('soportes/')) {
-    candidates.push(path.resolve(UPLOADS_ROOT, rel));
+    candidates.push(path.resolve(root, rel));
   } else if (rel.startsWith('pdx/')) {
-    candidates.push(path.join(SOPORTES_ROOT, rel));
-    candidates.push(path.resolve(UPLOADS_ROOT, 'soportes', rel));
+    candidates.push(path.join(soportesRoot(), rel));
+    candidates.push(path.resolve(root, 'soportes', rel));
   } else {
-    candidates.push(path.resolve(UPLOADS_ROOT, rel));
-    candidates.push(path.join(SOPORTES_ROOT, rel));
-    candidates.push(path.resolve(UPLOADS_ROOT, 'soportes', rel));
+    candidates.push(path.resolve(root, rel));
+    candidates.push(path.join(soportesRoot(), rel));
+    candidates.push(path.resolve(root, 'soportes', rel));
+  }
+
+  const leg = legacyPublicUploadsRoot();
+  candidates.push(path.join(leg, rel));
+  if (rel.startsWith('soportes/')) {
+    candidates.push(path.join(leg, rel));
   }
 
   for (const full of candidates) {
-    if (!isInsideUploadsRoot(full)) continue;
     if (fs.existsSync(full)) return full;
   }
-  const first = candidates.find((p) => isInsideUploadsRoot(p));
-  return first || null;
+  return null;
 }
 
-/** Resuelve PDF PDX probando ruta en BD, carpeta en disco y nombres alternativos. */
+function listPdxPdfsInCarpeta(carpetaId) {
+  try {
+    const dir = getPdxDir(carpetaId);
+    return fs.readdirSync(dir).filter((f) => f.toLowerCase().endsWith('.pdf'));
+  } catch (_) {
+    return [];
+  }
+}
+
+function matchPdxFileInCarpeta(carpetaId, names, archivoRow) {
+  const dir = getPdxDir(carpetaId);
+  const files = listPdxPdfsInCarpeta(carpetaId);
+  const want = names
+    .map((n) => path.basename(String(n || '')))
+    .filter((n) => n && n !== '.' && n !== '..');
+  const orig = path.basename(String(archivoRow?.nombre_archivo_original || '')).toLowerCase();
+  const origCore = orig.replace(/\.pdf$/i, '').slice(0, 40);
+
+  for (const f of files) {
+    const fLow = f.toLowerCase();
+    const fStripped = stripMulterTimestamp(f).toLowerCase();
+    if (want.some((w) => {
+      const wLow = w.toLowerCase();
+      return wLow === fLow || stripMulterTimestamp(w).toLowerCase() === fStripped;
+    })) {
+      return path.join(dir, f);
+    }
+    if (origCore && fLow.includes(origCore)) return path.join(dir, f);
+  }
+
+  if (files.length === 1 && want.length) {
+    return path.join(dir, files[0]);
+  }
+  return null;
+}
+
+/** Resuelve PDF PDX probando ruta en BD, legacy public/uploads, carpeta en disco y nombres alternativos. */
 function resolvePdxArchivoPath(archivoRow) {
   if (!archivoRow) return null;
+
   const fromDb = resolveStoragePath(archivoRow.ruta_relativa);
   if (fromDb && fs.existsSync(fromDb)) return fromDb;
 
@@ -85,32 +140,39 @@ function resolvePdxArchivoPath(archivoRow) {
       if (!base || base === '.' || base === '..') continue;
       const fp = path.join(dir, base);
       if (fs.existsSync(fp)) return fp;
+      const withTs = listPdxPdfsInCarpeta(carpetaId).find(
+        (f) => stripMulterTimestamp(f) === base || f.endsWith(base)
+      );
+      if (withTs) return path.join(dir, withTs);
     }
-    try {
-      const files = fs.readdirSync(dir).filter((f) => f.toLowerCase().endsWith('.pdf'));
-      const origBase = path.basename(String(archivoRow.nombre_archivo_original || '')).toLowerCase();
-      if (origBase) {
-        const match = files.find((f) => f.toLowerCase().includes(origBase.replace(/\.pdf$/i, '').slice(0, 24)));
-        if (match) return path.join(dir, match);
-      }
-    } catch (_) { /* ignore */ }
+    const matched = matchPdxFileInCarpeta(carpetaId, names, archivoRow);
+    if (matched) return matched;
   }
 
-  return fromDb && fs.existsSync(fromDb) ? fromDb : null;
+  return null;
 }
 
-ensureDir(SOPORTES_ROOT);
-ensureDir(path.join(SOPORTES_ROOT, 'pdx'));
-ensureDir(path.join(SOPORTES_ROOT, 'armado'));
+function relativePdxRuta(carpetaId, diskBasename) {
+  return path.join('soportes', 'pdx', String(carpetaId), diskBasename).replace(/\\/g, '/');
+}
+
+ensureDir(soportesRoot());
+ensureDir(path.join(soportesRoot(), 'pdx'));
+ensureDir(path.join(soportesRoot(), 'armado'));
 
 module.exports = {
-  SOPORTES_ROOT,
-  UPLOADS_ROOT,
+  get uploadsRoot() { return uploadsRoot(); },
+  get soportesRoot() { return soportesRoot(); },
+  get UPLOADS_ROOT() { return uploadsRoot(); },
+  get SOPORTES_ROOT() { return soportesRoot(); },
   getPdxDir,
   getArmadoExpedienteDir,
   getArmadoFeDirFromContext,
   safeFilename,
+  stripMulterTimestamp,
   resolveStoragePath,
   resolvePdxArchivoPath,
+  relativePdxRuta,
+  listPdxPdfsInCarpeta,
   ensureDir
 };

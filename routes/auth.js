@@ -84,8 +84,13 @@ router.post('/login', async (req, res) => {
       });
     });
   } catch (e) {
-    logger.error(e.message, { error: e });
-    res.status(500).json({ error: safeError(e) });
+    logger.error('[AUTH] login', { message: e.message, code: e.code });
+    const payload = { error: safeError(e) };
+    if (req.session?.rol === 'superadmin' || process.env.NODE_ENV !== 'production') {
+      payload.detail = String(e.message || e).slice(0, 300);
+      if (e.code) payload.code = e.code;
+    }
+    res.status(500).json(payload);
   }
 });
 
@@ -113,7 +118,10 @@ router.get('/sesion', async (req, res) => {
       if (ensureCsrf) ensureCsrf(req, res);
       res.json({ autenticado: true, csrfToken: req.session.csrfToken, usuario: user });
     } catch (e) {
-      logger.error(e.message, { error: e });
+      logger.error('[AUTH] sesion', { message: e.message, code: e.code });
+      if (req.session) {
+        return req.session.destroy(() => res.json({ autenticado: false }));
+      }
       res.status(500).json({ error: safeError(e) });
     }
   } else {

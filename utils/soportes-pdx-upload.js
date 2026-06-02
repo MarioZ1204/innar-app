@@ -21,7 +21,7 @@ const {
   esCarpetaComprobantes,
   esCarpetaConsentimientos
 } = require('./soportes-temas');
-const { getPdxDir } = require('./soportes-storage');
+const { getPdxDir, relativePdxRuta } = require('./soportes-storage');
 
 async function cargarEstudiosParaOrdenes(db) {
   try {
@@ -139,11 +139,12 @@ function finalizePdxFileOnDisk(carpetaId, fileOrTmpName, meta, carpeta = null) {
     if (fs.existsSync(finalPath)) fs.unlinkSync(finalPath);
     fs.renameSync(tmpPath, finalPath);
   }
-  const rutaRelativa = path.join('soportes', 'pdx', String(carpetaId), diskName).replace(/\\/g, '/');
+  const onDisk = fs.existsSync(finalPath) ? path.basename(finalPath) : path.basename(tmpPath);
+  const rutaRelativa = relativePdxRuta(carpetaId, onDisk);
   return {
     rutaRelativa,
-    diskName,
-    nombre_archivo_display: meta.nombre_archivo_display || diskName
+    diskName: onDisk,
+    nombre_archivo_display: meta.nombre_archivo_display || onDisk
   };
 }
 

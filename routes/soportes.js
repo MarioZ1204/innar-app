@@ -59,8 +59,19 @@ const {
   ensureDir,
   safeFilename,
   resolveStoragePath,
-  resolvePdxArchivoPath
+  resolvePdxArchivoPath,
+  relativePdxRuta
 } = require('../utils/soportes-storage');
+
+async function resolvePdxArchivoPathForApi(row, repair = false) {
+  const fp = resolvePdxArchivoPath(row);
+  if (!fp || !repair || !row?.id) return fp;
+  const rel = relativePdxRuta(row.carpeta_id, path.basename(fp));
+  if (row.ruta_relativa !== rel) {
+    await db.execute('UPDATE sop_pdx_archivos SET ruta_relativa = ? WHERE id = ?', [rel, row.id]).catch(() => {});
+  }
+  return fp;
+}
 const { jsonSafeRow } = require('../utils/json-safe');
 
 const ROLES_SOPORTES = ['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'contabilidad', 'admin_electro', 'electro', 'tecnico_electro'];
@@ -129,9 +140,12 @@ async function queryPdxArchivosConUsuarios(carpetaId) {
 
 function pdxListErrorPayload(req, e) {
   const payload = { error: safeError(e) };
-  if (req.session?.rol === 'superadmin') {
-    payload.detail = String(e?.message || e).slice(0, 400);
+  const msg = String(e?.message || e);
+  if (req.session?.rol === 'superadmin' || process.env.NODE_ENV !== 'production') {
+    payload.detail = msg.slice(0, 400);
     if (e?.code) payload.code = e.code;
+  } else if (/temporal|UPLOADS|ENOENT|EACCES|ER_/i.test(msg)) {
+    payload.detail = msg.slice(0, 200);
   }
   return payload;
 }
@@ -455,8 +469,19 @@ router.post(
         carpeta
       );
       meta.ruta_relativa = rutaRelativa;
-      meta.nombre_archivo_display = nombre_archivo_display;
+      meta.nombre_archivo_display = String(nombre_archivo_display || '').slice(0, 255);
       uploadedPath = null;
+
+      const diskCheck = resolvePdxArchivoPath({
+        carpeta_id: carpeta.id,
+        ruta_relativa: rutaRelativa,
+        nombre_archivo_original: req.file.originalname
+      });
+      if (!diskCheck) {
+        return res.status(500).json({
+          error: 'El PDF se subió pero no quedó en la carpeta de almacenamiento. Revise UPLOADS_DIR y permisos.'
+        });
+      }
 
       const ins = await insertPdxArchivoRow(carpeta.id, meta, req.file, req.session);
       if (!ins?.insertId) {
@@ -700,7 +725,7 @@ router.get('/soportes/pdx/archivos/:id/descargar', requireAuth, requireRoleOrPer
     const row = rows[0];
     const vis = calcularVisibilidadPeriodo(row.periodo);
     if (vis === 'archivo' && !puedeVerArchivo(req)) return res.status(403).json({ error: 'Archivo en carpeta cerrada' });
-    const fp = resolvePdxArchivoPath(row);
+    const fp = await resolvePdxArchivoPathForApi(row, true);
     if (!fp) return res.status(404).json({ error: 'Archivo no en disco' });
     const downloadName = buildNombreDescargaPdxDesdeRow(row, { nombre_display: row.carpeta_nombre })
       || row.nombre_archivo_original
@@ -725,7 +750,7 @@ router.get('/soportes/pdx/archivos/:id/ver', requireAuth, requireRoleOrPerm(ROLE
     if (!rows.length) return res.status(404).json({ error: 'No encontrado' });
     const vis = calcularVisibilidadPeriodo(rows[0].periodo);
     if (vis === 'archivo' && !puedeVerArchivo(req)) return res.status(403).json({ error: 'Archivo en carpeta cerrada' });
-    const fp = resolvePdxArchivoPath(rows[0]);
+    const fp = await resolvePdxArchivoPathForApi(rows[0], true);
     if (!fp) return res.status(404).json({ error: 'Archivo no en disco' });
     const name = rows[0].nombre_archivo_display || rows[0].nombre_archivo_original;
     res.setHeader('Content-Type', 'application/pdf');

@@ -95,6 +95,20 @@ app.get('/api/version', (req, res) => res.json({ version: APP_VERSION }));
 app.get('/api/health', (req, res) => {
   res.status(200).json({ ok: true, version: APP_VERSION, uptime: process.uptime() });
 });
+/** Ping MySQL sin autenticación (diagnóstico cuando login/sesión devuelven 500). */
+app.get('/api/health/db', async (req, res) => {
+  try {
+    const t0 = Date.now();
+    await db.query('SELECT 1 AS ping');
+    res.json({ ok: true, latency_ms: Date.now() - t0 });
+  } catch (e) {
+    res.status(503).json({
+      ok: false,
+      error: e.message,
+      code: e.code || null
+    });
+  }
+});
 app.get('/api/socket-status', (req, res) => {
   res.json({
     realtime: {
@@ -191,9 +205,10 @@ app.get('/api/health/deep', requireAuth, async (req, res) => {
     checks.logsDir.error = e.message;
   }
 
-  const allOk = checks.db.ok && checks.uploadsDir.ok && checks.backupsDir.ok && checks.logsDir.ok;
-  res.status(allOk ? 200 : 503).json({
-    ok: allOk,
+  const criticalOk = checks.db.ok && checks.uploadsDir.ok && checks.logsDir.ok;
+  res.status(criticalOk ? 200 : 503).json({
+    ok: criticalOk,
+    backups_ok: checks.backupsDir.ok,
     version: APP_VERSION,
     checked_in_ms: Date.now() - start,
     checks
@@ -258,6 +273,29 @@ app.use('/api', require('./routes/pdf'));
 app.use('/api', require('./routes/admin'));
 app.use('/api', require('./routes/integraciones-worldoffice'));
 app.use('/api', require('./routes/soportes'));
+
+// Errores de sesión MySQL (cookie corrupta) u otros → no dejar la API sin respuesta JSON
+app.use((err, req, res, _next) => {
+  logger.error('[EXPRESS] Error no capturado', {
+    path: req.path,
+    method: req.method,
+    message: err?.message,
+    code: err?.code
+  });
+  const finish = () => {
+    if (req.method === 'GET' && req.path === '/api/sesion') {
+      return res.json({ autenticado: false });
+    }
+    if (req.path && String(req.path).startsWith('/api/')) {
+      return res.status(500).json({ error: 'Error interno del servidor' });
+    }
+    return res.status(500).send('Error');
+  };
+  if (req.session) {
+    return req.session.destroy(() => finish());
+  }
+  return finish();
+});
 
 const PORT = process.env.PORT || 3000;
 

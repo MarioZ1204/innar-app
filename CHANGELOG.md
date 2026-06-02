@@ -3,6 +3,19 @@
 Todos los cambios importantes a la aplicación se documentan aquí. El formato
 sigue (informalmente) [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
+## [1.5.51] — 2026-06-02
+
+### Corregido
+
+- **PDX ver/descargar 404**: resolución de PDF sin cachear `UPLOADS_DIR`, coincidencia con nombres multer (`1234-archivo.pdf`), rutas legacy `public/uploads` y reparación de `ruta_relativa` en BD al abrir.
+- **POST subida PDX**: `ruta_relativa` alineada al archivo real en disco; health deep 200 aunque falten backups.
+
+## [1.5.50] — 2026-05-27
+
+### Corregido / añadido
+
+- **Diagnóstico login/sesión 500**: `GET /api/health/db` (ping MySQL), manejo de errores de sesión y rate-limit fail-open si falla `login_attempts`.
+
 ## [1.5.49] — 2026-05-27
 
 ### Corregido

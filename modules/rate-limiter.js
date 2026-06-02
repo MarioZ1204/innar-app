@@ -34,8 +34,8 @@ async function isBlocked(ip) {
     );
     return false;
   } catch (error) {
-    logger.error('[RATE LIMIT] Error verificando bloqueo (fail-closed)', { error: error.message });
-    return true;
+    logger.error('[RATE LIMIT] Error verificando bloqueo (fail-open)', { error: error.message });
+    return false;
   }
 }
 
