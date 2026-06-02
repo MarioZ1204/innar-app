@@ -158,24 +158,36 @@ async function pushToServer(event, data) {
 function registerDefaultRealtimeHandlers() {
   subscribe('recibo:actualizar-lista', () => {
     if (typeof cargarLista === 'function') {
-      scheduleSocketRefresh('recibos:lista', () => cargarLista());
+      scheduleSocketRefresh('recibos:lista', () => {
+        const q = typeof window._recibosLastParams === 'string' ? window._recibosLastParams : '';
+        cargarLista(q);
+      });
     }
+    if (typeof updateSavedCount === 'function') updateSavedCount();
     if (typeof scheduleBuscarCitasAuditoria === 'function') {
       scheduleSocketRefresh('dashboard:citas', () => scheduleBuscarCitasAuditoria(120));
     }
   });
   subscribe('recibo:creado', () => {
     if (typeof cargarLista === 'function') {
-      scheduleSocketRefresh('recibos:lista', () => cargarLista());
+      scheduleSocketRefresh('recibos:lista', () => {
+        const q = typeof window._recibosLastParams === 'string' ? window._recibosLastParams : '';
+        cargarLista(q);
+      });
     }
+    if (typeof updateSavedCount === 'function') updateSavedCount();
     if (typeof scheduleBuscarCitasAuditoria === 'function') {
       scheduleSocketRefresh('dashboard:citas', () => scheduleBuscarCitasAuditoria(120));
     }
   });
   subscribe('recibo:eliminado', () => {
     if (typeof cargarLista === 'function') {
-      scheduleSocketRefresh('recibos:lista', () => cargarLista());
+      scheduleSocketRefresh('recibos:lista', () => {
+        const q = typeof window._recibosLastParams === 'string' ? window._recibosLastParams : '';
+        cargarLista(q);
+      });
     }
+    if (typeof updateSavedCount === 'function') updateSavedCount();
     if (typeof scheduleBuscarCitasAuditoria === 'function') {
       scheduleSocketRefresh('dashboard:citas', () => scheduleBuscarCitasAuditoria(120));
     }
@@ -357,7 +369,7 @@ function registerDefaultRealtimeHandlers() {
   subscribe('electro:cita-removida', () => refreshActiveModuleData());
 
   subscribe('stats:actualizar', () => {
-    if (typeof updateStats === 'function') updateStats();
+    if (typeof updateSavedCount === 'function') updateSavedCount();
   });
 }
 

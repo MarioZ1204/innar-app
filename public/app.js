@@ -652,6 +652,7 @@ function goToModule(moduleId) {
     recargarSelectsEntidadModulo('recibos', { force: true });
     if ($('filtroEntidad')) cargarFiltrosOpciones({ force: true });
     if ($('filtroEspecialidad')) cargarFiltrosEspecialidades();
+    if (typeof updateSavedCount === 'function') updateSavedCount();
   }
   if (moduleId === 'agenda-medica') { 
     if (!initAgendaDone) {
@@ -9583,8 +9584,11 @@ function recalc(){
 }
 
 function setDefaultDate(){
-  const f = new Date().toISOString().slice(0,10);
-  $('fecha').value = f;
+  $('fecha').value = recibosFechaHoyLocal();
+}
+
+function recibosFechaHoyLocal() {
+  return fechaLocalYmdFromDate(new Date());
 }
 
 async function nextNumber(){
@@ -9971,6 +9975,7 @@ async function aplicarFiltrosRecibos() {
     const tipoServicio = tipoConsulta || tipoEstudio;
     if (tipoServicio) params.set('tipo_servicio',    tipoServicio);
     _recibosLastParams = params.toString();
+    window._recibosLastParams = _recibosLastParams;
     _recibosFiltrosUI = capturarEstadoFiltrosRecibosUI();
 
     await cargarLista(_recibosLastParams);
@@ -10001,6 +10006,7 @@ function limpiarFiltrosRecibos() {
   const wrap = $('filtroTipoConsultaWrap');
   if (wrap) wrap.style.display = 'none';
   _recibosLastParams = '';
+  window._recibosLastParams = '';
   _recibosFiltrosUI = null;
   cargarLista();
 }
@@ -10021,7 +10027,6 @@ function exportarReciboPDF() {
 
 async function cargarLista(queryString) {
   if (!tienePermiso('recibos.ver')) {
-    updateStats([]);
     const tbody = document.getElementById('savedItems');
     if (tbody) tbody.innerHTML = '<tr><td colspan="11"><div class="empty-state"><p class="empty-state-title">Sin acceso</p><p class="empty-state-subtitle">Tu usuario no tiene permiso para ver recibos.</p></div></td></tr>';
     return;
@@ -10031,15 +10036,13 @@ async function cargarLista(queryString) {
     const res = await apiFetch(url);
     if (!res.ok) {
       if (res.status === 401) { /* handled by apiFetch */ return; }
-      if (res.status === 403) { updateStats([]); return; }
+      if (res.status === 403) { return; }
       showToast('Error al cargar recibos', 'error');
-      updateStats([]);
       return;
     }
     const jsonResp = await res.json();
     const recibos = jsonResp.rows || (Array.isArray(jsonResp) ? jsonResp : []);
     const totalCount = jsonResp.totalCount || recibos.length;
-    updateStats(recibos);
     const countInfo = $('recibosCountInfo');
     if (countInfo) {
       countInfo.textContent = totalCount > 0 ? `Mostrando ${recibos.length} de ${totalCount} recibos` : '';
@@ -10124,6 +10127,11 @@ async function cargarLista(queryString) {
             <line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
           </svg>
         </button>`;
+        acciones += `<button class="btn-recibo-generador" data-id="${r.id}" data-numero="${escapeHtml(r.numero || '')}" data-generado-id="${r.generado_por_id || ''}" data-generado-nombre="${escapeHtml(r.generado_por_nombre || '')}" title="Cambiar usuario que generó el recibo" aria-label="Cambiar generado por">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+          </svg>
+        </button>`;
         acciones += `<button class="btn-recibo-obs" data-id="${r.id}" data-numero="${escapeHtml(r.numero || '')}" title="Editar observaciones">
           <img src="images/edit.svg" alt="Observaciones"/></button>`;
       }
@@ -10151,6 +10159,11 @@ async function cargarLista(queryString) {
     tbody.querySelectorAll('.btn-recibo-valor').forEach((b) => b.addEventListener('click', (e) => {
       const btn = e.target.closest('.btn-recibo-valor');
       showEditValorReciboModal(btn.dataset.id, btn.dataset.numero, btn.dataset.total);
+    }));
+
+    tbody.querySelectorAll('.btn-recibo-generador').forEach((b) => b.addEventListener('click', (e) => {
+      const btn = e.target.closest('.btn-recibo-generador');
+      showEditGeneradorReciboModal(btn.dataset.id, btn.dataset.numero, btn.dataset.generadoId, btn.dataset.generadoNombre);
     }));
 
     tbody.querySelectorAll('.btn-recibo-obs').forEach((b) => b.addEventListener('click', (e) => {
@@ -10467,23 +10480,124 @@ async function showEditReciboModal({ id, medico, servicio, entidad, cliente, tip
 }
 
 function updateSavedCount() {
-  const hoy = new Date().toISOString().slice(0,10);
-  apiFetch(`/api/recibos?fecha_desde=${hoy}&fecha_hasta=${hoy}`)
-    .then(r => r.ok ? r.json() : [])
-    .then(json => {
-      const rows = json?.rows || (Array.isArray(json) ? json : []);
-      updateStats(rows);
+  const hoy = recibosFechaHoyLocal();
+  apiFetch(`/api/recibos/stats-hoy?fecha=${encodeURIComponent(hoy)}`)
+    .then((r) => (r.ok ? r.json() : null))
+    .then((data) => {
+      if (!data) throw new Error('stats');
+      if ($('statsRecibosHoy')) $('statsRecibosHoy').textContent = String(data.cantidad_activos ?? 0);
+      if ($('statsTotalHoy')) {
+        $('statsTotalHoy').textContent = '$ ' + (Number(data.total_pagado) || 0).toLocaleString('es-CO', {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2
+        });
+      }
     })
-    .catch(() => updateStats([]));
+    .catch(() => {
+      apiFetch(`/api/recibos?fecha_desde=${encodeURIComponent(hoy)}&fecha_hasta=${encodeURIComponent(hoy)}&anulado=no`)
+        .then((r) => (r.ok ? r.json() : { rows: [] }))
+        .then((json) => {
+          const rows = json?.rows || (Array.isArray(json) ? json : []);
+          const activos = rows.filter(_reciboEsActivo);
+          const pagados = activos.filter(_reciboEsPagado);
+          const totalPagadoHoy = pagados.reduce((sum, r) => sum + _reciboMonto(r), 0);
+          if ($('statsRecibosHoy')) $('statsRecibosHoy').textContent = String(activos.length);
+          if ($('statsTotalHoy')) {
+            $('statsTotalHoy').textContent = '$ ' + totalPagadoHoy.toLocaleString('es-CO', {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2
+            });
+          }
+        })
+        .catch(() => {
+          if ($('statsRecibosHoy')) $('statsRecibosHoy').textContent = '0';
+          if ($('statsTotalHoy')) $('statsTotalHoy').textContent = '$ 0';
+        });
+    });
 }
 
-function updateStats(recibos) {
-  if (!Array.isArray(recibos)) recibos = [];
-  const activos = recibos.filter(_reciboEsActivo);
-  const pagados = activos.filter(_reciboEsPagado);
-  const totalPagadoHoy = pagados.reduce((sum, r) => sum + _reciboMonto(r), 0);
-  if ($('statsRecibosHoy')) $('statsRecibosHoy').textContent = activos.length;
-  if ($('statsTotalHoy')) $('statsTotalHoy').textContent = '$ ' + totalPagadoHoy.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+let _recibosUsuariosGeneradorCache = null;
+
+async function showEditGeneradorReciboModal(reciboId, numero, generadoIdActual, generadoNombreActual) {
+  if (!isSuperadmin()) {
+    showToast('Solo el superadministrador puede cambiar quién generó el recibo', 'error');
+    return;
+  }
+  const inputStyle = 'width:100%;margin-top:4px;padding:9px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:0.9rem;background:#fff';
+  const backdrop = document.createElement('div');
+  backdrop.className = 'confirm-backdrop';
+  backdrop.innerHTML = `
+    <div class="confirm-box" style="max-width:440px;width:92%">
+      <div class="confirm-icon">👤</div>
+      <div class="confirm-msg" style="font-size:1rem;margin-bottom:14px">Generado por — Recibo ${escapeHtml(numero || reciboId)}</div>
+      <p style="font-size:.82rem;color:#6b7280;margin:-8px 0 12px;text-align:center">Actual: <strong>${escapeHtml(generadoNombreActual || '—')}</strong></p>
+      <label style="font-size:0.85rem;font-weight:600;color:#374151;display:block;text-align:left">
+        Usuario que generó el recibo
+        <select id="editReciboGenerador" style="${inputStyle}" disabled><option>Cargando usuarios…</option></select>
+      </label>
+      <div class="confirm-actions" style="margin-top:18px">
+        <button type="button" class="btn-cancel">Cancelar</button>
+        <button type="button" class="btn-ok" style="background:#2d4a47" disabled id="editReciboGeneradorOk">Guardar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(backdrop);
+  const sel = backdrop.querySelector('#editReciboGenerador');
+  const btnOk = backdrop.querySelector('#editReciboGeneradorOk');
+  backdrop.querySelector('.btn-cancel').addEventListener('click', () => backdrop.remove());
+  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) backdrop.remove(); });
+
+  try {
+    if (!_recibosUsuariosGeneradorCache) {
+      const res = await apiFetch('/api/recibos/usuarios-generador');
+      const data = res.ok ? await res.json() : [];
+      _recibosUsuariosGeneradorCache = Array.isArray(data) ? data : [];
+    }
+    sel.innerHTML = '<option value="">— Seleccione —</option>';
+    _recibosUsuariosGeneradorCache.forEach((u) => {
+      const opt = document.createElement('option');
+      opt.value = String(u.id);
+      opt.textContent = u.nombre || u.usuario || String(u.id);
+      if (generadoIdActual && String(u.id) === String(generadoIdActual)) opt.selected = true;
+      sel.appendChild(opt);
+    });
+    sel.disabled = false;
+    btnOk.disabled = false;
+    sel.focus();
+  } catch (_) {
+    showToast('No se pudieron cargar los usuarios', 'error');
+    backdrop.remove();
+    return;
+  }
+
+  btnOk.addEventListener('click', async () => {
+    const generado_por_id = parseInt(sel.value, 10);
+    if (!generado_por_id) {
+      showToast('Seleccione un usuario', 'error');
+      return;
+    }
+    btnOk.disabled = true;
+    try {
+      const jr = await apiFetch(`/api/recibos/${reciboId}/generador`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ generado_por_id })
+      }).then((r) => r.json());
+      if (jr.ok) {
+        backdrop.remove();
+        showToast(`Generado por actualizado: ${jr.generado_por_nombre || ''}`, 'success');
+        _recibosUsuariosGeneradorCache = null;
+        cargarFiltrosUsuarios().catch(() => {});
+        cargarLista(_recibosLastParams);
+        updateSavedCount();
+      } else {
+        showToast(jr.error || 'Error al guardar', 'error');
+        btnOk.disabled = false;
+      }
+    } catch (_) {
+      showToast('Error al guardar', 'error');
+      btnOk.disabled = false;
+    }
+  });
 }
 
 function resetAllRecibos(){

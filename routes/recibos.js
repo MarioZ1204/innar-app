@@ -283,6 +283,55 @@ router.get('/recibos/generadores', requireAuth, async (req, res) => {
   } catch (err) { res.status(500).json({ error: safeError(err) }); }
 });
 
+// GET /api/recibos/usuarios-generador — solo superadmin (asignar «generado por»)
+router.get('/recibos/usuarios-generador', requireAuth, async (req, res) => {
+  if (req.session?.rol !== 'superadmin') {
+    return res.status(403).json({ error: 'Solo el superadministrador puede consultar usuarios para asignar' });
+  }
+  try {
+    const rows = await db.query(
+      `SELECT id, nombre, usuario, rol FROM usuarios
+       WHERE activo = 1 AND rol NOT IN ('doctor')
+       ORDER BY nombre ASC, usuario ASC`
+    );
+    res.json(rows.map((u) => ({
+      id: u.id,
+      nombre: u.nombre || u.usuario,
+      usuario: u.usuario,
+      rol: u.rol
+    })));
+  } catch (err) {
+    res.status(500).json({ error: safeError(err) });
+  }
+});
+
+// GET /api/recibos/stats-hoy — contador diario (fecha local del cliente)
+router.get('/recibos/stats-hoy', requireAuth, async (req, res) => {
+  const raw = String(req.query.fecha || '').trim();
+  const fecha = /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : new Date().toISOString().slice(0, 10);
+  try {
+    const [row] = await db.query(
+      `SELECT
+         COUNT(*) AS cantidad_activos,
+         COALESCE(SUM(CASE WHEN COALESCE(estado_pago, 'PAGADO') <> 'PENDIENTE' THEN total ELSE 0 END), 0) AS total_pagado,
+         SUM(CASE WHEN COALESCE(estado_pago, 'PAGADO') = 'PENDIENTE' THEN 1 ELSE 0 END) AS cantidad_pendientes,
+         COALESCE(SUM(CASE WHEN COALESCE(estado_pago, 'PAGADO') = 'PENDIENTE' THEN total ELSE 0 END), 0) AS total_pendiente
+       FROM recibos
+       WHERE fecha = ? AND (anulado = 0 OR anulado IS NULL)`,
+      [fecha]
+    );
+    res.json({
+      fecha,
+      cantidad_activos: parseInt(row?.cantidad_activos, 10) || 0,
+      total_pagado: Number(row?.total_pagado) || 0,
+      cantidad_pendientes: parseInt(row?.cantidad_pendientes, 10) || 0,
+      total_pendiente: Number(row?.total_pendiente) || 0
+    });
+  } catch (err) {
+    res.status(500).json({ error: safeError(err) });
+  }
+});
+
 // GET /api/recibos/opciones — BEFORE /:id
 router.get('/recibos/opciones', requireAuth, async (req, res) => {
   try {
@@ -585,6 +634,40 @@ router.patch('/recibos/:id/total', requireAuth, async (req, res) => {
     emitSocket('recibo:actualizar-lista');
     emitSocket('stats:actualizar');
     res.json({ ok: true, total: totalNum });
+  } catch (err) {
+    res.status(500).json({ error: safeError(err) });
+  }
+});
+
+// PATCH /api/recibos/:id/generador — solo superadministrador
+router.patch('/recibos/:id/generador', requireAuth, async (req, res) => {
+  if (req.session?.rol !== 'superadmin') {
+    return res.status(403).json({ error: 'Solo el superadministrador puede cambiar quién generó el recibo' });
+  }
+  const id = parseReciboId(req.params.id);
+  if (id === null) return res.status(400).json({ error: 'ID de recibo inválido' });
+  const generado_por_id = parseInt(req.body?.generado_por_id, 10);
+  if (!Number.isFinite(generado_por_id) || generado_por_id < 1) {
+    return res.status(400).json({ error: 'Seleccione un usuario válido' });
+  }
+  try {
+    const rows = await db.query('SELECT id, anulado FROM recibos WHERE id=?', [id]);
+    if (!rows.length) return res.status(404).json({ error: 'Recibo no encontrado' });
+    if (rows[0].anulado) return res.status(400).json({ error: 'No se puede editar un recibo anulado' });
+    const users = await db.query(
+      'SELECT id, nombre, usuario FROM usuarios WHERE id=? AND activo=1',
+      [generado_por_id]
+    );
+    if (!users.length) return res.status(400).json({ error: 'Usuario no encontrado o inactivo' });
+    const u = users[0];
+    const nombre = (u.nombre || u.usuario || '').trim();
+    await db.execute(
+      'UPDATE recibos SET generado_por_id = ?, generado_por_nombre = ? WHERE id = ?',
+      [generado_por_id, nombre, id]
+    );
+    emitSocket('recibo:actualizar-lista');
+    emitSocket('stats:actualizar');
+    res.json({ ok: true, generado_por_id, generado_por_nombre: nombre });
   } catch (err) {
     res.status(500).json({ error: safeError(err) });
   }

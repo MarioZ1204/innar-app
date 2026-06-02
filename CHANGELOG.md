@@ -3,6 +3,16 @@
 Todos los cambios importantes a la aplicación se documentan aquí. El formato
 sigue (informalmente) [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
+## [1.5.55] — 2026-06-02
+
+### Añadido
+
+- **Recibos (solo superadmin)**: botón para cambiar el usuario que generó un recibo (`PATCH /api/recibos/:id/generador`), actualiza `generado_por_id` y `generado_por_nombre` en BD.
+
+### Corregido
+
+- **Contador diario en Nuevo Recibo**: ya no se sobrescribe con la lista filtrada de «Ver recibos»; usa `GET /api/recibos/stats-hoy` con fecha local; sockets llaman `updateSavedCount` en lugar de vaciar el contador.
+
 ## [1.5.54] — 2026-06-02
 
 ### Corregido

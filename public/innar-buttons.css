@@ -282,6 +282,7 @@ button:disabled {
 .btn-recibo-pagar,
 .btn-recibo-tipo-pago,
 .btn-recibo-valor,
+.btn-recibo-generador,
 .btn-recibo-obs,
 .btn-usr-del,
 .btn-usr-edit,
@@ -301,6 +302,7 @@ button:disabled {
 .btn-recibo-pagar:hover,
 .btn-recibo-tipo-pago:hover:not(:disabled),
 .btn-recibo-valor:hover:not(:disabled),
+.btn-recibo-generador:hover:not(:disabled),
 .btn-recibo-anular:hover:not(:disabled),
 .btn-recibo-obs:hover:not(:disabled),
 .btn-usr-edit:hover,
@@ -313,6 +315,7 @@ button:disabled {
 /* Recibos — acciones tabla (mismo aspecto que PDF / pagar / editar) */
 button.btn-recibo-tipo-pago,
 button.btn-recibo-valor,
+button.btn-recibo-generador,
 button.btn-recibo-obs {
   display: inline-flex !important;
   align-items: center !important;
@@ -366,6 +369,26 @@ button.btn-recibo-valor:hover:not(:disabled) {
   background: #fef3c7 !important;
   border-color: #fbbf24 !important;
   color: #92400e !important;
+  transform: translateY(-1px);
+}
+
+button.btn-recibo-generador {
+  border: 1px solid #c7d2fe !important;
+  background: #eef2ff !important;
+  color: #4338ca !important;
+}
+
+button.btn-recibo-generador svg {
+  width: 16px !important;
+  height: 16px !important;
+  display: block !important;
+  pointer-events: none;
+}
+
+button.btn-recibo-generador:hover:not(:disabled) {
+  background: #e0e7ff !important;
+  border-color: #818cf8 !important;
+  color: #3730a3 !important;
   transform: translateY(-1px);
 }
 
