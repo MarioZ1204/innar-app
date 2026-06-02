@@ -112,6 +112,7 @@ app.get('/api/health/deep', requireAuth, async (req, res) => {
   const start = Date.now();
   const checks = {
     db: { ok: false, latency_ms: null, error: null },
+    uploadsDir: { ok: false, path: null, writable: false, soportesPdxFiles: 0, error: null },
     backupsDir: { ok: false, path: null, files: 0, latestAgeHours: null, error: null },
     logsDir: { ok: false, sizeBytes: 0, error: null },
     process: {
@@ -129,6 +130,32 @@ app.get('/api/health/deep', requireAuth, async (req, res) => {
     checks.db.latency_ms = Date.now() - t0;
   } catch (e) {
     checks.db.error = e.message;
+  }
+
+  try {
+    const { getUploadsRoot } = require('./config/uploads-path');
+    const uploadsDir = getUploadsRoot();
+    const testFile = path.join(uploadsDir, '.write_test');
+    fs.writeFileSync(testFile, 'ok');
+    fs.unlinkSync(testFile);
+    checks.uploadsDir.path = uploadsDir;
+    checks.uploadsDir.writable = true;
+    checks.uploadsDir.ok = true;
+    const pdxRoot = path.join(uploadsDir, 'soportes', 'pdx');
+    if (fs.existsSync(pdxRoot)) {
+      let count = 0;
+      const walk = (dir) => {
+        for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+          const full = path.join(dir, ent.name);
+          if (ent.isDirectory()) walk(full);
+          else if (ent.name.toLowerCase().endsWith('.pdf')) count += 1;
+        }
+      };
+      walk(pdxRoot);
+      checks.uploadsDir.soportesPdxFiles = count;
+    }
+  } catch (e) {
+    checks.uploadsDir.error = e.message;
   }
 
   try {
@@ -164,7 +191,7 @@ app.get('/api/health/deep', requireAuth, async (req, res) => {
     checks.logsDir.error = e.message;
   }
 
-  const allOk = checks.db.ok && checks.backupsDir.ok && checks.logsDir.ok;
+  const allOk = checks.db.ok && checks.uploadsDir.ok && checks.backupsDir.ok && checks.logsDir.ok;
   res.status(allOk ? 200 : 503).json({
     ok: allOk,
     version: APP_VERSION,

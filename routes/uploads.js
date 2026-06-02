@@ -15,7 +15,8 @@ const {
   requireAuth, safeError, isAdminRol, isRecepcionRol
 } = require('../middleware');
 
-const UPLOADS_DIR = path.resolve(__dirname, '..', 'public', 'uploads');
+const { getUploadsRoot, isInsideUploadsRoot } = require('../config/uploads-path');
+const UPLOADS_DIR = getUploadsRoot();
 
 function isSafeFilename(name) {
   if (typeof name !== 'string') return false;
@@ -54,7 +55,7 @@ router.get('/uploads/:filename', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Nombre de archivo inválido' });
     }
     const filePath = path.resolve(UPLOADS_DIR, name);
-    if (!filePath.startsWith(UPLOADS_DIR + path.sep) && filePath !== UPLOADS_DIR) {
+    if (!isInsideUploadsRoot(filePath)) {
       return res.status(400).json({ error: 'Ruta de archivo inválida' });
     }
     if (!fs.existsSync(filePath)) {

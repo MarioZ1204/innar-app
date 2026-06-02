@@ -1,8 +1,9 @@
 const path = require('path');
 const fs = require('fs');
+const { getUploadsRoot, getSoportesRoot, isInsideUploadsRoot } = require('../config/uploads-path');
 
-const SOPORTES_ROOT = path.resolve(__dirname, '..', 'public', 'uploads', 'soportes');
-const UPLOADS_ROOT = path.join(SOPORTES_ROOT, '..');
+const SOPORTES_ROOT = getSoportesRoot();
+const UPLOADS_ROOT = getUploadsRoot();
 
 function ensureDir(dir) {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
@@ -40,12 +41,6 @@ function safeFilename(original) {
   return `${Date.now()}-${base.replace(/[^a-zA-Z0-9.\-_,() ]/g, '_')}`;
 }
 
-function isPathInsideUploads(fullPath) {
-  const root = path.resolve(UPLOADS_ROOT);
-  const full = path.resolve(fullPath);
-  return full === root || full.startsWith(root + path.sep);
-}
-
 function resolveStoragePath(rutaRelativa) {
   const rel = String(rutaRelativa || '').replace(/^uploads\//, '').replace(/\\/g, '/').trim();
   if (!rel) return null;
@@ -63,10 +58,10 @@ function resolveStoragePath(rutaRelativa) {
   }
 
   for (const full of candidates) {
-    if (!isPathInsideUploads(full)) continue;
+    if (!isInsideUploadsRoot(full)) continue;
     if (fs.existsSync(full)) return full;
   }
-  const first = candidates.find((p) => isPathInsideUploads(p));
+  const first = candidates.find((p) => isInsideUploadsRoot(p));
   return first || null;
 }
 

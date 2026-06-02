@@ -42,7 +42,27 @@ Configura en el panel de Node.js (o archivo `.env` en servidor):
 
 Usa `.env.hostinger.example` como plantilla. Nunca subas secretos reales.
 
-## 4) Flujo recomendado de despliegue
+## 4) Archivos PDF de Soportes (no perderlos al desplegar)
+
+Los PDF de **Reportes PDX** y **Armado** se guardan en disco, **no en MySQL**. La base de datos solo guarda la ruta (`ruta_relativa`).
+
+Si los archivos viven dentro de la carpeta del repositorio (`public/uploads/`), cada **git pull**, **redeploy** o carpeta de release nueva deja los registros en BD pero el mensaje **«Archivo no en disco»** aparece porque el PDF ya no está.
+
+**Solución (recomendada):**
+
+1. Cree una carpeta persistente **fuera** del clone de Git, por ejemplo:
+   `private_uploads` al mismo nivel que el proyecto o en el home del hosting.
+2. En variables de entorno de Node.js defina:
+   `UPLOADS_DIR=/ruta/absoluta/private_uploads`
+3. Reinicie la app.
+4. **Una sola vez**, si había PDF en `public/uploads/soportes`, cópielos a:
+   `$UPLOADS_DIR/soportes/` (manteniendo `pdx/`, `armado/`, etc.).
+
+Compruebe con `/api/health/deep` (usuario autenticado): el bloque `uploadsDir` debe mostrar `ok: true`, la ruta configurada y `soportesPdxFiles` > 0 si hay reportes.
+
+No ejecute `git clean -fd` en el servidor sobre la carpeta de uploads persistente.
+
+## 5) Flujo recomendado de despliegue
 
 1. Haz commit y push en Git.
 2. En Hostinger, sincroniza/actualiza el repo.
@@ -53,7 +73,7 @@ Usa `.env.hostinger.example` como plantilla. Nunca subas secretos reales.
    - `https://innarapp.neurocienciasnarino.com/api/version`
    - `https://innarapp.neurocienciasnarino.com/`
 
-## 5) Proxy inverso para `/socket.io/` (obligatorio contra 404)
+## 6) Proxy inverso para `/socket.io/` (obligatorio contra 404)
 
 Si el dominio entra por **Apache, LiteSpeed o Nginx** y Node escucha un **puerto interno**, esas peticiones **no llegan solas**: hay que configurar el proxy para **`/socket.io/`** y normalmente **`/api/`**.
 
@@ -91,7 +111,7 @@ Si tienes acceso al `server { }` (VPS), usa la plantilla **[NGINX-SOCKET.IO.md](
 - `https://tudominio/api/health` debe responder **200** (si no, el proxy de `/api/` o Node no está bien).
 - Tras arreglar el proxy, el handshake de Socket.IO deja de devolver **404** generado por el estático/HTML del sitio.
 
-## 6) Diagnostico rapido 403/503
+## 7) Diagnostico rapido 403/503
 
 ### Si ves 403 en `/`
 
@@ -105,7 +125,7 @@ Si tienes acceso al `server { }` (VPS), usa la plantilla **[NGINX-SOCKET.IO.md](
 - Revisa logs de Node.js App en Hostinger.
 - Verifica que no falten variables requeridas (`DB_*`, `SESSION_SECRET`).
 
-## 7) Checklist final
+## 8) Checklist final
 
 - [ ] `npm run deploy:check` pasa en local
 - [ ] `server.js` es el startup file
@@ -114,3 +134,5 @@ Si tienes acceso al `server { }` (VPS), usa la plantilla **[NGINX-SOCKET.IO.md](
 - [ ] `/api/health` responde `ok: true`
 - [ ] Proxy: `.htaccess` (o Nginx) con **mismo puerto** que Node; `/socket.io/` y `/api/` reenviados (sin 404 del sitio estatico)
 - [ ] No hay secretos reales versionados en Git
+- [ ] `UPLOADS_DIR` apunta a carpeta persistente fuera del repo
+- [ ] PDF de soportes copiados a `$UPLOADS_DIR/soportes` si hubo deploy previo

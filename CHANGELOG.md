@@ -3,6 +3,12 @@
 Todos los cambios importantes a la aplicación se documentan aquí. El formato
 sigue (informalmente) [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
+## [1.5.46] — 2026-05-27
+
+### Corregido / añadido
+
+- **Uploads persistentes en producción**: variable de entorno `UPLOADS_DIR` para guardar PDF fuera del repositorio (evita «Archivo no en disco» tras `git pull` / redeploy en Hostinger). Documentación en `docs/HOSTINGER-DEPLOY.md` y `.env.hostinger.example`. Health deep incluye chequeo `uploadsDir`.
+
 ## [1.5.2] — 2026-05-19
 
 ### Cambiado

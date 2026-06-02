@@ -4,10 +4,9 @@
 
 const multer = require('multer');
 const path = require('path');
-const fs = require('fs');
+const { getUploadsRoot } = require('../config/uploads-path');
 
-const uploadDir = path.join(__dirname, '..', 'public', 'uploads');
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+const uploadDir = getUploadsRoot();
 
 // Extensiones permitidas → grupos de detección
 const EXT_PDF = ['.pdf'];
