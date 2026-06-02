@@ -3,6 +3,12 @@
 Todos los cambios importantes a la aplicación se documentan aquí. El formato
 sigue (informalmente) [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
+## [1.5.52] — 2026-06-02
+
+### Corregido
+
+- **Subida PDX 500**: el PDF ya no se renombra en disco en reportes PSG/VTM/EEG (se conserva el nombre de multer); `ruta_relativa` siempre coincide; INSERT con límites de longitud y `insertId` bigint; errores con `detail` y `step`.
+
 ## [1.5.51] — 2026-06-02
 
 ### Corregido

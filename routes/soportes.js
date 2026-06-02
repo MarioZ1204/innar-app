@@ -39,6 +39,7 @@ const {
   necesitaListaEstudios,
   finalizePdxFileOnDisk,
   ensureMetaPacienteNombre,
+  resolveTmpUploadPath,
   movePdxFileOnDisk,
   collectPdxWarnings
 } = require('../utils/soportes-pdx-upload');
@@ -138,14 +139,16 @@ async function queryPdxArchivosConUsuarios(carpetaId) {
   throw lastErr;
 }
 
-function pdxListErrorPayload(req, e) {
+function pdxListErrorPayload(req, e, step) {
   const payload = { error: safeError(e) };
   const msg = String(e?.message || e);
+  if (step) payload.step = step;
   if (req.session?.rol === 'superadmin' || process.env.NODE_ENV !== 'production') {
     payload.detail = msg.slice(0, 400);
     if (e?.code) payload.code = e.code;
-  } else if (/temporal|UPLOADS|ENOENT|EACCES|ER_/i.test(msg)) {
-    payload.detail = msg.slice(0, 200);
+  } else {
+    payload.detail = msg.slice(0, 250);
+    if (e?.code) payload.code = e.code;
   }
   return payload;
 }
@@ -219,14 +222,21 @@ function uploadPdxSingle(req, res, next) {
   });
 }
 
+function pdxInsertId(result) {
+  if (!result?.insertId) return 0;
+  return typeof result.insertId === 'bigint' ? Number(result.insertId) : Number(result.insertId);
+}
+
 async function insertPdxArchivoRow(carpetaId, meta, file, session) {
   ensureMetaPacienteNombre(meta, file.originalname);
+  const tamano = Number(file.size) || 0;
   const params = [
     carpetaId, meta.apellidos || null, meta.nombres || null, meta.paciente_nombre,
     meta.paciente_nombre_norm, meta.paciente_documento || null,
     meta.fecha_estudio || null, meta.marca_tiempo || null, meta.sufijo_numero || null,
-    meta.estudio_texto || null, file.originalname, meta.nombre_archivo_display,
-    meta.ruta_relativa, file.size, session.usuarioId || null
+    meta.estudio_texto || null, String(file.originalname || 'archivo.pdf').slice(0, 255),
+    meta.nombre_archivo_display,
+    meta.ruta_relativa, tamano, session.usuarioId || null
   ];
   try {
     return await db.execute(
@@ -248,8 +258,9 @@ async function insertPdxArchivoRow(carpetaId, meta, file, session) {
       [
         carpetaId, meta.paciente_nombre, meta.paciente_nombre_norm,
         meta.paciente_documento || null, meta.fecha_estudio || null,
-        file.originalname, meta.nombre_archivo_display, meta.ruta_relativa,
-        file.size, session.usuarioId || null
+        String(file.originalname || 'archivo.pdf').slice(0, 255),
+        meta.nombre_archivo_display, meta.ruta_relativa,
+        tamano, session.usuarioId || null
       ]
     );
   }
@@ -435,16 +446,20 @@ router.post(
   validateMagicBytes,
   async (req, res) => {
     let uploadedPath = null;
+    let step = 'inicio';
     try {
       if (!req.file) return res.status(400).json({ error: 'Archivo PDF requerido' });
-      uploadedPath = req.file.path;
+      uploadedPath = resolveTmpUploadPath(req.params.id, req.file);
+      if (!req.file.path && uploadedPath) req.file.path = uploadedPath;
 
+      step = 'carpeta';
       const carpetaRows = await db.query('SELECT * FROM sop_pdx_carpetas WHERE id = ?', [req.params.id]);
       if (!carpetaRows.length) return res.status(404).json({ error: 'Carpeta no encontrada' });
       const carpeta = carpetaRows[0];
       const vis = calcularVisibilidadPeriodo(carpeta.periodo);
       if (vis === 'archivo') return res.status(403).json({ error: 'Carpeta cerrada para carga' });
 
+      step = 'meta';
       if (necesitaListaEstudios(carpeta)) {
         carpeta._estudiosLista = await cargarEstudiosParaOrdenes(db);
       }
@@ -462,6 +477,7 @@ router.post(
       }
 
       const warnings = collectPdxWarnings(meta, carpeta);
+      step = 'disco';
       const { rutaRelativa, nombre_archivo_display } = finalizePdxFileOnDisk(
         carpeta.id,
         req.file,
@@ -469,27 +485,18 @@ router.post(
         carpeta
       );
       meta.ruta_relativa = rutaRelativa;
-      meta.nombre_archivo_display = String(nombre_archivo_display || '').slice(0, 255);
+      meta.nombre_archivo_display = nombre_archivo_display;
       uploadedPath = null;
 
-      const diskCheck = resolvePdxArchivoPath({
-        carpeta_id: carpeta.id,
-        ruta_relativa: rutaRelativa,
-        nombre_archivo_original: req.file.originalname
-      });
-      if (!diskCheck) {
-        return res.status(500).json({
-          error: 'El PDF se subió pero no quedó en la carpeta de almacenamiento. Revise UPLOADS_DIR y permisos.'
-        });
-      }
-
+      step = 'insert';
       const ins = await insertPdxArchivoRow(carpeta.id, meta, req.file, req.session);
-      if (!ins?.insertId) {
+      const newId = pdxInsertId(ins);
+      if (!newId) {
         throw new Error('No se obtuvo id del archivo insertado en base de datos');
       }
 
-      await logPdxArchivo(ins.insertId, 'subida', req.session.usuarioId, req.file.originalname);
-      const row = await db.query('SELECT * FROM sop_pdx_archivos WHERE id = ?', [ins.insertId]);
+      await logPdxArchivo(newId, 'subida', req.session.usuarioId, req.file.originalname);
+      const row = await db.query('SELECT * FROM sop_pdx_archivos WHERE id = ?', [newId]);
       if (!row.length) {
         throw new Error('Archivo guardado en BD pero no se pudo leer el registro');
       }
@@ -504,10 +511,11 @@ router.post(
       }
       logger.error('[SOPORTES] subir pdx', {
         carpetaId: req.params.id,
+        step,
         message: e?.message,
         code: e?.code
       });
-      res.status(500).json(pdxListErrorPayload(req, e));
+      res.status(500).json(pdxListErrorPayload(req, e, step));
     }
   }
 );

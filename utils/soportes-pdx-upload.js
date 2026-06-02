@@ -122,29 +122,63 @@ function resolveTmpUploadPath(carpetaId, fileOrName) {
       const p = path.join(fileOrName.destination, fileOrName.filename);
       if (fs.existsSync(p)) return p;
     }
-    if (fileOrName.filename) return path.join(dir, fileOrName.filename);
+    if (fileOrName.filename) {
+      const p = path.join(dir, fileOrName.filename);
+      if (fs.existsSync(p)) return p;
+    }
   }
-  return path.join(dir, String(fileOrName || ''));
+  const guess = path.join(dir, String(fileOrName || ''));
+  return guess;
 }
 
+function moveFileSafe(src, dest) {
+  if (path.resolve(src) === path.resolve(dest)) return;
+  if (fs.existsSync(dest)) fs.unlinkSync(dest);
+  try {
+    fs.renameSync(src, dest);
+  } catch (e) {
+    if (e.code === 'EXDEV') {
+      fs.copyFileSync(src, dest);
+      fs.unlinkSync(src);
+    } else {
+      throw e;
+    }
+  }
+}
+
+/**
+ * Deja el PDF con el nombre que generó multer (evita 500/404 por rename fallido en hosting).
+ * nombre_archivo_display en BD sigue siendo el nombre “bonito” para descargas.
+ */
 function finalizePdxFileOnDisk(carpetaId, fileOrTmpName, meta, carpeta = null) {
   const dir = getPdxDir(carpetaId);
-  const diskName = pdxDiskFilename(meta, carpeta);
   const tmpPath = resolveTmpUploadPath(carpetaId, fileOrTmpName);
-  const finalPath = path.join(dir, diskName);
   if (!fs.existsSync(tmpPath)) {
     throw new Error(`Archivo temporal no encontrado tras la subida (${tmpPath})`);
   }
-  if (path.resolve(tmpPath) !== path.resolve(finalPath)) {
-    if (fs.existsSync(finalPath)) fs.unlinkSync(finalPath);
-    fs.renameSync(tmpPath, finalPath);
+
+  const tema = detectarTemaCarpeta(carpeta?.nombre_display || '');
+  const wantCanonicalDisk = ['ordenes', 'comprobantes', 'consentimientos'].includes(tema);
+  let onDisk = path.basename(tmpPath);
+
+  if (wantCanonicalDisk) {
+    const targetName = pdxDiskFilename(meta, carpeta);
+    const finalPath = path.join(dir, targetName);
+    if (targetName && targetName !== onDisk) {
+      try {
+        moveFileSafe(tmpPath, finalPath);
+        onDisk = path.basename(finalPath);
+      } catch (_) {
+        onDisk = path.basename(tmpPath);
+      }
+    }
   }
-  const onDisk = fs.existsSync(finalPath) ? path.basename(finalPath) : path.basename(tmpPath);
+
   const rutaRelativa = relativePdxRuta(carpetaId, onDisk);
   return {
     rutaRelativa,
     diskName: onDisk,
-    nombre_archivo_display: meta.nombre_archivo_display || onDisk
+    nombre_archivo_display: meta.nombre_archivo_display || meta.nombre_archivo_original || onDisk
   };
 }
 
@@ -154,10 +188,22 @@ function ensureMetaPacienteNombre(meta, fallbackName = '') {
     const nom = String(meta.nombres || '').trim();
     meta.paciente_nombre = ap && nom ? `${ap}, ${nom}` : (ap || nom || fallbackName || 'Sin nombre');
   }
+  meta.paciente_nombre = String(meta.paciente_nombre).slice(0, 200);
   if (!meta.paciente_nombre_norm) {
     meta.paciente_nombre_norm = normalizarNombreBusqueda(meta.paciente_nombre);
   }
-  if (meta.fecha_estudio === '') meta.fecha_estudio = null;
+  meta.paciente_nombre_norm = String(meta.paciente_nombre_norm).slice(0, 220);
+  if (meta.fecha_estudio === '' || meta.fecha_estudio === undefined) meta.fecha_estudio = null;
+  if (meta.fecha_estudio && !/^\d{4}-\d{2}-\d{2}$/.test(String(meta.fecha_estudio).slice(0, 10))) {
+    meta.fecha_estudio = null;
+  }
+  meta.marca_tiempo = meta.marca_tiempo ? String(meta.marca_tiempo).slice(0, 40) : null;
+  meta.sufijo_numero = meta.sufijo_numero ? String(meta.sufijo_numero).slice(0, 10) : null;
+  meta.estudio_texto = meta.estudio_texto ? String(meta.estudio_texto).slice(0, 120) : null;
+  meta.nombre_archivo_display = meta.nombre_archivo_display
+    ? String(meta.nombre_archivo_display).slice(0, 255)
+    : null;
+  meta.ruta_relativa = meta.ruta_relativa ? String(meta.ruta_relativa).slice(0, 500) : null;
   return meta;
 }
 
@@ -167,8 +213,7 @@ function movePdxFileOnDisk(fromCarpetaId, toCarpetaId, oldRutaRelativa, meta, ca
   const destDir = getPdxDir(toCarpetaId);
   const newFp = path.join(destDir, diskName);
   if (fs.existsSync(oldFp)) {
-    if (fs.existsSync(newFp)) fs.unlinkSync(newFp);
-    fs.renameSync(oldFp, newFp);
+    moveFileSafe(oldFp, newFp);
   }
   return {
     rutaRelativa: path.join('soportes', 'pdx', String(toCarpetaId), diskName).replace(/\\/g, '/'),
@@ -205,6 +250,7 @@ module.exports = {
   pdxDiskFilename,
   finalizePdxFileOnDisk,
   resolveTmpUploadPath,
+  moveFileSafe,
   ensureMetaPacienteNombre,
   movePdxFileOnDisk,
   collectPdxWarnings,
