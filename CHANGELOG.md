@@ -3,6 +3,13 @@
 Todos los cambios importantes a la aplicación se documentan aquí. El formato
 sigue (informalmente) [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
+## [1.5.53] — 2026-06-02
+
+### Corregido
+
+- **Subida PDX**: faltaba `require('fs')` en `middleware/upload.js` (validación PDF fallaba siempre con «No se pudo validar el archivo subido»).
+- **Filtros recibos**: bucle infinito entre multiselect tipo consulta / estudio (`silentClearMultiSelect`).
+
 ## [1.5.52] — 2026-06-02
 
 ### Corregido

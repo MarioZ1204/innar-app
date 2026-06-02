@@ -2611,12 +2611,12 @@ function initRecibos() {
               const tipos = await apiFetch(`/api/tipos-consulta?medico_id=${encodeURIComponent(vals[0])}`).then(r => r.json()).catch(() => []);
               tipos.forEach(t => { const opt = document.createElement('option'); opt.value = t.nombre; opt.textContent = t.nombre; sel.appendChild(opt); });
             } catch (e) { console.warn('[filtroTipoConsulta] Error cargando tipos:', e.message); }
-            if (!sel._ms) initMultiSelect(sel, { placeholder: 'Todos', onChange: () => { clearMultiSelect($('filtroEstudio')); aplicarFiltrosRecibos(); } });
+            if (!sel._ms) initMultiSelect(sel, { placeholder: 'Todos', onChange: () => { silentClearMultiSelect($('filtroEstudio')); aplicarFiltrosRecibos(); } });
             else sel._ms.refresh();
             wrap.style.display = '';
           } else {
             wrap.style.display = 'none';
-            clearMultiSelect(sel);
+            silentClearMultiSelect(sel);
           }
         }
         if (selEstudio && esElectro) {
@@ -2645,7 +2645,7 @@ function initRecibos() {
     if (elEnt) { initMultiSelect(elEnt, { placeholder: 'Todas', onChange: () => aplicarFiltrosRecibos() }); observeSelectForMulti(elEnt); }
     const elEst = $('filtroEstudio');
     if (elEst) {
-      initMultiSelect(elEst, { placeholder: 'Todos', onChange: () => { clearMultiSelect($('filtroTipoConsulta')); aplicarFiltrosRecibos(); } });
+      initMultiSelect(elEst, { placeholder: 'Todos', onChange: () => { silentClearMultiSelect($('filtroTipoConsulta')); aplicarFiltrosRecibos(); } });
       observeSelectForMulti(elEst);
     }
   });
@@ -2688,7 +2688,7 @@ function initRecibos() {
           selMedico.appendChild(optElectro);
         }
         if (selMedico._ms) selMedico._ms.refresh();
-        clearMultiSelect(selMedico);
+        silentClearMultiSelect(selMedico);
       }
       const wrapTC = $('filtroTipoConsultaWrap');
       const selTC = $('filtroTipoConsulta');
@@ -2703,12 +2703,12 @@ function initRecibos() {
               selTC.appendChild(opt);
             });
             if (selTC._ms) selTC._ms.refresh();
-            else initMultiSelect(selTC, { placeholder: 'Todos', onChange: () => { clearMultiSelect($('filtroEstudio')); aplicarFiltrosRecibos(); } });
+            else initMultiSelect(selTC, { placeholder: 'Todos', onChange: () => { silentClearMultiSelect($('filtroEstudio')); aplicarFiltrosRecibos(); } });
             wrapTC.style.display = '';
-          } catch (_) { wrapTC.style.display = 'none'; clearMultiSelect(selTC); }
+          } catch (_) { wrapTC.style.display = 'none'; silentClearMultiSelect(selTC); }
         } else {
           wrapTC.style.display = 'none';
-          clearMultiSelect(selTC);
+          silentClearMultiSelect(selTC);
         }
       }
       aplicarFiltrosRecibos();
@@ -9948,14 +9948,14 @@ async function aplicarFiltrosRecibos() {
 function limpiarFiltrosRecibos() {
   if ($('filtroFechaDesde'))    $('filtroFechaDesde').value    = '';
   if ($('filtroFechaHasta'))    $('filtroFechaHasta').value    = '';
-  clearMultiSelect($('filtroTipoPago'));
-  clearMultiSelect($('filtroMedico'));
-  clearMultiSelect($('filtroGeneradoPor'));
-  clearMultiSelect($('filtroEntidad'));
-  clearMultiSelect($('filtroTipoConsulta'));
-  clearMultiSelect($('filtroEstudio'));
-  clearMultiSelect($('filtroEspecialidad'));
-  clearMultiSelect($('filtroEstadoPago'));
+  silentClearMultiSelect($('filtroTipoPago'));
+  silentClearMultiSelect($('filtroMedico'));
+  silentClearMultiSelect($('filtroGeneradoPor'));
+  silentClearMultiSelect($('filtroEntidad'));
+  silentClearMultiSelect($('filtroTipoConsulta'));
+  silentClearMultiSelect($('filtroEstudio'));
+  silentClearMultiSelect($('filtroEspecialidad'));
+  silentClearMultiSelect($('filtroEstadoPago'));
   const elAnul = $('filtroAnulado');
   if (elAnul?._ms) elAnul._ms.setValues(['no']);
   else if (elAnul) elAnul.value = 'no';

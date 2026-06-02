@@ -4,6 +4,7 @@
 
 const multer = require('multer');
 const path = require('path');
+const fs = require('fs');
 const { getUploadsRoot } = require('../config/uploads-path');
 
 const uploadDir = getUploadsRoot();
@@ -121,11 +122,20 @@ function validateMagicBytes(req, res, next) {
     }
     return next();
   } catch (e) {
+    if (EXT_PDF.includes(ext) && filePath && fs.existsSync(filePath) && fileLooksLikePdf(filePath)) {
+      req.file.path = filePath;
+      if (!req.file.destination) req.file.destination = path.dirname(filePath);
+      if (!req.file.filename) req.file.filename = path.basename(filePath);
+      return next();
+    }
     try {
-      fs.unlinkSync(filePath);
+      if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
     } catch (_) {}
     req.file = null;
-    return res.status(500).json({ error: 'No se pudo validar el archivo subido' });
+    return res.status(500).json({
+      error: 'No se pudo validar el archivo subido',
+      detail: String(e?.message || e).slice(0, 200)
+    });
   }
 }
 
