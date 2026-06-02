@@ -60,6 +60,7 @@ const {
   resolveStoragePath,
   resolvePdxArchivoPath
 } = require('../utils/soportes-storage');
+const { jsonSafeRow } = require('../utils/json-safe');
 
 const ROLES_SOPORTES = ['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'contabilidad', 'admin_electro', 'electro', 'tecnico_electro'];
 
@@ -86,24 +87,52 @@ function safeEnrichArchivoPdxConNombreDescarga(archivo, carpeta) {
 }
 
 async function queryPdxArchivosConUsuarios(carpetaId) {
-  const sqlFull = `SELECT a.*, us.nombre AS subido_por_nombre, ue.nombre AS editado_por_nombre
+  const queries = [
+    {
+      sql: `SELECT a.*, us.nombre AS subido_por_nombre, ue.nombre AS editado_por_nombre
        FROM sop_pdx_archivos a
        LEFT JOIN usuarios us ON us.id = a.subido_por
        LEFT JOIN usuarios ue ON ue.id = a.editado_por
-       WHERE a.carpeta_id = ? ORDER BY a.paciente_nombre ASC, a.id DESC`;
-  const sqlLegacy = `SELECT a.*, us.nombre AS subido_por_nombre
+       WHERE a.carpeta_id = ? ORDER BY a.paciente_nombre ASC, a.id DESC`,
+      map: (rows) => rows
+    },
+    {
+      sql: `SELECT a.*, us.nombre AS subido_por_nombre
        FROM sop_pdx_archivos a
        LEFT JOIN usuarios us ON us.id = a.subido_por
-       WHERE a.carpeta_id = ? ORDER BY a.paciente_nombre ASC, a.id DESC`;
-  try {
-    return await db.query(sqlFull, [carpetaId]);
-  } catch (e) {
-    if (e.code === 'ER_BAD_FIELD_ERROR') {
-      const rows = await db.query(sqlLegacy, [carpetaId]);
-      return rows.map((r) => ({ ...r, editado_por_nombre: null }));
+       WHERE a.carpeta_id = ? ORDER BY a.paciente_nombre ASC, a.id DESC`,
+      map: (rows) => rows.map((r) => ({ ...r, editado_por_nombre: null }))
+    },
+    {
+      sql: 'SELECT a.* FROM sop_pdx_archivos a WHERE a.carpeta_id = ? ORDER BY a.id DESC',
+      map: (rows) => rows.map((r) => ({ ...r, subido_por_nombre: null, editado_por_nombre: null }))
     }
-    throw e;
+  ];
+
+  let lastErr;
+  for (const { sql, map } of queries) {
+    try {
+      const rows = await db.query(sql, [carpetaId]);
+      return map(rows).map(jsonSafeRow);
+    } catch (e) {
+      lastErr = e;
+      if (e.code === 'ER_NO_SUCH_TABLE') {
+        logger.error('[SOPORTES] Falta tabla sop_pdx_archivos; reinicie la app para aplicar migraciones');
+        return [];
+      }
+      if (e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+    }
   }
+  throw lastErr;
+}
+
+function pdxListErrorPayload(req, e) {
+  const payload = { error: safeError(e) };
+  if (req.session?.rol === 'superadmin') {
+    payload.detail = String(e?.message || e).slice(0, 400);
+    if (e?.code) payload.code = e.code;
+  }
+  return payload;
 }
 
 function puedeVerArchivo(req) {
@@ -321,14 +350,18 @@ router.get('/soportes/pdx/carpetas/:id/archivos', requireAuth, requireRoleOrPerm
       return res.status(403).json({ error: 'Carpeta en archivo' });
     }
     const archivos = await queryPdxArchivosConUsuarios(req.params.id);
-    const carp = carpeta[0];
+    const carp = jsonSafeRow(carpeta[0]);
     res.json({
       carpeta: mapCarpetaPdx({ ...carp, archivos_count: archivos.length }),
       archivos: archivos.map((a) => safeEnrichArchivoPdxConNombreDescarga(a, carp))
     });
   } catch (e) {
-    logger.error('[SOPORTES] listar archivos pdx carpeta', req.params.id, e);
-    res.status(500).json({ error: safeError(e) });
+    logger.error('[SOPORTES] listar archivos pdx carpeta', {
+      carpetaId: req.params.id,
+      message: e?.message,
+      code: e?.code
+    });
+    res.status(500).json(pdxListErrorPayload(req, e));
   }
 });
 

@@ -590,6 +590,39 @@ const runtimeMigrations = [
     }
   },
   {
+    name: 'rt_sop_pdx_archivos_ensure',
+    description: 'Crea sop_pdx_archivos si rt_sop_soportes_radicacion se saltó (solo existía sop_pdx_carpetas)',
+    run: async (db) => {
+      if (!(await tableExists(db, 'sop_pdx_carpetas'))) return;
+      if (await tableExists(db, 'sop_pdx_archivos')) return;
+      await db.execute(`CREATE TABLE sop_pdx_archivos (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        carpeta_id INT NOT NULL,
+        apellidos VARCHAR(120) NULL,
+        nombres VARCHAR(120) NULL,
+        paciente_nombre VARCHAR(200) NOT NULL,
+        paciente_nombre_norm VARCHAR(220) NOT NULL,
+        paciente_documento VARCHAR(30) NULL,
+        fecha_estudio DATE NULL,
+        marca_tiempo VARCHAR(40) NULL,
+        sufijo_numero VARCHAR(10) NULL,
+        estudio_texto VARCHAR(120) NULL,
+        nombre_archivo_original VARCHAR(255) NOT NULL,
+        nombre_archivo_display VARCHAR(255) NULL,
+        ruta_relativa VARCHAR(500) NOT NULL,
+        mime_type VARCHAR(80) DEFAULT 'application/pdf',
+        tamano_bytes INT UNSIGNED NOT NULL,
+        subido_por INT NULL,
+        cita_electro_id INT NULL,
+        creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT fk_sop_pdx_carpeta_ensure FOREIGN KEY (carpeta_id) REFERENCES sop_pdx_carpetas(id) ON DELETE CASCADE,
+        INDEX idx_sop_pdx_nom (paciente_nombre_norm),
+        INDEX idx_sop_pdx_doc (paciente_documento),
+        INDEX idx_sop_pdx_carpeta (carpeta_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+    }
+  },
+  {
     name: 'rt_sop_estructura_carpetas_v2',
     description: 'Soportes: carpetas día, RIPS/SOPORTES y FE por contenedor',
     run: async (db) => {

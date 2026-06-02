@@ -3,6 +3,12 @@
 Todos los cambios importantes a la aplicación se documentan aquí. El formato
 sigue (informalmente) [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
+## [1.5.48] — 2026-05-27
+
+### Corregido
+
+- **PDX 500 al abrir carpeta**: migración `rt_sop_pdx_archivos_ensure` crea `sop_pdx_archivos` si la migración inicial se saltó; consultas con varios fallbacks; filas JSON-safe; superadmin ve `detail`/`code` en el 500.
+
 ## [1.5.47] — 2026-05-27
 
 ### Corregido
