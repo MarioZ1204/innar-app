@@ -687,6 +687,52 @@ function buildMetaDesdeCamposManuales(originalName, body, carpeta) {
   return base;
 }
 
+/**
+ * Nombre de archivo al descargar, según tema de carpeta y metadatos guardados.
+ * Recalcula el formato normalizado (órdenes, comprobantes, reportes con estudio, etc.).
+ */
+function buildNombreDescargaPdxDesdeRow(row, carpeta) {
+  const carpetaCtx = typeof carpeta === 'string'
+    ? { nombre_display: carpeta }
+    : (carpeta || { nombre_display: row?.carpeta_nombre || '' });
+  const tema = detectarTemaCarpeta(carpetaCtx.nombre_display || '');
+  const original = row?.nombre_archivo_original || '';
+  const apellidos = String(row?.apellidos || '').trim();
+  const nombres = String(row?.nombres || '').trim();
+  const fecha = row?.fecha_estudio ? String(row.fecha_estudio).slice(0, 10) : '';
+  const doc = String(row?.paciente_documento || '').replace(/\s/g, '');
+  let estudio = String(row?.estudio_texto || '').trim();
+  if (!estudio && ['vtm', 'eeg', 'psg', 'actigrafia'].includes(tema)) {
+    estudio = inferirEstudioDesdeCarpeta(carpetaCtx);
+  }
+
+  const reparsed = original ? parseNombrePorCarpeta(original, carpetaCtx) : { ok: false };
+  const tipoDoc = (reparsed.ok && reparsed.tipo_documento) ? reparsed.tipo_documento : 'CC';
+
+  if (tema === 'ordenes' && apellidos && nombres && fecha && estudio && doc) {
+    return normalizarNombreOrdenHc({
+      apellidos, nombres, tipo_documento: tipoDoc, paciente_documento: doc, fecha, estudio
+    });
+  }
+  if (tema === 'comprobantes' && apellidos && nombres && fecha && estudio && doc) {
+    return normalizarNombreComprobante({
+      apellidos, nombres, tipo_documento: tipoDoc, paciente_documento: doc, fecha, estudio
+    });
+  }
+  if (tema === 'consentimientos' && apellidos && nombres && fecha && estudio && doc) {
+    return normalizarNombreConsentimiento({
+      apellidos, nombres, tipo_documento: tipoDoc, paciente_documento: doc, fecha, estudio
+    });
+  }
+
+  return nombreArchivoDescarga({
+    nombre_archivo_original: original,
+    original,
+    estudio_texto: estudio,
+    nombre_archivo_display: row?.nombre_archivo_display
+  }, carpetaCtx);
+}
+
 module.exports = {
   RE_SIMPLE_MIN,
   RE_ORDEN_HC,
@@ -721,6 +767,7 @@ module.exports = {
   analizarNombreArchivo,
   buildMetaDesdeCamposManuales,
   nombreArchivoDescarga,
+  buildNombreDescargaPdxDesdeRow,
   appendEstudioAlNombre,
   normalizarNombreBusqueda,
   resolverEstudioDesdeLista,

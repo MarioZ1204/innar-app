@@ -30,7 +30,8 @@ const {
   normalizarNombreOrdenHc,
   normalizarNombreComprobante,
   normalizarNombreConsentimiento,
-  inferirEstudioDesdeCarpeta
+  inferirEstudioDesdeCarpeta,
+  buildNombreDescargaPdxDesdeRow
 } = require('../utils/soportes-pdx-parse');
 const {
   buildMetaFromUpload,
@@ -561,10 +562,15 @@ router.get('/soportes/pdx/archivos/:id/descargar', requireAuth, requireRoleOrPer
     if (vis === 'archivo' && !puedeVerArchivo(req)) return res.status(403).json({ error: 'Archivo en carpeta cerrada' });
     const fp = resolvePdxArchivoPath(row);
     if (!fp) return res.status(404).json({ error: 'Archivo no en disco' });
-    const downloadName = row.nombre_archivo_display
-      || nombreArchivoDescarga(row, { nombre_display: row.carpeta_nombre })
-      || row.nombre_archivo_original;
-    res.download(fp, downloadName);
+    const downloadName = buildNombreDescargaPdxDesdeRow(row, { nombre_display: row.carpeta_nombre })
+      || row.nombre_archivo_original
+      || 'archivo.pdf';
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${String(downloadName).replace(/"/g, '')}"; filename*=UTF-8''${encodeURIComponent(downloadName)}`
+    );
+    fs.createReadStream(fp).pipe(res);
   } catch (e) {
     res.status(500).json({ error: safeError(e) });
   }

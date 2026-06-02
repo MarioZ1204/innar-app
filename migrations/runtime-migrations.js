@@ -790,63 +790,6 @@ const runtimeMigrations = [
         );
       }
     }
-  },
-  {
-    name: 'rt_turnos_revert_reprogramado_sin_cita_hija',
-    description: 'Revierte turnos REPROGRAMADO sin cita hija [Reprogramado] (falsos positivos)',
-    run: async (db) => {
-      const result = await db.execute(`
-        UPDATE turnos t_old
-        SET t_old.estado = 'PENDIENTE', t_old.numero_turno = NULL
-        WHERE t_old.estado = 'REPROGRAMADO'
-          AND NOT EXISTS (
-            SELECT 1 FROM turnos t_new
-            WHERE t_new.id != t_old.id
-              AND t_new.doctor_id = t_old.doctor_id
-              AND t_new.notas LIKE '%[Reprogramado]%'
-              AND (
-                (t_old.paciente_documento IS NOT NULL AND TRIM(t_old.paciente_documento) != ''
-                 AND t_new.paciente_documento = t_old.paciente_documento)
-                OR TRIM(LOWER(t_new.paciente_nombre)) = TRIM(LOWER(t_old.paciente_nombre))
-              )
-              AND (
-                t_new.fecha > t_old.fecha
-                OR (t_new.fecha = t_old.fecha AND t_new.hora > t_old.hora)
-              )
-          )
-      `);
-      const affected = result?.affectedRows ?? result?.[0]?.affectedRows ?? 0;
-      if (affected > 0) {
-        console.info(`[RT-MIGRATION] rt_turnos_revert_reprogramado_sin_cita_hija: ${affected} turno(s) restaurados a PENDIENTE`);
-      }
-    }
-  },
-  {
-    name: 'rt_turnos_no_asistio_a_reprogramado',
-    description: 'Corrige turnos NO_ASISTIO que en realidad fueron reprogramados (existe cita hija con [Reprogramado])',
-    run: async (db) => {
-      const result = await db.execute(`
-        UPDATE turnos t_na
-        INNER JOIN turnos t_new ON t_new.id != t_na.id
-          AND t_new.doctor_id = t_na.doctor_id
-          AND t_new.notas LIKE '%[Reprogramado]%'
-          AND (
-            (t_na.paciente_documento IS NOT NULL AND TRIM(t_na.paciente_documento) != ''
-             AND t_new.paciente_documento = t_na.paciente_documento)
-            OR TRIM(LOWER(t_new.paciente_nombre)) = TRIM(LOWER(t_na.paciente_nombre))
-          )
-          AND (
-            t_new.fecha > t_na.fecha
-            OR (t_new.fecha = t_na.fecha AND t_new.hora > t_na.hora)
-          )
-        SET t_na.estado = 'REPROGRAMADO', t_na.numero_turno = NULL
-        WHERE t_na.estado = 'NO_ASISTIO'
-      `);
-      const affected = result?.affectedRows ?? result?.[0]?.affectedRows ?? 0;
-      if (affected > 0) {
-        console.info(`[RT-MIGRATION] rt_turnos_no_asistio_a_reprogramado: ${affected} turno(s) actualizados`);
-      }
-    }
   }
 ];
 

@@ -5,6 +5,7 @@ const {
   parseNombreConsentimiento,
   parseNombrePorCarpeta,
   nombreArchivoDescarga,
+  buildNombreDescargaPdxDesdeRow,
   inferirEstudioDesdeCarpeta,
   mensajeErrorFormato,
   analizarNombreArchivo,
@@ -34,6 +35,20 @@ describe('soportes-pdx-parse — reportes simples', () => {
     const p = parseNombreReporte('Pérez, Ana informe.pdf');
     expect(p.ok).toBe(false);
     expect(p.error).toBe(mensajeErrorFormato('neutral'));
+  });
+
+  test('buildNombreDescargaPdxDesdeRow añade estudio VTM al descargar', () => {
+    const nombre = buildNombreDescargaPdxDesdeRow(
+      {
+        nombre_archivo_original: 'García, Juan   2026-05-27.pdf',
+        apellidos: 'García',
+        nombres: 'Juan',
+        fecha_estudio: '2026-05-27',
+        estudio_texto: ''
+      },
+      { nombre_display: 'REPORTES VTM MARZO' }
+    );
+    expect(nombre).toBe('García, Juan   2026-05-27 VTM.pdf');
   });
 
   test('nombreArchivoDescarga añade estudio VTM al descargar', () => {

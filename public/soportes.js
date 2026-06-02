@@ -1049,7 +1049,7 @@
       b.addEventListener('click', () => modalVerPdfPdx(parseInt(b.dataset.pdxVer, 10)));
     });
     tbody.querySelectorAll('[data-pdx-dl]').forEach((b) => {
-      b.addEventListener('click', () => window.open(`/api/soportes/pdx/archivos/${b.dataset.pdxDl}/descargar`, '_blank'));
+      b.addEventListener('click', () => descargarArchivoPdx(parseInt(b.dataset.pdxDl, 10)));
     });
     tbody.querySelectorAll('[data-pdx-link]').forEach((b) => {
       b.addEventListener('click', () => modalVincularPdx(parseInt(b.dataset.pdxLink, 10)));
@@ -1144,6 +1144,42 @@
       if (pdxState.carpetaId === carpeta.id) abrirCarpetaPdx(carpeta.id);
       else renderListaCarpetasPdx();
     };
+  }
+
+  async function descargarArchivoPdx(archivoId) {
+    try {
+      const res = await apiFetch(`/api/soportes/pdx/archivos/${archivoId}/descargar`);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        sopToast(data.error || 'No se pudo descargar el archivo', 'error');
+        return;
+      }
+      const blob = await res.blob();
+      let filename = 'archivo.pdf';
+      const cd = res.headers.get('Content-Disposition') || '';
+      const utf8Match = cd.match(/filename\*=UTF-8''([^;\s]+)/i);
+      if (utf8Match) {
+        try { filename = decodeURIComponent(utf8Match[1]); } catch (_) { /* ignore */ }
+      } else {
+        const plainMatch = cd.match(/filename="([^"]+)"/i) || cd.match(/filename=([^;\s]+)/i);
+        if (plainMatch) filename = plainMatch[1].trim();
+      }
+      const row = pdxState.archivos.find((x) => x.id === archivoId);
+      if (row && (!filename || filename === 'archivo.pdf')) {
+        filename = row.nombre_archivo_display || row.nombre_archivo_original || filename;
+      }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.rel = 'noopener';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      sopToast(e.message || 'Error al descargar', 'error');
+    }
   }
 
   function modalVerPdfPdx(archivoId) {
