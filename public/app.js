@@ -4863,7 +4863,7 @@ async function cargarTurnosMedica() {
       lastTurnoNumber1Id = firstWithNum1.id;
     }
 
-    const filasRequeridas = 25;
+    const filasRequeridas = 12;
     const colspan = 9;
     const hayEnAtencion = turnosActivos.some((t) => t.estado === 'EN_ATENCION');
     globalHayEnAtencion = hayEnAtencion;
@@ -5025,6 +5025,7 @@ function esConsultaBotox(tipo) {
 
 function estadoBadgeMedica(estado) {
   const map = {
+    'PENDIENTE':    { bg: '#f1f5f9', color: '#334155', border: '#cbd5e1',  label: 'Pendiente' },
     'EN_ESPERA':    { bg: '#dbeafe', color: '#1d4ed8', border: '#93c5fd',  label: 'En Espera' },
     'EN_SALA':      { bg: '#fef9c3', color: '#92400e', border: '#fde047',  label: 'En Sala' },
     'EN_ATENCION':  { bg: '#ffedd5', color: '#c2410c', border: '#fdba74',  label: 'En Atención' },
@@ -9823,6 +9824,10 @@ async function abrirPDF(){
 let _recibosLastParams = '';
 let _recibosFiltrosUI = null;
 
+function _msValues(sel) {
+  return _msValuesRecibo(sel);
+}
+
 function _msValuesRecibo(sel) {
   if (!sel) return [];
   if (sel._ms) return sel._ms.getValues();
@@ -12974,18 +12979,18 @@ $('btnConfirmarReprogramarMedica')?.addEventListener('click', async (e) => {
   }
   
   try {
+    const fechaOrig = String(currentTurnoMedicaData.fecha || '').slice(0, 10);
+    const horaOrig = _medicaHoraInputValue(currentTurnoMedicaData.hora);
+    if (fechaNew === fechaOrig && horaNew === horaOrig) {
+      showToast('Seleccione una fecha u hora distinta para reprogramar', 'warning');
+      return;
+    }
+
     // Turno original: REPROGRAMADO al mover cita; CANCELADO solo si canceló el paciente
     let estadoOriginal = 'REPROGRAMADO';
     if (currentEstadoAction === 'cancelado-paciente') estadoOriginal = 'CANCELADO';
 
-    // 1) Marcar el turno original con su estado correspondiente (se queda en su fecha original)
-    await apiFetch(`/api/turnos/${currentTurnoMedicaData.id}/estado`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ estado: estadoOriginal })
-    });
-
-    // 2) Crear un NUEVO turno con estado PENDIENTE en la fecha/hora nueva
+    // 1) Crear primero la cita nueva; si falla, el original conserva PENDIENTE
     const body = {
       doctor_id: currentTurnoMedicaData.doctor_id,
       paciente_nombre: currentTurnoMedicaData.paciente_nombre,
@@ -13007,23 +13012,33 @@ $('btnConfirmarReprogramarMedica')?.addEventListener('click', async (e) => {
     });
     
     const data = await res.json();
-    if (data.ok) {
-      showToast('Cita reprogramada correctamente', 'success');
-      
-      // Emitir socket para actualizar otros usuarios en tiempo real
-      if (window.socket && window.socket.connected) {
-        window.socket.emit('turno-medico:reprogramado', {
-          turnoId: currentTurnoMedicaData.id,
-          fechaNueva: fechaNew,
-          horaNueva: horaNew
-        });
-      }
-      
-      cerrarModalReprogramarMedica();
-      cargarTurnosMedica();
-    } else {
+    if (!data.ok) {
       showToast(data.error || 'Error al reprogramar', 'error');
+      return;
     }
+
+    const resEstado = await apiFetch(`/api/turnos/${currentTurnoMedicaData.id}/estado`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ estado: estadoOriginal })
+    });
+    const dataEstado = await resEstado.json();
+    if (!dataEstado.ok) {
+      showToast(dataEstado.error || 'Cita nueva creada, pero no se pudo cerrar la cita anterior', 'warning');
+    } else {
+      showToast('Cita reprogramada correctamente', 'success');
+    }
+
+    if (window.socket && window.socket.connected) {
+      window.socket.emit('turno-medico:reprogramado', {
+        turnoId: currentTurnoMedicaData.id,
+        fechaNueva: fechaNew,
+        horaNueva: horaNew
+      });
+    }
+
+    cerrarModalReprogramarMedica();
+    cargarTurnosMedica();
   } catch (e) {
     showToast('Error al reprogramar cita', 'error');
     console.error(e);

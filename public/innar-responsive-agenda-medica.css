@@ -113,7 +113,29 @@
 /* Desktop: scroll horizontal solo si hace falta */
 @media (min-width: 769px) {
   #view-agenda-medica .medica-turnos-table {
-    min-width: 640px;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    table-layout: fixed;
+  }
+
+  #view-agenda-medica .medica-turnos-table .turno-cell-2lines,
+  #view-agenda-medica .medica-turnos-table .turno-notas-cell {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    word-break: break-word;
+  }
+
+  #view-agenda-medica .medica-turnos-table .col-paciente-cell,
+  #view-agenda-medica .medica-turnos-table .col-tipo-cell,
+  #view-agenda-medica .medica-turnos-table .col-entidad-cell,
+  #view-agenda-medica .medica-turnos-table .col-notas-cell,
+  #view-agenda-medica .medica-turnos-table .col-doc-cell {
+    overflow: hidden;
+    max-width: 0;
   }
 
   #view-agenda-medica .medica-turnos-table th:last-child,
@@ -592,46 +614,46 @@
   #view-agenda-medica #turnosTableMedica,
   #view-agenda-medica #turnosTableMedicaCompletados {
     width: max-content !important;
-    min-width: 940px !important;
+    min-width: 720px !important;
     max-width: none !important;
     table-layout: fixed !important;
     font-size: 0.8rem;
   }
 
   #view-agenda-medica .medica-turnos-table col.col-turno {
-    width: 92px !important;
+    width: 76px !important;
   }
 
   #view-agenda-medica .medica-turnos-table col.col-hora {
-    width: 58px !important;
+    width: 52px !important;
   }
 
   #view-agenda-medica .medica-turnos-table col.col-paciente {
-    width: 130px !important;
+    width: 108px !important;
   }
 
   #view-agenda-medica .medica-turnos-table col.col-tipo {
-    width: 118px !important;
-  }
-
-  #view-agenda-medica .medica-turnos-table col.col-doc {
-    width: 100px !important;
-  }
-
-  #view-agenda-medica .medica-turnos-table col.col-entidad {
-    width: 88px !important;
-  }
-
-  #view-agenda-medica .medica-turnos-table col.col-notas {
-    width: 120px !important;
-  }
-
-  #view-agenda-medica .medica-turnos-table col.col-estado {
     width: 96px !important;
   }
 
+  #view-agenda-medica .medica-turnos-table col.col-doc {
+    width: 82px !important;
+  }
+
+  #view-agenda-medica .medica-turnos-table col.col-entidad {
+    width: 72px !important;
+  }
+
+  #view-agenda-medica .medica-turnos-table col.col-notas {
+    width: 88px !important;
+  }
+
+  #view-agenda-medica .medica-turnos-table col.col-estado {
+    width: 84px !important;
+  }
+
   #view-agenda-medica .medica-turnos-table col.col-acciones {
-    width: 128px !important;
+    width: 108px !important;
   }
 
   #view-agenda-medica .medica-turnos-table thead th,

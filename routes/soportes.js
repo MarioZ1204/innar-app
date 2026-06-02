@@ -56,7 +56,8 @@ const {
   getArmadoFeDirFromContext,
   ensureDir,
   safeFilename,
-  resolveStoragePath
+  resolveStoragePath,
+  resolvePdxArchivoPath
 } = require('../utils/soportes-storage');
 
 const ROLES_SOPORTES = ['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'contabilidad', 'admin_electro', 'electro', 'tecnico_electro'];
@@ -250,8 +251,8 @@ router.delete('/soportes/pdx/carpetas/:id', requireAuth, requireRoleOrPerm(ROLES
       });
     }
     for (const a of archivos) {
-      const fp = resolveStoragePath(a.ruta_relativa);
-      if (fp && fs.existsSync(fp)) {
+      const fp = resolvePdxArchivoPath({ ...a, carpeta_id: req.params.id });
+      if (fp) {
         try { fs.unlinkSync(fp); } catch (_) { /* ignore */ }
       }
     }
@@ -538,8 +539,8 @@ router.delete('/soportes/pdx/archivos/:id', requireAuth, requireRoleOrPerm(ROLES
   try {
     const rows = await db.query('SELECT * FROM sop_pdx_archivos WHERE id = ?', [req.params.id]);
     if (!rows.length) return res.status(404).json({ error: 'No encontrado' });
-    const fp = resolveStoragePath(rows[0].ruta_relativa);
-    if (fp && fs.existsSync(fp)) fs.unlinkSync(fp);
+    const fp = resolvePdxArchivoPath(rows[0]);
+    if (fp) fs.unlinkSync(fp);
     await db.execute('DELETE FROM sop_pdx_archivos WHERE id = ?', [req.params.id]);
     res.json({ ok: true });
   } catch (e) {
@@ -558,8 +559,8 @@ router.get('/soportes/pdx/archivos/:id/descargar', requireAuth, requireRoleOrPer
     const row = rows[0];
     const vis = calcularVisibilidadPeriodo(row.periodo);
     if (vis === 'archivo' && !puedeVerArchivo(req)) return res.status(403).json({ error: 'Archivo en carpeta cerrada' });
-    const fp = resolveStoragePath(row.ruta_relativa);
-    if (!fp || !fs.existsSync(fp)) return res.status(404).json({ error: 'Archivo no en disco' });
+    const fp = resolvePdxArchivoPath(row);
+    if (!fp) return res.status(404).json({ error: 'Archivo no en disco' });
     const downloadName = row.nombre_archivo_display
       || nombreArchivoDescarga(row, { nombre_display: row.carpeta_nombre })
       || row.nombre_archivo_original;
@@ -578,8 +579,8 @@ router.get('/soportes/pdx/archivos/:id/ver', requireAuth, requireRoleOrPerm(ROLE
     if (!rows.length) return res.status(404).json({ error: 'No encontrado' });
     const vis = calcularVisibilidadPeriodo(rows[0].periodo);
     if (vis === 'archivo' && !puedeVerArchivo(req)) return res.status(403).json({ error: 'Archivo en carpeta cerrada' });
-    const fp = resolveStoragePath(rows[0].ruta_relativa);
-    if (!fp || !fs.existsSync(fp)) return res.status(404).json({ error: 'Archivo no en disco' });
+    const fp = resolvePdxArchivoPath(rows[0]);
+    if (!fp) return res.status(404).json({ error: 'Archivo no en disco' });
     const name = rows[0].nombre_archivo_display || rows[0].nombre_archivo_original;
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(name)}"`);

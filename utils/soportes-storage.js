@@ -2,6 +2,7 @@ const path = require('path');
 const fs = require('fs');
 
 const SOPORTES_ROOT = path.resolve(__dirname, '..', 'public', 'uploads', 'soportes');
+const UPLOADS_ROOT = path.join(SOPORTES_ROOT, '..');
 
 function ensureDir(dir) {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
@@ -39,12 +40,68 @@ function safeFilename(original) {
   return `${Date.now()}-${base.replace(/[^a-zA-Z0-9.\-_,() ]/g, '_')}`;
 }
 
+function isPathInsideUploads(fullPath) {
+  const root = path.resolve(UPLOADS_ROOT);
+  const full = path.resolve(fullPath);
+  return full === root || full.startsWith(root + path.sep);
+}
+
 function resolveStoragePath(rutaRelativa) {
-  const rel = String(rutaRelativa || '').replace(/^uploads\//, '').replace(/\\/g, '/');
-  const full = path.resolve(path.join(SOPORTES_ROOT, '..'), rel);
-  const root = path.resolve(path.join(SOPORTES_ROOT, '..'));
-  if (!full.startsWith(root + path.sep) && full !== root) return null;
-  return full;
+  const rel = String(rutaRelativa || '').replace(/^uploads\//, '').replace(/\\/g, '/').trim();
+  if (!rel) return null;
+
+  const candidates = [];
+  if (rel.startsWith('soportes/')) {
+    candidates.push(path.resolve(UPLOADS_ROOT, rel));
+  } else if (rel.startsWith('pdx/')) {
+    candidates.push(path.join(SOPORTES_ROOT, rel));
+    candidates.push(path.resolve(UPLOADS_ROOT, 'soportes', rel));
+  } else {
+    candidates.push(path.resolve(UPLOADS_ROOT, rel));
+    candidates.push(path.join(SOPORTES_ROOT, rel));
+    candidates.push(path.resolve(UPLOADS_ROOT, 'soportes', rel));
+  }
+
+  for (const full of candidates) {
+    if (!isPathInsideUploads(full)) continue;
+    if (fs.existsSync(full)) return full;
+  }
+  const first = candidates.find((p) => isPathInsideUploads(p));
+  return first || null;
+}
+
+/** Resuelve PDF PDX probando ruta en BD, carpeta en disco y nombres alternativos. */
+function resolvePdxArchivoPath(archivoRow) {
+  if (!archivoRow) return null;
+  const fromDb = resolveStoragePath(archivoRow.ruta_relativa);
+  if (fromDb && fs.existsSync(fromDb)) return fromDb;
+
+  const carpetaId = archivoRow.carpeta_id;
+  const names = [
+    path.basename(String(archivoRow.ruta_relativa || '')),
+    archivoRow.nombre_archivo_display,
+    archivoRow.nombre_archivo_original
+  ].filter(Boolean);
+
+  if (carpetaId) {
+    const dir = getPdxDir(carpetaId);
+    for (const name of names) {
+      const base = path.basename(String(name));
+      if (!base || base === '.' || base === '..') continue;
+      const fp = path.join(dir, base);
+      if (fs.existsSync(fp)) return fp;
+    }
+    try {
+      const files = fs.readdirSync(dir).filter((f) => f.toLowerCase().endsWith('.pdf'));
+      const origBase = path.basename(String(archivoRow.nombre_archivo_original || '')).toLowerCase();
+      if (origBase) {
+        const match = files.find((f) => f.toLowerCase().includes(origBase.replace(/\.pdf$/i, '').slice(0, 24)));
+        if (match) return path.join(dir, match);
+      }
+    } catch (_) { /* ignore */ }
+  }
+
+  return fromDb && fs.existsSync(fromDb) ? fromDb : null;
 }
 
 ensureDir(SOPORTES_ROOT);
@@ -53,10 +110,12 @@ ensureDir(path.join(SOPORTES_ROOT, 'armado'));
 
 module.exports = {
   SOPORTES_ROOT,
+  UPLOADS_ROOT,
   getPdxDir,
   getArmadoExpedienteDir,
   getArmadoFeDirFromContext,
   safeFilename,
   resolveStoragePath,
+  resolvePdxArchivoPath,
   ensureDir
 };
