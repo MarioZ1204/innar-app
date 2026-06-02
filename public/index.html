@@ -3346,9 +3346,9 @@
             <div class="sop-panel-head">
               <div class="sop-search-wrap">
                 <i data-lucide="search"></i>
-                <input type="search" id="sopPdxBuscar" class="sop-search" placeholder="Buscar paciente (mín. 2 caracteres)…">
+                <input type="search" id="sopPdxBuscar" class="sop-search" placeholder="Buscar paciente (mín. 2 caracteres)…" autocomplete="off">
               </div>
-              <button type="button" id="btnSopPdxBuscar" class="sop-btn sop-btn-ghost">
+              <button type="button" id="btnSopPdxBuscar" class="sop-btn sop-btn-ghost" title="Buscar ahora">
                 <i data-lucide="search"></i> Buscar
               </button>
             </div>
@@ -3437,8 +3437,12 @@
             <i data-lucide="panel-left"></i> Navegación
           </button>
         </div>
-        <div class="sop-topbar-center">
+        <div class="sop-topbar-center sop-topbar-center--search">
           <div class="sop-topbar-title">Soportes</div>
+          <div class="sop-search-wrap sop-arm-topbar-search">
+            <i data-lucide="search"></i>
+            <input type="search" id="sopArmBuscarPaciente" class="sop-search" placeholder="Buscar paciente (mín. 2 caracteres)…" autocomplete="off">
+          </div>
         </div>
         <div class="sop-topbar-right">
           <button type="button" id="btnSopArmNuevoDia" class="sop-btn sop-btn-ghost">
@@ -3466,6 +3470,7 @@
           </div>
         </aside>
         <div class="sop-arm-main">
+          <div id="sopArmBuscarResultados" class="sop-search-results hidden" aria-live="polite"></div>
           <nav id="sopArmContextBar" class="sop-context-bar" aria-label="Contexto de navegación"></nav>
           <section id="sopArmExpedientePanel" class="sop-panel sop-arm-content-panel">
             <div class="sop-panel-body">

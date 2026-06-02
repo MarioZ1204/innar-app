@@ -651,6 +651,7 @@ function goToModule(moduleId) {
     }
     recargarSelectsEntidadModulo('recibos', { force: true });
     if ($('filtroEntidad')) cargarFiltrosOpciones({ force: true });
+    if ($('filtroEspecialidad')) cargarFiltrosEspecialidades();
   }
   if (moduleId === 'agenda-medica') { 
     if (!initAgendaDone) {
@@ -2662,10 +2663,11 @@ function initRecibos() {
     if (elAnulado._ms) elAnulado._ms.setValues(['no']);
   }
 
-  // Especialidad -> filtra médicos y carga tipos de consulta
+  // Especialidad -> filtra médicos y carga tipos de consulta (opciones desde /api/especialidades)
+  cargarFiltrosEspecialidades().then(() => {
   const elEsp = $('filtroEspecialidad');
   if (elEsp) {
-    initMultiSelect(elEsp, { placeholder: 'Todas las especialidades', onChange: async function () {
+    if (!elEsp._ms) initMultiSelect(elEsp, { placeholder: 'Todas las especialidades', onChange: async function () {
       const vals = elEsp._ms ? elEsp._ms.getValues() : [];
       const espId = vals[0] || '';
       const selMedico = $('filtroMedico');
@@ -2713,7 +2715,9 @@ function initRecibos() {
       }
       aplicarFiltrosRecibos();
     }});
+    observeSelectForMulti(elEsp);
   }
+  });
 
   // Socket: cuando admin modifica tipos de consulta, refrescar el dropdown activo
   if (window.socket && !window.socketRecibosTiposListenerAdded) {
@@ -2799,6 +2803,39 @@ async function cargarServiciosEnRecibo() {
 }
 
 // ---- Cargar médicos en filtro ----
+async function cargarFiltrosEspecialidades() {
+  const sel = $('filtroEspecialidad');
+  if (!sel) return;
+  const snapshot = estadoFiltrosRecibosParaRestaurar();
+  try {
+    const res = await apiFetch('/api/especialidades');
+    const list = res.ok ? await res.json() : [];
+    const primera = sel.options.length ? sel.options[0] : null;
+    sel.innerHTML = '';
+    if (primera) {
+      const opt0 = document.createElement('option');
+      opt0.value = primera.value;
+      opt0.textContent = primera.textContent || 'Todas las especialidades';
+      sel.appendChild(opt0);
+    } else {
+      const opt0 = document.createElement('option');
+      opt0.value = '';
+      opt0.textContent = 'Todas las especialidades';
+      sel.appendChild(opt0);
+    }
+    (Array.isArray(list) ? list : []).forEach((e) => {
+      const opt = document.createElement('option');
+      opt.value = String(e.id);
+      opt.textContent = e.nombre;
+      sel.appendChild(opt);
+    });
+    if (sel._ms) sel._ms.refresh();
+    restaurarEstadoFiltrosRecibosUI(snapshot);
+  } catch (e) {
+    console.warn('[cargarFiltrosEspecialidades] Error:', e.message);
+  }
+}
+
 async function cargarFiltrosMedicos() {
   const sel = $('filtroMedico');
   if (!sel) return;

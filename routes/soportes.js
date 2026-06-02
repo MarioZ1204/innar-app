@@ -1557,6 +1557,49 @@ router.get('/soportes/armado/expedientes/:id/zip', requireAuth, requireRoleOrPer
   }
 });
 
+router.get('/soportes/armado/buscar', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'modulo.armado_soportes'), async (req, res) => {
+  try {
+    const q = String(req.query.q || '').trim();
+    if (q.length < 2) return res.json({ resultados: [] });
+    const norm = q.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const like = `%${norm.replace(/[^a-z0-9\s]/g, '%')}%`;
+    const docLike = `%${q.replace(/\s/g, '')}%`;
+    const rows = await db.query(
+      `SELECT e.id AS expediente_id, e.codigo, e.paciente_nombre, e.paciente_documento, e.numero_factura,
+              c.id AS contenedor_id, c.tipo AS contenedor_tipo,
+              d.id AS dia_id, d.nombre_display AS dia_nombre,
+              p.id AS periodo_id, p.periodo, p.etiqueta AS periodo_etiqueta
+       FROM sop_expedientes e
+       JOIN sop_contenedores c ON c.id = e.contenedor_id
+       JOIN sop_dias d ON d.id = c.dia_id
+       JOIN sop_periodos p ON p.id = d.periodo_id
+       WHERE LOWER(e.paciente_nombre) LIKE ? OR LOWER(e.codigo) LIKE ?
+          OR REPLACE(COALESCE(e.paciente_documento, ''), ' ', '') LIKE ?
+       ORDER BY p.periodo DESC, e.paciente_nombre ASC
+       LIMIT 60`,
+      [like, like, docLike]
+    );
+    res.json({
+      resultados: rows.map((r) => ({
+        expediente_id: r.expediente_id,
+        codigo: r.codigo,
+        paciente_nombre: r.paciente_nombre,
+        paciente_documento: r.paciente_documento,
+        numero_factura: r.numero_factura,
+        contenedor_id: r.contenedor_id,
+        contenedor_tipo: r.contenedor_tipo,
+        dia_id: r.dia_id,
+        dia_nombre: r.dia_nombre,
+        periodo_id: r.periodo_id,
+        periodo: r.periodo,
+        periodo_etiqueta: r.periodo_etiqueta
+      }))
+    });
+  } catch (e) {
+    res.status(500).json({ error: safeError(e) });
+  }
+});
+
 // List expedientes for import modal (armado visible periods)
 router.get('/soportes/armado/expedientes-select', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'soportes.armado.importar_pdx'), async (req, res) => {
   try {

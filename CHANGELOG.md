@@ -3,6 +3,17 @@
 Todos los cambios importantes a la aplicación se documentan aquí. El formato
 sigue (informalmente) [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
+## [1.5.54] — 2026-06-02
+
+### Corregido
+
+- **Filtro recibos — Especialidad**: el desplegable no cargaba opciones desde `/api/especialidades` (solo quedaba «Todas»).
+
+### Añadido
+
+- **Reportes PDX**: búsqueda de pacientes predictiva al escribir (debounce 320 ms), además de Enter/botón Buscar.
+- **Armado de soportes**: buscador de pacientes en la barra superior con resultados en vivo y navegación al expediente (`GET /api/soportes/armado/buscar`).
+
 ## [1.5.53] — 2026-06-02
 
 ### Corregido

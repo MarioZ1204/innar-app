@@ -333,6 +333,26 @@
   padding: 0;
 }
 
+.sop-topbar-center--search {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px 16px;
+}
+
+.sop-arm-topbar-search {
+  flex: 1 1 220px;
+  max-width: min(420px, 100%);
+  min-width: 180px;
+}
+
+#sopArmBuscarResultados {
+  margin: 0 0 12px;
+}
+
 /* Skeletons */
 @keyframes sop-shimmer {
   0% { background-position: -200% 0; }

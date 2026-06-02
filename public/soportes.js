@@ -684,13 +684,34 @@
     ).join('');
   }
 
-  function cerrarResultadosPdx() {
+  function sopDebounce(fn, ms) {
+    let t;
+    return (...args) => {
+      clearTimeout(t);
+      t = setTimeout(() => fn(...args), ms);
+    };
+  }
+
+  function cerrarResultadosPdx(clearInput = true) {
     const el = $('sopPdxResultados');
     if (!el) return;
     el.classList.add('hidden');
     el.innerHTML = '';
-    const inp = $('sopPdxBuscar');
-    if (inp) inp.value = '';
+    if (clearInput) {
+      const inp = $('sopPdxBuscar');
+      if (inp) inp.value = '';
+    }
+  }
+
+  function cerrarResultadosArmado(clearInput = true) {
+    const el = $('sopArmBuscarResultados');
+    if (!el) return;
+    el.classList.add('hidden');
+    el.innerHTML = '';
+    if (clearInput) {
+      const inp = $('sopArmBuscarPaciente');
+      if (inp) inp.value = '';
+    }
   }
 
   function renderArmadoPeriodoSummary() {
@@ -1737,7 +1758,10 @@
 
   async function buscarPdx() {
     const q = $('sopPdxBuscar')?.value?.trim();
-    if (!q || q.length < 2) { sopToast('Escriba al menos 2 caracteres', 'warning'); return; }
+    if (!q || q.length < 2) {
+      cerrarResultadosPdx(false);
+      return;
+    }
     const el = $('sopPdxResultados');
     el.classList.remove('hidden');
     el.innerHTML = `<div class="sop-search-results-head"><h4>Resultados de búsqueda</h4><span class="sop-search-results-meta">Buscando…</span></div>
@@ -1778,6 +1802,93 @@
       b.addEventListener('click', () => { cerrarResultadosPdx(); abrirCarpetaPdx(parseInt(b.dataset.openCarpeta, 10)); });
     });
     sopIcons(el);
+  }
+
+  const buscarPdxPredictivo = sopDebounce(() => buscarPdx(), 320);
+
+  async function buscarArmadoPaciente() {
+    const q = $('sopArmBuscarPaciente')?.value?.trim();
+    const el = $('sopArmBuscarResultados');
+    if (!el) return;
+    if (!q || q.length < 2) {
+      cerrarResultadosArmado(false);
+      return;
+    }
+    el.classList.remove('hidden');
+    el.innerHTML = `<div class="sop-search-results-head"><h4>Resultados de búsqueda</h4><span class="sop-search-results-meta">Buscando…</span></div>
+      <div class="sop-search-results-body"><div class="sop-empty" style="padding:24px"><i data-lucide="loader" class="sop-empty-icon"></i></div></div>`;
+    sopIcons(el);
+    try {
+      const res = await apiFetch(`/api/soportes/armado/buscar?q=${encodeURIComponent(q)}`);
+      const data = await res.json();
+      const list = data.resultados || [];
+      if (!list.length) {
+        el.innerHTML = `<div class="sop-search-results-head">
+            <h4>Resultados de búsqueda</h4>
+            <span class="sop-search-results-meta">Sin coincidencias</span>
+            <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-close-arm-search><i data-lucide="x"></i> Cerrar</button>
+          </div>
+          <div class="sop-search-results-body"><div class="sop-empty" style="padding:20px">No se encontraron expedientes para «${escapeHtml(q)}»</div></div>`;
+        el.querySelector('[data-close-arm-search]')?.addEventListener('click', () => cerrarResultadosArmado());
+        sopIcons(el);
+        return;
+      }
+      el.innerHTML = `<div class="sop-search-results-head">
+          <h4>Resultados de búsqueda</h4>
+          <span class="sop-search-results-meta">${list.length} encontrado${list.length !== 1 ? 's' : ''}</span>
+          <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-close-arm-search><i data-lucide="x"></i> Cerrar</button>
+        </div>
+        <div class="sop-search-results-body">
+          <div class="sop-table-wrap"><table class="sop-table"><thead><tr>
+            <th>Paciente</th><th>Carpeta</th><th>Ubicación</th><th></th></tr></thead><tbody>
+            ${list.map((r) => {
+              const factura = (r.numero_factura != null && Number(r.numero_factura) > 0)
+                ? ` · FE${r.numero_factura}` : '';
+              const tipo = r.contenedor_tipo === 'rips' ? 'RIPS' : 'SOPORTES';
+              return `<tr>
+                <td><strong>${escapeHtml(r.paciente_nombre || r.codigo)}</strong>
+                  ${r.paciente_documento ? `<div class="sop-search-results-meta">Doc. ${escapeHtml(r.paciente_documento)}</div>` : ''}</td>
+                <td>${escapeHtml(r.codigo || '—')}${factura}</td>
+                <td>${escapeHtml(r.periodo_etiqueta || r.periodo)} · ${escapeHtml(r.dia_nombre)} · ${tipo}</td>
+                <td><button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-open-exp="${r.expediente_id}"
+                  data-periodo-id="${r.periodo_id}" data-dia-id="${r.dia_id}" data-contenedor-id="${r.contenedor_id}">
+                  <i data-lucide="folder-open"></i> Abrir</button></td>
+              </tr>`;
+            }).join('')}
+          </tbody></table></div>
+        </div>`;
+      el.querySelector('[data-close-arm-search]')?.addEventListener('click', () => cerrarResultadosArmado());
+      el.querySelectorAll('[data-open-exp]').forEach((b) => {
+        b.addEventListener('click', () => {
+          navegarAExpedienteArmado({
+            expediente_id: parseInt(b.dataset.openExp, 10),
+            periodo_id: parseInt(b.dataset.periodoId, 10),
+            dia_id: parseInt(b.dataset.diaId, 10),
+            contenedor_id: parseInt(b.dataset.contenedorId, 10)
+          });
+        });
+      });
+      sopIcons(el);
+    } catch (e) {
+      el.innerHTML = `<div class="sop-search-results-body"><div class="sop-empty" style="padding:20px;color:#dc2626">${escapeHtml(e.message)}</div></div>`;
+    }
+  }
+
+  const buscarArmadoPacientePredictivo = sopDebounce(() => buscarArmadoPaciente(), 320);
+
+  async function navegarAExpedienteArmado(r) {
+    if (!r?.expediente_id) return;
+    cerrarResultadosArmado(false);
+    try {
+      if (!armState.periodos.length) await cargarPeriodosArmado();
+      if (armState.periodoId !== r.periodo_id) await seleccionarPeriodoArmado(r.periodo_id);
+      if (armState.diaId !== r.dia_id) await seleccionarDiaArmado(r.dia_id);
+      if (armState.contenedorId !== r.contenedor_id) await seleccionarContenedorArmado(r.contenedor_id);
+      await abrirExpedienteArmado(r.expediente_id);
+      sopArmNavOpen(false);
+    } catch (e) {
+      sopToast(e.message || 'No se pudo abrir el expediente', 'error');
+    }
   }
 
   async function modalVincularPdx(pdxArchivoId) {
@@ -1826,7 +1937,11 @@
     $('btnVolverReportesPdx')?.addEventListener('click', goToMenu);
     $('btnSopPdxNuevaCarpeta')?.addEventListener('click', modalNuevaCarpetaPdx);
     $('btnSopPdxBuscar')?.addEventListener('click', buscarPdx);
-    $('sopPdxBuscar')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') buscarPdx(); });
+    $('sopPdxBuscar')?.addEventListener('input', buscarPdxPredictivo);
+    $('sopPdxBuscar')?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); buscarPdx(); }
+      if (e.key === 'Escape') cerrarResultadosPdx();
+    });
     renderPdxTemaLegend();
     $('sopPdxUploadInput')?.addEventListener('change', async (e) => {
       const files = e.target.files;
@@ -2611,6 +2726,11 @@
     $('sopArmNavBackdrop')?.addEventListener('click', () => sopArmNavOpen(false));
     $('btnSopArmNuevoPeriodo')?.addEventListener('click', modalNuevoPeriodoArmado);
     $('btnSopArmNuevoDia')?.addEventListener('click', modalNuevoDiaArmado);
+    $('sopArmBuscarPaciente')?.addEventListener('input', buscarArmadoPacientePredictivo);
+    $('sopArmBuscarPaciente')?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); buscarArmadoPaciente(); }
+      if (e.key === 'Escape') cerrarResultadosArmado();
+    });
     renderArmadoContextBar();
     cargarPeriodosArmado().then(renderPeriodosArmado).catch((e) => sopToast(e.message, 'error'));
   };
