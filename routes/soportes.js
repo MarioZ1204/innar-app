@@ -71,6 +71,41 @@ function enrichArchivoPdxConNombreDescarga(archivo, carpeta) {
   return { ...archivo, nombre_descarga };
 }
 
+function safeEnrichArchivoPdxConNombreDescarga(archivo, carpeta) {
+  try {
+    return enrichArchivoPdxConNombreDescarga(archivo, carpeta);
+  } catch (e) {
+    logger.warn('[SOPORTES] nombre_descarga fallback', { archivoId: archivo?.id, err: e.message });
+    return {
+      ...archivo,
+      nombre_descarga: archivo?.nombre_archivo_display
+        || archivo?.nombre_archivo_original
+        || 'archivo.pdf'
+    };
+  }
+}
+
+async function queryPdxArchivosConUsuarios(carpetaId) {
+  const sqlFull = `SELECT a.*, us.nombre AS subido_por_nombre, ue.nombre AS editado_por_nombre
+       FROM sop_pdx_archivos a
+       LEFT JOIN usuarios us ON us.id = a.subido_por
+       LEFT JOIN usuarios ue ON ue.id = a.editado_por
+       WHERE a.carpeta_id = ? ORDER BY a.paciente_nombre ASC, a.id DESC`;
+  const sqlLegacy = `SELECT a.*, us.nombre AS subido_por_nombre
+       FROM sop_pdx_archivos a
+       LEFT JOIN usuarios us ON us.id = a.subido_por
+       WHERE a.carpeta_id = ? ORDER BY a.paciente_nombre ASC, a.id DESC`;
+  try {
+    return await db.query(sqlFull, [carpetaId]);
+  } catch (e) {
+    if (e.code === 'ER_BAD_FIELD_ERROR') {
+      const rows = await db.query(sqlLegacy, [carpetaId]);
+      return rows.map((r) => ({ ...r, editado_por_nombre: null }));
+    }
+    throw e;
+  }
+}
+
 function puedeVerArchivo(req) {
   const perms = req.session?.permisos;
   if (req.session?.rol === 'superadmin') return true;
@@ -285,20 +320,14 @@ router.get('/soportes/pdx/carpetas/:id/archivos', requireAuth, requireRoleOrPerm
     if (vis === 'archivo' && !puedeVerArchivo(req)) {
       return res.status(403).json({ error: 'Carpeta en archivo' });
     }
-    const archivos = await db.query(
-      `SELECT a.*, us.nombre AS subido_por_nombre, ue.nombre AS editado_por_nombre
-       FROM sop_pdx_archivos a
-       LEFT JOIN usuarios us ON us.id = a.subido_por
-       LEFT JOIN usuarios ue ON ue.id = a.editado_por
-       WHERE a.carpeta_id = ? ORDER BY a.paciente_nombre ASC, a.id DESC`,
-      [req.params.id]
-    );
+    const archivos = await queryPdxArchivosConUsuarios(req.params.id);
     const carp = carpeta[0];
     res.json({
       carpeta: mapCarpetaPdx({ ...carp, archivos_count: archivos.length }),
-      archivos: archivos.map((a) => enrichArchivoPdxConNombreDescarga(a, carp))
+      archivos: archivos.map((a) => safeEnrichArchivoPdxConNombreDescarga(a, carp))
     });
   } catch (e) {
+    logger.error('[SOPORTES] listar archivos pdx carpeta', req.params.id, e);
     res.status(500).json({ error: safeError(e) });
   }
 });

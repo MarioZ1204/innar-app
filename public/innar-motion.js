@@ -97,15 +97,22 @@
       && !document.documentElement.classList.contains('innar-motion-off');
   };
 
+  let _innarViewTransitionActive = false;
+
   window.innarRunViewSwitch = function innarRunViewSwitch(applyFn) {
     if (typeof applyFn !== 'function') return false;
-    if (window.innarSupportsViewTransition()) {
+    if (window.innarSupportsViewTransition() && !_innarViewTransitionActive) {
       try {
-        document.startViewTransition(() => {
+        const transition = document.startViewTransition(() => {
           applyFn();
         });
+        _innarViewTransitionActive = true;
+        transition.finished
+          .catch(() => { /* abortada: nueva navegación, etc. */ })
+          .finally(() => { _innarViewTransitionActive = false; });
         return true;
       } catch (e) {
+        _innarViewTransitionActive = false;
         console.warn('[innar-motion] startViewTransition falló:', e);
       }
     }

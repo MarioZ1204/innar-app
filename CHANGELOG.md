@@ -3,6 +3,12 @@
 Todos los cambios importantes a la aplicación se documentan aquí. El formato
 sigue (informalmente) [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
+## [1.5.47] — 2026-05-27
+
+### Corregido
+
+- **Reportes PDX**: error 500 al listar archivos de carpeta si `periodo` inválido en BD, si falta columna `editado_por` o falla el cálculo de `nombre_descarga`. Transiciones de vista (`InvalidStateError`) mitigadas en `innar-motion.js`.
+
 ## [1.5.46] — 2026-05-27
 
 ### Corregido / añadido
