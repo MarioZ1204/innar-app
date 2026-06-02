@@ -590,6 +590,28 @@ const runtimeMigrations = [
     }
   },
   {
+    name: 'rt_sop_pdx_archivos_columns_ensure',
+    description: 'Columnas faltantes en sop_pdx_archivos (esquemas parciales)',
+    run: async (db) => {
+      if (!(await tableExists(db, 'sop_pdx_archivos'))) return;
+      const adds = [
+        ['apellidos', 'VARCHAR(120) NULL'],
+        ['nombres', 'VARCHAR(120) NULL'],
+        ['marca_tiempo', 'VARCHAR(40) NULL'],
+        ['sufijo_numero', 'VARCHAR(10) NULL'],
+        ['estudio_texto', 'VARCHAR(120) NULL'],
+        ['nombre_archivo_display', 'VARCHAR(255) NULL'],
+        ['editado_por', 'INT NULL'],
+        ['editado_en', 'TIMESTAMP NULL']
+      ];
+      for (const [col, def] of adds) {
+        if (!(await columnExists(db, 'sop_pdx_archivos', col))) {
+          await db.execute(`ALTER TABLE sop_pdx_archivos ADD COLUMN ${col} ${def}`);
+        }
+      }
+    }
+  },
+  {
     name: 'rt_sop_pdx_archivos_ensure',
     description: 'Crea sop_pdx_archivos si rt_sop_soportes_radicacion se saltó (solo existía sop_pdx_carpetas)',
     run: async (db) => {

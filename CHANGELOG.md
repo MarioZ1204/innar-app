@@ -3,6 +3,12 @@
 Todos los cambios importantes a la aplicación se documentan aquí. El formato
 sigue (informalmente) [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
+## [1.5.49] — 2026-05-27
+
+### Corregido
+
+- **Subida PDX (POST) 500**: multer con errores legibles, ruta real del PDF tras `UPLOADS_DIR`, nombres en disco acotados, INSERT con columnas legacy y migración de columnas faltantes; superadmin ve `detail` en el error.
+
 ## [1.5.48] — 2026-05-27
 
 ### Corregido

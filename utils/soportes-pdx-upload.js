@@ -91,11 +91,19 @@ function buildMetaFromUploadOrdenes(originalName, body = {}, estudios = []) {
   });
 }
 
+const MAX_PDX_DISK_NAME = 200;
+
 function sanitizeDiskName(name) {
-  return String(name)
+  let base = String(name)
     .replace(/[<>:"/\\|?*]/g, '_')
     .replace(/\s+/g, ' ')
     .trim() || `reporte-${Date.now()}.pdf`;
+  if (!/\.pdf$/i.test(base)) base += '.pdf';
+  if (base.length > MAX_PDX_DISK_NAME) {
+    const ext = '.pdf';
+    base = base.slice(0, MAX_PDX_DISK_NAME - ext.length) + ext;
+  }
+  return base;
 }
 
 function pdxDiskFilename(meta, carpeta = null) {
@@ -106,16 +114,30 @@ function pdxDiskFilename(meta, carpeta = null) {
   return sanitizeDiskName(meta.nombre_archivo_original || meta.original);
 }
 
-function finalizePdxFileOnDisk(carpetaId, tmpFilename, meta, carpeta = null) {
+function resolveTmpUploadPath(carpetaId, fileOrName) {
+  const dir = getPdxDir(carpetaId);
+  if (fileOrName && typeof fileOrName === 'object') {
+    if (fileOrName.path && fs.existsSync(fileOrName.path)) return fileOrName.path;
+    if (fileOrName.destination && fileOrName.filename) {
+      const p = path.join(fileOrName.destination, fileOrName.filename);
+      if (fs.existsSync(p)) return p;
+    }
+    if (fileOrName.filename) return path.join(dir, fileOrName.filename);
+  }
+  return path.join(dir, String(fileOrName || ''));
+}
+
+function finalizePdxFileOnDisk(carpetaId, fileOrTmpName, meta, carpeta = null) {
   const dir = getPdxDir(carpetaId);
   const diskName = pdxDiskFilename(meta, carpeta);
-  const tmpPath = path.join(dir, tmpFilename);
+  const tmpPath = resolveTmpUploadPath(carpetaId, fileOrTmpName);
   const finalPath = path.join(dir, diskName);
-  if (fs.existsSync(tmpPath)) {
-    if (tmpFilename !== diskName) {
-      if (fs.existsSync(finalPath)) fs.unlinkSync(finalPath);
-      fs.renameSync(tmpPath, finalPath);
-    }
+  if (!fs.existsSync(tmpPath)) {
+    throw new Error(`Archivo temporal no encontrado tras la subida (${tmpPath})`);
+  }
+  if (path.resolve(tmpPath) !== path.resolve(finalPath)) {
+    if (fs.existsSync(finalPath)) fs.unlinkSync(finalPath);
+    fs.renameSync(tmpPath, finalPath);
   }
   const rutaRelativa = path.join('soportes', 'pdx', String(carpetaId), diskName).replace(/\\/g, '/');
   return {
@@ -123,6 +145,19 @@ function finalizePdxFileOnDisk(carpetaId, tmpFilename, meta, carpeta = null) {
     diskName,
     nombre_archivo_display: meta.nombre_archivo_display || diskName
   };
+}
+
+function ensureMetaPacienteNombre(meta, fallbackName = '') {
+  if (!meta.paciente_nombre) {
+    const ap = String(meta.apellidos || '').trim();
+    const nom = String(meta.nombres || '').trim();
+    meta.paciente_nombre = ap && nom ? `${ap}, ${nom}` : (ap || nom || fallbackName || 'Sin nombre');
+  }
+  if (!meta.paciente_nombre_norm) {
+    meta.paciente_nombre_norm = normalizarNombreBusqueda(meta.paciente_nombre);
+  }
+  if (meta.fecha_estudio === '') meta.fecha_estudio = null;
+  return meta;
 }
 
 function movePdxFileOnDisk(fromCarpetaId, toCarpetaId, oldRutaRelativa, meta, carpeta = null) {
@@ -168,6 +203,8 @@ module.exports = {
   necesitaListaEstudios,
   pdxDiskFilename,
   finalizePdxFileOnDisk,
+  resolveTmpUploadPath,
+  ensureMetaPacienteNombre,
   movePdxFileOnDisk,
   collectPdxWarnings,
   nombreArchivoDescarga

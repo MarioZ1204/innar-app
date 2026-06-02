@@ -72,11 +72,35 @@ function fileLooksLikePdf(filePath) {
   }
 }
 
+function resolveUploadedFilePath(file) {
+  if (!file) return null;
+  const candidates = [];
+  if (file.path) candidates.push(file.path);
+  if (file.destination && file.filename) {
+    candidates.push(path.join(file.destination, file.filename));
+  }
+  for (const p of candidates) {
+    try {
+      if (p && fs.existsSync(p)) return p;
+    } catch (_) { /* ignore */ }
+  }
+  return file.path || (file.destination && file.filename
+    ? path.join(file.destination, file.filename)
+    : null);
+}
+
 function validateMagicBytes(req, res, next) {
   if (!req.file) return next();
-  const filePath = req.file.path;
+  const filePath = resolveUploadedFilePath(req.file);
   const ext = path.extname(req.file.originalname).toLowerCase();
   if (EXT_CSV.includes(ext)) return next();
+
+  if (!filePath) {
+    return res.status(500).json({
+      error: 'El archivo subido no está en disco. Revise permisos de UPLOADS_DIR.'
+    });
+  }
+  req.file.path = filePath;
 
   try {
     const fd = fs.openSync(filePath, 'r');
@@ -160,6 +184,7 @@ module.exports = {
   upload,
   uploadArmadoSoportes,
   validateMagicBytes,
+  resolveUploadedFilePath,
   fileLooksLikePdf,
   bufferLooksLikePdf
 };

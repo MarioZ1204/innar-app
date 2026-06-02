@@ -38,6 +38,7 @@ const {
   cargarEstudiosParaOrdenes,
   necesitaListaEstudios,
   finalizePdxFileOnDisk,
+  ensureMetaPacienteNombre,
   movePdxFileOnDisk,
   collectPdxWarnings
 } = require('../utils/soportes-pdx-upload');
@@ -192,6 +193,53 @@ const uploadPdx = multer({
     else cb(new Error('Solo se permiten archivos PDF'));
   }
 });
+
+function uploadPdxSingle(req, res, next) {
+  uploadPdx.single('file')(req, res, (err) => {
+    if (!err) return next();
+    logger.error('[SOPORTES] multer pdx', { message: err.message, code: err.code });
+    const status = err.code === 'LIMIT_FILE_SIZE' ? 413 : 400;
+    const payload = { error: err.message || 'No se pudo recibir el archivo PDF' };
+    if (req.session?.rol === 'superadmin' && err.code) payload.code = err.code;
+    return res.status(status).json(payload);
+  });
+}
+
+async function insertPdxArchivoRow(carpetaId, meta, file, session) {
+  ensureMetaPacienteNombre(meta, file.originalname);
+  const params = [
+    carpetaId, meta.apellidos || null, meta.nombres || null, meta.paciente_nombre,
+    meta.paciente_nombre_norm, meta.paciente_documento || null,
+    meta.fecha_estudio || null, meta.marca_tiempo || null, meta.sufijo_numero || null,
+    meta.estudio_texto || null, file.originalname, meta.nombre_archivo_display,
+    meta.ruta_relativa, file.size, session.usuarioId || null
+  ];
+  try {
+    return await db.execute(
+      `INSERT INTO sop_pdx_archivos (
+          carpeta_id, apellidos, nombres, paciente_nombre, paciente_nombre_norm, paciente_documento,
+          fecha_estudio, marca_tiempo, sufijo_numero, estudio_texto, nombre_archivo_original,
+          nombre_archivo_display, ruta_relativa, tamano_bytes, subido_por
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      params
+    );
+  } catch (e) {
+    if (e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+    return db.execute(
+      `INSERT INTO sop_pdx_archivos (
+          carpeta_id, paciente_nombre, paciente_nombre_norm, paciente_documento,
+          fecha_estudio, nombre_archivo_original, nombre_archivo_display, ruta_relativa,
+          tamano_bytes, subido_por
+        ) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      [
+        carpetaId, meta.paciente_nombre, meta.paciente_nombre_norm,
+        meta.paciente_documento || null, meta.fecha_estudio || null,
+        file.originalname, meta.nombre_archivo_display, meta.ruta_relativa,
+        file.size, session.usuarioId || null
+      ]
+    );
+  }
+}
 
 // ─── PDX: carpetas ─────────────────────────────────────────────────────────
 
@@ -369,11 +417,14 @@ router.post(
   '/soportes/pdx/carpetas/:id/archivos',
   requireAuth,
   requireRoleOrPerm(ROLES_SOPORTES, ['modulo.reportes_pdx', 'soportes.pdx.subir']),
-  uploadPdx.single('file'),
+  uploadPdxSingle,
   validateMagicBytes,
   async (req, res) => {
+    let uploadedPath = null;
     try {
       if (!req.file) return res.status(400).json({ error: 'Archivo PDF requerido' });
+      uploadedPath = req.file.path;
+
       const carpetaRows = await db.query('SELECT * FROM sop_pdx_carpetas WHERE id = ?', [req.params.id]);
       if (!carpetaRows.length) return res.status(404).json({ error: 'Carpeta no encontrada' });
       const carpeta = carpetaRows[0];
@@ -392,39 +443,46 @@ router.post(
         });
       }
 
+      if (req.body.paciente_documento && !meta.paciente_documento) {
+        meta.paciente_documento = String(req.body.paciente_documento).trim().replace(/\s/g, '');
+      }
+
       const warnings = collectPdxWarnings(meta, carpeta);
       const { rutaRelativa, nombre_archivo_display } = finalizePdxFileOnDisk(
         carpeta.id,
-        req.file.filename,
+        req.file,
         meta,
         carpeta
       );
+      meta.ruta_relativa = rutaRelativa;
+      meta.nombre_archivo_display = nombre_archivo_display;
+      uploadedPath = null;
 
-      const ins = await db.execute(
-        `INSERT INTO sop_pdx_archivos (
-          carpeta_id, apellidos, nombres, paciente_nombre, paciente_nombre_norm, paciente_documento,
-          fecha_estudio, marca_tiempo, sufijo_numero, estudio_texto, nombre_archivo_original,
-          nombre_archivo_display, ruta_relativa, tamano_bytes, subido_por
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-        [
-          carpeta.id, meta.apellidos, meta.nombres, meta.paciente_nombre, meta.paciente_nombre_norm,
-          meta.paciente_documento || req.body.paciente_documento || null,
-          meta.fecha_estudio, meta.marca_tiempo, meta.sufijo_numero,
-          meta.estudio_texto, req.file.originalname, nombre_archivo_display, rutaRelativa,
-          req.file.size, req.session.usuarioId
-        ]
-      );
+      const ins = await insertPdxArchivoRow(carpeta.id, meta, req.file, req.session);
+      if (!ins?.insertId) {
+        throw new Error('No se obtuvo id del archivo insertado en base de datos');
+      }
 
       await logPdxArchivo(ins.insertId, 'subida', req.session.usuarioId, req.file.originalname);
       const row = await db.query('SELECT * FROM sop_pdx_archivos WHERE id = ?', [ins.insertId]);
+      if (!row.length) {
+        throw new Error('Archivo guardado en BD pero no se pudo leer el registro');
+      }
       res.status(201).json({
         ok: true,
-        archivo: enrichArchivoPdxConNombreDescarga(row[0], carpeta),
+        archivo: safeEnrichArchivoPdxConNombreDescarga(jsonSafeRow(row[0]), carpeta),
         warnings
       });
     } catch (e) {
-      logger.error('[SOPORTES] subir pdx:', e);
-      res.status(500).json({ error: safeError(e) });
+      if (uploadedPath && fs.existsSync(uploadedPath)) {
+        try { fs.unlinkSync(uploadedPath); } catch (_) { /* ignore */ }
+      }
+      logger.error('[SOPORTES] subir pdx', {
+        carpetaId: req.params.id,
+        message: e?.message,
+        code: e?.code
+      });
+      res.status(500).json(pdxListErrorPayload(req, e));
     }
   }
 );
@@ -733,10 +791,12 @@ router.post(
 
       const { rutaRelativa, nombre_archivo_display } = finalizePdxFileOnDisk(
         prev.carpeta_id,
-        req.file.filename,
+        req.file,
         meta,
         carpetaCtx
       );
+
+      ensureMetaPacienteNombre(meta, req.file.originalname);
 
       await db.execute(
         `UPDATE sop_pdx_archivos SET
