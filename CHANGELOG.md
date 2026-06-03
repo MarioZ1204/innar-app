@@ -3,6 +3,12 @@
 Todos los cambios importantes a la aplicación se documentan aquí. El formato
 sigue (informalmente) [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
+## [1.5.73] — 2026-05-27
+
+### Añadido
+
+- **Recibos — reporte**: el superadministrador puede cambiar la fecha de un recibo (icono calendario en la tabla; actualiza listados, reportes y PDF).
+
 ## [1.5.72] — 2026-05-27
 
 ### Corregido / mejorado

@@ -796,6 +796,47 @@ router.patch('/recibos/:id/generador', requireAuth, async (req, res) => {
   }
 });
 
+// PATCH /api/recibos/:id/fecha — solo superadministrador
+router.patch('/recibos/:id/fecha', requireAuth, async (req, res) => {
+  if (req.session?.rol !== 'superadmin') {
+    return res.status(403).json({ error: 'Solo el superadministrador puede cambiar la fecha del recibo' });
+  }
+  const id = parseReciboId(req.params.id);
+  if (id === null) return res.status(400).json({ error: 'ID de recibo inválido' });
+  const fechaStr = String(req.body?.fecha || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fechaStr)) {
+    return res.status(400).json({ error: 'Fecha inválida. Use formato AAAA-MM-DD.' });
+  }
+  const d = new Date(`${fechaStr}T12:00:00`);
+  if (Number.isNaN(d.getTime())) {
+    return res.status(400).json({ error: 'Fecha inválida' });
+  }
+  try {
+    const rows = await db.query('SELECT id, anulado, data FROM recibos WHERE id=?', [id]);
+    if (!rows.length) return res.status(404).json({ error: 'Recibo no encontrado' });
+    if (rows[0].anulado) return res.status(400).json({ error: 'No se puede editar un recibo anulado' });
+
+    let dataJson = null;
+    if (rows[0].data) {
+      try {
+        dataJson = typeof rows[0].data === 'string' ? JSON.parse(rows[0].data) : rows[0].data;
+      } catch (_) { dataJson = null; }
+    }
+    if (dataJson && typeof dataJson === 'object') {
+      dataJson.fecha = fechaStr;
+      await db.execute('UPDATE recibos SET fecha = ?, data = ? WHERE id = ?', [fechaStr, JSON.stringify(dataJson), id]);
+    } else {
+      await db.execute('UPDATE recibos SET fecha = ? WHERE id = ?', [fechaStr, id]);
+    }
+
+    emitSocket('recibo:actualizar-lista');
+    emitSocket('stats:actualizar');
+    res.json({ ok: true, fecha: fechaStr });
+  } catch (err) {
+    res.status(500).json({ error: safeError(err) });
+  }
+});
+
 // PATCH /api/recibos/:id/observaciones — solo superadministrador
 router.patch('/recibos/:id/observaciones', requireAuth, async (req, res) => {
   if (req.session?.rol !== 'superadmin') {

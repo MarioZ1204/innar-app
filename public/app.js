@@ -10181,6 +10181,11 @@ async function cargarLista(queryString) {
           <img src="images/delete.svg" alt="Eliminar"/></button>`;
       }
       if (isSuperadmin() && !esAnulado) {
+        acciones += `<button class="btn-recibo-fecha" data-id="${r.id}" data-numero="${escapeHtml(r.numero || '')}" data-fecha="${escapeHtml(fecha !== '-' ? fecha : '')}" title="Cambiar fecha del recibo" aria-label="Cambiar fecha">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>
+          </svg>
+        </button>`;
         acciones += `<button class="btn-recibo-valor" data-id="${r.id}" data-numero="${escapeHtml(r.numero || '')}" data-total="${Number(r.total || 0)}" title="Cambiar valor del recibo" aria-label="Cambiar valor del recibo">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
@@ -10214,6 +10219,11 @@ async function cargarLista(queryString) {
         <td class="col-recibo-acciones">${acciones}</td>`;
       tbody.appendChild(tr);
     });
+
+    tbody.querySelectorAll('.btn-recibo-fecha').forEach((b) => b.addEventListener('click', (e) => {
+      const btn = e.target.closest('.btn-recibo-fecha');
+      showEditFechaReciboModal(btn.dataset.id, btn.dataset.numero, btn.dataset.fecha || '');
+    }));
 
     tbody.querySelectorAll('.btn-recibo-valor').forEach((b) => b.addEventListener('click', (e) => {
       const btn = e.target.closest('.btn-recibo-valor');
@@ -10393,6 +10403,56 @@ async function showEditObservacionesReciboModal(reciboId, numero) {
       }
     } catch (_) {
       showToast('Error al guardar observaciones', 'error');
+    }
+  });
+  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) backdrop.remove(); });
+}
+
+function showEditFechaReciboModal(reciboId, numero, fechaActual) {
+  const hoy = recibosFechaHoyLocal();
+  const fechaInicial = (fechaActual && /^\d{4}-\d{2}-\d{2}$/.test(fechaActual)) ? fechaActual : hoy;
+  const inputStyle = 'width:100%;margin-top:4px;padding:9px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:0.9rem;background:#fff';
+  const backdrop = document.createElement('div');
+  backdrop.className = 'confirm-backdrop';
+  backdrop.innerHTML = `
+    <div class="confirm-box" style="max-width:420px;width:92%">
+      <div class="confirm-icon">📅</div>
+      <div class="confirm-msg" style="font-size:1rem;margin-bottom:14px">Cambiar fecha — Recibo ${escapeHtml(numero || reciboId)}</div>
+      <p style="font-size:.82rem;color:#6b7280;margin-bottom:10px;text-align:center">Solo superadministrador. Afecta el reporte y el PDF del recibo.</p>
+      <label style="font-size:0.85rem;font-weight:600;color:#374151;display:block;text-align:left">
+        Fecha del recibo
+        <input type="date" id="editReciboFecha" value="${escapeHtml(fechaInicial)}" style="${inputStyle}" />
+      </label>
+      <div class="confirm-actions" style="margin-top:18px">
+        <button class="btn-cancel">Cancelar</button>
+        <button class="btn-ok" style="background:#2d4a47">Guardar fecha</button>
+      </div>
+    </div>`;
+  document.body.appendChild(backdrop);
+  const input = backdrop.querySelector('#editReciboFecha');
+  input.focus();
+  backdrop.querySelector('.btn-cancel').addEventListener('click', () => backdrop.remove());
+  backdrop.querySelector('.btn-ok').addEventListener('click', async () => {
+    const fecha = input.value;
+    if (!fecha) {
+      showToast('Seleccione una fecha', 'error');
+      return;
+    }
+    try {
+      const jr = await apiFetch(`/api/recibos/${reciboId}/fecha`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fecha })
+      }).then((r) => r.json());
+      if (jr.ok) {
+        backdrop.remove();
+        showToast('Fecha del recibo actualizada', 'success');
+        cargarLista(_recibosLastParams);
+      } else {
+        showToast(jr.error || 'Error al actualizar fecha', 'error');
+      }
+    } catch (_) {
+      showToast('Error al actualizar fecha', 'error');
     }
   });
   backdrop.addEventListener('click', (e) => { if (e.target === backdrop) backdrop.remove(); });
