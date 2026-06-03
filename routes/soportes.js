@@ -50,7 +50,14 @@ const {
   parseFeCodigo
 } = require('../utils/soportes-armado-structure');
 const { ingestFeArchivo } = require('../utils/soportes-fe-upload');
-const { slotRequirements, buildCanonicalName, getNitObligado, fevFilenameHint } = require('../utils/soportes-archivo-detect');
+const {
+  slotRequirements,
+  buildCanonicalName,
+  buildSoportesDiskName,
+  expedienteTieneFactura,
+  getNitObligado,
+  fevFilenameHint
+} = require('../utils/soportes-archivo-detect');
 const { parseListaPacientes, parseLineaPaciente } = require('../utils/soportes-pacientes-parse');
 const { actualizarExpediente, eliminarExpediente } = require('../utils/soportes-expediente-admin');
 const { actualizarDia, eliminarDia } = require('../utils/soportes-dia-admin');
@@ -1271,9 +1278,16 @@ async function buildExpedienteDetail(expId) {
   return {
     ...e,
     nit_obligado: nit,
+    tiene_factura: expedienteTieneFactura(e),
     fev_nombre_ejemplo: fevFilenameHint(
       e.numero_factura != null && Number(e.numero_factura) > 0 ? e.numero_factura : '14726'
     ),
+    ejemplos_nombre: {
+      OPF: buildSoportesDiskName('OPF', e, '.pdf'),
+      CRC: buildSoportesDiskName('CRC', e, '.pdf'),
+      PDX: buildSoportesDiskName('PDX', e, '.pdf'),
+      HEV: buildSoportesDiskName('HEV', e, '.pdf')
+    },
     requisitos: req,
     slots: slotState,
     vinculos,
@@ -1563,12 +1577,37 @@ async function handleImportarDesdeDeposito(req, res) {
 router.post('/soportes/armado/expedientes/:id/importar-pdx', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'soportes.armado.importar_pdx'), handleImportarDesdeDeposito);
 router.post('/soportes/armado/expedientes/:id/importar-deposito', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'soportes.armado.importar_pdx'), handleImportarDesdeDeposito);
 
+function multerFieldFile(req, field) {
+  const list = req.files?.[field];
+  if (!list?.length) return null;
+  const f = list[0];
+  const p = f.path || resolveUploadedFilePath(f);
+  return p && fs.existsSync(p) ? { path: p, originalname: f.originalname } : null;
+}
+
+function cleanupMulterTempFiles(req) {
+  const names = ['autorizacion', 'orden_manual', 'opf_unido'];
+  for (const n of names) {
+    const items = req.files?.[n] || [];
+    for (const f of items) {
+      try { if (f.path && fs.existsSync(f.path)) fs.unlinkSync(f.path); } catch (_) { /* ignore */ }
+    }
+  }
+  if (req.file?.path) {
+    try { if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path); } catch (_) { /* ignore */ }
+  }
+}
+
 router.post(
   '/soportes/armado/expedientes/:id/generar-opf',
   requireAuth,
   requireRoleOrPerm(ROLES_SOPORTES, 'soportes.armado.subir'),
   (req, res, next) => {
-    uploadArmadoSoportes.single('autorizacion')(req, res, (err) => {
+    uploadArmadoSoportes.fields([
+      { name: 'autorizacion', maxCount: 1 },
+      { name: 'orden_manual', maxCount: 1 },
+      { name: 'opf_unido', maxCount: 1 }
+    ])(req, res, (err) => {
       if (err) return armadoUploadError(err, req, res, next);
       next();
     });
@@ -1576,61 +1615,83 @@ router.post(
   validateMagicBytes,
   async (req, res) => {
     try {
-      const pdxOrdenId = parseInt(req.body?.pdx_orden_archivo_id, 10);
-      if (!pdxOrdenId) return res.status(400).json({ error: 'Seleccione un ORDEN+HC del depósito de reportes' });
-      if (!req.file) return res.status(400).json({ error: 'Suba el PDF de autorización' });
-
       const exp = await resolveExpedienteContext(req.params.id);
       if (!exp) return res.status(404).json({ error: 'Expediente no encontrado' });
       if (exp.contenedor_tipo === 'rips') {
         return res.status(400).json({ error: 'Genere el OPF en la carpeta SOPORTES del expediente' });
       }
 
-      const pdxRows = await db.query(
-        `SELECT a.*, c.nombre_display AS carpeta_nombre, c.periodo, c.color_tema
-         FROM sop_pdx_archivos a JOIN sop_pdx_carpetas c ON c.id = a.carpeta_id WHERE a.id = ?`,
-        [pdxOrdenId]
-      );
-      if (!pdxRows.length) return res.status(404).json({ error: 'ORDEN+HC no encontrado en reportes' });
-      const pdxRow = pdxRows[0];
-      const vis = calcularVisibilidadPeriodo(pdxRow.periodo);
-      if (vis === 'archivo' && !puedeVerArchivo(req)) {
-        return res.status(403).json({ error: 'El ORDEN+HC está en carpeta archivada' });
-      }
+      const { generarOpfEnExpediente, guardarOpfPdfUnido } = require('../utils/soportes-opf-generar');
+      const opfUnido = multerFieldFile(req, 'opf_unido');
+      const authFile = multerFieldFile(req, 'autorizacion');
+      const ordenManual = multerFieldFile(req, 'orden_manual');
+      const pdxOrdenId = parseInt(req.body?.pdx_orden_archivo_id, 10);
 
-      const { generarOpfEnExpediente } = require('../utils/soportes-opf-generar');
-      const authPath = req.file.path || resolveUploadedFilePath(req.file);
-      if (!authPath || !fs.existsSync(authPath)) {
-        return res.status(400).json({ error: 'No se encontró el PDF de autorización tras la subida. Intente de nuevo.' });
-      }
-      const result = await generarOpfEnExpediente(exp, exp, {
-        ordenPdxRow: pdxRow,
-        authTempPath: authPath,
-        authOriginalName: req.file.originalname,
-        usuarioId: req.session.usuarioId
-      });
-      try { if (authPath && fs.existsSync(authPath)) fs.unlinkSync(authPath); } catch (_) { /* ignore */ }
-
+      let result;
       const warnings = [];
-      if (pdxRow.periodo !== exp.periodo) {
-        warnings.push(`ORDEN+HC del mes ${pdxRow.periodo} → expediente en periodo ${exp.periodo}`);
+
+      if (opfUnido) {
+        result = await guardarOpfPdfUnido(exp, exp, opfUnido.path, {
+          nombreOriginal: opfUnido.originalname,
+          origen: 'upload_opf_unido',
+          usuarioId: req.session.usuarioId
+        });
+      } else {
+        let pdxRow = null;
+        let ordenPath = ordenManual?.path || null;
+        let ordenLabel = ordenManual?.originalname || null;
+
+        if (pdxOrdenId) {
+          const pdxRows = await db.query(
+            `SELECT a.*, c.nombre_display AS carpeta_nombre, c.periodo, c.color_tema
+             FROM sop_pdx_archivos a JOIN sop_pdx_carpetas c ON c.id = a.carpeta_id WHERE a.id = ?`,
+            [pdxOrdenId]
+          );
+          if (!pdxRows.length) return res.status(404).json({ error: 'ORDEN+HC no encontrado en reportes' });
+          pdxRow = pdxRows[0];
+          const vis = calcularVisibilidadPeriodo(pdxRow.periodo);
+          if (vis === 'archivo' && !puedeVerArchivo(req)) {
+            return res.status(403).json({ error: 'El ORDEN+HC está en carpeta archivada' });
+          }
+          if (pdxRow.periodo !== exp.periodo) {
+            warnings.push(`ORDEN+HC del mes ${pdxRow.periodo} → expediente en periodo ${exp.periodo}`);
+          }
+        }
+
+        if (!pdxRow && !ordenPath) {
+          return res.status(400).json({
+            error: 'Indique ORDEN+HC (depósito o PDF manual), suba OPF ya unido, o ORDEN+HC + autorización'
+          });
+        }
+
+        result = await generarOpfEnExpediente(exp, exp, {
+          ordenPdxRow: pdxRow,
+          ordenPath,
+          ordenOriginalName: ordenLabel,
+          authTempPath: authFile?.path || null,
+          authOriginalName: authFile?.originalname,
+          usuarioId: req.session.usuarioId
+        });
       }
+
+      cleanupMulterTempFiles(req);
 
       const detail = await buildExpedienteDetail(req.params.id);
+      const avisoFactura = result.pendiente_factura
+        ? ' Sin factura aún: al subir la FEV se renombrará con NIT y número FE.'
+        : '';
       res.json({
         ok: true,
-        message: `OPF generado: ${result.nombre_archivo}`,
+        message: `OPF guardado: ${result.nombre_archivo}${avisoFactura}`,
         ...result,
         expediente: detail,
         warnings
       });
     } catch (e) {
-      if (req.file?.path) {
-        try { fs.unlinkSync(req.file.path); } catch (_) { /* ignore */ }
-      }
+      cleanupMulterTempFiles(req);
       logger.error('[SOPORTES] generar-opf:', e);
       const msg = e.message || safeError(e);
-      const status = /ya existe|asigne el número|no es un ORDEN|debe ser un PDF|no está en disco|Falta el PDF|Se requieren al menos/i.test(msg) ? 400 : 500;
+      const status = /ya existe|no es un ORDEN|debe ser un PDF|no está en disco|Falta el PDF|Indique ORDEN/i.test(msg) ? 400 : 500;
       res.status(status).json({ error: msg });
     }
   }
@@ -1644,15 +1705,16 @@ router.get('/soportes/armado/expedientes/:id/requisitos', requireAuth, requireRo
     res.json({
       codigo_fe: exp.codigo,
       numero_factura: exp.numero_factura,
+      tiene_factura: expedienteTieneFactura(exp),
       nit_obligado: getNitObligado(),
       ...reqSlots,
       fev_nombre_ejemplo: fevFilenameHint(exp.numero_factura > 0 ? exp.numero_factura : '14726'),
       ejemplos_nombre: {
-        OPF: buildCanonicalName('OPF', exp.numero_factura || 'FE14726', '.pdf'),
-        CRC: buildCanonicalName('CRC', exp.numero_factura || 'FE14726', '.pdf'),
-        FEV: buildCanonicalName('FEV', exp.numero_factura || 'FE14726', '.pdf'),
-        PDX: buildCanonicalName('PDX', exp.numero_factura || 'FE14726', '.pdf'),
-        HEV: buildCanonicalName('HEV', exp.numero_factura || 'FE14726', '.pdf')
+        OPF: buildSoportesDiskName('OPF', exp, '.pdf'),
+        CRC: buildSoportesDiskName('CRC', exp, '.pdf'),
+        FEV: buildCanonicalName('FEV', exp.numero_factura > 0 ? exp.numero_factura : '14726', '.pdf'),
+        PDX: buildSoportesDiskName('PDX', exp, '.pdf'),
+        HEV: buildSoportesDiskName('HEV', exp, '.pdf')
       }
     });
   } catch (e) {

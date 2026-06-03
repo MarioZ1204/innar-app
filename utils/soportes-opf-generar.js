@@ -1,14 +1,12 @@
 /**
- * Genera OPF en expediente FE: ORDEN+HC (depósito reportes) + autorización PDF.
+ * Genera OPF en expediente FE: ORDEN+HC + autorización (depósito, manual o PDF ya unido).
  */
 const path = require('path');
 const fs = require('fs');
-const os = require('os');
 const db = require('./db-mysql');
 const { fileLooksLikePdf } = require('../middleware/upload');
 const { getArmadoFeDirFromContext } = require('./soportes-storage');
-const { buildCanonicalName } = require('./soportes-archivo-detect');
-const { esExpedientePendienteFactura } = require('./soportes-pacientes-parse');
+const { buildSoportesDiskName } = require('./soportes-archivo-detect');
 const { mergePdfFilesToTemp, esArchivoOrdenHcPdx } = require('./soportes-opf-merge');
 
 async function assertOpfNoExiste(expedienteId) {
@@ -17,12 +15,80 @@ async function assertOpfNoExiste(expedienteId) {
     [expedienteId, 'OPF']
   );
   if (rows.length) {
-    throw new Error('Ya existe un OPF en este expediente (ORDEN+HC + autorización). No se puede reemplazar.');
+    throw new Error('Ya existe un OPF en este expediente. Elimínelo antes de generar otro.');
   }
 }
 
+function assertPdfEnDisco(filePath, etiqueta) {
+  if (!filePath || !fs.existsSync(filePath)) {
+    throw new Error(`Falta el PDF de ${etiqueta}`);
+  }
+  if (!fileLooksLikePdf(filePath)) {
+    throw new Error(`${etiqueta} debe ser un PDF válido`);
+  }
+}
+
+async function persistirOpfEnExpediente(exp, ctx, mergedTmp, meta, usuarioId) {
+  const diskName = buildSoportesDiskName('OPF', exp, '.pdf');
+  const { abs: feDir, rel: feRel } = getArmadoFeDirFromContext(ctx, exp.codigo);
+  const destPath = path.join(feDir, diskName);
+  if (fs.existsSync(destPath)) fs.unlinkSync(destPath);
+  fs.renameSync(mergedTmp, destPath);
+  const rutaRelativa = path.join(feRel, diskName).replace(/\\/g, '/');
+  const tamano = fs.statSync(destPath).size;
+  const nombreOriginal = String(meta?.nombre_original || 'OPF').slice(0, 500);
+
+  await db.execute('DELETE FROM sop_exp_archivos WHERE expediente_id = ? AND tipo = ?', [exp.id, 'OPF']);
+  await db.execute(
+    `INSERT INTO sop_exp_archivos (expediente_id, tipo, nombre_archivo, nombre_original, ruta_relativa, tamano_bytes, origen, pdx_archivo_id, subido_por)
+     VALUES (?,?,?,?,?,?, ?, ?, ?)`,
+    [
+      exp.id, 'OPF', diskName, nombreOriginal, rutaRelativa, tamano,
+      meta?.origen || 'merge_opf',
+      meta?.orden_pdx_id || null,
+      usuarioId
+    ]
+  );
+
+  return {
+    ok: true,
+    nombre_archivo: diskName,
+    nombre_original: nombreOriginal,
+    pendiente_factura: !(parseInt(exp.numero_factura, 10) > 0),
+    orden_pdx_id: meta?.orden_pdx_id || null
+  };
+}
+
+/**
+ * Guarda un PDF ya unido como OPF (subida manual sin depósito).
+ */
+async function guardarOpfPdfUnido(exp, ctx, sourcePath, { nombreOriginal, origen, usuarioId } = {}) {
+  if (!exp?.id) throw new Error('Expediente inválido');
+  if (ctx?.contenedor_tipo === 'rips') {
+    throw new Error('El OPF se guarda en la carpeta SOPORTES, no en RIPS');
+  }
+  await assertOpfNoExiste(exp.id);
+  assertPdfEnDisco(sourcePath, 'OPF');
+  const tmp = `${sourcePath}.innar-opf-copy.pdf`;
+  try {
+    fs.copyFileSync(sourcePath, tmp);
+    return await persistirOpfEnExpediente(exp, ctx, tmp, {
+      nombre_original: nombreOriginal || path.basename(sourcePath),
+      origen: origen || 'upload_opf'
+    }, usuarioId);
+  } catch (e) {
+    try { if (fs.existsSync(tmp)) fs.unlinkSync(tmp); } catch (_) { /* ignore */ }
+    throw e;
+  }
+}
+
+/**
+ * Une ORDEN+HC + autorización (o un solo PDF) y guarda como OPF.
+ */
 async function generarOpfEnExpediente(exp, ctx, {
   ordenPdxRow,
+  ordenPath,
+  ordenOriginalName,
   authTempPath,
   authOriginalName,
   usuarioId
@@ -32,51 +98,42 @@ async function generarOpfEnExpediente(exp, ctx, {
     throw new Error('El OPF se genera en la carpeta SOPORTES, no en RIPS');
   }
   await assertOpfNoExiste(exp.id);
-  if (esExpedientePendienteFactura(exp)) {
-    throw new Error('Asigne el número de factura (suba la FEV) antes de generar el OPF.');
-  }
-  if (!ordenPdxRow?.id || !esArchivoOrdenHcPdx(ordenPdxRow)) {
-    throw new Error('El archivo seleccionado no es un ORDEN + HC válido del depósito de reportes');
-  }
-  if (!authTempPath || !fs.existsSync(authTempPath)) {
-    throw new Error('Falta el PDF de autorización');
-  }
-  if (!fileLooksLikePdf(authTempPath)) {
-    throw new Error('La autorización debe ser un PDF válido');
+
+  let ordenFilePath = ordenPath;
+  let ordenLabel = ordenOriginalName || 'ORDEN+HC manual';
+  let pdxId = null;
+
+  if (ordenPdxRow?.id) {
+    if (!esArchivoOrdenHcPdx(ordenPdxRow)) {
+      throw new Error('El archivo del depósito no es un ORDEN + HC válido');
+    }
+    const { resolveStoragePath } = require('./soportes-storage');
+    ordenFilePath = resolveStoragePath(ordenPdxRow.ruta_relativa);
+    ordenLabel = ordenPdxRow.nombre_archivo_original || 'ORDEN+HC';
+    pdxId = ordenPdxRow.id;
   }
 
-  const { resolveStoragePath } = require('./soportes-storage');
-  const ordenPath = resolveStoragePath(ordenPdxRow.ruta_relativa);
-  if (!ordenPath || !fs.existsSync(ordenPath)) {
-    throw new Error('El archivo ORDEN+HC no está en disco');
+  if (!ordenFilePath) {
+    throw new Error('Indique ORDEN+HC (del depósito o PDF manual) y la autorización');
   }
-  if (!fileLooksLikePdf(ordenPath)) {
-    throw new Error('El ORDEN+HC del depósito no es un PDF válido');
+  assertPdfEnDisco(ordenFilePath, 'ORDEN+HC');
+
+  const paths = [ordenFilePath];
+  if (authTempPath) {
+    assertPdfEnDisco(authTempPath, 'autorización');
+    paths.push(authTempPath);
   }
 
-  const mergedTmp = await mergePdfFilesToTemp([ordenPath, authTempPath]);
+  const mergedTmp = await mergePdfFilesToTemp(paths);
   try {
-    const diskName = buildCanonicalName('OPF', exp.numero_factura, '.pdf');
-    const { abs: feDir, rel: feRel } = getArmadoFeDirFromContext(ctx, exp.codigo);
-    const destPath = path.join(feDir, diskName);
-    if (fs.existsSync(destPath)) fs.unlinkSync(destPath);
-    fs.renameSync(mergedTmp, destPath);
-    const rutaRelativa = path.join(feRel, diskName).replace(/\\/g, '/');
-    const tamano = fs.statSync(destPath).size;
-    const nombreOriginal = `OPF ← ${ordenPdxRow.nombre_archivo_original || 'ORDEN+HC'} + ${authOriginalName || 'Autorización'}`;
-
-    await db.execute(
-      `INSERT INTO sop_exp_archivos (expediente_id, tipo, nombre_archivo, nombre_original, ruta_relativa, tamano_bytes, origen, pdx_archivo_id, subido_por)
-       VALUES (?,?,?,?,?,?, 'merge_opf', ?, ?)`,
-      [exp.id, 'OPF', diskName, nombreOriginal.slice(0, 500), rutaRelativa, tamano, ordenPdxRow.id, usuarioId]
-    );
-
-    return {
-      ok: true,
-      nombre_archivo: diskName,
+    const nombreOriginal = paths.length > 1
+      ? `OPF ← ${ordenLabel} + ${authOriginalName || 'Autorización'}`
+      : `OPF ← ${ordenLabel}`;
+    return await persistirOpfEnExpediente(exp, ctx, mergedTmp, {
       nombre_original: nombreOriginal,
-      orden_pdx_id: ordenPdxRow.id
-    };
+      origen: 'merge_opf',
+      orden_pdx_id: pdxId
+    }, usuarioId);
   } catch (e) {
     try { if (fs.existsSync(mergedTmp)) fs.unlinkSync(mergedTmp); } catch (_) { /* ignore */ }
     throw e;
@@ -85,6 +142,7 @@ async function generarOpfEnExpediente(exp, ctx, {
 
 module.exports = {
   assertOpfNoExiste,
+  guardarOpfPdfUnido,
   generarOpfEnExpediente,
   esArchivoOrdenHcPdx
 };

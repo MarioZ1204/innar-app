@@ -17,8 +17,12 @@ function esArchivoOrdenHcPdx(row) {
 
 async function mergePdfFilesToPath(sourcePaths, destPath) {
   const paths = (sourcePaths || []).filter((p) => p && fs.existsSync(p));
-  if (paths.length < 2) {
-    throw new Error('Se requieren al menos dos PDF válidos para unir');
+  if (paths.length === 0) {
+    throw new Error('No hay PDF válidos para unir');
+  }
+  if (paths.length === 1) {
+    fs.copyFileSync(paths[0], destPath);
+    return destPath;
   }
   const merged = await PDFDocument.create();
   for (const p of paths) {

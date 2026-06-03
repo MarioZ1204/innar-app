@@ -3,6 +3,12 @@
 Todos los cambios importantes a la aplicación se documentan aquí. El formato
 sigue (informalmente) [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
+## [1.5.69] — 2026-05-27
+
+### Corregido / mejorado
+
+- **Soportes — OPF**: se puede generar o subir sin factura (nombre provisional con código de carpeta; al subir FEV se renombra con NIT y FE). Unión de PDF con un solo archivo o ORDEN+HC manual sin depósito. Modal y tarjeta OPF permiten subir PDF directo; endpoint `generar-opf` acepta `opf_unido`, `orden_manual` y autorización opcional.
+
 ## [1.5.68] — 2026-05-27
 
 ### Corregido

@@ -93,6 +93,32 @@ function buildCanonicalName(tipo, numeroFactura, ext) {
   return `${t}_${nit}_${feTag}.${e}`;
 }
 
+/** Etiqueta en nombre de archivo: FE{n} si hay factura; si no, código de carpeta (ej. PEREZ_JUAN). */
+function etiquetaFacturaExpediente(exp) {
+  const num = parseInt(exp?.numero_factura, 10) || 0;
+  if (num > 0) return formatFeTag(num);
+  const cod = String(exp?.codigo || 'PENDIENTE').trim().toUpperCase();
+  if (/^FE\d+$/.test(cod)) return cod;
+  const clean = cod.replace(/[^A-Z0-9_]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '').slice(0, 28);
+  return clean || 'PENDIENTE';
+}
+
+function expedienteTieneFactura(exp) {
+  return (parseInt(exp?.numero_factura, 10) || 0) > 0;
+}
+
+/** Nombre en disco según factura asignada o pendiente (se renombra al subir FEV). */
+function buildSoportesDiskName(tipo, exp, ext = '.pdf') {
+  const nit = getNitObligado();
+  const t = String(tipo || '').toUpperCase();
+  const tag = etiquetaFacturaExpediente(exp);
+  if (t === 'RIPS_JSON_1') return `RIPS_${nit}_${tag}_1.json`;
+  if (t === 'RIPS_JSON_2') return `RIPS_${nit}_${tag}_2.json`;
+  if (t === 'RIPS_XML') return `RIPS_${nit}_${tag}.xml`;
+  const e = (ext || '.pdf').replace(/^\./, '');
+  return `${t}_${nit}_${tag}.${e}`;
+}
+
 /**
  * Detecta slot SOPORTES desde el nombre original del archivo.
  */
@@ -194,6 +220,9 @@ module.exports = {
   formatFeTag,
   fevFilenameHint,
   buildCanonicalName,
+  buildSoportesDiskName,
+  etiquetaFacturaExpediente,
+  expedienteTieneFactura,
   parseFevFilename,
   safeOriginalFilename,
   detectSoportesSlot,

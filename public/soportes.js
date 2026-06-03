@@ -2361,9 +2361,9 @@
       ? `<div class="sop-slot-file" title="${escapeHtml(slot.nombre_original)}">${escapeHtml(slot.nombre_archivo || slot.nombre_original)}</div>`
       : `<div class="sop-slot-file">${ok ? escapeHtml(slot.nombre_archivo || 'Cargado') : 'Pendiente'}</div>`;
     const opfHint = key === 'OPF' && !ok && !dis
-      ? '<p class="sop-pdx-format-nota" style="margin:8px 0 0;font-size:.78rem">ORDEN+HC desde Reportes + autorización PDF → un solo archivo.</p>'
+      ? '<p class="sop-pdx-format-nota" style="margin:8px 0 0;font-size:.78rem">Unir ORDEN+HC + autorización, subir OPF listo, o PDF manual (sin factura: se renombra al subir FEV).</p>'
       : '';
-    const allowUpload = opts.upload && !dis && key !== 'OPF';
+    const allowUpload = opts.upload && !dis;
     return `<div class="sop-slot-card ${ok ? 'ok' : ''} ${dis ? 'disabled' : ''}" data-slot="${key}">
       <div class="sop-slot-head">
         <span class="sop-slot-label"><i data-lucide="${icons[key] || 'file'}"></i> ${labels[key] || key}</span>
@@ -2424,6 +2424,7 @@
     const opciones = esRips
       ? [['RIPS_JSON_1', 'JSON 1'], ['RIPS_JSON_2', 'JSON 2'], ['RIPS_XML', 'XML']]
       : [
+        ['OPF', 'OPF'],
         ['CRC', 'CRC'],
         ['FEV', 'FEV'],
         ...(esConsulta ? [] : [['PDX', 'PDX']]),
@@ -2560,32 +2561,44 @@
   function modalGenerarOpf(expId, expInfo) {
     let selectedOrdenId = null;
     let authFile = null;
+    let ordenManualFile = null;
+    let opfUnidoFile = null;
     let searchTimer = null;
-    const opfEjemplo = expInfo?.fev_nombre_ejemplo
-      ? expInfo.fev_nombre_ejemplo.replace(/^FEV_/, 'OPF_')
-      : 'OPF_{NIT}_FE{n}.pdf';
+    const opfEjemplo = expInfo?.ejemplos_nombre?.OPF || 'OPF_{NIT}_{código}.pdf';
+    const sinFactura = expInfo?.tiene_factura === false;
     const modal = openSopModal(`
-      <h3><i data-lucide="layers" style="vertical-align:-3px;width:22px"></i> Generar OPF</h3>
-      <p style="font-size:.85rem;color:#64748b;margin:-8px 0 12px">Seleccione el <strong>ORDEN + HC</strong> del depósito de reportes y suba la <strong>autorización</strong>. Se unirán en un PDF: primero ORDEN+HC, autorización al final.</p>
-      <p class="sop-pdx-format-nota" style="margin-bottom:12px">Nombre resultante: <code>${escapeHtml(opfEjemplo)}</code> (requiere número FE asignado).</p>
+      <h3><i data-lucide="layers" style="vertical-align:-3px;width:22px"></i> Generar / subir OPF</h3>
+      <p style="font-size:.85rem;color:#64748b;margin:-8px 0 12px">Puede <strong>unir</strong> ORDEN+HC con autorización (depósito o PDF manual), o subir el <strong>OPF ya listo</strong>. No hace falta tener la factura antes; al subir la FEV se renombra con NIT y número FE.</p>
+      <p class="sop-pdx-format-nota" style="margin-bottom:12px">Nombre provisional: <code>${escapeHtml(opfEjemplo)}</code>${sinFactura ? ' <span style="color:#b45309">(sin factura aún)</span>' : ''}.</p>
       <div class="sop-field">
-        <label>ORDEN + HC (reportes)</label>
+        <label>OPF ya unido (opcional — un solo PDF)</label>
+        <input type="file" id="sopOpfUnidoFile" accept=".pdf,application/pdf" class="sop-file-input-visible">
+        <div id="sopOpfUnidoName" class="sop-search-results-meta" style="margin-top:6px"></div>
+      </div>
+      <hr style="border:none;border-top:1px solid #e2e8f0;margin:14px 0">
+      <div class="sop-field">
+        <label>ORDEN + HC desde reportes (opcional)</label>
         <div class="sop-search-wrap" style="max-width:none">
           <i data-lucide="search"></i>
           <input type="search" id="sopOpfOrdenBuscar" class="sop-search" placeholder="Paciente, documento o nombre de archivo…" autocomplete="off">
         </div>
       </div>
       <div id="sopOpfOrdenResults" class="sop-import-results">
-        <div class="sop-empty" style="padding:16px;font-size:.85rem">Escriba al menos 2 caracteres para buscar en carpetas de órdenes</div>
+        <div class="sop-empty" style="padding:16px;font-size:.85rem">Busque en depósito o use PDF manual abajo</div>
+      </div>
+      <div class="sop-field" style="margin-top:10px">
+        <label>ORDEN + HC manual (PDF, si no está en el sistema)</label>
+        <input type="file" id="sopOpfOrdenManual" accept=".pdf,application/pdf" class="sop-file-input-visible">
+        <div id="sopOpfOrdenManualName" class="sop-search-results-meta" style="margin-top:6px"></div>
       </div>
       <div class="sop-field" style="margin-top:14px">
-        <label>Autorización (PDF)</label>
+        <label>Autorización (PDF, opcional si ya unió todo en un archivo)</label>
         <input type="file" id="sopOpfAuthFile" accept=".pdf,application/pdf" class="sop-file-input-visible">
         <div id="sopOpfAuthName" class="sop-search-results-meta" style="margin-top:6px"></div>
       </div>
       <div class="sop-dialog-actions">
         <button type="button" class="sop-btn sop-btn-ghost" id="sopOpfCancel">Cancelar</button>
-        <button type="button" class="sop-btn sop-btn-primary" id="sopOpfOk" disabled>Generar OPF</button>
+        <button type="button" class="sop-btn sop-btn-primary" id="sopOpfOk" disabled>Guardar OPF</button>
       </div>`);
     const resultsEl = modal.querySelector('#sopOpfOrdenResults');
     const btnOk = modal.querySelector('#sopOpfOk');
@@ -2594,7 +2607,7 @@
     const authInput = modal.querySelector('#sopOpfAuthFile');
 
     function refreshOk() {
-      btnOk.disabled = !(selectedOrdenId && authFile);
+      btnOk.disabled = !(opfUnidoFile || selectedOrdenId || ordenManualFile);
     }
 
     function renderOrdenResults(list) {
@@ -2652,37 +2665,53 @@
 
     authInput?.addEventListener('change', () => {
       authFile = authInput.files?.[0] || null;
-      if (inputAuth) {
-        inputAuth.textContent = authFile ? authFile.name : '';
-      }
+      if (inputAuth) inputAuth.textContent = authFile ? authFile.name : '';
+      refreshOk();
+    });
+
+    const ordenManualInput = modal.querySelector('#sopOpfOrdenManual');
+    const ordenManualNameEl = modal.querySelector('#sopOpfOrdenManualName');
+    ordenManualInput?.addEventListener('change', () => {
+      ordenManualFile = ordenManualInput.files?.[0] || null;
+      if (ordenManualNameEl) ordenManualNameEl.textContent = ordenManualFile ? ordenManualFile.name : '';
+      if (ordenManualFile) selectedOrdenId = null;
+      refreshOk();
+    });
+
+    const opfUnidoInput = modal.querySelector('#sopOpfUnidoFile');
+    const opfUnidoNameEl = modal.querySelector('#sopOpfUnidoName');
+    opfUnidoInput?.addEventListener('change', () => {
+      opfUnidoFile = opfUnidoInput.files?.[0] || null;
+      if (opfUnidoNameEl) opfUnidoNameEl.textContent = opfUnidoFile ? opfUnidoFile.name : '';
       refreshOk();
     });
 
     modal.querySelector('#sopOpfCancel').onclick = () => closeSopModal(modal);
     btnOk.onclick = async () => {
-      if (!selectedOrdenId || !authFile) return;
       btnOk.disabled = true;
-      btnOk.textContent = 'Generando…';
+      btnOk.textContent = 'Guardando…';
       const fd = new FormData();
-      fd.append('pdx_orden_archivo_id', String(selectedOrdenId));
-      fd.append('autorizacion', authFile);
+      if (opfUnidoFile) fd.append('opf_unido', opfUnidoFile);
+      if (selectedOrdenId) fd.append('pdx_orden_archivo_id', String(selectedOrdenId));
+      if (ordenManualFile) fd.append('orden_manual', ordenManualFile);
+      if (authFile) fd.append('autorizacion', authFile);
       try {
         const res = await apiFetch(`/api/soportes/armado/expedientes/${expId}/generar-opf`, { method: 'POST', body: fd });
         const data = await res.json();
         if (!res.ok) {
           sopToast(data.error || 'Error al generar OPF', 'error');
           btnOk.disabled = false;
-          btnOk.textContent = 'Generar OPF';
+          btnOk.textContent = 'Guardar OPF';
           return;
         }
         if (data.warnings?.length) sopToast(data.warnings.join(' · '), 'warning');
         closeSopModal(modal);
-        sopToast(data.message || 'OPF generado', 'success');
+        sopToast(data.message || 'OPF guardado', 'success');
         abrirExpedienteArmado(expId);
       } catch (e) {
         sopToast(e.message || 'Error de conexión', 'error');
         btnOk.disabled = false;
-        btnOk.textContent = 'Generar OPF';
+        btnOk.textContent = 'Guardar OPF';
       }
     };
     sopIcons(modal);

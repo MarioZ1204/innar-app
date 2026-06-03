@@ -32,6 +32,18 @@ describe('esArchivoOrdenHcPdx', () => {
 });
 
 describe('mergePdfFilesToPath', () => {
+  test('copia un solo PDF sin exigir dos archivos', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'innar-opf-test-'));
+    const solo = path.join(dir, 'solo.pdf');
+    const out = path.join(dir, 'opf.pdf');
+    await writeMinimalPdf(solo, 'OPF_UNIDO');
+    await mergePdfFilesToPath([solo], out);
+    expect(fs.existsSync(out)).toBe(true);
+    const merged = await PDFDocument.load(fs.readFileSync(out));
+    expect(merged.getPageCount()).toBe(1);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
   test('une ORDEN+HC y autorización en orden', async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'innar-opf-test-'));
     const orden = path.join(dir, 'orden.pdf');

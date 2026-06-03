@@ -158,10 +158,9 @@ async function saveSoportesArchivo(exp, ctx, slotKey, tempPath, originalName, us
 
     diskName = buildCanonicalName('FEV', fevParsed.numero, '.pdf');
 
-  } else if (!esExpedientePendienteFactura(exp)) {
-    diskName = buildCanonicalName(slotKey, exp.numero_factura, '.pdf');
   } else {
-    diskName = safeOriginalFilename(originalName);
+    const { buildSoportesDiskName } = require('./soportes-archivo-detect');
+    diskName = buildSoportesDiskName(slotKey, exp, path.extname(originalName) || '.pdf');
   }
 
 
@@ -351,16 +350,6 @@ async function ingestFeArchivo(exp, ctx, tempPath, originalName, usuarioId, tipo
     };
 
   }
-
-  if (det.tipo === 'OPF' || tipoManual === 'OPF') {
-    return {
-      ok: false,
-      status: 400,
-      error: 'Use el botón «Generar OPF» para unir ORDEN+HC (reportes) con la autorización en un solo PDF.'
-    };
-  }
-
-
 
   try {
 
