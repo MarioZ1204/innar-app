@@ -1,0 +1,68 @@
+/**
+ * Botones solo para /soportes/visor-pdf (sin innar-buttons.css ni variables globales).
+ */
+body.visor-pdf-standalone .sop-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 14px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.25;
+  border-radius: 8px;
+  cursor: pointer;
+  box-sizing: border-box;
+  font-family: inherit;
+  text-decoration: none;
+  white-space: nowrap;
+  -webkit-text-fill-color: currentColor;
+}
+
+body.visor-pdf-standalone .sop-btn-ghost {
+  background: #fff;
+  color: #334155;
+  border: 2px solid #e2e8f0;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+}
+
+body.visor-pdf-standalone .sop-btn-ghost:hover {
+  background: #f8fafc;
+  color: #0f172a;
+  border-color: #cbd5e1;
+}
+
+body.visor-pdf-standalone .sop-btn-primary,
+body.visor-pdf-standalone #sopPdfEdSave {
+  background: #2d4a47;
+  color: #fff;
+  border: 0;
+  box-shadow: 0 4px 12px rgba(45, 74, 71, 0.35);
+}
+
+body.visor-pdf-standalone .sop-btn-primary:hover:not(:disabled),
+body.visor-pdf-standalone #sopPdfEdSave:hover:not(:disabled) {
+  background: #1a3330;
+  color: #fff;
+}
+
+body.visor-pdf-standalone .sop-btn-primary:disabled,
+body.visor-pdf-standalone #sopPdfEdSave:disabled {
+  background: #94a3b8;
+  color: #fff;
+  opacity: 1;
+  cursor: not-allowed;
+}
+
+body.visor-pdf-standalone label.sop-btn {
+  cursor: pointer;
+}
+
+body.visor-pdf-standalone .sop-file-input-hidden {
+  position: absolute;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+}

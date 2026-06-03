@@ -3,6 +3,12 @@
 Todos los cambios importantes a la aplicación se documentan aquí. El formato
 sigue (informalmente) [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
+## [1.5.84] — 2026-06-03
+
+### Corregido
+
+- **Soportes — visor PDF (página)**: estilos de botones y colores de resaltado sin depender de `innar-buttons.css` (texto y paleta visibles).
+
 ## [1.5.83] — 2026-06-03
 
 ### Cambiado

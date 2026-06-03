@@ -123,7 +123,10 @@
             <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="sopPdfEdModeHighlight" title="Dibujar resaltados">Resaltar</button>
           </div>
           <div class="sop-pdf-editor-colors is-hidden" role="group" aria-label="Color de resaltado" id="sopPdfEdColors">
-            ${MARK_COLORS.map((c, i) => `<button type="button" class="sop-pdf-editor-color${i === 0 ? ' is-active' : ''}" data-color="${c}" title="${c}"></button>`).join('')}
+            ${MARK_COLORS.map((c, i) => {
+              const bg = { yellow: '#fde047', green: '#4ade80', pink: '#f472b6', blue: '#60a5fa' }[c] || '#fde047';
+              return `<button type="button" class="sop-pdf-editor-color${i === 0 ? ' is-active' : ''}" data-color="${c}" title="${c}" aria-label="Color ${c}" style="background-color:${bg}"></button>`;
+            }).join('')}
           </div>
           <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm is-hidden" id="sopPdfEdUndo">Deshacer</button>
           ${isPage && appendUrl ? `<label class="sop-btn sop-btn-ghost sop-btn-sm" id="sopPdfEdAnexarLbl" title="Añadir páginas de otro PDF al final">Añadir PDF

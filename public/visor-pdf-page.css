@@ -57,24 +57,77 @@ html, body.visor-pdf-standalone {
   white-space: nowrap;
 }
 
-.visor-pdf-standalone .visor-pdf-save-top {
-  box-shadow: 0 4px 14px rgba(45, 74, 71, 0.35) !important;
-  background: linear-gradient(135deg, #2d4a47 0%, #1a3330 100%) !important;
-  color: #fff !important;
-  font-weight: 700 !important;
-  padding: 10px 20px !important;
+body.visor-pdf-standalone #sopPdfEdSave.visor-pdf-save-top {
+  font-size: 0.9rem;
+  font-weight: 700;
+  padding: 10px 22px;
+  min-width: 140px;
+  color: #fff;
+  -webkit-text-fill-color: #fff;
+  background: #2d4a47;
+  background-image: none;
 }
 
-.visor-pdf-standalone .visor-pdf-save-top:hover:not(:disabled) {
-  background: linear-gradient(135deg, #1a3330 0%, #152a28 100%) !important;
-  color: #fff !important;
+body.visor-pdf-standalone #sopPdfEdSave.visor-pdf-save-top:disabled {
+  color: #fff;
+  -webkit-text-fill-color: #fff;
 }
 
-.visor-pdf-standalone .visor-pdf-save-top:disabled {
-  background: #94a3b8 !important;
-  color: #fff !important;
-  opacity: 1 !important;
-  cursor: not-allowed !important;
+/* Colores de resaltado y botones del editor (aislados de reglas globales) */
+body.visor-pdf-standalone .sop-pdf-editor button.sop-pdf-editor-color {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  padding: 0;
+  border: 2px solid #64748b;
+  border-radius: 8px;
+  font-size: 0;
+  line-height: 0;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  box-shadow: none;
+  background-image: none;
+}
+
+body.visor-pdf-standalone .sop-pdf-editor button.sop-pdf-editor-color[data-color="yellow"] {
+  background-color: #fde047;
+}
+
+body.visor-pdf-standalone .sop-pdf-editor button.sop-pdf-editor-color[data-color="green"] {
+  background-color: #4ade80;
+}
+
+body.visor-pdf-standalone .sop-pdf-editor button.sop-pdf-editor-color[data-color="pink"] {
+  background-color: #f472b6;
+}
+
+body.visor-pdf-standalone .sop-pdf-editor button.sop-pdf-editor-color[data-color="blue"] {
+  background-color: #60a5fa;
+}
+
+body.visor-pdf-standalone .sop-pdf-editor button.sop-pdf-editor-color.is-active {
+  border-color: #0f172a;
+  outline: 2px solid #fff;
+  outline-offset: -4px;
+}
+
+body.visor-pdf-standalone .sop-pdf-editor .sop-pdf-editor-modes .sop-btn {
+  color: #334155;
+  -webkit-text-fill-color: #334155;
+  font-size: 0.82rem;
+}
+
+body.visor-pdf-standalone .sop-pdf-editor .sop-pdf-editor-modes .sop-btn.is-active {
+  color: #0f172a;
+  -webkit-text-fill-color: #0f172a;
+  background: #fff;
+}
+
+body.visor-pdf-standalone .sop-pdf-editor .sop-pdf-editor-toolbar .sop-btn-ghost {
+  color: #334155;
+  -webkit-text-fill-color: #334155;
+  font-size: 0.82rem;
 }
 
 .visor-pdf-standalone .visor-pdf-main {
