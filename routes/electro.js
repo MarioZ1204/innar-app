@@ -24,6 +24,7 @@ const {
   horaInicioEfectivaParaInicioEstudio,
   finProgramadoCitaElectro,
   inferirDuracionMinutosCitaElectro,
+  inferirDuracionMinutosCitaElectroParaPersistir,
   calcularFinInicioEstudioElectro,
   sqlEstudioElectroFinProgramadoTs,
   sqlEstudioElectroFinProgramadoVencido,
@@ -46,7 +47,7 @@ async function asegurarDuracionMinutosCitaElectro(cita) {
       logger.warn('Catálogo estudio_duraciones no disponible:', err.message);
     }
   }
-  if (!(dur > 0)) dur = inferirDuracionMinutosCitaElectro(cita);
+  if (!(dur > 0)) dur = inferirDuracionMinutosCitaElectroParaPersistir(cita);
   if (dur > 0) {
     await db.execute(
       'UPDATE citas_electro SET duracion_minutos = ? WHERE id = ? AND (duracion_minutos IS NULL OR duracion_minutos = 0)',
@@ -139,6 +140,26 @@ async function sincronizarDuracionesElectroActivas() {
  * Cierra estudios vencidos. Hoy: solo con duracion_minutos (inicio+duración).
  * Días anteriores: también por hora_fin (limpieza de olvidados).
  */
+/** Al iniciar otro estudio: pausar los que estaban En Estudio (no completarlos). */
+async function pausarOtrosEstudiosElectroEnCurso(excludeId, editadoPor) {
+  if (!excludeId) return 0;
+  try {
+    const result = await db.execute(`
+      UPDATE citas_electro
+      SET estado = 'Pausado',
+          editado_por_nombre = ?,
+          editado_en = NOW()
+      WHERE id != ?
+        AND estado = 'En Estudio'
+        AND deleted_at IS NULL
+    `, [String(editadoPor || 'Sistema').slice(0, 120), excludeId]);
+    return result[0]?.affectedRows ?? result.affectedRows ?? 0;
+  } catch (err) {
+    logger.warn('Pausar otros estudios electro falló (no crítico):', err.message);
+    return 0;
+  }
+}
+
 async function autoCompletarEstudiosElectroVencidos(excludeId = null) {
   await sincronizarDuracionesElectroActivas();
   const condId = excludeId ? ' AND id != ?' : '';
@@ -1113,6 +1134,7 @@ router.patch('/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin',
     return res.status(400).json({ error: `Estado inválido: "${estado}". Valores permitidos: ${ESTADOS_VALIDOS_ELECTRO.join(', ')}` });
   }
 
+  let pausadosAlIniciar = 0;
   try {
     const citasResult = await db.query(
       'SELECT id, equipo_id, paciente_id, fecha, hora_agendamiento, hora_inicio, hora_fin, hora_fin_date, estudio, estado, duracion_minutos, entidad, observaciones, diagnostico_id FROM citas_electro WHERE id = ? AND deleted_at IS NULL',
@@ -1177,7 +1199,13 @@ router.patch('/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin',
           }
         }
         await asegurarDuracionMinutosCitaElectro(citaActual);
-        await autoCompletarEstudiosElectroVencidos(id);
+        const editadoPor = req.session?.usuarioNombre || req.session?.usuario || 'Sistema';
+        if (esInicioEstudioNuevo) {
+          pausadosAlIniciar = await pausarOtrosEstudiosElectroEnCurso(id, editadoPor);
+          if (pausadosAlIniciar > 0) {
+            emitSocket('electro:actualizar-lista', { motivo: 'estudios-pausados-al-iniciar', pausados: pausadosAlIniciar });
+          }
+        }
         const eqIdInicio = (equipo_id !== undefined && equipo_id !== null && equipo_id !== '')
           ? parseInt(equipo_id, 10)
           : (citaActual.equipo_id ? parseInt(citaActual.equipo_id, 10) : null);
@@ -1315,7 +1343,11 @@ router.patch('/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin',
       }
     }
 
-    res.json({ ok: true, transicion: `${estadoActual} → ${estado || estadoActual}` });
+    res.json({
+      ok: true,
+      transicion: `${estadoActual} → ${estado || estadoActual}`,
+      pausados_al_iniciar: pausadosAlIniciar
+    });
   } catch (e) {
     res.status(500).json({ error: safeError(e) });
   }

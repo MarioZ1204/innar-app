@@ -3,6 +3,12 @@
 Todos los cambios importantes a la aplicación se documentan aquí. El formato
 sigue (informalmente) [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
+## [1.5.74] — 2026-05-27
+
+### Corregido
+
+- **Electrodiagnóstico**: al poner un estudio nuevo en **En Estudio**, los demás en curso pasan a **Pausado** (ya no se completan solos). Se dejó de auto-completar al iniciar; la duración en curso no se infiere del slot de agenda (~30 min).
+
 ## [1.5.73] — 2026-05-27
 
 ### Añadido

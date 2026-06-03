@@ -209,6 +209,17 @@ function inferirDuracionMinutosCitaElectro(cita) {
   return Math.round((finMs - inicioMs) / 60000);
 }
 
+/**
+ * No inferir duración desde slot de agenda (ej. 30 min) si el estudio ya inició con hora_inicio real.
+ * Evita auto-cierre prematuro de estudios largos En Estudio.
+ */
+function inferirDuracionMinutosCitaElectroParaPersistir(cita) {
+  const activo = cita?.estado === 'En Estudio' || cita?.estado === 'Pausado';
+  const tieneInicioReal = /^\d{2}:\d{2}/.test(String(cita?.hora_inicio || '').trim());
+  if (activo && tieneInicioReal) return null;
+  return inferirDuracionMinutosCitaElectro(cita);
+}
+
 /** SQL: fin programado vencido — prioriza hora_inicio + duracion_minutos (igual que finProgramadoCitaElectro). */
 function sqlEstudioElectroFinProgramadoVencido(alias) {
   const p = alias ? `${alias}.` : '';
@@ -258,6 +269,7 @@ module.exports = {
   finProgramadoMsLocal,
   estudioElectroFinProgramadoVencido,
   inferirDuracionMinutosCitaElectro,
+  inferirDuracionMinutosCitaElectroParaPersistir,
   calcularFinInicioEstudioElectro,
   sqlEstudioElectroFinProgramadoTs,
   sqlEstudioElectroFinProgramadoVencido,

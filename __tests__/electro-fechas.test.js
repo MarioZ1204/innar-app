@@ -5,6 +5,7 @@ const {
   horaInicioEfectivaParaInicioEstudio,
   calcularFinInicioEstudioElectro,
   inferirDuracionMinutosCitaElectro,
+  inferirDuracionMinutosCitaElectroParaPersistir,
   sqlEstudioElectroFinProgramadoVencido,
   sqlEstudioElectroFinProgramadoVencidoConDuracion
 } = require('../utils/electro-fechas');
@@ -86,6 +87,19 @@ describe('electro-fechas', () => {
       duracion_minutos: null
     });
     expect(min).toBe(360);
+  });
+
+  test('no inferir duración corta de agenda si estudio ya está En Estudio', () => {
+    const min = inferirDuracionMinutosCitaElectroParaPersistir({
+      estado: 'En Estudio',
+      fecha: '2026-05-27',
+      hora_agendamiento: '09:00',
+      hora_inicio: '09:05',
+      hora_fin: '09:35',
+      hora_fin_date: '2026-05-27',
+      duracion_minutos: null
+    });
+    expect(min).toBeNull();
   });
 
   test('inicio a tiempo conserva fin desde hora programada', () => {

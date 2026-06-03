@@ -11399,7 +11399,10 @@ async function confirmarDuracionEstudio() {
     const data = await res.json();
     
     if (data && data.ok) {
-      showToast(`Estudio iniciado: ${horaInicio} - ${horaFin}`, 'success');
+      const msgPausa = data.pausados_al_iniciar > 0
+        ? ` · ${data.pausados_al_iniciar} estudio(s) anterior(es) en Pausado`
+        : '';
+      showToast(`Estudio iniciado: ${horaInicio} - ${horaFin}${msgPausa}`, 'success');
       await aplicarInicioEstudioEnUI(duracionMinutos, horaInicio, horaFin, horaFinDate);
       cerrarModalDuracionEstudio();
     } else {
@@ -11472,7 +11475,10 @@ async function ejecutarInicioEstudioAgendado(duracionMinutos, horaInicioRegistro
       let textoHora = '';
       if (horas > 0) textoHora += `${horas}h`;
       if (mins > 0) textoHora += `${mins}m`;
-      showToast(`Estudio iniciado a las ${horaInicioRegistro} (programada)${textoHora ? ` · ${textoHora}` : ''}`, 'success');
+      const msgPausa = data.pausados_al_iniciar > 0
+        ? ` · ${data.pausados_al_iniciar} estudio(s) en Pausado`
+        : '';
+      showToast(`Estudio iniciado a las ${horaInicioRegistro} (programada)${textoHora ? ` · ${textoHora}` : ''}${msgPausa}`, 'success');
       await aplicarInicioEstudioEnUI(duracionMinutos, horaInicioRegistro, horaFin, horaFinDate);
     } else {
       const msg = data?.details ? `${data.error || 'Error'} (${data.details})` : (data?.error || 'Error iniciando estudio');
