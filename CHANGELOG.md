@@ -3,6 +3,21 @@
 Todos los cambios importantes a la aplicación se documentan aquí. El formato
 sigue (informalmente) [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
+## [1.5.85] — 2026-06-03
+
+### Añadido
+
+- **Electrodiagnóstico — agenda**: calendario mensual con total de estudios por día, chips por tipo (PSG, EEG, VTM, Actigrafía, Otros) y leyenda del día seleccionado (`GET /api/citas-electro/calendario`).
+- **Soportes — visor PDF**: modo «Eliminar páginas» en edición (PDX y Armado).
+
+### Cambiado
+
+- **Soportes — Armado CRC/OPF**: el botón de capas (con archivo ya cargado) añade un PDF al final del documento existente, en lugar de reemplazar uniendo varios PDF.
+
+### Corregido
+
+- **Reportes PDX**: carpetas «ORDEN + HC» y nombres estructurados con guiones/tipos de documento ampliados; validación alineada en servidor y cliente.
+
 ## [1.5.84] — 2026-06-03
 
 ### Corregido

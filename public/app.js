@@ -6543,24 +6543,24 @@ async function initElectro() {
     await cargarCitasElectro();
     await checkEquiposDisponibilidad();
   };
-  if ($('btnElectroFechaPrev')) $('btnElectroFechaPrev').onclick = async () => {
+  if ($('btnElectroFechaPrev')) $('btnElectroFechaPrev').onclick = () => {
     const base = $('electroFecha')?.value || hoyColombiaISO();
     const d = new Date(`${base}T12:00:00`);
     d.setDate(d.getDate() - 1);
     const next = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     $('electroFecha').value = next;
-    await cargarCitasElectro();
-    await checkEquiposDisponibilidad();
+    $('electroFecha').dispatchEvent(new Event('change'));
   };
-  if ($('btnElectroFechaNext')) $('btnElectroFechaNext').onclick = async () => {
+  if ($('btnElectroFechaNext')) $('btnElectroFechaNext').onclick = () => {
     const base = $('electroFecha')?.value || hoyColombiaISO();
     const d = new Date(`${base}T12:00:00`);
     d.setDate(d.getDate() + 1);
     const next = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     $('electroFecha').value = next;
-    await cargarCitasElectro();
-    await checkEquiposDisponibilidad();
+    $('electroFecha').dispatchEvent(new Event('change'));
   };
+
+  if (typeof initElectroCalendario === 'function') initElectroCalendario();
   
   // Event listener para quitar el border rojo cuando se selecciona estudio y auto-completar duración
   $('electroEstudio')?.addEventListener('change', async (e) => {

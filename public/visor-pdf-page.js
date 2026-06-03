@@ -49,6 +49,7 @@
         pdfUrl: `/api/soportes/pdx/archivos/${id}/ver`,
         saveUrl: edit ? `/api/soportes/pdx/archivos/${id}/resaltar` : '',
         appendUrl: edit ? `/api/soportes/pdx/archivos/${id}/anexar-pdf` : '',
+        deletePagesUrl: edit ? `/api/soportes/pdx/archivos/${id}/eliminar-paginas` : '',
         downloadUrl: `/api/soportes/pdx/archivos/${id}/descargar`,
         canEdit: edit
       };
@@ -66,6 +67,9 @@
           : '',
         appendUrl: edit
           ? `/api/soportes/armado/expedientes/${exp}/archivos/${tipoEnc}/anexar-pdf`
+          : '',
+        deletePagesUrl: edit
+          ? `/api/soportes/armado/expedientes/${exp}/archivos/${tipoEnc}/eliminar-paginas`
           : '',
         downloadUrl: `/api/soportes/armado/expedientes/${exp}/archivos/${tipoEnc}/descargar`,
         canEdit: edit
@@ -98,6 +102,7 @@
       pdfUrl: cfg.pdfUrl,
       saveUrl: cfg.saveUrl,
       appendUrl: cfg.appendUrl || '',
+      deletePagesUrl: cfg.deletePagesUrl || '',
       downloadUrl: cfg.downloadUrl,
       title: cfg.title,
       canEdit: cfg.canEdit,

@@ -296,9 +296,13 @@ function buildStructuredOk(original, parts) {
 }
 
 function parseNombreOrdenHc(originalName, estudios = []) {
-  const base = String(originalName || '').trim();
+  const base = normalizarNombreParaParseo(originalName);
   const m = base.match(RE_ORDEN_HC);
-  if (!m) return { ok: false, original: base, error: mensajeErrorFormato('ordenes') };
+  if (!m) {
+    const flex = parseNombreEstructuradoFallback('ordenes', base, estudios);
+    if (flex.ok) return flex;
+    return { ok: false, original: base, error: mensajeErrorFormato('ordenes') };
+  }
   const apellidos = m[1].trim();
   const nombres = m[2].trim();
   const tipo_documento = m[3].trim();
@@ -318,9 +322,13 @@ function parseNombreOrdenHc(originalName, estudios = []) {
 }
 
 function parseNombreComprobante(originalName, estudios = []) {
-  const base = String(originalName || '').trim();
+  const base = normalizarNombreParaParseo(originalName);
   const m = base.match(RE_COMPROBANTE);
-  if (!m) return { ok: false, original: base, error: mensajeErrorFormato('comprobantes') };
+  if (!m) {
+    const flex = parseNombreEstructuradoFallback('comprobantes', base, estudios);
+    if (flex.ok) return flex;
+    return { ok: false, original: base, error: mensajeErrorFormato('comprobantes') };
+  }
   const apellidos = m[1].trim();
   const nombres = m[2].trim();
   const tipo_documento = m[3].trim();
@@ -340,9 +348,13 @@ function parseNombreComprobante(originalName, estudios = []) {
 }
 
 function parseNombreConsentimiento(originalName, estudios = []) {
-  const base = String(originalName || '').trim();
+  const base = normalizarNombreParaParseo(originalName);
   const m = base.match(RE_CONSENTIMIENTO);
-  if (!m) return { ok: false, original: base, error: mensajeErrorFormato('consentimientos') };
+  if (!m) {
+    const flex = parseNombreEstructuradoFallback('consentimientos', base, estudios);
+    if (flex.ok) return flex;
+    return { ok: false, original: base, error: mensajeErrorFormato('consentimientos') };
+  }
   const apellidos = m[1].trim();
   const nombres = m[2].trim();
   const tipo_documento = m[3].trim();
@@ -501,11 +513,70 @@ function temaCoincideCarpeta(estudioTema, carpetaTema) {
   return estudioTema === carpetaTema;
 }
 
+const TIPOS_DOC = ['CC', 'TI', 'CE', 'PA', 'RC', 'NUIP', 'PEP', 'PT'];
+
 function normalizarNombreParaParseo(originalName) {
   return String(originalName || '')
     .trim()
+    .replace(/[\u2013\u2014\u2212]/g, '-')
     .replace(/_/g, ' ')
     .replace(/\s+/g, ' ');
+}
+
+function detectarTipoDocumentoEnTexto(seg) {
+  const raw = String(seg || '').trim();
+  const u = raw.toUpperCase().replace(/\./g, '').replace(/\s+/g, ' ');
+  if (TIPOS_DOC.includes(u)) return u;
+  if (/^(CC|CEDULA|CIUDADANIA|CEDULA DE CIUDADANIA)$/.test(u)) return 'CC';
+  if (/^(TI|TARJETA DE IDENTIDAD)$/.test(u)) return 'TI';
+  if (/^(CE|CEDULA DE EXTRANJERIA)$/.test(u)) return 'CE';
+  if (/^(PA|PASAPORTE)$/.test(u)) return 'PA';
+  if (/^(RC|REGISTRO CIVIL)$/.test(u)) return 'RC';
+  if (/^(NUIP|PEP|PT)$/.test(u)) return u.split(' ')[0];
+  return '';
+}
+
+/**
+ * Parser por segmentos ( - ) cuando el regex estricto no coincide.
+ */
+function parseNombreEstructuradoFallback(tema, originalName, estudios = []) {
+  const base = normalizarNombreParaParseo(originalName);
+  const parts = splitPartesNombreGuiones(base);
+  let offset = 0;
+  if (tema === 'ordenes' && parts[0] && /orden/i.test(parts[0])) offset = 1;
+  if (tema === 'comprobantes' && parts[0] && /comprobante/i.test(parts[0])) offset = 1;
+  const need = 6;
+  if (parts.length < offset + need) return { ok: false, original: base };
+
+  const apellidos = parts[offset];
+  const nombres = parts[offset + 1];
+  const tipo_documento = detectarTipoDocumentoEnTexto(parts[offset + 2]) || String(parts[offset + 2] || 'CC').trim();
+  const paciente_documento = String(parts[offset + 3] || '').replace(/\s/g, '');
+  const fecha = parts[offset + 4];
+  const estudioRaw = parts[offset + 5];
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return { ok: false, original: base };
+  if (!apellidos || !nombres || !paciente_documento || !estudioRaw) return { ok: false, original: base };
+
+  const estudio = resolverEstudioDesdeLista(estudioRaw, estudios) || estudioRaw.trim();
+  const partsNorm = {
+    apellidos,
+    nombres,
+    tipo_documento,
+    paciente_documento,
+    fecha,
+    estudio,
+    formato: tema
+  };
+  if (tema === 'ordenes') {
+    partsNorm.nombre_display = normalizarNombreOrdenHc(partsNorm);
+  } else if (tema === 'comprobantes') {
+    partsNorm.nombre_display = normalizarNombreComprobante(partsNorm);
+  } else if (tema === 'consentimientos') {
+    partsNorm.nombre_display = normalizarNombreConsentimiento(partsNorm);
+  } else {
+    return { ok: false, original: base };
+  }
+  return buildStructuredOk(base, partsNorm);
 }
 
 function extraerNombresAntesDeFecha(beforeFecha) {
@@ -535,14 +606,6 @@ function extraerNombresAntesDeFecha(beforeFecha) {
     };
   }
   return { apellidos: tokens[0] || '', nombres: '' };
-}
-
-const TIPOS_DOC = ['CC', 'TI', 'CE', 'PA', 'RC', 'NUIP', 'PEP', 'PT'];
-
-function detectarTipoDocumentoEnTexto(seg) {
-  const u = String(seg || '').trim().toUpperCase();
-  if (TIPOS_DOC.includes(u)) return u;
-  return '';
 }
 
 /** Intenta leer datos del nombre aunque no cumpla el formato completo. */
@@ -705,7 +768,7 @@ function buildMetaDesdeCamposManuales(originalName, body, carpeta) {
   let estudio = String(body.estudio_texto || '').trim();
   if (esTemaEstructurado(tema)) {
     estudio = resolverEstudioDesdeLista(estudio, estudios);
-    if (!estudio) return { ok: false, error: 'Seleccione el tipo de examen' };
+    if (!estudio) return { ok: false, error: 'Indique el tipo de examen' };
     if (!paciente_documento) return { ok: false, error: 'El número de documento es obligatorio' };
   } else if (tema === 'psg') {
     estudio = resolverEstudioDesdeLista(estudio, estudios) || estudio;

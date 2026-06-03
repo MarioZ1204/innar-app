@@ -778,6 +778,37 @@ router.get('/citas-electro/plantilla-excel', requireAuth, async (req, res) => {
   }
 });
 
+// GET /api/citas-electro/calendario?mes=YYYY-MM — BEFORE /:id
+router.get('/citas-electro/calendario', requireAuth, async (req, res) => {
+  const { mes } = req.query;
+  if (!mes || !/^\d{4}-\d{2}$/.test(mes)) {
+    return res.status(400).json({ error: 'mes es obligatorio (formato YYYY-MM)' });
+  }
+  try {
+    const [year, month] = mes.split('-').map(Number);
+    const fechaInicio = `${mes}-01`;
+    const fechaFin = month === 12
+      ? `${year + 1}-01-01`
+      : `${year}-${String(month + 1).padStart(2, '0')}-01`;
+
+    const rows = await db.query(
+      `SELECT c.fecha, c.hora_fin_date, c.estudio, c.estado
+       FROM citas_electro c
+       WHERE c.deleted_at IS NULL
+         AND c.fecha < ?
+         AND COALESCE(c.hora_fin_date, c.fecha) >= ?`,
+      [fechaFin, fechaInicio]
+    );
+
+    const { buildCalendarioElectroMes } = require('../utils/electro-calendario');
+    const cal = buildCalendarioElectroMes(rows, mes);
+    res.json({ ok: true, ...cal });
+  } catch (e) {
+    logger.error('Error calendario electro:', e);
+    res.status(500).json({ error: safeError(e) });
+  }
+});
+
 // GET /api/citas-electro/stats — BEFORE /:id
 router.get('/citas-electro/stats', requireAuth, async (req, res) => {
   const { fecha } = req.query;

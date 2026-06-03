@@ -58,6 +58,23 @@ body.visor-pdf-standalone label.sop-btn {
   cursor: pointer;
 }
 
+body.visor-pdf-standalone .sop-btn-danger {
+  background: #dc2626;
+  color: #fff;
+  border: 0;
+}
+
+body.visor-pdf-standalone .sop-btn-danger:hover:not(:disabled) {
+  background: #b91c1c;
+  color: #fff;
+}
+
+body.visor-pdf-standalone .sop-btn-danger:disabled {
+  background: #fca5a5;
+  color: #fff;
+  cursor: not-allowed;
+}
+
 body.visor-pdf-standalone .sop-file-input-hidden {
   position: absolute;
   width: 0;

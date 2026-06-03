@@ -1,0 +1,249 @@
+/* Calendario mensual — electrodiagnóstico */
+.ecal-container {
+  padding: 4px 0 8px;
+}
+
+.ecal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.ecal-header-center {
+  flex: 1 1 140px;
+  min-width: 0;
+}
+
+.ecal-month-title {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.ecal-subtitle {
+  display: block;
+  font-size: 0.75rem;
+  color: #64748b;
+  font-weight: 600;
+  margin-top: 2px;
+}
+
+.ecal-nav-btn {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  border: 2px solid #e2e8f0;
+  background: #fff;
+  color: #334155;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.ecal-nav-btn:hover {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+
+.ecal-legend {
+  flex: 1 1 280px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px 14px;
+  max-width: 100%;
+}
+
+.ecal-legend-title {
+  width: 100%;
+  text-align: right;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #64748b;
+  margin-bottom: 2px;
+}
+
+.ecal-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.78rem;
+  color: #334155;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  padding: 4px 10px 4px 6px;
+}
+
+.ecal-legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.ecal-legend-num {
+  font-size: 0.85rem;
+  color: #0f172a;
+}
+
+.ecal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+}
+
+.ecal-weekday {
+  text-align: center;
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #94a3b8;
+  padding: 4px 0 6px;
+}
+
+.ecal-cell {
+  position: relative;
+  min-height: 72px;
+  border: 2px solid #e2e8f0;
+  border-radius: 10px;
+  background: #fff;
+  padding: 6px 5px 5px;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  transition: transform 0.12s, box-shadow 0.12s, border-color 0.12s;
+}
+
+.ecal-cell.ecal-empty {
+  border: none;
+  background: transparent;
+  cursor: default;
+  min-height: 0;
+  padding: 0;
+}
+
+.ecal-cell:not(.ecal-empty):hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+}
+
+.ecal-dia-num {
+  position: absolute;
+  top: 5px;
+  left: 7px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #64748b;
+}
+
+.ecal-total {
+  margin-top: 14px;
+  font-size: 1.35rem;
+  font-weight: 900;
+  line-height: 1;
+  color: #0f172a;
+}
+
+.ecal-chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 3px;
+  min-height: 18px;
+  width: 100%;
+  padding: 0 2px 2px;
+}
+
+.ecal-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 6px;
+  font-size: 0.65rem;
+  font-weight: 800;
+  color: #fff;
+  background: var(--ecal-chip, #64748b);
+}
+
+.ecal-chips-empty {
+  color: #cbd5e1;
+  font-size: 0.9rem;
+}
+
+.ecal-vacio .ecal-total {
+  color: #cbd5e1;
+  font-weight: 700;
+}
+
+.ecal-bajo {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+
+.ecal-medio {
+  background: #fffbeb;
+  border-color: #fde68a;
+}
+
+.ecal-alto {
+  background: #eff6ff;
+  border-color: #93c5fd;
+}
+
+.ecal-hoy {
+  box-shadow: inset 0 0 0 2px #2d4a47;
+}
+
+.ecal-selected {
+  border-color: #2d4a47 !important;
+  background: #f0fdfa !important;
+}
+
+@media (max-width: 900px) {
+  .ecal-legend {
+    justify-content: flex-start;
+  }
+  .ecal-legend-title {
+    text-align: left;
+  }
+  .ecal-cell {
+    min-height: 58px;
+  }
+  .ecal-total {
+    font-size: 1.1rem;
+  }
+}
+
+@media (max-width: 520px) {
+  .ecal-grid {
+    gap: 4px;
+  }
+  .ecal-cell {
+    min-height: 50px;
+    padding: 4px 2px;
+  }
+  .ecal-total {
+    font-size: 0.95rem;
+    margin-top: 10px;
+  }
+  .ecal-chip {
+    min-width: 14px;
+    height: 14px;
+    font-size: 0.58rem;
+  }
+}

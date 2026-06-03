@@ -82,7 +82,7 @@
     const u = String(nombreCarpeta || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     if (/\bcomprobante/.test(u)) return 'comprobantes';
     if (/\bconsentimiento/.test(u)) return 'consentimientos';
-    if (/\bordenes\b/.test(u)) return 'ordenes';
+    if (/\bordenes\b/.test(u) || /\borden\s*\+\s*hc\b/.test(u) || (/\borden\b/.test(u) && /\bhc\b/.test(u))) return 'ordenes';
     if (/\bvtm\b/.test(u) || u.includes('videotelemetria') || u.includes('telemetria')) return 'vtm';
     if (u.includes('actigraf')) return 'actigrafia';
     if (u.includes('polisomnog') || /\bpsg\b/.test(u) || u.startsWith('psg ') || u.includes('cpap') || u.includes('bpap')) return 'psg';
@@ -2375,8 +2375,8 @@
     if (!sopPerm('modulo.armado_soportes')) return '';
     const canEdit = sopPerm('soportes.armado.subir');
     const accept = escapeHtml(opts.accept || '.pdf,application/pdf');
-    const unirBtn = key === 'CRC' && canEdit
-      ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm sop-slot-unir" data-slot-unir="CRC" title="Unir varios PDF y reemplazar"><i data-lucide="layers"></i></button>`
+    const anexarBtn = (key === 'CRC' || key === 'OPF') && canEdit
+      ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm sop-slot-anexar" data-slot-anexar="${key}" title="Añadir un PDF al ${key} cargado"><i data-lucide="layers"></i></button>`
       : '';
     return `<div class="sop-slot-actions">
       <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-slot-ver="${key}" title="Ver en el navegador"><i data-lucide="eye"></i></button>
@@ -2384,7 +2384,7 @@
       <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm sop-slot-del" data-slot-del="${key}" title="Eliminar"><i data-lucide="trash-2"></i></button>
       <label class="sop-btn sop-btn-ghost sop-btn-sm" style="cursor:pointer" title="Reemplazar"><i data-lucide="refresh-cw"></i>
         <input type="file" data-replace-slot="${key}" class="sop-file-input-hidden" accept="${accept}"></label>
-      ${unirBtn}` : ''}
+      ${anexarBtn}` : ''}
     </div>`;
   }
 
@@ -2476,10 +2476,9 @@
         ev.target.value = '';
       });
     });
-    panel.querySelectorAll('.sop-slot-unir').forEach((btn) => {
+    panel.querySelectorAll('.sop-slot-anexar').forEach((btn) => {
       btn.addEventListener('click', () => {
-        const info = armState.expedienteDetalle || {};
-        modalUnirPdfSlot(expId, btn.dataset.slotUnir || 'CRC', info, { reemplazar: true });
+        modalAnexarPdfSlot(expId, btn.dataset.slotAnexar || 'CRC');
       });
     });
     panel.querySelectorAll('[data-slot-ver]').forEach((btn) => {
@@ -2553,6 +2552,62 @@
       orden: expected.map((t) => labels[t]),
       files: expected.map((t) => asignados.get(t))
     };
+  }
+
+  function modalAnexarPdfSlot(expId, tipo) {
+    const t = String(tipo || '').toUpperCase();
+    const modal = openSopModal(`
+      <h3><i data-lucide="layers" style="vertical-align:-3px;width:22px"></i> Añadir PDF a ${escapeHtml(t)}</h3>
+      <p class="sop-dialog-lead">Seleccione <strong>un PDF</strong>. Se añadirá al final del ${escapeHtml(t)} que ya tiene este expediente (no reemplaza el archivo).</p>
+      <div class="sop-field">
+        <label>PDF a añadir</label>
+        <input type="file" id="sopAnexarPdfFile" accept=".pdf,application/pdf" class="sop-file-input-visible">
+        <div id="sopAnexarPdfNombre" class="sop-search-results-meta" style="margin-top:8px"></div>
+      </div>
+      <div class="sop-dialog-actions">
+        <button type="button" class="sop-btn sop-btn-ghost" id="sopAnexarPdfCancel">Cancelar</button>
+        <button type="button" class="sop-btn sop-btn-primary" id="sopAnexarPdfOk" disabled>Añadir al ${escapeHtml(t)}</button>
+      </div>`);
+    const input = modal.querySelector('#sopAnexarPdfFile');
+    const nombreEl = modal.querySelector('#sopAnexarPdfNombre');
+    const btnOk = modal.querySelector('#sopAnexarPdfOk');
+    let file = null;
+
+    input?.addEventListener('change', () => {
+      file = input.files?.[0] || null;
+      if (nombreEl) nombreEl.textContent = file ? file.name : '';
+      if (btnOk) btnOk.disabled = !file;
+    });
+
+    modal.querySelector('#sopAnexarPdfCancel').onclick = () => closeSopModal(modal);
+    btnOk.onclick = async () => {
+      if (!file) return;
+      btnOk.disabled = true;
+      btnOk.textContent = 'Añadiendo…';
+      const fd = new FormData();
+      fd.append('partes', file);
+      try {
+        const res = await apiFetch(
+          `/api/soportes/armado/expedientes/${expId}/archivos/${encodeURIComponent(t)}/anexar-pdf`,
+          { method: 'POST', body: fd }
+        );
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.ok) {
+          sopToast(data.error || `No se pudo añadir al ${t}`, 'error');
+          btnOk.disabled = false;
+          btnOk.textContent = `Añadir al ${t}`;
+          return;
+        }
+        closeSopModal(modal);
+        sopToast(data.message || `PDF añadido al ${t}`, 'success');
+        abrirExpedienteArmado(expId);
+      } catch (e) {
+        sopToast(e.message || 'Error de conexión', 'error');
+        btnOk.disabled = false;
+        btnOk.textContent = `Añadir al ${t}`;
+      }
+    };
+    sopIcons(modal);
   }
 
   function modalUnirPdfSlot(expId, tipo, expInfo, { reemplazar = false } = {}) {

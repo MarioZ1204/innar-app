@@ -286,3 +286,74 @@
   color: #64748b;
   font-weight: 600;
 }
+
+.sop-pdf-delete-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 10px 16px;
+  background: #fff7ed;
+  border-bottom: 1px solid #fed7aa;
+}
+
+.sop-pdf-delete-actions.is-hidden {
+  display: none;
+}
+
+.sop-pdf-delete-count {
+  margin-right: auto;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #9a3412;
+}
+
+.sop-pdf-page-del {
+  display: none;
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 4;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.95);
+  border: 2px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #0f172a;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.12);
+}
+
+.sop-pdf-editor.is-delete-mode .sop-pdf-page-del {
+  display: inline-flex;
+}
+
+.sop-pdf-page.is-marked-delete {
+  outline: 3px solid #dc2626;
+  outline-offset: 2px;
+}
+
+.sop-pdf-editor.is-delete-mode .sop-pdf-overlay {
+  pointer-events: none;
+  cursor: default;
+}
+
+.sop-btn-danger {
+  background: #dc2626;
+  color: #fff;
+  border: 0;
+}
+
+.sop-btn-danger:hover:not(:disabled) {
+  background: #b91c1c;
+  color: #fff;
+}
+
+.sop-btn-danger:disabled {
+  background: #fca5a5;
+  cursor: not-allowed;
+}

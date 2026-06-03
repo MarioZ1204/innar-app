@@ -25,6 +25,7 @@ function configurarListeners() {
 
   const refrescarLista = () => {
     if (window.currentModule === 'electro' && typeof cargarCitasElectro === 'function') cargarCitasElectro();
+    if (typeof refrescarElectroCalendarioSiVisible === 'function') refrescarElectroCalendarioSiVisible();
   };
 
   window.socket.on('electro:actualizar-lista', refrescarLista);

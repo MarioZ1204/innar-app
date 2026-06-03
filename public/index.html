@@ -26,6 +26,7 @@
   <link rel="stylesheet" href="innar-responsive-agenda-medica.css">
   <link rel="stylesheet" href="innar-responsive-electro.css">
   <link rel="stylesheet" href="innar-electro-estudio-ui.css">
+  <link rel="stylesheet" href="innar-electro-calendario.css">
   <link rel="stylesheet" href="innar-responsive-mobile-fix.css">
   <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js" defer></script>
   <style>
@@ -1544,6 +1545,22 @@
               </button>
             </div>
           </header>
+
+          <!-- Calendario mensual -->
+          <section class="card no-print electro-cal-wrap" id="electroCalSection">
+            <div class="ecal-container">
+              <div class="ecal-header">
+                <button type="button" id="electroCalPrevMonth" class="ecal-nav-btn" title="Mes anterior" aria-label="Mes anterior">◀</button>
+                <div class="ecal-header-center">
+                  <h3 id="electroCalMonthTitle" class="ecal-month-title"></h3>
+                  <span class="ecal-subtitle">Estudios por día</span>
+                </div>
+                <div id="electroCalLegend" class="ecal-legend" aria-live="polite"></div>
+                <button type="button" id="electroCalNextMonth" class="ecal-nav-btn" title="Mes siguiente" aria-label="Mes siguiente">▶</button>
+              </div>
+              <div id="electroCalGrid" class="ecal-grid"></div>
+            </div>
+          </section>
 
           <!-- Selector de Fecha -->
           <section class="card no-print electro-date-toolbar">
@@ -3515,6 +3532,7 @@
   <script src="socket-electro.js"></script>
   <script src="dashboard-citas.js"></script>
   <script src="calendario-agenda.js"></script>
+  <script src="calendario-electro.js"></script>
   <script src="app.js"></script>
   <script src="soportes-pdf-editor.js"></script>
   <script src="soportes.js"></script>

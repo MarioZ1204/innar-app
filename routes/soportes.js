@@ -325,6 +325,7 @@ const PERMS_ARMADO_VER_SUBIR = ['modulo.armado_soportes', 'soportes.armado.subir
 
 const { applyHighlightsToPdfBytes, sanitizeHighlightsList } = require('../utils/soportes-pdf-highlights');
 const { appendPdfFilesToExisting } = require('../utils/soportes-pdf-anexar');
+const { sanitizePageIndexes, removePdfPagesFromBytes } = require('../utils/soportes-pdf-pages');
 
 function writePdfBytesAtomic(filePath, buffer) {
   const tmp = `${filePath}.hl-${process.pid}-${Date.now()}.tmp`;
@@ -1003,6 +1004,53 @@ router.post(
     } catch (e) {
       cleanupMulterTempFiles(req);
       logger.error('[SOPORTES] anexar pdx:', e);
+      res.status(500).json({ error: safeError(e) });
+    }
+  }
+);
+
+router.post(
+  '/soportes/pdx/archivos/:id/eliminar-paginas',
+  requireAuth,
+  requireRoleOrPerm(ROLES_SOPORTES, PERMS_PDX_VER_SUBIR),
+  async (req, res) => {
+    try {
+      const pages = req.body?.pages;
+      if (!Array.isArray(pages) || !pages.length) {
+        return res.status(400).json({ error: 'Indique las páginas a eliminar (número 1, 2, …)' });
+      }
+      const rows = await db.query(
+        `SELECT a.*, c.periodo FROM sop_pdx_archivos a JOIN sop_pdx_carpetas c ON c.id = a.carpeta_id WHERE a.id = ?`,
+        [req.params.id]
+      );
+      if (!rows.length) return res.status(404).json({ error: 'No encontrado' });
+      const row = rows[0];
+      const vis = calcularVisibilidadPeriodo(row.periodo);
+      if (vis === 'archivo') return res.status(403).json({ error: 'Carpeta cerrada' });
+      const fp = await resolvePdxArchivoPathForApi(row, true);
+      if (!fp || !fs.existsSync(fp)) return res.status(404).json({ error: 'Archivo no en disco' });
+
+      const bytes = fs.readFileSync(fp);
+      const { PDFDocument } = require('pdf-lib');
+      const pageCount = (await PDFDocument.load(bytes, { ignoreEncryption: true })).getPageCount();
+      const indexes = sanitizePageIndexes(pages, pageCount);
+      const outBytes = await removePdfPagesFromBytes(bytes, indexes);
+      writePdfBytesAtomic(fp, outBytes);
+      const tamanoFinal = outBytes.length;
+
+      await db.execute(
+        'UPDATE sop_pdx_archivos SET tamano_bytes = ?, editado_por = ?, editado_en = NOW() WHERE id = ?',
+        [tamanoFinal, req.session.usuarioId, req.params.id]
+      );
+      await logPdxArchivo(req.params.id, 'eliminar_paginas', req.session.usuarioId, `-${indexes.length} pág.`);
+      res.json({
+        ok: true,
+        message: `Se eliminaron ${indexes.length} página(s) del PDF`,
+        eliminadas: indexes.length,
+        tamano_bytes: tamanoFinal
+      });
+    } catch (e) {
+      logger.error('[SOPORTES] eliminar paginas pdx:', e);
       res.status(500).json({ error: safeError(e) });
     }
   }
@@ -1994,6 +2042,7 @@ router.post(
       const detail = await buildExpedienteDetail(req.params.id);
       res.json({
         ok: true,
+        message: `Se añadió ${partes.length} PDF al final de ${tipo}`,
         anexados: partes.length,
         tamano_bytes: tamano,
         expediente: detail
@@ -2001,6 +2050,55 @@ router.post(
     } catch (e) {
       cleanupMulterTempFiles(req);
       logger.error('[SOPORTES] anexar armado:', e);
+      res.status(500).json({ error: safeError(e) });
+    }
+  }
+);
+
+router.post(
+  '/soportes/armado/expedientes/:id/archivos/:tipo/eliminar-paginas',
+  requireAuth,
+  requireRoleOrPerm(ROLES_SOPORTES, PERMS_ARMADO_VER_SUBIR),
+  async (req, res) => {
+    try {
+      const pages = req.body?.pages;
+      if (!Array.isArray(pages) || !pages.length) {
+        return res.status(400).json({ error: 'Indique las páginas a eliminar (número 1, 2, …)' });
+      }
+      const { loadArchivoExpedienteSlot, resolveArchivoAbsoluto, SOPORTES_SLOT_TIPOS } = require('../utils/soportes-exp-archivo');
+      const tipo = String(req.params.tipo || '').toUpperCase();
+      if (!SOPORTES_SLOT_TIPOS.includes(tipo)) {
+        return res.status(400).json({ error: 'Tipo de archivo no válido' });
+      }
+      const loaded = await loadArchivoExpedienteSlot(req.params.id, tipo);
+      if (!loaded.ok) return res.status(loaded.status || 404).json({ error: loaded.error });
+      const fp = resolveArchivoAbsoluto(loaded.row);
+      if (!fp || !fs.existsSync(fp)) return res.status(404).json({ error: 'Archivo no en disco' });
+      if (!/\.pdf$/i.test(fp) && loaded.row.mime_type !== 'application/pdf') {
+        return res.status(400).json({ error: 'El archivo no es PDF' });
+      }
+
+      const bytes = fs.readFileSync(fp);
+      const { PDFDocument } = require('pdf-lib');
+      const pageCount = (await PDFDocument.load(bytes, { ignoreEncryption: true })).getPageCount();
+      const indexes = sanitizePageIndexes(pages, pageCount);
+      const outBytes = await removePdfPagesFromBytes(bytes, indexes);
+      writePdfBytesAtomic(fp, outBytes);
+
+      await db.execute(
+        'UPDATE sop_exp_archivos SET tamano_bytes = ?, subido_por = ? WHERE id = ?',
+        [outBytes.length, req.session.usuarioId, loaded.row.id]
+      );
+      const detail = await buildExpedienteDetail(req.params.id);
+      res.json({
+        ok: true,
+        message: `Se eliminaron ${indexes.length} página(s) del PDF`,
+        eliminadas: indexes.length,
+        tamano_bytes: outBytes.length,
+        expediente: detail
+      });
+    } catch (e) {
+      logger.error('[SOPORTES] eliminar paginas armado:', e);
       res.status(500).json({ error: safeError(e) });
     }
   }

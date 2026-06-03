@@ -13,6 +13,7 @@ const {
   estudioPsgReconocido
 } = require('../utils/soportes-pdx-parse');
 const { buildMetaFromUpload } = require('../utils/soportes-pdx-upload');
+const { detectarTemaCarpeta } = require('../utils/soportes-temas');
 
 describe('soportes-pdx-parse — reportes simples', () => {
   test('acepta formato mínimo Apellido, Nombre   YYYY-MM-DD.pdf', () => {
@@ -110,6 +111,22 @@ describe('soportes-pdx-parse — reportes simples', () => {
 });
 
 describe('soportes-pdx-parse — formatos estructurados', () => {
+  test('carpeta ORDEN + HC detecta tema ordenes', () => {
+    expect(detectarTemaCarpeta('ORDEN + HC MARZO 2026')).toBe('ordenes');
+    expect(detectarTemaCarpeta('Reportes ORDEN HC abril')).toBe('ordenes');
+  });
+
+  test('analizar nombre ideal en carpeta ORDEN + HC', () => {
+    const a = analizarNombreArchivo(
+      'ORDEN + HC - García López - Juan Carlos - CC - 1234567890 - 2026-05-27 - PSG Basal.pdf',
+      { nombre_display: 'ORDEN + HC MARZO' }
+    );
+    expect(a.ok).toBe(true);
+    expect(a.requiere_correccion).toBe(false);
+    expect(a.parsed.paciente_documento).toBe('1234567890');
+    expect(a.parsed.estudio_texto).toBe('PSG Basal');
+  });
+
   test('órdenes ORDEN + HC con guiones', () => {
     const p = parseNombreOrdenHc(
       'ORDEN + HC - García López - Juan Carlos - CC - 1234567890 - 2026-03-20 - PSG Basal.pdf',

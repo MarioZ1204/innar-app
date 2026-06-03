@@ -107,12 +107,15 @@
       + (isPage ? ' sop-pdf-editor--page' : '')
       + (saveInTopbar ? ' sop-pdf-editor--topbar-save' : '');
     const appendUrl = opts.appendUrl || '';
+    const deletePagesUrl = opts.deletePagesUrl || '';
+    const canDeletePages = canEdit && isPage && !!deletePagesUrl;
     const hintSelect = isPage
-      ? 'Seleccione texto (Ctrl+C). Use <strong>Resaltar</strong> o <strong>Añadir PDF</strong> y guarde los cambios.'
+      ? 'Seleccione texto (Ctrl+C). Use <strong>Resaltar</strong>, <strong>Añadir PDF</strong> o <strong>Eliminar páginas</strong> y guarde los cambios.'
       : 'Seleccione el texto con el ratón y copie con <strong>Ctrl+C</strong> (o clic derecho → Copiar).';
     const hintHighlight = isPage
       ? 'Arrastre para resaltar. Guarde antes de añadir otro PDF si ya tiene marcas pendientes.'
       : 'Modo resaltar: arrastre sobre el documento. Pulse <strong>Guardar en PDF</strong> para que las marcas queden al descargar.';
+    const hintDelete = 'Marque las páginas a quitar y pulse <strong>Eliminar seleccionadas</strong>. Debe quedar al menos una página.';
     shell.innerHTML = `
       <div class="sop-pdf-editor-header">
         <h3>${escapeHtml(opts.title || 'Documento PDF')}</h3>
@@ -121,6 +124,7 @@
           <div class="sop-pdf-editor-modes" role="group" aria-label="Modo del visor">
             <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm is-active" id="sopPdfEdModeSelect" title="Seleccionar y copiar texto">Seleccionar texto</button>
             <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="sopPdfEdModeHighlight" title="Dibujar resaltados">Resaltar</button>
+            ${canDeletePages ? '<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="sopPdfEdModeDelete" title="Quitar páginas del PDF">Eliminar páginas</button>' : ''}
           </div>
           <div class="sop-pdf-editor-colors is-hidden" role="group" aria-label="Color de resaltado" id="sopPdfEdColors">
             ${MARK_COLORS.map((c, i) => {
@@ -138,6 +142,12 @@
         </div>
       </div>
       <div class="sop-pdf-editor-hint" id="sopPdfEdHint">${canEdit ? hintSelect : hintSelect}</div>
+      ${canDeletePages ? `
+      <div class="sop-pdf-delete-actions is-hidden" id="sopPdfEdDeleteBar">
+        <span class="sop-pdf-delete-count" id="sopPdfEdDelCount"></span>
+        <button type="button" class="sop-btn sop-btn-danger sop-btn-sm" id="sopPdfEdDelApply" disabled>Eliminar seleccionadas</button>
+        <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="sopPdfEdDelCancel">Cancelar</button>
+      </div>` : ''}
       <div class="sop-pdf-editor-body" id="sopPdfEdBody"><div class="sop-pdf-editor-loading">Cargando PDF…</div></div>
       <div class="sop-pdf-editor-footer">
         <span class="sop-pdf-editor-count" id="sopPdfEdCount"></span>
@@ -162,16 +172,52 @@
     const hintEl = shell.querySelector('#sopPdfEdHint');
     const colorsEl = shell.querySelector('#sopPdfEdColors');
     const btnUndo = shell.querySelector('#sopPdfEdUndo');
+    const deleteBar = shell.querySelector('#sopPdfEdDeleteBar');
+    const delCountEl = shell.querySelector('#sopPdfEdDelCount');
+    const btnDelApply = shell.querySelector('#sopPdfEdDelApply');
+    const btnDelCancel = shell.querySelector('#sopPdfEdDelCancel');
+    const pageDeleteChecks = [];
+    let interactionMode = 'select';
+
+    function updateDeleteSelection() {
+      const n = pageDeleteChecks.filter((c) => c.checked).length;
+      if (delCountEl) {
+        delCountEl.textContent = n
+          ? `${n} página(s) marcada(s)`
+          : 'Marque las páginas a eliminar';
+      }
+      if (btnDelApply) btnDelApply.disabled = n === 0;
+      shell.querySelectorAll('.sop-pdf-page').forEach((wrap) => {
+        const inp = wrap.querySelector('.sop-pdf-page-del input');
+        wrap.classList.toggle('is-marked-delete', !!(inp && inp.checked));
+      });
+    }
 
     function setInteractionMode(mode) {
+      if (mode !== 'delete' && pending.length) {
+        toast('Guarde o deshaga los resaltados pendientes antes de cambiar de modo', 'error');
+        return;
+      }
+      interactionMode = mode;
       const highlight = mode === 'highlight';
-      shell.classList.toggle('is-select-mode', !highlight);
+      const del = mode === 'delete';
+      shell.classList.toggle('is-select-mode', mode === 'select');
       shell.classList.toggle('is-highlight-mode', highlight);
-      shell.querySelector('#sopPdfEdModeSelect')?.classList.toggle('is-active', !highlight);
+      shell.classList.toggle('is-delete-mode', del);
+      shell.querySelector('#sopPdfEdModeSelect')?.classList.toggle('is-active', mode === 'select');
       shell.querySelector('#sopPdfEdModeHighlight')?.classList.toggle('is-active', highlight);
+      shell.querySelector('#sopPdfEdModeDelete')?.classList.toggle('is-active', del);
       colorsEl?.classList.toggle('is-hidden', !highlight);
       btnUndo?.classList.toggle('is-hidden', !highlight);
-      if (hintEl) hintEl.innerHTML = highlight ? hintHighlight : hintSelect;
+      shell.querySelector('#sopPdfEdAnexarLbl')?.classList.toggle('is-hidden', del);
+      deleteBar?.classList.toggle('is-hidden', !del);
+      if (hintEl) {
+        hintEl.innerHTML = del ? hintDelete : (highlight ? hintHighlight : hintSelect);
+      }
+      if (!del) {
+        pageDeleteChecks.forEach((c) => { c.checked = false; });
+        updateDeleteSelection();
+      }
     }
 
     function close() {
@@ -229,6 +275,7 @@
       }
 
       overlay.addEventListener('pointerdown', (ev) => {
+        if (interactionMode !== 'highlight') return;
         if (ev.button !== 0) return;
         const rect = overlay.getBoundingClientRect();
         drag = {
@@ -292,6 +339,31 @@
 
     shell.querySelector('#sopPdfEdModeSelect')?.addEventListener('click', () => setInteractionMode('select'));
     shell.querySelector('#sopPdfEdModeHighlight')?.addEventListener('click', () => setInteractionMode('highlight'));
+    shell.querySelector('#sopPdfEdModeDelete')?.addEventListener('click', () => setInteractionMode('delete'));
+    btnDelCancel?.addEventListener('click', () => setInteractionMode('select'));
+
+    btnDelApply?.addEventListener('click', async () => {
+      const pages = pageDeleteChecks.filter((c) => c.checked).map((c) => parseInt(c.dataset.pageNum, 10));
+      if (!pages.length || !deletePagesUrl || !apiFetch) return;
+      btnDelApply.disabled = true;
+      btnDelApply.textContent = 'Eliminando…';
+      try {
+        const res = await apiFetch(deletePagesUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pages })
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || 'No se pudieron eliminar las páginas');
+        toast(data.message || 'Páginas eliminadas', 'success');
+        window.location.reload();
+      } catch (e) {
+        toast(e.message || 'Error al eliminar páginas', 'error');
+        btnDelApply.disabled = false;
+        btnDelApply.textContent = 'Eliminar seleccionadas';
+        updateDeleteSelection();
+      }
+    });
 
     const anexarInp = shell.querySelector('#sopPdfEdAnexarInp');
     anexarInp?.addEventListener('change', async (ev) => {
@@ -392,6 +464,20 @@
         overlay.className = 'sop-pdf-overlay';
         attachOverlay(overlay, i - 1);
         wrap.appendChild(overlay);
+        if (canDeletePages) {
+          const lbl = document.createElement('label');
+          lbl.className = 'sop-pdf-page-del';
+          const inp = document.createElement('input');
+          inp.type = 'checkbox';
+          inp.dataset.pageNum = String(i);
+          inp.addEventListener('change', updateDeleteSelection);
+          pageDeleteChecks.push(inp);
+          lbl.appendChild(inp);
+          const span = document.createElement('span');
+          span.textContent = `Pág. ${i}`;
+          lbl.appendChild(span);
+          wrap.appendChild(lbl);
+        }
         body.appendChild(wrap);
       }
       updateCount();

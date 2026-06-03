@@ -20,7 +20,11 @@ function detectarTemaCarpeta(nombreCarpeta) {
     return 'consentimientos';
   }
 
-  if (/\bordenes\b/.test(u)) {
+  if (
+    /\bordenes\b/.test(u) ||
+    /\borden\s*\+\s*hc\b/.test(u) ||
+    (/\borden\b/.test(u) && /\bhc\b/.test(u))
+  ) {
     return 'ordenes';
   }
 
