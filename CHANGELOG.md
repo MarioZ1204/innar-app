@@ -3,6 +3,18 @@
 Todos los cambios importantes a la aplicación se documentan aquí. El formato
 sigue (informalmente) [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
+## [1.5.83] — 2026-06-03
+
+### Cambiado
+
+- **Soportes — visor PDF (página)**: «Guardar en PDF» fijo en la barra superior (sustituye «Volver a Innar»); contador de resaltados pendientes junto al botón.
+
+## [1.5.82] — 2026-06-03
+
+### Corregido
+
+- **Soportes — visor PDF (página)**: colores de resaltado y texto del botón «Guardar en PDF» visibles (variables de marca y estilos aislados de `innar-buttons.css`).
+
 ## [1.5.81] — 2026-06-03
 
 ### Cambiado

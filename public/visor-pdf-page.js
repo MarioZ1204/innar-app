@@ -91,6 +91,9 @@
       return;
     }
 
+    const saveBtn = document.getElementById('sopPdfEdSave');
+    if (cfg.canEdit && saveBtn) saveBtn.hidden = false;
+
     await window.SopPdfEditor.mount(mount, {
       pdfUrl: cfg.pdfUrl,
       saveUrl: cfg.saveUrl,
@@ -101,6 +104,7 @@
       apiFetch,
       toast,
       layout: 'page',
+      saveInTopbar: true,
       onClose: null
     });
   }

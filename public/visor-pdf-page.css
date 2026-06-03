@@ -1,4 +1,11 @@
 /* Página dedicada /soportes/visor-pdf */
+:root {
+  --c-primary: #8aa6a1;
+  --c-primary-hover: #6d8a85;
+  --c-dark: #2d4a47;
+  --c-darker: #1a3330;
+}
+
 html, body.visor-pdf-standalone {
   margin: 0;
   min-height: 100%;
@@ -15,10 +22,12 @@ html, body.visor-pdf-standalone {
   padding: 12px 20px;
   background: #fff;
   border-bottom: 1px solid #e2e8f0;
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
-  position: sticky;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.08);
+  position: fixed;
   top: 0;
-  z-index: 20;
+  left: 0;
+  right: 0;
+  z-index: 100;
 }
 
 .visor-pdf-standalone .visor-pdf-topbar h1 {
@@ -36,14 +45,42 @@ html, body.visor-pdf-standalone {
 .visor-pdf-standalone .visor-pdf-topbar-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+.visor-pdf-standalone .visor-pdf-pending-count {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #64748b;
+  white-space: nowrap;
+}
+
+.visor-pdf-standalone .visor-pdf-save-top {
+  box-shadow: 0 4px 14px rgba(45, 74, 71, 0.35) !important;
+  background: linear-gradient(135deg, #2d4a47 0%, #1a3330 100%) !important;
+  color: #fff !important;
+  font-weight: 700 !important;
+  padding: 10px 20px !important;
+}
+
+.visor-pdf-standalone .visor-pdf-save-top:hover:not(:disabled) {
+  background: linear-gradient(135deg, #1a3330 0%, #152a28 100%) !important;
+  color: #fff !important;
+}
+
+.visor-pdf-standalone .visor-pdf-save-top:disabled {
+  background: #94a3b8 !important;
+  color: #fff !important;
+  opacity: 1 !important;
+  cursor: not-allowed !important;
 }
 
 .visor-pdf-standalone .visor-pdf-main {
   max-width: 1100px;
   margin: 0 auto;
-  padding: 16px 20px 32px;
+  padding: 72px 20px 32px;
 }
 
 .visor-pdf-standalone .sop-pdf-editor {

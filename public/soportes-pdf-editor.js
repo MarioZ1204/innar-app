@@ -100,8 +100,12 @@
     const isPage = opts.layout === 'page';
     const closeLabel = isPage ? 'Cerrar pestaña' : 'Cerrar';
 
+    const saveInTopbar = isPage && !!opts.saveInTopbar && canEdit;
+
     const shell = document.createElement('div');
-    shell.className = 'sop-pdf-editor is-select-mode' + (isPage ? ' sop-pdf-editor--page' : '');
+    shell.className = 'sop-pdf-editor is-select-mode'
+      + (isPage ? ' sop-pdf-editor--page' : '')
+      + (saveInTopbar ? ' sop-pdf-editor--topbar-save' : '');
     const appendUrl = opts.appendUrl || '';
     const hintSelect = isPage
       ? 'Seleccione texto (Ctrl+C). Use <strong>Resaltar</strong> o <strong>Añadir PDF</strong> y guarde los cambios.'
@@ -134,15 +138,19 @@
       <div class="sop-pdf-editor-body" id="sopPdfEdBody"><div class="sop-pdf-editor-loading">Cargando PDF…</div></div>
       <div class="sop-pdf-editor-footer">
         <span class="sop-pdf-editor-count" id="sopPdfEdCount"></span>
-        ${canEdit ? '<button type="button" class="sop-btn sop-btn-primary" id="sopPdfEdSave" disabled>Guardar en PDF</button>' : ''}
+        ${canEdit && !saveInTopbar ? '<button type="button" class="sop-btn sop-btn-primary" id="sopPdfEdSave" disabled>Guardar en PDF</button>' : ''}
       </div>`;
 
     container.innerHTML = '';
     container.appendChild(shell);
 
     const body = shell.querySelector('#sopPdfEdBody');
-    const countEl = shell.querySelector('#sopPdfEdCount');
-    const btnSave = shell.querySelector('#sopPdfEdSave');
+    const countEl = saveInTopbar
+      ? document.getElementById('visorPdfTopCount')
+      : shell.querySelector('#sopPdfEdCount');
+    const btnSave = saveInTopbar
+      ? document.getElementById('sopPdfEdSave')
+      : shell.querySelector('#sopPdfEdSave');
     const pending = [];
 
     let activeColor = 'yellow';
@@ -178,8 +186,17 @@
     }
 
     function updateCount() {
-      if (countEl) countEl.textContent = canEdit ? `${pending.length} resaltado(s) pendiente(s)` : '';
-      if (btnSave) btnSave.disabled = pending.length === 0;
+      if (countEl) {
+        countEl.textContent = canEdit && pending.length
+          ? `${pending.length} resaltado(s) pendiente(s)`
+          : '';
+      }
+      if (btnSave) {
+        btnSave.disabled = pending.length === 0;
+        if (pending.length > 0 && btnSave.textContent === 'Guardado') {
+          btnSave.textContent = 'Guardar en PDF';
+        }
+      }
     }
 
     function renderPendingMarks() {

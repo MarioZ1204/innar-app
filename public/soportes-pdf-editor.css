@@ -63,21 +63,51 @@
 .sop-pdf-editor-color {
   width: 28px;
   height: 28px;
+  min-width: 28px;
+  min-height: 28px;
   border-radius: 8px;
-  border: 2px solid transparent;
+  border: 2px solid #cbd5e1;
   cursor: pointer;
   padding: 0;
+  box-shadow: none !important;
+  color: transparent !important;
+  font-size: 0 !important;
+  line-height: 0 !important;
 }
 
 .sop-pdf-editor-color.is-active {
   border-color: #0f172a;
-  box-shadow: 0 0 0 2px #fff inset;
+  box-shadow: 0 0 0 2px #fff inset !important;
 }
 
-.sop-pdf-editor-color[data-color="yellow"] { background: #fde047; }
-.sop-pdf-editor-color[data-color="green"] { background: #86efac; }
-.sop-pdf-editor-color[data-color="pink"] { background: #f9a8d4; }
-.sop-pdf-editor-color[data-color="blue"] { background: #93c5fd; }
+.sop-pdf-editor-color[data-color="yellow"] { background: #fde047 !important; }
+.sop-pdf-editor-color[data-color="green"] { background: #86efac !important; }
+.sop-pdf-editor-color[data-color="pink"] { background: #f9a8d4 !important; }
+.sop-pdf-editor-color[data-color="blue"] { background: #93c5fd !important; }
+
+.sop-pdf-editor-color:hover {
+  transform: scale(1.06);
+  filter: brightness(1.02);
+}
+
+/* Guardar / toolbar en página standalone (variables de marca) */
+.sop-pdf-editor .sop-btn-primary#sopPdfEdSave {
+  background: linear-gradient(135deg, #2d4a47 0%, #1a3330 100%) !important;
+  color: #fff !important;
+  border: 0 !important;
+  box-shadow: 0 4px 14px rgba(45, 74, 71, 0.35) !important;
+}
+
+.sop-pdf-editor .sop-btn-primary#sopPdfEdSave:hover:not(:disabled) {
+  background: linear-gradient(135deg, #1a3330 0%, #152a28 100%) !important;
+  color: #fff !important;
+}
+
+.sop-pdf-editor .sop-btn-primary#sopPdfEdSave:disabled {
+  background: #94a3b8 !important;
+  color: #fff !important;
+  opacity: 1 !important;
+}
 
 .sop-pdf-editor-hint {
   font-size: 0.75rem;
@@ -201,7 +231,8 @@
   position: absolute;
   border-radius: 2px;
   pointer-events: none;
-  mix-blend-mode: multiply;
+  mix-blend-mode: normal;
+  opacity: 0.55;
 }
 
 .sop-pdf-mark[data-color="yellow"] { background: rgba(253, 224, 71, 0.55); }
@@ -239,6 +270,14 @@
 .sop-pdf-editor--page .sop-pdf-editor-body {
   flex: 1;
   max-height: none;
+}
+
+.sop-pdf-editor--page.sop-pdf-editor--topbar-save .sop-pdf-editor-footer {
+  display: none;
+}
+
+.sop-pdf-editor--page.sop-pdf-editor--topbar-save .sop-pdf-editor-header h3 {
+  display: none;
 }
 
 .sop-pdf-editor-count {
