@@ -3,6 +3,12 @@
 Todos los cambios importantes a la aplicación se documentan aquí. El formato
 sigue (informalmente) [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
+## [1.5.66] — 2026-05-27
+
+### Corregido
+
+- **Electrodiagnóstico**: al agendar un estudio nuevo ya no se auto-completa el que está En Estudio; el cierre automático del día actual exige `duracion_minutos` (inicio + duración), no el slot corto de `hora_fin`.
+
 ## [1.5.65] — 2026-05-27
 
 ### Corregido

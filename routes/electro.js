@@ -26,7 +26,8 @@ const {
   inferirDuracionMinutosCitaElectro,
   calcularFinInicioEstudioElectro,
   sqlEstudioElectroFinProgramadoTs,
-  sqlEstudioElectroFinProgramadoVencido
+  sqlEstudioElectroFinProgramadoVencido,
+  sqlEstudioElectroFinProgramadoVencidoConDuracion
 } = require('../utils/electro-fechas');
 
 /** Rellena duracion_minutos desde catálogo o ventana agendada→hora_fin si falta. */
@@ -118,18 +119,41 @@ async function repararEstadosElectroAlConsultar(fechaYmd) {
   }
 }
 
-/** Cierra estudios cuyo fin programado (inicio/duración o hora_fin) ya venció. */
+/** Rellena duracion_minutos en todos los estudios activos que solo tienen hora_fin de agenda. */
+async function sincronizarDuracionesElectroActivas() {
+  const rows = await db.query(`
+    SELECT id, fecha, hora_agendamiento, hora_fin, hora_fin_date, duracion_minutos, estudio
+    FROM citas_electro
+    WHERE deleted_at IS NULL
+      AND estado IN ('En Estudio', 'Pausado')
+      AND (duracion_minutos IS NULL OR duracion_minutos = 0)
+      AND hora_fin IS NOT NULL
+  `);
+  for (const row of rows) {
+    await asegurarDuracionMinutosCitaElectro(row);
+  }
+  return rows.length;
+}
+
+/**
+ * Cierra estudios vencidos. Hoy: solo con duracion_minutos (inicio+duración).
+ * Días anteriores: también por hora_fin (limpieza de olvidados).
+ */
 async function autoCompletarEstudiosElectroVencidos(excludeId = null) {
+  await sincronizarDuracionesElectroActivas();
   const condId = excludeId ? ' AND id != ?' : '';
   const params = excludeId ? [excludeId] : [];
   const sqlVencido = sqlEstudioElectroFinProgramadoVencido();
-  const finTs = sqlEstudioElectroFinProgramadoTs();
+  const sqlVencidoHoy = sqlEstudioElectroFinProgramadoVencidoConDuracion();
   await db.execute(`
     UPDATE citas_electro
     SET estado = 'Completado', editado_por_nombre = 'Sistema (Auto)', editado_en = NOW()
     WHERE estado IN ('En Estudio', 'Pausado')
       AND deleted_at IS NULL
-      AND ${sqlVencido}
+      AND (
+        (fecha < CURDATE() AND ${sqlVencido})
+        OR (fecha >= CURDATE() AND ${sqlVencidoHoy})
+      )
       ${condId}
   `, params).catch((err) => logger.warn('Auto-completar estudios vencidos falló (no crítico):', err.message));
 }
@@ -924,7 +948,7 @@ router.post('/citas-electro', requireAuth, requireRoleOrPerm(['superadmin', 'adm
       finalFechaFin = extraerFechaYmd(req.body.hora_fin_date) || fechaFinSiCruzaMedianoche(fecha, horaAgendamiento, hora_fin) || fecha;
     }
 
-    await autoCompletarEstudiosElectroVencidos();
+    // No auto-completar al agendar: cerraba estudios En Estudio por hora_fin corta sin duracion_minutos.
 
     // Verificaciones de capacidad SIN FOR UPDATE para evitar deadlocks
     const dupCheck = await db.query(

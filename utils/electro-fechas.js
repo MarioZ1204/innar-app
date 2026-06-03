@@ -224,6 +224,26 @@ function sqlEstudioElectroFinProgramadoVencido(alias) {
   ) < NOW()`;
 }
 
+/**
+ * Auto-cierre hoy/en curso: solo si hay duracion_minutos y fin = inicio + duración.
+ * Evita cerrar por hora_fin de agenda (slot 30 min) en estudios En Estudio largos.
+ */
+function sqlEstudioElectroFinProgramadoVencidoConDuracion(alias) {
+  const p = alias ? `${alias}.` : '';
+  return `(
+    ${p}duracion_minutos > 0
+    AND (
+      CASE
+        WHEN ${p}hora_inicio IS NOT NULL THEN
+          DATE_ADD(TIMESTAMP(${p}fecha, TIME(${p}hora_inicio)), INTERVAL ${p}duracion_minutos MINUTE)
+        WHEN ${p}hora_agendamiento IS NOT NULL THEN
+          DATE_ADD(TIMESTAMP(${p}fecha, TIME(${p}hora_agendamiento)), INTERVAL ${p}duracion_minutos MINUTE)
+        ELSE NULL
+      END
+    ) < NOW()
+  )`;
+}
+
 module.exports = {
   extraerFechaYmd,
   sumarMinutosAHoraYFecha,
@@ -240,5 +260,6 @@ module.exports = {
   inferirDuracionMinutosCitaElectro,
   calcularFinInicioEstudioElectro,
   sqlEstudioElectroFinProgramadoTs,
-  sqlEstudioElectroFinProgramadoVencido
+  sqlEstudioElectroFinProgramadoVencido,
+  sqlEstudioElectroFinProgramadoVencidoConDuracion
 };
