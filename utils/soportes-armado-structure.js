@@ -3,6 +3,7 @@
  */
 const path = require('path');
 const { ensureDir } = require('./soportes-storage');
+const { insertRowId } = require('./db-insert-id');
 
 const CONTENEDOR_TIPOS = ['rips', 'soportes'];
 
@@ -96,7 +97,7 @@ async function ensureFeParEnContenedorHermano(db, diaId, contenedorId, codigo, n
        VALUES (?,?,?,?,?,?,?,?)`,
       [diaId, hermano[0].id, codigo, numero, pacienteNombre, null, tipoServicio, usuarioId]
     );
-    return r.insertId;
+    return insertRowId(r);
   } catch (e) {
     if (e.code === 'ER_DUP_ENTRY' || String(e.message || '').includes('Duplicate')) {
       const again = await db.query(

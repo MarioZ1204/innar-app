@@ -12,7 +12,14 @@ function soportesRoot() {
 }
 
 function ensureDir(dir) {
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  try {
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  } catch (e) {
+    const err = new Error(`No se pudo crear directorio: ${dir}`);
+    err.code = e.code || 'ENSURE_DIR_FAILED';
+    err.cause = e;
+    throw err;
+  }
 }
 
 function getPdxDir(carpetaId) {

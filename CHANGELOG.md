@@ -3,6 +3,12 @@
 Todos los cambios importantes a la aplicación se documentan aquí. El formato
 sigue (informalmente) [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
+## [1.5.67] — 2026-05-27
+
+### Corregido
+
+- **Soportes**: error al crear carpetas (PDX y armado). Lectura correcta de `insertId` tras INSERT, validación de fila creada, mensajes claros si faltan tablas de migración o permisos en `UPLOADS_DIR`.
+
 ## [1.5.66] — 2026-05-27
 
 ### Corregido

@@ -222,9 +222,44 @@ function uploadPdxSingle(req, res, next) {
   });
 }
 
+const { insertRowId } = require('../utils/db-insert-id');
+
 function pdxInsertId(result) {
-  if (!result?.insertId) return 0;
-  return typeof result.insertId === 'bigint' ? Number(result.insertId) : Number(result.insertId);
+  return insertRowId(result);
+}
+
+function sopErrorCliente(e, fallback = 'Error interno del servidor') {
+  if (e.code === 'ER_NO_SUCH_TABLE') {
+    return 'Módulo Soportes no inicializado en la base de datos. Reinicie la aplicación (migraciones al arranque).';
+  }
+  if (e.code === 'ER_BAD_FIELD_ERROR') {
+    return 'Estructura de Soportes desactualizada. Reinicie la aplicación para aplicar migraciones.';
+  }
+  if (e.code === 'ENSURE_DIR_FAILED' || e.code === 'EACCES' || e.code === 'EPERM') {
+    return 'Sin permiso de escritura en la carpeta de archivos (revise UPLOADS_DIR en el servidor).';
+  }
+  return safeError(e) || fallback;
+}
+
+async function queryPdxCarpetasConCount() {
+  const sqlConArchivos = `
+      SELECT c.*, COUNT(a.id) AS archivos_count
+      FROM sop_pdx_carpetas c
+      LEFT JOIN sop_pdx_archivos a ON a.carpeta_id = c.id
+      GROUP BY c.id
+      ORDER BY c.periodo DESC, c.nombre_display ASC`;
+  const sqlSinArchivos = `
+      SELECT c.*, 0 AS archivos_count
+      FROM sop_pdx_carpetas c
+      ORDER BY c.periodo DESC, c.nombre_display ASC`;
+  try {
+    return await db.query(sqlConArchivos);
+  } catch (e) {
+    if (e.code === 'ER_NO_SUCH_TABLE' && String(e.message || '').includes('sop_pdx_archivos')) {
+      return await db.query(sqlSinArchivos);
+    }
+    throw e;
+  }
 }
 
 async function insertPdxArchivoRow(carpetaId, meta, file, session) {
@@ -300,13 +335,7 @@ const uploadPdxReemplazar = multer({
 router.get('/soportes/pdx/carpetas', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, ['modulo.reportes_pdx', 'soportes.pdx.ver', 'soportes.pdx.subir']), async (req, res) => {
   try {
     const incluirArchivo = puedeVerArchivo(req) && req.query.archivo === '1';
-    const rows = await db.query(`
-      SELECT c.*, COUNT(a.id) AS archivos_count
-      FROM sop_pdx_carpetas c
-      LEFT JOIN sop_pdx_archivos a ON a.carpeta_id = c.id
-      GROUP BY c.id
-      ORDER BY c.periodo DESC, c.nombre_display ASC
-    `);
+    const rows = await queryPdxCarpetasConCount();
     const hoyPeriodo = periodoFromDate();
     for (const r of rows) await refrescarVisibilidadPdx(r.periodo);
     const lista = rows
@@ -315,7 +344,7 @@ router.get('/soportes/pdx/carpetas', requireAuth, requireRoleOrPerm(ROLES_SOPORT
     res.json({ periodo_actual: hoyPeriodo, carpetas: lista });
   } catch (e) {
     logger.error('[SOPORTES] pdx carpetas:', e);
-    res.status(500).json({ error: safeError(e) });
+    res.status(500).json({ error: sopErrorCliente(e) });
   }
 });
 
@@ -332,18 +361,30 @@ router.post('/soportes/pdx/carpetas', requireAuth, requireRoleOrPerm(ROLES_SOPOR
     const r = await db.execute(
       `INSERT INTO sop_pdx_carpetas (periodo, nombre_display, color_tema, estado_visibilidad, creado_por)
        VALUES (?, ?, ?, ?, ?)`,
-      [periodo, nombre, tema, vis, req.session.usuarioId]
+      [periodo, nombre, tema, vis, req.session.usuarioId ?? null]
     );
-    const id = r.insertId;
-    getPdxDir(id);
+    const id = pdxInsertId(r);
+    if (!id) {
+      return res.status(500).json({ error: 'No se pudo registrar la carpeta (id inválido tras INSERT)' });
+    }
+    try {
+      getPdxDir(id);
+    } catch (dirErr) {
+      await db.execute('DELETE FROM sop_pdx_carpetas WHERE id = ?', [id]).catch(() => {});
+      logger.error('[SOPORTES] crear carpeta pdx disco:', dirErr);
+      return res.status(500).json({ error: sopErrorCliente(dirErr) });
+    }
     const rows = await db.query('SELECT * FROM sop_pdx_carpetas WHERE id = ?', [id]);
+    if (!rows.length) {
+      return res.status(500).json({ error: 'Carpeta creada pero no encontrada al leer' });
+    }
     res.status(201).json({ ok: true, carpeta: mapCarpetaPdx({ ...rows[0], archivos_count: 0 }) });
   } catch (e) {
     if (String(e.message || '').includes('uk_sop_pdx')) {
       return res.status(409).json({ error: 'Ya existe una carpeta con ese nombre en el periodo' });
     }
     logger.error('[SOPORTES] crear carpeta pdx:', e);
-    res.status(500).json({ error: safeError(e) });
+    res.status(500).json({ error: sopErrorCliente(e) });
   }
 });
 
@@ -1019,11 +1060,15 @@ router.post('/soportes/armado/periodos', requireAuth, requireRoleOrPerm(ROLES_SO
       'INSERT INTO sop_periodos (periodo, etiqueta, estado_visibilidad, creado_por) VALUES (?,?,?,?)',
       [periodo, label, vis, req.session.usuarioId]
     );
-    const rows = await db.query('SELECT * FROM sop_periodos WHERE id = ?', [r.insertId]);
+    const periodoId = pdxInsertId(r);
+    if (!periodoId) return res.status(500).json({ error: 'No se pudo crear el periodo' });
+    const rows = await db.query('SELECT * FROM sop_periodos WHERE id = ?', [periodoId]);
+    if (!rows.length) return res.status(500).json({ error: 'Periodo creado pero no encontrado' });
     res.status(201).json({ ok: true, periodo: mapPeriodo({ ...rows[0], expedientes_count: 0 }) });
   } catch (e) {
     if (String(e.message).includes('Duplicate')) return res.status(409).json({ error: 'El periodo ya existe' });
-    res.status(500).json({ error: safeError(e) });
+    logger.error('[SOPORTES] crear periodo armado:', e);
+    res.status(500).json({ error: sopErrorCliente(e) });
   }
 });
 
@@ -1056,10 +1101,18 @@ router.post('/soportes/armado/periodos/:id/dias', requireAuth, requireRoleOrPerm
       'INSERT INTO sop_dias (periodo_id, dia, fecha, nombre_display, estado_facturacion) VALUES (?,?,?,?,?)',
       [req.params.id, 0, fechaDate, nombre_display, estado_facturacion]
     );
-    const diaId = r.insertId;
-    await ensureContenedoresForDia(db, diaId);
+    const diaId = pdxInsertId(r);
+    if (!diaId) return res.status(500).json({ error: 'No se pudo crear la carpeta del día' });
+    try {
+      await ensureContenedoresForDia(db, diaId);
+    } catch (contErr) {
+      await db.execute('DELETE FROM sop_dias WHERE id = ?', [diaId]).catch(() => {});
+      logger.error('[SOPORTES] crear dia contenedores:', contErr);
+      return res.status(500).json({ error: sopErrorCliente(contErr) });
+    }
     const contenedores = await db.query('SELECT * FROM sop_contenedores WHERE dia_id = ? ORDER BY tipo', [diaId]);
     const row = await db.query('SELECT * FROM sop_dias WHERE id = ?', [diaId]);
+    if (!row.length) return res.status(500).json({ error: 'Carpeta del día creada pero no encontrada' });
     res.status(201).json({
       ok: true,
       dia: mapDia({ ...row[0], expedientes_count: 0 }),
@@ -1067,7 +1120,8 @@ router.post('/soportes/armado/periodos/:id/dias', requireAuth, requireRoleOrPerm
     });
   } catch (e) {
     if (String(e.message).includes('uk_sop_dia_nombre')) return res.status(409).json({ error: 'Ya existe una carpeta con ese nombre en el mes' });
-    res.status(500).json({ error: safeError(e) });
+    logger.error('[SOPORTES] crear dia armado:', e);
+    res.status(500).json({ error: sopErrorCliente(e) });
   }
 });
 
@@ -1307,7 +1361,9 @@ async function crearExpedienteEnContenedor(contenedorId, body, usuarioId) {
   } catch (e) {
     logger.warn('[SOPORTES] carpeta par RIPS/SOPORTES:', e.message);
   }
-  const detail = await buildExpedienteDetail(r.insertId);
+  const expId = pdxInsertId(r);
+  if (!expId) return { error: 'No se pudo crear la carpeta FE', status: 500 };
+  const detail = await buildExpedienteDetail(expId);
   return { ok: true, expediente: detail, codigo, par_creado: true };
 }
 
