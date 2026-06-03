@@ -3,6 +3,12 @@
 Todos los cambios importantes a la aplicación se documentan aquí. El formato
 sigue (informalmente) [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
+## [1.5.68] — 2026-05-27
+
+### Corregido
+
+- **Soportes — armado**: varias carpetas de día en el mismo mes (ya no todas con `dia=0`, que chocaba con el índice único antiguo). Migración renumerar días existentes y quitar `uk_sop_dia` legacy.
+
 ## [1.5.67] — 2026-05-27
 
 ### Corregido

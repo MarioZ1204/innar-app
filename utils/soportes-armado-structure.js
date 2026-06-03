@@ -110,6 +110,18 @@ async function ensureFeParEnContenedorHermano(db, diaId, contenedorId, codigo, n
   }
 }
 
+/** Número secuencial de día dentro del mes (evita uk_sop_dia periodo_id+dia con dia=0 fijo). */
+async function nextSopDiaNumero(db, periodoId) {
+  const pid = parseInt(periodoId, 10);
+  if (!pid) return 1;
+  const rows = await db.query(
+    'SELECT COALESCE(MAX(dia), 0) AS mx FROM sop_dias WHERE periodo_id = ?',
+    [pid]
+  );
+  const mx = parseInt(rows[0]?.mx, 10) || 0;
+  return Math.min(mx + 1, 255);
+}
+
 async function ensureContenedoresForDia(db, diaId) {
   for (const tipo of CONTENEDOR_TIPOS) {
     const exists = await db.query(
@@ -131,6 +143,7 @@ module.exports = {
   getArmadoFeDirAbs,
   parseFeCodigo,
   badgeFacturacion,
+  nextSopDiaNumero,
   ensureContenedoresForDia,
   ensureFeParEnContenedorHermano
 };

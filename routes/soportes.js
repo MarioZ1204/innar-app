@@ -44,6 +44,7 @@ const {
   collectPdxWarnings
 } = require('../utils/soportes-pdx-upload');
 const {
+  nextSopDiaNumero,
   ensureContenedoresForDia,
   ensureFeParEnContenedorHermano,
   parseFeCodigo
@@ -1091,15 +1092,25 @@ router.get('/soportes/armado/periodos/:id/dias', requireAuth, requireRoleOrPerm(
 
 router.post('/soportes/armado/periodos/:id/dias', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'soportes.armado.crear_estructura'), async (req, res) => {
   try {
+    const periodoId = parseInt(req.params.id, 10);
+    if (!periodoId) return res.status(400).json({ error: 'Periodo inválido' });
     const nombre_display = String(req.body.nombre_display || '').trim();
     const estado_facturacion = req.body.estado_facturacion === 'facturados' ? 'facturados' : 'a_facturar';
     if (!nombre_display) return res.status(400).json({ error: 'Indique el nombre de la carpeta del día (ej: MAYO 1, MAYO 2-3)' });
-    const periodo = await db.query('SELECT periodo FROM sop_periodos WHERE id = ?', [req.params.id]);
+    const periodo = await db.query('SELECT periodo FROM sop_periodos WHERE id = ?', [periodoId]);
     if (!periodo.length) return res.status(404).json({ error: 'Periodo no encontrado' });
+    const dupNom = await db.query(
+      'SELECT id FROM sop_dias WHERE periodo_id = ? AND nombre_display = ? LIMIT 1',
+      [periodoId, nombre_display]
+    );
+    if (dupNom.length) {
+      return res.status(409).json({ error: 'Ya existe una carpeta con ese nombre en el mes' });
+    }
     const fechaDate = req.body.fecha || `${periodo[0].periodo}-01`;
+    const diaNum = await nextSopDiaNumero(db, periodoId);
     const r = await db.execute(
       'INSERT INTO sop_dias (periodo_id, dia, fecha, nombre_display, estado_facturacion) VALUES (?,?,?,?,?)',
-      [req.params.id, 0, fechaDate, nombre_display, estado_facturacion]
+      [periodoId, diaNum, fechaDate, nombre_display, estado_facturacion]
     );
     const diaId = pdxInsertId(r);
     if (!diaId) return res.status(500).json({ error: 'No se pudo crear la carpeta del día' });
@@ -1119,7 +1130,9 @@ router.post('/soportes/armado/periodos/:id/dias', requireAuth, requireRoleOrPerm
       contenedores: contenedores.map(mapContenedor)
     });
   } catch (e) {
-    if (String(e.message).includes('uk_sop_dia_nombre')) return res.status(409).json({ error: 'Ya existe una carpeta con ese nombre en el mes' });
+    if (e.code === 'ER_DUP_ENTRY' || /uk_sop_dia|Duplicate entry/i.test(String(e.message || ''))) {
+      return res.status(409).json({ error: 'Ya existe una carpeta con ese nombre en el mes (o conflicto de índice en BD)' });
+    }
     logger.error('[SOPORTES] crear dia armado:', e);
     res.status(500).json({ error: sopErrorCliente(e) });
   }

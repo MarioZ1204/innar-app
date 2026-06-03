@@ -41,11 +41,14 @@ async function findOrCreateDia(periodoId, nombreDisplay, estadoFacturacion, auto
   if (!autoCreate) return null;
   const per = await db.query('SELECT periodo FROM sop_periodos WHERE id = ?', [periodoId]);
   const fecha = per[0] ? `${per[0].periodo}-01` : periodoFromDate(new Date());
+  const { nextSopDiaNumero } = require('./soportes-armado-structure');
+  const { insertRowId } = require('./db-insert-id');
+  const diaNum = await nextSopDiaNumero(db, periodoId);
   const r = await db.execute(
     'INSERT INTO sop_dias (periodo_id, dia, fecha, nombre_display, estado_facturacion) VALUES (?,?,?,?,?)',
-    [periodoId, 0, fecha, nombreDisplay, estado]
+    [periodoId, diaNum, fecha, nombreDisplay, estado]
   );
-  const diaId = r.insertId;
+  const diaId = insertRowId(r);
   await ensureContenedoresForDia(db, diaId);
   const created = await db.query('SELECT * FROM sop_dias WHERE id = ?', [diaId]);
   return created[0];

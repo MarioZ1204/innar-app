@@ -909,6 +909,36 @@ const runtimeMigrations = [
           AND ${finTs} > NOW()
       `);
     }
+  },
+  {
+    name: 'rt_sop_renumerar_dia_quitar_uk_legacy',
+    description: 'Soportes armado: quitar uk_sop_dia (periodo_id,dia) y renumerar dia por mes',
+    run: async (db) => {
+      if (!(await tableExists(db, 'sop_dias'))) return;
+      try {
+        await db.execute('ALTER TABLE sop_dias DROP INDEX uk_sop_dia');
+      } catch (_) { /* ya eliminado */ }
+      const periodos = await db.query('SELECT DISTINCT periodo_id FROM sop_dias');
+      for (const p of periodos) {
+        const dias = await db.query(
+          'SELECT id FROM sop_dias WHERE periodo_id = ? ORDER BY id ASC',
+          [p.periodo_id]
+        );
+        let n = 1;
+        for (const d of dias) {
+          await db.execute('UPDATE sop_dias SET dia = ? WHERE id = ?', [n, d.id]);
+          n += 1;
+        }
+      }
+      if (!(await columnExists(db, 'sop_dias', 'nombre_display'))) {
+        await db.execute(
+          "ALTER TABLE sop_dias ADD COLUMN nombre_display VARCHAR(80) NULL AFTER dia, ADD COLUMN estado_facturacion ENUM('facturados','a_facturar') NOT NULL DEFAULT 'a_facturar' AFTER nombre_display"
+        );
+      }
+      try {
+        await db.execute('ALTER TABLE sop_dias ADD UNIQUE KEY uk_sop_dia_nombre (periodo_id, nombre_display)');
+      } catch (_) { /* ya existe */ }
+    }
   }
 ];
 
