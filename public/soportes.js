@@ -2346,6 +2346,24 @@
     renderArmadoContextBar();
   }
 
+  function htmlSlotArchivoActions(expId, key, slot, opts = {}) {
+    if (!expId || !slot.completo || !slot.archivo_id) return '';
+    if (!sopPerm('modulo.armado_soportes')) return '';
+    const canEdit = sopPerm('soportes.armado.subir');
+    const accept = escapeHtml(opts.accept || '.pdf,application/pdf');
+    const verUrl = `/api/soportes/armado/expedientes/${expId}/archivos/${key}/descargar?inline=1`;
+    const unirBtn = key === 'CRC' && canEdit
+      ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm sop-slot-unir" data-slot-unir="CRC" title="Unir varios PDF y reemplazar"><i data-lucide="layers"></i></button>`
+      : '';
+    return `<div class="sop-slot-actions">
+      <a class="sop-btn sop-btn-ghost sop-btn-sm" href="${verUrl}" target="_blank" rel="noopener" title="Ver"><i data-lucide="eye"></i></a>
+      ${canEdit ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm sop-slot-del" data-slot-del="${key}" title="Eliminar"><i data-lucide="trash-2"></i></button>
+      <label class="sop-btn sop-btn-ghost sop-btn-sm" style="cursor:pointer" title="Reemplazar"><i data-lucide="refresh-cw"></i>
+        <input type="file" data-replace-slot="${key}" class="sop-file-input-hidden" accept="${accept}"></label>
+      ${unirBtn}` : ''}
+    </div>`;
+  }
+
   function htmlFeSlotCard(key, slot, opts = {}) {
     const ok = slot.completo;
     const dis = slot.habilitado === false;
@@ -2363,19 +2381,25 @@
     const opfHint = key === 'OPF' && !ok && !dis
       ? '<p class="sop-pdx-format-nota" style="margin:8px 0 0;font-size:.78rem">Unir ORDEN+HC + autorización, subir OPF listo, o PDF manual (sin factura: se renombra al subir FEV).</p>'
       : '';
-    const allowUpload = opts.upload && !dis;
+    const crcHint = key === 'CRC' && !ok && !dis
+      ? '<p class="sop-pdx-format-nota" style="margin:8px 0 0;font-size:.78rem">Suba un PDF, enlace desde reportes o <strong>una 2+ PDF</strong> en un solo CRC.</p>'
+      : '';
+    const allowUpload = opts.upload && !dis && !(ok && slot.archivo_id);
     return `<div class="sop-slot-card ${ok ? 'ok' : ''} ${dis ? 'disabled' : ''}" data-slot="${key}">
       <div class="sop-slot-head">
         <span class="sop-slot-label"><i data-lucide="${icons[key] || 'file'}"></i> ${labels[key] || key}</span>
         <span class="sop-slot-status"></span>
       </div>
       ${sub}
+      ${htmlSlotArchivoActions(opts.expId, key, slot, opts)}
       ${opfHint}
+      ${crcHint}
       ${allowUpload ? `<label class="sop-btn sop-btn-ghost sop-btn-sm" style="margin-top:8px;cursor:pointer">
         <i data-lucide="upload"></i> Subir<input type="file" data-upload-slot="${key}" class="sop-file-input-hidden" accept="${opts.accept || ''}"></label>` : ''}
       ${key === 'OPF' && !dis && !ok && sopPerm('soportes.armado.subir') ? '<button type="button" class="sop-btn sop-btn-primary sop-btn-sm" id="btnSopGenerarOpf" style="margin-top:8px"><i data-lucide="layers"></i> Generar OPF</button>' : ''}
       ${key === 'PDX' && !dis && !ok && sopPerm('soportes.armado.importar_pdx') ? '<button type="button" class="sop-btn sop-btn-primary sop-btn-sm" id="btnSopImportPdx"><i data-lucide="link-2"></i> Enlazar reporte</button>' : ''}
-      ${key === 'CRC' && !dis && !ok && sopPerm('soportes.armado.importar_pdx') ? '<button type="button" class="sop-btn sop-btn-primary sop-btn-sm" id="btnSopImportCrc"><i data-lucide="link-2"></i> Enlazar comprobante</button>' : ''}
+      ${key === 'CRC' && !dis && !ok && sopPerm('soportes.armado.importar_pdx') ? '<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="btnSopImportCrc" style="margin-top:8px"><i data-lucide="link-2"></i> Enlazar</button>' : ''}
+      ${key === 'CRC' && !dis && !ok && sopPerm('soportes.armado.subir') ? '<button type="button" class="sop-btn sop-btn-primary sop-btn-sm" id="btnSopUnirCrc" style="margin-top:8px"><i data-lucide="layers"></i> Unir PDFs</button>' : ''}
     </div>`;
   }
 
@@ -2387,6 +2411,119 @@
       return name.endsWith('.json') || name.endsWith('.xml') || mime.includes('json') || mime.includes('xml');
     }
     return name.endsWith('.pdf') || mime === 'application/pdf';
+  }
+
+  async function confirmEliminarArchivoSlot(expId, tipo) {
+    const modal = openSopModal(`
+      <h3><i data-lucide="trash-2"></i> Eliminar ${escapeHtml(tipo)}</h3>
+      <p class="sop-dialog-lead">Se quitará el archivo <strong>${escapeHtml(tipo)}</strong> de este expediente. Podrá volver a subirlo después.</p>
+      <div class="sop-dialog-actions">
+        <button type="button" class="sop-btn sop-btn-ghost" id="sopSlotDelCancel">Cancelar</button>
+        <button type="button" class="sop-btn sop-btn-danger" id="sopSlotDelOk">Eliminar</button>
+      </div>`);
+    modal.querySelector('#sopSlotDelCancel').onclick = () => closeSopModal(modal);
+    modal.querySelector('#sopSlotDelOk').onclick = async () => {
+      const btn = modal.querySelector('#sopSlotDelOk');
+      btn.disabled = true;
+      const res = await apiFetch(`/api/soportes/armado/expedientes/${expId}/archivos/${tipo}`, { method: 'DELETE' });
+      let data = {};
+      try { data = await res.json(); } catch (_) { /* ignore */ }
+      if (!res.ok) {
+        sopToast(data.error || 'No se pudo eliminar', 'error');
+        btn.disabled = false;
+        return;
+      }
+      closeSopModal(modal);
+      sopToast(data.message || 'Archivo eliminado', 'success');
+      abrirExpedienteArmado(expId);
+    };
+    sopIcons(modal);
+  }
+
+  function bindSlotArchivoActions(panel, expId, ctx = {}) {
+    panel.querySelectorAll('.sop-slot-del').forEach((btn) => {
+      btn.addEventListener('click', () => confirmEliminarArchivoSlot(expId, btn.dataset.slotDel));
+    });
+    panel.querySelectorAll('[data-replace-slot]').forEach((inp) => {
+      inp.addEventListener('change', async (ev) => {
+        const f = ev.target.files?.[0];
+        if (!f) return;
+        await subirArchivoFeSmart(expId, f, ev.target.dataset.replaceSlot, ctx);
+        ev.target.value = '';
+      });
+    });
+    panel.querySelectorAll('.sop-slot-unir').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const info = armState.expedienteDetalle || {};
+        modalUnirPdfSlot(expId, btn.dataset.slotUnir || 'CRC', info, { reemplazar: true });
+      });
+    });
+  }
+
+  function modalUnirPdfSlot(expId, tipo, expInfo, { reemplazar = false } = {}) {
+    const ejemplo = expInfo?.ejemplos_nombre?.[tipo] || `${tipo}_{NIT}.pdf`;
+    const titulo = reemplazar ? `Reemplazar ${tipo} (unir PDFs)` : `Unir PDFs — ${tipo}`;
+    const modal = openSopModal(`
+      <h3><i data-lucide="layers" style="vertical-align:-3px;width:22px"></i> ${escapeHtml(titulo)}</h3>
+      <p style="font-size:.85rem;color:#64748b;margin:-8px 0 12px">Seleccione <strong>2 o más</strong> PDF. Se guardarán en orden como un solo archivo <strong>${escapeHtml(tipo)}</strong>.</p>
+      <p class="sop-pdx-format-nota" style="margin-bottom:12px">Nombre: <code>${escapeHtml(ejemplo)}</code></p>
+      <div class="sop-field">
+        <label>Archivos PDF</label>
+        <input type="file" id="sopUnirPdfFiles" accept=".pdf,application/pdf" multiple class="sop-file-input-visible">
+        <div id="sopUnirPdfList" class="sop-search-results-meta" style="margin-top:8px"></div>
+      </div>
+      <div class="sop-dialog-actions">
+        <button type="button" class="sop-btn sop-btn-ghost" id="sopUnirPdfCancel">Cancelar</button>
+        <button type="button" class="sop-btn sop-btn-primary" id="sopUnirPdfOk" disabled>Guardar ${escapeHtml(tipo)}</button>
+      </div>`);
+    const listEl = modal.querySelector('#sopUnirPdfList');
+    const input = modal.querySelector('#sopUnirPdfFiles');
+    const btnOk = modal.querySelector('#sopUnirPdfOk');
+    let files = [];
+
+    function refreshList() {
+      if (!files.length) {
+        listEl.textContent = '';
+        btnOk.disabled = true;
+        return;
+      }
+      listEl.innerHTML = `<ol style="margin:0;padding-left:1.2rem;font-size:.85rem">${files.map((f, i) =>
+        `<li>${i + 1}. ${escapeHtml(f.name)}</li>`).join('')}</ol>`;
+      btnOk.disabled = files.length < 2;
+    }
+
+    input?.addEventListener('change', () => {
+      files = Array.from(input.files || []);
+      refreshList();
+    });
+
+    modal.querySelector('#sopUnirPdfCancel').onclick = () => closeSopModal(modal);
+    btnOk.onclick = async () => {
+      if (files.length < 2) return;
+      btnOk.disabled = true;
+      btnOk.textContent = 'Uniendo…';
+      const fd = new FormData();
+      files.forEach((f) => fd.append('partes', f));
+      if (reemplazar) fd.append('reemplazar', '1');
+      try {
+        const res = await apiFetch(`/api/soportes/armado/expedientes/${expId}/unir-pdf/${tipo}`, { method: 'POST', body: fd });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          sopToast(data.error || `Error al unir ${tipo}`, 'error');
+          btnOk.disabled = false;
+          btnOk.textContent = `Guardar ${tipo}`;
+          return;
+        }
+        closeSopModal(modal);
+        sopToast(data.message || `${tipo} guardado`, 'success');
+        abrirExpedienteArmado(expId);
+      } catch (e) {
+        sopToast(e.message || 'Error de conexión', 'error');
+        btnOk.disabled = false;
+        btnOk.textContent = `Guardar ${tipo}`;
+      }
+    };
+    sopIcons(modal);
   }
 
   async function subirArchivoFeSmart(expId, file, tipoManual, opts = {}) {
@@ -2450,10 +2587,12 @@
   async function abrirExpedienteArmado(id) {
     armState.expedienteId = id;
     armState.vista = 'expediente';
+    armState.expedienteDetalle = null;
     const res = await apiFetch(`/api/soportes/armado/expedientes/${id}`);
     const data = await res.json();
     if (!res.ok) { sopToast(data.error, 'error'); return; }
     const e = data.expediente;
+    armState.expedienteDetalle = e;
     armState.expedienteCodigo = e.codigo || `FE${id}`;
     const panel = $('sopArmExpedientePanel');
     const tipoLabel = labelContenedorArmado(armState.contenedorTipo);
@@ -2465,17 +2604,17 @@
     const acceptRips = '.json,.xml,application/json,text/xml,application/xml';
     const acceptPdf = '.pdf,application/pdf';
     if (esRips) {
-      slotsHtml = htmlFeSlotCard('RIPS_JSON_1', slots.RIPS_JSON_1 || {}, { upload: true, accept: acceptRips })
-        + htmlFeSlotCard('RIPS_JSON_2', slots.RIPS_JSON_2 || {}, { upload: true, accept: acceptRips })
-        + htmlFeSlotCard('RIPS_XML', slots.RIPS_XML || {}, { upload: true, accept: acceptRips });
+      slotsHtml = htmlFeSlotCard('RIPS_JSON_1', slots.RIPS_JSON_1 || {}, { upload: true, accept: acceptRips, expId: id })
+        + htmlFeSlotCard('RIPS_JSON_2', slots.RIPS_JSON_2 || {}, { upload: true, accept: acceptRips, expId: id })
+        + htmlFeSlotCard('RIPS_XML', slots.RIPS_XML || {}, { upload: true, accept: acceptRips, expId: id });
     } else {
       const showPdx = slots.PDX?.habilitado !== false;
       const showHev = slots.HEV?.habilitado !== false;
-      slotsHtml = htmlFeSlotCard('OPF', slots.OPF || {}, { upload: true, accept: acceptPdf })
-        + htmlFeSlotCard('CRC', slots.CRC || {}, { upload: true, accept: acceptPdf })
-        + htmlFeSlotCard('FEV', slots.FEV || {}, { upload: true, accept: acceptPdf })
-        + (showPdx ? htmlFeSlotCard('PDX', slots.PDX || {}, { upload: true, accept: acceptPdf }) : '')
-        + (showHev ? htmlFeSlotCard('HEV', slots.HEV || {}, { upload: true, accept: acceptPdf }) : '');
+      slotsHtml = htmlFeSlotCard('OPF', slots.OPF || {}, { upload: true, accept: acceptPdf, expId: id })
+        + htmlFeSlotCard('CRC', slots.CRC || {}, { upload: true, accept: acceptPdf, expId: id })
+        + htmlFeSlotCard('FEV', slots.FEV || {}, { upload: true, accept: acceptPdf, expId: id })
+        + (showPdx ? htmlFeSlotCard('PDX', slots.PDX || {}, { upload: true, accept: acceptPdf, expId: id }) : '')
+        + (showHev ? htmlFeSlotCard('HEV', slots.HEV || {}, { upload: true, accept: acceptPdf, expId: id }) : '');
     }
     const vinculos = e.vinculos || [];
     const vinculosHtml = vinculos.length ? `<div class="sop-vinculos-block" style="margin-top:18px">
@@ -2553,7 +2692,9 @@
     const openImportDep = (filtro) => modalImportDepositoEnExpediente(id, filtro);
     panel.querySelector('#btnSopImportPdx')?.addEventListener('click', () => openImportDep('PDX'));
     panel.querySelector('#btnSopImportCrc')?.addEventListener('click', () => openImportDep('CRC'));
+    panel.querySelector('#btnSopUnirCrc')?.addEventListener('click', () => modalUnirPdfSlot(id, 'CRC', e, { reemplazar: false }));
     panel.querySelector('#btnSopGenerarOpf')?.addEventListener('click', () => modalGenerarOpf(id, e));
+    bindSlotArchivoActions(panel, id, { esRips, tipoServicio: e.tipo_servicio });
     sopIcons(panel);
     renderArmadoContextBar();
   }

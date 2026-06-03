@@ -90,53 +90,60 @@ function resolveUploadedFilePath(file) {
     : null);
 }
 
-function validateMagicBytes(req, res, next) {
-  if (!req.file) return next();
-  const filePath = resolveUploadedFilePath(req.file);
-  const ext = path.extname(req.file.originalname).toLowerCase();
-  if (EXT_CSV.includes(ext)) return next();
-
-  if (!filePath) {
-    return res.status(500).json({
-      error: 'El archivo subido no está en disco. Revise permisos de UPLOADS_DIR.'
-    });
+function validateOneUploadedFile(file, res) {
+  const filePath = resolveUploadedFilePath(file);
+  const ext = path.extname(file.originalname).toLowerCase();
+  if (EXT_CSV.includes(ext)) {
+    file.path = filePath;
+    return null;
   }
-  req.file.path = filePath;
-
+  if (!filePath) {
+    return 'El archivo subido no está en disco. Revise permisos de UPLOADS_DIR.';
+  }
+  file.path = filePath;
   try {
     const fd = fs.openSync(filePath, 'r');
     const scanLen = EXT_PDF.includes(ext) ? 1024 : 12;
     const buf = Buffer.alloc(scanLen);
     const bytesRead = fs.readSync(fd, buf, 0, scanLen, 0);
     fs.closeSync(fd);
-
     const matches = detectByMagic(buf.subarray(0, bytesRead), ext);
     if (!matches) {
-      try {
-        fs.unlinkSync(filePath);
-      } catch (_) {}
-      req.file = null;
-      return res.status(400).json({
-        error: 'El contenido del archivo no coincide con su extensión'
-      });
+      try { fs.unlinkSync(filePath); } catch (_) { /* ignore */ }
+      return 'El contenido del archivo no coincide con su extensión';
     }
-    return next();
+    return null;
   } catch (e) {
     if (EXT_PDF.includes(ext) && filePath && fs.existsSync(filePath) && fileLooksLikePdf(filePath)) {
-      req.file.path = filePath;
-      if (!req.file.destination) req.file.destination = path.dirname(filePath);
-      if (!req.file.filename) req.file.filename = path.basename(filePath);
-      return next();
+      file.path = filePath;
+      if (!file.destination) file.destination = path.dirname(filePath);
+      if (!file.filename) file.filename = path.basename(filePath);
+      return null;
     }
-    try {
-      if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
-    } catch (_) {}
-    req.file = null;
-    return res.status(500).json({
-      error: 'No se pudo validar el archivo subido',
-      detail: String(e?.message || e).slice(0, 200)
-    });
+    try { if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch (_) { /* ignore */ }
+    return 'No se pudo validar el archivo subido';
   }
+}
+
+function validateMagicBytes(req, res, next) {
+  const batch = Array.isArray(req.files)
+    ? req.files
+    : (req.files && typeof req.files === 'object' ? Object.values(req.files).flat() : []);
+  if (batch.length) {
+    for (const f of batch) {
+      const errMsg = validateOneUploadedFile(f, res);
+      if (errMsg) return res.status(400).json({ error: errMsg });
+    }
+    return next();
+  }
+  if (!req.file) return next();
+  const errMsg = validateOneUploadedFile(req.file, res);
+  if (errMsg) {
+    req.file = null;
+    const status = errMsg.includes('disco') ? 500 : 400;
+    return res.status(status).json({ error: errMsg });
+  }
+  return next();
 }
 
 function detectByMagic(buf, ext) {

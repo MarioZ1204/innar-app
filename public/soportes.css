@@ -1409,6 +1409,18 @@
   flex: 1;
 }
 
+.sop-slot-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.sop-slot-actions .sop-btn-sm {
+  padding: 4px 8px;
+  min-height: 28px;
+}
+
 .sop-flags {
   display: flex;
   flex-wrap: wrap;

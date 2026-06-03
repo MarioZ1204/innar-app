@@ -3,6 +3,12 @@
 Todos los cambios importantes a la aplicación se documentan aquí. El formato
 sigue (informalmente) [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
+## [1.5.71] — 2026-05-27
+
+### Añadido / mejorado
+
+- **Soportes — CRC**: unir 2 o más PDF en un solo CRC (`POST …/unir-pdf/CRC`). En cada slot con archivo: **Ver**, **Eliminar** y **Reemplazar** (OPF, CRC, FEV, PDX, HEV y RIPS).
+
 ## [1.5.70] — 2026-05-27
 
 ### Corregido

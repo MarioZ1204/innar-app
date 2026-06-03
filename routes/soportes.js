@@ -1261,7 +1261,9 @@ async function buildExpedienteDetail(expId) {
   const slotState = {
     OPF: slots.OPF || { completo: false },
     CRC: slots.CRC || { completo: false },
-    FEV: { completo: !!(e.fev_externa_verificada || slots.FEV), externa: true, archivo: slots.FEV },
+    FEV: slots.FEV
+      ? { ...slots.FEV, completo: true }
+      : { completo: !!e.fev_externa_verificada, externa: !slots.FEV, habilitado: true },
     PDX: tipoPendiente
       ? { completo: false, habilitado: true }
       : hasHev
@@ -1586,12 +1588,16 @@ function multerFieldFile(req, field) {
 }
 
 function cleanupMulterTempFiles(req) {
-  const names = ['autorizacion', 'orden_manual', 'opf_unido'];
-  for (const n of names) {
-    const items = req.files?.[n] || [];
-    for (const f of items) {
-      try { if (f.path && fs.existsSync(f.path)) fs.unlinkSync(f.path); } catch (_) { /* ignore */ }
+  const fileList = [];
+  if (Array.isArray(req.files)) {
+    fileList.push(...req.files);
+  } else if (req.files && typeof req.files === 'object') {
+    for (const items of Object.values(req.files)) {
+      if (Array.isArray(items)) fileList.push(...items);
     }
+  }
+  for (const f of fileList) {
+    try { if (f?.path && fs.existsSync(f.path)) fs.unlinkSync(f.path); } catch (_) { /* ignore */ }
   }
   if (req.file?.path) {
     try { if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path); } catch (_) { /* ignore */ }
@@ -1692,6 +1698,110 @@ router.post(
       logger.error('[SOPORTES] generar-opf:', e);
       const msg = e.message || safeError(e);
       const status = /ya existe|no es un ORDEN|debe ser un PDF|no está en disco|Falta el PDF|Indique ORDEN/i.test(msg) ? 400 : 500;
+      res.status(status).json({ error: msg });
+    }
+  }
+);
+
+router.get(
+  '/soportes/armado/expedientes/:id/archivos/:tipo/descargar',
+  requireAuth,
+  requireRoleOrPerm(ROLES_SOPORTES, 'modulo.armado_soportes'),
+  async (req, res) => {
+    try {
+      const { loadArchivoExpedienteSlot, resolveArchivoAbsoluto } = require('../utils/soportes-exp-archivo');
+      const loaded = await loadArchivoExpedienteSlot(req.params.id, req.params.tipo);
+      if (!loaded.ok) return res.status(loaded.status || 404).json({ error: loaded.error });
+      const fp = resolveArchivoAbsoluto(loaded.row);
+      if (!fp || !fs.existsSync(fp)) {
+        return res.status(404).json({ error: 'El archivo no está en disco' });
+      }
+      const inline = req.query.inline === '1' || req.query.inline === 'true';
+      const name = loaded.row.nombre_archivo || 'archivo';
+      const ext = path.extname(name).toLowerCase();
+      const mime = ext === '.pdf' ? 'application/pdf'
+        : ext === '.json' ? 'application/json'
+          : ext === '.xml' ? 'application/xml'
+            : 'application/octet-stream';
+      res.setHeader('Content-Type', mime);
+      res.setHeader(
+        'Content-Disposition',
+        `${inline ? 'inline' : 'attachment'}; filename="${String(name).replace(/"/g, '')}"; filename*=UTF-8''${encodeURIComponent(name)}`
+      );
+      fs.createReadStream(fp).pipe(res);
+    } catch (e) {
+      logger.error('[SOPORTES] descargar archivo armado:', e);
+      if (!res.headersSent) res.status(500).json({ error: safeError(e) });
+    }
+  }
+);
+
+router.delete(
+  '/soportes/armado/expedientes/:id/archivos/:tipo',
+  requireAuth,
+  requireRoleOrPerm(ROLES_SOPORTES, 'soportes.armado.subir'),
+  async (req, res) => {
+    try {
+      const { eliminarArchivoExpedienteSlot } = require('../utils/soportes-exp-archivo');
+      const result = await eliminarArchivoExpedienteSlot(req.params.id, req.params.tipo);
+      if (!result.ok) return res.status(result.status || 400).json({ error: result.error });
+      const detail = await buildExpedienteDetail(req.params.id);
+      res.json({
+        ok: true,
+        message: `Archivo ${result.tipo} eliminado`,
+        expediente: detail
+      });
+    } catch (e) {
+      logger.error('[SOPORTES] eliminar archivo armado:', e);
+      res.status(500).json({ error: safeError(e) });
+    }
+  }
+);
+
+router.post(
+  '/soportes/armado/expedientes/:id/unir-pdf/:tipo',
+  requireAuth,
+  requireRoleOrPerm(ROLES_SOPORTES, 'soportes.armado.subir'),
+  (req, res, next) => {
+    uploadArmadoSoportes.array('partes', 24)(req, res, (err) => {
+      if (err) return armadoUploadError(err, req, res, next);
+      next();
+    });
+  },
+  validateMagicBytes,
+  async (req, res) => {
+    try {
+      const exp = await resolveExpedienteContext(req.params.id);
+      if (!exp) return res.status(404).json({ error: 'Expediente no encontrado' });
+      if (exp.contenedor_tipo === 'rips') {
+        return res.status(400).json({ error: 'Una los PDF en la carpeta SOPORTES del expediente' });
+      }
+      const partes = (req.files || []).map((f) => f.path).filter(Boolean);
+      if (partes.length < 2) {
+        cleanupMulterTempFiles(req);
+        return res.status(400).json({ error: 'Seleccione al menos 2 archivos PDF para unir' });
+      }
+      const { unirPdfsEnSlot } = require('../utils/soportes-slot-merge');
+      const reemplazar = req.body?.reemplazar === '1' || req.body?.reemplazar === 'true';
+      const result = await unirPdfsEnSlot(exp, exp, req.params.tipo, partes, {
+        usuarioId: req.session.usuarioId,
+        reemplazar,
+        minArchivos: 2
+      });
+      cleanupMulterTempFiles(req);
+      const detail = await buildExpedienteDetail(req.params.id);
+      const aviso = result.pendiente_factura ? ' (se renombrará al subir la FEV)' : '';
+      res.json({
+        ok: true,
+        message: `${result.tipo} guardado: ${result.nombre_archivo}${aviso}`,
+        ...result,
+        expediente: detail
+      });
+    } catch (e) {
+      cleanupMulterTempFiles(req);
+      logger.error('[SOPORTES] unir-pdf:', e);
+      const msg = e.message || safeError(e);
+      const status = /al menos|Ya existe|PDF|válido|no válido|RIPS/i.test(msg) ? 400 : 500;
       res.status(status).json({ error: msg });
     }
   }
