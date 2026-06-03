@@ -34,20 +34,7 @@ const { aplicarRenombradoPorFev } = require('./soportes-fe-rename');
 
 const { esExpedientePendienteFactura } = require('./soportes-pacientes-parse');
 
-function moveFileToDest(tempPath, destPath) {
-  if (path.resolve(tempPath) === path.resolve(destPath)) return;
-  if (fs.existsSync(destPath)) fs.unlinkSync(destPath);
-  try {
-    fs.renameSync(tempPath, destPath);
-  } catch (e) {
-    if (e.code === 'EXDEV') {
-      fs.copyFileSync(tempPath, destPath);
-      fs.unlinkSync(tempPath);
-    } else {
-      throw e;
-    }
-  }
-}
+const { moveFileSafe: moveFileToDest } = require('./fs-move-safe');
 
 async function loadRipsSlotsOcupados(expedienteId) {
 

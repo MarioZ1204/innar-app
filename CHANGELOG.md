@@ -3,6 +3,12 @@
 Todos los cambios importantes a la aplicación se documentan aquí. El formato
 sigue (informalmente) [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
+## [1.5.70] — 2026-05-27
+
+### Corregido
+
+- **Soportes — OPF**: error `EXDEV` al guardar OPF unido en Hostinger (`/tmp` → `private_uploads`). El movimiento del PDF temporal usa copia+borrado cuando `rename` cruza discos.
+
 ## [1.5.69] — 2026-05-27
 
 ### Corregido / mejorado

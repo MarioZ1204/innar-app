@@ -7,6 +7,7 @@ const db = require('./db-mysql');
 const { fileLooksLikePdf } = require('../middleware/upload');
 const { getArmadoFeDirFromContext } = require('./soportes-storage');
 const { buildSoportesDiskName } = require('./soportes-archivo-detect');
+const { moveFileSafe } = require('./fs-move-safe');
 const { mergePdfFilesToTemp, esArchivoOrdenHcPdx } = require('./soportes-opf-merge');
 
 async function assertOpfNoExiste(expedienteId) {
@@ -32,8 +33,7 @@ async function persistirOpfEnExpediente(exp, ctx, mergedTmp, meta, usuarioId) {
   const diskName = buildSoportesDiskName('OPF', exp, '.pdf');
   const { abs: feDir, rel: feRel } = getArmadoFeDirFromContext(ctx, exp.codigo);
   const destPath = path.join(feDir, diskName);
-  if (fs.existsSync(destPath)) fs.unlinkSync(destPath);
-  fs.renameSync(mergedTmp, destPath);
+  moveFileSafe(mergedTmp, destPath);
   const rutaRelativa = path.join(feRel, diskName).replace(/\\/g, '/');
   const tamano = fs.statSync(destPath).size;
   const nombreOriginal = String(meta?.nombre_original || 'OPF').slice(0, 500);
