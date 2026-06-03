@@ -3,6 +3,12 @@
 Todos los cambios importantes a la aplicación se documentan aquí. El formato
 sigue (informalmente) [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
+## [1.5.86] — 2026-06-03
+
+### Corregido
+
+- **Soportes — PDF en pestaña**: favicon Innar (`/images/icon.png`) en visor de edición, vista «ojo» (`/soportes/pdf-vista`) y reportes diario/mensual; `/favicon.ico` redirige al icono correcto.
+
 ## [1.5.85] — 2026-06-03
 
 ### Añadido

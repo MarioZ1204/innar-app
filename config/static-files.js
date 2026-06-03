@@ -57,7 +57,7 @@ function buildIndexHandler(publicDir, appVersion) {
  * `routes/uploads.js` (privacidad clínica).
  */
 function applyStaticFiles(app, { publicDir, appVersion }) {
-  app.get('/favicon.ico', (req, res) => res.status(204).end());
+  app.get('/favicon.ico', (req, res) => res.redirect(302, '/images/icon.png'));
   app.get('/', buildIndexHandler(publicDir, appVersion));
 
   const staticMw = express.static(publicDir, {

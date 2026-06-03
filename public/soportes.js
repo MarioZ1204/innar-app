@@ -910,9 +910,17 @@
     return sopPerm('modulo.armado_soportes') && sopPerm('soportes.armado.subir');
   }
 
-  function abrirPdfEnNavegador(url) {
+  function abrirPdfEnNavegador(url, titulo) {
     if (!url) return;
-    window.open(url, '_blank', 'noopener');
+    const src = String(url).trim();
+    if (!src.startsWith('/api/soportes/')) {
+      window.open(src, '_blank', 'noopener');
+      return;
+    }
+    const q = new URLSearchParams();
+    q.set('src', src);
+    if (titulo) q.set('titulo', String(titulo).slice(0, 200));
+    window.open(`/soportes/pdf-vista?${q.toString()}`, '_blank', 'noopener');
   }
 
   function abrirVisorPdfEnPagina(cfg) {

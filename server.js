@@ -237,6 +237,43 @@ app.get('/soportes/visor-pdf', requireAuth, (req, res) => {
   res.sendFile(path.join(__dirname, 'views', 'visor-pdf.html'));
 });
 
+const INNAR_FAVICON = '/images/icon.png';
+
+function escapeHtmlLite(s) {
+  return String(s || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function isAllowedSoportesPdfVistaSrc(src) {
+  const s = String(src || '').trim();
+  if (!s.startsWith('/api/soportes/')) return false;
+  if (s.includes('://') || s.startsWith('//')) return false;
+  return true;
+}
+
+/** Vista PDF en pestaña con favicon Innar (ojo / ver en navegador). */
+app.get('/soportes/pdf-vista', requireAuth, (req, res) => {
+  const src = String(req.query.src || '').trim();
+  if (!isAllowedSoportesPdfVistaSrc(src)) {
+    return res.status(400).type('html').send('<!DOCTYPE html><html lang="es"><body><p>URL de PDF no válida.</p></body></html>');
+  }
+  const titulo = escapeHtmlLite(req.query.titulo || 'Documento PDF');
+  const pdfUrl = escapeHtmlLite(src);
+  res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+  res.type('html').send(`<!DOCTYPE html>
+<html lang="es"><head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>${titulo}</title>
+  <link rel="icon" type="image/png" href="${INNAR_FAVICON}"/>
+</head><body style="margin:0;padding:0;">
+  <iframe src="${pdfUrl}" style="width:100%;height:100vh;border:none;" title="${titulo}"></iframe>
+</body></html>`);
+});
+
 // Páginas wrapper para reportes (muestran favicon en la pestaña y el PDF en iframe)
 app.get('/reportes/diario/vista', requireAuth, (req, res) => {
   const fecha = req.query.fecha || '';
@@ -244,7 +281,7 @@ app.get('/reportes/diario/vista', requireAuth, (req, res) => {
   res.type('html').send(`<!DOCTYPE html>
 <html lang="es"><head>
   <meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>Reporte Diario</title><link rel="icon" type="image/png" href="/icon.png"/>
+  <title>Reporte Diario</title><link rel="icon" type="image/png" href="${INNAR_FAVICON}"/>
 </head><body style="margin:0;padding:0;">
   <iframe src="${pdfUrl}" style="width:100%;height:100vh;border:none;" title="Reporte Diario"></iframe>
 </body></html>`);
@@ -256,7 +293,7 @@ app.get('/reportes/mensual/vista', requireAuth, (req, res) => {
   res.type('html').send(`<!DOCTYPE html>
 <html lang="es"><head>
   <meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>Reporte Mensual</title><link rel="icon" type="image/png" href="/icon.png"/>
+  <title>Reporte Mensual</title><link rel="icon" type="image/png" href="${INNAR_FAVICON}"/>
 </head><body style="margin:0;padding:0;">
   <iframe src="${pdfUrl}" style="width:100%;height:100vh;border:none;" title="Reporte Mensual"></iframe>
 </body></html>`);
