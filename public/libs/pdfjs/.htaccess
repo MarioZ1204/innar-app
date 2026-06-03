@@ -1,0 +1,5 @@
+# Hostinger / Apache: MIME correcto si quedan .mjs u otros assets
+<IfModule mod_mime.c>
+  AddType application/javascript .mjs
+  AddType application/javascript .js
+</IfModule>

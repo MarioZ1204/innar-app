@@ -8,6 +8,9 @@ const express = require('express');
 function staticCacheHeaders(res, filePath) {
   if (filePath.endsWith('.html')) {
     res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+  } else if (filePath.endsWith('.mjs')) {
+    res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+    res.setHeader('Cache-Control', 'public, max-age=86400, must-revalidate');
   } else if (filePath.endsWith('.js') || filePath.endsWith('.css')) {
     // Evita que clientes/proxies se queden con bundles viejos ante hotfixes urgentes.
     // Con revalidación en cada request reducimos riesgo de servir JS/CSS obsoletos.

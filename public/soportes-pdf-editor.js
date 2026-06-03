@@ -9,12 +9,45 @@
 
   const MARK_COLORS = ['yellow', 'green', 'pink', 'blue'];
 
+  function loadPdfJsScript() {
+    return new Promise((resolve, reject) => {
+      const lib = global.pdfjsLib || global['pdfjs-dist/build/pdf'];
+      if (lib?.getDocument) {
+        resolve(lib);
+        return;
+      }
+      const existing = document.querySelector('script[data-innar-pdfjs]');
+      if (existing) {
+        existing.addEventListener('load', () => {
+          const l = global.pdfjsLib || global['pdfjs-dist/build/pdf'];
+          if (l?.getDocument) resolve(l);
+          else reject(new Error('PDF.js no inicializó'));
+        });
+        existing.addEventListener('error', () => reject(new Error('No se pudo cargar PDF.js')));
+        return;
+      }
+      const s = document.createElement('script');
+      s.src = '/libs/pdfjs/pdf.min.js';
+      s.dataset.innarPdfjs = '1';
+      s.onload = () => {
+        const l = global.pdfjsLib || global['pdfjs-dist/build/pdf'];
+        if (!l?.getDocument) {
+          reject(new Error('PDF.js no disponible tras cargar'));
+          return;
+        }
+        l.GlobalWorkerOptions.workerSrc = '/libs/pdfjs/pdf.worker.min.js';
+        resolve(l);
+      };
+      s.onerror = () => reject(new Error('No se pudo cargar el visor PDF (/libs/pdfjs/pdf.min.js)'));
+      document.head.appendChild(s);
+    });
+  }
+
   async function ensurePdfJs() {
     if (pdfjsLib) return pdfjsLib;
     if (!pdfjsLoading) {
-      pdfjsLoading = import('/libs/pdfjs/pdf.min.mjs').then((mod) => {
-        pdfjsLib = mod;
-        pdfjsLib.GlobalWorkerOptions.workerSrc = '/libs/pdfjs/pdf.worker.min.mjs';
+      pdfjsLoading = loadPdfJsScript().then((lib) => {
+        pdfjsLib = lib;
         return pdfjsLib;
       });
     }

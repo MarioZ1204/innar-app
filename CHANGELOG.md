@@ -3,6 +3,12 @@
 Todos los cambios importantes a la aplicación se documentan aquí. El formato
 sigue (informalmente) [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
+## [1.5.78] — 2026-06-03
+
+### Corregido
+
+- **Soportes — visor PDF**: en Hostinger fallaba la carga de `pdf.min.mjs`; se usa PDF.js 3.x en `.js` (script clásico) y MIME `.mjs` en estáticos por si aplica.
+
 ## [1.5.77] — 2026-05-27
 
 ### Añadido / mejorado
