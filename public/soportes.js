@@ -19,6 +19,7 @@
     subida: 'Subida',
     edicion: 'Edición de metadatos',
     reemplazo: 'Reemplazo de PDF',
+    resaltado: 'Resaltado en PDF',
     movimiento: 'Movido de carpeta'
   };
 
@@ -899,6 +900,28 @@
     return false;
   }
 
+  function puedeResaltarPdx() {
+    const c = pdxState.carpetaActual;
+    if (!c || c.estado_visibilidad === 'archivo') return false;
+    return sopPerm('soportes.pdx.ver') && sopPerm('soportes.pdx.subir');
+  }
+
+  function puedeResaltarArmado() {
+    return sopPerm('modulo.armado_soportes') && sopPerm('soportes.armado.subir');
+  }
+
+  function abrirEditorPdfSoportes(cfg) {
+    if (!window.SopPdfEditor || typeof window.SopPdfEditor.open !== 'function') {
+      sopToast('Visor PDF no disponible. Recargue la página (Ctrl+F5).', 'error');
+      return;
+    }
+    window.SopPdfEditor.open({
+      apiFetch,
+      toast: sopToast,
+      ...cfg
+    });
+  }
+
   function periodoActual() {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
@@ -1354,17 +1377,19 @@
   }
 
   function modalVerPdfPdx(archivoId) {
-    const url = `/api/soportes/pdx/archivos/${archivoId}/ver`;
-    const modal = openSopModal(`
-      <h3><i data-lucide="eye"></i> Vista previa del PDF</h3>
-      <iframe class="sop-pdf-frame" src="${url}" title="Vista previa PDF"></iframe>
-      <div class="sop-dialog-actions" style="margin-top:12px">
-        <a href="${url}" target="_blank" rel="noopener" class="sop-btn sop-btn-ghost">Abrir en pestaña</a>
-        <button type="button" class="sop-btn sop-btn-primary" id="sopPdxPdfClose">Cerrar</button>
-      </div>`);
-    modal.querySelector('#sopPdxPdfClose').onclick = () => closeSopModal(modal);
-    const dlg = modal.querySelector('.sop-dialog');
-    if (dlg) dlg.classList.add('sop-dialog-pdf');
+    const row = pdxState.archivos.find((x) => x.id === archivoId);
+    const titulo = row?.paciente_nombre || row?.nombre_archivo_display || 'Documento PDF';
+    const canEdit = puedeResaltarPdx();
+    abrirEditorPdfSoportes({
+      pdfUrl: `/api/soportes/pdx/archivos/${archivoId}/ver`,
+      saveUrl: canEdit ? `/api/soportes/pdx/archivos/${archivoId}/resaltar` : '',
+      downloadUrl: `/api/soportes/pdx/archivos/${archivoId}/descargar`,
+      title: titulo,
+      canEdit,
+      onSaved: () => {
+        if (pdxState.carpetaId) abrirCarpetaPdx(pdxState.carpetaId);
+      }
+    });
   }
 
   async function modalHistorialPdx(archivoId) {
@@ -2351,12 +2376,12 @@
     if (!sopPerm('modulo.armado_soportes')) return '';
     const canEdit = sopPerm('soportes.armado.subir');
     const accept = escapeHtml(opts.accept || '.pdf,application/pdf');
-    const verUrl = `/api/soportes/armado/expedientes/${expId}/archivos/${key}/descargar?inline=1`;
     const unirBtn = key === 'CRC' && canEdit
       ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm sop-slot-unir" data-slot-unir="CRC" title="Unir varios PDF y reemplazar"><i data-lucide="layers"></i></button>`
       : '';
+    const verTitle = puedeResaltarArmado() ? 'Ver y resaltar PDF' : 'Ver PDF';
     return `<div class="sop-slot-actions">
-      <a class="sop-btn sop-btn-ghost sop-btn-sm" href="${verUrl}" target="_blank" rel="noopener" title="Ver"><i data-lucide="eye"></i></a>
+      <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-slot-pdf="${key}" title="${verTitle}"><i data-lucide="highlighter"></i></button>
       ${canEdit ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm sop-slot-del" data-slot-del="${key}" title="Eliminar"><i data-lucide="trash-2"></i></button>
       <label class="sop-btn sop-btn-ghost sop-btn-sm" style="cursor:pointer" title="Reemplazar"><i data-lucide="refresh-cw"></i>
         <input type="file" data-replace-slot="${key}" class="sop-file-input-hidden" accept="${accept}"></label>
@@ -2379,7 +2404,7 @@
       ? `<div class="sop-slot-file" title="${escapeHtml(slot.nombre_original)}">${escapeHtml(slot.nombre_archivo || slot.nombre_original)}</div>`
       : `<div class="sop-slot-file">${ok ? escapeHtml(slot.nombre_archivo || 'Cargado') : 'Pendiente'}</div>`;
     const opfHint = key === 'OPF' && !ok && !dis
-      ? '<p class="sop-pdx-format-nota" style="margin:8px 0 0;font-size:.78rem">Unir ORDEN+HC + autorización, subir OPF listo, o PDF manual (sin factura: se renombra al subir FEV).</p>'
+      ? '<p class="sop-pdx-format-nota" style="margin:8px 0 0;font-size:.78rem">Una 2+ PDF (depósito o manual) o suba OPF listo. Sin factura: se renombra al subir FEV.</p>'
       : '';
     const crcHint = key === 'CRC' && !ok && !dis
       ? '<p class="sop-pdx-format-nota" style="margin:8px 0 0;font-size:.78rem">Unir PDF: <strong>2</strong> Comprobante→Certificado · <strong>3</strong> +Consentimiento · <strong>4</strong> +Cotización (el orden se ajusta automático).</p>'
@@ -2456,6 +2481,25 @@
       btn.addEventListener('click', () => {
         const info = armState.expedienteDetalle || {};
         modalUnirPdfSlot(expId, btn.dataset.slotUnir || 'CRC', info, { reemplazar: true });
+      });
+    });
+    panel.querySelectorAll('[data-slot-pdf]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const tipo = btn.dataset.slotPdf;
+        const det = armState.expedienteDetalle || {};
+        const slot = det.slots?.[tipo] || {};
+        const titulo = `${armState.expedienteCodigo || 'Expediente'} — ${tipo}`;
+        const sub = slot.nombre_archivo || slot.nombre_original || '';
+        abrirEditorPdfSoportes({
+          pdfUrl: `/api/soportes/armado/expedientes/${expId}/archivos/${tipo}/descargar?inline=1`,
+          saveUrl: puedeResaltarArmado()
+            ? `/api/soportes/armado/expedientes/${expId}/archivos/${tipo}/resaltar`
+            : '',
+          downloadUrl: `/api/soportes/armado/expedientes/${expId}/archivos/${tipo}/descargar`,
+          title: sub ? `${titulo}: ${sub}` : titulo,
+          canEdit: puedeResaltarArmado(),
+          onSaved: () => abrirExpedienteArmado(expId)
+        });
       });
     });
   }
@@ -2683,7 +2727,7 @@
           ${escapeHtml(v.paciente_nombre || v.nombre_archivo_original || '')}
           <span style="font-size:.78rem;color:#64748b">${escapeHtml(v.fecha_estudio || '')}</span></li>`
       ).join('')}</ul>
-      ${vinculos.some((v) => v.rol === 'orden_hc') && !slots.OPF?.completo ? '<p class="sop-pdx-format-nota">Tiene ORDEN+HC vinculado: use «Generar OPF» con la autorización.</p>' : ''}
+      ${vinculos.some((v) => v.rol === 'orden_hc') && !slots.OPF?.completo ? '<p class="sop-pdx-format-nota">Tiene ORDEN+HC vinculado: en «Generar OPF» añada la autorización (u otro PDF) hasta completar 2 archivos.</p>' : ''}
     </div>` : '';
 
     panel.innerHTML = `
@@ -2759,123 +2803,198 @@
   }
 
   function modalGenerarOpf(expId, expInfo) {
-    let selectedOrdenId = null;
-    let authFile = null;
-    let ordenManualFile = null;
+    const OPF_MIN_PARTES = 2;
+    /** @type {{ tipo: 'pdx'|'file', pdxId?: number, file?: File, titulo: string, meta?: string }[]} */
+    const partes = [];
     let opfUnidoFile = null;
     let searchTimer = null;
+    let modoUnirActivo = true;
+
     const opfEjemplo = expInfo?.ejemplos_nombre?.OPF || 'OPF_{NIT}_{código}.pdf';
     const sinFactura = expInfo?.tiene_factura === false;
+
+    (expInfo?.vinculos || []).forEach((v) => {
+      if (v.rol !== 'orden_hc' || !v.pdx_archivo_id) return;
+      if (partes.some((p) => p.tipo === 'pdx' && p.pdxId === v.pdx_archivo_id)) return;
+      partes.push({
+        tipo: 'pdx',
+        pdxId: v.pdx_archivo_id,
+        titulo: v.paciente_nombre || v.nombre_archivo_original || 'ORDEN+HC',
+        meta: `Depósito · ${v.fecha_estudio || ''} · vinculado`
+      });
+    });
+
     const modal = openSopModal(`
       <h3><i data-lucide="layers" style="vertical-align:-3px;width:22px"></i> Generar / subir OPF</h3>
-      <p style="font-size:.85rem;color:#64748b;margin:-8px 0 12px">Puede <strong>unir</strong> ORDEN+HC con autorización (depósito o PDF manual), o subir el <strong>OPF ya listo</strong>. No hace falta tener la factura antes; al subir la FEV se renombra con NIT y número FE.</p>
+      <p style="font-size:.85rem;color:#64748b;margin:-8px 0 12px">Arme el OPF uniendo <strong>2 o más PDF</strong> (depósito o manual), en el orden que aparecen. O suba el <strong>OPF ya listo</strong> en un solo archivo.</p>
       <p class="sop-pdx-format-nota" style="margin-bottom:12px">Nombre provisional: <code>${escapeHtml(opfEjemplo)}</code>${sinFactura ? ' <span style="color:#b45309">(sin factura aún)</span>' : ''}.</p>
-      <div class="sop-field">
-        <label>OPF ya unido (opcional — un solo PDF)</label>
-        <input type="file" id="sopOpfUnidoFile" accept=".pdf,application/pdf" class="sop-file-input-visible">
-        <div id="sopOpfUnidoName" class="sop-search-results-meta" style="margin-top:6px"></div>
-      </div>
-      <hr style="border:none;border-top:1px solid #e2e8f0;margin:14px 0">
-      <div class="sop-field">
-        <label>ORDEN + HC desde reportes (opcional)</label>
-        <div class="sop-search-wrap" style="max-width:none">
-          <i data-lucide="search"></i>
-          <input type="search" id="sopOpfOrdenBuscar" class="sop-search" placeholder="Paciente, documento o nombre de archivo…" autocomplete="off">
+      <details class="sop-opf-unido-details" style="margin-bottom:14px">
+        <summary style="cursor:pointer;font-weight:600;font-size:.85rem;color:#475569">OPF ya unido (un solo PDF)</summary>
+        <div class="sop-field" style="margin-top:10px">
+          <input type="file" id="sopOpfUnidoFile" accept=".pdf,application/pdf" class="sop-file-input-visible">
+          <div id="sopOpfUnidoName" class="sop-search-results-meta" style="margin-top:6px"></div>
         </div>
-      </div>
-      <div id="sopOpfOrdenResults" class="sop-import-results">
-        <div class="sop-empty" style="padding:16px;font-size:.85rem">Busque en depósito o use PDF manual abajo</div>
-      </div>
-      <div class="sop-field" style="margin-top:10px">
-        <label>ORDEN + HC manual (PDF, si no está en el sistema)</label>
-        <input type="file" id="sopOpfOrdenManual" accept=".pdf,application/pdf" class="sop-file-input-visible">
-        <div id="sopOpfOrdenManualName" class="sop-search-results-meta" style="margin-top:6px"></div>
-      </div>
-      <div class="sop-field" style="margin-top:14px">
-        <label>Autorización (PDF, opcional si ya unió todo en un archivo)</label>
-        <input type="file" id="sopOpfAuthFile" accept=".pdf,application/pdf" class="sop-file-input-visible">
-        <div id="sopOpfAuthName" class="sop-search-results-meta" style="margin-top:6px"></div>
+      </details>
+      <div id="sopOpfUnirBlock">
+        <div class="sop-opf-progress" id="sopOpfProgress">
+          <div class="sop-opf-progress-head">
+            <span class="sop-opf-progress-title">Archivos para unir</span>
+            <span class="sop-opf-progress-badge pending" id="sopOpfBadge">0 / ${OPF_MIN_PARTES}</span>
+          </div>
+          <ul class="sop-opf-partes-list" id="sopOpfPartesList"></ul>
+        </div>
+        <div class="sop-opf-add-row">
+          <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="sopOpfBtnBuscar"><i data-lucide="search"></i> Desde depósito</button>
+          <label class="sop-btn sop-btn-ghost sop-btn-sm" style="cursor:pointer">
+            <i data-lucide="upload"></i> Subir PDF
+            <input type="file" id="sopOpfManualFile" accept=".pdf,application/pdf" class="sop-file-input-hidden">
+          </label>
+        </div>
+        <div class="sop-opf-search-panel" id="sopOpfSearchPanel" style="display:none">
+          <div class="sop-field" style="margin:0">
+            <label>Buscar en reportes (PDX)</label>
+            <div class="sop-search-wrap" style="max-width:none">
+              <i data-lucide="search"></i>
+              <input type="search" id="sopOpfDepBuscar" class="sop-search" placeholder="Paciente, documento o nombre de archivo…" autocomplete="off">
+            </div>
+          </div>
+          <div id="sopOpfDepResults" class="sop-import-results" style="margin-top:8px;max-height:200px;overflow:auto">
+            <div class="sop-empty" style="padding:12px;font-size:.82rem">Escriba al menos 2 caracteres</div>
+          </div>
+          <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="sopOpfCerrarBuscar" style="margin-top:8px">Ocultar búsqueda</button>
+        </div>
       </div>
       <div class="sop-dialog-actions">
         <button type="button" class="sop-btn sop-btn-ghost" id="sopOpfCancel">Cancelar</button>
         <button type="button" class="sop-btn sop-btn-primary" id="sopOpfOk" disabled>Guardar OPF</button>
       </div>`);
-    const resultsEl = modal.querySelector('#sopOpfOrdenResults');
-    const btnOk = modal.querySelector('#sopOpfOk');
-    const inputSearch = modal.querySelector('#sopOpfOrdenBuscar');
-    const inputAuth = modal.querySelector('#sopOpfAuthName');
-    const authInput = modal.querySelector('#sopOpfAuthFile');
 
-    function refreshOk() {
-      btnOk.disabled = !(opfUnidoFile || selectedOrdenId || ordenManualFile);
+    const btnOk = modal.querySelector('#sopOpfOk');
+    const progressEl = modal.querySelector('#sopOpfProgress');
+    const badgeEl = modal.querySelector('#sopOpfBadge');
+    const listEl = modal.querySelector('#sopOpfPartesList');
+    const searchPanel = modal.querySelector('#sopOpfSearchPanel');
+    const resultsEl = modal.querySelector('#sopOpfDepResults');
+    const inputSearch = modal.querySelector('#sopOpfDepBuscar');
+    const unirBlock = modal.querySelector('#sopOpfUnirBlock');
+    const unidoDetails = modal.querySelector('.sop-opf-unido-details');
+
+    function refreshUi() {
+      const n = partes.length;
+      const listo = n >= OPF_MIN_PARTES;
+      if (progressEl) progressEl.classList.toggle('is-ready', listo && modoUnirActivo);
+      if (badgeEl) {
+        badgeEl.textContent = listo ? 'Puede generar OPF' : `${n} / ${OPF_MIN_PARTES} archivos`;
+        badgeEl.className = `sop-opf-progress-badge ${listo ? 'ready' : 'pending'}`;
+      }
+      if (listEl) {
+        if (!n) {
+          listEl.innerHTML = '<li class="sop-empty" style="padding:10px;font-size:.82rem;border:none">Añada ORDEN+HC, autorización u otros PDF en orden.</li>';
+        } else {
+          listEl.innerHTML = partes.map((p, i) => `
+            <li class="sop-opf-parte-item">
+              <span class="sop-opf-parte-num">${i + 1}</span>
+              <div class="sop-opf-parte-body">
+                <strong title="${escapeHtml(p.titulo)}">${escapeHtml(p.titulo)}</strong>
+                <span class="sop-opf-parte-meta">${escapeHtml(p.meta || (p.tipo === 'pdx' ? 'Depósito' : 'Subido manual'))}</span>
+              </div>
+              <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm sop-opf-quitar" data-idx="${i}" title="Quitar"><i data-lucide="x"></i></button>
+            </li>`).join('');
+          listEl.querySelectorAll('.sop-opf-quitar').forEach((b) => {
+            b.addEventListener('click', () => {
+              partes.splice(parseInt(b.dataset.idx, 10), 1);
+              refreshUi();
+            });
+          });
+          sopIcons(listEl);
+        }
+      }
+      if (modoUnirActivo) {
+        btnOk.disabled = !listo;
+        btnOk.textContent = listo ? 'Unir y guardar OPF' : 'Guardar OPF';
+      }
     }
 
-    function renderOrdenResults(list) {
+    function agregarPartePdx(r) {
+      const id = r.archivo_id;
+      if (partes.some((p) => p.tipo === 'pdx' && p.pdxId === id)) {
+        sopToast('Ese archivo ya está en la lista', 'warning');
+        return;
+      }
+      partes.push({
+        tipo: 'pdx',
+        pdxId: id,
+        titulo: r.paciente_nombre || r.nombre_archivo_original || 'PDF',
+        meta: `${r.carpeta_nombre || 'Depósito'} · ${r.periodo || ''}`
+      });
+      refreshUi();
+      sopToast('Añadido a la lista', 'success');
+    }
+
+    function renderDepResults(list) {
       if (!list?.length) {
-        resultsEl.innerHTML = '<div class="sop-empty" style="padding:16px;font-size:.85rem">Sin ORDEN+HC en carpetas de órdenes</div>';
-        selectedOrdenId = null;
-        refreshOk();
+        resultsEl.innerHTML = '<div class="sop-empty" style="padding:12px;font-size:.82rem">Sin resultados</div>';
         return;
       }
       resultsEl.innerHTML = list.map((r) => `
-        <div class="sop-import-item${selectedOrdenId === r.archivo_id ? ' selected' : ''}" data-orden-archivo="${r.archivo_id}">
+        <div class="sop-import-item" data-add-pdx="${r.archivo_id}">
           <div>
             <strong>${escapeHtml(r.paciente_nombre)}</strong>
             <div class="sop-import-item-meta">${escapeHtml(r.fecha_estudio || '—')} · ${escapeHtml(r.estudio_texto || '—')}</div>
-            <div class="sop-import-item-meta">${escapeHtml(r.carpeta_nombre)} (${escapeHtml(r.periodo)})</div>
+            <div class="sop-import-item-meta">${escapeHtml(r.carpeta_nombre || '')} (${escapeHtml(r.periodo || '')})</div>
             <div class="sop-import-item-meta" style="font-size:.75rem">${escapeHtml(r.nombre_archivo_original || '')}</div>
           </div>
-          <i data-lucide="clipboard-list" style="width:18px;height:18px;color:#94a3b8;flex-shrink:0"></i>
+          <i data-lucide="plus-circle" style="width:18px;height:18px;color:#0d9488;flex-shrink:0"></i>
         </div>`).join('');
-      resultsEl.querySelectorAll('.sop-import-item').forEach((row) => {
+      resultsEl.querySelectorAll('[data-add-pdx]').forEach((row) => {
         row.addEventListener('click', () => {
-          selectedOrdenId = parseInt(row.dataset.ordenArchivo, 10);
-          resultsEl.querySelectorAll('.sop-import-item').forEach((el) => {
-            el.classList.toggle('selected', parseInt(el.dataset.ordenArchivo, 10) === selectedOrdenId);
-          });
-          refreshOk();
+          const id = parseInt(row.dataset.addPdx, 10);
+          const r = list.find((x) => x.archivo_id === id);
+          if (r) agregarPartePdx(r);
         });
       });
       sopIcons(resultsEl);
     }
 
-    async function runOrdenSearch() {
+    async function runDepSearch() {
       const q = inputSearch.value.trim();
       if (q.length < 2) {
-        resultsEl.innerHTML = '<div class="sop-empty" style="padding:16px;font-size:.85rem">Escriba al menos 2 caracteres</div>';
-        selectedOrdenId = null;
-        refreshOk();
+        resultsEl.innerHTML = '<div class="sop-empty" style="padding:12px;font-size:.82rem">Escriba al menos 2 caracteres</div>';
         return;
       }
-      resultsEl.innerHTML = '<div class="sop-empty" style="padding:16px"><i data-lucide="loader" class="sop-empty-icon"></i> Buscando…</div>';
+      resultsEl.innerHTML = '<div class="sop-empty" style="padding:12px"><i data-lucide="loader"></i> Buscando…</div>';
       sopIcons(resultsEl);
       try {
-        const res = await apiFetch(`/api/soportes/pdx/buscar-ordenes?q=${encodeURIComponent(q)}`);
+        const res = await apiFetch(`/api/soportes/pdx/buscar?q=${encodeURIComponent(q)}`);
         const data = await res.json();
-        renderOrdenResults(data.resultados || []);
+        renderDepResults(data.resultados || []);
       } catch (err) {
-        resultsEl.innerHTML = `<div class="sop-empty" style="padding:16px;color:#dc2626">${escapeHtml(err.message)}</div>`;
+        resultsEl.innerHTML = `<div class="sop-empty" style="padding:12px;color:#dc2626">${escapeHtml(err.message)}</div>`;
       }
     }
 
-    inputSearch.addEventListener('input', () => {
+    modal.querySelector('#sopOpfBtnBuscar')?.addEventListener('click', () => {
+      searchPanel.style.display = 'block';
+      inputSearch?.focus();
+    });
+    modal.querySelector('#sopOpfCerrarBuscar')?.addEventListener('click', () => {
+      searchPanel.style.display = 'none';
+    });
+    inputSearch?.addEventListener('input', () => {
       clearTimeout(searchTimer);
-      searchTimer = setTimeout(runOrdenSearch, 320);
+      searchTimer = setTimeout(runDepSearch, 320);
     });
 
-    authInput?.addEventListener('change', () => {
-      authFile = authInput.files?.[0] || null;
-      if (inputAuth) inputAuth.textContent = authFile ? authFile.name : '';
-      refreshOk();
-    });
-
-    const ordenManualInput = modal.querySelector('#sopOpfOrdenManual');
-    const ordenManualNameEl = modal.querySelector('#sopOpfOrdenManualName');
-    ordenManualInput?.addEventListener('change', () => {
-      ordenManualFile = ordenManualInput.files?.[0] || null;
-      if (ordenManualNameEl) ordenManualNameEl.textContent = ordenManualFile ? ordenManualFile.name : '';
-      if (ordenManualFile) selectedOrdenId = null;
-      refreshOk();
+    modal.querySelector('#sopOpfManualFile')?.addEventListener('change', (ev) => {
+      const f = ev.target.files?.[0];
+      ev.target.value = '';
+      if (!f) return;
+      if (!/\.pdf$/i.test(f.name) && f.type !== 'application/pdf') {
+        sopToast('Seleccione un PDF', 'warning');
+        return;
+      }
+      partes.push({ tipo: 'file', file: f, titulo: f.name, meta: 'Subido manual' });
+      refreshUi();
     });
 
     const opfUnidoInput = modal.querySelector('#sopOpfUnidoFile');
@@ -2883,25 +3002,45 @@
     opfUnidoInput?.addEventListener('change', () => {
       opfUnidoFile = opfUnidoInput.files?.[0] || null;
       if (opfUnidoNameEl) opfUnidoNameEl.textContent = opfUnidoFile ? opfUnidoFile.name : '';
-      refreshOk();
+      modoUnirActivo = !opfUnidoFile;
+      if (unirBlock) unirBlock.style.opacity = opfUnidoFile ? '0.45' : '1';
+      if (unirBlock) unirBlock.style.pointerEvents = opfUnidoFile ? 'none' : '';
+      if (opfUnidoFile) {
+        btnOk.disabled = false;
+        btnOk.textContent = 'Guardar OPF unido';
+      } else {
+        refreshUi();
+      }
     });
 
     modal.querySelector('#sopOpfCancel').onclick = () => closeSopModal(modal);
     btnOk.onclick = async () => {
       btnOk.disabled = true;
+      const prevLabel = btnOk.textContent;
       btnOk.textContent = 'Guardando…';
       const fd = new FormData();
-      if (opfUnidoFile) fd.append('opf_unido', opfUnidoFile);
-      if (selectedOrdenId) fd.append('pdx_orden_archivo_id', String(selectedOrdenId));
-      if (ordenManualFile) fd.append('orden_manual', ordenManualFile);
-      if (authFile) fd.append('autorizacion', authFile);
       try {
+        if (opfUnidoFile) {
+          fd.append('opf_unido', opfUnidoFile);
+        } else {
+          const spec = [];
+          let fileIdx = 0;
+          partes.forEach((p) => {
+            if (p.tipo === 'pdx') spec.push({ t: 'pdx', id: p.pdxId });
+            else {
+              spec.push({ t: 'file', i: fileIdx });
+              fd.append('parte_archivo', p.file);
+              fileIdx += 1;
+            }
+          });
+          fd.append('partes_json', JSON.stringify(spec));
+        }
         const res = await apiFetch(`/api/soportes/armado/expedientes/${expId}/generar-opf`, { method: 'POST', body: fd });
         const data = await res.json();
         if (!res.ok) {
           sopToast(data.error || 'Error al generar OPF', 'error');
           btnOk.disabled = false;
-          btnOk.textContent = 'Guardar OPF';
+          btnOk.textContent = prevLabel;
           return;
         }
         if (data.warnings?.length) sopToast(data.warnings.join(' · '), 'warning');
@@ -2911,9 +3050,11 @@
       } catch (e) {
         sopToast(e.message || 'Error de conexión', 'error');
         btnOk.disabled = false;
-        btnOk.textContent = 'Guardar OPF';
+        btnOk.textContent = prevLabel;
       }
     };
+
+    refreshUi();
     sopIcons(modal);
   }
 

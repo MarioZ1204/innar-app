@@ -19,11 +19,13 @@
   <link rel="stylesheet" href="innar-sesiones-multi.css">
   <link rel="stylesheet" href="sede-recordatorio.css">
   <link rel="stylesheet" href="soportes.css">
+  <link rel="stylesheet" href="soportes-pdf-editor.css">
   <link rel="stylesheet" href="innar-responsive.css">
   <link rel="stylesheet" href="innar-responsive-shell.css">
   <link rel="stylesheet" href="innar-responsive-recibos.css">
   <link rel="stylesheet" href="innar-responsive-agenda-medica.css">
   <link rel="stylesheet" href="innar-responsive-electro.css">
+  <link rel="stylesheet" href="innar-electro-estudio-ui.css">
   <link rel="stylesheet" href="innar-responsive-mobile-fix.css">
   <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js" defer></script>
   <style>
@@ -2140,24 +2142,35 @@
 
       <!-- BARRA DE PROGRESO DEL ESTUDIO -->
       <div class="cita-modal-section" id="estudiosBarraWrapper">
-        <div id="estudioBarra" class="estudio-progreso-card" style="display:none">
+        <div id="estudioBarra" class="estudio-progreso-card estudio-progreso-card--v2" style="display:none" data-estado="en-estudio">
           <div class="estudio-progreso-header">
             <div class="estudio-progreso-titulo">
-              <span class="estudio-progreso-dot"></span>
-              En estudio
+              <span class="estudio-progreso-dot" aria-hidden="true"></span>
+              <span id="estudioProgresoEstadoLabel">En estudio</span>
             </div>
-            <div class="estudio-progreso-pct">
-              <span class="estudio-progreso-restante" id="estudioTiempoRestante">--</span>
-              <span><span id="estudioProgreso">0</span>%</span>
+            <div class="estudio-progreso-pct-wrap">
+              <div class="estudio-progreso-ring" id="estudioProgresoRing" style="--pct: 0%">
+                <span class="estudio-progreso-ring__inner"><span id="estudioProgreso">0</span>%</span>
+              </div>
+              <span class="estudio-progreso-chip" id="estudioTiempoRestante">--</span>
             </div>
           </div>
-          <div class="estudio-progreso-barra-wrap">
+          <div class="estudio-progreso-barra-wrap" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="estudioBarraProgress">
             <div id="estudioBarraLlena" class="estudio-progreso-barra" style="width:0%"></div>
           </div>
+          <div class="estudio-progreso-meta">
+            <span class="estudio-progreso-meta-label">Transcurrido</span>
+            <span id="estudioTiempoTranscurrido" class="estudio-progreso-timer">00:00:00</span>
+          </div>
           <div class="estudio-progreso-footer">
-            <div id="estudioHoraInicio" class="estudio-progreso-hora">-</div>
-            <div id="estudioTiempoTranscurrido" class="estudio-progreso-timer">00:00:00</div>
-            <div id="estudioHoraFin" class="estudio-progreso-hora">-</div>
+            <div class="estudio-progreso-hora-col">
+              <span class="estudio-progreso-hora-label">Inicio</span>
+              <div id="estudioHoraInicio" class="estudio-progreso-hora">-</div>
+            </div>
+            <div class="estudio-progreso-hora-col estudio-progreso-hora-col--fin">
+              <span class="estudio-progreso-hora-label">Fin previsto</span>
+              <div id="estudioHoraFin" class="estudio-progreso-hora">-</div>
+            </div>
           </div>
         </div>
       </div>
@@ -3503,6 +3516,7 @@
   <script src="dashboard-citas.js"></script>
   <script src="calendario-agenda.js"></script>
   <script src="app.js"></script>
+  <script src="soportes-pdf-editor.js"></script>
   <script src="soportes.js"></script>
   <script src="calendario-bloqueado.js"></script>
   <script src="validation-client.js"></script>

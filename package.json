@@ -1,6 +1,6 @@
 {
   "name": "innar-app",
-  "version": "1.5.74",
+  "version": "1.5.77",
   "description": "Innar - Sistema de gestión de agenda médica y recibos",
   "main": "server.js",
   "scripts": {
@@ -15,7 +15,8 @@
     "migrate": "node utils/init-db.js && node migrations/db-migrations.js",
     "build": "echo No build step required",
     "build:min": "node scripts/build-minify.js",
-    "build:bundle": "node scripts/bundle.js"
+    "build:bundle": "node scripts/bundle.js",
+    "postinstall": "node scripts/copy-pdfjs.js"
   },
   "keywords": [
     "recibos",
@@ -41,6 +42,7 @@
     "mysql2": "^3.17.3",
     "node-schedule": "^2.1.1",
     "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^4.10.38",
     "puppeteer-core": "^24.42.0"
   },
   "devDependencies": {

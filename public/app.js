@@ -11399,10 +11399,7 @@ async function confirmarDuracionEstudio() {
     const data = await res.json();
     
     if (data && data.ok) {
-      const msgPausa = data.pausados_al_iniciar > 0
-        ? ` · ${data.pausados_al_iniciar} estudio(s) anterior(es) en Pausado`
-        : '';
-      showToast(`Estudio iniciado: ${horaInicio} - ${horaFin}${msgPausa}`, 'success');
+      showToast(`Estudio iniciado: ${horaInicio} - ${horaFin}`, 'success');
       await aplicarInicioEstudioEnUI(duracionMinutos, horaInicio, horaFin, horaFinDate);
       cerrarModalDuracionEstudio();
     } else {
@@ -11475,10 +11472,7 @@ async function ejecutarInicioEstudioAgendado(duracionMinutos, horaInicioRegistro
       let textoHora = '';
       if (horas > 0) textoHora += `${horas}h`;
       if (mins > 0) textoHora += `${mins}m`;
-      const msgPausa = data.pausados_al_iniciar > 0
-        ? ` · ${data.pausados_al_iniciar} estudio(s) en Pausado`
-        : '';
-      showToast(`Estudio iniciado a las ${horaInicioRegistro} (programada)${textoHora ? ` · ${textoHora}` : ''}${msgPausa}`, 'success');
+      showToast(`Estudio iniciado a las ${horaInicioRegistro} (programada)${textoHora ? ` · ${textoHora}` : ''}`, 'success');
       await aplicarInicioEstudioEnUI(duracionMinutos, horaInicioRegistro, horaFin, horaFinDate);
     } else {
       const msg = data?.details ? `${data.error || 'Error'} (${data.details})` : (data?.error || 'Error iniciando estudio');
@@ -11531,9 +11525,27 @@ async function iniciarEstudioSinDuracion() {
   await continuar();
 }
 
+function aplicarVisualProgresoEstudio(porcentaje, opts = {}) {
+  const pct = Math.min(Math.max(Math.round(porcentaje), 0), 100);
+  const card = $('estudioBarra');
+  const barraLlena = $('estudioBarraLlena');
+  const progreso = $('estudioProgreso');
+  const ring = $('estudioProgresoRing');
+  const progressWrap = $('estudioBarraProgress');
+  if (barraLlena) barraLlena.style.width = pct + '%';
+  if (progreso) progreso.textContent = pct;
+  if (ring) ring.style.setProperty('--pct', pct + '%');
+  if (progressWrap) progressWrap.setAttribute('aria-valuenow', String(pct));
+  if (card) {
+    if (pct >= 100) card.setAttribute('data-estado', 'completo');
+    else if (opts.estadoCard) card.setAttribute('data-estado', opts.estadoCard);
+  }
+}
+
 // Función para actualizar progreso del estudio en tiempo real
 function actualizarProgresoEstudio() {
-  if (!citaElectroSeleccionada || citaElectroSeleccionada.estado !== 'En Estudio') {
+  const estadoCita = citaElectroSeleccionada?.estado;
+  if (!citaElectroSeleccionada || (estadoCita !== 'En Estudio' && estadoCita !== 'Pausado')) {
     return;
   }
   
@@ -11582,76 +11594,78 @@ function actualizarProgresoEstudio() {
   const restanteEl = $('estudioTiempoRestante');
   if (restanteEl) restanteEl.textContent = durLabel ? `Duración ${durLabel}` : '--';
   
+  const estadoCard = estadoCita === 'Pausado' ? 'pausado' : 'en-estudio';
+  const labelEl = $('estudioProgresoEstadoLabel');
+  if (labelEl) labelEl.textContent = estadoCita === 'Pausado' ? 'En pausa' : 'En estudio';
+
   let _lastSocketEmit = 0;
-  
-  // Actualizar cada segundo
-  intervaloProgreso = setInterval(async () => {
+
+  const tickProgreso = () => {
+    const enVivo = citaElectroSeleccionada?.estado === 'En Estudio';
     const ahora = new Date();
     const transcurridoMs = ahora.getTime() - dateInicio.getTime();
     const restanteMs = dateFin.getTime() - ahora.getTime();
-    
+
     let porcentaje = (transcurridoMs / duracionTotalMs) * 100;
     porcentaje = Math.min(Math.max(porcentaje, 0), 100);
-    
-    // Tiempo transcurrido
+
     const segTranscurridos = Math.max(0, Math.floor(transcurridoMs / 1000));
     const tDias = Math.floor(segTranscurridos / 86400);
     const tHoras = Math.floor((segTranscurridos % 86400) / 3600);
     const tMinutos = Math.floor((segTranscurridos % 3600) / 60);
     const tSegundos = segTranscurridos % 60;
-    
+
     let tiempoFormato;
     if (tDias > 0) {
-      tiempoFormato = `${tDias}d ${String(tHoras).padStart(2,'0')}:${String(tMinutos).padStart(2,'0')}:${String(tSegundos).padStart(2,'0')}`;
+      tiempoFormato = `${tDias}d ${String(tHoras).padStart(2, '0')}:${String(tMinutos).padStart(2, '0')}:${String(tSegundos).padStart(2, '0')}`;
     } else {
-      tiempoFormato = `${String(tHoras).padStart(2,'0')}:${String(tMinutos).padStart(2,'0')}:${String(tSegundos).padStart(2,'0')}`;
+      tiempoFormato = `${String(tHoras).padStart(2, '0')}:${String(tMinutos).padStart(2, '0')}:${String(tSegundos).padStart(2, '0')}`;
     }
-    
-    // Tiempo restante
+
     const segRestante = Math.max(0, Math.floor(restanteMs / 1000));
     const rDias = Math.floor(segRestante / 86400);
     const rHoras = Math.floor((segRestante % 86400) / 3600);
     const rMinutos = Math.floor((segRestante % 3600) / 60);
     let restoFormato;
-    if (rDias > 0) {
-      restoFormato = `${rDias}d ${rHoras}h ${rMinutos}m`;
-    } else if (rHoras > 0) {
-      restoFormato = `${rHoras}h ${rMinutos}m`;
-    } else {
-      restoFormato = `${rMinutos}m`;
-    }
-    
-    // Actualizar barra visual
-    const barraLlena = $('estudioBarraLlena');
-    const progreso = $('estudioProgreso');
+    if (rDias > 0) restoFormato = `${rDias}d ${rHoras}h ${rMinutos}m`;
+    else if (rHoras > 0) restoFormato = `${rHoras}h ${rMinutos}m`;
+    else restoFormato = `${rMinutos}m`;
+
     const tiempoTranscurrido = $('estudioTiempoTranscurrido');
     const tiempoRestante = $('estudioTiempoRestante');
-    
-    if (barraLlena) barraLlena.style.width = porcentaje + '%';
-    if (progreso) progreso.textContent = Math.round(porcentaje);
-    if (tiempoTranscurrido) tiempoTranscurrido.textContent = `${tiempoFormato} · Faltan: ${restoFormato}`;
-    if (tiempoRestante) tiempoRestante.textContent = `Faltan ${restoFormato}`;
-    
-    // Emitir socket cada 15s
-    const nowMs = Date.now();
-    if (window.socket && window.socket.connected && (nowMs - _lastSocketEmit >= 15000)) {
-      _lastSocketEmit = nowMs;
-      window.socket.emit('electro:progreso-estudio', {
-        citaId: citaElectroSeleccionada.id,
-        porcentaje: porcentaje,
-        tiempoTranscurrido: tiempoFormato
-      });
+
+    aplicarVisualProgresoEstudio(porcentaje, { estadoCard: porcentaje >= 100 ? 'completo' : estadoCard });
+    if (tiempoTranscurrido) {
+      tiempoTranscurrido.textContent = enVivo ? tiempoFormato : `${tiempoFormato} (pausado)`;
     }
-    
-    // Al 100% solo avisar: el cierre debe ser manual (botón Finalizar)
-    if (porcentaje >= 100) {
-      if (barraLlena) barraLlena.style.width = '100%';
-      if (tiempoRestante && !citaElectroSeleccionada._avisoFinDuracion) {
-        tiempoRestante.textContent = 'Duración alcanzada — pulse Finalizar';
+    if (tiempoRestante) {
+      if (porcentaje >= 100 && !citaElectroSeleccionada._avisoFinDuracion) {
+        tiempoRestante.textContent = 'Finalizar estudio';
         citaElectroSeleccionada._avisoFinDuracion = true;
+      } else if (enVivo) {
+        tiempoRestante.textContent = `Faltan ${restoFormato}`;
+      } else {
+        tiempoRestante.textContent = 'Pausado';
       }
     }
-  }, 1000);
+
+    if (enVivo) {
+      const nowMs = Date.now();
+      if (window.socket && window.socket.connected && (nowMs - _lastSocketEmit >= 15000)) {
+        _lastSocketEmit = nowMs;
+        window.socket.emit('electro:progreso-estudio', {
+          citaId: citaElectroSeleccionada.id,
+          porcentaje,
+          tiempoTranscurrido: tiempoFormato
+        });
+      }
+    }
+  };
+
+  tickProgreso();
+  if (estadoCita === 'En Estudio') {
+    intervaloProgreso = setInterval(tickProgreso, 1000);
+  }
 }
 
 // Función para guardar edición de datos del paciente desde el modal
@@ -12106,17 +12120,16 @@ async function abrirModalDetallesCita(cita) {
   
   // Mostrar/Ocultar barra de progreso
   const estudioBarra = $('estudioBarra');
-  if (cita.estado === 'En Estudio' && cita.hora_inicio && cita.hora_fin) {
+  const estudioActivoConHoras = (cita.estado === 'En Estudio' || cita.estado === 'Pausado') && cita.hora_inicio && cita.hora_fin;
+  if (estudioActivoConHoras) {
     if (estudioBarra) {
       estudioBarra.style.display = 'block';
-      $('estudioHoraInicio').textContent = cita.hora_inicio;
-      $('estudioHoraFin').textContent = cita.hora_fin;
-      $('estudioProgreso').textContent = '0';
+      estudioBarra.setAttribute('data-estado', cita.estado === 'Pausado' ? 'pausado' : 'en-estudio');
+      cita._avisoFinDuracion = false;
+      aplicarVisualProgresoEstudio(0, { estadoCard: cita.estado === 'Pausado' ? 'pausado' : 'en-estudio' });
       const restanteEl = $('estudioTiempoRestante');
       if (restanteEl) restanteEl.textContent = '--';
-      $('estudioBarraLlena').style.width = '0%';
     }
-    // Iniciar actualización de progreso
     actualizarProgresoEstudio();
   } else {
     if (estudioBarra) {
@@ -12167,7 +12180,8 @@ function renderFlujoEstado(cita) {
 
   const svgCheck = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>`;
   const svgPlay  = `<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
-  const svgStop  = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>`;
+  const svgStop  = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>`;
+  const svgPause = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>`;
 
   // Reprogramado y Adelantado se tratan como Programado (con nota informativa)
   const esReprogramadoAdelantado = estado === 'Reprogramado' || estado === 'Adelantado';
@@ -12222,13 +12236,15 @@ function renderFlujoEstado(cita) {
   } else if (estado === 'En Estudio') {
     flujoEl.innerHTML = `
       <div class="flujo-estado-panel">
-        <div class="flujo-estado-label">Acci\u00f3n</div>
-        <button class="flujo-btn-primary" id="flujo-btn-finalizar" style="background:linear-gradient(135deg,#22c55e,#16a34a);color:white;">
-          ${svgStop} Finalizar Estudio
-        </button>
-        <div class="flujo-btn-secondary-row">
-          <button class="flujo-btn-sm pausar" id="flujo-btn-pausar" style="background:#f59e0b;color:#78350f;border:none;font-weight:600;">
-            &#9646;&#9646; Pausar estudio
+        <div class="flujo-estado-label">Estudio en curso</div>
+        <div class="flujo-estudio-toolbar">
+          <button type="button" class="electro-study-btn electro-study-btn--finish" id="flujo-btn-finalizar">
+            <span class="electro-study-btn__icon">${svgStop}</span>
+            <span class="electro-study-btn__text"><strong>Finalizar</strong><small>Cerrar estudio</small></span>
+          </button>
+          <button type="button" class="electro-study-btn electro-study-btn--pause" id="flujo-btn-pausar">
+            <span class="electro-study-btn__icon">${svgPause}</span>
+            <span class="electro-study-btn__text"><strong>Pausar</strong><small>Detener temporalmente</small></span>
           </button>
         </div>
       </div>`;
@@ -12238,10 +12254,16 @@ function renderFlujoEstado(cita) {
   } else if (estado === 'Pausado') {
     flujoEl.innerHTML = `
       <div class="flujo-estado-panel">
-        <div class="flujo-estado-label">Estudio Pausado</div>
-        <div class="flujo-btn-secondary-row">
-          <button class="flujo-btn-sm iniciar" id="flujo-btn-reanudar">&#9654; Reanudar Estudio</button>
-          <button class="flujo-btn-sm cancelar" id="flujo-btn-finalizar-pausado">Finalizar estudio</button>
+        <div class="flujo-estado-label">Estudio en pausa</div>
+        <div class="flujo-estudio-toolbar flujo-estudio-toolbar--paused">
+          <button type="button" class="electro-study-btn electro-study-btn--resume" id="flujo-btn-reanudar">
+            <span class="electro-study-btn__icon">${svgPlay}</span>
+            <span class="electro-study-btn__text"><strong>Reanudar</strong><small>Continuar estudio</small></span>
+          </button>
+          <button type="button" class="electro-study-btn electro-study-btn--outline-finish" id="flujo-btn-finalizar-pausado">
+            <span class="electro-study-btn__icon">${svgStop}</span>
+            <span class="electro-study-btn__text"><strong>Finalizar</strong><small>Cerrar estudio</small></span>
+          </button>
         </div>
       </div>`;
     document.getElementById('flujo-btn-reanudar').onclick = (ev) => cambiarEstadoCita('En Estudio', ev.currentTarget);

@@ -3,6 +3,24 @@
 Todos los cambios importantes a la aplicación se documentan aquí. El formato
 sigue (informalmente) [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
+## [1.5.77] — 2026-05-27
+
+### Añadido / mejorado
+
+- **Soportes — Generar OPF**: lista de archivos a unir (mínimo 2) con mensaje «Puede generar OPF»; añadir desde **depósito** (búsqueda PDX) o **subida manual**; permite más de 2 PDF en orden. Atajo: OPF ya unido en un solo archivo.
+
+## [1.5.76] — 2026-05-27
+
+### Añadido
+
+- **Soportes (PDX y Armado)**: visor PDF con resaltado por arrastre (amarillo, verde, rosa, azul). Al guardar, las marcas quedan **incrustadas en el PDF** y se ven al descargar. Permisos: ver y subir del módulo correspondiente.
+
+## [1.5.75] — 2026-05-27
+
+### Corregido / mejorado
+
+- **Electrodiagnóstico**: varios estudios pueden permanecer en **En Estudio** a la vez (sin pausar ni completar los anteriores al iniciar otro). UI renovada: botones Finalizar/Pausar y barra de progreso con anillo, chips y estilos modernos.
+
 ## [1.5.74] — 2026-05-27
 
 ### Corregido

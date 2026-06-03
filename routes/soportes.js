@@ -320,6 +320,24 @@ async function logPdxArchivo(archivoId, tipo, usuarioId, detalle) {
   } catch (_) { /* log opcional si migración pendiente */ }
 }
 
+const PERMS_PDX_VER_SUBIR = ['modulo.reportes_pdx', 'soportes.pdx.ver', 'soportes.pdx.subir'];
+const PERMS_ARMADO_VER_SUBIR = ['modulo.armado_soportes', 'soportes.armado.subir'];
+
+const { applyHighlightsToPdfBytes, sanitizeHighlightsList } = require('../utils/soportes-pdf-highlights');
+
+function writePdfBytesAtomic(filePath, buffer) {
+  const tmp = `${filePath}.hl-${process.pid}-${Date.now()}.tmp`;
+  fs.writeFileSync(tmp, buffer);
+  fs.renameSync(tmp, filePath);
+}
+
+async function persistHighlightsOnPdfFile(filePath, highlights) {
+  const bytes = fs.readFileSync(filePath);
+  const next = await applyHighlightsToPdfBytes(bytes, highlights);
+  writePdfBytesAtomic(filePath, next);
+  return next.length;
+}
+
 const uploadPdxReemplazar = multer({
   storage: multer.diskStorage({
     destination: (req, file, cb) => {
@@ -889,6 +907,52 @@ router.get('/soportes/pdx/archivos/:id/ver', requireAuth, requireRoleOrPerm(ROLE
     res.status(500).json({ error: safeError(e) });
   }
 });
+
+router.post(
+  '/soportes/pdx/archivos/:id/resaltar',
+  requireAuth,
+  requireRoleOrPerm(ROLES_SOPORTES, PERMS_PDX_VER_SUBIR),
+  async (req, res) => {
+    try {
+      const highlights = req.body?.highlights;
+      if (!Array.isArray(highlights) || highlights.length === 0) {
+        return res.status(400).json({ error: 'Indique al menos un resaltado' });
+      }
+      const rows = await db.query(
+        `SELECT a.*, c.periodo FROM sop_pdx_archivos a JOIN sop_pdx_carpetas c ON c.id = a.carpeta_id WHERE a.id = ?`,
+        [req.params.id]
+      );
+      if (!rows.length) return res.status(404).json({ error: 'No encontrado' });
+      const row = rows[0];
+      const vis = calcularVisibilidadPeriodo(row.periodo);
+      if (vis === 'archivo') return res.status(403).json({ error: 'Carpeta cerrada' });
+      const fp = await resolvePdxArchivoPathForApi(row, true);
+      if (!fp || !fs.existsSync(fp)) return res.status(404).json({ error: 'Archivo no en disco' });
+
+      const bytes = fs.readFileSync(fp);
+      const { PDFDocument } = require('pdf-lib');
+      const probe = await PDFDocument.load(bytes, { ignoreEncryption: true });
+      const sanitized = sanitizeHighlightsList(highlights, probe.getPageCount());
+      if (!sanitized.length) return res.status(400).json({ error: 'Resaltados no válidos' });
+
+      const tamano = await persistHighlightsOnPdfFile(fp, sanitized);
+      await db.execute(
+        'UPDATE sop_pdx_archivos SET tamano_bytes = ?, editado_por = ?, editado_en = NOW() WHERE id = ?',
+        [tamano, req.session.usuarioId, req.params.id]
+      );
+      await logPdxArchivo(
+        req.params.id,
+        'resaltado',
+        req.session.usuarioId,
+        `${sanitized.length} marca(s)`
+      );
+      res.json({ ok: true, aplicados: sanitized.length, tamano_bytes: tamano });
+    } catch (e) {
+      logger.error('[SOPORTES] resaltar pdx:', e);
+      res.status(500).json({ error: safeError(e) });
+    }
+  }
+);
 
 router.get('/soportes/pdx/archivos/:id/historial', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, ['modulo.reportes_pdx', 'soportes.pdx.ver', 'soportes.pdx.subir']), async (req, res) => {
   try {
@@ -1612,7 +1676,8 @@ router.post(
     uploadArmadoSoportes.fields([
       { name: 'autorizacion', maxCount: 1 },
       { name: 'orden_manual', maxCount: 1 },
-      { name: 'opf_unido', maxCount: 1 }
+      { name: 'opf_unido', maxCount: 1 },
+      { name: 'parte_archivo', maxCount: 16 }
     ])(req, res, (err) => {
       if (err) return armadoUploadError(err, req, res, next);
       next();
@@ -1627,11 +1692,15 @@ router.post(
         return res.status(400).json({ error: 'Genere el OPF en la carpeta SOPORTES del expediente' });
       }
 
-      const { generarOpfEnExpediente, guardarOpfPdfUnido } = require('../utils/soportes-opf-generar');
+      const { generarOpfEnExpediente, generarOpfDesdePartes, guardarOpfPdfUnido } = require('../utils/soportes-opf-generar');
       const opfUnido = multerFieldFile(req, 'opf_unido');
       const authFile = multerFieldFile(req, 'autorizacion');
       const ordenManual = multerFieldFile(req, 'orden_manual');
       const pdxOrdenId = parseInt(req.body?.pdx_orden_archivo_id, 10);
+      const parteArchivos = (req.files?.parte_archivo || []).map((f) => {
+        const p = f.path || resolveUploadedFilePath(f);
+        return p && fs.existsSync(p) ? { path: p, originalname: f.originalname } : null;
+      }).filter(Boolean);
 
       let result;
       const warnings = [];
@@ -1642,6 +1711,46 @@ router.post(
           origen: 'upload_opf_unido',
           usuarioId: req.session.usuarioId
         });
+      } else if (req.body?.partes_json) {
+        let spec = [];
+        try {
+          spec = JSON.parse(req.body.partes_json);
+        } catch (_) {
+          return res.status(400).json({ error: 'Lista de partes inválida' });
+        }
+        if (!Array.isArray(spec) || spec.length < 2) {
+          return res.status(400).json({ error: 'Agregue al menos 2 archivos PDF' });
+        }
+        const partes = [];
+        for (const item of spec) {
+          if (item?.t === 'pdx' || item?.tipo === 'pdx') {
+            const pdxId = parseInt(item.id ?? item.pdx_archivo_id, 10);
+            if (!pdxId) return res.status(400).json({ error: 'ID de depósito inválido en la lista' });
+            const pdxRows = await db.query(
+              `SELECT a.*, c.nombre_display AS carpeta_nombre, c.periodo, c.color_tema
+               FROM sop_pdx_archivos a JOIN sop_pdx_carpetas c ON c.id = a.carpeta_id WHERE a.id = ?`,
+              [pdxId]
+            );
+            if (!pdxRows.length) return res.status(404).json({ error: `Archivo #${pdxId} no encontrado en reportes` });
+            const row = pdxRows[0];
+            const vis = calcularVisibilidadPeriodo(row.periodo);
+            if (vis === 'archivo' && !puedeVerArchivo(req)) {
+              return res.status(403).json({ error: 'Un archivo está en carpeta archivada' });
+            }
+            if (row.periodo !== exp.periodo) {
+              warnings.push(`${row.nombre_archivo_original || 'PDF'} (${row.periodo}) → expediente ${exp.periodo}`);
+            }
+            partes.push({ kind: 'pdx', pdxRow: row });
+          } else if (item?.t === 'file' || item?.tipo === 'file') {
+            const idx = parseInt(item.i ?? item.index, 10);
+            const f = parteArchivos[idx];
+            if (!f) return res.status(400).json({ error: 'Falta un PDF manual en la lista' });
+            partes.push({ kind: 'file', path: f.path, label: f.originalname });
+          } else {
+            return res.status(400).json({ error: 'Parte de lista no reconocida' });
+          }
+        }
+        result = await generarOpfDesdePartes(exp, exp, partes, req.session.usuarioId);
       } else {
         let pdxRow = null;
         let ordenPath = ordenManual?.path || null;
@@ -1666,7 +1775,7 @@ router.post(
 
         if (!pdxRow && !ordenPath) {
           return res.status(400).json({
-            error: 'Indique ORDEN+HC (depósito o PDF manual), suba OPF ya unido, o ORDEN+HC + autorización'
+            error: 'Agregue al menos 2 PDF (depósito o manual), o suba el OPF ya unido'
           });
         }
 
@@ -1732,6 +1841,54 @@ router.get(
     } catch (e) {
       logger.error('[SOPORTES] descargar archivo armado:', e);
       if (!res.headersSent) res.status(500).json({ error: safeError(e) });
+    }
+  }
+);
+
+router.post(
+  '/soportes/armado/expedientes/:id/archivos/:tipo/resaltar',
+  requireAuth,
+  requireRoleOrPerm(ROLES_SOPORTES, PERMS_ARMADO_VER_SUBIR),
+  async (req, res) => {
+    try {
+      const highlights = req.body?.highlights;
+      if (!Array.isArray(highlights) || highlights.length === 0) {
+        return res.status(400).json({ error: 'Indique al menos un resaltado' });
+      }
+      const { loadArchivoExpedienteSlot, resolveArchivoAbsoluto, SOPORTES_SLOT_TIPOS } = require('../utils/soportes-exp-archivo');
+      const tipo = String(req.params.tipo || '').toUpperCase();
+      if (!SOPORTES_SLOT_TIPOS.includes(tipo)) {
+        return res.status(400).json({ error: 'Solo se pueden resaltar PDF de soportes (OPF, CRC, FEV, PDX, HEV)' });
+      }
+      const loaded = await loadArchivoExpedienteSlot(req.params.id, tipo);
+      if (!loaded.ok) return res.status(loaded.status || 404).json({ error: loaded.error });
+      const fp = resolveArchivoAbsoluto(loaded.row);
+      if (!fp || !fs.existsSync(fp)) return res.status(404).json({ error: 'Archivo no en disco' });
+      if (!/\.pdf$/i.test(fp) && loaded.row.mime_type !== 'application/pdf') {
+        return res.status(400).json({ error: 'El archivo no es PDF' });
+      }
+
+      const bytes = fs.readFileSync(fp);
+      const { PDFDocument } = require('pdf-lib');
+      const probe = await PDFDocument.load(bytes, { ignoreEncryption: true });
+      const sanitized = sanitizeHighlightsList(highlights, probe.getPageCount());
+      if (!sanitized.length) return res.status(400).json({ error: 'Resaltados no válidos' });
+
+      const tamano = await persistHighlightsOnPdfFile(fp, sanitized);
+      await db.execute(
+        'UPDATE sop_exp_archivos SET tamano_bytes = ?, subido_por = ? WHERE id = ?',
+        [tamano, req.session.usuarioId, loaded.row.id]
+      );
+      const detail = await buildExpedienteDetail(req.params.id);
+      res.json({
+        ok: true,
+        aplicados: sanitized.length,
+        tamano_bytes: tamano,
+        expediente: detail
+      });
+    } catch (e) {
+      logger.error('[SOPORTES] resaltar armado:', e);
+      res.status(500).json({ error: safeError(e) });
     }
   }
 );

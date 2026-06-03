@@ -140,9 +140,65 @@ async function generarOpfEnExpediente(exp, ctx, {
   }
 }
 
+/**
+ * Une N PDFs (depósito y/o temporales) en orden y guarda como OPF. Mínimo 2 partes.
+ * @param {Array<{ kind: 'pdx', pdxRow: object }|{ kind: 'file', path: string, label?: string }>} partes
+ */
+async function generarOpfDesdePartes(exp, ctx, partes, usuarioId) {
+  if (!exp?.id) throw new Error('Expediente inválido');
+  if (ctx?.contenedor_tipo === 'rips') {
+    throw new Error('El OPF se genera en la carpeta SOPORTES, no en RIPS');
+  }
+  if (!Array.isArray(partes) || partes.length < 2) {
+    throw new Error('Agregue al menos 2 archivos PDF para generar el OPF');
+  }
+  await assertOpfNoExiste(exp.id);
+
+  const { resolveStoragePath } = require('./soportes-storage');
+  const paths = [];
+  const labels = [];
+  let firstPdxId = null;
+
+  for (const p of partes) {
+    if (p.kind === 'pdx') {
+      const row = p.pdxRow;
+      if (!row?.ruta_relativa) throw new Error('Archivo del depósito sin ruta');
+      const fp = resolveStoragePath(row.ruta_relativa);
+      assertPdfEnDisco(fp, 'depósito');
+      paths.push(fp);
+      labels.push(row.nombre_archivo_original || row.paciente_nombre || 'Depósito');
+      if (!firstPdxId) firstPdxId = row.id;
+    } else if (p.kind === 'file') {
+      assertPdfEnDisco(p.path, p.label || 'archivo');
+      paths.push(p.path);
+      labels.push(p.label || path.basename(p.path));
+    } else {
+      throw new Error('Parte de OPF no válida');
+    }
+  }
+
+  const mergedTmp = await mergePdfFilesToTemp(paths);
+  try {
+    let nombreOriginal = `OPF ← ${labels[0]}`;
+    if (labels.length === 2) nombreOriginal += ` + ${labels[1]}`;
+    else if (labels.length > 2) {
+      nombreOriginal += ` + ${labels[1]} (+${labels.length - 2} más)`;
+    }
+    return await persistirOpfEnExpediente(exp, ctx, mergedTmp, {
+      nombre_original: nombreOriginal.slice(0, 500),
+      origen: 'merge_opf',
+      orden_pdx_id: firstPdxId
+    }, usuarioId);
+  } catch (e) {
+    try { if (fs.existsSync(mergedTmp)) fs.unlinkSync(mergedTmp); } catch (_) { /* ignore */ }
+    throw e;
+  }
+}
+
 module.exports = {
   assertOpfNoExiste,
   guardarOpfPdfUnido,
   generarOpfEnExpediente,
+  generarOpfDesdePartes,
   esArchivoOrdenHcPdx
 };

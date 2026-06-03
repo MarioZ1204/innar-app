@@ -844,6 +844,104 @@
   border-radius: 8px;
   background: #f8fafc;
 }
+
+/* OPF — lista de partes para unir */
+.sop-opf-progress {
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+.sop-opf-progress.is-ready {
+  border-color: #6ee7b7;
+  background: linear-gradient(135deg, #ecfdf5 0%, #f0fdf4 100%);
+}
+.sop-opf-progress-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.sop-opf-progress-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #334155;
+}
+.sop-opf-progress-badge {
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+.sop-opf-progress-badge.pending {
+  color: #b45309;
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+}
+.sop-opf-progress-badge.ready {
+  color: #047857;
+  background: #d1fae5;
+  border: 1px solid #6ee7b7;
+}
+.sop-opf-partes-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.sop-opf-parte-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 0.82rem;
+}
+.sop-opf-parte-num {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: #e0f2fe;
+  color: #0369a1;
+  font-weight: 800;
+  font-size: 0.72rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.sop-opf-parte-body {
+  flex: 1;
+  min-width: 0;
+}
+.sop-opf-parte-body strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sop-opf-parte-meta {
+  font-size: 0.72rem;
+  color: #94a3b8;
+}
+.sop-opf-add-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.sop-opf-search-panel {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed #e2e8f0;
+}
 .sop-lote-table { width: 100%; font-size: 0.82rem; border-collapse: collapse; }
 .sop-lote-table th, .sop-lote-table td {
   padding: 8px 6px;
