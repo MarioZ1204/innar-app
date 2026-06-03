@@ -35,11 +35,15 @@ async function asegurarDuracionMinutosCitaElectro(cita) {
   if (parseInt(cita.duracion_minutos, 10) > 0) return cita;
   let dur = null;
   if (cita.estudio) {
-    const cat = await db.query(
-      'SELECT duracion_minutos FROM estudio_duraciones WHERE nombre = ? LIMIT 1',
-      [String(cita.estudio).trim()]
-    );
-    dur = parseInt(cat[0]?.duracion_minutos, 10) || null;
+    try {
+      const cat = await db.query(
+        'SELECT duracion_minutos FROM estudio_duraciones WHERE nombre = ? LIMIT 1',
+        [String(cita.estudio).trim()]
+      );
+      dur = parseInt(cat[0]?.duracion_minutos, 10) || null;
+    } catch (err) {
+      logger.warn('Catálogo estudio_duraciones no disponible:', err.message);
+    }
   }
   if (!(dur > 0)) dur = inferirDuracionMinutosCitaElectro(cita);
   if (dur > 0) {
@@ -55,13 +59,13 @@ async function asegurarDuracionMinutosCitaElectro(cita) {
 /** Sincroniza duración en citas visibles de un día que solo tienen hora_fin (evita auto-cierre con slot corto). */
 async function sincronizarDuracionesElectroEnFecha(fechaYmd) {
   if (!fechaYmd || !/^\d{4}-\d{2}-\d{2}$/.test(fechaYmd)) return 0;
-  const vis = sqlCitaElectroVisibleEnFecha('');
+  const vis = sqlCitaElectroVisibleEnFecha('c');
   const rows = await db.query(`
-    SELECT id, fecha, hora_agendamiento, hora_fin, hora_fin_date, duracion_minutos, estudio
-    FROM citas_electro
-    WHERE deleted_at IS NULL
-      AND (duracion_minutos IS NULL OR duracion_minutos = 0)
-      AND hora_fin IS NOT NULL
+    SELECT c.id, c.fecha, c.hora_agendamiento, c.hora_fin, c.hora_fin_date, c.duracion_minutos, c.estudio
+    FROM citas_electro c
+    WHERE c.deleted_at IS NULL
+      AND (c.duracion_minutos IS NULL OR c.duracion_minutos = 0)
+      AND c.hora_fin IS NOT NULL
       AND ${vis}
   `, paramsCitaElectroVisibleEnFecha(fechaYmd));
   let n = 0;
@@ -82,29 +86,36 @@ async function revertirElectroCompletadosAntesDeTiempo(diasVentana = 14, fechaCe
     filtroFecha = 'fecha >= DATE_SUB(?, INTERVAL 3 DAY) AND fecha <= DATE_ADD(?, INTERVAL 3 DAY)';
     params.push(fechaCentro, fechaCentro);
   }
-  const result = await db.execute(`
-    UPDATE citas_electro
-    SET
-      estado = 'En Estudio',
-      editado_por_nombre = 'Sistema (Corrección)',
-      editado_en = NOW(),
-      hora_fin = DATE_FORMAT(${finTs}, '%H:%i'),
-      hora_fin_date = DATE(${finTs})
-    WHERE deleted_at IS NULL
-      AND estado = 'Completado'
-      AND ${filtroFecha}
-      AND ${finTs} > NOW()
-  `, params);
-  const affected = result[0]?.affectedRows ?? result.affectedRows ?? 0;
-  return affected;
+  try {
+    const result = await db.execute(`
+      UPDATE citas_electro
+      SET
+        estado = 'En Estudio',
+        editado_por_nombre = 'Sistema (Corrección)',
+        editado_en = NOW()
+      WHERE deleted_at IS NULL
+        AND estado = 'Completado'
+        AND ${filtroFecha}
+        AND ${finTs} > NOW()
+    `, params);
+    return result[0]?.affectedRows ?? result.affectedRows ?? 0;
+  } catch (err) {
+    logger.warn('Revertir completados electro falló:', err.message);
+    return 0;
+  }
 }
 
 /** Al abrir el kanban/monitor: reparar duraciones y revertir completados prematuros del día consultado. */
 async function repararEstadosElectroAlConsultar(fechaYmd) {
   if (!fechaYmd || !/^\d{4}-\d{2}-\d{2}$/.test(fechaYmd)) return { duraciones: 0, revertidas: 0 };
-  const duraciones = await sincronizarDuracionesElectroEnFecha(fechaYmd);
-  const revertidas = await revertirElectroCompletadosAntesDeTiempo(14, fechaYmd);
-  return { duraciones, revertidas };
+  try {
+    const duraciones = await sincronizarDuracionesElectroEnFecha(fechaYmd);
+    const revertidas = await revertirElectroCompletadosAntesDeTiempo(14, fechaYmd);
+    return { duraciones, revertidas };
+  } catch (err) {
+    logger.warn('Reparar estados electro al consultar falló (no crítico):', err.message);
+    return { duraciones: 0, revertidas: 0 };
+  }
 }
 
 /** Cierra estudios cuyo fin programado (inicio/duración o hora_fin) ya venció. */
@@ -119,7 +130,6 @@ async function autoCompletarEstudiosElectroVencidos(excludeId = null) {
     WHERE estado IN ('En Estudio', 'Pausado')
       AND deleted_at IS NULL
       AND ${sqlVencido}
-      AND ${finTs} IS NOT NULL
       ${condId}
   `, params).catch((err) => logger.warn('Auto-completar estudios vencidos falló (no crítico):', err.message));
 }

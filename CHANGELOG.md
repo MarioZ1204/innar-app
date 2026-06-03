@@ -3,6 +3,18 @@
 Todos los cambios importantes a la aplicación se documentan aquí. El formato
 sigue (informalmente) [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
+## [1.5.65] — 2026-05-27
+
+### Corregido
+
+- **Electrodiagnóstico**: error 500 en `GET /api/citas-electro` por SQL inválido (alias vacío en sincronización de duraciones).
+
+## [1.5.65] — 2026-05-27
+
+### Corregido
+
+- **Electrodiagnóstico**: error 500 en `GET /api/citas-electro` (kanban vacío). La reparación al cargar citas ya no rompe la petición si falla el SQL; se evita `TRIM` sobre columnas TIME y el UPDATE de reversión solo cambia el estado.
+
 ## [1.5.64] — 2026-05-27
 
 ### Corregido

@@ -184,9 +184,9 @@ function sqlEstudioElectroFinProgramadoTs(alias) {
   const p = alias ? `${alias}.` : '';
   return `(
     CASE
-      WHEN ${p}duracion_minutos > 0 AND ${p}hora_inicio IS NOT NULL AND TRIM(${p}hora_inicio) <> '' THEN
+      WHEN ${p}duracion_minutos > 0 AND ${p}hora_inicio IS NOT NULL THEN
         DATE_ADD(TIMESTAMP(${p}fecha, TIME(${p}hora_inicio)), INTERVAL ${p}duracion_minutos MINUTE)
-      WHEN ${p}duracion_minutos > 0 AND ${p}hora_agendamiento IS NOT NULL AND TRIM(${p}hora_agendamiento) <> '' THEN
+      WHEN ${p}duracion_minutos > 0 AND ${p}hora_agendamiento IS NOT NULL THEN
         DATE_ADD(TIMESTAMP(${p}fecha, TIME(${p}hora_agendamiento)), INTERVAL ${p}duracion_minutos MINUTE)
       ELSE
         TIMESTAMP(COALESCE(${p}hora_fin_date, ${p}fecha), COALESCE(${p}hora_fin, '23:59:59'))
@@ -214,9 +214,9 @@ function sqlEstudioElectroFinProgramadoVencido(alias) {
   const p = alias ? `${alias}.` : '';
   return `(
     CASE
-      WHEN ${p}duracion_minutos > 0 AND ${p}hora_inicio IS NOT NULL AND TRIM(${p}hora_inicio) <> '' THEN
+      WHEN ${p}duracion_minutos > 0 AND ${p}hora_inicio IS NOT NULL THEN
         DATE_ADD(TIMESTAMP(${p}fecha, TIME(${p}hora_inicio)), INTERVAL ${p}duracion_minutos MINUTE)
-      WHEN ${p}duracion_minutos > 0 AND ${p}hora_agendamiento IS NOT NULL AND TRIM(${p}hora_agendamiento) <> '' THEN
+      WHEN ${p}duracion_minutos > 0 AND ${p}hora_agendamiento IS NOT NULL THEN
         DATE_ADD(TIMESTAMP(${p}fecha, TIME(${p}hora_agendamiento)), INTERVAL ${p}duracion_minutos MINUTE)
       ELSE
         TIMESTAMP(COALESCE(${p}hora_fin_date, ${p}fecha), COALESCE(${p}hora_fin, '23:59:59'))
