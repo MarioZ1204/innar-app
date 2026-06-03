@@ -14,6 +14,12 @@ const {
   nombreEntidadParaSelect,
   normalizarNombreEntidad
 } = require('../utils/catalogo-entidades');
+const {
+  RECIBO_FILTRO_OTROS_CONSULTA,
+  RECIBO_FILTRO_OTROS_ESTUDIO,
+  separarValoresUsadosEnOtros,
+  expandirSeleccionFiltroServicio
+} = require('../utils/recibos-catalogo-filtros');
 
 // Helper local
 function escapeHtml(str) {
@@ -75,8 +81,77 @@ function expandTipoServicioFilter(values) {
   return [...expanded];
 }
 
-function buildRecibosFilter(query) {
-  const { fecha_desde, fecha_hasta, tipo_pago, medico_id, medico_nombre, generado_por_id, nombre_entidad, tipo_servicio, q, estado_pago, anulado } = query;
+async function loadTiposConsultaNombres(dbConn, { medico_id, especialidad_id } = {}) {
+  const medicoIds = String(medico_id || '').split(',').map((v) => parseInt(v, 10)).filter((n) => n > 0);
+  const espId = especialidad_id ? parseInt(especialidad_id, 10) : null;
+  const espIdSet = new Set();
+
+  if (medicoIds.length > 0) {
+    for (const mid of medicoIds) {
+      const doc = await dbConn.queryOne(
+        "SELECT especialidad FROM usuarios WHERE id=? AND rol='doctor'",
+        [mid]
+      );
+      const espNombre = (doc?.especialidad || '').trim();
+      if (!espNombre) continue;
+      const espRows = await dbConn.query(
+        'SELECT id FROM especialidades WHERE LOWER(TRIM(nombre))=LOWER(TRIM(?))',
+        [espNombre]
+      );
+      if (espRows.length > 0) espIdSet.add(espRows[0].id);
+    }
+  } else if (espId) {
+    espIdSet.add(espId);
+  }
+
+  if (espIdSet.size > 0) {
+    const espIds = [...espIdSet];
+    const placeholders = espIds.map(() => '?').join(',');
+    const rows = await dbConn.query(
+      `SELECT DISTINCT nombre FROM tipos_consulta
+       WHERE especialidad_id IN (${placeholders}) AND activo=1 ORDER BY nombre ASC`,
+      espIds
+    );
+    return rows.map((r) => r.nombre).filter(Boolean);
+  }
+
+  const rows = await dbConn.query(
+    'SELECT DISTINCT nombre FROM tipos_consulta WHERE activo=1 ORDER BY nombre ASC'
+  );
+  return rows.map((r) => r.nombre).filter(Boolean);
+}
+
+async function loadEstudiosCatalogoNombres(dbConn) {
+  const serviciosRows = await dbConn.query(
+    'SELECT DISTINCT nombre AS valor FROM servicios_recibo WHERE activo=1 AND nombre IS NOT NULL AND TRIM(nombre) <> "" ORDER BY nombre ASC'
+  ).catch(() => []);
+  return serviciosRows.map((r) => r.valor).filter(Boolean);
+}
+
+async function loadTiposServicioUsadosEnRecibos(dbConn) {
+  const usadosTipoRows = await dbConn.query(
+    'SELECT DISTINCT TRIM(tipo_servicio) AS valor FROM recibos WHERE tipo_servicio IS NOT NULL AND TRIM(tipo_servicio) <> "" ORDER BY valor ASC'
+  ).catch(() => []);
+  return usadosTipoRows.map((r) => r.valor).filter(Boolean);
+}
+
+function appendTipoServicioLikeConditions(conditions, params, valores, expandirEstudio = false) {
+  const expanded = expandirEstudio ? expandTipoServicioFilter(valores) : valores;
+  if (expanded.length === 1) {
+    const v = expanded[0];
+    conditions.push('tipo_servicio LIKE ?');
+    params.push(v.includes('%') ? v : `%${v}%`);
+  } else if (expanded.length > 1) {
+    conditions.push(`(${expanded.map(() => 'tipo_servicio LIKE ?').join(' OR ')})`);
+    params.push(...expanded.map((v) => (v.includes('%') ? v : `%${v}%`)));
+  }
+}
+
+async function buildRecibosFilter(query) {
+  const {
+    fecha_desde, fecha_hasta, tipo_pago, medico_id, medico_nombre, generado_por_id,
+    nombre_entidad, tipo_servicio, tipo_consulta, tipo_estudio, q, estado_pago, anulado
+  } = query;
   const conditions = [];
   const params = [];
   if (fecha_desde) { conditions.push('fecha >= ?'); params.push(fecha_desde); }
@@ -102,11 +177,52 @@ function buildRecibosFilter(query) {
     if (arr.length === 1) { conditions.push('UPPER(TRIM(nombre_entidad)) = UPPER(TRIM(?))'); params.push(arr[0]); }
     else if (arr.length > 1) { conditions.push(`UPPER(TRIM(nombre_entidad)) IN (${arr.map(() => 'UPPER(TRIM(?))').join(',')})`); params.push(...arr); }
   }
-  if (tipo_servicio) {
-    const raw = tipo_servicio.split(',').filter(Boolean);
-    const expanded = expandTipoServicioFilter(raw);
-    if (expanded.length === 1) { conditions.push('tipo_servicio LIKE ?'); params.push(expanded[0].includes('%') ? expanded[0] : `%${expanded[0]}%`); }
-    else if (expanded.length > 1) { conditions.push(`(${expanded.map(() => 'tipo_servicio LIKE ?').join(' OR ')})`); params.push(...expanded.map(v => v.includes('%') ? v : `%${v}%`)); }
+  const legacyServicio = tipo_servicio ? tipo_servicio.split(',').filter(Boolean) : [];
+  const orBlocks = [];
+  const orParams = [];
+
+  const pushGrupoServicio = (valores, expandirEstudio) => {
+    if (!valores.length) return;
+    const subC = [];
+    const subP = [];
+    appendTipoServicioLikeConditions(subC, subP, valores, expandirEstudio);
+    if (subC.length) {
+      orBlocks.push(subC[0]);
+      orParams.push(...subP);
+    }
+  };
+
+  if (tipo_consulta) {
+    const raw = tipo_consulta.split(',').filter(Boolean);
+    const nombresConsulta = await loadTiposConsultaNombres(db, {
+      medico_id,
+      especialidad_id: query.especialidad_id
+    });
+    const usados = await loadTiposServicioUsadosEnRecibos(db);
+    const otrosConsulta = separarValoresUsadosEnOtros(usados, nombresConsulta);
+    const expanded = expandirSeleccionFiltroServicio(raw, RECIBO_FILTRO_OTROS_CONSULTA, otrosConsulta);
+    pushGrupoServicio(expanded, false);
+  }
+
+  if (tipo_estudio) {
+    const raw = tipo_estudio.split(',').filter(Boolean);
+    const estudiosCat = await loadEstudiosCatalogoNombres(db);
+    const usados = await loadTiposServicioUsadosEnRecibos(db);
+    const otrosEstudio = separarValoresUsadosEnOtros(usados, estudiosCat);
+    const expanded = expandirSeleccionFiltroServicio(raw, RECIBO_FILTRO_OTROS_ESTUDIO, otrosEstudio);
+    pushGrupoServicio(expanded, true);
+  }
+
+  if (!tipo_consulta && !tipo_estudio && legacyServicio.length) {
+    pushGrupoServicio(expandTipoServicioFilter(legacyServicio), true);
+  }
+
+  if (orBlocks.length === 1) {
+    conditions.push(orBlocks[0]);
+    params.push(...orParams);
+  } else if (orBlocks.length > 1) {
+    conditions.push(`(${orBlocks.join(' OR ')})`);
+    params.push(...orParams);
   }
   if (estado_pago && (estado_pago === 'PAGADO' || estado_pago === 'PENDIENTE')) { conditions.push('estado_pago = ?'); params.push(estado_pago); }
   if (anulado === 'si') { conditions.push('anulado = 1'); }
@@ -335,16 +451,23 @@ router.get('/recibos/stats-hoy', requireAuth, async (req, res) => {
 // GET /api/recibos/opciones — BEFORE /:id
 router.get('/recibos/opciones', requireAuth, async (req, res) => {
   try {
+    const { medico_id, especialidad_id } = req.query;
     const catalogoRows = await db.query('SELECT nombre AS valor FROM entidades WHERE activo=1 ORDER BY nombre ASC');
     const entidades = listarEntidadesActivasDesdeBd(catalogoRows.map((r) => r.valor));
-    const [serviciosRows, usadosTipoRows] = await Promise.all([
-      db.query('SELECT DISTINCT nombre AS valor FROM servicios_recibo WHERE activo=1 AND nombre IS NOT NULL AND nombre <> "" ORDER BY nombre ASC').catch(() => []),
-      db.query('SELECT DISTINCT TRIM(tipo_servicio) AS valor FROM recibos WHERE tipo_servicio IS NOT NULL AND TRIM(tipo_servicio) <> "" ORDER BY valor ASC').catch(() => [])
+    const [tiposConsulta, estudiosCatalogo, usados] = await Promise.all([
+      loadTiposConsultaNombres(db, { medico_id, especialidad_id }),
+      loadEstudiosCatalogoNombres(db),
+      loadTiposServicioUsadosEnRecibos(db)
     ]);
-    const serviciosSet = new Set(serviciosRows.map(r => (r.valor || '').toUpperCase()));
-    const extrasEstudios = usadosTipoRows.filter(r => !serviciosSet.has((r.valor || '').toUpperCase()));
-    const estudios = [...serviciosRows.map(r => r.valor), ...extrasEstudios.map(r => r.valor)].sort((a, b) => a.localeCompare(b));
-    res.json({ entidades, estudios });
+    const otrosConsulta = separarValoresUsadosEnOtros(usados, tiposConsulta);
+    const otrosEstudio = separarValoresUsadosEnOtros(usados, estudiosCatalogo);
+    res.json({
+      entidades,
+      estudios: estudiosCatalogo,
+      tipos_consulta: tiposConsulta,
+      otros_consulta: otrosConsulta,
+      otros_estudio: otrosEstudio
+    });
   } catch (err) { res.status(500).json({ error: safeError(err) }); }
 });
 
@@ -400,7 +523,7 @@ router.get('/recibos', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'a
     const safeLimit = Math.max(1, Math.min(Number.isFinite(rawLimit) ? rawLimit : 500, 500));
     const rawOffset = parseInt(req.query.offset, 10);
     const safeOffset = Math.max(0, Number.isFinite(rawOffset) ? rawOffset : 0);
-    const { where, params } = buildRecibosFilter(req.query);
+    const { where, params } = await buildRecibosFilter(req.query);
     const [rows, countRows] = await Promise.all([
       db.query(
         `SELECT id, numero, cliente, fecha, total, tipo_pago, nombre_entidad, medico_id, medico_nombre, tipo_servicio, generado_por_id, generado_por_nombre, observaciones, turno_id, cita_electro_id, creado_en, data, estado_pago, fecha_pago, pagado_por_nombre, anulado, anulado_razon, anulado_por_nombre, anulado_en FROM recibos ${where} ORDER BY id DESC LIMIT ${safeLimit} OFFSET ${safeOffset}`,
@@ -419,7 +542,7 @@ router.get('/recibos', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'a
 // GET /api/recibos/export/xlsx — BEFORE /:id
 router.get('/recibos/export/xlsx', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion', 'contabilidad'], 'recibos.ver'), async (req, res) => {
   try {
-    const { where, params } = buildRecibosFilter(req.query);
+    const { where, params } = await buildRecibosFilter(req.query);
     const rows = await db.query(
       `SELECT numero, fecha, cliente, tipo_pago, nombre_entidad, medico_nombre, tipo_servicio, total, generado_por_nombre, observaciones, creado_en, anulado, anulado_razon, estado_pago, fecha_pago, pagado_por_nombre FROM recibos ${where} ORDER BY numero ASC, id ASC`,
       params
@@ -461,7 +584,7 @@ router.get('/recibos/export/xlsx', requireAuth, requireRoleOrPerm(['superadmin',
 router.get('/recibos/export/pdf-reporte', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion', 'contabilidad'], 'recibos.ver'), async (req, res) => {
   try {
     const { fecha_desde, fecha_hasta, tipo_pago } = req.query;
-    const { where, params } = buildRecibosFilter(req.query);
+    const { where, params } = await buildRecibosFilter(req.query);
     const rows = await db.query(
       `SELECT numero, fecha, cliente, tipo_pago, nombre_entidad, medico_nombre, tipo_servicio, total, generado_por_nombre, observaciones, anulado, anulado_razon, estado_pago FROM recibos ${where} ORDER BY numero ASC, id ASC`,
       params

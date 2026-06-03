@@ -2601,38 +2601,8 @@ function initRecibos() {
   cargarFiltrosMedicos().then(() => {
     const el = $('filtroMedico');
     if (el) {
-      initMultiSelect(el, { placeholder: 'Todos los m\u00e9dicos', onChange: async (vals) => {
-        const wrap = $('filtroTipoConsultaWrap');
-        const sel  = $('filtroTipoConsulta');
-        const selEstudio = $('filtroEstudio');
-        const esElectro = vals.length === 1 && vals[0] === 'ELECTRODIAGNOSTICOS';
-        if (wrap && sel) {
-          if (vals.length === 1 && !esElectro) {
-            sel.innerHTML = '<option value="">Todos</option>';
-            try {
-              const tipos = await apiFetch(`/api/tipos-consulta?medico_id=${encodeURIComponent(vals[0])}`).then(r => r.json()).catch(() => []);
-              tipos.forEach(t => { const opt = document.createElement('option'); opt.value = t.nombre; opt.textContent = t.nombre; sel.appendChild(opt); });
-            } catch (e) { console.warn('[filtroTipoConsulta] Error cargando tipos:', e.message); }
-            if (!sel._ms) initMultiSelect(sel, { placeholder: 'Todos', onChange: () => { silentClearMultiSelect($('filtroEstudio')); aplicarFiltrosRecibos(); } });
-            else sel._ms.refresh();
-            wrap.style.display = '';
-          } else {
-            wrap.style.display = 'none';
-            silentClearMultiSelect(sel);
-          }
-        }
-        if (selEstudio && esElectro) {
-          try {
-            const srvRes = await apiFetch('/api/servicios').then(r => r.json()).catch(() => []);
-            selEstudio.innerHTML = '<option value="">Todos</option>';
-            srvRes.forEach(s => { const opt = document.createElement('option'); opt.value = s.nombre; opt.textContent = s.nombre; selEstudio.appendChild(opt); });
-            if (selEstudio._ms) selEstudio._ms.refresh();
-          } catch (e) { console.warn('[filtroEstudio electro] Error:', e.message); }
-        } else if (selEstudio && !esElectro && window._allEstudiosOpciones) {
-          selEstudio.innerHTML = '<option value="">Todos</option>';
-          window._allEstudiosOpciones.forEach(v => { const opt = document.createElement('option'); opt.value = v; opt.textContent = v; selEstudio.appendChild(opt); });
-          if (selEstudio._ms) selEstudio._ms.refresh();
-        }
+      initMultiSelect(el, { placeholder: 'Todos los m\u00e9dicos', onChange: async () => {
+        await actualizarFiltrosServicioRecibos();
         aplicarFiltrosRecibos();
       }});
       observeSelectForMulti(el);
@@ -2642,14 +2612,10 @@ function initRecibos() {
     const el = $('filtroGeneradoPor');
     if (el) { initMultiSelect(el, { placeholder: 'Todos', onChange: () => aplicarFiltrosRecibos() }); observeSelectForMulti(el); }
   });
-  cargarFiltrosOpciones().then(() => {
+  cargarFiltrosOpciones().then(async () => {
     const elEnt = $('filtroEntidad');
     if (elEnt) { initMultiSelect(elEnt, { placeholder: 'Todas', onChange: () => aplicarFiltrosRecibos() }); observeSelectForMulti(elEnt); }
-    const elEst = $('filtroEstudio');
-    if (elEst) {
-      initMultiSelect(elEst, { placeholder: 'Todos', onChange: () => { silentClearMultiSelect($('filtroTipoConsulta')); aplicarFiltrosRecibos(); } });
-      observeSelectForMulti(elEst);
-    }
+    await actualizarFiltrosServicioRecibos();
   });
   // Tipo de pago (opciones estáticas)
   const elTP = $('filtroTipoPago');
@@ -2693,27 +2659,7 @@ function initRecibos() {
         if (selMedico._ms) selMedico._ms.refresh();
         silentClearMultiSelect(selMedico);
       }
-      const wrapTC = $('filtroTipoConsultaWrap');
-      const selTC = $('filtroTipoConsulta');
-      if (wrapTC && selTC) {
-        if (espId) {
-          try {
-            const tipos = await apiFetch('/api/tipos-consulta?especialidad_id=' + encodeURIComponent(espId)).then(r => r.json());
-            selTC.innerHTML = '<option value="">Todos</option>';
-            (Array.isArray(tipos) ? tipos : []).forEach(t => {
-              const opt = document.createElement('option');
-              opt.value = t.nombre; opt.textContent = t.nombre;
-              selTC.appendChild(opt);
-            });
-            if (selTC._ms) selTC._ms.refresh();
-            else initMultiSelect(selTC, { placeholder: 'Todos', onChange: () => { silentClearMultiSelect($('filtroEstudio')); aplicarFiltrosRecibos(); } });
-            wrapTC.style.display = '';
-          } catch (_) { wrapTC.style.display = 'none'; silentClearMultiSelect(selTC); }
-        } else {
-          wrapTC.style.display = 'none';
-          silentClearMultiSelect(selTC);
-        }
-      }
+      await actualizarFiltrosServicioRecibos();
       aplicarFiltrosRecibos();
     }});
     observeSelectForMulti(elEsp);
@@ -2723,10 +2669,12 @@ function initRecibos() {
   // Socket: cuando admin modifica tipos de consulta, refrescar el dropdown activo
   if (window.socket && !window.socketRecibosTiposListenerAdded) {
     window.socket.on('tipos-consulta:actualizado', () => {
-      _tiposConsultaCache = {};                     // invalidar caché de agenda/turnos
-      window._reciboCurrentTipos = [];              // invalidar caché del formulario
+      _tiposConsultaCache = {};
+      window._reciboCurrentTipos = [];
+      _catalogoEntidadesOpcionesCache = null;
       const medicoId = $('reciboMedico')?.value;
       if (medicoId) cargarTiposConsultaEnRecibo(medicoId);
+      actualizarFiltrosServicioRecibos().catch(() => {});
     });
     window.socketRecibosTiposListenerAdded = true;
   }
@@ -2941,28 +2889,143 @@ async function fetchEntidadesDesdeBd({ force = false } = {}) {
   return lista;
 }
 
-async function fetchCatalogoEntidadesOpciones({ force = false } = {}) {
-  if (!force && _catalogoEntidadesOpcionesCache) return _catalogoEntidadesOpcionesCache;
+const RECIBO_FILTRO_OTROS_CONSULTA = '__OTROS_CONSULTA__';
+const RECIBO_FILTRO_OTROS_ESTUDIO = '__OTROS_ESTUDIO__';
+
+async function fetchOpcionesFiltrosRecibos({ medicoId = '', especialidadId = '', force = false } = {}) {
+  const cacheKey = `${medicoId}|${especialidadId}`;
+  if (!force && _catalogoEntidadesOpcionesCache && _catalogoEntidadesOpcionesCache._key === cacheKey) {
+    return _catalogoEntidadesOpcionesCache;
+  }
   try {
     const [entidades, opcionesRes] = await Promise.all([
       fetchEntidadesDesdeBd({ force }),
-      apiFetch('/api/recibos/opciones').catch(() => null)
+      (async () => {
+        const qs = new URLSearchParams();
+        if (medicoId) qs.set('medico_id', medicoId);
+        if (especialidadId) qs.set('especialidad_id', especialidadId);
+        const url = qs.toString() ? `/api/recibos/opciones?${qs}` : '/api/recibos/opciones';
+        return apiFetch(url).catch(() => null);
+      })()
     ]);
-    let estudios = [];
+    let opciones = {
+      estudios: [],
+      tipos_consulta: [],
+      otros_consulta: [],
+      otros_estudio: []
+    };
     if (opcionesRes && opcionesRes.ok) {
       const data = await opcionesRes.json();
-      estudios = Array.isArray(data.estudios) ? data.estudios : [];
+      opciones = {
+        estudios: Array.isArray(data.estudios) ? data.estudios : [],
+        tipos_consulta: Array.isArray(data.tipos_consulta) ? data.tipos_consulta : [],
+        otros_consulta: Array.isArray(data.otros_consulta) ? data.otros_consulta : [],
+        otros_estudio: Array.isArray(data.otros_estudio) ? data.otros_estudio : []
+      };
     }
     _catalogoEntidadesOpcionesCache = {
+      _key: cacheKey,
       entidades: Array.isArray(entidades) ? entidades : [],
-      estudios
+      ...opciones
     };
   } catch (e) {
-    console.warn('[fetchCatalogoEntidadesOpciones] Error:', e.message);
+    console.warn('[fetchOpcionesFiltrosRecibos] Error:', e.message);
     if (force) throw e;
-    _catalogoEntidadesOpcionesCache = { entidades: [], estudios: [] };
+    _catalogoEntidadesOpcionesCache = {
+      _key: cacheKey,
+      entidades: [],
+      estudios: [],
+      tipos_consulta: [],
+      otros_consulta: [],
+      otros_estudio: []
+    };
   }
   return _catalogoEntidadesOpcionesCache;
+}
+
+async function fetchCatalogoEntidadesOpciones({ force = false } = {}) {
+  return fetchOpcionesFiltrosRecibos({ force });
+}
+
+function _poblarSelectFiltroServicioRecibo(sel, nombresCatalogo, marcadorOtros, tieneOtros) {
+  if (!sel) return;
+  const prev = sel._ms ? sel._ms.getValues() : (sel.value ? [sel.value] : []);
+  sel.innerHTML = '<option value="">Todos</option>';
+  (Array.isArray(nombresCatalogo) ? nombresCatalogo : []).forEach((nombre) => {
+    const n = String(nombre || '').trim();
+    if (!n) return;
+    const opt = document.createElement('option');
+    opt.value = n;
+    opt.textContent = n;
+    sel.appendChild(opt);
+  });
+  if (tieneOtros && marcadorOtros) {
+    const optOtros = document.createElement('option');
+    optOtros.value = marcadorOtros;
+    optOtros.textContent = 'Otros';
+    sel.appendChild(optOtros);
+  }
+  if (sel._ms) {
+    const valid = prev.filter((v) => sel.querySelector(`option[value="${CSS.escape(String(v))}"]`));
+    sel._ms.setValues(valid);
+    sel._ms.refresh();
+  }
+}
+
+function _initMultiSelectFiltroRecibo(sel, onChangeFn) {
+  if (!sel) return;
+  if (!sel._ms) {
+    initMultiSelect(sel, { placeholder: 'Todos', onChange: onChangeFn });
+    observeSelectForMulti(sel);
+  } else {
+    sel._ms.refresh();
+  }
+}
+
+async function actualizarFiltrosServicioRecibos() {
+  const medicoRaw = typeof getMultiSelectValue === 'function' ? getMultiSelectValue($('filtroMedico')) : '';
+  const medicoIds = medicoRaw ? String(medicoRaw).split(',').filter(Boolean) : [];
+  const espRaw = typeof getMultiSelectValue === 'function' ? getMultiSelectValue($('filtroEspecialidad')) : '';
+  const especialidadId = espRaw ? String(espRaw).split(',')[0] : ($('filtroEspecialidad')?.value || '');
+  const esElectro = medicoIds.length === 1 && medicoIds[0] === 'ELECTRODIAGNOSTICOS';
+  const medicoParam = esElectro ? '' : medicoIds.filter((id) => id !== 'ELECTRODIAGNOSTICOS').join(',');
+
+  const opciones = await fetchOpcionesFiltrosRecibos({
+    medicoId: medicoParam,
+    especialidadId: especialidadId || '',
+    force: true
+  });
+
+  const wrapTC = $('filtroTipoConsultaWrap');
+  const selTC = $('filtroTipoConsulta');
+  const selEst = $('filtroEstudio');
+
+  if (wrapTC && selTC) {
+    if (esElectro) {
+      wrapTC.style.display = 'none';
+      silentClearMultiSelect(selTC);
+    } else {
+      wrapTC.style.display = '';
+      _poblarSelectFiltroServicioRecibo(
+        selTC,
+        opciones.tipos_consulta,
+        RECIBO_FILTRO_OTROS_CONSULTA,
+        (opciones.otros_consulta || []).length > 0
+      );
+      _initMultiSelectFiltroRecibo(selTC, () => aplicarFiltrosRecibos());
+    }
+  }
+
+  if (selEst) {
+    _poblarSelectFiltroServicioRecibo(
+      selEst,
+      opciones.estudios,
+      RECIBO_FILTRO_OTROS_ESTUDIO,
+      (opciones.otros_estudio || []).length > 0
+    );
+    window._allEstudiosOpciones = Array.isArray(opciones.estudios) ? opciones.estudios : [];
+    _initMultiSelectFiltroRecibo(selEst, () => aplicarFiltrosRecibos());
+  }
 }
 
 function _poblarSelectEntidades(sel, entidades, opts = {}) {
@@ -3072,7 +3135,7 @@ async function cargarEntidadesEnRecibo(opts = {}) {
 async function cargarFiltrosOpciones({ force = false } = {}) {
   const snapshot = estadoFiltrosRecibosParaRestaurar();
   try {
-    const { entidades, estudios } = await fetchCatalogoEntidadesOpciones({ force });
+    const { entidades } = await fetchCatalogoEntidadesOpciones({ force });
     const selEnt = $('filtroEntidad');
     if (selEnt) {
       const entVals = _msValues(selEnt);
@@ -3083,18 +3146,7 @@ async function cargarFiltrosOpciones({ force = false } = {}) {
       });
       if (selEnt._ms) selEnt._ms.refresh();
     }
-    const selEstudio = $('filtroEstudio');
-    const estudiosArr = Array.isArray(estudios) ? estudios : [];
-    window._allEstudiosOpciones = estudiosArr;
-    if (selEstudio) {
-      selEstudio.innerHTML = '<option value="">Todos</option>';
-      estudiosArr.forEach(v => {
-        const opt = document.createElement('option');
-        opt.value = v; opt.textContent = v;
-        selEstudio.appendChild(opt);
-      });
-      if (selEstudio._ms) selEstudio._ms.refresh();
-    }
+    await actualizarFiltrosServicioRecibos();
     restaurarEstadoFiltrosRecibosUI(snapshot);
   } catch (e) { console.warn('[cargarFiltrosOpciones] Error:', e.message); }
 }
@@ -9979,8 +10031,8 @@ async function aplicarFiltrosRecibos() {
     if (estadoPago)   params.set('estado_pago',      estadoPago);
     if (anulado)      params.set('anulado',           anulado);
     if (palabraClave) params.set('q',                palabraClave);
-    const tipoServicio = tipoConsulta || tipoEstudio;
-    if (tipoServicio) params.set('tipo_servicio',    tipoServicio);
+    if (tipoConsulta) params.set('tipo_consulta', tipoConsulta);
+    if (tipoEstudio)  params.set('tipo_estudio',  tipoEstudio);
     _recibosLastParams = params.toString();
     window._recibosLastParams = _recibosLastParams;
     _recibosFiltrosUI = capturarEstadoFiltrosRecibosUI();

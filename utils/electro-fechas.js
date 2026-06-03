@@ -194,6 +194,21 @@ function sqlEstudioElectroFinProgramadoTs(alias) {
   )`;
 }
 
+/** Minutos de duración: columna, catálogo implícito vía hora_agendamiento→hora_fin, o null. */
+function inferirDuracionMinutosCitaElectro(cita) {
+  const d = parseInt(cita?.duracion_minutos, 10);
+  if (d > 0) return d;
+  const fecha = extraerFechaYmd(cita?.fecha);
+  const horaAg = String(cita?.hora_agendamiento || '').trim().slice(0, 5);
+  const horaFin = String(cita?.hora_fin || '').trim().slice(0, 5);
+  const fechaFin = extraerFechaYmd(cita?.hora_fin_date) || fecha;
+  if (!fecha || !/^\d{2}:\d{2}$/.test(horaAg) || !/^\d{2}:\d{2}$/.test(horaFin)) return null;
+  const inicioMs = finProgramadoMsLocal({ fechaFin: fecha, horaFin: horaAg });
+  const finMs = finProgramadoMsLocal({ fechaFin, horaFin });
+  if (inicioMs == null || finMs == null || finMs <= inicioMs) return null;
+  return Math.round((finMs - inicioMs) / 60000);
+}
+
 /** SQL: fin programado vencido — prioriza hora_inicio + duracion_minutos (igual que finProgramadoCitaElectro). */
 function sqlEstudioElectroFinProgramadoVencido(alias) {
   const p = alias ? `${alias}.` : '';
@@ -222,6 +237,7 @@ module.exports = {
   finProgramadoCitaElectro,
   finProgramadoMsLocal,
   estudioElectroFinProgramadoVencido,
+  inferirDuracionMinutosCitaElectro,
   calcularFinInicioEstudioElectro,
   sqlEstudioElectroFinProgramadoTs,
   sqlEstudioElectroFinProgramadoVencido

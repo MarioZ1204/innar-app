@@ -23,49 +23,103 @@ const {
   horaInicioAgendadaParaInicioEstudio,
   horaInicioEfectivaParaInicioEstudio,
   finProgramadoCitaElectro,
+  inferirDuracionMinutosCitaElectro,
   calcularFinInicioEstudioElectro,
   sqlEstudioElectroFinProgramadoTs,
   sqlEstudioElectroFinProgramadoVencido
 } = require('../utils/electro-fechas');
 
+/** Rellena duracion_minutos desde catálogo o ventana agendada→hora_fin si falta. */
+async function asegurarDuracionMinutosCitaElectro(cita) {
+  if (!cita?.id) return cita;
+  if (parseInt(cita.duracion_minutos, 10) > 0) return cita;
+  let dur = null;
+  if (cita.estudio) {
+    const cat = await db.query(
+      'SELECT duracion_minutos FROM estudio_duraciones WHERE nombre = ? LIMIT 1',
+      [String(cita.estudio).trim()]
+    );
+    dur = parseInt(cat[0]?.duracion_minutos, 10) || null;
+  }
+  if (!(dur > 0)) dur = inferirDuracionMinutosCitaElectro(cita);
+  if (dur > 0) {
+    await db.execute(
+      'UPDATE citas_electro SET duracion_minutos = ? WHERE id = ? AND (duracion_minutos IS NULL OR duracion_minutos = 0)',
+      [dur, cita.id]
+    );
+    cita.duracion_minutos = dur;
+  }
+  return cita;
+}
+
+/** Sincroniza duración en citas visibles de un día que solo tienen hora_fin (evita auto-cierre con slot corto). */
+async function sincronizarDuracionesElectroEnFecha(fechaYmd) {
+  if (!fechaYmd || !/^\d{4}-\d{2}-\d{2}$/.test(fechaYmd)) return 0;
+  const vis = sqlCitaElectroVisibleEnFecha('');
+  const rows = await db.query(`
+    SELECT id, fecha, hora_agendamiento, hora_fin, hora_fin_date, duracion_minutos, estudio
+    FROM citas_electro
+    WHERE deleted_at IS NULL
+      AND (duracion_minutos IS NULL OR duracion_minutos = 0)
+      AND hora_fin IS NOT NULL
+      AND ${vis}
+  `, paramsCitaElectroVisibleEnFecha(fechaYmd));
+  let n = 0;
+  for (const row of rows) {
+    await asegurarDuracionMinutosCitaElectro(row);
+    n += 1;
+  }
+  return n;
+}
+
 /** Devuelve a En Estudio citas Completado cuyo tiempo programado aún no terminó. */
-async function revertirElectroCompletadosAntesDeTiempo(diasVentana = 14) {
+async function revertirElectroCompletadosAntesDeTiempo(diasVentana = 14, fechaCentro = null) {
   const dias = Math.min(Math.max(parseInt(diasVentana, 10) || 14, 1), 90);
   const finTs = sqlEstudioElectroFinProgramadoTs();
+  let filtroFecha = `fecha >= DATE_SUB(CURDATE(), INTERVAL ${dias} DAY)`;
+  const params = [];
+  if (fechaCentro && /^\d{4}-\d{2}-\d{2}$/.test(fechaCentro)) {
+    filtroFecha = 'fecha >= DATE_SUB(?, INTERVAL 3 DAY) AND fecha <= DATE_ADD(?, INTERVAL 3 DAY)';
+    params.push(fechaCentro, fechaCentro);
+  }
   const result = await db.execute(`
     UPDATE citas_electro
     SET
       estado = 'En Estudio',
       editado_por_nombre = 'Sistema (Corrección)',
       editado_en = NOW(),
-      hora_fin = DATE_FORMAT(
-        DATE_ADD(NOW(), INTERVAL COALESCE(NULLIF(duracion_minutos, 0), 480) MINUTE),
-        '%H:%i'
-      ),
-      hora_fin_date = DATE(
-        DATE_ADD(NOW(), INTERVAL COALESCE(NULLIF(duracion_minutos, 0), 480) MINUTE)
-      )
+      hora_fin = DATE_FORMAT(${finTs}, '%H:%i'),
+      hora_fin_date = DATE(${finTs})
     WHERE deleted_at IS NULL
       AND estado = 'Completado'
-      AND fecha >= DATE_SUB(CURDATE(), INTERVAL ${dias} DAY)
+      AND ${filtroFecha}
       AND ${finTs} > NOW()
-  `);
+  `, params);
   const affected = result[0]?.affectedRows ?? result.affectedRows ?? 0;
   return affected;
 }
 
-/** Cierra estudios de días ANTERIORES cuyo fin programado ya venció (no los de hoy en curso). */
+/** Al abrir el kanban/monitor: reparar duraciones y revertir completados prematuros del día consultado. */
+async function repararEstadosElectroAlConsultar(fechaYmd) {
+  if (!fechaYmd || !/^\d{4}-\d{2}-\d{2}$/.test(fechaYmd)) return { duraciones: 0, revertidas: 0 };
+  const duraciones = await sincronizarDuracionesElectroEnFecha(fechaYmd);
+  const revertidas = await revertirElectroCompletadosAntesDeTiempo(14, fechaYmd);
+  return { duraciones, revertidas };
+}
+
+/** Cierra estudios cuyo fin programado (inicio/duración o hora_fin) ya venció. */
 async function autoCompletarEstudiosElectroVencidos(excludeId = null) {
   const condId = excludeId ? ' AND id != ?' : '';
   const params = excludeId ? [excludeId] : [];
   const sqlVencido = sqlEstudioElectroFinProgramadoVencido();
+  const finTs = sqlEstudioElectroFinProgramadoTs();
   await db.execute(`
     UPDATE citas_electro
     SET estado = 'Completado', editado_por_nombre = 'Sistema (Auto)', editado_en = NOW()
     WHERE estado IN ('En Estudio', 'Pausado')
       AND deleted_at IS NULL
-      AND fecha < CURDATE()
       AND ${sqlVencido}
+      AND ${finTs} IS NOT NULL
       ${condId}
   `, params).catch((err) => logger.warn('Auto-completar estudios vencidos falló (no crítico):', err.message));
 }
@@ -255,6 +309,8 @@ router.get('/equipos-electro/monitor', requireAuth, requireRoleOrPerm(
     const fechaParam = req.query.fecha && /^\d{4}-\d{2}-\d{2}$/.test(req.query.fecha) ? req.query.fecha : null;
     const esHoy = !fechaParam || fechaParam === hoy;
     const fechaConsulta = fechaParam || hoy;
+
+    await repararEstadosElectroAlConsultar(fechaConsulta);
 
     const equipos = await db.query('SELECT id, nombre, descripcion, activo FROM equipos_electro ORDER BY activo DESC, nombre ASC');
 
@@ -758,7 +814,8 @@ router.post('/citas-electro/corregir-completados-prematuros', requireAuth, requi
 ), async (req, res) => {
   try {
     const dias = req.body?.dias ?? req.query?.dias ?? 14;
-    const afectadas = await revertirElectroCompletadosAntesDeTiempo(dias);
+    const fechaCentro = req.body?.fecha || req.query?.fecha || null;
+    const afectadas = await revertirElectroCompletadosAntesDeTiempo(dias, fechaCentro);
     emitSocket('electro:actualizar-lista', { type: 'correccion-estado', afectadas });
     res.json({ ok: true, afectadas });
   } catch (e) {
@@ -795,6 +852,7 @@ router.get('/citas-electro', requireAuth, async (req, res) => {
   if (!fecha) return res.status(400).json({ error: 'fecha es obligatoria' });
 
   try {
+    await repararEstadosElectroAlConsultar(fecha);
     let query = `
       SELECT ${CITAS_ELECTRO_SELECT},
              p.nombre AS paciente_nombre, p.documento AS paciente_documento, p.telefono AS telefono,
@@ -909,7 +967,15 @@ router.post('/citas-electro', requireAuth, requireRoleOrPerm(['superadmin', 'adm
       }
     }
 
-    const duracionMinutosDB = duracion ? parseInt(duracion, 10) : null;
+    let duracionMinutosDB = duracion ? parseInt(duracion, 10) : null;
+    if (!(duracionMinutosDB > 0) && finalHoraFin) {
+      duracionMinutosDB = inferirDuracionMinutosCitaElectro({
+        fecha,
+        hora_agendamiento: horaAgendamiento,
+        hora_fin: finalHoraFin,
+        hora_fin_date: finalFechaFin
+      });
+    }
     const insertResult = await db.execute(`
       INSERT INTO citas_electro (equipo_id, paciente_id, fecha, hora_agendamiento, hora_inicio, hora_fin, hora_fin_date, estudio, observaciones, diagnostico_id, estado, programado_por_nombre, duracion_minutos, entidad)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -954,9 +1020,23 @@ router.get('/citas-electro/:id', requireAuth, async (req, res) => {
     `, [id]);
     if (!rows.length) return res.status(404).json({ error: 'Cita no encontrada' });
     const row = rows[0];
-    row.fecha = extraerFechaYmd(row.fecha) || normalizeFecha(row.fecha);
-    if (row.hora_fin_date) row.hora_fin_date = extraerFechaYmd(row.hora_fin_date) || normalizeFecha(row.hora_fin_date);
-    res.json(row);
+    const fechaRow = extraerFechaYmd(row.fecha) || normalizeFecha(row.fecha);
+    if (fechaRow) await repararEstadosElectroAlConsultar(fechaRow);
+    const rows2 = await db.query(`
+      SELECT ${CITAS_ELECTRO_SELECT},
+             p.nombre AS paciente_nombre, p.documento AS paciente_documento,
+             p.telefono AS telefono, d.nombre AS diagnostico_nombre,
+             d.codigo AS diagnostico_codigo, e.nombre AS equipo_nombre
+      FROM citas_electro c
+      JOIN pacientes p ON p.id = c.paciente_id
+      LEFT JOIN diagnosticos d ON d.id = c.diagnostico_id
+      LEFT JOIN equipos_electro e ON e.id = c.equipo_id
+      WHERE c.id = ? AND c.deleted_at IS NULL
+    `, [id]);
+    const rowFresh = rows2[0] || row;
+    rowFresh.fecha = extraerFechaYmd(rowFresh.fecha) || fechaRow;
+    if (rowFresh.hora_fin_date) rowFresh.hora_fin_date = extraerFechaYmd(rowFresh.hora_fin_date) || normalizeFecha(rowFresh.hora_fin_date);
+    res.json(rowFresh);
   } catch (e) {
     res.status(500).json({ error: safeError(e) });
   }
@@ -1005,7 +1085,7 @@ router.patch('/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin',
       [id]
     );
     if (citasResult.length === 0) return res.status(404).json({ error: 'Cita no encontrada' });
-    const citaActual = citasResult[0];
+    const citaActual = await asegurarDuracionMinutosCitaElectro(citasResult[0]);
     const estadoActual = citaActual.estado;
     const estudioActivo = estadoActual === 'En Estudio' || estadoActual === 'Pausado';
     let forzarCamposInicioEstudio = null;
@@ -1062,6 +1142,7 @@ router.patch('/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin',
             checkFechaFin = finCalc.fechaFin;
           }
         }
+        await asegurarDuracionMinutosCitaElectro(citaActual);
         await autoCompletarEstudiosElectroVencidos(id);
         const eqIdInicio = (equipo_id !== undefined && equipo_id !== null && equipo_id !== '')
           ? parseInt(equipo_id, 10)
@@ -1108,7 +1189,11 @@ router.patch('/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin',
           if (!/^\d{2}:\d{2}$/.test(horaIniStr)) {
             return res.status(400).json({ error: 'No se pudo determinar la hora de inicio del estudio' });
           }
-          const durIni = parseInt(duracion_minutos ?? citaActual.duracion_minutos, 10);
+          let durIni = parseInt(duracion_minutos ?? citaActual.duracion_minutos, 10);
+          if (!(durIni > 0)) {
+            await asegurarDuracionMinutosCitaElectro(citaActual);
+            durIni = parseInt(citaActual.duracion_minutos, 10) || inferirDuracionMinutosCitaElectro(citaActual) || 0;
+          }
           if (fechaIni && /^\d{2}:\d{2}$/.test(horaIniStr) && durIni > 0) {
             const finIni = calcularFinInicioEstudioElectro(fechaIni, horaIniStr, durIni, modoInicio);
             if (finIni) {

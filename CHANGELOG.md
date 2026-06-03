@@ -3,6 +3,18 @@
 Todos los cambios importantes a la aplicación se documentan aquí. El formato
 sigue (informalmente) [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
+## [1.5.64] — 2026-05-27
+
+### Corregido
+
+- **Electrodiagnóstico**: citas que seguían en Completado con fin programado futuro (p. ej. monitorización 6 h). Al cargar el kanban o el monitor se reparan duraciones faltantes y se revierten a En Estudio; el auto-cierre solo aplica cuando el fin programado real ya venció (no por slot corto sin `duracion_minutos`).
+
+## [1.5.63] — 2026-05-27
+
+### Corregido
+
+- **Recibos — filtros de reportes**: tipos de consulta y estudio se cargan desde `/api/recibos/opciones` según médico/especialidad; filtros separados (`tipo_consulta` / `tipo_estudio`). Valores en recibos que no están en el catálogo aparecen bajo **Otros**.
+
 ## [1.5.62] — 2026-05-27
 
 ### Corregido

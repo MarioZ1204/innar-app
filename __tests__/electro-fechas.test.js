@@ -4,6 +4,7 @@ const {
   horaInicioAgendadaParaInicioEstudio,
   horaInicioEfectivaParaInicioEstudio,
   calcularFinInicioEstudioElectro,
+  inferirDuracionMinutosCitaElectro,
   sqlEstudioElectroFinProgramadoVencido
 } = require('../utils/electro-fechas');
 
@@ -67,6 +68,17 @@ describe('electro-fechas', () => {
       hora_fin_date: '2026-05-27',
       duracion_minutos: 60
     });
+  });
+
+  test('inferir duración desde ventana agendada a hora_fin', () => {
+    const min = inferirDuracionMinutosCitaElectro({
+      fecha: '2026-06-03',
+      hora_agendamiento: '07:00',
+      hora_fin: '13:00',
+      hora_fin_date: '2026-06-03',
+      duracion_minutos: null
+    });
+    expect(min).toBe(360);
   });
 
   test('inicio a tiempo conserva fin desde hora programada', () => {
