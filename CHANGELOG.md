@@ -3,6 +3,12 @@
 Todos los cambios importantes a la aplicación se documentan aquí. El formato
 sigue (informalmente) [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
+## [1.5.80] — 2026-06-03
+
+### Añadido
+
+- **Soportes — visor PDF**: capa de texto seleccionable (copiar con Ctrl+C); con permiso de edición, alternar «Seleccionar texto» / «Resaltar».
+
 ## [1.5.79] — 2026-06-03
 
 ### Añadido

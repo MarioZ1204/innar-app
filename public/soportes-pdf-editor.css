@@ -108,6 +108,26 @@
 
 .sop-pdf-editor-error { color: #dc2626; }
 
+.sop-pdf-editor-modes {
+  display: flex;
+  gap: 4px;
+  padding: 2px;
+  background: #f1f5f9;
+  border-radius: 10px;
+}
+
+.sop-pdf-editor-modes .sop-btn.is-active {
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
+  color: #0f172a;
+  font-weight: 600;
+}
+
+.sop-pdf-editor-colors.is-hidden,
+.sop-pdf-editor-toolbar .is-hidden {
+  display: none !important;
+}
+
 .sop-pdf-page {
   position: relative;
   box-shadow: 0 4px 20px rgba(15, 23, 42, 0.12);
@@ -121,16 +141,60 @@
   height: auto;
 }
 
+/* Capa de texto PDF.js — selección y copia */
+.sop-pdf-text-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  line-height: 1;
+  z-index: 1;
+  text-size-adjust: none;
+}
+
+.sop-pdf-text-layer span,
+.sop-pdf-text-layer br {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0 0;
+}
+
+.sop-pdf-text-layer ::selection {
+  background: rgba(59, 130, 246, 0.35);
+}
+
+.sop-pdf-editor.is-select-mode .sop-pdf-text-layer {
+  pointer-events: auto;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.sop-pdf-editor.is-select-mode .sop-pdf-overlay {
+  pointer-events: none;
+  cursor: default;
+}
+
+.sop-pdf-editor.is-highlight-mode .sop-pdf-text-layer {
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
 .sop-pdf-overlay {
   position: absolute;
   inset: 0;
+  z-index: 2;
   cursor: crosshair;
   touch-action: none;
 }
 
+.sop-pdf-editor.is-highlight-mode .sop-pdf-overlay {
+  pointer-events: auto;
+}
+
 .sop-pdf-overlay.is-readonly {
   cursor: default;
-  pointer-events: none;
 }
 
 .sop-pdf-mark {

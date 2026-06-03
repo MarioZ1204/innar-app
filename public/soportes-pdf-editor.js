@@ -72,6 +72,20 @@
     return map[color] || map.yellow;
   }
 
+  async function renderPageTextLayer(lib, page, viewport, wrap) {
+    const layer = document.createElement('div');
+    layer.className = 'sop-pdf-text-layer textLayer';
+    layer.setAttribute('aria-hidden', 'true');
+    const textContent = await page.getTextContent();
+    const task = lib.renderTextLayer({
+      textContentSource: textContent,
+      container: layer,
+      viewport
+    });
+    await (task?.promise ?? task);
+    wrap.appendChild(layer);
+  }
+
   /**
    * Monta el visor en un contenedor (modal o página).
    * @returns {Promise<{ destroy: function }>}
@@ -87,22 +101,28 @@
     const closeLabel = isPage ? 'Cerrar pestaña' : 'Cerrar';
 
     const shell = document.createElement('div');
-    shell.className = 'sop-pdf-editor' + (isPage ? ' sop-pdf-editor--page' : '');
+    shell.className = 'sop-pdf-editor is-select-mode' + (isPage ? ' sop-pdf-editor--page' : '');
+    const hintSelect = 'Seleccione el texto con el ratón y copie con <strong>Ctrl+C</strong> (o clic derecho → Copiar).';
+    const hintHighlight = 'Modo resaltar: arrastre sobre el documento. Pulse <strong>Guardar en PDF</strong> para que las marcas queden al descargar.';
     shell.innerHTML = `
       <div class="sop-pdf-editor-header">
         <h3>${escapeHtml(opts.title || 'Documento PDF')}</h3>
         <div class="sop-pdf-editor-toolbar">
           ${canEdit ? `
-          <div class="sop-pdf-editor-colors" role="group" aria-label="Color de resaltado">
+          <div class="sop-pdf-editor-modes" role="group" aria-label="Modo del visor">
+            <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm is-active" id="sopPdfEdModeSelect" title="Seleccionar y copiar texto">Seleccionar texto</button>
+            <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="sopPdfEdModeHighlight" title="Dibujar resaltados">Resaltar</button>
+          </div>
+          <div class="sop-pdf-editor-colors is-hidden" role="group" aria-label="Color de resaltado" id="sopPdfEdColors">
             ${MARK_COLORS.map((c, i) => `<button type="button" class="sop-pdf-editor-color${i === 0 ? ' is-active' : ''}" data-color="${c}" title="${c}"></button>`).join('')}
           </div>
-          <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="sopPdfEdUndo">Deshacer</button>
+          <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm is-hidden" id="sopPdfEdUndo">Deshacer</button>
           ` : ''}
           <a class="sop-btn sop-btn-ghost sop-btn-sm" href="${escapeHtml(downloadUrl)}" target="_blank" rel="noopener">Descargar</a>
           <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="sopPdfEdClose">${closeLabel}</button>
         </div>
       </div>
-      ${canEdit ? '<div class="sop-pdf-editor-hint">Arrastre sobre el documento para resaltar. Pulse <strong>Guardar en PDF</strong> para que las marcas queden al descargar.</div>' : '<div class="sop-pdf-editor-hint">Vista previa (solo lectura).</div>'}
+      <div class="sop-pdf-editor-hint" id="sopPdfEdHint">${canEdit ? hintSelect : hintSelect}</div>
       <div class="sop-pdf-editor-body" id="sopPdfEdBody"><div class="sop-pdf-editor-loading">Cargando PDF…</div></div>
       <div class="sop-pdf-editor-footer">
         <span class="sop-pdf-editor-count" id="sopPdfEdCount"></span>
@@ -120,6 +140,20 @@
     let activeColor = 'yellow';
     let drag = null;
     let destroyed = false;
+    const hintEl = shell.querySelector('#sopPdfEdHint');
+    const colorsEl = shell.querySelector('#sopPdfEdColors');
+    const btnUndo = shell.querySelector('#sopPdfEdUndo');
+
+    function setInteractionMode(mode) {
+      const highlight = mode === 'highlight';
+      shell.classList.toggle('is-select-mode', !highlight);
+      shell.classList.toggle('is-highlight-mode', highlight);
+      shell.querySelector('#sopPdfEdModeSelect')?.classList.toggle('is-active', !highlight);
+      shell.querySelector('#sopPdfEdModeHighlight')?.classList.toggle('is-active', highlight);
+      colorsEl?.classList.toggle('is-hidden', !highlight);
+      btnUndo?.classList.toggle('is-hidden', !highlight);
+      if (hintEl) hintEl.innerHTML = highlight ? hintHighlight : hintSelect;
+    }
 
     function close() {
       if (destroyed) return;
@@ -228,6 +262,9 @@
 
     shell.querySelector('#sopPdfEdClose')?.addEventListener('click', close);
 
+    shell.querySelector('#sopPdfEdModeSelect')?.addEventListener('click', () => setInteractionMode('select'));
+    shell.querySelector('#sopPdfEdModeHighlight')?.addEventListener('click', () => setInteractionMode('highlight'));
+
     shell.querySelectorAll('.sop-pdf-editor-color').forEach((btn) => {
       btn.addEventListener('click', () => {
         shell.querySelectorAll('.sop-pdf-editor-color').forEach((b) => b.classList.remove('is-active'));
@@ -282,15 +319,24 @@
         const viewport = page.getViewport({ scale });
         const wrap = document.createElement('div');
         wrap.className = 'sop-pdf-page';
+        wrap.style.width = `${viewport.width}px`;
+        wrap.style.maxWidth = '100%';
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
         canvas.width = viewport.width;
         canvas.height = viewport.height;
+        canvas.style.width = '100%';
+        canvas.style.height = 'auto';
         await page.render({ canvasContext: ctx, viewport }).promise;
+        wrap.appendChild(canvas);
+        try {
+          await renderPageTextLayer(lib, page, viewport, wrap);
+        } catch (textErr) {
+          console.warn('[SopPdfEditor] Capa de texto no disponible:', textErr);
+        }
         const overlay = document.createElement('div');
         overlay.className = 'sop-pdf-overlay';
         attachOverlay(overlay, i - 1);
-        wrap.appendChild(canvas);
         wrap.appendChild(overlay);
         body.appendChild(wrap);
       }
