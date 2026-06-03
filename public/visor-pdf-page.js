@@ -48,6 +48,7 @@
         title: titulo,
         pdfUrl: `/api/soportes/pdx/archivos/${id}/ver`,
         saveUrl: edit ? `/api/soportes/pdx/archivos/${id}/resaltar` : '',
+        appendUrl: edit ? `/api/soportes/pdx/archivos/${id}/anexar-pdf` : '',
         downloadUrl: `/api/soportes/pdx/archivos/${id}/descargar`,
         canEdit: edit
       };
@@ -56,13 +57,17 @@
       const exp = parseInt(p.get('exp'), 10);
       const tipo = String(p.get('tipo') || '').toUpperCase();
       if (!exp || !tipo) return { error: 'Faltan parámetros exp y tipo (armado)' };
+      const tipoEnc = encodeURIComponent(tipo);
       return {
         title: titulo,
-        pdfUrl: `/api/soportes/armado/expedientes/${exp}/archivos/${encodeURIComponent(tipo)}/descargar?inline=1`,
+        pdfUrl: `/api/soportes/armado/expedientes/${exp}/archivos/${tipoEnc}/descargar?inline=1`,
         saveUrl: edit
-          ? `/api/soportes/armado/expedientes/${exp}/archivos/${encodeURIComponent(tipo)}/resaltar`
+          ? `/api/soportes/armado/expedientes/${exp}/archivos/${tipoEnc}/resaltar`
           : '',
-        downloadUrl: `/api/soportes/armado/expedientes/${exp}/archivos/${encodeURIComponent(tipo)}/descargar`,
+        appendUrl: edit
+          ? `/api/soportes/armado/expedientes/${exp}/archivos/${tipoEnc}/anexar-pdf`
+          : '',
+        downloadUrl: `/api/soportes/armado/expedientes/${exp}/archivos/${tipoEnc}/descargar`,
         canEdit: edit
       };
     }
@@ -89,6 +94,7 @@
     await window.SopPdfEditor.mount(mount, {
       pdfUrl: cfg.pdfUrl,
       saveUrl: cfg.saveUrl,
+      appendUrl: cfg.appendUrl || '',
       downloadUrl: cfg.downloadUrl,
       title: cfg.title,
       canEdit: cfg.canEdit,

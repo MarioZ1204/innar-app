@@ -324,6 +324,7 @@ const PERMS_PDX_VER_SUBIR = ['modulo.reportes_pdx', 'soportes.pdx.ver', 'soporte
 const PERMS_ARMADO_VER_SUBIR = ['modulo.armado_soportes', 'soportes.armado.subir'];
 
 const { applyHighlightsToPdfBytes, sanitizeHighlightsList } = require('../utils/soportes-pdf-highlights');
+const { appendPdfFilesToExisting } = require('../utils/soportes-pdf-anexar');
 
 function writePdfBytesAtomic(filePath, buffer) {
   const tmp = `${filePath}.hl-${process.pid}-${Date.now()}.tmp`;
@@ -949,6 +950,59 @@ router.post(
       res.json({ ok: true, aplicados: sanitized.length, tamano_bytes: tamano });
     } catch (e) {
       logger.error('[SOPORTES] resaltar pdx:', e);
+      res.status(500).json({ error: safeError(e) });
+    }
+  }
+);
+
+router.post(
+  '/soportes/pdx/archivos/:id/anexar-pdf',
+  requireAuth,
+  requireRoleOrPerm(ROLES_SOPORTES, PERMS_PDX_VER_SUBIR),
+  (req, res, next) => {
+    uploadArmadoSoportes.array('partes', 12)(req, res, (err) => {
+      if (err) return res.status(400).json({ error: err.message || 'Error al subir PDF' });
+      next();
+    });
+  },
+  validateMagicBytes,
+  async (req, res) => {
+    try {
+      const partes = (req.files || []).map((f) => f.path).filter(Boolean);
+      if (!partes.length) {
+        cleanupMulterTempFiles(req);
+        return res.status(400).json({ error: 'Seleccione al menos un PDF para añadir' });
+      }
+      const rows = await db.query(
+        `SELECT a.*, c.periodo FROM sop_pdx_archivos a JOIN sop_pdx_carpetas c ON c.id = a.carpeta_id WHERE a.id = ?`,
+        [req.params.id]
+      );
+      if (!rows.length) {
+        cleanupMulterTempFiles(req);
+        return res.status(404).json({ error: 'No encontrado' });
+      }
+      const row = rows[0];
+      const vis = calcularVisibilidadPeriodo(row.periodo);
+      if (vis === 'archivo') {
+        cleanupMulterTempFiles(req);
+        return res.status(403).json({ error: 'Carpeta cerrada' });
+      }
+      const fp = await resolvePdxArchivoPathForApi(row, true);
+      if (!fp || !fs.existsSync(fp)) {
+        cleanupMulterTempFiles(req);
+        return res.status(404).json({ error: 'Archivo no en disco' });
+      }
+      const tamano = await appendPdfFilesToExisting(fp, partes);
+      cleanupMulterTempFiles(req);
+      await db.execute(
+        'UPDATE sop_pdx_archivos SET tamano_bytes = ?, editado_por = ?, editado_en = NOW() WHERE id = ?',
+        [tamano, req.session.usuarioId, req.params.id]
+      );
+      await logPdxArchivo(req.params.id, 'anexo_pdf', req.session.usuarioId, `+${partes.length} PDF`);
+      res.json({ ok: true, anexados: partes.length, tamano_bytes: tamano });
+    } catch (e) {
+      cleanupMulterTempFiles(req);
+      logger.error('[SOPORTES] anexar pdx:', e);
       res.status(500).json({ error: safeError(e) });
     }
   }
@@ -1888,6 +1942,65 @@ router.post(
       });
     } catch (e) {
       logger.error('[SOPORTES] resaltar armado:', e);
+      res.status(500).json({ error: safeError(e) });
+    }
+  }
+);
+
+router.post(
+  '/soportes/armado/expedientes/:id/archivos/:tipo/anexar-pdf',
+  requireAuth,
+  requireRoleOrPerm(ROLES_SOPORTES, PERMS_ARMADO_VER_SUBIR),
+  (req, res, next) => {
+    uploadArmadoSoportes.array('partes', 12)(req, res, (err) => {
+      if (err) return res.status(400).json({ error: err.message || 'Error al subir PDF' });
+      next();
+    });
+  },
+  validateMagicBytes,
+  async (req, res) => {
+    try {
+      const partes = (req.files || []).map((f) => f.path).filter(Boolean);
+      if (!partes.length) {
+        cleanupMulterTempFiles(req);
+        return res.status(400).json({ error: 'Seleccione al menos un PDF para añadir' });
+      }
+      const { loadArchivoExpedienteSlot, resolveArchivoAbsoluto, SOPORTES_SLOT_TIPOS } = require('../utils/soportes-exp-archivo');
+      const tipo = String(req.params.tipo || '').toUpperCase();
+      if (!SOPORTES_SLOT_TIPOS.includes(tipo)) {
+        cleanupMulterTempFiles(req);
+        return res.status(400).json({ error: 'Tipo de archivo no válido para anexar PDF' });
+      }
+      const loaded = await loadArchivoExpedienteSlot(req.params.id, tipo);
+      if (!loaded.ok) {
+        cleanupMulterTempFiles(req);
+        return res.status(loaded.status || 404).json({ error: loaded.error });
+      }
+      const fp = resolveArchivoAbsoluto(loaded.row);
+      if (!fp || !fs.existsSync(fp)) {
+        cleanupMulterTempFiles(req);
+        return res.status(404).json({ error: 'Archivo no en disco' });
+      }
+      if (!/\.pdf$/i.test(fp) && loaded.row.mime_type !== 'application/pdf') {
+        cleanupMulterTempFiles(req);
+        return res.status(400).json({ error: 'El archivo no es PDF' });
+      }
+      const tamano = await appendPdfFilesToExisting(fp, partes);
+      cleanupMulterTempFiles(req);
+      await db.execute(
+        'UPDATE sop_exp_archivos SET tamano_bytes = ?, subido_por = ? WHERE id = ?',
+        [tamano, req.session.usuarioId, loaded.row.id]
+      );
+      const detail = await buildExpedienteDetail(req.params.id);
+      res.json({
+        ok: true,
+        anexados: partes.length,
+        tamano_bytes: tamano,
+        expediente: detail
+      });
+    } catch (e) {
+      cleanupMulterTempFiles(req);
+      logger.error('[SOPORTES] anexar armado:', e);
       res.status(500).json({ error: safeError(e) });
     }
   }

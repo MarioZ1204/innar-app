@@ -102,8 +102,13 @@
 
     const shell = document.createElement('div');
     shell.className = 'sop-pdf-editor is-select-mode' + (isPage ? ' sop-pdf-editor--page' : '');
-    const hintSelect = 'Seleccione el texto con el ratón y copie con <strong>Ctrl+C</strong> (o clic derecho → Copiar).';
-    const hintHighlight = 'Modo resaltar: arrastre sobre el documento. Pulse <strong>Guardar en PDF</strong> para que las marcas queden al descargar.';
+    const appendUrl = opts.appendUrl || '';
+    const hintSelect = isPage
+      ? 'Seleccione texto (Ctrl+C). Use <strong>Resaltar</strong> o <strong>Añadir PDF</strong> y guarde los cambios.'
+      : 'Seleccione el texto con el ratón y copie con <strong>Ctrl+C</strong> (o clic derecho → Copiar).';
+    const hintHighlight = isPage
+      ? 'Arrastre para resaltar. Guarde antes de añadir otro PDF si ya tiene marcas pendientes.'
+      : 'Modo resaltar: arrastre sobre el documento. Pulse <strong>Guardar en PDF</strong> para que las marcas queden al descargar.';
     shell.innerHTML = `
       <div class="sop-pdf-editor-header">
         <h3>${escapeHtml(opts.title || 'Documento PDF')}</h3>
@@ -117,6 +122,9 @@
             ${MARK_COLORS.map((c, i) => `<button type="button" class="sop-pdf-editor-color${i === 0 ? ' is-active' : ''}" data-color="${c}" title="${c}"></button>`).join('')}
           </div>
           <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm is-hidden" id="sopPdfEdUndo">Deshacer</button>
+          ${isPage && appendUrl ? `<label class="sop-btn sop-btn-ghost sop-btn-sm" id="sopPdfEdAnexarLbl" title="Añadir páginas de otro PDF al final">Añadir PDF
+            <input type="file" id="sopPdfEdAnexarInp" accept=".pdf,application/pdf" multiple class="sop-file-input-hidden">
+          </label>` : ''}
           ` : ''}
           <a class="sop-btn sop-btn-ghost sop-btn-sm" href="${escapeHtml(downloadUrl)}" target="_blank" rel="noopener">Descargar</a>
           <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="sopPdfEdClose">${closeLabel}</button>
@@ -264,6 +272,32 @@
 
     shell.querySelector('#sopPdfEdModeSelect')?.addEventListener('click', () => setInteractionMode('select'));
     shell.querySelector('#sopPdfEdModeHighlight')?.addEventListener('click', () => setInteractionMode('highlight'));
+
+    const anexarInp = shell.querySelector('#sopPdfEdAnexarInp');
+    anexarInp?.addEventListener('change', async (ev) => {
+      const files = [...(ev.target.files || [])];
+      ev.target.value = '';
+      if (!files.length || !appendUrl || !apiFetch) return;
+      if (pending.length) {
+        toast('Guarde los resaltados pendientes antes de añadir otro PDF', 'error');
+        return;
+      }
+      const lbl = shell.querySelector('#sopPdfEdAnexarLbl');
+      if (lbl) lbl.style.pointerEvents = 'none';
+      toast('Añadiendo PDF…', 'success');
+      try {
+        const fd = new FormData();
+        files.forEach((f) => fd.append('partes', f));
+        const res = await apiFetch(appendUrl, { method: 'POST', body: fd });
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || 'No se pudo añadir el PDF');
+        toast(data.message || `Se añadieron ${data.anexados || files.length} PDF`, 'success');
+        window.location.reload();
+      } catch (e) {
+        toast(e.message || 'Error al añadir PDF', 'error');
+        if (lbl) lbl.style.pointerEvents = '';
+      }
+    });
 
     shell.querySelectorAll('.sop-pdf-editor-color').forEach((btn) => {
       btn.addEventListener('click', () => {

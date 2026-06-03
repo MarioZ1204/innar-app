@@ -910,16 +910,9 @@
     return sopPerm('modulo.armado_soportes') && sopPerm('soportes.armado.subir');
   }
 
-  function abrirEditorPdfSoportes(cfg) {
-    if (!window.SopPdfEditor || typeof window.SopPdfEditor.open !== 'function') {
-      sopToast('Visor PDF no disponible. Recargue la página (Ctrl+F5).', 'error');
-      return;
-    }
-    window.SopPdfEditor.open({
-      apiFetch,
-      toast: sopToast,
-      ...cfg
-    });
+  function abrirPdfEnNavegador(url) {
+    if (!url) return;
+    window.open(url, '_blank', 'noopener');
   }
 
   function abrirVisorPdfEnPagina(cfg) {
@@ -1234,11 +1227,11 @@
       <td>${htmlEstudioBadge(a.estudio_texto, temaCarpeta)}</td>
       <td><span class="sop-pdx-archivo-nombre" title="${escapeHtml(nomArch)}">${escapeHtml(nomArch)}</span></td>
       <td><div class="sop-actions-row">
-        ${canVer ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-pdx-ver="${a.id}" title="Vista previa (modal)"><i data-lucide="eye"></i></button>
-        <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-pdx-pagina="${a.id}" title="Abrir en página"><i data-lucide="external-link"></i></button>
+        ${canVer ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-pdx-ver="${a.id}" title="Ver en el navegador"><i data-lucide="eye"></i></button>
         <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-pdx-dl="${a.id}" title="Descargar"><i data-lucide="download"></i></button>` : ''}
         ${canEdit && !enArchivo ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-pdx-edit-arch="${a.id}" title="Editar datos"><i data-lucide="pencil"></i></button>` : ''}
-        ${canEdit && !enArchivo ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-pdx-replace="${a.id}" title="Reemplazar PDF"><i data-lucide="file-up"></i></button>` : ''}
+        ${canEdit && !enArchivo ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-pdx-pagina="${a.id}" title="Editar PDF (resaltar, añadir páginas)"><i data-lucide="external-link"></i></button>
+        <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-pdx-replace="${a.id}" title="Reemplazar PDF"><i data-lucide="file-up"></i></button>` : ''}
         ${canEdit && !enArchivo ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-pdx-move="${a.id}" title="Mover a otra carpeta"><i data-lucide="folder-input"></i></button>` : ''}
         ${canVer ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-pdx-hist="${a.id}" title="Historial"><i data-lucide="history"></i></button>` : ''}
         ${sopPerm('soportes.armado.importar_pdx') && puedeVincularArchivoAFe(a, temaCarpeta) ? `<button type="button" class="sop-btn sop-btn-primary sop-btn-sm" data-pdx-link="${a.id}" data-pdx-dest="${escapeHtml(a.destino_importacion || destinoImportDesdeTema(temaCarpeta) || 'PDX')}" title="Vincular a carpeta FE"><i data-lucide="link-2"></i></button>` : ''}
@@ -1247,7 +1240,9 @@
     </tr>`;
     }).join('');
     tbody.querySelectorAll('[data-pdx-ver]').forEach((b) => {
-      b.addEventListener('click', () => modalVerPdfPdx(parseInt(b.dataset.pdxVer, 10)));
+      b.addEventListener('click', () => {
+        abrirPdfEnNavegador(`/api/soportes/pdx/archivos/${parseInt(b.dataset.pdxVer, 10)}/ver`);
+      });
     });
     tbody.querySelectorAll('[data-pdx-pagina]').forEach((b) => {
       b.addEventListener('click', () => {
@@ -1394,22 +1389,6 @@
     } catch (e) {
       sopToast(e.message || 'Error al descargar', 'error');
     }
-  }
-
-  function modalVerPdfPdx(archivoId) {
-    const row = pdxState.archivos.find((x) => x.id === archivoId);
-    const titulo = row?.paciente_nombre || row?.nombre_archivo_display || 'Documento PDF';
-    const canEdit = puedeResaltarPdx();
-    abrirEditorPdfSoportes({
-      pdfUrl: `/api/soportes/pdx/archivos/${archivoId}/ver`,
-      saveUrl: canEdit ? `/api/soportes/pdx/archivos/${archivoId}/resaltar` : '',
-      downloadUrl: `/api/soportes/pdx/archivos/${archivoId}/descargar`,
-      title: titulo,
-      canEdit,
-      onSaved: () => {
-        if (pdxState.carpetaId) abrirCarpetaPdx(pdxState.carpetaId);
-      }
-    });
   }
 
   async function modalHistorialPdx(archivoId) {
@@ -2399,11 +2378,10 @@
     const unirBtn = key === 'CRC' && canEdit
       ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm sop-slot-unir" data-slot-unir="CRC" title="Unir varios PDF y reemplazar"><i data-lucide="layers"></i></button>`
       : '';
-    const verTitle = puedeResaltarArmado() ? 'Ver y resaltar (modal)' : 'Ver PDF (modal)';
     return `<div class="sop-slot-actions">
-      <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-slot-pdf="${key}" title="${verTitle}"><i data-lucide="highlighter"></i></button>
-      <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-slot-pagina="${key}" title="Abrir en página"><i data-lucide="external-link"></i></button>
-      ${canEdit ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm sop-slot-del" data-slot-del="${key}" title="Eliminar"><i data-lucide="trash-2"></i></button>
+      <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-slot-ver="${key}" title="Ver en el navegador"><i data-lucide="eye"></i></button>
+      ${canEdit ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-slot-pagina="${key}" title="Editar PDF (resaltar, añadir páginas)"><i data-lucide="external-link"></i></button>
+      <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm sop-slot-del" data-slot-del="${key}" title="Eliminar"><i data-lucide="trash-2"></i></button>
       <label class="sop-btn sop-btn-ghost sop-btn-sm" style="cursor:pointer" title="Reemplazar"><i data-lucide="refresh-cw"></i>
         <input type="file" data-replace-slot="${key}" class="sop-file-input-hidden" accept="${accept}"></label>
       ${unirBtn}` : ''}
@@ -2504,40 +2482,31 @@
         modalUnirPdfSlot(expId, btn.dataset.slotUnir || 'CRC', info, { reemplazar: true });
       });
     });
-    panel.querySelectorAll('[data-slot-pdf]').forEach((btn) => {
-      btn.addEventListener('click', () => abrirPdfSlotArmado(expId, btn.dataset.slotPdf, false));
+    panel.querySelectorAll('[data-slot-ver]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const tipo = btn.dataset.slotVer;
+        abrirPdfEnNavegador(
+          `/api/soportes/armado/expedientes/${expId}/archivos/${encodeURIComponent(tipo)}/descargar?inline=1`
+        );
+      });
     });
     panel.querySelectorAll('[data-slot-pagina]').forEach((btn) => {
-      btn.addEventListener('click', () => abrirPdfSlotArmado(expId, btn.dataset.slotPagina, true));
+      btn.addEventListener('click', () => abrirPdfSlotArmado(expId, btn.dataset.slotPagina));
     });
   }
 
-  function abrirPdfSlotArmado(expId, tipo, enPagina) {
+  function abrirPdfSlotArmado(expId, tipo) {
     const det = armState.expedienteDetalle || {};
     const slot = det.slots?.[tipo] || {};
     const titulo = `${armState.expedienteCodigo || 'Expediente'} — ${tipo}`;
     const sub = slot.nombre_archivo || slot.nombre_original || '';
-    const cfg = {
-      pdfUrl: `/api/soportes/armado/expedientes/${expId}/archivos/${tipo}/descargar?inline=1`,
-      saveUrl: puedeResaltarArmado()
-        ? `/api/soportes/armado/expedientes/${expId}/archivos/${tipo}/resaltar`
-        : '',
-      downloadUrl: `/api/soportes/armado/expedientes/${expId}/archivos/${tipo}/descargar`,
-      title: sub ? `${titulo}: ${sub}` : titulo,
-      canEdit: puedeResaltarArmado(),
-      onSaved: () => abrirExpedienteArmado(expId)
-    };
-    if (enPagina) {
-      abrirVisorPdfEnPagina({
-        fuente: 'armado',
-        expId,
-        tipo,
-        titulo: cfg.title,
-        edit: puedeResaltarArmado()
-      });
-    } else {
-      abrirEditorPdfSoportes(cfg);
-    }
+    abrirVisorPdfEnPagina({
+      fuente: 'armado',
+      expId,
+      tipo,
+      titulo: sub ? `${titulo}: ${sub}` : titulo,
+      edit: puedeResaltarArmado()
+    });
   }
 
   function detectarParteCrcTipoCliente(name) {

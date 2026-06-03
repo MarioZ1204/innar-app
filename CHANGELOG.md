@@ -3,6 +3,16 @@
 Todos los cambios importantes a la aplicación se documentan aquí. El formato
 sigue (informalmente) [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
+## [1.5.81] — 2026-06-03
+
+### Cambiado
+
+- **Soportes — PDF**: el ojo abre el PDF en el visor del navegador; «Editar PDF» (enlace externo) abre la herramienta con resaltar, añadir PDF y guardar. Eliminado el modal «ver y resaltar».
+
+### Añadido
+
+- **Soportes — PDF**: anexar uno o más PDF al final del documento desde la página de edición (PDX y Armado).
+
 ## [1.5.80] — 2026-06-03
 
 ### Añadido
