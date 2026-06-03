@@ -34,7 +34,20 @@ const { aplicarRenombradoPorFev } = require('./soportes-fe-rename');
 
 const { esExpedientePendienteFactura } = require('./soportes-pacientes-parse');
 
-
+function moveFileToDest(tempPath, destPath) {
+  if (path.resolve(tempPath) === path.resolve(destPath)) return;
+  if (fs.existsSync(destPath)) fs.unlinkSync(destPath);
+  try {
+    fs.renameSync(tempPath, destPath);
+  } catch (e) {
+    if (e.code === 'EXDEV') {
+      fs.copyFileSync(tempPath, destPath);
+      fs.unlinkSync(tempPath);
+    } else {
+      throw e;
+    }
+  }
+}
 
 async function loadRipsSlotsOcupados(expedienteId) {
 
@@ -84,9 +97,7 @@ async function saveRipsArchivo(exp, ctx, slotKey, tempPath, originalName, usuari
 
   const destPath = path.join(feDir, diskName);
 
-  if (fs.existsSync(destPath)) fs.unlinkSync(destPath);
-
-  fs.renameSync(tempPath, destPath);
+  moveFileToDest(tempPath, destPath);
 
   const rutaRelativa = path.join(feRel, diskName).replace(/\\/g, '/');
 
@@ -159,15 +170,11 @@ async function saveSoportesArchivo(exp, ctx, slotKey, tempPath, originalName, us
 
   const destPath = path.join(feDir, diskName);
 
-  if (fs.existsSync(destPath)) fs.unlinkSync(destPath);
-
-  fs.renameSync(tempPath, destPath);
+  moveFileToDest(tempPath, destPath);
 
   const rutaRelativa = path.join(feRel, diskName).replace(/\\/g, '/');
 
   const tamano = fs.statSync(destPath).size;
-
-
 
   await db.execute('DELETE FROM sop_exp_archivos WHERE expediente_id = ? AND tipo = ?', [exp.id, slotKey]);
 
@@ -343,6 +350,14 @@ async function ingestFeArchivo(exp, ctx, tempPath, originalName, usuarioId, tipo
 
     };
 
+  }
+
+  if (det.tipo === 'OPF' || tipoManual === 'OPF') {
+    return {
+      ok: false,
+      status: 400,
+      error: 'Use el botón «Generar OPF» para unir ORDEN+HC (reportes) con la autorización en un solo PDF.'
+    };
   }
 
 

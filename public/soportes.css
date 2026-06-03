@@ -477,6 +477,115 @@
   align-items: center;
 }
 
+/* Explorador de carpetas (armado) */
+.sop-folder-explorer-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 14px;
+}
+
+.sop-folder-explorer-grid--2 {
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  max-width: 720px;
+}
+
+.sop-explorer-hint {
+  font-size: 0.85rem;
+  color: #64748b;
+  margin: 0 0 16px;
+}
+
+.sop-folder-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid var(--sop-border, #e2e8f0);
+  border-radius: 12px;
+  background: #fff;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.12s;
+}
+
+.sop-folder-card:hover,
+.sop-folder-card:focus-visible {
+  border-color: #0d9488;
+  box-shadow: 0 4px 16px rgba(13, 148, 136, 0.12);
+  outline: none;
+}
+
+.sop-folder-card.is-active {
+  border-color: #0d9488;
+  background: #f0fdfa;
+}
+
+.sop-folder-card-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: #f1f5f9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #0d9488;
+}
+
+.sop-folder-card-icon--lg {
+  width: 52px;
+  height: 52px;
+}
+
+.sop-folder-card-title {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: #0f172a;
+  line-height: 1.3;
+}
+
+.sop-folder-card-meta {
+  font-size: 0.78rem;
+  color: #64748b;
+}
+
+.sop-folder-card-count {
+  font-size: 0.8rem;
+  color: #475569;
+}
+
+.sop-folder-card-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid #f1f5f9;
+}
+
+.sop-folder-card--fe {
+  cursor: default;
+}
+
+.sop-folder-card--fe .sop-folder-card-icon {
+  color: #0369a1;
+  background: #e0f2fe;
+}
+
+.sop-vinculos-list {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.85rem;
+}
+
+.sop-vinculos-list li {
+  padding: 8px 0;
+  border-bottom: 1px solid #f1f5f9;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
 .sop-contenedores-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
@@ -569,6 +678,71 @@
 .sop-pdx-format-ejemplo {
   margin: 0 0 6px;
   font-size: 0.8rem;
+}
+
+.sop-pdx-campos-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 50vh;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.sop-campo-row label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #334155;
+  margin-bottom: 4px;
+}
+
+.sop-campo-row input,
+.sop-campo-row select {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.sop-campo-row--falta input,
+.sop-campo-row--falta select {
+  border-color: #f59e0b;
+  background: #fffbeb;
+}
+
+.sop-campo-row--ok input,
+.sop-campo-row--ok select {
+  border-color: #86efac;
+  background: #f0fdf4;
+}
+
+.sop-campo-badge {
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.sop-campo-badge.ok { background: #dcfce7; color: #166534; }
+.sop-campo-badge.auto { background: #e0f2fe; color: #0369a1; }
+.sop-campo-badge.falta { background: #fef3c7; color: #b45309; }
+.sop-campo-badge.opc { background: #f1f5f9; color: #64748b; }
+
+.sop-campo-inferred {
+  font-size: 0.88rem;
+  color: #0f766e;
+  padding: 8px 10px;
+  background: #f0fdfa;
+  border-radius: 8px;
+  border: 1px solid #99f6e4;
+}
+
+.sop-pdx-format-minimos {
+  font-size: 0.82rem;
+  color: #475569;
+  margin: 6px 0 0;
 }
 
 .sop-pdx-format-nota {

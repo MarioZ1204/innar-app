@@ -11387,15 +11387,20 @@ async function iniciarEstudioSinDuracion() {
   }
 
   const duracionMinutos = citaElectroSeleccionada.duracion_minutos || 480;
-  const horaInicioRegistro = obtenerHoraInicioAgendadaElectro(citaElectroSeleccionada);
-  if (!horaInicioRegistro) {
+  const horaInicioAgendada = obtenerHoraInicioAgendadaElectro(citaElectroSeleccionada);
+  if (!horaInicioAgendada) {
     showToast('La cita no tiene hora de agendamiento válida', 'error');
     return;
   }
 
   const fechaCitaRaw = citaElectroSeleccionada.fecha || new Date().toISOString().slice(0, 10);
   const fechaCita = typeof fechaCitaRaw === 'string' && fechaCitaRaw.length > 10 ? fechaCitaRaw.slice(0, 10) : String(fechaCitaRaw);
-  const finCalc = calcularHoraFinElectroDesdeInicio(fechaCita, horaInicioRegistro, duracionMinutos);
+  const horaInicioRegistro = horaInicioAgendada;
+  let horaBaseFin = horaInicioRegistro;
+  if (electroFinProgramadoYaPaso(fechaCita, horaInicioRegistro, duracionMinutos)) {
+    horaBaseFin = obtenerHoraInicioSolicitudElectro();
+  }
+  const finCalc = calcularHoraFinElectroDesdeInicio(fechaCita, horaBaseFin, duracionMinutos);
   if (!finCalc) {
     showToast('No se pudo calcular la hora de fin del estudio', 'error');
     return;
@@ -11404,15 +11409,6 @@ async function iniciarEstudioSinDuracion() {
   const equipoId = equipoSelect.value;
 
   const continuar = () => ejecutarInicioEstudioAgendado(duracionMinutos, horaInicioRegistro, horaFin, horaFinDate, equipoId);
-
-  if (electroFinProgramadoYaPaso(fechaCita, horaInicioRegistro, duracionMinutos)) {
-    showConfirm(
-      `Iniciará a las ${horaInicioRegistro} (hora programada). La hora de fin calculada (${horaFin}) ya pasó; el estudio podría cerrarse automáticamente. ¿Continuar?`,
-      continuar,
-      { okText: 'Sí, iniciar', cancelText: 'Cancelar', danger: true, icon: '⚠️' }
-    );
-    return;
-  }
 
   await continuar();
 }

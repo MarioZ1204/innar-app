@@ -87,13 +87,20 @@ function finProgramadoCitaElectro(cita) {
   return { horaFin, fechaFin };
 }
 
-/** true si el fin programado ya pasó (comparación UTC coherente con sumarMinutosAHoraYFecha). */
-function estudioElectroFinProgramadoVencido(cita, ahora = new Date()) {
-  const fin = finProgramadoCitaElectro(cita);
-  if (!fin) return false;
+/** Ms de fin programado en calendario local (coherente con TIMESTAMP MySQL / UI). */
+function finProgramadoMsLocal(fin) {
+  if (!fin?.fechaFin || !fin?.horaFin) return null;
   const [y, mo, d] = fin.fechaFin.split('-').map(Number);
   const [hh, mm] = fin.horaFin.split(':').map(Number);
-  const finMs = Date.UTC(y, mo - 1, d, hh, mm, 0);
+  const t = new Date(y, mo - 1, d, hh, mm, 0).getTime();
+  return Number.isNaN(t) ? null : t;
+}
+
+/** true si el fin programado ya pasó (hora local del servidor). */
+function estudioElectroFinProgramadoVencido(cita, ahora = new Date()) {
+  const fin = finProgramadoCitaElectro(cita);
+  const finMs = finProgramadoMsLocal(fin);
+  if (finMs == null) return false;
   return finMs <= ahora.getTime();
 }
 
@@ -129,6 +136,49 @@ function horaInicioEfectivaParaInicioEstudio(cita, ahora = new Date()) {
   return base;
 }
 
+/**
+ * Fin al pasar a En Estudio. Si inicio+duración ya venció, el fin se ancla a
+ * hora efectiva (ahora si la agendada ya pasó) + duración completa.
+ */
+function calcularFinInicioEstudioElectro(fechaIni, horaIniStr, durMin, modoInicio, ahora = new Date()) {
+  const dur = parseInt(durMin, 10);
+  if (!extraerFechaYmd(fechaIni) || !/^\d{2}:\d{2}$/.test(String(horaIniStr || '').slice(0, 5)) || !(dur > 0)) {
+    return null;
+  }
+  const horaIni = String(horaIniStr).slice(0, 5);
+  const finDesdeInicio = sumarMinutosAHoraYFecha(fechaIni, horaIni, dur);
+  if (!finDesdeInicio) return null;
+
+  const citaTmp = {
+    fecha: fechaIni,
+    hora_inicio: horaIni,
+    duracion_minutos: dur,
+    hora_fin: finDesdeInicio.horaFin,
+    hora_fin_date: finDesdeInicio.fechaFin
+  };
+  if (!estudioElectroFinProgramadoVencido(citaTmp, ahora)) {
+    return {
+      hora_inicio: horaIni,
+      hora_fin: finDesdeInicio.horaFin,
+      hora_fin_date: finDesdeInicio.fechaFin,
+      duracion_minutos: dur
+    };
+  }
+
+  const modo = String(modoInicio || '').trim().toLowerCase();
+  const horaEfectiva = modo === 'agendado'
+    ? horaInicioEfectivaParaInicioEstudio({ fecha: fechaIni, hora_agendamiento: horaIni }, ahora)
+    : horaIni;
+  const finDesdeEfectiva = sumarMinutosAHoraYFecha(fechaIni, horaEfectiva, dur);
+  if (!finDesdeEfectiva) return null;
+  return {
+    hora_inicio: horaIni,
+    hora_fin: finDesdeEfectiva.horaFin,
+    hora_fin_date: finDesdeEfectiva.fechaFin,
+    duracion_minutos: dur
+  };
+}
+
 /** SQL: fin programado vencido — prioriza hora_inicio + duracion_minutos (igual que finProgramadoCitaElectro). */
 function sqlEstudioElectroFinProgramadoVencido(alias) {
   const p = alias ? `${alias}.` : '';
@@ -155,6 +205,8 @@ module.exports = {
   horaInicioAgendadaParaInicioEstudio,
   horaInicioEfectivaParaInicioEstudio,
   finProgramadoCitaElectro,
+  finProgramadoMsLocal,
   estudioElectroFinProgramadoVencido,
+  calcularFinInicioEstudioElectro,
   sqlEstudioElectroFinProgramadoVencido
 };

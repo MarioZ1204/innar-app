@@ -320,16 +320,152 @@
       }).join('');
   }
 
+  function camposMinimosAyudaCliente(tema) {
+    const oblig = ['Apellidos', 'Nombres', 'Fecha del estudio'];
+    const opc = [];
+    if (esCarpetaEstructuradaPdx({ nombre_display: tema })) {
+      return { oblig: [...oblig, 'Número de documento', 'Tipo de examen'], opc: ['Tipo de documento (CC, TI…)'] };
+    }
+    if (tema === 'psg') {
+      return { oblig: [...oblig, 'Tipo PSG (Básica, CPAP, BPAP)'], opc: ['Documento'] };
+    }
+    if (['vtm', 'eeg', 'actigrafia'].includes(tema)) {
+      return { oblig, opc: ['Estudio (se completa según la carpeta)'] };
+    }
+    return { oblig, opc: [] };
+  }
+
   function actualizarAyudaFormatoPdx() {
     const el = $('sopPdxFormatHelp');
     if (!el) return;
     const tema = detectarTemaCarpetaCliente(pdxState.carpetaActual?.nombre_display || '');
     const ayuda = ayudaFormatoCliente(tema);
+    const min = camposMinimosAyudaCliente(tema);
     el.innerHTML = `
-      <p class="sop-pdx-format-pattern"><strong>Estructura requerida:</strong> <code>${escapeHtml(ayuda.pattern)}</code></p>
+      <p class="sop-pdx-format-pattern"><strong>Nombre ideal:</strong> <code>${escapeHtml(ayuda.pattern)}</code></p>
       <p class="sop-pdx-format-ejemplo"><strong>Ejemplo:</strong> ${escapeHtml(ayuda.ejemplo)}</p>
-      ${ayuda.nota ? `<p class="sop-pdx-format-nota" style="margin:6px 0 0;font-size:.82rem;color:#64748b">${escapeHtml(ayuda.nota)}</p>` : ''}`;
+      <p class="sop-pdx-format-minimos"><strong>Mínimo para subir:</strong> ${escapeHtml(min.oblig.join(' · '))}${min.opc.length ? ` <span style="color:#64748b">(opcional: ${escapeHtml(min.opc.join(', '))})</span>` : ''}</p>
+      <p class="sop-pdx-format-nota" style="margin:6px 0 0;font-size:.82rem;color:#0d9488">Si el nombre no trae todo, el sistema detecta lo que pueda y le pedirá solo los campos que falten.</p>
+      ${ayuda.nota ? `<p class="sop-pdx-format-nota" style="margin:4px 0 0;font-size:.82rem;color:#64748b">${escapeHtml(ayuda.nota)}</p>` : ''}`;
     sopIcons(el);
+  }
+
+  async function preAnalizarArchivoPdx(carpetaId, nombre) {
+    const res = await apiFetch(`/api/soportes/pdx/carpetas/${carpetaId}/pre-analizar`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nombre })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'No se pudo analizar el archivo');
+    return data;
+  }
+
+  function badgeEstadoCampoPdx(c) {
+    if (c.estado === 'ok') return '<span class="sop-campo-badge ok">Detectado en el nombre</span>';
+    if (c.estado === 'auto') return '<span class="sop-campo-badge auto">Automático</span>';
+    if (c.estado === 'falta') return '<span class="sop-campo-badge falta">Complete este dato</span>';
+    return '<span class="sop-campo-badge opc">Opcional</span>';
+  }
+
+  function htmlInputCampoPdx(c, datos) {
+    const val = escapeHtml(c.valor || datos[c.key] || c.defecto || '');
+    const wrapCls = `sop-campo-row sop-campo-row--${c.estado}`;
+    if (c.input === 'date') {
+      return `<div class="${wrapCls}" data-campo="${c.key}">
+        <label>${escapeHtml(c.label)}${c.requerido ? ' *' : ''} ${badgeEstadoCampoPdx(c)}</label>
+        <input type="date" class="sop-pdx-campo-input" data-key="${c.key}" value="${val}"></div>`;
+    }
+    if (c.input === 'estudio') {
+      return `<div class="${wrapCls}" data-campo="${c.key}">
+        <label>${escapeHtml(c.label)} * ${badgeEstadoCampoPdx(c)}</label>
+        <select class="sop-pdx-campo-input" data-key="${c.key}" data-tipo="estudio"></select></div>`;
+    }
+    if (c.input === 'psg_estudio') {
+      return `<div class="${wrapCls}" data-campo="${c.key}">
+        <label>${escapeHtml(c.label)} * ${badgeEstadoCampoPdx(c)}</label>
+        <select class="sop-pdx-campo-input" data-key="${c.key}" data-tipo="psg"></select></div>`;
+    }
+    if (c.input === 'inferred') {
+      return `<div class="${wrapCls}" data-campo="${c.key}">
+        <label>${escapeHtml(c.label)} ${badgeEstadoCampoPdx(c)}</label>
+        <div class="sop-campo-inferred">${escapeHtml(c.valor || '—')}</div>
+        <input type="hidden" class="sop-pdx-campo-input" data-key="${c.key}" value="${val}"></div>`;
+    }
+    return `<div class="${wrapCls}" data-campo="${c.key}">
+      <label>${escapeHtml(c.label)}${c.requerido ? ' *' : ''} ${badgeEstadoCampoPdx(c)}</label>
+      <input type="text" class="sop-pdx-campo-input" data-key="${c.key}" value="${val}"${c.key === 'paciente_documento' ? ' inputmode="numeric"' : ''}></div>`;
+  }
+
+  function leerCamposDesdeModal(modal) {
+    const body = { confirmacion_manual: '1' };
+    modal.querySelectorAll('.sop-pdx-campo-input').forEach((inp) => {
+      const k = inp.dataset.key;
+      if (!k) return;
+      body[k] = inp.tagName === 'SELECT' ? inp.value?.trim() : inp.value?.trim();
+    });
+    if (body.paciente_documento) body.paciente_documento = body.paciente_documento.replace(/\s/g, '');
+    return body;
+  }
+
+  function validarCamposModal(body, campos) {
+    for (const c of campos || []) {
+      if (!c.requerido) continue;
+      const v = String(body[c.key] || '').trim();
+      if (!v) return `Complete: ${c.label}`;
+    }
+    return null;
+  }
+
+  async function poblarSelectsCamposPdx(modal, campos, datos) {
+    for (const c of campos || []) {
+      const sel = modal.querySelector(`[data-key="${c.key}"][data-tipo="estudio"], [data-key="${c.key}"][data-tipo="psg"]`);
+      if (!sel) continue;
+      if (sel.dataset.tipo === 'psg') poblarSelectEstudioPsgCliente(sel, datos.estudio_texto || c.valor);
+      else await poblarSelectEstudioPdx(sel, datos.estudio_texto || c.valor);
+    }
+  }
+
+  function modalDatosArchivoPdx(file, carpetaId, analisis) {
+    const carpeta = pdxState.carpetaActual || pdxState.carpetas.find((c) => c.id === carpetaId);
+    const campos = analisis.campos || [];
+    const datos = analisis.parcial || {};
+    const esCorreccion = !!analisis.requiere_correccion;
+    const titulo = esCorreccion ? 'Completar datos del archivo' : 'Confirmar y subir';
+    const lead = esCorreccion
+      ? (analisis.error || 'Faltan datos en el nombre del archivo. Rellene solo lo que no se detectó.')
+      : (analisis.formato_completo
+        ? 'El nombre cumple la estructura. Revise los datos detectados y suba el PDF.'
+        : 'Se detectaron los datos mínimos en el nombre. Revise y ajuste si hace falta.');
+
+    return new Promise((resolve, reject) => {
+      const camposHtml = campos.map((c) => htmlInputCampoPdx(c, datos)).join('');
+      const modal = openSopModal(`
+        <h3><i data-lucide="${esCorreccion ? 'file-warning' : 'file-check'}"></i> ${titulo}</h3>
+        <p style="font-size:.85rem;color:#64748b;margin:-8px 0 10px">${escapeHtml(lead)}</p>
+        <dl class="sop-upload-preview" style="margin-bottom:12px">
+          <dt>Archivo</dt><dd style="word-break:break-all">${escapeHtml(file.name)}</dd>
+          <dt>Carpeta</dt><dd>${escapeHtml(carpeta?.nombre_display || '')}</dd>
+        </dl>
+        <div class="sop-pdx-campos-form">${camposHtml}</div>
+        <div class="sop-dialog-actions">
+          <button type="button" class="sop-btn sop-btn-ghost" id="sopPdxDatosCancel">Cancelar</button>
+          <button type="button" class="sop-btn sop-btn-primary" id="sopPdxDatosOk">Subir PDF</button>
+        </div>`);
+      poblarSelectsCamposPdx(modal, campos, datos).then(() => sopIcons(modal));
+      modal.querySelector('#sopPdxDatosCancel').onclick = () => { closeSopModal(modal); reject(new Error('cancelado')); };
+      modal.querySelector('#sopPdxDatosOk').onclick = async () => {
+        const body = leerCamposDesdeModal(modal);
+        const err = validarCamposModal(body, campos);
+        if (err) return sopToast(err, 'warning');
+        try {
+          await subirArchivoPdx(file, carpetaId, body);
+          closeSopModal(modal);
+          sopToast('Archivo subido', 'success');
+          resolve();
+        } catch (e) { sopToast(e.message, 'error'); }
+      };
+    });
   }
 
   let _cacheEstudiosPdx = null;
@@ -624,6 +760,18 @@
     consentimientos: 'file-signature',
     neutral: 'folder'
   };
+
+  function destinoImportDesdeTema(tema) {
+    if (tema === 'comprobantes') return 'CRC';
+    if (tema === 'consentimientos') return null;
+    if (tema === 'ordenes') return 'ORDEN+HC';
+    return 'PDX';
+  }
+
+  function puedeVincularArchivoAFe(a, temaCarpeta) {
+    if (a?.puede_vincular_fe === false) return false;
+    return temaCarpeta !== 'consentimientos';
+  }
 
   const TEMA_LABEL = {
     vtm: 'VTM',
@@ -1061,7 +1209,7 @@
         ${canEdit && !enArchivo ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-pdx-replace="${a.id}" title="Reemplazar PDF"><i data-lucide="file-up"></i></button>` : ''}
         ${canEdit && !enArchivo ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-pdx-move="${a.id}" title="Mover a otra carpeta"><i data-lucide="folder-input"></i></button>` : ''}
         ${canVer ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-pdx-hist="${a.id}" title="Historial"><i data-lucide="history"></i></button>` : ''}
-        ${sopPerm('soportes.armado.importar_pdx') ? `<button type="button" class="sop-btn sop-btn-primary sop-btn-sm" data-pdx-link="${a.id}" title="Vincular FE"><i data-lucide="link-2"></i></button>` : ''}
+        ${sopPerm('soportes.armado.importar_pdx') && puedeVincularArchivoAFe(a, temaCarpeta) ? `<button type="button" class="sop-btn sop-btn-primary sop-btn-sm" data-pdx-link="${a.id}" data-pdx-dest="${escapeHtml(a.destino_importacion || destinoImportDesdeTema(temaCarpeta) || 'PDX')}" title="Vincular a carpeta FE"><i data-lucide="link-2"></i></button>` : ''}
         ${canDelete ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-pdx-del="${a.id}" title="Eliminar" style="color:#dc2626"><i data-lucide="trash-2"></i></button>` : ''}
       </div></td>
     </tr>`;
@@ -1073,7 +1221,9 @@
       b.addEventListener('click', () => descargarArchivoPdx(parseInt(b.dataset.pdxDl, 10)));
     });
     tbody.querySelectorAll('[data-pdx-link]').forEach((b) => {
-      b.addEventListener('click', () => modalVincularPdx(parseInt(b.dataset.pdxLink, 10)));
+      b.addEventListener('click', () => modalVincularDeposito(parseInt(b.dataset.pdxLink, 10), {
+        destino_importacion: b.dataset.pdxDest
+      }));
     });
     tbody.querySelectorAll('[data-pdx-edit-arch]').forEach((b) => {
       b.addEventListener('click', () => {
@@ -1433,21 +1583,9 @@
     return data;
   }
 
-  function flujoSubidaPdx(file, carpetaId) {
-    return new Promise((resolve, reject) => {
-      const carpeta = pdxState.carpetaActual || pdxState.carpetas.find((c) => c.id === carpetaId);
-      const analisis = analizarNombreArchivoCliente(file.name, carpeta);
-      if (analisis.requiere_correccion) {
-        modalCorregirDatosPdx(file, carpetaId, carpeta, analisis, resolve, reject);
-        return;
-      }
-      const parsed = analisis.parsed;
-      if (esCarpetaEstructuradaPdx(carpeta)) {
-        modalSubidaEstructuradaCompleto(file, carpetaId, carpeta, parsed, resolve, reject);
-        return;
-      }
-      modalSubidaPdxNombreCompleto(file, carpetaId, carpeta, parsed, resolve, reject);
-    });
+  async function flujoSubidaPdx(file, carpetaId) {
+    const analisis = await preAnalizarArchivoPdx(carpetaId, file.name);
+    return modalDatosArchivoPdx(file, carpetaId, analisis);
   }
 
   function modalCorregirDatosPdx(file, carpetaId, carpeta, analisis, resolve, reject) {
@@ -1620,18 +1758,16 @@
     };
   }
 
-  function modalSubidaLotePdx(files, carpetaId) {
+  async function modalSubidaLotePdx(files, carpetaId) {
     const carpeta = pdxState.carpetaActual || pdxState.carpetas.find((c) => c.id === carpetaId);
     const tema = detectarTemaCarpetaCliente(carpeta?.nombre_display || '');
-    if (esCarpetaEstructuradaPdx(carpeta)) {
-      return (async () => {
-        for (const file of files) {
-          await flujoSubidaPdx(file, carpetaId);
-        }
-      })();
-    }
-    const items = files.map((file, idx) => {
-      const analisis = analizarNombreArchivoCliente(file.name, carpeta);
+    const items = await Promise.all(files.map(async (file, idx) => {
+      let analisis;
+      try {
+        analisis = await preAnalizarArchivoPdx(carpetaId, file.name);
+      } catch (e) {
+        analisis = { requiere_correccion: true, error: e.message, campos: [], parcial: {} };
+      }
       return {
         idx,
         file,
@@ -1639,7 +1775,7 @@
         parsed: analisis.parsed,
         necesitaCorreccion: !!analisis.requiere_correccion
       };
-    });
+    }));
     const listos = items.filter((it) => !it.necesitaCorreccion);
     if (!listos.length) {
       return (async () => {
@@ -1650,12 +1786,14 @@
     }
     const filas = items.map((it) => {
       if (!it.necesitaCorreccion) {
-        const w = pdxUploadWarnings(it.parsed, carpeta);
-        const est = it.parsed.estudio_texto || inferirEstudioCliente(carpeta);
+        const d = it.analisis.parcial || it.parsed || {};
+        const paciente = (d.apellidos && d.nombres) ? `${d.apellidos}, ${d.nombres}` : (it.parsed?.paciente_nombre || '—');
+        const w = pdxUploadWarnings(it.parsed || d, carpeta);
+        const est = d.estudio_texto || it.parsed?.estudio_texto || inferirEstudioCliente(carpeta);
         return `<tr data-lote-idx="${it.idx}">
           <td>${escapeHtml(it.file.name)}</td>
-          <td>${escapeHtml(it.parsed.paciente_nombre)}</td>
-          <td>${escapeHtml(it.parsed.fecha_estudio)}</td>
+          <td>${escapeHtml(paciente)}</td>
+          <td>${escapeHtml(d.fecha_estudio || '—')}</td>
           <td>${escapeHtml(est || '—')}</td>
           <td>${w.length ? '<span style="color:#b45309">Revisar</span>' : '<span style="color:#059669">OK</span>'}</td>
         </tr>`;
@@ -1689,9 +1827,7 @@
           const it = items.find((x) => x.idx === idx);
           if (!it) return;
           try {
-            await new Promise((res, rej) => {
-              modalCorregirDatosPdx(it.file, carpetaId, carpeta, it.analisis, res, rej);
-            });
+            await modalDatosArchivoPdx(it.file, carpetaId, it.analisis);
             btn.closest('tr')?.remove();
             it.necesitaCorreccion = false;
             const restantes = items.filter((x) => x.necesitaCorreccion).length;
@@ -1712,7 +1848,13 @@
       });
       modal.querySelector('#sopPdxLoteCancel').onclick = () => { closeSopModal(modal); reject(new Error('cancelado')); };
       modal.querySelector('#sopPdxLoteOk').onclick = async () => {
-        const extras = listos.map((it) => ({ file: it.file, extra: undefined }));
+        const extras = listos.map((it) => {
+          const extra = it.analisis.formato_completo ? undefined : {
+            confirmacion_manual: '1',
+            ...(it.analisis.parcial || {})
+          };
+          return { file: it.file, extra };
+        });
         const btn = modal.querySelector('#sopPdxLoteOk');
         btn.disabled = true;
         let ok = 0;
@@ -1891,34 +2033,40 @@
     }
   }
 
-  async function modalVincularPdx(pdxArchivoId) {
+  async function modalVincularDeposito(pdxArchivoId, meta = {}) {
     const res = await apiFetch('/api/soportes/armado/expedientes-select');
     const data = await res.json();
+    if (!res.ok) { sopToast(data.error || 'Error', 'error'); return; }
+    const destLabel = meta.destino_importacion || 'expediente';
     const opts = (data.expedientes || []).map((e) =>
-      `<option value="${e.id}">${escapeHtml(e.codigo)} (${escapeHtml(e.periodo)} · ${escapeHtml(e.dia_nombre || '')} · ${escapeHtml(e.contenedor_tipo || '')})</option>`
+      `<option value="${e.id}">${escapeHtml(e.codigo)} · ${escapeHtml(e.paciente_nombre || 'Sin paciente')} (${escapeHtml(e.periodo)} · ${escapeHtml(e.dia_nombre || '')})</option>`
     ).join('');
     const modal = openSopModal(`
-      <h3><i data-lucide="link-2" style="vertical-align:-3px;width:20px"></i> Vincular a expediente FE</h3>
-      <div class="sop-field"><label>Expediente</label>
+      <h3><i data-lucide="link-2" style="vertical-align:-3px;width:20px"></i> Vincular a carpeta FE</h3>
+      <p style="font-size:.85rem;color:#64748b;margin:-6px 0 12px">Se copiará al expediente como <strong>${escapeHtml(destLabel)}</strong> (carpeta SOPORTES).</p>
+      <div class="sop-field"><label>Carpeta FE (SOPORTES)</label>
         <select id="sopLinkExp"><option value="">— Seleccione —</option>${opts}</select></div>
       <div class="sop-dialog-actions">
         <button type="button" class="sop-btn sop-btn-ghost" id="sopLinkCancel">Cancelar</button>
-        <button type="button" class="sop-btn sop-btn-primary" id="sopLinkOk">Importar PDX</button>
+        <button type="button" class="sop-btn sop-btn-primary" id="sopLinkOk">Vincular</button>
       </div>`);
     modal.querySelector('#sopLinkCancel').onclick = () => closeSopModal(modal);
     modal.querySelector('#sopLinkOk').onclick = async () => {
       const expId = parseInt($('sopLinkExp').value, 10);
       if (!expId) return sopToast('Seleccione un expediente', 'warning');
-      const r2 = await apiFetch(`/api/soportes/armado/expedientes/${expId}/importar-pdx`, {
+      const btn = modal.querySelector('#sopLinkOk');
+      btn.disabled = true;
+      const r2 = await apiFetch(`/api/soportes/armado/expedientes/${expId}/importar-deposito`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pdx_archivo_id: pdxArchivoId })
       });
       const d2 = await r2.json();
-      if (!r2.ok) { sopToast(d2.error || 'Error', 'error'); return; }
+      btn.disabled = false;
+      if (!r2.ok) { sopToast(d2.error || 'Error al vincular', 'error'); return; }
       if (d2.warnings?.length) sopToast(d2.warnings.join(' · '), 'warning');
       closeSopModal(modal);
-      sopToast('PDX vinculado al expediente', 'success');
+      sopToast(d2.message || 'Archivo vinculado', 'success');
     };
   }
 
@@ -1996,51 +2144,64 @@
     const per = armState.periodos.find((p) => p.id === id);
     armState.periodoLabel = per?.etiqueta || per?.periodo || 'Mes';
     renderPeriodosArmado();
-    showSkeletonNavList($('sopArmDias'), 4);
+    const diasEl = $('sopArmDias');
+    if (diasEl) diasEl.innerHTML = '<div class="sop-empty" style="padding:12px;font-size:.78rem;color:#94a3b8">Carpetas del mes → panel principal</div>';
     const res = await apiFetch(`/api/soportes/armado/periodos/${id}/dias`);
     const data = await res.json();
     armState.dias = data.dias || [];
-    const diasEl = $('sopArmDias');
-    if (!armState.dias.length) {
-      diasEl.innerHTML = '<div class="sop-empty" style="padding:16px;font-size:.85rem">Sin carpetas — use «Carpeta de día»</div>';
-    } else {
-      const puedeGestionarDia = sopPerm('soportes.armado.crear_estructura');
-      diasEl.innerHTML = armState.dias.map((d) =>
-        `<div class="sop-nav-item${armState.diaId === d.id ? ' active' : ''}" data-dia-id="${d.id}">
-          <span class="sop-nav-item-main" role="button" tabindex="0" data-dia-open="${d.id}">
-            <span style="font-weight:600">${escapeHtml(d.nombre_display)}</span>
-            ${badgeFacturacionArmado(d.estado_facturacion)}
-          </span>
-          <span style="font-size:.75rem;color:#94a3b8;flex-shrink:0">${d.expedientes_count || 0} FE</span>
-          ${puedeGestionarDia ? `<span class="sop-nav-item-actions">
-            <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-dia-edit="${d.id}" title="Editar"><i data-lucide="pencil"></i></button>
-            <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-dia-del="${d.id}" data-dia-nom="${escapeHtml(d.nombre_display)}" title="Eliminar"><i data-lucide="trash-2"></i></button>
-          </span>` : ''}
-        </div>`
-      ).join('');
-      diasEl.querySelectorAll('[data-dia-open]').forEach((el) => {
-        const open = () => seleccionarDiaArmado(parseInt(el.dataset.diaOpen, 10));
-        el.addEventListener('click', (ev) => { ev.stopPropagation(); open(); });
-        el.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') open(); });
-      });
-      diasEl.querySelectorAll('[data-dia-edit]').forEach((btn) => {
-        btn.addEventListener('click', (ev) => {
-          ev.stopPropagation();
-          modalEditarDiaArmado(parseInt(btn.dataset.diaEdit, 10));
-        });
-      });
-      diasEl.querySelectorAll('[data-dia-del]').forEach((btn) => {
-        btn.addEventListener('click', (ev) => {
-          ev.stopPropagation();
-          modalEliminarDiaArmado(parseInt(btn.dataset.diaDel, 10), btn.dataset.diaNom);
-        });
-      });
-    }
-    sopIcons(diasEl);
     renderArmadoPeriodoSummary();
-    renderArmadoPlaceholder('Seleccione una carpeta de día (facturados o a facturar)');
+    renderArmadoDiasExplorer();
     renderArmadoContextBar();
     sopArmNavOpen(false);
+  }
+
+  function renderArmadoDiasExplorer() {
+    const panel = $('sopArmExpedientePanel');
+    if (!panel || !armState.periodoId) return;
+    armState.vista = 'period';
+    const puedeGestionarDia = sopPerm('soportes.armado.crear_estructura');
+    panel.innerHTML = `<div class="sop-panel-head">
+        <div>
+          <h3 style="margin:0"><i data-lucide="calendar"></i> ${escapeHtml(armState.periodoLabel || 'Mes')}</h3>
+          <p style="margin:6px 0 0;font-size:.85rem;color:#64748b">Elija una carpeta de día. Dentro encontrará RIPS y SOPORTES con las carpetas FE.</p>
+        </div>
+        ${puedeGestionarDia ? `<button type="button" class="sop-btn sop-btn-teal" id="btnSopArmNuevoDiaInline"><i data-lucide="folder-plus"></i> Carpeta de día</button>` : ''}
+      </div>
+      <div class="sop-panel-body">
+        <div id="sopArmDiasGrid" class="sop-folder-explorer-grid"></div>
+      </div>`;
+    const grid = panel.querySelector('#sopArmDiasGrid');
+    if (!armState.dias.length) {
+      grid.innerHTML = '<div class="sop-empty" style="grid-column:1/-1;padding:32px"><i data-lucide="folder-plus" class="sop-empty-icon"></i>Sin carpetas de día — cree la primera</div>';
+    } else {
+      grid.innerHTML = armState.dias.map((d) => `
+        <article class="sop-folder-card${armState.diaId === d.id ? ' is-active' : ''}" data-dia-id="${d.id}" tabindex="0">
+          <div class="sop-folder-card-icon"><i data-lucide="folder"></i></div>
+          <div class="sop-folder-card-title">${escapeHtml(d.nombre_display)}</div>
+          <div class="sop-folder-card-meta">${badgeFacturacionArmado(d.estado_facturacion)}</div>
+          <div class="sop-folder-card-count"><strong>${d.expedientes_count || 0}</strong> expediente(s) FE</div>
+          ${puedeGestionarDia ? `<div class="sop-folder-card-actions">
+            <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-dia-edit="${d.id}" title="Editar"><i data-lucide="pencil"></i></button>
+            <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-dia-del="${d.id}" data-dia-nom="${escapeHtml(d.nombre_display)}" title="Eliminar"><i data-lucide="trash-2"></i></button>
+          </div>` : ''}
+        </article>`).join('');
+      grid.querySelectorAll('[data-dia-id]').forEach((card) => {
+        const open = () => seleccionarDiaArmado(parseInt(card.dataset.diaId, 10));
+        card.addEventListener('click', (ev) => {
+          if (ev.target.closest('[data-dia-edit],[data-dia-del]')) return;
+          open();
+        });
+        card.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') open(); });
+      });
+      grid.querySelectorAll('[data-dia-edit]').forEach((btn) => {
+        btn.addEventListener('click', (ev) => { ev.stopPropagation(); modalEditarDiaArmado(parseInt(btn.dataset.diaEdit, 10)); });
+      });
+      grid.querySelectorAll('[data-dia-del]').forEach((btn) => {
+        btn.addEventListener('click', (ev) => { ev.stopPropagation(); modalEliminarDiaArmado(parseInt(btn.dataset.diaDel, 10), btn.dataset.diaNom); });
+      });
+    }
+    panel.querySelector('#btnSopArmNuevoDiaInline')?.addEventListener('click', modalNuevoDiaArmado);
+    sopIcons(panel);
   }
 
   function renderArmadoPlaceholder(msg) {
@@ -2067,20 +2228,19 @@
     const diaRow = armState.dias.find((d) => d.id === id);
     armState.diaLabel = diaRow?.nombre_display || 'Carpeta';
     armState.diaFacturacion = diaRow?.estado_facturacion || 'a_facturar';
-    document.querySelectorAll('#sopArmDias .sop-nav-item').forEach((el) => {
-      el.classList.toggle('active', parseInt(el.dataset.diaId, 10) === id);
-    });
     const panel = $('sopArmExpedientePanel');
     panel.innerHTML = `<div class="sop-panel-head">
         <div>
-          <h3 style="margin:0"><i data-lucide="folder"></i> ${escapeHtml(armState.diaLabel)}</h3>
+          <h3 style="margin:0"><i data-lucide="folder-open"></i> ${escapeHtml(armState.diaLabel)}</h3>
           <div style="margin-top:6px">${badgeFacturacionArmado(armState.diaFacturacion)}</div>
         </div>
+        <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="btnSopArmVolverMes"><i data-lucide="arrow-left"></i> ${escapeHtml(armState.periodoLabel || 'Mes')}</button>
       </div>
       <div class="sop-panel-body">
-        <p style="font-size:.85rem;color:#64748b;margin:0 0 14px">Dentro de esta carpeta existen <strong>RIPS</strong> y <strong>SOPORTES</strong> (creadas automáticamente). Elija una para ver o crear subcarpetas <code>FE{número}</code>.</p>
-        <div id="sopArmContenedoresGrid" class="sop-contenedores-grid"><div class="sop-empty"><i data-lucide="loader"></i></div></div>
+        <p class="sop-explorer-hint">Dos carpetas por día: <strong>RIPS</strong> (JSON/XML) y <strong>SOPORTES</strong> (PDF del expediente).</p>
+        <div id="sopArmContenedoresGrid" class="sop-folder-explorer-grid sop-folder-explorer-grid--2"><div class="sop-empty"><i data-lucide="loader"></i></div></div>
       </div>`;
+    panel.querySelector('#btnSopArmVolverMes')?.addEventListener('click', () => seleccionarPeriodoArmado(armState.periodoId));
     const res = await apiFetch(`/api/soportes/armado/dias/${id}/contenedores`);
     const data = await res.json();
     armState.contenedores = data.contenedores || [];
@@ -2091,10 +2251,12 @@
       grid.innerHTML = armState.contenedores.map((c) => {
         const label = labelContenedorArmado(c.tipo);
         const icon = c.tipo === 'rips' ? 'file-spreadsheet' : 'folder-archive';
-        return `<article class="sop-contenedor-card" data-contenedor-id="${c.id}" data-contenedor-tipo="${c.tipo}">
-          <div class="sop-contenedor-icon"><i data-lucide="${icon}"></i></div>
-          <div class="sop-contenedor-title">${label}</div>
-          <div class="sop-contenedor-meta">${c.expedientes_count || 0} carpeta(s) FE</div>
+        const desc = c.tipo === 'rips' ? 'JSON y XML de facturación' : 'OPF, CRC, FEV, PDX…';
+        return `<article class="sop-folder-card sop-folder-card--wide" data-contenedor-id="${c.id}" data-contenedor-tipo="${c.tipo}" tabindex="0">
+          <div class="sop-folder-card-icon sop-folder-card-icon--lg"><i data-lucide="${icon}"></i></div>
+          <div class="sop-folder-card-title">${label}</div>
+          <div class="sop-folder-card-meta">${escapeHtml(desc)}</div>
+          <div class="sop-folder-card-count"><strong>${c.expedientes_count || 0}</strong> carpeta(s) FE</div>
         </article>`;
       }).join('');
       grid.querySelectorAll('[data-contenedor-id]').forEach((card) => {
@@ -2115,17 +2277,21 @@
     const panel = $('sopArmExpedientePanel');
     const tipoLabel = labelContenedorArmado(armState.contenedorTipo);
     panel.innerHTML = `<div class="sop-panel-head">
-        <h3><i data-lucide="folder-tree"></i> ${escapeHtml(tipoLabel)} · ${escapeHtml(armState.diaLabel || '')}</h3>
-        ${sopPerm('soportes.armado.crear_estructura') ? `<button type="button" class="sop-btn sop-btn-teal" id="btnSopArmNuevoFe"><i data-lucide="folder-plus"></i> Nuevas carpetas</button>` : ''}
+        <div>
+          <h3 style="margin:0"><i data-lucide="folder-tree"></i> ${escapeHtml(tipoLabel)}</h3>
+          <p style="margin:4px 0 0;font-size:.85rem;color:#64748b">${escapeHtml(armState.diaLabel || '')}</p>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="btnSopArmVolverDia"><i data-lucide="arrow-left"></i> Día</button>
+        ${sopPerm('soportes.armado.crear_estructura') ? `<button type="button" class="sop-btn sop-btn-teal sop-btn-sm" id="btnSopArmNuevoFe"><i data-lucide="folder-plus"></i> Nuevas carpetas</button>` : ''}
+        </div>
       </div>
       <div class="sop-panel-body">
         <div id="sopArmContenedorSummary"></div>
-        <div class="sop-table-wrap"><table class="sop-table"><thead><tr>
-          <th>Carpeta / Paciente</th><th>Factura</th><th style="width:200px">Acciones</th></tr></thead>
-          <tbody id="sopArmExpedientesBody"></tbody>
-        </table></div>
+        <div id="sopArmExpedientesGrid" class="sop-folder-explorer-grid"><div class="sop-skeleton-block sop-skeleton-folder-card"></div></div>
       </div>`;
-    showSkeletonTableRows($('sopArmExpedientesBody'), 4, 3);
+    const gridSk = panel.querySelector('#sopArmExpedientesGrid');
+    if (gridSk) gridSk.innerHTML = '<div class="sop-skeleton-block sop-skeleton-folder-card"></div><div class="sop-skeleton-block sop-skeleton-folder-card"></div>';
     const res = await apiFetch(`/api/soportes/armado/contenedores/${id}/expedientes`);
     const data = await res.json();
     const list = data.expedientes || [];
@@ -2134,40 +2300,48 @@
       summary.innerHTML = htmlArmadoSummaryChips({ total: list.length, listos: 0, pendientes: list.length });
       sopIcons(summary);
     }
-    const tbody = $('sopArmExpedientesBody');
+    const grid = panel.querySelector('#sopArmExpedientesGrid');
     if (!list.length) {
-      tbody.innerHTML = '<tr><td colspan="3" class="sop-empty" style="padding:20px">Sin carpetas — cree la primera</td></tr>';
+      grid.innerHTML = '<div class="sop-empty" style="grid-column:1/-1;padding:28px">Sin carpetas FE — use «Nuevas carpetas»</div>';
     } else {
-      tbody.innerHTML = list.map((e) => {
+      grid.innerHTML = list.map((e) => {
         const factura = (e.numero_factura != null && Number(e.numero_factura) > 0)
           ? `FE${e.numero_factura}`
-          : '<span class="sop-badge sop-badge-pendiente" style="margin:0">Pendiente FEV</span>';
-        const titulo = e.paciente_nombre
-          ? `${escapeHtml(e.codigo)}<div style="font-size:.78rem;color:#64748b;font-weight:400">${escapeHtml(e.paciente_nombre)}</div>`
-          : escapeHtml(e.codigo);
+          : null;
         const puedeEditar = sopPerm('soportes.armado.subir');
         const puedeEliminar = sopPerm('soportes.armado.crear_estructura');
-        return `<tr>
-        <td><strong><i data-lucide="folder" style="width:14px;height:14px;vertical-align:-2px"></i> ${titulo}</strong></td>
-        <td>${factura}</td>
-        <td><div class="sop-row-actions" style="display:flex;gap:6px;flex-wrap:wrap">
-          <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-exp-id="${e.id}" title="Abrir"><i data-lucide="folder-open"></i></button>
-          ${puedeEditar ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-exp-edit="${e.id}" title="Editar"><i data-lucide="pencil"></i></button>` : ''}
-          ${puedeEliminar ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-exp-del="${e.id}" data-exp-codigo="${escapeHtml(e.codigo)}" title="Eliminar" style="color:#dc2626"><i data-lucide="trash-2"></i></button>` : ''}
-        </div></td>
-      </tr>`;
+        return `<article class="sop-folder-card sop-folder-card--fe" data-exp-id="${e.id}" tabindex="0">
+          <div class="sop-folder-card-icon"><i data-lucide="folder"></i></div>
+          <div class="sop-folder-card-title">${escapeHtml(e.codigo)}</div>
+          <div class="sop-folder-card-meta">${escapeHtml(e.paciente_nombre || 'Sin paciente')}</div>
+          <div class="sop-folder-card-count">${factura ? escapeHtml(factura) : '<span class="sop-badge sop-badge-pendiente" style="margin:0">Pendiente FEV</span>'}</div>
+          <div class="sop-folder-card-actions">
+            <button type="button" class="sop-btn sop-btn-teal sop-btn-sm" data-exp-open="${e.id}"><i data-lucide="folder-open"></i> Abrir</button>
+            ${puedeEditar ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-exp-edit="${e.id}"><i data-lucide="pencil"></i></button>` : ''}
+            ${puedeEliminar ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-exp-del="${e.id}" data-exp-codigo="${escapeHtml(e.codigo)}" style="color:#dc2626"><i data-lucide="trash-2"></i></button>` : ''}
+          </div>
+        </article>`;
       }).join('');
+      grid.querySelectorAll('.sop-folder-card--fe').forEach((card) => {
+        const open = () => abrirExpedienteArmado(parseInt(card.dataset.expId, 10));
+        card.addEventListener('click', (ev) => {
+          if (ev.target.closest('.sop-folder-card-actions')) return;
+          open();
+        });
+        card.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') open(); });
+      });
+      grid.querySelectorAll('[data-exp-open]').forEach((b) => {
+        b.addEventListener('click', (ev) => { ev.stopPropagation(); abrirExpedienteArmado(parseInt(b.dataset.expOpen, 10)); });
+      });
+      grid.querySelectorAll('[data-exp-edit]').forEach((b) => {
+        b.addEventListener('click', (ev) => { ev.stopPropagation(); modalEditarExpediente(parseInt(b.dataset.expEdit, 10)); });
+      });
+      grid.querySelectorAll('[data-exp-del]').forEach((b) => {
+        b.addEventListener('click', (ev) => { ev.stopPropagation(); modalEliminarExpediente(parseInt(b.dataset.expDel, 10), b.dataset.expCodigo); });
+      });
     }
+    panel.querySelector('#btnSopArmVolverDia')?.addEventListener('click', () => seleccionarDiaArmado(armState.diaId));
     panel.querySelector('#btnSopArmNuevoFe')?.addEventListener('click', modalNuevoExpediente);
-    panel.querySelectorAll('[data-exp-id]').forEach((b) => {
-      b.addEventListener('click', () => abrirExpedienteArmado(parseInt(b.dataset.expId, 10)));
-    });
-    panel.querySelectorAll('[data-exp-edit]').forEach((b) => {
-      b.addEventListener('click', () => modalEditarExpediente(parseInt(b.dataset.expEdit, 10)));
-    });
-    panel.querySelectorAll('[data-exp-del]').forEach((b) => {
-      b.addEventListener('click', () => modalEliminarExpediente(parseInt(b.dataset.expDel, 10), b.dataset.expCodigo));
-    });
     sopIcons(panel);
     renderArmadoContextBar();
   }
@@ -2186,15 +2360,22 @@
     const sub = slot.nombre_original
       ? `<div class="sop-slot-file" title="${escapeHtml(slot.nombre_original)}">${escapeHtml(slot.nombre_archivo || slot.nombre_original)}</div>`
       : `<div class="sop-slot-file">${ok ? escapeHtml(slot.nombre_archivo || 'Cargado') : 'Pendiente'}</div>`;
+    const opfHint = key === 'OPF' && !ok && !dis
+      ? '<p class="sop-pdx-format-nota" style="margin:8px 0 0;font-size:.78rem">ORDEN+HC desde Reportes + autorización PDF → un solo archivo.</p>'
+      : '';
+    const allowUpload = opts.upload && !dis && key !== 'OPF';
     return `<div class="sop-slot-card ${ok ? 'ok' : ''} ${dis ? 'disabled' : ''}" data-slot="${key}">
       <div class="sop-slot-head">
         <span class="sop-slot-label"><i data-lucide="${icons[key] || 'file'}"></i> ${labels[key] || key}</span>
         <span class="sop-slot-status"></span>
       </div>
       ${sub}
-      ${opts.upload && !dis ? `<label class="sop-btn sop-btn-ghost sop-btn-sm" style="margin-top:8px;cursor:pointer">
+      ${opfHint}
+      ${allowUpload ? `<label class="sop-btn sop-btn-ghost sop-btn-sm" style="margin-top:8px;cursor:pointer">
         <i data-lucide="upload"></i> Subir<input type="file" data-upload-slot="${key}" class="sop-file-input-hidden" accept="${opts.accept || ''}"></label>` : ''}
-      ${key === 'PDX' && !dis && sopPerm('soportes.armado.importar_pdx') ? '<button type="button" class="sop-btn sop-btn-primary sop-btn-sm" id="btnSopImportPdx"><i data-lucide="link-2"></i> PDX</button>' : ''}
+      ${key === 'OPF' && !dis && !ok && sopPerm('soportes.armado.subir') ? '<button type="button" class="sop-btn sop-btn-primary sop-btn-sm" id="btnSopGenerarOpf" style="margin-top:8px"><i data-lucide="layers"></i> Generar OPF</button>' : ''}
+      ${key === 'PDX' && !dis && !ok && sopPerm('soportes.armado.importar_pdx') ? '<button type="button" class="sop-btn sop-btn-primary sop-btn-sm" id="btnSopImportPdx"><i data-lucide="link-2"></i> Enlazar reporte</button>' : ''}
+      ${key === 'CRC' && !dis && !ok && sopPerm('soportes.armado.importar_pdx') ? '<button type="button" class="sop-btn sop-btn-primary sop-btn-sm" id="btnSopImportCrc"><i data-lucide="link-2"></i> Enlazar comprobante</button>' : ''}
     </div>`;
   }
 
@@ -2243,7 +2424,6 @@
     const opciones = esRips
       ? [['RIPS_JSON_1', 'JSON 1'], ['RIPS_JSON_2', 'JSON 2'], ['RIPS_XML', 'XML']]
       : [
-        ['OPF', 'OPF'],
         ['CRC', 'CRC'],
         ['FEV', 'FEV'],
         ...(esConsulta ? [] : [['PDX', 'PDX']]),
@@ -2288,12 +2468,24 @@
         + htmlFeSlotCard('RIPS_JSON_2', slots.RIPS_JSON_2 || {}, { upload: true, accept: acceptRips })
         + htmlFeSlotCard('RIPS_XML', slots.RIPS_XML || {}, { upload: true, accept: acceptRips });
     } else {
+      const showPdx = slots.PDX?.habilitado !== false;
+      const showHev = slots.HEV?.habilitado !== false;
       slotsHtml = htmlFeSlotCard('OPF', slots.OPF || {}, { upload: true, accept: acceptPdf })
         + htmlFeSlotCard('CRC', slots.CRC || {}, { upload: true, accept: acceptPdf })
         + htmlFeSlotCard('FEV', slots.FEV || {}, { upload: true, accept: acceptPdf })
-        + htmlFeSlotCard('PDX', slots.PDX || {}, { upload: true, accept: acceptPdf })
-        + htmlFeSlotCard('HEV', slots.HEV || {}, { upload: true, accept: acceptPdf });
+        + (showPdx ? htmlFeSlotCard('PDX', slots.PDX || {}, { upload: true, accept: acceptPdf }) : '')
+        + (showHev ? htmlFeSlotCard('HEV', slots.HEV || {}, { upload: true, accept: acceptPdf }) : '');
     }
+    const vinculos = e.vinculos || [];
+    const vinculosHtml = vinculos.length ? `<div class="sop-vinculos-block" style="margin-top:18px">
+      <div class="sop-pdx-format-title"><i data-lucide="link-2"></i> Enlaces desde reportes</div>
+      <ul class="sop-vinculos-list">${vinculos.map((v) =>
+        `<li><span class="sop-badge sop-badge-pendiente" style="margin:0">${escapeHtml(v.rol === 'orden_hc' ? 'ORDEN+HC' : v.rol)}</span>
+          ${escapeHtml(v.paciente_nombre || v.nombre_archivo_original || '')}
+          <span style="font-size:.78rem;color:#64748b">${escapeHtml(v.fecha_estudio || '')}</span></li>`
+      ).join('')}</ul>
+      ${vinculos.some((v) => v.rol === 'orden_hc') && !slots.OPF?.completo ? '<p class="sop-pdx-format-nota">Tiene ORDEN+HC vinculado: use «Generar OPF» con la autorización.</p>' : ''}
+    </div>` : '';
 
     panel.innerHTML = `
       <div class="sop-panel-head">
@@ -2321,6 +2513,7 @@
           <label class="sop-toggle"><input type="checkbox" id="sopFevCheck" ${e.fev_externa_verificada ? 'checked' : ''}> FEV verificada (externo)</label>
         </div>` : ''}
         <div class="sop-slots">${slotsHtml}</div>
+        ${vinculosHtml}
       </div>`;
 
     panel.querySelector('#btnSopArmVolverCont')?.addEventListener('click', () => {
@@ -2356,17 +2549,153 @@
         ev.target.value = '';
       });
     });
-    panel.querySelector('#btnSopImportPdx')?.addEventListener('click', () => modalImportPdxEnExpediente(id));
+    const openImportDep = (filtro) => modalImportDepositoEnExpediente(id, filtro);
+    panel.querySelector('#btnSopImportPdx')?.addEventListener('click', () => openImportDep('PDX'));
+    panel.querySelector('#btnSopImportCrc')?.addEventListener('click', () => openImportDep('CRC'));
+    panel.querySelector('#btnSopGenerarOpf')?.addEventListener('click', () => modalGenerarOpf(id, e));
     sopIcons(panel);
     renderArmadoContextBar();
   }
 
-  function modalImportPdxEnExpediente(expId) {
+  function modalGenerarOpf(expId, expInfo) {
+    let selectedOrdenId = null;
+    let authFile = null;
+    let searchTimer = null;
+    const opfEjemplo = expInfo?.fev_nombre_ejemplo
+      ? expInfo.fev_nombre_ejemplo.replace(/^FEV_/, 'OPF_')
+      : 'OPF_{NIT}_FE{n}.pdf';
+    const modal = openSopModal(`
+      <h3><i data-lucide="layers" style="vertical-align:-3px;width:22px"></i> Generar OPF</h3>
+      <p style="font-size:.85rem;color:#64748b;margin:-8px 0 12px">Seleccione el <strong>ORDEN + HC</strong> del depósito de reportes y suba la <strong>autorización</strong>. Se unirán en un PDF: primero ORDEN+HC, autorización al final.</p>
+      <p class="sop-pdx-format-nota" style="margin-bottom:12px">Nombre resultante: <code>${escapeHtml(opfEjemplo)}</code> (requiere número FE asignado).</p>
+      <div class="sop-field">
+        <label>ORDEN + HC (reportes)</label>
+        <div class="sop-search-wrap" style="max-width:none">
+          <i data-lucide="search"></i>
+          <input type="search" id="sopOpfOrdenBuscar" class="sop-search" placeholder="Paciente, documento o nombre de archivo…" autocomplete="off">
+        </div>
+      </div>
+      <div id="sopOpfOrdenResults" class="sop-import-results">
+        <div class="sop-empty" style="padding:16px;font-size:.85rem">Escriba al menos 2 caracteres para buscar en carpetas de órdenes</div>
+      </div>
+      <div class="sop-field" style="margin-top:14px">
+        <label>Autorización (PDF)</label>
+        <input type="file" id="sopOpfAuthFile" accept=".pdf,application/pdf" class="sop-file-input-visible">
+        <div id="sopOpfAuthName" class="sop-search-results-meta" style="margin-top:6px"></div>
+      </div>
+      <div class="sop-dialog-actions">
+        <button type="button" class="sop-btn sop-btn-ghost" id="sopOpfCancel">Cancelar</button>
+        <button type="button" class="sop-btn sop-btn-primary" id="sopOpfOk" disabled>Generar OPF</button>
+      </div>`);
+    const resultsEl = modal.querySelector('#sopOpfOrdenResults');
+    const btnOk = modal.querySelector('#sopOpfOk');
+    const inputSearch = modal.querySelector('#sopOpfOrdenBuscar');
+    const inputAuth = modal.querySelector('#sopOpfAuthName');
+    const authInput = modal.querySelector('#sopOpfAuthFile');
+
+    function refreshOk() {
+      btnOk.disabled = !(selectedOrdenId && authFile);
+    }
+
+    function renderOrdenResults(list) {
+      if (!list?.length) {
+        resultsEl.innerHTML = '<div class="sop-empty" style="padding:16px;font-size:.85rem">Sin ORDEN+HC en carpetas de órdenes</div>';
+        selectedOrdenId = null;
+        refreshOk();
+        return;
+      }
+      resultsEl.innerHTML = list.map((r) => `
+        <div class="sop-import-item${selectedOrdenId === r.archivo_id ? ' selected' : ''}" data-orden-archivo="${r.archivo_id}">
+          <div>
+            <strong>${escapeHtml(r.paciente_nombre)}</strong>
+            <div class="sop-import-item-meta">${escapeHtml(r.fecha_estudio || '—')} · ${escapeHtml(r.estudio_texto || '—')}</div>
+            <div class="sop-import-item-meta">${escapeHtml(r.carpeta_nombre)} (${escapeHtml(r.periodo)})</div>
+            <div class="sop-import-item-meta" style="font-size:.75rem">${escapeHtml(r.nombre_archivo_original || '')}</div>
+          </div>
+          <i data-lucide="clipboard-list" style="width:18px;height:18px;color:#94a3b8;flex-shrink:0"></i>
+        </div>`).join('');
+      resultsEl.querySelectorAll('.sop-import-item').forEach((row) => {
+        row.addEventListener('click', () => {
+          selectedOrdenId = parseInt(row.dataset.ordenArchivo, 10);
+          resultsEl.querySelectorAll('.sop-import-item').forEach((el) => {
+            el.classList.toggle('selected', parseInt(el.dataset.ordenArchivo, 10) === selectedOrdenId);
+          });
+          refreshOk();
+        });
+      });
+      sopIcons(resultsEl);
+    }
+
+    async function runOrdenSearch() {
+      const q = inputSearch.value.trim();
+      if (q.length < 2) {
+        resultsEl.innerHTML = '<div class="sop-empty" style="padding:16px;font-size:.85rem">Escriba al menos 2 caracteres</div>';
+        selectedOrdenId = null;
+        refreshOk();
+        return;
+      }
+      resultsEl.innerHTML = '<div class="sop-empty" style="padding:16px"><i data-lucide="loader" class="sop-empty-icon"></i> Buscando…</div>';
+      sopIcons(resultsEl);
+      try {
+        const res = await apiFetch(`/api/soportes/pdx/buscar-ordenes?q=${encodeURIComponent(q)}`);
+        const data = await res.json();
+        renderOrdenResults(data.resultados || []);
+      } catch (err) {
+        resultsEl.innerHTML = `<div class="sop-empty" style="padding:16px;color:#dc2626">${escapeHtml(err.message)}</div>`;
+      }
+    }
+
+    inputSearch.addEventListener('input', () => {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(runOrdenSearch, 320);
+    });
+
+    authInput?.addEventListener('change', () => {
+      authFile = authInput.files?.[0] || null;
+      if (inputAuth) {
+        inputAuth.textContent = authFile ? authFile.name : '';
+      }
+      refreshOk();
+    });
+
+    modal.querySelector('#sopOpfCancel').onclick = () => closeSopModal(modal);
+    btnOk.onclick = async () => {
+      if (!selectedOrdenId || !authFile) return;
+      btnOk.disabled = true;
+      btnOk.textContent = 'Generando…';
+      const fd = new FormData();
+      fd.append('pdx_orden_archivo_id', String(selectedOrdenId));
+      fd.append('autorizacion', authFile);
+      try {
+        const res = await apiFetch(`/api/soportes/armado/expedientes/${expId}/generar-opf`, { method: 'POST', body: fd });
+        const data = await res.json();
+        if (!res.ok) {
+          sopToast(data.error || 'Error al generar OPF', 'error');
+          btnOk.disabled = false;
+          btnOk.textContent = 'Generar OPF';
+          return;
+        }
+        if (data.warnings?.length) sopToast(data.warnings.join(' · '), 'warning');
+        closeSopModal(modal);
+        sopToast(data.message || 'OPF generado', 'success');
+        abrirExpedienteArmado(expId);
+      } catch (e) {
+        sopToast(e.message || 'Error de conexión', 'error');
+        btnOk.disabled = false;
+        btnOk.textContent = 'Generar OPF';
+      }
+    };
+    sopIcons(modal);
+  }
+
+  function modalImportDepositoEnExpediente(expId, filtroSlot = null) {
     let selectedId = null;
     let searchTimer = null;
+    const titulos = { PDX: 'reporte (PDX)', CRC: 'comprobante (CRC)' };
+    const titulo = filtroSlot ? titulos[filtroSlot] || filtroSlot : 'archivo del depósito';
     const modal = openSopModal(`
-      <h3><i data-lucide="file-output" style="vertical-align:-3px;width:22px"></i> Importar desde depósito PDX</h3>
-      <p style="font-size:.85rem;color:#64748b;margin:-8px 0 12px">Busque al paciente y seleccione el reporte a copiar al slot PDX.</p>
+      <h3><i data-lucide="link-2" style="vertical-align:-3px;width:22px"></i> Enlazar ${escapeHtml(titulo)}</h3>
+      <p style="font-size:.85rem;color:#64748b;margin:-8px 0 12px">Busque en reportes y seleccione el archivo. Se copiará a la carpeta FE según su tipo.</p>
       <div class="sop-field">
         <label>Paciente</label>
         <div class="sop-search-wrap" style="max-width:none">
@@ -2386,16 +2715,25 @@
     const input = modal.querySelector('#sopImpPdxBuscar');
 
     function renderImportResults(list) {
-      if (!list?.length) {
-        resultsEl.innerHTML = '<div class="sop-empty" style="padding:20px;font-size:.85rem">Sin resultados</div>';
+      let items = (list || []).filter((r) => r.puede_vincular_fe !== false && r.destino_modo !== 'no_soportes');
+      if (filtroSlot) {
+        items = items.filter((r) => {
+          const d = String(r.destino_importacion || '').toUpperCase();
+          if (filtroSlot === 'PDX') return d === 'PDX' || d.includes('REPORTE');
+          return d === filtroSlot || d.includes(filtroSlot);
+        });
+      }
+      if (!items.length) {
+        resultsEl.innerHTML = '<div class="sop-empty" style="padding:20px;font-size:.85rem">Sin resultados para este tipo</div>';
         selectedId = null;
         btnOk.disabled = true;
         return;
       }
-      resultsEl.innerHTML = list.map((r) => `
+      resultsEl.innerHTML = items.map((r) => `
         <div class="sop-import-item${selectedId === r.archivo_id ? ' selected' : ''}" data-pdx-archivo="${r.archivo_id}">
           <div>
             <strong>${escapeHtml(r.paciente_nombre)}</strong>
+            <span class="sop-badge sop-badge-pendiente" style="margin:0 0 0 6px;font-size:.7rem">→ ${escapeHtml(r.destino_importacion || 'PDX')}</span>
             <div class="sop-import-item-meta">${escapeHtml(r.fecha_estudio || '—')} · ${escapeHtml(r.estudio_texto || '—')}</div>
             <div class="sop-import-item-meta">${escapeHtml(r.carpeta_nombre)} (${escapeHtml(r.periodo)})</div>
           </div>
@@ -2438,19 +2776,19 @@
 
     modal.querySelector('#sopImpCancel').onclick = () => closeSopModal(modal);
     btnOk.onclick = async () => {
-      if (!selectedId) return sopToast('Seleccione un archivo PDX', 'warning');
+      if (!selectedId) return sopToast('Seleccione un archivo', 'warning');
       btnOk.disabled = true;
-      const r = await apiFetch(`/api/soportes/armado/expedientes/${expId}/importar-pdx`, {
+      const r = await apiFetch(`/api/soportes/armado/expedientes/${expId}/importar-deposito`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pdx_archivo_id: selectedId })
       });
       const d = await r.json();
       btnOk.disabled = false;
-      if (!r.ok) { sopToast(d.error, 'error'); return; }
+      if (!r.ok) { sopToast(d.error || 'Error al enlazar', 'error'); return; }
       if (d.warnings?.length) sopToast(d.warnings.join(' · '), 'warning');
       closeSopModal(modal);
-      sopToast('PDX importado', 'success');
+      sopToast(d.message || 'Archivo enlazado', 'success');
       abrirExpedienteArmado(expId);
     };
     input.focus();

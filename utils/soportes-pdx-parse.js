@@ -252,24 +252,9 @@ function parseNombreSimpleDesdeFecha(originalName) {
     apellidos = beforeFecha.slice(0, c).trim();
     nombres = beforeFecha.slice(c + 1).trim();
   } else if (beforeFecha) {
-    const segs = splitSegmentosGuionesEspaciados(beforeFecha);
-    const nameSegs = segs.filter((s) => !esSegmentoDocumento(s));
-    const tuvoDocumento = segs.length > nameSegs.length;
-    if (nameSegs.length >= 2) {
-      if (tuvoDocumento || segs.length >= 3) {
-        nombres = nameSegs[0];
-        apellidos = nameSegs[1];
-      } else {
-        apellidos = nameSegs[0];
-        nombres = nameSegs[1];
-      }
-    } else if (nameSegs.length === 1 && beforeFecha.includes(' - ')) {
-      const parts = splitSegmentosGuionesEspaciados(beforeFecha);
-      if (parts.length >= 2 && !esSegmentoDocumento(parts[0])) {
-        apellidos = parts[0];
-        nombres = parts.slice(1).filter((p) => !esSegmentoDocumento(p)).join(' - ').trim();
-      }
-    }
+    const extra = extraerNombresAntesDeFecha(beforeFecha);
+    apellidos = extra.apellidos;
+    nombres = extra.nombres;
   }
 
   const tail = parseRestoDespuesFecha(afterFecha);
@@ -516,9 +501,53 @@ function temaCoincideCarpeta(estudioTema, carpetaTema) {
   return estudioTema === carpetaTema;
 }
 
+function normalizarNombreParaParseo(originalName) {
+  return String(originalName || '')
+    .trim()
+    .replace(/_/g, ' ')
+    .replace(/\s+/g, ' ');
+}
+
+function extraerNombresAntesDeFecha(beforeFecha) {
+  const t = String(beforeFecha || '').trim();
+  if (!t) return { apellidos: '', nombres: '' };
+  if (t.includes(',')) {
+    const c = t.indexOf(',');
+    return { apellidos: t.slice(0, c).trim(), nombres: t.slice(c + 1).trim() };
+  }
+  if (t.includes(' - ')) {
+    const rawParts = splitSegmentosGuionesEspaciados(t);
+    const parts = rawParts.filter((p) => !esSegmentoDocumento(p));
+    if (parts.length >= 2) {
+      const hayDocumento = rawParts.some((p) => esSegmentoDocumento(p));
+      if (hayDocumento && parts.length === 2) {
+        return { nombres: parts[0], apellidos: parts[1] };
+      }
+      return { apellidos: parts[0], nombres: parts.slice(1).join(' - ') };
+    }
+  }
+  const tokens = t.split(/\s+/).filter(Boolean);
+  if (tokens.length >= 2) {
+    const mid = Math.ceil(tokens.length / 2);
+    return {
+      apellidos: tokens.slice(0, mid).join(' '),
+      nombres: tokens.slice(mid).join(' ')
+    };
+  }
+  return { apellidos: tokens[0] || '', nombres: '' };
+}
+
+const TIPOS_DOC = ['CC', 'TI', 'CE', 'PA', 'RC', 'NUIP', 'PEP', 'PT'];
+
+function detectarTipoDocumentoEnTexto(seg) {
+  const u = String(seg || '').trim().toUpperCase();
+  if (TIPOS_DOC.includes(u)) return u;
+  return '';
+}
+
 /** Intenta leer datos del nombre aunque no cumpla el formato completo. */
 function extraerDatosParcialesNombre(originalName, carpeta, estudios = []) {
-  const base = String(originalName || '').trim();
+  const base = normalizarNombreParaParseo(originalName);
   const tema = detectarTemaCarpeta(carpeta?.nombre_display || '');
   const parcial = {
     apellidos: '',
@@ -539,6 +568,12 @@ function extraerDatosParcialesNombre(originalName, carpeta, estudios = []) {
       parcial.nombres = parsedTry.nombres;
       parcial.fecha_estudio = parsedTry.fecha_estudio;
       parcial.estudio_texto = parsedTry.estudio_texto;
+    } else if (fechaMatch) {
+      const sinPdf = base.replace(/\.pdf$/i, '');
+      const beforeFecha = sinPdf.slice(0, fechaMatch.index).replace(/[\s\-–]+$/,'').trim();
+      const nombresExtra = extraerNombresAntesDeFecha(beforeFecha);
+      parcial.apellidos = parcial.apellidos || nombresExtra.apellidos;
+      parcial.nombres = parcial.nombres || nombresExtra.nombres;
     }
     if (tema === 'psg' && !estudioPsgReconocido(parcial.estudio_texto)) {
       parcial.estudio_texto = inferirEstudioDesdeCarpeta(carpeta?.nombre_display || '');
@@ -552,10 +587,27 @@ function extraerDatosParcialesNombre(originalName, carpeta, estudios = []) {
     if (tema === 'comprobantes' && parts[0] && /comprobante/i.test(parts[0])) offset = 1;
     if (parts.length > offset) parcial.apellidos = parts[offset] || '';
     if (parts.length > offset + 1) parcial.nombres = parts[offset + 1] || '';
-    if (parts.length > offset + 2) parcial.tipo_documento = parts[offset + 2] || 'CC';
-    if (parts.length > offset + 3) parcial.paciente_documento = String(parts[offset + 3] || '').replace(/\s/g, '');
-    if (parts.length > offset + 4 && /^\d{4}-\d{2}-\d{2}$/.test(parts[offset + 4])) {
-      parcial.fecha_estudio = parts[offset + 4];
+    if (parts.length > offset + 2) {
+      const tipoDet = detectarTipoDocumentoEnTexto(parts[offset + 2]);
+      parcial.tipo_documento = tipoDet || parts[offset + 2] || 'CC';
+      if (!tipoDet && esSegmentoDocumento(parts[offset + 2])) {
+        parcial.paciente_documento = String(parts[offset + 2] || '').replace(/\s/g, '');
+      }
+    }
+    if (parts.length > offset + 3 && !parcial.paciente_documento) {
+      const tipoDet = detectarTipoDocumentoEnTexto(parts[offset + 3]);
+      if (tipoDet) {
+        parcial.tipo_documento = tipoDet;
+        if (parts.length > offset + 4) parcial.paciente_documento = String(parts[offset + 4] || '').replace(/\s/g, '');
+      } else {
+        parcial.paciente_documento = String(parts[offset + 3] || '').replace(/\s/g, '');
+      }
+    }
+    for (let i = offset + 2; i < parts.length; i++) {
+      if (/^\d{4}-\d{2}-\d{2}$/.test(parts[i])) {
+        parcial.fecha_estudio = parts[i];
+        break;
+      }
     }
     const ultimo = parts[parts.length - 1];
     if (ultimo && !/^\d{4}-\d{2}-\d{2}$/.test(ultimo) && !/^(orden|comprobante)/i.test(ultimo)) {
@@ -568,47 +620,70 @@ function extraerDatosParcialesNombre(originalName, carpeta, estudios = []) {
 
 /**
  * Analiza si el nombre requiere modal de corrección antes de subir.
+ * Criterio: campos mínimos por tipo de carpeta (no solo coincidencia estricta con regex).
  */
 function analizarNombreArchivo(originalName, carpeta, estudios = []) {
+  const { evaluarCamposMinimos, ayudaCamposPorTema } = require('./soportes-pdx-campos');
   const tema = detectarTemaCarpeta(carpeta?.nombre_display || '');
   const parsed = parseNombrePorCarpeta(originalName, carpeta, estudios);
   const parcial = extraerDatosParcialesNombre(originalName, carpeta, estudios);
+  const evaluacion = evaluarCamposMinimos(tema, parcial, parsed, carpeta);
+  const ayudaCampos = ayudaCamposPorTema(tema);
 
+  if (!evaluacion.completo) {
+    const faltan = evaluacion.faltantes.map((c) => c.label).join(', ');
+    return {
+      ok: false,
+      requiere_correccion: true,
+      motivo: 'campos_faltantes',
+      error: `Complete los datos obligatorios: ${faltan}`,
+      tema,
+      parcial: evaluacion.datos,
+      campos: evaluacion.campos,
+      ayuda_campos: ayudaCampos,
+      formato_completo: parsed.ok
+    };
+  }
+
+  const datos = evaluacion.datos;
+  let finalParsed = parsed;
   if (!parsed.ok) {
-    return {
-      ok: false,
-      requiere_correccion: true,
-      motivo: 'formato',
-      error: parsed.error || mensajeErrorFormato(tema),
-      tema,
-      parcial
-    };
-  }
-
-  if (tema === 'psg' && !estudioPsgReconocido(parsed.estudio_texto)) {
-    const inferido = inferirEstudioDesdeCarpeta(carpeta?.nombre_display || '');
-    if (estudioPsgReconocido(inferido)) {
-      parsed.estudio_texto = parsed.estudio_texto || inferido;
-      return { ok: true, requiere_correccion: false, tema, parsed, parcial: parsed };
+    const meta = buildMetaDesdeCamposManuales(originalName, {
+      confirmacion_manual: '1',
+      apellidos: datos.apellidos,
+      nombres: datos.nombres,
+      tipo_documento: datos.tipo_documento,
+      paciente_documento: datos.paciente_documento,
+      fecha_estudio: datos.fecha_estudio,
+      estudio_texto: datos.estudio_texto
+    }, { ...carpeta, _estudiosLista: estudios });
+    if (!meta.ok) {
+      return {
+        ok: false,
+        requiere_correccion: true,
+        motivo: 'formato',
+        error: meta.error || mensajeErrorFormato(tema),
+        tema,
+        parcial: datos,
+        campos: evaluacion.campos,
+        ayuda_campos: ayudaCampos
+      };
     }
-    return {
-      ok: false,
-      requiere_correccion: true,
-      motivo: 'falta_estudio_psg',
-      error: 'No se pudo determinar el tipo de estudio PSG. Selecciónelo para continuar.',
-      tema,
-      parcial: {
-        ...parcial,
-        apellidos: parsed.apellidos || parcial.apellidos,
-        nombres: parsed.nombres || parcial.nombres,
-        fecha_estudio: parsed.fecha_estudio || parcial.fecha_estudio,
-        estudio_texto: inferido || 'PSG Básica'
-      },
-      parsed
-    };
+    finalParsed = meta;
+  } else if (tema === 'psg' && datos.estudio_texto && !parsed.estudio_texto) {
+    finalParsed = { ...parsed, estudio_texto: datos.estudio_texto };
   }
 
-  return { ok: true, requiere_correccion: false, tema, parsed, parcial: parsed };
+  return {
+    ok: true,
+    requiere_correccion: false,
+    tema,
+    parsed: finalParsed,
+    parcial: datos,
+    campos: evaluacion.campos,
+    ayuda_campos: ayudaCampos,
+    formato_completo: parsed.ok
+  };
 }
 
 function buildMetaDesdeCamposManuales(originalName, body, carpeta) {
@@ -812,6 +887,8 @@ module.exports = {
   splitPartesNombreGuiones,
   documentoValidoPsg,
   extraerDatosParcialesNombre,
+  extraerNombresAntesDeFecha,
+  normalizarNombreParaParseo,
   analizarNombreArchivo,
   buildMetaDesdeCamposManuales,
   nombreArchivoDescarga,

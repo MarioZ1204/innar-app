@@ -845,6 +845,43 @@ const runtimeMigrations = [
         );
       }
     }
+  },
+  {
+    name: 'rt_sop_exp_origen_merge_opf',
+    description: 'Origen merge_opf en sop_exp_archivos para OPF generado desde ORDEN+HC + autorización',
+    run: async (db) => {
+      if (!(await tableExists(db, 'sop_exp_archivos'))) return;
+      const col = await db.query(
+        "SELECT COLUMN_TYPE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'sop_exp_archivos' AND COLUMN_NAME = 'origen'"
+      );
+      const type = String(col[0]?.COLUMN_TYPE || '');
+      if (type.includes('merge_opf')) return;
+      await db.execute(
+        "ALTER TABLE sop_exp_archivos MODIFY origen ENUM('upload','copia_pdx','merge_opf') NOT NULL DEFAULT 'upload'"
+      );
+    }
+  },
+  {
+    name: 'rt_sop_exp_cns_y_vinculos',
+    description: 'Tabla sop_exp_vinculos para ORDEN+HC vinculadas al expediente',
+    run: async (db) => {
+      if (!(await tableExists(db, 'sop_exp_vinculos'))) {
+        await db.execute(`CREATE TABLE sop_exp_vinculos (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          expediente_id INT NOT NULL,
+          pdx_archivo_id INT NOT NULL,
+          rol ENUM('orden_hc','consentimiento','comprobante','reporte') NOT NULL DEFAULT 'reporte',
+          ruta_relativa VARCHAR(600) NULL,
+          nombre_archivo VARCHAR(500) NULL,
+          vinculado_por INT NULL,
+          creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE KEY uq_sop_vinc_exp_pdx (expediente_id, pdx_archivo_id),
+          INDEX idx_sop_vinc_exp (expediente_id),
+          CONSTRAINT fk_sop_vinc_exp FOREIGN KEY (expediente_id) REFERENCES sop_expedientes(id) ON DELETE CASCADE,
+          CONSTRAINT fk_sop_vinc_pdx FOREIGN KEY (pdx_archivo_id) REFERENCES sop_pdx_archivos(id) ON DELETE CASCADE
+        )`);
+      }
+    }
   }
 ];
 

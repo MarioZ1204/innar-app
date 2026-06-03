@@ -11,7 +11,7 @@ const router = express.Router();
 const db = require('../utils/db-mysql');
 const logger = require('../utils/logger');
 const { requireAuth, requireRoleOrPerm, safeError } = require('../middleware/index');
-const { upload, uploadArmadoSoportes, validateMagicBytes } = require('../middleware/upload');
+const { upload, uploadArmadoSoportes, validateMagicBytes, resolveUploadedFilePath } = require('../middleware/upload');
 const {
   periodoFromDate,
   calcularVisibilidadPeriodo,
@@ -438,6 +438,29 @@ router.get('/soportes/pdx/carpetas/:id/archivos', requireAuth, requireRoleOrPerm
   }
 });
 
+router.post('/soportes/pdx/carpetas/:id/pre-analizar', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, ['modulo.reportes_pdx', 'soportes.pdx.subir', 'soportes.pdx.ver']), async (req, res) => {
+  try {
+    const nombre = String(req.body?.nombre || '').trim();
+    if (!nombre) return res.status(400).json({ error: 'Indique el nombre del archivo' });
+    const carpetaRows = await db.query('SELECT * FROM sop_pdx_carpetas WHERE id = ?', [req.params.id]);
+    if (!carpetaRows.length) return res.status(404).json({ error: 'Carpeta no encontrada' });
+    const carpeta = carpetaRows[0];
+    if (necesitaListaEstudios(carpeta)) {
+      carpeta._estudiosLista = await cargarEstudiosParaOrdenes(db);
+    }
+    const { analizarNombreArchivo, ayudaFormatoPorTema } = require('../utils/soportes-pdx-parse');
+    const analisis = analizarNombreArchivo(nombre, carpeta, carpeta._estudiosLista || []);
+    const ayuda = ayudaFormatoPorTema(analisis.tema || detectarTemaCarpeta(carpeta.nombre_display));
+    res.json({
+      ...analisis,
+      ayuda_formato: ayuda,
+      carpeta: { id: carpeta.id, nombre_display: carpeta.nombre_display, periodo: carpeta.periodo }
+    });
+  } catch (e) {
+    res.status(500).json({ error: safeError(e) });
+  }
+});
+
 router.post(
   '/soportes/pdx/carpetas/:id/archivos',
   requireAuth,
@@ -535,11 +558,13 @@ router.get('/soportes/pdx/buscar', requireAuth, requireRoleOrPerm(ROLES_SOPORTES
        ORDER BY a.fecha_estudio DESC LIMIT 80`,
       [like, like, like, like]
     );
+    const { resolverDestinoImportacion } = require('../utils/soportes-deposito-import');
     const resultados = archivos.filter((a) => {
       const vis = calcularVisibilidadPeriodo(a.periodo);
       return vis !== 'archivo' || incluirArchivo;
     }).map((a) => {
       const enriched = enrichArchivoPdxConNombreDescarga(a, { nombre_display: a.carpeta_nombre });
+      const dest = resolverDestinoImportacion(a);
       return {
         archivo_id: a.id,
         paciente_nombre: a.paciente_nombre,
@@ -551,9 +576,56 @@ router.get('/soportes/pdx/buscar', requireAuth, requireRoleOrPerm(ROLES_SOPORTES
         carpeta_id: a.carpeta_id,
         carpeta_nombre: a.carpeta_nombre,
         periodo: a.periodo,
-        color_tema: a.color_tema
+        color_tema: a.color_tema,
+        destino_importacion: dest.modo === 'no_soportes' ? '—' : (dest.modo === 'vinculo' ? dest.etiqueta : (dest.slot || 'PDX')),
+        destino_modo: dest.modo,
+        puede_vincular_fe: dest.modo !== 'no_soportes'
       };
     });
+    res.json({ resultados });
+  } catch (e) {
+    res.status(500).json({ error: safeError(e) });
+  }
+});
+
+router.get('/soportes/pdx/buscar-ordenes', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, ['modulo.armado_soportes', 'soportes.armado.subir']), async (req, res) => {
+  try {
+    const q = String(req.query.q || '').trim();
+    if (q.length < 2) return res.json({ resultados: [] });
+    const incluirArchivo = puedeVerArchivo(req);
+    const norm = q.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const like = `%${norm.replace(/[^a-z0-9\s]/g, '%')}%`;
+    const archivos = await db.query(
+      `SELECT a.*, c.nombre_display AS carpeta_nombre, c.periodo, c.color_tema
+       FROM sop_pdx_archivos a
+       JOIN sop_pdx_carpetas c ON c.id = a.carpeta_id
+       WHERE (a.paciente_nombre_norm LIKE ? OR a.estudio_texto LIKE ? OR a.apellidos LIKE ? OR a.nombres LIKE ?
+              OR a.paciente_documento LIKE ? OR a.nombre_archivo_original LIKE ?)
+       ORDER BY a.fecha_estudio DESC LIMIT 120`,
+      [like, like, like, like, like, like]
+    );
+    const { esArchivoOrdenHcPdx } = require('../utils/soportes-opf-merge');
+    const resultados = archivos.filter((a) => {
+      const vis = calcularVisibilidadPeriodo(a.periodo);
+      if (vis === 'archivo' && !incluirArchivo) return false;
+      return esArchivoOrdenHcPdx(a);
+    }).map((a) => {
+      const enriched = enrichArchivoPdxConNombreDescarga(a, { nombre_display: a.carpeta_nombre });
+      return {
+        archivo_id: a.id,
+        paciente_nombre: a.paciente_nombre,
+        paciente_documento: a.paciente_documento,
+        nombre_archivo_original: a.nombre_archivo_original,
+        nombre_archivo_display: a.nombre_archivo_display,
+        nombre_descarga: enriched.nombre_descarga,
+        fecha_estudio: a.fecha_estudio,
+        estudio_texto: a.estudio_texto,
+        carpeta_id: a.carpeta_id,
+        carpeta_nombre: a.carpeta_nombre,
+        periodo: a.periodo,
+        color_tema: a.color_tema
+      };
+    }).slice(0, 80);
     res.json({ resultados });
   } catch (e) {
     res.status(500).json({ error: safeError(e) });
@@ -1098,6 +1170,17 @@ async function buildExpedienteDetail(expId) {
       pdx_archivo_id: a.pdx_archivo_id
     };
   }
+  let vinculos = [];
+  try {
+    vinculos = await db.query(
+      `SELECT v.*, a.paciente_nombre, a.nombre_archivo_original, a.fecha_estudio
+       FROM sop_exp_vinculos v
+       JOIN sop_pdx_archivos a ON a.id = v.pdx_archivo_id
+       WHERE v.expediente_id = ?
+       ORDER BY v.creado_en DESC`,
+      [expId]
+    );
+  } catch (_) { /* tabla pendiente */ }
   const hasPdx = !!slots.PDX?.completo;
   const hasHev = !!slots.HEV?.completo;
   const tipoPendiente = !hasPdx && !hasHev;
@@ -1126,6 +1209,7 @@ async function buildExpedienteDetail(expId) {
     ),
     requisitos: req,
     slots: slotState,
+    vinculos,
     paquete_completo: paquete && !!e.listo_radicacion
   };
 }
@@ -1370,58 +1454,118 @@ router.delete('/soportes/armado/expedientes/:id', requireAuth, requireRoleOrPerm
   }
 });
 
-router.post('/soportes/armado/expedientes/:id/importar-pdx', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'soportes.armado.importar_pdx'), async (req, res) => {
+async function handleImportarDesdeDeposito(req, res) {
   try {
     const pdxId = parseInt(req.body.pdx_archivo_id, 10);
-    if (!pdxId) return res.status(400).json({ error: 'pdx_archivo_id requerido' });
+    if (!pdxId) return res.status(400).json({ error: 'Seleccione un archivo del depósito de reportes' });
     const exp = await resolveExpedienteContext(req.params.id);
     if (!exp) return res.status(404).json({ error: 'Expediente no encontrado' });
-    const hev = await db.query('SELECT id FROM sop_exp_archivos WHERE expediente_id = ? AND tipo = ?', [req.params.id, 'HEV']);
-    if (hev.length) return res.status(400).json({ error: 'Ya existe HEV en este expediente; no puede importar PDX' });
 
     const pdx = await db.query(
-      `SELECT a.*, c.periodo FROM sop_pdx_archivos a JOIN sop_pdx_carpetas c ON c.id = a.carpeta_id WHERE a.id = ?`,
+      `SELECT a.*, c.periodo, c.nombre_display AS carpeta_nombre, c.color_tema
+       FROM sop_pdx_archivos a JOIN sop_pdx_carpetas c ON c.id = a.carpeta_id WHERE a.id = ?`,
       [pdxId]
     );
-    if (!pdx.length) return res.status(404).json({ error: 'PDX no encontrado' });
+    if (!pdx.length) return res.status(404).json({ error: 'Archivo no encontrado en reportes' });
+
+    const { importarArchivoDesdeDeposito, resolverDestinoImportacion } = require('../utils/soportes-deposito-import');
+    const destPreview = resolverDestinoImportacion(pdx[0]);
+    const result = await importarArchivoDesdeDeposito(exp, pdx[0], req.session.usuarioId);
 
     const warnings = [];
     if (pdx[0].periodo !== exp.periodo) {
-      warnings.push(`PDX del mes ${pdx[0].periodo} → expediente en periodo ${exp.periodo}`);
+      warnings.push(`Archivo del mes ${pdx[0].periodo} → expediente en periodo ${exp.periodo}`);
     }
-
-    const src = resolveStoragePath(pdx[0].ruta_relativa);
-    if (!src || !fs.existsSync(src)) return res.status(404).json({ error: 'Archivo PDX no en disco' });
-
-    const { saveSoportesArchivo } = require('../utils/soportes-fe-upload');
-    const tmpCopy = path.join(require('os').tmpdir(), `innar-pdx-${Date.now()}.pdf`);
-    fs.copyFileSync(src, tmpCopy);
-    await saveSoportesArchivo(
-      exp,
-      exp,
-      'PDX',
-      tmpCopy,
-      pdx[0].nombre_archivo_original,
-      req.session.usuarioId,
-      'copia_pdx'
-    );
-    try { fs.unlinkSync(tmpCopy); } catch (_) { /* ignore */ }
-    await db.execute(
-      'UPDATE sop_exp_archivos SET pdx_archivo_id = ? WHERE expediente_id = ? AND tipo = ?',
-      [pdxId, req.params.id, 'PDX']
-    );
-    await db.execute(
-      'INSERT INTO sop_transferencias (pdx_archivo_id, expediente_id, usuario_id) VALUES (?,?,?)',
-      [pdxId, req.params.id, req.session.usuarioId]
-    );
+    if (result.aviso) warnings.push(result.aviso);
 
     const detail = await buildExpedienteDetail(req.params.id);
-    res.json({ ok: true, expediente: detail, warnings });
+    const msg = result.modo === 'vinculo'
+      ? `Vinculado (${destPreview.etiqueta})`
+      : `Importado en ${result.slot || destPreview.slot}`;
+    res.json({ ok: true, message: msg, ...result, expediente: detail, warnings });
   } catch (e) {
-    logger.error('[SOPORTES] importar pdx:', e);
-    res.status(500).json({ error: safeError(e) });
+    logger.error('[SOPORTES] importar deposito:', e);
+    const msg = e.message || safeError(e);
+      const status = /ya existe|no puede|vinculado|SOPORTES|disco|HEV|OPF|consentimiento/i.test(msg) ? 400 : 500;
+    res.status(status).json({ error: msg });
   }
-});
+}
+
+router.post('/soportes/armado/expedientes/:id/importar-pdx', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'soportes.armado.importar_pdx'), handleImportarDesdeDeposito);
+router.post('/soportes/armado/expedientes/:id/importar-deposito', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'soportes.armado.importar_pdx'), handleImportarDesdeDeposito);
+
+router.post(
+  '/soportes/armado/expedientes/:id/generar-opf',
+  requireAuth,
+  requireRoleOrPerm(ROLES_SOPORTES, 'soportes.armado.subir'),
+  (req, res, next) => {
+    uploadArmadoSoportes.single('autorizacion')(req, res, (err) => {
+      if (err) return armadoUploadError(err, req, res, next);
+      next();
+    });
+  },
+  validateMagicBytes,
+  async (req, res) => {
+    try {
+      const pdxOrdenId = parseInt(req.body?.pdx_orden_archivo_id, 10);
+      if (!pdxOrdenId) return res.status(400).json({ error: 'Seleccione un ORDEN+HC del depósito de reportes' });
+      if (!req.file) return res.status(400).json({ error: 'Suba el PDF de autorización' });
+
+      const exp = await resolveExpedienteContext(req.params.id);
+      if (!exp) return res.status(404).json({ error: 'Expediente no encontrado' });
+      if (exp.contenedor_tipo === 'rips') {
+        return res.status(400).json({ error: 'Genere el OPF en la carpeta SOPORTES del expediente' });
+      }
+
+      const pdxRows = await db.query(
+        `SELECT a.*, c.nombre_display AS carpeta_nombre, c.periodo, c.color_tema
+         FROM sop_pdx_archivos a JOIN sop_pdx_carpetas c ON c.id = a.carpeta_id WHERE a.id = ?`,
+        [pdxOrdenId]
+      );
+      if (!pdxRows.length) return res.status(404).json({ error: 'ORDEN+HC no encontrado en reportes' });
+      const pdxRow = pdxRows[0];
+      const vis = calcularVisibilidadPeriodo(pdxRow.periodo);
+      if (vis === 'archivo' && !puedeVerArchivo(req)) {
+        return res.status(403).json({ error: 'El ORDEN+HC está en carpeta archivada' });
+      }
+
+      const { generarOpfEnExpediente } = require('../utils/soportes-opf-generar');
+      const authPath = req.file.path || resolveUploadedFilePath(req.file);
+      if (!authPath || !fs.existsSync(authPath)) {
+        return res.status(400).json({ error: 'No se encontró el PDF de autorización tras la subida. Intente de nuevo.' });
+      }
+      const result = await generarOpfEnExpediente(exp, exp, {
+        ordenPdxRow: pdxRow,
+        authTempPath: authPath,
+        authOriginalName: req.file.originalname,
+        usuarioId: req.session.usuarioId
+      });
+      try { if (authPath && fs.existsSync(authPath)) fs.unlinkSync(authPath); } catch (_) { /* ignore */ }
+
+      const warnings = [];
+      if (pdxRow.periodo !== exp.periodo) {
+        warnings.push(`ORDEN+HC del mes ${pdxRow.periodo} → expediente en periodo ${exp.periodo}`);
+      }
+
+      const detail = await buildExpedienteDetail(req.params.id);
+      res.json({
+        ok: true,
+        message: `OPF generado: ${result.nombre_archivo}`,
+        ...result,
+        expediente: detail,
+        warnings
+      });
+    } catch (e) {
+      if (req.file?.path) {
+        try { fs.unlinkSync(req.file.path); } catch (_) { /* ignore */ }
+      }
+      logger.error('[SOPORTES] generar-opf:', e);
+      const msg = e.message || safeError(e);
+      const status = /ya existe|asigne el número|no es un ORDEN|debe ser un PDF|no está en disco|Falta el PDF|Se requieren al menos/i.test(msg) ? 400 : 500;
+      res.status(status).json({ error: msg });
+    }
+  }
+);
 
 router.get('/soportes/armado/expedientes/:id/requisitos', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'modulo.armado_soportes'), async (req, res) => {
   try {
@@ -1605,12 +1749,12 @@ router.get('/soportes/armado/expedientes-select', requireAuth, requireRoleOrPerm
   try {
     const periodo = req.query.periodo;
     let sql = `
-      SELECT e.id, e.codigo, d.nombre_display AS dia_nombre, c.tipo AS contenedor_tipo, p.periodo
+      SELECT e.id, e.codigo, e.tipo_servicio, e.paciente_nombre, d.nombre_display AS dia_nombre, c.tipo AS contenedor_tipo, p.periodo
       FROM sop_expedientes e
       JOIN sop_contenedores c ON c.id = e.contenedor_id
       JOIN sop_dias d ON d.id = c.dia_id
       JOIN sop_periodos p ON p.id = d.periodo_id
-      WHERE e.tipo_servicio = 'electro'`;
+      WHERE c.tipo = 'soportes'`;
     const params = [];
     if (periodo) { sql += ' AND p.periodo = ?'; params.push(periodo); }
     sql += ' ORDER BY p.periodo DESC, e.numero_factura DESC LIMIT 200';

@@ -23,10 +23,11 @@ const {
   horaInicioAgendadaParaInicioEstudio,
   horaInicioEfectivaParaInicioEstudio,
   finProgramadoCitaElectro,
+  calcularFinInicioEstudioElectro,
   sqlEstudioElectroFinProgramadoVencido
 } = require('../utils/electro-fechas');
 
-/** Cierra solo estudios cuyo fin programado (hora_fin_date + hora_fin) ya venció — no por fecha de inicio. */
+/** Cierra estudios de días ANTERIORES cuyo fin programado ya venció (no los de hoy en curso). */
 async function autoCompletarEstudiosElectroVencidos(excludeId = null) {
   const condId = excludeId ? ' AND id != ?' : '';
   const params = excludeId ? [excludeId] : [];
@@ -36,6 +37,7 @@ async function autoCompletarEstudiosElectroVencidos(excludeId = null) {
     SET estado = 'Completado', editado_por_nombre = 'Sistema (Auto)', editado_en = NOW()
     WHERE estado IN ('En Estudio', 'Pausado')
       AND deleted_at IS NULL
+      AND fecha < CURDATE()
       AND ${sqlVencido}
       ${condId}
   `, params).catch((err) => logger.warn('Auto-completar estudios vencidos falló (no crítico):', err.message));
@@ -1066,14 +1068,9 @@ router.patch('/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin',
           }
           const durIni = parseInt(duracion_minutos ?? citaActual.duracion_minutos, 10);
           if (fechaIni && /^\d{2}:\d{2}$/.test(horaIniStr) && durIni > 0) {
-            const finIni = sumarMinutosAHoraYFecha(fechaIni, horaIniStr, durIni);
+            const finIni = calcularFinInicioEstudioElectro(fechaIni, horaIniStr, durIni, modoInicio);
             if (finIni) {
-              forzarCamposInicioEstudio = {
-                hora_inicio: horaIniStr,
-                hora_fin: finIni.horaFin,
-                hora_fin_date: finIni.fechaFin,
-                duracion_minutos: durIni
-              };
+              forzarCamposInicioEstudio = finIni;
             }
           }
         }

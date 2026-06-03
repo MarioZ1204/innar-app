@@ -3,6 +3,51 @@
 Todos los cambios importantes a la aplicación se documentan aquí. El formato
 sigue (informalmente) [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
+## [1.5.61] — 2026-05-27
+
+### Corregido
+
+- **Electrodiagnóstico**: estudios que pasaban solos a Completado al iniciar (fin programado en el pasado o auto-cierre del mismo día). El auto-cierre solo aplica a días anteriores; al iniciar se recalcula `hora_fin` desde la hora efectiva; migración devuelve a En Estudio los de hoy cerrados por `Sistema (Auto)`.
+
+## [1.5.60] — 2026-05-27
+
+### Mejorado
+
+- **Cargar reportes**: subida flexible por campos mínimos (no exige el nombre perfecto). Detecta apellidos, nombres y fecha aunque falten guiones o comas; solo pide lo que falte en un formulario con etiquetas «Detectado» / «Complete».
+- Pre-análisis en servidor (`POST .../pre-analizar`) y un solo modal de confirmación para todas las carpetas (VTM, EEG, PSG, órdenes, comprobantes, consentimientos).
+
+## [1.5.59] — 2026-05-27
+
+### Cambiado
+
+- **Soportes**: se quitó el slot CNS; los consentimientos no se vinculan al armado (solo en Cargar reportes).
+
+## [1.5.58] — 2026-05-27
+
+### Corregido
+
+- **Enlazar PDX / importar desde reportes**: error 500 al copiar el PDF (fallo `rename` entre discos en Windows). Ahora usa copia segura al guardar en el expediente.
+
+### Añadido
+
+- **Vincular desde reportes** por tipo: reporte → PDX, comprobante → CRC, ORDEN+HC → enlace en carpeta FE (luego «Generar OPF»). Los consentimientos permanecen solo en Cargar reportes.
+- Endpoint `POST .../importar-deposito` (alias de `importar-pdx`).
+- Tabla `sop_exp_vinculos` para órdenes vinculadas.
+
+### Cambiado
+
+- **Armado de soportes**: explorador con tarjetas de carpetas (mes → días → RIPS/SOPORTES → FE) en el panel principal; el mes sigue en la barra lateral.
+
+## [1.5.57] — 2026-05-27
+
+### Añadido
+
+- **Armado — Generar OPF**: botón en el slot OPF para unir el PDF **ORDEN+HC** del depósito de reportes con la **autorización** subida en el expediente (`POST /api/soportes/armado/expedientes/:id/generar-opf`). Nombre canónico `OPF_{NIT}_FE{n}.pdf`; requiere FEV/número de factura; bloquea si ya existe OPF.
+
+### Cambiado
+
+- **Armado**: ya no se puede subir OPF manualmente; usar «Generar OPF». Búsqueda de ORDEN+HC en carpetas de órdenes (`GET /api/soportes/pdx/buscar-ordenes`).
+
 ## [1.5.56] — 2026-06-02
 
 ### Corregido

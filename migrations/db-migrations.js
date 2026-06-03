@@ -362,6 +362,28 @@ const migrations = [
       'DEALLOCATE PREPARE stmt',
       "ALTER TABLE dias_bloqueados ADD UNIQUE KEY IF NOT EXISTS unique_fecha_doctor (fecha, doctor_id)"
     ]
+  },
+  {
+    name: 'electro_revertir_auto_completados_hoy_20260527',
+    description: 'Electro: devolver a En Estudio los de hoy cerrados por Sistema (Auto) sin cumplir tiempo',
+    sql: `
+      UPDATE citas_electro
+      SET
+        estado = 'En Estudio',
+        editado_por_nombre = 'Sistema (Corrección)',
+        editado_en = NOW(),
+        hora_fin = DATE_FORMAT(
+          DATE_ADD(NOW(), INTERVAL COALESCE(NULLIF(duracion_minutos, 0), 480) MINUTE),
+          '%H:%i'
+        ),
+        hora_fin_date = DATE(
+          DATE_ADD(NOW(), INTERVAL COALESCE(NULLIF(duracion_minutos, 0), 480) MINUTE)
+        )
+      WHERE fecha = CURDATE()
+        AND estado = 'Completado'
+        AND editado_por_nombre = 'Sistema (Auto)'
+        AND deleted_at IS NULL
+    `
   }
 ];
 

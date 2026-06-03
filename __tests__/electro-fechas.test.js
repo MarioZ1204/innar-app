@@ -3,6 +3,7 @@ const {
   estudioElectroFinProgramadoVencido,
   horaInicioAgendadaParaInicioEstudio,
   horaInicioEfectivaParaInicioEstudio,
+  calcularFinInicioEstudioElectro,
   sqlEstudioElectroFinProgramadoVencido
 } = require('../utils/electro-fechas');
 
@@ -55,5 +56,27 @@ describe('electro-fechas', () => {
     const sql = sqlEstudioElectroFinProgramadoVencido('c');
     expect(sql).toContain('duracion_minutos');
     expect(sql).toContain('hora_inicio');
+  });
+
+  test('inicio tardío agendado ancla fin a hora efectiva + duración', () => {
+    const ahora = new Date('2026-05-27T11:20:00');
+    const fin = calcularFinInicioEstudioElectro('2026-05-27', '09:00', 60, 'agendado', ahora);
+    expect(fin).toEqual({
+      hora_inicio: '09:00',
+      hora_fin: '12:20',
+      hora_fin_date: '2026-05-27',
+      duracion_minutos: 60
+    });
+  });
+
+  test('inicio a tiempo conserva fin desde hora programada', () => {
+    const ahora = new Date('2026-05-27T09:15:00');
+    const fin = calcularFinInicioEstudioElectro('2026-05-27', '09:00', 60, 'agendado', ahora);
+    expect(fin).toEqual({
+      hora_inicio: '09:00',
+      hora_fin: '10:00',
+      hora_fin_date: '2026-05-27',
+      duracion_minutos: 60
+    });
   });
 });
