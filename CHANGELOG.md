@@ -3,6 +3,13 @@
 Todos los cambios importantes a la aplicación se documentan aquí. El formato
 sigue (informalmente) [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
+## [1.5.62] — 2026-05-27
+
+### Corregido
+
+- **Electro**: reversión al arranque de citas marcadas Completado cuando el fin programado aún no venció (no solo `Sistema (Auto)`).
+- **Auditoría de citas**: filtro de médico con selección múltiple; tipos de consulta unidos de todas las especialidades de los médicos elegidos.
+
 ## [1.5.61] — 2026-05-27
 
 ### Corregido

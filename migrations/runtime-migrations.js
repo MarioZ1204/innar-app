@@ -882,6 +882,33 @@ const runtimeMigrations = [
         )`);
       }
     }
+  },
+  {
+    name: 'rt_electro_revertir_completados_antes_tiempo',
+    description: 'Electro: devolver a En Estudio citas Completado cuyo fin programado aún no venció (últimos 14 días)',
+    run: async (db) => {
+      if (!(await tableExists(db, 'citas_electro'))) return;
+      const { sqlEstudioElectroFinProgramadoTs } = require('../utils/electro-fechas');
+      const finTs = sqlEstudioElectroFinProgramadoTs();
+      await db.execute(`
+        UPDATE citas_electro
+        SET
+          estado = 'En Estudio',
+          editado_por_nombre = 'Sistema (Corrección)',
+          editado_en = NOW(),
+          hora_fin = DATE_FORMAT(
+            DATE_ADD(NOW(), INTERVAL COALESCE(NULLIF(duracion_minutos, 0), 480) MINUTE),
+            '%H:%i'
+          ),
+          hora_fin_date = DATE(
+            DATE_ADD(NOW(), INTERVAL COALESCE(NULLIF(duracion_minutos, 0), 480) MINUTE)
+          )
+        WHERE deleted_at IS NULL
+          AND estado = 'Completado'
+          AND fecha >= DATE_SUB(CURDATE(), INTERVAL 14 DAY)
+          AND ${finTs} > NOW()
+      `);
+    }
   }
 ];
 

@@ -179,6 +179,21 @@ function calcularFinInicioEstudioElectro(fechaIni, horaIniStr, durMin, modoInici
   };
 }
 
+/** SQL: fin programado (inicio + duración o hora_fin) — para comparar con NOW(). */
+function sqlEstudioElectroFinProgramadoTs(alias) {
+  const p = alias ? `${alias}.` : '';
+  return `(
+    CASE
+      WHEN ${p}duracion_minutos > 0 AND ${p}hora_inicio IS NOT NULL AND TRIM(${p}hora_inicio) <> '' THEN
+        DATE_ADD(TIMESTAMP(${p}fecha, TIME(${p}hora_inicio)), INTERVAL ${p}duracion_minutos MINUTE)
+      WHEN ${p}duracion_minutos > 0 AND ${p}hora_agendamiento IS NOT NULL AND TRIM(${p}hora_agendamiento) <> '' THEN
+        DATE_ADD(TIMESTAMP(${p}fecha, TIME(${p}hora_agendamiento)), INTERVAL ${p}duracion_minutos MINUTE)
+      ELSE
+        TIMESTAMP(COALESCE(${p}hora_fin_date, ${p}fecha), COALESCE(${p}hora_fin, '23:59:59'))
+    END
+  )`;
+}
+
 /** SQL: fin programado vencido — prioriza hora_inicio + duracion_minutos (igual que finProgramadoCitaElectro). */
 function sqlEstudioElectroFinProgramadoVencido(alias) {
   const p = alias ? `${alias}.` : '';
@@ -208,5 +223,6 @@ module.exports = {
   finProgramadoMsLocal,
   estudioElectroFinProgramadoVencido,
   calcularFinInicioEstudioElectro,
+  sqlEstudioElectroFinProgramadoTs,
   sqlEstudioElectroFinProgramadoVencido
 };

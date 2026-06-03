@@ -294,7 +294,16 @@ router.get('/dashboard/citas-auditoria', requireAuth, requireRoleOrPerm(['supera
     if (fecha_desde) { medConditions.push('t.fecha >= ?'); medParams.push(fecha_desde); }
     if (fecha_hasta) { medConditions.push('t.fecha <= ?'); medParams.push(fecha_hasta); }
     if (programado_por) { medConditions.push('t.programado_por LIKE ?'); medParams.push(`%${programado_por}%`); }
-    if (doctor_id) { medConditions.push('t.doctor_id = ?'); medParams.push(parseInt(doctor_id, 10)); }
+    if (doctor_id) {
+      const doctorIds = String(doctor_id).split(',').map((v) => parseInt(v, 10)).filter((n) => n > 0);
+      if (doctorIds.length === 1) {
+        medConditions.push('t.doctor_id = ?');
+        medParams.push(doctorIds[0]);
+      } else if (doctorIds.length > 1) {
+        medConditions.push(`t.doctor_id IN (${doctorIds.map(() => '?').join(',')})`);
+        medParams.push(...doctorIds);
+      }
+    }
     if (estado) { medConditions.push('t.estado = ?'); medParams.push(estado); }
     if (especialidad_id) { medConditions.push('e.id = ?'); medParams.push(parseInt(especialidad_id, 10)); }
     if (entidadArr.length === 1) { medConditions.push('t.entidad = ?'); medParams.push(entidadArr[0]); }

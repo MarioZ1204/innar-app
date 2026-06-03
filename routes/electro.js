@@ -24,8 +24,35 @@ const {
   horaInicioEfectivaParaInicioEstudio,
   finProgramadoCitaElectro,
   calcularFinInicioEstudioElectro,
+  sqlEstudioElectroFinProgramadoTs,
   sqlEstudioElectroFinProgramadoVencido
 } = require('../utils/electro-fechas');
+
+/** Devuelve a En Estudio citas Completado cuyo tiempo programado aún no terminó. */
+async function revertirElectroCompletadosAntesDeTiempo(diasVentana = 14) {
+  const dias = Math.min(Math.max(parseInt(diasVentana, 10) || 14, 1), 90);
+  const finTs = sqlEstudioElectroFinProgramadoTs();
+  const result = await db.execute(`
+    UPDATE citas_electro
+    SET
+      estado = 'En Estudio',
+      editado_por_nombre = 'Sistema (Corrección)',
+      editado_en = NOW(),
+      hora_fin = DATE_FORMAT(
+        DATE_ADD(NOW(), INTERVAL COALESCE(NULLIF(duracion_minutos, 0), 480) MINUTE),
+        '%H:%i'
+      ),
+      hora_fin_date = DATE(
+        DATE_ADD(NOW(), INTERVAL COALESCE(NULLIF(duracion_minutos, 0), 480) MINUTE)
+      )
+    WHERE deleted_at IS NULL
+      AND estado = 'Completado'
+      AND fecha >= DATE_SUB(CURDATE(), INTERVAL ${dias} DAY)
+      AND ${finTs} > NOW()
+  `);
+  const affected = result[0]?.affectedRows ?? result.affectedRows ?? 0;
+  return affected;
+}
 
 /** Cierra estudios de días ANTERIORES cuyo fin programado ya venció (no los de hoy en curso). */
 async function autoCompletarEstudiosElectroVencidos(excludeId = null) {
@@ -719,6 +746,21 @@ router.get('/citas-electro/export', requireAuth, async (req, res) => {
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="citas-electro-${fecha}.csv"`);
     res.send('\uFEFF' + lines.join('\r\n'));
+  } catch (e) {
+    res.status(500).json({ error: safeError(e) });
+  }
+});
+
+// POST /api/citas-electro/corregir-completados-prematuros
+router.post('/citas-electro/corregir-completados-prematuros', requireAuth, requireRoleOrPerm(
+  ['superadmin', 'admin', 'admin_electro'],
+  'electro.editar'
+), async (req, res) => {
+  try {
+    const dias = req.body?.dias ?? req.query?.dias ?? 14;
+    const afectadas = await revertirElectroCompletadosAntesDeTiempo(dias);
+    emitSocket('electro:actualizar-lista', { type: 'correccion-estado', afectadas });
+    res.json({ ok: true, afectadas });
   } catch (e) {
     res.status(500).json({ error: safeError(e) });
   }

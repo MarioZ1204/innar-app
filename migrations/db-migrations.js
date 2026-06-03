@@ -384,6 +384,37 @@ const migrations = [
         AND editado_por_nombre = 'Sistema (Auto)'
         AND deleted_at IS NULL
     `
+  },
+  {
+    name: 'electro_revertir_completados_antes_tiempo_20260527b',
+    description: 'Electro: En Estudio si Completado pero el fin programado aún no venció (14 días)',
+    sql: `
+      UPDATE citas_electro
+      SET
+        estado = 'En Estudio',
+        editado_por_nombre = 'Sistema (Corrección)',
+        editado_en = NOW(),
+        hora_fin = DATE_FORMAT(
+          DATE_ADD(NOW(), INTERVAL COALESCE(NULLIF(duracion_minutos, 0), 480) MINUTE),
+          '%H:%i'
+        ),
+        hora_fin_date = DATE(
+          DATE_ADD(NOW(), INTERVAL COALESCE(NULLIF(duracion_minutos, 0), 480) MINUTE)
+        )
+      WHERE deleted_at IS NULL
+        AND estado = 'Completado'
+        AND fecha >= DATE_SUB(CURDATE(), INTERVAL 14 DAY)
+        AND (
+          CASE
+            WHEN duracion_minutos > 0 AND hora_inicio IS NOT NULL AND TRIM(hora_inicio) <> '' THEN
+              DATE_ADD(TIMESTAMP(fecha, TIME(hora_inicio)), INTERVAL duracion_minutos MINUTE)
+            WHEN duracion_minutos > 0 AND hora_agendamiento IS NOT NULL AND TRIM(hora_agendamiento) <> '' THEN
+              DATE_ADD(TIMESTAMP(fecha, TIME(hora_agendamiento)), INTERVAL duracion_minutos MINUTE)
+            ELSE
+              TIMESTAMP(COALESCE(hora_fin_date, fecha), COALESCE(hora_fin, '23:59:59'))
+          END
+        ) > NOW()
+    `
   }
 ];
 

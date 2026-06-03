@@ -269,28 +269,48 @@ router.get('/tipos-consulta', requireAuth, async (req, res) => {
   const { especialidad_id, especialidad_nombre, medico_id } = req.query;
   try {
     if (medico_id) {
-      const doc = await db.queryOne(
-        "SELECT especialidad FROM usuarios WHERE id=? AND rol='doctor'",
-        [parseInt(medico_id, 10)]
-      );
-      const espNombre = (doc?.especialidad || '').trim();
-      if (espNombre) {
+      const medicoIds = String(medico_id).split(',').map((v) => parseInt(v, 10)).filter((n) => n > 0);
+      const espIdSet = new Set();
+
+      for (const mid of medicoIds) {
+        const doc = await db.queryOne(
+          "SELECT especialidad FROM usuarios WHERE id=? AND rol='doctor'",
+          [mid]
+        );
+        const espNombre = (doc?.especialidad || '').trim();
+        if (!espNombre) continue;
         const espRows = await db.query(
           'SELECT id FROM especialidades WHERE LOWER(TRIM(nombre))=LOWER(TRIM(?))',
           [espNombre]
         );
-        if (espRows.length > 0) {
-          const rows = await db.query(
-            'SELECT id, nombre, orden, COALESCE(permite_sesiones_multiples, 0) AS permite_sesiones_multiples FROM tipos_consulta WHERE especialidad_id=? AND activo=1 ORDER BY orden ASC, id ASC',
-            [espRows[0].id]
-          );
-          return res.json(rows);
-        }
+        if (espRows.length > 0) espIdSet.add(espRows[0].id);
       }
-      const allRows = await db.query(
-        'SELECT id, nombre, orden, COALESCE(permite_sesiones_multiples, 0) AS permite_sesiones_multiples FROM tipos_consulta WHERE activo=1 ORDER BY orden ASC, id ASC'
-      );
-      return res.json(allRows);
+
+      if (espIdSet.size > 0) {
+        const espIds = [...espIdSet];
+        const placeholders = espIds.map(() => '?').join(',');
+        const rows = await db.query(
+          `SELECT id, nombre, orden, COALESCE(permite_sesiones_multiples, 0) AS permite_sesiones_multiples
+           FROM tipos_consulta WHERE especialidad_id IN (${placeholders}) AND activo=1
+           ORDER BY orden ASC, id ASC, nombre ASC`,
+          espIds
+        );
+        const seen = new Set();
+        const uniq = rows.filter((r) => {
+          const k = String(r.nombre || '').trim().toLowerCase();
+          if (!k || seen.has(k)) return false;
+          seen.add(k);
+          return true;
+        });
+        return res.json(uniq);
+      }
+
+      if (medicoIds.length > 0) {
+        const allRows = await db.query(
+          'SELECT id, nombre, orden, COALESCE(permite_sesiones_multiples, 0) AS permite_sesiones_multiples FROM tipos_consulta WHERE activo=1 ORDER BY orden ASC, id ASC'
+        );
+        return res.json(allRows);
+      }
     }
     let espId = especialidad_id ? parseInt(especialidad_id, 10) : null;
     if (!espId && especialidad_nombre) {
