@@ -2382,7 +2382,7 @@
       ? '<p class="sop-pdx-format-nota" style="margin:8px 0 0;font-size:.78rem">Unir ORDEN+HC + autorización, subir OPF listo, o PDF manual (sin factura: se renombra al subir FEV).</p>'
       : '';
     const crcHint = key === 'CRC' && !ok && !dis
-      ? '<p class="sop-pdx-format-nota" style="margin:8px 0 0;font-size:.78rem">Suba un PDF, enlace desde reportes o <strong>una 2+ PDF</strong> en un solo CRC.</p>'
+      ? '<p class="sop-pdx-format-nota" style="margin:8px 0 0;font-size:.78rem">Unir PDF: <strong>2</strong> Comprobante→Certificado · <strong>3</strong> +Consentimiento · <strong>4</strong> +Cotización (el orden se ajusta automático).</p>'
       : '';
     const allowUpload = opts.upload && !dis && !(ok && slot.archivo_id);
     return `<div class="sop-slot-card ${ok ? 'ok' : ''} ${dis ? 'disabled' : ''}" data-slot="${key}">
@@ -2460,12 +2460,63 @@
     });
   }
 
+  function detectarParteCrcTipoCliente(name) {
+    const n = String(name || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    if (/\bcomprobante/.test(n) || /^comprobante[\s._-]/.test(n)) return 'comprobante';
+    if (/\bcotizaci[oó]n/.test(n) || /\bcotiz\b/.test(n)) return 'cotizacion';
+    if (/\bconsentimiento/.test(n) || /\bconsent\b/.test(n)) return 'consentimiento';
+    if (/\bcertificado/.test(n) || /\bcertific\b/.test(n)) return 'certificado';
+    return null;
+  }
+
+  function previewOrdenCrcArchivos(fileList) {
+    const expectedSets = {
+      2: ['comprobante', 'certificado'],
+      3: ['comprobante', 'consentimiento', 'certificado'],
+      4: ['comprobante', 'cotizacion', 'consentimiento', 'certificado']
+    };
+    const labels = { comprobante: 'Comprobante', cotizacion: 'Cotización', consentimiento: 'Consentimiento', certificado: 'Certificado' };
+    const n = fileList.length;
+    const expected = expectedSets[n];
+    if (!expected) return { ok: false, error: 'Seleccione 2, 3 o 4 PDF.' };
+    const asignados = new Map();
+    const sinTipo = [];
+    for (const f of fileList) {
+      const t = detectarParteCrcTipoCliente(f.name);
+      if (t && !asignados.has(t)) asignados.set(t, f);
+      else if (!t) sinTipo.push(f);
+      else return { ok: false, error: `Hay más de un «${labels[t]}».` };
+    }
+    for (const tipo of expected) {
+      if (!asignados.has(tipo) && sinTipo.length) {
+        asignados.set(tipo, sinTipo.shift());
+      }
+    }
+    if ([...asignados.keys()].some((t) => !expected.includes(t))) {
+      return { ok: false, error: `Con ${n} PDF no corresponde ese tipo de documento.` };
+    }
+    const faltantes = expected.filter((t) => !asignados.has(t));
+    if (faltantes.length) {
+      return { ok: false, error: `Falta: ${faltantes.map((t) => labels[t]).join(', ')}.` };
+    }
+    return {
+      ok: true,
+      orden: expected.map((t) => labels[t]),
+      files: expected.map((t) => asignados.get(t))
+    };
+  }
+
   function modalUnirPdfSlot(expId, tipo, expInfo, { reemplazar = false } = {}) {
     const ejemplo = expInfo?.ejemplos_nombre?.[tipo] || `${tipo}_{NIT}.pdf`;
     const titulo = reemplazar ? `Reemplazar ${tipo} (unir PDFs)` : `Unir PDFs — ${tipo}`;
     const modal = openSopModal(`
       <h3><i data-lucide="layers" style="vertical-align:-3px;width:22px"></i> ${escapeHtml(titulo)}</h3>
-      <p style="font-size:.85rem;color:#64748b;margin:-8px 0 12px">Seleccione <strong>2 o más</strong> PDF. Se guardarán en orden como un solo archivo <strong>${escapeHtml(tipo)}</strong>.</p>
+      <p style="font-size:.85rem;color:#64748b;margin:-8px 0 12px">Seleccione <strong>2, 3 o 4</strong> PDF. El orden final del CRC será:</p>
+      <ul style="font-size:.82rem;color:#64748b;margin:0 0 12px 1.1rem;line-height:1.5">
+        <li><strong>2</strong>: Comprobante → Certificado</li>
+        <li><strong>3</strong>: Comprobante → Consentimiento → Certificado</li>
+        <li><strong>4</strong>: Comprobante → Cotización → Consentimiento → Certificado</li>
+      </ul>
       <p class="sop-pdx-format-nota" style="margin-bottom:12px">Nombre: <code>${escapeHtml(ejemplo)}</code></p>
       <div class="sop-field">
         <label>Archivos PDF</label>
@@ -2487,9 +2538,17 @@
         btnOk.disabled = true;
         return;
       }
-      listEl.innerHTML = `<ol style="margin:0;padding-left:1.2rem;font-size:.85rem">${files.map((f, i) =>
-        `<li>${i + 1}. ${escapeHtml(f.name)}</li>`).join('')}</ol>`;
-      btnOk.disabled = files.length < 2;
+      const prev = previewOrdenCrcArchivos(files);
+      if (!prev.ok) {
+        listEl.innerHTML = `<p style="color:#b45309;font-size:.85rem;margin:0">${escapeHtml(prev.error)}</p>`;
+        btnOk.disabled = true;
+        return;
+      }
+      listEl.innerHTML = `<p style="font-size:.78rem;color:#64748b;margin:0 0 6px">Orden al guardar:</p>
+        <ol style="margin:0;padding-left:1.2rem;font-size:.85rem">${prev.orden.map((lab, i) =>
+        `<li><strong>${escapeHtml(lab)}</strong> — ${escapeHtml(prev.files[i]?.name || '')}</li>`).join('')}</ol>`;
+      files = prev.files;
+      btnOk.disabled = false;
     }
 
     input?.addEventListener('change', () => {
@@ -2499,7 +2558,7 @@
 
     modal.querySelector('#sopUnirPdfCancel').onclick = () => closeSopModal(modal);
     btnOk.onclick = async () => {
-      if (files.length < 2) return;
+      if (files.length < 2 || files.length > 4) return;
       btnOk.disabled = true;
       btnOk.textContent = 'Uniendo…';
       const fd = new FormData();

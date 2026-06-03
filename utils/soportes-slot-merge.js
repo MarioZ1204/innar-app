@@ -10,6 +10,7 @@ const { buildSoportesDiskName } = require('./soportes-archivo-detect');
 const { moveFileSafe } = require('./fs-move-safe');
 const { mergePdfFilesToTemp } = require('./soportes-opf-merge');
 const { loadArchivoExpedienteSlot, eliminarArchivoExpedienteSlot } = require('./soportes-exp-archivo');
+const { resolverTiposPartes } = require('./soportes-crc-orden');
 
 const UNIR_PDF_SLOTS = ['CRC'];
 
@@ -75,7 +76,25 @@ async function unirPdfsEnSlot(exp, ctx, slotKey, sourcePaths, {
   }
 
   const tipo = assertSlotUnirPermitido(slotKey);
-  const paths = assertPdfPaths(sourcePaths, minArchivos);
+  let paths;
+  let ordenEtiquetas = null;
+
+  const items = (sourcePaths || []).map((p) => (
+    typeof p === 'object' && p?.path
+      ? { path: p.path, originalname: p.originalname || p.originalName || path.basename(p.path) }
+      : { path: p, originalname: path.basename(String(p || '')) }
+  ));
+
+  if (tipo === 'CRC') {
+    if (items.length < 2 || items.length > 4) {
+      throw new Error('Para CRC seleccione 2, 3 o 4 PDF según el caso (Comprobante + Certificado, con Consentimiento y/o Cotización).');
+    }
+    const resuelto = resolverTiposPartes(items);
+    paths = assertPdfPaths(resuelto.paths, 2);
+    ordenEtiquetas = resuelto.orden;
+  } else {
+    paths = assertPdfPaths(items.map((i) => i.path), minArchivos);
+  }
 
   const existe = await loadArchivoExpedienteSlot(exp.id, tipo);
   if (existe.ok && !reemplazar) {
@@ -87,7 +106,9 @@ async function unirPdfsEnSlot(exp, ctx, slotKey, sourcePaths, {
 
   const mergedTmp = await mergePdfFilesToTemp(paths);
   try {
-    const labels = paths.map((p) => path.basename(p)).join(' + ');
+    const labels = ordenEtiquetas?.length
+      ? ordenEtiquetas.join(' + ')
+      : paths.map((p) => path.basename(p)).join(' + ');
     return await persistirSlotPdf(exp, ctx, tipo, mergedTmp, {
       nombre_original: nombreOriginal || `${tipo} ← ${labels}`,
       origen: origen || 'merge_pdf'

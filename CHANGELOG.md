@@ -3,6 +3,12 @@
 Todos los cambios importantes a la aplicación se documentan aquí. El formato
 sigue (informalmente) [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
+## [1.5.72] — 2026-05-27
+
+### Corregido / mejorado
+
+- **Soportes — CRC**: al unir PDF el orden es fijo — 2: Comprobante→Certificado; 3: +Consentimiento; 4: +Cotización. Se detecta por nombre y se valida la combinación antes de guardar.
+
 ## [1.5.71] — 2026-05-27
 
 ### Añadido / mejorado

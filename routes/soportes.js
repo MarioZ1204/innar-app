@@ -1776,10 +1776,15 @@ router.post(
       if (exp.contenedor_tipo === 'rips') {
         return res.status(400).json({ error: 'Una los PDF en la carpeta SOPORTES del expediente' });
       }
-      const partes = (req.files || []).map((f) => f.path).filter(Boolean);
-      if (partes.length < 2) {
+      const partes = (req.files || []).map((f) => ({
+        path: f.path,
+        originalname: f.originalname
+      })).filter((p) => p.path);
+      if (partes.length < 2 || partes.length > 4) {
         cleanupMulterTempFiles(req);
-        return res.status(400).json({ error: 'Seleccione al menos 2 archivos PDF para unir' });
+        return res.status(400).json({
+          error: 'Seleccione 2, 3 o 4 PDF: 2=Comprobante+Certificado; 3=+Consentimiento; 4=+Cotización.'
+        });
       }
       const { unirPdfsEnSlot } = require('../utils/soportes-slot-merge');
       const reemplazar = req.body?.reemplazar === '1' || req.body?.reemplazar === 'true';
@@ -1801,7 +1806,7 @@ router.post(
       cleanupMulterTempFiles(req);
       logger.error('[SOPORTES] unir-pdf:', e);
       const msg = e.message || safeError(e);
-      const status = /al menos|Ya existe|PDF|válido|no válido|RIPS/i.test(msg) ? 400 : 500;
+      const status = /al menos|Seleccione|requiere|reconoci|Falta|Ya existe|PDF|válido|no válido|RIPS|archivo\(s\)/i.test(msg) ? 400 : 500;
       res.status(status).json({ error: msg });
     }
   }
