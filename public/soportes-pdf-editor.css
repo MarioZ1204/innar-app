@@ -160,6 +160,23 @@
   border-top: 1px solid #e2e8f0;
 }
 
+/* Variante página completa (sin modal) */
+.sop-pdf-editor--page {
+  display: flex;
+  flex-direction: column;
+  max-height: none;
+  width: 100%;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+}
+
+.sop-pdf-editor--page .sop-pdf-editor-body {
+  flex: 1;
+  max-height: none;
+}
+
 .sop-pdf-editor-count {
   margin-right: auto;
   font-size: 0.8rem;

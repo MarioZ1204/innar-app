@@ -3,6 +3,12 @@
 Todos los cambios importantes a la aplicación se documentan aquí. El formato
 sigue (informalmente) [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
+## [1.5.79] — 2026-06-03
+
+### Añadido
+
+- **Soportes — visor PDF**: nueva página `/soportes/visor-pdf` (pestaña aparte) además del modal; botón «Abrir en página» en PDX y expedientes Armado.
+
 ## [1.5.78] — 2026-06-03
 
 ### Corregido

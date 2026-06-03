@@ -1,0 +1,68 @@
+/* Página dedicada /soportes/visor-pdf */
+html, body.visor-pdf-standalone {
+  margin: 0;
+  min-height: 100%;
+  background: #f1f5f9;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+.visor-pdf-standalone .visor-pdf-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 20px;
+  background: #fff;
+  border-bottom: 1px solid #e2e8f0;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+
+.visor-pdf-standalone .visor-pdf-topbar h1 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #0f172a;
+  flex: 1 1 200px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.visor-pdf-standalone .visor-pdf-topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.visor-pdf-standalone .visor-pdf-main {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 16px 20px 32px;
+}
+
+.visor-pdf-standalone .sop-pdf-editor {
+  max-height: none;
+  width: 100%;
+  border-radius: 14px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+}
+
+.visor-pdf-standalone .sop-pdf-editor-body {
+  max-height: none;
+  min-height: calc(100vh - 200px);
+}
+
+.visor-pdf-standalone .visor-pdf-error-box {
+  padding: 24px;
+  text-align: center;
+  color: #dc2626;
+  background: #fff;
+  border-radius: 12px;
+  border: 1px solid #fecaca;
+}

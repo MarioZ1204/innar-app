@@ -922,6 +922,14 @@
     });
   }
 
+  function abrirVisorPdfEnPagina(cfg) {
+    if (!window.SopPdfEditor?.openPage) {
+      sopToast('Visor PDF no disponible. Recargue la página (Ctrl+F5).', 'error');
+      return;
+    }
+    window.SopPdfEditor.openPage(cfg);
+  }
+
   function periodoActual() {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
@@ -1226,7 +1234,8 @@
       <td>${htmlEstudioBadge(a.estudio_texto, temaCarpeta)}</td>
       <td><span class="sop-pdx-archivo-nombre" title="${escapeHtml(nomArch)}">${escapeHtml(nomArch)}</span></td>
       <td><div class="sop-actions-row">
-        ${canVer ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-pdx-ver="${a.id}" title="Vista previa"><i data-lucide="eye"></i></button>
+        ${canVer ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-pdx-ver="${a.id}" title="Vista previa (modal)"><i data-lucide="eye"></i></button>
+        <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-pdx-pagina="${a.id}" title="Abrir en página"><i data-lucide="external-link"></i></button>
         <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-pdx-dl="${a.id}" title="Descargar"><i data-lucide="download"></i></button>` : ''}
         ${canEdit && !enArchivo ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-pdx-edit-arch="${a.id}" title="Editar datos"><i data-lucide="pencil"></i></button>` : ''}
         ${canEdit && !enArchivo ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-pdx-replace="${a.id}" title="Reemplazar PDF"><i data-lucide="file-up"></i></button>` : ''}
@@ -1239,6 +1248,17 @@
     }).join('');
     tbody.querySelectorAll('[data-pdx-ver]').forEach((b) => {
       b.addEventListener('click', () => modalVerPdfPdx(parseInt(b.dataset.pdxVer, 10)));
+    });
+    tbody.querySelectorAll('[data-pdx-pagina]').forEach((b) => {
+      b.addEventListener('click', () => {
+        const row = pdxState.archivos.find((x) => x.id === parseInt(b.dataset.pdxPagina, 10));
+        abrirVisorPdfEnPagina({
+          fuente: 'pdx',
+          id: parseInt(b.dataset.pdxPagina, 10),
+          titulo: row?.paciente_nombre || row?.nombre_archivo_display || 'PDF',
+          edit: puedeResaltarPdx()
+        });
+      });
     });
     tbody.querySelectorAll('[data-pdx-dl]').forEach((b) => {
       b.addEventListener('click', () => descargarArchivoPdx(parseInt(b.dataset.pdxDl, 10)));
@@ -2379,9 +2399,10 @@
     const unirBtn = key === 'CRC' && canEdit
       ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm sop-slot-unir" data-slot-unir="CRC" title="Unir varios PDF y reemplazar"><i data-lucide="layers"></i></button>`
       : '';
-    const verTitle = puedeResaltarArmado() ? 'Ver y resaltar PDF' : 'Ver PDF';
+    const verTitle = puedeResaltarArmado() ? 'Ver y resaltar (modal)' : 'Ver PDF (modal)';
     return `<div class="sop-slot-actions">
       <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-slot-pdf="${key}" title="${verTitle}"><i data-lucide="highlighter"></i></button>
+      <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-slot-pagina="${key}" title="Abrir en página"><i data-lucide="external-link"></i></button>
       ${canEdit ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm sop-slot-del" data-slot-del="${key}" title="Eliminar"><i data-lucide="trash-2"></i></button>
       <label class="sop-btn sop-btn-ghost sop-btn-sm" style="cursor:pointer" title="Reemplazar"><i data-lucide="refresh-cw"></i>
         <input type="file" data-replace-slot="${key}" class="sop-file-input-hidden" accept="${accept}"></label>
@@ -2484,24 +2505,39 @@
       });
     });
     panel.querySelectorAll('[data-slot-pdf]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const tipo = btn.dataset.slotPdf;
-        const det = armState.expedienteDetalle || {};
-        const slot = det.slots?.[tipo] || {};
-        const titulo = `${armState.expedienteCodigo || 'Expediente'} — ${tipo}`;
-        const sub = slot.nombre_archivo || slot.nombre_original || '';
-        abrirEditorPdfSoportes({
-          pdfUrl: `/api/soportes/armado/expedientes/${expId}/archivos/${tipo}/descargar?inline=1`,
-          saveUrl: puedeResaltarArmado()
-            ? `/api/soportes/armado/expedientes/${expId}/archivos/${tipo}/resaltar`
-            : '',
-          downloadUrl: `/api/soportes/armado/expedientes/${expId}/archivos/${tipo}/descargar`,
-          title: sub ? `${titulo}: ${sub}` : titulo,
-          canEdit: puedeResaltarArmado(),
-          onSaved: () => abrirExpedienteArmado(expId)
-        });
-      });
+      btn.addEventListener('click', () => abrirPdfSlotArmado(expId, btn.dataset.slotPdf, false));
     });
+    panel.querySelectorAll('[data-slot-pagina]').forEach((btn) => {
+      btn.addEventListener('click', () => abrirPdfSlotArmado(expId, btn.dataset.slotPagina, true));
+    });
+  }
+
+  function abrirPdfSlotArmado(expId, tipo, enPagina) {
+    const det = armState.expedienteDetalle || {};
+    const slot = det.slots?.[tipo] || {};
+    const titulo = `${armState.expedienteCodigo || 'Expediente'} — ${tipo}`;
+    const sub = slot.nombre_archivo || slot.nombre_original || '';
+    const cfg = {
+      pdfUrl: `/api/soportes/armado/expedientes/${expId}/archivos/${tipo}/descargar?inline=1`,
+      saveUrl: puedeResaltarArmado()
+        ? `/api/soportes/armado/expedientes/${expId}/archivos/${tipo}/resaltar`
+        : '',
+      downloadUrl: `/api/soportes/armado/expedientes/${expId}/archivos/${tipo}/descargar`,
+      title: sub ? `${titulo}: ${sub}` : titulo,
+      canEdit: puedeResaltarArmado(),
+      onSaved: () => abrirExpedienteArmado(expId)
+    };
+    if (enPagina) {
+      abrirVisorPdfEnPagina({
+        fuente: 'armado',
+        expId,
+        tipo,
+        titulo: cfg.title,
+        edit: puedeResaltarArmado()
+      });
+    } else {
+      abrirEditorPdfSoportes(cfg);
+    }
   }
 
   function detectarParteCrcTipoCliente(name) {

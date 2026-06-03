@@ -1,5 +1,5 @@
 /**
- * Visor PDF con resaltado (PDX + Armado). Marcas se guardan incrustadas en el PDF.
+ * Visor PDF con resaltado (PDX + Armado). Modal o página dedicada.
  */
 (function (global) {
   'use strict';
@@ -73,31 +73,21 @@
   }
 
   /**
-   * @param {object} opts
-   * @param {string} opts.pdfUrl
-   * @param {string} [opts.saveUrl]
-   * @param {string} [opts.downloadUrl]
-   * @param {string} [opts.title]
-   * @param {boolean} [opts.canEdit]
-   * @param {function} [opts.onSaved]
-   * @param {function} [opts.apiFetch]
-   * @param {function} [opts.toast]
+   * Monta el visor en un contenedor (modal o página).
+   * @returns {Promise<{ destroy: function }>}
    */
-  async function openPdfEditor(opts) {
+  async function mountPdfViewer(container, opts) {
     const pdfUrl = opts.pdfUrl;
     const saveUrl = opts.saveUrl || '';
     const downloadUrl = opts.downloadUrl || pdfUrl.replace(/\/ver(\?|$)/, '/descargar$1').replace(/\?inline=1/, '');
     const canEdit = !!opts.canEdit && !!saveUrl;
     const apiFetch = opts.apiFetch || global.apiFetch;
     const toast = opts.toast || global.showToast || (() => {});
-
-    const backdrop = document.createElement('div');
-    backdrop.className = 'sop-pdf-editor-backdrop';
-    backdrop.setAttribute('role', 'dialog');
-    backdrop.setAttribute('aria-modal', 'true');
+    const isPage = opts.layout === 'page';
+    const closeLabel = isPage ? 'Cerrar pestaña' : 'Cerrar';
 
     const shell = document.createElement('div');
-    shell.className = 'sop-pdf-editor';
+    shell.className = 'sop-pdf-editor' + (isPage ? ' sop-pdf-editor--page' : '');
     shell.innerHTML = `
       <div class="sop-pdf-editor-header">
         <h3>${escapeHtml(opts.title || 'Documento PDF')}</h3>
@@ -109,7 +99,7 @@
           <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="sopPdfEdUndo">Deshacer</button>
           ` : ''}
           <a class="sop-btn sop-btn-ghost sop-btn-sm" href="${escapeHtml(downloadUrl)}" target="_blank" rel="noopener">Descargar</a>
-          <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="sopPdfEdClose">Cerrar</button>
+          <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="sopPdfEdClose">${closeLabel}</button>
         </div>
       </div>
       ${canEdit ? '<div class="sop-pdf-editor-hint">Arrastre sobre el documento para resaltar. Pulse <strong>Guardar en PDF</strong> para que las marcas queden al descargar.</div>' : '<div class="sop-pdf-editor-hint">Vista previa (solo lectura).</div>'}
@@ -119,9 +109,8 @@
         ${canEdit ? '<button type="button" class="sop-btn sop-btn-primary" id="sopPdfEdSave" disabled>Guardar en PDF</button>' : ''}
       </div>`;
 
-    backdrop.appendChild(shell);
-    document.body.appendChild(backdrop);
-    document.body.style.overflow = 'hidden';
+    container.innerHTML = '';
+    container.appendChild(shell);
 
     const body = shell.querySelector('#sopPdfEdBody');
     const countEl = shell.querySelector('#sopPdfEdCount');
@@ -130,10 +119,20 @@
 
     let activeColor = 'yellow';
     let drag = null;
+    let destroyed = false;
 
     function close() {
-      document.body.style.overflow = '';
-      backdrop.remove();
+      if (destroyed) return;
+      destroyed = true;
+      if (typeof opts.onClose === 'function') opts.onClose();
+      else if (isPage) {
+        if (window.opener) window.close();
+        else window.history.length > 1 ? window.history.back() : (window.location.href = '/');
+      }
+      if (!isPage) {
+        document.body.style.overflow = '';
+        container.remove();
+      }
     }
 
     function updateCount() {
@@ -145,8 +144,6 @@
       shell.querySelectorAll('.sop-pdf-overlay').forEach((ov) => {
         ov.querySelectorAll('.sop-pdf-mark:not(.is-draft)').forEach((n) => n.remove());
         const pageIndex = parseInt(ov.dataset.pageIndex, 10);
-        const pw = ov.offsetWidth;
-        const ph = ov.offsetHeight;
         pending.filter((m) => m.pageIndex === pageIndex).forEach((m) => {
           const el = document.createElement('div');
           el.className = 'sop-pdf-mark';
@@ -230,7 +227,6 @@
     }
 
     shell.querySelector('#sopPdfEdClose')?.addEventListener('click', close);
-    backdrop.addEventListener('click', (ev) => { if (ev.target === backdrop) close(); });
 
     shell.querySelectorAll('.sop-pdf-editor-color').forEach((btn) => {
       btn.addEventListener('click', () => {
@@ -261,7 +257,11 @@
         pending.length = 0;
         updateCount();
         if (typeof opts.onSaved === 'function') opts.onSaved(data);
-        close();
+        if (!isPage) close();
+        else {
+          btnSave.disabled = true;
+          btnSave.textContent = 'Guardado';
+        }
       } catch (e) {
         toast(e.message || 'Error al guardar resaltados', 'error');
         btnSave.disabled = false;
@@ -273,8 +273,9 @@
       const lib = await ensurePdfJs();
       const loadingTask = lib.getDocument({ url: pdfUrl, withCredentials: true });
       const pdf = await loadingTask.promise;
+      if (destroyed) return { destroy: close };
       body.innerHTML = '';
-      const scale = Math.min(1.5, (body.clientWidth || 800) / 612);
+      const scale = Math.min(isPage ? 1.6 : 1.5, (body.clientWidth || 800) / 612);
 
       for (let i = 1; i <= pdf.numPages; i++) {
         const page = await pdf.getPage(i);
@@ -297,7 +298,54 @@
     } catch (e) {
       body.innerHTML = `<div class="sop-pdf-editor-error">${escapeHtml(e.message || 'No se pudo cargar el PDF')}</div>`;
     }
+
+    return { destroy: close };
   }
 
-  global.SopPdfEditor = { open: openPdfEditor };
+  async function openPdfEditor(opts) {
+    const backdrop = document.createElement('div');
+    backdrop.className = 'sop-pdf-editor-backdrop';
+    backdrop.setAttribute('role', 'dialog');
+    backdrop.setAttribute('aria-modal', 'true');
+    document.body.appendChild(backdrop);
+    document.body.style.overflow = 'hidden';
+
+    const holder = document.createElement('div');
+    backdrop.appendChild(holder);
+
+    backdrop.addEventListener('click', (ev) => {
+      if (ev.target === backdrop) mountApi?.destroy();
+    });
+
+    let mountApi;
+    mountApi = await mountPdfViewer(holder, {
+      ...opts,
+      layout: 'modal',
+      onClose: () => {
+        document.body.style.overflow = '';
+        backdrop.remove();
+      }
+    });
+  }
+
+  /**
+   * Abre el visor en pestaña nueva (misma sesión).
+   */
+  function openPdfInPage(cfg) {
+    const q = new URLSearchParams();
+    q.set('fuente', cfg.fuente);
+    if (cfg.fuente === 'pdx') {
+      q.set('id', String(cfg.id));
+      if (cfg.edit) q.set('edit', '1');
+    } else if (cfg.fuente === 'armado') {
+      q.set('exp', String(cfg.expId));
+      q.set('tipo', String(cfg.tipo || '').toUpperCase());
+      if (cfg.edit) q.set('edit', '1');
+    }
+    if (cfg.titulo) q.set('titulo', String(cfg.titulo).slice(0, 240));
+    const url = `/soportes/visor-pdf?${q.toString()}`;
+    window.open(url, '_blank', 'noopener');
+  }
+
+  global.SopPdfEditor = { open: openPdfEditor, mount: mountPdfViewer, openPage: openPdfInPage };
 })(typeof window !== 'undefined' ? window : globalThis);

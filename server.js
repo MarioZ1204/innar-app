@@ -231,6 +231,12 @@ app.post('/api/csp-report', express.json({ type: ['application/json', 'applicati
   res.status(204).end();
 });
 
+// Visor PDF Soportes (pantalla completa, requiere sesión)
+app.get('/soportes/visor-pdf', requireAuth, (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+  res.sendFile(path.join(__dirname, 'views', 'visor-pdf.html'));
+});
+
 // Páginas wrapper para reportes (muestran favicon en la pestaña y el PDF en iframe)
 app.get('/reportes/diario/vista', requireAuth, (req, res) => {
   const fecha = req.query.fecha || '';
