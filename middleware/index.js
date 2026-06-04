@@ -42,11 +42,16 @@ function requireRole(roles) {
 }
 
 function requirePermiso(permiso) {
+  const { esPermisoOptIn } = require('../config/permisos-opt-in');
   return (req, res, next) => {
     const rol = req.session?.rol;
     if (rol === 'superadmin') return next();
-    if (rol === 'admin' && (req.session?.permisos === null || req.session?.permisos === undefined)) return next();
     const perms = req.session?.permisos;
+    if (esPermisoOptIn(permiso)) {
+      if (Array.isArray(perms) && perms.includes(permiso)) return next();
+      return res.status(403).json({ error: 'No tienes permiso para esta acción' });
+    }
+    if (rol === 'admin' && (perms === null || perms === undefined)) return next();
     if (perms === null || perms === undefined) return next();
     if (Array.isArray(perms) && perms.includes(permiso)) return next();
     return res.status(403).json({ error: 'No tienes permiso para esta acción' });
@@ -55,11 +60,17 @@ function requirePermiso(permiso) {
 
 function requireRoleOrPerm(roles, permiso) {
   const permisos = Array.isArray(permiso) ? permiso : [permiso];
+  const { esPermisoOptIn } = require('../config/permisos-opt-in');
   return (req, res, next) => {
     if (!req.session?.usuarioId) return res.status(401).json({ error: 'No autenticado' });
     const rol = req.session.rol;
     const perms = req.session?.permisos;
     if (rol === 'superadmin') return next();
+    const soloOptIn = permisos.length > 0 && permisos.every((p) => esPermisoOptIn(p));
+    if (soloOptIn) {
+      if (Array.isArray(perms) && permisos.some((p) => perms.includes(p))) return next();
+      return res.status(403).json({ error: 'Acceso denegado' });
+    }
     if (rol === 'admin' && (perms === null || perms === undefined)) return next();
     if (roles.includes(rol)) {
       if (perms === null || perms === undefined) return next();

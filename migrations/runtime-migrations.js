@@ -941,6 +941,18 @@ const runtimeMigrations = [
     }
   },
   {
+    name: 'rt_sop_pdx_carpetas_roles_visibles',
+    description: 'Carpetas PDX: visibilidad por rol (JSON)',
+    run: async (db) => {
+      if (!(await tableExists(db, 'sop_pdx_carpetas'))) return;
+      if (!(await columnExists(db, 'sop_pdx_carpetas', 'roles_visibles'))) {
+        await db.execute(
+          'ALTER TABLE sop_pdx_carpetas ADD COLUMN roles_visibles JSON NULL DEFAULT NULL COMMENT \'Roles que ven la carpeta; NULL=todos\' AFTER color_tema'
+        );
+      }
+    }
+  },
+  {
     name: 'rt_anexo_fidu_registros',
     description: 'Tabla anexo FIDU (45 columnas tipo Excel)',
     run: async (db) => {

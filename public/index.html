@@ -225,7 +225,7 @@
             <span class="menu-card-desc">Copia BD y archivos (PDF)</span>
           </span>
         </button>
-        <button class="menu-card" data-module="anexo-fidu" data-rol="superadmin admin contabilidad admin_recepcion">
+        <button class="menu-card" data-module="anexo-fidu">
           <span class="menu-card-icon"><svg width="56" height="55" viewBox="0 0 56 55" fill="none"><rect x="6" y="6" width="44" height="40" rx="3" fill="#fef3c7" stroke="#d97706" stroke-width="2"/><path d="M10 14h36M10 22h36M10 30h24" stroke="#d97706" stroke-width="1.5"/><rect x="10" y="36" width="12" height="6" fill="#fde68a"/></svg></span>
           <span class="menu-card-label">
             <span class="menu-card-title">Anexo FIDU</span>
@@ -2149,12 +2149,12 @@
           </select>
         </div>
         <div class="cita-modal-info-item">
-          <div class="cita-modal-info-label">Fecha</div>
-          <div id="modalFechaDisplay" class="cita-modal-info-value">-</div>
+          <label class="cita-modal-info-label" for="modalFechaAgenda">Fecha</label>
+          <input type="date" id="modalFechaAgenda" class="cita-modal-select cita-modal-info-highlight" />
         </div>
         <div class="cita-modal-info-item">
-          <div class="cita-modal-info-label">Hora Agendada</div>
-          <div id="modalHoraDisplay" class="cita-modal-info-value">-</div>
+          <label class="cita-modal-info-label" for="modalHoraAgenda">Hora agendada</label>
+          <input type="time" id="modalHoraAgenda" class="cita-modal-select cita-modal-info-highlight" step="60" />
         </div>
         <div class="cita-modal-info-item">
           <div class="cita-modal-info-label">Duración</div>

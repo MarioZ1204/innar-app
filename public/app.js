@@ -659,6 +659,11 @@ function updateMenuByRole() {
   window.tienePermiso = function(permKey) {
     const r = currentUser?.rol || '';
     if (r === 'superadmin') return true;
+    const optIn = typeof PERMISOS_OPT_IN !== 'undefined' && PERMISOS_OPT_IN.has(permKey);
+    if (optIn) {
+      const p = perms;
+      return Array.isArray(p) && p.includes(permKey);
+    }
     if (r === 'admin' && !Array.isArray(perms)) return true;
     const p = perms;
     if (Array.isArray(p)) return p.includes(permKey);
@@ -681,6 +686,7 @@ function updateMenuByRole() {
     'monitor-equipos':'modulo.monitor_equipos',
     'reportes-pdx':     'modulo.reportes_pdx',
     'armado-soportes':  'modulo.armado_soportes',
+    'anexo-fidu':       'modulo.anexo_fidu',
     'backup':           'modulo.backup',
   };
 
@@ -825,6 +831,12 @@ async function doLogout() {
 
 let initRecibosDone = false, initAgendaDone = false, initElectroDone = false, initUsuariosDone = false, initDiagnosticosDone = false, initDashboardCitasDone = false, initGestionDatosDone = false, initUcqnDone = false, initBackupDone = false, initAnexoFiduDone = false;
 function goToModule(moduleId) {
+  const permAnexo = 'modulo.anexo_fidu';
+  if (moduleId === 'anexo-fidu' && typeof tienePermiso === 'function' && !tienePermiso(permAnexo)) {
+    showView('view-menu');
+    history.replaceState({ view: 'menu' }, '', '#menu');
+    return;
+  }
   showView(`view-${moduleId}`);
   currentModule = moduleId;
   window.currentModule = moduleId;  // Exponer para sockets
@@ -8383,6 +8395,9 @@ async function crearCitaElectro() {
 
 // ========== MÓDULO DE PERMISOS (solo superadmin) ==========
 
+/** No se conceden por defecto a admin u otros roles con lista abierta; solo superadmin o asignación explícita. */
+const PERMISOS_OPT_IN = new Set(['modulo.anexo_fidu']);
+
 // Definición completa de todos los permisos del sistema
 const PERMISOS_DEFS = [
   // ── Acceso a Módulos ───────────────────────────────────────────────────────
@@ -8397,6 +8412,7 @@ const PERMISOS_DEFS = [
   { key: 'modulo.monitor_equipos',  label: 'Módulo: Monitor de Equipos',           grupo: 'Acceso a Módulos' },
   { key: 'modulo.reportes_pdx',     label: 'Módulo: Cargar reportes',              grupo: 'Acceso a Módulos' },
   { key: 'modulo.armado_soportes', label: 'Módulo: Soportes',                    grupo: 'Acceso a Módulos' },
+  { key: 'modulo.anexo_fidu',      label: 'Módulo: Anexo FIDU',                   grupo: 'Acceso a Módulos' },
   { key: 'modulo.backup',          label: 'Módulo: Backup',                        grupo: 'Acceso a Módulos' },
   // ── Cargar reportes (PDX) ─────────────────────────────────────────────────
   { key: 'soportes.pdx.ver',             label: 'Reportes: Ver carpetas y archivos',     grupo: 'Cargar reportes' },
@@ -12216,10 +12232,23 @@ async function abrirModalDetallesCita(cita) {
     modalEstudioEl.style.opacity = !puedeEditarEstudio ? '0.6' : '1';
     modalEstudioEl.style.cursor = !puedeEditarEstudio ? 'not-allowed' : 'pointer';
   }
-  const $fechaEl = document.getElementById('modalFechaDisplay');
-  if ($fechaEl) $fechaEl.textContent = cita.fecha ? formatearFechaISO(cita.fecha) : '-';
-  const $horaEl = document.getElementById('modalHoraDisplay');
-  if ($horaEl) $horaEl.textContent = cita.hora_agendamiento ? formatearHora(cita.hora_agendamiento) : '-';
+  const puedeEditarFechaHora = puedeEditarElectro && citaElectroSeleccionada.estado !== 'Completado'
+    && citaElectroSeleccionada.estado !== 'En Estudio' && citaElectroSeleccionada.estado !== 'Pausado';
+  const $fechaEl = $('modalFechaAgenda');
+  if ($fechaEl) {
+    $fechaEl.value = cita.fecha ? formatearFechaISO(cita.fecha) : '';
+    $fechaEl.disabled = !puedeEditarFechaHora;
+    $fechaEl.style.opacity = !puedeEditarFechaHora ? '0.65' : '1';
+    $fechaEl.style.cursor = !puedeEditarFechaHora ? 'not-allowed' : 'pointer';
+  }
+  const $horaEl = $('modalHoraAgenda');
+  if ($horaEl) {
+    const hAg = cita.hora_agendamiento ? String(cita.hora_agendamiento).trim() : '';
+    $horaEl.value = /^\d{2}:\d{2}/.test(hAg) ? hAg.slice(0, 5) : hAg;
+    $horaEl.disabled = !puedeEditarFechaHora;
+    $horaEl.style.opacity = !puedeEditarFechaHora ? '0.65' : '1';
+    $horaEl.style.cursor = !puedeEditarFechaHora ? 'not-allowed' : 'pointer';
+  }
   const $diagEl = document.getElementById('modalDiagnosticoDisplay');
   if ($diagEl) $diagEl.textContent = cita.diagnostico_codigo ? `${cita.diagnostico_codigo}${cita.diagnostico_nombre ? ' – ' + cita.diagnostico_nombre : ''}` : (cita.diagnostico_nombre || '-');
   const entidadCita = obtenerEntidadCitaElectro(cita);
@@ -12488,7 +12517,10 @@ function renderFlujoEstado(cita) {
   if (!flujoEl) return;
   if (!puedeCambiarEstadoElectro) {
     flujoEl.innerHTML = `<div class="flujo-estado-readonly">Sin permisos para cambiar estado.</div>`;
-    if (btnGuardar) btnGuardar.style.display = 'none';
+    if (btnGuardar) {
+      const estadosOcultarSolo = ['Completado', 'Cancelado', 'No Asistió', 'En Estudio', 'Pausado'];
+      btnGuardar.style.display = (puedeEditarElectro && !estadosOcultarSolo.includes(estado)) ? '' : 'none';
+    }
     return;
   }
 
@@ -12588,9 +12620,11 @@ function renderFlujoEstado(cita) {
     flujoEl.innerHTML = `<div class="flujo-estado-readonly">Sin acciones disponibles para este estado.</div>`;
   }
 
-  // Guardar: ocultar en estados finales Y durante En Estudio/Pausado
+  // Guardar: ocultar en estados finales, durante estudio activo, o sin permiso de edición
   const estadosOcultar = ['Completado','Cancelado','No Asisti\u00f3','En Estudio','Pausado'];
-  if (btnGuardar) btnGuardar.style.display = estadosOcultar.includes(estado) ? 'none' : '';
+  if (btnGuardar) {
+    btnGuardar.style.display = (puedeEditarElectro && !estadosOcultar.includes(estado)) ? '' : 'none';
+  }
 }
 
 function actualizarEstadoFilaTablaElectro(citaId, nuevoEstado) {
@@ -12752,11 +12786,19 @@ async function eliminarCitaElectro() {
 
 async function guardarCambiosCitaElectro() {
   if (!citaElectroSeleccionada) return;
+  if (!tienePermiso('electro.editar')) {
+    showToast('No tiene permiso para editar citas de electro', 'error');
+    return;
+  }
   
   try {
     const estadoActual = citaElectroSeleccionada.estado || '';
     if (estadoActual === 'En Estudio' || estadoActual === 'Pausado') {
-      showToast('No puedes cambiar el equipo mientras el estudio está activo', 'error');
+      showToast('No puedes modificar datos mientras el estudio está activo', 'error');
+      return;
+    }
+    if (estadoActual === 'Completado') {
+      showToast('El estudio está completado y no se puede modificar', 'info');
       return;
     }
 
@@ -12777,6 +12819,23 @@ async function guardarCambiosCitaElectro() {
     if (entidadNueva && entidadNueva !== entidadActual) {
       cambios.entidad = entidadNueva;
     }
+
+    const fechaNueva = ($('modalFechaAgenda')?.value || '').trim();
+    const horaNueva = ($('modalHoraAgenda')?.value || '').trim().slice(0, 5);
+    const fechaActual = formatearFechaISO(citaElectroSeleccionada.fecha);
+    const horaActual = citaElectroSeleccionada.hora_agendamiento
+      ? String(citaElectroSeleccionada.hora_agendamiento).trim().slice(0, 5)
+      : '';
+    if (fechaNueva && fechaNueva !== fechaActual) {
+      cambios.fecha = fechaNueva;
+    }
+    if (horaNueva && horaNueva !== horaActual) {
+      cambios.hora_agendamiento = horaNueva;
+    }
+    if ((cambios.fecha || cambios.hora_agendamiento) && (!fechaNueva || !horaNueva)) {
+      showToast('Indique fecha y hora agendada válidas', 'error');
+      return;
+    }
     
     if (Object.keys(cambios).length > 0) {
       const res = await apiFetch(`/api/citas-electro/${citaElectroSeleccionada.id}`, {
@@ -12788,7 +12847,11 @@ async function guardarCambiosCitaElectro() {
       const data = await res.json();
       
       if (data && data.ok) {
-        showToast('Cambios guardados', 'success');
+        const movioDia = cambios.fecha && $('electroFecha')?.value && cambios.fecha !== $('electroFecha').value;
+        showToast(
+          movioDia ? `Cita actualizada al ${formatearFecha(cambios.fecha)}` : 'Cambios guardados',
+          'success'
+        );
         
         // Emitir evento de socket desde el cliente
         if (window.socket && window.socket.connected) {
@@ -12799,6 +12862,9 @@ async function guardarCambiosCitaElectro() {
         }
         
         // El servidor también emite el socket event
+        if (movioDia && $('electroFecha')) {
+          $('electroFecha').value = cambios.fecha;
+        }
         cargarCitasElectro();
         cerrarModalDetallesCita();
       } else {

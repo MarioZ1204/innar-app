@@ -85,6 +85,30 @@ async function resolvePdxArchivoPathForApi(row, repair = false) {
 const { jsonSafeRow } = require('../utils/json-safe');
 
 const ROLES_SOPORTES = ['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'contabilidad', 'admin_electro', 'electro', 'tecnico_electro'];
+const {
+  parseRolesVisibles,
+  carpetaVisibleParaRol,
+  normalizarRolesVisiblesBody,
+  serializarRolesVisibles,
+  labelRolesVisibles
+} = require('../utils/soportes-pdx-roles');
+
+function esSuperadminSesion(req) {
+  return req.session?.rol === 'superadmin';
+}
+
+function usuarioVeCarpetaPdx(req, carpetaRow) {
+  if (!carpetaRow) return false;
+  if (esSuperadminSesion(req)) return true;
+  return carpetaVisibleParaRol(carpetaRow.roles_visibles, req.session?.rol);
+}
+
+function denySinAccesoCarpetaPdx(req, carpetaRow) {
+  if (!usuarioVeCarpetaPdx(req, carpetaRow)) {
+    return { status: 403, error: 'No tiene acceso a esta carpeta' };
+  }
+  return null;
+}
 
 function enrichArchivoPdxConNombreDescarga(archivo, carpeta) {
   const carpetaCtx = carpeta?.nombre_display != null
@@ -184,6 +208,7 @@ async function refrescarVisibilidadArmado(periodo) {
 function mapCarpetaPdx(row) {
   const periodo = row.periodo;
   const vis = calcularVisibilidadPeriodo(periodo);
+  const roles_visibles = parseRolesVisibles(row.roles_visibles);
   return {
     id: row.id,
     periodo,
@@ -192,7 +217,9 @@ function mapCarpetaPdx(row) {
     estado_visibilidad: vis,
     dias_restantes_gracia: diasRestantesGracia(periodo),
     archivos_count: row.archivos_count || 0,
-    creado_en: row.creado_en
+    creado_en: row.creado_en,
+    roles_visibles,
+    roles_visibles_label: labelRolesVisibles(roles_visibles)
   };
 }
 
@@ -377,9 +404,10 @@ router.get('/soportes/pdx/carpetas', requireAuth, requireRoleOrPerm(ROLES_SOPORT
     const hoyPeriodo = periodoFromDate();
     for (const r of rows) await refrescarVisibilidadPdx(r.periodo);
     const lista = rows
+      .filter((r) => usuarioVeCarpetaPdx(req, r))
       .map(mapCarpetaPdx)
       .filter((c) => c.estado_visibilidad !== 'archivo' || incluirArchivo);
-    res.json({ periodo_actual: hoyPeriodo, carpetas: lista });
+    res.json({ periodo_actual: hoyPeriodo, carpetas: lista, puede_configurar_roles: esSuperadminSesion(req) });
   } catch (e) {
     logger.error('[SOPORTES] pdx carpetas:', e);
     res.status(500).json({ error: sopErrorCliente(e) });
@@ -396,10 +424,16 @@ router.post('/soportes/pdx/carpetas', requireAuth, requireRoleOrPerm(ROLES_SOPOR
     if (nombre.length < 3) return res.status(400).json({ error: 'nombre de carpeta requerido' });
     const tema = detectarTemaCarpeta(nombre);
     const vis = calcularVisibilidadPeriodo(periodo);
+    let rolesJson = null;
+    if (esSuperadminSesion(req) && req.body?.roles_visibles !== undefined) {
+      const norm = normalizarRolesVisiblesBody(req.body.roles_visibles);
+      if (norm && norm.error) return res.status(400).json({ error: norm.error });
+      rolesJson = serializarRolesVisibles(norm);
+    }
     const r = await db.execute(
-      `INSERT INTO sop_pdx_carpetas (periodo, nombre_display, color_tema, estado_visibilidad, creado_por)
-       VALUES (?, ?, ?, ?, ?)`,
-      [periodo, nombre, tema, vis, req.session.usuarioId ?? null]
+      `INSERT INTO sop_pdx_carpetas (periodo, nombre_display, color_tema, roles_visibles, estado_visibilidad, creado_por)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [periodo, nombre, tema, rolesJson, vis, req.session.usuarioId ?? null]
     );
     const id = pdxInsertId(r);
     if (!id) {
@@ -431,6 +465,8 @@ router.patch('/soportes/pdx/carpetas/:id', requireAuth, requireRoleOrPerm(ROLES_
     const rows = await db.query('SELECT * FROM sop_pdx_carpetas WHERE id = ?', [req.params.id]);
     if (!rows.length) return res.status(404).json({ error: 'Carpeta no encontrada' });
     const prev = rows[0];
+    const denied = denySinAccesoCarpetaPdx(req, prev);
+    if (denied) return res.status(denied.status).json({ error: denied.error });
     const vis = calcularVisibilidadPeriodo(prev.periodo);
     if (vis === 'archivo') return res.status(403).json({ error: 'Carpeta en archivo: no editable' });
 
@@ -441,9 +477,15 @@ router.patch('/soportes/pdx/carpetas/:id', requireAuth, requireRoleOrPerm(ROLES_
 
     const tema = detectarTemaCarpeta(nombre);
     const estado = calcularVisibilidadPeriodo(periodo);
+    let rolesJson = prev.roles_visibles;
+    if (esSuperadminSesion(req) && req.body?.roles_visibles !== undefined) {
+      const norm = normalizarRolesVisiblesBody(req.body.roles_visibles);
+      if (norm && norm.error) return res.status(400).json({ error: norm.error });
+      rolesJson = serializarRolesVisibles(norm);
+    }
     await db.execute(
-      'UPDATE sop_pdx_carpetas SET periodo = ?, nombre_display = ?, color_tema = ?, estado_visibilidad = ? WHERE id = ?',
-      [periodo, nombre, tema, estado, req.params.id]
+      'UPDATE sop_pdx_carpetas SET periodo = ?, nombre_display = ?, color_tema = ?, roles_visibles = ?, estado_visibilidad = ? WHERE id = ?',
+      [periodo, nombre, tema, rolesJson, estado, req.params.id]
     );
     const countRows = await db.query('SELECT COUNT(*) AS n FROM sop_pdx_archivos WHERE carpeta_id = ?', [req.params.id]);
     const updated = await db.query('SELECT * FROM sop_pdx_carpetas WHERE id = ?', [req.params.id]);
@@ -464,6 +506,8 @@ router.delete('/soportes/pdx/carpetas/:id', requireAuth, requireRoleOrPerm(ROLES
   try {
     const rows = await db.query('SELECT * FROM sop_pdx_carpetas WHERE id = ?', [req.params.id]);
     if (!rows.length) return res.status(404).json({ error: 'Carpeta no encontrada' });
+    const deniedDel = denySinAccesoCarpetaPdx(req, rows[0]);
+    if (deniedDel) return res.status(deniedDel.status).json({ error: deniedDel.error });
     const archivos = await db.query('SELECT id, ruta_relativa FROM sop_pdx_archivos WHERE carpeta_id = ?', [req.params.id]);
     const usados = await db.query(
       'SELECT COUNT(*) AS n FROM sop_exp_archivos WHERE pdx_archivo_id IN (SELECT id FROM sop_pdx_archivos WHERE carpeta_id = ?)',
@@ -497,6 +541,8 @@ router.get('/soportes/pdx/carpetas/:id/archivos', requireAuth, requireRoleOrPerm
   try {
     const carpeta = await db.query('SELECT * FROM sop_pdx_carpetas WHERE id = ?', [req.params.id]);
     if (!carpeta.length) return res.status(404).json({ error: 'Carpeta no encontrada' });
+    const deniedArch = denySinAccesoCarpetaPdx(req, carpeta[0]);
+    if (deniedArch) return res.status(deniedArch.status).json({ error: deniedArch.error });
     const vis = calcularVisibilidadPeriodo(carpeta[0].periodo);
     if (vis === 'archivo' && !puedeVerArchivo(req)) {
       return res.status(403).json({ error: 'Carpeta en archivo' });
@@ -524,6 +570,8 @@ router.post('/soportes/pdx/carpetas/:id/pre-analizar', requireAuth, requireRoleO
     const carpetaRows = await db.query('SELECT * FROM sop_pdx_carpetas WHERE id = ?', [req.params.id]);
     if (!carpetaRows.length) return res.status(404).json({ error: 'Carpeta no encontrada' });
     const carpeta = carpetaRows[0];
+    const deniedPre = denySinAccesoCarpetaPdx(req, carpeta);
+    if (deniedPre) return res.status(deniedPre.status).json({ error: deniedPre.error });
     if (necesitaListaEstudios(carpeta)) {
       carpeta._estudiosLista = await cargarListaParaCarpetaPdx(db, carpeta);
     }
@@ -558,6 +606,8 @@ router.post(
       const carpetaRows = await db.query('SELECT * FROM sop_pdx_carpetas WHERE id = ?', [req.params.id]);
       if (!carpetaRows.length) return res.status(404).json({ error: 'Carpeta no encontrada' });
       const carpeta = carpetaRows[0];
+      const deniedUp = denySinAccesoCarpetaPdx(req, carpeta);
+      if (deniedUp) return res.status(deniedUp.status).json({ error: deniedUp.error });
       const vis = calcularVisibilidadPeriodo(carpeta.periodo);
       if (vis === 'archivo') return res.status(403).json({ error: 'Carpeta cerrada para carga' });
 
@@ -645,6 +695,11 @@ router.post(
         return res.status(404).json({ error: 'Carpeta no encontrada' });
       }
       const carpeta = carpetaRows[0];
+      const deniedUni = denySinAccesoCarpetaPdx(req, carpeta);
+      if (deniedUni) {
+        cleanupMulterTempFiles(req);
+        return res.status(deniedUni.status).json({ error: deniedUni.error });
+      }
       const tema = detectarTemaCarpeta(carpeta.nombre_display);
       if (tema !== 'ordenes_consulta_medica') {
         cleanupMulterTempFiles(req);
@@ -730,7 +785,7 @@ router.get('/soportes/pdx/buscar', requireAuth, requireRoleOrPerm(ROLES_SOPORTES
     const norm = q.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     const like = `%${norm.replace(/[^a-z0-9\s]/g, '%')}%`;
     const archivos = await db.query(
-      `SELECT a.*, c.nombre_display AS carpeta_nombre, c.periodo, c.color_tema
+      `SELECT a.*, c.nombre_display AS carpeta_nombre, c.periodo, c.color_tema, c.roles_visibles
        FROM sop_pdx_archivos a
        JOIN sop_pdx_carpetas c ON c.id = a.carpeta_id
        WHERE a.paciente_nombre_norm LIKE ? OR a.estudio_texto LIKE ? OR a.apellidos LIKE ? OR a.nombres LIKE ?
@@ -739,6 +794,7 @@ router.get('/soportes/pdx/buscar', requireAuth, requireRoleOrPerm(ROLES_SOPORTES
     );
     const { resolverDestinoImportacion } = require('../utils/soportes-deposito-import');
     const resultados = archivos.filter((a) => {
+      if (!usuarioVeCarpetaPdx(req, a)) return false;
       const vis = calcularVisibilidadPeriodo(a.periodo);
       return vis !== 'archivo' || incluirArchivo;
     }).map((a) => {
@@ -775,7 +831,7 @@ router.get('/soportes/pdx/buscar-ordenes', requireAuth, requireRoleOrPerm(ROLES_
     const norm = q.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     const like = `%${norm.replace(/[^a-z0-9\s]/g, '%')}%`;
     const archivos = await db.query(
-      `SELECT a.*, c.nombre_display AS carpeta_nombre, c.periodo, c.color_tema
+      `SELECT a.*, c.nombre_display AS carpeta_nombre, c.periodo, c.color_tema, c.roles_visibles
        FROM sop_pdx_archivos a
        JOIN sop_pdx_carpetas c ON c.id = a.carpeta_id
        WHERE (a.paciente_nombre_norm LIKE ? OR a.estudio_texto LIKE ? OR a.apellidos LIKE ? OR a.nombres LIKE ?
@@ -785,6 +841,7 @@ router.get('/soportes/pdx/buscar-ordenes', requireAuth, requireRoleOrPerm(ROLES_
     );
     const { esArchivoOrdenHcPdx } = require('../utils/soportes-opf-merge');
     const resultados = archivos.filter((a) => {
+      if (!usuarioVeCarpetaPdx(req, a)) return false;
       const vis = calcularVisibilidadPeriodo(a.periodo);
       if (vis === 'archivo' && !incluirArchivo) return false;
       return esArchivoOrdenHcPdx(a);
@@ -814,12 +871,14 @@ router.get('/soportes/pdx/buscar-ordenes', requireAuth, requireRoleOrPerm(ROLES_
 router.patch('/soportes/pdx/archivos/:id', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, ['modulo.reportes_pdx', 'soportes.pdx.editar', 'soportes.pdx.subir']), async (req, res) => {
   try {
     const rows = await db.query(
-      `SELECT a.*, c.periodo, c.color_tema AS carpeta_tema, c.nombre_display AS carpeta_nombre FROM sop_pdx_archivos a
+      `SELECT a.*, c.periodo, c.color_tema AS carpeta_tema, c.nombre_display AS carpeta_nombre, c.roles_visibles FROM sop_pdx_archivos a
        JOIN sop_pdx_carpetas c ON c.id = a.carpeta_id WHERE a.id = ?`,
       [req.params.id]
     );
     if (!rows.length) return res.status(404).json({ error: 'Archivo no encontrado' });
     const prev = rows[0];
+    const deniedEd = denySinAccesoCarpetaPdx(req, prev);
+    if (deniedEd) return res.status(deniedEd.status).json({ error: deniedEd.error });
     const vis = calcularVisibilidadPeriodo(prev.periodo);
     if (vis === 'archivo') return res.status(403).json({ error: 'Carpeta en archivo: no editable' });
 
@@ -887,6 +946,8 @@ router.patch('/soportes/pdx/archivos/:id', requireAuth, requireRoleOrPerm(ROLES_
       const destRows = await db.query('SELECT * FROM sop_pdx_carpetas WHERE id = ?', [newCarpetaId]);
       if (!destRows.length) return res.status(404).json({ error: 'Carpeta destino no encontrada' });
       destCarpeta = destRows[0];
+      const deniedDest = denySinAccesoCarpetaPdx(req, destCarpeta);
+      if (deniedDest) return res.status(deniedDest.status).json({ error: deniedDest.error });
       const visDest = calcularVisibilidadPeriodo(destCarpeta.periodo);
       if (visDest === 'archivo') return res.status(403).json({ error: 'Carpeta destino en archivo' });
       const moved = movePdxFileOnDisk(prev.carpeta_id, newCarpetaId, prev.ruta_relativa, metaDisplay, destCarpeta);
@@ -962,8 +1023,14 @@ router.patch('/soportes/pdx/archivos/:id', requireAuth, requireRoleOrPerm(ROLES_
 
 router.delete('/soportes/pdx/archivos/:id', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, ['modulo.reportes_pdx', 'soportes.pdx.eliminar']), async (req, res) => {
   try {
-    const rows = await db.query('SELECT * FROM sop_pdx_archivos WHERE id = ?', [req.params.id]);
+    const rows = await db.query(
+      `SELECT a.*, c.roles_visibles FROM sop_pdx_archivos a
+       JOIN sop_pdx_carpetas c ON c.id = a.carpeta_id WHERE a.id = ?`,
+      [req.params.id]
+    );
     if (!rows.length) return res.status(404).json({ error: 'No encontrado' });
+    const deniedDelArch = denySinAccesoCarpetaPdx(req, rows[0]);
+    if (deniedDelArch) return res.status(deniedDelArch.status).json({ error: deniedDelArch.error });
     const fp = resolvePdxArchivoPath(rows[0]);
     if (fp) fs.unlinkSync(fp);
     await db.execute('DELETE FROM sop_pdx_archivos WHERE id = ?', [req.params.id]);
@@ -976,12 +1043,14 @@ router.delete('/soportes/pdx/archivos/:id', requireAuth, requireRoleOrPerm(ROLES
 router.get('/soportes/pdx/archivos/:id/descargar', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, ['modulo.reportes_pdx', 'soportes.pdx.ver', 'soportes.pdx.subir']), async (req, res) => {
   try {
     const rows = await db.query(
-      `SELECT a.*, c.periodo, c.nombre_display AS carpeta_nombre FROM sop_pdx_archivos a
+      `SELECT a.*, c.periodo, c.nombre_display AS carpeta_nombre, c.roles_visibles FROM sop_pdx_archivos a
        JOIN sop_pdx_carpetas c ON c.id = a.carpeta_id WHERE a.id = ?`,
       [req.params.id]
     );
     if (!rows.length) return res.status(404).json({ error: 'No encontrado' });
     const row = rows[0];
+    const deniedDl = denySinAccesoCarpetaPdx(req, row);
+    if (deniedDl) return res.status(deniedDl.status).json({ error: deniedDl.error });
     const vis = calcularVisibilidadPeriodo(row.periodo);
     if (vis === 'archivo' && !puedeVerArchivo(req)) return res.status(403).json({ error: 'Archivo en carpeta cerrada' });
     const fp = await resolvePdxArchivoPathForApi(row, true);
@@ -1003,10 +1072,12 @@ router.get('/soportes/pdx/archivos/:id/descargar', requireAuth, requireRoleOrPer
 router.get('/soportes/pdx/archivos/:id/ver', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, ['modulo.reportes_pdx', 'soportes.pdx.ver', 'soportes.pdx.subir']), async (req, res) => {
   try {
     const rows = await db.query(
-      `SELECT a.*, c.periodo FROM sop_pdx_archivos a JOIN sop_pdx_carpetas c ON c.id = a.carpeta_id WHERE a.id = ?`,
+      `SELECT a.*, c.periodo, c.roles_visibles FROM sop_pdx_archivos a JOIN sop_pdx_carpetas c ON c.id = a.carpeta_id WHERE a.id = ?`,
       [req.params.id]
     );
     if (!rows.length) return res.status(404).json({ error: 'No encontrado' });
+    const deniedVer = denySinAccesoCarpetaPdx(req, rows[0]);
+    if (deniedVer) return res.status(deniedVer.status).json({ error: deniedVer.error });
     const vis = calcularVisibilidadPeriodo(rows[0].periodo);
     if (vis === 'archivo' && !puedeVerArchivo(req)) return res.status(403).json({ error: 'Archivo en carpeta cerrada' });
     const fp = await resolvePdxArchivoPathForApi(rows[0], true);
@@ -1031,11 +1102,13 @@ router.post(
         return res.status(400).json({ error: 'Indique al menos un resaltado' });
       }
       const rows = await db.query(
-        `SELECT a.*, c.periodo FROM sop_pdx_archivos a JOIN sop_pdx_carpetas c ON c.id = a.carpeta_id WHERE a.id = ?`,
+        `SELECT a.*, c.periodo, c.roles_visibles FROM sop_pdx_archivos a JOIN sop_pdx_carpetas c ON c.id = a.carpeta_id WHERE a.id = ?`,
         [req.params.id]
       );
       if (!rows.length) return res.status(404).json({ error: 'No encontrado' });
       const row = rows[0];
+      const deniedRes = denySinAccesoCarpetaPdx(req, row);
+      if (deniedRes) return res.status(deniedRes.status).json({ error: deniedRes.error });
       const vis = calcularVisibilidadPeriodo(row.periodo);
       if (vis === 'archivo') return res.status(403).json({ error: 'Carpeta cerrada' });
       const fp = await resolvePdxArchivoPathForApi(row, true);
@@ -1085,7 +1158,7 @@ router.post(
         return res.status(400).json({ error: 'Seleccione al menos un PDF para añadir' });
       }
       const rows = await db.query(
-        `SELECT a.*, c.periodo FROM sop_pdx_archivos a JOIN sop_pdx_carpetas c ON c.id = a.carpeta_id WHERE a.id = ?`,
+        `SELECT a.*, c.periodo, c.roles_visibles FROM sop_pdx_archivos a JOIN sop_pdx_carpetas c ON c.id = a.carpeta_id WHERE a.id = ?`,
         [req.params.id]
       );
       if (!rows.length) {
@@ -1093,6 +1166,11 @@ router.post(
         return res.status(404).json({ error: 'No encontrado' });
       }
       const row = rows[0];
+      const deniedAnx = denySinAccesoCarpetaPdx(req, row);
+      if (deniedAnx) {
+        cleanupMulterTempFiles(req);
+        return res.status(deniedAnx.status).json({ error: deniedAnx.error });
+      }
       const vis = calcularVisibilidadPeriodo(row.periodo);
       if (vis === 'archivo') {
         cleanupMulterTempFiles(req);
@@ -1130,11 +1208,13 @@ router.post(
         return res.status(400).json({ error: 'Indique las páginas a eliminar (número 1, 2, …)' });
       }
       const rows = await db.query(
-        `SELECT a.*, c.periodo FROM sop_pdx_archivos a JOIN sop_pdx_carpetas c ON c.id = a.carpeta_id WHERE a.id = ?`,
+        `SELECT a.*, c.periodo, c.roles_visibles FROM sop_pdx_archivos a JOIN sop_pdx_carpetas c ON c.id = a.carpeta_id WHERE a.id = ?`,
         [req.params.id]
       );
       if (!rows.length) return res.status(404).json({ error: 'No encontrado' });
       const row = rows[0];
+      const deniedPag = denySinAccesoCarpetaPdx(req, row);
+      if (deniedPag) return res.status(deniedPag.status).json({ error: deniedPag.error });
       const vis = calcularVisibilidadPeriodo(row.periodo);
       if (vis === 'archivo') return res.status(403).json({ error: 'Carpeta cerrada' });
       const fp = await resolvePdxArchivoPathForApi(row, true);
@@ -1168,6 +1248,14 @@ router.post(
 
 router.get('/soportes/pdx/archivos/:id/historial', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, ['modulo.reportes_pdx', 'soportes.pdx.ver', 'soportes.pdx.subir']), async (req, res) => {
   try {
+    const accRows = await db.query(
+      `SELECT c.roles_visibles FROM sop_pdx_archivos a
+       JOIN sop_pdx_carpetas c ON c.id = a.carpeta_id WHERE a.id = ?`,
+      [req.params.id]
+    );
+    if (!accRows.length) return res.status(404).json({ error: 'No encontrado' });
+    const deniedHist = denySinAccesoCarpetaPdx(req, accRows[0]);
+    if (deniedHist) return res.status(deniedHist.status).json({ error: deniedHist.error });
     const rows = await db.query(
       `SELECT l.*, u.nombre AS usuario_nombre
        FROM sop_pdx_archivo_log l
@@ -1191,12 +1279,14 @@ router.post(
     try {
       if (!req.file) return res.status(400).json({ error: 'Archivo PDF requerido' });
       const rows = await db.query(
-        `SELECT a.*, c.periodo, c.color_tema, c.nombre_display FROM sop_pdx_archivos a
+        `SELECT a.*, c.periodo, c.color_tema, c.nombre_display, c.roles_visibles FROM sop_pdx_archivos a
          JOIN sop_pdx_carpetas c ON c.id = a.carpeta_id WHERE a.id = ?`,
         [req.params.id]
       );
       if (!rows.length) return res.status(404).json({ error: 'Archivo no encontrado' });
       const prev = rows[0];
+      const deniedRep = denySinAccesoCarpetaPdx(req, prev);
+      if (deniedRep) return res.status(deniedRep.status).json({ error: deniedRep.error });
       const vis = calcularVisibilidadPeriodo(prev.periodo);
       if (vis === 'archivo') return res.status(403).json({ error: 'Carpeta cerrada' });
 
@@ -1823,11 +1913,13 @@ async function handleImportarDesdeDeposito(req, res) {
     if (!exp) return res.status(404).json({ error: 'Expediente no encontrado' });
 
     const pdx = await db.query(
-      `SELECT a.*, c.periodo, c.nombre_display AS carpeta_nombre, c.color_tema
+      `SELECT a.*, c.periodo, c.nombre_display AS carpeta_nombre, c.color_tema, c.roles_visibles
        FROM sop_pdx_archivos a JOIN sop_pdx_carpetas c ON c.id = a.carpeta_id WHERE a.id = ?`,
       [pdxId]
     );
     if (!pdx.length) return res.status(404).json({ error: 'Archivo no encontrado en reportes' });
+    const deniedImp = denySinAccesoCarpetaPdx(req, pdx[0]);
+    if (deniedImp) return res.status(deniedImp.status).json({ error: deniedImp.error });
 
     const { importarArchivoDesdeDeposito, resolverDestinoImportacion } = require('../utils/soportes-deposito-import');
     const destPreview = resolverDestinoImportacion(pdx[0]);

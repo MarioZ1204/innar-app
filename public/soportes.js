@@ -12,8 +12,20 @@
     carpetaActual: null,
     archivos: [],
     periodoActual: null,
+    puedeConfigurarRoles: false,
     filtros: { texto: '', periodo: '', tema: '', orden: 'periodo_desc' }
   };
+
+  const PDX_ROLES_OPTS = [
+    { id: 'superadmin', label: 'Superadmin' },
+    { id: 'admin', label: 'Administrador' },
+    { id: 'admin_recepcion', label: 'Admin recepción' },
+    { id: 'recepcion', label: 'Recepción' },
+    { id: 'contabilidad', label: 'Contabilidad' },
+    { id: 'admin_electro', label: 'Admin electro' },
+    { id: 'electro', label: 'Electrodiagnóstico' },
+    { id: 'tecnico_electro', label: 'Técnico electro' }
+  ];
 
   const PDX_LOG_LABEL = {
     subida: 'Subida',
@@ -990,6 +1002,89 @@
     }
   }
 
+  function esSuperadminPdx() {
+    return typeof currentUser !== 'undefined' && currentUser
+      && String(currentUser.rol || '').toLowerCase() === 'superadmin';
+  }
+
+  function htmlPdxRolesVisiblesField(rolesSeleccionados) {
+    if (!esSuperadminPdx()) return '';
+    const sel = new Set((rolesSeleccionados || []).map((r) => String(r)));
+    const todosLosRoles = sel.size === 0;
+    const filas = PDX_ROLES_OPTS.map((r) => {
+      const on = sel.has(r.id);
+      return `<label class="sop-pdx-role-row${on ? ' is-checked' : ''}">
+        <input type="checkbox" class="sop-pdx-role-cb" data-pdx-role="${escapeHtml(r.id)}"${on ? ' checked' : ''}>
+        <span class="sop-pdx-role-row-text">${escapeHtml(r.label)}</span>
+        <span class="sop-pdx-role-row-mark" aria-hidden="true"></span>
+      </label>`;
+    }).join('');
+    return `<div class="sop-field sop-pdx-vis-field">
+      <label class="sop-pdx-vis-label">¿Quién ve esta carpeta?</label>
+      <label class="sop-pdx-vis-todos-row${todosLosRoles ? ' is-checked' : ''}">
+        <input type="checkbox" class="sop-pdx-vis-todos-cb" data-pdx-vis-todos${todosLosRoles ? ' checked' : ''}>
+        <span class="sop-pdx-role-row-text"><strong>Todos los roles</strong> (recepción, electro, contabilidad, etc.)</span>
+      </label>
+      <p class="sop-pdx-vis-subtitle">O marque solo los roles que deben verla:</p>
+      <div class="sop-pdx-role-checklist${todosLosRoles ? ' is-disabled' : ''}" data-pdx-role-list>${filas}</div>
+      <p class="sop-pdx-vis-legend"><span class="sop-pdx-legend-on"></span> Seleccionado &nbsp; <span class="sop-pdx-legend-off"></span> No seleccionado</p>
+    </div>`;
+  }
+
+  function htmlPdxRolesBadgeCarpeta(c) {
+    const roles = c.roles_visibles || [];
+    if (!roles.length) {
+      return '<span class="sop-pdx-vis-tag sop-pdx-vis-tag--all" title="Visible para todos">Todos</span>';
+    }
+    const byId = Object.fromEntries(PDX_ROLES_OPTS.map((r) => [r.id, r.label]));
+    const tags = roles.slice(0, 3).map((id) =>
+      `<span class="sop-pdx-vis-tag">${escapeHtml(byId[id] || id)}</span>`
+    ).join('');
+    const extra = roles.length > 3 ? `<span class="sop-pdx-vis-tag sop-pdx-vis-tag--more">+${roles.length - 3}</span>` : '';
+    return `<div class="sop-pdx-vis-tags" title="${escapeHtml(c.roles_visibles_label || '')}">${tags}${extra}</div>`;
+  }
+
+  function syncPdxRoleRowVisual(row) {
+    if (!row) return;
+    const cb = row.querySelector('.sop-pdx-role-cb');
+    row.classList.toggle('is-checked', !!cb?.checked);
+  }
+
+  function bindPdxRolesVisibilidadModal(modal) {
+    if (!modal || !esSuperadminPdx()) return;
+    const todosCb = modal.querySelector('[data-pdx-vis-todos]');
+    const todosRow = modal.querySelector('.sop-pdx-vis-todos-row');
+    const lista = modal.querySelector('[data-pdx-role-list]');
+    const setTodosMode = (todos) => {
+      todosRow?.classList.toggle('is-checked', todos);
+      lista?.classList.toggle('is-disabled', todos);
+      if (todos) {
+        lista?.querySelectorAll('.sop-pdx-role-cb').forEach((cb) => {
+          cb.checked = false;
+          syncPdxRoleRowVisual(cb.closest('.sop-pdx-role-row'));
+        });
+      }
+    };
+    todosCb?.addEventListener('change', () => setTodosMode(!!todosCb.checked));
+    lista?.querySelectorAll('.sop-pdx-role-row').forEach((row) => {
+      const cb = row.querySelector('.sop-pdx-role-cb');
+      cb?.addEventListener('change', () => {
+        syncPdxRoleRowVisual(row);
+        if (cb.checked && todosCb) {
+          todosCb.checked = false;
+          setTodosMode(false);
+        }
+      });
+      syncPdxRoleRowVisual(row);
+    });
+  }
+
+  function rolesVisiblesFromModal(modal) {
+    if (!esSuperadminPdx() || !modal) return undefined;
+    if (modal.querySelector('[data-pdx-vis-todos]')?.checked) return [];
+    return [...modal.querySelectorAll('.sop-pdx-role-cb:checked')].map((el) => el.dataset.pdxRole).filter(Boolean);
+  }
+
   function sopPerm(key) {
     if (typeof window.tienePermiso !== 'function') return false;
     if (window.tienePermiso(key)) return true;
@@ -1215,6 +1310,7 @@
     if (!res.ok) throw new Error(data.error || 'Error al cargar carpetas');
     pdxState.carpetas = data.carpetas || [];
     pdxState.periodoActual = data.periodo_actual || periodoActual();
+    pdxState.puedeConfigurarRoles = !!data.puede_configurar_roles;
     const chip = $('sopPdxChipPeriodo');
     if (chip) {
       chip.innerHTML = `<span class="sop-stat-chip"><i data-lucide="calendar"></i> Periodo en curso: <strong>${escapeHtml(pdxState.periodoActual)}</strong></span>
@@ -1251,6 +1347,7 @@
         <div class="sop-folder-icon"><i data-lucide="${icon}"></i></div>
         <div class="sop-folder-title">${escapeHtml(c.nombre_display)}</div>
         <div class="sop-folder-meta">${escapeHtml(c.periodo)} · ${c.archivos_count || 0} archivo(s)</div>
+        ${pdxState.puedeConfigurarRoles ? htmlPdxRolesBadgeCarpeta(c) : ''}
         ${badgeVis(c.estado_visibilidad, c.dias_restantes_gracia)}
         ${(canEdit || canDel) ? `<div class="sop-folder-actions">
           ${canEdit && !enArchivo ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-pdx-edit="${c.id}"><i data-lucide="pencil"></i></button>` : ''}
@@ -1451,19 +1548,25 @@
       <div class="sop-field"><label>Periodo (mes)</label><input type="month" id="sopPdxEditPer" value="${escapeHtml(carpeta.periodo)}"></div>
       <div class="sop-field"><label>Nombre visible</label><input type="text" id="sopPdxEditNom" value="${escapeHtml(carpeta.nombre_display)}"></div>
       <p style="font-size:.8rem;color:#64748b;margin:0">El tema de color (VTM, PSG, etc.) se detecta del nombre.</p>
+      ${htmlPdxRolesVisiblesField(carpeta.roles_visibles)}
       <div class="sop-dialog-actions">
         <button type="button" class="sop-btn sop-btn-ghost" id="sopPdxEditCancel">Cancelar</button>
         <button type="button" class="sop-btn sop-btn-primary" id="sopPdxEditOk">Guardar</button>
       </div>`);
+    sopIcons(modal);
+    bindPdxRolesVisibilidadModal(modal);
     modal.querySelector('#sopPdxEditCancel').onclick = () => closeSopModal(modal);
     modal.querySelector('#sopPdxEditOk').onclick = async () => {
+      const body = {
+        periodo: $('sopPdxEditPer').value,
+        nombre_display: $('sopPdxEditNom').value.trim()
+      };
+      const roles = rolesVisiblesFromModal(modal);
+      if (roles !== undefined) body.roles_visibles = roles;
       const res = await apiFetch(`/api/soportes/pdx/carpetas/${carpeta.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          periodo: $('sopPdxEditPer').value,
-          nombre_display: $('sopPdxEditNom').value.trim()
-        })
+        body: JSON.stringify(body)
       });
       const data = await res.json();
       if (!res.ok) { sopToast(data.error || 'Error', 'error'); return; }
@@ -1691,18 +1794,24 @@
       <div class="sop-field"><label>Periodo</label><input type="month" id="sopPdxNewPeriodo" value="${per}"></div>
       <div class="sop-field"><label>Nombre de carpeta</label>
         <input type="text" id="sopPdxNewNombre" placeholder="REPORTES VTM, ORDENES, COMPROBANTES o CONSENTIMIENTOS…"></div>
+      ${htmlPdxRolesVisiblesField([])}
       <div class="sop-dialog-actions">
         <button type="button" class="sop-btn sop-btn-ghost" id="sopPdxNewCancel">Cancelar</button>
         <button type="button" class="sop-btn sop-btn-primary" id="sopPdxNewOk">Crear carpeta</button>
       </div>`);
+    sopIcons(modal);
+    bindPdxRolesVisibilidadModal(modal);
     modal.querySelector('#sopPdxNewCancel').onclick = () => closeSopModal(modal);
     modal.querySelector('#sopPdxNewOk').onclick = async () => {
       const periodo = $('sopPdxNewPeriodo').value;
       const nombre_display = $('sopPdxNewNombre').value.trim();
+      const body = { periodo, nombre_display };
+      const roles = rolesVisiblesFromModal(modal);
+      if (roles !== undefined) body.roles_visibles = roles;
       const res = await apiFetch('/api/soportes/pdx/carpetas', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ periodo, nombre_display })
+        body: JSON.stringify(body)
       });
       const data = await res.json();
       if (!res.ok) { sopToast(data.error || 'Error', 'error'); return; }

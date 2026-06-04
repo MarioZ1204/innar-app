@@ -1318,6 +1318,25 @@ router.patch('/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin',
 
     if (hora_agendamiento !== undefined) { updates.push('hora_agendamiento = ?'); values.push(hora_agendamiento); cambios.hora_agendamiento = hora_agendamiento; }
     if (fecha !== undefined) { updates.push('fecha = ?'); values.push(fecha); cambios.fecha = fecha; }
+
+    if ((fecha !== undefined || hora_agendamiento !== undefined) && !citaActual.hora_inicio) {
+      const fechaBase = fecha || extraerFechaYmd(citaActual.fecha) || normalizeFecha(citaActual.fecha);
+      const horaBase = hora_agendamiento !== undefined
+        ? String(hora_agendamiento).trim().slice(0, 5)
+        : String(citaActual.hora_agendamiento || '').trim().slice(0, 5);
+      const durAgenda = parseInt(duracionPatch ?? citaActual.duracion_minutos, 10);
+      if (fechaBase && /^\d{2}:\d{2}$/.test(horaBase) && durAgenda > 0) {
+        const finAgenda = sumarMinutosAHoraYFecha(fechaBase, horaBase, durAgenda);
+        if (finAgenda) {
+          updates.push('hora_fin = ?');
+          values.push(finAgenda.horaFin);
+          cambios.hora_fin = finAgenda.horaFin;
+          updates.push('hora_fin_date = ?');
+          values.push(finAgenda.fechaFin);
+          cambios.hora_fin_date = finAgenda.fechaFin;
+        }
+      }
+    }
     if (duracionPatch !== undefined) { updates.push('duracion_minutos = ?'); values.push(duracionPatch); cambios.duracion_minutos = duracionPatch; }
     if (entidad !== undefined) { updates.push('entidad = ?'); values.push(entidad ? String(entidad).trim() : null); }
     if (estudio !== undefined) {

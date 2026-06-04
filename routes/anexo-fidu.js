@@ -5,7 +5,8 @@ const express = require('express');
 const router = express.Router();
 const db = require('../utils/db-mysql');
 const logger = require('../utils/logger');
-const { requireAuth, requireRole, safeError } = require('../middleware/index');
+const { requireAuth, requirePermiso, safeError } = require('../middleware/index');
+const PERM_ANEXO_FIDU = 'modulo.anexo_fidu';
 const { upload, validateMagicBytes } = require('../middleware/upload');
 const { ANEXO_FIDU_COLUMNAS, ANEXO_FIDU_COLUMN_KEYS } = require('../utils/anexo-fidu-columns');
 const {
@@ -14,8 +15,6 @@ const {
   formatFechaParaCelda,
   cellToString
 } = require('../utils/anexo-fidu-import');
-
-const ROLES_ANEXO = ['superadmin', 'admin', 'contabilidad', 'admin_recepcion'];
 
 function sanitizeRegistroBody(body) {
   const out = {};
@@ -38,12 +37,12 @@ function rowToApi(row) {
 }
 
 /** GET /api/anexo-fidu/columnas */
-router.get('/anexo-fidu/columnas', requireAuth, requireRole(ROLES_ANEXO), (req, res) => {
+router.get('/anexo-fidu/columnas', requireAuth, requirePermiso(PERM_ANEXO_FIDU), (req, res) => {
   res.json({ ok: true, total: ANEXO_FIDU_COLUMNAS.length, columnas: ANEXO_FIDU_COLUMNAS });
 });
 
 /** GET /api/anexo-fidu/registros */
-router.get('/anexo-fidu/registros', requireAuth, requireRole(ROLES_ANEXO), async (req, res) => {
+router.get('/anexo-fidu/registros', requireAuth, requirePermiso(PERM_ANEXO_FIDU), async (req, res) => {
   try {
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
     const limit = Math.min(200, Math.max(10, parseInt(req.query.limit, 10) || 50));
@@ -86,7 +85,7 @@ router.get('/anexo-fidu/registros', requireAuth, requireRole(ROLES_ANEXO), async
 });
 
 /** GET /api/anexo-fidu/registros/:id */
-router.get('/anexo-fidu/registros/:id', requireAuth, requireRole(ROLES_ANEXO), async (req, res) => {
+router.get('/anexo-fidu/registros/:id', requireAuth, requirePermiso(PERM_ANEXO_FIDU), async (req, res) => {
   try {
     const rows = await db.query('SELECT * FROM anexo_fidu_registros WHERE id = ? LIMIT 1', [req.params.id]);
     if (!rows.length) return res.status(404).json({ error: 'Registro no encontrado' });
@@ -97,7 +96,7 @@ router.get('/anexo-fidu/registros/:id', requireAuth, requireRole(ROLES_ANEXO), a
 });
 
 /** POST /api/anexo-fidu/registros */
-router.post('/anexo-fidu/registros', requireAuth, requireRole(ROLES_ANEXO), async (req, res) => {
+router.post('/anexo-fidu/registros', requireAuth, requirePermiso(PERM_ANEXO_FIDU), async (req, res) => {
   try {
     const data = sanitizeRegistroBody(req.body || {});
     const cols = ANEXO_FIDU_COLUMN_KEYS;
@@ -116,7 +115,7 @@ router.post('/anexo-fidu/registros', requireAuth, requireRole(ROLES_ANEXO), asyn
 });
 
 /** PUT /api/anexo-fidu/registros/:id */
-router.put('/anexo-fidu/registros/:id', requireAuth, requireRole(ROLES_ANEXO), async (req, res) => {
+router.put('/anexo-fidu/registros/:id', requireAuth, requirePermiso(PERM_ANEXO_FIDU), async (req, res) => {
   try {
     const data = sanitizeRegistroBody(req.body || {});
     const sets = ANEXO_FIDU_COLUMN_KEYS.map((c) => `\`${c}\` = ?`).join(', ');
@@ -136,7 +135,7 @@ router.put('/anexo-fidu/registros/:id', requireAuth, requireRole(ROLES_ANEXO), a
 });
 
 /** DELETE /api/anexo-fidu/registros/:id */
-router.delete('/anexo-fidu/registros/:id', requireAuth, requireRole(ROLES_ANEXO), async (req, res) => {
+router.delete('/anexo-fidu/registros/:id', requireAuth, requirePermiso(PERM_ANEXO_FIDU), async (req, res) => {
   try {
     const result = await db.execute('DELETE FROM anexo_fidu_registros WHERE id = ?', [req.params.id]);
     if (!result.affectedRows) return res.status(404).json({ error: 'Registro no encontrado' });
@@ -150,7 +149,7 @@ router.delete('/anexo-fidu/registros/:id', requireAuth, requireRole(ROLES_ANEXO)
 router.post(
   '/anexo-fidu/importar',
   requireAuth,
-  requireRole(ROLES_ANEXO),
+  requirePermiso(PERM_ANEXO_FIDU),
   upload.single('file'),
   validateMagicBytes,
   async (req, res) => {
