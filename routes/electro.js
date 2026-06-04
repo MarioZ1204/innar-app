@@ -37,6 +37,8 @@ const {
 async function asegurarDuracionMinutosCitaElectro(cita) {
   if (!cita?.id) return cita;
   if (parseInt(cita.duracion_minutos, 10) > 0) return cita;
+  const activo = cita.estado === 'En Estudio' || cita.estado === 'Pausado';
+  const tieneInicioReal = /^\d{2}:\d{2}/.test(String(cita.hora_inicio || '').trim());
   let dur = null;
   if (cita.estudio) {
     try {
@@ -49,7 +51,10 @@ async function asegurarDuracionMinutosCitaElectro(cita) {
       logger.warn('Catálogo estudio_duraciones no disponible:', err.message);
     }
   }
-  if (!(dur > 0)) dur = inferirDuracionMinutosCitaElectroParaPersistir(cita);
+  // En estudio con hora_inicio real: nunca usar slot corto de agenda (evita auto-cierre a los 30 min).
+  if (!(dur > 0) && !(activo && tieneInicioReal)) {
+    dur = inferirDuracionMinutosCitaElectroParaPersistir(cita);
+  }
   if (dur > 0) {
     await db.execute(
       'UPDATE citas_electro SET duracion_minutos = ? WHERE id = ? AND (duracion_minutos IS NULL OR duracion_minutos = 0)',
@@ -65,7 +70,8 @@ async function sincronizarDuracionesElectroEnFecha(fechaYmd) {
   if (!fechaYmd || !/^\d{4}-\d{2}-\d{2}$/.test(fechaYmd)) return 0;
   const vis = sqlCitaElectroVisibleEnFecha('c');
   const rows = await db.query(`
-    SELECT c.id, c.fecha, c.hora_agendamiento, c.hora_fin, c.hora_fin_date, c.duracion_minutos, c.estudio
+    SELECT c.id, c.fecha, c.hora_agendamiento, c.hora_inicio, c.hora_fin, c.hora_fin_date,
+           c.duracion_minutos, c.estudio, c.estado
     FROM citas_electro c
     WHERE c.deleted_at IS NULL
       AND (c.duracion_minutos IS NULL OR c.duracion_minutos = 0)
@@ -117,7 +123,7 @@ async function repararEstadosElectroAlConsultar(fechaYmd) {
   try {
     const duraciones = await sincronizarDuracionesElectroEnFecha(fechaYmd);
     const revertidas = await revertirElectroCompletadosAntesDeTiempo(14, fechaYmd);
-    const completadas = await autoCompletarEstudiosElectroVencidos();
+    const completadas = await autoCompletarEstudiosElectroVencidos(null, fechaYmd);
     if (completadas > 0) {
       emitSocket('electro:actualizar-lista', { type: 'auto-completados', completadas });
       emitSocket('electro:cambios-guardados', { type: 'auto-completados', completadas });
@@ -129,16 +135,20 @@ async function repararEstadosElectroAlConsultar(fechaYmd) {
   }
 }
 
-/** Rellena duracion_minutos en todos los estudios activos que solo tienen hora_fin de agenda. */
-async function sincronizarDuracionesElectroActivas() {
+/** Rellena duracion_minutos en estudios activos visibles en el día consultado. */
+async function sincronizarDuracionesElectroActivas(fechaYmd = null) {
+  if (!fechaYmd || !/^\d{4}-\d{2}-\d{2}$/.test(fechaYmd)) return 0;
+  const vis = sqlCitaElectroVisibleEnFecha('c');
   const rows = await db.query(`
-    SELECT id, fecha, hora_agendamiento, hora_fin, hora_fin_date, duracion_minutos, estudio
-    FROM citas_electro
-    WHERE deleted_at IS NULL
-      AND estado IN ('En Estudio', 'Pausado')
-      AND (duracion_minutos IS NULL OR duracion_minutos = 0)
-      AND hora_fin IS NOT NULL
-  `);
+    SELECT c.id, c.fecha, c.hora_agendamiento, c.hora_inicio, c.hora_fin, c.hora_fin_date,
+           c.duracion_minutos, c.estudio, c.estado
+    FROM citas_electro c
+    WHERE c.deleted_at IS NULL
+      AND c.estado IN ('En Estudio', 'Pausado')
+      AND (c.duracion_minutos IS NULL OR c.duracion_minutos = 0)
+      AND c.hora_fin IS NOT NULL
+      AND ${vis}
+  `, paramsCitaElectroVisibleEnFecha(fechaYmd));
   for (const row of rows) {
     await asegurarDuracionMinutosCitaElectro(row);
   }
@@ -146,27 +156,35 @@ async function sincronizarDuracionesElectroActivas() {
 }
 
 /**
- * Cierra estudios vencidos. Hoy: solo con duracion_minutos (inicio+duración).
- * Días anteriores: también por hora_fin (limpieza de olvidados).
+ * Cierra estudios vencidos visibles en el día consultado (no toda la base).
+ * Hoy: inicio real + duracion_minutos. Días anteriores al inicio: limpieza por hora_fin.
  */
-async function autoCompletarEstudiosElectroVencidos(excludeId = null) {
-  await sincronizarDuracionesElectroActivas();
-  const condId = excludeId ? ' AND id != ?' : '';
-  const params = excludeId ? [excludeId] : [];
-  const sqlVencido = sqlEstudioElectroFinProgramadoVencido();
-  const sqlVencidoHoy = sqlEstudioElectroFinProgramadoVencidoConDuracion();
+async function autoCompletarEstudiosElectroVencidos(excludeId = null, fechaYmd = null) {
+  if (!fechaYmd || !/^\d{4}-\d{2}-\d{2}$/.test(fechaYmd)) return 0;
+  await sincronizarDuracionesElectroActivas(fechaYmd);
+  const condId = excludeId ? ' AND citas_electro.id != ?' : '';
+  const vis = sqlCitaElectroVisibleEnFecha('citas_electro');
+  const params = [...paramsCitaElectroVisibleEnFecha(fechaYmd)];
+  if (excludeId) params.push(excludeId);
+  const sqlVencido = sqlEstudioElectroFinProgramadoVencido('citas_electro');
+  const sqlVencidoHoy = sqlEstudioElectroFinProgramadoVencidoConDuracion('citas_electro');
+  const sqlVencidoHoyConInicio = `(
+    ${sqlVencidoHoy}
+    AND citas_electro.hora_inicio IS NOT NULL
+  )`;
   try {
     const result = await db.execute(`
       UPDATE citas_electro
       SET estado = 'Completado', editado_por_nombre = 'Sistema (Auto)', editado_en = NOW()
       WHERE estado IN ('En Estudio', 'Pausado')
         AND deleted_at IS NULL
+        AND ${vis}
         AND (
-          (fecha < CURDATE() AND ${sqlVencido})
-          OR (fecha >= CURDATE() AND ${sqlVencidoHoy})
+          (citas_electro.fecha < ? AND ${sqlVencido})
+          OR (citas_electro.fecha >= ? AND ${sqlVencidoHoyConInicio})
         )
         ${condId}
-    `, params);
+    `, [...params, fechaYmd, fechaYmd]);
     return result[0]?.affectedRows ?? result.affectedRows ?? 0;
   } catch (err) {
     logger.warn('Auto-completar estudios vencidos falló (no crítico):', err.message);
@@ -1204,15 +1222,45 @@ router.patch('/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin',
       const estadosManuales = ['Confirmado', 'En Sala', 'No Asistió', 'Reprogramado', 'Cancelado', 'Adelantado', 'Pausado'];
       const esManual = estadosManuales.includes(estado);
       const esReanudarEstudio = estadoActual === 'Pausado' && estado === 'En Estudio';
+      const esRevertirCompletadoAEnEstudio = estadoActual === 'Completado' && estado === 'En Estudio';
       const esInicioEstudioNuevo = ['Programado', 'Confirmado', 'En Sala', 'Reprogramado', 'Adelantado'].includes(estadoActual) && estado === 'En Estudio';
-      const esInicioEstudio = esInicioEstudioNuevo || esReanudarEstudio;
+      const esInicioEstudio = (esInicioEstudioNuevo || esReanudarEstudio) && !esRevertirCompletadoAEnEstudio;
       const esFinEstudio = (estadoActual === 'En Estudio' || estadoActual === 'Pausado') && estado === 'Completado';
+      const rolSesion = (req.session?.rol && String(req.session.rol).toLowerCase()) || '';
 
-      if (!esManual && !esInicioEstudio && !esFinEstudio) {
+      if (!esManual && !esInicioEstudio && !esFinEstudio && !esRevertirCompletadoAEnEstudio) {
         return res.status(400).json({ error: `Transición de estado inválida: ${estadoActual} → ${estado}` });
       }
 
-      if (esInicioEstudio) {
+      if (esRevertirCompletadoAEnEstudio) {
+        if (rolSesion !== 'superadmin') {
+          return res.status(403).json({
+            error: 'Solo el superadmin puede devolver un estudio completado a En Estudio.'
+          });
+        }
+        const horaIniRev = horaInicioCitaElectro(citaActual);
+        if (!horaIniRev) {
+          return res.status(400).json({
+            error: 'No se puede reabrir: el estudio no tiene hora de inicio registrada.'
+          });
+        }
+        const eqIdRev = citaActual.equipo_id ? parseInt(citaActual.equipo_id, 10) : null;
+        if (eqIdRev && !Number.isNaN(eqIdRev)) {
+          const ocupadoRev = await db.query(
+            `SELECT id, estudio FROM citas_electro
+             WHERE equipo_id = ? AND id != ? AND estado = 'En Estudio' AND deleted_at IS NULL
+             LIMIT 1`,
+            [eqIdRev, id]
+          );
+          if (ocupadoRev.length > 0) {
+            const eqRowsRev = await db.query('SELECT nombre FROM equipos_electro WHERE id = ?', [eqIdRev]);
+            const eqNombreRev = eqRowsRev[0]?.nombre || `Equipo ${eqIdRev}`;
+            return res.status(409).json({
+              error: `${eqNombreRev} ya tiene otro estudio en curso. Finalice o pause ese estudio antes de reabrir este.`
+            });
+          }
+        }
+      } else if (esInicioEstudio) {
         const checkHora = hora_inicio || hora_agendamiento || horaInicioCitaElectro(citaActual);
         const checkFecha = fecha || extraerFechaYmd(citaActual.fecha) || normalizeFecha(citaActual.fecha);
         const durCheck = parseInt(duracion_minutos ?? citaActual.duracion_minutos, 10);

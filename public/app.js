@@ -11980,7 +11980,12 @@ function actualizarProgresoEstudio() {
           tiempoTranscurrido: tiempoFormato
         });
       }
-      if (porcentaje >= 100 && !citaElectroSeleccionada._autoFinalizandoEnCurso) {
+      if (
+        porcentaje >= 100
+        && !citaElectroSeleccionada._autoFinalizandoEnCurso
+        && parseInt(citaElectroSeleccionada.duracion_minutos, 10) > 0
+        && citaElectroSeleccionada.hora_inicio
+      ) {
         citaElectroSeleccionada._autoFinalizandoEnCurso = true;
         if (intervaloProgreso) {
           clearInterval(intervaloProgreso);
@@ -12616,8 +12621,21 @@ function renderFlujoEstado(cita) {
     document.getElementById('flujo-btn-reanudar').onclick = (ev) => cambiarEstadoCita('En Estudio', ev.currentTarget);
     document.getElementById('flujo-btn-finalizar-pausado').onclick = () => finalizarEstudioModal();
 
+  } else if (estado === 'Completado' && esSuperadmin) {
+    flujoEl.innerHTML = `
+      <div class="flujo-estado-panel">
+        <div class="flujo-estado-label">Correcci\u00f3n (superadmin)</div>
+        <p style="font-size:0.8rem;color:#6b7280;margin:0 0 10px;line-height:1.4">
+          Si el estudio se marc\u00f3 <strong>Completado</strong> por error (p. ej. cierre autom\u00e1tico), puede devolverlo a <strong>En Estudio</strong>.
+        </p>
+        <div class="flujo-btn-secondary-row">
+          <button type="button" class="flujo-btn-sm iniciar" id="flujo-btn-revertir-en-estudio">${svgPlay} Devolver a En Estudio</button>
+        </div>
+      </div>`;
+    document.getElementById('flujo-btn-revertir-en-estudio').onclick = () => revertirCompletadoAEnEstudio();
+
   } else {
-    // Completado / Cancelado / No Asisti\u00f3
+    // Cancelado / No Asisti\u00f3 (Completado sin permiso superadmin)
     flujoEl.innerHTML = `<div class="flujo-estado-readonly">Sin acciones disponibles para este estado.</div>`;
   }
 
@@ -12665,6 +12683,73 @@ function aplicarCambioCitaElectroRealtime(payload = {}) {
 }
 
 window.aplicarCambioCitaElectroRealtime = aplicarCambioCitaElectroRealtime;
+
+async function revertirCompletadoAEnEstudio() {
+  if (!citaElectroSeleccionada) return;
+  if (!isSuperadmin()) {
+    showToast('Solo el superadmin puede devolver un estudio a En Estudio', 'error');
+    return;
+  }
+  if (citaElectroSeleccionada.estado !== 'Completado') {
+    showToast('Solo aplica a estudios en estado Completado', 'warning');
+    return;
+  }
+  if (!citaElectroSeleccionada.hora_inicio && !citaElectroSeleccionada.hora_agendamiento) {
+    showToast('El estudio no tiene hora de inicio; no se puede reabrir', 'warning');
+    return;
+  }
+  const paciente = citaElectroSeleccionada.paciente_nombre || 'este paciente';
+  if (!confirm(`¿Devolver el estudio de ${paciente} de Completado a En Estudio?\n\nUse esta opción solo si se cerró por error del sistema.`)) {
+    return;
+  }
+  const btn = document.getElementById('flujo-btn-revertir-en-estudio');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Reabriendo...';
+  }
+  try {
+    const res = await apiFetch(`/api/citas-electro/${citaElectroSeleccionada.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ estado: 'En Estudio' })
+    });
+    const data = await res.json();
+    if (!res.ok || !data?.ok) {
+      showToast(data?.error || 'No se pudo reabrir el estudio', 'error');
+      return;
+    }
+    citaElectroSeleccionada.estado = 'En Estudio';
+    showToast('Estudio devuelto a En Estudio', 'success');
+    if (window.socket && window.socket.connected) {
+      window.socket.emit('electro:cita-cambio-estado', {
+        id: citaElectroSeleccionada.id,
+        estado: 'En Estudio'
+      });
+    }
+    $('modalEstado').value = 'En Estudio';
+    renderFlujoEstado(citaElectroSeleccionada);
+    const estudioBarra = $('estudioBarra');
+    const puedeBarra = citaElectroSeleccionada.hora_inicio && citaElectroSeleccionada.hora_fin;
+    if (estudioBarra && puedeBarra) {
+      estudioBarra.style.display = 'block';
+      estudioBarra.setAttribute('data-estado', 'en-estudio');
+      citaElectroSeleccionada._avisoFinDuracion = false;
+      aplicarVisualProgresoEstudio(0, { estadoCard: 'en-estudio' });
+    }
+    actualizarProgresoEstudio();
+    actualizarEstadoFilaTablaElectro(citaElectroSeleccionada.id, 'En Estudio');
+    await cargarCitasElectro();
+    cargarEquiposElectroSelect();
+  } catch (e) {
+    console.error('[REVERTIR_ESTUDIO]', e);
+    showToast('Error al reabrir el estudio', 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg> Devolver a En Estudio';
+    }
+  }
+}
 
 async function cambiarEstadoCita(nuevoEstado, triggerBtn = null) {
   if (!citaElectroSeleccionada) return;
