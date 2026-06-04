@@ -477,6 +477,68 @@
   align-items: center;
 }
 
+.sop-panel-head-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-left: auto;
+}
+
+.sop-pdx-filtros .sop-view-toggle {
+  margin-left: auto;
+}
+
+.sop-view-toggle {
+  display: inline-flex;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #f8fafc;
+}
+
+.sop-view-toggle .sop-btn {
+  border: none;
+  border-radius: 0;
+  margin: 0;
+  min-width: 36px;
+  padding: 6px 10px;
+}
+
+.sop-view-toggle .sop-btn.is-active {
+  background: #0d9488;
+  color: #fff;
+}
+
+.sop-view-toggle .sop-btn.is-active svg {
+  stroke: #fff;
+}
+
+.sop-folder-list-table tbody tr {
+  cursor: pointer;
+}
+
+.sop-folder-list-table tbody tr:hover {
+  background: #f8fafc;
+}
+
+.sop-folder-list-table tbody tr.is-active {
+  background: #f0fdfa;
+}
+
+.sop-folder-list-table .sop-folder-list-actions {
+  white-space: nowrap;
+}
+
+.sop-folder-list-table .sop-folder-list-actions .sop-btn {
+  margin-left: 4px;
+}
+
+.sop-folder-explorer-grid.sop-folder-list-mode,
+.sop-grid.sop-folder-list-mode {
+  display: block;
+}
+
 /* Explorador de carpetas (armado) */
 .sop-folder-explorer-grid {
   display: grid;

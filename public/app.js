@@ -12360,20 +12360,15 @@ async function abrirModalDetallesCita(cita) {
   // Agregar listeners para los botones de reprogramación y adelanto
   const btnRep = $('btnReprogramarCita');
   const btnAde = $('btnAdelantarCita');
-  
-  console.log('[MODAL_DETALLES] btnReprogramarCita existe:', !!btnRep);
-  console.log('[MODAL_DETALLES] btnAdelantarCita existe:', !!btnAde);
-  
+
   if (btnRep && puedeEditarElectro) {
     btnRep.addEventListener('click', abrirModalReprogramar);
-    console.log('[MODAL_DETALLES] Listener agregado a btnReprogramarCita');
   } else if (btnRep) {
     btnRep.style.display = 'none';
   }
-  
+
   if (btnAde && puedeEditarElectro) {
     btnAde.addEventListener('click', abrirModalAdelantarCita);
-    console.log('[MODAL_DETALLES] Listener agregado a btnAdelantarCita');
   } else if (btnAde) {
     btnAde.style.display = 'none';
   }

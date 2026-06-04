@@ -5,6 +5,7 @@ const q = require('./event-poll-queue');
 const ALLOWED = new Set([
   'agenda:anunciar-paciente',
   'electro:cambios-guardados',
+  'electro:cita-cambio-estado',
   'electro:estudio-finalizado',
   'electro:estudio-iniciado',
   'electro:progreso-estudio',
@@ -24,6 +25,10 @@ function relay(usuarioId, event, data) {
     case 'electro:cambios-guardados':
     case 'electro:estudio-finalizado':
     case 'electro:estudio-iniciado':
+      q.broadcast('electro:actualizar-lista');
+      break;
+    case 'electro:cita-cambio-estado':
+      q.broadcast('electro:cita-cambio-estado', data);
       q.broadcast('electro:actualizar-lista');
       break;
     case 'electro:progreso-estudio':

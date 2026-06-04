@@ -825,8 +825,60 @@
     contenedorTipo: null,
     expedienteId: null,
     expedienteCodigo: null,
-    vista: 'empty'
+    vista: 'empty',
+    expedientesLista: []
   };
+
+  const SOP_VIEW_LS = { pdx: 'innar.sop.pdx.folderView', arm: 'innar.sop.arm.folderView' };
+
+  function sopFolderViewMode(mod) {
+    try {
+      return localStorage.getItem(SOP_VIEW_LS[mod]) === 'list' ? 'list' : 'grid';
+    } catch (_) {
+      return 'grid';
+    }
+  }
+
+  function setSopFolderViewMode(mod, mode) {
+    const next = mode === 'list' ? 'list' : 'grid';
+    try { localStorage.setItem(SOP_VIEW_LS[mod], next); } catch (_) { /* ignore */ }
+    if (mod === 'pdx') {
+      renderListaCarpetasPdx();
+      return;
+    }
+    if (!armState.periodoId) return;
+    if (armState.vista === 'period') renderArmadoDiasExplorer();
+    else if (armState.vista === 'contenedor' && armState.contenedorId) {
+      renderArmadoExpedientesGrid(armState.expedientesLista);
+    }
+  }
+
+  function htmlSopFolderViewToggle(mod) {
+    const mode = sopFolderViewMode(mod);
+    return `<div class="sop-view-toggle" role="group" aria-label="Vista de carpetas">
+      <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm${mode === 'grid' ? ' is-active' : ''}" data-sop-view="${mod}" data-sop-view-mode="grid" title="Vista en cuadrícula"><i data-lucide="layout-grid"></i></button>
+      <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm${mode === 'list' ? ' is-active' : ''}" data-sop-view="${mod}" data-sop-view-mode="list" title="Vista en lista"><i data-lucide="list"></i></button>
+    </div>`;
+  }
+
+  function bindSopFolderViewToggle(root, mod) {
+    if (!root) return;
+    root.querySelectorAll(`[data-sop-view="${mod}"]`).forEach((btn) => {
+      btn.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        setSopFolderViewMode(mod, btn.dataset.sopViewMode);
+      });
+    });
+  }
+
+  function htmlArmZipFacturadosBtn() {
+    if (!armState.periodoId || !sopPerm('soportes.descargar_zip')) return '';
+    const diasFact = armState.dias.filter((d) => d.estado_facturacion === 'facturados');
+    if (!diasFact.length) return '';
+    const feCount = diasFact.reduce((s, d) => s + (d.expedientes_count || 0), 0);
+    const title = `Descargar ZIP de ${diasFact.length} carpeta(s) de día facturada(s) y ${feCount} expediente(s) FE`;
+    return `<a class="sop-btn sop-btn-ghost sop-btn-sm" href="/api/soportes/armado/periodos/${armState.periodoId}/zip-facturados" title="${escapeHtml(title)}" download><i data-lucide="archive"></i> ZIP facturados</a>`;
+  }
 
   function badgeFacturacionArmado(estado) {
     if (estado === 'facturados') {
@@ -1435,12 +1487,54 @@
     return data;
   }
 
+  function ensurePdxViewToggleInBar() {
+    const bar = $('sopPdxFiltrosBar');
+    if (!bar) return;
+    let wrap = bar.querySelector('[data-sop-view-toggle-wrap="pdx"]');
+    if (!wrap) {
+      wrap = document.createElement('div');
+      wrap.dataset.sopViewToggleWrap = 'pdx';
+      bar.appendChild(wrap);
+    }
+    wrap.innerHTML = htmlSopFolderViewToggle('pdx');
+    bindSopFolderViewToggle(wrap, 'pdx');
+    sopIcons(wrap);
+  }
+
+  function bindPdxCarpetaCardEvents(root) {
+    if (!root) return;
+    root.querySelectorAll('[data-pdx-carpeta]').forEach((card) => {
+      const open = () => abrirCarpetaPdx(parseInt(card.dataset.pdxCarpeta, 10));
+      card.addEventListener('click', (ev) => {
+        if (ev.target.closest('.sop-folder-actions, .sop-folder-list-actions')) return;
+        open();
+      });
+      card.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') open(); });
+    });
+    root.querySelectorAll('[data-pdx-edit]').forEach((b) => {
+      b.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        const c = pdxState.carpetas.find((x) => x.id === parseInt(b.dataset.pdxEdit, 10));
+        if (c) modalEditarCarpetaPdx(c);
+      });
+    });
+    root.querySelectorAll('[data-pdx-del-carpeta]').forEach((b) => {
+      b.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        const c = pdxState.carpetas.find((x) => x.id === parseInt(b.dataset.pdxDelCarpeta, 10));
+        if (c) eliminarCarpetaPdx(c);
+      });
+    });
+  }
+
   function renderListaCarpetasPdx() {
     renderPdxBreadcrumbLista();
     renderPdxTemaLegend();
+    ensurePdxViewToggleInBar();
     const el = $('sopPdxLista');
     if (!el) return;
     const lista = pdxCarpetasFiltradas();
+    const viewMode = sopFolderViewMode('pdx');
     if (!pdxState.carpetas.length) {
       el.innerHTML = `<div class="sop-empty"><i data-lucide="folder-open" class="sop-empty-icon"></i>No hay carpetas.<br><span style="font-size:.85rem">Use «Nueva carpeta» para comenzar.</span></div>`;
       sopIcons(el);
@@ -1453,42 +1547,45 @@
     }
     const canEdit = sopPerm('soportes.pdx.editar');
     const canDel = sopPerm('soportes.pdx.eliminar');
-    el.innerHTML = `<div class="sop-grid">${lista.map((c) => {
-      const tema = c.color_tema || 'neutral';
-      const icon = TEMA_ICON[tema] || 'folder';
-      const enArchivo = c.estado_visibilidad === 'archivo';
-      return `<article class="sop-folder-card" data-tema="${escapeHtml(tema)}" data-pdx-carpeta="${c.id}">
-        <div class="sop-folder-icon"><i data-lucide="${icon}"></i></div>
-        <div class="sop-folder-title">${escapeHtml(c.nombre_display)}</div>
-        <div class="sop-folder-meta">${escapeHtml(c.periodo)} · ${c.archivos_count || 0} archivo(s)</div>
-        ${pdxState.puedeConfigurarRoles ? htmlPdxRolesBadgeCarpeta(c) : ''}
-        ${badgeVis(c.estado_visibilidad, c.dias_restantes_gracia)}
-        ${(canEdit || canDel) ? `<div class="sop-folder-actions">
-          ${canEdit && !enArchivo ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-pdx-edit="${c.id}"><i data-lucide="pencil"></i></button>` : ''}
-          ${canDel ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-pdx-del-carpeta="${c.id}" title="Eliminar carpeta" style="color:#dc2626"><i data-lucide="trash-2"></i></button>` : ''}
-        </div>` : ''}
-      </article>`;
-    }).join('')}</div>`;
-    el.querySelectorAll('[data-pdx-carpeta]').forEach((card) => {
-      card.addEventListener('click', (ev) => {
-        if (ev.target.closest('.sop-folder-actions')) return;
-        abrirCarpetaPdx(parseInt(card.dataset.pdxCarpeta, 10));
-      });
-    });
-    el.querySelectorAll('[data-pdx-edit]').forEach((b) => {
-      b.addEventListener('click', (ev) => {
-        ev.stopPropagation();
-        const c = pdxState.carpetas.find((x) => x.id === parseInt(b.dataset.pdxEdit, 10));
-        if (c) modalEditarCarpetaPdx(c);
-      });
-    });
-    el.querySelectorAll('[data-pdx-del-carpeta]').forEach((b) => {
-      b.addEventListener('click', (ev) => {
-        ev.stopPropagation();
-        const c = pdxState.carpetas.find((x) => x.id === parseInt(b.dataset.pdxDelCarpeta, 10));
-        if (c) eliminarCarpetaPdx(c);
-      });
-    });
+    if (viewMode === 'list') {
+      el.innerHTML = `<div class="sop-table-wrap sop-folder-list-mode"><table class="sop-table sop-folder-list-table">
+        <thead><tr><th style="width:40px"></th><th>Carpeta</th><th>Periodo</th><th>Archivos</th><th>Estado</th><th class="sop-folder-list-actions">Acciones</th></tr></thead>
+        <tbody>${lista.map((c) => {
+          const tema = c.color_tema || 'neutral';
+          const icon = TEMA_ICON[tema] || 'folder';
+          const enArchivo = c.estado_visibilidad === 'archivo';
+          const roles = pdxState.puedeConfigurarRoles ? htmlPdxRolesBadgeCarpeta(c) : '';
+          return `<tr data-pdx-carpeta="${c.id}" tabindex="0">
+            <td><span class="sop-folder-icon" style="width:32px;height:32px;margin:0" data-tema="${escapeHtml(tema)}"><i data-lucide="${icon}"></i></span></td>
+            <td><strong>${escapeHtml(c.nombre_display)}</strong>${roles ? `<div>${roles}</div>` : ''}</td>
+            <td>${escapeHtml(c.periodo)}</td>
+            <td>${c.archivos_count || 0}</td>
+            <td>${badgeVis(c.estado_visibilidad, c.dias_restantes_gracia)}</td>
+            <td class="sop-folder-list-actions">
+              ${canEdit && !enArchivo ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-pdx-edit="${c.id}"><i data-lucide="pencil"></i></button>` : ''}
+              ${canDel ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-pdx-del-carpeta="${c.id}" style="color:#dc2626"><i data-lucide="trash-2"></i></button>` : ''}
+            </td>
+          </tr>`;
+        }).join('')}</tbody></table></div>`;
+    } else {
+      el.innerHTML = `<div class="sop-grid">${lista.map((c) => {
+        const tema = c.color_tema || 'neutral';
+        const icon = TEMA_ICON[tema] || 'folder';
+        const enArchivo = c.estado_visibilidad === 'archivo';
+        return `<article class="sop-folder-card" data-tema="${escapeHtml(tema)}" data-pdx-carpeta="${c.id}" tabindex="0">
+          <div class="sop-folder-icon"><i data-lucide="${icon}"></i></div>
+          <div class="sop-folder-title">${escapeHtml(c.nombre_display)}</div>
+          <div class="sop-folder-meta">${escapeHtml(c.periodo)} · ${c.archivos_count || 0} archivo(s)</div>
+          ${pdxState.puedeConfigurarRoles ? htmlPdxRolesBadgeCarpeta(c) : ''}
+          ${badgeVis(c.estado_visibilidad, c.dias_restantes_gracia)}
+          ${(canEdit || canDel) ? `<div class="sop-folder-actions">
+            ${canEdit && !enArchivo ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-pdx-edit="${c.id}"><i data-lucide="pencil"></i></button>` : ''}
+            ${canDel ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-pdx-del-carpeta="${c.id}" title="Eliminar carpeta" style="color:#dc2626"><i data-lucide="trash-2"></i></button>` : ''}
+          </div>` : ''}
+        </article>`;
+      }).join('')}</div>`;
+    }
+    bindPdxCarpetaCardEvents(el);
     sopIcons(el);
   }
 
@@ -2588,24 +2685,62 @@
     sopArmNavOpen(false);
   }
 
+  function bindArmadoDiaCardEvents(root) {
+    if (!root) return;
+    root.querySelectorAll('[data-dia-id]').forEach((card) => {
+      const open = () => seleccionarDiaArmado(parseInt(card.dataset.diaId, 10));
+      card.addEventListener('click', (ev) => {
+        if (ev.target.closest('[data-dia-edit],[data-dia-del],.sop-folder-card-actions,.sop-folder-list-actions')) return;
+        open();
+      });
+      card.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') open(); });
+    });
+    root.querySelectorAll('[data-dia-edit]').forEach((btn) => {
+      btn.addEventListener('click', (ev) => { ev.stopPropagation(); modalEditarDiaArmado(parseInt(btn.dataset.diaEdit, 10)); });
+    });
+    root.querySelectorAll('[data-dia-del]').forEach((btn) => {
+      btn.addEventListener('click', (ev) => { ev.stopPropagation(); modalEliminarDiaArmado(parseInt(btn.dataset.diaDel, 10), btn.dataset.diaNom); });
+    });
+  }
+
   function renderArmadoDiasExplorer() {
     const panel = $('sopArmExpedientePanel');
     if (!panel || !armState.periodoId) return;
     armState.vista = 'period';
     const puedeGestionarDia = sopPerm('soportes.armado.crear_estructura');
+    const viewMode = sopFolderViewMode('arm');
     panel.innerHTML = `<div class="sop-panel-head">
         <div>
           <h3 style="margin:0"><i data-lucide="calendar"></i> ${escapeHtml(armState.periodoLabel || 'Mes')}</h3>
           <p style="margin:6px 0 0;font-size:.85rem;color:#64748b">Elija una carpeta de día. Dentro encontrará RIPS y SOPORTES con las carpetas FE.</p>
         </div>
-        ${puedeGestionarDia ? `<button type="button" class="sop-btn sop-btn-teal" id="btnSopArmNuevoDiaInline"><i data-lucide="folder-plus"></i> Carpeta de día</button>` : ''}
+        <div class="sop-panel-head-tools">
+          ${htmlSopFolderViewToggle('arm')}
+          ${htmlArmZipFacturadosBtn()}
+          ${puedeGestionarDia ? `<button type="button" class="sop-btn sop-btn-teal" id="btnSopArmNuevoDiaInline"><i data-lucide="folder-plus"></i> Carpeta de día</button>` : ''}
+        </div>
       </div>
       <div class="sop-panel-body">
-        <div id="sopArmDiasGrid" class="sop-folder-explorer-grid"></div>
+        <div id="sopArmDiasGrid" class="sop-folder-explorer-grid${viewMode === 'list' ? ' sop-folder-list-mode' : ''}"></div>
       </div>`;
+    bindSopFolderViewToggle(panel, 'arm');
     const grid = panel.querySelector('#sopArmDiasGrid');
     if (!armState.dias.length) {
       grid.innerHTML = '<div class="sop-empty" style="grid-column:1/-1;padding:32px"><i data-lucide="folder-plus" class="sop-empty-icon"></i>Sin carpetas de día — cree la primera</div>';
+    } else if (viewMode === 'list') {
+      grid.innerHTML = `<div class="sop-table-wrap"><table class="sop-table sop-folder-list-table">
+        <thead><tr><th>Carpeta de día</th><th>Facturación</th><th>Expedientes FE</th>${puedeGestionarDia ? '<th class="sop-folder-list-actions">Acciones</th>' : ''}</tr></thead>
+        <tbody>${armState.dias.map((d) => `
+          <tr class="${armState.diaId === d.id ? 'is-active' : ''}" data-dia-id="${d.id}" tabindex="0">
+            <td><strong>${escapeHtml(d.nombre_display)}</strong></td>
+            <td>${badgeFacturacionArmado(d.estado_facturacion)}</td>
+            <td><strong>${d.expedientes_count || 0}</strong></td>
+            ${puedeGestionarDia ? `<td class="sop-folder-list-actions">
+              <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-dia-edit="${d.id}"><i data-lucide="pencil"></i></button>
+              <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-dia-del="${d.id}" data-dia-nom="${escapeHtml(d.nombre_display)}" style="color:#dc2626"><i data-lucide="trash-2"></i></button>
+            </td>` : ''}
+          </tr>`).join('')}</tbody></table></div>`;
+      bindArmadoDiaCardEvents(grid);
     } else {
       grid.innerHTML = armState.dias.map((d) => `
         <article class="sop-folder-card${armState.diaId === d.id ? ' is-active' : ''}" data-dia-id="${d.id}" tabindex="0">
@@ -2618,20 +2753,7 @@
             <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-dia-del="${d.id}" data-dia-nom="${escapeHtml(d.nombre_display)}" title="Eliminar"><i data-lucide="trash-2"></i></button>
           </div>` : ''}
         </article>`).join('');
-      grid.querySelectorAll('[data-dia-id]').forEach((card) => {
-        const open = () => seleccionarDiaArmado(parseInt(card.dataset.diaId, 10));
-        card.addEventListener('click', (ev) => {
-          if (ev.target.closest('[data-dia-edit],[data-dia-del]')) return;
-          open();
-        });
-        card.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') open(); });
-      });
-      grid.querySelectorAll('[data-dia-edit]').forEach((btn) => {
-        btn.addEventListener('click', (ev) => { ev.stopPropagation(); modalEditarDiaArmado(parseInt(btn.dataset.diaEdit, 10)); });
-      });
-      grid.querySelectorAll('[data-dia-del]').forEach((btn) => {
-        btn.addEventListener('click', (ev) => { ev.stopPropagation(); modalEliminarDiaArmado(parseInt(btn.dataset.diaDel, 10), btn.dataset.diaNom); });
-      });
+      bindArmadoDiaCardEvents(grid);
     }
     panel.querySelector('#btnSopArmNuevoDiaInline')?.addEventListener('click', modalNuevoDiaArmado);
     sopIcons(panel);
@@ -2700,6 +2822,73 @@
     renderArmadoContextBar();
   }
 
+  function bindArmadoFeCardEvents(root) {
+    if (!root) return;
+    root.querySelectorAll('[data-exp-id]').forEach((card) => {
+      const open = () => abrirExpedienteArmado(parseInt(card.dataset.expId, 10));
+      card.addEventListener('click', (ev) => {
+        if (ev.target.closest('.sop-folder-card-actions, .sop-folder-list-actions')) return;
+        open();
+      });
+      card.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') open(); });
+    });
+    root.querySelectorAll('[data-exp-open]').forEach((b) => {
+      b.addEventListener('click', (ev) => { ev.stopPropagation(); abrirExpedienteArmado(parseInt(b.dataset.expOpen, 10)); });
+    });
+    root.querySelectorAll('[data-exp-edit]').forEach((b) => {
+      b.addEventListener('click', (ev) => { ev.stopPropagation(); modalEditarExpediente(parseInt(b.dataset.expEdit, 10)); });
+    });
+    root.querySelectorAll('[data-exp-del]').forEach((b) => {
+      b.addEventListener('click', (ev) => { ev.stopPropagation(); modalEliminarExpediente(parseInt(b.dataset.expDel, 10), b.dataset.expCodigo); });
+    });
+  }
+
+  function renderArmadoExpedientesGrid(list) {
+    const panel = $('sopArmExpedientePanel');
+    const grid = panel?.querySelector('#sopArmExpedientesGrid');
+    if (!grid) return;
+    const viewMode = sopFolderViewMode('arm');
+    grid.classList.toggle('sop-folder-list-mode', viewMode === 'list');
+    if (!list.length) {
+      grid.innerHTML = '<div class="sop-empty" style="grid-column:1/-1;padding:28px">Sin carpetas FE — use «Nuevas carpetas»</div>';
+      return;
+    }
+    const puedeEditar = sopPerm('soportes.armado.subir');
+    const puedeEliminar = sopPerm('soportes.armado.crear_estructura');
+    const facturaCell = (e) => {
+      const factura = (e.numero_factura != null && Number(e.numero_factura) > 0) ? `FE${e.numero_factura}` : null;
+      return factura ? escapeHtml(factura) : '<span class="sop-badge sop-badge-pendiente" style="margin:0">Pendiente FEV</span>';
+    };
+    if (viewMode === 'list') {
+      grid.innerHTML = `<div class="sop-table-wrap"><table class="sop-table sop-folder-list-table">
+        <thead><tr><th>Código FE</th><th>Paciente</th><th>Factura</th><th class="sop-folder-list-actions">Acciones</th></tr></thead>
+        <tbody>${list.map((e) => `<tr data-exp-id="${e.id}" tabindex="0">
+          <td><strong>${escapeHtml(e.codigo)}</strong></td>
+          <td>${escapeHtml(e.paciente_nombre || 'Sin paciente')}</td>
+          <td>${facturaCell(e)}</td>
+          <td class="sop-folder-list-actions">
+            <button type="button" class="sop-btn sop-btn-teal sop-btn-sm" data-exp-open="${e.id}"><i data-lucide="folder-open"></i></button>
+            ${puedeEditar ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-exp-edit="${e.id}"><i data-lucide="pencil"></i></button>` : ''}
+            ${puedeEliminar ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-exp-del="${e.id}" data-exp-codigo="${escapeHtml(e.codigo)}" style="color:#dc2626"><i data-lucide="trash-2"></i></button>` : ''}
+          </td>
+        </tr>`).join('')}</tbody></table></div>`;
+    } else {
+      grid.innerHTML = list.map((e) => `<article class="sop-folder-card sop-folder-card--fe" data-exp-id="${e.id}" tabindex="0">
+          <div class="sop-folder-card-icon"><i data-lucide="folder"></i></div>
+          <div class="sop-folder-card-title">${escapeHtml(e.codigo)}</div>
+          <div class="sop-folder-card-meta">${escapeHtml(e.paciente_nombre || 'Sin paciente')}</div>
+          <div class="sop-folder-card-count">${facturaCell(e)}</div>
+          <div class="sop-folder-card-actions">
+            <button type="button" class="sop-btn sop-btn-teal sop-btn-sm" data-exp-open="${e.id}"><i data-lucide="folder-open"></i> Abrir</button>
+            ${puedeEditar ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-exp-edit="${e.id}"><i data-lucide="pencil"></i></button>` : ''}
+            ${puedeEliminar ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-exp-del="${e.id}" data-exp-codigo="${escapeHtml(e.codigo)}" style="color:#dc2626"><i data-lucide="trash-2"></i></button>` : ''}
+          </div>
+        </article>`).join('');
+    }
+    bindArmadoFeCardEvents(grid);
+    sopIcons(grid);
+  }
+
   async function seleccionarContenedorArmado(id) {
     armState.contenedorId = id;
     armState.expedienteId = null;
@@ -2709,70 +2898,35 @@
     armState.contenedorTipo = cont?.tipo || null;
     const panel = $('sopArmExpedientePanel');
     const tipoLabel = labelContenedorArmado(armState.contenedorTipo);
+    const viewMode = sopFolderViewMode('arm');
     panel.innerHTML = `<div class="sop-panel-head">
         <div>
           <h3 style="margin:0"><i data-lucide="folder-tree"></i> ${escapeHtml(tipoLabel)}</h3>
           <p style="margin:4px 0 0;font-size:.85rem;color:#64748b">${escapeHtml(armState.diaLabel || '')}</p>
         </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="btnSopArmVolverDia"><i data-lucide="arrow-left"></i> Día</button>
-        ${sopPerm('soportes.armado.crear_estructura') ? `<button type="button" class="sop-btn sop-btn-teal sop-btn-sm" id="btnSopArmNuevoFe"><i data-lucide="folder-plus"></i> Nuevas carpetas</button>` : ''}
+        <div class="sop-panel-head-tools">
+          ${htmlSopFolderViewToggle('arm')}
+          <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="btnSopArmVolverDia"><i data-lucide="arrow-left"></i> Día</button>
+          ${sopPerm('soportes.armado.crear_estructura') ? `<button type="button" class="sop-btn sop-btn-teal sop-btn-sm" id="btnSopArmNuevoFe"><i data-lucide="folder-plus"></i> Nuevas carpetas</button>` : ''}
         </div>
       </div>
       <div class="sop-panel-body">
         <div id="sopArmContenedorSummary"></div>
-        <div id="sopArmExpedientesGrid" class="sop-folder-explorer-grid"><div class="sop-skeleton-block sop-skeleton-folder-card"></div></div>
+        <div id="sopArmExpedientesGrid" class="sop-folder-explorer-grid${viewMode === 'list' ? ' sop-folder-list-mode' : ''}"><div class="sop-skeleton-block sop-skeleton-folder-card"></div></div>
       </div>`;
+    bindSopFolderViewToggle(panel, 'arm');
     const gridSk = panel.querySelector('#sopArmExpedientesGrid');
     if (gridSk) gridSk.innerHTML = '<div class="sop-skeleton-block sop-skeleton-folder-card"></div><div class="sop-skeleton-block sop-skeleton-folder-card"></div>';
     const res = await apiFetch(`/api/soportes/armado/contenedores/${id}/expedientes`);
     const data = await res.json();
     const list = data.expedientes || [];
+    armState.expedientesLista = list;
     const summary = panel.querySelector('#sopArmContenedorSummary');
     if (summary) {
       summary.innerHTML = htmlArmadoSummaryChips({ total: list.length, listos: 0, pendientes: list.length });
       sopIcons(summary);
     }
-    const grid = panel.querySelector('#sopArmExpedientesGrid');
-    if (!list.length) {
-      grid.innerHTML = '<div class="sop-empty" style="grid-column:1/-1;padding:28px">Sin carpetas FE — use «Nuevas carpetas»</div>';
-    } else {
-      grid.innerHTML = list.map((e) => {
-        const factura = (e.numero_factura != null && Number(e.numero_factura) > 0)
-          ? `FE${e.numero_factura}`
-          : null;
-        const puedeEditar = sopPerm('soportes.armado.subir');
-        const puedeEliminar = sopPerm('soportes.armado.crear_estructura');
-        return `<article class="sop-folder-card sop-folder-card--fe" data-exp-id="${e.id}" tabindex="0">
-          <div class="sop-folder-card-icon"><i data-lucide="folder"></i></div>
-          <div class="sop-folder-card-title">${escapeHtml(e.codigo)}</div>
-          <div class="sop-folder-card-meta">${escapeHtml(e.paciente_nombre || 'Sin paciente')}</div>
-          <div class="sop-folder-card-count">${factura ? escapeHtml(factura) : '<span class="sop-badge sop-badge-pendiente" style="margin:0">Pendiente FEV</span>'}</div>
-          <div class="sop-folder-card-actions">
-            <button type="button" class="sop-btn sop-btn-teal sop-btn-sm" data-exp-open="${e.id}"><i data-lucide="folder-open"></i> Abrir</button>
-            ${puedeEditar ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-exp-edit="${e.id}"><i data-lucide="pencil"></i></button>` : ''}
-            ${puedeEliminar ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-exp-del="${e.id}" data-exp-codigo="${escapeHtml(e.codigo)}" style="color:#dc2626"><i data-lucide="trash-2"></i></button>` : ''}
-          </div>
-        </article>`;
-      }).join('');
-      grid.querySelectorAll('.sop-folder-card--fe').forEach((card) => {
-        const open = () => abrirExpedienteArmado(parseInt(card.dataset.expId, 10));
-        card.addEventListener('click', (ev) => {
-          if (ev.target.closest('.sop-folder-card-actions')) return;
-          open();
-        });
-        card.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') open(); });
-      });
-      grid.querySelectorAll('[data-exp-open]').forEach((b) => {
-        b.addEventListener('click', (ev) => { ev.stopPropagation(); abrirExpedienteArmado(parseInt(b.dataset.expOpen, 10)); });
-      });
-      grid.querySelectorAll('[data-exp-edit]').forEach((b) => {
-        b.addEventListener('click', (ev) => { ev.stopPropagation(); modalEditarExpediente(parseInt(b.dataset.expEdit, 10)); });
-      });
-      grid.querySelectorAll('[data-exp-del]').forEach((b) => {
-        b.addEventListener('click', (ev) => { ev.stopPropagation(); modalEliminarExpediente(parseInt(b.dataset.expDel, 10), b.dataset.expCodigo); });
-      });
-    }
+    renderArmadoExpedientesGrid(list);
     panel.querySelector('#btnSopArmVolverDia')?.addEventListener('click', () => seleccionarDiaArmado(armState.diaId));
     panel.querySelector('#btnSopArmNuevoFe')?.addEventListener('click', modalNuevoExpediente);
     sopIcons(panel);
