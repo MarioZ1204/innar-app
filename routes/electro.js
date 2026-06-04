@@ -570,11 +570,7 @@ router.get('/equipos-electro/disponibilidad', requireAuth, async (req, res) => {
       .map(c => ({ equipo_id: String(c.equipo_id), equipo_nombre: c.equipo_nombre || `Equipo ${c.equipo_id}` }))
       .filter((eq, idx, self) => idx === self.findIndex(e => String(e.equipo_id) === String(eq.equipo_id)));
 
-    const convertirFecha = (f) => {
-      if (typeof f === 'string') return f;
-      if (f instanceof Date) return f.toISOString().slice(0, 10);
-      return String(f);
-    };
+    const convertirFecha = (f) => extraerFechaYmd(f) || (typeof f === 'string' ? f.slice(0, 10) : String(f).slice(0, 10));
     const convertirHora = (h) => typeof h === 'string' ? h : String(h);
 
     const citasEnRango = citasOcupadas.map((cita) => {

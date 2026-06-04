@@ -2985,7 +2985,7 @@
       ? `<div class="sop-slot-file" title="${escapeHtml(slot.nombre_original)}">${escapeHtml(slot.nombre_archivo || slot.nombre_original)}</div>`
       : `<div class="sop-slot-file">${ok ? escapeHtml(slot.nombre_archivo || 'Cargado') : 'Pendiente'}</div>`;
     const opfHint = key === 'OPF' && !ok && !dis
-      ? '<p class="sop-pdx-format-nota" style="margin:8px 0 0;font-size:.78rem">Una 2+ PDF (depósito o manual) o suba OPF listo. Sin factura: se renombra al subir FEV.</p>'
+      ? '<p class="sop-pdx-format-nota" style="margin:8px 0 0;font-size:.78rem">En <strong>Subir</strong> puede elegir <strong>2 PDF</strong> a la vez (se unen). También «Generar OPF» o un solo PDF ya listo. Sin factura: se renombra al subir FEV.</p>'
       : '';
     const crcHint = key === 'CRC' && !ok && !dis
       ? '<p class="sop-pdx-format-nota" style="margin:8px 0 0;font-size:.78rem">Unir PDF: <strong>2</strong> Comprobante→Certificado · <strong>3</strong> +Consentimiento · <strong>4</strong> +Cotización (el orden se ajusta automático).</p>'
@@ -3001,7 +3001,7 @@
       ${opfHint}
       ${crcHint}
       ${allowUpload ? `<label class="sop-btn sop-btn-ghost sop-btn-sm" style="margin-top:8px;cursor:pointer">
-        <i data-lucide="upload"></i> Subir<input type="file" data-upload-slot="${key}" class="sop-file-input-hidden" accept="${opts.accept || ''}"></label>` : ''}
+        <i data-lucide="upload"></i> Subir<input type="file" data-upload-slot="${key}" class="sop-file-input-hidden" accept="${opts.accept || ''}"${key === 'OPF' ? ' multiple' : ''}></label>` : ''}
       ${key === 'OPF' && !dis && !ok && sopPerm('soportes.armado.subir') ? '<button type="button" class="sop-btn sop-btn-primary sop-btn-sm" id="btnSopGenerarOpf" style="margin-top:8px"><i data-lucide="layers"></i> Generar OPF</button>' : ''}
       ${key === 'PDX' && !dis && !ok && sopPerm('soportes.armado.importar_pdx') ? '<button type="button" class="sop-btn sop-btn-primary sop-btn-sm" id="btnSopImportPdx"><i data-lucide="link-2"></i> Enlazar reporte</button>' : ''}
       ${key === 'CRC' && !dis && !ok && sopPerm('soportes.armado.importar_pdx') ? '<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="btnSopImportCrc" style="margin-top:8px"><i data-lucide="link-2"></i> Enlazar</button>' : ''}
@@ -3271,6 +3271,31 @@
     sopIcons(modal);
   }
 
+  async function subirOpfDesdeVariosArchivos(expId, files) {
+    const pdfs = (files || []).filter((f) => f && (/\.pdf$/i.test(f.name) || f.type === 'application/pdf'));
+    if (pdfs.length < 2) {
+      sopToast('Seleccione al menos 2 archivos PDF para armar el OPF', 'warning');
+      return;
+    }
+    const fd = new FormData();
+    const spec = pdfs.map((_, i) => ({ t: 'file', i }));
+    pdfs.forEach((f) => fd.append('parte_archivo', f));
+    fd.append('partes_json', JSON.stringify(spec));
+    const res = await apiFetch(`/api/soportes/armado/expedientes/${expId}/generar-opf`, { method: 'POST', body: fd });
+    let data = {};
+    try { data = await res.json(); } catch (_) {
+      sopToast('Error al unir y guardar OPF', 'error');
+      return;
+    }
+    if (!res.ok) {
+      sopToast(data.error || 'Error al generar OPF', 'error');
+      return;
+    }
+    if (data.warnings?.length) sopToast(data.warnings.join(' · '), 'warning');
+    sopToast(data.message || 'OPF guardado', 'success');
+    abrirExpedienteArmado(expId);
+  }
+
   async function subirArchivoFeSmart(expId, file, tipoManual, opts = {}) {
     const esRips = opts.esRips ?? (armState.contenedorTipo === 'rips');
     if (!esPdfSubidaArmado(file, esRips)) {
@@ -3428,10 +3453,17 @@
     }
     panel.querySelectorAll('[data-upload-slot]').forEach((inp) => {
       inp.addEventListener('change', async (ev) => {
-        const f = ev.target.files?.[0];
-        if (!f) return;
-        await subirArchivoFeSmart(id, f, ev.target.dataset.uploadSlot, { esRips, tipoServicio: e.tipo_servicio });
+        const slot = ev.target.dataset.uploadSlot;
+        const files = Array.from(ev.target.files || []);
         ev.target.value = '';
+        if (!files.length) return;
+        if (slot === 'OPF' && files.length >= 2) {
+          await subirOpfDesdeVariosArchivos(id, files);
+          return;
+        }
+        const f = files[0];
+        if (!f) return;
+        await subirArchivoFeSmart(id, f, slot, { esRips, tipoServicio: e.tipo_servicio });
       });
     });
     const openImportDep = (filtro) => modalImportDepositoEnExpediente(id, filtro);

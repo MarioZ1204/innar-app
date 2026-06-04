@@ -35,6 +35,18 @@ describe('electro-fechas', () => {
     expect(citaVisibleEnAgendaDiaYmd(cita, '2026-05-03')).toBe(true);
   });
 
+  test('fin programado elige el más tardío (no el slot corto de agenda)', () => {
+    const fin = finProgramadoCitaElectro({
+      fecha: '2026-05-27',
+      hora_inicio: '20:00',
+      hora_agendamiento: '20:00',
+      hora_fin: '21:00',
+      hora_fin_date: '2026-05-27',
+      duracion_minutos: 480
+    });
+    expect(fin).toEqual({ horaFin: '04:00', fechaFin: '2026-05-28' });
+  });
+
   test('fin programado usa hora_inicio + duracion', () => {
     const fin = finProgramadoCitaElectro({
       fecha: '2026-05-27',

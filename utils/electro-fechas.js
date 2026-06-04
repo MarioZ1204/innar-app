@@ -9,7 +9,7 @@ function extraerFechaYmd(val) {
   const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (m) return `${m[1]}-${m[2]}-${m[3]}`;
   if (val instanceof Date && !Number.isNaN(val.getTime())) {
-    return `${val.getUTCFullYear()}-${String(val.getUTCMonth() + 1).padStart(2, '0')}-${String(val.getUTCDate()).padStart(2, '0')}`;
+    return `${val.getFullYear()}-${String(val.getMonth() + 1).padStart(2, '0')}-${String(val.getDate()).padStart(2, '0')}`;
   }
   return null;
 }
@@ -38,8 +38,8 @@ function fechaFinSiCruzaMedianoche(fechaYmd, horaInicio, horaFin) {
   const [hf, mf] = String(horaFin).slice(0, 5).split(':').map(Number);
   if (hf * 60 + mf >= hi * 60 + mi) return f;
   const [y, mo, d] = f.split('-').map(Number);
-  const next = new Date(Date.UTC(y, mo - 1, d + 1));
-  return `${next.getUTCFullYear()}-${String(next.getUTCMonth() + 1).padStart(2, '0')}-${String(next.getUTCDate()).padStart(2, '0')}`;
+  const next = new Date(y, mo - 1, d + 1);
+  return `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}-${String(next.getDate()).padStart(2, '0')}`;
 }
 
 /** YYYY-MM-DD de fin programado (duración o hora_fin_date). */
