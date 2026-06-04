@@ -32,7 +32,7 @@ function injectAssetVersion(html, appVersion) {
     (match, asset) => `href="${withTag(asset)}"`
   );
   html = html.replace(
-    /src="(?!https?:\/\/|\/libs\/)([^"?]+\.js)"/g,
+    /src="(?!https?:\/\/)([^"?]+\.js)"/g,
     (match, asset) => `src="${withTag(asset)}"`
   );
   return html;

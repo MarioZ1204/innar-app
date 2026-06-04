@@ -97,15 +97,22 @@ button:disabled {
   height: 1em;
 }
 
-.sop-btn-sm svg:only-child,
-.sop-btn-sm [data-lucide]:only-child {
+.sop-btn-sm svg:only-child {
   display: block;
 }
 
-.sop-btn-sm:has(svg:only-child),
-.sop-btn-sm:has([data-lucide]:only-child) {
+.sop-btn-sm:has(> svg:only-child) {
   padding: 7px 10px !important;
   min-width: 34px;
+}
+
+/* Sin Lucide cargado: no dejar cajas vacías en botones solo icono */
+.sop-btn-sm > i[data-lucide]:only-child {
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
 }
 
 /* ── Primario (marca Innar) ─────────────────────────────────────────────── */

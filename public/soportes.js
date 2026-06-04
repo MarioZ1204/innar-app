@@ -979,6 +979,10 @@
   function $(id) { return document.getElementById(id); }
 
   function sopIcons(root) {
+    if (typeof window.innarLucideIcons === 'function') {
+      window.innarLucideIcons(root || document);
+      return;
+    }
     if (typeof lucide !== 'undefined' && lucide.createIcons) {
       const opts = { attrs: { 'stroke-width': 2 }, nameAttr: 'data-lucide' };
       if (root) opts.root = root;
@@ -1413,6 +1417,10 @@
       }
     }
     sopIcons($('sopPdxVistaDetalle'));
+    requestAnimationFrame(() => {
+      sopIcons(tbody);
+      sopIcons($('sopPdxVistaDetalle'));
+    });
   }
 
   async function eliminarCarpetaPdx(carpeta) {

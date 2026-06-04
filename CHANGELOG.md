@@ -3,6 +3,12 @@
 Todos los cambios importantes a la aplicación se documentan aquí. El formato
 sigue (informalmente) [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
+## [1.5.89] — 2026-05-27
+
+### Corregido
+
+- **Iconos Lucide en Hostinger**: biblioteca servida desde `/libs/lucide.min.js` (sin depender de unpkg/CDN); helper `innar-lucide.js` con reintentos tras render dinámico; botones PDX ya no muestran cajas vacías si el icono no cargó.
+
 ## [1.5.88] — 2026-05-27
 
 ### Añadido
