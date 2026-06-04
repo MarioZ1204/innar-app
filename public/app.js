@@ -12719,7 +12719,18 @@ async function revertirCompletadoAEnEstudio() {
       return;
     }
     citaElectroSeleccionada.estado = 'En Estudio';
-    showToast('Estudio devuelto a En Estudio', 'success');
+    citaElectroSeleccionada._autoFinalizandoEnCurso = false;
+    try {
+      const resFresh = await apiFetch(`/api/citas-electro/${citaElectroSeleccionada.id}?_t=${Date.now()}`, { cache: 'no-store' });
+      if (resFresh.ok) {
+        const fresh = await resFresh.json();
+        Object.assign(citaElectroSeleccionada, fresh, {
+          estado: 'En Estudio',
+          _autoFinalizandoEnCurso: false
+        });
+      }
+    } catch (_) { /* usar datos locales */ }
+    showToast('Estudio devuelto a En Estudio (duración reprogramada)', 'success');
     if (window.socket && window.socket.connected) {
       window.socket.emit('electro:cita-cambio-estado', {
         id: citaElectroSeleccionada.id,

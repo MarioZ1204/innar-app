@@ -25,6 +25,8 @@ const {
   horaInicioAgendadaParaInicioEstudio,
   horaInicioEfectivaParaInicioEstudio,
   finProgramadoCitaElectro,
+  estudioElectroFinProgramadoVencido,
+  ymdLocal,
   inferirDuracionMinutosCitaElectro,
   inferirDuracionMinutosCitaElectroParaPersistir,
   calcularFinInicioEstudioElectro,
@@ -63,6 +65,56 @@ async function asegurarDuracionMinutosCitaElectro(cita) {
     cita.duracion_minutos = dur;
   }
   return cita;
+}
+
+async function duracionCatalogoEstudioElectro(nombreEstudio) {
+  if (!nombreEstudio) return null;
+  try {
+    const cat = await db.query(
+      'SELECT duracion_minutos FROM estudio_duraciones WHERE nombre = ? LIMIT 1',
+      [String(nombreEstudio).trim()]
+    );
+    const d = parseInt(cat[0]?.duracion_minutos, 10);
+    return d > 0 ? d : null;
+  } catch (err) {
+    logger.warn('Catálogo estudio_duraciones no disponible:', err.message);
+    return null;
+  }
+}
+
+/**
+ * Al reabrir Completado → En Estudio: restaura duración del catálogo y reprograma fin.
+ * Si el fin ya pasó (cierre erróneo), ancla fin = ahora + duración completa del estudio.
+ */
+function programacionEstudioReabierto(cita, durMin, ahora = new Date()) {
+  const horaIni = horaInicioCitaElectro(cita);
+  const fechaIni = extraerFechaYmd(cita.fecha);
+  const dur = parseInt(durMin, 10);
+  if (!horaIni || !fechaIni || !(dur > 0)) return null;
+
+  let fin = sumarMinutosAHoraYFecha(fechaIni, horaIni, dur);
+  if (!fin) return null;
+
+  const tmp = {
+    fecha: fechaIni,
+    hora_inicio: horaIni,
+    duracion_minutos: dur,
+    hora_fin: fin.horaFin,
+    hora_fin_date: fin.fechaFin
+  };
+  if (estudioElectroFinProgramadoVencido(tmp, ahora)) {
+    const horaAhora = `${String(ahora.getHours()).padStart(2, '0')}:${String(ahora.getMinutes()).padStart(2, '0')}`;
+    const fechaHoy = ymdLocal(ahora);
+    fin = sumarMinutosAHoraYFecha(fechaHoy, horaAhora, dur);
+  }
+  if (!fin) return null;
+
+  return {
+    hora_inicio: horaIni,
+    hora_fin: fin.horaFin,
+    hora_fin_date: fin.fechaFin,
+    duracion_minutos: dur
+  };
 }
 
 /** Sincroniza duración en citas visibles de un día que solo tienen hora_fin (evita auto-cierre con slot corto). */
@@ -1260,6 +1312,11 @@ router.patch('/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin',
             });
           }
         }
+        let durRev = parseInt(citaActual.duracion_minutos, 10) || 0;
+        const durCat = await duracionCatalogoEstudioElectro(citaActual.estudio);
+        if (durCat > 0) durRev = durCat;
+        const reprog = programacionEstudioReabierto(citaActual, durRev);
+        if (reprog) forzarCamposInicioEstudio = reprog;
       } else if (esInicioEstudio) {
         const checkHora = hora_inicio || hora_agendamiento || horaInicioCitaElectro(citaActual);
         const checkFecha = fecha || extraerFechaYmd(citaActual.fecha) || normalizeFecha(citaActual.fecha);

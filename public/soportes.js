@@ -664,7 +664,7 @@
         <div class="sop-dialog-actions">
           <button type="button" class="sop-btn sop-btn-ghost" id="sopPdxDatosCancel">Cancelar</button>
           <button type="button" class="sop-btn sop-btn-primary" id="sopPdxDatosOk">Subir PDF</button>
-        </div>`);
+        </div>`, { closeOnBackdrop: false, closeOnEscape: false });
       poblarSelectsCamposPdx(modal, campos, datos).then(() => sopIcons(modal));
       modal.querySelector('#sopPdxDatosCancel').onclick = () => { closeSopModal(modal); reject(new Error('cancelado')); };
       modal.querySelector('#sopPdxDatosOk').onclick = async () => {
@@ -1268,7 +1268,9 @@
     }
   }
 
-  function openSopModal(html) {
+  function openSopModal(html, opts = {}) {
+    const closeOnBackdrop = opts.closeOnBackdrop !== false;
+    const closeOnEscape = opts.closeOnEscape !== false;
     const wrap = document.createElement('div');
     wrap.className = 'sop-dialog-backdrop';
     wrap.setAttribute('role', 'presentation');
@@ -1281,12 +1283,14 @@
     wrap.appendChild(dialog);
     wrap._sopPrevFocus = document.activeElement;
     wrap._sopClose = () => closeSopModal(wrap);
-    wrap.addEventListener('click', (e) => { if (e.target === wrap) closeSopModal(wrap); });
+    if (closeOnBackdrop) {
+      wrap.addEventListener('click', (e) => { if (e.target === wrap) closeSopModal(wrap); });
+    }
     const onKey = (e) => {
-      if (e.key === 'Escape') closeSopModal(wrap);
+      if (closeOnEscape && e.key === 'Escape') closeSopModal(wrap);
     };
     wrap._sopKeyHandler = onKey;
-    document.addEventListener('keydown', onKey);
+    if (closeOnEscape) document.addEventListener('keydown', onKey);
     const focusables = [...dialog.querySelectorAll(
       'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])'
     )].filter((el) => el.offsetParent !== null || el === document.activeElement);
@@ -2038,7 +2042,7 @@
       <div class="sop-dialog-actions">
         <button type="button" class="sop-btn sop-btn-ghost" id="sopPdxCorrCancel">Cancelar</button>
         <button type="button" class="sop-btn sop-btn-primary" id="sopPdxCorrOk">Subir PDF</button>
-      </div>`);
+      </div>`, { closeOnBackdrop: false, closeOnEscape: false });
 
     const estSel = modal.querySelector('#sopPdxCorrEst');
     if (esPsg) poblarSelectEstudioPsgCliente(estSel, p.estudio_texto);
