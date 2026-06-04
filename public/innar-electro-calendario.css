@@ -1,49 +1,70 @@
 /* Calendario mensual — electrodiagnóstico */
+.electro-cal-wrap.card {
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.05);
+  background: #fff;
+}
+
 .ecal-container {
-  padding: 4px 0 8px;
+  padding: 12px 14px 16px;
+  --ecal-accent: #1e40af;
+  --ecal-accent-soft: #eff6ff;
+  --ecal-accent-border: #3b82f6;
+  --ecal-today-text: #fff;
 }
 
 .ecal-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  grid-template-rows: auto auto;
+  gap: 10px 12px;
+  align-items: center;
   margin-bottom: 14px;
 }
 
 .ecal-header-center {
-  flex: 1 1 140px;
+  grid-column: 2;
+  grid-row: 1;
+  text-align: center;
   min-width: 0;
+}
+
+#electroCalLegend.ecal-legend {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  justify-content: center;
 }
 
 .ecal-month-title {
   margin: 0;
-  font-size: 1.1rem;
-  font-weight: 800;
+  font-size: 1.05rem;
+  font-weight: 700;
   color: #0f172a;
 }
 
 .ecal-subtitle {
   display: block;
-  font-size: 0.75rem;
-  color: #64748b;
-  font-weight: 600;
+  font-size: 0.7rem;
+  color: #94a3b8;
+  font-weight: 500;
   margin-top: 2px;
 }
 
 .ecal-nav-btn {
-  flex-shrink: 0;
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  border: 2px solid #e2e8f0;
+  grid-row: 1;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
   background: #fff;
-  color: #334155;
-  font-weight: 700;
+  color: #475569;
+  font-size: 0.75rem;
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s;
 }
+
+#electroCalPrevMonth { grid-column: 1; }
+#electroCalNextMonth { grid-column: 3; }
 
 .ecal-nav-btn:hover {
   background: #f8fafc;
@@ -51,199 +72,293 @@
 }
 
 .ecal-legend {
-  flex: 1 1 280px;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: flex-end;
-  gap: 8px 14px;
-  max-width: 100%;
+  justify-content: center;
+  gap: 6px 10px;
 }
 
 .ecal-legend-title {
   width: 100%;
-  text-align: right;
-  font-size: 0.72rem;
-  font-weight: 700;
+  text-align: center;
+  font-size: 0.7rem;
+  font-weight: 600;
   color: #64748b;
-  margin-bottom: 2px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.ecal-legend-cont-badge {
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: #a16207;
+  background: #fefce8;
+  border-radius: 4px;
+  padding: 1px 6px;
 }
 
 .ecal-legend-item {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  font-size: 0.78rem;
-  color: #334155;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 999px;
-  padding: 4px 10px 4px 6px;
+  gap: 4px;
+  font-size: 0.72rem;
+  color: #475569;
 }
 
 .ecal-legend-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
   flex-shrink: 0;
 }
 
 .ecal-legend-num {
-  font-size: 0.85rem;
+  font-weight: 700;
   color: #0f172a;
 }
 
+.ecal-tipo-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px 14px;
+  margin-bottom: 12px;
+  font-size: 0.65rem;
+  color: #64748b;
+}
+
+.ecal-tipo-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 600;
+}
+
+.ecal-tipo-pill--cont .ecal-tipo-dot--cont {
+  width: 14px;
+  height: 5px;
+  border-radius: 2px;
+  background: repeating-linear-gradient(
+    -45deg,
+    #d97706,
+    #d97706 2px,
+    #fde68a 2px,
+    #fde68a 4px
+  );
+}
+
+.ecal-tipo-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+/* Grilla tipo calendario de escritorio */
 .ecal-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  gap: 6px;
+  gap: 1px;
+  background: #e2e8f0;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  overflow: hidden;
 }
 
 .ecal-weekday {
   text-align: center;
-  font-size: 0.68rem;
-  font-weight: 800;
+  font-size: 0.62rem;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: #94a3b8;
-  padding: 4px 0 6px;
+  letter-spacing: 0.06em;
+  color: #64748b;
+  padding: 8px 4px;
+  background: #f8fafc;
 }
 
 .ecal-cell {
   position: relative;
-  min-height: 72px;
-  border: 2px solid #e2e8f0;
-  border-radius: 10px;
+  min-height: 64px;
+  border: none;
+  border-radius: 0;
   background: #fff;
-  padding: 6px 5px 5px;
+  color: #334155;
+  padding: 6px 6px 5px;
   cursor: pointer;
   font-family: inherit;
-  text-align: center;
+  text-align: left;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  transition: transform 0.12s, box-shadow 0.12s, border-color 0.12s;
+  justify-content: space-between;
+  gap: 6px;
+  transition: background 0.12s;
+  appearance: none;
+  -webkit-appearance: none;
 }
 
 .ecal-cell.ecal-empty {
-  border: none;
-  background: transparent;
+  background: #fafbfc;
   cursor: default;
   min-height: 0;
   padding: 0;
 }
 
 .ecal-cell:not(.ecal-empty):hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+  background: #f8fafc;
+  z-index: 1;
+  box-shadow: inset 0 0 0 1px #cbd5e1;
+}
+
+.ecal-cell--idle .ecal-dia-num {
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+.ecal-day {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  width: 100%;
 }
 
 .ecal-dia-num {
-  position: absolute;
-  top: 5px;
-  left: 7px;
-  font-size: 0.7rem;
-  font-weight: 700;
-  color: #64748b;
-}
-
-.ecal-total {
-  margin-top: 14px;
-  font-size: 1.35rem;
-  font-weight: 900;
-  line-height: 1;
-  color: #0f172a;
-}
-
-.ecal-chips {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 3px;
-  min-height: 18px;
-  width: 100%;
-  padding: 0 2px 2px;
-}
-
-.ecal-chip {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 18px;
-  height: 16px;
-  padding: 0 4px;
-  border-radius: 6px;
-  font-size: 0.65rem;
+  min-width: 1.5rem;
+  height: 1.5rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #334155;
+  line-height: 1;
+}
+
+.ecal-count {
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: #64748b !important;
+  background: #f1f5f9;
+  border-radius: 4px;
+  padding: 1px 5px;
+  line-height: 1.3;
+}
+
+.ecal-cell--busy .ecal-count {
+  color: #0f172a !important;
+  background: #e2e8f0;
+}
+
+.ecal-track {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  width: 100%;
+  height: 5px;
+  min-height: 5px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: #f1f5f9;
+}
+
+.ecal-cell--idle .ecal-track {
+  visibility: hidden;
+}
+
+.ecal-seg {
+  flex: 1 1 4px;
+  min-width: 3px;
+  border-radius: 2px;
+  background: var(--c, #94a3b8);
+}
+
+.ecal-seg--cont {
+  opacity: 0.85;
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--c, #94a3b8),
+    var(--c, #94a3b8) 2px,
+    rgba(255, 255, 255, 0.35) 2px,
+    rgba(255, 255, 255, 0.35) 4px
+  ) !important;
+}
+
+.ecal-seg--more {
+  flex: 0 0 auto;
+  min-width: 14px;
+  padding: 0 2px;
+  font-size: 0.5rem;
   font-weight: 800;
-  color: #fff;
-  background: var(--ecal-chip, #64748b);
+  color: #64748b;
+  background: #e2e8f0 !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.ecal-chips-empty {
-  color: #cbd5e1;
-  font-size: 0.9rem;
-}
-
-.ecal-vacio .ecal-total {
-  color: #cbd5e1;
+/* Hoy y selección (azul, sin verde de marca) */
+.ecal-hoy .ecal-dia-num {
+  background: var(--ecal-accent);
+  color: #fff !important;
+  border-radius: 6px;
   font-weight: 700;
 }
 
-.ecal-bajo {
-  background: #f0fdf4;
-  border-color: #bbf7d0;
-}
-
-.ecal-medio {
-  background: #fffbeb;
-  border-color: #fde68a;
-}
-
-.ecal-alto {
-  background: #eff6ff;
-  border-color: #93c5fd;
-}
-
-.ecal-hoy {
-  box-shadow: inset 0 0 0 2px #2d4a47;
-}
-
 .ecal-selected {
-  border-color: #2d4a47 !important;
-  background: #f0fdfa !important;
+  background: var(--ecal-accent-soft) !important;
+  box-shadow: inset 0 0 0 2px var(--ecal-accent-border);
+}
+
+.ecal-selected.ecal-hoy .ecal-dia-num {
+  box-shadow: 0 0 0 2px #fff, 0 0 0 3px var(--ecal-accent-border);
+}
+
+.ecal-cell--solo-cont {
+  background: #fffbeb;
+}
+
+.ecal-cell--solo-cont:hover {
+  background: #fef3c7;
+}
+
+.ecal-cell--mix {
+  background: linear-gradient(180deg, #fff 70%, #fffbeb 100%);
 }
 
 @media (max-width: 900px) {
-  .ecal-legend {
-    justify-content: flex-start;
-  }
-  .ecal-legend-title {
-    text-align: left;
-  }
   .ecal-cell {
-    min-height: 58px;
-  }
-  .ecal-total {
-    font-size: 1.1rem;
+    min-height: 56px;
+    padding: 5px 4px 4px;
   }
 }
 
 @media (max-width: 520px) {
-  .ecal-grid {
-    gap: 4px;
+  .ecal-container {
+    padding: 10px 8px 12px;
   }
   .ecal-cell {
-    min-height: 50px;
-    padding: 4px 2px;
+    min-height: 48px;
+    padding: 4px 3px 3px;
   }
-  .ecal-total {
-    font-size: 0.95rem;
-    margin-top: 10px;
+  .ecal-dia-num {
+    font-size: 0.72rem;
+    min-width: 1.35rem;
+    height: 1.35rem;
   }
-  .ecal-chip {
-    min-width: 14px;
-    height: 14px;
-    font-size: 0.58rem;
+  .ecal-count {
+    font-size: 0.55rem;
+    padding: 0 4px;
+  }
+  .ecal-track {
+    height: 4px;
+    min-height: 4px;
+  }
+  .ecal-weekday {
+    font-size: 0.55rem;
+    padding: 6px 2px;
   }
 }

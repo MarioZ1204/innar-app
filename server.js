@@ -316,6 +316,7 @@ app.use('/api', require('./routes/pdf'));
 app.use('/api', require('./routes/admin'));
 app.use('/api', require('./routes/integraciones-worldoffice'));
 app.use('/api', require('./routes/soportes'));
+app.use('/api', require('./routes/backup'));
 
 // Errores de sesión MySQL (cookie corrupta) u otros → no dejar la API sin respuesta JSON
 app.use((err, req, res, _next) => {

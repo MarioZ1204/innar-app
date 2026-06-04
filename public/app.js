@@ -495,6 +495,7 @@ function updateMenuByRole() {
     'monitor-equipos':'modulo.monitor_equipos',
     'reportes-pdx':     'modulo.reportes_pdx',
     'armado-soportes':  'modulo.armado_soportes',
+    'backup':           'modulo.backup',
   };
 
   document.querySelectorAll('.menu-card').forEach(card => {
@@ -636,7 +637,7 @@ async function doLogout() {
   if (p) { p.value = ''; p.setAttribute('value', ''); }
 }
 
-let initRecibosDone = false, initAgendaDone = false, initElectroDone = false, initUsuariosDone = false, initDiagnosticosDone = false, initDashboardCitasDone = false, initGestionDatosDone = false, initUcqnDone = false;
+let initRecibosDone = false, initAgendaDone = false, initElectroDone = false, initUsuariosDone = false, initDiagnosticosDone = false, initDashboardCitasDone = false, initGestionDatosDone = false, initUcqnDone = false, initBackupDone = false;
 function goToModule(moduleId) {
   showView(`view-${moduleId}`);
   currentModule = moduleId;
@@ -699,6 +700,14 @@ function goToModule(moduleId) {
   if (moduleId === 'monitor-equipos') { initMonitorEquipos(); }
   if (moduleId === 'reportes-pdx' && typeof initReportesPdx === 'function') initReportesPdx();
   if (moduleId === 'armado-soportes' && typeof initArmadoSoportes === 'function') initArmadoSoportes();
+  if (moduleId === 'backup') {
+    if (!initBackupDone && typeof initBackupModule === 'function') {
+      initBackupModule();
+      initBackupDone = true;
+    } else if (typeof initBackupModule === 'function') {
+      initBackupModule();
+    }
+  }
   if (typeof window.innarSidebarRefresh === 'function') window.innarSidebarRefresh();
 }
 
@@ -752,6 +761,7 @@ function setupMenuHandlers() {
   if ($('btnVolverUsuarios')) $('btnVolverUsuarios').addEventListener('click', goToMenu);
   if ($('btnVolverDashboardCitas')) $('btnVolverDashboardCitas').addEventListener('click', goToMenu);
   if ($('btnVolverGestionDatos')) $('btnVolverGestionDatos').addEventListener('click', goToMenu);
+  if ($('btnVolverBackup')) $('btnVolverBackup').addEventListener('click', goToMenu);
   if ($('btnVolverUcqn')) $('btnVolverUcqn').addEventListener('click', goToMenu);
 
   // Manejar botón atrás del navegador (solo una vez)
@@ -7667,11 +7677,26 @@ function actualizarStatsElectro(citas) {
 }
 
 
+function fechaFinYmdCitaElectroAgenda(c) {
+  const finDate = obtenerFechaHoraFinCitaElectro(c);
+  if (finDate && !isNaN(finDate.getTime())) {
+    return `${finDate.getFullYear()}-${String(finDate.getMonth() + 1).padStart(2, '0')}-${String(finDate.getDate()).padStart(2, '0')}`;
+  }
+  return extraerFechaYmdCalendario(c?.hora_fin_date) || extraerFechaYmdCalendario(c?.fecha);
+}
+
+function esContinuacionCitaElectroEnDia(c, fechaVista) {
+  if (!fechaVista || c?.estado === 'Cancelado') return false;
+  const fechaInicio = extraerFechaYmdCalendario(c.fecha);
+  if (!fechaInicio || fechaInicio === fechaVista) return false;
+  const fechaFin = fechaFinYmdCitaElectroAgenda(c);
+  return fechaVista >= fechaInicio && fechaVista <= fechaFin;
+}
+
 function obtenerEtiquetaRangoEstudioElectro(c) {
   const fechaInicio = extraerFechaYmdCalendario(c?.fecha);
-  const fechaFin = extraerFechaYmdCalendario(c?.hora_fin_date) || fechaInicio;
+  const fechaFin = fechaFinYmdCitaElectroAgenda(c);
   if (!fechaInicio || !fechaFin || fechaInicio === fechaFin) return '';
-  if (c.estado !== 'En Estudio' && c.estado !== 'Pausado') return '';
   return `Del ${formatearFechaISO(fechaInicio)} al ${formatearFechaISO(fechaFin)}`;
 }
 
@@ -7683,8 +7708,7 @@ function renderCitaElectroCard(container, c) {
   const estado = c.estado || 'Programado';
   const fechaVista = $('electroFecha')?.value || '';
   const fechaInicioCita = extraerFechaYmdCalendario(c.fecha);
-  const esContinuacion = (estado === 'En Estudio' || estado === 'Pausado')
-    && fechaVista && fechaInicioCita && fechaInicioCita !== fechaVista;
+  const esContinuacion = esContinuacionCitaElectroEnDia(c, fechaVista);
   const estadoClasses = {
     'En Sala': 'estado-en-sala',
     'En Estudio': 'estado-en-estudio',
@@ -7695,7 +7719,12 @@ function renderCitaElectroCard(container, c) {
   };
   if (estadoClasses[estado]) card.classList.add(estadoClasses[estado]);
   if (estado === 'En Estudio') card.classList.add('innar-pulse-estudio');
-  if (esContinuacion) card.classList.add('electro-cita-card-continuacion');
+  if (esContinuacion) {
+    card.classList.add('electro-cita-card-continuacion');
+    if (estado === 'Programado' || estado === 'Confirmado' || estado === 'En Sala') {
+      card.classList.add('electro-cita-card-continuacion--agendado');
+    }
+  }
   const equipoDisplay = c.equipo_nombre ? escapeHtml(c.equipo_nombre) : (c.equipo_id ? 'Equipo ' + c.equipo_id : '\u2014');
   const rangoEstudio = obtenerEtiquetaRangoEstudioElectro(c);
   const estudioCorto = abreviarEstudio(c.estudio);
@@ -8083,6 +8112,7 @@ const PERMISOS_DEFS = [
   { key: 'modulo.monitor_equipos',  label: 'Módulo: Monitor de Equipos',           grupo: 'Acceso a Módulos' },
   { key: 'modulo.reportes_pdx',     label: 'Módulo: Cargar reportes',              grupo: 'Acceso a Módulos' },
   { key: 'modulo.armado_soportes', label: 'Módulo: Soportes',                    grupo: 'Acceso a Módulos' },
+  { key: 'modulo.backup',          label: 'Módulo: Backup',                        grupo: 'Acceso a Módulos' },
   // ── Cargar reportes (PDX) ─────────────────────────────────────────────────
   { key: 'soportes.pdx.ver',             label: 'Reportes: Ver carpetas y archivos',     grupo: 'Cargar reportes' },
   { key: 'soportes.pdx.crear_carpeta',   label: 'Reportes: Crear carpetas',              grupo: 'Cargar reportes' },

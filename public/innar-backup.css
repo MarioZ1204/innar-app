@@ -1,0 +1,31 @@
+/* Módulo Backup */
+.backup-badge-completo {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.backup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+#view-backup .backup-info-list {
+  margin: 0;
+  padding-left: 1.2rem;
+  color: #475569;
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+#view-backup .backup-dir-label {
+  font-size: 0.8rem;
+  color: #64748b;
+  word-break: break-all;
+}

@@ -41,24 +41,44 @@ function fechaFinSiCruzaMedianoche(fechaYmd, horaInicio, horaFin) {
   return `${next.getUTCFullYear()}-${String(next.getUTCMonth() + 1).padStart(2, '0')}-${String(next.getUTCDate()).padStart(2, '0')}`;
 }
 
+/** YYYY-MM-DD de fin programado (duración o hora_fin_date). */
+function citaFechaFinYmd(cita) {
+  const fin = finProgramadoCitaElectro(cita);
+  if (fin?.fechaFin) return fin.fechaFin;
+  return extraerFechaYmd(cita?.hora_fin_date) || extraerFechaYmd(cita?.fecha);
+}
+
+/** Cita visible en día D si D está en [fecha inicio, fecha fin] y no está cancelada. */
+function citaVisibleEnFechaYmd(cita, fechaYmd) {
+  if (!cita || cita.estado === 'Cancelado') return false;
+  const inicio = extraerFechaYmd(cita.fecha);
+  if (!inicio || !fechaYmd) return false;
+  const fin = citaFechaFinYmd(cita) || inicio;
+  return fechaYmd >= inicio && fechaYmd <= fin;
+}
+
+function citaEsInicioEnFechaYmd(cita, fechaYmd) {
+  return extraerFechaYmd(cita?.fecha) === fechaYmd;
+}
+
+function citaEsContinuacionEnFechaYmd(cita, fechaYmd) {
+  return citaVisibleEnFechaYmd(cita, fechaYmd) && !citaEsInicioEnFechaYmd(cita, fechaYmd);
+}
+
 /**
- * Citas visibles en un día Y: agendadas ese día o estudios activos (En Estudio/Pausado)
- * cuyo rango [fecha, hora_fin_date] incluye Y.
+ * Citas visibles en un día Y: cualquier estudio cuyo rango [fecha, fin] incluye Y.
  */
 function sqlCitaElectroVisibleEnFecha(alias = 'c') {
   const a = alias;
   return `(
-    ${a}.fecha = ?
-    OR (
-      ${a}.estado IN ('En Estudio', 'Pausado')
-      AND ? >= ${a}.fecha
-      AND ? <= COALESCE(${a}.hora_fin_date, ${a}.fecha)
-    )
+    ${a}.fecha <= ?
+    AND COALESCE(${a}.hora_fin_date, ${a}.fecha) >= ?
+    AND ${a}.estado <> 'Cancelado'
   )`;
 }
 
 function paramsCitaElectroVisibleEnFecha(fechaYmd) {
-  return [fechaYmd, fechaYmd, fechaYmd];
+  return [fechaYmd, fechaYmd];
 }
 
 /** Hora HH:MM desde hora_inicio, hora_agendamiento o columna TIME. */
@@ -259,6 +279,10 @@ module.exports = {
   extraerFechaYmd,
   sumarMinutosAHoraYFecha,
   fechaFinSiCruzaMedianoche,
+  citaFechaFinYmd,
+  citaVisibleEnFechaYmd,
+  citaEsInicioEnFechaYmd,
+  citaEsContinuacionEnFechaYmd,
   sqlCitaElectroVisibleEnFecha,
   paramsCitaElectroVisibleEnFecha,
   horaInicioCitaElectro,

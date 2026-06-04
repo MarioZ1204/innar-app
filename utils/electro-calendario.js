@@ -1,7 +1,11 @@
 /**
  * Agregación mensual para calendario electro (misma visibilidad que agenda del día).
  */
-const { extraerFechaYmd } = require('./electro-fechas');
+const {
+  citaVisibleEnFechaYmd,
+  citaEsInicioEnFechaYmd,
+  citaEsContinuacionEnFechaYmd
+} = require('./electro-fechas');
 const { monitorEstudioColorKey } = require('./electro-monitor');
 
 const TIPOS_CALENDARIO = ['psg', 'eeg', 'vtm', 'actigrafia', 'otro'];
@@ -12,20 +16,9 @@ function emptyPorTipo() {
   return { psg: 0, eeg: 0, vtm: 0, actigrafia: 0, otro: 0 };
 }
 
-/** Misma regla que sqlCitaElectroVisibleEnFecha */
+/** Misma regla que sqlCitaElectroVisibleEnFecha (con fin por duración si aplica). */
 function citaVisibleEnDiaAgenda(cita, fechaYmd) {
-  const inicio = extraerFechaYmd(cita.fecha);
-  if (!inicio) return false;
-  const fin = extraerFechaYmd(cita.hora_fin_date) || inicio;
-  if (inicio === fechaYmd) return true;
-  if (
-    ['En Estudio', 'Pausado'].includes(cita.estado) &&
-    fechaYmd >= inicio &&
-    fechaYmd <= fin
-  ) {
-    return true;
-  }
-  return false;
+  return citaVisibleEnFechaYmd(cita, fechaYmd);
 }
 
 function familiaEstudioCalendario(estudio) {
@@ -49,14 +42,26 @@ function diasDelMes(mesYmd) {
   return out;
 }
 
+function emptyDia(fecha) {
+  return {
+    fecha,
+    total: 0,
+    inicio: 0,
+    continuacion: 0,
+    porTipo: emptyPorTipo(),
+    porTipoInicio: emptyPorTipo(),
+    porTipoCont: emptyPorTipo()
+  };
+}
+
 /**
- * @param {Array<{fecha, hora_fin_date, estudio, estado}>} citas
+ * @param {Array<{fecha, hora_fin_date, hora_agendamiento, hora_inicio, hora_fin, duracion_minutos, estudio, estado}>} citas
  * @param {string} mes YYYY-MM
  */
 function buildCalendarioElectroMes(citas, mes) {
   const diasMap = {};
   for (const fecha of diasDelMes(mes)) {
-    diasMap[fecha] = { fecha, total: 0, porTipo: emptyPorTipo() };
+    diasMap[fecha] = emptyDia(fecha);
   }
 
   const lista = Array.isArray(citas) ? citas : [];
@@ -65,11 +70,20 @@ function buildCalendarioElectroMes(citas, mes) {
     const familia = familiaEstudioCalendario(cita.estudio);
     for (const fecha of Object.keys(diasMap)) {
       if (!citaVisibleEnDiaAgenda(cita, fecha)) continue;
-      diasMap[fecha].total += 1;
-      if (diasMap[fecha].porTipo[familia] != null) {
-        diasMap[fecha].porTipo[familia] += 1;
-      } else {
-        diasMap[fecha].porTipo.otro += 1;
+      const dia = diasMap[fecha];
+      dia.total += 1;
+      if (dia.porTipo[familia] != null) dia.porTipo[familia] += 1;
+      else dia.porTipo.otro += 1;
+
+      if (citaEsInicioEnFechaYmd(cita, fecha)) {
+        dia.inicio += 1;
+        if (dia.porTipoInicio[familia] != null) dia.porTipoInicio[familia] += 1;
+        else dia.porTipoInicio.otro += 1;
+      }
+      if (citaEsContinuacionEnFechaYmd(cita, fecha)) {
+        dia.continuacion += 1;
+        if (dia.porTipoCont[familia] != null) dia.porTipoCont[familia] += 1;
+        else dia.porTipoCont.otro += 1;
       }
     }
   }

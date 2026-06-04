@@ -3,6 +3,20 @@
 Todos los cambios importantes a la aplicación se documentan aquí. El formato
 sigue (informalmente) [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
+## [1.5.87] — 2026-05-27
+
+### Añadido
+
+- **Módulo Backup**: copias completas en ZIP (base de datos + carpeta uploads con PDFs), listado, generación manual y descarga; backup mensual automático programable (`BACKUP_MONTHLY_CRON`).
+
+### Cambiado
+
+- **Electrodiagnóstico — agenda y calendario**: estudios mult día visibles en todos los días del rango (programados y en curso); tarjetas de continuación con estilo distinto; calendario mensual con barras por tipo, inicio vs continuación y diseño de celdas corregido (sin botón verde global).
+
+### Corregido
+
+- **Electrodiagnóstico — calendario**: celdas de día ya no heredan el estilo primario verde de `button`; contraste legible en el día «hoy».
+
 ## [1.5.86] — 2026-06-03
 
 ### Corregido

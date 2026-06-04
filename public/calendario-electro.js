@@ -42,22 +42,44 @@
     return (inp && inp.value) ? inp.value : hoyISO();
   }
 
+  function ensureTipoLegend() {
+    const wrap = document.querySelector('.electro-cal-wrap .ecal-container');
+    if (!wrap || document.getElementById('electroCalTipoLegend')) return;
+    const el = document.createElement('div');
+    el.id = 'electroCalTipoLegend';
+    el.className = 'ecal-tipo-legend';
+    el.innerHTML =
+      TIPOS.map((t) =>
+        `<span class="ecal-tipo-pill"><span class="ecal-tipo-dot" style="background:${t.color}"></span>${escapeHtml(t.label)}</span>`
+      ).join('') +
+      '<span class="ecal-tipo-pill ecal-tipo-pill--cont"><span class="ecal-tipo-dot ecal-tipo-dot--cont"></span>Continúa de otro día</span>';
+    const grid = document.getElementById('electroCalGrid');
+    if (grid) wrap.insertBefore(el, grid);
+  }
+
   function renderLeyendaDia(fecha) {
     const el = document.getElementById('electroCalLegend');
     if (!el) return;
-    const dia = calDatos[fecha] || { total: 0, porTipo: {} };
+    const dia = calDatos[fecha] || { total: 0, inicio: 0, continuacion: 0, porTipo: {}, porTipoInicio: {}, porTipoCont: {} };
     const parts = TIPOS.map((t) => {
       const n = parseInt(dia.porTipo?.[t.key], 10) || 0;
       if (!n) return '';
-      return `<span class="ecal-legend-item" title="${escapeHtml(t.label)}">
+      const ni = parseInt(dia.porTipoInicio?.[t.key], 10) || 0;
+      const nc = parseInt(dia.porTipoCont?.[t.key], 10) || 0;
+      const detalle = nc > 0 && ni > 0 ? ` (${ni} inicio, ${nc} cont.)` : (nc > 0 ? ` (${nc} cont.)` : '');
+      return `<span class="ecal-legend-item" title="${escapeHtml(t.label)}${escapeHtml(detalle)}">
         <span class="ecal-legend-dot" style="background:${t.color}"></span>
         <span class="ecal-legend-label">${escapeHtml(t.label)}</span>
         <strong class="ecal-legend-num">${n}</strong>
       </span>`;
     }).filter(Boolean);
     const total = parseInt(dia.total, 10) || 0;
+    const cont = parseInt(dia.continuacion, 10) || 0;
+    const contBadge = cont > 0
+      ? `<span class="ecal-legend-cont-badge" title="Estudios que siguen desde un día anterior">${cont} en continuación</span>`
+      : '';
     el.innerHTML = parts.length
-      ? `<span class="ecal-legend-title">${escapeHtml(fecha)} · ${total} estudio(s)</span>${parts.join('')}`
+      ? `<span class="ecal-legend-title">${escapeHtml(fecha)} · ${total} estudio(s)${contBadge}</span>${parts.join('')}`
       : `<span class="ecal-legend-title">${escapeHtml(fecha)} · sin estudios</span>`;
   }
 
@@ -68,19 +90,32 @@
     renderLeyendaDia(fecha);
   }
 
-  function intensidadCelda(total) {
-    if (total >= 8) return 'ecal-alto';
-    if (total >= 4) return 'ecal-medio';
-    if (total >= 1) return 'ecal-bajo';
-    return 'ecal-vacio';
+  /** Segmentos de barra: sólido = inicio ese día, rayado = continuación. */
+  function segmentosDia(info) {
+    const segs = [];
+    const inicio = info.porTipoInicio || info.porTipo || {};
+    const cont = info.porTipoCont || {};
+    TIPOS.forEach((t) => {
+      const ni = parseInt(inicio[t.key], 10) || 0;
+      const nc = parseInt(cont[t.key], 10) || 0;
+      for (let i = 0; i < ni; i++) segs.push({ color: t.color, cont: false, label: t.label });
+      for (let i = 0; i < nc; i++) segs.push({ color: t.color, cont: true, label: t.label });
+    });
+    return segs;
   }
 
-  function chipsPorTipo(porTipo) {
-    return TIPOS.map((t) => {
-      const n = parseInt(porTipo?.[t.key], 10) || 0;
-      if (!n) return '';
-      return `<span class="ecal-chip" style="--ecal-chip:${t.color}" title="${escapeHtml(t.label)}: ${n}">${n}</span>`;
-    }).join('');
+  function htmlBarraEstudios(segs, total) {
+    if (!total) return '<span class="ecal-track" aria-hidden="true"></span>';
+    const maxVis = 10;
+    const vis = segs.slice(0, maxVis);
+    const extra = segs.length - maxVis;
+    let html = '<span class="ecal-track" aria-hidden="true">';
+    vis.forEach((s) => {
+      html += `<span class="ecal-seg${s.cont ? ' ecal-seg--cont' : ''}" style="--c:${s.color}" title="${escapeHtml(s.label)}${s.cont ? ' (continúa)' : ''}"></span>`;
+    });
+    if (extra > 0) html += `<span class="ecal-seg ecal-seg--more" title="+${extra} más">+</span>`;
+    html += '</span>';
+    return html;
   }
 
   function renderGrid() {
@@ -103,15 +138,33 @@
     }
     for (let d = 1; d <= diasMes; d++) {
       const fecha = `${ano}-${String(mes + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-      const info = calDatos[fecha] || { total: 0, porTipo: {} };
+      const info = calDatos[fecha] || { total: 0, inicio: 0, continuacion: 0, porTipo: {}, porTipoInicio: {}, porTipoCont: {} };
       const total = parseInt(info.total, 10) || 0;
+      const cont = parseInt(info.continuacion, 10) || 0;
       const esHoy = fecha === hoy;
       const esSel = fecha === sel;
-      const chips = chipsPorTipo(info.porTipo || {});
-      html += `<button type="button" class="ecal-cell ${intensidadCelda(total)}${esHoy ? ' ecal-hoy' : ''}${esSel ? ' ecal-selected' : ''}" data-fecha="${fecha}" title="${total} estudio(s)">
-        <span class="ecal-dia-num">${d}</span>
-        <span class="ecal-total">${total || '—'}</span>
-        <span class="ecal-chips">${chips || '<span class="ecal-chips-empty">·</span>'}</span>
+      const segs = segmentosDia(info);
+      const inicio = parseInt(info.inicio, 10) || 0;
+      const clases = [
+        'ecal-cell',
+        total > 0 ? 'ecal-cell--busy' : 'ecal-cell--idle',
+        esHoy ? 'ecal-hoy' : '',
+        esSel ? 'ecal-selected' : '',
+        cont > 0 && inicio === 0 ? 'ecal-cell--solo-cont' : '',
+        cont > 0 && inicio > 0 ? 'ecal-cell--mix' : ''
+      ].filter(Boolean).join(' ');
+      const title = cont > 0
+        ? `${total} estudio(s) (${inicio} inicio, ${cont} continuación)`
+        : (total > 0 ? `${total} estudio(s)` : 'Sin estudios');
+      const badge = total > 0
+        ? `<span class="ecal-count" aria-label="${total} estudios">${total}</span>`
+        : '';
+      html += `<button type="button" class="${clases}" data-fecha="${fecha}" title="${escapeHtml(title)}">
+        <span class="ecal-day">
+          <span class="ecal-dia-num">${d}</span>
+          ${badge}
+        </span>
+        ${htmlBarraEstudios(segs, total)}
       </button>`;
     }
     const resto = (offset + diasMes) % 7;
@@ -140,7 +193,11 @@
           const f = String(row.fecha || '').slice(0, 10);
           calDatos[f] = {
             total: parseInt(row.total, 10) || 0,
-            porTipo: row.porTipo || {}
+            inicio: parseInt(row.inicio, 10) || 0,
+            continuacion: parseInt(row.continuacion, 10) || 0,
+            porTipo: row.porTipo || {},
+            porTipoInicio: row.porTipoInicio || {},
+            porTipoCont: row.porTipoCont || {}
           };
         });
       }
@@ -162,6 +219,7 @@
   }
 
   function initElectroCalendario() {
+    ensureTipoLegend();
     const prev = document.getElementById('electroCalPrevMonth');
     const next = document.getElementById('electroCalNextMonth');
 

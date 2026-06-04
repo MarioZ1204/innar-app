@@ -27,6 +27,7 @@
   <link rel="stylesheet" href="innar-responsive-electro.css">
   <link rel="stylesheet" href="innar-electro-estudio-ui.css">
   <link rel="stylesheet" href="innar-electro-calendario.css">
+  <link rel="stylesheet" href="innar-backup.css">
   <link rel="stylesheet" href="innar-responsive-mobile-fix.css">
   <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js" defer></script>
   <style>
@@ -215,6 +216,13 @@
           <span class="menu-card-label">
             <span class="menu-card-title">Auditoría de Citas</span>
             <span class="menu-card-desc">Quién agendó cada cita</span>
+          </span>
+        </button>
+        <button class="menu-card" data-module="backup" data-rol="superadmin admin">
+          <span class="menu-card-icon"><svg width="56" height="55" viewBox="0 0 56 55" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="8" y="10" width="40" height="36" rx="4" fill="#e0f2fe" stroke="#0284c7" stroke-width="2"/><path d="M28 18v12M22 24h12" stroke="#0284c7" stroke-width="2.5" stroke-linecap="round"/><path d="M16 38h24" stroke="#64748b" stroke-width="2" stroke-linecap="round"/></svg></span>
+          <span class="menu-card-label">
+            <span class="menu-card-title">Backup</span>
+            <span class="menu-card-desc">Copia BD y archivos (PDF)</span>
           </span>
         </button>
         <button class="menu-card" data-module="gestion-datos" data-rol="superadmin admin">
@@ -1553,7 +1561,7 @@
                 <button type="button" id="electroCalPrevMonth" class="ecal-nav-btn" title="Mes anterior" aria-label="Mes anterior">◀</button>
                 <div class="ecal-header-center">
                   <h3 id="electroCalMonthTitle" class="ecal-month-title"></h3>
-                  <span class="ecal-subtitle">Estudios por día</span>
+                  <span class="ecal-subtitle">Inicios y estudios que continúan en otros días</span>
                 </div>
                 <div id="electroCalLegend" class="ecal-legend" aria-live="polite"></div>
                 <button type="button" id="electroCalNextMonth" class="ecal-nav-btn" title="Mes siguiente" aria-label="Mes siguiente">▶</button>
@@ -2706,6 +2714,89 @@
     </div>
   </div>
 
+  <!-- ========== MÓDULO BACKUP ========== -->
+  <div id="view-backup" class="view-module hidden">
+    <div class="main-layout">
+      <div class="sidebar no-print">
+        <div class="sidebar-inner">
+          <div class="sidebar-logo-mini"><img src="/images/logo.webp" alt="Logo" width="305" height="100" loading="lazy" /></div>
+          <button class="btn-volver" id="btnVolverBackup" type="button">
+            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+            Volver al menú
+          </button>
+          <div class="sidebar-logo">
+            <img src="/images/logo.webp" alt="Logo" width="305" height="100" style="height:58px;width:auto;object-fit:contain" loading="lazy" />
+          </div>
+          <hr class="sidebar-title-sep" />
+          <h2>Backup</h2>
+          <p class="sidebar-desc">Respaldo completo del sistema</p>
+        </div>
+        <div class="sidebar-footer">
+          <div class="sidebar-user">
+            <div class="sidebar-user-avatar">--</div>
+            <div>
+              <div class="sidebar-user-name">Cargando...</div>
+              <div class="sidebar-user-role">-</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="main-content">
+        <div class="container">
+          <header>
+            <h2>Copias de seguridad</h2>
+            <p style="color:#475569;font-size:.9rem;max-width:720px">
+              Cada backup completo incluye la <strong>base de datos</strong> (usuarios, pacientes, citas, recibos, reportes PDX, armado, etc.)
+              y la carpeta <strong>uploads</strong> (PDFs de soportes y demás archivos subidos), empaquetados en un ZIP descargable.
+            </p>
+          </header>
+
+          <section class="card no-print">
+            <h3>Generar backup</h3>
+            <p style="font-size:.85rem;color:#64748b;margin-top:0">
+              También se programa uno <strong>mensual</strong> automático (día 1 de cada mes, según servidor).
+            </p>
+            <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:12px">
+              <button type="button" class="btn-primary" id="btnCrearBackupCompleto">Generar backup completo ahora</button>
+              <button type="button" class="btn-secondary" id="btnRefreshBackups">Actualizar lista</button>
+            </div>
+          </section>
+
+          <section class="card no-print">
+            <h3>Contenido del ZIP</h3>
+            <ul class="backup-info-list">
+              <li><code>database.sql</code> — toda la base MySQL del sistema</li>
+              <li><code>uploads/</code> — PDFs y archivos (reportes PDX, armado, electro, etc.)</li>
+              <li><code>MANIFEST.json</code> y <code>LEEME-RESTAURACION.txt</code> — instrucciones</li>
+            </ul>
+            <p class="backup-dir-label">Carpeta en servidor: <span id="backupDirLabel">—</span></p>
+          </section>
+
+          <section class="card">
+            <h3>Backups completos disponibles</h3>
+            <div class="table-wrap" style="overflow-x:auto">
+              <table class="data-table" style="width:100%">
+                <thead>
+                  <tr>
+                    <th>Archivo</th>
+                    <th>Fecha</th>
+                    <th>Tamaño</th>
+                    <th>Tipo</th>
+                    <th style="text-align:right">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody id="backupTablaBody"></tbody>
+              </table>
+            </div>
+            <p id="backupTablaEmpty" style="display:none;padding:20px;text-align:center;color:#64748b">
+              No hay backups completos todavía. Pulse «Generar backup completo ahora».
+            </p>
+          </section>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- ========== MÓDULO GESTIÓN DE DATOS ========== -->
   <div id="view-gestion-datos" class="view-module hidden">
     <div class="main-layout">
@@ -3533,6 +3624,7 @@
   <script src="dashboard-citas.js"></script>
   <script src="calendario-agenda.js"></script>
   <script src="calendario-electro.js"></script>
+  <script src="backup-module.js"></script>
   <script src="app.js"></script>
   <script src="soportes-pdf-editor.js"></script>
   <script src="soportes.js"></script>

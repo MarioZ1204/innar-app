@@ -52,34 +52,27 @@ function getBackupFilename() {
 }
 
 /**
- * Ejecutar mysqldump y crear backup
+ * Volcado SQL a un archivo (reutilizable por backup completo).
+ * @param {string} filepath
  */
-function createBackup() {
+function dumpDatabaseToFile(filepath) {
   return new Promise((resolve, reject) => {
     ensureBackupDir();
-    
-    const filename = getBackupFilename();
-    const filepath = path.join(BACKUP_DIR, filename);
     const writeStream = fs.createWriteStream(filepath);
-
-    console.log(`⏳ Creando backup: ${filename}`);
-
-    // Pasar contraseña por variable de entorno (no como arg, evita exposición en Task Manager)
     const childEnv = { ...process.env };
     if (DB_PASSWORD) childEnv.MYSQL_PWD = DB_PASSWORD;
 
-    // Comando mysqldump
     const mysqldump = spawn(getMysqldumpPath(), [
       `--host=${DB_HOST}`,
       `--port=${DB_PORT}`,
       `--user=${DB_USER}`,
-      '--default-auth=mysql_native_password', // Compatibilidad con MySQL 8 desde cliente MariaDB/antiguo
-      '--single-transaction',     // No bloquear tablas (transacción consistente)
-      '--skip-lock-tables',       // Necesario junto con --single-transaction
-      '--routines',               // Incluir stored procedures
-      '--triggers',               // Incluir triggers
-      '--events',                 // Incluir events
-      '--quick',                  // Búfer de límite
+      '--default-auth=mysql_native_password',
+      '--single-transaction',
+      '--skip-lock-tables',
+      '--routines',
+      '--triggers',
+      '--events',
+      '--quick',
       DB_NAME
     ], { env: childEnv });
 
@@ -87,7 +80,6 @@ function createBackup() {
 
     mysqldump.stderr.on('data', (data) => {
       const msg = data.toString().trim();
-      // mysqldump escribe advertencias a stderr incluso cuando tiene éxito
       if (msg) console.warn(`⚠️ mysqldump: ${msg}`);
     });
 
@@ -99,21 +91,29 @@ function createBackup() {
 
     mysqldump.on('close', (code) => {
       writeStream.end();
-      if (code === 0) {
-        const stats = fs.statSync(filepath);
-        const sizeInMB = (stats.size / (1024 * 1024)).toFixed(2);
-        console.log(`[OK] Backup creado: ${filename} (${sizeInMB} MB)`);
-        
-        // Limpiar backups antiguos
-        cleanOldBackups();
-        resolve(filepath);
-      } else {
-        // Eliminar archivo parcial/vacío para no contaminar la lista
+      if (code === 0) resolve(filepath);
+      else {
         try { fs.unlinkSync(filepath); } catch (_) {}
         reject(new Error(`mysqldump terminó con código ${code}`));
       }
     });
   });
+}
+
+/**
+ * Ejecutar mysqldump y crear backup SQL diario
+ */
+async function createBackup() {
+  ensureBackupDir();
+  const filename = getBackupFilename();
+  const filepath = path.join(BACKUP_DIR, filename);
+  console.log(`⏳ Creando backup: ${filename}`);
+  await dumpDatabaseToFile(filepath);
+  const stats = fs.statSync(filepath);
+  const sizeInMB = (stats.size / (1024 * 1024)).toFixed(2);
+  console.log(`[OK] Backup creado: ${filename} (${sizeInMB} MB)`);
+  cleanOldBackups();
+  return filepath;
 }
 
 /**
@@ -248,4 +248,17 @@ if (require.main === module) {
   main();
 }
 
-module.exports = { createBackup, verifyBackup };
+module.exports = {
+  BACKUP_DIR,
+  DB_HOST,
+  DB_PORT,
+  DB_USER,
+  DB_PASSWORD,
+  DB_NAME,
+  MAX_BACKUPS,
+  getMysqldumpPath,
+  ensureBackupDir,
+  createBackup,
+  dumpDatabaseToFile,
+  verifyBackup
+};

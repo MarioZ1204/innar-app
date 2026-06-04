@@ -792,9 +792,11 @@ router.get('/citas-electro/calendario', requireAuth, async (req, res) => {
       : `${year}-${String(month + 1).padStart(2, '0')}-01`;
 
     const rows = await db.query(
-      `SELECT c.fecha, c.hora_fin_date, c.estudio, c.estado
+      `SELECT c.fecha, c.hora_fin_date, c.hora_agendamiento, c.hora_inicio, c.hora_fin,
+              c.duracion_minutos, c.estudio, c.estado
        FROM citas_electro c
        WHERE c.deleted_at IS NULL
+         AND c.estado <> 'Cancelado'
          AND c.fecha < ?
          AND COALESCE(c.hora_fin_date, c.fecha) >= ?`,
       [fechaFin, fechaInicio]
