@@ -35,6 +35,17 @@ describe('electro-fechas', () => {
     expect(citaVisibleEnAgendaDiaYmd(cita, '2026-05-03')).toBe(true);
   });
 
+  test('PSG 8h a las 10:00 termina 18:00 mismo día (ignora hora_fin errónea)', () => {
+    const fin = finProgramadoCitaElectro({
+      fecha: '2026-05-27',
+      hora_agendamiento: '10:00',
+      hora_fin: '06:58',
+      hora_fin_date: '2026-05-28',
+      duracion_minutos: 480
+    });
+    expect(fin).toEqual({ horaFin: '18:00', fechaFin: '2026-05-27' });
+  });
+
   test('fin programado elige el más tardío (no el slot corto de agenda)', () => {
     const fin = finProgramadoCitaElectro({
       fecha: '2026-05-27',

@@ -3,6 +3,20 @@
  * Usar componentes de calendario (YYYY-MM-DD) en lugar de Date local/ISO.
  */
 
+/** HH:MM desde TIME MySQL, ISO u otros formatos (sin desfase TZ). */
+function normalizarHoraHmElectro(val) {
+  if (val == null || val === '') return null;
+  const s = String(val).trim();
+  const iso = s.match(/T(\d{2}):(\d{2})/);
+  if (iso) return `${iso[1]}:${iso[2]}`;
+  const m = s.match(/^(\d{1,2}):(\d{2})/);
+  if (!m) return null;
+  const hh = parseInt(m[1], 10);
+  const mm = parseInt(m[2], 10);
+  if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return null;
+  return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+}
+
 function extraerFechaYmd(val) {
   if (val == null || val === '') return null;
   const s = String(val).trim();
@@ -113,10 +127,7 @@ function paramsCitaElectroVisibleEnAgendaDia(fechaYmd) {
 
 /** Hora HH:MM desde hora_inicio, hora_agendamiento o columna TIME. */
 function horaInicioCitaElectro(cita) {
-  const raw = cita?.hora_inicio ?? cita?.hora_agendamiento;
-  if (raw == null || raw === '') return null;
-  const h = String(raw).trim().slice(0, 5);
-  return /^\d{2}:\d{2}$/.test(h) ? h : null;
+  return normalizarHoraHmElectro(cita?.hora_inicio) || normalizarHoraHmElectro(cita?.hora_agendamiento);
 }
 
 /** Elige el fin más tardío entre dos candidatos (reapertura / reprogramación). */
@@ -143,15 +154,42 @@ function finProgramadoCitaElectro(cita) {
   if (fechaInicio && horaInicio && durMin > 0) {
     finDesdeInicio = sumarMinutosAHoraYFecha(fechaInicio, horaInicio, durMin);
   }
-  const fechaFin = extraerFechaYmd(cita.hora_fin_date) || fechaInicio;
-  const horaFin = String(cita.hora_fin || '').trim().slice(0, 5);
+  const fechaFinSlot = extraerFechaYmd(cita.hora_fin_date) || fechaInicio;
+  const horaFin = normalizarHoraHmElectro(cita.hora_fin);
   let finDesdeSlot = null;
-  if (fechaFin && /^\d{2}:\d{2}$/.test(horaFin)) {
-    finDesdeSlot = { horaFin, fechaFin };
+  if (fechaFinSlot && horaFin) {
+    finDesdeSlot = { horaFin, fechaFin: fechaFinSlot };
   }
+
+  if (finDesdeInicio && durMin > 0) {
+    if (!finDesdeSlot) return finDesdeInicio;
+    const msIni = finProgramadoMsLocal(finDesdeInicio);
+    const msSlot = finProgramadoMsLocal(finDesdeSlot);
+    if (msIni == null) return finDesdeSlot;
+    if (msSlot == null) return finDesdeInicio;
+    const finIniYmd = finDesdeInicio.fechaFin;
+    const reprogramadoMultidia = fechaFinSlot && finIniYmd && fechaFinSlot > finIniYmd
+      && diasCalendarioEntreYmd(fechaInicio, fechaFinSlot) >= 2;
+    if (reprogramadoMultidia && msSlot >= msIni) return finDesdeSlot;
+    const spanMs = msSlot - msIni;
+    if (msSlot > msIni && spanMs <= durMin * 60000 * 1.15) return finDesdeSlot;
+    return finDesdeInicio;
+  }
+
   const efectivo = finProgramadoMasTardio(finDesdeInicio, finDesdeSlot);
   if (efectivo) return efectivo;
   return finDesdeSlot;
+}
+
+/** Días calendario entre dos YYYY-MM-DD (b - a). */
+function diasCalendarioEntreYmd(ymdA, ymdB) {
+  const a = extraerFechaYmd(ymdA);
+  const b = extraerFechaYmd(ymdB);
+  if (!a || !b) return 0;
+  const tA = new Date(`${a}T12:00:00`).getTime();
+  const tB = new Date(`${b}T12:00:00`).getTime();
+  if (Number.isNaN(tA) || Number.isNaN(tB)) return 0;
+  return Math.round((tB - tA) / 86400000);
 }
 
 /** Ms de fin programado en calendario local (coherente con TIMESTAMP MySQL / UI). */
@@ -273,8 +311,8 @@ function inferirDuracionMinutosCitaElectro(cita) {
   const d = parseInt(cita?.duracion_minutos, 10);
   if (d > 0) return d;
   const fecha = extraerFechaYmd(cita?.fecha);
-  const horaAg = String(cita?.hora_agendamiento || '').trim().slice(0, 5);
-  const horaFin = String(cita?.hora_fin || '').trim().slice(0, 5);
+  const horaAg = normalizarHoraHmElectro(cita?.hora_agendamiento);
+  const horaFin = normalizarHoraHmElectro(cita?.hora_fin);
   const fechaFin = extraerFechaYmd(cita?.hora_fin_date) || fecha;
   if (!fecha || !/^\d{2}:\d{2}$/.test(horaAg) || !/^\d{2}:\d{2}$/.test(horaFin)) return null;
   const inicioMs = finProgramadoMsLocal({ fechaFin: fecha, horaFin: horaAg });
@@ -312,6 +350,7 @@ function sqlEstudioElectroFinProgramadoVencidoConDuracion(alias) {
 }
 
 module.exports = {
+  normalizarHoraHmElectro,
   extraerFechaYmd,
   sumarMinutosAHoraYFecha,
   fechaFinSiCruzaMedianoche,

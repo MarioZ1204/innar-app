@@ -7732,17 +7732,38 @@ function electroFinProgramadoYaPaso(fechaCita, horaInicio, duracionMinutos) {
   return !!(finDate && finDate.getTime() <= Date.now());
 }
 
+/** HH:MM sin desfase (TIME MySQL, ISO, etc.). */
+function normalizarHoraElectroHm(val) {
+  if (val == null || val === '') return null;
+  const s = String(val).trim();
+  const iso = s.match(/T(\d{2}):(\d{2})/);
+  if (iso) return `${iso[1]}:${iso[2]}`;
+  const m = s.match(/^(\d{1,2}):(\d{2})/);
+  if (!m) return null;
+  const hh = parseInt(m[1], 10);
+  const mm = parseInt(m[2], 10);
+  if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return null;
+  return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+}
+
 /** Hora base para calcular fin real: la guardada en BD (inicio real), no la hora actual. */
 function obtenerHoraInicioCalculoFinElectro(cita) {
-  const horaInicio = String(cita?.hora_inicio || '').slice(0, 5);
-  if (/^\d{2}:\d{2}$/.test(horaInicio)) return horaInicio;
-  const horaAg = String(cita?.hora_agendamiento || '').slice(0, 5);
-  return /^\d{2}:\d{2}$/.test(horaAg) ? horaAg : null;
+  return normalizarHoraElectroHm(cita?.hora_inicio) || normalizarHoraElectroHm(cita?.hora_agendamiento);
 }
 
 function fechaYmdDesdeDate(d) {
   if (!d || Number.isNaN(d.getTime())) return '';
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function diasCalendarioEntreYmdElectro(ymdA, ymdB) {
+  const a = obtenerFechaElectroBase10(ymdA);
+  const b = obtenerFechaElectroBase10(ymdB);
+  if (!a || !b) return 0;
+  const tA = new Date(`${a}T12:00:00`).getTime();
+  const tB = new Date(`${b}T12:00:00`).getTime();
+  if (Number.isNaN(tA) || Number.isNaN(tB)) return 0;
+  return Math.round((tB - tA) / 86400000);
 }
 
 /** Hora de inicio al pulsar «Sí» en el modal: hora actual al solicitar el inicio. */
@@ -7766,31 +7787,42 @@ function calcularHoraFinElectroDesdeInicio(fechaBase, horaInicio, duracionMinuto
   };
 }
 
-/** Fin programado: el más tardío entre (inicio + duración) y (hora_fin / hora_fin_date), como en el servidor. */
+/** Fin programado (misma regla que finProgramadoCitaElectro en servidor). */
 function resolverFinProgramadoEstudioElectro(cita) {
   if (!cita) return null;
   const fechaIni = obtenerFechaElectroBase10(cita.fecha);
-  const horaIni = obtenerHoraInicioCalculoFinElectro(cita) || String(cita?.hora_agendamiento || '').slice(0, 5);
+  const horaIni = obtenerHoraInicioCalculoFinElectro(cita);
   const durMin = parseInt(cita.duracion_minutos, 10) || 0;
 
   let finInicio = null;
-  if (fechaIni && /^\d{2}:\d{2}$/.test(horaIni) && durMin > 0) {
+  if (fechaIni && horaIni && durMin > 0) {
     const calc = calcularHoraFinElectroDesdeInicio(fechaIni, horaIni, durMin);
     if (calc) finInicio = construirDateHoraElectro(calc.horaFinDate || fechaIni, calc.horaFin);
   }
 
   let finSlot = null;
-  const horaFinStr = String(cita.hora_fin || '').slice(0, 5);
-  if (/^\d{2}:\d{2}$/.test(horaFinStr) && fechaIni) {
-    const fechaFinSlot = obtenerFechaElectroBase10(cita.hora_fin_date) || fechaIni;
+  const horaFinStr = normalizarHoraElectroHm(cita.hora_fin);
+  const fechaFinSlot = obtenerFechaElectroBase10(cita.hora_fin_date) || fechaIni;
+  if (horaFinStr && fechaFinSlot) {
     finSlot = construirDateHoraElectro(fechaFinSlot, horaFinStr);
-    if (finSlot && !cita.hora_fin_date) {
+    if (finSlot && !cita.hora_fin_date && fechaIni && horaIni) {
       const dateInicio = construirDateHoraElectro(fechaIni, horaIni);
       if (dateInicio && finSlot.getTime() <= dateInicio.getTime()) {
         finSlot = new Date(finSlot.getTime());
         finSlot.setDate(finSlot.getDate() + 1);
       }
     }
+  }
+
+  if (finInicio && durMin > 0) {
+    if (!finSlot) return finInicio;
+    const finIniYmd = fechaYmdDesdeDate(finInicio);
+    const reprogramadoMultidia = fechaFinSlot && finIniYmd && fechaFinSlot > finIniYmd
+      && diasCalendarioEntreYmdElectro(fechaIni, fechaFinSlot) >= 2;
+    if (reprogramadoMultidia && finSlot.getTime() >= finInicio.getTime()) return finSlot;
+    const spanMs = finSlot.getTime() - finInicio.getTime();
+    if (finSlot.getTime() > finInicio.getTime() && spanMs <= durMin * 60000 * 1.15) return finSlot;
+    return finInicio;
   }
 
   if (finInicio && finSlot) return finInicio.getTime() >= finSlot.getTime() ? finInicio : finSlot;

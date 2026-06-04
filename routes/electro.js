@@ -25,6 +25,7 @@ const {
   horaInicioAgendadaParaInicioEstudio,
   horaInicioEfectivaParaInicioEstudio,
   finProgramadoCitaElectro,
+  normalizarHoraHmElectro,
   estudioElectroFinProgramadoVencido,
   ymdLocal,
   inferirDuracionMinutosCitaElectro,
@@ -251,6 +252,18 @@ const SQL_ENTIDAD_CITA_ELECTRO = `
       ORDER BY r.id DESC LIMIT 1
     )
   ) AS entidad`;
+
+function mapCitaElectroRow(row) {
+  if (!row) return row;
+  return {
+    ...row,
+    fecha: extraerFechaYmd(row.fecha) || row.fecha,
+    hora_fin_date: row.hora_fin_date ? (extraerFechaYmd(row.hora_fin_date) || row.hora_fin_date) : null,
+    hora_agendamiento: normalizarHoraHmElectro(row.hora_agendamiento) ?? row.hora_agendamiento,
+    hora_inicio: normalizarHoraHmElectro(row.hora_inicio) ?? row.hora_inicio,
+    hora_fin: normalizarHoraHmElectro(row.hora_fin) ?? row.hora_fin
+  };
+}
 
 const CITAS_ELECTRO_SELECT = `
   c.id, c.equipo_id, c.paciente_id,
@@ -982,7 +995,7 @@ router.get('/citas-electro', requireAuth, async (req, res) => {
         WHERE (p.documento LIKE ? OR p.nombre LIKE ?) AND c.deleted_at IS NULL
         ORDER BY c.fecha ASC, c.hora_agendamiento ASC LIMIT 50
       `, [`%${buscar}%`, `%${buscar}%`]);
-      return res.json(citas);
+      return res.json(citas.map(mapCitaElectroRow));
     } catch (e) {
       return res.status(500).json({ error: safeError(e) });
     }
@@ -1020,7 +1033,7 @@ router.get('/citas-electro', requireAuth, async (req, res) => {
     }
     query += ` ORDER BY c.hora_agendamiento ASC, c.hora_inicio ASC, c.id ASC`;
     const citas = await db.query(query, params);
-    res.json(citas);
+    res.json(citas.map(mapCitaElectroRow));
   } catch (e) {
     res.status(500).json({ error: safeError(e) });
   }
@@ -1115,6 +1128,13 @@ router.post('/citas-electro', requireAuth, requireRoleOrPerm(['superadmin', 'adm
         hora_fin_date: finalFechaFin
       });
     }
+    if (duracionMinutosDB > 0) {
+      const finDesdeDur = sumarMinutosAHoraYFecha(fecha, horaAgendamiento, duracionMinutosDB);
+      if (finDesdeDur) {
+        finalHoraFin = finDesdeDur.horaFin;
+        finalFechaFin = finDesdeDur.fechaFin;
+      }
+    }
     const insertResult = await db.execute(`
       INSERT INTO citas_electro (equipo_id, paciente_id, fecha, hora_agendamiento, hora_inicio, hora_fin, hora_fin_date, estudio, observaciones, diagnostico_id, estado, programado_por_nombre, duracion_minutos, entidad)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -1173,9 +1193,7 @@ router.get('/citas-electro/:id', requireAuth, async (req, res) => {
       WHERE c.id = ? AND c.deleted_at IS NULL
     `, [id]);
     const rowFresh = rows2[0] || row;
-    rowFresh.fecha = extraerFechaYmd(rowFresh.fecha) || fechaRow;
-    if (rowFresh.hora_fin_date) rowFresh.hora_fin_date = extraerFechaYmd(rowFresh.hora_fin_date) || normalizeFecha(rowFresh.hora_fin_date);
-    res.json(rowFresh);
+    res.json(mapCitaElectroRow(rowFresh));
   } catch (e) {
     res.status(500).json({ error: safeError(e) });
   }
