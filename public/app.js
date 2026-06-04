@@ -6,7 +6,12 @@ const lsKeyCurrentModule = 'current_module_v1';
 
 // ========== GLOBAL ERROR HANDLER ==========
 window.addEventListener('unhandledrejection', (e) => {
-  console.error('[Unhandled Promise]', e.reason);
+  const r = e.reason;
+  if (r?.name === 'InvalidStateError' && String(r?.message || '').includes('Transition')) {
+    e.preventDefault();
+    return;
+  }
+  console.error('[Unhandled Promise]', r);
 });
 window.onerror = function(msg, src, line, col, err) {
   console.error('[Global Error]', msg, src + ':' + line + ':' + col, err);
@@ -7761,25 +7766,42 @@ function calcularHoraFinElectroDesdeInicio(fechaBase, horaInicio, duracionMinuto
   };
 }
 
+/** Fin programado coherente: inicio+duración, o hora_fin reprogramada si es futura o extensión razonable. */
+function resolverFinProgramadoEstudioElectro(cita) {
+  if (!cita) return null;
+  const ahora = Date.now();
+  const fechaIni = obtenerFechaElectroBase10(cita.fecha);
+  const horaIni = obtenerHoraInicioCalculoFinElectro(cita) || String(cita?.hora_agendamiento || '').slice(0, 5);
+  const durMin = parseInt(cita.duracion_minutos, 10) || 0;
+
+  let finInicio = null;
+  if (fechaIni && /^\d{2}:\d{2}$/.test(horaIni) && durMin > 0) {
+    const d0 = construirDateHoraElectro(fechaIni, horaIni);
+    if (d0) finInicio = new Date(d0.getTime() + durMin * 60000);
+  }
+
+  let finSlot = null;
+  if (cita.hora_fin && cita.hora_fin_date) {
+    const fechaFinSlot = obtenerFechaElectroBase10(cita.hora_fin_date);
+    finSlot = construirDateHoraElectro(fechaFinSlot, cita.hora_fin);
+  }
+
+  if (finSlot && finSlot.getTime() > ahora) return finSlot;
+  if (finInicio && finInicio.getTime() > ahora) return finInicio;
+  if (finSlot && finInicio) {
+    const span = finSlot.getTime() - finInicio.getTime();
+    if (span >= 0 && span <= durMin * 60000 * 1.2) return finSlot;
+  }
+  return finInicio || finSlot;
+}
+
 function obtenerFechaHoraFinDesdeInicioReal(cita) {
+  const resuelto = resolverFinProgramadoEstudioElectro(cita);
+  if (resuelto) return resuelto;
+
   const fechaBase = obtenerFechaElectroBase10(cita?.fecha);
   if (!fechaBase) return null;
-
   const horaInicioStr = String(cita?.hora_inicio || cita?.hora_agendamiento || '').slice(0, 5);
-  const durMin = parseInt(cita?.duracion_minutos, 10);
-
-  if (/^\d{2}:\d{2}$/.test(horaInicioStr) && durMin > 0) {
-    const dateInicio = construirDateHoraElectro(fechaBase, horaInicioStr);
-    if (dateInicio) {
-      const finDesdeInicio = new Date(dateInicio.getTime() + durMin * 60000);
-      if (cita?.hora_fin && cita?.hora_fin_date) {
-        const fechaFinSlot = obtenerFechaElectroBase10(cita.hora_fin_date);
-        const finSlot = construirDateHoraElectro(fechaFinSlot, cita.hora_fin);
-        if (finSlot && finSlot.getTime() > finDesdeInicio.getTime()) return finSlot;
-      }
-      return finDesdeInicio;
-    }
-  }
 
   if (cita?.hora_fin && cita?.hora_fin_date) {
     const fechaFin = obtenerFechaElectroBase10(cita.hora_fin_date);
@@ -7811,8 +7833,8 @@ function calcularFechaFinEstudio(cita) {
 
 function obtenerFechaHoraFinCitaElectro(cita) {
   if (!cita) return null;
-  if ((cita.estado === 'En Estudio' || cita.estado === 'Pausado') && cita.hora_inicio) {
-    const finActivo = obtenerFechaHoraFinDesdeInicioReal(cita);
+  if (cita.estado === 'En Estudio' || cita.estado === 'Pausado') {
+    const finActivo = resolverFinProgramadoEstudioElectro(cita);
     if (finActivo) return finActivo;
   }
 

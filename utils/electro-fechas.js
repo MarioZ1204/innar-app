@@ -14,18 +14,19 @@ function extraerFechaYmd(val) {
   return null;
 }
 
-/** Suma minutos a fecha+hora calendario; devuelve hora_fin y hora_fin_date. */
+/** Suma minutos a fecha+hora en calendario local (coherente con UI y TIMESTAMP MySQL). */
 function sumarMinutosAHoraYFecha(fechaYmd, horaHm, minutos) {
   const f = extraerFechaYmd(fechaYmd);
   const hora = String(horaHm || '').slice(0, 5);
   if (!f || !/^\d{2}:\d{2}$/.test(hora)) return null;
   const [y, mo, d] = f.split('-').map(Number);
   const [hh, mm] = hora.split(':').map(Number);
-  const base = Date.UTC(y, mo - 1, d, hh, mm, 0);
-  const end = new Date(base + (parseInt(minutos, 10) || 0) * 60000);
+  const base = new Date(y, mo - 1, d, hh, mm, 0);
+  if (Number.isNaN(base.getTime())) return null;
+  const end = new Date(base.getTime() + (parseInt(minutos, 10) || 0) * 60000);
   return {
-    horaFin: `${String(end.getUTCHours()).padStart(2, '0')}:${String(end.getUTCMinutes()).padStart(2, '0')}`,
-    fechaFin: `${end.getUTCFullYear()}-${String(end.getUTCMonth() + 1).padStart(2, '0')}-${String(end.getUTCDate()).padStart(2, '0')}`
+    horaFin: `${String(end.getHours()).padStart(2, '0')}:${String(end.getMinutes()).padStart(2, '0')}`,
+    fechaFin: `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`
   };
 }
 

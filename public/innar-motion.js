@@ -108,7 +108,11 @@
         });
         _innarViewTransitionActive = true;
         transition.finished
-          .catch(() => { /* abortada: nueva navegación, etc. */ })
+          .catch((err) => {
+            if (err?.name !== 'InvalidStateError') {
+              console.warn('[innar-motion] transición interrumpida:', err);
+            }
+          })
           .finally(() => { _innarViewTransitionActive = false; });
         return true;
       } catch (e) {

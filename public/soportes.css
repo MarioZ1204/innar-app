@@ -632,6 +632,54 @@
   background: #e0f2fe;
 }
 
+.sop-folder-card--fe-listo {
+  border-color: #86efac;
+  background: linear-gradient(180deg, #f0fdf4 0%, #fff 32%);
+  box-shadow: 0 2px 10px rgba(22, 163, 74, 0.08);
+}
+
+.sop-folder-card--fe-listo .sop-folder-card-icon {
+  color: #15803d;
+  background: #dcfce7;
+}
+
+.sop-fe-card-progress {
+  margin: 6px 0 4px;
+}
+
+.sop-fe-card-progress-track {
+  height: 6px;
+  background: #e2e8f0;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.sop-fe-card-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--c-mid, #5a8a85), var(--c-active, #8aa6a1));
+  transition: width 0.35s ease;
+}
+
+.sop-fe-card-progress-fill.is-complete {
+  background: linear-gradient(90deg, #16a34a, #22c55e);
+}
+
+.sop-fe-card-progress-label {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.75rem;
+  color: #64748b;
+}
+
+.sop-fe-card-progress-label strong {
+  color: #0f172a;
+}
+
+.sop-fe-list-row--listo td:first-child strong {
+  color: #15803d;
+}
+
 .sop-vinculos-list {
   margin: 8px 0 0;
   padding: 0;

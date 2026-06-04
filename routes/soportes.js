@@ -66,6 +66,7 @@ const {
 } = require('../utils/soportes-archivo-detect');
 const { parseListaPacientes, parseLineaPaciente } = require('../utils/soportes-pacientes-parse');
 const { actualizarExpediente, eliminarExpediente } = require('../utils/soportes-expediente-admin');
+const { enrichExpedientesLista } = require('../utils/soportes-expediente-progreso');
 const { actualizarDia, eliminarDia } = require('../utils/soportes-dia-admin');
 const {
   getPdxDir,
@@ -1694,12 +1695,13 @@ router.get('/soportes/armado/contenedores/:id/expedientes', requireAuth, require
     const ctx = await resolveContenedorContext(req.params.id);
     if (!ctx) return res.status(404).json({ error: 'Contenedor no encontrado' });
     const rows = await db.query(
-      `SELECT id, codigo, numero_factura, paciente_nombre, listo_radicacion
+      `SELECT id, codigo, numero_factura, paciente_nombre, listo_radicacion, tipo_servicio, fev_externa_verificada
        FROM sop_expedientes WHERE contenedor_id = ?
        ORDER BY (numero_factura = 0) DESC, paciente_nombre ASC, numero_factura ASC`,
       [req.params.id]
     );
-    res.json({ contenedor: mapContenedor({ ...ctx, expedientes_count: rows.length }), expedientes: rows });
+    const expedientes = await enrichExpedientesLista(db, rows, ctx.tipo);
+    res.json({ contenedor: mapContenedor({ ...ctx, expedientes_count: rows.length }), expedientes });
   } catch (e) {
     res.status(500).json({ error: safeError(e) });
   }

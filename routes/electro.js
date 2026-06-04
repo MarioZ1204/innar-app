@@ -25,6 +25,7 @@ const {
   horaInicioAgendadaParaInicioEstudio,
   horaInicioEfectivaParaInicioEstudio,
   finProgramadoCitaElectro,
+  estudioElectroFinProgramadoVencido,
   ymdLocal,
   inferirDuracionMinutosCitaElectro,
   inferirDuracionMinutosCitaElectroParaPersistir,
@@ -81,17 +82,31 @@ async function duracionCatalogoEstudioElectro(nombreEstudio) {
 }
 
 /**
- * Al reabrir Completado → En Estudio: duración del catálogo y fin = ahora + duración completa.
- * hora_fin_date refleja el nuevo cierre (evita auto-completar por inicio histórico + duración).
+ * Al reabrir Completado → En Estudio: duración del catálogo.
+ * Primero fin = inicio real + duración; si ya venció, fin = ahora + duración completa.
  */
 function programacionEstudioReabierto(cita, durMin, ahora = new Date()) {
   const dur = parseInt(durMin, 10);
-  if (!(dur > 0)) return null;
-  const horaAhora = `${String(ahora.getHours()).padStart(2, '0')}:${String(ahora.getMinutes()).padStart(2, '0')}`;
-  const fechaReinicio = ymdLocal(ahora);
-  const fin = sumarMinutosAHoraYFecha(fechaReinicio, horaAhora, dur);
+  const horaIni = horaInicioCitaElectro(cita);
+  const fechaIni = extraerFechaYmd(cita.fecha);
+  if (!(dur > 0) || !horaIni || !fechaIni) return null;
+
+  let fin = sumarMinutosAHoraYFecha(fechaIni, horaIni, dur);
   if (!fin) return null;
-  const horaIni = horaInicioCitaElectro(cita) || horaAhora;
+
+  const tmp = {
+    fecha: fechaIni,
+    hora_inicio: horaIni,
+    duracion_minutos: dur,
+    hora_fin: fin.horaFin,
+    hora_fin_date: fin.fechaFin
+  };
+  if (estudioElectroFinProgramadoVencido(tmp, ahora)) {
+    const horaAhora = `${String(ahora.getHours()).padStart(2, '0')}:${String(ahora.getMinutes()).padStart(2, '0')}`;
+    fin = sumarMinutosAHoraYFecha(ymdLocal(ahora), horaAhora, dur);
+  }
+  if (!fin) return null;
+
   return {
     hora_inicio: horaIni,
     hora_fin: fin.horaFin,

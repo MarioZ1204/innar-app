@@ -1079,6 +1079,23 @@
       : '<span class="sop-badge sop-badge-pendiente"><i data-lucide="clock" style="width:12px;height:12px"></i> Pendiente</span>';
   }
 
+  function resumenExpedientesLista(list) {
+    const total = list.length;
+    const listos = list.filter((e) => e.documentos_completos).length;
+    return { total, listos, pendientes: Math.max(0, total - listos) };
+  }
+
+  function htmlFeExpedienteProgressMini(e) {
+    const done = Number(e.progreso_done) || 0;
+    const total = Number(e.progreso_total) || 1;
+    const pct = Math.min(100, Math.round((done / total) * 100));
+    const complete = !!e.documentos_completos;
+    return `<div class="sop-fe-card-progress" role="status" aria-label="Documentos del expediente">
+      <div class="sop-fe-card-progress-track"><div class="sop-fe-card-progress-fill${complete ? ' is-complete' : ''}" style="width:${pct}%"></div></div>
+      <span class="sop-fe-card-progress-label"><strong>${done}/${total}</strong> documentos</span>
+    </div>`;
+  }
+
   function showSkeletonFolderGrid(container, count = 6) {
     if (!container) return;
     container.innerHTML = `<div class="sop-grid sop-skeleton-grid">${Array.from({ length: count }, () =>
@@ -2861,11 +2878,12 @@
     };
     if (viewMode === 'list') {
       grid.innerHTML = `<div class="sop-table-wrap"><table class="sop-table sop-folder-list-table">
-        <thead><tr><th>Código FE</th><th>Paciente</th><th>Factura</th><th class="sop-folder-list-actions">Acciones</th></tr></thead>
-        <tbody>${list.map((e) => `<tr data-exp-id="${e.id}" tabindex="0">
+        <thead><tr><th>Código FE</th><th>Paciente</th><th>Factura</th><th>Documentos</th><th class="sop-folder-list-actions">Acciones</th></tr></thead>
+        <tbody>${list.map((e) => `<tr class="${e.documentos_completos ? 'sop-fe-list-row--listo' : ''}" data-exp-id="${e.id}" tabindex="0">
           <td><strong>${escapeHtml(e.codigo)}</strong></td>
           <td>${escapeHtml(e.paciente_nombre || 'Sin paciente')}</td>
           <td>${facturaCell(e)}</td>
+          <td>${htmlFeExpedienteProgressMini(e)} ${badgeEstadoFe(e.documentos_completos)}</td>
           <td class="sop-folder-list-actions">
             <button type="button" class="sop-btn sop-btn-teal sop-btn-sm" data-exp-open="${e.id}"><i data-lucide="folder-open"></i></button>
             ${puedeEditar ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-exp-edit="${e.id}"><i data-lucide="pencil"></i></button>` : ''}
@@ -2873,10 +2891,11 @@
           </td>
         </tr>`).join('')}</tbody></table></div>`;
     } else {
-      grid.innerHTML = list.map((e) => `<article class="sop-folder-card sop-folder-card--fe" data-exp-id="${e.id}" tabindex="0">
-          <div class="sop-folder-card-icon"><i data-lucide="folder"></i></div>
+      grid.innerHTML = list.map((e) => `<article class="sop-folder-card sop-folder-card--fe${e.documentos_completos ? ' sop-folder-card--fe-listo' : ''}" data-exp-id="${e.id}" tabindex="0">
+          <div class="sop-folder-card-icon"><i data-lucide="folder${e.documentos_completos ? '-check' : ''}"></i></div>
           <div class="sop-folder-card-title">${escapeHtml(e.codigo)}</div>
           <div class="sop-folder-card-meta">${escapeHtml(e.paciente_nombre || 'Sin paciente')}</div>
+          ${htmlFeExpedienteProgressMini(e)}
           <div class="sop-folder-card-count">${facturaCell(e)}</div>
           <div class="sop-folder-card-actions">
             <button type="button" class="sop-btn sop-btn-teal sop-btn-sm" data-exp-open="${e.id}"><i data-lucide="folder-open"></i> Abrir</button>
@@ -2923,7 +2942,7 @@
     armState.expedientesLista = list;
     const summary = panel.querySelector('#sopArmContenedorSummary');
     if (summary) {
-      summary.innerHTML = htmlArmadoSummaryChips({ total: list.length, listos: 0, pendientes: list.length });
+      summary.innerHTML = htmlArmadoSummaryChips(resumenExpedientesLista(list));
       sopIcons(summary);
     }
     renderArmadoExpedientesGrid(list);
