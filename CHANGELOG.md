@@ -3,6 +3,12 @@
 Todos los cambios importantes a la aplicación se documentan aquí. El formato
 sigue (informalmente) [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
+## [1.5.90] — 2026-05-27
+
+### Corregido
+
+- **Cargar reportes**: error `carpeta is not defined` en `abrirCarpetaPdx` (impedía pintar iconos Lucide en la tabla de acciones).
+
 ## [1.5.89] — 2026-05-27
 
 ### Corregido

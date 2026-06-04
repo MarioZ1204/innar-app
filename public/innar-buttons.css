@@ -106,15 +106,6 @@ button:disabled {
   min-width: 34px;
 }
 
-/* Sin Lucide cargado: no dejar cajas vacías en botones solo icono */
-.sop-btn-sm > i[data-lucide]:only-child {
-  width: 0;
-  height: 0;
-  overflow: hidden;
-  opacity: 0;
-  pointer-events: none;
-}
-
 /* ── Primario (marca Innar) ─────────────────────────────────────────────── */
 .btn-primary,
 .btn-ok:not(.danger),

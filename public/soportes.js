@@ -1409,7 +1409,7 @@
     if (inputUp) inputUp.disabled = dropDisabled;
     const hint = zone?.querySelector('.sop-dropzone-hint');
     if (hint) {
-      const t = detectarTemaCarpetaCliente(carpeta?.nombre_display || '');
+      const t = detectarTemaCarpetaCliente(c?.nombre_display || '');
       if (t === 'ordenes_consulta_medica') {
         hint.textContent = 'Solo PDF. Un archivo: ORDEN + HC con nombre completo. Varios archivos: se unifican (p. ej. orden en un PDF y HC en otro).';
       } else {
