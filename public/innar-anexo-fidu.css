@@ -1,0 +1,112 @@
+#view-anexo-fidu .afidu-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-end;
+  margin-bottom: 14px;
+}
+
+#view-anexo-fidu .afidu-toolbar .afidu-search {
+  flex: 1 1 220px;
+  min-width: 180px;
+}
+
+#view-anexo-fidu .afidu-grid-wrap {
+  overflow: auto;
+  max-height: min(68vh, 720px);
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #fff;
+}
+
+#view-anexo-fidu .afidu-grid {
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.72rem;
+  min-width: max-content;
+}
+
+#view-anexo-fidu .afidu-grid thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #f1f5f9;
+  color: #334155;
+  font-weight: 700;
+  padding: 8px 10px;
+  border-bottom: 2px solid #cbd5e1;
+  border-right: 1px solid #e2e8f0;
+  white-space: nowrap;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#view-anexo-fidu .afidu-grid tbody td {
+  padding: 6px 8px;
+  border-bottom: 1px solid #eef2f7;
+  border-right: 1px solid #f1f5f9;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: top;
+}
+
+#view-anexo-fidu .afidu-grid tbody tr:hover td {
+  background: #f8fafc;
+}
+
+#view-anexo-fidu .afidu-col-acciones {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: #fff;
+  box-shadow: 2px 0 4px rgba(15, 23, 42, 0.06);
+  min-width: 88px;
+}
+
+#view-anexo-fidu .afidu-grid thead .afidu-col-acciones {
+  z-index: 3;
+  background: #e2e8f0;
+}
+
+#view-anexo-fidu .afidu-modal-form {
+  max-height: min(70vh, 640px);
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 10px 14px;
+  padding: 4px 2px;
+}
+
+#view-anexo-fidu .afidu-modal-form label {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #64748b;
+  margin-bottom: 3px;
+}
+
+#view-anexo-fidu .afidu-modal-form input,
+#view-anexo-fidu .afidu-modal-form textarea {
+  width: 100%;
+  font-size: 0.85rem;
+  padding: 6px 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+}
+
+#view-anexo-fidu .afidu-modal-form textarea {
+  min-height: 52px;
+  resize: vertical;
+}
+
+#view-anexo-fidu .afidu-pager {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+  font-size: 0.875rem;
+  color: #64748b;
+}

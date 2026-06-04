@@ -3,6 +3,16 @@
 Todos los cambios importantes a la aplicación se documentan aquí. El formato
 sigue (informalmente) [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
+## [1.5.93] — 2026-05-27
+
+### Añadido
+
+- **Anexo FIDU (borrador)**: módulo grilla tipo Excel con 45 columnas, importación desde Sheet y CRUD de filas.
+
+### Cambiado
+
+- **Cargar reportes / Soportes**: carpetas del explorador más compactas.
+
 ## [1.5.92] — 2026-05-27
 
 ### Corregido

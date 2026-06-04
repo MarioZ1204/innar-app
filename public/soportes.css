@@ -1763,6 +1763,73 @@
 }
 
 /* ── Móvil: topbar, paneles y tablas (PDX + Armado) ───────────────────────── */
+/* Cargar reportes + Soportes: carpetas compactas (−8px vs base) */
+#view-reportes-pdx .sop-grid,
+#view-reportes-pdx .sop-skeleton-grid {
+  grid-template-columns: repeat(auto-fill, minmax(272px, 1fr));
+  gap: 12px;
+}
+
+#view-reportes-pdx .sop-skeleton-folder-card {
+  height: 140px;
+}
+
+#view-reportes-pdx .sop-folder-card,
+#view-armado-soportes .sop-folder-card {
+  padding: 8px;
+  border-radius: 8px;
+  gap: 4px;
+}
+
+#view-reportes-pdx .sop-folder-icon {
+  width: 36px;
+  height: 36px;
+  margin-bottom: 4px;
+  border-radius: 8px;
+}
+
+#view-reportes-pdx .sop-folder-title,
+#view-armado-soportes .sop-folder-card-title {
+  font-size: 0.88rem;
+  margin-bottom: 2px;
+}
+
+#view-reportes-pdx .sop-folder-meta,
+#view-armado-soportes .sop-folder-card-meta,
+#view-armado-soportes .sop-folder-card-count {
+  font-size: 0.74rem;
+}
+
+#view-reportes-pdx .sop-folder-actions {
+  margin-top: 4px;
+  padding-top: 4px;
+}
+
+#view-armado-soportes .sop-folder-explorer-grid {
+  grid-template-columns: repeat(auto-fill, minmax(192px, 1fr));
+  gap: 10px;
+}
+
+#view-armado-soportes .sop-folder-explorer-grid--2 {
+  grid-template-columns: repeat(auto-fill, minmax(252px, 1fr));
+}
+
+#view-armado-soportes .sop-folder-card-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+}
+
+#view-armado-soportes .sop-folder-card-icon--lg {
+  width: 44px;
+  height: 44px;
+}
+
+#view-armado-soportes .sop-folder-card-actions {
+  margin-top: 0;
+  padding-top: 4px;
+}
+
 @media (max-width: 768px) {
   .sop-topbar {
     flex-wrap: wrap;

@@ -823,7 +823,7 @@ async function doLogout() {
   if (p) { p.value = ''; p.setAttribute('value', ''); }
 }
 
-let initRecibosDone = false, initAgendaDone = false, initElectroDone = false, initUsuariosDone = false, initDiagnosticosDone = false, initDashboardCitasDone = false, initGestionDatosDone = false, initUcqnDone = false, initBackupDone = false;
+let initRecibosDone = false, initAgendaDone = false, initElectroDone = false, initUsuariosDone = false, initDiagnosticosDone = false, initDashboardCitasDone = false, initGestionDatosDone = false, initUcqnDone = false, initBackupDone = false, initAnexoFiduDone = false;
 function goToModule(moduleId) {
   showView(`view-${moduleId}`);
   currentModule = moduleId;
@@ -892,6 +892,14 @@ function goToModule(moduleId) {
       initBackupDone = true;
     } else if (typeof initBackupModule === 'function') {
       initBackupModule();
+    }
+  }
+  if (moduleId === 'anexo-fidu') {
+    if (!initAnexoFiduDone && typeof initAnexoFidu === 'function') {
+      initAnexoFidu();
+      initAnexoFiduDone = true;
+    } else if (typeof initAnexoFidu === 'function') {
+      initAnexoFidu();
     }
   }
   if (typeof window.innarSidebarRefresh === 'function') window.innarSidebarRefresh();

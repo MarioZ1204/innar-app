@@ -939,6 +939,14 @@ const runtimeMigrations = [
         await db.execute('ALTER TABLE sop_dias ADD UNIQUE KEY uk_sop_dia_nombre (periodo_id, nombre_display)');
       } catch (_) { /* ya existe */ }
     }
+  },
+  {
+    name: 'rt_anexo_fidu_registros',
+    description: 'Tabla anexo FIDU (45 columnas tipo Excel)',
+    run: async (db) => {
+      const { buildAnexoFiduCreateTableSql } = require('../utils/anexo-fidu-columns');
+      await db.execute(buildAnexoFiduCreateTableSql());
+    }
   }
 ];
 
