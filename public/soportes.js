@@ -51,6 +51,92 @@
     'i'
   );
 
+  const TIPOS_DOC_CLIENT = ['CC', 'TI', 'CE', 'PA', 'RC', 'NUIP', 'PEP', 'PT'];
+
+  function normalizarNumeroDocumentoCliente(raw) {
+    return String(raw || '').replace(/\D/g, '');
+  }
+
+  function normalizarTipoDocumentoCliente(raw) {
+    const u = String(raw || '').trim().toUpperCase().replace(/[^A-Z]/g, '');
+    if (TIPOS_DOC_CLIENT.includes(u)) return u;
+    if (TIPOS_DOC_CLIENT.includes(u.slice(0, 4))) return u.slice(0, 4);
+    if (TIPOS_DOC_CLIENT.includes(u.slice(0, 2))) return u.slice(0, 2);
+    return 'CC';
+  }
+
+  function normalizarParDocumentoCliente(tipoRaw, docRaw) {
+    return {
+      tipo_documento: normalizarTipoDocumentoCliente(tipoRaw),
+      paciente_documento: normalizarNumeroDocumentoCliente(docRaw)
+    };
+  }
+
+  function esInputTipoDocumentoPdx(el) {
+    return el && el.tagName === 'INPUT' && (
+      el.dataset.campoTipo === 'tipo_doc' || el.dataset.key === 'tipo_documento'
+    );
+  }
+
+  function esInputNumeroDocumentoPdx(el) {
+    return el && el.tagName === 'INPUT' && (
+      el.dataset.campoTipo === 'doc_numero' || el.dataset.key === 'paciente_documento'
+    );
+  }
+
+  /** Convierte a mayúsculas y solo letras A–Z (máx. 4, p. ej. NUIP). */
+  function aplicarEntradaTipoDocumentoPdx(inp) {
+    if (!inp) return;
+    const prev = String(inp.value || '');
+    const next = prev.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4);
+    if (prev === next) return;
+    const pos = inp.selectionStart;
+    inp.value = next;
+    try {
+      const p = Math.min(pos, next.length);
+      inp.setSelectionRange(p, p);
+    } catch (_) { /* ignore */ }
+  }
+
+  /** Solo dígitos mientras se escribe (máx. 20). */
+  function aplicarEntradaNumeroDocumentoPdx(inp) {
+    if (!inp) return;
+    const prev = String(inp.value || '');
+    const next = prev.replace(/\D/g, '').slice(0, 20);
+    if (prev === next) return;
+    const pos = inp.selectionStart;
+    inp.value = next;
+    try {
+      const p = Math.min(pos, next.length);
+      inp.setSelectionRange(p, p);
+    } catch (_) { /* ignore */ }
+  }
+
+  function valorTipoDocEnInput(inp, selected) {
+    if (!inp) return;
+    inp.value = normalizarTipoDocumentoCliente(selected || 'CC');
+  }
+
+  function setupEntradaDocumentoPdx() {
+    if (document.body.dataset.pdxDocInputBound) return;
+    document.body.dataset.pdxDocInputBound = '1';
+    document.body.addEventListener('input', (e) => {
+      if (!e.target?.closest?.('.sop-dialog')) return;
+      const t = e.target;
+      if (esInputTipoDocumentoPdx(t)) aplicarEntradaTipoDocumentoPdx(t);
+      else if (esInputNumeroDocumentoPdx(t)) aplicarEntradaNumeroDocumentoPdx(t);
+    });
+    document.body.addEventListener('blur', (e) => {
+      if (!e.target?.closest?.('.sop-dialog')) return;
+      const t = e.target;
+      if (esInputTipoDocumentoPdx(t)) {
+        t.value = normalizarTipoDocumentoCliente(t.value);
+      } else if (esInputNumeroDocumentoPdx(t)) {
+        t.value = normalizarNumeroDocumentoCliente(t.value);
+      }
+    }, true);
+  }
+
   const FORMATOS_AYUDA_CLIENT = {
     vtm: {
       pattern: 'Apellidos, Nombres   YYYY-MM-DD.pdf',
@@ -73,19 +159,19 @@
       nota: 'Al descargar se añade el tipo de estudio al nombre del archivo.'
     },
     ordenes: {
-      pattern: 'ORDEN + HC - APELLIDOS - NOMBRES - TIPO DE DOCUMENTO - DOCUMENTO - FECHA - TIPO DE ESTUDIO.pdf',
+      pattern: 'ORDEN + HC - APELLIDOS - NOMBRES - TIPO DOC (CC, TI…) - DOCUMENTO (solo números) - FECHA - TIPO DE ESTUDIO.pdf',
       ejemplo: 'ORDEN + HC - García López - Juan Carlos - CC - 1234567890 - 2026-05-27 - PSG Basal.pdf',
-      nota: 'Los guiones (-) son opcionales; puede usar espacios entre los datos.'
+      nota: 'Tipo: 2 letras (CC, TI, RC…). Documento: solo dígitos, sin puntos ni guiones. Guiones entre campos opcionales.'
     },
     comprobantes: {
-      pattern: 'COMPROBANTE - APELLIDOS - NOMBRES - TIPO DE DOCUMENTO - DOCUMENTO - FECHA - TIPO DE ESTUDIO.pdf',
+      pattern: 'COMPROBANTE - APELLIDOS - NOMBRES - TIPO DOC (CC, TI…) - DOCUMENTO (solo números) - FECHA - TIPO DE ESTUDIO.pdf',
       ejemplo: 'COMPROBANTE - García López - Juan Carlos - CC - 1234567890 - 2026-05-27 - PSG Basal.pdf',
-      nota: 'Los guiones (-) son opcionales; puede usar espacios entre los datos.'
+      nota: 'Tipo: 2 letras. Documento: solo dígitos. Guiones entre campos opcionales.'
     },
     comprobantes_consulta_medica: {
-      pattern: 'COMPROBANTE NOMBRES APELLIDOS YYYY-MM-DD TIPO DE CONSULTA.pdf',
-      ejemplo: 'COMPROBANTE Juan Carlos García López 2026-05-27 Control.pdf',
-      nota: 'Carpeta COMPROBANTES CONSULTAS MÉDICAS. Sin número de documento.'
+      pattern: 'COMPROBANTE NOMBRES APELLIDOS YYYY-MM-DD ESPECIALIDAD.pdf',
+      ejemplo: 'COMPROBANTE Juan Carlos García López 2026-05-27 Neurología.pdf',
+      nota: 'Carpeta COMPROBANTES CONSULTAS MÉDICAS. Sin documento; use especialidad (Neurología, Epileptología…).'
     },
     ordenes_consulta_medica: {
       pattern: 'ORDEN + HC NOMBRES APELLIDOS YYYY-MM-DD ESPECIALIDAD.pdf',
@@ -93,9 +179,9 @@
       nota: 'Sin documento. Puede subir 2 o más PDF (orden en un archivo, HC en otro) para unificarlos en uno solo.'
     },
     consentimientos: {
-      pattern: 'CONSENTIMIENTO - APELLIDOS - NOMBRES - TIPO DE DOCUMENTO - DOCUMENTO - FECHA - TIPO DE ESTUDIO.pdf',
+      pattern: 'CONSENTIMIENTO - APELLIDOS - NOMBRES - TIPO DOC (CC, TI…) - DOCUMENTO (solo números) - FECHA - TIPO DE ESTUDIO.pdf',
       ejemplo: 'CONSENTIMIENTO - García López - Juan Carlos - CC - 1234567890 - 2026-05-27 - PSG Basal.pdf',
-      nota: 'El nombre guardado siempre empieza por CONSENTIMIENTO. Los guiones (-) son opcionales al subir.'
+      nota: 'Tipo: 2 letras; documento: solo dígitos. El nombre guardado empieza por CONSENTIMIENTO. Guiones opcionales al subir.'
     },
     neutral: {
       pattern: 'Apellidos, Nombres   YYYY-MM-DD.pdf',
@@ -139,8 +225,8 @@
   }
 
   function esSegmentoDocumentoCliente(seg) {
-    const d = String(seg || '').replace(/\s/g, '');
-    return /^[\d.\-]{4,20}$/.test(d);
+    const n = normalizarNumeroDocumentoCliente(seg);
+    return n.length >= 4 && n.length <= 20;
   }
 
   /** Partes del nombre con guiones (ordenes, comprobantes, consentimientos). */
@@ -221,8 +307,11 @@
       if (tema === 'comprobantes' && parts[0] && /comprobante/i.test(parts[0])) offset = 1;
       if (parts.length > offset) parcial.apellidos = parts[offset] || '';
       if (parts.length > offset + 1) parcial.nombres = parts[offset + 1] || '';
-      if (parts.length > offset + 2) parcial.tipo_documento = parts[offset + 2] || 'CC';
-      if (parts.length > offset + 3) parcial.paciente_documento = String(parts[offset + 3] || '').replace(/\s/g, '');
+      if (parts.length > offset + 2) {
+        const doc = normalizarParDocumentoCliente(parts[offset + 2], parts[offset + 3] || '');
+        parcial.tipo_documento = doc.tipo_documento;
+        parcial.paciente_documento = doc.paciente_documento;
+      }
       if (parts.length > offset + 4 && /^\d{4}-\d{2}-\d{2}$/.test(parts[offset + 4])) {
         parcial.fecha_estudio = parts[offset + 4];
       }
@@ -288,13 +377,14 @@
     if (!m) return { ok: false, original: base, error: mensajeErrorFormatoCliente(tema) };
     const apellidos = m[1].trim();
     const nombres = m[2].trim();
+    const doc = normalizarParDocumentoCliente(m[3], m[4]);
     return {
       ok: true,
       original: base,
       apellidos,
       nombres,
-      tipo_documento: m[3].trim(),
-      paciente_documento: m[4].trim().replace(/\s/g, ''),
+      tipo_documento: doc.tipo_documento,
+      paciente_documento: doc.paciente_documento,
       fecha_estudio: m[5],
       estudio_texto: m[6].trim(),
       paciente_nombre: `${apellidos}, ${nombres}`
@@ -421,10 +511,10 @@
       return { oblig: [...oblig, 'Especialidad'], opc: ['Varios PDF: se unifican en un solo ORDEN + HC'] };
     }
     if (tema === 'comprobantes_consulta_medica') {
-      return { oblig: [...oblig, 'Tipo de consulta'], opc: [] };
+      return { oblig: [...oblig, 'Especialidad'], opc: [] };
     }
     if (esCarpetaEstructuradaPdx({ nombre_display: tema }) && !esCarpetaConsultaMedicaPdx({ nombre_display: tema })) {
-      return { oblig: [...oblig, 'Número de documento', 'Tipo de examen'], opc: ['Tipo de documento (CC, TI…)'] };
+      return { oblig: [...oblig, 'Número de documento (solo dígitos)', 'Tipo de examen'], opc: ['Tipo de documento (CC, TI, RC…)'] };
     }
     if (tema === 'psg') {
       return { oblig: [...oblig, 'Tipo PSG (Básica, CPAP, BPAP)'], opc: ['Documento'] };
@@ -476,6 +566,14 @@
         <label>${escapeHtml(c.label)}${c.requerido ? ' *' : ''} ${badgeEstadoCampoPdx(c)}</label>
         <input type="date" class="sop-pdx-campo-input" data-key="${c.key}" value="${val}"></div>`;
     }
+    if (c.input === 'tipo_doc') {
+      const tipoVal = escapeHtml(normalizarTipoDocumentoCliente(c.valor || datos[c.key] || c.defecto || 'CC'));
+      return `<div class="${wrapCls}" data-campo="${c.key}">
+        <label>${escapeHtml(c.label)}${c.requerido ? ' *' : ''} ${badgeEstadoCampoPdx(c)}</label>
+        <input type="text" class="sop-pdx-campo-input" data-key="${c.key}" data-campo-tipo="tipo_doc"
+          value="${tipoVal}" maxlength="4" autocomplete="off" spellcheck="false"
+          style="text-transform:uppercase" placeholder="CC" title="CC, TI, RC… (2 letras)"></div>`;
+    }
     if (c.input === 'estudio' || c.input === 'tipo_consulta' || c.input === 'especialidad') {
       const tipoSel = c.input === 'tipo_consulta' ? 'tipo_consulta' : (c.input === 'especialidad' ? 'especialidad' : 'estudio');
       return `<div class="${wrapCls}" data-campo="${c.key}">
@@ -495,7 +593,7 @@
     }
     return `<div class="${wrapCls}" data-campo="${c.key}">
       <label>${escapeHtml(c.label)}${c.requerido ? ' *' : ''} ${badgeEstadoCampoPdx(c)}</label>
-      <input type="text" class="sop-pdx-campo-input" data-key="${c.key}" value="${val}"${c.key === 'paciente_documento' ? ' inputmode="numeric"' : ''}></div>`;
+      <input type="text" class="sop-pdx-campo-input" data-key="${c.key}" value="${val}"${c.input === 'doc_numero' || c.key === 'paciente_documento' ? ' data-campo-tipo="doc_numero" inputmode="numeric" pattern="[0-9]*"' : ''}></div>`;
   }
 
   function leerCamposDesdeModal(modal) {
@@ -505,7 +603,12 @@
       if (!k) return;
       body[k] = inp.tagName === 'SELECT' ? inp.value?.trim() : inp.value?.trim();
     });
-    if (body.paciente_documento) body.paciente_documento = body.paciente_documento.replace(/\s/g, '');
+    if (body.paciente_documento != null) {
+      body.paciente_documento = normalizarNumeroDocumentoCliente(body.paciente_documento);
+    }
+    if (body.tipo_documento != null) {
+      body.tipo_documento = normalizarTipoDocumentoCliente(body.tipo_documento);
+    }
     return body;
   }
 
@@ -520,6 +623,13 @@
 
   async function poblarSelectsCamposPdx(modal, campos, datos) {
     for (const c of campos || []) {
+      if (c.input === 'tipo_doc') {
+        valorTipoDocEnInput(
+          modal.querySelector(`[data-key="${c.key}"][data-campo-tipo="tipo_doc"]`),
+          datos.tipo_documento || c.valor
+        );
+        continue;
+      }
       const sel = modal.querySelector(`[data-key="${c.key}"][data-tipo="estudio"], [data-key="${c.key}"][data-tipo="psg"], [data-key="${c.key}"][data-tipo="tipo_consulta"], [data-key="${c.key}"][data-tipo="especialidad"]`);
       if (!sel) continue;
       if (sel.dataset.tipo === 'psg') poblarSelectEstudioPsgCliente(sel, datos.estudio_texto || c.valor);
@@ -1726,24 +1836,31 @@
   }
 
   function modalEditarArchivoPdx(archivo) {
-    const esEstruct = esCarpetaEstructuradaPdx(pdxState.carpetaActual);
+    const esConsultaMed = esCarpetaConsultaMedicaPdx(pdxState.carpetaActual);
+    const esEstructConDoc = esCarpetaEstructuradaPdx(pdxState.carpetaActual) && !esConsultaMed;
     const esPsg = esCarpetaPsgReportePdx(pdxState.carpetaActual);
     const modal = openSopModal(`
       <h3><i data-lucide="pencil"></i> Editar datos del reporte</h3>
       <div class="sop-field"><label>Apellidos</label><input type="text" id="sopPdxEdApe" value="${escapeHtml(archivo.apellidos || '')}"></div>
       <div class="sop-field"><label>Nombres</label><input type="text" id="sopPdxEdNom" value="${escapeHtml(archivo.nombres || '')}"></div>
       <div class="sop-field"><label>Fecha del estudio</label><input type="date" id="sopPdxEdFecha" value="${escapeHtml(archivo.fecha_estudio || '')}"></div>
-      ${esEstruct || esPsg
-        ? '<div class="sop-field"><label>Tipo de examen *</label><select id="sopPdxEdEst"></select></div>'
-        : `<div class="sop-field"><label>Nombre del estudio</label><input type="text" id="sopPdxEdEst" value="${escapeHtml(archivo.estudio_texto || '')}" placeholder="PSG BASAL, EEG, VTM…"></div>`}
-      <div class="sop-field"><label>Documento${(esEstruct || esPsg) ? ' *' : ' (opcional)'}</label><input type="text" id="sopPdxEdDoc" value="${escapeHtml(archivo.paciente_documento || '')}"></div>
+      ${esConsultaMed
+        ? '<div class="sop-field"><label>Especialidad *</label><select id="sopPdxEdEst" data-tipo="especialidad"></select></div>'
+        : (esEstructConDoc || esPsg
+          ? '<div class="sop-field"><label>Tipo de examen *</label><select id="sopPdxEdEst"></select></div>'
+          : `<div class="sop-field"><label>Nombre del estudio</label><input type="text" id="sopPdxEdEst" value="${escapeHtml(archivo.estudio_texto || '')}" placeholder="PSG BASAL, EEG, VTM…"></div>`)}
+      ${esEstructConDoc ? `<div class="sop-field"><label>Tipo de documento</label><input type="text" id="sopPdxEdTipoDoc" data-campo-tipo="tipo_doc" value="${escapeHtml(normalizarTipoDocumentoCliente(archivo.tipo_documento || 'CC'))}" maxlength="4" autocomplete="off" spellcheck="false" style="text-transform:uppercase" placeholder="CC"></div>` : ''}
+      <div class="sop-field"><label>Número de documento${(esEstructConDoc || esPsg) ? ' *' : ' (opcional)'}</label><input type="text" id="sopPdxEdDoc" data-campo-tipo="doc_numero" value="${escapeHtml(archivo.paciente_documento || '')}" inputmode="numeric" pattern="[0-9]*"></div>
       <p style="margin:8px 0 0"><button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="sopPdxEdHist"><i data-lucide="history"></i> Ver historial</button></p>
       <div class="sop-dialog-actions">
         <button type="button" class="sop-btn sop-btn-ghost" id="sopPdxEdCancel">Cancelar</button>
         <button type="button" class="sop-btn sop-btn-primary" id="sopPdxEdOk">Guardar</button>
       </div>`);
     if (esPsg) poblarSelectEstudioPsgCliente(modal.querySelector('#sopPdxEdEst'), archivo.estudio_texto);
-    else if (esEstruct) poblarSelectEstudioPdx(modal.querySelector('#sopPdxEdEst'), archivo.estudio_texto);
+    else if (esConsultaMed) poblarSelectEspecialidadPdx(modal.querySelector('#sopPdxEdEst'), archivo.estudio_texto);
+    else if (esEstructConDoc) {
+      poblarSelectEstudioPdx(modal.querySelector('#sopPdxEdEst'), archivo.estudio_texto);
+    }
     modal.querySelector('#sopPdxEdHist')?.addEventListener('click', () => {
       closeSopModal(modal);
       modalHistorialPdx(archivo.id);
@@ -1756,13 +1873,14 @@
         nombres: $('sopPdxEdNom').value.trim(),
         fecha_estudio: $('sopPdxEdFecha').value,
         estudio_texto: (estEl?.tagName === 'SELECT' ? estEl.value : estEl?.value)?.trim(),
-        paciente_documento: $('sopPdxEdDoc').value.trim().replace(/\s/g, '') || null
+        tipo_documento: esEstructConDoc ? normalizarTipoDocumentoCliente($('sopPdxEdTipoDoc')?.value) : undefined,
+        paciente_documento: normalizarNumeroDocumentoCliente($('sopPdxEdDoc').value) || null
       };
       if (!body.apellidos || !body.nombres || !body.fecha_estudio || !body.estudio_texto) {
         return sopToast('Complete todos los campos obligatorios', 'warning');
       }
-      if (esEstruct && !body.paciente_documento) {
-        return sopToast('El número de documento es obligatorio', 'warning');
+      if (esEstructConDoc && (!body.paciente_documento || body.paciente_documento.length < 4)) {
+        return sopToast('El número de documento es obligatorio (solo dígitos, 4 a 20)', 'warning');
       }
       const res = await apiFetch(`/api/soportes/pdx/archivos/${archivo.id}`, {
         method: 'PATCH',
@@ -1912,9 +2030,9 @@
       <div class="sop-field"><label>Apellidos *</label><input type="text" id="sopPdxCorrApe" value="${escapeHtml(p.apellidos || '')}"></div>
       <div class="sop-field"><label>Nombres *</label><input type="text" id="sopPdxCorrNom" value="${escapeHtml(p.nombres || '')}"></div>
       ${esEstruct ? `
-      <div class="sop-field"><label>Tipo de documento</label><input type="text" id="sopPdxCorrTipoDoc" value="${escapeHtml(p.tipo_documento || 'CC')}"></div>
-      <div class="sop-field"><label>Número de documento *</label><input type="text" id="sopPdxCorrDoc" value="${escapeHtml(p.paciente_documento || '')}" inputmode="numeric"></div>` : `
-      <div class="sop-field"><label>Documento (opcional)</label><input type="text" id="sopPdxCorrDoc" value="${escapeHtml(p.paciente_documento || '')}" inputmode="numeric"></div>`}
+      <div class="sop-field"><label>Tipo de documento</label><input type="text" id="sopPdxCorrTipoDoc" data-campo-tipo="tipo_doc" value="${escapeHtml(normalizarTipoDocumentoCliente(p.tipo_documento || 'CC'))}" maxlength="4" autocomplete="off" spellcheck="false" style="text-transform:uppercase" placeholder="CC"></div>
+      <div class="sop-field"><label>Número de documento *</label><input type="text" id="sopPdxCorrDoc" data-campo-tipo="doc_numero" value="${escapeHtml(p.paciente_documento || '')}" inputmode="numeric" pattern="[0-9]*"></div>` : `
+      <div class="sop-field"><label>Documento (opcional)</label><input type="text" id="sopPdxCorrDoc" data-campo-tipo="doc_numero" value="${escapeHtml(p.paciente_documento || '')}" inputmode="numeric" pattern="[0-9]*"></div>`}
       <div class="sop-field"><label>Fecha del estudio *</label><input type="date" id="sopPdxCorrFecha" value="${escapeHtml(p.fecha_estudio || '')}"></div>
       ${(esEstruct || esPsg) ? '<div class="sop-field"><label>Tipo de examen *</label><select id="sopPdxCorrEst"></select></div>' : ''}
       <div class="sop-dialog-actions">
@@ -1932,16 +2050,16 @@
         confirmacion_manual: '1',
         apellidos: modal.querySelector('#sopPdxCorrApe')?.value?.trim(),
         nombres: modal.querySelector('#sopPdxCorrNom')?.value?.trim(),
-        tipo_documento: modal.querySelector('#sopPdxCorrTipoDoc')?.value?.trim() || 'CC',
-        paciente_documento: modal.querySelector('#sopPdxCorrDoc')?.value?.trim().replace(/\s/g, '') || '',
+        tipo_documento: normalizarTipoDocumentoCliente(modal.querySelector('#sopPdxCorrTipoDoc')?.value || 'CC'),
+        paciente_documento: normalizarNumeroDocumentoCliente(modal.querySelector('#sopPdxCorrDoc')?.value || ''),
         fecha_estudio: modal.querySelector('#sopPdxCorrFecha')?.value,
         estudio_texto: estSel?.value?.trim() || ''
       };
       if (!body.apellidos || !body.nombres || !body.fecha_estudio) {
         return sopToast('Complete apellidos, nombres y fecha', 'warning');
       }
-      if (esEstruct && (!body.paciente_documento || !body.estudio_texto)) {
-        return sopToast('Complete documento y tipo de examen', 'warning');
+      if (esEstruct && (!body.paciente_documento || body.paciente_documento.length < 4 || !body.estudio_texto)) {
+        return sopToast('Complete documento (solo dígitos) y tipo de examen', 'warning');
       }
       if (esPsg && !body.estudio_texto) {
         return sopToast('Seleccione el tipo de estudio PSG', 'warning');
@@ -1964,7 +2082,7 @@
       </dl>
       <div class="sop-field"><label>Nombres *</label><input type="text" id="sopPdxPsgNom" value="${escapeHtml(parsed.nombres)}"></div>
       <div class="sop-field"><label>Apellidos *</label><input type="text" id="sopPdxPsgApe" value="${escapeHtml(parsed.apellidos)}"></div>
-      <div class="sop-field"><label>Número de documento *</label><input type="text" id="sopPdxPsgDoc" value="${escapeHtml(parsed.paciente_documento || '')}" inputmode="numeric"></div>
+      <div class="sop-field"><label>Número de documento *</label><input type="text" id="sopPdxPsgDoc" data-campo-tipo="doc_numero" value="${escapeHtml(parsed.paciente_documento || '')}" inputmode="numeric" pattern="[0-9]*"></div>
       <div class="sop-field"><label>Fecha del estudio *</label><input type="date" id="sopPdxPsgFecha" value="${escapeHtml(parsed.fecha_estudio || '')}"></div>
       <div class="sop-field"><label>Tipo de PSG *</label><select id="sopPdxPsgEst"></select></div>
       <div class="sop-dialog-actions">
@@ -1977,7 +2095,7 @@
       const body = {
         apellidos: modal.querySelector('#sopPdxPsgApe')?.value?.trim(),
         nombres: modal.querySelector('#sopPdxPsgNom')?.value?.trim(),
-        paciente_documento: modal.querySelector('#sopPdxPsgDoc')?.value?.trim().replace(/\s/g, ''),
+        paciente_documento: normalizarNumeroDocumentoCliente(modal.querySelector('#sopPdxPsgDoc')?.value || ''),
         fecha_estudio: modal.querySelector('#sopPdxPsgFecha')?.value,
         estudio_texto: modal.querySelector('#sopPdxPsgEst')?.value?.trim()
       };
@@ -2004,8 +2122,8 @@
       </dl>
       <div class="sop-field"><label>Apellidos *</label><input type="text" id="sopPdxOrdApe" value="${escapeHtml(parsed.apellidos)}"></div>
       <div class="sop-field"><label>Nombres *</label><input type="text" id="sopPdxOrdNom" value="${escapeHtml(parsed.nombres)}"></div>
-      <div class="sop-field"><label>Tipo de documento</label><input type="text" id="sopPdxOrdTipoDoc" value="${escapeHtml(parsed.tipo_documento || '')}" readonly></div>
-      <div class="sop-field"><label>Número de documento *</label><input type="text" id="sopPdxOrdDoc" value="${escapeHtml(parsed.paciente_documento || '')}" inputmode="numeric"></div>
+      <div class="sop-field"><label>Tipo de documento</label><input type="text" id="sopPdxOrdTipoDoc" data-campo-tipo="tipo_doc" value="${escapeHtml(normalizarTipoDocumentoCliente(parsed.tipo_documento || 'CC'))}" maxlength="4" autocomplete="off" spellcheck="false" style="text-transform:uppercase" placeholder="CC"></div>
+      <div class="sop-field"><label>Número de documento *</label><input type="text" id="sopPdxOrdDoc" data-campo-tipo="doc_numero" value="${escapeHtml(parsed.paciente_documento || '')}" inputmode="numeric" pattern="[0-9]*"></div>
       <div class="sop-field"><label>Fecha *</label><input type="date" id="sopPdxOrdFecha" value="${escapeHtml(parsed.fecha_estudio || '')}"></div>
       <div class="sop-field"><label>Tipo de examen *</label><select id="sopPdxOrdEst"></select></div>
       <div class="sop-dialog-actions">
@@ -2018,7 +2136,8 @@
       const body = {
         apellidos: modal.querySelector('#sopPdxOrdApe')?.value?.trim(),
         nombres: modal.querySelector('#sopPdxOrdNom')?.value?.trim(),
-        paciente_documento: modal.querySelector('#sopPdxOrdDoc')?.value?.trim().replace(/\s/g, ''),
+        tipo_documento: normalizarTipoDocumentoCliente(modal.querySelector('#sopPdxOrdTipoDoc')?.value),
+        paciente_documento: normalizarNumeroDocumentoCliente(modal.querySelector('#sopPdxOrdDoc')?.value || ''),
         fecha_estudio: modal.querySelector('#sopPdxOrdFecha')?.value,
         estudio_texto: modal.querySelector('#sopPdxOrdEst')?.value?.trim()
       };
@@ -2382,10 +2501,12 @@
     sopIcons($('view-reportes-pdx'));
     sopAnimateModuleIn('view-reportes-pdx');
     if (initPdxDone) {
+      setupEntradaDocumentoPdx();
       cargarCarpetasPdx().then(renderListaCarpetasPdx).catch(console.error);
       return;
     }
     initPdxDone = true;
+    setupEntradaDocumentoPdx();
     setupPdxFiltros();
     sopIcons($('sopPdxFiltrosBar'));
     const btnNueva = $('btnSopPdxNuevaCarpeta');

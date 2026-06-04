@@ -138,6 +138,16 @@ describe('soportes-pdx-parse — formatos estructurados', () => {
     expect(p.estudio_texto).toBe('PSG Basal');
   });
 
+  test('documento con puntos y guiones se normaliza a solo dígitos', () => {
+    const p = parseNombreOrdenHc(
+      'ORDEN + HC - Pérez - Ana - TI - 12.345.678-9 - 2026-03-20 - PSG Basal.pdf',
+      [{ nombre: 'PSG Basal' }]
+    );
+    expect(p.ok).toBe(true);
+    expect(p.paciente_documento).toBe('123456789');
+    expect(p.tipo_documento).toBe('TI');
+  });
+
   test('comprobantes', () => {
     const p = parseNombreComprobante(
       'COMPROBANTE - García López - Juan Carlos - CC - 987654321 - 2026-04-01 - EEG.pdf',
@@ -166,17 +176,18 @@ describe('soportes-pdx-parse — formatos estructurados', () => {
     expect(p.paciente_documento).toBe('1234567890');
   });
 
-  test('comprobante consultas médicas', () => {
+  test('comprobante consultas médicas por especialidad', () => {
     expect(detectarTemaCarpeta('COMPROBANTES CONSULTAS MÉDICAS')).toBe('comprobantes_consulta_medica');
     const p = parseNombrePorCarpeta(
-      'COMPROBANTE Juan Carlos García López 2026-05-27 Control.pdf',
+      'COMPROBANTE Juan Carlos García López 2026-05-27 Neurología.pdf',
       { nombre_display: 'COMPROBANTES CONSULTAS MÉDICAS' },
-      [{ nombre: 'Control' }]
+      [{ nombre: 'Neurología' }]
     );
     expect(p.ok).toBe(true);
     expect(p.nombres).toBe('Juan Carlos');
     expect(p.apellidos).toBe('García López');
-    expect(p.nombre_display).toBe('COMPROBANTE Juan Carlos García López 2026-05-27 Control.pdf');
+    expect(p.estudio_texto).toBe('Neurología');
+    expect(p.nombre_display).toBe('COMPROBANTE Juan Carlos García López 2026-05-27 Neurología.pdf');
   });
 
   test('orden + HC consultas médicas por especialidad', () => {
@@ -295,7 +306,7 @@ describe('soportes-pdx-parse — corrección manual', () => {
         apellidos: 'Pérez',
         nombres: 'Ana',
         tipo_documento: 'CC',
-        paciente_documento: '123',
+        paciente_documento: '1234567',
         fecha_estudio: '2026-04-01',
         estudio_texto: 'EEG'
       },

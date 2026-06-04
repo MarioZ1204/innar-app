@@ -7,6 +7,14 @@ const {
   normalizarTexto,
   esTemaConsultaMedica
 } = require('./soportes-temas');
+const {
+  normalizarNumeroDocumentoPdx,
+  normalizarTipoDocumentoPdx,
+  normalizarParDocumentoPdx,
+  numeroDocumentoValidoPdx,
+  detectarTipoDocumentoEnTexto,
+  esSegmentoDocumento
+} = require('./soportes-pdx-documento');
 
 const SEP = '\\s*-\\s*';
 
@@ -53,24 +61,24 @@ const FORMATOS_AYUDA = {
     nota: 'Al descargar se añade el tipo de estudio al nombre del archivo.'
   },
   ordenes: {
-    pattern: 'ORDEN + HC - APELLIDOS - NOMBRES - TIPO DE DOCUMENTO - DOCUMENTO - FECHA - TIPO DE ESTUDIO.pdf',
+    pattern: 'ORDEN + HC - APELLIDOS - NOMBRES - TIPO DOC (CC, TI…) - DOCUMENTO (solo números) - FECHA - TIPO DE ESTUDIO.pdf',
     ejemplo: 'ORDEN + HC - García López - Juan Carlos - CC - 1234567890 - 2026-05-27 - PSG Basal.pdf',
-    nota: 'Los guiones (-) son opcionales; puede usar espacios entre los datos.'
+    nota: 'Tipo de documento: 2 letras (CC, TI, RC…). Número: solo dígitos, sin puntos ni guiones. Los guiones (-) entre campos son opcionales.'
   },
   comprobantes: {
-    pattern: 'COMPROBANTE - APELLIDOS - NOMBRES - TIPO DE DOCUMENTO - DOCUMENTO - FECHA - TIPO DE ESTUDIO.pdf',
+    pattern: 'COMPROBANTE - APELLIDOS - NOMBRES - TIPO DOC (CC, TI…) - DOCUMENTO (solo números) - FECHA - TIPO DE ESTUDIO.pdf',
     ejemplo: 'COMPROBANTE - García López - Juan Carlos - CC - 1234567890 - 2026-05-27 - PSG Basal.pdf',
-    nota: 'Los guiones (-) son opcionales; puede usar espacios entre los datos.'
+    nota: 'Tipo de documento: 2 letras (CC, TI, RC…). Número: solo dígitos. Los guiones (-) entre campos son opcionales.'
   },
   consentimientos: {
-    pattern: 'CONSENTIMIENTO - APELLIDOS - NOMBRES - TIPO DE DOCUMENTO - DOCUMENTO - FECHA - TIPO DE ESTUDIO.pdf',
+    pattern: 'CONSENTIMIENTO - APELLIDOS - NOMBRES - TIPO DOC (CC, TI…) - DOCUMENTO (solo números) - FECHA - TIPO DE ESTUDIO.pdf',
     ejemplo: 'CONSENTIMIENTO - García López - Juan Carlos - CC - 1234567890 - 2026-05-27 - PSG Basal.pdf',
-    nota: 'El nombre guardado siempre empieza por CONSENTIMIENTO. Los guiones (-) son opcionales al subir.'
+    nota: 'Tipo: 2 letras; documento: solo números. El nombre guardado empieza por CONSENTIMIENTO. Guiones opcionales al subir.'
   },
   comprobantes_consulta_medica: {
-    pattern: 'COMPROBANTE NOMBRES APELLIDOS YYYY-MM-DD TIPO DE CONSULTA.pdf',
-    ejemplo: 'COMPROBANTE Juan Carlos García López 2026-05-27 Control.pdf',
-    nota: 'Sin número de documento. El tipo de consulta se toma de Gestión de datos.'
+    pattern: 'COMPROBANTE NOMBRES APELLIDOS YYYY-MM-DD ESPECIALIDAD.pdf',
+    ejemplo: 'COMPROBANTE Juan Carlos García López 2026-05-27 Neurología.pdf',
+    nota: 'Sin número de documento. La especialidad se toma de Gestión de datos (igual que órdenes consultas médicas).'
   },
   ordenes_consulta_medica: {
     pattern: 'ORDEN + HC NOMBRES APELLIDOS YYYY-MM-DD ESPECIALIDAD.pdf',
@@ -160,11 +168,6 @@ function esTemaReporteClinico(tema) {
   return ['vtm', 'eeg', 'psg', 'actigrafia'].includes(tema);
 }
 
-function esSegmentoDocumento(seg) {
-  const d = String(seg || '').replace(/\s/g, '');
-  return /^[\d.\-]{4,20}$/.test(d);
-}
-
 /** Segmentos separados por guión con espacios (no parte de fechas ni horas 21-21-12). */
 function splitSegmentosGuionesEspaciados(texto) {
   return String(texto || '')
@@ -246,11 +249,12 @@ function extraerCamposEstructuradosAntesFecha(before) {
   if (t.includes(' - ')) {
     const parts = splitSegmentosGuionesEspaciados(t);
     if (parts.length >= 4) {
+      const doc = normalizarParDocumentoPdx(parts[2], parts[3]);
       return {
         apellidos: parts[0],
         nombres: parts[1],
-        tipo_documento: detectarTipoDocumentoEnTexto(parts[2]) || String(parts[2] || 'CC').trim(),
-        paciente_documento: String(parts[3] || '').replace(/\s/g, '')
+        tipo_documento: doc.tipo_documento,
+        paciente_documento: doc.paciente_documento
       };
     }
     if (parts.length === 3 && esSegmentoDocumento(parts[2])) {
@@ -258,7 +262,7 @@ function extraerCamposEstructuradosAntesFecha(before) {
         apellidos: parts[0],
         nombres: parts[1],
         tipo_documento: 'CC',
-        paciente_documento: String(parts[2]).replace(/\s/g, '')
+        paciente_documento: normalizarNumeroDocumentoPdx(parts[2])
       };
     }
     if (parts.length === 2) {
@@ -274,9 +278,9 @@ function extraerCamposEstructuradosAntesFecha(before) {
     }
   }
   if (docIdx >= 2) {
-    const paciente_documento = String(tokens[docIdx]).replace(/\s/g, '');
+    const paciente_documento = normalizarNumeroDocumentoPdx(tokens[docIdx]);
     const tipoSeg = tokens[docIdx - 1];
-    const tipo_documento = detectarTipoDocumentoEnTexto(tipoSeg) || 'CC';
+    const tipo_documento = normalizarTipoDocumentoPdx(tipoSeg);
     const nameEnd = detectarTipoDocumentoEnTexto(tipoSeg) ? docIdx - 1 : docIdx;
     const nameTokens = tokens.slice(0, nameEnd);
     if (nameTokens.length >= 2) {
@@ -365,8 +369,7 @@ function parseNombreEstructuradoDesdeFecha(tema, originalName, estudios = []) {
 }
 
 function documentoValidoPsg(doc) {
-  const d = String(doc || '').replace(/\s/g, '');
-  return /^[\d.\-]{4,20}$/.test(d);
+  return numeroDocumentoValidoPdx(doc);
 }
 
 function inferirEstudioDesdeCarpeta(carpeta) {
@@ -479,6 +482,7 @@ function parseNombreSimple(originalName) {
 }
 
 function buildStructuredOk(original, parts) {
+  const doc = normalizarParDocumentoPdx(parts.tipo_documento, parts.paciente_documento);
   const pacienteNombre = `${parts.apellidos}, ${parts.nombres}`;
   return {
     ok: true,
@@ -487,8 +491,8 @@ function buildStructuredOk(original, parts) {
     nombres: parts.nombres,
     paciente_nombre: pacienteNombre,
     paciente_nombre_norm: normalizarNombreBusqueda(pacienteNombre),
-    paciente_documento: parts.paciente_documento,
-    tipo_documento: parts.tipo_documento,
+    paciente_documento: doc.paciente_documento,
+    tipo_documento: doc.tipo_documento,
     fecha_estudio: parts.fecha,
     marca_tiempo: '',
     sufijo_numero: '',
@@ -525,8 +529,7 @@ function parseNombreOrdenHc(originalName, estudios = []) {
   }
   const apellidos = m[1].trim();
   const nombres = m[2].trim();
-  const tipo_documento = m[3].trim();
-  const paciente_documento = m[4].trim().replace(/\s/g, '');
+  const { tipo_documento, paciente_documento } = normalizarParDocumentoPdx(m[3], m[4]);
   const fecha = m[5];
   const estudio = resolverEstudioDesdeLista(m[6].trim(), estudios);
   return buildStructuredOk(base, {
@@ -553,8 +556,7 @@ function parseNombreComprobante(originalName, estudios = []) {
   }
   const apellidos = m[1].trim();
   const nombres = m[2].trim();
-  const tipo_documento = m[3].trim();
-  const paciente_documento = m[4].trim().replace(/\s/g, '');
+  const { tipo_documento, paciente_documento } = normalizarParDocumentoPdx(m[3], m[4]);
   const fecha = m[5];
   const estudio = resolverEstudioDesdeLista(m[6].trim(), estudios);
   return buildStructuredOk(base, {
@@ -581,8 +583,7 @@ function parseNombreConsentimiento(originalName, estudios = []) {
   }
   const apellidos = m[1].trim();
   const nombres = m[2].trim();
-  const tipo_documento = m[3].trim();
-  const paciente_documento = m[4].trim().replace(/\s/g, '');
+  const { tipo_documento, paciente_documento } = normalizarParDocumentoPdx(m[3], m[4]);
   const fecha = m[5];
   const estudio = resolverEstudioDesdeLista(m[6].trim(), estudios);
   return buildStructuredOk(base, {
@@ -647,7 +648,7 @@ function parseNombrePsg(originalName, estudios = []) {
   }
   const nombres = beforeParts[0];
   const apellidos = beforeParts[1];
-  const paciente_documento = String(beforeParts[2] || '').replace(/\s/g, '');
+  const paciente_documento = normalizarNumeroDocumentoPdx(beforeParts[2]);
   if (!documentoValidoPsg(paciente_documento)) {
     return { ok: false, original: base, error: mensajeErrorFormato('psg') };
   }
@@ -751,27 +752,12 @@ function temaCoincideCarpeta(estudioTema, carpetaTema) {
   return estudioTema === carpetaTema;
 }
 
-const TIPOS_DOC = ['CC', 'TI', 'CE', 'PA', 'RC', 'NUIP', 'PEP', 'PT'];
-
 function normalizarNombreParaParseo(originalName) {
   return String(originalName || '')
     .trim()
     .replace(/[\u2013\u2014\u2212]/g, '-')
     .replace(/_/g, ' ')
     .replace(/\s+/g, ' ');
-}
-
-function detectarTipoDocumentoEnTexto(seg) {
-  const raw = String(seg || '').trim();
-  const u = raw.toUpperCase().replace(/\./g, '').replace(/\s+/g, ' ');
-  if (TIPOS_DOC.includes(u)) return u;
-  if (/^(CC|CEDULA|CIUDADANIA|CEDULA DE CIUDADANIA)$/.test(u)) return 'CC';
-  if (/^(TI|TARJETA DE IDENTIDAD)$/.test(u)) return 'TI';
-  if (/^(CE|CEDULA DE EXTRANJERIA)$/.test(u)) return 'CE';
-  if (/^(PA|PASAPORTE)$/.test(u)) return 'PA';
-  if (/^(RC|REGISTRO CIVIL)$/.test(u)) return 'RC';
-  if (/^(NUIP|PEP|PT)$/.test(u)) return u.split(' ')[0];
-  return '';
 }
 
 /**
@@ -794,12 +780,13 @@ function parseNombreEstructuradoFallback(tema, originalName, estudios = []) {
 
   const apellidos = parts[offset];
   const nombres = parts[offset + 1];
-  const tipo_documento = detectarTipoDocumentoEnTexto(parts[offset + 2]) || String(parts[offset + 2] || 'CC').trim();
-  const paciente_documento = String(parts[offset + 3] || '').replace(/\s/g, '');
+  const { tipo_documento, paciente_documento } = normalizarParDocumentoPdx(parts[offset + 2], parts[offset + 3]);
   const fecha = parts[offset + 4];
   const estudioRaw = parts[offset + 5];
   if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return { ok: false, original: base };
-  if (!apellidos || !nombres || !paciente_documento || !estudioRaw) return { ok: false, original: base };
+  if (!apellidos || !nombres || !numeroDocumentoValidoPdx(paciente_documento) || !estudioRaw) {
+    return { ok: false, original: base };
+  }
 
   const estudio = resolverEstudioDesdeLista(estudioRaw, estudios) || estudioRaw.trim();
   const partsNorm = {
@@ -918,18 +905,20 @@ function extraerDatosParcialesNombre(originalName, carpeta, estudios = []) {
     if (parts.length > offset + 1) parcial.nombres = parts[offset + 1] || '';
     if (parts.length > offset + 2) {
       const tipoDet = detectarTipoDocumentoEnTexto(parts[offset + 2]);
-      parcial.tipo_documento = tipoDet || parts[offset + 2] || 'CC';
+      parcial.tipo_documento = tipoDet || normalizarTipoDocumentoPdx(parts[offset + 2]);
       if (!tipoDet && esSegmentoDocumento(parts[offset + 2])) {
-        parcial.paciente_documento = String(parts[offset + 2] || '').replace(/\s/g, '');
+        parcial.paciente_documento = normalizarNumeroDocumentoPdx(parts[offset + 2]);
       }
     }
     if (parts.length > offset + 3 && !parcial.paciente_documento) {
       const tipoDet = detectarTipoDocumentoEnTexto(parts[offset + 3]);
       if (tipoDet) {
         parcial.tipo_documento = tipoDet;
-        if (parts.length > offset + 4) parcial.paciente_documento = String(parts[offset + 4] || '').replace(/\s/g, '');
+        if (parts.length > offset + 4) {
+          parcial.paciente_documento = normalizarNumeroDocumentoPdx(parts[offset + 4]);
+        }
       } else {
-        parcial.paciente_documento = String(parts[offset + 3] || '').replace(/\s/g, '');
+        parcial.paciente_documento = normalizarNumeroDocumentoPdx(parts[offset + 3]);
       }
     }
     for (let i = offset + 2; i < parts.length; i++) {
@@ -1021,8 +1010,10 @@ function buildMetaDesdeCamposManuales(originalName, body, carpeta) {
   const apellidos = String(body.apellidos || '').trim();
   const nombres = String(body.nombres || '').trim();
   const fecha = String(body.fecha_estudio || '').trim();
-  const tipo_documento = String(body.tipo_documento || 'CC').trim();
-  const paciente_documento = String(body.paciente_documento || '').trim().replace(/\s/g, '');
+  const { tipo_documento, paciente_documento } = normalizarParDocumentoPdx(
+    body.tipo_documento,
+    body.paciente_documento
+  );
 
   if (!apellidos || !nombres) {
     return { ok: false, error: 'Apellidos y nombres son obligatorios' };
@@ -1037,12 +1028,17 @@ function buildMetaDesdeCamposManuales(originalName, body, carpeta) {
     if (!estudio) return { ok: false, error: 'Indique la especialidad' };
   } else if (tema === 'comprobantes_consulta_medica') {
     estudio = resolverEstudioDesdeLista(estudio, estudios);
-    if (!estudio) return { ok: false, error: 'Indique el tipo de consulta' };
+    if (!estudio) return { ok: false, error: 'Indique la especialidad' };
   } else if (esTemaEstructuradoConDocumento(tema)) {
     estudio = resolverEstudioDesdeLista(estudio, estudios);
     if (!estudio) return { ok: false, error: 'Indique el tipo de examen' };
-    if (!paciente_documento) return { ok: false, error: 'El número de documento es obligatorio' };
+    if (!numeroDocumentoValidoPdx(paciente_documento)) {
+      return { ok: false, error: 'El número de documento es obligatorio (solo dígitos, 4 a 20)' };
+    }
   } else if (tema === 'psg') {
+    if (paciente_documento && !numeroDocumentoValidoPdx(paciente_documento)) {
+      return { ok: false, error: 'El número de documento debe contener solo dígitos (4 a 20)' };
+    }
     estudio = resolverEstudioDesdeLista(estudio, estudios) || estudio;
     if (!estudio) estudio = inferirEstudioDesdeCarpeta(carpeta);
     if (!estudioPsgReconocido(estudio)) {
@@ -1119,8 +1115,8 @@ function mergeMetaPdxDesdeRow(row, carpetaCtx) {
     fecha: row?.fecha_estudio
       ? String(row.fecha_estudio).slice(0, 10)
       : (rp.fecha_estudio ? String(rp.fecha_estudio).slice(0, 10) : ''),
-    doc: String(row?.paciente_documento || rp.paciente_documento || '').replace(/\s/g, ''),
-    tipoDoc: String(rp.tipo_documento || 'CC').trim() || 'CC',
+    doc: normalizarNumeroDocumentoPdx(row?.paciente_documento || rp.paciente_documento || ''),
+    tipoDoc: normalizarTipoDocumentoPdx(rp.tipo_documento || row?.tipo_documento || 'CC'),
     estudio: String(row?.estudio_texto || rp.estudio_texto || '').trim(),
     marca_tiempo: String(row?.marca_tiempo || rp.marca_tiempo || '').trim(),
     sufijo_numero: String(row?.sufijo_numero || rp.sufijo_numero || '').trim()

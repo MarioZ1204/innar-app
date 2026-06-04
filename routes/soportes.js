@@ -34,6 +34,11 @@ const {
   buildNombreDescargaPdxDesdeRow
 } = require('../utils/soportes-pdx-parse');
 const {
+  normalizarNumeroDocumentoPdx,
+  normalizarTipoDocumentoPdx,
+  numeroDocumentoValidoPdx
+} = require('../utils/soportes-pdx-documento');
+const {
   buildMetaFromUpload,
   buildMetaDesdeCamposManuales,
   cargarListaParaCarpetaPdx,
@@ -625,7 +630,10 @@ router.post(
       }
 
       if (req.body.paciente_documento && !meta.paciente_documento) {
-        meta.paciente_documento = String(req.body.paciente_documento).trim().replace(/\s/g, '');
+        meta.paciente_documento = normalizarNumeroDocumentoPdx(req.body.paciente_documento);
+      }
+      if (req.body.tipo_documento) {
+        meta.tipo_documento = normalizarTipoDocumentoPdx(req.body.tipo_documento);
       }
 
       const warnings = collectPdxWarnings(meta, carpeta);
@@ -887,8 +895,8 @@ router.patch('/soportes/pdx/archivos/:id', requireAuth, requireRoleOrPerm(ROLES_
     const fecha = req.body?.fecha_estudio != null ? req.body.fecha_estudio : prev.fecha_estudio;
     const estudio = req.body?.estudio_texto != null ? String(req.body.estudio_texto).trim() : prev.estudio_texto;
     const documento = req.body?.paciente_documento != null
-      ? String(req.body.paciente_documento).trim().replace(/\s/g, '')
-      : (prev.paciente_documento || '');
+      ? normalizarNumeroDocumentoPdx(req.body.paciente_documento)
+      : normalizarNumeroDocumentoPdx(prev.paciente_documento || '');
     if (!apellidos || !nombres || !fecha) {
       return res.status(400).json({ error: 'Apellidos, nombres y fecha son obligatorios' });
     }
@@ -901,8 +909,8 @@ router.patch('/soportes/pdx/archivos/:id', requireAuth, requireRoleOrPerm(ROLES_
       return res.status(400).json({ error: 'Apellidos, nombres, fecha y estudio son obligatorios' });
     }
     const requiereDocumento = ['ordenes', 'comprobantes', 'consentimientos'].includes(temaCarpeta);
-    if (requiereDocumento && !documento) {
-      return res.status(400).json({ error: 'El número de documento es obligatorio en esta carpeta' });
+    if (requiereDocumento && !numeroDocumentoValidoPdx(documento)) {
+      return res.status(400).json({ error: 'El número de documento es obligatorio (solo dígitos, 4 a 20)' });
     }
 
     const pacienteNombre = `${apellidos}, ${nombres}`;
@@ -911,7 +919,9 @@ router.patch('/soportes/pdx/archivos/:id', requireAuth, requireRoleOrPerm(ROLES_
     let rutaRelativa = prev.ruta_relativa;
     let carpetaCtx = { nombre_display: prev.carpeta_nombre, color_tema: prev.carpeta_tema, periodo: prev.periodo };
     const reparsed = parseNombrePorCarpeta(prev.nombre_archivo_original, carpetaCtx);
-    const tipoDoc = reparsed.ok ? reparsed.tipo_documento : 'CC';
+    const tipoDoc = req.body?.tipo_documento != null
+      ? normalizarTipoDocumentoPdx(req.body.tipo_documento)
+      : (reparsed.ok ? normalizarTipoDocumentoPdx(reparsed.tipo_documento) : 'CC');
     let metaDisplay = {
       apellidos,
       nombres,

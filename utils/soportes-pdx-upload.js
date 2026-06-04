@@ -15,6 +15,7 @@ const {
   analizarNombreArchivo,
   buildMetaDesdeCamposManuales
 } = require('./soportes-pdx-parse');
+const { normalizarNumeroDocumentoPdx, normalizarTipoDocumentoPdx } = require('./soportes-pdx-documento');
 const {
   detectarTemaCarpeta,
   esTemaConsultaMedica
@@ -53,7 +54,7 @@ async function cargarListaParaCarpetaPdx(db, carpeta) {
     return cargarEspecialidadesParaPdx(db);
   }
   if (tema === 'comprobantes_consulta_medica') {
-    return cargarTiposConsultaParaPdx(db);
+    return cargarEspecialidadesParaPdx(db);
   }
   if (['ordenes', 'comprobantes', 'consentimientos'].includes(tema)) {
     return cargarEstudiosParaOrdenes(db);
@@ -103,7 +104,8 @@ function buildMetaFromUpload(originalName, body = {}, carpeta = null) {
   const meta = {
     ok: true,
     ...parsed,
-    paciente_documento: parsed.paciente_documento || String(body.paciente_documento || '').trim().replace(/\s/g, '') || '',
+    paciente_documento: normalizarNumeroDocumentoPdx(parsed.paciente_documento || body.paciente_documento || ''),
+    tipo_documento: normalizarTipoDocumentoPdx(parsed.tipo_documento || body.tipo_documento || 'CC'),
     fecha_estudio: body.fecha_estudio || parsed.fecha_estudio,
     estudio_texto: estudio,
     estudio_tema: detectarTemaCarpeta(estudio || tema),

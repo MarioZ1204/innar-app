@@ -3,6 +3,11 @@
  */
 const { detectarTemaCarpeta, inferirEstudioDesdeCarpeta, esTemaOrdenHcConsultaMedica } = require('./soportes-temas');
 const { estudioPsgReconocido } = require('./soportes-pdx-parse');
+const {
+  normalizarNumeroDocumentoPdx,
+  normalizarTipoDocumentoPdx,
+  numeroDocumentoValidoPdx
+} = require('./soportes-pdx-documento');
 
 function esTemaEstructuradoConDocumento(tema) {
   return ['ordenes', 'comprobantes', 'consentimientos'].includes(tema);
@@ -11,8 +16,6 @@ function esTemaEstructuradoConDocumento(tema) {
 function esTemaReporteClinico(tema) {
   return ['vtm', 'eeg', 'psg', 'actigrafia'].includes(tema);
 }
-
-const TIPOS_DOC = ['CC', 'TI', 'CE', 'PA', 'RC', 'NUIP', 'PEP', 'PT'];
 
 function definicionCamposPorTema(tema) {
   const base = [
@@ -29,21 +32,21 @@ function definicionCamposPorTema(tema) {
   if (tema === 'comprobantes_consulta_medica') {
     return [
       ...base,
-      { key: 'estudio_texto', label: 'Tipo de consulta', requerido: true, input: 'tipo_consulta' }
+      { key: 'estudio_texto', label: 'Especialidad', requerido: true, input: 'especialidad' }
     ];
   }
   if (esTemaEstructuradoConDocumento(tema)) {
     return [
       ...base,
-      { key: 'tipo_documento', label: 'Tipo de documento', requerido: false, input: 'text', defecto: 'CC' },
-      { key: 'paciente_documento', label: 'Número de documento', requerido: true, input: 'text' },
+      { key: 'tipo_documento', label: 'Tipo de documento', requerido: false, input: 'tipo_doc', defecto: 'CC' },
+      { key: 'paciente_documento', label: 'Número de documento', requerido: true, input: 'doc_numero' },
       { key: 'estudio_texto', label: 'Tipo de examen', requerido: true, input: 'estudio' }
     ];
   }
   if (tema === 'psg') {
     return [
       ...base,
-      { key: 'paciente_documento', label: 'Documento', requerido: false, input: 'text' },
+      { key: 'paciente_documento', label: 'Documento', requerido: false, input: 'doc_numero' },
       { key: 'estudio_texto', label: 'Tipo PSG', requerido: true, input: 'psg_estudio' }
     ];
   }
@@ -67,8 +70,8 @@ function mergeDatosNombre(parcial, parsed) {
   return {
     apellidos: String(p.apellidos || parcial?.apellidos || '').trim(),
     nombres: String(p.nombres || parcial?.nombres || '').trim(),
-    tipo_documento: String(p.tipo_documento || parcial?.tipo_documento || 'CC').trim() || 'CC',
-    paciente_documento: String(p.paciente_documento || parcial?.paciente_documento || '').replace(/\s/g, '').trim(),
+    tipo_documento: normalizarTipoDocumentoPdx(p.tipo_documento || parcial?.tipo_documento || 'CC'),
+    paciente_documento: normalizarNumeroDocumentoPdx(p.paciente_documento || parcial?.paciente_documento || ''),
     fecha_estudio: String(p.fecha_estudio || parcial?.fecha_estudio || '').trim(),
     estudio_texto: String(p.estudio_texto || parcial?.estudio_texto || '').trim()
   };
@@ -101,6 +104,15 @@ function valorCampoDetectado(def, datos, tema, carpeta) {
   if (def.key === 'fecha_estudio') {
     const ok = /^\d{4}-\d{2}-\d{2}$/.test(valor);
     return { valor, detectado: ok, automatico: false };
+  }
+  if (def.key === 'paciente_documento') {
+    const num = normalizarNumeroDocumentoPdx(valor);
+    const ok = numeroDocumentoValidoPdx(num);
+    return { valor: num, detectado: ok, automatico: false };
+  }
+  if (def.key === 'tipo_documento') {
+    const tipo = normalizarTipoDocumentoPdx(valor);
+    return { valor: tipo, detectado: !!tipo, automatico: false };
   }
   return { valor, detectado: !!valor, automatico: false };
 }
@@ -143,7 +155,6 @@ function ayudaCamposPorTema(tema) {
 }
 
 module.exports = {
-  TIPOS_DOC,
   definicionCamposPorTema,
   mergeDatosNombre,
   evaluarCamposMinimos,
