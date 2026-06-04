@@ -17,9 +17,7 @@ const {
 } = require('./soportes-pdx-parse');
 const {
   detectarTemaCarpeta,
-  esCarpetaOrdenes,
-  esCarpetaComprobantes,
-  esCarpetaConsentimientos
+  esTemaConsultaMedica
 } = require('./soportes-temas');
 const { getPdxDir, relativePdxRuta } = require('./soportes-storage');
 
@@ -31,9 +29,41 @@ async function cargarEstudiosParaOrdenes(db) {
   }
 }
 
+async function cargarTiposConsultaParaPdx(db) {
+  try {
+    return await db.query(
+      'SELECT id, nombre FROM tipos_consulta WHERE activo = 1 ORDER BY nombre ASC'
+    );
+  } catch (_) {
+    return [];
+  }
+}
+
+async function cargarEspecialidadesParaPdx(db) {
+  try {
+    return await db.query('SELECT id, nombre FROM especialidades WHERE activo = 1 ORDER BY nombre ASC');
+  } catch (_) {
+    return [];
+  }
+}
+
+async function cargarListaParaCarpetaPdx(db, carpeta) {
+  const tema = detectarTemaCarpeta(carpeta?.nombre_display || '');
+  if (tema === 'ordenes_consulta_medica') {
+    return cargarEspecialidadesParaPdx(db);
+  }
+  if (tema === 'comprobantes_consulta_medica') {
+    return cargarTiposConsultaParaPdx(db);
+  }
+  if (['ordenes', 'comprobantes', 'consentimientos'].includes(tema)) {
+    return cargarEstudiosParaOrdenes(db);
+  }
+  return [];
+}
+
 function necesitaListaEstudios(carpeta) {
   const tema = detectarTemaCarpeta(carpeta?.nombre_display || '');
-  return ['ordenes', 'comprobantes', 'consentimientos'].includes(tema);
+  return ['ordenes', 'comprobantes', 'consentimientos', 'comprobantes_consulta_medica', 'ordenes_consulta_medica'].includes(tema);
 }
 
 function esConfirmacionManual(body) {
@@ -108,7 +138,7 @@ function sanitizeDiskName(name) {
 
 function pdxDiskFilename(meta, carpeta = null) {
   const tema = detectarTemaCarpeta(carpeta?.nombre_display || '');
-  if (['ordenes', 'comprobantes', 'consentimientos'].includes(tema)) {
+  if (['ordenes', 'comprobantes', 'consentimientos', 'comprobantes_consulta_medica', 'ordenes_consulta_medica'].includes(tema)) {
     return sanitizeDiskName(meta.nombre_archivo_display || meta.nombre_archivo_original || meta.original);
   }
   return sanitizeDiskName(meta.nombre_archivo_original || meta.original);
@@ -158,7 +188,7 @@ function finalizePdxFileOnDisk(carpetaId, fileOrTmpName, meta, carpeta = null) {
   }
 
   const tema = detectarTemaCarpeta(carpeta?.nombre_display || '');
-  const wantCanonicalDisk = ['ordenes', 'comprobantes', 'consentimientos'].includes(tema);
+  const wantCanonicalDisk = ['ordenes', 'comprobantes', 'consentimientos', 'comprobantes_consulta_medica', 'ordenes_consulta_medica'].includes(tema);
   let onDisk = path.basename(tmpPath);
 
   if (wantCanonicalDisk) {
@@ -224,7 +254,7 @@ function movePdxFileOnDisk(fromCarpetaId, toCarpetaId, oldRutaRelativa, meta, ca
 function collectPdxWarnings(meta, carpeta) {
   const warnings = [];
   const tema = detectarTemaCarpeta(carpeta?.nombre_display || '');
-  if (['ordenes', 'comprobantes', 'consentimientos', 'vtm', 'eeg', 'psg', 'actigrafia'].includes(tema)) {
+  if (['ordenes', 'comprobantes', 'consentimientos', 'comprobantes_consulta_medica', 'ordenes_consulta_medica', 'vtm', 'eeg', 'psg', 'actigrafia'].includes(tema)) {
     if (carpeta && meta.fecha_estudio && !fechaEnPeriodo(meta.fecha_estudio, carpeta.periodo)) {
       warnings.push(`La fecha del estudio (${meta.fecha_estudio}) no pertenece al mes ${carpeta.periodo}`);
     }
@@ -246,6 +276,9 @@ module.exports = {
   analizarNombreArchivo,
   esConfirmacionManual,
   cargarEstudiosParaOrdenes,
+  cargarTiposConsultaParaPdx,
+  cargarEspecialidadesParaPdx,
+  cargarListaParaCarpetaPdx,
   necesitaListaEstudios,
   pdxDiskFilename,
   finalizePdxFileOnDisk,

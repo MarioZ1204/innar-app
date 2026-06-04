@@ -3,6 +3,17 @@
 Todos los cambios importantes a la aplicación se documentan aquí. El formato
 sigue (informalmente) [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
+## [1.5.88] — 2026-05-27
+
+### Añadido
+
+- **Cargar reportes (PDX)**: carpetas «COMPROBANTES CONSULTAS MÉDICAS» y «ORDENES + HC CONSULTAS MÉDICAS»; nombres con prefijos `COMPROBANTE`, `ORDEN + HC` y `CONSENTIMIENTO` al guardar; unificación de varios PDF en ORDEN + HC consultas médicas; especialidad en lugar de tipo de consulta para órdenes médicas.
+
+### Cambiado
+
+- **PDX**: guiones opcionales al subir en órdenes, comprobantes y consentimientos; iconos Lucide alineados en botones `sop-btn`.
+- **Electrodiagnóstico**: plantilla WhatsApp de recomendaciones con emojis y enlace a sede.
+
 ## [1.5.87] — 2026-05-27
 
 ### Añadido

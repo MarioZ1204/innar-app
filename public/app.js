@@ -52,15 +52,193 @@ const SEDES_INNAR = {
     id: '1',
     titulo: 'Sede Principal',
     corta: 'Calle 14A #34-13, Barrio San Ignacio',
-    completa: 'Calle 14A #34-13, Barrio San Ignacio, Pasto, Nariño'
+    completa: 'Calle 14A #34-13, Barrio San Ignacio, Pasto, Nariño',
+    mapsPath: '/ubicacion/principal',
+    mapsUrl: 'https://maps.app.goo.gl/nuT1XWpDEg6vXVmS7',
+    telefonos: '3053560651 - 6027238141'
   },
   complementaria: {
     id: '2',
     titulo: 'Sede Servicios Complementarios',
     corta: 'Carrera 33 #13-84, Barrio San Ignacio ("Casa Verde")',
-    completa: 'Carrera 33 #13-84, Barrio San Ignacio, Pasto, Nariño ("Casa Verde")'
+    completa: 'Carrera 33 #13-84, Barrio San Ignacio, Pasto, Nariño ("Casa Verde")',
+    mapsPath: '/ubicacion/complementaria',
+    mapsUrl: 'https://www.google.com/maps/search/?api=1&query=Carrera+33+%2313-84+Barrio+San+Ignacio+Pasto+Nari%C3%B1o',
+    telefonos: '3053560651 - 6027238141'
   }
 };
+
+/** PDFs de recomendaciones por tipo de estudio (public/recomendaciones-electro/*.pdf) */
+const ELECTRO_RECOMENDACIONES_PDF_BASE = '/recomendaciones-electro';
+
+/** Emojis UTF-8 (code points) — evitan caracteres rotos al abrir wa.me en Windows */
+const EMO_WA_ELECTRO = {
+  hospital: '\u{1F3E5}',
+  estudio: '\u{1F52C}',
+  duracion: '\u23F1',
+  dia: '\u{1F4C5}',
+  hora: '\u{1F550}',
+  salida: '\u{1F6AA}',
+  direccion: '\u{1F4CD}',
+  telefono: '\u{1F4DE}',
+  documentos: '\u{1F4C4}',
+  confirmar: '\u2705'
+};
+
+function clavePdfRecomendacionesElectro(estudio) {
+  const u = String(estudio || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  if (u.includes('psg') || u.includes('polisomnog')) return 'psg';
+  if (u.includes('electroencefalograma') || /\beeg\b/.test(u)) return 'eeg';
+  if (u.includes('vtm') || u.includes('video') || u.includes('monitoriz')) return 'vtm';
+  if (u.includes('actigraf')) return 'actigrafia';
+  return 'general';
+}
+
+function urlPdfRecomendacionesElectro(estudio) {
+  const clave = clavePdfRecomendacionesElectro(estudio);
+  return `${ELECTRO_RECOMENDACIONES_PDF_BASE}/${clave}.pdf`;
+}
+
+async function existeArchivoPublico(urlPath) {
+  try {
+    const res = await fetch(urlPath, { method: 'HEAD', cache: 'no-store' });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+function formatearFechaLargaElectroWhatsApp(fechaRaw) {
+  const ymd = extraerFechaYmdCalendario(fechaRaw);
+  if (!ymd) return '-';
+  const [year, month, day] = ymd.split('-').map(Number);
+  const fechaObj = new Date(year, month - 1, day);
+  if (isNaN(fechaObj.getTime())) return '-';
+  const texto = fechaObj.toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' });
+  return texto.charAt(0).toUpperCase() + texto.slice(1);
+}
+
+function formatearDuracionElectroWhatsApp(cita) {
+  const min = parseInt(cita?.duracion_minutos, 10);
+  if (!(min > 0)) return '';
+  const dHrs = Math.floor(min / 60);
+  const dMin = min % 60;
+  if (dHrs >= 24) {
+    const dias = Math.floor(dHrs / 24);
+    const hResto = dHrs % 24;
+    const parteDias = dias === 1 ? '1 día' : `${dias} días`;
+    if (hResto > 0) {
+      const parteHoras = hResto === 1 ? '1 hora' : `${hResto} horas`;
+      return `${parteDias} y ${parteHoras}`;
+    }
+    return parteDias;
+  }
+  if (dHrs > 0 && dMin > 0) {
+    const parteH = dHrs === 1 ? '1 hora' : `${dHrs} horas`;
+    const parteM = dMin === 1 ? '1 minuto' : `${dMin} minutos`;
+    return `${parteH} y ${parteM}`;
+  }
+  if (dHrs > 0) return dHrs === 1 ? '1 hora' : `${dHrs} horas`;
+  return dMin === 1 ? '1 minuto' : `${dMin} minutos`;
+}
+
+function obtenerTextoHoraFinEstudioElectroWhatsApp(cita) {
+  const finDate = obtenerFechaHoraFinCitaElectro(cita);
+  if (finDate && !isNaN(finDate.getTime())) {
+    return formatearFinEstudioElectroLabel(finDate);
+  }
+  const horaFin = formatearHora(cita?.hora_fin);
+  if (!horaFin || horaFin === '-') return '-';
+  const fechaFin = extraerFechaYmdCalendario(cita?.hora_fin_date);
+  const fechaIni = extraerFechaYmdCalendario(cita?.fecha);
+  if (fechaFin && fechaIni && fechaFin !== fechaIni) {
+    return `${horaFin} (${formatearFechaLargaElectroWhatsApp(fechaFin)})`;
+  }
+  return horaFin;
+}
+
+function construirMensajeRecomendacionesElectro(cita, opts = {}) {
+  const sede = SEDES_INNAR.principal;
+  const e = EMO_WA_ELECTRO;
+  const estudio = String(cita?.estudio || 'estudio').trim();
+  const duracionTxt = formatearDuracionElectroWhatsApp(cita) || 'No registrada';
+  const fechaTxt = formatearFechaLargaElectroWhatsApp(cita?.fecha);
+  const horaTxt = formatearHora(cita?.hora_agendamiento || cita?.hora_inicio);
+  const horaFinTxt = obtenerTextoHoraFinEstudioElectroWhatsApp(cita);
+  const telefonos = sede.telefonos || '3053560651 - 6027238141';
+
+  let mensaje = 'Buen día,\n';
+  mensaje += `${e.hospital} *Instituto Neurociencias de Nariño IPS S.A.S.*\n\n`;
+  mensaje += 'Le informamos:\n\n';
+  mensaje += 'Usted tiene programada una cita para la toma de un estudio de electrodiagnóstico:\n\n';
+  mensaje += `${e.estudio} *Estudio:* ${estudio}\n`;
+  mensaje += `${e.duracion} *Duración:* ${duracionTxt}\n`;
+  mensaje += `${e.dia} *Día:* ${fechaTxt}\n`;
+  mensaje += `${e.hora} *Hora:* ${horaTxt}\n`;
+  mensaje += `${e.salida} *Hora aproximada de salida:* ${horaFinTxt}\n`;
+  mensaje += `${e.direccion} *Dirección:* ${sede.completa}\n`;
+  mensaje += `${e.telefono} *Teléfonos:* ${telefonos}\n\n`;
+  mensaje += 'Le recordamos que será atendido(a) por un técnico o una técnica especializado(a) en electrodiagnóstico.\n\n';
+  mensaje += 'Anexo a este mensaje le enviamos las recomendaciones que debe tener en cuenta.\n\n';
+  mensaje += `${e.documentos} *No olvide traer:*\n`;
+  mensaje += '* Orden de servicio\n';
+  mensaje += '* Copia del documento de identificación\n';
+  mensaje += '* Epicrisis o historia clínica\n\n';
+  mensaje += `${e.confirmar} Le solicitamos confirmar su asistencia. ¡Gracias!`;
+
+  const pdfUrl = opts.pdfUrlAbsoluta || opts.pdfUrl;
+  if (pdfUrl) {
+    mensaje += `\n\n*PDF de recomendaciones:* ${pdfUrl}`;
+  }
+
+  const extra = String(opts.mensajeExtra || '').trim();
+  if (extra) mensaje += `\n\n${extra}`;
+
+  if (sede.mapsUrl) {
+    mensaje += `\n\n${sede.mapsUrl}`;
+  }
+
+  return mensaje;
+}
+
+async function copiarTextoWhatsAppElectro(texto) {
+  const t = String(texto || '');
+  if (!t) return false;
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(t);
+      return true;
+    }
+  } catch (_) { /* fallback */ }
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = t;
+    ta.setAttribute('readonly', '');
+    ta.style.cssText = 'position:fixed;left:-9999px;top:0';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return ok;
+  } catch (_) {
+    return false;
+  }
+}
+
+function abrirEnlaceWhatsAppElectro(numero, mensaje) {
+  const text = encodeURIComponent(mensaje);
+  return `https://api.whatsapp.com/send?phone=${numero}&text=${text}`;
+}
+
+function numeroWhatsAppDesdeTelefono(telefono) {
+  let n = String(telefono || '').replace(/\D/g, '');
+  if (n.length === 10) n = '57' + n;
+  if (n.startsWith('00')) n = n.slice(2);
+  return n;
+}
 
 let lastReciboId = null;
 
@@ -11743,13 +11921,46 @@ function enviarRecomendacionesWhatsApp(cita) {
   mostrarModalEnviarWhatsApp(cita);
 }
 
-// Variable global para guardar la información temporalmente
 let citaParaWhatsApp = null;
 
-// Función para mostrar modal de confirmación
+async function actualizarVistaModalWhatsAppElectro() {
+  if (!citaParaWhatsApp?.cita) return;
+  const cita = citaParaWhatsApp.cita;
+  const extra = $('whatsappMensajePersonalizado')?.value?.trim() || '';
+  const pdfRel = urlPdfRecomendacionesElectro(cita.estudio);
+  const pdfExiste = await existeArchivoPublico(pdfRel);
+  const pdfUrlAbsoluta = pdfExiste ? new URL(pdfRel, window.location.origin).href : null;
+  citaParaWhatsApp.pdfUrl = pdfRel;
+  citaParaWhatsApp.pdfUrlAbsoluta = pdfUrlAbsoluta;
+  citaParaWhatsApp.pdfExiste = pdfExiste;
+
+  const preview = $('whatsappMensajePreview');
+  if (preview) {
+    preview.value = construirMensajeRecomendacionesElectro(cita, {
+      mensajeExtra: extra,
+      pdfUrlAbsoluta
+    });
+  }
+
+  const pdfBox = $('whatsappPdfBox');
+  const btnPdf = $('btnAbrirPdfRecomendaciones');
+  if (pdfBox) {
+    pdfBox.style.display = pdfExiste ? 'block' : 'none';
+  }
+  if (btnPdf) {
+    btnPdf.onclick = () => window.open(pdfRel, '_blank', 'noopener');
+  }
+
+  const avisoPdf = $('whatsappAvisoPdf');
+  if (avisoPdf) {
+    avisoPdf.textContent = pdfExiste
+      ? 'Hay PDF de recomendaciones para este estudio. Ábralo, descárguelo y adjúntelo en WhatsApp (el chat no permite enviar archivos automáticamente desde el navegador).'
+      : 'Coloque el PDF en public/recomendaciones-electro/ (' + clavePdfRecomendacionesElectro(cita.estudio) + '.pdf) para poder abrirlo desde aquí.';
+  }
+}
+
 function mostrarModalEnviarWhatsApp(cita) {
   citaParaWhatsApp = { cita };
-  // Crear modal si no existe
   let modal = $('modalEnviarWhatsApp');
   if (!modal) {
     modal = document.createElement('div');
@@ -11757,138 +11968,104 @@ function mostrarModalEnviarWhatsApp(cita) {
     modal.className = 'modal hidden';
     modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);align-items:center;justify-content:center;z-index:1000;padding:20px;display:none';
     modal.innerHTML = `
-      <div class="modal-content" style="background:white;border-radius:12px;padding:32px;max-width:500px;width:100%;box-shadow:0 20px 25px -5px rgba(0,0,0,0.1)">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px">
-          <h2 style="margin:0;color:#1f2937">Enviar Recomendaciones por WhatsApp</h2>
-          <button id="cerrarModalWhatsApp" style="background:none;border:none;font-size:24px;cursor:pointer;color:#6b7280;padding:0;width:32px;height:32px;display:flex;align-items:center;justify-content:center">&times;</button>
+      <div class="modal-content" style="background:white;border-radius:12px;padding:28px;max-width:560px;width:100%;max-height:90vh;overflow:auto;box-shadow:0 20px 25px -5px rgba(0,0,0,0.1)">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+          <h2 style="margin:0;color:#1f2937;font-size:1.15rem">Recomendaciones por WhatsApp</h2>
+          <button type="button" id="cerrarModalWhatsApp" class="btn-close-x" title="Cerrar">&times;</button>
         </div>
 
-        <div style="margin-bottom:20px;padding:16px;background:#f3f4f6;border-radius:8px">
-          <p style="margin:0 0 12px 0;font-size:0.85rem;color:#6b7280;font-weight:600">INFORMACIÓN DEL PACIENTE</p>
-          <div style="display:grid;gap:8px;font-size:0.95rem">
-            <div><strong>Nombre:</strong> <span id="whatsappNombrePaciente">-</span></div>
-            <div><strong>Documento:</strong> <span id="whatsappDocumento">-</span></div>
-            <div><strong>Teléfono:</strong> <span id="whatsappTelefono">-</span></div>
-          </div>
+        <div style="margin-bottom:16px;padding:14px;background:#f8fafc;border-radius:8px;font-size:0.9rem">
+          <div><strong>Paciente:</strong> <span id="whatsappNombrePaciente">-</span></div>
+          <div style="margin-top:6px"><strong>Teléfono:</strong> <span id="whatsappTelefono">-</span></div>
         </div>
 
-        <div style="margin-bottom:16px;padding:12px 16px;background:#fffbeb;border-left:4px solid #f59e0b;border-radius:0 8px 8px 0;font-size:0.88rem;color:#92400e">
-          ⚠️ WhatsApp Web no permite adjuntar archivos por enlace. Después de abrir el chat, adjunta el PDF de recomendaciones manualmente.
+        <label style="display:block;font-size:0.8rem;color:#64748b;font-weight:600;margin-bottom:6px">Mensaje a enviar</label>
+        <textarea id="whatsappMensajePreview" readonly style="width:100%;padding:12px;border:1px solid #e2e8f0;border-radius:8px;font-size:0.82rem;font-family:'Segoe UI Emoji','Apple Color Emoji','Noto Color Emoji',inherit;resize:vertical;min-height:220px;background:#fff;color:#334155;line-height:1.45"></textarea>
+        <p style="margin:8px 0 0;font-size:0.75rem;color:#64748b">Al enviar, el mensaje se copia al portapapeles. Si en WhatsApp faltan emojis, pegue con Ctrl+V.</p>
+
+        <div style="margin-top:12px">
+          <label style="display:block;font-size:0.8rem;color:#64748b;font-weight:600;margin-bottom:6px">Nota adicional (opcional)</label>
+          <textarea id="whatsappMensajePersonalizado" placeholder="Texto extra al final del mensaje..." style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:0.88rem;resize:vertical;min-height:56px"></textarea>
         </div>
 
-        <div style="margin-bottom:20px">
-          <label style="display:block;font-size:0.85rem;color:#6b7280;font-weight:600;margin-bottom:8px">Mensaje personalizado (opcional):</label>
-          <textarea id="whatsappMensajePersonalizado" placeholder="Agregar un mensaje personalizado..." style="width:100%;padding:12px;border:1px solid #d1d5db;border-radius:6px;font-size:0.95rem;font-family:Arial,sans-serif;resize:vertical;min-height:80px"></textarea>
+        <div id="whatsappPdfBox" style="display:none;margin-top:14px;padding:12px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px">
+          <p id="whatsappAvisoPdf" style="margin:0 0 10px;font-size:0.82rem;color:#1e40af;line-height:1.4"></p>
+          <button type="button" id="btnAbrirPdfRecomendaciones" class="btn-secondary" style="width:100%">Abrir PDF de recomendaciones</button>
         </div>
 
-        <div style="display:flex;gap:12px;justify-content:flex-end">
-          <button id="btnCancelarWhatsApp" class="btn-secondary">Cancelar</button>
-          <button id="btnConfirmarWhatsApp" class="btn-success">Abrir WhatsApp</button>
+        <p style="margin:14px 0 0;font-size:0.78rem;color:#64748b;line-height:1.35">
+          Sede principal: ${escapeHtml(SEDES_INNAR.principal.completa)}
+        </p>
+
+        <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:18px;flex-wrap:wrap">
+          <button type="button" id="btnCancelarWhatsApp" class="btn-secondary">Cancelar</button>
+          <button type="button" id="btnConfirmarWhatsApp" class="btn-success">Abrir WhatsApp</button>
         </div>
       </div>
     `;
     document.body.appendChild(modal);
 
-    // Event listeners
-    $('cerrarModalWhatsApp').addEventListener('click', () => { modal.classList.add('hidden'); modal.style.display = 'none'; });
-    $('btnCancelarWhatsApp').addEventListener('click', () => { modal.classList.add('hidden'); modal.style.display = 'none'; });
+    const cerrar = () => { modal.classList.add('hidden'); modal.style.display = 'none'; };
+    $('cerrarModalWhatsApp').addEventListener('click', cerrar);
+    $('btnCancelarWhatsApp').addEventListener('click', cerrar);
     $('btnConfirmarWhatsApp').addEventListener('click', enviarPorWhatsApp);
+    $('whatsappMensajePersonalizado').addEventListener('input', () => {
+      actualizarVistaModalWhatsAppElectro();
+    });
   }
 
-  // Llenar datos del modal
-  $('whatsappNombrePaciente').textContent = escapeHtml(cita.paciente_nombre || '-');
-  $('whatsappDocumento').textContent = escapeHtml(cita.paciente_documento || '-');
-  $('whatsappTelefono').textContent = escapeHtml(cita.telefono || '-');
+  $('whatsappNombrePaciente').textContent = cita.paciente_nombre || '-';
+  $('whatsappTelefono').textContent = cita.telefono || '-';
   $('whatsappMensajePersonalizado').value = '';
 
-  // Mostrar modal
   modal.classList.remove('hidden');
   modal.style.display = 'flex';
+  actualizarVistaModalWhatsAppElectro();
 }
 
-// Función para enviar por WhatsApp
-function enviarPorWhatsApp() {
-  if (!citaParaWhatsApp) {
+async function enviarPorWhatsApp() {
+  if (!citaParaWhatsApp?.cita) {
     showToast('Error: No hay información para enviar', 'error');
     return;
   }
 
   const cita = citaParaWhatsApp.cita;
-  const mensajePersonalizado = $('whatsappMensajePersonalizado').value.trim();
+  const previewVal = ($('whatsappMensajePreview')?.value || '').trim();
+  const extra = $('whatsappMensajePersonalizado')?.value?.trim() || '';
+  const mensaje = previewVal || construirMensajeRecomendacionesElectro(cita, {
+    mensajeExtra: extra,
+    pdfUrlAbsoluta: citaParaWhatsApp.pdfUrlAbsoluta || null
+  });
 
-  // Construir el mensaje para WhatsApp con formato correcto de fecha
-  let fechaObj;
-  try {
-    console.log('Fecha recibida:', cita.fecha, 'Tipo:', typeof cita.fecha);
-    
-    const ymd = extraerFechaYmdCalendario(cita.fecha);
-    if (ymd) {
-      const [year, month, day] = ymd.split('-').map(Number);
-      fechaObj = new Date(year, month - 1, day);
-    } else {
-      fechaObj = new Date(cita.fecha);
-    }
-    
-    // Validar que sea una fecha válida
-    if (isNaN(fechaObj.getTime())) {
-      console.error('Fecha inválida después del parseo:', cita.fecha);
-      throw new Error('Fecha inválida');
-    }
-    
-    console.log('Fecha parseada correctamente:', fechaObj);
-  } catch (e) {
-    console.error('Error parsing fecha:', e);
-    showToast('Error: Formato de fecha inválido', 'error');
+  const numero = numeroWhatsAppDesdeTelefono(cita.telefono);
+  if (!numero || numero.length < 11) {
+    showToast('Teléfono no válido para WhatsApp', 'error');
     return;
   }
 
-  // Formato de fecha: DD de MMMM de YYYY
-  const options = { day: 'numeric', month: 'long', year: 'numeric' };
-  const fechaFormato = fechaObj.toLocaleDateString('es-ES', options);
-
-  // Asegurarse de que la fecha sea capitalizada correctamente
-  const fechaCapitalizada = fechaFormato.charAt(0).toUpperCase() + fechaFormato.slice(1);
-
-  // Mensaje predeterminado del instituto
-  let mensaje = `HOLA, ${(cita.paciente_nombre || '').toUpperCase()}, INSTITUTO NEUROCIENCIAS DE NARIÑO LE INFORMA QUE:\n\n`;
-  mensaje += `Tiene programada su cita para la toma de su ${cita.estudio || 'ESTUDIO'}\n`;
-  mensaje += `DÍA:  ${fechaCapitalizada.toUpperCase()}\n`;
-  mensaje += `HORA:  ${cita.hora_agendamiento || '-'}\n\n`;
-  mensaje += `Le recordamos que será atendido por una técnica especializada en electrodiagnostico.\n`;
-  mensaje += `Anexo a este mensaje le enviamos las recomendaciones que debe tener en cuenta, le recordamos la dirección: ${SEDES_INNAR.complementaria.completa}.\n`;
-  mensaje += `Teléfonos 3053560651- 6027238141\n\n`;
-  mensaje += `NOTA: no olvide traer su orden de servicio, copia de su documento de identificación y epicrisis o historia clínica.\n\n`;
-  mensaje += `Le solicitamos confirmar su asistencia.\n`;
-  mensaje += `Recuerde acercarse a la ${SEDES_INNAR.complementaria.titulo} (${SEDES_INNAR.complementaria.corta}) para la respectiva facturación con sello. Muchas Gracias.`;
-
-  if (mensajePersonalizado) {
-    mensaje += `\n\n${mensajePersonalizado}`;
-  }
-
-  // Formatear el número de teléfono para WhatsApp
-  let numeroWhatsApp = cita.telefono.replace(/\D/g, '');
-  
-  if (!numeroWhatsApp.startsWith('+')) {
-    if (numeroWhatsApp.length === 10) {
-      numeroWhatsApp = '57' + numeroWhatsApp;
-    }
-    numeroWhatsApp = '+' + numeroWhatsApp;
-  }
-
-  // Abrir WhatsApp con el mensaje
-  const urlWhatsApp = `https://wa.me/${numeroWhatsApp}?text=${encodeURIComponent(mensaje)}`;
-  
-  // Cerrar modal
+  const copiado = await copiarTextoWhatsAppElectro(mensaje);
   const modal = $('modalEnviarWhatsApp');
   if (modal) {
     modal.classList.add('hidden');
     modal.style.display = 'none';
   }
 
-  // Abrir WhatsApp
-  window.open(urlWhatsApp, '_blank');
+  window.open(abrirEnlaceWhatsAppElectro(numero, mensaje), '_blank');
 
-  showToast('WhatsApp abierto. Recuerda adjuntar el PDF de recomendaciones manualmente.', 'success');
+  if (citaParaWhatsApp.pdfExiste && citaParaWhatsApp.pdfUrl) {
+    window.open(citaParaWhatsApp.pdfUrl, '_blank', 'noopener');
+  }
+
+  if (copiado) {
+    showToast(
+      citaParaWhatsApp.pdfExiste
+        ? 'WhatsApp abierto. Mensaje copiado: si faltan emojis, pegue con Ctrl+V y adjunte el PDF.'
+        : 'WhatsApp abierto. Mensaje copiado: si faltan emojis, pegue con Ctrl+V.',
+      'success'
+    );
+  } else {
+    showToast('WhatsApp abierto. Revise el mensaje en el chat.', 'success');
+  }
 }
 
 async function abrirModalDetallesCita(cita) {

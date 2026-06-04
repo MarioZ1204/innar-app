@@ -12,8 +12,10 @@ const db = require('./db-mysql');
 
 const TEMA_LABEL = {
   comprobantes: 'comprobante',
+  comprobantes_consulta_medica: 'comprobante',
   consentimientos: 'consentimiento',
   ordenes: 'orden',
+  ordenes_consulta_medica: 'orden',
   neutral: 'reporte',
   vtm: 'reporte',
   psg: 'reporte',
@@ -28,7 +30,7 @@ function temaDeArchivo(row) {
 /** Slot FE destino según carpeta/tema del depósito. */
 function resolverDestinoImportacion(pdxRow) {
   const tema = temaDeArchivo(pdxRow);
-  if (tema === 'comprobantes') {
+  if (tema === 'comprobantes' || tema === 'comprobantes_consulta_medica') {
     return { modo: 'slot', slot: 'CRC', etiqueta: 'CRC (comprobante)' };
   }
   if (tema === 'consentimientos') {
@@ -37,7 +39,7 @@ function resolverDestinoImportacion(pdxRow) {
       error: 'Los consentimientos se gestionan solo en Cargar reportes; no se vinculan al módulo Soportes.'
     };
   }
-  if (tema === 'ordenes') {
+  if (tema === 'ordenes' || tema === 'ordenes_consulta_medica') {
     if (esArchivoOrdenHcPdx(pdxRow)) {
       return {
         modo: 'vinculo',

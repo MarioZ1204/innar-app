@@ -82,6 +82,32 @@ button:disabled {
   border-radius: var(--btn-radius-sm) !important;
 }
 
+/* Iconos Lucide en botones del módulo Soportes / PDX */
+.sop-btn [data-lucide],
+.sop-btn svg {
+  width: 1.125em;
+  height: 1.125em;
+  flex-shrink: 0;
+  stroke-width: 2;
+}
+
+.sop-btn-sm [data-lucide],
+.sop-btn-sm svg {
+  width: 1em;
+  height: 1em;
+}
+
+.sop-btn-sm svg:only-child,
+.sop-btn-sm [data-lucide]:only-child {
+  display: block;
+}
+
+.sop-btn-sm:has(svg:only-child),
+.sop-btn-sm:has([data-lucide]:only-child) {
+  padding: 7px 10px !important;
+  min-width: 34px;
+}
+
 /* ── Primario (marca Innar) ─────────────────────────────────────────────── */
 .btn-primary,
 .btn-ok:not(.danger),

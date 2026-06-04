@@ -56,8 +56,24 @@ function buildIndexHandler(publicDir, appVersion) {
  * Excluye explícitamente `/uploads/` para forzar acceso autenticado vía
  * `routes/uploads.js` (privacidad clínica).
  */
+/** Redirecciones cortas para WhatsApp (evita URLs largas de Google Maps). */
+const UBICACION_MAPS_REDIRECT = {
+  principal: 'https://maps.app.goo.gl/nuT1XWpDEg6vXVmS7',
+  complementaria:
+    'https://www.google.com/maps/search/?api=1&query=Carrera+33+%2313-84+Barrio+San+Ignacio+Pasto+Nari%C3%B1o'
+};
+
 function applyStaticFiles(app, { publicDir, appVersion }) {
   app.get('/favicon.ico', (req, res) => res.redirect(302, '/images/icon.png'));
+
+  app.get('/ubicacion/:clave', (req, res) => {
+    const dest = UBICACION_MAPS_REDIRECT[String(req.params.clave || '').toLowerCase()];
+    if (!dest) {
+      return res.status(404).type('text/plain; charset=utf-8').send('Ubicación no encontrada');
+    }
+    return res.redirect(302, dest);
+  });
+
   app.get('/', buildIndexHandler(publicDir, appVersion));
 
   const staticMw = express.static(publicDir, {
@@ -74,4 +90,10 @@ function applyStaticFiles(app, { publicDir, appVersion }) {
   });
 }
 
-module.exports = { applyStaticFiles, staticCacheHeaders, buildIndexHandler, injectAssetVersion };
+module.exports = {
+  applyStaticFiles,
+  staticCacheHeaders,
+  buildIndexHandler,
+  injectAssetVersion,
+  UBICACION_MAPS_REDIRECT
+};

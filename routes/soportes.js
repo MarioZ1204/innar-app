@@ -35,7 +35,8 @@ const {
 } = require('../utils/soportes-pdx-parse');
 const {
   buildMetaFromUpload,
-  cargarEstudiosParaOrdenes,
+  buildMetaDesdeCamposManuales,
+  cargarListaParaCarpetaPdx,
   necesitaListaEstudios,
   finalizePdxFileOnDisk,
   ensureMetaPacienteNombre,
@@ -227,6 +228,15 @@ function uploadPdxSingle(req, res, next) {
     const payload = { error: err.message || 'No se pudo recibir el archivo PDF' };
     if (req.session?.rol === 'superadmin' && err.code) payload.code = err.code;
     return res.status(status).json(payload);
+  });
+}
+
+function uploadPdxMultiple(req, res, next) {
+  uploadPdx.array('files', 12)(req, res, (err) => {
+    if (!err) return next();
+    logger.error('[SOPORTES] multer pdx múltiple', { message: err.message, code: err.code });
+    const status = err.code === 'LIMIT_FILE_SIZE' ? 413 : 400;
+    return res.status(status).json({ error: err.message || 'No se pudieron recibir los PDF' });
   });
 }
 
@@ -515,7 +525,7 @@ router.post('/soportes/pdx/carpetas/:id/pre-analizar', requireAuth, requireRoleO
     if (!carpetaRows.length) return res.status(404).json({ error: 'Carpeta no encontrada' });
     const carpeta = carpetaRows[0];
     if (necesitaListaEstudios(carpeta)) {
-      carpeta._estudiosLista = await cargarEstudiosParaOrdenes(db);
+      carpeta._estudiosLista = await cargarListaParaCarpetaPdx(db, carpeta);
     }
     const { analizarNombreArchivo, ayudaFormatoPorTema } = require('../utils/soportes-pdx-parse');
     const analisis = analizarNombreArchivo(nombre, carpeta, carpeta._estudiosLista || []);
@@ -553,7 +563,7 @@ router.post(
 
       step = 'meta';
       if (necesitaListaEstudios(carpeta)) {
-        carpeta._estudiosLista = await cargarEstudiosParaOrdenes(db);
+        carpeta._estudiosLista = await cargarListaParaCarpetaPdx(db, carpeta);
       }
       const meta = buildMetaFromUpload(req.file.originalname, req.body, carpeta);
       if (!meta.ok) {
@@ -608,6 +618,106 @@ router.post(
         code: e?.code
       });
       res.status(500).json(pdxListErrorPayload(req, e, step));
+    }
+  }
+);
+
+router.post(
+  '/soportes/pdx/carpetas/:id/archivos/unificar',
+  requireAuth,
+  requireRoleOrPerm(ROLES_SOPORTES, ['modulo.reportes_pdx', 'soportes.pdx.subir']),
+  uploadPdxMultiple,
+  validateMagicBytes,
+  async (req, res) => {
+    const partPaths = [];
+    let mergedTmp = null;
+    try {
+      const files = req.files || [];
+      if (!files.length) {
+        cleanupMulterTempFiles(req);
+        return res.status(400).json({ error: 'Seleccione al menos un PDF (orden y/o historia clínica)' });
+      }
+      partPaths.push(...files.map((f) => f.path).filter(Boolean));
+
+      const carpetaRows = await db.query('SELECT * FROM sop_pdx_carpetas WHERE id = ?', [req.params.id]);
+      if (!carpetaRows.length) {
+        cleanupMulterTempFiles(req);
+        return res.status(404).json({ error: 'Carpeta no encontrada' });
+      }
+      const carpeta = carpetaRows[0];
+      const tema = detectarTemaCarpeta(carpeta.nombre_display);
+      if (tema !== 'ordenes_consulta_medica') {
+        cleanupMulterTempFiles(req);
+        return res.status(400).json({ error: 'La unificación de PDF solo está disponible en carpetas ORDEN + HC CONSULTAS MÉDICAS' });
+      }
+      const vis = calcularVisibilidadPeriodo(carpeta.periodo);
+      if (vis === 'archivo') {
+        cleanupMulterTempFiles(req);
+        return res.status(403).json({ error: 'Carpeta cerrada para carga' });
+      }
+
+      carpeta._estudiosLista = await cargarListaParaCarpetaPdx(db, carpeta);
+      const refLabel = files.map((f) => f.originalname).join(' + ');
+      const body = { ...req.body, confirmacion_manual: '1' };
+      const meta = buildMetaDesdeCamposManuales(refLabel, body, carpeta);
+      if (!meta.ok) {
+        cleanupMulterTempFiles(req);
+        return res.status(400).json({ error: meta.error || mensajeErrorFormato(tema) });
+      }
+
+      const { mergePdfFilesToTemp } = require('../utils/soportes-opf-merge');
+      mergedTmp = await mergePdfFilesToTemp(partPaths);
+      for (const p of partPaths) {
+        try { if (p && fs.existsSync(p)) fs.unlinkSync(p); } catch (_) { /* ignore */ }
+      }
+      partPaths.length = 0;
+
+      const tamano = fs.statSync(mergedTmp).size;
+      const fakeFile = {
+        path: mergedTmp,
+        originalname: meta.nombre_archivo_display || refLabel,
+        size: tamano,
+        filename: path.basename(mergedTmp)
+      };
+
+      const warnings = collectPdxWarnings(meta, carpeta);
+      const { rutaRelativa, nombre_archivo_display } = finalizePdxFileOnDisk(
+        carpeta.id,
+        fakeFile,
+        meta,
+        carpeta
+      );
+      meta.ruta_relativa = rutaRelativa;
+      meta.nombre_archivo_display = nombre_archivo_display;
+      mergedTmp = null;
+
+      const ins = await insertPdxArchivoRow(carpeta.id, meta, fakeFile, req.session);
+      const newId = pdxInsertId(ins);
+      if (!newId) throw new Error('No se obtuvo id del archivo unificado');
+
+      await logPdxArchivo(
+        newId,
+        'subida',
+        req.session.usuarioId,
+        `Unificado (${files.length} PDF): ${refLabel}`
+      );
+      const row = await db.query('SELECT * FROM sop_pdx_archivos WHERE id = ?', [newId]);
+      res.status(201).json({
+        ok: true,
+        unificados: files.length,
+        archivo: safeEnrichArchivoPdxConNombreDescarga(jsonSafeRow(row[0]), carpeta),
+        warnings
+      });
+    } catch (e) {
+      if (mergedTmp && fs.existsSync(mergedTmp)) {
+        try { fs.unlinkSync(mergedTmp); } catch (_) { /* ignore */ }
+      }
+      for (const p of partPaths) {
+        try { if (p && fs.existsSync(p)) fs.unlinkSync(p); } catch (_) { /* ignore */ }
+      }
+      cleanupMulterTempFiles(req);
+      logger.error('[SOPORTES] unificar pdx', { carpetaId: req.params.id, message: e?.message });
+      res.status(500).json(pdxListErrorPayload(req, e));
     }
   }
 );
@@ -1092,7 +1202,7 @@ router.post(
 
       const carpetaCtx = { periodo: prev.periodo, color_tema: prev.color_tema, nombre_display: prev.nombre_display };
       if (necesitaListaEstudios(carpetaCtx)) {
-        carpetaCtx._estudiosLista = await cargarEstudiosParaOrdenes(db);
+        carpetaCtx._estudiosLista = await cargarListaParaCarpetaPdx(db, carpetaCtx);
       }
       const meta = buildMetaFromUpload(req.file.originalname, req.body, carpetaCtx);
       if (!meta.ok) {

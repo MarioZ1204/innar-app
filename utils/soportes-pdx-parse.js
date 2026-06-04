@@ -4,7 +4,8 @@
 
 const {
   detectarTemaCarpeta,
-  normalizarTexto
+  normalizarTexto,
+  esTemaConsultaMedica
 } = require('./soportes-temas');
 
 const SEP = '\\s*-\\s*';
@@ -24,9 +25,9 @@ const RE_COMPROBANTE = new RegExp(
   'i'
 );
 
-/** APELLIDOS - NOMBRES - TIPO DOC - DOCUMENTO - FECHA - ESTUDIO.pdf (consentimientos) */
+/** CONSENTIMIENTO - APELLIDOS - NOMBRES - TIPO DOC - DOCUMENTO - FECHA - ESTUDIO.pdf */
 const RE_CONSENTIMIENTO = new RegExp(
-  `^(.+?)${SEP}(.+?)${SEP}(.+?)${SEP}([\\d.\\-]+)${SEP}(\\d{4}-\\d{2}-\\d{2})${SEP}(.+?)\\.pdf$`,
+  `^CONSENTIMIENTO${SEP}(.+?)${SEP}(.+?)${SEP}(.+?)${SEP}([\\d.\\-]+)${SEP}(\\d{4}-\\d{2}-\\d{2})${SEP}(.+?)\\.pdf$`,
   'i'
 );
 
@@ -53,15 +54,28 @@ const FORMATOS_AYUDA = {
   },
   ordenes: {
     pattern: 'ORDEN + HC - APELLIDOS - NOMBRES - TIPO DE DOCUMENTO - DOCUMENTO - FECHA - TIPO DE ESTUDIO.pdf',
-    ejemplo: 'ORDEN + HC - García López - Juan Carlos - CC - 1234567890 - 2026-05-27 - PSG Basal.pdf'
+    ejemplo: 'ORDEN + HC - García López - Juan Carlos - CC - 1234567890 - 2026-05-27 - PSG Basal.pdf',
+    nota: 'Los guiones (-) son opcionales; puede usar espacios entre los datos.'
   },
   comprobantes: {
     pattern: 'COMPROBANTE - APELLIDOS - NOMBRES - TIPO DE DOCUMENTO - DOCUMENTO - FECHA - TIPO DE ESTUDIO.pdf',
-    ejemplo: 'COMPROBANTE - García López - Juan Carlos - CC - 1234567890 - 2026-05-27 - PSG Basal.pdf'
+    ejemplo: 'COMPROBANTE - García López - Juan Carlos - CC - 1234567890 - 2026-05-27 - PSG Basal.pdf',
+    nota: 'Los guiones (-) son opcionales; puede usar espacios entre los datos.'
   },
   consentimientos: {
-    pattern: 'APELLIDOS - NOMBRES - TIPO DE DOCUMENTO - DOCUMENTO - FECHA - TIPO DE ESTUDIO.pdf',
-    ejemplo: 'García López - Juan Carlos - CC - 1234567890 - 2026-05-27 - PSG Basal.pdf'
+    pattern: 'CONSENTIMIENTO - APELLIDOS - NOMBRES - TIPO DE DOCUMENTO - DOCUMENTO - FECHA - TIPO DE ESTUDIO.pdf',
+    ejemplo: 'CONSENTIMIENTO - García López - Juan Carlos - CC - 1234567890 - 2026-05-27 - PSG Basal.pdf',
+    nota: 'El nombre guardado siempre empieza por CONSENTIMIENTO. Los guiones (-) son opcionales al subir.'
+  },
+  comprobantes_consulta_medica: {
+    pattern: 'COMPROBANTE NOMBRES APELLIDOS YYYY-MM-DD TIPO DE CONSULTA.pdf',
+    ejemplo: 'COMPROBANTE Juan Carlos García López 2026-05-27 Control.pdf',
+    nota: 'Sin número de documento. El tipo de consulta se toma de Gestión de datos.'
+  },
+  ordenes_consulta_medica: {
+    pattern: 'ORDEN + HC NOMBRES APELLIDOS YYYY-MM-DD ESPECIALIDAD.pdf',
+    ejemplo: 'ORDEN + HC Juan Carlos García López 2026-05-27 Neurología.pdf',
+    nota: 'Sin documento. Use especialidad (Neurología, Epileptología…). Puede subir 2+ PDF (orden y HC) para unificarlos.'
   },
   neutral: {
     pattern: 'Apellidos, Nombres   YYYY-MM-DD.pdf',
@@ -127,6 +141,10 @@ function estudioPsgReconocido(texto) {
 }
 
 function esTemaEstructurado(tema) {
+  return ['ordenes', 'comprobantes', 'consentimientos', 'comprobantes_consulta_medica', 'ordenes_consulta_medica'].includes(tema);
+}
+
+function esTemaEstructuradoConDocumento(tema) {
   return ['ordenes', 'comprobantes', 'consentimientos'].includes(tema);
 }
 
@@ -156,8 +174,194 @@ function splitSegmentosGuionesEspaciados(texto) {
 }
 
 function splitPartesNombreGuiones(originalName) {
+  return splitPartesNombreArchivo(originalName);
+}
+
+/** Partes del nombre: guiones con espacios o, si no hay guiones, segmentación por fecha. */
+function splitPartesNombreArchivo(originalName) {
   const sinPdf = String(originalName || '').trim().replace(/\.pdf$/i, '');
-  return splitSegmentosGuionesEspaciados(sinPdf);
+  if (/\s+-\s+/.test(sinPdf)) {
+    return splitSegmentosGuionesEspaciados(sinPdf);
+  }
+  const fechaMatch = sinPdf.match(/(\d{4}-\d{2}-\d{2})/);
+  if (!fechaMatch) {
+    return sinPdf.split(/\s+/).filter(Boolean);
+  }
+  const fecha = fechaMatch[1];
+  const idx = fechaMatch.index;
+  let before = sinPdf.slice(0, idx).replace(/[\s\-.]+$/,'').trim();
+  const after = sinPdf.slice(idx + fecha.length).replace(/^[\s\-.]+/,'').trim();
+  const parts = [];
+  if (/^ORDEN\s*\+\s*HC/i.test(before)) {
+    parts.push('ORDEN + HC');
+    before = before.replace(/^ORDEN\s*\+\s*HC[\s\-.]*/i, '').trim();
+  } else if (/^COMPROBANTE/i.test(before)) {
+    parts.push('COMPROBANTE');
+    before = before.replace(/^COMPROBANTE[\s\-.]*/i, '').trim();
+  } else if (/^CONSENTIMIENTO/i.test(before)) {
+    parts.push('CONSENTIMIENTO');
+    before = before.replace(/^CONSENTIMIENTO[\s\-.]*/i, '').trim();
+  }
+  if (before.includes(' - ')) {
+    parts.push(...splitSegmentosGuionesEspaciados(before));
+  } else if (before.includes(',')) {
+    const c = before.indexOf(',');
+    parts.push(before.slice(0, c).trim(), before.slice(c + 1).trim());
+  } else if (before) {
+    parts.push(before);
+  }
+  parts.push(fecha);
+  if (after) parts.push(after);
+  return parts.filter(Boolean);
+}
+
+/** Nombres primero, apellidos después (consultas médicas). */
+function extraerNombreApellidoConsultaMedica(texto) {
+  const t = String(texto || '').replace(/[\s\-.]+$/,'').trim();
+  if (!t) return { nombres: '', apellidos: '' };
+  if (t.includes(' - ')) {
+    const parts = splitSegmentosGuionesEspaciados(t);
+    if (parts.length >= 2) {
+      return { nombres: parts[0], apellidos: parts.slice(1).join(' - ') };
+    }
+  }
+  if (t.includes(',')) {
+    const c = t.indexOf(',');
+    return { apellidos: t.slice(0, c).trim(), nombres: t.slice(c + 1).trim() };
+  }
+  const tokens = t.split(/\s+/).filter(Boolean);
+  if (tokens.length < 2) return { nombres: t, apellidos: '' };
+  const mid = Math.ceil(tokens.length / 2);
+  return {
+    nombres: tokens.slice(0, mid).join(' '),
+    apellidos: tokens.slice(mid).join(' ')
+  };
+}
+
+function extraerCamposEstructuradosAntesFecha(before) {
+  const t = String(before || '').trim();
+  if (!t) {
+    return { apellidos: '', nombres: '', tipo_documento: 'CC', paciente_documento: '' };
+  }
+  if (t.includes(' - ')) {
+    const parts = splitSegmentosGuionesEspaciados(t);
+    if (parts.length >= 4) {
+      return {
+        apellidos: parts[0],
+        nombres: parts[1],
+        tipo_documento: detectarTipoDocumentoEnTexto(parts[2]) || String(parts[2] || 'CC').trim(),
+        paciente_documento: String(parts[3] || '').replace(/\s/g, '')
+      };
+    }
+    if (parts.length === 3 && esSegmentoDocumento(parts[2])) {
+      return {
+        apellidos: parts[0],
+        nombres: parts[1],
+        tipo_documento: 'CC',
+        paciente_documento: String(parts[2]).replace(/\s/g, '')
+      };
+    }
+    if (parts.length === 2) {
+      return { apellidos: parts[0], nombres: parts[1], tipo_documento: 'CC', paciente_documento: '' };
+    }
+  }
+  const tokens = t.split(/\s+/).filter(Boolean);
+  let docIdx = -1;
+  for (let i = tokens.length - 1; i >= 0; i--) {
+    if (esSegmentoDocumento(tokens[i])) {
+      docIdx = i;
+      break;
+    }
+  }
+  if (docIdx >= 2) {
+    const paciente_documento = String(tokens[docIdx]).replace(/\s/g, '');
+    const tipoSeg = tokens[docIdx - 1];
+    const tipo_documento = detectarTipoDocumentoEnTexto(tipoSeg) || 'CC';
+    const nameEnd = detectarTipoDocumentoEnTexto(tipoSeg) ? docIdx - 1 : docIdx;
+    const nameTokens = tokens.slice(0, nameEnd);
+    if (nameTokens.length >= 2) {
+      const mid = Math.ceil(nameTokens.length / 2);
+      return {
+        apellidos: nameTokens.slice(0, mid).join(' '),
+        nombres: nameTokens.slice(mid).join(' '),
+        tipo_documento,
+        paciente_documento
+      };
+    }
+  }
+  const na = extraerNombreApellidoConsultaMedica(t);
+  return {
+    apellidos: na.apellidos,
+    nombres: na.nombres,
+    tipo_documento: 'CC',
+    paciente_documento: ''
+  };
+}
+
+function parseNombreEstructuradoDesdeFecha(tema, originalName, estudios = []) {
+  const base = normalizarNombreParaParseo(originalName);
+  const fechaMatch = base.match(/(\d{4}-\d{2}-\d{2})/);
+  if (!fechaMatch) return { ok: false, original: base };
+
+  const fecha = fechaMatch[1];
+  const sinPdf = base.replace(/\.pdf$/i, '');
+  let after = sinPdf.slice(fechaMatch.index + fecha.length).replace(/^[\s\-.]+/,'').trim();
+  let before = sinPdf.slice(0, fechaMatch.index).replace(/[\s\-.]+$/,'').trim();
+
+  if (tema === 'ordenes' || tema === 'ordenes_consulta_medica') {
+    before = before.replace(/^ORDEN\s*\+\s*HC[\s\-.]*/i, '').trim();
+  } else if (tema === 'comprobantes' || tema === 'comprobantes_consulta_medica') {
+    before = before.replace(/^COMPROBANTE[\s\-.]*/i, '').trim();
+  } else if (tema === 'consentimientos') {
+    before = before.replace(/^CONSENTIMIENTO[\s\-.]*/i, '').trim();
+  }
+
+  const estudio = resolverEstudioDesdeLista(after, estudios) || after.trim();
+  if (!estudio) return { ok: false, original: base };
+
+  if (esTemaConsultaMedica(tema)) {
+    const { nombres, apellidos } = extraerNombreApellidoConsultaMedica(before);
+    if (!nombres || !apellidos) return { ok: false, original: base };
+    const partsNorm = {
+      nombres,
+      apellidos,
+      tipo_documento: '',
+      paciente_documento: '',
+      fecha,
+      estudio,
+      formato: tema
+    };
+    if (tema === 'comprobantes_consulta_medica') {
+      partsNorm.nombre_display = normalizarNombreComprobanteConsultaMedica(partsNorm);
+    } else {
+      partsNorm.nombre_display = normalizarNombreOrdenHcConsultaMedica(partsNorm);
+    }
+    return buildStructuredOk(base, partsNorm);
+  }
+
+  const campos = extraerCamposEstructuradosAntesFecha(before);
+  if (!campos.apellidos || !campos.nombres || !campos.paciente_documento) {
+    return { ok: false, original: base };
+  }
+  const partsNorm = {
+    apellidos: campos.apellidos,
+    nombres: campos.nombres,
+    tipo_documento: campos.tipo_documento,
+    paciente_documento: campos.paciente_documento,
+    fecha,
+    estudio,
+    formato: tema
+  };
+  if (tema === 'ordenes') {
+    partsNorm.nombre_display = normalizarNombreOrdenHc(partsNorm);
+  } else if (tema === 'comprobantes') {
+    partsNorm.nombre_display = normalizarNombreComprobante(partsNorm);
+  } else if (tema === 'consentimientos') {
+    partsNorm.nombre_display = normalizarNombreConsentimiento(partsNorm);
+  } else {
+    return { ok: false, original: base };
+  }
+  return buildStructuredOk(base, partsNorm);
 }
 
 function documentoValidoPsg(doc) {
@@ -295,12 +499,28 @@ function buildStructuredOk(original, parts) {
   };
 }
 
+function parseNombreOrdenHcConsultaMedica(originalName, tiposLista = []) {
+  const base = normalizarNombreParaParseo(originalName);
+  const desdeFecha = parseNombreEstructuradoDesdeFecha('ordenes_consulta_medica', base, tiposLista);
+  if (desdeFecha.ok) return desdeFecha;
+  return { ok: false, original: base, error: mensajeErrorFormato('ordenes_consulta_medica') };
+}
+
+function parseNombreComprobanteConsultaMedica(originalName, tiposLista = []) {
+  const base = normalizarNombreParaParseo(originalName);
+  const desdeFecha = parseNombreEstructuradoDesdeFecha('comprobantes_consulta_medica', base, tiposLista);
+  if (desdeFecha.ok) return desdeFecha;
+  return { ok: false, original: base, error: mensajeErrorFormato('comprobantes_consulta_medica') };
+}
+
 function parseNombreOrdenHc(originalName, estudios = []) {
   const base = normalizarNombreParaParseo(originalName);
   const m = base.match(RE_ORDEN_HC);
   if (!m) {
     const flex = parseNombreEstructuradoFallback('ordenes', base, estudios);
     if (flex.ok) return flex;
+    const desdeFecha = parseNombreEstructuradoDesdeFecha('ordenes', base, estudios);
+    if (desdeFecha.ok) return desdeFecha;
     return { ok: false, original: base, error: mensajeErrorFormato('ordenes') };
   }
   const apellidos = m[1].trim();
@@ -327,6 +547,8 @@ function parseNombreComprobante(originalName, estudios = []) {
   if (!m) {
     const flex = parseNombreEstructuradoFallback('comprobantes', base, estudios);
     if (flex.ok) return flex;
+    const desdeFecha = parseNombreEstructuradoDesdeFecha('comprobantes', base, estudios);
+    if (desdeFecha.ok) return desdeFecha;
     return { ok: false, original: base, error: mensajeErrorFormato('comprobantes') };
   }
   const apellidos = m[1].trim();
@@ -353,6 +575,8 @@ function parseNombreConsentimiento(originalName, estudios = []) {
   if (!m) {
     const flex = parseNombreEstructuradoFallback('consentimientos', base, estudios);
     if (flex.ok) return flex;
+    const desdeFecha = parseNombreEstructuradoDesdeFecha('consentimientos', base, estudios);
+    if (desdeFecha.ok) return desdeFecha;
     return { ok: false, original: base, error: mensajeErrorFormato('consentimientos') };
   }
   const apellidos = m[1].trim();
@@ -385,7 +609,17 @@ function normalizarNombreComprobante(parts) {
 
 function normalizarNombreConsentimiento(parts) {
   const { apellidos, nombres, tipo_documento, paciente_documento, fecha, estudio } = parts;
-  return `${apellidos} - ${nombres} - ${tipo_documento} - ${paciente_documento} - ${fecha} - ${estudio}.pdf`;
+  return `CONSENTIMIENTO - ${apellidos} - ${nombres} - ${tipo_documento} - ${paciente_documento} - ${fecha} - ${estudio}.pdf`;
+}
+
+function normalizarNombreComprobanteConsultaMedica(parts) {
+  const { nombres, apellidos, fecha, estudio } = parts;
+  return `COMPROBANTE ${nombres} ${apellidos} ${fecha} ${estudio}.pdf`;
+}
+
+function normalizarNombreOrdenHcConsultaMedica(parts) {
+  const { nombres, apellidos, fecha, estudio } = parts;
+  return `ORDEN + HC ${nombres} ${apellidos} ${fecha} ${estudio}.pdf`;
 }
 
 /** PSG reportes: NOMBRES - APELLIDOS - DOCUMENTO - FECHA - [opcional…] - TIPO PSG */
@@ -447,6 +681,10 @@ function parseNombrePsg(originalName, estudios = []) {
 function parseNombrePorCarpeta(originalName, carpeta, estudios = []) {
   const tema = detectarTemaCarpeta(carpeta?.nombre_display || '');
   switch (tema) {
+    case 'ordenes_consulta_medica':
+      return parseNombreOrdenHcConsultaMedica(originalName, estudios);
+    case 'comprobantes_consulta_medica':
+      return parseNombreComprobanteConsultaMedica(originalName, estudios);
     case 'ordenes':
       return parseNombreOrdenHc(originalName, estudios);
     case 'comprobantes':
@@ -508,7 +746,7 @@ function fechaEnPeriodo(fechaStr, periodoYYYYMM) {
 function temaCoincideCarpeta(estudioTema, carpetaTema) {
   if (!estudioTema || !carpetaTema) return true;
   if (carpetaTema === 'neutral' || estudioTema === 'neutral') return true;
-  if (['ordenes', 'comprobantes', 'consentimientos'].includes(carpetaTema)) return true;
+  if (esTemaEstructurado(carpetaTema)) return true;
   if (['vtm', 'eeg', 'psg', 'actigrafia'].includes(carpetaTema)) return true;
   return estudioTema === carpetaTema;
 }
@@ -541,12 +779,18 @@ function detectarTipoDocumentoEnTexto(seg) {
  */
 function parseNombreEstructuradoFallback(tema, originalName, estudios = []) {
   const base = normalizarNombreParaParseo(originalName);
-  const parts = splitPartesNombreGuiones(base);
+  if (esTemaConsultaMedica(tema)) {
+    return parseNombreEstructuradoDesdeFecha(tema, base, estudios);
+  }
+  const parts = splitPartesNombreArchivo(base);
   let offset = 0;
   if (tema === 'ordenes' && parts[0] && /orden/i.test(parts[0])) offset = 1;
   if (tema === 'comprobantes' && parts[0] && /comprobante/i.test(parts[0])) offset = 1;
+  if (tema === 'consentimientos' && parts[0] && /consentimiento/i.test(parts[0])) offset = 1;
   const need = 6;
-  if (parts.length < offset + need) return { ok: false, original: base };
+  if (parts.length < offset + need) {
+    return parseNombreEstructuradoDesdeFecha(tema, base, estudios);
+  }
 
   const apellidos = parts[offset];
   const nombres = parts[offset + 1];
@@ -643,11 +887,33 @@ function extraerDatosParcialesNombre(originalName, carpeta, estudios = []) {
     } else if (!parcial.estudio_texto && ['vtm', 'eeg', 'actigrafia'].includes(tema)) {
       parcial.estudio_texto = inferirEstudioDesdeCarpeta(carpeta);
     }
+  } else if (esTemaConsultaMedica(tema)) {
+    const parsedTry = parseNombreEstructuradoDesdeFecha(tema, base, estudios);
+    if (parsedTry.ok) {
+      parcial.nombres = parsedTry.nombres;
+      parcial.apellidos = parsedTry.apellidos;
+      parcial.fecha_estudio = parsedTry.fecha_estudio;
+      parcial.estudio_texto = parsedTry.estudio_texto;
+    } else if (fechaMatch) {
+      const sinPdf = base.replace(/\.pdf$/i, '');
+      let before = sinPdf.slice(0, fechaMatch.index).replace(/[\s\-.]+$/,'').trim();
+      if (tema === 'ordenes_consulta_medica') {
+        before = before.replace(/^ORDEN\s*\+\s*HC[\s\-.]*/i, '').trim();
+      } else {
+        before = before.replace(/^COMPROBANTE[\s\-.]*/i, '').trim();
+      }
+      const na = extraerNombreApellidoConsultaMedica(before);
+      parcial.nombres = na.nombres;
+      parcial.apellidos = na.apellidos;
+      const after = sinPdf.slice(fechaMatch.index + fechaMatch[0].length).replace(/^[\s\-.]+/,'').trim();
+      if (after) parcial.estudio_texto = resolverEstudioDesdeLista(after, estudios) || after;
+    }
   } else if (esTemaEstructurado(tema)) {
-    const parts = splitPartesNombreGuiones(base);
+    const parts = splitPartesNombreArchivo(base);
     let offset = 0;
     if (tema === 'ordenes' && parts[0] && /orden/i.test(parts[0])) offset = 1;
     if (tema === 'comprobantes' && parts[0] && /comprobante/i.test(parts[0])) offset = 1;
+    if (tema === 'consentimientos' && parts[0] && /consentimiento/i.test(parts[0])) offset = 1;
     if (parts.length > offset) parcial.apellidos = parts[offset] || '';
     if (parts.length > offset + 1) parcial.nombres = parts[offset + 1] || '';
     if (parts.length > offset + 2) {
@@ -766,7 +1032,13 @@ function buildMetaDesdeCamposManuales(originalName, body, carpeta) {
   }
 
   let estudio = String(body.estudio_texto || '').trim();
-  if (esTemaEstructurado(tema)) {
+  if (tema === 'ordenes_consulta_medica') {
+    estudio = resolverEstudioDesdeLista(estudio, estudios);
+    if (!estudio) return { ok: false, error: 'Indique la especialidad' };
+  } else if (tema === 'comprobantes_consulta_medica') {
+    estudio = resolverEstudioDesdeLista(estudio, estudios);
+    if (!estudio) return { ok: false, error: 'Indique el tipo de consulta' };
+  } else if (esTemaEstructuradoConDocumento(tema)) {
     estudio = resolverEstudioDesdeLista(estudio, estudios);
     if (!estudio) return { ok: false, error: 'Indique el tipo de examen' };
     if (!paciente_documento) return { ok: false, error: 'El número de documento es obligatorio' };
@@ -808,6 +1080,16 @@ function buildMetaDesdeCamposManuales(originalName, body, carpeta) {
     base.formato = 'comprobantes';
     base.nombre_display = normalizarNombreComprobante({
       apellidos, nombres, tipo_documento, paciente_documento, fecha, estudio
+    });
+  } else if (tema === 'comprobantes_consulta_medica') {
+    base.formato = 'comprobantes_consulta_medica';
+    base.nombre_display = normalizarNombreComprobanteConsultaMedica({
+      nombres, apellidos, fecha, estudio
+    });
+  } else if (tema === 'ordenes_consulta_medica') {
+    base.formato = 'ordenes_consulta_medica';
+    base.nombre_display = normalizarNombreOrdenHcConsultaMedica({
+      nombres, apellidos, fecha, estudio
     });
   } else if (tema === 'consentimientos') {
     base.formato = 'consentimientos';
@@ -903,6 +1185,22 @@ function buildNombreDescargaPdxDesdeRow(row, carpeta) {
   if (tema === 'comprobantes' && partsEstruct.apellidos && partsEstruct.nombres && partsEstruct.fecha && partsEstruct.estudio && partsEstruct.paciente_documento) {
     return normalizarNombreComprobante(partsEstruct);
   }
+  if (tema === 'comprobantes_consulta_medica' && partsEstruct.nombres && partsEstruct.apellidos && partsEstruct.fecha && partsEstruct.estudio) {
+    return normalizarNombreComprobanteConsultaMedica({
+      nombres: partsEstruct.nombres,
+      apellidos: partsEstruct.apellidos,
+      fecha: partsEstruct.fecha,
+      estudio: partsEstruct.estudio
+    });
+  }
+  if (tema === 'ordenes_consulta_medica' && partsEstruct.nombres && partsEstruct.apellidos && partsEstruct.fecha && partsEstruct.estudio) {
+    return normalizarNombreOrdenHcConsultaMedica({
+      nombres: partsEstruct.nombres,
+      apellidos: partsEstruct.apellidos,
+      fecha: partsEstruct.fecha,
+      estudio: partsEstruct.estudio
+    });
+  }
   if (tema === 'consentimientos' && partsEstruct.apellidos && partsEstruct.nombres && partsEstruct.fecha && partsEstruct.estudio && partsEstruct.paciente_documento) {
     return normalizarNombreConsentimiento(partsEstruct);
   }
@@ -943,11 +1241,17 @@ module.exports = {
   PSG_TIPOS_ESTUDIO,
   estudioPsgReconocido,
   esTemaEstructurado,
+  esTemaEstructuradoConDocumento,
   esTemaPsgReporte,
   esTemaFormatoGuionesCompleto,
   parseNombrePsg,
   normalizarNombrePsg,
   splitPartesNombreGuiones,
+  splitPartesNombreArchivo,
+  parseNombreComprobanteConsultaMedica,
+  parseNombreOrdenHcConsultaMedica,
+  normalizarNombreComprobanteConsultaMedica,
+  normalizarNombreOrdenHcConsultaMedica,
   documentoValidoPsg,
   extraerDatosParcialesNombre,
   extraerNombresAntesDeFecha,

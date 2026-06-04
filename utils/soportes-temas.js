@@ -9,8 +9,34 @@ function normalizarTexto(s) {
     .replace(/[\u0300-\u036f]/g, '');
 }
 
+function esCarpetaConsultasMedicas(u) {
+  return /\bconsultas?\s+medicas?\b/.test(u) || (u.includes('consulta') && u.includes('medica'));
+}
+
+function esTemaConsultaMedica(tema) {
+  return tema === 'comprobantes_consulta_medica' || tema === 'ordenes_consulta_medica';
+}
+
+function esTemaOrdenHcConsultaMedica(tema) {
+  return tema === 'ordenes_consulta_medica';
+}
+
 function detectarTemaCarpeta(nombreCarpeta) {
   const u = normalizarTexto(nombreCarpeta);
+  const consultasMed = esCarpetaConsultasMedicas(u);
+
+  if (consultasMed && /\bcomprobante/.test(u)) {
+    return 'comprobantes_consulta_medica';
+  }
+
+  if (
+    consultasMed &&
+    (/\bordenes\b/.test(u) ||
+      /\borden\s*\+\s*hc\b/.test(u) ||
+      (/\borden\b/.test(u) && /\bhc\b/.test(u)))
+  ) {
+    return 'ordenes_consulta_medica';
+  }
 
   if (/\bcomprobante/.test(u)) {
     return 'comprobantes';
@@ -65,11 +91,13 @@ function detectarTemaCarpeta(nombreCarpeta) {
 }
 
 function esCarpetaOrdenes(nombreCarpeta) {
-  return detectarTemaCarpeta(nombreCarpeta) === 'ordenes';
+  const t = detectarTemaCarpeta(nombreCarpeta);
+  return t === 'ordenes' || t === 'ordenes_consulta_medica';
 }
 
 function esCarpetaComprobantes(nombreCarpeta) {
-  return detectarTemaCarpeta(nombreCarpeta) === 'comprobantes';
+  const t = detectarTemaCarpeta(nombreCarpeta);
+  return t === 'comprobantes' || t === 'comprobantes_consulta_medica';
 }
 
 function esCarpetaConsentimientos(nombreCarpeta) {
@@ -89,11 +117,16 @@ const TEMA_LABELS = {
   ordenes: 'Órdenes',
   comprobantes: 'Comprobantes',
   consentimientos: 'Consentimientos',
+  comprobantes_consulta_medica: 'Comprobantes consultas médicas',
+  ordenes_consulta_medica: 'Órdenes + HC consultas médicas',
   neutral: 'General'
 };
 
 module.exports = {
   detectarTemaCarpeta,
+  esCarpetaConsultasMedicas,
+  esTemaConsultaMedica,
+  esTemaOrdenHcConsultaMedica,
   esCarpetaOrdenes,
   esCarpetaComprobantes,
   esCarpetaConsentimientos,

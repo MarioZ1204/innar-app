@@ -1,10 +1,10 @@
 /**
  * Campos mínimos por tipo de carpeta PDX y evaluación flexible del nombre de archivo.
  */
-const { detectarTemaCarpeta, inferirEstudioDesdeCarpeta } = require('./soportes-temas');
+const { detectarTemaCarpeta, inferirEstudioDesdeCarpeta, esTemaOrdenHcConsultaMedica } = require('./soportes-temas');
 const { estudioPsgReconocido } = require('./soportes-pdx-parse');
 
-function esTemaEstructurado(tema) {
+function esTemaEstructuradoConDocumento(tema) {
   return ['ordenes', 'comprobantes', 'consentimientos'].includes(tema);
 }
 
@@ -20,7 +20,19 @@ function definicionCamposPorTema(tema) {
     { key: 'nombres', label: 'Nombres', requerido: true, input: 'text' },
     { key: 'fecha_estudio', label: 'Fecha del estudio', requerido: true, input: 'date' }
   ];
-  if (esTemaEstructurado(tema)) {
+  if (esTemaOrdenHcConsultaMedica(tema)) {
+    return [
+      ...base,
+      { key: 'estudio_texto', label: 'Especialidad', requerido: true, input: 'especialidad' }
+    ];
+  }
+  if (tema === 'comprobantes_consulta_medica') {
+    return [
+      ...base,
+      { key: 'estudio_texto', label: 'Tipo de consulta', requerido: true, input: 'tipo_consulta' }
+    ];
+  }
+  if (esTemaEstructuradoConDocumento(tema)) {
     return [
       ...base,
       { key: 'tipo_documento', label: 'Tipo de documento', requerido: false, input: 'text', defecto: 'CC' },

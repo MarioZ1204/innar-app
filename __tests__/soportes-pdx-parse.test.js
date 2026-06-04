@@ -147,13 +147,48 @@ describe('soportes-pdx-parse — formatos estructurados', () => {
     expect(p.formato).toBe('comprobantes');
   });
 
-  test('consentimientos', () => {
+  test('consentimientos con prefijo CONSENTIMIENTO al guardar', () => {
     const p = parseNombreConsentimiento(
-      'García López - Juan Carlos - CC - 5555555 - 2026-04-02 - VTM.pdf',
+      'CONSENTIMIENTO - García López - Juan Carlos - CC - 5555555 - 2026-04-02 - VTM.pdf',
       []
     );
     expect(p.ok).toBe(true);
     expect(p.formato).toBe('consentimientos');
+    expect(p.nombre_display).toMatch(/^CONSENTIMIENTO - /);
+  });
+
+  test('órdenes sin guiones obligatorios', () => {
+    const p = parseNombreOrdenHc(
+      'ORDEN + HC García López Juan Carlos CC 1234567890 2026-05-27 PSG Basal.pdf',
+      [{ nombre: 'PSG Basal' }]
+    );
+    expect(p.ok).toBe(true);
+    expect(p.paciente_documento).toBe('1234567890');
+  });
+
+  test('comprobante consultas médicas', () => {
+    expect(detectarTemaCarpeta('COMPROBANTES CONSULTAS MÉDICAS')).toBe('comprobantes_consulta_medica');
+    const p = parseNombrePorCarpeta(
+      'COMPROBANTE Juan Carlos García López 2026-05-27 Control.pdf',
+      { nombre_display: 'COMPROBANTES CONSULTAS MÉDICAS' },
+      [{ nombre: 'Control' }]
+    );
+    expect(p.ok).toBe(true);
+    expect(p.nombres).toBe('Juan Carlos');
+    expect(p.apellidos).toBe('García López');
+    expect(p.nombre_display).toBe('COMPROBANTE Juan Carlos García López 2026-05-27 Control.pdf');
+  });
+
+  test('orden + HC consultas médicas por especialidad', () => {
+    expect(detectarTemaCarpeta('ORDENES + HC CONSULTAS MÉDICAS')).toBe('ordenes_consulta_medica');
+    const a = analizarNombreArchivo(
+      'ORDEN + HC María Elena Pérez Gómez 2026-06-01 Neurología.pdf',
+      { nombre_display: 'ORDENES + HC CONSULTAS MÉDICAS' },
+      [{ nombre: 'Neurología' }]
+    );
+    expect(a.ok).toBe(true);
+    expect(a.parsed.estudio_texto).toBe('Neurología');
+    expect(a.parsed.nombre_display).toBe('ORDEN + HC María Elena Pérez Gómez 2026-06-01 Neurología.pdf');
   });
 
   test('parseNombrePorCarpeta elige parser según carpeta', () => {
