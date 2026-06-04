@@ -7860,9 +7860,79 @@ function debeMostrarFinEstudioEnCard(cita, dateFin) {
   return fechaFinStr !== fechaBase;
 }
 
-/** No auto-completa en cliente: el cierre lo hace el usuario o el servidor (fin programado vencido). */
+/** El cierre por tiempo lo hace el servidor al consultar citas; aquí solo devuelve la lista. */
 async function sincronizarEstadosPorTiempo(citas = []) {
   return Array.isArray(citas) ? citas : [];
+}
+
+function resolverHoraFinFinalizacionEstudio(cita) {
+  const ahora = new Date();
+  const horaActual = `${String(ahora.getHours()).padStart(2, '0')}:${String(ahora.getMinutes()).padStart(2, '0')}`;
+  const horaFinExistente = cita?.hora_fin;
+  let horaFinFinal = horaActual;
+  if (horaFinExistente && /^\d{2}:\d{2}$/.test(horaFinExistente)) {
+    const dateFinProg = obtenerFechaHoraFinEstudioActivo(cita) || obtenerFechaHoraFinCitaElectro(cita);
+    if (dateFinProg && ahora.getTime() >= dateFinProg.getTime()) {
+      horaFinFinal = horaFinExistente;
+    } else {
+      const [efH, efM] = horaFinExistente.split(':').map(Number);
+      if (ahora.getHours() * 60 + ahora.getMinutes() > efH * 60 + efM) {
+        horaFinFinal = horaFinExistente;
+      }
+    }
+  }
+  return horaFinFinal;
+}
+
+async function finalizarEstudioElectroEnServidor(opts = {}) {
+  const { cerrarModal = true, mensajeAuto = false } = opts;
+  if (!citaElectroSeleccionada) return false;
+  const horaFinFinal = resolverHoraFinFinalizacionEstudio(citaElectroSeleccionada);
+  try {
+    const res = await apiFetch(`/api/citas-electro/${citaElectroSeleccionada.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ estado: 'Completado', hora_fin: horaFinFinal })
+    });
+    const data = await res.json();
+    if (!data?.ok) {
+      showToast(data?.error || 'Error finalizando estudio', 'error');
+      return false;
+    }
+    const msg = mensajeAuto
+      ? `Estudio completado automáticamente (fin programado ${horaFinFinal})`
+      : `Estudio finalizado a las ${horaFinFinal}`;
+    showToast(msg, 'success');
+    citaElectroSeleccionada.estado = 'Completado';
+    citaElectroSeleccionada.hora_fin = horaFinFinal;
+    const selectEstado = $('modalEstado');
+    if (selectEstado) {
+      selectEstado.disabled = false;
+      selectEstado.style.opacity = '1';
+      selectEstado.style.cursor = 'pointer';
+      selectEstado.value = 'Completado';
+    }
+    const selectEquipo = $('modalEquipo');
+    if (selectEquipo) {
+      selectEquipo.disabled = false;
+      selectEquipo.style.opacity = '1';
+      selectEquipo.style.cursor = 'pointer';
+    }
+    if (window.socket && window.socket.connected) {
+      window.socket.emit('electro:estudio-finalizado', {
+        id: citaElectroSeleccionada.id,
+        hora_fin: horaFinFinal
+      });
+    }
+    cargarCitasElectro();
+    cargarEquiposElectroSelect();
+    if (cerrarModal) cerrarModalDetallesCita();
+    return true;
+  } catch (e) {
+    console.error('[FINALIZAR] Error:', e);
+    showToast('Error finalizando estudio', 'error');
+    return false;
+  }
 }
 
 /** Entidad mostrada en agenda electro (columna cita, espera o recibo). */
@@ -11468,89 +11538,9 @@ async function finalizarEstudioModal() {
 
 async function confirmarFinalizarEstudio() {
   if (!citaElectroSeleccionada) return;
-  
-  // Cerrar modal de confirmación
   const modal = $('modalConfirmarFinalizarEstudio');
-  if (modal) {
-    modal.classList.add('hidden');
-  }
-  
-  try {
-    const ahora = new Date();
-    const hh = String(ahora.getHours()).padStart(2, '0');
-    const mm = String(ahora.getMinutes()).padStart(2, '0');
-    const horaActual = `${hh}:${mm}`;
-    
-    // Si el estudio ya tiene hora_fin calculada (inicio + duración) y la hora actual
-    // es posterior, conservar la hora_fin original en vez de usar la hora actual.
-    const horaFinExistente = citaElectroSeleccionada?.hora_fin;
-    let horaFinFinal = horaActual;
-    if (horaFinExistente && /^\d{2}:\d{2}$/.test(horaFinExistente)) {
-      const [efH, efM] = horaFinExistente.split(':').map(Number);
-      if (ahora.getHours() * 60 + ahora.getMinutes() > efH * 60 + efM) {
-        horaFinFinal = horaFinExistente;
-      }
-    }
-
-    const cambios = {
-      estado: 'Completado',
-      hora_fin: horaFinFinal
-    };
-    
-    // Actualizar en la base de datos
-    const res = await apiFetch(`/api/citas-electro/${citaElectroSeleccionada.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(cambios)
-    });
-    
-    const data = await res.json();
-    
-    if (data && data.ok) {
-      showToast(`Estudio finalizado a las ${horaFinFinal}`, 'success');
-      
-      // Actualizar el objeto de la cita localmente
-      citaElectroSeleccionada.estado = 'Completado';
-      citaElectroSeleccionada.hora_fin = horaFinFinal;
-      
-      // Habilitar el select de estado ahora que se cambió a "Completado"
-      const selectEstado = $('modalEstado');
-      if (selectEstado) {
-        selectEstado.disabled = false;
-        selectEstado.style.opacity = '1';
-        selectEstado.style.cursor = 'pointer';
-        selectEstado.value = 'Completado';
-        console.log('[FINALIZAR] Select habilitado - estado "Completado"');
-      }
-      
-      // Habilitar selector de equipo cuando se finaliza el estudio
-      const selectEquipo = $('modalEquipo');
-      if (selectEquipo) {
-        selectEquipo.disabled = false;
-        selectEquipo.style.opacity = '1';
-        selectEquipo.style.cursor = 'pointer';
-        console.log('[FINALIZAR] Selector de equipo habilitado');
-      }
-      
-      // Emitir evento de socket desde el cliente
-      if (window.socket && window.socket.connected) {
-        window.socket.emit('electro:estudio-finalizado', {
-          id: citaElectroSeleccionada.id,
-          hora_fin: horaActual
-        });
-      }
-      
-      // El servidor también emitirá el socket event
-      cargarCitasElectro();
-      cargarEquiposElectroSelect();
-      cerrarModalDetallesCita();
-    } else {
-      showToast(data?.error || 'Error finalizando estudio', 'error');
-    }
-  } catch (e) {
-    console.error('[FINALIZAR] Error:', e);
-    showToast('Error finalizando estudio', 'error');
-  }
+  if (modal) modal.classList.add('hidden');
+  await finalizarEstudioElectroEnServidor({ cerrarModal: true, mensajeAuto: false });
 }
 
 function cancelarFinalizarEstudio() {
@@ -11989,6 +11979,17 @@ function actualizarProgresoEstudio() {
           porcentaje,
           tiempoTranscurrido: tiempoFormato
         });
+      }
+      if (porcentaje >= 100 && !citaElectroSeleccionada._autoFinalizandoEnCurso) {
+        citaElectroSeleccionada._autoFinalizandoEnCurso = true;
+        if (intervaloProgreso) {
+          clearInterval(intervaloProgreso);
+          intervaloProgreso = null;
+        }
+        finalizarEstudioElectroEnServidor({ cerrarModal: true, mensajeAuto: true })
+          .finally(() => {
+            if (citaElectroSeleccionada) citaElectroSeleccionada._autoFinalizandoEnCurso = false;
+          });
       }
     }
   };

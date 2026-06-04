@@ -109,16 +109,23 @@ async function revertirElectroCompletadosAntesDeTiempo(diasVentana = 14, fechaCe
   }
 }
 
-/** Al abrir el kanban/monitor: reparar duraciones y revertir completados prematuros del día consultado. */
+/** Al abrir el kanban/monitor: reparar duraciones, revertir completados prematuros y cerrar vencidos. */
 async function repararEstadosElectroAlConsultar(fechaYmd) {
-  if (!fechaYmd || !/^\d{4}-\d{2}-\d{2}$/.test(fechaYmd)) return { duraciones: 0, revertidas: 0 };
+  if (!fechaYmd || !/^\d{4}-\d{2}-\d{2}$/.test(fechaYmd)) {
+    return { duraciones: 0, revertidas: 0, completadas: 0 };
+  }
   try {
     const duraciones = await sincronizarDuracionesElectroEnFecha(fechaYmd);
     const revertidas = await revertirElectroCompletadosAntesDeTiempo(14, fechaYmd);
-    return { duraciones, revertidas };
+    const completadas = await autoCompletarEstudiosElectroVencidos();
+    if (completadas > 0) {
+      emitSocket('electro:actualizar-lista', { type: 'auto-completados', completadas });
+      emitSocket('electro:cambios-guardados', { type: 'auto-completados', completadas });
+    }
+    return { duraciones, revertidas, completadas };
   } catch (err) {
     logger.warn('Reparar estados electro al consultar falló (no crítico):', err.message);
-    return { duraciones: 0, revertidas: 0 };
+    return { duraciones: 0, revertidas: 0, completadas: 0 };
   }
 }
 
@@ -148,17 +155,23 @@ async function autoCompletarEstudiosElectroVencidos(excludeId = null) {
   const params = excludeId ? [excludeId] : [];
   const sqlVencido = sqlEstudioElectroFinProgramadoVencido();
   const sqlVencidoHoy = sqlEstudioElectroFinProgramadoVencidoConDuracion();
-  await db.execute(`
-    UPDATE citas_electro
-    SET estado = 'Completado', editado_por_nombre = 'Sistema (Auto)', editado_en = NOW()
-    WHERE estado IN ('En Estudio', 'Pausado')
-      AND deleted_at IS NULL
-      AND (
-        (fecha < CURDATE() AND ${sqlVencido})
-        OR (fecha >= CURDATE() AND ${sqlVencidoHoy})
-      )
-      ${condId}
-  `, params).catch((err) => logger.warn('Auto-completar estudios vencidos falló (no crítico):', err.message));
+  try {
+    const result = await db.execute(`
+      UPDATE citas_electro
+      SET estado = 'Completado', editado_por_nombre = 'Sistema (Auto)', editado_en = NOW()
+      WHERE estado IN ('En Estudio', 'Pausado')
+        AND deleted_at IS NULL
+        AND (
+          (fecha < CURDATE() AND ${sqlVencido})
+          OR (fecha >= CURDATE() AND ${sqlVencidoHoy})
+        )
+        ${condId}
+    `, params);
+    return result[0]?.affectedRows ?? result.affectedRows ?? 0;
+  } catch (err) {
+    logger.warn('Auto-completar estudios vencidos falló (no crítico):', err.message);
+    return 0;
+  }
 }
 
 /** Entidad de la cita: columna propia, lista de espera o último recibo vinculado. */
