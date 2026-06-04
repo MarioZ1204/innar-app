@@ -2,7 +2,7 @@
  * Agregación mensual para calendario electro (misma visibilidad que agenda del día).
  */
 const {
-  citaVisibleEnFechaYmd,
+  citaVisibleEnAgendaDiaYmd,
   citaEsInicioEnFechaYmd,
   citaEsContinuacionEnFechaYmd
 } = require('./electro-fechas');
@@ -16,9 +16,9 @@ function emptyPorTipo() {
   return { psg: 0, eeg: 0, vtm: 0, actigrafia: 0, otro: 0 };
 }
 
-/** Misma regla que sqlCitaElectroVisibleEnFecha (con fin por duración si aplica). */
+/** Misma regla que agenda/kanban (Completado solo día de inicio). */
 function citaVisibleEnDiaAgenda(cita, fechaYmd) {
-  return citaVisibleEnFechaYmd(cita, fechaYmd);
+  return citaVisibleEnAgendaDiaYmd(cita, fechaYmd);
 }
 
 function familiaEstudioCalendario(estudio) {

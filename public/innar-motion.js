@@ -122,7 +122,7 @@
 
   window.innarAnimateKanbanCards = function innarAnimateKanbanCards(root) {
     if (document.documentElement.classList.contains('innar-motion-off')) return;
-    const scopeEl = root || document.getElementById('electroKanban') || document;
+    const scopeEl = root || document.getElementById('electroKanbanBoard') || document.getElementById('electroKanbanPsg') || document;
     const bodies = scopeEl.querySelectorAll
       ? scopeEl.querySelectorAll('.electro-kanban-body')
       : [];

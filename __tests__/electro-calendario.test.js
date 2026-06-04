@@ -20,6 +20,16 @@ describe('electro-calendario', () => {
     expect(citaVisibleEnDiaAgenda(cita, '2026-05-13')).toBe(false);
   });
 
+  test('citaVisibleEnDiaAgenda — Completado mult día solo inicio', () => {
+    const cita = {
+      fecha: '2026-05-03',
+      hora_fin_date: '2026-05-04',
+      estado: 'Completado'
+    };
+    expect(citaVisibleEnDiaAgenda(cita, '2026-05-03')).toBe(true);
+    expect(citaVisibleEnDiaAgenda(cita, '2026-05-04')).toBe(false);
+  });
+
   test('citaVisibleEnDiaAgenda — mult día Programado por duración', () => {
     const cita = {
       fecha: '2026-05-14',

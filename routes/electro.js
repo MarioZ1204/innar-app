@@ -19,6 +19,8 @@ const {
   fechaFinSiCruzaMedianoche,
   sqlCitaElectroVisibleEnFecha,
   paramsCitaElectroVisibleEnFecha,
+  sqlCitaElectroVisibleEnAgendaDia,
+  paramsCitaElectroVisibleEnAgendaDia,
   horaInicioCitaElectro,
   horaInicioAgendadaParaInicioEstudio,
   horaInicioEfectivaParaInicioEstudio,
@@ -929,9 +931,9 @@ router.get('/citas-electro', requireAuth, async (req, res) => {
       JOIN pacientes p ON p.id = c.paciente_id
       LEFT JOIN diagnosticos d ON d.id = c.diagnostico_id
       LEFT JOIN equipos_electro e ON e.id = c.equipo_id
-      WHERE c.deleted_at IS NULL AND ${sqlCitaElectroVisibleEnFecha('c')}
+      WHERE c.deleted_at IS NULL AND ${sqlCitaElectroVisibleEnAgendaDia('c')}
     `;
-    let params = [...paramsCitaElectroVisibleEnFecha(fecha)];
+    let params = [...paramsCitaElectroVisibleEnAgendaDia(fecha)];
     if (equipo_id) { query += ` AND c.equipo_id = ?`; params.push(equipo_id); }
     const { estado, entidad, estudio } = req.query;
     if (estado) {

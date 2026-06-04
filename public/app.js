@@ -1050,6 +1050,75 @@ function abreviarEstudio(nombre) {
   return n.length > 22 ? n.substring(0, 20) + '\u2026' : n;
 }
 
+/** PSG arriba; EEG, VTM y demás estudios abajo (misma lógica que monitor/calendario). */
+function familiaKanbanElectro(estudio) {
+  const u = String(estudio || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  if (/\bvtm\b/.test(u) || u.includes('video telemetr')) return 'eeg';
+  const esPsg =
+    u.includes('polisomnog') ||
+    /^psg\b/.test(u) ||
+    u.startsWith('psg ') ||
+    (u.includes('basica') && (u.includes('psg') || u.includes('polisom'))) ||
+    (u.includes('titulacion') && (u.includes('cpap') || u.includes('bpap') || u.includes('psg') || u.includes('polisom') || u.includes('sueño') || u.includes('sueno')));
+  return esPsg ? 'psg' : 'eeg';
+}
+
+const ELECTRO_ESTUDIO_COLOR_MAP = {
+  'psg básica': { accent: '#7c3aed', bg: '#f5f3ff', border: '#c4b5fd' },
+  'psg basica': { accent: '#7c3aed', bg: '#f5f3ff', border: '#c4b5fd' },
+  'psg cpap/bpap': { accent: '#6d28d9', bg: '#ede9fe', border: '#a78bfa' },
+  'polisomnografía básica': { accent: '#7c3aed', bg: '#f5f3ff', border: '#c4b5fd' },
+  'polisomnografia basica': { accent: '#7c3aed', bg: '#f5f3ff', border: '#c4b5fd' },
+  'titulación cpap/bpap': { accent: '#5b21b6', bg: '#f3e8ff', border: '#c4b5fd' },
+  'electroencefalograma': { accent: '#ca8a04', bg: '#fefce8', border: '#fde047' },
+  'eeg': { accent: '#ca8a04', bg: '#fefce8', border: '#fde047' },
+  'monitorización electroencefalográfica por video y radio': { accent: '#2563eb', bg: '#eff6ff', border: '#93c5fd' },
+  'vtm': { accent: '#2563eb', bg: '#eff6ff', border: '#93c5fd' },
+  'test de latencia de sueño múltiple': { accent: '#0d9488', bg: '#f0fdfa', border: '#5eead4' },
+  'actigrafía': { accent: '#db2777', bg: '#fdf2f8', border: '#f9a8d4' }
+};
+
+const ELECTRO_ESTUDIO_COLOR_PALETTE = [
+  { accent: '#7c3aed', bg: '#f5f3ff', border: '#c4b5fd' },
+  { accent: '#2563eb', bg: '#eff6ff', border: '#93c5fd' },
+  { accent: '#ca8a04', bg: '#fefce8', border: '#fde047' },
+  { accent: '#0d9488', bg: '#f0fdfa', border: '#5eead4' },
+  { accent: '#db2777', bg: '#fdf2f8', border: '#f9a8d4' },
+  { accent: '#ea580c', bg: '#fff7ed', border: '#fdba74' },
+  { accent: '#4f46e5', bg: '#eef2ff', border: '#a5b4fc' },
+  { accent: '#059669', bg: '#ecfdf5', border: '#6ee7b7' },
+  { accent: '#dc2626', bg: '#fef2f2', border: '#fca5a5' },
+  { accent: '#0891b2', bg: '#ecfeff', border: '#67e8f9' }
+];
+
+function hashEstudioElectroColor(nombre) {
+  const s = String(nombre || '').trim().toLowerCase();
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+  return Math.abs(h) % ELECTRO_ESTUDIO_COLOR_PALETTE.length;
+}
+
+function colorTarjetaEstudioElectro(estudio) {
+  const key = String(estudio || '').trim().toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  if (ELECTRO_ESTUDIO_COLOR_MAP[key]) return ELECTRO_ESTUDIO_COLOR_MAP[key];
+  return ELECTRO_ESTUDIO_COLOR_PALETTE[hashEstudioElectroColor(estudio)];
+}
+
+function aplicarColorEstudioElectroCard(card, estudio) {
+  const c = colorTarjetaEstudioElectro(estudio);
+  card.style.borderLeftWidth = '4px';
+  card.style.borderLeftStyle = 'solid';
+  card.style.borderLeftColor = c.accent;
+  card.style.background = c.bg;
+  card.style.borderColor = c.border;
+  card.dataset.estudioColor = c.accent;
+}
+
 // Genera un badge de color según el estado de la cita electro
 function normalizarEstadoElectro(estado) {
   const raw = String(estado || '').trim();
@@ -3524,44 +3593,68 @@ function sortCitasElectro(a, b) {
   return ha.localeCompare(hb);
 }
 
+const ELECTRO_KANBAN_BODY_IDS = [
+  'citasElectroBodyPsgPendientes', 'citasElectroBodyPsgActivos', 'citasElectroBodyPsgCompletados',
+  'citasElectroBodyEegPendientes', 'citasElectroBodyEegActivos', 'citasElectroBodyEegCompletados'
+];
+
 function showElectroKanbanLoading() {
   const t = 'di' + 'v';
   const loadingHtml = '<' + t + ' class="electro-kanban-empty">Cargando\u2026</' + t + '>';
-  ['citasElectroBodyPendientes', 'citasElectroBodyActivos', 'citasElectroBodyCompletados'].forEach((id) => {
+  ELECTRO_KANBAN_BODY_IDS.forEach((id) => {
     const el = typeof $ === 'function' ? $(id) : document.getElementById(id);
     if (el) el.innerHTML = loadingHtml;
   });
 }
 
 function renderCitasElectroKanban(citas) {
-  const bodies = {
-    pendientes: $('citasElectroBodyPendientes'),
-    activos: $('citasElectroBodyActivos'),
-    completados: $('citasElectroBodyCompletados')
+  const boards = {
+    psg: {
+      pendientes: $('citasElectroBodyPsgPendientes'),
+      activos: $('citasElectroBodyPsgActivos'),
+      completados: $('citasElectroBodyPsgCompletados')
+    },
+    eeg: {
+      pendientes: $('citasElectroBodyEegPendientes'),
+      activos: $('citasElectroBodyEegActivos'),
+      completados: $('citasElectroBodyEegCompletados')
+    }
   };
-  const counts = { pendientes: 0, activos: 0, completados: 0 };
-  Object.values(bodies).forEach((b) => { if (b) b.innerHTML = ''; });
+  const counts = {
+    psg: { pendientes: 0, activos: 0, completados: 0 },
+    eeg: { pendientes: 0, activos: 0, completados: 0 }
+  };
+  Object.values(boards).forEach((bodies) => {
+    Object.values(bodies).forEach((b) => { if (b) b.innerHTML = ''; });
+  });
   const sorted = [...(citas || [])].sort(sortCitasElectro);
   sorted.forEach((c) => {
+    const familia = familiaKanbanElectro(c.estudio);
     const col = columnaElectroCita(c.estado || 'Programado');
-    const body = bodies[col];
+    const body = boards[familia]?.[col];
     if (body) {
       renderCitaElectroCard(body, c);
-      counts[col]++;
+      counts[familia][col]++;
     }
   });
-  Object.entries(bodies).forEach(([col, body]) => {
-    if (!body || counts[col] > 0) return;
-    body.innerHTML = '<div class="electro-kanban-empty">Sin citas</div>';
+  const emptyMsg = (citas || []).length === 0 ? 'Selecciona una fecha para ver las citas' : 'Sin citas';
+  Object.entries(boards).forEach(([familia, bodies]) => {
+    Object.entries(bodies).forEach(([col, body]) => {
+      if (!body || counts[familia][col] > 0) return;
+      body.innerHTML = `<div class="electro-kanban-empty">${emptyMsg}</div>`;
+    });
   });
   const setCount = (id, n) => { const el = $(id); if (el) el.textContent = String(n); };
-  setCount('electroKanbanCountPendientes', counts.pendientes);
-  setCount('electroKanbanCountActivos', counts.activos);
-  setCount('electroKanbanCountCompletados', counts.completados);
+  setCount('electroKanbanCountPsgPendientes', counts.psg.pendientes);
+  setCount('electroKanbanCountPsgActivos', counts.psg.activos);
+  setCount('electroKanbanCountPsgCompletados', counts.psg.completados);
+  setCount('electroKanbanCountEegPendientes', counts.eeg.pendientes);
+  setCount('electroKanbanCountEegActivos', counts.eeg.activos);
+  setCount('electroKanbanCountEegCompletados', counts.eeg.completados);
   const skipKanbanEnter = _innarSkipNextKanbanEnter;
   _innarSkipNextKanbanEnter = false;
   if (!skipKanbanEnter && typeof window.innarAnimateKanbanCards === 'function') {
-    requestAnimationFrame(() => window.innarAnimateKanbanCards());
+    requestAnimationFrame(() => window.innarAnimateKanbanCards(document.getElementById('electroKanbanBoard')));
   }
   _innarFlushElectroHighlight();
 }
@@ -7896,6 +7989,7 @@ function renderCitaElectroCard(container, c) {
     'No Asisti\u00f3': 'estado-no-asistio'
   };
   if (estadoClasses[estado]) card.classList.add(estadoClasses[estado]);
+  aplicarColorEstudioElectroCard(card, c.estudio);
   if (estado === 'En Estudio') card.classList.add('innar-pulse-estudio');
   if (esContinuacion) {
     card.classList.add('electro-cita-card-continuacion');

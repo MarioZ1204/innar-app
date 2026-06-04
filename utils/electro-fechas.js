@@ -57,6 +57,18 @@ function citaVisibleEnFechaYmd(cita, fechaYmd) {
   return fechaYmd >= inicio && fechaYmd <= fin;
 }
 
+/**
+ * Agenda del día: mult día en curso sigue visible en días intermedios;
+ * Completado solo en la tabla del día de inicio (no en el día en que terminó).
+ */
+function citaVisibleEnAgendaDiaYmd(cita, fechaYmd) {
+  if (!cita || cita.estado === 'Cancelado') return false;
+  const inicio = extraerFechaYmd(cita.fecha);
+  if (!inicio || !fechaYmd) return false;
+  if (cita.estado === 'Completado') return fechaYmd === inicio;
+  return citaVisibleEnFechaYmd(cita, fechaYmd);
+}
+
 function citaEsInicioEnFechaYmd(cita, fechaYmd) {
   return extraerFechaYmd(cita?.fecha) === fechaYmd;
 }
@@ -79,6 +91,23 @@ function sqlCitaElectroVisibleEnFecha(alias = 'c') {
 
 function paramsCitaElectroVisibleEnFecha(fechaYmd) {
   return [fechaYmd, fechaYmd];
+}
+
+/** SQL agenda: Completado solo si fecha = día consultado; resto por rango mult día. */
+function sqlCitaElectroVisibleEnAgendaDia(alias = 'c') {
+  const a = alias;
+  return `(
+    (${a}.estado = 'Completado' AND ${a}.fecha = ?)
+    OR (
+      ${a}.estado NOT IN ('Completado', 'Cancelado')
+      AND ${a}.fecha <= ?
+      AND COALESCE(${a}.hora_fin_date, ${a}.fecha) >= ?
+    )
+  )`;
+}
+
+function paramsCitaElectroVisibleEnAgendaDia(fechaYmd) {
+  return [fechaYmd, fechaYmd, fechaYmd];
 }
 
 /** Hora HH:MM desde hora_inicio, hora_agendamiento o columna TIME. */
@@ -281,10 +310,13 @@ module.exports = {
   fechaFinSiCruzaMedianoche,
   citaFechaFinYmd,
   citaVisibleEnFechaYmd,
+  citaVisibleEnAgendaDiaYmd,
   citaEsInicioEnFechaYmd,
   citaEsContinuacionEnFechaYmd,
   sqlCitaElectroVisibleEnFecha,
   paramsCitaElectroVisibleEnFecha,
+  sqlCitaElectroVisibleEnAgendaDia,
+  paramsCitaElectroVisibleEnAgendaDia,
   horaInicioCitaElectro,
   ymdLocal,
   horaInicioAgendadaParaInicioEstudio,

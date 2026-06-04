@@ -3,6 +3,16 @@
 Todos los cambios importantes a la aplicación se documentan aquí. El formato
 sigue (informalmente) [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
+## [1.5.91] — 2026-05-27
+
+### Añadido
+
+- **Agenda electro**: dos kanban (PSG arriba, EEG y VTM abajo), color distinto por tipo de estudio.
+
+### Cambiado
+
+- **Agenda electro**: estudios mult día completados solo aparecen en el día de inicio; en curso siguen visibles en los días intermedios (API, calendario y UI).
+
 ## [1.5.90] — 2026-05-27
 
 ### Corregido

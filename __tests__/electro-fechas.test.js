@@ -1,4 +1,6 @@
 const {
+  citaVisibleEnFechaYmd,
+  citaVisibleEnAgendaDiaYmd,
   finProgramadoCitaElectro,
   estudioElectroFinProgramadoVencido,
   horaInicioAgendadaParaInicioEstudio,
@@ -11,6 +13,28 @@ const {
 } = require('../utils/electro-fechas');
 
 describe('electro-fechas', () => {
+  test('agenda: Completado mult día solo visible en día de inicio', () => {
+    const cita = {
+      fecha: '2026-05-03',
+      hora_fin_date: '2026-05-04',
+      duracion_minutos: 1440,
+      estado: 'Completado'
+    };
+    expect(citaVisibleEnFechaYmd(cita, '2026-05-04')).toBe(true);
+    expect(citaVisibleEnAgendaDiaYmd(cita, '2026-05-04')).toBe(false);
+    expect(citaVisibleEnAgendaDiaYmd(cita, '2026-05-03')).toBe(true);
+  });
+
+  test('agenda: En Estudio mult día visible en días intermedios', () => {
+    const cita = {
+      fecha: '2026-05-03',
+      hora_fin_date: '2026-05-04',
+      estado: 'En Estudio'
+    };
+    expect(citaVisibleEnAgendaDiaYmd(cita, '2026-05-04')).toBe(true);
+    expect(citaVisibleEnAgendaDiaYmd(cita, '2026-05-03')).toBe(true);
+  });
+
   test('fin programado usa hora_inicio + duracion', () => {
     const fin = finProgramadoCitaElectro({
       fecha: '2026-05-27',
