@@ -48,7 +48,12 @@ describe('electro-calendario', () => {
     const citas = [
       { fecha: '2026-05-10', hora_fin_date: '2026-05-10', estudio: 'PSG Básica', estado: 'Programado' },
       { fecha: '2026-05-10', hora_fin_date: '2026-05-10', estudio: 'Electroencefalograma', estado: 'Confirmado' },
-      { fecha: '2026-05-10', hora_fin_date: '2026-05-10', estudio: 'Monitorización VTM', estado: 'Programado' },
+      {
+        fecha: '2026-05-10',
+        hora_fin_date: '2026-05-10',
+        estudio: 'Monitorización Electroencefalografica por Video y Radio',
+        estado: 'Programado'
+      },
       {
         fecha: '2026-05-09',
         hora_fin_date: '2026-05-11',

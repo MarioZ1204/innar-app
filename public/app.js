@@ -85,15 +85,24 @@ const EMO_WA_ELECTRO = {
   confirmar: '\u2705'
 };
 
+function tipoEstudioElectroApp(estudio) {
+  const api = window.innarElectroEstudioTipo;
+  if (api && typeof api.tipoEstudioElectro === 'function') return api.tipoEstudioElectro(estudio);
+  return 'otro';
+}
+
+function esEstudioElectroVtmApp(estudio) {
+  const api = window.innarElectroEstudioTipo;
+  if (api && typeof api.esEstudioElectroVtm === 'function') return api.esEstudioElectroVtm(estudio);
+  return false;
+}
+
 function clavePdfRecomendacionesElectro(estudio) {
-  const u = String(estudio || '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '');
-  if (u.includes('psg') || u.includes('polisomnog')) return 'psg';
-  if (u.includes('electroencefalograma') || /\beeg\b/.test(u)) return 'eeg';
-  if (u.includes('vtm') || u.includes('video') || u.includes('monitoriz')) return 'vtm';
-  if (u.includes('actigraf')) return 'actigrafia';
+  const tipo = tipoEstudioElectroApp(estudio);
+  if (tipo === 'psg') return 'psg';
+  if (tipo === 'eeg') return 'eeg';
+  if (tipo === 'vtm') return 'vtm';
+  if (tipo === 'actigrafia') return 'actigrafia';
   return 'general';
 }
 
@@ -337,8 +346,7 @@ function normalizarTextoBase(str) {
 }
 
 function esMonitorizacionVideoRadio(estudioNombre) {
-  const s = normalizarTextoBase(estudioNombre);
-  return s.includes('monitorizacion') && s.includes('video') && s.includes('radio');
+  return esEstudioElectroVtmApp(estudioNombre);
 }
 
 // ========= POLÍTICA CENTRAL: AGENDA MÉDICA =========
@@ -1034,36 +1042,24 @@ function escapeHtml(str) {
 function abreviarEstudio(nombre) {
   if (!nombre) return '-';
   const n = String(nombre).trim();
-  const u = n.toUpperCase();
-  if (u.includes('MONITORIZ') && (u.includes('VIDEO') || u.includes('RADIO') || u.includes('EEG') || u.includes('ELECTRO'))) {
-    return 'Monit. EEG Video';
-  }
-  if (u.includes('POLISOMNOGRAF') || u === 'PSG' || u.startsWith('PSG ')) {
+  const tipo = tipoEstudioElectroApp(nombre);
+  if (tipo === 'vtm') return 'VTM';
+  if (tipo === 'eeg') return 'EEG';
+  if (tipo === 'psg') {
+    const u = n.toUpperCase();
     if (u.includes('CPAP') || u.includes('BPAP')) return 'PSG CPAP/BPAP';
     if (u.includes('BASICA') || u.includes('B\u00c1SICA')) return 'PSG B\u00e1sica';
     return 'PSG';
   }
-  if (u.includes('TITULAC') || u.includes('CPAP')) return 'PSG CPAP/BPAP';
-  if (u.includes('ELECTROENCEFALOGRAMA') || (u.includes('EEG') && !u.includes('MONITORIZ'))) return 'EEG';
+  if (tipo === 'actigrafia') return 'Actigraf\u00eda';
+  const u = n.toUpperCase();
   if (u.includes('LATENCIA')) return 'Test Latencia';
-  if (u === 'VTM') return 'VTM';
   return n.length > 22 ? n.substring(0, 20) + '\u2026' : n;
 }
 
-/** PSG arriba; EEG, VTM y demás estudios abajo (misma lógica que monitor/calendario). */
+/** PSG arriba; EEG, VTM y demás estudios abajo. */
 function familiaKanbanElectro(estudio) {
-  const u = String(estudio || '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '');
-  if (/\bvtm\b/.test(u) || u.includes('video telemetr')) return 'eeg';
-  const esPsg =
-    u.includes('polisomnog') ||
-    /^psg\b/.test(u) ||
-    u.startsWith('psg ') ||
-    (u.includes('basica') && (u.includes('psg') || u.includes('polisom'))) ||
-    (u.includes('titulacion') && (u.includes('cpap') || u.includes('bpap') || u.includes('psg') || u.includes('polisom') || u.includes('sueño') || u.includes('sueno')));
-  return esPsg ? 'psg' : 'eeg';
+  return tipoEstudioElectroApp(estudio) === 'psg' ? 'psg' : 'eeg';
 }
 
 const ELECTRO_ESTUDIO_COLOR_MAP = {
@@ -1101,11 +1097,20 @@ function hashEstudioElectroColor(nombre) {
   return Math.abs(h) % ELECTRO_ESTUDIO_COLOR_PALETTE.length;
 }
 
+const ELECTRO_TIPO_COLOR_MAP = {
+  psg: { accent: '#7c3aed', bg: '#f5f3ff', border: '#c4b5fd' },
+  eeg: { accent: '#ca8a04', bg: '#fefce8', border: '#fde047' },
+  vtm: { accent: '#2563eb', bg: '#eff6ff', border: '#93c5fd' },
+  actigrafia: { accent: '#db2777', bg: '#fdf2f8', border: '#f9a8d4' }
+};
+
 function colorTarjetaEstudioElectro(estudio) {
   const key = String(estudio || '').trim().toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '');
   if (ELECTRO_ESTUDIO_COLOR_MAP[key]) return ELECTRO_ESTUDIO_COLOR_MAP[key];
+  const tipo = tipoEstudioElectroApp(estudio);
+  if (ELECTRO_TIPO_COLOR_MAP[tipo]) return ELECTRO_TIPO_COLOR_MAP[tipo];
   return ELECTRO_ESTUDIO_COLOR_PALETTE[hashEstudioElectroColor(estudio)];
 }
 

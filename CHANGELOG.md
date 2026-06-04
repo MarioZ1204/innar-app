@@ -3,6 +3,12 @@
 Todos los cambios importantes a la aplicación se documentan aquí. El formato
 sigue (informalmente) [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
+## [1.5.92] — 2026-05-27
+
+### Corregido
+
+- **Electrodiagnóstico**: VTM ya no se clasifica como EEG (monitor, calendario, kanban, colores y abreviaturas); utilidad compartida `electro-estudio-tipo`.
+
 ## [1.5.91] — 2026-05-27
 
 ### Añadido

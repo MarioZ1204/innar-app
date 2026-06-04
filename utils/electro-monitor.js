@@ -62,31 +62,12 @@ function monitorBarKind(estado, esProvision) {
   return 'otro';
 }
 
-/** PSG / básica / titulación → morado; EEG → amarillo; VTM → azul */
+const { tipoEstudioElectro } = require('./electro-estudio-tipo');
+
+/** PSG → morado; EEG → amarillo; VTM → azul */
 function monitorEstudioColorKey(estudio) {
-  const u = String(estudio || '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '');
-
-  if (/\bvtm\b/.test(u) || u.includes('video telemetr')) return 'vtm';
-
-  const esPsg =
-    u.includes('polisomnog') ||
-    /^psg\b/.test(u) ||
-    u.startsWith('psg ') ||
-    (u.includes('basica') && (u.includes('psg') || u.includes('polisom'))) ||
-    (u.includes('titulacion') && (u.includes('cpap') || u.includes('bpap') || u.includes('psg') || u.includes('polisom') || u.includes('sueño') || u.includes('sueno')));
-
-  if (esPsg) return 'psg';
-
-  const esEeg =
-    u.includes('electroencefalog') ||
-    (/\beeg\b/.test(u) && !u.includes('vtm')) ||
-    (u.includes('monitoriz') && (u.includes('video') || u.includes('radio') || u.includes('eeg')));
-
-  if (esEeg) return 'eeg';
-
+  const tipo = tipoEstudioElectro(estudio);
+  if (tipo === 'psg' || tipo === 'eeg' || tipo === 'vtm') return tipo;
   return 'otro';
 }
 
