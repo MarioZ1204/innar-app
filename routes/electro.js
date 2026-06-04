@@ -25,14 +25,12 @@ const {
   horaInicioAgendadaParaInicioEstudio,
   horaInicioEfectivaParaInicioEstudio,
   finProgramadoCitaElectro,
-  estudioElectroFinProgramadoVencido,
   ymdLocal,
   inferirDuracionMinutosCitaElectro,
   inferirDuracionMinutosCitaElectroParaPersistir,
   calcularFinInicioEstudioElectro,
   sqlEstudioElectroFinProgramadoTs,
-  sqlEstudioElectroFinProgramadoVencido,
-  sqlEstudioElectroFinProgramadoVencidoConDuracion
+  sqlEstudioElectroFinProgramadoVencido
 } = require('../utils/electro-fechas');
 
 /** Rellena duracion_minutos desde catálogo o ventana agendada→hora_fin si falta. */
@@ -83,32 +81,17 @@ async function duracionCatalogoEstudioElectro(nombreEstudio) {
 }
 
 /**
- * Al reabrir Completado → En Estudio: restaura duración del catálogo y reprograma fin.
- * Si el fin ya pasó (cierre erróneo), ancla fin = ahora + duración completa del estudio.
+ * Al reabrir Completado → En Estudio: duración del catálogo y fin = ahora + duración completa.
+ * hora_fin_date refleja el nuevo cierre (evita auto-completar por inicio histórico + duración).
  */
 function programacionEstudioReabierto(cita, durMin, ahora = new Date()) {
-  const horaIni = horaInicioCitaElectro(cita);
-  const fechaIni = extraerFechaYmd(cita.fecha);
   const dur = parseInt(durMin, 10);
-  if (!horaIni || !fechaIni || !(dur > 0)) return null;
-
-  let fin = sumarMinutosAHoraYFecha(fechaIni, horaIni, dur);
+  if (!(dur > 0)) return null;
+  const horaAhora = `${String(ahora.getHours()).padStart(2, '0')}:${String(ahora.getMinutes()).padStart(2, '0')}`;
+  const fechaReinicio = ymdLocal(ahora);
+  const fin = sumarMinutosAHoraYFecha(fechaReinicio, horaAhora, dur);
   if (!fin) return null;
-
-  const tmp = {
-    fecha: fechaIni,
-    hora_inicio: horaIni,
-    duracion_minutos: dur,
-    hora_fin: fin.horaFin,
-    hora_fin_date: fin.fechaFin
-  };
-  if (estudioElectroFinProgramadoVencido(tmp, ahora)) {
-    const horaAhora = `${String(ahora.getHours()).padStart(2, '0')}:${String(ahora.getMinutes()).padStart(2, '0')}`;
-    const fechaHoy = ymdLocal(ahora);
-    fin = sumarMinutosAHoraYFecha(fechaHoy, horaAhora, dur);
-  }
-  if (!fin) return null;
-
+  const horaIni = horaInicioCitaElectro(cita) || horaAhora;
   return {
     hora_inicio: horaIni,
     hora_fin: fin.horaFin,
@@ -168,14 +151,14 @@ async function revertirElectroCompletadosAntesDeTiempo(diasVentana = 14, fechaCe
 }
 
 /** Al abrir el kanban/monitor: reparar duraciones, revertir completados prematuros y cerrar vencidos. */
-async function repararEstadosElectroAlConsultar(fechaYmd) {
+async function repararEstadosElectroAlConsultar(fechaYmd, excludeId = null) {
   if (!fechaYmd || !/^\d{4}-\d{2}-\d{2}$/.test(fechaYmd)) {
     return { duraciones: 0, revertidas: 0, completadas: 0 };
   }
   try {
     const duraciones = await sincronizarDuracionesElectroEnFecha(fechaYmd);
     const revertidas = await revertirElectroCompletadosAntesDeTiempo(14, fechaYmd);
-    const completadas = await autoCompletarEstudiosElectroVencidos(null, fechaYmd);
+    const completadas = await autoCompletarEstudiosElectroVencidos(excludeId, fechaYmd);
     if (completadas > 0) {
       emitSocket('electro:actualizar-lista', { type: 'auto-completados', completadas });
       emitSocket('electro:cambios-guardados', { type: 'auto-completados', completadas });
@@ -219,11 +202,6 @@ async function autoCompletarEstudiosElectroVencidos(excludeId = null, fechaYmd =
   const params = [...paramsCitaElectroVisibleEnFecha(fechaYmd)];
   if (excludeId) params.push(excludeId);
   const sqlVencido = sqlEstudioElectroFinProgramadoVencido('citas_electro');
-  const sqlVencidoHoy = sqlEstudioElectroFinProgramadoVencidoConDuracion('citas_electro');
-  const sqlVencidoHoyConInicio = `(
-    ${sqlVencidoHoy}
-    AND citas_electro.hora_inicio IS NOT NULL
-  )`;
   try {
     const result = await db.execute(`
       UPDATE citas_electro
@@ -231,12 +209,9 @@ async function autoCompletarEstudiosElectroVencidos(excludeId = null, fechaYmd =
       WHERE estado IN ('En Estudio', 'Pausado')
         AND deleted_at IS NULL
         AND ${vis}
-        AND (
-          (citas_electro.fecha < ? AND ${sqlVencido})
-          OR (citas_electro.fecha >= ? AND ${sqlVencidoHoyConInicio})
-        )
+        AND ${sqlVencido}
         ${condId}
-    `, [...params, fechaYmd, fechaYmd]);
+    `, params);
     return result[0]?.affectedRows ?? result.affectedRows ?? 0;
   } catch (err) {
     logger.warn('Auto-completar estudios vencidos falló (no crítico):', err.message);
@@ -1174,7 +1149,7 @@ router.get('/citas-electro/:id', requireAuth, async (req, res) => {
     if (!rows.length) return res.status(404).json({ error: 'Cita no encontrada' });
     const row = rows[0];
     const fechaRow = extraerFechaYmd(row.fecha) || normalizeFecha(row.fecha);
-    if (fechaRow) await repararEstadosElectroAlConsultar(fechaRow);
+    if (fechaRow) await repararEstadosElectroAlConsultar(fechaRow, id);
     const rows2 = await db.query(`
       SELECT ${CITAS_ELECTRO_SELECT},
              p.nombre AS paciente_nombre, p.documento AS paciente_documento,
@@ -1316,7 +1291,12 @@ router.patch('/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin',
         const durCat = await duracionCatalogoEstudioElectro(citaActual.estudio);
         if (durCat > 0) durRev = durCat;
         const reprog = programacionEstudioReabierto(citaActual, durRev);
-        if (reprog) forzarCamposInicioEstudio = reprog;
+        if (!reprog) {
+          return res.status(400).json({
+            error: 'No se puede reabrir: falta duración del estudio en catálogo o datos de inicio.'
+          });
+        }
+        forzarCamposInicioEstudio = reprog;
       } else if (esInicioEstudio) {
         const checkHora = hora_inicio || hora_agendamiento || horaInicioCitaElectro(citaActual);
         const checkFecha = fecha || extraerFechaYmd(citaActual.fecha) || normalizeFecha(citaActual.fecha);

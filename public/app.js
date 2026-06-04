@@ -7770,7 +7770,15 @@ function obtenerFechaHoraFinDesdeInicioReal(cita) {
 
   if (/^\d{2}:\d{2}$/.test(horaInicioStr) && durMin > 0) {
     const dateInicio = construirDateHoraElectro(fechaBase, horaInicioStr);
-    if (dateInicio) return new Date(dateInicio.getTime() + durMin * 60000);
+    if (dateInicio) {
+      const finDesdeInicio = new Date(dateInicio.getTime() + durMin * 60000);
+      if (cita?.hora_fin && cita?.hora_fin_date) {
+        const fechaFinSlot = obtenerFechaElectroBase10(cita.hora_fin_date);
+        const finSlot = construirDateHoraElectro(fechaFinSlot, cita.hora_fin);
+        if (finSlot && finSlot.getTime() > finDesdeInicio.getTime()) return finSlot;
+      }
+      return finDesdeInicio;
+    }
   }
 
   if (cita?.hora_fin && cita?.hora_fin_date) {
@@ -11980,11 +11988,17 @@ function actualizarProgresoEstudio() {
           tiempoTranscurrido: tiempoFormato
         });
       }
+      const reabiertoHaceMs = citaElectroSeleccionada._reabiertoEn
+        ? (Date.now() - citaElectroSeleccionada._reabiertoEn)
+        : null;
+      const graciaReapertura = reabiertoHaceMs != null && reabiertoHaceMs < 120000;
       if (
         porcentaje >= 100
         && !citaElectroSeleccionada._autoFinalizandoEnCurso
+        && !graciaReapertura
         && parseInt(citaElectroSeleccionada.duracion_minutos, 10) > 0
         && citaElectroSeleccionada.hora_inicio
+        && restanteMs <= 0
       ) {
         citaElectroSeleccionada._autoFinalizandoEnCurso = true;
         if (intervaloProgreso) {
@@ -12744,6 +12758,7 @@ async function revertirCompletadoAEnEstudio() {
     }
     actualizarProgresoEstudio();
     actualizarEstadoFilaTablaElectro(citaElectroSeleccionada.id, 'En Estudio');
+    citaElectroSeleccionada._reabiertoEn = Date.now();
     await cargarCitasElectro();
     cargarEquiposElectroSelect();
   } catch (e) {

@@ -118,22 +118,39 @@ function horaInicioCitaElectro(cita) {
   return /^\d{2}:\d{2}$/.test(h) ? h : null;
 }
 
+/** Elige el fin más tardío entre dos candidatos (reapertura / reprogramación). */
+function finProgramadoMasTardio(a, b) {
+  if (!a) return b || null;
+  if (!b) return a;
+  const msA = finProgramadoMsLocal(a);
+  const msB = finProgramadoMsLocal(b);
+  if (msA == null) return b;
+  if (msB == null) return a;
+  return msB >= msA ? b : a;
+}
+
 /**
  * Fin programado del estudio (UTC calendario, sin TZ local).
- * Prioriza hora_inicio + duracion_minutos; si no hay duración, usa hora_fin + hora_fin_date.
+ * Usa el fin más tardío entre (hora_inicio + duración) y (hora_fin_date + hora_fin).
  */
 function finProgramadoCitaElectro(cita) {
   if (!cita) return null;
   const fechaInicio = extraerFechaYmd(cita.fecha);
   const horaInicio = horaInicioCitaElectro(cita);
   const durMin = parseInt(cita.duracion_minutos, 10);
+  let finDesdeInicio = null;
   if (fechaInicio && horaInicio && durMin > 0) {
-    return sumarMinutosAHoraYFecha(fechaInicio, horaInicio, durMin);
+    finDesdeInicio = sumarMinutosAHoraYFecha(fechaInicio, horaInicio, durMin);
   }
   const fechaFin = extraerFechaYmd(cita.hora_fin_date) || fechaInicio;
   const horaFin = String(cita.hora_fin || '').trim().slice(0, 5);
-  if (!fechaFin || !/^\d{2}:\d{2}$/.test(horaFin)) return null;
-  return { horaFin, fechaFin };
+  let finDesdeSlot = null;
+  if (fechaFin && /^\d{2}:\d{2}$/.test(horaFin)) {
+    finDesdeSlot = { horaFin, fechaFin };
+  }
+  const efectivo = finProgramadoMasTardio(finDesdeInicio, finDesdeSlot);
+  if (efectivo) return efectivo;
+  return finDesdeSlot;
 }
 
 /** Ms de fin programado en calendario local (coherente con TIMESTAMP MySQL / UI). */
@@ -231,16 +248,23 @@ function calcularFinInicioEstudioElectro(fechaIni, horaIniStr, durMin, modoInici
 /** SQL: fin programado (inicio + duración o hora_fin) — para comparar con NOW(). */
 function sqlEstudioElectroFinProgramadoTs(alias) {
   const p = alias ? `${alias}.` : '';
-  return `(
-    CASE
-      WHEN ${p}duracion_minutos > 0 AND ${p}hora_inicio IS NOT NULL THEN
-        DATE_ADD(TIMESTAMP(${p}fecha, TIME(${p}hora_inicio)), INTERVAL ${p}duracion_minutos MINUTE)
-      WHEN ${p}duracion_minutos > 0 AND ${p}hora_agendamiento IS NOT NULL THEN
-        DATE_ADD(TIMESTAMP(${p}fecha, TIME(${p}hora_agendamiento)), INTERVAL ${p}duracion_minutos MINUTE)
-      ELSE
-        TIMESTAMP(COALESCE(${p}hora_fin_date, ${p}fecha), COALESCE(${p}hora_fin, '23:59:59'))
-    END
-  )`;
+  const finDesdeInicio = `CASE
+        WHEN ${p}duracion_minutos > 0 AND ${p}hora_inicio IS NOT NULL THEN
+          DATE_ADD(TIMESTAMP(${p}fecha, TIME(${p}hora_inicio)), INTERVAL ${p}duracion_minutos MINUTE)
+        WHEN ${p}duracion_minutos > 0 AND ${p}hora_agendamiento IS NOT NULL THEN
+          DATE_ADD(TIMESTAMP(${p}fecha, TIME(${p}hora_agendamiento)), INTERVAL ${p}duracion_minutos MINUTE)
+        ELSE NULL
+      END`;
+  const finDesdeSlot = `CASE
+        WHEN ${p}hora_fin_date IS NOT NULL AND ${p}hora_fin IS NOT NULL THEN
+          TIMESTAMP(${p}hora_fin_date, TIME(${p}hora_fin))
+        ELSE NULL
+      END`;
+  return `(GREATEST(
+    COALESCE(${finDesdeInicio}, '1970-01-01 00:00:00'),
+    COALESCE(${finDesdeSlot}, '1970-01-01 00:00:00'),
+    TIMESTAMP(COALESCE(${p}hora_fin_date, ${p}fecha), COALESCE(${p}hora_fin, '23:59:59'))
+  ))`;
 }
 
 /** Minutos de duración: columna, catálogo implícito vía hora_agendamiento→hora_fin, o null. */
@@ -269,19 +293,9 @@ function inferirDuracionMinutosCitaElectroParaPersistir(cita) {
   return inferirDuracionMinutosCitaElectro(cita);
 }
 
-/** SQL: fin programado vencido — prioriza hora_inicio + duracion_minutos (igual que finProgramadoCitaElectro). */
+/** SQL: fin programado vencido (misma lógica que finProgramadoCitaElectro). */
 function sqlEstudioElectroFinProgramadoVencido(alias) {
-  const p = alias ? `${alias}.` : '';
-  return `(
-    CASE
-      WHEN ${p}duracion_minutos > 0 AND ${p}hora_inicio IS NOT NULL THEN
-        DATE_ADD(TIMESTAMP(${p}fecha, TIME(${p}hora_inicio)), INTERVAL ${p}duracion_minutos MINUTE)
-      WHEN ${p}duracion_minutos > 0 AND ${p}hora_agendamiento IS NOT NULL THEN
-        DATE_ADD(TIMESTAMP(${p}fecha, TIME(${p}hora_agendamiento)), INTERVAL ${p}duracion_minutos MINUTE)
-      ELSE
-        TIMESTAMP(COALESCE(${p}hora_fin_date, ${p}fecha), COALESCE(${p}hora_fin, '23:59:59'))
-    END
-  ) < NOW()`;
+  return `${sqlEstudioElectroFinProgramadoTs(alias)} < NOW()`;
 }
 
 /**
@@ -292,15 +306,7 @@ function sqlEstudioElectroFinProgramadoVencidoConDuracion(alias) {
   const p = alias ? `${alias}.` : '';
   return `(
     ${p}duracion_minutos > 0
-    AND (
-      CASE
-        WHEN ${p}hora_inicio IS NOT NULL THEN
-          DATE_ADD(TIMESTAMP(${p}fecha, TIME(${p}hora_inicio)), INTERVAL ${p}duracion_minutos MINUTE)
-        WHEN ${p}hora_agendamiento IS NOT NULL THEN
-          DATE_ADD(TIMESTAMP(${p}fecha, TIME(${p}hora_agendamiento)), INTERVAL ${p}duracion_minutos MINUTE)
-        ELSE NULL
-      END
-    ) < NOW()
+    AND ${sqlEstudioElectroFinProgramadoTs(alias)} < NOW()
   )`;
 }
 
@@ -322,6 +328,7 @@ module.exports = {
   horaInicioAgendadaParaInicioEstudio,
   horaInicioEfectivaParaInicioEstudio,
   finProgramadoCitaElectro,
+  finProgramadoMasTardio,
   finProgramadoMsLocal,
   estudioElectroFinProgramadoVencido,
   inferirDuracionMinutosCitaElectro,

@@ -47,6 +47,25 @@ describe('electro-fechas', () => {
     expect(fin).toEqual({ horaFin: '12:00', fechaFin: '2026-05-27' });
   });
 
+  test('fin programado prioriza hora_fin_date reprogramada tras reapertura', () => {
+    const fin = finProgramadoCitaElectro({
+      fecha: '2026-05-03',
+      hora_inicio: '08:00',
+      duracion_minutos: 480,
+      hora_fin: '18:00',
+      hora_fin_date: '2026-05-27'
+    });
+    expect(fin).toEqual({ horaFin: '18:00', fechaFin: '2026-05-27' });
+    const ahora = new Date('2026-05-27T14:00:00');
+    expect(estudioElectroFinProgramadoVencido({
+      fecha: '2026-05-03',
+      hora_inicio: '08:00',
+      duracion_minutos: 480,
+      hora_fin: '18:00',
+      hora_fin_date: '2026-05-27'
+    }, ahora)).toBe(false);
+  });
+
   test('no vencido si inicio tardío deja fin en el futuro', () => {
     const cita = {
       fecha: '2026-05-27',
@@ -88,7 +107,8 @@ describe('electro-fechas', () => {
   test('sql vencido con duracion exige duracion_minutos > 0', () => {
     const sql = sqlEstudioElectroFinProgramadoVencidoConDuracion('c');
     expect(sql).toContain('duracion_minutos > 0');
-    expect(sql).not.toContain("hora_fin, '23:59:59'");
+    expect(sql).toContain('hora_fin_date');
+    expect(sql).toContain('GREATEST');
   });
 
   test('inicio tardío agendado ancla fin a hora efectiva + duración', () => {
