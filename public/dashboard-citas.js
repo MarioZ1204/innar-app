@@ -689,6 +689,7 @@ function mapFilaReporteAuditoria(c) {
     'Tipo Cita': c.tipo_cita === 'AGENDA_MEDICA' ? 'Médica' : 'Electro',
     'Agendado por': c.programado_por || '-',
     Estado: c.estado || '-',
+    'Recibos en cita': c.recibo_seq || '',
     'Nº Recibo': c.recibo_numero || '',
     'Valor recibo': activo,
     'Valor anulado': anulado,
@@ -697,10 +698,10 @@ function mapFilaReporteAuditoria(c) {
   };
 }
 
-/** M=Valor recibo (12), N=Valor anulado (13) — totales separados */
+/** N=Valor recibo (13), O=Valor anulado (14) — totales separados */
 function aplicarFormatoYTotalExcelAuditoria(sheet, dataRowCount) {
-  const VALOR_COL = 12;
-  const VALOR_ANULADO_COL = 13;
+  const VALOR_COL = 13;
+  const VALOR_ANULADO_COL = 14;
   const ESTADO_CITA_COL = 10;
   const firstDataRowExcel = 2;
   const lastDataRowExcel = dataRowCount + 1;
@@ -760,7 +761,7 @@ async function exportarAuditoriaCitasExcel() {
     sheet['!cols'] = [
       { wch: 12 }, { wch: 8 }, { wch: 22 }, { wch: 28 }, { wch: 14 }, { wch: 20 },
       { wch: 22 }, { wch: 16 }, { wch: 10 }, { wch: 22 }, { wch: 14 },
-      { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 36 }
+      { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 36 }
     ];
     const wb = window.XLSX.utils.book_new();
     window.XLSX.utils.book_append_sheet(wb, sheet, 'Auditoria');
@@ -815,6 +816,7 @@ async function exportarAuditoriaCitasPDF() {
         <td>${c.tipo_cita === 'AGENDA_MEDICA' ? 'Médica' : 'Electro'}</td>
         <td>${esc(c.programado_por)}</td>
         <td>${esc(c.estado)}</td>
+        <td>${esc(c.recibo_seq)}</td>
         <td>${esc(c.recibo_numero)}</td>
         <td style="text-align:right">${fmtNum(activo)}</td>
         <td style="text-align:right;color:#991b1b">${fmtNum(anulado)}</td>
@@ -825,7 +827,7 @@ async function exportarAuditoriaCitasPDF() {
 
     const filaTotales = `<tr style="font-weight:700;background:#f0f9f7;border-top:2px solid #627371">
       <td colspan="11" style="text-align:right;padding-right:8px">TOTAL</td>
-      <td></td>
+      <td colspan="2"></td>
       <td style="text-align:right">${fmtNum(totalActivo)}</td>
       <td style="text-align:right;color:#991b1b">${fmtNum(totalAnulado || null)}</td>
       <td colspan="2"></td>
@@ -847,7 +849,7 @@ async function exportarAuditoriaCitasPDF() {
 <table><thead><tr>
   <th>Fecha</th><th>Hora</th><th>Médico</th><th>Paciente</th><th>Documento</th>
   <th>Especialidad</th><th>Tipo Consulta</th><th>Entidad</th><th>Tipo</th><th>Agendado por</th><th>Estado</th>
-  <th>Nº Recibo</th><th>Valor recibo</th><th>Valor anulado</th><th>Estado recibo</th><th>Observaciones</th>
+  <th>Recibos en cita</th><th>Nº Recibo</th><th>Valor recibo</th><th>Valor anulado</th><th>Estado recibo</th><th>Observaciones</th>
 </tr></thead><tbody>${filas}${filaTotales}</tbody></table>
 <script>window.onload=function(){window.print();}<\/script></body></html>`;
 

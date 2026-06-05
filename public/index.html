@@ -2873,10 +2873,29 @@
           <header>
             <h2>Anexo FIDU / FOMAG</h2>
             <p style="color:#475569;font-size:.9rem;max-width:820px">
-              Arma filas del anexo con las <strong>45 columnas</strong> y exporta Excel. Sube la <strong>base de personas</strong> (CSV Lista_Personas), crea filas del anexo eligiendo paciente y servicio, y exporta el resultado.
+              Organice cada anexo en <strong>carpetas por periodo</strong> (ej. Junio) y archivos (ej. ANEXO 1 JUNIO). Puede <strong>importar</strong> un Excel previo o empezar de cero. Al exportar, las filas llevan <strong>color según el código de servicio</strong>.
             </p>
           </header>
           <section class="card no-print">
+            <div class="afidu-carpetas-bar">
+              <div class="afidu-carpeta-field">
+                <label for="afiduCarpetaSel">Carpeta (periodo)</label>
+                <div class="afidu-carpeta-row">
+                  <select id="afiduCarpetaSel"><option value="">—</option></select>
+                  <button type="button" class="btn-secondary btn-sm" id="btnAfiduNuevaCarpeta" title="Ej. Junio">+ Carpeta</button>
+                </div>
+              </div>
+              <div class="afidu-carpeta-field">
+                <label for="afiduArchivoSel">Anexo</label>
+                <div class="afidu-carpeta-row">
+                  <select id="afiduArchivoSel"><option value="">—</option></select>
+                  <button type="button" class="btn-secondary btn-sm" id="btnAfiduNuevoArchivo" title="Ej. ANEXO 1 JUNIO">+ Anexo</button>
+                  <button type="button" class="btn-secondary btn-sm" id="btnAfiduImportarAnexo">Importar Excel</button>
+                </div>
+              </div>
+              <p class="afidu-archivo-info" id="afiduArchivoInfo">Seleccione carpeta y anexo para trabajar.</p>
+            </div>
+            <input type="file" id="afiduImportFileInput" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" style="display:none" />
             <div class="afidu-toolbar">
               <div class="afidu-search">
                 <label for="afiduBuscar">Buscar (documento, nombre, orden)</label>

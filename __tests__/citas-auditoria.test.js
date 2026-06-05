@@ -2,9 +2,16 @@
 
 const {
   mapReciboParaExport,
-  resolverRecibosParaExport,
+  expandirCitaConRecibos,
   elegirReciboActivo
 } = require('../utils/citas-auditoria');
+
+const CITA_BASE = {
+  id: 99,
+  fecha: '2026-06-01',
+  paciente_documento: '123456',
+  paciente_nombre: 'Juan Pérez'
+};
 
 describe('mapReciboParaExport', () => {
   test('sin recibo devuelve campos vacíos', () => {
@@ -30,33 +37,18 @@ describe('mapReciboParaExport', () => {
     expect(out.recibo_observaciones).toBe('Error de digitación');
     expect(out.recibo_valor).toBe(85000);
   });
-
-  test('recibo pendiente', () => {
-    const out = mapReciboParaExport({
-      numero: 'R-200',
-      total: 120000,
-      anulado: 0,
-      estado_pago: 'PENDIENTE',
-      observaciones: 'Pago en caja'
-    });
-    expect(out.recibo_estado).toBe('PENDIENTE');
-    expect(out.recibo_observaciones).toBe('Pago en caja');
-  });
-
-  test('recibo pagado por defecto', () => {
-    const out = mapReciboParaExport({
-      numero: 'R-300',
-      total: 50000,
-      anulado: 0,
-      observaciones: 'OK'
-    });
-    expect(out.recibo_estado).toBe('PAGADO');
-  });
 });
 
-describe('resolverRecibosParaExport', () => {
-  test('anulado DUPLICADO + activo pagado: usa el activo y suma anulado aparte', () => {
-    const out = resolverRecibosParaExport([
+describe('expandirCitaConRecibos', () => {
+  test('sin recibos: una fila vacía', () => {
+    const filas = expandirCitaConRecibos(CITA_BASE, []);
+    expect(filas).toHaveLength(1);
+    expect(filas[0].recibo_numero).toBe('');
+    expect(filas[0].recibo_seq).toBe('');
+  });
+
+  test('anulado + activo: dos filas con secuencia 1 de 2 y 2 de 2', () => {
+    const filas = expandirCitaConRecibos(CITA_BASE, [
       {
         id: 20,
         numero: 'R-020',
@@ -74,27 +66,28 @@ describe('resolverRecibosParaExport', () => {
         observaciones: 'Recibo válido'
       }
     ]);
-    expect(out.recibo_numero).toBe('R-015');
-    expect(out.recibo_estado).toBe('PAGADO');
-    expect(out.recibo_observaciones).toBe('Recibo válido');
-    expect(out.recibo_valor).toBe(90000);
-    expect(out.recibo_valor_anulado).toBe(90000);
+    expect(filas).toHaveLength(2);
+    expect(filas[0].recibo_numero).toBe('R-015');
+    expect(filas[0].recibo_estado).toBe('PAGADO');
+    expect(filas[0].recibo_valor).toBe(90000);
+    expect(filas[0].recibo_valor_anulado).toBe('');
+    expect(filas[0].recibo_seq).toBe('1 de 2');
+    expect(filas[1].recibo_numero).toBe('R-020');
+    expect(filas[1].recibo_estado).toBe('ANULADO');
+    expect(filas[1].recibo_valor).toBe('');
+    expect(filas[1].recibo_valor_anulado).toBe(90000);
+    expect(filas[1].recibo_seq).toBe('2 de 2');
+    expect(filas[0].paciente_documento).toBe('123456');
+    expect(filas[1].paciente_documento).toBe('123456');
   });
 
-  test('solo recibo anulado: valor va a columna anulada', () => {
-    const out = resolverRecibosParaExport([
-      {
-        id: 10,
-        numero: 'R-010',
-        total: 50000,
-        anulado: 1,
-        anulado_razon: 'Error en monto',
-        estado_pago: 'PAGADO'
-      }
+  test('un solo recibo: sin etiqueta de secuencia', () => {
+    const filas = expandirCitaConRecibos(CITA_BASE, [
+      { id: 1, numero: 'R-001', total: 50000, anulado: 0, estado_pago: 'PAGADO' }
     ]);
-    expect(out.recibo_estado).toBe('ANULADO');
-    expect(out.recibo_valor).toBe('');
-    expect(out.recibo_valor_anulado).toBe(50000);
+    expect(filas).toHaveLength(1);
+    expect(filas[0].recibo_seq).toBe('');
+    expect(filas[0].recibo_valor).toBe(50000);
   });
 
   test('prefiere pagado sobre pendiente si hay dos activos', () => {

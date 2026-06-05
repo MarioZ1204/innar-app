@@ -976,6 +976,74 @@ const runtimeMigrations = [
       const { buildAnexoFiduCreateTableSql } = require('../utils/anexo-fidu-columns');
       await db.execute(buildAnexoFiduCreateTableSql());
     }
+  },
+  {
+    name: 'rt_anexo_fidu_carpetas_archivos',
+    description: 'Carpetas y archivos del anexo FIDU (ej. Junio / ANEXO 1 JUNIO)',
+    run: async (db) => {
+      await db.execute(`
+        CREATE TABLE IF NOT EXISTS anexo_fidu_carpetas (
+          id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+          nombre VARCHAR(120) NOT NULL,
+          creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE KEY uk_anexo_carpeta_nombre (nombre)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+      `);
+      await db.execute(`
+        CREATE TABLE IF NOT EXISTS anexo_fidu_archivos (
+          id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+          carpeta_id INT UNSIGNED NOT NULL,
+          nombre VARCHAR(160) NOT NULL,
+          creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          actualizado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          UNIQUE KEY uk_anexo_archivo_carpeta_nombre (carpeta_id, nombre),
+          INDEX idx_anexo_archivo_carpeta (carpeta_id),
+          CONSTRAINT fk_anexo_archivo_carpeta FOREIGN KEY (carpeta_id)
+            REFERENCES anexo_fidu_carpetas(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+      `);
+      if (await tableExists(db, 'anexo_fidu_registros')) {
+        const cols = await db.query(
+          "SHOW COLUMNS FROM anexo_fidu_registros LIKE 'archivo_id'"
+        );
+        if (!cols.length) {
+          await db.execute(
+            'ALTER TABLE anexo_fidu_registros ADD COLUMN archivo_id INT UNSIGNED NULL AFTER id'
+          );
+          await db.execute(
+            'ALTER TABLE anexo_fidu_registros ADD INDEX idx_anexo_fidu_archivo (archivo_id)'
+          );
+        }
+        const [orphan] = await db.query(
+          'SELECT COUNT(*) AS n FROM anexo_fidu_registros WHERE archivo_id IS NULL'
+        );
+        if (orphan?.n > 0) {
+          await db.execute(
+            "INSERT IGNORE INTO anexo_fidu_carpetas (nombre) VALUES ('General')"
+          );
+          const [carp] = await db.query(
+            "SELECT id FROM anexo_fidu_carpetas WHERE nombre = 'General' LIMIT 1"
+          );
+          const carpetaId = carp?.id;
+          if (carpetaId) {
+            await db.execute(
+              'INSERT IGNORE INTO anexo_fidu_archivos (carpeta_id, nombre) VALUES (?, ?)',
+              [carpetaId, 'Anexo principal']
+            );
+            const [arch] = await db.query(
+              'SELECT id FROM anexo_fidu_archivos WHERE carpeta_id = ? AND nombre = ? LIMIT 1',
+              [carpetaId, 'Anexo principal']
+            );
+            if (arch?.id) {
+              await db.execute(
+                'UPDATE anexo_fidu_registros SET archivo_id = ? WHERE archivo_id IS NULL',
+                [arch.id]
+              );
+            }
+          }
+        }
+      }
+    }
   }
 ];
 

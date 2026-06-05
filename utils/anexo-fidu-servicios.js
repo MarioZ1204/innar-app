@@ -161,6 +161,7 @@ function listarServiciosCatalogo() {
 module.exports = {
   ANEXO_FIDU_VALORES_FIJOS,
   ANEXO_FIDU_CATALOGO_SERVICIOS,
+  normCodigoServicio,
   formatValorAnexo,
   parseValorAnexo,
   parseCantidadAnexo,

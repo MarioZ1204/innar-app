@@ -9,6 +9,9 @@
   let _limit = 50;
   let _celdaEditando = null;
   let _pendingCodigo = '';
+  let _carpetaId = null;
+  let _archivoId = null;
+  let _archivosCache = [];
 
   const PERSONA_FORM = [
     { key: 'numero_documento', label: 'NUMERODOCUMENTO' },
@@ -305,9 +308,179 @@
     recalcularTotalEnFila(tr);
   }
 
+  function requireArchivoActivo() {
+    if (_archivoId) return _archivoId;
+    if (typeof showToast === 'function') showToast('Seleccione o cree un anexo primero', 'warning');
+    throw new Error('Sin anexo seleccionado');
+  }
+
+  function actualizarInfoArchivo(texto) {
+    const el = $('afiduArchivoInfo');
+    if (el) el.textContent = texto || '—';
+  }
+
+  async function cargarCarpetas(seleccionarId) {
+    const data = await apiAnexo('/api/anexo-fidu/carpetas');
+    const sel = $('afiduCarpetaSel');
+    if (!sel) return;
+    const prev = seleccionarId || sel.value || _carpetaId;
+    sel.innerHTML = '<option value="">— Seleccione carpeta —</option>';
+    (data.carpetas || []).forEach((c) => {
+      const opt = document.createElement('option');
+      opt.value = c.id;
+      opt.textContent = `${c.nombre} (${c.total_archivos || 0})`;
+      sel.appendChild(opt);
+    });
+    if (prev) sel.value = String(prev);
+    _carpetaId = sel.value ? parseInt(sel.value, 10) : null;
+  }
+
+  async function cargarArchivos(carpetaId, seleccionarId) {
+    const sel = $('afiduArchivoSel');
+    if (!sel) return;
+    if (!carpetaId) {
+      sel.innerHTML = '<option value="">—</option>';
+      _archivosCache = [];
+      _archivoId = null;
+      actualizarInfoArchivo('Seleccione carpeta y anexo para trabajar.');
+      return;
+    }
+    const data = await apiAnexo(`/api/anexo-fidu/carpetas/${carpetaId}/archivos`);
+    _archivosCache = data.archivos || [];
+    const prev = seleccionarId || sel.value || _archivoId;
+    sel.innerHTML = '<option value="">— Seleccione anexo —</option>';
+    _archivosCache.forEach((a) => {
+      const opt = document.createElement('option');
+      opt.value = a.id;
+      const n = a.total_registros || 0;
+      opt.textContent = `${a.nombre}${n ? ` (${n} filas)` : ' (vacío)'}`;
+      sel.appendChild(opt);
+    });
+    if (prev) sel.value = String(prev);
+    _archivoId = sel.value ? parseInt(sel.value, 10) : null;
+    await onArchivoSeleccionado();
+  }
+
+  async function onArchivoSeleccionado() {
+    const sel = $('afiduArchivoSel');
+    _archivoId = sel?.value ? parseInt(sel.value, 10) : null;
+    if (!_archivoId) {
+      actualizarInfoArchivo('Seleccione o cree un anexo.');
+      renderBody([]);
+      _total = 0;
+      return;
+    }
+    try {
+      const data = await apiAnexo(`/api/anexo-fidu/archivos/${_archivoId}`);
+      const a = data.archivo || {};
+      actualizarInfoArchivo(
+        `Trabajando: ${a.carpeta_nombre || ''} / ${a.nombre || ''} — ${a.total_registros || 0} fila(s). Importe Excel o agregue filas nuevas.`
+      );
+      _page = 1;
+      await cargarRegistros();
+    } catch (e) {
+      actualizarInfoArchivo(e.message);
+    }
+  }
+
+  async function crearCarpeta() {
+    const nombre = window.prompt('Nombre de la carpeta (ej. Junio):', '');
+    if (!nombre?.trim()) return;
+    try {
+      const data = await apiAnexo('/api/anexo-fidu/carpetas', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nombre: nombre.trim() })
+      });
+      await cargarCarpetas(data.carpeta?.id);
+      await cargarArchivos(_carpetaId);
+      if (typeof showToast === 'function') showToast(`Carpeta «${data.carpeta?.nombre}» creada`, 'success');
+    } catch (e) {
+      if (e.message?.includes('409') || e.message?.includes('Ya existe')) {
+        if (typeof showToast === 'function') showToast('Esa carpeta ya existe', 'warning');
+      } else if (typeof showToast === 'function') showToast(e.message, 'error');
+    }
+  }
+
+  async function crearArchivo() {
+    if (!_carpetaId) {
+      if (typeof showToast === 'function') showToast('Seleccione una carpeta primero', 'warning');
+      return;
+    }
+    const nombre = window.prompt('Nombre del anexo (ej. ANEXO 1 JUNIO):', '');
+    if (!nombre?.trim()) return;
+    try {
+      const data = await apiAnexo('/api/anexo-fidu/archivos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ carpeta_id: _carpetaId, nombre: nombre.trim() })
+      });
+      await cargarArchivos(_carpetaId, data.archivo?.id);
+      if (typeof showToast === 'function') showToast(`Anexo «${data.archivo?.nombre}» listo — empiece a agregar filas`, 'success');
+    } catch (e) {
+      const msg = e.message || '';
+      if (msg.includes('Ya existe')) {
+        await cargarArchivos(_carpetaId);
+        const existente = _archivosCache.find(
+          (a) => a.nombre.toLowerCase() === nombre.trim().toLowerCase()
+        );
+        if (existente && window.confirm('Ese anexo ya existe. ¿Abrirlo para continuar o importar?')) {
+          const sel = $('afiduArchivoSel');
+          if (sel) sel.value = String(existente.id);
+          await onArchivoSeleccionado();
+        }
+      } else if (typeof showToast === 'function') showToast(msg, 'error');
+    }
+  }
+
+  async function importarExcelAnexo() {
+    requireArchivoActivo();
+    const input = $('afiduImportFileInput');
+    if (!input) return;
+    input.value = '';
+    input.click();
+  }
+
+  async function onImportFileSelected() {
+    const input = $('afiduImportFileInput');
+    if (!input?.files?.length || !_archivoId) return;
+    const meta = await apiAnexo(`/api/anexo-fidu/archivos/${_archivoId}`);
+    const total = meta.archivo?.total_registros || 0;
+    let reemplazar = '0';
+    if (total > 0) {
+      const modo = window.confirm(
+        `Este anexo tiene ${total} fila(s).\n\nAceptar = reemplazar todo con el Excel\nCancelar = agregar al final`
+      );
+      reemplazar = modo ? '1' : '0';
+    }
+    const fd = new FormData();
+    fd.append('file', input.files[0]);
+    fd.append('reemplazar', reemplazar);
+    const hdr = new Headers();
+    if (typeof getCsrfForRequest === 'function') {
+      const csrf = getCsrfForRequest();
+      if (csrf) hdr.set('x-csrf-token', csrf);
+    }
+    try {
+      const res = await fetch(`/api/anexo-fidu/archivos/${_archivoId}/importar`, {
+        method: 'POST',
+        headers: hdr,
+        body: fd,
+        credentials: 'include'
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Error al importar');
+      input.value = '';
+      if (typeof showToast === 'function') showToast(data.mensaje || 'Importación completada', 'success');
+      await cargarArchivos(_carpetaId, _archivoId);
+    } catch (e) {
+      if (typeof showToast === 'function') showToast(e.message, 'error');
+    }
+  }
+
   async function guardarFila(tr) {
     const body = leerRegistroDesdeFila(tr);
-    const payload = { ...body, actualizar_persona: true };
+    const payload = { ...body, actualizar_persona: true, archivo_id: requireArchivoActivo() };
     const isNew = tr.dataset.new === '1' || !tr.dataset.id;
     tr.classList.add('afidu-row-saving');
     try {
@@ -400,6 +573,7 @@
   }
 
   async function agregarFilaDesdeEntrada() {
+    try { requireArchivoActivo(); } catch (_) { return; }
     const doc = ($('afiduEntradaDoc')?.value || '').trim();
     const codigo = ($('afiduEntradaCodigo')?.value || '').trim();
     if (!doc) {
@@ -442,8 +616,13 @@
 
   async function cargarRegistros() {
     cancelarEdicionCelda();
+    if (!_archivoId) {
+      renderBody([]);
+      _total = 0;
+      return;
+    }
     const q = ($('afiduBuscar') && $('afiduBuscar').value.trim()) || '';
-    const qs = new URLSearchParams({ page: String(_page), limit: String(_limit) });
+    const qs = new URLSearchParams({ page: String(_page), limit: String(_limit), archivo_id: String(_archivoId) });
     if (q) qs.set('q', q);
     const data = await apiAnexo(`/api/anexo-fidu/registros?${qs}`);
     _total = data.total || 0;
@@ -518,7 +697,10 @@
   }
 
   function exportarExcel() {
-    window.location.href = '/api/anexo-fidu/exportar';
+    try {
+      const id = requireArchivoActivo();
+      window.location.href = `/api/anexo-fidu/exportar?archivo_id=${id}`;
+    } catch (_) { /* toast ya mostrado */ }
   }
 
   function bindGridEvents() {
@@ -549,6 +731,15 @@
     $('btnAfiduSubirPersonas')?.addEventListener('click', () => $('afiduPersonasFileInput')?.click());
     $('afiduPersonasFileInput')?.addEventListener('change', importarPersonasCsv);
     $('btnAfiduExportar')?.addEventListener('click', exportarExcel);
+    $('afiduCarpetaSel')?.addEventListener('change', async (e) => {
+      _carpetaId = e.target.value ? parseInt(e.target.value, 10) : null;
+      await cargarArchivos(_carpetaId);
+    });
+    $('afiduArchivoSel')?.addEventListener('change', onArchivoSeleccionado);
+    $('btnAfiduNuevaCarpeta')?.addEventListener('click', crearCarpeta);
+    $('btnAfiduNuevoArchivo')?.addEventListener('click', crearArchivo);
+    $('btnAfiduImportarAnexo')?.addEventListener('click', importarExcelAnexo);
+    $('afiduImportFileInput')?.addEventListener('change', onImportFileSelected);
     $('btnAfiduBuscar')?.addEventListener('click', () => { _page = 1; cargarRegistros(); });
     $('afiduBuscar')?.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') { _page = 1; cargarRegistros(); }
@@ -566,7 +757,9 @@
       await cargarColumnas();
       await cargarServicios();
       renderThead();
-      await cargarRegistros();
+      await cargarCarpetas();
+      if (_carpetaId) await cargarArchivos(_carpetaId);
+      else renderBody([]);
       await cargarResumenPersonas();
     } catch (e) {
       if (typeof showToast === 'function') showToast('Error cargando anexo: ' + e.message, 'error');
