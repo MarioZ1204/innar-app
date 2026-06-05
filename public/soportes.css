@@ -1041,6 +1041,16 @@
   font-size: 0.72rem;
   color: #94a3b8;
 }
+.sop-pdf-orden-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.sop-pdf-orden-actions .sop-btn-sm {
+  min-width: 28px;
+  padding: 4px 6px;
+}
 .sop-opf-add-row {
   display: flex;
   flex-wrap: wrap;

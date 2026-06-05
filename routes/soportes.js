@@ -53,7 +53,8 @@ const {
   nextSopDiaNumero,
   ensureContenedoresForDia,
   ensureFeParEnContenedorHermano,
-  parseFeCodigo
+  parseFeCodigo,
+  ordenarExpedientesFeLista
 } = require('../utils/soportes-armado-structure');
 const { ingestFeArchivo } = require('../utils/soportes-fe-upload');
 const {
@@ -66,6 +67,11 @@ const {
 } = require('../utils/soportes-archivo-detect');
 const { parseListaPacientes, parseLineaPaciente } = require('../utils/soportes-pacientes-parse');
 const { actualizarExpediente, eliminarExpediente } = require('../utils/soportes-expediente-admin');
+const {
+  buscarDuplicadoPdxEnCarpeta,
+  mensajeDuplicadoPdx,
+  cuentaReferenciasRutaPdx
+} = require('../utils/soportes-pdx-duplicados');
 const { enrichExpedientesLista } = require('../utils/soportes-expediente-progreso');
 const { actualizarDia, eliminarDia } = require('../utils/soportes-dia-admin');
 const {
@@ -298,11 +304,11 @@ async function queryPdxCarpetasConCount() {
       FROM sop_pdx_carpetas c
       LEFT JOIN sop_pdx_archivos a ON a.carpeta_id = c.id
       GROUP BY c.id
-      ORDER BY c.periodo DESC, c.nombre_display ASC`;
+      ORDER BY c.nombre_display ASC, c.periodo DESC`;
   const sqlSinArchivos = `
       SELECT c.*, 0 AS archivos_count
       FROM sop_pdx_carpetas c
-      ORDER BY c.periodo DESC, c.nombre_display ASC`;
+      ORDER BY c.nombre_display ASC, c.periodo DESC`;
   try {
     return await db.query(sqlConArchivos);
   } catch (e) {
@@ -584,9 +590,25 @@ router.post('/soportes/pdx/carpetas/:id/pre-analizar', requireAuth, requireRoleO
     const { analizarNombreArchivo, ayudaFormatoPorTema } = require('../utils/soportes-pdx-parse');
     const analisis = analizarNombreArchivo(nombre, carpeta, carpeta._estudiosLista || []);
     const ayuda = ayudaFormatoPorTema(analisis.tema || detectarTemaCarpeta(carpeta.nombre_display));
+    let duplicado = null;
+    if (analisis.ok && analisis.parsed) {
+      const p = analisis.parsed;
+      const tmpMeta = {
+        ...p,
+        paciente_nombre_norm: p.paciente_nombre_norm || normalizarNombreBusqueda(
+          p.paciente_nombre || `${p.apellidos || ''}, ${p.nombres || ''}`
+        ),
+        nombre_archivo_display: nombreArchivoDescarga(p, carpeta)
+      };
+      const dup = await buscarDuplicadoPdxEnCarpeta(db, carpeta.id, tmpMeta, carpeta);
+      if (dup) {
+        duplicado = { id: dup.row.id, mensaje: mensajeDuplicadoPdx(dup) };
+      }
+    }
     res.json({
       ...analisis,
       ayuda_formato: ayuda,
+      duplicado,
       carpeta: { id: carpeta.id, nombre_display: carpeta.nombre_display, periodo: carpeta.periodo }
     });
   } catch (e) {
@@ -638,6 +660,21 @@ router.post(
       }
 
       const warnings = collectPdxWarnings(meta, carpeta);
+
+      step = 'duplicado';
+      const dup = await buscarDuplicadoPdxEnCarpeta(db, carpeta.id, meta, carpeta);
+      if (dup) {
+        if (uploadedPath && fs.existsSync(uploadedPath)) {
+          try { fs.unlinkSync(uploadedPath); } catch (_) { /* ignore */ }
+        }
+        uploadedPath = null;
+        return res.status(409).json({
+          error: mensajeDuplicadoPdx(dup),
+          codigo: 'PDX_DUPLICADO',
+          duplicado_de: dup.row.id
+        });
+      }
+
       step = 'disco';
       const { rutaRelativa, nombre_archivo_display } = finalizePdxFileOnDisk(
         carpeta.id,
@@ -745,6 +782,20 @@ router.post(
       };
 
       const warnings = collectPdxWarnings(meta, carpeta);
+
+      const dupUni = await buscarDuplicadoPdxEnCarpeta(db, carpeta.id, meta, carpeta);
+      if (dupUni) {
+        if (mergedTmp && fs.existsSync(mergedTmp)) {
+          try { fs.unlinkSync(mergedTmp); } catch (_) { /* ignore */ }
+        }
+        mergedTmp = null;
+        return res.status(409).json({
+          error: mensajeDuplicadoPdx(dupUni),
+          codigo: 'PDX_DUPLICADO',
+          duplicado_de: dupUni.row.id
+        });
+      }
+
       const { rutaRelativa, nombre_archivo_display } = finalizePdxFileOnDisk(
         carpeta.id,
         fakeFile,
@@ -1042,10 +1093,18 @@ router.delete('/soportes/pdx/archivos/:id', requireAuth, requireRoleOrPerm(ROLES
     if (!rows.length) return res.status(404).json({ error: 'No encontrado' });
     const deniedDelArch = denySinAccesoCarpetaPdx(req, rows[0]);
     if (deniedDelArch) return res.status(deniedDelArch.status).json({ error: deniedDelArch.error });
-    const fp = resolvePdxArchivoPath(rows[0]);
-    if (fp) fs.unlinkSync(fp);
+    const row = rows[0];
+    const refs = await cuentaReferenciasRutaPdx(db, row.carpeta_id, row.ruta_relativa, req.params.id);
+    if (refs === 0) {
+      const fp = resolvePdxArchivoPath(row);
+      if (fp && fs.existsSync(fp)) {
+        try { fs.unlinkSync(fp); } catch (e) {
+          logger.warn('[SOPORTES] unlink pdx al eliminar', { id: req.params.id, message: e.message });
+        }
+      }
+    }
     await db.execute('DELETE FROM sop_pdx_archivos WHERE id = ?', [req.params.id]);
-    res.json({ ok: true });
+    res.json({ ok: true, archivo_fisico_eliminado: refs === 0 });
   } catch (e) {
     res.status(500).json({ error: safeError(e) });
   }
@@ -1696,11 +1755,10 @@ router.get('/soportes/armado/contenedores/:id/expedientes', requireAuth, require
     if (!ctx) return res.status(404).json({ error: 'Contenedor no encontrado' });
     const rows = await db.query(
       `SELECT id, codigo, numero_factura, paciente_nombre, listo_radicacion, tipo_servicio, fev_externa_verificada
-       FROM sop_expedientes WHERE contenedor_id = ?
-       ORDER BY (numero_factura = 0) DESC, paciente_nombre ASC, numero_factura ASC`,
+       FROM sop_expedientes WHERE contenedor_id = ?`,
       [req.params.id]
     );
-    const expedientes = await enrichExpedientesLista(db, rows, ctx.tipo);
+    const expedientes = ordenarExpedientesFeLista(await enrichExpedientesLista(db, rows, ctx.tipo));
     res.json({ contenedor: mapContenedor({ ...ctx, expedientes_count: rows.length }), expedientes });
   } catch (e) {
     res.status(500).json({ error: safeError(e) });
@@ -2370,10 +2428,12 @@ router.post(
       }
       const { unirPdfsEnSlot } = require('../utils/soportes-slot-merge');
       const reemplazar = req.body?.reemplazar === '1' || req.body?.reemplazar === 'true';
+      const ordenManual = req.body?.orden_manual === '1' || req.body?.orden_manual === 'true';
       const result = await unirPdfsEnSlot(exp, exp, req.params.tipo, partes, {
         usuarioId: req.session.usuarioId,
         reemplazar,
-        minArchivos: 2
+        minArchivos: 2,
+        ordenManual
       });
       cleanupMulterTempFiles(req);
       const detail = await buildExpedienteDetail(req.params.id);

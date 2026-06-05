@@ -68,7 +68,8 @@ async function unirPdfsEnSlot(exp, ctx, slotKey, sourcePaths, {
   origen,
   usuarioId,
   reemplazar = false,
-  minArchivos = 2
+  minArchivos = 2,
+  ordenManual = false
 } = {}) {
   if (!exp?.id) throw new Error('Expediente inválido');
   if (ctx?.contenedor_tipo === 'rips') {
@@ -87,11 +88,16 @@ async function unirPdfsEnSlot(exp, ctx, slotKey, sourcePaths, {
 
   if (tipo === 'CRC') {
     if (items.length < 2 || items.length > 4) {
-      throw new Error('Para CRC seleccione 2, 3 o 4 PDF según el caso (Comprobante + Certificado, con Consentimiento y/o Cotización).');
+      throw new Error('Para CRC seleccione 2, 3 o 4 PDF.');
     }
-    const resuelto = resolverTiposPartes(items);
-    paths = assertPdfPaths(resuelto.paths, 2);
-    ordenEtiquetas = resuelto.orden;
+    if (ordenManual) {
+      paths = assertPdfPaths(items.map((i) => i.path), 2);
+      ordenEtiquetas = items.map((i) => i.originalname || path.basename(i.path));
+    } else {
+      const resuelto = resolverTiposPartes(items);
+      paths = assertPdfPaths(resuelto.paths, 2);
+      ordenEtiquetas = resuelto.orden;
+    }
   } else {
     paths = assertPdfPaths(items.map((i) => i.path), minArchivos);
   }

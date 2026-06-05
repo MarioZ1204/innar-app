@@ -122,6 +122,21 @@ async function nextSopDiaNumero(db, periodoId) {
   return Math.min(mx + 1, 255);
 }
 
+function compararTextoNaturalArmado(a, b) {
+  return String(a || '').localeCompare(String(b || ''), 'es', { numeric: true, sensitivity: 'base' });
+}
+
+/** Ordena carpetas FE por nombre de paciente (0-9, A-Z) dentro del día/contenedor. */
+function ordenarExpedientesFeLista(list) {
+  return [...(list || [])].sort((a, b) => {
+    const la = String(a.paciente_nombre || a.codigo || '').trim();
+    const lb = String(b.paciente_nombre || b.codigo || '').trim();
+    const cmp = compararTextoNaturalArmado(la, lb);
+    if (cmp !== 0) return cmp;
+    return (parseInt(a.numero_factura, 10) || 0) - (parseInt(b.numero_factura, 10) || 0);
+  });
+}
+
 async function ensureContenedoresForDia(db, diaId) {
   for (const tipo of CONTENEDOR_TIPOS) {
     const exists = await db.query(
@@ -145,5 +160,6 @@ module.exports = {
   badgeFacturacion,
   nextSopDiaNumero,
   ensureContenedoresForDia,
-  ensureFeParEnContenedorHermano
+  ensureFeParEnContenedorHermano,
+  ordenarExpedientesFeLista
 };
