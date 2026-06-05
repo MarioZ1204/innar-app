@@ -126,14 +126,27 @@ function compararTextoNaturalArmado(a, b) {
   return String(a || '').localeCompare(String(b || ''), 'es', { numeric: true, sensitivity: 'base' });
 }
 
-/** Ordena carpetas FE por nombre de paciente (0-9, A-Z) dentro del día/contenedor. */
+function numeroFeExpediente(exp) {
+  const n = parseInt(exp?.numero_factura, 10);
+  if (n > 0) return n;
+  const m = String(exp?.codigo || '').trim().match(/^FE(\d+)$/i);
+  return m ? parseInt(m[1], 10) : 0;
+}
+
+/** Pendientes por nombre; facturadas por número FE ascendente (FE15424 antes que FE15436). */
 function ordenarExpedientesFeLista(list) {
   return [...(list || [])].sort((a, b) => {
-    const la = String(a.paciente_nombre || a.codigo || '').trim();
-    const lb = String(b.paciente_nombre || b.codigo || '').trim();
-    const cmp = compararTextoNaturalArmado(la, lb);
-    if (cmp !== 0) return cmp;
-    return (parseInt(a.numero_factura, 10) || 0) - (parseInt(b.numero_factura, 10) || 0);
+    const na = numeroFeExpediente(a);
+    const nb = numeroFeExpediente(b);
+    const aPend = na === 0;
+    const bPend = nb === 0;
+    if (aPend && bPend) {
+      const la = String(a.paciente_nombre || a.codigo || '').trim();
+      const lb = String(b.paciente_nombre || b.codigo || '').trim();
+      return compararTextoNaturalArmado(la, lb);
+    }
+    if (aPend !== bPend) return aPend ? -1 : 1;
+    return na - nb;
   });
 }
 
@@ -161,5 +174,6 @@ module.exports = {
   nextSopDiaNumero,
   ensureContenedoresForDia,
   ensureFeParEnContenedorHermano,
-  ordenarExpedientesFeLista
+  ordenarExpedientesFeLista,
+  numeroFeExpediente
 };

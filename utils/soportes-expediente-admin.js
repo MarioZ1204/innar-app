@@ -6,7 +6,7 @@ const fs = require('fs');
 const db = require('./db-mysql');
 const { getArmadoFeDirFromContext } = require('./soportes-storage');
 const { parseLineaPaciente, esExpedientePendienteFactura } = require('./soportes-pacientes-parse');
-const { findExpedientesMismoCodigo } = require('./soportes-fe-rename');
+const { findExpedientesMismoCodigo, aplicarRenombradoPorFev, revertirRenombradoPorFev } = require('./soportes-fe-rename');
 
 async function loadExpedienteContext(expedienteId) {
   const rows = await db.query(
@@ -75,15 +75,40 @@ async function actualizarExpediente(expedienteId, body) {
   if (!exp) return { error: 'Expediente no encontrado', status: 404 };
 
   const pendiente = esExpedientePendienteFactura(exp);
+  const lineaPaciente = body.paciente_linea || body.paciente_nombre;
+  let renombrado = null;
 
-  if (body.paciente_linea || (body.paciente_nombre && pendiente)) {
-    if (!pendiente) {
-      return {
-        error: 'La carpeta ya tiene factura vinculada (FEV). Solo puede editar notas o documento del paciente.',
-        status: 400
-      };
+  if (body.revertir_factura === true || body.revertir_factura === '1' || body.revertir_factura === 1) {
+    renombrado = await revertirRenombradoPorFev(expedienteId, {
+      paciente_linea: lineaPaciente,
+      paciente_nombre: body.paciente_nombre
+    });
+    if (!renombrado.ok) return { error: renombrado.error, status: 400 };
+    if (body.paciente_documento != null || body.notas != null) {
+      const codigo = renombrado.codigo;
+      await db.execute(
+        `UPDATE sop_expedientes SET
+          paciente_documento = COALESCE(?, paciente_documento),
+          notas = COALESCE(?, notas)
+         WHERE dia_id = ? AND codigo = ?`,
+        [body.paciente_documento || null, body.notas != null ? body.notas : null, exp.dia_id, codigo]
+      );
     }
-    const parsed = parseLineaPaciente(body.paciente_linea || body.paciente_nombre);
+    return { ok: true, renombrado };
+  }
+
+  if (!pendiente && body.numero_factura != null && body.numero_factura !== '') {
+    const numNuevo = parseInt(body.numero_factura, 10);
+    const numActual = parseInt(exp.numero_factura, 10) || 0;
+    if (numNuevo > 0 && numNuevo !== numActual) {
+      renombrado = await aplicarRenombradoPorFev(expedienteId, numNuevo);
+      if (!renombrado.ok) return { error: renombrado.error, status: 400 };
+      exp = await loadExpedienteContext(expedienteId);
+    }
+  }
+
+  if (lineaPaciente && pendiente) {
+    const parsed = parseLineaPaciente(lineaPaciente);
     if (!parsed) {
       return { error: 'Indique nombre y apellido válidos', status: 400 };
     }
@@ -99,11 +124,24 @@ async function actualizarExpediente(expedienteId, body) {
       await renombrarCodigoCarpetas(exp.dia_id, exp.codigo, nuevoCodigo);
     }
     await db.execute(
-      'UPDATE sop_expedientes SET paciente_nombre = ?, paciente_documento = COALESCE(?, paciente_documento) WHERE dia_id = ? AND codigo = ?',
-      [parsed.paciente_nombre, body.paciente_documento || null, exp.dia_id, nuevoCodigo]
+      'UPDATE sop_expedientes SET paciente_nombre = ? WHERE dia_id = ? AND codigo = ?',
+      [parsed.paciente_nombre, exp.dia_id, nuevoCodigo]
     );
-  } else {
-    const { fev_externa_verificada, listo_radicacion, paciente_documento, notas } = body;
+  } else if (lineaPaciente && !pendiente) {
+    const parsed = parseLineaPaciente(lineaPaciente);
+    if (!parsed) {
+      return { error: 'Indique nombre y apellido válidos', status: 400 };
+    }
+    await db.execute(
+      'UPDATE sop_expedientes SET paciente_nombre = ? WHERE dia_id = ? AND codigo = ?',
+      [parsed.paciente_nombre, exp.dia_id, exp.codigo]
+    );
+  }
+
+  const { fev_externa_verificada, listo_radicacion, paciente_documento, notas } = body;
+  const tieneMeta = fev_externa_verificada != null || listo_radicacion != null
+    || paciente_documento != null || notas != null;
+  if (tieneMeta) {
     await db.execute(
       `UPDATE sop_expedientes SET
         fev_externa_verificada = COALESCE(?, fev_externa_verificada),
@@ -121,7 +159,7 @@ async function actualizarExpediente(expedienteId, body) {
     );
   }
 
-  return { ok: true };
+  return { ok: true, renombrado };
 }
 
 async function eliminarExpediente(expedienteId) {

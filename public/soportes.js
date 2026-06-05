@@ -1435,13 +1435,26 @@
     return String(a || '').localeCompare(String(b || ''), 'es', { numeric: true, sensitivity: 'base' });
   }
 
+  function numeroFeExpedienteCliente(exp) {
+    const n = parseInt(exp?.numero_factura, 10);
+    if (n > 0) return n;
+    const m = String(exp?.codigo || '').trim().match(/^FE(\d+)$/i);
+    return m ? parseInt(m[1], 10) : 0;
+  }
+
   function ordenarExpedientesFeArmado(list) {
     return [...(list || [])].sort((a, b) => {
-      const la = String(a.paciente_nombre || a.codigo || '').trim();
-      const lb = String(b.paciente_nombre || b.codigo || '').trim();
-      const cmp = compararTextoNatural(la, lb);
-      if (cmp !== 0) return cmp;
-      return (parseInt(a.numero_factura, 10) || 0) - (parseInt(b.numero_factura, 10) || 0);
+      const na = numeroFeExpedienteCliente(a);
+      const nb = numeroFeExpedienteCliente(b);
+      const aPend = na === 0;
+      const bPend = nb === 0;
+      if (aPend && bPend) {
+        const la = String(a.paciente_nombre || a.codigo || '').trim();
+        const lb = String(b.paciente_nombre || b.codigo || '').trim();
+        return compararTextoNatural(la, lb);
+      }
+      if (aPend !== bPend) return aPend ? -1 : 1;
+      return na - nb;
     });
   }
 
@@ -2967,7 +2980,7 @@
           <td>${htmlFeExpedienteProgressMini(e)} ${badgeEstadoFe(e.documentos_completos)}</td>
           <td class="sop-folder-list-actions">
             <button type="button" class="sop-btn sop-btn-teal sop-btn-sm" data-exp-open="${e.id}"><i data-lucide="folder-open"></i></button>
-            ${puedeEditar ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-exp-edit="${e.id}"><i data-lucide="pencil"></i></button>` : ''}
+            ${puedeEditar ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-exp-edit="${e.id}" title="Renombrar carpeta"><i data-lucide="pencil"></i></button>` : ''}
             ${puedeEliminar ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-exp-del="${e.id}" data-exp-codigo="${escapeHtml(e.codigo)}" style="color:#dc2626"><i data-lucide="trash-2"></i></button>` : ''}
           </td>
         </tr>`).join('')}</tbody></table></div>`;
@@ -2980,7 +2993,7 @@
           <div class="sop-folder-card-count">${facturaCell(e)}</div>
           <div class="sop-folder-card-actions">
             <button type="button" class="sop-btn sop-btn-teal sop-btn-sm" data-exp-open="${e.id}"><i data-lucide="folder-open"></i> Abrir</button>
-            ${puedeEditar ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-exp-edit="${e.id}"><i data-lucide="pencil"></i></button>` : ''}
+            ${puedeEditar ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-exp-edit="${e.id}" title="Renombrar carpeta"><i data-lucide="pencil"></i></button>` : ''}
             ${puedeEliminar ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-exp-del="${e.id}" data-exp-codigo="${escapeHtml(e.codigo)}" style="color:#dc2626"><i data-lucide="trash-2"></i></button>` : ''}
           </div>
         </article>`).join('');
@@ -3461,7 +3474,7 @@
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="btnSopArmVolverCont"><i data-lucide="arrow-left"></i> ${escapeHtml(tipoLabel)}</button>
-        ${sopPerm('soportes.armado.subir') ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="btnSopExpEditar"><i data-lucide="pencil"></i> Editar</button>` : ''}
+        ${sopPerm('soportes.armado.subir') ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="btnSopExpEditar"><i data-lucide="pencil"></i> Renombrar</button>` : ''}
         ${sopPerm('soportes.armado.crear_estructura') ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="btnSopExpEliminar" style="color:#dc2626"><i data-lucide="trash-2"></i> Eliminar</button>` : ''}
         ${sopPerm('soportes.descargar_zip') ? `<a class="sop-btn sop-btn-teal sop-btn-sm" href="/api/soportes/armado/expedientes/${id}/zip" target="_blank"><i data-lucide="archive"></i> ZIP</a>` : ''}
         </div>
@@ -3901,29 +3914,56 @@
       if (!ex?.id && !expId) return sopToast('No se pudo cargar la carpeta', 'error');
       const id = ex.id || expId;
       const pendiente = ex.numero_factura == null || Number(ex.numero_factura) <= 0;
+      const numFe = Number(ex.numero_factura) > 0 ? Number(ex.numero_factura) : '';
       const modal = openSopModal(`
-        <h3><i data-lucide="pencil"></i> Editar carpeta</h3>
-        <p class="sop-dialog-lead">Código actual: <strong>${escapeHtml(ex.codigo)}</strong>${ex.paciente_nombre ? ` · ${escapeHtml(ex.paciente_nombre)}` : ''}</p>
-        ${pendiente ? `<div class="sop-field"><label>Paciente (nombre y apellido)</label>
-          <input type="text" id="sopExpEditPaciente" value="${escapeHtml(ex.paciente_nombre || '')}" placeholder="Nombre Apellido"></div>` : ''}
+        <h3><i data-lucide="pencil"></i> Renombrar carpeta</h3>
+        <p class="sop-dialog-lead">Carpeta actual: <strong>${escapeHtml(ex.codigo)}</strong>${ex.paciente_nombre ? ` · ${escapeHtml(ex.paciente_nombre)}` : ''}</p>
+        <div class="sop-field"><label>Paciente (nombre y apellido)</label>
+          <input type="text" id="sopExpEditPaciente" value="${escapeHtml(ex.paciente_nombre || ex.codigo || '')}" placeholder="Nombre Apellido" autocomplete="off"></div>
+        ${pendiente
+          ? '<p class="sop-pdx-format-nota">Sin factura aún: al guardar se renombra la carpeta en disco con el nombre del paciente.</p>'
+          : `<div class="sop-field"><label>Número de factura (FE)</label>
+          <input type="number" id="sopExpEditFe" min="1" step="1" value="${numFe}" placeholder="Ej. 14726"></div>
+          <p class="sop-pdx-format-nota">Si la FEV se subió con el número equivocado, corríjalo aquí. La carpeta y los archivos pasarán a <strong>FE{nuevo}</strong>.</p>
+          <label class="sop-toggle" style="display:flex;align-items:flex-start;gap:8px;margin:10px 0 4px">
+            <input type="checkbox" id="sopExpEditRevert" style="margin-top:3px">
+            <span><strong>Quitar factura y volver al nombre del paciente</strong><br>
+            <span style="font-size:.78rem;color:#64748b">Elimina la FEV, desvincula el número FE y renombra la carpeta (si la factura quedó en la carpeta incorrecta).</span></span>
+          </label>`}
         <div class="sop-field"><label>Documento paciente <span class="sop-label-opt">(opcional)</span></label>
           <input type="text" id="sopExpEditDoc" value="${escapeHtml(ex.paciente_documento || '')}"></div>
         <div class="sop-field"><label>Notas</label>
           <textarea id="sopExpEditNotas" rows="3">${escapeHtml(ex.notas || '')}</textarea></div>
-        ${!pendiente ? '<p class="sop-pdx-format-nota">Con factura vinculada no puede cambiar el nombre de la carpeta del paciente.</p>' : ''}
         <div class="sop-dialog-actions">
           <button type="button" class="sop-btn sop-btn-ghost" id="sopExpEditCancel">Cancelar</button>
-          <button type="button" class="sop-btn sop-btn-teal" id="sopExpEditOk">Guardar</button>
+          <button type="button" class="sop-btn sop-btn-teal" id="sopExpEditOk">Guardar cambios</button>
         </div>`);
+      const feInput = modal.querySelector('#sopExpEditFe');
+      const revertChk = modal.querySelector('#sopExpEditRevert');
+      const syncFeRevert = () => {
+        if (!feInput || !revertChk) return;
+        feInput.disabled = revertChk.checked;
+        if (revertChk.checked) feInput.style.opacity = '0.5';
+        else feInput.style.opacity = '';
+      };
+      revertChk?.addEventListener('change', syncFeRevert);
+      syncFeRevert();
       modal.querySelector('#sopExpEditCancel').onclick = () => closeSopModal(modal);
       modal.querySelector('#sopExpEditOk').onclick = async () => {
+        const linea = modal.querySelector('#sopExpEditPaciente')?.value?.trim();
+        if (!linea) return sopToast('Indique el nombre del paciente', 'warning');
         const body = {
+          paciente_linea: linea,
           paciente_documento: modal.querySelector('#sopExpEditDoc')?.value?.trim() || null,
           notas: modal.querySelector('#sopExpEditNotas')?.value?.trim() || null
         };
-        if (pendiente) {
-          const linea = modal.querySelector('#sopExpEditPaciente')?.value?.trim();
-          if (linea) body.paciente_linea = linea;
+        if (!pendiente) {
+          if (revertChk?.checked) {
+            body.revertir_factura = true;
+          } else {
+            const feVal = modal.querySelector('#sopExpEditFe')?.value?.trim();
+            if (feVal) body.numero_factura = parseInt(feVal, 10);
+          }
         }
         const res = await apiFetch(`/api/soportes/armado/expedientes/${id}`, {
           method: 'PATCH',
@@ -3933,7 +3973,13 @@
         const d = await res.json();
         if (!res.ok) { sopToast(d.error, 'error'); return; }
         closeSopModal(modal);
-        sopToast('Carpeta actualizada', 'success');
+        let msg = 'Carpeta actualizada';
+        if (d.renombrado?.codigo) {
+          msg = body.revertir_factura
+            ? `Factura desvinculada. Carpeta renombrada a ${d.renombrado.codigo}`
+            : `Carpeta renombrada a ${d.renombrado.codigo}`;
+        }
+        sopToast(msg, 'success');
         if (armState.contenedorId) await seleccionarContenedorArmado(armState.contenedorId);
         if (armState.expedienteId === id) abrirExpedienteArmado(id);
       };

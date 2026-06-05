@@ -1958,7 +1958,7 @@ router.patch('/soportes/armado/expedientes/:id', requireAuth, requireRoleOrPerm(
     const result = await actualizarExpediente(req.params.id, req.body || {});
     if (result.error) return res.status(result.status || 400).json({ error: result.error });
     const detail = await buildExpedienteDetail(req.params.id);
-    res.json({ ok: true, expediente: detail });
+    res.json({ ok: true, expediente: detail, renombrado: result.renombrado || null });
   } catch (e) {
     res.status(500).json({ error: safeError(e) });
   }
