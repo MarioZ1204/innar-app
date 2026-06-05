@@ -147,6 +147,7 @@ function mapReciboParaExport(rec) {
     return {
       recibo_numero: '',
       recibo_valor: '',
+      recibo_valor_anulado: '',
       recibo_estado: '',
       recibo_observaciones: ''
     };
@@ -155,12 +156,63 @@ function mapReciboParaExport(rec) {
   return {
     recibo_numero: rec.numero || '',
     recibo_valor: Number(rec.total || 0),
+    recibo_valor_anulado: '',
     recibo_estado: anulado ? 'ANULADO' : (rec.estado_pago === 'PENDIENTE' ? 'PENDIENTE' : 'PAGADO'),
     recibo_observaciones: anulado ? (rec.anulado_razon || '') : (rec.observaciones || '')
   };
 }
 
-/** Adjunta el recibo más reciente vinculado a cada cita (turno_id / cita_electro_id). */
+/** Recibo activo a mostrar: pagado > pendiente > más reciente. */
+function elegirReciboActivo(recibos) {
+  const activos = recibos.filter((r) => r.anulado != 1);
+  if (!activos.length) return null;
+  const pagados = activos.filter((r) => r.estado_pago !== 'PENDIENTE');
+  const pool = pagados.length ? pagados : activos;
+  return pool.sort((a, b) => b.id - a.id)[0];
+}
+
+/**
+ * Varios recibos por cita: el activo (p. ej. pagado tras anular duplicado) va a valor/estado;
+ * los anulados (DUPLICADO u otro) suman en recibo_valor_anulado sin reemplazar al activo.
+ */
+function resolverRecibosParaExport(recibos) {
+  if (!recibos?.length) return mapReciboParaExport(null);
+
+  const anulados = recibos.filter((r) => r.anulado == 1);
+  const valorAnulado = anulados.reduce((s, r) => s + Number(r.total || 0), 0);
+  const activo = elegirReciboActivo(recibos);
+
+  if (activo) {
+    const base = mapReciboParaExport(activo);
+    return {
+      ...base,
+      recibo_valor: Number(activo.total || 0),
+      recibo_valor_anulado: valorAnulado > 0 ? valorAnulado : ''
+    };
+  }
+
+  const principal = [...recibos].sort((a, b) => b.id - a.id)[0];
+  const base = mapReciboParaExport(principal);
+  return {
+    ...base,
+    recibo_valor: '',
+    recibo_valor_anulado: valorAnulado > 0 ? valorAnulado : Number(principal.total || 0)
+  };
+}
+
+function agruparRecibosPorCita(rows, tipoCita, idField) {
+  const map = new Map();
+  rows.forEach((r) => {
+    const citaId = r[idField];
+    if (citaId == null) return;
+    const key = `${tipoCita}-${citaId}`;
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(r);
+  });
+  return map;
+}
+
+/** Adjunta recibos vinculados a cada cita (turno_id / cita_electro_id). */
 async function enriquecerCitasConRecibos(db, citas) {
   if (!citas.length) return [];
 
@@ -175,10 +227,7 @@ async function enriquecerCitasConRecibos(db, citas) {
        FROM recibos WHERE turno_id IN (${ph}) ORDER BY id DESC`,
       turnoIds
     );
-    rows.forEach((r) => {
-      const key = `AGENDA_MEDICA-${r.turno_id}`;
-      if (!recibosMap.has(key)) recibosMap.set(key, r);
-    });
+    agruparRecibosPorCita(rows, 'AGENDA_MEDICA', 'turno_id').forEach((v, k) => recibosMap.set(k, v));
   }
 
   if (electroIds.length) {
@@ -188,20 +237,19 @@ async function enriquecerCitasConRecibos(db, citas) {
        FROM recibos WHERE cita_electro_id IN (${ph}) ORDER BY id DESC`,
       electroIds
     );
-    rows.forEach((r) => {
-      const key = `ELECTRODIAGNOSTICO-${r.cita_electro_id}`;
-      if (!recibosMap.has(key)) recibosMap.set(key, r);
-    });
+    agruparRecibosPorCita(rows, 'ELECTRODIAGNOSTICO', 'cita_electro_id').forEach((v, k) => recibosMap.set(k, v));
   }
 
   return citas.map((c) => {
-    const rec = recibosMap.get(`${c.tipo_cita}-${c.id}`);
-    return { ...c, ...mapReciboParaExport(rec) };
+    const lista = recibosMap.get(`${c.tipo_cita}-${c.id}`) || [];
+    return { ...c, ...resolverRecibosParaExport(lista) };
   });
 }
 
 module.exports = {
   queryCitasAuditoria,
   enriquecerCitasConRecibos,
-  mapReciboParaExport
+  mapReciboParaExport,
+  resolverRecibosParaExport,
+  elegirReciboActivo
 };

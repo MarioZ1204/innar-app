@@ -656,11 +656,23 @@ function valorReciboNumerico(c) {
   return Number.isFinite(n) ? n : null;
 }
 
+function valorReciboAnuladoNumerico(c) {
+  if (c.recibo_valor_anulado === '' || c.recibo_valor_anulado == null) return null;
+  const n = Number(c.recibo_valor_anulado);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
 function valoresReciboSeparados(c) {
-  const n = valorReciboNumerico(c);
-  if (n == null) return { activo: null, anulado: null };
-  if (c.recibo_estado === 'ANULADO') return { activo: null, anulado: n };
-  return { activo: n, anulado: null };
+  const anulado = valorReciboAnuladoNumerico(c);
+  const activo = valorReciboNumerico(c);
+
+  if (c.recibo_valor_anulado !== undefined) {
+    return { activo, anulado };
+  }
+
+  if (activo == null) return { activo: null, anulado: null };
+  if (c.recibo_estado === 'ANULADO') return { activo: null, anulado: activo };
+  return { activo, anulado: null };
 }
 
 function mapFilaReporteAuditoria(c) {
