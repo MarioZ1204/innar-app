@@ -1,5 +1,141 @@
 'use strict';
 
+const { tipoServicioCoincideNombre } = require('./recibos-catalogo-filtros');
+
+const RECIBO_CAMPOS_AUDITORIA = 'id, numero, turno_id, cita_electro_id, total, anulado, anulado_razon, estado_pago, observaciones, tipo_servicio, fecha, cliente';
+
+function extraerFechaYmd(val) {
+  if (!val) return '';
+  const m = String(val).match(/^(\d{4}-\d{2}-\d{2})/);
+  return m ? m[1] : String(val).slice(0, 10);
+}
+
+function normNombrePaciente(s) {
+  return String(s || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function clienteCoincidePaciente(cliente, pacienteNombre) {
+  const a = normNombrePaciente(cliente);
+  const b = normNombrePaciente(pacienteNombre);
+  if (!a || !b) return true;
+  return a === b || a.includes(b) || b.includes(a);
+}
+
+/** Excluye recibos de electrodiagnóstico. */
+function esReciboConsultaMedica(rec) {
+  if (!rec) return false;
+  return rec.cita_electro_id == null || rec.cita_electro_id === '';
+}
+
+function reciboEnlazadoPorTurno(rec, cita) {
+  return rec.turno_id != null && rec.turno_id !== '' && Number(rec.turno_id) === Number(cita.id);
+}
+
+function reciboEnlazadoPorCitaElectro(rec, cita) {
+  return rec.cita_electro_id != null && rec.cita_electro_id !== '' && Number(rec.cita_electro_id) === Number(cita.id);
+}
+
+/** Enlace directo por turno_id o, en su defecto, tipo_servicio ≈ tipo_consulta + fecha + paciente. */
+function reciboCoincideCitaMedica(rec, cita) {
+  if (!esReciboConsultaMedica(rec)) return false;
+  if (reciboEnlazadoPorTurno(rec, cita)) return true;
+  if (rec.turno_id != null && rec.turno_id !== '' && Number(rec.turno_id) !== Number(cita.id)) {
+    return false;
+  }
+  if (!cita.tipo_consulta) return false;
+  if (!tipoServicioCoincideNombre(rec.tipo_servicio, cita.tipo_consulta)) return false;
+  const fechaRec = extraerFechaYmd(rec.fecha);
+  const fechaCita = extraerFechaYmd(cita.fecha);
+  if (fechaRec && fechaCita && fechaRec !== fechaCita) return false;
+  return clienteCoincidePaciente(rec.cliente, cita.paciente_nombre);
+}
+
+/** Enlace directo por cita_electro_id o, en su defecto, tipo_servicio ≈ estudio + fecha + paciente. */
+function reciboCoincideCitaElectro(rec, cita) {
+  if (reciboEnlazadoPorCitaElectro(rec, cita)) return true;
+  if (rec.cita_electro_id != null && rec.cita_electro_id !== '' && Number(rec.cita_electro_id) !== Number(cita.id)) {
+    return false;
+  }
+  if (rec.turno_id != null && rec.turno_id !== '' && Number(rec.turno_id) !== 0) {
+    return false;
+  }
+  if (!cita.tipo_consulta) return false;
+  if (!tipoServicioCoincideNombre(rec.tipo_servicio, cita.tipo_consulta)) return false;
+  const fechaRec = extraerFechaYmd(rec.fecha);
+  const fechaCita = extraerFechaYmd(cita.fecha);
+  if (fechaRec && fechaCita && fechaRec !== fechaCita) return false;
+  return clienteCoincidePaciente(rec.cliente, cita.paciente_nombre);
+}
+
+async function cargarRecibosConsultaMedica(db, citasMedicas) {
+  if (!citasMedicas.length) return [];
+
+  const turnoIds = citasMedicas.map((c) => c.id);
+  const fechas = [...new Set(citasMedicas.map((c) => extraerFechaYmd(c.fecha)).filter(Boolean))];
+  const phTurnos = turnoIds.map(() => '?').join(',');
+
+  const porTurno = await db.query(
+    `SELECT ${RECIBO_CAMPOS_AUDITORIA} FROM recibos
+     WHERE cita_electro_id IS NULL AND turno_id IN (${phTurnos})`,
+    turnoIds
+  );
+
+  let porTipoFecha = [];
+  if (fechas.length) {
+    const phFechas = fechas.map(() => '?').join(',');
+    porTipoFecha = await db.query(
+      `SELECT ${RECIBO_CAMPOS_AUDITORIA} FROM recibos
+       WHERE cita_electro_id IS NULL
+         AND (turno_id IS NULL OR turno_id = 0)
+         AND DATE(fecha) IN (${phFechas})`,
+      fechas
+    );
+  }
+
+  return dedupeRecibosPorId([...porTurno, ...porTipoFecha]).filter(esReciboConsultaMedica);
+}
+
+async function cargarRecibosElectro(db, citasElectro) {
+  if (!citasElectro.length) return [];
+
+  const electroIds = citasElectro.map((c) => c.id);
+  const fechas = [...new Set(citasElectro.map((c) => extraerFechaYmd(c.fecha)).filter(Boolean))];
+  const phElectro = electroIds.map(() => '?').join(',');
+
+  const porCitaElectro = await db.query(
+    `SELECT ${RECIBO_CAMPOS_AUDITORIA} FROM recibos
+     WHERE cita_electro_id IN (${phElectro})`,
+    electroIds
+  );
+
+  let porTipoFecha = [];
+  if (fechas.length) {
+    const phFechas = fechas.map(() => '?').join(',');
+    porTipoFecha = await db.query(
+      `SELECT ${RECIBO_CAMPOS_AUDITORIA} FROM recibos
+       WHERE (cita_electro_id IS NULL OR cita_electro_id = 0)
+         AND (turno_id IS NULL OR turno_id = 0)
+         AND DATE(fecha) IN (${phFechas})`,
+      fechas
+    );
+  }
+
+  return dedupeRecibosPorId([...porCitaElectro, ...porTipoFecha]);
+}
+
+function dedupeRecibosPorId(rows) {
+  const map = new Map();
+  (rows || []).forEach((r) => {
+    if (r?.id != null) map.set(r.id, r);
+  });
+  return [...map.values()];
+}
+
 function contarEstados(arr, estadosList) {
   return arr.filter((c) => estadosList.includes(c.estado)).length;
 }
@@ -230,49 +366,39 @@ function resolverRecibosParaExport(recibos) {
   return out;
 }
 
-function agruparRecibosPorCita(rows, tipoCita, idField) {
-  const map = new Map();
-  rows.forEach((r) => {
-    const citaId = r[idField];
-    if (citaId == null) return;
-    const key = `${tipoCita}-${citaId}`;
-    if (!map.has(key)) map.set(key, []);
-    map.get(key).push(r);
-  });
-  return map;
-}
-
-/** Adjunta recibos vinculados a cada cita (turno_id / cita_electro_id). */
+/** Adjunta recibos según tipo de cita: médica (turno/tipo consulta) o electro (cita_electro/tipo estudio). */
 async function enriquecerCitasConRecibos(db, citas) {
   if (!citas.length) return [];
 
-  const turnoIds = citas.filter((c) => c.tipo_cita === 'AGENDA_MEDICA').map((c) => c.id);
-  const electroIds = citas.filter((c) => c.tipo_cita === 'ELECTRODIAGNOSTICO').map((c) => c.id);
-  const recibosMap = new Map();
+  const citasMedicas = citas.filter((c) => c.tipo_cita === 'AGENDA_MEDICA');
+  const citasElectro = citas.filter((c) => c.tipo_cita === 'ELECTRODIAGNOSTICO');
 
-  if (turnoIds.length) {
-    const ph = turnoIds.map(() => '?').join(',');
-    const rows = await db.query(
-      `SELECT id, numero, turno_id, cita_electro_id, total, anulado, anulado_razon, estado_pago, observaciones
-       FROM recibos WHERE turno_id IN (${ph}) ORDER BY id DESC`,
-      turnoIds
-    );
-    agruparRecibosPorCita(rows, 'AGENDA_MEDICA', 'turno_id').forEach((v, k) => recibosMap.set(k, v));
-  }
+  const [recibosMedicos, recibosElectro] = await Promise.all([
+    cargarRecibosConsultaMedica(db, citasMedicas),
+    cargarRecibosElectro(db, citasElectro)
+  ]);
 
-  if (electroIds.length) {
-    const ph = electroIds.map(() => '?').join(',');
-    const rows = await db.query(
-      `SELECT id, numero, turno_id, cita_electro_id, total, anulado, anulado_razon, estado_pago, observaciones
-       FROM recibos WHERE cita_electro_id IN (${ph}) ORDER BY id DESC`,
-      electroIds
-    );
-    agruparRecibosPorCita(rows, 'ELECTRODIAGNOSTICO', 'cita_electro_id').forEach((v, k) => recibosMap.set(k, v));
-  }
+  const usadosMedicos = new Set();
+  const usadosElectro = new Set();
 
   return citas.flatMap((c) => {
-    const lista = recibosMap.get(`${c.tipo_cita}-${c.id}`) || [];
-    return expandirCitaConRecibos(c, lista);
+    if (c.tipo_cita === 'AGENDA_MEDICA') {
+      const lista = recibosMedicos.filter((r) => {
+        if (usadosMedicos.has(r.id)) return false;
+        return reciboCoincideCitaMedica(r, c);
+      });
+      lista.forEach((r) => usadosMedicos.add(r.id));
+      return expandirCitaConRecibos(c, lista);
+    }
+    if (c.tipo_cita === 'ELECTRODIAGNOSTICO') {
+      const lista = recibosElectro.filter((r) => {
+        if (usadosElectro.has(r.id)) return false;
+        return reciboCoincideCitaElectro(r, c);
+      });
+      lista.forEach((r) => usadosElectro.add(r.id));
+      return expandirCitaConRecibos(c, lista);
+    }
+    return expandirCitaConRecibos(c, []);
   });
 }
 
@@ -284,5 +410,10 @@ module.exports = {
   expandirCitaConRecibos,
   ordenarRecibosParaReporte,
   resolverRecibosParaExport,
-  elegirReciboActivo
+  elegirReciboActivo,
+  esReciboConsultaMedica,
+  reciboCoincideCitaMedica,
+  reciboCoincideCitaElectro,
+  reciboEnlazadoPorTurno,
+  reciboEnlazadoPorCitaElectro
 };
