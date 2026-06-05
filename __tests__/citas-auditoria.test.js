@@ -4,12 +4,18 @@ const {
   mapReciboParaExport,
   expandirCitaConRecibos,
   elegirReciboActivo,
+  esReciboElectro,
   esReciboConsultaMedica,
   reciboCoincideCitaMedica,
   reciboCoincideCitaElectro,
   reciboEnlazadoPorTurno,
   reciboEnlazadoPorCitaElectro
 } = require('../utils/citas-auditoria');
+
+const CATALOGOS_AUDITORIA = {
+  tiposConsulta: ['Medicina General', 'Cardiología'],
+  estudios: ['EEG Convencional', 'ELECTROENCEFALOGRAMA  CONVENCIONAL']
+};
 
 const CITA_BASE = {
   id: 99,
@@ -113,19 +119,48 @@ describe('recibos consulta médica en auditoría', () => {
   };
 
   test('excluye recibos de electrodiagnóstico', () => {
-    expect(esReciboConsultaMedica({ cita_electro_id: 7 })).toBe(false);
-    expect(esReciboConsultaMedica({ cita_electro_id: null, turno_id: 42 })).toBe(true);
+    expect(esReciboConsultaMedica({ cita_electro_id: 7 }, CATALOGOS_AUDITORIA)).toBe(false);
+    expect(esReciboConsultaMedica({ cita_electro_id: null, turno_id: 42 }, CATALOGOS_AUDITORIA)).toBe(true);
+    expect(esReciboElectro({
+      cita_electro_id: null,
+      medico_nombre: 'ELECTRODIAGNÓSTICOS',
+      tipo_servicio: 'EEG Convencional'
+    }, CATALOGOS_AUDITORIA)).toBe(true);
+  });
+
+  test('no arrastra electro por medico ni por servicio de estudio', () => {
+    const recMedicoElectro = {
+      id: 5,
+      turno_id: 42,
+      cita_electro_id: null,
+      medico_nombre: 'ELECTRODIAGNÓSTICOS',
+      tipo_servicio: 'Medicina General',
+      fecha: '2026-06-15',
+      cliente: 'María López'
+    };
+    expect(reciboCoincideCitaMedica(recMedicoElectro, citaMedica, CATALOGOS_AUDITORIA)).toBe(false);
+
+    const recEstudio = {
+      id: 6,
+      turno_id: null,
+      cita_electro_id: null,
+      medico_nombre: null,
+      tipo_servicio: 'EEG Convencional',
+      fecha: '2026-06-15',
+      cliente: 'María López'
+    };
+    expect(reciboCoincideCitaMedica(recEstudio, citaMedica, CATALOGOS_AUDITORIA)).toBe(false);
   });
 
   test('enlaza por turno_id', () => {
     const rec = { id: 1, turno_id: 42, cita_electro_id: null, tipo_servicio: 'Otro' };
     expect(reciboEnlazadoPorTurno(rec, citaMedica)).toBe(true);
-    expect(reciboCoincideCitaMedica(rec, citaMedica)).toBe(true);
+    expect(reciboCoincideCitaMedica(rec, citaMedica, CATALOGOS_AUDITORIA)).toBe(true);
   });
 
   test('no asigna recibo enlazado a otro turno', () => {
     const rec = { id: 2, turno_id: 99, cita_electro_id: null, tipo_servicio: 'Medicina General' };
-    expect(reciboCoincideCitaMedica(rec, citaMedica)).toBe(false);
+    expect(reciboCoincideCitaMedica(rec, citaMedica, CATALOGOS_AUDITORIA)).toBe(false);
   });
 
   test('fallback por tipo de consulta, fecha y paciente', () => {
@@ -137,7 +172,7 @@ describe('recibos consulta médica en auditoría', () => {
       fecha: '2026-06-15',
       cliente: 'María López'
     };
-    expect(reciboCoincideCitaMedica(rec, citaMedica)).toBe(true);
+    expect(reciboCoincideCitaMedica(rec, citaMedica, CATALOGOS_AUDITORIA)).toBe(true);
   });
 
   test('fallback no coincide si cambia fecha o tipo', () => {
@@ -149,8 +184,8 @@ describe('recibos consulta médica en auditoría', () => {
       fecha: '2026-06-15',
       cliente: 'María López'
     };
-    expect(reciboCoincideCitaMedica({ ...base, fecha: '2026-06-16' }, citaMedica)).toBe(false);
-    expect(reciboCoincideCitaMedica({ ...base, tipo_servicio: 'Cardiología' }, citaMedica)).toBe(false);
+    expect(reciboCoincideCitaMedica({ ...base, fecha: '2026-06-16' }, citaMedica, CATALOGOS_AUDITORIA)).toBe(false);
+    expect(reciboCoincideCitaMedica({ ...base, tipo_servicio: 'Cardiología' }, citaMedica, CATALOGOS_AUDITORIA)).toBe(false);
   });
 });
 
@@ -165,17 +200,17 @@ describe('recibos electro en auditoría', () => {
   test('enlaza por cita_electro_id', () => {
     const rec = { id: 10, cita_electro_id: 88, turno_id: null, tipo_servicio: 'Otro' };
     expect(reciboEnlazadoPorCitaElectro(rec, citaElectro)).toBe(true);
-    expect(reciboCoincideCitaElectro(rec, citaElectro)).toBe(true);
+    expect(reciboCoincideCitaElectro(rec, citaElectro, CATALOGOS_AUDITORIA)).toBe(true);
   });
 
   test('no asigna recibo enlazado a otra cita electro', () => {
     const rec = { id: 11, cita_electro_id: 99, turno_id: null, tipo_servicio: 'EEG Convencional' };
-    expect(reciboCoincideCitaElectro(rec, citaElectro)).toBe(false);
+    expect(reciboCoincideCitaElectro(rec, citaElectro, CATALOGOS_AUDITORIA)).toBe(false);
   });
 
   test('no mezcla recibo médico con cita electro', () => {
     const rec = { id: 12, turno_id: 42, cita_electro_id: null, tipo_servicio: 'EEG Convencional' };
-    expect(reciboCoincideCitaElectro(rec, citaElectro)).toBe(false);
+    expect(reciboCoincideCitaElectro(rec, citaElectro, CATALOGOS_AUDITORIA)).toBe(false);
   });
 
   test('fallback por tipo de estudio, fecha y paciente', () => {
@@ -183,10 +218,11 @@ describe('recibos electro en auditoría', () => {
       id: 13,
       cita_electro_id: null,
       turno_id: null,
+      medico_nombre: 'ELECTRODIAGNÓSTICOS',
       tipo_servicio: 'EEG Convencional',
       fecha: '2026-06-20',
       cliente: 'Pedro Ruiz'
     };
-    expect(reciboCoincideCitaElectro(rec, citaElectro)).toBe(true);
+    expect(reciboCoincideCitaElectro(rec, citaElectro, CATALOGOS_AUDITORIA)).toBe(true);
   });
 });

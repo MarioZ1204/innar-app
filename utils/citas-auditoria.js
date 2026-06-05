@@ -1,8 +1,14 @@
 'use strict';
 
-const { tipoServicioCoincideNombre } = require('./recibos-catalogo-filtros');
+const {
+  normTipoServicio,
+  tipoServicioCoincideNombre,
+  tipoServicioCoincideCatalogo
+} = require('./recibos-catalogo-filtros');
 
-const RECIBO_CAMPOS_AUDITORIA = 'id, numero, turno_id, cita_electro_id, total, anulado, anulado_razon, estado_pago, observaciones, tipo_servicio, fecha, cliente';
+const RECIBO_CAMPOS_AUDITORIA = 'id, numero, turno_id, cita_electro_id, total, anulado, anulado_razon, estado_pago, observaciones, tipo_servicio, fecha, cliente, medico_nombre';
+
+const SQL_EXCLUIR_MEDICO_ELECTRO = `(medico_nombre IS NULL OR TRIM(medico_nombre) = '' OR UPPER(TRIM(medico_nombre)) NOT LIKE '%ELECTRODIAG%')`;
 
 function extraerFechaYmd(val) {
   if (!val) return '';
@@ -19,17 +25,56 @@ function normNombrePaciente(s) {
     .trim();
 }
 
-function clienteCoincidePaciente(cliente, pacienteNombre) {
+function clienteCoincidePaciente(cliente, pacienteNombre, estricto = false) {
   const a = normNombrePaciente(cliente);
   const b = normNombrePaciente(pacienteNombre);
-  if (!a || !b) return true;
+  if (!a || !b) return estricto ? false : true;
   return a === b || a.includes(b) || b.includes(a);
 }
 
-/** Excluye recibos de electrodiagnóstico. */
-function esReciboConsultaMedica(rec) {
+function esMedicoElectroDiagnostico(medicoNombre) {
+  const m = normTipoServicio(medicoNombre);
+  return m.includes('electrodiag');
+}
+
+function esReciboElectro(rec, catalogos = {}) {
   if (!rec) return false;
-  return rec.cita_electro_id == null || rec.cita_electro_id === '';
+  if (rec.cita_electro_id != null && rec.cita_electro_id !== '' && Number(rec.cita_electro_id) !== 0) {
+    return true;
+  }
+  if (esMedicoElectroDiagnostico(rec.medico_nombre)) return true;
+  const enEstudios = catalogos.estudios?.length
+    && tipoServicioCoincideCatalogo(rec.tipo_servicio, catalogos.estudios);
+  const enConsulta = catalogos.tiposConsulta?.length
+    && tipoServicioCoincideCatalogo(rec.tipo_servicio, catalogos.tiposConsulta);
+  if (enEstudios && !enConsulta) return true;
+  return false;
+}
+
+/** Recibo de consulta médica: no electro (cita_electro, médico electro ni servicio de estudio). */
+function esReciboConsultaMedica(rec, catalogos = {}) {
+  if (!rec) return false;
+  return !esReciboElectro(rec, catalogos);
+}
+
+async function cargarCatalogosEnlaceRecibos(db) {
+  const [consultaRows, serviciosRows, duracionesRows] = await Promise.all([
+    db.query('SELECT DISTINCT nombre FROM tipos_consulta WHERE activo = 1'),
+    db.query(
+      'SELECT DISTINCT nombre FROM servicios_recibo WHERE activo = 1 AND nombre IS NOT NULL AND TRIM(nombre) <> ""'
+    ).catch(() => []),
+    db.query(
+      'SELECT DISTINCT nombre FROM estudio_duraciones WHERE nombre IS NOT NULL AND TRIM(nombre) <> ""'
+    ).catch(() => [])
+  ]);
+  const estudios = [...new Set([
+    ...serviciosRows.map((r) => r.nombre),
+    ...duracionesRows.map((r) => r.nombre)
+  ].filter(Boolean))];
+  return {
+    tiposConsulta: consultaRows.map((r) => r.nombre).filter(Boolean),
+    estudios
+  };
 }
 
 function reciboEnlazadoPorTurno(rec, cita) {
@@ -41,23 +86,27 @@ function reciboEnlazadoPorCitaElectro(rec, cita) {
 }
 
 /** Enlace directo por turno_id o, en su defecto, tipo_servicio ≈ tipo_consulta + fecha + paciente. */
-function reciboCoincideCitaMedica(rec, cita) {
-  if (!esReciboConsultaMedica(rec)) return false;
+function reciboCoincideCitaMedica(rec, cita, catalogos = {}) {
+  if (esReciboElectro(rec, catalogos)) return false;
   if (reciboEnlazadoPorTurno(rec, cita)) return true;
   if (rec.turno_id != null && rec.turno_id !== '' && Number(rec.turno_id) !== Number(cita.id)) {
     return false;
   }
   if (!cita.tipo_consulta) return false;
+  if (catalogos.estudios?.length && tipoServicioCoincideCatalogo(rec.tipo_servicio, catalogos.estudios)) {
+    return false;
+  }
   if (!tipoServicioCoincideNombre(rec.tipo_servicio, cita.tipo_consulta)) return false;
   const fechaRec = extraerFechaYmd(rec.fecha);
   const fechaCita = extraerFechaYmd(cita.fecha);
   if (fechaRec && fechaCita && fechaRec !== fechaCita) return false;
-  return clienteCoincidePaciente(rec.cliente, cita.paciente_nombre);
+  return clienteCoincidePaciente(rec.cliente, cita.paciente_nombre, true);
 }
 
 /** Enlace directo por cita_electro_id o, en su defecto, tipo_servicio ≈ estudio + fecha + paciente. */
-function reciboCoincideCitaElectro(rec, cita) {
+function reciboCoincideCitaElectro(rec, cita, catalogos = {}) {
   if (reciboEnlazadoPorCitaElectro(rec, cita)) return true;
+  if (!esReciboElectro(rec, catalogos)) return false;
   if (rec.cita_electro_id != null && rec.cita_electro_id !== '' && Number(rec.cita_electro_id) !== Number(cita.id)) {
     return false;
   }
@@ -69,7 +118,7 @@ function reciboCoincideCitaElectro(rec, cita) {
   const fechaRec = extraerFechaYmd(rec.fecha);
   const fechaCita = extraerFechaYmd(cita.fecha);
   if (fechaRec && fechaCita && fechaRec !== fechaCita) return false;
-  return clienteCoincidePaciente(rec.cliente, cita.paciente_nombre);
+  return clienteCoincidePaciente(rec.cliente, cita.paciente_nombre, true);
 }
 
 async function cargarRecibosConsultaMedica(db, citasMedicas) {
@@ -81,7 +130,9 @@ async function cargarRecibosConsultaMedica(db, citasMedicas) {
 
   const porTurno = await db.query(
     `SELECT ${RECIBO_CAMPOS_AUDITORIA} FROM recibos
-     WHERE cita_electro_id IS NULL AND turno_id IN (${phTurnos})`,
+     WHERE (cita_electro_id IS NULL OR cita_electro_id = 0)
+       AND ${SQL_EXCLUIR_MEDICO_ELECTRO}
+       AND turno_id IN (${phTurnos})`,
     turnoIds
   );
 
@@ -90,14 +141,15 @@ async function cargarRecibosConsultaMedica(db, citasMedicas) {
     const phFechas = fechas.map(() => '?').join(',');
     porTipoFecha = await db.query(
       `SELECT ${RECIBO_CAMPOS_AUDITORIA} FROM recibos
-       WHERE cita_electro_id IS NULL
+       WHERE (cita_electro_id IS NULL OR cita_electro_id = 0)
+         AND ${SQL_EXCLUIR_MEDICO_ELECTRO}
          AND (turno_id IS NULL OR turno_id = 0)
          AND DATE(fecha) IN (${phFechas})`,
       fechas
     );
   }
 
-  return dedupeRecibosPorId([...porTurno, ...porTipoFecha]).filter(esReciboConsultaMedica);
+  return dedupeRecibosPorId([...porTurno, ...porTipoFecha]);
 }
 
 async function cargarRecibosElectro(db, citasElectro) {
@@ -373,19 +425,21 @@ async function enriquecerCitasConRecibos(db, citas) {
   const citasMedicas = citas.filter((c) => c.tipo_cita === 'AGENDA_MEDICA');
   const citasElectro = citas.filter((c) => c.tipo_cita === 'ELECTRODIAGNOSTICO');
 
-  const [recibosMedicos, recibosElectro] = await Promise.all([
+  const [catalogos, recibosMedicos, recibosElectro] = await Promise.all([
+    cargarCatalogosEnlaceRecibos(db),
     cargarRecibosConsultaMedica(db, citasMedicas),
     cargarRecibosElectro(db, citasElectro)
   ]);
 
+  const recibosMedicosFiltrados = recibosMedicos.filter((r) => esReciboConsultaMedica(r, catalogos));
   const usadosMedicos = new Set();
   const usadosElectro = new Set();
 
   return citas.flatMap((c) => {
     if (c.tipo_cita === 'AGENDA_MEDICA') {
-      const lista = recibosMedicos.filter((r) => {
+      const lista = recibosMedicosFiltrados.filter((r) => {
         if (usadosMedicos.has(r.id)) return false;
-        return reciboCoincideCitaMedica(r, c);
+        return reciboCoincideCitaMedica(r, c, catalogos);
       });
       lista.forEach((r) => usadosMedicos.add(r.id));
       return expandirCitaConRecibos(c, lista);
@@ -393,7 +447,7 @@ async function enriquecerCitasConRecibos(db, citas) {
     if (c.tipo_cita === 'ELECTRODIAGNOSTICO') {
       const lista = recibosElectro.filter((r) => {
         if (usadosElectro.has(r.id)) return false;
-        return reciboCoincideCitaElectro(r, c);
+        return reciboCoincideCitaElectro(r, c, catalogos);
       });
       lista.forEach((r) => usadosElectro.add(r.id));
       return expandirCitaConRecibos(c, lista);
@@ -411,9 +465,11 @@ module.exports = {
   ordenarRecibosParaReporte,
   resolverRecibosParaExport,
   elegirReciboActivo,
+  esReciboElectro,
   esReciboConsultaMedica,
   reciboCoincideCitaMedica,
   reciboCoincideCitaElectro,
   reciboEnlazadoPorTurno,
-  reciboEnlazadoPorCitaElectro
+  reciboEnlazadoPorCitaElectro,
+  cargarCatalogosEnlaceRecibos
 };
