@@ -8526,6 +8526,7 @@ const PERMISOS_DEFS = [
   { key: 'modulo.backup',          label: 'Módulo: Backup',                        grupo: 'Acceso a Módulos' },
   // ── Cargar reportes (PDX) ─────────────────────────────────────────────────
   { key: 'soportes.pdx.ver',             label: 'Reportes: Ver carpetas y archivos',     grupo: 'Cargar reportes' },
+  { key: 'soportes.pdx.carpetas.todas',  label: 'Reportes: Ver todas las carpetas',        grupo: 'Cargar reportes' },
   { key: 'soportes.pdx.crear_carpeta',   label: 'Reportes: Crear carpetas',              grupo: 'Cargar reportes' },
   { key: 'soportes.pdx.subir',           label: 'Reportes: Subir archivos PDF',          grupo: 'Cargar reportes' },
   { key: 'soportes.pdx.editar',          label: 'Reportes: Editar, reemplazar y mover',  grupo: 'Cargar reportes' },
@@ -8598,7 +8599,7 @@ const PERMISOS_ROL_DEFAULTS = {
   admin_recepcion: [
     'modulo.recibos','modulo.agenda_medica','modulo.electrodiag','modulo.ucqn','modulo.dashboard','modulo.monitor_equipos',
     'modulo.reportes_pdx','modulo.armado_soportes',
-    'soportes.pdx.ver','soportes.pdx.crear_carpeta','soportes.pdx.subir','soportes.pdx.editar',
+    'soportes.pdx.ver','soportes.pdx.carpetas.todas','soportes.pdx.crear_carpeta','soportes.pdx.subir','soportes.pdx.editar',
     'soportes.armado.crear_estructura','soportes.armado.subir','soportes.armado.importar_pdx','soportes.descargar_zip',
     'recibos.crear','recibos.ver','recibos.exportar',
     'agenda.ver','agenda.crear','agenda.editar','agenda.eliminar','agenda.cambiar_estado',
@@ -8610,7 +8611,7 @@ const PERMISOS_ROL_DEFAULTS = {
   recepcion: [
     'modulo.recibos','modulo.agenda_medica','modulo.electrodiag','modulo.ucqn','modulo.dashboard','modulo.monitor_equipos',
     'modulo.reportes_pdx','modulo.armado_soportes',
-    'soportes.pdx.ver','soportes.pdx.crear_carpeta','soportes.pdx.subir','soportes.pdx.editar',
+    'soportes.pdx.ver','soportes.pdx.carpetas.todas','soportes.pdx.crear_carpeta','soportes.pdx.subir','soportes.pdx.editar',
     'soportes.armado.crear_estructura','soportes.armado.subir','soportes.armado.importar_pdx','soportes.descargar_zip',
     'recibos.crear','recibos.ver',
     'agenda.ver','agenda.crear','agenda.editar','agenda.eliminar','agenda.cambiar_estado',
@@ -8620,7 +8621,8 @@ const PERMISOS_ROL_DEFAULTS = {
     'sistema.dashboard',
   ],
   auxiliar_recepcion: [
-    'modulo.recibos','modulo.agenda_medica','modulo.electrodiag',
+    'modulo.recibos','modulo.agenda_medica','modulo.electrodiag','modulo.reportes_pdx',
+    'soportes.pdx.ver','soportes.pdx.subir',
     'recibos.crear','recibos.ver',
     'agenda.ver','agenda.crear','agenda.editar','agenda.cambiar_estado','agenda.aviso_doctor',
     'electro.ver','electro.crear',
@@ -8634,7 +8636,7 @@ const PERMISOS_ROL_DEFAULTS = {
   admin_electro: [
     'modulo.electrodiag','modulo.ucqn','modulo.agenda_medica','modulo.dashboard','modulo.monitor_equipos',
     'modulo.reportes_pdx','modulo.armado_soportes',
-    'soportes.pdx.ver','soportes.pdx.crear_carpeta','soportes.pdx.subir','soportes.pdx.editar',
+    'soportes.pdx.ver','soportes.pdx.carpetas.todas','soportes.pdx.crear_carpeta','soportes.pdx.subir','soportes.pdx.editar',
     'soportes.armado.crear_estructura','soportes.armado.subir','soportes.armado.importar_pdx','soportes.descargar_zip',
     'electro.ver','electro.crear','electro.editar','electro.eliminar','electro.cambiar_estado','electro.subir_archivo','electro.ver_archivo','electro.aviso_doctor',
     'agenda.ver','agenda.editar','agenda.aviso_doctor',
@@ -8644,7 +8646,7 @@ const PERMISOS_ROL_DEFAULTS = {
   electro: [
     'modulo.electrodiag','modulo.ucqn','modulo.agenda_medica','modulo.dashboard','modulo.monitor_equipos',
     'modulo.reportes_pdx','modulo.armado_soportes',
-    'soportes.pdx.ver','soportes.pdx.crear_carpeta','soportes.pdx.subir','soportes.pdx.editar',
+    'soportes.pdx.ver','soportes.pdx.carpetas.todas','soportes.pdx.crear_carpeta','soportes.pdx.subir','soportes.pdx.editar',
     'soportes.armado.crear_estructura','soportes.armado.subir','soportes.armado.importar_pdx','soportes.descargar_zip',
     'electro.ver','electro.crear','electro.editar','electro.eliminar','electro.cambiar_estado','electro.subir_archivo','electro.ver_archivo','electro.aviso_doctor',
     'agenda.ver','agenda.editar','agenda.aviso_doctor',
@@ -8659,7 +8661,7 @@ const PERMISOS_ROL_DEFAULTS = {
   contabilidad: [
     'modulo.recibos','modulo.ucqn','modulo.dashboard',
     'modulo.reportes_pdx','modulo.armado_soportes',
-    'soportes.pdx.ver','soportes.pdx.crear_carpeta','soportes.pdx.subir','soportes.pdx.editar',
+    'soportes.pdx.ver','soportes.pdx.carpetas.todas','soportes.pdx.crear_carpeta','soportes.pdx.subir','soportes.pdx.editar',
     'soportes.armado.crear_estructura','soportes.armado.subir','soportes.armado.importar_pdx','soportes.descargar_zip','soportes.ver_archivo',
     'recibos.ver','recibos.exportar',
     'ucqn.ver','ucqn.editar_estado',
@@ -8669,6 +8671,8 @@ const PERMISOS_ROL_DEFAULTS = {
 
 let _permisosUsuarioSeleccionado = null; // { id, usuario, nombre, rol, permisos }
 let _permisosUsuariosCache = [];
+let _pdxCarpetasPermisosCache = [];
+const PERMISO_PDX_CARPETAS_TODAS = 'soportes.pdx.carpetas.todas';
 
 function _bindPermisosPageUIOnce() {
   if (window._permisosPageUIBound) return;
@@ -8767,6 +8771,7 @@ async function initPermisosPage() {
   if (btnRestablecer) btnRestablecer.onclick = _restablecerPermisos;
 
   await _cargarPermisosUserList();
+  _pdxCarpetasPermisosCache = [];
 
   // Socket: refrescar sesión del usuario actual si le cambiaron permisos
   if (window.socket && !window._socketPermisosListener) {
@@ -8832,6 +8837,7 @@ async function _seleccionarUsuarioPermisos(userId) {
     const activos = tienePersonalizados ? new Set(data.permisos) : null;
 
     _renderPermisosChecklist(activos, rolDefaults);
+    await _renderPermisosPdxCarpetas(activos, rolDefaults);
 
     if (editor) editor.style.display = '';
     if (noSel)  noSel.style.display  = 'none';
@@ -8935,10 +8941,131 @@ function _renderPermisosChecklist(activos, rolDefaults) {
   }
 }
 
+async function _cargarPdxCarpetasPermisosCatalogo() {
+  if (_pdxCarpetasPermisosCache.length) return _pdxCarpetasPermisosCache;
+  const res = await apiFetch('/api/soportes/pdx/carpetas/catalogo-permisos');
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'No se pudo cargar carpetas PDX');
+  _pdxCarpetasPermisosCache = Array.isArray(data.carpetas) ? data.carpetas : [];
+  return _pdxCarpetasPermisosCache;
+}
+
+async function _renderPermisosPdxCarpetas(activos, rolDefaults) {
+  const container = document.getElementById('permisosChecklistContainer');
+  if (!container) return;
+  container.querySelector('[data-pdx-carpetas-permisos]')?.remove();
+  let carpetas = [];
+  try {
+    carpetas = await _cargarPdxCarpetasPermisosCatalogo();
+  } catch (_) {
+    return;
+  }
+  if (!carpetas.length) return;
+
+  const det = document.createElement('details');
+  det.className = 'permisos-group';
+  det.open = true;
+  det.dataset.pdxCarpetasPermisos = '1';
+
+  const tieneTodasRol = rolDefaults === null || (Array.isArray(rolDefaults) && rolDefaults.includes(PERMISO_PDX_CARPETAS_TODAS));
+  const todasActivo = activos !== null ? activos.has(PERMISO_PDX_CARPETAS_TODAS) : tieneTodasRol;
+  const idsActivos = activos !== null
+    ? carpetas.filter((c) => activos.has(c.permiso_key)).map((c) => c.id)
+    : (todasActivo ? carpetas.map((c) => c.id) : []);
+
+  const sum = document.createElement('summary');
+  sum.className = 'permisos-group-summary';
+  const sumRow = document.createElement('div');
+  sumRow.className = 'permisos-group-summary-row';
+  const title = document.createElement('span');
+  title.className = 'permisos-group-title';
+  title.textContent = 'Carpetas visibles (Cargar reportes)';
+  const count = document.createElement('span');
+  count.className = 'permisos-group-count';
+  count.textContent = '0/0';
+  sumRow.appendChild(title);
+  sumRow.appendChild(count);
+  sum.appendChild(sumRow);
+  det.appendChild(sum);
+
+  const intro = document.createElement('p');
+  intro.className = 'permisos-pdx-carpetas-hint';
+  intro.style.cssText = 'font-size:.82rem;color:#64748b;margin:8px 12px 0';
+  intro.textContent = 'Marque las carpetas que este usuario puede ver. Si activa «Todas las carpetas», no hace falta marcar una por una.';
+  det.appendChild(intro);
+
+  const grid = document.createElement('div');
+  grid.className = 'permisos-group-grid';
+
+  const rowTodas = document.createElement('label');
+  rowTodas.className = 'permisos-row permisos-row--todas';
+  rowTodas.dataset.search = 'todas carpetas reportes pdx';
+  const chkTodas = document.createElement('input');
+  chkTodas.type = 'checkbox';
+  chkTodas.dataset.key = PERMISO_PDX_CARPETAS_TODAS;
+  chkTodas.checked = todasActivo;
+  const txtTodas = document.createElement('span');
+  txtTodas.className = 'permisos-row-text';
+  txtTodas.textContent = 'Todas las carpetas de reportes';
+  rowTodas.appendChild(chkTodas);
+  rowTodas.appendChild(txtTodas);
+  if (tieneTodasRol && activos === null) {
+    const badge = document.createElement('span');
+    badge.className = 'permisos-badge-rol';
+    badge.textContent = 'rol';
+    rowTodas.appendChild(badge);
+  }
+  grid.appendChild(rowTodas);
+
+  carpetas.forEach((c) => {
+    const search = `${c.nombre_display} ${c.periodo} ${c.permiso_key}`.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const row = document.createElement('label');
+    row.className = 'permisos-row permisos-row--carpeta';
+    row.dataset.search = search;
+    const chk = document.createElement('input');
+    chk.type = 'checkbox';
+    chk.dataset.key = c.permiso_key;
+    chk.checked = todasActivo || idsActivos.includes(c.id);
+    chk.disabled = todasActivo;
+    const txt = document.createElement('span');
+    txt.className = 'permisos-row-text';
+    txt.textContent = `${c.nombre_display} (${c.periodo})`;
+    row.appendChild(chk);
+    row.appendChild(txt);
+    grid.appendChild(row);
+  });
+
+  det.appendChild(grid);
+  container.appendChild(det);
+
+  const syncTodas = () => {
+    const on = !!chkTodas.checked;
+    grid.querySelectorAll('.permisos-row--carpeta input[data-key]').forEach((inp) => {
+      inp.disabled = on;
+      if (on) inp.checked = true;
+    });
+    _permisosRefreshStats();
+  };
+  chkTodas.addEventListener('change', syncTodas);
+  grid.querySelectorAll('.permisos-row--carpeta input[data-key]').forEach((inp) => {
+    inp.addEventListener('change', () => {
+      if (inp.checked && chkTodas.checked) {
+        chkTodas.checked = false;
+        grid.querySelectorAll('.permisos-row--carpeta input[data-key]').forEach((x) => { x.disabled = false; });
+      }
+      _permisosRefreshStats();
+    });
+  });
+  _permisosRefreshStats();
+}
+
 async function _guardarPermisos() {
   if (!_permisosUsuarioSeleccionado) return;
   const chks = document.querySelectorAll('#permisosChecklistContainer input[type=checkbox][data-key]');
-  const permisos = Array.from(chks).filter(c => c.checked).map(c => c.dataset.key);
+  let permisos = Array.from(chks).filter(c => c.checked).map(c => c.dataset.key);
+  if (permisos.includes(PERMISO_PDX_CARPETAS_TODAS)) {
+    permisos = permisos.filter((p) => !String(p).startsWith('soportes.pdx.carpeta.'));
+  }
   const btn = document.getElementById('btnPermisosGuardar');
   setLoading(btn, true, 'Guardando...');
   try {

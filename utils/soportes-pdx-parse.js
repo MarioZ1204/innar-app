@@ -168,6 +168,122 @@ function esTemaReporteClinico(tema) {
   return ['vtm', 'eeg', 'psg', 'actigrafia'].includes(tema);
 }
 
+function fechaDmyValida(d, m) {
+  const day = parseInt(d, 10);
+  const month = parseInt(m, 10);
+  return month >= 1 && month <= 12 && day >= 1 && day <= 31;
+}
+
+/** Busca fecha ISO (YYYY-MM-DD) o latina (DD-MM-YYYY / DD-MM-YY) en un texto. */
+function buscarFechaEnTextoPdx(texto) {
+  const t = String(texto || '');
+  let m = t.match(/(\d{4}-\d{2}-\d{2})/);
+  if (m) return { fecha: m[1], index: m.index, raw: m[0] };
+  m = t.match(/\b(\d{1,2})-(\d{1,2})-(\d{4})\b/);
+  if (m && fechaDmyValida(m[1], m[2])) {
+    const fecha = `${m[3]}-${String(m[2]).padStart(2, '0')}-${String(m[1]).padStart(2, '0')}`;
+    return { fecha, index: m.index, raw: m[0] };
+  }
+  m = t.match(/\b(\d{1,2})-(\d{1,2})-(\d{2})\b/);
+  if (m && fechaDmyValida(m[1], m[2])) {
+    const yy = parseInt(m[3], 10);
+    const year = yy >= 50 ? 1900 + yy : 2000 + yy;
+    const fecha = `${year}-${String(m[2]).padStart(2, '0')}-${String(m[1]).padStart(2, '0')}`;
+    return { fecha, index: m.index, raw: m[0] };
+  }
+  return null;
+}
+
+/** Quita prefijos ORDEN/COMPROBANTE/CONSENTIMIENTO al inicio de tokens (parseo tolerante). */
+function quitarPrefijosCruzadosPdx(tokens) {
+  let i = 0;
+  while (i < tokens.length) {
+    const u = String(tokens[i] || '').toUpperCase();
+    if (u === 'ORDEN' || u === 'COMPROBANTE' || u === 'CONSENTIMIENTO' || u === '+' || u === 'HC') {
+      i++;
+      continue;
+    }
+    break;
+  }
+  return tokens.slice(i);
+}
+
+/**
+ * Extrae campos de órdenes/comprobantes/consentimientos token a token
+ * (sin depender de guiones ni de posiciones fijas por palabra).
+ */
+function extraerCamposTokenizadosEstructurados(tokens, estudios = []) {
+  const toks = quitarPrefijosCruzadosPdx(Array.isArray(tokens) ? tokens : []);
+  const out = {
+    apellidos: '',
+    nombres: '',
+    tipo_documento: 'CC',
+    paciente_documento: '',
+    fecha_estudio: '',
+    estudio_texto: ''
+  };
+  if (!toks.length) return out;
+
+  let tipoIdx = -1;
+  for (let i = 0; i < toks.length; i++) {
+    if (detectarTipoDocumentoEnTexto(toks[i])) {
+      tipoIdx = i;
+      break;
+    }
+  }
+
+  if (tipoIdx >= 0) {
+    out.tipo_documento = normalizarTipoDocumentoPdx(toks[tipoIdx]);
+    if (tipoIdx + 1 < toks.length && esSegmentoDocumento(toks[tipoIdx + 1])) {
+      out.paciente_documento = normalizarNumeroDocumentoPdx(toks[tipoIdx + 1]);
+    }
+  } else {
+    for (let i = toks.length - 1; i >= 0; i--) {
+      if (!esSegmentoDocumento(toks[i])) continue;
+      out.paciente_documento = normalizarNumeroDocumentoPdx(toks[i]);
+      if (i > 0 && detectarTipoDocumentoEnTexto(toks[i - 1])) {
+        out.tipo_documento = normalizarTipoDocumentoPdx(toks[i - 1]);
+        tipoIdx = i - 1;
+      }
+      break;
+    }
+  }
+
+  let fechaIdx = -1;
+  for (let i = 0; i < toks.length; i++) {
+    const hit = buscarFechaEnTextoPdx(toks[i]);
+    if (hit) {
+      out.fecha_estudio = hit.fecha;
+      fechaIdx = i;
+      break;
+    }
+  }
+
+  const nameEnd = tipoIdx >= 0 ? tipoIdx : (fechaIdx >= 0 ? fechaIdx : toks.length);
+  const nameTokens = toks.slice(0, Math.max(0, nameEnd));
+  if (nameTokens.length >= 2) {
+    const mid = Math.ceil(nameTokens.length / 2);
+    out.apellidos = nameTokens.slice(0, mid).join(' ');
+    out.nombres = nameTokens.slice(mid).join(' ');
+  } else if (nameTokens.length === 1) {
+    out.apellidos = nameTokens[0];
+  }
+
+  if (fechaIdx >= 0 && fechaIdx + 1 < toks.length) {
+    out.estudio_texto = toks.slice(fechaIdx + 1).join(' ');
+  } else if (tipoIdx >= 0) {
+    const restStart = out.paciente_documento ? tipoIdx + 2 : tipoIdx + 1;
+    if (restStart < toks.length) {
+      out.estudio_texto = toks.slice(restStart).join(' ');
+    }
+  }
+  if (out.estudio_texto) {
+    out.estudio_texto = resolverEstudioDesdeLista(out.estudio_texto, estudios) || out.estudio_texto;
+  }
+
+  return out;
+}
+
 /** Segmentos separados por guión con espacios (no parte de fechas ni horas 21-21-12). */
 function splitSegmentosGuionesEspaciados(texto) {
   return String(texto || '')
@@ -186,14 +302,15 @@ function splitPartesNombreArchivo(originalName) {
   if (/\s+-\s+/.test(sinPdf)) {
     return splitSegmentosGuionesEspaciados(sinPdf);
   }
-  const fechaMatch = sinPdf.match(/(\d{4}-\d{2}-\d{2})/);
+  const fechaMatch = buscarFechaEnTextoPdx(sinPdf);
   if (!fechaMatch) {
     return sinPdf.split(/\s+/).filter(Boolean);
   }
-  const fecha = fechaMatch[1];
+  const fecha = fechaMatch.fecha;
   const idx = fechaMatch.index;
+  const rawFechaLen = String(fechaMatch.raw || fecha).length;
   let before = sinPdf.slice(0, idx).replace(/[\s\-.]+$/,'').trim();
-  const after = sinPdf.slice(idx + fecha.length).replace(/^[\s\-.]+/,'').trim();
+  const after = sinPdf.slice(idx + rawFechaLen).replace(/^[\s\-.]+/,'').trim();
   const parts = [];
   if (/^ORDEN\s*\+\s*HC/i.test(before)) {
     parts.push('ORDEN + HC');
@@ -242,7 +359,8 @@ function extraerNombreApellidoConsultaMedica(texto) {
 }
 
 function extraerCamposEstructuradosAntesFecha(before) {
-  const t = String(before || '').trim();
+  let t = String(before || '').trim();
+  t = t.replace(/^(?:ORDEN\s*\+\s*HC|ORDEN|COMPROBANTE|CONSENTIMIENTO)[\s\-.]*/i, '').trim();
   if (!t) {
     return { apellidos: '', nombres: '', tipo_documento: 'CC', paciente_documento: '' };
   }
@@ -304,12 +422,13 @@ function extraerCamposEstructuradosAntesFecha(before) {
 
 function parseNombreEstructuradoDesdeFecha(tema, originalName, estudios = []) {
   const base = normalizarNombreParaParseo(originalName);
-  const fechaMatch = base.match(/(\d{4}-\d{2}-\d{2})/);
+  const fechaMatch = buscarFechaEnTextoPdx(base);
   if (!fechaMatch) return { ok: false, original: base };
 
-  const fecha = fechaMatch[1];
+  const fecha = fechaMatch.fecha;
   const sinPdf = base.replace(/\.pdf$/i, '');
-  let after = sinPdf.slice(fechaMatch.index + fecha.length).replace(/^[\s\-.]+/,'').trim();
+  const rawFechaLen = String(fechaMatch.raw || fecha).length;
+  let after = sinPdf.slice(fechaMatch.index + rawFechaLen).replace(/^[\s\-.]+/,'').trim();
   let before = sinPdf.slice(0, fechaMatch.index).replace(/[\s\-.]+$/,'').trim();
 
   if (tema === 'ordenes' || tema === 'ordenes_consulta_medica') {
@@ -390,8 +509,10 @@ function finishSimpleParse(base, apellidos, nombres, fecha, tail = {}) {
   let sufijo_numero = tail.sufijo_numero || '';
   let estudio_texto = tail.estudio_texto || '';
   if (!estudio_texto && !marca_tiempo && !sufijo_numero) {
-    const idx = base.toLowerCase().indexOf(fecha.toLowerCase());
-    const rest = idx >= 0 ? base.slice(idx + fecha.length).replace(/\.pdf$/i, '').trim() : '';
+    const fechaHit = buscarFechaEnTextoPdx(base);
+    const rest = fechaHit
+      ? base.slice(fechaHit.index + String(fechaHit.raw || fechaHit.fecha).length).replace(/\.pdf$/i, '').trim()
+      : '';
     if (rest) {
       const ext = rest.match(/^([\d-]+)\s+(\d+)\.\s*(.+)$/i);
       if (ext) {
@@ -442,15 +563,16 @@ function parseRestoDespuesFecha(afterFecha) {
 }
 
 function parseNombreSimpleDesdeFecha(originalName) {
-  const base = String(originalName || '').trim();
-  const fechaMatch = base.match(/(\d{4}-\d{2}-\d{2})/);
+  const base = normalizarNombreParaParseo(originalName);
+  const fechaMatch = buscarFechaEnTextoPdx(base);
   if (!fechaMatch) {
     return { ok: false, original: base, error: mensajeErrorFormato('neutral') };
   }
-  const fecha = fechaMatch[1];
+  const fecha = fechaMatch.fecha;
   const sinPdf = base.replace(/\.pdf$/i, '');
+  const rawFechaLen = String(fechaMatch.raw || fecha).length;
   const beforeFecha = sinPdf.slice(0, fechaMatch.index).replace(/[\s\-–]+$/,'').trim();
-  const afterFecha = sinPdf.slice(fechaMatch.index + fecha.length).replace(/^[\s\-–]+/,'').trim();
+  const afterFecha = sinPdf.slice(fechaMatch.index + rawFechaLen).replace(/^[\s\-–]+/,'').trim();
 
   let apellidos = '';
   let nombres = '';
@@ -852,8 +974,8 @@ function extraerDatosParcialesNombre(originalName, carpeta, estudios = []) {
     estudio_texto: ''
   };
 
-  const fechaMatch = base.match(/(\d{4}-\d{2}-\d{2})/);
-  if (fechaMatch) parcial.fecha_estudio = fechaMatch[1];
+  const fechaHit = buscarFechaEnTextoPdx(base);
+  if (fechaHit) parcial.fecha_estudio = fechaHit.fecha;
 
   if (esTemaReporteClinico(tema) || tema === 'neutral') {
     const parsedTry = parseNombreSimple(base);
@@ -862,12 +984,16 @@ function extraerDatosParcialesNombre(originalName, carpeta, estudios = []) {
       parcial.nombres = parsedTry.nombres;
       parcial.fecha_estudio = parsedTry.fecha_estudio;
       parcial.estudio_texto = parsedTry.estudio_texto;
-    } else if (fechaMatch) {
+    } else if (fechaHit) {
       const sinPdf = base.replace(/\.pdf$/i, '');
-      const beforeFecha = sinPdf.slice(0, fechaMatch.index).replace(/[\s\-–]+$/,'').trim();
+      const rawFechaLen = String(fechaHit.raw || fechaHit.fecha).length;
+      const beforeFecha = sinPdf.slice(0, fechaHit.index).replace(/[\s\-–]+$/,'').trim();
       const nombresExtra = extraerNombresAntesDeFecha(beforeFecha);
       parcial.apellidos = parcial.apellidos || nombresExtra.apellidos;
       parcial.nombres = parcial.nombres || nombresExtra.nombres;
+      const afterFecha = sinPdf.slice(fechaHit.index + rawFechaLen).replace(/^[\s\-–]+/,'').trim();
+      const tail = parseRestoDespuesFecha(afterFecha);
+      if (tail.estudio_texto) parcial.estudio_texto = tail.estudio_texto;
     }
     if (tema === 'psg' && !estudioPsgReconocido(parcial.estudio_texto)) {
       parcial.estudio_texto = inferirEstudioDesdeCarpeta(carpeta?.nombre_display || '');
@@ -881,56 +1007,26 @@ function extraerDatosParcialesNombre(originalName, carpeta, estudios = []) {
       parcial.apellidos = parsedTry.apellidos;
       parcial.fecha_estudio = parsedTry.fecha_estudio;
       parcial.estudio_texto = parsedTry.estudio_texto;
-    } else if (fechaMatch) {
+    } else if (fechaHit) {
       const sinPdf = base.replace(/\.pdf$/i, '');
-      let before = sinPdf.slice(0, fechaMatch.index).replace(/[\s\-.]+$/,'').trim();
-      if (tema === 'ordenes_consulta_medica') {
-        before = before.replace(/^ORDEN\s*\+\s*HC[\s\-.]*/i, '').trim();
-      } else {
-        before = before.replace(/^COMPROBANTE[\s\-.]*/i, '').trim();
-      }
+      const rawFechaLen = String(fechaHit.raw || fechaHit.fecha).length;
+      let before = sinPdf.slice(0, fechaHit.index).replace(/[\s\-.]+$/,'').trim();
+      before = before.replace(/^(?:ORDEN\s*\+\s*HC|ORDEN|COMPROBANTE|CONSENTIMIENTO)[\s\-.]*/i, '').trim();
       const na = extraerNombreApellidoConsultaMedica(before);
       parcial.nombres = na.nombres;
       parcial.apellidos = na.apellidos;
-      const after = sinPdf.slice(fechaMatch.index + fechaMatch[0].length).replace(/^[\s\-.]+/,'').trim();
+      const after = sinPdf.slice(fechaHit.index + rawFechaLen).replace(/^[\s\-.]+/,'').trim();
       if (after) parcial.estudio_texto = resolverEstudioDesdeLista(after, estudios) || after;
     }
   } else if (esTemaEstructurado(tema)) {
-    const parts = splitPartesNombreArchivo(base);
-    let offset = 0;
-    if (tema === 'ordenes' && parts[0] && /orden/i.test(parts[0])) offset = 1;
-    if (tema === 'comprobantes' && parts[0] && /comprobante/i.test(parts[0])) offset = 1;
-    if (tema === 'consentimientos' && parts[0] && /consentimiento/i.test(parts[0])) offset = 1;
-    if (parts.length > offset) parcial.apellidos = parts[offset] || '';
-    if (parts.length > offset + 1) parcial.nombres = parts[offset + 1] || '';
-    if (parts.length > offset + 2) {
-      const tipoDet = detectarTipoDocumentoEnTexto(parts[offset + 2]);
-      parcial.tipo_documento = tipoDet || normalizarTipoDocumentoPdx(parts[offset + 2]);
-      if (!tipoDet && esSegmentoDocumento(parts[offset + 2])) {
-        parcial.paciente_documento = normalizarNumeroDocumentoPdx(parts[offset + 2]);
-      }
-    }
-    if (parts.length > offset + 3 && !parcial.paciente_documento) {
-      const tipoDet = detectarTipoDocumentoEnTexto(parts[offset + 3]);
-      if (tipoDet) {
-        parcial.tipo_documento = tipoDet;
-        if (parts.length > offset + 4) {
-          parcial.paciente_documento = normalizarNumeroDocumentoPdx(parts[offset + 4]);
-        }
-      } else {
-        parcial.paciente_documento = normalizarNumeroDocumentoPdx(parts[offset + 3]);
-      }
-    }
-    for (let i = offset + 2; i < parts.length; i++) {
-      if (/^\d{4}-\d{2}-\d{2}$/.test(parts[i])) {
-        parcial.fecha_estudio = parts[i];
-        break;
-      }
-    }
-    const ultimo = parts[parts.length - 1];
-    if (ultimo && !/^\d{4}-\d{2}-\d{2}$/.test(ultimo) && !/^(orden|comprobante)/i.test(ultimo)) {
-      parcial.estudio_texto = resolverEstudioDesdeLista(ultimo, estudios) || ultimo;
-    }
+    const tokens = base.replace(/\.pdf$/i, '').split(/\s+/).filter(Boolean);
+    const tokenized = extraerCamposTokenizadosEstructurados(tokens, estudios);
+    parcial.apellidos = tokenized.apellidos;
+    parcial.nombres = tokenized.nombres;
+    parcial.tipo_documento = tokenized.tipo_documento;
+    parcial.paciente_documento = tokenized.paciente_documento;
+    parcial.fecha_estudio = tokenized.fecha_estudio || parcial.fecha_estudio;
+    parcial.estudio_texto = tokenized.estudio_texto;
   }
 
   return parcial;

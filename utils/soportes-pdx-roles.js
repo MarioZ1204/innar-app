@@ -4,6 +4,7 @@ const ROLES_PDX_CARPETA = [
   { id: 'admin', label: 'Administrador' },
   { id: 'admin_recepcion', label: 'Admin recepción' },
   { id: 'recepcion', label: 'Recepción' },
+  { id: 'auxiliar_recepcion', label: 'Auxiliar recepción' },
   { id: 'contabilidad', label: 'Contabilidad' },
   { id: 'admin_electro', label: 'Admin electro' },
   { id: 'electro', label: 'Electrodiagnóstico' },

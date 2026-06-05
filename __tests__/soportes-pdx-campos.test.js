@@ -33,4 +33,45 @@ describe('evaluarCamposMinimos — carga flexible', () => {
     expect(a.campos?.length).toBeGreaterThan(0);
     expect(a.parcial.apellidos).toMatch(/Garcia/i);
   });
+
+  test('comprobantes: nombre mal formado pero extrae documento y fecha DD-MM-YY', () => {
+    const carpeta = { nombre_display: 'COMPROBANTES ELECTRO' };
+    const estudios = [{ nombre: 'EEG' }, { nombre: 'PSG Básica' }];
+    const a = analizarNombreArchivo(
+      'ORDEN MATABANCHOY ESPINOSA LUIS CARLOS CC 1085289107 19-05-26 EEG PSG Básica.pdf',
+      carpeta,
+      estudios
+    );
+    expect(a.parcial.apellidos).toBe('MATABANCHOY ESPINOSA');
+    expect(a.parcial.nombres).toBe('LUIS CARLOS');
+    expect(a.parcial.tipo_documento).toBe('CC');
+    expect(a.parcial.paciente_documento).toBe('1085289107');
+    expect(a.parcial.fecha_estudio).toBe('2026-05-19');
+    expect(a.parcial.estudio_texto).toMatch(/EEG|PSG Básica/i);
+    expect(a.requiere_correccion).toBe(false);
+  });
+
+  test('EEG: fecha DD-MM-YY y nombre sin coma', () => {
+    const carpeta = { nombre_display: 'REPORTES EEG MARZO' };
+    const parcial = extraerDatosParcialesNombre(
+      'Garcia Lopez Juan Carlos 19-05-26.pdf',
+      carpeta
+    );
+    expect(parcial.apellidos).toBeTruthy();
+    expect(parcial.nombres).toBeTruthy();
+    expect(parcial.fecha_estudio).toBe('2026-05-19');
+  });
+
+  test('órdenes: prefijo cruzado y fecha DD-MM-YY', () => {
+    const carpeta = { nombre_display: 'ORDENES MARZO' };
+    const a = analizarNombreArchivo(
+      'COMPROBANTE Perez Ana CC 1234567 01-06-26 PSG Basal.pdf',
+      carpeta,
+      [{ nombre: 'PSG Basal' }]
+    );
+    expect(a.parcial.apellidos).toBe('Perez');
+    expect(a.parcial.nombres).toBe('Ana');
+    expect(a.parcial.paciente_documento).toBe('1234567');
+    expect(a.parcial.fecha_estudio).toBe('2026-06-01');
+  });
 });

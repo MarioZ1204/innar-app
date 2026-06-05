@@ -10,7 +10,7 @@ const archiver = require('archiver');
 const router = express.Router();
 const db = require('../utils/db-mysql');
 const logger = require('../utils/logger');
-const { requireAuth, requireRoleOrPerm, safeError } = require('../middleware/index');
+const { requireAuth, requireRoleOrPerm, requireSuperAdmin, safeError } = require('../middleware/index');
 const { upload, uploadArmadoSoportes, validateMagicBytes, resolveUploadedFilePath } = require('../middleware/upload');
 const {
   periodoFromDate,
@@ -96,23 +96,16 @@ async function resolvePdxArchivoPathForApi(row, repair = false) {
 }
 const { jsonSafeRow } = require('../utils/json-safe');
 
-const ROLES_SOPORTES = ['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'contabilidad', 'admin_electro', 'electro', 'tecnico_electro'];
-const {
-  parseRolesVisibles,
-  carpetaVisibleParaRol,
-  normalizarRolesVisiblesBody,
-  serializarRolesVisibles,
-  labelRolesVisibles
-} = require('../utils/soportes-pdx-roles');
+const ROLES_SOPORTES = ['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion', 'contabilidad', 'admin_electro', 'electro', 'tecnico_electro'];
+const { permisoKeyCarpetaPdx } = require('../utils/soportes-pdx-carpetas-permisos');
+const { usuarioVeCarpetaPdx: usuarioVeCarpetaPdxPermiso } = require('../utils/soportes-pdx-carpetas-permisos');
 
 function esSuperadminSesion(req) {
   return req.session?.rol === 'superadmin';
 }
 
 function usuarioVeCarpetaPdx(req, carpetaRow) {
-  if (!carpetaRow) return false;
-  if (esSuperadminSesion(req)) return true;
-  return carpetaVisibleParaRol(carpetaRow.roles_visibles, req.session?.rol);
+  return usuarioVeCarpetaPdxPermiso(req.session, carpetaRow);
 }
 
 function denySinAccesoCarpetaPdx(req, carpetaRow) {
@@ -220,7 +213,6 @@ async function refrescarVisibilidadArmado(periodo) {
 function mapCarpetaPdx(row) {
   const periodo = row.periodo;
   const vis = calcularVisibilidadPeriodo(periodo);
-  const roles_visibles = parseRolesVisibles(row.roles_visibles);
   return {
     id: row.id,
     periodo,
@@ -229,9 +221,7 @@ function mapCarpetaPdx(row) {
     estado_visibilidad: vis,
     dias_restantes_gracia: diasRestantesGracia(periodo),
     archivos_count: row.archivos_count || 0,
-    creado_en: row.creado_en,
-    roles_visibles,
-    roles_visibles_label: labelRolesVisibles(roles_visibles)
+    creado_en: row.creado_en
   };
 }
 
@@ -409,6 +399,24 @@ const uploadPdxReemplazar = multer({
   }
 });
 
+/** Catálogo de carpetas para asignar permisos por usuario (superadmin). */
+router.get('/soportes/pdx/carpetas/catalogo-permisos', requireAuth, requireSuperAdmin, async (req, res) => {
+  try {
+    const rows = await queryPdxCarpetasConCount();
+    const carpetas = rows.map((r) => ({
+      id: r.id,
+      periodo: r.periodo,
+      nombre_display: r.nombre_display,
+      color_tema: r.color_tema || detectarTemaCarpeta(r.nombre_display),
+      permiso_key: permisoKeyCarpetaPdx(r.id)
+    }));
+    res.json({ carpetas });
+  } catch (e) {
+    logger.error('[SOPORTES] catalogo permisos pdx:', e);
+    res.status(500).json({ error: sopErrorCliente(e) });
+  }
+});
+
 router.get('/soportes/pdx/carpetas', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, ['modulo.reportes_pdx', 'soportes.pdx.ver', 'soportes.pdx.subir']), async (req, res) => {
   try {
     const incluirArchivo = puedeVerArchivo(req) && req.query.archivo === '1';
@@ -419,7 +427,7 @@ router.get('/soportes/pdx/carpetas', requireAuth, requireRoleOrPerm(ROLES_SOPORT
       .filter((r) => usuarioVeCarpetaPdx(req, r))
       .map(mapCarpetaPdx)
       .filter((c) => c.estado_visibilidad !== 'archivo' || incluirArchivo);
-    res.json({ periodo_actual: hoyPeriodo, carpetas: lista, puede_configurar_roles: esSuperadminSesion(req) });
+    res.json({ periodo_actual: hoyPeriodo, carpetas: lista });
   } catch (e) {
     logger.error('[SOPORTES] pdx carpetas:', e);
     res.status(500).json({ error: sopErrorCliente(e) });
@@ -436,16 +444,10 @@ router.post('/soportes/pdx/carpetas', requireAuth, requireRoleOrPerm(ROLES_SOPOR
     if (nombre.length < 3) return res.status(400).json({ error: 'nombre de carpeta requerido' });
     const tema = detectarTemaCarpeta(nombre);
     const vis = calcularVisibilidadPeriodo(periodo);
-    let rolesJson = null;
-    if (esSuperadminSesion(req) && req.body?.roles_visibles !== undefined) {
-      const norm = normalizarRolesVisiblesBody(req.body.roles_visibles);
-      if (norm && norm.error) return res.status(400).json({ error: norm.error });
-      rolesJson = serializarRolesVisibles(norm);
-    }
     const r = await db.execute(
       `INSERT INTO sop_pdx_carpetas (periodo, nombre_display, color_tema, roles_visibles, estado_visibilidad, creado_por)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [periodo, nombre, tema, rolesJson, vis, req.session.usuarioId ?? null]
+       VALUES (?, ?, ?, NULL, ?, ?)`,
+      [periodo, nombre, tema, vis, req.session.usuarioId ?? null]
     );
     const id = pdxInsertId(r);
     if (!id) {
@@ -489,15 +491,9 @@ router.patch('/soportes/pdx/carpetas/:id', requireAuth, requireRoleOrPerm(ROLES_
 
     const tema = detectarTemaCarpeta(nombre);
     const estado = calcularVisibilidadPeriodo(periodo);
-    let rolesJson = prev.roles_visibles;
-    if (esSuperadminSesion(req) && req.body?.roles_visibles !== undefined) {
-      const norm = normalizarRolesVisiblesBody(req.body.roles_visibles);
-      if (norm && norm.error) return res.status(400).json({ error: norm.error });
-      rolesJson = serializarRolesVisibles(norm);
-    }
     await db.execute(
-      'UPDATE sop_pdx_carpetas SET periodo = ?, nombre_display = ?, color_tema = ?, roles_visibles = ?, estado_visibilidad = ? WHERE id = ?',
-      [periodo, nombre, tema, rolesJson, estado, req.params.id]
+      'UPDATE sop_pdx_carpetas SET periodo = ?, nombre_display = ?, color_tema = ?, estado_visibilidad = ? WHERE id = ?',
+      [periodo, nombre, tema, estado, req.params.id]
     );
     const countRows = await db.query('SELECT COUNT(*) AS n FROM sop_pdx_archivos WHERE carpeta_id = ?', [req.params.id]);
     const updated = await db.query('SELECT * FROM sop_pdx_carpetas WHERE id = ?', [req.params.id]);

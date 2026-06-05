@@ -19,6 +19,13 @@ describe('soportes-pdx-roles', () => {
     expect(labelRolesVisibles(roles)).toContain('Electro');
   });
 
+  test('auxiliar_recepcion en lista legacy de roles de carpeta', () => {
+    const roles = ['recepcion', 'auxiliar_recepcion'];
+    expect(parseRolesVisibles(JSON.stringify(roles))).toEqual(roles);
+    expect(carpetaVisibleParaRol(roles, 'auxiliar_recepcion')).toBe(true);
+    expect(labelRolesVisibles(roles)).toContain('Auxiliar');
+  });
+
   test('parseRolesVisibles desde JSON string', () => {
     expect(parseRolesVisibles('["electro","foo"]')).toEqual(['electro']);
   });

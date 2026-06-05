@@ -15,12 +15,13 @@ const {
 const { validateSchema } = require('../modules/validation-schemas');
 
 const ROLES_VALIDOS = ['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro', 'tecnico_electro', 'auxiliar_recepcion', 'doctor', 'contabilidad'];
+const { esPermisoPdxValido } = require('../utils/soportes-pdx-carpetas-permisos');
 
 const PERMISOS_VALIDOS = new Set([
   'modulo.recibos', 'modulo.agenda_medica', 'modulo.electrodiag', 'modulo.ucqn',
   'modulo.dashboard', 'modulo.usuarios', 'modulo.diagnosticos', 'modulo.gestion_datos',
   'modulo.monitor_equipos', 'modulo.reportes_pdx', 'modulo.armado_soportes', 'modulo.anexo_fidu',
-  'soportes.pdx.ver', 'soportes.pdx.crear_carpeta', 'soportes.pdx.subir', 'soportes.pdx.editar', 'soportes.pdx.eliminar',
+  'soportes.pdx.ver', 'soportes.pdx.carpetas.todas', 'soportes.pdx.crear_carpeta', 'soportes.pdx.subir', 'soportes.pdx.editar', 'soportes.pdx.eliminar',
   'soportes.armado.crear_estructura', 'soportes.armado.subir', 'soportes.armado.importar_pdx',
   'soportes.descargar_zip', 'soportes.ver_archivo',
   'recibos.crear', 'recibos.ver', 'recibos.editar', 'recibos.anular', 'recibos.eliminar',
@@ -279,7 +280,7 @@ router.put('/:id/permisos', requireAuth, requireSuperAdmin, async (req, res) => 
       if (p.length < 2 || p.length > 80 || !/^[a-z0-9._]+$/i.test(p)) {
         return res.status(400).json({ error: 'Formato de clave de permiso no válido' });
       }
-      if (!PERMISOS_VALIDOS.has(p)) {
+      if (!PERMISOS_VALIDOS.has(p) && !esPermisoPdxValido(p)) {
         return res.status(400).json({ error: `Permiso desconocido: "${p}"` });
       }
     }
