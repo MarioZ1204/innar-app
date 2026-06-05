@@ -38,7 +38,7 @@ describe('soportes-pdx-parse — reportes simples', () => {
     expect(p.error).toBe(mensajeErrorFormato('neutral'));
   });
 
-  test('buildNombreDescargaPdxDesdeRow — órdenes con guiones', () => {
+  test('buildNombreDescargaPdxDesdeRow — órdenes sin guiones', () => {
     const nombre = buildNombreDescargaPdxDesdeRow(
       {
         apellidos: 'García López',
@@ -50,7 +50,7 @@ describe('soportes-pdx-parse — reportes simples', () => {
       },
       { nombre_display: 'ORDENES MARZO' }
     );
-    expect(nombre).toBe('ORDEN + HC - García López - Juan Carlos - CC - 1234567890 - 2026-05-27 - PSG Basal.pdf');
+    expect(nombre).toBe('ORDEN + HC García López Juan Carlos CC 1234567890 2026-05-27 PSG Basal.pdf');
   });
 
   test('buildNombreDescargaPdxDesdeRow — comprobantes', () => {
@@ -65,7 +65,7 @@ describe('soportes-pdx-parse — reportes simples', () => {
       },
       { nombre_display: 'COMPROBANTES ABRIL' }
     );
-    expect(nombre).toContain('COMPROBANTE - Pérez - Ana');
+    expect(nombre).toContain('COMPROBANTE Pérez Ana');
     expect(nombre).toContain('EEG.pdf');
   });
 
@@ -118,16 +118,17 @@ describe('soportes-pdx-parse — formatos estructurados', () => {
 
   test('analizar nombre ideal en carpeta ORDEN + HC', () => {
     const a = analizarNombreArchivo(
-      'ORDEN + HC - García López - Juan Carlos - CC - 1234567890 - 2026-05-27 - PSG Basal.pdf',
+      'ORDEN + HC García López Juan Carlos CC 1234567890 2026-05-27 PSG Basal.pdf',
       { nombre_display: 'ORDEN + HC MARZO' }
     );
     expect(a.ok).toBe(true);
     expect(a.requiere_correccion).toBe(false);
     expect(a.parsed.paciente_documento).toBe('1234567890');
     expect(a.parsed.estudio_texto).toBe('PSG Basal');
+    expect(a.parsed.nombre_display).toBe('ORDEN + HC García López Juan Carlos CC 1234567890 2026-05-27 PSG Basal.pdf');
   });
 
-  test('órdenes ORDEN + HC con guiones', () => {
+  test('órdenes ORDEN + HC con guiones legacy (acepta y normaliza sin guiones)', () => {
     const p = parseNombreOrdenHc(
       'ORDEN + HC - García López - Juan Carlos - CC - 1234567890 - 2026-03-20 - PSG Basal.pdf',
       []
@@ -136,6 +137,7 @@ describe('soportes-pdx-parse — formatos estructurados', () => {
     expect(p.paciente_documento).toBe('1234567890');
     expect(p.tipo_documento).toBe('CC');
     expect(p.estudio_texto).toBe('PSG Basal');
+    expect(p.nombre_display).toBe('ORDEN + HC García López Juan Carlos CC 1234567890 2026-03-20 PSG Basal.pdf');
   });
 
   test('documento con puntos y guiones se normaliza a solo dígitos', () => {
@@ -164,7 +166,8 @@ describe('soportes-pdx-parse — formatos estructurados', () => {
     );
     expect(p.ok).toBe(true);
     expect(p.formato).toBe('consentimientos');
-    expect(p.nombre_display).toMatch(/^CONSENTIMIENTO - /);
+    expect(p.nombre_display).toMatch(/^CONSENTIMIENTO /);
+    expect(p.nombre_display).not.toMatch(/\s-\s/);
   });
 
   test('órdenes sin guiones obligatorios', () => {

@@ -30,4 +30,17 @@ describe('anexo-fidu-import', () => {
   test('plantilla tiene 45 columnas', () => {
     expect(ANEXO_FIDU_COLUMNAS.length).toBe(45);
   });
+
+  test('importa con código de servicio y aplica catálogo', () => {
+    const row = mapSheetsRowToAnexoFidu({
+      NUMERODOCUMENTO: '999',
+      NOMBRES: 'Ana',
+      APELLIDOS: 'Ruiz',
+      CODIGOSERVICIO: '891704'
+    });
+    expect(row.codigo_servicio).toBe('891704');
+    expect(row.nit).toBe('901164565-1');
+    expect(row.valor_unitario).toBe('$ 1.564.355');
+    expect(row.codigo_servicio_referencia).toBe('327');
+  });
 });

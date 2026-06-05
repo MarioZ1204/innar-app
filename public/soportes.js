@@ -149,9 +149,9 @@
       nota: 'Al descargar se añade el tipo de estudio (EEG) al nombre del archivo.'
     },
     psg: {
-      pattern: 'Apellidos, Nombres   YYYY-MM-DD.pdf (también Apellidos - Nombres - YYYY-MM-DD.pdf)',
+      pattern: 'Apellidos, Nombres   YYYY-MM-DD.pdf',
       ejemplo: 'García López, Juan Carlos   2026-05-27.pdf',
-      nota: 'No incluya número de documento. Al descargar se añade el tipo de estudio PSG según la carpeta.'
+      nota: 'No incluya número de documento. Separe con espacios (no use guiones entre campos). Al descargar se añade el tipo de estudio PSG según la carpeta.'
     },
     actigrafia: {
       pattern: 'Apellidos, Nombres   YYYY-MM-DD.pdf',
@@ -159,14 +159,14 @@
       nota: 'Al descargar se añade el tipo de estudio al nombre del archivo.'
     },
     ordenes: {
-      pattern: 'ORDEN + HC - APELLIDOS - NOMBRES - TIPO DOC (CC, TI…) - DOCUMENTO (solo números) - FECHA - TIPO DE ESTUDIO.pdf',
-      ejemplo: 'ORDEN + HC - García López - Juan Carlos - CC - 1234567890 - 2026-05-27 - PSG Basal.pdf',
-      nota: 'Tipo: 2 letras (CC, TI, RC…). Documento: solo dígitos, sin puntos ni guiones. Guiones entre campos opcionales.'
+      pattern: 'ORDEN + HC APELLIDOS NOMBRES TIPO DOC (CC, TI…) DOCUMENTO (solo números) FECHA TIPO DE ESTUDIO.pdf',
+      ejemplo: 'ORDEN + HC García López Juan Carlos CC 1234567890 2026-05-27 PSG Basal.pdf',
+      nota: 'Tipo: 2 letras (CC, TI, RC…). Documento: solo dígitos, sin puntos ni guiones. Separe los campos con espacios (no use guiones entre campos).'
     },
     comprobantes: {
-      pattern: 'COMPROBANTE - APELLIDOS - NOMBRES - TIPO DOC (CC, TI…) - DOCUMENTO (solo números) - FECHA - TIPO DE ESTUDIO.pdf',
-      ejemplo: 'COMPROBANTE - García López - Juan Carlos - CC - 1234567890 - 2026-05-27 - PSG Basal.pdf',
-      nota: 'Tipo: 2 letras. Documento: solo dígitos. Guiones entre campos opcionales.'
+      pattern: 'COMPROBANTE APELLIDOS NOMBRES TIPO DOC (CC, TI…) DOCUMENTO (solo números) FECHA TIPO DE ESTUDIO.pdf',
+      ejemplo: 'COMPROBANTE García López Juan Carlos CC 1234567890 2026-05-27 PSG Basal.pdf',
+      nota: 'Tipo: 2 letras. Documento: solo dígitos. Separe los campos con espacios (no use guiones entre campos).'
     },
     comprobantes_consulta_medica: {
       pattern: 'COMPROBANTE NOMBRES APELLIDOS YYYY-MM-DD ESPECIALIDAD.pdf',
@@ -179,9 +179,9 @@
       nota: 'Sin documento. Puede subir 2 o más PDF (orden en un archivo, HC en otro) para unificarlos en uno solo.'
     },
     consentimientos: {
-      pattern: 'CONSENTIMIENTO - APELLIDOS - NOMBRES - TIPO DOC (CC, TI…) - DOCUMENTO (solo números) - FECHA - TIPO DE ESTUDIO.pdf',
-      ejemplo: 'CONSENTIMIENTO - García López - Juan Carlos - CC - 1234567890 - 2026-05-27 - PSG Basal.pdf',
-      nota: 'Tipo: 2 letras; documento: solo dígitos. El nombre guardado empieza por CONSENTIMIENTO. Guiones opcionales al subir.'
+      pattern: 'CONSENTIMIENTO APELLIDOS NOMBRES TIPO DOC (CC, TI…) DOCUMENTO (solo números) FECHA TIPO DE ESTUDIO.pdf',
+      ejemplo: 'CONSENTIMIENTO García López Juan Carlos CC 1234567890 2026-05-27 PSG Basal.pdf',
+      nota: 'Tipo: 2 letras; documento: solo dígitos. El nombre guardado empieza por CONSENTIMIENTO. Separe los campos con espacios (no use guiones entre campos).'
     },
     neutral: {
       pattern: 'Apellidos, Nombres   YYYY-MM-DD.pdf',

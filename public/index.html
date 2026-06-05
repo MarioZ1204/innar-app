@@ -2873,7 +2873,7 @@
           <header>
             <h2>Anexo FIDU / FOMAG</h2>
             <p style="color:#475569;font-size:.9rem;max-width:820px">
-              Tabla tipo Excel con las <strong>45 columnas</strong> del anexo. Importa pacientes desde Google Sheets (exportar .xlsx con las 13 columnas habituales) y completa servicio, diagnóstico y codigos fila a fila.
+              Arma filas del anexo con las <strong>45 columnas</strong> y exporta Excel. Sube la <strong>base de personas</strong> (CSV Lista_Personas), crea filas del anexo eligiendo paciente y servicio, y exporta el resultado.
             </p>
           </header>
           <section class="card no-print">
@@ -2883,12 +2883,30 @@
                 <input type="text" id="afiduBuscar" placeholder="Documento o nombre..." />
               </div>
               <button type="button" class="btn-secondary" id="btnAfiduBuscar">Buscar</button>
-              <button type="button" class="btn-primary" id="btnAfiduNuevo">Nueva fila</button>
-              <button type="button" class="btn-secondary" id="btnAfiduImportar">Importar Excel</button>
-              <input type="file" id="afiduFileInput" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" style="display:none" />
+              <button type="button" class="btn-secondary" id="btnAfiduSubirPersonas">Subir base personas (CSV)</button>
+              <button type="button" class="btn-secondary" id="btnAfiduExportar">Exportar Excel</button>
+              <input type="file" id="afiduPersonasFileInput" accept=".csv,text/csv" style="display:none" />
             </div>
+            <div class="afidu-entrada-bar afidu-entrada-inline">
+              <div class="afidu-entrada-fields">
+                <div>
+                  <label for="afiduEntradaDoc">Documento paciente</label>
+                  <input type="text" id="afiduEntradaDoc" placeholder="Ej. 1085252647" autocomplete="off" />
+                </div>
+                <div>
+                  <label for="afiduEntradaCodigo">Código servicio (CUPS)</label>
+                  <input type="text" id="afiduEntradaCodigo" placeholder="Ej. 891704" autocomplete="off" />
+                </div>
+                <div class="afidu-entrada-action">
+                  <button type="button" class="btn-primary" id="btnAfiduAgregarFila">Agregar fila</button>
+                </div>
+              </div>
+              <p class="afidu-entrada-hint">Ingrese documento y código, luego <kbd>Enter</kbd> o «Agregar fila». Edite en la tabla con <strong>doble clic</strong> (como Excel). Los datos del paciente se guardan en la base maestra al editar.</p>
+            </div>
+            <div id="afiduPanelNuevaPersona" class="afidu-panel-nueva-persona hidden"></div>
+            <p style="font-size:.8rem;color:#64748b;margin:0 0 6px" id="afiduPersonasInfo">—</p>
             <p style="font-size:.8rem;color:#64748b;margin:0 0 10px">
-              Importacion: NUMERODOCUMENTO, NOMBRES, APELLIDOS, TIPODOCUMENTO, FECHANACIMIENTO, CIUDADDENACIMIENTO, GENERO, DIRECCION, BARRIO, CIUDADDERESIDENCIA, TELEFONO, CORREO, AFILIACION
+              La base de personas vive en MySQL (local o Hostinger). Al subir el CSV o editar celdas del paciente en la grilla, los cambios quedan en la tabla <code>anexo_fidu_personas</code> del servidor.
             </p>
             <div class="afidu-grid-wrap">
               <table class="afidu-grid" id="afiduGrid">

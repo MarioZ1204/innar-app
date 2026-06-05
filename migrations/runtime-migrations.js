@@ -959,6 +959,23 @@ const runtimeMigrations = [
       const { buildAnexoFiduCreateTableSql } = require('../utils/anexo-fidu-columns');
       await db.execute(buildAnexoFiduCreateTableSql());
     }
+  },
+  {
+    name: 'rt_anexo_fidu_personas',
+    description: 'Base de personas FOMAG (Lista_Personas CSV)',
+    run: async (db) => {
+      const { buildAnexoFiduPersonasCreateTableSql } = require('../utils/anexo-fidu-personas');
+      await db.execute(buildAnexoFiduPersonasCreateTableSql());
+    }
+  },
+  {
+    name: 'rt_anexo_fidu_registros_v2',
+    description: 'Reintento tabla anexo FIDU (tipos TEXT/VARCHAR reducidos)',
+    run: async (db) => {
+      if (await tableExists(db, 'anexo_fidu_registros')) return;
+      const { buildAnexoFiduCreateTableSql } = require('../utils/anexo-fidu-columns');
+      await db.execute(buildAnexoFiduCreateTableSql());
+    }
   }
 ];
 

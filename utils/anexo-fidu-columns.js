@@ -53,13 +53,18 @@ const ANEXO_FIDU_COLUMNAS = [
 
 const ANEXO_FIDU_COLUMN_KEYS = ANEXO_FIDU_COLUMNAS.map((c) => c.key);
 
-/** Campos largos → TEXT; resto VARCHAR(500) por flexibilidad con fechas Excel. */
+/** Códigos/fechas cortos → VARCHAR(120); textos largos → TEXT (evita límite 65535 de fila MySQL). */
 function sqlTypeForAnexoFiduColumn(key) {
-  const textKeys = new Set([
-    'direccion', 'nombre_servicio', 'nombre_diagnostico', 'causa_atencion',
-    'ciudad_residencia', 'ciudad_nacimiento', 'especiales_excepcion_cotizante'
+  const varcharKeys = new Set([
+    'nit', 'numero_orden_fomag', 'fecha_autorizacion_hora', 'prefijo_fact', 'num_factura',
+    'tipo_documento', 'numero_documento', 'genero', 'edad', 'telefono',
+    'contacto_emergencia_telefono', 'correo', 'ciudad', 'fecha_nacimiento',
+    'codigo_servicio', 'plan', 'valor_unitario', 'cantidad', 'valor_total_fact',
+    'codigo_cie10', 'fecha_inicio', 'fecha_final', 'codigo_prestador',
+    'condicion_destino_persona', 'prioridad_atencion', 'tipo_atencion_solicitada',
+    'grupo_servicio', 'modalidad_tecnologia_salud', 'codigo_servicio_referencia'
   ]);
-  return textKeys.has(key) ? 'TEXT' : 'VARCHAR(500)';
+  return varcharKeys.has(key) ? 'VARCHAR(120)' : 'TEXT';
 }
 
 function buildAnexoFiduCreateTableSql() {

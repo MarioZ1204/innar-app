@@ -51,9 +51,9 @@ const FORMATOS_AYUDA = {
     nota: 'Al descargar se añade el tipo de estudio (EEG) al nombre del archivo.'
   },
   psg: {
-    pattern: 'Apellidos, Nombres   YYYY-MM-DD.pdf (también Apellidos - Nombres - YYYY-MM-DD.pdf)',
+    pattern: 'Apellidos, Nombres   YYYY-MM-DD.pdf',
     ejemplo: 'García López, Juan Carlos   2026-05-27.pdf',
-    nota: 'No incluya número de documento. Al descargar se añade el tipo de estudio PSG según la carpeta.'
+    nota: 'No incluya número de documento. Separe con espacios (no use guiones entre campos). Al descargar se añade el tipo de estudio PSG según la carpeta.'
   },
   actigrafia: {
     pattern: 'Apellidos, Nombres   YYYY-MM-DD.pdf',
@@ -61,19 +61,19 @@ const FORMATOS_AYUDA = {
     nota: 'Al descargar se añade el tipo de estudio al nombre del archivo.'
   },
   ordenes: {
-    pattern: 'ORDEN + HC - APELLIDOS - NOMBRES - TIPO DOC (CC, TI…) - DOCUMENTO (solo números) - FECHA - TIPO DE ESTUDIO.pdf',
-    ejemplo: 'ORDEN + HC - García López - Juan Carlos - CC - 1234567890 - 2026-05-27 - PSG Basal.pdf',
-    nota: 'Tipo de documento: 2 letras (CC, TI, RC…). Número: solo dígitos, sin puntos ni guiones. Los guiones (-) entre campos son opcionales.'
+    pattern: 'ORDEN + HC APELLIDOS NOMBRES TIPO DOC (CC, TI…) DOCUMENTO (solo números) FECHA TIPO DE ESTUDIO.pdf',
+    ejemplo: 'ORDEN + HC García López Juan Carlos CC 1234567890 2026-05-27 PSG Basal.pdf',
+    nota: 'Tipo de documento: 2 letras (CC, TI, RC…). Número: solo dígitos, sin puntos ni guiones. Separe los campos con espacios (no use guiones entre campos).'
   },
   comprobantes: {
-    pattern: 'COMPROBANTE - APELLIDOS - NOMBRES - TIPO DOC (CC, TI…) - DOCUMENTO (solo números) - FECHA - TIPO DE ESTUDIO.pdf',
-    ejemplo: 'COMPROBANTE - García López - Juan Carlos - CC - 1234567890 - 2026-05-27 - PSG Basal.pdf',
-    nota: 'Tipo de documento: 2 letras (CC, TI, RC…). Número: solo dígitos. Los guiones (-) entre campos son opcionales.'
+    pattern: 'COMPROBANTE APELLIDOS NOMBRES TIPO DOC (CC, TI…) DOCUMENTO (solo números) FECHA TIPO DE ESTUDIO.pdf',
+    ejemplo: 'COMPROBANTE García López Juan Carlos CC 1234567890 2026-05-27 PSG Basal.pdf',
+    nota: 'Tipo de documento: 2 letras (CC, TI, RC…). Número: solo dígitos. Separe los campos con espacios (no use guiones entre campos).'
   },
   consentimientos: {
-    pattern: 'CONSENTIMIENTO - APELLIDOS - NOMBRES - TIPO DOC (CC, TI…) - DOCUMENTO (solo números) - FECHA - TIPO DE ESTUDIO.pdf',
-    ejemplo: 'CONSENTIMIENTO - García López - Juan Carlos - CC - 1234567890 - 2026-05-27 - PSG Basal.pdf',
-    nota: 'Tipo: 2 letras; documento: solo números. El nombre guardado empieza por CONSENTIMIENTO. Guiones opcionales al subir.'
+    pattern: 'CONSENTIMIENTO APELLIDOS NOMBRES TIPO DOC (CC, TI…) DOCUMENTO (solo números) FECHA TIPO DE ESTUDIO.pdf',
+    ejemplo: 'CONSENTIMIENTO García López Juan Carlos CC 1234567890 2026-05-27 PSG Basal.pdf',
+    nota: 'Tipo: 2 letras; documento: solo números. El nombre guardado empieza por CONSENTIMIENTO. Separe los campos con espacios (no use guiones entre campos).'
   },
   comprobantes_consulta_medica: {
     pattern: 'COMPROBANTE NOMBRES APELLIDOS YYYY-MM-DD ESPECIALIDAD.pdf',
@@ -519,12 +519,12 @@ function parseNombreComprobanteConsultaMedica(originalName, tiposLista = []) {
 
 function parseNombreOrdenHc(originalName, estudios = []) {
   const base = normalizarNombreParaParseo(originalName);
+  const desdeFecha = parseNombreEstructuradoDesdeFecha('ordenes', base, estudios);
+  if (desdeFecha.ok) return desdeFecha;
+  const flex = parseNombreEstructuradoFallback('ordenes', base, estudios);
+  if (flex.ok) return flex;
   const m = base.match(RE_ORDEN_HC);
   if (!m) {
-    const flex = parseNombreEstructuradoFallback('ordenes', base, estudios);
-    if (flex.ok) return flex;
-    const desdeFecha = parseNombreEstructuradoDesdeFecha('ordenes', base, estudios);
-    if (desdeFecha.ok) return desdeFecha;
     return { ok: false, original: base, error: mensajeErrorFormato('ordenes') };
   }
   const apellidos = m[1].trim();
@@ -546,12 +546,12 @@ function parseNombreOrdenHc(originalName, estudios = []) {
 
 function parseNombreComprobante(originalName, estudios = []) {
   const base = normalizarNombreParaParseo(originalName);
+  const desdeFecha = parseNombreEstructuradoDesdeFecha('comprobantes', base, estudios);
+  if (desdeFecha.ok) return desdeFecha;
+  const flex = parseNombreEstructuradoFallback('comprobantes', base, estudios);
+  if (flex.ok) return flex;
   const m = base.match(RE_COMPROBANTE);
   if (!m) {
-    const flex = parseNombreEstructuradoFallback('comprobantes', base, estudios);
-    if (flex.ok) return flex;
-    const desdeFecha = parseNombreEstructuradoDesdeFecha('comprobantes', base, estudios);
-    if (desdeFecha.ok) return desdeFecha;
     return { ok: false, original: base, error: mensajeErrorFormato('comprobantes') };
   }
   const apellidos = m[1].trim();
@@ -573,12 +573,12 @@ function parseNombreComprobante(originalName, estudios = []) {
 
 function parseNombreConsentimiento(originalName, estudios = []) {
   const base = normalizarNombreParaParseo(originalName);
+  const desdeFecha = parseNombreEstructuradoDesdeFecha('consentimientos', base, estudios);
+  if (desdeFecha.ok) return desdeFecha;
+  const flex = parseNombreEstructuradoFallback('consentimientos', base, estudios);
+  if (flex.ok) return flex;
   const m = base.match(RE_CONSENTIMIENTO);
   if (!m) {
-    const flex = parseNombreEstructuradoFallback('consentimientos', base, estudios);
-    if (flex.ok) return flex;
-    const desdeFecha = parseNombreEstructuradoDesdeFecha('consentimientos', base, estudios);
-    if (desdeFecha.ok) return desdeFecha;
     return { ok: false, original: base, error: mensajeErrorFormato('consentimientos') };
   }
   const apellidos = m[1].trim();
@@ -600,17 +600,17 @@ function parseNombreConsentimiento(originalName, estudios = []) {
 
 function normalizarNombreOrdenHc(parts) {
   const { apellidos, nombres, tipo_documento, paciente_documento, fecha, estudio } = parts;
-  return `ORDEN + HC - ${apellidos} - ${nombres} - ${tipo_documento} - ${paciente_documento} - ${fecha} - ${estudio}.pdf`;
+  return `ORDEN + HC ${apellidos} ${nombres} ${tipo_documento} ${paciente_documento} ${fecha} ${estudio}.pdf`;
 }
 
 function normalizarNombreComprobante(parts) {
   const { apellidos, nombres, tipo_documento, paciente_documento, fecha, estudio } = parts;
-  return `COMPROBANTE - ${apellidos} - ${nombres} - ${tipo_documento} - ${paciente_documento} - ${fecha} - ${estudio}.pdf`;
+  return `COMPROBANTE ${apellidos} ${nombres} ${tipo_documento} ${paciente_documento} ${fecha} ${estudio}.pdf`;
 }
 
 function normalizarNombreConsentimiento(parts) {
   const { apellidos, nombres, tipo_documento, paciente_documento, fecha, estudio } = parts;
-  return `CONSENTIMIENTO - ${apellidos} - ${nombres} - ${tipo_documento} - ${paciente_documento} - ${fecha} - ${estudio}.pdf`;
+  return `CONSENTIMIENTO ${apellidos} ${nombres} ${tipo_documento} ${paciente_documento} ${fecha} ${estudio}.pdf`;
 }
 
 function normalizarNombreComprobanteConsultaMedica(parts) {
@@ -623,11 +623,11 @@ function normalizarNombreOrdenHcConsultaMedica(parts) {
   return `ORDEN + HC ${nombres} ${apellidos} ${fecha} ${estudio}.pdf`;
 }
 
-/** PSG reportes: NOMBRES - APELLIDOS - DOCUMENTO - FECHA - [opcional…] - TIPO PSG */
+/** PSG reportes (legacy con documento): normaliza al formato simple sin guiones. */
 function normalizarNombrePsg(parts) {
-  const { nombres, apellidos, paciente_documento, fecha, estudio, extras } = parts;
-  const mid = extras ? ` - ${extras}` : '';
-  return `${nombres} - ${apellidos} - ${paciente_documento} - ${fecha}${mid} - ${estudio}.pdf`;
+  const { nombres, apellidos, fecha, estudio, extras } = parts;
+  const mid = extras ? ` ${extras}` : '';
+  return `${apellidos}, ${nombres}   ${fecha}${mid} ${estudio}.pdf`;
 }
 
 function parseNombrePsg(originalName, estudios = []) {

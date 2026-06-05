@@ -2,6 +2,7 @@
  * Importación pacientes (Google Sheets / Excel) → columnas anexo FIDU.
  */
 const { ANEXO_FIDU_COLUMN_KEYS } = require('./anexo-fidu-columns');
+const { enriquecerRegistroAnexoFidu } = require('./anexo-fidu-servicios');
 
 function normHeader(h) {
   return String(h || '')
@@ -28,7 +29,13 @@ const SHEETS_ALIASES = {
   ciudadderesidencia: 'ciudad_residencia',
   telefono: 'telefono',
   correo: 'correo',
-  afiliacion: 'especiales_excepcion_cotizante'
+  afiliacion: 'especiales_excepcion_cotizante',
+  codigoservicio: 'codigo_servicio',
+  codigo_servicio: 'codigo_servicio',
+  cups: 'codigo_servicio',
+  servicio: '_servicio_texto',
+  tiposervicio: '_servicio_texto',
+  nombreservicio: 'nombre_servicio'
 };
 
 function splitNombrePartes(texto) {
@@ -97,6 +104,7 @@ function mapSheetsRowToAnexoFidu(row) {
     if (alias === '_nombres') nombresRaw = val;
     else if (alias === '_apellidos') apellidosRaw = val;
     else if (alias === '_barrio') barrio = val;
+    else if (alias === '_servicio_texto' && val && !out.codigo_servicio) out._servicio_texto = val;
     else if (ANEXO_FIDU_COLUMN_KEYS.includes(alias)) out[alias] = val;
   }
 
@@ -116,7 +124,13 @@ function mapSheetsRowToAnexoFidu(row) {
   out.fecha_nacimiento = formatFechaParaCelda(out.fecha_nacimiento);
   out.edad = calcularEdadDesdeFecha(out.fecha_nacimiento);
 
-  return out;
+  if (out._servicio_texto) {
+    const m = String(out._servicio_texto).match(/\b(\d{5,6})\b/);
+    if (m) out.codigo_servicio = m[1];
+    delete out._servicio_texto;
+  }
+
+  return enriquecerRegistroAnexoFidu(out);
 }
 
 /**
