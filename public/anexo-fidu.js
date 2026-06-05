@@ -166,6 +166,24 @@
     td.title = `${col?.label || key}: ${v}`;
   }
 
+  async function lookupNombreDiagnostico(codigoCie10) {
+    const cod = String(codigoCie10 || '').trim();
+    if (cod.length < 2) return '';
+    const data = await apiAnexo(`/api/anexo-fidu/diagnostico-por-codigo?codigo=${encodeURIComponent(cod)}`);
+    return String(data.nombre || '').trim();
+  }
+
+  async function aplicarNombreDiagnosticoDesdeCie10(tr, codigoCie10) {
+    const cod = String(codigoCie10 || '').trim();
+    if (!cod) {
+      setValorCelda(tr, 'nombre_diagnostico', '');
+      return '';
+    }
+    const nombre = await lookupNombreDiagnostico(cod);
+    if (nombre) setValorCelda(tr, 'nombre_diagnostico', nombre);
+    return nombre;
+  }
+
   function aplicarRegistroAFila(tr, registro) {
     _columnas.forEach((c) => setValorCelda(tr, c.key, registro[c.key]));
   }
@@ -200,6 +218,19 @@
 
     _celdaEditando = { td, input, key, valorOriginal, tr: td.closest('tr') };
 
+    if (key === 'codigo_cie10') {
+      let cieTimer;
+      input.addEventListener('input', () => {
+        clearTimeout(cieTimer);
+        cieTimer = setTimeout(async () => {
+          if (_celdaEditando?.input !== input) return;
+          try {
+            await aplicarNombreDiagnosticoDesdeCie10(tr, input.value);
+          } catch (_) { /* ignore mientras escribe */ }
+        }, 320);
+      });
+    }
+
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && (!isLong || e.ctrlKey)) {
         e.preventDefault();
@@ -230,6 +261,13 @@
     try {
       if (key === 'codigo_servicio' || key === 'numero_documento') {
         await recargarServicioYPacienteEnFila(tr);
+      } else if (key === 'codigo_cie10') {
+        const nombre = await aplicarNombreDiagnosticoDesdeCie10(tr, nuevoValor);
+        if (!nombre && nuevoValor.length >= 2) {
+          if (typeof showToast === 'function') {
+            showToast('No se encontró diagnóstico para ese código CIE-10', 'warning');
+          }
+        }
       } else if (key === 'valor_unitario' || key === 'cantidad') {
         recalcularTotalEnFila(tr);
       }

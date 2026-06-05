@@ -81,6 +81,48 @@ router.get('/anexo-fidu/servicios', requireAuth, requirePermiso(PERM_ANEXO_FIDU)
   res.json({ ok: true, servicios: listarServiciosCatalogo() });
 });
 
+/** GET /api/anexo-fidu/diagnostico-por-codigo?codigo=G470 — nombre CIE-10 para NOMBREDIAGNOSTICO */
+router.get('/anexo-fidu/diagnostico-por-codigo', requireAuth, requirePermiso(PERM_ANEXO_FIDU), async (req, res) => {
+  const raw = String(req.query.codigo || '').trim();
+  if (!raw) return res.json({ ok: true, nombre: '', codigo: '' });
+  const norm = raw.toUpperCase();
+  const normFlat = norm.replace(/\./g, '');
+  try {
+    const exact = await db.query(
+      `SELECT nombre, descripcion, codigo FROM diagnosticos WHERE activo = 1
+       AND (UPPER(TRIM(codigo)) = ? OR UPPER(REPLACE(TRIM(codigo), '.', '')) = ?)
+       LIMIT 1`,
+      [norm, normFlat]
+    );
+    if (exact.length) {
+      const r = exact[0];
+      return res.json({
+        ok: true,
+        nombre: String(r.nombre || r.descripcion || '').trim(),
+        codigo: String(r.codigo || '').trim()
+      });
+    }
+    if (normFlat.length < 2) {
+      return res.json({ ok: true, nombre: '', codigo: '' });
+    }
+    const partial = await db.query(
+      `SELECT nombre, descripcion, codigo FROM diagnosticos WHERE activo = 1
+       AND UPPER(REPLACE(TRIM(codigo), '.', '')) LIKE ?
+       ORDER BY LENGTH(codigo) ASC LIMIT 1`,
+      [`${normFlat}%`]
+    );
+    const r = partial[0];
+    res.json({
+      ok: true,
+      nombre: r ? String(r.nombre || r.descripcion || '').trim() : '',
+      codigo: r ? String(r.codigo || '').trim() : ''
+    });
+  } catch (e) {
+    logger.error('[ANEXO-FIDU] diagnostico-por-codigo:', e);
+    res.status(500).json({ error: safeError(e) });
+  }
+});
+
 /** GET /api/anexo-fidu/registros */
 router.get('/anexo-fidu/registros', requireAuth, requirePermiso(PERM_ANEXO_FIDU), async (req, res) => {
   try {

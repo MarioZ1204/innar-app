@@ -12,6 +12,7 @@ const {
   requireAuth, requireRoleOrPerm,
   safeError, isAdminRol, isRecepcionRol
 } = require('../middleware/index');
+const { queryCitasAuditoria, enriquecerCitasConRecibos } = require('../utils/citas-auditoria');
 
 const jsonLargeBody = require('express').json({ limit: '50mb' });
 
@@ -279,125 +280,15 @@ router.get('/reportes/mensual', requireAuth, requireRoleOrPerm(['superadmin', 'a
   }
 });
 
+const DASHBOARD_CITAS_PERM = requireRoleOrPerm(
+  ['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro', 'doctor', 'contabilidad'],
+  'sistema.dashboard'
+);
+
 // GET /api/dashboard/citas-auditoria
-router.get('/dashboard/citas-auditoria', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro', 'doctor', 'contabilidad'], 'sistema.dashboard'), async (req, res) => {
+router.get('/dashboard/citas-auditoria', requireAuth, DASHBOARD_CITAS_PERM, async (req, res) => {
   try {
-    const { tipo_cita, fecha_desde, fecha_hasta, programado_por, tipo_estudio, tipo_consulta, entidad, doctor_id, estado, especialidad_id } = req.query;
-
-    const entidadArr = entidad ? entidad.split(',').filter(Boolean) : [];
-    const tipoConsultaArr = tipo_consulta ? tipo_consulta.split(',').filter(Boolean) : [];
-    const tipoEstudioArr = tipo_estudio ? tipo_estudio.split(',').filter(Boolean) : [];
-
-    // ── Citas Médicas ──────────────────────────────────────────────────
-    const medConditions = ['1=1'];
-    const medParams = [];
-    if (fecha_desde) { medConditions.push('t.fecha >= ?'); medParams.push(fecha_desde); }
-    if (fecha_hasta) { medConditions.push('t.fecha <= ?'); medParams.push(fecha_hasta); }
-    if (programado_por) { medConditions.push('t.programado_por LIKE ?'); medParams.push(`%${programado_por}%`); }
-    if (doctor_id) {
-      const doctorIds = String(doctor_id).split(',').map((v) => parseInt(v, 10)).filter((n) => n > 0);
-      if (doctorIds.length === 1) {
-        medConditions.push('t.doctor_id = ?');
-        medParams.push(doctorIds[0]);
-      } else if (doctorIds.length > 1) {
-        medConditions.push(`t.doctor_id IN (${doctorIds.map(() => '?').join(',')})`);
-        medParams.push(...doctorIds);
-      }
-    }
-    if (estado) { medConditions.push('t.estado = ?'); medParams.push(estado); }
-    if (especialidad_id) { medConditions.push('e.id = ?'); medParams.push(parseInt(especialidad_id, 10)); }
-    if (entidadArr.length === 1) { medConditions.push('t.entidad = ?'); medParams.push(entidadArr[0]); }
-    else if (entidadArr.length > 1) { medConditions.push(`t.entidad IN (${entidadArr.map(() => '?').join(',')})`); medParams.push(...entidadArr); }
-    if (tipoConsultaArr.length === 1) { medConditions.push('t.tipo_consulta = ?'); medParams.push(tipoConsultaArr[0]); }
-    else if (tipoConsultaArr.length > 1) { medConditions.push(`t.tipo_consulta IN (${tipoConsultaArr.map(() => '?').join(',')})`); medParams.push(...tipoConsultaArr); }
-
-    const citasMedicas = await db.query(`
-      SELECT
-        t.id,
-        DATE_FORMAT(t.fecha, '%Y-%m-%d') AS fecha,
-        TIME_FORMAT(t.hora, '%H:%i') AS hora,
-        t.paciente_documento,
-        t.paciente_nombre,
-        t.tipo_consulta,
-        t.programado_por,
-        t.doctor_id,
-        COALESCE(u.nombre, '') AS medico_nombre,
-        COALESCE(e.nombre, u.especialidad, '') AS especialidad_nombre,
-        t.estado,
-        t.entidad,
-        'AGENDA_MEDICA' AS tipo_cita,
-        t.numero_turno
-      FROM turnos t
-      LEFT JOIN usuarios u ON u.id = t.doctor_id
-      LEFT JOIN especialidades e ON LOWER(TRIM(e.nombre)) = LOWER(TRIM(u.especialidad))
-      WHERE ${medConditions.join(' AND ')}
-      ORDER BY t.fecha DESC, t.hora DESC
-    `, medParams);
-
-    // ── Citas Electrodiagnóstico ───────────────────────────────────────
-    const electroConditions = ['ce.deleted_at IS NULL'];
-    const electroParams = [];
-    if (fecha_desde) { electroConditions.push('ce.fecha >= ?'); electroParams.push(fecha_desde); }
-    if (fecha_hasta) { electroConditions.push('ce.fecha <= ?'); electroParams.push(fecha_hasta); }
-    if (programado_por) { electroConditions.push('ce.programado_por_nombre LIKE ?'); electroParams.push(`%${programado_por}%`); }
-    if (doctor_id) { electroConditions.push('ce.equipo_id = ?'); electroParams.push(parseInt(doctor_id, 10)); }
-    if (estado) { electroConditions.push('ce.estado = ?'); electroParams.push(estado); }
-    if (entidadArr.length === 1) { electroConditions.push('ce.entidad = ?'); electroParams.push(entidadArr[0]); }
-    else if (entidadArr.length > 1) { electroConditions.push(`ce.entidad IN (${entidadArr.map(() => '?').join(',')})`); electroParams.push(...entidadArr); }
-    if (tipoEstudioArr.length === 1) { electroConditions.push('ce.estudio = ?'); electroParams.push(tipoEstudioArr[0]); }
-    else if (tipoEstudioArr.length > 1) { electroConditions.push(`ce.estudio IN (${tipoEstudioArr.map(() => '?').join(',')})`); electroParams.push(...tipoEstudioArr); }
-
-    const citasElectro = await db.query(`
-      SELECT
-        ce.id,
-        DATE_FORMAT(ce.fecha, '%Y-%m-%d') AS fecha,
-        TIME_FORMAT(ce.hora_agendamiento, '%H:%i') AS hora,
-        p.documento AS paciente_documento,
-        p.nombre AS paciente_nombre,
-        ce.estudio AS tipo_consulta,
-        ce.programado_por_nombre AS programado_por,
-        ce.equipo_id AS doctor_id,
-        '' AS medico_nombre,
-        ce.estudio AS especialidad_nombre,
-        ce.estado,
-        ce.entidad,
-        'ELECTRODIAGNOSTICO' AS tipo_cita,
-        'N/A' AS numero_turno
-      FROM citas_electro ce
-      LEFT JOIN pacientes p ON p.id = ce.paciente_id
-      WHERE ${electroConditions.join(' AND ')}
-      ORDER BY ce.fecha DESC, ce.hora_agendamiento DESC
-    `, electroParams);
-
-    let citas = [];
-    if (!tipo_cita || tipo_cita === 'TODOS') {
-      const esMedicaEstado = estado && ['PENDIENTE', 'EN_SALA', 'EN_ATENCION', 'ATENDIDO', 'NO_ASISTIO', 'CANCELADO', 'REPROGRAMADO'].includes(estado);
-      const esElectroEstado = estado && ['Programado', 'Confirmado', 'En Sala', 'En Estudio', 'Completado', 'No Asistió', 'Cancelado', 'Reprogramado'].includes(estado);
-      if (esMedicaEstado && !esElectroEstado) {
-        citas = citasMedicas;
-      } else if (esElectroEstado && !esMedicaEstado) {
-        citas = citasElectro;
-      } else {
-        citas = [...citasMedicas, ...citasElectro];
-      }
-    } else if (tipo_cita === 'AGENDA_MEDICA') {
-      citas = citasMedicas;
-    } else {
-      citas = citasElectro;
-    }
-
-    citas.sort((a, b) => {
-      const fd = (b.fecha || '').localeCompare(a.fecha || '');
-      if (fd !== 0) return fd;
-      return (b.hora || '').localeCompare(a.hora || '');
-    });
-
-    const contarEstados = (arr, estadosList) => arr.filter(c => estadosList.includes(c.estado)).length;
-    const atendidos = contarEstados(citas, ['ATENDIDO', 'Completado']);
-    const noAsistieron = contarEstados(citas, ['NO_ASISTIO', 'No Asistió']);
-    const cancelados = contarEstados(citas, ['CANCELADO', 'Cancelado']);
-    const reprogramados = contarEstados(citas, ['REPROGRAMADO', 'Reprogramado']);
-    const pendientes = contarEstados(citas, ['PENDIENTE', 'EN_SALA', 'EN_ATENCION', 'Programado', 'Confirmado', 'En Sala', 'En Estudio']);
+    const { citas, resumen, citasMedicas, citasElectro } = await queryCitasAuditoria(db, req.query);
 
     logger.info('Dashboard auditoría citas', {
       usuario: req.session && req.session.usuario ? req.session.usuario : 'Unknown',
@@ -406,24 +297,29 @@ router.get('/dashboard/citas-auditoria', requireAuth, requireRoleOrPerm(['supera
       electro: citasElectro.length
     });
 
-    res.json({
-      success: true,
-      data: citas,
-      resumen: {
-        total_citas: citas.length,
-        citas_medicas: (!tipo_cita || tipo_cita === 'TODOS' || tipo_cita === 'AGENDA_MEDICA') ? citasMedicas.length : 0,
-        citas_electrodiagnostico: (!tipo_cita || tipo_cita === 'TODOS' || tipo_cita === 'ELECTRODIAGNOSTICO') ? citasElectro.length : 0,
-        atendidos,
-        no_asistieron: noAsistieron,
-        cancelados,
-        reprogramados,
-        pendientes,
-        agendadores: [...new Set(citas.map(c => c.programado_por))].filter(p => p)
-      }
-    });
+    res.json({ success: true, data: citas, resumen });
   } catch (e) {
     logger.error('Error en dashboard auditoría', { error: e.message, stack: e.stack });
     res.status(500).json({ error: safeError(e, 'Error al cargar auditoría de citas: ') });
+  }
+});
+
+// GET /api/dashboard/citas-auditoria/export — mismos filtros + datos de recibo (solo reportes)
+router.get('/dashboard/citas-auditoria/export', requireAuth, DASHBOARD_CITAS_PERM, async (req, res) => {
+  try {
+    const { citas } = await queryCitasAuditoria(db, req.query);
+    const data = await enriquecerCitasConRecibos(db, citas);
+
+    logger.info('Dashboard auditoría citas export', {
+      usuario: req.session?.usuario || 'Unknown',
+      total_citas: data.length,
+      con_recibo: data.filter((c) => c.recibo_numero).length
+    });
+
+    res.json({ success: true, data });
+  } catch (e) {
+    logger.error('Error exportando auditoría citas', { error: e.message, stack: e.stack });
+    res.status(500).json({ error: safeError(e, 'Error al exportar auditoría de citas: ') });
   }
 });
 

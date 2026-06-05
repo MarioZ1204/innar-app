@@ -2468,13 +2468,18 @@
             <td>${escapeHtml(r.paciente_nombre)}</td>
             <td>${escapeHtml(r.fecha_estudio || '—')}</td>
             <td>${escapeHtml(r.carpeta_nombre)} <span class="sop-search-results-meta">(${escapeHtml(r.periodo)})</span></td>
-            <td><button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-open-carpeta="${r.carpeta_id}"><i data-lucide="folder-open"></i> Abrir</button></td>
+            <td><button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-open-archivo="${r.archivo_id}" title="Ver PDF en nueva pestaña"><i data-lucide="external-link"></i> Abrir</button></td>
           </tr>`).join('')}
         </tbody></table></div>
       </div>`;
     el.querySelector('[data-close-pdx-search]')?.addEventListener('click', cerrarResultadosPdx);
-    el.querySelectorAll('[data-open-carpeta]').forEach((b) => {
-      b.addEventListener('click', () => { cerrarResultadosPdx(); abrirCarpetaPdx(parseInt(b.dataset.openCarpeta, 10)); });
+    el.querySelectorAll('[data-open-archivo]').forEach((b) => {
+      b.addEventListener('click', () => {
+        const id = parseInt(b.dataset.openArchivo, 10);
+        const row = list.find((x) => x.archivo_id === id);
+        const titulo = row?.nombre_descarga || row?.paciente_nombre || row?.nombre_archivo_display || 'Reporte';
+        abrirPdfEnNavegador(`/api/soportes/pdx/archivos/${id}/ver`, titulo);
+      });
     });
     sopIcons(el);
   }
