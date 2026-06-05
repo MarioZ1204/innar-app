@@ -650,10 +650,21 @@ async function cargarEntidadesFiltroAuditoria({ force = false } = {}) {
   }
 }
 
+function valorReciboNumerico(c) {
+  if (c.recibo_valor === '' || c.recibo_valor == null) return null;
+  const n = Number(c.recibo_valor);
+  return Number.isFinite(n) ? n : null;
+}
+
+function valoresReciboSeparados(c) {
+  const n = valorReciboNumerico(c);
+  if (n == null) return { activo: null, anulado: null };
+  if (c.recibo_estado === 'ANULADO') return { activo: null, anulado: n };
+  return { activo: n, anulado: null };
+}
+
 function mapFilaReporteAuditoria(c) {
-  const valorRecibo = c.recibo_valor === '' || c.recibo_valor == null
-    ? ''
-    : Number(c.recibo_valor).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const { activo, anulado } = valoresReciboSeparados(c);
   return {
     Fecha: formatearFechaAuditoria(c.fecha),
     Hora: (c.hora || '').substring(0, 5) || '-',
@@ -667,10 +678,54 @@ function mapFilaReporteAuditoria(c) {
     'Agendado por': c.programado_por || '-',
     Estado: c.estado || '-',
     'Nº Recibo': c.recibo_numero || '',
-    'Valor recibo': valorRecibo,
+    'Valor recibo': activo,
+    'Valor anulado': anulado,
     'Estado recibo': c.recibo_estado || '',
     Observaciones: c.recibo_observaciones || ''
   };
+}
+
+/** M=Valor recibo (12), N=Valor anulado (13) — totales separados */
+function aplicarFormatoYTotalExcelAuditoria(sheet, dataRowCount) {
+  const VALOR_COL = 12;
+  const VALOR_ANULADO_COL = 13;
+  const ESTADO_CITA_COL = 10;
+  const firstDataRowExcel = 2;
+  const lastDataRowExcel = dataRowCount + 1;
+  const totalRow0 = dataRowCount + 1;
+
+  [VALOR_COL, VALOR_ANULADO_COL].forEach((col) => {
+    for (let r = 1; r <= dataRowCount; r++) {
+      const addr = window.XLSX.utils.encode_cell({ r, c: col });
+      const cell = sheet[addr];
+      if (cell && typeof cell.v === 'number') {
+        cell.t = 'n';
+        cell.z = '#,##0.00';
+      }
+    }
+  });
+
+  const labelAddr = window.XLSX.utils.encode_cell({ r: totalRow0, c: ESTADO_CITA_COL });
+  const totalActivoAddr = window.XLSX.utils.encode_cell({ r: totalRow0, c: VALOR_COL });
+  const totalAnuladoAddr = window.XLSX.utils.encode_cell({ r: totalRow0, c: VALOR_ANULADO_COL });
+  const valorColLetter = window.XLSX.utils.encode_col(VALOR_COL);
+  const valorAnuladoColLetter = window.XLSX.utils.encode_col(VALOR_ANULADO_COL);
+
+  sheet[labelAddr] = { v: 'TOTAL', t: 's' };
+  sheet[totalActivoAddr] = {
+    f: `SUM(${valorColLetter}${firstDataRowExcel}:${valorColLetter}${lastDataRowExcel})`,
+    t: 'n',
+    z: '#,##0.00'
+  };
+  sheet[totalAnuladoAddr] = {
+    f: `SUM(${valorAnuladoColLetter}${firstDataRowExcel}:${valorAnuladoColLetter}${lastDataRowExcel})`,
+    t: 'n',
+    z: '#,##0.00'
+  };
+
+  const range = window.XLSX.utils.decode_range(sheet['!ref'] || 'A1');
+  range.e.r = Math.max(range.e.r, totalRow0);
+  sheet['!ref'] = window.XLSX.utils.encode_range(range);
 }
 
 async function exportarAuditoriaCitasExcel() {
@@ -689,10 +744,11 @@ async function exportarAuditoriaCitasExcel() {
     }
     const rows = citas.map(mapFilaReporteAuditoria);
     const sheet = window.XLSX.utils.json_to_sheet(rows);
+    aplicarFormatoYTotalExcelAuditoria(sheet, rows.length);
     sheet['!cols'] = [
       { wch: 12 }, { wch: 8 }, { wch: 22 }, { wch: 28 }, { wch: 14 }, { wch: 20 },
       { wch: 22 }, { wch: 16 }, { wch: 10 }, { wch: 22 }, { wch: 14 },
-      { wch: 12 }, { wch: 14 }, { wch: 12 }, { wch: 36 }
+      { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 36 }
     ];
     const wb = window.XLSX.utils.book_new();
     window.XLSX.utils.book_append_sheet(wb, sheet, 'Auditoria');
@@ -717,11 +773,16 @@ async function exportarAuditoriaCitasPDF() {
       return;
     }
     const esc = (s) => String(s || '-').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    const fmtValor = (c) => {
-      if (c.recibo_valor === '' || c.recibo_valor == null) return '-';
-      return '$ ' + Number(c.recibo_valor).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const fmtNum = (n) => {
+      if (n == null || n === '') return '-';
+      return '$ ' + Number(n).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     };
+    let totalActivo = 0;
+    let totalAnulado = 0;
     const filas = citas.map((c) => {
+      const { activo, anulado } = valoresReciboSeparados(c);
+      if (activo != null) totalActivo += activo;
+      if (anulado != null) totalAnulado += anulado;
       const estRec = c.recibo_estado || '-';
       const estStyle = estRec === 'ANULADO'
         ? 'color:#991b1b;font-weight:600'
@@ -743,11 +804,20 @@ async function exportarAuditoriaCitasPDF() {
         <td>${esc(c.programado_por)}</td>
         <td>${esc(c.estado)}</td>
         <td>${esc(c.recibo_numero)}</td>
-        <td style="text-align:right">${fmtValor(c)}</td>
+        <td style="text-align:right">${fmtNum(activo)}</td>
+        <td style="text-align:right;color:#991b1b">${fmtNum(anulado)}</td>
         <td style="${estStyle}">${esc(estRec)}</td>
         <td>${esc(c.recibo_observaciones)}</td>
       </tr>`;
     }).join('');
+
+    const filaTotales = `<tr style="font-weight:700;background:#f0f9f7;border-top:2px solid #627371">
+      <td colspan="11" style="text-align:right;padding-right:8px">TOTAL</td>
+      <td></td>
+      <td style="text-align:right">${fmtNum(totalActivo)}</td>
+      <td style="text-align:right;color:#991b1b">${fmtNum(totalAnulado || null)}</td>
+      <td colspan="2"></td>
+    </tr>`;
 
     const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Auditoría de Citas</title>
 <style>
@@ -765,8 +835,8 @@ async function exportarAuditoriaCitasPDF() {
 <table><thead><tr>
   <th>Fecha</th><th>Hora</th><th>Médico</th><th>Paciente</th><th>Documento</th>
   <th>Especialidad</th><th>Tipo Consulta</th><th>Entidad</th><th>Tipo</th><th>Agendado por</th><th>Estado</th>
-  <th>Nº Recibo</th><th>Valor</th><th>Estado recibo</th><th>Observaciones</th>
-</tr></thead><tbody>${filas}</tbody></table>
+  <th>Nº Recibo</th><th>Valor recibo</th><th>Valor anulado</th><th>Estado recibo</th><th>Observaciones</th>
+</tr></thead><tbody>${filas}${filaTotales}</tbody></table>
 <script>window.onload=function(){window.print();}<\/script></body></html>`;
 
     const win = window.open('', '_blank', 'width=1200,height=700');
