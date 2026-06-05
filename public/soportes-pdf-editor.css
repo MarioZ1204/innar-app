@@ -171,13 +171,22 @@
   height: auto;
 }
 
+/* Resaltados entre el canvas y la capa de texto (no tapan las letras) */
+.sop-pdf-highlight-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  z-index: 1;
+  pointer-events: none;
+}
+
 /* Capa de texto PDF.js — selección y copia */
 .sop-pdf-text-layer {
   position: absolute;
   inset: 0;
   overflow: hidden;
   line-height: 1;
-  z-index: 1;
+  z-index: 2;
   text-size-adjust: none;
 }
 
@@ -214,9 +223,10 @@
 .sop-pdf-overlay {
   position: absolute;
   inset: 0;
-  z-index: 2;
+  z-index: 3;
   cursor: crosshair;
   touch-action: none;
+  background: transparent;
 }
 
 .sop-pdf-editor.is-highlight-mode .sop-pdf-overlay {
@@ -231,14 +241,13 @@
   position: absolute;
   border-radius: 2px;
   pointer-events: none;
-  mix-blend-mode: normal;
-  opacity: 0.55;
+  mix-blend-mode: multiply;
 }
 
-.sop-pdf-mark[data-color="yellow"] { background: rgba(253, 224, 71, 0.55); }
-.sop-pdf-mark[data-color="green"] { background: rgba(134, 239, 172, 0.55); }
-.sop-pdf-mark[data-color="pink"] { background: rgba(249, 168, 212, 0.55); }
-.sop-pdf-mark[data-color="blue"] { background: rgba(147, 197, 253, 0.55); }
+.sop-pdf-mark[data-color="yellow"] { background: rgba(253, 224, 71, 0.38); }
+.sop-pdf-mark[data-color="green"] { background: rgba(134, 239, 172, 0.38); }
+.sop-pdf-mark[data-color="pink"] { background: rgba(249, 168, 212, 0.38); }
+.sop-pdf-mark[data-color="blue"] { background: rgba(147, 197, 253, 0.38); }
 
 .sop-pdf-mark.is-draft {
   outline: 2px dashed rgba(15, 23, 42, 0.35);

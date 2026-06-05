@@ -64,10 +64,10 @@
 
   function markBg(color) {
     const map = {
-      yellow: 'rgba(253,224,71,0.55)',
-      green: 'rgba(134,239,172,0.55)',
-      pink: 'rgba(249,168,212,0.55)',
-      blue: 'rgba(147,197,253,0.55)'
+      yellow: 'rgba(253,224,71,0.32)',
+      green: 'rgba(134,239,172,0.32)',
+      pink: 'rgba(249,168,212,0.32)',
+      blue: 'rgba(147,197,253,0.32)'
     };
     return map[color] || map.yellow;
   }
@@ -249,9 +249,9 @@
     }
 
     function renderPendingMarks() {
-      shell.querySelectorAll('.sop-pdf-overlay').forEach((ov) => {
-        ov.querySelectorAll('.sop-pdf-mark:not(.is-draft)').forEach((n) => n.remove());
-        const pageIndex = parseInt(ov.dataset.pageIndex, 10);
+      shell.querySelectorAll('.sop-pdf-highlight-layer').forEach((hl) => {
+        hl.querySelectorAll('.sop-pdf-mark:not(.is-draft)').forEach((n) => n.remove());
+        const pageIndex = parseInt(hl.dataset.pageIndex, 10);
         pending.filter((m) => m.pageIndex === pageIndex).forEach((m) => {
           const el = document.createElement('div');
           el.className = 'sop-pdf-mark';
@@ -261,14 +261,15 @@
           el.style.width = `${m.w * 100}%`;
           el.style.height = `${m.h * 100}%`;
           el.style.background = markBg(m.color);
-          ov.appendChild(el);
+          hl.appendChild(el);
         });
       });
       updateCount();
     }
 
-    function attachOverlay(overlay, pageIndex) {
+    function attachOverlay(overlay, highlightLayer, pageIndex) {
       overlay.dataset.pageIndex = String(pageIndex);
+      highlightLayer.dataset.pageIndex = String(pageIndex);
       if (!canEdit) {
         overlay.classList.add('is-readonly');
         return;
@@ -289,7 +290,7 @@
         drag.draft.className = 'sop-pdf-mark is-draft';
         drag.draft.dataset.color = activeColor;
         drag.draft.style.background = markBg(activeColor);
-        overlay.appendChild(drag.draft);
+        highlightLayer.appendChild(drag.draft);
         overlay.setPointerCapture(ev.pointerId);
       });
 
@@ -455,6 +456,10 @@
         canvas.style.height = 'auto';
         await page.render({ canvasContext: ctx, viewport }).promise;
         wrap.appendChild(canvas);
+        const highlightLayer = document.createElement('div');
+        highlightLayer.className = 'sop-pdf-highlight-layer';
+        highlightLayer.setAttribute('aria-hidden', 'true');
+        wrap.appendChild(highlightLayer);
         try {
           await renderPageTextLayer(lib, page, viewport, wrap);
         } catch (textErr) {
@@ -462,7 +467,7 @@
         }
         const overlay = document.createElement('div');
         overlay.className = 'sop-pdf-overlay';
-        attachOverlay(overlay, i - 1);
+        attachOverlay(overlay, highlightLayer, i - 1);
         wrap.appendChild(overlay);
         if (canDeletePages) {
           const lbl = document.createElement('label');

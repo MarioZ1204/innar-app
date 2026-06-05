@@ -12,6 +12,8 @@ const HIGHLIGHT_COLORS = {
 };
 
 const MAX_HIGHLIGHTS_PER_REQUEST = 80;
+/** Opacidad al guardar en PDF: baja para que el texto siga legible. */
+const HIGHLIGHT_PDF_OPACITY = 0.24;
 
 function clamp01(n) {
   const x = Number(n);
@@ -72,7 +74,7 @@ async function applyHighlightsToPdfBytes(pdfBytes, highlights) {
       width: rectW,
       height: rectH,
       color: rgb(h.color.r, h.color.g, h.color.b),
-      opacity: 0.38,
+      opacity: HIGHLIGHT_PDF_OPACITY,
       borderWidth: 0
     });
   }
@@ -83,6 +85,7 @@ async function applyHighlightsToPdfBytes(pdfBytes, highlights) {
 
 module.exports = {
   HIGHLIGHT_COLORS,
+  HIGHLIGHT_PDF_OPACITY,
   MAX_HIGHLIGHTS_PER_REQUEST,
   sanitizeHighlightsList,
   applyHighlightsToPdfBytes
