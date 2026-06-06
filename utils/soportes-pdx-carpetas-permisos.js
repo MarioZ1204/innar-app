@@ -68,6 +68,17 @@ function idsCarpetasPermitidas(permisos) {
     .filter((id) => Number.isFinite(id) && id > 0);
 }
 
+/** Fila de carpeta (`id`) o de archivo PDX (`carpeta_id` + `id` del archivo). */
+function carpetaIdParaPermiso(row) {
+  if (!row) return null;
+  if (row.carpeta_id != null && row.carpeta_id !== '') {
+    const carpetaId = Number(row.carpeta_id);
+    if (Number.isFinite(carpetaId) && carpetaId > 0) return carpetaId;
+  }
+  const id = Number(row.id);
+  return Number.isFinite(id) && id > 0 ? id : null;
+}
+
 /**
  * ¿El usuario puede ver esta carpeta PDX?
  * - superadmin / admin sin lista: todas
@@ -88,8 +99,10 @@ function usuarioVeCarpetaPdx(session, carpetaRow) {
   if (tienePermisoTodasCarpetas(efectivos)) return true;
 
   const ids = idsCarpetasPermitidas(efectivos);
+  const carpetaId = carpetaIdParaPermiso(carpetaRow);
+  if (!carpetaId) return false;
   if (ids.length > 0) {
-    return ids.includes(Number(carpetaRow.id));
+    return ids.includes(carpetaId);
   }
 
   if (permisosPersonalizadosSesion(session)) return false;
@@ -112,6 +125,7 @@ module.exports = {
   esPermisoCarpetaPdx,
   esPermisoPdxValido,
   carpetaIdDesdePermiso,
+  carpetaIdParaPermiso,
   permisosEfectivosSesion,
   usuarioVeCarpetaPdx,
   tienePermisoTodasCarpetas,

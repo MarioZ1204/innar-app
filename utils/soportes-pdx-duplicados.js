@@ -1,9 +1,20 @@
 /**
  * Detección de duplicados PDX y borrado seguro del PDF en disco.
  */
-const { detectarTemaCarpeta } = require('./soportes-temas');
+const { detectarTemaCarpeta, esTemaConsultaMedica } = require('./soportes-temas');
 
 const TEMAS_CON_DOCUMENTO = ['ordenes', 'comprobantes', 'consentimientos'];
+
+/** Consultas médicas: duplicado solo si coinciden paciente + fecha + especialidad (no por nombre de archivo). */
+function esDuplicadoConsultaMedica(meta, existente) {
+  const norm = String(meta?.paciente_nombre_norm || '').trim();
+  const fecha = String(meta?.fecha_estudio || '').trim();
+  const estudio = String(meta?.estudio_texto || '').trim();
+  if (!norm || !fecha || !estudio) return false;
+  return norm === String(existente?.paciente_nombre_norm || '').trim()
+    && fecha === String(existente?.fecha_estudio || '').trim()
+    && estudio === String(existente?.estudio_texto || '').trim();
+}
 
 function mensajeDuplicadoPdx(dup) {
   const row = dup?.row || {};
@@ -11,16 +22,22 @@ function mensajeDuplicadoPdx(dup) {
   return `Ya existe un archivo con los mismos datos en esta carpeta (${nombre}). No se permiten duplicados.`;
 }
 
-async function buscarDuplicadoPdxEnCarpeta(db, carpetaId, meta, carpeta = null) {
+async function buscarDuplicadoPdxEnCarpeta(db, carpetaId, meta, carpeta = null, opts = {}) {
   if (!carpetaId || !meta) return null;
   const tema = detectarTemaCarpeta(carpeta?.nombre_display || '');
+  const excludeId = opts.excludeId != null ? parseInt(opts.excludeId, 10) : null;
+  const consultaMedica = esTemaConsultaMedica(tema);
 
-  if (meta.nombre_archivo_display) {
-    const byDisplay = await db.query(
-      `SELECT id, paciente_nombre, nombre_archivo_display, ruta_relativa
-       FROM sop_pdx_archivos WHERE carpeta_id = ? AND nombre_archivo_display = ? LIMIT 1`,
-      [carpetaId, meta.nombre_archivo_display]
-    );
+  if (!consultaMedica && meta.nombre_archivo_display) {
+    const paramsDisplay = [carpetaId, meta.nombre_archivo_display];
+    let sqlDisplay = `SELECT id, paciente_nombre, nombre_archivo_display, ruta_relativa, paciente_nombre_norm, fecha_estudio, estudio_texto
+       FROM sop_pdx_archivos WHERE carpeta_id = ? AND nombre_archivo_display = ?`;
+    if (excludeId) {
+      sqlDisplay += ' AND id <> ?';
+      paramsDisplay.push(excludeId);
+    }
+    sqlDisplay += ' LIMIT 1';
+    const byDisplay = await db.query(sqlDisplay, paramsDisplay);
     if (byDisplay.length) return { row: byDisplay[0], motivo: 'nombre_display' };
   }
 
@@ -30,7 +47,7 @@ async function buscarDuplicadoPdxEnCarpeta(db, carpetaId, meta, carpeta = null) 
   if (!norm || !fecha || !estudio) return null;
 
   const params = [carpetaId, norm, fecha, estudio];
-  let sql = `SELECT id, paciente_nombre, nombre_archivo_display, ruta_relativa
+  let sql = `SELECT id, paciente_nombre, nombre_archivo_display, ruta_relativa, paciente_nombre_norm, fecha_estudio, estudio_texto
     FROM sop_pdx_archivos
     WHERE carpeta_id = ? AND paciente_nombre_norm = ? AND fecha_estudio = ? AND estudio_texto = ?`;
 
@@ -39,6 +56,11 @@ async function buscarDuplicadoPdxEnCarpeta(db, carpetaId, meta, carpeta = null) 
     if (!doc) return null;
     sql += ' AND paciente_documento = ?';
     params.push(doc);
+  }
+
+  if (excludeId) {
+    sql += ' AND id <> ?';
+    params.push(excludeId);
   }
 
   sql += ' LIMIT 1';
@@ -61,6 +83,7 @@ async function cuentaReferenciasRutaPdx(db, carpetaId, rutaRelativa, excludeId =
 
 module.exports = {
   mensajeDuplicadoPdx,
+  esDuplicadoConsultaMedica,
   buscarDuplicadoPdxEnCarpeta,
   cuentaReferenciasRutaPdx
 };

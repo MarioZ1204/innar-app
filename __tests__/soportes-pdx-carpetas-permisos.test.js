@@ -1,6 +1,7 @@
 const {
   PERMISO_CARPETAS_TODAS,
   permisoKeyCarpetaPdx,
+  carpetaIdParaPermiso,
   usuarioVeCarpetaPdx,
   esPermisoPdxValido
 } = require('../utils/soportes-pdx-carpetas-permisos');
@@ -27,6 +28,17 @@ describe('soportes-pdx-carpetas-permisos', () => {
     };
     expect(usuarioVeCarpetaPdx(session, carpeta)).toBe(true);
     expect(usuarioVeCarpetaPdx(session, { id: 99 })).toBe(false);
+  });
+
+  test('fila de archivo usa carpeta_id para permiso (no id del archivo)', () => {
+    const session = {
+      rol: 'auxiliar_recepcion',
+      permisos: ['modulo.reportes_pdx', 'soportes.pdx.editar', permisoKeyCarpetaPdx(12)]
+    };
+    const archivo = { id: 220, carpeta_id: 12 };
+    expect(carpetaIdParaPermiso(archivo)).toBe(12);
+    expect(usuarioVeCarpetaPdx(session, archivo)).toBe(true);
+    expect(usuarioVeCarpetaPdx(session, { id: 220, carpeta_id: 99 })).toBe(false);
   });
 
   test('permiso personalizado todas las carpetas', () => {
