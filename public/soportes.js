@@ -877,14 +877,20 @@
 
   async function descargarZipArmado(apiPath, fallbackFilename, triggerBtn = null) {
     if (triggerBtn) triggerBtn.disabled = true;
+    sopToast('Generando ZIP…', 'info');
     try {
       const res = await apiFetch(apiPath);
-      if (!res.ok) {
+      const ct = (res.headers.get('Content-Type') || '').toLowerCase();
+      if (!res.ok || ct.includes('application/json')) {
         const data = await res.json().catch(() => ({}));
         sopToast(data.error || 'No se pudo descargar el ZIP', 'error');
         return;
       }
       const blob = await res.blob();
+      if (!blob.size) {
+        sopToast('El ZIP está vacío o no se generó correctamente', 'error');
+        return;
+      }
       const filename = parseZipFilenameFromResponse(res, fallbackFilename);
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');

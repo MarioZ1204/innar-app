@@ -7,6 +7,12 @@ const archiver = require('archiver');
 const db = require('./db-mysql');
 const { resolveStoragePath } = require('./soportes-storage');
 
+const ZIP_COMPRESSION = 6;
+const RIPS_FOLDER_PLACEHOLDER = Buffer.from(
+  'Carpeta de factura para archivos RIPS (JSON/XML).\r\n',
+  'utf8'
+);
+
 function zipArchiveSegment(name) {
   return String(name || 'sin-nombre')
     .replace(/[<>:"/\\|?*\x00-\x1f]/g, '_')
@@ -16,57 +22,69 @@ function zipArchiveSegment(name) {
 }
 
 function facturaFolderName(exp) {
-  const cod = String(exp.codigo || '').trim();
-  if (cod) return zipArchiveSegment(cod);
   const num = parseInt(exp.numero_factura, 10);
   if (num > 0) return zipArchiveSegment(`FE${num}`);
+  const cod = String(exp.codigo || '').trim();
+  if (cod) return zipArchiveSegment(cod);
   return zipArchiveSegment(`FE${exp.id}`);
 }
 
-async function appendSoportesArchivosToZip(archive, expedienteId, zipPrefix, usedPaths, diaNombre) {
-  let added = 0;
-  const archivos = await db.query('SELECT * FROM sop_exp_archivos WHERE expediente_id = ?', [expedienteId]);
-  for (const a of archivos) {
-    const fp = resolveStoragePath(path.join('soportes', a.ruta_relativa));
-    if (!fp || !fs.existsSync(fp)) continue;
-    let entryName = zipPrefix ? `${zipPrefix}/${a.nombre_archivo}` : a.nombre_archivo;
-    if (usedPaths) {
-      if (usedPaths.has(entryName)) {
-        const diaSeg = zipArchiveSegment(diaNombre || 'dia');
-        entryName = zipPrefix
-          ? `${zipPrefix}/${diaSeg}_${a.nombre_archivo}`
-          : `${diaSeg}_${a.nombre_archivo}`;
-      }
-      usedPaths.add(entryName);
-    }
-    archive.file(fp, { name: entryName });
-    added += 1;
-  }
-  return added;
+function resolveArchivoAbsoluto(row) {
+  const rel = String(row.ruta_relativa || '').replace(/\\/g, '/');
+  if (!rel) return null;
+  const joined = rel.startsWith('soportes/') ? rel : path.join('soportes', rel).replace(/\\/g, '/');
+  return resolveStoragePath(joined);
 }
 
-async function appendRipsArchivosToZip(archive, expedienteId, zipPrefix, usedPaths, diaNombre) {
-  let added = 0;
+function uniqueEntryName(usedPaths, zipPrefix, fileName, diaNombre) {
+  let entryName = zipPrefix ? `${zipPrefix}/${fileName}` : fileName;
+  if (!usedPaths) return entryName;
+  if (!usedPaths.has(entryName)) {
+    usedPaths.add(entryName);
+    return entryName;
+  }
+  const diaSeg = zipArchiveSegment(diaNombre || 'dia');
+  entryName = zipPrefix ? `${zipPrefix}/${diaSeg}_${fileName}` : `${diaSeg}_${fileName}`;
+  usedPaths.add(entryName);
+  return entryName;
+}
+
+async function listSoportesArchivoEntries(expedienteId, zipPrefix, usedPaths, diaNombre) {
+  const entries = [];
+  const archivos = await db.query('SELECT * FROM sop_exp_archivos WHERE expediente_id = ?', [expedienteId]);
+  for (const a of archivos) {
+    const fp = resolveArchivoAbsoluto(a);
+    if (!fp || !fs.existsSync(fp)) continue;
+    entries.push({
+      absPath: fp,
+      name: uniqueEntryName(usedPaths, zipPrefix, a.nombre_archivo, diaNombre)
+    });
+  }
+  return entries;
+}
+
+async function listRipsArchivoEntries(expedienteId, zipPrefix, usedPaths, diaNombre) {
+  const entries = [];
   try {
     const ripsArchivos = await db.query('SELECT * FROM sop_rips_archivos WHERE expediente_id = ?', [expedienteId]);
     for (const a of ripsArchivos) {
-      const fp = resolveStoragePath(path.join('soportes', a.ruta_relativa));
+      const fp = resolveArchivoAbsoluto(a);
       if (!fp || !fs.existsSync(fp)) continue;
-      let entryName = zipPrefix ? `${zipPrefix}/${a.nombre_archivo}` : a.nombre_archivo;
-      if (usedPaths) {
-        if (usedPaths.has(entryName)) {
-          const diaSeg = zipArchiveSegment(diaNombre || 'dia');
-          entryName = zipPrefix
-            ? `${zipPrefix}/${diaSeg}_${a.nombre_archivo}`
-            : `${diaSeg}_${a.nombre_archivo}`;
-        }
-        usedPaths.add(entryName);
-      }
-      archive.file(fp, { name: entryName });
-      added += 1;
+      entries.push({
+        absPath: fp,
+        name: uniqueEntryName(usedPaths, zipPrefix, a.nombre_archivo, diaNombre)
+      });
     }
   } catch (_) { /* tabla RIPS opcional */ }
-  return added;
+  return entries;
+}
+
+function ensureRipsFacturaFolder(entries, usedPaths, codSeg, diaNombre) {
+  const prefix = `RIPS/${codSeg}`;
+  const marker = `${prefix}/_CARPETA_FACTURA.txt`;
+  if (usedPaths && usedPaths.has(marker)) return;
+  if (usedPaths) usedPaths.add(marker);
+  entries.push({ placeholder: true, name: marker, content: RIPS_FOLDER_PLACEHOLDER });
 }
 
 async function queryExpedientesDia(diaId) {
@@ -81,85 +99,126 @@ async function queryExpedientesDia(diaId) {
   );
 }
 
-async function appendDiaEstructuradoToZip(archive, diaId, usedPaths = null) {
-  const expedientes = await queryExpedientesDia(diaId);
-  let total = 0;
+function groupExpedientesPorFactura(expedientes) {
+  const grupos = new Map();
   for (const exp of expedientes) {
-    const codSeg = facturaFolderName(exp);
-    if (exp.contenedor_tipo === 'rips') {
-      total += await appendRipsArchivosToZip(
-        archive,
-        exp.id,
-        `RIPS/${codSeg}`,
-        usedPaths,
-        exp.dia_nombre
-      );
-    } else {
-      total += await appendSoportesArchivosToZip(
-        archive,
-        exp.id,
-        `SOPORTES/${codSeg}`,
-        usedPaths,
-        exp.dia_nombre
-      );
+    const cod = facturaFolderName(exp);
+    if (!grupos.has(cod)) {
+      grupos.set(cod, { cod, soportes: [], rips: [], diaNombre: exp.dia_nombre });
     }
+    const g = grupos.get(cod);
+    if (exp.contenedor_tipo === 'rips') g.rips.push(exp);
+    else g.soportes.push(exp);
   }
-  return total;
+  return grupos;
 }
 
-function createZipBuffer(buildFn) {
+async function collectDiaZipEntries(diaId, usedPaths = null) {
+  const expedientes = await queryExpedientesDia(diaId);
+  const grupos = groupExpedientesPorFactura(expedientes);
+  const entries = [];
+
+  for (const [, g] of grupos) {
+    const codSeg = g.cod;
+    const sopPrefix = `SOPORTES/${codSeg}`;
+    const ripsPrefix = `RIPS/${codSeg}`;
+
+    for (const exp of g.soportes) {
+      const part = await listSoportesArchivoEntries(exp.id, sopPrefix, usedPaths, g.diaNombre);
+      entries.push(...part);
+    }
+
+    if (g.soportes.length) {
+      ensureRipsFacturaFolder(entries, usedPaths, codSeg, g.diaNombre);
+    }
+
+    for (const exp of g.rips) {
+      const part = await listRipsArchivoEntries(exp.id, ripsPrefix, usedPaths, g.diaNombre);
+      entries.push(...part);
+      if (part.length && !g.soportes.length) {
+        ensureRipsFacturaFolder(entries, usedPaths, codSeg, g.diaNombre);
+      }
+    }
+  }
+
+  return entries;
+}
+
+function pipeArchiveToResponse(res, entries) {
   return new Promise((resolve, reject) => {
-    const archive = archiver('zip', { zlib: { level: 9 } });
+    const archive = archiver('zip', { zlib: { level: ZIP_COMPRESSION } });
+    let settled = false;
+    const done = (err) => {
+      if (settled) return;
+      settled = true;
+      if (err) reject(err);
+      else resolve(entries.length);
+    };
+    archive.on('error', done);
+    res.on('error', done);
+    res.on('finish', () => done());
+    archive.pipe(res);
+    for (const e of entries) {
+      if (e.placeholder) {
+        archive.append(e.content || Buffer.alloc(0), { name: e.name });
+      } else {
+        archive.file(e.absPath, { name: e.name });
+      }
+    }
+    archive.finalize();
+  });
+}
+
+function createZipBuffer(entries) {
+  return new Promise((resolve, reject) => {
+    if (!entries.length) {
+      reject(new Error('ZIP vacío'));
+      return;
+    }
+    const archive = archiver('zip', { zlib: { level: ZIP_COMPRESSION } });
     const chunks = [];
     archive.on('data', (chunk) => chunks.push(chunk));
     archive.on('end', () => resolve(Buffer.concat(chunks)));
     archive.on('error', reject);
-    Promise.resolve(buildFn(archive))
-      .then((count) => {
-        if (!count) {
-          reject(new Error('ZIP vacío'));
-          return;
-        }
-        archive.finalize();
-      })
-      .catch(reject);
+    for (const e of entries) {
+      if (e.placeholder) {
+        archive.append(e.content || Buffer.alloc(0), { name: e.name });
+      } else {
+        archive.file(e.absPath, { name: e.name });
+      }
+    }
+    archive.finalize();
   });
 }
 
 async function buildDiaZipBuffer(diaId) {
-  return createZipBuffer((archive) => appendDiaEstructuradoToZip(archive, diaId));
+  const entries = await collectDiaZipEntries(diaId);
+  return createZipBuffer(entries);
 }
 
-async function buildUnifiedPeriodZipBuffer(periodoId) {
+async function collectPeriodUnifiedEntries(periodoId) {
   const usedPaths = new Set();
-  return createZipBuffer(async (archive) => {
-    const dias = await db.query(
-      'SELECT id FROM sop_dias WHERE periodo_id = ? ORDER BY nombre_display ASC',
-      [periodoId]
-    );
-    let total = 0;
-    for (const dia of dias) {
-      total += await appendDiaEstructuradoToZip(archive, dia.id, usedPaths);
-    }
-    return total;
-  });
+  const dias = await db.query(
+    'SELECT id FROM sop_dias WHERE periodo_id = ? ORDER BY nombre_display ASC',
+    [periodoId]
+  );
+  const entries = [];
+  for (const dia of dias) {
+    const part = await collectDiaZipEntries(dia.id, usedPaths);
+    entries.push(...part);
+  }
+  return entries;
 }
 
 async function streamDiaZip(res, dia) {
+  const entries = await collectDiaZipEntries(dia.id);
+  if (!entries.length) {
+    throw new Error('La carpeta no tiene archivos para descargar');
+  }
   const zipLabel = zipArchiveSegment(dia.nombre_display || `dia-${dia.id}`);
   res.setHeader('Content-Type', 'application/zip');
   res.setHeader('Content-Disposition', `attachment; filename="${zipLabel}.zip"`);
-  const archive = archiver('zip', { zlib: { level: 9 } });
-  archive.on('error', (err) => { throw err; });
-  archive.pipe(res);
-  const total = await appendDiaEstructuradoToZip(archive, dia.id);
-  if (!total) {
-    if (!res.headersSent) throw new Error('La carpeta no tiene archivos para descargar');
-    archive.abort();
-    return 0;
-  }
-  archive.finalize();
-  return total;
+  await pipeArchiveToResponse(res, entries);
 }
 
 async function streamPeriodPaqueteZip(res, periodo) {
@@ -170,73 +229,62 @@ async function streamPeriodPaqueteZip(res, periodo) {
   );
   if (!dias.length) throw new Error('El mes no tiene carpetas de día');
 
+  const innerBuffers = [];
+  for (const dia of dias) {
+    try {
+      const entries = await collectDiaZipEntries(dia.id);
+      if (!entries.length) continue;
+      const buf = await createZipBuffer(entries);
+      const diaSeg = zipArchiveSegment(dia.nombre_display || `dia-${dia.id}`);
+      innerBuffers.push({ name: `${diaSeg}.zip`, buf });
+    } catch (_) { /* sin archivos en este día */ }
+  }
+
+  const unifiedEntries = await collectPeriodUnifiedEntries(periodoId);
+  if (unifiedEntries.length) {
+    const zipLabel = zipArchiveSegment(periodo.etiqueta || periodo.periodo || `periodo-${periodoId}`);
+    const unifiedBuf = await createZipBuffer(unifiedEntries);
+    innerBuffers.push({ name: `${zipLabel}-unificado.zip`, buf: unifiedBuf });
+  }
+
+  if (!innerBuffers.length) {
+    throw new Error('No hay archivos para descargar en este mes');
+  }
+
   const zipLabel = zipArchiveSegment(periodo.etiqueta || periodo.periodo || `periodo-${periodoId}`);
   res.setHeader('Content-Type', 'application/zip');
   res.setHeader('Content-Disposition', `attachment; filename="${zipLabel}-paquete.zip"`);
-  const archive = archiver('zip', { zlib: { level: 9 } });
-  archive.on('error', (err) => { throw err; });
-  archive.pipe(res);
 
-  let anyFile = false;
-
-  for (const dia of dias) {
-    try {
-      const buf = await buildDiaZipBuffer(dia.id);
-      const diaSeg = zipArchiveSegment(dia.nombre_display || `dia-${dia.id}`);
-      archive.append(buf, { name: `${diaSeg}.zip` });
-      anyFile = true;
-    } catch (_) { /* carpeta sin archivos — omitir */ }
-  }
-
-  try {
-    const unifiedBuf = await buildUnifiedPeriodZipBuffer(periodoId);
-    archive.append(unifiedBuf, { name: `${zipLabel}-unificado.zip` });
-    anyFile = true;
-  } catch (_) { /* sin archivos unificables */ }
-
-  if (!anyFile) {
-    if (!res.headersSent) throw new Error('No hay archivos para descargar en este mes');
-    archive.abort();
-    return 0;
-  }
-
-  archive.finalize();
-  return 1;
+  await new Promise((resolve, reject) => {
+    const archive = archiver('zip', { zlib: { level: ZIP_COMPRESSION } });
+    archive.on('error', reject);
+    res.on('finish', resolve);
+    res.on('error', reject);
+    archive.pipe(res);
+    for (const item of innerBuffers) {
+      archive.append(item.buf, { name: item.name });
+    }
+    archive.finalize();
+  });
 }
 
 async function streamUnifiedPeriodZip(res, periodo) {
+  const entries = await collectPeriodUnifiedEntries(periodo.id);
+  if (!entries.length) {
+    throw new Error('No hay archivos para el ZIP unificado');
+  }
   const zipLabel = zipArchiveSegment(periodo.etiqueta || periodo.periodo || `periodo-${periodo.id}`);
   res.setHeader('Content-Type', 'application/zip');
   res.setHeader('Content-Disposition', `attachment; filename="${zipLabel}-unificado.zip"`);
-  const archive = archiver('zip', { zlib: { level: 9 } });
-  archive.on('error', (err) => { throw err; });
-  archive.pipe(res);
-  const usedPaths = new Set();
-  const dias = await db.query(
-    'SELECT id FROM sop_dias WHERE periodo_id = ? ORDER BY nombre_display ASC',
-    [periodo.id]
-  );
-  let total = 0;
-  for (const dia of dias) {
-    total += await appendDiaEstructuradoToZip(archive, dia.id, usedPaths);
-  }
-  if (!total) {
-    if (!res.headersSent) throw new Error('No hay archivos para el ZIP unificado');
-    archive.abort();
-    return 0;
-  }
-  archive.finalize();
-  return total;
+  await pipeArchiveToResponse(res, entries);
 }
 
 module.exports = {
   zipArchiveSegment,
   facturaFolderName,
-  appendSoportesArchivosToZip,
-  appendRipsArchivosToZip,
-  appendDiaEstructuradoToZip,
+  collectDiaZipEntries,
+  collectPeriodUnifiedEntries,
   buildDiaZipBuffer,
-  buildUnifiedPeriodZipBuffer,
   streamDiaZip,
   streamPeriodPaqueteZip,
   streamUnifiedPeriodZip

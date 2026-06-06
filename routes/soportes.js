@@ -74,10 +74,9 @@ const {
 } = require('../utils/soportes-pdx-duplicados');
 const { enrichExpedientesLista } = require('../utils/soportes-expediente-progreso');
 const { actualizarDia, eliminarDia } = require('../utils/soportes-dia-admin');
+const { resolveArchivoAbsoluto } = require('../utils/soportes-exp-archivo');
 const {
   zipArchiveSegment,
-  appendSoportesArchivosToZip,
-  appendRipsArchivosToZip,
   streamDiaZip,
   streamPeriodPaqueteZip,
   streamUnifiedPeriodZip
@@ -2565,13 +2564,6 @@ router.post(
   }
 );
 
-async function appendExpedienteArchivosToZip(archive, expedienteId, zipPrefix) {
-  let added = 0;
-  added += await appendSoportesArchivosToZip(archive, expedienteId, zipPrefix);
-  added += await appendRipsArchivosToZip(archive, expedienteId, zipPrefix);
-  return added;
-}
-
 router.get('/soportes/armado/dias/:id/zip', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'soportes.descargar_zip'), async (req, res) => {
   try {
     const diaId = parseInt(req.params.id, 10);
@@ -2638,28 +2630,44 @@ router.get('/soportes/armado/periodos/:id/zip-facturados', requireAuth, requireR
     if (!expedientes.length) {
       return res.status(404).json({ error: 'No hay carpetas FE en días marcados como Facturados en este mes' });
     }
-    const zipLabel = zipArchiveSegment(periodo.etiqueta || periodo.periodo || `periodo-${periodoId}`);
-    res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Disposition', `attachment; filename="${zipLabel}-facturados.zip"`);
-    const archive = archiver('zip', { zlib: { level: 9 } });
-    archive.on('error', (err) => { throw err; });
-    archive.pipe(res);
-    let totalFiles = 0;
+    const fileJobs = [];
     for (const exp of expedientes) {
       const diaSeg = zipArchiveSegment(exp.dia_nombre);
       const tipoSeg = exp.contenedor_tipo === 'rips' ? 'RIPS' : 'SOPORTES';
       const codSeg = zipArchiveSegment(exp.codigo);
       const prefix = `${diaSeg}/${tipoSeg}/${codSeg}`;
-      totalFiles += await appendExpedienteArchivosToZip(archive, exp.id, prefix);
-    }
-    if (totalFiles === 0) {
-      if (!res.headersSent) {
-        return res.status(404).json({ error: 'Las carpetas facturadas no tienen archivos para descargar' });
+      const archivos = await db.query('SELECT * FROM sop_exp_archivos WHERE expediente_id = ?', [exp.id]);
+      for (const a of archivos) {
+        const fp = resolveArchivoAbsoluto(a);
+        if (fp && fs.existsSync(fp)) {
+          fileJobs.push({ fp, name: `${prefix}/${a.nombre_archivo}` });
+        }
       }
-      archive.abort();
-      return;
+      try {
+        const ripsArchivos = await db.query('SELECT * FROM sop_rips_archivos WHERE expediente_id = ?', [exp.id]);
+        for (const a of ripsArchivos) {
+          const fp = resolveArchivoAbsoluto(a);
+          if (fp && fs.existsSync(fp)) {
+            fileJobs.push({ fp, name: `${prefix}/${a.nombre_archivo}` });
+          }
+        }
+      } catch (_) { /* ignore */ }
     }
-    archive.finalize();
+    if (!fileJobs.length) {
+      return res.status(404).json({ error: 'Las carpetas facturadas no tienen archivos para descargar' });
+    }
+    const zipLabel = zipArchiveSegment(periodo.etiqueta || periodo.periodo || `periodo-${periodoId}`);
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${zipLabel}-facturados.zip"`);
+    await new Promise((resolve, reject) => {
+      const archive = archiver('zip', { zlib: { level: 6 } });
+      archive.on('error', reject);
+      res.on('finish', resolve);
+      res.on('error', reject);
+      archive.pipe(res);
+      for (const job of fileJobs) archive.file(job.fp, { name: job.name });
+      archive.finalize();
+    });
   } catch (e) {
     if (!res.headersSent) res.status(500).json({ error: safeError(e) });
   }
@@ -2669,18 +2677,33 @@ router.get('/soportes/armado/expedientes/:id/zip', requireAuth, requireRoleOrPer
   try {
     const exp = await resolveExpedienteContext(req.params.id);
     if (!exp) return res.status(404).json({ error: 'No encontrado' });
+    const fileJobs = [];
+    const archivos = await db.query('SELECT * FROM sop_exp_archivos WHERE expediente_id = ?', [req.params.id]);
+    for (const a of archivos) {
+      const fp = resolveArchivoAbsoluto(a);
+      if (fp && fs.existsSync(fp)) fileJobs.push({ fp, name: a.nombre_archivo });
+    }
+    try {
+      const ripsArchivos = await db.query('SELECT * FROM sop_rips_archivos WHERE expediente_id = ?', [req.params.id]);
+      for (const a of ripsArchivos) {
+        const fp = resolveArchivoAbsoluto(a);
+        if (fp && fs.existsSync(fp)) fileJobs.push({ fp, name: a.nombre_archivo });
+      }
+    } catch (_) { /* ignore */ }
+    if (!fileJobs.length) {
+      return res.status(404).json({ error: 'El expediente no tiene archivos para descargar' });
+    }
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Disposition', `attachment; filename="${exp.codigo}.zip"`);
-    const archive = archiver('zip', { zlib: { level: 9 } });
-    archive.on('error', (err) => { throw err; });
-    archive.pipe(res);
-    const added = await appendExpedienteArchivosToZip(archive, req.params.id, '');
-    if (!added) {
-      if (!res.headersSent) return res.status(404).json({ error: 'El expediente no tiene archivos para descargar' });
-      archive.abort();
-      return;
-    }
-    archive.finalize();
+    await new Promise((resolve, reject) => {
+      const archive = archiver('zip', { zlib: { level: 6 } });
+      archive.on('error', reject);
+      res.on('finish', resolve);
+      res.on('error', reject);
+      archive.pipe(res);
+      for (const job of fileJobs) archive.file(job.fp, { name: job.name });
+      archive.finalize();
+    });
   } catch (e) {
     if (!res.headersSent) res.status(500).json({ error: safeError(e) });
   }
