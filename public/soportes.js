@@ -862,13 +862,122 @@
     });
   }
 
+  function parseZipFilenameFromResponse(res, fallback) {
+    let filename = fallback || 'descarga.zip';
+    const cd = res.headers.get('Content-Disposition') || '';
+    const utf8Match = cd.match(/filename\*=UTF-8''([^;\s]+)/i);
+    if (utf8Match) {
+      try { filename = decodeURIComponent(utf8Match[1]); } catch (_) { /* ignore */ }
+    } else {
+      const plainMatch = cd.match(/filename="([^"]+)"/i) || cd.match(/filename=([^;\s]+)/i);
+      if (plainMatch) filename = plainMatch[1].trim();
+    }
+    return filename;
+  }
+
+  async function descargarZipArmado(apiPath, fallbackFilename, triggerBtn = null) {
+    if (triggerBtn) triggerBtn.disabled = true;
+    try {
+      const res = await apiFetch(apiPath);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        sopToast(data.error || 'No se pudo descargar el ZIP', 'error');
+        return;
+      }
+      const blob = await res.blob();
+      const filename = parseZipFilenameFromResponse(res, fallbackFilename);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.rel = 'noopener';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      sopToast('ZIP descargado', 'success');
+    } catch (e) {
+      sopToast(e.message || 'Error al descargar', 'error');
+    } finally {
+      if (triggerBtn) triggerBtn.disabled = false;
+    }
+  }
+
+  function htmlArmZipBtn({ apiPath, fallbackName, title, icon = 'archive', label = '', variant = 'ghost' } = {}) {
+    if (!apiPath || !sopPerm('soportes.descargar_zip')) return '';
+    const cls = variant === 'teal' ? 'sop-btn sop-btn-teal sop-btn-sm' : 'sop-btn sop-btn-ghost sop-btn-sm';
+    return `<button type="button" class="${cls}" data-arm-zip="${apiPath}" data-arm-zip-fallback="${escapeHtml(fallbackName || 'descarga.zip')}" title="${escapeHtml(title)}"><i data-lucide="${icon}"></i>${label}</button>`;
+  }
+
+  function bindArmZipButtons(root) {
+    const scope = root || document;
+    scope.querySelectorAll('[data-arm-zip]').forEach((btn) => {
+      if (btn.dataset.armZipBound) return;
+      btn.dataset.armZipBound = '1';
+      btn.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        void descargarZipArmado(btn.dataset.armZip, btn.dataset.armZipFallback, btn);
+      });
+    });
+  }
+
   function htmlArmZipFacturadosBtn() {
     if (!armState.periodoId || !sopPerm('soportes.descargar_zip')) return '';
     const diasFact = armState.dias.filter((d) => d.estado_facturacion === 'facturados');
     if (!diasFact.length) return '';
     const feCount = diasFact.reduce((s, d) => s + (d.expedientes_count || 0), 0);
     const title = `Descargar ZIP de ${diasFact.length} carpeta(s) de día facturada(s) y ${feCount} expediente(s) FE`;
-    return `<a class="sop-btn sop-btn-ghost sop-btn-sm" href="/api/soportes/armado/periodos/${armState.periodoId}/zip-facturados" title="${escapeHtml(title)}" download><i data-lucide="archive"></i> ZIP facturados</a>`;
+    const fallback = `${armState.periodoLabel || 'mes'}-facturados.zip`;
+    return htmlArmZipBtn({
+      apiPath: `/api/soportes/armado/periodos/${armState.periodoId}/zip-facturados`,
+      fallbackName: fallback,
+      title,
+      icon: 'archive',
+      label: ' ZIP facturados'
+    });
+  }
+
+  function htmlArmZipPaqueteBtn() {
+    if (!armState.periodoId || !armState.dias.length || !sopPerm('soportes.descargar_zip')) return '';
+    const label = escapeHtml(armState.periodoLabel || 'Mes');
+    const title = `Paquete ZIP: un archivo por cada carpeta de día (${armState.dias.length}) más un ZIP unificado con RIPS y SOPORTES de todo el mes`;
+    return htmlArmZipBtn({
+      apiPath: `/api/soportes/armado/periodos/${armState.periodoId}/zip-paquete`,
+      fallbackName: `${armState.periodoLabel || 'mes'}-paquete.zip`,
+      title,
+      icon: 'package',
+      label: ` Paquete ${label}`,
+      variant: 'teal'
+    });
+  }
+
+  function htmlArmZipUnificadoBtn() {
+    if (!armState.periodoId || !armState.dias.length || !sopPerm('soportes.descargar_zip')) return '';
+    const label = escapeHtml(armState.periodoLabel || 'Mes');
+    const title = 'ZIP unificado: carpetas RIPS y SOPORTES de todas las subcarpetas, agrupadas por factura (FE)';
+    return htmlArmZipBtn({
+      apiPath: `/api/soportes/armado/periodos/${armState.periodoId}/zip-unificado`,
+      fallbackName: `${armState.periodoLabel || 'mes'}-unificado.zip`,
+      title,
+      icon: 'layers',
+      label: ` Unificado ${label}`
+    });
+  }
+
+  function htmlArmZipDiaBtn(dia, { labeled = false, variant = 'ghost' } = {}) {
+    if (!dia?.id || !sopPerm('soportes.descargar_zip')) return '';
+    const nom = dia.nombre_display || 'Carpeta';
+    const fe = dia.expedientes_count || 0;
+    const title = `Descargar ZIP de ${nom} (RIPS y SOPORTES por factura FE, ${fe} expediente(s))`;
+    return htmlArmZipBtn({
+      apiPath: `/api/soportes/armado/dias/${dia.id}/zip`,
+      fallbackName: `${nom}.zip`,
+      title,
+      icon: 'archive',
+      label: labeled ? ' ZIP' : '',
+      variant
+    });
   }
 
   function badgeFacturacionArmado(estado) {
@@ -1583,12 +1692,17 @@
   async function eliminarArchivoPdx(archivoId, nombre) {
     if (!sopPerm('soportes.pdx.eliminar')) return;
     const label = nombre || `archivo #${archivoId}`;
-    if (!window.confirm(`¿Eliminar "${label}"? Esta acción no se puede deshacer.`)) return;
+    const run = async () => {
     const res = await apiFetch(`/api/soportes/pdx/archivos/${archivoId}`, { method: 'DELETE' });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) { sopToast(data.error || 'No se pudo eliminar', 'error'); return; }
     sopToast('Archivo eliminado', 'success');
     if (pdxState.carpetaId) abrirCarpetaPdx(pdxState.carpetaId);
+    };
+    if (typeof window.confirmEliminar === 'function') {
+      window.confirmEliminar(`el archivo «${label}»`, run);
+    } else if (!window.confirm(`¿Está seguro de eliminar «${label}»?`)) return;
+    else await run();
   }
 
   async function abrirCarpetaPdx(id) {
@@ -1725,10 +1839,11 @@
   async function eliminarCarpetaPdx(carpeta) {
     if (!sopPerm('soportes.pdx.eliminar')) return;
     const n = carpeta.archivos_count || 0;
+    const label = carpeta.nombre_display || 'esta carpeta';
     const msg = n > 0
-      ? `¿Eliminar la carpeta «${carpeta.nombre_display}» y sus ${n} archivo(s)? No se puede deshacer.`
-      : `¿Eliminar la carpeta vacía «${carpeta.nombre_display}»?`;
-    if (!window.confirm(msg)) return;
+      ? `la carpeta «${label}» y sus ${n} archivo(s)`
+      : `la carpeta vacía «${label}»`;
+    const run = async () => {
     const res = await apiFetch(`/api/soportes/pdx/carpetas/${carpeta.id}`, { method: 'DELETE' });
     const data = await res.json().catch(() => ({}));
     if (res.status === 409) {
@@ -1742,6 +1857,11 @@
       await cargarCarpetasPdx();
       renderListaCarpetasPdx();
     }
+    };
+    if (typeof window.confirmEliminar === 'function') {
+      window.confirmEliminar(msg, run);
+    } else if (!window.confirm(`¿Está seguro de eliminar ${msg}?`)) return;
+    else await run();
   }
 
   function modalEditarCarpetaPdx(carpeta) {
@@ -2608,12 +2728,18 @@
     };
   }
 
+  async function refrescarVistaPdxActual() {
+    await cargarCarpetasPdx();
+    if (pdxState.carpetaId) await abrirCarpetaPdx(pdxState.carpetaId);
+    else renderListaCarpetasPdx();
+  }
+
   window.initReportesPdx = function initReportesPdx() {
     sopIcons($('view-reportes-pdx'));
     sopAnimateModuleIn('view-reportes-pdx');
     if (initPdxDone) {
       setupEntradaDocumentoPdx();
-      cargarCarpetasPdx().then(renderListaCarpetasPdx).catch(console.error);
+      refrescarVistaPdxActual().catch(console.error);
       return;
     }
     initPdxDone = true;
@@ -2722,10 +2848,11 @@
     panel.innerHTML = `<div class="sop-panel-head">
         <div>
           <h3 style="margin:0"><i data-lucide="calendar"></i> ${escapeHtml(armState.periodoLabel || 'Mes')}</h3>
-          <p style="margin:6px 0 0;font-size:.85rem;color:#64748b">Elija una carpeta de día. Dentro encontrará RIPS y SOPORTES con las carpetas FE.</p>
         </div>
         <div class="sop-panel-head-tools">
           ${htmlSopFolderViewToggle('arm')}
+          ${htmlArmZipPaqueteBtn()}
+          ${htmlArmZipUnificadoBtn()}
           ${htmlArmZipFacturadosBtn()}
           ${puedeGestionarDia ? `<button type="button" class="sop-btn sop-btn-teal" id="btnSopArmNuevoDiaInline"><i data-lucide="folder-plus"></i> Carpeta de día</button>` : ''}
         </div>
@@ -2739,16 +2866,18 @@
       grid.innerHTML = '<div class="sop-empty" style="grid-column:1/-1;padding:32px"><i data-lucide="folder-plus" class="sop-empty-icon"></i>Sin carpetas de día — cree la primera</div>';
     } else if (viewMode === 'list') {
       grid.innerHTML = `<div class="sop-table-wrap"><table class="sop-table sop-folder-list-table">
-        <thead><tr><th>Carpeta de día</th><th>Facturación</th><th>Expedientes FE</th>${puedeGestionarDia ? '<th class="sop-folder-list-actions">Acciones</th>' : ''}</tr></thead>
+        <thead><tr><th>Carpeta de día</th><th>Facturación</th><th>Expedientes FE</th><th class="sop-folder-list-actions">Acciones</th></tr></thead>
         <tbody>${armState.dias.map((d) => `
           <tr class="${armState.diaId === d.id ? 'is-active' : ''}" data-dia-id="${d.id}" tabindex="0">
             <td><strong>${escapeHtml(d.nombre_display)}</strong></td>
             <td>${badgeFacturacionArmado(d.estado_facturacion)}</td>
             <td><strong>${d.expedientes_count || 0}</strong></td>
-            ${puedeGestionarDia ? `<td class="sop-folder-list-actions">
+            <td class="sop-folder-list-actions">
+              ${htmlArmZipDiaBtn(d)}
+              ${puedeGestionarDia ? `
               <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-dia-edit="${d.id}"><i data-lucide="pencil"></i></button>
-              <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-dia-del="${d.id}" data-dia-nom="${escapeHtml(d.nombre_display)}" style="color:#dc2626"><i data-lucide="trash-2"></i></button>
-            </td>` : ''}
+              <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-dia-del="${d.id}" data-dia-nom="${escapeHtml(d.nombre_display)}" style="color:#dc2626"><i data-lucide="trash-2"></i></button>` : ''}
+            </td>
           </tr>`).join('')}</tbody></table></div>`;
       bindArmadoDiaCardEvents(grid);
     } else {
@@ -2758,15 +2887,18 @@
           <div class="sop-folder-card-title">${escapeHtml(d.nombre_display)}</div>
           <div class="sop-folder-card-meta">${badgeFacturacionArmado(d.estado_facturacion)}</div>
           <div class="sop-folder-card-count"><strong>${d.expedientes_count || 0}</strong> expediente(s) FE</div>
-          ${puedeGestionarDia ? `<div class="sop-folder-card-actions">
+          <div class="sop-folder-card-actions">
+            ${htmlArmZipDiaBtn(d)}
+            ${puedeGestionarDia ? `
             <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-dia-edit="${d.id}" title="Editar"><i data-lucide="pencil"></i></button>
-            <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-dia-del="${d.id}" data-dia-nom="${escapeHtml(d.nombre_display)}" title="Eliminar"><i data-lucide="trash-2"></i></button>
-          </div>` : ''}
+            <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-dia-del="${d.id}" data-dia-nom="${escapeHtml(d.nombre_display)}" title="Eliminar" style="color:#dc2626"><i data-lucide="trash-2"></i></button>` : ''}
+          </div>
         </article>`).join('');
       bindArmadoDiaCardEvents(grid);
     }
     panel.querySelector('#btnSopArmNuevoDiaInline')?.addEventListener('click', modalNuevoDiaArmado);
     sopIcons(panel);
+    bindArmZipButtons(panel);
   }
 
   function renderArmadoPlaceholder(msg) {
@@ -2799,13 +2931,16 @@
           <h3 style="margin:0"><i data-lucide="folder-open"></i> ${escapeHtml(armState.diaLabel)}</h3>
           <div style="margin-top:6px">${badgeFacturacionArmado(armState.diaFacturacion)}</div>
         </div>
-        <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="btnSopArmVolverMes"><i data-lucide="arrow-left"></i> ${escapeHtml(armState.periodoLabel || 'Mes')}</button>
+        <div class="sop-panel-head-tools" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          ${htmlArmZipDiaBtn(diaRow, { labeled: true, variant: 'teal' })}
+          <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="btnSopArmVolverMes"><i data-lucide="arrow-left"></i> ${escapeHtml(armState.periodoLabel || 'Mes')}</button>
+        </div>
       </div>
       <div class="sop-panel-body">
-        <p class="sop-explorer-hint">Dos carpetas por día: <strong>RIPS</strong> (JSON/XML) y <strong>SOPORTES</strong> (PDF del expediente).</p>
         <div id="sopArmContenedoresGrid" class="sop-folder-explorer-grid sop-folder-explorer-grid--2"><div class="sop-empty"><i data-lucide="loader"></i></div></div>
       </div>`;
     panel.querySelector('#btnSopArmVolverMes')?.addEventListener('click', () => seleccionarPeriodoArmado(armState.periodoId));
+    bindArmZipButtons(panel);
     const res = await apiFetch(`/api/soportes/armado/dias/${id}/contenedores`);
     const data = await res.json();
     armState.contenedores = data.contenedores || [];
@@ -3376,7 +3511,14 @@
         <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="btnSopArmVolverCont"><i data-lucide="arrow-left"></i> ${escapeHtml(tipoLabel)}</button>
         ${sopPerm('soportes.armado.subir') ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="btnSopExpEditar"><i data-lucide="pencil"></i> Renombrar</button>` : ''}
         ${sopPerm('soportes.armado.crear_estructura') ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="btnSopExpEliminar" style="color:#dc2626"><i data-lucide="trash-2"></i> Eliminar</button>` : ''}
-        ${sopPerm('soportes.descargar_zip') ? `<a class="sop-btn sop-btn-teal sop-btn-sm" href="/api/soportes/armado/expedientes/${id}/zip" target="_blank"><i data-lucide="archive"></i> ZIP</a>` : ''}
+        ${htmlArmZipBtn({
+          apiPath: `/api/soportes/armado/expedientes/${id}/zip`,
+          fallbackName: `${e.codigo || 'expediente'}.zip`,
+          title: `Descargar ZIP del expediente ${e.codigo || ''}`,
+          icon: 'archive',
+          label: ' ZIP',
+          variant: 'teal'
+        })}
         </div>
       </div>
       <div class="sop-panel-body">
@@ -3436,6 +3578,7 @@
     panel.querySelector('#btnSopGenerarOpf')?.addEventListener('click', () => modalGenerarOpf(id, e));
     bindSlotArchivoActions(panel, id, { esRips, tipoServicio: e.tipo_servicio });
     sopIcons(panel);
+    bindArmZipButtons(panel);
     renderArmadoContextBar();
   }
 
@@ -4089,11 +4232,46 @@
     };
   }
 
+  async function refrescarVistaArmadoActual() {
+    const snap = {
+      periodoId: armState.periodoId,
+      diaId: armState.diaId,
+      contenedorId: armState.contenedorId,
+      expedienteId: armState.expedienteId,
+      vista: armState.vista
+    };
+    await cargarPeriodosArmado();
+    renderPeriodosArmado();
+    if (!snap.periodoId) return;
+    const per = armState.periodos.find((p) => p.id === snap.periodoId);
+    if (!per) return;
+    armState.periodoId = snap.periodoId;
+    armState.periodoLabel = per.etiqueta || per.periodo || 'Mes';
+    const res = await apiFetch(`/api/soportes/armado/periodos/${snap.periodoId}/dias`);
+    const data = await res.json();
+    if (!res.ok) return;
+    armState.dias = data.dias || [];
+    if (snap.vista === 'expediente' && snap.expedienteId) {
+      armState.diaId = snap.diaId;
+      armState.contenedorId = snap.contenedorId;
+      await abrirExpedienteArmado(snap.expedienteId);
+    } else if (snap.vista === 'contenedor' && snap.contenedorId && snap.diaId) {
+      await seleccionarDiaArmado(snap.diaId);
+      await seleccionarContenedorArmado(snap.contenedorId);
+    } else if (snap.vista === 'day' && snap.diaId) {
+      await seleccionarDiaArmado(snap.diaId);
+    } else {
+      renderArmadoPeriodoSummary();
+      renderArmadoDiasExplorer();
+      renderArmadoContextBar();
+    }
+  }
+
   window.initArmadoSoportes = function initArmadoSoportes() {
     sopIcons($('view-armado-soportes'));
     sopAnimateModuleIn('view-armado-soportes');
     if (initArmadoDone) {
-      cargarPeriodosArmado().then(renderPeriodosArmado).catch(console.error);
+      refrescarVistaArmadoActual().catch(console.error);
       return;
     }
     initArmadoDone = true;
@@ -4116,4 +4294,7 @@
     renderArmadoContextBar();
     cargarPeriodosArmado().then(renderPeriodosArmado).catch((e) => sopToast(e.message, 'error'));
   };
+
+  window.refreshReportesPdx = refrescarVistaPdxActual;
+  window.refreshArmadoSoportes = refrescarVistaArmadoActual;
 })();

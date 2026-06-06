@@ -7,7 +7,7 @@ sigue (informalmente) [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/
 
 ### Añadido
 
-- **Anexo FIDU (borrador)**: módulo grilla tipo Excel con 45 columnas, importación desde Sheet y CRUD de filas.
+- **Anexo FIDU (borrador)**: módulo tabla tipo Excel con 45 columnas, importación desde Sheet y CRUD de filas.
 
 ### Cambiado
 

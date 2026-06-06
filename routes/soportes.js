@@ -75,6 +75,14 @@ const {
 const { enrichExpedientesLista } = require('../utils/soportes-expediente-progreso');
 const { actualizarDia, eliminarDia } = require('../utils/soportes-dia-admin');
 const {
+  zipArchiveSegment,
+  appendSoportesArchivosToZip,
+  appendRipsArchivosToZip,
+  streamDiaZip,
+  streamPeriodPaqueteZip,
+  streamUnifiedPeriodZip
+} = require('../utils/soportes-armado-zip');
+const {
   getPdxDir,
   getArmadoExpedienteDir,
   getArmadoFeDirFromContext,
@@ -2557,37 +2565,59 @@ router.post(
   }
 );
 
-function zipArchiveSegment(name) {
-  return String(name || 'sin-nombre')
-    .replace(/[<>:"/\\|?*\x00-\x1f]/g, '_')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 100) || 'sin-nombre';
-}
-
 async function appendExpedienteArchivosToZip(archive, expedienteId, zipPrefix) {
   let added = 0;
-  const zipName = (base, file) => (zipPrefix ? `${zipPrefix}/${file}` : base);
-  const archivos = await db.query('SELECT * FROM sop_exp_archivos WHERE expediente_id = ?', [expedienteId]);
-  for (const a of archivos) {
-    const fp = resolveStoragePath(path.join('soportes', a.ruta_relativa));
-    if (fp && fs.existsSync(fp)) {
-      archive.file(fp, { name: zipName(zipPrefix, a.nombre_archivo) });
-      added += 1;
-    }
-  }
-  try {
-    const ripsArchivos = await db.query('SELECT * FROM sop_rips_archivos WHERE expediente_id = ?', [expedienteId]);
-    for (const a of ripsArchivos) {
-      const fp = resolveStoragePath(path.join('soportes', a.ruta_relativa));
-      if (fp && fs.existsSync(fp)) {
-        archive.file(fp, { name: zipName(zipPrefix, a.nombre_archivo) });
-        added += 1;
-      }
-    }
-  } catch (_) { /* tabla RIPS opcional */ }
+  added += await appendSoportesArchivosToZip(archive, expedienteId, zipPrefix);
+  added += await appendRipsArchivosToZip(archive, expedienteId, zipPrefix);
   return added;
 }
+
+router.get('/soportes/armado/dias/:id/zip', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'soportes.descargar_zip'), async (req, res) => {
+  try {
+    const diaId = parseInt(req.params.id, 10);
+    if (!diaId) return res.status(400).json({ error: 'Carpeta de día inválida' });
+    const rows = await db.query('SELECT * FROM sop_dias WHERE id = ?', [diaId]);
+    if (!rows.length) return res.status(404).json({ error: 'Carpeta de día no encontrada' });
+    await streamDiaZip(res, rows[0]);
+  } catch (e) {
+    if (!res.headersSent) {
+      const msg = e.message === 'La carpeta no tiene archivos para descargar' || e.message === 'ZIP vacío'
+        ? e.message
+        : safeError(e);
+      res.status(e.message?.includes('no tiene') || e.message === 'ZIP vacío' ? 404 : 500).json({ error: msg });
+    }
+  }
+});
+
+router.get('/soportes/armado/periodos/:id/zip-paquete', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'soportes.descargar_zip'), async (req, res) => {
+  try {
+    const periodoId = parseInt(req.params.id, 10);
+    if (!periodoId) return res.status(400).json({ error: 'Periodo inválido' });
+    const periodoRows = await db.query('SELECT * FROM sop_periodos WHERE id = ?', [periodoId]);
+    if (!periodoRows.length) return res.status(404).json({ error: 'Periodo no encontrado' });
+    await streamPeriodPaqueteZip(res, periodoRows[0]);
+  } catch (e) {
+    if (!res.headersSent) {
+      const notFound = /no tiene|no hay archivos/i.test(e.message || '');
+      res.status(notFound ? 404 : 500).json({ error: notFound ? e.message : safeError(e) });
+    }
+  }
+});
+
+router.get('/soportes/armado/periodos/:id/zip-unificado', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'soportes.descargar_zip'), async (req, res) => {
+  try {
+    const periodoId = parseInt(req.params.id, 10);
+    if (!periodoId) return res.status(400).json({ error: 'Periodo inválido' });
+    const periodoRows = await db.query('SELECT * FROM sop_periodos WHERE id = ?', [periodoId]);
+    if (!periodoRows.length) return res.status(404).json({ error: 'Periodo no encontrado' });
+    await streamUnifiedPeriodZip(res, periodoRows[0]);
+  } catch (e) {
+    if (!res.headersSent) {
+      const notFound = /no hay archivos/i.test(e.message || '');
+      res.status(notFound ? 404 : 500).json({ error: notFound ? e.message : safeError(e) });
+    }
+  }
+});
 
 router.get('/soportes/armado/periodos/:id/zip-facturados', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'soportes.descargar_zip'), async (req, res) => {
   try {

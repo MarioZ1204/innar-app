@@ -188,10 +188,21 @@
 }
 
 .confirm-actions .btn-cancel,
-.confirm-actions .btn-ok {
+.confirm-actions .btn-ok,
+.confirm-actions .btn-secondary {
   min-height: var(--innar-touch-min);
   padding-left: 16px;
   padding-right: 16px;
+}
+
+.confirm-actions-choice {
+  justify-content: stretch;
+}
+
+.confirm-actions-choice .btn-cancel,
+.confirm-actions-choice .btn-secondary,
+.confirm-actions-choice .btn-ok {
+  flex: 1 1 auto;
 }
 
 /* ── Tablet ───────────────────────────────────────────────────────────────── */

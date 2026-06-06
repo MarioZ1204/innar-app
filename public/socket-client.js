@@ -73,6 +73,18 @@ function refreshActiveModuleData() {
   if (module === 'dashboard-citas' && typeof scheduleBuscarCitasAuditoria === 'function') {
     scheduleSocketRefresh('dashboard:citas', () => scheduleBuscarCitasAuditoria(120));
   }
+  if (module === 'anexo-fidu' && typeof window.refreshAnexoFidu === 'function') {
+    scheduleSocketRefresh('anexo-fidu', () => window.refreshAnexoFidu());
+  }
+  if (module === 'backup' && typeof window.refreshBackupModule === 'function') {
+    scheduleSocketRefresh('backup', () => window.refreshBackupModule());
+  }
+  if (module === 'reportes-pdx' && typeof window.refreshReportesPdx === 'function') {
+    scheduleSocketRefresh('reportes-pdx', () => window.refreshReportesPdx());
+  }
+  if (module === 'armado-soportes' && typeof window.refreshArmadoSoportes === 'function') {
+    scheduleSocketRefresh('armado-soportes', () => window.refreshArmadoSoportes());
+  }
 }
 
 function showUpdateBanner(remoteVersion) {
@@ -439,6 +451,10 @@ function initSocket() {
       if (module === 'agenda-medica' && typeof cargarTurnosMedica === 'function') cargarTurnosMedica();
       if (module === 'electro' && typeof cargarCitasElectro === 'function') cargarCitasElectro();
       if (module === 'usuarios' && typeof cargarUsuarios === 'function') cargarUsuarios();
+      if (module === 'anexo-fidu' && typeof window.refreshAnexoFidu === 'function') window.refreshAnexoFidu();
+      if (module === 'backup' && typeof window.refreshBackupModule === 'function') window.refreshBackupModule();
+      if (module === 'reportes-pdx' && typeof window.refreshReportesPdx === 'function') window.refreshReportesPdx();
+      if (module === 'armado-soportes' && typeof window.refreshArmadoSoportes === 'function') window.refreshArmadoSoportes();
       if (typeof updateStats === 'function') updateStats();
       checkServerVersion();
     });

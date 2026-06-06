@@ -1,5 +1,5 @@
 /**
- * API módulo Anexo FIDU — grilla tipo Excel (45 columnas).
+ * API módulo Anexo FIDU — tabla tipo Excel (45 columnas).
  */
 const express = require('express');
 const router = express.Router();
@@ -182,6 +182,73 @@ router.post('/anexo-fidu/carpetas', requireAuth, requirePermiso(PERM_ANEXO_FIDU)
   }
 });
 
+/** PATCH /api/anexo-fidu/carpetas/:id */
+router.patch('/anexo-fidu/carpetas/:id', requireAuth, requirePermiso(PERM_ANEXO_FIDU), async (req, res) => {
+  try {
+    const id = parseArchivoId(req.params.id);
+    if (!id) return res.status(400).json({ error: 'Carpeta inválida' });
+    const rows = await db.query('SELECT id, nombre FROM anexo_fidu_carpetas WHERE id = ? LIMIT 1', [id]);
+    if (!rows.length) return res.status(404).json({ error: 'Carpeta no encontrada' });
+    const nombre = normalizarNombreAnexo(req.body?.nombre);
+    if (!nombre) return res.status(400).json({ error: 'Nombre de carpeta requerido (ej. Junio)' });
+    const dup = await db.query(
+      'SELECT id FROM anexo_fidu_carpetas WHERE nombre = ? AND id <> ? LIMIT 1',
+      [nombre, id]
+    );
+    if (dup.length) {
+      return res.status(409).json({ error: 'Ya existe una carpeta con ese nombre' });
+    }
+    await db.execute('UPDATE anexo_fidu_carpetas SET nombre = ? WHERE id = ?', [nombre, id]);
+    const [cnt] = await db.query(
+      'SELECT COUNT(*) AS total_archivos FROM anexo_fidu_archivos WHERE carpeta_id = ?',
+      [id]
+    );
+    res.json({
+      ok: true,
+      carpeta: { id, nombre, total_archivos: cnt?.total_archivos || 0 }
+    });
+  } catch (e) {
+    logger.error('[ANEXO-FIDU] carpeta update:', e);
+    res.status(500).json({ error: safeError(e) });
+  }
+});
+
+/** DELETE /api/anexo-fidu/carpetas/:id */
+router.delete('/anexo-fidu/carpetas/:id', requireAuth, requirePermiso(PERM_ANEXO_FIDU), async (req, res) => {
+  try {
+    const id = parseArchivoId(req.params.id);
+    if (!id) return res.status(400).json({ error: 'Carpeta inválida' });
+    const rows = await db.query('SELECT id, nombre FROM anexo_fidu_carpetas WHERE id = ? LIMIT 1', [id]);
+    if (!rows.length) return res.status(404).json({ error: 'Carpeta no encontrada' });
+    const [regCnt] = await db.query(
+      `SELECT COUNT(*) AS n FROM anexo_fidu_registros r
+       INNER JOIN anexo_fidu_archivos a ON a.id = r.archivo_id
+       WHERE a.carpeta_id = ?`,
+      [id]
+    );
+    const [archCnt] = await db.query(
+      'SELECT COUNT(*) AS n FROM anexo_fidu_archivos WHERE carpeta_id = ?',
+      [id]
+    );
+    await db.execute(
+      `DELETE r FROM anexo_fidu_registros r
+       INNER JOIN anexo_fidu_archivos a ON a.id = r.archivo_id
+       WHERE a.carpeta_id = ?`,
+      [id]
+    );
+    const delArch = await db.execute('DELETE FROM anexo_fidu_archivos WHERE carpeta_id = ?', [id]);
+    await db.execute('DELETE FROM anexo_fidu_carpetas WHERE id = ?', [id]);
+    res.json({
+      ok: true,
+      eliminados_archivos: delArch.affectedRows || archCnt?.n || 0,
+      eliminados_registros: regCnt?.n || 0
+    });
+  } catch (e) {
+    logger.error('[ANEXO-FIDU] carpeta delete:', e);
+    res.status(500).json({ error: safeError(e) });
+  }
+});
+
 /** GET /api/anexo-fidu/carpetas/:carpetaId/archivos */
 router.get('/anexo-fidu/carpetas/:carpetaId/archivos', requireAuth, requirePermiso(PERM_ANEXO_FIDU), async (req, res) => {
   try {
@@ -230,6 +297,61 @@ router.post('/anexo-fidu/archivos', requireAuth, requirePermiso(PERM_ANEXO_FIDU)
     });
   } catch (e) {
     logger.error('[ANEXO-FIDU] archivo create:', e);
+    res.status(500).json({ error: safeError(e) });
+  }
+});
+
+/** PATCH /api/anexo-fidu/archivos/:id */
+router.patch('/anexo-fidu/archivos/:id', requireAuth, requirePermiso(PERM_ANEXO_FIDU), async (req, res) => {
+  try {
+    const archivoId = parseArchivoId(req.params.id);
+    if (!archivoId) return res.status(400).json({ error: 'Anexo inválido' });
+    const meta = await fetchArchivoMeta(archivoId);
+    if (!meta) return res.status(404).json({ error: 'Anexo no encontrado' });
+    const nombre = normalizarNombreAnexo(req.body?.nombre);
+    if (!nombre) return res.status(400).json({ error: 'Nombre del anexo requerido' });
+    const dup = await db.query(
+      'SELECT id FROM anexo_fidu_archivos WHERE carpeta_id = ? AND nombre = ? AND id <> ? LIMIT 1',
+      [meta.carpeta_id, nombre, archivoId]
+    );
+    if (dup.length) {
+      return res.status(409).json({ error: 'Ya existe un anexo con ese nombre en la carpeta' });
+    }
+    await db.execute('UPDATE anexo_fidu_archivos SET nombre = ? WHERE id = ?', [nombre, archivoId]);
+    const [cnt] = await db.query(
+      'SELECT COUNT(*) AS total FROM anexo_fidu_registros WHERE archivo_id = ?',
+      [archivoId]
+    );
+    res.json({
+      ok: true,
+      archivo: {
+        id: archivoId,
+        carpeta_id: meta.carpeta_id,
+        nombre,
+        total_registros: cnt?.total || 0
+      }
+    });
+  } catch (e) {
+    logger.error('[ANEXO-FIDU] archivo update:', e);
+    res.status(500).json({ error: safeError(e) });
+  }
+});
+
+/** DELETE /api/anexo-fidu/archivos/:id */
+router.delete('/anexo-fidu/archivos/:id', requireAuth, requirePermiso(PERM_ANEXO_FIDU), async (req, res) => {
+  try {
+    const archivoId = parseArchivoId(req.params.id);
+    if (!archivoId) return res.status(400).json({ error: 'Anexo inválido' });
+    const meta = await fetchArchivoMeta(archivoId);
+    if (!meta) return res.status(404).json({ error: 'Anexo no encontrado' });
+    const delReg = await db.execute('DELETE FROM anexo_fidu_registros WHERE archivo_id = ?', [archivoId]);
+    await db.execute('DELETE FROM anexo_fidu_archivos WHERE id = ?', [archivoId]);
+    res.json({
+      ok: true,
+      eliminados_registros: delReg.affectedRows || 0
+    });
+  } catch (e) {
+    logger.error('[ANEXO-FIDU] archivo delete:', e);
     res.status(500).json({ error: safeError(e) });
   }
 });

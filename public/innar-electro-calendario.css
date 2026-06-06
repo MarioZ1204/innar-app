@@ -158,7 +158,7 @@
   border-radius: 2px;
 }
 
-/* Grilla tipo calendario de escritorio */
+/* Vista tipo calendario de escritorio */
 .ecal-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);

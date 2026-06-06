@@ -1,5 +1,5 @@
 /**
- * Módulo Anexo FIDU — grilla editable tipo Excel (doble clic).
+ * Módulo Anexo FIDU — tabla editable tipo Excel (doble clic).
  */
 (function () {
   let _columnas = [];
@@ -12,6 +12,414 @@
   let _carpetaId = null;
   let _archivoId = null;
   let _archivosCache = [];
+
+  const AFIDU_VIEW_LS = 'innar.afidu.folderView';
+
+  let afiduState = {
+    carpetas: [],
+    carpetaId: null,
+    carpetaNombre: null,
+    archivos: [],
+    archivoId: null,
+    archivoNombre: null,
+    vista: 'root'
+  };
+
+  function syncAfiduIds() {
+    _carpetaId = afiduState.carpetaId;
+    _archivoId = afiduState.archivoId;
+    _archivosCache = afiduState.archivos;
+  }
+
+  function afiduIcons(root) {
+    if (typeof window.innarLucideIcons === 'function') {
+      window.innarLucideIcons(root || document);
+    }
+  }
+
+  function afiduFolderViewMode() {
+    try {
+      return localStorage.getItem(AFIDU_VIEW_LS) === 'list' ? 'list' : 'grid';
+    } catch (_) {
+      return 'grid';
+    }
+  }
+
+  function setAfiduFolderViewMode(mode) {
+    const next = mode === 'list' ? 'list' : 'grid';
+    try { localStorage.setItem(AFIDU_VIEW_LS, next); } catch (_) { /* ignore */ }
+    if (afiduState.vista === 'root') renderAfiduRootExplorer();
+    else if (afiduState.vista === 'carpeta') renderAfiduArchivosExplorer();
+  }
+
+  function htmlAfiduFolderViewToggle() {
+    const mode = afiduFolderViewMode();
+    return `<div class="sop-view-toggle" role="group" aria-label="Vista de carpetas">
+      <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm${mode === 'grid' ? ' is-active' : ''}" data-afidu-view-mode="grid" title="Vista en cuadrícula"><i data-lucide="layout-grid"></i></button>
+      <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm${mode === 'list' ? ' is-active' : ''}" data-afidu-view-mode="list" title="Vista en lista"><i data-lucide="list"></i></button>
+    </div>`;
+  }
+
+  function bindAfiduFolderViewToggle(root) {
+    if (!root) return;
+    root.querySelectorAll('[data-afidu-view-mode]').forEach((btn) => {
+      btn.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        setAfiduFolderViewMode(btn.dataset.afiduViewMode);
+      });
+    });
+  }
+
+  function renderAfiduBreadcrumbs(containerEl, crumbs) {
+    if (!containerEl || !crumbs?.length) return;
+    containerEl.innerHTML = crumbs.map((c, i) => {
+      const sep = i > 0 ? '<span class="sop-crumb-sep" aria-hidden="true">›</span>' : '';
+      if (c.current) {
+        return `${sep}<span class="sop-crumb is-current">${escapeHtml(c.label)}</span>`;
+      }
+      if (c.onClick) {
+        return `${sep}<button type="button" class="sop-crumb is-link" data-crumb-idx="${i}">${escapeHtml(c.label)}</button>`;
+      }
+      return `${sep}<span class="sop-crumb">${escapeHtml(c.label)}</span>`;
+    }).join('');
+    containerEl.querySelectorAll('[data-crumb-idx]').forEach((btn) => {
+      const idx = parseInt(btn.dataset.crumbIdx, 10);
+      const crumb = crumbs[idx];
+      if (crumb?.onClick) btn.addEventListener('click', crumb.onClick);
+    });
+  }
+
+  function renderAfiduContextBar() {
+    const el = $('afiduContextBar');
+    if (!el) return;
+    el.classList.remove('hidden');
+    const crumbs = [{ label: 'Anexo', current: afiduState.vista === 'root', onClick: afiduState.vista !== 'root' ? volverAfiduRoot : null }];
+    if (afiduState.carpetaId != null) {
+      crumbs.push({
+        label: afiduState.carpetaNombre || 'Carpeta',
+        current: afiduState.vista === 'carpeta',
+        onClick: afiduState.vista === 'archivo' ? volverAfiduCarpeta : null
+      });
+    }
+    if (afiduState.vista === 'archivo' && afiduState.archivoNombre) {
+      crumbs.push({ label: afiduState.archivoNombre, current: true });
+    } else if (afiduState.carpetaId != null && afiduState.vista === 'carpeta') {
+      crumbs.push({ label: 'Seleccione un anexo', current: true });
+    } else if (afiduState.vista === 'root') {
+      crumbs.push({ label: 'Seleccione una carpeta', current: true });
+    }
+    el.innerHTML = '<span class="sop-context-label">Ubicación</span>';
+    const trail = document.createElement('span');
+    trail.className = 'sop-breadcrumbs';
+    trail.style.margin = '0';
+    trail.style.flex = '1';
+    renderAfiduBreadcrumbs(trail, crumbs);
+    el.appendChild(trail);
+  }
+
+  function mostrarAfiduExplorer() {
+    $('afiduMainPanel')?.classList.remove('hidden');
+    $('afiduArchivoWorkspace')?.classList.add('hidden');
+  }
+
+  function mostrarAfiduArchivoWorkspace() {
+    $('afiduMainPanel')?.classList.add('hidden');
+    $('afiduArchivoWorkspace')?.classList.remove('hidden');
+  }
+
+  function confirmEliminarAfidu(msg, onOk) {
+    if (typeof window.confirmEliminar === 'function') {
+      window.confirmEliminar(msg, onOk);
+    } else if (typeof showConfirm === 'function') {
+      showConfirm(msg, onOk);
+    } else if (window.confirm(msg)) {
+      onOk();
+    }
+  }
+
+  function promptNombreAfidu(msg, defaultValue, onOk) {
+    if (typeof window.showPromptInput === 'function') {
+      window.showPromptInput(msg, (nombre) => onOk(nombre), {
+        defaultValue: defaultValue || '',
+        okText: 'Guardar',
+        cancelText: 'Cancelar',
+        danger: false,
+        icon: '✏️',
+        placeholder: 'Nombre'
+      });
+      return;
+    }
+    const nombre = window.prompt(msg, defaultValue || '');
+    if (nombre?.trim()) onOk(nombre.trim());
+  }
+
+  let initAfiduDone = false;
+  let afiduEventsBound = false;
+
+  function htmlAfiduCarpetaActions(c) {
+    return `<div class="sop-folder-card-actions">
+      <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-afidu-carpeta-edit="${c.id}" title="Editar nombre"><i data-lucide="pencil"></i></button>
+      <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-afidu-carpeta-del="${c.id}" data-afidu-carpeta-nom="${escapeHtml(c.nombre)}" data-afidu-carpeta-arch="${c.total_archivos || 0}" title="Eliminar" style="color:#dc2626"><i data-lucide="trash-2"></i></button>
+    </div>`;
+  }
+
+  function htmlAfiduArchivoActions(a) {
+    return `<div class="sop-folder-card-actions">
+      <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-afidu-archivo-edit="${a.id}" title="Editar nombre"><i data-lucide="pencil"></i></button>
+      <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-afidu-archivo-del="${a.id}" data-afidu-archivo-nom="${escapeHtml(a.nombre)}" data-afidu-archivo-filas="${a.total_registros || 0}" title="Eliminar" style="color:#dc2626"><i data-lucide="trash-2"></i></button>
+    </div>`;
+  }
+
+  function bindAfiduCarpetaCardEvents(root) {
+    if (!root) return;
+    root.querySelectorAll('[data-afidu-carpeta]').forEach((card) => {
+      const open = () => seleccionarCarpetaAfidu(parseInt(card.dataset.afiduCarpeta, 10));
+      card.addEventListener('click', (ev) => {
+        if (ev.target.closest('.sop-folder-card-actions, .sop-folder-list-actions')) return;
+        open();
+      });
+      card.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') open(); });
+    });
+    root.querySelectorAll('[data-afidu-carpeta-edit]').forEach((btn) => {
+      btn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        const id = parseInt(btn.dataset.afiduCarpetaEdit, 10);
+        const row = afiduState.carpetas.find((c) => c.id === id);
+        if (row) editarCarpetaAfidu(row);
+      });
+    });
+    root.querySelectorAll('[data-afidu-carpeta-del]').forEach((btn) => {
+      btn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        eliminarCarpetaAfidu({
+          id: parseInt(btn.dataset.afiduCarpetaDel, 10),
+          nombre: btn.dataset.afiduCarpetaNom || '',
+          total_archivos: parseInt(btn.dataset.afiduCarpetaArch, 10) || 0
+        });
+      });
+    });
+  }
+
+  function bindAfiduArchivoCardEvents(root) {
+    if (!root) return;
+    root.querySelectorAll('[data-afidu-archivo]').forEach((card) => {
+      const open = () => abrirArchivoAfidu(parseInt(card.dataset.afiduArchivo, 10));
+      card.addEventListener('click', (ev) => {
+        if (ev.target.closest('.sop-folder-card-actions, .sop-folder-list-actions')) return;
+        open();
+      });
+      card.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') open(); });
+    });
+    root.querySelectorAll('[data-afidu-archivo-edit]').forEach((btn) => {
+      btn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        const id = parseInt(btn.dataset.afiduArchivoEdit, 10);
+        const row = afiduState.archivos.find((a) => a.id === id);
+        if (row) editarArchivoAfidu(row);
+      });
+    });
+    root.querySelectorAll('[data-afidu-archivo-del]').forEach((btn) => {
+      btn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        eliminarArchivoAfidu({
+          id: parseInt(btn.dataset.afiduArchivoDel, 10),
+          nombre: btn.dataset.afiduArchivoNom || '',
+          total_registros: parseInt(btn.dataset.afiduArchivoFilas, 10) || 0
+        });
+      });
+    });
+  }
+
+  function renderAfiduRootExplorer() {
+    const panel = $('afiduMainPanel');
+    if (!panel) return;
+    afiduState.vista = 'root';
+    afiduState.carpetaId = null;
+    afiduState.carpetaNombre = null;
+    afiduState.archivoId = null;
+    afiduState.archivoNombre = null;
+    syncAfiduIds();
+    mostrarAfiduExplorer();
+    const viewMode = afiduFolderViewMode();
+    panel.innerHTML = `<div class="sop-panel">
+      <div class="sop-panel-head">
+        <div>
+          <h3 style="margin:0"><i data-lucide="folders"></i> Carpetas por periodo</h3>
+        </div>
+        <div class="sop-panel-head-tools">${htmlAfiduFolderViewToggle()}</div>
+      </div>
+      <div class="sop-panel-body">
+        <div id="afiduCarpetasGrid" class="sop-folder-explorer-grid${viewMode === 'list' ? ' sop-folder-list-mode' : ''}"></div>
+      </div>
+    </div>`;
+    bindAfiduFolderViewToggle(panel);
+    const grid = panel.querySelector('#afiduCarpetasGrid');
+    if (!afiduState.carpetas.length) {
+      grid.innerHTML = '<div class="sop-empty" style="grid-column:1/-1;padding:32px"><i data-lucide="folder-plus" class="sop-empty-icon"></i>Sin carpetas — cree la primera con «Nueva carpeta»</div>';
+    } else if (viewMode === 'list') {
+      grid.innerHTML = `<div class="sop-table-wrap"><table class="sop-table sop-folder-list-table">
+        <thead><tr><th>Carpeta</th><th>Anexos</th><th class="sop-folder-list-actions">Acciones</th></tr></thead>
+        <tbody>${afiduState.carpetas.map((c) => `
+          <tr data-afidu-carpeta="${c.id}" tabindex="0">
+            <td><strong>${escapeHtml(c.nombre)}</strong></td>
+            <td><strong>${c.total_archivos || 0}</strong></td>
+            <td class="sop-folder-list-actions">${htmlAfiduCarpetaActions(c)}</td>
+          </tr>`).join('')}</tbody></table></div>`;
+      bindAfiduCarpetaCardEvents(grid);
+    } else {
+      grid.innerHTML = afiduState.carpetas.map((c) => `
+        <article class="sop-folder-card" data-afidu-carpeta="${c.id}" tabindex="0">
+          <div class="sop-folder-card-icon"><i data-lucide="folder"></i></div>
+          <div class="sop-folder-card-title">${escapeHtml(c.nombre)}</div>
+          <div class="sop-folder-card-meta">Periodo / mes</div>
+          <div class="sop-folder-card-count"><strong>${c.total_archivos || 0}</strong> anexo(s)</div>
+          ${htmlAfiduCarpetaActions(c)}
+        </article>`).join('');
+      bindAfiduCarpetaCardEvents(grid);
+    }
+    afiduIcons(panel);
+    renderAfiduContextBar();
+  }
+
+  function renderAfiduArchivosExplorer() {
+    const panel = $('afiduMainPanel');
+    if (!panel || !afiduState.carpetaId) return;
+    afiduState.vista = 'carpeta';
+    afiduState.archivoId = null;
+    afiduState.archivoNombre = null;
+    syncAfiduIds();
+    mostrarAfiduExplorer();
+    const viewMode = afiduFolderViewMode();
+    panel.innerHTML = `<div class="sop-panel">
+      <div class="sop-panel-head">
+        <div>
+          <h3 style="margin:0"><i data-lucide="folder-open"></i> ${escapeHtml(afiduState.carpetaNombre || 'Carpeta')}</h3>
+        </div>
+        <div class="sop-panel-head-tools">
+          ${htmlAfiduFolderViewToggle()}
+          <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="btnAfiduEditarCarpeta"><i data-lucide="pencil"></i> Editar carpeta</button>
+          <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="btnAfiduEliminarCarpeta" style="color:#dc2626"><i data-lucide="trash-2"></i> Eliminar carpeta</button>
+          <button type="button" class="sop-btn sop-btn-teal" id="btnAfiduNuevoArchivo"><i data-lucide="file-plus"></i> Nuevo anexo</button>
+          <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="btnAfiduVolverRoot"><i data-lucide="arrow-left"></i> Carpetas</button>
+        </div>
+      </div>
+      <div class="sop-panel-body">
+        <div id="afiduArchivosGrid" class="sop-folder-explorer-grid${viewMode === 'list' ? ' sop-folder-list-mode' : ''}"></div>
+      </div>
+    </div>`;
+    bindAfiduFolderViewToggle(panel);
+    panel.querySelector('#btnAfiduEditarCarpeta')?.addEventListener('click', () => {
+      const row = afiduState.carpetas.find((c) => c.id === afiduState.carpetaId);
+      if (row) editarCarpetaAfidu(row);
+    });
+    panel.querySelector('#btnAfiduEliminarCarpeta')?.addEventListener('click', () => {
+      eliminarCarpetaAfidu({
+        id: afiduState.carpetaId,
+        nombre: afiduState.carpetaNombre || '',
+        total_archivos: afiduState.archivos.length
+      });
+    });
+    panel.querySelector('#btnAfiduNuevoArchivo')?.addEventListener('click', crearArchivo);
+    panel.querySelector('#btnAfiduVolverRoot')?.addEventListener('click', volverAfiduRoot);
+    const grid = panel.querySelector('#afiduArchivosGrid');
+    if (!afiduState.archivos.length) {
+      grid.innerHTML = '<div class="sop-empty" style="grid-column:1/-1;padding:32px"><i data-lucide="file-plus" class="sop-empty-icon"></i>Sin anexos — cree el primero para empezar a cargar filas</div>';
+    } else if (viewMode === 'list') {
+      grid.innerHTML = `<div class="sop-table-wrap"><table class="sop-table sop-folder-list-table">
+        <thead><tr><th>Anexo</th><th>Filas</th><th class="sop-folder-list-actions">Acciones</th></tr></thead>
+        <tbody>${afiduState.archivos.map((a) => `
+          <tr data-afidu-archivo="${a.id}" tabindex="0">
+            <td><strong>${escapeHtml(a.nombre)}</strong></td>
+            <td><strong>${a.total_registros || 0}</strong></td>
+            <td class="sop-folder-list-actions">${htmlAfiduArchivoActions(a)}</td>
+          </tr>`).join('')}</tbody></table></div>`;
+      bindAfiduArchivoCardEvents(grid);
+    } else {
+      grid.innerHTML = afiduState.archivos.map((a) => `
+        <article class="sop-folder-card" data-afidu-archivo="${a.id}" tabindex="0">
+          <div class="sop-folder-card-icon"><i data-lucide="file-spreadsheet"></i></div>
+          <div class="sop-folder-card-title">${escapeHtml(a.nombre)}</div>
+          <div class="sop-folder-card-meta">Tabla Excel FOMAG</div>
+          <div class="sop-folder-card-count"><strong>${a.total_registros || 0}</strong> fila(s)</div>
+          ${htmlAfiduArchivoActions(a)}
+        </article>`).join('');
+      bindAfiduArchivoCardEvents(grid);
+    }
+    afiduIcons(panel);
+    renderAfiduContextBar();
+  }
+
+  async function refrescarCarpetas() {
+    const data = await apiAnexo('/api/anexo-fidu/carpetas');
+    afiduState.carpetas = data.carpetas || [];
+    return afiduState.carpetas;
+  }
+
+  async function refrescarArchivos(carpetaId) {
+    if (!carpetaId) {
+      afiduState.archivos = [];
+      syncAfiduIds();
+      return [];
+    }
+    const data = await apiAnexo(`/api/anexo-fidu/carpetas/${carpetaId}/archivos`);
+    afiduState.archivos = data.archivos || [];
+    syncAfiduIds();
+    return afiduState.archivos;
+  }
+
+  async function seleccionarCarpetaAfidu(id) {
+    const row = afiduState.carpetas.find((c) => c.id === id);
+    afiduState.carpetaId = id;
+    afiduState.carpetaNombre = row?.nombre || 'Carpeta';
+    syncAfiduIds();
+    const panel = $('afiduMainPanel');
+    if (panel) {
+      panel.innerHTML = `<div class="sop-panel"><div class="sop-panel-body"><div class="sop-empty"><i data-lucide="loader" class="sop-empty-icon"></i>Cargando anexos…</div></div></div>`;
+      afiduIcons(panel);
+    }
+    await refrescarArchivos(id);
+    renderAfiduArchivosExplorer();
+  }
+
+  async function abrirArchivoAfidu(id) {
+    const row = afiduState.archivos.find((a) => a.id === id);
+    afiduState.archivoId = id;
+    afiduState.archivoNombre = row?.nombre || 'Anexo';
+    afiduState.vista = 'archivo';
+    syncAfiduIds();
+    mostrarAfiduArchivoWorkspace();
+    const titulo = $('afiduArchivoTitulo');
+    if (titulo) {
+      titulo.innerHTML = `<i data-lucide="file-spreadsheet"></i> ${escapeHtml(afiduState.archivoNombre)}`;
+    }
+    try {
+      const data = await apiAnexo(`/api/anexo-fidu/archivos/${_archivoId}`);
+      const a = data.archivo || {};
+      actualizarInfoArchivo(`${a.total_registros || 0} fila(s)`);
+      _page = 1;
+      await cargarRegistros();
+    } catch (e) {
+      actualizarInfoArchivo(e.message);
+      renderBody([]);
+    }
+    afiduIcons($('afiduArchivoWorkspace'));
+    renderAfiduContextBar();
+  }
+
+  function volverAfiduRoot() {
+    cancelarEdicionCelda();
+    renderAfiduRootExplorer();
+  }
+
+  async function volverAfiduCarpeta() {
+    cancelarEdicionCelda();
+    if (!afiduState.carpetaId) {
+      volverAfiduRoot();
+      return;
+    }
+    await refrescarArchivos(afiduState.carpetaId);
+    renderAfiduArchivosExplorer();
+  }
 
   const PERSONA_FORM = [
     { key: 'numero_documento', label: 'NUMERODOCUMENTO' },
@@ -319,118 +727,179 @@
     if (el) el.textContent = texto || '—';
   }
 
-  async function cargarCarpetas(seleccionarId) {
-    const data = await apiAnexo('/api/anexo-fidu/carpetas');
-    const sel = $('afiduCarpetaSel');
-    if (!sel) return;
-    const prev = seleccionarId || sel.value || _carpetaId;
-    sel.innerHTML = '<option value="">— Seleccione carpeta —</option>';
-    (data.carpetas || []).forEach((c) => {
-      const opt = document.createElement('option');
-      opt.value = c.id;
-      opt.textContent = `${c.nombre} (${c.total_archivos || 0})`;
-      sel.appendChild(opt);
+
+  function crearCarpeta() {
+    promptNombreAfidu('Nombre de la carpeta (ej. Junio):', '', async (nombre) => {
+      try {
+        const data = await apiAnexo('/api/anexo-fidu/carpetas', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ nombre })
+        });
+        await refrescarCarpetas();
+        if (data.carpeta?.id) await seleccionarCarpetaAfidu(data.carpeta.id);
+        else renderAfiduRootExplorer();
+        if (typeof showToast === 'function') showToast(`Carpeta «${data.carpeta?.nombre}» creada`, 'success');
+      } catch (e) {
+        if (e.message?.includes('409') || e.message?.includes('Ya existe')) {
+          if (typeof showToast === 'function') showToast('Esa carpeta ya existe', 'warning');
+        } else if (typeof showToast === 'function') showToast(e.message, 'error');
+      }
     });
-    if (prev) sel.value = String(prev);
-    _carpetaId = sel.value ? parseInt(sel.value, 10) : null;
   }
 
-  async function cargarArchivos(carpetaId, seleccionarId) {
-    const sel = $('afiduArchivoSel');
-    if (!sel) return;
-    if (!carpetaId) {
-      sel.innerHTML = '<option value="">—</option>';
-      _archivosCache = [];
-      _archivoId = null;
-      actualizarInfoArchivo('Seleccione carpeta y anexo para trabajar.');
-      return;
-    }
-    const data = await apiAnexo(`/api/anexo-fidu/carpetas/${carpetaId}/archivos`);
-    _archivosCache = data.archivos || [];
-    const prev = seleccionarId || sel.value || _archivoId;
-    sel.innerHTML = '<option value="">— Seleccione anexo —</option>';
-    _archivosCache.forEach((a) => {
-      const opt = document.createElement('option');
-      opt.value = a.id;
-      const n = a.total_registros || 0;
-      opt.textContent = `${a.nombre}${n ? ` (${n} filas)` : ' (vacío)'}`;
-      sel.appendChild(opt);
-    });
-    if (prev) sel.value = String(prev);
-    _archivoId = sel.value ? parseInt(sel.value, 10) : null;
-    await onArchivoSeleccionado();
-  }
-
-  async function onArchivoSeleccionado() {
-    const sel = $('afiduArchivoSel');
-    _archivoId = sel?.value ? parseInt(sel.value, 10) : null;
-    if (!_archivoId) {
-      actualizarInfoArchivo('Seleccione o cree un anexo.');
-      renderBody([]);
-      _total = 0;
-      return;
-    }
-    try {
-      const data = await apiAnexo(`/api/anexo-fidu/archivos/${_archivoId}`);
-      const a = data.archivo || {};
-      actualizarInfoArchivo(
-        `Trabajando: ${a.carpeta_nombre || ''} / ${a.nombre || ''} — ${a.total_registros || 0} fila(s). Importe Excel o agregue filas nuevas.`
-      );
-      _page = 1;
-      await cargarRegistros();
-    } catch (e) {
-      actualizarInfoArchivo(e.message);
-    }
-  }
-
-  async function crearCarpeta() {
-    const nombre = window.prompt('Nombre de la carpeta (ej. Junio):', '');
-    if (!nombre?.trim()) return;
-    try {
-      const data = await apiAnexo('/api/anexo-fidu/carpetas', {
-        method: 'POST',
+  function editarCarpetaAfidu(carpeta) {
+    if (!carpeta?.id) return;
+    promptNombreAfidu('Nombre de la carpeta:', carpeta.nombre || '', async (nombre) => {
+      if (nombre === carpeta.nombre) return;
+      try {
+      const data = await apiAnexo(`/api/anexo-fidu/carpetas/${carpeta.id}`, {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ nombre: nombre.trim() })
       });
-      await cargarCarpetas(data.carpeta?.id);
-      await cargarArchivos(_carpetaId);
-      if (typeof showToast === 'function') showToast(`Carpeta «${data.carpeta?.nombre}» creada`, 'success');
-    } catch (e) {
-      if (e.message?.includes('409') || e.message?.includes('Ya existe')) {
-        if (typeof showToast === 'function') showToast('Esa carpeta ya existe', 'warning');
-      } else if (typeof showToast === 'function') showToast(e.message, 'error');
-    }
+      await refrescarCarpetas();
+      if (afiduState.carpetaId === carpeta.id) {
+        afiduState.carpetaNombre = data.carpeta?.nombre || nombre.trim();
+        syncAfiduIds();
+        renderAfiduArchivosExplorer();
+      } else {
+        renderAfiduRootExplorer();
+      }
+      if (typeof showToast === 'function') showToast('Carpeta actualizada', 'success');
+      } catch (e) {
+        if (typeof showToast === 'function') showToast(e.message, 'error');
+      }
+    });
   }
 
-  async function crearArchivo() {
-    if (!_carpetaId) {
-      if (typeof showToast === 'function') showToast('Seleccione una carpeta primero', 'warning');
+  async function eliminarCarpetaAfidu(carpeta) {
+    if (!carpeta?.id) return;
+    const nArch = carpeta.total_archivos ?? afiduState.archivos.length ?? 0;
+    const label = carpeta.nombre || 'esta carpeta';
+    const msg = nArch > 0
+      ? `la carpeta «${label}» y sus ${nArch} anexo(s) con todas las filas`
+      : `la carpeta «${label}»`;
+    confirmEliminarAfidu(msg, async () => {
+      try {
+        const estabaAbierta = afiduState.carpetaId === carpeta.id;
+        await apiAnexo(`/api/anexo-fidu/carpetas/${carpeta.id}`, { method: 'DELETE' });
+        if (estabaAbierta) {
+          afiduState.carpetaId = null;
+          afiduState.carpetaNombre = null;
+          afiduState.archivoId = null;
+          afiduState.archivoNombre = null;
+          syncAfiduIds();
+        }
+        await refrescarCarpetas();
+        if (estabaAbierta) {
+          renderAfiduRootExplorer();
+        } else {
+          renderAfiduRootExplorer();
+        }
+        if (typeof showToast === 'function') showToast('Carpeta eliminada', 'success');
+      } catch (e) {
+        if (typeof showToast === 'function') showToast(e.message, 'error');
+      }
+    });
+  }
+
+  function editarArchivoAfidu(archivo) {
+    if (!archivo?.id) return;
+    promptNombreAfidu('Nombre del anexo:', archivo.nombre || '', async (nombre) => {
+      if (nombre === archivo.nombre) return;
+      try {
+      const data = await apiAnexo(`/api/anexo-fidu/archivos/${archivo.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nombre: nombre.trim() })
+      });
+      await refrescarArchivos(afiduState.carpetaId);
+      if (afiduState.archivoId === archivo.id) {
+        afiduState.archivoNombre = data.archivo?.nombre || nombre.trim();
+        const titulo = $('afiduArchivoTitulo');
+        if (titulo) {
+          titulo.innerHTML = `<i data-lucide="file-spreadsheet"></i> ${escapeHtml(afiduState.archivoNombre)}`;
+          afiduIcons($('afiduArchivoWorkspace'));
+        }
+        renderAfiduContextBar();
+      } else {
+        renderAfiduArchivosExplorer();
+      }
+      if (typeof showToast === 'function') showToast('Anexo actualizado', 'success');
+      } catch (e) {
+        if (typeof showToast === 'function') showToast(e.message, 'error');
+      }
+    });
+  }
+
+  async function eliminarArchivoAfidu(archivo) {
+    if (!archivo?.id) return;
+    const filas = archivo.total_registros || 0;
+    const label = archivo.nombre || 'este anexo';
+    const msg = filas > 0
+      ? `el anexo «${label}» y sus ${filas} fila(s)`
+      : `el anexo «${label}»`;
+    confirmEliminarAfidu(msg, async () => {
+      try {
+        await apiAnexo(`/api/anexo-fidu/archivos/${archivo.id}`, { method: 'DELETE' });
+        if (afiduState.archivoId === archivo.id) {
+          afiduState.archivoId = null;
+          afiduState.archivoNombre = null;
+          syncAfiduIds();
+          volverAfiduCarpeta();
+        } else {
+          await refrescarArchivos(afiduState.carpetaId);
+          renderAfiduArchivosExplorer();
+        }
+        if (typeof showToast === 'function') showToast('Anexo eliminado', 'success');
+      } catch (e) {
+        if (typeof showToast === 'function') showToast(e.message, 'error');
+      }
+    });
+  }
+
+  function crearArchivo() {
+    if (!afiduState.carpetaId) {
+      if (typeof showToast === 'function') showToast('Abra una carpeta primero', 'warning');
       return;
     }
-    const nombre = window.prompt('Nombre del anexo (ej. ANEXO 1 JUNIO):', '');
-    if (!nombre?.trim()) return;
-    try {
-      const data = await apiAnexo('/api/anexo-fidu/archivos', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ carpeta_id: _carpetaId, nombre: nombre.trim() })
-      });
-      await cargarArchivos(_carpetaId, data.archivo?.id);
-      if (typeof showToast === 'function') showToast(`Anexo «${data.archivo?.nombre}» listo — empiece a agregar filas`, 'success');
-    } catch (e) {
-      const msg = e.message || '';
-      if (msg.includes('Ya existe')) {
-        await cargarArchivos(_carpetaId);
-        const existente = _archivosCache.find(
-          (a) => a.nombre.toLowerCase() === nombre.trim().toLowerCase()
-        );
-        if (existente && window.confirm('Ese anexo ya existe. ¿Abrirlo para continuar o importar?')) {
-          const sel = $('afiduArchivoSel');
-          if (sel) sel.value = String(existente.id);
-          await onArchivoSeleccionado();
-        }
-      } else if (typeof showToast === 'function') showToast(msg, 'error');
-    }
+    promptNombreAfidu('Nombre del anexo (ej. ANEXO 1 JUNIO):', '', async (nombre) => {
+      try {
+        const data = await apiAnexo('/api/anexo-fidu/archivos', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ carpeta_id: afiduState.carpetaId, nombre })
+        });
+        await refrescarArchivos(afiduState.carpetaId);
+        if (data.archivo?.id) await abrirArchivoAfidu(data.archivo.id);
+        else renderAfiduArchivosExplorer();
+        if (typeof showToast === 'function') showToast(`Anexo «${data.archivo?.nombre}» listo — empiece a agregar filas`, 'success');
+      } catch (e) {
+        const msg = e.message || '';
+        if (msg.includes('Ya existe')) {
+          await refrescarArchivos(afiduState.carpetaId);
+          const existente = afiduState.archivos.find(
+            (a) => a.nombre.toLowerCase() === nombre.toLowerCase()
+          );
+          const abrirExistente = async () => {
+            if (existente) await abrirArchivoAfidu(existente.id);
+            else renderAfiduArchivosExplorer();
+          };
+          if (existente && typeof showConfirm === 'function') {
+            showConfirm(
+              'Ese anexo ya existe. ¿Desea abrirlo para continuar o importar?',
+              abrirExistente,
+              { okText: 'Abrir anexo', cancelText: 'Cancelar', danger: false, icon: '📄' }
+            );
+          } else if (existente) {
+            await abrirExistente();
+          } else {
+            renderAfiduArchivosExplorer();
+          }
+        } else if (typeof showToast === 'function') showToast(msg, 'error');
+      }
+    });
   }
 
   async function importarExcelAnexo() {
@@ -441,39 +910,68 @@
     input.click();
   }
 
-  async function onImportFileSelected() {
+  async function ejecutarImportExcel(file, reemplazar) {
     const input = $('afiduImportFileInput');
-    if (!input?.files?.length || !_archivoId) return;
-    const meta = await apiAnexo(`/api/anexo-fidu/archivos/${_archivoId}`);
-    const total = meta.archivo?.total_registros || 0;
-    let reemplazar = '0';
-    if (total > 0) {
-      const modo = window.confirm(
-        `Este anexo tiene ${total} fila(s).\n\nAceptar = reemplazar todo con el Excel\nCancelar = agregar al final`
-      );
-      reemplazar = modo ? '1' : '0';
-    }
     const fd = new FormData();
-    fd.append('file', input.files[0]);
+    fd.append('file', file);
     fd.append('reemplazar', reemplazar);
     const hdr = new Headers();
     if (typeof getCsrfForRequest === 'function') {
       const csrf = getCsrfForRequest();
       if (csrf) hdr.set('x-csrf-token', csrf);
     }
+    const res = await fetch(`/api/anexo-fidu/archivos/${_archivoId}/importar`, {
+      method: 'POST',
+      headers: hdr,
+      body: fd,
+      credentials: 'include'
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Error al importar');
+    if (input) input.value = '';
+    if (typeof showToast === 'function') showToast(data.mensaje || 'Importación completada', 'success');
+    await refrescarArchivos(afiduState.carpetaId);
+    await abrirArchivoAfidu(_archivoId);
+  }
+
+  async function onImportFileSelected() {
+    const input = $('afiduImportFileInput');
+    if (!input?.files?.length || !_archivoId) return;
+    const file = input.files[0];
+    const limpiarInput = () => { if (input) input.value = ''; };
     try {
-      const res = await fetch(`/api/anexo-fidu/archivos/${_archivoId}/importar`, {
-        method: 'POST',
-        headers: hdr,
-        body: fd,
-        credentials: 'include'
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || 'Error al importar');
-      input.value = '';
-      if (typeof showToast === 'function') showToast(data.mensaje || 'Importación completada', 'success');
-      await cargarArchivos(_carpetaId, _archivoId);
+      const meta = await apiAnexo(`/api/anexo-fidu/archivos/${_archivoId}`);
+      const total = meta.archivo?.total_registros || 0;
+      if (total > 0) {
+        const msg = `Este anexo tiene ${total} fila(s). ¿Cómo desea importar el Excel?`;
+        if (typeof window.showConfirmChoice === 'function') {
+          window.showConfirmChoice(
+            msg,
+            () => ejecutarImportExcel(file, '1').catch((e) => {
+              if (typeof showToast === 'function') showToast(e.message, 'error');
+            }),
+            () => ejecutarImportExcel(file, '0').catch((e) => {
+              if (typeof showToast === 'function') showToast(e.message, 'error');
+            }),
+            {
+              primaryText: 'Reemplazar todo',
+              secondaryText: 'Agregar al final',
+              cancelText: 'Cancelar',
+              icon: '📊',
+              onCancel: limpiarInput
+            }
+          );
+          return;
+        }
+        const reemplazar = window.confirm(
+          `${msg}\n\nAceptar = reemplazar todo con el Excel\nCancelar = agregar al final`
+        ) ? '1' : '0';
+        await ejecutarImportExcel(file, reemplazar);
+      } else {
+        await ejecutarImportExcel(file, '0');
+      }
     } catch (e) {
+      limpiarInput();
       if (typeof showToast === 'function') showToast(e.message, 'error');
     }
   }
@@ -608,7 +1106,7 @@
       $('afiduEntradaDoc').value = '';
       $('afiduEntradaCodigo').value = '';
       $('afiduEntradaDoc')?.focus();
-      if (typeof showToast === 'function') showToast('Fila agregada — doble clic para editar', 'success');
+      if (typeof showToast === 'function') showToast('Fila agregada', 'success');
     } catch (e) {
       if (typeof showToast === 'function') showToast(e.message, 'error');
     }
@@ -631,7 +1129,7 @@
     if (info) {
       const from = _total === 0 ? 0 : (_page - 1) * _limit + 1;
       const to = Math.min(_page * _limit, _total);
-      info.textContent = `Mostrando ${from}–${to} de ${_total} · doble clic para editar`;
+      info.textContent = `Mostrando ${from}–${to} de ${_total}`;
     }
     const prev = $('afiduPagerPrev');
     const next = $('afiduPagerNext');
@@ -640,25 +1138,24 @@
   }
 
   async function eliminarRegistro(id, tr) {
-    if (!confirm('¿Eliminar esta fila del anexo?')) return;
-    try {
-      if (id) await apiAnexo(`/api/anexo-fidu/registros/${id}`, { method: 'DELETE' });
-      tr?.remove();
-      if (typeof showToast === 'function') showToast('Fila eliminada', 'success');
-      const tbody = $('afiduGridBody');
-      if (tbody && !tbody.querySelector('.afidu-row')) {
-        await cargarRegistros();
+    confirmEliminarAfidu('esta fila del anexo', async () => {
+      try {
+        if (id) await apiAnexo(`/api/anexo-fidu/registros/${id}`, { method: 'DELETE' });
+        tr?.remove();
+        if (typeof showToast === 'function') showToast('Fila eliminada', 'success');
+        const tbody = $('afiduGridBody');
+        if (tbody && !tbody.querySelector('.afidu-row')) {
+          await cargarRegistros();
+        }
+      } catch (e) {
+        if (typeof showToast === 'function') showToast(e.message, 'error');
       }
-    } catch (e) {
-      if (typeof showToast === 'function') showToast(e.message, 'error');
-    }
+    });
   }
 
   async function cargarResumenPersonas() {
     try {
-      const data = await apiAnexo('/api/anexo-fidu/personas/resumen');
-      const el = $('afiduPersonasInfo');
-      if (el) el.textContent = `${data.total || 0} persona(s) en base maestra (MySQL)`;
+      await apiAnexo('/api/anexo-fidu/personas/resumen');
     } catch (_) { /* ignore */ }
   }
 
@@ -668,32 +1165,49 @@
       if (typeof showToast === 'function') showToast('Selecciona un archivo .csv', 'error');
       return;
     }
-    if (!confirm('Esto reemplazará toda la base de personas en el servidor. ¿Continuar?')) {
-      input.value = '';
+    const file = input.files[0];
+    const limpiarInput = () => { input.value = ''; };
+    const ejecutar = async () => {
+      const fd = new FormData();
+      fd.append('file', file);
+      const hdr = new Headers();
+      if (typeof getCsrfForRequest === 'function') {
+        const csrf = getCsrfForRequest();
+        if (csrf) hdr.set('x-csrf-token', csrf);
+      }
+      try {
+        const res = await fetch('/api/anexo-fidu/personas/importar', {
+          method: 'POST',
+          headers: hdr,
+          body: fd,
+          credentials: 'include'
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Error al importar');
+        limpiarInput();
+        if (typeof showToast === 'function') showToast(data.mensaje || 'Base de personas actualizada', 'success');
+        await cargarResumenPersonas();
+      } catch (e) {
+        limpiarInput();
+        if (typeof showToast === 'function') showToast(e.message, 'error');
+      }
+    };
+    const aviso = 'Esto reemplazará toda la base de personas en el servidor.\n\n¿Desea continuar?';
+    if (typeof showConfirm === 'function') {
+      showConfirm(aviso, ejecutar, {
+        okText: 'Continuar',
+        cancelText: 'Cancelar',
+        danger: true,
+        icon: '⚠️',
+        onCancel: limpiarInput
+      });
       return;
     }
-    const fd = new FormData();
-    fd.append('file', input.files[0]);
-    const hdr = new Headers();
-    if (typeof getCsrfForRequest === 'function') {
-      const csrf = getCsrfForRequest();
-      if (csrf) hdr.set('x-csrf-token', csrf);
+    if (!window.confirm(aviso)) {
+      limpiarInput();
+      return;
     }
-    try {
-      const res = await fetch('/api/anexo-fidu/personas/importar', {
-        method: 'POST',
-        headers: hdr,
-        body: fd,
-        credentials: 'include'
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || 'Error al importar');
-      input.value = '';
-      if (typeof showToast === 'function') showToast(data.mensaje || 'Base actualizada en MySQL', 'success');
-      await cargarResumenPersonas();
-    } catch (e) {
-      if (typeof showToast === 'function') showToast(e.message, 'error');
-    }
+    await ejecutar();
   }
 
   function exportarExcel() {
@@ -705,7 +1219,8 @@
 
   function bindGridEvents() {
     const tbody = $('afiduGridBody');
-    if (!tbody) return;
+    if (!tbody || tbody.dataset.afiduGridBound) return;
+    tbody.dataset.afiduGridBound = '1';
     tbody.addEventListener('dblclick', (e) => {
       const td = e.target.closest('.afidu-cell');
       if (td) iniciarEdicionCelda(td);
@@ -719,6 +1234,8 @@
   }
 
   function bindEvents() {
+    if (afiduEventsBound) return;
+    afiduEventsBound = true;
     $('btnVolverAnexoFidu')?.addEventListener('click', () => {
       if (typeof goToMenu === 'function') goToMenu();
     });
@@ -731,13 +1248,8 @@
     $('btnAfiduSubirPersonas')?.addEventListener('click', () => $('afiduPersonasFileInput')?.click());
     $('afiduPersonasFileInput')?.addEventListener('change', importarPersonasCsv);
     $('btnAfiduExportar')?.addEventListener('click', exportarExcel);
-    $('afiduCarpetaSel')?.addEventListener('change', async (e) => {
-      _carpetaId = e.target.value ? parseInt(e.target.value, 10) : null;
-      await cargarArchivos(_carpetaId);
-    });
-    $('afiduArchivoSel')?.addEventListener('change', onArchivoSeleccionado);
     $('btnAfiduNuevaCarpeta')?.addEventListener('click', crearCarpeta);
-    $('btnAfiduNuevoArchivo')?.addEventListener('click', crearArchivo);
+    $('btnAfiduVolverCarpeta')?.addEventListener('click', volverAfiduCarpeta);
     $('btnAfiduImportarAnexo')?.addEventListener('click', importarExcelAnexo);
     $('afiduImportFileInput')?.addEventListener('change', onImportFileSelected);
     $('btnAfiduBuscar')?.addEventListener('click', () => { _page = 1; cargarRegistros(); });
@@ -751,15 +1263,57 @@
     bindGridEvents();
   }
 
+  async function refrescarVistaAfiduActual() {
+    await refrescarCarpetas();
+    if (afiduState.vista === 'archivo' && afiduState.archivoId) {
+      if (afiduState.carpetaId) await refrescarArchivos(afiduState.carpetaId);
+      const row = afiduState.archivos.find((a) => a.id === afiduState.archivoId);
+      if (row) {
+        afiduState.archivoNombre = row.nombre;
+        syncAfiduIds();
+        await abrirArchivoAfidu(afiduState.archivoId);
+      } else {
+        afiduState.archivoId = null;
+        afiduState.archivoNombre = null;
+        afiduState.vista = afiduState.carpetaId ? 'carpeta' : 'root';
+        syncAfiduIds();
+        if (afiduState.carpetaId) renderAfiduArchivosExplorer();
+        else renderAfiduRootExplorer();
+      }
+    } else if (afiduState.vista === 'carpeta' && afiduState.carpetaId) {
+      const row = afiduState.carpetas.find((c) => c.id === afiduState.carpetaId);
+      if (row) {
+        afiduState.carpetaNombre = row.nombre;
+        syncAfiduIds();
+        await refrescarArchivos(afiduState.carpetaId);
+        renderAfiduArchivosExplorer();
+      } else {
+        afiduState.carpetaId = null;
+        afiduState.carpetaNombre = null;
+        afiduState.vista = 'root';
+        syncAfiduIds();
+        renderAfiduRootExplorer();
+      }
+    } else {
+      renderAfiduRootExplorer();
+    }
+  }
+
   async function initAnexoFidu() {
-    bindEvents();
+    if (!initAfiduDone) {
+      bindEvents();
+      try {
+        await cargarColumnas();
+        await cargarServicios();
+        renderThead();
+        initAfiduDone = true;
+      } catch (e) {
+        if (typeof showToast === 'function') showToast('Error cargando anexo: ' + e.message, 'error');
+        return;
+      }
+    }
     try {
-      await cargarColumnas();
-      await cargarServicios();
-      renderThead();
-      await cargarCarpetas();
-      if (_carpetaId) await cargarArchivos(_carpetaId);
-      else renderBody([]);
+      await refrescarVistaAfiduActual();
       await cargarResumenPersonas();
     } catch (e) {
       if (typeof showToast === 'function') showToast('Error cargando anexo: ' + e.message, 'error');
@@ -767,4 +1321,5 @@
   }
 
   window.initAnexoFidu = initAnexoFidu;
+  window.refreshAnexoFidu = refrescarVistaAfiduActual;
 })();

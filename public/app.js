@@ -834,7 +834,7 @@ async function doLogout() {
   if (p) { p.value = ''; p.setAttribute('value', ''); }
 }
 
-let initRecibosDone = false, initAgendaDone = false, initElectroDone = false, initUsuariosDone = false, initDiagnosticosDone = false, initDashboardCitasDone = false, initGestionDatosDone = false, initUcqnDone = false, initBackupDone = false, initAnexoFiduDone = false;
+let initRecibosDone = false, initAgendaDone = false, initElectroDone = false, initUsuariosDone = false, initDiagnosticosDone = false, initDashboardCitasDone = false, initGestionDatosDone = false, initUcqnDone = false;
 function goToModule(moduleId) {
   const permAnexo = 'modulo.anexo_fidu';
   if (moduleId === 'anexo-fidu' && typeof tienePermiso === 'function' && !tienePermiso(permAnexo)) {
@@ -903,22 +903,8 @@ function goToModule(moduleId) {
   if (moduleId === 'monitor-equipos') { initMonitorEquipos(); }
   if (moduleId === 'reportes-pdx' && typeof initReportesPdx === 'function') initReportesPdx();
   if (moduleId === 'armado-soportes' && typeof initArmadoSoportes === 'function') initArmadoSoportes();
-  if (moduleId === 'backup') {
-    if (!initBackupDone && typeof initBackupModule === 'function') {
-      initBackupModule();
-      initBackupDone = true;
-    } else if (typeof initBackupModule === 'function') {
-      initBackupModule();
-    }
-  }
-  if (moduleId === 'anexo-fidu') {
-    if (!initAnexoFiduDone && typeof initAnexoFidu === 'function') {
-      initAnexoFidu();
-      initAnexoFiduDone = true;
-    } else if (typeof initAnexoFidu === 'function') {
-      initAnexoFidu();
-    }
-  }
+  if (moduleId === 'backup' && typeof initBackupModule === 'function') initBackupModule();
+  if (moduleId === 'anexo-fidu' && typeof initAnexoFidu === 'function') initAnexoFidu();
   if (typeof window.innarSidebarRefresh === 'function') window.innarSidebarRefresh();
 }
 
@@ -1882,7 +1868,7 @@ function showSessionExpiredBanner() {
 }
 
 // ========== CONFIRM MODAL ==========
-function showConfirm(msg, onOk, { okText = 'Eliminar', cancelText = 'Cancelar', danger = true, icon = '⚠️' } = {}) {
+function showConfirm(msg, onOk, { okText = 'Eliminar', cancelText = 'Cancelar', danger = true, icon = '⚠️', onCancel = null } = {}) {
   const backdrop = document.createElement('div');
   backdrop.className = 'confirm-backdrop';
   backdrop.innerHTML = `
@@ -1898,6 +1884,7 @@ function showConfirm(msg, onOk, { okText = 'Eliminar', cancelText = 'Cancelar', 
   const closeConfirm = () => {
     if (typeof window.innarCloseConfirm === 'function') window.innarCloseConfirm(backdrop);
     else backdrop.remove();
+    if (typeof onCancel === 'function') onCancel();
   };
   backdrop.querySelector('.btn-cancel').addEventListener('click', closeConfirm);
   backdrop.querySelector('.btn-ok').addEventListener('click', () => {
@@ -1910,6 +1897,123 @@ function showConfirm(msg, onOk, { okText = 'Eliminar', cancelText = 'Cancelar', 
   });
   backdrop.addEventListener('click', e => { if (e.target === backdrop) closeConfirm(); });
 }
+
+/** Confirmación estándar antes de eliminar (usar en todo el sistema). */
+function confirmEliminar(msg, onOk, { okText = 'Eliminar', cancelText = 'Cancelar' } = {}) {
+  const base = String(msg || '¿Está seguro de que desea eliminar esto?').trim();
+  const texto = /¿/u.test(base)
+    ? base
+    : `¿Está seguro de que desea eliminar ${base}?`;
+  const aviso = texto.includes('no se puede deshacer') ? texto : `${texto}\n\nEsta acción no se puede deshacer.`;
+  showConfirm(aviso, onOk, { okText, cancelText, danger: true });
+}
+window.confirmEliminar = confirmEliminar;
+
+function showPromptInput(msg, onOk, {
+  okText = 'Guardar',
+  cancelText = 'Cancelar',
+  danger = false,
+  icon = '✏️',
+  placeholder = '',
+  defaultValue = '',
+  inputLabel = ''
+} = {}) {
+  const backdrop = document.createElement('div');
+  backdrop.className = 'confirm-backdrop';
+  const labelHtml = inputLabel
+    ? `<label class="confirm-prompt-label" style="display:block;margin:8px 0 4px;font-size:.85rem;color:#64748b">${escapeHtml(inputLabel)}</label>`
+    : '';
+  backdrop.innerHTML = `
+    <div class="confirm-box">
+      <div class="confirm-icon">${icon}</div>
+      <div class="confirm-msg">${msg}</div>
+      ${labelHtml}
+      <input type="text" class="prompt-input prompt-input-single" value="${escapeHtml(defaultValue)}" placeholder="${escapeHtml(placeholder)}" style="width:100%;margin:10px 0;padding:10px;border:1px solid #d1d5db;border-radius:8px;font-family:inherit;font-size:.9rem" />
+      <div class="confirm-actions">
+        <button class="btn-cancel">${cancelText}</button>
+        <button class="btn-ok${danger ? ' danger' : ''}">${okText}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(backdrop);
+  const input = backdrop.querySelector('.prompt-input');
+  input.focus();
+  input.select();
+  const closePrompt = () => {
+    if (typeof window.innarCloseConfirm === 'function') window.innarCloseConfirm(backdrop);
+    else backdrop.remove();
+  };
+  const submit = () => {
+    const val = input.value.trim();
+    if (!val) { input.style.borderColor = '#ef4444'; input.focus(); return; }
+    if (typeof window.innarCloseConfirm === 'function') {
+      window.innarCloseConfirm(backdrop, () => onOk(val));
+    } else {
+      backdrop.remove();
+      onOk(val);
+    }
+  };
+  backdrop.querySelector('.btn-cancel').addEventListener('click', closePrompt);
+  backdrop.querySelector('.btn-ok').addEventListener('click', submit);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); submit(); }
+    if (e.key === 'Escape') closePrompt();
+  });
+  backdrop.addEventListener('click', e => { if (e.target === backdrop) closePrompt(); });
+}
+window.showPromptInput = showPromptInput;
+
+function showConfirmChoice(msg, onPrimary, onSecondary, {
+  primaryText = 'Aceptar',
+  secondaryText = 'Otra opción',
+  cancelText = 'Cancelar',
+  icon = '❓',
+  onCancel = null
+} = {}) {
+  const backdrop = document.createElement('div');
+  backdrop.className = 'confirm-backdrop';
+  backdrop.innerHTML = `
+    <div class="confirm-box">
+      <div class="confirm-icon">${icon}</div>
+      <div class="confirm-msg">${msg}</div>
+      <div class="confirm-actions confirm-actions-choice">
+        <button class="btn-cancel">${cancelText}</button>
+        <button class="btn-secondary">${secondaryText}</button>
+        <button class="btn-ok">${primaryText}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(backdrop);
+  const closeChoice = () => {
+    if (typeof window.innarCloseConfirm === 'function') window.innarCloseConfirm(backdrop);
+    else backdrop.remove();
+  };
+  backdrop.querySelector('.btn-cancel').addEventListener('click', () => {
+    closeChoice();
+    if (typeof onCancel === 'function') onCancel();
+  });
+  backdrop.querySelector('.btn-secondary').addEventListener('click', () => {
+    if (typeof window.innarCloseConfirm === 'function') {
+      window.innarCloseConfirm(backdrop, onSecondary);
+    } else {
+      backdrop.remove();
+      onSecondary();
+    }
+  });
+  backdrop.querySelector('.btn-ok').addEventListener('click', () => {
+    if (typeof window.innarCloseConfirm === 'function') {
+      window.innarCloseConfirm(backdrop, onPrimary);
+    } else {
+      backdrop.remove();
+      onPrimary();
+    }
+  });
+  backdrop.addEventListener('click', e => {
+    if (e.target === backdrop) {
+      closeChoice();
+      if (typeof onCancel === 'function') onCancel();
+    }
+  });
+}
+window.showConfirmChoice = showConfirmChoice;
 
 function showPrompt(msg, onOk, { okText = 'Confirmar', cancelText = 'Cancelar', danger = true, icon = '⚠️', placeholder = '' } = {}) {
   const backdrop = document.createElement('div');
@@ -8522,7 +8626,7 @@ const PERMISOS_DEFS = [
   { key: 'modulo.monitor_equipos',  label: 'Módulo: Monitor de Equipos',           grupo: 'Acceso a Módulos' },
   { key: 'modulo.reportes_pdx',     label: 'Módulo: Cargar reportes',              grupo: 'Acceso a Módulos' },
   { key: 'modulo.armado_soportes', label: 'Módulo: Soportes',                    grupo: 'Acceso a Módulos' },
-  { key: 'modulo.anexo_fidu',      label: 'Módulo: Anexo FIDU',                   grupo: 'Acceso a Módulos' },
+  { key: 'modulo.anexo_fidu',      label: 'Módulo: Anexo',                        grupo: 'Acceso a Módulos' },
   { key: 'modulo.backup',          label: 'Módulo: Backup',                        grupo: 'Acceso a Módulos' },
   // ── Cargar reportes (PDX) ─────────────────────────────────────────────────
   { key: 'soportes.pdx.ver',             label: 'Reportes: Ver carpetas y archivos',     grupo: 'Cargar reportes' },

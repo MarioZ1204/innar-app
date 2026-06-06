@@ -33,14 +33,13 @@
 .ccal-dia-info-split+.ccal-status-badges{top:4px;right:4px;bottom:auto}
 
 /* ========== MONITOR DE EQUIPOS ========== */
-.meq-fullpage{min-height:100vh;background:linear-gradient(135deg,#f0f4f8 0%,#e8edf3 100%);display:flex;flex-direction:column}
-.meq-topbar{display:flex;justify-content:space-between;align-items:center;padding:0 28px;height:60px;background:#fff;border-bottom:1px solid #e5e7eb;position:sticky;top:0;z-index:10;box-shadow:0 1px 4px rgba(0,0,0,.04)}
+.meq-fullpage{min-height:100vh;min-height:100dvh;background:var(--innar-page-bg,#f4f7f6);display:flex;flex-direction:column}
+.meq-topbar{display:flex;justify-content:space-between;align-items:center;padding:0 28px;height:60px;background:var(--innar-surface,#fff);border-bottom:1px solid var(--innar-border,#e5e7eb);position:sticky;top:0;z-index:10;box-shadow:var(--innar-shadow-sm,0 1px 4px rgba(0,0,0,.04))}
 .meq-topbar-left{display:flex;align-items:center;gap:0;height:100%}
 .meq-topbar-logo{height:36px;width:auto;object-fit:contain}
 .meq-topbar-divider{width:1px;height:28px;background:#e2e8f0;margin:0 16px}
 .meq-topbar-center{position:absolute;left:50%;transform:translateX(-50%);font-size:.95rem;font-weight:700;color:#1e293b;letter-spacing:.01em}
-.meq-back-btn{display:flex;align-items:center;gap:8px;background:none;border:none;font-size:.88rem;font-weight:600;color:#475569;cursor:pointer;padding:6px 12px;border-radius:8px;transition:background .15s,color .15s}
-.meq-back-btn:hover{background:#f1f5f9;color:#1e293b}
+.meq-topbar .btn-volver.meq-back-btn{margin:0;height:auto;min-height:0;padding:8px 12px}
 .meq-topbar-right{display:flex;align-items:center;gap:10px}
 .meq-refresh-btn{width:48px!important;height:48px!important;min-width:48px!important;min-height:48px!important;border-radius:12px!important;border:2.5px solid #7c3aed!important;background:#ede9fe!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;cursor:pointer!important;color:#7c3aed!important;transition:all .2s;font-weight:700;box-shadow:0 3px 10px rgba(124,58,237,.25)!important;padding:0!important;overflow:visible!important;visibility:visible!important;opacity:1!important}
 .meq-refresh-btn:hover{background:#7c3aed!important;color:#fff!important;transform:rotate(90deg) scale(1.08);box-shadow:0 4px 14px rgba(124,58,237,.35)!important}

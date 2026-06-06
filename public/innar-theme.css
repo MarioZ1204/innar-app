@@ -138,6 +138,24 @@ select {
   color: var(--innar-text) !important;
 }
 
+.meq-topbar .btn-volver {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--innar-border);
+  color: var(--innar-text-muted);
+}
+
+.meq-topbar .btn-volver:hover {
+  background: var(--innar-accent-soft);
+  color: var(--innar-text);
+  border-color: var(--innar-accent-border);
+}
+
+.meq-stat-chip {
+  background: var(--innar-surface) !important;
+  border-color: var(--innar-border) !important;
+  box-shadow: var(--innar-shadow-sm) !important;
+}
+
 #monitorLastUpdate {
   color: var(--innar-text-muted) !important;
 }

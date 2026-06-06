@@ -113,17 +113,24 @@
   }
 
   async function eliminarBackup(filename) {
-    if (!filename || !confirm(`¿Eliminar el backup ${filename}?`)) return;
-    try {
-      const res = await apiFetch(`/api/backups/completo/${encodeURIComponent(filename)}`, {
-        method: 'DELETE'
-      });
-      const data = await res.json();
-      if (!res.ok || !data.ok) throw new Error(data.error || 'No se pudo eliminar');
-      toast('Backup eliminado', 'success');
-      await cargarListaBackups();
-    } catch (e) {
-      toast(e.message || 'Error al eliminar', 'error');
+    if (!filename) return;
+    const run = async () => {
+      try {
+        const res = await apiFetch(`/api/backups/completo/${encodeURIComponent(filename)}`, {
+          method: 'DELETE'
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || 'No se pudo eliminar');
+        toast('Backup eliminado', 'success');
+        await cargarListaBackups();
+      } catch (e) {
+        toast(e.message || 'Error al eliminar', 'error');
+      }
+    };
+    if (typeof window.confirmEliminar === 'function') {
+      window.confirmEliminar(`el backup «${filename}»`, run);
+    } else if (window.confirm(`¿Está seguro de eliminar el backup «${filename}»?`)) {
+      await run();
     }
   }
 
@@ -142,4 +149,5 @@
   }
 
   window.initBackupModule = initBackupModule;
+  window.refreshBackupModule = cargarListaBackups;
 })();
