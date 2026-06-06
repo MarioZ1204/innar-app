@@ -2579,11 +2579,12 @@ router.get('/soportes/armado/dias/:id/zip', requireAuth, requireRoleOrPerm(ROLES
     if (!rows.length) return res.status(404).json({ error: 'Carpeta de día no encontrada' });
     await streamDiaZip(res, rows[0]);
   } catch (e) {
+    logger.error('[SOPORTES] zip dia:', e);
     if (!res.headersSent) {
-      const msg = e.message === 'La carpeta no tiene archivos para descargar' || e.message === 'ZIP vacío'
-        ? e.message
-        : safeError(e);
-      res.status(e.message?.includes('no tiene') || e.message === 'ZIP vacío' ? 404 : 500).json({ error: msg });
+      const notFound = /no tiene|no hay archivos|ZIP vacío/i.test(e.message || '');
+      res.status(notFound ? 404 : 500).json({
+        error: notFound ? e.message : 'No se pudo generar el ZIP. Intente de nuevo o contacte al administrador.'
+      });
     }
   }
 });
@@ -2596,9 +2597,12 @@ router.get('/soportes/armado/periodos/:id/zip-paquete', requireAuth, requireRole
     if (!periodoRows.length) return res.status(404).json({ error: 'Periodo no encontrado' });
     await streamPeriodPaqueteZip(res, periodoRows[0]);
   } catch (e) {
+    logger.error('[SOPORTES] zip-paquete:', e);
     if (!res.headersSent) {
       const notFound = /no tiene|no hay archivos/i.test(e.message || '');
-      res.status(notFound ? 404 : 500).json({ error: notFound ? e.message : safeError(e) });
+      res.status(notFound ? 404 : 500).json({
+        error: notFound ? e.message : 'No se pudo generar el ZIP. Intente de nuevo o contacte al administrador.'
+      });
     }
   }
 });
@@ -2611,9 +2615,12 @@ router.get('/soportes/armado/periodos/:id/zip-unificado', requireAuth, requireRo
     if (!periodoRows.length) return res.status(404).json({ error: 'Periodo no encontrado' });
     await streamUnifiedPeriodZip(res, periodoRows[0]);
   } catch (e) {
+    logger.error('[SOPORTES] zip-unificado:', e);
     if (!res.headersSent) {
       const notFound = /no hay archivos/i.test(e.message || '');
-      res.status(notFound ? 404 : 500).json({ error: notFound ? e.message : safeError(e) });
+      res.status(notFound ? 404 : 500).json({
+        error: notFound ? e.message : 'No se pudo generar el ZIP. Intente de nuevo o contacte al administrador.'
+      });
     }
   }
 });
