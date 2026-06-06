@@ -1044,6 +1044,19 @@ const runtimeMigrations = [
         }
       }
     }
+  },
+  {
+    name: 'rt_sop_pdx_orphans_cleanup',
+    description: 'Elimina archivos PDX huérfanos (carpeta_id sin carpeta en sop_pdx_carpetas)',
+    run: async (db) => {
+      if (!(await tableExists(db, 'sop_pdx_archivos'))) return;
+      if (!(await tableExists(db, 'sop_pdx_carpetas'))) return;
+      await db.execute(
+        `DELETE a FROM sop_pdx_archivos a
+         LEFT JOIN sop_pdx_carpetas c ON c.id = a.carpeta_id
+         WHERE c.id IS NULL`
+      );
+    }
   }
 ];
 

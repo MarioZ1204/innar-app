@@ -22,51 +22,68 @@ function mensajeDuplicadoPdx(dup) {
   return `Ya existe un archivo con los mismos datos en esta carpeta (${nombre}). No se permiten duplicados.`;
 }
 
-async function buscarDuplicadoPdxEnCarpeta(db, carpetaId, meta, carpeta = null, opts = {}) {
-  if (!carpetaId || !meta) return null;
-  const tema = detectarTemaCarpeta(carpeta?.nombre_display || '');
-  const excludeId = opts.excludeId != null ? parseInt(opts.excludeId, 10) : null;
-  const consultaMedica = esTemaConsultaMedica(tema);
-
-  if (!consultaMedica && meta.nombre_archivo_display) {
-    const paramsDisplay = [carpetaId, meta.nombre_archivo_display];
-    let sqlDisplay = `SELECT id, paciente_nombre, nombre_archivo_display, ruta_relativa, paciente_nombre_norm, fecha_estudio, estudio_texto
-       FROM sop_pdx_archivos WHERE carpeta_id = ? AND nombre_archivo_display = ?`;
-    if (excludeId) {
-      sqlDisplay += ' AND id <> ?';
-      paramsDisplay.push(excludeId);
-    }
-    sqlDisplay += ' LIMIT 1';
+async function buscarPorNombreDisplay(db, carpetaId, meta, excludeId) {
+  if (!meta.nombre_archivo_display) return null;
+  const paramsDisplay = [carpetaId, meta.nombre_archivo_display];
+  let sqlDisplay = `SELECT id, paciente_nombre, nombre_archivo_display, ruta_relativa, paciente_nombre_norm, fecha_estudio, estudio_texto
+     FROM sop_pdx_archivos WHERE carpeta_id = ? AND nombre_archivo_display = ?`;
+  if (excludeId) {
+    sqlDisplay += ' AND id <> ?';
+    paramsDisplay.push(excludeId);
+  }
+  sqlDisplay += ' LIMIT 1';
+  try {
     const byDisplay = await db.query(sqlDisplay, paramsDisplay);
     if (byDisplay.length) return { row: byDisplay[0], motivo: 'nombre_display' };
+  } catch (e) {
+    if (e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+    /* esquema antiguo sin nombre_archivo_display */
   }
+  return null;
+}
 
-  const norm = meta.paciente_nombre_norm;
-  const fecha = meta.fecha_estudio;
-  const estudio = meta.estudio_texto;
-  if (!norm || !fecha || !estudio) return null;
+async function buscarDuplicadoPdxEnCarpeta(db, carpetaId, meta, carpeta = null, opts = {}) {
+  if (!carpetaId || !meta) return null;
+  try {
+    const tema = detectarTemaCarpeta(carpeta?.nombre_display || '');
+    const excludeId = opts.excludeId != null ? parseInt(opts.excludeId, 10) : null;
+    const consultaMedica = esTemaConsultaMedica(tema);
 
-  const params = [carpetaId, norm, fecha, estudio];
-  let sql = `SELECT id, paciente_nombre, nombre_archivo_display, ruta_relativa, paciente_nombre_norm, fecha_estudio, estudio_texto
+    if (!consultaMedica) {
+      const byName = await buscarPorNombreDisplay(db, carpetaId, meta, excludeId);
+      if (byName) return byName;
+    }
+
+    const norm = meta.paciente_nombre_norm;
+    const fecha = meta.fecha_estudio;
+    const estudio = meta.estudio_texto;
+    if (!norm || !fecha || !estudio) return null;
+
+    const params = [carpetaId, norm, fecha, estudio];
+    let sql = `SELECT id, paciente_nombre, nombre_archivo_display, ruta_relativa, paciente_nombre_norm, fecha_estudio, estudio_texto
     FROM sop_pdx_archivos
     WHERE carpeta_id = ? AND paciente_nombre_norm = ? AND fecha_estudio = ? AND estudio_texto = ?`;
 
-  if (TEMAS_CON_DOCUMENTO.includes(tema)) {
-    const doc = String(meta.paciente_documento || '').trim();
-    if (!doc) return null;
-    sql += ' AND paciente_documento = ?';
-    params.push(doc);
-  }
+    if (TEMAS_CON_DOCUMENTO.includes(tema)) {
+      const doc = String(meta.paciente_documento || '').trim();
+      if (!doc) return null;
+      sql += ' AND paciente_documento = ?';
+      params.push(doc);
+    }
 
-  if (excludeId) {
-    sql += ' AND id <> ?';
-    params.push(excludeId);
-  }
+    if (excludeId) {
+      sql += ' AND id <> ?';
+      params.push(excludeId);
+    }
 
-  sql += ' LIMIT 1';
-  const byDatos = await db.query(sql, params);
-  if (byDatos.length) return { row: byDatos[0], motivo: 'datos' };
-  return null;
+    sql += ' LIMIT 1';
+    const byDatos = await db.query(sql, params);
+    if (byDatos.length) return { row: byDatos[0], motivo: 'datos' };
+    return null;
+  } catch (e) {
+    if (e.code === 'ER_NO_SUCH_TABLE' || e.code === 'ER_BAD_FIELD_ERROR') return null;
+    throw e;
+  }
 }
 
 async function cuentaReferenciasRutaPdx(db, carpetaId, rutaRelativa, excludeId = null) {

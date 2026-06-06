@@ -2192,10 +2192,16 @@
     const res = await apiFetch(`/api/soportes/pdx/carpetas/${carpetaId}/archivos`, { method: 'POST', body: fd });
     const data = await res.json();
     if (!res.ok) {
+      if (data.codigo === 'PDX_CARPETA_INEXISTENTE') {
+        await cargarCarpetasPdx();
+        volverListaPdx();
+      }
       const msg = data.codigo === 'PDX_DUPLICADO'
         ? (data.error || 'Ya existe un archivo con los mismos datos en esta carpeta')
         : [data.error, data.detail, data.step].filter(Boolean).join(' — ');
-      throw new Error(msg || 'Error al subir');
+      const err = new Error(msg || 'Error al subir');
+      err.codigo = data.codigo;
+      throw err;
     }
     if (data.warnings?.length) sopToast(data.warnings.join(' · '), 'warning');
     return data;

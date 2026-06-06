@@ -269,14 +269,39 @@ const uploadPdx = multer({
   }
 });
 
+async function requirePdxCarpetaExiste(req, res, next) {
+  const carpetaId = parseInt(req.params.id, 10);
+  if (!carpetaId) {
+    return res.status(400).json({ error: 'ID de carpeta inválido', codigo: 'PDX_CARPETA_INVALIDA' });
+  }
+  try {
+    const rows = await db.query('SELECT id FROM sop_pdx_carpetas WHERE id = ?', [carpetaId]);
+    if (!rows.length) {
+      return res.status(404).json({
+        error: 'Carpeta no encontrada o eliminada. Vuelva a la lista y ábrala de nuevo.',
+        codigo: 'PDX_CARPETA_INEXISTENTE'
+      });
+    }
+    return next();
+  } catch (e) {
+    logger.error('[SOPORTES] validar carpeta pdx:', e);
+    return res.status(500).json(pdxListErrorPayload(req, e, 'carpeta'));
+  }
+}
+
 function uploadPdxSingle(req, res, next) {
   uploadPdx.single('file')(req, res, (err) => {
     if (!err) return next();
-    logger.error('[SOPORTES] multer pdx', { message: err.message, code: err.code });
-    const status = err.code === 'LIMIT_FILE_SIZE' ? 413 : 400;
-    const payload = { error: err.message || 'No se pudo recibir el archivo PDF' };
-    if (req.session?.rol === 'superadmin' && err.code) payload.code = err.code;
-    return res.status(status).json(payload);
+    logger.error('[SOPORTES] multer pdx', err);
+    const msg = err.message || '';
+    const status = err.code === 'LIMIT_FILE_SIZE' ? 413
+      : (/permiten|PDF/i.test(msg) ? 400 : 500);
+    return res.status(status).json({
+      ...pdxListErrorPayload(req, err, 'multer'),
+      error: err.code === 'LIMIT_FILE_SIZE'
+        ? 'El PDF supera el tamaño máximo (20 MB).'
+        : sopErrorCliente(err, err.message || 'No se pudo recibir el archivo PDF')
+    });
   });
 }
 
@@ -301,6 +326,12 @@ function sopErrorCliente(e, fallback = 'Error interno del servidor') {
   }
   if (e.code === 'ER_BAD_FIELD_ERROR') {
     return 'Estructura de Soportes desactualizada. Reinicie la aplicación para aplicar migraciones.';
+  }
+  if (e.code === 'ER_NO_REFERENCED_ROW_2') {
+    return 'La carpeta no existe en la base de datos (puede haber sido eliminada). Actualice la lista de carpetas.';
+  }
+  if (e.code === 'ER_DUP_ENTRY') {
+    return 'Ya existe un registro con los mismos datos en esta carpeta.';
   }
   if (e.code === 'ENSURE_DIR_FAILED' || e.code === 'EACCES' || e.code === 'EPERM') {
     return 'Sin permiso de escritura en la carpeta de archivos (revise UPLOADS_DIR en el servidor).';
@@ -531,15 +562,19 @@ router.patch('/soportes/pdx/carpetas/:id', requireAuth, requireRoleOrPerm(ROLES_
 });
 
 router.delete('/soportes/pdx/carpetas/:id', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, ['modulo.reportes_pdx', 'soportes.pdx.eliminar']), async (req, res) => {
+  const carpetaId = parseInt(req.params.id, 10);
+  if (!carpetaId) return res.status(400).json({ error: 'ID de carpeta inválido' });
   try {
-    const rows = await db.query('SELECT * FROM sop_pdx_carpetas WHERE id = ?', [req.params.id]);
+    const rows = await db.query('SELECT * FROM sop_pdx_carpetas WHERE id = ?', [carpetaId]);
     if (!rows.length) return res.status(404).json({ error: 'Carpeta no encontrada' });
     const deniedDel = denySinAccesoCarpetaPdx(req, rows[0]);
     if (deniedDel) return res.status(deniedDel.status).json({ error: deniedDel.error });
-    const archivos = await db.query('SELECT id, ruta_relativa FROM sop_pdx_archivos WHERE carpeta_id = ?', [req.params.id]);
+    const archivos = await db.query('SELECT id, ruta_relativa FROM sop_pdx_archivos WHERE carpeta_id = ?', [carpetaId]);
     const usados = await db.query(
-      'SELECT COUNT(*) AS n FROM sop_exp_archivos WHERE pdx_archivo_id IN (SELECT id FROM sop_pdx_archivos WHERE carpeta_id = ?)',
-      [req.params.id]
+      `SELECT COUNT(*) AS n FROM sop_exp_archivos e
+       INNER JOIN sop_pdx_archivos a ON a.id = e.pdx_archivo_id
+       WHERE a.carpeta_id = ?`,
+      [carpetaId]
     );
     if (usados[0]?.n > 0 && req.query.force !== '1') {
       return res.status(409).json({
@@ -547,21 +582,30 @@ router.delete('/soportes/pdx/carpetas/:id', requireAuth, requireRoleOrPerm(ROLES
         vinculados: usados[0].n
       });
     }
+    if (req.query.force === '1' && archivos.length) {
+      const ids = archivos.map((a) => a.id);
+      const ph = ids.map(() => '?').join(',');
+      await db.execute(
+        `UPDATE sop_exp_archivos SET pdx_archivo_id = NULL WHERE pdx_archivo_id IN (${ph})`,
+        ids
+      );
+    }
     for (const a of archivos) {
-      const fp = resolvePdxArchivoPath({ ...a, carpeta_id: req.params.id });
+      const fp = resolvePdxArchivoPath({ ...a, carpeta_id: carpetaId });
       if (fp) {
         try { fs.unlinkSync(fp); } catch (_) { /* ignore */ }
       }
     }
-    await db.execute('DELETE FROM sop_pdx_carpetas WHERE id = ?', [req.params.id]);
+    await db.execute('DELETE FROM sop_pdx_archivos WHERE carpeta_id = ?', [carpetaId]);
+    await db.execute('DELETE FROM sop_pdx_carpetas WHERE id = ?', [carpetaId]);
     try {
-      const dir = getPdxDir(req.params.id);
+      const dir = getPdxDir(carpetaId);
       if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
     } catch (_) { /* ignore */ }
     res.json({ ok: true, eliminados: archivos.length });
   } catch (e) {
     logger.error('[SOPORTES] eliminar carpeta pdx:', e);
-    res.status(500).json({ error: safeError(e) });
+    res.status(500).json({ error: sopErrorCliente(e), detail: String(e?.message || '').slice(0, 200) });
   }
 });
 
@@ -636,6 +680,7 @@ router.post(
   '/soportes/pdx/carpetas/:id/archivos',
   requireAuth,
   requireRoleOrPerm(ROLES_SOPORTES, ['modulo.reportes_pdx', 'soportes.pdx.subir']),
+  requirePdxCarpetaExiste,
   uploadPdxSingle,
   validateMagicBytes,
   async (req, res) => {
@@ -735,6 +780,7 @@ router.post(
   '/soportes/pdx/carpetas/:id/archivos/unificar',
   requireAuth,
   requireRoleOrPerm(ROLES_SOPORTES, ['modulo.reportes_pdx', 'soportes.pdx.subir']),
+  requirePdxCarpetaExiste,
   uploadPdxMultiple,
   validateMagicBytes,
   async (req, res) => {
