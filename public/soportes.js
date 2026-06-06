@@ -875,13 +875,35 @@
     return filename;
   }
 
-  function iniciarDescargaZipIframe(apiPath) {
+  function iniciarDescargaArchivoIframe(apiPath, ttlMs = 180000) {
     const iframe = document.createElement('iframe');
     iframe.style.cssText = 'display:none;width:0;height:0;border:0';
     iframe.setAttribute('aria-hidden', 'true');
     iframe.src = apiPath;
     document.body.appendChild(iframe);
-    setTimeout(() => iframe.remove(), 120000);
+    setTimeout(() => iframe.remove(), ttlMs);
+  }
+
+  function iniciarDescargaArchivoEnlace(apiPath, filename) {
+    const a = document.createElement('a');
+    a.href = apiPath;
+    a.rel = 'noopener';
+    if (filename) a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+
+  function dispararDescargaBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename || 'descarga.bin';
+    a.rel = 'noopener';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 120000);
   }
 
   async function descargarZipArmado(apiPath, fallbackFilename, triggerBtn = null) {
@@ -893,29 +915,30 @@
       const ct = (res.headers.get('Content-Type') || '').toLowerCase();
       if (!res.ok || ct.includes('application/json') || ct.includes('text/html')) {
         const data = await res.json().catch(() => ({}));
-        sopToast(data.error || 'No se pudo descargar el ZIP', 'error');
+        sopToast(data.error || data.detail || 'No se pudo descargar el ZIP', 'error');
+        liberar();
+        return;
+      }
+      const len = parseInt(res.headers.get('Content-Length') || '0', 10);
+      if (len > 40 * 1024 * 1024) {
+        try { res.body?.cancel?.(); } catch (_) { /* ignore */ }
+        iniciarDescargaArchivoIframe(apiPath);
+        sopToast('Descarga iniciada…', 'success');
         liberar();
         return;
       }
       const blob = await res.blob();
       if (!blob.size) {
-        sopToast('El ZIP está vacío. Revise que haya archivos en las carpetas.', 'error');
+        iniciarDescargaArchivoIframe(apiPath);
+        sopToast('Descarga iniciada…', 'info');
         liberar();
         return;
       }
       const filename = parseZipFilenameFromResponse(res, fallbackFilename);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      a.rel = 'noopener';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      dispararDescargaBlob(blob, filename);
       sopToast('ZIP descargado', 'success');
     } catch (e) {
-      iniciarDescargaZipIframe(apiPath);
+      iniciarDescargaArchivoIframe(apiPath);
       sopToast('Descarga iniciada…', 'info');
     } finally {
       liberar();
@@ -1916,15 +1939,17 @@
   }
 
   async function descargarArchivoPdx(archivoId) {
+    const apiPath = `/api/soportes/pdx/archivos/${archivoId}/descargar`;
+    const row = pdxState.archivos.find((x) => x.id === archivoId);
+    let filename = row?.nombre_descarga || row?.nombre_archivo_display || row?.nombre_archivo_original || 'archivo.pdf';
     try {
-      const res = await apiFetch(`/api/soportes/pdx/archivos/${archivoId}/descargar`);
-      if (!res.ok) {
+      const res = await apiFetch(apiPath);
+      const ct = (res.headers.get('Content-Type') || '').toLowerCase();
+      if (!res.ok || ct.includes('application/json') || ct.includes('text/html')) {
         const data = await res.json().catch(() => ({}));
-        sopToast(data.error || 'No se pudo descargar el archivo', 'error');
+        sopToast(data.error || data.detail || 'No se pudo descargar el archivo', 'error');
         return;
       }
-      const blob = await res.blob();
-      let filename = 'archivo.pdf';
       const cd = res.headers.get('Content-Disposition') || '';
       const utf8Match = cd.match(/filename\*=UTF-8''([^;\s]+)/i);
       if (utf8Match) {
@@ -1933,21 +1958,17 @@
         const plainMatch = cd.match(/filename="([^"]+)"/i) || cd.match(/filename=([^;\s]+)/i);
         if (plainMatch) filename = plainMatch[1].trim();
       }
-      const row = pdxState.archivos.find((x) => x.id === archivoId);
-      if (row) {
-        filename = row.nombre_descarga || row.nombre_archivo_display || row.nombre_archivo_original || filename;
+      const blob = await res.blob();
+      if (!blob.size) {
+        iniciarDescargaArchivoEnlace(apiPath, filename);
+        sopToast('Descarga iniciada…', 'info');
+        return;
       }
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      a.rel = 'noopener';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      dispararDescargaBlob(blob, filename);
+      sopToast('Descarga iniciada', 'success');
     } catch (e) {
-      sopToast(e.message || 'Error al descargar', 'error');
+      iniciarDescargaArchivoIframe(apiPath);
+      sopToast('Descarga iniciada…', 'info');
     }
   }
 

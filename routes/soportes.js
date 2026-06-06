@@ -186,17 +186,29 @@ async function queryPdxArchivosConUsuarios(carpetaId) {
 }
 
 function pdxListErrorPayload(req, e, step) {
-  const payload = { error: safeError(e) };
   const msg = String(e?.message || e);
-  if (step) payload.step = step;
-  if (req.session?.rol === 'superadmin' || process.env.NODE_ENV !== 'production') {
-    payload.detail = msg.slice(0, 400);
-    if (e?.code) payload.code = e.code;
-  } else {
-    payload.detail = msg.slice(0, 250);
-    if (e?.code) payload.code = e.code;
+  const payload = {
+    error: sopErrorCliente(e, 'No se pudo completar la operación en Cargar reportes.'),
+    step: step || undefined,
+    detail: msg.slice(0, 400),
+    code: e?.code || undefined
+  };
+  if (process.env.NODE_ENV === 'production' && req.session?.rol !== 'superadmin') {
+    delete payload.code;
+    if (payload.error === 'Error interno del servidor') {
+      payload.detail = msg.slice(0, 200);
+    }
   }
   return payload;
+}
+
+function safeNombreDescargaPdx(row, carpetaCtx) {
+  try {
+    return buildNombreDescargaPdxDesdeRow(row, carpetaCtx);
+  } catch (e) {
+    logger.warn('[SOPORTES] nombre descarga PDX:', e.message);
+    return row?.nombre_archivo_display || row?.nombre_archivo_original || 'archivo.pdf';
+  }
 }
 
 function puedeVerArchivo(req) {
@@ -711,13 +723,10 @@ router.post(
       if (uploadedPath && fs.existsSync(uploadedPath)) {
         try { fs.unlinkSync(uploadedPath); } catch (_) { /* ignore */ }
       }
-      logger.error('[SOPORTES] subir pdx', {
-        carpetaId: req.params.id,
-        step,
-        message: e?.message,
-        code: e?.code
-      });
-      res.status(500).json(pdxListErrorPayload(req, e, step));
+      logger.error('[SOPORTES] subir pdx', e);
+      const status = /no encontrado|ZIP vacío|requerido/i.test(e?.message || '') ? 400
+        : (e?.code === 'ER_DUP_ENTRY' ? 409 : 500);
+      res.status(status).json(pdxListErrorPayload(req, e, step));
     }
   }
 );
@@ -1129,17 +1138,22 @@ router.get('/soportes/pdx/archivos/:id/descargar', requireAuth, requireRoleOrPer
     if (vis === 'archivo' && !puedeVerArchivo(req)) return res.status(403).json({ error: 'Archivo en carpeta cerrada' });
     const fp = await resolvePdxArchivoPathForApi(row, true);
     if (!fp) return res.status(404).json({ error: 'Archivo no en disco' });
-    const downloadName = buildNombreDescargaPdxDesdeRow(row, { nombre_display: row.carpeta_nombre })
-      || row.nombre_archivo_original
-      || 'archivo.pdf';
+    const downloadName = safeNombreDescargaPdx(row, { nombre_display: row.carpeta_nombre });
     res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Cache-Control', 'no-store');
     res.setHeader(
       'Content-Disposition',
       `attachment; filename="${String(downloadName).replace(/"/g, '')}"; filename*=UTF-8''${encodeURIComponent(downloadName)}`
     );
-    fs.createReadStream(fp).pipe(res);
+    const stream = fs.createReadStream(fp);
+    stream.on('error', (err) => {
+      logger.error('[SOPORTES] descargar pdx stream:', err);
+      if (!res.headersSent) res.status(500).json({ error: 'No se pudo leer el archivo' });
+    });
+    stream.pipe(res);
   } catch (e) {
-    res.status(500).json({ error: safeError(e) });
+    logger.error('[SOPORTES] descargar pdx:', e);
+    if (!res.headersSent) res.status(500).json({ error: sopErrorCliente(e, 'No se pudo descargar el archivo') });
   }
 });
 

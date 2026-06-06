@@ -20,7 +20,7 @@ const {
   detectarTemaCarpeta,
   esTemaConsultaMedica
 } = require('./soportes-temas');
-const { getPdxDir, relativePdxRuta } = require('./soportes-storage');
+const { getPdxDir, relativePdxRuta, stripMulterTimestamp } = require('./soportes-storage');
 
 async function cargarEstudiosParaOrdenes(db) {
   try {
@@ -182,9 +182,38 @@ function moveFileSafe(src, dest) {
  * Deja el PDF con el nombre que generó multer (evita 500/404 por rename fallido en hosting).
  * nombre_archivo_display en BD sigue siendo el nombre “bonito” para descargas.
  */
+function findUploadedPdfInPdxDir(dir, fileOrName) {
+  try {
+    const files = fs.readdirSync(dir).filter((f) => f.toLowerCase().endsWith('.pdf'));
+    if (!files.length) return null;
+    const orig = fileOrName && typeof fileOrName === 'object'
+      ? String(fileOrName.originalname || fileOrName.filename || '')
+      : String(fileOrName || '');
+    const origBase = path.basename(orig).toLowerCase();
+    const origCore = stripMulterTimestamp(origBase).replace(/\.pdf$/i, '');
+    for (const f of files) {
+      const fLow = f.toLowerCase();
+      const fCore = stripMulterTimestamp(fLow).replace(/\.pdf$/i, '');
+      if (origBase && (fLow === origBase || fCore === origCore || fLow.endsWith(origBase))) {
+        return path.join(dir, f);
+      }
+    }
+    const sorted = files
+      .map((f) => ({ f, m: fs.statSync(path.join(dir, f)).mtimeMs }))
+      .sort((a, b) => b.m - a.m);
+    return path.join(dir, sorted[0].f);
+  } catch (_) {
+    return null;
+  }
+}
+
 function finalizePdxFileOnDisk(carpetaId, fileOrTmpName, meta, carpeta = null) {
   const dir = getPdxDir(carpetaId);
-  const tmpPath = resolveTmpUploadPath(carpetaId, fileOrTmpName);
+  let tmpPath = resolveTmpUploadPath(carpetaId, fileOrTmpName);
+  if (!fs.existsSync(tmpPath)) {
+    const fallback = findUploadedPdfInPdxDir(dir, fileOrTmpName);
+    if (fallback) tmpPath = fallback;
+  }
   if (!fs.existsSync(tmpPath)) {
     throw new Error(`Archivo temporal no encontrado tras la subida (${tmpPath})`);
   }
