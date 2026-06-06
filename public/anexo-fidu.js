@@ -9,6 +9,7 @@
   let _limit = 50;
   let _celdaEditando = null;
   let _pendingCodigo = '';
+  let _pendingBulkPairs = null;
   let _carpetaId = null;
   let _archivoId = null;
   let _archivosCache = [];
@@ -403,6 +404,7 @@
       renderBody([]);
     }
     afiduIcons($('afiduArchivoWorkspace'));
+    actualizarVisibilidadAfiduAdmin();
     renderAfiduContextBar();
   }
 
@@ -479,6 +481,73 @@
     'tipo_atencion_solicitada', 'grupo_servicio', 'modalidad_tecnologia_salud', 'codigo_servicio_referencia'
   ]);
 
+  /** Paleta pastel (sincronizada con utils/anexo-fidu-colores.js). */
+  const AFIDU_COLOR_POR_CODIGO = {
+    '861411': '#FFF7F2', '890302': '#FFF7F2', '890502': '#FFF7F2',
+    '890202': '#ECF2F8', '890297': '#ECF2F8', '891410': '#ECF2F8', '891901': '#ECF2F8',
+    '890208': '#FFF9ED', '890308': '#FFF9ED', '940701': '#FFF9ED', '943102': '#FFF9ED',
+    '944002': '#FFF9ED', '944102': '#FFF9ED', '944301': '#FFF9ED',
+    '890274': '#EEF6EB', '890374': '#EEF6EB', '891401': '#EEF6EB', '891402': '#EEF6EB',
+    '931002': '#EEF6EB', '931601': '#EEF6EB', '933501': '#EEF6EB', '934201': '#EEF6EB',
+    '934601': '#EEF6EB', '940201': '#EEF6EB',
+    '890284': '#E8F3F8', '890384': '#E8F3F8', '53105': '#E8F3F8', '053105': '#E8F3F8',
+    '891703': '#FFF5E0', '891704': '#FFF5E0',
+    '931001': '#F2EEF7', '931501': '#F2EEF7'
+  };
+
+  function colorFilaCss(codigo) {
+    const norm = String(codigo || '').replace(/\D/g, '');
+    if (!norm) return null;
+    if (AFIDU_COLOR_POR_CODIGO[norm]) return AFIDU_COLOR_POR_CODIGO[norm];
+    const sinCeros = norm.replace(/^0+/, '') || norm;
+    if (AFIDU_COLOR_POR_CODIGO[sinCeros]) return AFIDU_COLOR_POR_CODIGO[sinCeros];
+    const padded = norm.padStart(6, '0');
+    return AFIDU_COLOR_POR_CODIGO[padded] || null;
+  }
+
+  function parseLineasEntrada(text) {
+    const pairs = [];
+    const raw = String(text || '').trim();
+    if (!raw) return pairs;
+    raw.split(/\r?\n/).forEach((line) => {
+      const trimmed = line.trim();
+      if (!trimmed) return;
+      const parts = trimmed.split(/[\s,;|\t]+/).filter(Boolean);
+      if (parts.length >= 2) {
+        pairs.push({ doc: parts[0], cups: parts[1] });
+      }
+    });
+    return pairs;
+  }
+
+  function syncBulkTextareaDesdePendientes() {
+    const ta = $('afiduEntradaBulkText');
+    if (!ta || !_pendingBulkPairs?.length) return;
+    ta.value = _pendingBulkPairs.map((p) => `${p.doc} ${p.cups}`).join('\n');
+    setModoEntradaAfidu('bulk');
+  }
+
+  function setModoEntradaAfidu(modo) {
+    const simple = $('afiduEntradaSimple');
+    const bulk = $('afiduEntradaBulkPanel');
+    document.querySelectorAll('[data-afidu-modo]').forEach((btn) => {
+      const active = btn.dataset.afiduModo === modo;
+      btn.classList.toggle('is-active', active);
+      btn.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+    simple?.classList.toggle('hidden', modo !== 'simple');
+    bulk?.classList.toggle('hidden', modo !== 'bulk');
+    if (modo === 'simple') $('afiduEntradaDoc')?.focus();
+    else $('afiduEntradaBulkText')?.focus();
+  }
+
+  function actualizarVisibilidadAfiduAdmin() {
+    const bar = $('afiduAdminBar');
+    if (!bar) return;
+    const show = typeof isSuperadmin === 'function' && isSuperadmin();
+    bar.classList.toggle('hidden', !show);
+  }
+
   function $(id) {
     return document.getElementById(id);
   }
@@ -531,7 +600,9 @@
   function crearFilaHtml(registro, opts = {}) {
     const id = registro.id != null ? String(registro.id) : '';
     const isNew = opts.isNew || !id;
+    const rowColor = colorFilaCss(registro.codigo_servicio);
     const trClass = isNew ? 'afidu-row afidu-row-new' : 'afidu-row';
+    const trStyle = rowColor ? ` style="--afidu-row-bg:${rowColor}" data-row-color="1"` : '';
     let cells = `<td class="afidu-col-acciones">
       <button type="button" class="afidu-btn-del" data-id="${escapeHtml(id)}" title="Eliminar fila">✕</button>
     </td>`;
@@ -542,14 +613,14 @@
         <span class="afidu-cell-text">${valorCeldaTexto(v)}</span>
       </td>`;
     });
-    return `<tr class="${trClass}" data-id="${escapeHtml(id)}" data-new="${isNew ? '1' : '0'}">${cells}</tr>`;
+    return `<tr class="${trClass}" data-id="${escapeHtml(id)}" data-new="${isNew ? '1' : '0'}"${trStyle}>${cells}</tr>`;
   }
 
   function renderBody(registros) {
     const tbody = $('afiduGridBody');
     if (!tbody) return;
     if (!registros.length) {
-      tbody.innerHTML = `<tr><td colspan="${_columnas.length + 1}" class="afidu-empty-msg">Sin filas. Use documento + código arriba para agregar la primera fila. Doble clic en una celda para editar.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="${_columnas.length + 1}" class="afidu-empty-msg">Sin filas. Agregue pacientes con documento y CUPS arriba (una o varias filas). Doble clic en una celda para editar.</td></tr>`;
       return;
     }
     tbody.innerHTML = registros.map((r) => crearFilaHtml(r)).join('');
@@ -595,8 +666,21 @@
     return nombre;
   }
 
+  function aplicarColorFila(tr, codigo) {
+    if (!tr) return;
+    const rowColor = colorFilaCss(codigo);
+    if (rowColor) {
+      tr.style.setProperty('--afidu-row-bg', rowColor);
+      tr.dataset.rowColor = '1';
+    } else {
+      tr.style.removeProperty('--afidu-row-bg');
+      delete tr.dataset.rowColor;
+    }
+  }
+
   function aplicarRegistroAFila(tr, registro) {
     _columnas.forEach((c) => setValorCelda(tr, c.key, registro[c.key]));
+    aplicarColorFila(tr, registro.codigo_servicio);
   }
 
   function cancelarEdicionCelda() {
@@ -1019,11 +1103,16 @@
     return tr;
   }
 
-  function ocultarPanelNuevaPersona() {
+  function ocultarPanelNuevaPersona(limpiarPendientesBulk = false) {
     const panel = $('afiduPanelNuevaPersona');
     if (panel) {
       panel.classList.add('hidden');
       panel.innerHTML = '';
+    }
+    if (limpiarPendientesBulk) {
+      _pendingBulkPairs = null;
+    } else {
+      syncBulkTextareaDesdePendientes();
     }
   }
 
@@ -1031,7 +1120,11 @@
     const panel = $('afiduPanelNuevaPersona');
     if (!panel) return;
     _pendingCodigo = codigo;
-    let html = `<div class="afidu-step-banner afidu-step-banner-warn">Paciente <strong>${escapeHtml(doc)}</strong> no está en la base. Complete los 15 datos y guarde para continuar.</div><div class="afidu-panel-form">`;
+    const pendientes = _pendingBulkPairs?.length || 0;
+    const hintCola = pendientes > 1
+      ? ` Quedan <strong>${pendientes}</strong> paciente(s) por registrar en esta carga; los que ya existían ya están en la tabla.`
+      : '';
+    let html = `<div class="afidu-step-banner afidu-step-banner-warn">Paciente <strong>${escapeHtml(doc)}</strong> (CUPS ${escapeHtml(codigo)}) no está en la base. Complete los 15 datos y guarde para agregar su fila.${hintCola}</div><div class="afidu-panel-form">`;
     PERSONA_FORM.forEach((f) => {
       const v = f.key === 'numero_documento' ? doc : '';
       const ro = f.key === 'numero_documento' ? ' readonly' : '';
@@ -1043,7 +1136,26 @@
     panel.innerHTML = html;
     panel.classList.remove('hidden');
     $('btnAfiduGuardarPersona')?.addEventListener('click', guardarPersonaYAgregarFila);
-    $('btnAfiduCancelarPersona')?.addEventListener('click', ocultarPanelNuevaPersona);
+    $('btnAfiduCancelarPersona')?.addEventListener('click', () => ocultarPanelNuevaPersona(false));
+  }
+
+  async function avanzarColaPendientesBulk() {
+    let agregadas = 0;
+    while (_pendingBulkPairs?.length) {
+      const { doc, cups } = _pendingBulkPairs[0];
+      const result = await agregarUnaFila(doc, cups, { ocultarPanelSiOk: false });
+      if (result.needsPanel) {
+        syncBulkTextareaDesdePendientes();
+        mostrarPanelNuevaPersona(doc, cups);
+        return { completo: false, agregadas };
+      }
+      _pendingBulkPairs.shift();
+      if (result.ok) agregadas += 1;
+    }
+    ocultarPanelNuevaPersona(true);
+    const ta = $('afiduEntradaBulkText');
+    if (ta) ta.value = '';
+    return { completo: true, agregadas };
   }
 
   async function guardarPersonaYAgregarFila() {
@@ -1053,25 +1165,121 @@
       persona[f.key] = el ? el.value.trim() : '';
     });
     const codigo = _pendingCodigo || ($('afiduEntradaCodigo')?.value || '').trim();
+    const enCola = _pendingBulkPairs?.length > 0;
     try {
       await apiAnexo('/api/anexo-fidu/personas', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(persona)
       });
-      ocultarPanelNuevaPersona();
       await cargarResumenPersonas();
-      $('afiduEntradaDoc').value = persona.numero_documento;
-      $('afiduEntradaCodigo').value = codigo;
-      await agregarFilaDesdeEntrada();
+      await agregarUnaFila(persona.numero_documento, codigo, { ocultarPanelSiOk: false });
+      if (enCola) {
+        if (_pendingBulkPairs?.length) _pendingBulkPairs.shift();
+        const { completo, agregadas } = await avanzarColaPendientesBulk();
+        if (typeof showToast === 'function') {
+          if (completo) {
+            showToast('Todos los pacientes registrados y filas agregadas', 'success');
+          } else {
+            const restantes = _pendingBulkPairs?.length || 0;
+            const extra = agregadas > 0 ? ` Se agregaron ${agregadas} fila(s) más.` : '';
+            showToast(`Paciente registrado.${extra} Quedan ${restantes} por registrar.`, 'success');
+          }
+        }
+        return;
+      }
+      ocultarPanelNuevaPersona(true);
+      $('afiduEntradaDoc').value = '';
+      $('afiduEntradaCodigo').value = '';
+      $('afiduEntradaDoc')?.focus();
       if (typeof showToast === 'function') showToast('Paciente registrado y fila agregada', 'success');
     } catch (e) {
       if (typeof showToast === 'function') showToast(e.message, 'error');
     }
   }
 
+  async function agregarUnaFila(doc, codigo, opts = {}) {
+    const data = await apiAnexo('/api/anexo-fidu/armar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ numero_documento: doc, codigo_servicio: codigo })
+    });
+    if (!data.persona_encontrada) {
+      return { ok: false, needsPanel: true, doc, codigo };
+    }
+    if (opts.ocultarPanelSiOk !== false) ocultarPanelNuevaPersona();
+    const reg = { ...(data.registro || {}) };
+    delete reg.id;
+    const tr = prependFila(reg);
+    if (tr) {
+      await guardarFila(tr);
+      tr.classList.add('afidu-row-highlight');
+      setTimeout(() => tr.classList.remove('afidu-row-highlight'), 2000);
+      tr.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+    return { ok: true };
+  }
+
+  async function agregarFilasDesdeEntrada(pairs, opts = {}) {
+    try { requireArchivoActivo(); } catch (_) { return 0; }
+    if (!pairs.length) {
+      if (typeof showToast === 'function') showToast('Ingresa al menos un documento y CUPS', 'error');
+      return 0;
+    }
+    const bulkContinuar = !!opts.bulkContinuar;
+    let agregadas = 0;
+    const faltantes = [];
+    try {
+      for (let i = 0; i < pairs.length; i += 1) {
+        const { doc, cups } = pairs[i];
+        const result = await agregarUnaFila(doc, cups, { ocultarPanelSiOk: !bulkContinuar });
+        if (result.needsPanel) {
+          if (bulkContinuar) {
+            faltantes.push({ doc, cups });
+            continue;
+          }
+          _pendingBulkPairs = pairs.slice(i);
+          syncBulkTextareaDesdePendientes();
+          mostrarPanelNuevaPersona(result.doc, result.codigo);
+          if (typeof showToast === 'function') {
+            showToast('Paciente no registrado — complete los datos abajo para continuar', 'info');
+          }
+          return agregadas;
+        }
+        if (result.ok) agregadas += 1;
+      }
+      if (bulkContinuar && faltantes.length) {
+        _pendingBulkPairs = faltantes;
+        syncBulkTextareaDesdePendientes();
+        mostrarPanelNuevaPersona(faltantes[0].doc, faltantes[0].cups);
+        if (typeof showToast === 'function') {
+          const msgAgregadas = agregadas > 0
+            ? `${agregadas} fila(s) agregada(s). `
+            : '';
+          showToast(`${msgAgregadas}${faltantes.length} paciente(s) sin registrar — complete sus datos abajo.`, 'info');
+        }
+        return agregadas;
+      }
+      _pendingBulkPairs = null;
+      if (opts.limpiarSimple) {
+        $('afiduEntradaDoc').value = '';
+        $('afiduEntradaCodigo').value = '';
+        $('afiduEntradaDoc')?.focus();
+      }
+      if (opts.limpiarBulk) {
+        $('afiduEntradaBulkText').value = '';
+      }
+      if (!opts.silencioso && agregadas > 0 && typeof showToast === 'function') {
+        showToast(agregadas === 1 ? 'Fila agregada' : `${agregadas} filas agregadas`, 'success');
+      }
+      return agregadas;
+    } catch (e) {
+      if (typeof showToast === 'function') showToast(e.message, 'error');
+      return agregadas;
+    }
+  }
+
   async function agregarFilaDesdeEntrada() {
-    try { requireArchivoActivo(); } catch (_) { return; }
     const doc = ($('afiduEntradaDoc')?.value || '').trim();
     const codigo = ($('afiduEntradaCodigo')?.value || '').trim();
     if (!doc) {
@@ -1082,34 +1290,17 @@
       if (typeof showToast === 'function') showToast('Ingresa el código del servicio', 'error');
       return;
     }
-    try {
-      const data = await apiAnexo('/api/anexo-fidu/armar', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ numero_documento: doc, codigo_servicio: codigo })
-      });
-      if (!data.persona_encontrada) {
-        mostrarPanelNuevaPersona(doc, codigo);
-        if (typeof showToast === 'function') showToast('Paciente no registrado — complete los datos', 'info');
-        return;
-      }
-      ocultarPanelNuevaPersona();
-      const reg = { ...(data.registro || {}) };
-      delete reg.id;
-      const tr = prependFila(reg);
-      if (tr) {
-        await guardarFila(tr);
-        tr.classList.add('afidu-row-highlight');
-        setTimeout(() => tr.classList.remove('afidu-row-highlight'), 2000);
-        tr.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-      }
-      $('afiduEntradaDoc').value = '';
-      $('afiduEntradaCodigo').value = '';
-      $('afiduEntradaDoc')?.focus();
-      if (typeof showToast === 'function') showToast('Fila agregada', 'success');
-    } catch (e) {
-      if (typeof showToast === 'function') showToast(e.message, 'error');
+    await agregarFilasDesdeEntrada([{ doc, cups: codigo }], { limpiarSimple: true });
+  }
+
+  async function agregarFilasBulk() {
+    const bulk = ($('afiduEntradaBulkText')?.value || '').trim();
+    const pairs = parseLineasEntrada(bulk);
+    if (!pairs.length) {
+      if (typeof showToast === 'function') showToast('Escribe al menos una línea con documento y CUPS', 'error');
+      return;
     }
+    await agregarFilasDesdeEntrada(pairs, { limpiarBulk: true, bulkContinuar: true });
   }
 
   async function cargarRegistros() {
@@ -1119,9 +1310,7 @@
       _total = 0;
       return;
     }
-    const q = ($('afiduBuscar') && $('afiduBuscar').value.trim()) || '';
     const qs = new URLSearchParams({ page: String(_page), limit: String(_limit), archivo_id: String(_archivoId) });
-    if (q) qs.set('q', q);
     const data = await apiAnexo(`/api/anexo-fidu/registros?${qs}`);
     _total = data.total || 0;
     renderBody(data.registros || []);
@@ -1240,11 +1429,15 @@
       if (typeof goToMenu === 'function') goToMenu();
     });
     $('btnAfiduAgregarFila')?.addEventListener('click', agregarFilaDesdeEntrada);
+    $('btnAfiduAgregarFilasBulk')?.addEventListener('click', agregarFilasBulk);
     const onEnter = (e) => {
       if (e.key === 'Enter') { e.preventDefault(); agregarFilaDesdeEntrada(); }
     };
     $('afiduEntradaDoc')?.addEventListener('keydown', onEnter);
     $('afiduEntradaCodigo')?.addEventListener('keydown', onEnter);
+    document.querySelectorAll('[data-afidu-modo]').forEach((btn) => {
+      btn.addEventListener('click', () => setModoEntradaAfidu(btn.dataset.afiduModo));
+    });
     $('btnAfiduSubirPersonas')?.addEventListener('click', () => $('afiduPersonasFileInput')?.click());
     $('afiduPersonasFileInput')?.addEventListener('change', importarPersonasCsv);
     $('btnAfiduExportar')?.addEventListener('click', exportarExcel);
@@ -1252,10 +1445,6 @@
     $('btnAfiduVolverCarpeta')?.addEventListener('click', volverAfiduCarpeta);
     $('btnAfiduImportarAnexo')?.addEventListener('click', importarExcelAnexo);
     $('afiduImportFileInput')?.addEventListener('change', onImportFileSelected);
-    $('btnAfiduBuscar')?.addEventListener('click', () => { _page = 1; cargarRegistros(); });
-    $('afiduBuscar')?.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') { _page = 1; cargarRegistros(); }
-    });
     $('afiduPagerPrev')?.addEventListener('click', () => { if (_page > 1) { _page -= 1; cargarRegistros(); } });
     $('afiduPagerNext')?.addEventListener('click', () => {
       if (_page * _limit < _total) { _page += 1; cargarRegistros(); }
@@ -1312,6 +1501,7 @@
         return;
       }
     }
+    actualizarVisibilidadAfiduAdmin();
     try {
       await refrescarVistaAfiduActual();
       await cargarResumenPersonas();

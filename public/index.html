@@ -2870,43 +2870,61 @@
                   <p class="afidu-archivo-info" id="afiduArchivoInfo">—</p>
                 </div>
                 <div class="sop-panel-head-actions afidu-archivo-head-actions">
-                  <button type="button" class="btn-secondary btn-sm" id="btnAfiduVolverCarpeta">
-                    <i data-lucide="arrow-left"></i> Carpeta
-                  </button>
-                  <button type="button" class="btn-secondary btn-sm" id="btnAfiduImportarAnexo">
-                    <i data-lucide="upload"></i> Importar Excel
-                  </button>
-                  <button type="button" class="btn-secondary btn-sm" id="btnAfiduExportar">
-                    <i data-lucide="download"></i> Exportar Excel
-                  </button>
+                  <div class="afidu-action-group">
+                    <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="btnAfiduVolverCarpeta" title="Volver a la carpeta">
+                      <i data-lucide="arrow-left"></i> Carpeta
+                    </button>
+                    <span class="afidu-action-sep" aria-hidden="true"></span>
+                    <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm afidu-action-import" id="btnAfiduImportarAnexo" title="Importar desde Excel">
+                      <i data-lucide="file-up"></i> Importar
+                    </button>
+                    <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm afidu-action-export" id="btnAfiduExportar" title="Exportar a Excel">
+                      <i data-lucide="file-down"></i> Exportar
+                    </button>
+                  </div>
                 </div>
               </div>
               <div class="sop-panel-body">
                 <input type="file" id="afiduImportFileInput" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" style="display:none" />
-                <div class="afidu-toolbar">
-                  <div class="afidu-search">
-                    <label for="afiduBuscar">Buscar (documento, nombre, orden)</label>
-                    <input type="text" id="afiduBuscar" placeholder="Documento o nombre..." />
-                  </div>
-                  <button type="button" class="btn-secondary" id="btnAfiduBuscar">Buscar</button>
-                  <button type="button" class="btn-secondary" id="btnAfiduSubirPersonas">Subir base personas (CSV)</button>
+                <div id="afiduAdminBar" class="afidu-admin-bar hidden">
+                  <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="btnAfiduSubirPersonas" title="Reemplazar base de personas (solo superadmin)">
+                    <i data-lucide="database"></i> Subir base personas (CSV)
+                  </button>
                   <input type="file" id="afiduPersonasFileInput" accept=".csv,text/csv" style="display:none" />
                 </div>
-                <div class="afidu-entrada-bar afidu-entrada-inline">
-                  <div class="afidu-entrada-fields">
-                    <div>
-                      <label for="afiduEntradaDoc">Documento paciente</label>
-                      <input type="text" id="afiduEntradaDoc" placeholder="Ej. 1085252647" autocomplete="off" />
-                    </div>
-                    <div>
-                      <label for="afiduEntradaCodigo">Código servicio (CUPS)</label>
-                      <input type="text" id="afiduEntradaCodigo" placeholder="Ej. 891704" autocomplete="off" />
-                    </div>
-                    <div class="afidu-entrada-action">
-                      <button type="button" class="btn-primary" id="btnAfiduAgregarFila">Agregar fila</button>
+                <section class="afidu-entrada-bar">
+                  <div class="afidu-entrada-head">
+                    <h4 class="afidu-entrada-title"><i data-lucide="plus-circle"></i> Agregar filas</h4>
+                    <div class="afidu-entrada-tabs" role="tablist" aria-label="Modo de entrada">
+                      <button type="button" class="afidu-tab is-active" role="tab" aria-selected="true" data-afidu-modo="simple">Una fila</button>
+                      <button type="button" class="afidu-tab" role="tab" aria-selected="false" data-afidu-modo="bulk">Varias filas</button>
                     </div>
                   </div>
-                </div>
+                  <div id="afiduEntradaSimple" class="afidu-entrada-modo">
+                    <div class="afidu-entrada-fields">
+                      <div>
+                        <label for="afiduEntradaDoc">Documento</label>
+                        <input type="text" id="afiduEntradaDoc" placeholder="Ej. 1085252647" autocomplete="off" />
+                      </div>
+                      <div>
+                        <label for="afiduEntradaCodigo">CUPS</label>
+                        <input type="text" id="afiduEntradaCodigo" placeholder="Ej. 891704" autocomplete="off" />
+                      </div>
+                      <div class="afidu-entrada-action">
+                        <button type="button" class="sop-btn sop-btn-teal" id="btnAfiduAgregarFila"><i data-lucide="plus"></i> Agregar</button>
+                      </div>
+                    </div>
+                    <p class="afidu-entrada-hint">Pulse <kbd>Enter</kbd> en documento o CUPS para agregar.</p>
+                  </div>
+                  <div id="afiduEntradaBulkPanel" class="afidu-entrada-modo hidden">
+                    <label for="afiduEntradaBulkText">Documento y CUPS — una línea por paciente</label>
+                    <textarea id="afiduEntradaBulkText" rows="5" placeholder="1085252647 891704&#10;1234567890 890274&#10;9876543210, 891703"></textarea>
+                    <p class="afidu-entrada-hint">Separe documento y CUPS con espacio, coma, punto y coma o tabulador. Los pacientes que ya existan se agregan de una; los que falten quedarán abajo para registrar sus datos.</p>
+                    <div class="afidu-entrada-bulk-actions">
+                      <button type="button" class="sop-btn sop-btn-teal" id="btnAfiduAgregarFilasBulk"><i data-lucide="list-plus"></i> Agregar todas</button>
+                    </div>
+                  </div>
+                </section>
                 <div id="afiduPanelNuevaPersona" class="afidu-panel-nueva-persona hidden"></div>
                 <div class="afidu-grid-wrap">
                   <table class="afidu-grid" id="afiduGrid">
