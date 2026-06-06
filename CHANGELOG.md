@@ -3,6 +3,17 @@
 Todos los cambios importantes a la aplicación se documentan aquí. El formato
 sigue (informalmente) [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
+## [1.5.119] — 2026-05-27
+
+### Añadido
+
+- **Armado de soportes**: descarga ZIP por carpeta de día, paquete mensual (un ZIP por subcarpeta + unificado RIPS/SOPORTES) y descarga segura vía `fetch`/blob.
+
+### Cambiado
+
+- **Anexo FIDU**: modales Innar en lugar de `prompt`/`confirm` del navegador; refresco de vista al reentrar al módulo.
+- **Módulos nuevos** (Anexo, Backup, PDX, Armado): actualización al volver a la pestaña o reentrar sin perder contexto.
+
 ## [1.5.93] — 2026-05-27
 
 ### Añadido
