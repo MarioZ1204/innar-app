@@ -82,8 +82,9 @@ async function ensureFeParEnContenedorHermano(db, diaId, contenedorId, codigo, n
     [hermano[0].id]
   );
   if (ctx.length) {
+    const { soportesRoot } = require('./soportes-storage');
     getArmadoFeDirAbs(
-      require('./soportes-storage').SOPORTES_ROOT,
+      soportesRoot(),
       ctx[0].periodo,
       ctx[0].nombre_display,
       ctx[0].estado_facturacion,

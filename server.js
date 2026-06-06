@@ -44,7 +44,14 @@ const PUBLIC_DIR = path.join(__dirname, 'public');
 const app = express();
 app.locals.appVersion = APP_VERSION;
 
-app.use(compression());
+app.use(compression({
+  filter(req, res) {
+    const p = String(req.path || '');
+    if (p.includes('/zip') || p.includes('/descargar')) return false;
+    if (String(res.getHeader('Content-Type') || '').includes('application/zip')) return false;
+    return compression.filter(req, res);
+  }
+}));
 applyCors(app);
 const { sessionMiddleware, sessionCookieSecure, sessionCookieSameSite } = applySession(app);
 applySecurity(app, { sessionCookieSecure, sessionCookieSameSite });

@@ -3,6 +3,13 @@
 Todos los cambios importantes a la aplicación se documentan aquí. El formato
 sigue (informalmente) [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
+## [1.5.121] — 2026-05-27
+
+### Corregido
+
+- **ZIP Armado**: excluir rutas `/zip` del middleware `compression` (evitaba descargas colgadas o corruptas).
+- **RIPS por factura**: sincronización en disco (`RIPS/FE{n}/`) al abrir día, crear expediente, vincular FEV y antes de generar ZIP.
+
 ## [1.5.120] — 2026-05-27
 
 ### Corregido

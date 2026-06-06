@@ -6,6 +6,7 @@ const fs = require('fs');
 const archiver = require('archiver');
 const db = require('./db-mysql');
 const { resolveStoragePath } = require('./soportes-storage');
+const { syncRipsCarpetasDia, syncRipsCarpetasPeriodo } = require('./soportes-rips-carpetas-sync');
 
 const ZIP_COMPRESSION = 6;
 const RIPS_FOLDER_PLACEHOLDER = Buffer.from(
@@ -75,7 +76,47 @@ async function listRipsArchivoEntries(expedienteId, zipPrefix, usedPaths, diaNom
         name: uniqueEntryName(usedPaths, zipPrefix, a.nombre_archivo, diaNombre)
       });
     }
+    const ripsDirEntries = await listRipsDirEntriesFromDisk(expedienteId, zipPrefix, usedPaths, diaNombre);
+    for (const de of ripsDirEntries) {
+      if (!entries.some((x) => x.name === de.name)) entries.push(de);
+    }
   } catch (_) { /* tabla RIPS opcional */ }
+  return entries;
+}
+
+async function listRipsDirEntriesFromDisk(expedienteId, zipPrefix, usedPaths, diaNombre) {
+  const entries = [];
+  const expRows = await db.query(
+    `SELECT e.codigo, e.numero_factura, d.nombre_display, d.estado_facturacion, p.periodo
+     FROM sop_expedientes e
+     JOIN sop_contenedores c ON c.id = e.contenedor_id
+     JOIN sop_dias d ON d.id = c.dia_id
+     JOIN sop_periodos p ON p.id = d.periodo_id
+     WHERE e.id = ?`,
+    [expedienteId]
+  );
+  if (!expRows.length) return entries;
+  const row = expRows[0];
+  const { getArmadoFeDirAbs } = require('./soportes-armado-structure');
+  const { soportesRoot } = require('./soportes-storage');
+  const { abs } = getArmadoFeDirAbs(
+    soportesRoot(),
+    row.periodo,
+    row.nombre_display,
+    row.estado_facturacion,
+    'rips',
+    row.codigo
+  );
+  if (!abs || !fs.existsSync(abs)) return entries;
+  const files = fs.readdirSync(abs);
+  for (const fname of files) {
+    const fp = path.join(abs, fname);
+    if (!fs.statSync(fp).isFile()) continue;
+    entries.push({
+      absPath: fp,
+      name: uniqueEntryName(usedPaths, zipPrefix, fname, diaNombre)
+    });
+  }
   return entries;
 }
 
@@ -147,16 +188,10 @@ async function collectDiaZipEntries(diaId, usedPaths = null) {
 function pipeArchiveToResponse(res, entries) {
   return new Promise((resolve, reject) => {
     const archive = archiver('zip', { zlib: { level: ZIP_COMPRESSION } });
-    let settled = false;
-    const done = (err) => {
-      if (settled) return;
-      settled = true;
-      if (err) reject(err);
-      else resolve(entries.length);
-    };
-    archive.on('error', done);
-    res.on('error', done);
-    res.on('finish', () => done());
+    archive.on('error', reject);
+    res.on('error', reject);
+    archive.on('end', () => resolve(entries.length));
+    res.setHeader('Cache-Control', 'no-store');
     archive.pipe(res);
     for (const e of entries) {
       if (e.placeholder) {
@@ -211,6 +246,7 @@ async function collectPeriodUnifiedEntries(periodoId) {
 }
 
 async function streamDiaZip(res, dia) {
+  await syncRipsCarpetasDia(db, dia.id);
   const entries = await collectDiaZipEntries(dia.id);
   if (!entries.length) {
     throw new Error('La carpeta no tiene archivos para descargar');
@@ -223,6 +259,7 @@ async function streamDiaZip(res, dia) {
 
 async function streamPeriodPaqueteZip(res, periodo) {
   const periodoId = periodo.id;
+  await syncRipsCarpetasPeriodo(db, periodoId);
   const dias = await db.query(
     'SELECT id, nombre_display FROM sop_dias WHERE periodo_id = ? ORDER BY nombre_display ASC',
     [periodoId]
@@ -269,6 +306,7 @@ async function streamPeriodPaqueteZip(res, periodo) {
 }
 
 async function streamUnifiedPeriodZip(res, periodo) {
+  await syncRipsCarpetasPeriodo(db, periodo.id);
   const entries = await collectPeriodUnifiedEntries(periodo.id);
   if (!entries.length) {
     throw new Error('No hay archivos para el ZIP unificado');

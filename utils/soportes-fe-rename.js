@@ -8,6 +8,7 @@ const { getArmadoFeDirFromContext } = require('./soportes-storage');
 const { buildCanonicalName, buildSoportesDiskName } = require('./soportes-archivo-detect');
 const { parseLineaPaciente, esExpedientePendienteFactura } = require('./soportes-pacientes-parse');
 const { loadArchivoExpedienteSlot, eliminarArchivoExpedienteSlot } = require('./soportes-exp-archivo');
+const { syncRipsCarpetasDia } = require('./soportes-rips-carpetas-sync');
 
 async function loadExpedienteContext(expedienteId) {
   const rows = await db.query(
@@ -153,6 +154,10 @@ async function aplicarRenombradoPorFev(expedienteId, numeroFactura) {
       [newCodigo, num, her.id]
     );
   }
+
+  try {
+    await syncRipsCarpetasDia(db, exp.dia_id);
+  } catch (_) { /* ignore */ }
 
   return {
     ok: true,

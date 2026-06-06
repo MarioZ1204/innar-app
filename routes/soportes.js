@@ -75,6 +75,7 @@ const {
 const { enrichExpedientesLista } = require('../utils/soportes-expediente-progreso');
 const { actualizarDia, eliminarDia } = require('../utils/soportes-dia-admin');
 const { resolveArchivoAbsoluto } = require('../utils/soportes-exp-archivo');
+const { syncRipsCarpetasDia } = require('../utils/soportes-rips-carpetas-sync');
 const {
   zipArchiveSegment,
   streamDiaZip,
@@ -1623,6 +1624,11 @@ router.get('/soportes/armado/dias/:id/contenedores', requireAuth, requireRoleOrP
     const dia = await db.query('SELECT * FROM sop_dias WHERE id = ?', [req.params.id]);
     if (!dia.length) return res.status(404).json({ error: 'Carpeta de día no encontrada' });
     await ensureContenedoresForDia(db, req.params.id);
+    try {
+      await syncRipsCarpetasDia(db, req.params.id, req.session?.usuarioId);
+    } catch (syncErr) {
+      logger.warn('[SOPORTES] sync RIPS carpetas:', syncErr.message);
+    }
     const contenedores = await db.query(
       `SELECT c.*, COUNT(e.id) AS expedientes_count
        FROM sop_contenedores c
@@ -1826,6 +1832,7 @@ async function crearExpedienteEnContenedor(contenedorId, body, usuarioId) {
   );
   try {
     await ensureFeParEnContenedorHermano(db, ctx.dia_id, contenedorId, codigo, numero, ts, usuarioId, pacienteNombre);
+    await syncRipsCarpetasDia(db, ctx.dia_id, usuarioId);
   } catch (e) {
     logger.warn('[SOPORTES] carpeta par RIPS/SOPORTES:', e.message);
   }

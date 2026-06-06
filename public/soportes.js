@@ -875,20 +875,32 @@
     return filename;
   }
 
+  function iniciarDescargaZipIframe(apiPath) {
+    const iframe = document.createElement('iframe');
+    iframe.style.cssText = 'display:none;width:0;height:0;border:0';
+    iframe.setAttribute('aria-hidden', 'true');
+    iframe.src = apiPath;
+    document.body.appendChild(iframe);
+    setTimeout(() => iframe.remove(), 120000);
+  }
+
   async function descargarZipArmado(apiPath, fallbackFilename, triggerBtn = null) {
     if (triggerBtn) triggerBtn.disabled = true;
     sopToast('Generando ZIP…', 'info');
+    const liberar = () => { if (triggerBtn) triggerBtn.disabled = false; };
     try {
-      const res = await apiFetch(apiPath);
+      const res = await fetch(apiPath, { credentials: 'include', cache: 'no-store' });
       const ct = (res.headers.get('Content-Type') || '').toLowerCase();
-      if (!res.ok || ct.includes('application/json')) {
+      if (!res.ok || ct.includes('application/json') || ct.includes('text/html')) {
         const data = await res.json().catch(() => ({}));
         sopToast(data.error || 'No se pudo descargar el ZIP', 'error');
+        liberar();
         return;
       }
       const blob = await res.blob();
       if (!blob.size) {
-        sopToast('El ZIP está vacío o no se generó correctamente', 'error');
+        sopToast('El ZIP está vacío. Revise que haya archivos en las carpetas.', 'error');
+        liberar();
         return;
       }
       const filename = parseZipFilenameFromResponse(res, fallbackFilename);
@@ -900,12 +912,13 @@
       document.body.appendChild(a);
       a.click();
       a.remove();
-      URL.revokeObjectURL(url);
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
       sopToast('ZIP descargado', 'success');
     } catch (e) {
-      sopToast(e.message || 'Error al descargar', 'error');
+      iniciarDescargaZipIframe(apiPath);
+      sopToast('Descarga iniciada…', 'info');
     } finally {
-      if (triggerBtn) triggerBtn.disabled = false;
+      liberar();
     }
   }
 
