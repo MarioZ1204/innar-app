@@ -10,7 +10,7 @@ const {
   getArmadoFeDirAbs,
   numeroFeExpediente
 } = require('./soportes-armado-structure');
-const { soportesRoot } = require('./soportes-storage');
+const sopStorage = require('./soportes-storage');
 
 const RIPS_README_NAME = '_CARPETA_FACTURA.txt';
 const RIPS_README_TEXT = 'Carpeta de factura para archivos RIPS (JSON/XML).\r\n';
@@ -35,7 +35,7 @@ async function ensureRipsCarpetaFacturaEnDisco(db, diaId, codigoFactura) {
     if (!ctx.length) return null;
     const row = ctx[0];
     const { abs } = getArmadoFeDirAbs(
-      soportesRoot(),
+      sopStorage.soportesRoot,
       row.periodo,
       row.nombre_display,
       row.estado_facturacion,

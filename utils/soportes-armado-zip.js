@@ -7,7 +7,7 @@ const archiver = require('archiver');
 const db = require('./db-mysql');
 const logger = require('./logger');
 const { resolveArchivoAbsoluto } = require('./soportes-exp-archivo');
-const { soportesRoot } = require('./soportes-storage');
+const sopStorage = require('./soportes-storage');
 const { getArmadoFeDirAbs } = require('./soportes-armado-structure');
 const { syncRipsCarpetasDia, syncRipsCarpetasPeriodo } = require('./soportes-rips-carpetas-sync');
 
@@ -90,7 +90,7 @@ function listRipsDirEntriesFromDisk(ctx, codigo, zipPrefix, usedPaths, diaNombre
   const entries = [];
   try {
     const { abs } = getArmadoFeDirAbs(
-      soportesRoot(),
+      sopStorage.soportesRoot,
       ctx.periodo,
       ctx.nombre_display,
       ctx.estado_facturacion,
