@@ -4,7 +4,9 @@ const {
   parsePersonasCsvContent,
   personaToAnexoPaciente,
   anexoRegistroToPersona,
-  armarRegistroAnexo
+  armarRegistroAnexo,
+  correoParaAnexo,
+  CORREO_ANEXO_SIN_EMAIL
 } = require('../utils/anexo-fidu-personas');
 
 describe('anexo-fidu-personas', () => {
@@ -60,6 +62,12 @@ describe('anexo-fidu-personas', () => {
     expect(p.afiliacion).toBe('Cotizante');
   });
 
+  test('correoParaAnexo usa notiene@gmail.com sin email', () => {
+    expect(correoParaAnexo('')).toBe(CORREO_ANEXO_SIN_EMAIL);
+    expect(correoParaAnexo('notiene@gmail.com')).toBe(CORREO_ANEXO_SIN_EMAIL);
+    expect(correoParaAnexo('a@b.com')).toBe('a@b.com');
+  });
+
   test('personaToAnexoPaciente divide campos del anexo', () => {
     const anexo = personaToAnexoPaciente({
       numero_documento: '27486786',
@@ -79,6 +87,7 @@ describe('anexo-fidu-personas', () => {
     });
     expect(anexo.nombres_1).toBe('MERCEDES');
     expect(anexo.numero_documento).toBe('27486786');
+    expect(anexo.correo).toBe(CORREO_ANEXO_SIN_EMAIL);
     expect(Number(anexo.edad)).toBeGreaterThan(50);
   });
 

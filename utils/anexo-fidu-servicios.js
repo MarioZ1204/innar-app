@@ -3,6 +3,14 @@
  * Al elegir el servicio se rellenan codigo, nombre, plan, valores y códigos RIPS.
  */
 
+/** Campos que el catálogo CUPS recalcula; el resto se preserva al guardar/editar. */
+const CAMPOS_SERVICIO_AUTO = new Set([
+  'nit', 'prefijo_fact', 'ciudad', 'nombre_servicio', 'plan', 'valor_unitario',
+  'cantidad', 'valor_total_fact', 'condicion_destino_persona', 'prioridad_atencion',
+  'tipo_atencion_solicitada', 'grupo_servicio', 'modalidad_tecnologia_salud',
+  'codigo_servicio_referencia', 'codigo_servicio'
+]);
+
 const ANEXO_FIDU_VALORES_FIJOS = {
   nit: '901164565-1',
   prefijo_fact: 'FE',
@@ -161,6 +169,7 @@ function listarServiciosCatalogo() {
 }
 
 module.exports = {
+  CAMPOS_SERVICIO_AUTO,
   ANEXO_FIDU_VALORES_FIJOS,
   ANEXO_FIDU_CATALOGO_SERVICIOS,
   normCodigoServicio,

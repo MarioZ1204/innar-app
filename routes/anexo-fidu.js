@@ -106,6 +106,8 @@ async function lookupNombreDiagnosticoDb(codigoRaw) {
 }
 
 function sanitizeRegistroBody(body) {
+  const { correoParaAnexo } = require('../utils/anexo-fidu-personas');
+  const { CAMPOS_SERVICIO_AUTO } = require('../utils/anexo-fidu-servicios');
   const out = {};
   for (const key of ANEXO_FIDU_COLUMN_KEYS) {
     if (body[key] == null) out[key] = '';
@@ -121,7 +123,15 @@ function sanitizeRegistroBody(body) {
     const { formatFechaAutorizacionHora } = require('../utils/anexo-fidu-import');
     out.fecha_autorizacion_hora = formatFechaAutorizacionHora(out.fecha_autorizacion_hora);
   }
-  return enriquecerRegistroAnexoFidu(out);
+  const antes = { ...out };
+  const enriched = enriquecerRegistroAnexoFidu(out);
+  ANEXO_FIDU_COLUMN_KEYS.forEach((k) => {
+    if (!CAMPOS_SERVICIO_AUTO.has(k) && String(antes[k] || '').trim()) {
+      enriched[k] = antes[k];
+    }
+  });
+  enriched.correo = correoParaAnexo(enriched.correo || antes.correo);
+  return enriched;
 }
 
 function rowToApi(row) {
@@ -132,7 +142,11 @@ function rowToApi(row) {
     creado_en: row.creado_en,
     actualizado_en: row.actualizado_en
   };
-  ANEXO_FIDU_COLUMN_KEYS.forEach((k) => { o[k] = row[k] != null ? String(row[k]) : ''; });
+  const { correoParaAnexo } = require('../utils/anexo-fidu-personas');
+  ANEXO_FIDU_COLUMN_KEYS.forEach((k) => {
+    const raw = row[k] != null ? String(row[k]) : '';
+    o[k] = k === 'correo' ? correoParaAnexo(raw) : raw;
+  });
   return o;
 }
 
@@ -518,7 +532,7 @@ router.get('/anexo-fidu/registros', requireAuth, requirePermiso(PERM_ANEXO_FIDU)
     const total = countRow?.total || 0;
 
     const rows = await db.query(
-      `SELECT * FROM anexo_fidu_registros${where} ORDER BY id DESC LIMIT ? OFFSET ?`,
+      `SELECT * FROM anexo_fidu_registros${where} ORDER BY id ASC LIMIT ? OFFSET ?`,
       [...params, limit, offset]
     );
 

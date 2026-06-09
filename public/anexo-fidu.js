@@ -535,6 +535,17 @@
     'Especiales o de Excepcion beneficiario'
   ];
 
+  function normalizarFechaAfidu(val) {
+    const s = String(val || '').trim();
+    const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+    const dm = s.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/);
+    if (dm) {
+      return `${dm[3]}-${String(dm[2]).padStart(2, '0')}-${String(dm[1]).padStart(2, '0')}`;
+    }
+    return s;
+  }
+
   function calcularTipoDocumentoAfidu(fecha) {
     if (!fecha) return '';
     const m = String(fecha).match(/^(\d{4})-(\d{2})-(\d{2})/);
@@ -554,7 +565,7 @@
     const v = valor || '';
     const ro = f.key === 'numero_documento' ? ' readonly' : '';
     if (f.key === 'fecha_nacimiento') {
-      return `<input type="date" id="afidu-p-${f.key}" data-key="${f.key}" value="${escapeHtml(v)}" />`;
+      return `<input type="text" id="afidu-p-${f.key}" data-key="${f.key}" value="${escapeHtml(v)}" placeholder="AAAA-MM-DD" autocomplete="off" />`;
     }
     if (f.key === 'afiliacion') {
       const opts = AFILIACION_OPCIONES.map((o) =>
@@ -1022,13 +1033,11 @@
       throw new Error('Paciente no registrado — complete los datos abajo');
     }
     const reg = data.registro || {};
-    const manual = {};
-    _columnas.forEach((c) => {
-      if (!CAMPOS_SERVICIO_AUTO.has(c.key) && !CAMPOS_PACIENTE_ANEXO.has(c.key)) {
-        manual[c.key] = body[c.key];
-      }
+    const merged = { ...body };
+    CAMPOS_SERVICIO_AUTO.forEach((k) => {
+      if (reg[k] != null && String(reg[k]).trim() !== '') merged[k] = reg[k];
     });
-    aplicarRegistroAFila(tr, { ...reg, ...manual });
+    aplicarRegistroAFila(tr, merged);
     recalcularTotalEnFila(tr);
   }
 
@@ -1298,8 +1307,9 @@
     const isNew = tr.dataset.new === '1' || !tr.dataset.id;
     tr.classList.add('afidu-row-saving');
     try {
+      let data;
       if (isNew) {
-        const data = await apiAnexo('/api/anexo-fidu/registros', {
+        data = await apiAnexo('/api/anexo-fidu/registros', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
@@ -1310,12 +1320,13 @@
         tr.classList.remove('afidu-row-new');
         _total += 1;
       } else {
-        await apiAnexo(`/api/anexo-fidu/registros/${tr.dataset.id}`, {
+        data = await apiAnexo(`/api/anexo-fidu/registros/${tr.dataset.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
         });
       }
+      if (data?.registro) aplicarRegistroAFila(tr, data.registro);
       tr.classList.remove('afidu-row-dirty');
       await cargarResumenPersonas();
     } finally {
@@ -1323,7 +1334,7 @@
     }
   }
 
-  function prependFila(registro) {
+  function appendFila(registro) {
     const tbody = $('afiduGridBody');
     if (!tbody) return null;
     const empty = tbody.querySelector('.afidu-empty-msg');
@@ -1331,7 +1342,7 @@
     const wrap = document.createElement('tbody');
     wrap.innerHTML = crearFilaHtml(registro, { isNew: true });
     const tr = wrap.firstElementChild;
-    tbody.insertBefore(tr, tbody.firstChild);
+    tbody.appendChild(tr);
     return tr;
   }
 
@@ -1371,7 +1382,14 @@
       const t = calcularTipoDocumentoAfidu(fn?.value || '');
       if (t) tipo.value = t;
     };
-    fn?.addEventListener('change', syncTipo);
+    const syncFecha = () => {
+      if (!fn) return;
+      const norm = normalizarFechaAfidu(fn.value);
+      if (norm && norm !== fn.value) fn.value = norm;
+      syncTipo();
+    };
+    fn?.addEventListener('change', syncFecha);
+    fn?.addEventListener('blur', syncFecha);
     fn?.addEventListener('input', syncTipo);
     $('btnAfiduGuardarPersona')?.addEventListener('click', guardarPersonaYAgregarFila);
     $('btnAfiduCancelarPersona')?.addEventListener('click', () => ocultarPanelNuevaPersona(false));
@@ -1400,7 +1418,9 @@
     const persona = {};
     PERSONA_FORM.forEach((f) => {
       const el = document.getElementById(`afidu-p-${f.key}`);
-      persona[f.key] = el ? el.value.trim() : '';
+      let val = el ? el.value.trim() : '';
+      if (f.key === 'fecha_nacimiento') val = normalizarFechaAfidu(val);
+      persona[f.key] = val;
     });
     const codigo = _pendingCodigo || ($('afiduEntradaCodigo')?.value || '').trim();
     const enCola = _pendingBulkPairs?.length > 0;
@@ -1460,9 +1480,24 @@
     if (opts.ocultarPanelSiOk !== false) ocultarPanelNuevaPersona();
     const reg = { ...(data.registro || {}) };
     delete reg.id;
-    const tr = prependFila(reg);
+    const archivoId = requireArchivoActivo();
+    const ultimaPagina = Math.max(1, Math.ceil((_total + 1) / _limit));
+    let tr;
+    if (_page !== ultimaPagina) {
+      await apiAnexo('/api/anexo-fidu/registros', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...reg, actualizar_persona: true, archivo_id: archivoId })
+      });
+      _total += 1;
+      _page = Math.max(1, Math.ceil(_total / _limit));
+      await cargarRegistros();
+      tr = $('afiduGridBody')?.lastElementChild;
+    } else {
+      tr = appendFila(reg);
+      if (tr) await guardarFila(tr);
+    }
     if (tr) {
-      await guardarFila(tr);
       tr.classList.add('afidu-row-highlight');
       setTimeout(() => tr.classList.remove('afidu-row-highlight'), 2000);
       tr.scrollIntoView({ block: 'nearest', behavior: 'smooth' });

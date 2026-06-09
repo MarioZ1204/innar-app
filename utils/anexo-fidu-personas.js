@@ -79,6 +79,8 @@ function normalizarGenero(val) {
   return val ? String(val).trim() : '';
 }
 
+const CORREO_ANEXO_SIN_EMAIL = 'notiene@gmail.com';
+
 function normalizarCorreo(val) {
   let c = String(val || '').trim();
   if (!c) return '';
@@ -87,6 +89,12 @@ function normalizarCorreo(val) {
   c = c.replace(/,COM$/i, '.COM').replace(/,com$/i, '.com');
   c = c.replace(/,@/g, '@');
   return c;
+}
+
+/** Correo mostrado/guardado en el anexo cuando el paciente no tiene email. */
+function correoParaAnexo(val) {
+  const c = normalizarCorreo(val);
+  return c || CORREO_ANEXO_SIN_EMAIL;
 }
 
 function normalizarFecha(val) {
@@ -201,7 +209,7 @@ function personaToAnexoPaciente(persona) {
     edad: calcularEdadDesdeFecha(fecha),
     direccion: direccionConBarrio(persona),
     telefono: persona.telefono || '',
-    correo: normalizarCorreo(persona.correo),
+    correo: correoParaAnexo(persona.correo),
     especiales_excepcion_cotizante: persona.afiliacion || '',
     fecha_nacimiento: fecha,
     ciudad_nacimiento: persona.ciudad_nacimiento || '',
@@ -336,6 +344,8 @@ function buildAnexoFiduPersonasCreateTableSql() {
 }
 
 module.exports = {
+  CORREO_ANEXO_SIN_EMAIL,
+  correoParaAnexo,
   PERSONAS_CSV_COLUMNS,
   ANEXO_KEYS_DESDE_PERSONA,
   parseCsvLine,
