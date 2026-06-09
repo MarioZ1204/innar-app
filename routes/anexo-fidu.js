@@ -112,8 +112,10 @@ function sanitizeRegistroBody(body) {
     else out[key] = String(body[key]).trim();
   }
   if (out.fecha_nacimiento) {
+    const { calcularTipoDocumentoDesdeFecha } = require('../utils/anexo-fidu-import');
     out.fecha_nacimiento = formatFechaParaCelda(out.fecha_nacimiento);
     if (!out.edad) out.edad = calcularEdadDesdeFecha(out.fecha_nacimiento);
+    if (!out.tipo_documento) out.tipo_documento = calcularTipoDocumentoDesdeFecha(out.fecha_nacimiento);
   }
   return enriquecerRegistroAnexoFidu(out);
 }

@@ -45,6 +45,46 @@ function splitNombrePartes(texto) {
   return { a: parts[0], b: parts.slice(1).join(' ') };
 }
 
+/** Alias extra para cabeceras de Excel del anexo (nombres/apellidos combinados, etc.) */
+const IMPORT_HEADER_ALIASES = {
+  nombres: '_nombres',
+  nombrescompletos: '_nombres',
+  nombre: '_nombres',
+  apellidos: '_apellidos',
+  apellidoscompletos: '_apellidos',
+  apellido: '_apellidos',
+  barrio: '_barrio',
+  tipodedocumento: 'tipo_documento',
+  especialesodeexcepcioncotizanteben: 'especiales_excepcion_cotizante',
+  especialesodeexcepcioncotizante: 'especiales_excepcion_cotizante',
+  afiliacion: 'especiales_excepcion_cotizante'
+};
+
+function aplicarCamposCombinadosImport(out, { nombresRaw = '', apellidosRaw = '', barrioRaw = '' } = {}) {
+  if (!out.nombres_1 && nombresRaw) {
+    const n = splitNombrePartes(nombresRaw);
+    out.nombres_1 = n.a;
+    out.nombres_2 = n.b;
+  }
+  if (!out.apellidos_1 && apellidosRaw) {
+    const a = splitNombrePartes(apellidosRaw);
+    out.apellidos_1 = a.a;
+    out.apellidos_2 = a.b;
+  }
+  const barrio = barrioRaw || '';
+  if (barrio && out.direccion && !String(out.direccion).toUpperCase().includes(barrio.toUpperCase())) {
+    out.direccion = `${out.direccion} — ${barrio}`;
+  } else if (barrio && !out.direccion) {
+    out.direccion = barrio;
+  }
+  if (out.fecha_nacimiento) {
+    out.fecha_nacimiento = formatFechaParaCelda(out.fecha_nacimiento);
+    if (!out.edad) out.edad = calcularEdadDesdeFecha(out.fecha_nacimiento);
+    if (!out.tipo_documento) out.tipo_documento = calcularTipoDocumentoDesdeFecha(out.fecha_nacimiento);
+  }
+  return out;
+}
+
 function calcularEdadDesdeFecha(val) {
   if (!val) return '';
   const s = String(val).trim();
@@ -63,6 +103,17 @@ function calcularEdadDesdeFecha(val) {
   return edad >= 0 ? String(edad) : '';
 }
 
+/** CC >=18 años; TI 7-17; REGISTRO CIVIL <7 años */
+function calcularTipoDocumentoDesdeFecha(val) {
+  const edadStr = calcularEdadDesdeFecha(val);
+  if (!edadStr) return '';
+  const edad = parseInt(edadStr, 10);
+  if (Number.isNaN(edad) || edad < 0) return '';
+  if (edad < 7) return 'REGISTRO CIVIL';
+  if (edad < 18) return 'TI';
+  return 'CC';
+}
+
 function formatFechaParaCelda(val) {
   if (val == null || val === '') return '';
   if (val instanceof Date && !Number.isNaN(val.getTime())) {
@@ -74,6 +125,10 @@ function formatFechaParaCelda(val) {
   const s = String(val).trim();
   const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  const dm = s.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/);
+  if (dm) {
+    return `${dm[3]}-${String(dm[2]).padStart(2, '0')}-${String(dm[1]).padStart(2, '0')}`;
+  }
   return s;
 }
 
@@ -108,21 +163,7 @@ function mapSheetsRowToAnexoFidu(row) {
     else if (ANEXO_FIDU_COLUMN_KEYS.includes(alias)) out[alias] = val;
   }
 
-  const n = splitNombrePartes(nombresRaw);
-  const a = splitNombrePartes(apellidosRaw);
-  out.nombres_1 = n.a;
-  out.nombres_2 = n.b;
-  out.apellidos_1 = a.a;
-  out.apellidos_2 = a.b;
-
-  if (barrio && out.direccion) {
-    out.direccion = `${out.direccion} — ${barrio}`;
-  } else if (barrio) {
-    out.direccion = barrio;
-  }
-
-  out.fecha_nacimiento = formatFechaParaCelda(out.fecha_nacimiento);
-  out.edad = calcularEdadDesdeFecha(out.fecha_nacimiento);
+  aplicarCamposCombinadosImport(out, { nombresRaw, apellidosRaw, barrioRaw: barrio });
 
   if (out._servicio_texto) {
     const m = String(out._servicio_texto).match(/\b(\d{5,6})\b/);
@@ -142,9 +183,13 @@ function mapExcelRowsToAnexoFidu(dataRows) {
 
 module.exports = {
   normHeader,
+  IMPORT_HEADER_ALIASES,
+  splitNombrePartes,
+  aplicarCamposCombinadosImport,
   mapSheetsRowToAnexoFidu,
   mapExcelRowsToAnexoFidu,
   calcularEdadDesdeFecha,
+  calcularTipoDocumentoDesdeFecha,
   formatFechaParaCelda,
   cellToString
 };

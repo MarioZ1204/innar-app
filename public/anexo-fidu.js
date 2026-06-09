@@ -530,14 +530,55 @@
     renderAfiduArchivosExplorer();
   }
 
+  const AFILIACION_OPCIONES = [
+    'Especiales o de Excepcion cotizante',
+    'Especiales o de Excepcion beneficiario'
+  ];
+
+  function calcularTipoDocumentoAfidu(fecha) {
+    if (!fecha) return '';
+    const m = String(fecha).match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!m) return '';
+    const hoy = new Date();
+    const nac = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    if (Number.isNaN(nac.getTime())) return '';
+    let edad = hoy.getFullYear() - nac.getFullYear();
+    const md = hoy.getMonth() - nac.getMonth();
+    if (md < 0 || (md === 0 && hoy.getDate() < nac.getDate())) edad -= 1;
+    if (edad < 7) return 'REGISTRO CIVIL';
+    if (edad < 18) return 'TI';
+    return 'CC';
+  }
+
+  function htmlCampoPersonaForm(f, valor = '') {
+    const v = valor || '';
+    const ro = f.key === 'numero_documento' ? ' readonly' : '';
+    if (f.key === 'fecha_nacimiento') {
+      return `<input type="date" id="afidu-p-${f.key}" data-key="${f.key}" value="${escapeHtml(v)}" />`;
+    }
+    if (f.key === 'afiliacion') {
+      const opts = AFILIACION_OPCIONES.map((o) =>
+        `<option value="${escapeHtml(o)}"${v === o ? ' selected' : ''}>${escapeHtml(o)}</option>`
+      ).join('');
+      return `<select id="afidu-p-${f.key}" data-key="${f.key}"><option value="">Seleccionar…</option>${opts}</select>`;
+    }
+    if (f.key === 'tipo_documento') {
+      return `<input type="text" id="afidu-p-${f.key}" data-key="${f.key}" value="${escapeHtml(v)}" placeholder="Se calcula con la fecha de nacimiento" />`;
+    }
+    if (f.long) {
+      return `<textarea id="afidu-p-${f.key}" data-key="${f.key}"${ro}>${escapeHtml(v)}</textarea>`;
+    }
+    return `<input type="text" id="afidu-p-${f.key}" data-key="${f.key}" value="${escapeHtml(v)}"${ro} />`;
+  }
+
   const PERSONA_FORM = [
     { key: 'numero_documento', label: 'NUMERODOCUMENTO' },
     { key: 'nombres_1', label: 'NOMBRES (1)' },
     { key: 'nombres_2', label: 'NOMBRES (2)' },
     { key: 'apellidos_1', label: 'APELLIDOS (1)' },
     { key: 'apellidos_2', label: 'APELLIDOS (2)' },
+    { key: 'fecha_nacimiento', label: 'FECHANACIMIENTO (AAAA-MM-DD)' },
     { key: 'tipo_documento', label: 'TIPODOCUMENTO' },
-    { key: 'fecha_nacimiento', label: 'FECHANACIMIENTO' },
     { key: 'ciudad_nacimiento', label: 'CIUDADDENACIMIENTO' },
     { key: 'genero', label: 'GENERO' },
     { key: 'direccion', label: 'DIRECCION', long: true },
@@ -1315,14 +1356,20 @@
     let html = `<div class="afidu-step-banner afidu-step-banner-warn">Paciente <strong>${escapeHtml(doc)}</strong> (CUPS ${escapeHtml(codigo)}) no está en la base. Complete los 15 datos y guarde para agregar su fila.${hintCola}</div><div class="afidu-panel-form">`;
     PERSONA_FORM.forEach((f) => {
       const v = f.key === 'numero_documento' ? doc : '';
-      const ro = f.key === 'numero_documento' ? ' readonly' : '';
-      html += `<div><label>${escapeHtml(f.label)}</label>${f.long
-        ? `<textarea id="afidu-p-${f.key}" data-key="${f.key}"${ro}>${escapeHtml(v)}</textarea>`
-        : `<input type="text" id="afidu-p-${f.key}" data-key="${f.key}" value="${escapeHtml(v)}"${ro} />`}</div>`;
+      html += `<div><label>${escapeHtml(f.label)}</label>${htmlCampoPersonaForm(f, v)}</div>`;
     });
     html += `</div><div class="afidu-panel-actions"><button type="button" class="btn-primary" id="btnAfiduGuardarPersona">Guardar paciente y agregar fila</button><button type="button" class="btn-secondary" id="btnAfiduCancelarPersona">Cancelar</button></div>`;
     panel.innerHTML = html;
     panel.classList.remove('hidden');
+    const fn = $('afidu-p-fecha_nacimiento');
+    const tipo = $('afidu-p-tipo_documento');
+    const syncTipo = () => {
+      if (!tipo) return;
+      const t = calcularTipoDocumentoAfidu(fn?.value || '');
+      if (t) tipo.value = t;
+    };
+    fn?.addEventListener('change', syncTipo);
+    fn?.addEventListener('input', syncTipo);
     $('btnAfiduGuardarPersona')?.addEventListener('click', guardarPersonaYAgregarFila);
     $('btnAfiduCancelarPersona')?.addEventListener('click', () => ocultarPanelNuevaPersona(false));
   }

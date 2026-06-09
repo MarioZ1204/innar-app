@@ -81,4 +81,20 @@ describe('anexo-fidu-personas', () => {
     expect(anexo.numero_documento).toBe('27486786');
     expect(Number(anexo.edad)).toBeGreaterThan(50);
   });
+
+  test('personaToAnexoPaciente une barrio en direccion y conserva correo', () => {
+    const anexo = personaToAnexoPaciente({
+      numero_documento: '123',
+      nombres_1: 'JUAN',
+      apellidos_1: 'PEREZ',
+      fecha_nacimiento: '1990-01-01',
+      direccion: 'CALLE 10',
+      barrio: 'MARILUZ',
+      correo: 'test@mail.com',
+      afiliacion: 'Especiales o de Excepcion cotizante'
+    });
+    expect(anexo.direccion).toBe('CALLE 10 — MARILUZ');
+    expect(anexo.correo).toBe('test@mail.com');
+    expect(anexo.especiales_excepcion_cotizante).toBe('Especiales o de Excepcion cotizante');
+  });
 });

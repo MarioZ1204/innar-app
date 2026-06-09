@@ -17,29 +17,29 @@ function slugNombreArchivo(nombre) {
  * Lee hoja Excel exportada del anexo (cabeceras = labels de columnas).
  * @param {import('exceljs').Worksheet} ws
  */
-function mapFilaImportadaAnexo(raw) {
+function mapFilaImportadaAnexo(raw, extras = {}) {
   const { ANEXO_FIDU_COLUMN_KEYS } = require('./anexo-fidu-columns');
   const { enriquecerRegistroAnexoFidu } = require('./anexo-fidu-servicios');
-  const { formatFechaParaCelda, calcularEdadDesdeFecha } = require('./anexo-fidu-import');
+  const { aplicarCamposCombinadosImport } = require('./anexo-fidu-import');
   const out = {};
   ANEXO_FIDU_COLUMN_KEYS.forEach((k) => {
     out[k] = raw[k] != null ? String(raw[k]).trim() : '';
   });
-  if (out.fecha_nacimiento) {
-    out.fecha_nacimiento = formatFechaParaCelda(out.fecha_nacimiento);
-    if (!out.edad) out.edad = calcularEdadDesdeFecha(out.fecha_nacimiento);
-  }
+  aplicarCamposCombinadosImport(out, extras);
   return enriquecerRegistroAnexoFidu(out);
 }
 
 function parseAnexoFiduWorksheet(ws) {
   const { ANEXO_FIDU_COLUMNAS } = require('./anexo-fidu-columns');
-  const { normHeader, cellToString } = require('./anexo-fidu-import');
+  const { normHeader, cellToString, IMPORT_HEADER_ALIASES } = require('./anexo-fidu-import');
 
   const labelToKey = new Map();
   ANEXO_FIDU_COLUMNAS.forEach((c) => {
     labelToKey.set(normHeader(c.label), c.key);
     labelToKey.set(normHeader(c.key), c.key);
+  });
+  Object.entries(IMPORT_HEADER_ALIASES).forEach(([alias, key]) => {
+    if (!labelToKey.has(alias)) labelToKey.set(alias, key);
   });
 
   const headerRow = ws.getRow(1);
@@ -54,17 +54,23 @@ function parseAnexoFiduWorksheet(ws) {
   ws.eachRow((row, rowNumber) => {
     if (rowNumber === 1) return;
     const raw = {};
+    let nombresRaw = '';
+    let apellidosRaw = '';
+    let barrioRaw = '';
     let tieneDato = false;
     row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
       const key = colMap[colNumber];
       if (!key) return;
       const val = cellToString(cell.value);
       if (val) tieneDato = true;
-      raw[key] = val;
+      if (key === '_nombres') nombresRaw = val;
+      else if (key === '_apellidos') apellidosRaw = val;
+      else if (key === '_barrio') barrioRaw = val;
+      else raw[key] = val;
     });
     if (!tieneDato) return;
     try {
-      registros.push(mapFilaImportadaAnexo(raw));
+      registros.push(mapFilaImportadaAnexo(raw, { nombresRaw, apellidosRaw, barrioRaw }));
     } catch (e) {
       errores.push(`Fila ${rowNumber}: ${e.message}`);
     }

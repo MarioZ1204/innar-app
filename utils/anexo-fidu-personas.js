@@ -175,22 +175,35 @@ const ANEXO_KEYS_DESDE_PERSONA = [
   'direccion', 'telefono', 'correo', 'especiales_excepcion_cotizante', 'ciudad_residencia', 'edad'
 ];
 
+function direccionConBarrio(persona) {
+  const direccion = limpiarDireccionRepetida(persona.direccion);
+  const barrio = normEspacios(persona.barrio);
+  if (barrio && direccion && !direccion.toUpperCase().includes(barrio.toUpperCase())) {
+    return `${direccion} — ${barrio}`;
+  }
+  if (!direccion && barrio) return barrio;
+  return direccion;
+}
+
 function personaToAnexoPaciente(persona) {
-  const { calcularEdadDesdeFecha } = require('./anexo-fidu-import');
+  const { calcularEdadDesdeFecha, calcularTipoDocumentoDesdeFecha, formatFechaParaCelda } = require('./anexo-fidu-import');
+  const fecha = formatFechaParaCelda(persona.fecha_nacimiento);
+  let tipoDoc = normEspacios(persona.tipo_documento);
+  if (!tipoDoc && fecha) tipoDoc = calcularTipoDocumentoDesdeFecha(fecha);
   return {
     nombres_1: persona.nombres_1 || '',
     nombres_2: persona.nombres_2 || '',
     apellidos_1: persona.apellidos_1 || '',
     apellidos_2: persona.apellidos_2 || '',
-    tipo_documento: persona.tipo_documento || '',
+    tipo_documento: tipoDoc,
     numero_documento: persona.numero_documento || '',
     genero: persona.genero || '',
-    edad: calcularEdadDesdeFecha(persona.fecha_nacimiento),
-    direccion: persona.direccion || '',
+    edad: calcularEdadDesdeFecha(fecha),
+    direccion: direccionConBarrio(persona),
     telefono: persona.telefono || '',
-    correo: persona.correo || '',
+    correo: normalizarCorreo(persona.correo),
     especiales_excepcion_cotizante: persona.afiliacion || '',
-    fecha_nacimiento: persona.fecha_nacimiento || '',
+    fecha_nacimiento: fecha,
     ciudad_nacimiento: persona.ciudad_nacimiento || '',
     ciudad_residencia: persona.ciudad_residencia || ''
   };
@@ -230,15 +243,24 @@ function anexoRegistroToPersona(registro = {}) {
 }
 
 function sanitizePersonaBody(body = {}) {
+  const { calcularTipoDocumentoDesdeFecha, formatFechaParaCelda } = require('./anexo-fidu-import');
   const p = {};
   PERSONAS_CSV_COLUMNS.forEach((k) => {
     p[k] = body[k] != null ? normEspacios(body[k]) : '';
   });
   if (!p.numero_documento) throw new Error('Número de documento requerido');
-  p.fecha_nacimiento = normalizarFecha(p.fecha_nacimiento);
+  p.fecha_nacimiento = formatFechaParaCelda(p.fecha_nacimiento) || normalizarFecha(p.fecha_nacimiento);
   p.genero = normalizarGenero(p.genero);
   p.correo = normalizarCorreo(p.correo);
   p.direccion = limpiarDireccionRepetida(p.direccion);
+  if (p.barrio && p.direccion && !p.direccion.toUpperCase().includes(p.barrio.toUpperCase())) {
+    p.direccion = `${p.direccion} — ${p.barrio}`;
+  } else if (!p.direccion && p.barrio) {
+    p.direccion = p.barrio;
+  }
+  if (!p.tipo_documento && p.fecha_nacimiento) {
+    p.tipo_documento = calcularTipoDocumentoDesdeFecha(p.fecha_nacimiento);
+  }
   return p;
 }
 

@@ -1,4 +1,8 @@
-const { mapSheetsRowToAnexoFidu } = require('../utils/anexo-fidu-import');
+const {
+  mapSheetsRowToAnexoFidu,
+  calcularTipoDocumentoDesdeFecha,
+  aplicarCamposCombinadosImport
+} = require('../utils/anexo-fidu-import');
 const { ANEXO_FIDU_COLUMNAS } = require('../utils/anexo-fidu-columns');
 
 describe('anexo-fidu-import', () => {
@@ -29,6 +33,29 @@ describe('anexo-fidu-import', () => {
 
   test('plantilla tiene 46 columnas', () => {
     expect(ANEXO_FIDU_COLUMNAS.length).toBe(46);
+  });
+
+  test('calcularTipoDocumentoDesdeFecha', () => {
+    const hoy = new Date();
+    const yChild = hoy.getFullYear() - 5;
+    const yTeen = hoy.getFullYear() - 12;
+    const yAdult = hoy.getFullYear() - 30;
+    expect(calcularTipoDocumentoDesdeFecha(`${yChild}-01-15`)).toBe('REGISTRO CIVIL');
+    expect(calcularTipoDocumentoDesdeFecha(`${yTeen}-06-01`)).toBe('TI');
+    expect(calcularTipoDocumentoDesdeFecha(`${yAdult}-03-10`)).toBe('CC');
+  });
+
+  test('aplicarCamposCombinadosImport parte nombres y barrio', () => {
+    const out = aplicarCamposCombinadosImport(
+      { direccion: 'CALLE 1', fecha_nacimiento: '2010-05-01' },
+      { nombresRaw: 'Ana Maria', apellidosRaw: 'Lopez Ruiz', barrioRaw: 'CENTRO' }
+    );
+    expect(out.nombres_1).toBe('Ana');
+    expect(out.nombres_2).toBe('Maria');
+    expect(out.apellidos_1).toBe('Lopez');
+    expect(out.apellidos_2).toBe('Ruiz');
+    expect(out.direccion).toContain('CENTRO');
+    expect(out.tipo_documento).toBe('TI');
   });
 
   test('importa con código de servicio y aplica catálogo', () => {
