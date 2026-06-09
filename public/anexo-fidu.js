@@ -752,27 +752,21 @@
     return _medicosAfidu;
   }
 
-  function poblarSelectMedicoAtencion(selectId, valorPrevio = '') {
-    const sel = $(selectId);
-    if (!sel) return;
-    const prev = valorPrevio || sel.value || '';
-    sel.innerHTML = '<option value="">Seleccionar médico</option>' +
-      _medicosAfidu.map((m) => {
-        const nom = String(m.nombre || '').trim();
-        const esp = String(m.especialidad || '').trim();
-        const label = esp ? `${nom} — ${esp}` : nom;
-        return `<option value="${escapeHtml(nom)}" data-especialidad="${escapeHtml(esp)}">${escapeHtml(label)}</option>`;
-      }).join('');
-    if (prev) {
-      const opt = [...sel.options].find((o) => o.value === prev);
-      if (opt) sel.value = prev;
-    }
+  function poblarDatalistMedicoAtencion() {
+    const list = $('afiduDatalistMedicosAtencion');
+    if (!list) return;
+    list.innerHTML = _medicosAfidu.map((m) => {
+      const nom = String(m.nombre || '').trim();
+      if (!nom) return '';
+      const esp = String(m.especialidad || '').trim();
+      const label = esp ? `${nom} — ${esp}` : nom;
+      return `<option value="${escapeHtml(nom)}" label="${escapeHtml(label)}"></option>`;
+    }).join('');
   }
 
   async function initSelectsEntradaAfidu() {
     await cargarMedicosAfidu();
-    poblarSelectMedicoAtencion('afiduEntradaMedicoAtencion');
-    poblarSelectMedicoAtencion('afiduEntradaBulkMedicoAtencion');
+    poblarDatalistMedicoAtencion();
   }
 
   function valorCeldaTexto(val) {

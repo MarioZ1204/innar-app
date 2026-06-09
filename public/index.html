@@ -2973,7 +2973,7 @@
                       </div>
                       <div>
                         <label for="afiduEntradaMedicoAtencion">Médico que realiza atención</label>
-                        <select id="afiduEntradaMedicoAtencion"><option value="">Seleccionar médico</option></select>
+                        <input type="text" id="afiduEntradaMedicoAtencion" list="afiduDatalistMedicosAtencion" placeholder="Seleccionar o escribir nombre" autocomplete="off" />
                       </div>
                       <div>
                         <label for="afiduEntradaEspRemitente">Especialidad remitente</label>
@@ -2984,7 +2984,8 @@
                       </div>
                     </div>
                     <p id="afiduDiagnosticoPreview" class="afidu-diagnostico-preview hidden"></p>
-                    <p class="afidu-entrada-hint">Pulse <kbd>Enter</kbd> en documento o CUPS para agregar. El nombre del diagnóstico se completa al escribir el CIE-10.</p>
+                    <datalist id="afiduDatalistMedicosAtencion"></datalist>
+                    <p class="afidu-entrada-hint">Pulse <kbd>Enter</kbd> en documento o CUPS para agregar. El nombre del diagnóstico se completa al escribir el CIE-10. En <strong>Médico que realiza atención</strong> puede elegir de la lista o escribir un nombre que no esté en la base.</p>
                   </div>
                   <div id="afiduEntradaBulkPanel" class="afidu-entrada-modo hidden">
                     <label for="afiduEntradaBulkText">Documento y CUPS — una línea por paciente</label>
@@ -3000,7 +3001,7 @@
                       </div>
                       <div>
                         <label for="afiduEntradaBulkMedicoAtencion">Médico atención (todas las filas)</label>
-                        <select id="afiduEntradaBulkMedicoAtencion"><option value="">Seleccionar médico</option></select>
+                        <input type="text" id="afiduEntradaBulkMedicoAtencion" list="afiduDatalistMedicosAtencion" placeholder="Seleccionar o escribir nombre" autocomplete="off" />
                       </div>
                       <div>
                         <label for="afiduEntradaBulkEspRemitente">Especialidad remitente (todas)</label>

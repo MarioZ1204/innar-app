@@ -491,7 +491,8 @@
   justify-self: end;
 }
 
-#view-anexo-fidu .afidu-entrada-fields-ext select {
+#view-anexo-fidu .afidu-entrada-fields-ext select,
+#view-anexo-fidu .afidu-entrada-fields-ext input[list] {
   width: 100%;
   padding: 8px 10px;
   border: 1px solid #d1d5db;
@@ -505,7 +506,8 @@
   margin-bottom: 10px;
 }
 
-#view-anexo-fidu .afidu-entrada-fields-bulk-extra select {
+#view-anexo-fidu .afidu-entrada-fields-bulk-extra select,
+#view-anexo-fidu .afidu-entrada-fields-bulk-extra input[list] {
   width: 100%;
   padding: 8px 10px;
   border: 1px solid #d1d5db;
