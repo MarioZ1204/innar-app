@@ -64,6 +64,7 @@ const {
   normalizarModoDia,
   fetchModoParentContenedora,
   ensureContenedorasRaizPeriodo,
+  reparentCarpetasFacturacionHuerfanas,
   crearAnexoArchivoParaDia,
   asegurarExpedienteUcqn,
   esModoAnexo,
@@ -1605,9 +1606,22 @@ router.post('/soportes/armado/periodos', requireAuth, requireRoleOrPerm(ROLES_SO
   }
 });
 
+router.post('/soportes/armado/periodos/:id/reparent-facturas', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'soportes.armado.crear_estructura'), async (req, res) => {
+  try {
+    const periodoId = parseInt(req.params.id, 10);
+    const result = await reparentCarpetasFacturacionHuerfanas(db, periodoId);
+    res.json(result);
+  } catch (e) {
+    logger.error('[SOPORTES] reparent facturas:', e);
+    res.status(500).json({ error: safeError(e) });
+  }
+});
+
 router.get('/soportes/armado/periodos/:id/dias', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'modulo.armado_soportes'), async (req, res) => {
   try {
-    await ensureContenedorasRaizPeriodo(db, parseInt(req.params.id, 10));
+    const periodoId = parseInt(req.params.id, 10);
+    await ensureContenedorasRaizPeriodo(db, periodoId);
+    await reparentCarpetasFacturacionHuerfanas(db, periodoId);
     const dias = await db.query(
       `SELECT d.*,
         COUNT(DISTINCT e.id) AS expedientes_count,

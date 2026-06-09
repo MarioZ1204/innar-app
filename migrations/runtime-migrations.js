@@ -1197,6 +1197,15 @@ const runtimeMigrations = [
     }
   },
   {
+    name: 'rt_sop_reparent_dias_facturacion',
+    description: 'Mueve carpetas de día de facturación huérfanas (raíz) dentro de Facturas FIDU — sin borrar archivos',
+    run: async (db) => {
+      if (!(await tableExists(db, 'sop_dias'))) return;
+      const { reparentCarpetasFacturacionHuerfanas } = require('../utils/soportes-armado-modos');
+      await reparentCarpetasFacturacionHuerfanas(db);
+    }
+  },
+  {
     name: 'rt_sop_pdx_orphans_cleanup',
     description: 'Elimina archivos PDX huérfanos (carpeta_id sin carpeta en sop_pdx_carpetas)',
     run: async (db) => {

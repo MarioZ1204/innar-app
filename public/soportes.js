@@ -3214,6 +3214,7 @@
     const puedeGestionarDia = sopPerm('soportes.armado.crear_estructura');
     const viewMode = sopFolderViewMode('arm');
     const lista = armDiasVisibles();
+    const huerfanasRaiz = !armState.diasParentId ? lista.filter((d) => !d.es_contenedor) : [];
     const dragHint = armPuedeArrastrarDia() ? 'Mantenga pulsado para mover' : '';
     panel.innerHTML = `<div class="sop-panel-head">
         <div>
@@ -3228,6 +3229,9 @@
         </div>
       </div>
       <div class="sop-panel-body">
+        ${huerfanasRaiz.length ? `<div class="sop-panel-warn" style="margin-bottom:12px;padding:10px 12px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;font-size:.85rem;color:#92400e">
+          <strong>${huerfanasRaiz.length} carpeta(s) de facturación</strong> siguen en la raíz del mes (no se borraron). Abra <strong>Facturas FIDU</strong> o arrástrelas ahí. Los archivos en disco no se eliminaron.
+        </div>` : ''}
         ${armPuedeArrastrarDia() ? `<p class="sop-arm-drag-hint" style="font-size:.8rem;color:#64748b;margin:0 0 10px"><i data-lucide="move" style="width:14px;height:14px;vertical-align:-2px"></i> Mantenga pulsada una carpeta y suéltela sobre un <strong>contenedor</strong>, o use <strong>Mover</strong> para elegir destino.</p>` : ''}
         <div id="sopArmDiasDropRoot" class="sop-arm-dias-drop-root${armState.diasParentId ? '' : ' hidden'}" data-arm-drop-parent="0" title="Soltar aquí para mover a la raíz del mes"></div>
         <div id="sopArmDiasGrid" class="sop-folder-explorer-grid${viewMode === 'list' ? ' sop-folder-list-mode' : ''}"></div>

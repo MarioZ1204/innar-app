@@ -131,6 +131,108 @@ async function backfillContenedorasTodosPeriodos(db) {
   }
 }
 
+/** Contenedora canónica Facturas FIDU de un mes (crea si falta). */
+async function idContenedoraFacturas(db, periodoId) {
+  await ensureContenedorasRaizPeriodo(db, periodoId);
+  const rows = await db.query(
+    `SELECT id FROM sop_dias
+     WHERE periodo_id = ? AND parent_id = 0 AND es_contenedor = 1
+       AND modo = 'facturacion'
+     ORDER BY orden ASC, id ASC LIMIT 1`,
+    [periodoId]
+  );
+  return rows[0]?.id || null;
+}
+
+/**
+ * Repara carpetas de facturación que quedaron en la raíz del mes (parent_id=0)
+ * antes de la jerarquía con contenedoras. No borra archivos ni expedientes.
+ */
+async function reparentCarpetasFacturacionHuerfanas(db, periodoId = null) {
+  let periodos = [];
+  if (periodoId) {
+    periodos = [{ id: periodoId }];
+  } else {
+    periodos = await db.query('SELECT id FROM sop_periodos ORDER BY id ASC');
+  }
+  let movidas = 0;
+  let omitidas = 0;
+  const detalle = [];
+
+  for (const per of periodos) {
+    const facturasId = await idContenedoraFacturas(db, per.id);
+    if (!facturasId) continue;
+
+    const huerfanas = await db.query(
+      `SELECT d.id, d.nombre_display, d.modo, d.es_contenedor
+       FROM sop_dias d
+       WHERE d.periodo_id = ? AND d.parent_id = 0 AND d.es_contenedor = 0
+         AND d.id != ?
+       ORDER BY d.id ASC`,
+      [per.id, facturasId]
+    );
+
+    for (const dia of huerfanas) {
+      if (esModoAnexo(dia.modo) || esModoUcqn(dia.modo)) {
+        omitidas += 1;
+        continue;
+      }
+      const tieneEstructura = await db.query(
+        `SELECT 1 FROM sop_contenedores c WHERE c.dia_id = ? LIMIT 1`,
+        [dia.id]
+      );
+      const tieneExp = await db.query(
+        'SELECT 1 FROM sop_expedientes e WHERE e.dia_id = ? LIMIT 1',
+        [dia.id]
+      );
+      if (!tieneEstructura.length && !tieneExp.length) {
+        omitidas += 1;
+        continue;
+      }
+      const dup = await db.query(
+        'SELECT id FROM sop_dias WHERE periodo_id = ? AND parent_id = ? AND nombre_display = ? AND id != ? LIMIT 1',
+        [per.id, facturasId, dia.nombre_display, dia.id]
+      );
+      if (dup.length) {
+        omitidas += 1;
+        detalle.push({ id: dia.id, nombre: dia.nombre_display, motivo: 'nombre_duplicado_en_destino' });
+        continue;
+      }
+      await db.execute('UPDATE sop_dias SET parent_id = ?, modo = ? WHERE id = ?', [facturasId, 'facturacion', dia.id]);
+      movidas += 1;
+      detalle.push({ id: dia.id, nombre: dia.nombre_display, destino: facturasId });
+    }
+
+    const contDuplicadas = await db.query(
+      `SELECT id, nombre_display FROM sop_dias
+       WHERE periodo_id = ? AND parent_id = 0 AND es_contenedor = 1
+         AND modo = 'facturacion' AND id != ?
+       ORDER BY id ASC`,
+      [per.id, facturasId]
+    );
+    for (const dupCont of contDuplicadas) {
+      const hijos = await db.query('SELECT id, nombre_display FROM sop_dias WHERE parent_id = ?', [dupCont.id]);
+      for (const hijo of hijos) {
+        const clash = await db.query(
+          'SELECT id FROM sop_dias WHERE periodo_id = ? AND parent_id = ? AND nombre_display = ? AND id != ? LIMIT 1',
+          [per.id, facturasId, hijo.nombre_display, hijo.id]
+        );
+        if (!clash.length) {
+          await db.execute('UPDATE sop_dias SET parent_id = ? WHERE id = ?', [facturasId, hijo.id]);
+          movidas += 1;
+        }
+      }
+      const quedanHijos = await db.query('SELECT COUNT(*) AS n FROM sop_dias WHERE parent_id = ?', [dupCont.id]);
+      if (!(quedanHijos[0]?.n > 0)) {
+        await db.execute('DELETE FROM sop_dias WHERE id = ?', [dupCont.id]);
+        detalle.push({ id: dupCont.id, nombre: dupCont.nombre_display, motivo: 'contenedora_duplicada_vacia' });
+      }
+    }
+  }
+
+  return { ok: true, movidas, omitidas, detalle };
+}
+
 async function crearAnexoArchivoParaDia(db, diaRow, usuarioId) {
   const parentRows = await db.query('SELECT * FROM sop_dias WHERE id = ?', [diaRow.parent_id]);
   const parent = parentRows[0];
@@ -196,6 +298,8 @@ module.exports = {
   ensureContenedoresForDiaModo,
   ensureContenedorasRaizPeriodo,
   backfillContenedorasTodosPeriodos,
+  idContenedoraFacturas,
+  reparentCarpetasFacturacionHuerfanas,
   crearAnexoArchivoParaDia,
   asegurarExpedienteUcqn
 };
