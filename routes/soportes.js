@@ -57,9 +57,9 @@ const {
   ordenarExpedientesFeLista
 } = require('../utils/soportes-armado-structure');
 const {
-  normalizarParentId,
-  validarMoverCarpetaPdx
-} = require('../utils/soportes-pdx-carpetas-tree');
+  normalizarParentId: normalizarParentIdDia,
+  validarMoverDiaArmado
+} = require('../utils/soportes-armado-dias-tree');
 const { ingestFeArchivo } = require('../utils/soportes-fe-upload');
 const {
   slotRequirements,
@@ -239,28 +239,14 @@ function mapCarpetaPdx(row) {
   const vis = calcularVisibilidadPeriodo(periodo);
   return {
     id: row.id,
-    parent_id: normalizarParentId(row.parent_id),
-    es_contenedor: !!row.es_contenedor,
-    orden: row.orden || 0,
     periodo,
     nombre_display: row.nombre_display,
     color_tema: row.color_tema || detectarTemaCarpeta(row.nombre_display),
     estado_visibilidad: vis,
     dias_restantes_gracia: diasRestantesGracia(periodo),
     archivos_count: row.archivos_count || 0,
-    hijos_count: row.hijos_count || 0,
     creado_en: row.creado_en
   };
-}
-
-function denyCarpetaContenedorPdx(carpeta) {
-  if (carpeta?.es_contenedor) {
-    return {
-      status: 400,
-      error: 'Las carpetas contenedoras no admiten archivos. Abra una carpeta de reportes.'
-    };
-  }
-  return null;
 }
 
 const pdxStorage = multer.diskStorage({
@@ -359,37 +345,18 @@ function sopErrorCliente(e, fallback = 'Error interno del servidor') {
 
 async function queryPdxCarpetasConCount() {
   const sqlConArchivos = `
-      SELECT c.*,
-        COUNT(DISTINCT a.id) AS archivos_count,
-        (SELECT COUNT(*) FROM sop_pdx_carpetas ch WHERE ch.parent_id = c.id) AS hijos_count
+      SELECT c.*, COUNT(a.id) AS archivos_count
       FROM sop_pdx_carpetas c
       LEFT JOIN sop_pdx_archivos a ON a.carpeta_id = c.id
       GROUP BY c.id
-      ORDER BY c.orden ASC, c.nombre_display ASC, c.periodo DESC`;
+      ORDER BY c.nombre_display ASC, c.periodo DESC`;
   const sqlSinArchivos = `
-      SELECT c.*, 0 AS archivos_count,
-        (SELECT COUNT(*) FROM sop_pdx_carpetas ch WHERE ch.parent_id = c.id) AS hijos_count
+      SELECT c.*, 0 AS archivos_count
       FROM sop_pdx_carpetas c
-      ORDER BY c.orden ASC, c.nombre_display ASC, c.periodo DESC`;
+      ORDER BY c.nombre_display ASC, c.periodo DESC`;
   try {
     return await db.query(sqlConArchivos);
   } catch (e) {
-    if (e.code === 'ER_BAD_FIELD_ERROR') {
-      const sqlLegacy = `
-        SELECT c.*, COUNT(a.id) AS archivos_count, 0 AS hijos_count
-        FROM sop_pdx_carpetas c
-        LEFT JOIN sop_pdx_archivos a ON a.carpeta_id = c.id
-        GROUP BY c.id
-        ORDER BY c.nombre_display ASC, c.periodo DESC`;
-      try {
-        return await db.query(sqlLegacy);
-      } catch (e2) {
-        if (e2.code === 'ER_NO_SUCH_TABLE' && String(e2.message || '').includes('sop_pdx_archivos')) {
-          return await db.query(sqlSinArchivos);
-        }
-        throw e2;
-      }
-    }
     if (e.code === 'ER_NO_SUCH_TABLE' && String(e.message || '').includes('sop_pdx_archivos')) {
       return await db.query(sqlSinArchivos);
     }
@@ -525,43 +492,28 @@ router.get('/soportes/pdx/carpetas', requireAuth, requireRoleOrPerm(ROLES_SOPORT
 router.post('/soportes/pdx/carpetas', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, ['modulo.reportes_pdx', 'soportes.pdx.crear_carpeta', 'soportes.pdx.subir']), async (req, res) => {
   try {
     const { periodo, nombre_display } = req.body || {};
-    const parent_id = normalizarParentId(req.body?.parent_id);
-    const es_contenedor = req.body?.es_contenedor === true
-      || req.body?.es_contenedor === 1
-      || req.body?.es_contenedor === '1';
     if (!periodo || !/^\d{4}-\d{2}$/.test(periodo)) {
       return res.status(400).json({ error: 'periodo inválido (YYYY-MM)' });
     }
     const nombre = String(nombre_display || '').trim();
     if (nombre.length < 3) return res.status(400).json({ error: 'nombre de carpeta requerido' });
-    if (parent_id > 0) {
-      const parentRows = await db.query('SELECT * FROM sop_pdx_carpetas WHERE id = ?', [parent_id]);
-      if (!parentRows.length) return res.status(400).json({ error: 'Carpeta padre no encontrada' });
-      const deniedPadre = denySinAccesoCarpetaPdx(req, parentRows[0]);
-      if (deniedPadre) return res.status(deniedPadre.status).json({ error: deniedPadre.error });
-      if (!parentRows[0].es_contenedor) {
-        return res.status(400).json({ error: 'La carpeta padre no es contenedora' });
-      }
-    }
-    const tema = es_contenedor ? 'neutral' : detectarTemaCarpeta(nombre);
+    const tema = detectarTemaCarpeta(nombre);
     const vis = calcularVisibilidadPeriodo(periodo);
     const r = await db.execute(
-      `INSERT INTO sop_pdx_carpetas (parent_id, periodo, nombre_display, color_tema, es_contenedor, roles_visibles, estado_visibilidad, creado_por)
-       VALUES (?, ?, ?, ?, ?, NULL, ?, ?)`,
-      [parent_id, periodo, nombre, tema, es_contenedor ? 1 : 0, vis, req.session.usuarioId ?? null]
+      `INSERT INTO sop_pdx_carpetas (periodo, nombre_display, color_tema, roles_visibles, estado_visibilidad, creado_por)
+       VALUES (?, ?, ?, NULL, ?, ?)`,
+      [periodo, nombre, tema, vis, req.session.usuarioId ?? null]
     );
     const id = pdxInsertId(r);
     if (!id) {
       return res.status(500).json({ error: 'No se pudo registrar la carpeta (id inválido tras INSERT)' });
     }
-    if (!es_contenedor) {
-      try {
-        getPdxDir(id);
-      } catch (dirErr) {
-        await db.execute('DELETE FROM sop_pdx_carpetas WHERE id = ?', [id]).catch(() => {});
-        logger.error('[SOPORTES] crear carpeta pdx disco:', dirErr);
-        return res.status(500).json({ error: sopErrorCliente(dirErr) });
-      }
+    try {
+      getPdxDir(id);
+    } catch (dirErr) {
+      await db.execute('DELETE FROM sop_pdx_carpetas WHERE id = ?', [id]).catch(() => {});
+      logger.error('[SOPORTES] crear carpeta pdx disco:', dirErr);
+      return res.status(500).json({ error: sopErrorCliente(dirErr) });
     }
     const rows = await db.query('SELECT * FROM sop_pdx_carpetas WHERE id = ?', [id]);
     if (!rows.length) {
@@ -571,9 +523,6 @@ router.post('/soportes/pdx/carpetas', requireAuth, requireRoleOrPerm(ROLES_SOPOR
   } catch (e) {
     if (String(e.message || '').includes('uk_sop_pdx')) {
       return res.status(409).json({ error: 'Ya existe una carpeta con ese nombre en el periodo' });
-    }
-    if (String(e.message || '').includes('uk_sop_pdx_padre')) {
-      return res.status(409).json({ error: 'Ya existe una carpeta con ese nombre en el mismo nivel' });
     }
     logger.error('[SOPORTES] crear carpeta pdx:', e);
     res.status(500).json({ error: sopErrorCliente(e) });
@@ -590,28 +539,16 @@ router.patch('/soportes/pdx/carpetas/:id', requireAuth, requireRoleOrPerm(ROLES_
     const vis = calcularVisibilidadPeriodo(prev.periodo);
     if (vis === 'archivo') return res.status(403).json({ error: 'Carpeta en archivo: no editable' });
 
-    let parent_id = normalizarParentId(prev.parent_id);
-    if (req.body?.parent_id !== undefined) {
-      const moveCheck = await validarMoverCarpetaPdx(db, parseInt(req.params.id, 10), req.body.parent_id);
-      if (!moveCheck.ok) return res.status(moveCheck.status).json({ error: moveCheck.error });
-      parent_id = moveCheck.nuevoParentId;
-    }
-
     const periodo = req.body?.periodo != null ? String(req.body.periodo).trim() : prev.periodo;
     const nombre = req.body?.nombre_display != null ? String(req.body.nombre_display).trim() : prev.nombre_display;
     if (!/^\d{4}-\d{2}$/.test(periodo)) return res.status(400).json({ error: 'periodo inválido (YYYY-MM)' });
     if (nombre.length < 3) return res.status(400).json({ error: 'nombre de carpeta requerido' });
 
-    const es_contenedor = !!prev.es_contenedor;
-    const tema = es_contenedor ? 'neutral' : detectarTemaCarpeta(nombre);
+    const tema = detectarTemaCarpeta(nombre);
     const estado = calcularVisibilidadPeriodo(periodo);
-    const orden = req.body?.orden != null ? parseInt(req.body.orden, 10) || 0 : (prev.orden || 0);
     await db.execute(
-      `UPDATE sop_pdx_carpetas
-       SET parent_id = ?, periodo = ?, nombre_display = ?, color_tema = ?, es_contenedor = ?,
-           estado_visibilidad = ?, orden = ?
-       WHERE id = ?`,
-      [parent_id, periodo, nombre, tema, es_contenedor ? 1 : 0, estado, orden, req.params.id]
+      'UPDATE sop_pdx_carpetas SET periodo = ?, nombre_display = ?, color_tema = ?, estado_visibilidad = ? WHERE id = ?',
+      [periodo, nombre, tema, estado, req.params.id]
     );
     const countRows = await db.query('SELECT COUNT(*) AS n FROM sop_pdx_archivos WHERE carpeta_id = ?', [req.params.id]);
     const updated = await db.query('SELECT * FROM sop_pdx_carpetas WHERE id = ?', [req.params.id]);
@@ -622,9 +559,6 @@ router.patch('/soportes/pdx/carpetas/:id', requireAuth, requireRoleOrPerm(ROLES_
   } catch (e) {
     if (String(e.message || '').includes('uk_sop_pdx')) {
       return res.status(409).json({ error: 'Ya existe una carpeta con ese nombre en el periodo' });
-    }
-    if (String(e.message || '').includes('uk_sop_pdx_padre')) {
-      return res.status(409).json({ error: 'Ya existe una carpeta con ese nombre en el mismo nivel' });
     }
     logger.error('[SOPORTES] editar carpeta pdx:', e);
     res.status(500).json({ error: safeError(e) });
@@ -639,13 +573,6 @@ router.delete('/soportes/pdx/carpetas/:id', requireAuth, requireRoleOrPerm(ROLES
     if (!rows.length) return res.status(404).json({ error: 'Carpeta no encontrada' });
     const deniedDel = denySinAccesoCarpetaPdx(req, rows[0]);
     if (deniedDel) return res.status(deniedDel.status).json({ error: deniedDel.error });
-    const hijos = await db.query('SELECT COUNT(*) AS n FROM sop_pdx_carpetas WHERE parent_id = ?', [carpetaId]);
-    if (hijos[0]?.n > 0) {
-      return res.status(409).json({
-        error: 'La carpeta contiene otras carpetas. Muévalas o elimínelas primero.',
-        hijos: hijos[0].n
-      });
-    }
     const archivos = await db.query('SELECT id, ruta_relativa FROM sop_pdx_archivos WHERE carpeta_id = ?', [carpetaId]);
     const usados = await db.query(
       `SELECT COUNT(*) AS n FROM sop_exp_archivos e
@@ -774,8 +701,6 @@ router.post(
       const carpeta = carpetaRows[0];
       const deniedUp = denySinAccesoCarpetaPdx(req, carpeta);
       if (deniedUp) return res.status(deniedUp.status).json({ error: deniedUp.error });
-      const deniedCont = denyCarpetaContenedorPdx(carpeta);
-      if (deniedCont) return res.status(deniedCont.status).json({ error: deniedCont.error });
       const vis = calcularVisibilidadPeriodo(carpeta.periodo);
       if (vis === 'archivo') return res.status(403).json({ error: 'Carpeta cerrada para carga' });
 
@@ -883,11 +808,6 @@ router.post(
       if (deniedUni) {
         cleanupMulterTempFiles(req);
         return res.status(deniedUni.status).json({ error: deniedUni.error });
-      }
-      const deniedContUni = denyCarpetaContenedorPdx(carpeta);
-      if (deniedContUni) {
-        cleanupMulterTempFiles(req);
-        return res.status(deniedContUni.status).json({ error: deniedContUni.error });
       }
       const tema = detectarTemaCarpeta(carpeta.nombre_display);
       if (tema !== 'ordenes_consulta_medica') {
@@ -1594,11 +1514,15 @@ function mapDia(row) {
   return {
     id: row.id,
     periodo_id: row.periodo_id,
+    parent_id: normalizarParentIdDia(row.parent_id),
+    es_contenedor: !!row.es_contenedor,
+    orden: row.orden || 0,
     dia: row.dia,
     fecha: row.fecha,
     nombre_display: row.nombre_display || `Día ${row.dia}`,
     estado_facturacion: row.estado_facturacion || 'a_facturar',
     expedientes_count: row.expedientes_count || 0,
+    hijos_count: row.hijos_count || 0,
     creado_en: row.creado_en
   };
 }
@@ -1667,12 +1591,14 @@ router.post('/soportes/armado/periodos', requireAuth, requireRoleOrPerm(ROLES_SO
 router.get('/soportes/armado/periodos/:id/dias', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'modulo.armado_soportes'), async (req, res) => {
   try {
     const dias = await db.query(
-      `SELECT d.*, COUNT(e.id) AS expedientes_count
+      `SELECT d.*,
+        COUNT(DISTINCT e.id) AS expedientes_count,
+        (SELECT COUNT(*) FROM sop_dias ch WHERE ch.parent_id = d.id) AS hijos_count
        FROM sop_dias d
-       LEFT JOIN sop_contenedores c ON c.dia_id = d.id
+       LEFT JOIN sop_contenedores c ON c.dia_id = d.id AND d.es_contenedor = 0
        LEFT JOIN sop_expedientes e ON e.contenedor_id = c.id
        WHERE d.periodo_id = ?
-       GROUP BY d.id ORDER BY d.nombre_display ASC, d.id ASC`,
+       GROUP BY d.id ORDER BY d.orden ASC, d.nombre_display ASC, d.id ASC`,
       [req.params.id]
     );
     res.json({ dias: dias.map(mapDia) });
@@ -1686,38 +1612,56 @@ router.post('/soportes/armado/periodos/:id/dias', requireAuth, requireRoleOrPerm
     const periodoId = parseInt(req.params.id, 10);
     if (!periodoId) return res.status(400).json({ error: 'Periodo inválido' });
     const nombre_display = String(req.body.nombre_display || '').trim();
+    const parent_id = normalizarParentIdDia(req.body?.parent_id);
+    const es_contenedor = req.body?.es_contenedor === true
+      || req.body?.es_contenedor === 1
+      || req.body?.es_contenedor === '1';
     const estado_facturacion = req.body.estado_facturacion === 'facturados' ? 'facturados' : 'a_facturar';
     if (!nombre_display) return res.status(400).json({ error: 'Indique el nombre de la carpeta del día (ej: MAYO 1, MAYO 2-3)' });
     const periodo = await db.query('SELECT periodo FROM sop_periodos WHERE id = ?', [periodoId]);
     if (!periodo.length) return res.status(404).json({ error: 'Periodo no encontrado' });
+    if (parent_id > 0) {
+      const parentRows = await db.query('SELECT * FROM sop_dias WHERE id = ?', [parent_id]);
+      if (!parentRows.length) return res.status(400).json({ error: 'Carpeta padre no encontrada' });
+      if (parentRows[0].periodo_id !== periodoId) {
+        return res.status(400).json({ error: 'La carpeta padre debe estar en el mismo mes' });
+      }
+      if (!parentRows[0].es_contenedor) {
+        return res.status(400).json({ error: 'La carpeta padre no es contenedora' });
+      }
+    }
     const dupNom = await db.query(
-      'SELECT id FROM sop_dias WHERE periodo_id = ? AND nombre_display = ? LIMIT 1',
-      [periodoId, nombre_display]
+      'SELECT id FROM sop_dias WHERE periodo_id = ? AND parent_id = ? AND nombre_display = ? LIMIT 1',
+      [periodoId, parent_id, nombre_display]
     );
     if (dupNom.length) {
-      return res.status(409).json({ error: 'Ya existe una carpeta con ese nombre en el mes' });
+      return res.status(409).json({ error: 'Ya existe una carpeta con ese nombre en el mismo nivel' });
     }
     const fechaDate = req.body.fecha || `${periodo[0].periodo}-01`;
     const diaNum = await nextSopDiaNumero(db, periodoId);
     const r = await db.execute(
-      'INSERT INTO sop_dias (periodo_id, dia, fecha, nombre_display, estado_facturacion) VALUES (?,?,?,?,?)',
-      [periodoId, diaNum, fechaDate, nombre_display, estado_facturacion]
+      `INSERT INTO sop_dias (periodo_id, parent_id, dia, fecha, nombre_display, es_contenedor, estado_facturacion)
+       VALUES (?,?,?,?,?,?,?)`,
+      [periodoId, parent_id, diaNum, fechaDate, nombre_display, es_contenedor ? 1 : 0, estado_facturacion]
     );
     const diaId = pdxInsertId(r);
     if (!diaId) return res.status(500).json({ error: 'No se pudo crear la carpeta del día' });
-    try {
-      await ensureContenedoresForDia(db, diaId);
-    } catch (contErr) {
-      await db.execute('DELETE FROM sop_dias WHERE id = ?', [diaId]).catch(() => {});
-      logger.error('[SOPORTES] crear dia contenedores:', contErr);
-      return res.status(500).json({ error: sopErrorCliente(contErr) });
+    let contenedores = [];
+    if (!es_contenedor) {
+      try {
+        await ensureContenedoresForDia(db, diaId);
+      } catch (contErr) {
+        await db.execute('DELETE FROM sop_dias WHERE id = ?', [diaId]).catch(() => {});
+        logger.error('[SOPORTES] crear dia contenedores:', contErr);
+        return res.status(500).json({ error: sopErrorCliente(contErr) });
+      }
+      contenedores = await db.query('SELECT * FROM sop_contenedores WHERE dia_id = ? ORDER BY tipo', [diaId]);
     }
-    const contenedores = await db.query('SELECT * FROM sop_contenedores WHERE dia_id = ? ORDER BY tipo', [diaId]);
     const row = await db.query('SELECT * FROM sop_dias WHERE id = ?', [diaId]);
     if (!row.length) return res.status(500).json({ error: 'Carpeta del día creada pero no encontrada' });
     res.status(201).json({
       ok: true,
-      dia: mapDia({ ...row[0], expedientes_count: 0 }),
+      dia: mapDia({ ...row[0], expedientes_count: 0, hijos_count: 0 }),
       contenedores: contenedores.map(mapContenedor)
     });
   } catch (e) {
@@ -1731,6 +1675,12 @@ router.post('/soportes/armado/periodos/:id/dias', requireAuth, requireRoleOrPerm
 
 router.patch('/soportes/armado/dias/:id', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'soportes.armado.crear_estructura'), async (req, res) => {
   try {
+    const diaId = parseInt(req.params.id, 10);
+    if (req.body?.parent_id !== undefined) {
+      const moveCheck = await validarMoverDiaArmado(db, diaId, req.body.parent_id);
+      if (!moveCheck.ok) return res.status(moveCheck.status).json({ error: moveCheck.error });
+      await db.execute('UPDATE sop_dias SET parent_id = ? WHERE id = ?', [moveCheck.nuevoParentId, diaId]);
+    }
     const result = await actualizarDia(req.params.id, req.body || {});
     if (result.error) return res.status(result.status || 400).json({ error: result.error });
     const contenedores = await db.query(

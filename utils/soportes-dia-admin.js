@@ -108,6 +108,15 @@ async function eliminarDia(diaId) {
   const dia = await loadDiaConPeriodo(diaId);
   if (!dia) return { error: 'Carpeta de día no encontrada', status: 404 };
 
+  const hijos = await db.query('SELECT COUNT(*) AS n FROM sop_dias WHERE parent_id = ?', [diaId]);
+  if (hijos[0]?.n > 0) {
+    return {
+      error: 'La carpeta contiene otras carpetas. Muévalas o elimínelas primero.',
+      status: 409,
+      hijos: hijos[0].n
+    };
+  }
+
   const codigos = await db.query(
     'SELECT DISTINCT codigo FROM sop_expedientes WHERE dia_id = ?',
     [diaId]

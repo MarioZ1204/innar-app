@@ -1058,6 +1058,33 @@ const runtimeMigrations = [
     }
   },
   {
+    name: 'rt_sop_arm_dias_jerarquia',
+    description: 'Carpetas de día anidadas en armado Soportes: parent_id, es_contenedor, orden',
+    run: async (db) => {
+      if (!(await tableExists(db, 'sop_dias'))) return;
+      if (!(await columnExists(db, 'sop_dias', 'parent_id'))) {
+        await db.execute(
+          'ALTER TABLE sop_dias ADD COLUMN parent_id INT NOT NULL DEFAULT 0 AFTER periodo_id'
+        );
+      }
+      if (!(await columnExists(db, 'sop_dias', 'es_contenedor'))) {
+        await db.execute(
+          'ALTER TABLE sop_dias ADD COLUMN es_contenedor TINYINT(1) NOT NULL DEFAULT 0 AFTER nombre_display'
+        );
+      }
+      if (!(await columnExists(db, 'sop_dias', 'orden'))) {
+        await db.execute(
+          'ALTER TABLE sop_dias ADD COLUMN orden INT NOT NULL DEFAULT 0 AFTER es_contenedor'
+        );
+      }
+      try {
+        await db.execute('ALTER TABLE sop_dias ADD INDEX idx_sop_dia_parent (parent_id)');
+      } catch (e) {
+        if (!String(e.message || '').includes('Duplicate key name')) throw e;
+      }
+    }
+  },
+  {
     name: 'rt_sop_pdx_carpetas_jerarquia',
     description: 'Carpetas PDX anidadas: parent_id, es_contenedor y orden',
     run: async (db) => {

@@ -4,7 +4,6 @@
 (function () {
   let _columnas = [];
   let _medicosAfidu = [];
-  let _especialidadesAfidu = [];
   let _servicios = [];
   let _page = 1;
   let _total = 0;
@@ -753,15 +752,6 @@
     return _medicosAfidu;
   }
 
-  async function cargarEspecialidadesAfidu() {
-    if (_especialidadesAfidu.length) return _especialidadesAfidu;
-    if (typeof apiFetch !== 'function') return [];
-    const res = await apiFetch('/api/especialidades');
-    const data = await res.json().catch(() => []);
-    _especialidadesAfidu = Array.isArray(data) ? data : [];
-    return _especialidadesAfidu;
-  }
-
   function poblarSelectMedicoAtencion(selectId, valorPrevio = '') {
     const sel = $(selectId);
     if (!sel) return;
@@ -779,38 +769,10 @@
     }
   }
 
-  function poblarSelectEspRemitente(selectId, valorPrevio = '') {
-    const sel = $(selectId);
-    if (!sel) return;
-    const prev = valorPrevio || sel.value || '';
-    sel.innerHTML = '<option value="">Seleccionar especialidad</option>' +
-      _especialidadesAfidu.map((e) => {
-        const nom = String(e.nombre || '').trim();
-        return `<option value="${escapeHtml(nom)}">${escapeHtml(nom)}</option>`;
-      }).join('');
-    if (prev) {
-      const opt = [...sel.options].find((o) => o.value === prev);
-      if (opt) sel.value = prev;
-    }
-  }
-
   async function initSelectsEntradaAfidu() {
-    await Promise.all([cargarMedicosAfidu(), cargarEspecialidadesAfidu()]);
+    await cargarMedicosAfidu();
     poblarSelectMedicoAtencion('afiduEntradaMedicoAtencion');
     poblarSelectMedicoAtencion('afiduEntradaBulkMedicoAtencion');
-    poblarSelectEspRemitente('afiduEntradaEspRemitente');
-    poblarSelectEspRemitente('afiduEntradaBulkEspRemitente');
-  }
-
-  function syncEspRemitenteDesdeMedico(medicoSelectId, espSelectId) {
-    const medSel = $(medicoSelectId);
-    const espSel = $(espSelectId);
-    if (!medSel || !espSel) return;
-    const opt = medSel.options[medSel.selectedIndex];
-    const esp = opt?.dataset?.especialidad || '';
-    if (!esp) return;
-    const match = [...espSel.options].find((o) => o.value === esp);
-    if (match) espSel.value = esp;
   }
 
   function valorCeldaTexto(val) {
@@ -1713,12 +1675,6 @@
     $('btnAfiduAgregarFila')?.addEventListener('click', agregarFilaDesdeEntrada);
     $('btnAfiduAgregarFilasBulk')?.addEventListener('click', agregarFilasBulk);
     bindPreviewCie10('afiduEntradaCie10');
-    $('afiduEntradaMedicoAtencion')?.addEventListener('change', () => {
-      syncEspRemitenteDesdeMedico('afiduEntradaMedicoAtencion', 'afiduEntradaEspRemitente');
-    });
-    $('afiduEntradaBulkMedicoAtencion')?.addEventListener('change', () => {
-      syncEspRemitenteDesdeMedico('afiduEntradaBulkMedicoAtencion', 'afiduEntradaBulkEspRemitente');
-    });
     const onEnter = (e) => {
       if (e.key === 'Enter') { e.preventDefault(); agregarFilaDesdeEntrada(); }
     };

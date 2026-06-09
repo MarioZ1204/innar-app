@@ -12,12 +12,11 @@
     carpetaActual: null,
     archivos: [],
     periodoActual: null,
-    explorerParentId: 0,
     filtros: { texto: '', periodo: '', tema: '', orden: 'nombre_asc' }
   };
 
-  const PDX_DRAG_HOLD_MS = 300;
-  let pdxDragSession = null;
+  const ARM_DRAG_HOLD_MS = 300;
+  let armDragSession = null;
 
   const PDX_LOG_LABEL = {
     subida: 'Subida',
@@ -821,7 +820,8 @@
     expedienteId: null,
     expedienteCodigo: null,
     vista: 'empty',
-    expedientesLista: []
+    expedientesLista: [],
+    diasParentId: 0
   };
 
   const SOP_VIEW_LS = { pdx: 'innar.sop.pdx.folderView', arm: 'innar.sop.arm.folderView' };
@@ -1012,7 +1012,7 @@
   }
 
   function htmlArmZipDiaBtn(dia, { labeled = false, variant = 'ghost' } = {}) {
-    if (!dia?.id || !sopPerm('soportes.descargar_zip')) return '';
+    if (!dia?.id || dia.es_contenedor || !sopPerm('soportes.descargar_zip')) return '';
     const nom = dia.nombre_display || 'Carpeta';
     const fe = dia.expedientes_count || 0;
     const title = `Descargar ZIP de ${nom} (RIPS y SOPORTES por factura FE, ${fe} expediente(s))`;
@@ -1099,11 +1099,34 @@
       el.innerHTML = '<span class="sop-context-label">Navegación</span><span>Seleccione un mes en el panel izquierdo</span>';
       return;
     }
+    const enExplorer = armState.vista === 'period';
     const crumbs = [{
       label: armState.periodoLabel || 'Mes',
-      current: armState.vista === 'period',
-      onClick: armState.vista !== 'period' ? () => seleccionarPeriodoArmado(armState.periodoId) : null
+      current: enExplorer && !armState.diasParentId,
+      onClick: !enExplorer || armState.diasParentId
+        ? () => {
+          armState.diasParentId = 0;
+          if (enExplorer) {
+            renderArmadoDiasExplorer();
+            renderArmadoContextBar();
+          } else {
+            seleccionarPeriodoArmado(armState.periodoId);
+          }
+        }
+        : null,
+      dropParentId: enExplorer ? 0 : undefined
     }];
+    if (enExplorer && armState.diasParentId) {
+      armRutaExplorerChain().forEach((d, i, arr) => {
+        const isLast = i === arr.length - 1;
+        crumbs.push({
+          label: d.nombre_display,
+          current: isLast,
+          onClick: isLast ? null : () => navegarArmDiasExplorer(d.id),
+          dropParentId: d.id
+        });
+      });
+    }
     if (armState.diaId != null) {
       crumbs.push({
         label: armState.diaLabel || 'Carpeta de día',
@@ -1124,7 +1147,7 @@
       crumbs.push({ label: 'Carpetas FE', current: true });
     } else if (armState.diaId) {
       crumbs.push({ label: 'RIPS / SOPORTES', current: true });
-    } else {
+    } else if (!enExplorer || !armState.diasParentId) {
       crumbs.push({ label: 'Seleccione carpeta de día', current: true });
     }
     el.innerHTML = '<span class="sop-context-label">Ubicación</span>';
@@ -1133,81 +1156,29 @@
     trail.style.margin = '0';
     trail.style.flex = '1';
     renderSopBreadcrumbs(trail, crumbs);
-    el.appendChild(trail);
-  }
-
-  function pdxParentId(carpeta) {
-    return carpeta?.parent_id || 0;
-  }
-
-  function pdxCarpetaById(id) {
-    return pdxState.carpetas.find((c) => c.id === id);
-  }
-
-  function pdxRutaExplorerChain() {
-    const chain = [];
-    let id = pdxState.explorerParentId || 0;
-    const seen = new Set();
-    while (id && !seen.has(id)) {
-      seen.add(id);
-      const c = pdxCarpetaById(id);
-      if (!c) break;
-      chain.unshift(c);
-      id = pdxParentId(c);
-    }
-    return chain;
-  }
-
-  function navegarPdxExplorer(parentId) {
-    pdxState.explorerParentId = parentId || 0;
-    renderListaCarpetasPdx();
-  }
-
-  function renderPdxBreadcrumbLista() {
-    const crumbs = [{
-      label: 'Cargar reportes',
-      current: !pdxState.explorerParentId,
-      onClick: pdxState.explorerParentId ? () => navegarPdxExplorer(0) : null,
-      dropParentId: 0
-    }];
-    const chain = pdxRutaExplorerChain();
-    chain.forEach((c, i) => {
-      const isLast = i === chain.length - 1;
-      crumbs.push({
-        label: c.nombre_display,
-        current: isLast,
-        onClick: isLast ? null : () => navegarPdxExplorer(c.id),
-        dropParentId: c.id
-      });
-    });
-    const el = $('sopPdxBreadcrumbLista');
-    if (!el) return;
-    el.classList.add('sop-breadcrumbs');
-    renderSopBreadcrumbs(el, crumbs);
-    if (sopPerm('soportes.pdx.editar')) {
-      el.querySelectorAll('.sop-crumb').forEach((crumb, idx) => {
+    if (armPuedeArrastrarDia()) {
+      trail.querySelectorAll('.sop-crumb').forEach((crumb, idx) => {
         const c = crumbs[idx];
         if (c?.dropParentId === undefined) return;
-        crumb.dataset.pdxDropParent = String(c.dropParentId);
+        crumb.dataset.armDropParent = String(c.dropParentId);
         crumb.classList.add('sop-pdx-crumb-drop');
       });
     }
+    el.appendChild(trail);
+  }
+
+  function renderPdxBreadcrumbLista() {
+    renderSopBreadcrumbs($('sopPdxBreadcrumbLista'), [
+      { label: 'Cargar reportes', current: true }
+    ]);
   }
 
   function renderPdxBreadcrumbDetalle(carpeta) {
     if (!carpeta) return;
-    const crumbs = [{ label: 'Cargar reportes', onClick: volverRaizPdx }];
-    pdxRutaExplorerChain().forEach((c) => {
-      crumbs.push({
-        label: c.nombre_display,
-        onClick: () => {
-          volverListaPdx();
-          navegarPdxExplorer(c.id);
-        }
-      });
-    });
-    crumbs.push({ label: carpeta.nombre_display || 'Carpeta', current: true });
-    renderSopBreadcrumbs($('sopPdxBreadcrumbDetalle'), crumbs);
+    renderSopBreadcrumbs($('sopPdxBreadcrumbDetalle'), [
+      { label: 'Cargar reportes', onClick: volverListaPdx },
+      { label: carpeta.nombre_display || 'Carpeta', current: true }
+    ]);
   }
 
   function renderPdxDetalleAcciones(carpeta) {
@@ -1620,8 +1591,7 @@
   }
 
   function pdxCarpetasFiltradas() {
-    const parentId = pdxState.explorerParentId || 0;
-    let list = pdxState.carpetas.filter((c) => pdxParentId(c) === parentId);
+    let list = [...pdxState.carpetas];
     const { texto, periodo, tema, orden } = pdxState.filtros;
     const t = (texto || '').trim().toLowerCase();
     if (t) {
@@ -1696,149 +1666,6 @@
     return data;
   }
 
-  function htmlPdxCarpetaMeta(c) {
-    if (c.es_contenedor) {
-      const n = c.hijos_count || 0;
-      return `${n} carpeta${n === 1 ? '' : 's'} dentro`;
-    }
-    return `${escapeHtml(c.periodo)} · ${c.archivos_count || 0} archivo(s)`;
-  }
-
-  function htmlPdxCarpetaIcon(c) {
-    if (c.es_contenedor) return 'folder-tree';
-    const tema = c.color_tema || 'neutral';
-    return TEMA_ICON[tema] || 'folder';
-  }
-
-  function pdxEsAncestroEnCliente(posibleAncestroId, carpetaId) {
-    const map = {};
-    pdxState.carpetas.forEach((c) => { map[c.id] = pdxParentId(c); });
-    let cur = carpetaId;
-    const seen = new Set();
-    while (cur) {
-      const p = map[cur] || 0;
-      if (!p) return false;
-      if (p === posibleAncestroId) return true;
-      if (seen.has(p)) return false;
-      seen.add(p);
-      cur = p;
-    }
-    return false;
-  }
-
-  async function pdxMoverCarpetaApi(carpetaId, parentId) {
-    const res = await apiFetch(`/api/soportes/pdx/carpetas/${carpetaId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ parent_id: parentId || 0 })
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || 'No se pudo mover la carpeta');
-    return data;
-  }
-
-  function pdxFinalizarDragSession() {
-    if (pdxDragSession?.ghost?.parentNode) pdxDragSession.ghost.remove();
-    document.querySelectorAll('.sop-folder-dragging, .sop-folder-drop-over').forEach((el) => {
-      el.classList.remove('sop-folder-dragging', 'sop-folder-drop-over');
-    });
-    pdxDragSession = null;
-  }
-
-  function pdxPuedeArrastrarCarpeta() {
-    return sopPerm('soportes.pdx.editar');
-  }
-
-  function bindPdxFolderDragSource(card, carpetaId) {
-    if (!pdxPuedeArrastrarCarpeta()) return;
-    let holdTimer = null;
-    let active = false;
-
-    const cancelHold = () => {
-      if (holdTimer) clearTimeout(holdTimer);
-      holdTimer = null;
-    };
-
-    const onMove = (ev) => {
-      if (!active || !pdxDragSession) return;
-      const g = pdxDragSession.ghost;
-      if (g) {
-        g.style.left = `${ev.clientX + 12}px`;
-        g.style.top = `${ev.clientY + 12}px`;
-      }
-      const under = document.elementFromPoint(ev.clientX, ev.clientY);
-      document.querySelectorAll('.sop-folder-drop-over, .sop-pdx-crumb-drop-over').forEach((el) => {
-        el.classList.remove('sop-folder-drop-over', 'sop-pdx-crumb-drop-over');
-      });
-      const dropEl = under?.closest?.('[data-pdx-drop-parent]');
-      if (dropEl) {
-        const targetParent = parseInt(dropEl.dataset.pdxDropParent, 10) || 0;
-        if (targetParent !== carpetaId && !pdxEsAncestroEnCliente(carpetaId, targetParent)) {
-          dropEl.classList.add(dropEl.dataset.pdxDropParent != null ? 'sop-pdx-crumb-drop-over' : 'sop-folder-drop-over');
-          pdxDragSession.hoverParentId = targetParent;
-        } else {
-          pdxDragSession.hoverParentId = null;
-        }
-      } else {
-        pdxDragSession.hoverParentId = null;
-      }
-    };
-
-    const onUp = async () => {
-      cancelHold();
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
-      if (!active) return;
-      active = false;
-      const targetParent = pdxDragSession?.hoverParentId;
-      const srcId = pdxDragSession?.carpetaId;
-      pdxFinalizarDragSession();
-      if (targetParent == null || srcId == null) return;
-      const c = pdxCarpetaById(srcId);
-      if (!c || pdxParentId(c) === targetParent) return;
-      try {
-        await pdxMoverCarpetaApi(srcId, targetParent);
-        sopToast('Carpeta movida', 'success');
-        await cargarCarpetasPdx();
-        if (pdxState.explorerParentId && !pdxCarpetaById(pdxState.explorerParentId)) {
-          pdxState.explorerParentId = targetParent;
-        }
-        renderListaCarpetasPdx();
-      } catch (e) {
-        sopToast(e.message, 'error');
-      }
-    };
-
-    card.addEventListener('mousedown', (ev) => {
-      if (ev.button !== 0 || ev.target.closest('.sop-folder-actions, .sop-folder-list-actions')) return;
-      cancelHold();
-      holdTimer = setTimeout(() => {
-        active = true;
-        card.classList.add('sop-folder-dragging');
-        const ghost = card.cloneNode(true);
-        ghost.classList.add('sop-pdx-drag-ghost');
-        ghost.classList.remove('sop-folder-dragging');
-        document.body.appendChild(ghost);
-        pdxDragSession = { carpetaId, ghost, hoverParentId: null };
-        document.addEventListener('mousemove', onMove);
-        document.addEventListener('mouseup', onUp);
-      }, PDX_DRAG_HOLD_MS);
-    });
-    card.addEventListener('mouseup', cancelHold);
-    card.addEventListener('mouseleave', cancelHold);
-  }
-
-  function bindPdxFolderDropTarget(card, carpetaId) {
-    card.dataset.pdxContenedor = '1';
-    card.dataset.pdxDropParent = String(carpetaId);
-  }
-
-  function bindPdxBreadcrumbDropTargets() {
-    $('sopPdxBreadcrumbLista')?.querySelectorAll('[data-pdx-drop-parent]').forEach((crumb) => {
-      crumb.dataset.pdxDropParent = crumb.dataset.pdxDropParent || '0';
-    });
-  }
-
   function ensurePdxViewToggleInBar() {
     const bar = $('sopPdxFiltrosBar');
     if (!bar) return;
@@ -1856,22 +1683,13 @@
   function bindPdxCarpetaCardEvents(root) {
     if (!root) return;
     root.querySelectorAll('[data-pdx-carpeta]').forEach((card) => {
-      const id = parseInt(card.dataset.pdxCarpeta, 10);
-      const open = () => {
-        const c = pdxCarpetaById(id);
-        if (c?.es_contenedor) navegarPdxExplorer(id);
-        else abrirCarpetaPdx(id);
-      };
+      const open = () => abrirCarpetaPdx(parseInt(card.dataset.pdxCarpeta, 10));
       card.addEventListener('click', (ev) => {
         if (ev.target.closest('.sop-folder-actions, .sop-folder-list-actions')) return;
-        if (card.classList.contains('sop-folder-dragging')) return;
         open();
       });
       card.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') open(); });
-      bindPdxFolderDragSource(card, id);
-      if (card.dataset.pdxContenedor === '1') bindPdxFolderDropTarget(card, id);
     });
-    bindPdxBreadcrumbDropTargets();
     root.querySelectorAll('[data-pdx-edit]').forEach((b) => {
       b.addEventListener('click', (ev) => {
         ev.stopPropagation();
@@ -1902,10 +1720,7 @@
       return;
     }
     if (!lista.length) {
-      const enContenedor = (pdxState.explorerParentId || 0) > 0;
-      el.innerHTML = enContenedor
-        ? `<div class="sop-empty"><i data-lucide="folder-open" class="sop-empty-icon"></i>Esta carpeta está vacía.<br><span style="font-size:.85rem">Arrastre carpetas aquí o cree una nueva.</span></div>`
-        : `<div class="sop-empty"><i data-lucide="filter-x" class="sop-empty-icon"></i>Ninguna carpeta coincide con los filtros.</div>`;
+      el.innerHTML = `<div class="sop-empty"><i data-lucide="filter-x" class="sop-empty-icon"></i>Ninguna carpeta coincide con los filtros.</div>`;
       sopIcons(el);
       return;
     }
@@ -1915,14 +1730,14 @@
       el.innerHTML = `<div class="sop-table-wrap sop-folder-list-mode"><table class="sop-table sop-folder-list-table">
         <thead><tr><th style="width:40px"></th><th>Carpeta</th><th>Periodo</th><th>Archivos</th><th>Estado</th><th class="sop-folder-list-actions">Acciones</th></tr></thead>
         <tbody>${lista.map((c) => {
-          const tema = c.es_contenedor ? 'neutral' : (c.color_tema || 'neutral');
-          const icon = htmlPdxCarpetaIcon(c);
+          const tema = c.color_tema || 'neutral';
+          const icon = TEMA_ICON[tema] || 'folder';
           const enArchivo = c.estado_visibilidad === 'archivo';
-          return `<tr data-pdx-carpeta="${c.id}" data-pdx-contenedor="${c.es_contenedor ? '1' : '0'}" tabindex="0" class="${c.es_contenedor ? 'sop-folder-row-contenedor' : ''}">
+          return `<tr data-pdx-carpeta="${c.id}" tabindex="0">
             <td><span class="sop-folder-icon" style="width:32px;height:32px;margin:0" data-tema="${escapeHtml(tema)}"><i data-lucide="${icon}"></i></span></td>
-            <td><strong>${escapeHtml(c.nombre_display)}</strong>${c.es_contenedor ? ' <span class="sop-badge sop-badge-muted">Contenedor</span>' : ''}</td>
-            <td>${c.es_contenedor ? '—' : escapeHtml(c.periodo)}</td>
-            <td>${c.es_contenedor ? (c.hijos_count || 0) : (c.archivos_count || 0)}</td>
+            <td><strong>${escapeHtml(c.nombre_display)}</strong></td>
+            <td>${escapeHtml(c.periodo)}</td>
+            <td>${c.archivos_count || 0}</td>
             <td>${badgeVis(c.estado_visibilidad, c.dias_restantes_gracia)}</td>
             <td class="sop-folder-list-actions">
               ${canEdit && !enArchivo ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-pdx-edit="${c.id}"><i data-lucide="pencil"></i></button>` : ''}
@@ -1932,13 +1747,13 @@
         }).join('')}</tbody></table></div>`;
     } else {
       el.innerHTML = `<div class="sop-grid">${lista.map((c) => {
-        const tema = c.es_contenedor ? 'neutral' : (c.color_tema || 'neutral');
-        const icon = htmlPdxCarpetaIcon(c);
+        const tema = c.color_tema || 'neutral';
+        const icon = TEMA_ICON[tema] || 'folder';
         const enArchivo = c.estado_visibilidad === 'archivo';
-        return `<article class="sop-folder-card${c.es_contenedor ? ' sop-folder-card-contenedor' : ''}" data-tema="${escapeHtml(tema)}" data-pdx-carpeta="${c.id}" data-pdx-contenedor="${c.es_contenedor ? '1' : '0'}" tabindex="0" title="${pdxPuedeArrastrarCarpeta() ? 'Mantenga pulsado para mover' : ''}">
+        return `<article class="sop-folder-card" data-tema="${escapeHtml(tema)}" data-pdx-carpeta="${c.id}" tabindex="0">
           <div class="sop-folder-icon"><i data-lucide="${icon}"></i></div>
-          <div class="sop-folder-title">${escapeHtml(c.nombre_display)}${c.es_contenedor ? '<span class="sop-badge sop-badge-muted">Contenedor</span>' : ''}</div>
-          <div class="sop-folder-meta">${htmlPdxCarpetaMeta(c)}</div>
+          <div class="sop-folder-title">${escapeHtml(c.nombre_display)}</div>
+          <div class="sop-folder-meta">${escapeHtml(c.periodo)} · ${c.archivos_count || 0} archivo(s)</div>
           ${badgeVis(c.estado_visibilidad, c.dias_restantes_gracia)}
           ${(canEdit || canDel) ? `<div class="sop-folder-actions">
             ${canEdit && !enArchivo ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-pdx-edit="${c.id}"><i data-lucide="pencil"></i></button>` : ''}
@@ -1968,13 +1783,7 @@
   }
 
   async function abrirCarpetaPdx(id) {
-    const cached = pdxCarpetaById(id);
-    if (cached?.es_contenedor) {
-      navegarPdxExplorer(id);
-      return;
-    }
     pdxState.carpetaId = id;
-    pdxState.explorerParentId = pdxParentId(cached);
     $('sopPdxVistaLista')?.classList.add('hidden');
     $('sopPdxVistaDetalle')?.classList.remove('hidden');
     showSkeletonTableRows($('sopPdxArchivosBody'), 4, 4);
@@ -1984,7 +1793,6 @@
     pdxState.archivos = data.archivos || [];
     const c = data.carpeta;
     pdxState.carpetaActual = c;
-    pdxState.explorerParentId = pdxParentId(c);
     renderPdxBreadcrumbDetalle(c);
     renderPdxDetalleAcciones(c);
     $('sopPdxDetalleTitulo').textContent = c.nombre_display;
@@ -2107,11 +1915,6 @@
 
   async function eliminarCarpetaPdx(carpeta) {
     if (!sopPerm('soportes.pdx.eliminar')) return;
-    const hijos = carpeta.hijos_count || 0;
-    if (hijos > 0) {
-      sopToast('La carpeta contiene otras carpetas. Muévalas o elimínelas primero.', 'error');
-      return;
-    }
     const n = carpeta.archivos_count || 0;
     const label = carpeta.nombre_display || 'esta carpeta';
     const msg = n > 0
@@ -2284,7 +2087,7 @@
       await cargarCarpetasPdx();
     }
     const opts = pdxState.carpetas
-      .filter((c) => !c.es_contenedor && c.id !== archivo.carpeta_id && c.estado_visibilidad !== 'archivo')
+      .filter((c) => c.id !== archivo.carpeta_id && c.estado_visibilidad !== 'archivo')
       .map((c) => `<option value="${c.id}">${escapeHtml(c.nombre_display)} (${escapeHtml(c.periodo)})</option>`)
       .join('');
     if (!opts) return sopToast('No hay otra carpeta abierta disponible', 'warning');
@@ -2385,46 +2188,24 @@
     sopIcons($('view-reportes-pdx'));
   }
 
-  function volverRaizPdx() {
-    pdxState.explorerParentId = 0;
-    volverListaPdx();
-  }
-
-  function modalNuevaCarpetaPdx(esContenedorPref) {
+  function modalNuevaCarpetaPdx() {
     const per = periodoActual();
-    const parentId = pdxState.explorerParentId || 0;
-    const dentroDe = parentId ? pdxCarpetaById(parentId) : null;
     const modal = openSopModal(`
-      <h3><i data-lucide="folder-plus" style="vertical-align:-3px;width:22px"></i> Nueva carpeta</h3>
-      ${dentroDe ? `<p style="font-size:.85rem;color:#64748b;margin:0 0 12px">Dentro de: <strong>${escapeHtml(dentroDe.nombre_display)}</strong></p>` : ''}
-      <div class="sop-field"><label>Tipo</label>
-        <select id="sopPdxNewTipo">
-          <option value="reportes"${esContenedorPref ? '' : ' selected'}>Carpeta de reportes (PDF)</option>
-          <option value="contenedor"${esContenedorPref ? ' selected' : ''}>Carpeta contenedora (agrupa otras)</option>
-        </select></div>
-      <div class="sop-field" id="sopPdxNewPeriodoWrap"><label>Periodo</label><input type="month" id="sopPdxNewPeriodo" value="${per}"></div>
-      <div class="sop-field"><label>Nombre</label>
-        <input type="text" id="sopPdxNewNombre" placeholder="${esContenedorPref ? 'Ej. Mayo 2026, Electrodiagnóstico…' : 'REPORTES VTM, ORDENES, COMPROBANTES…'}"></div>
-      <p style="font-size:.8rem;color:#64748b;margin:0">Puede arrastrar carpetas sobre un contenedor para reorganizarlas. Permisos en <strong>Usuarios → Permisos</strong>.</p>
+      <h3><i data-lucide="folder-plus" style="vertical-align:-3px;width:22px"></i> Nueva carpeta de reportes</h3>
+      <div class="sop-field"><label>Periodo</label><input type="month" id="sopPdxNewPeriodo" value="${per}"></div>
+      <div class="sop-field"><label>Nombre de carpeta</label>
+        <input type="text" id="sopPdxNewNombre" placeholder="REPORTES VTM, ORDENES, COMPROBANTES o CONSENTIMIENTOS…"></div>
+      <p style="font-size:.8rem;color:#64748b;margin:0">Asigne qué usuarios ven esta carpeta en <strong>Usuarios → Permisos</strong> (bloque «Carpetas visibles»).</p>
       <div class="sop-dialog-actions">
         <button type="button" class="sop-btn sop-btn-ghost" id="sopPdxNewCancel">Cancelar</button>
         <button type="button" class="sop-btn sop-btn-primary" id="sopPdxNewOk">Crear carpeta</button>
       </div>`);
     sopIcons(modal);
-    const tipoSel = modal.querySelector('#sopPdxNewTipo');
-    const periodoWrap = modal.querySelector('#sopPdxNewPeriodoWrap');
-    const syncTipo = () => {
-      const esCont = tipoSel?.value === 'contenedor';
-      if (periodoWrap) periodoWrap.style.display = esCont ? 'none' : '';
-    };
-    tipoSel?.addEventListener('change', syncTipo);
-    syncTipo();
     modal.querySelector('#sopPdxNewCancel').onclick = () => closeSopModal(modal);
     modal.querySelector('#sopPdxNewOk').onclick = async () => {
-      const es_contenedor = tipoSel?.value === 'contenedor';
-      const periodo = es_contenedor ? per : $('sopPdxNewPeriodo').value;
+      const periodo = $('sopPdxNewPeriodo').value;
       const nombre_display = $('sopPdxNewNombre').value.trim();
-      const body = { periodo, nombre_display, es_contenedor, parent_id: parentId };
+      const body = { periodo, nombre_display };
       const res = await apiFetch('/api/soportes/pdx/carpetas', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2433,7 +2214,7 @@
       const data = await res.json();
       if (!res.ok) { sopToast(data.error || 'Error', 'error'); return; }
       closeSopModal(modal);
-      sopToast(es_contenedor ? 'Carpeta contenedora creada' : 'Carpeta creada', 'success');
+      sopToast('Carpeta creada', 'success');
       await cargarCarpetasPdx();
       renderListaCarpetasPdx();
     };
@@ -3046,14 +2827,10 @@
     setupEntradaDocumentoPdx();
     setupPdxFiltros();
     sopIcons($('sopPdxFiltrosBar'));
-    const canCrear = sopPerm('soportes.pdx.crear_carpeta');
     const btnNueva = $('btnSopPdxNuevaCarpeta');
-    const btnCont = $('btnSopPdxNuevaContenedora');
-    if (btnNueva) btnNueva.style.display = canCrear ? '' : 'none';
-    if (btnCont) btnCont.style.display = canCrear ? '' : 'none';
+    if (btnNueva) btnNueva.style.display = sopPerm('soportes.pdx.crear_carpeta') ? '' : 'none';
     $('btnVolverReportesPdx')?.addEventListener('click', goToMenu);
-    $('btnSopPdxNuevaCarpeta')?.addEventListener('click', () => modalNuevaCarpetaPdx(false));
-    $('btnSopPdxNuevaContenedora')?.addEventListener('click', () => modalNuevaCarpetaPdx(true));
+    $('btnSopPdxNuevaCarpeta')?.addEventListener('click', modalNuevaCarpetaPdx);
     $('btnSopPdxBuscar')?.addEventListener('click', buscarPdx);
     $('sopPdxBuscar')?.addEventListener('input', buscarPdxPredictivo);
     $('sopPdxBuscar')?.addEventListener('keydown', (e) => {
@@ -3102,6 +2879,7 @@
 
   async function seleccionarPeriodoArmado(id) {
     armState.periodoId = id;
+    armState.diasParentId = 0;
     armState.diaId = null;
     armState.diaLabel = null;
     armState.diaFacturacion = null;
@@ -3125,15 +2903,196 @@
     sopArmNavOpen(false);
   }
 
+  function armDiaParentId(dia) {
+    return dia?.parent_id || 0;
+  }
+
+  function armDiaById(id) {
+    return armState.dias.find((d) => d.id === id);
+  }
+
+  function armDiasVisibles() {
+    const parentId = armState.diasParentId || 0;
+    return armState.dias.filter((d) => armDiaParentId(d) === parentId);
+  }
+
+  function armRutaExplorerChain() {
+    const chain = [];
+    let id = armState.diasParentId || 0;
+    const seen = new Set();
+    while (id && !seen.has(id)) {
+      seen.add(id);
+      const d = armDiaById(id);
+      if (!d) break;
+      chain.unshift(d);
+      id = armDiaParentId(d);
+    }
+    return chain;
+  }
+
+  function navegarArmDiasExplorer(parentId) {
+    armState.diasParentId = parentId || 0;
+    armState.diaId = null;
+    armState.vista = 'period';
+    renderArmadoDiasExplorer();
+    renderArmadoContextBar();
+  }
+
+  function htmlArmDiaMeta(d) {
+    if (d.es_contenedor) {
+      const n = d.hijos_count || 0;
+      return `${n} carpeta${n === 1 ? '' : 's'} dentro`;
+    }
+    return `${badgeFacturacionArmado(d.estado_facturacion)} · <strong>${d.expedientes_count || 0}</strong> expediente(s) FE`;
+  }
+
+  function htmlArmDiaIcon(d) {
+    return d.es_contenedor ? 'folder-tree' : 'folder';
+  }
+
+  function armEsAncestroEnCliente(posibleAncestroId, diaId) {
+    const map = {};
+    armState.dias.forEach((d) => { map[d.id] = armDiaParentId(d); });
+    let cur = diaId;
+    const seen = new Set();
+    while (cur) {
+      const p = map[cur] || 0;
+      if (!p) return false;
+      if (p === posibleAncestroId) return true;
+      if (seen.has(p)) return false;
+      seen.add(p);
+      cur = p;
+    }
+    return false;
+  }
+
+  async function armMoverDiaApi(diaId, parentId) {
+    const res = await apiFetch(`/api/soportes/armado/dias/${diaId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ parent_id: parentId || 0 })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'No se pudo mover la carpeta');
+    return data;
+  }
+
+  function armFinalizarDragSession() {
+    if (armDragSession?.ghost?.parentNode) armDragSession.ghost.remove();
+    document.querySelectorAll('.sop-folder-dragging, .sop-folder-drop-over, .sop-pdx-crumb-drop-over').forEach((el) => {
+      el.classList.remove('sop-folder-dragging', 'sop-folder-drop-over', 'sop-pdx-crumb-drop-over');
+    });
+    armDragSession = null;
+  }
+
+  function armPuedeArrastrarDia() {
+    return sopPerm('soportes.armado.crear_estructura');
+  }
+
+  function bindArmFolderDragSource(card, diaId) {
+    if (!armPuedeArrastrarDia()) return;
+    let holdTimer = null;
+    let active = false;
+
+    const cancelHold = () => {
+      if (holdTimer) clearTimeout(holdTimer);
+      holdTimer = null;
+    };
+
+    const onMove = (ev) => {
+      if (!active || !armDragSession) return;
+      const g = armDragSession.ghost;
+      if (g) {
+        g.style.left = `${ev.clientX + 12}px`;
+        g.style.top = `${ev.clientY + 12}px`;
+      }
+      const under = document.elementFromPoint(ev.clientX, ev.clientY);
+      document.querySelectorAll('.sop-folder-drop-over, .sop-pdx-crumb-drop-over').forEach((el) => {
+        el.classList.remove('sop-folder-drop-over', 'sop-pdx-crumb-drop-over');
+      });
+      const dropEl = under?.closest?.('[data-arm-drop-parent]');
+      if (dropEl) {
+        const targetParent = parseInt(dropEl.dataset.armDropParent, 10) || 0;
+        if (targetParent !== diaId && !armEsAncestroEnCliente(diaId, targetParent)) {
+          dropEl.classList.add(dropEl.classList.contains('sop-pdx-crumb-drop') ? 'sop-pdx-crumb-drop-over' : 'sop-folder-drop-over');
+          armDragSession.hoverParentId = targetParent;
+        } else {
+          armDragSession.hoverParentId = null;
+        }
+      } else {
+        armDragSession.hoverParentId = null;
+      }
+    };
+
+    const onUp = async () => {
+      cancelHold();
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      if (!active) return;
+      active = false;
+      const targetParent = armDragSession?.hoverParentId;
+      const srcId = armDragSession?.diaId;
+      armFinalizarDragSession();
+      if (targetParent == null || srcId == null) return;
+      const d = armDiaById(srcId);
+      if (!d || armDiaParentId(d) === targetParent) return;
+      try {
+        await armMoverDiaApi(srcId, targetParent);
+        sopToast('Carpeta movida', 'success');
+        const res = await apiFetch(`/api/soportes/armado/periodos/${armState.periodoId}/dias`);
+        const data = await res.json();
+        if (res.ok) armState.dias = data.dias || [];
+        if (armState.diasParentId && !armDiaById(armState.diasParentId)) {
+          armState.diasParentId = targetParent;
+        }
+        renderArmadoDiasExplorer();
+        renderArmadoContextBar();
+      } catch (e) {
+        sopToast(e.message, 'error');
+      }
+    };
+
+    card.addEventListener('mousedown', (ev) => {
+      if (ev.button !== 0 || ev.target.closest('.sop-folder-card-actions, .sop-folder-list-actions')) return;
+      cancelHold();
+      holdTimer = setTimeout(() => {
+        active = true;
+        card.classList.add('sop-folder-dragging');
+        const ghost = card.cloneNode(true);
+        ghost.classList.add('sop-pdx-drag-ghost');
+        ghost.classList.remove('sop-folder-dragging');
+        document.body.appendChild(ghost);
+        armDragSession = { diaId, ghost, hoverParentId: null };
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+      }, ARM_DRAG_HOLD_MS);
+    });
+    card.addEventListener('mouseup', cancelHold);
+    card.addEventListener('mouseleave', cancelHold);
+  }
+
+  function bindArmFolderDropTarget(card, diaId) {
+    card.dataset.armContenedor = '1';
+    card.dataset.armDropParent = String(diaId);
+  }
+
   function bindArmadoDiaCardEvents(root) {
     if (!root) return;
     root.querySelectorAll('[data-dia-id]').forEach((card) => {
-      const open = () => seleccionarDiaArmado(parseInt(card.dataset.diaId, 10));
+      const id = parseInt(card.dataset.diaId, 10);
+      const open = () => {
+        const d = armDiaById(id);
+        if (d?.es_contenedor) navegarArmDiasExplorer(id);
+        else seleccionarDiaArmado(id);
+      };
       card.addEventListener('click', (ev) => {
         if (ev.target.closest('[data-dia-edit],[data-dia-del],.sop-folder-card-actions,.sop-folder-list-actions')) return;
+        if (card.classList.contains('sop-folder-dragging')) return;
         open();
       });
       card.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') open(); });
+      bindArmFolderDragSource(card, id);
+      if (card.dataset.armContenedor === '1') bindArmFolderDropTarget(card, id);
     });
     root.querySelectorAll('[data-dia-edit]').forEach((btn) => {
       btn.addEventListener('click', (ev) => { ev.stopPropagation(); modalEditarDiaArmado(parseInt(btn.dataset.diaEdit, 10)); });
@@ -3149,6 +3108,8 @@
     armState.vista = 'period';
     const puedeGestionarDia = sopPerm('soportes.armado.crear_estructura');
     const viewMode = sopFolderViewMode('arm');
+    const lista = armDiasVisibles();
+    const dragHint = armPuedeArrastrarDia() ? 'Mantenga pulsado para mover' : '';
     panel.innerHTML = `<div class="sop-panel-head">
         <div>
           <h3 style="margin:0"><i data-lucide="calendar"></i> ${escapeHtml(armState.periodoLabel || 'Mes')}</h3>
@@ -3158,6 +3119,7 @@
           ${htmlArmZipPaqueteBtn()}
           ${htmlArmZipUnificadoBtn()}
           ${htmlArmZipFacturadosBtn()}
+          ${puedeGestionarDia ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="btnSopArmNuevaContenedoraInline"><i data-lucide="folder-tree"></i> Contenedora</button>` : ''}
           ${puedeGestionarDia ? `<button type="button" class="sop-btn sop-btn-teal" id="btnSopArmNuevoDiaInline"><i data-lucide="folder-plus"></i> Carpeta de día</button>` : ''}
         </div>
       </div>
@@ -3168,39 +3130,49 @@
     const grid = panel.querySelector('#sopArmDiasGrid');
     if (!armState.dias.length) {
       grid.innerHTML = '<div class="sop-empty" style="grid-column:1/-1;padding:32px"><i data-lucide="folder-plus" class="sop-empty-icon"></i>Sin carpetas de día — cree la primera</div>';
+    } else if (!lista.length) {
+      const enContenedor = (armState.diasParentId || 0) > 0;
+      grid.innerHTML = enContenedor
+        ? '<div class="sop-empty" style="grid-column:1/-1;padding:32px"><i data-lucide="folder-open" class="sop-empty-icon"></i>Esta carpeta está vacía.<br><span style="font-size:.85rem">Arrastre carpetas aquí o cree una nueva.</span></div>'
+        : '<div class="sop-empty" style="grid-column:1/-1;padding:32px"><i data-lucide="folder-open" class="sop-empty-icon"></i>Sin carpetas en este nivel</div>';
     } else if (viewMode === 'list') {
       grid.innerHTML = `<div class="sop-table-wrap"><table class="sop-table sop-folder-list-table">
-        <thead><tr><th>Carpeta de día</th><th>Facturación</th><th>Expedientes FE</th><th class="sop-folder-list-actions">Acciones</th></tr></thead>
-        <tbody>${armState.dias.map((d) => `
-          <tr class="${armState.diaId === d.id ? 'is-active' : ''}" data-dia-id="${d.id}" tabindex="0">
-            <td><strong>${escapeHtml(d.nombre_display)}</strong></td>
-            <td>${badgeFacturacionArmado(d.estado_facturacion)}</td>
-            <td><strong>${d.expedientes_count || 0}</strong></td>
+        <thead><tr><th style="width:40px"></th><th>Carpeta</th><th>Facturación</th><th>Contenido</th><th class="sop-folder-list-actions">Acciones</th></tr></thead>
+        <tbody>${lista.map((d) => {
+          const icon = htmlArmDiaIcon(d);
+          return `<tr class="${armState.diaId === d.id ? 'is-active' : ''}${d.es_contenedor ? ' sop-folder-row-contenedor' : ''}" data-dia-id="${d.id}" data-arm-contenedor="${d.es_contenedor ? '1' : '0'}" tabindex="0" title="${dragHint}">
+            <td><span class="sop-folder-icon" style="width:32px;height:32px;margin:0"><i data-lucide="${icon}"></i></span></td>
+            <td><strong>${escapeHtml(d.nombre_display)}</strong>${d.es_contenedor ? ' <span class="sop-badge sop-badge-muted">Contenedor</span>' : ''}</td>
+            <td>${d.es_contenedor ? '—' : badgeFacturacionArmado(d.estado_facturacion)}</td>
+            <td>${d.es_contenedor ? (d.hijos_count || 0) : `<strong>${d.expedientes_count || 0}</strong> expediente(s)`}</td>
             <td class="sop-folder-list-actions">
               ${htmlArmZipDiaBtn(d)}
               ${puedeGestionarDia ? `
               <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-dia-edit="${d.id}"><i data-lucide="pencil"></i></button>
               <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-dia-del="${d.id}" data-dia-nom="${escapeHtml(d.nombre_display)}" style="color:#dc2626"><i data-lucide="trash-2"></i></button>` : ''}
             </td>
-          </tr>`).join('')}</tbody></table></div>`;
+          </tr>`;
+        }).join('')}</tbody></table></div>`;
       bindArmadoDiaCardEvents(grid);
     } else {
-      grid.innerHTML = armState.dias.map((d) => `
-        <article class="sop-folder-card${armState.diaId === d.id ? ' is-active' : ''}" data-dia-id="${d.id}" tabindex="0">
-          <div class="sop-folder-card-icon"><i data-lucide="folder"></i></div>
-          <div class="sop-folder-card-title">${escapeHtml(d.nombre_display)}</div>
-          <div class="sop-folder-card-meta">${badgeFacturacionArmado(d.estado_facturacion)}</div>
-          <div class="sop-folder-card-count"><strong>${d.expedientes_count || 0}</strong> expediente(s) FE</div>
+      grid.innerHTML = lista.map((d) => {
+        const icon = htmlArmDiaIcon(d);
+        return `<article class="sop-folder-card${d.es_contenedor ? ' sop-folder-card-contenedor' : ''}${armState.diaId === d.id ? ' is-active' : ''}" data-dia-id="${d.id}" data-arm-contenedor="${d.es_contenedor ? '1' : '0'}" tabindex="0" title="${dragHint}">
+          <div class="sop-folder-card-icon"><i data-lucide="${icon}"></i></div>
+          <div class="sop-folder-card-title">${escapeHtml(d.nombre_display)}${d.es_contenedor ? '<span class="sop-badge sop-badge-muted">Contenedor</span>' : ''}</div>
+          <div class="sop-folder-card-meta">${htmlArmDiaMeta(d)}</div>
           <div class="sop-folder-card-actions">
             ${htmlArmZipDiaBtn(d)}
             ${puedeGestionarDia ? `
             <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-dia-edit="${d.id}" title="Editar"><i data-lucide="pencil"></i></button>
             <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-dia-del="${d.id}" data-dia-nom="${escapeHtml(d.nombre_display)}" title="Eliminar" style="color:#dc2626"><i data-lucide="trash-2"></i></button>` : ''}
           </div>
-        </article>`).join('');
+        </article>`;
+      }).join('');
       bindArmadoDiaCardEvents(grid);
     }
     panel.querySelector('#btnSopArmNuevoDiaInline')?.addEventListener('click', modalNuevoDiaArmado);
+    panel.querySelector('#btnSopArmNuevaContenedoraInline')?.addEventListener('click', modalNuevaContenedoraArmado);
     sopIcons(panel);
     bindArmZipButtons(panel);
   }
@@ -4479,10 +4451,18 @@
 
   function modalEliminarDiaArmado(diaId, nombre) {
     const d = armState.dias.find((x) => x.id === diaId);
+    if (d?.es_contenedor && (d.hijos_count || 0) > 0) {
+      sopToast('La carpeta contiene otras carpetas. Muévalas o elimínelas primero.', 'error');
+      return;
+    }
     const feCount = d?.expedientes_count || 0;
+    const tipoLabel = d?.es_contenedor ? 'carpeta contenedora' : 'carpeta de día';
+    const detalle = d?.es_contenedor
+      ? 'Se eliminará la carpeta contenedora vacía.'
+      : `Se eliminará con <strong>${feCount}</strong> expediente(s) FE, todos sus archivos en SOPORTES y RIPS.`;
     const modal = openSopModal(`
-      <h3><i data-lucide="trash-2" style="color:#dc2626"></i> Eliminar carpeta de día</h3>
-      <p class="sop-dialog-lead">Se eliminará <strong>${escapeHtml(nombre || '')}</strong> con <strong>${feCount}</strong> expediente(s) FE, todos sus archivos en SOPORTES y RIPS. No se puede deshacer.</p>
+      <h3><i data-lucide="trash-2" style="color:#dc2626"></i> Eliminar ${tipoLabel}</h3>
+      <p class="sop-dialog-lead">Se eliminará <strong>${escapeHtml(nombre || '')}</strong>. ${detalle} No se puede deshacer.</p>
       <div class="sop-dialog-actions">
         <button type="button" class="sop-btn sop-btn-ghost" id="sopArmDiaDelCancel">Cancelar</button>
         <button type="button" class="sop-btn sop-btn-danger" id="sopArmDiaDelOk">Eliminar todo</button>
@@ -4500,12 +4480,51 @@
     };
   }
 
+  function modalNuevaContenedoraArmado() {
+    if (!armState.periodoId) return sopToast('Seleccione un mes primero', 'warning');
+    const parentId = armState.diasParentId || 0;
+    const dentroDe = parentId ? armDiaById(parentId) : null;
+    const perLabel = armState.periodoLabel || '';
+    const modal = openSopModal(`
+      <h3><i data-lucide="folder-tree"></i> Nueva carpeta contenedora</h3>
+      ${dentroDe
+        ? `<p style="font-size:.85rem;color:#64748b;margin:-6px 0 12px">Dentro de <strong>${escapeHtml(dentroDe.nombre_display)}</strong>. Agrupa otras carpetas de día.</p>`
+        : `<p style="font-size:.85rem;color:#64748b;margin:-6px 0 12px">Dentro de <strong>${escapeHtml(perLabel)}</strong>. Agrupa carpetas de día.</p>`}
+      <div class="sop-field"><label>Nombre</label>
+        <input id="sopArmContNom" placeholder="Ej. Mayo 1era quincena, Electrodiagnóstico…"></div>
+      <p style="font-size:.8rem;color:#64748b;margin:0">Puede arrastrar carpetas sobre un contenedor para reorganizarlas.</p>
+      <div class="sop-dialog-actions">
+        <button type="button" class="sop-btn sop-btn-ghost" id="sopArmContCancel">Cancelar</button>
+        <button type="button" class="sop-btn sop-btn-teal" id="sopArmContOk">Crear contenedora</button>
+      </div>`);
+    modal.querySelector('#sopArmContCancel').onclick = () => closeSopModal(modal);
+    modal.querySelector('#sopArmContOk').onclick = async () => {
+      const nombre_display = $('sopArmContNom')?.value?.trim();
+      if (!nombre_display) return sopToast('Indique el nombre', 'warning');
+      const res = await apiFetch(`/api/soportes/armado/periodos/${armState.periodoId}/dias`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nombre_display, es_contenedor: true, parent_id: parentId })
+      });
+      const data = await res.json();
+      if (!res.ok) { sopToast(data.error, 'error'); return; }
+      closeSopModal(modal);
+      sopToast('Carpeta contenedora creada', 'success');
+      await seleccionarPeriodoArmado(armState.periodoId);
+      if (data.dia?.id) navegarArmDiasExplorer(data.dia.id);
+    };
+  }
+
   function modalNuevoDiaArmado() {
     if (!armState.periodoId) return sopToast('Seleccione un mes primero', 'warning');
+    const parentId = armState.diasParentId || 0;
+    const dentroDe = parentId ? armDiaById(parentId) : null;
     const perLabel = armState.periodoLabel || '';
     const modal = openSopModal(`
       <h3><i data-lucide="folder-plus"></i> Nueva carpeta de día</h3>
-      <p style="font-size:.85rem;color:#64748b;margin:-6px 0 12px">Dentro de <strong>${escapeHtml(perLabel)}</strong>. Se crearán automáticamente las carpetas <strong>RIPS</strong> y <strong>SOPORTES</strong>.</p>
+      ${dentroDe
+        ? `<p style="font-size:.85rem;color:#64748b;margin:-6px 0 12px">Dentro de <strong>${escapeHtml(dentroDe.nombre_display)}</strong>. Se crearán automáticamente las carpetas <strong>RIPS</strong> y <strong>SOPORTES</strong>.</p>`
+        : `<p style="font-size:.85rem;color:#64748b;margin:-6px 0 12px">Dentro de <strong>${escapeHtml(perLabel)}</strong>. Se crearán automáticamente las carpetas <strong>RIPS</strong> y <strong>SOPORTES</strong>.</p>`}
       <div class="sop-field"><label>Nombre de la carpeta</label>
         <input id="sopArmDiaNom" placeholder="Ej: MAYO 1, MAYO 2-3"></div>
       <div class="sop-field"><label>Estado de facturación</label>
@@ -4525,20 +4544,27 @@
       const res = await apiFetch(`/api/soportes/armado/periodos/${armState.periodoId}/dias`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nombre_display, estado_facturacion })
+        body: JSON.stringify({ nombre_display, estado_facturacion, parent_id: parentId })
       });
       const data = await res.json();
       if (!res.ok) { sopToast(data.error, 'error'); return; }
       closeSopModal(modal);
       sopToast('Carpeta creada con RIPS y SOPORTES', 'success');
+      const savedParent = armState.diasParentId;
       await seleccionarPeriodoArmado(armState.periodoId);
+      armState.diasParentId = savedParent;
       if (data.dia?.id) seleccionarDiaArmado(data.dia.id);
+      else {
+        renderArmadoDiasExplorer();
+        renderArmadoContextBar();
+      }
     };
   }
 
   async function refrescarVistaArmadoActual() {
     const snap = {
       periodoId: armState.periodoId,
+      diasParentId: armState.diasParentId,
       diaId: armState.diaId,
       contenedorId: armState.contenedorId,
       expedienteId: armState.expedienteId,
@@ -4555,6 +4581,10 @@
     const data = await res.json();
     if (!res.ok) return;
     armState.dias = data.dias || [];
+    armState.diasParentId = snap.diasParentId || 0;
+    if (armState.diasParentId && !armDiaById(armState.diasParentId)) {
+      armState.diasParentId = 0;
+    }
     if (snap.vista === 'expediente' && snap.expedienteId) {
       armState.diaId = snap.diaId;
       armState.contenedorId = snap.contenedorId;
@@ -4589,6 +4619,12 @@
     });
     $('sopArmNavBackdrop')?.addEventListener('click', () => sopArmNavOpen(false));
     $('btnSopArmNuevoPeriodo')?.addEventListener('click', modalNuevoPeriodoArmado);
+    const canEstructura = sopPerm('soportes.armado.crear_estructura');
+    const btnCont = $('btnSopArmNuevaContenedora');
+    const btnDia = $('btnSopArmNuevoDia');
+    if (btnCont) btnCont.style.display = canEstructura ? '' : 'none';
+    if (btnDia) btnDia.style.display = canEstructura ? '' : 'none';
+    $('btnSopArmNuevaContenedora')?.addEventListener('click', modalNuevaContenedoraArmado);
     $('btnSopArmNuevoDia')?.addEventListener('click', modalNuevoDiaArmado);
     $('sopArmBuscarPaciente')?.addEventListener('input', buscarArmadoPacientePredictivo);
     $('sopArmBuscarPaciente')?.addEventListener('keydown', (e) => {

@@ -2977,7 +2977,7 @@
                       </div>
                       <div>
                         <label for="afiduEntradaEspRemitente">Especialidad remitente</label>
-                        <select id="afiduEntradaEspRemitente"><option value="">Seleccionar especialidad</option></select>
+                        <input type="text" id="afiduEntradaEspRemitente" placeholder="Opcional" autocomplete="off" />
                       </div>
                       <div class="afidu-entrada-action">
                         <button type="button" class="sop-btn sop-btn-teal" id="btnAfiduAgregarFila"><i data-lucide="plus"></i> Agregar</button>
@@ -3004,7 +3004,7 @@
                       </div>
                       <div>
                         <label for="afiduEntradaBulkEspRemitente">Especialidad remitente (todas)</label>
-                        <select id="afiduEntradaBulkEspRemitente"><option value="">Seleccionar especialidad</option></select>
+                        <input type="text" id="afiduEntradaBulkEspRemitente" placeholder="Opcional" autocomplete="off" />
                       </div>
                     </div>
                     <p class="afidu-entrada-hint">Una línea por paciente: <code>documento CUPS</code> o <code>documento CUPS CIE10 médico</code>. Los existentes se agregan; los faltantes quedan para registrar datos.</p>
@@ -3737,9 +3737,6 @@
               <h2>Cargar reportes</h2>
             </div>
             <div class="sop-module-header-actions" style="display:flex;gap:8px;flex-wrap:wrap">
-              <button type="button" id="btnSopPdxNuevaContenedora" class="btn-secondary">
-                <i data-lucide="folder-tree"></i> Contenedora
-              </button>
               <button type="button" id="btnSopPdxNuevaCarpeta" class="btn-primary">
                 <i data-lucide="folder-plus"></i> Nueva carpeta
               </button>
@@ -3871,6 +3868,9 @@
                 <i data-lucide="search"></i>
                 <input type="search" id="sopArmBuscarPaciente" class="sop-search" placeholder="Buscar paciente (mín. 2 caracteres)…" autocomplete="off">
               </div>
+              <button type="button" id="btnSopArmNuevaContenedora" class="btn-secondary">
+                <i data-lucide="folder-tree"></i> Contenedora
+              </button>
               <button type="button" id="btnSopArmNuevoDia" class="btn-secondary">
                 <i data-lucide="folder-plus"></i> Carpeta de día
               </button>
