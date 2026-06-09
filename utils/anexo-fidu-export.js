@@ -3,6 +3,14 @@
 const { ANEXO_FIDU_COLUMNAS, ANEXO_FIDU_COLUMN_KEYS } = require('./anexo-fidu-columns');
 const { aplicarColorFilaExcel } = require('./anexo-fidu-colores');
 
+function celdaExcelValor(val) {
+  if (val == null) return '';
+  if (typeof val === 'bigint') return String(val);
+  if (val instanceof Date) return val.toISOString().slice(0, 10);
+  if (Buffer.isBuffer(val)) return val.toString('utf8');
+  return String(val);
+}
+
 async function buildAnexoFiduExcelBuffer(rows, { nombreArchivo = 'anexo' } = {}) {
   const ExcelJS = require('exceljs');
   const wb = new ExcelJS.Workbook();
@@ -21,7 +29,7 @@ async function buildAnexoFiduExcelBuffer(rows, { nombreArchivo = 'anexo' } = {})
   });
 
   for (const row of rows) {
-    const excelRow = ws.addRow(ANEXO_FIDU_COLUMN_KEYS.map((k) => (row[k] != null ? String(row[k]) : '')));
+    const excelRow = ws.addRow(ANEXO_FIDU_COLUMN_KEYS.map((k) => celdaExcelValor(row[k])));
     aplicarColorFilaExcel(excelRow, row.codigo_servicio);
   }
 

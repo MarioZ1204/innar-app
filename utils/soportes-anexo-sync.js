@@ -24,7 +24,11 @@ async function fetchAnexoArchivoMeta(archivoId) {
   return rows[0] || null;
 }
 
-async function resolverSopDiaAnexo(archivoId, meta) {
+async function resolverSopDiaAnexo(archivoId, meta, diaIdPreferido = null) {
+  if (diaIdPreferido) {
+    const pref = await db.query('SELECT * FROM sop_dias WHERE id = ?', [diaIdPreferido]);
+    if (pref.length) return pref[0];
+  }
   if (meta?.sop_dia_id) {
     const dia = await db.query('SELECT * FROM sop_dias WHERE id = ?', [meta.sop_dia_id]);
     if (dia.length) return dia[0];
@@ -32,6 +36,12 @@ async function resolverSopDiaAnexo(archivoId, meta) {
   const byLink = await db.query('SELECT * FROM sop_dias WHERE anexo_archivo_id = ? LIMIT 1', [archivoId]);
   if (byLink.length) return byLink[0];
   return null;
+}
+
+async function asegurarVinculoAnexoDia(archivoId, dia) {
+  if (!dia?.id || !archivoId) return;
+  await db.execute('UPDATE sop_dias SET anexo_archivo_id = ?, modo = ? WHERE id = ?', [archivoId, 'anexo_fidu', dia.id]);
+  await db.execute('UPDATE anexo_fidu_archivos SET sop_dia_id = ? WHERE id = ?', [dia.id, archivoId]);
 }
 
 async function periodoIdsPorCarpetaAnexo(carpetaId) {
@@ -157,7 +167,7 @@ async function syncAnexoModuloASoportesPeriodo(periodoId, options = {}) {
       const meta = await fetchAnexoArchivoMeta(arch.id);
       const necesitaExport = forzarExport || !meta?.ruta_export;
       if (tieneFilas.length && necesitaExport) {
-        const exp = await guardarExportAnexoEnSoportes(arch.id);
+        const exp = await guardarExportAnexoEnSoportes(arch.id, { diaId: link.dia_id });
         if (exp.ok) exportadas += 1;
         else detalle.push({ archivo_id: arch.id, nombre: arch.nombre, export_error: exp.error || exp.reason });
       }
@@ -184,40 +194,86 @@ async function syncAnexoModuloPorCarpetaId(carpetaId, options = {}) {
   return { ok: true, periodos: results };
 }
 
-async function guardarExportAnexoEnSoportes(archivoId) {
-  const meta = await fetchAnexoArchivoMeta(archivoId);
-  if (!meta) return { ok: false, error: 'Anexo no encontrado' };
+async function guardarExportAnexoEnSoportes(archivoId, options = {}) {
+  try {
+    const meta = await fetchAnexoArchivoMeta(archivoId);
+    if (!meta) return { ok: false, error: 'Anexo no encontrado en el módulo Anexo FIDU' };
 
-  const dia = await resolverSopDiaAnexo(archivoId, meta);
-  if (!dia) return { ok: false, skipped: true, reason: 'sin_vinculo_soportes' };
+    const dia = await resolverSopDiaAnexo(archivoId, meta, options.diaId || null);
+    if (!dia) {
+      return {
+        ok: false,
+        error: 'Sin vínculo con Soportes. Abra el mes → Anexo FIDU → «Sincronizar desde Anexo».'
+      };
+    }
 
-  const parentRows = dia.parent_id
-    ? await db.query('SELECT nombre_display FROM sop_dias WHERE id = ?', [dia.parent_id])
-    : [];
-  const contenedorNombre = parentRows[0]?.nombre_display || 'Anexo FIDU';
-  const periodoRows = await db.query('SELECT periodo FROM sop_periodos WHERE id = ?', [dia.periodo_id]);
-  const periodo = periodoRows[0]?.periodo;
-  if (!periodo) return { ok: false, error: 'Periodo no encontrado' };
+    await asegurarVinculoAnexoDia(archivoId, dia);
 
-  const rows = await db.query(
-    'SELECT * FROM anexo_fidu_registros WHERE archivo_id = ? ORDER BY id ASC',
-    [archivoId]
-  );
-  const { buffer, filename } = await buildAnexoFiduExcelBuffer(rows, { nombreArchivo: meta.nombre });
-  const relDir = getArmadoAnexoDir(periodo, contenedorNombre, dia.nombre_display);
-  const absDir = path.join(soportesRoot(), relDir);
-  ensureDir(absDir);
-  const absPath = path.join(absDir, filename);
-  fs.writeFileSync(absPath, Buffer.from(buffer));
-  const rutaExport = path.join(relDir, filename).replace(/\\/g, '/');
+    const parentRows = dia.parent_id
+      ? await db.query('SELECT nombre_display FROM sop_dias WHERE id = ?', [dia.parent_id])
+      : [];
+    const contenedorNombre = parentRows[0]?.nombre_display || 'Anexo FIDU';
+    const periodoRows = await db.query('SELECT periodo FROM sop_periodos WHERE id = ?', [dia.periodo_id]);
+    const periodo = periodoRows[0]?.periodo;
+    if (!periodo) return { ok: false, error: 'Periodo del mes no encontrado' };
 
-  await db.execute(
-    'UPDATE anexo_fidu_archivos SET ruta_export = ?, sop_dia_id = COALESCE(sop_dia_id, ?) WHERE id = ?',
-    [rutaExport, dia.id, archivoId]
-  );
-  await db.execute('UPDATE sop_dias SET anexo_archivo_id = ? WHERE id = ?', [archivoId, dia.id]);
+    let registros = [];
+    try {
+      registros = await db.query(
+        'SELECT * FROM anexo_fidu_registros WHERE archivo_id = ? ORDER BY id ASC',
+        [archivoId]
+      );
+    } catch (dbErr) {
+      if (String(dbErr.message || '').includes('archivo_id')) {
+        return { ok: false, error: 'Falta columna archivo_id en anexo_fidu_registros. Reinicie el servidor para aplicar migraciones.' };
+      }
+      throw dbErr;
+    }
 
-  return { ok: true, ruta_export: rutaExport, filename };
+    let buffer;
+    let filename;
+    try {
+      ({ buffer, filename } = await buildAnexoFiduExcelBuffer(registros, { nombreArchivo: meta.nombre }));
+    } catch (excelErr) {
+      return { ok: false, error: `Error al generar Excel: ${excelErr.message}` };
+    }
+
+    const relDir = getArmadoAnexoDir(periodo, contenedorNombre, dia.nombre_display || meta.nombre);
+    const absDir = path.join(soportesRoot(), relDir);
+    const absPath = path.join(absDir, filename);
+    try {
+      ensureDir(absDir);
+      const data = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
+      fs.writeFileSync(absPath, data);
+    } catch (fsErr) {
+      return {
+        ok: false,
+        error: `No se pudo guardar el Excel en disco (${fsErr.message}). Revise permisos de UPLOADS_DIR.`
+      };
+    }
+
+    const rutaExport = path.join(relDir, filename).replace(/\\/g, '/');
+    try {
+      await db.execute(
+        'UPDATE anexo_fidu_archivos SET ruta_export = ?, sop_dia_id = ? WHERE id = ?',
+        [rutaExport, dia.id, archivoId]
+      );
+    } catch (dbErr) {
+      if (dbErr.code === 'ER_BAD_FIELD_ERROR') {
+        return { ok: false, error: 'Faltan columnas ruta_export/sop_dia_id. Reinicie el servidor para aplicar migraciones.' };
+      }
+      throw dbErr;
+    }
+
+    return {
+      ok: true,
+      ruta_export: rutaExport,
+      filename,
+      filas: registros.length
+    };
+  } catch (e) {
+    return { ok: false, error: e.message || 'Error al exportar anexo a Soportes' };
+  }
 }
 
 module.exports = {

@@ -1782,12 +1782,30 @@ router.delete('/soportes/armado/dias/:id', requireAuth, requireRoleOrPerm(ROLES_
 
 router.post('/soportes/armado/dias/:id/sync-anexo-export', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'modulo.armado_soportes'), async (req, res) => {
   try {
-    const diaRows = await db.query('SELECT * FROM sop_dias WHERE id = ?', [req.params.id]);
+    const diaId = parseInt(req.params.id, 10);
+    const diaRows = await db.query('SELECT * FROM sop_dias WHERE id = ?', [diaId]);
     if (!diaRows.length) return res.status(404).json({ error: 'Carpeta no encontrada' });
-    if (!esModoAnexo(diaRows[0].modo)) return res.status(400).json({ error: 'No es una carpeta de Anexo FIDU' });
-    const archivoId = diaRows[0].anexo_archivo_id;
-    if (!archivoId) return res.status(400).json({ error: 'Sin anexo vinculado' });
-    const sync = await guardarExportAnexoEnSoportes(archivoId);
+    const dia = diaRows[0];
+    if (dia.es_contenedor) {
+      return res.status(400).json({ error: 'Seleccione un anexo dentro de la contenedora Anexo FIDU, no la contenedora misma' });
+    }
+    if (!esModoAnexo(dia.modo)) return res.status(400).json({ error: 'No es una carpeta de Anexo FIDU' });
+
+    let archivoId = dia.anexo_archivo_id;
+    if (!archivoId) {
+      const arch = await db.query('SELECT id FROM anexo_fidu_archivos WHERE sop_dia_id = ? LIMIT 1', [diaId]);
+      if (arch.length) {
+        archivoId = arch[0].id;
+        await db.execute('UPDATE sop_dias SET anexo_archivo_id = ? WHERE id = ?', [archivoId, diaId]);
+      }
+    }
+    if (!archivoId) {
+      return res.status(400).json({
+        error: 'Sin anexo vinculado. Use «Sincronizar desde Anexo» dentro de la contenedora Anexo FIDU del mes.'
+      });
+    }
+
+    const sync = await guardarExportAnexoEnSoportes(archivoId, { diaId });
     if (!sync.ok) return res.status(400).json({ error: sync.error || 'No se pudo exportar' });
     res.json({ ok: true, ...sync });
   } catch (e) {

@@ -46,9 +46,9 @@ async function pushAnexoASoportes(archivoId) {
       guardarExportAnexoEnSoportes
     } = require('../utils/soportes-anexo-sync');
     await syncAnexoModuloPorCarpetaId(meta.carpeta_id, { exportarExcel: false });
-    const exp = await guardarExportAnexoEnSoportes(archivoId);
-    if (!exp.ok && !exp.skipped) {
-      logger.warn('[ANEXO-FIDU] export soportes:', exp.error || exp.reason);
+    const exp = await guardarExportAnexoEnSoportes(archivoId, { diaId: meta.sop_dia_id || null });
+    if (!exp.ok) {
+      logger.warn('[ANEXO-FIDU] export soportes:', exp.error);
     }
   } catch (e) {
     logger.warn('[ANEXO-FIDU] push soportes:', e.message);
@@ -57,7 +57,7 @@ async function pushAnexoASoportes(archivoId) {
 
 async function fetchArchivoMeta(archivoId) {
   const rows = await db.query(
-    `SELECT a.id, a.nombre, a.carpeta_id, c.nombre AS carpeta_nombre
+    `SELECT a.id, a.nombre, a.carpeta_id, a.sop_dia_id, c.nombre AS carpeta_nombre
      FROM anexo_fidu_archivos a
      INNER JOIN anexo_fidu_carpetas c ON c.id = a.carpeta_id
      WHERE a.id = ? LIMIT 1`,
