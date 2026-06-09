@@ -3239,6 +3239,7 @@
           ${htmlArmZipPaqueteBtn()}
           ${htmlArmZipUnificadoBtn()}
           ${htmlArmZipFacturadosBtn()}
+          ${puedeGestionarDia && armState.diasParentId && armModoContenedoraActual() === 'anexo_fidu' ? `<button type="button" class="sop-btn sop-btn-ghost" id="btnSopArmSyncAnexoModulo"><i data-lucide="refresh-cw"></i> Sincronizar desde Anexo</button>` : ''}
           ${puedeGestionarDia && armState.diasParentId ? `<button type="button" class="sop-btn sop-btn-teal" id="btnSopArmNuevoDiaInline"><i data-lucide="folder-plus"></i> ${escapeHtml(armLabelNuevaCarpetaModo(armModoContenedoraActual()))}</button>` : ''}
         </div>
       </div>
@@ -3248,6 +3249,7 @@
           <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="btnSopArmRepararContenedoras" style="margin-left:8px">Reparar ahora</button>
         </div>` : ''}
         ${!armState.diasParentId ? `<p style="font-size:.82rem;color:#64748b;margin:0 0 12px">Abra una contenedora para crear carpetas de día, anexos o personas (UCQN). Las tres contenedoras del mes se crean automáticamente.</p>` : ''}
+        ${armState.diasParentId && armModoContenedoraActual() === 'anexo_fidu' ? `<p style="font-size:.82rem;color:#64748b;margin:0 0 12px">Las carpetas de este nivel se sincronizan con los archivos del módulo <strong>Anexo FIDU</strong> del mismo mes. El Excel se guarda en Soportes al exportar o actualizar.</p>` : ''}
         ${huerfanasRaiz.length ? `<div class="sop-panel-warn" style="margin-bottom:12px;padding:10px 12px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;font-size:.85rem;color:#92400e">
           <strong>${huerfanasRaiz.length} carpeta(s) de facturación</strong> siguen en la raíz del mes (no se borraron). Abra <strong>Facturas FIDU</strong> o arrástrelas ahí. Los archivos en disco no se eliminaron.
         </div>` : ''}
@@ -3305,6 +3307,23 @@
       }).join('');
       bindArmadoDiaCardEvents(grid);
     }
+    panel.querySelector('#btnSopArmSyncAnexoModulo')?.addEventListener('click', async () => {
+      if (!armState.periodoId) return;
+      const res = await apiFetch(`/api/soportes/armado/periodos/${armState.periodoId}/sync-anexo-modulo`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ forzar_export: true })
+      });
+      const data = await res.json();
+      if (!res.ok) { sopToast(data.error || 'Error al sincronizar', 'error'); return; }
+      const msg = `${data.total_modulo || 0} anexo(s): ${data.creadas || 0} nueva(s), ${data.vinculadas || 0} vinculada(s), ${data.exportadas || 0} Excel en disco`;
+      sopToast(msg, 'success');
+      const savedParent = armState.diasParentId;
+      await seleccionarPeriodoArmado(armState.periodoId);
+      armState.diasParentId = savedParent;
+      renderArmadoDiasExplorer();
+      renderArmadoContextBar();
+    });
     panel.querySelector('#btnSopArmNuevoDiaInline')?.addEventListener('click', modalNuevoDiaArmado);
     sopIcons(panel);
     bindArmZipButtons(panel);

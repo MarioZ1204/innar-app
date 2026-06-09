@@ -157,6 +157,19 @@ async function backfillContenedorasTodosPeriodos(db) {
   }
 }
 
+/** Contenedora canónica Anexo FIDU de un mes (crea si falta). */
+async function idContenedoraAnexo(db, periodoId) {
+  await ensureContenedorasRaizPeriodo(db, periodoId);
+  const rows = await db.query(
+    `SELECT id FROM sop_dias
+     WHERE periodo_id = ? AND parent_id = 0 AND es_contenedor = 1
+       AND modo = 'anexo_fidu'
+     ORDER BY orden ASC, id ASC LIMIT 1`,
+    [periodoId]
+  );
+  return rows[0]?.id || null;
+}
+
 /** Contenedora canónica Facturas FIDU de un mes (crea si falta). */
 async function idContenedoraFacturas(db, periodoId) {
   await ensureContenedorasRaizPeriodo(db, periodoId);
@@ -323,7 +336,9 @@ module.exports = {
   fetchModoParentContenedora,
   ensureContenedoresForDiaModo,
   ensureContenedorasRaizPeriodo,
+  ensureAnexoCarpetaPeriodo,
   backfillContenedorasTodosPeriodos,
+  idContenedoraAnexo,
   idContenedoraFacturas,
   reparentCarpetasFacturacionHuerfanas,
   crearAnexoArchivoParaDia,

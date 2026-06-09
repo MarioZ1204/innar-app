@@ -1197,6 +1197,20 @@ const runtimeMigrations = [
     }
   },
   {
+    name: 'rt_sop_sync_anexo_modulo_soportes',
+    description: 'Sincroniza archivos del módulo Anexo FIDU como carpetas en Soportes (Anexo FIDU del mes)',
+    run: async (db) => {
+      if (!(await tableExists(db, 'sop_periodos'))) return;
+      const { syncAnexoModuloASoportesPeriodo } = require('../utils/soportes-anexo-sync');
+      const periodos = await db.query('SELECT id FROM sop_periodos ORDER BY id ASC');
+      for (const p of periodos) {
+        try {
+          await syncAnexoModuloASoportesPeriodo(p.id);
+        } catch (_) { /* best-effort */ }
+      }
+    }
+  },
+  {
     name: 'rt_sop_fix_contenedoras_raiz_v2',
     description: 'Repara contenedoras raíz (Anexo/Facturas/UCQN) si carpetas huérfanas bloquearon su creación',
     run: async (db) => {

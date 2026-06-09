@@ -37,6 +37,24 @@ function parseArchivoId(val) {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
+async function pushAnexoASoportes(archivoId) {
+  try {
+    const meta = await fetchArchivoMeta(archivoId);
+    if (!meta?.carpeta_id) return;
+    const {
+      syncAnexoModuloPorCarpetaId,
+      guardarExportAnexoEnSoportes
+    } = require('../utils/soportes-anexo-sync');
+    await syncAnexoModuloPorCarpetaId(meta.carpeta_id, { exportarExcel: false });
+    const exp = await guardarExportAnexoEnSoportes(archivoId);
+    if (!exp.ok && !exp.skipped) {
+      logger.warn('[ANEXO-FIDU] export soportes:', exp.error || exp.reason);
+    }
+  } catch (e) {
+    logger.warn('[ANEXO-FIDU] push soportes:', e.message);
+  }
+}
+
 async function fetchArchivoMeta(archivoId) {
   const rows = await db.query(
     `SELECT a.id, a.nombre, a.carpeta_id, c.nombre AS carpeta_nombre
@@ -306,9 +324,11 @@ router.post('/anexo-fidu/archivos', requireAuth, requirePermiso(PERM_ANEXO_FIDU)
       'INSERT INTO anexo_fidu_archivos (carpeta_id, nombre) VALUES (?, ?)',
       [carpetaId, nombre]
     );
+    const archivoId = result.insertId;
+    await pushAnexoASoportes(archivoId);
     res.status(201).json({
       ok: true,
-      archivo: { id: result.insertId, carpeta_id: carpetaId, nombre, total_registros: 0 }
+      archivo: { id: archivoId, carpeta_id: carpetaId, nombre, total_registros: 0 }
     });
   } catch (e) {
     logger.error('[ANEXO-FIDU] archivo create:', e);
@@ -333,6 +353,7 @@ router.patch('/anexo-fidu/archivos/:id', requireAuth, requirePermiso(PERM_ANEXO_
       return res.status(409).json({ error: 'Ya existe un anexo con ese nombre en la carpeta' });
     }
     await db.execute('UPDATE anexo_fidu_archivos SET nombre = ? WHERE id = ?', [nombre, archivoId]);
+    await pushAnexoASoportes(archivoId);
     const [cnt] = await db.query(
       'SELECT COUNT(*) AS total FROM anexo_fidu_registros WHERE archivo_id = ?',
       [archivoId]
@@ -446,6 +467,7 @@ router.post(
         insertados += 1;
       }
 
+      await pushAnexoASoportes(archivoId);
       res.json({
         ok: true,
         insertados,
@@ -612,6 +634,7 @@ router.post('/anexo-fidu/registros', requireAuth, requirePermiso(PERM_ANEXO_FIDU
     if (syncPersona) await upsertPersonaDesdeRegistro(data);
     const id = result.insertId;
     const rows = await db.query('SELECT * FROM anexo_fidu_registros WHERE id = ?', [id]);
+    await pushAnexoASoportes(archivoId);
     res.status(201).json({
       ok: true,
       registro: rowToApi(rows[0]),
@@ -638,6 +661,7 @@ router.put('/anexo-fidu/registros/:id', requireAuth, requirePermiso(PERM_ANEXO_F
     const syncPersona = req.body?.actualizar_persona !== false;
     if (syncPersona) await upsertPersonaDesdeRegistro(data);
     const rows = await db.query('SELECT * FROM anexo_fidu_registros WHERE id = ?', [req.params.id]);
+    if (rows[0]?.archivo_id) await pushAnexoASoportes(rows[0].archivo_id);
     res.json({ ok: true, registro: rowToApi(rows[0]), persona_actualizada: syncPersona });
   } catch (e) {
     logger.error('[ANEXO-FIDU] update:', e);
@@ -648,8 +672,10 @@ router.put('/anexo-fidu/registros/:id', requireAuth, requirePermiso(PERM_ANEXO_F
 /** DELETE /api/anexo-fidu/registros/:id */
 router.delete('/anexo-fidu/registros/:id', requireAuth, requirePermiso(PERM_ANEXO_FIDU), async (req, res) => {
   try {
+    const prev = await db.query('SELECT archivo_id FROM anexo_fidu_registros WHERE id = ? LIMIT 1', [req.params.id]);
     const result = await db.execute('DELETE FROM anexo_fidu_registros WHERE id = ?', [req.params.id]);
     if (!result.affectedRows) return res.status(404).json({ error: 'Registro no encontrado' });
+    if (prev[0]?.archivo_id) await pushAnexoASoportes(prev[0].archivo_id);
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: safeError(e) });
@@ -785,8 +811,7 @@ router.get('/anexo-fidu/exportar', requireAuth, requirePermiso(PERM_ANEXO_FIDU),
     const { buffer, filename } = await buildAnexoFiduExcelBuffer(rows, { nombreArchivo: meta.nombre });
 
     try {
-      const { guardarExportAnexoEnSoportes } = require('../utils/soportes-anexo-sync');
-      await guardarExportAnexoEnSoportes(archivoId);
+      await pushAnexoASoportes(archivoId);
     } catch (syncErr) {
       logger.warn('[ANEXO-FIDU] sync soportes:', syncErr.message);
     }

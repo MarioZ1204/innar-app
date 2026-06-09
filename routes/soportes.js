@@ -72,7 +72,10 @@ const {
   esModoFacturacion
 } = require('../utils/soportes-armado-modos');
 const { buildUcqnExpedienteDetail } = require('../utils/soportes-ucqn-upload');
-const { guardarExportAnexoEnSoportes } = require('../utils/soportes-anexo-sync');
+const {
+  guardarExportAnexoEnSoportes,
+  syncAnexoModuloASoportesPeriodo
+} = require('../utils/soportes-anexo-sync');
 const { ingestFeArchivo } = require('../utils/soportes-fe-upload');
 const {
   slotRequirements,
@@ -1606,6 +1609,19 @@ router.post('/soportes/armado/periodos', requireAuth, requireRoleOrPerm(ROLES_SO
   }
 });
 
+router.post('/soportes/armado/periodos/:id/sync-anexo-modulo', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'modulo.armado_soportes'), async (req, res) => {
+  try {
+    const periodoId = parseInt(req.params.id, 10);
+    const forzarExport = req.body?.forzar_export === true || req.body?.forzar_export === 1;
+    const result = await syncAnexoModuloASoportesPeriodo(periodoId, { forzarExport });
+    if (!result.ok) return res.status(400).json({ error: result.error || 'No se pudo sincronizar' });
+    res.json(result);
+  } catch (e) {
+    logger.error('[SOPORTES] sync anexo modulo manual:', e);
+    res.status(500).json({ error: safeError(e) });
+  }
+});
+
 router.post('/soportes/armado/periodos/:id/reparent-facturas', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'soportes.armado.crear_estructura'), async (req, res) => {
   try {
     const periodoId = parseInt(req.params.id, 10);
@@ -1622,6 +1638,11 @@ router.get('/soportes/armado/periodos/:id/dias', requireAuth, requireRoleOrPerm(
     const periodoId = parseInt(req.params.id, 10);
     await ensureContenedorasRaizPeriodo(db, periodoId);
     await reparentCarpetasFacturacionHuerfanas(db, periodoId);
+    try {
+      await syncAnexoModuloASoportesPeriodo(periodoId);
+    } catch (syncAnexoErr) {
+      logger.warn('[SOPORTES] sync anexo modulo:', syncAnexoErr.message);
+    }
     const dias = await db.query(
       `SELECT d.*,
         COUNT(DISTINCT e.id) AS expedientes_count,
