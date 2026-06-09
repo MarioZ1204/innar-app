@@ -484,12 +484,34 @@
 }
 
 #view-anexo-fidu .afidu-entrada-fields-ext {
-  grid-template-columns: repeat(4, minmax(120px, 1fr)) auto;
+  grid-template-columns: repeat(4, minmax(130px, 1fr));
+}
+
+#view-anexo-fidu .afidu-entrada-fields-ext .afidu-entrada-action {
+  justify-self: end;
+}
+
+#view-anexo-fidu .afidu-entrada-fields-ext select {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  background: #fff;
 }
 
 #view-anexo-fidu .afidu-entrada-fields-bulk-extra {
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(160px, 1fr));
   margin-bottom: 10px;
+}
+
+#view-anexo-fidu .afidu-entrada-fields-bulk-extra select {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  background: #fff;
 }
 
 #view-anexo-fidu .afidu-diagnostico-preview {

@@ -27,8 +27,8 @@ describe('anexo-fidu-import', () => {
     expect(row.especiales_excepcion_cotizante).toBe('Cotizante');
   });
 
-  test('plantilla tiene 45 columnas', () => {
-    expect(ANEXO_FIDU_COLUMNAS.length).toBe(45);
+  test('plantilla tiene 46 columnas', () => {
+    expect(ANEXO_FIDU_COLUMNAS.length).toBe(46);
   });
 
   test('importa con código de servicio y aplica catálogo', () => {

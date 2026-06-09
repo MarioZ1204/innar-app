@@ -1,6 +1,6 @@
 /**
  * Columnas del anexo FIDU/FOMAG (plantilla .xlsm — fila 1 de datos).
- * Total: 45 columnas.
+ * Total: 46 columnas.
  */
 
 const ANEXO_FIDU_COLUMNAS = [
@@ -39,6 +39,7 @@ const ANEXO_FIDU_COLUMNAS = [
   { key: 'fecha_inicio', label: 'FECHAINICIO', group: 'diagnostico', width: 100 },
   { key: 'fecha_final', label: 'FECHAFINAL', group: 'diagnostico', width: 100 },
   { key: 'nombre_medico', label: 'NOMBREMEDICO', group: 'medico', width: 120 },
+  { key: 'medico_quien_realiza_atencion', label: 'MEDICOQUEREALIZAATENCIÓN', group: 'medico', width: 160 },
   { key: 'especialidad_remitente', label: 'EspecialidadRemitente', group: 'medico', width: 130 },
   { key: 'medicamento_psiquiatria', label: 'MEDICAMENTOPSIQUIATRIA', group: 'medico', width: 140 },
   { key: 'proximo_control_psiquiatria', label: 'PROXIMOCONTROLPSIQUIATRIA', group: 'medico', width: 150 },

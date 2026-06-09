@@ -12,8 +12,12 @@
     carpetaActual: null,
     archivos: [],
     periodoActual: null,
+    explorerParentId: 0,
     filtros: { texto: '', periodo: '', tema: '', orden: 'nombre_asc' }
   };
+
+  const PDX_DRAG_HOLD_MS = 300;
+  let pdxDragSession = null;
 
   const PDX_LOG_LABEL = {
     subida: 'Subida',
@@ -1132,18 +1136,78 @@
     el.appendChild(trail);
   }
 
+  function pdxParentId(carpeta) {
+    return carpeta?.parent_id || 0;
+  }
+
+  function pdxCarpetaById(id) {
+    return pdxState.carpetas.find((c) => c.id === id);
+  }
+
+  function pdxRutaExplorerChain() {
+    const chain = [];
+    let id = pdxState.explorerParentId || 0;
+    const seen = new Set();
+    while (id && !seen.has(id)) {
+      seen.add(id);
+      const c = pdxCarpetaById(id);
+      if (!c) break;
+      chain.unshift(c);
+      id = pdxParentId(c);
+    }
+    return chain;
+  }
+
+  function navegarPdxExplorer(parentId) {
+    pdxState.explorerParentId = parentId || 0;
+    renderListaCarpetasPdx();
+  }
+
   function renderPdxBreadcrumbLista() {
-    renderSopBreadcrumbs($('sopPdxBreadcrumbLista'), [
-      { label: 'Cargar reportes', current: true }
-    ]);
+    const crumbs = [{
+      label: 'Cargar reportes',
+      current: !pdxState.explorerParentId,
+      onClick: pdxState.explorerParentId ? () => navegarPdxExplorer(0) : null,
+      dropParentId: 0
+    }];
+    const chain = pdxRutaExplorerChain();
+    chain.forEach((c, i) => {
+      const isLast = i === chain.length - 1;
+      crumbs.push({
+        label: c.nombre_display,
+        current: isLast,
+        onClick: isLast ? null : () => navegarPdxExplorer(c.id),
+        dropParentId: c.id
+      });
+    });
+    const el = $('sopPdxBreadcrumbLista');
+    if (!el) return;
+    el.classList.add('sop-breadcrumbs');
+    renderSopBreadcrumbs(el, crumbs);
+    if (sopPerm('soportes.pdx.editar')) {
+      el.querySelectorAll('.sop-crumb').forEach((crumb, idx) => {
+        const c = crumbs[idx];
+        if (c?.dropParentId === undefined) return;
+        crumb.dataset.pdxDropParent = String(c.dropParentId);
+        crumb.classList.add('sop-pdx-crumb-drop');
+      });
+    }
   }
 
   function renderPdxBreadcrumbDetalle(carpeta) {
     if (!carpeta) return;
-    renderSopBreadcrumbs($('sopPdxBreadcrumbDetalle'), [
-      { label: 'Cargar reportes', onClick: volverListaPdx },
-      { label: carpeta.nombre_display || 'Carpeta', current: true }
-    ]);
+    const crumbs = [{ label: 'Cargar reportes', onClick: volverRaizPdx }];
+    pdxRutaExplorerChain().forEach((c) => {
+      crumbs.push({
+        label: c.nombre_display,
+        onClick: () => {
+          volverListaPdx();
+          navegarPdxExplorer(c.id);
+        }
+      });
+    });
+    crumbs.push({ label: carpeta.nombre_display || 'Carpeta', current: true });
+    renderSopBreadcrumbs($('sopPdxBreadcrumbDetalle'), crumbs);
   }
 
   function renderPdxDetalleAcciones(carpeta) {
@@ -1556,7 +1620,8 @@
   }
 
   function pdxCarpetasFiltradas() {
-    let list = [...pdxState.carpetas];
+    const parentId = pdxState.explorerParentId || 0;
+    let list = pdxState.carpetas.filter((c) => pdxParentId(c) === parentId);
     const { texto, periodo, tema, orden } = pdxState.filtros;
     const t = (texto || '').trim().toLowerCase();
     if (t) {
@@ -1631,6 +1696,149 @@
     return data;
   }
 
+  function htmlPdxCarpetaMeta(c) {
+    if (c.es_contenedor) {
+      const n = c.hijos_count || 0;
+      return `${n} carpeta${n === 1 ? '' : 's'} dentro`;
+    }
+    return `${escapeHtml(c.periodo)} · ${c.archivos_count || 0} archivo(s)`;
+  }
+
+  function htmlPdxCarpetaIcon(c) {
+    if (c.es_contenedor) return 'folder-tree';
+    const tema = c.color_tema || 'neutral';
+    return TEMA_ICON[tema] || 'folder';
+  }
+
+  function pdxEsAncestroEnCliente(posibleAncestroId, carpetaId) {
+    const map = {};
+    pdxState.carpetas.forEach((c) => { map[c.id] = pdxParentId(c); });
+    let cur = carpetaId;
+    const seen = new Set();
+    while (cur) {
+      const p = map[cur] || 0;
+      if (!p) return false;
+      if (p === posibleAncestroId) return true;
+      if (seen.has(p)) return false;
+      seen.add(p);
+      cur = p;
+    }
+    return false;
+  }
+
+  async function pdxMoverCarpetaApi(carpetaId, parentId) {
+    const res = await apiFetch(`/api/soportes/pdx/carpetas/${carpetaId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ parent_id: parentId || 0 })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'No se pudo mover la carpeta');
+    return data;
+  }
+
+  function pdxFinalizarDragSession() {
+    if (pdxDragSession?.ghost?.parentNode) pdxDragSession.ghost.remove();
+    document.querySelectorAll('.sop-folder-dragging, .sop-folder-drop-over').forEach((el) => {
+      el.classList.remove('sop-folder-dragging', 'sop-folder-drop-over');
+    });
+    pdxDragSession = null;
+  }
+
+  function pdxPuedeArrastrarCarpeta() {
+    return sopPerm('soportes.pdx.editar');
+  }
+
+  function bindPdxFolderDragSource(card, carpetaId) {
+    if (!pdxPuedeArrastrarCarpeta()) return;
+    let holdTimer = null;
+    let active = false;
+
+    const cancelHold = () => {
+      if (holdTimer) clearTimeout(holdTimer);
+      holdTimer = null;
+    };
+
+    const onMove = (ev) => {
+      if (!active || !pdxDragSession) return;
+      const g = pdxDragSession.ghost;
+      if (g) {
+        g.style.left = `${ev.clientX + 12}px`;
+        g.style.top = `${ev.clientY + 12}px`;
+      }
+      const under = document.elementFromPoint(ev.clientX, ev.clientY);
+      document.querySelectorAll('.sop-folder-drop-over, .sop-pdx-crumb-drop-over').forEach((el) => {
+        el.classList.remove('sop-folder-drop-over', 'sop-pdx-crumb-drop-over');
+      });
+      const dropEl = under?.closest?.('[data-pdx-drop-parent]');
+      if (dropEl) {
+        const targetParent = parseInt(dropEl.dataset.pdxDropParent, 10) || 0;
+        if (targetParent !== carpetaId && !pdxEsAncestroEnCliente(carpetaId, targetParent)) {
+          dropEl.classList.add(dropEl.dataset.pdxDropParent != null ? 'sop-pdx-crumb-drop-over' : 'sop-folder-drop-over');
+          pdxDragSession.hoverParentId = targetParent;
+        } else {
+          pdxDragSession.hoverParentId = null;
+        }
+      } else {
+        pdxDragSession.hoverParentId = null;
+      }
+    };
+
+    const onUp = async () => {
+      cancelHold();
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      if (!active) return;
+      active = false;
+      const targetParent = pdxDragSession?.hoverParentId;
+      const srcId = pdxDragSession?.carpetaId;
+      pdxFinalizarDragSession();
+      if (targetParent == null || srcId == null) return;
+      const c = pdxCarpetaById(srcId);
+      if (!c || pdxParentId(c) === targetParent) return;
+      try {
+        await pdxMoverCarpetaApi(srcId, targetParent);
+        sopToast('Carpeta movida', 'success');
+        await cargarCarpetasPdx();
+        if (pdxState.explorerParentId && !pdxCarpetaById(pdxState.explorerParentId)) {
+          pdxState.explorerParentId = targetParent;
+        }
+        renderListaCarpetasPdx();
+      } catch (e) {
+        sopToast(e.message, 'error');
+      }
+    };
+
+    card.addEventListener('mousedown', (ev) => {
+      if (ev.button !== 0 || ev.target.closest('.sop-folder-actions, .sop-folder-list-actions')) return;
+      cancelHold();
+      holdTimer = setTimeout(() => {
+        active = true;
+        card.classList.add('sop-folder-dragging');
+        const ghost = card.cloneNode(true);
+        ghost.classList.add('sop-pdx-drag-ghost');
+        ghost.classList.remove('sop-folder-dragging');
+        document.body.appendChild(ghost);
+        pdxDragSession = { carpetaId, ghost, hoverParentId: null };
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+      }, PDX_DRAG_HOLD_MS);
+    });
+    card.addEventListener('mouseup', cancelHold);
+    card.addEventListener('mouseleave', cancelHold);
+  }
+
+  function bindPdxFolderDropTarget(card, carpetaId) {
+    card.dataset.pdxContenedor = '1';
+    card.dataset.pdxDropParent = String(carpetaId);
+  }
+
+  function bindPdxBreadcrumbDropTargets() {
+    $('sopPdxBreadcrumbLista')?.querySelectorAll('[data-pdx-drop-parent]').forEach((crumb) => {
+      crumb.dataset.pdxDropParent = crumb.dataset.pdxDropParent || '0';
+    });
+  }
+
   function ensurePdxViewToggleInBar() {
     const bar = $('sopPdxFiltrosBar');
     if (!bar) return;
@@ -1648,13 +1856,22 @@
   function bindPdxCarpetaCardEvents(root) {
     if (!root) return;
     root.querySelectorAll('[data-pdx-carpeta]').forEach((card) => {
-      const open = () => abrirCarpetaPdx(parseInt(card.dataset.pdxCarpeta, 10));
+      const id = parseInt(card.dataset.pdxCarpeta, 10);
+      const open = () => {
+        const c = pdxCarpetaById(id);
+        if (c?.es_contenedor) navegarPdxExplorer(id);
+        else abrirCarpetaPdx(id);
+      };
       card.addEventListener('click', (ev) => {
         if (ev.target.closest('.sop-folder-actions, .sop-folder-list-actions')) return;
+        if (card.classList.contains('sop-folder-dragging')) return;
         open();
       });
       card.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') open(); });
+      bindPdxFolderDragSource(card, id);
+      if (card.dataset.pdxContenedor === '1') bindPdxFolderDropTarget(card, id);
     });
+    bindPdxBreadcrumbDropTargets();
     root.querySelectorAll('[data-pdx-edit]').forEach((b) => {
       b.addEventListener('click', (ev) => {
         ev.stopPropagation();
@@ -1685,7 +1902,10 @@
       return;
     }
     if (!lista.length) {
-      el.innerHTML = `<div class="sop-empty"><i data-lucide="filter-x" class="sop-empty-icon"></i>Ninguna carpeta coincide con los filtros.</div>`;
+      const enContenedor = (pdxState.explorerParentId || 0) > 0;
+      el.innerHTML = enContenedor
+        ? `<div class="sop-empty"><i data-lucide="folder-open" class="sop-empty-icon"></i>Esta carpeta está vacía.<br><span style="font-size:.85rem">Arrastre carpetas aquí o cree una nueva.</span></div>`
+        : `<div class="sop-empty"><i data-lucide="filter-x" class="sop-empty-icon"></i>Ninguna carpeta coincide con los filtros.</div>`;
       sopIcons(el);
       return;
     }
@@ -1695,14 +1915,14 @@
       el.innerHTML = `<div class="sop-table-wrap sop-folder-list-mode"><table class="sop-table sop-folder-list-table">
         <thead><tr><th style="width:40px"></th><th>Carpeta</th><th>Periodo</th><th>Archivos</th><th>Estado</th><th class="sop-folder-list-actions">Acciones</th></tr></thead>
         <tbody>${lista.map((c) => {
-          const tema = c.color_tema || 'neutral';
-          const icon = TEMA_ICON[tema] || 'folder';
+          const tema = c.es_contenedor ? 'neutral' : (c.color_tema || 'neutral');
+          const icon = htmlPdxCarpetaIcon(c);
           const enArchivo = c.estado_visibilidad === 'archivo';
-          return `<tr data-pdx-carpeta="${c.id}" tabindex="0">
+          return `<tr data-pdx-carpeta="${c.id}" data-pdx-contenedor="${c.es_contenedor ? '1' : '0'}" tabindex="0" class="${c.es_contenedor ? 'sop-folder-row-contenedor' : ''}">
             <td><span class="sop-folder-icon" style="width:32px;height:32px;margin:0" data-tema="${escapeHtml(tema)}"><i data-lucide="${icon}"></i></span></td>
-            <td><strong>${escapeHtml(c.nombre_display)}</strong></td>
-            <td>${escapeHtml(c.periodo)}</td>
-            <td>${c.archivos_count || 0}</td>
+            <td><strong>${escapeHtml(c.nombre_display)}</strong>${c.es_contenedor ? ' <span class="sop-badge sop-badge-muted">Contenedor</span>' : ''}</td>
+            <td>${c.es_contenedor ? '—' : escapeHtml(c.periodo)}</td>
+            <td>${c.es_contenedor ? (c.hijos_count || 0) : (c.archivos_count || 0)}</td>
             <td>${badgeVis(c.estado_visibilidad, c.dias_restantes_gracia)}</td>
             <td class="sop-folder-list-actions">
               ${canEdit && !enArchivo ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-pdx-edit="${c.id}"><i data-lucide="pencil"></i></button>` : ''}
@@ -1712,13 +1932,13 @@
         }).join('')}</tbody></table></div>`;
     } else {
       el.innerHTML = `<div class="sop-grid">${lista.map((c) => {
-        const tema = c.color_tema || 'neutral';
-        const icon = TEMA_ICON[tema] || 'folder';
+        const tema = c.es_contenedor ? 'neutral' : (c.color_tema || 'neutral');
+        const icon = htmlPdxCarpetaIcon(c);
         const enArchivo = c.estado_visibilidad === 'archivo';
-        return `<article class="sop-folder-card" data-tema="${escapeHtml(tema)}" data-pdx-carpeta="${c.id}" tabindex="0">
+        return `<article class="sop-folder-card${c.es_contenedor ? ' sop-folder-card-contenedor' : ''}" data-tema="${escapeHtml(tema)}" data-pdx-carpeta="${c.id}" data-pdx-contenedor="${c.es_contenedor ? '1' : '0'}" tabindex="0" title="${pdxPuedeArrastrarCarpeta() ? 'Mantenga pulsado para mover' : ''}">
           <div class="sop-folder-icon"><i data-lucide="${icon}"></i></div>
-          <div class="sop-folder-title">${escapeHtml(c.nombre_display)}</div>
-          <div class="sop-folder-meta">${escapeHtml(c.periodo)} · ${c.archivos_count || 0} archivo(s)</div>
+          <div class="sop-folder-title">${escapeHtml(c.nombre_display)}${c.es_contenedor ? '<span class="sop-badge sop-badge-muted">Contenedor</span>' : ''}</div>
+          <div class="sop-folder-meta">${htmlPdxCarpetaMeta(c)}</div>
           ${badgeVis(c.estado_visibilidad, c.dias_restantes_gracia)}
           ${(canEdit || canDel) ? `<div class="sop-folder-actions">
             ${canEdit && !enArchivo ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-pdx-edit="${c.id}"><i data-lucide="pencil"></i></button>` : ''}
@@ -1748,7 +1968,13 @@
   }
 
   async function abrirCarpetaPdx(id) {
+    const cached = pdxCarpetaById(id);
+    if (cached?.es_contenedor) {
+      navegarPdxExplorer(id);
+      return;
+    }
     pdxState.carpetaId = id;
+    pdxState.explorerParentId = pdxParentId(cached);
     $('sopPdxVistaLista')?.classList.add('hidden');
     $('sopPdxVistaDetalle')?.classList.remove('hidden');
     showSkeletonTableRows($('sopPdxArchivosBody'), 4, 4);
@@ -1758,6 +1984,7 @@
     pdxState.archivos = data.archivos || [];
     const c = data.carpeta;
     pdxState.carpetaActual = c;
+    pdxState.explorerParentId = pdxParentId(c);
     renderPdxBreadcrumbDetalle(c);
     renderPdxDetalleAcciones(c);
     $('sopPdxDetalleTitulo').textContent = c.nombre_display;
@@ -1880,6 +2107,11 @@
 
   async function eliminarCarpetaPdx(carpeta) {
     if (!sopPerm('soportes.pdx.eliminar')) return;
+    const hijos = carpeta.hijos_count || 0;
+    if (hijos > 0) {
+      sopToast('La carpeta contiene otras carpetas. Muévalas o elimínelas primero.', 'error');
+      return;
+    }
     const n = carpeta.archivos_count || 0;
     const label = carpeta.nombre_display || 'esta carpeta';
     const msg = n > 0
@@ -2052,7 +2284,7 @@
       await cargarCarpetasPdx();
     }
     const opts = pdxState.carpetas
-      .filter((c) => c.id !== archivo.carpeta_id && c.estado_visibilidad !== 'archivo')
+      .filter((c) => !c.es_contenedor && c.id !== archivo.carpeta_id && c.estado_visibilidad !== 'archivo')
       .map((c) => `<option value="${c.id}">${escapeHtml(c.nombre_display)} (${escapeHtml(c.periodo)})</option>`)
       .join('');
     if (!opts) return sopToast('No hay otra carpeta abierta disponible', 'warning');
@@ -2153,24 +2385,46 @@
     sopIcons($('view-reportes-pdx'));
   }
 
-  function modalNuevaCarpetaPdx() {
+  function volverRaizPdx() {
+    pdxState.explorerParentId = 0;
+    volverListaPdx();
+  }
+
+  function modalNuevaCarpetaPdx(esContenedorPref) {
     const per = periodoActual();
+    const parentId = pdxState.explorerParentId || 0;
+    const dentroDe = parentId ? pdxCarpetaById(parentId) : null;
     const modal = openSopModal(`
-      <h3><i data-lucide="folder-plus" style="vertical-align:-3px;width:22px"></i> Nueva carpeta de reportes</h3>
-      <div class="sop-field"><label>Periodo</label><input type="month" id="sopPdxNewPeriodo" value="${per}"></div>
-      <div class="sop-field"><label>Nombre de carpeta</label>
-        <input type="text" id="sopPdxNewNombre" placeholder="REPORTES VTM, ORDENES, COMPROBANTES o CONSENTIMIENTOS…"></div>
-      <p style="font-size:.8rem;color:#64748b;margin:0">Asigne qué usuarios ven esta carpeta en <strong>Usuarios → Permisos</strong> (bloque «Carpetas visibles»).</p>
+      <h3><i data-lucide="folder-plus" style="vertical-align:-3px;width:22px"></i> Nueva carpeta</h3>
+      ${dentroDe ? `<p style="font-size:.85rem;color:#64748b;margin:0 0 12px">Dentro de: <strong>${escapeHtml(dentroDe.nombre_display)}</strong></p>` : ''}
+      <div class="sop-field"><label>Tipo</label>
+        <select id="sopPdxNewTipo">
+          <option value="reportes"${esContenedorPref ? '' : ' selected'}>Carpeta de reportes (PDF)</option>
+          <option value="contenedor"${esContenedorPref ? ' selected' : ''}>Carpeta contenedora (agrupa otras)</option>
+        </select></div>
+      <div class="sop-field" id="sopPdxNewPeriodoWrap"><label>Periodo</label><input type="month" id="sopPdxNewPeriodo" value="${per}"></div>
+      <div class="sop-field"><label>Nombre</label>
+        <input type="text" id="sopPdxNewNombre" placeholder="${esContenedorPref ? 'Ej. Mayo 2026, Electrodiagnóstico…' : 'REPORTES VTM, ORDENES, COMPROBANTES…'}"></div>
+      <p style="font-size:.8rem;color:#64748b;margin:0">Puede arrastrar carpetas sobre un contenedor para reorganizarlas. Permisos en <strong>Usuarios → Permisos</strong>.</p>
       <div class="sop-dialog-actions">
         <button type="button" class="sop-btn sop-btn-ghost" id="sopPdxNewCancel">Cancelar</button>
         <button type="button" class="sop-btn sop-btn-primary" id="sopPdxNewOk">Crear carpeta</button>
       </div>`);
     sopIcons(modal);
+    const tipoSel = modal.querySelector('#sopPdxNewTipo');
+    const periodoWrap = modal.querySelector('#sopPdxNewPeriodoWrap');
+    const syncTipo = () => {
+      const esCont = tipoSel?.value === 'contenedor';
+      if (periodoWrap) periodoWrap.style.display = esCont ? 'none' : '';
+    };
+    tipoSel?.addEventListener('change', syncTipo);
+    syncTipo();
     modal.querySelector('#sopPdxNewCancel').onclick = () => closeSopModal(modal);
     modal.querySelector('#sopPdxNewOk').onclick = async () => {
-      const periodo = $('sopPdxNewPeriodo').value;
+      const es_contenedor = tipoSel?.value === 'contenedor';
+      const periodo = es_contenedor ? per : $('sopPdxNewPeriodo').value;
       const nombre_display = $('sopPdxNewNombre').value.trim();
-      const body = { periodo, nombre_display };
+      const body = { periodo, nombre_display, es_contenedor, parent_id: parentId };
       const res = await apiFetch('/api/soportes/pdx/carpetas', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2179,7 +2433,7 @@
       const data = await res.json();
       if (!res.ok) { sopToast(data.error || 'Error', 'error'); return; }
       closeSopModal(modal);
-      sopToast('Carpeta creada', 'success');
+      sopToast(es_contenedor ? 'Carpeta contenedora creada' : 'Carpeta creada', 'success');
       await cargarCarpetasPdx();
       renderListaCarpetasPdx();
     };
@@ -2792,10 +3046,14 @@
     setupEntradaDocumentoPdx();
     setupPdxFiltros();
     sopIcons($('sopPdxFiltrosBar'));
+    const canCrear = sopPerm('soportes.pdx.crear_carpeta');
     const btnNueva = $('btnSopPdxNuevaCarpeta');
-    if (btnNueva) btnNueva.style.display = sopPerm('soportes.pdx.crear_carpeta') ? '' : 'none';
+    const btnCont = $('btnSopPdxNuevaContenedora');
+    if (btnNueva) btnNueva.style.display = canCrear ? '' : 'none';
+    if (btnCont) btnCont.style.display = canCrear ? '' : 'none';
     $('btnVolverReportesPdx')?.addEventListener('click', goToMenu);
-    $('btnSopPdxNuevaCarpeta')?.addEventListener('click', modalNuevaCarpetaPdx);
+    $('btnSopPdxNuevaCarpeta')?.addEventListener('click', () => modalNuevaCarpetaPdx(false));
+    $('btnSopPdxNuevaContenedora')?.addEventListener('click', () => modalNuevaCarpetaPdx(true));
     $('btnSopPdxBuscar')?.addEventListener('click', buscarPdx);
     $('sopPdxBuscar')?.addEventListener('input', buscarPdxPredictivo);
     $('sopPdxBuscar')?.addEventListener('keydown', (e) => {

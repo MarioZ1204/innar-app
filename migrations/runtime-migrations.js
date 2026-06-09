@@ -1046,6 +1046,55 @@ const runtimeMigrations = [
     }
   },
   {
+    name: 'rt_anexo_fidu_col_medico_atencion',
+    description: 'Columna MEDICOQUEREALIZAATENCIÓN en anexo_fidu_registros',
+    run: async (db) => {
+      if (!(await tableExists(db, 'anexo_fidu_registros'))) return;
+      if (!(await columnExists(db, 'anexo_fidu_registros', 'medico_quien_realiza_atencion'))) {
+        await db.execute(
+          'ALTER TABLE anexo_fidu_registros ADD COLUMN medico_quien_realiza_atencion TEXT NULL AFTER nombre_medico'
+        );
+      }
+    }
+  },
+  {
+    name: 'rt_sop_pdx_carpetas_jerarquia',
+    description: 'Carpetas PDX anidadas: parent_id, es_contenedor y orden',
+    run: async (db) => {
+      if (!(await tableExists(db, 'sop_pdx_carpetas'))) return;
+      if (!(await columnExists(db, 'sop_pdx_carpetas', 'parent_id'))) {
+        await db.execute(
+          'ALTER TABLE sop_pdx_carpetas ADD COLUMN parent_id INT NOT NULL DEFAULT 0 AFTER id'
+        );
+      }
+      if (!(await columnExists(db, 'sop_pdx_carpetas', 'es_contenedor'))) {
+        await db.execute(
+          'ALTER TABLE sop_pdx_carpetas ADD COLUMN es_contenedor TINYINT(1) NOT NULL DEFAULT 0 AFTER color_tema'
+        );
+      }
+      if (!(await columnExists(db, 'sop_pdx_carpetas', 'orden'))) {
+        await db.execute(
+          'ALTER TABLE sop_pdx_carpetas ADD COLUMN orden INT NOT NULL DEFAULT 0 AFTER es_contenedor'
+        );
+      }
+      try {
+        await db.execute('ALTER TABLE sop_pdx_carpetas DROP INDEX uk_sop_pdx_periodo_nombre');
+      } catch (_) { /* ya eliminado o distinto nombre */ }
+      try {
+        await db.execute(
+          'ALTER TABLE sop_pdx_carpetas ADD UNIQUE KEY uk_sop_pdx_padre_periodo_nom (parent_id, periodo, nombre_display)'
+        );
+      } catch (e) {
+        if (!String(e.message || '').includes('Duplicate key name')) throw e;
+      }
+      try {
+        await db.execute('ALTER TABLE sop_pdx_carpetas ADD INDEX idx_sop_pdx_parent (parent_id)');
+      } catch (e) {
+        if (!String(e.message || '').includes('Duplicate key name')) throw e;
+      }
+    }
+  },
+  {
     name: 'rt_sop_pdx_orphans_cleanup',
     description: 'Elimina archivos PDX huérfanos (carpeta_id sin carpeta en sop_pdx_carpetas)',
     run: async (db) => {

@@ -2968,8 +2968,16 @@
                         <input type="text" id="afiduEntradaCie10" placeholder="Ej. G470" autocomplete="off" />
                       </div>
                       <div>
-                        <label for="afiduEntradaMedico">Nombre médico</label>
-                        <input type="text" id="afiduEntradaMedico" placeholder="Ej. Dr. Pérez" autocomplete="off" />
+                        <label for="afiduEntradaMedico">Nombre médico (NOMBREMEDICO)</label>
+                        <input type="text" id="afiduEntradaMedico" placeholder="Opcional" autocomplete="off" />
+                      </div>
+                      <div>
+                        <label for="afiduEntradaMedicoAtencion">Médico que realiza atención</label>
+                        <select id="afiduEntradaMedicoAtencion"><option value="">Seleccionar médico</option></select>
+                      </div>
+                      <div>
+                        <label for="afiduEntradaEspRemitente">Especialidad remitente</label>
+                        <select id="afiduEntradaEspRemitente"><option value="">Seleccionar especialidad</option></select>
                       </div>
                       <div class="afidu-entrada-action">
                         <button type="button" class="sop-btn sop-btn-teal" id="btnAfiduAgregarFila"><i data-lucide="plus"></i> Agregar</button>
@@ -2987,8 +2995,16 @@
                         <input type="text" id="afiduEntradaBulkCie10" placeholder="Ej. G470" autocomplete="off" />
                       </div>
                       <div>
-                        <label for="afiduEntradaBulkMedico">Médico (opcional, todas las filas)</label>
-                        <input type="text" id="afiduEntradaBulkMedico" placeholder="Ej. Dr. Pérez" autocomplete="off" />
+                        <label for="afiduEntradaBulkMedico">NOMBREMEDICO (opcional)</label>
+                        <input type="text" id="afiduEntradaBulkMedico" placeholder="Opcional" autocomplete="off" />
+                      </div>
+                      <div>
+                        <label for="afiduEntradaBulkMedicoAtencion">Médico atención (todas las filas)</label>
+                        <select id="afiduEntradaBulkMedicoAtencion"><option value="">Seleccionar médico</option></select>
+                      </div>
+                      <div>
+                        <label for="afiduEntradaBulkEspRemitente">Especialidad remitente (todas)</label>
+                        <select id="afiduEntradaBulkEspRemitente"><option value="">Seleccionar especialidad</option></select>
                       </div>
                     </div>
                     <p class="afidu-entrada-hint">Una línea por paciente: <code>documento CUPS</code> o <code>documento CUPS CIE10 médico</code>. Los existentes se agregan; los faltantes quedan para registrar datos.</p>
@@ -3720,7 +3736,10 @@
             <div>
               <h2>Cargar reportes</h2>
             </div>
-            <div class="sop-module-header-actions">
+            <div class="sop-module-header-actions" style="display:flex;gap:8px;flex-wrap:wrap">
+              <button type="button" id="btnSopPdxNuevaContenedora" class="btn-secondary">
+                <i data-lucide="folder-tree"></i> Contenedora
+              </button>
               <button type="button" id="btnSopPdxNuevaCarpeta" class="btn-primary">
                 <i data-lucide="folder-plus"></i> Nueva carpeta
               </button>

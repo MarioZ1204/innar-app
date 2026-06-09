@@ -3,6 +3,8 @@
  */
 (function () {
   let _columnas = [];
+  let _medicosAfidu = [];
+  let _especialidadesAfidu = [];
   let _servicios = [];
   let _page = 1;
   let _total = 0;
@@ -624,7 +626,9 @@
           doc: parts[0],
           cups: parts[1],
           cie10: parts[2] || defaults.cie10 || '',
-          medico: parts.slice(3).join(' ') || defaults.medico || ''
+          medico: parts[3] || defaults.medico || '',
+          medico_atencion: defaults.medico_atencion || '',
+          esp_remitente: defaults.esp_remitente || ''
         });
       }
     });
@@ -634,14 +638,18 @@
   function extraCamposEntradaSimple() {
     return {
       cie10: ($('afiduEntradaCie10')?.value || '').trim(),
-      medico: ($('afiduEntradaMedico')?.value || '').trim()
+      medico: ($('afiduEntradaMedico')?.value || '').trim(),
+      medico_atencion: ($('afiduEntradaMedicoAtencion')?.value || '').trim(),
+      esp_remitente: ($('afiduEntradaEspRemitente')?.value || '').trim()
     };
   }
 
   function extraCamposEntradaBulk() {
     return {
       cie10: ($('afiduEntradaBulkCie10')?.value || '').trim(),
-      medico: ($('afiduEntradaBulkMedico')?.value || '').trim()
+      medico: ($('afiduEntradaBulkMedico')?.value || '').trim(),
+      medico_atencion: ($('afiduEntradaBulkMedicoAtencion')?.value || '').trim(),
+      esp_remitente: ($('afiduEntradaBulkEspRemitente')?.value || '').trim()
     };
   }
 
@@ -734,6 +742,75 @@
     const data = await apiAnexo('/api/anexo-fidu/servicios');
     _servicios = data.servicios || [];
     return _servicios;
+  }
+
+  async function cargarMedicosAfidu() {
+    if (_medicosAfidu.length) return _medicosAfidu;
+    if (typeof apiFetch !== 'function') return [];
+    const res = await apiFetch('/api/medicos');
+    const data = await res.json().catch(() => []);
+    _medicosAfidu = Array.isArray(data) ? data : [];
+    return _medicosAfidu;
+  }
+
+  async function cargarEspecialidadesAfidu() {
+    if (_especialidadesAfidu.length) return _especialidadesAfidu;
+    if (typeof apiFetch !== 'function') return [];
+    const res = await apiFetch('/api/especialidades');
+    const data = await res.json().catch(() => []);
+    _especialidadesAfidu = Array.isArray(data) ? data : [];
+    return _especialidadesAfidu;
+  }
+
+  function poblarSelectMedicoAtencion(selectId, valorPrevio = '') {
+    const sel = $(selectId);
+    if (!sel) return;
+    const prev = valorPrevio || sel.value || '';
+    sel.innerHTML = '<option value="">Seleccionar médico</option>' +
+      _medicosAfidu.map((m) => {
+        const nom = String(m.nombre || '').trim();
+        const esp = String(m.especialidad || '').trim();
+        const label = esp ? `${nom} — ${esp}` : nom;
+        return `<option value="${escapeHtml(nom)}" data-especialidad="${escapeHtml(esp)}">${escapeHtml(label)}</option>`;
+      }).join('');
+    if (prev) {
+      const opt = [...sel.options].find((o) => o.value === prev);
+      if (opt) sel.value = prev;
+    }
+  }
+
+  function poblarSelectEspRemitente(selectId, valorPrevio = '') {
+    const sel = $(selectId);
+    if (!sel) return;
+    const prev = valorPrevio || sel.value || '';
+    sel.innerHTML = '<option value="">Seleccionar especialidad</option>' +
+      _especialidadesAfidu.map((e) => {
+        const nom = String(e.nombre || '').trim();
+        return `<option value="${escapeHtml(nom)}">${escapeHtml(nom)}</option>`;
+      }).join('');
+    if (prev) {
+      const opt = [...sel.options].find((o) => o.value === prev);
+      if (opt) sel.value = prev;
+    }
+  }
+
+  async function initSelectsEntradaAfidu() {
+    await Promise.all([cargarMedicosAfidu(), cargarEspecialidadesAfidu()]);
+    poblarSelectMedicoAtencion('afiduEntradaMedicoAtencion');
+    poblarSelectMedicoAtencion('afiduEntradaBulkMedicoAtencion');
+    poblarSelectEspRemitente('afiduEntradaEspRemitente');
+    poblarSelectEspRemitente('afiduEntradaBulkEspRemitente');
+  }
+
+  function syncEspRemitenteDesdeMedico(medicoSelectId, espSelectId) {
+    const medSel = $(medicoSelectId);
+    const espSel = $(espSelectId);
+    if (!medSel || !espSel) return;
+    const opt = medSel.options[medSel.selectedIndex];
+    const esp = opt?.dataset?.especialidad || '';
+    if (!esp) return;
+    const match = [...espSel.options].find((o) => o.value === esp);
+    if (match) espSel.value = esp;
   }
 
   function valorCeldaTexto(val) {
@@ -1363,6 +1440,8 @@
     };
     if (opts.cie10) payload.codigo_cie10 = opts.cie10;
     if (opts.medico) payload.nombre_medico = opts.medico;
+    if (opts.medico_atencion) payload.medico_quien_realiza_atencion = opts.medico_atencion;
+    if (opts.esp_remitente) payload.especialidad_remitente = opts.esp_remitente;
     const data = await apiAnexo('/api/anexo-fidu/armar', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1395,11 +1474,13 @@
     const faltantes = [];
     try {
       for (let i = 0; i < pairs.length; i += 1) {
-        const { doc, cups, cie10, medico } = pairs[i];
+        const { doc, cups, cie10, medico, medico_atencion, esp_remitente } = pairs[i];
         const result = await agregarUnaFila(doc, cups, {
           ocultarPanelSiOk: !bulkContinuar,
           cie10,
-          medico
+          medico,
+          medico_atencion,
+          esp_remitente
         });
         if (result.needsPanel) {
           if (bulkContinuar) {
@@ -1434,6 +1515,8 @@
         $('afiduEntradaCodigo').value = '';
         $('afiduEntradaCie10').value = '';
         $('afiduEntradaMedico').value = '';
+        if ($('afiduEntradaMedicoAtencion')) $('afiduEntradaMedicoAtencion').value = '';
+        if ($('afiduEntradaEspRemitente')) $('afiduEntradaEspRemitente').value = '';
         $('afiduDiagnosticoPreview')?.classList.add('hidden');
         $('afiduEntradaDoc')?.focus();
       }
@@ -1630,6 +1713,12 @@
     $('btnAfiduAgregarFila')?.addEventListener('click', agregarFilaDesdeEntrada);
     $('btnAfiduAgregarFilasBulk')?.addEventListener('click', agregarFilasBulk);
     bindPreviewCie10('afiduEntradaCie10');
+    $('afiduEntradaMedicoAtencion')?.addEventListener('change', () => {
+      syncEspRemitenteDesdeMedico('afiduEntradaMedicoAtencion', 'afiduEntradaEspRemitente');
+    });
+    $('afiduEntradaBulkMedicoAtencion')?.addEventListener('change', () => {
+      syncEspRemitenteDesdeMedico('afiduEntradaBulkMedicoAtencion', 'afiduEntradaBulkEspRemitente');
+    });
     const onEnter = (e) => {
       if (e.key === 'Enter') { e.preventDefault(); agregarFilaDesdeEntrada(); }
     };
@@ -1699,6 +1788,7 @@
       try {
         await cargarColumnas();
         await cargarServicios();
+        await initSelectsEntradaAfidu();
         renderThead();
         initAfiduDone = true;
       } catch (e) {

@@ -1,5 +1,5 @@
 /**
- * API módulo Anexo FIDU — tabla tipo Excel (45 columnas).
+ * API módulo Anexo FIDU — tabla tipo Excel (46 columnas).
  */
 const express = require('express');
 const router = express.Router();
@@ -542,6 +542,8 @@ router.post('/anexo-fidu/armar', requireAuth, requirePermiso(PERM_ANEXO_FIDU), a
     const { registro, servicio_encontrado } = armarRegistroAnexo(documento, codigo, rows[0]);
     const cie10 = String(req.body?.codigo_cie10 || '').trim();
     const nombreMedico = String(req.body?.nombre_medico || '').trim();
+    const medicoAtencion = String(req.body?.medico_quien_realiza_atencion || '').trim();
+    const espRemitente = String(req.body?.especialidad_remitente || '').trim();
     if (cie10) {
       registro.codigo_cie10 = cie10;
       const diag = await lookupNombreDiagnosticoDb(cie10);
@@ -549,6 +551,8 @@ router.post('/anexo-fidu/armar', requireAuth, requirePermiso(PERM_ANEXO_FIDU), a
       if (diag.nombre) registro.nombre_diagnostico = diag.nombre;
     }
     if (nombreMedico) registro.nombre_medico = nombreMedico;
+    if (medicoAtencion) registro.medico_quien_realiza_atencion = medicoAtencion;
+    if (espRemitente) registro.especialidad_remitente = espRemitente;
     res.json({
       ok: true,
       persona_encontrada: true,
