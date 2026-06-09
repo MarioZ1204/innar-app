@@ -86,12 +86,25 @@ async function ensureContenedoresForDiaModo(db, diaId, modoRaw) {
   }
 }
 
-async function ensureAnexoCarpetaPeriodo(db, periodoRow) {
-  const nombre = String(periodoRow.etiqueta || periodoRow.periodo || 'Periodo').trim().slice(0, 120);
-  const dup = await db.query('SELECT id FROM anexo_fidu_carpetas WHERE nombre = ? LIMIT 1', [nombre]);
-  if (dup.length) return dup[0].id;
-  const r = await db.execute('INSERT INTO anexo_fidu_carpetas (nombre) VALUES (?)', [nombre]);
-  return insertRowId(r);
+/** Busca carpeta existente en el módulo Anexo (no crea — las carpetas las gestiona el usuario en Anexo). */
+async function buscarCarpetaAnexoPeriodo(db, periodoRow) {
+  const candidates = [periodoRow.etiqueta, periodoRow.periodo]
+    .map((s) => String(s || '').trim().slice(0, 120))
+    .filter(Boolean);
+  const seen = new Set();
+  for (const nom of candidates) {
+    const key = nom.toUpperCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const rows = await db.query(
+      `SELECT id FROM anexo_fidu_carpetas
+       WHERE nombre = ? OR UPPER(TRIM(nombre)) = UPPER(?)
+       ORDER BY id ASC LIMIT 1`,
+      [nom, nom]
+    );
+    if (rows.length) return rows[0].id;
+  }
+  return null;
 }
 
 async function buscarContenedoraRaizPeriodo(db, periodoId, def) {
@@ -142,10 +155,6 @@ async function ensureContenedorasRaizPeriodo(db, periodoId, usuarioId = null) {
     const id = insertRowId(r);
     if (id) creadas.push({ id, ...def });
   }
-
-  try {
-    await ensureAnexoCarpetaPeriodo(db, per);
-  } catch (_) { /* anexo opcional si tablas no existen */ }
 
   return creadas;
 }
@@ -280,7 +289,14 @@ async function crearAnexoArchivoParaDia(db, diaRow, usuarioId) {
   }
   const periodoRows = await db.query('SELECT * FROM sop_periodos WHERE id = ?', [diaRow.periodo_id]);
   if (!periodoRows.length) return { error: 'Periodo no encontrado', status: 404 };
-  const carpetaId = await ensureAnexoCarpetaPeriodo(db, periodoRows[0]);
+  const carpetaId = await buscarCarpetaAnexoPeriodo(db, periodoRows[0]);
+  if (!carpetaId) {
+    const nom = String(periodoRows[0].etiqueta || periodoRows[0].periodo || '').trim();
+    return {
+      error: `No existe la carpeta «${nom}» en el módulo Anexo. Créela allí primero; Soportes no crea carpetas en Anexo.`,
+      status: 400
+    };
+  }
   const nombre = String(diaRow.nombre_display || '').trim();
   const dup = await db.query(
     'SELECT id FROM anexo_fidu_archivos WHERE carpeta_id = ? AND nombre = ? LIMIT 1',
@@ -336,7 +352,7 @@ module.exports = {
   fetchModoParentContenedora,
   ensureContenedoresForDiaModo,
   ensureContenedorasRaizPeriodo,
-  ensureAnexoCarpetaPeriodo,
+  buscarCarpetaAnexoPeriodo,
   backfillContenedorasTodosPeriodos,
   idContenedoraAnexo,
   idContenedoraFacturas,

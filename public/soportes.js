@@ -3249,7 +3249,7 @@
           <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="btnSopArmRepararContenedoras" style="margin-left:8px">Reparar ahora</button>
         </div>` : ''}
         ${!armState.diasParentId ? `<p style="font-size:.82rem;color:#64748b;margin:0 0 12px">Abra una contenedora para crear carpetas de día, anexos o personas (UCQN). Las tres contenedoras del mes se crean automáticamente.</p>` : ''}
-        ${armState.diasParentId && armModoContenedoraActual() === 'anexo_fidu' ? `<p style="font-size:.82rem;color:#64748b;margin:0 0 12px">Las carpetas de este nivel se sincronizan con los archivos del módulo <strong>Anexo FIDU</strong> del mismo mes. El Excel se guarda en Soportes al exportar o actualizar.</p>` : ''}
+        ${armState.diasParentId && armModoContenedoraActual() === 'anexo_fidu' ? `<p style="font-size:.82rem;color:#64748b;margin:0 0 12px">Los anexos se leen del módulo <strong>Anexo FIDU</strong> (carpeta del mes creada allí por usted). Soportes no crea carpetas en Anexo. Use <strong>Sincronizar desde Anexo</strong> tras crear archivos en el módulo.</p>` : ''}
         ${huerfanasRaiz.length ? `<div class="sop-panel-warn" style="margin-bottom:12px;padding:10px 12px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;font-size:.85rem;color:#92400e">
           <strong>${huerfanasRaiz.length} carpeta(s) de facturación</strong> siguen en la raíz del mes (no se borraron). Abra <strong>Facturas FIDU</strong> o arrástrelas ahí. Los archivos en disco no se eliminaron.
         </div>` : ''}

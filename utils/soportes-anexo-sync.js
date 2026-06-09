@@ -8,7 +8,7 @@ const { buildAnexoFiduExcelBuffer } = require('./anexo-fidu-export');
 const { soportesRoot, ensureDir } = require('./soportes-storage');
 const {
   getArmadoAnexoDir,
-  ensureAnexoCarpetaPeriodo,
+  buscarCarpetaAnexoPeriodo,
   idContenedoraAnexo
 } = require('./soportes-armado-modos');
 const { nextSopDiaNumero } = require('./soportes-armado-structure');
@@ -32,26 +32,6 @@ async function resolverSopDiaAnexo(archivoId, meta) {
   const byLink = await db.query('SELECT * FROM sop_dias WHERE anexo_archivo_id = ? LIMIT 1', [archivoId]);
   if (byLink.length) return byLink[0];
   return null;
-}
-
-async function resolverCarpetaAnexoPeriodo(dbConn, per) {
-  const candidates = [per.etiqueta, per.periodo]
-    .map((s) => String(s || '').trim())
-    .filter(Boolean);
-  const seen = new Set();
-  for (const nom of candidates) {
-    const key = nom.toUpperCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    const rows = await dbConn.query(
-      `SELECT id FROM anexo_fidu_carpetas
-       WHERE nombre = ? OR UPPER(TRIM(nombre)) = UPPER(?)
-       ORDER BY id ASC LIMIT 1`,
-      [nom, nom]
-    );
-    if (rows.length) return rows[0].id;
-  }
-  return ensureAnexoCarpetaPeriodo(dbConn, per);
 }
 
 async function periodoIdsPorCarpetaAnexo(carpetaId) {
@@ -135,11 +115,13 @@ async function syncAnexoModuloASoportesPeriodo(periodoId, options = {}) {
   const anexoContId = await idContenedoraAnexo(db, periodoId);
   if (!anexoContId) return { ok: false, error: 'Contenedora Anexo FIDU no encontrada en el mes' };
 
-  const carpetaId = await resolverCarpetaAnexoPeriodo(db, per);
-  const archivosCarpeta = await db.query(
-    'SELECT * FROM anexo_fidu_archivos WHERE carpeta_id = ? ORDER BY nombre ASC, id ASC',
-    [carpetaId]
-  );
+  const carpetaId = await buscarCarpetaAnexoPeriodo(db, per);
+  const archivosCarpeta = carpetaId
+    ? await db.query(
+      'SELECT * FROM anexo_fidu_archivos WHERE carpeta_id = ? ORDER BY nombre ASC, id ASC',
+      [carpetaId]
+    )
+    : [];
   const archivosVinculados = await db.query(
     `SELECT DISTINCT a.* FROM anexo_fidu_archivos a
      INNER JOIN sop_dias d ON d.anexo_archivo_id = a.id OR d.id = a.sop_dia_id
