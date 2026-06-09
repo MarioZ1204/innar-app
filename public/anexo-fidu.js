@@ -668,7 +668,8 @@
           cie10: parts[2] || defaults.cie10 || '',
           medico: parts[3] || defaults.medico || '',
           medico_atencion: defaults.medico_atencion || '',
-          esp_remitente: defaults.esp_remitente || ''
+          esp_remitente: defaults.esp_remitente || '',
+          fecha_autorizacion_hora: defaults.fecha_autorizacion_hora || ''
         });
       }
     });
@@ -680,7 +681,8 @@
       cie10: ($('afiduEntradaCie10')?.value || '').trim(),
       medico: ($('afiduEntradaMedico')?.value || '').trim(),
       medico_atencion: ($('afiduEntradaMedicoAtencion')?.value || '').trim(),
-      esp_remitente: ($('afiduEntradaEspRemitente')?.value || '').trim()
+      esp_remitente: ($('afiduEntradaEspRemitente')?.value || '').trim(),
+      fecha_autorizacion_hora: ($('afiduEntradaFechaAuth')?.value || '').trim()
     };
   }
 
@@ -689,7 +691,8 @@
       cie10: ($('afiduEntradaBulkCie10')?.value || '').trim(),
       medico: ($('afiduEntradaBulkMedico')?.value || '').trim(),
       medico_atencion: ($('afiduEntradaBulkMedicoAtencion')?.value || '').trim(),
-      esp_remitente: ($('afiduEntradaBulkEspRemitente')?.value || '').trim()
+      esp_remitente: ($('afiduEntradaBulkEspRemitente')?.value || '').trim(),
+      fecha_autorizacion_hora: ($('afiduEntradaBulkFechaAuth')?.value || '').trim()
     };
   }
 
@@ -1445,6 +1448,7 @@
     if (opts.medico) payload.nombre_medico = opts.medico;
     if (opts.medico_atencion) payload.medico_quien_realiza_atencion = opts.medico_atencion;
     if (opts.esp_remitente) payload.especialidad_remitente = opts.esp_remitente;
+    if (opts.fecha_autorizacion_hora) payload.fecha_autorizacion_hora = opts.fecha_autorizacion_hora;
     const data = await apiAnexo('/api/anexo-fidu/armar', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1477,13 +1481,14 @@
     const faltantes = [];
     try {
       for (let i = 0; i < pairs.length; i += 1) {
-        const { doc, cups, cie10, medico, medico_atencion, esp_remitente } = pairs[i];
+        const { doc, cups, cie10, medico, medico_atencion, esp_remitente, fecha_autorizacion_hora } = pairs[i];
         const result = await agregarUnaFila(doc, cups, {
           ocultarPanelSiOk: !bulkContinuar,
           cie10,
           medico,
           medico_atencion,
-          esp_remitente
+          esp_remitente,
+          fecha_autorizacion_hora
         });
         if (result.needsPanel) {
           if (bulkContinuar) {
@@ -1520,6 +1525,7 @@
         $('afiduEntradaMedico').value = '';
         if ($('afiduEntradaMedicoAtencion')) $('afiduEntradaMedicoAtencion').value = '';
         if ($('afiduEntradaEspRemitente')) $('afiduEntradaEspRemitente').value = '';
+        if ($('afiduEntradaFechaAuth')) $('afiduEntradaFechaAuth').value = '';
         $('afiduDiagnosticoPreview')?.classList.add('hidden');
         $('afiduEntradaDoc')?.focus();
       }

@@ -124,8 +124,10 @@ function aplicarCatalogoServicio(codigo, row = {}) {
   out.codigo_servicio = svc.codigo;
   out.nombre_servicio = svc.nombre.trim();
   out.plan = ANEXO_FIDU_VALORES_FIJOS.plan;
-  out.valor_unitario = formatValorAnexo(svc.valor_unitario);
-  out.cantidad = svc.cantidad;
+  const cantidadImportada = String(out.cantidad || '').trim();
+  const valorImportado = String(out.valor_unitario || '').trim();
+  if (!valorImportado) out.valor_unitario = formatValorAnexo(svc.valor_unitario);
+  if (!cantidadImportada) out.cantidad = svc.cantidad;
   aplicarValorTotalCalculado(out);
   out.condicion_destino_persona = ANEXO_FIDU_VALORES_FIJOS.condicion_destino_persona;
   out.prioridad_atencion = ANEXO_FIDU_VALORES_FIJOS.prioridad_atencion;

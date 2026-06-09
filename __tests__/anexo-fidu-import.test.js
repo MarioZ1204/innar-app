@@ -1,7 +1,8 @@
 const {
   mapSheetsRowToAnexoFidu,
   calcularTipoDocumentoDesdeFecha,
-  aplicarCamposCombinadosImport
+  aplicarCamposCombinadosImport,
+  formatFechaAutorizacionHora
 } = require('../utils/anexo-fidu-import');
 const { ANEXO_FIDU_COLUMNAS } = require('../utils/anexo-fidu-columns');
 
@@ -56,6 +57,14 @@ describe('anexo-fidu-import', () => {
     expect(out.apellidos_2).toBe('Ruiz');
     expect(out.direccion).toContain('CENTRO');
     expect(out.tipo_documento).toBe('TI');
+  });
+
+  test('formatFechaAutorizacionHora normaliza a AAAA-MM-DD.HH:MM', () => {
+    expect(formatFechaAutorizacionHora('2025-06-15.14:30')).toBe('2025-06-15.14:30');
+    expect(formatFechaAutorizacionHora('2025-06-15 14:30')).toBe('2025-06-15.14:30');
+    expect(formatFechaAutorizacionHora('2025-06-15')).toBe('2025-06-15.00:00');
+    const d = new Date(2025, 5, 15, 9, 5);
+    expect(formatFechaAutorizacionHora(d)).toBe('2025-06-15.09:05');
   });
 
   test('importa con código de servicio y aplica catálogo', () => {

@@ -35,6 +35,13 @@ describe('anexo-fidu-servicios', () => {
     expect(row.valor_total_fact).toBe('$ 160.095');
   });
 
+  test('preserva cantidad importada del Excel al aplicar catálogo', () => {
+    const { ok, row } = aplicarCatalogoServicio('891704', { cantidad: '3' });
+    expect(ok).toBe(true);
+    expect(row.cantidad).toBe('3');
+    expect(row.valor_total_fact).toBe('$ 4.693.065');
+  });
+
   test('terapia física deja cantidad vacía y total en cero', () => {
     const { ok, row } = aplicarCatalogoServicio('931001', {});
     expect(ok).toBe(true);

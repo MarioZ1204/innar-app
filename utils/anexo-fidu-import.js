@@ -57,7 +57,10 @@ const IMPORT_HEADER_ALIASES = {
   tipodedocumento: 'tipo_documento',
   especialesodeexcepcioncotizanteben: 'especiales_excepcion_cotizante',
   especialesodeexcepcioncotizante: 'especiales_excepcion_cotizante',
-  afiliacion: 'especiales_excepcion_cotizante'
+  afiliacion: 'especiales_excepcion_cotizante',
+  cantidades: 'cantidad',
+  fechaaautorizacionyhora: 'fecha_autorizacion_hora',
+  fechadeautorizacionyhora: 'fecha_autorizacion_hora'
 };
 
 function aplicarCamposCombinadosImport(out, { nombresRaw = '', apellidosRaw = '', barrioRaw = '' } = {}) {
@@ -82,7 +85,37 @@ function aplicarCamposCombinadosImport(out, { nombresRaw = '', apellidosRaw = ''
     if (!out.edad) out.edad = calcularEdadDesdeFecha(out.fecha_nacimiento);
     if (!out.tipo_documento) out.tipo_documento = calcularTipoDocumentoDesdeFecha(out.fecha_nacimiento);
   }
+  if (out.fecha_autorizacion_hora) {
+    out.fecha_autorizacion_hora = formatFechaAutorizacionHora(out.fecha_autorizacion_hora);
+  }
   return out;
+}
+
+/** Formato canónico: AAAA-MM-DD.HH:MM */
+function formatFechaAutorizacionHora(val) {
+  if (val == null || val === '') return '';
+  if (val instanceof Date && !Number.isNaN(val.getTime())) {
+    const y = val.getFullYear();
+    const mo = String(val.getMonth() + 1).padStart(2, '0');
+    const da = String(val.getDate()).padStart(2, '0');
+    const hh = String(val.getHours()).padStart(2, '0');
+    const mm = String(val.getMinutes()).padStart(2, '0');
+    return `${y}-${mo}-${da}.${hh}:${mm}`;
+  }
+  const s = String(val).trim();
+  const ok = s.match(/^(\d{4})-(\d{2})-(\d{2})\.(\d{2}):(\d{2})$/);
+  if (ok) return `${ok[1]}-${ok[2]}-${ok[3]}.${ok[4]}:${ok[5]}`;
+  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})[\sT](\d{2}):(\d{2})/);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}.${iso[4]}:${iso[5]}`;
+  const soloFecha = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (soloFecha) return `${soloFecha[1]}-${soloFecha[2]}-${soloFecha[3]}.00:00`;
+  const dm = s.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})(?:[\s.](\d{2}):(\d{2}))?/);
+  if (dm) {
+    const hh = dm[4] != null ? dm[4] : '00';
+    const mm = dm[5] != null ? dm[5] : '00';
+    return `${dm[3]}-${String(dm[2]).padStart(2, '0')}-${String(dm[1]).padStart(2, '0')}.${hh}:${mm}`;
+  }
+  return s;
 }
 
 function calcularEdadDesdeFecha(val) {
@@ -191,5 +224,6 @@ module.exports = {
   calcularEdadDesdeFecha,
   calcularTipoDocumentoDesdeFecha,
   formatFechaParaCelda,
+  formatFechaAutorizacionHora,
   cellToString
 };

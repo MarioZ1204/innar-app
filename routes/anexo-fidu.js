@@ -117,6 +117,10 @@ function sanitizeRegistroBody(body) {
     if (!out.edad) out.edad = calcularEdadDesdeFecha(out.fecha_nacimiento);
     if (!out.tipo_documento) out.tipo_documento = calcularTipoDocumentoDesdeFecha(out.fecha_nacimiento);
   }
+  if (out.fecha_autorizacion_hora) {
+    const { formatFechaAutorizacionHora } = require('../utils/anexo-fidu-import');
+    out.fecha_autorizacion_hora = formatFechaAutorizacionHora(out.fecha_autorizacion_hora);
+  }
   return enriquecerRegistroAnexoFidu(out);
 }
 
@@ -577,6 +581,17 @@ router.post('/anexo-fidu/armar', requireAuth, requirePermiso(PERM_ANEXO_FIDU), a
     if (nombreMedico) registro.nombre_medico = nombreMedico;
     if (medicoAtencion) registro.medico_quien_realiza_atencion = medicoAtencion;
     if (espRemitente) registro.especialidad_remitente = espRemitente;
+    const fechaAuth = String(req.body?.fecha_autorizacion_hora || '').trim();
+    if (fechaAuth) {
+      const { formatFechaAutorizacionHora } = require('../utils/anexo-fidu-import');
+      registro.fecha_autorizacion_hora = formatFechaAutorizacionHora(fechaAuth);
+    }
+    const cantidad = String(req.body?.cantidad ?? '').trim();
+    if (cantidad) {
+      const { aplicarValorTotalCalculado } = require('../utils/anexo-fidu-servicios');
+      registro.cantidad = cantidad;
+      aplicarValorTotalCalculado(registro);
+    }
     res.json({
       ok: true,
       persona_encontrada: true,

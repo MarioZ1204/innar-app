@@ -61,7 +61,11 @@ function parseAnexoFiduWorksheet(ws) {
     row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
       const key = colMap[colNumber];
       if (!key) return;
-      const val = cellToString(cell.value);
+      let val = cellToString(cell.value);
+      if (key === 'fecha_autorizacion_hora') {
+        const { formatFechaAutorizacionHora } = require('./anexo-fidu-import');
+        val = formatFechaAutorizacionHora(cell.value);
+      }
       if (val) tieneDato = true;
       if (key === '_nombres') nombresRaw = val;
       else if (key === '_apellidos') apellidosRaw = val;
