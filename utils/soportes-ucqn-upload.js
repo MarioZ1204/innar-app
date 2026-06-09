@@ -4,7 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const db = require('./db-mysql');
 const { fileLooksLikePdf } = require('../middleware/upload');
-const { soportesRoot, ensureDir } = require('./soportes-storage');
+const { SOPORTES_ROOT, ensureDir } = require('./soportes-storage');
 const { moveFileSafe } = require('./fs-move-safe');
 const { safeOriginalFilename } = require('./soportes-archivo-detect');
 const {
@@ -32,7 +32,7 @@ async function resolveUcqnUploadContext(exp) {
   const periodoRows = await db.query('SELECT periodo FROM sop_periodos WHERE id = ?', [dia.periodo_id]);
   const periodo = periodoRows[0]?.periodo || '';
   const relDir = getArmadoUcqnPersonaDir(periodo, contenedorNombre, dia.nombre_display);
-  const absDir = path.join(soportesRoot(), relDir);
+  const absDir = path.join(SOPORTES_ROOT, relDir);
   ensureDir(absDir);
   return { dia, relDir, absDir, periodo, contenedorNombre };
 }

@@ -5,7 +5,7 @@ const fs = require('fs');
 const db = require('./db-mysql');
 const { insertRowId } = require('./db-insert-id');
 const { buildAnexoFiduExcelBuffer } = require('./anexo-fidu-export');
-const { soportesRoot, ensureDir } = require('./soportes-storage');
+const { SOPORTES_ROOT, ensureDir } = require('./soportes-storage');
 const {
   getArmadoAnexoDir,
   buscarCarpetaAnexoPeriodo,
@@ -239,7 +239,7 @@ async function guardarExportAnexoEnSoportes(archivoId, options = {}) {
     }
 
     const relDir = getArmadoAnexoDir(periodo, contenedorNombre, dia.nombre_display || meta.nombre);
-    const absDir = path.join(soportesRoot(), relDir);
+    const absDir = path.join(SOPORTES_ROOT, relDir);
     const absPath = path.join(absDir, filename);
     try {
       ensureDir(absDir);
