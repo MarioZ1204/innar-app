@@ -2906,7 +2906,8 @@
   }
 
   function armDiaParentId(dia) {
-    return dia?.parent_id || 0;
+    const n = parseInt(dia?.parent_id, 10);
+    return Number.isFinite(n) && n > 0 ? n : 0;
   }
 
   function armDiaById(id) {
@@ -2926,9 +2927,21 @@
     return 'Carpeta de día';
   }
 
+  function armContenedorasRaiz() {
+    return armState.dias.filter((d) => !armDiaParentId(d) && d.es_contenedor);
+  }
+
   function armDiasVisibles() {
     const parentId = armState.diasParentId || 0;
-    return armState.dias.filter((d) => armDiaParentId(d) === parentId);
+    const lista = armState.dias.filter((d) => armDiaParentId(d) === parentId);
+    if (!parentId) {
+      return lista.slice().sort((a, b) => {
+        if (!!a.es_contenedor !== !!b.es_contenedor) return a.es_contenedor ? -1 : 1;
+        return (a.orden || 0) - (b.orden || 0)
+          || String(a.nombre_display || '').localeCompare(String(b.nombre_display || ''), 'es');
+      });
+    }
+    return lista;
   }
 
   function armRutaExplorerChain() {
@@ -3215,6 +3228,7 @@
     const viewMode = sopFolderViewMode('arm');
     const lista = armDiasVisibles();
     const huerfanasRaiz = !armState.diasParentId ? lista.filter((d) => !d.es_contenedor) : [];
+    const faltanContenedorasRaiz = !armState.diasParentId && armContenedorasRaiz().length < 3;
     const dragHint = armPuedeArrastrarDia() ? 'Mantenga pulsado para mover' : '';
     panel.innerHTML = `<div class="sop-panel-head">
         <div>
@@ -3229,6 +3243,11 @@
         </div>
       </div>
       <div class="sop-panel-body">
+        ${faltanContenedorasRaiz ? `<div class="sop-panel-warn" style="margin-bottom:12px;padding:10px 12px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;font-size:.85rem;color:#991b1b">
+          Faltan las carpetas fijas del mes (<strong>Anexo FIDU</strong>, <strong>Facturas FIDU</strong>, <strong>U C Q N</strong>).
+          <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="btnSopArmRepararContenedoras" style="margin-left:8px">Reparar ahora</button>
+        </div>` : ''}
+        ${!armState.diasParentId ? `<p style="font-size:.82rem;color:#64748b;margin:0 0 12px">Abra una contenedora para crear carpetas de día, anexos o personas (UCQN). Las tres contenedoras del mes se crean automáticamente.</p>` : ''}
         ${huerfanasRaiz.length ? `<div class="sop-panel-warn" style="margin-bottom:12px;padding:10px 12px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;font-size:.85rem;color:#92400e">
           <strong>${huerfanasRaiz.length} carpeta(s) de facturación</strong> siguen en la raíz del mes (no se borraron). Abra <strong>Facturas FIDU</strong> o arrástrelas ahí. Los archivos en disco no se eliminaron.
         </div>` : ''}
@@ -3238,13 +3257,16 @@
       </div>`;
     bindSopFolderViewToggle(panel, 'arm');
     const grid = panel.querySelector('#sopArmDiasGrid');
+    panel.querySelector('#btnSopArmRepararContenedoras')?.addEventListener('click', () => {
+      seleccionarPeriodoArmado(armState.periodoId).catch((e) => sopToast(e.message, 'error'));
+    });
     if (!armState.dias.length) {
-      grid.innerHTML = '<div class="sop-empty" style="grid-column:1/-1;padding:32px"><i data-lucide="folder-plus" class="sop-empty-icon"></i>Sin carpetas de día — cree la primera</div>';
+      grid.innerHTML = '<div class="sop-empty" style="grid-column:1/-1;padding:32px"><i data-lucide="folder-tree" class="sop-empty-icon"></i>Preparando estructura del mes…<br><span style="font-size:.85rem">Deben aparecer Anexo FIDU, Facturas FIDU y U C Q N.</span></div>';
     } else if (!lista.length) {
       const enContenedor = (armState.diasParentId || 0) > 0;
       grid.innerHTML = enContenedor
         ? '<div class="sop-empty" style="grid-column:1/-1;padding:32px"><i data-lucide="folder-open" class="sop-empty-icon"></i>Esta carpeta está vacía.<br><span style="font-size:.85rem">Arrastre carpetas aquí o cree una nueva.</span></div>'
-        : '<div class="sop-empty" style="grid-column:1/-1;padding:32px"><i data-lucide="folder-open" class="sop-empty-icon"></i>Sin carpetas en este nivel</div>';
+        : '<div class="sop-empty" style="grid-column:1/-1;padding:32px"><i data-lucide="folder-tree" class="sop-empty-icon"></i>Debe ver aquí <strong>Anexo FIDU</strong>, <strong>Facturas FIDU</strong> y <strong>U C Q N</strong>.<br><span style="font-size:.85rem">Use <strong>Reparar ahora</strong> si no aparecen.</span></div>';
     } else if (viewMode === 'list') {
       grid.innerHTML = `<div class="sop-table-wrap"><table class="sop-table sop-folder-list-table">
         <thead><tr><th style="width:40px"></th><th>Carpeta</th><th>Facturación</th><th>Contenido</th><th class="sop-folder-list-actions">Acciones</th></tr></thead>
@@ -4734,6 +4756,9 @@
   function modalNuevaContenedoraArmado() {
     if (!armState.periodoId) return sopToast('Seleccione un mes primero', 'warning');
     const parentId = armState.diasParentId || 0;
+    if (!parentId) {
+      return sopToast('En la raíz del mes solo existen Anexo FIDU, Facturas FIDU y U C Q N (automáticas). Entre en una para crear carpetas.', 'info');
+    }
     const dentroDe = parentId ? armDiaById(parentId) : null;
     const perLabel = armState.periodoLabel || '';
     const modal = openSopModal(`

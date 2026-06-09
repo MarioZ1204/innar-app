@@ -94,6 +94,27 @@ async function ensureAnexoCarpetaPeriodo(db, periodoRow) {
   return insertRowId(r);
 }
 
+async function buscarContenedoraRaizPeriodo(db, periodoId, def) {
+  const byModo = await db.query(
+    `SELECT id FROM sop_dias
+     WHERE periodo_id = ? AND parent_id = 0 AND es_contenedor = 1 AND modo = ?
+     ORDER BY orden ASC, id ASC LIMIT 1`,
+    [periodoId, def.modo]
+  );
+  if (byModo.length) return byModo[0].id;
+
+  const byNombre = await db.query(
+    `SELECT id FROM sop_dias
+     WHERE periodo_id = ? AND parent_id = 0
+       AND (nombre_display = ? OR UPPER(TRIM(nombre_display)) = UPPER(?))
+     ORDER BY es_contenedor DESC, id ASC LIMIT 1`,
+    [periodoId, def.nombre, def.nombre]
+  );
+  if (byNombre.length) return byNombre[0].id;
+
+  return null;
+}
+
 async function ensureContenedorasRaizPeriodo(db, periodoId, usuarioId = null) {
   const periodoRows = await db.query('SELECT * FROM sop_periodos WHERE id = ?', [periodoId]);
   if (!periodoRows.length) return [];
@@ -102,11 +123,16 @@ async function ensureContenedorasRaizPeriodo(db, periodoId, usuarioId = null) {
   const creadas = [];
 
   for (const def of CONTENEDORAS_RAIZ) {
-    const exists = await db.query(
-      'SELECT id FROM sop_dias WHERE periodo_id = ? AND parent_id = 0 AND modo = ? LIMIT 1',
-      [periodoId, def.modo]
-    );
-    if (exists.length) continue;
+    let existingId = await buscarContenedoraRaizPeriodo(db, periodoId, def);
+    if (existingId) {
+      await db.execute(
+        `UPDATE sop_dias SET nombre_display = ?, es_contenedor = 1, modo = ?, orden = ?, parent_id = 0
+         WHERE id = ?`,
+        [def.nombre, def.modo, def.orden, existingId]
+      );
+      continue;
+    }
+
     const diaNum = await nextSopDiaNumero(db, periodoId);
     const r = await db.execute(
       `INSERT INTO sop_dias (periodo_id, parent_id, dia, fecha, nombre_display, es_contenedor, modo, orden, estado_facturacion)

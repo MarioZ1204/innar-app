@@ -1197,6 +1197,15 @@ const runtimeMigrations = [
     }
   },
   {
+    name: 'rt_sop_fix_contenedoras_raiz_v2',
+    description: 'Repara contenedoras raíz (Anexo/Facturas/UCQN) si carpetas huérfanas bloquearon su creación',
+    run: async (db) => {
+      if (!(await tableExists(db, 'sop_dias'))) return;
+      const { backfillContenedorasTodosPeriodos } = require('../utils/soportes-armado-modos');
+      await backfillContenedorasTodosPeriodos(db);
+    }
+  },
+  {
     name: 'rt_sop_reparent_dias_facturacion',
     description: 'Mueve carpetas de día de facturación huérfanas (raíz) dentro de Facturas FIDU — sin borrar archivos',
     run: async (db) => {
