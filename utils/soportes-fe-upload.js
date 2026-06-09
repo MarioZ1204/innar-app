@@ -237,8 +237,24 @@ function validarPdfSoportes(tempPath, originalName) {
 async function ingestFeArchivo(exp, ctx, tempPath, originalName, usuarioId, tipoManual = null) {
 
   const contenedorTipo = ctx.contenedor_tipo || 'soportes';
+  const diaModo = ctx.dia_modo || 'facturacion';
 
-
+  if (diaModo === 'ucqn') {
+    try {
+      const { saveUcqnPdf } = require('./soportes-ucqn-upload');
+      const saved = await saveUcqnPdf(exp, tempPath, originalName, usuarioId);
+      return {
+        ok: true,
+        contenedor: 'soportes',
+        modo: 'ucqn',
+        tipo_detectado: 'PDF',
+        message: 'PDF guardado',
+        ...saved
+      };
+    } catch (e) {
+      return { ok: false, status: 400, error: e.message || 'No se pudo guardar el PDF' };
+    }
+  }
 
   if (contenedorTipo === 'rips') {
 

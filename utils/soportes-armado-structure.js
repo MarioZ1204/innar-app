@@ -152,15 +152,10 @@ function ordenarExpedientesFeLista(list) {
 }
 
 async function ensureContenedoresForDia(db, diaId) {
-  for (const tipo of CONTENEDOR_TIPOS) {
-    const exists = await db.query(
-      'SELECT id FROM sop_contenedores WHERE dia_id = ? AND tipo = ?',
-      [diaId, tipo]
-    );
-    if (!exists.length) {
-      await db.execute('INSERT INTO sop_contenedores (dia_id, tipo) VALUES (?,?)', [diaId, tipo]);
-    }
-  }
+  const rows = await db.query('SELECT modo FROM sop_dias WHERE id = ?', [diaId]);
+  const modo = rows[0]?.modo || 'facturacion';
+  const { ensureContenedoresForDiaModo } = require('./soportes-armado-modos');
+  await ensureContenedoresForDiaModo(db, diaId, modo);
 }
 
 module.exports = {

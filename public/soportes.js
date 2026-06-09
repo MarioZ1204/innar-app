@@ -822,7 +822,8 @@
     expedienteCodigo: null,
     vista: 'empty',
     expedientesLista: [],
-    diasParentId: 0
+    diasParentId: 0,
+    diaModo: 'facturacion'
   };
 
   const SOP_VIEW_LS = { pdx: 'innar.sop.pdx.folderView', arm: 'innar.sop.arm.folderView' };
@@ -2912,6 +2913,19 @@
     return armState.dias.find((d) => d.id === id);
   }
 
+  function armModoContenedoraActual() {
+    const parentId = armState.diasParentId || 0;
+    if (!parentId) return 'facturacion';
+    const p = armDiaById(parentId);
+    return p?.modo || 'facturacion';
+  }
+
+  function armLabelNuevaCarpetaModo(modo) {
+    if (modo === 'anexo_fidu') return 'Nuevo anexo';
+    if (modo === 'ucqn') return 'Nueva persona';
+    return 'Carpeta de día';
+  }
+
   function armDiasVisibles() {
     const parentId = armState.diasParentId || 0;
     return armState.dias.filter((d) => armDiaParentId(d) === parentId);
@@ -3210,8 +3224,7 @@
           ${htmlArmZipPaqueteBtn()}
           ${htmlArmZipUnificadoBtn()}
           ${htmlArmZipFacturadosBtn()}
-          ${puedeGestionarDia ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="btnSopArmNuevaContenedoraInline"><i data-lucide="folder-tree"></i> Contenedora</button>` : ''}
-          ${puedeGestionarDia ? `<button type="button" class="sop-btn sop-btn-teal" id="btnSopArmNuevoDiaInline"><i data-lucide="folder-plus"></i> Carpeta de día</button>` : ''}
+          ${puedeGestionarDia && armState.diasParentId ? `<button type="button" class="sop-btn sop-btn-teal" id="btnSopArmNuevoDiaInline"><i data-lucide="folder-plus"></i> ${escapeHtml(armLabelNuevaCarpetaModo(armModoContenedoraActual()))}</button>` : ''}
         </div>
       </div>
       <div class="sop-panel-body">
@@ -3267,7 +3280,6 @@
       bindArmadoDiaCardEvents(grid);
     }
     panel.querySelector('#btnSopArmNuevoDiaInline')?.addEventListener('click', modalNuevoDiaArmado);
-    panel.querySelector('#btnSopArmNuevaContenedoraInline')?.addEventListener('click', modalNuevaContenedoraArmado);
     sopIcons(panel);
     bindArmZipButtons(panel);
   }
@@ -3286,6 +3298,56 @@
     renderArmadoContextBar();
   }
 
+  function renderAnexoDiaPanel(diaRow, anexo) {
+    const panel = $('sopArmExpedientePanel');
+    const parent = diaRow?.parent_id ? armDiaById(diaRow.parent_id) : null;
+    const volverLabel = parent?.nombre_display || armState.periodoLabel || 'Mes';
+    const tieneExport = !!(anexo?.ruta_export);
+    panel.innerHTML = `<div class="sop-panel-head">
+        <div>
+          <h3 style="margin:0"><i data-lucide="file-spreadsheet"></i> ${escapeHtml(diaRow?.nombre_display || 'Anexo')}</h3>
+          <div style="font-size:.85rem;color:#64748b;margin-top:4px">${anexo?.total_registros || 0} fila(s) en el módulo Anexo</div>
+        </div>
+        <div class="sop-panel-head-tools" style="display:flex;gap:8px;flex-wrap:wrap">
+          <button type="button" class="sop-btn sop-btn-teal sop-btn-sm" id="btnSopAnexoAbrirModulo"><i data-lucide="external-link"></i> Abrir en Anexo</button>
+          <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="btnSopAnexoDescargar"${tieneExport ? '' : ' disabled'}><i data-lucide="download"></i> Descargar Excel</button>
+          <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="btnSopAnexoSync"><i data-lucide="refresh-cw"></i> Actualizar Excel</button>
+          <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="btnSopArmVolverAnexoCont"><i data-lucide="arrow-left"></i> ${escapeHtml(volverLabel)}</button>
+        </div>
+      </div>
+      <div class="sop-panel-body">
+        <div class="sop-empty" style="padding:28px;text-align:left;max-width:520px;margin:0 auto">
+          <p style="margin:0 0 10px">Este anexo está vinculado al módulo <strong>Anexo FIDU</strong>. Edite filas allí; al exportar, el Excel queda guardado aquí para descarga.</p>
+          ${tieneExport ? `<p style="margin:0;font-size:.85rem;color:#64748b">Último export: <code>${escapeHtml(anexo.ruta_export.split('/').pop())}</code></p>` : '<p style="margin:0;font-size:.85rem;color:#64748b">Aún no hay Excel exportado — use «Actualizar Excel» o exporte desde Anexo.</p>'}
+        </div>
+      </div>`;
+    panel.querySelector('#btnSopArmVolverAnexoCont')?.addEventListener('click', () => {
+      if (parent?.id) navegarArmDiasExplorer(parent.id);
+      else seleccionarPeriodoArmado(armState.periodoId);
+    });
+    panel.querySelector('#btnSopAnexoAbrirModulo')?.addEventListener('click', () => {
+      if (!anexo?.archivo_id) return sopToast('Sin anexo vinculado', 'warning');
+      if (typeof window.abrirAnexoFiduArchivo === 'function') {
+        window.abrirAnexoFiduArchivo(anexo.archivo_id);
+      } else {
+        sopToast('Módulo Anexo no disponible', 'error');
+      }
+    });
+    panel.querySelector('#btnSopAnexoDescargar')?.addEventListener('click', () => {
+      if (!diaRow?.id) return;
+      iniciarDescargaArchivoEnlace(`/api/soportes/armado/dias/${diaRow.id}/descargar-anexo`);
+    });
+    panel.querySelector('#btnSopAnexoSync')?.addEventListener('click', async () => {
+      const res = await apiFetch(`/api/soportes/armado/dias/${diaRow.id}/sync-anexo-export`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) { sopToast(data.error || 'Error', 'error'); return; }
+      sopToast('Excel actualizado en Soportes', 'success');
+      await seleccionarDiaArmado(diaRow.id);
+    });
+    sopIcons(panel);
+    renderArmadoContextBar();
+  }
+
   async function seleccionarDiaArmado(id) {
     armState.diaId = id;
     armState.contenedorId = null;
@@ -3295,8 +3357,24 @@
     armState.vista = 'day';
     const diaRow = armState.dias.find((d) => d.id === id);
     armState.diaLabel = diaRow?.nombre_display || 'Carpeta';
+    armState.diaModo = diaRow?.modo || 'facturacion';
     armState.diaFacturacion = diaRow?.estado_facturacion || 'a_facturar';
     const panel = $('sopArmExpedientePanel');
+    panel.innerHTML = `<div class="sop-panel-body"><div class="sop-empty"><i data-lucide="loader"></i></div></div>`;
+    const res = await apiFetch(`/api/soportes/armado/dias/${id}/contenedores`);
+    const data = await res.json();
+    if (!res.ok) { sopToast(data.error || 'Error', 'error'); return; }
+    armState.diaModo = data.modo || armState.diaModo;
+    if (data.modo === 'anexo_fidu') {
+      renderAnexoDiaPanel(diaRow, data.anexo);
+      return;
+    }
+    if (data.modo === 'ucqn' && data.ucqn_expediente_id) {
+      armState.contenedorId = data.contenedores?.[0]?.id || null;
+      armState.contenedorTipo = 'soportes';
+      await abrirExpedienteArmado(data.ucqn_expediente_id);
+      return;
+    }
     panel.innerHTML = `<div class="sop-panel-head">
         <div>
           <h3 style="margin:0"><i data-lucide="folder-open"></i> ${escapeHtml(armState.diaLabel)}</h3>
@@ -3308,12 +3386,10 @@
         </div>
       </div>
       <div class="sop-panel-body">
-        <div id="sopArmContenedoresGrid" class="sop-folder-explorer-grid sop-folder-explorer-grid--2"><div class="sop-empty"><i data-lucide="loader"></i></div></div>
+        <div id="sopArmContenedoresGrid" class="sop-folder-explorer-grid sop-folder-explorer-grid--2"></div>
       </div>`;
     panel.querySelector('#btnSopArmVolverMes')?.addEventListener('click', () => seleccionarPeriodoArmado(armState.periodoId));
     bindArmZipButtons(panel);
-    const res = await apiFetch(`/api/soportes/armado/dias/${id}/contenedores`);
-    const data = await res.json();
     armState.contenedores = data.contenedores || [];
     const grid = panel.querySelector('#sopArmContenedoresGrid');
     if (!armState.contenedores.length) {
@@ -3829,6 +3905,78 @@
     };
   }
 
+  function renderUcqnExpedientePanel(expId, e) {
+    const panel = $('sopArmExpedientePanel');
+    const pdfs = e.pdfs || [];
+    const diaPersona = armDiaById(armState.diaId);
+    const parent = diaPersona?.parent_id ? armDiaById(diaPersona.parent_id) : null;
+    const volverCont = parent?.nombre_display || 'UCQN';
+    panel.innerHTML = `<div class="sop-panel-head">
+        <div>
+          <h3 style="margin:0"><i data-lucide="user"></i> ${escapeHtml(e.paciente_nombre || e.codigo || 'Persona')}</h3>
+          <div style="font-size:.85rem;color:#64748b;margin-top:4px">UCQN · ${pdfs.length} PDF</div>
+        </div>
+        <div class="sop-panel-head-tools" style="display:flex;gap:8px;flex-wrap:wrap">
+          <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="btnSopUcqnVolver"><i data-lucide="arrow-left"></i> ${escapeHtml(volverCont)}</button>
+        </div>
+      </div>
+      <div class="sop-panel-body">
+        ${sopPerm('soportes.armado.subir') ? `<div id="sopUcqnDropzone" class="sop-dropzone sop-dropzone-compact" style="margin-bottom:16px">
+          <div class="sop-dropzone-label"><i data-lucide="upload-cloud"></i> Subir PDF (varios permitidos)</div>
+          <input type="file" id="sopUcqnUploadInput" class="sop-file-input-hidden" accept=".pdf,application/pdf" multiple>
+        </div>` : ''}
+        <div id="sopUcqnPdfList" class="sop-table-wrap">${pdfs.length ? `<table class="sop-table">
+          <thead><tr><th>Archivo</th><th>Tamaño</th><th class="sop-folder-list-actions">Acciones</th></tr></thead>
+          <tbody>${pdfs.map((p) => `<tr>
+            <td>${escapeHtml(p.nombre_original || p.nombre_archivo)}</td>
+            <td>${Math.round((p.tamano_bytes || 0) / 1024)} KB</td>
+            <td class="sop-folder-list-actions">
+              <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-ucqn-ver="${p.id}"><i data-lucide="eye"></i></button>
+              <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-ucqn-dl="${p.id}"><i data-lucide="download"></i></button>
+              ${sopPerm('soportes.armado.crear_estructura') ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-ucqn-del="${p.id}" style="color:#dc2626"><i data-lucide="trash-2"></i></button>` : ''}
+            </td>
+          </tr>`).join('')}</tbody></table>` : '<div class="sop-empty">Sin PDF — suba el primero</div>'}
+        </div>
+      </div>`;
+    panel.querySelector('#btnSopUcqnVolver')?.addEventListener('click', () => {
+      if (parent?.id) navegarArmDiasExplorer(parent.id);
+      else seleccionarPeriodoArmado(armState.periodoId);
+    });
+    const dz = panel.querySelector('#sopUcqnDropzone');
+    const inp = panel.querySelector('#sopUcqnUploadInput');
+    if (dz && inp) {
+      dz.addEventListener('click', () => inp.click());
+      inp.addEventListener('change', async () => {
+        const files = [...(inp.files || [])];
+        inp.value = '';
+        for (const f of files) {
+          const fd = new FormData();
+          fd.append('file', f);
+          const res = await apiFetch(`/api/soportes/armado/expedientes/${expId}/upload`, { method: 'POST', body: fd });
+          const data = await res.json();
+          if (!res.ok) sopToast(data.error || `Error: ${f.name}`, 'error');
+        }
+        await abrirExpedienteArmado(expId);
+      });
+    }
+    panel.querySelectorAll('[data-ucqn-ver]').forEach((b) => {
+      b.addEventListener('click', () => abrirPdfEnNavegador(`/api/soportes/armado/expedientes/${expId}/pdfs/${parseInt(b.dataset.ucqnVer, 10)}/ver`));
+    });
+    panel.querySelectorAll('[data-ucqn-dl]').forEach((b) => {
+      b.addEventListener('click', () => iniciarDescargaArchivoEnlace(`/api/soportes/armado/expedientes/${expId}/pdfs/${parseInt(b.dataset.ucqnDl, 10)}/descargar`));
+    });
+    panel.querySelectorAll('[data-ucqn-del]').forEach((b) => {
+      b.addEventListener('click', async () => {
+        if (!confirm('¿Eliminar este PDF?')) return;
+        const res = await apiFetch(`/api/soportes/armado/expedientes/${expId}/pdfs/${parseInt(b.dataset.ucqnDel, 10)}`, { method: 'DELETE' });
+        if (!res.ok) { const d = await res.json(); sopToast(d.error, 'error'); return; }
+        await abrirExpedienteArmado(expId);
+      });
+    });
+    sopIcons(panel);
+    renderArmadoContextBar();
+  }
+
   async function abrirExpedienteArmado(id) {
     armState.expedienteId = id;
     armState.vista = 'expediente';
@@ -3840,6 +3988,10 @@
     armState.expedienteDetalle = e;
     armState.expedienteCodigo = e.codigo || `FE${id}`;
     const panel = $('sopArmExpedientePanel');
+    if (e.modo === 'ucqn' || armState.diaModo === 'ucqn') {
+      renderUcqnExpedientePanel(id, e);
+      return;
+    }
     const tipoLabel = labelContenedorArmado(armState.contenedorTipo);
     const esRips = e.contenedor_tipo === 'rips';
     const nit = e.nit_obligado || '—';
@@ -4613,20 +4765,26 @@
   function modalNuevoDiaArmado() {
     if (!armState.periodoId) return sopToast('Seleccione un mes primero', 'warning');
     const parentId = armState.diasParentId || 0;
-    const dentroDe = parentId ? armDiaById(parentId) : null;
-    const perLabel = armState.periodoLabel || '';
+    if (!parentId) return sopToast('Entre en Facturas FIDU, Anexo FIDU o U C Q N para crear carpetas', 'warning');
+    const dentroDe = armDiaById(parentId);
+    const modo = dentroDe?.modo || 'facturacion';
+    const titulo = armLabelNuevaCarpetaModo(modo);
+    const hint = modo === 'anexo_fidu'
+      ? 'Se vinculará al módulo <strong>Anexo FIDU</strong> para editar filas y exportar Excel.'
+      : modo === 'ucqn'
+        ? 'Carpeta de persona para guardar varios PDF sin tipificación.'
+        : 'Se crearán automáticamente las carpetas <strong>RIPS</strong> y <strong>SOPORTES</strong>.';
+    const placeholder = modo === 'ucqn' ? 'Ej: Juan Pérez García' : modo === 'anexo_fidu' ? 'Ej: ANEXO 1 JUNIO' : 'Ej: MAYO 1, MAYO 2-3';
     const modal = openSopModal(`
-      <h3><i data-lucide="folder-plus"></i> Nueva carpeta de día</h3>
-      ${dentroDe
-        ? `<p style="font-size:.85rem;color:#64748b;margin:-6px 0 12px">Dentro de <strong>${escapeHtml(dentroDe.nombre_display)}</strong>. Se crearán automáticamente las carpetas <strong>RIPS</strong> y <strong>SOPORTES</strong>.</p>`
-        : `<p style="font-size:.85rem;color:#64748b;margin:-6px 0 12px">Dentro de <strong>${escapeHtml(perLabel)}</strong>. Se crearán automáticamente las carpetas <strong>RIPS</strong> y <strong>SOPORTES</strong>.</p>`}
-      <div class="sop-field"><label>Nombre de la carpeta</label>
-        <input id="sopArmDiaNom" placeholder="Ej: MAYO 1, MAYO 2-3"></div>
-      <div class="sop-field"><label>Estado de facturación</label>
+      <h3><i data-lucide="folder-plus"></i> ${escapeHtml(titulo)}</h3>
+      <p style="font-size:.85rem;color:#64748b;margin:-6px 0 12px">Dentro de <strong>${escapeHtml(dentroDe?.nombre_display || '')}</strong>. ${hint}</p>
+      <div class="sop-field"><label>Nombre</label>
+        <input id="sopArmDiaNom" placeholder="${escapeHtml(placeholder)}"></div>
+      ${modo === 'facturacion' ? `<div class="sop-field"><label>Estado de facturación</label>
         <select id="sopArmDiaFact">
           <option value="a_facturar">A facturar</option>
           <option value="facturados">Facturados</option>
-        </select></div>
+        </select></div>` : ''}
       <div class="sop-dialog-actions">
         <button type="button" class="sop-btn sop-btn-ghost" id="sopArmDiaCancel">Cancelar</button>
         <button type="button" class="sop-btn sop-btn-teal" id="sopArmDiaOk">Crear carpeta</button>
@@ -4634,8 +4792,8 @@
     modal.querySelector('#sopArmDiaCancel').onclick = () => closeSopModal(modal);
     modal.querySelector('#sopArmDiaOk').onclick = async () => {
       const nombre_display = $('sopArmDiaNom').value.trim();
-      const estado_facturacion = $('sopArmDiaFact').value;
-      if (!nombre_display) return sopToast('Indique el nombre de la carpeta', 'warning');
+      const estado_facturacion = $('sopArmDiaFact')?.value || 'a_facturar';
+      if (!nombre_display) return sopToast('Indique el nombre', 'warning');
       const res = await apiFetch(`/api/soportes/armado/periodos/${armState.periodoId}/dias`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -4644,7 +4802,7 @@
       const data = await res.json();
       if (!res.ok) { sopToast(data.error, 'error'); return; }
       closeSopModal(modal);
-      sopToast('Carpeta creada con RIPS y SOPORTES', 'success');
+      sopToast(modo === 'ucqn' ? 'Persona creada' : modo === 'anexo_fidu' ? 'Anexo creado y vinculado' : 'Carpeta creada con RIPS y SOPORTES', 'success');
       const savedParent = armState.diasParentId;
       await seleccionarPeriodoArmado(armState.periodoId);
       armState.diasParentId = savedParent;
@@ -4717,9 +4875,8 @@
     const canEstructura = sopPerm('soportes.armado.crear_estructura');
     const btnCont = $('btnSopArmNuevaContenedora');
     const btnDia = $('btnSopArmNuevoDia');
-    if (btnCont) btnCont.style.display = canEstructura ? '' : 'none';
+    if (btnCont) btnCont.style.display = 'none';
     if (btnDia) btnDia.style.display = canEstructura ? '' : 'none';
-    $('btnSopArmNuevaContenedora')?.addEventListener('click', modalNuevaContenedoraArmado);
     $('btnSopArmNuevoDia')?.addEventListener('click', modalNuevoDiaArmado);
     $('sopArmBuscarPaciente')?.addEventListener('input', buscarArmadoPacientePredictivo);
     $('sopArmBuscarPaciente')?.addEventListener('keydown', (e) => {

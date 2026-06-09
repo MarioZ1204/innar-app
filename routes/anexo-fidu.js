@@ -784,6 +784,13 @@ router.get('/anexo-fidu/exportar', requireAuth, requirePermiso(PERM_ANEXO_FIDU),
     );
     const { buffer, filename } = await buildAnexoFiduExcelBuffer(rows, { nombreArchivo: meta.nombre });
 
+    try {
+      const { guardarExportAnexoEnSoportes } = require('../utils/soportes-anexo-sync');
+      await guardarExportAnexoEnSoportes(archivoId);
+    } catch (syncErr) {
+      logger.warn('[ANEXO-FIDU] sync soportes:', syncErr.message);
+    }
+
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(Buffer.from(buffer));

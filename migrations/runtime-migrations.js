@@ -1122,6 +1122,81 @@ const runtimeMigrations = [
     }
   },
   {
+    name: 'rt_sop_dias_modo_flujos',
+    description: 'Modos de carpeta armado: facturacion, anexo_fidu, ucqn + vínculo anexo + PDF múltiples',
+    run: async (db) => {
+      if (!(await tableExists(db, 'sop_dias'))) return;
+      if (!(await columnExists(db, 'sop_dias', 'modo'))) {
+        await db.execute(
+          "ALTER TABLE sop_dias ADD COLUMN modo ENUM('facturacion','anexo_fidu','ucqn') NOT NULL DEFAULT 'facturacion' AFTER es_contenedor"
+        );
+      }
+      if (!(await columnExists(db, 'sop_dias', 'anexo_archivo_id'))) {
+        await db.execute(
+          'ALTER TABLE sop_dias ADD COLUMN anexo_archivo_id INT UNSIGNED NULL AFTER modo'
+        );
+      }
+      try {
+        await db.execute('ALTER TABLE sop_dias DROP INDEX uk_sop_dia_nombre');
+      } catch (_) { /* ya actualizado */ }
+      try {
+        await db.execute(
+          'ALTER TABLE sop_dias ADD UNIQUE KEY uk_sop_dia_padre_nombre (periodo_id, parent_id, nombre_display)'
+        );
+      } catch (e) {
+        if (!String(e.message || '').includes('Duplicate key name')) throw e;
+      }
+      if (await tableExists(db, 'anexo_fidu_archivos')) {
+        if (!(await columnExists(db, 'anexo_fidu_archivos', 'sop_dia_id'))) {
+          await db.execute(
+            'ALTER TABLE anexo_fidu_archivos ADD COLUMN sop_dia_id INT UNSIGNED NULL AFTER nombre'
+          );
+        }
+        if (!(await columnExists(db, 'anexo_fidu_archivos', 'ruta_export'))) {
+          await db.execute(
+            'ALTER TABLE anexo_fidu_archivos ADD COLUMN ruta_export VARCHAR(500) NULL AFTER sop_dia_id'
+          );
+        }
+      }
+      if (await tableExists(db, 'sop_exp_archivos')) {
+        const col = await db.query(
+          "SELECT COLUMN_TYPE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'sop_exp_archivos' AND COLUMN_NAME = 'tipo'"
+        );
+        const tipo = col[0]?.COLUMN_TYPE || '';
+        if (!tipo.includes('PDF')) {
+          await db.execute(
+            "ALTER TABLE sop_exp_archivos MODIFY tipo ENUM('OPF','CRC','FEV','PDX','HEV','PDF') NOT NULL"
+          );
+        }
+        try {
+          await db.execute('ALTER TABLE sop_exp_archivos DROP INDEX uk_sop_exp_tipo');
+        } catch (_) { /* ya eliminado */ }
+        try {
+          await db.execute(
+            'ALTER TABLE sop_exp_archivos ADD UNIQUE KEY uk_sop_exp_ruta (expediente_id, ruta_relativa(255))'
+          );
+        } catch (e) {
+          if (!String(e.message || '').includes('Duplicate key name')) throw e;
+        }
+      }
+      const { backfillContenedorasTodosPeriodos } = require('../utils/soportes-armado-modos');
+      await backfillContenedorasTodosPeriodos(db);
+      const mapNom = [
+        ['Anexo FIDU', 'anexo_fidu', 1],
+        ['Facturas FIDU', 'facturacion', 2],
+        ['U C Q N', 'ucqn', 3]
+      ];
+      for (const [nom, modo, orden] of mapNom) {
+        await db.execute(
+          `UPDATE sop_dias SET modo = ?, orden = ?, es_contenedor = 1
+           WHERE es_contenedor = 1 AND (nombre_display = ? OR nombre_display LIKE ?)
+           AND parent_id = 0`,
+          [modo, orden, nom, `${nom}%`]
+        );
+      }
+    }
+  },
+  {
     name: 'rt_sop_pdx_orphans_cleanup',
     description: 'Elimina archivos PDX huérfanos (carpeta_id sin carpeta en sop_pdx_carpetas)',
     run: async (db) => {

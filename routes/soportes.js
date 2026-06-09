@@ -60,6 +60,18 @@ const {
   normalizarParentId: normalizarParentIdDia,
   validarMoverDiaArmado
 } = require('../utils/soportes-armado-dias-tree');
+const {
+  normalizarModoDia,
+  fetchModoParentContenedora,
+  ensureContenedorasRaizPeriodo,
+  crearAnexoArchivoParaDia,
+  asegurarExpedienteUcqn,
+  esModoAnexo,
+  esModoUcqn,
+  esModoFacturacion
+} = require('../utils/soportes-armado-modos');
+const { buildUcqnExpedienteDetail } = require('../utils/soportes-ucqn-upload');
+const { guardarExportAnexoEnSoportes } = require('../utils/soportes-anexo-sync');
 const { ingestFeArchivo } = require('../utils/soportes-fe-upload');
 const {
   slotRequirements,
@@ -1486,7 +1498,8 @@ router.post(
 async function resolveExpedienteContext(expedienteId) {
   const rows = await db.query(
     `SELECT e.*, c.tipo AS contenedor_tipo, c.id AS contenedor_id,
-            d.id AS dia_id, d.dia, d.nombre_display, d.estado_facturacion,
+            d.id AS dia_id, d.dia, d.nombre_display, d.estado_facturacion, d.modo AS dia_modo,
+            d.anexo_archivo_id, d.parent_id AS dia_parent_id,
             p.periodo, p.etiqueta AS periodo_etiqueta
      FROM sop_expedientes e
      LEFT JOIN sop_contenedores c ON c.id = e.contenedor_id
@@ -1500,7 +1513,8 @@ async function resolveExpedienteContext(expedienteId) {
 
 async function resolveContenedorContext(contenedorId) {
   const rows = await db.query(
-    `SELECT c.*, c.tipo AS contenedor_tipo, d.dia, d.nombre_display, d.estado_facturacion, d.periodo_id, p.periodo, p.etiqueta AS periodo_etiqueta
+    `SELECT c.*, c.tipo AS contenedor_tipo, d.dia, d.nombre_display, d.estado_facturacion, d.modo AS dia_modo,
+            d.anexo_archivo_id, d.periodo_id, p.periodo, p.etiqueta AS periodo_etiqueta
      FROM sop_contenedores c
      JOIN sop_dias d ON d.id = c.dia_id
      JOIN sop_periodos p ON p.id = d.periodo_id
@@ -1516,6 +1530,8 @@ function mapDia(row) {
     periodo_id: row.periodo_id,
     parent_id: normalizarParentIdDia(row.parent_id),
     es_contenedor: !!row.es_contenedor,
+    modo: normalizarModoDia(row.modo),
+    anexo_archivo_id: row.anexo_archivo_id || null,
     orden: row.orden || 0,
     dia: row.dia,
     fecha: row.fecha,
@@ -1580,6 +1596,7 @@ router.post('/soportes/armado/periodos', requireAuth, requireRoleOrPerm(ROLES_SO
     if (!periodoId) return res.status(500).json({ error: 'No se pudo crear el periodo' });
     const rows = await db.query('SELECT * FROM sop_periodos WHERE id = ?', [periodoId]);
     if (!rows.length) return res.status(500).json({ error: 'Periodo creado pero no encontrado' });
+    await ensureContenedorasRaizPeriodo(db, periodoId, req.session.usuarioId);
     res.status(201).json({ ok: true, periodo: mapPeriodo({ ...rows[0], expedientes_count: 0 }) });
   } catch (e) {
     if (String(e.message).includes('Duplicate')) return res.status(409).json({ error: 'El periodo ya existe' });
@@ -1590,6 +1607,7 @@ router.post('/soportes/armado/periodos', requireAuth, requireRoleOrPerm(ROLES_SO
 
 router.get('/soportes/armado/periodos/:id/dias', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'modulo.armado_soportes'), async (req, res) => {
   try {
+    await ensureContenedorasRaizPeriodo(db, parseInt(req.params.id, 10));
     const dias = await db.query(
       `SELECT d.*,
         COUNT(DISTINCT e.id) AS expedientes_count,
@@ -1616,8 +1634,14 @@ router.post('/soportes/armado/periodos/:id/dias', requireAuth, requireRoleOrPerm
     const es_contenedor = req.body?.es_contenedor === true
       || req.body?.es_contenedor === 1
       || req.body?.es_contenedor === '1';
+    if (es_contenedor && !parent_id) {
+      return res.status(400).json({ error: 'Las carpetas contenedoras del mes (Anexo FIDU, Facturas FIDU, U C Q N) se crean automáticamente.' });
+    }
     const estado_facturacion = req.body.estado_facturacion === 'facturados' ? 'facturados' : 'a_facturar';
     if (!nombre_display) return res.status(400).json({ error: 'Indique el nombre de la carpeta del día (ej: MAYO 1, MAYO 2-3)' });
+    const modo = es_contenedor
+      ? normalizarModoDia(req.body?.modo || 'facturacion')
+      : await fetchModoParentContenedora(db, parent_id);
     const periodo = await db.query('SELECT periodo FROM sop_periodos WHERE id = ?', [periodoId]);
     if (!periodo.length) return res.status(404).json({ error: 'Periodo no encontrado' });
     if (parent_id > 0) {
@@ -1640,9 +1664,9 @@ router.post('/soportes/armado/periodos/:id/dias', requireAuth, requireRoleOrPerm
     const fechaDate = req.body.fecha || `${periodo[0].periodo}-01`;
     const diaNum = await nextSopDiaNumero(db, periodoId);
     const r = await db.execute(
-      `INSERT INTO sop_dias (periodo_id, parent_id, dia, fecha, nombre_display, es_contenedor, estado_facturacion)
-       VALUES (?,?,?,?,?,?,?)`,
-      [periodoId, parent_id, diaNum, fechaDate, nombre_display, es_contenedor ? 1 : 0, estado_facturacion]
+      `INSERT INTO sop_dias (periodo_id, parent_id, dia, fecha, nombre_display, es_contenedor, modo, estado_facturacion)
+       VALUES (?,?,?,?,?,?,?,?)`,
+      [periodoId, parent_id, diaNum, fechaDate, nombre_display, es_contenedor ? 1 : 0, modo, estado_facturacion]
     );
     const diaId = pdxInsertId(r);
     if (!diaId) return res.status(500).json({ error: 'No se pudo crear la carpeta del día' });
@@ -1650,6 +1674,14 @@ router.post('/soportes/armado/periodos/:id/dias', requireAuth, requireRoleOrPerm
     if (!es_contenedor) {
       try {
         await ensureContenedoresForDia(db, diaId);
+        if (esModoAnexo(modo)) {
+          const diaTmp = { id: diaId, periodo_id: periodoId, parent_id, nombre_display };
+          const anexoRes = await crearAnexoArchivoParaDia(db, diaTmp, req.session.usuarioId);
+          if (anexoRes.error) throw new Error(anexoRes.error);
+        }
+        if (esModoUcqn(modo)) {
+          await asegurarExpedienteUcqn(db, diaId, nombre_display, req.session.usuarioId);
+        }
       } catch (contErr) {
         await db.execute('DELETE FROM sop_dias WHERE id = ?', [diaId]).catch(() => {});
         logger.error('[SOPORTES] crear dia contenedores:', contErr);
@@ -1713,15 +1745,138 @@ router.delete('/soportes/armado/dias/:id', requireAuth, requireRoleOrPerm(ROLES_
   }
 });
 
+router.post('/soportes/armado/dias/:id/sync-anexo-export', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'modulo.armado_soportes'), async (req, res) => {
+  try {
+    const diaRows = await db.query('SELECT * FROM sop_dias WHERE id = ?', [req.params.id]);
+    if (!diaRows.length) return res.status(404).json({ error: 'Carpeta no encontrada' });
+    if (!esModoAnexo(diaRows[0].modo)) return res.status(400).json({ error: 'No es una carpeta de Anexo FIDU' });
+    const archivoId = diaRows[0].anexo_archivo_id;
+    if (!archivoId) return res.status(400).json({ error: 'Sin anexo vinculado' });
+    const sync = await guardarExportAnexoEnSoportes(archivoId);
+    if (!sync.ok) return res.status(400).json({ error: sync.error || 'No se pudo exportar' });
+    res.json({ ok: true, ...sync });
+  } catch (e) {
+    logger.error('[SOPORTES] sync anexo export:', e);
+    res.status(500).json({ error: safeError(e) });
+  }
+});
+
+router.get('/soportes/armado/dias/:id/descargar-anexo', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'modulo.armado_soportes'), async (req, res) => {
+  try {
+    const diaRows = await db.query('SELECT * FROM sop_dias WHERE id = ?', [req.params.id]);
+    if (!diaRows.length) return res.status(404).json({ error: 'Carpeta no encontrada' });
+    const archivoId = diaRows[0].anexo_archivo_id;
+    if (!archivoId) return res.status(404).json({ error: 'Sin anexo vinculado' });
+    let arch = await db.query('SELECT * FROM anexo_fidu_archivos WHERE id = ?', [archivoId]);
+    if (!arch.length) return res.status(404).json({ error: 'Anexo no encontrado' });
+    if (!arch[0].ruta_export) {
+      const sync = await guardarExportAnexoEnSoportes(archivoId);
+      if (!sync.ok) return res.status(404).json({ error: 'Exporte el anexo desde el módulo Anexo primero' });
+      arch = await db.query('SELECT * FROM anexo_fidu_archivos WHERE id = ?', [archivoId]);
+    }
+    const fp = resolveArchivoAbsoluto({ ruta_relativa: arch[0].ruta_export });
+    if (!fp || !fs.existsSync(fp)) return res.status(404).json({ error: 'Archivo Excel no encontrado en disco' });
+    const name = path.basename(fp);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${name}"; filename*=UTF-8''${encodeURIComponent(name)}`);
+    fs.createReadStream(fp).pipe(res);
+  } catch (e) {
+    logger.error('[SOPORTES] descargar anexo:', e);
+    if (!res.headersSent) res.status(500).json({ error: safeError(e) });
+  }
+});
+
+router.get('/soportes/armado/expedientes/:id/pdfs/:archivoId/ver', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'modulo.armado_soportes'), async (req, res) => {
+  try {
+    const rows = await db.query(
+      "SELECT a.* FROM sop_exp_archivos a WHERE a.id = ? AND a.expediente_id = ? AND a.tipo = 'PDF'",
+      [req.params.archivoId, req.params.id]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'PDF no encontrado' });
+    const fp = resolveArchivoAbsoluto(rows[0]);
+    if (!fp || !fs.existsSync(fp)) return res.status(404).json({ error: 'Archivo no en disco' });
+    const name = rows[0].nombre_original || rows[0].nombre_archivo || 'documento.pdf';
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${String(name).replace(/"/g, '')}"`);
+    fs.createReadStream(fp).pipe(res);
+  } catch (e) {
+    if (!res.headersSent) res.status(500).json({ error: safeError(e) });
+  }
+});
+
+router.get('/soportes/armado/expedientes/:id/pdfs/:archivoId/descargar', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'modulo.armado_soportes'), async (req, res) => {
+  try {
+    const rows = await db.query(
+      "SELECT a.* FROM sop_exp_archivos a WHERE a.id = ? AND a.expediente_id = ? AND a.tipo = 'PDF'",
+      [req.params.archivoId, req.params.id]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'PDF no encontrado' });
+    const fp = resolveArchivoAbsoluto(rows[0]);
+    if (!fp || !fs.existsSync(fp)) return res.status(404).json({ error: 'Archivo no en disco' });
+    const name = rows[0].nombre_original || rows[0].nombre_archivo || 'documento.pdf';
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${String(name).replace(/"/g, '')}"`);
+    fs.createReadStream(fp).pipe(res);
+  } catch (e) {
+    if (!res.headersSent) res.status(500).json({ error: safeError(e) });
+  }
+});
+
+router.delete('/soportes/armado/expedientes/:id/pdfs/:archivoId', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'soportes.armado.crear_estructura'), async (req, res) => {
+  try {
+    const rows = await db.query(
+      `SELECT a.* FROM sop_exp_archivos a JOIN sop_expedientes e ON e.id = a.expediente_id
+       JOIN sop_dias d ON d.id = e.dia_id WHERE a.id = ? AND a.expediente_id = ? AND a.tipo = 'PDF' AND d.modo = 'ucqn'`,
+      [req.params.archivoId, req.params.id]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'PDF no encontrado' });
+    const fp = resolveArchivoAbsoluto(rows[0]);
+    if (fp && fs.existsSync(fp)) {
+      try { fs.unlinkSync(fp); } catch (_) { /* ignore */ }
+    }
+    await db.execute('DELETE FROM sop_exp_archivos WHERE id = ?', [rows[0].id]);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: safeError(e) });
+  }
+});
+
 router.get('/soportes/armado/dias/:id/contenedores', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'modulo.armado_soportes'), async (req, res) => {
   try {
     const dia = await db.query('SELECT * FROM sop_dias WHERE id = ?', [req.params.id]);
     if (!dia.length) return res.status(404).json({ error: 'Carpeta de día no encontrada' });
+    const modo = normalizarModoDia(dia[0].modo);
+    let anexo = null;
+    if (esModoAnexo(modo)) {
+      if (dia[0].anexo_archivo_id) {
+        const arch = await db.query(
+          `SELECT a.*, (SELECT COUNT(*) FROM anexo_fidu_registros r WHERE r.archivo_id = a.id) AS total_registros
+           FROM anexo_fidu_archivos a WHERE a.id = ?`,
+          [dia[0].anexo_archivo_id]
+        );
+        if (arch.length) {
+          anexo = {
+            archivo_id: arch[0].id,
+            nombre: arch[0].nombre,
+            ruta_export: arch[0].ruta_export || null,
+            total_registros: arch[0].total_registros || 0
+          };
+        }
+      }
+      return res.json({
+        dia: mapDia({ ...dia[0], expedientes_count: 0 }),
+        modo,
+        anexo,
+        contenedores: []
+      });
+    }
     await ensureContenedoresForDia(db, req.params.id);
-    try {
-      await syncRipsCarpetasDia(db, req.params.id, req.session?.usuarioId);
-    } catch (syncErr) {
-      logger.warn('[SOPORTES] sync RIPS carpetas:', syncErr.message);
+    if (esModoFacturacion(modo)) {
+      try {
+        await syncRipsCarpetasDia(db, req.params.id, req.session?.usuarioId);
+      } catch (syncErr) {
+        logger.warn('[SOPORTES] sync RIPS carpetas:', syncErr.message);
+      }
     }
     const contenedores = await db.query(
       `SELECT c.*, COUNT(e.id) AS expedientes_count
@@ -1731,7 +1886,25 @@ router.get('/soportes/armado/dias/:id/contenedores', requireAuth, requireRoleOrP
        GROUP BY c.id ORDER BY FIELD(c.tipo, 'rips', 'soportes')`,
       [req.params.id]
     );
-    res.json({ dia: mapDia({ ...dia[0], expedientes_count: contenedores.reduce((s, c) => s + (c.expedientes_count || 0), 0) }), contenedores: contenedores.map(mapContenedor) });
+    let ucqn_expediente_id = null;
+    if (esModoUcqn(modo)) {
+      const exp = await db.query(
+        `SELECT e.id FROM sop_expedientes e
+         JOIN sop_contenedores c ON c.id = e.contenedor_id
+         WHERE c.dia_id = ? LIMIT 1`,
+        [req.params.id]
+      );
+      ucqn_expediente_id = exp[0]?.id || null;
+      if (!ucqn_expediente_id) {
+        ucqn_expediente_id = await asegurarExpedienteUcqn(db, req.params.id, dia[0].nombre_display, req.session?.usuarioId);
+      }
+    }
+    res.json({
+      dia: mapDia({ ...dia[0], expedientes_count: contenedores.reduce((s, c) => s + (c.expedientes_count || 0), 0) }),
+      modo,
+      ucqn_expediente_id,
+      contenedores: contenedores.map(mapContenedor)
+    });
   } catch (e) {
     res.status(500).json({ error: safeError(e) });
   }
@@ -1741,6 +1914,9 @@ async function buildExpedienteDetail(expId) {
   const ctx = await resolveExpedienteContext(expId);
   if (!ctx) return null;
   const e = ctx;
+  if (esModoUcqn(e.dia_modo)) {
+    return buildUcqnExpedienteDetail(expId, e);
+  }
   const nit = getNitObligado();
   const req = slotRequirements(e.contenedor_tipo, e.tipo_servicio);
 
@@ -1916,6 +2092,10 @@ async function crearExpedienteEnContenedor(contenedorId, body, usuarioId) {
     return { error: `Ya existe la carpeta "${codigo}" en este contenedor`, status: 409 };
   }
 
+  const diaModo = ctx.dia_modo || await fetchModoParentContenedora(db, ctx.dia_id);
+  if (esModoUcqn(diaModo)) {
+    return { error: 'En UCQN cree una carpeta por persona desde el explorador del mes', status: 400 };
+  }
   await ensureContenedoresForDia(db, ctx.dia_id);
   getArmadoFeDirFromContext(ctx, codigo);
   const ts = 'electro';
@@ -1925,8 +2105,10 @@ async function crearExpedienteEnContenedor(contenedorId, body, usuarioId) {
     [ctx.dia_id, contenedorId, codigo, numero, pacienteNombre, null, ts, usuarioId]
   );
   try {
-    await ensureFeParEnContenedorHermano(db, ctx.dia_id, contenedorId, codigo, numero, ts, usuarioId, pacienteNombre);
-    await syncRipsCarpetasDia(db, ctx.dia_id, usuarioId);
+    if (esModoFacturacion(diaModo)) {
+      await ensureFeParEnContenedorHermano(db, ctx.dia_id, contenedorId, codigo, numero, ts, usuarioId, pacienteNombre);
+      await syncRipsCarpetasDia(db, ctx.dia_id, usuarioId);
+    }
   } catch (e) {
     logger.warn('[SOPORTES] carpeta par RIPS/SOPORTES:', e.message);
   }

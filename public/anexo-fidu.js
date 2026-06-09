@@ -1764,5 +1764,13 @@
   }
 
   window.initAnexoFidu = initAnexoFidu;
+  window.abrirAnexoFiduArchivo = async function abrirAnexoFiduArchivoDesdeSoportes(archivoId) {
+    const id = parseInt(archivoId, 10);
+    if (!id) return;
+    if (typeof goToModule === 'function') goToModule('anexo-fidu');
+    if (!afiduEventsBound && typeof initAnexoFidu === 'function') initAnexoFidu();
+    await new Promise((r) => setTimeout(r, 80));
+    await abrirArchivoAfidu(id);
+  };
   window.refreshAnexoFidu = refrescarVistaAfiduActual;
 })();
