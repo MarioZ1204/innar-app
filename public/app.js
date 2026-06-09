@@ -360,6 +360,13 @@ function agendaMedicaEsEstadoFinal(estado) {
   return ['ATENDIDO', 'NO_ASISTIO', 'CANCELADO', 'REPROGRAMADO'].includes(estado);
 }
 
+/** Cambiar solo la entidad en citas ya atendidas (recepción/admin con agenda.editar). */
+function puedeEditarEntidadCitaAtendida(turno) {
+  if (!turno || turno.estado !== 'ATENDIDO') return false;
+  if (currentUser?.rol === 'doctor') return false;
+  return tienePermiso('agenda.editar') || tienePermiso('agenda.editar_siempre');
+}
+
 function agendaMedicaPolicy(turno, opts = {}) {
   const estado = turno?.estado || 'EN_ESPERA';
   const hayEnAtencion = Boolean(opts.hayEnAtencion ?? globalHayEnAtencion);
@@ -13661,6 +13668,13 @@ function abrirModalEstadoCitaMedica(turno) {
   }
   if (editTipoWrap) editTipoWrap.style.display = 'none';
 
+  const btnEditEntidad = el('btnEditEntidadAtendida');
+  const editEntidadWrap = el('editEntidadAtendidaWrap');
+  if (btnEditEntidad) {
+    btnEditEntidad.style.display = puedeEditarEntidadCitaAtendida(turno) ? '' : 'none';
+  }
+  if (editEntidadWrap) editEntidadWrap.style.display = 'none';
+
   // Mostrar modal
   const modal = $('modalEstadoCitaMedica');
   if (typeof window.innarOpenModal === 'function') window.innarOpenModal(modal);
@@ -14370,6 +14384,63 @@ document.getElementById('btnSaveEditTipoAtendida')?.addEventListener('click', as
     }
   } catch (err) {
     showToast('Error al guardar cambios', 'error');
+    console.error(err);
+  }
+});
+
+// ── Cambiar entidad en citas ATENDIDAS ──
+document.getElementById('btnEditEntidadAtendida')?.addEventListener('click', async () => {
+  const wrap = document.getElementById('editEntidadAtendidaWrap');
+  const sel = document.getElementById('editEntidadAtendidaSel');
+  if (!wrap || !sel || !currentTurnoMedicaData) return;
+  if (!puedeEditarEntidadCitaAtendida(currentTurnoMedicaData)) {
+    showToast('No tienes permiso para cambiar la entidad', 'error');
+    return;
+  }
+  await cargarEntidadesEnSelect('editEntidadAtendidaSel', { force: false });
+  if (currentTurnoMedicaData.entidad) {
+    _medicaAsegurarOpcionEntidad(sel, currentTurnoMedicaData.entidad);
+    sel.value = currentTurnoMedicaData.entidad;
+  }
+  wrap.style.display = 'block';
+});
+
+document.getElementById('btnCancelEditEntidadAtendida')?.addEventListener('click', () => {
+  const wrap = document.getElementById('editEntidadAtendidaWrap');
+  if (wrap) wrap.style.display = 'none';
+});
+
+document.getElementById('btnSaveEditEntidadAtendida')?.addEventListener('click', async () => {
+  if (!currentTurnoMedicaData) return;
+  if (!puedeEditarEntidadCitaAtendida(currentTurnoMedicaData)) {
+    showToast('No tienes permiso para cambiar la entidad', 'error');
+    return;
+  }
+  const sel = document.getElementById('editEntidadAtendidaSel');
+  const entidad = sel?.value?.trim() || '';
+  if (!entidad) {
+    showToast('Selecciona una entidad', 'error');
+    return;
+  }
+  try {
+    const res = await apiFetch(`/api/turnos/${currentTurnoMedicaData.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ entidad })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      currentTurnoMedicaData.entidad = entidad;
+      const det = document.getElementById('detMedicaEntidad');
+      if (det) det.textContent = entidad;
+      document.getElementById('editEntidadAtendidaWrap').style.display = 'none';
+      showToast('Entidad actualizada', 'success');
+      cargarTurnosMedica();
+    } else {
+      showToast(data.error || 'Error al guardar', 'error');
+    }
+  } catch (err) {
+    showToast('Error al guardar la entidad', 'error');
     console.error(err);
   }
 });

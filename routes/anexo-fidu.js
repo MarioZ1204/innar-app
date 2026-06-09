@@ -23,6 +23,7 @@ const {
   anexoRegistroToPersona,
   sanitizePersonaBody,
   armarRegistroAnexo,
+  upsertPersonaEnDb,
   PERSONAS_CSV_COLUMNS
 } = require('../utils/anexo-fidu-personas');
 const { buildAnexoFiduExcelBuffer } = require('../utils/anexo-fidu-export');
@@ -50,26 +51,40 @@ async function fetchArchivoMeta(archivoId) {
 async function upsertPersonaDesdeRegistro(data) {
   const persona = anexoRegistroToPersona(data);
   if (!persona.numero_documento) return false;
-  const cols = PERSONAS_CSV_COLUMNS;
-  const sets = cols.map((c) => `\`${c}\` = ?`).join(', ');
-  const vals = cols.map((c) => persona[c] || '');
-  const existing = await db.query(
-    'SELECT id FROM anexo_fidu_personas WHERE numero_documento = ? LIMIT 1',
-    [persona.numero_documento]
-  );
-  if (existing.length) {
-    await db.execute(
-      `UPDATE anexo_fidu_personas SET ${sets} WHERE numero_documento = ?`,
-      [...vals, persona.numero_documento]
-    );
-  } else {
-    const placeholders = cols.map(() => '?').join(',');
-    await db.execute(
-      `INSERT INTO anexo_fidu_personas (${cols.map((c) => `\`${c}\``).join(',')}) VALUES (${placeholders})`,
-      vals
-    );
-  }
+  await upsertPersonaEnDb(db, persona);
   return true;
+}
+
+async function lookupNombreDiagnosticoDb(codigoRaw) {
+  const raw = String(codigoRaw || '').trim();
+  if (!raw) return { codigo: '', nombre: '' };
+  const norm = raw.toUpperCase();
+  const normFlat = norm.replace(/\./g, '');
+  const exact = await db.query(
+    `SELECT nombre, descripcion, codigo FROM diagnosticos WHERE activo = 1
+     AND (UPPER(TRIM(codigo)) = ? OR UPPER(REPLACE(TRIM(codigo), '.', '')) = ?)
+     LIMIT 1`,
+    [norm, normFlat]
+  );
+  if (exact.length) {
+    const r = exact[0];
+    return {
+      codigo: String(r.codigo || '').trim(),
+      nombre: String(r.nombre || r.descripcion || '').trim()
+    };
+  }
+  if (normFlat.length < 2) return { codigo: '', nombre: '' };
+  const partial = await db.query(
+    `SELECT nombre, descripcion, codigo FROM diagnosticos WHERE activo = 1
+     AND UPPER(REPLACE(TRIM(codigo), '.', '')) LIKE ?
+     ORDER BY LENGTH(codigo) ASC LIMIT 1`,
+    [`${normFlat}%`]
+  );
+  const r = partial[0];
+  return {
+    codigo: r ? String(r.codigo || '').trim() : '',
+    nombre: r ? String(r.nombre || r.descripcion || '').trim() : ''
+  };
 }
 
 function sanitizeRegistroBody(body) {
@@ -525,6 +540,15 @@ router.post('/anexo-fidu/armar', requireAuth, requirePermiso(PERM_ANEXO_FIDU), a
     }
 
     const { registro, servicio_encontrado } = armarRegistroAnexo(documento, codigo, rows[0]);
+    const cie10 = String(req.body?.codigo_cie10 || '').trim();
+    const nombreMedico = String(req.body?.nombre_medico || '').trim();
+    if (cie10) {
+      registro.codigo_cie10 = cie10;
+      const diag = await lookupNombreDiagnosticoDb(cie10);
+      if (diag.codigo) registro.codigo_cie10 = diag.codigo;
+      if (diag.nombre) registro.nombre_diagnostico = diag.nombre;
+    }
+    if (nombreMedico) registro.nombre_medico = nombreMedico;
     res.json({
       ok: true,
       persona_encontrada: true,
@@ -696,7 +720,7 @@ router.get('/anexo-fidu/personas/doc/:documento', requireAuth, requirePermiso(PE
   }
 });
 
-/** POST /api/anexo-fidu/personas/importar — CSV Lista_Personas (reemplaza base completa) */
+/** POST /api/anexo-fidu/personas/importar — CSV Lista_Personas (fusiona: inserta nuevos, actualiza existentes) */
 router.post(
   '/anexo-fidu/personas/importar',
   requireAuth,
@@ -717,22 +741,20 @@ router.post(
         return res.status(400).json({ error: 'No hay personas válidas en el CSV', errores: errores.slice(0, 30) });
       }
 
-      const cols = PERSONAS_CSV_COLUMNS;
-      const placeholders = cols.map(() => '?').join(',');
-      const sql = `INSERT INTO anexo_fidu_personas (${cols.map((c) => `\`${c}\``).join(',')}) VALUES (${placeholders})`;
-
-      await db.execute('DELETE FROM anexo_fidu_personas');
       let insertados = 0;
+      let actualizados = 0;
       for (const p of personas) {
-        await db.execute(sql, cols.map((c) => p[c] || ''));
-        insertados += 1;
+        const accion = await upsertPersonaEnDb(db, p);
+        if (accion === 'updated') actualizados += 1;
+        else insertados += 1;
       }
 
       res.json({
         ok: true,
         insertados,
+        actualizados,
         omitidos: errores.length,
-        mensaje: `Base de personas actualizada: ${insertados} registro(s)${errores.length ? ` (${errores.length} fila(s) omitidas)` : ''}`,
+        mensaje: `Base de personas sincronizada: ${insertados} nuevo(s), ${actualizados} actualizado(s)${errores.length ? ` (${errores.length} fila(s) omitidas)` : ''}`,
         advertencias: errores.slice(0, 50)
       });
     } catch (e) {

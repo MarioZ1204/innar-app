@@ -130,9 +130,7 @@ async function cargarRecibosConsultaMedica(db, citasMedicas) {
 
   const porTurno = await db.query(
     `SELECT ${RECIBO_CAMPOS_AUDITORIA} FROM recibos
-     WHERE (cita_electro_id IS NULL OR cita_electro_id = 0)
-       AND ${SQL_EXCLUIR_MEDICO_ELECTRO}
-       AND turno_id IN (${phTurnos})`,
+     WHERE turno_id IN (${phTurnos})`,
     turnoIds
   );
 
@@ -418,6 +416,47 @@ function resolverRecibosParaExport(recibos) {
   return out;
 }
 
+function reciboDirectoMedica(rec, cita) {
+  if (!reciboEnlazadoPorTurno(rec, cita)) return false;
+  if (rec.cita_electro_id != null && rec.cita_electro_id !== '' && Number(rec.cita_electro_id) !== 0) {
+    return false;
+  }
+  return true;
+}
+
+function reciboDirectoElectro(rec, cita) {
+  return reciboEnlazadoPorCitaElectro(rec, cita);
+}
+
+/** Asigna recibos en dos pasos: enlaces directos primero, coincidencia por tipo/fecha después. */
+function asignarRecibosACitas(citas, recibos, catalogos, tipoCita) {
+  const usados = new Set();
+  const porCita = new Map(citas.map((c) => [c.id, []]));
+  const directoFn = tipoCita === 'AGENDA_MEDICA' ? reciboDirectoMedica : reciboDirectoElectro;
+  const coincideFn = tipoCita === 'AGENDA_MEDICA' ? reciboCoincideCitaMedica : reciboCoincideCitaElectro;
+  const pool = recibos || [];
+
+  citas.forEach((c) => {
+    pool.forEach((r) => {
+      if (usados.has(r.id)) return;
+      if (!directoFn(r, c)) return;
+      porCita.get(c.id).push(r);
+      usados.add(r.id);
+    });
+  });
+
+  citas.forEach((c) => {
+    pool.forEach((r) => {
+      if (usados.has(r.id)) return;
+      if (!coincideFn(r, c, catalogos)) return;
+      porCita.get(c.id).push(r);
+      usados.add(r.id);
+    });
+  });
+
+  return citas.flatMap((c) => expandirCitaConRecibos(c, porCita.get(c.id)));
+}
+
 /** Adjunta recibos según tipo de cita: médica (turno/tipo consulta) o electro (cita_electro/tipo estudio). */
 async function enriquecerCitasConRecibos(db, citas) {
   if (!citas.length) return [];
@@ -431,26 +470,27 @@ async function enriquecerCitasConRecibos(db, citas) {
     cargarRecibosElectro(db, citasElectro)
   ]);
 
-  const recibosMedicosFiltrados = recibosMedicos.filter((r) => esReciboConsultaMedica(r, catalogos));
-  const usadosMedicos = new Set();
-  const usadosElectro = new Set();
+  const filasMedicas = asignarRecibosACitas(citasMedicas, recibosMedicos, catalogos, 'AGENDA_MEDICA');
+  const filasElectro = asignarRecibosACitas(citasElectro, recibosElectro, catalogos, 'ELECTRODIAGNOSTICO');
+
+  function indexarFilasPorCita(filas) {
+    const map = new Map();
+    (filas || []).forEach((f) => {
+      if (!map.has(f.id)) map.set(f.id, []);
+      map.get(f.id).push(f);
+    });
+    return map;
+  }
+
+  const medIdx = indexarFilasPorCita(filasMedicas);
+  const elecIdx = indexarFilasPorCita(filasElectro);
 
   return citas.flatMap((c) => {
     if (c.tipo_cita === 'AGENDA_MEDICA') {
-      const lista = recibosMedicosFiltrados.filter((r) => {
-        if (usadosMedicos.has(r.id)) return false;
-        return reciboCoincideCitaMedica(r, c, catalogos);
-      });
-      lista.forEach((r) => usadosMedicos.add(r.id));
-      return expandirCitaConRecibos(c, lista);
+      return medIdx.get(c.id) || expandirCitaConRecibos(c, []);
     }
     if (c.tipo_cita === 'ELECTRODIAGNOSTICO') {
-      const lista = recibosElectro.filter((r) => {
-        if (usadosElectro.has(r.id)) return false;
-        return reciboCoincideCitaElectro(r, c, catalogos);
-      });
-      lista.forEach((r) => usadosElectro.add(r.id));
-      return expandirCitaConRecibos(c, lista);
+      return elecIdx.get(c.id) || expandirCitaConRecibos(c, []);
     }
     return expandirCitaConRecibos(c, []);
   });
@@ -471,5 +511,7 @@ module.exports = {
   reciboCoincideCitaElectro,
   reciboEnlazadoPorTurno,
   reciboEnlazadoPorCitaElectro,
+  reciboDirectoMedica,
+  asignarRecibosACitas,
   cargarCatalogosEnlaceRecibos
 };

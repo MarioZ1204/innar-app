@@ -264,6 +264,30 @@ function armarRegistroAnexo(documento, codigoServicio, personaRow = null) {
   return { registro: enriched, servicio_encontrado: true };
 }
 
+/** INSERT o UPDATE por numero_documento (no borra el resto de la base). */
+async function upsertPersonaEnDb(db, persona) {
+  const cols = PERSONAS_CSV_COLUMNS;
+  const sets = cols.map((c) => `\`${c}\` = ?`).join(', ');
+  const vals = cols.map((c) => persona[c] || '');
+  const existing = await db.query(
+    'SELECT id FROM anexo_fidu_personas WHERE numero_documento = ? LIMIT 1',
+    [persona.numero_documento]
+  );
+  if (existing.length) {
+    await db.execute(
+      `UPDATE anexo_fidu_personas SET ${sets} WHERE numero_documento = ?`,
+      [...vals, persona.numero_documento]
+    );
+    return 'updated';
+  }
+  const placeholders = cols.map(() => '?').join(',');
+  await db.execute(
+    `INSERT INTO anexo_fidu_personas (${cols.map((c) => `\`${c}\``).join(',')}) VALUES (${placeholders})`,
+    vals
+  );
+  return 'inserted';
+}
+
 function buildAnexoFiduPersonasCreateTableSql() {
   return `CREATE TABLE IF NOT EXISTS anexo_fidu_personas (
       id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -301,5 +325,6 @@ module.exports = {
   anexoRegistroToPersona,
   sanitizePersonaBody,
   armarRegistroAnexo,
+  upsertPersonaEnDb,
   buildAnexoFiduPersonasCreateTableSql
 };

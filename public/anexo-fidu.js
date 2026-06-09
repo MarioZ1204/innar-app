@@ -17,6 +17,7 @@
   const AFIDU_VIEW_LS = 'innar.afidu.folderView';
 
   let afiduState = {
+    seccion: 'anexos',
     carpetas: [],
     carpetaId: null,
     carpetaNombre: null,
@@ -25,6 +26,10 @@
     archivoNombre: null,
     vista: 'root'
   };
+
+  let _personasPage = 1;
+  let _personasTotal = 0;
+  let _personasLimit = 50;
 
   function syncAfiduIds() {
     _carpetaId = afiduState.carpetaId;
@@ -93,6 +98,11 @@
   function renderAfiduContextBar() {
     const el = $('afiduContextBar');
     if (!el) return;
+    if (afiduState.seccion === 'personas') {
+      el.classList.remove('hidden');
+      el.innerHTML = '<span class="sop-context-label">Ubicación</span><span class="sop-breadcrumbs" style="margin:0;flex:1"><span class="sop-crumb is-current">Base de pacientes</span></span>';
+      return;
+    }
     el.classList.remove('hidden');
     const crumbs = [{ label: 'Anexo', current: afiduState.vista === 'root', onClick: afiduState.vista !== 'root' ? volverAfiduRoot : null }];
     if (afiduState.carpetaId != null) {
@@ -118,14 +128,111 @@
     el.appendChild(trail);
   }
 
+  function actualizarSidebarAfiduActivo() {
+    document.querySelectorAll('#view-anexo-fidu [data-afidu-section]').forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.afiduSection === afiduState.seccion);
+    });
+  }
+
+  function actualizarHeaderAfidu() {
+    const actions = $('afiduHeaderActionsAnexos');
+    if (actions) actions.classList.toggle('hidden', afiduState.seccion !== 'anexos');
+  }
+
   function mostrarAfiduExplorer() {
     $('afiduMainPanel')?.classList.remove('hidden');
     $('afiduArchivoWorkspace')?.classList.add('hidden');
+    $('afiduPersonasWorkspace')?.classList.add('hidden');
   }
 
   function mostrarAfiduArchivoWorkspace() {
     $('afiduMainPanel')?.classList.add('hidden');
     $('afiduArchivoWorkspace')?.classList.remove('hidden');
+    $('afiduPersonasWorkspace')?.classList.add('hidden');
+  }
+
+  function mostrarAfiduPersonasWorkspace() {
+    cancelarEdicionCelda();
+    $('afiduMainPanel')?.classList.add('hidden');
+    $('afiduArchivoWorkspace')?.classList.add('hidden');
+    $('afiduPersonasWorkspace')?.classList.remove('hidden');
+    actualizarHeaderAfidu();
+    renderAfiduContextBar();
+    afiduIcons($('afiduPersonasWorkspace'));
+  }
+
+  async function setAfiduSeccion(seccion) {
+    const next = seccion === 'personas' ? 'personas' : 'anexos';
+    if (afiduState.seccion === next) return;
+    afiduState.seccion = next;
+    actualizarSidebarAfiduActivo();
+    actualizarHeaderAfidu();
+    if (next === 'personas') {
+      mostrarAfiduPersonasWorkspace();
+      _personasPage = 1;
+      await cargarListaPersonas();
+      return;
+    }
+    renderAfiduContextBar();
+    if (afiduState.vista === 'archivo') mostrarAfiduArchivoWorkspace();
+    else mostrarAfiduExplorer();
+  }
+
+  function nombreCompletoPersona(p) {
+    return [p.nombres_1, p.nombres_2, p.apellidos_1, p.apellidos_2].filter(Boolean).join(' ').trim() || '—';
+  }
+
+  function renderPersonasBody(personas) {
+    const tbody = $('afiduPersonasBody');
+    if (!tbody) return;
+    if (!personas.length) {
+      tbody.innerHTML = '<tr><td colspan="7" class="afidu-empty-msg">Sin resultados. Importe un CSV o agregue pacientes al armar un anexo.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = personas.map((p) => {
+      const nombres = [p.nombres_1, p.nombres_2].filter(Boolean).join(' ') || '—';
+      const apellidos = [p.apellidos_1, p.apellidos_2].filter(Boolean).join(' ') || '—';
+      return `<tr data-persona-id="${escapeHtml(p.id)}" title="${escapeHtml(nombreCompletoPersona(p))}">
+        <td>${escapeHtml(p.numero_documento)}</td>
+        <td>${escapeHtml(nombres)}</td>
+        <td>${escapeHtml(apellidos)}</td>
+        <td>${escapeHtml(p.telefono || '—')}</td>
+        <td>${escapeHtml(p.ciudad_residencia || '—')}</td>
+        <td>${escapeHtml(p.correo || '—')}</td>
+        <td>${escapeHtml(p.afiliacion || '—')}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  async function cargarListaPersonas() {
+    const q = ($('afiduPersonasBuscar')?.value || '').trim();
+    const qs = new URLSearchParams({
+      page: String(_personasPage),
+      limit: String(_personasLimit)
+    });
+    if (q) qs.set('q', q);
+    try {
+      const data = await apiAnexo(`/api/anexo-fidu/personas?${qs}`);
+      _personasTotal = data.total || 0;
+      renderPersonasBody(data.personas || []);
+      const resumen = $('afiduPersonasResumen');
+      if (resumen) {
+        resumen.textContent = `${_personasTotal.toLocaleString('es-CO')} paciente(s) en la base`;
+      }
+      const info = $('afiduPersonasPagerInfo');
+      if (info) {
+        const from = _personasTotal === 0 ? 0 : (_personasPage - 1) * _personasLimit + 1;
+        const to = Math.min(_personasPage * _personasLimit, _personasTotal);
+        info.textContent = `Mostrando ${from}–${to} de ${_personasTotal}`;
+      }
+      const prev = $('afiduPersonasPagerPrev');
+      const next = $('afiduPersonasPagerNext');
+      if (prev) prev.disabled = _personasPage <= 1;
+      if (next) next.disabled = _personasPage * _personasLimit >= _personasTotal;
+    } catch (e) {
+      renderPersonasBody([]);
+      if (typeof showToast === 'function') showToast(e.message, 'error');
+    }
   }
 
   function confirmEliminarAfidu(msg, onOk) {
@@ -404,7 +511,6 @@
       renderBody([]);
     }
     afiduIcons($('afiduArchivoWorkspace'));
-    actualizarVisibilidadAfiduAdmin();
     renderAfiduContextBar();
   }
 
@@ -505,7 +611,7 @@
     return AFIDU_COLOR_POR_CODIGO[padded] || null;
   }
 
-  function parseLineasEntrada(text) {
+  function parseLineasEntrada(text, defaults = {}) {
     const pairs = [];
     const raw = String(text || '').trim();
     if (!raw) return pairs;
@@ -514,10 +620,66 @@
       if (!trimmed) return;
       const parts = trimmed.split(/[\s,;|\t]+/).filter(Boolean);
       if (parts.length >= 2) {
-        pairs.push({ doc: parts[0], cups: parts[1] });
+        pairs.push({
+          doc: parts[0],
+          cups: parts[1],
+          cie10: parts[2] || defaults.cie10 || '',
+          medico: parts.slice(3).join(' ') || defaults.medico || ''
+        });
       }
     });
     return pairs;
+  }
+
+  function extraCamposEntradaSimple() {
+    return {
+      cie10: ($('afiduEntradaCie10')?.value || '').trim(),
+      medico: ($('afiduEntradaMedico')?.value || '').trim()
+    };
+  }
+
+  function extraCamposEntradaBulk() {
+    return {
+      cie10: ($('afiduEntradaBulkCie10')?.value || '').trim(),
+      medico: ($('afiduEntradaBulkMedico')?.value || '').trim()
+    };
+  }
+
+  let _cie10PreviewTimer = null;
+  async function actualizarPreviewDiagnostico(codigo) {
+    const el = $('afiduDiagnosticoPreview');
+    if (!el) return;
+    const cod = String(codigo || '').trim();
+    if (cod.length < 2) {
+      el.classList.add('hidden');
+      el.textContent = '';
+      return;
+    }
+    try {
+      const nombre = await lookupNombreDiagnostico(cod);
+      if (nombre) {
+        el.textContent = `Diagnóstico: ${nombre}`;
+        el.classList.remove('hidden');
+      } else {
+        el.textContent = 'Código CIE-10 no encontrado en el catálogo';
+        el.classList.remove('hidden');
+      }
+    } catch (_) {
+      el.classList.add('hidden');
+    }
+  }
+
+  function bindPreviewCie10(inputId) {
+    const input = $(inputId);
+    if (!input || input.dataset.afiduCieBound) return;
+    input.dataset.afiduCieBound = '1';
+    input.addEventListener('input', () => {
+      clearTimeout(_cie10PreviewTimer);
+      _cie10PreviewTimer = setTimeout(() => {
+        if (inputId === 'afiduEntradaCie10') actualizarPreviewDiagnostico(input.value);
+      }, 320);
+    });
+    input.addEventListener('blur', () => actualizarPreviewDiagnostico(input.value));
   }
 
   function syncBulkTextareaDesdePendientes() {
@@ -539,13 +701,6 @@
     bulk?.classList.toggle('hidden', modo !== 'bulk');
     if (modo === 'simple') $('afiduEntradaDoc')?.focus();
     else $('afiduEntradaBulkText')?.focus();
-  }
-
-  function actualizarVisibilidadAfiduAdmin() {
-    const bar = $('afiduAdminBar');
-    if (!bar) return;
-    const show = typeof isSuperadmin === 'function' && isSuperadmin();
-    bar.classList.toggle('hidden', !show);
   }
 
   function $(id) {
@@ -1142,8 +1297,8 @@
   async function avanzarColaPendientesBulk() {
     let agregadas = 0;
     while (_pendingBulkPairs?.length) {
-      const { doc, cups } = _pendingBulkPairs[0];
-      const result = await agregarUnaFila(doc, cups, { ocultarPanelSiOk: false });
+      const { doc, cups, cie10, medico } = _pendingBulkPairs[0];
+      const result = await agregarUnaFila(doc, cups, { ocultarPanelSiOk: false, cie10, medico });
       if (result.needsPanel) {
         syncBulkTextareaDesdePendientes();
         mostrarPanelNuevaPersona(doc, cups);
@@ -1173,7 +1328,10 @@
         body: JSON.stringify(persona)
       });
       await cargarResumenPersonas();
-      await agregarUnaFila(persona.numero_documento, codigo, { ocultarPanelSiOk: false });
+      await agregarUnaFila(persona.numero_documento, codigo, {
+        ocultarPanelSiOk: false,
+        ...extraCamposEntradaSimple()
+      });
       if (enCola) {
         if (_pendingBulkPairs?.length) _pendingBulkPairs.shift();
         const { completo, agregadas } = await avanzarColaPendientesBulk();
@@ -1199,10 +1357,16 @@
   }
 
   async function agregarUnaFila(doc, codigo, opts = {}) {
+    const payload = {
+      numero_documento: doc,
+      codigo_servicio: codigo
+    };
+    if (opts.cie10) payload.codigo_cie10 = opts.cie10;
+    if (opts.medico) payload.nombre_medico = opts.medico;
     const data = await apiAnexo('/api/anexo-fidu/armar', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ numero_documento: doc, codigo_servicio: codigo })
+      body: JSON.stringify(payload)
     });
     if (!data.persona_encontrada) {
       return { ok: false, needsPanel: true, doc, codigo };
@@ -1231,8 +1395,12 @@
     const faltantes = [];
     try {
       for (let i = 0; i < pairs.length; i += 1) {
-        const { doc, cups } = pairs[i];
-        const result = await agregarUnaFila(doc, cups, { ocultarPanelSiOk: !bulkContinuar });
+        const { doc, cups, cie10, medico } = pairs[i];
+        const result = await agregarUnaFila(doc, cups, {
+          ocultarPanelSiOk: !bulkContinuar,
+          cie10,
+          medico
+        });
         if (result.needsPanel) {
           if (bulkContinuar) {
             faltantes.push({ doc, cups });
@@ -1264,6 +1432,9 @@
       if (opts.limpiarSimple) {
         $('afiduEntradaDoc').value = '';
         $('afiduEntradaCodigo').value = '';
+        $('afiduEntradaCie10').value = '';
+        $('afiduEntradaMedico').value = '';
+        $('afiduDiagnosticoPreview')?.classList.add('hidden');
         $('afiduEntradaDoc')?.focus();
       }
       if (opts.limpiarBulk) {
@@ -1290,12 +1461,13 @@
       if (typeof showToast === 'function') showToast('Ingresa el código del servicio', 'error');
       return;
     }
-    await agregarFilasDesdeEntrada([{ doc, cups: codigo }], { limpiarSimple: true });
+    const extra = extraCamposEntradaSimple();
+    await agregarFilasDesdeEntrada([{ doc, cups: codigo, ...extra }], { limpiarSimple: true });
   }
 
   async function agregarFilasBulk() {
     const bulk = ($('afiduEntradaBulkText')?.value || '').trim();
-    const pairs = parseLineasEntrada(bulk);
+    const pairs = parseLineasEntrada(bulk, extraCamposEntradaBulk());
     if (!pairs.length) {
       if (typeof showToast === 'function') showToast('Escribe al menos una línea con documento y CUPS', 'error');
       return;
@@ -1344,8 +1516,15 @@
 
   async function cargarResumenPersonas() {
     try {
-      await apiAnexo('/api/anexo-fidu/personas/resumen');
-    } catch (_) { /* ignore */ }
+      const data = await apiAnexo('/api/anexo-fidu/personas/resumen');
+      const resumen = $('afiduPersonasResumen');
+      if (resumen && data.total != null) {
+        resumen.textContent = `${Number(data.total).toLocaleString('es-CO')} paciente(s) en la base`;
+      }
+      return data;
+    } catch (_) {
+      return null;
+    }
   }
 
   async function importarPersonasCsv() {
@@ -1376,18 +1555,22 @@
         limpiarInput();
         if (typeof showToast === 'function') showToast(data.mensaje || 'Base de personas actualizada', 'success');
         await cargarResumenPersonas();
+        if (afiduState.seccion === 'personas') {
+          _personasPage = 1;
+          await cargarListaPersonas();
+        }
       } catch (e) {
         limpiarInput();
         if (typeof showToast === 'function') showToast(e.message, 'error');
       }
     };
-    const aviso = 'Esto reemplazará toda la base de personas en el servidor.\n\n¿Desea continuar?';
+    const aviso = 'Se fusionará con la base de personas: nuevos se agregan y los existentes se actualizan. No se borran pacientes que no vengan en el archivo.\n\n¿Desea continuar?';
     if (typeof showConfirm === 'function') {
       showConfirm(aviso, ejecutar, {
-        okText: 'Continuar',
+        okText: 'Importar',
         cancelText: 'Cancelar',
-        danger: true,
-        icon: '⚠️',
+        danger: false,
+        icon: '📋',
         onCancel: limpiarInput
       });
       return;
@@ -1428,8 +1611,25 @@
     $('btnVolverAnexoFidu')?.addEventListener('click', () => {
       if (typeof goToMenu === 'function') goToMenu();
     });
+    document.querySelectorAll('#view-anexo-fidu [data-afidu-section]').forEach((btn) => {
+      btn.addEventListener('click', () => setAfiduSeccion(btn.dataset.afiduSection));
+    });
+    $('btnAfiduPersonasBuscar')?.addEventListener('click', () => {
+      _personasPage = 1;
+      cargarListaPersonas();
+    });
+    $('afiduPersonasBuscar')?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); _personasPage = 1; cargarListaPersonas(); }
+    });
+    $('afiduPersonasPagerPrev')?.addEventListener('click', () => {
+      if (_personasPage > 1) { _personasPage -= 1; cargarListaPersonas(); }
+    });
+    $('afiduPersonasPagerNext')?.addEventListener('click', () => {
+      if (_personasPage * _personasLimit < _personasTotal) { _personasPage += 1; cargarListaPersonas(); }
+    });
     $('btnAfiduAgregarFila')?.addEventListener('click', agregarFilaDesdeEntrada);
     $('btnAfiduAgregarFilasBulk')?.addEventListener('click', agregarFilasBulk);
+    bindPreviewCie10('afiduEntradaCie10');
     const onEnter = (e) => {
       if (e.key === 'Enter') { e.preventDefault(); agregarFilaDesdeEntrada(); }
     };
@@ -1453,6 +1653,11 @@
   }
 
   async function refrescarVistaAfiduActual() {
+    if (afiduState.seccion === 'personas') {
+      await cargarResumenPersonas();
+      await cargarListaPersonas();
+      return;
+    }
     await refrescarCarpetas();
     if (afiduState.vista === 'archivo' && afiduState.archivoId) {
       if (afiduState.carpetaId) await refrescarArchivos(afiduState.carpetaId);
@@ -1501,10 +1706,12 @@
         return;
       }
     }
-    actualizarVisibilidadAfiduAdmin();
+    actualizarSidebarAfiduActivo();
+    actualizarHeaderAfidu();
+    afiduIcons($('view-anexo-fidu'));
     try {
-      await refrescarVistaAfiduActual();
       await cargarResumenPersonas();
+      await refrescarVistaAfiduActual();
     } catch (e) {
       if (typeof showToast === 'function') showToast('Error cargando anexo: ' + e.message, 'error');
     }

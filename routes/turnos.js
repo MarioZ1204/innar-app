@@ -538,9 +538,17 @@ router.patch('/turnos/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin
     if (idorErr) return res.status(403).json({ error: idorErr });
 
     const userRole = req.session?.rol;
-    const puedeEditarSiempre = userRole === 'superadmin' || (Array.isArray(req.session?.permisos) && req.session.permisos.includes('agenda.editar_siempre'));
+    const permisos = Array.isArray(req.session?.permisos) ? req.session.permisos : [];
+    const puedeEditarSiempre = userRole === 'superadmin' || permisos.includes('agenda.editar_siempre');
     const ESTADOS_FINALES_EDICION = ['ATENDIDO', 'NO_ASISTIO', 'CANCELADO', 'REPROGRAMADO'];
-    if (ESTADOS_FINALES_EDICION.includes(turno.estado) && !puedeEditarSiempre) {
+    const camposSolicitados = [
+      'paciente_nombre', 'paciente_telefono', 'paciente_documento', 'paciente_telefono2',
+      'entidad', 'notas', 'tipo_consulta', 'doctor_id', 'fecha', 'hora', 'estado', 'observaciones'
+    ].filter((k) => req.body[k] !== undefined);
+    const soloEntidad = camposSolicitados.length === 1 && camposSolicitados[0] === 'entidad';
+    const puedeCambiarEntidadAtendida = turno.estado === 'ATENDIDO' && soloEntidad
+      && (puedeEditarSiempre || permisos.includes('agenda.editar'));
+    if (ESTADOS_FINALES_EDICION.includes(turno.estado) && !puedeEditarSiempre && !puedeCambiarEntidadAtendida) {
       return res.status(400).json({ error: 'No se puede modificar una cita en estado final. Se requiere permiso especial.' });
     }
     // Solo superadmin puede cambiar el estado de una cita finalizada

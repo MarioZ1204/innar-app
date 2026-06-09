@@ -2831,6 +2831,16 @@
           </div>
           <hr class="sidebar-title-sep" />
           <h2>Anexo</h2>
+          <nav class="afidu-sidebar-nav" aria-label="Secciones del módulo">
+            <button type="button" class="sidebar-btn afidu-section-btn active" data-afidu-section="anexos">
+              <span class="sb-icon"><i data-lucide="folder-tree"></i></span>
+              <span>Anexos</span>
+            </button>
+            <button type="button" class="sidebar-btn afidu-section-btn" data-afidu-section="personas">
+              <span class="sb-icon"><i data-lucide="database"></i></span>
+              <span>Base de pacientes</span>
+            </button>
+          </nav>
         </div>
         <div class="sidebar-footer">
           <div class="sidebar-user">
@@ -2848,13 +2858,62 @@
             <div>
               <h2>Anexo</h2>
             </div>
-            <div class="sop-module-header-actions">
+            <div class="sop-module-header-actions" id="afiduHeaderActionsAnexos">
               <button type="button" class="btn-primary" id="btnAfiduNuevaCarpeta" title="Ej. Junio">
                 <i data-lucide="folder-plus"></i> Nueva carpeta
               </button>
             </div>
           </header>
           <nav id="afiduContextBar" class="sop-context-bar no-print" aria-label="Ubicación"></nav>
+          <section id="afiduPersonasWorkspace" class="afidu-personas-workspace hidden no-print">
+            <div class="sop-panel">
+              <div class="sop-panel-head">
+                <div>
+                  <h3 style="margin:0"><i data-lucide="database"></i> Base de pacientes</h3>
+                  <p class="afidu-personas-subtitle" id="afiduPersonasResumen">—</p>
+                </div>
+                <div class="sop-panel-head-actions afidu-personas-head-actions">
+                  <button type="button" class="sop-btn sop-btn-teal sop-btn-sm" id="btnAfiduSubirPersonas" title="Importar CSV (fusiona con la base actual)">
+                    <i data-lucide="upload"></i> Importar CSV
+                  </button>
+                  <input type="file" id="afiduPersonasFileInput" accept=".csv,text/csv" style="display:none" />
+                </div>
+              </div>
+              <div class="sop-panel-body">
+                <div class="afidu-personas-toolbar">
+                  <div class="afidu-personas-search">
+                    <label for="afiduPersonasBuscar">Buscar</label>
+                    <input type="search" id="afiduPersonasBuscar" placeholder="Documento, nombre o apellido…" autocomplete="off" />
+                  </div>
+                  <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="btnAfiduPersonasBuscar"><i data-lucide="search"></i> Buscar</button>
+                </div>
+                <p class="afidu-personas-hint">La base queda guardada en el servidor. Al importar un CSV se <strong>fusionan</strong> los datos: nuevos pacientes se agregan y los existentes se actualizan (no se borran los que no vengan en el archivo).</p>
+                <div class="afidu-personas-table-wrap">
+                  <table class="afidu-personas-table" id="afiduPersonasTable">
+                    <thead>
+                      <tr>
+                        <th>Documento</th>
+                        <th>Nombres</th>
+                        <th>Apellidos</th>
+                        <th>Teléfono</th>
+                        <th>Ciudad</th>
+                        <th>Correo</th>
+                        <th>Afiliación</th>
+                      </tr>
+                    </thead>
+                    <tbody id="afiduPersonasBody">
+                      <tr><td colspan="7" class="afidu-empty-msg">Cargando…</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div class="afidu-pager">
+                  <button type="button" class="btn-secondary" id="afiduPersonasPagerPrev">Anterior</button>
+                  <span id="afiduPersonasPagerInfo">—</span>
+                  <button type="button" class="btn-secondary" id="afiduPersonasPagerNext">Siguiente</button>
+                </div>
+              </div>
+            </div>
+          </section>
           <div id="afiduMainPanel" class="afidu-main-panel no-print">
             <div class="sop-panel">
               <div class="sop-panel-body">
@@ -2886,12 +2945,6 @@
               </div>
               <div class="sop-panel-body">
                 <input type="file" id="afiduImportFileInput" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" style="display:none" />
-                <div id="afiduAdminBar" class="afidu-admin-bar hidden">
-                  <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="btnAfiduSubirPersonas" title="Reemplazar base de personas (solo superadmin)">
-                    <i data-lucide="database"></i> Subir base personas (CSV)
-                  </button>
-                  <input type="file" id="afiduPersonasFileInput" accept=".csv,text/csv" style="display:none" />
-                </div>
                 <section class="afidu-entrada-bar">
                   <div class="afidu-entrada-head">
                     <h4 class="afidu-entrada-title"><i data-lucide="plus-circle"></i> Agregar filas</h4>
@@ -2901,7 +2954,7 @@
                     </div>
                   </div>
                   <div id="afiduEntradaSimple" class="afidu-entrada-modo">
-                    <div class="afidu-entrada-fields">
+                    <div class="afidu-entrada-fields afidu-entrada-fields-ext">
                       <div>
                         <label for="afiduEntradaDoc">Documento</label>
                         <input type="text" id="afiduEntradaDoc" placeholder="Ej. 1085252647" autocomplete="off" />
@@ -2910,16 +2963,35 @@
                         <label for="afiduEntradaCodigo">CUPS</label>
                         <input type="text" id="afiduEntradaCodigo" placeholder="Ej. 891704" autocomplete="off" />
                       </div>
+                      <div>
+                        <label for="afiduEntradaCie10">Código diagnóstico (CIE-10)</label>
+                        <input type="text" id="afiduEntradaCie10" placeholder="Ej. G470" autocomplete="off" />
+                      </div>
+                      <div>
+                        <label for="afiduEntradaMedico">Nombre médico</label>
+                        <input type="text" id="afiduEntradaMedico" placeholder="Ej. Dr. Pérez" autocomplete="off" />
+                      </div>
                       <div class="afidu-entrada-action">
                         <button type="button" class="sop-btn sop-btn-teal" id="btnAfiduAgregarFila"><i data-lucide="plus"></i> Agregar</button>
                       </div>
                     </div>
-                    <p class="afidu-entrada-hint">Pulse <kbd>Enter</kbd> en documento o CUPS para agregar.</p>
+                    <p id="afiduDiagnosticoPreview" class="afidu-diagnostico-preview hidden"></p>
+                    <p class="afidu-entrada-hint">Pulse <kbd>Enter</kbd> en documento o CUPS para agregar. El nombre del diagnóstico se completa al escribir el CIE-10.</p>
                   </div>
                   <div id="afiduEntradaBulkPanel" class="afidu-entrada-modo hidden">
                     <label for="afiduEntradaBulkText">Documento y CUPS — una línea por paciente</label>
                     <textarea id="afiduEntradaBulkText" rows="5" placeholder="1085252647 891704&#10;1234567890 890274&#10;9876543210, 891703"></textarea>
-                    <p class="afidu-entrada-hint">Separe documento y CUPS con espacio, coma, punto y coma o tabulador. Los pacientes que ya existan se agregan de una; los que falten quedarán abajo para registrar sus datos.</p>
+                    <div class="afidu-entrada-fields afidu-entrada-fields-bulk-extra">
+                      <div>
+                        <label for="afiduEntradaBulkCie10">CIE-10 (opcional, todas las filas)</label>
+                        <input type="text" id="afiduEntradaBulkCie10" placeholder="Ej. G470" autocomplete="off" />
+                      </div>
+                      <div>
+                        <label for="afiduEntradaBulkMedico">Médico (opcional, todas las filas)</label>
+                        <input type="text" id="afiduEntradaBulkMedico" placeholder="Ej. Dr. Pérez" autocomplete="off" />
+                      </div>
+                    </div>
+                    <p class="afidu-entrada-hint">Una línea por paciente: <code>documento CUPS</code> o <code>documento CUPS CIE10 médico</code>. Los existentes se agregan; los faltantes quedan para registrar datos.</p>
                     <div class="afidu-entrada-bulk-actions">
                       <button type="button" class="sop-btn sop-btn-teal" id="btnAfiduAgregarFilasBulk"><i data-lucide="list-plus"></i> Agregar todas</button>
                     </div>
@@ -3387,7 +3459,21 @@
         </div>
         <div class="cita-modal-info-item">
           <div class="cita-modal-info-label">Entidad</div>
-          <div id="detMedicaEntidad" class="cita-modal-info-value">-</div>
+          <div style="display:flex;align-items:center;gap:6px">
+            <div id="detMedicaEntidad" class="cita-modal-info-value" style="flex:1">-</div>
+            <button id="btnEditEntidadAtendida" type="button" title="Cambiar entidad" style="display:none;background:none;border:none;cursor:pointer;color:#8aa6a1;padding:2px;line-height:1;flex-shrink:0">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            </button>
+          </div>
+          <div id="editEntidadAtendidaWrap" style="display:none;margin-top:6px">
+            <select id="editEntidadAtendidaSel" style="width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:.875rem;background:white;margin-bottom:6px">
+              <option value="">Seleccionar entidad</option>
+            </select>
+            <div style="display:flex;gap:6px;justify-content:flex-end">
+              <button id="btnCancelEditEntidadAtendida" type="button" class="btn-secondary btn-sm" style="font-size:.78rem;padding:4px 10px">Cancelar</button>
+              <button id="btnSaveEditEntidadAtendida" type="button" class="btn-primary btn-sm" style="font-size:.78rem;padding:4px 10px">Guardar</button>
+            </div>
+          </div>
         </div>
         <div class="cita-modal-info-item">
           <div class="cita-modal-info-label">Médico</div>

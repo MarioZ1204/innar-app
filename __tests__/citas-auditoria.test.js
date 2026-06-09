@@ -9,7 +9,9 @@ const {
   reciboCoincideCitaMedica,
   reciboCoincideCitaElectro,
   reciboEnlazadoPorTurno,
-  reciboEnlazadoPorCitaElectro
+  reciboEnlazadoPorCitaElectro,
+  reciboDirectoMedica,
+  asignarRecibosACitas
 } = require('../utils/citas-auditoria');
 
 const CATALOGOS_AUDITORIA = {
@@ -161,6 +163,26 @@ describe('recibos consulta médica en auditoría', () => {
   test('no asigna recibo enlazado a otro turno', () => {
     const rec = { id: 2, turno_id: 99, cita_electro_id: null, tipo_servicio: 'Medicina General' };
     expect(reciboCoincideCitaMedica(rec, citaMedica, CATALOGOS_AUDITORIA)).toBe(false);
+  });
+
+  test('enlace directo por turno aunque el médico del recibo diga electrodiagnóstico', () => {
+    const rec = {
+      id: 7,
+      turno_id: 42,
+      cita_electro_id: null,
+      medico_nombre: 'ELECTRODIAGNÓSTICOS',
+      tipo_servicio: 'Medicina General',
+      fecha: '2026-06-15',
+      cliente: 'María López',
+      total: 120000,
+      numero: 'R-007',
+      anulado: 0,
+      estado_pago: 'PAGADO'
+    };
+    expect(reciboDirectoMedica(rec, citaMedica)).toBe(true);
+    const filas = asignarRecibosACitas([citaMedica], [rec], CATALOGOS_AUDITORIA, 'AGENDA_MEDICA');
+    expect(filas).toHaveLength(1);
+    expect(filas[0].recibo_valor).toBe(120000);
   });
 
   test('fallback por tipo de consulta, fecha y paciente', () => {

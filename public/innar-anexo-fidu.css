@@ -1,6 +1,31 @@
+#view-anexo-fidu .afidu-sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 12px;
+}
+
+#view-anexo-fidu .afidu-sidebar-nav .sidebar-btn {
+  width: 100%;
+  justify-content: flex-start;
+  text-align: left;
+}
+
+#view-anexo-fidu .afidu-sidebar-nav .sb-icon {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+}
+
 #view-anexo-fidu .afidu-module-content {
   width: 100%;
   max-width: 1440px;
+}
+
+#view-anexo-fidu #afiduHeaderActionsAnexos.hidden {
+  display: none;
 }
 
 #view-anexo-fidu .afidu-main-panel {
@@ -48,16 +73,96 @@
   background: #d1fae5;
 }
 
-#view-anexo-fidu .afidu-admin-bar {
-  display: flex;
-  justify-content: flex-end;
-  margin-bottom: 10px;
-  padding-bottom: 10px;
-  border-bottom: 1px dashed #e2e8f0;
+#view-anexo-fidu .afidu-personas-workspace {
+  margin-bottom: 20px;
 }
 
-#view-anexo-fidu .afidu-admin-bar.hidden {
-  display: none;
+#view-anexo-fidu .afidu-personas-subtitle {
+  margin: 6px 0 0;
+  font-size: 0.82rem;
+  color: #64748b;
+}
+
+#view-anexo-fidu .afidu-personas-head-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+#view-anexo-fidu .afidu-personas-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-end;
+  margin-bottom: 10px;
+}
+
+#view-anexo-fidu .afidu-personas-search {
+  flex: 1 1 240px;
+}
+
+#view-anexo-fidu .afidu-personas-search label {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #64748b;
+  margin-bottom: 4px;
+}
+
+#view-anexo-fidu .afidu-personas-search input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #d8e0ea;
+  border-radius: 8px;
+  font-size: 0.85rem;
+}
+
+#view-anexo-fidu .afidu-personas-hint {
+  font-size: 0.78rem;
+  color: #64748b;
+  margin: 0 0 12px;
+  line-height: 1.45;
+}
+
+#view-anexo-fidu .afidu-personas-table-wrap {
+  overflow: auto;
+  max-height: min(68vh, 720px);
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #fff;
+}
+
+#view-anexo-fidu .afidu-personas-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+#view-anexo-fidu .afidu-personas-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #f1f5f9;
+  color: #334155;
+  font-weight: 700;
+  padding: 10px 12px;
+  border-bottom: 2px solid #cbd5e1;
+  text-align: left;
+  white-space: nowrap;
+}
+
+#view-anexo-fidu .afidu-personas-table tbody td {
+  padding: 8px 12px;
+  border-bottom: 1px solid #eef2f7;
+  vertical-align: top;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#view-anexo-fidu .afidu-personas-table tbody tr:hover td {
+  background: #f8fafc;
 }
 
 #view-anexo-fidu #afiduContextBar {
@@ -378,6 +483,28 @@
   align-items: end;
 }
 
+#view-anexo-fidu .afidu-entrada-fields-ext {
+  grid-template-columns: repeat(4, minmax(120px, 1fr)) auto;
+}
+
+#view-anexo-fidu .afidu-entrada-fields-bulk-extra {
+  grid-template-columns: 1fr 1fr;
+  margin-bottom: 10px;
+}
+
+#view-anexo-fidu .afidu-diagnostico-preview {
+  margin: 6px 0 0;
+  font-size: 0.78rem;
+  color: #0f766e;
+  background: #f0fdfa;
+  border-radius: 6px;
+  padding: 6px 10px;
+}
+
+#view-anexo-fidu .afidu-diagnostico-preview.hidden {
+  display: none;
+}
+
 #view-anexo-fidu .afidu-entrada-modo label {
   display: block;
   font-size: 0.72rem;
@@ -446,7 +573,9 @@
 }
 
 @media (max-width: 768px) {
-  #view-anexo-fidu .afidu-entrada-fields {
+  #view-anexo-fidu .afidu-entrada-fields,
+  #view-anexo-fidu .afidu-entrada-fields-ext,
+  #view-anexo-fidu .afidu-entrada-fields-bulk-extra {
     grid-template-columns: 1fr;
   }
 }
