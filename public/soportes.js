@@ -17,6 +17,7 @@
 
   const ARM_DRAG_HOLD_MS = 300;
   let armDragSession = null;
+  let armBlockClickUntil = 0;
 
   const PDX_LOG_LABEL = {
     subida: 'Subida',
@@ -2989,10 +2990,102 @@
     return sopPerm('soportes.armado.crear_estructura');
   }
 
+  function armFindDropTargetAt(clientX, clientY, srcId) {
+    const stack = typeof document.elementsFromPoint === 'function'
+      ? document.elementsFromPoint(clientX, clientY)
+      : [document.elementFromPoint(clientX, clientY)].filter(Boolean);
+    for (const el of stack) {
+      const dropEl = el?.closest?.('[data-arm-drop-parent]');
+      if (!dropEl) continue;
+      const targetParent = Number.parseInt(dropEl.dataset.armDropParent, 10);
+      const dest = Number.isFinite(targetParent) ? targetParent : 0;
+      if (dest !== srcId && !armEsAncestroEnCliente(srcId, dest)) {
+        return { dropEl, targetParent: dest };
+      }
+    }
+    return null;
+  }
+
+  async function armRecargarDiasTrasMover(targetParent) {
+    const res = await apiFetch(`/api/soportes/armado/periodos/${armState.periodoId}/dias`);
+    const data = await res.json();
+    if (res.ok) armState.dias = data.dias || [];
+    if (armState.diasParentId && !armDiaById(armState.diasParentId)) {
+      armState.diasParentId = targetParent;
+    }
+    renderArmadoDiasExplorer();
+    renderArmadoContextBar();
+  }
+
+  async function armEjecutarMoverDia(srcId, targetParent) {
+    const d = armDiaById(srcId);
+    if (!d || armDiaParentId(d) === targetParent) return false;
+    await armMoverDiaApi(srcId, targetParent);
+    sopToast('Carpeta movida', 'success');
+    await armRecargarDiasTrasMover(targetParent);
+    return true;
+  }
+
+  function armOpcionesDestinoMover(excludeId) {
+    const opts = [{ value: 0, label: `${armState.periodoLabel || 'Mes'} (raíz)` }];
+    armState.dias
+      .filter((d) => d.es_contenedor && d.id !== excludeId)
+      .filter((d) => !armEsAncestroEnCliente(excludeId, d.id))
+      .sort((a, b) => compararTextoNatural(a.nombre_display, b.nombre_display))
+      .forEach((d) => {
+        const chain = [];
+        let p = armDiaParentId(d);
+        const seen = new Set();
+        while (p && !seen.has(p)) {
+          seen.add(p);
+          const parent = armDiaById(p);
+          if (!parent) break;
+          chain.unshift(parent.nombre_display);
+          p = armDiaParentId(parent);
+        }
+        const prefix = chain.length ? `${chain.join(' / ')} / ` : '';
+        opts.push({ value: d.id, label: `${prefix}${d.nombre_display}` });
+      });
+    return opts;
+  }
+
+  function modalMoverDiaArmado(diaId) {
+    if (!armPuedeArrastrarDia()) return;
+    const d = armDiaById(diaId);
+    if (!d) return sopToast('Carpeta no encontrada', 'warning');
+    const opts = armOpcionesDestinoMover(diaId);
+    const actual = armDiaParentId(d);
+    const modal = openSopModal(`
+      <h3><i data-lucide="folder-input"></i> Mover carpeta</h3>
+      <p style="font-size:.85rem;color:#64748b;margin:-6px 0 12px">Mueva <strong>${escapeHtml(d.nombre_display)}</strong> dentro de una carpeta contenedora o a la raíz del mes.</p>
+      <div class="sop-field"><label>Carpeta contenedora destino</label>
+        <select id="sopArmMoveDest">${opts.map((o) =>
+          `<option value="${o.value}"${o.value === actual ? ' selected' : ''}>${escapeHtml(o.label)}</option>`
+        ).join('')}</select></div>
+      <p style="font-size:.8rem;color:#64748b;margin:0">También puede mantener pulsada la carpeta y soltarla sobre un contenedor.</p>
+      <div class="sop-dialog-actions">
+        <button type="button" class="sop-btn sop-btn-ghost" id="sopArmMoveCancel">Cancelar</button>
+        <button type="button" class="sop-btn sop-btn-teal" id="sopArmMoveOk">Mover</button>
+      </div>`);
+    modal.querySelector('#sopArmMoveCancel').onclick = () => closeSopModal(modal);
+    modal.querySelector('#sopArmMoveOk').onclick = async () => {
+      const dest = Number.parseInt(modal.querySelector('#sopArmMoveDest')?.value, 10);
+      const targetParent = Number.isFinite(dest) ? dest : 0;
+      try {
+        const moved = await armEjecutarMoverDia(diaId, targetParent);
+        if (moved) closeSopModal(modal);
+      } catch (e) {
+        sopToast(e.message, 'error');
+      }
+    };
+    sopIcons(modal);
+  }
+
   function bindArmFolderDragSource(card, diaId) {
     if (!armPuedeArrastrarDia()) return;
     let holdTimer = null;
     let active = false;
+    let moved = false;
 
     const cancelHold = () => {
       if (holdTimer) clearTimeout(holdTimer);
@@ -3001,68 +3094,62 @@
 
     const onMove = (ev) => {
       if (!active || !armDragSession) return;
+      moved = true;
+      ev.preventDefault();
       const g = armDragSession.ghost;
       if (g) {
         g.style.left = `${ev.clientX + 12}px`;
         g.style.top = `${ev.clientY + 12}px`;
       }
-      const under = document.elementFromPoint(ev.clientX, ev.clientY);
       document.querySelectorAll('.sop-folder-drop-over, .sop-pdx-crumb-drop-over').forEach((el) => {
         el.classList.remove('sop-folder-drop-over', 'sop-pdx-crumb-drop-over');
       });
-      const dropEl = under?.closest?.('[data-arm-drop-parent]');
-      if (dropEl) {
-        const targetParent = parseInt(dropEl.dataset.armDropParent, 10) || 0;
-        if (targetParent !== diaId && !armEsAncestroEnCliente(diaId, targetParent)) {
-          dropEl.classList.add(dropEl.classList.contains('sop-pdx-crumb-drop') ? 'sop-pdx-crumb-drop-over' : 'sop-folder-drop-over');
-          armDragSession.hoverParentId = targetParent;
-        } else {
-          armDragSession.hoverParentId = null;
-        }
+      const hit = armFindDropTargetAt(ev.clientX, ev.clientY, diaId);
+      if (hit) {
+        hit.dropEl.classList.add(hit.dropEl.classList.contains('sop-pdx-crumb-drop') ? 'sop-pdx-crumb-drop-over' : 'sop-folder-drop-over');
+        armDragSession.hoverParentId = hit.targetParent;
       } else {
         armDragSession.hoverParentId = null;
       }
     };
 
-    const onUp = async () => {
+    const onUp = async (ev) => {
       cancelHold();
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseup', onUp);
+      document.body.classList.remove('sop-arm-drag-active');
       if (!active) return;
       active = false;
       const targetParent = armDragSession?.hoverParentId;
       const srcId = armDragSession?.diaId;
       armFinalizarDragSession();
+      if (moved) {
+        armBlockClickUntil = Date.now() + 450;
+        ev?.preventDefault?.();
+        ev?.stopPropagation?.();
+      }
       if (targetParent == null || srcId == null) return;
-      const d = armDiaById(srcId);
-      if (!d || armDiaParentId(d) === targetParent) return;
       try {
-        await armMoverDiaApi(srcId, targetParent);
-        sopToast('Carpeta movida', 'success');
-        const res = await apiFetch(`/api/soportes/armado/periodos/${armState.periodoId}/dias`);
-        const data = await res.json();
-        if (res.ok) armState.dias = data.dias || [];
-        if (armState.diasParentId && !armDiaById(armState.diasParentId)) {
-          armState.diasParentId = targetParent;
-        }
-        renderArmadoDiasExplorer();
-        renderArmadoContextBar();
+        await armEjecutarMoverDia(srcId, targetParent);
       } catch (e) {
         sopToast(e.message, 'error');
       }
     };
 
     card.addEventListener('mousedown', (ev) => {
-      if (ev.button !== 0 || ev.target.closest('.sop-folder-card-actions, .sop-folder-list-actions')) return;
+      if (ev.button !== 0 || ev.target.closest('.sop-folder-card-actions, .sop-folder-list-actions, [data-dia-move]')) return;
       cancelHold();
       holdTimer = setTimeout(() => {
         active = true;
+        moved = false;
         card.classList.add('sop-folder-dragging');
+        document.body.classList.add('sop-arm-drag-active');
         const ghost = card.cloneNode(true);
         ghost.classList.add('sop-pdx-drag-ghost');
         ghost.classList.remove('sop-folder-dragging');
         document.body.appendChild(ghost);
         armDragSession = { diaId, ghost, hoverParentId: null };
+        onMove(ev);
         document.addEventListener('mousemove', onMove);
         document.addEventListener('mouseup', onUp);
       }, ARM_DRAG_HOLD_MS);
@@ -3086,8 +3173,9 @@
         else seleccionarDiaArmado(id);
       };
       card.addEventListener('click', (ev) => {
-        if (ev.target.closest('[data-dia-edit],[data-dia-del],.sop-folder-card-actions,.sop-folder-list-actions')) return;
+        if (ev.target.closest('[data-dia-edit],[data-dia-del],[data-dia-move],.sop-folder-card-actions,.sop-folder-list-actions')) return;
         if (card.classList.contains('sop-folder-dragging')) return;
+        if (Date.now() < armBlockClickUntil) return;
         open();
       });
       card.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') open(); });
@@ -3096,6 +3184,9 @@
     });
     root.querySelectorAll('[data-dia-edit]').forEach((btn) => {
       btn.addEventListener('click', (ev) => { ev.stopPropagation(); modalEditarDiaArmado(parseInt(btn.dataset.diaEdit, 10)); });
+    });
+    root.querySelectorAll('[data-dia-move]').forEach((btn) => {
+      btn.addEventListener('click', (ev) => { ev.stopPropagation(); modalMoverDiaArmado(parseInt(btn.dataset.diaMove, 10)); });
     });
     root.querySelectorAll('[data-dia-del]').forEach((btn) => {
       btn.addEventListener('click', (ev) => { ev.stopPropagation(); modalEliminarDiaArmado(parseInt(btn.dataset.diaDel, 10), btn.dataset.diaNom); });
@@ -3124,6 +3215,8 @@
         </div>
       </div>
       <div class="sop-panel-body">
+        ${armPuedeArrastrarDia() ? `<p class="sop-arm-drag-hint" style="font-size:.8rem;color:#64748b;margin:0 0 10px"><i data-lucide="move" style="width:14px;height:14px;vertical-align:-2px"></i> Mantenga pulsada una carpeta y suéltela sobre un <strong>contenedor</strong>, o use <strong>Mover</strong> para elegir destino.</p>` : ''}
+        <div id="sopArmDiasDropRoot" class="sop-arm-dias-drop-root${armState.diasParentId ? '' : ' hidden'}" data-arm-drop-parent="0" title="Soltar aquí para mover a la raíz del mes"></div>
         <div id="sopArmDiasGrid" class="sop-folder-explorer-grid${viewMode === 'list' ? ' sop-folder-list-mode' : ''}"></div>
       </div>`;
     bindSopFolderViewToggle(panel, 'arm');
@@ -3148,8 +3241,9 @@
             <td class="sop-folder-list-actions">
               ${htmlArmZipDiaBtn(d)}
               ${puedeGestionarDia ? `
-              <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-dia-edit="${d.id}"><i data-lucide="pencil"></i></button>
-              <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-dia-del="${d.id}" data-dia-nom="${escapeHtml(d.nombre_display)}" style="color:#dc2626"><i data-lucide="trash-2"></i></button>` : ''}
+              <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-dia-move="${d.id}" title="Mover"><i data-lucide="folder-input"></i></button>
+              <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-dia-edit="${d.id}" title="Editar"><i data-lucide="pencil"></i></button>
+              <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-dia-del="${d.id}" data-dia-nom="${escapeHtml(d.nombre_display)}" title="Eliminar" style="color:#dc2626"><i data-lucide="trash-2"></i></button>` : ''}
             </td>
           </tr>`;
         }).join('')}</tbody></table></div>`;
@@ -3164,6 +3258,7 @@
           <div class="sop-folder-card-actions">
             ${htmlArmZipDiaBtn(d)}
             ${puedeGestionarDia ? `
+            <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-dia-move="${d.id}" title="Mover a contenedora"><i data-lucide="folder-input"></i></button>
             <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-dia-edit="${d.id}" title="Editar"><i data-lucide="pencil"></i></button>
             <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-dia-del="${d.id}" data-dia-nom="${escapeHtml(d.nombre_display)}" title="Eliminar" style="color:#dc2626"><i data-lucide="trash-2"></i></button>` : ''}
           </div>

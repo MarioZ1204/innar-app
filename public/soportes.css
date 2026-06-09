@@ -1197,6 +1197,18 @@
 .sop-folder-list-table tr.sop-folder-dragging {
   opacity: 0.4;
   cursor: grabbing;
+  pointer-events: none;
+}
+.sop-arm-dias-drop-root {
+  min-height: 8px;
+}
+.sop-arm-dias-drop-root.sop-folder-drop-over {
+  min-height: 36px;
+  border-radius: 8px;
+}
+body.sop-arm-drag-active {
+  user-select: none;
+  cursor: grabbing;
 }
 .sop-folder-card.sop-folder-drop-over,
 .sop-folder-list-table tr.sop-folder-drop-over,
