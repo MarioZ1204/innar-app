@@ -370,6 +370,14 @@ const PORT = process.env.PORT || 3000;
 
     await runRuntimeMigrations(db, logger);
 
+    try {
+      const { recargarCatalogoAnexoFidu } = require('./utils/anexo-fidu-servicios');
+      await recargarCatalogoAnexoFidu(db);
+      logger.info('[STARTUP] Catálogo CUPS Anexo FIDU cargado', { type: 'STARTUP' });
+    } catch (e) {
+      logger.warn('[STARTUP] Catálogo CUPS Anexo FIDU no precargado: ' + e.message, { type: 'STARTUP' });
+    }
+
     const certPath = path.join(__dirname, 'server.crt');
     const keyPath = path.join(__dirname, 'server.key');
     const USE_HTTPS = false;

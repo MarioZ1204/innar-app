@@ -75,6 +75,18 @@ router.get('/admin/datos/:tipo', requireAuth, requireRoleOrPerm(['superadmin', '
       const params = [];
       if (q) { where += ' AND nombre LIKE ?'; params.push(`%${q}%`); }
       rows = await db.query(`SELECT id, nombre, activo FROM entidades ${where} ORDER BY nombre ASC LIMIT ${limit}`, params);
+    } else if (tipo === 'anexo_fidu_servicios') {
+      let where = 'WHERE activo = 1';
+      const params = [];
+      if (q) {
+        where += ' AND (codigo LIKE ? OR nombre LIKE ?)';
+        params.push(`%${q}%`, `%${q}%`);
+      }
+      rows = await db.query(
+        `SELECT id, codigo, nombre, valor_unitario, cantidad, valor_total, codigo_servicio_referencia
+         FROM anexo_fidu_servicios ${where} ORDER BY codigo ASC LIMIT ${limit}`,
+        params
+      );
     } else {
       return res.status(400).json({ error: 'Tipo no válido' });
     }
@@ -138,11 +150,96 @@ router.post('/admin/datos/:tipo', requireAuth, requireRoleOrPerm(['superadmin', 
         [nombre.trim().toUpperCase()]
       );
       res.json({ ok: true, id: result.insertId });
+    } else if (tipo === 'anexo_fidu_servicios') {
+      const { normCodigoAlmacen } = require('../utils/anexo-fidu-catalogo');
+      const codigo = normCodigoAlmacen(body.codigo);
+      const nombre = String(body.nombre || '').trim();
+      const valorUnitario = parseInt(body.valor_unitario, 10);
+      const codigoRef = String(body.codigo_servicio_referencia || '').trim();
+      if (!codigo) return res.status(400).json({ error: 'El código CUPS es obligatorio' });
+      if (!nombre) return res.status(400).json({ error: 'El nombre del servicio es obligatorio' });
+      if (!(valorUnitario >= 0)) return res.status(400).json({ error: 'Valor unitario inválido' });
+      if (!codigoRef) return res.status(400).json({ error: 'Código servicio referencia (RIPS) es obligatorio' });
+      const cantidad = body.cantidad != null ? String(body.cantidad).trim() : '1';
+      const valorTotal = parseInt(body.valor_total, 10);
+      const result = await db.execute(
+        `INSERT INTO anexo_fidu_servicios
+          (codigo, nombre, valor_unitario, cantidad, valor_total, codigo_servicio_referencia, activo)
+         VALUES (?,?,?,?,?,?,1)`,
+        [
+          codigo,
+          nombre,
+          valorUnitario,
+          cantidad,
+          Number.isFinite(valorTotal) && valorTotal >= 0 ? valorTotal : valorUnitario,
+          codigoRef
+        ]
+      );
+      await refrescarCatalogoCupsAnexo();
+      res.json({ ok: true, id: result.insertId });
     } else {
       res.status(400).json({ error: 'Tipo no soportado para agregar' });
     }
   } catch (e) {
-    if (e.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'Ya existe un registro con ese nombre' });
+    if (e.code === 'ER_DUP_ENTRY') {
+      return res.status(409).json({ error: 'Ya existe un registro con ese código o nombre' });
+    }
+    res.status(500).json({ error: safeError(e) });
+  }
+});
+
+async function refrescarCatalogoCupsAnexo() {
+  const { invalidarCatalogoAnexoFidu, recargarCatalogoAnexoFidu } = require('../utils/anexo-fidu-servicios');
+  invalidarCatalogoAnexoFidu();
+  await recargarCatalogoAnexoFidu();
+  emitSocket('anexo-fidu:servicios-actualizado', {});
+}
+
+// PATCH /api/admin/datos/:tipo/:id — editar catálogos
+router.patch('/admin/datos/:tipo/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'modulo.gestion_datos'), async (req, res) => {
+  try {
+    const tipo = req.params.tipo;
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) return res.status(400).json({ error: 'ID inválido' });
+    const body = req.body || {};
+
+    if (tipo === 'anexo_fidu_servicios') {
+      const { normCodigoAlmacen } = require('../utils/anexo-fidu-catalogo');
+      const codigo = normCodigoAlmacen(body.codigo);
+      const nombre = String(body.nombre || '').trim();
+      const valorUnitario = parseInt(body.valor_unitario, 10);
+      const codigoRef = String(body.codigo_servicio_referencia || '').trim();
+      if (!codigo) return res.status(400).json({ error: 'El código CUPS es obligatorio' });
+      if (!nombre) return res.status(400).json({ error: 'El nombre del servicio es obligatorio' });
+      if (!(valorUnitario >= 0)) return res.status(400).json({ error: 'Valor unitario inválido' });
+      if (!codigoRef) return res.status(400).json({ error: 'Código servicio referencia (RIPS) es obligatorio' });
+      const cantidad = body.cantidad != null ? String(body.cantidad).trim() : '1';
+      const valorTotal = parseInt(body.valor_total, 10);
+      const result = await db.execute(
+        `UPDATE anexo_fidu_servicios SET
+          codigo = ?, nombre = ?, valor_unitario = ?, cantidad = ?,
+          valor_total = ?, codigo_servicio_referencia = ?
+         WHERE id = ? AND activo = 1`,
+        [
+          codigo,
+          nombre,
+          valorUnitario,
+          cantidad,
+          Number.isFinite(valorTotal) && valorTotal >= 0 ? valorTotal : valorUnitario,
+          codigoRef,
+          id
+        ]
+      );
+      if (!result.affectedRows) return res.status(404).json({ error: 'Servicio CUPS no encontrado' });
+      await refrescarCatalogoCupsAnexo();
+      return res.json({ ok: true, id });
+    }
+
+    return res.status(400).json({ error: 'Tipo no soportado para editar' });
+  } catch (e) {
+    if (e.code === 'ER_DUP_ENTRY') {
+      return res.status(409).json({ error: 'Ya existe otro servicio con ese código CUPS' });
+    }
     res.status(500).json({ error: safeError(e) });
   }
 });
@@ -158,12 +255,16 @@ router.delete('/admin/datos/:tipo/bulk', requireAuth, requireRoleOrPerm(['supera
     const tablaMap = {
       citas_electro: 'citas_electro', turnos: 'turnos', recibos: 'recibos',
       estudio_duraciones: 'estudio_duraciones', especialidades: 'especialidades',
-      tipos_consulta: 'tipos_consulta', diagnosticos: 'diagnosticos', entidades: 'entidades'
+      tipos_consulta: 'tipos_consulta', diagnosticos: 'diagnosticos', entidades: 'entidades',
+      anexo_fidu_servicios: 'anexo_fidu_servicios'
     };
     if (!tablaMap[tipo]) return res.status(400).json({ error: 'Tipo no válido' });
     const tabla = tablaMap[tipo];
     const placeholders = ids.map(() => '?').join(',');
     const result = await db.execute(`DELETE FROM ${tabla} WHERE id IN (${placeholders})`, ids);
+    if (tipo === 'anexo_fidu_servicios' && result.affectedRows > 0) {
+      await refrescarCatalogoCupsAnexo();
+    }
     res.json({ ok: true, eliminados: result.affectedRows });
   } catch (e) {
     logger.error('[ADMIN BULK DELETE]', e.message);
@@ -205,6 +306,10 @@ router.delete('/admin/datos/:tipo/:id', requireAuth, requireRoleOrPerm(['superad
     } else if (tipo === 'entidades') {
       const result = await db.execute('DELETE FROM entidades WHERE id=?', [id]);
       affected = result.affectedRows;
+    } else if (tipo === 'anexo_fidu_servicios') {
+      const result = await db.execute('DELETE FROM anexo_fidu_servicios WHERE id=?', [id]);
+      affected = result.affectedRows;
+      if (affected > 0) await refrescarCatalogoCupsAnexo();
     } else {
       return res.status(400).json({ error: 'Tipo no válido' });
     }

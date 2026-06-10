@@ -1918,6 +1918,18 @@
     }
   }
 
+  window._invalidarServiciosAnexoFidu = async function () {
+    _servicios = [];
+    try { await cargarServicios(); } catch (_) { /* ignore */ }
+  };
+
+  if (window.socket && !window._afiduServiciosSocketBound) {
+    window.socket.on('anexo-fidu:servicios-actualizado', () => {
+      window._invalidarServiciosAnexoFidu?.();
+    });
+    window._afiduServiciosSocketBound = true;
+  }
+
   window.initAnexoFidu = initAnexoFidu;
   window.abrirAnexoFiduArchivo = async function abrirAnexoFiduArchivoDesdeSoportes(archivoId) {
     const id = parseInt(archivoId, 10);

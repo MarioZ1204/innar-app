@@ -15,7 +15,8 @@ const {
 } = require('../utils/anexo-fidu-import');
 const {
   enriquecerRegistroAnexoFidu,
-  listarServiciosCatalogo
+  listarServiciosCatalogo,
+  recargarCatalogoAnexoFidu
 } = require('../utils/anexo-fidu-servicios');
 const {
   parsePersonasCsvContent,
@@ -156,8 +157,14 @@ router.get('/anexo-fidu/columnas', requireAuth, requirePermiso(PERM_ANEXO_FIDU),
 });
 
 /** GET /api/anexo-fidu/servicios — catálogo CUPS + valores RIPS */
-router.get('/anexo-fidu/servicios', requireAuth, requirePermiso(PERM_ANEXO_FIDU), (req, res) => {
-  res.json({ ok: true, servicios: listarServiciosCatalogo() });
+router.get('/anexo-fidu/servicios', requireAuth, requirePermiso(PERM_ANEXO_FIDU), async (req, res) => {
+  try {
+    await recargarCatalogoAnexoFidu();
+    res.json({ ok: true, servicios: listarServiciosCatalogo() });
+  } catch (e) {
+    logger.error('[ANEXO-FIDU] servicios:', e);
+    res.status(500).json({ error: safeError(e) });
+  }
 });
 
 /** POST /api/anexo-fidu/diagnosticos — alta CIE-10 desde el módulo anexo */

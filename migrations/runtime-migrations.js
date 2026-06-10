@@ -1240,6 +1240,31 @@ const runtimeMigrations = [
          WHERE c.id IS NULL`
       );
     }
+  },
+  {
+    name: 'rt_anexo_fidu_servicios',
+    description: 'Catálogo CUPS Anexo FIDU en BD (tarifario FOMAG)',
+    run: async (db) => {
+      await db.execute(`
+        CREATE TABLE IF NOT EXISTS anexo_fidu_servicios (
+          id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+          codigo VARCHAR(12) NOT NULL,
+          nombre VARCHAR(500) NOT NULL,
+          valor_unitario INT UNSIGNED NOT NULL DEFAULT 0,
+          cantidad VARCHAR(20) NOT NULL DEFAULT '1',
+          valor_total INT UNSIGNED NOT NULL DEFAULT 0,
+          codigo_servicio_referencia VARCHAR(20) NOT NULL DEFAULT '',
+          activo TINYINT(1) NOT NULL DEFAULT 1,
+          creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          actualizado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          UNIQUE KEY uk_anexo_fidu_servicio_codigo (codigo),
+          INDEX idx_anexo_fidu_servicio_activo (activo)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+      `);
+      const { ANEXO_FIDU_CATALOGO_SERVICIOS } = require('../utils/anexo-fidu-servicios');
+      const { seedAnexoFiduServiciosDesdeEstatico } = require('../utils/anexo-fidu-catalogo');
+      await seedAnexoFiduServiciosDesdeEstatico(db, ANEXO_FIDU_CATALOGO_SERVICIOS);
+    }
   }
 ];
 

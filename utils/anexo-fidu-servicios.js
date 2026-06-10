@@ -60,9 +60,15 @@ const ANEXO_FIDU_CATALOGO_SERVICIOS = [
   { codigo: '940201', nombre: 'ADMINISTRACION (APLICACIÓN) DE PRUEBA DE PERSONALIDAD (CAULQUIER TIPO)(CADA UNA)', valor_unitario: 53362, cantidad: '1', valor_total: 53362, codigo_servicio_referencia: '344' }
 ];
 
-const CATALOGO_POR_CODIGO = new Map(
-  ANEXO_FIDU_CATALOGO_SERVICIOS.map((s) => [s.codigo, s])
-);
+const {
+  asegurarCatalogoLocal,
+  buscarEnMapa,
+  listarCatalogoActivo,
+  invalidarCatalogoAnexoFidu,
+  recargarCatalogoAnexoFidu,
+  usarCatalogoEstatico,
+  normCodigoAlmacen
+} = require('./anexo-fidu-catalogo');
 
 function normCodigoServicio(codigo) {
   const raw = String(codigo || '').trim().replace(/\D/g, '');
@@ -109,12 +115,8 @@ function normalizarCiudadResidencia(val) {
 }
 
 function buscarServicioPorCodigo(codigo) {
-  const c = normCodigoServicio(codigo);
-  if (!c) return null;
-  if (CATALOGO_POR_CODIGO.has(c)) return CATALOGO_POR_CODIGO.get(c);
-  const padded = c.padStart(6, '0');
-  if (CATALOGO_POR_CODIGO.has(padded)) return CATALOGO_POR_CODIGO.get(padded);
-  return null;
+  asegurarCatalogoLocal(ANEXO_FIDU_CATALOGO_SERVICIOS);
+  return buscarEnMapa(codigo);
 }
 
 function aplicarValoresFijosAnexo(row = {}) {
@@ -159,7 +161,8 @@ function enriquecerRegistroAnexoFidu(row = {}) {
 }
 
 function listarServiciosCatalogo() {
-  return ANEXO_FIDU_CATALOGO_SERVICIOS.map((s) => ({
+  asegurarCatalogoLocal(ANEXO_FIDU_CATALOGO_SERVICIOS);
+  return listarCatalogoActivo().map((s) => ({
     codigo: s.codigo,
     nombre: s.nombre.trim(),
     valor_unitario: formatValorAnexo(s.valor_unitario),
@@ -174,6 +177,7 @@ module.exports = {
   ANEXO_FIDU_VALORES_FIJOS,
   ANEXO_FIDU_CATALOGO_SERVICIOS,
   normCodigoServicio,
+  normCodigoAlmacen,
   formatValorAnexo,
   parseValorAnexo,
   parseCantidadAnexo,
@@ -184,5 +188,8 @@ module.exports = {
   aplicarValoresFijosAnexo,
   aplicarCatalogoServicio,
   enriquecerRegistroAnexoFidu,
-  listarServiciosCatalogo
+  listarServiciosCatalogo,
+  invalidarCatalogoAnexoFidu,
+  recargarCatalogoAnexoFidu: (dbConn) => recargarCatalogoAnexoFidu(dbConn, ANEXO_FIDU_CATALOGO_SERVICIOS),
+  usarCatalogoEstatico: () => usarCatalogoEstatico(ANEXO_FIDU_CATALOGO_SERVICIOS)
 };

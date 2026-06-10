@@ -15236,7 +15236,8 @@ const _gestionTitulos = {
   especialidades:    'Especialidades',
   tipos_consulta:    'Tipos de Consulta',
   diagnosticos:      'Diagnósticos',
-  entidades:         'Entidades'
+  entidades:         'Entidades',
+  anexo_fidu_servicios: 'CUPS Anexo FIDU'
 };
 
 const _gestionColumnas = {
@@ -15294,6 +15295,13 @@ const _gestionColumnas = {
     { key: 'id',     label: 'ID' },
     { key: 'nombre', label: 'Nombre' },
     { key: 'activo', label: 'Activo', format: v => v ? 'Sí' : 'No' }
+  ],
+  anexo_fidu_servicios: [
+    { key: 'codigo', label: 'CUPS' },
+    { key: 'nombre', label: 'Nombre', format: v => escapeHtml(String(v || '').slice(0, 80)) + (String(v || '').length > 80 ? '…' : '') },
+    { key: 'valor_unitario', label: 'Valor unit.', format: v => `$ ${(parseInt(v, 10) || 0).toLocaleString('es-CO')}` },
+    { key: 'cantidad', label: 'Cant.' },
+    { key: 'codigo_servicio_referencia', label: 'RIPS ref.' }
   ]
 };
 
@@ -15301,7 +15309,8 @@ let _gestionSeleccionados = new Set();
 let _gestionRegistrosAll  = [];
 let _gestionPaginaActual  = 1;
 const _GESTION_POR_PAGINA = 20;
-const _GESTION_TIPOS_AGREGAR = ['estudio_duraciones', 'especialidades', 'tipos_consulta', 'diagnosticos', 'entidades'];
+const _GESTION_TIPOS_AGREGAR = ['estudio_duraciones', 'especialidades', 'tipos_consulta', 'diagnosticos', 'entidades', 'anexo_fidu_servicios'];
+let _gestionCupsEditId = null;
 
 function _actualizarConteoGestion() {
   const n = _gestionSeleccionados.size;
@@ -15314,7 +15323,7 @@ function _actualizarConteoGestion() {
 function _gestionActualizarFiltros() {
   const tipo = _gestionTipoActual;
   const hayFechas   = ['citas_electro', 'turnos', 'recibos'].includes(tipo);
-  const hayBusqueda = ['citas_electro', 'turnos', 'recibos', 'diagnosticos', 'entidades'].includes(tipo);
+  const hayBusqueda = ['citas_electro', 'turnos', 'recibos', 'diagnosticos', 'entidades', 'anexo_fidu_servicios'].includes(tipo);
   const colBusqueda = $('gestionBusqueda')?.closest('.col');
   const colDesde    = $('gestionFechaDesde')?.closest('.col');
   const colHasta    = $('gestionFechaHasta')?.closest('.col');
@@ -15361,6 +15370,10 @@ function initGestionDatos() {
     window.socket.off('tipos-consulta:actualizado');
     window.socket.on('estudio:creado',           () => { if (_gestionTipoActual === 'estudio_duraciones') buscarGestionDatos(); });
     window.socket.on('tipos-consulta:actualizado',() => { if (_gestionTipoActual === 'tipos_consulta')    buscarGestionDatos(); });
+    window.socket.off('anexo-fidu:servicios-actualizado');
+    window.socket.on('anexo-fidu:servicios-actualizado', () => {
+      if (_gestionTipoActual === 'anexo_fidu_servicios') buscarGestionDatos();
+    });
   }
 
   _gestionActualizarFiltros();
@@ -15405,10 +15418,14 @@ function _gestionRenderRows(tipo, registros) {
       const display = (val === null || val === undefined) ? '-' : (c.format ? c.format(val) : escapeHtml(String(val)));
       return `<td>${display}</td>`;
     }).join('');
+    const btnEditar = tipo === 'anexo_fidu_servicios'
+      ? `<button type="button" class="btn-secondary btn-sm" style="margin-right:6px" title="Editar" onclick="abrirModalEditarGestionCups(${r.id})">Editar</button>`
+      : '';
     return `<tr>
       <td><input type="checkbox" class="chk-row" data-id="${r.id}" /></td>
       ${cells}
       <td>
+        ${btnEditar}
         <button class="btn-eliminar" title="Eliminar" onclick="confirmarEliminarGestion('${tipo}',${r.id})">
           <img src="images/delete.svg" alt="Eliminar" />
         </button>
@@ -15511,9 +15528,72 @@ function _gestionIrPagina(n) {
   _gestionRenderPaginacion();
 }
 
+function _htmlFormularioCupsGestion(prefill = {}) {
+  const codigo = prefill.codigo || '';
+  const nombre = prefill.nombre || '';
+  const valor = prefill.valor_unitario != null ? prefill.valor_unitario : '';
+  const cantidad = prefill.cantidad != null ? prefill.cantidad : '1';
+  const valorTotal = prefill.valor_total != null ? prefill.valor_total : '';
+  const rips = prefill.codigo_servicio_referencia || '';
+  return `
+    <div style="margin-bottom:14px">
+      <label style="display:block;margin-bottom:6px;font-weight:500;font-size:14px">Código CUPS *</label>
+      <input id="agrGestionCupsCodigo" type="text" required maxlength="12" placeholder="Ej: 890211" value="${escapeHtml(codigo)}" style="width:100%;padding:9px 12px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;font-size:14px" />
+    </div>
+    <div style="margin-bottom:14px">
+      <label style="display:block;margin-bottom:6px;font-weight:500;font-size:14px">Nombre del servicio *</label>
+      <textarea id="agrGestionCupsNombre" required rows="3" maxlength="500" placeholder="Descripción según tarifario" style="width:100%;padding:9px 12px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;font-size:14px;resize:vertical">${escapeHtml(nombre)}</textarea>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
+      <div>
+        <label style="display:block;margin-bottom:6px;font-weight:500;font-size:14px">Valor unitario (COP) *</label>
+        <input id="agrGestionCupsValor" type="number" required min="0" step="1" placeholder="35119" value="${escapeHtml(String(valor))}" style="width:100%;padding:9px 12px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;font-size:14px" />
+      </div>
+      <div>
+        <label style="display:block;margin-bottom:6px;font-weight:500;font-size:14px">Cantidad</label>
+        <input id="agrGestionCupsCantidad" type="text" maxlength="20" placeholder="1 o vacío para sesiones" value="${escapeHtml(String(cantidad))}" style="width:100%;padding:9px 12px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;font-size:14px" />
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
+      <div>
+        <label style="display:block;margin-bottom:6px;font-weight:500;font-size:14px">Valor total ref.</label>
+        <input id="agrGestionCupsValorTotal" type="number" min="0" step="1" placeholder="Igual al unitario si es 1" value="${escapeHtml(String(valorTotal))}" style="width:100%;padding:9px 12px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;font-size:14px" />
+      </div>
+      <div>
+        <label style="display:block;margin-bottom:6px;font-weight:500;font-size:14px">Código RIPS ref. *</label>
+        <input id="agrGestionCupsRips" type="text" required maxlength="20" placeholder="Ej: 327" value="${escapeHtml(rips)}" style="width:100%;padding:9px 12px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;font-size:14px" />
+      </div>
+    </div>`;
+}
+
+function abrirModalEditarGestionCups(id) {
+  const reg = _gestionRegistrosAll.find((r) => r.id === id);
+  if (!reg) { showToast('Registro no encontrado', 'error'); return; }
+  _gestionCupsEditId = id;
+  const modal = $('modalAgregarGestion');
+  if (!modal) return;
+  const titulo = $('modalAgregarGestionTitulo');
+  if (titulo) titulo.textContent = `Editar — ${_gestionTitulos.anexo_fidu_servicios}`;
+  const form = $('formAgregarGestion');
+  if (!form) return;
+  form.innerHTML = _htmlFormularioCupsGestion(reg) +
+    `<div style="display:flex;justify-content:flex-end;gap:10px;margin-top:20px">
+       <button type="button" class="btn-secondary btn-sm" onclick="cerrarModalGestionCups()">Cancelar</button>
+       <button type="submit" class="btn-primary btn-sm">Guardar cambios</button>
+     </div>`;
+  form.onsubmit = guardarAgregarGestion;
+  modal.classList.remove('hidden');
+}
+
+function cerrarModalGestionCups() {
+  _gestionCupsEditId = null;
+  $('modalAgregarGestion')?.classList.add('hidden');
+}
+
 async function abrirModalAgregarGestion() {
   const tipo = _gestionTipoActual;
   if (!_GESTION_TIPOS_AGREGAR.includes(tipo)) return;
+  _gestionCupsEditId = null;
   const modal = $('modalAgregarGestion');
   if (!modal) return;
 
@@ -15586,10 +15666,12 @@ async function abrirModalAgregarGestion() {
         <input id="agrGestionNombre" type="text" required maxlength="200" placeholder="Ej: NUEVA EPS" style="width:100%;padding:9px 12px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;font-size:14px" />
         <span style="font-size:0.78rem;color:#6b7280;margin-top:4px;display:block">Se guardará en mayúsculas automáticamente</span>
       </div>`;
+  } else if (tipo === 'anexo_fidu_servicios') {
+    camposHtml = _htmlFormularioCupsGestion();
   }
   form.innerHTML = camposHtml +
     `<div style="display:flex;justify-content:flex-end;gap:10px;margin-top:20px">
-       <button type="button" class="btn-secondary btn-sm" onclick="$('modalAgregarGestion').classList.add('hidden')">Cancelar</button>
+       <button type="button" class="btn-secondary btn-sm" onclick="cerrarModalGestionCups()">Cancelar</button>
        <button type="submit" class="btn-primary btn-sm">Guardar</button>
      </div>`;
   form.onsubmit = guardarAgregarGestion;
@@ -15611,22 +15693,43 @@ async function guardarAgregarGestion(e) {
     body.codigo      = $('agrGestionCodigo')?.value.trim() || undefined;
     body.descripcion = $('agrGestionDescripcion')?.value.trim() || undefined;
   }
+  if (tipo === 'anexo_fidu_servicios') {
+    body.codigo = $('agrGestionCupsCodigo')?.value.trim() || '';
+    body.nombre = $('agrGestionCupsNombre')?.value.trim() || '';
+    body.valor_unitario = parseInt($('agrGestionCupsValor')?.value || '0', 10);
+    body.cantidad = $('agrGestionCupsCantidad')?.value.trim() ?? '1';
+    const vt = $('agrGestionCupsValorTotal')?.value.trim();
+    if (vt !== '') body.valor_total = parseInt(vt, 10);
+    body.codigo_servicio_referencia = $('agrGestionCupsRips')?.value.trim() || '';
+    if (!body.codigo || !body.nombre) { showToast('Código CUPS y nombre son obligatorios', 'error'); return; }
+    if (!body.codigo_servicio_referencia) { showToast('Código RIPS de referencia es obligatorio', 'error'); return; }
+  }
   try {
-    const res  = await apiFetch(`/api/admin/datos/${tipo}`, {
-      method: 'POST',
+    const esEdicionCups = tipo === 'anexo_fidu_servicios' && _gestionCupsEditId;
+    const url = esEdicionCups
+      ? `/api/admin/datos/${tipo}/${_gestionCupsEditId}`
+      : `/api/admin/datos/${tipo}`;
+    const res  = await apiFetch(url, {
+      method: esEdicionCups ? 'PATCH' : 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
     });
     const data = await res.json();
     if (!data.ok) { showToast(data.error || 'Error al guardar', 'error'); return; }
-    showToast('Registro agregado exitosamente', 'success');
-    $('modalAgregarGestion').classList.add('hidden');
+    showToast(esEdicionCups ? 'Servicio CUPS actualizado' : 'Registro agregado exitosamente', 'success');
+    cerrarModalGestionCups();
     // Invalidar caché para que otros módulos recarguen datos actualizados
     if (tipo === 'entidades') invalidarCacheEntidades();
     if (tipo === 'estudio_duraciones') invalidarCacheEstudios();
+    if (tipo === 'anexo_fidu_servicios' && typeof window._invalidarServiciosAnexoFidu === 'function') {
+      window._invalidarServiciosAnexoFidu();
+    }
     buscarGestionDatos();
   } catch (err) { showToast('Error: ' + err.message, 'error'); }
 }
+
+window.abrirModalEditarGestionCups = abrirModalEditarGestionCups;
+window.cerrarModalGestionCups = cerrarModalGestionCups;
 
 function confirmarEliminarGestion(tipo, id) {
   const titulo = _gestionTitulos[tipo] || tipo;
@@ -15639,6 +15742,9 @@ function confirmarEliminarGestion(tipo, id) {
     // Invalidar caché para que otros módulos recarguen datos actualizados
     if (tipo === 'entidades') invalidarCacheEntidades();
     if (tipo === 'estudio_duraciones') invalidarCacheEstudios();
+    if (tipo === 'anexo_fidu_servicios' && typeof window._invalidarServiciosAnexoFidu === 'function') {
+      window._invalidarServiciosAnexoFidu();
+    }
     buscarGestionDatos();
   } catch (e) { showToast('Error: ' + e.message, 'error'); }
   });
@@ -15664,6 +15770,9 @@ function eliminarSeleccionadosGestion() {
     // Invalidar caché para que otros módulos recarguen datos actualizados
     if (tipo === 'entidades') invalidarCacheEntidades();
     if (tipo === 'estudio_duraciones') invalidarCacheEstudios();
+    if (tipo === 'anexo_fidu_servicios' && typeof window._invalidarServiciosAnexoFidu === 'function') {
+      window._invalidarServiciosAnexoFidu();
+    }
     buscarGestionDatos();
   } catch (e) { showToast('Error: ' + e.message, 'error'); }
   });
