@@ -9,8 +9,18 @@ const {
 } = require('../utils/anexo-fidu-servicios');
 
 describe('anexo-fidu-servicios', () => {
-  test('catálogo tiene 31 servicios', () => {
-    expect(ANEXO_FIDU_CATALOGO_SERVICIOS.length).toBe(31);
+  test('catálogo tiene 32 servicios', () => {
+    expect(ANEXO_FIDU_CATALOGO_SERVICIOS.length).toBe(32);
+  });
+
+  test('aplica consulta fisioterapia primera vez (890211)', () => {
+    const { ok, row } = aplicarCatalogoServicio('890211', {});
+    expect(ok).toBe(true);
+    expect(row.codigo_servicio).toBe('890211');
+    expect(row.nombre_servicio).toContain('FISIOTERAPIA');
+    expect(row.valor_unitario).toBe('$ 35.119');
+    expect(row.valor_total_fact).toBe('$ 35.119');
+    expect(row.codigo_servicio_referencia).toBe('327');
   });
 
   test('aplica PSG básica (891704) con valores y RIPS', () => {
@@ -60,7 +70,8 @@ describe('anexo-fidu-servicios', () => {
   });
 
   test('busca código con ceros a la izquierda', () => {
-    expect(buscarServicioPorCodigo('53105')?.codigo).toBe('53105');
+    expect(buscarServicioPorCodigo('53105')?.codigo).toBe('053105');
+    expect(buscarServicioPorCodigo('053105')?.nombre).toContain('BLOQUEO');
     expect(normalizarCiudadResidencia('Pasto')).toBe('San Juan de Pasto');
     expect(normalizarCiudadResidencia('San Juan de Pasto')).toBe('San Juan de Pasto');
   });
