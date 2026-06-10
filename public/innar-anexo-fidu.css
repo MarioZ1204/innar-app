@@ -529,6 +529,22 @@
   display: none;
 }
 
+#view-anexo-fidu .afidu-link-agregar-dx {
+  margin-left: 6px;
+  padding: 2px 8px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #0f766e;
+  background: #ecfdf5;
+  border: 1px solid #99f6e4;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+#view-anexo-fidu .afidu-link-agregar-dx:hover {
+  background: #ccfbf1;
+}
+
 #view-anexo-fidu .afidu-entrada-modo label {
   display: block;
   font-size: 0.72rem;

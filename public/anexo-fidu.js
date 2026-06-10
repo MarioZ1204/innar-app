@@ -708,13 +708,78 @@
   }
 
   let _cie10PreviewTimer = null;
+
+  function promptNombreDiagnosticoAfidu(codigo, onOk) {
+    const cod = String(codigo || '').trim();
+    const msg = `Código ${cod} no está en el catálogo. Escriba el nombre del diagnóstico para guardarlo:`;
+    if (typeof window.showPromptInput === 'function') {
+      window.showPromptInput(msg, (nombre) => {
+        if (nombre?.trim()) onOk(nombre.trim());
+      }, {
+        okText: 'Guardar diagnóstico',
+        cancelText: 'Cancelar',
+        danger: false,
+        icon: '🩺',
+        placeholder: 'Nombre del diagnóstico (NOMBREDIAGNOSTICO)'
+      });
+      return;
+    }
+    const nombre = window.prompt(msg);
+    if (nombre?.trim()) onOk(nombre.trim());
+  }
+
+  async function crearDiagnosticoEnCatalogo(codigo, nombre) {
+    const data = await apiAnexo('/api/anexo-fidu/diagnosticos', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ codigo, nombre })
+    });
+    return {
+      codigo: String(data.codigo || codigo).trim(),
+      nombre: String(data.nombre || nombre).trim()
+    };
+  }
+
+  async function solicitarYRegistrarDiagnostico(codigo) {
+    const cod = String(codigo || '').trim();
+    if (cod.length < 2) return '';
+    return new Promise((resolve) => {
+      promptNombreDiagnosticoAfidu(cod, async (nombre) => {
+        try {
+          const dx = await crearDiagnosticoEnCatalogo(cod, nombre);
+          if (typeof showToast === 'function') {
+            showToast(dx.nombre ? `Diagnóstico guardado: ${dx.nombre}` : 'Diagnóstico guardado', 'success');
+          }
+          resolve(dx.nombre);
+        } catch (e) {
+          if (typeof showToast === 'function') showToast(e.message, 'error');
+          resolve('');
+        }
+      });
+    });
+  }
+
+  async function registrarDiagnosticoSiNuevo(codigo, nombre) {
+    const cod = String(codigo || '').trim();
+    const nom = String(nombre || '').trim();
+    if (cod.length < 2 || !nom) return nom;
+    const existente = await lookupNombreDiagnostico(cod);
+    if (existente) return existente;
+    try {
+      const dx = await crearDiagnosticoEnCatalogo(cod, nom);
+      return dx.nombre || nom;
+    } catch (_) {
+      return nom;
+    }
+  }
+
   async function actualizarPreviewDiagnostico(codigo) {
     const el = $('afiduDiagnosticoPreview');
     if (!el) return;
     const cod = String(codigo || '').trim();
     if (cod.length < 2) {
       el.classList.add('hidden');
-      el.textContent = '';
+      el.innerHTML = '';
       return;
     }
     try {
@@ -723,8 +788,12 @@
         el.textContent = `Diagnóstico: ${nombre}`;
         el.classList.remove('hidden');
       } else {
-        el.textContent = 'Código CIE-10 no encontrado en el catálogo';
+        el.innerHTML = 'Código CIE-10 no encontrado. <button type="button" class="afidu-link-agregar-dx">Agregar diagnóstico</button>';
         el.classList.remove('hidden');
+        el.querySelector('.afidu-link-agregar-dx')?.addEventListener('click', async () => {
+          const nom = await solicitarYRegistrarDiagnostico(cod);
+          if (nom) el.textContent = `Diagnóstico: ${nom}`;
+        });
       }
     } catch (_) {
       el.classList.add('hidden');
@@ -1000,11 +1069,15 @@
       if (key === 'codigo_servicio' || key === 'numero_documento') {
         await recargarServicioYPacienteEnFila(tr);
       } else if (key === 'codigo_cie10') {
-        const nombre = await aplicarNombreDiagnosticoDesdeCie10(tr, nuevoValor);
+        let nombre = await aplicarNombreDiagnosticoDesdeCie10(tr, nuevoValor);
         if (!nombre && nuevoValor.length >= 2) {
-          if (typeof showToast === 'function') {
-            showToast('No se encontró diagnóstico para ese código CIE-10', 'warning');
-          }
+          nombre = await solicitarYRegistrarDiagnostico(nuevoValor);
+          if (nombre) setValorCelda(tr, 'nombre_diagnostico', nombre);
+        }
+      } else if (key === 'nombre_diagnostico') {
+        const bodyDx = leerRegistroDesdeFila(tr);
+        if (bodyDx.codigo_cie10 && nuevoValor) {
+          await registrarDiagnosticoSiNuevo(bodyDx.codigo_cie10, nuevoValor);
         }
       } else if (key === 'valor_unitario' || key === 'cantidad') {
         recalcularTotalEnFila(tr);

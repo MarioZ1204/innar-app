@@ -10851,6 +10851,14 @@ async function cargarLista(queryString) {
           </svg>
         </button>`;
       }
+      if (tienePermiso('recibos.editar') && !esAnulado && !esPendiente) {
+        acciones += `<button class="btn-recibo-pendiente marcar-pendiente" data-id="${r.id}" title="Marcar como pendiente" aria-label="Marcar como pendiente">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="9"/>
+            <path d="M12 7v5l3 2"/>
+          </svg>
+        </button>`;
+      }
       if (tienePermiso('recibos.anular') && !esAnulado) {
         acciones += `<button class="btn-recibo-anular anular-recibo" data-id="${r.id}" title="Anular">
           <img src="images/cancel.svg" alt="Anular"/></button>`;
@@ -10953,6 +10961,25 @@ async function cargarLista(queryString) {
           }
         } catch (_) { showToast('Error marcando como pagado', 'error'); }
       }, { okText: 'Pagado', cancelText: 'Cancelar', danger: false, icon: '✅' });
+    }));
+
+    // Listener: Marcar como pendiente (revierte totales pagado → pendiente)
+    tbody.querySelectorAll('.marcar-pendiente').forEach(b => b.addEventListener('click', e => {
+      const reciboId = e.target.closest('.marcar-pendiente').dataset.id;
+      showConfirm('¿Marcar este recibo como pendiente? El valor pasará de pagado a pendiente en el resumen.', async () => {
+        try {
+          const jr = await apiFetch(`/api/recibos/${reciboId}/pendiente`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' }
+          }).then(r => r.json());
+          if (jr.ok) {
+            showToast('Recibo marcado como pendiente', 'success');
+            cargarLista(_recibosLastParams);
+          } else {
+            showToast(jr.error || 'Error al marcar como pendiente', 'error');
+          }
+        } catch (_) { showToast('Error marcando como pendiente', 'error'); }
+      }, { okText: 'Pendiente', cancelText: 'Cancelar', danger: false, icon: '⏳' });
     }));
 
     // Listener: Anular recibo

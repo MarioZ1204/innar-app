@@ -160,6 +160,53 @@ router.get('/anexo-fidu/servicios', requireAuth, requirePermiso(PERM_ANEXO_FIDU)
   res.json({ ok: true, servicios: listarServiciosCatalogo() });
 });
 
+/** POST /api/anexo-fidu/diagnosticos — alta CIE-10 desde el módulo anexo */
+router.post('/anexo-fidu/diagnosticos', requireAuth, requirePermiso(PERM_ANEXO_FIDU), async (req, res) => {
+  const codigo = String(req.body?.codigo || '').trim();
+  const nombre = String(req.body?.nombre || '').trim();
+  const descripcion = String(req.body?.descripcion || '').trim();
+  if (!codigo || codigo.replace(/\./g, '').length < 2) {
+    return res.status(400).json({ error: 'Código CIE-10 requerido (mín. 2 caracteres)' });
+  }
+  if (!nombre) return res.status(400).json({ error: 'Nombre del diagnóstico requerido' });
+  try {
+    const existente = await lookupNombreDiagnosticoDb(codigo);
+    if (existente.nombre) {
+      return res.json({
+        ok: true,
+        ya_existia: true,
+        id: null,
+        codigo: existente.codigo || codigo,
+        nombre: existente.nombre
+      });
+    }
+    const result = await db.execute(
+      'INSERT INTO diagnosticos (nombre, descripcion, codigo, activo) VALUES (?, ?, ?, 1)',
+      [nombre, descripcion || nombre, codigo]
+    );
+    res.status(201).json({
+      ok: true,
+      ya_existia: false,
+      id: result.insertId,
+      codigo,
+      nombre
+    });
+  } catch (e) {
+    if (e.code === 'ER_DUP_ENTRY') {
+      const dup = await lookupNombreDiagnosticoDb(codigo);
+      return res.json({
+        ok: true,
+        ya_existia: true,
+        id: null,
+        codigo: dup.codigo || codigo,
+        nombre: dup.nombre || nombre
+      });
+    }
+    logger.error('[ANEXO-FIDU] crear diagnostico:', e);
+    res.status(500).json({ error: safeError(e) });
+  }
+});
+
 /** GET /api/anexo-fidu/diagnostico-por-codigo?codigo=G470 — nombre CIE-10 para NOMBREDIAGNOSTICO */
 router.get('/anexo-fidu/diagnostico-por-codigo', requireAuth, requirePermiso(PERM_ANEXO_FIDU), async (req, res) => {
   const raw = String(req.query.codigo || '').trim();

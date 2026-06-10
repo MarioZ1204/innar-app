@@ -882,6 +882,26 @@ router.patch('/recibos/:id/anular', requireAuth, requireRoleOrPerm(['superadmin'
   } catch (err) { res.status(500).json({ error: safeError(err) }); }
 });
 
+// PATCH /api/recibos/:id/pendiente — revierte PAGADO → PENDIENTE (actualiza totales en resumen/stats)
+router.patch('/recibos/:id/pendiente', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion', 'contabilidad'], 'recibos.editar'), async (req, res) => {
+  const id = parseReciboId(req.params.id);
+  if (id === null) return res.status(400).json({ error: 'ID de recibo inválido' });
+  try {
+    const rows = await db.query('SELECT id, anulado, estado_pago FROM recibos WHERE id=?', [id]);
+    if (!rows.length) return res.status(404).json({ error: 'Recibo no encontrado' });
+    if (rows[0].anulado) return res.status(400).json({ error: 'No se puede marcar como pendiente un recibo anulado' });
+    if (rows[0].estado_pago === 'PENDIENTE') {
+      return res.status(400).json({ error: 'Este recibo ya está pendiente' });
+    }
+    await db.execute(
+      'UPDATE recibos SET estado_pago=?, fecha_pago=NULL, pagado_por_id=NULL, pagado_por_nombre=NULL WHERE id=?',
+      ['PENDIENTE', id]
+    );
+    emitSocket('recibo:actualizar-lista'); emitSocket('stats:actualizar');
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: safeError(err) }); }
+});
+
 // PATCH /api/recibos/:id/pagar
 router.patch('/recibos/:id/pagar', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion', 'contabilidad'], 'recibos.editar'), async (req, res) => {
   const id = parseReciboId(req.params.id);
