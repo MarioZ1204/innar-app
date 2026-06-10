@@ -883,7 +883,7 @@ router.patch('/recibos/:id/anular', requireAuth, requireRoleOrPerm(['superadmin'
 });
 
 // PATCH /api/recibos/:id/pendiente — revierte PAGADO → PENDIENTE (actualiza totales en resumen/stats)
-router.patch('/recibos/:id/pendiente', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion', 'contabilidad'], 'recibos.editar'), async (req, res) => {
+router.patch('/recibos/:id/pendiente', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion', 'contabilidad'], ['recibos.editar', 'recibos.pendiente']), async (req, res) => {
   const id = parseReciboId(req.params.id);
   if (id === null) return res.status(400).json({ error: 'ID de recibo inválido' });
   try {
@@ -903,7 +903,7 @@ router.patch('/recibos/:id/pendiente', requireAuth, requireRoleOrPerm(['superadm
 });
 
 // PATCH /api/recibos/:id/pagar
-router.patch('/recibos/:id/pagar', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion', 'contabilidad'], 'recibos.editar'), async (req, res) => {
+router.patch('/recibos/:id/pagar', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion', 'contabilidad'], ['recibos.editar', 'recibos.pagar']), async (req, res) => {
   const id = parseReciboId(req.params.id);
   if (id === null) return res.status(400).json({ error: 'ID de recibo inválido' });
   try {

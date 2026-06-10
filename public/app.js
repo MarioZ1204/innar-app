@@ -354,6 +354,163 @@ function esMonitorizacionVideoRadio(estudioNombre) {
   return esEstudioElectroVtmApp(estudioNombre);
 }
 
+if (!window._duracionCacheElectro) window._duracionCacheElectro = {};
+
+async function fetchDuracionEstudioElectro(nombre) {
+  const key = String(nombre || '').trim();
+  if (!key) return null;
+  if (window._duracionCacheElectro[key]) return window._duracionCacheElectro[key];
+  try {
+    const res = await apiFetch(`/api/estudios/duracion?nombre=${encodeURIComponent(key)}`);
+    const data = await res.json();
+    if (data.ok) {
+      window._duracionCacheElectro[key] = data;
+      return data;
+    }
+  } catch (_) { /* ignore */ }
+  return null;
+}
+
+async function estudioElectroDuracionEditable(nombre) {
+  if (esMonitorizacionVideoRadio(nombre)) return true;
+  const info = await fetchDuracionEstudioElectro(nombre);
+  return !!(info && info.esVariable);
+}
+
+function formatearDuracionMinutosElectro(minutos) {
+  const m = parseInt(minutos, 10);
+  if (!(m > 0)) return { html: false, text: '-' };
+  const dHrs = Math.floor(m / 60);
+  const dMin = m % 60;
+  if (dHrs >= 24) {
+    const dias = Math.floor(dHrs / 24);
+    const hResto = dHrs % 24;
+    return { html: true, text: `<span class="electro-dur-badge multi-day">${dias}d ${hResto}h</span>` };
+  }
+  if (dHrs > 0 && dMin > 0) return { html: false, text: `${dHrs}h ${dMin}min` };
+  if (dHrs > 0) return { html: false, text: `${dHrs} horas` };
+  return { html: false, text: `${dMin} min` };
+}
+
+function pintarDuracionMinutosEnElemento(el, minutos) {
+  if (!el) return;
+  const fmt = formatearDuracionMinutosElectro(minutos);
+  if (fmt.html) el.innerHTML = fmt.text;
+  else el.textContent = fmt.text;
+}
+
+function pintarHoraFinModalElectro(cita) {
+  const hfInfoEl = document.getElementById('modalHoraFinInfoDisplay');
+  if (!hfInfoEl) return;
+  if (cita?.hora_fin) {
+    let hfText = formatearHora(cita.hora_fin);
+    if (cita.hora_fin_date && extraerFechaYmdCalendario(cita.hora_fin_date) !== extraerFechaYmdCalendario(cita.fecha)) {
+      hfText += ` (${formatearFechaISO(cita.hora_fin_date)})`;
+    }
+    hfInfoEl.textContent = hfText;
+  } else {
+    hfInfoEl.textContent = '-';
+  }
+}
+
+async function configurarEdicionDuracionModalElectro(cita) {
+  const editWrap = $('modalDuracionEdit');
+  if (!editWrap) return;
+  const puedeEditar = tienePermiso('electro.editar') && cita?.estado !== 'Completado';
+  const esEditable = puedeEditar && await estudioElectroDuracionEditable(cita?.estudio);
+  if (esEditable) {
+    editWrap.style.display = 'block';
+    editWrap.classList.remove('hidden');
+    const mins = parseInt(cita.duracion_minutos, 10) || 0;
+    const hhEl = $('modalDurHH');
+    const mmEl = $('modalDurMM');
+    if (hhEl) hhEl.value = String(Math.floor(mins / 60));
+    if (mmEl) mmEl.value = String(mins % 60);
+    const btnGuardar = $('btnGuardarDuracionModal');
+    if (btnGuardar) btnGuardar.disabled = false;
+  } else {
+    editWrap.style.display = 'none';
+    editWrap.classList.add('hidden');
+  }
+}
+
+async function guardarDuracionCitaElectro() {
+  if (!citaElectroSeleccionada) return;
+  if (!tienePermiso('electro.editar')) {
+    showToast('No tiene permiso para editar citas de electro', 'error');
+    return;
+  }
+  if (citaElectroSeleccionada.estado === 'Completado') {
+    showToast('No se puede cambiar la duración de un estudio completado', 'error');
+    return;
+  }
+  const hh = parseInt($('modalDurHH')?.value, 10) || 0;
+  const mm = parseInt($('modalDurMM')?.value, 10) || 0;
+  const duracionMinutos = hh * 60 + mm;
+  if (duracionMinutos <= 0) {
+    showToast('Indique una duración válida (horas y/o minutos)', 'error');
+    return;
+  }
+  const btn = $('btnGuardarDuracionModal');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Guardando...';
+  }
+  try {
+    const res = await apiFetch(`/api/citas-electro/${citaElectroSeleccionada.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ duracion_minutos: duracionMinutos })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data?.ok) {
+      showToast(data?.error || 'No se pudo actualizar la duración', 'error');
+      return;
+    }
+    try {
+      const resFresh = await apiFetch(
+        `/api/citas-electro/${citaElectroSeleccionada.id}?_t=${Date.now()}`,
+        { cache: 'no-store' }
+      );
+      if (resFresh.ok) {
+        const fresh = await resFresh.json();
+        Object.assign(citaElectroSeleccionada, fresh, {
+          estado: normalizarEstadoElectro(fresh.estado ?? citaElectroSeleccionada.estado)
+        });
+      } else {
+        citaElectroSeleccionada.duracion_minutos = duracionMinutos;
+      }
+    } catch (_) {
+      citaElectroSeleccionada.duracion_minutos = duracionMinutos;
+    }
+    pintarDuracionMinutosEnElemento($('modalDuracionDisplay'), citaElectroSeleccionada.duracion_minutos);
+    pintarHoraFinModalElectro(citaElectroSeleccionada);
+    const estudioActivo = (citaElectroSeleccionada.estado === 'En Estudio' || citaElectroSeleccionada.estado === 'Pausado')
+      && citaElectroSeleccionada.hora_inicio;
+    if (estudioActivo) {
+      citaElectroSeleccionada._avisoFinDuracion = false;
+      const estudioBarra = $('estudioBarra');
+      if (estudioBarra) estudioBarra.style.display = 'block';
+      actualizarProgresoEstudio();
+    }
+    if (window.socket && window.socket.connected) {
+      window.socket.emit('electro:cambios-guardados', {
+        id: citaElectroSeleccionada.id,
+        cambios: { duracion_minutos: duracionMinutos }
+      });
+    }
+    await cargarCitasElectro();
+    showToast('Duración actualizada', 'success');
+  } catch (e) {
+    showToast('Error actualizando duración: ' + e.message, 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = 'Actualizar duración';
+    }
+  }
+}
+
 // ========= POLÍTICA CENTRAL: AGENDA MÉDICA =========
 // Objetivo: evitar reglas duplicadas entre tabla / panel / modal.
 function agendaMedicaEsEstadoFinal(estado) {
@@ -568,6 +725,14 @@ function isElectro() { return currentUser && (currentUser.rol === 'electro' || c
 function isDoctor() { return currentUser && currentUser.rol === 'doctor'; }
 function isContabilidad() { return currentUser && currentUser.rol === 'contabilidad'; }
 function canDeleteRecibos() { return tienePermiso('recibos.eliminar'); }
+
+function puedeMarcarReciboPagado() {
+  return tienePermiso('recibos.pagar') || tienePermiso('recibos.editar');
+}
+
+function puedeMarcarReciboPendiente() {
+  return tienePermiso('recibos.pendiente') || tienePermiso('recibos.editar');
+}
 
 // Mostrar saludo para doctores
 function mostrarSaludoDoctor() {
@@ -3602,11 +3767,6 @@ async function preLlenarReciboDesdeCita(cita) {
   if ($('clienteNombres')) $('clienteNombres').value = _partesNombre.slice(0, _mitad).join(' ');
   if ($('clienteApellidos')) $('clienteApellidos').value = _partesNombre.slice(_mitad).join(' ');
   if ($('docCliente')) $('docCliente').value = cita.paciente_documento || '';
-
-  // Entidad: pre-seleccionar si existe en el select
-  if ($('reciboEntidad') && cita.entidad) {
-    $('reciboEntidad').value = cita.entidad; // intentará coincidir con la opción
-  }
 
   // Tipo de recibo: si hay médico -> seleccionar 'doctor', si hay tipo de estudio -> 'estudio'
   if (cita.medico_id) {
@@ -7132,6 +7292,7 @@ async function initElectro() {
   $('cerrarModalDetallesCita')?.addEventListener('click', cerrarModalDetallesCita);
   $('btnCancelarModal')?.addEventListener('click', cerrarModalDetallesCita);
   $('btnGuardarCambios')?.addEventListener('click', guardarCambiosCitaElectro);
+  $('btnGuardarDuracionModal')?.addEventListener('click', guardarDuracionCitaElectro);
   $('btnIniciarEstudio')?.addEventListener('click', iniciarEstudioModal);
   $('btnFinalizarEstudio')?.addEventListener('click', finalizarEstudioModal);
   
@@ -7693,11 +7854,6 @@ function aplicarPacienteFormularioMedica(p) {
   if ($('nuevoPacienteTelefonoMedica2')) {
     $('nuevoPacienteTelefonoMedica2').value = String(p.telefono2 || '').replace(/\D/g, '').slice(0, 10);
   }
-  const entSel = $('nuevoTurnoEntidadMedica');
-  if (p.entidad && entSel) {
-    const opt = [...entSel.options].find((o) => o.value === p.entidad || o.textContent === p.entidad);
-    if (opt) entSel.value = opt.value;
-  }
   const tipoSel = $('nuevoTurnoTipoMedica');
   if (p.tipo_consulta && tipoSel) {
     const opt = [...tipoSel.options].find((o) => o.value === p.tipo_consulta || o.textContent === p.tipo_consulta);
@@ -7718,11 +7874,6 @@ function aplicarPacienteFormularioElectro(p) {
   if ($('electroPacienteApellidos')) $('electroPacienteApellidos').value = apellidos;
   if ($('electroTelefono')) $('electroTelefono').value = String(p.telefono || '').replace(/\D/g, '').slice(0, 10);
   if ($('electroTelefono2')) $('electroTelefono2').value = String(p.telefono2 || '').replace(/\D/g, '').slice(0, 10);
-  const entSel = $('electroEntidad');
-  if (p.entidad && entSel) {
-    const opt = [...entSel.options].find((o) => o.value === p.entidad || o.textContent === p.entidad);
-    if (opt) entSel.value = opt.value;
-  }
 }
 
 async function consultarPacientePorDocumento(documento) {
@@ -8619,85 +8770,90 @@ async function crearCitaElectro() {
 /** No se conceden por defecto a admin u otros roles con lista abierta; solo superadmin o asignación explícita. */
 const PERMISOS_OPT_IN = new Set(['modulo.anexo_fidu']);
 
-// Definición completa de todos los permisos del sistema
+// Definición completa de todos los permisos del sistema (agrupados por módulo)
 const PERMISOS_DEFS = [
-  // ── Acceso a Módulos ───────────────────────────────────────────────────────
-  { key: 'modulo.recibos',          label: 'Módulo: Recibos',                     grupo: 'Acceso a Módulos' },
-  { key: 'modulo.agenda_medica',    label: 'Módulo: Agenda Médica',               grupo: 'Acceso a Módulos' },
-  { key: 'modulo.electrodiag',      label: 'Módulo: Electrodiagnóstico',          grupo: 'Acceso a Módulos' },
-  { key: 'modulo.ucqn',             label: 'Módulo: UCQN',                         grupo: 'Acceso a Módulos' },
-  { key: 'modulo.dashboard',        label: 'Módulo: Dashboard de Citas',          grupo: 'Acceso a Módulos' },
-  { key: 'modulo.usuarios',         label: 'Módulo: Gestión de Usuarios',         grupo: 'Acceso a Módulos' },
-  { key: 'modulo.diagnosticos',     label: 'Módulo: Diagnósticos',                grupo: 'Acceso a Módulos' },
-  { key: 'modulo.gestion_datos',    label: 'Módulo: Gestión de Datos',            grupo: 'Acceso a Módulos' },
-  { key: 'modulo.monitor_equipos',  label: 'Módulo: Monitor de Equipos',           grupo: 'Acceso a Módulos' },
-  { key: 'modulo.reportes_pdx',     label: 'Módulo: Cargar reportes',              grupo: 'Acceso a Módulos' },
-  { key: 'modulo.armado_soportes', label: 'Módulo: Soportes',                    grupo: 'Acceso a Módulos' },
-  { key: 'modulo.anexo_fidu',      label: 'Módulo: Anexo',                        grupo: 'Acceso a Módulos' },
-  { key: 'modulo.backup',          label: 'Módulo: Backup',                        grupo: 'Acceso a Módulos' },
-  // ── Cargar reportes (PDX) ─────────────────────────────────────────────────
-  { key: 'soportes.pdx.ver',             label: 'Reportes: Ver carpetas y archivos',     grupo: 'Cargar reportes' },
-  { key: 'soportes.pdx.carpetas.todas',  label: 'Reportes: Ver todas las carpetas',        grupo: 'Cargar reportes' },
-  { key: 'soportes.pdx.crear_carpeta',   label: 'Reportes: Crear carpetas',              grupo: 'Cargar reportes' },
-  { key: 'soportes.pdx.subir',           label: 'Reportes: Subir archivos PDF',          grupo: 'Cargar reportes' },
-  { key: 'soportes.pdx.editar',          label: 'Reportes: Editar, reemplazar y mover',  grupo: 'Cargar reportes' },
-  { key: 'soportes.pdx.eliminar',        label: 'Reportes: Eliminar archivos y carpetas', grupo: 'Cargar reportes' },
-  // ── Armado de soportes ────────────────────────────────────────────────────
-  { key: 'soportes.armado.crear_estructura', label: 'Armado: Crear mes/día/FE',         grupo: 'Soportes Radicación' },
-  { key: 'soportes.armado.subir',        label: 'Armado: Subir OPF/CRC/HEV',            grupo: 'Soportes Radicación' },
-  { key: 'soportes.armado.importar_pdx', label: 'Armado: Importar PDX a expediente',    grupo: 'Soportes Radicación' },
-  { key: 'soportes.descargar_zip',       label: 'Armado: Descargar ZIP del expediente', grupo: 'Soportes Radicación' },
-  { key: 'soportes.ver_archivo',         label: 'Soportes: Ver periodos en archivo',    grupo: 'Soportes Radicación' },
   // ── Recibos ───────────────────────────────────────────────────────────────
-  { key: 'recibos.crear',           label: 'Recibos: Crear nuevo recibo',         grupo: 'Recibos' },
-  { key: 'recibos.ver',             label: 'Recibos: Ver lista de recibos',       grupo: 'Recibos' },
-  { key: 'recibos.editar',          label: 'Recibos: Editar recibo existente',    grupo: 'Recibos' },
-  { key: 'recibos.anular',          label: 'Recibos: Anular recibo',              grupo: 'Recibos' },
-  { key: 'recibos.eliminar',        label: 'Recibos: Eliminar recibos',           grupo: 'Recibos' },
-  { key: 'recibos.exportar',        label: 'Recibos: Exportar Excel / PDF',       grupo: 'Recibos' },
-  { key: 'recibos.gestionar_servicios', label: 'Recibos: Gestionar servicios',    grupo: 'Recibos' },
-  { key: 'recibos.resetear',        label: 'Recibos: Resetear consecutivos',      grupo: 'Recibos' },
+  { key: 'modulo.recibos',              label: 'Acceso al módulo',                    grupo: 'Recibos' },
+  { key: 'recibos.crear',               label: 'Crear nuevo recibo',                  grupo: 'Recibos' },
+  { key: 'recibos.ver',                 label: 'Ver lista de recibos',              grupo: 'Recibos' },
+  { key: 'recibos.editar',              label: 'Editar datos del recibo',           grupo: 'Recibos' },
+  { key: 'recibos.pagar',               label: 'Marcar recibo como pagado',         grupo: 'Recibos' },
+  { key: 'recibos.pendiente',           label: 'Revertir recibo a pendiente',       grupo: 'Recibos' },
+  { key: 'recibos.anular',              label: 'Anular recibo',                     grupo: 'Recibos' },
+  { key: 'recibos.eliminar',            label: 'Eliminar recibos',                  grupo: 'Recibos' },
+  { key: 'recibos.exportar',            label: 'Exportar Excel / PDF',              grupo: 'Recibos' },
+  { key: 'recibos.gestionar_servicios', label: 'Gestionar servicios y tarifas',     grupo: 'Recibos' },
+  { key: 'recibos.resetear',            label: 'Resetear consecutivos',             grupo: 'Recibos' },
+  { key: 'sistema.reportes',            label: 'Ver reportes diarios y mensuales',  grupo: 'Recibos' },
   // ── Agenda Médica ──────────────────────────────────────────────────────────
-  { key: 'agenda.ver',              label: 'Agenda: Ver turnos del día',          grupo: 'Agenda Médica' },
-  { key: 'agenda.crear',            label: 'Agenda: Crear / Programar citas',     grupo: 'Agenda Médica' },
-  { key: 'agenda.editar',           label: 'Agenda: Editar citas',                grupo: 'Agenda Médica' },
-  { key: 'agenda.eliminar',         label: 'Agenda: Eliminar citas',              grupo: 'Agenda Médica' },
-  { key: 'agenda.cambiar_estado',   label: 'Agenda: Cambiar estado de turno',     grupo: 'Agenda Médica' },
-  { key: 'agenda.llamar_siguiente', label: 'Agenda: Llamar siguiente paciente',   grupo: 'Agenda Médica' },
-  { key: 'agenda.marcar_atendido',  label: 'Agenda: Marcar como atendido',        grupo: 'Agenda Médica' },
-  { key: 'agenda.aviso_doctor',     label: 'Agenda: Enviar aviso al doctor',      grupo: 'Agenda Médica' },
-  { key: 'agenda.disponibilidad',   label: 'Agenda: Programar disponibilidad',    grupo: 'Agenda Médica' },
-  { key: 'agenda.editar_siempre',   label: 'Agenda: Editar citas en cualquier estado', grupo: 'Agenda Médica' },
+  { key: 'modulo.agenda_medica',        label: 'Acceso al módulo',                    grupo: 'Agenda Médica' },
+  { key: 'agenda.ver',                  label: 'Ver turnos del día',                  grupo: 'Agenda Médica' },
+  { key: 'agenda.crear',                label: 'Crear / programar citas',             grupo: 'Agenda Médica' },
+  { key: 'agenda.editar',               label: 'Editar citas',                        grupo: 'Agenda Médica' },
+  { key: 'agenda.eliminar',             label: 'Eliminar citas',                      grupo: 'Agenda Médica' },
+  { key: 'agenda.cambiar_estado',       label: 'Cambiar estado de turno',             grupo: 'Agenda Médica' },
+  { key: 'agenda.llamar_siguiente',     label: 'Llamar siguiente paciente',           grupo: 'Agenda Médica' },
+  { key: 'agenda.marcar_atendido',      label: 'Marcar como atendido',                grupo: 'Agenda Médica' },
+  { key: 'agenda.aviso_doctor',         label: 'Enviar aviso al doctor',              grupo: 'Agenda Médica' },
+  { key: 'agenda.disponibilidad',       label: 'Programar disponibilidad',            grupo: 'Agenda Médica' },
+  { key: 'agenda.editar_siempre',       label: 'Editar citas en cualquier estado',    grupo: 'Agenda Médica' },
   // ── Electrodiagnóstico ────────────────────────────────────────────────────
-  { key: 'electro.ver',             label: 'Electro: Ver citas',                  grupo: 'Electrodiagnóstico' },
-  { key: 'electro.crear',           label: 'Electro: Crear cita',                grupo: 'Electrodiagnóstico' },
-  { key: 'electro.editar',          label: 'Electro: Editar cita',                grupo: 'Electrodiagnóstico' },
-  { key: 'electro.eliminar',        label: 'Electro: Eliminar cita',              grupo: 'Electrodiagnóstico' },
-  { key: 'electro.cambiar_estado',  label: 'Electro: Cambiar estado de cita',     grupo: 'Electrodiagnóstico' },
-  { key: 'electro.subir_archivo',   label: 'Electro: Subir archivos de estudios', grupo: 'Electrodiagnóstico' },
-  { key: 'electro.ver_archivo',     label: 'Electro: Ver/descargar archivos',     grupo: 'Electrodiagnóstico' },
-  { key: 'electro.aviso_doctor',    label: 'Electro: Enviar aviso al doctor',     grupo: 'Electrodiagnóstico' },
+  { key: 'modulo.electrodiag',          label: 'Acceso al módulo',                    grupo: 'Electrodiagnóstico' },
+  { key: 'electro.ver',                 label: 'Ver citas',                           grupo: 'Electrodiagnóstico' },
+  { key: 'electro.crear',               label: 'Crear cita',                          grupo: 'Electrodiagnóstico' },
+  { key: 'electro.editar',              label: 'Editar cita y duración',              grupo: 'Electrodiagnóstico' },
+  { key: 'electro.eliminar',            label: 'Eliminar cita',                       grupo: 'Electrodiagnóstico' },
+  { key: 'electro.cambiar_estado',      label: 'Cambiar estado de cita',              grupo: 'Electrodiagnóstico' },
+  { key: 'electro.subir_archivo',       label: 'Subir archivos de estudios',          grupo: 'Electrodiagnóstico' },
+  { key: 'electro.ver_archivo',         label: 'Ver / descargar archivos',            grupo: 'Electrodiagnóstico' },
+  { key: 'electro.aviso_doctor',        label: 'Enviar aviso al doctor',              grupo: 'Electrodiagnóstico' },
+  // ── Monitor de Equipos ────────────────────────────────────────────────────
+  { key: 'modulo.monitor_equipos',      label: 'Acceso al módulo',                    grupo: 'Monitor de Equipos' },
   // ── UCQN ───────────────────────────────────────────────────────────────────
-  { key: 'ucqn.ver',                label: 'UCQN: Ver estudios',                   grupo: 'UCQN' },
-  { key: 'ucqn.editar_estado',      label: 'UCQN: Cambiar estado',                 grupo: 'UCQN' },
-  // ── Usuarios ─────────────────────────────────────────────────────────────
-  { key: 'usuarios.ver',            label: 'Usuarios: Ver lista de usuarios',     grupo: 'Gestión de Usuarios' },
-  { key: 'usuarios.crear',          label: 'Usuarios: Crear usuario',             grupo: 'Gestión de Usuarios' },
-  { key: 'usuarios.editar',         label: 'Usuarios: Editar usuario',            grupo: 'Gestión de Usuarios' },
-  { key: 'usuarios.cambiar_clave',  label: 'Usuarios: Cambiar contraseña',        grupo: 'Gestión de Usuarios' },
-  { key: 'usuarios.eliminar',       label: 'Usuarios: Eliminar usuario',          grupo: 'Gestión de Usuarios' },
-  { key: 'usuarios.auditoria',      label: 'Usuarios: Ver auditoría de accesos',  grupo: 'Gestión de Usuarios' },
-  { key: 'usuarios.permisos',       label: 'Usuarios: Gestionar permisos (superadmin)', grupo: 'Gestión de Usuarios' },
+  { key: 'modulo.ucqn',                 label: 'Acceso al módulo',                    grupo: 'UCQN' },
+  { key: 'ucqn.ver',                    label: 'Ver estudios',                        grupo: 'UCQN' },
+  { key: 'ucqn.editar_estado',          label: 'Cambiar estado',                      grupo: 'UCQN' },
+  // ── Dashboard de Citas ────────────────────────────────────────────────────
+  { key: 'modulo.dashboard',            label: 'Acceso al módulo',                    grupo: 'Dashboard de Citas' },
+  { key: 'sistema.dashboard',           label: 'Ver estadísticas de citas',           grupo: 'Dashboard de Citas' },
+  // ── Gestión de Usuarios ───────────────────────────────────────────────────
+  { key: 'modulo.usuarios',             label: 'Acceso al módulo',                    grupo: 'Gestión de Usuarios' },
+  { key: 'usuarios.ver',                label: 'Ver lista de usuarios',               grupo: 'Gestión de Usuarios' },
+  { key: 'usuarios.crear',              label: 'Crear usuario',                       grupo: 'Gestión de Usuarios' },
+  { key: 'usuarios.editar',             label: 'Editar usuario',                      grupo: 'Gestión de Usuarios' },
+  { key: 'usuarios.cambiar_clave',      label: 'Cambiar contraseña',                  grupo: 'Gestión de Usuarios' },
+  { key: 'usuarios.eliminar',           label: 'Eliminar usuario',                    grupo: 'Gestión de Usuarios' },
+  { key: 'usuarios.auditoria',          label: 'Ver auditoría de accesos',            grupo: 'Gestión de Usuarios' },
+  { key: 'usuarios.permisos',           label: 'Gestionar permisos (superadmin)',     grupo: 'Gestión de Usuarios' },
   // ── Diagnósticos ──────────────────────────────────────────────────────────
-  { key: 'diagnosticos.ver',        label: 'Diagnósticos: Ver lista',             grupo: 'Diagnósticos' },
-  { key: 'diagnosticos.crear',      label: 'Diagnósticos: Crear diagnóstico',     grupo: 'Diagnósticos' },
-  { key: 'diagnosticos.editar',     label: 'Diagnósticos: Editar diagnóstico',    grupo: 'Diagnósticos' },
-  { key: 'diagnosticos.eliminar',   label: 'Diagnósticos: Eliminar diagnóstico',  grupo: 'Diagnósticos' },
-  // ── Sistema ───────────────────────────────────────────────────────────────
-  { key: 'sistema.backups',         label: 'Sistema: Gestión de backups',         grupo: 'Sistema' },
-  { key: 'sistema.exportar_datos',  label: 'Sistema: Exportar datos del sistema', grupo: 'Sistema' },
-  { key: 'sistema.dashboard',       label: 'Sistema: Ver dashboard estadísticas', grupo: 'Sistema' },
-  { key: 'sistema.reportes',        label: 'Sistema: Ver reportes de recibos',    grupo: 'Sistema' },
+  { key: 'modulo.diagnosticos',         label: 'Acceso al módulo',                    grupo: 'Diagnósticos' },
+  { key: 'diagnosticos.ver',            label: 'Ver lista',                           grupo: 'Diagnósticos' },
+  { key: 'diagnosticos.crear',          label: 'Crear diagnóstico',                   grupo: 'Diagnósticos' },
+  { key: 'diagnosticos.editar',         label: 'Editar diagnóstico',                  grupo: 'Diagnósticos' },
+  { key: 'diagnosticos.eliminar',       label: 'Eliminar diagnóstico',                grupo: 'Diagnósticos' },
+  // ── Gestión de Datos ──────────────────────────────────────────────────────
+  { key: 'modulo.gestion_datos',        label: 'Acceso al módulo (catálogos, entidades, especialidades)', grupo: 'Gestión de Datos' },
+  { key: 'sistema.exportar_datos',      label: 'Exportar datos del sistema',          grupo: 'Gestión de Datos' },
+  // ── Cargar reportes (PDX) ─────────────────────────────────────────────────
+  { key: 'modulo.reportes_pdx',         label: 'Acceso al módulo',                    grupo: 'Cargar reportes' },
+  { key: 'soportes.pdx.ver',            label: 'Ver carpetas y archivos',             grupo: 'Cargar reportes' },
+  { key: 'soportes.pdx.carpetas.todas', label: 'Ver todas las carpetas',              grupo: 'Cargar reportes' },
+  { key: 'soportes.pdx.crear_carpeta',  label: 'Crear carpetas',                      grupo: 'Cargar reportes' },
+  { key: 'soportes.pdx.subir',          label: 'Subir archivos PDF',                  grupo: 'Cargar reportes' },
+  { key: 'soportes.pdx.editar',         label: 'Editar, reemplazar y mover',          grupo: 'Cargar reportes' },
+  { key: 'soportes.pdx.eliminar',       label: 'Eliminar archivos y carpetas',        grupo: 'Cargar reportes' },
+  // ── Soportes Radicación ───────────────────────────────────────────────────
+  { key: 'modulo.armado_soportes',      label: 'Acceso al módulo',                    grupo: 'Soportes Radicación' },
+  { key: 'soportes.armado.crear_estructura', label: 'Crear mes / día / FE',           grupo: 'Soportes Radicación' },
+  { key: 'soportes.armado.subir',       label: 'Subir OPF / CRC / HEV',               grupo: 'Soportes Radicación' },
+  { key: 'soportes.armado.importar_pdx', label: 'Importar PDX a expediente',          grupo: 'Soportes Radicación' },
+  { key: 'soportes.descargar_zip',      label: 'Descargar ZIP del expediente',        grupo: 'Soportes Radicación' },
+  { key: 'soportes.ver_archivo',        label: 'Ver periodos en archivo',             grupo: 'Soportes Radicación' },
+  // ── Anexo FIDU ────────────────────────────────────────────────────────────
+  { key: 'modulo.anexo_fidu',           label: 'Acceso al módulo (importar, editar, exportar)', grupo: 'Anexo FIDU' },
+  // ── Backup ────────────────────────────────────────────────────────────────
+  { key: 'modulo.backup',               label: 'Acceso al módulo',                    grupo: 'Backup' },
+  { key: 'sistema.backups',             label: 'Generar, descargar y eliminar backups', grupo: 'Backup' },
 ];
 
 // Permisos predeterminados por rol (null = sin restricciones / todo permitido)
@@ -8712,7 +8868,7 @@ const PERMISOS_ROL_DEFAULTS = {
     'modulo.reportes_pdx','modulo.armado_soportes',
     'soportes.pdx.ver','soportes.pdx.carpetas.todas','soportes.pdx.crear_carpeta','soportes.pdx.subir','soportes.pdx.editar',
     'soportes.armado.crear_estructura','soportes.armado.subir','soportes.armado.importar_pdx','soportes.descargar_zip',
-    'recibos.crear','recibos.ver','recibos.exportar',
+    'recibos.crear','recibos.ver','recibos.exportar','recibos.pagar','recibos.pendiente',
     'agenda.ver','agenda.crear','agenda.editar','agenda.eliminar','agenda.cambiar_estado',
     'agenda.llamar_siguiente','agenda.marcar_atendido','agenda.aviso_doctor','agenda.disponibilidad',
     'electro.ver','electro.crear','electro.editar','electro.cambiar_estado','electro.subir_archivo','electro.ver_archivo','electro.aviso_doctor',
@@ -8724,7 +8880,7 @@ const PERMISOS_ROL_DEFAULTS = {
     'modulo.reportes_pdx','modulo.armado_soportes',
     'soportes.pdx.ver','soportes.pdx.carpetas.todas','soportes.pdx.crear_carpeta','soportes.pdx.subir','soportes.pdx.editar',
     'soportes.armado.crear_estructura','soportes.armado.subir','soportes.armado.importar_pdx','soportes.descargar_zip',
-    'recibos.crear','recibos.ver',
+    'recibos.crear','recibos.ver','recibos.pagar','recibos.pendiente',
     'agenda.ver','agenda.crear','agenda.editar','agenda.eliminar','agenda.cambiar_estado',
     'agenda.llamar_siguiente','agenda.marcar_atendido','agenda.aviso_doctor',
     'electro.ver','electro.crear','electro.editar','electro.cambiar_estado',
@@ -8734,7 +8890,7 @@ const PERMISOS_ROL_DEFAULTS = {
   auxiliar_recepcion: [
     'modulo.recibos','modulo.agenda_medica','modulo.electrodiag','modulo.reportes_pdx',
     'soportes.pdx.ver','soportes.pdx.subir',
-    'recibos.crear','recibos.ver',
+    'recibos.crear','recibos.ver','recibos.pagar','recibos.pendiente',
     'agenda.ver','agenda.crear','agenda.editar','agenda.cambiar_estado','agenda.aviso_doctor',
     'electro.ver','electro.crear',
   ],
@@ -8774,7 +8930,7 @@ const PERMISOS_ROL_DEFAULTS = {
     'modulo.reportes_pdx','modulo.armado_soportes',
     'soportes.pdx.ver','soportes.pdx.carpetas.todas','soportes.pdx.crear_carpeta','soportes.pdx.subir','soportes.pdx.editar',
     'soportes.armado.crear_estructura','soportes.armado.subir','soportes.armado.importar_pdx','soportes.descargar_zip','soportes.ver_archivo',
-    'recibos.ver','recibos.exportar',
+    'recibos.ver','recibos.exportar','recibos.pagar','recibos.pendiente',
     'ucqn.ver','ucqn.editar_estado',
     'sistema.dashboard','sistema.reportes',
   ],
@@ -10842,7 +10998,7 @@ async function cargarLista(queryString) {
           </svg>
         </button>`;
       }
-      if (tienePermiso('recibos.editar') && esPendiente) {
+      if (puedeMarcarReciboPagado() && esPendiente) {
         acciones += `<button class="btn-recibo-pagar marcar-pagado" data-id="${r.id}" title="Marcar como pagado" aria-label="Marcar como pagado">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M3 7.5A2.5 2.5 0 0 1 5.5 5h13A2.5 2.5 0 0 1 21 7.5v9A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5z"/>
@@ -10851,7 +11007,7 @@ async function cargarLista(queryString) {
           </svg>
         </button>`;
       }
-      if (tienePermiso('recibos.editar') && !esAnulado && !esPendiente) {
+      if (puedeMarcarReciboPendiente() && !esAnulado && !esPendiente) {
         acciones += `<button class="btn-recibo-pendiente marcar-pendiente" data-id="${r.id}" title="Marcar como pendiente" aria-label="Marcar como pendiente">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <circle cx="12" cy="12" r="9"/>
@@ -12585,41 +12741,9 @@ async function abrirModalDetallesCita(cita) {
   const $telEl = document.getElementById('modalTelefonoDisplay');
   if ($telEl) $telEl.textContent = cita.telefono || '-';
   
-  // Duración
-  const $durEl = document.getElementById('modalDuracionDisplay');
-  if ($durEl) {
-    if (cita.duracion_minutos) {
-      const dHrs = Math.floor(cita.duracion_minutos / 60);
-      const dMin = cita.duracion_minutos % 60;
-      if (dHrs >= 24) {
-        const dias = Math.floor(dHrs / 24);
-        const hResto = dHrs % 24;
-        $durEl.innerHTML = `<span class="electro-dur-badge multi-day">${dias}d ${hResto}h</span>`;
-      } else if (dHrs > 0 && dMin > 0) {
-        $durEl.textContent = `${dHrs}h ${dMin}min`;
-      } else if (dHrs > 0) {
-        $durEl.textContent = `${dHrs} horas`;
-      } else {
-        $durEl.textContent = `${dMin} min`;
-      }
-    } else {
-      $durEl.textContent = '-';
-    }
-  }
-  
-  // Hora fin info
-  const $hfInfoEl = document.getElementById('modalHoraFinInfoDisplay');
-  if ($hfInfoEl) {
-    if (cita.hora_fin) {
-      let hfText = formatearHora(cita.hora_fin);
-      if (cita.hora_fin_date && extraerFechaYmdCalendario(cita.hora_fin_date) !== extraerFechaYmdCalendario(cita.fecha)) {
-        hfText += ` (${formatearFechaISO(cita.hora_fin_date)})`;
-      }
-      $hfInfoEl.textContent = hfText;
-    } else {
-      $hfInfoEl.textContent = '-';
-    }
-  }
+  pintarDuracionMinutosEnElemento(document.getElementById('modalDuracionDisplay'), cita.duracion_minutos);
+  await configurarEdicionDuracionModalElectro(cita);
+  pintarHoraFinModalElectro(cita);
 
   // Badge de estado en el header
   const $badgeEl = document.getElementById('modalEstadoHeaderBadge');

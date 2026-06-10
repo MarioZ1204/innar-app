@@ -2140,6 +2140,15 @@
         <div class="cita-modal-info-item">
           <div class="cita-modal-info-label">Duración</div>
           <div id="modalDuracionDisplay" class="cita-modal-info-value">-</div>
+          <div id="modalDuracionEdit" class="hidden" style="display:none;margin-top:8px;">
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+              <label style="font-size:0.75rem;color:#6b7280;">H</label>
+              <input type="number" id="modalDurHH" min="0" max="168" style="width:4rem;padding:4px 6px;border:1px solid #d1d5db;border-radius:6px;" />
+              <label style="font-size:0.75rem;color:#6b7280;">M</label>
+              <input type="number" id="modalDurMM" min="0" max="59" style="width:4rem;padding:4px 6px;border:1px solid #d1d5db;border-radius:6px;" />
+              <button type="button" class="btn-secondary btn-sm" id="btnGuardarDuracionModal">Actualizar duración</button>
+            </div>
+          </div>
         </div>
         <div class="cita-modal-info-item">
           <div class="cita-modal-info-label">Hora Fin</div>

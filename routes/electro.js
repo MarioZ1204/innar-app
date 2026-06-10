@@ -1464,6 +1464,34 @@ router.patch('/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin',
         }
       }
     }
+
+    if (
+      duracionPatch !== undefined
+      && horaFinPatch === undefined
+      && horaFinDatePatch === undefined
+      && !forzarCamposInicioEstudio
+    ) {
+      const yaTieneHoraFin = updates.some((u) => u.startsWith('hora_fin ='));
+      if (!yaTieneHoraFin) {
+        const fechaBase = fecha || extraerFechaYmd(citaActual.fecha) || normalizeFecha(citaActual.fecha);
+        const horaRef = String(
+          horaInicioPatch || citaActual.hora_inicio || citaActual.hora_agendamiento || ''
+        ).trim().slice(0, 5);
+        const durMin = parseInt(duracionPatch, 10);
+        if (fechaBase && /^\d{2}:\d{2}$/.test(horaRef) && durMin > 0) {
+          const finCalc = sumarMinutosAHoraYFecha(fechaBase, horaRef, durMin);
+          if (finCalc) {
+            updates.push('hora_fin = ?');
+            values.push(finCalc.horaFin);
+            cambios.hora_fin = finCalc.horaFin;
+            updates.push('hora_fin_date = ?');
+            values.push(finCalc.fechaFin);
+            cambios.hora_fin_date = finCalc.fechaFin;
+          }
+        }
+      }
+    }
+
     if (duracionPatch !== undefined) { updates.push('duracion_minutos = ?'); values.push(duracionPatch); cambios.duracion_minutos = duracionPatch; }
     if (entidad !== undefined) { updates.push('entidad = ?'); values.push(entidad ? String(entidad).trim() : null); }
     if (estudio !== undefined) {
