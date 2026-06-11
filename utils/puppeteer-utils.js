@@ -35,6 +35,7 @@ function getPuppeteerLaunchOptions() {
 
 let logoBase64 = '';
 let logoReciboBase64 = null;
+let certificadoAsistenciaFondoCache = null;
 
 function getLogoPath() {
   const possiblePaths = [
@@ -79,7 +80,43 @@ function getLogoReciboBase64() {
   return logoReciboBase64 || getLogoBase64();
 }
 
+function getCertificadoAsistenciaFondo() {
+  if (certificadoAsistenciaFondoCache) return certificadoAsistenciaFondoCache;
+  const files = [
+    { name: 'certificado-asistencia-fondo.png', mime: 'image/png' },
+    { name: 'certificado-asistencia-fondo.jpg', mime: 'image/jpeg' },
+    { name: 'certificado-asistencia-fondo.jpeg', mime: 'image/jpeg' },
+    { name: 'certificado-asistencia-fondo.webp', mime: 'image/webp' }
+  ];
+  const dirs = [
+    path.join(__dirname, '..', 'public', 'images'),
+    path.join(process.execPath, '..', 'public', 'images')
+  ];
+  for (const dir of dirs) {
+    for (const file of files) {
+      const p = path.join(dir, file.name);
+      if (fs.existsSync(p)) {
+        try {
+          certificadoAsistenciaFondoCache = {
+            base64: fs.readFileSync(p).toString('base64'),
+            mime: file.mime
+          };
+          return certificadoAsistenciaFondoCache;
+        } catch (e) {
+          logger.warn('Error cargando fondo certificado asistencia:', e.message);
+        }
+      }
+    }
+  }
+  return { base64: '', mime: 'image/png' };
+}
+
 // Precarga no crítica
 try { getLogoBase64(); } catch (_) {}
 
-module.exports = { getPuppeteerLaunchOptions, getLogoBase64, getLogoReciboBase64 };
+module.exports = {
+  getPuppeteerLaunchOptions,
+  getLogoBase64,
+  getLogoReciboBase64,
+  getCertificadoAsistenciaFondo
+};

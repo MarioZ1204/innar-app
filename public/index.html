@@ -2060,6 +2060,10 @@
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
                 Recomendaciones
               </button>
+              <button id="btnCertificadoAsistenciaElectroMenu" class="btn-dropdown-item" style="border-top:1px solid #f3f4f6;display:flex;align-items:center;gap:8px">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                Certificado de asistencia
+              </button>
               <button id="btnEliminarCitaMenu" class="btn-dropdown-item" style="border-top:1px solid #f3f4f6;display:none;align-items:center;gap:8px;color:#dc2626">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
                 Eliminar
@@ -3393,6 +3397,10 @@
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="17" y1="8" x2="23" y2="14"/><line x1="23" y1="8" x2="17" y2="14"/></svg>
                 Paciente No Asistió
               </button>
+              <button id="btnCertificadoAsistenciaMedicaMenu" class="btn-dropdown-item" style="border-top:1px solid #f3f4f6;display:flex;align-items:center;gap:8px">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                Certificado de asistencia
+              </button>
             </div>
           </div>
           <button id="btnCerrarEstadoMedica" class="cita-modal-icon-btn cita-modal-close-btn" title="Cerrar" style="font-size:1.25rem;line-height:1">&times;</button>
@@ -3963,6 +3971,80 @@
   <script src="calendario-bloqueado.js"></script>
   <script src="validation-client.js"></script>
   <script src="splash.js" defer></script>
+
+  <!-- ========== MODAL CERTIFICADO DE ASISTENCIA ========== -->
+  <div id="modalCertificadoAsistencia" class="modal hidden" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.55);align-items:center;justify-content:center;z-index:10050;padding:16px">
+    <div class="cita-modal-card" style="max-width:560px;width:100%;max-height:92vh;overflow-y:auto">
+      <div class="cita-modal-header">
+        <div class="cita-modal-header-left">
+          <h2 class="cita-modal-title">Certificado de asistencia</h2>
+        </div>
+        <button type="button" id="btnCerrarCertificadoAsistencia" class="cita-modal-icon-btn cita-modal-close-btn" title="Cerrar">&times;</button>
+      </div>
+      <div style="padding:18px 22px 8px">
+        <p style="margin:0 0 16px;font-size:.875rem;color:#6b7280">Revise los datos antes de generar el PDF. El funcionario que certifica puede cambiarse en cada certificado.</p>
+        <input type="hidden" id="certAsistOrigen" value="" />
+        <div style="margin-bottom:12px;padding:12px;background:#f8fafc;border-radius:8px;border:1px solid #e5e7eb">
+          <div style="font-size:.75rem;font-weight:600;color:#6b7280;margin-bottom:4px">Paciente</div>
+          <div id="certAsistPacienteResumen" style="font-size:.95rem;font-weight:600;color:#111827">-</div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+          <div>
+            <label style="display:block;font-size:.8rem;font-weight:600;color:#6b7280;margin-bottom:4px">Tipo documento</label>
+            <select id="certAsistTipoDoc" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:.9rem">
+              <option value="CC">Cédula (CC)</option>
+              <option value="TI">Tarjeta de identidad (TI)</option>
+            </select>
+          </div>
+          <div>
+            <label style="display:block;font-size:.8rem;font-weight:600;color:#6b7280;margin-bottom:4px">Número documento *</label>
+            <input id="certAsistDocumento" type="text" inputmode="numeric" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:.9rem" />
+          </div>
+        </div>
+        <div style="margin-bottom:12px">
+          <label style="display:block;font-size:.8rem;font-weight:600;color:#6b7280;margin-bottom:4px">Motivo / servicio *</label>
+          <input id="certAsistMotivo" type="text" maxlength="200" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:.9rem" />
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+          <div>
+            <label style="display:block;font-size:.8rem;font-weight:600;color:#6b7280;margin-bottom:4px">Fecha ingreso *</label>
+            <input id="certAsistFechaIngreso" type="date" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:.9rem" />
+          </div>
+          <div>
+            <label style="display:block;font-size:.8rem;font-weight:600;color:#6b7280;margin-bottom:4px">Hora ingreso *</label>
+            <input id="certAsistHoraIngreso" type="time" step="60" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:.9rem" />
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+          <div>
+            <label style="display:block;font-size:.8rem;font-weight:600;color:#6b7280;margin-bottom:4px">Fecha egreso *</label>
+            <input id="certAsistFechaEgreso" type="date" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:.9rem" />
+          </div>
+          <div>
+            <label style="display:block;font-size:.8rem;font-weight:600;color:#6b7280;margin-bottom:4px">Hora egreso *</label>
+            <input id="certAsistHoraEgreso" type="time" step="60" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:.9rem" />
+          </div>
+        </div>
+        <div style="margin-bottom:12px">
+          <label style="display:block;font-size:.8rem;font-weight:600;color:#6b7280;margin-bottom:4px">Funcionario que certifica *</label>
+          <input id="certAsistFuncionarioNombre" type="text" maxlength="120" placeholder="Nombre completo" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:.9rem" />
+        </div>
+        <div style="margin-bottom:12px">
+          <label style="display:block;font-size:.8rem;font-weight:600;color:#6b7280;margin-bottom:4px">Cargo *</label>
+          <input id="certAsistFuncionarioCargo" type="text" maxlength="80" placeholder="Ej: Secretaria" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:.9rem" />
+        </div>
+        <p style="margin:0 0 8px;font-size:.8rem;color:#6b7280">Firma elaborado (fija en el PDF): <strong>Secretaria</strong></p>
+        <p style="margin:0;font-size:.8rem;color:#6b7280">Teléfonos institucionales (fijos en el certificado): Celular 3053560651 · Fijo 6027299737</p>
+      </div>
+      <div class="cita-modal-footer">
+        <button type="button" id="btnCancelarCertificadoAsistencia" class="btn-secondary">Cancelar</button>
+        <button type="button" id="btnGenerarCertificadoAsistencia" class="btn-primary">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:4px"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          Generar PDF
+        </button>
+      </div>
+    </div>
+  </div>
 
   <!-- ========== MODAL EDITAR SERVICIO ========== -->
   <div id="modalEditarServicio" style="display:none">

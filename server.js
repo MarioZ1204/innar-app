@@ -320,6 +320,7 @@ app.use('/api', require('./routes/pacientes'));
 app.use('/api', require('./routes/electro'));
 app.use('/api', require('./routes/recibos'));
 app.use('/api', require('./routes/pdf'));
+app.use('/api', require('./routes/certificados'));
 app.use('/api', require('./routes/admin'));
 app.use('/api', require('./routes/integraciones-worldoffice'));
 app.use('/api', require('./routes/soportes'));

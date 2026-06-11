@@ -1210,6 +1210,8 @@ function setupMenuHandlers() {
   if (typeof window.innarSidebarInit === 'function') {
     window.innarSidebarInit();
   }
+
+  initCertificadoAsistenciaUi();
 }
 
 // Escapar HTML para evitar XSS al insertar en innerHTML
@@ -12865,6 +12867,17 @@ async function abrirModalDetallesCita(cita) {
     };
   }
 
+  const btnCertElectro = $('btnCertificadoAsistenciaElectroMenu');
+  if (btnCertElectro) {
+    const puedeCert = tienePermiso('electro.ver');
+    btnCertElectro.style.display = puedeCert ? 'flex' : 'none';
+    btnCertElectro.onclick = () => {
+      menuMasOpciones.style.display = 'none';
+      if (!citaElectroSeleccionada) return;
+      abrirModalCertificadoAsistencia(prefillCertificadoAsistenciaElectro(citaElectroSeleccionada));
+    };
+  }
+
   if (btnEliminarMenuAction) {
     btnEliminarMenuAction.onclick = () => {
       menuMasOpciones.style.display = 'none';
@@ -13704,6 +13717,201 @@ function enviarRecordatorioWhatsAppMedica(turno) {
   mostrarModalSedeRecordatorio(turno);
 }
 
+// ========== CERTIFICADO DE ASISTENCIA ==========
+let _certAsistPacienteNombre = '';
+
+const CERT_ASIST_LS_KEY = 'innar_cert_asist_func';
+
+function certAsistenciaLeerDefaults() {
+  try {
+    return JSON.parse(localStorage.getItem(CERT_ASIST_LS_KEY) || '{}');
+  } catch (_) {
+    return {};
+  }
+}
+
+function certAsistenciaGuardarDefaults(payload) {
+  try {
+    localStorage.setItem(CERT_ASIST_LS_KEY, JSON.stringify({
+      funcionario_nombre: payload.funcionario_nombre || '',
+      funcionario_cargo: payload.funcionario_cargo || ''
+    }));
+  } catch (_) { /* ignore */ }
+}
+
+function certAsistenciaHoraDesdeCita(horaRaw) {
+  const s = String(horaRaw || '').trim();
+  if (/^\d{2}:\d{2}/.test(s)) return s.slice(0, 5);
+  return s || '';
+}
+
+function certAsistenciaFechaFinElectro(cita) {
+  const finDate = obtenerFechaHoraFinCitaElectro(cita);
+  if (finDate && !isNaN(finDate.getTime())) {
+    const y = finDate.getFullYear();
+    const m = String(finDate.getMonth() + 1).padStart(2, '0');
+    const d = String(finDate.getDate()).padStart(2, '0');
+    return {
+      fecha: `${y}-${m}-${d}`,
+      hora: `${String(finDate.getHours()).padStart(2, '0')}:${String(finDate.getMinutes()).padStart(2, '0')}`
+    };
+  }
+  const fechaEgr = extraerFechaYmdCalendario(cita?.hora_fin_date || cita?.fecha);
+  const horaEgr = certAsistenciaHoraDesdeCita(cita?.hora_fin || cita?.hora_agendamiento);
+  return { fecha: fechaEgr, hora: horaEgr };
+}
+
+function prefillCertificadoAsistenciaElectro(cita) {
+  const fechaIng = extraerFechaYmdCalendario(cita?.fecha);
+  const horaIng = certAsistenciaHoraDesdeCita(cita?.hora_inicio || cita?.hora_agendamiento);
+  const fin = certAsistenciaFechaFinElectro(cita);
+  const defaults = certAsistenciaLeerDefaults();
+  const nombreUsuario = (currentUser?.nombre || currentUser?.usuario || '').trim();
+  return {
+    origen: 'electro',
+    paciente_nombre: (cita?.paciente_nombre || '').trim(),
+    paciente_documento: (cita?.paciente_documento || '').trim(),
+    tipo_documento: 'CC',
+    motivo: (cita?.estudio || '').trim(),
+    fecha_ingreso: fechaIng,
+    hora_ingreso: horaIng,
+    fecha_egreso: fin.fecha || fechaIng,
+    hora_egreso: fin.hora || horaIng,
+    funcionario_nombre: defaults.funcionario_nombre || nombreUsuario,
+    funcionario_cargo: defaults.funcionario_cargo || ''
+  };
+}
+
+function prefillCertificadoAsistenciaMedica(turno) {
+  const fecha = extraerFechaYmdCalendario(turno?.fecha);
+  const hora = certAsistenciaHoraDesdeCita(turno?.hora);
+  const defaults = certAsistenciaLeerDefaults();
+  const nombreUsuario = (currentUser?.nombre || currentUser?.usuario || '').trim();
+  return {
+    origen: 'medica',
+    paciente_nombre: (turno?.paciente_nombre || '').trim(),
+    paciente_documento: (turno?.paciente_documento || '').trim(),
+    tipo_documento: 'CC',
+    motivo: (turno?.tipo_consulta || '').trim(),
+    fecha_ingreso: fecha,
+    hora_ingreso: hora,
+    fecha_egreso: fecha,
+    hora_egreso: hora,
+    funcionario_nombre: defaults.funcionario_nombre || nombreUsuario,
+    funcionario_cargo: defaults.funcionario_cargo || ''
+  };
+}
+
+function abrirModalCertificadoAsistencia(prefill) {
+  if (!prefill?.paciente_nombre) {
+    showToast('No hay datos del paciente para el certificado', 'error');
+    return;
+  }
+  _certAsistPacienteNombre = prefill.paciente_nombre;
+  const set = (id, val) => { const el = $(id); if (el) el.value = val ?? ''; };
+  set('certAsistOrigen', prefill.origen);
+  const resumen = $('certAsistPacienteResumen');
+  if (resumen) resumen.textContent = prefill.paciente_nombre;
+  set('certAsistTipoDoc', prefill.tipo_documento || 'CC');
+  set('certAsistDocumento', prefill.paciente_documento);
+  set('certAsistMotivo', prefill.motivo);
+  set('certAsistFechaIngreso', prefill.fecha_ingreso);
+  set('certAsistHoraIngreso', prefill.hora_ingreso);
+  set('certAsistFechaEgreso', prefill.fecha_egreso);
+  set('certAsistHoraEgreso', prefill.hora_egreso);
+  set('certAsistFuncionarioNombre', prefill.funcionario_nombre);
+  set('certAsistFuncionarioCargo', prefill.funcionario_cargo);
+  const modal = $('modalCertificadoAsistencia');
+  if (modal) {
+    modal.classList.remove('hidden');
+    modal.style.display = 'flex';
+  }
+}
+
+function cerrarModalCertificadoAsistencia() {
+  const modal = $('modalCertificadoAsistencia');
+  if (modal) {
+    modal.classList.add('hidden');
+    modal.style.display = 'none';
+  }
+}
+
+async function generarCertificadoAsistenciaPdf() {
+  const origen = $('certAsistOrigen')?.value?.trim();
+  const permOk = origen === 'electro'
+    ? tienePermiso('electro.ver')
+    : origen === 'medica'
+      ? tienePermiso('agenda.ver')
+      : false;
+  if (!permOk) {
+    showToast('No tiene permiso para generar este certificado', 'error');
+    return;
+  }
+  const payload = {
+    origen,
+    paciente_nombre: _certAsistPacienteNombre,
+    paciente_documento: $('certAsistDocumento')?.value?.trim(),
+    tipo_documento: $('certAsistTipoDoc')?.value || 'CC',
+    motivo: $('certAsistMotivo')?.value?.trim(),
+    fecha_ingreso: $('certAsistFechaIngreso')?.value,
+    hora_ingreso: $('certAsistHoraIngreso')?.value,
+    fecha_egreso: $('certAsistFechaEgreso')?.value,
+    hora_egreso: $('certAsistHoraEgreso')?.value,
+    funcionario_nombre: $('certAsistFuncionarioNombre')?.value?.trim(),
+    funcionario_cargo: $('certAsistFuncionarioCargo')?.value?.trim()
+  };
+  if (!payload.paciente_documento || !payload.motivo || !payload.fecha_ingreso || !payload.hora_ingreso
+    || !payload.fecha_egreso || !payload.hora_egreso || !payload.funcionario_nombre
+    || !payload.funcionario_cargo) {
+    showToast('Complete todos los campos obligatorios', 'error');
+    return;
+  }
+  const btn = $('btnGenerarCertificadoAsistencia');
+  if (btn) btn.disabled = true;
+  try {
+    const res = await apiFetch('/api/certificados/asistencia', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Error generando certificado');
+    }
+    const blob = await res.blob();
+    const doc = payload.paciente_documento.replace(/\D/g, '') || 'certificado';
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `certificado_asistencia_${doc}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    certAsistenciaGuardarDefaults(payload);
+    showToast('Certificado generado', 'success');
+    cerrarModalCertificadoAsistencia();
+  } catch (e) {
+    showToast(e.message || 'Error generando certificado', 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function initCertificadoAsistenciaUi() {
+  $('btnCerrarCertificadoAsistencia')?.addEventListener('click', cerrarModalCertificadoAsistencia);
+  $('btnCancelarCertificadoAsistencia')?.addEventListener('click', cerrarModalCertificadoAsistencia);
+  $('btnGenerarCertificadoAsistencia')?.addEventListener('click', generarCertificadoAsistenciaPdf);
+  $('modalCertificadoAsistencia')?.addEventListener('click', (e) => {
+    if (e.target?.id === 'modalCertificadoAsistencia') cerrarModalCertificadoAsistencia();
+  });
+  $('btnCertificadoAsistenciaMedicaMenu')?.addEventListener('click', () => {
+    document.getElementById('menuMasOpcionesMedica').style.display = 'none';
+    if (!currentTurnoMedicaData) return;
+    abrirModalCertificadoAsistencia(prefillCertificadoAsistenciaMedica(currentTurnoMedicaData));
+  });
+}
+
 function abrirModalEstadoCitaMedica(turno) {
   currentTurnoMedicaData = turno;
 
@@ -13802,6 +14010,11 @@ function abrirModalEstadoCitaMedica(turno) {
   // --- MENÚ 3 PUNTOS + EDITAR (desde política) ---
   const btn3dots = el('btnMasOpcionesMedica');
   if (btn3dots) btn3dots.style.display = pol.modal.showMenu3Puntos ? '' : 'none';
+
+  const btnCertMedica = el('btnCertificadoAsistenciaMedicaMenu');
+  if (btnCertMedica) {
+    btnCertMedica.style.display = tienePermiso('agenda.ver') ? 'flex' : 'none';
+  }
 
   const btnCambiarDocMenu = document.getElementById('btnCambiarDoctorMedicaMenu');
   if (btnCambiarDocMenu) btnCambiarDocMenu.style.display = pol.modal.showCambiarDoctor ? '' : 'none';
