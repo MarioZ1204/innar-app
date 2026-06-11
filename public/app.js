@@ -1211,7 +1211,9 @@ function setupMenuHandlers() {
     window.innarSidebarInit();
   }
 
+  initCompletarPersonaFiduUi();
   initCertificadoAsistenciaUi();
+  initComprobanteServiciosUi();
 }
 
 // Escapar HTML para evitar XSS al insertar en innerHTML
@@ -12867,16 +12869,7 @@ async function abrirModalDetallesCita(cita) {
     };
   }
 
-  const btnCertElectro = $('btnCertificadoAsistenciaElectroMenu');
-  if (btnCertElectro) {
-    const puedeCert = tienePermiso('electro.ver');
-    btnCertElectro.style.display = puedeCert ? 'flex' : 'none';
-    btnCertElectro.onclick = () => {
-      menuMasOpciones.style.display = 'none';
-      if (!citaElectroSeleccionada) return;
-      abrirModalCertificadoAsistencia(prefillCertificadoAsistenciaElectro(citaElectroSeleccionada));
-    };
-  }
+  actualizarBotonesDocumentosCitaElectro();
 
   if (btnEliminarMenuAction) {
     btnEliminarMenuAction.onclick = () => {
@@ -13898,6 +13891,189 @@ async function generarCertificadoAsistenciaPdf() {
   }
 }
 
+// ========== BASE PACIENTES FOMAG (anexo_fidu_personas) ==========
+let _personaFiduPending = null;
+
+function personaFiduNombreCompleto(persona, fallback) {
+  const parts = [
+    persona?.nombres_1, persona?.nombres_2, persona?.apellidos_1, persona?.apellidos_2
+  ].map((s) => String(s || '').trim()).filter(Boolean);
+  if (parts.length) return parts.join(' ');
+  return String(fallback || '').trim();
+}
+
+function personaFiduSugerirDesdeNombre(nombreCompleto) {
+  const words = String(nombreCompleto || '').trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return {};
+  if (words.length === 1) return { nombres_1: words[0] };
+  if (words.length === 2) return { nombres_1: words[0], apellidos_1: words[1] };
+  return {
+    nombres_1: words.slice(0, -2).join(' '),
+    apellidos_1: words[words.length - 2],
+    apellidos_2: words[words.length - 1]
+  };
+}
+
+function personaFiduEnriquecerDesdeCita(persona, citaPrefill, contexto) {
+  const p = { ...(persona || {}) };
+  const sugeridos = personaFiduSugerirDesdeNombre(citaPrefill?.paciente_nombre);
+  Object.keys(sugeridos).forEach((k) => {
+    if (!String(p[k] || '').trim()) p[k] = sugeridos[k];
+  });
+  if (!String(p.telefono || '').trim() && citaPrefill?.telefono) p.telefono = citaPrefill.telefono;
+  if (!String(p.afiliacion || '').trim() && citaPrefill?.tipo_afiliacion) {
+    p.afiliacion = citaPrefill.tipo_afiliacion;
+  }
+  if (contexto === 'comprobante' && !String(p.correo || '').trim()) p.correo = '';
+  return p;
+}
+
+function personaFiduAplicarAPrefill(contexto, persona, citaPrefill) {
+  const nombre = personaFiduNombreCompleto(persona, citaPrefill?.paciente_nombre);
+  if (contexto === 'certificado') {
+    return {
+      ...citaPrefill,
+      paciente_nombre: nombre,
+      paciente_documento: persona?.numero_documento || citaPrefill?.paciente_documento,
+      tipo_documento: persona?.tipo_documento || citaPrefill?.tipo_documento || 'CC'
+    };
+  }
+  if (contexto === 'comprobante') {
+    return {
+      ...citaPrefill,
+      paciente_nombre: nombre,
+      paciente_documento: persona?.numero_documento || citaPrefill?.paciente_documento,
+      tipo_documento: persona?.tipo_documento || citaPrefill?.tipo_documento || 'CC',
+      fecha_nacimiento: persona?.fecha_nacimiento || citaPrefill?.fecha_nacimiento || '',
+      direccion: persona?.direccion || citaPrefill?.direccion || '',
+      telefono: persona?.telefono || citaPrefill?.telefono || '',
+      correo: persona?.correo || citaPrefill?.correo || '',
+      tipo_afiliacion: persona?.afiliacion || citaPrefill?.tipo_afiliacion || 'Cotizante'
+    };
+  }
+  return citaPrefill;
+}
+
+function abrirModalCompletarPersonaFidu(opts = {}) {
+  const PF = window.innarPersonaFidu;
+  const modal = $('modalCompletarPersonaFidu');
+  const formEl = $('pfiduModalForm');
+  const msgEl = $('pfiduModalMensaje');
+  if (!PF || !modal || !formEl) {
+    showToast('No se pudo abrir el formulario de paciente', 'error');
+    return;
+  }
+  const doc = opts.persona?.numero_documento || '';
+  const parcial = !opts.modoCompleto && (opts.camposFaltantes || []).length > 0;
+  if (msgEl) {
+    msgEl.innerHTML = parcial
+      ? `El paciente <strong>${escapeHtml(doc)}</strong> está en la base pero faltan algunos datos. Complételos para continuar.`
+      : `El paciente <strong>${escapeHtml(doc)}</strong> no está completo en la base FOMAG. Registre los datos para continuar.`;
+  }
+  PF.renderFormulario(formEl, {
+    persona: opts.persona || {},
+    camposFaltantes: opts.camposFaltantes,
+    modoCompleto: !!opts.modoCompleto
+  });
+  modal.classList.remove('hidden');
+  modal.style.display = 'flex';
+}
+
+function cerrarModalCompletarPersonaFidu() {
+  const modal = $('modalCompletarPersonaFidu');
+  if (modal) {
+    modal.classList.add('hidden');
+    modal.style.display = 'none';
+  }
+  _personaFiduPending = null;
+}
+
+async function abrirDocumentoConPersonaFidu(contexto, citaPrefill, abrirFn) {
+  const PF = window.innarPersonaFidu;
+  if (!PF) {
+    abrirFn(citaPrefill);
+    return;
+  }
+  const doc = String(citaPrefill?.paciente_documento || '').trim();
+  if (!doc) {
+    showToast('La cita no tiene documento del paciente', 'error');
+    return;
+  }
+  try {
+    const data = await PF.fetchPersona(doc, contexto);
+    let persona = personaFiduEnriquecerDesdeCita(data.persona || { numero_documento: doc }, citaPrefill, contexto);
+    const faltantes = data.campos_faltantes || [];
+    if (faltantes.length) {
+      _personaFiduPending = { contexto, citaPrefill, abrirFn };
+      abrirModalCompletarPersonaFidu({
+        persona,
+        camposFaltantes: faltantes,
+        modoCompleto: !data.encontrada
+      });
+      return;
+    }
+    abrirFn(personaFiduAplicarAPrefill(contexto, persona, citaPrefill));
+  } catch (e) {
+    showToast(e.message || 'Error consultando base de pacientes', 'error');
+  }
+}
+
+async function guardarCompletarPersonaFiduYContinuar() {
+  const PF = window.innarPersonaFidu;
+  const pending = _personaFiduPending;
+  const formRoot = $('pfiduModalForm');
+  if (!PF || !pending || !formRoot) return;
+  const btn = $('btnGuardarCompletarPersonaFidu');
+  if (btn) btn.disabled = true;
+  try {
+    const persona = PF.leerFormulario(formRoot);
+    const data = await PF.guardarPersona(persona, pending.contexto);
+    if (data.campos_faltantes?.length) {
+      showToast('Aún faltan datos obligatorios', 'error');
+      abrirModalCompletarPersonaFidu({
+        persona: data.persona,
+        camposFaltantes: data.campos_faltantes,
+        modoCompleto: false
+      });
+      _personaFiduPending = pending;
+      return;
+    }
+    const { contexto, citaPrefill, abrirFn } = pending;
+    cerrarModalCompletarPersonaFidu();
+    abrirFn(personaFiduAplicarAPrefill(contexto, data.persona, citaPrefill));
+    showToast('Paciente actualizado en la base FOMAG', 'success');
+  } catch (e) {
+    showToast(e.message || 'Error guardando paciente', 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function initCompletarPersonaFiduUi() {
+  $('btnCerrarCompletarPersonaFidu')?.addEventListener('click', cerrarModalCompletarPersonaFidu);
+  $('btnCancelarCompletarPersonaFidu')?.addEventListener('click', cerrarModalCompletarPersonaFidu);
+  $('btnGuardarCompletarPersonaFidu')?.addEventListener('click', guardarCompletarPersonaFiduYContinuar);
+  $('modalCompletarPersonaFidu')?.addEventListener('click', (e) => {
+    if (e.target?.id === 'modalCompletarPersonaFidu') cerrarModalCompletarPersonaFidu();
+  });
+}
+
+function actualizarBotonesDocumentosCitaMedica() {
+  const puede = tienePermiso('agenda.ver');
+  const btnCert = $('btnCertificadoAsistenciaMedica');
+  const btnComp = $('btnComprobanteServiciosMedica');
+  if (btnCert) btnCert.hidden = !puede;
+  if (btnComp) btnComp.hidden = !puede;
+}
+
+function actualizarBotonesDocumentosCitaElectro() {
+  const puede = tienePermiso('electro.ver');
+  const btnCert = $('btnCertificadoAsistenciaElectro');
+  const btnComp = $('btnComprobanteServiciosElectro');
+  if (btnCert) btnCert.hidden = !puede;
+  if (btnComp) btnComp.hidden = !puede;
+}
+
 function initCertificadoAsistenciaUi() {
   $('btnCerrarCertificadoAsistencia')?.addEventListener('click', cerrarModalCertificadoAsistencia);
   $('btnCancelarCertificadoAsistencia')?.addEventListener('click', cerrarModalCertificadoAsistencia);
@@ -13905,10 +14081,235 @@ function initCertificadoAsistenciaUi() {
   $('modalCertificadoAsistencia')?.addEventListener('click', (e) => {
     if (e.target?.id === 'modalCertificadoAsistencia') cerrarModalCertificadoAsistencia();
   });
-  $('btnCertificadoAsistenciaMedicaMenu')?.addEventListener('click', () => {
-    document.getElementById('menuMasOpcionesMedica').style.display = 'none';
+  $('btnCertificadoAsistenciaMedica')?.addEventListener('click', () => {
     if (!currentTurnoMedicaData) return;
-    abrirModalCertificadoAsistencia(prefillCertificadoAsistenciaMedica(currentTurnoMedicaData));
+    const prefill = prefillCertificadoAsistenciaMedica(currentTurnoMedicaData);
+    abrirDocumentoConPersonaFidu('certificado', prefill, abrirModalCertificadoAsistencia);
+  });
+  $('btnCertificadoAsistenciaElectro')?.addEventListener('click', () => {
+    if (!citaElectroSeleccionada) return;
+    const prefill = prefillCertificadoAsistenciaElectro(citaElectroSeleccionada);
+    abrirDocumentoConPersonaFidu('certificado', prefill, abrirModalCertificadoAsistencia);
+  });
+}
+
+// ========== COMPROBANTE DE SERVICIOS ==========
+let _compServPacienteNombre = '';
+let _compServFirmaPacienteDataUrl = '';
+let _compServFirmaAcudienteDataUrl = '';
+
+function compServLeerImagenArchivo(file) {
+  return new Promise((resolve, reject) => {
+    if (!file) {
+      resolve('');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(new Error('No se pudo leer la imagen'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function compServMostrarPreview(inputId, previewId, dataUrl) {
+  const preview = $(previewId);
+  if (!preview) return;
+  if (dataUrl) {
+    preview.src = dataUrl;
+    preview.style.display = 'block';
+  } else {
+    preview.removeAttribute('src');
+    preview.style.display = 'none';
+  }
+  const input = $(inputId);
+  if (input && !dataUrl) input.value = '';
+}
+
+function prefillComprobanteServiciosElectro(cita) {
+  const fecha = extraerFechaYmdCalendario(cita?.fecha);
+  return {
+    origen: 'electro',
+    paciente_nombre: (cita?.paciente_nombre || '').trim(),
+    paciente_documento: (cita?.paciente_documento || '').trim(),
+    tipo_documento: 'CC',
+    fecha: fecha,
+    fecha_nacimiento: '',
+    direccion: '',
+    telefono: '',
+    correo: '',
+    tipo_afiliacion: 'Cotizante',
+    servicio: (cita?.estudio || '').trim()
+  };
+}
+
+function prefillComprobanteServiciosMedica(turno) {
+  const fecha = extraerFechaYmdCalendario(turno?.fecha);
+  return {
+    origen: 'medica',
+    paciente_nombre: (turno?.paciente_nombre || '').trim(),
+    paciente_documento: (turno?.paciente_documento || '').trim(),
+    tipo_documento: 'CC',
+    fecha,
+    fecha_nacimiento: '',
+    direccion: '',
+    telefono: (turno?.paciente_telefono || '').trim(),
+    correo: '',
+    tipo_afiliacion: (turno?.entidad || '').trim() || 'Cotizante',
+    servicio: (turno?.tipo_consulta || '').trim()
+  };
+}
+
+function abrirModalComprobanteServicios(prefill) {
+  if (!prefill?.paciente_nombre) {
+    showToast('No hay datos del paciente para el comprobante', 'error');
+    return;
+  }
+  _compServPacienteNombre = prefill.paciente_nombre;
+  _compServFirmaPacienteDataUrl = '';
+  _compServFirmaAcudienteDataUrl = '';
+  const set = (id, val) => { const el = $(id); if (el) el.value = val ?? ''; };
+  set('compServOrigen', prefill.origen);
+  const resumen = $('compServPacienteResumen');
+  if (resumen) resumen.textContent = prefill.paciente_nombre;
+  set('compServFecha', prefill.fecha);
+  set('compServTipoDoc', prefill.tipo_documento || 'CC');
+  set('compServDocumento', prefill.paciente_documento);
+  set('compServFechaNac', prefill.fecha_nacimiento);
+  set('compServDireccion', prefill.direccion);
+  set('compServTelefono', prefill.telefono);
+  set('compServCorreo', prefill.correo);
+  set('compServTipoAfiliacion', prefill.tipo_afiliacion);
+  set('compServServicio', prefill.servicio);
+  set('compServAcudienteNombre', '');
+  set('compServParentesco', '');
+  const chkAcud = $('compServMostrarAcudiente');
+  if (chkAcud) chkAcud.checked = false;
+  const panelAcud = $('compServAcudientePanel');
+  if (panelAcud) panelAcud.style.display = 'none';
+  compServMostrarPreview('compServFirmaPaciente', 'compServFirmaPreview', '');
+  compServMostrarPreview('compServFirmaAcudiente', 'compServFirmaAcudPreview', '');
+  const modal = $('modalComprobanteServicios');
+  if (modal) {
+    modal.classList.remove('hidden');
+    modal.style.display = 'flex';
+  }
+}
+
+function cerrarModalComprobanteServicios() {
+  const modal = $('modalComprobanteServicios');
+  if (modal) {
+    modal.classList.add('hidden');
+    modal.style.display = 'none';
+  }
+}
+
+async function generarComprobanteServiciosPdf() {
+  const origen = $('compServOrigen')?.value?.trim();
+  const permOk = origen === 'electro'
+    ? tienePermiso('electro.ver')
+    : origen === 'medica'
+      ? tienePermiso('agenda.ver')
+      : false;
+  if (!permOk) {
+    showToast('No tiene permiso para generar este comprobante', 'error');
+    return;
+  }
+  const payload = {
+    origen,
+    fecha: $('compServFecha')?.value,
+    paciente_nombre: _compServPacienteNombre,
+    tipo_documento: $('compServTipoDoc')?.value || 'CC',
+    paciente_documento: $('compServDocumento')?.value?.trim(),
+    fecha_nacimiento: $('compServFechaNac')?.value,
+    direccion: $('compServDireccion')?.value?.trim(),
+    telefono: $('compServTelefono')?.value?.trim(),
+    correo: $('compServCorreo')?.value?.trim(),
+    tipo_afiliacion: $('compServTipoAfiliacion')?.value?.trim(),
+    servicio: $('compServServicio')?.value?.trim(),
+    firma_paciente: _compServFirmaPacienteDataUrl
+  };
+  if ($('compServMostrarAcudiente')?.checked) {
+    payload.acudiente_nombre = $('compServAcudienteNombre')?.value?.trim();
+    payload.parentesco = $('compServParentesco')?.value?.trim();
+    if (_compServFirmaAcudienteDataUrl) payload.firma_acudiente = _compServFirmaAcudienteDataUrl;
+  }
+  if (!payload.fecha || !payload.paciente_documento || !payload.fecha_nacimiento
+    || !payload.direccion || !payload.telefono || !payload.correo
+    || !payload.tipo_afiliacion || !payload.servicio) {
+    showToast('Complete todos los campos obligatorios', 'error');
+    return;
+  }
+  if (!payload.firma_paciente) {
+    showToast('Debe cargar la firma del paciente como imagen', 'error');
+    return;
+  }
+  const btn = $('btnGenerarComprobanteServicios');
+  if (btn) btn.disabled = true;
+  try {
+    const res = await apiFetch('/api/certificados/comprobante-servicios', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Error generando comprobante');
+    }
+    const blob = await res.blob();
+    const doc = payload.paciente_documento.replace(/\D/g, '') || 'comprobante';
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `comprobante_servicios_${doc}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    showToast('Comprobante generado', 'success');
+    cerrarModalComprobanteServicios();
+  } catch (e) {
+    showToast(e.message || 'Error generando comprobante', 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function initComprobanteServiciosUi() {
+  $('btnCerrarComprobanteServicios')?.addEventListener('click', cerrarModalComprobanteServicios);
+  $('btnCancelarComprobanteServicios')?.addEventListener('click', cerrarModalComprobanteServicios);
+  $('btnGenerarComprobanteServicios')?.addEventListener('click', generarComprobanteServiciosPdf);
+  $('modalComprobanteServicios')?.addEventListener('click', (e) => {
+    if (e.target?.id === 'modalComprobanteServicios') cerrarModalComprobanteServicios();
+  });
+  $('compServMostrarAcudiente')?.addEventListener('change', (e) => {
+    const panel = $('compServAcudientePanel');
+    if (panel) panel.style.display = e.target.checked ? 'block' : 'none';
+  });
+  $('compServFirmaPaciente')?.addEventListener('change', async (e) => {
+    try {
+      _compServFirmaPacienteDataUrl = await compServLeerImagenArchivo(e.target.files?.[0]);
+      compServMostrarPreview('compServFirmaPaciente', 'compServFirmaPreview', _compServFirmaPacienteDataUrl);
+    } catch (err) {
+      showToast(err.message || 'Error leyendo firma', 'error');
+    }
+  });
+  $('compServFirmaAcudiente')?.addEventListener('change', async (e) => {
+    try {
+      _compServFirmaAcudienteDataUrl = await compServLeerImagenArchivo(e.target.files?.[0]);
+      compServMostrarPreview('compServFirmaAcudiente', 'compServFirmaAcudPreview', _compServFirmaAcudienteDataUrl);
+    } catch (err) {
+      showToast(err.message || 'Error leyendo firma acudiente', 'error');
+    }
+  });
+  $('btnComprobanteServiciosMedica')?.addEventListener('click', () => {
+    if (!currentTurnoMedicaData) return;
+    const prefill = prefillComprobanteServiciosMedica(currentTurnoMedicaData);
+    abrirDocumentoConPersonaFidu('comprobante', prefill, abrirModalComprobanteServicios);
+  });
+  $('btnComprobanteServiciosElectro')?.addEventListener('click', () => {
+    if (!citaElectroSeleccionada) return;
+    const prefill = prefillComprobanteServiciosElectro(citaElectroSeleccionada);
+    abrirDocumentoConPersonaFidu('comprobante', prefill, abrirModalComprobanteServicios);
   });
 }
 
@@ -14011,10 +14412,7 @@ function abrirModalEstadoCitaMedica(turno) {
   const btn3dots = el('btnMasOpcionesMedica');
   if (btn3dots) btn3dots.style.display = pol.modal.showMenu3Puntos ? '' : 'none';
 
-  const btnCertMedica = el('btnCertificadoAsistenciaMedicaMenu');
-  if (btnCertMedica) {
-    btnCertMedica.style.display = tienePermiso('agenda.ver') ? 'flex' : 'none';
-  }
+  actualizarBotonesDocumentosCitaMedica();
 
   const btnCambiarDocMenu = document.getElementById('btnCambiarDoctorMedicaMenu');
   if (btnCambiarDocMenu) btnCambiarDocMenu.style.display = pol.modal.showCambiarDoctor ? '' : 'none';

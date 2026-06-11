@@ -36,6 +36,7 @@ function getPuppeteerLaunchOptions() {
 let logoBase64 = '';
 let logoReciboBase64 = null;
 let certificadoAsistenciaFondoCache = null;
+let comprobanteServiciosFondoCache = null;
 
 function getLogoPath() {
   const possiblePaths = [
@@ -111,6 +112,37 @@ function getCertificadoAsistenciaFondo() {
   return { base64: '', mime: 'image/png' };
 }
 
+function getComprobanteServiciosFondo() {
+  if (comprobanteServiciosFondoCache) return comprobanteServiciosFondoCache;
+  const files = [
+    { name: 'comprobante-servicios-fondo.png', mime: 'image/png' },
+    { name: 'comprobante-servicios-fondo.jpg', mime: 'image/jpeg' },
+    { name: 'comprobante-servicios-fondo.jpeg', mime: 'image/jpeg' },
+    { name: 'comprobante-servicios-fondo.webp', mime: 'image/webp' }
+  ];
+  const dirs = [
+    path.join(__dirname, '..', 'public', 'images'),
+    path.join(process.execPath, '..', 'public', 'images')
+  ];
+  for (const dir of dirs) {
+    for (const file of files) {
+      const p = path.join(dir, file.name);
+      if (fs.existsSync(p)) {
+        try {
+          comprobanteServiciosFondoCache = {
+            base64: fs.readFileSync(p).toString('base64'),
+            mime: file.mime
+          };
+          return comprobanteServiciosFondoCache;
+        } catch (e) {
+          logger.warn('Error cargando fondo comprobante servicios:', e.message);
+        }
+      }
+    }
+  }
+  return { base64: '', mime: 'image/png' };
+}
+
 // Precarga no crítica
 try { getLogoBase64(); } catch (_) {}
 
@@ -118,5 +150,6 @@ module.exports = {
   getPuppeteerLaunchOptions,
   getLogoBase64,
   getLogoReciboBase64,
-  getCertificadoAsistenciaFondo
+  getCertificadoAsistenciaFondo,
+  getComprobanteServiciosFondo
 };

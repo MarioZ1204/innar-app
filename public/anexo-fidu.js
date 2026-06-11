@@ -1102,8 +1102,20 @@
       body: JSON.stringify({ numero_documento: doc, codigo_servicio: codigo })
     });
     if (!data.persona_encontrada) {
-      mostrarPanelNuevaPersona(doc, codigo);
+      mostrarPanelNuevaPersona(doc, codigo, {
+        persona: { numero_documento: doc },
+        campos_faltantes: data.campos_faltantes,
+        modoCompleto: true
+      });
       throw new Error('Paciente no registrado — complete los datos abajo');
+    }
+    if (data.campos_faltantes?.length) {
+      mostrarPanelNuevaPersona(doc, codigo, {
+        persona: data.persona || { numero_documento: doc },
+        campos_faltantes: data.campos_faltantes,
+        parcial: true
+      });
+      throw new Error('Faltan datos del paciente — complete los campos abajo');
     }
     const reg = data.registro || {};
     const merged = { ...body };
@@ -1432,7 +1444,7 @@
     }
   }
 
-  function mostrarPanelNuevaPersona(doc, codigo) {
+  function mostrarPanelNuevaPersona(doc, codigo, opts = {}) {
     const panel = $('afiduPanelNuevaPersona');
     if (!panel) return;
     _pendingCodigo = codigo;
@@ -1440,30 +1452,48 @@
     const hintCola = pendientes > 1
       ? ` Quedan <strong>${pendientes}</strong> paciente(s) por registrar en esta carga; los que ya existían ya están en la tabla.`
       : '';
-    let html = `<div class="afidu-step-banner afidu-step-banner-warn">Paciente <strong>${escapeHtml(doc)}</strong> (CUPS ${escapeHtml(codigo)}) no está en la base. Complete los 15 datos y guarde para agregar su fila.${hintCola}</div><div class="afidu-panel-form">`;
-    PERSONA_FORM.forEach((f) => {
-      const v = f.key === 'numero_documento' ? doc : '';
-      html += `<div><label>${escapeHtml(f.label)}</label>${htmlCampoPersonaForm(f, v)}</div>`;
-    });
-    html += `</div><div class="afidu-panel-actions"><button type="button" class="btn-primary" id="btnAfiduGuardarPersona">Guardar paciente y agregar fila</button><button type="button" class="btn-secondary" id="btnAfiduCancelarPersona">Cancelar</button></div>`;
-    panel.innerHTML = html;
+    const parcial = !!opts.parcial && (opts.campos_faltantes || []).length > 0;
+    const banner = parcial
+      ? `<div class="afidu-step-banner afidu-step-banner-warn">Paciente <strong>${escapeHtml(doc)}</strong> (CUPS ${escapeHtml(codigo)}) tiene datos incompletos. Complete los campos faltantes y guarde para continuar.${hintCola}</div>`
+      : `<div class="afidu-step-banner afidu-step-banner-warn">Paciente <strong>${escapeHtml(doc)}</strong> (CUPS ${escapeHtml(codigo)}) no está en la base. Complete los datos y guarde para agregar su fila.${hintCola}</div>`;
+    panel.innerHTML = `${banner}<div id="afiduPersonaFormMount" class="afidu-panel-form"></div><div class="afidu-panel-actions"><button type="button" class="btn-primary" id="btnAfiduGuardarPersona">Guardar paciente y agregar fila</button><button type="button" class="btn-secondary" id="btnAfiduCancelarPersona">Cancelar</button></div>`;
+    const mount = $('afiduPersonaFormMount');
+    const persona = { numero_documento: doc, ...(opts.persona || {}) };
+    if (window.innarPersonaFidu && mount) {
+      window.innarPersonaFidu.renderFormulario(mount, {
+        persona,
+        camposFaltantes: opts.campos_faltantes,
+        modoCompleto: opts.modoCompleto ?? !parcial
+      });
+    } else if (mount) {
+      let html = '';
+      PERSONA_FORM.forEach((f) => {
+        const v = persona[f.key] != null ? String(persona[f.key]) : (f.key === 'numero_documento' ? doc : '');
+        html += `<div><label>${escapeHtml(f.label)}</label>${htmlCampoPersonaForm(f, v)}</div>`;
+      });
+      mount.innerHTML = html;
+      const fn = $('afidu-p-fecha_nacimiento');
+      const tipo = $('afidu-p-tipo_documento');
+      const syncTipo = () => {
+        if (!tipo) return;
+        const t = calcularTipoDocumentoAfidu(fn?.value || '');
+        if (t) tipo.value = t;
+      };
+      fn?.addEventListener('change', () => {
+        if (!fn) return;
+        const norm = normalizarFechaAfidu(fn.value);
+        if (norm && norm !== fn.value) fn.value = norm;
+        syncTipo();
+      });
+      fn?.addEventListener('blur', () => {
+        if (!fn) return;
+        const norm = normalizarFechaAfidu(fn.value);
+        if (norm && norm !== fn.value) fn.value = norm;
+        syncTipo();
+      });
+      fn?.addEventListener('input', syncTipo);
+    }
     panel.classList.remove('hidden');
-    const fn = $('afidu-p-fecha_nacimiento');
-    const tipo = $('afidu-p-tipo_documento');
-    const syncTipo = () => {
-      if (!tipo) return;
-      const t = calcularTipoDocumentoAfidu(fn?.value || '');
-      if (t) tipo.value = t;
-    };
-    const syncFecha = () => {
-      if (!fn) return;
-      const norm = normalizarFechaAfidu(fn.value);
-      if (norm && norm !== fn.value) fn.value = norm;
-      syncTipo();
-    };
-    fn?.addEventListener('change', syncFecha);
-    fn?.addEventListener('blur', syncFecha);
-    fn?.addEventListener('input', syncTipo);
     $('btnAfiduGuardarPersona')?.addEventListener('click', guardarPersonaYAgregarFila);
     $('btnAfiduCancelarPersona')?.addEventListener('click', () => ocultarPanelNuevaPersona(false));
   }
@@ -1475,7 +1505,12 @@
       const result = await agregarUnaFila(doc, cups, { ocultarPanelSiOk: false, cie10, medico });
       if (result.needsPanel) {
         syncBulkTextareaDesdePendientes();
-        mostrarPanelNuevaPersona(doc, cups);
+        mostrarPanelNuevaPersona(doc, cups, {
+          persona: result.persona,
+          campos_faltantes: result.campos_faltantes,
+          modoCompleto: result.modoCompleto,
+          parcial: result.parcial
+        });
         return { completo: false, agregadas };
       }
       _pendingBulkPairs.shift();
@@ -1488,21 +1523,40 @@
   }
 
   async function guardarPersonaYAgregarFila() {
-    const persona = {};
-    PERSONA_FORM.forEach((f) => {
-      const el = document.getElementById(`afidu-p-${f.key}`);
-      let val = el ? el.value.trim() : '';
-      if (f.key === 'fecha_nacimiento') val = normalizarFechaAfidu(val);
-      persona[f.key] = val;
-    });
+    const mount = $('afiduPersonaFormMount');
+    let persona = {};
+    if (window.innarPersonaFidu && mount) {
+      persona = window.innarPersonaFidu.leerFormulario(mount);
+    } else {
+      PERSONA_FORM.forEach((f) => {
+        const el = document.getElementById(`afidu-p-${f.key}`);
+        let val = el ? el.value.trim() : '';
+        if (f.key === 'fecha_nacimiento') val = normalizarFechaAfidu(val);
+        persona[f.key] = val;
+      });
+    }
     const codigo = _pendingCodigo || ($('afiduEntradaCodigo')?.value || '').trim();
     const enCola = _pendingBulkPairs?.length > 0;
     try {
-      await apiAnexo('/api/anexo-fidu/personas', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(persona)
-      });
+      let saved;
+      if (window.innarPersonaFidu) {
+        saved = await window.innarPersonaFidu.guardarPersona(persona, 'anexo');
+        if (saved.campos_faltantes?.length) {
+          mostrarPanelNuevaPersona(persona.numero_documento, codigo, {
+            persona: saved.persona,
+            campos_faltantes: saved.campos_faltantes,
+            parcial: true
+          });
+          if (typeof showToast === 'function') showToast('Complete los campos faltantes', 'error');
+          return;
+        }
+      } else {
+        await apiAnexo('/api/anexo-fidu/personas', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(persona)
+        });
+      }
       await cargarResumenPersonas();
       await agregarUnaFila(persona.numero_documento, codigo, {
         ocultarPanelSiOk: false,
@@ -1548,7 +1602,26 @@
       body: JSON.stringify(payload)
     });
     if (!data.persona_encontrada) {
-      return { ok: false, needsPanel: true, doc, codigo };
+      return {
+        ok: false,
+        needsPanel: true,
+        doc,
+        codigo,
+        persona: { numero_documento: doc },
+        campos_faltantes: data.campos_faltantes,
+        modoCompleto: true
+      };
+    }
+    if (data.campos_faltantes?.length) {
+      return {
+        ok: false,
+        needsPanel: true,
+        doc,
+        codigo,
+        persona: data.persona,
+        campos_faltantes: data.campos_faltantes,
+        parcial: true
+      };
     }
     if (opts.ocultarPanelSiOk !== false) ocultarPanelNuevaPersona();
     const reg = { ...(data.registro || {}) };
@@ -1605,9 +1678,17 @@
           }
           _pendingBulkPairs = pairs.slice(i);
           syncBulkTextareaDesdePendientes();
-          mostrarPanelNuevaPersona(result.doc, result.codigo);
+          mostrarPanelNuevaPersona(result.doc, result.codigo, {
+            persona: result.persona,
+            campos_faltantes: result.campos_faltantes,
+            modoCompleto: result.modoCompleto,
+            parcial: result.parcial
+          });
           if (typeof showToast === 'function') {
-            showToast('Paciente no registrado — complete los datos abajo para continuar', 'info');
+            const msg = result.parcial
+              ? 'Paciente con datos incompletos — complete los campos abajo'
+              : 'Paciente no registrado — complete los datos abajo para continuar';
+            showToast(msg, 'info');
           }
           return agregadas;
         }
@@ -1616,7 +1697,7 @@
       if (bulkContinuar && faltantes.length) {
         _pendingBulkPairs = faltantes;
         syncBulkTextareaDesdePendientes();
-        mostrarPanelNuevaPersona(faltantes[0].doc, faltantes[0].cups);
+        mostrarPanelNuevaPersona(faltantes[0].doc, faltantes[0].cups, { modoCompleto: true });
         if (typeof showToast === 'function') {
           const msgAgregadas = agregadas > 0
             ? `${agregadas} fila(s) agregada(s). `

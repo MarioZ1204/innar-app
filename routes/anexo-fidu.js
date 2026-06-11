@@ -627,11 +627,13 @@ router.post('/anexo-fidu/armar', requireAuth, requirePermiso(PERM_ANEXO_FIDU), a
       [documento]
     );
     if (!rows.length) {
+      const { detectarCamposFaltantes } = require('../utils/anexo-fidu-personas-docs');
       return res.json({
         ok: true,
         persona_encontrada: false,
         numero_documento: documento,
-        codigo_servicio: codigo
+        codigo_servicio: codigo,
+        campos_faltantes: detectarCamposFaltantes({ numero_documento: documento }, 'anexo')
       });
     }
 
@@ -660,12 +662,16 @@ router.post('/anexo-fidu/armar', requireAuth, requirePermiso(PERM_ANEXO_FIDU), a
       registro.cantidad = cantidad;
       aplicarValorTotalCalculado(registro);
     }
+    const { detectarCamposFaltantes } = require('../utils/anexo-fidu-personas-docs');
+    const personaApi = personaRowToApi(rows[0]);
+    const campos_faltantes = detectarCamposFaltantes(personaApi, 'anexo');
     res.json({
       ok: true,
       persona_encontrada: true,
       servicio_encontrado,
       registro: rowToApi({ id: null, ...registro }),
-      persona: personaRowToApi(rows[0])
+      persona: personaApi,
+      campos_faltantes
     });
   } catch (e) {
     logger.error('[ANEXO-FIDU] armar:', e);
