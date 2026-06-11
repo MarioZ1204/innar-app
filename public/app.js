@@ -13829,6 +13829,31 @@ function cerrarModalCertificadoAsistencia() {
   }
 }
 
+async function procesarRespuestaDocumentoGenerado(res, filenameBase) {
+  const ct = (res.headers.get('content-type') || '').toLowerCase();
+  const modo = res.headers.get('X-Documento-Modo');
+  if (modo === 'html' || ct.includes('text/html')) {
+    const html = await res.text();
+    const ventana = window.open('', '_blank');
+    if (!ventana) throw new Error('Permita ventanas emergentes para imprimir el documento');
+    ventana.document.open();
+    ventana.document.write(html);
+    ventana.document.close();
+    return 'html';
+  }
+  const blob = await res.blob();
+  if (!blob || !blob.size) throw new Error('El documento generado está vacío');
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filenameBase.endsWith('.pdf') ? filenameBase : `${filenameBase}.pdf`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  return 'pdf';
+}
+
 async function generarCertificadoAsistenciaPdf() {
   const origen = $('certAsistOrigen')?.value?.trim();
   const permOk = origen === 'electro'
@@ -13871,18 +13896,15 @@ async function generarCertificadoAsistenciaPdf() {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.error || 'Error generando certificado');
     }
-    const blob = await res.blob();
     const doc = payload.paciente_documento.replace(/\D/g, '') || 'certificado';
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `certificado_asistencia_${doc}.pdf`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
+    const modo = await procesarRespuestaDocumentoGenerado(res, `certificado_asistencia_${doc}.pdf`);
     certAsistenciaGuardarDefaults(payload);
-    showToast('Certificado generado', 'success');
+    showToast(
+      modo === 'html'
+        ? 'Certificado abierto. Use «Imprimir / Guardar PDF» en la nueva ventana.'
+        : 'Certificado generado',
+      'success'
+    );
     cerrarModalCertificadoAsistencia();
   } catch (e) {
     showToast(e.message || 'Error generando certificado', 'error');
@@ -14253,17 +14275,14 @@ async function generarComprobanteServiciosPdf() {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.error || 'Error generando comprobante');
     }
-    const blob = await res.blob();
     const doc = payload.paciente_documento.replace(/\D/g, '') || 'comprobante';
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `comprobante_servicios_${doc}.pdf`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-    showToast('Comprobante generado', 'success');
+    const modo = await procesarRespuestaDocumentoGenerado(res, `comprobante_servicios_${doc}.pdf`);
+    showToast(
+      modo === 'html'
+        ? 'Comprobante abierto. Use «Imprimir / Guardar PDF» en la nueva ventana.'
+        : 'Comprobante generado',
+      'success'
+    );
     cerrarModalComprobanteServicios();
   } catch (e) {
     showToast(e.message || 'Error generando comprobante', 'error');

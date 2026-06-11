@@ -98,6 +98,17 @@ function resolveChromeExecutable() {
   return null;
 }
 
+function getChromiumDiagnostic() {
+  const executablePath = resolveChromeExecutable();
+  return {
+    platform: process.platform,
+    executablePath: executablePath || null,
+    executableExists: !!(executablePath && fs.existsSync(executablePath)),
+    cacheDir: PUPPETEER_CACHE_DIR,
+    envPath: process.env.PUPPETEER_EXECUTABLE_PATH || null
+  };
+}
+
 function getPuppeteerLaunchOptions() {
   const executablePath = resolveChromeExecutable();
   if (!executablePath) {
@@ -126,6 +137,26 @@ function getPuppeteerLaunchOptions() {
 /**
  * Renderiza HTML a PDF sin depender de red externa (p. ej. Google Fonts).
  */
+async function tryRenderHtmlToPdf(html, options = {}) {
+  try {
+    const pdf = await renderHtmlToPdf(html, options);
+    return { ok: true, pdf };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+async function probeChromiumLaunch() {
+  try {
+    const launchOptions = getPuppeteerLaunchOptions();
+    const browser = await puppeteer.launch(launchOptions);
+    await browser.close().catch(() => {});
+    return { ok: true, executablePath: launchOptions.executablePath };
+  } catch (e) {
+    return { ok: false, error: e.message, ...getChromiumDiagnostic() };
+  }
+}
+
 async function renderHtmlToPdf(html, options = {}) {
   const {
     format = 'A4',
@@ -268,6 +299,9 @@ try { getLogoBase64(); } catch (_) {}
 
 module.exports = {
   getPuppeteerLaunchOptions,
+  getChromiumDiagnostic,
+  probeChromiumLaunch,
+  tryRenderHtmlToPdf,
   renderHtmlToPdf,
   getLogoBase64,
   getLogoReciboBase64,

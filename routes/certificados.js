@@ -7,10 +7,11 @@ const {
   requireAuth, requirePermiso, safeError
 } = require('../middleware/index');
 const {
-  renderHtmlToPdf,
+  tryRenderHtmlToPdf,
   getCertificadoAsistenciaFondo,
   getComprobanteServiciosFondo
 } = require('../utils/puppeteer-utils');
+const { wrapHtmlDocumentoImprimible } = require('../utils/documento-imprimible');
 const {
   validarPayloadCertificado,
   buildCertificadoAsistenciaHtml
@@ -45,6 +46,25 @@ function parseContextoPersonaFidu(val) {
   return CONTEXTOS_PERSONA_FIDU.has(ctx) ? ctx : 'anexo';
 }
 
+async function responderDocumentoPdfOHtml(res, { html, titulo, filename, logLabel }) {
+  const modo = String(process.env.CERTIFICADOS_PDF_MODE || '').trim().toLowerCase();
+  if (modo !== 'html') {
+    const resultado = await tryRenderHtmlToPdf(html);
+    if (resultado.ok) {
+      res.contentType('application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.setHeader('X-Documento-Modo', 'pdf');
+      return res.send(resultado.pdf);
+    }
+    logger.warn(`[CERT] ${logLabel} PDF en servidor no disponible, usando HTML imprimible:`, resultado.error);
+  }
+
+  const imprimible = wrapHtmlDocumentoImprimible(html, titulo);
+  res.contentType('text/html; charset=utf-8');
+  res.setHeader('X-Documento-Modo', 'html');
+  return res.send(imprimible);
+}
+
 /** POST /api/certificados/asistencia — genera PDF de certificación de asistencia */
 router.post('/certificados/asistencia', requireAuth, (req, res, next) => {
   const origen = String(req.body?.origen || '').trim().toLowerCase();
@@ -62,7 +82,6 @@ router.post('/certificados/asistencia', requireAuth, (req, res, next) => {
 
     const fondo = getCertificadoAsistenciaFondo();
     const html = buildCertificadoAsistenciaHtml(validacion.data, fondo);
-    const pdf = await renderHtmlToPdf(html);
 
     const doc = validacion.data.paciente_documento.replace(/\D/g, '') || 'sin_doc';
     const filename = `certificado_asistencia_${doc}.pdf`;
@@ -73,9 +92,12 @@ router.post('/certificados/asistencia', requireAuth, (req, res, next) => {
       usuario: req.session?.usuario
     });
 
-    res.contentType('application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    res.send(pdf);
+    await responderDocumentoPdfOHtml(res, {
+      html,
+      titulo: 'Certificado de asistencia',
+      filename,
+      logLabel: 'Asistencia'
+    });
   } catch (e) {
     logger.error('[CERT] Error generando asistencia:', e.message, e.stack);
     res.status(500).json({ error: safeError(e, 'Error generando certificado: ') });
@@ -100,7 +122,6 @@ router.post('/certificados/comprobante-servicios', requireAuth, (req, res, next)
     const datos = await procesarImagenesFirma(validacion.data);
     const fondo = getComprobanteServiciosFondo();
     const html = buildComprobanteServiciosHtml(datos, fondo);
-    const pdf = await renderHtmlToPdf(html);
 
     const doc = validacion.data.paciente_documento.replace(/\D/g, '') || 'sin_doc';
     const filename = `comprobante_servicios_${doc}.pdf`;
@@ -111,9 +132,12 @@ router.post('/certificados/comprobante-servicios', requireAuth, (req, res, next)
       usuario: req.session?.usuario
     });
 
-    res.contentType('application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    res.send(pdf);
+    await responderDocumentoPdfOHtml(res, {
+      html,
+      titulo: 'Comprobante de servicios FOMAG',
+      filename,
+      logLabel: 'Comprobante servicios'
+    });
   } catch (e) {
     logger.error('[CERT] Error generando comprobante servicios:', e.message, e.stack);
     res.status(500).json({ error: safeError(e, 'Error generando comprobante: ') });

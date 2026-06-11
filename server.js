@@ -141,7 +141,8 @@ app.get('/api/health/deep', requireAuth, async (req, res) => {
       pid: process.pid,
       memRss_mb: Math.round(process.memoryUsage().rss / (1024 * 1024)),
       nodeVersion: process.version
-    }
+    },
+    chromium: { ok: false, diagnostic: null, launch: null, error: null }
   };
 
   try {
@@ -210,6 +211,17 @@ app.get('/api/health/deep', requireAuth, async (req, res) => {
     }
   } catch (e) {
     checks.logsDir.error = e.message;
+  }
+
+  try {
+    const { getChromiumDiagnostic, probeChromiumLaunch } = require('./utils/puppeteer-utils');
+    checks.chromium.diagnostic = getChromiumDiagnostic();
+    const launch = await probeChromiumLaunch();
+    checks.chromium.launch = launch;
+    checks.chromium.ok = !!launch.ok;
+    if (!launch.ok) checks.chromium.error = launch.error;
+  } catch (e) {
+    checks.chromium.error = e.message;
   }
 
   const criticalOk = checks.db.ok && checks.uploadsDir.ok && checks.logsDir.ok;
