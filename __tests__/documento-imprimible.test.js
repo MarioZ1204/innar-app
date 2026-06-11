@@ -1,4 +1,7 @@
-const { wrapHtmlDocumentoImprimible } = require('../utils/documento-imprimible');
+const {
+  wrapHtmlDocumentoImprimible,
+  buildPageFondoImg
+} = require('../utils/documento-imprimible');
 
 describe('documento-imprimible', () => {
   test('agrega barra de impresión y título', () => {
@@ -7,5 +10,11 @@ describe('documento-imprimible', () => {
     expect(html).toContain('<title>Mi doc</title>');
     expect(html).toContain('doc-print-bar');
     expect(html).toContain('<p>Hola</p>');
+  });
+
+  test('fondo como img para impresión', () => {
+    const img = buildPageFondoImg({ base64: 'abc123', mime: 'image/png' });
+    expect(img).toContain('class="page-fondo"');
+    expect(img).toContain('data:image/png;base64,abc123');
   });
 });

@@ -13829,24 +13829,121 @@ function cerrarModalCertificadoAsistencia() {
   }
 }
 
+function cargarScriptPdfCliente(src) {
+  return new Promise((resolve, reject) => {
+    if (window.html2pdf) {
+      resolve();
+      return;
+    }
+    const existente = document.querySelector(`script[data-innar-pdf="${src}"]`);
+    if (existente) {
+      existente.addEventListener('load', () => resolve(), { once: true });
+      existente.addEventListener('error', () => reject(new Error('No se pudo cargar el generador PDF')), { once: true });
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = src;
+    script.dataset.innarPdf = src;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error('No se pudo cargar el generador PDF'));
+    document.head.appendChild(script);
+  });
+}
+
+function esperarImagenesDocumento(doc, timeoutMs = 5000) {
+  return new Promise((resolve) => {
+    const imgs = doc.querySelectorAll('img');
+    if (!imgs.length) {
+      resolve();
+      return;
+    }
+    let pendientes = imgs.length;
+    const listo = () => {
+      pendientes -= 1;
+      if (pendientes <= 0) resolve();
+    };
+    imgs.forEach((img) => {
+      if (img.complete) listo();
+      else {
+        img.addEventListener('load', listo, { once: true });
+        img.addEventListener('error', listo, { once: true });
+      }
+    });
+    setTimeout(resolve, timeoutMs);
+  });
+}
+
+async function descargarHtmlComoPdf(html, filename) {
+  await cargarScriptPdfCliente('/libs/html2pdf.bundle.min.js');
+  if (!window.html2pdf) throw new Error('Generador PDF no disponible');
+
+  const iframe = document.createElement('iframe');
+  iframe.setAttribute('aria-hidden', 'true');
+  iframe.style.cssText = 'position:fixed;left:-10000px;top:0;width:210mm;height:297mm;border:0;visibility:hidden;';
+  document.body.appendChild(iframe);
+
+  const doc = iframe.contentDocument || iframe.contentWindow?.document;
+  if (!doc) {
+    iframe.remove();
+    throw new Error('No se pudo preparar el documento para PDF');
+  }
+
+  doc.open();
+  doc.write(html);
+  doc.close();
+  await esperarImagenesDocumento(doc);
+
+  const page = doc.querySelector('.page') || doc.body;
+  try {
+    await window.html2pdf().set({
+      margin: 0,
+      filename,
+      image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#ffffff'
+      },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+      pagebreak: { mode: ['avoid-all'] }
+    }).from(page).save();
+  } finally {
+    iframe.remove();
+  }
+}
+
+function abrirHtmlParaImprimir(html) {
+  const ventana = window.open('', '_blank');
+  if (!ventana) throw new Error('Permita ventanas emergentes para imprimir el documento');
+  ventana.document.open();
+  ventana.document.write(html);
+  ventana.document.close();
+}
+
 async function procesarRespuestaDocumentoGenerado(res, filenameBase) {
   const ct = (res.headers.get('content-type') || '').toLowerCase();
   const modo = res.headers.get('X-Documento-Modo');
+  const filename = filenameBase.endsWith('.pdf') ? filenameBase : `${filenameBase}.pdf`;
+
   if (modo === 'html' || ct.includes('text/html')) {
     const html = await res.text();
-    const ventana = window.open('', '_blank');
-    if (!ventana) throw new Error('Permita ventanas emergentes para imprimir el documento');
-    ventana.document.open();
-    ventana.document.write(html);
-    ventana.document.close();
-    return 'html';
+    try {
+      await descargarHtmlComoPdf(html, filename);
+      return 'pdf-cliente';
+    } catch (e) {
+      console.warn('[PDF] html2pdf falló, abriendo impresión:', e);
+      abrirHtmlParaImprimir(html);
+      return 'html';
+    }
   }
+
   const blob = await res.blob();
   if (!blob || !blob.size) throw new Error('El documento generado está vacío');
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = filenameBase.endsWith('.pdf') ? filenameBase : `${filenameBase}.pdf`;
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -13902,7 +13999,9 @@ async function generarCertificadoAsistenciaPdf() {
     showToast(
       modo === 'html'
         ? 'Certificado abierto. Use «Imprimir / Guardar PDF» en la nueva ventana.'
-        : 'Certificado generado',
+        : modo === 'pdf-cliente'
+          ? 'Certificado descargado'
+          : 'Certificado generado',
       'success'
     );
     cerrarModalCertificadoAsistencia();
@@ -14280,7 +14379,9 @@ async function generarComprobanteServiciosPdf() {
     showToast(
       modo === 'html'
         ? 'Comprobante abierto. Use «Imprimir / Guardar PDF» en la nueva ventana.'
-        : 'Comprobante generado',
+        : modo === 'pdf-cliente'
+          ? 'Comprobante descargado'
+          : 'Comprobante generado',
       'success'
     );
     cerrarModalComprobanteServicios();

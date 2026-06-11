@@ -1,5 +1,7 @@
 'use strict';
 
+const { FONDO_PRINT_CSS, buildPageFondoImg } = require('./documento-imprimible');
+
 const COMPROBANTE_SERVICIOS_TITULO =
   'FORMATO DE FIRMA DE PACIENTE COMO COMPROBANTE DE RECIBIDO EL SERVICIO - PACIENTE DE FOMAG';
 
@@ -183,9 +185,7 @@ function buildComprobanteServiciosHtml(data, fondo = {}) {
   const fondoBase64 = fondo.base64 || '';
   const fondoMime = fondo.mime || 'image/png';
   const conFondo = !!fondoBase64;
-  const fondoStyle = conFondo
-    ? `background-image:url('data:${fondoMime};base64,${fondoBase64}');background-size:100% 100%;background-repeat:no-repeat;background-position:center top;`
-    : 'background:#fff;';
+  const fondoImgHtml = buildPageFondoImg(fondo);
 
   const L = COMPROBANTE_LAYOUT;
   const F = calcularPosicionesFirma(L);
@@ -250,10 +250,12 @@ function buildComprobanteServiciosHtml(data, fondo = {}) {
       height: 297mm;
       position: relative;
       overflow: hidden;
-      ${fondoStyle}
+      background: #fff;
     }
+    ${FONDO_PRINT_CSS}
     .cmp-titulo {
       position: absolute;
+      z-index: 1;
       top: ${L.tituloTop}mm;
       left: ${L.tituloLeft}mm;
       right: ${L.tituloRight}mm;
@@ -486,6 +488,7 @@ function buildComprobanteServiciosHtml(data, fondo = {}) {
 </head>
 <body>
   <div class="page">
+    ${fondoImgHtml}
     <h1 class="cmp-titulo">${escapeHtml(COMPROBANTE_SERVICIOS_TITULO)}</h1>
 
     <div class="cmp-zona-superior">

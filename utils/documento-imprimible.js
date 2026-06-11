@@ -13,8 +13,39 @@ function escapeHtml(str) {
 const BARRA_IMPRESION = `
 <div class="doc-print-bar no-print">
   <button type="button" onclick="window.print()">Imprimir / Guardar PDF</button>
-  <p class="doc-print-hint">En el diálogo de impresión elija «Guardar como PDF» o «Microsoft Print to PDF».</p>
+  <p class="doc-print-hint">Destino: «Guardar como PDF». En Chrome active «Más opciones» → «Gráficos de fondo» si el diseño no sale completo.</p>
 </div>`;
+
+/** CSS compartido: fondo como &lt;img&gt; (imprime mejor que background-image) */
+const FONDO_PRINT_CSS = `
+    .page-fondo {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 210mm;
+      height: 297mm;
+      z-index: 0;
+      pointer-events: none;
+      object-fit: fill;
+    }
+    @media print {
+      html, body, .page, .page-fondo {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+      }
+      .page-fondo {
+        display: block !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+      }
+    }`;
+
+function buildPageFondoImg(fondo = {}) {
+  const base64 = fondo.base64 || '';
+  if (!base64) return '';
+  const mime = fondo.mime || 'image/png';
+  return `<img class="page-fondo" src="data:${mime};base64,${base64}" alt="" aria-hidden="true"/>`;
+}
 
 const ESTILOS_IMPRESION = `
 <style id="doc-print-styles">
@@ -75,5 +106,7 @@ function wrapHtmlDocumentoImprimible(html, titulo = 'Documento') {
 }
 
 module.exports = {
-  wrapHtmlDocumentoImprimible
+  wrapHtmlDocumentoImprimible,
+  FONDO_PRINT_CSS,
+  buildPageFondoImg
 };

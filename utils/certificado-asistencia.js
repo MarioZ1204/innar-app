@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { FONDO_PRINT_CSS, buildPageFondoImg } = require('./documento-imprimible');
 
 const CERT_ASISTENCIA_TITULO = 'CERTIFICACION ASISTENCIA A EXAMEN O CONSULTA MEDICA';
 
@@ -155,9 +156,7 @@ function buildCertificadoAsistenciaHtml(data, fondo = {}) {
   const telTxt = `Celular: ${CERT_ASISTENCIA_TELEFONOS.celular} Teléfono fijo: ${CERT_ASISTENCIA_TELEFONOS.fijo}`;
 
   const conFondo = !!fondoBase64;
-  const fondoStyle = conFondo
-    ? `background-image:url('data:${fondoMime};base64,${fondoBase64}');background-size:100% 100%;background-repeat:no-repeat;background-position:center top;`
-    : 'background:#fff;';
+  const fondoImgHtml = buildPageFondoImg(fondo);
 
   const fontFaceCss = getCertificadoAsistenciaFontCss();
   const tieneAptosLocal = fontFaceCss.includes('Aptos Narrow');
@@ -184,10 +183,13 @@ function buildCertificadoAsistenciaHtml(data, fondo = {}) {
       width: 210mm;
       min-height: 297mm;
       position: relative;
-      ${fondoStyle}
+      overflow: hidden;
+      background: #fff;
     }
+    ${FONDO_PRINT_CSS}
     .cert-titulo {
       position: absolute;
+      z-index: 1;
       top: ${conFondo ? '9.5mm' : '8mm'};
       left: ${conFondo ? '48mm' : '12mm'};
       right: ${conFondo ? '12mm' : '12mm'};
@@ -205,6 +207,8 @@ function buildCertificadoAsistenciaHtml(data, fondo = {}) {
       padding: 0 4mm;
     }
     .cert-contenido {
+      position: relative;
+      z-index: 1;
       min-height: 297mm;
       display: flex;
       flex-direction: column;
@@ -362,6 +366,7 @@ function buildCertificadoAsistenciaHtml(data, fondo = {}) {
 </head>
 <body>
   <div class="page">
+    ${fondoImgHtml}
     <h1 class="cert-titulo">${escapeHtml(CERT_ASISTENCIA_TITULO)}</h1>
     <div class="cert-contenido">
       <div class="cert-cuerpo">
