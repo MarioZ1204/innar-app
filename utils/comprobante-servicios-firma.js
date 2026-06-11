@@ -1,8 +1,15 @@
 'use strict';
 
-const sharp = require('sharp');
-
 const UMBRAL_BLANCO = 242;
+
+/** Carga diferida: evita fallo de arranque en Hostinger si el binario nativo no está listo. */
+function getSharp() {
+  try {
+    return require('sharp');
+  } catch (e) {
+    return null;
+  }
+}
 
 /**
  * Convierte píxeles casi blancos en transparentes (PNG).
@@ -10,6 +17,8 @@ const UMBRAL_BLANCO = 242;
  */
 async function quitarFondoBlancoFirma(img) {
   if (!img?.base64) return img;
+  const sharp = getSharp();
+  if (!sharp) return img;
   try {
     const input = Buffer.from(img.base64, 'base64');
     const { data, info } = await sharp(input)
