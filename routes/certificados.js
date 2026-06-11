@@ -2,13 +2,12 @@
 
 const express = require('express');
 const router = express.Router();
-const puppeteer = require('puppeteer-core');
 const logger = require('../utils/logger');
 const {
   requireAuth, requirePermiso, safeError
 } = require('../middleware/index');
 const {
-  getPuppeteerLaunchOptions,
+  renderHtmlToPdf,
   getCertificadoAsistenciaFondo,
   getComprobanteServiciosFondo
 } = require('../utils/puppeteer-utils');
@@ -57,25 +56,13 @@ router.post('/certificados/asistencia', requireAuth, (req, res, next) => {
   }
   return res.status(400).json({ error: 'Origen inválido (medica o electro)' });
 }, async (req, res) => {
-  let browser = null;
   try {
     const validacion = validarPayloadCertificado(req.body);
     if (validacion.error) return res.status(400).json({ error: validacion.error });
 
     const fondo = getCertificadoAsistenciaFondo();
     const html = buildCertificadoAsistenciaHtml(validacion.data, fondo);
-
-    const launchOptions = getPuppeteerLaunchOptions();
-    browser = await puppeteer.launch(launchOptions);
-    const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: 'networkidle0' });
-    const pdf = await page.pdf({
-      format: 'A4',
-      printBackground: true,
-      margin: { top: '0', bottom: '0', left: '0', right: '0' }
-    });
-    await browser.close();
-    browser = null;
+    const pdf = await renderHtmlToPdf(html);
 
     const doc = validacion.data.paciente_documento.replace(/\D/g, '') || 'sin_doc';
     const filename = `certificado_asistencia_${doc}.pdf`;
@@ -90,8 +77,7 @@ router.post('/certificados/asistencia', requireAuth, (req, res, next) => {
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(pdf);
   } catch (e) {
-    if (browser) await browser.close().catch(() => {});
-    logger.error('[CERT] Error generando asistencia:', e.message);
+    logger.error('[CERT] Error generando asistencia:', e.message, e.stack);
     res.status(500).json({ error: safeError(e, 'Error generando certificado: ') });
   }
 });
@@ -107,7 +93,6 @@ router.post('/certificados/comprobante-servicios', requireAuth, (req, res, next)
   }
   return res.status(400).json({ error: 'Origen inválido (medica o electro)' });
 }, async (req, res) => {
-  let browser = null;
   try {
     const validacion = validarPayloadComprobanteServicios(req.body);
     if (validacion.error) return res.status(400).json({ error: validacion.error });
@@ -115,19 +100,7 @@ router.post('/certificados/comprobante-servicios', requireAuth, (req, res, next)
     const datos = await procesarImagenesFirma(validacion.data);
     const fondo = getComprobanteServiciosFondo();
     const html = buildComprobanteServiciosHtml(datos, fondo);
-
-    const launchOptions = getPuppeteerLaunchOptions();
-    browser = await puppeteer.launch(launchOptions);
-    const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: 'networkidle0' });
-    await page.evaluate(() => document.fonts.ready);
-    const pdf = await page.pdf({
-      format: 'A4',
-      printBackground: true,
-      margin: { top: '0', bottom: '0', left: '0', right: '0' }
-    });
-    await browser.close();
-    browser = null;
+    const pdf = await renderHtmlToPdf(html);
 
     const doc = validacion.data.paciente_documento.replace(/\D/g, '') || 'sin_doc';
     const filename = `comprobante_servicios_${doc}.pdf`;
@@ -142,8 +115,7 @@ router.post('/certificados/comprobante-servicios', requireAuth, (req, res, next)
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(pdf);
   } catch (e) {
-    if (browser) await browser.close().catch(() => {});
-    logger.error('[CERT] Error generando comprobante servicios:', e.message);
+    logger.error('[CERT] Error generando comprobante servicios:', e.message, e.stack);
     res.status(500).json({ error: safeError(e, 'Error generando comprobante: ') });
   }
 });

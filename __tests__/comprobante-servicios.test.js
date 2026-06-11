@@ -100,13 +100,13 @@ describe('comprobante-servicios', () => {
     expect(html).toContain('cmp-acudiente');
     expect(html).toContain('cmp-pie-bloque');
     expect(html).toContain('Auditor Médico');
-    expect(html).toContain('Noto Sans');
+    expect(html).toContain('Arial');
     expect(html).toContain('NEUROLOGÍA');
     expect(html).toContain(COMPROBANTE_SERVICIOS_PIE.codigo);
     expect(html).toContain('cmp-pie-col');
     expect(html).not.toContain('cmp-pie-tabla');
     expect(html).toContain(COMPROBANTE_SERVICIOS_PIE.version);
     expect(html).toContain(COMPROBANTE_SERVICIOS_PIE.fecha_actualizacion);
-    expect(html).toContain('Noto Sans');
+    expect(html).toContain('Arial');
   });
 });

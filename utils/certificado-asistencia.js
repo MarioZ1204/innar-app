@@ -161,18 +161,14 @@ function buildCertificadoAsistenciaHtml(data, fondo = {}) {
 
   const fontFaceCss = getCertificadoAsistenciaFontCss();
   const tieneAptosLocal = fontFaceCss.includes('Aptos Narrow');
-  const fontLink = tieneAptosLocal
-    ? ''
-    : '<link href="https://fonts.googleapis.com/css2?family=Archivo+Narrow:wght@400;600;700&amp;display=swap" rel="stylesheet"/>';
   const fontFamily = tieneAptosLocal
     ? "'Aptos Narrow', 'Arial Narrow', sans-serif"
-    : "'Aptos Narrow', 'Archivo Narrow', 'Arial Narrow', sans-serif";
+    : "'Arial Narrow', Arial, sans-serif";
 
   return `<!doctype html>
 <html lang="es">
 <head>
   <meta charset="utf-8"/>
-  ${fontLink}
   <style>
     ${fontFaceCss}
     @page { size: A4; margin: 0; }

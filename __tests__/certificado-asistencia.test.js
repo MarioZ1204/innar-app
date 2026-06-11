@@ -64,7 +64,7 @@ describe('certificado-asistencia', () => {
     expect(html).toContain('6027299737');
     expect(html).toContain('Alejandra Benavides');
     expect(html).toContain(CERT_ASISTENCIA_TITULO);
-    expect(html).toMatch(/Aptos Narrow|Archivo Narrow/);
+    expect(html).toMatch(/Aptos Narrow|Arial Narrow/);
     expect(html).toContain(CERT_ASISTENCIA_PIE.codigo);
     expect(html).toContain(CERT_ASISTENCIA_PIE.fecha_actualizacion);
     expect(html).toContain('1 de 1');

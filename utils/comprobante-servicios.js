@@ -200,8 +200,7 @@ function buildComprobanteServiciosHtml(data, fondo = {}) {
   const firmaAcud = data.firma_acudiente;
   const mostrarAcudienteDatos = tieneBloqueAcudiente(data);
 
-  const fontLink = '<link href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,400;0,600;0,700;1,400&amp;display=swap" rel="stylesheet"/>';
-  const fontFamily = "'Noto Sans', Arial, sans-serif";
+  const fontFamily = "Arial, 'Helvetica Neue', Helvetica, sans-serif";
 
   const firmaAcudHtml = firmaAcud
     ? `<img class="cmp-firma-acud-img" src="data:${firmaAcud.mime};base64,${firmaAcud.base64}" alt="Firma acudiente"/>`
@@ -235,7 +234,6 @@ function buildComprobanteServiciosHtml(data, fondo = {}) {
 <head>
   <meta charset="UTF-8"/>
   <meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>
-  ${fontLink}
   <style>
     @page { size: A4; margin: 0; }
     * { box-sizing: border-box; }

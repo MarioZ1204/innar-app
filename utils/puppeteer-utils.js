@@ -1,36 +1,97 @@
 // Opciones de lanzamiento de Puppeteer + helpers de logo
 const fs = require('fs');
 const path = require('path');
+const puppeteer = require('puppeteer-core');
 const logger = require('./logger');
 
-function getPuppeteerLaunchOptions() {
-  const launchOptions = {
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--no-zygote', '--single-process'],
-    dumpio: false
-  };
+function resolveChromeExecutable() {
+  const envCandidates = [
+    process.env.PUPPETEER_EXECUTABLE_PATH,
+    process.env.CHROME_PATH,
+    process.env.GOOGLE_CHROME_BIN
+  ].filter(Boolean);
+  for (const chromePath of envCandidates) {
+    if (fs.existsSync(chromePath)) return chromePath;
+  }
   const chromePaths = [
     '/usr/bin/chromium-browser',
     '/usr/bin/chromium',
+    '/snap/bin/chromium',
     '/usr/bin/google-chrome',
     '/usr/bin/google-chrome-stable',
+    '/opt/google/chrome/google-chrome',
     'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
     'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
     'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
     'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
   ];
   for (const chromePath of chromePaths) {
-    if (fs.existsSync(chromePath)) {
-      launchOptions.executablePath = chromePath;
-      break;
-    }
+    if (fs.existsSync(chromePath)) return chromePath;
   }
-  if (!launchOptions.executablePath) {
+  return null;
+}
+
+function getPuppeteerLaunchOptions() {
+  const executablePath = resolveChromeExecutable();
+  if (!executablePath) {
     throw new Error(
-      'No se encontró Chrome/Chromium instalado. En Hostinger ejecute: apt-get install -y chromium-browser. ' +
-      'En Windows instale Google Chrome o Microsoft Edge.'
+      'No se encontró Chrome/Chromium instalado. Defina PUPPETEER_EXECUTABLE_PATH o instale Chromium. ' +
+      'En Hostinger: apt-get install -y chromium-browser. En Windows: Google Chrome o Microsoft Edge.'
     );
   }
-  return launchOptions;
+  return {
+    executablePath,
+    headless: true,
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+      '--no-zygote',
+      '--single-process',
+      '--font-render-hinting=none'
+    ],
+    dumpio: false
+  };
+}
+
+/**
+ * Renderiza HTML a PDF sin depender de red externa (p. ej. Google Fonts).
+ */
+async function renderHtmlToPdf(html, options = {}) {
+  const {
+    format = 'A4',
+    printBackground = true,
+    margin = { top: '0', bottom: '0', left: '0', right: '0' },
+    waitFonts = true,
+    contentTimeout = 60000,
+    fontsTimeoutMs = 3000
+  } = options;
+
+  const launchOptions = getPuppeteerLaunchOptions();
+  const browser = await puppeteer.launch(launchOptions);
+  try {
+    const page = await browser.newPage();
+    await page.setRequestInterception(true);
+    page.on('request', (req) => {
+      const url = req.url();
+      if (/fonts\.googleapis\.com|fonts\.gstatic\.com/i.test(url)) {
+        req.abort();
+      } else {
+        req.continue();
+      }
+    });
+    await page.setContent(html, { waitUntil: 'load', timeout: contentTimeout });
+    if (waitFonts) {
+      await page.evaluate((ms) => Promise.race([
+        document.fonts.ready,
+        new Promise((resolve) => setTimeout(resolve, ms))
+      ]), fontsTimeoutMs);
+    }
+    return await page.pdf({ format, printBackground, margin });
+  } finally {
+    await browser.close().catch(() => {});
+  }
 }
 
 let logoBase64 = '';
@@ -148,6 +209,7 @@ try { getLogoBase64(); } catch (_) {}
 
 module.exports = {
   getPuppeteerLaunchOptions,
+  renderHtmlToPdf,
   getLogoBase64,
   getLogoReciboBase64,
   getCertificadoAsistenciaFondo,
