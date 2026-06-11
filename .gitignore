@@ -1,5 +1,6 @@
 # Dependencias
 node_modules/
+.cache/
 
 # Variables de entorno — contienen contraseñas y secretos
 .env

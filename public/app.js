@@ -14083,13 +14083,11 @@ function initCertificadoAsistenciaUi() {
   });
   $('btnCertificadoAsistenciaMedica')?.addEventListener('click', () => {
     if (!currentTurnoMedicaData) return;
-    const prefill = prefillCertificadoAsistenciaMedica(currentTurnoMedicaData);
-    abrirDocumentoConPersonaFidu('certificado', prefill, abrirModalCertificadoAsistencia);
+    abrirModalCertificadoAsistencia(prefillCertificadoAsistenciaMedica(currentTurnoMedicaData));
   });
   $('btnCertificadoAsistenciaElectro')?.addEventListener('click', () => {
     if (!citaElectroSeleccionada) return;
-    const prefill = prefillCertificadoAsistenciaElectro(citaElectroSeleccionada);
-    abrirDocumentoConPersonaFidu('certificado', prefill, abrirModalCertificadoAsistencia);
+    abrirModalCertificadoAsistencia(prefillCertificadoAsistenciaElectro(citaElectroSeleccionada));
   });
 }
 

@@ -66,7 +66,7 @@ No ejecute `git clean -fd` en el servidor sobre la carpeta de uploads persistent
 
 1. Haz commit y push en Git.
 2. En Hostinger, sincroniza/actualiza el repo.
-3. Ejecuta `npm install` en el servidor (si no se ejecuta automatico).
+3. Ejecuta `npm install` en el servidor (si no se ejecuta automatico). El `postinstall` descarga **Chrome** para Puppeteer (certificados/comprobantes PDF); la primera vez puede tardar varios minutos.
 4. Reinicia la Node.js App desde hPanel.
 5. Verifica:
    - `https://innarapp.neurocienciasnarino.com/api/health`

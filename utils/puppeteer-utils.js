@@ -4,6 +4,69 @@ const path = require('path');
 const puppeteer = require('puppeteer-core');
 const logger = require('./logger');
 
+const PUPPETEER_CACHE_DIR = process.env.PUPPETEER_CACHE_DIR
+  || path.join(__dirname, '..', '.cache', 'puppeteer');
+
+function resolveBundledChromeExecutable() {
+  try {
+    const puppeteerFull = require('puppeteer');
+    if (typeof puppeteerFull.executablePath === 'function') {
+      const bundled = puppeteerFull.executablePath();
+      if (bundled && fs.existsSync(bundled)) return bundled;
+    }
+  } catch (e) {
+    logger.warn('Puppeteer empaquetado no disponible:', e.message);
+  }
+
+  const cacheRoots = [
+    PUPPETEER_CACHE_DIR,
+    path.join(process.env.HOME || '', '.cache', 'puppeteer'),
+    path.join(__dirname, '..', 'node_modules', 'puppeteer', '.cache')
+  ].filter(Boolean);
+
+  const execNames = process.platform === 'win32'
+    ? ['chrome.exe', 'chromium.exe']
+    : ['chrome', 'chromium', 'chromium-browser', 'google-chrome'];
+
+  for (const root of cacheRoots) {
+    if (!fs.existsSync(root)) continue;
+    const found = buscarEjecutableChrome(root, execNames, 0, 6);
+    if (found) return found;
+  }
+  return null;
+}
+
+function buscarEjecutableChrome(dir, execNames, depth, maxDepth) {
+  if (depth > maxDepth) return null;
+  let entries;
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch (_) {
+    return null;
+  }
+  for (const entry of entries) {
+    const full = path.join(dir, entry.name);
+    if (entry.isFile() && execNames.includes(entry.name) && esEjecutableChrome(full)) {
+      return full;
+    }
+    if (entry.isDirectory()) {
+      const nested = buscarEjecutableChrome(full, execNames, depth + 1, maxDepth);
+      if (nested) return nested;
+    }
+  }
+  return null;
+}
+
+function esEjecutableChrome(filePath) {
+  if (process.platform === 'win32') return filePath.toLowerCase().endsWith('.exe');
+  try {
+    fs.accessSync(filePath, fs.constants.X_OK);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
 function resolveChromeExecutable() {
   const envCandidates = [
     process.env.PUPPETEER_EXECUTABLE_PATH,
@@ -13,6 +76,10 @@ function resolveChromeExecutable() {
   for (const chromePath of envCandidates) {
     if (fs.existsSync(chromePath)) return chromePath;
   }
+
+  const bundled = resolveBundledChromeExecutable();
+  if (bundled) return bundled;
+
   const chromePaths = [
     '/usr/bin/chromium-browser',
     '/usr/bin/chromium',
@@ -35,22 +102,23 @@ function getPuppeteerLaunchOptions() {
   const executablePath = resolveChromeExecutable();
   if (!executablePath) {
     throw new Error(
-      'No se encontró Chrome/Chromium instalado. Defina PUPPETEER_EXECUTABLE_PATH o instale Chromium. ' +
-      'En Hostinger: apt-get install -y chromium-browser. En Windows: Google Chrome o Microsoft Edge.'
+      'No se encontró Chrome/Chromium. Ejecute npm install (descarga Chrome con puppeteer) o defina PUPPETEER_EXECUTABLE_PATH.'
     );
+  }
+  const args = [
+    '--no-sandbox',
+    '--disable-setuid-sandbox',
+    '--disable-dev-shm-usage',
+    '--disable-gpu',
+    '--font-render-hinting=none'
+  ];
+  if (process.platform === 'linux') {
+    args.push('--no-zygote');
   }
   return {
     executablePath,
     headless: true,
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-gpu',
-      '--no-zygote',
-      '--single-process',
-      '--font-render-hinting=none'
-    ],
+    args,
     dumpio: false
   };
 }
@@ -72,15 +140,6 @@ async function renderHtmlToPdf(html, options = {}) {
   const browser = await puppeteer.launch(launchOptions);
   try {
     const page = await browser.newPage();
-    await page.setRequestInterception(true);
-    page.on('request', (req) => {
-      const url = req.url();
-      if (/fonts\.googleapis\.com|fonts\.gstatic\.com/i.test(url)) {
-        req.abort();
-      } else {
-        req.continue();
-      }
-    });
     await page.setContent(html, { waitUntil: 'load', timeout: contentTimeout });
     if (waitFonts) {
       await page.evaluate((ms) => Promise.race([
