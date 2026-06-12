@@ -5,7 +5,6 @@
 (function () {
   'use strict';
 
-  const LS_JOB = 'innar.docJob';
   let bound = false;
   let firmaPacienteDataUrl = '';
 
@@ -386,121 +385,10 @@
     return data;
   }
 
-  function esperarImagenes(doc, timeoutMs) {
-    return new Promise((resolve) => {
-      const imgs = doc.querySelectorAll('img');
-      if (!imgs.length) { resolve(); return; }
-      let pendientes = imgs.length;
-      const listo = () => { pendientes -= 1; if (pendientes <= 0) resolve(); };
-      imgs.forEach((img) => {
-        if (img.complete) listo();
-        else {
-          img.addEventListener('load', listo, { once: true });
-          img.addEventListener('error', listo, { once: true });
-        }
-      });
-      setTimeout(resolve, timeoutMs || 8000);
-    });
-  }
-
-  function esperarLayout(doc) {
-    return new Promise((resolve) => {
-      requestAnimationFrame(() => requestAnimationFrame(resolve));
-    }).then(() => new Promise((r) => setTimeout(r, 350)));
-  }
-
-  function asegurarDimensionesPagina(page) {
-    const A4_W = 794;
-    const A4_H = 1123;
-    let w = page.offsetWidth || page.scrollWidth;
-    let h = page.offsetHeight || page.scrollHeight;
-    if (w < 100 || h < 100) {
-      page.style.width = `${A4_W}px`;
-      page.style.minHeight = `${A4_H}px`;
-      page.style.height = `${A4_H}px`;
-      page.style.boxSizing = 'border-box';
-      w = A4_W;
-      h = A4_H;
-    }
-    return { width: w, height: h };
-  }
-
-  function montarHtmlEnStaging(html) {
-    document.getElementById('docmodPdfStage')?.remove();
-    const parsed = new DOMParser().parseFromString(html, 'text/html');
-    const stage = document.createElement('div');
-    stage.id = 'docmodPdfStage';
-    stage.setAttribute('aria-hidden', 'true');
-    parsed.querySelectorAll('style').forEach((node) => stage.appendChild(node.cloneNode(true)));
-    const page = parsed.querySelector('.page');
-    if (!page) return null;
-    stage.appendChild(page.cloneNode(true));
-    document.body.appendChild(stage);
-    return stage.querySelector('.page');
-  }
-
-  function quitarStaging() {
-    document.getElementById('docmodPdfStage')?.remove();
-  }
-
-  async function renderizarHtmlParaPdf(html) {
-    const frame = $('docmodPdfFrame');
-    const doc = frame?.contentDocument || frame?.contentWindow?.document;
-    if (frame && doc) {
-      doc.open();
-      doc.write(html);
-      doc.close();
-      await esperarImagenes(doc, 8000);
-      if (doc.fonts?.ready) {
-        await Promise.race([doc.fonts.ready, new Promise((r) => setTimeout(r, 4000))]);
-      }
-      await esperarLayout(doc);
-      const page = doc.querySelector('.page');
-      if (page) {
-        asegurarDimensionesPagina(page);
-        await esperarLayout(doc);
-        if ((page.offsetWidth || 0) >= 100) return { page, cleanup: () => {} };
-      }
-    }
-    const page = montarHtmlEnStaging(html);
-    if (!page) throw new Error('No se encontró el contenido del documento');
-    await esperarImagenes(page.ownerDocument, 8000);
-    await esperarLayout(page.ownerDocument);
-    asegurarDimensionesPagina(page);
-    await esperarLayout(page.ownerDocument);
-    return { page, cleanup: quitarStaging };
-  }
-
   async function generarPdfDesdePreview(preview) {
-    if (!window.html2pdf) throw new Error('Generador PDF no disponible');
-    const { page, cleanup } = await renderizarHtmlParaPdf(preview.html);
-    const width = page.offsetWidth || 794;
-    const height = page.offsetHeight || 1123;
-    try {
-      await window.html2pdf().set({
-        margin: 0,
-        filename: preview.filename || 'documento.pdf',
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: {
-          scale: 2,
-          useCORS: true,
-          allowTaint: true,
-          logging: false,
-          backgroundColor: '#ffffff',
-          width,
-          height,
-          windowWidth: width,
-          windowHeight: height,
-          scrollX: 0,
-          scrollY: 0,
-          x: 0,
-          y: 0
-        },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-      }).from(page).save();
-    } finally {
-      cleanup();
-    }
+    const PDF = window.innarDocumentoPdf;
+    if (!PDF) throw new Error('Generador PDF no disponible');
+    await PDF.generarPdfDesdeHtml(preview.html, preview.filename);
   }
 
   async function confirmarModal() {
@@ -542,32 +430,6 @@
     }
   }
 
-  function readJobFromStorage() {
-    try {
-      const raw = sessionStorage.getItem(LS_JOB);
-      if (!raw) return null;
-      sessionStorage.removeItem(LS_JOB);
-      return JSON.parse(raw);
-    } catch (_) {
-      return null;
-    }
-  }
-
-  async function aplicarJobDesdeAgenda(job) {
-    const payload = job.payload || {};
-    state.tipo = job.tipo;
-    state.origen = payload.origen || 'medica';
-    state.documento = String(payload.paciente_documento || '').trim();
-    state.encontrada = true;
-    sincronizarUiSeleccion();
-    if (state.documento) $('docmodDocumento').value = state.documento;
-
-    abrirModalConDatos({ numero_documento: state.documento }, payload);
-    if (job.autoDownload) {
-      await confirmarModal();
-    }
-  }
-
   function bindUi() {
     if (bound) return;
     bound = true;
@@ -597,11 +459,6 @@
 
   async function initDocumentosCitaModule() {
     bindUi();
-    const job = readJobFromStorage();
-    if (job?.tipo && job?.payload) {
-      await aplicarJobDesdeAgenda(job);
-      return;
-    }
     sincronizarUiSeleccion();
   }
 

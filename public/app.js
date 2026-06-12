@@ -13844,16 +13844,6 @@ function cerrarModalCertificadoAsistencia() {
   }
 }
 
-const DOC_JOB_STORAGE_KEY = 'innar.docJob';
-
-function abrirGeneradorDocumentosCita(job) {
-  sessionStorage.setItem(DOC_JOB_STORAGE_KEY, JSON.stringify({
-    ...job,
-    ts: Date.now()
-  }));
-  goToModule('documentos-cita');
-}
-
 async function generarCertificadoAsistenciaPdf() {
   const origen = $('certAsistOrigen')?.value?.trim();
   const permOk = origen === 'electro'
@@ -13887,13 +13877,17 @@ async function generarCertificadoAsistenciaPdf() {
   const btn = $('btnGenerarCertificadoAsistencia');
   if (btn) btn.disabled = true;
   try {
-    abrirGeneradorDocumentosCita({
-      tipo: 'certificado',
-      payload,
-      autoDownload: true
+    const PDF = window.innarDocumentoPdf;
+    if (!PDF) throw new Error('Generador PDF no disponible');
+    const doc = payload.paciente_documento.replace(/\D/g, '') || 'sin_doc';
+    const res = await apiFetch('/api/certificados/asistencia', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
     });
+    await PDF.procesarRespuestaDocumento(res, `certificado_asistencia_${doc}.pdf`);
     certAsistenciaGuardarDefaults(payload);
-    showToast('Abriendo módulo de certificado…', 'success');
+    showToast('Certificado descargado', 'success');
     cerrarModalCertificadoAsistencia();
   } catch (e) {
     showToast(e.message || 'Error generando certificado', 'error');
@@ -14255,12 +14249,16 @@ async function generarComprobanteServiciosPdf() {
   const btn = $('btnGenerarComprobanteServicios');
   if (btn) btn.disabled = true;
   try {
-    abrirGeneradorDocumentosCita({
-      tipo: 'comprobante',
-      payload,
-      autoDownload: true
+    const PDF = window.innarDocumentoPdf;
+    if (!PDF) throw new Error('Generador PDF no disponible');
+    const doc = payload.paciente_documento.replace(/\D/g, '') || 'sin_doc';
+    const res = await apiFetch('/api/certificados/comprobante-servicios', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
     });
-    showToast('Abriendo módulo de comprobante…', 'success');
+    await PDF.procesarRespuestaDocumento(res, `comprobante_servicios_${doc}.pdf`);
+    showToast('Comprobante descargado', 'success');
     cerrarModalComprobanteServicios();
   } catch (e) {
     showToast(e.message || 'Error generando comprobante', 'error');

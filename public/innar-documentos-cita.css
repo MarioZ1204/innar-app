@@ -351,44 +351,6 @@
   box-shadow: none;
 }
 
-#docmodPdfStage {
-  position: fixed;
-  left: 0;
-  top: 0;
-  width: 794px;
-  height: 1123px;
-  overflow: hidden;
-  opacity: 0.01;
-  pointer-events: none;
-  z-index: 1;
-  background: #fff;
-}
-
-#docmodPdfStage .page {
-  width: 794px !important;
-  min-height: 1123px !important;
-  height: 1123px !important;
-  position: relative;
-  background: #fff;
-}
-
-#docmodPdfFrame {
-  position: fixed;
-  left: 0;
-  top: 0;
-  width: 794px;
-  height: 1123px;
-  border: 0;
-  margin: 0;
-  padding: 0;
-  opacity: 0.01;
-  pointer-events: none;
-  z-index: 1;
-  visibility: visible;
-  overflow: hidden;
-  background: #fff;
-}
-
 @media (max-width: 640px) {
   .docmod-pick-grid {
     grid-template-columns: 1fr;
