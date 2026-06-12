@@ -65,6 +65,69 @@ async function responderDocumentoPdfOHtml(res, { html, titulo, filename, logLabe
   return res.send(imprimible);
 }
 
+function buildAsistenciaPreview(reqBody) {
+  const validacion = validarPayloadCertificado(reqBody);
+  if (validacion.error) return { error: validacion.error };
+  const fondo = getCertificadoAsistenciaFondo();
+  const html = buildCertificadoAsistenciaHtml(validacion.data, fondo);
+  const doc = validacion.data.paciente_documento.replace(/\D/g, '') || 'sin_doc';
+  return {
+    data: validacion.data,
+    html,
+    filename: `certificado_asistencia_${doc}.pdf`,
+    titulo: 'Certificado de asistencia'
+  };
+}
+
+async function buildComprobantePreview(reqBody) {
+  const validacion = validarPayloadComprobanteServicios(reqBody);
+  if (validacion.error) return { error: validacion.error };
+  const datos = await procesarImagenesFirma(validacion.data);
+  const fondo = getComprobanteServiciosFondo();
+  const html = buildComprobanteServiciosHtml(datos, fondo);
+  const doc = validacion.data.paciente_documento.replace(/\D/g, '') || 'sin_doc';
+  return {
+    data: validacion.data,
+    html,
+    filename: `comprobante_servicios_${doc}.pdf`,
+    titulo: 'Comprobante de servicios FOMAG'
+  };
+}
+
+/** POST /api/certificados/asistencia/preview — HTML para generador (sin Puppeteer) */
+router.post('/certificados/asistencia/preview', requireAuth, (req, res, next) => {
+  const origen = String(req.body?.origen || '').trim().toLowerCase();
+  if (origen === 'electro') return requirePermiso('electro.ver')(req, res, next);
+  if (origen === 'medica') return requirePermiso('agenda.ver')(req, res, next);
+  return res.status(400).json({ error: 'Origen inválido (medica o electro)' });
+}, async (req, res) => {
+  try {
+    const built = buildAsistenciaPreview(req.body);
+    if (built.error) return res.status(400).json({ error: built.error });
+    res.json({ html: built.html, filename: built.filename, titulo: built.titulo });
+  } catch (e) {
+    logger.error('[CERT] preview asistencia:', e.message);
+    res.status(500).json({ error: safeError(e, 'Error generando vista previa: ') });
+  }
+});
+
+/** POST /api/certificados/comprobante-servicios/preview */
+router.post('/certificados/comprobante-servicios/preview', requireAuth, (req, res, next) => {
+  const origen = String(req.body?.origen || '').trim().toLowerCase();
+  if (origen === 'electro') return requirePermiso('electro.ver')(req, res, next);
+  if (origen === 'medica') return requirePermiso('agenda.ver')(req, res, next);
+  return res.status(400).json({ error: 'Origen inválido (medica o electro)' });
+}, async (req, res) => {
+  try {
+    const built = await buildComprobantePreview(req.body);
+    if (built.error) return res.status(400).json({ error: built.error });
+    res.json({ html: built.html, filename: built.filename, titulo: built.titulo });
+  } catch (e) {
+    logger.error('[CERT] preview comprobante:', e.message);
+    res.status(500).json({ error: safeError(e, 'Error generando vista previa: ') });
+  }
+});
+
 /** POST /api/certificados/asistencia — genera PDF de certificación de asistencia */
 router.post('/certificados/asistencia', requireAuth, (req, res, next) => {
   const origen = String(req.body?.origen || '').trim().toLowerCase();
@@ -77,25 +140,19 @@ router.post('/certificados/asistencia', requireAuth, (req, res, next) => {
   return res.status(400).json({ error: 'Origen inválido (medica o electro)' });
 }, async (req, res) => {
   try {
-    const validacion = validarPayloadCertificado(req.body);
-    if (validacion.error) return res.status(400).json({ error: validacion.error });
-
-    const fondo = getCertificadoAsistenciaFondo();
-    const html = buildCertificadoAsistenciaHtml(validacion.data, fondo);
-
-    const doc = validacion.data.paciente_documento.replace(/\D/g, '') || 'sin_doc';
-    const filename = `certificado_asistencia_${doc}.pdf`;
+    const built = buildAsistenciaPreview(req.body);
+    if (built.error) return res.status(400).json({ error: built.error });
 
     logger.info('[CERT] Asistencia generada', {
       origen: req.body?.origen,
-      documento: validacion.data.paciente_documento,
+      documento: built.data.paciente_documento,
       usuario: req.session?.usuario
     });
 
     await responderDocumentoPdfOHtml(res, {
-      html,
-      titulo: 'Certificado de asistencia',
-      filename,
+      html: built.html,
+      titulo: built.titulo,
+      filename: built.filename,
       logLabel: 'Asistencia'
     });
   } catch (e) {
@@ -116,26 +173,19 @@ router.post('/certificados/comprobante-servicios', requireAuth, (req, res, next)
   return res.status(400).json({ error: 'Origen inválido (medica o electro)' });
 }, async (req, res) => {
   try {
-    const validacion = validarPayloadComprobanteServicios(req.body);
-    if (validacion.error) return res.status(400).json({ error: validacion.error });
-
-    const datos = await procesarImagenesFirma(validacion.data);
-    const fondo = getComprobanteServiciosFondo();
-    const html = buildComprobanteServiciosHtml(datos, fondo);
-
-    const doc = validacion.data.paciente_documento.replace(/\D/g, '') || 'sin_doc';
-    const filename = `comprobante_servicios_${doc}.pdf`;
+    const built = await buildComprobantePreview(req.body);
+    if (built.error) return res.status(400).json({ error: built.error });
 
     logger.info('[CERT] Comprobante servicios generado', {
       origen: req.body?.origen,
-      documento: validacion.data.paciente_documento,
+      documento: built.data.paciente_documento,
       usuario: req.session?.usuario
     });
 
     await responderDocumentoPdfOHtml(res, {
-      html,
-      titulo: 'Comprobante de servicios FOMAG',
-      filename,
+      html: built.html,
+      titulo: built.titulo,
+      filename: built.filename,
       logLabel: 'Comprobante servicios'
     });
   } catch (e) {

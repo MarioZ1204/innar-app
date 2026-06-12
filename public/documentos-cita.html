@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="refresh" content="0;url=/#documentos-cita">
+  <title>Redirigiendo…</title>
+  <script>
+    (function () {
+      try {
+        var params = new URLSearchParams(location.search);
+        var job = params.get('job');
+        if (job) sessionStorage.setItem('innar.docJob', job);
+      } catch (_) {}
+      location.replace('/#documentos-cita');
+    })();
+  </script>
+</head>
+<body>
+  <p>Redirigiendo al módulo de comprobantes y certificados… <a href="/#documentos-cita">Continuar</a></p>
+</body>
+</html>

@@ -869,6 +869,10 @@ function updateMenuByRole() {
 
   document.querySelectorAll('.menu-card').forEach(card => {
     const moduleKey = card.dataset.module || '';
+    if (moduleKey === 'documentos-cita') {
+      card.style.display = (tienePermiso('agenda.ver') || tienePermiso('electro.ver')) ? '' : 'none';
+      return;
+    }
     const permKey = MODULE_PERM_MAP[moduleKey];
     let allowed = permKey ? tienePermiso(permKey) : (card.dataset.rol || '').split(' ').includes(rol);
     card.style.display = allowed ? '' : 'none';
@@ -1008,6 +1012,15 @@ async function doLogout() {
 
 let initRecibosDone = false, initAgendaDone = false, initElectroDone = false, initUsuariosDone = false, initDiagnosticosDone = false, initDashboardCitasDone = false, initGestionDatosDone = false, initUcqnDone = false;
 function goToModule(moduleId) {
+  if (moduleId === 'documentos-cita') {
+    const permDoc = (typeof tienePermiso === 'function')
+      && (tienePermiso('agenda.ver') || tienePermiso('electro.ver'));
+    if (!permDoc) {
+      showView('view-menu');
+      history.replaceState({ view: 'menu' }, '', '#menu');
+      return;
+    }
+  }
   const permAnexo = 'modulo.anexo_fidu';
   if (moduleId === 'anexo-fidu' && typeof tienePermiso === 'function' && !tienePermiso(permAnexo)) {
     showView('view-menu');
@@ -1076,6 +1089,7 @@ function goToModule(moduleId) {
   if (moduleId === 'reportes-pdx' && typeof initReportesPdx === 'function') initReportesPdx();
   if (moduleId === 'armado-soportes' && typeof initArmadoSoportes === 'function') initArmadoSoportes();
   if (moduleId === 'backup' && typeof initBackupModule === 'function') initBackupModule();
+  if (moduleId === 'documentos-cita' && typeof initDocumentosCitaModule === 'function') initDocumentosCitaModule();
   if (moduleId === 'anexo-fidu' && typeof initAnexoFidu === 'function') initAnexoFidu();
   if (typeof window.innarSidebarRefresh === 'function') window.innarSidebarRefresh();
 }
@@ -1131,6 +1145,7 @@ function setupMenuHandlers() {
   if ($('btnVolverDashboardCitas')) $('btnVolverDashboardCitas').addEventListener('click', goToMenu);
   if ($('btnVolverGestionDatos')) $('btnVolverGestionDatos').addEventListener('click', goToMenu);
   if ($('btnVolverBackup')) $('btnVolverBackup').addEventListener('click', goToMenu);
+  if ($('btnVolverDocumentosCita')) $('btnVolverDocumentosCita').addEventListener('click', goToMenu);
   if ($('btnVolverUcqn')) $('btnVolverUcqn').addEventListener('click', goToMenu);
 
   // Manejar botón atrás del navegador (solo una vez)
@@ -13829,126 +13844,14 @@ function cerrarModalCertificadoAsistencia() {
   }
 }
 
-function cargarScriptPdfCliente(src) {
-  return new Promise((resolve, reject) => {
-    if (window.html2pdf) {
-      resolve();
-      return;
-    }
-    const existente = document.querySelector(`script[data-innar-pdf="${src}"]`);
-    if (existente) {
-      existente.addEventListener('load', () => resolve(), { once: true });
-      existente.addEventListener('error', () => reject(new Error('No se pudo cargar el generador PDF')), { once: true });
-      return;
-    }
-    const script = document.createElement('script');
-    script.src = src;
-    script.dataset.innarPdf = src;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error('No se pudo cargar el generador PDF'));
-    document.head.appendChild(script);
-  });
-}
+const DOC_JOB_STORAGE_KEY = 'innar.docJob';
 
-function esperarImagenesDocumento(doc, timeoutMs = 5000) {
-  return new Promise((resolve) => {
-    const imgs = doc.querySelectorAll('img');
-    if (!imgs.length) {
-      resolve();
-      return;
-    }
-    let pendientes = imgs.length;
-    const listo = () => {
-      pendientes -= 1;
-      if (pendientes <= 0) resolve();
-    };
-    imgs.forEach((img) => {
-      if (img.complete) listo();
-      else {
-        img.addEventListener('load', listo, { once: true });
-        img.addEventListener('error', listo, { once: true });
-      }
-    });
-    setTimeout(resolve, timeoutMs);
-  });
-}
-
-async function descargarHtmlComoPdf(html, filename) {
-  await cargarScriptPdfCliente('/libs/html2pdf.bundle.min.js');
-  if (!window.html2pdf) throw new Error('Generador PDF no disponible');
-
-  const iframe = document.createElement('iframe');
-  iframe.setAttribute('aria-hidden', 'true');
-  iframe.style.cssText = 'position:fixed;left:-10000px;top:0;width:210mm;height:297mm;border:0;visibility:hidden;';
-  document.body.appendChild(iframe);
-
-  const doc = iframe.contentDocument || iframe.contentWindow?.document;
-  if (!doc) {
-    iframe.remove();
-    throw new Error('No se pudo preparar el documento para PDF');
-  }
-
-  doc.open();
-  doc.write(html);
-  doc.close();
-  await esperarImagenesDocumento(doc);
-
-  const page = doc.querySelector('.page') || doc.body;
-  try {
-    await window.html2pdf().set({
-      margin: 0,
-      filename,
-      image: { type: 'jpeg', quality: 0.98 },
-      html2canvas: {
-        scale: 2,
-        useCORS: true,
-        logging: false,
-        backgroundColor: '#ffffff'
-      },
-      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-      pagebreak: { mode: ['avoid-all'] }
-    }).from(page).save();
-  } finally {
-    iframe.remove();
-  }
-}
-
-function abrirHtmlParaImprimir(html) {
-  const ventana = window.open('', '_blank');
-  if (!ventana) throw new Error('Permita ventanas emergentes para imprimir el documento');
-  ventana.document.open();
-  ventana.document.write(html);
-  ventana.document.close();
-}
-
-async function procesarRespuestaDocumentoGenerado(res, filenameBase) {
-  const ct = (res.headers.get('content-type') || '').toLowerCase();
-  const modo = res.headers.get('X-Documento-Modo');
-  const filename = filenameBase.endsWith('.pdf') ? filenameBase : `${filenameBase}.pdf`;
-
-  if (modo === 'html' || ct.includes('text/html')) {
-    const html = await res.text();
-    try {
-      await descargarHtmlComoPdf(html, filename);
-      return 'pdf-cliente';
-    } catch (e) {
-      console.warn('[PDF] html2pdf falló, abriendo impresión:', e);
-      abrirHtmlParaImprimir(html);
-      return 'html';
-    }
-  }
-
-  const blob = await res.blob();
-  if (!blob || !blob.size) throw new Error('El documento generado está vacío');
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-  return 'pdf';
+function abrirGeneradorDocumentosCita(job) {
+  sessionStorage.setItem(DOC_JOB_STORAGE_KEY, JSON.stringify({
+    ...job,
+    ts: Date.now()
+  }));
+  goToModule('documentos-cita');
 }
 
 async function generarCertificadoAsistenciaPdf() {
@@ -13984,26 +13887,13 @@ async function generarCertificadoAsistenciaPdf() {
   const btn = $('btnGenerarCertificadoAsistencia');
   if (btn) btn.disabled = true;
   try {
-    const res = await apiFetch('/api/certificados/asistencia', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+    abrirGeneradorDocumentosCita({
+      tipo: 'certificado',
+      payload,
+      autoDownload: true
     });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || 'Error generando certificado');
-    }
-    const doc = payload.paciente_documento.replace(/\D/g, '') || 'certificado';
-    const modo = await procesarRespuestaDocumentoGenerado(res, `certificado_asistencia_${doc}.pdf`);
     certAsistenciaGuardarDefaults(payload);
-    showToast(
-      modo === 'html'
-        ? 'Certificado abierto. Use «Imprimir / Guardar PDF» en la nueva ventana.'
-        : modo === 'pdf-cliente'
-          ? 'Certificado descargado'
-          : 'Certificado generado',
-      'success'
-    );
+    showToast('Abriendo módulo de certificado…', 'success');
     cerrarModalCertificadoAsistencia();
   } catch (e) {
     showToast(e.message || 'Error generando certificado', 'error');
@@ -14365,25 +14255,12 @@ async function generarComprobanteServiciosPdf() {
   const btn = $('btnGenerarComprobanteServicios');
   if (btn) btn.disabled = true;
   try {
-    const res = await apiFetch('/api/certificados/comprobante-servicios', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+    abrirGeneradorDocumentosCita({
+      tipo: 'comprobante',
+      payload,
+      autoDownload: true
     });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || 'Error generando comprobante');
-    }
-    const doc = payload.paciente_documento.replace(/\D/g, '') || 'comprobante';
-    const modo = await procesarRespuestaDocumentoGenerado(res, `comprobante_servicios_${doc}.pdf`);
-    showToast(
-      modo === 'html'
-        ? 'Comprobante abierto. Use «Imprimir / Guardar PDF» en la nueva ventana.'
-        : modo === 'pdf-cliente'
-          ? 'Comprobante descargado'
-          : 'Comprobante generado',
-      'success'
-    );
+    showToast('Abriendo módulo de comprobante…', 'success');
     cerrarModalComprobanteServicios();
   } catch (e) {
     showToast(e.message || 'Error generando comprobante', 'error');

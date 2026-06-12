@@ -1,7 +1,5 @@
 'use strict';
 
-const fs = require('fs');
-const path = require('path');
 const { FONDO_PRINT_CSS, buildPageFondoImg } = require('./documento-imprimible');
 
 const CERT_ASISTENCIA_TITULO = 'CERTIFICACION ASISTENCIA A EXAMEN O CONSULTA MEDICA';
@@ -118,30 +116,7 @@ function validarPayloadCertificado(body = {}) {
   };
 }
 
-function getCertificadoAsistenciaFontCss() {
-  const dirs = [
-    path.join(__dirname, '..', 'public', 'fonts'),
-    path.join(process.execPath, '..', 'public', 'fonts')
-  ];
-  const archivos = [
-    { file: 'Aptos-Narrow.ttf', weight: 400 },
-    { file: 'Aptos-Narrow-Bold.ttf', weight: 700 },
-    { file: 'AptosNarrow.ttf', weight: 400 },
-    { file: 'AptosNarrow-Bold.ttf', weight: 700 }
-  ];
-  let css = '';
-  for (const dir of dirs) {
-    for (const ar of archivos) {
-      const p = path.join(dir, ar.file);
-      if (!fs.existsSync(p)) continue;
-      try {
-        const b64 = fs.readFileSync(p).toString('base64');
-        css += `@font-face{font-family:'Aptos Narrow';font-style:normal;font-weight:${ar.weight};src:url(data:font/ttf;base64,${b64}) format('truetype');}`;
-      } catch (_) { /* ignore */ }
-    }
-  }
-  return css;
-}
+const { getCertificadoAsistenciaFontCss } = require('./certificado-fuentes');
 
 function buildCertificadoAsistenciaHtml(data, fondo = {}) {
   const fondoBase64 = fondo.base64 || '';
@@ -159,10 +134,7 @@ function buildCertificadoAsistenciaHtml(data, fondo = {}) {
   const fondoImgHtml = buildPageFondoImg(fondo);
 
   const fontFaceCss = getCertificadoAsistenciaFontCss();
-  const tieneAptosLocal = fontFaceCss.includes('Aptos Narrow');
-  const fontFamily = tieneAptosLocal
-    ? "'Aptos Narrow', 'Arial Narrow', sans-serif"
-    : "'Arial Narrow', Arial, sans-serif";
+  const fontFamily = "'Aptos Narrow', 'Arial Narrow', Arial, sans-serif";
 
   return `<!doctype html>
 <html lang="es">

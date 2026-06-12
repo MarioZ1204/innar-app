@@ -1,6 +1,6 @@
 {
   "name": "innar-app",
-  "version": "1.5.168",
+  "version": "1.5.170",
   "description": "Innar - Sistema de gestión de agenda médica y recibos",
   "main": "server.js",
   "scripts": {
@@ -16,7 +16,7 @@
     "build": "echo No build step required",
     "build:min": "node scripts/build-minify.js",
     "build:bundle": "node scripts/bundle.js",
-    "postinstall": "node scripts/copy-pdfjs.js && node scripts/copy-html2pdf.js && node scripts/ensure-chromium.js"
+    "postinstall": "node scripts/copy-pdfjs.js && node scripts/copy-html2pdf.js && node scripts/copy-certificado-fonts.js && node scripts/ensure-chromium.js"
   },
   "keywords": [
     "recibos",
@@ -26,6 +26,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@fontsource/archivo-narrow": "^5.2.8",
     "archiver": "^7.0.1",
     "bcryptjs": "^2.4.3",
     "compression": "^1.8.1",

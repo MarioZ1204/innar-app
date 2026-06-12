@@ -28,6 +28,7 @@
   <link rel="stylesheet" href="innar-electro-estudio-ui.css">
   <link rel="stylesheet" href="innar-electro-calendario.css">
   <link rel="stylesheet" href="innar-backup.css">
+  <link rel="stylesheet" href="innar-documentos-cita.css">
   <link rel="stylesheet" href="innar-anexo-fidu.css">
   <link rel="stylesheet" href="innar-responsive-mobile-fix.css">
   <style>
@@ -219,6 +220,12 @@
           <span class="menu-card-icon"><svg width="56" height="55" viewBox="0 0 56 55" fill="none"><rect x="6" y="6" width="44" height="40" rx="3" fill="#fef3c7" stroke="#d97706" stroke-width="2"/><path d="M10 14h36M10 22h36M10 30h24" stroke="#d97706" stroke-width="1.5"/><rect x="10" y="36" width="12" height="6" fill="#fde68a"/></svg></span>
           <span class="menu-card-label">
             <span class="menu-card-title">Anexo</span>
+          </span>
+        </button>
+        <button class="menu-card" data-module="documentos-cita">
+          <span class="menu-card-icon"><svg width="56" height="55" viewBox="0 0 56 55" fill="none"><rect x="8" y="6" width="40" height="44" rx="4" fill="#e6f4f1" stroke="#2d4a47" stroke-width="2"/><path d="M16 18h24M16 26h20M16 34h16" stroke="#2d4a47" stroke-width="2" stroke-linecap="round"/><path d="M34 38l6 6" stroke="#0d9488" stroke-width="2.5" stroke-linecap="round"/></svg></span>
+          <span class="menu-card-label">
+            <span class="menu-card-title">Comprobantes y certificados</span>
           </span>
         </button>
         <button class="menu-card" data-module="gestion-datos" data-rol="superadmin admin">
@@ -2835,6 +2842,104 @@
     </div>
   </div>
 
+  <!-- ========== MÓDULO COMPROBANTES Y CERTIFICADOS ========== -->
+  <div id="view-documentos-cita" class="view-module hidden">
+    <div class="main-layout">
+      <div class="sidebar no-print">
+        <div class="sidebar-inner">
+          <div class="sidebar-logo-mini"><img src="/images/logo.webp" alt="Logo" width="305" height="100" loading="lazy" /></div>
+          <button class="btn-volver" id="btnVolverDocumentosCita" type="button">
+            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+            Volver al menú
+          </button>
+          <div class="sidebar-logo">
+            <img src="/images/logo.webp" alt="Logo" width="305" height="100" style="height:58px;width:auto;object-fit:contain" loading="lazy" />
+          </div>
+          <hr class="sidebar-title-sep" />
+          <h2>Documentos</h2>
+        </div>
+        <div class="sidebar-footer">
+          <div class="sidebar-user">
+            <div class="sidebar-user-avatar">--</div>
+            <div>
+              <div class="sidebar-user-name">Cargando...</div>
+              <div class="sidebar-user-role">-</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="main-content">
+        <div class="container">
+          <header class="no-print">
+            <h2>Comprobantes y certificados</h2>
+            <p style="margin:6px 0 0;font-size:.875rem;color:#64748b">Genere un certificado de asistencia o comprobante FOMAG por número de documento del paciente.</p>
+          </header>
+
+          <section class="card no-print" id="docmodConfigCard">
+            <h3 style="margin-top:0">Tipo de documento</h3>
+            <p id="docmodTipoResumen" class="docmod-pick-resumen" aria-live="polite">Ninguna opción seleccionada</p>
+            <div class="docmod-pick-grid" role="group" aria-label="Tipo de documento">
+              <button type="button" class="docmod-pick-card" data-docmod-tipo="certificado" aria-pressed="false">
+                <span class="docmod-pick-check" aria-hidden="true"></span>
+                <span class="docmod-pick-text">
+                  <span class="docmod-pick-title">Certificado de asistencia</span>
+                  <span class="docmod-pick-desc">Constancia de asistencia</span>
+                </span>
+                <span class="docmod-pick-badge">Seleccionado</span>
+              </button>
+              <button type="button" class="docmod-pick-card" data-docmod-tipo="comprobante" aria-pressed="false">
+                <span class="docmod-pick-check" aria-hidden="true"></span>
+                <span class="docmod-pick-text">
+                  <span class="docmod-pick-title">Comprobante de servicios</span>
+                  <span class="docmod-pick-desc">Formato FOMAG</span>
+                </span>
+                <span class="docmod-pick-badge">Seleccionado</span>
+              </button>
+            </div>
+            <div id="docmodOrigenSection" class="docmod-origen-block hidden">
+              <h3>Origen del servicio</h3>
+              <p id="docmodOrigenResumen" class="docmod-pick-resumen" aria-live="polite">Ninguna opción seleccionada</p>
+              <div class="docmod-pick-grid docmod-pick-grid--origen" role="group" aria-label="Origen del servicio">
+                <button type="button" class="docmod-pick-card" data-docmod-origen="medica" aria-pressed="false">
+                  <span class="docmod-pick-check" aria-hidden="true"></span>
+                  <span class="docmod-pick-text">
+                    <span class="docmod-pick-title">Cita médica</span>
+                    <span class="docmod-pick-desc">Agenda médica</span>
+                  </span>
+                  <span class="docmod-pick-badge">Seleccionado</span>
+                </button>
+                <button type="button" class="docmod-pick-card" data-docmod-origen="electro" aria-pressed="false">
+                  <span class="docmod-pick-check" aria-hidden="true"></span>
+                  <span class="docmod-pick-text">
+                    <span class="docmod-pick-title">Electrodiagnóstico</span>
+                    <span class="docmod-pick-desc">Agenda de electro</span>
+                  </span>
+                  <span class="docmod-pick-badge">Seleccionado</span>
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <section class="card no-print">
+            <h3 style="margin-top:0">Paciente</h3>
+            <p style="margin:0 0 12px;font-size:.85rem;color:#64748b">Ingrese el número de documento del paciente y pulse Generar.</p>
+            <div class="docmod-buscar-row">
+              <div class="docmod-field docmod-field-grow">
+                <label for="docmodDocumento">Número de documento *</label>
+                <input type="text" id="docmodDocumento" inputmode="numeric" autocomplete="off" placeholder="Ej. 1234567890" />
+              </div>
+              <div class="docmod-field docmod-field-action">
+                <label>&nbsp;</label>
+                <button type="button" class="docmod-btn-generar" id="btnDocmodGenerar">Generar</button>
+              </div>
+            </div>
+            <p id="docmodBuscarMsg" class="docmod-status" aria-live="polite"></p>
+          </section>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- ========== MÓDULO ANEXO FIDU ========== -->
   <div id="view-anexo-fidu" class="view-module hidden">
     <div class="main-layout">
@@ -3975,6 +4080,9 @@
   <script src="innar-lucide.js"></script>
   <script src="electro-estudio-tipo.js"></script>
   <script src="persona-fidu-shared.js"></script>
+  <script src="documentos-cita-prefill.js"></script>
+  <script src="/libs/html2pdf.bundle.min.js"></script>
+  <script src="documentos-cita-module.js"></script>
   <script src="app.js"></script>
   <script src="anexo-fidu.js"></script>
   <script src="soportes-pdf-editor.js"></script>
@@ -4010,6 +4118,138 @@
     .pfidu-form-field:has(textarea), .pfidu-form-field:has(#pfidu-numero_documento) { grid-column:1 / -1; }
     @media (max-width:520px) { .pfidu-form-grid { grid-template-columns:1fr; } }
   </style>
+
+  <!-- ========== MODAL GENERAR DOCUMENTO (módulo documentos-cita) ========== -->
+  <div id="modalDocumentosCita" class="modal hidden" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(15,23,42,0.55);align-items:center;justify-content:center;z-index:10055;padding:16px">
+    <div class="cita-modal-card docmod-modal-card" style="max-width:620px;width:100%;max-height:92vh;overflow-y:auto">
+      <div class="cita-modal-header">
+        <div class="cita-modal-header-left">
+          <h2 class="cita-modal-title" id="docmodModalTitulo">Generar documento</h2>
+        </div>
+        <button type="button" id="btnCerrarModalDocumentosCita" class="cita-modal-icon-btn cita-modal-close-btn" title="Cerrar">&times;</button>
+      </div>
+      <div class="docmod-modal-body">
+        <p id="docmodModalHint" class="docmod-modal-hint"></p>
+
+        <div id="docmodModalCert" class="hidden">
+          <div class="docmod-modal-section">
+            <h4 class="docmod-modal-section-title">Datos del paciente</h4>
+            <div class="docmod-modal-grid">
+              <div class="docmod-field docmod-span-2">
+                <label for="docmodModalCertNombre">Nombre *</label>
+                <input type="text" id="docmodModalCertNombre" maxlength="160" />
+              </div>
+              <div class="docmod-field docmod-span-2">
+                <span class="docmod-field-label">Tipo de identificación *</span>
+                <div class="docmod-tipo-id" role="radiogroup" aria-label="Tipo de identificación">
+                  <label class="docmod-tipo-id-opt"><input type="radio" name="docmodModalCertTipoId" value="CC" checked /><span>CC</span></label>
+                  <label class="docmod-tipo-id-opt"><input type="radio" name="docmodModalCertTipoId" value="TI" /><span>TI</span></label>
+                  <label class="docmod-tipo-id-opt"><input type="radio" name="docmodModalCertTipoId" value="RC" /><span>RC</span></label>
+                </div>
+              </div>
+              <div class="docmod-field docmod-span-2">
+                <label for="docmodModalCertDocumento">Número de identificación *</label>
+                <input type="text" id="docmodModalCertDocumento" inputmode="numeric" readonly class="docmod-readonly" />
+              </div>
+            </div>
+          </div>
+          <div class="docmod-modal-section">
+            <h4 class="docmod-modal-section-title">Datos del certificado</h4>
+            <div class="docmod-modal-grid">
+              <div class="docmod-field docmod-span-2">
+                <label for="docmodModalCertMotivo">Motivo / servicio *</label>
+                <input type="text" id="docmodModalCertMotivo" maxlength="200" />
+              </div>
+              <div class="docmod-field">
+                <label for="docmodModalCertFechaIngreso">Fecha ingreso *</label>
+                <input type="date" id="docmodModalCertFechaIngreso" />
+              </div>
+              <div class="docmod-field">
+                <label for="docmodModalCertHoraIngreso">Hora ingreso *</label>
+                <input type="time" id="docmodModalCertHoraIngreso" step="60" />
+              </div>
+              <div class="docmod-field">
+                <label for="docmodModalCertFechaEgreso">Fecha egreso *</label>
+                <input type="date" id="docmodModalCertFechaEgreso" />
+              </div>
+              <div class="docmod-field">
+                <label for="docmodModalCertHoraEgreso">Hora egreso *</label>
+                <input type="time" id="docmodModalCertHoraEgreso" step="60" />
+              </div>
+              <div class="docmod-field docmod-span-2">
+                <label for="docmodModalCertFuncionario">Funcionario que certifica *</label>
+                <input type="text" id="docmodModalCertFuncionario" maxlength="120" />
+              </div>
+              <div class="docmod-field docmod-span-2">
+                <label for="docmodModalCertCargo">Cargo *</label>
+                <input type="text" id="docmodModalCertCargo" maxlength="80" placeholder="Ej: Secretaria" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="docmodModalComp" class="hidden">
+          <div class="docmod-modal-grid">
+            <div class="docmod-field">
+              <label for="docmodModalCompFecha">Fecha *</label>
+              <input type="date" id="docmodModalCompFecha" />
+            </div>
+            <div class="docmod-field docmod-span-2">
+              <label for="docmodModalCompNombre">Yo *</label>
+              <input type="text" id="docmodModalCompNombre" maxlength="160" placeholder="Nombre completo del paciente" />
+            </div>
+            <div class="docmod-field docmod-span-2">
+              <span class="docmod-field-label">Tipo de identificación *</span>
+              <div class="docmod-tipo-id" role="radiogroup" aria-label="Tipo de identificación">
+                <label class="docmod-tipo-id-opt"><input type="radio" name="docmodModalCompTipoId" value="CC" checked /><span>CC</span></label>
+                <label class="docmod-tipo-id-opt"><input type="radio" name="docmodModalCompTipoId" value="TI" /><span>TI</span></label>
+                <label class="docmod-tipo-id-opt"><input type="radio" name="docmodModalCompTipoId" value="RC" /><span>RC</span></label>
+              </div>
+            </div>
+            <div class="docmod-field docmod-span-2">
+              <label for="docmodModalCompDocumento">Número de identificación *</label>
+              <input type="text" id="docmodModalCompDocumento" inputmode="numeric" readonly class="docmod-readonly" />
+            </div>
+            <div class="docmod-field">
+              <label for="docmodModalCompFechaNac">Fecha de nacimiento *</label>
+              <input type="date" id="docmodModalCompFechaNac" />
+            </div>
+            <div class="docmod-field">
+              <label for="docmodModalCompAfiliacion">Tipo de afiliación *</label>
+              <input type="text" id="docmodModalCompAfiliacion" value="Cotizante" />
+            </div>
+            <div class="docmod-field docmod-span-2">
+              <label for="docmodModalCompDireccion">Dirección *</label>
+              <input type="text" id="docmodModalCompDireccion" />
+            </div>
+            <div class="docmod-field">
+              <label for="docmodModalCompTelefono">Número de teléfono *</label>
+              <input type="text" id="docmodModalCompTelefono" />
+            </div>
+            <div class="docmod-field">
+              <label for="docmodModalCompCorreo">Correo *</label>
+              <input type="email" id="docmodModalCompCorreo" />
+            </div>
+            <div class="docmod-field docmod-span-2">
+              <label for="docmodModalCompServicio">Motivo / servicio *</label>
+              <input type="text" id="docmodModalCompServicio" maxlength="200" placeholder="Ej: Consulta neurología, EEG, etc." />
+            </div>
+            <div class="docmod-field docmod-span-2">
+              <label for="docmodModalCompFirma">Firma del paciente (imagen) *</label>
+              <input type="file" id="docmodModalCompFirma" accept="image/*" />
+            </div>
+          </div>
+        </div>
+
+        <p id="docmodModalError" class="docmod-modal-error" role="alert"></p>
+      </div>
+      <div class="cita-modal-footer">
+        <button type="button" id="btnCancelarModalDocumentosCita" class="btn-secondary">Cancelar</button>
+        <button type="button" id="btnConfirmarModalDocumentosCita" class="docmod-btn-confirmar">Confirmar</button>
+      </div>
+    </div>
+  </div>
+  <iframe id="docmodPdfFrame" title="Generación PDF" tabindex="-1" aria-hidden="true"></iframe>
 
   <!-- ========== MODAL CERTIFICADO DE ASISTENCIA ========== -->
   <div id="modalCertificadoAsistencia" class="modal hidden" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.55);align-items:center;justify-content:center;z-index:10050;padding:16px">
