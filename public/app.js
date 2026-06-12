@@ -13880,14 +13880,19 @@ async function generarCertificadoAsistenciaPdf() {
     const PDF = window.innarDocumentoPdf;
     if (!PDF) throw new Error('Generador PDF no disponible');
     const doc = payload.paciente_documento.replace(/\D/g, '') || 'sin_doc';
-    const res = await apiFetch('/api/certificados/asistencia', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+    const modo = await PDF.generarDocumento({
+      postUrl: '/api/certificados/asistencia',
+      previewUrl: '/api/certificados/asistencia/preview',
+      payload,
+      filename: `certificado_asistencia_${doc}.pdf`
     });
-    await PDF.procesarRespuestaDocumento(res, `certificado_asistencia_${doc}.pdf`);
     certAsistenciaGuardarDefaults(payload);
-    showToast('Certificado descargado', 'success');
+    showToast(
+      modo === 'impresion'
+        ? 'Se abrió la ventana de impresión. Use «Guardar como PDF».'
+        : 'Certificado descargado',
+      modo === 'impresion' ? 'info' : 'success'
+    );
     cerrarModalCertificadoAsistencia();
   } catch (e) {
     showToast(e.message || 'Error generando certificado', 'error');
@@ -14252,13 +14257,18 @@ async function generarComprobanteServiciosPdf() {
     const PDF = window.innarDocumentoPdf;
     if (!PDF) throw new Error('Generador PDF no disponible');
     const doc = payload.paciente_documento.replace(/\D/g, '') || 'sin_doc';
-    const res = await apiFetch('/api/certificados/comprobante-servicios', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+    const modo = await PDF.generarDocumento({
+      postUrl: '/api/certificados/comprobante-servicios',
+      previewUrl: '/api/certificados/comprobante-servicios/preview',
+      payload,
+      filename: `comprobante_servicios_${doc}.pdf`
     });
-    await PDF.procesarRespuestaDocumento(res, `comprobante_servicios_${doc}.pdf`);
-    showToast('Comprobante descargado', 'success');
+    showToast(
+      modo === 'impresion'
+        ? 'Se abrió la ventana de impresión. Use «Guardar como PDF».'
+        : 'Comprobante descargado',
+      modo === 'impresion' ? 'info' : 'success'
+    );
     cerrarModalComprobanteServicios();
   } catch (e) {
     showToast(e.message || 'Error generando comprobante', 'error');

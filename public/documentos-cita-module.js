@@ -388,7 +388,7 @@
   async function generarPdfDesdePreview(preview) {
     const PDF = window.innarDocumentoPdf;
     if (!PDF) throw new Error('Generador PDF no disponible');
-    await PDF.generarPdfDesdeHtml(preview.html, preview.filename);
+    return PDF.generarPdfDesdeHtml(preview.html, preview.filename);
   }
 
   async function confirmarModal() {
@@ -409,7 +409,7 @@
         ? await buildComprobantePayload()
         : buildCertificadoPayload();
       const preview = await fetchPreview(payload);
-      await generarPdfDesdePreview(preview);
+      const modoPdf = await generarPdfDesdePreview(preview);
 
       if (state.tipo === 'certificado') {
         try {
@@ -420,7 +420,12 @@
         } catch (_) { /* ignore */ }
       }
 
-      toast('PDF generado correctamente', 'success');
+      toast(
+        modoPdf === 'impresion'
+          ? 'Se abrió la ventana de impresión. Use «Guardar como PDF».'
+          : 'PDF generado correctamente',
+        modoPdf === 'impresion' ? 'info' : 'success'
+      );
       cerrarModal();
       setStatus('');
     } catch (e) {
