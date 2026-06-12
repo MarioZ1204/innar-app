@@ -14284,6 +14284,7 @@ async function generarComprobanteServiciosPdf() {
 }
 
 function initComprobanteServiciosUi() {
+  window.innarServicioCombo?.init?.('compServServicio');
   $('btnCerrarComprobanteServicios')?.addEventListener('click', cerrarModalComprobanteServicios);
   $('btnCancelarComprobanteServicios')?.addEventListener('click', cerrarModalComprobanteServicios);
   $('btnGenerarComprobanteServicios')?.addEventListener('click', generarComprobanteServiciosPdf);

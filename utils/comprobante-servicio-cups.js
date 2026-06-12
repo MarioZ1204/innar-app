@@ -148,5 +148,6 @@ function nombreServicioComprobanteCups(servicioInterno) {
 module.exports = {
   nombreServicioComprobanteCups,
   normTexto,
-  formatoTituloCups
+  formatoTituloCups,
+  restaurarAcentosCups
 };

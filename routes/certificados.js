@@ -21,6 +21,7 @@ const {
   buildComprobanteServiciosHtml
 } = require('../utils/comprobante-servicios');
 const { procesarImagenesFirma } = require('../utils/comprobante-servicios-firma');
+const { listarServiciosComprobante } = require('../utils/cups-comprobante-activos');
 const db = require('../utils/db-mysql');
 const {
   buscarPersonaFiduPorDocumento,
@@ -44,6 +45,18 @@ function requirePersonaFiduLectura(req, res, next) {
 function parseContextoPersonaFidu(val) {
   const ctx = String(val || 'anexo').trim().toLowerCase();
   return CONTEXTOS_PERSONA_FIDU.has(ctx) ? ctx : 'anexo';
+}
+
+function requireCertificadoComprobante(req, res, next) {
+  if (req.session?.rol === 'superadmin') return next();
+  const perms = req.session?.permisos;
+  const permisosOk = ['agenda.ver', 'electro.ver', 'modulo.anexo_fidu'];
+  if (perms === null || perms === undefined) {
+    if (req.session?.rol === 'admin' || req.session?.rol === 'administrador') return next();
+    return next();
+  }
+  if (Array.isArray(perms) && permisosOk.some((p) => perms.includes(p))) return next();
+  return res.status(403).json({ error: 'No tienes permiso para consultar el catálogo de servicios' });
 }
 
 async function responderDocumentoPdfOHtml(res, { html, titulo, filename, logLabel }) {
@@ -191,6 +204,17 @@ router.post('/certificados/comprobante-servicios', requireAuth, (req, res, next)
   } catch (e) {
     logger.error('[CERT] Error generando comprobante servicios:', e.message, e.stack);
     res.status(500).json({ error: safeError(e, 'Error generando comprobante: ') });
+  }
+});
+
+/** GET /api/certificados/catalogo-servicios — catálogo CUPS para comprobante (combo) */
+router.get('/certificados/catalogo-servicios', requireAuth, requireCertificadoComprobante, async (req, res) => {
+  try {
+    const servicios = await listarServiciosComprobante(db);
+    res.json({ ok: true, servicios });
+  } catch (e) {
+    logger.error('[CERT] catalogo-servicios:', e.message);
+    res.status(500).json({ error: safeError(e, 'Error cargando catálogo CUPS: ') });
   }
 });
 

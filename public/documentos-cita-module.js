@@ -467,6 +467,7 @@
 
   async function initDocumentosCitaModule() {
     bindUi();
+    window.innarServicioCombo?.init?.('docmodModalCompServicio');
     sincronizarUiSeleccion();
   }
 

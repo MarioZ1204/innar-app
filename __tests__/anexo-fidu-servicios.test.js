@@ -9,8 +9,8 @@ const {
 } = require('../utils/anexo-fidu-servicios');
 
 describe('anexo-fidu-servicios', () => {
-  test('catálogo tiene 32 servicios', () => {
-    expect(ANEXO_FIDU_CATALOGO_SERVICIOS.length).toBe(32);
+  test('catálogo tiene 50 servicios', () => {
+    expect(ANEXO_FIDU_CATALOGO_SERVICIOS.length).toBe(50);
   });
 
   test('aplica consulta fisioterapia primera vez (890211)', () => {

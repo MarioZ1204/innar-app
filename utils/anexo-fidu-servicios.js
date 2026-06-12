@@ -57,7 +57,25 @@ const ANEXO_FIDU_CATALOGO_SERVICIOS = [
   { codigo: '890502', nombre: 'PRACTICA EN JUNTA MEDICA, POR MEDICINA ESPECIALIZADA Y CASO (PACIENTE)', valor_unitario: 107640, cantidad: '2', valor_total: 215280, codigo_servicio_referencia: '327' },
   { codigo: '931501', nombre: 'MODALIDADES ELECTRICAS O ELECTROMAGNETICAS DE TERAPIA', valor_unitario: 45500, cantidad: '', valor_total: 0, codigo_servicio_referencia: '739' },
   { codigo: '944301', nombre: 'TERAPIAS DE REHABILITACION COGNITIVA ', valor_unitario: 53365, cantidad: '1', valor_total: 53365, codigo_servicio_referencia: '344' },
-  { codigo: '940201', nombre: 'ADMINISTRACION (APLICACIÓN) DE PRUEBA DE PERSONALIDAD (CAULQUIER TIPO)(CADA UNA)', valor_unitario: 53362, cantidad: '1', valor_total: 53362, codigo_servicio_referencia: '344' }
+  { codigo: '940201', nombre: 'ADMINISTRACION (APLICACIÓN) DE PRUEBA DE PERSONALIDAD (CAULQUIER TIPO)(CADA UNA)', valor_unitario: 53362, cantidad: '1', valor_total: 53362, codigo_servicio_referencia: '344' },
+  { codigo: '048201', nombre: 'INYECCION DE AGENTE ANESTESICO PARA NERVIO PERIFERICO', valor_unitario: 150000, cantidad: '1', valor_total: 150000, codigo_servicio_referencia: '327' },
+  { codigo: '012210', nombre: 'REVISION DE NEUROESTIMULADOR', valor_unitario: 150000, cantidad: '1', valor_total: 150000, codigo_servicio_referencia: '327' },
+  { codigo: '890110', nombre: 'ATENCION (VISITA) DOMICILIARIA, POR FONIATRIA Y FONOAUDIOLOGIA', valor_unitario: 53365, cantidad: '1', valor_total: 53365, codigo_servicio_referencia: '332' },
+  { codigo: '890111', nombre: 'ATENCION (VISITA) DOMICILIARIA, POR FISIOTERAPIA', valor_unitario: 35119, cantidad: '1', valor_total: 35119, codigo_servicio_referencia: '739' },
+  { codigo: '890112', nombre: 'ATENCION (VISITA) DOMICILIARIA, POR TERAPIA RESPIRATORIA', valor_unitario: 35119, cantidad: '1', valor_total: 35119, codigo_servicio_referencia: '739' },
+  { codigo: '890113', nombre: 'ATENCION (VISITA) DOMICILIARIA, POR TERAPIA OCUPACIONAL', valor_unitario: 35119, cantidad: '1', valor_total: 35119, codigo_servicio_referencia: '739' },
+  { codigo: '890397', nombre: 'CONSULTA DE CONTROL O DE SEGUIMIENTO POR OTRAS ESPECIALIDADES DE PSICOLOGIA', valor_unitario: 53365, cantidad: '1', valor_total: 53365, codigo_servicio_referencia: '334' },
+  { codigo: '891801', nombre: 'PRUEBAS DE LATENCIA MULTIPLE DE SUEÑO', valor_unitario: 75000, cantidad: '1', valor_total: 75000, codigo_servicio_referencia: '327' },
+  { codigo: '891803', nombre: 'PRUEBA DE MANTENIMIENTO DE LA VIGILIA', valor_unitario: 75000, cantidad: '1', valor_total: 75000, codigo_servicio_referencia: '327' },
+  { codigo: '891806', nombre: 'MONITOREO DE ACTIVIDAD SUEÑO VIGILIA [ACTIGRAFIA]', valor_unitario: 75000, cantidad: '1', valor_total: 75000, codigo_servicio_referencia: '327' },
+  { codigo: '930102', nombre: 'PRUEBA COGNITIVA (CADA UNA)', valor_unitario: 53365, cantidad: '1', valor_total: 53365, codigo_servicio_referencia: '344' },
+  { codigo: '930103', nombre: 'EVALUACION DEL COMPONENTE COGNITIVO', valor_unitario: 53365, cantidad: '1', valor_total: 53365, codigo_servicio_referencia: '344' },
+  { codigo: '934501', nombre: 'TRACCION ESQUELETICA DE MIEMBROS', valor_unitario: 28000, cantidad: '', valor_total: 0, codigo_servicio_referencia: '739' },
+  { codigo: '936601', nombre: 'TRATAMIENTO MANIPULATIVO OSTEOPATICO BOMBA LINFATICA SOD', valor_unitario: 28000, cantidad: '', valor_total: 0, codigo_servicio_referencia: '739' },
+  { codigo: '940101', nombre: 'ADMINISTRACION [APLICACION] DE PRUEBA DE INTELIGENCIA (CUALQUIER TIPO) (CADA UNA)', valor_unitario: 53365, cantidad: '1', valor_total: 53365, codigo_servicio_referencia: '344' },
+  { codigo: '940301', nombre: 'EVALUACION EN ALTERACIONES EMOCIONALES (AFECTIVAS) O DE CONDUCTA', valor_unitario: 53365, cantidad: '1', valor_total: 53365, codigo_servicio_referencia: '344' },
+  { codigo: '940302', nombre: 'ADMINISTRACION [APLICACION] DE PRUEBA EN ALTERACIONES EMOCIONALES (AFECTIVAS) O DE CONDUCTA', valor_unitario: 53365, cantidad: '1', valor_total: 53365, codigo_servicio_referencia: '344' },
+  { codigo: '999102', nombre: 'OTRAS PRESTACIONES EN SALUD', valor_unitario: 0, cantidad: '1', valor_total: 0, codigo_servicio_referencia: '327' }
 ];
 
 const {
