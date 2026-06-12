@@ -7,6 +7,14 @@
   const A4_W = 794;
   const A4_H = 1123;
 
+  const ESTILO_CAPTURA_OCULTA = [
+    'position:fixed', 'left:-12000px', 'top:0',
+    `width:${A4_W}px`, `height:${A4_H}px`,
+    'border:0', 'margin:0', 'padding:0',
+    'pointer-events:none', 'overflow:hidden',
+    'background:#fff', 'opacity:1', 'visibility:visible', 'z-index:-1'
+  ].join(';');
+
   function esperarImagenes(root, timeoutMs) {
     return new Promise((resolve) => {
       const doc = root.ownerDocument || document;
@@ -68,12 +76,7 @@
 
     const stage = document.createElement('div');
     stage.id = 'innarPdfStage';
-    stage.style.cssText = [
-      'position:fixed', 'left:0', 'top:0',
-      `width:${A4_W}px`, `height:${A4_H}px`,
-      'z-index:2147483646', 'pointer-events:none', 'overflow:hidden',
-      'background:#fff', 'opacity:1', 'visibility:visible'
-    ].join(';');
+    stage.style.cssText = ESTILO_CAPTURA_OCULTA;
 
     parsed.querySelectorAll('style').forEach((style) => {
       stage.appendChild(style.cloneNode(true));
@@ -97,13 +100,7 @@
     frame.id = 'innarPdfFrame';
     frame.title = 'Generación PDF';
     frame.setAttribute('tabindex', '-1');
-    frame.style.cssText = [
-      'position:fixed', 'left:0', 'top:0',
-      `width:${A4_W}px`, `height:${A4_H}px`,
-      'border:0', 'margin:0', 'padding:0', 'opacity:1',
-      'pointer-events:none', 'z-index:2147483646',
-      'visibility:visible', 'overflow:hidden', 'background:#fff'
-    ].join(';');
+    frame.style.cssText = ESTILO_CAPTURA_OCULTA;
 
     document.body.appendChild(frame);
 

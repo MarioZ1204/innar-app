@@ -14146,7 +14146,8 @@ function prefillComprobanteServiciosElectro(cita) {
     telefono: '',
     correo: '',
     tipo_afiliacion: 'Cotizante',
-    servicio: (cita?.estudio || '').trim()
+    servicio: window.innarComprobanteCups?.nombreServicioComprobanteCups((cita?.estudio || '').trim())
+      || (cita?.estudio || '').trim()
   };
 }
 
@@ -14163,7 +14164,8 @@ function prefillComprobanteServiciosMedica(turno) {
     telefono: (turno?.paciente_telefono || '').trim(),
     correo: '',
     tipo_afiliacion: (turno?.entidad || '').trim() || 'Cotizante',
-    servicio: (turno?.tipo_consulta || '').trim()
+    servicio: window.innarComprobanteCups?.nombreServicioComprobanteCups((turno?.tipo_consulta || '').trim())
+      || (turno?.tipo_consulta || '').trim()
   };
 }
 

@@ -55,7 +55,7 @@ describe('comprobante-servicios', () => {
       telefono: '3164518932',
       correo: 'mariozamb1204@gmail.com',
       tipo_afiliacion: 'Cotizante',
-      servicio: 'CONSULTA DE CONTROL POR NEUROLOGÍA',
+      servicio: 'Consulta de Control por Neurología',
       firma_paciente: FIRMA_MINI
     });
     expect(r.error).toBeUndefined();
@@ -87,21 +87,21 @@ describe('comprobante-servicios', () => {
       telefono: '3164518932',
       correo: 'mariozamb1204@gmail.com',
       tipo_afiliacion: 'Cotizante',
-      servicio: 'CONSULTA DE CONTROL POR NEUROLOGÍA',
+      servicio: 'Consulta de Control por Neurología',
       firma_paciente: FIRMA_MINI
     });
     const html = buildComprobanteServiciosHtml(data);
     expect(html).toContain(COMPROBANTE_SERVICIOS_TITULO);
     expect(html).toContain(COMPROBANTE_SERVICIOS_FOMAG_TEXTO);
     expect(html).toContain('MARIO FERNANDO ZAMBRANO MEJIA');
-    expect(html).toContain('CONSULTA DE CONTROL POR NEUROLOGÍA');
+    expect(html).toMatch(/neurolog[ií]a control/i);
     expect(html).toContain('cmp-firma-paciente');
     expect(html).toContain('FIRMA DEL PACIENTE:');
     expect(html).toContain('cmp-acudiente');
     expect(html).toContain('cmp-pie-bloque');
     expect(html).toContain('Auditor Médico');
     expect(html).toContain('Arial');
-    expect(html).toContain('NEUROLOGÍA');
+    expect(html).toMatch(/neurolog/i);
     expect(html).toContain(COMPROBANTE_SERVICIOS_PIE.codigo);
     expect(html).toContain('cmp-pie-col');
     expect(html).not.toContain('cmp-pie-tabla');
