@@ -422,7 +422,7 @@
 
       toast(
         modoPdf === 'impresion'
-          ? 'Se abrió la ventana de impresión. Use «Guardar como PDF».'
+          ? 'Se abrió la vista de impresión. Use «Guardar como PDF».'
           : 'PDF generado correctamente',
         modoPdf === 'impresion' ? 'info' : 'success'
       );

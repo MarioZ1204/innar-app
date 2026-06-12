@@ -13889,7 +13889,7 @@ async function generarCertificadoAsistenciaPdf() {
     certAsistenciaGuardarDefaults(payload);
     showToast(
       modo === 'impresion'
-        ? 'Se abrió la ventana de impresión. Use «Guardar como PDF».'
+        ? 'Se abrió la vista de impresión. Use «Guardar como PDF».'
         : 'Certificado descargado',
       modo === 'impresion' ? 'info' : 'success'
     );
@@ -14265,7 +14265,7 @@ async function generarComprobanteServiciosPdf() {
     });
     showToast(
       modo === 'impresion'
-        ? 'Se abrió la ventana de impresión. Use «Guardar como PDF».'
+        ? 'Se abrió la vista de impresión. Use «Guardar como PDF».'
         : 'Comprobante descargado',
       modo === 'impresion' ? 'info' : 'success'
     );

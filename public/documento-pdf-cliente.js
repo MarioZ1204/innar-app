@@ -9,25 +9,26 @@
 
   function esperarImagenes(root, timeoutMs) {
     return new Promise((resolve) => {
-      const imgs = (root.querySelectorAll ? root : document).querySelectorAll('img');
+      const doc = root.ownerDocument || document;
+      const imgs = (root.querySelectorAll ? root : doc).querySelectorAll('img');
       if (!imgs.length) { resolve(); return; }
       let pendientes = imgs.length;
       const listo = () => { pendientes -= 1; if (pendientes <= 0) resolve(); };
       imgs.forEach((img) => {
-        if (img.complete) listo();
+        if (img.complete && img.naturalWidth > 0) listo();
         else {
           img.addEventListener('load', listo, { once: true });
           img.addEventListener('error', listo, { once: true });
         }
       });
-      setTimeout(resolve, timeoutMs || 8000);
+      setTimeout(resolve, timeoutMs || 10000);
     });
   }
 
-  function esperarLayout() {
+  function esperarLayout(ms) {
     return new Promise((resolve) => {
       requestAnimationFrame(() => requestAnimationFrame(resolve));
-    }).then(() => new Promise((r) => setTimeout(r, 350)));
+    }).then(() => new Promise((r) => setTimeout(r, ms || 500)));
   }
 
   function limpiarElementosImpresion(doc) {
@@ -46,6 +47,16 @@
     return `<!DOCTYPE html><html><head><meta charset="utf-8">${styles}</head><body>${page.outerHTML}</body></html>`;
   }
 
+  function estilosStagingFix() {
+    return [
+      '#innarPdfStage,#innarPdfStage .page{box-sizing:border-box;}',
+      `#innarPdfStage .page{width:${A4_W}px!important;min-height:${A4_H}px!important;height:${A4_H}px!important;`,
+      'position:relative!important;overflow:visible!important;background:#fff!important;margin:0!important;}',
+      '#innarPdfStage .page-fondo{width:100%!important;height:100%!important;object-fit:fill!important;display:block!important;}',
+      '#innarPdfStage .page-content{position:relative!important;z-index:1!important;}'
+    ].join('');
+  }
+
   function montarStaging(html) {
     document.getElementById('innarPdfStage')?.remove();
 
@@ -57,12 +68,11 @@
 
     const stage = document.createElement('div');
     stage.id = 'innarPdfStage';
-    stage.setAttribute('aria-hidden', 'true');
     stage.style.cssText = [
       'position:fixed', 'left:0', 'top:0',
       `width:${A4_W}px`, `height:${A4_H}px`,
       'z-index:2147483646', 'pointer-events:none', 'overflow:hidden',
-      'background:#fff', 'opacity:1'
+      'background:#fff', 'opacity:1', 'visibility:visible'
     ].join(';');
 
     parsed.querySelectorAll('style').forEach((style) => {
@@ -70,39 +80,98 @@
     });
 
     const fix = document.createElement('style');
-    fix.textContent = [
-      '#innarPdfStage,#innarPdfStage .page{box-sizing:border-box;}',
-      `#innarPdfStage .page{width:${A4_W}px!important;min-height:${A4_H}px!important;height:${A4_H}px!important;`,
-      'position:relative!important;overflow:visible!important;background:#fff!important;margin:0!important;}',
-      '#innarPdfStage .page-fondo{width:100%!important;height:100%!important;object-fit:fill!important;}'
-    ].join('');
+    fix.textContent = estilosStagingFix();
     stage.appendChild(fix);
 
     const pageClone = page.cloneNode(true);
     stage.appendChild(pageClone);
     document.body.appendChild(stage);
 
-    return { stage, page: pageClone };
+    return { stage, page: pageClone, tipo: 'dom' };
+  }
+
+  function montarEnIframe(html) {
+    document.getElementById('innarPdfFrame')?.remove();
+
+    const frame = document.createElement('iframe');
+    frame.id = 'innarPdfFrame';
+    frame.title = 'Generación PDF';
+    frame.setAttribute('tabindex', '-1');
+    frame.style.cssText = [
+      'position:fixed', 'left:0', 'top:0',
+      `width:${A4_W}px`, `height:${A4_H}px`,
+      'border:0', 'margin:0', 'padding:0', 'opacity:1',
+      'pointer-events:none', 'z-index:2147483646',
+      'visibility:visible', 'overflow:hidden', 'background:#fff'
+    ].join(';');
+
+    document.body.appendChild(frame);
+
+    const doc = frame.contentDocument || frame.contentWindow?.document;
+    if (!doc) throw new Error('No se pudo preparar el documento para PDF');
+
+    doc.open();
+    doc.write(html);
+    doc.close();
+
+    const fix = doc.createElement('style');
+    fix.textContent = [
+      'html,body{margin:0;padding:0;background:#fff;}',
+      `.page{width:${A4_W}px!important;min-height:${A4_H}px!important;height:${A4_H}px!important;`,
+      'position:relative!important;overflow:visible!important;background:#fff!important;}',
+      '.page-fondo{width:100%!important;height:100%!important;object-fit:fill!important;display:block!important;}'
+    ].join('');
+    doc.head.appendChild(fix);
+
+    const page = doc.querySelector('.page');
+    if (!page) throw new Error('No se encontró el contenido del documento');
+
+    return {
+      stage: frame,
+      page,
+      tipo: 'iframe',
+      win: frame.contentWindow,
+      doc
+    };
+  }
+
+  async function prepararDocumento(html) {
+    const limpio = normalizarHtmlString(html);
+    const montado = montarStaging(limpio);
+    await esperarImagenes(montado.page, 10000);
+    if (document.fonts?.ready) {
+      await Promise.race([document.fonts.ready, new Promise((r) => setTimeout(r, 6000))]);
+    }
+    await esperarLayout(500);
+    return { ...montado, limpio };
+  }
+
+  async function prepararDocumentoIframe(html) {
+    const limpio = normalizarHtmlString(html);
+    const montado = montarEnIframe(limpio);
+    await esperarImagenes(montado.doc, 10000);
+    if (montado.doc.fonts?.ready) {
+      await Promise.race([montado.doc.fonts.ready, new Promise((r) => setTimeout(r, 6000))]);
+    }
+    await esperarLayout(600);
+    return { ...montado, limpio };
   }
 
   function canvasTieneContenido(canvas) {
     if (!canvas || canvas.width < 10 || canvas.height < 10) return false;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) return false;
 
-    function regionTieneTinta(x, y, w, h) {
-      const data = ctx.getImageData(x, y, w, h).data;
-      for (let i = 0; i < data.length; i += 4) {
-        const a = data[i + 3];
-        if (a > 8 && (data[i] < 248 || data[i + 1] < 248 || data[i + 2] < 248)) return true;
+    const puntos = [0.12, 0.35, 0.5, 0.65, 0.88];
+    for (const py of puntos) {
+      for (const px of puntos) {
+        const x = Math.min(canvas.width - 1, Math.floor(canvas.width * px));
+        const y = Math.min(canvas.height - 1, Math.floor(canvas.height * py));
+        const d = ctx.getImageData(x, y, 1, 1).data;
+        if (d[3] > 8 && (d[0] < 245 || d[1] < 245 || d[2] < 245)) return true;
       }
-      return false;
     }
-
-    if (regionTieneTinta(0, 0, Math.min(100, canvas.width), Math.min(100, canvas.height))) return true;
-    const cx = Math.max(0, Math.floor(canvas.width / 2) - 50);
-    const cy = Math.max(0, Math.floor(canvas.height / 2) - 50);
-    return regionTieneTinta(cx, cy, Math.min(100, canvas.width - cx), Math.min(100, canvas.height - cy));
+    return false;
   }
 
   function obtenerJsPdf() {
@@ -111,14 +180,26 @@
     return null;
   }
 
-  async function rasterizarAPdf(pageEl, filename) {
-    const html2canvas = window.html2canvas;
-    const JsPDF = obtenerJsPdf();
-    if (!html2canvas || !JsPDF) {
-      throw new Error('Generador PDF no disponible (html2canvas/jsPDF)');
-    }
+  function prepararClonCaptura(clonedEl) {
+    clonedEl.style.width = `${A4_W}px`;
+    clonedEl.style.minHeight = `${A4_H}px`;
+    clonedEl.style.height = `${A4_H}px`;
+    clonedEl.style.background = '#fff';
+    clonedEl.style.opacity = '1';
+    clonedEl.style.visibility = 'visible';
+    clonedEl.style.display = 'block';
+    clonedEl.querySelectorAll('img').forEach((img) => {
+      img.style.display = 'block';
+      img.style.visibility = 'visible';
+      img.style.opacity = '1';
+    });
+  }
 
-    const canvas = await html2canvas(pageEl, {
+  async function capturarConHtml2Canvas(target, opts = {}) {
+    const html2canvas = window.html2canvas;
+    if (!html2canvas) throw new Error('Generador PDF no disponible (html2canvas)');
+
+    const base = {
       scale: 2,
       useCORS: true,
       allowTaint: true,
@@ -126,23 +207,51 @@
       backgroundColor: '#ffffff',
       scrollX: 0,
       scrollY: 0,
-      width: A4_W,
-      height: A4_H,
-      windowWidth: A4_W,
-      windowHeight: A4_H,
-      onclone: (_doc, clonedEl) => {
-        clonedEl.style.width = `${A4_W}px`;
-        clonedEl.style.height = `${A4_H}px`;
-        clonedEl.style.background = '#fff';
-      }
-    });
+      onclone: (_doc, clonedEl) => prepararClonCaptura(clonedEl)
+    };
 
-    if (!canvasTieneContenido(canvas)) {
-      const err = new Error('BLANK_CANVAS');
-      throw err;
+    return html2canvas(target, { ...base, ...opts });
+  }
+
+  async function intentarCaptura(montado) {
+    const intentos = [];
+
+    if (montado.tipo === 'dom') {
+      intentos.push(
+        () => capturarConHtml2Canvas(montado.stage),
+        () => capturarConHtml2Canvas(montado.page),
+        () => capturarConHtml2Canvas(montado.page, { scale: 1.5 })
+      );
+    } else {
+      intentos.push(
+        () => capturarConHtml2Canvas(montado.page, { window: montado.win }),
+        () => capturarConHtml2Canvas(montado.page, { window: montado.win, scale: 1.5 })
+      );
     }
 
+    let ultimo = null;
+    for (const intento of intentos) {
+      try {
+        const canvas = await intento();
+        ultimo = canvas;
+        if (canvasTieneContenido(canvas)) return canvas;
+      } catch (_) { /* siguiente intento */ }
+    }
+    return ultimo;
+  }
+
+  async function rasterizarAPdf(montado, filename) {
+    const JsPDF = obtenerJsPdf();
+    if (!JsPDF) throw new Error('Generador PDF no disponible (jsPDF)');
+
+    const canvas = await intentarCaptura(montado);
+    if (!canvas) throw new Error('No se pudo capturar el documento');
+
     const imgData = canvas.toDataURL('image/jpeg', 0.92);
+    if (!imgData || imgData.length < 5000) {
+      throw new Error('BLANK_CANVAS');
+    }
+
     const pdf = new JsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
     const pw = pdf.internal.pageSize.getWidth();
     const ph = pdf.internal.pageSize.getHeight();
@@ -166,47 +275,100 @@
   }
 
   function abrirImpresionDocumento(html) {
-    const w = window.open('', '_blank', 'noopener,noreferrer');
-    if (!w) {
-      throw new Error('No se pudo abrir la ventana de impresión. Permita ventanas emergentes.');
-    }
-    w.document.open();
-    w.document.write(htmlParaImpresionManual(html));
-    w.document.close();
-    w.focus();
-    setTimeout(() => {
-      try { w.print(); } catch (_) { /* ignore */ }
-    }, 700);
+    document.getElementById('innarPrintOverlay')?.remove();
+
+    const overlay = document.createElement('div');
+    overlay.id = 'innarPrintOverlay';
+    overlay.style.cssText = [
+      'position:fixed', 'inset:0', 'z-index:2147483647',
+      'background:#eef3f2', 'display:flex', 'flex-direction:column'
+    ].join(';');
+
+    const bar = document.createElement('div');
+    bar.className = 'no-print';
+    bar.style.cssText = [
+      'flex:0 0 auto', 'padding:12px 16px', 'background:#eef3f2',
+      'border-bottom:1px solid #c5d4d1', 'text-align:center', 'font-family:Arial,sans-serif'
+    ].join(';');
+
+    const btnPrint = document.createElement('button');
+    btnPrint.type = 'button';
+    btnPrint.textContent = 'Imprimir / Guardar como PDF';
+    btnPrint.style.cssText = [
+      'padding:10px 22px', 'margin-right:8px', 'background:#2d4a47', 'color:#fff',
+      'border:none', 'border-radius:6px', 'cursor:pointer', 'font-weight:600'
+    ].join(';');
+
+    const btnClose = document.createElement('button');
+    btnClose.type = 'button';
+    btnClose.textContent = 'Cerrar';
+    btnClose.style.cssText = [
+      'padding:10px 22px', 'background:#fff', 'color:#2d4a47',
+      'border:1px solid #c5d4d1', 'border-radius:6px', 'cursor:pointer', 'font-weight:600'
+    ].join(';');
+
+    const hint = document.createElement('p');
+    hint.textContent = 'Use «Guardar como PDF» en el diálogo. Active «Gráficos de fondo» si el diseño no sale completo.';
+    hint.style.cssText = 'font-size:12px;color:#555;margin:8px 0 0';
+
+    bar.append(btnPrint, btnClose, hint);
+
+    const frame = document.createElement('iframe');
+    frame.title = 'Vista previa del documento';
+    frame.style.cssText = 'flex:1 1 auto;width:100%;border:0;background:#fff';
+
+    overlay.append(bar, frame);
+    document.body.appendChild(overlay);
+
+    const htmlImp = htmlParaImpresionManual(html);
+    frame.srcdoc = htmlImp;
+
+    const cerrar = () => overlay.remove();
+    btnClose.addEventListener('click', cerrar);
+    btnPrint.addEventListener('click', () => {
+      try {
+        frame.contentWindow?.focus();
+        frame.contentWindow?.print();
+      } catch (_) { /* ignore */ }
+    });
+
+    frame.addEventListener('load', () => {
+      setTimeout(() => {
+        try {
+          frame.contentWindow?.focus();
+          frame.contentWindow?.print();
+        } catch (_) { /* ignore */ }
+      }, 500);
+    }, { once: true });
+  }
+
+  function limpiarMontaje(montado) {
+    montado?.stage?.remove();
   }
 
   async function generarPdfDesdeHtml(html, filename) {
     const name = filename || 'documento.pdf';
-    const limpio = normalizarHtmlString(html);
-    let stage = null;
+    let montado = null;
 
     try {
-      const montado = montarStaging(limpio);
-      stage = montado.stage;
-      const { page } = montado;
-
-      await esperarImagenes(page, 8000);
-      if (document.fonts?.ready) {
-        await Promise.race([document.fonts.ready, new Promise((r) => setTimeout(r, 5000))]);
-      }
-      await esperarLayout();
-
+      montado = await prepararDocumento(html);
       try {
-        await rasterizarAPdf(page, name);
+        await rasterizarAPdf(montado, name);
         return 'pdf-cliente';
-      } catch (e) {
-        if (e.message === 'BLANK_CANVAS') {
-          abrirImpresionDocumento(limpio);
+      } catch (e1) {
+        limpiarMontaje(montado);
+        montado = await prepararDocumentoIframe(html);
+        try {
+          await rasterizarAPdf(montado, name);
+          return 'pdf-cliente';
+        } catch (_e2) {
+          abrirImpresionDocumento(montado.limpio || normalizarHtmlString(html));
           return 'impresion';
         }
-        throw e;
       }
     } finally {
-      stage?.remove();
+      limpiarMontaje(montado);
+      document.getElementById('innarPdfFrame')?.remove();
     }
   }
 
