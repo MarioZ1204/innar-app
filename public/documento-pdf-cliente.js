@@ -135,9 +135,16 @@
     };
   }
 
+  async function procesarFirmasMontaje(montado) {
+    if (window.innarFirmaFondo?.procesarFirmasEnRoot) {
+      await window.innarFirmaFondo.procesarFirmasEnRoot(montado.page);
+    }
+  }
+
   async function prepararDocumento(html) {
     const limpio = normalizarHtmlString(html);
     const montado = montarStaging(limpio);
+    await procesarFirmasMontaje(montado);
     await esperarImagenes(montado.page, 10000);
     if (document.fonts?.ready) {
       await Promise.race([document.fonts.ready, new Promise((r) => setTimeout(r, 6000))]);
@@ -149,6 +156,7 @@
   async function prepararDocumentoIframe(html) {
     const limpio = normalizarHtmlString(html);
     const montado = montarEnIframe(limpio);
+    await procesarFirmasMontaje(montado);
     await esperarImagenes(montado.doc, 10000);
     if (montado.doc.fonts?.ready) {
       await Promise.race([montado.doc.fonts.ready, new Promise((r) => setTimeout(r, 6000))]);
@@ -192,6 +200,9 @@
       img.style.display = 'block';
       img.style.visibility = 'visible';
       img.style.opacity = '1';
+      if (img.closest('.cmp-firma-paciente, .cmp-campo-firma-acud')) {
+        img.style.mixBlendMode = 'multiply';
+      }
     });
   }
 

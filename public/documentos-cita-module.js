@@ -405,9 +405,12 @@
     setModalError('Generando PDF…');
 
     try {
-      const payload = state.tipo === 'comprobante'
+      let payload = state.tipo === 'comprobante'
         ? await buildComprobantePayload()
         : buildCertificadoPayload();
+      if (state.tipo === 'comprobante' && window.innarFirmaFondo?.procesarPayloadComprobante) {
+        payload = await window.innarFirmaFondo.procesarPayloadComprobante(payload);
+      }
       const preview = await fetchPreview(payload);
       const modoPdf = await generarPdfDesdePreview(preview);
 

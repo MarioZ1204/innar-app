@@ -364,6 +364,7 @@ function buildComprobanteServiciosHtml(data, fondo = {}) {
       object-position: center bottom;
       transform: scale(${F.firmaImgEscala});
       transform-origin: center bottom;
+      mix-blend-mode: multiply;
     }
     .cmp-acudiente {
       position: absolute;
@@ -391,6 +392,7 @@ function buildComprobanteServiciosHtml(data, fondo = {}) {
       max-height: 9mm;
       max-width: 65mm;
       object-fit: contain;
+      mix-blend-mode: multiply;
     }
     .cmp-pie-bloque {
       position: absolute;

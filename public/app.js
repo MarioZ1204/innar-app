@@ -14256,11 +14256,15 @@ async function generarComprobanteServiciosPdf() {
   try {
     const PDF = window.innarDocumentoPdf;
     if (!PDF) throw new Error('Generador PDF no disponible');
+    const Firma = window.innarFirmaFondo;
+    const payloadFirma = Firma?.procesarPayloadComprobante
+      ? await Firma.procesarPayloadComprobante(payload)
+      : payload;
     const doc = payload.paciente_documento.replace(/\D/g, '') || 'sin_doc';
     const modo = await PDF.generarDocumento({
       postUrl: '/api/certificados/comprobante-servicios',
       previewUrl: '/api/certificados/comprobante-servicios/preview',
-      payload,
+      payload: payloadFirma,
       filename: `comprobante_servicios_${doc}.pdf`
     });
     showToast(

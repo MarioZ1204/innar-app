@@ -1,6 +1,6 @@
 'use strict';
 
-const UMBRAL_BLANCO = 242;
+const { transparentarFondoEnRgba } = require('./firma-quitar-fondo-core');
 
 /** Carga diferida: evita fallo de arranque en Hostinger si el binario nativo no está listo. */
 function getSharp() {
@@ -26,18 +26,10 @@ async function quitarFondoBlancoFirma(img) {
       .raw()
       .toBuffer({ resolveWithObject: true });
 
-    const ch = info.channels;
-    for (let i = 0; i < data.length; i += ch) {
-      const r = data[i];
-      const g = data[i + 1];
-      const b = data[i + 2];
-      if (r >= UMBRAL_BLANCO && g >= UMBRAL_BLANCO && b >= UMBRAL_BLANCO) {
-        data[i + 3] = 0;
-      }
-    }
+    transparentarFondoEnRgba(data, info.channels);
 
     const out = await sharp(data, {
-      raw: { width: info.width, height: info.height, channels: 4 }
+      raw: { width: info.width, height: info.height, channels: info.channels }
     })
       .png()
       .toBuffer();
