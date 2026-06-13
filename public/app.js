@@ -13887,6 +13887,7 @@ async function generarCertificadoAsistenciaPdf() {
       filename: `certificado_asistencia_${doc}.pdf`
     });
     certAsistenciaGuardarDefaults(payload);
+    await guardarPersonaFiduDesdeDocumento('certificado', payload);
     showToast(
       modo === 'impresion'
         ? 'Se abrió la vista de impresión. Use «Guardar como PDF».'
@@ -13958,10 +13959,25 @@ function personaFiduAplicarAPrefill(contexto, persona, citaPrefill) {
       direccion: persona?.direccion || citaPrefill?.direccion || '',
       telefono: persona?.telefono || citaPrefill?.telefono || '',
       correo: persona?.correo || citaPrefill?.correo || '',
-      tipo_afiliacion: persona?.afiliacion || citaPrefill?.tipo_afiliacion || 'Cotizante'
+      tipo_afiliacion: persona?.afiliacion || citaPrefill?.tipo_afiliacion || 'Cotizante',
+      firma_paciente: persona?.firma_paciente || citaPrefill?.firma_paciente || ''
     };
   }
   return citaPrefill;
+}
+
+async function guardarPersonaFiduDesdeDocumento(contexto, payload) {
+  const PF = window.innarPersonaFidu;
+  if (!PF || !payload?.paciente_documento) return;
+  try {
+    if (contexto === 'comprobante' && PF.guardarDesdeComprobanteModal) {
+      await PF.guardarDesdeComprobanteModal(payload, 'comprobante');
+    } else if (contexto === 'certificado' && PF.guardarDesdeCertificadoModal) {
+      await PF.guardarDesdeCertificadoModal(payload, 'certificado');
+    }
+  } catch (e) {
+    showToast('PDF generado, pero no se pudo actualizar la base de pacientes', 'warning');
+  }
 }
 
 function abrirModalCompletarPersonaFidu(opts = {}) {
@@ -14175,7 +14191,7 @@ function abrirModalComprobanteServicios(prefill) {
     return;
   }
   _compServPacienteNombre = prefill.paciente_nombre;
-  _compServFirmaPacienteDataUrl = '';
+  _compServFirmaPacienteDataUrl = String(prefill.firma_paciente || '').trim();
   _compServFirmaAcudienteDataUrl = '';
   const set = (id, val) => { const el = $(id); if (el) el.value = val ?? ''; };
   set('compServOrigen', prefill.origen);
@@ -14196,8 +14212,10 @@ function abrirModalComprobanteServicios(prefill) {
   if (chkAcud) chkAcud.checked = false;
   const panelAcud = $('compServAcudientePanel');
   if (panelAcud) panelAcud.style.display = 'none';
-  compServMostrarPreview('compServFirmaPaciente', 'compServFirmaPreview', '');
+  compServMostrarPreview('compServFirmaPaciente', 'compServFirmaPreview', _compServFirmaPacienteDataUrl);
   compServMostrarPreview('compServFirmaAcudiente', 'compServFirmaAcudPreview', '');
+  const inpFirmaPac = $('compServFirmaPaciente');
+  if (inpFirmaPac) inpFirmaPac.value = '';
   const modal = $('modalComprobanteServicios');
   if (modal) {
     modal.classList.remove('hidden');
@@ -14269,6 +14287,7 @@ async function generarComprobanteServiciosPdf() {
       payload: payloadFirma,
       filename: `comprobante_servicios_${doc}.pdf`
     });
+    await guardarPersonaFiduDesdeDocumento('comprobante', payloadFirma);
     showToast(
       modo === 'impresion'
         ? 'Se abrió la vista de impresión. Use «Guardar como PDF».'

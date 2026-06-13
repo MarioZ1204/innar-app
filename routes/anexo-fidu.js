@@ -74,36 +74,13 @@ async function upsertPersonaDesdeRegistro(data) {
   return true;
 }
 
-async function lookupNombreDiagnosticoDb(codigoRaw) {
-  const raw = String(codigoRaw || '').trim();
-  if (!raw) return { codigo: '', nombre: '' };
-  const norm = raw.toUpperCase();
-  const normFlat = norm.replace(/\./g, '');
-  const exact = await db.query(
-    `SELECT nombre, descripcion, codigo FROM diagnosticos WHERE activo = 1
-     AND (UPPER(TRIM(codigo)) = ? OR UPPER(REPLACE(TRIM(codigo), '.', '')) = ?)
-     LIMIT 1`,
-    [norm, normFlat]
-  );
-  if (exact.length) {
-    const r = exact[0];
-    return {
-      codigo: String(r.codigo || '').trim(),
-      nombre: String(r.nombre || r.descripcion || '').trim()
-    };
-  }
-  if (normFlat.length < 2) return { codigo: '', nombre: '' };
-  const partial = await db.query(
-    `SELECT nombre, descripcion, codigo FROM diagnosticos WHERE activo = 1
-     AND UPPER(REPLACE(TRIM(codigo), '.', '')) LIKE ?
-     ORDER BY LENGTH(codigo) ASC LIMIT 1`,
-    [`${normFlat}%`]
-  );
-  const r = partial[0];
-  return {
-    codigo: r ? String(r.codigo || '').trim() : '',
-    nombre: r ? String(r.nombre || r.descripcion || '').trim() : ''
-  };
+const {
+  lookupDiagnosticoDb,
+  lookupDiagnosticoExactoDb
+} = require('../utils/anexo-fidu-diagnosticos');
+
+async function lookupNombreDiagnosticoDb(codigoRaw, opts = {}) {
+  return lookupDiagnosticoDb(db, codigoRaw, opts);
 }
 
 function sanitizeRegistroBody(body) {
@@ -177,7 +154,7 @@ router.post('/anexo-fidu/diagnosticos', requireAuth, requirePermiso(PERM_ANEXO_F
   }
   if (!nombre) return res.status(400).json({ error: 'Nombre del diagnóstico requerido' });
   try {
-    const existente = await lookupNombreDiagnosticoDb(codigo);
+    const existente = await lookupDiagnosticoExactoDb(db, codigo);
     if (existente.nombre) {
       return res.json({
         ok: true,
@@ -200,13 +177,18 @@ router.post('/anexo-fidu/diagnosticos', requireAuth, requirePermiso(PERM_ANEXO_F
     });
   } catch (e) {
     if (e.code === 'ER_DUP_ENTRY') {
-      const dup = await lookupNombreDiagnosticoDb(codigo);
-      return res.json({
-        ok: true,
-        ya_existia: true,
-        id: null,
-        codigo: dup.codigo || codigo,
-        nombre: dup.nombre || nombre
+      const dup = await lookupDiagnosticoExactoDb(db, codigo);
+      if (dup.nombre) {
+        return res.json({
+          ok: true,
+          ya_existia: true,
+          id: null,
+          codigo: dup.codigo || codigo,
+          nombre: dup.nombre
+        });
+      }
+      return res.status(409).json({
+        error: 'Ya existe un diagnóstico con ese nombre. Edítelo en Gestión de datos o use otro nombre.'
       });
     }
     logger.error('[ANEXO-FIDU] crear diagnostico:', e);
@@ -218,37 +200,13 @@ router.post('/anexo-fidu/diagnosticos', requireAuth, requirePermiso(PERM_ANEXO_F
 router.get('/anexo-fidu/diagnostico-por-codigo', requireAuth, requirePermiso(PERM_ANEXO_FIDU), async (req, res) => {
   const raw = String(req.query.codigo || '').trim();
   if (!raw) return res.json({ ok: true, nombre: '', codigo: '' });
-  const norm = raw.toUpperCase();
-  const normFlat = norm.replace(/\./g, '');
+  const soloExacto = req.query.exacto === '1' || req.query.exacto === 'true';
   try {
-    const exact = await db.query(
-      `SELECT nombre, descripcion, codigo FROM diagnosticos WHERE activo = 1
-       AND (UPPER(TRIM(codigo)) = ? OR UPPER(REPLACE(TRIM(codigo), '.', '')) = ?)
-       LIMIT 1`,
-      [norm, normFlat]
-    );
-    if (exact.length) {
-      const r = exact[0];
-      return res.json({
-        ok: true,
-        nombre: String(r.nombre || r.descripcion || '').trim(),
-        codigo: String(r.codigo || '').trim()
-      });
-    }
-    if (normFlat.length < 2) {
-      return res.json({ ok: true, nombre: '', codigo: '' });
-    }
-    const partial = await db.query(
-      `SELECT nombre, descripcion, codigo FROM diagnosticos WHERE activo = 1
-       AND UPPER(REPLACE(TRIM(codigo), '.', '')) LIKE ?
-       ORDER BY LENGTH(codigo) ASC LIMIT 1`,
-      [`${normFlat}%`]
-    );
-    const r = partial[0];
+    const diag = await lookupNombreDiagnosticoDb(raw, { soloExacto });
     res.json({
       ok: true,
-      nombre: r ? String(r.nombre || r.descripcion || '').trim() : '',
-      codigo: r ? String(r.codigo || '').trim() : ''
+      nombre: diag.nombre || '',
+      codigo: diag.codigo || ''
     });
   } catch (e) {
     logger.error('[ANEXO-FIDU] diagnostico-por-codigo:', e);
@@ -644,9 +602,10 @@ router.post('/anexo-fidu/armar', requireAuth, requirePermiso(PERM_ANEXO_FIDU), a
     const espRemitente = String(req.body?.especialidad_remitente || '').trim();
     if (cie10) {
       registro.codigo_cie10 = cie10;
-      const diag = await lookupNombreDiagnosticoDb(cie10);
+      const diag = await lookupDiagnosticoExactoDb(db, cie10);
       if (diag.codigo) registro.codigo_cie10 = diag.codigo;
       if (diag.nombre) registro.nombre_diagnostico = diag.nombre;
+      else registro.codigo_cie10 = cie10;
     }
     if (nombreMedico) registro.nombre_medico = nombreMedico;
     if (medicoAtencion) registro.medico_quien_realiza_atencion = medicoAtencion;

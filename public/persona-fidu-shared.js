@@ -140,6 +140,57 @@
     return data;
   }
 
+  function sugerirNombresDesdeTexto(nombreCompleto) {
+    const words = String(nombreCompleto || '').trim().replace(/\s+/g, ' ').split(' ').filter(Boolean);
+    if (!words.length) {
+      return { nombres_1: '', nombres_2: '', apellidos_1: '', apellidos_2: '' };
+    }
+    if (words.length === 1) {
+      return { nombres_1: words[0], nombres_2: '', apellidos_1: '', apellidos_2: '' };
+    }
+    if (words.length === 2) {
+      return { nombres_1: words[0], nombres_2: '', apellidos_1: words[1], apellidos_2: '' };
+    }
+    return {
+      nombres_1: words.slice(0, -2).join(' '),
+      nombres_2: '',
+      apellidos_1: words[words.length - 2],
+      apellidos_2: words[words.length - 1]
+    };
+  }
+
+  function personaDesdeComprobanteModal(modal) {
+    const doc = String(modal?.paciente_documento || '').trim();
+    return {
+      numero_documento: doc,
+      ...sugerirNombresDesdeTexto(modal?.paciente_nombre),
+      tipo_documento: String(modal?.tipo_documento || '').trim(),
+      fecha_nacimiento: normalizarFecha(modal?.fecha_nacimiento),
+      direccion: String(modal?.direccion || '').trim(),
+      telefono: String(modal?.telefono || '').trim(),
+      correo: String(modal?.correo || '').trim(),
+      afiliacion: String(modal?.tipo_afiliacion || '').trim(),
+      firma_paciente: String(modal?.firma_paciente || '').trim()
+    };
+  }
+
+  function personaDesdeCertificadoModal(modal) {
+    const doc = String(modal?.paciente_documento || '').trim();
+    return {
+      numero_documento: doc,
+      ...sugerirNombresDesdeTexto(modal?.paciente_nombre),
+      tipo_documento: String(modal?.tipo_documento || '').trim()
+    };
+  }
+
+  async function guardarDesdeComprobanteModal(modal, contexto) {
+    return guardarPersona(personaDesdeComprobanteModal(modal), contexto || 'comprobante');
+  }
+
+  async function guardarDesdeCertificadoModal(modal, contexto) {
+    return guardarPersona(personaDesdeCertificadoModal(modal), contexto || 'certificado');
+  }
+
   window.innarPersonaFidu = {
     PERSONA_FORM,
     normalizarFecha,
@@ -148,6 +199,11 @@
     leerFormulario,
     fetchPersona,
     guardarPersona,
+    sugerirNombresDesdeTexto,
+    personaDesdeComprobanteModal,
+    personaDesdeCertificadoModal,
+    guardarDesdeComprobanteModal,
+    guardarDesdeCertificadoModal,
     camposParaFormulario
   };
 })();

@@ -21,6 +21,9 @@ const PERSONAS_CSV_COLUMNS = [
   'afiliacion'
 ];
 
+/** Columnas adicionales en BD (no vienen del CSV Lista_Personas). */
+const PERSONA_DB_EXTRA_COLUMNS = ['firma_paciente'];
+
 function parseCsvLine(line) {
   const row = [];
   let cur = '';
@@ -272,6 +275,14 @@ function sanitizePersonaBody(body = {}) {
   return p;
 }
 
+function sanitizeFirmaPaciente(val) {
+  const s = String(val || '').trim();
+  if (!s) return '';
+  if (!/^data:image\/(png|jpe?g|webp);base64,/i.test(s)) return '';
+  if (s.length > 1_500_000) return '';
+  return s;
+}
+
 function armarRegistroAnexo(documento, codigoServicio, personaRow = null) {
   const { ANEXO_FIDU_COLUMN_KEYS } = require('./anexo-fidu-columns');
   const { enriquecerRegistroAnexoFidu, buscarServicioPorCodigo } = require('./anexo-fidu-servicios');
@@ -296,7 +307,7 @@ function armarRegistroAnexo(documento, codigoServicio, personaRow = null) {
 
 /** INSERT o UPDATE por numero_documento (no borra el resto de la base). */
 async function upsertPersonaEnDb(db, persona) {
-  const cols = PERSONAS_CSV_COLUMNS;
+  const cols = [...PERSONAS_CSV_COLUMNS, ...PERSONA_DB_EXTRA_COLUMNS];
   const sets = cols.map((c) => `\`${c}\` = ?`).join(', ');
   const vals = cols.map((c) => persona[c] || '');
   const existing = await db.query(
@@ -336,6 +347,7 @@ function buildAnexoFiduPersonasCreateTableSql() {
       telefono VARCHAR(40) NULL,
       correo VARCHAR(200) NULL,
       afiliacion VARCHAR(200) NULL,
+      firma_paciente LONGTEXT NULL,
       creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       actualizado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       UNIQUE KEY uq_anexo_persona_documento (numero_documento),
@@ -347,6 +359,8 @@ module.exports = {
   CORREO_ANEXO_SIN_EMAIL,
   correoParaAnexo,
   PERSONAS_CSV_COLUMNS,
+  PERSONA_DB_EXTRA_COLUMNS,
+  sanitizeFirmaPaciente,
   ANEXO_KEYS_DESDE_PERSONA,
   parseCsvLine,
   limpiarDireccionRepetida,

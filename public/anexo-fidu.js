@@ -14,6 +14,7 @@
   let _carpetaId = null;
   let _archivoId = null;
   let _archivosCache = [];
+  const _cie10Asegurados = new Set();
 
   const AFIDU_VIEW_LS = 'innar.afidu.folderView';
 
@@ -763,14 +764,27 @@
     const cod = String(codigo || '').trim();
     const nom = String(nombre || '').trim();
     if (cod.length < 2 || !nom) return nom;
-    const existente = await lookupNombreDiagnostico(cod);
+    const existente = await lookupNombreDiagnostico(cod, true);
     if (existente) return existente;
-    try {
-      const dx = await crearDiagnosticoEnCatalogo(cod, nom);
-      return dx.nombre || nom;
-    } catch (_) {
-      return nom;
+    const dx = await crearDiagnosticoEnCatalogo(cod, nom);
+    return dx.nombre || nom;
+  }
+
+  async function asegurarDiagnosticoEnCatalogo(codigo) {
+    const cod = String(codigo || '').trim();
+    if (cod.length < 2) return '';
+    const key = cod.toUpperCase().replace(/\./g, '');
+    if (_cie10Asegurados.has(key)) {
+      return lookupNombreDiagnostico(cod, true);
     }
+    const existente = await lookupNombreDiagnostico(cod, true);
+    if (existente) {
+      _cie10Asegurados.add(key);
+      return existente;
+    }
+    const nom = await solicitarYRegistrarDiagnostico(cod);
+    if (nom) _cie10Asegurados.add(key);
+    return nom;
   }
 
   async function actualizarPreviewDiagnostico(codigo) {
@@ -783,7 +797,7 @@
       return;
     }
     try {
-      const nombre = await lookupNombreDiagnostico(cod);
+      const nombre = await lookupNombreDiagnostico(cod, true);
       if (nombre) {
         el.textContent = `Diagnóstico: ${nombre}`;
         el.classList.remove('hidden');
@@ -960,10 +974,12 @@
     td.title = `${col?.label || key}: ${v}`;
   }
 
-  async function lookupNombreDiagnostico(codigoCie10) {
+  async function lookupNombreDiagnostico(codigoCie10, soloExacto = false) {
     const cod = String(codigoCie10 || '').trim();
     if (cod.length < 2) return '';
-    const data = await apiAnexo(`/api/anexo-fidu/diagnostico-por-codigo?codigo=${encodeURIComponent(cod)}`);
+    const qs = new URLSearchParams({ codigo: cod });
+    if (soloExacto) qs.set('exacto', '1');
+    const data = await apiAnexo(`/api/anexo-fidu/diagnostico-por-codigo?${qs}`);
     return String(data.nombre || '').trim();
   }
 
@@ -973,7 +989,7 @@
       setValorCelda(tr, 'nombre_diagnostico', '');
       return '';
     }
-    const nombre = await lookupNombreDiagnostico(cod);
+    const nombre = await lookupNombreDiagnostico(cod, true);
     if (nombre) setValorCelda(tr, 'nombre_diagnostico', nombre);
     return nombre;
   }
@@ -1587,11 +1603,15 @@
   }
 
   async function agregarUnaFila(doc, codigo, opts = {}) {
+    const cie10 = String(opts.cie10 || '').trim();
+    if (cie10.length >= 2) {
+      await asegurarDiagnosticoEnCatalogo(cie10);
+    }
     const payload = {
       numero_documento: doc,
       codigo_servicio: codigo
     };
-    if (opts.cie10) payload.codigo_cie10 = opts.cie10;
+    if (cie10) payload.codigo_cie10 = cie10;
     if (opts.medico) payload.nombre_medico = opts.medico;
     if (opts.medico_atencion) payload.medico_quien_realiza_atencion = opts.medico_atencion;
     if (opts.esp_remitente) payload.especialidad_remitente = opts.esp_remitente;

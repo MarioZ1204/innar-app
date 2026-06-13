@@ -3,6 +3,7 @@
 const {
   PERSONAS_CSV_COLUMNS,
   sanitizePersonaBody,
+  sanitizeFirmaPaciente,
   upsertPersonaEnDb
 } = require('./anexo-fidu-personas');
 
@@ -59,6 +60,7 @@ function personaRowToPlain(row) {
   PERSONAS_CSV_COLUMNS.forEach((k) => {
     o[k] = row[k] != null ? String(row[k]) : '';
   });
+  o.firma_paciente = row.firma_paciente != null ? String(row.firma_paciente) : '';
   return o;
 }
 
@@ -114,6 +116,9 @@ function mergePersonaBodies(existing = {}, incoming = {}) {
     const v = incoming[k];
     if (v != null && String(v).trim() !== '') out[k] = normEspacios(v);
   });
+  const firma = sanitizeFirmaPaciente(incoming.firma_paciente);
+  if (firma) out.firma_paciente = firma;
+  else if (existing.firma_paciente) out.firma_paciente = existing.firma_paciente;
   return out;
 }
 
@@ -157,7 +162,33 @@ function personaAPrefillComprobante(persona, citaPrefill = {}) {
     direccion: persona.direccion || citaPrefill.direccion || '',
     telefono: persona.telefono || citaPrefill.telefono || '',
     correo: persona.correo || citaPrefill.correo || '',
-    tipo_afiliacion: persona.afiliacion || citaPrefill.tipo_afiliacion || 'Cotizante'
+    tipo_afiliacion: persona.afiliacion || citaPrefill.tipo_afiliacion || 'Cotizante',
+    firma_paciente: persona.firma_paciente || citaPrefill.firma_paciente || ''
+  };
+}
+
+/** Convierte campos del modal de comprobante al cuerpo de persona FOMAG. */
+function personaBodyDesdeComprobanteModal(modal = {}) {
+  const doc = normEspacios(modal.paciente_documento);
+  return {
+    numero_documento: doc,
+    ...sugerirNombresDesdeTexto(modal.paciente_nombre),
+    tipo_documento: normEspacios(modal.tipo_documento),
+    fecha_nacimiento: normEspacios(modal.fecha_nacimiento),
+    direccion: normEspacios(modal.direccion),
+    telefono: normEspacios(modal.telefono),
+    correo: normEspacios(modal.correo),
+    afiliacion: normEspacios(modal.tipo_afiliacion),
+    firma_paciente: sanitizeFirmaPaciente(modal.firma_paciente)
+  };
+}
+
+/** Convierte campos del modal de certificado al cuerpo de persona FOMAG. */
+function personaBodyDesdeCertificadoModal(modal = {}) {
+  return {
+    numero_documento: normEspacios(modal.paciente_documento),
+    ...sugerirNombresDesdeTexto(modal.paciente_nombre),
+    tipo_documento: normEspacios(modal.tipo_documento)
   };
 }
 
@@ -201,6 +232,10 @@ async function guardarPersonaFiduMerge(db, body = {}, contexto = 'anexo') {
   const existente = rows.length ? personaRowToPlain(rows[0]) : { numero_documento: doc };
   const merged = mergePersonaBodies(existente, body);
   const persona = sanitizePersonaBody(merged);
+  const firma = sanitizeFirmaPaciente(merged.firma_paciente);
+  if (firma) persona.firma_paciente = firma;
+  else if (existente.firma_paciente) persona.firma_paciente = existente.firma_paciente;
+  else persona.firma_paciente = '';
   const accion = await upsertPersonaEnDb(db, persona);
   const campos_faltantes = detectarCamposFaltantes(persona, contexto);
   return {
@@ -223,6 +258,8 @@ module.exports = {
   personaInicialDesdeCita,
   personaAPrefillCertificado,
   personaAPrefillComprobante,
+  personaBodyDesdeComprobanteModal,
+  personaBodyDesdeCertificadoModal,
   buscarPersonaFiduPorDocumento,
   guardarPersonaFiduMerge
 };

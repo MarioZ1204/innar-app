@@ -107,8 +107,35 @@
       direccion: String(persona?.direccion || '').trim(),
       telefono: String(persona?.telefono || '').trim(),
       correo: String(persona?.correo || '').trim(),
-      tipo_afiliacion: String(persona?.afiliacion || 'Cotizante').trim() || 'Cotizante'
+      tipo_afiliacion: String(persona?.afiliacion || 'Cotizante').trim() || 'Cotizante',
+      firma_paciente: String(persona?.firma_paciente || '').trim()
     };
+  }
+
+  function mostrarFirmaPreview(dataUrl) {
+    const img = $('docmodModalCompFirmaPreview');
+    if (!img) return;
+    if (dataUrl) {
+      img.src = dataUrl;
+      img.style.display = 'block';
+    } else {
+      img.removeAttribute('src');
+      img.style.display = 'none';
+    }
+  }
+
+  async function guardarPersonaDesdeModal(tipo, payload) {
+    const PF = window.innarPersonaFidu;
+    if (!PF || !payload?.paciente_documento) return;
+    try {
+      if (tipo === 'comprobante' && PF.guardarDesdeComprobanteModal) {
+        await PF.guardarDesdeComprobanteModal(payload, 'comprobante');
+      } else if (tipo === 'certificado' && PF.guardarDesdeCertificadoModal) {
+        await PF.guardarDesdeCertificadoModal(payload, 'certificado');
+      }
+    } catch (_) {
+      toast('PDF generado, pero no se pudo actualizar la base de pacientes', 'warning');
+    }
   }
 
   function marcarBotonesGrupo(selector, attr, value) {
@@ -191,7 +218,9 @@
     modal.style.display = 'none';
     setModalError('');
     firmaPacienteDataUrl = '';
-    $('docmodModalCompFirma') && ($('docmodModalCompFirma').value = '');
+    const inpFirma = $('docmodModalCompFirma');
+    if (inpFirma) inpFirma.value = '';
+    mostrarFirmaPreview('');
   }
 
   function llenarModalCertificado(datos, extras) {
@@ -233,7 +262,10 @@
     $('docmodModalCompCorreo').value = datos.correo || extras?.correo || '';
     $('docmodModalCompAfiliacion').value = datos.tipo_afiliacion || extras?.tipo_afiliacion || 'Cotizante';
     $('docmodModalCompServicio').value = extras?.servicio || servicioSugerido();
-    if (extras?.firma_paciente) firmaPacienteDataUrl = extras.firma_paciente;
+    firmaPacienteDataUrl = String(datos.firma_paciente || extras?.firma_paciente || '').trim();
+    const inpFirma = $('docmodModalCompFirma');
+    if (inpFirma) inpFirma.value = '';
+    mostrarFirmaPreview(firmaPacienteDataUrl);
   }
 
   function abrirModalConDatos(persona, extras) {
@@ -266,7 +298,8 @@
     try {
       const PF = window.innarPersonaFidu;
       if (PF) {
-        const data = await PF.fetchPersona(doc, 'anexo');
+        const ctx = state.tipo === 'certificado' ? 'certificado' : 'comprobante';
+        const data = await PF.fetchPersona(doc, ctx);
         if (data?.persona) {
           persona = data.persona;
           state.encontrada = !!data.encontrada;
@@ -423,6 +456,8 @@
         } catch (_) { /* ignore */ }
       }
 
+      await guardarPersonaDesdeModal(state.tipo, payload);
+
       toast(
         modoPdf === 'impresion'
           ? 'Se abrió la vista de impresión. Use «Guardar como PDF».'
@@ -458,6 +493,16 @@
     });
 
     $('btnConfirmarModalDocumentosCita')?.addEventListener('click', () => confirmarModal());
+    $('docmodModalCompFirma')?.addEventListener('change', async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      try {
+        firmaPacienteDataUrl = await readFileAsDataUrl(file);
+        mostrarFirmaPreview(firmaPacienteDataUrl);
+      } catch (err) {
+        toast(err.message || 'Error leyendo firma', 'error');
+      }
+    });
     $('btnCancelarModalDocumentosCita')?.addEventListener('click', cerrarModal);
     $('btnCerrarModalDocumentosCita')?.addEventListener('click', cerrarModal);
     $('modalDocumentosCita')?.addEventListener('click', (e) => {

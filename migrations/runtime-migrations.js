@@ -1265,6 +1265,18 @@ const runtimeMigrations = [
       const { seedAnexoFiduServiciosDesdeEstatico } = require('../utils/anexo-fidu-catalogo');
       await seedAnexoFiduServiciosDesdeEstatico(db, ANEXO_FIDU_CATALOGO_SERVICIOS);
     }
+  },
+  {
+    name: 'rt_anexo_fidu_personas_firma',
+    description: 'Columna firma_paciente en anexo_fidu_personas (comprobante FOMAG)',
+    run: async (db) => {
+      if (!(await tableExists(db, 'anexo_fidu_personas'))) return;
+      if (!(await columnExists(db, 'anexo_fidu_personas', 'firma_paciente'))) {
+        await db.execute(
+          'ALTER TABLE anexo_fidu_personas ADD COLUMN firma_paciente LONGTEXT NULL AFTER afiliacion'
+        );
+      }
+    }
   }
 ];
 

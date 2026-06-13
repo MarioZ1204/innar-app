@@ -4,7 +4,9 @@ const {
   sugerirNombresDesdeTexto,
   mergePersonaBodies,
   personaAPrefillComprobante,
-  personaAPrefillCertificado
+  personaAPrefillCertificado,
+  personaBodyDesdeComprobanteModal,
+  personaBodyDesdeCertificadoModal
 } = require('../utils/anexo-fidu-personas-docs');
 
 describe('anexo-fidu-personas-docs', () => {
@@ -91,5 +93,54 @@ describe('anexo-fidu-personas-docs', () => {
     );
     expect(pre.motivo).toBe('Consulta');
     expect(pre.paciente_nombre).toBe('Ana Ruiz');
+  });
+
+  test('prefill comprobante incluye firma guardada', () => {
+    const firma = 'data:image/png;base64,abc';
+    const pre = personaAPrefillComprobante(
+      { numero_documento: '1', nombres_1: 'Ana', apellidos_1: 'Ruiz', firma_paciente: firma },
+      {}
+    );
+    expect(pre.firma_paciente).toBe(firma);
+  });
+
+  test('merge conserva firma existente si no llega una nueva', () => {
+    const firma = 'data:image/png;base64,xyz';
+    const merged = mergePersonaBodies(
+      { numero_documento: '1', firma_paciente: firma },
+      { telefono: '300' }
+    );
+    expect(merged.firma_paciente).toBe(firma);
+    expect(merged.telefono).toBe('300');
+  });
+
+  test('personaBodyDesdeComprobanteModal mapea campos del modal', () => {
+    const body = personaBodyDesdeComprobanteModal({
+      paciente_nombre: 'MARIO FERNANDO ZAMBRANO MEJIA',
+      paciente_documento: '123',
+      tipo_documento: 'CC',
+      fecha_nacimiento: '2002-04-12',
+      direccion: 'Calle 1',
+      telefono: '300',
+      correo: 'a@b.com',
+      tipo_afiliacion: 'Cotizante',
+      firma_paciente: 'data:image/png;base64,abc'
+    });
+    expect(body.numero_documento).toBe('123');
+    expect(body.nombres_1).toBe('MARIO FERNANDO');
+    expect(body.afiliacion).toBe('Cotizante');
+    expect(body.firma_paciente).toBe('data:image/png;base64,abc');
+  });
+
+  test('personaBodyDesdeCertificadoModal mapea nombre y documento', () => {
+    const body = personaBodyDesdeCertificadoModal({
+      paciente_nombre: 'Ana Ruiz',
+      paciente_documento: '99',
+      tipo_documento: 'TI'
+    });
+    expect(body.numero_documento).toBe('99');
+    expect(body.nombres_1).toBe('Ana');
+    expect(body.apellidos_1).toBe('Ruiz');
+    expect(body.tipo_documento).toBe('TI');
   });
 });

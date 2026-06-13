@@ -808,9 +808,9 @@ router.post(
     let mergedTmp = null;
     try {
       const files = req.files || [];
-      if (!files.length) {
+      if (files.length < 2) {
         cleanupMulterTempFiles(req);
-        return res.status(400).json({ error: 'Seleccione al menos un PDF (orden y/o historia clínica)' });
+        return res.status(400).json({ error: 'Para unificar debe seleccionar 2 o más PDF' });
       }
       partPaths.push(...files.map((f) => f.path).filter(Boolean));
 
@@ -824,11 +824,6 @@ router.post(
       if (deniedUni) {
         cleanupMulterTempFiles(req);
         return res.status(deniedUni.status).json({ error: deniedUni.error });
-      }
-      const tema = detectarTemaCarpeta(carpeta.nombre_display);
-      if (tema !== 'ordenes_consulta_medica') {
-        cleanupMulterTempFiles(req);
-        return res.status(400).json({ error: 'La unificación de PDF solo está disponible en carpetas ORDEN + HC CONSULTAS MÉDICAS' });
       }
       const vis = calcularVisibilidadPeriodo(carpeta.periodo);
       if (vis === 'archivo') {

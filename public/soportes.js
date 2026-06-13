@@ -168,7 +168,7 @@
     ordenes_consulta_medica: {
       pattern: 'ORDEN + HC NOMBRES APELLIDOS YYYY-MM-DD ESPECIALIDAD.pdf',
       ejemplo: 'ORDEN + HC Juan Carlos García López 2026-05-27 Neurología.pdf',
-      nota: 'Sin documento. Puede subir 2 o más PDF (orden en un archivo, HC en otro) para unificarlos en uno solo.'
+      nota: 'Sin documento. Puede subir 2 o más PDF (p. ej. orden y HC por separado); ordénelos y se unifican en uno solo.'
     },
     consentimientos: {
       pattern: 'CONSENTIMIENTO APELLIDOS NOMBRES TIPO DOC (CC, TI…) DOCUMENTO (solo números) FECHA TIPO DE ESTUDIO.pdf',
@@ -498,23 +498,46 @@
 
   function camposMinimosAyudaCliente(tema) {
     const oblig = ['Apellidos', 'Nombres', 'Fecha del estudio'];
-    const opc = [];
+    const opc = ['Varios PDF: ordénelos y se unifican en un solo archivo'];
     if (tema === 'ordenes_consulta_medica') {
-      return { oblig: [...oblig, 'Especialidad'], opc: ['Varios PDF: se unifican en un solo ORDEN + HC'] };
+      return { oblig: [...oblig, 'Especialidad'], opc };
     }
     if (tema === 'comprobantes_consulta_medica') {
-      return { oblig: [...oblig, 'Especialidad'], opc: [] };
+      return { oblig: [...oblig, 'Especialidad'], opc };
     }
     if (esCarpetaEstructuradaPdx({ nombre_display: tema }) && !esCarpetaConsultaMedicaPdx({ nombre_display: tema })) {
-      return { oblig: [...oblig, 'Número de documento (solo dígitos)', 'Tipo de examen'], opc: ['Tipo de documento (CC, TI, RC…)'] };
+      return { oblig: [...oblig, 'Número de documento (solo dígitos)', 'Tipo de examen'], opc: [...opc, 'Tipo de documento (CC, TI, RC…)'] };
     }
     if (tema === 'psg') {
-      return { oblig: [...oblig, 'Tipo PSG (Básica, CPAP, BPAP)'], opc: ['Documento'] };
+      return { oblig: [...oblig, 'Tipo PSG (Básica, CPAP, BPAP)'], opc: [...opc, 'Documento'] };
     }
     if (['vtm', 'eeg', 'actigrafia'].includes(tema)) {
-      return { oblig, opc: ['Estudio (se completa según la carpeta)'] };
+      return { oblig, opc: [...opc, 'Estudio (se completa según la carpeta)'] };
     }
-    return { oblig, opc: [] };
+    return { oblig, opc };
+  }
+
+  function camposFallbackUnificarPdx(tema) {
+    const base = [
+      { key: 'apellidos', label: 'Apellidos', requerido: true, input: 'text', estado: 'falta' },
+      { key: 'nombres', label: 'Nombres', requerido: true, input: 'text', estado: 'falta' },
+      { key: 'fecha_estudio', label: 'Fecha del estudio', requerido: true, input: 'date', estado: 'falta' }
+    ];
+    if (tema === 'ordenes_consulta_medica' || tema === 'comprobantes_consulta_medica') {
+      base.push({ key: 'estudio_texto', label: 'Especialidad', requerido: true, input: 'especialidad', estado: 'falta' });
+    } else if (esCarpetaEstructuradaPdx({ nombre_display: tema }) && !esCarpetaConsultaMedicaPdx({ nombre_display: tema })) {
+      base.push(
+        { key: 'tipo_documento', label: 'Tipo de documento', requerido: false, input: 'tipo_doc', estado: 'opc', defecto: 'CC' },
+        { key: 'paciente_documento', label: 'Número de documento', requerido: true, input: 'doc_numero', estado: 'falta' },
+        { key: 'estudio_texto', label: 'Tipo de examen', requerido: true, input: 'estudio', estado: 'falta' }
+      );
+    } else if (tema === 'psg') {
+      base.push(
+        { key: 'paciente_documento', label: 'Número de documento', requerido: true, input: 'doc_numero', estado: 'falta' },
+        { key: 'estudio_texto', label: 'Tipo de PSG', requerido: true, input: 'psg_estudio', estado: 'falta' }
+      );
+    }
+    return base;
   }
 
   function actualizarAyudaFormatoPdx() {
@@ -1901,12 +1924,7 @@
     if (inputUp) inputUp.disabled = dropDisabled;
     const hint = zone?.querySelector('.sop-dropzone-hint');
     if (hint) {
-      const t = detectarTemaCarpetaCliente(c?.nombre_display || '');
-      if (t === 'ordenes_consulta_medica') {
-        hint.textContent = 'Solo PDF. Un archivo: ORDEN + HC con nombre completo. Varios archivos: se unifican (p. ej. orden en un PDF y HC en otro).';
-      } else {
-        hint.textContent = 'Solo PDF. El sistema lee el nombre y solo pide los datos que falten. Varios archivos: revisión en lote.';
-      }
+      hint.textContent = 'Solo PDF. Un archivo: el sistema lee el nombre y pide lo que falte. Varios archivos (2 o más): ordénelos y se unifican en un solo PDF.';
     }
     sopIcons($('sopPdxVistaDetalle'));
     requestAnimationFrame(() => {
@@ -2258,26 +2276,30 @@
     return data;
   }
 
-  function flujoUnificarOrdenHcConsultaMedica(files, carpetaId) {
+  function flujoUnificarPdfsPdx(files, carpetaId) {
+    const carpeta = pdxState.carpetaActual || pdxState.carpetas.find((c) => c.id === carpetaId);
+    const tema = detectarTemaCarpetaCliente(carpeta?.nombre_display || '');
     const ordenados = [...files];
-    let parcial = { apellidos: '', nombres: '', fecha_estudio: '', estudio_texto: '' };
+    let analisis = { campos: [], parcial: {} };
     return preAnalizarArchivoPdx(carpetaId, ordenados[0].name)
-      .then((a) => { parcial = a.parcial || parcial; })
+      .then((a) => { analisis = a; })
       .catch(() => {})
       .then(() => new Promise((resolve, reject) => {
+        const campos = analisis.campos?.length
+          ? analisis.campos
+          : camposFallbackUnificarPdx(tema);
+        const camposHtml = campos.map((c) => htmlInputCampoPdx(c, analisis.parcial || {})).join('');
+        const tituloCarpeta = TEMA_LABEL[tema] || carpeta?.nombre_display || 'reporte';
         const modal = openSopModal(`
-          <h3><i data-lucide="layers"></i> Unificar ORDEN + HC (${ordenados.length} PDF)</h3>
-          <p style="font-size:.85rem;color:#64748b;margin:-6px 0 10px">Se combinarán en un solo archivo con nombre <strong>ORDEN + HC …</strong>. Ajuste el orden de los PDF y complete los datos del paciente:</p>
+          <h3><i data-lucide="layers"></i> Unificar PDF (${ordenados.length} archivos)</h3>
+          <p style="font-size:.85rem;color:#64748b;margin:-6px 0 10px">Se combinarán en un solo PDF para <strong>${escapeHtml(tituloCarpeta)}</strong>. Ordene las partes con las flechas y complete los datos del paciente:</p>
           <div class="sop-opf-progress" style="margin-bottom:12px">
             <div class="sop-opf-progress-head">
               <span class="sop-opf-progress-title">Orden de unión</span>
             </div>
             <ul class="sop-opf-partes-list" id="sopPdxUniOrdenList"></ul>
           </div>
-          <div class="sop-field"><label>Apellidos *</label><input type="text" class="sop-pdx-campo-input" data-key="apellidos" value="${escapeHtml(parcial.apellidos || '')}"></div>
-          <div class="sop-field"><label>Nombres *</label><input type="text" class="sop-pdx-campo-input" data-key="nombres" value="${escapeHtml(parcial.nombres || '')}"></div>
-          <div class="sop-field"><label>Fecha *</label><input type="date" class="sop-pdx-campo-input" data-key="fecha_estudio" value="${escapeHtml(parcial.fecha_estudio || '')}"></div>
-          <div class="sop-field"><label>Especialidad *</label><select class="sop-pdx-campo-input" data-key="estudio_texto" data-tipo="especialidad"></select></div>
+          <div class="sop-pdx-campos-form">${camposHtml}</div>
           <div class="sop-dialog-actions">
             <button type="button" class="sop-btn sop-btn-ghost" id="sopPdxUniCancel">Cancelar</button>
             <button type="button" class="sop-btn sop-btn-primary" id="sopPdxUniOk">Unificar y guardar</button>
@@ -2289,13 +2311,12 @@
           sopIcons(listEl);
         };
         refreshOrden();
-        poblarSelectEspecialidadPdx(modal.querySelector('[data-tipo="especialidad"]'), parcial.estudio_texto).then(() => sopIcons(modal));
+        poblarSelectsCamposPdx(modal, campos, analisis.parcial || {}).then(() => sopIcons(modal));
         modal.querySelector('#sopPdxUniCancel').onclick = () => { closeSopModal(modal); reject(new Error('cancelado')); };
         modal.querySelector('#sopPdxUniOk').onclick = async () => {
           const body = leerCamposDesdeModal(modal);
-          if (!body.apellidos || !body.nombres || !body.fecha_estudio || !body.estudio_texto) {
-            return sopToast('Complete apellidos, nombres, fecha y especialidad', 'warning');
-          }
+          const err = validarCamposModal(body, campos);
+          if (err) return sopToast(err, 'warning');
           try {
             const data = await subirArchivosUnificadosPdx(ordenados, carpetaId, body);
             closeSopModal(modal);
@@ -2617,15 +2638,11 @@
       return true;
     });
     if (!pdfs.length) return;
-    const carpeta = pdxState.carpetaActual || pdxState.carpetas.find((c) => c.id === carpetaId);
-    const tema = detectarTemaCarpetaCliente(carpeta?.nombre_display || '');
     try {
-      if (tema === 'ordenes_consulta_medica' && pdfs.length > 1) {
-        await flujoUnificarOrdenHcConsultaMedica(pdfs, carpetaId);
-      } else if (pdfs.length === 1) {
-        await flujoSubidaPdx(pdfs[0], carpetaId);
+      if (pdfs.length >= 2) {
+        await flujoUnificarPdfsPdx(pdfs, carpetaId);
       } else {
-        await modalSubidaLotePdx(pdfs, carpetaId);
+        await flujoSubidaPdx(pdfs[0], carpetaId);
       }
     } catch (e) {
       if (e.message !== 'cancelado') sopToast(e.message, 'error');
