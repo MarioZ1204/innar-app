@@ -12,7 +12,7 @@
     carpetaActual: null,
     archivos: [],
     periodoActual: null,
-    filtros: { texto: '', periodo: '', tema: '', orden: 'nombre_asc' }
+    filtros: { texto: '', periodo: '', tema: '', orden: 'periodo_desc' }
   };
 
   const ARM_DRAG_HOLD_MS = 300;
@@ -1615,6 +1615,15 @@
     </li>`;
   }
 
+  function ordenarArchivosPdxPorFecha(archivos) {
+    return [...(archivos || [])].sort((a, b) => {
+      const fa = String(a.fecha_estudio || '');
+      const fb = String(b.fecha_estudio || '');
+      if (fa !== fb) return fb.localeCompare(fa);
+      return compararTextoNatural(a.paciente_nombre, b.paciente_nombre);
+    });
+  }
+
   function pdxCarpetasFiltradas() {
     let list = [...pdxState.carpetas];
     const { texto, periodo, tema, orden } = pdxState.filtros;
@@ -1815,7 +1824,7 @@
     const res = await apiFetch(`/api/soportes/pdx/carpetas/${id}/archivos`);
     const data = await res.json();
     if (!res.ok) { sopToast(data.error || 'Error', 'error'); return; }
-    pdxState.archivos = data.archivos || [];
+    pdxState.archivos = ordenarArchivosPdxPorFecha(data.archivos || []);
     const c = data.carpeta;
     pdxState.carpetaActual = c;
     renderPdxBreadcrumbDetalle(c);

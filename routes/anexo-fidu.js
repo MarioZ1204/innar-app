@@ -8,7 +8,7 @@ const logger = require('../utils/logger');
 const { requireAuth, requirePermiso, safeError } = require('../middleware/index');
 const PERM_ANEXO_FIDU = 'modulo.anexo_fidu';
 const { upload, validateMagicBytes } = require('../middleware/upload');
-const { ANEXO_FIDU_COLUMNAS, ANEXO_FIDU_COLUMN_KEYS } = require('../utils/anexo-fidu-columns');
+const { ANEXO_FIDU_COLUMNAS, ANEXO_FIDU_COLUMN_KEYS, ANEXO_FIDU_REGISTROS_ORDER_SQL } = require('../utils/anexo-fidu-columns');
 const {
   calcularEdadDesdeFecha,
   formatFechaParaCelda
@@ -544,7 +544,7 @@ router.get('/anexo-fidu/registros', requireAuth, requirePermiso(PERM_ANEXO_FIDU)
     const total = countRow?.total || 0;
 
     const rows = await db.query(
-      `SELECT * FROM anexo_fidu_registros${where} ORDER BY id ASC LIMIT ? OFFSET ?`,
+      `SELECT * FROM anexo_fidu_registros${where} ORDER BY ${ANEXO_FIDU_REGISTROS_ORDER_SQL} LIMIT ? OFFSET ?`,
       [...params, limit, offset]
     );
 
@@ -855,7 +855,7 @@ router.get('/anexo-fidu/exportar', requireAuth, requirePermiso(PERM_ANEXO_FIDU),
     if (!meta) return res.status(404).json({ error: 'Anexo no encontrado' });
 
     const rows = await db.query(
-      'SELECT * FROM anexo_fidu_registros WHERE archivo_id = ? ORDER BY id ASC',
+      `SELECT * FROM anexo_fidu_registros WHERE archivo_id = ? ORDER BY ${ANEXO_FIDU_REGISTROS_ORDER_SQL}`,
       [archivoId]
     );
     const { buffer, filename } = await buildAnexoFiduExcelBuffer(rows, { nombreArchivo: meta.nombre });

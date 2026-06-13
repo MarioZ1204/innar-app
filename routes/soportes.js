@@ -172,18 +172,18 @@ async function queryPdxArchivosConUsuarios(carpetaId) {
        FROM sop_pdx_archivos a
        LEFT JOIN usuarios us ON us.id = a.subido_por
        LEFT JOIN usuarios ue ON ue.id = a.editado_por
-       WHERE a.carpeta_id = ? ORDER BY a.paciente_nombre ASC, a.id DESC`,
+       WHERE a.carpeta_id = ? ORDER BY a.fecha_estudio IS NULL, a.fecha_estudio DESC, a.paciente_nombre ASC, a.id DESC`,
       map: (rows) => rows
     },
     {
       sql: `SELECT a.*, us.nombre AS subido_por_nombre
        FROM sop_pdx_archivos a
        LEFT JOIN usuarios us ON us.id = a.subido_por
-       WHERE a.carpeta_id = ? ORDER BY a.paciente_nombre ASC, a.id DESC`,
+       WHERE a.carpeta_id = ? ORDER BY a.fecha_estudio IS NULL, a.fecha_estudio DESC, a.paciente_nombre ASC, a.id DESC`,
       map: (rows) => rows.map((r) => ({ ...r, editado_por_nombre: null }))
     },
     {
-      sql: 'SELECT a.* FROM sop_pdx_archivos a WHERE a.carpeta_id = ? ORDER BY a.id DESC',
+      sql: 'SELECT a.* FROM sop_pdx_archivos a WHERE a.carpeta_id = ? ORDER BY a.fecha_estudio IS NULL, a.fecha_estudio DESC, a.id DESC',
       map: (rows) => rows.map((r) => ({ ...r, subido_por_nombre: null, editado_por_nombre: null }))
     }
   ];
