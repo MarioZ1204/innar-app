@@ -29,6 +29,7 @@
   <link rel="stylesheet" href="innar-electro-calendario.css">
   <link rel="stylesheet" href="innar-backup.css">
   <link rel="stylesheet" href="innar-documentos-cita.css">
+  <link rel="stylesheet" href="innar-persona-fidu.css">
   <link rel="stylesheet" href="innar-anexo-fidu.css">
   <link rel="stylesheet" href="innar-responsive-mobile-fix.css">
   <style>
@@ -4115,14 +4116,6 @@
       </div>
     </div>
   </div>
-  <style>
-    .pfidu-form-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px 12px; }
-    .pfidu-form-field label { display:block; font-size:.75rem; font-weight:600; color:#6b7280; margin-bottom:4px; }
-    .pfidu-form-field input, .pfidu-form-field textarea { width:100%; padding:8px 10px; border:1px solid #d1d5db; border-radius:6px; font-size:.88rem; box-sizing:border-box; }
-    .pfidu-form-field textarea { min-height:52px; resize:vertical; }
-    .pfidu-form-field:has(textarea), .pfidu-form-field:has(#pfidu-numero_documento) { grid-column:1 / -1; }
-    @media (max-width:520px) { .pfidu-form-grid { grid-template-columns:1fr; } }
-  </style>
 
   <!-- ========== MODAL GENERAR DOCUMENTO (módulo documentos-cita) ========== -->
   <div id="modalDocumentosCita" class="modal hidden" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(15,23,42,0.55);align-items:center;justify-content:center;z-index:10055;padding:16px">
@@ -4167,7 +4160,7 @@
               </div>
               <div class="docmod-field">
                 <label for="docmodModalCertFechaIngreso">Fecha ingreso *</label>
-                <input type="date" id="docmodModalCertFechaIngreso" />
+                <input type="text" class="innar-fecha-input" id="docmodModalCertFechaIngreso" placeholder="AAAA-MM-DD" autocomplete="off" />
               </div>
               <div class="docmod-field">
                 <label for="docmodModalCertHoraIngreso">Hora ingreso *</label>
@@ -4175,7 +4168,7 @@
               </div>
               <div class="docmod-field">
                 <label for="docmodModalCertFechaEgreso">Fecha egreso *</label>
-                <input type="date" id="docmodModalCertFechaEgreso" />
+                <input type="text" class="innar-fecha-input" id="docmodModalCertFechaEgreso" placeholder="AAAA-MM-DD" autocomplete="off" />
               </div>
               <div class="docmod-field">
                 <label for="docmodModalCertHoraEgreso">Hora egreso *</label>
@@ -4197,7 +4190,7 @@
           <div class="docmod-modal-grid">
             <div class="docmod-field">
               <label for="docmodModalCompFecha">Fecha *</label>
-              <input type="date" id="docmodModalCompFecha" />
+              <input type="text" class="innar-fecha-input" id="docmodModalCompFecha" placeholder="AAAA-MM-DD" autocomplete="off" />
             </div>
             <div class="docmod-field docmod-span-2">
               <label for="docmodModalCompNombre">Yo *</label>
@@ -4217,7 +4210,7 @@
             </div>
             <div class="docmod-field">
               <label for="docmodModalCompFechaNac">Fecha de nacimiento *</label>
-              <input type="date" id="docmodModalCompFechaNac" />
+              <input type="text" class="innar-fecha-input" id="docmodModalCompFechaNac" placeholder="AAAA-MM-DD" autocomplete="off" />
             </div>
             <div class="docmod-field">
               <label for="docmodModalCompAfiliacion">Tipo de afiliación *</label>
@@ -4291,7 +4284,7 @@
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
           <div>
             <label style="display:block;font-size:.8rem;font-weight:600;color:#6b7280;margin-bottom:4px">Fecha ingreso *</label>
-            <input id="certAsistFechaIngreso" type="date" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:.9rem" />
+            <input id="certAsistFechaIngreso" type="text" class="innar-fecha-input" placeholder="AAAA-MM-DD" autocomplete="off" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:.9rem" />
           </div>
           <div>
             <label style="display:block;font-size:.8rem;font-weight:600;color:#6b7280;margin-bottom:4px">Hora ingreso *</label>
@@ -4301,7 +4294,7 @@
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
           <div>
             <label style="display:block;font-size:.8rem;font-weight:600;color:#6b7280;margin-bottom:4px">Fecha egreso *</label>
-            <input id="certAsistFechaEgreso" type="date" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:.9rem" />
+            <input id="certAsistFechaEgreso" type="text" class="innar-fecha-input" placeholder="AAAA-MM-DD" autocomplete="off" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:.9rem" />
           </div>
           <div>
             <label style="display:block;font-size:.8rem;font-weight:600;color:#6b7280;margin-bottom:4px">Hora egreso *</label>
@@ -4348,7 +4341,7 @@
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
           <div>
             <label style="display:block;font-size:.8rem;font-weight:600;color:#6b7280;margin-bottom:4px">Fecha *</label>
-            <input id="compServFecha" type="date" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:.9rem" />
+            <input id="compServFecha" type="text" class="innar-fecha-input" placeholder="AAAA-MM-DD" autocomplete="off" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:.9rem" />
           </div>
           <div>
             <label style="display:block;font-size:.8rem;font-weight:600;color:#6b7280;margin-bottom:4px">Tipo documento</label>
@@ -4366,7 +4359,7 @@
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
           <div>
             <label style="display:block;font-size:.8rem;font-weight:600;color:#6b7280;margin-bottom:4px">Fecha de nacimiento *</label>
-            <input id="compServFechaNac" type="date" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:.9rem" />
+            <input id="compServFechaNac" type="text" class="innar-fecha-input" placeholder="AAAA-MM-DD" autocomplete="off" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:.9rem" />
           </div>
           <div>
             <label style="display:block;font-size:.8rem;font-weight:600;color:#6b7280;margin-bottom:4px">Tipo de afiliación *</label>

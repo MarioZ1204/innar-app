@@ -566,7 +566,7 @@
     const v = valor || '';
     const ro = f.key === 'numero_documento' ? ' readonly' : '';
     if (f.key === 'fecha_nacimiento') {
-      return `<input type="text" id="afidu-p-${f.key}" data-key="${f.key}" value="${escapeHtml(v)}" placeholder="AAAA-MM-DD" autocomplete="off" />`;
+      return `<input type="text" class="innar-fecha-input" id="afidu-p-${f.key}" data-key="${f.key}" value="${escapeHtml(v)}" placeholder="AAAA-MM-DD" autocomplete="off" />`;
     }
     if (f.key === 'afiliacion') {
       const opts = AFILIACION_OPCIONES.map((o) =>
@@ -1476,18 +1476,21 @@
     const mount = $('afiduPersonaFormMount');
     const persona = { numero_documento: doc, ...(opts.persona || {}) };
     if (window.innarPersonaFidu && mount) {
+      mount.classList.remove('afidu-panel-form--legacy');
       window.innarPersonaFidu.renderFormulario(mount, {
         persona,
         camposFaltantes: opts.campos_faltantes,
         modoCompleto: opts.modoCompleto ?? !parcial
       });
     } else if (mount) {
+      mount.classList.add('afidu-panel-form--legacy');
       let html = '';
       PERSONA_FORM.forEach((f) => {
         const v = persona[f.key] != null ? String(persona[f.key]) : (f.key === 'numero_documento' ? doc : '');
         html += `<div><label>${escapeHtml(f.label)}</label>${htmlCampoPersonaForm(f, v)}</div>`;
       });
       mount.innerHTML = html;
+      window.innarPersonaFidu?.bindFechaInputs?.(mount);
       const fn = $('afidu-p-fecha_nacimiento');
       const tipo = $('afidu-p-tipo_documento');
       const syncTipo = () => {

@@ -13830,6 +13830,7 @@ function abrirModalCertificadoAsistencia(prefill) {
   set('certAsistFuncionarioNombre', prefill.funcionario_nombre);
   set('certAsistFuncionarioCargo', prefill.funcionario_cargo);
   const modal = $('modalCertificadoAsistencia');
+  window.innarPersonaFidu?.bindFechaInputs?.(modal);
   if (modal) {
     modal.classList.remove('hidden');
     modal.style.display = 'flex';
@@ -13861,9 +13862,9 @@ async function generarCertificadoAsistenciaPdf() {
     paciente_documento: $('certAsistDocumento')?.value?.trim(),
     tipo_documento: $('certAsistTipoDoc')?.value || 'CC',
     motivo: $('certAsistMotivo')?.value?.trim(),
-    fecha_ingreso: $('certAsistFechaIngreso')?.value,
+    fecha_ingreso: window.innarPersonaFidu?.normalizarFecha?.($('certAsistFechaIngreso')?.value) || $('certAsistFechaIngreso')?.value,
     hora_ingreso: $('certAsistHoraIngreso')?.value,
-    fecha_egreso: $('certAsistFechaEgreso')?.value,
+    fecha_egreso: window.innarPersonaFidu?.normalizarFecha?.($('certAsistFechaEgreso')?.value) || $('certAsistFechaEgreso')?.value,
     hora_egreso: $('certAsistHoraEgreso')?.value,
     funcionario_nombre: $('certAsistFuncionarioNombre')?.value?.trim(),
     funcionario_cargo: $('certAsistFuncionarioCargo')?.value?.trim()
@@ -14217,6 +14218,7 @@ function abrirModalComprobanteServicios(prefill) {
   const inpFirmaPac = $('compServFirmaPaciente');
   if (inpFirmaPac) inpFirmaPac.value = '';
   const modal = $('modalComprobanteServicios');
+  window.innarPersonaFidu?.bindFechaInputs?.(modal);
   if (modal) {
     modal.classList.remove('hidden');
     modal.style.display = 'flex';
@@ -14244,11 +14246,11 @@ async function generarComprobanteServiciosPdf() {
   }
   const payload = {
     origen,
-    fecha: $('compServFecha')?.value,
+    fecha: window.innarPersonaFidu?.normalizarFecha?.($('compServFecha')?.value) || $('compServFecha')?.value,
     paciente_nombre: _compServPacienteNombre,
     tipo_documento: $('compServTipoDoc')?.value || 'CC',
     paciente_documento: $('compServDocumento')?.value?.trim(),
-    fecha_nacimiento: $('compServFechaNac')?.value,
+    fecha_nacimiento: window.innarPersonaFidu?.normalizarFecha?.($('compServFechaNac')?.value) || $('compServFechaNac')?.value,
     direccion: $('compServDireccion')?.value?.trim(),
     telefono: $('compServTelefono')?.value?.trim(),
     correo: $('compServCorreo')?.value?.trim(),

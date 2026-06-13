@@ -276,6 +276,7 @@
     } else {
       llenarModalComprobante(datos, extras);
     }
+    window.innarPersonaFidu?.bindFechaInputs?.($('modalDocumentosCita'));
     abrirModal();
   }
 
@@ -356,6 +357,10 @@
     return null;
   }
 
+  function normFecha(val) {
+    return window.innarPersonaFidu?.normalizarFecha?.(val) || String(val || '').trim();
+  }
+
   function buildCertificadoPayload() {
     return {
       origen: state.origen,
@@ -363,9 +368,9 @@
       paciente_documento: $('docmodModalCertDocumento')?.value?.trim(),
       tipo_documento: leerTipoIdRadio('docmodModalCertTipoId'),
       motivo: $('docmodModalCertMotivo')?.value?.trim(),
-      fecha_ingreso: $('docmodModalCertFechaIngreso')?.value,
+      fecha_ingreso: normFecha($('docmodModalCertFechaIngreso')?.value),
       hora_ingreso: $('docmodModalCertHoraIngreso')?.value,
-      fecha_egreso: $('docmodModalCertFechaEgreso')?.value,
+      fecha_egreso: normFecha($('docmodModalCertFechaEgreso')?.value),
       hora_egreso: $('docmodModalCertHoraEgreso')?.value,
       funcionario_nombre: $('docmodModalCertFuncionario')?.value?.trim(),
       funcionario_cargo: $('docmodModalCertCargo')?.value?.trim()
@@ -387,11 +392,11 @@
     if (filePac) firmaPacienteDataUrl = await readFileAsDataUrl(filePac);
     return {
       origen: state.origen,
-      fecha: $('docmodModalCompFecha')?.value,
+      fecha: normFecha($('docmodModalCompFecha')?.value),
       paciente_nombre: $('docmodModalCompNombre')?.value?.trim(),
       tipo_documento: leerTipoIdRadio('docmodModalCompTipoId'),
       paciente_documento: $('docmodModalCompDocumento')?.value?.trim(),
-      fecha_nacimiento: $('docmodModalCompFechaNac')?.value,
+      fecha_nacimiento: normFecha($('docmodModalCompFechaNac')?.value),
       direccion: $('docmodModalCompDireccion')?.value?.trim(),
       telefono: $('docmodModalCompTelefono')?.value?.trim(),
       correo: $('docmodModalCompCorreo')?.value?.trim(),

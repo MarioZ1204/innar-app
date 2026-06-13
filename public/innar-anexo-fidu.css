@@ -330,14 +330,20 @@
   display: none;
 }
 
+/* Contenedor del formulario PFidu (grid interno en .pfidu-form-grid) */
 #view-anexo-fidu .afidu-panel-form {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 8px 12px;
+  display: block;
   margin: 10px 0;
 }
 
-#view-anexo-fidu .afidu-panel-form label {
+/* Fallback legacy: campos sueltos sin PFidu compartido */
+#view-anexo-fidu .afidu-panel-form.afidu-panel-form--legacy {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px 12px;
+}
+
+#view-anexo-fidu .afidu-panel-form.afidu-panel-form--legacy label {
   display: block;
   font-size: 0.68rem;
   font-weight: 600;
@@ -345,13 +351,15 @@
   margin-bottom: 2px;
 }
 
-#view-anexo-fidu .afidu-panel-form input,
-#view-anexo-fidu .afidu-panel-form textarea {
+#view-anexo-fidu .afidu-panel-form.afidu-panel-form--legacy input,
+#view-anexo-fidu .afidu-panel-form.afidu-panel-form--legacy textarea,
+#view-anexo-fidu .afidu-panel-form.afidu-panel-form--legacy select {
   width: 100%;
   font-size: 0.8rem;
   padding: 5px 7px;
   border: 1px solid #d1d5db;
   border-radius: 6px;
+  box-sizing: border-box;
 }
 
 #view-anexo-fidu .afidu-panel-actions {

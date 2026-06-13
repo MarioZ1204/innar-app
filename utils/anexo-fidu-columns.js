@@ -82,13 +82,8 @@ function buildAnexoFiduCreateTableSql() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`;
 }
 
-/** Orden por defecto de filas del anexo: fecha de autorización (más reciente primero). */
-const ANEXO_FIDU_REGISTROS_ORDER_SQL = `
-  (fecha_autorizacion_hora IS NULL OR TRIM(fecha_autorizacion_hora) = '') ASC,
-  fecha_autorizacion_hora DESC,
-  (fecha_inicio IS NULL OR TRIM(fecha_inicio) = '') ASC,
-  fecha_inicio DESC,
-  id DESC`;
+/** Orden por defecto de filas del anexo: orden de inserción (primero añadido arriba). */
+const ANEXO_FIDU_REGISTROS_ORDER_SQL = 'id ASC';
 
 module.exports = {
   ANEXO_FIDU_COLUMNAS,

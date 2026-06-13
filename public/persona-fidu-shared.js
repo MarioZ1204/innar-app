@@ -56,7 +56,7 @@
   function htmlCampo(f, val, readonly) {
     const ro = readonly ? ' readonly style="opacity:.75"' : '';
     if (f.key === 'fecha_nacimiento') {
-      return `<input type="date" id="pfidu-${f.key}" data-key="${f.key}" value="${escapeHtml(val)}"${ro} />`;
+      return `<input type="text" class="innar-fecha-input" id="pfidu-${f.key}" data-key="${f.key}" value="${escapeHtml(val)}" placeholder="AAAA-MM-DD" autocomplete="off"${ro} />`;
     }
     if (f.long) {
       return `<textarea id="pfidu-${f.key}" data-key="${f.key}"${ro}>${escapeHtml(val)}</textarea>`;
@@ -88,6 +88,21 @@
     html += '</div>';
     container.innerHTML = html;
     bindFechaTipoDocumento(container);
+    bindFechaInputs(container);
+  }
+
+  function bindFechaInputs(root = document) {
+    const scope = root && root.querySelectorAll ? root : document;
+    scope.querySelectorAll('.innar-fecha-input').forEach((el) => {
+      if (el.dataset.innarFechaBound) return;
+      el.dataset.innarFechaBound = '1';
+      const norm = () => {
+        const n = normalizarFecha(el.value);
+        if (n && n !== el.value) el.value = n;
+      };
+      el.addEventListener('blur', norm);
+      el.addEventListener('change', norm);
+    });
   }
 
   function bindFechaTipoDocumento(root) {
@@ -191,9 +206,19 @@
     return guardarPersona(personaDesdeCertificadoModal(modal), contexto || 'certificado');
   }
 
+  function initFechaInputsGlobal() {
+    bindFechaInputs(document);
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initFechaInputsGlobal);
+  } else {
+    initFechaInputsGlobal();
+  }
+
   window.innarPersonaFidu = {
     PERSONA_FORM,
     normalizarFecha,
+    bindFechaInputs,
     calcularTipoDocumento,
     renderFormulario,
     leerFormulario,

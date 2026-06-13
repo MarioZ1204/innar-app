@@ -1,0 +1,52 @@
+/* Formulario compartido paciente FOMAG (anexo, certificados, comprobantes) */
+.pfidu-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 12px;
+}
+
+.pfidu-form-field label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #6b7280;
+  margin-bottom: 4px;
+}
+
+.pfidu-form-field input,
+.pfidu-form-field textarea,
+.pfidu-form-field select {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 0.88rem;
+  box-sizing: border-box;
+  background: #fff;
+}
+
+.pfidu-form-field textarea {
+  min-height: 52px;
+  resize: vertical;
+}
+
+.pfidu-form-field:has(textarea),
+.pfidu-form-field:has(#pfidu-numero_documento) {
+  grid-column: 1 / -1;
+}
+
+/* Fecha escribible (AAAA-MM-DD o DD/MM/AAAA) */
+input.innar-fecha-input {
+  font-family: inherit;
+}
+
+input.innar-fecha-input::placeholder {
+  color: #9ca3af;
+  font-size: 0.85em;
+}
+
+@media (max-width: 520px) {
+  .pfidu-form-grid {
+    grid-template-columns: 1fr;
+  }
+}
