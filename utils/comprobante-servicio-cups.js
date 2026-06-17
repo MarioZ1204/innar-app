@@ -118,6 +118,27 @@ function buscarCupsPorPalabrasClave(norm) {
   return mejorPuntaje >= 2 ? mejor : null;
 }
 
+function normCodigoCups(val) {
+  const raw = String(val || '').replace(/\D/g, '');
+  if (!raw) return '';
+  return raw.length >= 6 ? raw : raw.padStart(6, '0');
+}
+
+/**
+ * Texto final del servicio en el comprobante: resuelve CUPS, mapea consultas/estudios y conserva texto libre.
+ */
+function textoServicioComprobante(servicioInterno) {
+  const raw = String(servicioInterno || '').trim();
+  if (!raw) return '';
+  const soloCodigo = !/[a-zA-ZáéíóúñÁÉÍÓÚÑ]/.test(raw);
+  if (soloCodigo) {
+    const porCodigo = nombreDesdeCodigoCups(normCodigoCups(raw));
+    if (porCodigo) return porCodigo;
+  }
+  const mapped = nombreServicioComprobanteCups(raw);
+  return (mapped && mapped.trim()) ? mapped : raw;
+}
+
 /**
  * Convierte el nombre interno del sistema al texto CUPS para el comprobante FOMAG.
  */
@@ -147,6 +168,8 @@ function nombreServicioComprobanteCups(servicioInterno) {
 
 module.exports = {
   nombreServicioComprobanteCups,
+  textoServicioComprobante,
+  normCodigoCups,
   normTexto,
   formatoTituloCups,
   restaurarAcentosCups

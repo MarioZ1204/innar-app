@@ -165,11 +165,19 @@
     init('docmodModalCompServicio');
   }
 
+  function leerValor(inputId) {
+    const input = document.getElementById(inputId);
+    if (!input) return '';
+    resolverCodigoEnInput(input);
+    return String(input.value || '').trim();
+  }
+
   root.innarServicioCombo = {
     init,
     initAll,
     cargarCatalogo,
-    buscarPorCodigo
+    buscarPorCodigo,
+    leerValor
   };
 
   if (document.readyState === 'loading') {

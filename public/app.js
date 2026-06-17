@@ -7311,6 +7311,7 @@ async function initElectro() {
   $('cerrarModalDetallesCita')?.addEventListener('click', cerrarModalDetallesCita);
   $('btnCancelarModal')?.addEventListener('click', cerrarModalDetallesCita);
   $('btnGuardarCambios')?.addEventListener('click', guardarCambiosCitaElectro);
+  bindReprogramarElectroDesdeModalAgenda();
   $('btnGuardarDuracionModal')?.addEventListener('click', guardarDuracionCitaElectro);
   $('btnIniciarEstudio')?.addEventListener('click', iniciarEstudioModal);
   $('btnFinalizarEstudio')?.addEventListener('click', finalizarEstudioModal);
@@ -13409,6 +13410,9 @@ async function guardarCambiosCitaElectro() {
     if (horaNueva && horaNueva !== horaActual) {
       cambios.hora_agendamiento = horaNueva;
     }
+    if ((cambios.fecha || cambios.hora_agendamiento) && puedeReprogramarCitaElectro(citaElectroSeleccionada)) {
+      cambios.estado = 'Reprogramado';
+    }
     if ((cambios.fecha || cambios.hora_agendamiento) && (!fechaNueva || !horaNueva)) {
       showToast('Indique fecha y hora agendada válidas', 'error');
       return;
@@ -13457,6 +13461,103 @@ async function guardarCambiosCitaElectro() {
 }
 
 // ========== FUNCIONES PARA REPROGRAMAR Y ADELANTAR CITAS ==========
+
+function puedeReprogramarCitaElectro(cita) {
+  const est = normalizarEstadoElectro(cita?.estado || '');
+  return !['En Estudio', 'Pausado', 'Completado', 'Cancelado', 'No Asistió'].includes(est);
+}
+
+function bindReprogramarElectroDesdeModalAgenda() {
+  const fechaEl = $('modalFechaAgenda');
+  const horaEl = $('modalHoraAgenda');
+  if (fechaEl && !fechaEl.dataset.reprogBound) {
+    fechaEl.dataset.reprogBound = '1';
+    fechaEl.addEventListener('change', () => reprogramarCitaElectroDesdeModalAgenda());
+  }
+  if (horaEl && !horaEl.dataset.reprogBound) {
+    horaEl.dataset.reprogBound = '1';
+    horaEl.addEventListener('change', () => reprogramarCitaElectroDesdeModalAgenda());
+  }
+}
+
+async function reprogramarCitaElectroDesdeModalAgenda() {
+  if (!citaElectroSeleccionada || isInitializingElectroModal) return;
+  if (!tienePermiso('electro.editar')) return;
+  if (!puedeReprogramarCitaElectro(citaElectroSeleccionada)) {
+    showToast('No se puede reprogramar la cita en este estado', 'error');
+    const $fechaEl = $('modalFechaAgenda');
+    const $horaEl = $('modalHoraAgenda');
+    if ($fechaEl) $fechaEl.value = formatearFechaISO(citaElectroSeleccionada.fecha);
+    if ($horaEl) {
+      const h = citaElectroSeleccionada.hora_agendamiento ? String(citaElectroSeleccionada.hora_agendamiento).trim() : '';
+      $horaEl.value = /^\d{2}:\d{2}/.test(h) ? h.slice(0, 5) : h;
+    }
+    return;
+  }
+
+  const fechaNueva = ($('modalFechaAgenda')?.value || '').trim();
+  const horaNueva = ($('modalHoraAgenda')?.value || '').trim().slice(0, 5);
+  const fechaActual = formatearFechaISO(citaElectroSeleccionada.fecha);
+  const horaActual = citaElectroSeleccionada.hora_agendamiento
+    ? String(citaElectroSeleccionada.hora_agendamiento).trim().slice(0, 5)
+    : '';
+
+  if (!fechaNueva || !horaNueva) {
+    showToast('Indique fecha y hora agendada válidas', 'error');
+    return;
+  }
+  if (fechaNueva === fechaActual && horaNueva === horaActual) return;
+
+  const cambios = {
+    estado: 'Reprogramado',
+    fecha: fechaNueva,
+    hora_agendamiento: horaNueva
+  };
+
+  try {
+    const res = await apiFetch(`/api/citas-electro/${citaElectroSeleccionada.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(cambios)
+    });
+    const data = await res.json();
+    if (!data?.ok) throw new Error(data?.error || 'Error reprogramando cita');
+
+    citaElectroSeleccionada.estado = 'Reprogramado';
+    citaElectroSeleccionada.fecha = fechaNueva;
+    citaElectroSeleccionada.hora_agendamiento = horaNueva;
+
+    const movioDia = $('electroFecha')?.value && fechaNueva !== $('electroFecha').value;
+    showToast(
+      movioDia ? `Cita reprogramada al ${formatearFecha(fechaNueva)}` : 'Cita reprogramada',
+      'success'
+    );
+
+    if (window.socket && window.socket.connected) {
+      window.socket.emit('electro:cambios-guardados', {
+        id: citaElectroSeleccionada.id,
+        cambios
+      });
+    }
+
+    if (movioDia && $('electroFecha')) {
+      $('electroFecha').value = fechaNueva;
+      $('electroFecha').dispatchEvent(new Event('change'));
+    } else {
+      cargarCitasElectro();
+    }
+
+    const $badgeEl = document.getElementById('modalEstadoHeaderBadge');
+    if ($badgeEl) $badgeEl.innerHTML = estadoBadge('Reprogramado');
+    renderFlujoEstado(citaElectroSeleccionada);
+  } catch (e) {
+    showToast(e.message || 'Error reprogramando cita', 'error');
+    const $fechaEl = $('modalFechaAgenda');
+    const $horaEl = $('modalHoraAgenda');
+    if ($fechaEl) $fechaEl.value = fechaActual;
+    if ($horaEl) $horaEl.value = horaActual;
+  }
+}
 
 function abrirModalReprogramar() {
   if (!citaElectroSeleccionada) {
@@ -14283,7 +14384,8 @@ async function generarComprobanteServiciosPdf() {
     telefono: $('compServTelefono')?.value?.trim(),
     correo: $('compServCorreo')?.value?.trim(),
     tipo_afiliacion: $('compServTipoAfiliacion')?.value?.trim(),
-    servicio: $('compServServicio')?.value?.trim(),
+    servicio: window.innarServicioCombo?.leerValor?.('compServServicio')
+      || $('compServServicio')?.value?.trim(),
     firma_paciente: _compServFirmaPacienteDataUrl
   };
   if ($('compServMostrarAcudiente')?.checked) {

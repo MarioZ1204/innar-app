@@ -1,7 +1,7 @@
 'use strict';
 
 const { FONDO_PRINT_CSS, buildPageFondoImg } = require('./documento-imprimible');
-const { nombreServicioComprobanteCups } = require('./comprobante-servicio-cups');
+const { nombreServicioComprobanteCups, textoServicioComprobante } = require('./comprobante-servicio-cups');
 
 const COMPROBANTE_SERVICIOS_TITULO =
   'FORMATO DE FIRMA DE PACIENTE COMO COMPROBANTE DE RECIBIDO EL SERVICIO - PACIENTE DE FOMAG';
@@ -127,7 +127,7 @@ function validarPayloadComprobanteServicios(body = {}) {
   const telefono = String(body.telefono || '').trim();
   const correo = String(body.correo || '').trim();
   const tipoAfiliacion = String(body.tipo_afiliacion || '').trim();
-  const servicio = nombreServicioComprobanteCups(String(body.servicio || '').trim());
+  const servicio = textoServicioComprobante(String(body.servicio || '').trim());
   const firmaPaciente = parseImagenBase64(body.firma_paciente);
 
   if (!parseFechaYmd(fecha)) return { error: 'Fecha inválida' };
@@ -312,18 +312,15 @@ function buildComprobanteServiciosHtml(data, fondo = {}) {
       font-size: 10pt;
       padding: 0 2mm;
     }
-    .cmp-servicio {
-      position: absolute;
-      left: ${L.bodySide}mm;
-      right: ${L.bodySide}mm;
-      top: ${L.servicioTop}mm;
-      z-index: 2;
+    .cmp-servicio-inline {
+      margin: 6mm 0 0;
       text-align: center;
       font-size: 11pt;
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0.02em;
-      line-height: 1.15;
+      line-height: 1.25;
+      color: #1a1a1a;
       padding: 0 4mm;
     }
     .cmp-firma-label {
@@ -534,9 +531,8 @@ function buildComprobanteServiciosHtml(data, fondo = {}) {
         <span class="cmp-valor">${escapeHtml(data.tipo_afiliacion)}</span>
       </div>
       <p class="cmp-fomag">${escapeHtml(COMPROBANTE_SERVICIOS_FOMAG_TEXTO)}</p>
+      <p class="cmp-servicio-inline">${escapeHtml(data.servicio)}</p>
     </div>
-
-    <div class="cmp-servicio">${escapeHtml(data.servicio)}</div>
     <div class="cmp-firma-label">FIRMA DEL PACIENTE:</div>
     ${lineaFirmaCoverHtml}
     <div class="cmp-linea-firma-punteada" aria-hidden="true"></div>

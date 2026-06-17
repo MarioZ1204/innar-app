@@ -1,0 +1,78 @@
+  function timelineBarClass(seg) {
+    const k = seg.bar_kind || 'otro';
+    if (k === 'pasado') return 'meq-bar-pasado';
+    if (k === 'activo') return 'meq-bar-activo';
+    if (k === 'futuro') return 'meq-bar-futuro';
+    return 'meq-bar-otro';
+  }
+
+  const now = new Date();
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+  const nowPct = (nowMin / 1440) * 100;
+  const hourTicks = [0, 3, 6, 9, 12, 15, 18, 21, 24];
+
+  let html = '<div class="meq-timeline-wrap">';
+  html += '<div class="meq-timeline-legend">';
+  html += '<span class="meq-leg-item"><i class="meq-leg-swatch meq-bar-pasado"></i> Completados</span>';
+  html += '<span class="meq-leg-item"><i class="meq-leg-swatch meq-bar-activo"></i> En estudio</span>';
+  html += '<span class="meq-leg-item"><i class="meq-leg-swatch meq-bar-futuro"></i> Programados</span>';
+  if (esHoy) html += '<span class="meq-leg-item meq-leg-now"><i class="meq-leg-now-line"></i> Ahora</span>';
+  html += '</div>';
+
+  html += '<div class="meq-timeline-head">';
+  html += '<div class="meq-timeline-eq-col">Equipo</div>';
+  html += '<div class="meq-timeline-hours">';
+  hourTicks.forEach(function(h) {
+    const pct = (h / 24) * 100;
+    const lbl = h === 24 ? '24' : String(h).padStart(2, '0') + ':00';
+    html += '<span class="meq-hour-tick" style="left:' + pct + '%">' + lbl + '</span>';
+  });
+  html += '</div></div>';
+
+  html += '<div class="meq-timeline-body">';
+  equipos.forEach(function(eq) {
+    const timeline = eq.estudios_timeline || [];
+    const tieneActivo = timeline.some(function(s) { return s.bar_kind === 'activo'; });
+    const tieneAlgo = timeline.length > 0;
+
+    if (!eq.activo) {
+      inactivos++;
+      html += '<div class="meq-timeline-row meq-inactivo">';
+      html += '<div class="meq-timeline-eq-col"><div class="meq-eq-icon">' + getEquipIcon(eq.nombre) + '</div><span>' + escapeHtml(eq.nombre) + '</span></div>';
+      html += '<div class="meq-timeline-track meq-track-inactivo"><span class="meq-inactivo-cell">Desactivado</span></div>';
+      html += '</div>';
+      return;
+    }
+
+    activos++;
+    if (tieneActivo) ocupados++;
+    else if (!tieneAlgo) libres++;
+
+    const stClass = tieneActivo ? 'meq-st-ocupado' : (tieneAlgo ? 'meq-st-completado' : 'meq-st-libre');
+    html += '<div class="meq-timeline-row ' + stClass + '">';
+    html += '<motion class="meq-timeline-eq-col"><div class="meq-eq-icon">' + getEquipIcon(eq.nombre) + '</div><div class="meq-eq-name">';
+    html += '<span>' + escapeHtml(eq.nombre) + '</span>';
+    if (eq.descripcion) html += '<small>' + escapeHtml(eq.descripcion) + '</small>';
+    html += '</div></div>';
+
+    html += '<div class="meq-timeline-track">';
+    for (var t = 0; t < 25; t++) {
+      html += '<span class="meq-grid-line" style="left:' + ((t / 24) * 100) + '%"></span>';
+    }
+    if (esHoy) {
+      html += '<span class="meq-now-line" style="left:' + nowPct + '%" title="Ahora"></span>';
+    }
+    timeline.forEach(function(seg) {
+      const w = Math.max(seg.width_pct || 0, 0.8);
+      const tip = (seg.estudio || 'Estudio') + ' \u2014 ' + (seg.paciente_nombre || '') +
+        ' (' + formatearHora(seg.hora_inicio || '') + '\u2013' + formatearHora(seg.hora_fin || '') + ')';
+      const label = (seg.hora_inicio || '') + ' ' + (seg.estudio || '');
+      html += '<div class="meq-timeline-bar ' + timelineBarClass(seg) + '" style="left:' + (seg.left_pct || 0) + '%;width:' + w + '%" title="' + escapeHtml(tip) + '">';
+      if (w >= 4) html += '<span class="meq-bar-label">' + escapeHtml(label.length > 28 ? label.slice(0, 26) + '\u2026' : label) + '</span>';
+      html += '</div>';
+    });
+    if (!tieneAlgo) html += '<span class="meq-track-empty">Sin estudios</span>';
+    html += '</div></motion>';
+  });
+  html += '</div></div>';
+  grid.innerHTML = html;
