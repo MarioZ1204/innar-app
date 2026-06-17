@@ -56,6 +56,7 @@ const {
   parseFeCodigo,
   ordenarExpedientesFeLista
 } = require('../utils/soportes-armado-structure');
+const { compararTextoNatural, ordenarPorTextoNatural } = require('../utils/comparar-texto-natural');
 const {
   normalizarParentId: normalizarParentIdDia,
   validarMoverDiaArmado
@@ -498,6 +499,7 @@ router.get('/soportes/pdx/carpetas', requireAuth, requireRoleOrPerm(ROLES_SOPORT
       .filter((r) => usuarioVeCarpetaPdx(req, r))
       .map(mapCarpetaPdx)
       .filter((c) => c.estado_visibilidad !== 'archivo' || incluirArchivo);
+    ordenarPorTextoNatural(lista, 'nombre_display');
     res.json({ periodo_actual: hoyPeriodo, carpetas: lista });
   } catch (e) {
     logger.error('[SOPORTES] pdx carpetas:', e);
@@ -1649,7 +1651,13 @@ router.get('/soportes/armado/periodos/:id/dias', requireAuth, requireRoleOrPerm(
        GROUP BY d.id ORDER BY d.orden ASC, d.nombre_display ASC, d.id ASC`,
       [req.params.id]
     );
-    res.json({ dias: dias.map(mapDia) });
+    const diasRaw = dias.map(mapDia);
+    diasRaw.sort((a, b) => {
+      const ord = (a.orden || 0) - (b.orden || 0);
+      if (ord !== 0) return ord;
+      return compararTextoNatural(a.nombre_display, b.nombre_display);
+    });
+    res.json({ dias: diasRaw });
   } catch (e) {
     res.status(500).json({ error: safeError(e) });
   }

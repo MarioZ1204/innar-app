@@ -2117,6 +2117,7 @@
     }
     const opts = pdxState.carpetas
       .filter((c) => c.id !== archivo.carpeta_id && c.estado_visibilidad !== 'archivo')
+      .sort((a, b) => compararTextoNatural(a.nombre_display, b.nombre_display))
       .map((c) => `<option value="${c.id}">${escapeHtml(c.nombre_display)} (${escapeHtml(c.periodo)})</option>`)
       .join('');
     if (!opts) return sopToast('No hay otra carpeta abierta disponible', 'warning');
@@ -2963,11 +2964,16 @@
     if (!parentId) {
       return lista.slice().sort((a, b) => {
         if (!!a.es_contenedor !== !!b.es_contenedor) return a.es_contenedor ? -1 : 1;
-        return (a.orden || 0) - (b.orden || 0)
-          || String(a.nombre_display || '').localeCompare(String(b.nombre_display || ''), 'es');
+        const ord = (a.orden || 0) - (b.orden || 0);
+        if (ord !== 0) return ord;
+        return compararTextoNatural(a.nombre_display, b.nombre_display);
       });
     }
-    return lista;
+    return lista.slice().sort((a, b) => {
+      const ord = (a.orden || 0) - (b.orden || 0);
+      if (ord !== 0) return ord;
+      return compararTextoNatural(a.nombre_display, b.nombre_display);
+    });
   }
 
   function armRutaExplorerChain() {

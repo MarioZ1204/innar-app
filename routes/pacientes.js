@@ -149,8 +149,8 @@ router.get('/pacientes/:id', requireAuth, async (req, res) => {
 router.patch('/pacientes/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro', 'tecnico_electro', 'auxiliar_recepcion'], ['agenda.editar', 'electro.editar']), async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (!id) return res.status(400).json({ error: 'ID inválido' });
-  const { nombre, documento, telefono, email } = req.body || {};
-  if (!nombre && !documento && !telefono && !email) {
+  const { nombre, documento, telefono, telefono2, email } = req.body || {};
+  if (!nombre && !documento && !telefono && telefono2 === undefined && !email) {
     return res.status(400).json({ error: 'Nada que actualizar' });
   }
   try {
@@ -162,6 +162,7 @@ router.patch('/pacientes/:id', requireAuth, requireRoleOrPerm(['superadmin', 'ad
     if (nombre !== undefined) { updates.push('nombre = ?'); params.push(nombre); }
     if (documento !== undefined) { updates.push('documento = ?'); params.push(documento); }
     if (telefono !== undefined) { updates.push('telefono = ?'); params.push(telefono); }
+    if (telefono2 !== undefined) { updates.push('telefono2 = ?'); params.push(telefono2 || null); }
     if (email !== undefined) { updates.push('email = ?'); params.push(email); }
     params.push(id);
     await db.execute(`UPDATE pacientes SET ${updates.join(', ')} WHERE id = ?`, params);

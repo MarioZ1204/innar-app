@@ -7510,6 +7510,7 @@ async function initElectro() {
         $('editNombrePaciente').value = citaElectroSeleccionada?.paciente_nombre || '';
         $('editDocumentoPaciente').value = citaElectroSeleccionada?.paciente_documento || '';
         $('editTelefonoPaciente').value = citaElectroSeleccionada?.telefono || '';
+        $('editTelefonoPaciente2').value = citaElectroSeleccionada?.telefono2 || '';
         editPanel.style.display = 'block';
       }
     };
@@ -7517,6 +7518,9 @@ async function initElectro() {
     $('btnGuardarEditarPaciente').onclick = () => guardarEdicionPaciente();
     // Solo dígitos y max 10 en el teléfono del panel de edición
     $('editTelefonoPaciente').addEventListener('input', (e) => {
+      e.target.value = e.target.value.replace(/\D/g, '').slice(0, 10);
+    });
+    $('editTelefonoPaciente2')?.addEventListener('input', (e) => {
       e.target.value = e.target.value.replace(/\D/g, '').slice(0, 10);
     });
   }
@@ -12500,16 +12504,18 @@ async function guardarEdicionPaciente() {
   const nombre = $('editNombrePaciente').value.trim();
   const documento = $('editDocumentoPaciente').value.trim();
   const telefono = $('editTelefonoPaciente').value.trim();
+  const telefono2 = $('editTelefonoPaciente2')?.value.trim() || '';
 
   if (!nombre) { showToast('El nombre no puede estar vacío', 'error'); return; }
   if (documento && !/^\d+$/.test(documento)) { showToast('El documento solo puede contener números', 'error'); return; }
-  if (telefono && !/^\d{10}$/.test(telefono)) { showToast('El teléfono debe tener exactamente 10 dígitos', 'error'); return; }
+  if (telefono && !/^\d{10}$/.test(telefono)) { showToast('El teléfono 1 debe tener exactamente 10 dígitos', 'error'); return; }
+  if (telefono2 && !/^\d{10}$/.test(telefono2)) { showToast('El teléfono 2 debe tener exactamente 10 dígitos', 'error'); return; }
 
   try {
     const res = await apiFetch(`/api/pacientes/${citaElectroSeleccionada.paciente_id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ nombre, documento, telefono })
+      body: JSON.stringify({ nombre, documento, telefono, telefono2 })
     });
     const json = await res.json();
     if (!json.ok) throw new Error(json.error || 'Error desconocido');
@@ -12517,9 +12523,20 @@ async function guardarEdicionPaciente() {
     citaElectroSeleccionada.paciente_nombre = nombre;
     citaElectroSeleccionada.paciente_documento = documento;
     citaElectroSeleccionada.telefono = telefono;
+    citaElectroSeleccionada.telefono2 = telefono2;
     $('modalPacienteNombre').textContent = nombre;
     $('modalPacienteDocumento').textContent = documento;
-    $('modalTelefonoDisplay').textContent = telefono;
+    const $telEl = document.getElementById('modalTelefonoDisplay');
+    const $tel2El = document.getElementById('modalTelefono2Display');
+    if ($telEl) $telEl.textContent = telefono || '-';
+    if ($tel2El) {
+      $tel2El.textContent = telefono2 || '-';
+      const sep = $tel2El.previousElementSibling;
+      if (sep?.classList?.contains('cita-modal-sep')) {
+        sep.style.display = telefono && telefono2 ? '' : 'none';
+      }
+      $tel2El.style.display = telefono2 ? '' : (telefono ? 'none' : '');
+    }
     $('editarPacientePanel').style.display = 'none';
     showToast('Datos del paciente actualizados', 'success');
     // Refrescar lista de citas
@@ -12758,7 +12775,18 @@ async function abrirModalDetallesCita(cita) {
     if (!entidadCita && !modalEntidadEl.value) modalEntidadEl.value = '';
   }
   const $telEl = document.getElementById('modalTelefonoDisplay');
-  if ($telEl) $telEl.textContent = cita.telefono || '-';
+  const $tel2El = document.getElementById('modalTelefono2Display');
+  const tel1 = String(cita.telefono || '').trim();
+  const tel2 = String(cita.telefono2 || '').trim();
+  if ($telEl) $telEl.textContent = tel1 || '-';
+  if ($tel2El) {
+    $tel2El.textContent = tel2 || '-';
+    const sep = $tel2El.previousElementSibling;
+    if (sep?.classList?.contains('cita-modal-sep')) {
+      sep.style.display = tel1 && tel2 ? '' : 'none';
+    }
+    $tel2El.style.display = tel2 ? '' : (tel1 ? 'none' : '');
+  }
   
   pintarDuracionMinutosEnElemento(document.getElementById('modalDuracionDisplay'), cita.duracion_minutos);
   await configurarEdicionDuracionModalElectro(cita);

@@ -931,7 +931,7 @@ router.get('/citas-electro/export', requireAuth, async (req, res) => {
     const rows = await db.query(`
       SELECT c.fecha, c.hora_agendamiento, c.hora_inicio, c.hora_fin, c.estudio,
              c.estado, c.programado_por_nombre, c.editado_por_nombre,
-             p.nombre AS paciente_nombre, p.documento AS paciente_documento, p.telefono,
+             p.nombre AS paciente_nombre, p.documento AS paciente_documento, p.telefono, p.telefono2,
              d.codigo AS diagnostico_codigo, d.nombre AS diagnostico_nombre,
              e.nombre AS equipo_nombre
       FROM citas_electro c
@@ -986,7 +986,7 @@ router.get('/citas-electro', requireAuth, async (req, res) => {
     try {
       const citas = await db.query(`
         SELECT ${CITAS_ELECTRO_SELECT},
-               p.nombre AS paciente_nombre, p.documento AS paciente_documento, p.telefono AS telefono,
+               p.nombre AS paciente_nombre, p.documento AS paciente_documento, p.telefono AS telefono, p.telefono2 AS telefono2,
                d.nombre AS diagnostico_nombre, d.codigo AS diagnostico_codigo, e.nombre AS equipo_nombre
         FROM citas_electro c
         JOIN pacientes p ON p.id = c.paciente_id
@@ -1007,7 +1007,7 @@ router.get('/citas-electro', requireAuth, async (req, res) => {
     await repararEstadosElectroAlConsultar(fecha);
     let query = `
       SELECT ${CITAS_ELECTRO_SELECT},
-             p.nombre AS paciente_nombre, p.documento AS paciente_documento, p.telefono AS telefono,
+             p.nombre AS paciente_nombre, p.documento AS paciente_documento, p.telefono AS telefono, p.telefono2 AS telefono2,
              d.nombre AS diagnostico_nombre, d.codigo AS diagnostico_codigo, e.nombre AS equipo_nombre
       FROM citas_electro c
       JOIN pacientes p ON p.id = c.paciente_id
@@ -1169,7 +1169,7 @@ router.get('/citas-electro/:id', requireAuth, async (req, res) => {
     const rows = await db.query(`
       SELECT ${CITAS_ELECTRO_SELECT},
              p.nombre AS paciente_nombre, p.documento AS paciente_documento,
-             p.telefono AS telefono, d.nombre AS diagnostico_nombre,
+             p.telefono AS telefono, p.telefono2 AS telefono2, d.nombre AS diagnostico_nombre,
              d.codigo AS diagnostico_codigo, e.nombre AS equipo_nombre
       FROM citas_electro c
       JOIN pacientes p ON p.id = c.paciente_id
@@ -1184,7 +1184,7 @@ router.get('/citas-electro/:id', requireAuth, async (req, res) => {
     const rows2 = await db.query(`
       SELECT ${CITAS_ELECTRO_SELECT},
              p.nombre AS paciente_nombre, p.documento AS paciente_documento,
-             p.telefono AS telefono, d.nombre AS diagnostico_nombre,
+             p.telefono AS telefono, p.telefono2 AS telefono2, d.nombre AS diagnostico_nombre,
              d.codigo AS diagnostico_codigo, e.nombre AS equipo_nombre
       FROM citas_electro c
       JOIN pacientes p ON p.id = c.paciente_id

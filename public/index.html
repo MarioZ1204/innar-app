@@ -2090,6 +2090,8 @@
             <span class="cita-modal-sep">·</span>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2A19.79 19.79 0 0 1 11.39 19a19.47 19.47 0 0 1-6-6A19.79 19.79 0 0 1 2.09 4.18 2 2 0 0 1 4.07 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.9a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
             <span id="modalTelefonoDisplay">-</span>
+            <span class="cita-modal-sep">·</span>
+            <span id="modalTelefono2Display">-</span>
           </div>
         </div>
         <button id="btnEditarPacienteModal" class="cita-modal-icon-btn" title="Editar datos del paciente" style="flex-shrink:0">
@@ -2109,9 +2111,15 @@
             <input id="editDocumentoPaciente" type="text" inputmode="numeric" placeholder="Número de documento" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:.9rem" />
           </div>
         </div>
-        <div style="margin-bottom:10px">
-          <label style="font-size:.8rem;font-weight:600;color:#6b7280;display:block;margin-bottom:4px">Teléfono</label>
-          <input id="editTelefonoPaciente" type="tel" inputmode="numeric" maxlength="10" placeholder="10 dígitos" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:.9rem" />
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+          <div>
+            <label style="font-size:.8rem;font-weight:600;color:#6b7280;display:block;margin-bottom:4px">Teléfono 1</label>
+            <input id="editTelefonoPaciente" type="tel" inputmode="numeric" maxlength="10" placeholder="10 dígitos" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:.9rem" />
+          </div>
+          <div>
+            <label style="font-size:.8rem;font-weight:600;color:#6b7280;display:block;margin-bottom:4px">Teléfono 2</label>
+            <input id="editTelefonoPaciente2" type="tel" inputmode="numeric" maxlength="10" placeholder="10 dígitos" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:.9rem" />
+          </div>
         </div>
         <div style="display:flex;gap:8px;justify-content:flex-end">
           <button id="btnCancelarEditarPaciente" class="btn-secondary btn-sm">Cancelar</button>
