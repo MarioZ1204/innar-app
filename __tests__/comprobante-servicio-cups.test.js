@@ -16,6 +16,11 @@ describe('comprobante-servicio-cups', () => {
     expect(out).toMatch(/electroencefalograma convencional/i);
   });
 
+  test('nombre de estudio renombrado conserva texto original', () => {
+    const out = nombreServicioComprobanteCups('Electroencefalograma Basal Extendido');
+    expect(out).toBe('Electroencefalograma Basal Extendido');
+  });
+
   test('desconocido conserva texto original', () => {
     const out = nombreServicioComprobanteCups('Servicio particular custom');
     expect(out).toBe('Servicio particular custom');

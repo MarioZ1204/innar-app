@@ -37,12 +37,18 @@ const REGLAS_ESTUDIO = [
   { re: /eeg\s*comput|electroencefalograma\s*comput/i, cups: '891402' },
   { re: /polisomn.*titul|titulaci[oó]n.*dispositivo/i, cups: '891703' },
   { re: /polisomn.*b[aá]sica|psg\s*b[aá]sica|sueño\s*b[aá]sico/i, cups: '891704' },
-  { re: /electroencefal|\beeg\b/i, cups: '891401' },
   { re: /prueba\s*neuropsicol/i, cups: '940701' },
   { re: /terapia.*rehabilitaci[oó]n\s*cognitiva/i, cups: '944301' },
   { re: /psicoterapia\s*individual/i, cups: '943102' },
   { re: /terapia\s*f[ií]sica\s*integral/i, cups: '931001' }
 ];
+
+const ALIAS_EEG_891401 = new Set([
+  'eeg',
+  'eeg convencional',
+  'electroencefalograma',
+  'electroencefalograma convencional'
+].map((s) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()));
 
 function normTexto(val) {
   return String(val || '')
@@ -157,6 +163,11 @@ function nombreServicioComprobanteCups(servicioInterno) {
   for (const regla of REGLAS_ESTUDIO) {
     if (!regla.re.test(raw) && !regla.re.test(norm)) continue;
     const nombre = nombreDesdeCodigoCups(regla.cups);
+    if (nombre) return nombre;
+  }
+
+  if (ALIAS_EEG_891401.has(norm)) {
+    const nombre = nombreDesdeCodigoCups('891401');
     if (nombre) return nombre;
   }
 

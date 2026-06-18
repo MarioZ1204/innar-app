@@ -1,51 +1,27 @@
-/**
- * Tiempo real vía GET /api/eventos/poll (sin Socket.IO / sin WebSocket).
- * Expone window.socket compatible: .on(...), .emit(...) → POST /api/eventos/push
- */
+// socket-client.js - Manejo de conexión WebSocket global con soporte para TODO
 
 let socket = null;
-window.socketReady = false;
+window.socketReady = false;  // Flag para indicar cuando socket está listo
 let updateCheckTimer = null;
 let updateBannerShown = false;
 const UPDATE_CHECK_INTERVAL_MS = 60000;
-
-const POLL_MS = typeof window.INNAR_REALTIME_POLL_MS === 'number'
-  ? window.INNAR_REALTIME_POLL_MS
-  : 4000;
-
-/** @type {ReturnType<typeof setInterval>|null} */
-let socketPollTimer = null;
-let pollInFlight = false;
-
-/** @type {Record<string, ReturnType<typeof setTimeout>|null>} */
 const _socketRefreshTimers = {};
 
-function scheduleSocketRefresh(key, callback, delayMs = 120) {
-  if (typeof callback !== 'function') return;
+function scheduleSocketRefresh(key, fn, delayMs = 120) {
+  if (typeof fn !== 'function') return;
   if (_socketRefreshTimers[key]) clearTimeout(_socketRefreshTimers[key]);
   _socketRefreshTimers[key] = setTimeout(() => {
     _socketRefreshTimers[key] = null;
-    try {
-      callback();
-    } catch (e) { /* noop */ }
+    try { fn(); } catch (_) {}
   }, delayMs);
 }
 
-/** Recarga Ver Recibos manteniendo query de filtros (_recibosLastParams). */
-function refreshRecibosListaPreservandoFiltros() {
-  if (window.currentModule !== 'recibos') return;
-  if (typeof cargarLista !== 'function') return;
-  scheduleSocketRefresh('recibos:lista', () => {
-    const q = typeof window._recibosLastParams === 'string' ? window._recibosLastParams : '';
-    cargarLista(q);
-  });
-}
-
 function refreshActiveModuleData() {
-  const module = window.currentModule;
-  // No recargar recibos aquí: eventos de agenda/electro no deben vaciar filtros del reporte.
-  // Solo los eventos recibo:* llaman refreshRecibosListaPreservandoFiltros().
-  if (module === 'agenda-medica') {
+  const mod = window.currentModule;
+  if (mod === 'recibos' && typeof cargarLista === 'function') {
+    scheduleSocketRefresh('recibos:lista', () => cargarLista());
+  }
+  if (mod === 'agenda-medica') {
     if (typeof cargarTurnosMedica === 'function') {
       scheduleSocketRefresh('agenda:turnos', () => cargarTurnosMedica());
     }
@@ -59,7 +35,7 @@ function refreshActiveModuleData() {
       scheduleSocketRefresh('agenda:horas', () => actualizarHorasDisponibles());
     }
   }
-  if (module === 'electro') {
+  if (mod === 'electro') {
     if (typeof cargarCitasElectro === 'function') {
       scheduleSocketRefresh('electro:citas', () => cargarCitasElectro());
     }
@@ -67,55 +43,45 @@ function refreshActiveModuleData() {
       scheduleSocketRefresh('electro:espera', () => cargarEsperaElectro());
     }
   }
-  if (module === 'usuarios' && typeof cargarUsuarios === 'function') {
+  if (mod === 'usuarios' && typeof cargarUsuarios === 'function') {
     scheduleSocketRefresh('usuarios:lista', () => cargarUsuarios());
   }
-  if (module === 'dashboard-citas' && typeof scheduleBuscarCitasAuditoria === 'function') {
+  if (mod === 'dashboard-citas' && typeof scheduleBuscarCitasAuditoria === 'function') {
     scheduleSocketRefresh('dashboard:citas', () => scheduleBuscarCitasAuditoria(120));
-  }
-  if (module === 'anexo-fidu' && typeof window.refreshAnexoFidu === 'function') {
-    scheduleSocketRefresh('anexo-fidu', () => window.refreshAnexoFidu());
-  }
-  if (module === 'backup' && typeof window.refreshBackupModule === 'function') {
-    scheduleSocketRefresh('backup', () => window.refreshBackupModule());
-  }
-  if (module === 'reportes-pdx' && typeof window.refreshReportesPdx === 'function') {
-    scheduleSocketRefresh('reportes-pdx', () => window.refreshReportesPdx());
-  }
-  if (module === 'armado-soportes' && typeof window.refreshArmadoSoportes === 'function') {
-    scheduleSocketRefresh('armado-soportes', () => window.refreshArmadoSoportes());
   }
 }
 
-function showUpdateBanner(remoteVersion) {
+function showUpdateBanner(serverVersion) {
   if (updateBannerShown) return;
   updateBannerShown = true;
   const banner = document.getElementById('updateBanner');
   if (banner) banner.style.display = 'block';
-  const btn = document.getElementById('btnReloadUpdateBanner');
-  if (btn && !btn.dataset.bound) {
-    btn.dataset.bound = '1';
-    btn.addEventListener('click', () => window.location.reload());
+  const btnReload = document.getElementById('btnReloadUpdateBanner');
+  if (btnReload && !btnReload.dataset.bound) {
+    btnReload.dataset.bound = '1';
+    btnReload.addEventListener('click', () => window.location.reload());
   }
-  if (remoteVersion && console.warn) {
-    console.warn('Nueva version detectada:', remoteVersion, 'actual:', window.APP_VERSION);
+  if (serverVersion) {
+    console.warn('Nueva version detectada:', serverVersion, 'actual:', window.APP_VERSION);
   }
 }
 
 async function checkServerVersion() {
   if (!window.APP_VERSION) return;
   try {
-    const r = await fetch(`/api/version?t=${Date.now()}`, {
+    const response = await fetch(`/api/version?t=${Date.now()}`, {
       method: 'GET',
       credentials: 'include',
       cache: 'no-store'
     });
-    if (!r.ok) return;
-    const body = await r.json();
-    if (body?.version && body.version !== window.APP_VERSION) {
-      showUpdateBanner(body.version);
+    if (!response.ok) return;
+    const data = await response.json();
+    if (data?.version && data.version !== window.APP_VERSION) {
+      showUpdateBanner(data.version);
     }
-  } catch (e) { /* noop */ }
+  } catch (_) {
+    // Silenciar: si falla red temporalmente, se reintenta en el siguiente ciclo
+  }
 }
 
 function startVersionWatcher() {
@@ -124,358 +90,318 @@ function startVersionWatcher() {
   updateCheckTimer = setInterval(checkServerVersion, UPDATE_CHECK_INTERVAL_MS);
 }
 
-/** @type {Map<string, Function[]>} */
-const listeners = new Map();
-
-function subscribe(event, cb) {
-  if (!listeners.has(event)) listeners.set(event, []);
-  listeners.get(event).push(cb);
+// Detectar si es dispositivo móvil
+function isMobile() {
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 }
 
-function unsubscribe(event, cb) {
-  if (!listeners.has(event)) return;
-  if (typeof cb !== 'function') {
-    listeners.delete(event);
-    return;
-  }
-  const next = listeners.get(event).filter((fn) => fn !== cb);
-  if (next.length) listeners.set(event, next);
-  else listeners.delete(event);
-}
-
-function dispatchRealtime(event, payload) {
-  const cbs = listeners.get(event);
-  if (!cbs) return;
-  for (let i = 0; i < cbs.length; i++) {
-    try {
-      cbs[i](payload);
-    } catch (e) {
-      console.error('[Realtime]', event, e);
-    }
-  }
-}
-
-function readCsrfToken() {
-  const m = document.cookie.match(/(?:^|; )csrf_token=([^;]*)/);
-  return m ? decodeURIComponent(m[1]) : null;
-}
-
-async function pushToServer(event, data) {
-  const csrf = readCsrfToken();
-  /** @type {Record<string,string>} */
-  const headers = { 'Content-Type': 'application/json' };
-  if (csrf) headers['x-csrf-token'] = csrf;
-  try {
-    await fetch('/api/eventos/push', {
-      method: 'POST',
-      credentials: 'include',
-      cache: 'no-store',
-      headers,
-      body: JSON.stringify({ event, data })
-    });
-  } catch (e) { /* noop */ }
-}
-
-function registerDefaultRealtimeHandlers() {
-  subscribe('recibo:actualizar-lista', () => {
-    refreshRecibosListaPreservandoFiltros();
-    if (typeof updateSavedCount === 'function') updateSavedCount();
-    if (typeof scheduleBuscarCitasAuditoria === 'function') {
-      scheduleSocketRefresh('dashboard:citas', () => scheduleBuscarCitasAuditoria(120));
-    }
-  });
-  subscribe('recibo:creado', () => {
-    refreshRecibosListaPreservandoFiltros();
-    if (typeof updateSavedCount === 'function') updateSavedCount();
-    if (typeof scheduleBuscarCitasAuditoria === 'function') {
-      scheduleSocketRefresh('dashboard:citas', () => scheduleBuscarCitasAuditoria(120));
-    }
-  });
-  subscribe('recibo:eliminado', () => {
-    refreshRecibosListaPreservandoFiltros();
-    if (typeof updateSavedCount === 'function') updateSavedCount();
-    if (typeof scheduleBuscarCitasAuditoria === 'function') {
-      scheduleSocketRefresh('dashboard:citas', () => scheduleBuscarCitasAuditoria(120));
-    }
-  });
-
-  subscribe('usuario:creado', () => {
-    if (typeof cargarUsuarios === 'function') {
-      scheduleSocketRefresh('usuarios:lista', () => cargarUsuarios());
-    }
-  });
-  subscribe('usuario:actualizado', () => {
-    if (typeof cargarUsuarios === 'function') {
-      scheduleSocketRefresh('usuarios:lista', () => cargarUsuarios());
-    }
-  });
-  subscribe('usuario:eliminado', () => {
-    if (typeof cargarUsuarios === 'function') {
-      scheduleSocketRefresh('usuarios:lista', () => cargarUsuarios());
-    }
-  });
-  subscribe('usuario:permisos-cambiados', (e) => {
-    if (
-      e?.userId != null &&
-      typeof window.currentUser !== 'undefined' &&
-      window.currentUser?.id === e.userId &&
-      typeof checkSession === 'function'
-    ) {
-      checkSession();
-    }
-  });
-  subscribe('usuario:nombre-actualizado', () => {
-    if (typeof checkSession === 'function') checkSession();
-  });
-  subscribe('tipos-consulta:actualizado', () => {
-    if (typeof _tiposConsultaCache !== 'undefined') _tiposConsultaCache = {};
-    if (typeof window._reciboCurrentTipos !== 'undefined') window._reciboCurrentTipos = [];
-    const medicoId = document.getElementById('reciboMedico')?.value;
-    if (medicoId && typeof cargarTiposConsultaEnRecibo === 'function') {
-      cargarTiposConsultaEnRecibo(medicoId);
-    }
-    if (typeof buscarGestionDatos === 'function' && typeof _gestionTipoActual !== 'undefined' && _gestionTipoActual === 'tipos_consulta') {
-      buscarGestionDatos();
-    }
-  });
-  subscribe('estudio:creado', () => {
-    if (typeof buscarGestionDatos === 'function' && typeof _gestionTipoActual !== 'undefined' && _gestionTipoActual === 'estudio_duraciones') {
-      buscarGestionDatos();
-    }
-  });
-
-  subscribe('sistema:version', (e) => {
-    if (e?.version && window.APP_VERSION && e.version !== window.APP_VERSION) {
-      showUpdateBanner(e.version);
-    }
-  });
-
-  subscribe('agenda:turno-creado', () => refreshActiveModuleData());
-  subscribe('agenda:turno-eliminado', () => refreshActiveModuleData());
-  subscribe('agenda:turno-estado-cambio', (e) => {
-    refreshActiveModuleData();
-    if (e && e.estado === 'EN_SALA' && typeof currentUser !== 'undefined' && currentUser && currentUser.rol === 'doctor') {
-      const suffix = e.paciente_nombre ? ` - ${e.paciente_nombre}` : '';
-      if (typeof showToast === 'function') showToast(`Paciente en sala${suffix}`, 'info');
-      if (typeof _speak === 'function') {
-        _speak('Paciente en sala', 1.05);
-      } else if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-        const u = new SpeechSynthesisUtterance('Paciente en sala');
-        u.lang = 'es-CO';
-        u.rate = 1.05;
-        u.volume = 1;
-        window.speechSynthesis.speak(u);
-      }
-    }
-  });
-  subscribe('agenda:turno-numero-cambio', () => refreshActiveModuleData());
-  subscribe('agenda:disponibilidad-actualizada', (e) => {
-    if (typeof actualizarDisponibilidad === 'function') {
-      actualizarDisponibilidad(e.doctor_id);
-    }
-    if (window.currentModule === 'agenda-medica') {
-      refreshActiveModuleData();
-      const feAg = document.getElementById('agendaMedicaFecha');
-      if (feAg?.value) feAg.dispatchEvent(new Event('change'));
-      const feModal = document.getElementById('modalNuevaCitaFecha');
-      if (feModal?.value) feModal.dispatchEvent(new Event('change'));
-    }
-  });
-  subscribe('agenda:anunciar-paciente', (e) => {
-    if (typeof tienePermiso !== 'function' || !tienePermiso('agenda.cambiar_estado')) return;
-    if (!('speechSynthesis' in window)) return;
-    const text = `Paciente ${e.paciente_nombre || 'siguiente paciente'}, pasar al ${e.numero_consultorio ? `consultorio ${e.numero_consultorio}` : 'consultorio'}`;
-    if (typeof showToast === 'function') showToast(text, 'info');
-    if (typeof _speak === 'function') {
-      _speak(text, 0.9);
-    } else {
-      window.speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance(text);
-      u.lang = 'es-CO';
-      u.rate = 0.9;
-      u.volume = 1;
-      window.speechSynthesis.speak(u);
-    }
-  });
-  subscribe('agenda:turno-llamar-siguiente', (e) => {
-    refreshActiveModuleData();
-    if (typeof tienePermiso !== 'function' || !tienePermiso('agenda.cambiar_estado')) return;
-    if (!('speechSynthesis' in window)) return;
-    const text = `Paciente ${e.paciente_nombre || 'siguiente paciente'}, pasar al ${e.numero_consultorio ? `consultorio ${e.numero_consultorio}` : 'consultorio'}`;
-    if (typeof _speak === 'function') {
-      _speak(text, 0.9);
-    } else {
-      window.speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance(text);
-      u.lang = 'es-CO';
-      u.rate = 0.9;
-      u.volume = 1;
-      window.speechSynthesis.speak(u);
-    }
-  });
-  subscribe('agenda:turno-marcar-atendido', () => refreshActiveModuleData());
-  subscribe('agenda:turno-cambio-paciente', () => refreshActiveModuleData());
-  subscribe('agenda:turno-doctor-cambio', () => refreshActiveModuleData());
-  subscribe('agenda:actualizar-lista', () => refreshActiveModuleData());
-  subscribe('agenda:actualizar-consultorio', () => refreshActiveModuleData());
-
-  subscribe('turno-medico:estado-actualizado', () => refreshActiveModuleData());
-  subscribe('turno-medico:reprogramado', () => refreshActiveModuleData());
-  subscribe('turno-medico:creado', () => refreshActiveModuleData());
-
-  subscribe('agenda:aviso-concluir-consulta', (e) => {
-    if (!(typeof currentUser !== 'undefined' && currentUser && currentUser.rol === 'doctor')) return;
-    if (e.doctor_id && e.doctor_id !== currentUser.id) return;
-    if (typeof showToast === 'function') {
-      showToast('⏰ Recepción solicita que concluya la consulta', 'warning');
-    }
-    if (typeof _speak === 'function') {
-      _speak('Doctor, puede concluir su consulta', 0.9);
-    } else if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance('Doctor, puede concluir su consulta');
-      u.lang = 'es-CO';
-      u.rate = 0.9;
-      u.volume = 1;
-      window.speechSynthesis.speak(u);
-    }
-  });
-
-  subscribe('electro:cita-creada', (e) => {
-    if (window.currentModule !== 'electro' || typeof window.aplicarCambioCitaElectroRealtime !== 'function') {
-      refreshActiveModuleData();
-    } else {
-      window.aplicarCambioCitaElectroRealtime({ ...(e || {}), type: 'creada' });
-    }
-  });
-  subscribe('electro:cita-eliminada', (e) => {
-    if (window.currentModule !== 'electro' || typeof window.aplicarCambioCitaElectroRealtime !== 'function') {
-      refreshActiveModuleData();
-    } else {
-      window.aplicarCambioCitaElectroRealtime({ ...(e || {}), type: 'eliminada' });
-    }
-  });
-  subscribe('electro:cita-actualizada', (e) => {
-    if (window.currentModule !== 'electro' || typeof window.aplicarCambioCitaElectroRealtime !== 'function') {
-      refreshActiveModuleData();
-    } else {
-      window.aplicarCambioCitaElectroRealtime({ ...(e || {}), type: 'actualizada' });
-    }
-  });
-  subscribe('electro:actualizar-lista', (e) => {
-    if (window.currentModule === 'electro' && typeof window.aplicarCambioCitaElectroRealtime === 'function' && e?.id) {
-      window.aplicarCambioCitaElectroRealtime(e);
-    } else {
-      refreshActiveModuleData();
-    }
-  });
-  subscribe('electro:nueva-cita', () => refreshActiveModuleData());
-  subscribe('electro:cita-cambio-estado', () => refreshActiveModuleData());
-  subscribe('electro:cita-removida', () => refreshActiveModuleData());
-
-  subscribe('stats:actualizar', () => {
-    if (typeof updateSavedCount === 'function') updateSavedCount();
-  });
-}
-
-async function runPollIteration() {
-  if (pollInFlight) return;
-  pollInFlight = true;
-  try {
-    const r = await fetch('/api/eventos/poll', { credentials: 'include', cache: 'no-store' });
-    if (r.status === 401) {
-      document.dispatchEvent(new CustomEvent('app:no-autenticado'));
-      closeSocket();
-      return;
-    }
-    if (!r.ok) return;
-    const body = await r.json();
-    const events = Array.isArray(body.events) ? body.events : [];
-    for (let i = 0; i < events.length; i++) {
-      const row = events[i];
-      if (row?.event) dispatchRealtime(row.event, row.data);
-    }
-  } catch (e) { /* noop */
-  } finally {
-    pollInFlight = false;
-  }
-}
-
+// Inicializar WebSocket después de login (con soporte mejorado para móviles)
 function initSocket() {
-  if (socketPollTimer !== null) return;
+  if (socket) return;
+  
+  const isMobileDevice = isMobile();
+  
+  socket = io({
+    reconnection: true,
+    reconnectionDelay: isMobileDevice ? 3000 : 1000,
+    reconnectionDelayMax: isMobileDevice ? 20000 : 5000,
+    reconnectionAttempts: isMobileDevice ? 10 : 5,
+    timeout: isMobileDevice ? 30000 : 20000,
+    transports: ['websocket', 'polling'],
+    path: '/socket.io/',
+    withCredentials: true,
+    forceNew: false,
+    autoConnect: true
+  });
 
-  listeners.clear();
+  // Eventos de conexión
+  socket.on('connect', () => {
+    console.log('✓ Conectado al servidor WebSocket', {
+      mobile: isMobileDevice,
+      transport: socket.io.engine.transport.name,
+      socketId: socket.id
+    });
+    window.socket = socket;  // Exponer globalmente
+    window.socketReady = true;  // Marcar como listo
+    // Disparar evento para módulos que esperan
+    window.dispatchEvent(new CustomEvent('socketReady', { detail: socket }));
+    // Verificación extra por polling para detectar despliegues aunque no llegue evento socket.
+    startVersionWatcher();
+    // Al reconectar, sincronizar inmediatamente la vista activa sin recargar página.
+    refreshActiveModuleData();
+  });
 
-  socket = {
-    id: 'http-poll',
-    connected: false,
-    on(ev, cb) {
-      subscribe(ev, cb);
-    },
-    off(ev, cb) {
-      unsubscribe(ev, cb);
-    },
-    emit(ev, data) {
-      void pushToServer(ev, data);
-    },
-    disconnect() {
-      this.connected = false;
-    }
-  };
-
-  window.socket = socket;
-  registerDefaultRealtimeHandlers();
-
-  socket.connected = true;
-  console.info('Tiempo real: HTTP polling', { intervalMs: POLL_MS });
-
-  socketPollTimer = setInterval(runPollIteration, POLL_MS);
-  void runPollIteration();
-
-  window.socketReady = true;
-  window.dispatchEvent(new CustomEvent('socketReady', { detail: socket }));
-  startVersionWatcher();
-  refreshActiveModuleData();
-
+  // Al volver de segundo plano, reconectar y refrescar datos del módulo activo
   if (!window._visibilityHandlerAdded) {
     window._visibilityHandlerAdded = true;
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState !== 'visible') return;
-      if (socket) {
-        socket.connected = true;
-        void runPollIteration();
+      if (document.visibilityState === 'visible' && socket) {
+        if (!socket.connected) {
+          socket.connect();
+        }
+        // Refrescar datos del módulo activo para recuperar lo perdido durante la suspensión
+        const mod = window.currentModule;
+        if (mod === 'recibos' && typeof cargarLista === 'function') cargarLista();
+        if (mod === 'agenda-medica' && typeof cargarTurnosMedica === 'function') cargarTurnosMedica();
+        if (mod === 'electro' && typeof cargarCitasElectro === 'function') cargarCitasElectro();
+        if (mod === 'usuarios' && typeof cargarUsuarios === 'function') cargarUsuarios();
+        if (typeof updateStats === 'function') updateStats();
+        checkServerVersion();
       }
-      const module = window.currentModule;
-      if (module === 'recibos') refreshRecibosListaPreservandoFiltros();
-      if (module === 'agenda-medica' && typeof cargarTurnosMedica === 'function') cargarTurnosMedica();
-      if (module === 'electro' && typeof cargarCitasElectro === 'function') cargarCitasElectro();
-      if (module === 'usuarios' && typeof cargarUsuarios === 'function') cargarUsuarios();
-      if (module === 'anexo-fidu' && typeof window.refreshAnexoFidu === 'function') window.refreshAnexoFidu();
-      if (module === 'backup' && typeof window.refreshBackupModule === 'function') window.refreshBackupModule();
-      if (module === 'reportes-pdx' && typeof window.refreshReportesPdx === 'function') window.refreshReportesPdx();
-      if (module === 'armado-soportes' && typeof window.refreshArmadoSoportes === 'function') window.refreshArmadoSoportes();
-      if (typeof updateStats === 'function') updateStats();
-      checkServerVersion();
     });
   }
+
+  socket.on('disconnect', (reason) => {
+    console.log('✗ Desconectado del servidor', { reason, mobile: isMobileDevice });
+    window.socketReady = false;
+  });
+
+  socket.on('connect_error', (error) => {
+    console.error('Error en conexión WebSocket:', {
+      error: error.message || error,
+      mobile: isMobileDevice,
+      transport: socket?.io?.engine?.transport?.name
+    });
+  });
+
+  // Recibos
+  socket.on('recibo:actualizar-lista', () => {
+    if (typeof cargarLista === 'function') scheduleSocketRefresh('recibos:lista', () => cargarLista());
+    if (typeof scheduleBuscarCitasAuditoria === 'function') scheduleSocketRefresh('dashboard:citas', () => scheduleBuscarCitasAuditoria(120));
+  });
+
+  socket.on('recibo:creado', (data) => {
+    if (typeof cargarLista === 'function') scheduleSocketRefresh('recibos:lista', () => cargarLista());
+    if (typeof scheduleBuscarCitasAuditoria === 'function') scheduleSocketRefresh('dashboard:citas', () => scheduleBuscarCitasAuditoria(120));
+  });
+
+  socket.on('recibo:eliminado', (data) => {
+    if (typeof cargarLista === 'function') scheduleSocketRefresh('recibos:lista', () => cargarLista());
+    if (typeof scheduleBuscarCitasAuditoria === 'function') scheduleSocketRefresh('dashboard:citas', () => scheduleBuscarCitasAuditoria(120));
+  });
+
+  // Usuarios
+  socket.on('usuario:creado', (data) => {
+    if (typeof cargarUsuarios === 'function') scheduleSocketRefresh('usuarios:lista', () => cargarUsuarios());
+  });
+
+  socket.on('usuario:actualizado', (data) => {
+    if (typeof cargarUsuarios === 'function') scheduleSocketRefresh('usuarios:lista', () => cargarUsuarios());
+  });
+
+  socket.on('usuario:eliminado', (data) => {
+    if (typeof cargarUsuarios === 'function') scheduleSocketRefresh('usuarios:lista', () => cargarUsuarios());
+  });
+
+  // Permisos cambiados: refrescar sesión del usuario afectado
+  socket.on('usuario:permisos-cambiados', (data) => {
+    if (data?.userId && typeof window.currentUser !== 'undefined' && window.currentUser?.id === data.userId) {
+      if (typeof checkSession === 'function') checkSession();
+    }
+  });
+
+  // Detectar nueva versión del servidor (cache busting)
+  socket.on('sistema:version', (data) => {
+    if (data?.version && window.APP_VERSION && data.version !== window.APP_VERSION) {
+      showUpdateBanner(data.version);
+    }
+  });
+
+  // Agenda médica
+  socket.on('agenda:turno-creado', (data) => {
+    refreshActiveModuleData();
+  });
+
+  socket.on('agenda:turno-eliminado', (data) => {
+    refreshActiveModuleData();
+  });
+
+  socket.on('agenda:turno-estado-cambio', (data) => {
+    refreshActiveModuleData();
+    // Alerta sonora al doctor cuando un paciente entra en sala
+    if (data.estado === 'EN_SALA' && typeof currentUser !== 'undefined' && currentUser && currentUser.rol === 'doctor') {
+      const nombre = data.paciente_nombre ? ` - ${data.paciente_nombre}` : '';
+      if (typeof showToast === 'function') showToast(`Paciente en sala${nombre}`, 'info');
+      if (typeof _speak === 'function') _speak('Paciente en sala', 1.05);
+      else if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+        const utter = new SpeechSynthesisUtterance('Paciente en sala');
+        utter.lang = 'es-CO'; utter.rate = 1.05; utter.volume = 1;
+        window.speechSynthesis.speak(utter);
+      }
+    }
+    // EN_ATENCION: ya NO se reproduce voz aquí (se maneja vía agenda:anunciar-paciente y agenda:turno-llamar-siguiente)
+  });
+
+  socket.on('agenda:turno-numero-cambio', (data) => {
+    refreshActiveModuleData();
+  });
+
+  socket.on('agenda:disponibilidad-actualizada', (data) => {
+    if (typeof actualizarDisponibilidad === 'function') {
+      actualizarDisponibilidad(data.doctor_id);
+    }
+    // Refresco en caliente del módulo Agenda Médica para evitar recargar página.
+    if (window.currentModule === 'agenda-medica') {
+      refreshActiveModuleData();
+      // Re-disparar cambios de fecha para que validadores de disponibilidad
+      // actualicen estilos/estados de inputs sin intervención manual.
+      const agendaFecha = document.getElementById('agendaMedicaFecha');
+      if (agendaFecha?.value) {
+        agendaFecha.dispatchEvent(new Event('change'));
+      }
+      const modalFecha = document.getElementById('modalNuevaCitaFecha');
+      if (modalFecha?.value) {
+        modalFecha.dispatchEvent(new Event('change'));
+      }
+    }
+  });
+
+  // Anuncio de voz directo: doctor presiona "Llamar al paciente"
+  socket.on('agenda:anunciar-paciente', (data) => {
+    const esRecep = typeof tienePermiso === 'function' && tienePermiso('agenda.cambiar_estado');
+    if (esRecep && 'speechSynthesis' in window) {
+      const nombre = data.paciente_nombre || 'siguiente paciente';
+      const consultorio = data.numero_consultorio ? `consultorio ${data.numero_consultorio}` : 'consultorio';
+      const texto = `Paciente ${nombre}, pasar al ${consultorio}`;
+      if (typeof showToast === 'function') showToast(texto, 'info');
+      if (typeof _speak === 'function') _speak(texto, 0.9);
+      else {
+        window.speechSynthesis.cancel();
+        const utter = new SpeechSynthesisUtterance(texto);
+        utter.lang = 'es-CO'; utter.rate = 0.9; utter.volume = 1;
+        window.speechSynthesis.speak(utter);
+      }
+    }
+  });
+
+  socket.on('agenda:turno-llamar-siguiente', (data) => {
+    refreshActiveModuleData();
+    // Anuncio de voz para recepción y electrodiagnóstico
+    const esRecep = typeof tienePermiso === 'function' && tienePermiso('agenda.cambiar_estado');
+    if (esRecep && 'speechSynthesis' in window) {
+      const nombre = data.paciente_nombre || 'siguiente paciente';
+      const consultorio = data.numero_consultorio ? `consultorio ${data.numero_consultorio}` : 'consultorio';
+      const texto = `Paciente ${nombre}, pasar al ${consultorio}`;
+      if (typeof _speak === 'function') _speak(texto, 0.9);
+      else {
+        window.speechSynthesis.cancel();
+        const utter = new SpeechSynthesisUtterance(texto);
+        utter.lang = 'es-CO'; utter.rate = 0.9; utter.volume = 1;
+        window.speechSynthesis.speak(utter);
+      }
+    }
+  });
+
+  socket.on('agenda:turno-marcar-atendido', (data) => {
+    refreshActiveModuleData();
+  });
+
+  socket.on('agenda:turno-cambio-paciente', (data) => {
+    refreshActiveModuleData();
+  });
+
+  // Compatibilidad con eventos relay usados en app.js/socket server.
+  socket.on('agenda:actualizar-lista', () => {
+    refreshActiveModuleData();
+  });
+
+  socket.on('agenda:actualizar-consultorio', () => {
+    refreshActiveModuleData();
+  });
+
+  socket.on('turno-medico:estado-actualizado', () => {
+    refreshActiveModuleData();
+  });
+
+  socket.on('turno-medico:reprogramado', () => {
+    refreshActiveModuleData();
+  });
+
+  socket.on('turno-medico:creado', () => {
+    refreshActiveModuleData();
+  });
+
+  // Aviso al doctor para concluir consulta
+  socket.on('agenda:aviso-concluir-consulta', (data) => {
+    // Este aviso es para el doctor — solo actuar si es doctor y el aviso es para este doctor
+    if (typeof currentUser !== 'undefined' && currentUser && currentUser.rol === 'doctor') {
+      if (!data.doctor_id || data.doctor_id === currentUser.id) {
+        if (typeof showToast === 'function') showToast('⏰ Recepción solicita que concluya la consulta', 'warning');
+        if (typeof _speak === 'function') _speak('Doctor, puede concluir su consulta', 0.9);
+        else if ('speechSynthesis' in window) {
+          window.speechSynthesis.cancel();
+          const utter = new SpeechSynthesisUtterance('Doctor, puede concluir su consulta');
+          utter.lang = 'es-CO'; utter.rate = 0.9; utter.volume = 1;
+          window.speechSynthesis.speak(utter);
+        }
+      }
+    }
+  });
+
+  // ===== EVENTOS DE ELECTRODIAGNÓSTICO =====
+  // Guard de módulo activo para evitar doble llamada con socket-electro.js
+  socket.on('electro:cita-creada', (data) => {
+    if (window.currentModule === 'electro' && typeof window.aplicarCambioCitaElectroRealtime === 'function') {
+      window.aplicarCambioCitaElectroRealtime({ ...(data || {}), type: 'creada' });
+      return;
+    }
+    refreshActiveModuleData();
+  });
+
+  socket.on('electro:cita-eliminada', (data) => {
+    if (window.currentModule === 'electro' && typeof window.aplicarCambioCitaElectroRealtime === 'function') {
+      window.aplicarCambioCitaElectroRealtime({ ...(data || {}), type: 'eliminada' });
+      return;
+    }
+    refreshActiveModuleData();
+  });
+
+  // electro:cita-actualizada es el evento correcto (el servidor emite este, no electro:cita-estado-cambio)
+  socket.on('electro:cita-actualizada', (data) => {
+    if (window.currentModule === 'electro' && typeof window.aplicarCambioCitaElectroRealtime === 'function') {
+      window.aplicarCambioCitaElectroRealtime({ ...(data || {}), type: 'actualizada' });
+      return;
+    }
+    refreshActiveModuleData();
+  });
+
+  socket.on('electro:actualizar-lista', (data) => {
+    if (window.currentModule === 'electro' && typeof window.aplicarCambioCitaElectroRealtime === 'function' && data?.id) {
+      window.aplicarCambioCitaElectroRealtime(data);
+      return;
+    }
+    refreshActiveModuleData();
+  });
+
+  socket.on('electro:nueva-cita', () => {
+    refreshActiveModuleData();
+  });
+
+  socket.on('electro:cita-cambio-estado', () => {
+    refreshActiveModuleData();
+  });
+
+  socket.on('electro:cita-removida', () => {
+    refreshActiveModuleData();
+  });
+
+  // Dashboard
+  socket.on('stats:actualizar', () => {
+    if (typeof updateStats === 'function') updateStats();
+  });
+
+  return socket;
 }
 
+// Cerrar conexión al logout
 function closeSocket() {
-  window.dispatchEvent(new CustomEvent('socketClosed'));
-
-  if (socketPollTimer) {
-    clearInterval(socketPollTimer);
-    socketPollTimer = null;
-  }
   if (socket) {
     socket.disconnect();
+    socket = null;
+    window.socket = null;
+    window.socketReady = false;
   }
-  socket = null;
-  window.socket = null;
-  window.socketReady = false;
-  listeners.clear();
-
   if (updateCheckTimer) {
     clearInterval(updateCheckTimer);
     updateCheckTimer = null;
@@ -486,10 +412,16 @@ function closeSocket() {
   });
 }
 
-function emitSocket(eventName, data) {
-  if (socket && socket.connected) socket.emit(eventName, data);
+// Función para emitir eventos
+function emitSocket(event, data) {
+  if (socket && socket.connected) {
+    socket.emit(event, data);
+  }
 }
 
-function onSocket(eventName, cb) {
-  if (socket) socket.on(eventName, cb);
+// Función para escuchar eventos custom
+function onSocket(event, callback) {
+  if (socket) {
+    socket.on(event, callback);
+  }
 }
