@@ -1,6 +1,6 @@
 {
   "name": "innar-app",
-  "version": "1.5.181",
+  "version": "1.5.182",
   "description": "Innar - Sistema de gestión de agenda médica y recibos",
   "main": "server.js",
   "scripts": {
@@ -46,7 +46,8 @@
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^3.11.174",
     "puppeteer": "^24.43.1",
-    "puppeteer-core": "^24.42.0"
+    "puppeteer-core": "^24.42.0",
+    "socket.io": "^4.8.1"
   },
   "devDependencies": {
     "csso-cli": "^4.0.2",

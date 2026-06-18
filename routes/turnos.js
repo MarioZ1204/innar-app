@@ -536,7 +536,7 @@ router.patch('/turnos/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin
   }
 
   try {
-    const turnos = await db.query('SELECT id, estado, doctor_id, fecha, hora, paciente_nombre FROM turnos WHERE id = ?', [id]);
+    const turnos = await db.query('SELECT id, estado, doctor_id, fecha, hora, paciente_nombre, notas FROM turnos WHERE id = ?', [id]);
     const turno = turnos.length > 0 ? turnos[0] : null;
     if (!turno) {
       return res.status(404).json({ error: 'Turno no encontrado' });
