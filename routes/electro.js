@@ -82,6 +82,13 @@ async function duracionCatalogoEstudioElectro(nombreEstudio) {
   }
 }
 
+/** Añade la marca [Reprogramado] en observaciones si aún no está. */
+function anexarNotaReprogramadoObs(obs) {
+  const s = String(obs || '').trim();
+  if (/\[Reprogramado\]/i.test(s)) return s || null;
+  return s ? `[Reprogramado] ${s}` : '[Reprogramado]';
+}
+
 /**
  * Al reabrir Completado → En Estudio: duración del catálogo.
  * Primero fin = inicio real + duración; si ya venció, fin = ahora + duración completa.
@@ -1403,8 +1410,34 @@ router.patch('/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin',
     const updates = [];
     const values = [];
     const cambios = {};
+
+    const fechaActualYmd = extraerFechaYmd(citaActual.fecha);
+    const horaActualHm = normalizarHoraHmElectro(citaActual.hora_agendamiento) || '';
+    const horaNuevaHm = hora_agendamiento !== undefined
+      ? String(hora_agendamiento).trim().slice(0, 5)
+      : horaActualHm;
+    const cambioAgenda = (fecha !== undefined && fecha !== fechaActualYmd)
+      || (hora_agendamiento !== undefined && horaNuevaHm !== horaActualHm);
+    const esReprogramacion = cambioAgenda && !estudioActivo
+      && !['Completado', 'Cancelado', 'No Asistió'].includes(estadoActual);
+
+    let estadoPatch = estado;
+    let observacionesPatch = req.body.observaciones;
+
+    if (estadoPatch === 'Reprogramado' || esReprogramacion) {
+      estadoPatch = 'Programado';
+      observacionesPatch = anexarNotaReprogramadoObs(
+        observacionesPatch !== undefined ? observacionesPatch : citaActual.observaciones
+      );
+    }
+
     if (equipo_id !== undefined) { updates.push('equipo_id = ?'); values.push(equipo_id); cambios.equipo_id = equipo_id; }
-    if (estado !== undefined) { updates.push('estado = ?'); values.push(estado); cambios.estado = estado; }
+    if (estadoPatch !== undefined) { updates.push('estado = ?'); values.push(estadoPatch); cambios.estado = estadoPatch; }
+    if (observacionesPatch !== undefined) {
+      updates.push('observaciones = ?');
+      values.push(observacionesPatch);
+      cambios.observaciones = observacionesPatch;
+    }
 
     const horaInicioPatch = forzarCamposInicioEstudio?.hora_inicio ?? hora_inicio;
     const horaFinPatch = forzarCamposInicioEstudio?.hora_fin ?? hora_fin;
@@ -1446,7 +1479,7 @@ router.patch('/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin',
     if (hora_agendamiento !== undefined) { updates.push('hora_agendamiento = ?'); values.push(hora_agendamiento); cambios.hora_agendamiento = hora_agendamiento; }
     if (fecha !== undefined) { updates.push('fecha = ?'); values.push(fecha); cambios.fecha = fecha; }
 
-    if ((fecha !== undefined || hora_agendamiento !== undefined) && !citaActual.hora_inicio) {
+    if ((fecha !== undefined || hora_agendamiento !== undefined) && !estudioActivo) {
       const fechaBase = fecha || extraerFechaYmd(citaActual.fecha) || normalizeFecha(citaActual.fecha);
       const horaBase = hora_agendamiento !== undefined
         ? String(hora_agendamiento).trim().slice(0, 5)
@@ -1516,15 +1549,15 @@ router.patch('/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin',
 
     emitSocket('electro:cita-actualizada', { id, ...cambios, editado_por: editorNombre });
     emitSocket('electro:actualizar-lista', { type: 'actualizada', id, cambios });
-    if (estado !== undefined) {
+    if (estadoPatch !== undefined) {
       const ver2 = await db.query('SELECT estado FROM citas_electro WHERE id = ?', [id]);
       const estadoGuardado2 = ver2.length ? ver2[0].estado : null;
-      if (estadoGuardado2 !== estado) {
-        return res.status(409).json({ ok: false, error: `No se pudo persistir el estado solicitado (${estado}). Estado actual en BD: ${estadoGuardado2 || 'N/D'}`, estado_actual: estadoGuardado2 || null });
+      if (estadoGuardado2 !== estadoPatch) {
+        return res.status(409).json({ ok: false, error: `No se pudo persistir el estado solicitado (${estadoPatch}). Estado actual en BD: ${estadoGuardado2 || 'N/D'}`, estado_actual: estadoGuardado2 || null });
       }
     }
 
-    res.json({ ok: true, transicion: `${estadoActual} → ${estado || estadoActual}` });
+    res.json({ ok: true, transicion: `${estadoActual} → ${estadoPatch || estadoActual}` });
   } catch (e) {
     res.status(500).json({ error: safeError(e) });
   }

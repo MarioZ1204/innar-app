@@ -371,14 +371,22 @@ async function queryPdxCarpetasConCount() {
       SELECT c.*, 0 AS archivos_count
       FROM sop_pdx_carpetas c
       ORDER BY c.nombre_display ASC, c.periodo DESC`;
+  let rows;
   try {
-    return await db.query(sqlConArchivos);
+    rows = await db.query(sqlConArchivos);
   } catch (e) {
     if (e.code === 'ER_NO_SUCH_TABLE' && String(e.message || '').includes('sop_pdx_archivos')) {
-      return await db.query(sqlSinArchivos);
+      rows = await db.query(sqlSinArchivos);
+    } else {
+      throw e;
     }
-    throw e;
   }
+  rows.sort((a, b) => {
+    const pc = String(b.periodo || '').localeCompare(String(a.periodo || ''));
+    if (pc !== 0) return pc;
+    return compararTextoNatural(a.nombre_display, b.nombre_display);
+  });
+  return rows;
 }
 
 async function insertPdxArchivoRow(carpetaId, meta, file, session) {
@@ -482,6 +490,7 @@ router.get('/soportes/pdx/carpetas/catalogo-permisos', requireAuth, requireSuper
       color_tema: r.color_tema || detectarTemaCarpeta(r.nombre_display),
       permiso_key: permisoKeyCarpetaPdx(r.id)
     }));
+    ordenarPorTextoNatural(carpetas, 'nombre_display');
     res.json({ carpetas });
   } catch (e) {
     logger.error('[SOPORTES] catalogo permisos pdx:', e);

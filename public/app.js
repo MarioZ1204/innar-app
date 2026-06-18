@@ -1,4 +1,4 @@
-﻿// public/app.js
+// public/app.js
 const $ = id => document.getElementById(id);
 const lsKey = 'recibos_sencillo_v1';
 const lsKeyServicios = 'servicios_list_v1';
@@ -1368,6 +1368,31 @@ function estadoBadge(estado) {
   const e = normalizarEstadoElectro(estado);
   const s = map[e] || { bg: '#f3f4f6', color: '#374151', border: '#d1d5db' };
   return `<span style="display:inline-block;padding:5px 14px;border-radius:14px;font-size:0.85rem;font-weight:700;background:${s.bg};color:${s.color};border:1px solid ${s.border};white-space:nowrap;letter-spacing:0.01em">${escapeHtml(e)}</span>`;
+}
+
+function citaElectroEsReprogramada(cita) {
+  if (!cita) return false;
+  if (normalizarEstadoElectro(cita.estado) === 'Reprogramado') return true;
+  return /\[Reprogramado\]/i.test(String(cita.observaciones || ''));
+}
+
+function estadoBadgeCitaElectro(citaOrEstado, observacionesArg) {
+  const esObj = typeof citaOrEstado === 'object' && citaOrEstado !== null;
+  const cita = esObj ? citaOrEstado : { estado: citaOrEstado, observaciones: observacionesArg };
+  const estado = citaElectroEsReprogramada(cita) ? 'Programado' : (cita.estado || 'Programado');
+  return estadoBadge(estado);
+}
+
+function buildPayloadReprogramarCitaElectro(cita, fechaNueva, horaNueva) {
+  const obs = String(cita?.observaciones || '').trim();
+  const nota = '[Reprogramado]';
+  const observaciones = /\[Reprogramado\]/i.test(obs) ? obs : (obs ? `${nota} ${obs}` : nota);
+  return {
+    estado: 'Programado',
+    fecha: fechaNueva,
+    hora_agendamiento: horaNueva,
+    observaciones
+  };
 }
 
 /**
@@ -8440,12 +8465,16 @@ function renderCitaElectroCard(container, c) {
     : (esContinuacion
       ? '<' + t + ' class="electro-cita-card-rango">Inicio: ' + escapeHtml(formatearFechaISO(fechaInicioCita)) + '</' + t + '>'
       : '');
+  const notaReprogHtml = citaElectroEsReprogramada(c)
+    ? '<' + t + ' class="electro-cita-card-nota-reprog" style="font-size:0.72rem;color:#0369a1;font-weight:600;margin-top:2px">[Reprogramado]</' + t + '>'
+    : '';
   card.innerHTML =
     '<' + t + ' class="electro-cita-card-top">' +
       '<span class="electro-cita-card-hora">' + formatearHora(c.hora_agendamiento) + '</span>' +
-      estadoBadge(estado) +
+      estadoBadgeCitaElectro(c) +
     '</' + t + '>' +
     rangoHtml +
+    notaReprogHtml +
     '<' + t + ' class="electro-cita-card-paciente">' + escapeHtml(c.paciente_nombre || '-') + '</' + t + '>' +
     '<' + t + ' class="electro-cita-card-meta">' +
       '<span>' + escapeHtml(c.paciente_documento || '-') + '</span>' +
@@ -8528,7 +8557,7 @@ function renderCitaElectroRow(tbody, c) {
     <td class="col-mobile-hide">${escapeHtml(obtenerEntidadCitaElectro(c) || '-')}</td>
     <td class="col-mobile-hide">${duracionDisplay}</td>
     <td class="col-mobile-hide">${escapeHtml(c.diagnostico_codigo || '-')}</td>
-    <td>${estadoBadge(c.estado || 'Programado')}</td>
+    <td>${estadoBadgeCitaElectro(c)}</td>
     <td class="col-mobile-hide">${horaFinDisplay}</td>
   `;
   
@@ -12795,7 +12824,7 @@ async function abrirModalDetallesCita(cita) {
 
   // Badge de estado en el header
   const $badgeEl = document.getElementById('modalEstadoHeaderBadge');
-  if ($badgeEl) $badgeEl.innerHTML = estadoBadge(citaElectroSeleccionada.estado || 'Programado');
+  if ($badgeEl) $badgeEl.innerHTML = estadoBadgeCitaElectro(citaElectroSeleccionada);
 
   // Franja de horario real (cuando la cita ya tiene hora_inicio)
   const $horarios = document.getElementById('modalInfoHorarios');
@@ -13016,14 +13045,14 @@ function renderFlujoEstado(cita) {
   const svgPause = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>`;
 
   // Reprogramado y Adelantado se tratan como Programado (con nota informativa)
-  const esReprogramadoAdelantado = estado === 'Reprogramado' || estado === 'Adelantado';
-  const estadoEfectivo = esReprogramadoAdelantado ? 'Programado' : estado;
+  const esReprogramadoAdelantado = estado === 'Reprogramado' || estado === 'Adelantado' || citaElectroEsReprogramada(cita);
+  const estadoEfectivo = (estado === 'Reprogramado' || estado === 'Adelantado') ? 'Programado' : estado;
 
   if (estadoEfectivo === 'Programado') {
     if (equipoSelect) { equipoSelect.disabled = true; equipoSelect.style.opacity = '0.45'; equipoSelect.style.cursor = 'not-allowed'; }
     const notaReprog = esReprogramadoAdelantado
       ? `<div style="font-size:0.8rem;color:#6b7280;margin-bottom:8px;padding:6px 10px;background:#f0f9ff;border-radius:6px;border-left:3px solid #3b82f6">
-           \u2139\ufe0f Cita ${estado === 'Reprogramado' ? 'reprogramada' : 'adelantada'}
+           \u2139\ufe0f Cita ${estado === 'Adelantado' ? 'adelantada' : 'reprogramada'}
          </div>`
       : '';
     flujoEl.innerHTML = `
@@ -13275,7 +13304,7 @@ async function cambiarEstadoCita(nuevoEstado, triggerBtn = null) {
       citaElectroSeleccionada.estado = estadoPersistido;
       $('modalEstado').value = estadoPersistido;
       const $badgeEl = document.getElementById('modalEstadoHeaderBadge');
-      if ($badgeEl) $badgeEl.innerHTML = estadoBadge(estadoPersistido);
+      if ($badgeEl) $badgeEl.innerHTML = estadoBadgeCitaElectro(citaElectroSeleccionada);
       renderFlujoEstado(citaElectroSeleccionada);
       if (estadoPersistido !== estadoObjetivo) {
         showToast(`El servidor conservó el estado "${estadoPersistido}"`, 'warning');
@@ -13411,7 +13440,11 @@ async function guardarCambiosCitaElectro() {
       cambios.hora_agendamiento = horaNueva;
     }
     if ((cambios.fecha || cambios.hora_agendamiento) && puedeReprogramarCitaElectro(citaElectroSeleccionada)) {
-      cambios.estado = 'Reprogramado';
+      Object.assign(cambios, buildPayloadReprogramarCitaElectro(
+        citaElectroSeleccionada,
+        fechaNueva || fechaActual,
+        horaNueva || horaActual
+      ));
     }
     if ((cambios.fecha || cambios.hora_agendamiento) && (!fechaNueva || !horaNueva)) {
       showToast('Indique fecha y hora agendada válidas', 'error');
@@ -13508,11 +13541,7 @@ async function reprogramarCitaElectroDesdeModalAgenda() {
   }
   if (fechaNueva === fechaActual && horaNueva === horaActual) return;
 
-  const cambios = {
-    estado: 'Reprogramado',
-    fecha: fechaNueva,
-    hora_agendamiento: horaNueva
-  };
+  const cambios = buildPayloadReprogramarCitaElectro(citaElectroSeleccionada, fechaNueva, horaNueva);
 
   try {
     const res = await apiFetch(`/api/citas-electro/${citaElectroSeleccionada.id}`, {
@@ -13523,9 +13552,10 @@ async function reprogramarCitaElectroDesdeModalAgenda() {
     const data = await res.json();
     if (!data?.ok) throw new Error(data?.error || 'Error reprogramando cita');
 
-    citaElectroSeleccionada.estado = 'Reprogramado';
+    citaElectroSeleccionada.estado = 'Programado';
     citaElectroSeleccionada.fecha = fechaNueva;
     citaElectroSeleccionada.hora_agendamiento = horaNueva;
+    citaElectroSeleccionada.observaciones = cambios.observaciones;
 
     const movioDia = $('electroFecha')?.value && fechaNueva !== $('electroFecha').value;
     showToast(
@@ -13548,7 +13578,7 @@ async function reprogramarCitaElectroDesdeModalAgenda() {
     }
 
     const $badgeEl = document.getElementById('modalEstadoHeaderBadge');
-    if ($badgeEl) $badgeEl.innerHTML = estadoBadge('Reprogramado');
+    if ($badgeEl) $badgeEl.innerHTML = estadoBadgeCitaElectro(citaElectroSeleccionada);
     renderFlujoEstado(citaElectroSeleccionada);
   } catch (e) {
     showToast(e.message || 'Error reprogramando cita', 'error');
@@ -13602,11 +13632,11 @@ async function confirmarReprogramar() {
       return;
     }
     
-    const cambios = {
-      estado: 'Reprogramado',
-      fecha: fechaNueva,
-      hora_agendamiento: horaNueva
-    };
+    const cambios = buildPayloadReprogramarCitaElectro(
+      citaReprogramarAdelantarActual,
+      fechaNueva,
+      horaNueva
+    );
     
     const res = await apiFetch(`/api/citas-electro/${citaReprogramarAdelantarActual.id}`, {
       method: 'PATCH',
@@ -15468,7 +15498,7 @@ async function buscarEstudiosPorDocumento() {
         <td style="padding:12px;color:#374151;font-weight:500">${escapeHtml(cita.paciente_documento || '-')}</td>
         <td style="padding:12px;color:#1f2937;font-weight:500">${escapeHtml(cita.paciente_nombre || '-')}</td>
         <td style="padding:12px;color:#374151">${escapeHtml(cita.estudio || '-')}</td>
-        <td style="padding:12px">${estadoBadge(cita.estado)}</td>
+        <td style="padding:12px">${estadoBadgeCitaElectro(cita)}</td>
         <td style="padding:12px"><button class="btn-primary btn-sm">Ver / Editar</button></td>
       `;
       tr.querySelector('button').addEventListener('click', () => {

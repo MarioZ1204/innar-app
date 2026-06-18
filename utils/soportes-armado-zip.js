@@ -9,6 +9,7 @@ const logger = require('./logger');
 const { resolveArchivoAbsoluto } = require('./soportes-exp-archivo');
 const sopStorage = require('./soportes-storage');
 const { getArmadoFeDirAbs } = require('./soportes-armado-structure');
+const { compararTextoNatural } = require('./comparar-texto-natural');
 const { syncRipsCarpetasDia, syncRipsCarpetasPeriodo } = require('./soportes-rips-carpetas-sync');
 
 const ZIP_COMPRESSION = 6;
@@ -286,9 +287,10 @@ async function streamDiaZip(res, dia) {
 
 async function buildPeriodPaqueteParts(periodoId, zipLabel) {
   const dias = await db.query(
-    'SELECT id, nombre_display FROM sop_dias WHERE periodo_id = ? ORDER BY nombre_display ASC',
+    'SELECT id, nombre_display FROM sop_dias WHERE periodo_id = ?',
     [periodoId]
   );
+  dias.sort((a, b) => compararTextoNatural(a.nombre_display, b.nombre_display));
   if (!dias.length) throw new Error('El mes no tiene carpetas de día');
 
   const parts = [];
@@ -345,9 +347,10 @@ async function streamPeriodPaqueteZip(res, periodo) {
 async function collectPeriodUnifiedEntries(periodoId) {
   const usedPaths = new Set();
   const dias = await db.query(
-    'SELECT id FROM sop_dias WHERE periodo_id = ? ORDER BY nombre_display ASC',
+    'SELECT id, nombre_display FROM sop_dias WHERE periodo_id = ?',
     [periodoId]
   );
+  dias.sort((a, b) => compararTextoNatural(a.nombre_display, b.nombre_display));
   const entries = [];
   for (const dia of dias) {
     const part = await collectDiaZipEntries(dia.id, usedPaths);

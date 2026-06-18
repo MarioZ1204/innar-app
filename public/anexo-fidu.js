@@ -459,9 +459,13 @@
     renderAfiduContextBar();
   }
 
+  function compararTextoNaturalAfidu(a, b) {
+    return String(a || '').localeCompare(String(b || ''), 'es', { numeric: true, sensitivity: 'base' });
+  }
+
   async function refrescarCarpetas() {
     const data = await apiAnexo('/api/anexo-fidu/carpetas');
-    afiduState.carpetas = data.carpetas || [];
+    afiduState.carpetas = (data.carpetas || []).slice().sort((a, b) => compararTextoNaturalAfidu(a.nombre, b.nombre));
     return afiduState.carpetas;
   }
 
@@ -472,7 +476,7 @@
       return [];
     }
     const data = await apiAnexo(`/api/anexo-fidu/carpetas/${carpetaId}/archivos`);
-    afiduState.archivos = data.archivos || [];
+    afiduState.archivos = (data.archivos || []).slice().sort((a, b) => compararTextoNaturalAfidu(a.nombre, b.nombre));
     syncAfiduIds();
     return afiduState.archivos;
   }

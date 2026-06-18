@@ -12,6 +12,7 @@ const {
   idContenedoraAnexo
 } = require('./soportes-armado-modos');
 const { nextSopDiaNumero } = require('./soportes-armado-structure');
+const { compararTextoNatural } = require('./comparar-texto-natural');
 
 async function fetchAnexoArchivoMeta(archivoId) {
   const rows = await db.query(
@@ -141,7 +142,10 @@ async function syncAnexoModuloASoportesPeriodo(periodoId, options = {}) {
   );
   const byId = new Map();
   for (const a of [...archivosCarpeta, ...archivosVinculados]) byId.set(a.id, a);
-  const archivos = [...byId.values()];
+  const archivos = [...byId.values()].sort((a, b) => {
+    const cmp = compararTextoNatural(a.nombre, b.nombre);
+    return cmp !== 0 ? cmp : (a.id || 0) - (b.id || 0);
+  });
 
   let creadas = 0;
   let vinculadas = 0;

@@ -7,7 +7,7 @@ function compararTextoNatural(a, b) {
 
 function ordenarPorTextoNatural(list, key, dir = 'asc') {
   const mult = dir === 'desc' ? -1 : 1;
-  return [...(list || [])].sort((x, y) => {
+  return (list || []).sort((x, y) => {
     const cmp = compararTextoNatural(x?.[key], y?.[key]);
     return cmp * mult;
   });

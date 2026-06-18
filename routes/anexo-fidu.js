@@ -32,6 +32,7 @@ const {
   normalizarNombreAnexo,
   parseAnexoFiduWorksheet
 } = require('../utils/anexo-fidu-archivos');
+const { ordenarPorTextoNatural } = require('../utils/comparar-texto-natural');
 
 function parseArchivoId(val) {
   const n = parseInt(val, 10);
@@ -221,9 +222,9 @@ router.get('/anexo-fidu/carpetas', requireAuth, requirePermiso(PERM_ANEXO_FIDU),
       SELECT c.id, c.nombre, c.creado_en,
         (SELECT COUNT(*) FROM anexo_fidu_archivos a WHERE a.carpeta_id = c.id) AS total_archivos
       FROM anexo_fidu_carpetas c
-      ORDER BY c.nombre ASC
     `);
-    res.json({ ok: true, carpetas: rows });
+    const carpetas = ordenarPorTextoNatural(rows, 'nombre');
+    res.json({ ok: true, carpetas });
   } catch (e) {
     logger.error('[ANEXO-FIDU] carpetas list:', e);
     res.status(500).json({ error: safeError(e) });
@@ -323,11 +324,11 @@ router.get('/anexo-fidu/carpetas/:carpetaId/archivos', requireAuth, requirePermi
       `SELECT a.id, a.nombre, a.creado_en, a.actualizado_en,
         (SELECT COUNT(*) FROM anexo_fidu_registros r WHERE r.archivo_id = a.id) AS total_registros
        FROM anexo_fidu_archivos a
-       WHERE a.carpeta_id = ?
-       ORDER BY a.nombre ASC`,
+       WHERE a.carpeta_id = ?`,
       [carpetaId]
     );
-    res.json({ ok: true, archivos });
+    const archivosOrdenados = ordenarPorTextoNatural(archivos, 'nombre');
+    res.json({ ok: true, archivos: archivosOrdenados });
   } catch (e) {
     res.status(500).json({ error: safeError(e) });
   }
