@@ -6,7 +6,12 @@ const lsKeyCurrentModule = 'current_module_v1';
 
 // ========== GLOBAL ERROR HANDLER ==========
 window.addEventListener('unhandledrejection', (e) => {
-  console.error('[Unhandled Promise]', e.reason);
+  const r = e.reason;
+  if (r?.name === 'InvalidStateError' && String(r?.message || '').includes('Transition')) {
+    e.preventDefault();
+    return;
+  }
+  console.error('[Unhandled Promise]', r);
 });
 window.onerror = function(msg, src, line, col, err) {
   console.error('[Global Error]', msg, src + ':' + line + ':' + col, err);
@@ -23,7 +28,10 @@ document.addEventListener('keydown', (e) => {
     const z = parseInt(getComputedStyle(m).zIndex) || 0;
     if (z >= maxZ) { maxZ = z; top = m; }
   });
-  if (top) top.classList.add('hidden');
+  if (top) {
+    if (typeof window.innarCloseModal === 'function') window.innarCloseModal(top);
+    else top.classList.add('hidden');
+  }
 });
 
 // ========== FUNCIÓN DE HASHING SHA512 ==========
@@ -42,6 +50,210 @@ function updateRequirementItem(elementId, isMet, text) {
 }
 
 const lsKeySelectedDoctor = 'selected_doctor_v1';
+
+/** Direcciones oficiales de las sedes (recordatorios WhatsApp, documentos) */
+const SEDES_INNAR = {
+  principal: {
+    id: '1',
+    titulo: 'Sede Principal',
+    corta: 'Calle 14A #34-13, Barrio San Ignacio',
+    completa: 'Calle 14A #34-13, Barrio San Ignacio, Pasto, Nariño',
+    mapsPath: '/ubicacion/principal',
+    mapsUrl: 'https://maps.app.goo.gl/nuT1XWpDEg6vXVmS7',
+    telefonos: '3053560651 - 6027238141'
+  },
+  complementaria: {
+    id: '2',
+    titulo: 'Sede Servicios Complementarios',
+    corta: 'Carrera 33 #13-84, Barrio San Ignacio ("Casa Verde")',
+    completa: 'Carrera 33 #13-84, Barrio San Ignacio, Pasto, Nariño ("Casa Verde")',
+    mapsPath: '/ubicacion/complementaria',
+    mapsUrl: 'https://www.google.com/maps/search/?api=1&query=Carrera+33+%2313-84+Barrio+San+Ignacio+Pasto+Nari%C3%B1o',
+    telefonos: '3053560651 - 6027238141'
+  }
+};
+
+/** PDFs de recomendaciones por tipo de estudio (public/recomendaciones-electro/*.pdf) */
+const ELECTRO_RECOMENDACIONES_PDF_BASE = '/recomendaciones-electro';
+
+/** Emojis UTF-8 (code points) — evitan caracteres rotos al abrir wa.me en Windows */
+const EMO_WA_ELECTRO = {
+  hospital: '\u{1F3E5}',
+  estudio: '\u{1F52C}',
+  duracion: '\u23F1',
+  dia: '\u{1F4C5}',
+  hora: '\u{1F550}',
+  salida: '\u{1F6AA}',
+  direccion: '\u{1F4CD}',
+  telefono: '\u{1F4DE}',
+  documentos: '\u{1F4C4}',
+  confirmar: '\u2705'
+};
+
+function tipoEstudioElectroApp(estudio) {
+  const api = window.innarElectroEstudioTipo;
+  if (api && typeof api.tipoEstudioElectro === 'function') return api.tipoEstudioElectro(estudio);
+  return 'otro';
+}
+
+function esEstudioElectroVtmApp(estudio) {
+  const api = window.innarElectroEstudioTipo;
+  if (api && typeof api.esEstudioElectroVtm === 'function') return api.esEstudioElectroVtm(estudio);
+  return false;
+}
+
+function clavePdfRecomendacionesElectro(estudio) {
+  const tipo = tipoEstudioElectroApp(estudio);
+  if (tipo === 'psg') return 'psg';
+  if (tipo === 'eeg') return 'eeg';
+  if (tipo === 'vtm') return 'vtm';
+  if (tipo === 'actigrafia') return 'actigrafia';
+  return 'general';
+}
+
+function urlPdfRecomendacionesElectro(estudio) {
+  const clave = clavePdfRecomendacionesElectro(estudio);
+  return `${ELECTRO_RECOMENDACIONES_PDF_BASE}/${clave}.pdf`;
+}
+
+async function existeArchivoPublico(urlPath) {
+  try {
+    const res = await fetch(urlPath, { method: 'HEAD', cache: 'no-store' });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+function formatearFechaLargaElectroWhatsApp(fechaRaw) {
+  const ymd = extraerFechaYmdCalendario(fechaRaw);
+  if (!ymd) return '-';
+  const [year, month, day] = ymd.split('-').map(Number);
+  const fechaObj = new Date(year, month - 1, day);
+  if (isNaN(fechaObj.getTime())) return '-';
+  const texto = fechaObj.toLocaleDateString('es-CO', { day: 'numeric', month: 'long', year: 'numeric' });
+  return texto.charAt(0).toUpperCase() + texto.slice(1);
+}
+
+function formatearDuracionElectroWhatsApp(cita) {
+  const min = parseInt(cita?.duracion_minutos, 10);
+  if (!(min > 0)) return '';
+  const dHrs = Math.floor(min / 60);
+  const dMin = min % 60;
+  if (dHrs >= 24) {
+    const dias = Math.floor(dHrs / 24);
+    const hResto = dHrs % 24;
+    const parteDias = dias === 1 ? '1 día' : `${dias} días`;
+    if (hResto > 0) {
+      const parteHoras = hResto === 1 ? '1 hora' : `${hResto} horas`;
+      return `${parteDias} y ${parteHoras}`;
+    }
+    return parteDias;
+  }
+  if (dHrs > 0 && dMin > 0) {
+    const parteH = dHrs === 1 ? '1 hora' : `${dHrs} horas`;
+    const parteM = dMin === 1 ? '1 minuto' : `${dMin} minutos`;
+    return `${parteH} y ${parteM}`;
+  }
+  if (dHrs > 0) return dHrs === 1 ? '1 hora' : `${dHrs} horas`;
+  return dMin === 1 ? '1 minuto' : `${dMin} minutos`;
+}
+
+function obtenerTextoHoraFinEstudioElectroWhatsApp(cita) {
+  const finDate = obtenerFechaHoraFinCitaElectro(cita);
+  if (finDate && !isNaN(finDate.getTime())) {
+    return formatearFinEstudioElectroLabel(finDate);
+  }
+  const horaFin = formatearHora(cita?.hora_fin);
+  if (!horaFin || horaFin === '-') return '-';
+  const fechaFin = extraerFechaYmdCalendario(cita?.hora_fin_date);
+  const fechaIni = extraerFechaYmdCalendario(cita?.fecha);
+  if (fechaFin && fechaIni && fechaFin !== fechaIni) {
+    return `${horaFin} (${formatearFechaLargaElectroWhatsApp(fechaFin)})`;
+  }
+  return horaFin;
+}
+
+function construirMensajeRecomendacionesElectro(cita, opts = {}) {
+  const sede = SEDES_INNAR.principal;
+  const e = EMO_WA_ELECTRO;
+  const estudio = String(cita?.estudio || 'estudio').trim();
+  const duracionTxt = formatearDuracionElectroWhatsApp(cita) || 'No registrada';
+  const fechaTxt = formatearFechaLargaElectroWhatsApp(cita?.fecha);
+  const horaTxt = formatearHora(cita?.hora_agendamiento || cita?.hora_inicio);
+  const horaFinTxt = obtenerTextoHoraFinEstudioElectroWhatsApp(cita);
+  const telefonos = sede.telefonos || '3053560651 - 6027238141';
+
+  let mensaje = 'Buen día,\n';
+  mensaje += `${e.hospital} *Instituto Neurociencias de Nariño IPS S.A.S.*\n\n`;
+  mensaje += 'Le informamos:\n\n';
+  mensaje += 'Usted tiene programada una cita para la toma de un estudio de electrodiagnóstico:\n\n';
+  mensaje += `${e.estudio} *Estudio:* ${estudio}\n`;
+  mensaje += `${e.duracion} *Duración:* ${duracionTxt}\n`;
+  mensaje += `${e.dia} *Día:* ${fechaTxt}\n`;
+  mensaje += `${e.hora} *Hora:* ${horaTxt}\n`;
+  mensaje += `${e.salida} *Hora aproximada de salida:* ${horaFinTxt}\n`;
+  mensaje += `${e.direccion} *Dirección:* ${sede.completa}\n`;
+  mensaje += `${e.telefono} *Teléfonos:* ${telefonos}\n\n`;
+  mensaje += 'Le recordamos que será atendido(a) por un técnico o una técnica especializado(a) en electrodiagnóstico.\n\n';
+  mensaje += 'Anexo a este mensaje le enviamos las recomendaciones que debe tener en cuenta.\n\n';
+  mensaje += `${e.documentos} *No olvide traer:*\n`;
+  mensaje += '* Orden de servicio\n';
+  mensaje += '* Copia del documento de identificación\n';
+  mensaje += '* Epicrisis o historia clínica\n\n';
+  mensaje += `${e.confirmar} Le solicitamos confirmar su asistencia. ¡Gracias!`;
+
+  const pdfUrl = opts.pdfUrlAbsoluta || opts.pdfUrl;
+  if (pdfUrl) {
+    mensaje += `\n\n*PDF de recomendaciones:* ${pdfUrl}`;
+  }
+
+  const extra = String(opts.mensajeExtra || '').trim();
+  if (extra) mensaje += `\n\n${extra}`;
+
+  if (sede.mapsUrl) {
+    mensaje += `\n\n${sede.mapsUrl}`;
+  }
+
+  return mensaje;
+}
+
+async function copiarTextoWhatsAppElectro(texto) {
+  const t = String(texto || '');
+  if (!t) return false;
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(t);
+      return true;
+    }
+  } catch (_) { /* fallback */ }
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = t;
+    ta.setAttribute('readonly', '');
+    ta.style.cssText = 'position:fixed;left:-9999px;top:0';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return ok;
+  } catch (_) {
+    return false;
+  }
+}
+
+function abrirEnlaceWhatsAppElectro(numero, mensaje) {
+  const text = encodeURIComponent(mensaje);
+  return `https://api.whatsapp.com/send?phone=${numero}&text=${text}`;
+}
+
+function numeroWhatsAppDesdeTelefono(telefono) {
+  let n = String(telefono || '').replace(/\D/g, '');
+  if (n.length === 10) n = '57' + n;
+  if (n.startsWith('00')) n = n.slice(2);
+  return n;
+}
+
 let lastReciboId = null;
 
 // Usuario actual (rol: admin, recepcion, electro, doctor)
@@ -57,7 +269,7 @@ let selectedDoctorEspecialidad = null;
 let selectedDiagnosticoElectroId = null;
 let selectedEquipoElectroId = null;
 let selectedEstudioDuracion = null; // Duración en minutos del estudio seleccionado
-let filtroEstudioElectro = 'todas'; // Filtro de estudio en tabla de citas
+let filtroEstudiosElectro = []; // vacío = todos los tipos de estudio
 let filtroEquipoSeleccionado = null; // Filtro de equipo en tabla de citas
 let intervaloProgreso = null; // Intervalo para actualizar barra de progreso del estudio
 let intervaloProgresoPanel = null; // Intervalo para mini-barras en panel de equipos
@@ -122,6 +334,8 @@ let lastTurnoNumber1Id = null;
 let globalHayEnAtencion = false;
 let _cargandoTurnosMedica = false;
 let _pendienteTurnosMedica = false;
+/** Clave "fecha|doctorId" tras última carga OK; misma clave => sin skeleton (polling/sockets). */
+let _medicaUltimaKeyAgenda = null;
 let _cargandoCitasElectro = false;
 let _pendienteCitasElectro = false;
 let _citasElectroReqId = 0;
@@ -137,14 +351,177 @@ function normalizarTextoBase(str) {
 }
 
 function esMonitorizacionVideoRadio(estudioNombre) {
-  const s = normalizarTextoBase(estudioNombre);
-  return s.includes('monitorizacion') && s.includes('video') && s.includes('radio');
+  return esEstudioElectroVtmApp(estudioNombre);
+}
+
+if (!window._duracionCacheElectro) window._duracionCacheElectro = {};
+
+async function fetchDuracionEstudioElectro(nombre) {
+  const key = String(nombre || '').trim();
+  if (!key) return null;
+  if (window._duracionCacheElectro[key]) return window._duracionCacheElectro[key];
+  try {
+    const res = await apiFetch(`/api/estudios/duracion?nombre=${encodeURIComponent(key)}`);
+    const data = await res.json();
+    if (data.ok) {
+      window._duracionCacheElectro[key] = data;
+      return data;
+    }
+  } catch (_) { /* ignore */ }
+  return null;
+}
+
+async function estudioElectroDuracionEditable(nombre) {
+  if (esMonitorizacionVideoRadio(nombre)) return true;
+  const info = await fetchDuracionEstudioElectro(nombre);
+  return !!(info && info.esVariable);
+}
+
+function formatearDuracionMinutosElectro(minutos) {
+  const m = parseInt(minutos, 10);
+  if (!(m > 0)) return { html: false, text: '-' };
+  const dHrs = Math.floor(m / 60);
+  const dMin = m % 60;
+  if (dHrs >= 24) {
+    const dias = Math.floor(dHrs / 24);
+    const hResto = dHrs % 24;
+    return { html: true, text: `<span class="electro-dur-badge multi-day">${dias}d ${hResto}h</span>` };
+  }
+  if (dHrs > 0 && dMin > 0) return { html: false, text: `${dHrs}h ${dMin}min` };
+  if (dHrs > 0) return { html: false, text: `${dHrs} horas` };
+  return { html: false, text: `${dMin} min` };
+}
+
+function pintarDuracionMinutosEnElemento(el, minutos) {
+  if (!el) return;
+  const fmt = formatearDuracionMinutosElectro(minutos);
+  if (fmt.html) el.innerHTML = fmt.text;
+  else el.textContent = fmt.text;
+}
+
+function pintarHoraFinModalElectro(cita) {
+  const hfInfoEl = document.getElementById('modalHoraFinInfoDisplay');
+  if (!hfInfoEl) return;
+  if (cita?.hora_fin) {
+    let hfText = formatearHora(cita.hora_fin);
+    if (cita.hora_fin_date && extraerFechaYmdCalendario(cita.hora_fin_date) !== extraerFechaYmdCalendario(cita.fecha)) {
+      hfText += ` (${formatearFechaISO(cita.hora_fin_date)})`;
+    }
+    hfInfoEl.textContent = hfText;
+  } else {
+    hfInfoEl.textContent = '-';
+  }
+}
+
+async function configurarEdicionDuracionModalElectro(cita) {
+  const editWrap = $('modalDuracionEdit');
+  if (!editWrap) return;
+  const puedeEditar = tienePermiso('electro.editar') && cita?.estado !== 'Completado';
+  const esEditable = puedeEditar && await estudioElectroDuracionEditable(cita?.estudio);
+  if (esEditable) {
+    editWrap.style.display = 'block';
+    editWrap.classList.remove('hidden');
+    const mins = parseInt(cita.duracion_minutos, 10) || 0;
+    const hhEl = $('modalDurHH');
+    const mmEl = $('modalDurMM');
+    if (hhEl) hhEl.value = String(Math.floor(mins / 60));
+    if (mmEl) mmEl.value = String(mins % 60);
+    const btnGuardar = $('btnGuardarDuracionModal');
+    if (btnGuardar) btnGuardar.disabled = false;
+  } else {
+    editWrap.style.display = 'none';
+    editWrap.classList.add('hidden');
+  }
+}
+
+async function guardarDuracionCitaElectro() {
+  if (!citaElectroSeleccionada) return;
+  if (!tienePermiso('electro.editar')) {
+    showToast('No tiene permiso para editar citas de electro', 'error');
+    return;
+  }
+  if (citaElectroSeleccionada.estado === 'Completado') {
+    showToast('No se puede cambiar la duración de un estudio completado', 'error');
+    return;
+  }
+  const hh = parseInt($('modalDurHH')?.value, 10) || 0;
+  const mm = parseInt($('modalDurMM')?.value, 10) || 0;
+  const duracionMinutos = hh * 60 + mm;
+  if (duracionMinutos <= 0) {
+    showToast('Indique una duración válida (horas y/o minutos)', 'error');
+    return;
+  }
+  const btn = $('btnGuardarDuracionModal');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Guardando...';
+  }
+  try {
+    const res = await apiFetch(`/api/citas-electro/${citaElectroSeleccionada.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ duracion_minutos: duracionMinutos })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data?.ok) {
+      showToast(data?.error || 'No se pudo actualizar la duración', 'error');
+      return;
+    }
+    try {
+      const resFresh = await apiFetch(
+        `/api/citas-electro/${citaElectroSeleccionada.id}?_t=${Date.now()}`,
+        { cache: 'no-store' }
+      );
+      if (resFresh.ok) {
+        const fresh = await resFresh.json();
+        Object.assign(citaElectroSeleccionada, fresh, {
+          estado: normalizarEstadoElectro(fresh.estado ?? citaElectroSeleccionada.estado)
+        });
+      } else {
+        citaElectroSeleccionada.duracion_minutos = duracionMinutos;
+      }
+    } catch (_) {
+      citaElectroSeleccionada.duracion_minutos = duracionMinutos;
+    }
+    pintarDuracionMinutosEnElemento($('modalDuracionDisplay'), citaElectroSeleccionada.duracion_minutos);
+    pintarHoraFinModalElectro(citaElectroSeleccionada);
+    const estudioActivo = (citaElectroSeleccionada.estado === 'En Estudio' || citaElectroSeleccionada.estado === 'Pausado')
+      && citaElectroSeleccionada.hora_inicio;
+    if (estudioActivo) {
+      citaElectroSeleccionada._avisoFinDuracion = false;
+      const estudioBarra = $('estudioBarra');
+      if (estudioBarra) estudioBarra.style.display = 'block';
+      actualizarProgresoEstudio();
+    }
+    if (window.socket && window.socket.connected) {
+      window.socket.emit('electro:cambios-guardados', {
+        id: citaElectroSeleccionada.id,
+        cambios: { duracion_minutos: duracionMinutos }
+      });
+    }
+    await cargarCitasElectro();
+    showToast('Duración actualizada', 'success');
+  } catch (e) {
+    showToast('Error actualizando duración: ' + e.message, 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = 'Actualizar duración';
+    }
+  }
 }
 
 // ========= POLÍTICA CENTRAL: AGENDA MÉDICA =========
 // Objetivo: evitar reglas duplicadas entre tabla / panel / modal.
 function agendaMedicaEsEstadoFinal(estado) {
   return ['ATENDIDO', 'NO_ASISTIO', 'CANCELADO', 'REPROGRAMADO'].includes(estado);
+}
+
+/** Cambiar solo la entidad en citas ya atendidas (recepción/admin con agenda.editar). */
+function puedeEditarEntidadCitaAtendida(turno) {
+  if (!turno || turno.estado !== 'ATENDIDO') return false;
+  if (currentUser?.rol === 'doctor') return false;
+  return tienePermiso('agenda.editar') || tienePermiso('agenda.editar_siempre');
 }
 
 function agendaMedicaPolicy(turno, opts = {}) {
@@ -169,7 +546,7 @@ function agendaMedicaPolicy(turno, opts = {}) {
   const esEnSala = estado === 'EN_SALA';
   const esPendiente = estado === 'PENDIENTE' || estado === 'EN_ESPERA';
 
-  // Regla de negocio/UI: la existencia de un turno EN_ATENCION sólo “bloquea” otras filas para el doctor.
+  // Regla de negocio/UI: la existencia de un turno EN_ATENCION sólo "bloquea" otras filas para el doctor.
   const bloqueadoPorAtencionGlobal = esDoctorRol && hayEnAtencion && !esEnAtencion;
 
   // Tabla: acciones por fila (editar/eliminar/prioridad)
@@ -180,7 +557,7 @@ function agendaMedicaPolicy(turno, opts = {}) {
     puedeVerDetalle: perms.ver,
     puedeEditar: perms.editar && !rowBloqueada,
     puedeEliminar: perms.eliminar && !rowBloqueada,
-    puedePrioridad: perms.cambiarEstado && !rowBloqueada, // la prioridad se maneja como “cambiar estado” hoy
+    puedePrioridad: perms.cambiarEstado && !rowBloqueada, // la prioridad se maneja como "cambiar estado" hoy
     deshabilitarBotones: !(perms.editar || perms.cambiarEstado) || rowBloqueada,
   };
 
@@ -193,17 +570,19 @@ function agendaMedicaPolicy(turno, opts = {}) {
   // Modal: matriz explícita de visibilidad por estado/rol para evitar inconsistencias.
   const puedeGestionarComoRecepcion = !esDoctorRol && perms.cambiarEstado;
   const puedeGestionarComoDoctor = esDoctorRol && (perms.llamarSiguiente || perms.marcarAtendido || perms.cambiarEstado);
+  const puedeCambiarDoctor = perms.editar && !esDoctorRol && !esFinal && !esEnAtencion && (esPendiente || esEnSala);
 
   const modal = {
     // Edición de datos dentro del modal
     bloquearEdicion: esDoctorRol && esEnAtencion,
 
-    // Footer
-    // RECEPCIÓN/ADMIN:
-    // - PENDIENTE -> EN SALA, NO ASISTIO
-    // - EN_SALA   -> LLAMAR, EN_ATENCION, ATENDIDO
-    // - EN_ATENCION -> ATENDIDO
+    // Footer (visibilidad estricta por ESTADO)
+    // PENDIENTE: recordatorio, en sala, no asistió, reprogramar
+    // EN_SALA: llamar paciente, en atención
+    // EN_ATENCION: atendido
+    showRecordatorio: esPendiente,
     showEnSala: puedeGestionarComoRecepcion && esPendiente,
+    showReprogramar: (puedeGestionarComoRecepcion || (perms.editar && !esDoctorRol)) && (esPendiente || estado === 'NO_ASISTIO'),
     showReprogramarNoAsistio: puedeGestionarComoRecepcion && estado === 'NO_ASISTIO',
 
     // LLAMAR solo cuando está EN_SALA (doctor o recepción con permisos)
@@ -222,12 +601,10 @@ function agendaMedicaPolicy(turno, opts = {}) {
     ),
     enAtencionDisabled: esFinal || esEnAtencion,
 
-    // ATENDIDO:
-    // - Doctor: solo cuando está EN_ATENCION
-    // - Recepción/Admin: cuando está EN_SALA o EN_ATENCION
-    showAtendido: !esFinal && (
-      (esDoctorRol && perms.marcarAtendido && esEnAtencion) ||
-      (puedeGestionarComoRecepcion && (esEnSala || esEnAtencion))
+    // ATENDIDO: solo cuando está EN_ATENCION
+    showAtendido: !esFinal && esEnAtencion && (
+      (esDoctorRol && perms.marcarAtendido) ||
+      puedeGestionarComoRecepcion
     ),
     atendidoDisabled: esFinal || (!esEnAtencion && !puedeGestionarComoRecepcion),
 
@@ -240,7 +617,12 @@ function agendaMedicaPolicy(turno, opts = {}) {
     noAsistioDisabled: esFinal,
 
     // Menú 3 puntos (recepción/admin)
-    showMenu3Puntos: (perms.cambiarEstado || perms.llamarSiguiente || perms.marcarAtendido) && !esDoctorRol && !esFinal,
+    showMenu3Puntos: !esDoctorRol && !esFinal && (
+      perms.cambiarEstado || perms.llamarSiguiente || perms.marcarAtendido || puedeCambiarDoctor
+    ),
+
+    // Transferir cita a otro médico (misma fecha/hora)
+    showCambiarDoctor: puedeCambiarDoctor,
   };
 
   return { perms, row, panel, modal, meta: { rol, esFinal, esEnAtencion, esEnSala, hayEnAtencion } };
@@ -337,11 +719,20 @@ function apiFetch(url, opts = {}) {
 }
 
 function isAdmin() { return currentUser && (currentUser.rol === 'admin' || currentUser.rol === 'superadmin'); }
+function isSuperadmin() { return currentUser && currentUser.rol === 'superadmin'; }
 function isRecepcion() { return currentUser && (currentUser.rol === 'recepcion' || currentUser.rol === 'auxiliar_recepcion' || currentUser.rol === 'admin_recepcion'); }
 function isElectro() { return currentUser && (currentUser.rol === 'electro' || currentUser.rol === 'admin_electro' || currentUser.rol === 'tecnico_electro'); }
 function isDoctor() { return currentUser && currentUser.rol === 'doctor'; }
 function isContabilidad() { return currentUser && currentUser.rol === 'contabilidad'; }
 function canDeleteRecibos() { return tienePermiso('recibos.eliminar'); }
+
+function puedeMarcarReciboPagado() {
+  return tienePermiso('recibos.pagar') || tienePermiso('recibos.editar');
+}
+
+function puedeMarcarReciboPendiente() {
+  return tienePermiso('recibos.pendiente') || tienePermiso('recibos.editar');
+}
 
 // Mostrar saludo para doctores
 function mostrarSaludoDoctor() {
@@ -358,10 +749,65 @@ function mostrarSaludoDoctor() {
 }
 
 // ========== LOGIN Y NAVEGACIÓN ==========
+let _innarPendingTurnoHighlightId = null;
+let _innarPendingElectroHighlightId = null;
+let _innarSkipNextKanbanEnter = false;
+
+function innarSkipKanbanEnterOnce() {
+  _innarSkipNextKanbanEnter = true;
+}
+
+function innarQueueTurnoHighlight(turnoId) {
+  if (turnoId != null && turnoId !== '') _innarPendingTurnoHighlightId = turnoId;
+}
+
+function innarQueueElectroHighlight(citaId) {
+  if (citaId != null && citaId !== '') _innarPendingElectroHighlightId = citaId;
+}
+
+function _innarFlushElectroHighlight() {
+  const id = _innarPendingElectroHighlightId;
+  _innarPendingElectroHighlightId = null;
+  if (id != null && typeof window.innarHighlightElectroCard === 'function') {
+    requestAnimationFrame(() => window.innarHighlightElectroCard(id));
+  }
+}
+
+function _innarFlushTurnoHighlight() {
+  const id = _innarPendingTurnoHighlightId;
+  _innarPendingTurnoHighlightId = null;
+  if (id != null && typeof window.innarHighlightTurnoRow === 'function') {
+    requestAnimationFrame(() => window.innarHighlightTurnoRow(id));
+  }
+}
+
 function showView(id) {
-  document.querySelectorAll('[id^="view-"]').forEach(v => v.classList.add('hidden'));
-  const el = document.getElementById(id);
-  if (el) el.classList.remove('hidden');
+  const apply = () => {
+    document.querySelectorAll('[id^="view-"]').forEach((v) => {
+      if (v.id === id) return;
+      v.classList.remove('innar-view-enter');
+      v.classList.add('hidden');
+    });
+    const el = document.getElementById(id);
+    if (el) el.classList.remove('hidden');
+    if (typeof window.innarSidebarRefresh === 'function') window.innarSidebarRefresh();
+  };
+  let usedViewTransition = false;
+  if (typeof window.innarRunViewSwitch === 'function') {
+    try {
+      usedViewTransition = window.innarRunViewSwitch(apply);
+    } catch (e) {
+      console.warn('[showView] View transition falló, aplicando vista directa:', e);
+      apply();
+    }
+  } else {
+    apply();
+  }
+  if (!usedViewTransition) {
+    const el = document.getElementById(id);
+    if (el && typeof window.innarAnimateViewIn === 'function') window.innarAnimateViewIn(el);
+    else if (el) el.classList.add('innar-view-enter');
+  }
 }
 
 function updateSidebarUser(user) {
@@ -376,6 +822,7 @@ function updateSidebarUser(user) {
   document.querySelectorAll('.sidebar-user-avatar').forEach(el => el.textContent = initials);
   document.querySelectorAll('.sidebar-user-name').forEach(el => el.textContent = name);
   document.querySelectorAll('.sidebar-user-role').forEach(el => el.textContent = roleLabel);
+  if (typeof window.innarSidebarRefresh === 'function') window.innarSidebarRefresh();
 }
 
 function updateMenuByRole() {
@@ -388,7 +835,13 @@ function updateMenuByRole() {
   // Helper global: verifica si el usuario tiene un permiso granular
   window.tienePermiso = function(permKey) {
     const r = currentUser?.rol || '';
-    if (r === 'superadmin' || r === 'admin') return true;
+    if (r === 'superadmin') return true;
+    const optIn = typeof PERMISOS_OPT_IN !== 'undefined' && PERMISOS_OPT_IN.has(permKey);
+    if (optIn) {
+      const p = perms;
+      return Array.isArray(p) && p.includes(permKey);
+    }
+    if (r === 'admin' && !Array.isArray(perms)) return true;
     const p = perms;
     if (Array.isArray(p)) return p.includes(permKey);
     // Sin permisos personalizados → verificar defaults del rol
@@ -407,10 +860,19 @@ function updateMenuByRole() {
     'diagnosticos':   'modulo.diagnosticos',
     'dashboard-citas':'modulo.dashboard',
     'gestion-datos':  'modulo.gestion_datos',
+    'monitor-equipos':'modulo.monitor_equipos',
+    'reportes-pdx':     'modulo.reportes_pdx',
+    'armado-soportes':  'modulo.armado_soportes',
+    'anexo-fidu':       'modulo.anexo_fidu',
+    'backup':           'modulo.backup',
   };
 
   document.querySelectorAll('.menu-card').forEach(card => {
     const moduleKey = card.dataset.module || '';
+    if (moduleKey === 'documentos-cita') {
+      card.style.display = (tienePermiso('agenda.ver') || tienePermiso('electro.ver')) ? '' : 'none';
+      return;
+    }
     const permKey = MODULE_PERM_MAP[moduleKey];
     let allowed = permKey ? tienePermiso(permKey) : (card.dataset.rol || '').split(' ').includes(rol);
     card.style.display = allowed ? '' : 'none';
@@ -429,7 +891,8 @@ async function checkSession() {
     if (data.autenticado) {
       if (data.csrfToken) innarCsrfToken = data.csrfToken;
       currentUser = data.usuario;
-      $('menuUserName').textContent = currentUser?.nombre || currentUser?.usuario || 'Usuario';
+      const menuUser = $('menuUserName');
+      if (menuUser) menuUser.textContent = currentUser?.nombre || currentUser?.usuario || 'Usuario';
       sessionStorage.setItem('nombre_usuario', currentUser?.nombre || '');
       updateSidebarUser(currentUser);
       updateMenuByRole();
@@ -481,7 +944,8 @@ async function doLogin(usuario, password) {
       $('loginErrorText').textContent = '';
       $('loginErrorRetry').textContent = '';
       showView('view-menu');
-      $('menuUserName').textContent = currentUser?.nombre || currentUser?.usuario || 'Usuario';
+      const menuUser = $('menuUserName');
+      if (menuUser) menuUser.textContent = currentUser?.nombre || currentUser?.usuario || 'Usuario';
       sessionStorage.setItem('nombre_usuario', currentUser?.nombre || '');
       updateSidebarUser(currentUser);
       updateMenuByRole();
@@ -548,12 +1012,37 @@ async function doLogout() {
 
 let initRecibosDone = false, initAgendaDone = false, initElectroDone = false, initUsuariosDone = false, initDiagnosticosDone = false, initDashboardCitasDone = false, initGestionDatosDone = false, initUcqnDone = false;
 function goToModule(moduleId) {
+  if (moduleId === 'documentos-cita') {
+    const permDoc = (typeof tienePermiso === 'function')
+      && (tienePermiso('agenda.ver') || tienePermiso('electro.ver'));
+    if (!permDoc) {
+      showView('view-menu');
+      history.replaceState({ view: 'menu' }, '', '#menu');
+      return;
+    }
+  }
+  const permAnexo = 'modulo.anexo_fidu';
+  if (moduleId === 'anexo-fidu' && typeof tienePermiso === 'function' && !tienePermiso(permAnexo)) {
+    showView('view-menu');
+    history.replaceState({ view: 'menu' }, '', '#menu');
+    return;
+  }
   showView(`view-${moduleId}`);
   currentModule = moduleId;
   window.currentModule = moduleId;  // Exponer para sockets
   sessionStorage.setItem(lsKeyCurrentModule, moduleId);
   history.pushState({view: moduleId}, '', `#${moduleId}`);
-  if (moduleId === 'recibos') { if (!initRecibosDone) initRecibos(); else cargarLista(_recibosLastParams || ''); }
+  if (moduleId === 'recibos') {
+    if (!initRecibosDone) initRecibos();
+    else {
+      cargarLista(_recibosLastParams || '');
+      if (_recibosFiltrosUI) restaurarEstadoFiltrosRecibosUI(_recibosFiltrosUI);
+    }
+    recargarSelectsEntidadModulo('recibos', { force: true });
+    if ($('filtroEntidad')) cargarFiltrosOpciones({ force: true });
+    if ($('filtroEspecialidad')) cargarFiltrosEspecialidades();
+    if (typeof updateSavedCount === 'function') updateSavedCount();
+  }
   if (moduleId === 'agenda-medica') { 
     if (!initAgendaDone) {
       initAgendaMedica();
@@ -575,17 +1064,34 @@ function goToModule(moduleId) {
       if (typeof loadCalendarData === 'function' && (selectedDoctorId || currentUser?.id)) loadCalendarData();
       if (typeof cargarTurnosMedica === 'function') cargarTurnosMedica();
       if (typeof actualizarHorasDisponibles === 'function') actualizarHorasDisponibles();
+      recargarSelectsEntidadModulo('agenda-medica', { force: true });
     }
     // Socket.IO maneja los cambios en tiempo real, no necesitamos auto-refresh
   } else {
     stopAgendaMedicaAutoRefresh();
   }
-  if (moduleId === 'electro') { if (!initElectroDone) initElectro(); initElectroDone = true; }
+  if (moduleId === 'electro') {
+    if (!initElectroDone) { initElectro(); initElectroDone = true; }
+    else recargarSelectsEntidadModulo('electro', { force: true });
+  }
   if (moduleId === 'usuarios') { if (!initUsuariosDone) initUsuarios(); initUsuariosDone = true; }
   if (moduleId === 'diagnosticos') { if (!initDiagnosticosDone) initDiagnosticos(); initDiagnosticosDone = true; }
-  if (moduleId === 'dashboard-citas') { if (!initDashboardCitasDone) initDashboardCitas(); initDashboardCitasDone = true; }
+  if (moduleId === 'dashboard-citas') {
+    if (!initDashboardCitasDone) initDashboardCitas();
+    else if (typeof cargarEntidadesFiltroAuditoria === 'function') {
+      cargarEntidadesFiltroAuditoria({ force: true });
+    }
+    initDashboardCitasDone = true;
+  }
   if (moduleId === 'gestion-datos') { if (!initGestionDatosDone) initGestionDatos(); initGestionDatosDone = true; }
   if (moduleId === 'ucqn') { if (!initUcqnDone) initUcqn(); initUcqnDone = true; }
+  if (moduleId === 'monitor-equipos') { initMonitorEquipos(); }
+  if (moduleId === 'reportes-pdx' && typeof initReportesPdx === 'function') initReportesPdx();
+  if (moduleId === 'armado-soportes' && typeof initArmadoSoportes === 'function') initArmadoSoportes();
+  if (moduleId === 'backup' && typeof initBackupModule === 'function') initBackupModule();
+  if (moduleId === 'documentos-cita' && typeof initDocumentosCitaModule === 'function') initDocumentosCitaModule();
+  if (moduleId === 'anexo-fidu' && typeof initAnexoFidu === 'function') initAnexoFidu();
+  if (typeof window.innarSidebarRefresh === 'function') window.innarSidebarRefresh();
 }
 
 function goToMenu() {
@@ -620,8 +1126,8 @@ function goToMenu() {
 function setupMenuHandlers() {
   if (window._menuHandlersSetup) return;
   window._menuHandlersSetup = true;
-  $('btnLogout').addEventListener('click', doLogout);
-  $('btnCambiarContrasena').addEventListener('click', openCambiarContrasenaModal);
+  $('btnLogout')?.addEventListener('click', doLogout);
+  $('btnCambiarContrasena')?.addEventListener('click', openCambiarContrasenaModal);
   document.querySelectorAll('.menu-card').forEach(card => {
     card.addEventListener('click', () => {
       // Si NO es doctor y hace clic en AGENDA MÉDICA, mostrar selección de doctor
@@ -632,12 +1138,14 @@ function setupMenuHandlers() {
       }
     });
   });
-  $('btnVolverRecibos').addEventListener('click', goToMenu);
-  $('btnVolverAgenda').addEventListener('click', goToMenu);
-  $('btnVolverElectro').addEventListener('click', goToMenu);
+  $('btnVolverRecibos')?.addEventListener('click', goToMenu);
+  $('btnVolverAgenda')?.addEventListener('click', goToMenu);
+  $('btnVolverElectro')?.addEventListener('click', goToMenu);
   if ($('btnVolverUsuarios')) $('btnVolverUsuarios').addEventListener('click', goToMenu);
   if ($('btnVolverDashboardCitas')) $('btnVolverDashboardCitas').addEventListener('click', goToMenu);
   if ($('btnVolverGestionDatos')) $('btnVolverGestionDatos').addEventListener('click', goToMenu);
+  if ($('btnVolverBackup')) $('btnVolverBackup').addEventListener('click', goToMenu);
+  if ($('btnVolverDocumentosCita')) $('btnVolverDocumentosCita').addEventListener('click', goToMenu);
   if ($('btnVolverUcqn')) $('btnVolverUcqn').addEventListener('click', goToMenu);
 
   // Manejar botón atrás del navegador (solo una vez)
@@ -709,63 +1217,18 @@ function setupMenuHandlers() {
       document.querySelectorAll('#view-recibos .page').forEach(p => p.classList.remove('active'));
       const pg = document.getElementById(`page-${page}`);
       if (pg) pg.classList.add('active');
-      if (page === 'recibos') { cargarLista(_recibosLastParams || ''); cargarFiltrosUsuarios(); if ($('resetAll')) $('resetAll').style.display = canDeleteRecibos() ? 'inline-block' : 'none'; }
+      if (page === 'recibos') { cargarLista(_recibosLastParams || ''); if ($('resetAll')) $('resetAll').style.display = canDeleteRecibos() ? 'inline-block' : 'none'; }
       if (page === 'servicios') renderServiciosList();
     });
   });
 
-  setupMobileSidebars();
-}
-
-function setupMobileSidebars() {
-  if (window._mobileSidebarSetup) return;
-  window._mobileSidebarSetup = true;
-
-  function openSidebar(sidebar, backdrop) {
-    sidebar.classList.add('mobile-open');
-    backdrop.classList.add('active');
+  if (typeof window.innarSidebarInit === 'function') {
+    window.innarSidebarInit();
   }
 
-  function closeSidebar(sidebar, backdrop) {
-    sidebar.classList.remove('mobile-open');
-    backdrop.classList.remove('active');
-  }
-
-  function closeAll() {
-    document.querySelectorAll('.sidebar.mobile-open').forEach(s => {
-      const layout = s.closest('.main-layout');
-      const bd = layout && layout.querySelector('.mobile-sidebar-backdrop');
-      closeSidebar(s, bd || { classList: { remove: () => {} } });
-    });
-  }
-
-  // Inyectar backdrop y botón en cada módulo
-  document.querySelectorAll('.main-layout').forEach(layout => {
-    const sidebar = layout.querySelector(':scope > .sidebar');
-    const mainContent = layout.querySelector(':scope > .main-content');
-    if (!sidebar || !mainContent) return;
-
-    // Backdrop dentro del mismo layout (mismo stacking context que el sidebar)
-    const backdrop = document.createElement('div');
-    backdrop.className = 'mobile-sidebar-backdrop';
-    layout.appendChild(backdrop);
-    backdrop.addEventListener('click', () => closeSidebar(sidebar, backdrop));
-
-    // Botón hamburguesa antes del main-content
-    const btn = document.createElement('button');
-    btn.className = 'mobile-menu-btn no-print';
-    btn.setAttribute('aria-label', 'Abrir navegación');
-    btn.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>`;
-    layout.insertBefore(btn, mainContent);
-    btn.addEventListener('click', () => openSidebar(sidebar, backdrop));
-  });
-
-  // Cerrar sidebar al elegir opción o volver
-  document.addEventListener('click', e => {
-    if (e.target.closest('.btn-volver') || e.target.closest('.sidebar-btn')) {
-      closeAll();
-    }
-  }, true);
+  initCompletarPersonaFiduUi();
+  initCertificadoAsistenciaUi();
+  initComprobanteServiciosUi();
 }
 
 // Escapar HTML para evitar XSS al insertar en innerHTML
@@ -780,48 +1243,90 @@ function escapeHtml(str) {
 // Abreviar nombres largos de estudios para la tabla
 function abreviarEstudio(nombre) {
   if (!nombre) return '-';
-  const abreviaturas = {
-    'Monitorización Electroencefalografica por Video y Radio': 'Monit. EEG Video',
-    'POLISOMNOGRAFIA': 'PSG',
-    'PSG Básica': 'PSG Básica',
-    'PSG CPAP': 'PSG CPAP',
-    'POLISOMNOGRAFIA CPAP': 'PSG CPAP',
-    'VTM': 'VTM',
-  };
-  // Coincidencia exacta
-  if (abreviaturas[nombre]) return abreviaturas[nombre];
-  // Coincidencia parcial (inicio)
-  for (const [key, val] of Object.entries(abreviaturas)) {
-    if (nombre.toUpperCase().startsWith(key.toUpperCase())) return val;
+  const n = String(nombre).trim();
+  const tipo = tipoEstudioElectroApp(nombre);
+  if (tipo === 'vtm') return 'VTM';
+  if (tipo === 'eeg') return 'EEG';
+  if (tipo === 'psg') {
+    const u = n.toUpperCase();
+    if (u.includes('CPAP') || u.includes('BPAP')) return 'PSG CPAP/BPAP';
+    if (u.includes('BASICA') || u.includes('B\u00c1SICA')) return 'PSG B\u00e1sica';
+    return 'PSG';
   }
-  // Si es muy largo, truncar
-  return nombre.length > 22 ? nombre.substring(0, 20) + '…' : nombre;
+  if (tipo === 'actigrafia') return 'Actigraf\u00eda';
+  const u = n.toUpperCase();
+  if (u.includes('LATENCIA')) return 'Test Latencia';
+  return n.length > 22 ? n.substring(0, 20) + '\u2026' : n;
+}
+
+/** PSG arriba; EEG, VTM y demás estudios abajo. */
+function familiaKanbanElectro(estudio) {
+  return tipoEstudioElectroApp(estudio) === 'psg' ? 'psg' : 'eeg';
+}
+
+const ELECTRO_ESTUDIO_COLOR_MAP = {
+  'psg básica': { accent: '#7c3aed', bg: '#f5f3ff', border: '#c4b5fd' },
+  'psg basica': { accent: '#7c3aed', bg: '#f5f3ff', border: '#c4b5fd' },
+  'psg cpap/bpap': { accent: '#6d28d9', bg: '#ede9fe', border: '#a78bfa' },
+  'polisomnografía básica': { accent: '#7c3aed', bg: '#f5f3ff', border: '#c4b5fd' },
+  'polisomnografia basica': { accent: '#7c3aed', bg: '#f5f3ff', border: '#c4b5fd' },
+  'titulación cpap/bpap': { accent: '#5b21b6', bg: '#f3e8ff', border: '#c4b5fd' },
+  'electroencefalograma': { accent: '#ca8a04', bg: '#fefce8', border: '#fde047' },
+  'eeg': { accent: '#ca8a04', bg: '#fefce8', border: '#fde047' },
+  'monitorización electroencefalográfica por video y radio': { accent: '#2563eb', bg: '#eff6ff', border: '#93c5fd' },
+  'vtm': { accent: '#2563eb', bg: '#eff6ff', border: '#93c5fd' },
+  'test de latencia de sueño múltiple': { accent: '#0d9488', bg: '#f0fdfa', border: '#5eead4' },
+  'actigrafía': { accent: '#db2777', bg: '#fdf2f8', border: '#f9a8d4' }
+};
+
+const ELECTRO_ESTUDIO_COLOR_PALETTE = [
+  { accent: '#7c3aed', bg: '#f5f3ff', border: '#c4b5fd' },
+  { accent: '#2563eb', bg: '#eff6ff', border: '#93c5fd' },
+  { accent: '#ca8a04', bg: '#fefce8', border: '#fde047' },
+  { accent: '#0d9488', bg: '#f0fdfa', border: '#5eead4' },
+  { accent: '#db2777', bg: '#fdf2f8', border: '#f9a8d4' },
+  { accent: '#ea580c', bg: '#fff7ed', border: '#fdba74' },
+  { accent: '#4f46e5', bg: '#eef2ff', border: '#a5b4fc' },
+  { accent: '#059669', bg: '#ecfdf5', border: '#6ee7b7' },
+  { accent: '#dc2626', bg: '#fef2f2', border: '#fca5a5' },
+  { accent: '#0891b2', bg: '#ecfeff', border: '#67e8f9' }
+];
+
+function hashEstudioElectroColor(nombre) {
+  const s = String(nombre || '').trim().toLowerCase();
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+  return Math.abs(h) % ELECTRO_ESTUDIO_COLOR_PALETTE.length;
+}
+
+const ELECTRO_TIPO_COLOR_MAP = {
+  psg: { accent: '#7c3aed', bg: '#f5f3ff', border: '#c4b5fd' },
+  eeg: { accent: '#ca8a04', bg: '#fefce8', border: '#fde047' },
+  vtm: { accent: '#2563eb', bg: '#eff6ff', border: '#93c5fd' },
+  actigrafia: { accent: '#db2777', bg: '#fdf2f8', border: '#f9a8d4' }
+};
+
+function colorTarjetaEstudioElectro(estudio) {
+  const key = String(estudio || '').trim().toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  if (ELECTRO_ESTUDIO_COLOR_MAP[key]) return ELECTRO_ESTUDIO_COLOR_MAP[key];
+  const tipo = tipoEstudioElectroApp(estudio);
+  if (ELECTRO_TIPO_COLOR_MAP[tipo]) return ELECTRO_TIPO_COLOR_MAP[tipo];
+  return ELECTRO_ESTUDIO_COLOR_PALETTE[hashEstudioElectroColor(estudio)];
+}
+
+function aplicarColorEstudioElectroCard(card, estudio) {
+  const c = colorTarjetaEstudioElectro(estudio);
+  card.style.borderLeftWidth = '4px';
+  card.style.borderLeftStyle = 'solid';
+  card.style.borderLeftColor = c.accent;
+  card.style.background = c.bg;
+  card.style.borderColor = c.border;
+  card.dataset.estudioColor = c.accent;
 }
 
 // Genera un badge de color según el estado de la cita electro
-function esTurnoMedicaReprogramado(turno) {
-  if (!turno) return false;
-  if (turno.estado === 'REPROGRAMADO') return true;
-  return /\[Reprogramado\]/i.test(String(turno.notas || ''));
-}
-
-function esCitaElectroReprogramada(cita) {
-  if (!cita) return false;
-  if (normalizarEstadoElectro(cita.estado) === 'Reprogramado') return true;
-  return /\[Reprogramado\]/i.test(String(cita.observaciones || ''));
-}
-
-function esCitaElectroAdelantada(cita) {
-  if (!cita) return false;
-  return normalizarEstadoElectro(cita.estado) === 'Adelantado';
-}
-
-function anexarNotaReprogramadoMedica(notas) {
-  const s = String(notas || '').trim();
-  if (/\[Reprogramado\]/i.test(s)) return s || null;
-  return s ? `[Reprogramado] ${s}` : '[Reprogramado]';
-}
-
 function normalizarEstadoElectro(estado) {
   const raw = String(estado || '').trim();
   if (!raw) return 'Programado';
@@ -865,6 +1370,31 @@ function estadoBadge(estado) {
   return `<span style="display:inline-block;padding:5px 14px;border-radius:14px;font-size:0.85rem;font-weight:700;background:${s.bg};color:${s.color};border:1px solid ${s.border};white-space:nowrap;letter-spacing:0.01em">${escapeHtml(e)}</span>`;
 }
 
+function citaElectroEsReprogramada(cita) {
+  if (!cita) return false;
+  if (normalizarEstadoElectro(cita.estado) === 'Reprogramado') return true;
+  return /\[Reprogramado\]/i.test(String(cita.observaciones || ''));
+}
+
+function estadoBadgeCitaElectro(citaOrEstado, observacionesArg) {
+  const esObj = typeof citaOrEstado === 'object' && citaOrEstado !== null;
+  const cita = esObj ? citaOrEstado : { estado: citaOrEstado, observaciones: observacionesArg };
+  const estado = citaElectroEsReprogramada(cita) ? 'Programado' : (cita.estado || 'Programado');
+  return estadoBadge(estado);
+}
+
+function buildPayloadReprogramarCitaElectro(cita, fechaNueva, horaNueva) {
+  const obs = String(cita?.observaciones || '').trim();
+  const nota = '[Reprogramado]';
+  const observaciones = /\[Reprogramado\]/i.test(obs) ? obs : (obs ? `${nota} ${obs}` : nota);
+  return {
+    estado: 'Programado',
+    fecha: fechaNueva,
+    hora_agendamiento: horaNueva,
+    observaciones
+  };
+}
+
 /**
  * Formatea una hora al formato HH:MM AM/PM (12 horas)
  * Maneja: null, undefined, '', 'null', HH:MM, HH:MM:SS
@@ -876,18 +1406,27 @@ function estadoBadge(estado) {
  * @param {string} fecha - Fecha en formato ISO
  * @returns {string} Fecha en formato DD/MM/YYYY o la fecha original si no es ISO
  */
+/** Fecha calendario YYYY-MM-DD sin desfase UTC (Colombia). */
+function extraerFechaYmdCalendario(valor) {
+  if (!valor) return '';
+  const s = String(valor).trim();
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return '';
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Bogota',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).format(d);
+}
+
 function formatearFecha(fecha) {
-  if (!fecha) return '-';
-  try {
-    const date = new Date(fecha);
-    if (isNaN(date)) return fecha; // Si no es una fecha válida, devuelve original
-    const dia = String(date.getDate()).padStart(2, '0');
-    const mes = String(date.getMonth() + 1).padStart(2, '0');
-    const anio = date.getFullYear();
-    return `${dia}/${mes}/${anio}`;
-  } catch (e) {
-    return fecha;
-  }
+  const ymd = extraerFechaYmdCalendario(fecha);
+  if (!ymd) return '-';
+  const [y, m, d] = ymd.split('-');
+  return `${d}/${m}/${y}`;
 }
 
 function formatearHora(valor) {
@@ -950,26 +1489,38 @@ function parseHora12a24(str) {
   return '';
 }
 
+/** Hora desde input type=time, 24h o 12h (incl. «a. m.» / «p. m.»). */
+function parseHoraInputAgenda(str) {
+  if (str == null || str === '') return '';
+  let t = String(str).trim();
+  const mSec = t.match(/^(\d{1,2}):(\d{2}):\d{2}$/);
+  if (mSec) t = `${mSec[1]}:${mSec[2]}`;
+  let h = parseHora12a24(t);
+  if (h) return h;
+  const norm = t.replace(/\./g, '').replace(/\s+/g, ' ').trim();
+  const mAmPm = norm.match(/^(\d{1,2}):(\d{2})\s*([AaPp])\s*([Mm])$/);
+  if (mAmPm) {
+    h = parseHora12a24(`${mAmPm[1]}:${mAmPm[2]} ${mAmPm[3].toUpperCase()}${mAmPm[4].toUpperCase()}`);
+    if (h) return h;
+  }
+  const m24 = norm.match(/^(\d{1,2}):(\d{2})$/);
+  if (m24) {
+    const hh = parseInt(m24[1], 10);
+    const mm = parseInt(m24[2], 10);
+    if (hh >= 0 && hh <= 23 && mm >= 0 && mm <= 59) {
+      return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+    }
+  }
+  return '';
+}
+
 /**
  * Formatea una fecha ISO (2026-03-03T05:00:00.000Z) a YYYY-MM-DD
  * @param {string} fecha - Fecha en formato ISO o YYYY-MM-DD
  * @returns {string} Fecha en formato YYYY-MM-DD o la fecha original si es válida
  */
 function formatearFechaISO(fecha) {
-  if (!fecha) return '';
-  const strFecha = String(fecha).trim();
-  
-  // Si ya está en formato YYYY-MM-DD, devolverlo tal cual
-  if (/^\d{4}-\d{2}-\d{2}$/.test(strFecha)) {
-    return strFecha;
-  }
-  
-  // Si es un ISO string, extraer la parte de la fecha
-  if (strFecha.includes('T')) {
-    return strFecha.split('T')[0];
-  }
-  
-  return strFecha;
+  return extraerFechaYmdCalendario(fecha) || '';
 }
 
 function hoyColombiaISO() {
@@ -1416,7 +1967,8 @@ function showToast(msg, type = 'info', duration = 4000) {
 function _removeToast(toast) {
   if (!toast || toast.classList.contains('removing')) return;
   toast.classList.add('removing');
-  setTimeout(() => toast.remove(), 280);
+  const exitMs = typeof window.INNAR_TOAST_EXIT_MS === 'number' ? window.INNAR_TOAST_EXIT_MS : 220;
+  setTimeout(() => toast.remove(), exitMs);
 }
 
 // Botón con estado de carga
@@ -1532,7 +2084,7 @@ function showSessionExpiredBanner() {
 }
 
 // ========== CONFIRM MODAL ==========
-function showConfirm(msg, onOk, { okText = 'Eliminar', cancelText = 'Cancelar', danger = true, icon = '⚠️' } = {}) {
+function showConfirm(msg, onOk, { okText = 'Eliminar', cancelText = 'Cancelar', danger = true, icon = '⚠️', onCancel = null } = {}) {
   const backdrop = document.createElement('div');
   backdrop.className = 'confirm-backdrop';
   backdrop.innerHTML = `
@@ -1545,10 +2097,139 @@ function showConfirm(msg, onOk, { okText = 'Eliminar', cancelText = 'Cancelar', 
       </div>
     </div>`;
   document.body.appendChild(backdrop);
-  backdrop.querySelector('.btn-cancel').addEventListener('click', () => backdrop.remove());
-  backdrop.querySelector('.btn-ok').addEventListener('click', () => { backdrop.remove(); onOk(); });
-  backdrop.addEventListener('click', e => { if (e.target === backdrop) backdrop.remove(); });
+  const closeConfirm = () => {
+    if (typeof window.innarCloseConfirm === 'function') window.innarCloseConfirm(backdrop);
+    else backdrop.remove();
+    if (typeof onCancel === 'function') onCancel();
+  };
+  backdrop.querySelector('.btn-cancel').addEventListener('click', closeConfirm);
+  backdrop.querySelector('.btn-ok').addEventListener('click', () => {
+    if (typeof window.innarCloseConfirm === 'function') {
+      window.innarCloseConfirm(backdrop, onOk);
+    } else {
+      backdrop.remove();
+      onOk();
+    }
+  });
+  backdrop.addEventListener('click', e => { if (e.target === backdrop) closeConfirm(); });
 }
+
+/** Confirmación estándar antes de eliminar (usar en todo el sistema). */
+function confirmEliminar(msg, onOk, { okText = 'Eliminar', cancelText = 'Cancelar' } = {}) {
+  const base = String(msg || '¿Está seguro de que desea eliminar esto?').trim();
+  const texto = /¿/u.test(base)
+    ? base
+    : `¿Está seguro de que desea eliminar ${base}?`;
+  const aviso = texto.includes('no se puede deshacer') ? texto : `${texto}\n\nEsta acción no se puede deshacer.`;
+  showConfirm(aviso, onOk, { okText, cancelText, danger: true });
+}
+window.confirmEliminar = confirmEliminar;
+
+function showPromptInput(msg, onOk, {
+  okText = 'Guardar',
+  cancelText = 'Cancelar',
+  danger = false,
+  icon = '✏️',
+  placeholder = '',
+  defaultValue = '',
+  inputLabel = ''
+} = {}) {
+  const backdrop = document.createElement('div');
+  backdrop.className = 'confirm-backdrop';
+  const labelHtml = inputLabel
+    ? `<label class="confirm-prompt-label" style="display:block;margin:8px 0 4px;font-size:.85rem;color:#64748b">${escapeHtml(inputLabel)}</label>`
+    : '';
+  backdrop.innerHTML = `
+    <div class="confirm-box">
+      <div class="confirm-icon">${icon}</div>
+      <div class="confirm-msg">${msg}</div>
+      ${labelHtml}
+      <input type="text" class="prompt-input prompt-input-single" value="${escapeHtml(defaultValue)}" placeholder="${escapeHtml(placeholder)}" style="width:100%;margin:10px 0;padding:10px;border:1px solid #d1d5db;border-radius:8px;font-family:inherit;font-size:.9rem" />
+      <div class="confirm-actions">
+        <button class="btn-cancel">${cancelText}</button>
+        <button class="btn-ok${danger ? ' danger' : ''}">${okText}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(backdrop);
+  const input = backdrop.querySelector('.prompt-input');
+  input.focus();
+  input.select();
+  const closePrompt = () => {
+    if (typeof window.innarCloseConfirm === 'function') window.innarCloseConfirm(backdrop);
+    else backdrop.remove();
+  };
+  const submit = () => {
+    const val = input.value.trim();
+    if (!val) { input.style.borderColor = '#ef4444'; input.focus(); return; }
+    if (typeof window.innarCloseConfirm === 'function') {
+      window.innarCloseConfirm(backdrop, () => onOk(val));
+    } else {
+      backdrop.remove();
+      onOk(val);
+    }
+  };
+  backdrop.querySelector('.btn-cancel').addEventListener('click', closePrompt);
+  backdrop.querySelector('.btn-ok').addEventListener('click', submit);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); submit(); }
+    if (e.key === 'Escape') closePrompt();
+  });
+  backdrop.addEventListener('click', e => { if (e.target === backdrop) closePrompt(); });
+}
+window.showPromptInput = showPromptInput;
+
+function showConfirmChoice(msg, onPrimary, onSecondary, {
+  primaryText = 'Aceptar',
+  secondaryText = 'Otra opción',
+  cancelText = 'Cancelar',
+  icon = '❓',
+  onCancel = null
+} = {}) {
+  const backdrop = document.createElement('div');
+  backdrop.className = 'confirm-backdrop';
+  backdrop.innerHTML = `
+    <div class="confirm-box">
+      <div class="confirm-icon">${icon}</div>
+      <div class="confirm-msg">${msg}</div>
+      <div class="confirm-actions confirm-actions-choice">
+        <button class="btn-cancel">${cancelText}</button>
+        <button class="btn-secondary">${secondaryText}</button>
+        <button class="btn-ok">${primaryText}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(backdrop);
+  const closeChoice = () => {
+    if (typeof window.innarCloseConfirm === 'function') window.innarCloseConfirm(backdrop);
+    else backdrop.remove();
+  };
+  backdrop.querySelector('.btn-cancel').addEventListener('click', () => {
+    closeChoice();
+    if (typeof onCancel === 'function') onCancel();
+  });
+  backdrop.querySelector('.btn-secondary').addEventListener('click', () => {
+    if (typeof window.innarCloseConfirm === 'function') {
+      window.innarCloseConfirm(backdrop, onSecondary);
+    } else {
+      backdrop.remove();
+      onSecondary();
+    }
+  });
+  backdrop.querySelector('.btn-ok').addEventListener('click', () => {
+    if (typeof window.innarCloseConfirm === 'function') {
+      window.innarCloseConfirm(backdrop, onPrimary);
+    } else {
+      backdrop.remove();
+      onPrimary();
+    }
+  });
+  backdrop.addEventListener('click', e => {
+    if (e.target === backdrop) {
+      closeChoice();
+      if (typeof onCancel === 'function') onCancel();
+    }
+  });
+}
+window.showConfirmChoice = showConfirmChoice;
 
 function showPrompt(msg, onOk, { okText = 'Confirmar', cancelText = 'Cancelar', danger = true, icon = '⚠️', placeholder = '' } = {}) {
   const backdrop = document.createElement('div');
@@ -1566,13 +2247,22 @@ function showPrompt(msg, onOk, { okText = 'Confirmar', cancelText = 'Cancelar', 
   document.body.appendChild(backdrop);
   const input = backdrop.querySelector('.prompt-input');
   input.focus();
-  backdrop.querySelector('.btn-cancel').addEventListener('click', () => backdrop.remove());
+  const closePrompt = () => {
+    if (typeof window.innarCloseConfirm === 'function') window.innarCloseConfirm(backdrop);
+    else backdrop.remove();
+  };
+  backdrop.querySelector('.btn-cancel').addEventListener('click', closePrompt);
   backdrop.querySelector('.btn-ok').addEventListener('click', () => {
     const val = input.value.trim();
     if (!val) { input.style.borderColor = '#ef4444'; input.focus(); return; }
-    backdrop.remove(); onOk(val);
+    if (typeof window.innarCloseConfirm === 'function') {
+      window.innarCloseConfirm(backdrop, () => onOk(val));
+    } else {
+      backdrop.remove();
+      onOk(val);
+    }
   });
-  backdrop.addEventListener('click', e => { if (e.target === backdrop) backdrop.remove(); });
+  backdrop.addEventListener('click', e => { if (e.target === backdrop) closePrompt(); });
 }
 
 // ========== SKELETON ROWS ==========
@@ -1643,7 +2333,9 @@ function setupLoginForm() {
   }
 
   // Login form submit
-  $('formLogin').addEventListener('submit', async (e) => {
+  const formLogin = $('formLogin');
+  if (!formLogin) return;
+  formLogin.addEventListener('submit', async (e) => {
     e.preventDefault();
     const usuario = $('loginUsuario').value.trim();
     const password = $('loginPassword').value;
@@ -1656,24 +2348,29 @@ function setupLoginForm() {
 
 // init
 document.addEventListener('DOMContentLoaded', async ()=>{
-  // SIEMPRE registrar el handler del formulario de login (antes de cualquier return)
-  setupLoginForm();
-  
-  // Si la página se refresca con sesión expirada pendiente, hacer logout en servidor
-  if (sessionStorage.getItem('session_expired')) {
-    sessionStorage.removeItem('session_expired');
-    try { await fetch('/api/logout', { method: 'POST', credentials: 'include' }); } catch(_) {}
-    showView('view-login');
-    return;
-  }
-  // Verificar sesión al cargar
-  const autenticado = await checkSession();
-  if (!autenticado) {
-    return;
-  }
+  try {
+    // SIEMPRE registrar el handler del formulario de login (antes de cualquier return)
+    setupLoginForm();
 
-  setupMenuHandlers();
-  // initRecibos() solo al entrar al módulo Recibos (goToModule) — evita GET /api/recibos y 403 en usuarios sin recibos.ver
+    // Si la página se refresca con sesión expirada pendiente, hacer logout en servidor
+    if (sessionStorage.getItem('session_expired')) {
+      sessionStorage.removeItem('session_expired');
+      try { await fetch('/api/logout', { method: 'POST', credentials: 'include' }); } catch (_) {}
+      showView('view-login');
+      return;
+    }
+    // Verificar sesión al cargar
+    const autenticado = await checkSession();
+    if (!autenticado) {
+      return;
+    }
+
+    setupMenuHandlers();
+    // initRecibos() solo al entrar al módulo Recibos (goToModule) — evita GET /api/recibos y 403 en usuarios sin recibos.ver
+  } catch (e) {
+    console.error('[DOMContentLoaded] Error al iniciar la aplicación:', e);
+    try { showView('view-login'); } catch (_) {}
+  }
 });
 
 // ========== MODAL SELECCIÓN DE DOCTOR ==========
@@ -1688,10 +2385,8 @@ async function showDoctorSelectionModal() {
     medicos.forEach(med => {
       const btn = document.createElement('button');
       btn.type = 'button';
-      btn.style.cssText = 'padding:12px;text-align:left;border:1px solid #ddd;border-radius:6px;background:white;cursor:pointer;transition:all 0.2s;color:#627371;font-weight:500';
+      btn.className = 'medico-select-btn';
       btn.textContent = med.nombre;
-      btn.onmouseover = () => btn.style.background = '#f3f4f6';
-      btn.onmouseout = () => btn.style.background = 'white';
       btn.addEventListener('click', () => selectDoctor(med.id, med.nombre, med.especialidad));
       container.appendChild(btn);
     });
@@ -1742,8 +2437,12 @@ async function cargarTiposConsultaSegunEspecialidad(especialidad) {
     if (tipos.length > 0) {
       tipos.forEach(t => {
         const opt = document.createElement('option');
-        opt.value = t.nombre;
-        opt.textContent = t.nombre;
+        const nombre = typeof t === 'string' ? t : t.nombre;
+        opt.value = nombre;
+        opt.textContent = nombre;
+        if (typeof t === 'object' && t.permite_sesiones_multiples) {
+          opt.dataset.sesionesMultiples = '1';
+        }
         selectTipo.appendChild(opt);
       });
     } else {
@@ -1767,10 +2466,529 @@ async function cargarTiposConsultaSegunEspecialidad(especialidad) {
 
   selectTipo.removeEventListener('change', manejarCambioTipoConsulta);
   selectTipo.addEventListener('change', manejarCambioTipoConsulta);
+  actualizarBotonSesionesMultiples();
+}
+
+function tipoConsultaPermiteSesionesMultiples(selectEl) {
+  const opt = selectEl?.selectedOptions?.[0];
+  if (opt?.dataset?.sesionesMultiples === '1') return true;
+  const nombre = (selectEl?.value || '').toLowerCase();
+  return nombre.includes('rehabilitación cognitiva') || nombre.includes('rehabilitacion cognitiva');
+}
+
+function fechaLocalYmdFromDate(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function sumarDiasYmd(ymd, dias) {
+  const d = new Date(String(ymd).slice(0, 10) + 'T12:00:00');
+  d.setDate(d.getDate() + (parseInt(dias, 10) || 0));
+  return fechaLocalYmdFromDate(d);
+}
+
+const SESIONES_MULTI_DIAS_DEFECTO = 7;
+let _sesionesVerifTimers = {};
+
+function obtenerHoraPrimeraSesionModal() {
+  return parseHoraInputAgenda($('nuevoTurnoHoraMedica')?.value || '');
+}
+
+function leerCamposSesionesAdicionales() {
+  const map = {};
+  document.querySelectorAll('.sesion-multi-fecha').forEach((el) => {
+    const idx = parseInt(el.dataset.idx, 10);
+    if (!Number.isNaN(idx)) {
+      if (!map[idx]) map[idx] = {};
+      map[idx].fecha = el.value;
+    }
+  });
+  document.querySelectorAll('.sesion-multi-hora').forEach((el) => {
+    const idx = parseInt(el.dataset.idx, 10);
+    if (!Number.isNaN(idx)) {
+      if (!map[idx]) map[idx] = {};
+      map[idx].hora = el.value;
+    }
+  });
+  return map;
+}
+
+function valorDefectoSesionAdicional(idx, fecha1, hora1, built) {
+  if (idx === 1) {
+    return { fecha: sumarDiasYmd(fecha1, SESIONES_MULTI_DIAS_DEFECTO), hora: hora1 };
+  }
+  const prev = built[idx - 1];
+  const prevFecha = prev?.fecha || fecha1;
+  return { fecha: sumarDiasYmd(prevFecha, SESIONES_MULTI_DIAS_DEFECTO), hora: prev?.hora || hora1 };
+}
+
+function renderCamposSesionesMultiples(forzar) {
+  const container = $('sesionesMultiplesCamposList');
+  if (!container) return;
+  const cantidad = Math.min(52, Math.max(1, parseInt($('sesionesMultiplesCantidad')?.value || '1', 10)));
+  if (!forzar && cantidad === _sesionesUltimaCantidadRender && container.querySelector('.sesion-multi-fecha')) {
+    return;
+  }
+  _sesionesUltimaCantidadRender = cantidad;
+
+  const fecha1 = $('modalNuevaCitaFecha')?.value;
+  const hora1Raw = $('nuevoTurnoHoraMedica')?.value || '';
+
+  if (cantidad < 2) {
+    container.innerHTML = '<p style="margin:0;font-size:.8rem;color:#6b7280">Use cantidad mayor a 1 para definir más sesiones.</p>';
+    return;
+  }
+
+  const prevMap = leerCamposSesionesAdicionales();
+  let html = '<div style="font-weight:600;font-size:.875rem;margin-bottom:8px;color:#166534">Siguientes sesiones</div>';
+  const built = {};
+  for (let num = 2; num <= cantidad; num += 1) {
+    const idx = num - 1;
+    let def;
+    if (_sesionesCamposManual.has(idx) && prevMap[idx]?.fecha) {
+      def = { fecha: prevMap[idx].fecha, hora: prevMap[idx].hora || hora1Raw };
+    } else {
+      def = valorDefectoSesionAdicional(idx, fecha1, hora1Raw, built);
+    }
+    built[idx] = def;
+    const hVal = parseHoraInputAgenda(def.hora) || String(def.hora || '').slice(0, 5);
+    html += `<div class="sesion-multi-card sesion-multi-campo-row" data-idx="${idx}">
+      <div class="sesion-multi-card-num">${num}</div>
+      <div class="sesion-multi-field-fecha"><label>Fecha</label><div class="sesion-multi-date-input-wrap"><input type="date" class="sesion-multi-fecha" data-idx="${idx}" value="${def.fecha || ''}" /></div></div>
+      <div><label>Hora</label><input type="time" class="sesion-multi-hora" data-idx="${idx}" value="${hVal}" /></div>
+      <div class="sesion-multi-estado-wrap"><span class="sesion-multi-estado" data-idx="${idx}"><span class="sesion-multi-pill sesion-multi-pill--muted">—</span></span></div>
+    </div>`;
+  }
+  container.innerHTML = html;
+  container.querySelectorAll('.sesion-multi-fecha, .sesion-multi-hora').forEach((el) => {
+    const idx = parseInt(el.dataset.idx, 10);
+    const marcarManual = () => {
+      if (!Number.isNaN(idx)) _sesionesCamposManual.add(idx);
+      programarVerificarSesionMultiFila(idx);
+      programarActualizarPreviewSesionesMultiples();
+    };
+    el.addEventListener('change', marcarManual);
+    el.addEventListener('input', marcarManual);
+  });
+  for (let num = 2; num <= cantidad; num += 1) {
+    programarVerificarSesionMultiFila(num - 1);
+  }
+}
+
+function obtenerTodasLasSesionesMultiples() {
+  const fecha1 = $('modalNuevaCitaFecha')?.value;
+  const hora1 = obtenerHoraPrimeraSesionModal();
+  const cantidad = Math.min(52, Math.max(1, parseInt($('sesionesMultiplesCantidad')?.value || '1', 10)));
+  const sesiones = [{ fecha: fecha1, hora: hora1, sesion_numero: 1 }];
+  for (let num = 2; num <= cantidad; num += 1) {
+    const idx = num - 1;
+    const fEl = document.querySelector(`.sesion-multi-fecha[data-idx="${idx}"]`);
+    const hEl = document.querySelector(`.sesion-multi-hora[data-idx="${idx}"]`);
+    sesiones.push({
+      fecha: fEl?.value || '',
+      hora: parseHoraInputAgenda(hEl?.value || '') || hora1,
+      sesion_numero: num
+    });
+  }
+  return sesiones;
+}
+
+function syncModalNuevaCitaFechaDesdeAgenda() {
+  const v = $('agendaMedicaFecha')?.value;
+  const m = $('modalNuevaCitaFecha');
+  if (v && m) m.value = v;
+}
+
+/** Tras crear citas, muestra en la tabla el día donde quedó la primera sesión. */
+function navegarAgendaMedicaAFecha(fechaYmd) {
+  if (!fechaYmd) {
+    cargarTurnosMedica();
+    return;
+  }
+  const el = $('agendaMedicaFecha');
+  if (!el) {
+    cargarTurnosMedica();
+    return;
+  }
+  if (el.value === fechaYmd) {
+    updateAgendaFechaDisplay();
+    cargarTurnosMedica();
+    return;
+  }
+  el.value = fechaYmd;
+  updateAgendaFechaDisplay();
+  el.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
+function formatearFechaCorta(iso) {
+  if (!iso) return '';
+  const [y, m, d] = iso.split('-');
+  const meses = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+  return `${parseInt(d, 10)} ${meses[parseInt(m, 10) - 1]} ${y}`;
+}
+
+function _intervaloAgendaMedicaMin() {
+  const espLower = (selectedDoctorEspecialidad || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  return (espLower.includes('epileptolog') || espLower.includes('neurolog')) ? 25 : 40;
+}
+
+let _sesionesMultiplesPlan = [];
+let _sesionesPreviewTimer = null;
+let _sesionesPreviewSeq = 0;
+let _modoSesionesMultiplesActivo = false;
+let _sesionesCamposManual = new Set();
+let _sesionesUltimaCantidadRender = 0;
+
+function actualizarBotonSesionesMultiples() {
+  const btn = $('btnActivarSesionesMultiples');
+  const tipo = $('nuevoTurnoTipoMedica');
+  if (!btn) return;
+  const permite = tipoConsultaPermiteSesionesMultiples(tipo);
+  btn.style.display = permite ? 'inline-flex' : 'none';
+  if (!permite && _modoSesionesMultiplesActivo) {
+    setModoSesionesMultiples(false);
+    return;
+  }
+  btn.textContent = _modoSesionesMultiplesActivo ? 'Ocultar sesiones múltiples' : 'Sesiones múltiples';
+  btn.setAttribute('aria-pressed', _modoSesionesMultiplesActivo ? 'true' : 'false');
+}
+
+function setModoSesionesMultiples(activo) {
+  _modoSesionesMultiplesActivo = !!activo;
+  const lbl = $('lblModalNuevaCitaFecha');
+  if (lbl) {
+    lbl.innerHTML = _modoSesionesMultiplesActivo
+      ? 'Fecha (1ª sesión) <span style="color:#dc2626">*</span>'
+      : 'Fecha <span style="color:#dc2626">*</span>';
+  }
+  const panel = $('sesionesMultiplesRow');
+  if (panel) panel.style.display = _modoSesionesMultiplesActivo ? '' : 'none';
+  if (_modoSesionesMultiplesActivo) {
+    _sesionesCamposManual = new Set();
+    _sesionesUltimaCantidadRender = 0;
+    renderCamposSesionesMultiples(true);
+    actualizarPreviewSesionesMultiples();
+  } else {
+    limpiarEstadoSesionesMultiples();
+    const btn = $('crearTurnoMedica');
+    if (btn) btn.textContent = 'Crear Cita';
+  }
+  actualizarBotonSesionesMultiples();
+}
+
+function limpiarEstadoSesionesMultiples() {
+  _sesionesMultiplesPlan = [];
+  _sesionesCamposManual = new Set();
+  _sesionesUltimaCantidadRender = 0;
+  _sesionesVerifTimers = {};
+  clearTimeout(_sesionesPreviewTimer);
+  const tbody = $('sesionesMultiplesTableBody');
+  if (tbody) tbody.innerHTML = '';
+  const campos = $('sesionesMultiplesCamposList');
+  if (campos) campos.innerHTML = '';
+}
+
+function programarActualizarPreviewSesionesMultiples() {
+  clearTimeout(_sesionesPreviewTimer);
+  _sesionesPreviewTimer = setTimeout(() => actualizarPreviewSesionesMultiples(), 220);
+}
+
+function programarVerificarSesionMultiFila(idx) {
+  if (Number.isNaN(idx)) return;
+  clearTimeout(_sesionesVerifTimers[idx]);
+  _sesionesVerifTimers[idx] = setTimeout(() => verificarSesionMultiFila(idx), 180);
+}
+
+function payloadVerificarSesionesMultiples(sesiones) {
+  const doctorId = selectedDoctorId || (currentUser?.rol === 'doctor' ? currentUser?.id : null);
+  const todas = obtenerTodasLasSesionesMultiples();
+  return {
+    doctor_id: parseInt(doctorId, 10),
+    sesiones: sesiones.map((s) => ({
+      fecha: s.fecha,
+      hora: s.hora,
+      sesion_numero: s.sesion_numero
+    })),
+    primera_sesion: {
+      fecha: $('modalNuevaCitaFecha')?.value || '',
+      hora: obtenerHoraPrimeraSesionModal()
+    },
+    todas_sesiones: todas.map((s) => ({
+      fecha: s.fecha,
+      hora: s.hora,
+      sesion_numero: s.sesion_numero
+    })),
+    intervalo_min: _intervaloAgendaMedicaMin()
+  };
+}
+
+function planDesdeVerificacionApi(s, i, info) {
+  const esPrimera = i === 0;
+  const ocupada = !!(info.ocupada || info.duplicada_en_plan);
+  const requiereCambio = !esPrimera && (info.agenda_valida === false || ocupada);
+  return {
+    numero: s.sesion_numero,
+    fecha: s.fecha,
+    hora: s.hora,
+    esPrimera,
+    agenda_valida: info.agenda_valida !== false,
+    agenda_error: info.agenda_error || null,
+    ocupada,
+    paciente: info.paciente || null,
+    horas_alternativas: info.horas_alternativas || [],
+    requiereCambio
+  };
+}
+
+function htmlPillEstadoSesion(s) {
+  if (s.esPrimera || s.sinVerificar) {
+    if (!s.fecha || !s.hora) {
+      return '<span class="sesion-multi-pill sesion-multi-pill--muted">Complete fecha y hora arriba</span>';
+    }
+    return '<span class="sesion-multi-pill sesion-multi-pill--muted">Definida arriba</span>';
+  }
+  if (s.incompleta || !s.fecha || !s.hora) {
+    const msg = s.agenda_error || 'Complete fecha y hora';
+    return `<span class="sesion-multi-pill sesion-multi-pill--muted">${escapeHtml(msg)}</span>`;
+  }
+  if (s.requiereCambio || s.ocupada) {
+    const msg = s.agenda_error
+      || (s.paciente ? `Ya hay cita (${s.paciente})` : 'Ya hay otra cita a esta hora');
+    return `<span class="sesion-multi-pill sesion-multi-pill--bad">${escapeHtml(msg)}</span>`;
+  }
+  return '<span class="sesion-multi-pill sesion-multi-pill--ok">✓ Disponible</span>';
+}
+
+function htmlEstadoDisponibilidadSesion(s) {
+  return htmlPillEstadoSesion(s);
+}
+
+function actualizarResumenPrimeraSesionEnPanel() {
+  const fecha = $('modalNuevaCitaFecha')?.value || '';
+  const hora = obtenerHoraPrimeraSesionModal();
+  const fEl = $('sesionMultiPrimeraFecha');
+  const hEl = $('sesionMultiPrimeraHora');
+  if (fEl) fEl.textContent = fecha ? formatearFechaCorta(fecha) : 'Sin fecha';
+  if (hEl) hEl.textContent = hora ? formatearHora(hora) : 'Sin hora';
+}
+
+function actualizarEstadosCamposSesionesMultiples(plan) {
+  if (!Array.isArray(plan)) return;
+  plan.forEach((s) => {
+    if (s.esPrimera) return;
+    const el = document.querySelector(`.sesion-multi-estado[data-idx="${s.numero - 1}"]`);
+    if (el) el.innerHTML = htmlPillEstadoSesion(s);
+    const row = document.querySelector(`.sesion-multi-campo-row[data-idx="${s.numero - 1}"]`);
+    if (row) {
+      row.classList.toggle('sesion-multi-card--invalid', !!s.requiereCambio);
+      row.classList.toggle('sesion-multi-card--ok', !s.requiereCambio && !!(s.fecha && s.hora));
+    }
+  });
+}
+
+async function verificarSesionMultiFila(idx) {
+  const wrap = document.querySelector(`.sesion-multi-estado[data-idx="${idx}"]`);
+  if (!wrap) return;
+  const fecha = document.querySelector(`.sesion-multi-fecha[data-idx="${idx}"]`)?.value;
+  const hora = parseHoraInputAgenda(document.querySelector(`.sesion-multi-hora[data-idx="${idx}"]`)?.value);
+  const row = document.querySelector(`.sesion-multi-campo-row[data-idx="${idx}"]`);
+  if (!fecha || !hora) {
+    wrap.innerHTML = '<span class="sesion-multi-pill sesion-multi-pill--muted">Complete fecha y hora</span>';
+    if (row) row.classList.remove('sesion-multi-card--ok', 'sesion-multi-card--invalid');
+    return;
+  }
+  wrap.innerHTML = '<span class="sesion-multi-pill sesion-multi-pill--loading">Comprobando…</span>';
+  const doctorId = selectedDoctorId || (currentUser?.rol === 'doctor' ? currentUser?.id : null);
+  if (!doctorId) {
+    wrap.innerHTML = '<span class="sesion-multi-pill sesion-multi-pill--muted">Seleccione doctor</span>';
+    return;
+  }
+  try {
+    const res = await apiFetch('/api/turnos/verificar-sesiones', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payloadVerificarSesionesMultiples([
+        { fecha, hora, sesion_numero: idx + 1 }
+      ]))
+    });
+    const data = await res.json();
+    const info = data.ok && data.sesiones?.[0] ? data.sesiones[0] : {};
+    const plan = planDesdeVerificacionApi({ fecha, hora, sesion_numero: idx + 1 }, 1, info);
+    wrap.innerHTML = htmlPillEstadoSesion(plan);
+    if (row) {
+      row.classList.toggle('sesion-multi-card--invalid', !!plan.requiereCambio);
+      row.classList.toggle('sesion-multi-card--ok', !plan.requiereCambio);
+    }
+    const planIdx = idx + 1;
+    if (_sesionesMultiplesPlan[planIdx]) {
+      Object.assign(_sesionesMultiplesPlan[planIdx], plan);
+    }
+  } catch (e) {
+    wrap.innerHTML = '<span class="sesion-multi-pill sesion-multi-pill--warn">No se pudo verificar</span>';
+  }
+}
+
+async function actualizarPreviewSesionesMultiples() {
+  const panel = $('sesionesMultiplesRow');
+  const tbody = $('sesionesMultiplesTableBody');
+  const btn = $('crearTurnoMedica');
+  if (!panel || panel.style.display === 'none') {
+    if (btn) btn.textContent = 'Crear Cita';
+    return;
+  }
+
+  actualizarResumenPrimeraSesionEnPanel();
+
+  const fecha = $('modalNuevaCitaFecha')?.value;
+  const horaBase = obtenerHoraPrimeraSesionModal();
+  const doctorId = selectedDoctorId || (currentUser?.rol === 'doctor' ? currentUser?.id : null);
+  const cantidad = Math.min(52, Math.max(1, parseInt($('sesionesMultiplesCantidad')?.value || '1', 10)));
+  if ($('sesionesMultiplesCantidad') && String(cantidad) !== $('sesionesMultiplesCantidad').value) {
+    $('sesionesMultiplesCantidad').value = String(cantidad);
+  }
+
+  const todasSesiones = obtenerTodasLasSesionesMultiples();
+
+  if (!doctorId) {
+    if (tbody) {
+      tbody.innerHTML = '<tr><td colspan="4"><span class="sesion-multi-pill sesion-multi-pill--muted">Seleccione un doctor en la agenda</span></td></tr>';
+    }
+    if (btn) btn.textContent = 'Agendar sesiones';
+    return;
+  }
+
+  /** Solo sesiones 2…N: la 1.ª se define arriba y no se valida en este panel. */
+  const sesionesAVerificar = todasSesiones.filter((s) => s.sesion_numero > 1 && s.fecha && s.hora);
+  const haySiguientesIncompletas = todasSesiones.some((s) => s.sesion_numero > 1 && (!s.fecha || !s.hora));
+  if (!sesionesAVerificar.length && haySiguientesIncompletas) {
+    if (tbody) {
+      tbody.innerHTML = '<tr><td colspan="4"><span class="sesion-multi-pill sesion-multi-pill--muted">Complete fecha y hora de las siguientes sesiones</span></td></tr>';
+    }
+    if (btn) btn.textContent = 'Agendar sesiones';
+    _sesionesMultiplesPlan = todasSesiones.map((s, i) => ({
+      numero: s.sesion_numero,
+      fecha: s.fecha,
+      hora: s.hora,
+      esPrimera: i === 0,
+      sinVerificar: i === 0,
+      incompleta: !s.fecha || !s.hora,
+      requiereCambio: false,
+      agenda_valida: true
+    }));
+    actualizarEstadosCamposSesionesMultiples(_sesionesMultiplesPlan);
+    actualizarResumenPrimeraSesionEnPanel();
+    return;
+  }
+
+  const seq = ++_sesionesPreviewSeq;
+  document.querySelectorAll('.sesion-multi-estado').forEach((el) => {
+    el.innerHTML = '<span class="sesion-multi-pill sesion-multi-pill--loading">Comprobando…</span>';
+  });
+  if (tbody) {
+    tbody.innerHTML = `<tr><td colspan="4"><span class="sesion-multi-pill sesion-multi-pill--loading">Comprobando disponibilidad…</span></td></tr>`;
+  }
+
+  const sesionesPayload = sesionesAVerificar.map((s) => ({ fecha: s.fecha, hora: s.hora }));
+  let verif = { sesiones: [] };
+  if (doctorId) {
+    try {
+      const res = await apiFetch('/api/turnos/verificar-sesiones', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payloadVerificarSesionesMultiples(
+          sesionesAVerificar.map((s) => ({
+            fecha: s.fecha,
+            hora: s.hora,
+            sesion_numero: s.sesion_numero
+          }))
+        ))
+      });
+      const data = await res.json();
+      if (data.ok) verif = data;
+    } catch (e) {
+      console.warn('[sesiones] verificar:', e.message);
+    }
+  }
+  if (seq !== _sesionesPreviewSeq) return;
+
+  let verifIdx = 0;
+  _sesionesMultiplesPlan = todasSesiones.map((s, i) => {
+    const esPrimera = i === 0;
+    if (!s.fecha || !s.hora) {
+      return {
+        numero: s.sesion_numero, fecha: s.fecha, hora: s.hora, esPrimera,
+        sinVerificar: esPrimera,
+        incompleta: true, requiereCambio: false, agenda_valida: true
+      };
+    }
+    if (esPrimera) {
+      return {
+        numero: s.sesion_numero, fecha: s.fecha, hora: s.hora, esPrimera: true,
+        sinVerificar: true, requiereCambio: false, agenda_valida: true, incompleta: false
+      };
+    }
+    const info = verif.sesiones[verifIdx] || {};
+    verifIdx += 1;
+    return planDesdeVerificacionApi({ ...s, hora: s.hora }, i, info);
+  });
+
+  if (tbody) {
+    tbody.innerHTML = _sesionesMultiplesPlan.map((s) => {
+      if (s.incompleta) {
+        const msg = s.esPrimera
+          ? (s.agenda_error || 'Complete la 1.ª sesión arriba')
+          : 'Complete fecha y hora';
+        return `<tr>
+          <td>${s.numero}</td>
+          <td>${s.fecha ? formatearFechaCorta(s.fecha) : '—'}</td>
+          <td>${s.hora ? formatearHora(s.hora) : '—'}</td>
+          <td><span class="sesion-multi-pill sesion-multi-pill--muted">${escapeHtml(msg)}</span></td>
+        </tr>`;
+      }
+      return `<tr>
+        <td>${s.numero}</td>
+        <td>${formatearFechaCorta(s.fecha)}</td>
+        <td>${formatearHora(s.hora)}</td>
+        <td>${htmlPillEstadoSesion(s)}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  actualizarEstadosCamposSesionesMultiples(_sesionesMultiplesPlan);
+  actualizarResumenPrimeraSesionEnPanel();
+
+  const pendientes = _sesionesMultiplesPlan.filter((s) => s.requiereCambio).length;
+  const incompletas = _sesionesMultiplesPlan.filter((s) => s.incompleta).length;
+  if (btn) {
+    if (pendientes > 0) {
+      btn.textContent = `Revise ${pendientes} sesión${pendientes !== 1 ? 'es' : ''} no disponibles`;
+    } else if (incompletas > 0) {
+      btn.textContent = 'Complete todas las sesiones';
+    } else {
+      btn.textContent = `Agendar ${todasSesiones.length} sesiones`;
+    }
+  }
+}
+
+function obtenerPlanSesionesMultiplesParaGuardar() {
+  return obtenerTodasLasSesionesMultiples().map((s, i) => ({
+    fecha: s.fecha,
+    hora: s.hora,
+    sesion_numero: s.sesion_numero,
+    requiereCambio: _sesionesMultiplesPlan[i]?.requiereCambio
+  }));
+}
+
+function togglePanelSesionesMultiples(visible) {
+  setModoSesionesMultiples(!!visible);
 }
 
 function manejarCambioTipoConsulta(e) {
   manejarOtraConsulta(e.target.value);
+  setModoSesionesMultiples(false);
+  actualizarBotonSesionesMultiples();
 }
 
 function manejarOtraConsulta(tipoSeleccionado) {
@@ -1864,6 +3082,7 @@ function initRecibos() {
   cargarMedicosEnRecibo();
   // Cargar servicios en el select de tipo estudio
   cargarServiciosEnRecibo();
+  cargarEntidadesEnRecibo();
   // Mostrar usuario actual como "generado por"
   const gpEl = $('reciboGeneradoPorDisplay');
   if (gpEl) {
@@ -1952,8 +3171,7 @@ function initRecibos() {
   if ($('btnExportarCSV')) $('btnExportarCSV').onclick = exportarReciboCSV;
   if ($('btnExportarPDF')) $('btnExportarPDF').onclick = exportarReciboPDF;
 
-  // Auto-aplicar filtros al cambiar fecha
-  ['filtroFechaDesde', 'filtroFechaHasta'].forEach(id => {
+  ['filtroFechaDesde', 'filtroFechaHasta', 'filtroEstadoPago', 'filtroAnulado'].forEach(id => {
     const el = $(id);
     if (el) el.addEventListener('change', () => aplicarFiltrosRecibos());
   });
@@ -1990,25 +3208,8 @@ function initRecibos() {
   cargarFiltrosMedicos().then(() => {
     const el = $('filtroMedico');
     if (el) {
-      initMultiSelect(el, { placeholder: 'Todos los médicos', onChange: async (vals) => {
-        // Cargar tipos de consulta si hay exactamente 1 médico (no Electro)
-        const wrap = $('filtroTipoConsultaWrap');
-        const sel  = $('filtroTipoConsulta');
-        if (wrap && sel) {
-          if (vals.length === 1 && vals[0] !== 'ELECTRODIAGNOSTICOS') {
-            sel.innerHTML = '<option value="">Todos</option>';
-            try {
-              const tipos = await apiFetch(`/api/tipos-consulta?medico_id=${encodeURIComponent(vals[0])}`).then(r => r.json()).catch(() => []);
-              tipos.forEach(t => { const opt = document.createElement('option'); opt.value = t.nombre; opt.textContent = t.nombre; sel.appendChild(opt); });
-            } catch (e) { console.warn('[filtroTipoConsulta] Error cargando tipos:', e.message); }
-            if (!sel._ms) initMultiSelect(sel, { placeholder: 'Todos', onChange: () => { clearMultiSelect($('filtroEstudio')); aplicarFiltrosRecibos(); } });
-            else sel._ms.refresh();
-            wrap.style.display = '';
-          } else {
-            wrap.style.display = 'none';
-            clearMultiSelect(sel);
-          }
-        }
+      initMultiSelect(el, { placeholder: 'Todos los m\u00e9dicos', onChange: async () => {
+        await actualizarFiltrosServicioRecibos();
         aplicarFiltrosRecibos();
       }});
       observeSelectForMulti(el);
@@ -2018,26 +3219,69 @@ function initRecibos() {
     const el = $('filtroGeneradoPor');
     if (el) { initMultiSelect(el, { placeholder: 'Todos', onChange: () => aplicarFiltrosRecibos() }); observeSelectForMulti(el); }
   });
-  cargarFiltrosOpciones().then(() => {
+  cargarFiltrosOpciones().then(async () => {
     const elEnt = $('filtroEntidad');
     if (elEnt) { initMultiSelect(elEnt, { placeholder: 'Todas', onChange: () => aplicarFiltrosRecibos() }); observeSelectForMulti(elEnt); }
-    const elEst = $('filtroEstudio');
-    if (elEst) {
-      initMultiSelect(elEst, { placeholder: 'Todos', onChange: () => { clearMultiSelect($('filtroTipoConsulta')); aplicarFiltrosRecibos(); } });
-      observeSelectForMulti(elEst);
-    }
+    await actualizarFiltrosServicioRecibos();
   });
   // Tipo de pago (opciones estáticas)
   const elTP = $('filtroTipoPago');
   if (elTP) initMultiSelect(elTP, { placeholder: 'Todos', onChange: () => aplicarFiltrosRecibos() });
 
+  const elEstadoPago = $('filtroEstadoPago');
+  if (elEstadoPago) initMultiSelect(elEstadoPago, { placeholder: 'Todos', onChange: () => aplicarFiltrosRecibos() });
+
+  const elAnulado = $('filtroAnulado');
+  if (elAnulado) {
+    initMultiSelect(elAnulado, { placeholder: 'Todos', onChange: () => aplicarFiltrosRecibos() });
+    if (elAnulado._ms) elAnulado._ms.setValues(['no']);
+  }
+
+  // Especialidad -> filtra médicos y carga tipos de consulta (opciones desde /api/especialidades)
+  cargarFiltrosEspecialidades().then(() => {
+  const elEsp = $('filtroEspecialidad');
+  if (elEsp) {
+    if (!elEsp._ms) initMultiSelect(elEsp, { placeholder: 'Todas las especialidades', onChange: async function () {
+      const vals = elEsp._ms ? elEsp._ms.getValues() : [];
+      const espId = vals[0] || '';
+      const selMedico = $('filtroMedico');
+      if (selMedico && window._filtroMedicos) {
+        selMedico.innerHTML = '<option value="">Todos los médicos</option>';
+        window._filtroMedicos
+          .filter(m => !espId || String(m.especialidad_id) === espId)
+          .forEach(m => {
+            const opt = document.createElement('option');
+            opt.value = m.id;
+            opt.textContent = m.nombre || m.usuario;
+            if (m.especialidad_id) opt.dataset.especialidadId = m.especialidad_id;
+            if (m.especialidad) opt.dataset.especialidadNombre = m.especialidad;
+            selMedico.appendChild(opt);
+          });
+        if (!espId) {
+          const optElectro = document.createElement('option');
+          optElectro.value = 'ELECTRODIAGNOSTICOS';
+          optElectro.textContent = 'ELECTRODIAGNÓSTICOS';
+          selMedico.appendChild(optElectro);
+        }
+        if (selMedico._ms) selMedico._ms.refresh();
+        silentClearMultiSelect(selMedico);
+      }
+      await actualizarFiltrosServicioRecibos();
+      aplicarFiltrosRecibos();
+    }});
+    observeSelectForMulti(elEsp);
+  }
+  });
+
   // Socket: cuando admin modifica tipos de consulta, refrescar el dropdown activo
   if (window.socket && !window.socketRecibosTiposListenerAdded) {
     window.socket.on('tipos-consulta:actualizado', () => {
-      _tiposConsultaCache = {};                     // invalidar caché de agenda/turnos
-      window._reciboCurrentTipos = [];              // invalidar caché del formulario
+      _tiposConsultaCache = {};
+      window._reciboCurrentTipos = [];
+      _catalogoEntidadesOpcionesCache = null;
       const medicoId = $('reciboMedico')?.value;
       if (medicoId) cargarTiposConsultaEnRecibo(medicoId);
+      actualizarFiltrosServicioRecibos().catch(() => {});
     });
     window.socketRecibosTiposListenerAdded = true;
   }
@@ -2115,18 +3359,55 @@ async function cargarServiciosEnRecibo() {
 }
 
 // ---- Cargar médicos en filtro ----
+async function cargarFiltrosEspecialidades() {
+  const sel = $('filtroEspecialidad');
+  if (!sel) return;
+  const snapshot = estadoFiltrosRecibosParaRestaurar();
+  try {
+    const res = await apiFetch('/api/especialidades');
+    const list = res.ok ? await res.json() : [];
+    const primera = sel.options.length ? sel.options[0] : null;
+    sel.innerHTML = '';
+    if (primera) {
+      const opt0 = document.createElement('option');
+      opt0.value = primera.value;
+      opt0.textContent = primera.textContent || 'Todas las especialidades';
+      sel.appendChild(opt0);
+    } else {
+      const opt0 = document.createElement('option');
+      opt0.value = '';
+      opt0.textContent = 'Todas las especialidades';
+      sel.appendChild(opt0);
+    }
+    (Array.isArray(list) ? list : []).forEach((e) => {
+      const opt = document.createElement('option');
+      opt.value = String(e.id);
+      opt.textContent = e.nombre;
+      sel.appendChild(opt);
+    });
+    if (sel._ms) sel._ms.refresh();
+    restaurarEstadoFiltrosRecibosUI(snapshot);
+  } catch (e) {
+    console.warn('[cargarFiltrosEspecialidades] Error:', e.message);
+  }
+}
+
 async function cargarFiltrosMedicos() {
   const sel = $('filtroMedico');
   if (!sel) return;
+  const snapshot = estadoFiltrosRecibosParaRestaurar();
   try {
     const res = await apiFetch('/api/medicos');
     const medicos = res.ok ? await res.json() : [];
     if (!Array.isArray(medicos)) { console.warn('[cargarFiltrosMedicos] Respuesta no es array'); return; }
+    window._filtroMedicos = medicos;
     sel.innerHTML = '<option value="">Todos los médicos</option>';
     medicos.forEach(m => {
       const opt = document.createElement('option');
       opt.value = m.id;
       opt.textContent = m.nombre || m.usuario;
+      if (m.especialidad_id) opt.dataset.especialidadId = m.especialidad_id;
+      if (m.especialidad) opt.dataset.especialidadNombre = m.especialidad;
       sel.appendChild(opt);
     });
     // Opción especial para filtrar recibos de electrodiagnósticos
@@ -2134,13 +3415,29 @@ async function cargarFiltrosMedicos() {
     optElectro.value = 'ELECTRODIAGNOSTICOS';
     optElectro.textContent = 'ELECTRODIAGNÓSTICOS';
     sel.appendChild(optElectro);
+    if (sel._ms) sel._ms.refresh();
+    restaurarEstadoFiltrosRecibosUI(snapshot);
   } catch (e) { console.warn('[cargarFiltrosMedicos] Error:', e.message); }
+}
+
+function syncGeneradorActualEnFiltroRecibos() {
+  const sel = $('filtroGeneradoPor');
+  const uid = currentUser?.id;
+  if (!sel || uid == null) return;
+  const id = String(uid);
+  if (Array.from(sel.options).some(o => o.value === id)) return;
+  const opt = document.createElement('option');
+  opt.value = id;
+  opt.textContent = currentUser.nombre || currentUser.usuario || id;
+  sel.appendChild(opt);
+  if (sel._ms) sel._ms.refresh();
 }
 
 // ---- Cargar usuarios que han generado recibos en filtro ----
 async function cargarFiltrosUsuarios() {
   const sel = $('filtroGeneradoPor');
   if (!sel) return;
+  const snapshot = estadoFiltrosRecibosParaRestaurar();
   try {
     const res = await apiFetch('/api/recibos/generadores');
     const generadores = res.ok ? await res.json() : [];
@@ -2152,32 +3449,312 @@ async function cargarFiltrosUsuarios() {
       opt.textContent = u.nombre || String(u.id);
       sel.appendChild(opt);
     });
+    if (sel._ms) sel._ms.refresh();
+    restaurarEstadoFiltrosRecibosUI(snapshot);
   } catch (e) { console.warn('[cargarFiltrosUsuarios] Error:', e.message); }
 }
 
-// ---- Cargar entidades y tipos de servicio/estudio usados en recibos ----
-async function cargarFiltrosOpciones() {
+// ---- Catálogo de entidades (tabla entidades en BD) ----
+let _catalogoEntidadesOpcionesCache = null;
+let _entidadesBdCache = null;
+
+/** Selects de entidad por módulo (id del elemento en index.html). */
+const ENTIDAD_SELECTS_POR_MODULO = {
+  recibos: [
+    { id: 'reciboEntidad', placeholder: 'Seleccionar entidad' }
+  ],
+  'agenda-medica': [
+    { id: 'nuevoTurnoEntidadMedica' },
+    { id: 'editMedicaEntidad', placeholder: 'Seleccionar' }
+  ],
+  electro: [
+    { id: 'electroEntidad', placeholder: 'Seleccionar entidad' },
+    { id: 'modalEntidad', placeholder: 'Seleccionar entidad', incluirParticular: true },
+    { id: 'esperaEntidad' },
+    { id: 'esperaFiltroEntidad', placeholder: 'Todas' }
+  ],
+  'dashboard-citas': [
+    { id: 'dashboardEntidad', placeholder: 'Todas' }
+  ]
+};
+
+/** Entidades activas desde tabla `entidades` (fuente principal para selects). */
+async function fetchEntidadesDesdeBd({ force = false } = {}) {
+  if (!force && _entidadesBdCache) return _entidadesBdCache;
+  const res = await apiFetch('/api/entidades');
+  if (!res.ok) throw new Error('No se pudieron cargar las entidades');
+  const data = await res.json();
+  let lista = [];
+  if (Array.isArray(data)) {
+    lista = data.map((e) => (typeof e === 'string' ? e : e?.nombre)).filter(Boolean);
+  } else if (Array.isArray(data.entidades)) {
+    lista = data.entidades;
+  } else if (Array.isArray(data.registros)) {
+    lista = data.registros.map((e) => e?.nombre).filter(Boolean);
+  }
+  _entidadesBdCache = lista;
+  return lista;
+}
+
+const RECIBO_FILTRO_OTROS_CONSULTA = '__OTROS_CONSULTA__';
+const RECIBO_FILTRO_OTROS_ESTUDIO = '__OTROS_ESTUDIO__';
+
+async function fetchOpcionesFiltrosRecibos({ medicoId = '', especialidadId = '', force = false } = {}) {
+  const cacheKey = `${medicoId}|${especialidadId}`;
+  if (!force && _catalogoEntidadesOpcionesCache && _catalogoEntidadesOpcionesCache._key === cacheKey) {
+    return _catalogoEntidadesOpcionesCache;
+  }
   try {
-    const res = await apiFetch('/api/recibos/opciones');
-    const data = res.ok ? await res.json() : { entidades: [], estudios: [] };
+    const [entidades, opcionesRes] = await Promise.all([
+      fetchEntidadesDesdeBd({ force }),
+      (async () => {
+        const qs = new URLSearchParams();
+        if (medicoId) qs.set('medico_id', medicoId);
+        if (especialidadId) qs.set('especialidad_id', especialidadId);
+        const url = qs.toString() ? `/api/recibos/opciones?${qs}` : '/api/recibos/opciones';
+        return apiFetch(url).catch(() => null);
+      })()
+    ]);
+    let opciones = {
+      estudios: [],
+      tipos_consulta: [],
+      otros_consulta: [],
+      otros_estudio: []
+    };
+    if (opcionesRes && opcionesRes.ok) {
+      const data = await opcionesRes.json();
+      opciones = {
+        estudios: Array.isArray(data.estudios) ? data.estudios : [],
+        tipos_consulta: Array.isArray(data.tipos_consulta) ? data.tipos_consulta : [],
+        otros_consulta: Array.isArray(data.otros_consulta) ? data.otros_consulta : [],
+        otros_estudio: Array.isArray(data.otros_estudio) ? data.otros_estudio : []
+      };
+    }
+    _catalogoEntidadesOpcionesCache = {
+      _key: cacheKey,
+      entidades: Array.isArray(entidades) ? entidades : [],
+      ...opciones
+    };
+  } catch (e) {
+    console.warn('[fetchOpcionesFiltrosRecibos] Error:', e.message);
+    if (force) throw e;
+    _catalogoEntidadesOpcionesCache = {
+      _key: cacheKey,
+      entidades: [],
+      estudios: [],
+      tipos_consulta: [],
+      otros_consulta: [],
+      otros_estudio: []
+    };
+  }
+  return _catalogoEntidadesOpcionesCache;
+}
+
+async function fetchCatalogoEntidadesOpciones({ force = false } = {}) {
+  return fetchOpcionesFiltrosRecibos({ force });
+}
+
+function _poblarSelectFiltroServicioRecibo(sel, nombresCatalogo, marcadorOtros, tieneOtros) {
+  if (!sel) return;
+  const prev = sel._ms ? sel._ms.getValues() : (sel.value ? [sel.value] : []);
+  sel.innerHTML = '<option value="">Todos</option>';
+  (Array.isArray(nombresCatalogo) ? nombresCatalogo : []).forEach((nombre) => {
+    const n = String(nombre || '').trim();
+    if (!n) return;
+    const opt = document.createElement('option');
+    opt.value = n;
+    opt.textContent = n;
+    sel.appendChild(opt);
+  });
+  if (tieneOtros && marcadorOtros) {
+    const optOtros = document.createElement('option');
+    optOtros.value = marcadorOtros;
+    optOtros.textContent = 'Otros';
+    sel.appendChild(optOtros);
+  }
+  if (sel._ms) {
+    const valid = prev.filter((v) => sel.querySelector(`option[value="${CSS.escape(String(v))}"]`));
+    sel._ms.setValues(valid);
+    sel._ms.refresh();
+  }
+}
+
+function _initMultiSelectFiltroRecibo(sel, onChangeFn) {
+  if (!sel) return;
+  if (!sel._ms) {
+    initMultiSelect(sel, { placeholder: 'Todos', onChange: onChangeFn });
+    observeSelectForMulti(sel);
+  } else {
+    sel._ms.refresh();
+  }
+}
+
+async function actualizarFiltrosServicioRecibos() {
+  const medicoRaw = typeof getMultiSelectValue === 'function' ? getMultiSelectValue($('filtroMedico')) : '';
+  const medicoIds = medicoRaw ? String(medicoRaw).split(',').filter(Boolean) : [];
+  const espRaw = typeof getMultiSelectValue === 'function' ? getMultiSelectValue($('filtroEspecialidad')) : '';
+  const especialidadId = espRaw ? String(espRaw).split(',')[0] : ($('filtroEspecialidad')?.value || '');
+  const esElectro = medicoIds.length === 1 && medicoIds[0] === 'ELECTRODIAGNOSTICOS';
+  const medicoParam = esElectro ? '' : medicoIds.filter((id) => id !== 'ELECTRODIAGNOSTICOS').join(',');
+
+  const opciones = await fetchOpcionesFiltrosRecibos({
+    medicoId: medicoParam,
+    especialidadId: especialidadId || '',
+    force: true
+  });
+
+  const wrapTC = $('filtroTipoConsultaWrap');
+  const selTC = $('filtroTipoConsulta');
+  const selEst = $('filtroEstudio');
+
+  if (wrapTC && selTC) {
+    if (esElectro) {
+      wrapTC.style.display = 'none';
+      silentClearMultiSelect(selTC);
+    } else {
+      wrapTC.style.display = '';
+      _poblarSelectFiltroServicioRecibo(
+        selTC,
+        opciones.tipos_consulta,
+        RECIBO_FILTRO_OTROS_CONSULTA,
+        (opciones.otros_consulta || []).length > 0
+      );
+      _initMultiSelectFiltroRecibo(selTC, () => aplicarFiltrosRecibos());
+    }
+  }
+
+  if (selEst) {
+    _poblarSelectFiltroServicioRecibo(
+      selEst,
+      opciones.estudios,
+      RECIBO_FILTRO_OTROS_ESTUDIO,
+      (opciones.otros_estudio || []).length > 0
+    );
+    window._allEstudiosOpciones = Array.isArray(opciones.estudios) ? opciones.estudios : [];
+    _initMultiSelectFiltroRecibo(selEst, () => aplicarFiltrosRecibos());
+  }
+}
+
+function _poblarSelectEntidades(sel, entidades, opts = {}) {
+  if (!sel) return;
+  const {
+    placeholder = 'Seleccionar',
+    incluirParticular = true,
+    valorPrevio = null
+  } = opts;
+  const seen = new Set();
+  const ordenadas = [];
+  const normEntidadKey = (raw) => String(raw || '')
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .toUpperCase();
+  const EXCLUIR_ENTIDAD = new Set(['ABOGADO', 'ABOGADO 2', 'OTRA']);
+  const pushNombre = (raw) => {
+    const n = (raw || '').trim().replace(/\s+/g, ' ');
+    if (!n) return;
+    const key = normEntidadKey(n);
+    if (EXCLUIR_ENTIDAD.has(key)) return;
+    if (key === 'FIDUPREVISRA') {
+      if (seen.has('FIDUPREVISORA')) return;
+      seen.add('FIDUPREVISORA');
+      ordenadas.push('FIDUPREVISORA');
+      return;
+    }
+    if (seen.has(key)) return;
+    seen.add(key);
+    ordenadas.push(n);
+  };
+  (entidades || []).forEach((v) => pushNombre(typeof v === 'string' ? v : v?.nombre));
+  if (incluirParticular && !seen.has('PARTICULAR')) pushNombre('PARTICULAR');
+  ordenadas.sort((a, b) => {
+    if (a.toUpperCase() === 'PARTICULAR') return -1;
+    if (b.toUpperCase() === 'PARTICULAR') return 1;
+    return a.localeCompare(b, 'es');
+  });
+  const prev = valorPrevio != null ? String(valorPrevio) : sel.value;
+  sel.innerHTML = `<option value="">${escapeHtml(placeholder)}</option>`;
+  ordenadas.forEach((nombre) => {
+    const opt = document.createElement('option');
+    opt.value = nombre;
+    opt.textContent = nombre;
+    sel.appendChild(opt);
+  });
+  if (prev && !seen.has(prev.toUpperCase())) {
+    const opt = document.createElement('option');
+    opt.value = prev;
+    opt.textContent = prev;
+    sel.appendChild(opt);
+  }
+  if (prev) sel.value = prev;
+}
+
+async function cargarEntidadesEnSelect(selectId, opts = {}) {
+  const sel = $(selectId);
+  if (!sel) return;
+  try {
+    const entidades = await fetchEntidadesDesdeBd({ force: !!opts.force });
+    _poblarSelectEntidades(sel, entidades, {
+      placeholder: opts.placeholder || 'Seleccionar',
+      incluirParticular: opts.incluirParticular !== false,
+      valorPrevio: opts.valorPrevio != null ? opts.valorPrevio : sel.value
+    });
+  } catch (err) {
+    console.warn('[cargarEntidadesEnSelect] Error:', err.message);
+    _poblarSelectEntidades(sel, [], {
+      placeholder: opts.placeholder || 'Seleccionar',
+      incluirParticular: opts.incluirParticular !== false,
+      valorPrevio: opts.valorPrevio != null ? opts.valorPrevio : sel.value
+    });
+  }
+}
+
+async function recargarSelectsEntidadModulo(moduleId, { force = true } = {}) {
+  const configs = ENTIDAD_SELECTS_POR_MODULO[moduleId] || [];
+  await Promise.all(configs.map((cfg) => {
+    if (!$(cfg.id)) return Promise.resolve();
+    return cargarEntidadesEnSelect(cfg.id, { ...cfg, force });
+  }));
+}
+
+async function recargarTodosSelectsEntidad({ force = true } = {}) {
+  const vistos = new Set();
+  const tareas = [];
+  Object.values(ENTIDAD_SELECTS_POR_MODULO).forEach((configs) => {
+    configs.forEach((cfg) => {
+      if (vistos.has(cfg.id) || !$(cfg.id)) return;
+      vistos.add(cfg.id);
+      tareas.push(cargarEntidadesEnSelect(cfg.id, { ...cfg, force }));
+    });
+  });
+  await Promise.all(tareas);
+}
+
+async function cargarEntidadesEnRecibo(opts = {}) {
+  await cargarEntidadesEnSelect('reciboEntidad', {
+    placeholder: 'Seleccionar entidad',
+    incluirParticular: true,
+    force: opts.force !== false
+  });
+}
+
+async function cargarFiltrosOpciones({ force = false } = {}) {
+  const snapshot = estadoFiltrosRecibosParaRestaurar();
+  try {
+    const { entidades } = await fetchCatalogoEntidadesOpciones({ force });
     const selEnt = $('filtroEntidad');
     if (selEnt) {
-      selEnt.innerHTML = '<option value="">Todas</option>';
-      (Array.isArray(data.entidades) ? data.entidades : []).forEach(v => {
-        const opt = document.createElement('option');
-        opt.value = v; opt.textContent = v;
-        selEnt.appendChild(opt);
+      const entVals = _msValues(selEnt);
+      _poblarSelectEntidades(selEnt, entidades, {
+        placeholder: 'Todas',
+        incluirParticular: true,
+        valorPrevio: entVals[0] || selEnt.value
       });
+      if (selEnt._ms) selEnt._ms.refresh();
     }
-    const selEstudio = $('filtroEstudio');
-    if (selEstudio) {
-      selEstudio.innerHTML = '<option value="">Todos</option>';
-      (Array.isArray(data.estudios) ? data.estudios : []).forEach(v => {
-        const opt = document.createElement('option');
-        opt.value = v; opt.textContent = v;
-        selEstudio.appendChild(opt);
-      });
-    }
+    await actualizarFiltrosServicioRecibos();
+    restaurarEstadoFiltrosRecibosUI(snapshot);
   } catch (e) { console.warn('[cargarFiltrosOpciones] Error:', e.message); }
 }
 async function buscarCitaParaRecibo() {
@@ -2235,11 +3812,6 @@ async function preLlenarReciboDesdeCita(cita) {
   if ($('clienteApellidos')) $('clienteApellidos').value = _partesNombre.slice(_mitad).join(' ');
   if ($('docCliente')) $('docCliente').value = cita.paciente_documento || '';
 
-  // Entidad: pre-seleccionar si existe en el select
-  if ($('reciboEntidad') && cita.entidad) {
-    $('reciboEntidad').value = cita.entidad; // intentará coincidir con la opción
-  }
-
   // Tipo de recibo: si hay médico -> seleccionar 'doctor', si hay tipo de estudio -> 'estudio'
   if (cita.medico_id) {
     const docRadio = document.querySelector('input[name="reciboTipo"][value="doctor"]');
@@ -2251,12 +3823,10 @@ async function preLlenarReciboDesdeCita(cita) {
     if (cita.tipo_consulta && $('reciboTipoConsulta')) {
       $('reciboTipoConsulta').value = cita.tipo_consulta;
     }
-  } else if (cita.tipo_consulta || cita.estudio) {
+  } else if (cita.tipo_consulta) {
     const estRadio = document.querySelector('input[name="reciboTipo"][value="estudio"]');
     if (estRadio) { estRadio.checked = true; estRadio.dispatchEvent(new Event('change')); }
-    await cargarServiciosEnRecibo();
-    const estudioNombre = (cita.estudio || cita.tipo_consulta || '').trim();
-    if ($('reciboTipoServicio') && estudioNombre) $('reciboTipoServicio').value = estudioNombre;
+    if ($('reciboTipoServicio')) $('reciboTipoServicio').value = cita.tipo_consulta;
   }
 
   // Turno / cita vinculada
@@ -2267,94 +3837,182 @@ async function preLlenarReciboDesdeCita(cita) {
 }
 
 // ========== CARGA DINÁMICA DE CATÁLOGOS ==========
-let _entidadesCache = null;
-let _estudiosCache = null;
+/** Solo estudios de electrodiagnóstico (tabla estudio_duraciones), no tipos de consulta médica */
+let _estudiosElectroCache = null;
 
-async function cargarEntidadesEnSelect(selectId) {
-  const sel = $(selectId);
-  if (!sel) return;
+async function fetchEstudiosElectroOpciones({ force = false } = {}) {
+  if (!force && _estudiosElectroCache) return _estudiosElectroCache;
   try {
-    if (!_entidadesCache) {
-      const res = await apiFetch('/api/entidades');
-      _entidadesCache = await res.json();
-    }
-    sel.innerHTML = '<option value="">Seleccionar</option>';
-    (_entidadesCache || []).forEach(e => {
-      const opt = document.createElement('option');
-      opt.value = e.nombre;
-      opt.textContent = e.nombre;
-      sel.appendChild(opt);
-    });
-  } catch (err) {
-    console.warn('[cargarEntidadesEnSelect] Error:', err.message);
+    const res = await apiFetch('/api/estudios/lista');
+    const data = res.ok ? await res.json() : {};
+    _estudiosElectroCache = (Array.isArray(data) ? data : (data.registros || data.estudios || []))
+      .map((e) => (typeof e === 'string' ? e : e?.nombre))
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
+  } catch (e) {
+    console.warn('[fetchEstudiosElectroOpciones] Error:', e.message);
+    _estudiosElectroCache = [];
   }
+  return _estudiosElectroCache;
 }
 
-async function cargarEstudiosEnSelect(selectId) {
+async function cargarEstudiosEnSelect(selectId, opts = {}) {
   const sel = $(selectId);
   if (!sel) return;
+  const placeholder = opts.placeholder || 'Seleccionar estudio';
   try {
-    if (!_estudiosCache) {
-      const res = await apiFetch('/api/estudios/lista');
-      const data = await res.json();
-      _estudiosCache = (Array.isArray(data) ? data : (data.registros || data.estudios || [])).map(e => e.nombre || e);
-    }
-    sel.innerHTML = '<option value="">Seleccionar estudio</option>';
-    (_estudiosCache || []).forEach(nombre => {
+    const estudios = await fetchEstudiosElectroOpciones({ force: opts.force });
+    const prev = opts.valorPrevio != null ? opts.valorPrevio : sel.value;
+    sel.innerHTML = `<option value="">${escapeHtml(placeholder)}</option>`;
+    estudios.forEach((nombre) => {
       const opt = document.createElement('option');
       opt.value = nombre;
       opt.textContent = nombre;
       sel.appendChild(opt);
     });
+    if (prev && prev !== '' && ![...sel.options].some((o) => o.value === prev)) {
+      const opt = document.createElement('option');
+      opt.value = prev;
+      opt.textContent = prev;
+      sel.appendChild(opt);
+    }
+    if (prev) sel.value = prev;
   } catch (err) {
     console.warn('[cargarEstudiosEnSelect] Error:', err.message);
   }
 }
 
-function generarTabsElectro(estudios) {
-  const container = $('tabsElectroContainer');
-  if (!container) return;
-  // Mantener solo el botón "Todas"
-  container.innerHTML = '';
-  // Botón "Todas" con su listener
-  const btnTodas = document.createElement('button');
-  btnTodas.className = 'tab-electro-btn active';
-  btnTodas.dataset.estudio = 'todas';
-  btnTodas.textContent = 'Todas';
-  btnTodas.addEventListener('click', (e) => {
-    filtroEstudioElectro = 'todas';
-    container.querySelectorAll('.tab-electro-btn').forEach(b => b.classList.remove('active'));
-    e.target.classList.add('active');
-    cargarCitasElectro();
+function invalidarCacheEstudios() {
+  _estudiosElectroCache = null;
+  const recargar = [
+    ['electroEstudio', () => cargarEstudiosEnSelect('electroEstudio', { force: true })],
+    ['filtroEstudiosElectro', () => fetchEstudiosElectroOpciones({ force: true }).then((lista) => initFiltroEstudiosElectro(lista))]
+  ];
+  if ($('modalEstudio')) {
+    recargar.push(['modalEstudio', () => cargarEstudiosEnSelect('modalEstudio', { force: true, valorPrevio: citaElectroSeleccionada?.estudio })]);
+  }
+  recargar.forEach(([id, fn]) => { if ($(id)) fn(); });
+}
+
+function getFiltroEstudiosElectroActivos() {
+  const sel = $('filtroEstudiosElectro');
+  if (!sel) return [];
+  if (sel._ms) return sel._ms.getValues();
+  return Array.from(sel.selectedOptions).map((o) => o.value).filter(Boolean);
+}
+
+function initFiltroEstudiosElectro(estudios) {
+  const sel = $('filtroEstudiosElectro');
+  if (!sel) return;
+  sel.innerHTML = '';
+  (estudios || []).forEach((nombre) => {
+    const opt = document.createElement('option');
+    opt.value = nombre;
+    opt.textContent = nombre;
+    sel.appendChild(opt);
   });
-  container.appendChild(btnTodas);
-  // Etiquetas cortas para tabs
-  const labelCorto = (nombre) => {
-    if (!nombre) return nombre;
-    if (nombre.toLowerCase().includes('monitorización') || nombre.toLowerCase().includes('monitorizacion')) return 'Monit. EEG';
-    if (nombre.toLowerCase().includes('titulación') || nombre.toLowerCase().includes('titulacion') || nombre.toLowerCase().includes('cpap')) return 'PSG CPAP/BPAP';
-    if (nombre.toLowerCase().includes('electroencefalograma')) return 'EEG';
-    if (nombre.toLowerCase().includes('test de latencia')) return 'Test Latencia';
-    // Para nombres cortos, usar tal cual; para largos, abreviar
-    return nombre.length > 15 ? nombre.substring(0, 15) + '…' : nombre;
-  };
-  (estudios || []).forEach(nombre => {
-    const btn = document.createElement('button');
-    btn.className = 'tab-electro-btn';
-    btn.dataset.estudio = nombre;
-    btn.textContent = labelCorto(nombre);
-    btn.addEventListener('click', (e) => {
-      filtroEstudioElectro = e.target.dataset.estudio;
-      container.querySelectorAll('.tab-electro-btn').forEach(b => b.classList.remove('active'));
-      e.target.classList.add('active');
-      cargarCitasElectro();
-    });
-    container.appendChild(btn);
+  if (typeof initMultiSelect === 'function') {
+    if (!sel._ms) {
+      initMultiSelect(sel, {
+        placeholder: 'Todos los estudios',
+        onChange: () => cargarCitasElectro()
+      });
+    } else if (sel._ms.refresh) {
+      sel._ms.refresh();
+    }
+  }
+}
+
+const ELECTRO_COL_ACTIVOS = new Set(['En Estudio', 'Pausado']);
+const ELECTRO_COL_COMPLETADOS = new Set(['Completado']);
+
+function columnaElectroCita(estado) {
+  if (ELECTRO_COL_ACTIVOS.has(estado)) return 'activos';
+  if (ELECTRO_COL_COMPLETADOS.has(estado)) return 'completados';
+  return 'pendientes';
+}
+
+function sortCitasElectro(a, b) {
+  const ha = String(a.hora_agendamiento || '').slice(0, 5);
+  const hb = String(b.hora_agendamiento || '').slice(0, 5);
+  return ha.localeCompare(hb);
+}
+
+const ELECTRO_KANBAN_BODY_IDS = [
+  'citasElectroBodyPsgPendientes', 'citasElectroBodyPsgActivos', 'citasElectroBodyPsgCompletados',
+  'citasElectroBodyEegPendientes', 'citasElectroBodyEegActivos', 'citasElectroBodyEegCompletados'
+];
+
+function showElectroKanbanLoading() {
+  const t = 'di' + 'v';
+  const loadingHtml = '<' + t + ' class="electro-kanban-empty">Cargando\u2026</' + t + '>';
+  ELECTRO_KANBAN_BODY_IDS.forEach((id) => {
+    const el = typeof $ === 'function' ? $(id) : document.getElementById(id);
+    if (el) el.innerHTML = loadingHtml;
   });
 }
 
-function invalidarCacheEntidades() { _entidadesCache = null; }
-function invalidarCacheEstudios() { _estudiosCache = null; }
+function renderCitasElectroKanban(citas) {
+  const boards = {
+    psg: {
+      pendientes: $('citasElectroBodyPsgPendientes'),
+      activos: $('citasElectroBodyPsgActivos'),
+      completados: $('citasElectroBodyPsgCompletados')
+    },
+    eeg: {
+      pendientes: $('citasElectroBodyEegPendientes'),
+      activos: $('citasElectroBodyEegActivos'),
+      completados: $('citasElectroBodyEegCompletados')
+    }
+  };
+  const counts = {
+    psg: { pendientes: 0, activos: 0, completados: 0 },
+    eeg: { pendientes: 0, activos: 0, completados: 0 }
+  };
+  Object.values(boards).forEach((bodies) => {
+    Object.values(bodies).forEach((b) => { if (b) b.innerHTML = ''; });
+  });
+  const sorted = [...(citas || [])].sort(sortCitasElectro);
+  sorted.forEach((c) => {
+    const familia = familiaKanbanElectro(c.estudio);
+    const col = columnaElectroCita(c.estado || 'Programado');
+    const body = boards[familia]?.[col];
+    if (body) {
+      renderCitaElectroCard(body, c);
+      counts[familia][col]++;
+    }
+  });
+  const emptyMsg = (citas || []).length === 0 ? 'Selecciona una fecha para ver las citas' : 'Sin citas';
+  Object.entries(boards).forEach(([familia, bodies]) => {
+    Object.entries(bodies).forEach(([col, body]) => {
+      if (!body || counts[familia][col] > 0) return;
+      body.innerHTML = `<div class="electro-kanban-empty">${emptyMsg}</div>`;
+    });
+  });
+  const setCount = (id, n) => { const el = $(id); if (el) el.textContent = String(n); };
+  setCount('electroKanbanCountPsgPendientes', counts.psg.pendientes);
+  setCount('electroKanbanCountPsgActivos', counts.psg.activos);
+  setCount('electroKanbanCountPsgCompletados', counts.psg.completados);
+  setCount('electroKanbanCountEegPendientes', counts.eeg.pendientes);
+  setCount('electroKanbanCountEegActivos', counts.eeg.activos);
+  setCount('electroKanbanCountEegCompletados', counts.eeg.completados);
+  const skipKanbanEnter = _innarSkipNextKanbanEnter;
+  _innarSkipNextKanbanEnter = false;
+  if (!skipKanbanEnter && typeof window.innarAnimateKanbanCards === 'function') {
+    requestAnimationFrame(() => window.innarAnimateKanbanCards(document.getElementById('electroKanbanBoard')));
+  }
+  _innarFlushElectroHighlight();
+}
+
+function invalidarCacheEntidades() {
+  _catalogoEntidadesOpcionesCache = null;
+  _entidadesBdCache = null;
+  recargarTodosSelectsEntidad({ force: true });
+  if ($('filtroEntidad')) cargarFiltrosOpciones({ force: true });
+  if (typeof cargarEntidadesFiltroAuditoria === 'function') {
+    cargarEntidadesFiltroAuditoria({ force: true });
+  }
+}
 
 // ========== AGENDA MÉDICA (Citas) ==========
 async function initAgendaMedica() {
@@ -2362,8 +4020,7 @@ async function initAgendaMedica() {
   $('agendaMedicaFecha').value = hoy;
   updateAgendaFechaDisplay();
   
-  // Cargar entidades desde la base de datos
-  await cargarEntidadesEnSelect('nuevoTurnoEntidadMedica');
+  await recargarSelectsEntidadModulo('agenda-medica', { force: true });
   
   // Cargar lista de médicos
   const medicos = await apiFetch('/api/medicos').then(r=>r.json()).catch(()=>[]);
@@ -2406,6 +4063,10 @@ async function initAgendaMedica() {
   $('agendaMedicaFecha').addEventListener('change', () => {
     updateAgendaFechaDisplay();
     actualizarHorasDisponibles();
+    if (!$('modalNuevaCitaMedica')?.classList.contains('hidden')) {
+      syncModalNuevaCitaFechaDesdeAgenda();
+      if (_modoSesionesMultiplesActivo) programarActualizarPreviewSesionesMultiples();
+    }
     cargarTurnosMedica();
   });
   if (tienePermiso('agenda.crear')) {
@@ -2417,7 +4078,17 @@ async function initAgendaMedica() {
   };
   $('nuevoPacienteTelefonoMedica')?.addEventListener('input', limitarTelMedica);
   $('nuevoPacienteTelefonoMedica2')?.addEventListener('input', limitarTelMedica);
-  // (autocompletado por documento removido)
+  const docMedicaEl = $('nuevoPacienteDocMedica');
+  docMedicaEl?.addEventListener('input', (e) => {
+    e.target.value = e.target.value.replace(/\D/g, '').slice(0, 15);
+    delete e.target.dataset.pacienteId;
+  });
+  docMedicaEl?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      buscarPacientePorDocumentoDesdeFormulario('medica');
+    }
+  });
   // mostrar quien programa
   const prog = $('nuevoTurnoProgramadoPor');
   if (prog) prog.textContent = (currentUser && (currentUser.nombre || currentUser.usuario)) || '-';
@@ -2531,18 +4202,53 @@ async function initAgendaMedica() {
   if (btnNuevaCita) btnNuevaCita.style.display = canCrearCita ? 'inline-flex' : 'none';
   if (canCrearCita) {
     btnNuevaCita?.addEventListener('click', () => {
-      const fechaModal = $('modalNuevaCitaFecha');
-      if (fechaModal) fechaModal.value = $('agendaMedicaFecha')?.value || new Date().toISOString().slice(0, 10);
+      syncModalNuevaCitaFechaDesdeAgenda();
+      if (!$('modalNuevaCitaFecha')?.value) {
+        $('modalNuevaCitaFecha').value = hoyColombiaISO();
+      }
       const nomDiv = $('modalNuevaCitaDoctorNombre');
       if (nomDiv) nomDiv.textContent = $('agendaMedicaDoctorDisplay')?.textContent || '-';
       const prog = $('nuevoTurnoProgramadoPor');
       if (prog) prog.textContent = (currentUser && (currentUser.nombre || currentUser.usuario)) || '-';
       actualizarHorasDisponibles();
+      setModoSesionesMultiples(false);
+      actualizarBotonSesionesMultiples();
       $('modalNuevaCitaMedica')?.classList.remove('hidden');
     });
-    $('btnCerrarNuevaCitaModal')?.addEventListener('click', () => $('modalNuevaCitaMedica')?.classList.add('hidden'));
-    $('btnCancelarNuevaCitaModal')?.addEventListener('click', () => $('modalNuevaCitaMedica')?.classList.add('hidden'));
-    $('modalNuevaCitaFecha')?.addEventListener('change', actualizarHorasDisponibles);
+    $('btnActivarSesionesMultiples')?.addEventListener('click', () => {
+      setModoSesionesMultiples(!_modoSesionesMultiplesActivo);
+    });
+    $('btnCerrarNuevaCitaModal')?.addEventListener('click', () => {
+      $('modalNuevaCitaMedica')?.classList.add('hidden');
+      setModoSesionesMultiples(false);
+    });
+    $('btnCancelarNuevaCitaModal')?.addEventListener('click', () => {
+      $('modalNuevaCitaMedica')?.classList.add('hidden');
+      setModoSesionesMultiples(false);
+    });
+    $('modalNuevaCitaFecha')?.addEventListener('change', () => {
+      actualizarHorasDisponibles();
+      if (_modoSesionesMultiplesActivo) renderCamposSesionesMultiples(true);
+      programarActualizarPreviewSesionesMultiples();
+    });
+    $('nuevoTurnoHoraMedica')?.addEventListener('change', () => {
+      if (_modoSesionesMultiplesActivo) renderCamposSesionesMultiples(true);
+      programarActualizarPreviewSesionesMultiples();
+    });
+    $('nuevoTurnoHoraMedica')?.addEventListener('input', () => {
+      if (_modoSesionesMultiplesActivo) renderCamposSesionesMultiples(true);
+      programarActualizarPreviewSesionesMultiples();
+    });
+    $('sesionesMultiplesCantidad')?.addEventListener('input', () => {
+      _sesionesUltimaCantidadRender = 0;
+      renderCamposSesionesMultiples(true);
+      programarActualizarPreviewSesionesMultiples();
+    });
+    $('sesionesMultiplesCantidad')?.addEventListener('change', () => {
+      _sesionesUltimaCantidadRender = 0;
+      renderCamposSesionesMultiples(true);
+      programarActualizarPreviewSesionesMultiples();
+    });
     $('crearTurnoMedica')?.addEventListener('click', crearTurnoMedica);
   }
 
@@ -2566,7 +4272,7 @@ async function initAgendaMedica() {
       $('btnCerrarEditPaciente').addEventListener('click', () => {
         editSection.classList.add('hidden');
         selectedTurnoMedica = null;
-        document.querySelectorAll('#turnosTableMedica tbody tr').forEach(row => row.classList.remove('turno-selected'));
+        _clearMedicaTurnoSelection();
       });
     } else {
       editSection.classList.add('hidden');
@@ -2602,37 +4308,40 @@ async function initAgendaMedica() {
 // Autocompletado por documento removido por solicitud del usuario
 
 // hide Hora column for doctor view
-function adjustColumnsForRole(){
-  const headerRow = document.querySelector('#turnosTableMedica thead tr');
-  if (!headerRow) return;
-  
-  if (currentUser?.rol === 'doctor') {
-    // Para DOCTOR: mantener Hora visible, cambiar Acciones por "Quien Programó"
-    const colHora = document.querySelector('#turnosTableMedica colgroup .col-hora');
-    if (colHora) colHora.style.display = '';
-    
-    const lastTh = headerRow.querySelector('th:last-child');
-    if (lastTh && lastTh.textContent.includes('Acciones')) {
-      lastTh.textContent = 'Quien Programó';
+function adjustColumnsForRole() {
+  document.querySelectorAll('.medica-turnos-table').forEach((table) => {
+    const headerRow = table.querySelector('thead tr');
+    if (!headerRow) return;
+
+    if (currentUser?.rol === 'doctor') {
+      const colHora = table.querySelector('colgroup .col-hora');
+      if (colHora) colHora.style.display = '';
+      const lastTh = headerRow.querySelector('th:last-child');
+      if (lastTh && lastTh.textContent.includes('Acciones')) {
+        lastTh.textContent = 'Quien Programó';
+      }
+    } else {
+      const colHora = table.querySelector('colgroup .col-hora');
+      if (colHora) colHora.style.display = '';
+      if (!headerRow.querySelector('.col-hora') && originalHoraTHHtml) {
+        const tpl = document.createElement('template');
+        tpl.innerHTML = originalHoraTHHtml.trim();
+        const newTh = tpl.content.firstChild;
+        const ref = headerRow.children[1] || null;
+        headerRow.insertBefore(newTh, ref);
+      }
+      const lastTh = headerRow.querySelector('th:last-child');
+      if (lastTh && (lastTh.textContent.includes('Quien') || lastTh.textContent.includes('Programó'))) {
+        lastTh.textContent = 'Acciones';
+      }
     }
-  } else {
-    // Para RECEPCION/ADMIN: asegurar Hora visible, cambiar "Quien Programó" por "Acciones"
-    const colHora = document.querySelector('#turnosTableMedica colgroup .col-hora');
-    if (colHora) colHora.style.display = '';
-    
-    if (!headerRow.querySelector('.col-hora') && originalHoraTHHtml) {
-      const tpl = document.createElement('template');
-      tpl.innerHTML = originalHoraTHHtml.trim();
-      const newTh = tpl.content.firstChild;
-      const ref = headerRow.children[1] || null;
-      headerRow.insertBefore(newTh, ref);
-    }
-    
-    const lastTh = headerRow.querySelector('th:last-child');
-    if (lastTh && (lastTh.textContent.includes('Quien') || lastTh.textContent.includes('Programó'))) {
-      lastTh.textContent = 'Acciones';
-    }
-  }
+  });
+}
+
+function _clearMedicaTurnoSelection() {
+  document.querySelectorAll('.medica-turnos-table tbody tr').forEach((row) => {
+    row.classList.remove('turno-selected');
+  });
 }
 
 function updateAgendaFechaDisplay(){
@@ -2735,11 +4444,30 @@ let calSelectedDate = null; // 'YYYY-MM-DD'
 let calDisponibilidad = {}; // { 'YYYY-MM-DD': { disponible, disponible_manana, disponible_tarde } }
 let calSlots = []; // [{ fecha, hora_inicio, hora_fin, disponible }]
 let calDoctorIdForCal = null;
-let calModoTodoDia = false;
+/** 'attend-partial' | 'attend-full' | 'absent' */
+let calModoAsistencia = 'attend-partial';
 let calLoadReqId = 0;
+/** Evita que un refresh tardío (Hostinger) pise el color recién guardado */
+let calSavedSnapshot = null;
+
+function normalizarFilaDisponibilidadCal(d) {
+  const fecha = (d.fecha || '').slice(0, 10);
+  let disponible = null;
+  if (d.disponible === true || d.disponible === 1 || d.disponible === '1') disponible = true;
+  else if (d.disponible === false || d.disponible === 0 || d.disponible === '0' || d.disponible === 'false') disponible = false;
+  const disponible_manana = d.disponible_manana === true || d.disponible_manana === 1 || d.disponible_manana === '1';
+  const disponible_tarde = d.disponible_tarde === true || d.disponible_tarde === 1 || d.disponible_tarde === '1';
+  if (disponible === null) {
+    if (!disponible_manana && !disponible_tarde) disponible = false;
+    else if (disponible_manana || disponible_tarde) disponible = true;
+  }
+  return { ...d, fecha, disponible, disponible_manana, disponible_tarde };
+}
 
 function obtenerEstadoDiaAgenda(dateStr) {
   const disp = calDisponibilidad[dateStr];
+  if (disp && disp.disponible === false) return 'unavailable';
+
   const daySlots = calSlots.filter(s => (s.fecha || '').slice(0, 10) === dateStr && s.disponible);
   const normalizedSlots = daySlots
     .map(s => `${(s.hora_inicio || '').slice(0, 5)}-${(s.hora_fin || '').slice(0, 5)}`)
@@ -2752,7 +4480,6 @@ function obtenerEstadoDiaAgenda(dateStr) {
   const tieneMediaJornada = normalizedSlots.length === 1
     && (normalizedSlots[0] === '08:00-12:00' || normalizedSlots[0] === '14:00-18:00');
 
-  if (disp && !disp.disponible) return 'unavailable';
   if (tieneJornadaCompleta) return 'full';
   if (tieneMediaJornada) return 'partial';
 
@@ -2778,19 +4505,70 @@ function setupAgendaCalendar() {
     selectorDiv.style.display = 'none';
   }
 
-  // Nav buttons
-  $('calPrevMonth')?.addEventListener('click', () => { calCurrentMonth--; if (calCurrentMonth < 0) { calCurrentMonth = 11; calCurrentYear--; } calSelectedDate = null; loadCalendarData(); });
-  $('calNextMonth')?.addEventListener('click', () => { calCurrentMonth++; if (calCurrentMonth > 11) { calCurrentMonth = 0; calCurrentYear++; } calSelectedDate = null; loadCalendarData(); });
+  // Nav buttons - evitar listeners duplicados
+  const prevBtn = $('calPrevMonth');
+  const nextBtn = $('calNextMonth');
+  if (prevBtn) {
+    prevBtn.replaceWith(prevBtn.cloneNode(true));
+    const newPrevBtn = $('calPrevMonth');
+    newPrevBtn.addEventListener('click', () => {
+      calCurrentMonth--;
+      if (calCurrentMonth < 0) { calCurrentMonth = 11; calCurrentYear--; }
+      calSelectedDate = null;
+      loadCalendarData();
+    });
+  }
+  if (nextBtn) {
+    nextBtn.replaceWith(nextBtn.cloneNode(true));
+    const newNextBtn = $('calNextMonth');
+    newNextBtn.addEventListener('click', () => {
+      calCurrentMonth++;
+      if (calCurrentMonth > 11) { calCurrentMonth = 0; calCurrentYear++; }
+      calSelectedDate = null;
+      loadCalendarData();
+    });
+  }
 
   // Modal events
   $('calModalClose')?.addEventListener('click', closeCalModal);
   $('calDayModal')?.addEventListener('click', (e) => { if (e.target.id === 'calDayModal') closeCalModal(); });
-  $('calToggleYes')?.addEventListener('click', () => setCalToggle(true));
-  $('calToggleFullDay')?.addEventListener('click', () => setCalToggle(true, true));
-  $('calToggleNo')?.addEventListener('click', () => setCalToggle(false));
+  $('calBtnNoAsiste')?.addEventListener('click', abrirCalPasoNoAsiste);
+  $('calBtnConfirmarNoAsiste')?.addEventListener('click', confirmarCalDiaNoAsiste);
+  $('calBtnConfigurar')?.addEventListener('click', abrirCalPasoConfigurar);
+  $('calBtnVolver')?.addEventListener('click', () => showCalModalStep('choice'));
+  $('calBtnVolverAbsent')?.addEventListener('click', () => showCalModalStep('choice'));
+  $('calChipPartial')?.addEventListener('click', () => setCalJornada('attend-partial'));
+  $('calChipFullDay')?.addEventListener('click', () => setCalJornada('attend-full'));
   $('calModalAddHora')?.addEventListener('click', () => addCalHoraRow('', ''));
   $('calModalSave')?.addEventListener('click', saveCalDay);
   $('calModalClear')?.addEventListener('click', deleteCalDay);
+
+  const selMotivoAttend = $('calModalMotivoSelectAttend');
+  const inpMotivoAttend = $('calModalMotivoOtroAttend');
+  if (selMotivoAttend && !selMotivoAttend.dataset.boundCalMotivo) {
+    selMotivoAttend.addEventListener('change', function () {
+      if (!inpMotivoAttend) return;
+      if (this.value === 'Otro') inpMotivoAttend.classList.remove('cal-motivo-input--hidden');
+      else {
+        inpMotivoAttend.classList.add('cal-motivo-input--hidden');
+        inpMotivoAttend.value = '';
+      }
+    });
+    selMotivoAttend.dataset.boundCalMotivo = '1';
+  }
+  const selMotivoAbsent = $('calModalMotivoSelectAbsent');
+  const inpMotivoAbsent = $('calModalMotivoOtroAbsent');
+  if (selMotivoAbsent && !selMotivoAbsent.dataset.boundCalMotivo) {
+    selMotivoAbsent.addEventListener('change', function () {
+      if (!inpMotivoAbsent) return;
+      if (this.value === 'Otro') inpMotivoAbsent.classList.remove('cal-motivo-input--hidden');
+      else {
+        inpMotivoAbsent.classList.add('cal-motivo-input--hidden');
+        inpMotivoAbsent.value = '';
+      }
+    });
+    selMotivoAbsent.dataset.boundCalMotivo = '1';
+  }
 
   // ESC to close modal
   document.addEventListener('keydown', (e) => {
@@ -2800,24 +4578,192 @@ function setupAgendaCalendar() {
   loadCalendarData();
 }
 
-function setCalToggle(asistire, todoDia = false) {
-  const btnYes = $('calToggleYes');
-  const btnFullDay = $('calToggleFullDay');
-  const btnNo = $('calToggleNo');
-  const horasC = $('calModalHorasContainer');
-  if (asistire) {
-    calModoTodoDia = Boolean(todoDia);
-    // "Todo el día" también es "asistiré", por lo que debe considerarse disponible.
-    btnYes.classList.add('cal-toggle-active-yes');
-    btnFullDay?.classList.toggle('cal-toggle-active-full', calModoTodoDia);
-    btnNo.classList.remove('cal-toggle-active-no');
-    if (horasC) horasC.style.display = calModoTodoDia ? 'none' : '';
+function showCalModalStep(step) {
+  const choice = $('calStepChoice');
+  const config = $('calStepConfig');
+  const absent = $('calStepAbsent');
+  if (choice) choice.classList.toggle('hidden', step !== 'choice');
+  if (config) config.classList.toggle('hidden', step !== 'config');
+  if (absent) absent.classList.toggle('hidden', step !== 'absent');
+}
+
+function leerMotivoCalAbsent() {
+  const select = $('calModalMotivoSelectAbsent');
+  const inp = $('calModalMotivoOtroAbsent');
+  if (!select) return null;
+  if (select.value === 'Otro') return (inp?.value || '').trim() || null;
+  return select.value || null;
+}
+
+function cargarMotivoCalAbsent(motivo) {
+  const select = $('calModalMotivoSelectAbsent');
+  const inputOtro = $('calModalMotivoOtroAbsent');
+  if (!select) return;
+  const opciones = ['', 'UCQN', 'Hospital departamental', 'Cita médica personal', 'Vacaciones', 'Capacitación'];
+  if (opciones.includes(motivo)) {
+    select.value = motivo;
+    if (inputOtro) inputOtro.classList.add('cal-motivo-input--hidden');
+  } else if (motivo) {
+    select.value = 'Otro';
+    if (inputOtro) {
+      inputOtro.classList.remove('cal-motivo-input--hidden');
+      inputOtro.value = motivo;
+    }
   } else {
-    calModoTodoDia = false;
-    btnYes.classList.remove('cal-toggle-active-yes');
-    btnFullDay?.classList.remove('cal-toggle-active-full');
-    btnNo.classList.add('cal-toggle-active-no');
-    if (horasC) horasC.style.display = 'none';
+    select.value = '';
+    if (inputOtro) inputOtro.classList.add('cal-motivo-input--hidden');
+  }
+}
+
+function abrirCalPasoNoAsiste() {
+  if (!calSelectedDate) return;
+  const disp = calDisponibilidad[calSelectedDate];
+  cargarMotivoCalAbsent(disp?.disponible === false ? (disp.motivo_ausencia || '') : '');
+  showCalModalStep('absent');
+}
+
+function setCalJornada(modo) {
+  calModoAsistencia = modo;
+  const horasC = $('calModalHorasContainer');
+  const chipPartial = $('calChipPartial');
+  const chipFull = $('calChipFullDay');
+  const esFull = modo === 'attend-full';
+  chipPartial?.classList.toggle('is-selected', !esFull);
+  chipFull?.classList.toggle('is-selected', esFull);
+  horasC?.classList.toggle('hidden', esFull);
+  if (esFull) {
+    const horasList = $('calModalHorasList');
+    if (horasList) horasList.innerHTML = '';
+  } else if ($('calModalHorasList') && !$('calModalHorasList').children.length) {
+    addCalHoraRow('', '');
+  }
+}
+
+function leerMotivoCalModal() {
+  const select = $('calModalMotivoSelectAttend');
+  const inp = $('calModalMotivoOtroAttend');
+  if (!select) return null;
+  if (select.value === 'Otro') return (inp?.value || '').trim() || null;
+  return select.value || null;
+}
+
+function cargarMotivoEnCalModal(motivo) {
+  const select = $('calModalMotivoSelectAttend');
+  const inputOtro = $('calModalMotivoOtroAttend');
+  if (!select) return;
+  const opciones = ['', 'UCQN', 'Hospital departamental', 'Cita médica personal', 'Vacaciones', 'Capacitación'];
+  if (opciones.includes(motivo)) {
+    select.value = motivo;
+    if (inputOtro) inputOtro.classList.add('cal-motivo-input--hidden');
+  } else if (motivo) {
+    select.value = 'Otro';
+    if (inputOtro) {
+      inputOtro.classList.remove('cal-motivo-input--hidden');
+      inputOtro.value = motivo;
+    }
+  } else {
+    select.value = '';
+    if (inputOtro) inputOtro.classList.add('cal-motivo-input--hidden');
+  }
+}
+
+function poblarCalFormularioConfig(dateStr) {
+  const disp = calDisponibilidad[dateStr];
+  const daySlots = calSlots.filter((s) => (s.fecha || '').slice(0, 10) === dateStr && s.disponible);
+  const normalizedSlots = daySlots
+    .map((s) => `${(s.hora_inicio || '').slice(0, 5)}-${(s.hora_fin || '').slice(0, 5)}`)
+    .sort();
+  const isFullDay = normalizedSlots.length === 2
+    && normalizedSlots[0] === '08:00-12:00'
+    && normalizedSlots[1] === '14:00-18:00';
+
+  const horasList = $('calModalHorasList');
+  if (horasList) horasList.innerHTML = '';
+
+  if (isFullDay) {
+    setCalJornada('attend-full');
+    cargarMotivoEnCalModal(disp?.motivo_ausencia || '');
+  } else {
+    setCalJornada('attend-partial');
+    if (daySlots.length > 0) {
+      daySlots.forEach((s) => addCalHoraRow(s.hora_inicio?.slice(0, 5), s.hora_fin?.slice(0, 5)));
+    } else if (disp) {
+      if (disp.disponible_manana) addCalHoraRow('08:00', '12:00');
+      if (disp.disponible_tarde) addCalHoraRow('14:00', '18:00');
+      if (!disp.disponible_manana && !disp.disponible_tarde) addCalHoraRow('', '');
+    } else {
+      addCalHoraRow('', '');
+    }
+    cargarMotivoEnCalModal(disp?.motivo_ausencia || '');
+  }
+}
+
+function abrirCalPasoConfigurar() {
+  if (!calSelectedDate) return;
+  poblarCalFormularioConfig(calSelectedDate);
+  showCalModalStep('config');
+}
+
+async function persistirCalDia(payload) {
+  const { disponible, slots, hasManana, hasTarde, motivoAusencia, savedDate } = payload;
+  const res = await apiFetch('/api/doctor-disponibilidad/guardar-dia-completo', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      doctor_id: calDoctorIdForCal,
+      fecha: savedDate,
+      disponible,
+      disponible_manana: disponible ? (hasManana || (!hasManana && !hasTarde)) : false,
+      disponible_tarde: disponible ? (hasTarde || (!hasManana && !hasTarde)) : false,
+      motivo_ausencia: motivoAusencia,
+      slots
+    })
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.ok) {
+    throw new Error(data.error || `Error ${res.status} guardando el día`);
+  }
+
+  const dispCache = {
+    disponible,
+    disponible_manana: disponible ? (hasManana || (!hasManana && !hasTarde)) : false,
+    disponible_tarde: disponible ? (hasTarde || (!hasManana && !hasTarde)) : false,
+    motivo_ausencia: motivoAusencia,
+    fecha: savedDate
+  };
+  const slotsCache = slots.map((s) => ({ ...s, fecha: savedDate }));
+
+  calDisponibilidad[savedDate] = dispCache;
+  calSlots = calSlots.filter((s) => (s.fecha || '').slice(0, 10) !== savedDate);
+  slotsCache.forEach((s) => calSlots.push(s));
+  calSavedSnapshot = { at: Date.now(), date: savedDate, disp: dispCache, slots: slotsCache };
+
+  renderCalendar();
+  renderCalResumen();
+  await loadCalendarData();
+}
+
+async function confirmarCalDiaNoAsiste() {
+  if (!calSelectedDate || !calDoctorIdForCal) return;
+  const btn = $('calBtnConfirmarNoAsiste');
+  if (btn) btn.disabled = true;
+  const savedDate = calSelectedDate;
+  const motivoAusencia = leerMotivoCalAbsent();
+  try {
+    await persistirCalDia({
+      savedDate,
+      disponible: false,
+      slots: [],
+      hasManana: false,
+      hasTarde: false,
+      motivoAusencia
+    });
+    showToast('Día marcado como no asiste', 'success');
+    closeCalModal();
+  } catch (e) {
+    showToast('Error: ' + e.message, 'error');
+  } finally {
+    if (btn) btn.disabled = false;
   }
 }
 
@@ -2835,48 +4781,41 @@ function openCalModal(dateStr) {
   if (titulo) titulo.textContent = `${diasSemana[d.getDay()]} ${d.getDate()} de ${meses[d.getMonth()]}`;
   if (sub) sub.textContent = `${calCurrentYear}`;
 
-  // Load existing data
-  const disp = calDisponibilidad[dateStr];
-  const daySlots = calSlots.filter(s => (s.fecha || '').slice(0, 10) === dateStr && s.disponible);
-  const normalizedSlots = daySlots
-    .map(s => `${(s.hora_inicio || '').slice(0, 5)}-${(s.hora_fin || '').slice(0, 5)}`)
-    .sort();
-  const isFullDayConfigured = normalizedSlots.length === 2
-    && normalizedSlots[0] === '08:00-12:00'
-    && normalizedSlots[1] === '14:00-18:00';
+  cargarMotivoCalAbsent('');
+  showCalModalStep('choice');
+  const btnNo = $('calBtnNoAsiste');
+  const btnCfg = $('calBtnConfigurar');
+  const btnConf = $('calBtnConfirmarNoAsiste');
+  if (btnNo) btnNo.disabled = false;
+  if (btnCfg) btnCfg.disabled = false;
+  if (btnConf) btnConf.disabled = false;
 
-  const horasList = $('calModalHorasList');
-  if (horasList) horasList.innerHTML = '';
-
-  if (disp && !disp.disponible) {
-    setCalToggle(false);
-  } else {
-    setCalToggle(true, isFullDayConfigured);
-    if (isFullDayConfigured) {
-      // "Todo el día" se guarda como dos slots: 08:00-12:00 y 14:00-18:00.
-    } else if (daySlots.length > 0) {
-      daySlots.forEach(s => addCalHoraRow(s.hora_inicio?.slice(0, 5), s.hora_fin?.slice(0, 5)));
-    } else if (disp) {
-      if (disp.disponible_manana) addCalHoraRow('08:00', '12:00');
-      if (disp.disponible_tarde) addCalHoraRow('14:00', '18:00');
-      if (!disp.disponible_manana && !disp.disponible_tarde) addCalHoraRow('', '');
-    } else {
-      addCalHoraRow('', '');
-    }
-  }
-
-  // Show with animation
-  requestAnimationFrame(() => {
-    overlay.classList.add('active');
-  });
+  overlay.classList.remove('hidden');
+  overlay.setAttribute('aria-hidden', 'false');
+  requestAnimationFrame(() => overlay.classList.add('active'));
   renderCalendar();
 }
 
 function closeCalModal() {
   const overlay = $('calDayModal');
-  if (overlay) overlay.classList.remove('active');
+  if (overlay) {
+    overlay.classList.remove('active');
+    overlay.classList.add('hidden');
+    overlay.setAttribute('aria-hidden', 'true');
+  }
   calSelectedDate = null;
   renderCalendar();
+}
+
+function aplicarCalSavedSnapshotEnCache() {
+  if (!calSavedSnapshot || Date.now() - calSavedSnapshot.at > 5000) {
+    calSavedSnapshot = null;
+    return;
+  }
+  const { date, disp, slots } = calSavedSnapshot;
+  calDisponibilidad[date] = disp;
+  calSlots = calSlots.filter((s) => (s.fecha || '').slice(0, 10) !== date);
+  slots.forEach((s) => calSlots.push(s));
 }
 
 async function loadCalendarData() {
@@ -2895,27 +4834,20 @@ async function loadCalendarData() {
     if (reqId !== calLoadReqId) return; // respuesta vieja
     calDisponibilidad = {};
     if (dataDisp.ok && Array.isArray(dataDisp.disponibilidad)) {
-      dataDisp.disponibilidad.forEach(d => {
-        const fecha = (d.fecha || '').slice(0, 10);
-        const dispDia = d.disponible === true || d.disponible === 1 || d.disponible === '1';
-        const dispManana = d.disponible_manana === true || d.disponible_manana === 1 || d.disponible_manana === '1';
-        const dispTarde = d.disponible_tarde === true || d.disponible_tarde === 1 || d.disponible_tarde === '1';
-        calDisponibilidad[fecha] = {
-          ...d,
-          disponible: dispDia,
-          disponible_manana: dispManana,
-          disponible_tarde: dispTarde
-        };
+      dataDisp.disponibilidad.forEach((d) => {
+        const row = normalizarFilaDisponibilidadCal(d);
+        if (row.fecha) calDisponibilidad[row.fecha] = row;
       });
     }
 
-    // Cargar slots de agenda
     const resSlots = await apiFetch(`/api/doctor-agenda?doctor_id=${calDoctorIdForCal}&_t=${Date.now()}`, {
       cache: 'no-store'
     });
     const slotsData = await resSlots.json();
-    if (reqId !== calLoadReqId) return; // respuesta vieja
+    if (reqId !== calLoadReqId) return;
     calSlots = Array.isArray(slotsData) ? slotsData : [];
+
+    aplicarCalSavedSnapshotEnCache();
   } catch (e) {
     console.error('Error cargando datos del calendario:', e);
   }
@@ -3003,73 +4935,50 @@ function addCalHoraRow(inicio, fin) {
 async function saveCalDay() {
   if (!calSelectedDate || !calDoctorIdForCal) return;
 
-  const disponible = Boolean(
-    calModoTodoDia
-    || $('calToggleYes')?.classList.contains('cal-toggle-active-yes')
-    || $('calToggleFullDay')?.classList.contains('cal-toggle-active-full')
-  );
-  const horasRows = document.querySelectorAll('#calModalHorasList .cal-hora-row');
+  let slots = [];
+  let hasManana = false;
+  let hasTarde = false;
+  const motivoAusencia = leerMotivoCalModal();
 
-  // Build slots
-  const slots = [];
-  let hasManana = false, hasTarde = false;
-
-  if (disponible) {
-    if (calModoTodoDia) {
-      slots.push({ fecha: calSelectedDate, hora_inicio: '08:00', hora_fin: '12:00', disponible: 1 });
-      slots.push({ fecha: calSelectedDate, hora_inicio: '14:00', hora_fin: '18:00', disponible: 1 });
-      hasManana = true;
-      hasTarde = true;
-    } else {
-      let valid = true;
-      horasRows.forEach(row => {
-        const hi = row.querySelector('.cal-hora-inicio')?.value;
-        const hf = row.querySelector('.cal-hora-fin')?.value;
-        if (!hi || !hf) { valid = false; return; }
-        if (hi >= hf) { valid = false; return; }
-        slots.push({ fecha: calSelectedDate, hora_inicio: hi, hora_fin: hf, disponible: 1 });
-        const h = parseInt(hi.split(':')[0], 10);
-        if (h < 12) hasManana = true;
-        if (h >= 12) hasTarde = true;
-      });
-      if (!valid || slots.length === 0) {
-        showToast('Completa todos los horarios correctamente (inicio < fin)', 'error');
-        return;
-      }
+  if (calModoAsistencia === 'attend-full') {
+    slots.push({ fecha: calSelectedDate, hora_inicio: '08:00', hora_fin: '12:00', disponible: 1 });
+    slots.push({ fecha: calSelectedDate, hora_inicio: '14:00', hora_fin: '18:00', disponible: 1 });
+    hasManana = true;
+    hasTarde = true;
+  } else {
+    const horasRows = document.querySelectorAll('#calModalHorasList .cal-hora-row');
+    let valid = true;
+    horasRows.forEach((row) => {
+      const hi = row.querySelector('.cal-hora-inicio')?.value;
+      const hf = row.querySelector('.cal-hora-fin')?.value;
+      if (!hi || !hf) { valid = false; return; }
+      if (hi >= hf) { valid = false; return; }
+      slots.push({ fecha: calSelectedDate, hora_inicio: hi, hora_fin: hf, disponible: 1 });
+      const h = parseInt(hi.split(':')[0], 10);
+      if (h < 12) hasManana = true;
+      if (h >= 12) hasTarde = true;
+    });
+    if (!valid || slots.length === 0) {
+      showToast('Completa todos los horarios correctamente (inicio debe ser menor que fin)', 'error');
+      return;
     }
   }
 
   const saveBtn = $('calModalSave');
   setLoading(saveBtn, true, 'Guardando...');
+  const savedDate = calSelectedDate;
 
   try {
-    // 1. Save availability in doctor_disponibilidad_mensual
-    await apiFetch('/api/doctor-disponibilidad/guardar-dia', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        doctor_id: calDoctorIdForCal,
-        fecha: calSelectedDate,
-        disponible,
-        disponible_manana: disponible ? (hasManana || (!hasManana && !hasTarde)) : false,
-        disponible_tarde: disponible ? (hasTarde || (!hasManana && !hasTarde)) : false
-      })
+    await persistirCalDia({
+      savedDate,
+      disponible: true,
+      slots,
+      hasManana,
+      hasTarde,
+      motivoAusencia
     });
-
-    // 2. Save specific slots in doctor_agenda (replace day's slots)
-    await apiFetch('/api/doctor-agenda/guardar-dia', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        doctor_id: calDoctorIdForCal,
-        fecha: calSelectedDate,
-        slots
-      })
-    });
-
     showToast('Día guardado correctamente', 'success');
     closeCalModal();
-    await loadCalendarData();
   } catch (e) {
     showToast('Error guardando: ' + e.message, 'error');
   } finally {
@@ -3081,18 +4990,23 @@ function deleteCalDay() {
   if (!calSelectedDate || !calDoctorIdForCal) return;
   showConfirm('¿Limpiar la configuración del día seleccionado?', async () => {
     try {
-      await apiFetch('/api/doctor-disponibilidad/eliminar-dia', {
+      const r = await apiFetch('/api/doctor-disponibilidad/eliminar-dia', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ doctor_id: calDoctorIdForCal, fecha: calSelectedDate })
     });
+    if (!r.ok) {
+      const errData = await r.json().catch(() => ({}));
+      throw new Error(errData.error || `Error ${r.status} limpiando día`);
+    }
+    calSavedSnapshot = null;
     showToast('Día limpiado', 'success');
-    closeCalModal();
     await loadCalendarData();
+    closeCalModal();
   } catch (e) {
     showToast('Error: ' + e.message, 'error');
   }
-  }, { okText: 'Limpiar', icon: '🗓️' });
+  }, { okText: 'Limpiar', icon: '🗑️' });
 }
 
 function renderCalResumen() {
@@ -3121,7 +5035,7 @@ function renderCalResumen() {
     const dayName = diasSemana[dateObj.getDay()];
     let estadoHtml = '', horasHtml = '';
 
-    if (estadoDia === 'unavailable') {
+    if (estadoDia === 'unavailable' || (disp && disp.disponible === false)) {
       estadoHtml = '<span class="cal-resumen-estado">No asiste</span>';
     } else if (estadoDia === 'full' || estadoDia === 'partial') {
       estadoHtml = `<span class="cal-resumen-estado">${estadoDia === 'full' ? 'Todo el día' : 'Medio día'}</span>`;
@@ -3499,6 +5413,121 @@ async function buscarPacientesMedica() {
 
 // Attach document input listener in init (added later)
 
+const MEDICA_ESTADOS_FINALES = ['ATENDIDO', 'NO_ASISTIO', 'CANCELADO', 'REPROGRAMADO'];
+
+function _ordenarTurnosMedica(turnos) {
+  return [...turnos].sort((a, b) => {
+    const ma = horaAMinutos(a.hora) ?? 9999;
+    const mb = horaAMinutos(b.hora) ?? 9999;
+    return ma - mb;
+  });
+}
+
+function _construirDisplayListMedica(turnosDiaOrdenCronologico, dispCtx) {
+  const { dispManana, dispTarde, intervalosBloqueados, INTERVALO_MIN } = dispCtx;
+  const rangosDisponibles = [];
+  if (dispManana) rangosDisponibles.push({ inicio: 8 * 60, fin: 12 * 60 });
+  if (dispTarde) rangosDisponibles.push({ inicio: 14 * 60, fin: 18 * 60 });
+
+  const esTurnoEnTablaActivos = (t) => !MEDICA_ESTADOS_FINALES.includes(t.estado);
+
+  function minutoDentroDeDisponibilidad(m) {
+    const enRango = rangosDisponibles.some((r) => m >= r.inicio && m < r.fin);
+    if (!enRango) return false;
+    return !intervalosBloqueados.some((b) => m >= b.inicio && m < b.fin);
+  }
+
+  function generarSlotsEnRango(desdeMin, hastaMin) {
+    const slots = [];
+    let m = desdeMin;
+    while (m < hastaMin) {
+      if (minutoDentroDeDisponibilidad(m)) {
+        const hh = String(Math.floor(m / 60)).padStart(2, '0');
+        const mm = String(m % 60).padStart(2, '0');
+        slots.push({ tipo: 'slot-vacio', hora: `${hh}:${mm}` });
+      }
+      m += INTERVALO_MIN;
+    }
+    return slots;
+  }
+
+  const displayList = [];
+  const lista = turnosDiaOrdenCronologico;
+  const horasTurnos = lista.map((t) => horaAMinutos(t.hora)).filter((m) => m !== null);
+
+  if (horasTurnos.length === 0) {
+    for (const t of lista) {
+      if (esTurnoEnTablaActivos(t)) {
+        displayList.push({ tipo: 'turno', data: t });
+      }
+    }
+    for (const rango of rangosDisponibles) {
+      displayList.push(...generarSlotsEnRango(rango.inicio, rango.fin));
+    }
+  } else {
+    const primerTurno = Math.min(...horasTurnos);
+    for (const rango of rangosDisponibles) {
+      if (rango.fin <= primerTurno) {
+        displayList.push(...generarSlotsEnRango(rango.inicio, rango.fin));
+      } else if (rango.inicio < primerTurno) {
+        displayList.push(...generarSlotsEnRango(rango.inicio, primerTurno));
+      }
+    }
+    for (let i = 0; i < lista.length; i++) {
+      const t = lista[i];
+      if (esTurnoEnTablaActivos(t)) {
+        displayList.push({ tipo: 'turno', data: t });
+      }
+      if (i < lista.length - 1) {
+        const mActual = horaAMinutos(lista[i].hora);
+        const mSiguiente = horaAMinutos(lista[i + 1].hora);
+        if (mActual !== null && mSiguiente !== null) {
+          displayList.push(...generarSlotsEnRango(mActual + INTERVALO_MIN, mSiguiente));
+        }
+      }
+    }
+    const ultimoTurno = Math.max(...horasTurnos);
+    let inicio = ultimoTurno + INTERVALO_MIN;
+    for (const rango of rangosDisponibles) {
+      if (rango.fin <= inicio) continue;
+      const desde = Math.max(rango.inicio, inicio);
+      displayList.push(...generarSlotsEnRango(desde, rango.fin));
+    }
+  }
+  return displayList;
+}
+
+function _renderDisplayListMedica(tbody, displayList, opts) {
+  const { colspan, animateTargetId, hayEnAtencion, filasRequeridas, padEmptyRows } = opts;
+  tbody.innerHTML = '';
+  const totalFilas = Math.max(displayList.length, padEmptyRows ? filasRequeridas : displayList.length);
+  for (let i = 0; i < totalFilas; i++) {
+    if (i < displayList.length) {
+      const item = displayList[i];
+      if (item.tipo === 'turno') {
+        renderTurnoRowMedica(tbody, item.data, animateTargetId, hayEnAtencion);
+      } else if (item.tipo === 'slot-vacio') {
+        crearFilaSlotVacio(tbody, colspan, item.hora);
+      } else {
+        crearFilaTurnoHueco(tbody, colspan);
+      }
+    } else if (padEmptyRows) {
+      crearFilaTurnoVacia(tbody, colspan, currentUser?.rol === 'doctor');
+    }
+  }
+}
+
+function _renderTurnosFinalizadosMedica(tbody, turnos, hayEnAtencion, colspan) {
+  tbody.innerHTML = '';
+  if (!turnos.length) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td colspan="${colspan}" style="padding:16px;text-align:center;color:#9ca3af;font-style:italic">Sin citas completadas</td>`;
+    tbody.appendChild(tr);
+    return;
+  }
+  turnos.forEach((t) => renderTurnoRowMedica(tbody, t, null, hayEnAtencion));
+}
+
 async function cargarTurnosMedica() {
   if (_cargandoTurnosMedica) {
     _pendienteTurnosMedica = true;
@@ -3514,168 +5543,99 @@ async function cargarTurnosMedica() {
     }
     return;
   }
-  showSkeletonRows($('turnosTableBodyMedica'), 8, 6);
+  const agendaKeyMedica = `${fecha}|${doctorId}`;
+  const tbodyActivos = $('turnosTableBodyMedica');
+  const tbodyCompletados = $('turnosTableBodyMedicaCompletados');
+  const mismoContextoUltimaVista = _medicaUltimaKeyAgenda === agendaKeyMedica;
+  if (!mismoContextoUltimaVista) {
+    if (typeof window.innarMotionPause === 'function') window.innarMotionPause(380);
+    showSkeletonRows(tbodyActivos, 8, 6);
+    if (tbodyCompletados) showSkeletonRows(tbodyCompletados, 9, 4);
+  }
   try {
     const res = await apiFetch(`/api/turnos?fecha=${fecha}&doctor_id=${doctorId}`);
     const turnos = await res.json();
-    const tbody = $('turnosTableBodyMedica');
+    if (!res.ok || !Array.isArray(turnos)) {
+      showToast(turnos?.error || 'Error cargando citas', 'error');
+      return;
+    }
 
-    // Todos los turnos ordenados por hora (mantener orden cronológico siempre)
-    const ESTADOS_FINALES = ['ATENDIDO', 'NO_ASISTIO', 'CANCELADO', 'REPROGRAMADO'];
-    const turnosOrdenados = [...turnos].sort((a, b) => {
-      const ma = horaAMinutos(a.hora) ?? 9999;
-      const mb = horaAMinutos(b.hora) ?? 9999;
-      return ma - mb;
-    });
+    const turnosOrdenados = _ordenarTurnosMedica(turnos);
+    const turnosActivos = turnosOrdenados.filter((t) => !MEDICA_ESTADOS_FINALES.includes(t.estado));
+    const turnosFinalizados = turnosOrdenados.filter((t) => MEDICA_ESTADOS_FINALES.includes(t.estado));
 
-    // Si es doctor, asegurarnos de mostrar primero quien tenga numero_turno == 1
     if (currentUser?.rol === 'doctor') {
-      const idx1 = turnosOrdenados.findIndex(x => x.numero_turno === 1 && !ESTADOS_FINALES.includes(x.estado));
+      const idx1 = turnosActivos.findIndex((x) => x.numero_turno === 1);
       if (idx1 > 0) {
-        const [one] = turnosOrdenados.splice(idx1, 1);
-        turnosOrdenados.unshift(one);
+        const [one] = turnosActivos.splice(idx1, 1);
+        turnosActivos.unshift(one);
       }
     }
-    // Detectar si hay nuevo primer paciente con numero 1 para animar
-    const firstWithNum1 = turnosOrdenados.find(t => t.numero_turno === 1 && !ESTADOS_FINALES.includes(t.estado));
+
+    const firstWithNum1 = turnosActivos.find((t) => t.numero_turno === 1);
     let animateTargetId = null;
-    
     if (firstWithNum1 && firstWithNum1.id !== lastTurnoNumber1Id) {
       animateTargetId = firstWithNum1.id;
       lastTurnoNumber1Id = firstWithNum1.id;
     }
 
-    tbody.innerHTML = '';
-    const filasRequeridas = 25;
+    const filasRequeridas = 12;
     const colspan = 9;
-    
-    const hayEnAtencion = turnosOrdenados.some(t => t.estado === 'EN_ATENCION');
+    const hayEnAtencion = turnosActivos.some((t) => t.estado === 'EN_ATENCION');
     globalHayEnAtencion = hayEnAtencion;
 
-    // Umbral de hueco dinámico según especialidad del doctor
     const espLower = (selectedDoctorEspecialidad || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     const es25min = espLower.includes('epileptolog') || espLower.includes('neurolog');
     const INTERVALO_MIN = es25min ? 25 : 40;
 
-    // Obtener disponibilidad del doctor para la fecha seleccionada
-    let dispManana = true, dispTarde = true, intervalosBloqueados = [];
+    let dispManana = false, dispTarde = false, intervalosBloqueados = [];
     try {
       const dispRes = await apiFetch(`/api/doctor-disponibilidad?doctor_id=${doctorId}&fecha=${fecha}`);
       const dispData = await dispRes.json();
       if (dispData.ok) {
-        dispManana = dispData.disponible_manana;
-        dispTarde  = dispData.disponible_tarde;
+        dispManana = Boolean(dispData.disponible_manana);
+        dispTarde = Boolean(dispData.disponible_tarde);
         if (dispData.tiene_intervalos && dispData.intervalos) {
-          intervalosBloqueados = dispData.intervalos.map(i => ({
+          intervalosBloqueados = dispData.intervalos.map((i) => ({
             inicio: horaAMinutos(i.hora_inicio),
-            fin:    horaAMinutos(i.hora_fin)
+            fin: horaAMinutos(i.hora_fin)
           }));
         }
       }
     } catch (e) { console.warn('Error obteniendo disponibilidad:', e.message); }
 
-    // Construir rangos disponibles basados en la agenda del doctor
-    const rangosDisponibles = [];
-    if (dispManana) rangosDisponibles.push({ inicio: 8 * 60, fin: 12 * 60 }); // 8:00 - 12:00
-    if (dispTarde)  rangosDisponibles.push({ inicio: 14 * 60, fin: 18 * 60 }); // 14:00 - 18:00
+    const displayList = _construirDisplayListMedica(turnosOrdenados, {
+      dispManana, dispTarde, intervalosBloqueados, INTERVALO_MIN
+    });
 
-    // Función para verificar si un minuto está dentro de los rangos disponibles
-    // y no está en un intervalo bloqueado
-    function minutoDentroDeDisponibilidad(m) {
-      const enRango = rangosDisponibles.some(r => m >= r.inicio && m < r.fin);
-      if (!enRango) return false;
-      const bloqueado = intervalosBloqueados.some(b => m >= b.inicio && m < b.fin);
-      return !bloqueado;
+    if (tbodyActivos) {
+      _renderDisplayListMedica(tbodyActivos, displayList, {
+        colspan, animateTargetId, hayEnAtencion, filasRequeridas, padEmptyRows: true
+      });
+    }
+    if (tbodyCompletados) {
+      _renderTurnosFinalizadosMedica(tbodyCompletados, turnosFinalizados, hayEnAtencion, colspan);
     }
 
-    // Construir lista de visualización: insertar filas de slot vacío con hora
-    // tanto en los huecos entre citas como antes/después, respetando disponibilidad
-    const displayList = [];
+    const countActivos = $('medicaCountActivos');
+    const countCompletados = $('medicaCountCompletados');
+    if (countActivos) countActivos.textContent = String(turnosActivos.length);
+    if (countCompletados) countCompletados.textContent = String(turnosFinalizados.length);
 
-    // Helper: generar todos los slots disponibles en los rangos del doctor
-    function generarSlotsEnRango(desdeMin, hastaMin) {
-      const slots = [];
-      let m = desdeMin;
-      while (m < hastaMin) {
-        if (minutoDentroDeDisponibilidad(m)) {
-          const hh = String(Math.floor(m / 60)).padStart(2, '0');
-          const mm = String(m % 60).padStart(2, '0');
-          slots.push({ tipo: 'slot-vacio', hora: `${hh}:${mm}` });
-        }
-        m += INTERVALO_MIN;
-      }
-      return slots;
-    }
-
-    // Recopilar horas de TODOS los turnos para detectar huecos
-    const horasTurnos = turnosOrdenados.map(t => horaAMinutos(t.hora)).filter(m => m !== null);
-
-    if (horasTurnos.length === 0) {
-      // Sin turnos: generar slots en todos los rangos disponibles
-      for (const rango of rangosDisponibles) {
-        displayList.push(...generarSlotsEnRango(rango.inicio, rango.fin));
-      }
-    } else {
-      // (a) Slots antes del primer turno
-      const primerTurno = Math.min(...horasTurnos);
-      for (const rango of rangosDisponibles) {
-        if (rango.fin <= primerTurno) {
-          displayList.push(...generarSlotsEnRango(rango.inicio, rango.fin));
-        } else if (rango.inicio < primerTurno) {
-          displayList.push(...generarSlotsEnRango(rango.inicio, primerTurno));
-        }
-      }
-
-      // (b) Turnos + slots entre TODAS las citas (incluidas atendidas)
-      for (let i = 0; i < turnosOrdenados.length; i++) {
-        displayList.push({ tipo: 'turno', data: turnosOrdenados[i] });
-        if (i < turnosOrdenados.length - 1) {
-          const mActual   = horaAMinutos(turnosOrdenados[i].hora);
-          const mSiguiente = horaAMinutos(turnosOrdenados[i + 1].hora);
-          if (mActual !== null && mSiguiente !== null) {
-            displayList.push(...generarSlotsEnRango(mActual + INTERVALO_MIN, mSiguiente));
-          }
-        }
-      }
-
-      // (c) Slots después del último turno hasta fin de disponibilidad
-      const ultimoTurno = Math.max(...horasTurnos);
-      let inicio = ultimoTurno + INTERVALO_MIN;
-      for (const rango of rangosDisponibles) {
-        if (rango.fin <= inicio) continue;
-        const desde = Math.max(rango.inicio, inicio);
-        displayList.push(...generarSlotsEnRango(desde, rango.fin));
-      }
-    }
-
-    const totalFilas = Math.max(displayList.length, filasRequeridas);
-    for (let i = 0; i < totalFilas; i++) {
-      if (i < displayList.length) {
-        const item = displayList[i];
-        if (item.tipo === 'turno') {
-          renderTurnoRowMedica(tbody, item.data, animateTargetId, hayEnAtencion);
-        } else if (item.tipo === 'slot-vacio') {
-          crearFilaSlotVacio(tbody, colspan, item.hora);
-        } else {
-          crearFilaTurnoHueco(tbody, colspan);
-        }
-      } else {
-        crearFilaTurnoVacia(tbody, colspan, currentUser?.rol === 'doctor');
-      }
-    }
-    
-    // Actualizar contador de citas en el header
     const countEl = $('citasTableCount');
     if (countEl) {
-      const totalCitas = turnosOrdenados.filter(t => t.nombre_paciente).length;
-      countEl.textContent = totalCitas > 0 ? totalCitas + ' cita' + (totalCitas !== 1 ? 's' : '') : '';
+      const total = turnosOrdenados.length;
+      if (total > 0) {
+        countEl.textContent = `${turnosActivos.length} en curso · ${turnosFinalizados.length} completadas`;
+      } else {
+        countEl.textContent = '';
+      }
     }
-    
-    // Actualizar estado del botón "Marcar como atendido"
-    // (eliminado: ahora el cambio de estado se hace desde el modal al clickear el paciente)
-    // adjustColumnsForRole
-    // Ajustar columnas según rol (una sola vez después de renderizar todas las filas)
+
     adjustColumnsForRole();
+    _applySlotVacioVisibility();
+    _medicaUltimaKeyAgenda = agendaKeyMedica;
+    _innarFlushTurnoHighlight();
   } catch (e) {
     showToast('Error cargando citas', 'error');
   } finally {
@@ -3712,6 +5672,28 @@ function crearFilaTurnoHueco(tbody, colspan) {
   tbody.appendChild(tr);
 }
 
+let _mostrarSlotVacio = localStorage.getItem('agenda_mostrar_slots') === '1';
+
+function toggleSlotVacio() {
+  _mostrarSlotVacio = !_mostrarSlotVacio;
+  localStorage.setItem('agenda_mostrar_slots', _mostrarSlotVacio ? '1' : '0');
+  _applySlotVacioVisibility();
+}
+
+function _applySlotVacioVisibility() {
+  const rows = document.querySelectorAll('#turnosTableBodyMedica tr.turno-slot-vacio');
+  rows.forEach((r) => {
+    r.style.display = _mostrarSlotVacio ? '' : 'none';
+  });
+  const btn = document.getElementById('btnToggleSlotVacio');
+  if (btn) {
+    btn.style.display = rows.length > 0 ? 'inline-flex' : 'none';
+    btn.setAttribute('aria-pressed', _mostrarSlotVacio ? 'true' : 'false');
+  }
+  const lbl = document.getElementById('lblToggleSlot');
+  if (lbl) lbl.textContent = _mostrarSlotVacio ? 'Ocultar libres' : 'Mostrar libres';
+}
+
 // Fila visual de slot vacío con hora tentativa (rojo claro suave)
 function crearFilaSlotVacio(tbody, colspan, hora) {
   const tr = document.createElement('tr');
@@ -3725,7 +5707,7 @@ function crearFilaSlotVacio(tbody, colspan, hora) {
   } else {
     tr.innerHTML = `
       <td style="padding:7px 10px;color:#b0b8b6;font-size:0.82rem"></td>
-      <td class="col-hora col-mobile-hide" style="padding:7px 10px;color:#e57373;font-size:0.82rem;font-style:italic">${horaDisplay}</td>
+      <td class="col-hora" style="padding:7px 10px;color:#e57373;font-size:0.82rem;font-style:italic">${horaDisplay}</td>
       <td colspan="${colspan - 2}" style="padding:7px 10px;color:#e57373;font-size:0.8rem;font-style:italic">Disponible</td>
     `;
   }
@@ -3736,8 +5718,30 @@ function updateMarcarAtendidoButton(_turnos) { /* no-op: replaced by per-row mod
 
 let selectedTurnoMedica = null;
 
+let _cacheMedicosAgenda = null;
+
+async function obtenerMedicosAgenda() {
+  if (_cacheMedicosAgenda) return _cacheMedicosAgenda;
+  const list = await apiFetch('/api/medicos').then((r) => r.json()).catch(() => []);
+  _cacheMedicosAgenda = Array.isArray(list) ? list : [];
+  return _cacheMedicosAgenda;
+}
+
+function nombreMedicoPorId(id, list) {
+  const m = (list || []).find((x) => String(x.id) === String(id));
+  if (m) return m.nombre || m.usuario || `Médico #${id}`;
+  return id ? `Médico #${id}` : '-';
+}
+
+function esConsultaBotox(tipo) {
+  if (!tipo) return false;
+  const s = String(tipo).toLowerCase();
+  return s.includes('botox') || s.includes('botulínica') || s.includes('botulinica');
+}
+
 function estadoBadgeMedica(estado) {
   const map = {
+    'PENDIENTE':    { bg: '#f1f5f9', color: '#334155', border: '#cbd5e1',  label: 'Pendiente' },
     'EN_ESPERA':    { bg: '#dbeafe', color: '#1d4ed8', border: '#93c5fd',  label: 'En Espera' },
     'EN_SALA':      { bg: '#fef9c3', color: '#92400e', border: '#fde047',  label: 'En Sala' },
     'EN_ATENCION':  { bg: '#ffedd5', color: '#c2410c', border: '#fdba74',  label: 'En Atención' },
@@ -3757,6 +5761,7 @@ function renderTurnoRowMedica(tbody, t, animateTargetId, hayEnAtencion) {
   }
   const tr = document.createElement('tr');
   tr.className = 'turno-row';
+  if (esConsultaBotox(t.tipo_consulta)) tr.classList.add('turno-tipo-botox');
   const pol = agendaMedicaPolicy(t, { hayEnAtencion });
   const puedeVerDetalle = pol.row.puedeVerDetalle;
   tr.style.cursor = puedeVerDetalle ? 'pointer' : 'default';
@@ -3794,14 +5799,14 @@ function renderTurnoRowMedica(tbody, t, animateTargetId, hayEnAtencion) {
 
     if (currentUser?.rol === 'doctor') {
       tr.innerHTML = `
-        <td>${numCellHtml}</td>
-        <td class="col-hora col-mobile-hide">${formatearHora(t.hora)}</td>
-        <td>${escapeHtml(t.paciente_nombre)}</td>
-        <td class="col-mobile-hide">${escapeHtml(t.tipo_consulta || '')}</td>
-        <td class="col-mobile-hide">${escapeHtml(t.paciente_documento||'')}</td>
-        <td class="col-mobile-hide">${escapeHtml(t.entidad||'')}</td>
-        <td class="col-mobile-hide">${escapeHtml(t.notas || '')}</td>
-        <td>${estadoBadgeMedica(t.estado)}</td>
+        <td class="col-turno-cell">${numCellHtml}</td>
+        <td class="col-hora">${formatearHora(t.hora)}</td>
+        <td class="col-paciente-cell"><span class="turno-cell-2lines" title="${escapeHtml(t.paciente_nombre)}">${escapeHtml(t.paciente_nombre)}</span></td>
+        <td class="col-mobile-hide col-wrap-cell col-tipo-cell"><span class="turno-cell-2lines" title="${escapeHtml(t.tipo_consulta || '')}">${escapeHtml(t.tipo_consulta || '')}</span></td>
+        <td class="col-mobile-hide col-wrap-cell col-doc-cell"><span class="turno-cell-2lines">${escapeHtml(t.paciente_documento||'')}</span></td>
+        <td class="col-mobile-hide col-wrap-cell col-entidad-cell"><span class="turno-cell-2lines">${escapeHtml(t.entidad||'')}</span></td>
+        <td class="col-mobile-hide col-notas-cell"><span class="turno-notas-cell" title="${escapeHtml(t.notas || '')}">${escapeHtml(t.notas || '')}</span></td>
+        <td class="col-estado-cell">${estadoBadgeMedica(t.estado)}</td>
         <td>${escapeHtml(t.programado_por || '-')}</td>
       `;
       if (animateTargetId && t.id === animateTargetId) {
@@ -3810,15 +5815,15 @@ function renderTurnoRowMedica(tbody, t, animateTargetId, hayEnAtencion) {
       }
     } else {
       tr.innerHTML = `
-        <td>${numCellHtml}</td>
-        <td class="col-hora col-mobile-hide">${formatearHora(t.hora)}</td>
-        <td>${escapeHtml(t.paciente_nombre)}</td>
-        <td class="col-mobile-hide">${escapeHtml(t.tipo_consulta || '')}</td>
-        <td class="col-mobile-hide">${escapeHtml(t.paciente_documento||'')}</td>
-        <td class="col-mobile-hide">${escapeHtml(t.entidad||'')}</td>
-        <td class="col-mobile-hide">${escapeHtml(t.notas || '')}</td>
-        <td>${estadoBadgeMedica(t.estado)}</td>
-        <td class="td-acciones">${accionesCell}</td>
+        <td class="col-turno-cell">${numCellHtml}</td>
+        <td class="col-hora">${formatearHora(t.hora)}</td>
+        <td class="col-paciente-cell"><span class="turno-cell-2lines" title="${escapeHtml(t.paciente_nombre)}">${escapeHtml(t.paciente_nombre)}</span></td>
+        <td class="col-mobile-hide col-wrap-cell col-tipo-cell"><span class="turno-cell-2lines" title="${escapeHtml(t.tipo_consulta || '')}">${escapeHtml(t.tipo_consulta || '')}</span></td>
+        <td class="col-mobile-hide col-wrap-cell col-doc-cell"><span class="turno-cell-2lines">${escapeHtml(t.paciente_documento||'')}</span></td>
+        <td class="col-mobile-hide col-wrap-cell col-entidad-cell"><span class="turno-cell-2lines">${escapeHtml(t.entidad||'')}</span></td>
+        <td class="col-mobile-hide col-notas-cell"><span class="turno-notas-cell" title="${escapeHtml(t.notas || '')}">${escapeHtml(t.notas || '')}</span></td>
+        <td class="col-estado-cell">${estadoBadgeMedica(t.estado)}</td>
+        <td class="td-acciones col-acciones-cell">${accionesCell}</td>
       `;
     }
   // Abrir modal al hacer clic en la fila
@@ -4058,9 +6063,7 @@ async function moverTurno(id, delta) {
 
 function seleccionarTurnoMedica(tr, t) {
   selectedTurnoMedica = t;
-  document.querySelectorAll('#turnosTableMedica tbody tr').forEach(row => {
-    row.classList.remove('turno-selected');
-  });
+  _clearMedicaTurnoSelection();
   tr.classList.add('turno-selected');
   const info = $('agendaEditInfo');
   if (info) {
@@ -4216,24 +6219,53 @@ async function crearTurnoMedica() {
   }
 
   try {
-    // Validación rápida en cliente: si el día está marcado como NO ASISTE, no permitir crear.
-    const dispRes = await apiFetch(`/api/doctor-disponibilidad?doctor_id=${doctorId}&fecha=${fecha}`);
-    const dispData = await dispRes.json().catch(() => null);
-    if (dispData?.ok && dispData.disponible_manana === false && dispData.disponible_tarde === false) {
-      showToast('No se puede agendar: el doctor está marcado como no asistirá ese día', 'error');
-      return;
+    const modoMulti = _modoSesionesMultiplesActivo && tipoConsultaPermiteSesionesMultiples($('nuevoTurnoTipoMedica'));
+    const cantidadSesiones = modoMulti
+      ? Math.min(52, Math.max(1, parseInt($('sesionesMultiplesCantidad')?.value || '1', 10)))
+      : 1;
+    const planSesiones = modoMulti ? obtenerPlanSesionesMultiplesParaGuardar() : [{ fecha, hora, sesion_numero: 1 }];
+    const fechasSesiones = planSesiones.map((s) => s.fecha);
+
+    if (modoMulti) {
+      for (const s of planSesiones) {
+        if (!s.fecha || !s.hora) {
+          showToast(`Complete fecha y hora de la sesión ${s.sesion_numero}`, 'error');
+          return;
+        }
+      }
+      if (fechasSesiones.length < cantidadSesiones) {
+        showToast(`Defina las ${cantidadSesiones} sesiones en el formulario`, 'error');
+        return;
+      }
+      const sinAgenda = _sesionesMultiplesPlan.filter((s) => !s.esPrimera && (s.agenda_valida === false || s.ocupada));
+      if (sinAgenda.length) {
+        const ej = sinAgenda[0];
+        showToast(ej.agenda_error || `Horario no válido el ${formatearFechaCorta(ej.fecha)} (sesión ${ej.numero})`, 'error');
+        return;
+      }
+      const conConflicto = planSesiones.filter((s, i) => i > 0 && _sesionesMultiplesPlan[i]?.requiereCambio);
+      if (conConflicto.length) {
+        showToast(`Hay ${conConflicto.length} sesión(es) con horario no válido. Elija otra hora en la tabla.`, 'error');
+        return;
+      }
     }
 
-    // Validaciones completadas - permitir múltiples pacientes en la misma hora
-    // (no hay validación de duplicados por hora, se permite hasta 20 pacientes)
+    // Validación rápida en cliente: si el día está marcado como NO ASISTE, no permitir crear.
+    for (const fSes of fechasSesiones) {
+      const dispRes = await apiFetch(`/api/doctor-disponibilidad?doctor_id=${doctorId}&fecha=${fSes}`);
+      const dispData = await dispRes.json().catch(() => null);
+      if (dispData?.ok && dispData.disponible_manana === false && dispData.disponible_tarde === false) {
+        showToast(`No se puede agendar: el doctor no asiste el ${formatearFechaCorta(fSes)}`, 'error');
+        return;
+      }
+    }
 
-    const body = {
+    const bodyBase = {
       doctor_id: parseInt(doctorId, 10),
       paciente_nombre: nombre,
       paciente_documento: doc || null,
       paciente_telefono: telefono1,
       paciente_telefono2: telefono2,
-      fecha,
       hora,
       tipo_consulta: tipoConsulta || null,
       entidad: entidad || null,
@@ -4242,27 +6274,73 @@ async function crearTurnoMedica() {
       programado_por: (currentUser && (currentUser.nombre || currentUser.usuario)) || null
     };
 
-    const res = await apiFetch('/api/turnos', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    });
+    let res;
+    if (modoMulti && fechasSesiones.length > 1) {
+      res = await apiFetch('/api/turnos/lote', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...bodyBase,
+          sesiones: planSesiones.map(({ fecha: f, hora: h, sesion_numero }) => ({
+            fecha: f,
+            hora: h,
+            sesion_numero
+          }))
+        })
+      });
+    } else {
+      const fUna = modoMulti ? (planSesiones[0]?.fecha || fecha) : fecha;
+      const hUna = modoMulti ? (planSesiones[0]?.hora || hora) : hora;
+      res = await apiFetch('/api/turnos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...bodyBase, fecha: fUna, hora: hUna })
+      });
+    }
     const data = await res.json();
 
+    if (!res.ok) {
+      if (data.errores?.length) {
+        const detalle = data.errores.slice(0, 3).map(e => `${formatearFechaCorta(e.fecha)}: ${e.error}`).join('; ');
+        showToast((data.error || 'Error al agendar sesiones') + (detalle ? ` (${detalle})` : ''), 'error');
+      } else {
+        showToast(data.error || 'Error al crear la cita', 'error');
+      }
+      return;
+    }
+
     if (data.ok) {
-      showToast('Cita creada correctamente', 'success');
+      const fechaVer = (modoMulti && fechasSesiones.length) ? fechasSesiones[0] : (planSesiones[0]?.fecha || fecha);
+      const agendaAntes = $('agendaMedicaFecha')?.value;
+      let msg = modoMulti && fechasSesiones.length > 1
+        ? `${data.creados || fechasSesiones.length} sesiones agendadas correctamente`
+        : 'Cita creada correctamente';
+      if (modoMulti && fechasSesiones.length > 1 && agendaAntes && fechaVer && agendaAntes !== fechaVer) {
+        msg += `. Mostrando ${formatearFechaCorta(fechaVer)} (use el calendario para las demás fechas).`;
+      }
+      showToast(msg, 'success');
       $('modalNuevaCitaMedica')?.classList.add('hidden');
+      setModoSesionesMultiples(false);
       $('nuevoPacienteNombresMedica').value = '';
       $('nuevoPacienteApellidosMedica').value = '';
-      $('nuevoPacienteDocMedica').value = '';
+      const docReset = $('nuevoPacienteDocMedica');
+      if (docReset) {
+        docReset.value = '';
+        delete docReset.dataset.pacienteId;
+      }
       $('nuevoPacienteTelefonoMedica').value = '';
       $('nuevoPacienteTelefonoMedica2').value = '';
       $('nuevoTurnoNotasMedica').value = '';
       $('nuevoTurnoEntidadMedica').value = '';
       $('nuevoTurnoTipoMedica').value = '';
-      cargarTurnosMedica();
+      navegarAgendaMedicaAFecha(fechaVer);
     } else {
-      showToast(data.error || 'Error al crear la cita', 'error');
+      if (data.errores?.length) {
+        const detalle = data.errores.slice(0, 3).map(e => `${formatearFechaCorta(e.fecha)}: ${e.error}`).join('; ');
+        showToast((data.error || 'Error al agendar sesiones') + (detalle ? ` (${detalle})` : ''), 'error');
+      } else {
+        showToast(data.error || 'Error al crear la cita', 'error');
+      }
     }
   } catch (e) {
     showToast('Error creando cita: ' + e.message, 'error');
@@ -4397,8 +6475,7 @@ function procesarExcelPacientesMedica(file) {
       // Cargar opciones de entidad y tipo de consulta para dropdowns en preview
       let opcionesEntidad = [], opcionesTipo = [];
       try {
-        const opcData = await apiFetch('/api/recibos/opciones').then(r => r.json()).catch(() => ({ entidades: [] }));
-        opcionesEntidad = opcData.entidades || [];
+        opcionesEntidad = await fetchEntidadesDesdeBd({ force: true });
       } catch (_) { console.warn('[cargarPacientesExcelData] Failed to load entity options'); }
       const doctorIdPlantilla = selectedDoctorId || ((currentUser?.rol === 'doctor' ? currentUser?.id : null));
       if (doctorIdPlantilla) {
@@ -4984,10 +7061,10 @@ async function cargarUcqn() {
       <td>${escapeHtml(r.fecha_estudio || '-')}</td>
       <td>${escapeHtml((r.hora_estudio || '').substring(0,5) || '-')}</td>
       <td>${escapeHtml(r.paciente_nombres || '-')}</td>
-      <td>${escapeHtml(r.paciente_apellidos || '-')}</td>
+      <td class="col-mobile-hide">${escapeHtml(r.paciente_apellidos || '-')}</td>
       <td>${escapeHtml(r.paciente_documento || '-')}</td>
       <td>${escapeHtml(r.tipo_estudio || '-')}</td>
-      <td>${escapeHtml(r.entidad || '-')}</td>
+      <td class="col-mobile-hide">${escapeHtml(r.entidad || '-')}</td>
       <td>
         <span class="estado-badge-ucqn estado-${String(r.estado || '').toLowerCase()}">${escapeHtml(r.estado || '-')}</span>
         ${canEdit ? (
@@ -5036,17 +7113,46 @@ async function initUcqn() {
 
 // ========== DASHBOARD (Admin solo) ==========
 // ========== AGENDA ELECTRODIAGNÓSTICO =========
+async function cargarEquiposElectroSelect(valorPreferido) {
+  const equipoSelect = $('modalEquipo');
+  if (!equipoSelect) return;
+  const prev = valorPreferido !== undefined && valorPreferido !== null
+    ? String(valorPreferido)
+    : (equipoSelect.value || '');
+  try {
+    const res = await apiFetch('/api/equipos-electro');
+    const equipos = await res.json();
+    if (!res.ok || !Array.isArray(equipos)) return;
+    equipoSelect.innerHTML = '<option value="">Seleccionar equipo</option>';
+    equipos.forEach(e => {
+      const opt = document.createElement('option');
+      opt.value = e.id;
+      opt.textContent = e.nombre;
+      if (e.en_uso) {
+        if (currentUser && String(currentUser.rol || '').toLowerCase() === 'superadmin') {
+          opt.textContent += ' (En uso - cambiar)';
+        } else {
+          opt.disabled = true;
+          opt.textContent += ' (En uso)';
+        }
+      }
+      equipoSelect.appendChild(opt);
+    });
+    if (prev) equipoSelect.value = prev;
+  } catch (e) {
+    console.error('Error cargando equipos para modal:', e);
+  }
+}
+
 async function initElectro() {
   const hoy = hoyColombiaISO();
   $('electroFecha').value = hoy;
   
   // Cargar estudios desde BD para el select y las pestañas
   await cargarEstudiosEnSelect('electroEstudio');
-  generarTabsElectro(_estudiosCache || []);
+  initFiltroEstudiosElectro(await fetchEstudiosElectroOpciones());
   
-  // Cargar entidades desde BD para pacientes en espera
-  await cargarEntidadesEnSelect('esperaEntidad');
-  await cargarEntidadesEnSelect('electroEntidad');
+  await recargarSelectsEntidadModulo('electro', { force: true });
   
   // Generar intervalos de hora (texto libre con formato HH:MM AM/PM)
   // No se genera select, el usuario escribe la hora directamente
@@ -5056,50 +7162,31 @@ async function initElectro() {
     $('electroProgramadoPor').textContent = currentUser.nombre || currentUser.usuario || '-';
   }
   
-  // Cargar equipos SOLO para el modal (para seleccionar después)
-  try {
-    const res = await apiFetch('/api/equipos-electro');
-    const equipos = await res.json();
-    const equipoSelect = $('modalEquipo');
-    equipoSelect.innerHTML = '<option value="">Seleccionar equipo</option>';
-    equipos.forEach(e => {
-      const opt = document.createElement('option');
-      opt.value = e.id;
-      opt.textContent = e.nombre;
-      // Si el equipo está en uso (En Estudio), deshabilitarlo
-      if (e.en_uso) {
-        opt.disabled = true;
-        opt.textContent += ' (En uso)';
-      }
-      equipoSelect.appendChild(opt);
-    });
-  } catch (e) {
-    console.error('Error cargando equipos para modal:', e);
-  }
+  await cargarEquiposElectroSelect();
   
   // Event listener para cambiar fecha y cargar citas automáticamente
   if ($('electroFecha')) $('electroFecha').onchange = async () => {
     await cargarCitasElectro();
     await checkEquiposDisponibilidad();
   };
-  if ($('btnElectroFechaPrev')) $('btnElectroFechaPrev').onclick = async () => {
+  if ($('btnElectroFechaPrev')) $('btnElectroFechaPrev').onclick = () => {
     const base = $('electroFecha')?.value || hoyColombiaISO();
     const d = new Date(`${base}T12:00:00`);
     d.setDate(d.getDate() - 1);
     const next = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     $('electroFecha').value = next;
-    await cargarCitasElectro();
-    await checkEquiposDisponibilidad();
+    $('electroFecha').dispatchEvent(new Event('change'));
   };
-  if ($('btnElectroFechaNext')) $('btnElectroFechaNext').onclick = async () => {
+  if ($('btnElectroFechaNext')) $('btnElectroFechaNext').onclick = () => {
     const base = $('electroFecha')?.value || hoyColombiaISO();
     const d = new Date(`${base}T12:00:00`);
     d.setDate(d.getDate() + 1);
     const next = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     $('electroFecha').value = next;
-    await cargarCitasElectro();
-    await checkEquiposDisponibilidad();
+    $('electroFecha').dispatchEvent(new Event('change'));
   };
+
+  if (typeof initElectroCalendario === 'function') initElectroCalendario();
   
   // Event listener para quitar el border rojo cuando se selecciona estudio y auto-completar duración
   $('electroEstudio')?.addEventListener('change', async (e) => {
@@ -5188,16 +7275,17 @@ async function initElectro() {
   $('electroPacienteNombres')?.addEventListener('input', _sanitizarNombreElectro);
   $('electroPacienteApellidos')?.addEventListener('input', _sanitizarNombreElectro);
   
-  // Documento: Solo números + buscar paciente
-  $('electroDocumento')?.addEventListener('input', debounce((e) => {
-    const valor = e.target.value;
-    if (valor && !/^\d*$/.test(valor)) {
-      // Remover caracteres no numéricos
-      e.target.value = valor.replace(/\D/g, '');
+  // Documento: solo números; Enter carga datos del paciente
+  $('electroDocumento')?.addEventListener('input', (e) => {
+    e.target.value = e.target.value.replace(/\D/g, '').slice(0, 15);
+    delete e.target.dataset.pacienteId;
+  });
+  $('electroDocumento')?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      buscarPacientePorDocumentoDesdeFormulario('electro');
     }
-    // Buscar paciente por documento
-    buscarPacientePorDocumento();
-  }, 300));
+  });
   
   // Teléfono: Solo números, máximo 10 dígitos
   const limitarTel = (e) => {
@@ -5248,11 +7336,63 @@ async function initElectro() {
   $('cerrarModalDetallesCita')?.addEventListener('click', cerrarModalDetallesCita);
   $('btnCancelarModal')?.addEventListener('click', cerrarModalDetallesCita);
   $('btnGuardarCambios')?.addEventListener('click', guardarCambiosCitaElectro);
+  bindReprogramarElectroDesdeModalAgenda();
+  $('btnGuardarDuracionModal')?.addEventListener('click', guardarDuracionCitaElectro);
   $('btnIniciarEstudio')?.addEventListener('click', iniciarEstudioModal);
   $('btnFinalizarEstudio')?.addEventListener('click', finalizarEstudioModal);
   
   // Event listeners para cambios en el modal (equipo y estado)
   const modalEquipoEl = $('modalEquipo');
+  const modalEstudioEl = $('modalEstudio');
+  if (modalEstudioEl && !modalEstudioEl.dataset.boundChange) {
+    modalEstudioEl.dataset.boundChange = '1';
+    modalEstudioEl.addEventListener('change', async (e) => {
+      if (!citaElectroSeleccionada || isInitializingElectroModal) return;
+      if (!tienePermiso('electro.editar')) return;
+      if (citaElectroSeleccionada.estado === 'Completado') {
+        showToast('No se puede cambiar el estudio de una cita completada', 'error');
+        e.target.value = citaElectroSeleccionada.estudio || '';
+        return;
+      }
+      const nuevoEstudio = e.target.value.trim();
+      if (!nuevoEstudio || nuevoEstudio === (citaElectroSeleccionada.estudio || '')) return;
+      try {
+        let duracionMinutos = citaElectroSeleccionada.duracion_minutos;
+        try {
+          const dr = await apiFetch(`/api/estudios/duracion?nombre=${encodeURIComponent(nuevoEstudio)}`);
+          const dj = await dr.json();
+          if (dj && dj.duracion_minutos) duracionMinutos = dj.duracion_minutos;
+        } catch (_) { /* mantener duración actual */ }
+        const cambios = { estudio: nuevoEstudio };
+        if (duracionMinutos) cambios.duracion_minutos = duracionMinutos;
+        const res = await apiFetch(`/api/citas-electro/${citaElectroSeleccionada.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(cambios)
+        });
+        const data = await res.json();
+        if (data && data.ok) {
+          citaElectroSeleccionada.estudio = nuevoEstudio;
+          if (duracionMinutos) citaElectroSeleccionada.duracion_minutos = duracionMinutos;
+          const $durEl = document.getElementById('modalDuracionDisplay');
+          if ($durEl && duracionMinutos) {
+            const dHrs = Math.floor(duracionMinutos / 60);
+            const dMin = duracionMinutos % 60;
+            $durEl.textContent = dHrs > 0 && dMin > 0 ? `${dHrs}h ${dMin}min` : (dHrs > 0 ? `${dHrs} horas` : `${dMin} min`);
+          }
+          showToast('Tipo de estudio actualizado', 'success');
+          cargarCitasElectro();
+        } else {
+          showToast(data?.error || 'Error al actualizar estudio', 'error');
+          e.target.value = citaElectroSeleccionada.estudio || '';
+        }
+      } catch (err) {
+        showToast('Error al actualizar estudio', 'error');
+        e.target.value = citaElectroSeleccionada.estudio || '';
+      }
+    });
+  }
+
   if (modalEquipoEl && !modalEquipoEl.dataset.boundChange) modalEquipoEl.addEventListener('change', async (e) => {
     if (!citaElectroSeleccionada) return;
     
@@ -5265,8 +7405,8 @@ async function initElectro() {
     const equipoIdActual = citaElectroSeleccionada.equipo_id || '';
     const estadoActual = citaElectroSeleccionada.estado || '';
 
-    if (estadoActual === 'En Estudio' || estadoActual === 'Pausado') {
-      showToast('No puedes cambiar el equipo mientras el estudio está activo', 'error');
+    if ((estadoActual === 'En Estudio' || estadoActual === 'Pausado') && String(currentUser?.rol || '').toLowerCase() !== 'superadmin') {
+      showToast('No puedes cambiar el equipo mientras el estudio está activo. Solo el superadmin puede hacerlo.', 'error');
       e.target.value = equipoIdActual;
       return;
     }
@@ -5396,6 +7536,7 @@ async function initElectro() {
         $('editNombrePaciente').value = citaElectroSeleccionada?.paciente_nombre || '';
         $('editDocumentoPaciente').value = citaElectroSeleccionada?.paciente_documento || '';
         $('editTelefonoPaciente').value = citaElectroSeleccionada?.telefono || '';
+        $('editTelefonoPaciente2').value = citaElectroSeleccionada?.telefono2 || '';
         editPanel.style.display = 'block';
       }
     };
@@ -5403,6 +7544,9 @@ async function initElectro() {
     $('btnGuardarEditarPaciente').onclick = () => guardarEdicionPaciente();
     // Solo dígitos y max 10 en el teléfono del panel de edición
     $('editTelefonoPaciente').addEventListener('input', (e) => {
+      e.target.value = e.target.value.replace(/\D/g, '').slice(0, 10);
+    });
+    $('editTelefonoPaciente2')?.addEventListener('input', (e) => {
       e.target.value = e.target.value.replace(/\D/g, '').slice(0, 10);
     });
   }
@@ -5463,18 +7607,16 @@ async function initElectro() {
 
   // Configurar listeners de socket para ver cambios en tiempo real
   if (window.socket && !window.socketElectroListenerAdded) {
-    window.socket.on('electro:actualizar-lista', () => {
+    const refrescarElectroVista = () => {
       cargarCitasElectro();
-    });
-    window.socket.on('electro:nueva-cita', () => {
-      cargarCitasElectro();
-    });
-    window.socket.on('electro:cita-cambio-estado', () => {
-      cargarCitasElectro();
-    });
-    window.socket.on('electro:cita-removida', () => {
-      cargarCitasElectro();
-    });
+      cargarEquiposElectroSelect();
+    };
+    window.socket.on('electro:actualizar-lista', refrescarElectroVista);
+    window.socket.on('electro:nueva-cita', refrescarElectroVista);
+    window.socket.on('electro:cita-cambio-estado', refrescarElectroVista);
+    window.socket.on('electro:cita-removida', refrescarElectroVista);
+    window.socket.on('electro:estudio-iniciado', refrescarElectroVista);
+    window.socket.on('electro:estudio-finalizado', refrescarElectroVista);
     window.socketElectroListenerAdded = true;
   }
 
@@ -5613,13 +7755,30 @@ async function checkEquiposDisponibilidad() {
     // Citas "En Estudio" con hora_inicio real (para barra de progreso)
     const citasEnEstudio = data.citasEnRango.filter(c => c.estado === 'En Estudio' && c.horaInicioReal);
 
-    // Grid de cupos
+    let equiposLista = [];
+    try {
+      const resEq = await apiFetch('/api/equipos-electro');
+      const eqJson = await resEq.json();
+      if (resEq.ok && Array.isArray(eqJson)) equiposLista = eqJson;
+    } catch (_) { /* ignore */ }
+
+    // Grid de cupos (una tarjeta por equipo real)
     html += `<div class="cupos-grid">`;
     const maxCupos = data?.capacidad?.maxCupos || 4;
-    for (let i = 1; i <= maxCupos; i++) {
-      const cita = data.citasEnRango[i - 1] || null;
-      const ocupado = i <= data.capacidad.cuposOcupados;
-      const enEstudio = ocupado && cita && cita.estado === 'En Estudio' && cita.horaInicioReal;
+    if (equiposLista.length === 0) {
+      equiposLista = Array.from({ length: maxCupos }, (_, idx) => ({
+        id: idx + 1,
+        nombre: `Equipo ${idx + 1}`,
+        en_uso: false
+      }));
+    }
+    equiposLista.forEach((eq, i) => {
+      const slot = i + 1;
+      const eqId = String(eq.id);
+      const cita = data.citasEnRango.find(c => c.equipo_id != null && String(c.equipo_id) === eqId) || null;
+      const enUsoActivo = !!eq.en_uso;
+      const ocupado = !!cita || enUsoActivo;
+      const enEstudio = (cita && (cita.estado === 'En Estudio' || cita.estado === 'Pausado')) || enUsoActivo;
       const tipoCard = ocupado ? 'ocupado' : 'libre';
       const icono = ocupado
         ? `<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/></svg>`
@@ -5632,22 +7791,26 @@ async function checkEquiposDisponibilidad() {
             : 'Ocupado')
           : 'Libre';
 
-      const barraId = enEstudio ? `cupo-barra-${i}` : '';
-      const tiempoId = enEstudio ? `cupo-tiempo-${i}` : '';
-      const barraHtml = enEstudio ? `
-        <div class="cupo-mini-barra-wrap" title="${fmtHora(cita.horaInicioReal)} → ${fmtHora(cita.horaFin)}">
+      const citaProgreso = cita && cita.estado === 'En Estudio' && cita.horaInicioReal ? cita : null;
+      const barraId = citaProgreso ? `cupo-barra-${slot}` : '';
+      const tiempoId = citaProgreso ? `cupo-tiempo-${slot}` : '';
+      const barraHtml = citaProgreso ? `
+        <div class="cupo-mini-barra-wrap" title="${fmtHora(citaProgreso.horaInicioReal)} → ${fmtHora(citaProgreso.horaFin)}">
           <div class="cupo-mini-barra" id="${barraId}" style="width:0%"></div>
         </div>
         <div class="cupo-tiempo" id="${tiempoId}">00:00</div>` : (ocupado ? `<div class="cupo-mini-barra-wrap"><div class="cupo-mini-barra" style="width:100%;opacity:0.3"></div></div>` : '');
 
       html += `
-        <div class="cupo-card ${tipoCard}">
+        <div class="cupo-card ${tipoCard}" title="${escapeHtml(eq.nombre || '')}">
           <div class="cupo-card-icon">${icono}</div>
           <div class="cupo-card-label">${estadoLabel}</div>
           ${barraHtml}
         </div>`;
-    }
+    });
     html += `</div>`;
+
+    const slotPorEquipoId = {};
+    equiposLista.forEach((eq, idx) => { slotPorEquipoId[String(eq.id)] = idx + 1; });
 
     // Iniciar actualización de barras de progreso (cada segundo)
     if (intervaloProgresoPanel) clearInterval(intervaloProgresoPanel);
@@ -5655,14 +7818,19 @@ async function checkEquiposDisponibilidad() {
       const actualizarBarras = () => {
         const ahora = new Date();
         const segsAhora = ahora.getHours() * 3600 + ahora.getMinutes() * 60 + ahora.getSeconds();
-        data.citasEnRango.forEach((cita, idx) => {
+        data.citasEnRango.forEach((cita) => {
           if (cita.estado !== 'En Estudio' || !cita.horaInicioReal) return;
-          const barra = $(`cupo-barra-${idx + 1}`);
-          const tiempoEl = $(`cupo-tiempo-${idx + 1}`);
+          const slotIdx = slotPorEquipoId[String(cita.equipo_id)];
+          if (!slotIdx) return;
+          const barra = $(`cupo-barra-${slotIdx}`);
+          const tiempoEl = $(`cupo-tiempo-${slotIdx}`);
           const parseHora = h => { const [hh, mm] = h.substring(0,5).split(':').map(Number); return hh * 3600 + mm * 60; };
           let segsInicio = parseHora(cita.horaInicioReal);
           let segsFin = parseHora(cita.horaFin);
-          if (segsFin < segsInicio) segsFin += 86400;
+          const fechaIni = String(cita.fechaInicio || '').slice(0, 10);
+          const fechaFin = String(cita.fechaFin || fechaIni).slice(0, 10);
+          if (fechaFin > fechaIni) segsFin += 86400;
+          else if (segsFin < segsInicio) segsFin += 86400;
           let segsActual = segsAhora < segsInicio ? segsAhora + 86400 : segsAhora;
           const segsTranscurridos = Math.max(0, segsActual - segsInicio);
           const pct = Math.min(100, Math.max(0, (segsTranscurridos / (segsFin - segsInicio)) * 100));
@@ -5714,9 +7882,94 @@ async function checkEquiposDisponibilidad() {
   }
 }
 
-// Buscar paciente por documento y auto-completar nombre y teléfono
+function normalizarDocumentoPaciente(val) {
+  return String(val || '').trim().replace(/\D/g, '');
+}
+
+function aplicarPacienteFormularioMedica(p) {
+  const nombres = p.nombres != null ? String(p.nombres).trim() : splitNombreApellido(p.nombre).nombres;
+  const apellidos = p.apellidos != null ? String(p.apellidos).trim() : splitNombreApellido(p.nombre).apellidos;
+  const docEl = $('nuevoPacienteDocMedica');
+  if (docEl) {
+    docEl.value = p.documento || docEl.value || '';
+    if (p.id) docEl.dataset.pacienteId = String(p.id);
+    else delete docEl.dataset.pacienteId;
+  }
+  if ($('nuevoPacienteNombresMedica')) $('nuevoPacienteNombresMedica').value = nombres;
+  if ($('nuevoPacienteApellidosMedica')) $('nuevoPacienteApellidosMedica').value = apellidos;
+  if ($('nuevoPacienteTelefonoMedica')) {
+    $('nuevoPacienteTelefonoMedica').value = String(p.telefono || '').replace(/\D/g, '').slice(0, 10);
+  }
+  if ($('nuevoPacienteTelefonoMedica2')) {
+    $('nuevoPacienteTelefonoMedica2').value = String(p.telefono2 || '').replace(/\D/g, '').slice(0, 10);
+  }
+  const tipoSel = $('nuevoTurnoTipoMedica');
+  if (p.tipo_consulta && tipoSel) {
+    const opt = [...tipoSel.options].find((o) => o.value === p.tipo_consulta || o.textContent === p.tipo_consulta);
+    if (opt) tipoSel.value = opt.value;
+  }
+}
+
+function aplicarPacienteFormularioElectro(p) {
+  const nombres = p.nombres != null ? String(p.nombres).trim() : splitNombreApellido(p.nombre).nombres;
+  const apellidos = p.apellidos != null ? String(p.apellidos).trim() : splitNombreApellido(p.nombre).apellidos;
+  const docEl = $('electroDocumento');
+  if (docEl) {
+    docEl.value = p.documento || docEl.value || '';
+    if (p.id) docEl.dataset.pacienteId = String(p.id);
+    else delete docEl.dataset.pacienteId;
+  }
+  if ($('electroPacienteNombres')) $('electroPacienteNombres').value = nombres;
+  if ($('electroPacienteApellidos')) $('electroPacienteApellidos').value = apellidos;
+  if ($('electroTelefono')) $('electroTelefono').value = String(p.telefono || '').replace(/\D/g, '').slice(0, 10);
+  if ($('electroTelefono2')) $('electroTelefono2').value = String(p.telefono2 || '').replace(/\D/g, '').slice(0, 10);
+}
+
+async function consultarPacientePorDocumento(documento) {
+  const doc = normalizarDocumentoPaciente(documento);
+  if (doc.length < 5) {
+    return { ok: false, error: 'Ingrese al menos 5 dígitos del documento' };
+  }
+  const res = await apiFetch(`/api/pacientes/por-documento/${encodeURIComponent(doc)}`);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    return { ok: false, error: data.error || 'No se encontró un paciente con ese documento' };
+  }
+  return data;
+}
+
+async function buscarPacientePorDocumentoDesdeFormulario(contexto) {
+  const esMedica = contexto === 'medica';
+  const docEl = esMedica ? $('nuevoPacienteDocMedica') : $('electroDocumento');
+  if (!docEl) return;
+  const doc = normalizarDocumentoPaciente(docEl.value);
+  if (!doc) {
+    showToast('Escriba el número de documento', 'warning');
+    docEl.focus();
+    return;
+  }
+  docEl.disabled = true;
+  try {
+    const data = await consultarPacientePorDocumento(doc);
+    if (!data.ok) {
+      showToast(data.error || 'No encontrado', 'warning');
+      delete docEl.dataset.pacienteId;
+      return;
+    }
+    if (esMedica) aplicarPacienteFormularioMedica(data);
+    else aplicarPacienteFormularioElectro(data);
+    const fuenteLabel = { pacientes: 'registro de pacientes', turno: 'última cita médica', electro: 'último estudio', espera: 'lista de espera' };
+    showToast(`Datos cargados (${fuenteLabel[data.fuente] || data.fuente})`, 'success');
+    (esMedica ? $('nuevoPacienteNombresMedica') : $('electroPacienteNombres'))?.focus();
+  } catch (e) {
+    showToast('Error al buscar el paciente', 'error');
+  } finally {
+    docEl.disabled = false;
+  }
+}
+
 async function buscarPacientePorDocumento() {
-  // Eliminado autocompletado por documento. No hacer nada.
+  await buscarPacientePorDocumentoDesdeFormulario('electro');
 }
 
 async function buscarDiagnosticosElectro() {
@@ -5763,62 +8016,281 @@ $('electroDiagnostico').addEventListener('input', function() {
   }
 });
 
-function calcularFechaFinEstudio(cita) {
-  if (!cita || cita.estado !== 'En Estudio' || !cita.hora_inicio || !cita.hora_fin) return null;
-  const fechaRaw = cita.fecha || new Date().toISOString().slice(0, 10);
-  const fechaBase = typeof fechaRaw === 'string' && fechaRaw.length > 10 ? fechaRaw.slice(0, 10) : String(fechaRaw);
-  const [hiH, hiM] = cita.hora_inicio.split(':').map(Number);
-  const dateInicio = new Date(`${fechaBase}T${String(hiH).padStart(2, '0')}:${String(hiM).padStart(2, '0')}:00`);
-
-  const horaFinDateRaw = cita.hora_fin_date;
-  const fechaFin = horaFinDateRaw
-    ? (typeof horaFinDateRaw === 'string' && horaFinDateRaw.length > 10 ? horaFinDateRaw.slice(0, 10) : String(horaFinDateRaw))
-    : null;
-  const [hfH, hfM] = cita.hora_fin.split(':').map(Number);
-
-  if (fechaFin && fechaFin !== fechaBase) {
-    return new Date(`${fechaFin}T${String(hfH).padStart(2, '0')}:${String(hfM).padStart(2, '0')}:00`);
-  }
-  if (cita.duracion_minutos && cita.duracion_minutos > 0) {
-    return new Date(dateInicio.getTime() + cita.duracion_minutos * 60000);
-  }
-  const dateFin = new Date(`${fechaBase}T${String(hfH).padStart(2, '0')}:${String(hfM).padStart(2, '0')}:00`);
-  if (dateFin <= dateInicio) dateFin.setDate(dateFin.getDate() + 1);
-  return dateFin;
+function obtenerFechaElectroBase10(fechaRaw) {
+  const ymd = extraerFechaYmdCalendario(fechaRaw);
+  return ymd || null;
 }
 
-async function sincronizarEstadosPorTiempo(citas = []) {
-  if (!Array.isArray(citas) || citas.length === 0) return citas;
+function construirDateHoraElectro(fechaBase, horaStr) {
+  if (!fechaBase || !horaStr) return null;
+  const [hh, mm] = String(horaStr).slice(0, 5).split(':').map(Number);
+  if (Number.isNaN(hh) || Number.isNaN(mm)) return null;
+  const d = new Date(`${fechaBase}T${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:00`);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
 
+/** Hora de inicio al pulsar «No»: solo hora_agendamiento (programada), nunca la hora actual. */
+function obtenerHoraInicioAgendadaElectro(cita) {
+  const horaAgendada = String(cita?.hora_agendamiento || '').slice(0, 5);
+  return /^\d{2}:\d{2}$/.test(horaAgendada) ? horaAgendada : null;
+}
+
+/** true si fin = inicio programado + duración ya pasó (relevante al elegir «No» tarde). */
+function electroFinProgramadoYaPaso(fechaCita, horaInicio, duracionMinutos) {
+  const finCalc = calcularHoraFinElectroDesdeInicio(fechaCita, horaInicio, duracionMinutos);
+  if (!finCalc) return false;
+  const finDate = construirDateHoraElectro(finCalc.horaFinDate || fechaCita, finCalc.horaFin);
+  return !!(finDate && finDate.getTime() <= Date.now());
+}
+
+/** HH:MM sin desfase (TIME MySQL, ISO, etc.). */
+function normalizarHoraElectroHm(val) {
+  if (val == null || val === '') return null;
+  const s = String(val).trim();
+  const iso = s.match(/T(\d{2}):(\d{2})/);
+  if (iso) return `${iso[1]}:${iso[2]}`;
+  const m = s.match(/^(\d{1,2}):(\d{2})/);
+  if (!m) return null;
+  const hh = parseInt(m[1], 10);
+  const mm = parseInt(m[2], 10);
+  if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return null;
+  return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+}
+
+/** Hora base para calcular fin real: la guardada en BD (inicio real), no la hora actual. */
+function obtenerHoraInicioCalculoFinElectro(cita) {
+  return normalizarHoraElectroHm(cita?.hora_inicio) || normalizarHoraElectroHm(cita?.hora_agendamiento);
+}
+
+function fechaYmdDesdeDate(d) {
+  if (!d || Number.isNaN(d.getTime())) return '';
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function diasCalendarioEntreYmdElectro(ymdA, ymdB) {
+  const a = obtenerFechaElectroBase10(ymdA);
+  const b = obtenerFechaElectroBase10(ymdB);
+  if (!a || !b) return 0;
+  const tA = new Date(`${a}T12:00:00`).getTime();
+  const tB = new Date(`${b}T12:00:00`).getTime();
+  if (Number.isNaN(tA) || Number.isNaN(tB)) return 0;
+  return Math.round((tB - tA) / 86400000);
+}
+
+/** Hora de inicio al pulsar «Sí» en el modal: hora actual al solicitar el inicio. */
+function obtenerHoraInicioSolicitudElectro() {
   const ahora = new Date();
-  const hh = String(ahora.getHours()).padStart(2, '0');
-  const mm = String(ahora.getMinutes()).padStart(2, '0');
-  const horaActual = `${hh}:${mm}`;
-  const vencidas = citas.filter((c) => c?.estado === 'En Estudio' && calcularFechaFinEstudio(c) && ahora >= calcularFechaFinEstudio(c));
-  if (!vencidas.length) return citas;
+  return `${String(ahora.getHours()).padStart(2, '0')}:${String(ahora.getMinutes()).padStart(2, '0')}`;
+}
 
-  const actualizadas = [...citas];
-  for (const cita of vencidas) {
-    try {
-      const res = await apiFetch(`/api/citas-electro/${cita.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ estado: 'Completado', hora_fin: horaActual })
-      });
-      const data = await res.json();
-      if (!data?.ok) continue;
+/**
+ * Fin calculado desde hora_inicio real (+ duración). Ignora ventana agendada si hay duración.
+ */
+function calcularHoraFinElectroDesdeInicio(fechaBase, horaInicio, duracionMinutos) {
+  const [hhInicio, mmInicio] = String(horaInicio || '').slice(0, 5).split(':').map(Number);
+  if (Number.isNaN(hhInicio) || Number.isNaN(mmInicio)) return null;
+  const startDate = new Date(`${fechaBase}T${String(hhInicio).padStart(2, '0')}:${String(mmInicio).padStart(2, '0')}:00`);
+  if (Number.isNaN(startDate.getTime())) return null;
+  startDate.setMinutes(startDate.getMinutes() + (parseInt(duracionMinutos, 10) || 0));
+  return {
+    horaFin: `${String(startDate.getHours()).padStart(2, '0')}:${String(startDate.getMinutes()).padStart(2, '0')}`,
+    horaFinDate: `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, '0')}-${String(startDate.getDate()).padStart(2, '0')}`
+  };
+}
 
-      const idx = actualizadas.findIndex((x) => x.id === cita.id);
-      if (idx >= 0) actualizadas[idx] = { ...actualizadas[idx], estado: 'Completado', hora_fin: horaActual };
+/** Fin programado (misma regla que finProgramadoCitaElectro en servidor). */
+function resolverFinProgramadoEstudioElectro(cita) {
+  if (!cita) return null;
+  const fechaIni = obtenerFechaElectroBase10(cita.fecha);
+  const horaIni = obtenerHoraInicioCalculoFinElectro(cita);
+  const durMin = parseInt(cita.duracion_minutos, 10) || 0;
 
-      if (window.socket && window.socket.connected) {
-        window.socket.emit('electro:estudio-finalizado', { id: cita.id, hora_fin: horaActual });
+  let finInicio = null;
+  if (fechaIni && horaIni && durMin > 0) {
+    const calc = calcularHoraFinElectroDesdeInicio(fechaIni, horaIni, durMin);
+    if (calc) finInicio = construirDateHoraElectro(calc.horaFinDate || fechaIni, calc.horaFin);
+  }
+
+  let finSlot = null;
+  const horaFinStr = normalizarHoraElectroHm(cita.hora_fin);
+  const fechaFinSlot = obtenerFechaElectroBase10(cita.hora_fin_date) || fechaIni;
+  if (horaFinStr && fechaFinSlot) {
+    finSlot = construirDateHoraElectro(fechaFinSlot, horaFinStr);
+    if (finSlot && !cita.hora_fin_date && fechaIni && horaIni) {
+      const dateInicio = construirDateHoraElectro(fechaIni, horaIni);
+      if (dateInicio && finSlot.getTime() <= dateInicio.getTime()) {
+        finSlot = new Date(finSlot.getTime());
+        finSlot.setDate(finSlot.getDate() + 1);
       }
-    } catch (e) {
-      console.error('[AUTO_SYNC_ELECTRO] Error actualizando estado por tiempo:', e);
     }
   }
-  return actualizadas;
+
+  if (finInicio && durMin > 0) {
+    if (!finSlot) return finInicio;
+    const finIniYmd = fechaYmdDesdeDate(finInicio);
+    const reprogramadoMultidia = fechaFinSlot && finIniYmd && fechaFinSlot > finIniYmd
+      && diasCalendarioEntreYmdElectro(fechaIni, fechaFinSlot) >= 2;
+    if (reprogramadoMultidia && finSlot.getTime() >= finInicio.getTime()) return finSlot;
+    const spanMs = finSlot.getTime() - finInicio.getTime();
+    if (finSlot.getTime() > finInicio.getTime() && spanMs <= durMin * 60000 * 1.15) return finSlot;
+    return finInicio;
+  }
+
+  if (finInicio && finSlot) return finInicio.getTime() >= finSlot.getTime() ? finInicio : finSlot;
+  return finInicio || finSlot;
+}
+
+function obtenerFechaHoraFinDesdeInicioReal(cita) {
+  const resuelto = resolverFinProgramadoEstudioElectro(cita);
+  if (resuelto) return resuelto;
+
+  const fechaBase = obtenerFechaElectroBase10(cita?.fecha);
+  if (!fechaBase) return null;
+  const horaInicioStr = String(cita?.hora_inicio || cita?.hora_agendamiento || '').slice(0, 5);
+
+  if (cita?.hora_fin && cita?.hora_fin_date) {
+    const fechaFin = obtenerFechaElectroBase10(cita.hora_fin_date);
+    return construirDateHoraElectro(fechaFin, cita.hora_fin);
+  }
+
+  if (cita?.hora_fin) {
+    const dateInicio = /^\d{2}:\d{2}$/.test(horaInicioStr)
+      ? construirDateHoraElectro(fechaBase, horaInicioStr)
+      : null;
+    let dateFin = construirDateHoraElectro(fechaBase, cita.hora_fin);
+    if (dateFin && dateInicio && dateFin <= dateInicio) {
+      dateFin.setDate(dateFin.getDate() + 1);
+    }
+    return dateFin;
+  }
+
+  return null;
+}
+
+function obtenerFechaHoraFinEstudioActivo(cita) {
+  if (!cita || (cita.estado !== 'En Estudio' && cita.estado !== 'Pausado')) return null;
+  return obtenerFechaHoraFinDesdeInicioReal(cita);
+}
+
+function calcularFechaFinEstudio(cita) {
+  return obtenerFechaHoraFinEstudioActivo(cita);
+}
+
+function obtenerFechaHoraFinCitaElectro(cita) {
+  if (!cita) return null;
+  const fin = resolverFinProgramadoEstudioElectro(cita);
+  if (fin) return fin;
+  return null;
+}
+
+function formatearFinEstudioElectroLabel(date) {
+  if (!date || isNaN(date.getTime())) return '';
+  const meses = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+  const dia = date.getDate();
+  const mes = meses[date.getMonth()];
+  const anio = date.getFullYear();
+  let h = date.getHours();
+  const m = date.getMinutes();
+  const esPm = h >= 12;
+  if (h > 12) h -= 12;
+  if (h === 0) h = 12;
+  const horaStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')} ${esPm ? 'p.m.' : 'a.m.'}`;
+  return `${dia} ${mes} ${anio} - ${horaStr}`;
+}
+
+function debeMostrarFinEstudioEnCard(cita, dateFin) {
+  if (!cita || !dateFin) return false;
+  if (cita.duracion_minutos && cita.duracion_minutos >= 60) return true;
+  const fechaRaw = cita.fecha;
+  if (!fechaRaw) return false;
+  const fechaBase = typeof fechaRaw === 'string' && fechaRaw.length > 10 ? fechaRaw.slice(0, 10) : String(fechaRaw).slice(0, 10);
+  const y = dateFin.getFullYear();
+  const mo = String(dateFin.getMonth() + 1).padStart(2, '0');
+  const d = String(dateFin.getDate()).padStart(2, '0');
+  const fechaFinStr = `${y}-${mo}-${d}`;
+  return fechaFinStr !== fechaBase;
+}
+
+/** El cierre por tiempo lo hace el servidor al consultar citas; aquí solo devuelve la lista. */
+async function sincronizarEstadosPorTiempo(citas = []) {
+  return Array.isArray(citas) ? citas : [];
+}
+
+function resolverHoraFinFinalizacionEstudio(cita) {
+  const ahora = new Date();
+  const horaActual = `${String(ahora.getHours()).padStart(2, '0')}:${String(ahora.getMinutes()).padStart(2, '0')}`;
+  const horaFinExistente = cita?.hora_fin;
+  let horaFinFinal = horaActual;
+  if (horaFinExistente && /^\d{2}:\d{2}$/.test(horaFinExistente)) {
+    const dateFinProg = obtenerFechaHoraFinEstudioActivo(cita) || obtenerFechaHoraFinCitaElectro(cita);
+    if (dateFinProg && ahora.getTime() >= dateFinProg.getTime()) {
+      horaFinFinal = horaFinExistente;
+    } else {
+      const [efH, efM] = horaFinExistente.split(':').map(Number);
+      if (ahora.getHours() * 60 + ahora.getMinutes() > efH * 60 + efM) {
+        horaFinFinal = horaFinExistente;
+      }
+    }
+  }
+  return horaFinFinal;
+}
+
+async function finalizarEstudioElectroEnServidor(opts = {}) {
+  const { cerrarModal = true, mensajeAuto = false } = opts;
+  if (!citaElectroSeleccionada) return false;
+  const horaFinFinal = resolverHoraFinFinalizacionEstudio(citaElectroSeleccionada);
+  try {
+    const res = await apiFetch(`/api/citas-electro/${citaElectroSeleccionada.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ estado: 'Completado', hora_fin: horaFinFinal })
+    });
+    const data = await res.json();
+    if (!data?.ok) {
+      showToast(data?.error || 'Error finalizando estudio', 'error');
+      return false;
+    }
+    const msg = mensajeAuto
+      ? `Estudio completado automáticamente (fin programado ${horaFinFinal})`
+      : `Estudio finalizado a las ${horaFinFinal}`;
+    showToast(msg, 'success');
+    citaElectroSeleccionada.estado = 'Completado';
+    citaElectroSeleccionada.hora_fin = horaFinFinal;
+    const selectEstado = $('modalEstado');
+    if (selectEstado) {
+      selectEstado.disabled = false;
+      selectEstado.style.opacity = '1';
+      selectEstado.style.cursor = 'pointer';
+      selectEstado.value = 'Completado';
+    }
+    const selectEquipo = $('modalEquipo');
+    if (selectEquipo) {
+      selectEquipo.disabled = false;
+      selectEquipo.style.opacity = '1';
+      selectEquipo.style.cursor = 'pointer';
+    }
+    if (window.socket && window.socket.connected) {
+      window.socket.emit('electro:estudio-finalizado', {
+        id: citaElectroSeleccionada.id,
+        hora_fin: horaFinFinal
+      });
+    }
+    cargarCitasElectro();
+    cargarEquiposElectroSelect();
+    if (cerrarModal) cerrarModalDetallesCita();
+    return true;
+  } catch (e) {
+    console.error('[FINALIZAR] Error:', e);
+    showToast('Error finalizando estudio', 'error');
+    return false;
+  }
+}
+
+/** Entidad mostrada en agenda electro (columna cita, espera o recibo). */
+function obtenerEntidadCitaElectro(cita) {
+  const raw = cita?.entidad ?? cita?.nombre_entidad ?? '';
+  const t = String(raw).trim();
+  return t || '';
 }
 
 async function cargarCitasElectro() {
@@ -5834,7 +8306,8 @@ async function cargarCitasElectro() {
     showToast('Selecciona una fecha', 'error');
     return;
   }
-  showSkeletonRows($('citasElectroBody'), 10, 6);
+  if (typeof window.innarMotionPause === 'function') window.innarMotionPause(420);
+  showElectroKanbanLoading();
   try {
     const res = await apiFetch(`/api/citas-electro?fecha=${encodeURIComponent(fecha)}&_t=${Date.now()}`, {
       cache: 'no-store'
@@ -5849,18 +8322,18 @@ async function cargarCitasElectro() {
     const citasNormalizadas = await sincronizarEstadosPorTiempo(citasNormalizadasEstado);
     if (reqId !== _citasElectroReqId) return; // respuesta vieja
     
-    // Filtrar por estudio si es necesario
+    const estudiosFiltro = getFiltroEstudiosElectroActivos();
     let citasFiltradas = citasNormalizadas;
-    if (filtroEstudioElectro !== 'todas') {
-      citasFiltradas = citasNormalizadas.filter(c => c.estudio === filtroEstudioElectro);
+    if (estudiosFiltro.length > 0) {
+      citasFiltradas = citasNormalizadas.filter((c) => estudiosFiltro.includes(c.estudio));
     }
+    window._citasElectroAllData = citasNormalizadas;
+    window._citasElectroKanbanData = citasFiltradas;
     
     if (citasFiltradas.length === 0) {
-      const tbody = $('citasElectroBody');
-      const mensajeEstudio = filtroEstudioElectro === 'todas' ? '' : ` para ${filtroEstudioElectro}`;
-      tbody.innerHTML = `<tr><td colspan="12"><div class="empty-state"><div class="empty-state-icon">📅</div><p class="empty-state-title">Sin citas</p><p class="empty-state-subtitle">No hay citas registradas para esta fecha${mensajeEstudio}</p></div></td></tr>`;
+      renderCitasElectroKanban([]);
       const contador = $('citasElectroContador');
-      if (contador) contador.textContent = '';
+      if (contador) contador.textContent = 'Sin citas';
       $('electroUsuarioProgramo').textContent = '-';
       $('electroUsuarioEdito').textContent = '-';
       actualizarStatsElectro(citasNormalizadas);
@@ -5879,15 +8352,10 @@ async function cargarCitasElectro() {
       const partes = [`${total} cita${total !== 1 ? 's' : ''}`];
       if (enEstudio > 0) partes.push(`${enEstudio} en estudio`);
       if (completadas > 0) partes.push(`${completadas} completada${completadas !== 1 ? 's' : ''}`);
-      contador.textContent = partes.join(' · ');
+      contador.textContent = partes.join(' \u00B7 ');
     }
 
-    // Usar setupPagination para renderizar con paginación
-    setupPagination('citasElectro', citasFiltradas, renderCitaElectroRow, {
-      itemsPerPageDefault: 20,
-      tbodyId: 'citasElectroBody',
-      containerSelector: '#citasElectroTableControls'
-    });
+    renderCitasElectroKanban(citasFiltradas);
     
     // Actualizar información de usuario (del primer registro filtrado)
     if (citasFiltradas.length > 0) {
@@ -5925,6 +8393,112 @@ function actualizarStatsElectro(citas) {
   if (elPend) elPend.textContent = pendientes;
 }
 
+
+function fechaFinYmdCitaElectroAgenda(c) {
+  const finDate = obtenerFechaHoraFinCitaElectro(c);
+  if (finDate && !isNaN(finDate.getTime())) {
+    return `${finDate.getFullYear()}-${String(finDate.getMonth() + 1).padStart(2, '0')}-${String(finDate.getDate()).padStart(2, '0')}`;
+  }
+  return extraerFechaYmdCalendario(c?.hora_fin_date) || extraerFechaYmdCalendario(c?.fecha);
+}
+
+function esContinuacionCitaElectroEnDia(c, fechaVista) {
+  if (!fechaVista || c?.estado === 'Cancelado') return false;
+  const fechaInicio = extraerFechaYmdCalendario(c.fecha);
+  if (!fechaInicio || fechaInicio === fechaVista) return false;
+  const fechaFin = fechaFinYmdCitaElectroAgenda(c);
+  return fechaVista >= fechaInicio && fechaVista <= fechaFin;
+}
+
+function obtenerEtiquetaRangoEstudioElectro(c) {
+  const fechaInicio = extraerFechaYmdCalendario(c?.fecha);
+  const fechaFin = fechaFinYmdCitaElectroAgenda(c);
+  if (!fechaInicio || !fechaFin || fechaInicio === fechaFin) return '';
+  return `Del ${formatearFechaISO(fechaInicio)} al ${formatearFechaISO(fechaFin)}`;
+}
+
+function renderCitaElectroCard(container, c) {
+  if (!container) return;
+  const card = document.createElement('article');
+  card.className = 'electro-cita-card';
+  card.dataset.citaId = String(c.id || '');
+  const estado = c.estado || 'Programado';
+  const fechaVista = $('electroFecha')?.value || '';
+  const fechaInicioCita = extraerFechaYmdCalendario(c.fecha);
+  const esContinuacion = esContinuacionCitaElectroEnDia(c, fechaVista);
+  const estadoClasses = {
+    'En Sala': 'estado-en-sala',
+    'En Estudio': 'estado-en-estudio',
+    'Pausado': 'estado-pausado',
+    'Completado': 'estado-completado',
+    'Cancelado': 'estado-cancelado',
+    'No Asisti\u00f3': 'estado-no-asistio'
+  };
+  if (estadoClasses[estado]) card.classList.add(estadoClasses[estado]);
+  aplicarColorEstudioElectroCard(card, c.estudio);
+  if (estado === 'En Estudio') card.classList.add('innar-pulse-estudio');
+  if (esContinuacion) {
+    card.classList.add('electro-cita-card-continuacion');
+    if (estado === 'Programado' || estado === 'Confirmado' || estado === 'En Sala') {
+      card.classList.add('electro-cita-card-continuacion--agendado');
+    }
+  }
+  const equipoDisplay = c.equipo_nombre ? escapeHtml(c.equipo_nombre) : (c.equipo_id ? 'Equipo ' + c.equipo_id : '\u2014');
+  const rangoEstudio = obtenerEtiquetaRangoEstudioElectro(c);
+  const estudioCorto = abreviarEstudio(c.estudio);
+  let duracionTxt = '';
+  if (c.duracion_minutos) {
+    const dHrs = Math.floor(c.duracion_minutos / 60);
+    const dMin = c.duracion_minutos % 60;
+    duracionTxt = dHrs > 0 ? (dMin > 0 ? dHrs + 'h ' + dMin + 'm' : dHrs + 'h') : dMin + 'm';
+  }
+  const t = 'di' + 'v';
+  const finDate = obtenerFechaHoraFinCitaElectro(c);
+  let finEstudioHtml = '';
+  if (finDate && debeMostrarFinEstudioEnCard(c, finDate)) {
+    const finLabel = formatearFinEstudioElectroLabel(finDate);
+    finEstudioHtml =
+      '<' + t + ' class="electro-cita-card-fin">Fin del estudio: ' + escapeHtml(finLabel) + '</' + t + '>';
+  }
+  const rangoHtml = rangoEstudio
+    ? '<' + t + ' class="electro-cita-card-rango" title="Estudio prolongado">' + escapeHtml(rangoEstudio) + '</' + t + '>'
+    : (esContinuacion
+      ? '<' + t + ' class="electro-cita-card-rango">Inicio: ' + escapeHtml(formatearFechaISO(fechaInicioCita)) + '</' + t + '>'
+      : '');
+  const notaReprogHtml = citaElectroEsReprogramada(c)
+    ? '<' + t + ' class="electro-cita-card-nota-reprog" style="font-size:0.72rem;color:#0369a1;font-weight:600;margin-top:2px">[Reprogramado]</' + t + '>'
+    : '';
+  card.innerHTML =
+    '<' + t + ' class="electro-cita-card-top">' +
+      '<span class="electro-cita-card-hora">' + formatearHora(c.hora_agendamiento) + '</span>' +
+      estadoBadgeCitaElectro(c) +
+    '</' + t + '>' +
+    rangoHtml +
+    notaReprogHtml +
+    '<' + t + ' class="electro-cita-card-paciente">' + escapeHtml(c.paciente_nombre || '-') + '</' + t + '>' +
+    '<' + t + ' class="electro-cita-card-meta">' +
+      '<span>' + escapeHtml(c.paciente_documento || '-') + '</span>' +
+      (obtenerEntidadCitaElectro(c) ? '<span title="Entidad">' + escapeHtml(obtenerEntidadCitaElectro(c)) + '</span>' : '') +
+      (equipoDisplay !== '\u2014' ? '<span>' + equipoDisplay + '</span>' : '') +
+      (duracionTxt ? '<span>' + duracionTxt + '</span>' : '') +
+    '</' + t + '>' +
+    '<' + t + ' class="electro-cita-card-estudio" title="' + escapeHtml(c.estudio || '') + '">' + escapeHtml(estudioCorto) + '</' + t + '>' +
+    finEstudioHtml;
+  card.addEventListener('click', () => {
+    if (!tienePermiso('electro.editar') && !tienePermiso('electro.cambiar_estado')) return;
+    if (estado === 'Completado' && !tienePermiso('electro.eliminar')) {
+      showToast('Esta cita ya est\u00e1 completada - No se puede modificar', 'info');
+      return;
+    }
+    abrirModalDetallesCita(c);
+  });
+  if (estado === 'Completado') {
+    card.classList.add('electro-cita-card-done');
+    if (!tienePermiso('electro.eliminar')) card.style.cursor = 'not-allowed';
+  }
+  container.appendChild(card);
+}
+
 function renderCitaElectroRow(tbody, c) {
   const tr = document.createElement('tr');
   tr.className = 'turno-row';
@@ -5935,7 +8509,7 @@ function renderCitaElectroRow(tbody, c) {
   
   // Mostrar hora_fin con fecha SOLO si cruza medianoche
   let horaFinDisplay = formatearHora(c.hora_fin);
-  if (c.hora_fin_date && c.hora_fin_date !== c.fecha) {
+  if (c.hora_fin_date && extraerFechaYmdCalendario(c.hora_fin_date) !== extraerFechaYmdCalendario(c.fecha)) {
     const fechaFormateada = formatearFechaISO(c.hora_fin_date);
     horaFinDisplay = `${formatearHora(c.hora_fin)} <span style="color:#dc2626;font-size:0.72rem;font-weight:600;">(${fechaFormateada})</span>`;
   }
@@ -5980,10 +8554,10 @@ function renderCitaElectroRow(tbody, c) {
     <td>${escapeHtml(c.paciente_documento || '-')}</td>
     <td class="col-mobile-hide">${escapeHtml(c.telefono || '-')}</td>
     <td><span title="${escapeHtml(c.estudio || '')}">${escapeHtml(estudioCorto)}</span></td>
-    <td class="col-mobile-hide">${escapeHtml(c.entidad || '-')}</td>
+    <td class="col-mobile-hide">${escapeHtml(obtenerEntidadCitaElectro(c) || '-')}</td>
     <td class="col-mobile-hide">${duracionDisplay}</td>
     <td class="col-mobile-hide">${escapeHtml(c.diagnostico_codigo || '-')}</td>
-    <td>${estadoBadge(c.estado || 'Programado')}</td>
+    <td>${estadoBadgeCitaElectro(c)}</td>
     <td class="col-mobile-hide">${horaFinDisplay}</td>
   `;
   
@@ -6156,7 +8730,7 @@ async function crearCitaElectro() {
     const dl = $('diagnosticosListElectro');
     const opciones = dl.querySelectorAll('option');
     for (let opt of opciones) {
-      // Buscar coincidia exacta o parcial con el value o el dataset.codigo
+      // Buscar coincidía exacta o parcial con el value o el dataset.codigo
       if (opt.value === diagnostico || opt.dataset.codigo === diagnostico || opt.dataset.nombre === diagnostico) {
         diagnosticoId = parseInt(opt.dataset.id, 10);
         break;
@@ -6246,66 +8820,93 @@ async function crearCitaElectro() {
 
 // ========== MÓDULO DE PERMISOS (solo superadmin) ==========
 
-// Definición completa de todos los permisos del sistema
+/** No se conceden por defecto a admin u otros roles con lista abierta; solo superadmin o asignación explícita. */
+const PERMISOS_OPT_IN = new Set(['modulo.anexo_fidu']);
+
+// Definición completa de todos los permisos del sistema (agrupados por módulo)
 const PERMISOS_DEFS = [
-  // ── Acceso a Módulos ───────────────────────────────────────────────────────
-  { key: 'modulo.recibos',          label: 'Módulo: Recibos',                     grupo: 'Acceso a Módulos' },
-  { key: 'modulo.agenda_medica',    label: 'Módulo: Agenda Médica',               grupo: 'Acceso a Módulos' },
-  { key: 'modulo.electrodiag',      label: 'Módulo: Electrodiagnóstico',          grupo: 'Acceso a Módulos' },
-  { key: 'modulo.ucqn',             label: 'Módulo: UCQN',                         grupo: 'Acceso a Módulos' },
-  { key: 'modulo.dashboard',        label: 'Módulo: Dashboard de Citas',          grupo: 'Acceso a Módulos' },
-  { key: 'modulo.usuarios',         label: 'Módulo: Gestión de Usuarios',         grupo: 'Acceso a Módulos' },
-  { key: 'modulo.diagnosticos',     label: 'Módulo: Diagnósticos',                grupo: 'Acceso a Módulos' },
-  { key: 'modulo.gestion_datos',    label: 'Módulo: Gestión de Datos',            grupo: 'Acceso a Módulos' },
   // ── Recibos ───────────────────────────────────────────────────────────────
-  { key: 'recibos.crear',           label: 'Recibos: Crear nuevo recibo',         grupo: 'Recibos' },
-  { key: 'recibos.ver',             label: 'Recibos: Ver lista de recibos',       grupo: 'Recibos' },
-  { key: 'recibos.editar',          label: 'Recibos: Editar recibo existente',    grupo: 'Recibos' },
-  { key: 'recibos.anular',          label: 'Recibos: Anular recibo',              grupo: 'Recibos' },
-  { key: 'recibos.eliminar',        label: 'Recibos: Eliminar recibos',           grupo: 'Recibos' },
-  { key: 'recibos.exportar',        label: 'Recibos: Exportar Excel / PDF',       grupo: 'Recibos' },
-  { key: 'recibos.gestionar_servicios', label: 'Recibos: Gestionar servicios',    grupo: 'Recibos' },
-  { key: 'recibos.resetear',        label: 'Recibos: Resetear consecutivos',      grupo: 'Recibos' },
+  { key: 'modulo.recibos',              label: 'Acceso al módulo',                    grupo: 'Recibos' },
+  { key: 'recibos.crear',               label: 'Crear nuevo recibo',                  grupo: 'Recibos' },
+  { key: 'recibos.ver',                 label: 'Ver lista de recibos',              grupo: 'Recibos' },
+  { key: 'recibos.editar',              label: 'Editar datos del recibo',           grupo: 'Recibos' },
+  { key: 'recibos.pagar',               label: 'Marcar recibo como pagado',         grupo: 'Recibos' },
+  { key: 'recibos.pendiente',           label: 'Revertir recibo a pendiente',       grupo: 'Recibos' },
+  { key: 'recibos.anular',              label: 'Anular recibo',                     grupo: 'Recibos' },
+  { key: 'recibos.eliminar',            label: 'Eliminar recibos',                  grupo: 'Recibos' },
+  { key: 'recibos.exportar',            label: 'Exportar Excel / PDF',              grupo: 'Recibos' },
+  { key: 'recibos.gestionar_servicios', label: 'Gestionar servicios y tarifas',     grupo: 'Recibos' },
+  { key: 'recibos.resetear',            label: 'Resetear consecutivos',             grupo: 'Recibos' },
+  { key: 'sistema.reportes',            label: 'Ver reportes diarios y mensuales',  grupo: 'Recibos' },
   // ── Agenda Médica ──────────────────────────────────────────────────────────
-  { key: 'agenda.ver',              label: 'Agenda: Ver turnos del día',          grupo: 'Agenda Médica' },
-  { key: 'agenda.crear',            label: 'Agenda: Crear / Programar citas',     grupo: 'Agenda Médica' },
-  { key: 'agenda.editar',           label: 'Agenda: Editar citas',                grupo: 'Agenda Médica' },
-  { key: 'agenda.eliminar',         label: 'Agenda: Eliminar citas',              grupo: 'Agenda Médica' },
-  { key: 'agenda.cambiar_estado',   label: 'Agenda: Cambiar estado de turno',     grupo: 'Agenda Médica' },
-  { key: 'agenda.llamar_siguiente', label: 'Agenda: Llamar siguiente paciente',   grupo: 'Agenda Médica' },
-  { key: 'agenda.marcar_atendido',  label: 'Agenda: Marcar como atendido',        grupo: 'Agenda Médica' },
-  { key: 'agenda.aviso_doctor',     label: 'Agenda: Enviar aviso al doctor',      grupo: 'Agenda Médica' },
-  { key: 'agenda.disponibilidad',   label: 'Agenda: Programar disponibilidad',    grupo: 'Agenda Médica' },
+  { key: 'modulo.agenda_medica',        label: 'Acceso al módulo',                    grupo: 'Agenda Médica' },
+  { key: 'agenda.ver',                  label: 'Ver turnos del día',                  grupo: 'Agenda Médica' },
+  { key: 'agenda.crear',                label: 'Crear / programar citas',             grupo: 'Agenda Médica' },
+  { key: 'agenda.editar',               label: 'Editar citas',                        grupo: 'Agenda Médica' },
+  { key: 'agenda.eliminar',             label: 'Eliminar citas',                      grupo: 'Agenda Médica' },
+  { key: 'agenda.cambiar_estado',       label: 'Cambiar estado de turno',             grupo: 'Agenda Médica' },
+  { key: 'agenda.llamar_siguiente',     label: 'Llamar siguiente paciente',           grupo: 'Agenda Médica' },
+  { key: 'agenda.marcar_atendido',      label: 'Marcar como atendido',                grupo: 'Agenda Médica' },
+  { key: 'agenda.aviso_doctor',         label: 'Enviar aviso al doctor',              grupo: 'Agenda Médica' },
+  { key: 'agenda.disponibilidad',       label: 'Programar disponibilidad',            grupo: 'Agenda Médica' },
+  { key: 'agenda.editar_siempre',       label: 'Editar citas en cualquier estado',    grupo: 'Agenda Médica' },
   // ── Electrodiagnóstico ────────────────────────────────────────────────────
-  { key: 'electro.ver',             label: 'Electro: Ver citas',                  grupo: 'Electrodiagnóstico' },
-  { key: 'electro.crear',           label: 'Electro: Crear cita',                grupo: 'Electrodiagnóstico' },
-  { key: 'electro.editar',          label: 'Electro: Editar cita',                grupo: 'Electrodiagnóstico' },
-  { key: 'electro.eliminar',        label: 'Electro: Eliminar cita',              grupo: 'Electrodiagnóstico' },
-  { key: 'electro.cambiar_estado',  label: 'Electro: Cambiar estado de cita',     grupo: 'Electrodiagnóstico' },
-  { key: 'electro.subir_archivo',   label: 'Electro: Subir archivos de estudios', grupo: 'Electrodiagnóstico' },
-  { key: 'electro.ver_archivo',     label: 'Electro: Ver/descargar archivos',     grupo: 'Electrodiagnóstico' },
-  { key: 'electro.aviso_doctor',    label: 'Electro: Enviar aviso al doctor',     grupo: 'Electrodiagnóstico' },
+  { key: 'modulo.electrodiag',          label: 'Acceso al módulo',                    grupo: 'Electrodiagnóstico' },
+  { key: 'electro.ver',                 label: 'Ver citas',                           grupo: 'Electrodiagnóstico' },
+  { key: 'electro.crear',               label: 'Crear cita',                          grupo: 'Electrodiagnóstico' },
+  { key: 'electro.editar',              label: 'Editar cita y duración',              grupo: 'Electrodiagnóstico' },
+  { key: 'electro.eliminar',            label: 'Eliminar cita',                       grupo: 'Electrodiagnóstico' },
+  { key: 'electro.cambiar_estado',      label: 'Cambiar estado de cita',              grupo: 'Electrodiagnóstico' },
+  { key: 'electro.subir_archivo',       label: 'Subir archivos de estudios',          grupo: 'Electrodiagnóstico' },
+  { key: 'electro.ver_archivo',         label: 'Ver / descargar archivos',            grupo: 'Electrodiagnóstico' },
+  { key: 'electro.aviso_doctor',        label: 'Enviar aviso al doctor',              grupo: 'Electrodiagnóstico' },
+  // ── Monitor de Equipos ────────────────────────────────────────────────────
+  { key: 'modulo.monitor_equipos',      label: 'Acceso al módulo',                    grupo: 'Monitor de Equipos' },
   // ── UCQN ───────────────────────────────────────────────────────────────────
-  { key: 'ucqn.ver',                label: 'UCQN: Ver estudios',                   grupo: 'UCQN' },
-  { key: 'ucqn.editar_estado',      label: 'UCQN: Cambiar estado',                 grupo: 'UCQN' },
-  // ── Usuarios ─────────────────────────────────────────────────────────────
-  { key: 'usuarios.ver',            label: 'Usuarios: Ver lista de usuarios',     grupo: 'Gestión de Usuarios' },
-  { key: 'usuarios.crear',          label: 'Usuarios: Crear usuario',             grupo: 'Gestión de Usuarios' },
-  { key: 'usuarios.editar',         label: 'Usuarios: Editar usuario',            grupo: 'Gestión de Usuarios' },
-  { key: 'usuarios.cambiar_clave',  label: 'Usuarios: Cambiar contraseña',        grupo: 'Gestión de Usuarios' },
-  { key: 'usuarios.eliminar',       label: 'Usuarios: Eliminar usuario',          grupo: 'Gestión de Usuarios' },
-  { key: 'usuarios.auditoria',      label: 'Usuarios: Ver auditoría de accesos',  grupo: 'Gestión de Usuarios' },
-  { key: 'usuarios.permisos',       label: 'Usuarios: Gestionar permisos (superadmin)', grupo: 'Gestión de Usuarios' },
+  { key: 'modulo.ucqn',                 label: 'Acceso al módulo',                    grupo: 'UCQN' },
+  { key: 'ucqn.ver',                    label: 'Ver estudios',                        grupo: 'UCQN' },
+  { key: 'ucqn.editar_estado',          label: 'Cambiar estado',                      grupo: 'UCQN' },
+  // ── Dashboard de Citas ────────────────────────────────────────────────────
+  { key: 'modulo.dashboard',            label: 'Acceso al módulo',                    grupo: 'Dashboard de Citas' },
+  { key: 'sistema.dashboard',           label: 'Ver estadísticas de citas',           grupo: 'Dashboard de Citas' },
+  // ── Gestión de Usuarios ───────────────────────────────────────────────────
+  { key: 'modulo.usuarios',             label: 'Acceso al módulo',                    grupo: 'Gestión de Usuarios' },
+  { key: 'usuarios.ver',                label: 'Ver lista de usuarios',               grupo: 'Gestión de Usuarios' },
+  { key: 'usuarios.crear',              label: 'Crear usuario',                       grupo: 'Gestión de Usuarios' },
+  { key: 'usuarios.editar',             label: 'Editar usuario',                      grupo: 'Gestión de Usuarios' },
+  { key: 'usuarios.cambiar_clave',      label: 'Cambiar contraseña',                  grupo: 'Gestión de Usuarios' },
+  { key: 'usuarios.eliminar',           label: 'Eliminar usuario',                    grupo: 'Gestión de Usuarios' },
+  { key: 'usuarios.auditoria',          label: 'Ver auditoría de accesos',            grupo: 'Gestión de Usuarios' },
+  { key: 'usuarios.permisos',           label: 'Gestionar permisos (superadmin)',     grupo: 'Gestión de Usuarios' },
   // ── Diagnósticos ──────────────────────────────────────────────────────────
-  { key: 'diagnosticos.ver',        label: 'Diagnósticos: Ver lista',             grupo: 'Diagnósticos' },
-  { key: 'diagnosticos.crear',      label: 'Diagnósticos: Crear diagnóstico',     grupo: 'Diagnósticos' },
-  { key: 'diagnosticos.editar',     label: 'Diagnósticos: Editar diagnóstico',    grupo: 'Diagnósticos' },
-  { key: 'diagnosticos.eliminar',   label: 'Diagnósticos: Eliminar diagnóstico',  grupo: 'Diagnósticos' },
-  // ── Sistema ───────────────────────────────────────────────────────────────
-  { key: 'sistema.backups',         label: 'Sistema: Gestión de backups',         grupo: 'Sistema' },
-  { key: 'sistema.exportar_datos',  label: 'Sistema: Exportar datos del sistema', grupo: 'Sistema' },
-  { key: 'sistema.dashboard',       label: 'Sistema: Ver dashboard estadísticas', grupo: 'Sistema' },
-  { key: 'sistema.reportes',        label: 'Sistema: Ver reportes de recibos',    grupo: 'Sistema' },
+  { key: 'modulo.diagnosticos',         label: 'Acceso al módulo',                    grupo: 'Diagnósticos' },
+  { key: 'diagnosticos.ver',            label: 'Ver lista',                           grupo: 'Diagnósticos' },
+  { key: 'diagnosticos.crear',          label: 'Crear diagnóstico',                   grupo: 'Diagnósticos' },
+  { key: 'diagnosticos.editar',         label: 'Editar diagnóstico',                  grupo: 'Diagnósticos' },
+  { key: 'diagnosticos.eliminar',       label: 'Eliminar diagnóstico',                grupo: 'Diagnósticos' },
+  // ── Gestión de Datos ──────────────────────────────────────────────────────
+  { key: 'modulo.gestion_datos',        label: 'Acceso al módulo (catálogos, entidades, especialidades)', grupo: 'Gestión de Datos' },
+  { key: 'sistema.exportar_datos',      label: 'Exportar datos del sistema',          grupo: 'Gestión de Datos' },
+  // ── Cargar reportes (PDX) ─────────────────────────────────────────────────
+  { key: 'modulo.reportes_pdx',         label: 'Acceso al módulo',                    grupo: 'Cargar reportes' },
+  { key: 'soportes.pdx.ver',            label: 'Ver carpetas y archivos',             grupo: 'Cargar reportes' },
+  { key: 'soportes.pdx.carpetas.todas', label: 'Ver todas las carpetas',              grupo: 'Cargar reportes' },
+  { key: 'soportes.pdx.crear_carpeta',  label: 'Crear carpetas',                      grupo: 'Cargar reportes' },
+  { key: 'soportes.pdx.subir',          label: 'Subir archivos PDF',                  grupo: 'Cargar reportes' },
+  { key: 'soportes.pdx.editar',         label: 'Editar, reemplazar y mover',          grupo: 'Cargar reportes' },
+  { key: 'soportes.pdx.eliminar',       label: 'Eliminar archivos y carpetas',        grupo: 'Cargar reportes' },
+  // ── Soportes Radicación ───────────────────────────────────────────────────
+  { key: 'modulo.armado_soportes',      label: 'Acceso al módulo',                    grupo: 'Soportes Radicación' },
+  { key: 'soportes.armado.crear_estructura', label: 'Crear mes / día / FE',           grupo: 'Soportes Radicación' },
+  { key: 'soportes.armado.subir',       label: 'Subir OPF / CRC / HEV',               grupo: 'Soportes Radicación' },
+  { key: 'soportes.armado.importar_pdx', label: 'Importar PDX a expediente',          grupo: 'Soportes Radicación' },
+  { key: 'soportes.descargar_zip',      label: 'Descargar ZIP del expediente',        grupo: 'Soportes Radicación' },
+  { key: 'soportes.ver_archivo',        label: 'Ver periodos en archivo',             grupo: 'Soportes Radicación' },
+  // ── Anexo FIDU ────────────────────────────────────────────────────────────
+  { key: 'modulo.anexo_fidu',           label: 'Acceso al módulo (importar, editar, exportar)', grupo: 'Anexo FIDU' },
+  // ── Backup ────────────────────────────────────────────────────────────────
+  { key: 'modulo.backup',               label: 'Acceso al módulo',                    grupo: 'Backup' },
+  { key: 'sistema.backups',             label: 'Generar, descargar y eliminar backups', grupo: 'Backup' },
 ];
 
 // Permisos predeterminados por rol (null = sin restricciones / todo permitido)
@@ -6316,8 +8917,11 @@ const PERMISOS_ROL_DEFAULTS = {
   superadmin: null,
   admin: null,
   admin_recepcion: [
-    'modulo.recibos','modulo.agenda_medica','modulo.electrodiag','modulo.ucqn','modulo.dashboard',
-    'recibos.crear','recibos.ver','recibos.exportar',
+    'modulo.recibos','modulo.agenda_medica','modulo.electrodiag','modulo.ucqn','modulo.dashboard','modulo.monitor_equipos',
+    'modulo.reportes_pdx','modulo.armado_soportes',
+    'soportes.pdx.ver','soportes.pdx.carpetas.todas','soportes.pdx.crear_carpeta','soportes.pdx.subir','soportes.pdx.editar',
+    'soportes.armado.crear_estructura','soportes.armado.subir','soportes.armado.importar_pdx','soportes.descargar_zip',
+    'recibos.crear','recibos.ver','recibos.exportar','recibos.pagar','recibos.pendiente',
     'agenda.ver','agenda.crear','agenda.editar','agenda.eliminar','agenda.cambiar_estado',
     'agenda.llamar_siguiente','agenda.marcar_atendido','agenda.aviso_doctor','agenda.disponibilidad',
     'electro.ver','electro.crear','electro.editar','electro.cambiar_estado','electro.subir_archivo','electro.ver_archivo','electro.aviso_doctor',
@@ -6325,8 +8929,11 @@ const PERMISOS_ROL_DEFAULTS = {
     'sistema.dashboard',
   ],
   recepcion: [
-    'modulo.recibos','modulo.agenda_medica','modulo.electrodiag','modulo.ucqn','modulo.dashboard',
-    'recibos.crear','recibos.ver',
+    'modulo.recibos','modulo.agenda_medica','modulo.electrodiag','modulo.ucqn','modulo.dashboard','modulo.monitor_equipos',
+    'modulo.reportes_pdx','modulo.armado_soportes',
+    'soportes.pdx.ver','soportes.pdx.carpetas.todas','soportes.pdx.crear_carpeta','soportes.pdx.subir','soportes.pdx.editar',
+    'soportes.armado.crear_estructura','soportes.armado.subir','soportes.armado.importar_pdx','soportes.descargar_zip',
+    'recibos.crear','recibos.ver','recibos.pagar','recibos.pendiente',
     'agenda.ver','agenda.crear','agenda.editar','agenda.eliminar','agenda.cambiar_estado',
     'agenda.llamar_siguiente','agenda.marcar_atendido','agenda.aviso_doctor',
     'electro.ver','electro.crear','electro.editar','electro.cambiar_estado',
@@ -6334,8 +8941,9 @@ const PERMISOS_ROL_DEFAULTS = {
     'sistema.dashboard',
   ],
   auxiliar_recepcion: [
-    'modulo.recibos','modulo.agenda_medica','modulo.electrodiag',
-    'recibos.crear','recibos.ver',
+    'modulo.recibos','modulo.agenda_medica','modulo.electrodiag','modulo.reportes_pdx',
+    'soportes.pdx.ver','soportes.pdx.subir',
+    'recibos.crear','recibos.ver','recibos.pagar','recibos.pendiente',
     'agenda.ver','agenda.crear','agenda.editar','agenda.cambiar_estado','agenda.aviso_doctor',
     'electro.ver','electro.crear',
   ],
@@ -6346,27 +8954,36 @@ const PERMISOS_ROL_DEFAULTS = {
     'sistema.dashboard',
   ],
   admin_electro: [
-    'modulo.electrodiag','modulo.ucqn','modulo.agenda_medica','modulo.dashboard',
+    'modulo.electrodiag','modulo.ucqn','modulo.agenda_medica','modulo.dashboard','modulo.monitor_equipos',
+    'modulo.reportes_pdx','modulo.armado_soportes',
+    'soportes.pdx.ver','soportes.pdx.carpetas.todas','soportes.pdx.crear_carpeta','soportes.pdx.subir','soportes.pdx.editar',
+    'soportes.armado.crear_estructura','soportes.armado.subir','soportes.armado.importar_pdx','soportes.descargar_zip',
     'electro.ver','electro.crear','electro.editar','electro.eliminar','electro.cambiar_estado','electro.subir_archivo','electro.ver_archivo','electro.aviso_doctor',
     'agenda.ver','agenda.editar','agenda.aviso_doctor',
     'ucqn.ver','ucqn.editar_estado',
     'sistema.dashboard',
   ],
   electro: [
-    'modulo.electrodiag','modulo.ucqn','modulo.agenda_medica','modulo.dashboard',
+    'modulo.electrodiag','modulo.ucqn','modulo.agenda_medica','modulo.dashboard','modulo.monitor_equipos',
+    'modulo.reportes_pdx','modulo.armado_soportes',
+    'soportes.pdx.ver','soportes.pdx.carpetas.todas','soportes.pdx.crear_carpeta','soportes.pdx.subir','soportes.pdx.editar',
+    'soportes.armado.crear_estructura','soportes.armado.subir','soportes.armado.importar_pdx','soportes.descargar_zip',
     'electro.ver','electro.crear','electro.editar','electro.eliminar','electro.cambiar_estado','electro.subir_archivo','electro.ver_archivo','electro.aviso_doctor',
     'agenda.ver','agenda.editar','agenda.aviso_doctor',
     'ucqn.ver','ucqn.editar_estado',
     'sistema.dashboard',
   ],
   tecnico_electro: [
-    'modulo.electrodiag','modulo.agenda_medica',
+    'modulo.electrodiag','modulo.agenda_medica','modulo.monitor_equipos',
     'electro.ver','electro.crear','electro.editar','electro.cambiar_estado','electro.subir_archivo','electro.ver_archivo',
     'agenda.ver','agenda.editar','agenda.aviso_doctor',
   ],
   contabilidad: [
     'modulo.recibos','modulo.ucqn','modulo.dashboard',
-    'recibos.ver','recibos.exportar',
+    'modulo.reportes_pdx','modulo.armado_soportes',
+    'soportes.pdx.ver','soportes.pdx.carpetas.todas','soportes.pdx.crear_carpeta','soportes.pdx.subir','soportes.pdx.editar',
+    'soportes.armado.crear_estructura','soportes.armado.subir','soportes.armado.importar_pdx','soportes.descargar_zip','soportes.ver_archivo',
+    'recibos.ver','recibos.exportar','recibos.pagar','recibos.pendiente',
     'ucqn.ver','ucqn.editar_estado',
     'sistema.dashboard','sistema.reportes',
   ],
@@ -6374,6 +8991,8 @@ const PERMISOS_ROL_DEFAULTS = {
 
 let _permisosUsuarioSeleccionado = null; // { id, usuario, nombre, rol, permisos }
 let _permisosUsuariosCache = [];
+let _pdxCarpetasPermisosCache = [];
+const PERMISO_PDX_CARPETAS_TODAS = 'soportes.pdx.carpetas.todas';
 
 function _bindPermisosPageUIOnce() {
   if (window._permisosPageUIBound) return;
@@ -6472,6 +9091,7 @@ async function initPermisosPage() {
   if (btnRestablecer) btnRestablecer.onclick = _restablecerPermisos;
 
   await _cargarPermisosUserList();
+  _pdxCarpetasPermisosCache = [];
 
   // Socket: refrescar sesión del usuario actual si le cambiaron permisos
   if (window.socket && !window._socketPermisosListener) {
@@ -6537,6 +9157,7 @@ async function _seleccionarUsuarioPermisos(userId) {
     const activos = tienePersonalizados ? new Set(data.permisos) : null;
 
     _renderPermisosChecklist(activos, rolDefaults);
+    await _renderPermisosPdxCarpetas(activos, rolDefaults);
 
     if (editor) editor.style.display = '';
     if (noSel)  noSel.style.display  = 'none';
@@ -6640,10 +9261,131 @@ function _renderPermisosChecklist(activos, rolDefaults) {
   }
 }
 
+async function _cargarPdxCarpetasPermisosCatalogo() {
+  if (_pdxCarpetasPermisosCache.length) return _pdxCarpetasPermisosCache;
+  const res = await apiFetch('/api/soportes/pdx/carpetas/catalogo-permisos');
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'No se pudo cargar carpetas PDX');
+  _pdxCarpetasPermisosCache = Array.isArray(data.carpetas) ? data.carpetas : [];
+  return _pdxCarpetasPermisosCache;
+}
+
+async function _renderPermisosPdxCarpetas(activos, rolDefaults) {
+  const container = document.getElementById('permisosChecklistContainer');
+  if (!container) return;
+  container.querySelector('[data-pdx-carpetas-permisos]')?.remove();
+  let carpetas = [];
+  try {
+    carpetas = await _cargarPdxCarpetasPermisosCatalogo();
+  } catch (_) {
+    return;
+  }
+  if (!carpetas.length) return;
+
+  const det = document.createElement('details');
+  det.className = 'permisos-group';
+  det.open = true;
+  det.dataset.pdxCarpetasPermisos = '1';
+
+  const tieneTodasRol = rolDefaults === null || (Array.isArray(rolDefaults) && rolDefaults.includes(PERMISO_PDX_CARPETAS_TODAS));
+  const todasActivo = activos !== null ? activos.has(PERMISO_PDX_CARPETAS_TODAS) : tieneTodasRol;
+  const idsActivos = activos !== null
+    ? carpetas.filter((c) => activos.has(c.permiso_key)).map((c) => c.id)
+    : (todasActivo ? carpetas.map((c) => c.id) : []);
+
+  const sum = document.createElement('summary');
+  sum.className = 'permisos-group-summary';
+  const sumRow = document.createElement('div');
+  sumRow.className = 'permisos-group-summary-row';
+  const title = document.createElement('span');
+  title.className = 'permisos-group-title';
+  title.textContent = 'Carpetas visibles (Cargar reportes)';
+  const count = document.createElement('span');
+  count.className = 'permisos-group-count';
+  count.textContent = '0/0';
+  sumRow.appendChild(title);
+  sumRow.appendChild(count);
+  sum.appendChild(sumRow);
+  det.appendChild(sum);
+
+  const intro = document.createElement('p');
+  intro.className = 'permisos-pdx-carpetas-hint';
+  intro.style.cssText = 'font-size:.82rem;color:#64748b;margin:8px 12px 0';
+  intro.textContent = 'Marque las carpetas que este usuario puede ver. Si activa «Todas las carpetas», no hace falta marcar una por una.';
+  det.appendChild(intro);
+
+  const grid = document.createElement('div');
+  grid.className = 'permisos-group-grid';
+
+  const rowTodas = document.createElement('label');
+  rowTodas.className = 'permisos-row permisos-row--todas';
+  rowTodas.dataset.search = 'todas carpetas reportes pdx';
+  const chkTodas = document.createElement('input');
+  chkTodas.type = 'checkbox';
+  chkTodas.dataset.key = PERMISO_PDX_CARPETAS_TODAS;
+  chkTodas.checked = todasActivo;
+  const txtTodas = document.createElement('span');
+  txtTodas.className = 'permisos-row-text';
+  txtTodas.textContent = 'Todas las carpetas de reportes';
+  rowTodas.appendChild(chkTodas);
+  rowTodas.appendChild(txtTodas);
+  if (tieneTodasRol && activos === null) {
+    const badge = document.createElement('span');
+    badge.className = 'permisos-badge-rol';
+    badge.textContent = 'rol';
+    rowTodas.appendChild(badge);
+  }
+  grid.appendChild(rowTodas);
+
+  carpetas.forEach((c) => {
+    const search = `${c.nombre_display} ${c.periodo} ${c.permiso_key}`.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const row = document.createElement('label');
+    row.className = 'permisos-row permisos-row--carpeta';
+    row.dataset.search = search;
+    const chk = document.createElement('input');
+    chk.type = 'checkbox';
+    chk.dataset.key = c.permiso_key;
+    chk.checked = todasActivo || idsActivos.includes(c.id);
+    chk.disabled = todasActivo;
+    const txt = document.createElement('span');
+    txt.className = 'permisos-row-text';
+    txt.textContent = `${c.nombre_display} (${c.periodo})`;
+    row.appendChild(chk);
+    row.appendChild(txt);
+    grid.appendChild(row);
+  });
+
+  det.appendChild(grid);
+  container.appendChild(det);
+
+  const syncTodas = () => {
+    const on = !!chkTodas.checked;
+    grid.querySelectorAll('.permisos-row--carpeta input[data-key]').forEach((inp) => {
+      inp.disabled = on;
+      if (on) inp.checked = true;
+    });
+    _permisosRefreshStats();
+  };
+  chkTodas.addEventListener('change', syncTodas);
+  grid.querySelectorAll('.permisos-row--carpeta input[data-key]').forEach((inp) => {
+    inp.addEventListener('change', () => {
+      if (inp.checked && chkTodas.checked) {
+        chkTodas.checked = false;
+        grid.querySelectorAll('.permisos-row--carpeta input[data-key]').forEach((x) => { x.disabled = false; });
+      }
+      _permisosRefreshStats();
+    });
+  });
+  _permisosRefreshStats();
+}
+
 async function _guardarPermisos() {
   if (!_permisosUsuarioSeleccionado) return;
   const chks = document.querySelectorAll('#permisosChecklistContainer input[type=checkbox][data-key]');
-  const permisos = Array.from(chks).filter(c => c.checked).map(c => c.dataset.key);
+  let permisos = Array.from(chks).filter(c => c.checked).map(c => c.dataset.key);
+  if (permisos.includes(PERMISO_PDX_CARPETAS_TODAS)) {
+    permisos = permisos.filter((p) => !String(p).startsWith('soportes.pdx.carpeta.'));
+  }
   const btn = document.getElementById('btnPermisosGuardar');
   setLoading(btn, true, 'Guardando...');
   try {
@@ -6652,7 +9394,11 @@ async function _guardarPermisos() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ permisos })
     });
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      showToast(data.error || 'Error al guardar permisos', 'error');
+      return;
+    }
     if (data.ok) {
       showToast('Permisos guardados correctamente', 'success');
       _permisosUsuarioSeleccionado.permisos = permisos;
@@ -6820,7 +9566,16 @@ async function cargarUsuarios() {
   try {
     const res = await apiFetch('/api/usuarios');
     if (res.status === 403) { showToast('No tienes permiso', 'error'); return; }
-    const usuarios = await res.json();
+    const usuarios = await res.json().catch(() => null);
+    if (!res.ok) {
+      showToast((usuarios && usuarios.error) || 'Error cargando usuarios', 'error');
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#b91c1c;padding:16px">No se pudo cargar la lista de usuarios</td></tr>';
+      return;
+    }
+    if (!Array.isArray(usuarios)) {
+      showToast('Respuesta inválida del servidor', 'error');
+      return;
+    }
     
     if (!usuarios.length) {
       tbody.innerHTML = '<tr><td colspan="6"><div class="empty-state"><div class="empty-state-icon">👤</div><p class="empty-state-title">Sin usuarios</p><p class="empty-state-subtitle">No hay usuarios registrados en el sistema</p></div></td></tr>';
@@ -7595,7 +10350,11 @@ async function crearUsuario() {
       headers: { 'Content-Type': 'application/json' }, 
       body: JSON.stringify(body) 
     });
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      showToast(data.error || data.details?.[0]?.message || 'Error al crear usuario', 'error');
+      return;
+    }
     if (data.ok) { 
       showToast('Usuario creado exitosamente', 'success'); 
       $('newUserUsuario').value=''; 
@@ -7765,8 +10524,11 @@ function recalc(){
 }
 
 function setDefaultDate(){
-  const f = new Date().toISOString().slice(0,10);
-  $('fecha').value = f;
+  $('fecha').value = recibosFechaHoyLocal();
+}
+
+function recibosFechaHoyLocal() {
+  return fechaLocalYmdFromDate(new Date());
 }
 
 async function nextNumber(){
@@ -7950,7 +10712,7 @@ async function saveToDatabase(){
       showToast('✓ Recibo guardado', 'success');
       updateSavedCount();
       nextNumber();
-      cargarFiltrosUsuarios();
+      syncGeneradorActualEnFiltroRecibos();
     } else {
       showToast('Error guardando: ' + (json.error || 'desconocido'), 'error');
     }
@@ -8041,6 +10803,85 @@ async function abrirPDF(){
 
 // ---- Filtros activos para exportación ----
 let _recibosLastParams = '';
+let _recibosFiltrosUI = null;
+
+/** Recarga la tabla de Ver Recibos respetando filtros aplicados (tiempo real / visibilidad). */
+function recargarListaRecibosPreservandoFiltros() {
+  const q = typeof window._recibosLastParams === 'string' ? window._recibosLastParams : (_recibosLastParams || '');
+  return cargarLista(q);
+}
+window.recargarListaRecibosPreservandoFiltros = recargarListaRecibosPreservandoFiltros;
+
+function _msValues(sel) {
+  return _msValuesRecibo(sel);
+}
+
+function _msValuesRecibo(sel) {
+  if (!sel) return [];
+  if (sel._ms) return sel._ms.getValues();
+  return sel.value ? [sel.value] : [];
+}
+
+function _msSetValuesRecibo(sel, vals) {
+  if (!sel) return;
+  const arr = Array.isArray(vals) ? vals.map(String).filter(Boolean) : String(vals || '').split(',').filter(Boolean);
+  if (sel._ms) sel._ms.setValues(arr);
+  else sel.value = arr[0] || '';
+}
+
+function capturarEstadoFiltrosRecibosUI() {
+  const wrap = $('filtroTipoConsultaWrap');
+  return {
+    fechaDesde: $('filtroFechaDesde')?.value || '',
+    fechaHasta: $('filtroFechaHasta')?.value || '',
+    tipoPago: _msValuesRecibo($('filtroTipoPago')),
+    medico: _msValuesRecibo($('filtroMedico')),
+    generadoPor: _msValuesRecibo($('filtroGeneradoPor')),
+    entidad: _msValuesRecibo($('filtroEntidad')),
+    tipoConsulta: _msValuesRecibo($('filtroTipoConsulta')),
+    estudio: _msValuesRecibo($('filtroEstudio')),
+    especialidad: _msValuesRecibo($('filtroEspecialidad')),
+    estadoPago: _msValuesRecibo($('filtroEstadoPago')),
+    anulado: _msValuesRecibo($('filtroAnulado')),
+    palabraClave: $('filtroPalabraClave')?.value?.trim() || '',
+    tipoConsultaWrapVisible: wrap ? wrap.style.display !== 'none' : false
+  };
+}
+
+function _filtrosRecibosTienenSeleccion(state) {
+  if (!state) return false;
+  return !!(state.fechaDesde || state.fechaHasta || state.palabraClave ||
+    state.tipoPago?.length || state.medico?.length || state.generadoPor?.length ||
+    state.entidad?.length || state.tipoConsulta?.length || state.estudio?.length ||
+    state.especialidad?.length || state.estadoPago?.length ||
+    (state.anulado?.length && !(state.anulado.length === 1 && state.anulado[0] === 'no')));
+}
+
+function estadoFiltrosRecibosParaRestaurar() {
+  const dom = capturarEstadoFiltrosRecibosUI();
+  return _filtrosRecibosTienenSeleccion(dom) ? dom : (_recibosFiltrosUI || dom);
+}
+
+function restaurarEstadoFiltrosRecibosUI(state) {
+  if (!state) return;
+  if ($('filtroFechaDesde')) $('filtroFechaDesde').value = state.fechaDesde || '';
+  if ($('filtroFechaHasta')) $('filtroFechaHasta').value = state.fechaHasta || '';
+  if ($('filtroPalabraClave')) $('filtroPalabraClave').value = state.palabraClave || '';
+  _msSetValuesRecibo($('filtroTipoPago'), state.tipoPago);
+  _msSetValuesRecibo($('filtroMedico'), state.medico);
+  _msSetValuesRecibo($('filtroGeneradoPor'), state.generadoPor);
+  _msSetValuesRecibo($('filtroEntidad'), state.entidad);
+  _msSetValuesRecibo($('filtroEspecialidad'), state.especialidad);
+  _msSetValuesRecibo($('filtroEstadoPago'), state.estadoPago);
+  const elAnul = $('filtroAnulado');
+  if (state.anulado?.length) _msSetValuesRecibo(elAnul, state.anulado);
+  else if (elAnul?._ms) elAnul._ms.setValues(['no']);
+  else if (elAnul) elAnul.value = 'no';
+  const wrap = $('filtroTipoConsultaWrap');
+  if (wrap) wrap.style.display = state.tipoConsultaWrapVisible ? '' : 'none';
+  _msSetValuesRecibo($('filtroTipoConsulta'), state.tipoConsulta);
+  _msSetValuesRecibo($('filtroEstudio'), state.estudio);
+}
 
 async function aplicarFiltrosRecibos() {
   const btn = $('btnAplicarFiltros');
@@ -8054,7 +10895,8 @@ async function aplicarFiltrosRecibos() {
     const entidad     = getMultiSelectValue($('filtroEntidad'));
     const tipoConsulta= getMultiSelectValue($('filtroTipoConsulta'));
     const tipoEstudio = getMultiSelectValue($('filtroEstudio'));
-    const estadoPago  = $('filtroEstadoPago')?.value || '';
+    const estadoPago  = getMultiSelectValue($('filtroEstadoPago')) || $('filtroEstadoPago')?.value || '';
+    const anulado     = getMultiSelectValue($('filtroAnulado')) || $('filtroAnulado')?.value || '';
     const palabraClave= $('filtroPalabraClave')?.value?.trim() || '';
 
     const params = new URLSearchParams();
@@ -8065,15 +10907,23 @@ async function aplicarFiltrosRecibos() {
       params.set('medico_nombre', 'ELECTRODIAGNÓSTICOS');
     } else if (medicoId) {
       params.set('medico_id', medicoId);
+    } else if (getMultiSelectValue($('filtroEspecialidad'))) {
+      const espFiltro = getMultiSelectValue($('filtroEspecialidad'));
+      const espMedIds = (window._filtroMedicos || [])
+        .filter(m => String(m.especialidad_id) === espFiltro)
+        .map(m => m.id).join(',');
+      if (espMedIds) params.set('medico_id', espMedIds);
     }
     if (genPor)       params.set('generado_por_id',  genPor);
     if (entidad)      params.set('nombre_entidad',   entidad);
     if (estadoPago)   params.set('estado_pago',      estadoPago);
+    if (anulado)      params.set('anulado',           anulado);
     if (palabraClave) params.set('q',                palabraClave);
-    // Tipo de consulta y estudio filtran la misma columna tipo_servicio
-    const tipoServicio = tipoConsulta || tipoEstudio;
-    if (tipoServicio) params.set('tipo_servicio',    tipoServicio);
+    if (tipoConsulta) params.set('tipo_consulta', tipoConsulta);
+    if (tipoEstudio)  params.set('tipo_estudio',  tipoEstudio);
     _recibosLastParams = params.toString();
+    window._recibosLastParams = _recibosLastParams;
+    _recibosFiltrosUI = capturarEstadoFiltrosRecibosUI();
 
     await cargarLista(_recibosLastParams);
   } catch (e) {
@@ -8087,20 +10937,30 @@ async function aplicarFiltrosRecibos() {
 function limpiarFiltrosRecibos() {
   if ($('filtroFechaDesde'))    $('filtroFechaDesde').value    = '';
   if ($('filtroFechaHasta'))    $('filtroFechaHasta').value    = '';
-  clearMultiSelect($('filtroTipoPago'));
-  clearMultiSelect($('filtroMedico'));
-  clearMultiSelect($('filtroGeneradoPor'));
-  clearMultiSelect($('filtroEntidad'));
-  clearMultiSelect($('filtroTipoConsulta'));
-  clearMultiSelect($('filtroEstudio'));
-  if ($('filtroEstadoPago'))    $('filtroEstadoPago').value    = '';
+  silentClearMultiSelect($('filtroTipoPago'));
+  silentClearMultiSelect($('filtroMedico'));
+  silentClearMultiSelect($('filtroGeneradoPor'));
+  silentClearMultiSelect($('filtroEntidad'));
+  silentClearMultiSelect($('filtroTipoConsulta'));
+  silentClearMultiSelect($('filtroEstudio'));
+  silentClearMultiSelect($('filtroEspecialidad'));
+  silentClearMultiSelect($('filtroEstadoPago'));
+  const elAnul = $('filtroAnulado');
+  if (elAnul?._ms) elAnul._ms.setValues(['no']);
+  else if (elAnul) elAnul.value = 'no';
   if ($('filtroPalabraClave'))  $('filtroPalabraClave').value  = '';
-  // Ocultar tipo de consulta al limpiar
+  if ($('filtroEspecialidad'))   $('filtroEspecialidad').value   = '';
   const wrap = $('filtroTipoConsultaWrap');
   if (wrap) wrap.style.display = 'none';
   _recibosLastParams = '';
+  window._recibosLastParams = '';
+  _recibosFiltrosUI = null;
   cargarLista();
 }
+
+function _reciboMonto(r) { return Number(r?.total) || 0; }
+function _reciboEsActivo(r) { return r.anulado != 1; }
+function _reciboEsPagado(r) { return _reciboEsActivo(r) && r.estado_pago !== 'PENDIENTE'; }
 
 function exportarReciboCSV() {
   const url = '/api/recibos/export/xlsx' + (_recibosLastParams ? '?' + _recibosLastParams : '');
@@ -8114,7 +10974,6 @@ function exportarReciboPDF() {
 
 async function cargarLista(queryString) {
   if (!tienePermiso('recibos.ver')) {
-    updateStats([]);
     const tbody = document.getElementById('savedItems');
     if (tbody) tbody.innerHTML = '<tr><td colspan="11"><div class="empty-state"><p class="empty-state-title">Sin acceso</p><p class="empty-state-subtitle">Tu usuario no tiene permiso para ver recibos.</p></div></td></tr>';
     return;
@@ -8124,13 +10983,17 @@ async function cargarLista(queryString) {
     const res = await apiFetch(url);
     if (!res.ok) {
       if (res.status === 401) { /* handled by apiFetch */ return; }
-      if (res.status === 403) { updateStats([]); return; }
+      if (res.status === 403) { return; }
       showToast('Error al cargar recibos', 'error');
-      updateStats([]);
       return;
     }
-    const recibos = await res.json();
-    updateStats(Array.isArray(recibos) ? recibos : []);
+    const jsonResp = await res.json();
+    const recibos = jsonResp.rows || (Array.isArray(jsonResp) ? jsonResp : []);
+    const totalCount = jsonResp.totalCount || recibos.length;
+    const countInfo = $('recibosCountInfo');
+    if (countInfo) {
+      countInfo.textContent = totalCount > 0 ? `Mostrando ${recibos.length} de ${totalCount} recibos` : '';
+    }
     const tbody = document.getElementById('savedItems');
     if (!tbody) return;
     tbody.innerHTML = '';
@@ -8138,18 +11001,18 @@ async function cargarLista(queryString) {
     const resumenCard = document.getElementById('reciboResumenCard');
 
     if (!recibos || !recibos.length) {
-      tbody.innerHTML = '<tr><td colspan="11"><div class="empty-state"><div class="empty-state-icon">📋</div><p class="empty-state-title">Sin resultados</p><p class="empty-state-subtitle">No hay recibos con los filtros aplicados</p></div></td></tr>';
+      tbody.innerHTML = '<tr><td colspan="11"><div class="empty-state"><div class="empty-state-icon">\uD83D\uDCCB</div><p class="empty-state-title">Sin resultados</p><p class="empty-state-subtitle">No hay recibos con los filtros aplicados</p></div></td></tr>';
       if (resumenCard) resumenCard.classList.add('hidden');
       return;
     }
 
-    // Resumen (excluir anulados del total)
-    const recibosActivos = recibos.filter(r => r.anulado != 1);
-    const totalMonto = recibosActivos.reduce((s, r) => s + Number(r.total||0), 0);
+    const recibosActivos = recibos.filter(_reciboEsActivo);
+    const recibosPagados = recibosActivos.filter(_reciboEsPagado);
+    const totalPagado = recibosPagados.reduce((s, r) => s + _reciboMonto(r), 0);
     const recibosPendientes = recibosActivos.filter(r => r.estado_pago === 'PENDIENTE');
-    const totalPendiente = recibosPendientes.reduce((s, r) => s + Number(r.total||0), 0);
-    if ($('resumenCantidad')) $('resumenCantidad').textContent = recibosActivos.length;
-    if ($('resumenTotal')) $('resumenTotal').textContent = '$ ' + totalMonto.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const totalPendiente = recibosPendientes.reduce((s, r) => s + _reciboMonto(r), 0);
+    if ($('resumenCantidad')) $('resumenCantidad').textContent = recibosPagados.length;
+    if ($('resumenTotal')) $('resumenTotal').textContent = '$ ' + totalPagado.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     if ($('resumenPendienteCant')) $('resumenPendienteCant').textContent = recibosPendientes.length;
     if ($('resumenPendienteTotal')) $('resumenPendienteTotal').textContent = '$ ' + totalPendiente.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const pendientesWrap = $('resumenPendientesWrap');
@@ -8178,15 +11041,30 @@ async function cargarLista(queryString) {
       acciones += `<a href="/api/recibos/${r.id}/pdf" target="_blank" class="btn-recibo-pdf" title="Ver PDF">
         <img src="images/pdf.svg" alt="PDF"/></a>`;
       if (tienePermiso('recibos.editar') && !esAnulado) {
-        acciones += `<button class="btn-editar" data-id="${r.id}" data-medico="${escapeHtml(r.medico_nombre||'')}" data-servicio="${escapeHtml(r.tipo_servicio||'')}" data-entidad="${escapeHtml(r.nombre_entidad||'')}" data-cliente="${escapeHtml(r.cliente||'')}" title="Editar">
+        acciones += `<button class="btn-editar" data-id="${r.id}" data-medico="${escapeHtml(r.medico_nombre||'')}" data-servicio="${escapeHtml(r.tipo_servicio||'')}" data-entidad="${escapeHtml(r.nombre_entidad||'')}" data-cliente="${escapeHtml(r.cliente||'')}" data-tipo-pago="${escapeHtml(r.tipo_pago||'')}" title="Editar">
           <img src="images/edit.svg" alt="Editar"/></button>`;
+        acciones += `<button class="btn-recibo-tipo-pago" data-id="${r.id}" data-numero="${escapeHtml(r.numero || '')}" data-tipo-pago="${escapeHtml(r.tipo_pago||'')}" title="Cambiar forma de pago" aria-label="Cambiar forma de pago">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="2" y="5" width="20" height="14" rx="2"/>
+            <path d="M2 10h20"/>
+            <path d="M6 15h4"/>
+          </svg>
+        </button>`;
       }
-      if (tienePermiso('recibos.editar') && esPendiente) {
+      if (puedeMarcarReciboPagado() && esPendiente) {
         acciones += `<button class="btn-recibo-pagar marcar-pagado" data-id="${r.id}" title="Marcar como pagado" aria-label="Marcar como pagado">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M3 7.5A2.5 2.5 0 0 1 5.5 5h13A2.5 2.5 0 0 1 21 7.5v9A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5z"/>
             <path d="M3 9h18"/>
             <path d="m9 14 2 2 4-4"/>
+          </svg>
+        </button>`;
+      }
+      if (puedeMarcarReciboPendiente() && !esAnulado && !esPendiente) {
+        acciones += `<button class="btn-recibo-pendiente marcar-pendiente" data-id="${r.id}" title="Marcar como pendiente" aria-label="Marcar como pendiente">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="9"/>
+            <path d="M12 7v5l3 2"/>
           </svg>
         </button>`;
       }
@@ -8197,6 +11075,25 @@ async function cargarLista(queryString) {
       if (canDeleteRecibos() && !esAnulado) {
         acciones += `<button class="btn-eliminar delete" data-id="${r.id}" title="Eliminar">
           <img src="images/delete.svg" alt="Eliminar"/></button>`;
+      }
+      if (isSuperadmin() && !esAnulado) {
+        acciones += `<button class="btn-recibo-fecha" data-id="${r.id}" data-numero="${escapeHtml(r.numero || '')}" data-fecha="${escapeHtml(fecha !== '-' ? fecha : '')}" title="Cambiar fecha del recibo" aria-label="Cambiar fecha">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>
+          </svg>
+        </button>`;
+        acciones += `<button class="btn-recibo-valor" data-id="${r.id}" data-numero="${escapeHtml(r.numero || '')}" data-total="${Number(r.total || 0)}" title="Cambiar valor del recibo" aria-label="Cambiar valor del recibo">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+          </svg>
+        </button>`;
+        acciones += `<button class="btn-recibo-generador" data-id="${r.id}" data-numero="${escapeHtml(r.numero || '')}" data-generado-id="${r.generado_por_id || ''}" data-generado-nombre="${escapeHtml(r.generado_por_nombre || '')}" title="Cambiar usuario que generó el recibo" aria-label="Cambiar generado por">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+          </svg>
+        </button>`;
+        acciones += `<button class="btn-recibo-obs" data-id="${r.id}" data-numero="${escapeHtml(r.numero || '')}" title="Editar observaciones">
+          <img src="images/edit.svg" alt="Observaciones"/></button>`;
       }
       acciones += `</div>`;
 
@@ -8215,9 +11112,34 @@ async function cargarLista(queryString) {
         <td style="text-align:right;font-weight:600;color:${esAnulado ? '#991b1b' : '#2d4a47'}">$ ${escapeHtml(total)}</td>
         <td>${estadoPagoBadge}</td>
         <td>${escapeHtml(r.generado_por_nombre||'-')}</td>
-        <td style="text-align:center">${acciones}</td>`;
+        <td class="col-recibo-acciones">${acciones}</td>`;
       tbody.appendChild(tr);
     });
+
+    tbody.querySelectorAll('.btn-recibo-fecha').forEach((b) => b.addEventListener('click', (e) => {
+      const btn = e.target.closest('.btn-recibo-fecha');
+      showEditFechaReciboModal(btn.dataset.id, btn.dataset.numero, btn.dataset.fecha || '');
+    }));
+
+    tbody.querySelectorAll('.btn-recibo-valor').forEach((b) => b.addEventListener('click', (e) => {
+      const btn = e.target.closest('.btn-recibo-valor');
+      showEditValorReciboModal(btn.dataset.id, btn.dataset.numero, btn.dataset.total);
+    }));
+
+    tbody.querySelectorAll('.btn-recibo-generador').forEach((b) => b.addEventListener('click', (e) => {
+      const btn = e.target.closest('.btn-recibo-generador');
+      showEditGeneradorReciboModal(btn.dataset.id, btn.dataset.numero, btn.dataset.generadoId, btn.dataset.generadoNombre);
+    }));
+
+    tbody.querySelectorAll('.btn-recibo-obs').forEach((b) => b.addEventListener('click', (e) => {
+      const btn = e.target.closest('.btn-recibo-obs');
+      showEditObservacionesReciboModal(btn.dataset.id, btn.dataset.numero);
+    }));
+
+    tbody.querySelectorAll('.btn-recibo-tipo-pago').forEach((b) => b.addEventListener('click', (e) => {
+      const btn = e.target.closest('.btn-recibo-tipo-pago');
+      showEditTipoPagoReciboModal(btn.dataset.id, btn.dataset.numero, btn.dataset.tipoPago || '');
+    }));
 
     // Listener: Editar recibo (superadmin)
     tbody.querySelectorAll('.btn-editar').forEach(b => b.addEventListener('click', e => {
@@ -8227,7 +11149,8 @@ async function cargarLista(queryString) {
       const servicio = btn.dataset.servicio || '';
       const entidad  = btn.dataset.entidad  || '';
       const cliente  = btn.dataset.cliente  || '';
-      showEditReciboModal({ id: reciboId, medico, servicio, entidad, cliente });
+      const tipoPago = btn.dataset.tipoPago || '';
+      showEditReciboModal({ id: reciboId, medico, servicio, entidad, cliente, tipoPago });
     }));
 
     // Listener: Marcar como pagado
@@ -8247,6 +11170,25 @@ async function cargarLista(queryString) {
           }
         } catch (_) { showToast('Error marcando como pagado', 'error'); }
       }, { okText: 'Pagado', cancelText: 'Cancelar', danger: false, icon: '✅' });
+    }));
+
+    // Listener: Marcar como pendiente (revierte totales pagado → pendiente)
+    tbody.querySelectorAll('.marcar-pendiente').forEach(b => b.addEventListener('click', e => {
+      const reciboId = e.target.closest('.marcar-pendiente').dataset.id;
+      showConfirm('¿Marcar este recibo como pendiente? El valor pasará de pagado a pendiente en el resumen.', async () => {
+        try {
+          const jr = await apiFetch(`/api/recibos/${reciboId}/pendiente`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' }
+          }).then(r => r.json());
+          if (jr.ok) {
+            showToast('Recibo marcado como pendiente', 'success');
+            cargarLista(_recibosLastParams);
+          } else {
+            showToast(jr.error || 'Error al marcar como pendiente', 'error');
+          }
+        } catch (_) { showToast('Error marcando como pendiente', 'error'); }
+      }, { okText: 'Pendiente', cancelText: 'Cancelar', danger: false, icon: '⏳' });
     }));
 
     // Listener: Anular recibo
@@ -8279,16 +11221,218 @@ async function cargarLista(queryString) {
   }
 }
 
-async function showEditReciboModal({ id, medico, servicio, entidad, cliente }) {
+function showEditTipoPagoReciboModal(reciboId, numero, tipoPagoActual) {
+  const inputStyle = 'width:100%;margin-top:4px;padding:9px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:0.9rem;background:#fff';
+  const tp = tipoPagoActual || '';
+  const backdrop = document.createElement('div');
+  backdrop.className = 'confirm-backdrop';
+  backdrop.innerHTML = `
+    <div class="confirm-box" style="max-width:400px;width:92%">
+      <div class="confirm-icon">💳</div>
+      <div class="confirm-msg" style="font-size:1rem;margin-bottom:14px">Forma de pago — Recibo ${escapeHtml(numero || reciboId)}</div>
+      <label style="font-size:0.85rem;font-weight:600;color:#374151;display:block;text-align:left">
+        Tipo de pago
+        <select id="editReciboSoloTipoPago" style="${inputStyle}">
+          <option value="Efectivo"${tp === 'Efectivo' ? ' selected' : ''}>Efectivo</option>
+          <option value="Transferencia"${tp === 'Transferencia' ? ' selected' : ''}>Transferencia</option>
+        </select>
+      </label>
+      <div class="confirm-actions" style="margin-top:18px">
+        <button class="btn-cancel">Cancelar</button>
+        <button class="btn-ok" style="background:#2d4a47">Guardar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(backdrop);
+  backdrop.querySelector('#editReciboSoloTipoPago').focus();
+  backdrop.querySelector('.btn-cancel').addEventListener('click', () => backdrop.remove());
+  backdrop.querySelector('.btn-ok').addEventListener('click', async () => {
+    const tipo_pago = backdrop.querySelector('#editReciboSoloTipoPago').value;
+    try {
+      const jr = await apiFetch(`/api/recibos/${reciboId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tipo_pago })
+      }).then((r) => r.json());
+      if (jr.ok) {
+        backdrop.remove();
+        showToast('Forma de pago actualizada', 'success');
+        cargarLista(_recibosLastParams);
+      } else {
+        showToast(jr.error || 'Error al guardar', 'error');
+      }
+    } catch (_) {
+      showToast('Error al guardar forma de pago', 'error');
+    }
+  });
+  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) backdrop.remove(); });
+}
+
+async function showEditObservacionesReciboModal(reciboId, numero) {
+  let obsActual = '';
+  try {
+    const rec = await apiFetch(`/api/recibos/${reciboId}`).then((r) => r.json());
+    if (rec.error) {
+      showToast(rec.error, 'error');
+      return;
+    }
+    obsActual = rec.observaciones || '';
+  } catch (_) {
+    showToast('No se pudo cargar el recibo', 'error');
+    return;
+  }
+
+  const inputStyle = 'width:100%;margin-top:4px;padding:9px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:0.9rem;background:#fff';
+  const backdrop = document.createElement('div');
+  backdrop.className = 'confirm-backdrop';
+  backdrop.innerHTML = `
+    <div class="confirm-box" style="max-width:520px;width:92%">
+      <div class="confirm-icon">📝</div>
+      <div class="confirm-msg" style="font-size:1rem;margin-bottom:14px">Observaciones — Recibo ${escapeHtml(numero || reciboId)}</div>
+      <p style="font-size:.8rem;color:#64748b;margin:-8px 0 12px">Solo superadministrador puede modificar este campo.</p>
+      <label style="font-size:0.85rem;font-weight:600;color:#374151;display:block">
+        Observaciones
+        <textarea id="editReciboObs" rows="5" style="${inputStyle};resize:vertical;min-height:100px">${escapeHtml(obsActual)}</textarea>
+      </label>
+      <div class="confirm-actions" style="margin-top:18px">
+        <button class="btn-cancel">Cancelar</button>
+        <button class="btn-ok" style="background:#2d4a47">Guardar observaciones</button>
+      </div>
+    </div>`;
+  document.body.appendChild(backdrop);
+  backdrop.querySelector('#editReciboObs').focus();
+  backdrop.querySelector('.btn-cancel').addEventListener('click', () => backdrop.remove());
+  backdrop.querySelector('.btn-ok').addEventListener('click', async () => {
+    const observaciones = backdrop.querySelector('#editReciboObs').value;
+    try {
+      const jr = await apiFetch(`/api/recibos/${reciboId}/observaciones`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ observaciones })
+      }).then((r) => r.json());
+      if (jr.ok) {
+        backdrop.remove();
+        showToast('Observaciones guardadas', 'success');
+        cargarLista(_recibosLastParams);
+      } else {
+        showToast(jr.error || 'Error al guardar', 'error');
+      }
+    } catch (_) {
+      showToast('Error al guardar observaciones', 'error');
+    }
+  });
+  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) backdrop.remove(); });
+}
+
+function showEditFechaReciboModal(reciboId, numero, fechaActual) {
+  const hoy = recibosFechaHoyLocal();
+  const fechaInicial = (fechaActual && /^\d{4}-\d{2}-\d{2}$/.test(fechaActual)) ? fechaActual : hoy;
+  const inputStyle = 'width:100%;margin-top:4px;padding:9px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:0.9rem;background:#fff';
+  const backdrop = document.createElement('div');
+  backdrop.className = 'confirm-backdrop';
+  backdrop.innerHTML = `
+    <div class="confirm-box" style="max-width:420px;width:92%">
+      <div class="confirm-icon">📅</div>
+      <div class="confirm-msg" style="font-size:1rem;margin-bottom:14px">Cambiar fecha — Recibo ${escapeHtml(numero || reciboId)}</div>
+      <p style="font-size:.82rem;color:#6b7280;margin-bottom:10px;text-align:center">Solo superadministrador. Afecta el reporte y el PDF del recibo.</p>
+      <label style="font-size:0.85rem;font-weight:600;color:#374151;display:block;text-align:left">
+        Fecha del recibo
+        <input type="date" id="editReciboFecha" value="${escapeHtml(fechaInicial)}" style="${inputStyle}" />
+      </label>
+      <div class="confirm-actions" style="margin-top:18px">
+        <button class="btn-cancel">Cancelar</button>
+        <button class="btn-ok" style="background:#2d4a47">Guardar fecha</button>
+      </div>
+    </div>`;
+  document.body.appendChild(backdrop);
+  const input = backdrop.querySelector('#editReciboFecha');
+  input.focus();
+  backdrop.querySelector('.btn-cancel').addEventListener('click', () => backdrop.remove());
+  backdrop.querySelector('.btn-ok').addEventListener('click', async () => {
+    const fecha = input.value;
+    if (!fecha) {
+      showToast('Seleccione una fecha', 'error');
+      return;
+    }
+    try {
+      const jr = await apiFetch(`/api/recibos/${reciboId}/fecha`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fecha })
+      }).then((r) => r.json());
+      if (jr.ok) {
+        backdrop.remove();
+        showToast('Fecha del recibo actualizada', 'success');
+        cargarLista(_recibosLastParams);
+      } else {
+        showToast(jr.error || 'Error al actualizar fecha', 'error');
+      }
+    } catch (_) {
+      showToast('Error al actualizar fecha', 'error');
+    }
+  });
+  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) backdrop.remove(); });
+}
+
+function showEditValorReciboModal(reciboId, numero, totalActual) {
+  const valorInicial = Number(totalActual) || 0;
+  const inputStyle = 'width:100%;margin-top:4px;padding:9px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:0.9rem;background:#fff';
+  const backdrop = document.createElement('div');
+  backdrop.className = 'confirm-backdrop';
+  backdrop.innerHTML = `
+    <div class="confirm-box" style="max-width:420px;width:92%">
+      <div class="confirm-icon">💰</div>
+      <div class="confirm-msg" style="font-size:1rem;margin-bottom:14px">Cambiar valor — Recibo ${escapeHtml(numero || reciboId)}</div>
+      <p style="font-size:0.82rem;color:#6b7280;margin-bottom:10px;text-align:center">Solo superadministrador. Actualiza el total del recibo y el detalle guardado.</p>
+      <label style="font-size:0.85rem;font-weight:600;color:#374151;display:block;text-align:left">
+        Valor del recibo (COP)
+        <input type="number" id="editReciboValor" min="0" step="0.01" value="${valorInicial}" style="${inputStyle}" />
+      </label>
+      <div class="confirm-actions" style="margin-top:18px">
+        <button class="btn-cancel">Cancelar</button>
+        <button class="btn-ok" style="background:#2d4a47">Guardar valor</button>
+      </div>
+    </div>`;
+  document.body.appendChild(backdrop);
+  const input = backdrop.querySelector('#editReciboValor');
+  input.focus();
+  input.select();
+  backdrop.querySelector('.btn-cancel').addEventListener('click', () => backdrop.remove());
+  backdrop.querySelector('.btn-ok').addEventListener('click', async () => {
+    const total = Number(input.value);
+    if (!Number.isFinite(total) || total < 0) {
+      showToast('Ingrese un valor numérico válido (≥ 0)', 'error');
+      return;
+    }
+    try {
+      const jr = await apiFetch(`/api/recibos/${reciboId}/total`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ total })
+      }).then((r) => r.json());
+      if (jr.ok) {
+        backdrop.remove();
+        showToast('Valor del recibo actualizado', 'success');
+        cargarLista(_recibosLastParams);
+      } else {
+        showToast(jr.error || 'Error al actualizar valor', 'error');
+      }
+    } catch (_) {
+      showToast('Error al actualizar valor', 'error');
+    }
+  });
+  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) backdrop.remove(); });
+}
+
+async function showEditReciboModal({ id, medico, servicio, entidad, cliente, tipoPago }) {
   // Cargar opciones en paralelo
-  const [medicosRes, serviciosArr, entidadesRes] = await Promise.all([
+  const [medicosRes, serviciosArr, entidadesCatalogo] = await Promise.all([
     apiFetch('/api/medicos').then(r => r.json()).catch(() => []),
     getServicios().catch(() => []),
-    apiFetch('/api/entidades').then(r => r.json()).catch(() => [])
+    fetchEntidadesDesdeBd({ force: true }).catch(() => [])
   ]);
   const medicos = Array.isArray(medicosRes) ? medicosRes : [];
   const servicios = Array.isArray(serviciosArr) ? serviciosArr : [];
-  const entidades = Array.isArray(entidadesRes) ? entidadesRes : [];
+  const entidades = (entidadesCatalogo || []).map((nombre) => ({ nombre }));
 
   const medicoOpts = medicos.map(m => `<option value="${escapeHtml(m.nombre)}"${m.nombre===medico?' selected':''}>${escapeHtml(m.nombre)}</option>`).join('');
   const servicioOpts = servicios.map(s => `<option value="${escapeHtml(s.nombre)}"${s.nombre===servicio?' selected':''}>${escapeHtml(s.nombre)}</option>`).join('');
@@ -8330,6 +11474,15 @@ async function showEditReciboModal({ id, medico, servicio, entidad, cliente }) {
             ${entidad && !entidades.find(e=>e.nombre===entidad) ? `<option value="${escapeHtml(entidad)}" selected>${escapeHtml(entidad)}</option>` : ''}
           </select>
         </label>
+        <label style="font-size:0.85rem;font-weight:600;color:#374151">
+          Forma de pago
+          <select id="editReciboTipoPago" style="${inputStyle}">
+            <option value="">-- Seleccionar --</option>
+            <option value="Efectivo"${tipoPago==='Efectivo'?' selected':''}>Efectivo</option>
+            <option value="Transferencia"${tipoPago==='Transferencia'?' selected':''}>Transferencia</option>
+            ${tipoPago && tipoPago !== 'Efectivo' && tipoPago !== 'Transferencia' ? `<option value="${escapeHtml(tipoPago)}" selected>${escapeHtml(tipoPago)}</option>` : ''}
+          </select>
+        </label>
       </div>
       <div class="confirm-actions" style="margin-top:18px">
         <button class="btn-cancel">Cancelar</button>
@@ -8344,7 +11497,8 @@ async function showEditReciboModal({ id, medico, servicio, entidad, cliente }) {
       cliente:        backdrop.querySelector('#editReciboCliente').value.trim(),
       medico_nombre:  backdrop.querySelector('#editReciboMedico').value,
       tipo_servicio:  backdrop.querySelector('#editReciboServicio').value,
-      nombre_entidad: backdrop.querySelector('#editReciboEntidad').value
+      nombre_entidad: backdrop.querySelector('#editReciboEntidad').value,
+      tipo_pago:      backdrop.querySelector('#editReciboTipoPago').value
     };
     try {
       const jr = await apiFetch(`/api/recibos/${id}`, {
@@ -8360,18 +11514,124 @@ async function showEditReciboModal({ id, medico, servicio, entidad, cliente }) {
 }
 
 function updateSavedCount() {
-  const hoy = new Date().toISOString().slice(0,10);
-  apiFetch(`/api/recibos?fecha_desde=${hoy}&fecha_hasta=${hoy}`)
-    .then(r => r.ok ? r.json() : [])
-    .then(arr => updateStats(Array.isArray(arr) ? arr : []))
-    .catch(() => updateStats([]));
+  const hoy = recibosFechaHoyLocal();
+  apiFetch(`/api/recibos/stats-hoy?fecha=${encodeURIComponent(hoy)}`)
+    .then((r) => (r.ok ? r.json() : null))
+    .then((data) => {
+      if (!data) throw new Error('stats');
+      if ($('statsRecibosHoy')) $('statsRecibosHoy').textContent = String(data.cantidad_activos ?? 0);
+      if ($('statsTotalHoy')) {
+        $('statsTotalHoy').textContent = '$ ' + (Number(data.total_pagado) || 0).toLocaleString('es-CO', {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2
+        });
+      }
+    })
+    .catch(() => {
+      apiFetch(`/api/recibos?fecha_desde=${encodeURIComponent(hoy)}&fecha_hasta=${encodeURIComponent(hoy)}&anulado=no`)
+        .then((r) => (r.ok ? r.json() : { rows: [] }))
+        .then((json) => {
+          const rows = json?.rows || (Array.isArray(json) ? json : []);
+          const activos = rows.filter(_reciboEsActivo);
+          const pagados = activos.filter(_reciboEsPagado);
+          const totalPagadoHoy = pagados.reduce((sum, r) => sum + _reciboMonto(r), 0);
+          if ($('statsRecibosHoy')) $('statsRecibosHoy').textContent = String(activos.length);
+          if ($('statsTotalHoy')) {
+            $('statsTotalHoy').textContent = '$ ' + totalPagadoHoy.toLocaleString('es-CO', {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2
+            });
+          }
+        })
+        .catch(() => {
+          if ($('statsRecibosHoy')) $('statsRecibosHoy').textContent = '0';
+          if ($('statsTotalHoy')) $('statsTotalHoy').textContent = '$ 0';
+        });
+    });
 }
 
-function updateStats(recibos) {
-  if (!Array.isArray(recibos)) recibos = [];
-  const totalHoy = recibos.reduce((sum, r) => sum + (Number(r.total)||0), 0);
-  if ($('statsRecibosHoy')) $('statsRecibosHoy').textContent = recibos.length;
-  if ($('statsTotalHoy')) $('statsTotalHoy').textContent = '$ ' + totalHoy.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+let _recibosUsuariosGeneradorCache = null;
+
+async function showEditGeneradorReciboModal(reciboId, numero, generadoIdActual, generadoNombreActual) {
+  if (!isSuperadmin()) {
+    showToast('Solo el superadministrador puede cambiar quién generó el recibo', 'error');
+    return;
+  }
+  const inputStyle = 'width:100%;margin-top:4px;padding:9px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:0.9rem;background:#fff';
+  const backdrop = document.createElement('div');
+  backdrop.className = 'confirm-backdrop';
+  backdrop.innerHTML = `
+    <div class="confirm-box" style="max-width:440px;width:92%">
+      <div class="confirm-icon">👤</div>
+      <div class="confirm-msg" style="font-size:1rem;margin-bottom:14px">Generado por — Recibo ${escapeHtml(numero || reciboId)}</div>
+      <p style="font-size:.82rem;color:#6b7280;margin:-8px 0 12px;text-align:center">Actual: <strong>${escapeHtml(generadoNombreActual || '—')}</strong></p>
+      <label style="font-size:0.85rem;font-weight:600;color:#374151;display:block;text-align:left">
+        Usuario que generó el recibo
+        <select id="editReciboGenerador" style="${inputStyle}" disabled><option>Cargando usuarios…</option></select>
+      </label>
+      <div class="confirm-actions" style="margin-top:18px">
+        <button type="button" class="btn-cancel">Cancelar</button>
+        <button type="button" class="btn-ok" style="background:#2d4a47" disabled id="editReciboGeneradorOk">Guardar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(backdrop);
+  const sel = backdrop.querySelector('#editReciboGenerador');
+  const btnOk = backdrop.querySelector('#editReciboGeneradorOk');
+  backdrop.querySelector('.btn-cancel').addEventListener('click', () => backdrop.remove());
+  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) backdrop.remove(); });
+
+  try {
+    if (!_recibosUsuariosGeneradorCache) {
+      const res = await apiFetch('/api/recibos/usuarios-generador');
+      const data = res.ok ? await res.json() : [];
+      _recibosUsuariosGeneradorCache = Array.isArray(data) ? data : [];
+    }
+    sel.innerHTML = '<option value="">— Seleccione —</option>';
+    _recibosUsuariosGeneradorCache.forEach((u) => {
+      const opt = document.createElement('option');
+      opt.value = String(u.id);
+      opt.textContent = u.nombre || u.usuario || String(u.id);
+      if (generadoIdActual && String(u.id) === String(generadoIdActual)) opt.selected = true;
+      sel.appendChild(opt);
+    });
+    sel.disabled = false;
+    btnOk.disabled = false;
+    sel.focus();
+  } catch (_) {
+    showToast('No se pudieron cargar los usuarios', 'error');
+    backdrop.remove();
+    return;
+  }
+
+  btnOk.addEventListener('click', async () => {
+    const generado_por_id = parseInt(sel.value, 10);
+    if (!generado_por_id) {
+      showToast('Seleccione un usuario', 'error');
+      return;
+    }
+    btnOk.disabled = true;
+    try {
+      const jr = await apiFetch(`/api/recibos/${reciboId}/generador`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ generado_por_id })
+      }).then((r) => r.json());
+      if (jr.ok) {
+        backdrop.remove();
+        showToast(`Generado por actualizado: ${jr.generado_por_nombre || ''}`, 'success');
+        _recibosUsuariosGeneradorCache = null;
+        cargarFiltrosUsuarios().catch(() => {});
+        cargarLista(_recibosLastParams);
+        updateSavedCount();
+      } else {
+        showToast(jr.error || 'Error al guardar', 'error');
+        btnOk.disabled = false;
+      }
+    } catch (_) {
+      showToast('Error al guardar', 'error');
+      btnOk.disabled = false;
+    }
+  });
 }
 
 function resetAllRecibos(){
@@ -8792,77 +12052,9 @@ async function finalizarEstudioModal() {
 
 async function confirmarFinalizarEstudio() {
   if (!citaElectroSeleccionada) return;
-  
-  // Cerrar modal de confirmación
   const modal = $('modalConfirmarFinalizarEstudio');
-  if (modal) {
-    modal.classList.add('hidden');
-  }
-  
-  try {
-    const ahora = new Date();
-    const hh = String(ahora.getHours()).padStart(2, '0');
-    const mm = String(ahora.getMinutes()).padStart(2, '0');
-    const horaActual = `${hh}:${mm}`;
-    
-    const cambios = {
-      estado: 'Completado',
-      hora_fin: horaActual
-    };
-    
-    // Actualizar en la base de datos
-    const res = await apiFetch(`/api/citas-electro/${citaElectroSeleccionada.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(cambios)
-    });
-    
-    const data = await res.json();
-    
-    if (data && data.ok) {
-      showToast(`Estudio finalizado a las ${horaActual}`, 'success');
-      
-      // Actualizar el objeto de la cita localmente
-      citaElectroSeleccionada.estado = 'Completado';
-      citaElectroSeleccionada.hora_fin = horaActual;
-      
-      // Habilitar el select de estado ahora que se cambió a "Completado"
-      const selectEstado = $('modalEstado');
-      if (selectEstado) {
-        selectEstado.disabled = false;
-        selectEstado.style.opacity = '1';
-        selectEstado.style.cursor = 'pointer';
-        selectEstado.value = 'Completado';
-        console.log('[FINALIZAR] Select habilitado - estado "Completado"');
-      }
-      
-      // Habilitar selector de equipo cuando se finaliza el estudio
-      const selectEquipo = $('modalEquipo');
-      if (selectEquipo) {
-        selectEquipo.disabled = false;
-        selectEquipo.style.opacity = '1';
-        selectEquipo.style.cursor = 'pointer';
-        console.log('[FINALIZAR] Selector de equipo habilitado');
-      }
-      
-      // Emitir evento de socket desde el cliente
-      if (window.socket && window.socket.connected) {
-        window.socket.emit('electro:estudio-finalizado', {
-          id: citaElectroSeleccionada.id,
-          hora_fin: horaActual
-        });
-      }
-      
-      // El servidor también emitirá el socket event
-      cargarCitasElectro();
-      cerrarModalDetallesCita();
-    } else {
-      showToast(data?.error || 'Error finalizando estudio', 'error');
-    }
-  } catch (e) {
-    console.error('[FINALIZAR] Error:', e);
-    showToast('Error finalizando estudio', 'error');
-  }
+  if (modal) modal.classList.add('hidden');
+  await finalizarEstudioElectroEnServidor({ cerrarModal: true, mensajeAuto: false });
 }
 
 function cancelarFinalizarEstudio() {
@@ -8893,14 +12085,8 @@ function abrirModalDuracionEstudio() {
   if (modal) {
     modal.classList.remove('hidden');
     
-    // Hora inicio: hora agendada de la cita (fija, no editable)
-    const horaAgendada = citaElectroSeleccionada && citaElectroSeleccionada.hora_agendamiento
-      ? citaElectroSeleccionada.hora_agendamiento.substring(0, 5)
-      : (() => {
-          const a = new Date();
-          return `${String(a.getHours()).padStart(2,'0')}:${String(a.getMinutes()).padStart(2,'0')}`;
-        })();
-    $('horaEstudioInicio').value = horaAgendada;
+    // «Sí»: hora actual al solicitar el inicio (editable en el modal)
+    $('horaEstudioInicio').value = obtenerHoraInicioSolicitudElectro();
     
     // Duración predeterminada HH:MM desde duracion_minutos de la cita
     const durPredMin = (citaElectroSeleccionada && citaElectroSeleccionada.duracion_minutos)
@@ -8958,7 +12144,7 @@ function validarInicioElectroSegunFechaHora(cita) {
     return { ok: true, horaAgendada: horaAgendadaRaw };
   }
 
-  const fechaRaw = cita?.fecha ? String(cita.fecha).slice(0, 10) : '';
+  const fechaRaw = extraerFechaYmdCalendario(cita?.fecha) || '';
   if (!/^\d{4}-\d{2}-\d{2}$/.test(fechaRaw)) {
     return { ok: true, horaAgendada: horaAgendadaRaw };
   }
@@ -9030,6 +12216,7 @@ async function confirmarDuracionEstudio() {
     const equipoId = equipoSelect.value;
     const cambios = {
       estado: 'En Estudio',
+      inicio_desde: 'solicitud',
       hora_inicio: horaInicio,
       hora_fin: horaFin,
       hora_fin_date: horaFinDate,
@@ -9048,49 +12235,11 @@ async function confirmarDuracionEstudio() {
     
     if (data && data.ok) {
       showToast(`Estudio iniciado: ${horaInicio} - ${horaFin}`, 'success');
-      
-      // Actualizar el objeto de la cita localmente
-      citaElectroSeleccionada.estado = 'En Estudio';
-      citaElectroSeleccionada.hora_inicio = horaInicio;
-      citaElectroSeleccionada.hora_fin = horaFin;
-      citaElectroSeleccionada.hora_fin_date = horaFinDate;
-      citaElectroSeleccionada.duracion_minutos = duracionMinutos;
-      
-      // BLOQUEAR el select de estado mientras está en "En Estudio"
-      const selectEstado = $('modalEstado');
-      if (selectEstado) {
-        selectEstado.disabled = true;
-        selectEstado.style.opacity = '0.5';
-        selectEstado.style.cursor = 'not-allowed';
-        selectEstado.value = 'En Estudio';
-      }
-      
-      // BLOQUEAR el menú de "Más opciones" mientras está en "En Estudio"
-      const btnMasOpciones = $('btnMasOpciones');
-      const menuMasOpciones = $('menuMasOpciones');
-      if (btnMasOpciones) {
-        btnMasOpciones.disabled = true;
-        btnMasOpciones.style.opacity = '0.5';
-        btnMasOpciones.style.cursor = 'not-allowed';
-        if (menuMasOpciones) menuMasOpciones.style.display = 'none';
-      }
-      
-      // Emitir evento de socket desde el cliente
-      if (window.socket && window.socket.connected) {
-        window.socket.emit('electro:estudio-iniciado', {
-          id: citaElectroSeleccionada.id,
-          hora_inicio: horaInicio,
-          hora_fin: horaFin,
-          duracion_minutos: duracionMinutos
-        });
-      }
-      
-      // El servidor también emitirá el socket event
-      cargarCitasElectro();
-      cerrarModalDetallesCita();
+      await aplicarInicioEstudioEnUI(duracionMinutos, horaInicio, horaFin, horaFinDate);
       cerrarModalDuracionEstudio();
     } else {
-      showToast(data?.error || 'Error iniciando estudio', 'error');
+      const msg = data?.details ? `${data.error || 'Error'} (${data.details})` : (data?.error || 'Error iniciando estudio');
+      showToast(msg, 'error');
     }
   } catch (e) {
     console.error('[DURACION] Error:', e);
@@ -9098,122 +12247,140 @@ async function confirmarDuracionEstudio() {
   }
 }
 
-async function iniciarEstudioSinDuracion() {
-  
-  if (!citaElectroSeleccionada) return;
-  
-  // VALIDACIÓN: usar FECHA+HORA real de la cita.
-  const validInicio = validarInicioElectroSegunFechaHora(citaElectroSeleccionada);
-  if (!validInicio.ok) {
-    showToast(`❌ El estudio está agendado para las ${validInicio.horaAgendada}. Faltan ${validInicio.faltanMinutos} minutos para poder iniciarlo.`, 'error');
-    return;
+async function aplicarInicioEstudioEnUI(duracionMinutos, horaInicioRegistro, horaFin, horaFinDate) {
+  citaElectroSeleccionada.estado = 'En Estudio';
+  citaElectroSeleccionada.hora_inicio = horaInicioRegistro;
+  citaElectroSeleccionada.hora_fin = horaFin;
+  citaElectroSeleccionada.hora_fin_date = horaFinDate;
+  citaElectroSeleccionada.duracion_minutos = duracionMinutos;
+
+  const selectEstado = $('modalEstado');
+  if (selectEstado) {
+    selectEstado.disabled = true;
+    selectEstado.style.opacity = '0.5';
+    selectEstado.style.cursor = 'not-allowed';
+    selectEstado.value = 'En Estudio';
   }
 
-  const horaAgendada = String(citaElectroSeleccionada.hora_agendamiento || '').slice(0, 5);
-  
-  // VALIDAR QUE SE HAYA SELECCIONADO UN EQUIPO
-  const equipoSelect = $('modalEquipo');
-  if (!equipoSelect || !equipoSelect.value) {
-    showToast('❌ Debes seleccionar un equipo antes de iniciar el estudio', 'error');
-    return;
+  const btnMasOpciones = $('btnMasOpciones');
+  const menuMasOpciones = $('menuMasOpciones');
+  if (btnMasOpciones) {
+    btnMasOpciones.disabled = true;
+    btnMasOpciones.style.opacity = '0.5';
+    btnMasOpciones.style.cursor = 'not-allowed';
+    if (menuMasOpciones) menuMasOpciones.style.display = 'none';
   }
-  
-  try {
-    // Obtener la duración predeterminada de la cita (en minutos)
-    const duracionMinutos = citaElectroSeleccionada.duracion_minutos || 480;
-    
-    console.log(`[DURACION_SIN] Usando duración predeterminada: ${duracionMinutos} minutos`);
-    
-    // Calcular hora_fin usando Date (soporta multi-día)
-    const horaInicio = horaAgendada;
-    const [hh_inicio, mm_inicio] = horaInicio.split(':').map(Number);
-    const fechaCitaRaw = citaElectroSeleccionada.fecha || new Date().toISOString().slice(0, 10);
-    const fechaCita = typeof fechaCitaRaw === 'string' && fechaCitaRaw.length > 10 ? fechaCitaRaw.slice(0, 10) : String(fechaCitaRaw);
-    const startDate = new Date(`${fechaCita}T${String(hh_inicio).padStart(2,'0')}:${String(mm_inicio).padStart(2,'0')}:00`);
-    startDate.setMinutes(startDate.getMinutes() + duracionMinutos);
-    const horaFin = `${String(startDate.getHours()).padStart(2,'0')}:${String(startDate.getMinutes()).padStart(2,'0')}`;
-    const horaFinDate = `${startDate.getFullYear()}-${String(startDate.getMonth()+1).padStart(2,'0')}-${String(startDate.getDate()).padStart(2,'0')}`;
-    
-    console.log(`[DURACION_SIN] Hora inicio: ${horaInicio}, Hora fin: ${horaFin}, Fecha fin: ${horaFinDate}`);
-    
-    const equipoId = equipoSelect.value;
-    const cambios = {
-      estado: 'En Estudio',
-      hora_inicio: horaInicio,
+
+  if (window.socket && window.socket.connected) {
+    window.socket.emit('electro:estudio-iniciado', {
+      id: citaElectroSeleccionada.id,
+      hora_inicio: horaInicioRegistro,
       hora_fin: horaFin,
       hora_fin_date: horaFinDate,
-      duracion_minutos: duracionMinutos,
-      equipo_id: equipoId
-    };
-    
-    // Actualizar en la base de datos
+      duracion_minutos: duracionMinutos
+    });
+  }
+
+  cargarCitasElectro();
+  cerrarModalDetallesCita();
+}
+
+async function ejecutarInicioEstudioAgendado(duracionMinutos, horaInicioRegistro, horaFin, horaFinDate, equipoId) {
+  try {
     const res = await apiFetch(`/api/citas-electro/${citaElectroSeleccionada.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(cambios)
+      body: JSON.stringify({
+        estado: 'En Estudio',
+        inicio_desde: 'agendado',
+        hora_inicio: horaInicioRegistro,
+        hora_fin: horaFin,
+        hora_fin_date: horaFinDate,
+        duracion_minutos: duracionMinutos,
+        equipo_id: equipoId
+      })
     });
-    
     const data = await res.json();
-    
     if (data && data.ok) {
       const horas = Math.floor(duracionMinutos / 60);
       const mins = duracionMinutos % 60;
       let textoHora = '';
       if (horas > 0) textoHora += `${horas}h`;
       if (mins > 0) textoHora += `${mins}m`;
-      
-      showToast(`Estudio iniciado a las ${horaInicio} (duración: ${textoHora})`, 'success');
-      
-      // Actualizar el objeto de la cita localmente
-      citaElectroSeleccionada.estado = 'En Estudio';
-      citaElectroSeleccionada.hora_inicio = horaInicio;
-      citaElectroSeleccionada.hora_fin = horaFin;
-      citaElectroSeleccionada.hora_fin_date = horaFinDate;
-      citaElectroSeleccionada.duracion_minutos = duracionMinutos;
-      
-      // BLOQUEAR el select de estado mientras está en "En Estudio"
-      const selectEstado = $('modalEstado');
-      if (selectEstado) {
-        selectEstado.disabled = true;
-        selectEstado.style.opacity = '0.5';
-        selectEstado.style.cursor = 'not-allowed';
-        selectEstado.value = 'En Estudio';
-      }
-      
-      // BLOQUEAR el menú de "Más opciones" mientras está en "En Estudio"
-      const btnMasOpciones = $('btnMasOpciones');
-      const menuMasOpciones = $('menuMasOpciones');
-      if (btnMasOpciones) {
-        btnMasOpciones.disabled = true;
-        btnMasOpciones.style.opacity = '0.5';
-        btnMasOpciones.style.cursor = 'not-allowed';
-        if (menuMasOpciones) menuMasOpciones.style.display = 'none';
-      }
-      
-      // Emitir evento de socket desde el cliente
-      if (window.socket && window.socket.connected) {
-        window.socket.emit('electro:estudio-iniciado', {
-          id: citaElectroSeleccionada.id,
-          hora_inicio: horaInicio,
-          hora_fin: horaFin,
-          duracion_minutos: duracionMinutos
-        });
-      }
-      
-      // Llamar para actualizar progreso del estudio
-      cargarCitasElectro();
-      cerrarModalDetallesCita();
+      showToast(`Estudio iniciado a las ${horaInicioRegistro} (programada)${textoHora ? ` · ${textoHora}` : ''}`, 'success');
+      await aplicarInicioEstudioEnUI(duracionMinutos, horaInicioRegistro, horaFin, horaFinDate);
     } else {
-      showToast(data?.error || 'Error iniciando estudio', 'error');
+      const msg = data?.details ? `${data.error || 'Error'} (${data.details})` : (data?.error || 'Error iniciando estudio');
+      showToast(msg, 'error');
     }
-  } catch (e) {
+  } catch (_) {
     showToast('Error iniciando estudio', 'error');
+  }
+}
+
+async function iniciarEstudioSinDuracion() {
+  if (!citaElectroSeleccionada) return;
+
+  const validInicio = validarInicioElectroSegunFechaHora(citaElectroSeleccionada);
+  if (!validInicio.ok) {
+    showToast(`❌ El estudio está agendado para las ${validInicio.horaAgendada}. Faltan ${validInicio.faltanMinutos} minutos para poder iniciarlo.`, 'error');
+    return;
+  }
+
+  const equipoSelect = $('modalEquipo');
+  if (!equipoSelect || !equipoSelect.value) {
+    showToast('❌ Debes seleccionar un equipo antes de iniciar el estudio', 'error');
+    return;
+  }
+
+  const duracionMinutos = citaElectroSeleccionada.duracion_minutos || 480;
+  const horaInicioAgendada = obtenerHoraInicioAgendadaElectro(citaElectroSeleccionada);
+  if (!horaInicioAgendada) {
+    showToast('La cita no tiene hora de agendamiento válida', 'error');
+    return;
+  }
+
+  const fechaCitaRaw = citaElectroSeleccionada.fecha || new Date().toISOString().slice(0, 10);
+  const fechaCita = typeof fechaCitaRaw === 'string' && fechaCitaRaw.length > 10 ? fechaCitaRaw.slice(0, 10) : String(fechaCitaRaw);
+  const horaInicioRegistro = horaInicioAgendada;
+  let horaBaseFin = horaInicioRegistro;
+  if (electroFinProgramadoYaPaso(fechaCita, horaInicioRegistro, duracionMinutos)) {
+    horaBaseFin = obtenerHoraInicioSolicitudElectro();
+  }
+  const finCalc = calcularHoraFinElectroDesdeInicio(fechaCita, horaBaseFin, duracionMinutos);
+  if (!finCalc) {
+    showToast('No se pudo calcular la hora de fin del estudio', 'error');
+    return;
+  }
+  const { horaFin, horaFinDate } = finCalc;
+  const equipoId = equipoSelect.value;
+
+  const continuar = () => ejecutarInicioEstudioAgendado(duracionMinutos, horaInicioRegistro, horaFin, horaFinDate, equipoId);
+
+  await continuar();
+}
+
+function aplicarVisualProgresoEstudio(porcentaje, opts = {}) {
+  const pct = Math.min(Math.max(Math.round(porcentaje), 0), 100);
+  const card = $('estudioBarra');
+  const barraLlena = $('estudioBarraLlena');
+  const progreso = $('estudioProgreso');
+  const ring = $('estudioProgresoRing');
+  const progressWrap = $('estudioBarraProgress');
+  if (barraLlena) barraLlena.style.width = pct + '%';
+  if (progreso) progreso.textContent = pct;
+  if (ring) ring.style.setProperty('--pct', pct + '%');
+  if (progressWrap) progressWrap.setAttribute('aria-valuenow', String(pct));
+  if (card) {
+    if (pct >= 100) card.setAttribute('data-estado', 'completo');
+    else if (opts.estadoCard) card.setAttribute('data-estado', opts.estadoCard);
   }
 }
 
 // Función para actualizar progreso del estudio en tiempo real
 function actualizarProgresoEstudio() {
-  if (!citaElectroSeleccionada || citaElectroSeleccionada.estado !== 'En Estudio') {
+  const estadoCita = citaElectroSeleccionada?.estado;
+  if (!citaElectroSeleccionada || (estadoCita !== 'En Estudio' && estadoCita !== 'Pausado')) {
     return;
   }
   
@@ -9223,39 +12390,16 @@ function actualizarProgresoEstudio() {
     intervaloProgreso = null;
   }
   
-  const horaInicio = citaElectroSeleccionada.hora_inicio; // "HH:MM"
-  const horaFin = citaElectroSeleccionada.hora_fin; // "HH:MM"
-  
-  if (!horaInicio || !horaFin) {
-    return;
-  }
-  
-  // Construir fechas absolutas de inicio y fin
-  const fechaRaw = citaElectroSeleccionada.fecha || new Date().toISOString().slice(0, 10);
-  const fechaBase = typeof fechaRaw === 'string' && fechaRaw.length > 10 ? fechaRaw.slice(0, 10) : String(fechaRaw);
-  const [hiH, hiM] = horaInicio.split(':').map(Number);
-  const dateInicio = new Date(`${fechaBase}T${String(hiH).padStart(2,'0')}:${String(hiM).padStart(2,'0')}:00`);
-  
-  // Fecha de fin: usar hora_fin_date si existe, sino calcular con duracion_minutos
-  let dateFin;
-  const horaFinDateRaw = citaElectroSeleccionada.hora_fin_date;
-  const fechaFin = horaFinDateRaw ? (typeof horaFinDateRaw === 'string' && horaFinDateRaw.length > 10 ? horaFinDateRaw.slice(0, 10) : String(horaFinDateRaw)) : null;
-  const [hfH, hfM] = horaFin.split(':').map(Number);
-  
-  if (fechaFin && fechaFin !== fechaBase) {
-    // Multi-día: tenemos la fecha de fin explícita
-    dateFin = new Date(`${fechaFin}T${String(hfH).padStart(2,'0')}:${String(hfM).padStart(2,'0')}:00`);
-  } else if (citaElectroSeleccionada.duracion_minutos && citaElectroSeleccionada.duracion_minutos > 0) {
-    // Usar duración para calcular fin
-    dateFin = new Date(dateInicio.getTime() + citaElectroSeleccionada.duracion_minutos * 60000);
-  } else {
-    // Mismo día, calcular normalmente
-    dateFin = new Date(`${fechaBase}T${String(hfH).padStart(2,'0')}:${String(hfM).padStart(2,'0')}:00`);
-    // Si hora_fin <= hora_inicio, asumir que cruza medianoche (+1 día)
-    if (dateFin <= dateInicio) {
-      dateFin.setDate(dateFin.getDate() + 1);
-    }
-  }
+  const horaInicio = citaElectroSeleccionada.hora_inicio;
+  if (!horaInicio) return;
+
+  const fechaBase = obtenerFechaElectroBase10(citaElectroSeleccionada.fecha) || new Date().toISOString().slice(0, 10);
+  const dateInicio = construirDateHoraElectro(fechaBase, horaInicio);
+  const dateFin = obtenerFechaHoraFinEstudioActivo(citaElectroSeleccionada);
+  if (!dateInicio || !dateFin) return;
+
+  const finHoraStr = `${String(dateFin.getHours()).padStart(2, '0')}:${String(dateFin.getMinutes()).padStart(2, '0')}`;
+  const finFechaStr = `${dateFin.getFullYear()}-${String(dateFin.getMonth() + 1).padStart(2, '0')}-${String(dateFin.getDate()).padStart(2, '0')}`;
   
   const duracionTotalMs = dateFin.getTime() - dateInicio.getTime();
   
@@ -9277,123 +12421,108 @@ function actualizarProgresoEstudio() {
   
   const horaFinEl = $('estudioHoraFin');
   if (horaFinEl) {
-    const finText = formatearHora(horaFin);
-    horaFinEl.textContent = fechaFin && fechaFin !== fechaBase ? `${finText} (${fechaFin})` : finText;
+    const finText = formatearHora(finHoraStr);
+    horaFinEl.textContent = finFechaStr !== fechaBase ? `${finText} (${finFechaStr})` : finText;
   }
   const horaInicioEl = $('estudioHoraInicio');
   if (horaInicioEl) horaInicioEl.textContent = formatearHora(horaInicio);
   const restanteEl = $('estudioTiempoRestante');
   if (restanteEl) restanteEl.textContent = durLabel ? `Duración ${durLabel}` : '--';
   
+  const estadoCard = estadoCita === 'Pausado' ? 'pausado' : 'en-estudio';
+  const labelEl = $('estudioProgresoEstadoLabel');
+  if (labelEl) labelEl.textContent = estadoCita === 'Pausado' ? 'En pausa' : 'En estudio';
+
   let _lastSocketEmit = 0;
-  
-  // Actualizar cada segundo
-  intervaloProgreso = setInterval(async () => {
+
+  const tickProgreso = () => {
+    const enVivo = citaElectroSeleccionada?.estado === 'En Estudio';
     const ahora = new Date();
     const transcurridoMs = ahora.getTime() - dateInicio.getTime();
     const restanteMs = dateFin.getTime() - ahora.getTime();
-    
+
     let porcentaje = (transcurridoMs / duracionTotalMs) * 100;
     porcentaje = Math.min(Math.max(porcentaje, 0), 100);
-    
-    // Tiempo transcurrido
+
     const segTranscurridos = Math.max(0, Math.floor(transcurridoMs / 1000));
     const tDias = Math.floor(segTranscurridos / 86400);
     const tHoras = Math.floor((segTranscurridos % 86400) / 3600);
     const tMinutos = Math.floor((segTranscurridos % 3600) / 60);
     const tSegundos = segTranscurridos % 60;
-    
+
     let tiempoFormato;
     if (tDias > 0) {
-      tiempoFormato = `${tDias}d ${String(tHoras).padStart(2,'0')}:${String(tMinutos).padStart(2,'0')}:${String(tSegundos).padStart(2,'0')}`;
+      tiempoFormato = `${tDias}d ${String(tHoras).padStart(2, '0')}:${String(tMinutos).padStart(2, '0')}:${String(tSegundos).padStart(2, '0')}`;
     } else {
-      tiempoFormato = `${String(tHoras).padStart(2,'0')}:${String(tMinutos).padStart(2,'0')}:${String(tSegundos).padStart(2,'0')}`;
+      tiempoFormato = `${String(tHoras).padStart(2, '0')}:${String(tMinutos).padStart(2, '0')}:${String(tSegundos).padStart(2, '0')}`;
     }
-    
-    // Tiempo restante
+
     const segRestante = Math.max(0, Math.floor(restanteMs / 1000));
     const rDias = Math.floor(segRestante / 86400);
     const rHoras = Math.floor((segRestante % 86400) / 3600);
     const rMinutos = Math.floor((segRestante % 3600) / 60);
     let restoFormato;
-    if (rDias > 0) {
-      restoFormato = `${rDias}d ${rHoras}h ${rMinutos}m`;
-    } else if (rHoras > 0) {
-      restoFormato = `${rHoras}h ${rMinutos}m`;
-    } else {
-      restoFormato = `${rMinutos}m`;
-    }
-    
-    // Actualizar barra visual
-    const barraLlena = $('estudioBarraLlena');
-    const progreso = $('estudioProgreso');
+    if (rDias > 0) restoFormato = `${rDias}d ${rHoras}h ${rMinutos}m`;
+    else if (rHoras > 0) restoFormato = `${rHoras}h ${rMinutos}m`;
+    else restoFormato = `${rMinutos}m`;
+
     const tiempoTranscurrido = $('estudioTiempoTranscurrido');
     const tiempoRestante = $('estudioTiempoRestante');
-    
-    if (barraLlena) barraLlena.style.width = porcentaje + '%';
-    if (progreso) progreso.textContent = Math.round(porcentaje);
-    if (tiempoTranscurrido) tiempoTranscurrido.textContent = `${tiempoFormato} · Faltan: ${restoFormato}`;
-    if (tiempoRestante) tiempoRestante.textContent = `Faltan ${restoFormato}`;
-    
-    // Emitir socket cada 15s
-    const nowMs = Date.now();
-    if (window.socket && window.socket.connected && (nowMs - _lastSocketEmit >= 15000)) {
-      _lastSocketEmit = nowMs;
-      window.socket.emit('electro:progreso-estudio', {
-        citaId: citaElectroSeleccionada.id,
-        porcentaje: porcentaje,
-        tiempoTranscurrido: tiempoFormato
-      });
+
+    aplicarVisualProgresoEstudio(porcentaje, { estadoCard: porcentaje >= 100 ? 'completo' : estadoCard });
+    if (tiempoTranscurrido) {
+      tiempoTranscurrido.textContent = enVivo ? tiempoFormato : `${tiempoFormato} (pausado)`;
     }
-    
-    // Si llegó al 100%, finalizar automáticamente
-    if (porcentaje >= 100) {
-      clearInterval(intervaloProgreso);
-      intervaloProgreso = null;
-      
-      try {
-        const ahora = new Date();
-        const hh = String(ahora.getHours()).padStart(2, '0');
-        const mm = String(ahora.getMinutes()).padStart(2, '0');
-        const horaActual = `${hh}:${mm}`;
-        
-        const cambios = {
-          estado: 'Completado',
-          hora_fin: horaActual
-        };
-        
-        const res = await apiFetch(`/api/citas-electro/${citaElectroSeleccionada.id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(cambios)
-        });
-        
-        const data = await res.json();
-        
-        if (data && data.ok) {
-          showToast(`Estudio completado automáticamente a las ${horaActual}`, 'success');
-          citaElectroSeleccionada.estado = 'Completado';
-          citaElectroSeleccionada.hora_fin = horaActual;
-          
-          const estudioBarra = $('estudioBarra');
-          if (estudioBarra) estudioBarra.style.display = 'none';
-          
-          if (window.socket && window.socket.connected) {
-            window.socket.emit('electro:estudio-finalizado', {
-              id: citaElectroSeleccionada.id,
-              hora_fin: horaActual
-            });
-          }
-          
-          cargarCitasElectro();
-          cerrarModalDetallesCita();
-        }
-      } catch (error) {
-        console.error('[PROGRESO] Error finalizando estudio:', error);
-        showToast('Error finalizando estudio automáticamente', 'error');
+    if (tiempoRestante) {
+      if (porcentaje >= 100 && !citaElectroSeleccionada._avisoFinDuracion) {
+        tiempoRestante.textContent = 'Finalizar estudio';
+        citaElectroSeleccionada._avisoFinDuracion = true;
+      } else if (enVivo) {
+        tiempoRestante.textContent = `Faltan ${restoFormato}`;
+      } else {
+        tiempoRestante.textContent = 'Pausado';
       }
     }
-  }, 1000);
+
+    if (enVivo) {
+      const nowMs = Date.now();
+      if (window.socket && window.socket.connected && (nowMs - _lastSocketEmit >= 15000)) {
+        _lastSocketEmit = nowMs;
+        window.socket.emit('electro:progreso-estudio', {
+          citaId: citaElectroSeleccionada.id,
+          porcentaje,
+          tiempoTranscurrido: tiempoFormato
+        });
+      }
+      const reabiertoHaceMs = citaElectroSeleccionada._reabiertoEn
+        ? (Date.now() - citaElectroSeleccionada._reabiertoEn)
+        : null;
+      const graciaReapertura = reabiertoHaceMs != null && reabiertoHaceMs < 120000;
+      if (
+        porcentaje >= 100
+        && !citaElectroSeleccionada._autoFinalizandoEnCurso
+        && !graciaReapertura
+        && parseInt(citaElectroSeleccionada.duracion_minutos, 10) > 0
+        && citaElectroSeleccionada.hora_inicio
+        && restanteMs <= 0
+      ) {
+        citaElectroSeleccionada._autoFinalizandoEnCurso = true;
+        if (intervaloProgreso) {
+          clearInterval(intervaloProgreso);
+          intervaloProgreso = null;
+        }
+        finalizarEstudioElectroEnServidor({ cerrarModal: true, mensajeAuto: true })
+          .finally(() => {
+            if (citaElectroSeleccionada) citaElectroSeleccionada._autoFinalizandoEnCurso = false;
+          });
+      }
+    }
+  };
+
+  tickProgreso();
+  if (estadoCita === 'En Estudio') {
+    intervaloProgreso = setInterval(tickProgreso, 1000);
+  }
 }
 
 // Función para guardar edición de datos del paciente desde el modal
@@ -9405,16 +12534,18 @@ async function guardarEdicionPaciente() {
   const nombre = $('editNombrePaciente').value.trim();
   const documento = $('editDocumentoPaciente').value.trim();
   const telefono = $('editTelefonoPaciente').value.trim();
+  const telefono2 = $('editTelefonoPaciente2')?.value.trim() || '';
 
   if (!nombre) { showToast('El nombre no puede estar vacío', 'error'); return; }
   if (documento && !/^\d+$/.test(documento)) { showToast('El documento solo puede contener números', 'error'); return; }
-  if (telefono && !/^\d{10}$/.test(telefono)) { showToast('El teléfono debe tener exactamente 10 dígitos', 'error'); return; }
+  if (telefono && !/^\d{10}$/.test(telefono)) { showToast('El teléfono 1 debe tener exactamente 10 dígitos', 'error'); return; }
+  if (telefono2 && !/^\d{10}$/.test(telefono2)) { showToast('El teléfono 2 debe tener exactamente 10 dígitos', 'error'); return; }
 
   try {
     const res = await apiFetch(`/api/pacientes/${citaElectroSeleccionada.paciente_id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ nombre, documento, telefono })
+      body: JSON.stringify({ nombre, documento, telefono, telefono2 })
     });
     const json = await res.json();
     if (!json.ok) throw new Error(json.error || 'Error desconocido');
@@ -9422,9 +12553,20 @@ async function guardarEdicionPaciente() {
     citaElectroSeleccionada.paciente_nombre = nombre;
     citaElectroSeleccionada.paciente_documento = documento;
     citaElectroSeleccionada.telefono = telefono;
+    citaElectroSeleccionada.telefono2 = telefono2;
     $('modalPacienteNombre').textContent = nombre;
     $('modalPacienteDocumento').textContent = documento;
-    $('modalTelefonoDisplay').textContent = telefono;
+    const $telEl = document.getElementById('modalTelefonoDisplay');
+    const $tel2El = document.getElementById('modalTelefono2Display');
+    if ($telEl) $telEl.textContent = telefono || '-';
+    if ($tel2El) {
+      $tel2El.textContent = telefono2 || '-';
+      const sep = $tel2El.previousElementSibling;
+      if (sep?.classList?.contains('cita-modal-sep')) {
+        sep.style.display = telefono && telefono2 ? '' : 'none';
+      }
+      $tel2El.style.display = telefono2 ? '' : (telefono ? 'none' : '');
+    }
     $('editarPacientePanel').style.display = 'none';
     showToast('Datos del paciente actualizados', 'success');
     // Refrescar lista de citas
@@ -9441,13 +12583,46 @@ function enviarRecomendacionesWhatsApp(cita) {
   mostrarModalEnviarWhatsApp(cita);
 }
 
-// Variable global para guardar la información temporalmente
 let citaParaWhatsApp = null;
 
-// Función para mostrar modal de confirmación
+async function actualizarVistaModalWhatsAppElectro() {
+  if (!citaParaWhatsApp?.cita) return;
+  const cita = citaParaWhatsApp.cita;
+  const extra = $('whatsappMensajePersonalizado')?.value?.trim() || '';
+  const pdfRel = urlPdfRecomendacionesElectro(cita.estudio);
+  const pdfExiste = await existeArchivoPublico(pdfRel);
+  const pdfUrlAbsoluta = pdfExiste ? new URL(pdfRel, window.location.origin).href : null;
+  citaParaWhatsApp.pdfUrl = pdfRel;
+  citaParaWhatsApp.pdfUrlAbsoluta = pdfUrlAbsoluta;
+  citaParaWhatsApp.pdfExiste = pdfExiste;
+
+  const preview = $('whatsappMensajePreview');
+  if (preview) {
+    preview.value = construirMensajeRecomendacionesElectro(cita, {
+      mensajeExtra: extra,
+      pdfUrlAbsoluta
+    });
+  }
+
+  const pdfBox = $('whatsappPdfBox');
+  const btnPdf = $('btnAbrirPdfRecomendaciones');
+  if (pdfBox) {
+    pdfBox.style.display = pdfExiste ? 'block' : 'none';
+  }
+  if (btnPdf) {
+    btnPdf.onclick = () => window.open(pdfRel, '_blank', 'noopener');
+  }
+
+  const avisoPdf = $('whatsappAvisoPdf');
+  if (avisoPdf) {
+    avisoPdf.textContent = pdfExiste
+      ? 'Hay PDF de recomendaciones para este estudio. Ábralo, descárguelo y adjúntelo en WhatsApp (el chat no permite enviar archivos automáticamente desde el navegador).'
+      : 'Coloque el PDF en public/recomendaciones-electro/ (' + clavePdfRecomendacionesElectro(cita.estudio) + '.pdf) para poder abrirlo desde aquí.';
+  }
+}
+
 function mostrarModalEnviarWhatsApp(cita) {
   citaParaWhatsApp = { cita };
-  // Crear modal si no existe
   let modal = $('modalEnviarWhatsApp');
   if (!modal) {
     modal = document.createElement('div');
@@ -9455,156 +12630,125 @@ function mostrarModalEnviarWhatsApp(cita) {
     modal.className = 'modal hidden';
     modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);align-items:center;justify-content:center;z-index:1000;padding:20px;display:none';
     modal.innerHTML = `
-      <div class="modal-content" style="background:white;border-radius:12px;padding:32px;max-width:500px;width:100%;box-shadow:0 20px 25px -5px rgba(0,0,0,0.1)">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px">
-          <h2 style="margin:0;color:#1f2937">Enviar Recomendaciones por WhatsApp</h2>
-          <button id="cerrarModalWhatsApp" style="background:none;border:none;font-size:24px;cursor:pointer;color:#6b7280;padding:0;width:32px;height:32px;display:flex;align-items:center;justify-content:center">&times;</button>
+      <div class="modal-content" style="background:white;border-radius:12px;padding:28px;max-width:560px;width:100%;max-height:90vh;overflow:auto;box-shadow:0 20px 25px -5px rgba(0,0,0,0.1)">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+          <h2 style="margin:0;color:#1f2937;font-size:1.15rem">Recomendaciones por WhatsApp</h2>
+          <button type="button" id="cerrarModalWhatsApp" class="btn-close-x" title="Cerrar">&times;</button>
         </div>
 
-        <div style="margin-bottom:20px;padding:16px;background:#f3f4f6;border-radius:8px">
-          <p style="margin:0 0 12px 0;font-size:0.85rem;color:#6b7280;font-weight:600">INFORMACIÓN DEL PACIENTE</p>
-          <div style="display:grid;gap:8px;font-size:0.95rem">
-            <div><strong>Nombre:</strong> <span id="whatsappNombrePaciente">-</span></div>
-            <div><strong>Documento:</strong> <span id="whatsappDocumento">-</span></div>
-            <div><strong>Teléfono:</strong> <span id="whatsappTelefono">-</span></div>
-          </div>
+        <div style="margin-bottom:16px;padding:14px;background:#f8fafc;border-radius:8px;font-size:0.9rem">
+          <div><strong>Paciente:</strong> <span id="whatsappNombrePaciente">-</span></div>
+          <div style="margin-top:6px"><strong>Teléfono:</strong> <span id="whatsappTelefono">-</span></div>
         </div>
 
-        <div style="margin-bottom:16px;padding:12px 16px;background:#fffbeb;border-left:4px solid #f59e0b;border-radius:0 8px 8px 0;font-size:0.88rem;color:#92400e">
-          ⚠️ WhatsApp Web no permite adjuntar archivos por enlace. Después de abrir el chat, adjunta el PDF de recomendaciones manualmente.
+        <label style="display:block;font-size:0.8rem;color:#64748b;font-weight:600;margin-bottom:6px">Mensaje a enviar</label>
+        <textarea id="whatsappMensajePreview" readonly style="width:100%;padding:12px;border:1px solid #e2e8f0;border-radius:8px;font-size:0.82rem;font-family:'Segoe UI Emoji','Apple Color Emoji','Noto Color Emoji',inherit;resize:vertical;min-height:220px;background:#fff;color:#334155;line-height:1.45"></textarea>
+        <p style="margin:8px 0 0;font-size:0.75rem;color:#64748b">Al enviar, el mensaje se copia al portapapeles. Si en WhatsApp faltan emojis, pegue con Ctrl+V.</p>
+
+        <div style="margin-top:12px">
+          <label style="display:block;font-size:0.8rem;color:#64748b;font-weight:600;margin-bottom:6px">Nota adicional (opcional)</label>
+          <textarea id="whatsappMensajePersonalizado" placeholder="Texto extra al final del mensaje..." style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:0.88rem;resize:vertical;min-height:56px"></textarea>
         </div>
 
-        <div style="margin-bottom:20px">
-          <label style="display:block;font-size:0.85rem;color:#6b7280;font-weight:600;margin-bottom:8px">Mensaje personalizado (opcional):</label>
-          <textarea id="whatsappMensajePersonalizado" placeholder="Agregar un mensaje personalizado..." style="width:100%;padding:12px;border:1px solid #d1d5db;border-radius:6px;font-size:0.95rem;font-family:Arial,sans-serif;resize:vertical;min-height:80px"></textarea>
+        <div id="whatsappPdfBox" style="display:none;margin-top:14px;padding:12px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px">
+          <p id="whatsappAvisoPdf" style="margin:0 0 10px;font-size:0.82rem;color:#1e40af;line-height:1.4"></p>
+          <button type="button" id="btnAbrirPdfRecomendaciones" class="btn-secondary" style="width:100%">Abrir PDF de recomendaciones</button>
         </div>
 
-        <div style="display:flex;gap:12px;justify-content:flex-end">
-          <button id="btnCancelarWhatsApp" class="btn-secondary">Cancelar</button>
-          <button id="btnConfirmarWhatsApp" class="btn-success">Abrir WhatsApp</button>
+        <p style="margin:14px 0 0;font-size:0.78rem;color:#64748b;line-height:1.35">
+          Sede principal: ${escapeHtml(SEDES_INNAR.principal.completa)}
+        </p>
+
+        <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:18px;flex-wrap:wrap">
+          <button type="button" id="btnCancelarWhatsApp" class="btn-secondary">Cancelar</button>
+          <button type="button" id="btnConfirmarWhatsApp" class="btn-success">Abrir WhatsApp</button>
         </div>
       </div>
     `;
     document.body.appendChild(modal);
 
-    // Event listeners
-    $('cerrarModalWhatsApp').addEventListener('click', () => { modal.classList.add('hidden'); modal.style.display = 'none'; });
-    $('btnCancelarWhatsApp').addEventListener('click', () => { modal.classList.add('hidden'); modal.style.display = 'none'; });
+    const cerrar = () => { modal.classList.add('hidden'); modal.style.display = 'none'; };
+    $('cerrarModalWhatsApp').addEventListener('click', cerrar);
+    $('btnCancelarWhatsApp').addEventListener('click', cerrar);
     $('btnConfirmarWhatsApp').addEventListener('click', enviarPorWhatsApp);
+    $('whatsappMensajePersonalizado').addEventListener('input', () => {
+      actualizarVistaModalWhatsAppElectro();
+    });
   }
 
-  // Llenar datos del modal
-  $('whatsappNombrePaciente').textContent = escapeHtml(cita.paciente_nombre || '-');
-  $('whatsappDocumento').textContent = escapeHtml(cita.paciente_documento || '-');
-  $('whatsappTelefono').textContent = escapeHtml(cita.telefono || '-');
+  $('whatsappNombrePaciente').textContent = cita.paciente_nombre || '-';
+  $('whatsappTelefono').textContent = cita.telefono || '-';
   $('whatsappMensajePersonalizado').value = '';
 
-  // Mostrar modal
   modal.classList.remove('hidden');
   modal.style.display = 'flex';
+  actualizarVistaModalWhatsAppElectro();
 }
 
-// Función para enviar por WhatsApp
-function enviarPorWhatsApp() {
-  if (!citaParaWhatsApp) {
+async function enviarPorWhatsApp() {
+  if (!citaParaWhatsApp?.cita) {
     showToast('Error: No hay información para enviar', 'error');
     return;
   }
 
   const cita = citaParaWhatsApp.cita;
-  const mensajePersonalizado = $('whatsappMensajePersonalizado').value.trim();
+  const previewVal = ($('whatsappMensajePreview')?.value || '').trim();
+  const extra = $('whatsappMensajePersonalizado')?.value?.trim() || '';
+  const mensaje = previewVal || construirMensajeRecomendacionesElectro(cita, {
+    mensajeExtra: extra,
+    pdfUrlAbsoluta: citaParaWhatsApp.pdfUrlAbsoluta || null
+  });
 
-  // Construir el mensaje para WhatsApp con formato correcto de fecha
-  let fechaObj;
-  try {
-    console.log('Fecha recibida:', cita.fecha, 'Tipo:', typeof cita.fecha);
-    
-    // Intentar parsear la fecha de diferentes formas
-    if (typeof cita.fecha === 'string') {
-      // Eliminar hora si está incluida (formato ISO: YYYY-MM-DD HH:MM:SS)
-      const soloFecha = cita.fecha.split(' ')[0];
-      
-      if (soloFecha.includes('-')) {
-        // Formato YYYY-MM-DD
-        const [year, month, day] = soloFecha.split('-');
-        fechaObj = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
-      } else if (soloFecha.includes('/')) {
-        // Formato DD/MM/YYYY
-        const [day, month, year] = soloFecha.split('/');
-        fechaObj = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
-      } else {
-        // Intentar parseo directo
-        fechaObj = new Date(cita.fecha);
-      }
-    } else {
-      // Si es un número (timestamp)
-      fechaObj = new Date(cita.fecha);
-    }
-    
-    // Validar que sea una fecha válida
-    if (isNaN(fechaObj.getTime())) {
-      console.error('Fecha inválida después del parseo:', cita.fecha);
-      throw new Error('Fecha inválida');
-    }
-    
-    console.log('Fecha parseada correctamente:', fechaObj);
-  } catch (e) {
-    console.error('Error parsing fecha:', e);
-    showToast('Error: Formato de fecha inválido', 'error');
+  const numero = numeroWhatsAppDesdeTelefono(cita.telefono);
+  if (!numero || numero.length < 11) {
+    showToast('Teléfono no válido para WhatsApp', 'error');
     return;
   }
 
-  // Formato de fecha: DD de MMMM de YYYY
-  const options = { day: 'numeric', month: 'long', year: 'numeric' };
-  const fechaFormato = fechaObj.toLocaleDateString('es-ES', options);
-
-  // Asegurarse de que la fecha sea capitalizada correctamente
-  const fechaCapitalizada = fechaFormato.charAt(0).toUpperCase() + fechaFormato.slice(1);
-
-  // Mensaje predeterminado del instituto
-  let mensaje = `HOLA, ${(cita.paciente_nombre || '').toUpperCase()}, INSTITUTO NEUROCIENCIAS DE NARIÑO LE INFORMA QUE:\n\n`;
-  mensaje += `Tiene programada su cita para la toma de su ${cita.estudio || 'ESTUDIO'}\n`;
-  mensaje += `DÍA:  ${fechaCapitalizada.toUpperCase()}\n`;
-  mensaje += `HORA:  ${cita.hora_agendamiento || '-'}\n\n`;
-  mensaje += `Le recordamos que será atendido por una técnica especializada en electrodiagnostico.\n`;
-  mensaje += `Anexo a este mensaje le enviamos las recomendaciones que debe tener en cuenta, le recordamos la dirección: Carrera 34 #13-80, Barrio San Ignacio.\n`;
-  mensaje += `Teléfonos 3053560651- 6027238141\n\n`;
-  mensaje += `NOTA: no olvide traer su orden de servicio, copia de su documento de identificación y epicrisis o historia clínica.\n\n`;
-  mensaje += `Le solicitamos confirmar su asistencia.\n`;
-  mensaje += `Recuerde acercarse al centro comercial Valle de Atriz 2do piso y hacer la respectiva facturación con sello. Muchas Gracias.`;
-
-  if (mensajePersonalizado) {
-    mensaje += `\n\n${mensajePersonalizado}`;
-  }
-
-  // Formatear el número de teléfono para WhatsApp
-  let numeroWhatsApp = cita.telefono.replace(/\D/g, '');
-  
-  if (!numeroWhatsApp.startsWith('+')) {
-    if (numeroWhatsApp.length === 10) {
-      numeroWhatsApp = '57' + numeroWhatsApp;
-    }
-    numeroWhatsApp = '+' + numeroWhatsApp;
-  }
-
-  // Abrir WhatsApp con el mensaje
-  const urlWhatsApp = `https://wa.me/${numeroWhatsApp}?text=${encodeURIComponent(mensaje)}`;
-  
-  // Cerrar modal
+  const copiado = await copiarTextoWhatsAppElectro(mensaje);
   const modal = $('modalEnviarWhatsApp');
   if (modal) {
     modal.classList.add('hidden');
     modal.style.display = 'none';
   }
 
-  // Abrir WhatsApp
-  window.open(urlWhatsApp, '_blank');
+  window.open(abrirEnlaceWhatsAppElectro(numero, mensaje), '_blank');
 
-  showToast('WhatsApp abierto. Recuerda adjuntar el PDF de recomendaciones manualmente.', 'success');
+  if (citaParaWhatsApp.pdfExiste && citaParaWhatsApp.pdfUrl) {
+    window.open(citaParaWhatsApp.pdfUrl, '_blank', 'noopener');
+  }
+
+  if (copiado) {
+    showToast(
+      citaParaWhatsApp.pdfExiste
+        ? 'WhatsApp abierto. Mensaje copiado: si faltan emojis, pegue con Ctrl+V y adjunte el PDF.'
+        : 'WhatsApp abierto. Mensaje copiado: si faltan emojis, pegue con Ctrl+V.',
+      'success'
+    );
+  } else {
+    showToast('WhatsApp abierto. Revise el mensaje en el chat.', 'success');
+  }
 }
 
-function abrirModalDetallesCita(cita) {
-  citaElectroSeleccionada = { ...cita, estado: normalizarEstadoElectro(cita?.estado) };
+async function abrirModalDetallesCita(cita) {
+  let citaData = { ...cita, estado: normalizarEstadoElectro(cita?.estado) };
+  if (cita?.id) {
+    try {
+      const resFresh = await apiFetch(`/api/citas-electro/${cita.id}?_t=${Date.now()}`, { cache: 'no-store' });
+      if (resFresh.ok) {
+        const fresh = await resFresh.json();
+        citaData = {
+          ...citaData,
+          ...fresh,
+          estado: normalizarEstadoElectro(fresh.estado ?? citaData.estado)
+        };
+      }
+    } catch (e) {
+      console.warn('[abrirModalDetallesCita] No se pudo refrescar cita:', e.message);
+    }
+  }
+  cita = citaData;
+  citaElectroSeleccionada = { ...cita };
   const puedeEditarElectro = tienePermiso('electro.editar');
   const puedeCambiarEstadoElectro = tienePermiso('electro.cambiar_estado') || puedeEditarElectro;
   
@@ -9619,57 +12763,68 @@ function abrirModalDetallesCita(cita) {
   $('modalUsuarioProgramo').textContent = escapeHtml(cita.programado_por_nombre || '-');
   $('modalUsuarioEdito').textContent = escapeHtml(cita.editado_por_nombre || cita.programado_por_nombre || '-');
 
-  // Nuevos campos de información de la cita
-  const $estudioEl = document.getElementById('modalEstudioDisplay');
-  if ($estudioEl) $estudioEl.textContent = cita.estudio || '-';
-  const $fechaEl = document.getElementById('modalFechaDisplay');
-  if ($fechaEl) $fechaEl.textContent = cita.fecha ? formatearFechaISO(cita.fecha) : '-';
-  const $horaEl = document.getElementById('modalHoraDisplay');
-  if ($horaEl) $horaEl.textContent = cita.hora_agendamiento ? formatearHora(cita.hora_agendamiento) : '-';
+  const modalEstudioEl = $('modalEstudio');
+  if (modalEstudioEl) {
+    await cargarEstudiosEnSelect('modalEstudio', { valorPrevio: cita.estudio || '', force: false });
+    const puedeEditarEstudio = puedeEditarElectro && citaElectroSeleccionada.estado !== 'Completado';
+    modalEstudioEl.disabled = !puedeEditarEstudio;
+    modalEstudioEl.style.opacity = !puedeEditarEstudio ? '0.6' : '1';
+    modalEstudioEl.style.cursor = !puedeEditarEstudio ? 'not-allowed' : 'pointer';
+  }
+  const puedeEditarFechaHora = puedeEditarElectro && citaElectroSeleccionada.estado !== 'Completado'
+    && citaElectroSeleccionada.estado !== 'En Estudio' && citaElectroSeleccionada.estado !== 'Pausado';
+  const $fechaEl = $('modalFechaAgenda');
+  if ($fechaEl) {
+    $fechaEl.value = cita.fecha ? formatearFechaISO(cita.fecha) : '';
+    $fechaEl.disabled = !puedeEditarFechaHora;
+    $fechaEl.style.opacity = !puedeEditarFechaHora ? '0.65' : '1';
+    $fechaEl.style.cursor = !puedeEditarFechaHora ? 'not-allowed' : 'pointer';
+  }
+  const $horaEl = $('modalHoraAgenda');
+  if ($horaEl) {
+    const hAg = cita.hora_agendamiento ? String(cita.hora_agendamiento).trim() : '';
+    $horaEl.value = /^\d{2}:\d{2}/.test(hAg) ? hAg.slice(0, 5) : hAg;
+    $horaEl.disabled = !puedeEditarFechaHora;
+    $horaEl.style.opacity = !puedeEditarFechaHora ? '0.65' : '1';
+    $horaEl.style.cursor = !puedeEditarFechaHora ? 'not-allowed' : 'pointer';
+  }
   const $diagEl = document.getElementById('modalDiagnosticoDisplay');
   if ($diagEl) $diagEl.textContent = cita.diagnostico_codigo ? `${cita.diagnostico_codigo}${cita.diagnostico_nombre ? ' – ' + cita.diagnostico_nombre : ''}` : (cita.diagnostico_nombre || '-');
+  const entidadCita = obtenerEntidadCitaElectro(cita);
+  const modalEntidadEl = $('modalEntidad');
+  if (modalEntidadEl) {
+    await cargarEntidadesEnSelect('modalEntidad', {
+      valorPrevio: entidadCita,
+      placeholder: 'Seleccionar entidad',
+      incluirParticular: true
+    });
+    const puedeEditarEntidad = puedeEditarElectro && citaElectroSeleccionada.estado !== 'Completado';
+    modalEntidadEl.disabled = !puedeEditarEntidad;
+    modalEntidadEl.style.opacity = !puedeEditarEntidad ? '0.65' : '1';
+    modalEntidadEl.style.cursor = !puedeEditarEntidad ? 'not-allowed' : 'pointer';
+    if (!entidadCita && !modalEntidadEl.value) modalEntidadEl.value = '';
+  }
   const $telEl = document.getElementById('modalTelefonoDisplay');
-  if ($telEl) $telEl.textContent = cita.telefono || '-';
-  
-  // Duración
-  const $durEl = document.getElementById('modalDuracionDisplay');
-  if ($durEl) {
-    if (cita.duracion_minutos) {
-      const dHrs = Math.floor(cita.duracion_minutos / 60);
-      const dMin = cita.duracion_minutos % 60;
-      if (dHrs >= 24) {
-        const dias = Math.floor(dHrs / 24);
-        const hResto = dHrs % 24;
-        $durEl.innerHTML = `<span class="electro-dur-badge multi-day">${dias}d ${hResto}h</span>`;
-      } else if (dHrs > 0 && dMin > 0) {
-        $durEl.textContent = `${dHrs}h ${dMin}min`;
-      } else if (dHrs > 0) {
-        $durEl.textContent = `${dHrs} horas`;
-      } else {
-        $durEl.textContent = `${dMin} min`;
-      }
-    } else {
-      $durEl.textContent = '-';
+  const $tel2El = document.getElementById('modalTelefono2Display');
+  const tel1 = String(cita.telefono || '').trim();
+  const tel2 = String(cita.telefono2 || '').trim();
+  if ($telEl) $telEl.textContent = tel1 || '-';
+  if ($tel2El) {
+    $tel2El.textContent = tel2 || '-';
+    const sep = $tel2El.previousElementSibling;
+    if (sep?.classList?.contains('cita-modal-sep')) {
+      sep.style.display = tel1 && tel2 ? '' : 'none';
     }
+    $tel2El.style.display = tel2 ? '' : (tel1 ? 'none' : '');
   }
   
-  // Hora fin info
-  const $hfInfoEl = document.getElementById('modalHoraFinInfoDisplay');
-  if ($hfInfoEl) {
-    if (cita.hora_fin) {
-      let hfText = formatearHora(cita.hora_fin);
-      if (cita.hora_fin_date && cita.hora_fin_date !== cita.fecha) {
-        hfText += ` (${formatearFechaISO(cita.hora_fin_date)})`;
-      }
-      $hfInfoEl.textContent = hfText;
-    } else {
-      $hfInfoEl.textContent = '-';
-    }
-  }
+  pintarDuracionMinutosEnElemento(document.getElementById('modalDuracionDisplay'), cita.duracion_minutos);
+  await configurarEdicionDuracionModalElectro(cita);
+  pintarHoraFinModalElectro(cita);
 
   // Badge de estado en el header
   const $badgeEl = document.getElementById('modalEstadoHeaderBadge');
-  if ($badgeEl) $badgeEl.innerHTML = estadoBadge(citaElectroSeleccionada.estado || 'Programado');
+  if ($badgeEl) $badgeEl.innerHTML = estadoBadgeCitaElectro(citaElectroSeleccionada);
 
   // Franja de horario real (cuando la cita ya tiene hora_inicio)
   const $horarios = document.getElementById('modalInfoHorarios');
@@ -9685,8 +12840,8 @@ function abrirModalDetallesCita(cita) {
     }
   }
   
-  // Rellenar selector de equipo
-  $('modalEquipo').value = cita.equipo_id || '';
+  // Rellenar selector de equipo (estado en uso actualizado)
+  await cargarEquiposElectroSelect(cita.equipo_id || '');
   // Equipo solo editable con permiso de edición.
   if ($('modalEquipo')) {
     $('modalEquipo').disabled = !puedeEditarElectro;
@@ -9717,20 +12872,15 @@ function abrirModalDetallesCita(cita) {
   // Agregar listeners para los botones de reprogramación y adelanto
   const btnRep = $('btnReprogramarCita');
   const btnAde = $('btnAdelantarCita');
-  
-  console.log('[MODAL_DETALLES] btnReprogramarCita existe:', !!btnRep);
-  console.log('[MODAL_DETALLES] btnAdelantarCita existe:', !!btnAde);
-  
+
   if (btnRep && puedeEditarElectro) {
     btnRep.addEventListener('click', abrirModalReprogramar);
-    console.log('[MODAL_DETALLES] Listener agregado a btnReprogramarCita');
   } else if (btnRep) {
     btnRep.style.display = 'none';
   }
-  
+
   if (btnAde && puedeEditarElectro) {
     btnAde.addEventListener('click', abrirModalAdelantarCita);
-    console.log('[MODAL_DETALLES] Listener agregado a btnAdelantarCita');
   } else if (btnAde) {
     btnAde.style.display = 'none';
   }
@@ -9792,6 +12942,8 @@ function abrirModalDetallesCita(cita) {
     };
   }
 
+  actualizarBotonesDocumentosCitaElectro();
+
   if (btnEliminarMenuAction) {
     btnEliminarMenuAction.onclick = () => {
       menuMasOpciones.style.display = 'none';
@@ -9826,17 +12978,16 @@ function abrirModalDetallesCita(cita) {
   
   // Mostrar/Ocultar barra de progreso
   const estudioBarra = $('estudioBarra');
-  if (cita.estado === 'En Estudio' && cita.hora_inicio && cita.hora_fin) {
+  const estudioActivoConHoras = (cita.estado === 'En Estudio' || cita.estado === 'Pausado') && cita.hora_inicio && cita.hora_fin;
+  if (estudioActivoConHoras) {
     if (estudioBarra) {
       estudioBarra.style.display = 'block';
-      $('estudioHoraInicio').textContent = cita.hora_inicio;
-      $('estudioHoraFin').textContent = cita.hora_fin;
-      $('estudioProgreso').textContent = '0';
+      estudioBarra.setAttribute('data-estado', cita.estado === 'Pausado' ? 'pausado' : 'en-estudio');
+      cita._avisoFinDuracion = false;
+      aplicarVisualProgresoEstudio(0, { estadoCard: cita.estado === 'Pausado' ? 'pausado' : 'en-estudio' });
       const restanteEl = $('estudioTiempoRestante');
       if (restanteEl) restanteEl.textContent = '--';
-      $('estudioBarraLlena').style.width = '0%';
     }
-    // Iniciar actualización de progreso
     actualizarProgresoEstudio();
   } else {
     if (estudioBarra) {
@@ -9869,8 +13020,9 @@ function renderFlujoEstado(cita) {
   // Ocultar botones Iniciar/Finalizar del bloque separado (se muestran dentro del flujo)
   if (accionesEl) accionesEl.style.display = 'none';
 
-  // Control de equipo: bloqueado si En Estudio o Pausado
-  const equipoBloqueado = estado === 'En Estudio' || estado === 'Pausado' || estado === 'Completado';
+  // Control de equipo: bloqueado si En Estudio o Pausado (superadmin puede cambiar equipo en activo)
+  const esSuperadmin = currentUser && String(currentUser.rol || '').toLowerCase() === 'superadmin';
+  const equipoBloqueado = estado === 'Completado' || ((estado === 'En Estudio' || estado === 'Pausado') && !esSuperadmin);
   if (equipoSelect) {
     equipoSelect.disabled = equipoBloqueado;
     equipoSelect.style.opacity = equipoBloqueado ? '0.5' : '1';
@@ -9880,25 +13032,27 @@ function renderFlujoEstado(cita) {
   if (!flujoEl) return;
   if (!puedeCambiarEstadoElectro) {
     flujoEl.innerHTML = `<div class="flujo-estado-readonly">Sin permisos para cambiar estado.</div>`;
-    if (btnGuardar) btnGuardar.style.display = 'none';
+    if (btnGuardar) {
+      const estadosOcultarSolo = ['Completado', 'Cancelado', 'No Asistió', 'En Estudio', 'Pausado'];
+      btnGuardar.style.display = (puedeEditarElectro && !estadosOcultarSolo.includes(estado)) ? '' : 'none';
+    }
     return;
   }
 
   const svgCheck = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>`;
   const svgPlay  = `<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
-  const svgStop  = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>`;
+  const svgStop  = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>`;
+  const svgPause = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>`;
 
   // Reprogramado y Adelantado se tratan como Programado (con nota informativa)
-  const esReprogramado = esCitaElectroReprogramada(cita);
-  const esAdelantado = esCitaElectroAdelantada(cita);
-  const esReprogramadoAdelantado = esReprogramado || esAdelantado;
-  const estadoEfectivo = esReprogramadoAdelantado ? 'Programado' : estado;
+  const esReprogramadoAdelantado = estado === 'Reprogramado' || estado === 'Adelantado' || citaElectroEsReprogramada(cita);
+  const estadoEfectivo = (estado === 'Reprogramado' || estado === 'Adelantado') ? 'Programado' : estado;
 
   if (estadoEfectivo === 'Programado') {
     if (equipoSelect) { equipoSelect.disabled = true; equipoSelect.style.opacity = '0.45'; equipoSelect.style.cursor = 'not-allowed'; }
     const notaReprog = esReprogramadoAdelantado
       ? `<div style="font-size:0.8rem;color:#6b7280;margin-bottom:8px;padding:6px 10px;background:#f0f9ff;border-radius:6px;border-left:3px solid #3b82f6">
-           \u2139\ufe0f Cita ${esReprogramado ? 'reprogramada' : 'adelantada'}
+           \u2139\ufe0f Cita ${estado === 'Adelantado' ? 'adelantada' : 'reprogramada'}
          </div>`
       : '';
     flujoEl.innerHTML = `
@@ -9943,13 +13097,15 @@ function renderFlujoEstado(cita) {
   } else if (estado === 'En Estudio') {
     flujoEl.innerHTML = `
       <div class="flujo-estado-panel">
-        <div class="flujo-estado-label">Acci\u00f3n</div>
-        <button class="flujo-btn-primary" id="flujo-btn-finalizar" style="background:linear-gradient(135deg,#22c55e,#16a34a);color:white;">
-          ${svgStop} Finalizar Estudio
-        </button>
-        <div class="flujo-btn-secondary-row">
-          <button class="flujo-btn-sm pausar" id="flujo-btn-pausar" style="background:#f59e0b;color:#78350f;border:none;font-weight:600;">
-            &#9646;&#9646; Pausar estudio
+        <div class="flujo-estado-label">Estudio en curso</div>
+        <div class="flujo-estudio-toolbar">
+          <button type="button" class="electro-study-btn electro-study-btn--finish" id="flujo-btn-finalizar">
+            <span class="electro-study-btn__icon">${svgStop}</span>
+            <span class="electro-study-btn__text"><strong>Finalizar</strong><small>Cerrar estudio</small></span>
+          </button>
+          <button type="button" class="electro-study-btn electro-study-btn--pause" id="flujo-btn-pausar">
+            <span class="electro-study-btn__icon">${svgPause}</span>
+            <span class="electro-study-btn__text"><strong>Pausar</strong><small>Detener temporalmente</small></span>
           </button>
         </div>
       </div>`;
@@ -9959,72 +13115,162 @@ function renderFlujoEstado(cita) {
   } else if (estado === 'Pausado') {
     flujoEl.innerHTML = `
       <div class="flujo-estado-panel">
-        <div class="flujo-estado-label">Estudio Pausado</div>
-        <div class="flujo-btn-secondary-row">
-          <button class="flujo-btn-sm iniciar" id="flujo-btn-reanudar">&#9654; Reanudar Estudio</button>
-          <button class="flujo-btn-sm cancelar" id="flujo-btn-finalizar-pausado">Finalizar estudio</button>
+        <div class="flujo-estado-label">Estudio en pausa</div>
+        <div class="flujo-estudio-toolbar flujo-estudio-toolbar--paused">
+          <button type="button" class="electro-study-btn electro-study-btn--resume" id="flujo-btn-reanudar">
+            <span class="electro-study-btn__icon">${svgPlay}</span>
+            <span class="electro-study-btn__text"><strong>Reanudar</strong><small>Continuar estudio</small></span>
+          </button>
+          <button type="button" class="electro-study-btn electro-study-btn--outline-finish" id="flujo-btn-finalizar-pausado">
+            <span class="electro-study-btn__icon">${svgStop}</span>
+            <span class="electro-study-btn__text"><strong>Finalizar</strong><small>Cerrar estudio</small></span>
+          </button>
         </div>
       </div>`;
     document.getElementById('flujo-btn-reanudar').onclick = (ev) => cambiarEstadoCita('En Estudio', ev.currentTarget);
     document.getElementById('flujo-btn-finalizar-pausado').onclick = () => finalizarEstudioModal();
 
+  } else if (estado === 'Completado' && esSuperadmin) {
+    flujoEl.innerHTML = `
+      <div class="flujo-estado-panel">
+        <div class="flujo-estado-label">Correcci\u00f3n (superadmin)</div>
+        <p style="font-size:0.8rem;color:#6b7280;margin:0 0 10px;line-height:1.4">
+          Si el estudio se marc\u00f3 <strong>Completado</strong> por error (p. ej. cierre autom\u00e1tico), puede devolverlo a <strong>En Estudio</strong>.
+        </p>
+        <div class="flujo-btn-secondary-row">
+          <button type="button" class="flujo-btn-sm iniciar" id="flujo-btn-revertir-en-estudio">${svgPlay} Devolver a En Estudio</button>
+        </div>
+      </div>`;
+    document.getElementById('flujo-btn-revertir-en-estudio').onclick = () => revertirCompletadoAEnEstudio();
+
   } else {
-    // Completado / Cancelado / No Asisti\u00f3
+    // Cancelado / No Asisti\u00f3 (Completado sin permiso superadmin)
     flujoEl.innerHTML = `<div class="flujo-estado-readonly">Sin acciones disponibles para este estado.</div>`;
   }
 
-  // Guardar: ocultar en estados finales Y durante En Estudio/Pausado
+  // Guardar: ocultar en estados finales, durante estudio activo, o sin permiso de edición
   const estadosOcultar = ['Completado','Cancelado','No Asisti\u00f3','En Estudio','Pausado'];
-  if (btnGuardar) btnGuardar.style.display = estadosOcultar.includes(estado) ? 'none' : '';
+  if (btnGuardar) {
+    btnGuardar.style.display = (puedeEditarElectro && !estadosOcultar.includes(estado)) ? '' : 'none';
+  }
 }
 
 function actualizarEstadoFilaTablaElectro(citaId, nuevoEstado) {
-  const st = window.paginationState && window.paginationState.citasElectro;
-  if (!st || !Array.isArray(st.data)) return;
+  const data = window._citasElectroKanbanData;
+  if (!data) return;
   const idStr = String(citaId);
-  const idx = st.data.findIndex((c) => String(c.id) === idStr);
+  const idx = data.findIndex((c) => String(c.id) === idStr);
   if (idx < 0) return;
-  const norm = normalizarEstadoElectro(nuevoEstado);
-  st.data[idx] = { ...st.data[idx], estado: norm };
-  renderPaginatedTable('citasElectro', renderCitaElectroRow, 'citasElectroBody');
-  const containerSel = '#citasElectroTableControls';
-  const container = document.querySelector(containerSel);
-  if (container) {
-    createPaginationControls('citasElectro', containerSel, [5, 10, 15, 20, 50], renderCitaElectroRow, 'citasElectroBody');
-  }
+  data[idx] = { ...data[idx], estado: normalizarEstadoElectro(nuevoEstado) };
+  innarQueueElectroHighlight(citaId);
+  renderCitasElectroKanban(data);
+  if (window._citasElectroAllData) actualizarStatsElectro(window._citasElectroAllData);
 }
 
 function aplicarCambioCitaElectroRealtime(payload = {}) {
-  const st = window.paginationState && window.paginationState.citasElectro;
-  if (!st || !Array.isArray(st.data)) return;
+  const data = window._citasElectroKanbanData;
+  if (!data) return;
   const id = payload?.id;
   if (!id) return;
   const idStr = String(id);
-  const idx = st.data.findIndex((c) => String(c.id) === idStr);
+  const idx = data.findIndex((c) => String(c.id) === idStr);
 
   if (payload.type === 'eliminada' || payload.type === 'eliminado') {
-    if (idx >= 0) st.data.splice(idx, 1);
+    if (idx >= 0) data.splice(idx, 1);
   } else {
     const cambios = payload.cambios || payload;
     const next = {
-      ...(idx >= 0 ? st.data[idx] : { id }),
+      ...(idx >= 0 ? data[idx] : { id }),
       ...cambios
     };
     if (next.estado !== undefined) next.estado = normalizarEstadoElectro(next.estado);
-    if (idx >= 0) st.data[idx] = next;
-    else st.data.push(next);
+    if (idx >= 0) data[idx] = next;
+    else data.push(next);
   }
-
-  st.totalPages = Math.max(1, Math.ceil(st.data.length / st.itemsPerPage));
-  st.currentPage = Math.min(st.currentPage || 1, st.totalPages);
-  renderPaginatedTable('citasElectro', renderCitaElectroRow, 'citasElectroBody');
-  const containerSel = '#citasElectroTableControls';
-  if (document.querySelector(containerSel)) {
-    createPaginationControls('citasElectro', containerSel, [5, 10, 15, 20, 50], renderCitaElectroRow, 'citasElectroBody');
-  }
+  renderCitasElectroKanban(data);
+  if (window._citasElectroAllData) actualizarStatsElectro(window._citasElectroAllData);
 }
 
 window.aplicarCambioCitaElectroRealtime = aplicarCambioCitaElectroRealtime;
+
+async function revertirCompletadoAEnEstudio() {
+  if (!citaElectroSeleccionada) return;
+  if (!isSuperadmin()) {
+    showToast('Solo el superadmin puede devolver un estudio a En Estudio', 'error');
+    return;
+  }
+  if (citaElectroSeleccionada.estado !== 'Completado') {
+    showToast('Solo aplica a estudios en estado Completado', 'warning');
+    return;
+  }
+  if (!citaElectroSeleccionada.hora_inicio && !citaElectroSeleccionada.hora_agendamiento) {
+    showToast('El estudio no tiene hora de inicio; no se puede reabrir', 'warning');
+    return;
+  }
+  const paciente = citaElectroSeleccionada.paciente_nombre || 'este paciente';
+  if (!confirm(`¿Devolver el estudio de ${paciente} de Completado a En Estudio?\n\nUse esta opción solo si se cerró por error del sistema.`)) {
+    return;
+  }
+  const btn = document.getElementById('flujo-btn-revertir-en-estudio');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Reabriendo...';
+  }
+  try {
+    const res = await apiFetch(`/api/citas-electro/${citaElectroSeleccionada.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ estado: 'En Estudio' })
+    });
+    const data = await res.json();
+    if (!res.ok || !data?.ok) {
+      showToast(data?.error || 'No se pudo reabrir el estudio', 'error');
+      return;
+    }
+    citaElectroSeleccionada.estado = 'En Estudio';
+    citaElectroSeleccionada._autoFinalizandoEnCurso = false;
+    try {
+      const resFresh = await apiFetch(`/api/citas-electro/${citaElectroSeleccionada.id}?_t=${Date.now()}`, { cache: 'no-store' });
+      if (resFresh.ok) {
+        const fresh = await resFresh.json();
+        Object.assign(citaElectroSeleccionada, fresh, {
+          estado: 'En Estudio',
+          _autoFinalizandoEnCurso: false
+        });
+      }
+    } catch (_) { /* usar datos locales */ }
+    showToast('Estudio devuelto a En Estudio (duración reprogramada)', 'success');
+    if (window.socket && window.socket.connected) {
+      window.socket.emit('electro:cita-cambio-estado', {
+        id: citaElectroSeleccionada.id,
+        estado: 'En Estudio'
+      });
+    }
+    $('modalEstado').value = 'En Estudio';
+    renderFlujoEstado(citaElectroSeleccionada);
+    const estudioBarra = $('estudioBarra');
+    const puedeBarra = citaElectroSeleccionada.hora_inicio && citaElectroSeleccionada.hora_fin;
+    if (estudioBarra && puedeBarra) {
+      estudioBarra.style.display = 'block';
+      estudioBarra.setAttribute('data-estado', 'en-estudio');
+      citaElectroSeleccionada._avisoFinDuracion = false;
+      aplicarVisualProgresoEstudio(0, { estadoCard: 'en-estudio' });
+    }
+    actualizarProgresoEstudio();
+    actualizarEstadoFilaTablaElectro(citaElectroSeleccionada.id, 'En Estudio');
+    citaElectroSeleccionada._reabiertoEn = Date.now();
+    await cargarCitasElectro();
+    cargarEquiposElectroSelect();
+  } catch (e) {
+    console.error('[REVERTIR_ESTUDIO]', e);
+    showToast('Error al reabrir el estudio', 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg> Devolver a En Estudio';
+    }
+  }
+}
 
 async function cambiarEstadoCita(nuevoEstado, triggerBtn = null) {
   if (!citaElectroSeleccionada) return;
@@ -10038,10 +13284,15 @@ async function cambiarEstadoCita(nuevoEstado, triggerBtn = null) {
   try {
     // Usar endpoint general para unificar exactamente el mismo flujo que ya funciona
     // en el resto del módulo (equipos, inicio/fin estudio, etc.).
+    const cambios = { estado: estadoObjetivo };
+    if (estadoObjetivo === 'En Estudio') {
+      const eqId = $('modalEquipo')?.value || citaElectroSeleccionada.equipo_id;
+      if (eqId) cambios.equipo_id = eqId;
+    }
     const res = await apiFetch(`/api/citas-electro/${citaElectroSeleccionada.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ estado: estadoObjetivo })
+      body: JSON.stringify(cambios)
     });
     const data = await res.json();
     if (data && data.ok) {
@@ -10053,7 +13304,7 @@ async function cambiarEstadoCita(nuevoEstado, triggerBtn = null) {
       citaElectroSeleccionada.estado = estadoPersistido;
       $('modalEstado').value = estadoPersistido;
       const $badgeEl = document.getElementById('modalEstadoHeaderBadge');
-      if ($badgeEl) $badgeEl.innerHTML = estadoBadge(estadoPersistido);
+      if ($badgeEl) $badgeEl.innerHTML = estadoBadgeCitaElectro(citaElectroSeleccionada);
       renderFlujoEstado(citaElectroSeleccionada);
       if (estadoPersistido !== estadoObjetivo) {
         showToast(`El servidor conservó el estado "${estadoPersistido}"`, 'warning');
@@ -10064,6 +13315,7 @@ async function cambiarEstadoCita(nuevoEstado, triggerBtn = null) {
       if (window.socket && window.socket.connected) {
         window.socket.emit('electro:cambios-guardados', { id: citaElectroSeleccionada.id, cambios: { estado: estadoPersistido } });
       }
+      innarSkipKanbanEnterOnce();
       await cargarCitasElectro();
     } else {
       showToast(data?.error || 'Error actualizando estado', 'error');
@@ -10141,23 +13393,62 @@ async function eliminarCitaElectro() {
 
 async function guardarCambiosCitaElectro() {
   if (!citaElectroSeleccionada) return;
+  if (!tienePermiso('electro.editar')) {
+    showToast('No tiene permiso para editar citas de electro', 'error');
+    return;
+  }
   
   try {
     const estadoActual = citaElectroSeleccionada.estado || '';
     if (estadoActual === 'En Estudio' || estadoActual === 'Pausado') {
-      showToast('No puedes cambiar el equipo mientras el estudio está activo', 'error');
+      showToast('No puedes modificar datos mientras el estudio está activo', 'error');
+      return;
+    }
+    if (estadoActual === 'Completado') {
+      showToast('El estudio está completado y no se puede modificar', 'info');
       return;
     }
 
     const equipoNuevo = $('modalEquipo').value;
-    
-    // Solo manejar cambio de equipo — los cambios de estado se manejan
-    // exclusivamente por los botones de flujo (cambiarEstadoCita, iniciarEstudioModal, etc.)
+    const estudioNuevo = ($('modalEstudio')?.value || '').trim();
+
     const cambios = {};
-    
-    // Comparar equipo (convertir ambos a string para comparar)
+
     if (String(equipoNuevo) !== String(citaElectroSeleccionada.equipo_id || '')) {
       cambios.equipo_id = equipoNuevo ? parseInt(equipoNuevo) : null;
+    }
+    if (estudioNuevo && estudioNuevo !== (citaElectroSeleccionada.estudio || '')) {
+      cambios.estudio = estudioNuevo;
+    }
+
+    const entidadNueva = ($('modalEntidad')?.value || '').trim();
+    const entidadActual = obtenerEntidadCitaElectro(citaElectroSeleccionada);
+    if (entidadNueva && entidadNueva !== entidadActual) {
+      cambios.entidad = entidadNueva;
+    }
+
+    const fechaNueva = ($('modalFechaAgenda')?.value || '').trim();
+    const horaNueva = ($('modalHoraAgenda')?.value || '').trim().slice(0, 5);
+    const fechaActual = formatearFechaISO(citaElectroSeleccionada.fecha);
+    const horaActual = citaElectroSeleccionada.hora_agendamiento
+      ? String(citaElectroSeleccionada.hora_agendamiento).trim().slice(0, 5)
+      : '';
+    if (fechaNueva && fechaNueva !== fechaActual) {
+      cambios.fecha = fechaNueva;
+    }
+    if (horaNueva && horaNueva !== horaActual) {
+      cambios.hora_agendamiento = horaNueva;
+    }
+    if ((cambios.fecha || cambios.hora_agendamiento) && puedeReprogramarCitaElectro(citaElectroSeleccionada)) {
+      Object.assign(cambios, buildPayloadReprogramarCitaElectro(
+        citaElectroSeleccionada,
+        fechaNueva || fechaActual,
+        horaNueva || horaActual
+      ));
+    }
+    if ((cambios.fecha || cambios.hora_agendamiento) && (!fechaNueva || !horaNueva)) {
+      showToast('Indique fecha y hora agendada válidas', 'error');
+      return;
     }
     
     if (Object.keys(cambios).length > 0) {
@@ -10170,7 +13461,11 @@ async function guardarCambiosCitaElectro() {
       const data = await res.json();
       
       if (data && data.ok) {
-        showToast('Cambios guardados', 'success');
+        const movioDia = cambios.fecha && $('electroFecha')?.value && cambios.fecha !== $('electroFecha').value;
+        showToast(
+          movioDia ? `Cita actualizada al ${formatearFecha(cambios.fecha)}` : 'Cambios guardados',
+          'success'
+        );
         
         // Emitir evento de socket desde el cliente
         if (window.socket && window.socket.connected) {
@@ -10181,6 +13476,9 @@ async function guardarCambiosCitaElectro() {
         }
         
         // El servidor también emite el socket event
+        if (movioDia && $('electroFecha')) {
+          $('electroFecha').value = cambios.fecha;
+        }
         cargarCitasElectro();
         cerrarModalDetallesCita();
       } else {
@@ -10196,6 +13494,100 @@ async function guardarCambiosCitaElectro() {
 }
 
 // ========== FUNCIONES PARA REPROGRAMAR Y ADELANTAR CITAS ==========
+
+function puedeReprogramarCitaElectro(cita) {
+  const est = normalizarEstadoElectro(cita?.estado || '');
+  return !['En Estudio', 'Pausado', 'Completado', 'Cancelado', 'No Asistió'].includes(est);
+}
+
+function bindReprogramarElectroDesdeModalAgenda() {
+  const fechaEl = $('modalFechaAgenda');
+  const horaEl = $('modalHoraAgenda');
+  if (fechaEl && !fechaEl.dataset.reprogBound) {
+    fechaEl.dataset.reprogBound = '1';
+    fechaEl.addEventListener('change', () => reprogramarCitaElectroDesdeModalAgenda());
+  }
+  if (horaEl && !horaEl.dataset.reprogBound) {
+    horaEl.dataset.reprogBound = '1';
+    horaEl.addEventListener('change', () => reprogramarCitaElectroDesdeModalAgenda());
+  }
+}
+
+async function reprogramarCitaElectroDesdeModalAgenda() {
+  if (!citaElectroSeleccionada || isInitializingElectroModal) return;
+  if (!tienePermiso('electro.editar')) return;
+  if (!puedeReprogramarCitaElectro(citaElectroSeleccionada)) {
+    showToast('No se puede reprogramar la cita en este estado', 'error');
+    const $fechaEl = $('modalFechaAgenda');
+    const $horaEl = $('modalHoraAgenda');
+    if ($fechaEl) $fechaEl.value = formatearFechaISO(citaElectroSeleccionada.fecha);
+    if ($horaEl) {
+      const h = citaElectroSeleccionada.hora_agendamiento ? String(citaElectroSeleccionada.hora_agendamiento).trim() : '';
+      $horaEl.value = /^\d{2}:\d{2}/.test(h) ? h.slice(0, 5) : h;
+    }
+    return;
+  }
+
+  const fechaNueva = ($('modalFechaAgenda')?.value || '').trim();
+  const horaNueva = ($('modalHoraAgenda')?.value || '').trim().slice(0, 5);
+  const fechaActual = formatearFechaISO(citaElectroSeleccionada.fecha);
+  const horaActual = citaElectroSeleccionada.hora_agendamiento
+    ? String(citaElectroSeleccionada.hora_agendamiento).trim().slice(0, 5)
+    : '';
+
+  if (!fechaNueva || !horaNueva) {
+    showToast('Indique fecha y hora agendada válidas', 'error');
+    return;
+  }
+  if (fechaNueva === fechaActual && horaNueva === horaActual) return;
+
+  const cambios = buildPayloadReprogramarCitaElectro(citaElectroSeleccionada, fechaNueva, horaNueva);
+
+  try {
+    const res = await apiFetch(`/api/citas-electro/${citaElectroSeleccionada.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(cambios)
+    });
+    const data = await res.json();
+    if (!data?.ok) throw new Error(data?.error || 'Error reprogramando cita');
+
+    citaElectroSeleccionada.estado = 'Programado';
+    citaElectroSeleccionada.fecha = fechaNueva;
+    citaElectroSeleccionada.hora_agendamiento = horaNueva;
+    citaElectroSeleccionada.observaciones = cambios.observaciones;
+
+    const movioDia = $('electroFecha')?.value && fechaNueva !== $('electroFecha').value;
+    showToast(
+      movioDia ? `Cita reprogramada al ${formatearFecha(fechaNueva)}` : 'Cita reprogramada',
+      'success'
+    );
+
+    if (window.socket && window.socket.connected) {
+      window.socket.emit('electro:cambios-guardados', {
+        id: citaElectroSeleccionada.id,
+        cambios
+      });
+    }
+
+    if (movioDia && $('electroFecha')) {
+      $('electroFecha').value = fechaNueva;
+      $('electroFecha').dispatchEvent(new Event('change'));
+    } else {
+      cargarCitasElectro();
+    }
+
+    const $badgeEl = document.getElementById('modalEstadoHeaderBadge');
+    if ($badgeEl) $badgeEl.innerHTML = estadoBadgeCitaElectro(citaElectroSeleccionada);
+    renderFlujoEstado(citaElectroSeleccionada);
+  } catch (e) {
+    showToast(e.message || 'Error reprogramando cita', 'error');
+    const $fechaEl = $('modalFechaAgenda');
+    const $horaEl = $('modalHoraAgenda');
+    if ($fechaEl) $fechaEl.value = fechaActual;
+    if ($horaEl) $horaEl.value = horaActual;
+  }
+}
 
 function abrirModalReprogramar() {
   if (!citaElectroSeleccionada) {
@@ -10240,10 +13632,11 @@ async function confirmarReprogramar() {
       return;
     }
     
-    const cambios = {
-      fecha: fechaNueva,
-      hora_agendamiento: horaNueva
-    };
+    const cambios = buildPayloadReprogramarCitaElectro(
+      citaReprogramarAdelantarActual,
+      fechaNueva,
+      horaNueva
+    );
     
     const res = await apiFetch(`/api/citas-electro/${citaReprogramarAdelantarActual.id}`, {
       method: 'PATCH',
@@ -10407,38 +13800,708 @@ function obtenerNombreEspecialistaRecordatorio() {
   return (currentUser?.nombre || currentUser?.usuario || '').trim();
 }
 
-function construirMensajeRecordatorioMedica(turno, especialidadDoctor) {
+const SEDES_RECORDATORIO_MEDICA = {
+  '1': {
+    titulo: SEDES_INNAR.principal.titulo,
+    subtitulo: SEDES_INNAR.principal.corta,
+    ubicacion: SEDES_INNAR.principal.completa
+  },
+  '2': {
+    titulo: SEDES_INNAR.complementaria.titulo,
+    subtitulo: SEDES_INNAR.complementaria.corta,
+    ubicacion: SEDES_INNAR.complementaria.completa
+  }
+};
+
+function construirMensajeRecordatorioMedica(turno, especialidadDoctor, sedeId) {
   const nombre = turno?.paciente_nombre || '';
   const fecha = turno?.fecha ? formatearFechaISO(turno.fecha) : '-';
   const hora = turno?.hora ? formatearHora(turno.hora) : '-';
   const especialidadTexto = especialidadDoctor || 'Neuropsicología';
   const nombreEspecialista = obtenerNombreEspecialistaRecordatorio();
   const lineaEspecialista = especialidadIncluyeEspecialista(especialidadTexto)
-    ? `\n◉ Especialista: ${nombreEspecialista || 'Por confirmar'}`
+    ? `\n▸ Especialista: ${nombreEspecialista || 'Por confirmar'}`
     : '';
+  const sede = SEDES_RECORDATORIO_MEDICA[sedeId] || SEDES_RECORDATORIO_MEDICA['1'];
   return `¡Hola, buen día!. Le recordamos su cita de ${especialidadTexto} en el Instituto Neurociencias de Nariño IPS S.A.S:
-◉ Paciente: ${nombre}
-◉ Fecha: ${fecha}
-◉ Hora: ${hora}
+▸ Paciente: ${nombre}
+▸ Fecha: ${fecha}
+▸ Hora: ${hora}
 ${lineaEspecialista}
-◉ Ubicación: Carrera 33 #13 - 84 "Casa Verde" (https://maps.app.goo.gl/YU5GheUmVMDAHFbq8)
+▸ Ubicación: ${sede.ubicacion}
 Cualquier novedad, no dude en comunicarse con nosotros.
 
 NOTA: Por favor confirmar su asistencia lo antes posible. Muchas gracias.`;
 }
 
-function enviarRecordatorioWhatsAppMedica(turno) {
-  if (!turno) return;
-  const telefono = String(turno.paciente_telefono || '').replace(/\D/g, '');
+function cerrarModalSedeRecordatorio() {
+  const modal = document.getElementById('modalSedeRecordatorio');
+  if (modal) modal.classList.add('hidden');
+}
+
+function mostrarModalSedeRecordatorio(turno) {
+  const telefono = String(turno?.paciente_telefono || '').replace(/\D/g, '');
   if (!telefono || telefono.length < 7) {
-    showToast('La cita no tiene un teléfono #1 válido para enviar recordatorio', 'error');
+    showToast('La cita no tiene un teléfono válido para enviar recordatorio', 'error');
     return;
   }
-  const numeroWhatsApp = telefono.startsWith('57') ? telefono : `57${telefono}`;
-  const especialidadActual = selectedDoctorEspecialidad || currentUser?.especialidad || '';
-  const mensaje = construirMensajeRecordatorioMedica(turno, especialidadActual);
-  window.open(`https://wa.me/${numeroWhatsApp}?text=${encodeURIComponent(mensaje)}`, '_blank');
-  showToast('Recordatorio listo para enviar por WhatsApp', 'success');
+  const modal = document.getElementById('modalSedeRecordatorio');
+  if (!modal) {
+    showToast('No se pudo abrir el selector de sede', 'error');
+    return;
+  }
+
+  const enviar = (sedeId) => {
+    const especialidadActual = selectedDoctorEspecialidad || currentUser?.especialidad || '';
+    const mensaje = construirMensajeRecordatorioMedica(turno, especialidadActual, sedeId);
+    const numero = telefono.startsWith('57') ? telefono : `57${telefono}`;
+    window.open(`https://wa.me/${numero}?text=${encodeURIComponent(mensaje)}`, '_blank');
+    showToast('Recordatorio listo para enviar por WhatsApp', 'success');
+    cerrarModalSedeRecordatorio();
+  };
+
+  const btn1 = document.getElementById('sedeRBtn1');
+  const btn2 = document.getElementById('sedeRBtn2');
+  const btnCancel = document.getElementById('sedeRBtnCancel');
+  if (btn1) btn1.onclick = () => enviar('1');
+  if (btn2) btn2.onclick = () => enviar('2');
+  if (btnCancel) btnCancel.onclick = cerrarModalSedeRecordatorio;
+
+  if (!modal.dataset.sedeOverlayBound) {
+    modal.dataset.sedeOverlayBound = '1';
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) cerrarModalSedeRecordatorio();
+    });
+    const dialog = modal.querySelector('.sede-recordatorio-dialog');
+    if (dialog) dialog.addEventListener('click', (e) => e.stopPropagation());
+  }
+
+  modal.classList.remove('hidden');
+}
+
+function enviarRecordatorioWhatsAppMedica(turno) {
+  if (!turno) return;
+  mostrarModalSedeRecordatorio(turno);
+}
+
+// ========== CERTIFICADO DE ASISTENCIA ==========
+let _certAsistPacienteNombre = '';
+
+const CERT_ASIST_LS_KEY = 'innar_cert_asist_func';
+
+function certAsistenciaLeerDefaults() {
+  try {
+    return JSON.parse(localStorage.getItem(CERT_ASIST_LS_KEY) || '{}');
+  } catch (_) {
+    return {};
+  }
+}
+
+function certAsistenciaGuardarDefaults(payload) {
+  try {
+    localStorage.setItem(CERT_ASIST_LS_KEY, JSON.stringify({
+      funcionario_nombre: payload.funcionario_nombre || '',
+      funcionario_cargo: payload.funcionario_cargo || ''
+    }));
+  } catch (_) { /* ignore */ }
+}
+
+function certAsistenciaHoraDesdeCita(horaRaw) {
+  const s = String(horaRaw || '').trim();
+  if (/^\d{2}:\d{2}/.test(s)) return s.slice(0, 5);
+  return s || '';
+}
+
+function certAsistenciaFechaFinElectro(cita) {
+  const finDate = obtenerFechaHoraFinCitaElectro(cita);
+  if (finDate && !isNaN(finDate.getTime())) {
+    const y = finDate.getFullYear();
+    const m = String(finDate.getMonth() + 1).padStart(2, '0');
+    const d = String(finDate.getDate()).padStart(2, '0');
+    return {
+      fecha: `${y}-${m}-${d}`,
+      hora: `${String(finDate.getHours()).padStart(2, '0')}:${String(finDate.getMinutes()).padStart(2, '0')}`
+    };
+  }
+  const fechaEgr = extraerFechaYmdCalendario(cita?.hora_fin_date || cita?.fecha);
+  const horaEgr = certAsistenciaHoraDesdeCita(cita?.hora_fin || cita?.hora_agendamiento);
+  return { fecha: fechaEgr, hora: horaEgr };
+}
+
+function prefillCertificadoAsistenciaElectro(cita) {
+  const fechaIng = extraerFechaYmdCalendario(cita?.fecha);
+  const horaIng = certAsistenciaHoraDesdeCita(cita?.hora_inicio || cita?.hora_agendamiento);
+  const fin = certAsistenciaFechaFinElectro(cita);
+  const defaults = certAsistenciaLeerDefaults();
+  const nombreUsuario = (currentUser?.nombre || currentUser?.usuario || '').trim();
+  return {
+    origen: 'electro',
+    paciente_nombre: (cita?.paciente_nombre || '').trim(),
+    paciente_documento: (cita?.paciente_documento || '').trim(),
+    tipo_documento: 'CC',
+    motivo: (cita?.estudio || '').trim(),
+    fecha_ingreso: fechaIng,
+    hora_ingreso: horaIng,
+    fecha_egreso: fin.fecha || fechaIng,
+    hora_egreso: fin.hora || horaIng,
+    funcionario_nombre: defaults.funcionario_nombre || nombreUsuario,
+    funcionario_cargo: defaults.funcionario_cargo || ''
+  };
+}
+
+function prefillCertificadoAsistenciaMedica(turno) {
+  const fecha = extraerFechaYmdCalendario(turno?.fecha);
+  const hora = certAsistenciaHoraDesdeCita(turno?.hora);
+  const defaults = certAsistenciaLeerDefaults();
+  const nombreUsuario = (currentUser?.nombre || currentUser?.usuario || '').trim();
+  return {
+    origen: 'medica',
+    paciente_nombre: (turno?.paciente_nombre || '').trim(),
+    paciente_documento: (turno?.paciente_documento || '').trim(),
+    tipo_documento: 'CC',
+    motivo: (turno?.tipo_consulta || '').trim(),
+    fecha_ingreso: fecha,
+    hora_ingreso: hora,
+    fecha_egreso: fecha,
+    hora_egreso: hora,
+    funcionario_nombre: defaults.funcionario_nombre || nombreUsuario,
+    funcionario_cargo: defaults.funcionario_cargo || ''
+  };
+}
+
+function abrirModalCertificadoAsistencia(prefill) {
+  if (!prefill?.paciente_nombre) {
+    showToast('No hay datos del paciente para el certificado', 'error');
+    return;
+  }
+  _certAsistPacienteNombre = prefill.paciente_nombre;
+  const set = (id, val) => { const el = $(id); if (el) el.value = val ?? ''; };
+  set('certAsistOrigen', prefill.origen);
+  const resumen = $('certAsistPacienteResumen');
+  if (resumen) resumen.textContent = prefill.paciente_nombre;
+  set('certAsistTipoDoc', prefill.tipo_documento || 'CC');
+  set('certAsistDocumento', prefill.paciente_documento);
+  set('certAsistMotivo', prefill.motivo);
+  set('certAsistFechaIngreso', prefill.fecha_ingreso);
+  set('certAsistHoraIngreso', prefill.hora_ingreso);
+  set('certAsistFechaEgreso', prefill.fecha_egreso);
+  set('certAsistHoraEgreso', prefill.hora_egreso);
+  set('certAsistFuncionarioNombre', prefill.funcionario_nombre);
+  set('certAsistFuncionarioCargo', prefill.funcionario_cargo);
+  const modal = $('modalCertificadoAsistencia');
+  window.innarPersonaFidu?.bindFechaInputs?.(modal);
+  if (modal) {
+    modal.classList.remove('hidden');
+    modal.style.display = 'flex';
+  }
+}
+
+function cerrarModalCertificadoAsistencia() {
+  const modal = $('modalCertificadoAsistencia');
+  if (modal) {
+    modal.classList.add('hidden');
+    modal.style.display = 'none';
+  }
+}
+
+async function generarCertificadoAsistenciaPdf() {
+  const origen = $('certAsistOrigen')?.value?.trim();
+  const permOk = origen === 'electro'
+    ? tienePermiso('electro.ver')
+    : origen === 'medica'
+      ? tienePermiso('agenda.ver')
+      : false;
+  if (!permOk) {
+    showToast('No tiene permiso para generar este certificado', 'error');
+    return;
+  }
+  const payload = {
+    origen,
+    paciente_nombre: _certAsistPacienteNombre,
+    paciente_documento: $('certAsistDocumento')?.value?.trim(),
+    tipo_documento: $('certAsistTipoDoc')?.value || 'CC',
+    motivo: $('certAsistMotivo')?.value?.trim(),
+    fecha_ingreso: window.innarPersonaFidu?.normalizarFecha?.($('certAsistFechaIngreso')?.value) || $('certAsistFechaIngreso')?.value,
+    hora_ingreso: $('certAsistHoraIngreso')?.value,
+    fecha_egreso: window.innarPersonaFidu?.normalizarFecha?.($('certAsistFechaEgreso')?.value) || $('certAsistFechaEgreso')?.value,
+    hora_egreso: $('certAsistHoraEgreso')?.value,
+    funcionario_nombre: $('certAsistFuncionarioNombre')?.value?.trim(),
+    funcionario_cargo: $('certAsistFuncionarioCargo')?.value?.trim()
+  };
+  if (!payload.paciente_documento || !payload.motivo || !payload.fecha_ingreso || !payload.hora_ingreso
+    || !payload.fecha_egreso || !payload.hora_egreso || !payload.funcionario_nombre
+    || !payload.funcionario_cargo) {
+    showToast('Complete todos los campos obligatorios', 'error');
+    return;
+  }
+  const btn = $('btnGenerarCertificadoAsistencia');
+  if (btn) btn.disabled = true;
+  try {
+    const PDF = window.innarDocumentoPdf;
+    if (!PDF) throw new Error('Generador PDF no disponible');
+    const doc = payload.paciente_documento.replace(/\D/g, '') || 'sin_doc';
+    const modo = await PDF.generarDocumento({
+      postUrl: '/api/certificados/asistencia',
+      previewUrl: '/api/certificados/asistencia/preview',
+      payload,
+      filename: `certificado_asistencia_${doc}.pdf`
+    });
+    certAsistenciaGuardarDefaults(payload);
+    await guardarPersonaFiduDesdeDocumento('certificado', payload);
+    showToast(
+      modo === 'impresion'
+        ? 'Se abrió la vista de impresión. Use «Guardar como PDF».'
+        : 'Certificado descargado',
+      modo === 'impresion' ? 'info' : 'success'
+    );
+    cerrarModalCertificadoAsistencia();
+  } catch (e) {
+    showToast(e.message || 'Error generando certificado', 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+// ========== BASE PACIENTES FOMAG (anexo_fidu_personas) ==========
+let _personaFiduPending = null;
+
+function personaFiduNombreCompleto(persona, fallback) {
+  const parts = [
+    persona?.nombres_1, persona?.nombres_2, persona?.apellidos_1, persona?.apellidos_2
+  ].map((s) => String(s || '').trim()).filter(Boolean);
+  if (parts.length) return parts.join(' ');
+  return String(fallback || '').trim();
+}
+
+function personaFiduSugerirDesdeNombre(nombreCompleto) {
+  const words = String(nombreCompleto || '').trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return {};
+  if (words.length === 1) return { nombres_1: words[0] };
+  if (words.length === 2) return { nombres_1: words[0], apellidos_1: words[1] };
+  return {
+    nombres_1: words.slice(0, -2).join(' '),
+    apellidos_1: words[words.length - 2],
+    apellidos_2: words[words.length - 1]
+  };
+}
+
+function personaFiduEnriquecerDesdeCita(persona, citaPrefill, contexto) {
+  const p = { ...(persona || {}) };
+  const sugeridos = personaFiduSugerirDesdeNombre(citaPrefill?.paciente_nombre);
+  Object.keys(sugeridos).forEach((k) => {
+    if (!String(p[k] || '').trim()) p[k] = sugeridos[k];
+  });
+  if (!String(p.telefono || '').trim() && citaPrefill?.telefono) p.telefono = citaPrefill.telefono;
+  if (!String(p.afiliacion || '').trim() && citaPrefill?.tipo_afiliacion) {
+    p.afiliacion = citaPrefill.tipo_afiliacion;
+  }
+  if (contexto === 'comprobante' && !String(p.correo || '').trim()) p.correo = '';
+  return p;
+}
+
+function personaFiduAplicarAPrefill(contexto, persona, citaPrefill) {
+  const nombre = personaFiduNombreCompleto(persona, citaPrefill?.paciente_nombre);
+  if (contexto === 'certificado') {
+    return {
+      ...citaPrefill,
+      paciente_nombre: nombre,
+      paciente_documento: persona?.numero_documento || citaPrefill?.paciente_documento,
+      tipo_documento: persona?.tipo_documento || citaPrefill?.tipo_documento || 'CC'
+    };
+  }
+  if (contexto === 'comprobante') {
+    return {
+      ...citaPrefill,
+      paciente_nombre: nombre,
+      paciente_documento: persona?.numero_documento || citaPrefill?.paciente_documento,
+      tipo_documento: persona?.tipo_documento || citaPrefill?.tipo_documento || 'CC',
+      fecha_nacimiento: persona?.fecha_nacimiento || citaPrefill?.fecha_nacimiento || '',
+      direccion: persona?.direccion || citaPrefill?.direccion || '',
+      telefono: persona?.telefono || citaPrefill?.telefono || '',
+      correo: persona?.correo || citaPrefill?.correo || '',
+      tipo_afiliacion: persona?.afiliacion || citaPrefill?.tipo_afiliacion || 'Cotizante',
+      firma_paciente: persona?.firma_paciente || citaPrefill?.firma_paciente || ''
+    };
+  }
+  return citaPrefill;
+}
+
+async function guardarPersonaFiduDesdeDocumento(contexto, payload) {
+  const PF = window.innarPersonaFidu;
+  if (!PF || !payload?.paciente_documento) return;
+  try {
+    if (contexto === 'comprobante' && PF.guardarDesdeComprobanteModal) {
+      await PF.guardarDesdeComprobanteModal(payload, 'comprobante');
+    } else if (contexto === 'certificado' && PF.guardarDesdeCertificadoModal) {
+      await PF.guardarDesdeCertificadoModal(payload, 'certificado');
+    }
+  } catch (e) {
+    showToast('PDF generado, pero no se pudo actualizar la base de pacientes', 'warning');
+  }
+}
+
+function abrirModalCompletarPersonaFidu(opts = {}) {
+  const PF = window.innarPersonaFidu;
+  const modal = $('modalCompletarPersonaFidu');
+  const formEl = $('pfiduModalForm');
+  const msgEl = $('pfiduModalMensaje');
+  if (!PF || !modal || !formEl) {
+    showToast('No se pudo abrir el formulario de paciente', 'error');
+    return;
+  }
+  const doc = opts.persona?.numero_documento || '';
+  const parcial = !opts.modoCompleto && (opts.camposFaltantes || []).length > 0;
+  if (msgEl) {
+    msgEl.innerHTML = parcial
+      ? `El paciente <strong>${escapeHtml(doc)}</strong> está en la base pero faltan algunos datos. Complételos para continuar.`
+      : `El paciente <strong>${escapeHtml(doc)}</strong> no está completo en la base FOMAG. Registre los datos para continuar.`;
+  }
+  PF.renderFormulario(formEl, {
+    persona: opts.persona || {},
+    camposFaltantes: opts.camposFaltantes,
+    modoCompleto: !!opts.modoCompleto
+  });
+  modal.classList.remove('hidden');
+  modal.style.display = 'flex';
+}
+
+function cerrarModalCompletarPersonaFidu() {
+  const modal = $('modalCompletarPersonaFidu');
+  if (modal) {
+    modal.classList.add('hidden');
+    modal.style.display = 'none';
+  }
+  _personaFiduPending = null;
+}
+
+async function abrirDocumentoConPersonaFidu(contexto, citaPrefill, abrirFn) {
+  const PF = window.innarPersonaFidu;
+  if (!PF) {
+    abrirFn(citaPrefill);
+    return;
+  }
+  const doc = String(citaPrefill?.paciente_documento || '').trim();
+  if (!doc) {
+    showToast('La cita no tiene documento del paciente', 'error');
+    return;
+  }
+  try {
+    const data = await PF.fetchPersona(doc, contexto);
+    let persona = personaFiduEnriquecerDesdeCita(data.persona || { numero_documento: doc }, citaPrefill, contexto);
+    const faltantes = data.campos_faltantes || [];
+    if (faltantes.length) {
+      _personaFiduPending = { contexto, citaPrefill, abrirFn };
+      abrirModalCompletarPersonaFidu({
+        persona,
+        camposFaltantes: faltantes,
+        modoCompleto: !data.encontrada
+      });
+      return;
+    }
+    abrirFn(personaFiduAplicarAPrefill(contexto, persona, citaPrefill));
+  } catch (e) {
+    showToast(e.message || 'Error consultando base de pacientes', 'error');
+  }
+}
+
+async function guardarCompletarPersonaFiduYContinuar() {
+  const PF = window.innarPersonaFidu;
+  const pending = _personaFiduPending;
+  const formRoot = $('pfiduModalForm');
+  if (!PF || !pending || !formRoot) return;
+  const btn = $('btnGuardarCompletarPersonaFidu');
+  if (btn) btn.disabled = true;
+  try {
+    const persona = PF.leerFormulario(formRoot);
+    const data = await PF.guardarPersona(persona, pending.contexto);
+    if (data.campos_faltantes?.length) {
+      showToast('Aún faltan datos obligatorios', 'error');
+      abrirModalCompletarPersonaFidu({
+        persona: data.persona,
+        camposFaltantes: data.campos_faltantes,
+        modoCompleto: false
+      });
+      _personaFiduPending = pending;
+      return;
+    }
+    const { contexto, citaPrefill, abrirFn } = pending;
+    cerrarModalCompletarPersonaFidu();
+    abrirFn(personaFiduAplicarAPrefill(contexto, data.persona, citaPrefill));
+    showToast('Paciente actualizado en la base FOMAG', 'success');
+  } catch (e) {
+    showToast(e.message || 'Error guardando paciente', 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function initCompletarPersonaFiduUi() {
+  $('btnCerrarCompletarPersonaFidu')?.addEventListener('click', cerrarModalCompletarPersonaFidu);
+  $('btnCancelarCompletarPersonaFidu')?.addEventListener('click', cerrarModalCompletarPersonaFidu);
+  $('btnGuardarCompletarPersonaFidu')?.addEventListener('click', guardarCompletarPersonaFiduYContinuar);
+  $('modalCompletarPersonaFidu')?.addEventListener('click', (e) => {
+    if (e.target?.id === 'modalCompletarPersonaFidu') cerrarModalCompletarPersonaFidu();
+  });
+}
+
+function actualizarBotonesDocumentosCitaMedica() {
+  const puede = tienePermiso('agenda.ver');
+  const btnCert = $('btnCertificadoAsistenciaMedica');
+  const btnComp = $('btnComprobanteServiciosMedica');
+  if (btnCert) btnCert.hidden = !puede;
+  if (btnComp) btnComp.hidden = !puede;
+}
+
+function actualizarBotonesDocumentosCitaElectro() {
+  const puede = tienePermiso('electro.ver');
+  const btnCert = $('btnCertificadoAsistenciaElectro');
+  const btnComp = $('btnComprobanteServiciosElectro');
+  if (btnCert) btnCert.hidden = !puede;
+  if (btnComp) btnComp.hidden = !puede;
+}
+
+function initCertificadoAsistenciaUi() {
+  $('btnCerrarCertificadoAsistencia')?.addEventListener('click', cerrarModalCertificadoAsistencia);
+  $('btnCancelarCertificadoAsistencia')?.addEventListener('click', cerrarModalCertificadoAsistencia);
+  $('btnGenerarCertificadoAsistencia')?.addEventListener('click', generarCertificadoAsistenciaPdf);
+  $('modalCertificadoAsistencia')?.addEventListener('click', (e) => {
+    if (e.target?.id === 'modalCertificadoAsistencia') cerrarModalCertificadoAsistencia();
+  });
+  $('btnCertificadoAsistenciaMedica')?.addEventListener('click', () => {
+    if (!currentTurnoMedicaData) return;
+    abrirModalCertificadoAsistencia(prefillCertificadoAsistenciaMedica(currentTurnoMedicaData));
+  });
+  $('btnCertificadoAsistenciaElectro')?.addEventListener('click', () => {
+    if (!citaElectroSeleccionada) return;
+    abrirModalCertificadoAsistencia(prefillCertificadoAsistenciaElectro(citaElectroSeleccionada));
+  });
+}
+
+// ========== COMPROBANTE DE SERVICIOS ==========
+let _compServPacienteNombre = '';
+let _compServFirmaPacienteDataUrl = '';
+let _compServFirmaAcudienteDataUrl = '';
+
+function compServLeerImagenArchivo(file) {
+  return new Promise((resolve, reject) => {
+    if (!file) {
+      resolve('');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(new Error('No se pudo leer la imagen'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function compServMostrarPreview(inputId, previewId, dataUrl) {
+  const preview = $(previewId);
+  if (!preview) return;
+  if (dataUrl) {
+    preview.src = dataUrl;
+    preview.style.display = 'block';
+  } else {
+    preview.removeAttribute('src');
+    preview.style.display = 'none';
+  }
+  const input = $(inputId);
+  if (input && !dataUrl) input.value = '';
+}
+
+function prefillComprobanteServiciosElectro(cita) {
+  const fecha = extraerFechaYmdCalendario(cita?.fecha);
+  return {
+    origen: 'electro',
+    paciente_nombre: (cita?.paciente_nombre || '').trim(),
+    paciente_documento: (cita?.paciente_documento || '').trim(),
+    tipo_documento: 'CC',
+    fecha: fecha,
+    fecha_nacimiento: '',
+    direccion: '',
+    telefono: '',
+    correo: '',
+    tipo_afiliacion: 'Cotizante',
+    servicio: window.innarComprobanteCups?.nombreServicioComprobanteCups((cita?.estudio || '').trim())
+      || (cita?.estudio || '').trim()
+  };
+}
+
+function prefillComprobanteServiciosMedica(turno) {
+  const fecha = extraerFechaYmdCalendario(turno?.fecha);
+  return {
+    origen: 'medica',
+    paciente_nombre: (turno?.paciente_nombre || '').trim(),
+    paciente_documento: (turno?.paciente_documento || '').trim(),
+    tipo_documento: 'CC',
+    fecha,
+    fecha_nacimiento: '',
+    direccion: '',
+    telefono: (turno?.paciente_telefono || '').trim(),
+    correo: '',
+    tipo_afiliacion: (turno?.entidad || '').trim() || 'Cotizante',
+    servicio: window.innarComprobanteCups?.nombreServicioComprobanteCups((turno?.tipo_consulta || '').trim())
+      || (turno?.tipo_consulta || '').trim()
+  };
+}
+
+function abrirModalComprobanteServicios(prefill) {
+  if (!prefill?.paciente_nombre) {
+    showToast('No hay datos del paciente para el comprobante', 'error');
+    return;
+  }
+  _compServPacienteNombre = prefill.paciente_nombre;
+  _compServFirmaPacienteDataUrl = String(prefill.firma_paciente || '').trim();
+  _compServFirmaAcudienteDataUrl = '';
+  const set = (id, val) => { const el = $(id); if (el) el.value = val ?? ''; };
+  set('compServOrigen', prefill.origen);
+  const resumen = $('compServPacienteResumen');
+  if (resumen) resumen.textContent = prefill.paciente_nombre;
+  set('compServFecha', prefill.fecha);
+  set('compServTipoDoc', prefill.tipo_documento || 'CC');
+  set('compServDocumento', prefill.paciente_documento);
+  set('compServFechaNac', prefill.fecha_nacimiento);
+  set('compServDireccion', prefill.direccion);
+  set('compServTelefono', prefill.telefono);
+  set('compServCorreo', prefill.correo);
+  set('compServTipoAfiliacion', prefill.tipo_afiliacion);
+  set('compServServicio', prefill.servicio);
+  set('compServAcudienteNombre', '');
+  set('compServParentesco', '');
+  const chkAcud = $('compServMostrarAcudiente');
+  if (chkAcud) chkAcud.checked = false;
+  const panelAcud = $('compServAcudientePanel');
+  if (panelAcud) panelAcud.style.display = 'none';
+  compServMostrarPreview('compServFirmaPaciente', 'compServFirmaPreview', _compServFirmaPacienteDataUrl);
+  compServMostrarPreview('compServFirmaAcudiente', 'compServFirmaAcudPreview', '');
+  const inpFirmaPac = $('compServFirmaPaciente');
+  if (inpFirmaPac) inpFirmaPac.value = '';
+  const modal = $('modalComprobanteServicios');
+  window.innarPersonaFidu?.bindFechaInputs?.(modal);
+  if (modal) {
+    modal.classList.remove('hidden');
+    modal.style.display = 'flex';
+  }
+}
+
+function cerrarModalComprobanteServicios() {
+  const modal = $('modalComprobanteServicios');
+  if (modal) {
+    modal.classList.add('hidden');
+    modal.style.display = 'none';
+  }
+}
+
+async function generarComprobanteServiciosPdf() {
+  const origen = $('compServOrigen')?.value?.trim();
+  const permOk = origen === 'electro'
+    ? tienePermiso('electro.ver')
+    : origen === 'medica'
+      ? tienePermiso('agenda.ver')
+      : false;
+  if (!permOk) {
+    showToast('No tiene permiso para generar este comprobante', 'error');
+    return;
+  }
+  const payload = {
+    origen,
+    fecha: window.innarPersonaFidu?.normalizarFecha?.($('compServFecha')?.value) || $('compServFecha')?.value,
+    paciente_nombre: _compServPacienteNombre,
+    tipo_documento: $('compServTipoDoc')?.value || 'CC',
+    paciente_documento: $('compServDocumento')?.value?.trim(),
+    fecha_nacimiento: window.innarPersonaFidu?.normalizarFecha?.($('compServFechaNac')?.value) || $('compServFechaNac')?.value,
+    direccion: $('compServDireccion')?.value?.trim(),
+    telefono: $('compServTelefono')?.value?.trim(),
+    correo: $('compServCorreo')?.value?.trim(),
+    tipo_afiliacion: $('compServTipoAfiliacion')?.value?.trim(),
+    servicio: window.innarServicioCombo?.leerValor?.('compServServicio')
+      || $('compServServicio')?.value?.trim(),
+    firma_paciente: _compServFirmaPacienteDataUrl
+  };
+  if ($('compServMostrarAcudiente')?.checked) {
+    payload.acudiente_nombre = $('compServAcudienteNombre')?.value?.trim();
+    payload.parentesco = $('compServParentesco')?.value?.trim();
+    if (_compServFirmaAcudienteDataUrl) payload.firma_acudiente = _compServFirmaAcudienteDataUrl;
+  }
+  if (!payload.fecha || !payload.paciente_documento || !payload.fecha_nacimiento
+    || !payload.direccion || !payload.telefono || !payload.correo
+    || !payload.tipo_afiliacion || !payload.servicio) {
+    showToast('Complete todos los campos obligatorios', 'error');
+    return;
+  }
+  if (!payload.firma_paciente) {
+    showToast('Debe cargar la firma del paciente como imagen', 'error');
+    return;
+  }
+  const btn = $('btnGenerarComprobanteServicios');
+  if (btn) btn.disabled = true;
+  try {
+    const PDF = window.innarDocumentoPdf;
+    if (!PDF) throw new Error('Generador PDF no disponible');
+    const Firma = window.innarFirmaFondo;
+    const payloadFirma = Firma?.procesarPayloadComprobante
+      ? await Firma.procesarPayloadComprobante(payload)
+      : payload;
+    const doc = payload.paciente_documento.replace(/\D/g, '') || 'sin_doc';
+    const modo = await PDF.generarDocumento({
+      postUrl: '/api/certificados/comprobante-servicios',
+      previewUrl: '/api/certificados/comprobante-servicios/preview',
+      payload: payloadFirma,
+      filename: `comprobante_servicios_${doc}.pdf`
+    });
+    await guardarPersonaFiduDesdeDocumento('comprobante', payloadFirma);
+    showToast(
+      modo === 'impresion'
+        ? 'Se abrió la vista de impresión. Use «Guardar como PDF».'
+        : 'Comprobante descargado',
+      modo === 'impresion' ? 'info' : 'success'
+    );
+    cerrarModalComprobanteServicios();
+  } catch (e) {
+    showToast(e.message || 'Error generando comprobante', 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function initComprobanteServiciosUi() {
+  window.innarServicioCombo?.init?.('compServServicio');
+  $('btnCerrarComprobanteServicios')?.addEventListener('click', cerrarModalComprobanteServicios);
+  $('btnCancelarComprobanteServicios')?.addEventListener('click', cerrarModalComprobanteServicios);
+  $('btnGenerarComprobanteServicios')?.addEventListener('click', generarComprobanteServiciosPdf);
+  $('modalComprobanteServicios')?.addEventListener('click', (e) => {
+    if (e.target?.id === 'modalComprobanteServicios') cerrarModalComprobanteServicios();
+  });
+  $('compServMostrarAcudiente')?.addEventListener('change', (e) => {
+    const panel = $('compServAcudientePanel');
+    if (panel) panel.style.display = e.target.checked ? 'block' : 'none';
+  });
+  $('compServFirmaPaciente')?.addEventListener('change', async (e) => {
+    try {
+      _compServFirmaPacienteDataUrl = await compServLeerImagenArchivo(e.target.files?.[0]);
+      compServMostrarPreview('compServFirmaPaciente', 'compServFirmaPreview', _compServFirmaPacienteDataUrl);
+    } catch (err) {
+      showToast(err.message || 'Error leyendo firma', 'error');
+    }
+  });
+  $('compServFirmaAcudiente')?.addEventListener('change', async (e) => {
+    try {
+      _compServFirmaAcudienteDataUrl = await compServLeerImagenArchivo(e.target.files?.[0]);
+      compServMostrarPreview('compServFirmaAcudiente', 'compServFirmaAcudPreview', _compServFirmaAcudienteDataUrl);
+    } catch (err) {
+      showToast(err.message || 'Error leyendo firma acudiente', 'error');
+    }
+  });
+  $('btnComprobanteServiciosMedica')?.addEventListener('click', () => {
+    if (!currentTurnoMedicaData) return;
+    const prefill = prefillComprobanteServiciosMedica(currentTurnoMedicaData);
+    abrirDocumentoConPersonaFidu('comprobante', prefill, abrirModalComprobanteServicios);
+  });
+  $('btnComprobanteServiciosElectro')?.addEventListener('click', () => {
+    if (!citaElectroSeleccionada) return;
+    const prefill = prefillComprobanteServiciosElectro(citaElectroSeleccionada);
+    abrirDocumentoConPersonaFidu('comprobante', prefill, abrirModalComprobanteServicios);
+  });
 }
 
 function abrirModalEstadoCitaMedica(turno) {
@@ -10453,13 +14516,7 @@ function abrirModalEstadoCitaMedica(turno) {
   // Llenar datos de la tarjeta
   const el = (id) => document.getElementById(id);
   const badge = el('detMedicaBadge');
-  if (badge) {
-    let badgeHtml = estadoBadgeMedica(turno.estado || 'EN_ESPERA');
-    if (esTurnoMedicaReprogramado(turno) && turno.estado === 'PENDIENTE') {
-      badgeHtml += ` <span style="font-size:0.75rem;color:#0369a1;margin-left:6px">(Reprogramada)</span>`;
-    }
-    badge.innerHTML = badgeHtml;
-  }
+  if (badge) badge.innerHTML = estadoBadgeMedica(turno.estado || 'EN_ESPERA');
   if (el('detMedicaPaciente')) el('detMedicaPaciente').textContent = escapeHtml(turno.paciente_nombre || '-');
   if (el('detMedicaDocumento')) el('detMedicaDocumento').textContent = escapeHtml(turno.paciente_documento || '-');
   if (el('detMedicaTelefono')) el('detMedicaTelefono').textContent = turno.paciente_telefono || '-';
@@ -10467,6 +14524,14 @@ function abrirModalEstadoCitaMedica(turno) {
   if (el('detMedicaEntidad')) el('detMedicaEntidad').textContent = turno.entidad || '-';
   if (el('detMedicaFecha')) el('detMedicaFecha').textContent = turno.fecha ? formatearFechaISO(turno.fecha) : '-';
   if (el('detMedicaHora')) el('detMedicaHora').textContent = turno.hora ? formatearHora(turno.hora) : '-';
+  const medicoIdDet = turno.doctor_id || selectedDoctorId;
+  if (el('detMedicaMedico')) {
+    el('detMedicaMedico').textContent = '-';
+    obtenerMedicosAgenda().then((list) => {
+      const det = document.getElementById('detMedicaMedico');
+      if (det) det.textContent = nombreMedicoPorId(medicoIdDet, list);
+    });
+  }
   if (el('detMedicaProgramadoPor')) el('detMedicaProgramadoPor').textContent = escapeHtml(turno.programado_por || '-');
   if (el('detMedicaNotas')) el('detMedicaNotas').textContent = turno.notas || '';
   $('modalReprogramarMedicaFechaActual').innerHTML = `<strong>${formatearFecha(turno.fecha)}</strong> a las <strong>${formatearHora(turno.hora)}</strong>`;
@@ -10475,8 +14540,8 @@ function abrirModalEstadoCitaMedica(turno) {
   const btnRecordatorio = el('btnEnviarRecordatorioMedica');
   if (btnRecordatorio) {
     const especialidadActual = selectedDoctorEspecialidad || currentUser?.especialidad || '';
-    const visible = esEspecialidadRecordatorio(especialidadActual);
-    btnRecordatorio.style.display = visible ? '' : 'none';
+    const visible = pol.modal.showRecordatorio && esEspecialidadRecordatorio(especialidadActual);
+    btnRecordatorio.hidden = !visible;
     btnRecordatorio.disabled = !visible;
     btnRecordatorio.onclick = () => enviarRecordatorioWhatsAppMedica(currentTurnoMedicaData);
   }
@@ -10492,50 +14557,44 @@ function abrirModalEstadoCitaMedica(turno) {
   }
 
   // --- RESET footer para evitar estados residuales ---
-  const footerBtnIds = [
-    'btnEstadoEnSala',
-    'btnModalLlamarPaciente',
-    'btnModalEnAtencion',
-    'btnModalAtendido',
-    'btnModalNoAsistio',
-    'btnModalReprogramarNoAsistio',
-  ];
-  footerBtnIds.forEach((id) => {
+  const setFooterBtnVisible = (id, visible) => {
     const b = el(id);
-    if (b) b.style.display = 'none';
-  });
+    if (!b) return;
+    b.hidden = !visible;
+    if (visible) b.style.removeProperty('display');
+  };
 
-  // --- BOTONES FOOTER (desde política) ---
-  const btnEnSala = el('btnEstadoEnSala');
-  if (btnEnSala) btnEnSala.style.display = pol.modal.showEnSala ? '' : 'none';
-
-  const btnReprogramarNA = el('btnModalReprogramarNoAsistio');
-  if (btnReprogramarNA) btnReprogramarNA.style.display = pol.modal.showReprogramarNoAsistio ? '' : 'none';
+  // --- BOTONES FOOTER (desde política / columna ESTADO) ---
+  setFooterBtnVisible('btnEstadoEnSala', pol.modal.showEnSala);
+  setFooterBtnVisible(
+    'btnModalReprogramarNoAsistio',
+    pol.modal.showReprogramar || pol.modal.showReprogramarNoAsistio
+  );
 
   const btnLlamarMod = el('btnModalLlamarPaciente');
   if (btnLlamarMod) {
-    btnLlamarMod.style.display = pol.modal.showLlamar ? '' : 'none';
+    btnLlamarMod.hidden = !pol.modal.showLlamar;
     btnLlamarMod.disabled = pol.modal.llamarDisabled;
     btnLlamarMod.style.opacity = btnLlamarMod.disabled ? '0.4' : '';
   }
 
   const btnEnAtencionMod = el('btnModalEnAtencion');
   if (btnEnAtencionMod) {
-    btnEnAtencionMod.style.display = pol.modal.showEnAtencion ? '' : 'none';
+    btnEnAtencionMod.hidden = !pol.modal.showEnAtencion;
     btnEnAtencionMod.disabled = pol.modal.enAtencionDisabled;
     btnEnAtencionMod.style.opacity = btnEnAtencionMod.disabled ? '0.4' : '';
   }
 
   const btnAtendidoMod = el('btnModalAtendido');
   if (btnAtendidoMod) {
-    btnAtendidoMod.style.display = pol.modal.showAtendido ? '' : 'none';
+    btnAtendidoMod.hidden = !pol.modal.showAtendido;
     btnAtendidoMod.disabled = pol.modal.atendidoDisabled;
     btnAtendidoMod.style.opacity = btnAtendidoMod.disabled ? '0.4' : '';
   }
 
   const btnNoAsistioMod = el('btnModalNoAsistio');
   if (btnNoAsistioMod) {
-    btnNoAsistioMod.style.display = pol.modal.showNoAsistio ? '' : 'none';
+    btnNoAsistioMod.hidden = !pol.modal.showNoAsistio;
     btnNoAsistioMod.disabled = pol.modal.noAsistioDisabled;
     btnNoAsistioMod.style.opacity = btnNoAsistioMod.disabled ? '0.4' : '';
   }
@@ -10543,6 +14602,11 @@ function abrirModalEstadoCitaMedica(turno) {
   // --- MENÚ 3 PUNTOS + EDITAR (desde política) ---
   const btn3dots = el('btnMasOpcionesMedica');
   if (btn3dots) btn3dots.style.display = pol.modal.showMenu3Puntos ? '' : 'none';
+
+  actualizarBotonesDocumentosCitaMedica();
+
+  const btnCambiarDocMenu = document.getElementById('btnCambiarDoctorMedicaMenu');
+  if (btnCambiarDocMenu) btnCambiarDocMenu.style.display = pol.modal.showCambiarDoctor ? '' : 'none';
 
   if (editBtnMed) {
     // Editar: solo recepción/admin (NO doctor), y no en estados finales
@@ -10557,12 +14621,26 @@ function abrirModalEstadoCitaMedica(turno) {
   }
   if (editTipoWrap) editTipoWrap.style.display = 'none';
 
+  const btnEditEntidad = el('btnEditEntidadAtendida');
+  const editEntidadWrap = el('editEntidadAtendidaWrap');
+  if (btnEditEntidad) {
+    btnEditEntidad.style.display = puedeEditarEntidadCitaAtendida(turno) ? '' : 'none';
+  }
+  if (editEntidadWrap) editEntidadWrap.style.display = 'none';
+
   // Mostrar modal
-  $('modalEstadoCitaMedica').classList.remove('hidden');
+  const modal = $('modalEstadoCitaMedica');
+  if (typeof window.innarOpenModal === 'function') window.innarOpenModal(modal);
+  else modal?.classList.remove('hidden');
+  if (typeof window.innarStaggerModalFooter === 'function') {
+    requestAnimationFrame(() => window.innarStaggerModalFooter(modal));
+  }
 }
 
 function cerrarModalEstadoCitaMedica() {
-  $('modalEstadoCitaMedica').classList.add('hidden');
+  const modal = $('modalEstadoCitaMedica');
+  if (typeof window.innarCloseModal === 'function') window.innarCloseModal(modal);
+  else modal?.classList.add('hidden');
   // NO limpiar currentTurnoMedicaData ni currentEstadoAction aquí 
   // Se necesitan para el modal de confirmación
   // currentTurnoMedicaData = null;
@@ -10574,6 +14652,44 @@ function cerrarModalReprogramarMedica() {
   // Limpiar datos después de reprogramar
   currentTurnoMedicaData = null;
   currentEstadoAction = null;
+}
+
+async function abrirModalCambiarDoctorMedica() {
+  if (!currentTurnoMedicaData) return;
+  const turno = currentTurnoMedicaData;
+  const menu = document.getElementById('menuMasOpcionesMedica');
+  if (menu) menu.style.display = 'none';
+  cerrarModalEstadoCitaMedica();
+
+  const select = $('modalCambiarDoctorMedicaSelect');
+  const resumen = $('modalCambiarDoctorMedicaResumen');
+  if (resumen) {
+    const fechaTxt = turno.fecha ? formatearFechaISO(turno.fecha) : '-';
+    const horaTxt = turno.hora ? formatearHora(turno.hora) : '-';
+    resumen.textContent = `${turno.paciente_nombre || 'Paciente'} · ${fechaTxt} ${horaTxt}`;
+  }
+
+  if (select) {
+    select.innerHTML = '<option value="">Cargando...</option>';
+    select.disabled = true;
+    const medicos = await obtenerMedicosAgenda();
+    select.innerHTML = '<option value="">Seleccionar médico</option>';
+    medicos.forEach((m) => {
+      const o = document.createElement('option');
+      o.value = String(m.id);
+      o.textContent = m.nombre || m.usuario || `Médico ${m.id}`;
+      select.appendChild(o);
+    });
+    const actualId = String(turno.doctor_id || selectedDoctorId || '');
+    if (actualId) select.value = actualId;
+    select.disabled = false;
+  }
+
+  $('modalCambiarDoctorMedica')?.classList.remove('hidden');
+}
+
+function cerrarModalCambiarDoctorMedica() {
+  $('modalCambiarDoctorMedica')?.classList.add('hidden');
 }
 
 function cerrarModalConfirmReprogramacion() {
@@ -10593,7 +14709,12 @@ $('btnEstadoEnSala')?.addEventListener('click', async (e) => {
       body: JSON.stringify({ estado: 'EN_SALA' })
     });
     const data = await res.json();
-    if (data.ok) { showToast('Paciente marcado como En Sala', 'success'); cerrarModalEstadoCitaMedica(); cargarTurnosMedica(); }
+    if (data.ok) {
+      showToast('Paciente marcado como En Sala', 'success');
+      innarQueueTurnoHighlight(currentTurnoMedicaData.id);
+      cerrarModalEstadoCitaMedica();
+      cargarTurnosMedica();
+    }
     else showToast(data.error || 'Error al actualizar', 'error');
   } catch (err) { showToast('Error al actualizar estado', 'error'); console.error(err); }
 });
@@ -10627,7 +14748,12 @@ $('btnModalEnAtencion')?.addEventListener('click', async (e) => {
       body: JSON.stringify({ estado: 'EN_ATENCION' })
     });
     const data = await res.json();
-    if (data.ok) { showToast('Paciente en atención: ' + nombrePaciente, 'success'); cerrarModalEstadoCitaMedica(); cargarTurnosMedica(); }
+    if (data.ok) {
+      showToast('Paciente en atención: ' + nombrePaciente, 'success');
+      innarQueueTurnoHighlight(currentTurnoMedicaData.id);
+      cerrarModalEstadoCitaMedica();
+      cargarTurnosMedica();
+    }
     else showToast(data.error || 'Error al actualizar', 'error');
   } catch (err) { showToast('Error al actualizar estado', 'error'); console.error(err); }
 });
@@ -10648,7 +14774,12 @@ $('btnModalAtendido')?.addEventListener('click', async (e) => {
           body: JSON.stringify({ estado: 'ATENDIDO' })
         });
     const data = await res.json();
-    if (data.ok) { showToast('Paciente marcado como atendido', 'success'); cerrarModalEstadoCitaMedica(); cargarTurnosMedica(); }
+    if (data.ok) {
+      showToast('Paciente marcado como atendido', 'success');
+      innarQueueTurnoHighlight(currentTurnoMedicaData.id);
+      cerrarModalEstadoCitaMedica();
+      cargarTurnosMedica();
+    }
     else showToast(data.error || 'Error al actualizar', 'error');
   } catch (err) { showToast('Error al actualizar estado', 'error'); console.error(err); }
 });
@@ -10673,6 +14804,14 @@ document.getElementById('btnMasOpcionesMedica')?.addEventListener('click', (e) =
   if (menu) menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
 });
 
+// Menú: Cambiar médico
+document.getElementById('btnCambiarDoctorMedicaMenu')?.addEventListener('click', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  if (!currentTurnoMedicaData) return;
+  abrirModalCambiarDoctorMedica();
+});
+
 // Menú: Reprogramar
 document.getElementById('btnReprogramarMedicaMenu')?.addEventListener('click', (e) => {
   e.preventDefault();
@@ -10686,12 +14825,12 @@ document.getElementById('btnReprogramarMedicaMenu')?.addEventListener('click', (
   $('modalReprogramarMedicaHora').value = (currentTurnoMedicaData.hora || '').substring(0, 5);
 });
 
-// Botón Reprogramar (admin/recepcion) para NO_ASISTIO
+// Botón Reprogramar (footer): PENDIENTE o NO_ASISTIO → cita original queda REPROGRAMADO
 document.getElementById('btnModalReprogramarNoAsistio')?.addEventListener('click', (e) => {
   e.preventDefault();
   e.stopPropagation();
   if (!currentTurnoMedicaData) return;
-  currentEstadoAction = 'no-asistio'; // El turno original ya era NO_ASISTIO
+  currentEstadoAction = 'reprogramar';
   cerrarModalEstadoCitaMedica();
   $('modalReprogramarMedica').classList.remove('hidden');
   $('modalReprogramarMedicaFecha').value = currentTurnoMedicaData.fecha || '';
@@ -10851,48 +14990,18 @@ $('btnConfirmarReprogramarMedica')?.addEventListener('click', async (e) => {
   }
   
   try {
-    // Reprogramación directa: actualizar el mismo turno (como en electro)
-    if (currentEstadoAction === 'reprogramar') {
-      const res = await apiFetch(`/api/turnos/${currentTurnoMedicaData.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          fecha: fechaNew,
-          hora: horaNew,
-          notas: anexarNotaReprogramadoMedica(currentTurnoMedicaData.notas)
-        })
-      });
-      const data = await res.json();
-      if (data.ok) {
-        showToast('Cita reprogramada correctamente', 'success');
-        if (window.socket && window.socket.connected) {
-          window.socket.emit('turno-medico:reprogramado', {
-            turnoId: currentTurnoMedicaData.id,
-            fechaNueva: fechaNew,
-            horaNueva: horaNew
-          });
-        }
-        cerrarModalReprogramarMedica();
-        cargarTurnosMedica();
-      } else {
-        showToast(data.error || 'Error al reprogramar', 'error');
-      }
+    const fechaOrig = String(currentTurnoMedicaData.fecha || '').slice(0, 10);
+    const horaOrig = _medicaHoraInputValue(currentTurnoMedicaData.hora);
+    if (fechaNew === fechaOrig && horaNew === horaOrig) {
+      showToast('Seleccione una fecha u hora distinta para reprogramar', 'warning');
       return;
     }
-    
-    // Tras no asistió / cancelación: marcar original y crear turno nuevo
+
+    // Turno original: REPROGRAMADO al mover cita; CANCELADO solo si canceló el paciente
     let estadoOriginal = 'REPROGRAMADO';
-    if (currentEstadoAction === 'no-asistio') estadoOriginal = 'NO_ASISTIO';
-    else if (currentEstadoAction === 'cancelado-paciente') estadoOriginal = 'CANCELADO';
+    if (currentEstadoAction === 'cancelado-paciente') estadoOriginal = 'CANCELADO';
 
-    // 1) Marcar el turno original con su estado correspondiente (se queda en su fecha original)
-    await apiFetch(`/api/turnos/${currentTurnoMedicaData.id}/estado`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ estado: estadoOriginal })
-    });
-
-    // 2) Crear un NUEVO turno con estado PENDIENTE en la fecha/hora nueva
+    // 1) Crear primero la cita nueva; si falla, el original conserva PENDIENTE
     const body = {
       doctor_id: currentTurnoMedicaData.doctor_id,
       paciente_nombre: currentTurnoMedicaData.paciente_nombre,
@@ -10914,23 +15023,33 @@ $('btnConfirmarReprogramarMedica')?.addEventListener('click', async (e) => {
     });
     
     const data = await res.json();
-    if (data.ok) {
-      showToast('Cita reprogramada correctamente', 'success');
-      
-      // Emitir socket para actualizar otros usuarios en tiempo real
-      if (window.socket && window.socket.connected) {
-        window.socket.emit('turno-medico:reprogramado', {
-          turnoId: currentTurnoMedicaData.id,
-          fechaNueva: fechaNew,
-          horaNueva: horaNew
-        });
-      }
-      
-      cerrarModalReprogramarMedica();
-      cargarTurnosMedica();
-    } else {
+    if (!data.ok) {
       showToast(data.error || 'Error al reprogramar', 'error');
+      return;
     }
+
+    const resEstado = await apiFetch(`/api/turnos/${currentTurnoMedicaData.id}/estado`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ estado: estadoOriginal })
+    });
+    const dataEstado = await resEstado.json();
+    if (!dataEstado.ok) {
+      showToast(dataEstado.error || 'Cita nueva creada, pero no se pudo cerrar la cita anterior', 'warning');
+    } else {
+      showToast('Cita reprogramada correctamente', 'success');
+    }
+
+    if (window.socket && window.socket.connected) {
+      window.socket.emit('turno-medico:reprogramado', {
+        turnoId: currentTurnoMedicaData.id,
+        fechaNueva: fechaNew,
+        horaNueva: horaNew
+      });
+    }
+
+    cerrarModalReprogramarMedica();
+    cargarTurnosMedica();
   } catch (e) {
     showToast('Error al reprogramar cita', 'error');
     console.error(e);
@@ -10942,6 +15061,60 @@ $('btnCerrarEstadoMedica')?.addEventListener('click', cerrarModalEstadoCitaMedic
 $('btnCancelarEstadoMedica')?.addEventListener('click', cerrarModalEstadoCitaMedica);
 $('btnCerrarReprogramarMedica')?.addEventListener('click', cerrarModalReprogramarMedica);
 $('btnCancelarReprogramarMedica')?.addEventListener('click', cerrarModalReprogramarMedica);
+
+$('btnConfirmarCambiarDoctorMedica')?.addEventListener('click', async (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  if (!currentTurnoMedicaData) return;
+
+  const nuevoDoctorId = parseInt($('modalCambiarDoctorMedicaSelect')?.value, 10);
+  if (!nuevoDoctorId) {
+    showToast('Selecciona el médico destino', 'error');
+    return;
+  }
+
+  const actualId = parseInt(currentTurnoMedicaData.doctor_id || selectedDoctorId, 10);
+  if (nuevoDoctorId === actualId) {
+    showToast('La cita ya está asignada a ese médico', 'info');
+    return;
+  }
+
+  const btn = $('btnConfirmarCambiarDoctorMedica');
+  if (btn) btn.disabled = true;
+
+  try {
+    const res = await apiFetch(`/api/turnos/${currentTurnoMedicaData.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ doctor_id: nuevoDoctorId })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      showToast('Médico de la cita actualizado', 'success');
+      const turnoId = currentTurnoMedicaData.id;
+      cerrarModalCambiarDoctorMedica();
+      currentTurnoMedicaData = null;
+      if (String(selectedDoctorId) === String(actualId) && String(nuevoDoctorId) !== String(actualId)) {
+        showToast('La cita ya no aparece en la agenda del médico actual', 'info');
+      }
+      cargarTurnosMedica();
+      innarQueueTurnoHighlight(turnoId);
+    } else {
+      showToast(data.error || 'No se pudo cambiar el médico', 'error');
+    }
+  } catch (err) {
+    showToast('Error al cambiar el médico', 'error');
+    console.error(err);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+});
+
+$('btnCerrarCambiarDoctorMedica')?.addEventListener('click', cerrarModalCambiarDoctorMedica);
+$('btnCancelarCambiarDoctorMedica')?.addEventListener('click', cerrarModalCambiarDoctorMedica);
+$('modalCambiarDoctorMedica')?.addEventListener('click', (e) => {
+  if (e.target === $('modalCambiarDoctorMedica')) cerrarModalCambiarDoctorMedica();
+});
 $('modalConfirmReprogramacion')?.addEventListener('click', (e) => {
   if (e.target === $('modalConfirmReprogramacion')) {
     cerrarModalConfirmReprogramacion();
@@ -10964,25 +15137,73 @@ $('modalReprogramarMedica')?.addEventListener('click', (e) => {
 });
 
 // ── Editar paciente en modal médica ──
-document.getElementById('btnEditarMedicaModal')?.addEventListener('click', () => {
+function _medicaHoraInputValue(hora) {
+  if (!hora) return '';
+  return String(hora).trim().substring(0, 5);
+}
+
+function _medicaAsegurarOpcionEntidad(selectEl, nombre) {
+  if (!selectEl || !nombre) return;
+  const existe = Array.from(selectEl.options).some((o) => o.value === nombre);
+  if (!existe) selectEl.add(new Option(nombre, nombre));
+  selectEl.value = nombre;
+}
+
+async function _poblarEditMedicaTipoConsulta(turno) {
+  const selectDst = document.getElementById('editMedicaTipoConsulta');
+  if (!selectDst) return;
+  selectDst.innerHTML = '<option value="">Seleccionar</option>';
+  const doctorId = turno?.doctor_id;
+  let tipos = [];
+  if (doctorId) {
+    tipos = await apiFetch(`/api/tipos-consulta?medico_id=${encodeURIComponent(doctorId)}`)
+      .then((r) => r.json()).catch(() => []);
+  }
+  if (!Array.isArray(tipos) || tipos.length === 0) {
+    const selectSrc = $('nuevoTurnoTipoMedica');
+    if (selectSrc) {
+      Array.from(selectSrc.options).slice(1).forEach((opt) => {
+        selectDst.add(new Option(opt.text, opt.value));
+      });
+    }
+  } else {
+    tipos.forEach((t) => {
+      const nombre = typeof t === 'string' ? t : (t.nombre || t.tipo || '');
+      if (nombre) selectDst.add(new Option(nombre, nombre));
+    });
+  }
+  const actual = turno?.tipo_consulta || '';
+  if (actual && !Array.from(selectDst.options).some((o) => o.value === actual)) {
+    selectDst.add(new Option(actual, actual));
+  }
+  selectDst.value = actual;
+}
+
+document.getElementById('btnEditarMedicaModal')?.addEventListener('click', async () => {
   const panel = document.getElementById('editarMedicaPanel');
-  if (!panel) return;
+  if (!panel || !currentTurnoMedicaData) return;
   if (panel.style.display !== 'none') {
     panel.style.display = 'none';
     return;
   }
-  document.getElementById('editMedicaNombre').value = currentTurnoMedicaData?.paciente_nombre || '';
-  document.getElementById('editMedicaTelefono').value = currentTurnoMedicaData?.paciente_telefono || '';
-  // Poblar tipos de consulta desde el selector del formulario de nueva cita
-  const selectSrc = $('nuevoTurnoTipoMedica');
-  const selectDst = document.getElementById('editMedicaTipoConsulta');
-  if (selectSrc && selectDst) {
-    selectDst.innerHTML = '<option value="">Seleccionar</option>';
-    Array.from(selectSrc.options).slice(1).forEach(opt => {
-      selectDst.add(new Option(opt.text, opt.value));
-    });
-    selectDst.value = currentTurnoMedicaData?.tipo_consulta || '';
-  }
+  const t = currentTurnoMedicaData;
+  const set = (id, val) => {
+    const el = document.getElementById(id);
+    if (el) el.value = val ?? '';
+  };
+  set('editMedicaNombre', t.paciente_nombre || '');
+  set('editMedicaDocumento', t.paciente_documento || '');
+  set('editMedicaTelefono', t.paciente_telefono || '');
+  set('editMedicaTelefono2', t.paciente_telefono2 || '');
+  set('editMedicaFecha', formatearFechaISO(t.fecha) || '');
+  set('editMedicaHora', _medicaHoraInputValue(t.hora));
+  set('editMedicaNotas', t.notas || '');
+
+  await _poblarEditMedicaTipoConsulta(t);
+  await cargarEntidadesEnSelect('editMedicaEntidad', { force: true });
+  const selEnt = document.getElementById('editMedicaEntidad');
+  if (selEnt && t.entidad) _medicaAsegurarOpcionEntidad(selEnt, t.entidad);
+
   panel.style.display = 'block';
 });
 document.getElementById('btnCancelarEditarMedica')?.addEventListener('click', () => {
@@ -10992,27 +15213,61 @@ document.getElementById('btnCancelarEditarMedica')?.addEventListener('click', ()
 document.getElementById('editMedicaTelefono')?.addEventListener('input', (e) => {
   e.target.value = e.target.value.replace(/\D/g, '').slice(0, 10);
 });
+document.getElementById('editMedicaDocumento')?.addEventListener('input', (e) => {
+  e.target.value = e.target.value.replace(/\D/g, '').slice(0, 15);
+});
 document.getElementById('btnGuardarEditarMedica')?.addEventListener('click', async () => {
   if (!currentTurnoMedicaData) return;
   const nombre = document.getElementById('editMedicaNombre')?.value.trim();
+  const documento = document.getElementById('editMedicaDocumento')?.value.trim();
   const telefono = document.getElementById('editMedicaTelefono')?.value.trim();
+  const telefono2 = document.getElementById('editMedicaTelefono2')?.value.trim();
   const tipoConsulta = document.getElementById('editMedicaTipoConsulta')?.value;
+  const entidad = document.getElementById('editMedicaEntidad')?.value;
+  const fecha = document.getElementById('editMedicaFecha')?.value;
+  const hora = document.getElementById('editMedicaHora')?.value;
+  const notas = document.getElementById('editMedicaNotas')?.value.trim();
   if (!nombre) { showToast('El nombre es obligatorio', 'error'); return; }
+  if (!entidad) { showToast('Selecciona la entidad', 'error'); return; }
+  if (!fecha || !hora) { showToast('Fecha y hora son obligatorias', 'error'); return; }
   try {
     const res = await apiFetch(`/api/turnos/${currentTurnoMedicaData.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ paciente_nombre: nombre, paciente_telefono: telefono, tipo_consulta: tipoConsulta })
+      body: JSON.stringify({
+        paciente_nombre: nombre,
+        paciente_documento: documento || null,
+        paciente_telefono: telefono || null,
+        paciente_telefono2: telefono2 || null,
+        tipo_consulta: tipoConsulta || null,
+        entidad: entidad || null,
+        fecha,
+        hora,
+        notas: notas || null
+      })
     });
     const data = await res.json();
     if (data.ok) {
-      currentTurnoMedicaData.paciente_nombre = nombre;
-      currentTurnoMedicaData.paciente_telefono = telefono;
-      currentTurnoMedicaData.tipo_consulta = tipoConsulta;
+      Object.assign(currentTurnoMedicaData, {
+        paciente_nombre: nombre,
+        paciente_documento: documento || null,
+        paciente_telefono: telefono || null,
+        paciente_telefono2: telefono2 || null,
+        tipo_consulta: tipoConsulta || null,
+        entidad: entidad || null,
+        fecha,
+        hora,
+        notas: notas || null
+      });
       const el = (id) => document.getElementById(id);
       if (el('detMedicaPaciente')) el('detMedicaPaciente').textContent = escapeHtml(nombre);
+      if (el('detMedicaDocumento')) el('detMedicaDocumento').textContent = escapeHtml(documento || '-');
       if (el('detMedicaTelefono')) el('detMedicaTelefono').textContent = telefono || '-';
       if (el('detMedicaTipo')) el('detMedicaTipo').textContent = tipoConsulta || '-';
+      if (el('detMedicaEntidad')) el('detMedicaEntidad').textContent = entidad || '-';
+      if (el('detMedicaFecha')) el('detMedicaFecha').textContent = fecha ? formatearFechaISO(fecha) : '-';
+      if (el('detMedicaHora')) el('detMedicaHora').textContent = hora ? formatearHora(hora) : '-';
+      if (el('detMedicaNotas')) el('detMedicaNotas').textContent = notas || '';
       document.getElementById('editarMedicaPanel').style.display = 'none';
       showToast('Datos actualizados correctamente', 'success');
       cargarTurnosMedica();
@@ -11082,6 +15337,63 @@ document.getElementById('btnSaveEditTipoAtendida')?.addEventListener('click', as
     }
   } catch (err) {
     showToast('Error al guardar cambios', 'error');
+    console.error(err);
+  }
+});
+
+// ── Cambiar entidad en citas ATENDIDAS ──
+document.getElementById('btnEditEntidadAtendida')?.addEventListener('click', async () => {
+  const wrap = document.getElementById('editEntidadAtendidaWrap');
+  const sel = document.getElementById('editEntidadAtendidaSel');
+  if (!wrap || !sel || !currentTurnoMedicaData) return;
+  if (!puedeEditarEntidadCitaAtendida(currentTurnoMedicaData)) {
+    showToast('No tienes permiso para cambiar la entidad', 'error');
+    return;
+  }
+  await cargarEntidadesEnSelect('editEntidadAtendidaSel', { force: false });
+  if (currentTurnoMedicaData.entidad) {
+    _medicaAsegurarOpcionEntidad(sel, currentTurnoMedicaData.entidad);
+    sel.value = currentTurnoMedicaData.entidad;
+  }
+  wrap.style.display = 'block';
+});
+
+document.getElementById('btnCancelEditEntidadAtendida')?.addEventListener('click', () => {
+  const wrap = document.getElementById('editEntidadAtendidaWrap');
+  if (wrap) wrap.style.display = 'none';
+});
+
+document.getElementById('btnSaveEditEntidadAtendida')?.addEventListener('click', async () => {
+  if (!currentTurnoMedicaData) return;
+  if (!puedeEditarEntidadCitaAtendida(currentTurnoMedicaData)) {
+    showToast('No tienes permiso para cambiar la entidad', 'error');
+    return;
+  }
+  const sel = document.getElementById('editEntidadAtendidaSel');
+  const entidad = sel?.value?.trim() || '';
+  if (!entidad) {
+    showToast('Selecciona una entidad', 'error');
+    return;
+  }
+  try {
+    const res = await apiFetch(`/api/turnos/${currentTurnoMedicaData.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ entidad })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      currentTurnoMedicaData.entidad = entidad;
+      const det = document.getElementById('detMedicaEntidad');
+      if (det) det.textContent = entidad;
+      document.getElementById('editEntidadAtendidaWrap').style.display = 'none';
+      showToast('Entidad actualizada', 'success');
+      cargarTurnosMedica();
+    } else {
+      showToast(data.error || 'Error al guardar', 'error');
+    }
+  } catch (err) {
+    showToast('Error al guardar la entidad', 'error');
     console.error(err);
   }
 });
@@ -11186,7 +15498,7 @@ async function buscarEstudiosPorDocumento() {
         <td style="padding:12px;color:#374151;font-weight:500">${escapeHtml(cita.paciente_documento || '-')}</td>
         <td style="padding:12px;color:#1f2937;font-weight:500">${escapeHtml(cita.paciente_nombre || '-')}</td>
         <td style="padding:12px;color:#374151">${escapeHtml(cita.estudio || '-')}</td>
-        <td style="padding:12px">${estadoBadge(cita.estado)}</td>
+        <td style="padding:12px">${estadoBadgeCitaElectro(cita)}</td>
         <td style="padding:12px"><button class="btn-primary btn-sm">Ver / Editar</button></td>
       `;
       tr.querySelector('button').addEventListener('click', () => {
@@ -11234,31 +15546,17 @@ let _esperaPendienteId = null;  // id esperando confirmación de eliminación
 function initEsperaElectro() {
   $('btnAgregarEspera')?.addEventListener('click', agregarPacienteEspera);
 
-  // Cargar entidades dinámicamente
-  (async () => {
-    try {
-      const el = $('esperaFiltroEntidad');
-      if (el) {
-        el.innerHTML = '<option value="">Todas</option>';
-        const resp = await apiFetch('/api/entidades');
-        if (resp.ok) {
-          const data = await resp.json();
-          const entidades = Array.isArray(data) ? data : (data.registros || []);
-          entidades.filter(e => e.activo !== 0).forEach(e => {
-            const o = document.createElement('option');
-            o.value = e.nombre;
-            o.textContent = e.nombre;
-            el.appendChild(o);
-          });
-        }
-        // Inicializar multi-select
-        if (typeof initMultiSelect === 'function') {
-          initMultiSelect(el, { placeholder: 'Todas', onChange: () => renderEsperaTable() });
-          if (typeof observeSelectForMulti === 'function') observeSelectForMulti(el);
-        }
+  cargarEntidadesEnSelect('esperaFiltroEntidad', { placeholder: 'Todas' }).then(() => {
+    const el = $('esperaFiltroEntidad');
+    if (el && typeof initMultiSelect === 'function') {
+      if (!el._ms) {
+        initMultiSelect(el, { placeholder: 'Todas', onChange: () => renderEsperaTable() });
+        if (typeof observeSelectForMulti === 'function') observeSelectForMulti(el);
+      } else if (el._ms.refresh) {
+        el._ms.refresh();
       }
-    } catch (e) { console.warn('No se pudieron cargar entidades para espera:', e.message); }
-  })();
+    }
+  });
 
   // Inicializar multi-select de prioridad (opciones estáticas)
   const elPrio = $('esperaFiltroPrioridad');
@@ -11611,7 +15909,7 @@ function cerrarTiposConsultaPanel() {
 async function cargarTiposConsultaPanel() {
   if (!_especialidadSelId) return;
   const tbody = $('tiposConsultaTableBody');
-  if (tbody) tbody.innerHTML = '<tr><td colspan="2" style="padding:16px;text-align:center;color:#999">Cargando...</td></tr>';
+  if (tbody) tbody.innerHTML = '<tr><td colspan="3" style="padding:16px;text-align:center;color:#999">Cargando...</td></tr>';
   try {
     const res = await apiFetch(`/api/tipos-consulta?especialidad_id=${_especialidadSelId}`);
     const data = await res.json();
@@ -11628,13 +15926,20 @@ function renderTiposConsultaPanel(lista) {
   const tbody = $('tiposConsultaTableBody');
   if (!tbody) return;
   if (!lista || lista.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="2" style="padding:16px;text-align:center;color:#999">Sin tipos de consulta. Agrega el primero.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="3" style="padding:16px;text-align:center;color:#999">Sin tipos de consulta. Agrega el primero.</td></tr>';
     return;
   }
   tbody.innerHTML = lista.map(t => {
     const n = escapeHtml(t.nombre).replace(/'/g, "\\'");
+    const multi = t.permite_sesiones_multiples ? 1 : 0;
     return `<tr>
       <td>${escapeHtml(t.nombre)}</td>
+      <td style="text-align:center">
+        <label style="cursor:pointer;font-size:.85rem" title="Permite agendar varias sesiones por días de la semana">
+          <input type="checkbox" ${multi ? 'checked' : ''} onchange="toggleSesionesMultiplesTipo(${t.id}, this.checked)" />
+          Sesiones múlt.
+        </label>
+      </td>
       <td>
         <div class="table-actions">
           <button class="btn-editar" title="Editar" onclick="editarTipoConsulta(${t.id},'${n}')">
@@ -11649,6 +15954,27 @@ function renderTiposConsultaPanel(lista) {
   }).join('');
 }
 
+async function toggleSesionesMultiplesTipo(id, activo) {
+  try {
+    const res = await apiFetch(`/api/tipos-consulta/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ permite_sesiones_multiples: !!activo })
+    });
+    const data = await res.json();
+    if (!data.ok) {
+      showToast(data.error || 'Error al actualizar', 'error');
+      await cargarTiposConsultaPanel();
+      return;
+    }
+    showToast(activo ? 'Sesiones múltiples activadas' : 'Sesiones múltiples desactivadas', 'success');
+    _tiposConsultaCache = {};
+  } catch (e) {
+    showToast('Error: ' + e.message, 'error');
+    await cargarTiposConsultaPanel();
+  }
+}
+
 async function crearTipoConsulta() {
   const nombre = $('tipoConsultaNuevoNombre').value.trim();
   if (!nombre) { showToast('Escribe el nombre del tipo de consulta', 'error'); return; }
@@ -11658,7 +15984,11 @@ async function crearTipoConsulta() {
   try {
     const res = await apiFetch('/api/tipos-consulta', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ especialidad_id: _especialidadSelId, nombre })
+      body: JSON.stringify({
+        especialidad_id: _especialidadSelId,
+        nombre,
+        permite_sesiones_multiples: !!$('tipoConsultaNuevoSesionesMultiples')?.checked
+      })
     });
     const data = await res.json();
     if (!data.ok) { showToast(data.error || 'Error', 'error'); return; }
@@ -11708,7 +16038,8 @@ const _gestionTitulos = {
   especialidades:    'Especialidades',
   tipos_consulta:    'Tipos de Consulta',
   diagnosticos:      'Diagnósticos',
-  entidades:         'Entidades'
+  entidades:         'Entidades',
+  anexo_fidu_servicios: 'CUPS Anexo FIDU'
 };
 
 const _gestionColumnas = {
@@ -11753,6 +16084,7 @@ const _gestionColumnas = {
     { key: 'id',          label: 'ID' },
     { key: 'nombre',      label: 'Nombre' },
     { key: 'especialidad',label: 'Especialidad' },
+    { key: 'permite_sesiones_multiples', label: 'Sesiones múlt.', format: v => v ? 'Sí' : 'No' },
     { key: 'activo',      label: 'Activo', format: v => v ? 'Sí' : 'No' }
   ],
   diagnosticos: [
@@ -11765,6 +16097,13 @@ const _gestionColumnas = {
     { key: 'id',     label: 'ID' },
     { key: 'nombre', label: 'Nombre' },
     { key: 'activo', label: 'Activo', format: v => v ? 'Sí' : 'No' }
+  ],
+  anexo_fidu_servicios: [
+    { key: 'codigo', label: 'CUPS' },
+    { key: 'nombre', label: 'Nombre', format: v => escapeHtml(String(v || '').slice(0, 80)) + (String(v || '').length > 80 ? '…' : '') },
+    { key: 'valor_unitario', label: 'Valor unit.', format: v => `$ ${(parseInt(v, 10) || 0).toLocaleString('es-CO')}` },
+    { key: 'cantidad', label: 'Cant.' },
+    { key: 'codigo_servicio_referencia', label: 'RIPS ref.' }
   ]
 };
 
@@ -11772,7 +16111,8 @@ let _gestionSeleccionados = new Set();
 let _gestionRegistrosAll  = [];
 let _gestionPaginaActual  = 1;
 const _GESTION_POR_PAGINA = 20;
-const _GESTION_TIPOS_AGREGAR = ['estudio_duraciones', 'especialidades', 'tipos_consulta', 'diagnosticos', 'entidades'];
+const _GESTION_TIPOS_AGREGAR = ['estudio_duraciones', 'especialidades', 'tipos_consulta', 'diagnosticos', 'entidades', 'anexo_fidu_servicios'];
+let _gestionCupsEditId = null;
 
 function _actualizarConteoGestion() {
   const n = _gestionSeleccionados.size;
@@ -11785,7 +16125,7 @@ function _actualizarConteoGestion() {
 function _gestionActualizarFiltros() {
   const tipo = _gestionTipoActual;
   const hayFechas   = ['citas_electro', 'turnos', 'recibos'].includes(tipo);
-  const hayBusqueda = ['citas_electro', 'turnos', 'recibos', 'diagnosticos', 'entidades'].includes(tipo);
+  const hayBusqueda = ['citas_electro', 'turnos', 'recibos', 'diagnosticos', 'entidades', 'anexo_fidu_servicios'].includes(tipo);
   const colBusqueda = $('gestionBusqueda')?.closest('.col');
   const colDesde    = $('gestionFechaDesde')?.closest('.col');
   const colHasta    = $('gestionFechaHasta')?.closest('.col');
@@ -11832,6 +16172,10 @@ function initGestionDatos() {
     window.socket.off('tipos-consulta:actualizado');
     window.socket.on('estudio:creado',           () => { if (_gestionTipoActual === 'estudio_duraciones') buscarGestionDatos(); });
     window.socket.on('tipos-consulta:actualizado',() => { if (_gestionTipoActual === 'tipos_consulta')    buscarGestionDatos(); });
+    window.socket.off('anexo-fidu:servicios-actualizado');
+    window.socket.on('anexo-fidu:servicios-actualizado', () => {
+      if (_gestionTipoActual === 'anexo_fidu_servicios') buscarGestionDatos();
+    });
   }
 
   _gestionActualizarFiltros();
@@ -11876,10 +16220,14 @@ function _gestionRenderRows(tipo, registros) {
       const display = (val === null || val === undefined) ? '-' : (c.format ? c.format(val) : escapeHtml(String(val)));
       return `<td>${display}</td>`;
     }).join('');
+    const btnEditar = tipo === 'anexo_fidu_servicios'
+      ? `<button type="button" class="btn-secondary btn-sm" style="margin-right:6px" title="Editar" onclick="abrirModalEditarGestionCups(${r.id})">Editar</button>`
+      : '';
     return `<tr>
       <td><input type="checkbox" class="chk-row" data-id="${r.id}" /></td>
       ${cells}
       <td>
+        ${btnEditar}
         <button class="btn-eliminar" title="Eliminar" onclick="confirmarEliminarGestion('${tipo}',${r.id})">
           <img src="images/delete.svg" alt="Eliminar" />
         </button>
@@ -11982,9 +16330,72 @@ function _gestionIrPagina(n) {
   _gestionRenderPaginacion();
 }
 
+function _htmlFormularioCupsGestion(prefill = {}) {
+  const codigo = prefill.codigo || '';
+  const nombre = prefill.nombre || '';
+  const valor = prefill.valor_unitario != null ? prefill.valor_unitario : '';
+  const cantidad = prefill.cantidad != null ? prefill.cantidad : '1';
+  const valorTotal = prefill.valor_total != null ? prefill.valor_total : '';
+  const rips = prefill.codigo_servicio_referencia || '';
+  return `
+    <div style="margin-bottom:14px">
+      <label style="display:block;margin-bottom:6px;font-weight:500;font-size:14px">Código CUPS *</label>
+      <input id="agrGestionCupsCodigo" type="text" required maxlength="12" placeholder="Ej: 890211" value="${escapeHtml(codigo)}" style="width:100%;padding:9px 12px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;font-size:14px" />
+    </div>
+    <div style="margin-bottom:14px">
+      <label style="display:block;margin-bottom:6px;font-weight:500;font-size:14px">Nombre del servicio *</label>
+      <textarea id="agrGestionCupsNombre" required rows="3" maxlength="500" placeholder="Descripción según tarifario" style="width:100%;padding:9px 12px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;font-size:14px;resize:vertical">${escapeHtml(nombre)}</textarea>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
+      <div>
+        <label style="display:block;margin-bottom:6px;font-weight:500;font-size:14px">Valor unitario (COP) *</label>
+        <input id="agrGestionCupsValor" type="number" required min="0" step="1" placeholder="35119" value="${escapeHtml(String(valor))}" style="width:100%;padding:9px 12px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;font-size:14px" />
+      </div>
+      <div>
+        <label style="display:block;margin-bottom:6px;font-weight:500;font-size:14px">Cantidad</label>
+        <input id="agrGestionCupsCantidad" type="text" maxlength="20" placeholder="1 o vacío para sesiones" value="${escapeHtml(String(cantidad))}" style="width:100%;padding:9px 12px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;font-size:14px" />
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
+      <div>
+        <label style="display:block;margin-bottom:6px;font-weight:500;font-size:14px">Valor total ref.</label>
+        <input id="agrGestionCupsValorTotal" type="number" min="0" step="1" placeholder="Igual al unitario si es 1" value="${escapeHtml(String(valorTotal))}" style="width:100%;padding:9px 12px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;font-size:14px" />
+      </div>
+      <div>
+        <label style="display:block;margin-bottom:6px;font-weight:500;font-size:14px">Código RIPS ref. *</label>
+        <input id="agrGestionCupsRips" type="text" required maxlength="20" placeholder="Ej: 327" value="${escapeHtml(rips)}" style="width:100%;padding:9px 12px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;font-size:14px" />
+      </div>
+    </div>`;
+}
+
+function abrirModalEditarGestionCups(id) {
+  const reg = _gestionRegistrosAll.find((r) => r.id === id);
+  if (!reg) { showToast('Registro no encontrado', 'error'); return; }
+  _gestionCupsEditId = id;
+  const modal = $('modalAgregarGestion');
+  if (!modal) return;
+  const titulo = $('modalAgregarGestionTitulo');
+  if (titulo) titulo.textContent = `Editar — ${_gestionTitulos.anexo_fidu_servicios}`;
+  const form = $('formAgregarGestion');
+  if (!form) return;
+  form.innerHTML = _htmlFormularioCupsGestion(reg) +
+    `<div style="display:flex;justify-content:flex-end;gap:10px;margin-top:20px">
+       <button type="button" class="btn-secondary btn-sm" onclick="cerrarModalGestionCups()">Cancelar</button>
+       <button type="submit" class="btn-primary btn-sm">Guardar cambios</button>
+     </div>`;
+  form.onsubmit = guardarAgregarGestion;
+  modal.classList.remove('hidden');
+}
+
+function cerrarModalGestionCups() {
+  _gestionCupsEditId = null;
+  $('modalAgregarGestion')?.classList.add('hidden');
+}
+
 async function abrirModalAgregarGestion() {
   const tipo = _gestionTipoActual;
   if (!_GESTION_TIPOS_AGREGAR.includes(tipo)) return;
+  _gestionCupsEditId = null;
   const modal = $('modalAgregarGestion');
   if (!modal) return;
 
@@ -12029,6 +16440,12 @@ async function abrirModalAgregarGestion() {
       <div style="margin-bottom:14px">
         <label style="display:block;margin-bottom:6px;font-weight:500;font-size:14px">Nombre del tipo de consulta *</label>
         <input id="agrGestionNombre" type="text" required maxlength="120" placeholder="Ej: Consulta de control" style="width:100%;padding:9px 12px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;font-size:14px" />
+      </div>
+      <div style="margin-bottom:14px">
+        <label style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer">
+          <input type="checkbox" id="agrGestionSesionesMultiples" />
+          Permitir agendar varias sesiones (por días de la semana)
+        </label>
       </div>`;
   } else if (tipo === 'diagnosticos') {
     camposHtml = `
@@ -12051,10 +16468,12 @@ async function abrirModalAgregarGestion() {
         <input id="agrGestionNombre" type="text" required maxlength="200" placeholder="Ej: NUEVA EPS" style="width:100%;padding:9px 12px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;font-size:14px" />
         <span style="font-size:0.78rem;color:#6b7280;margin-top:4px;display:block">Se guardará en mayúsculas automáticamente</span>
       </div>`;
+  } else if (tipo === 'anexo_fidu_servicios') {
+    camposHtml = _htmlFormularioCupsGestion();
   }
   form.innerHTML = camposHtml +
     `<div style="display:flex;justify-content:flex-end;gap:10px;margin-top:20px">
-       <button type="button" class="btn-secondary btn-sm" onclick="$('modalAgregarGestion').classList.add('hidden')">Cancelar</button>
+       <button type="button" class="btn-secondary btn-sm" onclick="cerrarModalGestionCups()">Cancelar</button>
        <button type="submit" class="btn-primary btn-sm">Guardar</button>
      </div>`;
   form.onsubmit = guardarAgregarGestion;
@@ -12068,27 +16487,51 @@ async function guardarAgregarGestion(e) {
   const nombre = $('agrGestionNombre')?.value.trim() || '';
   const body  = { nombre };
   if (tipo === 'estudio_duraciones') body.duracion_minutos = parseInt($('agrGestionDuracion')?.value || '0', 10);
-  if (tipo === 'tipos_consulta')     body.especialidad_id  = $('agrGestionEspecialidad')?.value;
+  if (tipo === 'tipos_consulta') {
+    body.especialidad_id = $('agrGestionEspecialidad')?.value;
+    body.permite_sesiones_multiples = !!$('agrGestionSesionesMultiples')?.checked;
+  }
   if (tipo === 'diagnosticos') {
     body.codigo      = $('agrGestionCodigo')?.value.trim() || undefined;
     body.descripcion = $('agrGestionDescripcion')?.value.trim() || undefined;
   }
+  if (tipo === 'anexo_fidu_servicios') {
+    body.codigo = $('agrGestionCupsCodigo')?.value.trim() || '';
+    body.nombre = $('agrGestionCupsNombre')?.value.trim() || '';
+    body.valor_unitario = parseInt($('agrGestionCupsValor')?.value || '0', 10);
+    body.cantidad = $('agrGestionCupsCantidad')?.value.trim() ?? '1';
+    const vt = $('agrGestionCupsValorTotal')?.value.trim();
+    if (vt !== '') body.valor_total = parseInt(vt, 10);
+    body.codigo_servicio_referencia = $('agrGestionCupsRips')?.value.trim() || '';
+    if (!body.codigo || !body.nombre) { showToast('Código CUPS y nombre son obligatorios', 'error'); return; }
+    if (!body.codigo_servicio_referencia) { showToast('Código RIPS de referencia es obligatorio', 'error'); return; }
+  }
   try {
-    const res  = await apiFetch(`/api/admin/datos/${tipo}`, {
-      method: 'POST',
+    const esEdicionCups = tipo === 'anexo_fidu_servicios' && _gestionCupsEditId;
+    const url = esEdicionCups
+      ? `/api/admin/datos/${tipo}/${_gestionCupsEditId}`
+      : `/api/admin/datos/${tipo}`;
+    const res  = await apiFetch(url, {
+      method: esEdicionCups ? 'PATCH' : 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
     });
     const data = await res.json();
     if (!data.ok) { showToast(data.error || 'Error al guardar', 'error'); return; }
-    showToast('Registro agregado exitosamente', 'success');
-    $('modalAgregarGestion').classList.add('hidden');
+    showToast(esEdicionCups ? 'Servicio CUPS actualizado' : 'Registro agregado exitosamente', 'success');
+    cerrarModalGestionCups();
     // Invalidar caché para que otros módulos recarguen datos actualizados
     if (tipo === 'entidades') invalidarCacheEntidades();
     if (tipo === 'estudio_duraciones') invalidarCacheEstudios();
+    if (tipo === 'anexo_fidu_servicios' && typeof window._invalidarServiciosAnexoFidu === 'function') {
+      window._invalidarServiciosAnexoFidu();
+    }
     buscarGestionDatos();
   } catch (err) { showToast('Error: ' + err.message, 'error'); }
 }
+
+window.abrirModalEditarGestionCups = abrirModalEditarGestionCups;
+window.cerrarModalGestionCups = cerrarModalGestionCups;
 
 function confirmarEliminarGestion(tipo, id) {
   const titulo = _gestionTitulos[tipo] || tipo;
@@ -12101,6 +16544,9 @@ function confirmarEliminarGestion(tipo, id) {
     // Invalidar caché para que otros módulos recarguen datos actualizados
     if (tipo === 'entidades') invalidarCacheEntidades();
     if (tipo === 'estudio_duraciones') invalidarCacheEstudios();
+    if (tipo === 'anexo_fidu_servicios' && typeof window._invalidarServiciosAnexoFidu === 'function') {
+      window._invalidarServiciosAnexoFidu();
+    }
     buscarGestionDatos();
   } catch (e) { showToast('Error: ' + e.message, 'error'); }
   });
@@ -12126,7 +16572,341 @@ function eliminarSeleccionadosGestion() {
     // Invalidar caché para que otros módulos recarguen datos actualizados
     if (tipo === 'entidades') invalidarCacheEntidades();
     if (tipo === 'estudio_duraciones') invalidarCacheEstudios();
+    if (tipo === 'anexo_fidu_servicios' && typeof window._invalidarServiciosAnexoFidu === 'function') {
+      window._invalidarServiciosAnexoFidu();
+    }
     buscarGestionDatos();
   } catch (e) { showToast('Error: ' + e.message, 'error'); }
   });
+}
+
+
+// ========== MONITOR DE EQUIPOS ==========
+let initMonitorEquiposDone = false;
+let _monitorRefreshTimer = null;
+let _monitorFechaActual = null; // null = hoy
+
+function _monitorGetHoy() {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+
+function _monitorEsHoy() {
+  return !_monitorFechaActual || _monitorFechaActual === _monitorGetHoy();
+}
+
+function _monitorFormatDateLabel(fecha) {
+  if (!fecha) return 'Hoy';
+  const hoy = _monitorGetHoy();
+  if (fecha === hoy) return 'Hoy';
+  const DIAS = ['Domingo','Lunes','Martes','Mi\u00e9rcoles','Jueves','Viernes','S\u00e1bado'];
+  const MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  const parts = fecha.split('-').map(Number);
+  const d = new Date(parts[0], parts[1]-1, parts[2]);
+  return DIAS[d.getDay()] + ' ' + parts[2] + ' ' + MESES[parts[1]-1] + ' ' + parts[0];
+}
+
+function _monitorCambiarFecha(offset) {
+  const base = _monitorFechaActual || _monitorGetHoy();
+  const parts = base.split('-').map(Number);
+  const d = new Date(parts[0], parts[1]-1, parts[2] + offset);
+  _monitorFechaActual = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  _monitorSyncDateUI();
+  cargarMonitorEquipos();
+}
+
+function _monitorIrAHoy() {
+  _monitorFechaActual = null;
+  _monitorSyncDateUI();
+  cargarMonitorEquipos();
+}
+
+function _monitorSyncDateUI() {
+  const picker = $('monitorDatePicker');
+  const label = $('monitorDateLabel');
+  const btnHoy = $('monitorDateHoy');
+  const fecha = _monitorFechaActual || _monitorGetHoy();
+  if (picker) picker.value = fecha;
+  if (label) label.textContent = _monitorFormatDateLabel(fecha);
+  if (btnHoy) btnHoy.style.display = _monitorEsHoy() ? 'none' : '';
+  const badge = $('monitorHistBadge');
+  if (badge) badge.style.display = _monitorEsHoy() ? 'none' : '';
+}
+
+function initMonitorEquipos() {
+  if (initMonitorEquiposDone) { cargarMonitorEquipos(); return; }
+  initMonitorEquiposDone = true;
+
+  $('btnVolverMonitorEquipos')?.addEventListener('click', goToMenu);
+  $('btnRefreshMonitor')?.addEventListener('click', () => cargarMonitorEquipos());
+  $('monitorDatePrev')?.addEventListener('click', () => _monitorCambiarFecha(-1));
+  $('monitorDateNext')?.addEventListener('click', () => _monitorCambiarFecha(1));
+  $('monitorDateHoy')?.addEventListener('click', _monitorIrAHoy);
+  const picker = $('monitorDatePicker');
+  if (picker) picker.addEventListener('change', function() {
+    _monitorFechaActual = this.value || null;
+    _monitorSyncDateUI();
+    cargarMonitorEquipos();
+  });
+
+  if (window.socket) {
+    window.socket.on('electro:cita-actualizada', () => {
+      if (window.currentModule === 'monitor-equipos') cargarMonitorEquipos();
+    });
+    window.socket.on('electro:actualizar-lista', () => {
+      if (window.currentModule === 'monitor-equipos') cargarMonitorEquipos();
+    });
+  }
+
+  _monitorSyncDateUI();
+  cargarMonitorEquipos();
+
+  if (_monitorRefreshTimer) clearInterval(_monitorRefreshTimer);
+  _monitorRefreshTimer = setInterval(() => {
+    if (window.currentModule === 'monitor-equipos' && _monitorEsHoy()) cargarMonitorEquipos();
+  }, 30000);
+
+  if (!window._monitorCitaClickBound) {
+    window._monitorCitaClickBound = true;
+    document.addEventListener('click', async function _monitorCitaClickHandler(ev) {
+      const bar = ev.target.closest('.meq-timeline-bar[data-cita-id]');
+      const card = ev.target.closest('.meq-sin-equipo-card[data-cita-id]');
+      const el = bar || card;
+      if (!el) return;
+      const view = $('view-monitor-equipos');
+      if (!view || view.classList.contains('hidden')) return;
+      const id = el.getAttribute('data-cita-id');
+      if (!id) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      try {
+        const res = await apiFetch('/api/citas-electro/' + encodeURIComponent(id));
+        if (!res.ok) {
+          let msg = 'No se pudo cargar el estudio';
+          try {
+            const err = await res.json();
+            if (err && err.error) msg = err.error;
+          } catch (e2) { /* ignore */ }
+          showToast(msg, 'error');
+          return;
+        }
+        const cita = await res.json();
+        abrirModalDetallesCita(cita);
+      } catch (e) {
+        console.error('[MONITOR] detalle cita:', e);
+        showToast('Error al cargar el estudio', 'error');
+      }
+    });
+  }
+}
+
+async function cargarMonitorEquipos() {
+  try {
+    let url = '/api/equipos-electro/monitor';
+    if (_monitorFechaActual && _monitorFechaActual !== _monitorGetHoy()) {
+      url += '?fecha=' + encodeURIComponent(_monitorFechaActual);
+    }
+    const res = await apiFetch(url);
+    const data = await res.json();
+    if (data && data.equipos) {
+      renderMonitorEquipos(data);
+    }
+    const ts = $('monitorLastUpdate');
+    if (ts) {
+      const now = new Date();
+      ts.textContent = 'Actualizado ' + String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0') + ':' + String(now.getSeconds()).padStart(2,'0');
+    }
+  } catch (e) {
+    console.error('[MONITOR] Error:', e);
+    const grid = $('monitorEquiposGrid');
+    if (grid) grid.innerHTML = '<div class="meq-empty-cell" style="text-align:center;padding:60px 20px">Error cargando equipos</div>';
+  }
+}
+
+function renderMonitorEquipos(data) {
+  const equipos = data.equipos || [];
+  const sinEquipo = data.sin_equipo || [];
+  const sinCupoProvision = data.sin_cupo_provision || [];
+  const esHoy = data.es_hoy !== false;
+  const resumen = data.resumen || {};
+  const grid = $('monitorEquiposGrid');
+  if (!grid) return;
+
+  let activos = 0, ocupados = 0, libres = 0, inactivos = 0;
+  const svgMonitor = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>';
+  const svgBrain = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9.5 2A5.5 5.5 0 005 7.5c0 .68.12 1.33.34 1.93a4.5 4.5 0 00.16 7.07A4.5 4.5 0 009.5 22h1V2h-1z"/><path d="M14.5 2A5.5 5.5 0 0120 7.5c0 .68-.12 1.33-.34 1.93a4.5 4.5 0 00-.16 7.07A4.5 4.5 0 0114.5 22h-1V2h1z"/></svg>';
+  const svgSleep = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>';
+  const svgActivity = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>';
+  const svgUser = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>';
+  const svgClock = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>';
+  const svgDoc = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>';
+
+  function getEquipIcon(nombre) {
+    const n = (nombre || '').toLowerCase();
+    if (n.includes('psg') || n.includes('polisomno') || n.includes('sue\u00f1o') || n.includes('sleep')) return svgSleep;
+    if (n.includes('eeg') || n.includes('electro') || n.includes('cerebr') || n.includes('neuro')) return svgBrain;
+    if (n.includes('emg') || n.includes('conducci') || n.includes('nerve') || n.includes('electrom')) return svgActivity;
+    return svgMonitor;
+  }
+
+  function timelineBarClasses(seg) {
+    const color = seg.estudio_color || 'otro';
+    const classes = ['meq-est-' + color];
+    const k = seg.bar_kind || 'otro';
+    if (seg.es_provision) classes.push('meq-bar-provision');
+    if (k === 'pasado') classes.push('meq-bar-pasado');
+    else if (k === 'activo') classes.push('meq-bar-activo');
+    else if (k === 'provision' || k === 'futuro') classes.push('meq-bar-futuro');
+    else classes.push('meq-bar-otro');
+    return classes.join(' ');
+  }
+
+  function rowStatusClass(eq) {
+    const f = eq.estado_fila;
+    if (f === 'ocupado') return 'meq-st-ocupado';
+    if (f === 'reservado') return 'meq-st-reservado';
+    if (f === 'programado') return 'meq-st-completado';
+    return 'meq-st-libre';
+  }
+
+  const fechaVista = data.fecha || _monitorFechaActual || _monitorGetHoy();
+  const ventanaLbl = (data.ventana_horaria && data.ventana_horaria.etiqueta) ? data.ventana_horaria.etiqueta : (fechaVista + ' 06:00 \u2013 06:00');
+  const hourTicks = [
+    { axisMin: 0, label: '06:00' },
+    { axisMin: 180, label: '09:00' },
+    { axisMin: 360, label: '12:00' },
+    { axisMin: 540, label: '15:00' },
+    { axisMin: 720, label: '18:00' },
+    { axisMin: 900, label: '21:00' },
+    { axisMin: 1080, label: '00:00' },
+    { axisMin: 1260, label: '03:00' },
+    { axisMin: 1440, label: '06:00' }
+  ];
+  let nowPct = null;
+  if (esHoy) {
+    const p = fechaVista.split('-').map(Number);
+    const winStart = new Date(p[0], p[1] - 1, p[2], 6, 0, 0);
+    const winEnd = new Date(winStart.getTime() + 24 * 60 * 60000);
+    const now = new Date();
+    if (now >= winStart && now < winEnd) {
+      nowPct = ((now - winStart) / 60000 / 1440) * 100;
+    }
+  }
+
+  let html = '<div class="meq-timeline-wrap">';
+  html += '<div class="meq-ventana-bar"><span class="meq-ventana-label">Jornada: ' + escapeHtml(ventanaLbl) + '</span></div>';
+  html += '<div class="meq-timeline-legend">';
+  html += '<span class="meq-leg-item"><i class="meq-leg-swatch meq-est-psg"></i> PSG / Polisomnograf\u00eda</span>';
+  html += '<span class="meq-leg-item"><i class="meq-leg-swatch meq-est-eeg"></i> EEG</span>';
+  html += '<span class="meq-leg-item"><i class="meq-leg-swatch meq-est-vtm"></i> VTM</span>';
+  html += '<span class="meq-leg-item"><i class="meq-leg-swatch meq-bar-provision meq-est-psg"></i> Provisi\u00f3n (sin equipo)</span>';
+  html += '<span class="meq-leg-item"><i class="meq-leg-swatch meq-bar-activo meq-est-eeg"></i> En estudio</span>';
+  if (nowPct != null) html += '<span class="meq-leg-item meq-leg-now"><i class="meq-leg-now-line"></i> Ahora</span>';
+  html += '</div>';
+
+  html += '<div class="meq-timeline-head">';
+  html += '<div class="meq-timeline-eq-col">Equipo</div>';
+  html += '<div class="meq-timeline-hours">';
+  hourTicks.forEach(function(t) {
+    const pct = (t.axisMin / 1440) * 100;
+    html += '<span class="meq-hour-tick" style="left:' + pct + '%">' + t.label + '</span>';
+  });
+  html += '</div></div>';
+
+  html += '<div class="meq-timeline-body">';
+  equipos.forEach(function(eq) {
+    const timeline = eq.estudios_timeline || [];
+    const tieneActivo = timeline.some(function(s) { return s.bar_kind === 'activo'; });
+    const tieneAlgo = timeline.length > 0;
+
+    if (!eq.activo) {
+      inactivos++;
+      html += '<div class="meq-timeline-row meq-inactivo">';
+      html += '<div class="meq-timeline-eq-col"><div class="meq-eq-icon">' + getEquipIcon(eq.nombre) + '</div><span>' + escapeHtml(eq.nombre) + '</span></div>';
+      html += '<div class="meq-timeline-track meq-track-inactivo"><span class="meq-inactivo-cell">Desactivado</span></div>';
+      html += '</div>';
+      return;
+    }
+
+    activos++;
+    const estadoFila = eq.estado_fila || (tieneActivo ? 'ocupado' : (tieneAlgo ? 'programado' : 'libre'));
+    if (estadoFila === 'ocupado') ocupados++;
+    else if (estadoFila === 'libre') libres++;
+
+    html += '<div class="meq-timeline-row ' + rowStatusClass(eq) + '">';
+    html += '<div class="meq-timeline-eq-col"><div class="meq-eq-icon">' + getEquipIcon(eq.nombre) + '</div><div class="meq-eq-name">';
+    html += '<span>' + escapeHtml(eq.nombre) + '</span>';
+    if (eq.descripcion) html += '<small>' + escapeHtml(eq.descripcion) + '</small>';
+    html += '</div></div>';
+
+    html += '<div class="meq-timeline-track">';
+    for (var t = 0; t < 25; t++) {
+      html += '<span class="meq-grid-line" style="left:' + ((t / 24) * 100) + '%"></span>';
+    }
+    if (nowPct != null) {
+      html += '<span class="meq-now-line" style="left:' + nowPct + '%" title="Ahora"></span>';
+    }
+    timeline.forEach(function(seg) {
+      const w = Math.max(seg.width_pct || 0, 0.8);
+      const pref = seg.es_provision ? '[Provisi\u00f3n] ' : '';
+      const tip = pref + (seg.estudio || 'Estudio') + ' \u2014 ' + (seg.paciente_nombre || '') +
+        ' (' + formatearHora(seg.hora_inicio || '') + '\u2013' + formatearHora(seg.hora_fin || '') + ')';
+      const label = (seg.hora_inicio || '') + ' ' + (seg.estudio || '');
+      const cid = seg.id != null ? String(seg.id) : '';
+      html += '<div class="meq-timeline-bar ' + timelineBarClasses(seg) + '" data-cita-id="' + escapeHtml(cid) + '" style="left:' + (seg.left_pct || 0) + '%;width:' + w + '%" title="' + escapeHtml(tip) + ' (clic para detalle)">';
+      if (w >= 4) html += '<span class="meq-bar-label">' + escapeHtml(label.length > 28 ? label.slice(0, 26) + '\u2026' : label) + '</span>';
+      html += '</div>';
+    });
+    if (!tieneAlgo) html += '<span class="meq-track-empty">Sin estudios</span>';
+    html += '</div></div>';
+  });
+  html += '</div></div>';
+  grid.innerHTML = html;
+
+
+  // Update stats
+  var cA = $('monitorCountActivos'), cO = $('monitorCountOcupados'), cL = $('monitorCountLibres'), cI = $('monitorCountInactivos');
+  var cT = $('monitorCountTotal'), cComp = $('monitorCountCompletados');
+  if (cA) cA.textContent = activos;
+  if (cO) cO.textContent = esHoy ? ocupados : (resumen.en_estudio || 0);
+  if (cL) cL.textContent = libres;
+  if (cI) cI.textContent = inactivos;
+  if (cT) cT.textContent = resumen.total_estudios || 0;
+  if (cComp) cComp.textContent = resumen.completados || 0;
+
+  // Sin equipo section
+  var sinEqC = $('monitorSinEquipo'), sinEqL = $('monitorSinEquipoList');
+  if (sinEquipo && sinEquipo.length > 0 && sinEqC && sinEqL) {
+    sinEqC.style.display = '';
+    sinEqL.innerHTML = sinEquipo.map(function(c) {
+      const sid = c.id != null ? String(c.id) : '';
+      return '<div class="meq-sin-equipo-card" data-cita-id="' + escapeHtml(sid) + '" title="Clic para ver detalle">' +
+        '<div class="meq-study-block"><div class="meq-study-title">' + escapeHtml(c.estudio || 'Sin tipo') + '</div>' +
+        '<div class="meq-study-meta">' + svgUser + ' ' + escapeHtml(c.paciente_nombre || '-') + '</div></div>' +
+        '<div class="meq-study-meta" style="color:#a16207">' + svgClock + ' ' + (c.fecha || '') + ' ' + formatearHora(c.hora_agendamiento || '') + ' &middot; ' + escapeHtml(c.estado || '') + '</div>' +
+      '</div>';
+    }).join('');
+  } else if (sinEqC) { sinEqC.style.display = 'none'; }
+
+  var sinCupoC = $('monitorSinCupoProvision');
+  if (!sinCupoC && grid && grid.parentNode) {
+    sinCupoC = document.createElement('div');
+    sinCupoC.id = 'monitorSinCupoProvision';
+    sinCupoC.style.display = 'none';
+    sinCupoC.style.marginTop = '24px';
+    sinCupoC.innerHTML = '<h3 style="font-size:1rem;color:#64748b;margin:0 0 12px;font-weight:600">Programados sin cupo en equipos</h3><div id="monitorSinCupoList"></div>';
+    grid.parentNode.insertBefore(sinCupoC, $('monitorSinEquipo') || null);
+  }
+  var sinCupoL = $('monitorSinCupoList');
+  if (sinCupoProvision.length > 0 && sinCupoC && sinCupoL) {
+    sinCupoC.style.display = '';
+    sinCupoL.innerHTML = sinCupoProvision.map(function(c) {
+      const sid = c.id != null ? String(c.id) : '';
+      return '<div class="meq-sin-equipo-card" data-cita-id="' + escapeHtml(sid) + '" title="Clic para ver detalle">' +
+        '<div class="meq-study-block"><div class="meq-study-title">' + escapeHtml(c.estudio || 'Sin tipo') + '</div>' +
+        '<div class="meq-study-meta">' + svgUser + ' ' + escapeHtml(c.paciente_nombre || '-') + '</div></div>' +
+        '<div class="meq-study-meta" style="color:#b45309">' + svgClock + ' ' + formatearHora(c.hora_agendamiento || c.hora_inicio || '') + ' &middot; Sin cupo para provisi\u00f3n</div>' +
+      '</div>';
+    }).join('');
+  } else if (sinCupoC) { sinCupoC.style.display = 'none'; }
 }

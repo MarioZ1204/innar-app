@@ -122,12 +122,6 @@ async function loadTiposConsultaNombres(dbConn, { medico_id, especialidad_id } =
 }
 
 async function loadEstudiosCatalogoNombres(dbConn) {
-  const estudioRows = await dbConn.query(
-    'SELECT DISTINCT nombre AS valor FROM estudio_duraciones WHERE nombre IS NOT NULL AND TRIM(nombre) <> "" ORDER BY nombre ASC'
-  ).catch(() => []);
-  if (estudioRows.length) {
-    return estudioRows.map((r) => r.valor).filter(Boolean);
-  }
   const serviciosRows = await dbConn.query(
     'SELECT DISTINCT nombre AS valor FROM servicios_recibo WHERE activo=1 AND nombre IS NOT NULL AND TRIM(nombre) <> "" ORDER BY nombre ASC'
   ).catch(() => []);

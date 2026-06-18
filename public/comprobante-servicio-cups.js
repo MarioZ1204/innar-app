@@ -53,14 +53,8 @@
     { re: /eeg\s*comput|electroencefalograma\s*comput/i, cups: '891402' },
     { re: /polisomn.*titul|titulaci[oó]n.*dispositivo/i, cups: '891703' },
     { re: /polisomn.*b[aá]sica|psg\s*b[aá]sica|sueño\s*b[aá]sico/i, cups: '891704' },
+    { re: /electroencefal|\beeg\b/i, cups: '891401' }
   ];
-
-  const ALIAS_EEG_891401 = new Set([
-    'eeg',
-    'eeg convencional',
-    'electroencefalograma',
-    'electroencefalograma convencional'
-  ].map((s) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()));
 
   function extraerEspecialidadPor(nombre) {
     const m = String(nombre || '').trim()
@@ -104,21 +98,9 @@
       if (nombre) return nombre;
     }
 
-    const norm = raw
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .replace(/\s+/g, ' ')
-      .trim();
-
     for (const regla of REGLAS_ESTUDIO) {
-      if (!regla.re.test(raw) && !regla.re.test(norm)) continue;
+      if (!regla.re.test(raw)) continue;
       const nombre = nombreDesdeCodigo(regla.cups);
-      if (nombre) return nombre;
-    }
-
-    if (ALIAS_EEG_891401.has(norm)) {
-      const nombre = nombreDesdeCodigo('891401');
       if (nombre) return nombre;
     }
 

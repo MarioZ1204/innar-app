@@ -23,13 +23,6 @@ async function getNextTurnoNumber(fecha, doctor_id) {
 
 const ESTADOS_VALIDOS_TURNOS = ['PENDIENTE', 'EN_SALA', 'EN_ATENCION', 'ATENDIDO', 'COMPLETADO', 'NO_ASISTIO', 'CANCELADO', 'REPROGRAMADO'];
 
-/** Añade la marca [Reprogramado] en notas si aún no está. */
-function anexarNotaReprogramadoObs(notas) {
-  const s = String(notas || '').trim();
-  if (/\[Reprogramado\]/i.test(s)) return s || null;
-  return s ? `[Reprogramado] ${s}` : '[Reprogramado]';
-}
-
 // Si el rol del usuario es 'doctor', exige que doctorId coincida con la sesión.
 // Otros roles (admin, recepción, electro) no se ven afectados.
 function denyIfDoctorMismatch(req, doctorId) {
@@ -60,8 +53,7 @@ router.get('/turnos/calendario', requireAuth, async (req, res) => {
           SUM(CASE WHEN estado IN ('ATENDIDO','COMPLETADO') THEN 1 ELSE 0 END) as atendidas,
           SUM(CASE WHEN estado = 'NO_ASISTIO' THEN 1 ELSE 0 END) as no_asistieron,
           SUM(CASE WHEN estado = 'CANCELADO' THEN 1 ELSE 0 END) as canceladas,
-          SUM(CASE WHEN estado = 'REPROGRAMADO'
-            OR (estado = 'PENDIENTE' AND notas LIKE '%[Reprogramado]%') THEN 1 ELSE 0 END) as reprogramadas
+          SUM(CASE WHEN estado = 'REPROGRAMADO' THEN 1 ELSE 0 END) as reprogramadas
         FROM turnos
         WHERE fecha >= ? AND fecha < ?`;
     let sql, params;
@@ -536,7 +528,7 @@ router.patch('/turnos/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin
   }
 
   try {
-    const turnos = await db.query('SELECT id, estado, doctor_id, fecha, hora, paciente_nombre, notas FROM turnos WHERE id = ?', [id]);
+    const turnos = await db.query('SELECT id, estado, doctor_id, fecha, hora, paciente_nombre FROM turnos WHERE id = ?', [id]);
     const turno = turnos.length > 0 ? turnos[0] : null;
     if (!turno) {
       return res.status(404).json({ error: 'Turno no encontrado' });
@@ -598,40 +590,16 @@ router.patch('/turnos/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin
       }
     }
 
-    const fechaActualYmd = turno.fecha ? String(turno.fecha).slice(0, 10) : '';
-    const horaActualHm = String(turno.hora || '').trim().slice(0, 5);
-    const fechaNuevaYmd = fecha !== undefined ? String(fecha).slice(0, 10) : fechaActualYmd;
-    const horaNuevaHm = hora !== undefined ? String(hora).trim().slice(0, 5) : horaActualHm;
-    const cambioAgenda = (fecha !== undefined && fechaNuevaYmd !== fechaActualYmd)
-      || (hora !== undefined && horaNuevaHm !== horaActualHm);
-    const esReprogramacion = cambioAgenda
-      && !ESTADOS_FINALES_EDICION.includes(turno.estado)
-      && turno.estado !== 'EN_ATENCION';
-
-    let estadoPatch = estado;
-    let notasPatch = notas;
-
-    if (estadoPatch === 'REPROGRAMADO' || esReprogramacion) {
-      if (esReprogramacion && !ESTADOS_FINALES_EDICION.includes(turno.estado)) {
-        estadoPatch = 'PENDIENTE';
-      } else if (estadoPatch === 'REPROGRAMADO' && !esReprogramacion) {
-        estadoPatch = undefined;
-      }
-      notasPatch = anexarNotaReprogramadoObs(
-        notasPatch !== undefined ? notasPatch : turno.notas
-      );
-    }
-
     if (paciente_nombre !== undefined) { updates.push('paciente_nombre = ?'); values.push(paciente_nombre); }
     if (paciente_telefono !== undefined) { updates.push('paciente_telefono = ?'); values.push(paciente_telefono); }
     if (paciente_documento !== undefined) { updates.push('paciente_documento = ?'); values.push(paciente_documento); }
     if (paciente_telefono2 !== undefined) { updates.push('paciente_telefono2 = ?'); values.push(paciente_telefono2); }
     if (entidad !== undefined) { updates.push('entidad = ?'); values.push(entidad); }
-    if (notasPatch !== undefined) { updates.push('notas = ?'); values.push(notasPatch); }
+    if (notas !== undefined) { updates.push('notas = ?'); values.push(notas); }
     if (tipo_consulta !== undefined) { updates.push('tipo_consulta = ?'); values.push(tipo_consulta); }
     if (fecha !== undefined) { updates.push('fecha = ?'); values.push(fecha); }
     if (hora !== undefined) { updates.push('hora = ?'); values.push(hora); }
-    if (estadoPatch !== undefined) { updates.push('estado = ?'); values.push(estadoPatch); }
+    if (estado !== undefined) { updates.push('estado = ?'); values.push(estado); }
     if (observaciones !== undefined) { updates.push('observaciones = ?'); values.push(observaciones); }
 
     if (updates.length === 0) {
@@ -660,10 +628,10 @@ router.patch('/turnos/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin
         fecha: fechaEmit
       });
     }
-    if (fecha !== undefined || hora !== undefined || estado !== undefined || esReprogramacion) {
+    if (fecha !== undefined || hora !== undefined || estado !== undefined) {
       emitSocket('agenda:turno-estado-cambio', {
         id,
-        estado: estadoPatch !== undefined ? estadoPatch : (estado || turno.estado),
+        estado: estado || turno.estado,
         doctor_id: doctorIdEmit,
         fecha: fechaEmit
       });
