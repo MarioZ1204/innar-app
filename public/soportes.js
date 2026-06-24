@@ -2342,6 +2342,138 @@
     return modalDatosArchivoPdx(file, carpetaId, analisis);
   }
 
+  async function flujoSubidaMultiplePdx(files, carpetaId) {
+    // Analizar todos los archivos
+    const analisisLista = [];
+    for (const file of files) {
+      try {
+        const analisis = await preAnalizarArchivoPdx(carpetaId, file.name);
+        analisisLista.push({ file, analisis });
+      } catch (e) {
+        sopToast(`Error analizando ${file.name}: ${e.message}`, 'warning');
+      }
+    }
+
+    if (!analisisLista.length) throw new Error('No se pudieron analizar los archivos');
+
+    return new Promise((resolve, reject) => {
+      const carpeta = pdxState.carpetaActual || pdxState.carpetas.find((c) => c.id === carpetaId);
+      const tema = detectarTemaCarpetaCliente(carpeta?.nombre_display || '');
+      const label = TEMA_LABEL[tema] || 'Documentos';
+
+      // Crear tabs HTML para cada archivo
+      const tabsHtml = analisisLista.map((item, idx) => {
+        const isActive = idx === 0 ? 'active' : '';
+        return `<button class="sop-tab-btn ${isActive}" data-tab="${idx}" style="font-size:.9rem;padding:6px 12px">${item.file.name.slice(0, 20)}...</button>`;
+      }).join('');
+
+      const contentsHtml = analisisLista.map((item, idx) => {
+        const isActive = idx === 0 ? 'display:block' : 'display:none';
+        const parsed = item.analisis.parsed || item.analisis.parcial || {};
+        const campos = item.analisis.campos || [];
+        
+        const fieldsHtml = `
+          <div class="sop-field"><label>Apellidos *</label><input type="text" class="sopMultiApe" data-idx="${idx}" value="${escapeHtml(parsed.apellidos || '')}"></div>
+          <div class="sop-field"><label>Nombres *</label><input type="text" class="sopMultiNom" data-idx="${idx}" value="${escapeHtml(parsed.nombres || '')}"></div>
+          <div class="sop-field"><label>Tipo de documento</label><input type="text" class="sopMultiTipoDoc" data-idx="${idx}" value="${escapeHtml(normalizarTipoDocumentoCliente(parsed.tipo_documento || 'CC'))}" maxlength="4" style="text-transform:uppercase" placeholder="CC"></div>
+          <div class="sop-field"><label>Número de documento *</label><input type="text" class="sopMultiDoc" data-idx="${idx}" value="${escapeHtml(parsed.paciente_documento || '')}" inputmode="numeric" pattern="[0-9]*"></div>
+          <div class="sop-field"><label>Fecha *</label><input type="date" class="sopMultiFecha" data-idx="${idx}" value="${escapeHtml(parsed.fecha_estudio || '')}"></div>
+          <div class="sop-field"><label>Especialidad/Tipo examen *</label><select class="sopMultiEst" data-idx="${idx}"><option value="">-- Seleccione --</option></select></div>
+        `;
+
+        return `<div class="sop-tab-content" data-tab="${idx}" style="${isActive};padding:12px 0">${fieldsHtml}</div>`;
+      }).join('');
+
+      const modal = openSopModal(`
+        <h3><i data-lucide="files"></i> Subir ${analisisLista.length} comprobante(s)</h3>
+        <p style="font-size:.85rem;color:#64748b;margin:-8px 0 10px">Verifique y/o edite los datos de cada comprobante. Los se subirán de forma individual.</p>
+        <div style="max-height:400px;overflow-y:auto;border:1px solid #e2e8f0;border-radius:6px;padding:0">
+          <div class="sop-tabs" style="display:flex;border-bottom:1px solid #e2e8f0;background:#f8fafc;padding:0;overflow-x:auto">
+            ${tabsHtml}
+          </div>
+          <div style="padding:12px">${contentsHtml}</div>
+        </div>
+        <div class="sop-dialog-actions">
+          <button type="button" class="sop-btn sop-btn-ghost" id="sopMultiCancel">Cancelar</button>
+          <button type="button" class="sop-btn sop-btn-primary" id="sopMultiOk">Subir todos</button>
+        </div>
+      `, { closeOnBackdrop: false, closeOnEscape: false });
+
+      // Tabs behavior
+      const tabBtns = modal.querySelectorAll('.sop-tab-btn');
+      const tabContents = modal.querySelectorAll('.sop-tab-content');
+      tabBtns.forEach(btn => {
+        btn.onclick = () => {
+          tabBtns.forEach(b => b.classList.remove('active'));
+          tabContents.forEach(c => c.style.display = 'none');
+          btn.classList.add('active');
+          const tabIdx = btn.getAttribute('data-tab');
+          modal.querySelector(`[data-tab="${tabIdx}"].sop-tab-content`).style.display = 'block';
+        };
+      });
+
+      // Populate estudio selects
+      (async () => {
+        for (let idx = 0; idx < analisisLista.length; idx++) {
+          const parsed = analisisLista[idx].analisis.parsed || analisisLista[idx].analisis.parcial || {};
+          const estSelect = modal.querySelector(`.sopMultiEst[data-idx="${idx}"]`);
+          if (estSelect) {
+            await poblarSelectEstudioPdx(estSelect, parsed.estudio_texto);
+          }
+        }
+      })();
+
+      modal.querySelector('#sopMultiCancel').onclick = () => { closeSopModal(modal); reject(new Error('cancelado')); };
+      modal.querySelector('#sopMultiOk').onclick = async () => {
+        // Recolectar datos de cada tab
+        const uploads = [];
+        let hasError = false;
+
+        for (let idx = 0; idx < analisisLista.length; idx++) {
+          const ape = modal.querySelector(`.sopMultiApe[data-idx="${idx}"]`)?.value?.trim();
+          const nom = modal.querySelector(`.sopMultiNom[data-idx="${idx}"]`)?.value?.trim();
+          const doc = modal.querySelector(`.sopMultiDoc[data-idx="${idx}"]`)?.value?.trim();
+          const fecha = modal.querySelector(`.sopMultiFecha[data-idx="${idx}"]`)?.value;
+          const est = modal.querySelector(`.sopMultiEst[data-idx="${idx}"]`)?.value?.trim();
+
+          if (!ape || !nom || !doc || !fecha || !est) {
+            sopToast(`Comprobante ${idx + 1}: Complete todos los campos obligatorios`, 'warning');
+            hasError = true;
+            break;
+          }
+
+          const body = {
+            apellidos: ape,
+            nombres: nom,
+            paciente_documento: normalizarNumeroDocumentoCliente(doc),
+            tipo_documento: modal.querySelector(`.sopMultiTipoDoc[data-idx="${idx}"]`)?.value?.toUpperCase() || 'CC',
+            fecha_estudio: fecha,
+            estudio_texto: est,
+            confirmacion_manual: '1'
+          };
+
+          uploads.push({ file: analisisLista[idx].file, body });
+        }
+
+        if (hasError) return;
+
+        // Subir cada uno
+        try {
+          let contador = 0;
+          for (const { file, body } of uploads) {
+            await subirArchivoPdx(file, carpetaId, body);
+            contador++;
+          }
+          closeSopModal(modal);
+          sopToast(`${contador} comprobante(s) subido(s)`, 'success');
+          resolve();
+        } catch (e) {
+          sopToast(e.message, 'error');
+        }
+      };
+    });
+  }
+
   function modalCorregirDatosPdx(file, carpetaId, carpeta, analisis, resolve, reject) {
     const tema = analisis.tema || detectarTemaCarpetaCliente(carpeta?.nombre_display || '');
     const p = analisis.parcial || {};
@@ -2650,7 +2782,15 @@
     if (!pdfs.length) return;
     try {
       if (pdfs.length >= 2) {
-        await flujoUnificarPdfsPdx(pdfs, carpetaId);
+        const carpeta = pdxState.carpetaActual || pdxState.carpetas.find((c) => c.id === carpetaId);
+        const tema = detectarTemaCarpetaCliente(carpeta?.nombre_display || '');
+        // COMPROBANTES: subida múltiple SIN unificar
+        if (tema === 'comprobantes') {
+          await flujoSubidaMultiplePdx(pdfs, carpetaId);
+        } else {
+          // ORDEN + HC: unificar (mantener actual)
+          await flujoUnificarPdfsPdx(pdfs, carpetaId);
+        }
       } else {
         await flujoSubidaPdx(pdfs[0], carpetaId);
       }

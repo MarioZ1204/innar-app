@@ -2456,3 +2456,38 @@ body.sop-arm-drag-active {
     justify-content: center;
   }
 }
+
+/* Tabs para multi-upload */
+.sop-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--sop-border);
+  background: #f8fafc;
+  overflow-x: auto;
+}
+
+.sop-tab-btn {
+  padding: 8px 14px;
+  border: none;
+  background: transparent;
+  color: var(--sop-text-muted);
+  font-size: 0.9rem;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+}
+
+.sop-tab-btn:hover {
+  color: var(--sop-text);
+  background: rgba(138, 166, 161, 0.05);
+}
+
+.sop-tab-btn.active {
+  color: var(--sop-focus);
+  border-bottom-color: var(--sop-focus);
+  background: rgba(138, 166, 161, 0.1);
+}
+
+.sop-tab-content {
+  display: none;
+}

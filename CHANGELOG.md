@@ -3,6 +3,19 @@
 Todos los cambios importantes a la aplicación se documentan aquí. El formato
 sigue (informalmente) [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
+## [1.5.183] — 2026-05-27
+
+### Agregado
+
+- **Comprobantes Upload Multi**: Nuevo flujo para subir múltiples comprobantes simultáneamente sin unificar PDFs. Muestra modal con tabs para verificar/editar datos de cada comprobante incluyendo especialidad individual. Se sube cada comprobante como entrada separada en la base de datos.
+  - `procesarArchivosPdx()`: Detecta tema y rutea a `flujoSubidaMultiplePdx()` para comprobantes
+  - `flujoSubidaMultiplePdx()`: Nuevo flujo que analiza, muestra tabs editables y sube cada archivo individualmente
+  - Estilos: Nuevas clases `.sop-tab-btn` y `.sop-tab-content` para UI de tabs
+
+### Mantenimiento
+
+- Actualización de versión a 1.5.183
+
 ## [1.5.121] — 2026-05-27
 
 ### Corregido
