@@ -2359,58 +2359,53 @@
     return new Promise((resolve, reject) => {
       const carpeta = pdxState.carpetaActual || pdxState.carpetas.find((c) => c.id === carpetaId);
       const tema = detectarTemaCarpetaCliente(carpeta?.nombre_display || '');
+      const esConsultaMedica = tema === 'comprobantes_consulta_medica';
+      const esConsentimiento = tema === 'consentimientos';
       const label = TEMA_LABEL[tema] || 'Documentos';
+      const tipoEntidad = esConsentimiento ? 'consentimiento(s)' : (esConsultaMedica ? 'comprobante(s) de consulta médica' : 'comprobante(s)');
+      const titulo = tipoEntidad;
 
-      // Crear tabs HTML para cada archivo
-      const tabsHtml = analisisLista.map((item, idx) => {
-        const isActive = idx === 0 ? 'active' : '';
-        return `<button class="sop-tab-btn ${isActive}" data-tab="${idx}" style="font-size:.9rem;padding:6px 12px">${item.file.name.slice(0, 20)}...</button>`;
-      }).join('');
-
-      const contentsHtml = analisisLista.map((item, idx) => {
-        const isActive = idx === 0 ? 'display:block' : 'display:none';
+      // Crear lista de cards para cada archivo
+      const cardsHtml = analisisLista.map((item, idx) => {
         const parsed = item.analisis.parsed || item.analisis.parcial || {};
-        const campos = item.analisis.campos || [];
-        
-        const fieldsHtml = `
-          <div class="sop-field"><label>Apellidos *</label><input type="text" class="sopMultiApe" data-idx="${idx}" value="${escapeHtml(parsed.apellidos || '')}"></div>
-          <div class="sop-field"><label>Nombres *</label><input type="text" class="sopMultiNom" data-idx="${idx}" value="${escapeHtml(parsed.nombres || '')}"></div>
+        const docFieldsHtml = esConsultaMedica ? '' : `
           <div class="sop-field"><label>Tipo de documento</label><input type="text" class="sopMultiTipoDoc" data-idx="${idx}" value="${escapeHtml(normalizarTipoDocumentoCliente(parsed.tipo_documento || 'CC'))}" maxlength="4" style="text-transform:uppercase" placeholder="CC"></div>
           <div class="sop-field"><label>Número de documento *</label><input type="text" class="sopMultiDoc" data-idx="${idx}" value="${escapeHtml(parsed.paciente_documento || '')}" inputmode="numeric" pattern="[0-9]*"></div>
-          <div class="sop-field"><label>Fecha *</label><input type="date" class="sopMultiFecha" data-idx="${idx}" value="${escapeHtml(parsed.fecha_estudio || '')}"></div>
-          <div class="sop-field"><label>Especialidad/Tipo examen *</label><select class="sopMultiEst" data-idx="${idx}"><option value="">-- Seleccione --</option></select></div>
+        `;
+        
+        const fieldsHtml = `
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <div class="sop-field"><label>Apellidos *</label><input type="text" class="sopMultiApe" data-idx="${idx}" value="${escapeHtml(parsed.apellidos || '')}"></div>
+            <div class="sop-field"><label>Nombres *</label><input type="text" class="sopMultiNom" data-idx="${idx}" value="${escapeHtml(parsed.nombres || '')}"></div>
+            ${docFieldsHtml}
+            <div class="sop-field"><label>Fecha *</label><input type="date" class="sopMultiFecha" data-idx="${idx}" value="${escapeHtml(parsed.fecha_estudio || '')}"></div>
+            <div class="sop-field"><label>${esConsultaMedica ? 'Especialidad' : 'Especialidad/Tipo examen'} *</label><select class="sopMultiEst" data-idx="${idx}"><option value="">-- Seleccione --</option></select></div>
+          </div>
         `;
 
-        return `<div class="sop-tab-content" data-tab="${idx}" style="${isActive};padding:12px 0">${fieldsHtml}</div>`;
+        return `
+          <div class="sop-multi-card" style="border:1px solid #e2e8f0;border-radius:8px;padding:14px;margin-bottom:12px;background:#f9fafb">
+            <div style="display:flex;align-items:center;margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid #e5e7eb">
+              <i data-lucide="file-pdf" style="width:20px;height:20px;color:#dc2626;margin-right:8px"></i>
+              <strong style="flex:1;font-size:.95rem;color:#1f2937">${escapeHtml(item.file.name)}</strong>
+              <span style="background:#e5e7eb;padding:4px 8px;border-radius:4px;font-size:.8rem;color:#6b7280">Comprobante ${idx + 1}/${analisisLista.length}</span>
+            </div>
+            ${fieldsHtml}
+          </div>
+        `;
       }).join('');
 
       const modal = openSopModal(`
-        <h3><i data-lucide="files"></i> Subir ${analisisLista.length} comprobante(s)</h3>
-        <p style="font-size:.85rem;color:#64748b;margin:-8px 0 10px">Verifique y/o edite los datos de cada comprobante. Los se subirán de forma individual.</p>
-        <div style="max-height:400px;overflow-y:auto;border:1px solid #e2e8f0;border-radius:6px;padding:0">
-          <div class="sop-tabs" style="display:flex;border-bottom:1px solid #e2e8f0;background:#f8fafc;padding:0;overflow-x:auto">
-            ${tabsHtml}
-          </div>
-          <div style="padding:12px">${contentsHtml}</div>
+        <h3><i data-lucide="files"></i> Subir ${analisisLista.length} ${titulo}</h3>
+        <p style="font-size:.85rem;color:#64748b;margin:-8px 0 14px">Verifique y/o edite los datos de cada ${esConsentimiento ? 'consentimiento' : (esConsultaMedica ? 'comprobante de consulta médica' : 'comprobante')}. Se subirán de forma individual.</p>
+        <div style="max-height:600px;overflow-y:auto;border:1px solid #e2e8f0;border-radius:8px;padding:12px;background:#fafbfc">
+          ${cardsHtml}
         </div>
-        <div class="sop-dialog-actions">
+        <div class="sop-dialog-actions" style="margin-top:16px">
           <button type="button" class="sop-btn sop-btn-ghost" id="sopMultiCancel">Cancelar</button>
           <button type="button" class="sop-btn sop-btn-primary" id="sopMultiOk">Subir todos</button>
         </div>
       `, { closeOnBackdrop: false, closeOnEscape: false });
-
-      // Tabs behavior
-      const tabBtns = modal.querySelectorAll('.sop-tab-btn');
-      const tabContents = modal.querySelectorAll('.sop-tab-content');
-      tabBtns.forEach(btn => {
-        btn.onclick = () => {
-          tabBtns.forEach(b => b.classList.remove('active'));
-          tabContents.forEach(c => c.style.display = 'none');
-          btn.classList.add('active');
-          const tabIdx = btn.getAttribute('data-tab');
-          modal.querySelector(`[data-tab="${tabIdx}"].sop-tab-content`).style.display = 'block';
-        };
-      });
 
       // Populate estudio selects
       (async () => {
@@ -2421,11 +2416,12 @@
             await poblarSelectEstudioPdx(estSelect, parsed.estudio_texto);
           }
         }
+        sopIcons(modal);
       })();
 
       modal.querySelector('#sopMultiCancel').onclick = () => { closeSopModal(modal); reject(new Error('cancelado')); };
       modal.querySelector('#sopMultiOk').onclick = async () => {
-        // Recolectar datos de cada tab
+        // Recolectar datos de cada card
         const uploads = [];
         let hasError = false;
 
@@ -2436,8 +2432,8 @@
           const fecha = modal.querySelector(`.sopMultiFecha[data-idx="${idx}"]`)?.value;
           const est = modal.querySelector(`.sopMultiEst[data-idx="${idx}"]`)?.value?.trim();
 
-          if (!ape || !nom || !doc || !fecha || !est) {
-            sopToast(`Comprobante ${idx + 1}: Complete todos los campos obligatorios`, 'warning');
+          if (!ape || !nom || !fecha || !est || (!esConsultaMedica && !doc)) {
+            sopToast(`Comprobante ${idx + 1} (${analisisLista[idx].file.name}): Complete todos los campos obligatorios`, 'warning');
             hasError = true;
             break;
           }
@@ -2445,12 +2441,14 @@
           const body = {
             apellidos: ape,
             nombres: nom,
-            paciente_documento: normalizarNumeroDocumentoCliente(doc),
-            tipo_documento: modal.querySelector(`.sopMultiTipoDoc[data-idx="${idx}"]`)?.value?.toUpperCase() || 'CC',
             fecha_estudio: fecha,
             estudio_texto: est,
             confirmacion_manual: '1'
           };
+          if (!esConsultaMedica) {
+            body.paciente_documento = normalizarNumeroDocumentoCliente(doc);
+            body.tipo_documento = modal.querySelector(`.sopMultiTipoDoc[data-idx="${idx}"]`)?.value?.toUpperCase() || 'CC';
+          }
 
           uploads.push({ file: analisisLista[idx].file, body });
         }
@@ -2461,11 +2459,19 @@
         try {
           let contador = 0;
           for (const { file, body } of uploads) {
-            await subirArchivoPdx(file, carpetaId, body);
-            contador++;
+            try {
+              await subirArchivoPdx(file, carpetaId, body);
+              contador++;
+            } catch (e) {
+              if (e.codigo === 'PDX_DUPLICADO') {
+                sopToast(`${file.name}: ${e.message}`, 'warning');
+                continue;
+              }
+              throw e;
+            }
           }
           closeSopModal(modal);
-          sopToast(`${contador} comprobante(s) subido(s)`, 'success');
+          sopToast(`${contador} ${tipoEntidad} subido(s)`, 'success');
           resolve();
         } catch (e) {
           sopToast(e.message, 'error');
@@ -2784,8 +2790,8 @@
       if (pdfs.length >= 2) {
         const carpeta = pdxState.carpetaActual || pdxState.carpetas.find((c) => c.id === carpetaId);
         const tema = detectarTemaCarpetaCliente(carpeta?.nombre_display || '');
-        // COMPROBANTES: subida múltiple SIN unificar
-        if (tema === 'comprobantes') {
+        // COMPROBANTES, COMPROB. CONSULTAS MÉDICAS y CONSENTIMIENTOS: subida múltiple SIN unificar
+        if (['comprobantes', 'comprobantes_consulta_medica', 'consentimientos'].includes(tema)) {
           await flujoSubidaMultiplePdx(pdfs, carpetaId);
         } else {
           // ORDEN + HC: unificar (mantener actual)

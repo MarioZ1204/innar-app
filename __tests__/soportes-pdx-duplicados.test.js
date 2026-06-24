@@ -119,4 +119,27 @@ describe('soportes-pdx-duplicados', () => {
     const whereMatch = sqlCall.match(/WHERE.*?(?=LIMIT|$)/);
     expect(whereMatch[0]).not.toContain('estudio_texto');
   });
+
+  test('consentimientos: detecta duplicado por documento+fecha', async () => {
+    const db = {
+      query: jest.fn(async (sql, params) => {
+        if (String(sql).includes('paciente_documento = ?') && String(sql).includes('fecha_estudio = ?')) {
+          return [{ id: 77, paciente_documento: params[1], fecha_estudio: params[2], paciente_nombre: 'Lopez, Ana' }];
+        }
+        return [];
+      })
+    };
+    const carpeta = { nombre_display: 'CONSENTIMIENTOS' };
+    const meta = {
+      paciente_documento: '111222333',
+      fecha_estudio: '2026-04-02',
+      estudio_texto: 'Consentimiento',
+      nombre_archivo_display: 'CONSENTIMIENTO Ana Lopez CC 111222333 2026-04-02 Consentimiento.pdf'
+    };
+
+    const dup = await buscarDuplicadoPdxEnCarpeta(db, 2, meta, carpeta);
+    expect(dup).not.toBeNull();
+    expect(dup.row.id).toBe(77);
+    expect(dup.motivo).toBe('documento_fecha');
+  });
 });

@@ -205,6 +205,19 @@ describe('soportes-pdx-parse — formatos estructurados', () => {
     expect(a.parsed.nombre_display).toBe('ORDEN + HC María Elena Pérez Gómez 2026-06-01 Neurología.pdf');
   });
 
+  test('consentimientos extrae datos del nombre de archivo', () => {
+    const a = analizarNombreArchivo(
+      'CONSENTIMIENTO García López Juan Carlos CC 1234567890 2026-05-27 PSG Basal.pdf',
+      { nombre_display: 'CONSENTIMIENTOS' },
+      [{ nombre: 'PSG Basal' }]
+    );
+    expect(a.ok).toBe(true);
+    expect(a.parsed.apellidos).toBe('García López');
+    expect(a.parsed.nombres).toBe('Juan Carlos');
+    expect(a.parsed.paciente_documento).toBe('1234567890');
+    expect(a.parsed.estudio_texto).toBe('PSG Basal');
+  });
+
   test('parseNombrePorCarpeta elige parser según carpeta', () => {
     const p = parseNombrePorCarpeta(
       'COMPROBANTE - Pérez - Ana - CC - 111 - 2026-01-01 - EEG.pdf',
