@@ -1383,6 +1383,54 @@ function estadoBadgeCitaElectro(citaOrEstado, observacionesArg) {
   return estadoBadge(estado);
 }
 
+function buildReprogramacionTurnoPayload(turno, { fecha, hora, estadoOriginal = 'REPROGRAMADO', actor = 'Sistema' } = {}) {
+  return {
+    nuevoTurno: {
+      doctor_id: turno?.doctor_id,
+      paciente_nombre: turno?.paciente_nombre || null,
+      paciente_documento: turno?.paciente_documento || null,
+      paciente_telefono: turno?.paciente_telefono || null,
+      paciente_telefono2: turno?.paciente_telefono2 || null,
+      tipo_consulta: turno?.tipo_consulta || null,
+      entidad: turno?.entidad || null,
+      notas: turno?.notas || null,
+      fecha,
+      hora,
+      estado: 'PENDIENTE',
+      programado_por: actor || 'Sistema'
+    },
+    actualizacionOriginal: {
+      estado: estadoOriginal,
+      numero_turno: null,
+      observaciones: turno?.notas ? `[Reprogramado] ${turno.notas}` : '[Reprogramado]'
+    }
+  };
+}
+
+function buildReprogramacionElectroPayload(cita, { fecha, hora, actor = 'Sistema' } = {}) {
+  const obs = String(cita?.observaciones || '').trim();
+  const observaciones = /\[Reprogramado\]/i.test(obs) ? obs : (obs ? `[Reprogramado] ${obs}` : '[Reprogramado]');
+  return {
+    nuevaCita: {
+      paciente_id: cita?.paciente_id,
+      fecha,
+      hora_agendamiento: hora,
+      estudio: cita?.estudio || null,
+      entidad: cita?.entidad || null,
+      observaciones: cita?.observaciones || null,
+      diagnostico_id: cita?.diagnostico_id || null,
+      equipo_id: cita?.equipo_id || null,
+      duracion_minutos: cita?.duracion_minutos || null,
+      estado: 'Programado',
+      programado_por_nombre: actor || 'Sistema'
+    },
+    actualizacionOriginal: {
+      estado: 'Reprogramado',
+      observaciones
+    }
+  };
+}
+
 function buildPayloadReprogramarCitaElectro(cita, fechaNueva, horaNueva) {
   const obs = String(cita?.observaciones || '').trim();
   const nota = '[Reprogramado]';
@@ -1615,6 +1663,33 @@ async function confirmarEditarServicio() {
 // Almacenar estado de paginación de cada tabla
 window.paginationState = {};
 
+function getPaginationStorageKey(tableId) {
+  return `innar.pagination.${tableId}`;
+}
+
+function loadPaginationState(tableId) {
+  try {
+    const raw = sessionStorage.getItem(getPaginationStorageKey(tableId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function persistPaginationState(tableId, state) {
+  if (!tableId || !state) return;
+  try {
+    sessionStorage.setItem(getPaginationStorageKey(tableId), JSON.stringify({
+      currentPage: Number(state.currentPage) || 1,
+      itemsPerPage: Number(state.itemsPerPage) || 20
+    }));
+  } catch (_) {
+    /* ignore */
+  }
+}
+
 /**
  * Configura paginación para una tabla
  * @param {string} tableId - ID único para la tabla (ej: 'usuarios', 'citasElectro', etc)
@@ -1631,27 +1706,34 @@ function setupPagination(tableId, data, renderFunction, options = {}) {
     keepCurrentPage = true
   } = options;
 
+  const savedState = loadPaginationState(tableId);
+
   // Inicializar estado
   if (!window.paginationState[tableId]) {
+    const initialItemsPerPage = savedState?.itemsPerPage || itemsPerPageDefault;
     window.paginationState[tableId] = {
-      currentPage: 1,
-      itemsPerPage: itemsPerPageDefault,
+      currentPage: savedState?.currentPage || 1,
+      itemsPerPage: initialItemsPerPage,
       data: data,
-      totalPages: Math.ceil(data.length / itemsPerPageDefault)
+      totalPages: Math.ceil(data.length / initialItemsPerPage)
     };
   } else {
     // Actualizar datos y recalcular
-    window.paginationState[tableId].data = data;
-    window.paginationState[tableId].totalPages = Math.ceil(data.length / window.paginationState[tableId].itemsPerPage);
+    const state = window.paginationState[tableId];
+    state.data = data;
+    state.itemsPerPage = savedState?.itemsPerPage || state.itemsPerPage || itemsPerPageDefault;
+    state.totalPages = Math.ceil(data.length / state.itemsPerPage);
     if (!keepCurrentPage) {
-      window.paginationState[tableId].currentPage = 1;
+      state.currentPage = 1;
     } else {
-      const maxPage = Math.max(1, window.paginationState[tableId].totalPages || 1);
-      window.paginationState[tableId].currentPage = Math.min(window.paginationState[tableId].currentPage || 1, maxPage);
+      const maxPage = Math.max(1, state.totalPages || 1);
+      const preferredPage = savedState?.currentPage || state.currentPage || 1;
+      state.currentPage = Math.min(preferredPage, maxPage);
     }
   }
 
   const state = window.paginationState[tableId];
+  persistPaginationState(tableId, state);
 
   // Renderizar tabla
   renderPaginatedTable(tableId, renderFunction, tbodyId);
@@ -1767,6 +1849,7 @@ function createPaginationControls(tableId, containerSelector, itemsPerPageOption
     state.itemsPerPage = parseInt(e.target.value);
     state.totalPages = Math.ceil(state.data.length / state.itemsPerPage);
     state.currentPage = 1;
+    persistPaginationState(tableId, state);
     renderPaginatedTable(tableId, renderFunction, tbodyId);
     createPaginationControls(tableId, containerSelector, itemsPerPageOptions, renderFunction, tbodyId);
   });
@@ -1787,6 +1870,7 @@ function createPaginationControls(tableId, containerSelector, itemsPerPageOption
     firstBtn.className = 'pg-nav';
     firstBtn.addEventListener('click', () => {
       state.currentPage = 1;
+      persistPaginationState(tableId, state);
       renderPaginatedTable(tableId, renderFunction, tbodyId);
       createPaginationControls(tableId, containerSelector, itemsPerPageOptions, renderFunction, tbodyId);
     });
@@ -1800,6 +1884,7 @@ function createPaginationControls(tableId, containerSelector, itemsPerPageOption
     prevBtn.className = 'pg-nav';
     prevBtn.addEventListener('click', () => {
       state.currentPage--;
+      persistPaginationState(tableId, state);
       renderPaginatedTable(tableId, renderFunction, tbodyId);
       createPaginationControls(tableId, containerSelector, itemsPerPageOptions, renderFunction, tbodyId);
     });
@@ -1822,6 +1907,7 @@ function createPaginationControls(tableId, containerSelector, itemsPerPageOption
       pageBtn.className = 'pg-page';
       pageBtn.addEventListener('click', () => {
         state.currentPage = i;
+        persistPaginationState(tableId, state);
         renderPaginatedTable(tableId, renderFunction, tbodyId);
         createPaginationControls(tableId, containerSelector, itemsPerPageOptions, renderFunction, tbodyId);
       });
@@ -1836,6 +1922,7 @@ function createPaginationControls(tableId, containerSelector, itemsPerPageOption
     nextBtn.className = 'pg-nav';
     nextBtn.addEventListener('click', () => {
       state.currentPage++;
+      persistPaginationState(tableId, state);
       renderPaginatedTable(tableId, renderFunction, tbodyId);
       createPaginationControls(tableId, containerSelector, itemsPerPageOptions, renderFunction, tbodyId);
     });
@@ -1849,6 +1936,7 @@ function createPaginationControls(tableId, containerSelector, itemsPerPageOption
     lastBtn.className = 'pg-nav';
     lastBtn.addEventListener('click', () => {
       state.currentPage = state.totalPages;
+      persistPaginationState(tableId, state);
       renderPaginatedTable(tableId, renderFunction, tbodyId);
       createPaginationControls(tableId, containerSelector, itemsPerPageOptions, renderFunction, tbodyId);
     });
@@ -13632,20 +13720,32 @@ async function confirmarReprogramar() {
       return;
     }
     
-    const cambios = buildPayloadReprogramarCitaElectro(
+    const { nuevaCita, actualizacionOriginal } = buildReprogramacionElectroPayload(
       citaReprogramarAdelantarActual,
-      fechaNueva,
-      horaNueva
+      { fecha: fechaNueva, hora: horaNueva, actor: (currentUser && (currentUser.nombre || currentUser.usuario)) || 'Sistema' }
     );
-    
+
+    const resNueva = await apiFetch('/api/citas-electro', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(nuevaCita)
+    });
+
+    const dataNueva = await resNueva.json();
+
+    if (!dataNueva?.ok) {
+      showToast(dataNueva?.error || 'Error reprogramando cita', 'error');
+      return;
+    }
+
     const res = await apiFetch(`/api/citas-electro/${citaReprogramarAdelantarActual.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(cambios)
+      body: JSON.stringify(actualizacionOriginal)
     });
-    
+
     const data = await res.json();
-    
+
     if (data && data.ok) {
       showToast('Cita reprogramada exitosamente', 'success');
       
@@ -15001,37 +15101,29 @@ $('btnConfirmarReprogramarMedica')?.addEventListener('click', async (e) => {
     let estadoOriginal = 'REPROGRAMADO';
     if (currentEstadoAction === 'cancelado-paciente') estadoOriginal = 'CANCELADO';
 
-    // 1) Crear primero la cita nueva; si falla, el original conserva PENDIENTE
-    const body = {
-      doctor_id: currentTurnoMedicaData.doctor_id,
-      paciente_nombre: currentTurnoMedicaData.paciente_nombre,
-      paciente_documento: currentTurnoMedicaData.paciente_documento || null,
-      paciente_telefono: currentTurnoMedicaData.paciente_telefono || null,
-      paciente_telefono2: currentTurnoMedicaData.paciente_telefono2 || null,
+    const { nuevoTurno, actualizacionOriginal } = buildReprogramacionTurnoPayload(currentTurnoMedicaData, {
       fecha: fechaNew,
       hora: horaNew,
-      tipo_consulta: currentTurnoMedicaData.tipo_consulta || null,
-      entidad: currentTurnoMedicaData.entidad || null,
-      notas: currentTurnoMedicaData.notas ? `[Reprogramado] ${currentTurnoMedicaData.notas}` : '[Reprogramado]',
-      programado_por: (currentUser && (currentUser.nombre || currentUser.usuario)) || 'Sistema'
-    };
+      estadoOriginal,
+      actor: (currentUser && (currentUser.nombre || currentUser.usuario)) || 'Sistema'
+    });
 
     const res = await apiFetch('/api/turnos', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
+      body: JSON.stringify(nuevoTurno)
     });
-    
+
     const data = await res.json();
     if (!data.ok) {
       showToast(data.error || 'Error al reprogramar', 'error');
       return;
     }
 
-    const resEstado = await apiFetch(`/api/turnos/${currentTurnoMedicaData.id}/estado`, {
+    const resEstado = await apiFetch(`/api/turnos/${currentTurnoMedicaData.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ estado: estadoOriginal })
+      body: JSON.stringify(actualizacionOriginal)
     });
     const dataEstado = await resEstado.json();
     if (!dataEstado.ok) {

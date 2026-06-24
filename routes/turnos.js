@@ -10,6 +10,7 @@ const {
   safeError, emitSocket
 } = require('../middleware/index');
 const { validateSchema } = require('../modules/validation-schemas');
+const { buildReprogramacionTurnoPayload } = require('../utils/agenda-reprogramacion');
 
 // Helper: obtener siguiente número de turno
 async function getNextTurnoNumber(fecha, doctor_id) {

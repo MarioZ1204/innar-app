@@ -11,6 +11,7 @@ const {
   safeError, emitSocket
 } = require('../middleware/index');
 const { validateSchema } = require('../modules/validation-schemas');
+const { buildReprogramacionElectroPayload } = require('../utils/agenda-reprogramacion');
 const { hayCupoElectroParaAgendar, hayCupoElectroParaIniciar } = require('./electro-capacity');
 const { buildMonitorEquiposView, citaOverlapsMonitorWindow } = require('../utils/electro-monitor');
 const {
