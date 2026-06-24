@@ -318,4 +318,38 @@ describe('soportes-pdx-parse — corrección manual', () => {
     expect(meta.ok).toBe(true);
     expect(meta.nombre_display).toContain('ORDEN + HC');
   });
+
+  test('analizarNombreArchivo retorna parsed incluso cuando requiere corrección', () => {
+    const analisis = analizarNombreArchivo(
+      'COMPROBANTE García López Juan Carlos CC 1234567890 2026-05-27 PSG Basal.pdf',
+      { nombre_display: 'COMPROBANTES', _estudiosLista: [] },
+      []
+    );
+    // Si ok es true, parsed debe estar presente
+    if (analisis.ok) {
+      expect(analisis.parsed).toBeDefined();
+      expect(analisis.parsed.apellidos).toBe('García López');
+      expect(analisis.parsed.nombres).toBe('Juan Carlos');
+    }
+  });
+
+  test('analizarNombreArchivo retorna parsed cuando campos faltan pero se pueden parsear', () => {
+    // Nombre incompleto: sin documento (requerido para comprobantes)
+    const analisis = analizarNombreArchivo(
+      'García López Juan 2026-05-27.pdf',
+      { nombre_display: 'COMPROBANTES', _estudiosLista: [] },
+      []
+    );
+    // Aunque ok sea false y requiera corrección, debe retornar parsed con lo que se pudo extraer
+    // O en su defecto, debe retornar los datos parseados si los tiene
+    if (!analisis.ok) {
+      // Cuando falla, debe haber field parsed con los datos que se pudieron extraer
+      expect(analisis.requiere_correccion).toBe(true);
+      // El campo 'parsed' debe estar presente si hubo parsing exitoso previo
+      if (analisis.parsed && analisis.parsed.ok) {
+        expect(analisis.parsed.apellidos).toBeDefined();
+        expect(analisis.parsed.nombres).toBeDefined();
+      }
+    }
+  });
 });

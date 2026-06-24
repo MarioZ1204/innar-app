@@ -1053,6 +1053,7 @@ function analizarNombreArchivo(originalName, carpeta, estudios = []) {
       error: `Complete los datos obligatorios: ${faltan}`,
       tema,
       parcial: evaluacion.datos,
+      parsed: parsed.ok ? parsed : null,
       campos: evaluacion.campos,
       ayuda_campos: ayudaCampos,
       formato_completo: parsed.ok
@@ -1079,6 +1080,7 @@ function analizarNombreArchivo(originalName, carpeta, estudios = []) {
         error: meta.error || mensajeErrorFormato(tema),
         tema,
         parcial: datos,
+        parsed: parsed.ok ? parsed : null,
         campos: evaluacion.campos,
         ayuda_campos: ayudaCampos
       };
