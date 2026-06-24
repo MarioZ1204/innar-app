@@ -54,6 +54,30 @@ async function buscarDuplicadoPdxEnCarpeta(db, carpetaId, meta, carpeta = null, 
       if (byName) return byName;
     }
 
+    // Para temas con documento (ordenes, comprobantes, consentimientos), buscar por documento+fecha.
+    // NO incluir estudio_texto, ya que puede cambiar sin que sea duplicado (ej: cambio de especialidad).
+    if (TEMAS_CON_DOCUMENTO.includes(tema)) {
+      const doc = String(meta.paciente_documento || '').trim();
+      const fecha = meta.fecha_estudio;
+      if (!doc || !fecha) return null;
+
+      const params = [carpetaId, doc, fecha];
+      let sql = `SELECT id, paciente_nombre, nombre_archivo_display, ruta_relativa, paciente_nombre_norm, fecha_estudio, estudio_texto
+      FROM sop_pdx_archivos
+      WHERE carpeta_id = ? AND paciente_documento = ? AND fecha_estudio = ?`;
+
+      if (excludeId) {
+        sql += ' AND id <> ?';
+        params.push(excludeId);
+      }
+
+      sql += ' LIMIT 1';
+      const byDocFecha = await db.query(sql, params);
+      if (byDocFecha.length) return { row: byDocFecha[0], motivo: 'documento_fecha' };
+      return null;
+    }
+
+    // Para otros temas (sin documento), buscar por nombre normalizado + fecha + estudio
     const norm = meta.paciente_nombre_norm;
     const fecha = meta.fecha_estudio;
     const estudio = meta.estudio_texto;
@@ -63,13 +87,6 @@ async function buscarDuplicadoPdxEnCarpeta(db, carpetaId, meta, carpeta = null, 
     let sql = `SELECT id, paciente_nombre, nombre_archivo_display, ruta_relativa, paciente_nombre_norm, fecha_estudio, estudio_texto
     FROM sop_pdx_archivos
     WHERE carpeta_id = ? AND paciente_nombre_norm = ? AND fecha_estudio = ? AND estudio_texto = ?`;
-
-    if (TEMAS_CON_DOCUMENTO.includes(tema)) {
-      const doc = String(meta.paciente_documento || '').trim();
-      if (!doc) return null;
-      sql += ' AND paciente_documento = ?';
-      params.push(doc);
-    }
 
     if (excludeId) {
       sql += ' AND id <> ?';
