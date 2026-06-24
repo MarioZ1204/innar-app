@@ -229,6 +229,38 @@ describe('soportes-pdx-parse — formatos estructurados', () => {
     expect(p.estudio_texto).toBe('Neurología');
   });
 
+  test('comprobante consultas médicas extrae nombres y apellidos desde formato con guiones', () => {
+    const p = parseNombrePorCarpeta(
+      'COMPROBANTE - Juan Carlos - García López - 2026-05-27 - Neurología.pdf',
+      { nombre_display: 'COMPROBANTES CONSULTAS MÉDICAS' },
+      [{ nombre: 'Neurología' }]
+    );
+    expect(p.ok).toBe(true);
+    expect(p.nombres).toBe('Juan Carlos');
+    expect(p.apellidos).toBe('García López');
+    expect(p.estudio_texto).toBe('Neurología');
+  });
+
+  test('consultas médicas ignora prefijos estructurales concatenados al inicio', () => {
+    const casos = [
+      'COMPROBANTE ORDEN + HC Juan Carlos García López 2026-05-27 Neurología.pdf',
+      'ORDEN + HC COMPROBANTE Juan Carlos García López 2026-05-27 Neurología.pdf',
+      'COMPROBANTE CONSENTIMIENTO Juan Carlos García López 2026-05-27 Neurología.pdf'
+    ];
+
+    for (const nombre of casos) {
+      const p = parseNombrePorCarpeta(
+        nombre,
+        { nombre_display: 'COMPROBANTES CONSULTAS MÉDICAS' },
+        [{ nombre: 'Neurología' }]
+      );
+      expect(p.ok).toBe(true);
+      expect(p.nombres).toBe('Juan Carlos');
+      expect(p.apellidos).toBe('García López');
+      expect(p.estudio_texto).toBe('Neurología');
+    }
+  });
+
   test('orden + HC consultas médicas ignora prefijos al extraer nombres y apellidos', () => {
     const p = parseNombrePorCarpeta(
       'ORDEN + HC María Elena Pérez Gómez 2026-06-01 Neurología.pdf',

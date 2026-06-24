@@ -197,9 +197,11 @@ function buscarFechaEnTextoPdx(texto) {
 function quitarPrefijosEstructuradosInicio(texto) {
   let t = String(texto || '').trim();
   while (t) {
-    const next = t.replace(/^(?:ORDEN\s*\+\s*HC|ORDEN|COMPROBANTE|CONSENTIMIENTO|HC)[\s\-.]*/i, '').trim();
-    if (next === t) break;
-    t = next;
+    const original = t;
+    t = t
+      .replace(/^(?:ORDEN\s*\+\s*HC|ORDEN|COMPROBANTE|CONSENTIMIENTO|HC)\b[\s\-.]*/i, '')
+      .trim();
+    if (t === original) break;
   }
   return t;
 }
