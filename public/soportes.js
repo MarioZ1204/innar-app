@@ -2359,7 +2359,7 @@
     return new Promise((resolve, reject) => {
       const carpeta = pdxState.carpetaActual || pdxState.carpetas.find((c) => c.id === carpetaId);
       const tema = detectarTemaCarpetaCliente(carpeta?.nombre_display || '');
-      const esConsultaMedica = tema === 'comprobantes_consulta_medica';
+      const esConsultaMedica = esCarpetaConsultaMedicaPdx(carpeta);
       const esConsentimiento = tema === 'consentimientos';
       const label = TEMA_LABEL[tema] || 'Documentos';
       const tipoEntidad = esConsentimiento ? 'consentimiento(s)' : (esConsultaMedica ? 'comprobante(s) de consulta médica' : 'comprobante(s)');
@@ -2413,7 +2413,11 @@
           const parsed = analisisLista[idx].analisis.parsed || analisisLista[idx].analisis.parcial || {};
           const estSelect = modal.querySelector(`.sopMultiEst[data-idx="${idx}"]`);
           if (estSelect) {
-            await poblarSelectEstudioPdx(estSelect, parsed.estudio_texto);
+            if (esConsultaMedica) {
+              await poblarSelectEspecialidadPdx(estSelect, parsed.estudio_texto);
+            } else {
+              await poblarSelectEstudioPdx(estSelect, parsed.estudio_texto);
+            }
           }
         }
         sopIcons(modal);
@@ -2485,6 +2489,7 @@
     const p = analisis.parcial || {};
     const ayuda = ayudaFormatoCliente(tema);
     const esEstruct = esCarpetaEstructuradaPdx(carpeta);
+    const esConsultaMedica = esCarpetaConsultaMedicaPdx(carpeta);
     const esPsg = tema === 'psg';
     const motivoTxt = analisis.motivo === 'falta_estudio_psg'
       ? 'El nombre no incluye el tipo de estudio PSG (Básica, CPAP o BPAP). Complételo para continuar.'
@@ -2512,6 +2517,7 @@
 
     const estSel = modal.querySelector('#sopPdxCorrEst');
     if (esPsg) poblarSelectEstudioPsgCliente(estSel, p.estudio_texto);
+    else if (esConsultaMedica) poblarSelectEspecialidadPdx(estSel, p.estudio_texto);
     else if (esEstruct) poblarSelectEstudioPdx(estSel, p.estudio_texto);
 
     modal.querySelector('#sopPdxCorrCancel').onclick = () => { closeSopModal(modal); reject(new Error('cancelado')); };

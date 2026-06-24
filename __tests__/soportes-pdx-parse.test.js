@@ -205,6 +205,42 @@ describe('soportes-pdx-parse — formatos estructurados', () => {
     expect(a.parsed.nombre_display).toBe('ORDEN + HC María Elena Pérez Gómez 2026-06-01 Neurología.pdf');
   });
 
+  test('comprobante consultas médicas ignora prefijos al extraer nombres y apellidos', () => {
+    const p = parseNombrePorCarpeta(
+      'COMPROBANTE Juan Carlos García López 2026-05-27 Neurología.pdf',
+      { nombre_display: 'COMPROBANTES CONSULTAS MÉDICAS' },
+      [{ nombre: 'Neurología' }]
+    );
+    expect(p.ok).toBe(true);
+    expect(p.nombres).toBe('Juan Carlos');
+    expect(p.apellidos).toBe('García López');
+    expect(p.estudio_texto).toBe('Neurología');
+  });
+
+  test('prefijos estructurales se ignoran cuando aparecen antes del nombre en consultas médicas', () => {
+    const p = parseNombrePorCarpeta(
+      'COMPROBANTE ORDEN + HC Juan Carlos García López 2026-05-27 Neurología.pdf',
+      { nombre_display: 'COMPROBANTES CONSULTAS MÉDICAS' },
+      [{ nombre: 'Neurología' }]
+    );
+    expect(p.ok).toBe(true);
+    expect(p.nombres).toBe('Juan Carlos');
+    expect(p.apellidos).toBe('García López');
+    expect(p.estudio_texto).toBe('Neurología');
+  });
+
+  test('orden + HC consultas médicas ignora prefijos al extraer nombres y apellidos', () => {
+    const p = parseNombrePorCarpeta(
+      'ORDEN + HC María Elena Pérez Gómez 2026-06-01 Neurología.pdf',
+      { nombre_display: 'ORDENES + HC CONSULTAS MÉDICAS' },
+      [{ nombre: 'Neurología' }]
+    );
+    expect(p.ok).toBe(true);
+    expect(p.nombres).toBe('María Elena');
+    expect(p.apellidos).toBe('Pérez Gómez');
+    expect(p.estudio_texto).toBe('Neurología');
+  });
+
   test('consentimientos extrae datos del nombre de archivo', () => {
     const a = analizarNombreArchivo(
       'CONSENTIMIENTO García López Juan Carlos CC 1234567890 2026-05-27 PSG Basal.pdf',

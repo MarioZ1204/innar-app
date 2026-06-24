@@ -194,6 +194,16 @@ function buscarFechaEnTextoPdx(texto) {
   return null;
 }
 
+function quitarPrefijosEstructuradosInicio(texto) {
+  let t = String(texto || '').trim();
+  while (t) {
+    const next = t.replace(/^(?:ORDEN\s*\+\s*HC|ORDEN|COMPROBANTE|CONSENTIMIENTO|HC)[\s\-.]*/i, '').trim();
+    if (next === t) break;
+    t = next;
+  }
+  return t;
+}
+
 /** Quita prefijos ORDEN/COMPROBANTE/CONSENTIMIENTO al inicio de tokens (parseo tolerante). */
 function quitarPrefijosCruzadosPdx(tokens) {
   let i = 0;
@@ -337,7 +347,7 @@ function splitPartesNombreArchivo(originalName) {
 
 /** Nombres primero, apellidos después (consultas médicas). */
 function extraerNombreApellidoConsultaMedica(texto) {
-  const t = String(texto || '').replace(/[\s\-.]+$/,'').trim();
+  const t = quitarPrefijosEstructuradosInicio(String(texto || '').replace(/[\s\-.]+$/,'').trim());
   if (!t) return { nombres: '', apellidos: '' };
   if (t.includes(' - ')) {
     const parts = splitSegmentosGuionesEspaciados(t);
@@ -359,8 +369,7 @@ function extraerNombreApellidoConsultaMedica(texto) {
 }
 
 function extraerCamposEstructuradosAntesFecha(before) {
-  let t = String(before || '').trim();
-  t = t.replace(/^(?:ORDEN\s*\+\s*HC|ORDEN|COMPROBANTE|CONSENTIMIENTO)[\s\-.]*/i, '').trim();
+  let t = quitarPrefijosEstructuradosInicio(String(before || '').trim());
   if (!t) {
     return { apellidos: '', nombres: '', tipo_documento: 'CC', paciente_documento: '' };
   }
@@ -431,13 +440,7 @@ function parseNombreEstructuradoDesdeFecha(tema, originalName, estudios = []) {
   let after = sinPdf.slice(fechaMatch.index + rawFechaLen).replace(/^[\s\-.]+/,'').trim();
   let before = sinPdf.slice(0, fechaMatch.index).replace(/[\s\-.]+$/,'').trim();
 
-  if (tema === 'ordenes' || tema === 'ordenes_consulta_medica') {
-    before = before.replace(/^ORDEN\s*\+\s*HC[\s\-.]*/i, '').trim();
-  } else if (tema === 'comprobantes' || tema === 'comprobantes_consulta_medica') {
-    before = before.replace(/^COMPROBANTE[\s\-.]*/i, '').trim();
-  } else if (tema === 'consentimientos') {
-    before = before.replace(/^CONSENTIMIENTO[\s\-.]*/i, '').trim();
-  }
+  before = quitarPrefijosEstructuradosInicio(before);
 
   const estudio = resolverEstudioDesdeLista(after, estudios) || after.trim();
   if (!estudio) return { ok: false, original: base };
