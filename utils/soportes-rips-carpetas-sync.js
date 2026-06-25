@@ -12,8 +12,17 @@ const {
 } = require('./soportes-armado-structure');
 const sopStorage = require('./soportes-storage');
 
-const RIPS_README_NAME = '_CARPETA_FACTURA.txt';
-const RIPS_README_TEXT = 'Carpeta de factura para archivos RIPS (JSON/XML).\r\n';
+function vaciarDirectorioSiExiste(abs) {
+  if (!abs) return;
+  if (!fs.existsSync(abs)) {
+    fs.mkdirSync(abs, { recursive: true });
+    return;
+  }
+  for (const entry of fs.readdirSync(abs)) {
+    const entryPath = path.join(abs, entry);
+    fs.rmSync(entryPath, { recursive: true, force: true });
+  }
+}
 
 function codigoFacturaDesdeExp(exp) {
   const n = numeroFeExpediente(exp);
@@ -42,10 +51,7 @@ async function ensureRipsCarpetaFacturaEnDisco(db, diaId, codigoFactura) {
       'rips',
       codigoFactura
     );
-    const readme = path.join(abs, RIPS_README_NAME);
-    if (!fs.existsSync(readme)) {
-      fs.writeFileSync(readme, RIPS_README_TEXT, 'utf8');
-    }
+    vaciarDirectorioSiExiste(abs);
     return abs;
   } catch (e) {
     logger.warn('[SOPORTES] RIPS carpeta disco:', e.message);
@@ -118,10 +124,22 @@ async function syncRipsCarpetasPeriodo(db, periodoId, usuarioId = null) {
   }
 }
 
+async function syncRipsCarpetasDias(db, dias, usuarioId = null) {
+  const lista = Array.isArray(dias) ? dias : [dias];
+  const todas = [];
+  const syncDia = module.exports.syncRipsCarpetasDia || syncRipsCarpetasDia;
+  for (const diaId of lista) {
+    if (!diaId && diaId !== 0) continue;
+    const part = await syncDia(db, diaId, usuarioId);
+    todas.push(...part);
+  }
+  return todas;
+}
+
 module.exports = {
   codigoFacturaDesdeExp,
   ensureRipsCarpetaFacturaEnDisco,
   syncRipsCarpetasDia,
   syncRipsCarpetasPeriodo,
-  RIPS_README_NAME
+  syncRipsCarpetasDias,
 };
