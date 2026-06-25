@@ -347,8 +347,7 @@ function splitPartesNombreArchivo(originalName) {
   return parts.filter(Boolean);
 }
 
-/** Nombres primero, apellidos después (consultas médicas). */
-function extraerNombreApellidoConsultaMedica(texto) {
+function separarNombreCompletoConsultaMedica(texto) {
   const t = quitarPrefijosEstructuradosInicio(String(texto || '').replace(/[\s\-.]+$/,'').trim());
   if (!t) return { nombres: '', apellidos: '' };
   if (t.includes(' - ')) {
@@ -368,6 +367,11 @@ function extraerNombreApellidoConsultaMedica(texto) {
     nombres: tokens.slice(0, mid).join(' '),
     apellidos: tokens.slice(mid).join(' ')
   };
+}
+
+/** Nombres primero, apellidos después (consultas médicas). */
+function extraerNombreApellidoConsultaMedica(texto) {
+  return separarNombreCompletoConsultaMedica(texto);
 }
 
 function extraerCamposEstructuradosAntesFecha(before) {
@@ -807,7 +811,7 @@ function parseNombrePsg(originalName, estudios = []) {
 }
 
 function parseNombrePorCarpeta(originalName, carpeta, estudios = []) {
-  const tema = detectarTemaCarpeta(carpeta?.nombre_display || '');
+  const tema = detectarTemaCarpeta(carpeta?.nombre_display || '', originalName);
   switch (tema) {
     case 'ordenes_consulta_medica':
       return parseNombreOrdenHcConsultaMedica(originalName, estudios);
@@ -969,7 +973,7 @@ function extraerNombresAntesDeFecha(beforeFecha) {
 /** Intenta leer datos del nombre aunque no cumpla el formato completo. */
 function extraerDatosParcialesNombre(originalName, carpeta, estudios = []) {
   const base = normalizarNombreParaParseo(originalName);
-  const tema = detectarTemaCarpeta(carpeta?.nombre_display || '');
+  const tema = detectarTemaCarpeta(carpeta?.nombre_display || '', originalName);
   const parcial = {
     apellidos: '',
     nombres: '',
@@ -1043,7 +1047,7 @@ function extraerDatosParcialesNombre(originalName, carpeta, estudios = []) {
  */
 function analizarNombreArchivo(originalName, carpeta, estudios = []) {
   const { evaluarCamposMinimos, ayudaCamposPorTema } = require('./soportes-pdx-campos');
-  const tema = detectarTemaCarpeta(carpeta?.nombre_display || '');
+  const tema = detectarTemaCarpeta(carpeta?.nombre_display || '', originalName);
   const parsed = parseNombrePorCarpeta(originalName, carpeta, estudios);
   const parcial = extraerDatosParcialesNombre(originalName, carpeta, estudios);
   const evaluacion = evaluarCamposMinimos(tema, parcial, parsed, carpeta);
@@ -1109,7 +1113,7 @@ function analizarNombreArchivo(originalName, carpeta, estudios = []) {
 
 function buildMetaDesdeCamposManuales(originalName, body, carpeta) {
   const estudios = carpeta?._estudiosLista || [];
-  const tema = detectarTemaCarpeta(carpeta?.nombre_display || '');
+  const tema = detectarTemaCarpeta(carpeta?.nombre_display || '', originalName);
   const apellidos = String(body.apellidos || '').trim();
   const nombres = String(body.nombres || '').trim();
   const fecha = String(body.fecha_estudio || '').trim();
@@ -1354,6 +1358,8 @@ module.exports = {
   documentoValidoPsg,
   extraerDatosParcialesNombre,
   extraerNombresAntesDeFecha,
+  extraerNombreApellidoConsultaMedica,
+  separarNombreCompletoConsultaMedica,
   normalizarNombreParaParseo,
   analizarNombreArchivo,
   buildMetaDesdeCamposManuales,

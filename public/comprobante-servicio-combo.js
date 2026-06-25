@@ -161,8 +161,13 @@
   }
 
   function initAll() {
-    init('compServServicio');
-    init('docmodModalCompServicio');
+    // El campo de comprobante ahora acepta texto libre sin autocompletado de CUPS.
+    if (document.getElementById('compServServicio')) {
+      document.getElementById('compServServicio').dataset.innarServicioCombo = '1';
+    }
+    if (document.getElementById('docmodModalCompServicio')) {
+      document.getElementById('docmodModalCompServicio').dataset.innarServicioCombo = '1';
+    }
   }
 
   function leerValor(inputId) {

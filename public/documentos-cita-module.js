@@ -401,8 +401,7 @@
       telefono: $('docmodModalCompTelefono')?.value?.trim(),
       correo: $('docmodModalCompCorreo')?.value?.trim(),
       tipo_afiliacion: $('docmodModalCompAfiliacion')?.value?.trim(),
-      servicio: window.innarServicioCombo?.leerValor?.('docmodModalCompServicio')
-        || $('docmodModalCompServicio')?.value?.trim(),
+      servicio: $('docmodModalCompServicio')?.value?.trim(),
       firma_paciente: firmaPacienteDataUrl
     };
   }

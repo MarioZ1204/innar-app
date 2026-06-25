@@ -363,6 +363,22 @@
       ).join('');
   }
 
+  function separarNombreCompletoConsultaMedicaCliente(texto) {
+    const t = String(texto || '').trim().replace(/\.pdf$/i, '').replace(/[\s\-.]+$/g, '');
+    if (!t) return { nombres: '', apellidos: '' };
+    if (t.includes(',')) {
+      const c = t.indexOf(',');
+      return { apellidos: t.slice(0, c).trim(), nombres: t.slice(c + 1).trim() };
+    }
+    const tokens = t.split(/\s+/).filter(Boolean);
+    if (tokens.length < 2) return { nombres: t, apellidos: '' };
+    const mid = Math.ceil(tokens.length / 2);
+    return {
+      nombres: tokens.slice(0, mid).join(' '),
+      apellidos: tokens.slice(mid).join(' ')
+    };
+  }
+
   function parseNombreEstructuradoCliente(originalName, regex, tema) {
     const base = String(originalName || '').trim();
     const m = base.match(regex);
@@ -407,10 +423,10 @@
         if (parsed.ok) {
           const { nombres, apellidos } = parsed;
           if (!nombres || !apellidos) {
-            const [n, a] = [parsed.nombres || '', parsed.apellidos || ''];
-            if (n || a) {
-              parsed.nombres = n;
-              parsed.apellidos = a;
+            const split = separarNombreCompletoConsultaMedicaCliente(originalName);
+            if (split.nombres || split.apellidos) {
+              parsed.nombres = split.nombres;
+              parsed.apellidos = split.apellidos;
             }
           }
           if (!parsed.estudio_texto) parsed.estudio_texto = inferirEstudioCliente(carpeta);
@@ -2476,11 +2492,10 @@
               nombres = parsedFull.nombres;
               apellidos = parsedFull.apellidos;
             } else {
-              const parts = full.split(/\s+/).filter(Boolean);
-              if (parts.length >= 2) {
-                const mid = Math.ceil(parts.length / 2);
-                nombres = parts.slice(0, mid).join(' ');
-                apellidos = parts.slice(mid).join(' ');
+              const split = separarNombreCompletoConsultaMedicaCliente(full);
+              if (split.nombres || split.apellidos) {
+                nombres = split.nombres;
+                apellidos = split.apellidos;
               } else {
                 nombres = full;
                 apellidos = '';

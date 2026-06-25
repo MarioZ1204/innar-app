@@ -10,7 +10,9 @@ const {
   mensajeErrorFormato,
   analizarNombreArchivo,
   buildMetaDesdeCamposManuales,
-  estudioPsgReconocido
+  estudioPsgReconocido,
+  extraerNombreApellidoConsultaMedica,
+  separarNombreCompletoConsultaMedica
 } = require('../utils/soportes-pdx-parse');
 const { buildMetaFromUpload } = require('../utils/soportes-pdx-upload');
 const { detectarTemaCarpeta } = require('../utils/soportes-temas');
@@ -229,6 +231,20 @@ describe('soportes-pdx-parse — formatos estructurados', () => {
     expect(p.estudio_texto).toBe('Neurología');
   });
 
+  test('extrae nombres y apellidos desde un nombre completo escrito en un solo campo', () => {
+    expect(extraerNombreApellidoConsultaMedica('Juan Carlos García López')).toEqual({
+      nombres: 'Juan Carlos',
+      apellidos: 'García López'
+    });
+  });
+
+  test('separa un nombre completo de consulta médica aunque no incluya fecha ni prefijo', () => {
+    expect(separarNombreCompletoConsultaMedica('Juan Carlos García López')).toEqual({
+      nombres: 'Juan Carlos',
+      apellidos: 'García López'
+    });
+  });
+
   test('comprobante consultas médicas extrae nombres y apellidos desde formato con guiones', () => {
     const p = parseNombrePorCarpeta(
       'COMPROBANTE - Juan Carlos - García López - 2026-05-27 - Neurología.pdf',
@@ -239,6 +255,17 @@ describe('soportes-pdx-parse — formatos estructurados', () => {
     expect(p.nombres).toBe('Juan Carlos');
     expect(p.apellidos).toBe('García López');
     expect(p.estudio_texto).toBe('Neurología');
+  });
+
+  test('analizarNombreArchivo acepta comprobantes consultas médicas cuando la carpeta es genérica pero el nombre lo indica', () => {
+    const a = analizarNombreArchivo(
+      'COMPROBANTE Juan Carlos García López 2026-05-27 Neurología.pdf',
+      { nombre_display: 'CONSULTAS MÉDICAS' },
+      [{ nombre: 'Neurología' }]
+    );
+    expect(a.ok).toBe(true);
+    expect(a.requiere_correccion).toBe(false);
+    expect(a.parsed.estudio_texto).toBe('Neurología');
   });
 
   test('consultas médicas ignora prefijos estructurales concatenados al inicio', () => {
