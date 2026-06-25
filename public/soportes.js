@@ -163,7 +163,7 @@
     comprobantes_consulta_medica: {
       pattern: 'COMPROBANTE NOMBRES APELLIDOS YYYY-MM-DD ESPECIALIDAD.pdf',
       ejemplo: 'COMPROBANTE Juan Carlos García López 2026-05-27 Neurología.pdf',
-      nota: 'Carpeta COMPROBANTES CONSULTAS MÉDICAS. Sin documento; use especialidad (Neurología, Epileptología…).'
+      nota: 'Carpeta COMPROBANTE. CONSULTAS MÉDICAS. Sin documento; use especialidad (Neurología, Epileptología…).'
     },
     ordenes_consulta_medica: {
       pattern: 'ORDEN + HC NOMBRES APELLIDOS YYYY-MM-DD ESPECIALIDAD.pdf',
@@ -401,6 +401,25 @@
       case 'ordenes': return parseNombreOrdenesCliente(originalName);
       case 'comprobantes': return parseNombreComprobanteCliente(originalName);
       case 'consentimientos': return parseNombreConsentimientoCliente(originalName);
+      case 'comprobantes_consulta_medica':
+      case 'ordenes_consulta_medica': {
+        const parsed = parseNombrePdxCliente(originalName);
+        if (parsed.ok) {
+          const { nombres, apellidos } = parsed;
+          if (!nombres || !apellidos) {
+            const [n, a] = [parsed.nombres || '', parsed.apellidos || ''];
+            if (n || a) {
+              parsed.nombres = n;
+              parsed.apellidos = a;
+            }
+          }
+          if (!parsed.estudio_texto) parsed.estudio_texto = inferirEstudioCliente(carpeta);
+          if (parsed.ok && parsed.nombres && parsed.apellidos) {
+            parsed.paciente_nombre = `${parsed.apellidos}, ${parsed.nombres}`;
+          }
+        }
+        return parsed;
+      }
       default: {
         const parsed = parseNombrePdxCliente(originalName);
         if (parsed.ok && ['vtm', 'eeg', 'psg', 'actigrafia'].includes(tema) && !parsed.estudio_texto) {
@@ -1250,7 +1269,7 @@
     actigrafia: 'Actigrafía',
     ordenes: 'Órdenes',
     comprobantes: 'Comprobantes',
-    comprobantes_consulta_medica: 'Comprob. consultas médicas',
+    comprobantes_consulta_medica: 'Comprobante. consultas médicas',
     ordenes_consulta_medica: 'Órdenes + HC consultas médicas',
     consentimientos: 'Consentimientos',
     neutral: 'General'
@@ -1933,7 +1952,7 @@
     if (inputUp) inputUp.disabled = dropDisabled;
     const hint = zone?.querySelector('.sop-dropzone-hint');
     if (hint) {
-      hint.textContent = 'Solo PDF. Un archivo: el sistema lee el nombre y pide lo que falte. Varios archivos (2 o más): ordénelos y se unifican en un solo PDF.';
+      hint.textContent = 'Solo PDF. Un archivo: el sistema lee el nombre y pide lo que falte. Varios archivos (2 o más): se revisan y suben por separado, uno a uno.';
     }
     sopIcons($('sopPdxVistaDetalle'));
     requestAnimationFrame(() => {
@@ -2373,10 +2392,16 @@
           <div class="sop-field"><label>Número de documento *</label><input type="text" class="sopMultiDoc" data-idx="${idx}" value="${escapeHtml(parsed.paciente_documento || '')}" inputmode="numeric" pattern="[0-9]*"></div>
         `;
         
-        const fieldsHtml = `
+        const nombreSingleFieldHtml = esConsultaMedica ? `
+          <div class="sop-field" style="grid-column:1 / -1"><label>Nombre completo *</label><input type="text" class="sopMultiNombreCompleto" data-idx="${idx}" value="${escapeHtml((parsed.apellidos && parsed.nombres) ? `${parsed.apellidos} ${parsed.nombres}` : (parsed.paciente_nombre || ''))}" placeholder="Nombres y apellidos"></div>
+        ` : '';
+
+    const fieldsHtml = `
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-            <div class="sop-field"><label>Apellidos *</label><input type="text" class="sopMultiApe" data-idx="${idx}" value="${escapeHtml(parsed.apellidos || '')}"></div>
-            <div class="sop-field"><label>Nombres *</label><input type="text" class="sopMultiNom" data-idx="${idx}" value="${escapeHtml(parsed.nombres || '')}"></div>
+            ${esConsultaMedica ? nombreSingleFieldHtml : `
+              <div class="sop-field"><label>Apellidos *</label><input type="text" class="sopMultiApe" data-idx="${idx}" value="${escapeHtml(parsed.apellidos || '')}"></div>
+              <div class="sop-field"><label>Nombres *</label><input type="text" class="sopMultiNom" data-idx="${idx}" value="${escapeHtml(parsed.nombres || '')}"></div>
+            `}
             ${docFieldsHtml}
             <div class="sop-field"><label>Fecha *</label><input type="date" class="sopMultiFecha" data-idx="${idx}" value="${escapeHtml(parsed.fecha_estudio || '')}"></div>
             <div class="sop-field"><label>${esConsultaMedica ? 'Especialidad' : 'Especialidad/Tipo examen'} *</label><select class="sopMultiEst" data-idx="${idx}"><option value="">-- Seleccione --</option></select></div>
@@ -2430,21 +2455,53 @@
         let hasError = false;
 
         for (let idx = 0; idx < analisisLista.length; idx++) {
+          const nombreCompleto = modal.querySelector(`.sopMultiNombreCompleto[data-idx="${idx}"]`)?.value?.trim();
           const ape = modal.querySelector(`.sopMultiApe[data-idx="${idx}"]`)?.value?.trim();
           const nom = modal.querySelector(`.sopMultiNom[data-idx="${idx}"]`)?.value?.trim();
           const doc = modal.querySelector(`.sopMultiDoc[data-idx="${idx}"]`)?.value?.trim();
           const fecha = modal.querySelector(`.sopMultiFecha[data-idx="${idx}"]`)?.value;
           const est = modal.querySelector(`.sopMultiEst[data-idx="${idx}"]`)?.value?.trim();
 
-          if (!ape || !nom || !fecha || !est || (!esConsultaMedica && !doc)) {
+          let nombres = nom || '';
+          let apellidos = ape || '';
+          if (esConsultaMedica) {
+            const full = nombreCompleto || '';
+            if (!full) {
+              sopToast(`Comprobante ${idx + 1} (${analisisLista[idx].file.name}): Complete el nombre completo`, 'warning');
+              hasError = true;
+              break;
+            }
+            const parsedFull = parseNombrePdxCliente(full, carpeta);
+            if (parsedFull.ok && parsedFull.nombres && parsedFull.apellidos) {
+              nombres = parsedFull.nombres;
+              apellidos = parsedFull.apellidos;
+            } else {
+              const parts = full.split(/\s+/).filter(Boolean);
+              if (parts.length >= 2) {
+                const mid = Math.ceil(parts.length / 2);
+                nombres = parts.slice(0, mid).join(' ');
+                apellidos = parts.slice(mid).join(' ');
+              } else {
+                nombres = full;
+                apellidos = '';
+              }
+            }
+          }
+
+          if (!esConsultaMedica && (!ape || !nom || !fecha || !est || !doc)) {
+            sopToast(`Comprobante ${idx + 1} (${analisisLista[idx].file.name}): Complete todos los campos obligatorios`, 'warning');
+            hasError = true;
+            break;
+          }
+          if (esConsultaMedica && (!nombres || !apellidos || !fecha || !est)) {
             sopToast(`Comprobante ${idx + 1} (${analisisLista[idx].file.name}): Complete todos los campos obligatorios`, 'warning');
             hasError = true;
             break;
           }
 
           const body = {
-            apellidos: ape,
-            nombres: nom,
+            apellidos,
+            nombres,
             fecha_estudio: fecha,
             estudio_texto: est,
             confirmacion_manual: '1'

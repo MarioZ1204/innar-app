@@ -21,35 +21,37 @@ function esTemaOrdenHcConsultaMedica(tema) {
   return tema === 'ordenes_consulta_medica';
 }
 
-function detectarTemaCarpeta(nombreCarpeta) {
+function detectarTemaCarpeta(nombreCarpeta, nombreArchivo = '') {
   const u = normalizarTexto(nombreCarpeta);
-  const consultasMed = esCarpetaConsultasMedicas(u);
+  const archivo = normalizarTexto(nombreArchivo);
+  const contexto = `${u} ${archivo}`.trim();
+  const consultasMed = esCarpetaConsultasMedicas(u) || (archivo.includes('consulta') && archivo.includes('medica'));
 
-  if (consultasMed && /\bcomprobante/.test(u)) {
+  if (consultasMed && /\bcomprobante/.test(contexto)) {
     return 'comprobantes_consulta_medica';
   }
 
   if (
     consultasMed &&
-    (/\bordenes\b/.test(u) ||
-      /\borden\s*\+\s*hc\b/.test(u) ||
-      (/\borden\b/.test(u) && /\bhc\b/.test(u)))
+    (/\bordenes\b/.test(contexto) ||
+      /\borden\s*\+\s*hc\b/.test(contexto) ||
+      (/\borden\b/.test(contexto) && /\bhc\b/.test(contexto)))
   ) {
     return 'ordenes_consulta_medica';
   }
 
-  if (/\bcomprobante/.test(u)) {
+  if (/\bcomprobante/.test(contexto)) {
     return 'comprobantes';
   }
 
-  if (/\bconsentimiento/.test(u)) {
+  if (/\bconsentimiento/.test(contexto)) {
     return 'consentimientos';
   }
 
   if (
-    /\bordenes\b/.test(u) ||
-    /\borden\s*\+\s*hc\b/.test(u) ||
-    (/\borden\b/.test(u) && /\bhc\b/.test(u))
+    /\bordenes\b/.test(contexto) ||
+    /\borden\s*\+\s*hc\b/.test(contexto) ||
+    (/\borden\b/.test(contexto) && /\bhc\b/.test(contexto))
   ) {
     return 'ordenes';
   }
@@ -117,7 +119,7 @@ const TEMA_LABELS = {
   ordenes: 'Órdenes',
   comprobantes: 'Comprobantes',
   consentimientos: 'Consentimientos',
-  comprobantes_consulta_medica: 'Comprobantes consultas médicas',
+  comprobantes_consulta_medica: 'Comprobante. consultas médicas',
   ordenes_consulta_medica: 'Órdenes + HC consultas médicas',
   neutral: 'General'
 };
