@@ -716,7 +716,13 @@ router.patch('/turnos/:id/estado', requireAuth, requireRoleOrPerm(['superadmin',
       await db.execute('UPDATE turnos SET estado = ? WHERE id = ?', [estado, id]);
     }
 
-    const emitData = { id, estado, paciente_nombre: turno.paciente_nombre || null };
+    const emitData = {
+      id,
+      estado,
+      paciente_nombre: turno.paciente_nombre || null,
+      doctor_id: turno.doctor_id,
+      fecha: turno.fecha
+    };
       if (estado === 'EN_ATENCION') {
         const doctorRow = await db.query('SELECT numero_consultorio FROM usuarios WHERE id = ?', [turno.doctor_id]);
         emitData.numero_consultorio = doctorRow.length > 0 ? doctorRow[0].numero_consultorio : null;

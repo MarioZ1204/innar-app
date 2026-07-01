@@ -33,10 +33,32 @@ const {
   parseAnexoFiduWorksheet
 } = require('../utils/anexo-fidu-archivos');
 const { ordenarPorTextoNatural } = require('../utils/comparar-texto-natural');
+const { calcularVisibilidadPeriodo, periodoFromDate, diasRestantesGracia } = require('../utils/soportes-visibilidad');
 
 function parseArchivoId(val) {
   const n = parseInt(val, 10);
   return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+async function refrescarVisibilidadAnexoCarpeta(carpetaRow, archivadoPor = null) {
+  const periodo = carpetaRow.periodo || periodoFromDate();
+  const estadoAnterior = carpetaRow.estado_visibilidad || calcularVisibilidadPeriodo(periodo);
+  const estado = calcularVisibilidadPeriodo(periodo);
+  await db.execute(
+    'UPDATE anexo_fidu_carpetas SET estado_visibilidad = ?, periodo = COALESCE(NULLIF(periodo, ""), ?) WHERE id = ?',
+    [estado, periodo, carpetaRow.id]
+  );
+  try {
+    const { procesarTransicionArchivoAnexo } = require('../utils/soportes-modulo-archivo');
+    await procesarTransicionArchivoAnexo(
+      { ...carpetaRow, periodo, estado_visibilidad: estado },
+      estadoAnterior,
+      archivadoPor
+    );
+  } catch (e) {
+    logger.warn('[ANEXO-FIDU] archivo automático:', e.message);
+  }
+  return estado;
 }
 
 async function pushAnexoASoportes(archivoId) {
@@ -219,11 +241,21 @@ router.get('/anexo-fidu/diagnostico-por-codigo', requireAuth, requirePermiso(PER
 router.get('/anexo-fidu/carpetas', requireAuth, requirePermiso(PERM_ANEXO_FIDU), async (req, res) => {
   try {
     const rows = await db.query(`
-      SELECT c.id, c.nombre, c.creado_en,
+      SELECT c.id, c.nombre, c.periodo, c.estado_visibilidad, c.creado_en,
         (SELECT COUNT(*) FROM anexo_fidu_archivos a WHERE a.carpeta_id = c.id) AS total_archivos
       FROM anexo_fidu_carpetas c
     `);
-    const carpetas = ordenarPorTextoNatural(rows, 'nombre');
+    const activas = [];
+    for (const c of rows) {
+      const vis = await refrescarVisibilidadAnexoCarpeta(c, req.session?.usuarioId || null);
+      if (vis === 'archivo') continue;
+      activas.push({
+        ...c,
+        estado_visibilidad: vis,
+        dias_restantes_gracia: diasRestantesGracia(c.periodo || periodoFromDate())
+      });
+    }
+    const carpetas = ordenarPorTextoNatural(activas, 'nombre');
     res.json({ ok: true, carpetas });
   } catch (e) {
     logger.error('[ANEXO-FIDU] carpetas list:', e);
@@ -240,8 +272,15 @@ router.post('/anexo-fidu/carpetas', requireAuth, requirePermiso(PERM_ANEXO_FIDU)
     if (existing.length) {
       return res.status(409).json({ error: 'Ya existe una carpeta con ese nombre', carpeta: existing[0] });
     }
-    const result = await db.execute('INSERT INTO anexo_fidu_carpetas (nombre) VALUES (?)', [nombre]);
-    res.status(201).json({ ok: true, carpeta: { id: result.insertId, nombre } });
+    const periodo = (req.body?.periodo && /^\d{4}-\d{2}$/.test(String(req.body.periodo).trim()))
+      ? String(req.body.periodo).trim()
+      : periodoFromDate();
+    const vis = calcularVisibilidadPeriodo(periodo);
+    const result = await db.execute(
+      'INSERT INTO anexo_fidu_carpetas (nombre, periodo, estado_visibilidad) VALUES (?, ?, ?)',
+      [nombre, periodo, vis]
+    );
+    res.status(201).json({ ok: true, carpeta: { id: result.insertId, nombre, periodo, estado_visibilidad: vis } });
   } catch (e) {
     logger.error('[ANEXO-FIDU] carpeta create:', e);
     res.status(500).json({ error: safeError(e) });

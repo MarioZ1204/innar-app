@@ -376,6 +376,9 @@ module.exports = {
   facturaFolderName,
   collectDiaZipEntries,
   collectPeriodUnifiedEntries,
+  createZipBuffer,
+  buildPeriodPaqueteParts,
+  safeSyncRipsPeriodo,
   streamDiaZip,
   streamPeriodPaqueteZip,
   streamUnifiedPeriodZip

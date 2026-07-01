@@ -1277,6 +1277,44 @@ const runtimeMigrations = [
         );
       }
     }
+  },
+  {
+    name: 'rt_modulo_archivo_soportes',
+    description: 'Tabla sop_modulo_archivo y visibilidad Anexo FIDU por periodo',
+    run: async (db) => {
+      await db.execute(`
+        CREATE TABLE IF NOT EXISTS sop_modulo_archivo (
+          id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+          modulo ENUM('pdx','armado','anexo') NOT NULL,
+          periodo VARCHAR(7) NULL,
+          ref_id INT NOT NULL,
+          etiqueta VARCHAR(200) NOT NULL,
+          backup_filename VARCHAR(255) NULL,
+          backup_bytes BIGINT NULL,
+          archivado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          archivado_por INT NULL,
+          UNIQUE KEY uk_modulo_archivo_ref (modulo, ref_id),
+          INDEX idx_archivo_periodo (periodo),
+          INDEX idx_archivo_en (archivado_en)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+      `);
+      if (await tableExists(db, 'anexo_fidu_carpetas')) {
+        if (!(await columnExists(db, 'anexo_fidu_carpetas', 'periodo'))) {
+          await db.execute(
+            "ALTER TABLE anexo_fidu_carpetas ADD COLUMN periodo VARCHAR(7) NULL AFTER nombre"
+          );
+        }
+        if (!(await columnExists(db, 'anexo_fidu_carpetas', 'estado_visibilidad'))) {
+          await db.execute(
+            "ALTER TABLE anexo_fidu_carpetas ADD COLUMN estado_visibilidad ENUM('activa','gracia','archivo') NOT NULL DEFAULT 'activa' AFTER periodo"
+          );
+        }
+        await db.execute(`
+          UPDATE anexo_fidu_carpetas SET periodo = DATE_FORMAT(creado_en, '%Y-%m')
+          WHERE periodo IS NULL OR periodo = ''
+        `);
+      }
+    }
   }
 ];
 

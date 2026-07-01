@@ -1526,8 +1526,8 @@
   function badgeVis(estado, dias) {
     const labels = {
       activa: 'Activo',
-      gracia: `Restan ${dias || 0}d para la eliminación de esta carpeta`,
-      archivo: 'Archivo'
+      gracia: dias ? `Pasa a Archivo en ${dias}d` : 'Próximo a archivar',
+      archivo: 'En módulo Archivo'
     };
     const icon = estado === 'activa' ? 'circle-check' : estado === 'gracia' ? 'clock' : 'archive';
     return `<span class="sop-badge sop-badge-${estado}"><i data-lucide="${icon}" style="width:12px;height:12px"></i> ${escapeHtml(labels[estado] || estado)}</span>`;

@@ -82,8 +82,8 @@ function refreshActiveModuleData() {
   if (module === 'reportes-pdx' && typeof window.refreshReportesPdx === 'function') {
     scheduleSocketRefresh('reportes-pdx', () => window.refreshReportesPdx());
   }
-  if (module === 'armado-soportes' && typeof window.refreshArmadoSoportes === 'function') {
-    scheduleSocketRefresh('armado-soportes', () => window.refreshArmadoSoportes());
+  if (module === 'archivo-soportes' && typeof window.cargarArchivoModulo === 'function') {
+    scheduleSocketRefresh('archivo-modulo', () => window.cargarArchivoModulo());
   }
 }
 
@@ -158,6 +158,23 @@ function dispatchRealtime(event, payload) {
 function readCsrfToken() {
   const m = document.cookie.match(/(?:^|; )csrf_token=([^;]*)/);
   return m ? decodeURIComponent(m[1]) : null;
+}
+
+/** Anuncio por altavoz al llamar paciente: solo personal de recepción (no doctores ni electro). */
+function debeEscucharLlamadoPacienteAgenda() {
+  if (typeof currentUser === 'undefined' || !currentUser) return false;
+  const rol = String(currentUser.rol || '').toLowerCase();
+  if (rol === 'doctor') return false;
+  return ['admin_recepcion', 'recepcion', 'auxiliar_recepcion', 'admin', 'superadmin'].includes(rol);
+}
+
+/** Aviso de voz «paciente en sala»: solo el médico asignado al turno. */
+function debeEscucharAvisoPacienteEnSala(e) {
+  if (typeof currentUser === 'undefined' || !currentUser) return false;
+  if (String(currentUser.rol || '').toLowerCase() !== 'doctor') return false;
+  const doctorId = parseInt(e?.doctor_id, 10);
+  const myId = parseInt(currentUser.id, 10);
+  return Number.isFinite(doctorId) && Number.isFinite(myId) && doctorId === myId;
 }
 
 async function pushToServer(event, data) {
@@ -254,7 +271,7 @@ function registerDefaultRealtimeHandlers() {
   subscribe('agenda:turno-eliminado', () => refreshActiveModuleData());
   subscribe('agenda:turno-estado-cambio', (e) => {
     refreshActiveModuleData();
-    if (e && e.estado === 'EN_SALA' && typeof currentUser !== 'undefined' && currentUser && currentUser.rol === 'doctor') {
+    if (e && e.estado === 'EN_SALA' && debeEscucharAvisoPacienteEnSala(e)) {
       const suffix = e.paciente_nombre ? ` - ${e.paciente_nombre}` : '';
       if (typeof showToast === 'function') showToast(`Paciente en sala${suffix}`, 'info');
       if (typeof _speak === 'function') {
@@ -283,7 +300,7 @@ function registerDefaultRealtimeHandlers() {
     }
   });
   subscribe('agenda:anunciar-paciente', (e) => {
-    if (typeof tienePermiso !== 'function' || !tienePermiso('agenda.cambiar_estado')) return;
+    if (!debeEscucharLlamadoPacienteAgenda()) return;
     if (!('speechSynthesis' in window)) return;
     const text = `Paciente ${e.paciente_nombre || 'siguiente paciente'}, pasar al ${e.numero_consultorio ? `consultorio ${e.numero_consultorio}` : 'consultorio'}`;
     if (typeof showToast === 'function') showToast(text, 'info');
@@ -300,7 +317,7 @@ function registerDefaultRealtimeHandlers() {
   });
   subscribe('agenda:turno-llamar-siguiente', (e) => {
     refreshActiveModuleData();
-    if (typeof tienePermiso !== 'function' || !tienePermiso('agenda.cambiar_estado')) return;
+    if (!debeEscucharLlamadoPacienteAgenda()) return;
     if (!('speechSynthesis' in window)) return;
     const text = `Paciente ${e.paciente_nombre || 'siguiente paciente'}, pasar al ${e.numero_consultorio ? `consultorio ${e.numero_consultorio}` : 'consultorio'}`;
     if (typeof _speak === 'function') {

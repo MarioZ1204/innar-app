@@ -247,6 +247,12 @@
             <span class="menu-card-title">Soportes</span>
           </span>
         </button>
+        <button class="menu-card" data-module="archivo-soportes" data-rol="superadmin admin admin_recepcion recepcion contabilidad admin_electro">
+          <span class="menu-card-icon"><svg width="56" height="55" viewBox="0 0 56 55" fill="none"><rect x="10" y="8" width="36" height="38" rx="4" fill="#f1f5f9" stroke="#64748b" stroke-width="2"/><path d="M18 18h20M18 26h16M18 34h12" stroke="#64748b" stroke-width="2" stroke-linecap="round"/><rect x="32" y="30" width="10" height="10" rx="2" fill="#cbd5e1"/></svg></span>
+          <span class="menu-card-label">
+            <span class="menu-card-title">Archivo</span>
+          </span>
+        </button>
 
       </div>
     </div>
@@ -4066,6 +4072,67 @@
     </div>
   </div>
 
+  <!-- ========== MÓDULO ARCHIVO (reportes / soportes / anexo) ========== -->
+  <div id="view-archivo-soportes" class="view-module hidden">
+    <div class="main-layout">
+      <div class="sidebar no-print">
+        <div class="sidebar-inner">
+          <div class="sidebar-logo-mini"><img src="/images/logo.webp" alt="Logo" width="305" height="100" loading="lazy" /></div>
+          <button class="btn-volver" id="btnVolverArchivoModulo" type="button">
+            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+            Volver al menú
+          </button>
+          <div class="sidebar-logo">
+            <img src="/images/logo.webp" alt="Logo" width="305" height="100" style="height:58px;width:auto;object-fit:contain" loading="lazy" />
+          </div>
+          <hr class="sidebar-title-sep" />
+          <h2>Archivo</h2>
+        </div>
+        <div class="sidebar-footer">
+          <div class="sidebar-user">
+            <div class="sidebar-user-avatar">--</div>
+            <div>
+              <div class="sidebar-user-name">Cargando...</div>
+              <div class="sidebar-user-role">-</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="main-content">
+        <div class="container sop-module-content">
+          <header class="sop-module-page-header no-print">
+            <div>
+              <h2>Archivo de módulos</h2>
+              <p style="margin:6px 0 0;font-size:.875rem;color:#64748b">Carpetas de Cargar reportes, Soportes y Anexo que completaron su ciclo. Se genera una copia ZIP de respaldo al archivarlas; los datos permanecen consultables aquí.</p>
+            </div>
+            <button type="button" id="btnArchivoModuloRefrescar" class="sop-btn sop-btn-ghost">
+              <i data-lucide="refresh-cw"></i> Actualizar
+            </button>
+          </header>
+          <div class="sop-panel">
+            <div class="sop-panel-body" style="overflow-x:auto">
+              <table class="sop-table">
+                <thead>
+                  <tr>
+                    <th>Módulo</th>
+                    <th>Carpeta / mes</th>
+                    <th>Periodo</th>
+                    <th>Archivado</th>
+                    <th>Respaldo</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="archivoModuloBody">
+                  <tr><td colspan="6" class="sop-empty" style="padding:24px">Cargando…</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- ========== FOOTER ========== -->
   <footer class="app-footer">
     <div class="footer-content">
@@ -4079,7 +4146,7 @@
   <script src="innar-motion.js?v=20260625-2"></script>
   <script src="innar-sidebar.js?v=20260625-2"></script>
   <script src="multiselect.js?v=20260625-2"></script>
-  <script src="socket-client.js?v=20260625-2"></script>
+  <script src="socket-client.js?v=1.7.4"></script>
   <script src="socket-electro.js?v=20260625-2"></script>
   <script src="dashboard-citas.js?v=20260625-2"></script>
   <script src="calendario-agenda.js?v=20260625-2"></script>
@@ -4097,10 +4164,11 @@
   <script src="firma-quitar-fondo.js?v=20260625-2"></script>
   <script src="documento-pdf-cliente.js?v=20260625-2"></script>
   <script src="documentos-cita-module.js?v=20260625-2"></script>
-  <script src="app.js?v=20260625-2"></script>
-  <script src="anexo-fidu.js?v=20260625-2"></script>
+  <script src="app.js?v=1.7.4"></script>
+  <script src="anexo-fidu.js?v=1.7.4"></script>
   <script src="soportes-pdf-editor.js?v=20260625-2"></script>
-  <script src="soportes.js?v=20260625-2"></script>
+  <script src="archivo-modulo.js?v=1.7.4"></script>
+  <script src="soportes.js?v=1.7.4"></script>
   <script src="calendario-bloqueado.js?v=20260625-2"></script>
   <script src="validation-client.js?v=20260625-2"></script>
   <script src="splash.js?v=20260625-2" defer></script>

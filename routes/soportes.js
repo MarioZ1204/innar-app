@@ -239,15 +239,39 @@ function puedeVerArchivo(req) {
   return false;
 }
 
-async function refrescarVisibilidadPdx(periodo) {
+async function refrescarVisibilidadPdx(periodo, archivadoPor = null) {
+  const prevRows = await db.query(
+    'SELECT estado_visibilidad FROM sop_pdx_carpetas WHERE periodo = ? LIMIT 1',
+    [periodo]
+  );
+  const estadoAnterior = prevRows[0]?.estado_visibilidad || calcularVisibilidadPeriodo(periodo);
   const estado = calcularVisibilidadPeriodo(periodo);
   await db.execute('UPDATE sop_pdx_carpetas SET estado_visibilidad = ? WHERE periodo = ?', [estado, periodo]);
+  try {
+    const { procesarTransicionArchivoPdx } = require('../utils/soportes-modulo-archivo');
+    await procesarTransicionArchivoPdx(periodo, estadoAnterior, archivadoPor);
+  } catch (e) {
+    logger.warn('[SOPORTES] archivo automático PDX:', e.message);
+  }
   return estado;
 }
 
-async function refrescarVisibilidadArmado(periodo) {
+async function refrescarVisibilidadArmado(periodo, archivadoPor = null) {
+  const prevRows = await db.query(
+    'SELECT id, periodo, etiqueta, estado_visibilidad FROM sop_periodos WHERE periodo = ? LIMIT 1',
+    [periodo]
+  );
+  const estadoAnterior = prevRows[0]?.estado_visibilidad || calcularVisibilidadPeriodo(periodo);
   const estado = calcularVisibilidadPeriodo(periodo);
   await db.execute('UPDATE sop_periodos SET estado_visibilidad = ? WHERE periodo = ?', [estado, periodo]);
+  if (prevRows.length && estado === 'archivo' && estadoAnterior !== 'archivo') {
+    try {
+      const { procesarTransicionArchivoArmado } = require('../utils/soportes-modulo-archivo');
+      await procesarTransicionArchivoArmado(prevRows[0], estadoAnterior, archivadoPor);
+    } catch (e) {
+      logger.warn('[SOPORTES] archivo automático Armado:', e.message);
+    }
+  }
   return estado;
 }
 
@@ -500,14 +524,13 @@ router.get('/soportes/pdx/carpetas/catalogo-permisos', requireAuth, requireSuper
 
 router.get('/soportes/pdx/carpetas', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, ['modulo.reportes_pdx', 'soportes.pdx.ver', 'soportes.pdx.subir']), async (req, res) => {
   try {
-    const incluirArchivo = puedeVerArchivo(req) && req.query.archivo === '1';
     const rows = await queryPdxCarpetasConCount();
     const hoyPeriodo = periodoFromDate();
-    for (const r of rows) await refrescarVisibilidadPdx(r.periodo);
+    for (const r of rows) await refrescarVisibilidadPdx(r.periodo, req.session?.usuarioId || null);
     const lista = rows
       .filter((r) => usuarioVeCarpetaPdx(req, r))
       .map(mapCarpetaPdx)
-      .filter((c) => c.estado_visibilidad !== 'archivo' || incluirArchivo);
+      .filter((c) => c.estado_visibilidad !== 'archivo');
     ordenarPorTextoNatural(lista, 'nombre_display');
     res.json({ periodo_actual: hoyPeriodo, carpetas: lista });
   } catch (e) {
@@ -1577,7 +1600,6 @@ function mapPeriodo(row) {
 
 router.get('/soportes/armado/periodos', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'modulo.armado_soportes'), async (req, res) => {
   try {
-    const incluirArchivo = puedeVerArchivo(req) && req.query.archivo === '1';
     const rows = await db.query(`
       SELECT p.*, COUNT(DISTINCT e.id) AS expedientes_count
       FROM sop_periodos p
@@ -1585,6 +1607,10 @@ router.get('/soportes/armado/periodos', requireAuth, requireRoleOrPerm(ROLES_SOP
       LEFT JOIN sop_expedientes e ON e.dia_id = d.id OR e.contenedor_id IN (SELECT id FROM sop_contenedores WHERE dia_id = d.id)
       GROUP BY p.id ORDER BY p.periodo DESC
     `);
+    for (const r of rows) {
+      await refrescarVisibilidadArmado(r.periodo, req.session?.usuarioId || null);
+    }
+    const incluirArchivo = false;
     const lista = rows.map(mapPeriodo).filter((p) => p.estado_visibilidad !== 'archivo' || incluirArchivo);
     res.json({ periodos: lista });
   } catch (e) {

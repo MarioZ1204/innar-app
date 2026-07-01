@@ -260,6 +260,15 @@ let lastReciboId = null;
 let currentUser = null;
 let currentModule = null;
 let selectedDoctorId = null;
+/** Lista de médicos cargada en agenda (consultorio por doctor_id). */
+window._medicosAgendaList = window._medicosAgendaList || [];
+
+function obtenerConsultorioMedicoAgenda(doctorId) {
+  const id = parseInt(doctorId, 10);
+  if (!Number.isFinite(id)) return null;
+  const m = (window._medicosAgendaList || []).find((x) => parseInt(x.id, 10) === id);
+  return m?.numero_consultorio ?? null;
+}
 /** Token CSRF (también viene en JSON de /api/sesion y login; la cookie puede no leerse en document.cookie) */
 let innarCsrfToken = '';
 let citaElectroSeleccionada = null;
@@ -864,6 +873,7 @@ function updateMenuByRole() {
     'reportes-pdx':     'modulo.reportes_pdx',
     'armado-soportes':  'modulo.armado_soportes',
     'anexo-fidu':       'modulo.anexo_fidu',
+    'archivo-soportes': 'modulo.archivo_soportes',
     'backup':           'modulo.backup',
   };
 
@@ -1088,6 +1098,7 @@ function goToModule(moduleId) {
   if (moduleId === 'monitor-equipos') { initMonitorEquipos(); }
   if (moduleId === 'reportes-pdx' && typeof initReportesPdx === 'function') initReportesPdx();
   if (moduleId === 'armado-soportes' && typeof initArmadoSoportes === 'function') initArmadoSoportes();
+  if (moduleId === 'archivo-soportes' && typeof initArchivoModulo === 'function') initArchivoModulo();
   if (moduleId === 'backup' && typeof initBackupModule === 'function') initBackupModule();
   if (moduleId === 'documentos-cita' && typeof initDocumentosCitaModule === 'function') initDocumentosCitaModule();
   if (moduleId === 'anexo-fidu' && typeof initAnexoFidu === 'function') initAnexoFidu();
@@ -4112,6 +4123,7 @@ async function initAgendaMedica() {
   
   // Cargar lista de médicos
   const medicos = await apiFetch('/api/medicos').then(r=>r.json()).catch(()=>[]);
+  window._medicosAgendaList = Array.isArray(medicos) ? medicos : [];
   
   // Mostrar médico seleccionado
   if (selectedDoctorId) {
@@ -6030,7 +6042,7 @@ async function llamarSiguientePaciente() {
       const nombre = data.turno.paciente_nombre || '';
       const consultorio = data.turno.numero_consultorio;
       showToast('Paciente llamado: ' + nombre, 'success'); 
-      // El anuncio de voz es recibido por recepción/electro vía socket (agenda:turno-llamar-siguiente)
+      // El anuncio de voz lo reproduce recepción vía socket (agenda:turno-llamar-siguiente)
       cargarTurnosMedica(); 
     } else {
       showToast(data.error||'Error', 'error');
@@ -8989,7 +9001,8 @@ const PERMISOS_DEFS = [
   { key: 'soportes.armado.subir',       label: 'Subir OPF / CRC / HEV',               grupo: 'Soportes Radicación' },
   { key: 'soportes.armado.importar_pdx', label: 'Importar PDX a expediente',          grupo: 'Soportes Radicación' },
   { key: 'soportes.descargar_zip',      label: 'Descargar ZIP del expediente',        grupo: 'Soportes Radicación' },
-  { key: 'soportes.ver_archivo',        label: 'Ver periodos en archivo',             grupo: 'Soportes Radicación' },
+  { key: 'soportes.ver_archivo',        label: 'Ver y descargar módulo Archivo',      grupo: 'Soportes Radicación' },
+  { key: 'modulo.archivo_soportes',     label: 'Acceso al módulo Archivo',            grupo: 'Archivo' },
   // ── Anexo FIDU ────────────────────────────────────────────────────────────
   { key: 'modulo.anexo_fidu',           label: 'Acceso al módulo (importar, editar, exportar)', grupo: 'Anexo FIDU' },
   // ── Backup ────────────────────────────────────────────────────────────────
@@ -9009,6 +9022,7 @@ const PERMISOS_ROL_DEFAULTS = {
     'modulo.reportes_pdx','modulo.armado_soportes',
     'soportes.pdx.ver','soportes.pdx.carpetas.todas','soportes.pdx.crear_carpeta','soportes.pdx.subir','soportes.pdx.editar',
     'soportes.armado.crear_estructura','soportes.armado.subir','soportes.armado.importar_pdx','soportes.descargar_zip',
+    'soportes.ver_archivo','modulo.archivo_soportes',
     'recibos.crear','recibos.ver','recibos.exportar','recibos.pagar','recibos.pendiente',
     'agenda.ver','agenda.crear','agenda.editar','agenda.eliminar','agenda.cambiar_estado',
     'agenda.llamar_siguiente','agenda.marcar_atendido','agenda.aviso_doctor','agenda.disponibilidad',
@@ -9021,6 +9035,7 @@ const PERMISOS_ROL_DEFAULTS = {
     'modulo.reportes_pdx','modulo.armado_soportes',
     'soportes.pdx.ver','soportes.pdx.carpetas.todas','soportes.pdx.crear_carpeta','soportes.pdx.subir','soportes.pdx.editar',
     'soportes.armado.crear_estructura','soportes.armado.subir','soportes.armado.importar_pdx','soportes.descargar_zip',
+    'soportes.ver_archivo','modulo.archivo_soportes',
     'recibos.crear','recibos.ver','recibos.pagar','recibos.pendiente',
     'agenda.ver','agenda.crear','agenda.editar','agenda.eliminar','agenda.cambiar_estado',
     'agenda.llamar_siguiente','agenda.marcar_atendido','agenda.aviso_doctor',
@@ -9046,6 +9061,7 @@ const PERMISOS_ROL_DEFAULTS = {
     'modulo.reportes_pdx','modulo.armado_soportes',
     'soportes.pdx.ver','soportes.pdx.carpetas.todas','soportes.pdx.crear_carpeta','soportes.pdx.subir','soportes.pdx.editar',
     'soportes.armado.crear_estructura','soportes.armado.subir','soportes.armado.importar_pdx','soportes.descargar_zip',
+    'soportes.ver_archivo','modulo.archivo_soportes',
     'electro.ver','electro.crear','electro.editar','electro.eliminar','electro.cambiar_estado','electro.subir_archivo','electro.ver_archivo','electro.aviso_doctor',
     'agenda.ver','agenda.editar','agenda.aviso_doctor',
     'ucqn.ver','ucqn.editar_estado',
@@ -9056,6 +9072,7 @@ const PERMISOS_ROL_DEFAULTS = {
     'modulo.reportes_pdx','modulo.armado_soportes',
     'soportes.pdx.ver','soportes.pdx.carpetas.todas','soportes.pdx.crear_carpeta','soportes.pdx.subir','soportes.pdx.editar',
     'soportes.armado.crear_estructura','soportes.armado.subir','soportes.armado.importar_pdx','soportes.descargar_zip',
+    'soportes.ver_archivo','modulo.archivo_soportes',
     'electro.ver','electro.crear','electro.editar','electro.eliminar','electro.cambiar_estado','electro.subir_archivo','electro.ver_archivo','electro.aviso_doctor',
     'agenda.ver','agenda.editar','agenda.aviso_doctor',
     'ucqn.ver','ucqn.editar_estado',
@@ -9070,7 +9087,8 @@ const PERMISOS_ROL_DEFAULTS = {
     'modulo.recibos','modulo.ucqn','modulo.dashboard',
     'modulo.reportes_pdx','modulo.armado_soportes',
     'soportes.pdx.ver','soportes.pdx.carpetas.todas','soportes.pdx.crear_carpeta','soportes.pdx.subir','soportes.pdx.editar',
-    'soportes.armado.crear_estructura','soportes.armado.subir','soportes.armado.importar_pdx','soportes.descargar_zip','soportes.ver_archivo',
+    'soportes.armado.crear_estructura','soportes.armado.subir','soportes.armado.importar_pdx','soportes.descargar_zip',
+    'soportes.ver_archivo','modulo.archivo_soportes',
     'recibos.ver','recibos.exportar','recibos.pagar','recibos.pendiente',
     'ucqn.ver','ucqn.editar_estado',
     'sistema.dashboard','sistema.reportes',
@@ -14823,9 +14841,11 @@ $('btnModalLlamarPaciente')?.addEventListener('click', async (e) => {
   if (!currentTurnoMedicaData) return;
   
   const nombrePaciente = currentTurnoMedicaData.paciente_nombre || 'el paciente';
-  const consultorio = currentUser?.numero_consultorio;
+  const doctorIdTurno = currentTurnoMedicaData.doctor_id;
+  const consultorio = obtenerConsultorioMedicoAgenda(doctorIdTurno)
+    || (currentUser?.rol === 'doctor' ? currentUser?.numero_consultorio : null);
   
-  // 1) Emitir anuncio por socket (solo recepción reproduce la voz)
+  // 1) Emitir anuncio por socket (solo recepción reproduce la voz en altavoz)
   if (typeof socket !== 'undefined' && socket) {
     socket.emit('agenda:anunciar-paciente', {
       paciente_nombre: nombrePaciente,

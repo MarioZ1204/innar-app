@@ -23,7 +23,7 @@ const PERMISOS_VALIDOS = new Set([
   'modulo.monitor_equipos', 'modulo.reportes_pdx', 'modulo.armado_soportes', 'modulo.anexo_fidu', 'modulo.backup',
   'soportes.pdx.ver', 'soportes.pdx.carpetas.todas', 'soportes.pdx.crear_carpeta', 'soportes.pdx.subir', 'soportes.pdx.editar', 'soportes.pdx.eliminar',
   'soportes.armado.crear_estructura', 'soportes.armado.subir', 'soportes.armado.importar_pdx',
-  'soportes.descargar_zip', 'soportes.ver_archivo',
+  'soportes.descargar_zip', 'soportes.ver_archivo', 'modulo.archivo_soportes',
   'recibos.crear', 'recibos.ver', 'recibos.editar', 'recibos.pagar', 'recibos.pendiente',
   'recibos.anular', 'recibos.eliminar', 'recibos.exportar', 'recibos.gestionar_servicios', 'recibos.resetear',
   'agenda.ver', 'agenda.crear', 'agenda.editar', 'agenda.eliminar', 'agenda.cambiar_estado',
