@@ -8,7 +8,8 @@ const {
   ensureContenedoresForDia,
   ensureFeParEnContenedorHermano,
   getArmadoFeDirAbs,
-  numeroFeExpediente
+  numeroFeExpediente,
+  parseFeCodigo
 } = require('./soportes-armado-structure');
 const sopStorage = require('./soportes-storage');
 
@@ -25,17 +26,23 @@ function vaciarDirectorioSiExiste(abs) {
 }
 
 function codigoFacturaDesdeExp(exp) {
+  const codigoRaw = String(exp?.codigo || '').trim();
+  if (codigoRaw) {
+    const parsed = parseFeCodigo(codigoRaw);
+    if (parsed.ok) return parsed.codigo;
+  }
+
   const n = numeroFeExpediente(exp);
   if (n > 0) return `FE${n}`;
-  const cod = String(exp.codigo || '').trim();
-  if (cod) return cod;
-  return `FE${exp.id}`;
+
+  if (codigoRaw) return codigoRaw;
+  return `FE${exp?.id || 0}`;
 }
 
 async function ensureRipsCarpetaFacturaEnDisco(db, diaId, codigoFactura) {
   try {
     const ctx = await db.query(
-      `SELECT d.nombre_display, d.estado_facturacion, p.periodo
+      `SELECT d.nombre_display, d.estado_facturacion, p.periodo, p.etiqueta AS periodo_etiqueta
        FROM sop_dias d
        JOIN sop_periodos p ON p.id = d.periodo_id
        WHERE d.id = ?`,
@@ -43,9 +50,10 @@ async function ensureRipsCarpetaFacturaEnDisco(db, diaId, codigoFactura) {
     );
     if (!ctx.length) return null;
     const row = ctx[0];
+    const periodoRuta = row.periodo_etiqueta || row.periodo || row.etiqueta || '';
     const { abs } = getArmadoFeDirAbs(
       sopStorage.soportesRoot,
-      row.periodo,
+      periodoRuta,
       row.nombre_display,
       row.estado_facturacion,
       'rips',
@@ -57,6 +65,34 @@ async function ensureRipsCarpetaFacturaEnDisco(db, diaId, codigoFactura) {
     logger.warn('[SOPORTES] RIPS carpeta disco:', e.message);
     return null;
   }
+}
+
+async function syncRipsCarpetasExpedientes(db, { diaId, expedientes, usuarioId = null }) {
+  const sincronizadas = [];
+  for (const exp of expedientes || []) {
+    try {
+      const codigo = codigoFacturaDesdeExp(exp);
+      const ruta = await ensureRipsCarpetaFacturaEnDisco(db, diaId, codigo);
+      try {
+        await ensureFeParEnContenedorHermano(
+          db,
+          diaId,
+          exp.contenedor_id,
+          codigo,
+          exp.numero_factura,
+          exp.tipo_servicio || 'electro',
+          usuarioId || exp.creado_por || null,
+          exp.paciente_nombre
+        );
+      } catch (e) {
+        /* par ya existe o duplicado */
+      }
+      sincronizadas.push({ codigo, ruta });
+    } catch (e) {
+      logger.warn('[SOPORTES] sync RIPS expediente:', e.message);
+    }
+  }
+  return sincronizadas;
 }
 
 /**
@@ -82,31 +118,27 @@ async function syncRipsCarpetasDia(db, diaId, usuarioId = null) {
     logger.warn('[SOPORTES] sync RIPS query:', e.message);
     return [];
   }
-  const sincronizadas = [];
-  for (const exp of soportes) {
-    try {
-      const codigo = codigoFacturaDesdeExp(exp);
-      const ruta = await ensureRipsCarpetaFacturaEnDisco(db, diaId, codigo);
-      try {
-        await ensureFeParEnContenedorHermano(
-          db,
-          diaId,
-          exp.contenedor_id,
-          codigo,
-          exp.numero_factura,
-          exp.tipo_servicio || 'electro',
-          usuarioId || exp.creado_por || null,
-          exp.paciente_nombre
-        );
-      } catch (e) {
-        /* par ya existe o duplicado */
-      }
-      sincronizadas.push({ codigo, ruta });
-    } catch (e) {
-      logger.warn('[SOPORTES] sync RIPS expediente:', e.message);
-    }
+  return syncRipsCarpetasExpedientes(db, { diaId, expedientes: soportes, usuarioId });
+}
+
+async function syncRipsCarpetasContenedor(db, contenedorId, usuarioId = null) {
+  try {
+    const contenedorRows = await db.query('SELECT id, dia_id, tipo FROM sop_contenedores WHERE id = ?', [contenedorId]);
+    if (!contenedorRows.length || contenedorRows[0].tipo !== 'soportes') return [];
+    const diaId = contenedorRows[0].dia_id;
+    await ensureContenedoresForDia(db, diaId);
+    const expedientes = await db.query(
+      `SELECT e.*, c.id AS contenedor_id
+       FROM sop_expedientes e
+       JOIN sop_contenedores c ON c.id = e.contenedor_id AND c.tipo = 'soportes'
+       WHERE e.contenedor_id = ?`,
+      [contenedorId]
+    );
+    return syncRipsCarpetasExpedientes(db, { diaId, expedientes, usuarioId });
+  } catch (e) {
+    logger.warn('[SOPORTES] sync RIPS contenedor:', e.message);
+    return [];
   }
-  return sincronizadas;
 }
 
 async function syncRipsCarpetasPeriodo(db, periodoId, usuarioId = null) {
@@ -140,6 +172,7 @@ module.exports = {
   codigoFacturaDesdeExp,
   ensureRipsCarpetaFacturaEnDisco,
   syncRipsCarpetasDia,
+  syncRipsCarpetasContenedor,
   syncRipsCarpetasPeriodo,
   syncRipsCarpetasDias,
 };

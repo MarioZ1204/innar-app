@@ -1028,6 +1028,66 @@
     });
   }
 
+  async function migrarRipsDesdeContenedor(contenedorId, { btn = null } = {}) {
+    if (btn) btn.disabled = true;
+    sopToast('Creando carpetas espejo en RIPS…', 'info');
+    try {
+      const res = await apiFetch(`/api/soportes/armado/contenedores/${contenedorId}/sync-rips-carpetas`, { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        sopToast(data.error || 'No se pudo migrar a RIPS', 'error');
+        return false;
+      }
+      const count = Number(data.count || 0);
+      sopToast(count ? `Migradas ${count} carpeta(s) a RIPS` : 'Carpetas espejo actualizadas en RIPS', 'success');
+      try {
+        if (armState.diaId) {
+          await seleccionarDiaArmado(armState.diaId);
+          const ripsContenedorId = data.rips_contenedor_id || armState.contenedores?.find((c) => c.tipo === 'rips' && c.id !== contenedorId)?.id;
+          if (ripsContenedorId) {
+            await seleccionarContenedorArmado(ripsContenedorId);
+            return true;
+          }
+        }
+        if (armState.contenedores?.length) {
+          const ripsContenedorId = data.rips_contenedor_id || armState.contenedores.find((c) => c.tipo === 'rips' && c.id !== contenedorId)?.id;
+          if (ripsContenedorId) {
+            await seleccionarContenedorArmado(ripsContenedorId);
+            return true;
+          }
+        }
+        await refrescarVistaArmadoActual().catch(() => {});
+      } catch (refreshErr) {
+        console.error('[SOPORTES] refresh after RIPS migration', refreshErr);
+      }
+      return true;
+    } catch (e) {
+      sopToast(e.message || 'No se pudo migrar a RIPS', 'error');
+      return false;
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  function bindArmMigrarRipsButtons(root) {
+    const scope = root || document;
+    scope.querySelectorAll('[data-arm-migrar-rips]').forEach((btn) => {
+      if (btn.dataset.armMigrarRipsBound) return;
+      btn.dataset.armMigrarRipsBound = '1';
+      btn.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        void migrarRipsDesdeContenedor(btn.dataset.armMigrarRips, { btn });
+      });
+    });
+  }
+
+  function htmlArmMigrarRipsContenedorBtn(contenedorId, { labeled = false, variant = 'ghost' } = {}) {
+    if (!contenedorId || !sopPerm('soportes.armado.crear_estructura')) return '';
+    const cls = variant === 'teal' ? 'sop-btn sop-btn-teal sop-btn-sm' : 'sop-btn sop-btn-ghost sop-btn-sm';
+    return `<button type="button" class="${cls}" data-arm-migrar-rips="${contenedorId}" title="Crear/actualizar carpetas espejo en RIPS para las carpetas FE de esta carpeta SOPORTES"><i data-lucide="refresh-cw"></i>${labeled ? ' Migrar FE a RIPS' : ''}</button>`;
+  }
+
   function htmlArmZipFacturadosBtn() {
     if (!armState.periodoId || !sopPerm('soportes.descargar_zip')) return '';
     const diasFact = armState.dias.filter((d) => d.estado_facturacion === 'facturados');
@@ -3582,6 +3642,7 @@
     });
     panel.querySelector('#btnSopArmNuevoDiaInline')?.addEventListener('click', modalNuevoDiaArmado);
     sopIcons(panel);
+    bindArmMigrarRipsButtons(panel);
     bindArmZipButtons(panel);
   }
 
@@ -3690,6 +3751,7 @@
         <div id="sopArmContenedoresGrid" class="sop-folder-explorer-grid sop-folder-explorer-grid--2"></div>
       </div>`;
     panel.querySelector('#btnSopArmVolverMes')?.addEventListener('click', () => seleccionarPeriodoArmado(armState.periodoId));
+    bindArmMigrarRipsButtons(panel);
     bindArmZipButtons(panel);
     armState.contenedores = data.contenedores || [];
     const grid = panel.querySelector('#sopArmContenedoresGrid');
@@ -3802,6 +3864,7 @@
         </div>
         <div class="sop-panel-head-tools">
           ${htmlSopFolderViewToggle('arm')}
+          ${armState.contenedorTipo === 'soportes' && sopPerm('soportes.armado.crear_estructura') ? htmlArmMigrarRipsContenedorBtn(armState.contenedorId, { labeled: true, variant: 'teal' }) : ''}
           <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="btnSopArmVolverDia"><i data-lucide="arrow-left"></i> Día</button>
           ${sopPerm('soportes.armado.crear_estructura') ? `<button type="button" class="sop-btn sop-btn-teal sop-btn-sm" id="btnSopArmNuevoFe"><i data-lucide="folder-plus"></i> Nuevas carpetas</button>` : ''}
         </div>
@@ -3811,6 +3874,7 @@
         <div id="sopArmExpedientesGrid" class="sop-folder-explorer-grid${viewMode === 'list' ? ' sop-folder-list-mode' : ''}"><div class="sop-skeleton-block sop-skeleton-folder-card"></div></div>
       </div>`;
     bindSopFolderViewToggle(panel, 'arm');
+    bindArmMigrarRipsButtons(panel);
     const gridSk = panel.querySelector('#sopArmExpedientesGrid');
     if (gridSk) gridSk.innerHTML = '<div class="sop-skeleton-block sop-skeleton-folder-card"></div><div class="sop-skeleton-block sop-skeleton-folder-card"></div>';
     const res = await apiFetch(`/api/soportes/armado/contenedores/${id}/expedientes`);
@@ -4902,7 +4966,7 @@
       const url = esLote
         ? `/api/soportes/armado/contenedores/${armState.contenedorId}/expedientes/lote`
         : `/api/soportes/armado/contenedores/${armState.contenedorId}/expedientes`;
-      const body = esLote ? { lista: texto } : { paciente_linea: lineas[0] || texto };
+      const body = esLote ? { lista: lineas } : { paciente_linea: lineas[0] || texto };
       const res = await apiFetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

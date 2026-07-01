@@ -31,8 +31,31 @@ function parseLineaPaciente(line) {
   return { nombre, apellido, paciente_nombre, codigo };
 }
 
+function normalizarLineasEntrada(input) {
+  if (Array.isArray(input)) {
+    return input
+      .map((item) => (typeof item === 'string' ? item : (item && typeof item === 'object' ? (item.paciente_nombre || item.nombre || item.apellido || '') : '')))
+      .map((item) => String(item || '').trim())
+      .filter(Boolean);
+  }
+
+  if (typeof input === 'string') {
+    return input.split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
+  }
+
+  if (input && typeof input === 'object') {
+    if (Array.isArray(input.lista)) return normalizarLineasEntrada(input.lista);
+    if (Array.isArray(input.lines)) return normalizarLineasEntrada(input.lines);
+    if (typeof input.lista === 'string') return normalizarLineasEntrada(input.lista);
+    if (typeof input.texto === 'string') return normalizarLineasEntrada(input.texto);
+    if (typeof input.paciente_linea === 'string') return normalizarLineasEntrada(input.paciente_linea);
+  }
+
+  return [];
+}
+
 function parseListaPacientes(text) {
-  const lines = String(text || '').split(/\r?\n/);
+  const lines = normalizarLineasEntrada(text);
   const out = [];
   const used = new Set();
 

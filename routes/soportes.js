@@ -96,7 +96,7 @@ const {
 const { enrichExpedientesLista } = require('../utils/soportes-expediente-progreso');
 const { actualizarDia, eliminarDia } = require('../utils/soportes-dia-admin');
 const { resolveArchivoAbsoluto } = require('../utils/soportes-exp-archivo');
-const { syncRipsCarpetasDia } = require('../utils/soportes-rips-carpetas-sync');
+const { syncRipsCarpetasDia, syncRipsCarpetasContenedor } = require('../utils/soportes-rips-carpetas-sync');
 const {
   zipArchiveSegment,
   streamDiaZip,
@@ -1902,6 +1902,38 @@ router.delete('/soportes/armado/expedientes/:id/pdfs/:archivoId', requireAuth, r
     await db.execute('DELETE FROM sop_exp_archivos WHERE id = ?', [rows[0].id]);
     res.json({ ok: true });
   } catch (e) {
+    res.status(500).json({ error: safeError(e) });
+  }
+});
+
+router.post('/soportes/armado/dias/:id/sync-rips-carpetas', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'soportes.armado.crear_estructura'), async (req, res) => {
+  try {
+    const diaRows = await db.query('SELECT id FROM sop_dias WHERE id = ?', [req.params.id]);
+    if (!diaRows.length) return res.status(404).json({ error: 'Carpeta de día no encontrada' });
+    const result = await syncRipsCarpetasDia(db, req.params.id, req.session?.usuarioId);
+    res.json({ ok: true, dia_id: Number(req.params.id), count: Array.isArray(result) ? result.length : 0, items: result || [] });
+  } catch (e) {
+    logger.warn('[SOPORTES] sync RIPS manual:', e.message);
+    res.status(500).json({ error: safeError(e) });
+  }
+});
+
+router.post('/soportes/armado/contenedores/:id/sync-rips-carpetas', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'soportes.armado.crear_estructura'), async (req, res) => {
+  try {
+    const contRows = await db.query('SELECT id, dia_id FROM sop_contenedores WHERE id = ?', [req.params.id]);
+    if (!contRows.length) return res.status(404).json({ error: 'Carpeta SOPORTES no encontrada' });
+    const diaId = contRows[0].dia_id;
+    const result = await syncRipsCarpetasContenedor(db, req.params.id, req.session?.usuarioId);
+    const ripsRows = await db.query('SELECT id FROM sop_contenedores WHERE dia_id = ? AND tipo = ?', [diaId, 'rips']);
+    res.json({
+      ok: true,
+      contenedor_id: Number(req.params.id),
+      rips_contenedor_id: ripsRows[0]?.id || null,
+      count: Array.isArray(result) ? result.length : 0,
+      items: result || []
+    });
+  } catch (e) {
+    logger.warn('[SOPORTES] sync RIPS manual contenedor:', e.message);
     res.status(500).json({ error: safeError(e) });
   }
 });

@@ -76,19 +76,21 @@ async function ensureFeParEnContenedorHermano(db, diaId, contenedorId, codigo, n
   );
   if (exists.length) return exists[0].id;
   const ctx = await db.query(
-    `SELECT c.tipo AS contenedor_tipo, d.nombre_display, d.estado_facturacion, d.dia, p.periodo
+    `SELECT c.tipo AS contenedor_tipo, d.nombre_display, d.estado_facturacion, d.dia,
+            p.periodo, p.etiqueta AS periodo_etiqueta
      FROM sop_contenedores c JOIN sop_dias d ON d.id = c.dia_id JOIN sop_periodos p ON p.id = d.periodo_id
      WHERE c.id = ?`,
     [hermano[0].id]
   );
   if (ctx.length) {
+    const row = ctx[0];
     const sopStorage = require('./soportes-storage');
     getArmadoFeDirAbs(
       sopStorage.soportesRoot,
-      ctx[0].periodo,
-      ctx[0].nombre_display,
-      ctx[0].estado_facturacion,
-      ctx[0].contenedor_tipo,
+      row.periodo_etiqueta || row.periodo || '',
+      row.nombre_display,
+      row.estado_facturacion,
+      row.contenedor_tipo,
       codigo
     );
   }

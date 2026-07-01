@@ -22,4 +22,11 @@ describe('soportes-pacientes-parse', () => {
     expect(list).toHaveLength(2);
     expect(list[0].codigo).not.toBe(list[1].codigo);
   });
+
+  test('acepta un arreglo de líneas como entrada de lote', () => {
+    const list = parseListaPacientes(['Juan Pérez', 'María García']);
+    expect(list).toHaveLength(2);
+    expect(list[0].paciente_nombre).toBe('Juan Pérez');
+    expect(list[1].paciente_nombre).toBe('María García');
+  });
 });
