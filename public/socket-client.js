@@ -163,9 +163,18 @@ function readCsrfToken() {
 /** Anuncio por altavoz al llamar paciente: solo personal de recepción (no doctores ni electro). */
 function debeEscucharLlamadoPacienteAgenda() {
   if (typeof currentUser === 'undefined' || !currentUser) return false;
+  if (window.currentModule === 'llamado-pacientes') return false;
   const rol = String(currentUser.rol || '').toLowerCase();
   if (rol === 'doctor') return false;
   return ['admin_recepcion', 'recepcion', 'auxiliar_recepcion', 'admin', 'superadmin'].includes(rol);
+}
+
+function textoLlamadoPacienteAgenda(e) {
+  const nombre = String(e?.paciente_nombre || 'siguiente paciente').trim();
+  const cons = e?.numero_consultorio ? `consultorio número ${e.numero_consultorio}` : 'consultorio';
+  const doc = String(e?.doctor_nombre || '').trim();
+  const docTxt = doc ? ` con ${doc}` : '';
+  return `Atención. ${nombre}, por favor diríjase al ${cons}${docTxt}.`;
 }
 
 /** Aviso de voz «paciente en sala»: solo el médico asignado al turno. */
@@ -302,15 +311,15 @@ function registerDefaultRealtimeHandlers() {
   subscribe('agenda:anunciar-paciente', (e) => {
     if (!debeEscucharLlamadoPacienteAgenda()) return;
     if (!('speechSynthesis' in window)) return;
-    const text = `Paciente ${e.paciente_nombre || 'siguiente paciente'}, pasar al ${e.numero_consultorio ? `consultorio ${e.numero_consultorio}` : 'consultorio'}`;
+    const text = textoLlamadoPacienteAgenda(e);
     if (typeof showToast === 'function') showToast(text, 'info');
     if (typeof _speak === 'function') {
-      _speak(text, 0.9);
+      _speak(text, 0.86);
     } else {
       window.speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(text);
       u.lang = 'es-CO';
-      u.rate = 0.9;
+      u.rate = 0.86;
       u.volume = 1;
       window.speechSynthesis.speak(u);
     }
@@ -319,14 +328,14 @@ function registerDefaultRealtimeHandlers() {
     refreshActiveModuleData();
     if (!debeEscucharLlamadoPacienteAgenda()) return;
     if (!('speechSynthesis' in window)) return;
-    const text = `Paciente ${e.paciente_nombre || 'siguiente paciente'}, pasar al ${e.numero_consultorio ? `consultorio ${e.numero_consultorio}` : 'consultorio'}`;
+    const text = textoLlamadoPacienteAgenda(e);
     if (typeof _speak === 'function') {
-      _speak(text, 0.9);
+      _speak(text, 0.86);
     } else {
       window.speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(text);
       u.lang = 'es-CO';
-      u.rate = 0.9;
+      u.rate = 0.86;
       u.volume = 1;
       window.speechSynthesis.speak(u);
     }

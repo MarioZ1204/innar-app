@@ -269,6 +269,13 @@ function obtenerConsultorioMedicoAgenda(doctorId) {
   const m = (window._medicosAgendaList || []).find((x) => parseInt(x.id, 10) === id);
   return m?.numero_consultorio ?? null;
 }
+
+function obtenerNombreMedicoAgenda(doctorId) {
+  const id = parseInt(doctorId, 10);
+  if (!Number.isFinite(id)) return null;
+  const m = (window._medicosAgendaList || []).find((x) => parseInt(x.id, 10) === id);
+  return m?.nombre ?? null;
+}
 /** Token CSRF (también viene en JSON de /api/sesion y login; la cookie puede no leerse en document.cookie) */
 let innarCsrfToken = '';
 let citaElectroSeleccionada = null;
@@ -874,6 +881,7 @@ function updateMenuByRole() {
     'armado-soportes':  'modulo.armado_soportes',
     'anexo-fidu':       'modulo.anexo_fidu',
     'archivo-soportes': 'modulo.archivo_soportes',
+    'llamado-pacientes': 'modulo.llamado_pacientes',
     'backup':           'modulo.backup',
   };
 
@@ -1102,6 +1110,7 @@ function goToModule(moduleId) {
   if (moduleId === 'backup' && typeof initBackupModule === 'function') initBackupModule();
   if (moduleId === 'documentos-cita' && typeof initDocumentosCitaModule === 'function') initDocumentosCitaModule();
   if (moduleId === 'anexo-fidu' && typeof initAnexoFidu === 'function') initAnexoFidu();
+  if (moduleId === 'llamado-pacientes' && typeof initLlamadoPacientes === 'function') initLlamadoPacientes();
   if (typeof window.innarSidebarRefresh === 'function') window.innarSidebarRefresh();
 }
 
@@ -8950,6 +8959,8 @@ const PERMISOS_DEFS = [
   { key: 'agenda.aviso_doctor',         label: 'Enviar aviso al doctor',              grupo: 'Agenda Médica' },
   { key: 'agenda.disponibilidad',       label: 'Programar disponibilidad',            grupo: 'Agenda Médica' },
   { key: 'agenda.editar_siempre',       label: 'Editar citas en cualquier estado',    grupo: 'Agenda Médica' },
+  // ── Llamado de pacientes (pantalla) ───────────────────────────────────────
+  { key: 'modulo.llamado_pacientes',    label: 'Acceso a pantalla de llamado',        grupo: 'Llamado de pacientes' },
   // ── Electrodiagnóstico ────────────────────────────────────────────────────
   { key: 'modulo.electrodiag',          label: 'Acceso al módulo',                    grupo: 'Electrodiagnóstico' },
   { key: 'electro.ver',                 label: 'Ver citas',                           grupo: 'Electrodiagnóstico' },
@@ -9019,7 +9030,7 @@ const PERMISOS_ROL_DEFAULTS = {
   admin: null,
   admin_recepcion: [
     'modulo.recibos','modulo.agenda_medica','modulo.electrodiag','modulo.ucqn','modulo.dashboard','modulo.monitor_equipos',
-    'modulo.reportes_pdx','modulo.armado_soportes',
+    'modulo.reportes_pdx','modulo.armado_soportes','modulo.llamado_pacientes',
     'soportes.pdx.ver','soportes.pdx.carpetas.todas','soportes.pdx.crear_carpeta','soportes.pdx.subir','soportes.pdx.editar',
     'soportes.armado.crear_estructura','soportes.armado.subir','soportes.armado.importar_pdx','soportes.descargar_zip',
     'soportes.ver_archivo','modulo.archivo_soportes',
@@ -9032,7 +9043,7 @@ const PERMISOS_ROL_DEFAULTS = {
   ],
   recepcion: [
     'modulo.recibos','modulo.agenda_medica','modulo.electrodiag','modulo.ucqn','modulo.dashboard','modulo.monitor_equipos',
-    'modulo.reportes_pdx','modulo.armado_soportes',
+    'modulo.reportes_pdx','modulo.armado_soportes','modulo.llamado_pacientes',
     'soportes.pdx.ver','soportes.pdx.carpetas.todas','soportes.pdx.crear_carpeta','soportes.pdx.subir','soportes.pdx.editar',
     'soportes.armado.crear_estructura','soportes.armado.subir','soportes.armado.importar_pdx','soportes.descargar_zip',
     'soportes.ver_archivo','modulo.archivo_soportes',
@@ -9044,7 +9055,7 @@ const PERMISOS_ROL_DEFAULTS = {
     'sistema.dashboard',
   ],
   auxiliar_recepcion: [
-    'modulo.recibos','modulo.agenda_medica','modulo.electrodiag','modulo.reportes_pdx',
+    'modulo.recibos','modulo.agenda_medica','modulo.electrodiag','modulo.reportes_pdx','modulo.llamado_pacientes',
     'soportes.pdx.ver','soportes.pdx.subir',
     'recibos.crear','recibos.ver','recibos.pagar','recibos.pendiente',
     'agenda.ver','agenda.crear','agenda.editar','agenda.cambiar_estado','agenda.aviso_doctor',
@@ -9058,7 +9069,7 @@ const PERMISOS_ROL_DEFAULTS = {
   ],
   admin_electro: [
     'modulo.electrodiag','modulo.ucqn','modulo.agenda_medica','modulo.dashboard','modulo.monitor_equipos',
-    'modulo.reportes_pdx','modulo.armado_soportes',
+    'modulo.reportes_pdx','modulo.armado_soportes','modulo.llamado_pacientes',
     'soportes.pdx.ver','soportes.pdx.carpetas.todas','soportes.pdx.crear_carpeta','soportes.pdx.subir','soportes.pdx.editar',
     'soportes.armado.crear_estructura','soportes.armado.subir','soportes.armado.importar_pdx','soportes.descargar_zip',
     'soportes.ver_archivo','modulo.archivo_soportes',
@@ -9069,7 +9080,7 @@ const PERMISOS_ROL_DEFAULTS = {
   ],
   electro: [
     'modulo.electrodiag','modulo.ucqn','modulo.agenda_medica','modulo.dashboard','modulo.monitor_equipos',
-    'modulo.reportes_pdx','modulo.armado_soportes',
+    'modulo.reportes_pdx','modulo.armado_soportes','modulo.llamado_pacientes',
     'soportes.pdx.ver','soportes.pdx.carpetas.todas','soportes.pdx.crear_carpeta','soportes.pdx.subir','soportes.pdx.editar',
     'soportes.armado.crear_estructura','soportes.armado.subir','soportes.armado.importar_pdx','soportes.descargar_zip',
     'soportes.ver_archivo','modulo.archivo_soportes',
@@ -9085,7 +9096,7 @@ const PERMISOS_ROL_DEFAULTS = {
   ],
   contabilidad: [
     'modulo.recibos','modulo.ucqn','modulo.dashboard',
-    'modulo.reportes_pdx','modulo.armado_soportes',
+    'modulo.reportes_pdx','modulo.armado_soportes','modulo.llamado_pacientes',
     'soportes.pdx.ver','soportes.pdx.carpetas.todas','soportes.pdx.crear_carpeta','soportes.pdx.subir','soportes.pdx.editar',
     'soportes.armado.crear_estructura','soportes.armado.subir','soportes.armado.importar_pdx','soportes.descargar_zip',
     'soportes.ver_archivo','modulo.archivo_soportes',
@@ -14812,12 +14823,15 @@ $('btnModalLlamarPaciente')?.addEventListener('click', async (e) => {
   const doctorIdTurno = currentTurnoMedicaData.doctor_id;
   const consultorio = obtenerConsultorioMedicoAgenda(doctorIdTurno)
     || (currentUser?.rol === 'doctor' ? currentUser?.numero_consultorio : null);
-  
-  // 1) Emitir anuncio por socket (solo recepción reproduce la voz en altavoz)
+  const doctorNombre = obtenerNombreMedicoAgenda(doctorIdTurno)
+    || (currentUser?.rol === 'doctor' ? currentUser?.nombre : null);
+
+  // 1) Emitir anuncio por socket (pantalla de llamado y recepción)
   if (typeof socket !== 'undefined' && socket) {
     socket.emit('agenda:anunciar-paciente', {
       paciente_nombre: nombrePaciente,
-      numero_consultorio: consultorio
+      numero_consultorio: consultorio,
+      doctor_nombre: doctorNombre
     });
   }
   showToast('Paciente llamado: ' + nombrePaciente, 'success');

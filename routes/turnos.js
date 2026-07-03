@@ -283,8 +283,9 @@ router.post('/turnos/llamar-siguiente', requireAuth, requireRoleOrPerm(['superad
   const idorErr = denyIfDoctorMismatch(req, doctor_id);
   if (idorErr) return res.status(403).json({ error: idorErr });
   try {
-    const doctor = await db.query(`SELECT numero_consultorio FROM usuarios WHERE id = ?`, [doctor_id]);
+    const doctor = await db.query(`SELECT numero_consultorio, nombre FROM usuarios WHERE id = ?`, [doctor_id]);
     const numeroConsultorio = doctor.length > 0 ? doctor[0].numero_consultorio : null;
+    const doctorNombre = doctor.length > 0 ? doctor[0].nombre : null;
 
     const turnos = await db.query(`
       SELECT id, numero_turno, doctor_id, paciente_nombre, paciente_documento,
@@ -307,7 +308,8 @@ router.post('/turnos/llamar-siguiente', requireAuth, requireRoleOrPerm(['superad
       fecha,
       paciente_nombre: turnoConConsultorio.paciente_nombre,
       numero_turno: turnoConConsultorio.numero_turno,
-      numero_consultorio: numeroConsultorio
+      numero_consultorio: numeroConsultorio,
+      doctor_nombre: doctorNombre
     });
     res.json({ ok: true, turno: turnoConConsultorio });
   } catch (e) {

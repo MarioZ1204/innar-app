@@ -966,6 +966,96 @@
     return filename;
   }
 
+  function parseZipFilenameFromXhr(xhr, fallback) {
+    return parseZipFilenameFromResponse({
+      headers: { get: (k) => xhr.getResponseHeader(k) }
+    }, fallback);
+  }
+
+  function formatearBytesDescarga(n) {
+    const v = Number(n) || 0;
+    if (v < 1024) return `${v} B`;
+    if (v < 1024 * 1024) return `${Math.round(v / 1024)} KB`;
+    return `${(v / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  function descargarArchivoConProgreso(apiPath, fallbackFilename, opts = {}) {
+    const title = opts.title || 'Descargando';
+    const triggerBtn = opts.triggerBtn || null;
+    if (triggerBtn) triggerBtn.disabled = true;
+    const liberar = () => { if (triggerBtn) triggerBtn.disabled = false; };
+
+    sopUploadBegin({ title, total: 1 });
+    sopUploadSetFile(1, 1, fallbackFilename || 'descarga.zip');
+
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', apiPath, true);
+      xhr.responseType = 'blob';
+      xhr.withCredentials = true;
+      let indeterminatePct = 8;
+      xhr.onprogress = (e) => {
+        if (e.lengthComputable && e.total > 0) {
+          const pct = Math.max(1, Math.round((e.loaded / e.total) * 100));
+          sopUploadUpdateBar(1, 1, pct, 'Recibiendo archivo…');
+        } else {
+          indeterminatePct = Math.min(92, indeterminatePct + 2);
+          sopUploadUpdateBar(1, 1, indeterminatePct, `Generando / recibidos ${formatearBytesDescarga(e.loaded)}…`);
+        }
+      };
+      xhr.onload = async () => {
+        const ct = (xhr.getResponseHeader('Content-Type') || '').toLowerCase();
+        if (xhr.status < 200 || xhr.status >= 300) {
+          let errMsg = `Error ${xhr.status}`;
+          try {
+            const text = await xhr.response.text();
+            const data = sopUploadParseJson(text);
+            errMsg = data.error || data.detail || errMsg;
+          } catch (_) { /* ignore */ }
+          sopUploadFinish({ state: 'error', message: errMsg });
+          liberar();
+          reject(new Error(errMsg));
+          return;
+        }
+        if (ct.includes('application/json') || ct.includes('text/html')) {
+          let errMsg = 'No se pudo descargar el archivo';
+          try {
+            const text = await xhr.response.text();
+            const data = sopUploadParseJson(text);
+            errMsg = data.error || data.detail || errMsg;
+          } catch (_) { /* ignore */ }
+          sopUploadFinish({ state: 'error', message: errMsg });
+          liberar();
+          reject(new Error(errMsg));
+          return;
+        }
+        const blob = xhr.response;
+        if (!blob || !blob.size) {
+          sopUploadFinish({ state: 'error', message: 'Archivo vacío' });
+          liberar();
+          reject(new Error('Archivo vacío'));
+          return;
+        }
+        const filename = parseZipFilenameFromXhr(xhr, fallbackFilename);
+        dispararDescargaBlob(blob, filename);
+        sopUploadFinish({ state: 'success', message: 'Descarga completa' });
+        liberar();
+        resolve({ ok: true, filename });
+      };
+      xhr.onerror = () => {
+        sopUploadFinish({ state: 'error', message: 'Error de conexión' });
+        liberar();
+        reject(new Error('Error de conexión'));
+      };
+      xhr.onabort = () => {
+        sopUploadFinish({ state: 'error', message: 'Descarga cancelada' });
+        liberar();
+        reject(new Error('Descarga cancelada'));
+      };
+      xhr.send();
+    });
+  }
+
   function iniciarDescargaArchivoIframe(apiPath, ttlMs = 180000) {
     const iframe = document.createElement('iframe');
     iframe.style.cssText = 'display:none;width:0;height:0;border:0';
@@ -998,41 +1088,14 @@
   }
 
   async function descargarZipArmado(apiPath, fallbackFilename, triggerBtn = null) {
-    if (triggerBtn) triggerBtn.disabled = true;
-    sopToast('Generando ZIP…', 'info');
-    const liberar = () => { if (triggerBtn) triggerBtn.disabled = false; };
     try {
-      const res = await fetch(apiPath, { credentials: 'include', cache: 'no-store' });
-      const ct = (res.headers.get('Content-Type') || '').toLowerCase();
-      if (!res.ok || ct.includes('application/json') || ct.includes('text/html')) {
-        const data = await res.json().catch(() => ({}));
-        sopToast(data.error || data.detail || 'No se pudo descargar el ZIP', 'error');
-        liberar();
-        return;
-      }
-      const len = parseInt(res.headers.get('Content-Length') || '0', 10);
-      if (len > 40 * 1024 * 1024) {
-        try { res.body?.cancel?.(); } catch (_) { /* ignore */ }
-        iniciarDescargaArchivoIframe(apiPath);
-        sopToast('Descarga iniciada…', 'success');
-        liberar();
-        return;
-      }
-      const blob = await res.blob();
-      if (!blob.size) {
-        iniciarDescargaArchivoIframe(apiPath);
-        sopToast('Descarga iniciada…', 'info');
-        liberar();
-        return;
-      }
-      const filename = parseZipFilenameFromResponse(res, fallbackFilename);
-      dispararDescargaBlob(blob, filename);
+      await descargarArchivoConProgreso(apiPath, fallbackFilename, {
+        title: 'Generando ZIP',
+        triggerBtn
+      });
       sopToast('ZIP descargado', 'success');
     } catch (e) {
-      iniciarDescargaArchivoIframe(apiPath);
-      sopToast('Descarga iniciada…', 'info');
-    } finally {
-      liberar();
+      sopToast(e.message || 'No se pudo descargar el ZIP', 'error');
     }
   }
 
@@ -3594,9 +3657,48 @@
   function navegarArmDiasExplorer(parentId) {
     armState.diasParentId = parentId || 0;
     armState.diaId = null;
+    armState.diaLabel = null;
+    armState.contenedorId = null;
+    armState.contenedorTipo = null;
+    armState.expedienteId = null;
+    armState.expedienteCodigo = null;
     armState.vista = 'period';
     renderArmadoDiasExplorer();
     renderArmadoContextBar();
+  }
+
+  function armVolverExplorerUnNivel() {
+    const cur = armDiaById(armState.diasParentId);
+    const parentId = cur ? armDiaParentId(cur) : 0;
+    navegarArmDiasExplorer(parentId);
+  }
+
+  function armLabelVolverDesdeDia() {
+    const diaRow = armDiaById(armState.diaId);
+    const parent = diaRow?.parent_id ? armDiaById(diaRow.parent_id) : null;
+    return parent?.nombre_display || armState.periodoLabel || 'Mes';
+  }
+
+  function armVolverDesdeDia() {
+    const diaRow = armDiaById(armState.diaId);
+    const parentId = diaRow ? armDiaParentId(diaRow) : (armState.diasParentId || 0);
+    armState.diaId = null;
+    armState.diaLabel = null;
+    armState.diaModo = null;
+    armState.diaFacturacion = null;
+    armState.contenedores = [];
+    armState.contenedorId = null;
+    armState.contenedorTipo = null;
+    armState.expedienteId = null;
+    armState.expedienteCodigo = null;
+    armState.expedienteDetalle = null;
+    armState.vista = 'period';
+    if (parentId) navegarArmDiasExplorer(parentId);
+    else {
+      armState.diasParentId = 0;
+      renderArmadoDiasExplorer();
+      renderArmadoContextBar();
+    }
   }
 
   function htmlArmDiaMeta(d) {
@@ -3863,11 +3965,16 @@
     const huerfanasRaiz = !armState.diasParentId ? lista.filter((d) => !d.es_contenedor) : [];
     const faltanContenedorasRaiz = !armState.diasParentId && armContenedorasRaiz().length < 3;
     const dragHint = armPuedeArrastrarDia() ? 'Mantenga pulsado para mover' : '';
+    const parentExplorer = armState.diasParentId ? armDiaById(armState.diasParentId) : null;
+    const volverExplorerLabel = parentExplorer
+      ? (armDiaParentId(parentExplorer) ? parentExplorer.nombre_display : (armState.periodoLabel || 'Mes'))
+      : '';
     panel.innerHTML = `<div class="sop-panel-head">
         <div>
           <h3 style="margin:0"><i data-lucide="calendar"></i> ${escapeHtml(armState.periodoLabel || 'Mes')}</h3>
         </div>
         <div class="sop-panel-head-tools">
+          ${armState.diasParentId ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="btnSopArmVolverExplorer"><i data-lucide="arrow-left"></i> ${escapeHtml(volverExplorerLabel)}</button>` : ''}
           ${htmlSopFolderViewToggle('arm')}
           ${htmlArmZipPaqueteBtn()}
           ${htmlArmZipUnificadoBtn()}
@@ -3891,6 +3998,7 @@
         <div id="sopArmDiasGrid" class="sop-folder-explorer-grid${viewMode === 'list' ? ' sop-folder-list-mode' : ''}"></div>
       </div>`;
     bindSopFolderViewToggle(panel, 'arm');
+    panel.querySelector('#btnSopArmVolverExplorer')?.addEventListener('click', armVolverExplorerUnNivel);
     const grid = panel.querySelector('#sopArmDiasGrid');
     panel.querySelector('#btnSopArmRepararContenedoras')?.addEventListener('click', () => {
       seleccionarPeriodoArmado(armState.periodoId).catch((e) => sopToast(e.message, 'error'));
@@ -4000,10 +4108,7 @@
           ${tieneExport ? `<p style="margin:0;font-size:.85rem;color:#64748b">Último export: <code>${escapeHtml(anexo.ruta_export.split('/').pop())}</code></p>` : '<p style="margin:0;font-size:.85rem;color:#64748b">Aún no hay Excel exportado — use «Actualizar Excel» o exporte desde Anexo.</p>'}
         </div>
       </div>`;
-    panel.querySelector('#btnSopArmVolverAnexoCont')?.addEventListener('click', () => {
-      if (parent?.id) navegarArmDiasExplorer(parent.id);
-      else seleccionarPeriodoArmado(armState.periodoId);
-    });
+    panel.querySelector('#btnSopArmVolverAnexoCont')?.addEventListener('click', armVolverDesdeDia);
     panel.querySelector('#btnSopAnexoAbrirModulo')?.addEventListener('click', () => {
       if (!anexo?.archivo_id) return sopToast('Sin anexo vinculado', 'warning');
       if (typeof window.abrirAnexoFiduArchivo === 'function') {
@@ -4061,13 +4166,13 @@
         </div>
         <div class="sop-panel-head-tools" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           ${htmlArmZipDiaBtn(diaRow, { labeled: true, variant: 'teal' })}
-          <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="btnSopArmVolverMes"><i data-lucide="arrow-left"></i> ${escapeHtml(armState.periodoLabel || 'Mes')}</button>
+          <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="btnSopArmVolverMes"><i data-lucide="arrow-left"></i> ${escapeHtml(armLabelVolverDesdeDia())}</button>
         </div>
       </div>
       <div class="sop-panel-body">
         <div id="sopArmContenedoresGrid" class="sop-folder-explorer-grid sop-folder-explorer-grid--2"></div>
       </div>`;
-    panel.querySelector('#btnSopArmVolverMes')?.addEventListener('click', () => seleccionarPeriodoArmado(armState.periodoId));
+    panel.querySelector('#btnSopArmVolverMes')?.addEventListener('click', armVolverDesdeDia);
     bindArmMigrarRipsButtons(panel);
     bindArmZipButtons(panel);
     armState.contenedores = data.contenedores || [];
@@ -4182,7 +4287,7 @@
         <div class="sop-panel-head-tools">
           ${htmlSopFolderViewToggle('arm')}
           ${armState.contenedorTipo === 'soportes' && sopPerm('soportes.armado.crear_estructura') ? htmlArmMigrarRipsContenedorBtn(armState.contenedorId, { labeled: true, variant: 'teal' }) : ''}
-          <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="btnSopArmVolverDia"><i data-lucide="arrow-left"></i> Día</button>
+          <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="btnSopArmVolverDia"><i data-lucide="arrow-left"></i> ${escapeHtml(armState.diaLabel || 'Carpeta')}</button>
           ${sopPerm('soportes.armado.crear_estructura') ? `<button type="button" class="sop-btn sop-btn-teal sop-btn-sm" id="btnSopArmNuevoFe"><i data-lucide="folder-plus"></i> Nuevas carpetas</button>` : ''}
         </div>
       </div>
@@ -4647,10 +4752,7 @@
           </tr>`).join('')}</tbody></table>` : '<div class="sop-empty">Sin PDF — suba el primero</div>'}
         </div>
       </div>`;
-    panel.querySelector('#btnSopUcqnVolver')?.addEventListener('click', () => {
-      if (parent?.id) navegarArmDiasExplorer(parent.id);
-      else seleccionarPeriodoArmado(armState.periodoId);
-    });
+    panel.querySelector('#btnSopUcqnVolver')?.addEventListener('click', armVolverDesdeDia);
     const dz = panel.querySelector('#sopUcqnDropzone');
     const inp = panel.querySelector('#sopUcqnUploadInput');
     if (dz && inp) {

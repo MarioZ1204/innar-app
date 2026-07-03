@@ -1,0 +1,271 @@
+/* Pantalla de llamado de pacientes — sala de espera */
+#view-llamado-pacientes {
+  min-height: 100vh;
+  background: linear-gradient(145deg, #0f172a 0%, #1e3a5f 42%, #134e4a 100%);
+}
+
+.llamado-screen {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  color: #f8fafc;
+  position: relative;
+  overflow: hidden;
+}
+
+.llamado-screen::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 15% 20%, rgba(45, 212, 191, 0.12) 0%, transparent 45%),
+    radial-gradient(circle at 85% 80%, rgba(56, 189, 248, 0.1) 0%, transparent 40%);
+  pointer-events: none;
+}
+
+.llamado-header {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 28px;
+  gap: 16px;
+}
+
+.llamado-logo {
+  height: 72px;
+  width: auto;
+  max-width: min(320px, 55vw);
+  object-fit: contain;
+  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.25));
+}
+
+.llamado-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.08);
+  color: #e2e8f0;
+  font-size: 0.9rem;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.llamado-back-btn:hover {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.llamado-main {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 28px 48px;
+}
+
+.llamado-idle {
+  text-align: center;
+  max-width: 520px;
+}
+
+.llamado-idle-icon {
+  width: 88px;
+  height: 88px;
+  margin: 0 auto 20px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: llamadoPulse 3s ease-in-out infinite;
+}
+
+.llamado-idle-icon svg {
+  width: 44px;
+  height: 44px;
+  color: #5eead4;
+}
+
+.llamado-idle h2 {
+  margin: 0 0 10px;
+  font-size: clamp(1.4rem, 3vw, 2rem);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.llamado-idle p {
+  margin: 0;
+  color: #94a3b8;
+  font-size: 1.05rem;
+  line-height: 1.5;
+}
+
+.llamado-activo {
+  width: min(920px, 100%);
+  text-align: center;
+  animation: llamadoEntrada 0.65s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.llamado-activo.hidden {
+  display: none;
+}
+
+.llamado-idle.hidden {
+  display: none;
+}
+
+.llamado-badge {
+  display: inline-block;
+  padding: 8px 18px;
+  border-radius: 999px;
+  background: rgba(45, 212, 191, 0.18);
+  border: 1px solid rgba(45, 212, 191, 0.45);
+  color: #99f6e4;
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-bottom: 20px;
+}
+
+.llamado-paciente {
+  margin: 0 0 28px;
+  font-size: clamp(2rem, 6vw, 3.6rem);
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.03em;
+  text-shadow: 0 2px 24px rgba(0, 0, 0, 0.35);
+  word-break: break-word;
+}
+
+.llamado-consultorio-wrap {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 24px;
+  padding: 22px 48px;
+  border-radius: 20px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.04));
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
+}
+
+.llamado-consultorio-label {
+  font-size: 0.95rem;
+  color: #cbd5e1;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-weight: 500;
+}
+
+.llamado-consultorio-num {
+  font-size: clamp(3.5rem, 12vw, 6.5rem);
+  font-weight: 800;
+  line-height: 1;
+  color: #fef08a;
+  text-shadow: 0 4px 20px rgba(250, 204, 21, 0.35);
+}
+
+.llamado-especialista {
+  margin: 0;
+  font-size: clamp(1.1rem, 2.5vw, 1.55rem);
+  color: #cbd5e1;
+  font-weight: 500;
+}
+
+.llamado-especialista strong {
+  color: #f1f5f9;
+  font-weight: 600;
+}
+
+.llamado-footer {
+  position: relative;
+  z-index: 1;
+  padding: 12px 28px 24px;
+  display: flex;
+  justify-content: center;
+}
+
+.llamado-audio-btn {
+  padding: 10px 20px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(15, 23, 42, 0.5);
+  color: #94a3b8;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.llamado-audio-btn.is-ready {
+  border-color: rgba(45, 212, 191, 0.5);
+  color: #5eead4;
+  background: rgba(45, 212, 191, 0.12);
+}
+
+.llamado-historial {
+  margin-top: 32px;
+  padding-top: 24px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.llamado-historial-title {
+  margin: 0 0 12px;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #64748b;
+}
+
+.llamado-historial-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.llamado-historial-list li {
+  font-size: 0.92rem;
+  color: #94a3b8;
+}
+
+@keyframes llamadoPulse {
+  0%, 100% { transform: scale(1); opacity: 0.85; }
+  50% { transform: scale(1.04); opacity: 1; }
+}
+
+@keyframes llamadoEntrada {
+  from {
+    opacity: 0;
+    transform: translateY(24px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (max-width: 640px) {
+  .llamado-header {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+  .llamado-logo {
+    align-self: center;
+    height: 56px;
+  }
+  .llamado-consultorio-wrap {
+    padding: 18px 32px;
+  }
+}

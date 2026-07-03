@@ -273,6 +273,30 @@ async function safeSyncRipsPeriodo(periodoId) {
   }
 }
 
+/** Carpetas de facturación con expedientes (excluye contenedoras, anexo y UCQN). */
+async function queryDiasFacturacionZip(periodoId) {
+  const dias = await db.query(
+    `SELECT id, nombre_display FROM sop_dias
+     WHERE periodo_id = ? AND es_contenedor = 0 AND COALESCE(modo, 'facturacion') = 'facturacion'`,
+    [periodoId]
+  );
+  dias.sort((a, b) => compararTextoNatural(a.nombre_display, b.nombre_display));
+  return dias;
+}
+
+function appendInnerZipToArchive(outerArchive, name, entries) {
+  const valid = filterValidZipEntries(entries);
+  if (!valid.length) return Promise.resolve(false);
+  return new Promise((resolve, reject) => {
+    const inner = archiver('zip', { zlib: { level: ZIP_COMPRESSION } });
+    inner.on('error', reject);
+    inner.on('end', () => resolve(true));
+    outerArchive.append(inner, { name });
+    appendEntriesToArchive(inner, valid);
+    inner.finalize();
+  });
+}
+
 async function streamDiaZip(res, dia) {
   await safeSyncRipsDia(dia.id);
   const entries = await collectDiaZipEntries(dia.id);
@@ -286,12 +310,8 @@ async function streamDiaZip(res, dia) {
 }
 
 async function buildPeriodPaqueteParts(periodoId, zipLabel) {
-  const dias = await db.query(
-    'SELECT id, nombre_display FROM sop_dias WHERE periodo_id = ?',
-    [periodoId]
-  );
-  dias.sort((a, b) => compararTextoNatural(a.nombre_display, b.nombre_display));
-  if (!dias.length) throw new Error('El mes no tiene carpetas de día');
+  const dias = await queryDiasFacturacionZip(periodoId);
+  if (!dias.length) throw new Error('El mes no tiene carpetas de facturación');
 
   const parts = [];
   for (const dia of dias) {
@@ -322,35 +342,53 @@ async function buildPeriodPaqueteParts(periodoId, zipLabel) {
 
 async function streamPeriodPaqueteZip(res, periodo) {
   const periodoId = periodo.id;
-  await safeSyncRipsPeriodo(periodoId);
-
   const zipLabel = zipArchiveSegment(periodo.etiqueta || periodo.periodo || `periodo-${periodoId}`);
-  const parts = await buildPeriodPaqueteParts(periodoId, zipLabel);
+  const dias = await queryDiasFacturacionZip(periodoId);
+  if (!dias.length) throw new Error('El mes no tiene carpetas de facturación');
 
   res.setHeader('Content-Type', 'application/zip');
   res.setHeader('Content-Disposition', `attachment; filename="${zipLabel}-paquete.zip"`);
   res.setHeader('Cache-Control', 'no-store');
+  if (typeof res.flushHeaders === 'function') res.flushHeaders();
+
+  const syncPromise = safeSyncRipsPeriodo(periodoId);
 
   await new Promise((resolve, reject) => {
     const archive = archiver('zip', { zlib: { level: ZIP_COMPRESSION } });
+    let partsAdded = 0;
     archive.on('error', reject);
     res.on('error', reject);
-    archive.on('end', () => resolve());
+    archive.on('end', () => {
+      if (!partsAdded) reject(new Error('No hay archivos para descargar en este mes'));
+      else resolve();
+    });
     archive.pipe(res);
-    for (const part of parts) {
-      archive.append(part.buffer, { name: part.name });
-    }
-    archive.finalize();
+
+    (async () => {
+      try {
+        await syncPromise;
+        for (const dia of dias) {
+          const entries = await collectDiaZipEntries(dia.id);
+          const diaSeg = zipArchiveSegment(dia.nombre_display || `dia-${dia.id}`);
+          const added = await appendInnerZipToArchive(archive, `${diaSeg}.zip`, entries);
+          if (added) partsAdded++;
+        }
+        const unifiedEntries = await collectPeriodUnifiedEntries(periodoId);
+        if (unifiedEntries.length) {
+          const addedUni = await appendInnerZipToArchive(archive, `${zipLabel}-unificado.zip`, unifiedEntries);
+          if (addedUni) partsAdded++;
+        }
+        archive.finalize();
+      } catch (e) {
+        reject(e);
+      }
+    })();
   });
 }
 
 async function collectPeriodUnifiedEntries(periodoId) {
   const usedPaths = new Set();
-  const dias = await db.query(
-    'SELECT id, nombre_display FROM sop_dias WHERE periodo_id = ?',
-    [periodoId]
-  );
-  dias.sort((a, b) => compararTextoNatural(a.nombre_display, b.nombre_display));
+  const dias = await queryDiasFacturacionZip(periodoId);
   const entries = [];
   for (const dia of dias) {
     const part = await collectDiaZipEntries(dia.id, usedPaths);
@@ -378,6 +416,8 @@ module.exports = {
   collectPeriodUnifiedEntries,
   createZipBuffer,
   buildPeriodPaqueteParts,
+  queryDiasFacturacionZip,
+  appendInnerZipToArchive,
   safeSyncRipsPeriodo,
   streamDiaZip,
   streamPeriodPaqueteZip,

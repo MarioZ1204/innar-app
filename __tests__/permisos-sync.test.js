@@ -43,7 +43,8 @@ describe('permisos-sync', () => {
       'modulo.reportes_pdx',
       'modulo.armado_soportes',
       'modulo.anexo_fidu',
-      'modulo.backup'
+      'modulo.backup',
+      'modulo.llamado_pacientes'
     ]));
   });
 
