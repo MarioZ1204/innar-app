@@ -128,6 +128,12 @@ function validarPayloadComprobanteServicios(body = {}) {
   const tipoAfiliacion = String(body.tipo_afiliacion || '').trim();
   const servicio = String(body.servicio || '').trim();
   const firmaPaciente = parseImagenBase64(body.firma_paciente);
+  const acudienteNombre = String(body.acudiente_nombre || '').trim();
+  const parentesco = String(body.parentesco || '').trim();
+  const firmaAcudiente = parseImagenBase64(body.firma_acudiente);
+  const firmaUsar = String(body.firma_usar || 'paciente').trim().toLowerCase() === 'acudiente'
+    ? 'acudiente'
+    : 'paciente';
 
   if (!parseFechaYmd(fecha)) return { error: 'Fecha inválida' };
   if (!pacienteNombre) return { error: 'El nombre del paciente (YO) es obligatorio' };
@@ -138,11 +144,15 @@ function validarPayloadComprobanteServicios(body = {}) {
   if (!correo) return { error: 'El correo es obligatorio' };
   if (!tipoAfiliacion) return { error: 'El tipo de afiliación es obligatorio' };
   if (!servicio) return { error: 'El servicio prestado es obligatorio' };
-  if (!firmaPaciente) return { error: 'La firma del paciente (imagen) es obligatoria' };
 
-  const acudienteNombre = String(body.acudiente_nombre || '').trim();
-  const parentesco = String(body.parentesco || '').trim();
-  const firmaAcudiente = parseImagenBase64(body.firma_acudiente);
+  const firmaPrincipal = firmaUsar === 'acudiente' && firmaAcudiente ? firmaAcudiente : firmaPaciente;
+  if (!firmaPrincipal) {
+    return {
+      error: firmaUsar === 'acudiente'
+        ? 'Debe cargar la firma del acudiente seleccionada para el PDF'
+        : 'La firma del paciente (imagen) es obligatoria'
+    };
+  }
 
   return {
     data: {
@@ -157,9 +167,11 @@ function validarPayloadComprobanteServicios(body = {}) {
       tipo_afiliacion: tipoAfiliacion,
       servicio,
       firma_paciente: firmaPaciente,
+      firma_acudiente: firmaAcudiente,
+      firma_usar: firmaUsar,
+      firma_principal: firmaPrincipal,
       acudiente_nombre: acudienteNombre,
-      parentesco,
-      firma_acudiente: firmaAcudiente
+      parentesco
     }
   };
 }
@@ -196,7 +208,7 @@ function buildComprobanteServiciosHtml(data, fondo = {}) {
 
   const fechaTxt = formatFechaComprobante(data.fecha);
   const fechaNacTxt = formatFechaNacimiento(data.fecha_nacimiento);
-  const firmaPac = data.firma_paciente;
+  const firmaPac = data.firma_principal || data.firma_paciente;
   const firmaAcud = data.firma_acudiente;
   const mostrarAcudienteDatos = tieneBloqueAcudiente(data);
 

@@ -14397,35 +14397,7 @@ function initCertificadoAsistenciaUi() {
 
 // ========== COMPROBANTE DE SERVICIOS ==========
 let _compServPacienteNombre = '';
-let _compServFirmaPacienteDataUrl = '';
-let _compServFirmaAcudienteDataUrl = '';
-
-function compServLeerImagenArchivo(file) {
-  return new Promise((resolve, reject) => {
-    if (!file) {
-      resolve('');
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ''));
-    reader.onerror = () => reject(new Error('No se pudo leer la imagen'));
-    reader.readAsDataURL(file);
-  });
-}
-
-function compServMostrarPreview(inputId, previewId, dataUrl) {
-  const preview = $(previewId);
-  if (!preview) return;
-  if (dataUrl) {
-    preview.src = dataUrl;
-    preview.style.display = 'block';
-  } else {
-    preview.removeAttribute('src');
-    preview.style.display = 'none';
-  }
-  const input = $(inputId);
-  if (input && !dataUrl) input.value = '';
-}
+let _compServFirmaUi = null;
 
 function prefillComprobanteServiciosElectro(cita) {
   const fecha = extraerFechaYmdCalendario(cita?.fecha);
@@ -14467,10 +14439,9 @@ function abrirModalComprobanteServicios(prefill) {
     return;
   }
   _compServPacienteNombre = prefill.paciente_nombre;
-  _compServFirmaPacienteDataUrl = String(prefill.firma_paciente || '').trim();
-  _compServFirmaAcudienteDataUrl = '';
   const set = (id, val) => { const el = $(id); if (el) el.value = val ?? ''; };
   set('compServOrigen', prefill.origen);
+  window.innarServicioCombo?.setOrigen?.('compServServicio', prefill.origen);
   const resumen = $('compServPacienteResumen');
   if (resumen) resumen.textContent = prefill.paciente_nombre;
   set('compServFecha', prefill.fecha);
@@ -14484,14 +14455,12 @@ function abrirModalComprobanteServicios(prefill) {
   set('compServServicio', prefill.servicio);
   set('compServAcudienteNombre', '');
   set('compServParentesco', '');
-  const chkAcud = $('compServMostrarAcudiente');
-  if (chkAcud) chkAcud.checked = false;
-  const panelAcud = $('compServAcudientePanel');
-  if (panelAcud) panelAcud.style.display = 'none';
-  compServMostrarPreview('compServFirmaPaciente', 'compServFirmaPreview', _compServFirmaPacienteDataUrl);
-  compServMostrarPreview('compServFirmaAcudiente', 'compServFirmaAcudPreview', '');
-  const inpFirmaPac = $('compServFirmaPaciente');
-  if (inpFirmaPac) inpFirmaPac.value = '';
+  const chkPdx = $('compServEnviarPdx');
+  if (chkPdx) chkPdx.checked = false;
+  const selPdx = $('compServPdxCarpeta');
+  if (selPdx) { selPdx.disabled = true; selPdx.value = ''; }
+  _compServFirmaUi?.reset?.();
+  _compServFirmaUi?.setFirmaPaciente?.(String(prefill.firma_paciente || '').trim());
   const modal = $('modalComprobanteServicios');
   window.innarPersonaFidu?.bindFechaInputs?.(modal);
   if (modal) {
@@ -14519,6 +14488,11 @@ async function generarComprobanteServiciosPdf() {
     showToast('No tiene permiso para generar este comprobante', 'error');
     return;
   }
+  const errFirma = _compServFirmaUi?.validar?.();
+  if (errFirma) {
+    showToast(errFirma, 'error');
+    return;
+  }
   const payload = {
     origen,
     fecha: window.innarPersonaFidu?.normalizarFecha?.($('compServFecha')?.value) || $('compServFecha')?.value,
@@ -14530,22 +14504,14 @@ async function generarComprobanteServiciosPdf() {
     telefono: $('compServTelefono')?.value?.trim(),
     correo: $('compServCorreo')?.value?.trim(),
     tipo_afiliacion: $('compServTipoAfiliacion')?.value?.trim(),
-    servicio: $('compServServicio')?.value?.trim(),
-    firma_paciente: _compServFirmaPacienteDataUrl
+    servicio: window.innarServicioCombo?.leerValor?.('compServServicio')
+      || $('compServServicio')?.value?.trim(),
+    ...(await (_compServFirmaUi?.buildPayloadExtras?.() || {}))
   };
-  if ($('compServMostrarAcudiente')?.checked) {
-    payload.acudiente_nombre = $('compServAcudienteNombre')?.value?.trim();
-    payload.parentesco = $('compServParentesco')?.value?.trim();
-    if (_compServFirmaAcudienteDataUrl) payload.firma_acudiente = _compServFirmaAcudienteDataUrl;
-  }
   if (!payload.fecha || !payload.paciente_documento || !payload.fecha_nacimiento
     || !payload.direccion || !payload.telefono || !payload.correo
     || !payload.tipo_afiliacion || !payload.servicio) {
     showToast('Complete todos los campos obligatorios', 'error');
-    return;
-  }
-  if (!payload.firma_paciente) {
-    showToast('Debe cargar la firma del paciente como imagen', 'error');
     return;
   }
   const btn = $('btnGenerarComprobanteServicios');
@@ -14558,18 +14524,32 @@ async function generarComprobanteServiciosPdf() {
       ? await Firma.procesarPayloadComprobante(payload)
       : payload;
     const doc = payload.paciente_documento.replace(/\D/g, '') || 'sin_doc';
-    const modo = await PDF.generarDocumento({
+    const filename = `comprobante_servicios_${doc}.pdf`;
+    const out = await PDF.generarDocumentoConBlob({
       postUrl: '/api/certificados/comprobante-servicios',
       previewUrl: '/api/certificados/comprobante-servicios/preview',
       payload: payloadFirma,
-      filename: `comprobante_servicios_${doc}.pdf`
+      filename
     });
+    if (out.blob) PDF.descargarBlob(out.blob, out.filename || filename);
+
+    const carpetaId = $('compServEnviarPdx')?.checked ? $('compServPdxCarpeta')?.value : '';
+    if (carpetaId && out.blob) {
+      const opt = $('compServPdxCarpeta')?.selectedOptions?.[0];
+      await window.innarComprobantePdx?.enviarPdf?.(carpetaId, out.blob, {
+        ...payloadFirma,
+        filename: out.filename || filename,
+        tema: opt?.dataset?.tema || ''
+      });
+    }
+
     await guardarPersonaFiduDesdeDocumento('comprobante', payloadFirma);
+    const msgPdx = carpetaId && out.blob ? ' y enviado a Cargar Reportes' : '';
     showToast(
-      modo === 'impresion'
+      out.modo === 'impresion'
         ? 'Se abrió la vista de impresión. Use «Guardar como PDF».'
-        : 'Comprobante descargado',
-      modo === 'impresion' ? 'info' : 'success'
+        : `Comprobante descargado${msgPdx}`,
+      out.modo === 'impresion' ? 'info' : 'success'
     );
     cerrarModalComprobanteServicios();
   } catch (e) {
@@ -14580,31 +14560,21 @@ async function generarComprobanteServiciosPdf() {
 }
 
 function initComprobanteServiciosUi() {
+  window.innarServicioCombo?.init?.('compServServicio', {
+    getOrigen: () => $('compServOrigen')?.value?.trim() || null
+  });
+  _compServFirmaUi = window.innarComprobanteFirma?.init?.({
+    prefix: 'compServ',
+    btnQuitarPaciente: 'btnCompServQuitarFirmaPaciente',
+    btnQuitarAcudiente: 'btnCompServQuitarFirmaAcudiente'
+  });
+  window.innarComprobantePdx?.poblarSelect?.($('compServPdxCarpeta'));
+  window.innarComprobantePdx?.bindEnviarPdx?.('compServEnviarPdx', 'compServPdxCarpeta');
   $('btnCerrarComprobanteServicios')?.addEventListener('click', cerrarModalComprobanteServicios);
   $('btnCancelarComprobanteServicios')?.addEventListener('click', cerrarModalComprobanteServicios);
   $('btnGenerarComprobanteServicios')?.addEventListener('click', generarComprobanteServiciosPdf);
   $('modalComprobanteServicios')?.addEventListener('click', (e) => {
     if (e.target?.id === 'modalComprobanteServicios') cerrarModalComprobanteServicios();
-  });
-  $('compServMostrarAcudiente')?.addEventListener('change', (e) => {
-    const panel = $('compServAcudientePanel');
-    if (panel) panel.style.display = e.target.checked ? 'block' : 'none';
-  });
-  $('compServFirmaPaciente')?.addEventListener('change', async (e) => {
-    try {
-      _compServFirmaPacienteDataUrl = await compServLeerImagenArchivo(e.target.files?.[0]);
-      compServMostrarPreview('compServFirmaPaciente', 'compServFirmaPreview', _compServFirmaPacienteDataUrl);
-    } catch (err) {
-      showToast(err.message || 'Error leyendo firma', 'error');
-    }
-  });
-  $('compServFirmaAcudiente')?.addEventListener('change', async (e) => {
-    try {
-      _compServFirmaAcudienteDataUrl = await compServLeerImagenArchivo(e.target.files?.[0]);
-      compServMostrarPreview('compServFirmaAcudiente', 'compServFirmaAcudPreview', _compServFirmaAcudienteDataUrl);
-    } catch (err) {
-      showToast(err.message || 'Error leyendo firma acudiente', 'error');
-    }
   });
   $('btnComprobanteServiciosMedica')?.addEventListener('click', () => {
     if (!currentTurnoMedicaData) return;

@@ -28,7 +28,7 @@
   <link rel="stylesheet" href="innar-electro-estudio-ui.css?v=20260625-2">
   <link rel="stylesheet" href="innar-electro-calendario.css?v=20260625-2">
   <link rel="stylesheet" href="innar-backup.css?v=20260625-2">
-  <link rel="stylesheet" href="innar-documentos-cita.css?v=20260703-2">
+  <link rel="stylesheet" href="innar-documentos-cita.css?v=20260703-3">
   <link rel="stylesheet" href="innar-persona-fidu.css?v=20260625-2">
   <link rel="stylesheet" href="innar-anexo-fidu.css?v=20260625-2">
   <link rel="stylesheet" href="innar-responsive-mobile-fix.css?v=20260625-2">
@@ -4202,14 +4202,16 @@
   <script src="electro-estudio-tipo.js?v=20260625-2"></script>
   <script src="persona-fidu-shared.js?v=20260625-2"></script>
   <script src="comprobante-servicio-cups.js?v=20260625-2"></script>
-  <script src="comprobante-servicio-combo.js?v=20260625-2"></script>
+  <script src="comprobante-servicio-combo.js?v=20260703-3"></script>
+  <script src="comprobante-firma-ui.js?v=20260703-3"></script>
+  <script src="comprobante-pdx-envio.js?v=20260703-3"></script>
   <script src="documentos-cita-prefill.js?v=20260703-1"></script>
   <script src="/libs/jspdf.umd.min.js?v=20260625-2"></script>
   <script src="/libs/html2canvas.min.js?v=20260625-2"></script>
   <script src="firma-quitar-fondo.js?v=20260625-2"></script>
-  <script src="documento-pdf-cliente.js?v=20260625-2"></script>
-  <script src="documentos-cita-module.js?v=20260703-2"></script>
-  <script src="app.js?v=20260703-1"></script>
+  <script src="documento-pdf-cliente.js?v=20260703-3"></script>
+  <script src="documentos-cita-module.js?v=20260703-3"></script>
+  <script src="app.js?v=20260703-3"></script>
   <script src="anexo-fidu.js?v=1.7.4"></script>
   <script src="soportes-pdf-editor.js?v=20260625-2"></script>
   <script src="archivo-modulo.js?v=1.7.6"></script>
@@ -4351,12 +4353,46 @@
             </div>
             <div class="docmod-field docmod-span-2">
               <label for="docmodModalCompServicio">Motivo / servicio *</label>
-              <input type="text" id="docmodModalCompServicio" maxlength="200" placeholder="Escriba el motivo o servicio" autocomplete="off" />
+              <input type="text" id="docmodModalCompServicio" maxlength="200" placeholder="Escriba o elija de la lista…" autocomplete="off" />
+            </div>
+            <div class="docmod-field docmod-span-2 comp-firma-block">
+              <label for="docmodModalCompFirmaPaciente">Firma del paciente (imagen) *</label>
+              <input type="file" id="docmodModalCompFirmaPaciente" accept="image/png,image/jpeg,image/webp" />
+              <button type="button" id="btnDocmodQuitarFirmaPaciente" class="btn-secondary comp-firma-quitar">Quitar firma</button>
+              <img id="docmodModalCompFirmaPreview" alt="Vista previa firma" class="comp-firma-preview" />
             </div>
             <div class="docmod-field docmod-span-2">
-              <label for="docmodModalCompFirma">Firma del paciente (imagen) *</label>
-              <input type="file" id="docmodModalCompFirma" accept="image/png,image/jpeg,image/webp" />
-              <img id="docmodModalCompFirmaPreview" alt="Vista previa firma" style="display:none;max-height:64px;margin-top:8px;border:1px solid #e5e7eb;border-radius:4px;background:repeating-conic-gradient(#e5e7eb 0% 25%,#fff 0% 50%) 50%/12px 12px" />
+              <label class="docmod-check-label"><input type="checkbox" id="docmodModalCompMostrarAcudiente" /> Paciente menor o adulto mayor (acudiente)</label>
+            </div>
+            <div id="docmodModalCompFirmaUsarRow" class="docmod-field docmod-span-2 comp-firma-usar-row" style="display:none">
+              <span class="comp-firma-usar-label">Firma en la línea principal del PDF:</span>
+              <label class="comp-firma-usar-opt"><input type="radio" name="docmodModalCompFirmaUsar" value="paciente" checked /> Paciente</label>
+              <label class="comp-firma-usar-opt"><input type="radio" name="docmodModalCompFirmaUsar" value="acudiente" /> Acudiente</label>
+            </div>
+            <div id="docmodModalCompAcudientePanel" class="docmod-field docmod-span-2 comp-acud-panel" style="display:none">
+              <div class="docmod-modal-grid">
+                <div class="docmod-field docmod-span-2">
+                  <label for="docmodModalCompAcudienteNombre">Nombre acudiente / representante</label>
+                  <input type="text" id="docmodModalCompAcudienteNombre" maxlength="120" />
+                </div>
+                <div class="docmod-field docmod-span-2">
+                  <label for="docmodModalCompParentesco">Parentesco</label>
+                  <input type="text" id="docmodModalCompParentesco" maxlength="60" />
+                </div>
+                <div class="docmod-field docmod-span-2">
+                  <label for="docmodModalCompFirmaAcudiente">Firma acudiente (imagen)</label>
+                  <input type="file" id="docmodModalCompFirmaAcudiente" accept="image/png,image/jpeg,image/webp" />
+                  <button type="button" id="btnDocmodQuitarFirmaAcudiente" class="btn-secondary comp-firma-quitar">Quitar firma acudiente</button>
+                  <img id="docmodModalCompFirmaAcudPreview" alt="Vista previa firma acudiente" class="comp-firma-preview comp-firma-preview--sm" />
+                </div>
+              </div>
+            </div>
+            <div class="docmod-field docmod-span-2 comp-pdx-block">
+              <label class="docmod-check-label"><input type="checkbox" id="docmodModalCompEnviarPdx" /> Enviar también a Cargar Reportes</label>
+              <label for="docmodModalCompPdxCarpeta">Carpeta destino</label>
+              <select id="docmodModalCompPdxCarpeta" disabled>
+                <option value="">— Seleccione carpeta —</option>
+              </select>
             </div>
           </div>
         </div>
@@ -4503,11 +4539,12 @@
         </div>
         <div style="margin-bottom:12px">
           <label style="display:block;font-size:.8rem;font-weight:600;color:#6b7280;margin-bottom:4px">Servicio prestado *</label>
-          <input id="compServServicio" type="text" maxlength="200" placeholder="Escriba el motivo o servicio" autocomplete="off" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:.9rem" />
+          <input id="compServServicio" type="text" maxlength="200" placeholder="Escriba o elija de la lista…" autocomplete="off" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:.9rem" />
         </div>
         <div style="margin-bottom:12px;padding:12px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px">
           <label style="display:block;font-size:.8rem;font-weight:600;color:#92400e;margin-bottom:6px">Firma del paciente (PNG recomendado) *</label>
-          <input id="compServFirmaPaciente" type="file" accept="image/png,image/jpeg,image/webp" style="width:100%;font-size:.85rem" />
+          <input id="compServFirmaPaciente" type="file" accept="image/png,image/jpeg,image/webp" style="width:100%;font-size:.85rem;margin-bottom:6px" />
+          <button type="button" id="btnCompServQuitarFirmaPaciente" class="btn-secondary comp-firma-quitar">Quitar firma</button>
           <p style="margin:6px 0 0;font-size:.75rem;color:#92400e">Use PNG con fondo blanco o transparente; el sistema quita el fondo blanco al generar el PDF.</p>
           <img id="compServFirmaPreview" alt="Vista previa firma" style="display:none;max-height:64px;margin-top:8px;border:1px solid #e5e7eb;border-radius:4px;background:repeating-conic-gradient(#e5e7eb 0% 25%,#fff 0% 50%) 50%/12px 12px" />
         </div>
@@ -4515,6 +4552,11 @@
           <input type="checkbox" id="compServMostrarAcudiente" />
           Paciente menor o adulto mayor (acudiente)
         </label>
+        <div id="compServFirmaUsarRow" class="comp-firma-usar-row" style="display:none;margin-bottom:12px;padding:10px 12px;background:#f0fdfa;border:1px solid #99f6e4;border-radius:8px">
+          <span class="comp-firma-usar-label">Firma en la línea principal del PDF:</span>
+          <label class="comp-firma-usar-opt"><input type="radio" name="compServFirmaUsar" value="paciente" checked /> Paciente</label>
+          <label class="comp-firma-usar-opt"><input type="radio" name="compServFirmaUsar" value="acudiente" /> Acudiente</label>
+        </div>
         <div id="compServAcudientePanel" style="display:none;margin-bottom:12px;padding:12px;background:#f8fafc;border-radius:8px;border:1px solid #e5e7eb">
           <div style="margin-bottom:10px">
             <label style="display:block;font-size:.8rem;font-weight:600;color:#6b7280;margin-bottom:4px">Nombre acudiente / representante</label>
@@ -4525,10 +4567,21 @@
             <input id="compServParentesco" type="text" maxlength="60" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:.9rem" />
           </div>
           <div>
-            <label style="display:block;font-size:.8rem;font-weight:600;color:#6b7280;margin-bottom:4px">Firma acudiente (imagen, opcional)</label>
-            <input id="compServFirmaAcudiente" type="file" accept="image/png,image/jpeg,image/webp" style="width:100%;font-size:.85rem" />
+            <label style="display:block;font-size:.8rem;font-weight:600;color:#6b7280;margin-bottom:4px">Firma acudiente (imagen)</label>
+            <input id="compServFirmaAcudiente" type="file" accept="image/png,image/jpeg,image/webp" style="width:100%;font-size:.85rem;margin-bottom:6px" />
+            <button type="button" id="btnCompServQuitarFirmaAcudiente" class="btn-secondary comp-firma-quitar">Quitar firma acudiente</button>
             <img id="compServFirmaAcudPreview" alt="Vista previa firma acudiente" style="display:none;max-height:48px;margin-top:8px;border:1px solid #e5e7eb;border-radius:4px;background:#fff" />
           </div>
+        </div>
+        <div class="comp-pdx-block" style="margin-bottom:12px;padding:12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px">
+          <label style="display:flex;align-items:center;gap:8px;font-size:.875rem;color:#374151;cursor:pointer;margin-bottom:8px">
+            <input type="checkbox" id="compServEnviarPdx" />
+            Enviar también a Cargar Reportes
+          </label>
+          <label for="compServPdxCarpeta" style="display:block;font-size:.78rem;font-weight:600;color:#64748b;margin-bottom:4px">Carpeta destino</label>
+          <select id="compServPdxCarpeta" disabled style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:.9rem">
+            <option value="">— Seleccione carpeta —</option>
+          </select>
         </div>
       </div>
       <div class="cita-modal-footer">

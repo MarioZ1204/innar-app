@@ -404,7 +404,36 @@
     return data;
   }
 
-  async function generarDocumento({ postUrl, previewUrl, payload, filename }) {
+  async function generarPdfBlobDesdeHtml(html) {
+    const JsPDF = obtenerJsPdf();
+    if (!JsPDF) throw new Error('Generador PDF no disponible (jsPDF)');
+
+    let montado = null;
+    try {
+      montado = await prepararDocumento(html);
+      let canvas = await intentarCaptura(montado);
+      if (!canvas || !canvasTieneContenido(canvas)) {
+        limpiarMontaje(montado);
+        montado = await prepararDocumentoIframe(html);
+        canvas = await intentarCaptura(montado);
+      }
+      if (!canvas) throw new Error('No se pudo capturar el documento');
+
+      const imgData = canvas.toDataURL('image/jpeg', 0.92);
+      if (!imgData || imgData.length < 5000) throw new Error('BLANK_CANVAS');
+
+      const pdf = new JsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+      const pw = pdf.internal.pageSize.getWidth();
+      const ph = pdf.internal.pageSize.getHeight();
+      pdf.addImage(imgData, 'JPEG', 0, 0, pw, ph, undefined, 'FAST');
+      return pdf.output('blob');
+    } finally {
+      limpiarMontaje(montado);
+      document.getElementById('innarPdfFrame')?.remove();
+    }
+  }
+
+  async function generarDocumentoConBlob({ postUrl, previewUrl, payload, filename }) {
     const name = String(filename || 'documento.pdf').endsWith('.pdf')
       ? String(filename || 'documento.pdf')
       : `${filename}.pdf`;
@@ -416,21 +445,33 @@
     });
 
     const ct = (res.headers.get('content-type') || '').toLowerCase();
-    const modo = res.headers.get('X-Documento-Modo');
+    const modoHdr = res.headers.get('X-Documento-Modo');
 
-    if (modo === 'pdf' || ct.includes('application/pdf')) {
-      descargarBlob(await res.blob(), name);
-      return 'pdf-servidor';
+    if (modoHdr === 'pdf' || ct.includes('application/pdf')) {
+      const blob = await res.blob();
+      return { blob, modo: 'pdf-servidor', filename: name };
     }
 
     await res.text().catch(() => '');
 
     if (previewUrl) {
       const preview = await fetchPreviewHtml(previewUrl, payload);
-      return generarPdfDesdeHtml(preview.html, preview.filename || name);
+      try {
+        const blob = await generarPdfBlobDesdeHtml(preview.html);
+        return { blob, modo: 'pdf-cliente', filename: preview.filename || name };
+      } catch (e) {
+        abrirImpresionDocumento(preview.html);
+        return { blob: null, modo: 'impresion', filename: preview.filename || name };
+      }
     }
 
     throw new Error('El servidor no generó PDF y no hay vista previa disponible');
+  }
+
+  async function generarDocumento(opts) {
+    const out = await generarDocumentoConBlob(opts);
+    if (out.blob) descargarBlob(out.blob, out.filename || opts.filename || 'documento.pdf');
+    return out.modo;
   }
 
   async function procesarRespuestaDocumento(res, filenameBase, options = {}) {
@@ -470,8 +511,11 @@
 
   window.innarDocumentoPdf = {
     generarPdfDesdeHtml,
+    generarPdfBlobDesdeHtml,
+    descargarBlob,
     procesarRespuestaDocumento,
     generarDesdePreview,
-    generarDocumento
+    generarDocumento,
+    generarDocumentoConBlob
   };
 })();

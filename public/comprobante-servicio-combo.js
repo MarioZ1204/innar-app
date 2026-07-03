@@ -1,11 +1,10 @@
 /**
- * Combo servicio comprobante: escribir libremente + lista CUPS (código y nombre).
+ * Campo servicio/motivo: texto libre + sugerencias según origen (estudios o consultas).
  */
 (function (root) {
   'use strict';
 
-  let catalogo = null;
-  let promesaCarga = null;
+  const instancias = new Map();
 
   function normBusqueda(val) {
     return String(val || '')
@@ -16,12 +15,6 @@
       .trim();
   }
 
-  function normCodigo(val) {
-    const raw = String(val || '').replace(/\D/g, '');
-    if (!raw) return '';
-    return raw.length >= 6 ? raw : raw.padStart(6, '0');
-  }
-
   function escHtml(str) {
     return String(str || '')
       .replace(/&/g, '&amp;')
@@ -30,64 +23,76 @@
       .replace(/"/g, '&quot;');
   }
 
-  async function cargarCatalogo() {
-    if (catalogo) return catalogo;
-    if (promesaCarga) return promesaCarga;
+  function tituloLista(origen) {
+    if (origen === 'electro') return 'Estudios de electrodiagnóstico';
+    if (origen === 'medica') return 'Tipos de consulta';
+    return 'Sugerencias';
+  }
+
+  async function cargarSugerencias(origen) {
+    const key = origen || 'todos';
+    const cacheKey = `_cache_${key}`;
+    if (root.innarServicioCombo?.[cacheKey]) return root.innarServicioCombo[cacheKey];
+
     if (typeof apiFetch !== 'function') return [];
 
-    promesaCarga = apiFetch('/api/certificados/catalogo-servicios')
+    const url = origen
+      ? `/api/certificados/catalogo-servicios?origen=${encodeURIComponent(origen)}`
+      : '/api/certificados/catalogo-servicios';
+
+    const prom = apiFetch(url)
       .then(async (res) => {
         const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.error || 'No se pudo cargar el catálogo CUPS');
-        catalogo = (data.servicios || []).map((s) => {
-          const codigo = normCodigo(s.codigo);
+        if (!res.ok) throw new Error(data.error || 'No se pudo cargar sugerencias');
+        const items = (data.servicios || []).map((s) => {
           const nombre = String(s.nombre || '').trim();
           return {
-            codigo,
+            codigo: String(s.codigo || '').trim(),
             nombre,
-            buscar: normBusqueda(`${codigo} ${nombre}`)
+            buscar: normBusqueda(nombre)
           };
-        });
-        return catalogo;
-      })
-      .catch((e) => {
-        promesaCarga = null;
-        throw e;
+        }).filter((s) => s.nombre);
+        root.innarServicioCombo[cacheKey] = items;
+        return items;
       });
 
-    return promesaCarga;
+    return prom;
   }
 
-  function buscarPorCodigo(valor) {
-    if (!catalogo?.length) return null;
-    const cod = normCodigo(valor);
-    if (cod.length < 5) return null;
-    return catalogo.find((s) => s.codigo === cod || s.codigo.replace(/^0+/, '') === cod.replace(/^0+/, '')) || null;
-  }
-
-  function filtrarCatalogo(texto) {
+  function filtrarLista(catalogo, texto) {
     if (!catalogo?.length) return [];
     const q = normBusqueda(texto);
-    const soloDigitos = String(texto || '').replace(/\D/g, '');
-    if (!q) return catalogo.slice(0, 20);
-    return catalogo.filter((s) => {
-      if (soloDigitos && s.codigo.includes(soloDigitos)) return true;
-      return s.buscar.includes(q);
-    }).slice(0, 20);
+    if (!q) return catalogo.slice(0, 25);
+    return catalogo.filter((s) => s.buscar.includes(q)).slice(0, 25);
   }
 
-  function resolverCodigoEnInput(input) {
-    const v = String(input.value || '').trim();
-    if (!v) return;
-    if (/[a-zA-ZáéíóúñÁÉÍÓÚÑ]/.test(v)) return;
-    const hit = buscarPorCodigo(v);
-    if (hit) input.value = hit.nombre;
+  function insertarSugerencia(input, nombre) {
+    const texto = String(nombre || '').trim();
+    if (!texto) return;
+    input.value = texto;
+    input.focus();
+    const len = input.value.length;
+    try {
+      input.setSelectionRange(len, len);
+    } catch (_) { /* ignore */ }
   }
 
-  function init(inputId) {
+  function init(inputId, options = {}) {
     const input = document.getElementById(inputId);
-    if (!input || input.dataset.innarServicioCombo === '1') return;
-    input.dataset.innarServicioCombo = '1';
+    if (!input) return;
+    if (input.dataset.innarServicioComboInit === '1') {
+      const prev = instancias.get(inputId);
+      if (prev && options.origen != null) prev.origen = options.origen;
+      return;
+    }
+    input.dataset.innarServicioComboInit = '1';
+
+    const state = {
+      origen: options.origen || null,
+      getOrigen: typeof options.getOrigen === 'function' ? options.getOrigen : null,
+      catalogo: []
+    };
+    instancias.set(inputId, state);
 
     const wrap = document.createElement('div');
     wrap.className = 'innar-servicio-combo';
@@ -101,33 +106,41 @@
 
     const hint = document.createElement('p');
     hint.className = 'innar-servicio-combo-hint';
-    hint.textContent = 'Escriba el código CUPS, busque en la lista o ingrese texto libre.';
+    hint.textContent = 'Escriba libremente o elija una sugerencia de la lista (puede completar el texto después).';
     wrap.appendChild(hint);
 
     input.setAttribute('autocomplete', 'off');
     if (!input.getAttribute('placeholder')) {
-      input.setAttribute('placeholder', 'Código CUPS o nombre del servicio');
+      input.setAttribute('placeholder', 'Escriba o elija de la lista…');
+    }
+
+    function origenActual() {
+      if (state.getOrigen) return state.getOrigen() || state.origen;
+      return state.origen;
     }
 
     function pintarLista(items) {
+      const origen = origenActual();
       if (!items.length) {
         list.classList.add('hidden');
         list.innerHTML = '';
         return;
       }
-      list.innerHTML = items.map((s) => (
-        `<li role="option" tabindex="-1" data-nombre="${escHtml(s.nombre)}">`
-        + `<span class="innar-servicio-combo-cod">${escHtml(s.codigo)}</span>`
-        + `<span class="innar-servicio-combo-nom">${escHtml(s.nombre)}</span>`
-        + '</li>'
-      )).join('');
+      const titulo = tituloLista(origen);
+      list.innerHTML = `<li class="innar-servicio-combo-head" aria-hidden="true">${escHtml(titulo)}</li>`
+        + items.map((s) => (
+          `<li role="option" tabindex="-1" data-nombre="${escHtml(s.nombre)}">`
+          + (s.codigo ? `<span class="innar-servicio-combo-cod">${escHtml(s.codigo)}</span>` : '')
+          + `<span class="innar-servicio-combo-nom">${escHtml(s.nombre)}</span>`
+          + '</li>'
+        )).join('');
       list.classList.remove('hidden');
     }
 
     async function mostrarSugerencias() {
       try {
-        await cargarCatalogo();
-        pintarLista(filtrarCatalogo(input.value));
+        state.catalogo = await cargarSugerencias(origenActual());
+        pintarLista(filtrarLista(state.catalogo, input.value));
       } catch (_) {
         list.classList.add('hidden');
       }
@@ -136,16 +149,15 @@
     input.addEventListener('focus', () => { mostrarSugerencias(); });
     input.addEventListener('input', () => { mostrarSugerencias(); });
     input.addEventListener('blur', () => {
-      setTimeout(() => list.classList.add('hidden'), 160);
-      resolverCodigoEnInput(input);
+      setTimeout(() => list.classList.add('hidden'), 180);
     });
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') list.classList.add('hidden');
       if (e.key === 'Enter') {
-        const first = list.querySelector('li');
+        const first = list.querySelector('li[role="option"]');
         if (first && !list.classList.contains('hidden')) {
           e.preventDefault();
-          input.value = first.dataset.nombre || '';
+          insertarSugerencia(input, first.dataset.nombre || '');
           list.classList.add('hidden');
         }
       }
@@ -153,41 +165,38 @@
 
     list.addEventListener('mousedown', (e) => {
       e.preventDefault();
-      const li = e.target.closest('li');
+      const li = e.target.closest('li[role="option"]');
       if (!li) return;
-      input.value = li.dataset.nombre || '';
+      insertarSugerencia(input, li.dataset.nombre || '');
       list.classList.add('hidden');
     });
   }
 
-  function initAll() {
-    // El campo de comprobante ahora acepta texto libre sin autocompletado de CUPS.
-    if (document.getElementById('compServServicio')) {
-      document.getElementById('compServServicio').dataset.innarServicioCombo = '1';
-    }
-    if (document.getElementById('docmodModalCompServicio')) {
-      document.getElementById('docmodModalCompServicio').dataset.innarServicioCombo = '1';
+  function setOrigen(inputId, origen) {
+    const state = instancias.get(inputId);
+    if (state) {
+      state.origen = origen;
+      delete root.innarServicioCombo?.[`_cache_${origen || 'todos'}`];
     }
   }
 
   function leerValor(inputId) {
     const input = document.getElementById(inputId);
     if (!input) return '';
-    resolverCodigoEnInput(input);
     return String(input.value || '').trim();
+  }
+
+  function invalidarCache() {
+    Object.keys(root.innarServicioCombo || {}).forEach((k) => {
+      if (k.startsWith('_cache_')) delete root.innarServicioCombo[k];
+    });
   }
 
   root.innarServicioCombo = {
     init,
-    initAll,
-    cargarCatalogo,
-    buscarPorCodigo,
-    leerValor
+    setOrigen,
+    leerValor,
+    invalidarCache,
+    cargarSugerencias
   };
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initAll);
-  } else {
-    initAll();
-  }
 })(typeof window !== 'undefined' ? window : globalThis);

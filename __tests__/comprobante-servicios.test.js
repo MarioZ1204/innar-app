@@ -95,6 +95,28 @@ describe('comprobante-servicios', () => {
     expect(r.data.servicio).toBe(servicioManual);
   });
 
+  test('respeta firma_usar acudiente en la línea principal', () => {
+    const r = validarPayloadComprobanteServicios({
+      fecha: '2026-05-27',
+      paciente_nombre: 'Test Paciente',
+      paciente_documento: '1234567890',
+      fecha_nacimiento: '2000-01-01',
+      direccion: 'Calle 1',
+      telefono: '3001234567',
+      correo: 'test@example.com',
+      tipo_afiliacion: 'Cotizante',
+      servicio: 'EEG convencional',
+      firma_paciente: FIRMA_MINI,
+      firma_acudiente: FIRMA_MINI,
+      firma_usar: 'acudiente',
+      acudiente_nombre: 'Acudiente Test',
+      parentesco: 'Madre'
+    });
+    expect(r.error).toBeUndefined();
+    expect(r.data.firma_usar).toBe('acudiente');
+    expect(r.data.firma_principal).toEqual(r.data.firma_acudiente);
+  });
+
   test('HTML incluye datos, servicio, firma y pie FORM-24', () => {
     const { data } = validarPayloadComprobanteServicios({
       fecha: '2026-05-27',

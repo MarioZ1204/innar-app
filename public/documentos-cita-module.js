@@ -6,7 +6,7 @@
   'use strict';
 
   let bound = false;
-  let firmaPacienteDataUrl = '';
+  let _docmodFirmaUi = null;
 
   const state = {
     tipo: null,
@@ -109,15 +109,12 @@
   }
 
   function mostrarFirmaPreview(dataUrl) {
-    const img = $('docmodModalCompFirmaPreview');
-    if (!img) return;
-    if (dataUrl) {
-      img.src = dataUrl;
-      img.style.display = 'block';
-    } else {
-      img.removeAttribute('src');
-      img.style.display = 'none';
-    }
+    _docmodFirmaUi?.setFirmaPaciente?.(dataUrl);
+  }
+
+  function refrescarCombosServicio() {
+    window.innarServicioCombo?.setOrigen?.('docmodModalCompServicio', state.origen);
+    window.innarServicioCombo?.setOrigen?.('docmodModalCertMotivo', state.origen);
   }
 
   async function guardarPersonaDesdeModal(tipo, payload) {
@@ -229,6 +226,7 @@
     state.origen = origen;
     marcarBotonesGrupo('[data-docmod-origen]', 'data-docmod-origen', state.origen);
     actualizarResumenesSeleccion();
+    refrescarCombosServicio();
   }
 
   function sincronizarUiSeleccion() {
@@ -263,10 +261,7 @@
     modal.classList.add('hidden');
     modal.style.display = 'none';
     setModalError('');
-    firmaPacienteDataUrl = '';
-    const inpFirma = $('docmodModalCompFirma');
-    if (inpFirma) inpFirma.value = '';
-    mostrarFirmaPreview('');
+    _docmodFirmaUi?.reset?.();
   }
 
   function llenarModalCertificado(datos, extras) {
@@ -308,10 +303,13 @@
     $('docmodModalCompCorreo').value = datos.correo || extras?.correo || '';
     $('docmodModalCompAfiliacion').value = datos.tipo_afiliacion || extras?.tipo_afiliacion || 'Cotizante';
     $('docmodModalCompServicio').value = extras?.servicio || '';
-    firmaPacienteDataUrl = String(datos.firma_paciente || extras?.firma_paciente || '').trim();
-    const inpFirma = $('docmodModalCompFirma');
-    if (inpFirma) inpFirma.value = '';
-    mostrarFirmaPreview(firmaPacienteDataUrl);
+    _docmodFirmaUi?.reset?.();
+    _docmodFirmaUi?.setFirmaPaciente?.(String(datos.firma_paciente || extras?.firma_paciente || '').trim());
+    const chkPdx = $('docmodModalCompEnviarPdx');
+    if (chkPdx) chkPdx.checked = false;
+    const selPdx = $('docmodModalCompPdxCarpeta');
+    if (selPdx) { selPdx.disabled = true; selPdx.value = ''; }
+    refrescarCombosServicio();
   }
 
   function abrirModalConDatos(persona, extras) {
@@ -397,9 +395,8 @@
     if (!correo) return 'El correo es obligatorio';
     if (!afil) return 'El tipo de afiliación es obligatorio';
     if (!servicio) return 'El motivo / servicio es obligatorio';
-    if (!firmaPacienteDataUrl && !$('docmodModalCompFirma')?.files?.[0]) {
-      return 'Debe cargar la firma del paciente (imagen)';
-    }
+    const errFirma = _docmodFirmaUi?.validar?.();
+    if (errFirma) return errFirma;
     return null;
   }
 
@@ -434,8 +431,7 @@
   }
 
   async function buildComprobantePayload() {
-    const filePac = $('docmodModalCompFirma')?.files?.[0];
-    if (filePac) firmaPacienteDataUrl = await readFileAsDataUrl(filePac);
+    const extras = await (_docmodFirmaUi?.buildPayloadExtras?.() || {});
     return {
       origen: state.origen,
       fecha: normFecha($('docmodModalCompFecha')?.value),
@@ -447,8 +443,9 @@
       telefono: $('docmodModalCompTelefono')?.value?.trim(),
       correo: $('docmodModalCompCorreo')?.value?.trim(),
       tipo_afiliacion: $('docmodModalCompAfiliacion')?.value?.trim(),
-      servicio: $('docmodModalCompServicio')?.value?.trim(),
-      firma_paciente: firmaPacienteDataUrl
+      servicio: window.innarServicioCombo?.leerValor?.('docmodModalCompServicio')
+        || $('docmodModalCompServicio')?.value?.trim(),
+      ...extras
     };
   }
 
@@ -496,7 +493,40 @@
         payload = await window.innarFirmaFondo.procesarPayloadComprobante(payload);
       }
       const preview = await fetchPreview(payload);
-      const modoPdf = await generarPdfDesdePreview(preview);
+      const PDF = window.innarDocumentoPdf;
+      if (!PDF) throw new Error('Generador PDF no disponible');
+      const doc = payload.paciente_documento?.replace(/\D/g, '') || 'sin_doc';
+      const filename = state.tipo === 'comprobante'
+        ? `comprobante_servicios_${doc}.pdf`
+        : (preview.filename || `certificado_${doc}.pdf`);
+
+      let out = { blob: null, modo: 'impresion', filename };
+      if (state.tipo === 'comprobante') {
+        out = await PDF.generarDocumentoConBlob({
+          postUrl: '/api/certificados/comprobante-servicios',
+          previewUrl: '/api/certificados/comprobante-servicios/preview',
+          payload,
+          filename
+        });
+      } else {
+        const blob = await PDF.generarPdfBlobDesdeHtml(preview.html);
+        out = { blob, modo: 'pdf-cliente', filename: preview.filename || filename };
+      }
+      if (out.blob) PDF.descargarBlob(out.blob, out.filename || filename);
+
+      const carpetaId = state.tipo === 'comprobante' && $('docmodModalCompEnviarPdx')?.checked
+        ? $('docmodModalCompPdxCarpeta')?.value
+        : '';
+      if (carpetaId && out.blob) {
+        const opt = $('docmodModalCompPdxCarpeta')?.selectedOptions?.[0];
+        await window.innarComprobantePdx?.enviarPdf?.(carpetaId, out.blob, {
+          ...payload,
+          filename: out.filename || filename,
+          tema: opt?.dataset?.tema || ''
+        });
+      }
+
+      const modoPdf = out.modo;
 
       if (state.tipo === 'certificado') {
         try {
@@ -509,10 +539,11 @@
 
       await guardarPersonaDesdeModal(state.tipo, payload);
 
+      const msgPdx = carpetaId && out.blob ? ' y enviado a Cargar Reportes' : '';
       toast(
         modoPdf === 'impresion'
           ? 'Se abrió la vista de impresión. Use «Guardar como PDF».'
-          : 'PDF generado correctamente',
+          : `${state.tipo === 'comprobante' ? 'Comprobante' : 'Certificado'} generado${msgPdx}`,
         modoPdf === 'impresion' ? 'info' : 'success'
       );
       cerrarModal();
@@ -544,16 +575,6 @@
     });
 
     $('btnConfirmarModalDocumentosCita')?.addEventListener('click', () => confirmarModal());
-    $('docmodModalCompFirma')?.addEventListener('change', async (e) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-      try {
-        firmaPacienteDataUrl = await readFileAsDataUrl(file);
-        mostrarFirmaPreview(firmaPacienteDataUrl);
-      } catch (err) {
-        toast(err.message || 'Error leyendo firma', 'error');
-      }
-    });
     $('btnCancelarModalDocumentosCita')?.addEventListener('click', cerrarModal);
     $('btnCerrarModalDocumentosCita')?.addEventListener('click', cerrarModal);
     $('modalDocumentosCita')?.addEventListener('click', (e) => {
@@ -563,6 +584,19 @@
 
   async function initDocumentosCitaModule() {
     bindUi();
+    window.innarServicioCombo?.init?.('docmodModalCompServicio', {
+      getOrigen: () => state.origen
+    });
+    window.innarServicioCombo?.init?.('docmodModalCertMotivo', {
+      getOrigen: () => state.origen
+    });
+    _docmodFirmaUi = window.innarComprobanteFirma?.init?.({
+      prefix: 'docmodModalComp',
+      btnQuitarPaciente: 'btnDocmodQuitarFirmaPaciente',
+      btnQuitarAcudiente: 'btnDocmodQuitarFirmaAcudiente'
+    });
+    window.innarComprobantePdx?.poblarSelect?.($('docmodModalCompPdxCarpeta'));
+    window.innarComprobantePdx?.bindEnviarPdx?.('docmodModalCompEnviarPdx', 'docmodModalCompPdxCarpeta');
     sincronizarUiSeleccion();
   }
 

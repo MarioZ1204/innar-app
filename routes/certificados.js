@@ -207,14 +207,45 @@ router.post('/certificados/comprobante-servicios', requireAuth, (req, res, next)
   }
 });
 
-/** GET /api/certificados/catalogo-servicios — catálogo CUPS para comprobante (combo) */
+/** GET /api/certificados/catalogo-servicios — sugerencias por origen (estudios, consultas o CUPS) */
 router.get('/certificados/catalogo-servicios', requireAuth, requireCertificadoComprobante, async (req, res) => {
   try {
+    const origen = String(req.query?.origen || '').trim().toLowerCase();
+    if (origen === 'electro') {
+      const rows = await db.query(
+        'SELECT nombre FROM estudio_duraciones WHERE nombre IS NOT NULL AND TRIM(nombre) <> "" ORDER BY nombre ASC'
+      );
+      return res.json({
+        ok: true,
+        servicios: rows.map((r) => ({ codigo: '', nombre: String(r.nombre || '').trim() }))
+      });
+    }
+    if (origen === 'medica') {
+      const [tipos, cups] = await Promise.all([
+        db.query('SELECT nombre FROM tipos_consulta WHERE activo = 1 ORDER BY nombre ASC'),
+        listarServiciosComprobante(db)
+      ]);
+      const vistos = new Set();
+      const servicios = [];
+      tipos.forEach((r) => {
+        const nombre = String(r.nombre || '').trim();
+        if (!nombre || vistos.has(nombre.toLowerCase())) return;
+        vistos.add(nombre.toLowerCase());
+        servicios.push({ codigo: '', nombre });
+      });
+      cups.forEach((s) => {
+        const nombre = String(s.nombre || '').trim();
+        if (!nombre || vistos.has(nombre.toLowerCase())) return;
+        vistos.add(nombre.toLowerCase());
+        servicios.push({ codigo: s.codigo, nombre });
+      });
+      return res.json({ ok: true, servicios });
+    }
     const servicios = await listarServiciosComprobante(db);
     res.json({ ok: true, servicios });
   } catch (e) {
     logger.error('[CERT] catalogo-servicios:', e.message);
-    res.status(500).json({ error: safeError(e, 'Error cargando catálogo CUPS: ') });
+    res.status(500).json({ error: safeError(e, 'Error cargando catálogo: ') });
   }
 });
 
