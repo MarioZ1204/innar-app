@@ -1290,10 +1290,31 @@
     });
   }
 
+  function htmlArmZipCarpetaBtn(dia, { labeled = false, variant = 'ghost' } = {}) {
+    if (!dia?.id || !sopPerm('soportes.descargar_zip')) return '';
+    const nom = dia.nombre_display || 'Carpeta';
+    const title = dia.es_contenedor
+      ? `Descargar ZIP de la carpeta ${nom} (todo su contenido y subcarpetas)`
+      : `Descargar ZIP de ${nom}`;
+    return htmlArmZipBtn({
+      apiPath: `/api/soportes/armado/dias/${dia.id}/zip-carpeta`,
+      fallbackName: `${nom}.zip`,
+      title,
+      icon: 'archive',
+      label: labeled ? ' ZIP' : '',
+      variant
+    });
+  }
+
   function htmlArmZipDiaBtn(dia, { labeled = false, variant = 'ghost' } = {}) {
-    if (!dia?.id || dia.es_contenedor || !sopPerm('soportes.descargar_zip')) return '';
+    if (!dia?.id || !sopPerm('soportes.descargar_zip')) return '';
+    if (dia.es_contenedor) return htmlArmZipCarpetaBtn(dia, { labeled, variant });
     const nom = dia.nombre_display || 'Carpeta';
     const fe = dia.expedientes_count || 0;
+    const modo = dia.modo || 'facturacion';
+    if (modo === 'ucqn' || modo === 'anexo_fidu') {
+      return htmlArmZipCarpetaBtn(dia, { labeled, variant });
+    }
     const title = `Descargar ZIP de ${nom} (RIPS y SOPORTES por factura FE, ${fe} expediente(s))`;
     return htmlArmZipBtn({
       apiPath: `/api/soportes/armado/dias/${dia.id}/zip`,
@@ -1303,6 +1324,13 @@
       label: labeled ? ' ZIP' : '',
       variant
     });
+  }
+
+  function htmlArmZipCarpetaActualBtn() {
+    if (!armState.diasParentId || !sopPerm('soportes.descargar_zip')) return '';
+    const carpeta = armDiaById(armState.diasParentId);
+    if (!carpeta) return '';
+    return htmlArmZipCarpetaBtn(carpeta, { labeled: true, variant: 'teal' });
   }
 
   function badgeFacturacionArmado(estado) {
@@ -4045,9 +4073,7 @@
         <div class="sop-panel-head-tools">
           ${armState.diasParentId ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="btnSopArmVolverExplorer"><i data-lucide="arrow-left"></i> ${escapeHtml(volverExplorerLabel)}</button>` : ''}
           ${htmlSopFolderViewToggle('arm')}
-          ${htmlArmZipPaqueteBtn()}
-          ${htmlArmZipUnificadoBtn()}
-          ${htmlArmZipFacturadosBtn()}
+          ${armState.diasParentId ? htmlArmZipCarpetaActualBtn() : `${htmlArmZipPaqueteBtn()}${htmlArmZipUnificadoBtn()}${htmlArmZipFacturadosBtn()}`}
           ${puedeGestionarDia && armState.diasParentId && armModoContenedoraActual() === 'anexo_fidu' ? `<button type="button" class="sop-btn sop-btn-ghost" id="btnSopArmSyncAnexoModulo"><i data-lucide="refresh-cw"></i> Sincronizar desde Anexo</button>` : ''}
           ${puedeGestionarDia && armState.diasParentId ? `<button type="button" class="sop-btn sop-btn-teal" id="btnSopArmNuevoDiaInline"><i data-lucide="folder-plus"></i> ${escapeHtml(armLabelNuevaCarpetaModo(armModoContenedoraActual()))}</button>` : ''}
         </div>

@@ -100,6 +100,7 @@ const { syncRipsCarpetasDia, syncRipsCarpetasContenedor } = require('../utils/so
 const {
   zipArchiveSegment,
   streamDiaZip,
+  streamCarpetaZip,
   streamPeriodPaqueteZip,
   streamUnifiedPeriodZip
 } = require('../utils/soportes-armado-zip');
@@ -2986,6 +2987,24 @@ router.get('/soportes/armado/dias/:id/zip', requireAuth, requireRoleOrPerm(ROLES
     await streamDiaZip(res, rows[0]);
   } catch (e) {
     logger.error('[SOPORTES] zip dia:', e);
+    if (!res.headersSent) {
+      const notFound = /no tiene|no hay archivos|ZIP vacío/i.test(e.message || '');
+      res.status(notFound ? 404 : 500).json({
+        error: notFound ? e.message : 'No se pudo generar el ZIP. Intente de nuevo o contacte al administrador.'
+      });
+    }
+  }
+});
+
+router.get('/soportes/armado/dias/:id/zip-carpeta', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'soportes.descargar_zip'), async (req, res) => {
+  try {
+    const diaId = parseInt(req.params.id, 10);
+    if (!diaId) return res.status(400).json({ error: 'Carpeta inválida' });
+    const rows = await db.query('SELECT * FROM sop_dias WHERE id = ?', [diaId]);
+    if (!rows.length) return res.status(404).json({ error: 'Carpeta no encontrada' });
+    await streamCarpetaZip(res, rows[0]);
+  } catch (e) {
+    logger.error('[SOPORTES] zip carpeta:', e);
     if (!res.headersSent) {
       const notFound = /no tiene|no hay archivos|ZIP vacío/i.test(e.message || '');
       res.status(notFound ? 404 : 500).json({

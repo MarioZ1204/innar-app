@@ -407,10 +407,126 @@ async function streamUnifiedPeriodZip(res, periodo) {
   await pipeArchiveToResponse(res, entries);
 }
 
+function buildDiaChildrenMap(allDias) {
+  const map = new Map();
+  for (const d of allDias) {
+    const p = parseInt(d.parent_id, 10) || 0;
+    if (!map.has(p)) map.set(p, []);
+    map.get(p).push(d);
+  }
+  for (const list of map.values()) {
+    list.sort((a, b) => compararTextoNatural(a.nombre_display, b.nombre_display));
+  }
+  return map;
+}
+
+async function collectAnexoDiaZipEntries(dia, pathPrefix, usedPaths, out) {
+  if (!dia.anexo_archivo_id) return;
+  const archRows = await db.query('SELECT * FROM anexo_fidu_archivos WHERE id = ?', [dia.anexo_archivo_id]);
+  if (!archRows.length || !archRows[0].ruta_export) return;
+  const fp = resolveArchivoAbsoluto({ ruta_relativa: archRows[0].ruta_export });
+  if (!fp || !fs.existsSync(fp)) return;
+  const fname = path.basename(fp);
+  out.push({
+    absPath: fp,
+    name: uniqueEntryName(usedPaths, pathPrefix, fname, dia.nombre_display)
+  });
+}
+
+async function collectUcqnDiaZipEntries(dia, pathPrefix, usedPaths, out) {
+  const archivos = await db.query(
+    `SELECT a.* FROM sop_exp_archivos a
+     JOIN sop_expedientes e ON e.id = a.expediente_id
+     JOIN sop_contenedores c ON c.id = e.contenedor_id
+     WHERE c.dia_id = ? AND a.tipo = 'PDF'`,
+    [dia.id]
+  );
+  for (const a of archivos) {
+    const fp = resolveArchivoAbsoluto(a);
+    if (!fp || !fs.existsSync(fp)) continue;
+    const fname = a.nombre_original || a.nombre_archivo;
+    out.push({
+      absPath: fp,
+      name: uniqueEntryName(usedPaths, pathPrefix, fname, dia.nombre_display)
+    });
+  }
+}
+
+async function collectLeafDiaZipEntries(dia, pathPrefix, usedPaths, out) {
+  const modo = dia.modo || 'facturacion';
+  if (modo === 'ucqn') {
+    await collectUcqnDiaZipEntries(dia, pathPrefix, usedPaths, out);
+    return;
+  }
+  if (modo === 'anexo_fidu') {
+    await collectAnexoDiaZipEntries(dia, pathPrefix, usedPaths, out);
+    return;
+  }
+  await safeSyncRipsDia(dia.id);
+  const part = await collectDiaZipEntries(dia.id, null);
+  for (const e of part) {
+    let name = pathPrefix ? `${pathPrefix}/${e.name}` : e.name;
+    if (usedPaths.has(name)) {
+      const seg = zipArchiveSegment(dia.nombre_display || `dia-${dia.id}`);
+      name = pathPrefix ? `${pathPrefix}/${seg}_${e.name}` : `${seg}_${e.name}`;
+    }
+    usedPaths.add(name);
+    out.push({ absPath: e.absPath, name });
+  }
+}
+
+async function walkCarpetaZip(diaId, pathPrefix, diasById, childrenMap, usedPaths, out) {
+  const dia = diasById.get(diaId);
+  if (!dia) return;
+  if (!dia.es_contenedor) {
+    await collectLeafDiaZipEntries(dia, pathPrefix, usedPaths, out);
+    return;
+  }
+  const children = childrenMap.get(diaId) || [];
+  for (const child of children) {
+    const seg = zipArchiveSegment(child.nombre_display);
+    const next = pathPrefix ? `${pathPrefix}/${seg}` : seg;
+    await walkCarpetaZip(child.id, next, diasById, childrenMap, usedPaths, out);
+  }
+}
+
+async function collectCarpetaZipEntries(rootDiaId) {
+  const rootRows = await db.query('SELECT * FROM sop_dias WHERE id = ?', [rootDiaId]);
+  const root = rootRows[0];
+  if (!root) throw new Error('Carpeta no encontrada');
+
+  const allDias = await db.query('SELECT * FROM sop_dias WHERE periodo_id = ?', [root.periodo_id]);
+  const diasById = new Map(allDias.map((d) => [d.id, d]));
+  const childrenMap = buildDiaChildrenMap(allDias);
+  const usedPaths = new Set();
+  const entries = [];
+
+  if (!root.es_contenedor) {
+    await collectLeafDiaZipEntries(root, '', usedPaths, entries);
+  } else {
+    await walkCarpetaZip(rootDiaId, '', diasById, childrenMap, usedPaths, entries);
+  }
+
+  return filterValidZipEntries(entries);
+}
+
+async function streamCarpetaZip(res, rootDia) {
+  const entries = await collectCarpetaZipEntries(rootDia.id);
+  if (!entries.length) {
+    throw new Error('La carpeta no tiene archivos para descargar');
+  }
+  const zipLabel = zipArchiveSegment(rootDia.nombre_display || `carpeta-${rootDia.id}`);
+  res.setHeader('Content-Type', 'application/zip');
+  res.setHeader('Content-Disposition', `attachment; filename="${zipLabel}.zip"`);
+  res.setHeader('Cache-Control', 'no-store');
+  await pipeArchiveToResponse(res, entries);
+}
+
 module.exports = {
   zipArchiveSegment,
   facturaFolderName,
   collectDiaZipEntries,
+  collectCarpetaZipEntries,
   collectPeriodUnifiedEntries,
   createZipBuffer,
   buildPeriodPaqueteParts,
@@ -418,6 +534,7 @@ module.exports = {
   appendInnerZipToArchive,
   safeSyncRipsPeriodo,
   streamDiaZip,
+  streamCarpetaZip,
   streamPeriodPaqueteZip,
   streamUnifiedPeriodZip
 };
