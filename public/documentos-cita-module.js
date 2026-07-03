@@ -148,15 +148,64 @@
     if (tipoEl) {
       tipoEl.textContent = state.tipo
         ? `Seleccionado: ${LABEL_TIPO[state.tipo] || state.tipo}`
-        : 'Ninguna opción seleccionada';
+        : 'Paso 1: elija certificado o comprobante';
       tipoEl.classList.toggle('is-selected', !!state.tipo);
     }
     if (origenEl) {
       origenEl.textContent = state.origen
         ? `Seleccionado: ${LABEL_ORIGEN[state.origen] || state.origen}`
-        : 'Ninguna opción seleccionada';
+        : 'Paso 2: elija agenda médica o electro';
       origenEl.classList.toggle('is-selected', !!state.origen);
     }
+    actualizarPasosWizard();
+    actualizarSummaryChip();
+  }
+
+  function actualizarPasosWizard() {
+    const s1 = $('docmodStep1');
+    const s2 = $('docmodStep2');
+    const s3 = $('docmodStep3');
+    const pacienteCard = $('docmodPacienteCard');
+    const btnGen = $('btnDocmodGenerar');
+    const docInput = $('docmodDocumento');
+
+    if (s1) {
+      s1.classList.toggle('is-done', !!state.tipo);
+      s1.classList.toggle('is-active', !state.tipo);
+    }
+    if (s2) {
+      s2.classList.toggle('is-done', !!state.origen);
+      s2.classList.toggle('is-active', !!state.tipo && !state.origen);
+      s2.classList.toggle('is-disabled', !state.tipo);
+    }
+    if (s3) {
+      s3.classList.toggle('is-active', !!state.tipo && !!state.origen);
+      s3.classList.toggle('is-done', false);
+    }
+
+    const listo = !!(state.tipo && state.origen);
+    pacienteCard?.classList.toggle('docmod-panel--locked', !listo);
+    if (btnGen) btnGen.disabled = !listo;
+    if (docInput) docInput.disabled = !listo;
+  }
+
+  function actualizarSummaryChip() {
+    const chip = $('docmodSummaryChip');
+    if (!chip) return;
+    if (!state.tipo) {
+      chip.textContent = 'Complete los pasos para continuar';
+      chip.classList.remove('is-ready');
+      return;
+    }
+    const tipo = LABEL_TIPO[state.tipo] || state.tipo;
+    if (!state.origen) {
+      chip.textContent = `${tipo} · falta origen`;
+      chip.classList.remove('is-ready');
+      return;
+    }
+    const origen = LABEL_ORIGEN[state.origen] || state.origen;
+    chip.textContent = `${tipo} · ${origen}`;
+    chip.classList.add('is-ready');
   }
 
   function actualizarSeccionOrigen() {
@@ -179,6 +228,7 @@
   function seleccionarOrigen(origen) {
     state.origen = origen;
     marcarBotonesGrupo('[data-docmod-origen]', 'data-docmod-origen', state.origen);
+    actualizarResumenesSeleccion();
   }
 
   function sincronizarUiSeleccion() {

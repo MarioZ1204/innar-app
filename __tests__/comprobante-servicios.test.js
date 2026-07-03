@@ -77,6 +77,24 @@ describe('comprobante-servicios', () => {
     expect(r.error).toMatch(/firma/i);
   });
 
+  test('conserva el texto libre del servicio sin mapear al catálogo CUPS', () => {
+    const servicioManual = 'Monitorización Electroencefalografica por Video y Radio por 8 horas';
+    const r = validarPayloadComprobanteServicios({
+      fecha: '2026-05-27',
+      paciente_nombre: 'Test Paciente',
+      paciente_documento: '1234567890',
+      fecha_nacimiento: '2000-01-01',
+      direccion: 'Calle 1',
+      telefono: '3001234567',
+      correo: 'test@example.com',
+      tipo_afiliacion: 'Cotizante',
+      servicio: servicioManual,
+      firma_paciente: FIRMA_MINI
+    });
+    expect(r.error).toBeUndefined();
+    expect(r.data.servicio).toBe(servicioManual);
+  });
+
   test('HTML incluye datos, servicio, firma y pie FORM-24', () => {
     const { data } = validarPayloadComprobanteServicios({
       fecha: '2026-05-27',
@@ -94,7 +112,7 @@ describe('comprobante-servicios', () => {
     expect(html).toContain(COMPROBANTE_SERVICIOS_TITULO);
     expect(html).toContain(COMPROBANTE_SERVICIOS_FOMAG_TEXTO);
     expect(html).toContain('MARIO FERNANDO ZAMBRANO MEJIA');
-    expect(html).toMatch(/neurolog[ií]a control/i);
+    expect(html).toContain('Consulta de Control por Neurología');
     expect(html).toContain('cmp-firma-paciente');
     expect(html).toContain('FIRMA DEL PACIENTE:');
     expect(html).toContain('cmp-acudiente');

@@ -1,7 +1,6 @@
 'use strict';
 
 const { FONDO_PRINT_CSS, buildPageFondoImg } = require('./documento-imprimible');
-const { nombreServicioComprobanteCups, textoServicioComprobante } = require('./comprobante-servicio-cups');
 
 const COMPROBANTE_SERVICIOS_TITULO =
   'FORMATO DE FIRMA DE PACIENTE COMO COMPROBANTE DE RECIBIDO EL SERVICIO - PACIENTE DE FOMAG';
@@ -127,7 +126,7 @@ function validarPayloadComprobanteServicios(body = {}) {
   const telefono = String(body.telefono || '').trim();
   const correo = String(body.correo || '').trim();
   const tipoAfiliacion = String(body.tipo_afiliacion || '').trim();
-  const servicio = textoServicioComprobante(String(body.servicio || '').trim());
+  const servicio = String(body.servicio || '').trim();
   const firmaPaciente = parseImagenBase64(body.firma_paciente);
 
   if (!parseFechaYmd(fecha)) return { error: 'Fecha inválida' };

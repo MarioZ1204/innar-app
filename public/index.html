@@ -28,7 +28,7 @@
   <link rel="stylesheet" href="innar-electro-estudio-ui.css?v=20260625-2">
   <link rel="stylesheet" href="innar-electro-calendario.css?v=20260625-2">
   <link rel="stylesheet" href="innar-backup.css?v=20260625-2">
-  <link rel="stylesheet" href="innar-documentos-cita.css?v=20260625-2">
+  <link rel="stylesheet" href="innar-documentos-cita.css?v=20260703-2">
   <link rel="stylesheet" href="innar-persona-fidu.css?v=20260625-2">
   <link rel="stylesheet" href="innar-anexo-fidu.css?v=20260625-2">
   <link rel="stylesheet" href="innar-responsive-mobile-fix.css?v=20260625-2">
@@ -2884,72 +2884,117 @@
         </div>
       </div>
       <div class="main-content">
-        <div class="container">
-          <header class="no-print">
-            <h2>Comprobantes y certificados</h2>
-            <p style="margin:6px 0 0;font-size:.875rem;color:#64748b">Genere un certificado de asistencia o comprobante FOMAG por número de documento del paciente.</p>
+        <div class="container docmod-page">
+          <header class="docmod-hero no-print">
+            <div class="docmod-hero-main">
+              <p class="docmod-hero-kicker">Documentos FOMAG</p>
+              <h2 class="docmod-hero-title">Comprobantes y certificados</h2>
+              <p class="docmod-hero-desc">Seleccione el tipo de documento, el origen del servicio e ingrese el documento del paciente para generar el PDF.</p>
+            </div>
+            <aside class="docmod-hero-aside" aria-live="polite">
+              <span class="docmod-hero-aside-label">Selección actual</span>
+              <p id="docmodSummaryChip" class="docmod-summary-chip">Complete los pasos para continuar</p>
+            </aside>
           </header>
 
-          <section class="card no-print" id="docmodConfigCard">
-            <h3 style="margin-top:0">Tipo de documento</h3>
-            <p id="docmodTipoResumen" class="docmod-pick-resumen" aria-live="polite">Ninguna opción seleccionada</p>
-            <div class="docmod-pick-grid" role="group" aria-label="Tipo de documento">
-              <button type="button" class="docmod-pick-card" data-docmod-tipo="certificado" aria-pressed="false">
-                <span class="docmod-pick-check" aria-hidden="true"></span>
-                <span class="docmod-pick-text">
-                  <span class="docmod-pick-title">Certificado de asistencia</span>
-                  <span class="docmod-pick-desc">Constancia de asistencia</span>
-                </span>
-                <span class="docmod-pick-badge">Seleccionado</span>
-              </button>
-              <button type="button" class="docmod-pick-card" data-docmod-tipo="comprobante" aria-pressed="false">
-                <span class="docmod-pick-check" aria-hidden="true"></span>
-                <span class="docmod-pick-text">
-                  <span class="docmod-pick-title">Comprobante de servicios</span>
-                  <span class="docmod-pick-desc">Formato FOMAG</span>
-                </span>
-                <span class="docmod-pick-badge">Seleccionado</span>
-              </button>
-            </div>
-            <div id="docmodOrigenSection" class="docmod-origen-block hidden">
-              <h3>Origen del servicio</h3>
-              <p id="docmodOrigenResumen" class="docmod-pick-resumen" aria-live="polite">Ninguna opción seleccionada</p>
-              <div class="docmod-pick-grid docmod-pick-grid--origen" role="group" aria-label="Origen del servicio">
-                <button type="button" class="docmod-pick-card" data-docmod-origen="medica" aria-pressed="false">
-                  <span class="docmod-pick-check" aria-hidden="true"></span>
-                  <span class="docmod-pick-text">
-                    <span class="docmod-pick-title">Cita médica</span>
-                    <span class="docmod-pick-desc">Agenda médica</span>
-                  </span>
-                  <span class="docmod-pick-badge">Seleccionado</span>
-                </button>
-                <button type="button" class="docmod-pick-card" data-docmod-origen="electro" aria-pressed="false">
-                  <span class="docmod-pick-check" aria-hidden="true"></span>
-                  <span class="docmod-pick-text">
-                    <span class="docmod-pick-title">Electrodiagnóstico</span>
-                    <span class="docmod-pick-desc">Agenda de electro</span>
-                  </span>
-                  <span class="docmod-pick-badge">Seleccionado</span>
-                </button>
-              </div>
-            </div>
-          </section>
+          <ol class="docmod-steps no-print" aria-label="Pasos del formulario">
+            <li class="docmod-step is-active" id="docmodStep1" data-step="1">
+              <span class="docmod-step-num">1</span>
+              <span class="docmod-step-text">Tipo de documento</span>
+            </li>
+            <li class="docmod-step" id="docmodStep2" data-step="2">
+              <span class="docmod-step-num">2</span>
+              <span class="docmod-step-text">Origen</span>
+            </li>
+            <li class="docmod-step" id="docmodStep3" data-step="3">
+              <span class="docmod-step-num">3</span>
+              <span class="docmod-step-text">Paciente</span>
+            </li>
+          </ol>
 
-          <section class="card no-print">
-            <h3 style="margin-top:0">Paciente</h3>
-            <p style="margin:0 0 12px;font-size:.85rem;color:#64748b">Ingrese el número de documento del paciente y pulse Generar.</p>
-            <div class="docmod-buscar-row">
-              <div class="docmod-field docmod-field-grow">
-                <label for="docmodDocumento">Número de documento *</label>
-                <input type="text" id="docmodDocumento" inputmode="numeric" autocomplete="off" placeholder="Ej. 1234567890" />
+          <div class="docmod-layout no-print">
+            <section class="card docmod-panel" id="docmodConfigCard">
+              <div class="docmod-panel-head">
+                <h3>Configuración del documento</h3>
+                <p id="docmodTipoResumen" class="docmod-pick-resumen" aria-live="polite">Paso 1: elija certificado o comprobante</p>
               </div>
-              <div class="docmod-field docmod-field-action">
-                <label>&nbsp;</label>
-                <button type="button" class="docmod-btn-generar" id="btnDocmodGenerar">Generar</button>
+              <div class="docmod-pick-grid" role="group" aria-label="Tipo de documento">
+                <button type="button" class="docmod-pick-card" data-docmod-tipo="certificado" aria-pressed="false">
+                  <span class="docmod-pick-icon docmod-pick-icon--cert" aria-hidden="true">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                  </span>
+                  <span class="docmod-pick-check" aria-hidden="true"></span>
+                  <span class="docmod-pick-text">
+                    <span class="docmod-pick-title">Certificado de asistencia</span>
+                    <span class="docmod-pick-desc">Constancia de asistencia a cita o estudio</span>
+                  </span>
+                  <span class="docmod-pick-badge">Seleccionado</span>
+                </button>
+                <button type="button" class="docmod-pick-card" data-docmod-tipo="comprobante" aria-pressed="false">
+                  <span class="docmod-pick-icon docmod-pick-icon--comp" aria-hidden="true">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 8h10M7 12h6"/><path d="M16 16l2 2 4-4"/></svg>
+                  </span>
+                  <span class="docmod-pick-check" aria-hidden="true"></span>
+                  <span class="docmod-pick-text">
+                    <span class="docmod-pick-title">Comprobante de servicios</span>
+                    <span class="docmod-pick-desc">Formato FOMAG con firma del paciente</span>
+                  </span>
+                  <span class="docmod-pick-badge">Seleccionado</span>
+                </button>
               </div>
-            </div>
-            <p id="docmodBuscarMsg" class="docmod-status" aria-live="polite"></p>
-          </section>
+              <div id="docmodOrigenSection" class="docmod-origen-block hidden">
+                <div class="docmod-panel-head docmod-panel-head--sub">
+                  <h3>Origen del servicio</h3>
+                  <p id="docmodOrigenResumen" class="docmod-pick-resumen" aria-live="polite">Paso 2: elija agenda médica o electro</p>
+                </div>
+                <div class="docmod-pick-grid docmod-pick-grid--origen" role="group" aria-label="Origen del servicio">
+                  <button type="button" class="docmod-pick-card" data-docmod-origen="medica" aria-pressed="false">
+                    <span class="docmod-pick-icon docmod-pick-icon--med" aria-hidden="true">
+                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+                    </span>
+                    <span class="docmod-pick-check" aria-hidden="true"></span>
+                    <span class="docmod-pick-text">
+                      <span class="docmod-pick-title">Cita médica</span>
+                      <span class="docmod-pick-desc">Consultas de agenda médica</span>
+                    </span>
+                    <span class="docmod-pick-badge">Seleccionado</span>
+                  </button>
+                  <button type="button" class="docmod-pick-card" data-docmod-origen="electro" aria-pressed="false">
+                    <span class="docmod-pick-icon docmod-pick-icon--elec" aria-hidden="true">
+                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+                    </span>
+                    <span class="docmod-pick-check" aria-hidden="true"></span>
+                    <span class="docmod-pick-text">
+                      <span class="docmod-pick-title">Electrodiagnóstico</span>
+                      <span class="docmod-pick-desc">Estudios de electrodiagnóstico</span>
+                    </span>
+                    <span class="docmod-pick-badge">Seleccionado</span>
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            <section class="card docmod-panel docmod-panel--paciente" id="docmodPacienteCard">
+              <div class="docmod-panel-head">
+                <h3>Buscar paciente</h3>
+                <p class="docmod-panel-desc">Ingrese el número de documento. Si existe en la base, se cargarán sus datos automáticamente.</p>
+              </div>
+              <div class="docmod-buscar-row">
+                <div class="docmod-field docmod-field-grow">
+                  <label for="docmodDocumento">Número de documento *</label>
+                  <input type="text" id="docmodDocumento" inputmode="numeric" autocomplete="off" placeholder="Ej. 1234567890" />
+                </div>
+                <div class="docmod-field docmod-field-action">
+                  <label class="docmod-sr-only" for="btnDocmodGenerar">Generar documento</label>
+                  <button type="button" class="docmod-btn-generar" id="btnDocmodGenerar">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                    Generar documento
+                  </button>
+                </div>
+              </div>
+              <p id="docmodBuscarMsg" class="docmod-status" aria-live="polite"></p>
+            </section>
+          </div>
         </div>
       </div>
     </div>
@@ -4163,7 +4208,7 @@
   <script src="/libs/html2canvas.min.js?v=20260625-2"></script>
   <script src="firma-quitar-fondo.js?v=20260625-2"></script>
   <script src="documento-pdf-cliente.js?v=20260625-2"></script>
-  <script src="documentos-cita-module.js?v=20260703-1"></script>
+  <script src="documentos-cita-module.js?v=20260703-2"></script>
   <script src="app.js?v=20260703-1"></script>
   <script src="anexo-fidu.js?v=1.7.4"></script>
   <script src="soportes-pdf-editor.js?v=20260625-2"></script>
