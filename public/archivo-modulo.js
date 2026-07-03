@@ -4,6 +4,8 @@
 (function () {
   'use strict';
 
+  let initArchivoDone = false;
+
   function $(id) { return document.getElementById(id); }
 
   function escapeHtml(s) {
@@ -25,9 +27,17 @@
   }
 
   async function apiArchivo(path, opts) {
-    const res = await fetch(`/api${path}`, { credentials: 'include', cache: 'no-store', ...(opts || {}) });
+    const fetchFn = typeof apiFetch === 'function' ? apiFetch : fetch;
+    const res = await fetchFn(`/api${path}`, {
+      credentials: 'include',
+      cache: 'no-store',
+      ...(opts || {})
+    });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
+    if (!res.ok) {
+      const msg = data.error || (data.code === 'CSRF_INVALID' ? 'Sesión de seguridad desactualizada. Recargue la página e intente de nuevo.' : `Error ${res.status}`);
+      throw new Error(msg);
+    }
     return data;
   }
 
@@ -60,7 +70,11 @@
           const id = parseInt(btn.dataset.archivoRegen, 10);
           btn.disabled = true;
           try {
-            await apiArchivo(`/archivo-modulo/${id}/regenerar-backup`, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+            await apiArchivo(`/archivo-modulo/${id}/regenerar-backup`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: '{}'
+            });
             if (typeof showToast === 'function') showToast('Copia de seguridad generada', 'success');
             await cargarArchivoModulo();
           } catch (e) {
@@ -76,10 +90,14 @@
   }
 
   function initArchivoModulo() {
-    $('btnVolverArchivoModulo')?.addEventListener('click', () => {
-      if (typeof showMenu === 'function') showMenu();
-    });
-    $('btnArchivoModuloRefrescar')?.addEventListener('click', () => cargarArchivoModulo());
+    if (!initArchivoDone) {
+      initArchivoDone = true;
+      $('btnVolverArchivoModulo')?.addEventListener('click', () => {
+        if (typeof goToMenu === 'function') goToMenu();
+        else if (typeof showView === 'function') showView('view-menu');
+      });
+      $('btnArchivoModuloRefrescar')?.addEventListener('click', () => cargarArchivoModulo());
+    }
     cargarArchivoModulo();
   }
 

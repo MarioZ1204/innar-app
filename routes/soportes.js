@@ -2366,9 +2366,15 @@ router.patch('/soportes/armado/expedientes/:id', requireAuth, requireRoleOrPerm(
   try {
     const result = await actualizarExpediente(req.params.id, req.body || {});
     if (result.error) return res.status(result.status || 400).json({ error: result.error });
-    const detail = await buildExpedienteDetail(req.params.id);
-    res.json({ ok: true, expediente: detail, renombrado: result.renombrado || null });
+    let expediente = null;
+    try {
+      expediente = await buildExpedienteDetail(req.params.id);
+    } catch (detailErr) {
+      logger.error('[SOPORTES] buildExpedienteDetail tras PATCH expediente:', detailErr);
+    }
+    res.json({ ok: true, expediente, renombrado: result.renombrado || null });
   } catch (e) {
+    logger.error('[SOPORTES] PATCH expediente:', e);
     res.status(500).json({ error: safeError(e) });
   }
 });

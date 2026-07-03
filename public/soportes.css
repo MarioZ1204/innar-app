@@ -1160,6 +1160,105 @@
   font-size: 0.8rem;
 }
 
+/* Panel flotante — progreso de subida (PDX / Soportes) */
+.sop-upload-progress-panel {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 10120;
+  width: min(420px, calc(100vw - 32px));
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  box-shadow: 0 12px 40px rgba(15, 23, 42, 0.18);
+  opacity: 0;
+  transform: translateY(12px);
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.sop-upload-progress-panel.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+.sop-upload-progress-panel.is-success {
+  border-color: #6ee7b7;
+  background: linear-gradient(135deg, #ecfdf5 0%, #fff 100%);
+}
+.sop-upload-progress-panel.is-error {
+  border-color: #fca5a5;
+  background: linear-gradient(135deg, #fef2f2 0%, #fff 100%);
+}
+.sop-upload-progress-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.sop-upload-progress-title {
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: #0f172a;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.sop-upload-progress-pct {
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: #0369a1;
+  font-variant-numeric: tabular-nums;
+}
+.sop-upload-progress-panel.is-success .sop-upload-progress-pct {
+  color: #047857;
+}
+.sop-upload-progress-panel.is-error .sop-upload-progress-pct {
+  color: #b91c1c;
+}
+.sop-upload-progress-bar-wrap {
+  height: 8px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+.sop-upload-progress-bar {
+  height: 100%;
+  width: 0%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #0ea5e9, #0284c7);
+  transition: width 0.15s ease;
+}
+.sop-upload-progress-panel.is-success .sop-upload-progress-bar {
+  background: linear-gradient(90deg, #34d399, #059669);
+}
+.sop-upload-progress-panel.is-error .sop-upload-progress-bar {
+  background: linear-gradient(90deg, #f87171, #dc2626);
+}
+.sop-upload-progress-file {
+  font-size: 0.78rem;
+  color: #475569;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sop-upload-progress-status {
+  margin-top: 6px;
+  font-size: 0.76rem;
+  color: #64748b;
+  min-height: 1.1em;
+}
+.sop-upload-progress-panel.is-success .sop-upload-progress-status {
+  color: #047857;
+  font-weight: 600;
+}
+.sop-upload-progress-panel.is-error .sop-upload-progress-status {
+  color: #b91c1c;
+  font-weight: 600;
+}
+
 .sop-estudio-badge {
   display: inline-flex;
   align-items: center;

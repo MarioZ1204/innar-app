@@ -2,7 +2,7 @@
  * Campos mínimos por tipo de carpeta PDX y evaluación flexible del nombre de archivo.
  */
 const { detectarTemaCarpeta, inferirEstudioDesdeCarpeta, esTemaOrdenHcConsultaMedica } = require('./soportes-temas');
-const { estudioPsgReconocido } = require('./soportes-pdx-parse');
+const { estudioPsgReconocido, separarNombreCompletoConsultaMedica } = require('./soportes-pdx-parse');
 const {
   normalizarNumeroDocumentoPdx,
   normalizarTipoDocumentoPdx,
@@ -18,18 +18,19 @@ function esTemaReporteClinico(tema) {
 }
 
 function definicionCamposPorTema(tema) {
+  if (tema === 'comprobantes_consulta_medica') {
+    return [
+      { key: 'paciente_nombre_completo', label: 'Nombre completo', requerido: true, input: 'nombre_completo' },
+      { key: 'fecha_estudio', label: 'Fecha del estudio', requerido: true, input: 'date' },
+      { key: 'estudio_texto', label: 'Especialidad', requerido: true, input: 'especialidad' }
+    ];
+  }
   const base = [
     { key: 'apellidos', label: 'Apellidos', requerido: true, input: 'text' },
     { key: 'nombres', label: 'Nombres', requerido: true, input: 'text' },
     { key: 'fecha_estudio', label: 'Fecha del estudio', requerido: true, input: 'date' }
   ];
   if (esTemaOrdenHcConsultaMedica(tema)) {
-    return [
-      ...base,
-      { key: 'estudio_texto', label: 'Especialidad', requerido: true, input: 'especialidad' }
-    ];
-  }
-  if (tema === 'comprobantes_consulta_medica') {
     return [
       ...base,
       { key: 'estudio_texto', label: 'Especialidad', requerido: true, input: 'especialidad' }
@@ -67,9 +68,21 @@ function definicionCamposPorTema(tema) {
 
 function mergeDatosNombre(parcial, parsed) {
   const p = parsed?.ok ? parsed : {};
+  let apellidos = String(p.apellidos || parcial?.apellidos || '').trim();
+  let nombres = String(p.nombres || parcial?.nombres || '').trim();
+  let nombreCompleto = String(p.paciente_nombre_completo || parcial?.paciente_nombre_completo || '').trim();
+  if (!nombreCompleto && apellidos && nombres) {
+    nombreCompleto = `${nombres} ${apellidos}`.trim();
+  }
+  if (nombreCompleto && (!apellidos || !nombres)) {
+    const split = separarNombreCompletoConsultaMedica(nombreCompleto);
+    if (split.apellidos) apellidos = split.apellidos;
+    if (split.nombres) nombres = split.nombres;
+  }
   return {
-    apellidos: String(p.apellidos || parcial?.apellidos || '').trim(),
-    nombres: String(p.nombres || parcial?.nombres || '').trim(),
+    paciente_nombre_completo: nombreCompleto,
+    apellidos,
+    nombres,
     tipo_documento: normalizarTipoDocumentoPdx(p.tipo_documento || parcial?.tipo_documento || 'CC'),
     paciente_documento: normalizarNumeroDocumentoPdx(p.paciente_documento || parcial?.paciente_documento || ''),
     fecha_estudio: String(p.fecha_estudio || parcial?.fecha_estudio || '').trim(),
@@ -113,6 +126,12 @@ function valorCampoDetectado(def, datos, tema, carpeta) {
   if (def.key === 'tipo_documento') {
     const tipo = normalizarTipoDocumentoPdx(valor);
     return { valor: tipo, detectado: !!tipo, automatico: false };
+  }
+  if (def.key === 'paciente_nombre_completo') {
+    const full = valor || `${datos.nombres || ''} ${datos.apellidos || ''}`.trim();
+    const tokens = full.split(/\s+/).filter(Boolean);
+    const ok = tokens.length >= 2;
+    return { valor: full, detectado: ok, automatico: false };
   }
   return { valor, detectado: !!valor, automatico: false };
 }

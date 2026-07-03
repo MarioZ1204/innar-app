@@ -208,6 +208,11 @@
     return t === 'comprobantes_consulta_medica' || t === 'ordenes_consulta_medica';
   }
 
+  function esCarpetaComprobanteConsultaMedicaPdx(carpetaOrNombre) {
+    const t = detectarTemaCarpetaCliente(typeof carpetaOrNombre === 'string' ? carpetaOrNombre : carpetaOrNombre?.nombre_display);
+    return t === 'comprobantes_consulta_medica';
+  }
+
   function esCarpetaPsgReportePdx(carpetaOrNombre) {
     return detectarTemaCarpetaCliente(typeof carpetaOrNombre === 'string' ? carpetaOrNombre : carpetaOrNombre?.nombre_display) === 'psg';
   }
@@ -538,7 +543,7 @@
       return { oblig: [...oblig, 'Especialidad'], opc };
     }
     if (tema === 'comprobantes_consulta_medica') {
-      return { oblig: [...oblig, 'Especialidad'], opc };
+      return { oblig: ['Nombre completo', 'Fecha del estudio', 'Especialidad'], opc };
     }
     if (esCarpetaEstructuradaPdx({ nombre_display: tema }) && !esCarpetaConsultaMedicaPdx({ nombre_display: tema })) {
       return { oblig: [...oblig, 'Número de documento (solo dígitos)', 'Tipo de examen'], opc: [...opc, 'Tipo de documento (CC, TI, RC…)'] };
@@ -553,12 +558,19 @@
   }
 
   function camposFallbackUnificarPdx(tema) {
+    if (tema === 'comprobantes_consulta_medica') {
+      return [
+        { key: 'paciente_nombre_completo', label: 'Nombre completo', requerido: true, input: 'nombre_completo', estado: 'falta' },
+        { key: 'fecha_estudio', label: 'Fecha del estudio', requerido: true, input: 'date', estado: 'falta' },
+        { key: 'estudio_texto', label: 'Especialidad', requerido: true, input: 'especialidad', estado: 'falta' }
+      ];
+    }
     const base = [
       { key: 'apellidos', label: 'Apellidos', requerido: true, input: 'text', estado: 'falta' },
       { key: 'nombres', label: 'Nombres', requerido: true, input: 'text', estado: 'falta' },
       { key: 'fecha_estudio', label: 'Fecha del estudio', requerido: true, input: 'date', estado: 'falta' }
     ];
-    if (tema === 'ordenes_consulta_medica' || tema === 'comprobantes_consulta_medica') {
+    if (tema === 'ordenes_consulta_medica') {
       base.push({ key: 'estudio_texto', label: 'Especialidad', requerido: true, input: 'especialidad', estado: 'falta' });
     } else if (esCarpetaEstructuradaPdx({ nombre_display: tema }) && !esCarpetaConsultaMedicaPdx({ nombre_display: tema })) {
       base.push(
@@ -635,6 +647,13 @@
         <label>${escapeHtml(c.label)} * ${badgeEstadoCampoPdx(c)}</label>
         <select class="sop-pdx-campo-input" data-key="${c.key}" data-tipo="psg"></select></div>`;
     }
+    if (c.input === 'nombre_completo') {
+      const full = c.valor || datos.paciente_nombre_completo
+        || ((datos.apellidos && datos.nombres) ? `${datos.nombres} ${datos.apellidos}`.trim() : (datos.paciente_nombre || ''));
+      return `<div class="${wrapCls}" data-campo="${c.key}">
+        <label>${escapeHtml(c.label)}${c.requerido ? ' *' : ''} ${badgeEstadoCampoPdx(c)}</label>
+        <input type="text" class="sop-pdx-campo-input" data-key="${c.key}" value="${escapeHtml(full)}" placeholder="Nombres y apellidos"></div>`;
+    }
     if (c.input === 'inferred') {
       return `<div class="${wrapCls}" data-campo="${c.key}">
         <label>${escapeHtml(c.label)} ${badgeEstadoCampoPdx(c)}</label>
@@ -658,6 +677,14 @@
     }
     if (body.tipo_documento != null) {
       body.tipo_documento = normalizarTipoDocumentoCliente(body.tipo_documento);
+    }
+    if (body.paciente_nombre_completo != null) {
+      const full = String(body.paciente_nombre_completo || '').trim();
+      if (full) {
+        const split = separarNombreCompletoConsultaMedicaCliente(full);
+        if (split.nombres) body.nombres = split.nombres;
+        if (split.apellidos) body.apellidos = split.apellidos;
+      }
     }
     return body;
   }
@@ -1625,6 +1652,210 @@
     else alert(msg);
   }
 
+  let sopUploadUi = null;
+  let sopUploadHideTimer = null;
+
+  function sopUploadPanelEl() {
+    if (sopUploadUi?.panel?.isConnected) return sopUploadUi.panel;
+    const panel = document.createElement('div');
+    panel.id = 'sopUploadProgressPanel';
+    panel.className = 'sop-upload-progress-panel';
+    panel.setAttribute('role', 'status');
+    panel.setAttribute('aria-live', 'polite');
+    panel.innerHTML = `
+      <div class="sop-upload-progress-head">
+        <span class="sop-upload-progress-title" id="sopUploadProgressTitle">Subiendo…</span>
+        <span class="sop-upload-progress-pct" id="sopUploadProgressPct">0%</span>
+      </div>
+      <div class="sop-upload-progress-bar-wrap" aria-hidden="true">
+        <div class="sop-upload-progress-bar" id="sopUploadProgressBar"></div>
+      </div>
+      <div class="sop-upload-progress-file" id="sopUploadProgressFile">—</div>
+      <div class="sop-upload-progress-status" id="sopUploadProgressStatus"></div>`;
+    document.body.appendChild(panel);
+    sopUploadUi = {
+      panel,
+      title: panel.querySelector('#sopUploadProgressTitle'),
+      pct: panel.querySelector('#sopUploadProgressPct'),
+      bar: panel.querySelector('#sopUploadProgressBar'),
+      file: panel.querySelector('#sopUploadProgressFile'),
+      status: panel.querySelector('#sopUploadProgressStatus')
+    };
+    return panel;
+  }
+
+  function sopUploadClearHideTimer() {
+    if (sopUploadHideTimer) {
+      clearTimeout(sopUploadHideTimer);
+      sopUploadHideTimer = null;
+    }
+  }
+
+  function sopUploadShowPanel() {
+    sopUploadClearHideTimer();
+    const panel = sopUploadPanelEl();
+    panel.classList.remove('is-success', 'is-error');
+    panel.classList.add('is-visible');
+  }
+
+  function sopUploadHidePanel(delayMs = 0) {
+    sopUploadClearHideTimer();
+    const hide = () => {
+      const panel = sopUploadUi?.panel;
+      if (!panel) return;
+      panel.classList.remove('is-visible', 'is-success', 'is-error');
+    };
+    if (delayMs > 0) sopUploadHideTimer = setTimeout(hide, delayMs);
+    else hide();
+  }
+
+  function sopUploadCalcOverallPercent(fileIndex, batchTotal, filePercent) {
+    const idx = Math.max(1, fileIndex || 1);
+    const tot = Math.max(1, batchTotal || 1);
+    const pct = Math.max(0, Math.min(100, filePercent ?? 0));
+    if (tot <= 1) return pct;
+    return Math.round(((idx - 1) + pct / 100) / tot * 100);
+  }
+
+  function sopUploadUpdateBar(fileIndex, batchTotal, filePercent, statusText) {
+    if (!sopUploadUi) return;
+    const overall = sopUploadCalcOverallPercent(fileIndex, batchTotal, filePercent);
+    sopUploadUi.bar.style.width = `${overall}%`;
+    sopUploadUi.pct.textContent = `${overall}%`;
+    if (statusText != null) sopUploadUi.status.textContent = statusText;
+  }
+
+  function sopUploadBegin({ title = 'Subiendo archivos', total = 1 } = {}) {
+    sopUploadShowPanel();
+    if (sopUploadUi.title) sopUploadUi.title.textContent = title;
+    if (sopUploadUi.file) {
+      sopUploadUi.file.textContent = total > 1 ? `Preparando lote (${total} archivo(s))…` : 'Preparando…';
+    }
+    if (sopUploadUi.status) sopUploadUi.status.textContent = 'Iniciando subida…';
+    sopUploadUpdateBar(1, total, 0, null);
+  }
+
+  function sopUploadSetFile(fileIndex, batchTotal, fileName) {
+    if (!sopUploadUi) return;
+    const idx = Math.max(1, fileIndex || 1);
+    const tot = Math.max(1, batchTotal || 1);
+    const name = String(fileName || 'Archivo');
+    sopUploadUi.file.textContent = tot > 1 ? `${idx}/${tot}: ${name}` : name;
+    sopUploadUi.status.textContent = 'Enviando al servidor…';
+    sopUploadUpdateBar(idx, tot, 0, 'Enviando al servidor…');
+  }
+
+  function sopUploadFinish({ state = 'success', message = '', delayMs } = {}) {
+    if (!sopUploadUi) return;
+    const ok = state === 'success';
+    const panel = sopUploadUi.panel;
+    panel.classList.toggle('is-success', ok);
+    panel.classList.toggle('is-error', !ok);
+    sopUploadUi.bar.style.width = ok ? '100%' : sopUploadUi.bar.style.width || '0%';
+    sopUploadUi.pct.textContent = ok ? '100%' : sopUploadUi.pct.textContent;
+    if (message) sopUploadUi.status.textContent = message;
+    sopUploadHidePanel(delayMs ?? (ok ? 2600 : 4500));
+  }
+
+  function sopUploadParseJson(text) {
+    try { return JSON.parse(text || '{}'); } catch (_) { return {}; }
+  }
+
+  async function sopUploadRefreshCsrf() {
+    try {
+      const rs = await fetch('/api/sesion', { credentials: 'include' });
+      const sd = await rs.json();
+      if (sd && sd.csrfToken && typeof window.innarCsrfToken !== 'undefined') {
+        window.innarCsrfToken = sd.csrfToken;
+      }
+      return sd?.csrfToken || '';
+    } catch (_) {
+      return '';
+    }
+  }
+
+  function apiUploadFormData(url, formData, opts = {}) {
+    const fileIndex = opts.fileIndex || 1;
+    const batchTotal = opts.batchTotal || 1;
+    const onProgress = typeof opts.onProgress === 'function' ? opts.onProgress : null;
+
+    return new Promise((resolve, reject) => {
+      const send = (csrf, isRetry) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', url, true);
+        xhr.withCredentials = true;
+        if (csrf) xhr.setRequestHeader('x-csrf-token', csrf);
+        xhr.upload.addEventListener('progress', (e) => {
+          if (!onProgress) return;
+          if (e.lengthComputable && e.total > 0) {
+            const percent = Math.round((e.loaded / e.total) * 100);
+            onProgress({ loaded: e.loaded, total: e.total, percent });
+            sopUploadUpdateBar(fileIndex, batchTotal, percent, 'Enviando al servidor…');
+          } else {
+            onProgress({ loaded: e.loaded, total: 0, percent: null });
+            sopUploadUpdateBar(fileIndex, batchTotal, 50, 'Enviando al servidor…');
+          }
+        });
+        xhr.onload = async () => {
+          const data = sopUploadParseJson(xhr.responseText);
+          if (xhr.status === 403 && data.code === 'CSRF_INVALID' && !isRetry) {
+            const newCsrf = await sopUploadRefreshCsrf();
+            if (newCsrf) return send(newCsrf, true);
+          }
+          resolve({
+            ok: xhr.status >= 200 && xhr.status < 300,
+            status: xhr.status,
+            data
+          });
+        };
+        xhr.onerror = () => reject(new Error('Error de conexión al subir'));
+        xhr.onabort = () => reject(new Error('Subida cancelada'));
+        xhr.send(formData);
+      };
+      const csrf = typeof getCsrfForRequest === 'function' ? getCsrfForRequest() : '';
+      send(csrf, false);
+    });
+  }
+
+  async function subirFormDataConProgreso(url, formData, ctx = {}) {
+    const {
+      title = 'Subiendo archivo',
+      fileName = 'Archivo',
+      fileIndex = 1,
+      batchTotal = 1,
+      manageSession = true
+    } = ctx;
+
+    if (manageSession && fileIndex === 1) {
+      sopUploadBegin({ title, total: batchTotal });
+    }
+    sopUploadSetFile(fileIndex, batchTotal, fileName);
+
+    try {
+      const res = await apiUploadFormData(url, formData, {
+        fileIndex,
+        batchTotal,
+        onProgress: ({ percent }) => {
+          sopUploadUpdateBar(fileIndex, batchTotal, percent ?? 0, 'Enviando al servidor…');
+        }
+      });
+      if (manageSession && fileIndex === batchTotal) {
+        if (res.ok) {
+          sopUploadFinish({
+            state: 'success',
+            message: batchTotal > 1 ? 'Lote enviado correctamente' : 'Archivo subido correctamente'
+          });
+        }
+      }
+      return res;
+    } catch (e) {
+      if (manageSession) {
+        sopUploadFinish({ state: 'error', message: e.message || 'Error al subir' });
+      }
+      throw e;
+    }
+  }
+
   function setupDropzone() {
     const zone = $('sopPdxDropzone');
     const input = $('sopPdxUploadInput');
@@ -2196,9 +2427,17 @@
         const est = modal.querySelector('#sopPdxRepEst')?.value?.trim();
         if (est) fd.append('estudio_texto', est);
       }
-      const res = await apiFetch(`/api/soportes/pdx/archivos/${archivo.id}/reemplazar`, { method: 'POST', body: fd });
-      const data = await res.json();
-      if (!res.ok) { sopToast(data.error || 'Error', 'error'); return; }
+      const res = await subirFormDataConProgreso(
+        `/api/soportes/pdx/archivos/${archivo.id}/reemplazar`,
+        fd,
+        { title: 'Cargar reportes', fileName: file.name }
+      );
+      const data = res.data || {};
+      if (!res.ok) {
+        sopUploadFinish({ state: 'error', message: data.error || 'Error al reemplazar' });
+        sopToast(data.error || 'Error', 'error');
+        return;
+      }
       if (data.warnings?.length) sopToast(data.warnings.join(' · '), 'warning');
       closeSopModal(modal);
       sopToast('PDF reemplazado', 'success');
@@ -2345,12 +2584,25 @@
     };
   }
 
-  async function subirArchivoPdx(file, carpetaId, extra) {
+  async function subirArchivoPdx(file, carpetaId, extra, uploadCtx = {}) {
     const fd = new FormData();
     fd.append('file', file);
     if (extra) Object.keys(extra).forEach((k) => fd.append(k, extra[k]));
-    const res = await apiFetch(`/api/soportes/pdx/carpetas/${carpetaId}/archivos`, { method: 'POST', body: fd });
-    const data = await res.json();
+    const fileIndex = uploadCtx.fileIndex || 1;
+    const batchTotal = uploadCtx.batchTotal || 1;
+    const manageSession = uploadCtx.manageSession !== false && batchTotal === 1;
+    const res = await subirFormDataConProgreso(
+      `/api/soportes/pdx/carpetas/${carpetaId}/archivos`,
+      fd,
+      {
+        title: uploadCtx.title || 'Cargar reportes',
+        fileName: file.name,
+        fileIndex,
+        batchTotal,
+        manageSession
+      }
+    );
+    const data = res.data || {};
     if (!res.ok) {
       if (data.codigo === 'PDX_CARPETA_INEXISTENTE') {
         await cargarCarpetasPdx();
@@ -2361,6 +2613,7 @@
         : [data.error, data.detail, data.step].filter(Boolean).join(' — ');
       const err = new Error(msg || 'Error al subir');
       err.codigo = data.codigo;
+      if (manageSession) sopUploadFinish({ state: 'error', message: msg || 'Error al subir' });
       throw err;
     }
     if (data.warnings?.length) sopToast(data.warnings.join(' · '), 'warning');
@@ -2371,10 +2624,16 @@
     const fd = new FormData();
     files.forEach((f) => fd.append('files', f));
     if (extra) Object.keys(extra).forEach((k) => fd.append(k, extra[k]));
-    const res = await apiFetch(`/api/soportes/pdx/carpetas/${carpetaId}/archivos/unificar`, { method: 'POST', body: fd });
-    const data = await res.json();
+    const label = files.length > 1 ? `Unificando ${files.length} PDF` : (files[0]?.name || 'PDF');
+    const res = await subirFormDataConProgreso(
+      `/api/soportes/pdx/carpetas/${carpetaId}/archivos/unificar`,
+      fd,
+      { title: 'Cargar reportes', fileName: label, fileIndex: 1, batchTotal: 1, manageSession: true }
+    );
+    const data = res.data || {};
     if (!res.ok) {
       const msg = [data.error, data.detail, data.step].filter(Boolean).join(' — ');
+      if (msg) sopUploadFinish({ state: 'error', message: msg });
       throw new Error(msg || 'Error al unificar');
     }
     if (data.warnings?.length) sopToast(data.warnings.join(' · '), 'warning');
@@ -2454,27 +2713,28 @@
     return new Promise((resolve, reject) => {
       const carpeta = pdxState.carpetaActual || pdxState.carpetas.find((c) => c.id === carpetaId);
       const tema = detectarTemaCarpetaCliente(carpeta?.nombre_display || '');
+      const esComprobanteConsultaMed = esCarpetaComprobanteConsultaMedicaPdx(carpeta);
       const esConsultaMedica = esCarpetaConsultaMedicaPdx(carpeta);
       const esConsentimiento = tema === 'consentimientos';
       const label = TEMA_LABEL[tema] || 'Documentos';
-      const tipoEntidad = esConsentimiento ? 'consentimiento(s)' : (esConsultaMedica ? 'comprobante(s) de consulta médica' : 'comprobante(s)');
+      const tipoEntidad = esConsentimiento ? 'consentimiento(s)' : (esComprobanteConsultaMed ? 'comprobante(s) de consulta médica' : 'comprobante(s)');
       const titulo = tipoEntidad;
 
       // Crear lista de cards para cada archivo
       const cardsHtml = analisisLista.map((item, idx) => {
         const parsed = item.analisis.parsed || item.analisis.parcial || {};
-        const docFieldsHtml = esConsultaMedica ? '' : `
+        const docFieldsHtml = (esConsultaMedica && !esComprobanteConsultaMed) ? '' : (!esConsultaMedica ? `
           <div class="sop-field"><label>Tipo de documento</label><input type="text" class="sopMultiTipoDoc" data-idx="${idx}" value="${escapeHtml(normalizarTipoDocumentoCliente(parsed.tipo_documento || 'CC'))}" maxlength="4" style="text-transform:uppercase" placeholder="CC"></div>
           <div class="sop-field"><label>Número de documento *</label><input type="text" class="sopMultiDoc" data-idx="${idx}" value="${escapeHtml(parsed.paciente_documento || '')}" inputmode="numeric" pattern="[0-9]*"></div>
-        `;
+        ` : '');
         
-        const nombreSingleFieldHtml = esConsultaMedica ? `
-          <div class="sop-field" style="grid-column:1 / -1"><label>Nombre completo *</label><input type="text" class="sopMultiNombreCompleto" data-idx="${idx}" value="${escapeHtml((parsed.apellidos && parsed.nombres) ? `${parsed.apellidos} ${parsed.nombres}` : (parsed.paciente_nombre || ''))}" placeholder="Nombres y apellidos"></div>
+        const nombreSingleFieldHtml = esComprobanteConsultaMed ? `
+          <div class="sop-field" style="grid-column:1 / -1"><label>Nombre completo *</label><input type="text" class="sopMultiNombreCompleto" data-idx="${idx}" value="${escapeHtml((parsed.apellidos && parsed.nombres) ? `${parsed.nombres} ${parsed.apellidos}` : (parsed.paciente_nombre || parsed.paciente_nombre_completo || ''))}" placeholder="Nombres y apellidos"></div>
         ` : '';
 
     const fieldsHtml = `
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-            ${esConsultaMedica ? nombreSingleFieldHtml : `
+            ${esComprobanteConsultaMed ? nombreSingleFieldHtml : `
               <div class="sop-field"><label>Apellidos *</label><input type="text" class="sopMultiApe" data-idx="${idx}" value="${escapeHtml(parsed.apellidos || '')}"></div>
               <div class="sop-field"><label>Nombres *</label><input type="text" class="sopMultiNom" data-idx="${idx}" value="${escapeHtml(parsed.nombres || '')}"></div>
             `}
@@ -2540,7 +2800,7 @@
 
           let nombres = nom || '';
           let apellidos = ape || '';
-          if (esConsultaMedica) {
+          if (esComprobanteConsultaMed) {
             const full = nombreCompleto || '';
             if (!full) {
               sopToast(`Comprobante ${idx + 1} (${analisisLista[idx].file.name}): Complete el nombre completo`, 'warning');
@@ -2563,12 +2823,17 @@
             }
           }
 
-          if (!esConsultaMedica && (!ape || !nom || !fecha || !est || !doc)) {
+          if (!esComprobanteConsultaMed && (!esConsultaMedica && (!ape || !nom || !fecha || !est || !doc))) {
             sopToast(`Comprobante ${idx + 1} (${analisisLista[idx].file.name}): Complete todos los campos obligatorios`, 'warning');
             hasError = true;
             break;
           }
-          if (esConsultaMedica && (!nombres || !apellidos || !fecha || !est)) {
+          if (esComprobanteConsultaMed && (!nombres || !apellidos || !fecha || !est)) {
+            sopToast(`Comprobante ${idx + 1} (${analisisLista[idx].file.name}): Complete todos los campos obligatorios`, 'warning');
+            hasError = true;
+            break;
+          }
+          if (esConsultaMedica && !esComprobanteConsultaMed && (!ape || !nom || !fecha || !est)) {
             sopToast(`Comprobante ${idx + 1} (${analisisLista[idx].file.name}): Complete todos los campos obligatorios`, 'warning');
             hasError = true;
             break;
@@ -2581,6 +2846,9 @@
             estudio_texto: est,
             confirmacion_manual: '1'
           };
+          if (esComprobanteConsultaMed) {
+            body.paciente_nombre_completo = nombreCompleto || `${nombres} ${apellidos}`.trim();
+          }
           if (!esConsultaMedica) {
             body.paciente_documento = normalizarNumeroDocumentoCliente(doc);
             body.tipo_documento = modal.querySelector(`.sopMultiTipoDoc[data-idx="${idx}"]`)?.value?.toUpperCase() || 'CC';
@@ -2594,20 +2862,35 @@
         // Subir cada uno
         try {
           let contador = 0;
-          for (const { file, body } of uploads) {
+          let fallos = 0;
+          sopUploadBegin({ title: 'Cargar reportes', total: uploads.length });
+          for (let i = 0; i < uploads.length; i++) {
+            const { file, body } = uploads[i];
             try {
-              await subirArchivoPdx(file, carpetaId, body);
+              await subirArchivoPdx(file, carpetaId, body, {
+                fileIndex: i + 1,
+                batchTotal: uploads.length,
+                manageSession: false
+              });
               contador++;
             } catch (e) {
               if (e.codigo === 'PDX_DUPLICADO') {
                 sopToast(`${file.name}: ${e.message}`, 'warning');
+                fallos++;
                 continue;
               }
+              sopUploadFinish({ state: 'error', message: e.message || 'Error al subir' });
               throw e;
             }
           }
+          sopUploadFinish({
+            state: contador ? 'success' : 'error',
+            message: contador
+              ? `${contador} ${tipoEntidad} subido(s)${fallos ? `, ${fallos} omitido(s)` : ''}`
+              : 'No se subió ningún archivo'
+          });
           closeSopModal(modal);
-          sopToast(`${contador} ${tipoEntidad} subido(s)`, 'success');
+          if (contador) sopToast(`${contador} ${tipoEntidad} subido(s)${fallos ? `, ${fallos} omitido(s)` : ''}`, fallos ? 'warning' : 'success');
           resolve();
         } catch (e) {
           sopToast(e.message, 'error');
@@ -2621,11 +2904,13 @@
     const p = analisis.parcial || {};
     const ayuda = ayudaFormatoCliente(tema);
     const esEstruct = esCarpetaEstructuradaPdx(carpeta);
+    const esComprobanteConsultaMed = esCarpetaComprobanteConsultaMedicaPdx(carpeta);
     const esConsultaMedica = esCarpetaConsultaMedicaPdx(carpeta);
     const esPsg = tema === 'psg';
     const motivoTxt = analisis.motivo === 'falta_estudio_psg'
       ? 'El nombre no incluye el tipo de estudio PSG (Básica, CPAP o BPAP). Complételo para continuar.'
       : `El nombre del archivo no cumple la estructura requerida. Complételo o corríjalo para subir el PDF.`;
+    const nombreCompletoVal = (p.apellidos && p.nombres) ? `${p.nombres} ${p.apellidos}` : (p.paciente_nombre || p.paciente_nombre_completo || '');
 
     const modal = openSopModal(`
       <h3><i data-lucide="file-warning"></i> Completar datos del archivo</h3>
@@ -2634,8 +2919,10 @@
       <dl class="sop-upload-preview" style="margin-bottom:12px">
         <dt>Archivo</dt><dd>${escapeHtml(file.name)}</dd>
       </dl>
+      ${esComprobanteConsultaMed ? `
+      <div class="sop-field"><label>Nombre completo *</label><input type="text" id="sopPdxCorrNombreCompleto" value="${escapeHtml(nombreCompletoVal)}" placeholder="Nombres y apellidos"></div>` : `
       <div class="sop-field"><label>Apellidos *</label><input type="text" id="sopPdxCorrApe" value="${escapeHtml(p.apellidos || '')}"></div>
-      <div class="sop-field"><label>Nombres *</label><input type="text" id="sopPdxCorrNom" value="${escapeHtml(p.nombres || '')}"></div>
+      <div class="sop-field"><label>Nombres *</label><input type="text" id="sopPdxCorrNom" value="${escapeHtml(p.nombres || '')}"></div>`}
       ${esEstruct ? `
       <div class="sop-field"><label>Tipo de documento</label><input type="text" id="sopPdxCorrTipoDoc" data-campo-tipo="tipo_doc" value="${escapeHtml(normalizarTipoDocumentoCliente(p.tipo_documento || 'CC'))}" maxlength="4" autocomplete="off" spellcheck="false" style="text-transform:uppercase" placeholder="CC"></div>
       <div class="sop-field"><label>Número de documento *</label><input type="text" id="sopPdxCorrDoc" data-campo-tipo="doc_numero" value="${escapeHtml(p.paciente_documento || '')}" inputmode="numeric" pattern="[0-9]*"></div>` : `
@@ -2654,16 +2941,34 @@
 
     modal.querySelector('#sopPdxCorrCancel').onclick = () => { closeSopModal(modal); reject(new Error('cancelado')); };
     modal.querySelector('#sopPdxCorrOk').onclick = async () => {
+      let apellidos = modal.querySelector('#sopPdxCorrApe')?.value?.trim() || '';
+      let nombres = modal.querySelector('#sopPdxCorrNom')?.value?.trim() || '';
+      if (esComprobanteConsultaMed) {
+        const full = modal.querySelector('#sopPdxCorrNombreCompleto')?.value?.trim() || '';
+        if (!full) return sopToast('Complete el nombre completo', 'warning');
+        const split = separarNombreCompletoConsultaMedicaCliente(full);
+        if (split.nombres && split.apellidos) {
+          nombres = split.nombres;
+          apellidos = split.apellidos;
+        } else {
+          nombres = split.nombres || full;
+          apellidos = split.apellidos || '';
+        }
+        if (!nombres || !apellidos) return sopToast('Indique nombre y apellido en el campo nombre completo', 'warning');
+      }
       const body = {
         confirmacion_manual: '1',
-        apellidos: modal.querySelector('#sopPdxCorrApe')?.value?.trim(),
-        nombres: modal.querySelector('#sopPdxCorrNom')?.value?.trim(),
+        apellidos,
+        nombres,
         tipo_documento: normalizarTipoDocumentoCliente(modal.querySelector('#sopPdxCorrTipoDoc')?.value || 'CC'),
         paciente_documento: normalizarNumeroDocumentoCliente(modal.querySelector('#sopPdxCorrDoc')?.value || ''),
         fecha_estudio: modal.querySelector('#sopPdxCorrFecha')?.value,
         estudio_texto: estSel?.value?.trim() || ''
       };
-      if (!body.apellidos || !body.nombres || !body.fecha_estudio) {
+      if (esComprobanteConsultaMed) {
+        body.paciente_nombre_completo = modal.querySelector('#sopPdxCorrNombreCompleto')?.value?.trim() || `${nombres} ${apellidos}`.trim();
+      }
+      if (!esComprobanteConsultaMed && (!body.apellidos || !body.nombres || !body.fecha_estudio)) {
         return sopToast('Complete apellidos, nombres y fecha', 'warning');
       }
       if (esEstruct && (!body.paciente_documento || body.paciente_documento.length < 4 || !body.estudio_texto)) {
@@ -2898,15 +3203,27 @@
         btn.disabled = true;
         let ok = 0;
         let fail = 0;
-        for (const { file, extra } of extras) {
+        sopUploadBegin({ title: 'Cargar reportes', total: extras.length });
+        for (let i = 0; i < extras.length; i++) {
+          const { file, extra } = extras[i];
           try {
-            await subirArchivoPdx(file, carpetaId, extra);
+            await subirArchivoPdx(file, carpetaId, extra, {
+              fileIndex: i + 1,
+              batchTotal: extras.length,
+              manageSession: false
+            });
             ok++;
           } catch (e) {
             fail++;
             sopToast(`${file.name}: ${e.message}`, 'error');
           }
         }
+        sopUploadFinish({
+          state: ok ? 'success' : 'error',
+          message: ok
+            ? `${ok} archivo(s) subido(s)${fail ? `, ${fail} con error` : ''}`
+            : 'Ningún archivo se subió correctamente'
+        });
         closeSopModal(modal);
         if (ok) sopToast(`${ok} archivo(s) subido(s)${fail ? `, ${fail} con error` : ''}`, fail ? 'warning' : 'success');
         resolve();
@@ -4110,13 +4427,16 @@
       const fd = new FormData();
       fd.append('partes', file);
       try {
-        const res = await apiFetch(
+        const res = await subirFormDataConProgreso(
           `/api/soportes/armado/expedientes/${expId}/archivos/${encodeURIComponent(t)}/anexar-pdf`,
-          { method: 'POST', body: fd }
+          fd,
+          { title: 'Soportes', fileName: file.name }
         );
-        const data = await res.json().catch(() => ({}));
+        const data = res.data || {};
         if (!res.ok || !data.ok) {
-          sopToast(data.error || `No se pudo añadir al ${t}`, 'error');
+          const msg = data.error || `No se pudo añadir al ${t}`;
+          sopUploadFinish({ state: 'error', message: msg });
+          sopToast(msg, 'error');
           btnOk.disabled = false;
           btnOk.textContent = `Añadir al ${t}`;
           return;
@@ -4191,10 +4511,16 @@
       fd.append('orden_manual', '1');
       if (reemplazar) fd.append('reemplazar', '1');
       try {
-        const res = await apiFetch(`/api/soportes/armado/expedientes/${expId}/unir-pdf/${tipo}`, { method: 'POST', body: fd });
-        const data = await res.json().catch(() => ({}));
+        const res = await subirFormDataConProgreso(
+          `/api/soportes/armado/expedientes/${expId}/unir-pdf/${tipo}`,
+          fd,
+          { title: 'Soportes', fileName: `Unir ${files.length} PDF → ${tipo}` }
+        );
+        const data = res.data || {};
         if (!res.ok) {
-          sopToast(data.error || `Error al unir ${tipo}`, 'error');
+          const msg = data.error || `Error al unir ${tipo}`;
+          sopUploadFinish({ state: 'error', message: msg });
+          sopToast(msg, 'error');
           btnOk.disabled = false;
           btnOk.textContent = `Guardar ${tipo}`;
           return;
@@ -4226,15 +4552,33 @@
     const fd = new FormData();
     fd.append('file', file);
     if (tipoManual) fd.append('tipo', tipoManual);
-    const res = await apiFetch(`/api/soportes/armado/expedientes/${expId}/upload`, { method: 'POST', body: fd });
-    let data = {};
-    try { data = await res.json(); } catch (_) {
-      sopToast('Error al subir el archivo', 'error');
+    const uploadCtx = {
+      title: 'Soportes',
+      fileName: file.name,
+      fileIndex: opts.fileIndex || 1,
+      batchTotal: opts.batchTotal || 1,
+      manageSession: opts.manageSession !== false && (opts.batchTotal || 1) === 1
+    };
+    let res;
+    try {
+      res = await subirFormDataConProgreso(
+        `/api/soportes/armado/expedientes/${expId}/upload`,
+        fd,
+        uploadCtx
+      );
+    } catch (e) {
+      sopToast(e.message || 'Error de conexión', 'error');
       return;
     }
+    const data = res.data || {};
     if (!res.ok) {
-      if (data.requiere_tipo) return modalElegirTipoArchivo(expId, file, data.nombre_original, { esRips, tipoServicio: opts.tipoServicio });
-      sopToast(data.error || 'Error al subir', 'error');
+      if (data.requiere_tipo) {
+        sopUploadHidePanel();
+        return modalElegirTipoArchivo(expId, file, data.nombre_original, { esRips, tipoServicio: opts.tipoServicio });
+      }
+      const msg = data.error || 'Error al subir';
+      if (uploadCtx.manageSession) sopUploadFinish({ state: 'error', message: msg });
+      sopToast(msg, 'error');
       return;
     }
     sopToast(data.message || 'Archivo guardado', 'success');
@@ -4314,13 +4658,36 @@
       inp.addEventListener('change', async () => {
         const files = [...(inp.files || [])];
         inp.value = '';
-        for (const f of files) {
+        if (!files.length) return;
+        sopUploadBegin({ title: 'Soportes', total: files.length });
+        let ok = 0;
+        let fail = 0;
+        for (let i = 0; i < files.length; i++) {
+          const f = files[i];
           const fd = new FormData();
           fd.append('file', f);
-          const res = await apiFetch(`/api/soportes/armado/expedientes/${expId}/upload`, { method: 'POST', body: fd });
-          const data = await res.json();
-          if (!res.ok) sopToast(data.error || `Error: ${f.name}`, 'error');
+          try {
+            const res = await subirFormDataConProgreso(
+              `/api/soportes/armado/expedientes/${expId}/upload`,
+              fd,
+              { title: 'Soportes', fileName: f.name, fileIndex: i + 1, batchTotal: files.length, manageSession: false }
+            );
+            const data = res.data || {};
+            if (!res.ok) {
+              fail++;
+              sopToast(data.error || `Error: ${f.name}`, 'error');
+            } else ok++;
+          } catch (e) {
+            fail++;
+            sopToast(e.message || `Error: ${f.name}`, 'error');
+          }
         }
+        sopUploadFinish({
+          state: ok ? 'success' : 'error',
+          message: ok
+            ? `${ok} archivo(s) subido(s)${fail ? `, ${fail} con error` : ''}`
+            : 'No se subió ningún archivo'
+        });
         await abrirExpedienteArmado(expId);
       });
     }
@@ -4707,10 +5074,17 @@
           });
           fd.append('partes_json', JSON.stringify(spec));
         }
-        const res = await apiFetch(`/api/soportes/armado/expedientes/${expId}/generar-opf`, { method: 'POST', body: fd });
-        const data = await res.json();
+        const progLabel = opfUnidoFile ? opfUnidoFile.name : `Generar OPF (${partes.length} parte(s))`;
+        const res = await subirFormDataConProgreso(
+          `/api/soportes/armado/expedientes/${expId}/generar-opf`,
+          fd,
+          { title: 'Soportes', fileName: progLabel }
+        );
+        const data = res.data || {};
         if (!res.ok) {
-          sopToast(data.error || 'Error al generar OPF', 'error');
+          const msg = data.error || 'Error al generar OPF';
+          sopUploadFinish({ state: 'error', message: msg });
+          sopToast(msg, 'error');
           btnOk.disabled = false;
           btnOk.textContent = prevLabel;
           return;

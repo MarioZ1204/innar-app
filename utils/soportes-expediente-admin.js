@@ -71,7 +71,7 @@ async function renombrarCodigoCarpetas(diaId, codigoViejo, codigoNuevo) {
 }
 
 async function actualizarExpediente(expedienteId, body) {
-  const exp = await loadExpedienteContext(expedienteId);
+  let exp = await loadExpedienteContext(expedienteId);
   if (!exp) return { error: 'Expediente no encontrado', status: 404 };
 
   const pendiente = esExpedientePendienteFactura(exp);

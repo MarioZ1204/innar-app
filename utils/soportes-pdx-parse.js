@@ -1114,16 +1114,35 @@ function analizarNombreArchivo(originalName, carpeta, estudios = []) {
 function buildMetaDesdeCamposManuales(originalName, body, carpeta) {
   const estudios = carpeta?._estudiosLista || [];
   const tema = detectarTemaCarpeta(carpeta?.nombre_display || '', originalName);
-  const apellidos = String(body.apellidos || '').trim();
-  const nombres = String(body.nombres || '').trim();
+  let apellidos = String(body.apellidos || '').trim();
+  let nombres = String(body.nombres || '').trim();
   const fecha = String(body.fecha_estudio || '').trim();
   const { tipo_documento, paciente_documento } = normalizarParDocumentoPdx(
     body.tipo_documento,
     body.paciente_documento
   );
 
+  if (tema === 'comprobantes_consulta_medica') {
+    const nombreCompleto = String(body.paciente_nombre_completo || '').trim();
+    if (nombreCompleto) {
+      const split = separarNombreCompletoConsultaMedica(nombreCompleto);
+      if (split.nombres && split.apellidos) {
+        nombres = split.nombres;
+        apellidos = split.apellidos;
+      } else if (split.nombres || split.apellidos) {
+        nombres = split.nombres || nombres;
+        apellidos = split.apellidos || apellidos;
+      }
+    }
+  }
+
   if (!apellidos || !nombres) {
-    return { ok: false, error: 'Apellidos y nombres son obligatorios' };
+    return {
+      ok: false,
+      error: tema === 'comprobantes_consulta_medica'
+        ? 'El nombre completo del paciente es obligatorio'
+        : 'Apellidos y nombres son obligatorios'
+    };
   }
   if (!fecha || !/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
     return { ok: false, error: 'La fecha del estudio es obligatoria (YYYY-MM-DD)' };
