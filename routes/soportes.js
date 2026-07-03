@@ -103,6 +103,7 @@ const {
   streamPeriodPaqueteZip,
   streamUnifiedPeriodZip
 } = require('../utils/soportes-armado-zip');
+const { createPeriodPaqueteJob, getJob: getSopZipJob } = require('../utils/soportes-zip-jobs');
 const {
   getPdxDir,
   getArmadoExpedienteDir,
@@ -2991,6 +2992,70 @@ router.get('/soportes/armado/dias/:id/zip', requireAuth, requireRoleOrPerm(ROLES
         error: notFound ? e.message : 'No se pudo generar el ZIP. Intente de nuevo o contacte al administrador.'
       });
     }
+  }
+});
+
+router.post('/soportes/armado/periodos/:id/zip-paquete/job', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'soportes.descargar_zip'), async (req, res) => {
+  try {
+    const periodoId = parseInt(req.params.id, 10);
+    if (!periodoId) return res.status(400).json({ error: 'Periodo inválido' });
+    const periodoRows = await db.query('SELECT * FROM sop_periodos WHERE id = ?', [periodoId]);
+    if (!periodoRows.length) return res.status(404).json({ error: 'Periodo no encontrado' });
+    const job = createPeriodPaqueteJob(periodoRows[0], req.session?.usuarioId || null);
+    res.json({
+      ok: true,
+      job_id: job.id,
+      status: job.status,
+      progress: job.progress,
+      message: job.message
+    });
+  } catch (e) {
+    logger.error('[SOPORTES] zip-paquete job start:', e);
+    res.status(500).json({ error: safeError(e) });
+  }
+});
+
+router.get('/soportes/armado/periodos/:id/zip-paquete/job/:jobId', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'soportes.descargar_zip'), (req, res) => {
+  const periodoId = parseInt(req.params.id, 10);
+  const job = getSopZipJob(req.params.jobId);
+  if (!job || job.periodoId !== periodoId) {
+    return res.status(404).json({ error: 'Trabajo no encontrado o expirado' });
+  }
+  res.json({
+    ok: true,
+    job_id: job.id,
+    status: job.status,
+    progress: job.progress,
+    message: job.message,
+    error: job.error || null,
+    filename: job.filename
+  });
+});
+
+router.get('/soportes/armado/periodos/:id/zip-paquete/job/:jobId/descargar', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'soportes.descargar_zip'), (req, res) => {
+  try {
+    const periodoId = parseInt(req.params.id, 10);
+    const job = getSopZipJob(req.params.jobId);
+    if (!job || job.periodoId !== periodoId) {
+      return res.status(404).json({ error: 'Trabajo no encontrado o expirado' });
+    }
+    if (job.status === 'error') {
+      return res.status(500).json({ error: job.error || 'Error al generar ZIP' });
+    }
+    if (job.status !== 'ready' || !job.filePath || !fs.existsSync(job.filePath)) {
+      return res.status(409).json({ error: 'El ZIP aún se está generando', status: job.status, progress: job.progress });
+    }
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${job.filename}"`);
+    res.setHeader('Cache-Control', 'no-store');
+    const stream = fs.createReadStream(job.filePath);
+    stream.on('error', () => {
+      if (!res.headersSent) res.status(500).json({ error: 'Error al leer el ZIP generado' });
+    });
+    stream.pipe(res);
+  } catch (e) {
+    logger.error('[SOPORTES] zip-paquete job download:', e);
+    if (!res.headersSent) res.status(500).json({ error: safeError(e) });
   }
 });
 

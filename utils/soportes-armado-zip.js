@@ -351,8 +351,6 @@ async function streamPeriodPaqueteZip(res, periodo) {
   res.setHeader('Cache-Control', 'no-store');
   if (typeof res.flushHeaders === 'function') res.flushHeaders();
 
-  const syncPromise = safeSyncRipsPeriodo(periodoId);
-
   await new Promise((resolve, reject) => {
     const archive = archiver('zip', { zlib: { level: ZIP_COMPRESSION } });
     let partsAdded = 0;
@@ -366,7 +364,7 @@ async function streamPeriodPaqueteZip(res, periodo) {
 
     (async () => {
       try {
-        await syncPromise;
+        void safeSyncRipsPeriodo(periodoId);
         for (const dia of dias) {
           const entries = await collectDiaZipEntries(dia.id);
           const diaSeg = zipArchiveSegment(dia.nombre_display || `dia-${dia.id}`);

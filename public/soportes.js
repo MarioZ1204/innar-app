@@ -1087,14 +1087,83 @@
     setTimeout(() => URL.revokeObjectURL(url), 120000);
   }
 
-  async function descargarZipArmado(apiPath, fallbackFilename, triggerBtn = null) {
+  function sleepMs(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  async function descargarZipPaquetePorJob(apiPath, fallbackFilename, triggerBtn = null) {
+    const m = apiPath.match(/\/periodos\/(\d+)\/zip-paquete/);
+    const periodoId = m ? parseInt(m[1], 10) : null;
+    if (!periodoId) throw new Error('Periodo inválido');
+
+    if (triggerBtn) triggerBtn.disabled = true;
+    const liberar = () => { if (triggerBtn) triggerBtn.disabled = false; };
+
+    sopUploadBegin({ title: 'Generando ZIP del mes', total: 1 });
+    sopUploadSetFile(1, 1, fallbackFilename || 'paquete.zip');
+    sopUploadUpdateBar(1, 1, 2, 'Preparando en el servidor…');
+
     try {
-      await descargarArchivoConProgreso(apiPath, fallbackFilename, {
-        title: 'Generando ZIP',
-        triggerBtn
+      const startRes = await apiFetch(`/api/soportes/armado/periodos/${periodoId}/zip-paquete/job`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}'
       });
+      const startData = await startRes.json().catch(() => ({}));
+      if (!startRes.ok || !startData.job_id) {
+        throw new Error(startData.error || 'No se pudo iniciar la generación del ZIP');
+      }
+
+      const jobId = startData.job_id;
+      let ready = false;
+      for (let i = 0; i < 900; i++) {
+        await sleepMs(i < 3 ? 800 : 1500);
+        const stRes = await apiFetch(`/api/soportes/armado/periodos/${periodoId}/zip-paquete/job/${jobId}`);
+        const st = await stRes.json().catch(() => ({}));
+        if (!stRes.ok) throw new Error(st.error || 'Error consultando progreso');
+        const pct = Math.max(0, Math.min(100, parseInt(st.progress, 10) || 0));
+        sopUploadUpdateBar(1, 1, pct, st.message || 'Generando ZIP…');
+        if (st.status === 'ready') {
+          ready = true;
+          break;
+        }
+        if (st.status === 'error') throw new Error(st.error || 'No se pudo generar el ZIP');
+      }
+      if (!ready) throw new Error('La generación del ZIP tardó demasiado. Intente de nuevo.');
+
+      await descargarArchivoConProgreso(
+        `/api/soportes/armado/periodos/${periodoId}/zip-paquete/job/${jobId}/descargar`,
+        fallbackFilename,
+        { title: 'Descargando ZIP', triggerBtn: null }
+      );
+      liberar();
+    } catch (e) {
+      sopUploadFinish({ state: 'error', message: e.message || 'Error al descargar' });
+      liberar();
+      throw e;
+    }
+  }
+
+  async function descargarZipArmado(apiPath, fallbackFilename, triggerBtn = null) {
+    const esPaqueteMes = /\/zip-paquete(?:\?|$)/.test(apiPath) && !/\/zip-paquete\/job\//.test(apiPath);
+    try {
+      if (esPaqueteMes) {
+        await descargarZipPaquetePorJob(apiPath, fallbackFilename, triggerBtn);
+      } else {
+        await descargarArchivoConProgreso(apiPath, fallbackFilename, {
+          title: 'Generando ZIP',
+          triggerBtn
+        });
+      }
       sopToast('ZIP descargado', 'success');
     } catch (e) {
+      if (!esPaqueteMes) {
+        try {
+          iniciarDescargaArchivoIframe(apiPath);
+          sopToast('Descarga iniciada en segundo plano…', 'info');
+          return;
+        } catch (_) { /* ignore */ }
+      }
       sopToast(e.message || 'No se pudo descargar el ZIP', 'error');
     }
   }

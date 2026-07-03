@@ -39,6 +39,10 @@
     tbody.innerHTML = '<tr><td colspan="5" style="padding:16px;text-align:center;color:#64748b">Cargando…</td></tr>';
     try {
       const res = await apiFetch('/api/backups');
+      const ct = (res.headers.get('Content-Type') || '').toLowerCase();
+      if (ct.includes('text/html')) {
+        throw new Error('El servidor no expone la API de backups. Reinicie la aplicación Node.');
+      }
       const data = await res.json();
       if (!res.ok || !data.ok) throw new Error(data.error || 'No se pudo cargar la lista');
       backupListCache = data.completos || [];
