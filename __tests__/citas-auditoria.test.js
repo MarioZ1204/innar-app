@@ -131,16 +131,16 @@ describe('recibos consulta médica en auditoría', () => {
   });
 
   test('no arrastra electro por medico ni por servicio de estudio', () => {
-    const recMedicoElectro = {
+    const recMedicoElectroSinTurno = {
       id: 5,
-      turno_id: 42,
+      turno_id: null,
       cita_electro_id: null,
       medico_nombre: 'ELECTRODIAGNÓSTICOS',
-      tipo_servicio: 'Medicina General',
+      tipo_servicio: 'EEG Convencional',
       fecha: '2026-06-15',
       cliente: 'María López'
     };
-    expect(reciboCoincideCitaMedica(recMedicoElectro, citaMedica, CATALOGOS_AUDITORIA)).toBe(false);
+    expect(reciboCoincideCitaMedica(recMedicoElectroSinTurno, citaMedica, CATALOGOS_AUDITORIA)).toBe(false);
 
     const recEstudio = {
       id: 6,
@@ -152,6 +152,21 @@ describe('recibos consulta médica en auditoría', () => {
       cliente: 'María López'
     };
     expect(reciboCoincideCitaMedica(recEstudio, citaMedica, CATALOGOS_AUDITORIA)).toBe(false);
+
+    const recEstudiosElectro = {
+      id: 8,
+      turno_id: 42,
+      cita_electro_id: null,
+      medico_nombre: 'ELECTRODIAGNÓSTICOS',
+      tipo_servicio: 'ESTUDIOS ELECTRODIAGNÓSTICOS',
+      fecha: '2026-06-15',
+      cliente: 'María López'
+    };
+    expect(esReciboElectro(recEstudiosElectro, CATALOGOS_AUDITORIA)).toBe(true);
+    expect(reciboDirectoMedica(recEstudiosElectro, citaMedica, CATALOGOS_AUDITORIA)).toBe(false);
+    const filas = asignarRecibosACitas([citaMedica], [recEstudiosElectro], CATALOGOS_AUDITORIA, 'AGENDA_MEDICA');
+    expect(filas).toHaveLength(1);
+    expect(filas[0].recibo_numero).toBe('');
   });
 
   test('enlaza por turno_id', () => {
@@ -179,7 +194,7 @@ describe('recibos consulta médica en auditoría', () => {
       anulado: 0,
       estado_pago: 'PAGADO'
     };
-    expect(reciboDirectoMedica(rec, citaMedica)).toBe(true);
+    expect(reciboDirectoMedica(rec, citaMedica, CATALOGOS_AUDITORIA)).toBe(true);
     const filas = asignarRecibosACitas([citaMedica], [rec], CATALOGOS_AUDITORIA, 'AGENDA_MEDICA');
     expect(filas).toHaveLength(1);
     expect(filas[0].recibo_valor).toBe(120000);

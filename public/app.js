@@ -14440,7 +14440,7 @@ function prefillComprobanteServiciosElectro(cita) {
     telefono: '',
     correo: '',
     tipo_afiliacion: 'Cotizante',
-    servicio: (cita?.estudio || '').trim()
+    servicio: ''
   };
 }
 
@@ -14457,7 +14457,7 @@ function prefillComprobanteServiciosMedica(turno) {
     telefono: (turno?.paciente_telefono || '').trim(),
     correo: '',
     tipo_afiliacion: (turno?.entidad || '').trim() || 'Cotizante',
-    servicio: (turno?.tipo_consulta || '').trim()
+    servicio: ''
   };
 }
 
@@ -14530,8 +14530,7 @@ async function generarComprobanteServiciosPdf() {
     telefono: $('compServTelefono')?.value?.trim(),
     correo: $('compServCorreo')?.value?.trim(),
     tipo_afiliacion: $('compServTipoAfiliacion')?.value?.trim(),
-    servicio: window.innarServicioCombo?.leerValor?.('compServServicio')
-      || $('compServServicio')?.value?.trim(),
+    servicio: $('compServServicio')?.value?.trim(),
     firma_paciente: _compServFirmaPacienteDataUrl
   };
   if ($('compServMostrarAcudiente')?.checked) {
@@ -14581,7 +14580,6 @@ async function generarComprobanteServiciosPdf() {
 }
 
 function initComprobanteServiciosUi() {
-  window.innarServicioCombo?.init?.('compServServicio');
   $('btnCerrarComprobanteServicios')?.addEventListener('click', cerrarModalComprobanteServicios);
   $('btnCancelarComprobanteServicios')?.addEventListener('click', cerrarModalComprobanteServicios);
   $('btnGenerarComprobanteServicios')?.addEventListener('click', generarComprobanteServiciosPdf);

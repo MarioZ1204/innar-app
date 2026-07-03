@@ -48,11 +48,6 @@
     };
   }
 
-  function formatearServicioCups(nombre) {
-    const fn = root.innarComprobanteCups?.nombreServicioComprobanteCups;
-    return fn ? fn(nombre) : nombre;
-  }
-
   function prefillCertificadoElectro(cita, usuario) {
     const fechaIng = extraerFechaYmd(cita?.fecha);
     const horaIng = horaDesdeCita(cita?.hora_inicio || cita?.hora_agendamiento);
@@ -106,7 +101,7 @@
       telefono: (cita?.telefono || '').trim(),
       correo: '',
       tipo_afiliacion: 'Cotizante',
-      servicio: formatearServicioCups((cita?.estudio || '').trim())
+      servicio: ''
     };
   }
 
@@ -122,7 +117,7 @@
       telefono: (turno?.paciente_telefono || '').trim(),
       correo: '',
       tipo_afiliacion: (turno?.entidad || '').trim() || 'Cotizante',
-      servicio: formatearServicioCups((turno?.tipo_consulta || '').trim())
+      servicio: ''
     };
   }
 

@@ -92,10 +92,6 @@
     electro: 'Electrodiagnóstico'
   };
 
-  function servicioSugerido() {
-    return state.origen === 'electro' ? 'Electrodiagnóstico' : 'Consulta médica';
-  }
-
   function datosDesdePersona(persona, documento) {
     const doc = String(persona?.numero_documento || documento || '').trim();
     const nombre = nombreDesdePersona(persona);
@@ -261,7 +257,7 @@
     $('docmodModalCompTelefono').value = datos.telefono || extras?.telefono || '';
     $('docmodModalCompCorreo').value = datos.correo || extras?.correo || '';
     $('docmodModalCompAfiliacion').value = datos.tipo_afiliacion || extras?.tipo_afiliacion || 'Cotizante';
-    $('docmodModalCompServicio').value = extras?.servicio || servicioSugerido();
+    $('docmodModalCompServicio').value = extras?.servicio || '';
     firmaPacienteDataUrl = String(datos.firma_paciente || extras?.firma_paciente || '').trim();
     const inpFirma = $('docmodModalCompFirma');
     if (inpFirma) inpFirma.value = '';
@@ -517,7 +513,6 @@
 
   async function initDocumentosCitaModule() {
     bindUi();
-    window.innarServicioCombo?.init?.('docmodModalCompServicio');
     sincronizarUiSeleccion();
   }
 

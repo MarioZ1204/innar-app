@@ -691,6 +691,7 @@ function mapFilaReporteAuditoria(c) {
     Estado: c.estado || '-',
     'Recibos en cita': c.recibo_seq || '',
     'Nº Recibo': c.recibo_numero || '',
+    'Servicio recibo': c.recibo_tipo_servicio || '',
     'Valor recibo': activo,
     'Valor anulado': anulado,
     'Estado recibo': c.recibo_estado || '',
@@ -698,10 +699,10 @@ function mapFilaReporteAuditoria(c) {
   };
 }
 
-/** N=Valor recibo (13), O=Valor anulado (14) — totales separados */
+/** N=Valor recibo (14), O=Valor anulado (15) — totales separados */
 function aplicarFormatoYTotalExcelAuditoria(sheet, dataRowCount) {
-  const VALOR_COL = 13;
-  const VALOR_ANULADO_COL = 14;
+  const VALOR_COL = 14;
+  const VALOR_ANULADO_COL = 15;
   const ESTADO_CITA_COL = 10;
   const firstDataRowExcel = 2;
   const lastDataRowExcel = dataRowCount + 1;
@@ -761,7 +762,7 @@ async function exportarAuditoriaCitasExcel() {
     sheet['!cols'] = [
       { wch: 12 }, { wch: 8 }, { wch: 22 }, { wch: 28 }, { wch: 14 }, { wch: 20 },
       { wch: 22 }, { wch: 16 }, { wch: 10 }, { wch: 22 }, { wch: 14 },
-      { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 36 }
+      { wch: 12 }, { wch: 12 }, { wch: 28 }, { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 36 }
     ];
     const wb = window.XLSX.utils.book_new();
     window.XLSX.utils.book_append_sheet(wb, sheet, 'Auditoria');

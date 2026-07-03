@@ -370,13 +370,13 @@ const PORT = process.env.PORT || 3000;
 
     // Índices de rendimiento en background (no bloquea arranque)
     try {
-      const { migrations } = require('./migrations/db-migrations');
-      const perfMigration = migrations.find(m => m.name === 'performance_indexes');
-      if (perfMigration) {
-        const stmts = Array.isArray(perfMigration.sql) ? perfMigration.sql : [perfMigration.sql];
-        Promise.all(stmts.map(s => db.execute(s).catch(() => {})))
-          .then(() => logger.info('[STARTUP] Índices de rendimiento verificados', { type: 'STARTUP' }));
-      }
+    const { migrations } = require('./migrations/db-migrations');
+    const perfMigration = migrations.find(m => m.name === 'performance_indexes');
+    if (perfMigration) {
+      const stmts = Array.isArray(perfMigration.sql) ? perfMigration.sql : [perfMigration.sql];
+      Promise.all(stmts.map(s => db.execute(s).catch(() => {})))
+        .then(() => logger.info('[STARTUP] Índices de rendimiento verificados', { type: 'STARTUP' }));
+    }
     } catch (e) {
       logger.warn('[STARTUP] No se aplicaron índices de rendimiento: ' + e.message, { type: 'STARTUP' });
     }

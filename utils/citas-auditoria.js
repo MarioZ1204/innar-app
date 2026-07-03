@@ -37,17 +37,27 @@ function esMedicoElectroDiagnostico(medicoNombre) {
   return m.includes('electrodiag');
 }
 
+function esTipoServicioElectroDiagnostico(tipoServicio) {
+  const ts = normTipoServicio(tipoServicio);
+  if (!ts) return false;
+  if (ts.includes('estudios') && ts.includes('electro')) return true;
+  if (ts.includes('electrodiag') && !ts.includes('consulta')) return true;
+  return false;
+}
+
 function esReciboElectro(rec, catalogos = {}) {
   if (!rec) return false;
   if (rec.cita_electro_id != null && rec.cita_electro_id !== '' && Number(rec.cita_electro_id) !== 0) {
     return true;
   }
-  if (esMedicoElectroDiagnostico(rec.medico_nombre)) return true;
+  if (esTipoServicioElectroDiagnostico(rec.tipo_servicio)) return true;
   const enEstudios = catalogos.estudios?.length
     && tipoServicioCoincideCatalogo(rec.tipo_servicio, catalogos.estudios);
   const enConsulta = catalogos.tiposConsulta?.length
     && tipoServicioCoincideCatalogo(rec.tipo_servicio, catalogos.tiposConsulta);
   if (enEstudios && !enConsulta) return true;
+  if (enConsulta && !enEstudios) return false;
+  if (esMedicoElectroDiagnostico(rec.medico_nombre) && !enConsulta) return true;
   return false;
 }
 
@@ -293,7 +303,16 @@ async function queryCitasAuditoria(db, query) {
   if (fecha_desde) { electroConditions.push('ce.fecha >= ?'); electroParams.push(fecha_desde); }
   if (fecha_hasta) { electroConditions.push('ce.fecha <= ?'); electroParams.push(fecha_hasta); }
   if (programado_por) { electroConditions.push('ce.programado_por_nombre LIKE ?'); electroParams.push(`%${programado_por}%`); }
-  if (doctor_id) { electroConditions.push('ce.equipo_id = ?'); electroParams.push(parseInt(doctor_id, 10)); }
+  if (doctor_id) {
+    const doctorIds = String(doctor_id).split(',').map((v) => parseInt(v, 10)).filter((n) => n > 0);
+    if (doctorIds.length === 1) {
+      electroConditions.push('ce.equipo_id = ?');
+      electroParams.push(doctorIds[0]);
+    } else if (doctorIds.length > 1) {
+      electroConditions.push(`ce.equipo_id IN (${doctorIds.map(() => '?').join(',')})`);
+      electroParams.push(...doctorIds);
+    }
+  }
   if (estado) { electroConditions.push('ce.estado = ?'); electroParams.push(estado); }
   if (entidadArr.length === 1) { electroConditions.push('ce.entidad = ?'); electroParams.push(entidadArr[0]); }
   else if (entidadArr.length > 1) { electroConditions.push(`ce.entidad IN (${entidadArr.map(() => '?').join(',')})`); electroParams.push(...entidadArr); }
@@ -364,6 +383,7 @@ function mapReciboFilaReporte(rec) {
   const anulado = rec.anulado == 1;
   return {
     ...base,
+    recibo_tipo_servicio: rec.tipo_servicio || '',
     recibo_valor: anulado ? '' : base.recibo_valor,
     recibo_valor_anulado: anulado ? base.recibo_valor : ''
   };
@@ -416,7 +436,8 @@ function resolverRecibosParaExport(recibos) {
   return out;
 }
 
-function reciboDirectoMedica(rec, cita) {
+function reciboDirectoMedica(rec, cita, catalogos = {}) {
+  if (esReciboElectro(rec, catalogos)) return false;
   if (!reciboEnlazadoPorTurno(rec, cita)) return false;
   if (rec.cita_electro_id != null && rec.cita_electro_id !== '' && Number(rec.cita_electro_id) !== 0) {
     return false;
@@ -432,7 +453,9 @@ function reciboDirectoElectro(rec, cita) {
 function asignarRecibosACitas(citas, recibos, catalogos, tipoCita) {
   const usados = new Set();
   const porCita = new Map(citas.map((c) => [c.id, []]));
-  const directoFn = tipoCita === 'AGENDA_MEDICA' ? reciboDirectoMedica : reciboDirectoElectro;
+  const directoFn = tipoCita === 'AGENDA_MEDICA'
+    ? (r, c) => reciboDirectoMedica(r, c, catalogos)
+    : reciboDirectoElectro;
   const coincideFn = tipoCita === 'AGENDA_MEDICA' ? reciboCoincideCitaMedica : reciboCoincideCitaElectro;
   const pool = recibos || [];
 
@@ -464,11 +487,14 @@ async function enriquecerCitasConRecibos(db, citas) {
   const citasMedicas = citas.filter((c) => c.tipo_cita === 'AGENDA_MEDICA');
   const citasElectro = citas.filter((c) => c.tipo_cita === 'ELECTRODIAGNOSTICO');
 
-  const [catalogos, recibosMedicos, recibosElectro] = await Promise.all([
+  const [catalogos, recibosMedicosRaw, recibosElectroRaw] = await Promise.all([
     cargarCatalogosEnlaceRecibos(db),
     cargarRecibosConsultaMedica(db, citasMedicas),
     cargarRecibosElectro(db, citasElectro)
   ]);
+
+  const recibosMedicos = recibosMedicosRaw.filter((r) => esReciboConsultaMedica(r, catalogos));
+  const recibosElectro = recibosElectroRaw.filter((r) => esReciboElectro(r, catalogos));
 
   const filasMedicas = asignarRecibosACitas(citasMedicas, recibosMedicos, catalogos, 'AGENDA_MEDICA');
   const filasElectro = asignarRecibosACitas(citasElectro, recibosElectro, catalogos, 'ELECTRODIAGNOSTICO');
