@@ -21,8 +21,11 @@ const {
   loadVisibleEnSoportesSet,
   loadVisibleEnSoportesCtx,
   resolveVisibilidadPeriodo,
+  resolveVisibilidadArmadoRow,
   periodoToRefId,
-  effectiveVisibilidad
+  effectiveVisibilidad,
+  ensureRegistroArchivoArmado,
+  syncRegistrosArchivoFaltantes
 } = require('../utils/soportes-modulo-archivo');
 const {
   detectarTemaCarpeta
@@ -253,7 +256,7 @@ async function visPdxPeriodo(periodo, visiblesSet = null) {
 }
 
 async function visArmadoPeriodo(periodoRow, visCtx = null) {
-  return effectiveVisibilidad('armado', periodoRow.id, periodoRow.periodo, visCtx);
+  return effectiveVisibilidad('armado', periodoRow.id, periodoRow.periodo, visCtx, periodoRow.etiqueta);
 }
 
 async function fetchPeriodoArmadoRow(periodoId) {
@@ -315,6 +318,12 @@ async function refrescarVisibilidadArmado(periodo, archivadoPor = null) {
       await procesarTransicionArchivoArmado(prevRows[0], estadoAnterior, archivadoPor);
     } catch (e) {
       logger.warn('[SOPORTES] archivo automático Armado:', e.message);
+    }
+  } else if (prevRows.length && estado === 'archivo') {
+    try {
+      await ensureRegistroArchivoArmado(prevRows[0], archivadoPor);
+    } catch (e) {
+      logger.warn('[SOPORTES] ensure registro archivo Armado:', e.message);
     }
   }
   return estado;
@@ -1640,7 +1649,7 @@ function mapContenedor(row) {
 function mapPeriodo(row, visCtx) {
   const periodo = row.periodo;
   const vis = visCtx
-    ? resolveVisibilidadPeriodo(periodo, 'armado', row.id, visCtx)
+    ? resolveVisibilidadArmadoRow(row, visCtx)
     : calcularVisibilidadPeriodo(periodo);
   return {
     id: row.id,
@@ -1664,6 +1673,7 @@ router.get('/soportes/armado/periodos', requireAuth, requireRoleOrPerm(ROLES_SOP
     for (const r of rows) {
       await refrescarVisibilidadArmado(r.periodo, req.session?.usuarioId || null);
     }
+    await syncRegistrosArchivoFaltantes(req.session?.usuarioId || null);
     const visCtx = await loadVisibleEnSoportesCtx();
     const incluirArchivo = false;
     const lista = rows.map((r) => mapPeriodo(r, visCtx)).filter((p) => p.estado_visibilidad !== 'archivo' || incluirArchivo);
@@ -3300,7 +3310,10 @@ router.get('/soportes/armado/buscar', requireAuth, requireRoleOrPerm(ROLES_SOPOR
     );
     const visCtx = await loadVisibleEnSoportesCtx();
     const visibles = rows.filter((r) =>
-      resolveVisibilidadPeriodo(r.periodo, 'armado', r.periodo_id, visCtx) !== 'archivo'
+      resolveVisibilidadArmadoRow(
+        { id: r.periodo_id, periodo: r.periodo, etiqueta: r.periodo_etiqueta },
+        visCtx
+      ) !== 'archivo'
     );
     res.json({
       resultados: visibles.map((r) => ({

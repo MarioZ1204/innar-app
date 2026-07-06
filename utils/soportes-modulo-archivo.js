@@ -14,24 +14,47 @@ function visKey(modulo, refId) {
   return `${modulo}:${refId}`;
 }
 
+function normalizeEtiquetaArchivo(s) {
+  return String(s || '').trim().toUpperCase().replace(/\s+/g, ' ');
+}
+
+function etiquetasArchivoCoinciden(a, b) {
+  const na = normalizeEtiquetaArchivo(a);
+  const nb = normalizeEtiquetaArchivo(b);
+  if (!na || !nb) return false;
+  if (na === nb) return true;
+  return na.includes(nb) || nb.includes(na);
+}
+
+function emptyVisibleCtx() {
+  return { byRef: new Set(), armadoPeriodos: new Set(), pdxPeriodos: new Set(), anexoRefs: new Set(), armadoEtiquetas: new Set() };
+}
+
 async function loadVisibleEnSoportesCtx() {
-  const rows = await db.query(
-    'SELECT modulo, ref_id, periodo FROM sop_modulo_archivo WHERE visible_en_soportes = 1'
-  );
-  const byRef = new Set();
-  const armadoPeriodos = new Set();
-  const pdxPeriodos = new Set();
-  const anexoRefs = new Set();
-  for (const r of rows) {
-    byRef.add(visKey(r.modulo, r.ref_id));
-    if (r.modulo === 'armado' && r.periodo) armadoPeriodos.add(r.periodo);
-    if (r.modulo === 'pdx' && r.periodo) {
-      pdxPeriodos.add(r.periodo);
-      byRef.add(visKey('pdx', periodoToRefId(r.periodo)));
+  try {
+    const rows = await db.query(
+      'SELECT modulo, ref_id, periodo, etiqueta FROM sop_modulo_archivo WHERE visible_en_soportes = 1'
+    );
+    const ctx = emptyVisibleCtx();
+    for (const r of rows) {
+      ctx.byRef.add(visKey(r.modulo, r.ref_id));
+      if (r.modulo === 'armado') {
+        if (r.periodo) ctx.armadoPeriodos.add(r.periodo);
+        if (r.etiqueta) ctx.armadoEtiquetas.add(normalizeEtiquetaArchivo(r.etiqueta));
+      }
+      if (r.modulo === 'pdx' && r.periodo) {
+        ctx.pdxPeriodos.add(r.periodo);
+        ctx.byRef.add(visKey('pdx', periodoToRefId(r.periodo)));
+      }
+      if (r.modulo === 'anexo') ctx.anexoRefs.add(r.ref_id);
     }
-    if (r.modulo === 'anexo') anexoRefs.add(r.ref_id);
+    return ctx;
+  } catch (e) {
+    if (e.code === 'ER_NO_SUCH_TABLE' || /visible_en_soportes|sop_modulo_archivo/i.test(String(e.message || ''))) {
+      return emptyVisibleCtx();
+    }
+    throw e;
   }
-  return { byRef, armadoPeriodos, pdxPeriodos, anexoRefs };
 }
 
 /** @deprecated alias — use loadVisibleEnSoportesCtx */
@@ -39,7 +62,7 @@ async function loadVisibleEnSoportesSet() {
   return loadVisibleEnSoportesCtx();
 }
 
-function resolveVisibilidadPeriodo(periodo, modulo, refId, ctx) {
+function resolveVisibilidadPeriodo(periodo, modulo, refId, ctx, etiqueta = null) {
   const calc = calcularVisibilidadPeriodo(periodo);
   if (calc !== 'archivo') return calc;
   if (!ctx) return 'archivo';
@@ -47,27 +70,63 @@ function resolveVisibilidadPeriodo(periodo, modulo, refId, ctx) {
   if (modulo === 'armado' && ctx.armadoPeriodos && ctx.armadoPeriodos.has(periodo)) return 'activa';
   if (modulo === 'pdx' && ctx.pdxPeriodos && ctx.pdxPeriodos.has(periodo)) return 'activa';
   if (modulo === 'anexo' && ctx.anexoRefs && ctx.anexoRefs.has(refId)) return 'activa';
+  if (modulo === 'armado' && ctx.armadoEtiquetas && etiqueta) {
+    const ne = normalizeEtiquetaArchivo(etiqueta);
+    if (ctx.armadoEtiquetas.has(ne)) return 'activa';
+    for (const ae of ctx.armadoEtiquetas) {
+      if (etiquetasArchivoCoinciden(ne, ae)) return 'activa';
+    }
+  }
   return 'archivo';
 }
 
-async function isForcedVisibleEnSoportes(modulo, refId, periodo = null) {
-  const rows = await db.query(
-    `SELECT 1 FROM sop_modulo_archivo
-     WHERE visible_en_soportes = 1 AND modulo = ?
-       AND (ref_id = ? OR (? IS NOT NULL AND periodo = ?))
-     LIMIT 1`,
-    [modulo, refId, periodo, periodo]
+function resolveVisibilidadArmadoRow(periodoRow, ctx) {
+  if (!periodoRow) return 'archivo';
+  return resolveVisibilidadPeriodo(
+    periodoRow.periodo,
+    'armado',
+    periodoRow.id,
+    ctx,
+    periodoRow.etiqueta
   );
-  return rows.length > 0;
 }
 
-async function effectiveVisibilidad(modulo, refId, periodo, ctx = null) {
+async function isForcedVisibleEnSoportes(modulo, refId, periodo = null, etiqueta = null) {
+  try {
+    const rows = await db.query(
+      `SELECT etiqueta FROM sop_modulo_archivo
+       WHERE visible_en_soportes = 1 AND modulo = ?
+         AND (ref_id = ? OR (? IS NOT NULL AND periodo = ?))
+       LIMIT 5`,
+      [modulo, refId, periodo, periodo]
+    );
+    if (rows.length) return true;
+    if (modulo === 'armado' && etiqueta) {
+      const visibles = await db.query(
+        `SELECT etiqueta FROM sop_modulo_archivo
+         WHERE visible_en_soportes = 1 AND modulo = 'armado' AND etiqueta IS NOT NULL AND etiqueta != ''`
+      );
+      for (const r of visibles) {
+        if (etiquetasArchivoCoinciden(r.etiqueta, etiqueta)) return true;
+      }
+    }
+    return false;
+  } catch (e) {
+    if (e.code === 'ER_NO_SUCH_TABLE') return false;
+    throw e;
+  }
+}
+
+async function effectiveVisibilidad(modulo, refId, periodo, ctx = null, etiqueta = null) {
   const calc = calcularVisibilidadPeriodo(periodo);
   if (calc !== 'archivo') return calc;
   if (ctx) {
-    return resolveVisibilidadPeriodo(periodo, modulo, refId, ctx) === 'activa' ? 'activa' : 'archivo';
+    const resolved = modulo === 'armado' && etiqueta
+      ? resolveVisibilidadPeriodo(periodo, modulo, refId, ctx, etiqueta)
+      : resolveVisibilidadPeriodo(periodo, modulo, refId, ctx);
+    return resolved === 'activa' ? 'activa' : 'archivo';
   }
-  return (await isForcedVisibleEnSoportes(modulo, refId, periodo)) ? 'activa' : 'archivo';
+  return (await isForcedVisibleEnSoportes(modulo, refId, periodo, etiqueta)) ? 'activa' : 'archivo';
 }
 
 async function setVisibleEnSoportes(registroId, visible) {
@@ -75,10 +134,23 @@ async function setVisibleEnSoportes(registroId, visible) {
   if (!rows.length) throw new Error('Registro no encontrado');
   const reg = rows[0];
 
-  if (visible && reg.modulo === 'armado' && reg.periodo) {
-    const pr = await db.query('SELECT id FROM sop_periodos WHERE periodo = ? LIMIT 1', [reg.periodo]);
-    if (pr.length && pr[0].id !== reg.ref_id) {
-      await db.execute('UPDATE sop_modulo_archivo SET ref_id = ? WHERE id = ?', [pr[0].id, registroId]);
+  if (visible && reg.modulo === 'armado') {
+    let pr = [];
+    if (reg.periodo) {
+      pr = await db.query('SELECT id, etiqueta FROM sop_periodos WHERE periodo = ? LIMIT 1', [reg.periodo]);
+    }
+    if (!pr.length && reg.etiqueta) {
+      pr = await db.query(
+        'SELECT id, periodo, etiqueta FROM sop_periodos WHERE UPPER(TRIM(etiqueta)) = UPPER(TRIM(?)) LIMIT 1',
+        [reg.etiqueta]
+      );
+    }
+    if (pr.length) {
+      const p0 = pr[0];
+      await db.execute(
+        'UPDATE sop_modulo_archivo SET ref_id = ?, periodo = ?, etiqueta = ? WHERE id = ?',
+        [p0.id, p0.periodo || reg.periodo, p0.etiqueta || reg.etiqueta, registroId]
+      );
     }
   }
 
@@ -154,6 +226,81 @@ async function yaRegistradoEnArchivo(modulo, refId) {
     [modulo, refId]
   );
   return rows.length > 0;
+}
+
+async function existeRegistroArchivo(modulo, refId, periodo = null) {
+  if (await yaRegistradoEnArchivo(modulo, refId)) return true;
+  if (!periodo) return false;
+  try {
+    const rows = await db.query(
+      'SELECT id FROM sop_modulo_archivo WHERE modulo = ? AND periodo = ? LIMIT 1',
+      [modulo, periodo]
+    );
+    return rows.length > 0;
+  } catch (e) {
+    if (e.code === 'ER_NO_SUCH_TABLE') return false;
+    throw e;
+  }
+}
+
+async function ensureRegistroArchivoArmado(periodoRow, archivadoPor = null) {
+  if (!periodoRow?.id || !periodoRow?.periodo) return null;
+  if (calcularVisibilidadPeriodo(periodoRow.periodo) !== 'archivo') return null;
+  if (await existeRegistroArchivo('armado', periodoRow.id, periodoRow.periodo)) {
+    await db.execute(
+      `UPDATE sop_modulo_archivo SET ref_id = ?, etiqueta = ?
+       WHERE modulo = 'armado' AND periodo = ? AND ref_id != ?`,
+      [periodoRow.id, periodoRow.etiqueta || periodoRow.periodo, periodoRow.periodo, periodoRow.id]
+    ).catch(() => {});
+    return null;
+  }
+  const id = await insertRegistroArchivo({
+    modulo: 'armado',
+    periodo: periodoRow.periodo,
+    ref_id: periodoRow.id,
+    etiqueta: periodoRow.etiqueta || periodoRow.periodo,
+    backup_filename: null,
+    backup_bytes: null,
+    archivado_por: archivadoPor
+  });
+  return { id };
+}
+
+async function ensureRegistroArchivoPdx(periodo, archivadoPor = null) {
+  const refId = periodoToRefId(periodo);
+  if (!refId || calcularVisibilidadPeriodo(periodo) !== 'archivo') return null;
+  if (await existeRegistroArchivo('pdx', refId, periodo)) return null;
+  const id = await insertRegistroArchivo({
+    modulo: 'pdx',
+    periodo,
+    ref_id: refId,
+    etiqueta: `Reportes ${periodo}`,
+    backup_filename: null,
+    backup_bytes: null,
+    archivado_por: archivadoPor
+  });
+  return { id };
+}
+
+async function syncRegistrosArchivoFaltantes(archivadoPor = null) {
+  try {
+    const periodos = await db.query('SELECT * FROM sop_periodos');
+    for (const p of periodos) {
+      if (calcularVisibilidadPeriodo(p.periodo) === 'archivo') {
+        await ensureRegistroArchivoArmado(p, archivadoPor);
+      }
+    }
+    const pdxPeriodos = await db.query('SELECT DISTINCT periodo FROM sop_pdx_carpetas WHERE periodo IS NOT NULL');
+    for (const row of pdxPeriodos) {
+      if (calcularVisibilidadPeriodo(row.periodo) === 'archivo') {
+        await ensureRegistroArchivoPdx(row.periodo, archivadoPor);
+      }
+    }
+  } catch (e) {
+    if (e.code !== 'ER_NO_SUCH_TABLE') {
+      logger.warn('[ARCHIVO-MODULO] sync registros faltantes:', e.message);
+    }
+  }
 }
 
 async function insertRegistroArchivo(row) {
@@ -360,7 +507,8 @@ async function procesarTransicionArchivoAnexo(carpetaRow, estadoAnterior, archiv
   return archivarAnexoCarpeta(carpetaRow, archivadoPor);
 }
 
-async function listarModuloArchivo() {
+async function listarModuloArchivo(archivadoPor = null) {
+  await syncRegistrosArchivoFaltantes(archivadoPor);
   const rows = await db.query(`
     SELECT a.*, u.nombre AS archivado_por_nombre
     FROM sop_modulo_archivo a
@@ -429,7 +577,11 @@ module.exports = {
   loadVisibleEnSoportesSet,
   loadVisibleEnSoportesCtx,
   resolveVisibilidadPeriodo,
+  resolveVisibilidadArmadoRow,
   isForcedVisibleEnSoportes,
   effectiveVisibilidad,
-  setVisibleEnSoportes
+  setVisibleEnSoportes,
+  ensureRegistroArchivoArmado,
+  ensureRegistroArchivoPdx,
+  syncRegistrosArchivoFaltantes
 };

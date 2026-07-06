@@ -24,7 +24,7 @@ router.get('/archivo-modulo', requireAuth, requireRoleOrPerm(
   PERM_ARCHIVO
 ), async (req, res) => {
   try {
-    const items = await listarModuloArchivo();
+    const items = await listarModuloArchivo(req.session?.usuarioId || null);
     res.json({ ok: true, items });
   } catch (e) {
     logger.error('[ARCHIVO-MODULO] list:', e);
