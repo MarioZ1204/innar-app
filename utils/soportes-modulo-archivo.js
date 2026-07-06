@@ -9,6 +9,51 @@ const db = require('./db-mysql');
 const logger = require('./logger');
 const { BACKUP_DIR, ensureBackupDir } = require('./backup');
 const { calcularVisibilidadPeriodo } = require('./soportes-visibilidad');
+
+function visKey(modulo, refId) {
+  return `${modulo}:${refId}`;
+}
+
+async function loadVisibleEnSoportesSet() {
+  const rows = await db.query(
+    'SELECT modulo, ref_id FROM sop_modulo_archivo WHERE visible_en_soportes = 1'
+  );
+  return new Set(rows.map((r) => visKey(r.modulo, r.ref_id)));
+}
+
+function resolveVisibilidadPeriodo(periodo, modulo, refId, visiblesSet) {
+  const calc = calcularVisibilidadPeriodo(periodo);
+  if (calc !== 'archivo') return calc;
+  if (visiblesSet && visiblesSet.has(visKey(modulo, refId))) return 'activa';
+  return 'archivo';
+}
+
+async function isForcedVisibleEnSoportes(modulo, refId) {
+  const rows = await db.query(
+    'SELECT 1 FROM sop_modulo_archivo WHERE modulo = ? AND ref_id = ? AND visible_en_soportes = 1 LIMIT 1',
+    [modulo, refId]
+  );
+  return rows.length > 0;
+}
+
+async function effectiveVisibilidad(modulo, refId, periodo, visiblesSet = null) {
+  const calc = calcularVisibilidadPeriodo(periodo);
+  if (calc !== 'archivo') return calc;
+  if (visiblesSet) {
+    return visiblesSet.has(visKey(modulo, refId)) ? 'activa' : 'archivo';
+  }
+  return (await isForcedVisibleEnSoportes(modulo, refId)) ? 'activa' : 'archivo';
+}
+
+async function setVisibleEnSoportes(registroId, visible) {
+  const rows = await db.query('SELECT id FROM sop_modulo_archivo WHERE id = ? LIMIT 1', [registroId]);
+  if (!rows.length) throw new Error('Registro no encontrado');
+  await db.execute(
+    'UPDATE sop_modulo_archivo SET visible_en_soportes = ? WHERE id = ?',
+    [visible ? 1 : 0, registroId]
+  );
+  return { visible: !!visible };
+}
 const { resolvePdxArchivoPath, soportesRoot } = require('./soportes-storage');
 const { zipArchiveSegment, createZipBuffer, buildPeriodPaqueteParts, safeSyncRipsPeriodo } = require('./soportes-armado-zip');
 const { buildAnexoFiduExcelBuffer } = require('./anexo-fidu-export');
@@ -291,7 +336,8 @@ async function listarModuloArchivo() {
   return rows.map((r) => ({
     ...r,
     size_mb: r.backup_bytes ? (r.backup_bytes / (1024 * 1024)).toFixed(2) : null,
-    tiene_backup: Boolean(r.backup_filename)
+    tiene_backup: Boolean(r.backup_filename),
+    visible_en_soportes: Boolean(r.visible_en_soportes)
   }));
 }
 
@@ -344,5 +390,11 @@ module.exports = {
   regenerarBackup,
   crearBackupZipPdxPeriodo,
   crearBackupZipArmadoPeriodo,
-  crearBackupZipAnexoCarpeta
+  crearBackupZipAnexoCarpeta,
+  periodoToRefId,
+  loadVisibleEnSoportesSet,
+  resolveVisibilidadPeriodo,
+  isForcedVisibleEnSoportes,
+  effectiveVisibilidad,
+  setVisibleEnSoportes
 };

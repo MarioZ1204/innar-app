@@ -34,6 +34,11 @@ const {
 } = require('../utils/anexo-fidu-archivos');
 const { ordenarPorTextoNatural } = require('../utils/comparar-texto-natural');
 const { calcularVisibilidadPeriodo, periodoFromDate, diasRestantesGracia } = require('../utils/soportes-visibilidad');
+const {
+  loadVisibleEnSoportesSet,
+  resolveVisibilidadPeriodo,
+  effectiveVisibilidad
+} = require('../utils/soportes-modulo-archivo');
 
 function parseArchivoId(val) {
   const n = parseInt(val, 10);
@@ -245,9 +250,11 @@ router.get('/anexo-fidu/carpetas', requireAuth, requirePermiso(PERM_ANEXO_FIDU),
         (SELECT COUNT(*) FROM anexo_fidu_archivos a WHERE a.carpeta_id = c.id) AS total_archivos
       FROM anexo_fidu_carpetas c
     `);
+    const visiblesSet = await loadVisibleEnSoportesSet();
     const activas = [];
     for (const c of rows) {
-      const vis = await refrescarVisibilidadAnexoCarpeta(c, req.session?.usuarioId || null);
+      await refrescarVisibilidadAnexoCarpeta(c, req.session?.usuarioId || null);
+      const vis = await effectiveVisibilidad('anexo', c.id, c.periodo || periodoFromDate(), visiblesSet);
       if (vis === 'archivo') continue;
       activas.push({
         ...c,

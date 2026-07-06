@@ -1315,6 +1315,18 @@ const runtimeMigrations = [
         `);
       }
     }
+  },
+  {
+    name: 'rt_sop_modulo_archivo_visible_soportes',
+    description: 'Columna visible_en_soportes en sop_modulo_archivo',
+    run: async (db) => {
+      if (!(await tableExists(db, 'sop_modulo_archivo'))) return;
+      if (!(await columnExists(db, 'sop_modulo_archivo', 'visible_en_soportes'))) {
+        await db.execute(
+          'ALTER TABLE sop_modulo_archivo ADD COLUMN visible_en_soportes TINYINT(1) NOT NULL DEFAULT 0 AFTER archivado_por'
+        );
+      }
+    }
   }
 ];
 

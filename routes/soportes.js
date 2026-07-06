@@ -18,6 +18,12 @@ const {
   diasRestantesGracia
 } = require('../utils/soportes-visibilidad');
 const {
+  loadVisibleEnSoportesSet,
+  resolveVisibilidadPeriodo,
+  periodoToRefId,
+  effectiveVisibilidad
+} = require('../utils/soportes-modulo-archivo');
+const {
   detectarTemaCarpeta
 } = require('../utils/soportes-temas');
 const {
@@ -241,6 +247,14 @@ function puedeVerArchivo(req) {
   return false;
 }
 
+async function visPdxPeriodo(periodo, visiblesSet = null) {
+  return effectiveVisibilidad('pdx', periodoToRefId(periodo), periodo, visiblesSet);
+}
+
+async function visArmadoPeriodo(periodoRow, visiblesSet = null) {
+  return effectiveVisibilidad('armado', periodoRow.id, periodoRow.periodo, visiblesSet);
+}
+
 async function refrescarVisibilidadPdx(periodo, archivadoPor = null) {
   const prevRows = await db.query(
     'SELECT estado_visibilidad FROM sop_pdx_carpetas WHERE periodo = ? LIMIT 1',
@@ -277,9 +291,11 @@ async function refrescarVisibilidadArmado(periodo, archivadoPor = null) {
   return estado;
 }
 
-function mapCarpetaPdx(row) {
+function mapCarpetaPdx(row, visiblesSet) {
   const periodo = row.periodo;
-  const vis = calcularVisibilidadPeriodo(periodo);
+  const vis = visiblesSet
+    ? resolveVisibilidadPeriodo(periodo, 'pdx', periodoToRefId(periodo), visiblesSet)
+    : calcularVisibilidadPeriodo(periodo);
   return {
     id: row.id,
     periodo,
@@ -529,9 +545,10 @@ router.get('/soportes/pdx/carpetas', requireAuth, requireRoleOrPerm(ROLES_SOPORT
     const rows = await queryPdxCarpetasConCount();
     const hoyPeriodo = periodoFromDate();
     for (const r of rows) await refrescarVisibilidadPdx(r.periodo, req.session?.usuarioId || null);
+    const visiblesSet = await loadVisibleEnSoportesSet();
     const lista = rows
       .filter((r) => usuarioVeCarpetaPdx(req, r))
-      .map(mapCarpetaPdx)
+      .map((r) => mapCarpetaPdx(r, visiblesSet))
       .filter((c) => c.estado_visibilidad !== 'archivo');
     ordenarPorTextoNatural(lista, 'nombre_display');
     res.json({ periodo_actual: hoyPeriodo, carpetas: lista });
@@ -588,7 +605,7 @@ router.patch('/soportes/pdx/carpetas/:id', requireAuth, requireRoleOrPerm(ROLES_
     const prev = rows[0];
     const denied = denySinAccesoCarpetaPdx(req, prev);
     if (denied) return res.status(denied.status).json({ error: denied.error });
-    const vis = calcularVisibilidadPeriodo(prev.periodo);
+    const vis = await visPdxPeriodo(prev.periodo);
     if (vis === 'archivo') return res.status(403).json({ error: 'Carpeta en archivo: no editable' });
 
     const periodo = req.body?.periodo != null ? String(req.body.periodo).trim() : prev.periodo;
@@ -671,14 +688,15 @@ router.get('/soportes/pdx/carpetas/:id/archivos', requireAuth, requireRoleOrPerm
     if (!carpeta.length) return res.status(404).json({ error: 'Carpeta no encontrada' });
     const deniedArch = denySinAccesoCarpetaPdx(req, carpeta[0]);
     if (deniedArch) return res.status(deniedArch.status).json({ error: deniedArch.error });
-    const vis = calcularVisibilidadPeriodo(carpeta[0].periodo);
+    const vis = await visPdxPeriodo(carpeta[0].periodo);
     if (vis === 'archivo' && !puedeVerArchivo(req)) {
       return res.status(403).json({ error: 'Carpeta en archivo' });
     }
+    const visiblesSet = await loadVisibleEnSoportesSet();
     const archivos = await queryPdxArchivosConUsuarios(req.params.id);
     const carp = jsonSafeRow(carpeta[0]);
     res.json({
-      carpeta: mapCarpetaPdx({ ...carp, archivos_count: archivos.length }),
+      carpeta: mapCarpetaPdx({ ...carp, archivos_count: archivos.length }, visiblesSet),
       archivos: archivos.map((a) => safeEnrichArchivoPdxConNombreDescarga(a, carp))
     });
   } catch (e) {
@@ -753,7 +771,7 @@ router.post(
       const carpeta = carpetaRows[0];
       const deniedUp = denySinAccesoCarpetaPdx(req, carpeta);
       if (deniedUp) return res.status(deniedUp.status).json({ error: deniedUp.error });
-      const vis = calcularVisibilidadPeriodo(carpeta.periodo);
+      const vis = await visPdxPeriodo(carpeta.periodo);
       if (vis === 'archivo') return res.status(403).json({ error: 'Carpeta cerrada para carga' });
 
       step = 'meta';
@@ -861,7 +879,7 @@ router.post(
         cleanupMulterTempFiles(req);
         return res.status(deniedUni.status).json({ error: deniedUni.error });
       }
-      const vis = calcularVisibilidadPeriodo(carpeta.periodo);
+      const vis = await visPdxPeriodo(carpeta.periodo);
       if (vis === 'archivo') {
         cleanupMulterTempFiles(req);
         return res.status(403).json({ error: 'Carpeta cerrada para carga' });
@@ -952,6 +970,7 @@ router.get('/soportes/pdx/buscar', requireAuth, requireRoleOrPerm(ROLES_SOPORTES
     const q = String(req.query.q || '').trim();
     if (q.length < 2) return res.json({ resultados: [] });
     const incluirArchivo = puedeVerArchivo(req);
+    const visiblesSet = await loadVisibleEnSoportesSet();
     const norm = q.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     const like = `%${norm.replace(/[^a-z0-9\s]/g, '%')}%`;
     const archivos = await db.query(
@@ -965,7 +984,7 @@ router.get('/soportes/pdx/buscar', requireAuth, requireRoleOrPerm(ROLES_SOPORTES
     const { resolverDestinoImportacion } = require('../utils/soportes-deposito-import');
     const resultados = archivos.filter((a) => {
       if (!usuarioVeCarpetaPdx(req, a)) return false;
-      const vis = calcularVisibilidadPeriodo(a.periodo);
+      const vis = resolveVisibilidadPeriodo(a.periodo, 'pdx', periodoToRefId(a.periodo), visiblesSet);
       return vis !== 'archivo' || incluirArchivo;
     }).map((a) => {
       const enriched = enrichArchivoPdxConNombreDescarga(a, { nombre_display: a.carpeta_nombre });
@@ -998,6 +1017,7 @@ router.get('/soportes/pdx/buscar-ordenes', requireAuth, requireRoleOrPerm(ROLES_
     const q = String(req.query.q || '').trim();
     if (q.length < 2) return res.json({ resultados: [] });
     const incluirArchivo = puedeVerArchivo(req);
+    const visiblesSet = await loadVisibleEnSoportesSet();
     const norm = q.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     const like = `%${norm.replace(/[^a-z0-9\s]/g, '%')}%`;
     const archivos = await db.query(
@@ -1012,7 +1032,7 @@ router.get('/soportes/pdx/buscar-ordenes', requireAuth, requireRoleOrPerm(ROLES_
     const { esArchivoOrdenHcPdx } = require('../utils/soportes-opf-merge');
     const resultados = archivos.filter((a) => {
       if (!usuarioVeCarpetaPdx(req, a)) return false;
-      const vis = calcularVisibilidadPeriodo(a.periodo);
+      const vis = resolveVisibilidadPeriodo(a.periodo, 'pdx', periodoToRefId(a.periodo), visiblesSet);
       if (vis === 'archivo' && !incluirArchivo) return false;
       return esArchivoOrdenHcPdx(a);
     }).map((a) => {
@@ -1049,7 +1069,7 @@ router.patch('/soportes/pdx/archivos/:id', requireAuth, requireRoleOrPerm(ROLES_
     const prev = rows[0];
     const deniedEd = denySinAccesoCarpetaPdx(req, prev);
     if (deniedEd) return res.status(deniedEd.status).json({ error: deniedEd.error });
-    const vis = calcularVisibilidadPeriodo(prev.periodo);
+    const vis = await visPdxPeriodo(prev.periodo);
     if (vis === 'archivo') return res.status(403).json({ error: 'Carpeta en archivo: no editable' });
 
     const apellidos = req.body?.apellidos != null ? String(req.body.apellidos).trim() : prev.apellidos;
@@ -1120,7 +1140,7 @@ router.patch('/soportes/pdx/archivos/:id', requireAuth, requireRoleOrPerm(ROLES_
       destCarpeta = destRows[0];
       const deniedDest = denySinAccesoCarpetaPdx(req, destCarpeta);
       if (deniedDest) return res.status(deniedDest.status).json({ error: deniedDest.error });
-      const visDest = calcularVisibilidadPeriodo(destCarpeta.periodo);
+      const visDest = await visPdxPeriodo(destCarpeta.periodo);
       if (visDest === 'archivo') return res.status(403).json({ error: 'Carpeta destino en archivo' });
       const moved = movePdxFileOnDisk(prev.carpeta_id, newCarpetaId, prev.ruta_relativa, metaDisplay, destCarpeta);
       const destTema = detectarTemaCarpeta(destCarpeta.nombre_display);
@@ -1231,7 +1251,7 @@ router.get('/soportes/pdx/archivos/:id/descargar', requireAuth, requireRoleOrPer
     const row = rows[0];
     const deniedDl = denySinAccesoCarpetaPdx(req, row);
     if (deniedDl) return res.status(deniedDl.status).json({ error: deniedDl.error });
-    const vis = calcularVisibilidadPeriodo(row.periodo);
+    const vis = await visPdxPeriodo(row.periodo);
     if (vis === 'archivo' && !puedeVerArchivo(req)) return res.status(403).json({ error: 'Archivo en carpeta cerrada' });
     const fp = await resolvePdxArchivoPathForApi(row, true);
     if (!fp) return res.status(404).json({ error: 'Archivo no en disco' });
@@ -1263,7 +1283,7 @@ router.get('/soportes/pdx/archivos/:id/ver', requireAuth, requireRoleOrPerm(ROLE
     if (!rows.length) return res.status(404).json({ error: 'No encontrado' });
     const deniedVer = denySinAccesoCarpetaPdx(req, rows[0]);
     if (deniedVer) return res.status(deniedVer.status).json({ error: deniedVer.error });
-    const vis = calcularVisibilidadPeriodo(rows[0].periodo);
+    const vis = await visPdxPeriodo(rows[0].periodo);
     if (vis === 'archivo' && !puedeVerArchivo(req)) return res.status(403).json({ error: 'Archivo en carpeta cerrada' });
     const fp = await resolvePdxArchivoPathForApi(rows[0], true);
     if (!fp) return res.status(404).json({ error: 'Archivo no en disco' });
@@ -1294,7 +1314,7 @@ router.post(
       const row = rows[0];
       const deniedRes = denySinAccesoCarpetaPdx(req, row);
       if (deniedRes) return res.status(deniedRes.status).json({ error: deniedRes.error });
-      const vis = calcularVisibilidadPeriodo(row.periodo);
+      const vis = await visPdxPeriodo(row.periodo);
       if (vis === 'archivo') return res.status(403).json({ error: 'Carpeta cerrada' });
       const fp = await resolvePdxArchivoPathForApi(row, true);
       if (!fp || !fs.existsSync(fp)) return res.status(404).json({ error: 'Archivo no en disco' });
@@ -1356,7 +1376,7 @@ router.post(
         cleanupMulterTempFiles(req);
         return res.status(deniedAnx.status).json({ error: deniedAnx.error });
       }
-      const vis = calcularVisibilidadPeriodo(row.periodo);
+      const vis = await visPdxPeriodo(row.periodo);
       if (vis === 'archivo') {
         cleanupMulterTempFiles(req);
         return res.status(403).json({ error: 'Carpeta cerrada' });
@@ -1400,7 +1420,7 @@ router.post(
       const row = rows[0];
       const deniedPag = denySinAccesoCarpetaPdx(req, row);
       if (deniedPag) return res.status(deniedPag.status).json({ error: deniedPag.error });
-      const vis = calcularVisibilidadPeriodo(row.periodo);
+      const vis = await visPdxPeriodo(row.periodo);
       if (vis === 'archivo') return res.status(403).json({ error: 'Carpeta cerrada' });
       const fp = await resolvePdxArchivoPathForApi(row, true);
       if (!fp || !fs.existsSync(fp)) return res.status(404).json({ error: 'Archivo no en disco' });
@@ -1472,7 +1492,7 @@ router.post(
       const prev = rows[0];
       const deniedRep = denySinAccesoCarpetaPdx(req, prev);
       if (deniedRep) return res.status(deniedRep.status).json({ error: deniedRep.error });
-      const vis = calcularVisibilidadPeriodo(prev.periodo);
+      const vis = await visPdxPeriodo(prev.periodo);
       if (vis === 'archivo') return res.status(403).json({ error: 'Carpeta cerrada' });
 
       const carpetaCtx = { periodo: prev.periodo, color_tema: prev.color_tema, nombre_display: prev.nombre_display };
@@ -1588,13 +1608,16 @@ function mapContenedor(row) {
   };
 }
 
-function mapPeriodo(row) {
+function mapPeriodo(row, visiblesSet) {
   const periodo = row.periodo;
+  const vis = visiblesSet
+    ? resolveVisibilidadPeriodo(periodo, 'armado', row.id, visiblesSet)
+    : calcularVisibilidadPeriodo(periodo);
   return {
     id: row.id,
     periodo,
     etiqueta: row.etiqueta,
-    estado_visibilidad: calcularVisibilidadPeriodo(periodo),
+    estado_visibilidad: vis,
     dias_restantes_gracia: diasRestantesGracia(periodo),
     expedientes_count: row.expedientes_count || 0
   };
@@ -1612,8 +1635,9 @@ router.get('/soportes/armado/periodos', requireAuth, requireRoleOrPerm(ROLES_SOP
     for (const r of rows) {
       await refrescarVisibilidadArmado(r.periodo, req.session?.usuarioId || null);
     }
+    const visiblesSet = await loadVisibleEnSoportesSet();
     const incluirArchivo = false;
-    const lista = rows.map(mapPeriodo).filter((p) => p.estado_visibilidad !== 'archivo' || incluirArchivo);
+    const lista = rows.map((r) => mapPeriodo(r, visiblesSet)).filter((p) => p.estado_visibilidad !== 'archivo' || incluirArchivo);
     res.json({ periodos: lista });
   } catch (e) {
     res.status(500).json({ error: safeError(e) });
@@ -2524,7 +2548,7 @@ router.post(
             );
             if (!pdxRows.length) return res.status(404).json({ error: `Archivo #${pdxId} no encontrado en reportes` });
             const row = pdxRows[0];
-            const vis = calcularVisibilidadPeriodo(row.periodo);
+            const vis = await visPdxPeriodo(row.periodo);
             if (vis === 'archivo' && !puedeVerArchivo(req)) {
               return res.status(403).json({ error: 'Un archivo está en carpeta archivada' });
             }
@@ -2555,7 +2579,7 @@ router.post(
           );
           if (!pdxRows.length) return res.status(404).json({ error: 'ORDEN+HC no encontrado en reportes' });
           pdxRow = pdxRows[0];
-          const vis = calcularVisibilidadPeriodo(pdxRow.periodo);
+          const vis = await visPdxPeriodo(pdxRow.periodo);
           if (vis === 'archivo' && !puedeVerArchivo(req)) {
             return res.status(403).json({ error: 'El ORDEN+HC está en carpeta archivada' });
           }

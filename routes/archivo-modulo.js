@@ -13,7 +13,8 @@ const {
   regenerarBackup,
   archivarPdxPeriodo,
   archivarArmadoPeriodo,
-  archivarAnexoCarpeta
+  archivarAnexoCarpeta,
+  setVisibleEnSoportes
 } = require('../utils/soportes-modulo-archivo');
 
 const PERM_ARCHIVO = ['modulo.archivo_soportes', 'soportes.ver_archivo'];
@@ -64,6 +65,28 @@ router.post('/archivo-modulo/:id/regenerar-backup', requireAuth, requireRoleOrPe
   } catch (e) {
     logger.error('[ARCHIVO-MODULO] regenerar:', e);
     res.status(500).json({ error: safeError(e) });
+  }
+});
+
+router.patch('/archivo-modulo/:id/visible-soportes', requireAuth, requireRoleOrPerm(
+  ['superadmin', 'admin', 'admin_recepcion'],
+  PERM_ARCHIVO
+), async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (!id) return res.status(400).json({ error: 'Registro inválido' });
+    const visible = req.body?.visible === true || req.body?.visible === 1 || req.body?.visible === '1';
+    const result = await setVisibleEnSoportes(id, visible);
+    res.json({
+      ok: true,
+      visible: result.visible,
+      mensaje: result.visible
+        ? 'La carpeta volverá a mostrarse en el módulo Soportes.'
+        : 'La carpeta ya no se mostrará en el módulo Soportes (sigue disponible aquí en Archivo).'
+    });
+  } catch (e) {
+    logger.error('[ARCHIVO-MODULO] visible-soportes:', e);
+    res.status(e.message === 'Registro no encontrado' ? 404 : 500).json({ error: safeError(e) });
   }
 });
 
