@@ -415,6 +415,14 @@ const migrations = [
           END
         ) > NOW()
     `
+  },
+  {
+    name: 'agenda_reprogramado_en_20260706',
+    description: 'Columna reprogramado_en en turnos y citas_electro (fantasma 3 días)',
+    sql: [
+      `ALTER TABLE turnos ADD COLUMN reprogramado_en DATETIME NULL DEFAULT NULL AFTER actualizado_en`,
+      `ALTER TABLE citas_electro ADD COLUMN reprogramado_en DATETIME NULL DEFAULT NULL AFTER editado_en`
+    ]
   }
 ];
 

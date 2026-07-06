@@ -11,6 +11,7 @@ const {
 } = require('../middleware/index');
 const { validateSchema } = require('../modules/validation-schemas');
 const { buildReprogramacionTurnoPayload } = require('../utils/agenda-reprogramacion');
+const { sqlFantasmaReprogramadoReciente } = require('../utils/agenda-reprogramacion-visibilidad');
 
 // Helper: obtener siguiente número de turno
 async function getNextTurnoNumber(fecha, doctor_id) {
@@ -121,7 +122,7 @@ router.get('/turnos', requireAuth, async (req, res) => {
   }
 
   try {
-    let sql = `SELECT ${COLS} FROM turnos WHERE fecha = ?`;
+    let sql = `SELECT ${COLS} FROM turnos WHERE fecha = ? AND ${sqlFantasmaReprogramadoReciente('turnos')}`;
     let params = [fecha];
     if (doctor_id) { sql += ' AND doctor_id = ?'; params.push(doctor_id); }
     if (estado) {
@@ -603,7 +604,10 @@ router.patch('/turnos/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin
     if (fecha !== undefined) { updates.push('fecha = ?'); values.push(fecha); }
     if (hora !== undefined) { updates.push('hora = ?'); values.push(hora); }
     if (estado !== undefined) { updates.push('estado = ?'); values.push(estado); }
-    if (observaciones !== undefined) { updates.push('observaciones = ?'); values.push(observaciones); }
+    if (observaciones !== undefined && notas === undefined) { updates.push('notas = ?'); values.push(observaciones); }
+    if (estado === 'REPROGRAMADO') {
+      updates.push('reprogramado_en = NOW()');
+    }
 
     if (updates.length === 0) {
       return res.status(400).json({ error: 'No hay campos para actualizar' });
@@ -705,7 +709,14 @@ router.patch('/turnos/:id/estado', requireAuth, requireRoleOrPerm(['superadmin',
       });
     } else if (esFinal) {
       await db.transaction(async (conn) => {
-        await conn.execute('UPDATE turnos SET estado = ?, numero_turno = NULL WHERE id = ?', [estado, id]);
+        if (estado === 'REPROGRAMADO') {
+          await conn.execute(
+            'UPDATE turnos SET estado = ?, numero_turno = NULL, reprogramado_en = NOW() WHERE id = ?',
+            [estado, id]
+          );
+        } else {
+          await conn.execute('UPDATE turnos SET estado = ?, numero_turno = NULL WHERE id = ?', [estado, id]);
+        }
         const enSalaList = await conn.query(
           `SELECT id FROM turnos WHERE fecha = ? AND doctor_id = ? AND estado = 'EN_SALA' ORDER BY numero_turno ASC, id ASC`,
           [turno.fecha, turno.doctor_id]

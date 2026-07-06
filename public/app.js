@@ -1399,7 +1399,10 @@ function citaElectroEsReprogramada(cita) {
 function estadoBadgeCitaElectro(citaOrEstado, observacionesArg) {
   const esObj = typeof citaOrEstado === 'object' && citaOrEstado !== null;
   const cita = esObj ? citaOrEstado : { estado: citaOrEstado, observaciones: observacionesArg };
-  const estado = citaElectroEsReprogramada(cita) ? 'Programado' : (cita.estado || 'Programado');
+  const estNorm = normalizarEstadoElectro(cita?.estado || '');
+  const estado = estNorm === 'Reprogramado'
+    ? 'Reprogramado'
+    : (citaElectroEsReprogramada(cita) ? 'Programado' : (cita.estado || 'Programado'));
   return estadoBadge(estado);
 }
 
@@ -1422,12 +1425,12 @@ function buildReprogramacionTurnoPayload(turno, { fecha, hora, estadoOriginal = 
     actualizacionOriginal: {
       estado: estadoOriginal,
       numero_turno: null,
-      observaciones: turno?.notas ? `[Reprogramado] ${turno.notas}` : '[Reprogramado]'
+      notas: turno?.notas ? `[Reprogramado] ${turno.notas}` : '[Reprogramado]'
     }
   };
 }
 
-function buildReprogramacionElectroPayload(cita, { fecha, hora, actor = 'Sistema' } = {}) {
+function buildReprogramacionElectroPayload(cita, { fecha, hora, actor = 'Sistema', overrides = {} } = {}) {
   const obs = String(cita?.observaciones || '').trim();
   const observaciones = /\[Reprogramado\]/i.test(obs) ? obs : (obs ? `[Reprogramado] ${obs}` : '[Reprogramado]');
   return {
@@ -1435,12 +1438,12 @@ function buildReprogramacionElectroPayload(cita, { fecha, hora, actor = 'Sistema
       paciente_id: cita?.paciente_id,
       fecha,
       hora_agendamiento: hora,
-      estudio: cita?.estudio || null,
-      entidad: cita?.entidad || null,
-      observaciones: cita?.observaciones || null,
+      estudio: overrides.estudio !== undefined ? overrides.estudio : (cita?.estudio || null),
+      entidad: overrides.entidad !== undefined ? overrides.entidad : (cita?.entidad || null),
+      observaciones: overrides.observaciones !== undefined ? overrides.observaciones : (cita?.observaciones || null),
       diagnostico_id: cita?.diagnostico_id || null,
-      equipo_id: cita?.equipo_id || null,
-      duracion_minutos: cita?.duracion_minutos || null,
+      equipo_id: overrides.equipo_id !== undefined ? overrides.equipo_id : (cita?.equipo_id || null),
+      duracion_minutos: overrides.duracion_minutos !== undefined ? overrides.duracion_minutos : (cita?.duracion_minutos || null),
       estado: 'Programado',
       programado_por_nombre: actor || 'Sistema'
     },
@@ -1451,16 +1454,58 @@ function buildReprogramacionElectroPayload(cita, { fecha, hora, actor = 'Sistema
   };
 }
 
-function buildPayloadReprogramarCitaElectro(cita, fechaNueva, horaNueva) {
-  const obs = String(cita?.observaciones || '').trim();
-  const nota = '[Reprogramado]';
-  const observaciones = /\[Reprogramado\]/i.test(obs) ? obs : (obs ? `${nota} ${obs}` : nota);
-  return {
-    estado: 'Programado',
+async function ejecutarReprogramacionElectro(cita, fechaNueva, horaNueva, { overrides = {}, onSuccess } = {}) {
+  if (!cita?.id) throw new Error('Cita no válida');
+  const actor = (currentUser && (currentUser.nombre || currentUser.usuario)) || 'Sistema';
+  const { nuevaCita, actualizacionOriginal } = buildReprogramacionElectroPayload(cita, {
     fecha: fechaNueva,
-    hora_agendamiento: horaNueva,
-    observaciones
-  };
+    hora: horaNueva,
+    actor,
+    overrides
+  });
+
+  const resNueva = await apiFetch('/api/citas-electro', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(nuevaCita)
+  });
+  const dataNueva = await resNueva.json();
+  if (!dataNueva?.ok) {
+    throw new Error(dataNueva?.error || 'Error creando la cita reprogramada');
+  }
+
+  const resOrig = await apiFetch(`/api/citas-electro/${cita.id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(actualizacionOriginal)
+  });
+  const dataOrig = await resOrig.json();
+  if (!dataOrig?.ok) {
+    throw new Error(dataOrig?.error || 'Cita nueva creada, pero no se pudo marcar la original como reprogramada');
+  }
+
+  if (window.socket && window.socket.connected) {
+    window.socket.emit('electro:cambios-guardados', {
+      id: cita.id,
+      cambios: actualizacionOriginal
+    });
+  }
+
+  const movioDia = $('electroFecha')?.value && fechaNueva !== $('electroFecha').value;
+  showToast(
+    movioDia ? `Cita reprogramada al ${formatearFecha(fechaNueva)}` : 'Cita reprogramada exitosamente',
+    'success'
+  );
+
+  if (movioDia && $('electroFecha')) {
+    $('electroFecha').value = fechaNueva;
+    $('electroFecha').dispatchEvent(new Event('change'));
+  } else {
+    cargarCitasElectro();
+  }
+
+  if (typeof onSuccess === 'function') onSuccess({ nuevaCitaId: dataNueva.id });
+  return { nuevaCitaId: dataNueva.id };
 }
 
 /**
@@ -8541,7 +8586,8 @@ function renderCitaElectroCard(container, c) {
     'Pausado': 'estado-pausado',
     'Completado': 'estado-completado',
     'Cancelado': 'estado-cancelado',
-    'No Asisti\u00f3': 'estado-no-asistio'
+    'No Asisti\u00f3': 'estado-no-asistio',
+    'Reprogramado': 'estado-reprogramado'
   };
   if (estadoClasses[estado]) card.classList.add(estadoClasses[estado]);
   aplicarColorEstudioElectroCard(card, c.estudio);
@@ -13550,24 +13596,31 @@ async function guardarCambiosCitaElectro() {
     const horaActual = citaElectroSeleccionada.hora_agendamiento
       ? String(citaElectroSeleccionada.hora_agendamiento).trim().slice(0, 5)
       : '';
-    if (fechaNueva && fechaNueva !== fechaActual) {
-      cambios.fecha = fechaNueva;
-    }
-    if (horaNueva && horaNueva !== horaActual) {
-      cambios.hora_agendamiento = horaNueva;
-    }
-    if ((cambios.fecha || cambios.hora_agendamiento) && puedeReprogramarCitaElectro(citaElectroSeleccionada)) {
-      Object.assign(cambios, buildPayloadReprogramarCitaElectro(
-        citaElectroSeleccionada,
-        fechaNueva || fechaActual,
-        horaNueva || horaActual
-      ));
-    }
-    if ((cambios.fecha || cambios.hora_agendamiento) && (!fechaNueva || !horaNueva)) {
-      showToast('Indique fecha y hora agendada válidas', 'error');
+    const cambioAgenda = (fechaNueva && fechaNueva !== fechaActual) || (horaNueva && horaNueva !== horaActual);
+
+    if (cambioAgenda) {
+      if (!fechaNueva || !horaNueva) {
+        showToast('Indique fecha y hora agendada válidas', 'error');
+        return;
+      }
+      if (!puedeReprogramarCitaElectro(citaElectroSeleccionada)) {
+        showToast('No se puede reprogramar la cita en este estado', 'error');
+        return;
+      }
+      if (fechaNueva === fechaActual && horaNueva === horaActual) {
+        showToast('No hay cambios para guardar', 'info');
+        cerrarModalDetallesCita();
+        return;
+      }
+      const overrides = {};
+      if (cambios.equipo_id !== undefined) overrides.equipo_id = cambios.equipo_id;
+      if (cambios.estudio !== undefined) overrides.estudio = cambios.estudio;
+      if (cambios.entidad !== undefined) overrides.entidad = cambios.entidad;
+      await ejecutarReprogramacionElectro(citaElectroSeleccionada, fechaNueva, horaNueva, { overrides });
+      cerrarModalDetallesCita();
       return;
     }
-    
+
     if (Object.keys(cambios).length > 0) {
       const res = await apiFetch(`/api/citas-electro/${citaElectroSeleccionada.id}`, {
         method: 'PATCH',
@@ -13618,116 +13671,25 @@ function puedeReprogramarCitaElectro(cita) {
 }
 
 function bindReprogramarElectroDesdeModalAgenda() {
-  const fechaEl = $('modalFechaAgenda');
-  const horaEl = $('modalHoraAgenda');
-  if (fechaEl && !fechaEl.dataset.reprogBound) {
-    fechaEl.dataset.reprogBound = '1';
-    fechaEl.addEventListener('change', () => reprogramarCitaElectroDesdeModalAgenda());
-  }
-  if (horaEl && !horaEl.dataset.reprogBound) {
-    horaEl.dataset.reprogBound = '1';
-    horaEl.addEventListener('change', () => reprogramarCitaElectroDesdeModalAgenda());
-  }
-}
-
-async function reprogramarCitaElectroDesdeModalAgenda() {
-  if (!citaElectroSeleccionada || isInitializingElectroModal) return;
-  if (!tienePermiso('electro.editar')) return;
-  if (!puedeReprogramarCitaElectro(citaElectroSeleccionada)) {
-    showToast('No se puede reprogramar la cita en este estado', 'error');
-    const $fechaEl = $('modalFechaAgenda');
-    const $horaEl = $('modalHoraAgenda');
-    if ($fechaEl) $fechaEl.value = formatearFechaISO(citaElectroSeleccionada.fecha);
-    if ($horaEl) {
-      const h = citaElectroSeleccionada.hora_agendamiento ? String(citaElectroSeleccionada.hora_agendamiento).trim() : '';
-      $horaEl.value = /^\d{2}:\d{2}/.test(h) ? h.slice(0, 5) : h;
-    }
-    return;
-  }
-
-  const fechaNueva = ($('modalFechaAgenda')?.value || '').trim();
-  const horaNueva = ($('modalHoraAgenda')?.value || '').trim().slice(0, 5);
-  const fechaActual = formatearFechaISO(citaElectroSeleccionada.fecha);
-  const horaActual = citaElectroSeleccionada.hora_agendamiento
-    ? String(citaElectroSeleccionada.hora_agendamiento).trim().slice(0, 5)
-    : '';
-
-  if (!fechaNueva || !horaNueva) {
-    showToast('Indique fecha y hora agendada válidas', 'error');
-    return;
-  }
-  if (fechaNueva === fechaActual && horaNueva === horaActual) return;
-
-  const cambios = buildPayloadReprogramarCitaElectro(citaElectroSeleccionada, fechaNueva, horaNueva);
-
-  try {
-    const res = await apiFetch(`/api/citas-electro/${citaElectroSeleccionada.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(cambios)
-    });
-    const data = await res.json();
-    if (!data?.ok) throw new Error(data?.error || 'Error reprogramando cita');
-
-    citaElectroSeleccionada.estado = 'Programado';
-    citaElectroSeleccionada.fecha = fechaNueva;
-    citaElectroSeleccionada.hora_agendamiento = horaNueva;
-    citaElectroSeleccionada.observaciones = cambios.observaciones;
-
-    const movioDia = $('electroFecha')?.value && fechaNueva !== $('electroFecha').value;
-    showToast(
-      movioDia ? `Cita reprogramada al ${formatearFecha(fechaNueva)}` : 'Cita reprogramada',
-      'success'
-    );
-
-    if (window.socket && window.socket.connected) {
-      window.socket.emit('electro:cambios-guardados', {
-        id: citaElectroSeleccionada.id,
-        cambios
-      });
-    }
-
-    if (movioDia && $('electroFecha')) {
-      $('electroFecha').value = fechaNueva;
-      $('electroFecha').dispatchEvent(new Event('change'));
-    } else {
-      cargarCitasElectro();
-    }
-
-    const $badgeEl = document.getElementById('modalEstadoHeaderBadge');
-    if ($badgeEl) $badgeEl.innerHTML = estadoBadgeCitaElectro(citaElectroSeleccionada);
-    renderFlujoEstado(citaElectroSeleccionada);
-  } catch (e) {
-    showToast(e.message || 'Error reprogramando cita', 'error');
-    const $fechaEl = $('modalFechaAgenda');
-    const $horaEl = $('modalHoraAgenda');
-    if ($fechaEl) $fechaEl.value = fechaActual;
-    if ($horaEl) $horaEl.value = horaActual;
-  }
+  // La reprogramación se confirma con el botón Reprogramar o al guardar fecha/hora distinta.
 }
 
 function abrirModalReprogramar() {
   if (!citaElectroSeleccionada) {
     return;
   }
-  
-  // GUARDAR CITA ANTES DE CERRAR MODAL
+
   citaReprogramarAdelantarActual = citaElectroSeleccionada;
-  
-  // Rellenar datos actuales
-  $('modalReprogramarFechaActual').textContent = 
+
+  $('modalReprogramarFechaActual').textContent =
     `${formatearFecha(citaElectroSeleccionada.fecha)} a las ${citaElectroSeleccionada.hora_agendamiento}`;
-  
-  // Precargar fecha y hora actual (extraer solo la fecha en formato YYYY-MM-DD)
+
   const fecha = citaElectroSeleccionada.fecha;
   const fechaFormato = fecha ? fecha.split('T')[0] : '';
   $('modalReprogramarFecha').value = fechaFormato;
   $('modalReprogramarHora').value = citaElectroSeleccionada.hora_agendamiento || '';
-  
-  // Cerrar modal de detalles
+
   cerrarModalDetallesCita();
-  
-  // Abrir modal de reprogramación
   $('modalReprogramarCita').classList.remove('hidden');
 }
 
@@ -13739,62 +13701,29 @@ async function confirmarReprogramar() {
   if (!citaReprogramarAdelantarActual) {
     return;
   }
-  
+
   try {
     const fechaNueva = $('modalReprogramarFecha').value;
     const horaNueva = $('modalReprogramarHora').value;
-    
+
     if (!fechaNueva || !horaNueva) {
       showToast('Debes completar fecha y hora', 'error');
       return;
     }
-    
-    const { nuevaCita, actualizacionOriginal } = buildReprogramacionElectroPayload(
-      citaReprogramarAdelantarActual,
-      { fecha: fechaNueva, hora: horaNueva, actor: (currentUser && (currentUser.nombre || currentUser.usuario)) || 'Sistema' }
-    );
 
-    const resNueva = await apiFetch('/api/citas-electro', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(nuevaCita)
-    });
-
-    const dataNueva = await resNueva.json();
-
-    if (!dataNueva?.ok) {
-      showToast(dataNueva?.error || 'Error reprogramando cita', 'error');
+    const fechaOrig = formatearFechaISO(citaReprogramarAdelantarActual.fecha);
+    const horaOrig = String(citaReprogramarAdelantarActual.hora_agendamiento || '').trim().slice(0, 5);
+    if (fechaNueva === fechaOrig && horaNueva === horaOrig) {
+      showToast('Seleccione una fecha u hora distinta para reprogramar', 'warning');
       return;
     }
 
-    const res = await apiFetch(`/api/citas-electro/${citaReprogramarAdelantarActual.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(actualizacionOriginal)
-    });
-
-    const data = await res.json();
-
-    if (data && data.ok) {
-      showToast('Cita reprogramada exitosamente', 'success');
-      
-      // Emitir evento de socket
-      if (window.socket && window.socket.connected) {
-        window.socket.emit('electro:cambios-guardados', {
-          id: citaReprogramarAdelantarActual.id,
-          cambios
-        });
-      }
-      
-      cargarCitasElectro();
-      cerrarModalReprogramar();
-      citaReprogramarAdelantarActual = null; // Limpiar referencia
-    } else {
-      showToast(data?.error || 'Error reprogramando cita', 'error');
-    }
+    await ejecutarReprogramacionElectro(citaReprogramarAdelantarActual, fechaNueva, horaNueva);
+    cerrarModalReprogramar();
+    citaReprogramarAdelantarActual = null;
   } catch (e) {
     console.error('[CONFIRMAR_REPROGRAMAR] Error:', e);
-    showToast('Error reprogramando cita: ' + e.message, 'error');
+    showToast(e.message || 'Error reprogramando cita', 'error');
   }
 }
 

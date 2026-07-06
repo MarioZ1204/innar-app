@@ -108,6 +108,8 @@ function paramsCitaElectroVisibleEnFecha(fechaYmd) {
   return [fechaYmd, fechaYmd];
 }
 
+const { DIAS_FANTASMA_REPROGRAMADO } = require('./agenda-reprogramacion-visibilidad');
+
 /** SQL agenda: Completado solo si fecha = día consultado; resto por rango mult día. */
 function sqlCitaElectroVisibleEnAgendaDia(alias = 'c') {
   const a = alias;
@@ -117,12 +119,22 @@ function sqlCitaElectroVisibleEnAgendaDia(alias = 'c') {
       ${a}.estado NOT IN ('Completado', 'Cancelado')
       AND ${a}.fecha <= ?
       AND COALESCE(${a}.hora_fin_date, ${a}.fecha) >= ?
+      AND (
+        ${a}.estado <> 'Reprogramado'
+        OR (
+          ${a}.fecha = ?
+          AND (
+            ${a}.reprogramado_en IS NULL
+            OR DATEDIFF(CURDATE(), DATE(${a}.reprogramado_en)) < ${DIAS_FANTASMA_REPROGRAMADO}
+          )
+        )
+      )
     )
   )`;
 }
 
 function paramsCitaElectroVisibleEnAgendaDia(fechaYmd) {
-  return [fechaYmd, fechaYmd, fechaYmd];
+  return [fechaYmd, fechaYmd, fechaYmd, fechaYmd];
 }
 
 /** Hora HH:MM desde hora_inicio, hora_agendamiento o columna TIME. */

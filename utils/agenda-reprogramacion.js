@@ -17,13 +17,13 @@ function buildReprogramacionTurnoPayload(turno, { fecha, hora, estadoOriginal = 
   const original = {
     estado: estadoOriginal,
     numero_turno: null,
-    observaciones: turno?.notas ? `[Reprogramado] ${turno.notas}` : '[Reprogramado]'
+    notas: turno?.notas ? `[Reprogramado] ${turno.notas}` : '[Reprogramado]'
   };
 
   return { nuevoTurno: base, actualizacionOriginal: original };
 }
 
-function buildReprogramacionElectroPayload(cita, { fecha, hora, actor = 'Sistema' } = {}) {
+function buildReprogramacionElectroPayload(cita, { fecha, hora, actor = 'Sistema', overrides = {} } = {}) {
   const obs = String(cita?.observaciones || '').trim();
   const observaciones = /\[Reprogramado\]/i.test(obs) ? obs : (obs ? `[Reprogramado] ${obs}` : '[Reprogramado]');
 
@@ -32,12 +32,12 @@ function buildReprogramacionElectroPayload(cita, { fecha, hora, actor = 'Sistema
       paciente_id: cita?.paciente_id,
       fecha,
       hora_agendamiento: hora,
-      estudio: cita?.estudio || null,
-      entidad: cita?.entidad || null,
-      observaciones: cita?.observaciones || null,
+      estudio: overrides.estudio !== undefined ? overrides.estudio : (cita?.estudio || null),
+      entidad: overrides.entidad !== undefined ? overrides.entidad : (cita?.entidad || null),
+      observaciones: overrides.observaciones !== undefined ? overrides.observaciones : (cita?.observaciones || null),
       diagnostico_id: cita?.diagnostico_id || null,
-      equipo_id: cita?.equipo_id || null,
-      duracion_minutos: cita?.duracion_minutos || null,
+      equipo_id: overrides.equipo_id !== undefined ? overrides.equipo_id : (cita?.equipo_id || null),
+      duracion_minutos: overrides.duracion_minutos !== undefined ? overrides.duracion_minutos : (cita?.duracion_minutos || null),
       estado: 'Programado',
       programado_por_nombre: actor || 'Sistema'
     },

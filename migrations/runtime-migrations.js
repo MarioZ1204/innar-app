@@ -1344,6 +1344,18 @@ const runtimeMigrations = [
         }
       }
     }
+  },
+  {
+    name: 'rt_agenda_reprogramado_en',
+    description: 'Columna reprogramado_en en turnos y citas_electro',
+    run: async (db) => {
+      if (await tableExists(db, 'turnos') && !(await columnExists(db, 'turnos', 'reprogramado_en'))) {
+        await db.execute('ALTER TABLE turnos ADD COLUMN reprogramado_en DATETIME NULL DEFAULT NULL');
+      }
+      if (await tableExists(db, 'citas_electro') && !(await columnExists(db, 'citas_electro', 'reprogramado_en'))) {
+        await db.execute('ALTER TABLE citas_electro ADD COLUMN reprogramado_en DATETIME NULL DEFAULT NULL');
+      }
+    }
   }
 ];
 

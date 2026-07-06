@@ -1424,12 +1424,17 @@ router.patch('/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin',
 
     let estadoPatch = estado;
     let observacionesPatch = req.body.observaciones;
+    let marcarReprogramadoEn = false;
 
-    if (estadoPatch === 'Reprogramado' || esReprogramacion) {
-      estadoPatch = 'Programado';
+    if (estadoPatch === 'Reprogramado' && !cambioAgenda) {
       observacionesPatch = anexarNotaReprogramadoObs(
         observacionesPatch !== undefined ? observacionesPatch : citaActual.observaciones
       );
+      marcarReprogramadoEn = true;
+    } else if (esReprogramacion && estadoPatch !== 'Adelantado') {
+      return res.status(400).json({
+        error: 'Para cambiar fecha u hora use la opción Reprogramar (se crea una cita nueva en la fecha elegida).'
+      });
     }
 
     if (equipo_id !== undefined) { updates.push('equipo_id = ?'); values.push(equipo_id); cambios.equipo_id = equipo_id; }
@@ -1537,6 +1542,10 @@ router.patch('/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin',
     }
 
     if (updates.length === 0) return res.json({ ok: true });
+
+    if (marcarReprogramadoEn) {
+      updates.push('reprogramado_en = NOW()');
+    }
 
     updates.push('editado_en = NOW()');
     const editorNombre = req.session.usuarioNombre || req.session.usuario || 'Sistema';

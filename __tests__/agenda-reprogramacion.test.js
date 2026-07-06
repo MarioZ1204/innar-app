@@ -36,7 +36,8 @@ describe('agenda reprogramacion', () => {
     });
     expect(payload.actualizacionOriginal).toMatchObject({
       estado: 'REPROGRAMADO',
-      numero_turno: null
+      numero_turno: null,
+      notas: '[Reprogramado] Pendiente'
     });
     expect(payload.actualizacionOriginal).not.toHaveProperty('id');
     expect(payload.nuevoTurno).not.toHaveProperty('id');
