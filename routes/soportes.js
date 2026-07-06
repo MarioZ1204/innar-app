@@ -19,6 +19,7 @@ const {
 } = require('../utils/soportes-visibilidad');
 const {
   loadVisibleEnSoportesSet,
+  loadVisibleEnSoportesCtx,
   resolveVisibilidadPeriodo,
   periodoToRefId,
   effectiveVisibilidad
@@ -251,8 +252,36 @@ async function visPdxPeriodo(periodo, visiblesSet = null) {
   return effectiveVisibilidad('pdx', periodoToRefId(periodo), periodo, visiblesSet);
 }
 
-async function visArmadoPeriodo(periodoRow, visiblesSet = null) {
-  return effectiveVisibilidad('armado', periodoRow.id, periodoRow.periodo, visiblesSet);
+async function visArmadoPeriodo(periodoRow, visCtx = null) {
+  return effectiveVisibilidad('armado', periodoRow.id, periodoRow.periodo, visCtx);
+}
+
+async function fetchPeriodoArmadoRow(periodoId) {
+  const id = parseInt(periodoId, 10);
+  if (!id) return null;
+  const rows = await db.query('SELECT * FROM sop_periodos WHERE id = ? LIMIT 1', [id]);
+  return rows[0] || null;
+}
+
+async function denyPeriodoArmadoInaccesible(req, res, periodoRow, visCtx = null) {
+  const vis = await visArmadoPeriodo(periodoRow, visCtx);
+  if (vis === 'archivo') {
+    res.status(403).json({
+      error: 'Este mes está en archivo. Actívelo en Archivo → «Mostrar en Soportes» para verlo aquí.'
+    });
+    return true;
+  }
+  return false;
+}
+
+async function requirePeriodoArmadoAccesible(req, res, periodoId, visCtx = null) {
+  const row = await fetchPeriodoArmadoRow(periodoId);
+  if (!row) {
+    res.status(404).json({ error: 'Periodo no encontrado' });
+    return null;
+  }
+  if (await denyPeriodoArmadoInaccesible(req, res, row, visCtx)) return null;
+  return row;
 }
 
 async function refrescarVisibilidadPdx(periodo, archivadoPor = null) {
@@ -1608,10 +1637,10 @@ function mapContenedor(row) {
   };
 }
 
-function mapPeriodo(row, visiblesSet) {
+function mapPeriodo(row, visCtx) {
   const periodo = row.periodo;
-  const vis = visiblesSet
-    ? resolveVisibilidadPeriodo(periodo, 'armado', row.id, visiblesSet)
+  const vis = visCtx
+    ? resolveVisibilidadPeriodo(periodo, 'armado', row.id, visCtx)
     : calcularVisibilidadPeriodo(periodo);
   return {
     id: row.id,
@@ -1635,9 +1664,9 @@ router.get('/soportes/armado/periodos', requireAuth, requireRoleOrPerm(ROLES_SOP
     for (const r of rows) {
       await refrescarVisibilidadArmado(r.periodo, req.session?.usuarioId || null);
     }
-    const visiblesSet = await loadVisibleEnSoportesSet();
+    const visCtx = await loadVisibleEnSoportesCtx();
     const incluirArchivo = false;
-    const lista = rows.map((r) => mapPeriodo(r, visiblesSet)).filter((p) => p.estado_visibilidad !== 'archivo' || incluirArchivo);
+    const lista = rows.map((r) => mapPeriodo(r, visCtx)).filter((p) => p.estado_visibilidad !== 'archivo' || incluirArchivo);
     res.json({ periodos: lista });
   } catch (e) {
     res.status(500).json({ error: safeError(e) });
@@ -1670,6 +1699,8 @@ router.post('/soportes/armado/periodos', requireAuth, requireRoleOrPerm(ROLES_SO
 router.post('/soportes/armado/periodos/:id/sync-anexo-modulo', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'modulo.armado_soportes'), async (req, res) => {
   try {
     const periodoId = parseInt(req.params.id, 10);
+    const visCtx = await loadVisibleEnSoportesCtx();
+    if (!await requirePeriodoArmadoAccesible(req, res, periodoId, visCtx)) return;
     const forzarExport = req.body?.forzar_export === true || req.body?.forzar_export === 1;
     const result = await syncAnexoModuloASoportesPeriodo(periodoId, { forzarExport });
     if (!result.ok) return res.status(400).json({ error: result.error || 'No se pudo sincronizar' });
@@ -1683,6 +1714,8 @@ router.post('/soportes/armado/periodos/:id/sync-anexo-modulo', requireAuth, requ
 router.post('/soportes/armado/periodos/:id/reparent-facturas', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'soportes.armado.crear_estructura'), async (req, res) => {
   try {
     const periodoId = parseInt(req.params.id, 10);
+    const visCtx = await loadVisibleEnSoportesCtx();
+    if (!await requirePeriodoArmadoAccesible(req, res, periodoId, visCtx)) return;
     const result = await reparentCarpetasFacturacionHuerfanas(db, periodoId);
     res.json(result);
   } catch (e) {
@@ -1694,6 +1727,9 @@ router.post('/soportes/armado/periodos/:id/reparent-facturas', requireAuth, requ
 router.get('/soportes/armado/periodos/:id/dias', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'modulo.armado_soportes'), async (req, res) => {
   try {
     const periodoId = parseInt(req.params.id, 10);
+    const visCtx = await loadVisibleEnSoportesCtx();
+    const periodoRow = await requirePeriodoArmadoAccesible(req, res, periodoId, visCtx);
+    if (!periodoRow) return;
     await ensureContenedorasRaizPeriodo(db, periodoId);
     await reparentCarpetasFacturacionHuerfanas(db, periodoId);
     try {
@@ -1727,6 +1763,8 @@ router.get('/soportes/armado/periodos/:id/dias', requireAuth, requireRoleOrPerm(
 router.post('/soportes/armado/periodos/:id/dias', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'soportes.armado.crear_estructura'), async (req, res) => {
   try {
     const periodoId = parseInt(req.params.id, 10);
+    const visCtx = await loadVisibleEnSoportesCtx();
+    if (!await requirePeriodoArmadoAccesible(req, res, periodoId, visCtx)) return;
     if (!periodoId) return res.status(400).json({ error: 'Periodo inválido' });
     const nombre_display = String(req.body.nombre_display || '').trim();
     const parent_id = normalizarParentIdDia(req.body?.parent_id);
@@ -3106,9 +3144,10 @@ router.get('/soportes/armado/periodos/:id/zip-paquete', requireAuth, requireRole
   try {
     const periodoId = parseInt(req.params.id, 10);
     if (!periodoId) return res.status(400).json({ error: 'Periodo inválido' });
-    const periodoRows = await db.query('SELECT * FROM sop_periodos WHERE id = ?', [periodoId]);
-    if (!periodoRows.length) return res.status(404).json({ error: 'Periodo no encontrado' });
-    await streamPeriodPaqueteZip(res, periodoRows[0]);
+    const visCtx = await loadVisibleEnSoportesCtx();
+    const periodoRow = await requirePeriodoArmadoAccesible(req, res, periodoId, visCtx);
+    if (!periodoRow) return;
+    await streamPeriodPaqueteZip(res, periodoRow);
   } catch (e) {
     logger.error('[SOPORTES] zip-paquete:', e);
     if (!res.headersSent) {
@@ -3124,9 +3163,10 @@ router.get('/soportes/armado/periodos/:id/zip-unificado', requireAuth, requireRo
   try {
     const periodoId = parseInt(req.params.id, 10);
     if (!periodoId) return res.status(400).json({ error: 'Periodo inválido' });
-    const periodoRows = await db.query('SELECT * FROM sop_periodos WHERE id = ?', [periodoId]);
-    if (!periodoRows.length) return res.status(404).json({ error: 'Periodo no encontrado' });
-    await streamUnifiedPeriodZip(res, periodoRows[0]);
+    const visCtx = await loadVisibleEnSoportesCtx();
+    const periodoRow = await requirePeriodoArmadoAccesible(req, res, periodoId, visCtx);
+    if (!periodoRow) return;
+    await streamUnifiedPeriodZip(res, periodoRow);
   } catch (e) {
     logger.error('[SOPORTES] zip-unificado:', e);
     if (!res.headersSent) {
@@ -3142,9 +3182,9 @@ router.get('/soportes/armado/periodos/:id/zip-facturados', requireAuth, requireR
   try {
     const periodoId = parseInt(req.params.id, 10);
     if (!periodoId) return res.status(400).json({ error: 'Periodo inválido' });
-    const periodoRows = await db.query('SELECT * FROM sop_periodos WHERE id = ?', [periodoId]);
-    if (!periodoRows.length) return res.status(404).json({ error: 'Periodo no encontrado' });
-    const periodo = periodoRows[0];
+    const visCtx = await loadVisibleEnSoportesCtx();
+    const periodo = await requirePeriodoArmadoAccesible(req, res, periodoId, visCtx);
+    if (!periodo) return;
     const expedientes = await db.query(
       `SELECT e.id, e.codigo, d.nombre_display AS dia_nombre, c.tipo AS contenedor_tipo
        FROM sop_expedientes e
@@ -3258,8 +3298,12 @@ router.get('/soportes/armado/buscar', requireAuth, requireRoleOrPerm(ROLES_SOPOR
        LIMIT 60`,
       [like, like, docLike]
     );
+    const visCtx = await loadVisibleEnSoportesCtx();
+    const visibles = rows.filter((r) =>
+      resolveVisibilidadPeriodo(r.periodo, 'armado', r.periodo_id, visCtx) !== 'archivo'
+    );
     res.json({
-      resultados: rows.map((r) => ({
+      resultados: visibles.map((r) => ({
         expediente_id: r.expediente_id,
         codigo: r.codigo,
         paciente_nombre: r.paciente_nombre,

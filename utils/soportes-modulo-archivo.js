@@ -14,40 +14,74 @@ function visKey(modulo, refId) {
   return `${modulo}:${refId}`;
 }
 
-async function loadVisibleEnSoportesSet() {
+async function loadVisibleEnSoportesCtx() {
   const rows = await db.query(
-    'SELECT modulo, ref_id FROM sop_modulo_archivo WHERE visible_en_soportes = 1'
+    'SELECT modulo, ref_id, periodo FROM sop_modulo_archivo WHERE visible_en_soportes = 1'
   );
-  return new Set(rows.map((r) => visKey(r.modulo, r.ref_id)));
+  const byRef = new Set();
+  const armadoPeriodos = new Set();
+  const pdxPeriodos = new Set();
+  const anexoRefs = new Set();
+  for (const r of rows) {
+    byRef.add(visKey(r.modulo, r.ref_id));
+    if (r.modulo === 'armado' && r.periodo) armadoPeriodos.add(r.periodo);
+    if (r.modulo === 'pdx' && r.periodo) {
+      pdxPeriodos.add(r.periodo);
+      byRef.add(visKey('pdx', periodoToRefId(r.periodo)));
+    }
+    if (r.modulo === 'anexo') anexoRefs.add(r.ref_id);
+  }
+  return { byRef, armadoPeriodos, pdxPeriodos, anexoRefs };
 }
 
-function resolveVisibilidadPeriodo(periodo, modulo, refId, visiblesSet) {
+/** @deprecated alias — use loadVisibleEnSoportesCtx */
+async function loadVisibleEnSoportesSet() {
+  return loadVisibleEnSoportesCtx();
+}
+
+function resolveVisibilidadPeriodo(periodo, modulo, refId, ctx) {
   const calc = calcularVisibilidadPeriodo(periodo);
   if (calc !== 'archivo') return calc;
-  if (visiblesSet && visiblesSet.has(visKey(modulo, refId))) return 'activa';
+  if (!ctx) return 'archivo';
+  if (ctx.byRef && ctx.byRef.has(visKey(modulo, refId))) return 'activa';
+  if (modulo === 'armado' && ctx.armadoPeriodos && ctx.armadoPeriodos.has(periodo)) return 'activa';
+  if (modulo === 'pdx' && ctx.pdxPeriodos && ctx.pdxPeriodos.has(periodo)) return 'activa';
+  if (modulo === 'anexo' && ctx.anexoRefs && ctx.anexoRefs.has(refId)) return 'activa';
   return 'archivo';
 }
 
-async function isForcedVisibleEnSoportes(modulo, refId) {
+async function isForcedVisibleEnSoportes(modulo, refId, periodo = null) {
   const rows = await db.query(
-    'SELECT 1 FROM sop_modulo_archivo WHERE modulo = ? AND ref_id = ? AND visible_en_soportes = 1 LIMIT 1',
-    [modulo, refId]
+    `SELECT 1 FROM sop_modulo_archivo
+     WHERE visible_en_soportes = 1 AND modulo = ?
+       AND (ref_id = ? OR (? IS NOT NULL AND periodo = ?))
+     LIMIT 1`,
+    [modulo, refId, periodo, periodo]
   );
   return rows.length > 0;
 }
 
-async function effectiveVisibilidad(modulo, refId, periodo, visiblesSet = null) {
+async function effectiveVisibilidad(modulo, refId, periodo, ctx = null) {
   const calc = calcularVisibilidadPeriodo(periodo);
   if (calc !== 'archivo') return calc;
-  if (visiblesSet) {
-    return visiblesSet.has(visKey(modulo, refId)) ? 'activa' : 'archivo';
+  if (ctx) {
+    return resolveVisibilidadPeriodo(periodo, modulo, refId, ctx) === 'activa' ? 'activa' : 'archivo';
   }
-  return (await isForcedVisibleEnSoportes(modulo, refId)) ? 'activa' : 'archivo';
+  return (await isForcedVisibleEnSoportes(modulo, refId, periodo)) ? 'activa' : 'archivo';
 }
 
 async function setVisibleEnSoportes(registroId, visible) {
-  const rows = await db.query('SELECT id FROM sop_modulo_archivo WHERE id = ? LIMIT 1', [registroId]);
+  const rows = await db.query('SELECT * FROM sop_modulo_archivo WHERE id = ? LIMIT 1', [registroId]);
   if (!rows.length) throw new Error('Registro no encontrado');
+  const reg = rows[0];
+
+  if (visible && reg.modulo === 'armado' && reg.periodo) {
+    const pr = await db.query('SELECT id FROM sop_periodos WHERE periodo = ? LIMIT 1', [reg.periodo]);
+    if (pr.length && pr[0].id !== reg.ref_id) {
+      await db.execute('UPDATE sop_modulo_archivo SET ref_id = ? WHERE id = ?', [pr[0].id, registroId]);
+    }
+  }
+
   await db.execute(
     'UPDATE sop_modulo_archivo SET visible_en_soportes = ? WHERE id = ?',
     [visible ? 1 : 0, registroId]
@@ -393,6 +427,7 @@ module.exports = {
   crearBackupZipAnexoCarpeta,
   periodoToRefId,
   loadVisibleEnSoportesSet,
+  loadVisibleEnSoportesCtx,
   resolveVisibilidadPeriodo,
   isForcedVisibleEnSoportes,
   effectiveVisibilidad,

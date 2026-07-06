@@ -1327,6 +1327,23 @@ const runtimeMigrations = [
         );
       }
     }
+  },
+  {
+    name: 'rt_archivo_armado_sync_ref_id',
+    description: 'Alinear ref_id de registros armado en sop_modulo_archivo con sop_periodos',
+    run: async (db) => {
+      if (!(await tableExists(db, 'sop_modulo_archivo'))) return;
+      if (!(await tableExists(db, 'sop_periodos'))) return;
+      const rows = await db.query(
+        "SELECT id, ref_id, periodo FROM sop_modulo_archivo WHERE modulo = 'armado' AND periodo IS NOT NULL AND periodo != ''"
+      );
+      for (const r of rows) {
+        const pr = await db.query('SELECT id FROM sop_periodos WHERE periodo = ? LIMIT 1', [r.periodo]);
+        if (pr.length && pr[0].id !== r.ref_id) {
+          await db.execute('UPDATE sop_modulo_archivo SET ref_id = ? WHERE id = ?', [pr[0].id, r.id]);
+        }
+      }
+    }
   }
 ];
 
