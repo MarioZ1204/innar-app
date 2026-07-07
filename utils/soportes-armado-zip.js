@@ -12,7 +12,19 @@ const { getArmadoFeDirAbs } = require('./soportes-armado-structure');
 const { compararTextoNatural } = require('./comparar-texto-natural');
 const { syncRipsCarpetasDia, syncRipsCarpetasPeriodo } = require('./soportes-rips-carpetas-sync');
 
-const ZIP_COMPRESSION = 6;
+const ZIP_COMPRESSION = 1;
+/** Extensiones ya comprimidas: store en ZIP (más rápido, mismo tamaño). */
+const PRECOMPRESSED_EXT = new Set(['.pdf', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.zip', '.xlsx', '.7z', '.rar']);
+
+function zipEntryOptions(filePath) {
+  const ext = path.extname(String(filePath || '')).toLowerCase();
+  if (PRECOMPRESSED_EXT.has(ext)) return { store: true };
+  return {};
+}
+
+function createArchiverInstance() {
+  return archiver('zip', { zlib: { level: ZIP_COMPRESSION } });
+}
 const RIPS_FOLDER_PLACEHOLDER = Buffer.from(
   'Carpeta de factura para archivos RIPS (JSON/XML).\r\n',
   'utf8'
@@ -64,7 +76,7 @@ function appendEntriesToArchive(archive, entries) {
     if (e.placeholder) {
       archive.append(e.content || Buffer.alloc(0), { name: e.name });
     } else {
-      archive.file(e.absPath, { name: e.name });
+      archive.file(e.absPath, { name: e.name, ...zipEntryOptions(e.absPath) });
     }
   }
 }
@@ -227,7 +239,7 @@ function pipeArchiveToResponse(res, entries) {
     return Promise.reject(new Error('No hay archivos para el ZIP'));
   }
   return new Promise((resolve, reject) => {
-    const archive = archiver('zip', { zlib: { level: ZIP_COMPRESSION } });
+    const archive = createArchiverInstance();
     archive.on('error', reject);
     res.on('error', reject);
     archive.on('end', () => resolve(valid.length));
@@ -247,7 +259,7 @@ function createZipBuffer(entries) {
       reject(new Error('ZIP vacío'));
       return;
     }
-    const archive = archiver('zip', { zlib: { level: ZIP_COMPRESSION } });
+    const archive = createArchiverInstance();
     const chunks = [];
     archive.on('data', (chunk) => chunks.push(chunk));
     archive.on('end', () => resolve(Buffer.concat(chunks)));
@@ -288,7 +300,7 @@ function appendInnerZipToArchive(outerArchive, name, entries) {
   const valid = filterValidZipEntries(entries);
   if (!valid.length) return Promise.resolve(false);
   return new Promise((resolve, reject) => {
-    const inner = archiver('zip', { zlib: { level: ZIP_COMPRESSION } });
+    const inner = createArchiverInstance();
     inner.on('error', reject);
     inner.on('end', () => resolve(true));
     outerArchive.append(inner, { name });
@@ -309,79 +321,47 @@ async function streamDiaZip(res, dia) {
   await pipeArchiveToResponse(res, entries);
 }
 
-async function buildPeriodPaqueteParts(periodoId, zipLabel) {
+async function collectPeriodPaqueteFlatEntries(periodoId) {
+  await safeSyncRipsPeriodo(periodoId);
   const dias = await queryDiasFacturacionZip(periodoId);
-  if (!dias.length) throw new Error('El mes no tiene carpetas de facturación');
+  const usedPaths = new Set();
+  const entries = [];
 
-  const parts = [];
   for (const dia of dias) {
-    try {
-      const entries = await collectDiaZipEntries(dia.id);
-      if (!entries.length) continue;
-      const buf = await createZipBuffer(entries);
-      const diaSeg = zipArchiveSegment(dia.nombre_display || `dia-${dia.id}`);
-      parts.push({ name: `${diaSeg}.zip`, buffer: buf });
-    } catch (e) {
-      logger.warn('[SOPORTES] zip paquete dia:', e.message);
+    const diaSeg = zipArchiveSegment(dia.nombre_display || `dia-${dia.id}`);
+    const part = await collectDiaZipEntries(dia.id);
+    for (const e of part) {
+      let name = `${diaSeg}/${e.name}`;
+      if (usedPaths.has(name)) {
+        name = `${diaSeg}/${diaSeg}_${path.basename(e.name)}`;
+      }
+      usedPaths.add(name);
+      entries.push({ ...e, name });
     }
   }
 
-  try {
-    const unifiedEntries = await collectPeriodUnifiedEntries(periodoId);
-    if (unifiedEntries.length) {
-      const unifiedBuf = await createZipBuffer(unifiedEntries);
-      parts.push({ name: `${zipLabel}-unificado.zip`, buffer: unifiedBuf });
-    }
-  } catch (e) {
-    logger.warn('[SOPORTES] zip paquete unificado:', e.message);
-  }
+  return filterValidZipEntries(entries);
+}
 
-  if (!parts.length) throw new Error('No hay archivos para descargar en este mes');
-  return parts;
+/** @deprecated Usar collectPeriodPaqueteFlatEntries; conservado para manifiestos legacy. */
+async function buildPeriodPaqueteParts(periodoId, zipLabel) {
+  const entries = await collectPeriodPaqueteFlatEntries(periodoId);
+  if (!entries.length) throw new Error('No hay archivos para descargar en este mes');
+  const buf = await createZipBuffer(entries);
+  return [{ name: `${zipLabel || 'mes'}-por-dias.zip`, buffer: buf }];
 }
 
 async function streamPeriodPaqueteZip(res, periodo) {
   const periodoId = periodo.id;
   const zipLabel = zipArchiveSegment(periodo.etiqueta || periodo.periodo || `periodo-${periodoId}`);
-  const dias = await queryDiasFacturacionZip(periodoId);
-  if (!dias.length) throw new Error('El mes no tiene carpetas de facturación');
+  const entries = await collectPeriodPaqueteFlatEntries(periodoId);
+  if (!entries.length) throw new Error('No hay archivos para descargar en este mes');
 
   res.setHeader('Content-Type', 'application/zip');
   res.setHeader('Content-Disposition', `attachment; filename="${zipLabel}-paquete.zip"`);
   res.setHeader('Cache-Control', 'no-store');
   if (typeof res.flushHeaders === 'function') res.flushHeaders();
-
-  await new Promise((resolve, reject) => {
-    const archive = archiver('zip', { zlib: { level: ZIP_COMPRESSION } });
-    let partsAdded = 0;
-    archive.on('error', reject);
-    res.on('error', reject);
-    archive.on('end', () => {
-      if (!partsAdded) reject(new Error('No hay archivos para descargar en este mes'));
-      else resolve();
-    });
-    archive.pipe(res);
-
-    (async () => {
-      try {
-        void safeSyncRipsPeriodo(periodoId);
-        for (const dia of dias) {
-          const entries = await collectDiaZipEntries(dia.id);
-          const diaSeg = zipArchiveSegment(dia.nombre_display || `dia-${dia.id}`);
-          const added = await appendInnerZipToArchive(archive, `${diaSeg}.zip`, entries);
-          if (added) partsAdded++;
-        }
-        const unifiedEntries = await collectPeriodUnifiedEntries(periodoId);
-        if (unifiedEntries.length) {
-          const addedUni = await appendInnerZipToArchive(archive, `${zipLabel}-unificado.zip`, unifiedEntries);
-          if (addedUni) partsAdded++;
-        }
-        archive.finalize();
-      } catch (e) {
-        reject(e);
-      }
-    })();
-  });
+  await pipeArchiveToResponse(res, entries);
 }
 
 async function collectPeriodUnifiedEntries(periodoId) {
@@ -528,10 +508,12 @@ module.exports = {
   collectDiaZipEntries,
   collectCarpetaZipEntries,
   collectPeriodUnifiedEntries,
+  collectPeriodPaqueteFlatEntries,
   createZipBuffer,
   buildPeriodPaqueteParts,
   queryDiasFacturacionZip,
   appendInnerZipToArchive,
+  appendEntriesToArchive,
   safeSyncRipsPeriodo,
   streamDiaZip,
   streamCarpetaZip,

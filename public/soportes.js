@@ -1266,7 +1266,7 @@
   function htmlArmZipPaqueteBtn() {
     if (!armState.periodoId || !armState.dias.length || !sopPerm('soportes.descargar_zip')) return '';
     const label = escapeHtml(armState.periodoLabel || 'Mes');
-    const title = `Paquete ZIP: un archivo por cada carpeta de día (${armState.dias.length}) más un ZIP unificado con RIPS y SOPORTES de todo el mes`;
+    const title = `Paquete ZIP del mes: una carpeta por día con SOPORTES y RIPS (sin duplicar el ZIP unificado; use el botón «ZIP unificado» si lo necesita)`;
     return htmlArmZipBtn({
       apiPath: `/api/soportes/armado/periodos/${armState.periodoId}/zip-paquete`,
       fallbackName: `${armState.periodoLabel || 'mes'}-paquete.zip`,
