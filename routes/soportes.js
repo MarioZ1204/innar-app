@@ -524,7 +524,7 @@ const PERMS_ARMADO_VER_SUBIR = ['modulo.armado_soportes', 'soportes.armado.subir
 
 const { applyHighlightsToPdfBytes, sanitizeHighlightsList } = require('../utils/soportes-pdf-highlights');
 const { appendPdfFilesToExisting } = require('../utils/soportes-pdf-anexar');
-const { sanitizePageIndexes, removePdfPagesFromBytes } = require('../utils/soportes-pdf-pages');
+const { sanitizePageIndexes, removePdfPagesFromBytes, reorderPdfPagesFromBytes } = require('../utils/soportes-pdf-pages');
 
 function writePdfBytesAtomic(filePath, buffer) {
   const tmp = `${filePath}.hl-${process.pid}-${Date.now()}.tmp`;
@@ -1435,6 +1435,47 @@ router.post(
     } catch (e) {
       cleanupMulterTempFiles(req);
       logger.error('[SOPORTES] anexar pdx:', e);
+      res.status(500).json({ error: safeError(e) });
+    }
+  }
+);
+
+router.post(
+  '/soportes/pdx/archivos/:id/reordenar-paginas',
+  requireAuth,
+  requireRoleOrPerm(ROLES_SOPORTES, PERMS_PDX_VER_SUBIR),
+  async (req, res) => {
+    try {
+      const order = req.body?.order;
+      if (!Array.isArray(order) || !order.length) {
+        return res.status(400).json({ error: 'Indique el nuevo orden de páginas' });
+      }
+      const rows = await db.query(
+        `SELECT a.*, c.periodo, c.roles_visibles FROM sop_pdx_archivos a JOIN sop_pdx_carpetas c ON c.id = a.carpeta_id WHERE a.id = ?`,
+        [req.params.id]
+      );
+      if (!rows.length) return res.status(404).json({ error: 'No encontrado' });
+      const row = rows[0];
+      const deniedOrd = denySinAccesoCarpetaPdx(req, row);
+      if (deniedOrd) return res.status(deniedOrd.status).json({ error: deniedOrd.error });
+      const vis = await visPdxPeriodo(row.periodo);
+      if (vis === 'archivo') return res.status(403).json({ error: 'Carpeta cerrada' });
+      const fp = await resolvePdxArchivoPathForApi(row, true);
+      if (!fp || !fs.existsSync(fp)) return res.status(404).json({ error: 'Archivo no en disco' });
+      const bytes = fs.readFileSync(fp);
+      const { PDFDocument } = require('pdf-lib');
+      const pageCount = (await PDFDocument.load(bytes, { ignoreEncryption: true })).getPageCount();
+      const outBytes = await reorderPdfPagesFromBytes(bytes, order);
+      writePdfBytesAtomic(fp, outBytes);
+      const tamanoFinal = outBytes.length;
+      await db.execute(
+        'UPDATE sop_pdx_archivos SET tamano_bytes = ?, editado_por = ?, editado_en = NOW() WHERE id = ?',
+        [tamanoFinal, req.session.usuarioId, req.params.id]
+      );
+      await logPdxArchivo(req.params.id, 'reordenar_paginas', req.session.usuarioId, `${order.length} pág.`);
+      res.json({ ok: true, message: 'Se reordenaron las páginas del PDF', tamano_bytes: tamanoFinal });
+    } catch (e) {
+      logger.error('[SOPORTES] reordenar paginas pdx:', e);
       res.status(500).json({ error: safeError(e) });
     }
   }
@@ -2811,6 +2852,46 @@ router.post(
     } catch (e) {
       cleanupMulterTempFiles(req);
       logger.error('[SOPORTES] anexar armado:', e);
+      res.status(500).json({ error: safeError(e) });
+    }
+  }
+);
+
+router.post(
+  '/soportes/armado/expedientes/:id/archivos/:tipo/reordenar-paginas',
+  requireAuth,
+  requireRoleOrPerm(ROLES_SOPORTES, PERMS_ARMADO_VER_SUBIR),
+  async (req, res) => {
+    try {
+      const order = req.body?.order;
+      if (!Array.isArray(order) || !order.length) {
+        return res.status(400).json({ error: 'Indique el nuevo orden de páginas' });
+      }
+      const { loadArchivoExpedienteSlot, resolveArchivoAbsoluto, SOPORTES_SLOT_TIPOS } = require('../utils/soportes-exp-archivo');
+      const tipo = String(req.params.tipo || '').toUpperCase();
+      if (!SOPORTES_SLOT_TIPOS.includes(tipo)) {
+        return res.status(400).json({ error: 'Tipo de archivo no válido' });
+      }
+      const loaded = await loadArchivoExpedienteSlot(req.params.id, tipo);
+      if (!loaded.ok) return res.status(loaded.status || 404).json({ error: loaded.error });
+      const fp = resolveArchivoAbsoluto(loaded.row);
+      if (!fp || !fs.existsSync(fp)) return res.status(404).json({ error: 'Archivo no en disco' });
+      if (!/\.pdf$/i.test(fp) && loaded.row.mime_type !== 'application/pdf') {
+        return res.status(400).json({ error: 'El archivo no es PDF' });
+      }
+      const bytes = fs.readFileSync(fp);
+      const { PDFDocument } = require('pdf-lib');
+      const pageCount = (await PDFDocument.load(bytes, { ignoreEncryption: true })).getPageCount();
+      const outBytes = await reorderPdfPagesFromBytes(bytes, order);
+      writePdfBytesAtomic(fp, outBytes);
+      await db.execute(
+        'UPDATE sop_exp_archivos SET tamano_bytes = ?, subido_por = ? WHERE id = ?',
+        [outBytes.length, req.session.usuarioId, loaded.row.id]
+      );
+      const detail = await buildExpedienteDetail(req.params.id);
+      res.json({ ok: true, message: 'Se reordenaron las páginas del PDF', tamano_bytes: outBytes.length, expediente: detail });
+    } catch (e) {
+      logger.error('[SOPORTES] reordenar armado:', e);
       res.status(500).json({ error: safeError(e) });
     }
   }

@@ -50,6 +50,7 @@
         saveUrl: edit ? `/api/soportes/pdx/archivos/${id}/resaltar` : '',
         appendUrl: edit ? `/api/soportes/pdx/archivos/${id}/anexar-pdf` : '',
         deletePagesUrl: edit ? `/api/soportes/pdx/archivos/${id}/eliminar-paginas` : '',
+        reorderPagesUrl: edit ? `/api/soportes/pdx/archivos/${id}/reordenar-paginas` : '',
         downloadUrl: `/api/soportes/pdx/archivos/${id}/descargar`,
         canEdit: edit
       };
@@ -70,6 +71,9 @@
           : '',
         deletePagesUrl: edit
           ? `/api/soportes/armado/expedientes/${exp}/archivos/${tipoEnc}/eliminar-paginas`
+          : '',
+        reorderPagesUrl: edit
+          ? `/api/soportes/armado/expedientes/${exp}/archivos/${tipoEnc}/reordenar-paginas`
           : '',
         downloadUrl: `/api/soportes/armado/expedientes/${exp}/archivos/${tipoEnc}/descargar`,
         canEdit: edit
@@ -103,6 +107,7 @@
       saveUrl: cfg.saveUrl,
       appendUrl: cfg.appendUrl || '',
       deletePagesUrl: cfg.deletePagesUrl || '',
+      reorderPagesUrl: cfg.reorderPagesUrl || '',
       downloadUrl: cfg.downloadUrl,
       title: cfg.title,
       canEdit: cfg.canEdit,

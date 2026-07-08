@@ -108,7 +108,9 @@
       + (saveInTopbar ? ' sop-pdf-editor--topbar-save' : '');
     const appendUrl = opts.appendUrl || '';
     const deletePagesUrl = opts.deletePagesUrl || '';
+    const reorderPagesUrl = opts.reorderPagesUrl || '';
     const canDeletePages = canEdit && isPage && !!deletePagesUrl;
+    const canReorderPages = canEdit && isPage && !!reorderPagesUrl;
     const hintSelect = isPage
       ? 'Seleccione texto (Ctrl+C). Use <strong>Resaltar</strong>, <strong>Añadir PDF</strong> o <strong>Eliminar páginas</strong> y guarde los cambios.'
       : 'Seleccione el texto con el ratón y copie con <strong>Ctrl+C</strong> (o clic derecho → Copiar).';
@@ -116,6 +118,7 @@
       ? 'Arrastre para resaltar. Guarde antes de añadir otro PDF si ya tiene marcas pendientes.'
       : 'Modo resaltar: arrastre sobre el documento. Pulse <strong>Guardar en PDF</strong> para que las marcas queden al descargar.';
     const hintDelete = 'Marque las páginas a quitar y pulse <strong>Eliminar seleccionadas</strong>. Debe quedar al menos una página.';
+    const hintReorder = 'Arrastre las páginas en la lista para definir el orden y confirme con <strong>Guardar orden</strong>.';
     shell.innerHTML = `
       <div class="sop-pdf-editor-header">
         <h3>${escapeHtml(opts.title || 'Documento PDF')}</h3>
@@ -125,6 +128,7 @@
             <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm is-active" id="sopPdfEdModeSelect" title="Seleccionar y copiar texto">Seleccionar texto</button>
             <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="sopPdfEdModeHighlight" title="Dibujar resaltados">Resaltar</button>
             ${canDeletePages ? '<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="sopPdfEdModeDelete" title="Quitar páginas del PDF">Eliminar páginas</button>' : ''}
+            ${canReorderPages ? '<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="sopPdfEdModeReorder" title="Cambiar el orden de las páginas del PDF">Reordenar</button>' : ''}
           </div>
           <div class="sop-pdf-editor-colors is-hidden" role="group" aria-label="Color de resaltado" id="sopPdfEdColors">
             ${MARK_COLORS.map((c, i) => {
@@ -148,6 +152,13 @@
         <button type="button" class="sop-btn sop-btn-danger sop-btn-sm" id="sopPdfEdDelApply" disabled>Eliminar seleccionadas</button>
         <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="sopPdfEdDelCancel">Cancelar</button>
       </div>` : ''}
+      ${canReorderPages ? `
+      <div class="sop-pdf-reorder-actions is-hidden" id="sopPdfEdReorderBar">
+        <span class="sop-pdf-reorder-hint">Arrastre las páginas para cambiar el orden y confirme.</span>
+        <button type="button" class="sop-btn sop-btn-primary sop-btn-sm" id="sopPdfEdReorderApply" disabled>Guardar orden</button>
+        <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="sopPdfEdReorderCancel">Cancelar</button>
+      </div>` : ''}
+      ${canReorderPages ? '<div class="sop-pdf-reorder-list is-hidden" id="sopPdfEdReorderList"></div>' : ''}
       <div class="sop-pdf-editor-body" id="sopPdfEdBody"><div class="sop-pdf-editor-loading">Cargando PDF…</div></div>
       <div class="sop-pdf-editor-footer">
         <span class="sop-pdf-editor-count" id="sopPdfEdCount"></span>
@@ -176,7 +187,12 @@
     const delCountEl = shell.querySelector('#sopPdfEdDelCount');
     const btnDelApply = shell.querySelector('#sopPdfEdDelApply');
     const btnDelCancel = shell.querySelector('#sopPdfEdDelCancel');
+    const reorderBar = shell.querySelector('#sopPdfEdReorderBar');
+    const reorderList = shell.querySelector('#sopPdfEdReorderList');
+    const btnReorderApply = shell.querySelector('#sopPdfEdReorderApply');
+    const btnReorderCancel = shell.querySelector('#sopPdfEdReorderCancel');
     const pageDeleteChecks = [];
+    const reorderItems = [];
     let interactionMode = 'select';
 
     function updateDeleteSelection() {
@@ -201,22 +217,30 @@
       interactionMode = mode;
       const highlight = mode === 'highlight';
       const del = mode === 'delete';
+      const reorder = mode === 'reorder';
       shell.classList.toggle('is-select-mode', mode === 'select');
       shell.classList.toggle('is-highlight-mode', highlight);
       shell.classList.toggle('is-delete-mode', del);
+      shell.classList.toggle('is-reorder-mode', reorder);
       shell.querySelector('#sopPdfEdModeSelect')?.classList.toggle('is-active', mode === 'select');
       shell.querySelector('#sopPdfEdModeHighlight')?.classList.toggle('is-active', highlight);
       shell.querySelector('#sopPdfEdModeDelete')?.classList.toggle('is-active', del);
+      shell.querySelector('#sopPdfEdModeReorder')?.classList.toggle('is-active', reorder);
       colorsEl?.classList.toggle('is-hidden', !highlight);
       btnUndo?.classList.toggle('is-hidden', !highlight);
-      shell.querySelector('#sopPdfEdAnexarLbl')?.classList.toggle('is-hidden', del);
+      shell.querySelector('#sopPdfEdAnexarLbl')?.classList.toggle('is-hidden', del || mode === 'reorder');
       deleteBar?.classList.toggle('is-hidden', !del);
+      reorderBar?.classList.toggle('is-hidden', mode !== 'reorder');
+      reorderList?.classList.toggle('is-hidden', mode !== 'reorder');
       if (hintEl) {
-        hintEl.innerHTML = del ? hintDelete : (highlight ? hintHighlight : hintSelect);
+        hintEl.innerHTML = del ? hintDelete : (highlight ? hintHighlight : (mode === 'reorder' ? hintReorder : hintSelect));
       }
       if (!del) {
         pageDeleteChecks.forEach((c) => { c.checked = false; });
         updateDeleteSelection();
+      }
+      if (mode !== 'reorder') {
+        reorderItems.forEach((item) => item.classList.remove('is-dragging'));
       }
     }
 
@@ -341,7 +365,9 @@
     shell.querySelector('#sopPdfEdModeSelect')?.addEventListener('click', () => setInteractionMode('select'));
     shell.querySelector('#sopPdfEdModeHighlight')?.addEventListener('click', () => setInteractionMode('highlight'));
     shell.querySelector('#sopPdfEdModeDelete')?.addEventListener('click', () => setInteractionMode('delete'));
+    shell.querySelector('#sopPdfEdModeReorder')?.addEventListener('click', () => setInteractionMode('reorder'));
     btnDelCancel?.addEventListener('click', () => setInteractionMode('select'));
+    btnReorderCancel?.addEventListener('click', () => setInteractionMode('select'));
 
     btnDelApply?.addEventListener('click', async () => {
       const pages = pageDeleteChecks.filter((c) => c.checked).map((c) => parseInt(c.dataset.pageNum, 10));
@@ -363,6 +389,28 @@
         btnDelApply.disabled = false;
         btnDelApply.textContent = 'Eliminar seleccionadas';
         updateDeleteSelection();
+      }
+    });
+
+    btnReorderApply?.addEventListener('click', async () => {
+      const order = reorderItems.map((item) => parseInt(item.dataset.pageNum, 10));
+      if (!order.length || !reorderPagesUrl || !apiFetch) return;
+      btnReorderApply.disabled = true;
+      btnReorderApply.textContent = 'Guardando…';
+      try {
+        const res = await apiFetch(reorderPagesUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ order })
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || 'No se pudo guardar el orden');
+        toast(data.message || 'Orden actualizado', 'success');
+        window.location.reload();
+      } catch (e) {
+        toast(e.message || 'Error al guardar el orden', 'error');
+        btnReorderApply.disabled = false;
+        btnReorderApply.textContent = 'Guardar orden';
       }
     });
 
@@ -482,6 +530,54 @@
           span.textContent = `Pág. ${i}`;
           lbl.appendChild(span);
           wrap.appendChild(lbl);
+        }
+        if (canReorderPages) {
+          const reorderItem = document.createElement('button');
+          reorderItem.type = 'button';
+          reorderItem.className = 'sop-pdf-reorder-item';
+          reorderItem.dataset.pageNum = String(i);
+          reorderItem.innerHTML = `<span class="sop-pdf-reorder-item__num">Pág. ${i}</span><span class="sop-pdf-reorder-item__hint">Arrastre</span>`;
+          reorderItem.draggable = true;
+          reorderItem.addEventListener('dragstart', (ev) => {
+            reorderItem.classList.add('is-dragging');
+            reorderItem.dataset.dragging = '1';
+            if (ev.dataTransfer) ev.dataTransfer.effectAllowed = 'move';
+          });
+          reorderItem.addEventListener('dragend', () => {
+            reorderItem.classList.remove('is-dragging');
+            reorderItem.classList.remove('is-over');
+            delete reorderItem.dataset.dragging;
+          });
+          reorderItem.addEventListener('dragover', (ev) => {
+            ev.preventDefault();
+            if (ev.dataTransfer) ev.dataTransfer.dropEffect = 'move';
+            reorderItem.classList.add('is-over');
+          });
+          reorderItem.addEventListener('dragleave', () => {
+            reorderItem.classList.remove('is-over');
+          });
+          reorderItem.addEventListener('drop', (ev) => {
+            ev.preventDefault();
+            reorderItem.classList.remove('is-over');
+            const from = shell.querySelector('.sop-pdf-reorder-item.is-dragging');
+            if (!from || from === reorderItem) return;
+            const fromIndex = Array.from(reorderItems).indexOf(from);
+            const toIndex = Array.from(reorderItems).indexOf(reorderItem);
+            if (fromIndex < 0 || toIndex < 0) return;
+            const [moved] = reorderItems.splice(fromIndex, 1);
+            reorderItems.splice(toIndex, 0, moved);
+            const parent = reorderList;
+            if (parent) {
+              if (fromIndex < toIndex) {
+                parent.insertBefore(moved, reorderItem.nextSibling);
+              } else {
+                parent.insertBefore(moved, reorderItem);
+              }
+            }
+            btnReorderApply.disabled = false;
+          });
+          reorderItems.push(reorderItem);
+          reorderList?.appendChild(reorderItem);
         }
         body.appendChild(wrap);
       }

@@ -1,4 +1,4 @@
-const { sanitizePageIndexes, removePdfPagesFromBytes } = require('../utils/soportes-pdf-pages');
+const { sanitizePageIndexes, removePdfPagesFromBytes, reorderPdfPagesFromBytes } = require('../utils/soportes-pdf-pages');
 const { PDFDocument } = require('pdf-lib');
 
 async function pdfWithPages(n) {
@@ -23,5 +23,12 @@ describe('soportes-pdf-pages', () => {
     const out = await removePdfPagesFromBytes(src, [1, 3]);
     const doc = await PDFDocument.load(out);
     expect(doc.getPageCount()).toBe(2);
+  });
+
+  test('reorderPdfPagesFromBytes reordena páginas conservando el total', async () => {
+    const src = await pdfWithPages(3);
+    const out = await reorderPdfPagesFromBytes(src, [3, 1, 2]);
+    const doc = await PDFDocument.load(out);
+    expect(doc.getPageCount()).toBe(3);
   });
 });

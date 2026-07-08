@@ -48,8 +48,37 @@ async function removePdfPagesFromBytes(pdfBytes, pageIndexes0) {
   return Buffer.from(await out.save());
 }
 
+function sanitizePageOrder(order, pageCount) {
+  if (!Array.isArray(order) || !order.length) {
+    throw new Error('Indique un orden de páginas válido');
+  }
+  const normalized = order.map((raw) => parseInt(raw, 10)).filter((n) => Number.isFinite(n));
+  if (normalized.length !== pageCount) {
+    throw new Error(`El orden debe incluir todas las páginas (${pageCount})`);
+  }
+  const set = new Set(normalized);
+  if (set.size !== pageCount || normalized.some((n) => n < 1 || n > pageCount)) {
+    throw new Error('El orden de páginas es inválido');
+  }
+  return normalized.map((n) => n - 1);
+}
+
+async function reorderPdfPagesFromBytes(pdfBytes, pageOrder1Based) {
+  const doc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
+  const pageCount = doc.getPageCount();
+  const indexes = sanitizePageOrder(pageOrder1Based, pageCount);
+  const out = await PDFDocument.create();
+  for (const idx of indexes) {
+    const [copied] = await out.copyPages(doc, [idx]);
+    out.addPage(copied);
+  }
+  return Buffer.from(await out.save());
+}
+
 module.exports = {
   MAX_PAGES_PER_REQUEST,
   sanitizePageIndexes,
-  removePdfPagesFromBytes
+  sanitizePageOrder,
+  removePdfPagesFromBytes,
+  reorderPdfPagesFromBytes
 };
