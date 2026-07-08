@@ -257,6 +257,22 @@ describe('soportes-pdx-parse — formatos estructurados', () => {
     expect(p.estudio_texto).toBe('Neurología');
   });
 
+  test('buildMetaFromUpload usa el nombre estructurado para carpetas de consultas médicas y evita sobrescribir archivos con distinta especialidad', () => {
+    const meta = buildMetaFromUpload(
+      'COMPROBANTE mismo.pdf',
+      {
+        confirmacion_manual: '1',
+        nombres: 'Juan Carlos',
+        apellidos: 'García López',
+        fecha_estudio: '2026-05-27',
+        estudio_texto: 'Neurología'
+      },
+      { nombre_display: 'COMPROBANTES CONSULTAS MÉDICAS' }
+    );
+    expect(meta.ok).toBe(true);
+    expect(meta.nombre_archivo_display).toBe('COMPROBANTE Juan Carlos García López 2026-05-27 Neurología.pdf');
+  });
+
   test('analizarNombreArchivo acepta comprobantes consultas médicas cuando la carpeta es genérica pero el nombre lo indica', () => {
     const a = analizarNombreArchivo(
       'COMPROBANTE Juan Carlos García López 2026-05-27 Neurología.pdf',

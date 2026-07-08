@@ -863,7 +863,7 @@ function nombreArchivoDescarga(meta, carpeta) {
   const original = meta.nombre_archivo_original || meta.original || '';
   const tema = detectarTemaCarpeta(carpeta?.nombre_display || '');
   if (esTemaFormatoGuionesCompleto(tema)) {
-    return meta.nombre_archivo_display || original;
+    return meta.nombre_display || meta.nombre_archivo_display || original;
   }
   const estudio = meta.estudio_texto || inferirEstudioDesdeCarpeta(carpeta);
   if (!estudio) return original;
