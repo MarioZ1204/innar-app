@@ -6,6 +6,7 @@ const fs = require('fs');
 const db = require('./db-mysql');
 const { getSoportesRoot } = require('../config/uploads-path');
 const { resolveStoragePath } = require('./soportes-storage');
+const { buildSoportesDiskName, etiquetaFacturaExpediente, getNitObligado } = require('./soportes-archivo-detect');
 
 const SOPORTES_SLOT_TIPOS = ['OPF', 'CRC', 'FEV', 'PDX', 'HEV'];
 
@@ -94,7 +95,83 @@ function buscarRutaHistoricaArchivo(row, baseRoot = getSoportesRoot()) {
   return null;
 }
 
-function resolveArchivoAbsoluto(row) {
+function inferNitDesdeNombre(nombre) {
+  const base = path.basename(String(nombre || '')).toUpperCase();
+  const match = base.match(/^(OPF|CRC|FEV|PDX|HEV)[_-](\d+)[_-]/i);
+  if (match) return match[2];
+  return null;
+}
+
+function construirNombreEsperado(row, expediente, ext = null) {
+  const tipo = String(row?.tipo || '').toUpperCase();
+  if (!tipo) return null;
+  const resolvedExt = ext || path.extname(String(row?.nombre_archivo || row?.ruta_relativa || '') || '.pdf') || '.pdf';
+  const nit = inferNitDesdeNombre(row?.nombre_archivo || row?.ruta_relativa) || getNitObligado();
+  const tag = expediente ? etiquetaFacturaExpediente(expediente) : null;
+  if (!tag) return null;
+  return `${tipo}_${nit}_${tag}${resolvedExt.startsWith('.') ? resolvedExt : `.${resolvedExt}`}`;
+}
+
+function buscarRutaPorPatronExpediente(row, expediente, baseRoot = getSoportesRoot()) {
+  const tipo = String(row?.tipo || '').toUpperCase();
+  const rel = String(row?.ruta_relativa || '').replace(/\\/g, '/').trim();
+  const relDir = rel ? path.dirname(rel).replace(/^soportes\//, '') : '';
+  const rowName = String(row?.nombre_archivo || '').trim();
+  const rowBase = rowName ? path.basename(rowName) : '';
+  const expectedName = construirNombreEsperado(row, expediente);
+  const expectedStem = expectedName ? path.basename(expectedName, path.extname(expectedName)) : '';
+  const typePrefix = tipo ? `${tipo.toLowerCase()}_` : '';
+
+  const roots = [
+    baseRoot,
+    path.join(baseRoot, 'armado'),
+    path.join(baseRoot, relDir),
+    path.join(baseRoot, 'armado', relDir),
+    path.resolve(__dirname, '..', 'public', 'uploads', 'soportes')
+  ].filter(Boolean);
+
+  const scorePath = (entryName, absPath) => {
+    const lower = entryName.toLowerCase();
+    const ext = path.extname(entryName).toLowerCase();
+    let score = 0;
+    if (expectedName && lower === expectedName.toLowerCase()) return 1000;
+    if (expectedStem && lower.includes(expectedStem.toLowerCase())) score += 300;
+    if (tipo && lower.startsWith(typePrefix)) score += 180;
+    if (rowBase && lower === rowBase.toLowerCase()) score += 120;
+    if (rowBase && lower.includes(path.basename(rowBase, path.extname(rowBase)).toLowerCase())) score += 80;
+    if (expediente && String(etiquetaFacturaExpediente(expediente)).toUpperCase()) {
+      const tag = String(etiquetaFacturaExpediente(expediente)).toUpperCase();
+      if (lower.includes(tag.toLowerCase())) score += 200;
+    }
+    if (ext === '.pdf') score += 20;
+    if (absPath && relDir && absPath.includes(`/${relDir}/`)) score += 40;
+    return score;
+  };
+
+  const matches = [];
+  const walk = (currentDir) => {
+    if (!fs.existsSync(currentDir)) return;
+    const entries = fs.readdirSync(currentDir, { withFileTypes: true });
+    for (const entry of entries) {
+      const full = path.join(currentDir, entry.name);
+      if (entry.isDirectory()) {
+        walk(full);
+        continue;
+      }
+      const score = scorePath(entry.name, full);
+      if (score > 0) matches.push({ path: full, score });
+    }
+  };
+
+  for (const root of roots) {
+    walk(root);
+  }
+
+  matches.sort((a, b) => b.score - a.score || a.path.localeCompare(b.path));
+  return matches[0]?.path || null;
+}
+
+function resolveArchivoAbsoluto(row, options = {}) {
   const rel = String(row?.ruta_relativa || '').replace(/\\/g, '/');
   if (!rel) return null;
   const joined = rel.startsWith('soportes/') ? rel : path.join('soportes', rel).replace(/\\/g, '/');
@@ -156,6 +233,8 @@ function resolveArchivoAbsoluto(row) {
   ];
   const historical = buscarRutaHistoricaArchivo(row);
   if (historical) return historical;
+  const byPattern = buscarRutaPorPatronExpediente(row, options.expediente);
+  if (byPattern) return byPattern;
   for (const root of scanRoots) {
     const found = buscarPorPrefijo(root);
     if (found) return found;
@@ -176,10 +255,17 @@ function resolveArchivoAbsoluto(row) {
   return null;
 }
 
-async function repararArchivoExpedienteRow(row, { contenedor = 'soportes', usedPaths = null, expedienteId = null } = {}) {
+async function obtenerExpedienteContext(expedienteId) {
+  if (!expedienteId) return null;
+  const rows = await db.query('SELECT id, codigo, numero_factura, contenedor_tipo, periodo, nombre_display, estado_facturacion FROM sop_expedientes WHERE id = ?', [expedienteId]);
+  return rows?.[0] || null;
+}
+
+async function repararArchivoExpedienteRow(row, { contenedor = 'soportes', usedPaths = null, expedienteId = null, expediente = null } = {}) {
   if (!row?.id) return { ok: false, repaired: false, path: null };
 
-  let resolved = resolveArchivoAbsoluto(row);
+  const expedienteContext = expediente || (await obtenerExpedienteContext(expedienteId || row?.expediente_id));
+  let resolved = resolveArchivoAbsoluto(row, { expediente: expedienteContext });
   const rowNombre = String(row?.nombre_archivo || '').trim();
   const rowBaseName = rowNombre ? path.basename(rowNombre) : '';
   const resolvedBaseName = resolved ? path.basename(resolved) : '';
@@ -290,14 +376,15 @@ async function repararArchivosExpediente(expedienteId) {
   const soportesRows = await db.query('SELECT * FROM sop_exp_archivos WHERE expediente_id = ?', [expedienteId]);
   const reparaciones = [];
   const usedPaths = new Set();
+  const expediente = await obtenerExpedienteContext(expedienteId);
   for (const row of soportesRows) {
-    reparaciones.push(await repararArchivoExpedienteRow(row, { contenedor: 'soportes', usedPaths, expedienteId }));
+    reparaciones.push(await repararArchivoExpedienteRow(row, { contenedor: 'soportes', usedPaths, expedienteId, expediente }));
   }
 
   try {
     const ripsRows = await db.query('SELECT * FROM sop_rips_archivos WHERE expediente_id = ?', [expedienteId]);
     for (const row of ripsRows) {
-      reparaciones.push(await repararArchivoExpedienteRow(row, { contenedor: 'rips', usedPaths, expedienteId }));
+      reparaciones.push(await repararArchivoExpedienteRow(row, { contenedor: 'rips', usedPaths, expedienteId, expediente }));
     }
   } catch (_) {
     // La tabla puede no existir o no estar preparada en todos los entornos.

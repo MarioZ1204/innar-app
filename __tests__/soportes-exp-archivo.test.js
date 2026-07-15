@@ -76,6 +76,28 @@ describe('soportes-exp-archivo', () => {
     expect(db.execute).toHaveBeenCalled();
   });
 
+  test('reconoce el archivo correcto cuando el expediente usa un FE distinto al registro anterior', async () => {
+    const fileDir = path.join(tempRoot, 'soportes', 'armado', '2026', '03', 'A_FACTURAR', 'SOPORTES', 'FE16300');
+    fs.mkdirSync(fileDir, { recursive: true });
+    const filePath = path.join(fileDir, 'OPF_901164565_FE16300.pdf');
+    fs.writeFileSync(filePath, 'pdf');
+
+    db.query.mockResolvedValueOnce([{ id: 1, codigo: 'FE16300', numero_factura: 16300 }]);
+    db.execute.mockResolvedValue({ affectedRows: 1 });
+
+    const result = await repararArchivoExpedienteRow({
+      id: 43,
+      expediente_id: 1,
+      tipo: 'OPF',
+      nombre_archivo: 'OPF_901164565_FE15448.pdf',
+      ruta_relativa: 'soportes/armado/2026/03/A_FACTURAR/SOPORTES/FE15448/OPF_901164565_FE15448.pdf'
+    });
+
+    expect(result.repaired).toBe(true);
+    expect(result.nombre_archivo).toBe('OPF_901164565_FE16300.pdf');
+    expect(result.ruta_relativa).toContain('/FE16300/OPF_901164565_FE16300.pdf');
+  });
+
   test('repara expedientes legacy que comparten el mismo archivo físico entre dos soportes', async () => {
     const expId = 77;
     const targetDir = path.join(tempRoot, 'soportes', 'armado', '2026', '03', 'A_FACTURAR', 'SOPORTES', 'FE14726');
