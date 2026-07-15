@@ -12,7 +12,8 @@ const {
   SOPORTES_SLOT_TIPOS,
   resolveArchivoAbsoluto,
   repararArchivoExpedienteRow,
-  repararArchivosExpediente
+  repararArchivosExpediente,
+  buscarRutaHistoricaArchivo
 } = require('../utils/soportes-exp-archivo');
 
 describe('soportes-exp-archivo', () => {
@@ -102,5 +103,20 @@ describe('soportes-exp-archivo', () => {
     expect(secondCall).toBeTruthy();
     expect(secondCall[1][0]).toBe('CRC_901164565_FE14726_77.pdf');
     expect(fs.existsSync(path.join(targetDir, 'CRC_901164565_FE14726_77.pdf'))).toBe(true);
+  });
+
+  test('recupera la ruta histórica cuando el archivo actual ya no está en la ruta de FE', () => {
+    const legacyDir = path.join(tempRoot, 'soportes', 'armado', '2026', '03', 'A_FACTURAR', 'SOPORTES', 'PEREZ_JUAN');
+    fs.mkdirSync(legacyDir, { recursive: true });
+    const legacyFile = path.join(legacyDir, 'OPF_901164565_PEREZ_JUAN.pdf');
+    fs.writeFileSync(legacyFile, 'legacy');
+
+    const recovered = buscarRutaHistoricaArchivo({
+      tipo: 'OPF',
+      nombre_archivo: 'OPF_901164565_FE14726.pdf',
+      ruta_relativa: 'soportes/armado/2026/03/A_FACTURAR/SOPORTES/FE14726/OPF_901164565_FE14726.pdf'
+    }, tempRoot);
+
+    expect(recovered).toBe(legacyFile);
   });
 });
