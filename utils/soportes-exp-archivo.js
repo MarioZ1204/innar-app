@@ -6,7 +6,8 @@ const fs = require('fs');
 const db = require('./db-mysql');
 const { getSoportesRoot } = require('../config/uploads-path');
 const { resolveStoragePath } = require('./soportes-storage');
-const { buildSoportesDiskName, etiquetaFacturaExpediente, getNitObligado, extractEtiquetaFromSoporteName } = require('./soportes-archivo-detect');
+const { buildSoportesDiskName, etiquetaFacturaExpediente, getNitObligado, extractEtiquetaFromSoporteName, archivoCoincideConTipoSlot } = require('./soportes-archivo-detect');
+const { codigoPacienteFromExpediente } = require('./soportes-pacientes-parse');
 
 const SOPORTES_SLOT_TIPOS = ['OPF', 'CRC', 'FEV', 'PDX', 'HEV'];
 
@@ -51,6 +52,68 @@ function buildStoredRutaRelativa(absPath) {
   return rel;
 }
 
+function listarCarpetasExpediente(expediente, baseRoot = getSoportesRoot()) {
+  if (!expediente) return [];
+  const codigo = String(expediente.codigo || '').trim().toUpperCase();
+  const pacienteCodigo = String(codigoPacienteFromExpediente(expediente) || '').trim().toUpperCase();
+  const carpetas = new Set();
+  if (codigo) carpetas.add(codigo);
+  if (pacienteCodigo) carpetas.add(pacienteCodigo);
+
+  const dirs = [];
+  const armadoRoot = path.join(baseRoot, 'armado');
+  for (const folder of carpetas) {
+    dirs.push(path.join(baseRoot, folder));
+    dirs.push(path.join(armadoRoot, folder));
+    if (fs.existsSync(armadoRoot)) {
+      const periodos = fs.readdirSync(armadoRoot, { withFileTypes: true }).filter((e) => e.isDirectory());
+      for (const periodo of periodos) {
+        const periodoPath = path.join(armadoRoot, periodo.name);
+        const dias = fs.readdirSync(periodoPath, { withFileTypes: true }).filter((e) => e.isDirectory());
+        for (const dia of dias) {
+          for (const estado of ['A_FACTURAR', 'FACTURADOS']) {
+            for (const cont of ['SOPORTES', 'RIPS']) {
+              dirs.push(path.join(periodoPath, dia.name, estado, cont, folder));
+            }
+          }
+        }
+      }
+    }
+  }
+  return dirs.filter((dir, index, all) => dir && all.indexOf(dir) === index);
+}
+
+function buscarArchivoPorTipoEnCarpetasExpediente(row, expediente, baseRoot = getSoportesRoot()) {
+  const tipo = String(row?.tipo || '').toUpperCase();
+  if (!tipo || !expediente) return null;
+
+  const nit = inferNitDesdeNombre(row?.nombre_archivo || row?.ruta_relativa) || getNitObligado();
+  const pacienteCodigo = String(codigoPacienteFromExpediente(expediente) || '').trim().toUpperCase();
+  const expedienteTag = String(etiquetaFacturaExpediente(expediente)).toUpperCase();
+  const ext = path.extname(String(row?.nombre_archivo || '.pdf')).toLowerCase() || '.pdf';
+  const candidatosNombre = [];
+
+  if (pacienteCodigo) candidatosNombre.push(`${tipo}_${nit}_${pacienteCodigo}${ext}`);
+  if (expedienteTag) candidatosNombre.push(`${tipo}_${nit}_${expedienteTag}${ext}`);
+  if (row?.nombre_archivo) candidatosNombre.push(path.basename(String(row.nombre_archivo)));
+
+  for (const dir of listarCarpetasExpediente(expediente, baseRoot)) {
+    if (!fs.existsSync(dir)) continue;
+    for (const name of candidatosNombre) {
+      const full = path.join(dir, name);
+      if (fs.existsSync(full) && archivoCoincideConTipoSlot(name, tipo)) return full;
+    }
+    const files = fs.readdirSync(dir).filter((f) => archivoCoincideConTipoSlot(f, tipo));
+    const tagged = files.filter((f) => {
+      const tag = extractEtiquetaFromSoporteName(f);
+      return (pacienteCodigo && tag === pacienteCodigo) || (expedienteTag && tag === expedienteTag);
+    });
+    if (tagged.length === 1) return path.join(dir, tagged[0]);
+  }
+
+  return null;
+}
+
 function buscarRutaHistoricaArchivo(row, baseRoot = getSoportesRoot()) {
   const nombre = String(row?.nombre_archivo || '').trim();
   const tipo = String(row?.tipo || '').toUpperCase();
@@ -77,6 +140,7 @@ function buscarRutaHistoricaArchivo(row, baseRoot = getSoportesRoot()) {
         continue;
       }
       const lower = entry.name.toLowerCase();
+      if (tipo && !archivoCoincideConTipoSlot(entry.name, tipo)) continue;
       const matches = tokens.some((token) => {
         if (!token) return false;
         if (token.endsWith('_')) return lower.startsWith(token);
@@ -159,6 +223,7 @@ function buscarRutaPorPatronExpediente(row, expediente, baseRoot = getSoportesRo
   const tokens = obtenerTokensBusqueda(row, expediente);
   const expedienteCodigo = String(expediente?.codigo || '').trim().toUpperCase();
   const expedienteTag = expediente ? String(etiquetaFacturaExpediente(expediente)).toUpperCase() : '';
+  const pacienteCodigo = expediente ? String(codigoPacienteFromExpediente(expediente) || '').trim().toUpperCase() : '';
   const rowTag = extractEtiquetaFromSoporteName(rowName);
 
   const roots = [
@@ -177,6 +242,8 @@ function buscarRutaPorPatronExpediente(row, expediente, baseRoot = getSoportesRo
     let score = 0;
 
     if (expedienteCodigo && dirName === expedienteCodigo) score += 500;
+    if (pacienteCodigo && dirName === pacienteCodigo) score += 480;
+    if (pacienteCodigo && fileTag && fileTag === pacienteCodigo) score += 460;
     if (expedienteTag && fileTag && fileTag === expedienteTag) score += 400;
     if (rowTag && fileTag && fileTag === rowTag) score += 350;
     if (expedienteTag && fileTag && /^FE\d+$/.test(fileTag) && /^FE\d+$/.test(expedienteTag) && fileTag !== expedienteTag) {
@@ -227,15 +294,20 @@ function buscarRutaPorPatronExpediente(row, expediente, baseRoot = getSoportesRo
   return best.path || null;
 }
 
-function archivoCompatibleConExpediente(absPath, expediente) {
+function archivoCompatibleConExpediente(absPath, row, expediente) {
   if (!absPath || !expediente) return true;
 
   const entryName = path.basename(absPath);
+  const tipo = String(row?.tipo || '').toUpperCase();
+  if (tipo && !archivoCoincideConTipoSlot(entryName, tipo)) return false;
+
   const dirName = path.basename(path.dirname(absPath)).toUpperCase();
   const expedienteCodigo = String(expediente?.codigo || '').trim().toUpperCase();
   const expedienteTag = String(etiquetaFacturaExpediente(expediente)).toUpperCase();
+  const pacienteCodigo = String(codigoPacienteFromExpediente(expediente) || '').trim().toUpperCase();
   const fileTag = extractEtiquetaFromSoporteName(entryName);
 
+  if (pacienteCodigo && fileTag === pacienteCodigo) return true;
   if (expedienteTag && fileTag && /^FE\d+$/.test(fileTag) && /^FE\d+$/.test(expedienteTag) && fileTag !== expedienteTag) {
     return false;
   }
@@ -256,7 +328,7 @@ function resolveArchivoAbsoluto(row, options = {}) {
   if (rel) {
     joined = rel.startsWith('soportes/') ? rel : path.join('soportes', rel).replace(/\\/g, '/');
     const resolved = resolveStoragePath(joined);
-    if (resolved && archivoCompatibleConExpediente(resolved, options.expediente)) return resolved;
+    if (resolved && archivoCompatibleConExpediente(resolved, row, options.expediente)) return resolved;
   }
 
   if (base) {
@@ -286,6 +358,7 @@ function resolveArchivoAbsoluto(row, options = {}) {
           continue;
         }
         const lower = entry.name.toLowerCase();
+        if (tipo && !archivoCoincideConTipoSlot(entry.name, tipo)) continue;
         const matches =
           lower === base.toLowerCase() ||
           lower.includes(nombreSinExt.toLowerCase()) ||
@@ -300,7 +373,12 @@ function resolveArchivoAbsoluto(row, options = {}) {
   };
 
   for (const candidate of candidates) {
-    if (fs.existsSync(candidate) && archivoCompatibleConExpediente(candidate, options.expediente)) return candidate;
+    if (fs.existsSync(candidate) && archivoCompatibleConExpediente(candidate, row, options.expediente)) return candidate;
+  }
+
+  const byExpedienteFolder = buscarArchivoPorTipoEnCarpetasExpediente(row, options.expediente);
+  if (byExpedienteFolder && archivoCompatibleConExpediente(byExpedienteFolder, row, options.expediente)) {
+    return byExpedienteFolder;
   }
 
   const relDir = joined ? path.dirname(joined).replace(/^soportes\//, '') : '';
@@ -311,12 +389,12 @@ function resolveArchivoAbsoluto(row, options = {}) {
     path.resolve(__dirname, '..', 'public', 'uploads', 'soportes')
   ];
   const historical = buscarRutaHistoricaArchivo(row);
-  if (historical && archivoCompatibleConExpediente(historical, options.expediente)) return historical;
+  if (historical && archivoCompatibleConExpediente(historical, row, options.expediente)) return historical;
   const byPattern = buscarRutaPorPatronExpediente(row, options.expediente);
-  if (byPattern) return byPattern;
+  if (byPattern && archivoCompatibleConExpediente(byPattern, row, options.expediente)) return byPattern;
   for (const root of scanRoots) {
     const found = buscarPorPrefijo(root);
-    if (found && archivoCompatibleConExpediente(found, options.expediente)) return found;
+    if (found && archivoCompatibleConExpediente(found, row, options.expediente)) return found;
   }
 
   if (base) {
@@ -327,11 +405,70 @@ function resolveArchivoAbsoluto(row, options = {}) {
     ];
     for (const dir of dirCandidates) {
       const full = path.join(dir, base);
-      if (fs.existsSync(full) && archivoCompatibleConExpediente(full, options.expediente)) return full;
+      if (fs.existsSync(full) && archivoCompatibleConExpediente(full, row, options.expediente)) return full;
     }
   }
 
   return null;
+}
+
+function archivoResueltoValido(fp, row, expediente) {
+  return Boolean(fp && fs.existsSync(fp) && archivoCompatibleConExpediente(fp, row, expediente));
+}
+
+function registroArchivoDesincronizado(row, fp) {
+  if (!row || !fp) return false;
+  const base = path.basename(fp);
+  const rel = buildStoredRutaRelativa(fp);
+  const rowName = String(row?.nombre_archivo || '').trim();
+  const rowRel = String(row?.ruta_relativa || '').replace(/\\/g, '/').trim();
+  return rowName !== base || (rel && rowRel !== rel);
+}
+
+async function resolverArchivoExpedienteSlot(expedienteId, tipoParam) {
+  const loaded = await loadArchivoExpedienteSlot(expedienteId, tipoParam);
+  if (!loaded.ok) {
+    return { ok: false, error: loaded.error, status: loaded.status || 404, fp: null };
+  }
+
+  const expediente = await obtenerExpedienteContext(expedienteId);
+  let row = loaded.row;
+  let fp = resolveArchivoAbsoluto(row, { expediente });
+
+  if (!archivoResueltoValido(fp, row, expediente) || registroArchivoDesincronizado(row, fp)) {
+    await repararArchivosExpediente(expedienteId, expediente);
+    const reloaded = await loadArchivoExpedienteSlot(expedienteId, tipoParam);
+    if (reloaded.ok) {
+      row = reloaded.row;
+      fp = resolveArchivoAbsoluto(row, { expediente });
+    }
+  }
+
+  if (!archivoResueltoValido(fp, row, expediente)) {
+    return {
+      ok: false,
+      error: 'El archivo no está en disco',
+      status: 404,
+      fp: null,
+      row,
+      contenedor: loaded.contenedor,
+      tipo: loaded.tipo
+    };
+  }
+
+  return {
+    ok: true,
+    fp,
+    row,
+    contenedor: loaded.contenedor,
+    tipo: loaded.tipo,
+    expediente
+  };
+}
+
+function resolverArchivoExpedienteRow(row, expediente) {
+  const fp = resolveArchivoAbsoluto(row, { expediente });
+  return archivoResueltoValido(fp, row, expediente) ? fp : null;
 }
 
 async function obtenerExpedienteContext(expedienteId) {
@@ -387,38 +524,9 @@ async function repararArchivoExpedienteRow(row, { contenedor = 'soportes', usedP
 
   const expedienteContext = expediente || (await obtenerExpedienteContext(expedienteId || row?.expediente_id));
   let resolved = resolveArchivoAbsoluto(row, { expediente: expedienteContext });
-  const rowNombre = String(row?.nombre_archivo || '').trim();
-  const rowBaseName = rowNombre ? path.basename(rowNombre) : '';
-  const resolvedBaseName = resolved ? path.basename(resolved) : '';
-  const rowStem = rowBaseName ? path.basename(rowBaseName, path.extname(rowBaseName)) : '';
-  const resolvedStem = resolvedBaseName ? path.basename(resolvedBaseName, path.extname(resolvedBaseName)) : '';
-  const nombreNoCoincide = Boolean(rowBaseName && resolvedBaseName && rowStem && resolvedStem && rowStem.toLowerCase() !== resolvedStem.toLowerCase());
-  const shouldCloneFromPrevious = Boolean(
-    usedPaths instanceof Set &&
-      usedPaths.size > 0 &&
-      (!resolved || !fs.existsSync(resolved) || nombreNoCoincide || (resolvedBaseName && usedPaths.has(path.resolve(resolved))))
-  );
 
-  if (shouldCloneFromPrevious) {
-    const sourcePath = Array.from(usedPaths).slice(-1)[0];
-    if (sourcePath && fs.existsSync(sourcePath)) {
-      const ext = path.extname(String(row?.nombre_archivo || 'archivo.pdf')) || '.pdf';
-      const base = path.basename(String(row?.nombre_archivo || `archivo${ext}`), ext);
-      const suffix = expedienteId ? `_${expedienteId}` : '';
-      const dir = path.dirname(sourcePath);
-      let index = 1;
-      let candidatePath = null;
-      while (!candidatePath) {
-        const altName = `${base}${suffix}${index > 1 ? `_${index}` : ''}${ext}`;
-        const altPath = path.join(dir, altName);
-        if (!fs.existsSync(altPath) && !usedPaths.has(path.resolve(altPath))) {
-          candidatePath = altPath;
-          fs.copyFileSync(sourcePath, candidatePath);
-          resolved = candidatePath;
-        }
-        index += 1;
-      }
-    }
+  if (resolved && !archivoCompatibleConExpediente(resolved, row, expedienteContext)) {
+    resolved = null;
   }
 
   if (!resolved || !fs.existsSync(resolved)) {
@@ -427,46 +535,35 @@ async function repararArchivoExpedienteRow(row, { contenedor = 'soportes', usedP
 
   const fromDb = row?.ruta_relativa ? resolveStoragePath(String(row.ruta_relativa).replace(/\\/g, '/')) : null;
   const samePath = fromDb && fs.existsSync(fromDb) && path.resolve(fromDb) === path.resolve(resolved);
-  const targetName = path.basename(resolved);
-  const targetRel = buildStoredRutaRelativa(resolved);
+  let finalPath = resolved;
+  let finalName = path.basename(resolved);
+  let finalRel = buildStoredRutaRelativa(resolved);
 
-  if (!targetRel) {
+  if (!finalRel) {
     return { ok: false, repaired: false, path: resolved };
   }
 
-  let finalPath = resolved;
-  let finalName = targetName;
-  let finalRel = targetRel;
-
-  if (usedPaths instanceof Set) {
-    const resolvedAbs = path.resolve(resolved);
-    if (usedPaths.has(resolvedAbs)) {
-      const ext = path.extname(targetName);
-      const base = path.basename(targetName, ext);
-      const suffix = expedienteId ? `_${expedienteId}` : '';
-      let index = 1;
-      let candidatePath = null;
-      while (!candidatePath) {
-        const altName = `${base}${suffix}${index > 1 ? `_${index}` : ''}${ext}`;
-        const altPath = path.join(path.dirname(resolved), altName);
-        if (!fs.existsSync(altPath) && !usedPaths.has(path.resolve(altPath))) {
-          candidatePath = altPath;
-          finalName = altName;
-          finalPath = altPath;
-          finalRel = buildStoredRutaRelativa(altPath);
-        }
-        index += 1;
-      }
-      fs.copyFileSync(resolved, finalPath);
-      const currentRelPath = path.dirname(targetRel);
-      if (finalRel && currentRelPath && finalRel.startsWith(`${currentRelPath}/`)) {
-        // keep relative path aligned with the new filename inside the same directory
+  const expectedName = construirNombreEsperado(row, expedienteContext);
+  if (expectedName && finalName !== expectedName && fs.existsSync(finalPath)) {
+    const targetPath = path.join(path.dirname(finalPath), expectedName);
+    if (!fs.existsSync(targetPath)) {
+      try {
+        fs.renameSync(finalPath, targetPath);
+        finalPath = targetPath;
+        finalName = expectedName;
+        finalRel = buildStoredRutaRelativa(targetPath);
+      } catch (_) {
+        // conservar el archivo encontrado aunque no se haya podido renombrar
       }
     }
   }
 
   if (usedPaths instanceof Set) {
-    usedPaths.add(path.resolve(finalPath));
+    const resolvedAbs = path.resolve(finalPath);
+    if (usedPaths.has(resolvedAbs)) {
+      return { ok: false, repaired: false, path: null, error: 'archivo_duplicado' };
+    }
+    usedPaths.add(resolvedAbs);
   }
 
   const needsUpdate = !samePath || String(row?.nombre_archivo || '') !== finalName || String(row?.ruta_relativa || '').replace(/\\/g, '/') !== finalRel;
@@ -484,10 +581,6 @@ async function repararArchivoExpedienteRow(row, { contenedor = 'soportes', usedP
       'UPDATE sop_rips_archivos SET nombre_archivo = ?, ruta_relativa = ? WHERE id = ?',
       [finalName, finalRel, row.id]
     );
-  }
-
-  if (usedPaths instanceof Set) {
-    usedPaths.add(path.resolve(finalPath));
   }
 
   return { ok: true, repaired: true, path: finalPath, nombre_archivo: finalName, ruta_relativa: finalRel };
@@ -519,7 +612,8 @@ async function eliminarArchivoExpedienteSlot(expedienteId, tipoParam) {
   const loaded = await loadArchivoExpedienteSlot(expedienteId, tipoParam);
   if (!loaded.ok) return loaded;
 
-  const fp = resolveArchivoAbsoluto(loaded.row);
+  const expediente = await obtenerExpedienteContext(expedienteId);
+  const fp = resolverArchivoExpedienteRow(loaded.row, expediente) || resolveArchivoAbsoluto(loaded.row, { expediente });
   if (fp && fs.existsSync(fp)) {
     try { fs.unlinkSync(fp); } catch (_) { /* ignore */ }
   }
@@ -546,6 +640,9 @@ module.exports = {
   normalizarTipoArchivo,
   loadArchivoExpedienteSlot,
   resolveArchivoAbsoluto,
+  resolverArchivoExpedienteSlot,
+  resolverArchivoExpedienteRow,
+  archivoResueltoValido,
   buscarRutaHistoricaArchivo,
   repararArchivoExpedienteRow,
   repararArchivosExpediente,

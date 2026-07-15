@@ -105,7 +105,7 @@ const {
 } = require('../utils/soportes-pdx-duplicados');
 const { enrichExpedientesLista } = require('../utils/soportes-expediente-progreso');
 const { actualizarDia, eliminarDia } = require('../utils/soportes-dia-admin');
-const { resolveArchivoAbsoluto } = require('../utils/soportes-exp-archivo');
+const { resolveArchivoAbsoluto, resolverArchivoExpedienteRow } = require('../utils/soportes-exp-archivo');
 const { runSoportesRecoveryScript } = require('../utils/soportes-recovery-runner');
 const { syncRipsCarpetasDia, syncRipsCarpetasContenedor } = require('../utils/soportes-rips-carpetas-sync');
 const {
@@ -2749,28 +2749,17 @@ router.get(
   requireRoleOrPerm(ROLES_SOPORTES, 'modulo.armado_soportes'),
   async (req, res) => {
     try {
-      const { loadArchivoExpedienteSlot, resolveArchivoAbsoluto, repararArchivosExpediente } = require('../utils/soportes-exp-archivo');
-      const loaded = await loadArchivoExpedienteSlot(req.params.id, req.params.tipo);
-      if (!loaded.ok) return res.status(loaded.status || 404).json({ error: loaded.error });
-      let fp = resolveArchivoAbsoluto(loaded.row);
-      if (!fp || !fs.existsSync(fp)) {
-        await repararArchivosExpediente(req.params.id);
-        const reloaded = await loadArchivoExpedienteSlot(req.params.id, req.params.tipo);
-        if (reloaded.ok) {
-          loaded.row = reloaded.row;
-          fp = resolveArchivoAbsoluto(reloaded.row);
-        }
-      }
-      if (!fp || !fs.existsSync(fp)) {
-        return res.status(404).json({ error: 'El archivo no está en disco' });
-      }
-      const inline = req.query.inline === '1' || req.query.inline === 'true';
-      const name = loaded.row.nombre_archivo || 'archivo';
+      const { resolverArchivoExpedienteSlot } = require('../utils/soportes-exp-archivo');
+      const resolved = await resolverArchivoExpedienteSlot(req.params.id, req.params.tipo);
+      if (!resolved.ok) return res.status(resolved.status || 404).json({ error: resolved.error });
+      const fp = resolved.fp;
+      const name = resolved.row.nombre_archivo || 'archivo';
       const ext = path.extname(name).toLowerCase();
       const mime = ext === '.pdf' ? 'application/pdf'
         : ext === '.json' ? 'application/json'
           : ext === '.xml' ? 'application/xml'
             : 'application/octet-stream';
+      const inline = req.query.inline === '1' || req.query.inline === 'true';
       res.setHeader('Content-Type', mime);
       res.setHeader(
         'Content-Disposition',
@@ -2794,23 +2783,15 @@ router.post(
       if (!Array.isArray(highlights) || highlights.length === 0) {
         return res.status(400).json({ error: 'Indique al menos un resaltado' });
       }
-      const { loadArchivoExpedienteSlot, resolveArchivoAbsoluto, repararArchivosExpediente, SOPORTES_SLOT_TIPOS } = require('../utils/soportes-exp-archivo');
+      const { resolverArchivoExpedienteSlot, SOPORTES_SLOT_TIPOS } = require('../utils/soportes-exp-archivo');
       const tipo = String(req.params.tipo || '').toUpperCase();
       if (!SOPORTES_SLOT_TIPOS.includes(tipo)) {
         return res.status(400).json({ error: 'Solo se pueden resaltar PDF de soportes (OPF, CRC, FEV, PDX, HEV)' });
       }
-      const loaded = await loadArchivoExpedienteSlot(req.params.id, tipo);
-      if (!loaded.ok) return res.status(loaded.status || 404).json({ error: loaded.error });
-      let fp = resolveArchivoAbsoluto(loaded.row);
-      if (!fp || !fs.existsSync(fp)) {
-        await repararArchivosExpediente(req.params.id);
-        const reloaded = await loadArchivoExpedienteSlot(req.params.id, tipo);
-        if (reloaded.ok) {
-          loaded.row = reloaded.row;
-          fp = resolveArchivoAbsoluto(reloaded.row);
-        }
-      }
-      if (!fp || !fs.existsSync(fp)) return res.status(404).json({ error: 'Archivo no en disco' });
+      const resolved = await resolverArchivoExpedienteSlot(req.params.id, tipo);
+      if (!resolved.ok) return res.status(resolved.status || 404).json({ error: resolved.error });
+      const fp = resolved.fp;
+      const loaded = resolved;
       if (!/\.pdf$/i.test(fp) && loaded.row.mime_type !== 'application/pdf') {
         return res.status(400).json({ error: 'El archivo no es PDF' });
       }
@@ -2858,30 +2839,19 @@ router.post(
         cleanupMulterTempFiles(req);
         return res.status(400).json({ error: 'Seleccione al menos un PDF para añadir' });
       }
-      const { loadArchivoExpedienteSlot, resolveArchivoAbsoluto, repararArchivosExpediente, SOPORTES_SLOT_TIPOS } = require('../utils/soportes-exp-archivo');
+      const { resolverArchivoExpedienteSlot, SOPORTES_SLOT_TIPOS } = require('../utils/soportes-exp-archivo');
       const tipo = String(req.params.tipo || '').toUpperCase();
       if (!SOPORTES_SLOT_TIPOS.includes(tipo)) {
         cleanupMulterTempFiles(req);
         return res.status(400).json({ error: 'Tipo de archivo no válido para anexar PDF' });
       }
-      const loaded = await loadArchivoExpedienteSlot(req.params.id, tipo);
-      if (!loaded.ok) {
+      const resolved = await resolverArchivoExpedienteSlot(req.params.id, tipo);
+      if (!resolved.ok) {
         cleanupMulterTempFiles(req);
-        return res.status(loaded.status || 404).json({ error: loaded.error });
+        return res.status(resolved.status || 404).json({ error: resolved.error });
       }
-      let fp = resolveArchivoAbsoluto(loaded.row);
-      if (!fp || !fs.existsSync(fp)) {
-        await repararArchivosExpediente(req.params.id);
-        const reloaded = await loadArchivoExpedienteSlot(req.params.id, tipo);
-        if (reloaded.ok) {
-          loaded.row = reloaded.row;
-          fp = resolveArchivoAbsoluto(reloaded.row);
-        }
-      }
-      if (!fp || !fs.existsSync(fp)) {
-        cleanupMulterTempFiles(req);
-        return res.status(404).json({ error: 'Archivo no en disco' });
-      }
+      const fp = resolved.fp;
+      const loaded = resolved;
       if (!/\.pdf$/i.test(fp) && loaded.row.mime_type !== 'application/pdf') {
         cleanupMulterTempFiles(req);
         return res.status(400).json({ error: 'El archivo no es PDF' });
@@ -2918,15 +2888,15 @@ router.post(
       if (!Array.isArray(order) || !order.length) {
         return res.status(400).json({ error: 'Indique el nuevo orden de páginas' });
       }
-      const { loadArchivoExpedienteSlot, resolveArchivoAbsoluto, SOPORTES_SLOT_TIPOS } = require('../utils/soportes-exp-archivo');
+      const { resolverArchivoExpedienteSlot, SOPORTES_SLOT_TIPOS } = require('../utils/soportes-exp-archivo');
       const tipo = String(req.params.tipo || '').toUpperCase();
       if (!SOPORTES_SLOT_TIPOS.includes(tipo)) {
         return res.status(400).json({ error: 'Tipo de archivo no válido' });
       }
-      const loaded = await loadArchivoExpedienteSlot(req.params.id, tipo);
-      if (!loaded.ok) return res.status(loaded.status || 404).json({ error: loaded.error });
-      const fp = resolveArchivoAbsoluto(loaded.row);
-      if (!fp || !fs.existsSync(fp)) return res.status(404).json({ error: 'Archivo no en disco' });
+      const resolved = await resolverArchivoExpedienteSlot(req.params.id, tipo);
+      if (!resolved.ok) return res.status(resolved.status || 404).json({ error: resolved.error });
+      const fp = resolved.fp;
+      const loaded = resolved;
       if (!/\.pdf$/i.test(fp) && loaded.row.mime_type !== 'application/pdf') {
         return res.status(400).json({ error: 'El archivo no es PDF' });
       }
@@ -2958,15 +2928,15 @@ router.post(
       if (!Array.isArray(pages) || !pages.length) {
         return res.status(400).json({ error: 'Indique las páginas a eliminar (número 1, 2, …)' });
       }
-      const { loadArchivoExpedienteSlot, resolveArchivoAbsoluto, SOPORTES_SLOT_TIPOS } = require('../utils/soportes-exp-archivo');
+      const { resolverArchivoExpedienteSlot, SOPORTES_SLOT_TIPOS } = require('../utils/soportes-exp-archivo');
       const tipo = String(req.params.tipo || '').toUpperCase();
       if (!SOPORTES_SLOT_TIPOS.includes(tipo)) {
         return res.status(400).json({ error: 'Tipo de archivo no válido' });
       }
-      const loaded = await loadArchivoExpedienteSlot(req.params.id, tipo);
-      if (!loaded.ok) return res.status(loaded.status || 404).json({ error: loaded.error });
-      const fp = resolveArchivoAbsoluto(loaded.row);
-      if (!fp || !fs.existsSync(fp)) return res.status(404).json({ error: 'Archivo no en disco' });
+      const resolved = await resolverArchivoExpedienteSlot(req.params.id, tipo);
+      if (!resolved.ok) return res.status(resolved.status || 404).json({ error: resolved.error });
+      const fp = resolved.fp;
+      const loaded = resolved;
       if (!/\.pdf$/i.test(fp) && loaded.row.mime_type !== 'application/pdf') {
         return res.status(400).json({ error: 'El archivo no es PDF' });
       }
@@ -3346,17 +3316,23 @@ router.get('/soportes/armado/periodos/:id/zip-facturados', requireAuth, requireR
       const codSeg = zipArchiveSegment(exp.codigo);
       const prefix = `${diaSeg}/${tipoSeg}/${codSeg}`;
       const archivos = await db.query('SELECT * FROM sop_exp_archivos WHERE expediente_id = ?', [exp.id]);
+      const expedienteCtx = {
+        codigo: exp.codigo,
+        numero_factura: exp.numero_factura,
+        paciente_nombre: exp.paciente_nombre,
+        nombre_display: exp.dia_nombre
+      };
       for (const a of archivos) {
-        const fp = resolveArchivoAbsoluto(a);
-        if (fp && fs.existsSync(fp)) {
+        const fp = resolverArchivoExpedienteRow(a, expedienteCtx);
+        if (fp) {
           fileJobs.push({ fp, name: `${prefix}/${a.nombre_archivo}` });
         }
       }
       try {
         const ripsArchivos = await db.query('SELECT * FROM sop_rips_archivos WHERE expediente_id = ?', [exp.id]);
         for (const a of ripsArchivos) {
-          const fp = resolveArchivoAbsoluto(a);
-          if (fp && fs.existsSync(fp)) {
+          const fp = resolverArchivoExpedienteRow(a, expedienteCtx);
+          if (fp) {
             fileJobs.push({ fp, name: `${prefix}/${a.nombre_archivo}` });
           }
         }
@@ -3388,15 +3364,21 @@ router.get('/soportes/armado/expedientes/:id/zip', requireAuth, requireRoleOrPer
     if (!exp) return res.status(404).json({ error: 'No encontrado' });
     const fileJobs = [];
     const archivos = await db.query('SELECT * FROM sop_exp_archivos WHERE expediente_id = ?', [req.params.id]);
+    const expedienteCtx = {
+      codigo: exp.codigo,
+      numero_factura: exp.numero_factura,
+      paciente_nombre: exp.paciente_nombre,
+      nombre_display: exp.nombre_display
+    };
     for (const a of archivos) {
-      const fp = resolveArchivoAbsoluto(a);
-      if (fp && fs.existsSync(fp)) fileJobs.push({ fp, name: a.nombre_archivo });
+      const fp = resolverArchivoExpedienteRow(a, expedienteCtx);
+      if (fp) fileJobs.push({ fp, name: a.nombre_archivo });
     }
     try {
       const ripsArchivos = await db.query('SELECT * FROM sop_rips_archivos WHERE expediente_id = ?', [req.params.id]);
       for (const a of ripsArchivos) {
-        const fp = resolveArchivoAbsoluto(a);
-        if (fp && fs.existsSync(fp)) fileJobs.push({ fp, name: a.nombre_archivo });
+        const fp = resolverArchivoExpedienteRow(a, expedienteCtx);
+        if (fp) fileJobs.push({ fp, name: a.nombre_archivo });
       }
     } catch (_) { /* ignore */ }
     if (!fileJobs.length) {

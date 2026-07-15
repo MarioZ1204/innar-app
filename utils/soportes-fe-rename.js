@@ -5,9 +5,9 @@ const path = require('path');
 const fs = require('fs');
 const db = require('./db-mysql');
 const { getArmadoFeDirFromContext } = require('./soportes-storage');
-const { buildCanonicalName, buildSoportesDiskName, extractEtiquetaFromSoporteName } = require('./soportes-archivo-detect');
+const { buildCanonicalName, buildSoportesDiskName, extractEtiquetaFromSoporteName, archivoCoincideConTipoSlot } = require('./soportes-archivo-detect');
 const { parseLineaPaciente, esExpedientePendienteFactura } = require('./soportes-pacientes-parse');
-const { loadArchivoExpedienteSlot, eliminarArchivoExpedienteSlot, repararArchivosExpediente } = require('./soportes-exp-archivo');
+const { loadArchivoExpedienteSlot, eliminarArchivoExpedienteSlot } = require('./soportes-exp-archivo');
 const { syncRipsCarpetasDia } = require('./soportes-rips-carpetas-sync');
 
 async function loadExpedienteContext(expedienteId) {
@@ -67,8 +67,7 @@ function etiquetasCompatiblesParaRenombrado(preferredName, candidateName) {
   if (!preferredTag || !candidateTag) return true;
   if (preferredTag === candidateTag) return true;
   if (/^FE\d+$/.test(preferredTag) && /^FE\d+$/.test(candidateTag)) return false;
-  if (/^FE\d+$/.test(preferredTag) !== /^FE\d+$/.test(candidateTag)) return false;
-  return preferredTag === candidateTag;
+  return false;
 }
 
 function sourceDirForRename(oldDir, newDir) {
@@ -95,6 +94,7 @@ function resolveSourceFileForRename(row, oldDir, newDir, options = {}) {
 
   const checkPath = (dir, name) => {
     if (!dir || !name) return null;
+    if (!archivoCoincideConTipoSlot(name, row?.tipo)) return null;
     const full = path.join(dir, name);
     if (!fs.existsSync(full)) return null;
     if (!etiquetasCompatiblesParaRenombrado(preferredName || name, name)) return null;
@@ -124,6 +124,7 @@ function resolveSourceFileForRename(row, oldDir, newDir, options = {}) {
 
     const preferredTag = extractEtiquetaFromSoporteName(preferredName);
     const typeMatches = files.filter((f) => {
+      if (!archivoCoincideConTipoSlot(f, row?.tipo)) return false;
       const lower = f.toLowerCase();
       if (prefix && !lower.startsWith(`${prefix.toLowerCase()}_`)) return false;
       if (ext && path.extname(f).toLowerCase() !== ext) return false;
@@ -178,6 +179,61 @@ function buildUniqueTargetPathForRename(targetDir, canonicalName, sourcePath, ex
   }
 }
 
+function ordenarArchivosParaRenombrado(archivos) {
+  const order = { OPF: 1, CRC: 2, PDX: 3, HEV: 3, FEV: 9 };
+  return [...archivos].sort((a, b) => {
+    const ta = order[String(a?.tipo || '').toUpperCase()] || 5;
+    const tb = order[String(b?.tipo || '').toUpperCase()] || 5;
+    return ta - tb || String(a?.id || 0) - String(b?.id || 0);
+  });
+}
+
+async function renombrarArchivosExpedienteEnDisco(archivos, ctx, oldCodigo, newCodigo, newRel, num, herId) {
+  const { abs: oldDir } = getArmadoFeDirFromContext(ctx, oldCodigo);
+  const { abs: newDir } = getArmadoFeDirFromContext(ctx, newCodigo);
+  const resumen = [];
+  const usedPaths = new Set();
+  const isRips = ctx.contenedor_tipo !== 'soportes';
+
+  for (const a of ordenarArchivosParaRenombrado(archivos)) {
+    const slotKey = isRips
+      ? (a.slot === 'json_1' ? 'RIPS_JSON_1' : a.slot === 'json_2' ? 'RIPS_JSON_2' : 'RIPS_XML')
+      : a.tipo;
+    const ext = path.extname(a.nombre_archivo || (isRips ? '.json' : '.pdf')).toLowerCase() || (isRips ? '.json' : '.pdf');
+    const targetName = buildCanonicalName(slotKey, num, ext);
+    const diskMatch = resolveSourceFileForRename(a, oldDir, newDir, { usedPaths });
+    const currentPath = diskMatch?.fullPath || null;
+
+    if (!currentPath || !fs.existsSync(currentPath)) {
+      resumen.push({ tipo: slotKey, nombre: a.nombre_archivo, renombrado: false, omitido: true });
+      continue;
+    }
+
+    usedPaths.add(path.resolve(currentPath));
+    const targetPath = buildUniqueTargetPathForRename(newDir, targetName, currentPath, herId);
+    if (path.resolve(currentPath) !== path.resolve(targetPath)) {
+      moveFileSafely(currentPath, targetPath);
+    }
+
+    const finalName = path.basename(targetPath);
+    const rutaRelativa = path.join(newRel, finalName).replace(/\\/g, '/');
+    if (isRips) {
+      await db.execute(
+        'UPDATE sop_rips_archivos SET nombre_archivo = ?, ruta_relativa = ? WHERE id = ?',
+        [finalName, rutaRelativa, a.id]
+      );
+    } else {
+      await db.execute(
+        'UPDATE sop_exp_archivos SET nombre_archivo = ?, ruta_relativa = ? WHERE id = ?',
+        [finalName, rutaRelativa, a.id]
+      );
+    }
+    resumen.push({ tipo: slotKey, nombre: finalName, renombrado: finalName !== a.nombre_archivo });
+  }
+
+  return resumen;
+}
+
 /**
  * Tras subir FEV_{NIT}_{num}.pdf: carpeta → FE{num} y archivos OPF/CRC/PDX/HEV al formato canónico.
  */
@@ -224,25 +280,7 @@ async function aplicarRenombradoPorFev(expedienteId, numeroFactura) {
         'SELECT * FROM sop_exp_archivos WHERE expediente_id = ?',
         [her.id]
       );
-      const usedPaths = new Set();
-      for (const a of archivos) {
-        const ext = path.extname(a.nombre_archivo || '.pdf').toLowerCase() || '.pdf';
-        const targetName = buildCanonicalName(a.tipo, num, ext);
-        const diskMatch = resolveSourceFileForRename(a, oldDir, newDir, { usedPaths });
-        const currentPath = diskMatch?.fullPath || null;
-        if (currentPath) usedPaths.add(path.resolve(currentPath));
-        const targetPath = buildUniqueTargetPathForRename(newDir, targetName, currentPath, her.id);
-        if (currentPath && currentPath !== targetPath && fs.existsSync(currentPath)) {
-          moveFileSafely(currentPath, targetPath);
-        }
-        const finalName = path.basename(targetPath);
-        const rutaRelativa = path.join(newRel, finalName).replace(/\\/g, '/');
-        await db.execute(
-          'UPDATE sop_exp_archivos SET nombre_archivo = ?, ruta_relativa = ? WHERE id = ?',
-          [finalName, rutaRelativa, a.id]
-        );
-        resumen.archivos.push({ tipo: a.tipo, nombre: targetName, renombrado: targetName !== a.nombre_archivo });
-      }
+      resumen.archivos.push(...await renombrarArchivosExpedienteEnDisco(archivos, ctx, oldCodigo, newCodigo, newRel, num, her.id));
     } else {
       let ripsArchivos = [];
       try {
@@ -251,35 +289,13 @@ async function aplicarRenombradoPorFev(expedienteId, numeroFactura) {
           [her.id]
         );
       } catch (_) { /* tabla opcional */ }
-      const usedPaths = new Set();
-      for (const a of ripsArchivos) {
-        const slotKey = a.slot === 'json_1' ? 'RIPS_JSON_1' : a.slot === 'json_2' ? 'RIPS_JSON_2' : 'RIPS_XML';
-        const ext = path.extname(a.nombre_archivo || '.json').toLowerCase();
-        const targetName = buildCanonicalName(slotKey, num, ext);
-        const diskMatch = resolveSourceFileForRename(a, oldDir, newDir, { usedPaths });
-        const currentPath = diskMatch?.fullPath || null;
-        if (currentPath) usedPaths.add(path.resolve(currentPath));
-        const targetPath = buildUniqueTargetPathForRename(newDir, targetName, currentPath, her.id);
-        if (currentPath && currentPath !== targetPath && fs.existsSync(currentPath)) {
-          moveFileSafely(currentPath, targetPath);
-        }
-        const finalName = path.basename(targetPath);
-        const rutaRelativa = path.join(newRel, finalName).replace(/\\/g, '/');
-        await db.execute(
-          'UPDATE sop_rips_archivos SET nombre_archivo = ?, ruta_relativa = ? WHERE id = ?',
-          [finalName, rutaRelativa, a.id]
-        );
-        resumen.archivos.push({ tipo: slotKey, nombre: targetName, renombrado: targetName !== a.nombre_archivo });
-      }
+      resumen.archivos.push(...await renombrarArchivosExpedienteEnDisco(ripsArchivos, ctx, oldCodigo, newCodigo, newRel, num, her.id));
     }
 
     await db.execute(
       'UPDATE sop_expedientes SET codigo = ?, numero_factura = ? WHERE id = ?',
       [newCodigo, num, her.id]
     );
-
-    const expedienteActualizado = { ...her, codigo: newCodigo, numero_factura: num };
-    await repararArchivosExpediente(her.id, expedienteActualizado);
   }
 
   try {

@@ -6,7 +6,7 @@ const fs = require('fs');
 const archiver = require('archiver');
 const db = require('./db-mysql');
 const logger = require('./logger');
-const { resolveArchivoAbsoluto } = require('./soportes-exp-archivo');
+const { resolveArchivoAbsoluto, resolverArchivoExpedienteRow } = require('./soportes-exp-archivo');
 const sopStorage = require('./soportes-storage');
 const { getArmadoFeDirAbs } = require('./soportes-armado-structure');
 const { compararTextoNatural } = require('./comparar-texto-natural');
@@ -69,12 +69,14 @@ function appendEntriesToArchive(archive, entries) {
   }
 }
 
-async function listSoportesArchivoEntries(expedienteId, zipPrefix, usedPaths, diaNombre) {
+async function listSoportesArchivoEntries(expedienteId, zipPrefix, usedPaths, diaNombre, expediente = null) {
   const entries = [];
   try {
     const archivos = await db.query('SELECT * FROM sop_exp_archivos WHERE expediente_id = ?', [expedienteId]);
     for (const a of archivos) {
-      const fp = resolveArchivoAbsoluto(a);
+      const fp = expediente
+        ? resolverArchivoExpedienteRow(a, expediente)
+        : resolveArchivoAbsoluto(a);
       if (!fp || !fs.existsSync(fp)) continue;
       entries.push({
         absPath: fp,
@@ -114,12 +116,14 @@ function listRipsDirEntriesFromDisk(ctx, codigo, zipPrefix, usedPaths, diaNombre
   return entries;
 }
 
-async function listRipsArchivoEntries(expedienteId, zipPrefix, usedPaths, diaNombre, ctx, codigo) {
+async function listRipsArchivoEntries(expedienteId, zipPrefix, usedPaths, diaNombre, ctx, codigo, expediente = null) {
   const entries = [];
   try {
     const ripsArchivos = await db.query('SELECT * FROM sop_rips_archivos WHERE expediente_id = ?', [expedienteId]);
     for (const a of ripsArchivos) {
-      const fp = resolveArchivoAbsoluto(a);
+      const fp = expediente
+        ? resolverArchivoExpedienteRow(a, expediente)
+        : resolveArchivoAbsoluto(a);
       if (!fp || !fs.existsSync(fp)) continue;
       entries.push({
         absPath: fp,
@@ -194,7 +198,13 @@ async function collectDiaZipEntries(diaId, usedPaths = null) {
     const ripsCodigo = g.soportes[0]?.codigo || g.rips[0]?.codigo || codSeg;
 
     for (const exp of g.soportes) {
-      const part = await listSoportesArchivoEntries(exp.id, sopPrefix, usedPaths, g.diaNombre);
+      const expedienteCtx = {
+        codigo: exp.codigo,
+        numero_factura: exp.numero_factura,
+        paciente_nombre: exp.paciente_nombre,
+        nombre_display: exp.nombre_display
+      };
+      const part = await listSoportesArchivoEntries(exp.id, sopPrefix, usedPaths, g.diaNombre, expedienteCtx);
       entries.push(...part);
     }
 
@@ -203,13 +213,20 @@ async function collectDiaZipEntries(diaId, usedPaths = null) {
     }
 
     for (const exp of g.rips) {
+      const expedienteCtx = {
+        codigo: exp.codigo,
+        numero_factura: exp.numero_factura,
+        paciente_nombre: exp.paciente_nombre,
+        nombre_display: exp.nombre_display
+      };
       const part = await listRipsArchivoEntries(
         exp.id,
         ripsPrefix,
         usedPaths,
         g.diaNombre,
         g.ctx,
-        ripsCodigo
+        ripsCodigo,
+        expedienteCtx
       );
       entries.push(...part);
       if (part.length && !g.soportes.length) {

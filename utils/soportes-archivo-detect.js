@@ -118,6 +118,18 @@ function extractEtiquetaFromSoporteName(nombre) {
   return '';
 }
 
+function extractTipoFromSoporteName(nombre) {
+  const base = path.basename(String(nombre || ''), path.extname(String(nombre || '')));
+  const m = base.match(/^(OPF|CRC|FEV|PDX|HEV)[_-]/i);
+  return m ? m[1].toUpperCase() : '';
+}
+
+function archivoCoincideConTipoSlot(fileName, tipo) {
+  const expected = String(tipo || '').toUpperCase();
+  if (!expected) return true;
+  return extractTipoFromSoporteName(fileName) === expected;
+}
+
 function buildSoportesDiskName(tipo, exp, ext = '.pdf') {
   const nit = getNitObligado();
   const t = String(tipo || '').toUpperCase();
@@ -231,6 +243,8 @@ module.exports = {
   fevFilenameHint,
   buildCanonicalName,
   extractEtiquetaFromSoporteName,
+  extractTipoFromSoporteName,
+  archivoCoincideConTipoSlot,
   buildSoportesDiskName,
   etiquetaFacturaExpediente,
   expedienteTieneFactura,

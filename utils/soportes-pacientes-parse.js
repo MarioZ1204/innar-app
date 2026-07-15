@@ -88,9 +88,19 @@ function esExpedientePendienteFactura(exp) {
   return (parseInt(num, 10) || 0) === 0;
 }
 
+/** Código de carpeta del paciente (PEREZ_JUAN), aunque el expediente ya esté facturado como FE{n}. */
+function codigoPacienteFromExpediente(exp) {
+  if (!exp) return '';
+  const codigo = String(exp.codigo || '').trim().toUpperCase();
+  if (codigo && !/^FE\d+$/.test(codigo)) return codigo;
+  const parsed = parseLineaPaciente(exp.paciente_nombre);
+  return parsed?.codigo || '';
+}
+
 module.exports = {
   parseLineaPaciente,
   parseListaPacientes,
   codigoCarpetaPaciente,
-  esExpedientePendienteFactura
+  esExpedientePendienteFactura,
+  codigoPacienteFromExpediente
 };

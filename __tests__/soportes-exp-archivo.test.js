@@ -13,6 +13,8 @@ const {
   resolveArchivoAbsoluto,
   repararArchivoExpedienteRow,
   repararArchivosExpediente,
+  resolverArchivoExpedienteSlot,
+  resolverArchivoExpedienteRow,
   buscarRutaHistoricaArchivo,
   obtenerExpedienteContext
 } = require('../utils/soportes-exp-archivo');
@@ -171,6 +173,9 @@ describe('soportes-exp-archivo', () => {
           { id: 2, expediente_id: expId, tipo: 'CRC', nombre_archivo: 'CRC_901164565_FE14726.pdf', ruta_relativa: 'soportes/armado/2026/03/A_FACTURAR/SOPORTES/FE14726/CRC_901164565_FE14726.pdf' }
         ];
       }
+      if (sql.includes('SHOW COLUMNS FROM sop_expedientes')) {
+        return [{ Field: 'id' }, { Field: 'codigo' }, { Field: 'numero_factura' }];
+      }
       if (sql.includes('FROM sop_expedientes e')) {
         return [{ id: expId, codigo: 'FE14726', numero_factura: 14726, dia_id: 5, contenedor_tipo: 'soportes', periodo: '2026-03', nombre_display: 'Día 1', estado_facturacion: 'a_facturar' }];
       }
@@ -178,12 +183,25 @@ describe('soportes-exp-archivo', () => {
     });
     db.execute.mockResolvedValue({ affectedRows: 1 });
 
-    await repararArchivosExpediente(expId);
+    const results = await repararArchivosExpediente(expId);
+    expect(results.some((item) => item?.error === 'archivo_duplicado' || (item?.ok === false && item?.repaired === false))).toBe(true);
+  });
 
-    const secondCall = db.execute.mock.calls.find((args) => String(args[0]).includes('UPDATE sop_exp_archivos') && args[1]?.[2] === 2);
-    expect(secondCall).toBeTruthy();
-    expect(secondCall[1][0]).toBe('CRC_901164565_FE14726_77.pdf');
-    expect(fs.existsSync(path.join(targetDir, 'CRC_901164565_FE14726_77.pdf'))).toBe(true);
+  test('encuentra OPF con nombre de paciente en carpeta del expediente facturado', () => {
+    const fileDir = path.join(tempRoot, 'soportes', 'armado', '2026', '03', 'A_FACTURAR', 'SOPORTES', 'FE16300');
+    fs.mkdirSync(fileDir, { recursive: true });
+    const filePath = path.join(fileDir, 'OPF_901164565_PEREZ_JUAN.pdf');
+    fs.writeFileSync(filePath, 'pdf-paciente');
+
+    const resolved = resolveArchivoAbsoluto({
+      tipo: 'OPF',
+      nombre_archivo: 'OPF_901164565_FE15448.pdf',
+      ruta_relativa: 'soportes/armado/2026/03/A_FACTURAR/SOPORTES/FE15448/OPF_901164565_FE15448.pdf'
+    }, {
+      expediente: { codigo: 'FE16300', numero_factura: 16300, paciente_nombre: 'Juan Pérez' }
+    });
+
+    expect(resolved).toBe(filePath);
   });
 
   test('recupera la ruta histórica cuando el archivo actual ya no está en la ruta de FE', () => {
@@ -261,5 +279,82 @@ describe('soportes-exp-archivo', () => {
     expect(results[0].nombre_archivo).toBe('OPF_901164565_FE16300.pdf');
     const expedienteQueries = db.query.mock.calls.filter((args) => String(args[0]).includes('FROM sop_expedientes'));
     expect(expedienteQueries).toHaveLength(0);
+  });
+
+  test('resolverArchivoExpedienteSlot repara cuando la ruta guardada apunta a otra factura FE', async () => {
+    const fileDir = path.join(tempRoot, 'soportes', 'armado', '2026', '03', 'A_FACTURAR', 'SOPORTES', 'FE16300');
+    fs.mkdirSync(fileDir, { recursive: true });
+    const filePath = path.join(fileDir, 'OPF_901164565_FE16300.pdf');
+    fs.writeFileSync(filePath, 'pdf');
+
+    const wrongDir = path.join(tempRoot, 'soportes', 'armado', '2026', '03', 'A_FACTURAR', 'SOPORTES', 'FE15448');
+    fs.mkdirSync(wrongDir, { recursive: true });
+    fs.writeFileSync(path.join(wrongDir, 'OPF_901164565_FE15448.pdf'), 'wrong');
+
+    db.query.mockImplementation((sql) => {
+      if (sql.includes('FROM sop_exp_archivos WHERE expediente_id = ? AND tipo = ?')) {
+        return [{
+          id: 55,
+          expediente_id: 12,
+          tipo: 'OPF',
+          nombre_archivo: 'OPF_901164565_FE15448.pdf',
+          ruta_relativa: 'soportes/armado/2026/03/A_FACTURAR/SOPORTES/FE15448/OPF_901164565_FE15448.pdf'
+        }];
+      }
+      if (sql.includes('FROM sop_exp_archivos WHERE expediente_id = ?') && !sql.includes('AND tipo')) {
+        return [{
+          id: 55,
+          expediente_id: 12,
+          tipo: 'OPF',
+          nombre_archivo: 'OPF_901164565_FE15448.pdf',
+          ruta_relativa: 'soportes/armado/2026/03/A_FACTURAR/SOPORTES/FE15448/OPF_901164565_FE15448.pdf'
+        }];
+      }
+      if (sql.includes('SHOW COLUMNS FROM sop_expedientes')) {
+        return [{ Field: 'id' }, { Field: 'codigo' }, { Field: 'numero_factura' }];
+      }
+      if (sql.includes('FROM sop_expedientes e')) {
+        return [{ id: 12, codigo: 'FE16300', numero_factura: 16300 }];
+      }
+      return [];
+    });
+    db.execute.mockImplementation(async (sql, params) => {
+      if (String(sql).includes('UPDATE sop_exp_archivos')) {
+        db.query.mockImplementation((innerSql) => {
+          if (innerSql.includes('FROM sop_exp_archivos WHERE expediente_id = ? AND tipo = ?')) {
+            return [{
+              id: 55,
+              expediente_id: 12,
+              tipo: 'OPF',
+              nombre_archivo: params[0],
+              ruta_relativa: params[1]
+            }];
+          }
+          if (innerSql.includes('FROM sop_exp_archivos WHERE expediente_id = ?') && !innerSql.includes('AND tipo')) {
+            return [{
+              id: 55,
+              expediente_id: 12,
+              tipo: 'OPF',
+              nombre_archivo: params[0],
+              ruta_relativa: params[1]
+            }];
+          }
+          if (innerSql.includes('SHOW COLUMNS FROM sop_expedientes')) {
+            return [{ Field: 'id' }, { Field: 'codigo' }, { Field: 'numero_factura' }];
+          }
+          if (innerSql.includes('FROM sop_expedientes e')) {
+            return [{ id: 12, codigo: 'FE16300', numero_factura: 16300 }];
+          }
+          return [];
+        });
+      }
+      return { affectedRows: 1 };
+    });
+
+    const resolved = await resolverArchivoExpedienteSlot(12, 'OPF');
+
+    expect(resolved.ok).toBe(true);
+    expect(resolved.fp).toBe(filePath);
+    expect(resolved.row.nombre_archivo).toBe('OPF_901164565_FE16300.pdf');
   });
 });

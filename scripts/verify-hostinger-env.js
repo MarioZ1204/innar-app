@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 
 const REQUIRED_ENV = ['DB_HOST', 'DB_USER', 'DB_NAME', 'SESSION_SECRET'];
-const RECOMMENDED_ENV = ['PORT', 'NODE_ENV', 'FRONTEND_URL', 'DB_PASSWORD'];
+const RECOMMENDED_ENV = ['PORT', 'NODE_ENV', 'FRONTEND_URL', 'DB_PASSWORD', 'SOPORTES_RECOVERY_ON_DEPLOY'];
 
 const projectRoot = process.cwd();
 const envPath = path.join(projectRoot, '.env');

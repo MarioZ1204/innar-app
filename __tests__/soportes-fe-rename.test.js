@@ -201,6 +201,36 @@ describe('aplicarRenombradoPorFev', () => {
     expect(resolved?.fullPath).toBe(path.join(newDir, 'OPF_901164565_PEREZ_JUAN.pdf'));
   });
 
+  test('no copia la factura FEV como OPF al renombrar por FEV', async () => {
+    const isolatedRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'soportes-fe-rename-fev-'));
+    getArmadoFeDirFromContext.mockImplementation((ctx, codigo) => {
+      const abs = path.join(isolatedRoot, codigo);
+      return { abs, rel: `soportes/armado/${codigo}` };
+    });
+
+    const oldDir = path.join(isolatedRoot, 'PEREZ_JUAN');
+    fs.mkdirSync(oldDir, { recursive: true });
+    fs.writeFileSync(path.join(oldDir, 'OPF_901164565_PEREZ_JUAN.pdf'), 'contenido-opf');
+    fs.writeFileSync(path.join(oldDir, 'FEV_901164565_FE14726.pdf'), 'contenido-fev');
+
+    jest.clearAllMocks();
+    db.query.mockResolvedValueOnce([{ id: 1, codigo: 'PEREZ_JUAN', numero_factura: 0, dia_id: 10, contenedor_tipo: 'soportes', paciente_nombre: 'Juan Pérez' }]);
+    db.query.mockResolvedValueOnce([{ id: 1, codigo: 'PEREZ_JUAN', numero_factura: 0, dia_id: 10, contenedor_tipo: 'soportes', paciente_nombre: 'Juan Pérez' }]);
+    db.query.mockResolvedValueOnce([]);
+    db.query.mockResolvedValueOnce([
+      { id: 11, tipo: 'OPF', nombre_archivo: 'OPF_901164565_PEREZ_JUAN.pdf' },
+      { id: 12, tipo: 'FEV', nombre_archivo: 'FEV_901164565_FE14726.pdf' }
+    ]);
+    db.execute.mockResolvedValue({});
+
+    await aplicarRenombradoPorFev(1, 14726);
+
+    const opfPath = path.join(isolatedRoot, 'FE14726', 'OPF_901164565_FE14726.pdf');
+    expect(fs.existsSync(opfPath)).toBe(true);
+    expect(fs.readFileSync(opfPath, 'utf8')).toBe('contenido-opf');
+    fs.rmSync(isolatedRoot, { recursive: true, force: true });
+  });
+
   test('etiquetasCompatiblesParaRenombrado bloquea cruce entre facturas distintas', () => {
     expect(etiquetasCompatiblesParaRenombrado('OPF_901164565_PEREZ_JUAN.pdf', 'OPF_901164565_PEREZ_JUAN.pdf')).toBe(true);
     expect(etiquetasCompatiblesParaRenombrado('OPF_901164565_PEREZ_JUAN.pdf', 'OPF_901164565_FE16300.pdf')).toBe(false);
