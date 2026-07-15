@@ -30,7 +30,7 @@ const fs = require('fs');
 const db = require('../utils/db-mysql');
 const { getArmadoFeDirFromContext } = require('../utils/soportes-storage');
 const { repararArchivosExpediente } = require('../utils/soportes-exp-archivo');
-const { aplicarRenombradoPorFev } = require('../utils/soportes-fe-rename');
+const { aplicarRenombradoPorFev, resolveSourceFileForRename } = require('../utils/soportes-fe-rename');
 
 describe('aplicarRenombradoPorFev', () => {
   let tempRoot;
@@ -76,5 +76,29 @@ describe('aplicarRenombradoPorFev', () => {
       expect.stringContaining('UPDATE sop_exp_archivos SET nombre_archivo = ?, ruta_relativa = ? WHERE id = ?'),
       ['OPF_901164565_FE14726.pdf', expect.stringContaining('soportes/armado/FE14726/OPF_901164565_FE14726.pdf'), 11]
     );
+  });
+
+  test('prefiere el archivo asociado al registro sobre otro archivo genérico en la carpeta destino', () => {
+    const oldDir = path.join(tempRoot, 'PEREZ_JUAN');
+    const newDir = path.join(tempRoot, 'FE14726');
+    fs.mkdirSync(oldDir, { recursive: true });
+    fs.mkdirSync(newDir, { recursive: true });
+
+    const sourcePath = path.join(oldDir, 'OPF_901164565_PEREZ_JUAN.pdf');
+    const otherPath = path.join(newDir, 'OPF_901164565_FE14726.pdf');
+    fs.writeFileSync(sourcePath, 'source');
+    fs.writeFileSync(otherPath, 'other');
+
+    const resolved = resolveSourceFileForRename(
+      {
+        nombre_archivo: 'OPF_901164565_PEREZ_JUAN.pdf',
+        ruta_relativa: 'soportes/armado/PEREZ_JUAN/OPF_901164565_PEREZ_JUAN.pdf',
+        tipo: 'OPF'
+      },
+      oldDir,
+      newDir
+    );
+
+    expect(resolved?.fullPath).toBe(sourcePath);
   });
 });

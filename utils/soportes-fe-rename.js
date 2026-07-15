@@ -61,28 +61,49 @@ function renameDirectoryIfExists(oldAbs, newAbs) {
   }
 }
 
-function resolveExistingFileInDir(dir, preferredName, tipo) {
+function resolveSourceFileForRename(row, oldDir, newDir) {
+  const preferredName = String(row?.nombre_archivo || '').trim();
+  const preferredRel = String(row?.ruta_relativa || '').replace(/\\/g, '/').trim();
   const candidates = [];
-  if (preferredName) candidates.push(preferredName);
-  if (dir && fs.existsSync(dir)) {
-    const files = fs.readdirSync(dir).filter((f) => !!f && f !== '.' && f !== '..');
-    const ext = path.extname(String(preferredName || '')).toLowerCase();
-    const prefix = String(tipo || '').toUpperCase();
-    files.forEach((f) => {
-      const lower = f.toLowerCase();
-      if (!candidates.includes(f) && (!preferredName || lower === String(preferredName).toLowerCase())) candidates.push(f);
-      if (prefix && lower.startsWith(`${prefix.toLowerCase()}_`)) candidates.push(f);
-      if (ext && path.extname(f).toLowerCase() === ext) candidates.push(f);
-    });
+
+  if (preferredName) {
+    const base = path.basename(preferredName);
+    if (base) candidates.push(base);
+  }
+  if (preferredRel) {
+    const base = path.basename(preferredRel);
+    if (base && !candidates.includes(base)) candidates.push(base);
   }
 
-  const seen = new Set();
-  for (const name of candidates) {
-    if (!name || seen.has(name)) continue;
-    seen.add(name);
+  const checkPath = (dir, name) => {
+    if (!dir || !name) return null;
     const full = path.join(dir, name);
-    if (fs.existsSync(full)) return { fullPath: full, fileName: name };
+    return fs.existsSync(full) ? { fullPath: full, fileName: name } : null;
+  };
+
+  for (const name of candidates) {
+    const fromOld = checkPath(oldDir, name);
+    if (fromOld) return fromOld;
+    const fromNew = checkPath(newDir, name);
+    if (fromNew) return fromNew;
   }
+
+  if (oldDir && fs.existsSync(oldDir)) {
+    const files = fs.readdirSync(oldDir).filter((f) => !!f && f !== '.' && f !== '..');
+    const ext = preferredName ? path.extname(preferredName).toLowerCase() : '';
+    const prefix = String(row?.tipo || '').toUpperCase();
+    const exact = files.find((f) => f.toLowerCase() === preferredName.toLowerCase());
+    if (exact) return { fullPath: path.join(oldDir, exact), fileName: exact };
+
+    const typeMatches = files.filter((f) => {
+      const lower = f.toLowerCase();
+      return (!prefix || lower.startsWith(`${prefix.toLowerCase()}_`)) && (!ext || path.extname(f).toLowerCase() === ext);
+    });
+    if (typeMatches.length === 1) {
+      return { fullPath: path.join(oldDir, typeMatches[0]), fileName: typeMatches[0] };
+    }
+  }
+
   return null;
 }
 
@@ -150,9 +171,8 @@ async function aplicarRenombradoPorFev(expedienteId, numeroFactura) {
       for (const a of archivos) {
         const ext = path.extname(a.nombre_archivo || '.pdf').toLowerCase() || '.pdf';
         const targetName = buildCanonicalName(a.tipo, num, ext);
-        const diskMatch = resolveExistingFileInDir(newDir, a.nombre_archivo, a.tipo);
-        const actualName = diskMatch?.fileName || targetName;
-        const currentPath = diskMatch?.fullPath || path.join(newDir, actualName);
+        const diskMatch = resolveSourceFileForRename(a, oldDir, newDir);
+        const currentPath = diskMatch?.fullPath || null;
         const targetPath = path.join(newDir, targetName);
         if (currentPath && currentPath !== targetPath && fs.existsSync(currentPath)) {
           moveFileSafely(currentPath, targetPath);
@@ -176,9 +196,8 @@ async function aplicarRenombradoPorFev(expedienteId, numeroFactura) {
         const slotKey = a.slot === 'json_1' ? 'RIPS_JSON_1' : a.slot === 'json_2' ? 'RIPS_JSON_2' : 'RIPS_XML';
         const ext = path.extname(a.nombre_archivo || '.json').toLowerCase();
         const targetName = buildCanonicalName(slotKey, num, ext);
-        const diskMatch = resolveExistingFileInDir(newDir, a.nombre_archivo, slotKey);
-        const actualName = diskMatch?.fileName || targetName;
-        const currentPath = diskMatch?.fullPath || path.join(newDir, actualName);
+        const diskMatch = resolveSourceFileForRename(a, oldDir, newDir);
+        const currentPath = diskMatch?.fullPath || null;
         const targetPath = path.join(newDir, targetName);
         if (currentPath && currentPath !== targetPath && fs.existsSync(currentPath)) {
           moveFileSafely(currentPath, targetPath);
@@ -269,9 +288,8 @@ async function revertirRenombradoPorFev(expedienteId, { paciente_linea, paciente
       for (const a of archivos) {
         const ext = path.extname(a.nombre_archivo || '.pdf').toLowerCase() || '.pdf';
         const targetName = a.tipo === 'FEV' ? buildSoportesDiskName(a.tipo, pendingExp, ext) : buildSoportesDiskName(a.tipo, pendingExp, ext);
-        const diskMatch = resolveExistingFileInDir(newDir, a.nombre_archivo, a.tipo);
-        const actualName = diskMatch?.fileName || targetName;
-        const currentPath = diskMatch?.fullPath || path.join(newDir, actualName);
+        const diskMatch = resolveSourceFileForRename(a, oldDir, newDir);
+        const currentPath = diskMatch?.fullPath || null;
         const targetPath = path.join(newDir, targetName);
         if (currentPath && currentPath !== targetPath && fs.existsSync(currentPath)) {
           moveFileSafely(currentPath, targetPath);
@@ -295,9 +313,8 @@ async function revertirRenombradoPorFev(expedienteId, { paciente_linea, paciente
         const slotKey = a.slot === 'json_1' ? 'RIPS_JSON_1' : a.slot === 'json_2' ? 'RIPS_JSON_2' : 'RIPS_XML';
         const ext = path.extname(a.nombre_archivo || '.json').toLowerCase();
         const targetName = buildSoportesDiskName(slotKey, pendingExp, ext);
-        const diskMatch = resolveExistingFileInDir(newDir, a.nombre_archivo, slotKey);
-        const actualName = diskMatch?.fileName || targetName;
-        const currentPath = diskMatch?.fullPath || path.join(newDir, actualName);
+        const diskMatch = resolveSourceFileForRename(a, oldDir, newDir);
+        const currentPath = diskMatch?.fullPath || null;
         const targetPath = path.join(newDir, targetName);
         if (currentPath && currentPath !== targetPath && fs.existsSync(currentPath)) {
           moveFileSafely(currentPath, targetPath);
@@ -329,5 +346,6 @@ async function revertirRenombradoPorFev(expedienteId, { paciente_linea, paciente
 module.exports = {
   aplicarRenombradoPorFev,
   revertirRenombradoPorFev,
-  findExpedientesMismoCodigo
+  findExpedientesMismoCodigo,
+  resolveSourceFileForRename
 };
