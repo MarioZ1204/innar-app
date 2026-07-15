@@ -215,23 +215,29 @@ function buscarRutaPorPatronExpediente(row, expediente, baseRoot = getSoportesRo
 }
 
 function resolveArchivoAbsoluto(row, options = {}) {
-  const rel = String(row?.ruta_relativa || '').replace(/\\/g, '/');
-  if (!rel) return null;
-  const joined = rel.startsWith('soportes/') ? rel : path.join('soportes', rel).replace(/\\/g, '/');
-  const resolved = resolveStoragePath(joined);
-  if (resolved) return resolved;
-
+  const rel = String(row?.ruta_relativa || '').replace(/\\/g, '/').trim();
   const nombre = String(row?.nombre_archivo || '');
   const tipo = String(row?.tipo || '').toUpperCase();
   const base = path.basename(nombre);
   const candidates = [];
+  let joined = null;
+
+  if (rel) {
+    joined = rel.startsWith('soportes/') ? rel : path.join('soportes', rel).replace(/\\/g, '/');
+    const resolved = resolveStoragePath(joined);
+    if (resolved) return resolved;
+  }
 
   if (base) {
-    candidates.push(path.join(path.dirname(joined), base));
-    candidates.push(path.join(getSoportesRoot(), path.basename(joined)));
-    candidates.push(path.join(getSoportesRoot(), path.dirname(joined).replace(/^soportes\//, ''), base));
-    candidates.push(path.join(getSoportesRoot(), 'armado', path.basename(joined)));
-    candidates.push(path.join(getSoportesRoot(), 'armado', path.dirname(joined).replace(/^soportes\//, ''), base));
+    if (joined) {
+      candidates.push(path.join(path.dirname(joined), base));
+      candidates.push(path.join(getSoportesRoot(), path.basename(joined)));
+      candidates.push(path.join(getSoportesRoot(), path.dirname(joined).replace(/^soportes\//, ''), base));
+      candidates.push(path.join(getSoportesRoot(), 'armado', path.basename(joined)));
+      candidates.push(path.join(getSoportesRoot(), 'armado', path.dirname(joined).replace(/^soportes\//, ''), base));
+    }
+    candidates.push(path.join(getSoportesRoot(), base));
+    candidates.push(path.join(getSoportesRoot(), 'armado', base));
   }
 
   const nombreSinExt = base ? path.basename(base, path.extname(base)) : '';
@@ -266,12 +272,11 @@ function resolveArchivoAbsoluto(row, options = {}) {
     if (fs.existsSync(candidate)) return candidate;
   }
 
-  const relDir = path.dirname(joined).replace(/^soportes\//, '');
+  const relDir = joined ? path.dirname(joined).replace(/^soportes\//, '') : '';
   const scanRoots = [
     getSoportesRoot(),
     path.join(getSoportesRoot(), 'armado'),
-    path.join(getSoportesRoot(), 'armado', relDir),
-    path.join(getSoportesRoot(), relDir),
+    ...(relDir ? [path.join(getSoportesRoot(), 'armado', relDir), path.join(getSoportesRoot(), relDir)] : []),
     path.resolve(__dirname, '..', 'public', 'uploads', 'soportes')
   ];
   const historical = buscarRutaHistoricaArchivo(row);
@@ -300,8 +305,50 @@ function resolveArchivoAbsoluto(row, options = {}) {
 
 async function obtenerExpedienteContext(expedienteId) {
   if (!expedienteId) return null;
-  const rows = await db.query('SELECT id, codigo, numero_factura, contenedor_tipo, periodo, nombre_display, estado_facturacion FROM sop_expedientes WHERE id = ?', [expedienteId]);
-  return rows?.[0] || null;
+
+  try {
+    const columnas = await db.query('SHOW COLUMNS FROM sop_expedientes');
+    const columnasSet = new Set((columnas || []).map((col) => String(col?.Field || '').toLowerCase()));
+    const selectParts = [
+      'e.id',
+      'e.codigo',
+      'e.numero_factura',
+      'e.paciente_nombre',
+      'e.paciente_documento',
+      'e.tipo_servicio',
+      'e.dia_id',
+      'e.contenedor_id',
+      'e.fev_externa_verificada',
+      'e.listo_radicacion',
+      'e.notas',
+      'e.creado_por',
+      'e.creado_en'
+    ];
+
+    if (columnasSet.has('nombre_display')) {
+      selectParts.push('e.nombre_display');
+    }
+    if (columnasSet.has('periodo')) {
+      selectParts.push('e.periodo');
+    }
+    if (columnasSet.has('estado_facturacion')) {
+      selectParts.push('e.estado_facturacion');
+    }
+
+    const sql = `SELECT ${selectParts.join(', ')} FROM sop_expedientes e WHERE e.id = ? LIMIT 1`;
+    const rows = await db.query(sql, [expedienteId]);
+    return rows?.[0] || null;
+  } catch (error) {
+    try {
+      const rows = await db.query(
+        'SELECT id, codigo, numero_factura, paciente_nombre, paciente_documento, tipo_servicio, dia_id, contenedor_id, fev_externa_verificada, listo_radicacion, notas, creado_por, creado_en FROM sop_expedientes WHERE id = ? LIMIT 1',
+        [expedienteId]
+      );
+      return rows?.[0] || null;
+    } catch (fallbackError) {
+      return null;
+    }
+  }
 }
 
 async function repararArchivoExpedienteRow(row, { contenedor = 'soportes', usedPaths = null, expedienteId = null, expediente = null } = {}) {
@@ -471,5 +518,6 @@ module.exports = {
   buscarRutaHistoricaArchivo,
   repararArchivoExpedienteRow,
   repararArchivosExpediente,
-  eliminarArchivoExpedienteSlot
+  eliminarArchivoExpedienteSlot,
+  obtenerExpedienteContext
 };

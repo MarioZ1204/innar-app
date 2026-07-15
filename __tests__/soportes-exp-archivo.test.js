@@ -13,7 +13,8 @@ const {
   resolveArchivoAbsoluto,
   repararArchivoExpedienteRow,
   repararArchivosExpediente,
-  buscarRutaHistoricaArchivo
+  buscarRutaHistoricaArchivo,
+  obtenerExpedienteContext
 } = require('../utils/soportes-exp-archivo');
 
 describe('soportes-exp-archivo', () => {
@@ -115,6 +116,47 @@ describe('soportes-exp-archivo', () => {
     expect(resolved).toBe(filePath);
   });
 
+  test('carga el contexto del expediente sin depender de contenedor_tipo si la columna no existe', async () => {
+    db.query.mockResolvedValueOnce([{ id: 1, codigo: 'FE15448', numero_factura: 15448, periodo: '2026-03', nombre_display: 'PEREZ JUAN', estado_facturacion: 'a_facturar' }]);
+
+    const context = await require('../utils/soportes-exp-archivo').repararArchivoExpedienteRow({
+      id: 99,
+      expediente_id: 1,
+      tipo: 'OPF',
+      nombre_archivo: 'OPF_901164565_FE15448.pdf',
+      ruta_relativa: 'soportes/armado/2026/03/A_FACTURAR/SOPORTES/FE15448/OPF_901164565_FE15448.pdf'
+    });
+
+    expect(context.ok).toBe(false);
+    const querySql = db.query.mock.calls[0][0];
+    expect(querySql).toContain('FROM sop_expedientes');
+    expect(querySql).not.toContain('contenedor_tipo');
+  });
+
+  test('obtiene el contexto del expediente sin depender de columnas opcionales como periodo', async () => {
+    db.query.mockResolvedValueOnce([
+      { Field: 'id' },
+      { Field: 'codigo' },
+      { Field: 'numero_factura' },
+      { Field: 'paciente_nombre' },
+      { Field: 'paciente_documento' },
+      { Field: 'tipo_servicio' },
+      { Field: 'dia_id' },
+      { Field: 'contenedor_id' },
+      { Field: 'fev_externa_verificada' },
+      { Field: 'listo_radicacion' },
+      { Field: 'notas' },
+      { Field: 'creado_por' },
+      { Field: 'creado_en' }
+    ]);
+    db.query.mockResolvedValueOnce([{ id: 5, codigo: 'FE15925', numero_factura: 15925, paciente_nombre: 'Juan' }]);
+
+    const context = await obtenerExpedienteContext(5);
+
+    expect(context).toMatchObject({ id: 5, codigo: 'FE15925', numero_factura: 15925 });
+    expect(context.periodo).toBeUndefined();
+  });
+
   test('repara expedientes legacy que comparten el mismo archivo físico entre dos soportes', async () => {
     const expId = 77;
     const targetDir = path.join(tempRoot, 'soportes', 'armado', '2026', '03', 'A_FACTURAR', 'SOPORTES', 'FE14726');
@@ -157,5 +199,22 @@ describe('soportes-exp-archivo', () => {
     }, tempRoot);
 
     expect(recovered).toBe(legacyFile);
+  });
+
+  test('recupera el archivo incluso cuando la ruta relativa está vacía', () => {
+    const fileDir = path.join(tempRoot, 'soportes', 'armado', '2026', '03', 'A_FACTURAR', 'SOPORTES', 'FE15925');
+    fs.mkdirSync(fileDir, { recursive: true });
+    const filePath = path.join(fileDir, 'OPF_901164565_FE15925.pdf');
+    fs.writeFileSync(filePath, 'pdf');
+
+    const resolved = resolveArchivoAbsoluto({
+      tipo: 'OPF',
+      nombre_archivo: 'OPF_901164565_FE15925.pdf',
+      ruta_relativa: ''
+    }, {
+      expediente: { codigo: 'FE15925', numero_factura: 15925, nombre_display: 'PEREZ_JUAN' }
+    });
+
+    expect(resolved).toBe(filePath);
   });
 });
