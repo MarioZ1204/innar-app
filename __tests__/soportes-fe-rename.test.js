@@ -30,7 +30,7 @@ const fs = require('fs');
 const db = require('../utils/db-mysql');
 const { getArmadoFeDirFromContext } = require('../utils/soportes-storage');
 const { repararArchivosExpediente } = require('../utils/soportes-exp-archivo');
-const { aplicarRenombradoPorFev, resolveSourceFileForRename } = require('../utils/soportes-fe-rename');
+const { aplicarRenombradoPorFev, resolveSourceFileForRename, buildUniqueTargetPathForRename } = require('../utils/soportes-fe-rename');
 
 describe('aplicarRenombradoPorFev', () => {
   let tempRoot;
@@ -100,5 +100,15 @@ describe('aplicarRenombradoPorFev', () => {
     );
 
     expect(resolved?.fullPath).toBe(sourcePath);
+  });
+
+  test('genera un nombre alternativo cuando el archivo canónico ya está ocupado por otro expediente', () => {
+    const newDir = path.join(tempRoot, 'FE14726');
+    fs.mkdirSync(newDir, { recursive: true });
+    fs.writeFileSync(path.join(newDir, 'OPF_901164565_FE14726.pdf'), 'ocuppied');
+
+    const targetPath = buildUniqueTargetPathForRename(newDir, 'OPF_901164565_FE14726.pdf', path.join(newDir, 'OPF_901164565_PEREZ_JUAN.pdf'), 42);
+
+    expect(path.basename(targetPath)).toBe('OPF_901164565_FE14726_42.pdf');
   });
 });
