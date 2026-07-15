@@ -30,6 +30,7 @@ const { applyRateLimiters } = require('./config/rate-limit');
 const { runRuntimeMigrations } = require('./migrations/runtime-migrations');
 const { attachSockets } = require('./socket/handlers');
 const { requireAuth } = require('./middleware/index');
+const { runRecoveryBootstrap } = require('./scripts/auto-run-recuperacion-soportes');
 
 const PACKAGE_VERSION = require('./package.json').version;
 // IMPORTANTE: la versión debe ser ESTABLE entre reinicios.
@@ -43,6 +44,12 @@ const PUBLIC_DIR = path.join(__dirname, 'public');
 
 const app = express();
 app.locals.appVersion = APP_VERSION;
+
+if (process.env.SOPORTES_RECOVERY_ON_DEPLOY === '1' || process.env.SOPORTES_RECOVERY_ON_DEPLOY === 'true') {
+  runRecoveryBootstrap().catch((error) => {
+    console.error('[server] Falló el bootstrap de recuperación de SOPORTES:', error);
+  });
+}
 
 app.use(compression({
   filter(req, res) {

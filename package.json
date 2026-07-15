@@ -9,6 +9,7 @@
     "check:syntax": "node --check server.js",
     "check:hostinger-env": "node scripts/verify-hostinger-env.js",
     "deploy:check": "npm run check:syntax && npm run check:hostinger-env",
+    "deploy:recover-soportes": "node scripts/auto-run-recuperacion-soportes.js",
     "test": "jest --forceExit --detectOpenHandles",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
