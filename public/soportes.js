@@ -5811,6 +5811,37 @@
     });
     $('sopArmNavBackdrop')?.addEventListener('click', () => sopArmNavOpen(false));
     $('btnSopArmNuevoPeriodo')?.addEventListener('click', modalNuevoPeriodoArmado);
+    $('btnSopArmRecuperarArchivos')?.addEventListener('click', async () => {
+      const expedienteId = armState?.expedienteId;
+      if (!expedienteId) {
+        sopToast('Abra un expediente de SOPORTES antes de recuperar archivos.', 'info');
+        return;
+      }
+      const btn = $('btnSopArmRecuperarArchivos');
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i data-lucide="loader"></i> Recuperando…';
+        sopIcons(btn);
+      }
+      try {
+        const res = await apiFetch('/api/soportes/armado/recuperar-archivos', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ expedienteId })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'No se pudo recuperar');
+        sopToast(data.message || 'Recuperación completada', 'success');
+      } catch (error) {
+        sopToast(error.message || 'No se pudo completar la recuperación', 'error');
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = '<i data-lucide="refresh-cw"></i> Recuperar archivos';
+          sopIcons(btn);
+        }
+      }
+    });
     const canEstructura = sopPerm('soportes.armado.crear_estructura');
     const btnCont = $('btnSopArmNuevaContenedora');
     const btnDia = $('btnSopArmNuevoDia');

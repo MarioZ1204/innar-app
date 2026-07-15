@@ -106,6 +106,7 @@ const {
 const { enrichExpedientesLista } = require('../utils/soportes-expediente-progreso');
 const { actualizarDia, eliminarDia } = require('../utils/soportes-dia-admin');
 const { resolveArchivoAbsoluto } = require('../utils/soportes-exp-archivo');
+const { runSoportesRecoveryScript } = require('../utils/soportes-recovery-runner');
 const { syncRipsCarpetasDia, syncRipsCarpetasContenedor } = require('../utils/soportes-rips-carpetas-sync');
 const {
   zipArchiveSegment,
@@ -1771,6 +1772,35 @@ router.post('/soportes/armado/periodos/:id/reparent-facturas', requireAuth, requ
     res.json(result);
   } catch (e) {
     logger.error('[SOPORTES] reparent facturas:', e);
+    res.status(500).json({ error: safeError(e) });
+  }
+});
+
+router.post('/soportes/armado/recuperar-archivos', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'soportes.armado.crear_estructura'), async (req, res) => {
+  try {
+    const ids = Array.isArray(req.body?.expedienteIds)
+      ? req.body.expedienteIds.filter((value) => Number.isFinite(Number(value)) && Number(value) > 0)
+      : [];
+    const expedienteId = req.body?.expedienteId != null ? Number(req.body.expedienteId) : null;
+    const targetIds = ids.length ? ids : (expedienteId ? [expedienteId] : []);
+
+    if (!targetIds.length) {
+      return res.status(400).json({ error: 'Debe indicar al menos un expediente' });
+    }
+
+    const result = await runSoportesRecoveryScript({
+      cwd: path.resolve(__dirname, '..'),
+      expedienteIds: targetIds
+    });
+
+    if (!result.ok) {
+      logger.error('[SOPORTES] recuperación manual fallida', { result, expedienteIds: targetIds });
+      return res.status(500).json({ error: 'No se pudo ejecutar la recuperación', detail: result.stderr || result.stdout });
+    }
+
+    res.json({ ok: true, message: 'Recuperación ejecutada', result });
+  } catch (e) {
+    logger.error('[SOPORTES] recuperar archivos manual:', e);
     res.status(500).json({ error: safeError(e) });
   }
 });
