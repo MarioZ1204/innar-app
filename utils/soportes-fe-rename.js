@@ -61,9 +61,10 @@ function renameDirectoryIfExists(oldAbs, newAbs) {
   }
 }
 
-function resolveSourceFileForRename(row, oldDir, newDir) {
+function resolveSourceFileForRename(row, oldDir, newDir, options = {}) {
   const preferredName = String(row?.nombre_archivo || '').trim();
   const preferredRel = String(row?.ruta_relativa || '').replace(/\\/g, '/').trim();
+  const usedPaths = options?.usedPaths instanceof Set ? options.usedPaths : null;
   const candidates = [];
 
   if (preferredName) {
@@ -81,11 +82,17 @@ function resolveSourceFileForRename(row, oldDir, newDir) {
     return fs.existsSync(full) ? { fullPath: full, fileName: name } : null;
   };
 
+  const isPathAvailable = (candidate) => {
+    if (!candidate?.fullPath) return false;
+    if (!usedPaths) return true;
+    return !usedPaths.has(path.resolve(candidate.fullPath));
+  };
+
   for (const name of candidates) {
     const fromOld = checkPath(oldDir, name);
-    if (fromOld) return fromOld;
+    if (fromOld && isPathAvailable(fromOld)) return fromOld;
     const fromNew = checkPath(newDir, name);
-    if (fromNew) return fromNew;
+    if (fromNew && isPathAvailable(fromNew)) return fromNew;
   }
 
   if (oldDir && fs.existsSync(oldDir)) {
@@ -100,7 +107,8 @@ function resolveSourceFileForRename(row, oldDir, newDir) {
       return (!prefix || lower.startsWith(`${prefix.toLowerCase()}_`)) && (!ext || path.extname(f).toLowerCase() === ext);
     });
     if (typeMatches.length === 1) {
-      return { fullPath: path.join(oldDir, typeMatches[0]), fileName: typeMatches[0] };
+      const match = { fullPath: path.join(oldDir, typeMatches[0]), fileName: typeMatches[0] };
+      if (isPathAvailable(match)) return match;
     }
   }
 
@@ -186,11 +194,13 @@ async function aplicarRenombradoPorFev(expedienteId, numeroFactura) {
         'SELECT * FROM sop_exp_archivos WHERE expediente_id = ?',
         [her.id]
       );
+      const usedPaths = new Set();
       for (const a of archivos) {
         const ext = path.extname(a.nombre_archivo || '.pdf').toLowerCase() || '.pdf';
         const targetName = buildCanonicalName(a.tipo, num, ext);
-        const diskMatch = resolveSourceFileForRename(a, oldDir, newDir);
+        const diskMatch = resolveSourceFileForRename(a, oldDir, newDir, { usedPaths });
         const currentPath = diskMatch?.fullPath || null;
+        if (currentPath) usedPaths.add(path.resolve(currentPath));
         const targetPath = buildUniqueTargetPathForRename(newDir, targetName, currentPath, her.id);
         if (currentPath && currentPath !== targetPath && fs.existsSync(currentPath)) {
           moveFileSafely(currentPath, targetPath);
@@ -211,12 +221,14 @@ async function aplicarRenombradoPorFev(expedienteId, numeroFactura) {
           [her.id]
         );
       } catch (_) { /* tabla opcional */ }
+      const usedPaths = new Set();
       for (const a of ripsArchivos) {
         const slotKey = a.slot === 'json_1' ? 'RIPS_JSON_1' : a.slot === 'json_2' ? 'RIPS_JSON_2' : 'RIPS_XML';
         const ext = path.extname(a.nombre_archivo || '.json').toLowerCase();
         const targetName = buildCanonicalName(slotKey, num, ext);
-        const diskMatch = resolveSourceFileForRename(a, oldDir, newDir);
+        const diskMatch = resolveSourceFileForRename(a, oldDir, newDir, { usedPaths });
         const currentPath = diskMatch?.fullPath || null;
+        if (currentPath) usedPaths.add(path.resolve(currentPath));
         const targetPath = buildUniqueTargetPathForRename(newDir, targetName, currentPath, her.id);
         if (currentPath && currentPath !== targetPath && fs.existsSync(currentPath)) {
           moveFileSafely(currentPath, targetPath);
@@ -305,11 +317,13 @@ async function revertirRenombradoPorFev(expedienteId, { paciente_linea, paciente
         'SELECT * FROM sop_exp_archivos WHERE expediente_id = ?',
         [her.id]
       );
+      const usedPaths = new Set();
       for (const a of archivos) {
         const ext = path.extname(a.nombre_archivo || '.pdf').toLowerCase() || '.pdf';
         const targetName = a.tipo === 'FEV' ? buildSoportesDiskName(a.tipo, pendingExp, ext) : buildSoportesDiskName(a.tipo, pendingExp, ext);
-        const diskMatch = resolveSourceFileForRename(a, oldDir, newDir);
+        const diskMatch = resolveSourceFileForRename(a, oldDir, newDir, { usedPaths });
         const currentPath = diskMatch?.fullPath || null;
+        if (currentPath) usedPaths.add(path.resolve(currentPath));
         const targetPath = buildUniqueTargetPathForRename(newDir, targetName, currentPath, her.id);
         if (currentPath && currentPath !== targetPath && fs.existsSync(currentPath)) {
           moveFileSafely(currentPath, targetPath);
@@ -330,12 +344,14 @@ async function revertirRenombradoPorFev(expedienteId, { paciente_linea, paciente
           [her.id]
         );
       } catch (_) { /* tabla opcional */ }
+      const usedPaths = new Set();
       for (const a of ripsArchivos) {
         const slotKey = a.slot === 'json_1' ? 'RIPS_JSON_1' : a.slot === 'json_2' ? 'RIPS_JSON_2' : 'RIPS_XML';
         const ext = path.extname(a.nombre_archivo || '.json').toLowerCase();
         const targetName = buildSoportesDiskName(slotKey, pendingExp, ext);
-        const diskMatch = resolveSourceFileForRename(a, oldDir, newDir);
+        const diskMatch = resolveSourceFileForRename(a, oldDir, newDir, { usedPaths });
         const currentPath = diskMatch?.fullPath || null;
+        if (currentPath) usedPaths.add(path.resolve(currentPath));
         const targetPath = buildUniqueTargetPathForRename(newDir, targetName, currentPath, her.id);
         if (currentPath && currentPath !== targetPath && fs.existsSync(currentPath)) {
           moveFileSafely(currentPath, targetPath);

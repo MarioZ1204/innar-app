@@ -251,6 +251,6 @@ RECOMENDACIÓN: Línea OK, pero solo usar CDNs confiables
 
 **Versión:** 1.0  
 **Fecha:** Feb 27, 2026  
-**Autor:** GitHub Copilot (Claude Haiku 4.5)  
+**Autor:** Equipo de desarrollo  
 **Archivos modificados:** 1 (server.js)  
 **Archivos creados:** 4 (CSP docs)

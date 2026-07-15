@@ -247,6 +247,6 @@ Select-String "2026-02-27T10" logs\errors.log
 
 ---
 
-**Implementado por:** GitHub Copilot  
+**Implementado por:** Equipo de desarrollo  
 **Fecha:** 27 de Febrero 2026  
 **Estado:** ✨ COMPLETADO - Sistema listo para usar

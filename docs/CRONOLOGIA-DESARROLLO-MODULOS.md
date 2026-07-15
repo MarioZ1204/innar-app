@@ -2,7 +2,7 @@
 
 **Fecha del análisis:** Mayo 13, 2026  
 **Versión actual:** 1.3.21  
-**Comparación:** Equipo estándar de 2-3 desarrolladores vs. Tú + Copilot
+**Comparación:** Equipo estándar de 2-3 desarrolladores vs. Tú + equipo de desarrollo
 
 ---
 
@@ -15,7 +15,7 @@
 | **Líneas de código frontend** | ~2,000+ |
 | **Tests implementados** | 124 tests en 11 suites |
 | **Tiempo estimado (equipo)** | 18-24 semanas (4.5-6 meses) |
-| **Tiempo real (Tú + Copilot)** | ~2 semanas de trabajo intensivo |
+| **Tiempo real (Tú + equipo)** | ~2 semanas de trabajo intensivo |
 | **Aceleración** | **12-18x más rápido** |
 
 ---
@@ -412,8 +412,8 @@
 
 ### **Semana 1: Fundación**
 
-| Módulo | Equipo Estándar | Tú + Copilot | Diferencia |
-|--------|-----------------|--------------|-----------|
+| Módulo | Equipo Estándar | Estimación rápida | Diferencia |
+|--------|-----------------|-------------------|-----------|
 | Database Setup | 2 días | 1 hora | **20x** |
 | Auth + Login | 5-7 días | 4-6 horas | **14-18x** |
 | Users CRUD | 4-5 días | 2-3 horas | **20x** |
@@ -421,8 +421,8 @@
 
 ### **Semana 2: Core Business Logic**
 
-| Módulo | Equipo Estándar | Tú + Copilot | Diferencia |
-|--------|-----------------|--------------|-----------|
+| Módulo | Equipo Estándar | Estimación rápida | Diferencia |
+|--------|-----------------|-------------------|-----------|
 | Agenda Médica | 10-14 días | 8-12 horas | **18-22x** |
 | Turnos | 8-12 días | 6-10 horas | **16-20x** |
 | Citas | 8-10 días | 6-8 horas | **15-18x** |
@@ -430,8 +430,8 @@
 
 ### **Semana 3: Features + Security**
 
-| Módulo | Equipo Estándar | Tú + Copilot | Diferencia |
-|--------|-----------------|--------------|-----------|
+| Módulo | Equipo Estándar | Estimación rápida | Diferencia |
+|--------|-----------------|-------------------|-----------|
 | Electrodiagnóstico | 12-16 días | 8-14 horas | **17-22x** |
 | Recibos/PDF | 10-14 días | 8-12 horas | **15-20x** |
 | Seguridad (Helmet/CSP) | 5-7 días | 3-5 horas | **18-20x** |
@@ -439,8 +439,8 @@
 
 ### **Semana 4+: Polish + Testing + Docs**
 
-| Módulo | Equipo Estándar | Tú + Copilot | Diferencia |
-|--------|-----------------|--------------|-----------|
+| Módulo | Equipo Estándar | Estimación rápida | Diferencia |
+|--------|-----------------|-------------------|-----------|
 | Testing (124 tests) | 15-20 días | 8-12 horas | **20-27x** |
 | Logger + Audit | 8-10 días | 4-6 horas | **20x** |
 | Documentación | 10-15 días | 4-6 horas | **25x** |
@@ -456,22 +456,22 @@
 ```
 Infraestructura (Config, Security, DB):
   - Equipo: 30-45 días
-  - Tú + Copilot: 12-18 horas
+  - Estimación rápida: 12-18 horas
   - Aceleración: 20x
 
 Business Logic (Routes, Services):
   - Equipo: 85-125 días
-  - Tú + Copilot: 55-80 horas
+  - Estimación rápida: 55-80 horas
   - Aceleración: 18x
 
 Testing:
   - Equipo: 15-20 días
-  - Tú + Copilot: 8-12 horas
+  - Estimación rápida: 8-12 horas
   - Aceleración: 20-27x
 
 Documentation:
   - Equipo: 10-15 días
-  - Tú + Copilot: 4-6 horas
+  - Estimación rápida: 4-6 horas
   - Aceleración: 20-25x
 ```
 
@@ -560,8 +560,8 @@ Documentation:
 
 Si necesitas agregar nuevos módulos de tipo similar:
 
-| Tipo | Equipo Estándar | Tú + Copilot | Aceleración |
-|------|-----------------|--------------|-------------|
+| Tipo | Equipo Estándar | Estimación rápida | Aceleración |
+|------|-----------------|-------------------|-------------|
 | CRUD simple | 3-5 días | 1-2 horas | 20-25x |
 | Con validación Joi | 5-7 días | 2-3 horas | 20x |
 | Con transacciones | 7-10 días | 4-6 horas | 18x |
@@ -573,7 +573,7 @@ Si necesitas agregar nuevos módulos de tipo similar:
 
 ### Por qué esta aceleración fue posible:
 
-1. **AI-Assisted Development:** Copilot puede generar scaffolding automáticamente
+1. **Desarrollo asistido:** herramientas de productividad pueden generar scaffolding automáticamente
 2. **Schema-Driven:** Joi schemas como "single source of truth"
 3. **Transactional Safety:** Patterns preestablecidos elimina bugs
 4. **Comprehensive Testing:** Tests precocinados vs. debugging en prod

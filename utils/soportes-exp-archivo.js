@@ -130,10 +130,34 @@ function resolveArchivoAbsoluto(row) {
   return null;
 }
 
-async function repararArchivoExpedienteRow(row, { contenedor = 'soportes' } = {}) {
+async function repararArchivoExpedienteRow(row, { contenedor = 'soportes', usedPaths = null, expedienteId = null } = {}) {
   if (!row?.id) return { ok: false, repaired: false, path: null };
 
-  const resolved = resolveArchivoAbsoluto(row);
+  let resolved = resolveArchivoAbsoluto(row);
+  if (!resolved || !fs.existsSync(resolved)) {
+    if (usedPaths instanceof Set && usedPaths.size > 0) {
+      const sourcePath = Array.from(usedPaths).slice(-1)[0];
+      if (sourcePath && fs.existsSync(sourcePath)) {
+        const ext = path.extname(String(row?.nombre_archivo || 'archivo.pdf')) || '.pdf';
+        const base = path.basename(String(row?.nombre_archivo || `archivo${ext}`), ext);
+        const suffix = expedienteId ? `_${expedienteId}` : '';
+        const dir = path.dirname(sourcePath);
+        let index = 1;
+        let candidatePath = null;
+        while (!candidatePath) {
+          const altName = `${base}${suffix}${index > 1 ? `_${index}` : ''}${ext}`;
+          const altPath = path.join(dir, altName);
+          if (!fs.existsSync(altPath) && !usedPaths.has(path.resolve(altPath))) {
+            candidatePath = altPath;
+            fs.copyFileSync(sourcePath, candidatePath);
+            resolved = candidatePath;
+          }
+          index += 1;
+        }
+      }
+    }
+  }
+
   if (!resolved || !fs.existsSync(resolved)) {
     return { ok: false, repaired: false, path: null };
   }
@@ -147,37 +171,77 @@ async function repararArchivoExpedienteRow(row, { contenedor = 'soportes' } = {}
     return { ok: false, repaired: false, path: resolved };
   }
 
-  const needsUpdate = !samePath || String(row?.nombre_archivo || '') !== targetName;
+  let finalPath = resolved;
+  let finalName = targetName;
+  let finalRel = targetRel;
+
+  if (usedPaths instanceof Set) {
+    const resolvedAbs = path.resolve(resolved);
+    if (usedPaths.has(resolvedAbs)) {
+      const ext = path.extname(targetName);
+      const base = path.basename(targetName, ext);
+      const suffix = expedienteId ? `_${expedienteId}` : '';
+      let index = 1;
+      let candidatePath = null;
+      while (!candidatePath) {
+        const altName = `${base}${suffix}${index > 1 ? `_${index}` : ''}${ext}`;
+        const altPath = path.join(path.dirname(resolved), altName);
+        if (!fs.existsSync(altPath) && !usedPaths.has(path.resolve(altPath))) {
+          candidatePath = altPath;
+          finalName = altName;
+          finalPath = altPath;
+          finalRel = buildStoredRutaRelativa(altPath);
+        }
+        index += 1;
+      }
+      fs.copyFileSync(resolved, finalPath);
+      const currentRelPath = path.dirname(targetRel);
+      if (finalRel && currentRelPath && finalRel.startsWith(`${currentRelPath}/`)) {
+        // keep relative path aligned with the new filename inside the same directory
+      }
+    }
+  }
+
+  if (usedPaths instanceof Set) {
+    usedPaths.add(path.resolve(finalPath));
+  }
+
+  const needsUpdate = !samePath || String(row?.nombre_archivo || '') !== finalName || String(row?.ruta_relativa || '').replace(/\\/g, '/') !== finalRel;
   if (!needsUpdate) {
-    return { ok: true, repaired: false, path: resolved, nombre_archivo: targetName, ruta_relativa: targetRel };
+    return { ok: true, repaired: false, path: finalPath, nombre_archivo: finalName, ruta_relativa: finalRel };
   }
 
   if (contenedor === 'soportes') {
     await db.execute(
       'UPDATE sop_exp_archivos SET nombre_archivo = ?, ruta_relativa = ? WHERE id = ?',
-      [targetName, targetRel, row.id]
+      [finalName, finalRel, row.id]
     );
   } else {
     await db.execute(
       'UPDATE sop_rips_archivos SET nombre_archivo = ?, ruta_relativa = ? WHERE id = ?',
-      [targetName, targetRel, row.id]
+      [finalName, finalRel, row.id]
     );
   }
 
-  return { ok: true, repaired: true, path: resolved, nombre_archivo: targetName, ruta_relativa: targetRel };
+  if (usedPaths instanceof Set) {
+    usedPaths.add(path.resolve(finalPath));
+  }
+
+  return { ok: true, repaired: true, path: finalPath, nombre_archivo: finalName, ruta_relativa: finalRel };
 }
 
 async function repararArchivosExpediente(expedienteId) {
   const soportesRows = await db.query('SELECT * FROM sop_exp_archivos WHERE expediente_id = ?', [expedienteId]);
   const reparaciones = [];
+  const usedPaths = new Set();
   for (const row of soportesRows) {
-    reparaciones.push(await repararArchivoExpedienteRow(row, { contenedor: 'soportes' }));
+    reparaciones.push(await repararArchivoExpedienteRow(row, { contenedor: 'soportes', usedPaths, expedienteId }));
   }
 
   try {
     const ripsRows = await db.query('SELECT * FROM sop_rips_archivos WHERE expediente_id = ?', [expedienteId]);
     for (const row of ripsRows) {
-      reparaciones.push(await repararArchivoExpedienteRow(row, { contenedor: 'rips' }));
+      reparaciones.push(await repararArchivoExpedienteRow(row, { contenedor: 'rips', usedPaths, expedienteId }));
     }
   } catch (_) {
     // La tabla puede no existir o no estar preparada en todos los entornos.
@@ -185,6 +249,7 @@ async function repararArchivosExpediente(expedienteId) {
 
   return reparaciones;
 }
+
 
 async function eliminarArchivoExpedienteSlot(expedienteId, tipoParam) {
   const loaded = await loadArchivoExpedienteSlot(expedienteId, tipoParam);

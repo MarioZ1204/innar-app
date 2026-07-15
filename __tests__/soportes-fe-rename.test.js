@@ -111,4 +111,39 @@ describe('aplicarRenombradoPorFev', () => {
 
     expect(path.basename(targetPath)).toBe('OPF_901164565_FE14726_42.pdf');
   });
+
+  test('no reutiliza el mismo archivo físico para más de un soporte ya asignado', () => {
+    const oldDir = path.join(tempRoot, 'PEREZ_JUAN');
+    const newDir = path.join(tempRoot, 'FE14726');
+    fs.mkdirSync(oldDir, { recursive: true });
+    fs.mkdirSync(newDir, { recursive: true });
+
+    const sourcePath = path.join(oldDir, 'OPF_901164565_PEREZ_JUAN.pdf');
+    fs.writeFileSync(sourcePath, 'exp1');
+
+    const first = resolveSourceFileForRename(
+      {
+        nombre_archivo: 'OPF_901164565_PEREZ_JUAN.pdf',
+        ruta_relativa: 'soportes/armado/PEREZ_JUAN/OPF_901164565_PEREZ_JUAN.pdf',
+        tipo: 'OPF'
+      },
+      oldDir,
+      newDir,
+      { usedPaths: new Set() }
+    );
+
+    const second = resolveSourceFileForRename(
+      {
+        nombre_archivo: 'CRC_901164565_PEREZ_JUAN.pdf',
+        ruta_relativa: 'soportes/armado/PEREZ_JUAN/CRC_901164565_PEREZ_JUAN.pdf',
+        tipo: 'CRC'
+      },
+      oldDir,
+      newDir,
+      { usedPaths: new Set([first.fullPath]) }
+    );
+
+    expect(first?.fullPath).toBe(sourcePath);
+    expect(second).toBeNull();
+  });
 });
