@@ -5,7 +5,8 @@ const {
   buildCanonicalName,
   buildSoportesDiskName,
   etiquetaFacturaExpediente,
-  expedienteTieneFactura
+  expedienteTieneFactura,
+  extractEtiquetaFromSoporteName
 } = require('../utils/soportes-archivo-detect');
 
 describe('parseFevFilename FE tag', () => {
@@ -40,5 +41,13 @@ describe('buildSoportesDiskName sin factura', () => {
     const exp = { codigo: 'FE14726', numero_factura: 14726 };
     expect(buildSoportesDiskName('OPF', exp, '.pdf')).toBe('OPF_901164565_FE14726.pdf');
     expect(expedienteTieneFactura(exp)).toBe(true);
+  });
+});
+
+describe('extractEtiquetaFromSoporteName', () => {
+  test('extrae etiqueta de paciente y de factura', () => {
+    expect(extractEtiquetaFromSoporteName('OPF_901164565_PEREZ_JUAN.pdf')).toBe('PEREZ_JUAN');
+    expect(extractEtiquetaFromSoporteName('CRC_901164565_FE16300.pdf')).toBe('FE16300');
+    expect(extractEtiquetaFromSoporteName('documento.pdf')).toBe('');
   });
 });

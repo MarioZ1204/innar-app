@@ -30,7 +30,7 @@ const fs = require('fs');
 const db = require('../utils/db-mysql');
 const { getArmadoFeDirFromContext } = require('../utils/soportes-storage');
 const { repararArchivosExpediente } = require('../utils/soportes-exp-archivo');
-const { aplicarRenombradoPorFev, resolveSourceFileForRename, buildUniqueTargetPathForRename } = require('../utils/soportes-fe-rename');
+const { aplicarRenombradoPorFev, resolveSourceFileForRename, buildUniqueTargetPathForRename, etiquetasCompatiblesParaRenombrado, renameDirectoryIfExists } = require('../utils/soportes-fe-rename');
 
 describe('aplicarRenombradoPorFev', () => {
   let tempRoot;
@@ -145,5 +145,65 @@ describe('aplicarRenombradoPorFev', () => {
 
     expect(first?.fullPath).toBe(sourcePath);
     expect(second).toBeNull();
+  });
+
+  test('rechaza un archivo con etiqueta FE distinta al renombrar', () => {
+    const isolatedRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'soportes-fe-rename-reject-'));
+    const oldDir = path.join(isolatedRoot, 'GARCIA_ANA');
+    fs.mkdirSync(oldDir, { recursive: true });
+    fs.writeFileSync(path.join(oldDir, 'OPF_901164565_FE15448.pdf'), 'wrong-fe');
+
+    const resolved = resolveSourceFileForRename(
+      {
+        nombre_archivo: 'OPF_901164565_GARCIA_ANA.pdf',
+        tipo: 'OPF'
+      },
+      oldDir,
+      path.join(isolatedRoot, 'FE16300')
+    );
+
+    expect(resolved).toBeNull();
+    fs.rmSync(isolatedRoot, { recursive: true, force: true });
+  });
+
+  test('no fusiona carpetas cuando el destino FE ya contiene archivos', () => {
+    const oldDir = path.join(tempRoot, 'PEREZ_JUAN');
+    const newDir = path.join(tempRoot, 'FE16300');
+    fs.mkdirSync(oldDir, { recursive: true });
+    fs.mkdirSync(newDir, { recursive: true });
+    fs.writeFileSync(path.join(oldDir, 'OPF_901164565_PEREZ_JUAN.pdf'), 'paciente');
+    fs.writeFileSync(path.join(newDir, 'OPF_901164565_FE16300.pdf'), 'otro');
+
+    const result = renameDirectoryIfExists(oldDir, newDir);
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/destino ya existe/);
+    expect(fs.existsSync(path.join(oldDir, 'OPF_901164565_PEREZ_JUAN.pdf'))).toBe(true);
+  });
+
+  test('encuentra archivos en la carpeta destino tras renombrar el directorio', () => {
+    const oldDir = path.join(tempRoot, 'PEREZ_JUAN');
+    const newDir = path.join(tempRoot, 'FE14726');
+    fs.mkdirSync(oldDir, { recursive: true });
+    const sourcePath = path.join(oldDir, 'OPF_901164565_PEREZ_JUAN.pdf');
+    fs.writeFileSync(sourcePath, 'source');
+    renameDirectoryIfExists(oldDir, newDir);
+
+    const resolved = resolveSourceFileForRename(
+      {
+        nombre_archivo: 'OPF_901164565_PEREZ_JUAN.pdf',
+        tipo: 'OPF'
+      },
+      oldDir,
+      newDir
+    );
+
+    expect(resolved?.fullPath).toBe(path.join(newDir, 'OPF_901164565_PEREZ_JUAN.pdf'));
+  });
+
+  test('etiquetasCompatiblesParaRenombrado bloquea cruce entre facturas distintas', () => {
+    expect(etiquetasCompatiblesParaRenombrado('OPF_901164565_PEREZ_JUAN.pdf', 'OPF_901164565_PEREZ_JUAN.pdf')).toBe(true);
+    expect(etiquetasCompatiblesParaRenombrado('OPF_901164565_PEREZ_JUAN.pdf', 'OPF_901164565_FE16300.pdf')).toBe(false);
+    expect(etiquetasCompatiblesParaRenombrado('OPF_901164565_FE16300.pdf', 'OPF_901164565_FE15448.pdf')).toBe(false);
   });
 });

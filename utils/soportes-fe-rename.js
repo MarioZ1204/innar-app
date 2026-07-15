@@ -5,7 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const db = require('./db-mysql');
 const { getArmadoFeDirFromContext } = require('./soportes-storage');
-const { buildCanonicalName, buildSoportesDiskName } = require('./soportes-archivo-detect');
+const { buildCanonicalName, buildSoportesDiskName, extractEtiquetaFromSoporteName } = require('./soportes-archivo-detect');
 const { parseLineaPaciente, esExpedientePendienteFactura } = require('./soportes-pacientes-parse');
 const { loadArchivoExpedienteSlot, eliminarArchivoExpedienteSlot, repararArchivosExpediente } = require('./soportes-exp-archivo');
 const { syncRipsCarpetasDia } = require('./soportes-rips-carpetas-sync');
@@ -43,28 +43,45 @@ function renameDirectoryIfExists(oldAbs, newAbs) {
     const parent = path.dirname(newAbs);
     if (!fs.existsSync(parent)) fs.mkdirSync(parent, { recursive: true });
     if (!fs.existsSync(newAbs)) fs.mkdirSync(newAbs, { recursive: true });
-    return;
+    return { ok: true };
   }
   if (fs.existsSync(newAbs)) {
-    const files = fs.readdirSync(oldAbs);
-    for (const f of files) {
-      const src = path.join(oldAbs, f);
-      const dst = path.join(newAbs, f);
-      if (fs.existsSync(dst)) fs.unlinkSync(dst);
-      fs.renameSync(src, dst);
+    const existingFiles = fs.readdirSync(newAbs).filter((f) => f && f !== '.' && f !== '..');
+    if (existingFiles.length) {
+      return {
+        ok: false,
+        error: `La carpeta destino ya existe y contiene archivos (${existingFiles.slice(0, 3).join(', ')}${existingFiles.length > 3 ? '…' : ''})`
+      };
     }
-    try { fs.rmdirSync(oldAbs); } catch (_) { /* ignore */ }
-  } else {
-    const parent = path.dirname(newAbs);
-    if (!fs.existsSync(parent)) fs.mkdirSync(parent, { recursive: true });
-    fs.renameSync(oldAbs, newAbs);
+    try { fs.rmdirSync(newAbs); } catch (_) { /* ignore */ }
   }
+  const parent = path.dirname(newAbs);
+  if (!fs.existsSync(parent)) fs.mkdirSync(parent, { recursive: true });
+  fs.renameSync(oldAbs, newAbs);
+  return { ok: true };
+}
+
+function etiquetasCompatiblesParaRenombrado(preferredName, candidateName) {
+  const preferredTag = extractEtiquetaFromSoporteName(preferredName);
+  const candidateTag = extractEtiquetaFromSoporteName(candidateName);
+  if (!preferredTag || !candidateTag) return true;
+  if (preferredTag === candidateTag) return true;
+  if (/^FE\d+$/.test(preferredTag) && /^FE\d+$/.test(candidateTag)) return false;
+  if (/^FE\d+$/.test(preferredTag) !== /^FE\d+$/.test(candidateTag)) return false;
+  return preferredTag === candidateTag;
+}
+
+function sourceDirForRename(oldDir, newDir) {
+  if (oldDir && fs.existsSync(oldDir)) return oldDir;
+  if (newDir && fs.existsSync(newDir)) return newDir;
+  return oldDir || newDir;
 }
 
 function resolveSourceFileForRename(row, oldDir, newDir, options = {}) {
   const preferredName = String(row?.nombre_archivo || '').trim();
   const preferredRel = String(row?.ruta_relativa || '').replace(/\\/g, '/').trim();
   const usedPaths = options?.usedPaths instanceof Set ? options.usedPaths : null;
+  const searchDir = sourceDirForRename(oldDir, newDir);
   const candidates = [];
 
   if (preferredName) {
@@ -79,7 +96,9 @@ function resolveSourceFileForRename(row, oldDir, newDir, options = {}) {
   const checkPath = (dir, name) => {
     if (!dir || !name) return null;
     const full = path.join(dir, name);
-    return fs.existsSync(full) ? { fullPath: full, fileName: name } : null;
+    if (!fs.existsSync(full)) return null;
+    if (!etiquetasCompatiblesParaRenombrado(preferredName || name, name)) return null;
+    return { fullPath: full, fileName: name };
   };
 
   const isPathAvailable = (candidate) => {
@@ -89,25 +108,33 @@ function resolveSourceFileForRename(row, oldDir, newDir, options = {}) {
   };
 
   for (const name of candidates) {
-    const fromOld = checkPath(oldDir, name);
-    if (fromOld && isPathAvailable(fromOld)) return fromOld;
-    const fromNew = checkPath(newDir, name);
-    if (fromNew && isPathAvailable(fromNew)) return fromNew;
+    const fromDir = checkPath(searchDir, name);
+    if (fromDir && isPathAvailable(fromDir)) return fromDir;
   }
 
-  if (oldDir && fs.existsSync(oldDir)) {
-    const files = fs.readdirSync(oldDir).filter((f) => !!f && f !== '.' && f !== '..');
+  if (searchDir && fs.existsSync(searchDir)) {
+    const files = fs.readdirSync(searchDir).filter((f) => !!f && f !== '.' && f !== '..');
     const ext = preferredName ? path.extname(preferredName).toLowerCase() : '';
     const prefix = String(row?.tipo || '').toUpperCase();
     const exact = files.find((f) => f.toLowerCase() === preferredName.toLowerCase());
-    if (exact) return { fullPath: path.join(oldDir, exact), fileName: exact };
+    if (exact) {
+      const match = { fullPath: path.join(searchDir, exact), fileName: exact };
+      if (isPathAvailable(match)) return match;
+    }
 
+    const preferredTag = extractEtiquetaFromSoporteName(preferredName);
     const typeMatches = files.filter((f) => {
       const lower = f.toLowerCase();
-      return (!prefix || lower.startsWith(`${prefix.toLowerCase()}_`)) && (!ext || path.extname(f).toLowerCase() === ext);
+      if (prefix && !lower.startsWith(`${prefix.toLowerCase()}_`)) return false;
+      if (ext && path.extname(f).toLowerCase() !== ext) return false;
+      if (preferredTag) {
+        const fileTag = extractEtiquetaFromSoporteName(f);
+        return fileTag && fileTag === preferredTag;
+      }
+      return true;
     });
     if (typeMatches.length === 1) {
-      const match = { fullPath: path.join(oldDir, typeMatches[0]), fileName: typeMatches[0] };
+      const match = { fullPath: path.join(searchDir, typeMatches[0]), fileName: typeMatches[0] };
       if (isPathAvailable(match)) return match;
     }
   }
@@ -186,7 +213,10 @@ async function aplicarRenombradoPorFev(expedienteId, numeroFactura) {
     const ctx = her;
     const { abs: oldDir } = getArmadoFeDirFromContext(ctx, oldCodigo);
     const { abs: newDir, rel: newRel } = getArmadoFeDirFromContext(ctx, newCodigo);
-    renameDirectoryIfExists(oldDir, newDir);
+    const dirRename = renameDirectoryIfExists(oldDir, newDir);
+    if (!dirRename.ok) {
+      return { ok: false, error: dirRename.error || `No se pudo renombrar la carpeta ${oldCodigo} → ${newCodigo}` };
+    }
     resumen.carpetas.push({ contenedor: ctx.contenedor_tipo, de: oldCodigo, a: newCodigo });
 
     if (ctx.contenedor_tipo === 'soportes') {
@@ -243,12 +273,13 @@ async function aplicarRenombradoPorFev(expedienteId, numeroFactura) {
       }
     }
 
-    await repararArchivosExpediente(her.id);
-
     await db.execute(
       'UPDATE sop_expedientes SET codigo = ?, numero_factura = ? WHERE id = ?',
       [newCodigo, num, her.id]
     );
+
+    const expedienteActualizado = { ...her, codigo: newCodigo, numero_factura: num };
+    await repararArchivosExpediente(her.id, expedienteActualizado);
   }
 
   try {
@@ -307,7 +338,10 @@ async function revertirRenombradoPorFev(expedienteId, { paciente_linea, paciente
     const ctx = her;
     const { abs: oldDir } = getArmadoFeDirFromContext(ctx, oldCodigo);
     const { abs: newDir, rel: newRel } = getArmadoFeDirFromContext(ctx, newCodigo);
-    renameDirectoryIfExists(oldDir, newDir);
+    const dirRename = renameDirectoryIfExists(oldDir, newDir);
+    if (!dirRename.ok) {
+      return { ok: false, error: dirRename.error || `No se pudo renombrar la carpeta ${oldCodigo} → ${newCodigo}` };
+    }
     resumen.carpetas.push({ contenedor: ctx.contenedor_tipo, de: oldCodigo, a: newCodigo });
 
     const pendingExp = { ...her, numero_factura: 0, codigo: newCodigo, paciente_nombre: parsed.paciente_nombre };
@@ -385,6 +419,9 @@ module.exports = {
   aplicarRenombradoPorFev,
   revertirRenombradoPorFev,
   findExpedientesMismoCodigo,
+  sourceDirForRename,
   resolveSourceFileForRename,
-  buildUniqueTargetPathForRename
+  buildUniqueTargetPathForRename,
+  etiquetasCompatiblesParaRenombrado,
+  renameDirectoryIfExists
 };

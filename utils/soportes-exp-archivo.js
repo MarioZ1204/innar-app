@@ -6,7 +6,7 @@ const fs = require('fs');
 const db = require('./db-mysql');
 const { getSoportesRoot } = require('../config/uploads-path');
 const { resolveStoragePath } = require('./soportes-storage');
-const { buildSoportesDiskName, etiquetaFacturaExpediente, getNitObligado } = require('./soportes-archivo-detect');
+const { buildSoportesDiskName, etiquetaFacturaExpediente, getNitObligado, extractEtiquetaFromSoporteName } = require('./soportes-archivo-detect');
 
 const SOPORTES_SLOT_TIPOS = ['OPF', 'CRC', 'FEV', 'PDX', 'HEV'];
 
@@ -157,6 +157,9 @@ function buscarRutaPorPatronExpediente(row, expediente, baseRoot = getSoportesRo
   const expectedStem = expectedName ? path.basename(expectedName, path.extname(expectedName)) : '';
   const typePrefix = tipo ? `${tipo.toLowerCase()}_` : '';
   const tokens = obtenerTokensBusqueda(row, expediente);
+  const expedienteCodigo = String(expediente?.codigo || '').trim().toUpperCase();
+  const expedienteTag = expediente ? String(etiquetaFacturaExpediente(expediente)).toUpperCase() : '';
+  const rowTag = extractEtiquetaFromSoporteName(rowName);
 
   const roots = [
     baseRoot,
@@ -169,22 +172,30 @@ function buscarRutaPorPatronExpediente(row, expediente, baseRoot = getSoportesRo
   const scorePath = (entryName, absPath) => {
     const lower = entryName.toLowerCase();
     const ext = path.extname(entryName).toLowerCase();
-    const dirName = path.basename(path.dirname(absPath)).toLowerCase();
+    const dirName = path.basename(path.dirname(absPath)).toUpperCase();
+    const fileTag = extractEtiquetaFromSoporteName(entryName);
     let score = 0;
+
+    if (expedienteCodigo && dirName === expedienteCodigo) score += 500;
+    if (expedienteTag && fileTag && fileTag === expedienteTag) score += 400;
+    if (rowTag && fileTag && fileTag === rowTag) score += 350;
+    if (expedienteTag && fileTag && /^FE\d+$/.test(fileTag) && /^FE\d+$/.test(expedienteTag) && fileTag !== expedienteTag) {
+      return 0;
+    }
     if (expectedName && lower === expectedName.toLowerCase()) return 1000;
     if (expectedStem && lower.includes(expectedStem.toLowerCase())) score += 300;
     if (tipo && lower.startsWith(typePrefix)) score += 180;
     if (rowBase && lower === rowBase.toLowerCase()) score += 120;
     if (rowBase && lower.includes(path.basename(rowBase, path.extname(rowBase)).toLowerCase())) score += 80;
-    if (expediente && String(etiquetaFacturaExpediente(expediente)).toUpperCase()) {
-      const tag = String(etiquetaFacturaExpediente(expediente)).toUpperCase();
-      if (lower.includes(tag.toLowerCase())) score += 200;
+    if (expedienteTag) {
+      if (lower.includes(expedienteTag.toLowerCase())) score += 200;
+      if (dirName.includes(expedienteTag)) score += 180;
     }
     for (const token of tokens) {
       if (!token) continue;
       const tokenLower = token.toLowerCase();
       if (lower.includes(tokenLower)) score += 120;
-      if (dirName.includes(tokenLower)) score += 180;
+      if (dirName.toLowerCase().includes(tokenLower)) score += 180;
     }
     if (ext === '.pdf') score += 20;
     if (absPath && relDir && absPath.includes(`/${relDir}/`)) score += 40;
@@ -211,7 +222,27 @@ function buscarRutaPorPatronExpediente(row, expediente, baseRoot = getSoportesRo
   }
 
   matches.sort((a, b) => b.score - a.score || a.path.localeCompare(b.path));
-  return matches[0]?.path || null;
+  const best = matches[0];
+  if (!best || best.score < 200) return null;
+  return best.path || null;
+}
+
+function archivoCompatibleConExpediente(absPath, expediente) {
+  if (!absPath || !expediente) return true;
+
+  const entryName = path.basename(absPath);
+  const dirName = path.basename(path.dirname(absPath)).toUpperCase();
+  const expedienteCodigo = String(expediente?.codigo || '').trim().toUpperCase();
+  const expedienteTag = String(etiquetaFacturaExpediente(expediente)).toUpperCase();
+  const fileTag = extractEtiquetaFromSoporteName(entryName);
+
+  if (expedienteTag && fileTag && /^FE\d+$/.test(fileTag) && /^FE\d+$/.test(expedienteTag) && fileTag !== expedienteTag) {
+    return false;
+  }
+  if (expedienteCodigo && /^FE\d+$/.test(expedienteCodigo) && /^FE\d+$/.test(dirName) && dirName !== expedienteCodigo) {
+    return false;
+  }
+  return true;
 }
 
 function resolveArchivoAbsoluto(row, options = {}) {
@@ -225,7 +256,7 @@ function resolveArchivoAbsoluto(row, options = {}) {
   if (rel) {
     joined = rel.startsWith('soportes/') ? rel : path.join('soportes', rel).replace(/\\/g, '/');
     const resolved = resolveStoragePath(joined);
-    if (resolved) return resolved;
+    if (resolved && archivoCompatibleConExpediente(resolved, options.expediente)) return resolved;
   }
 
   if (base) {
@@ -269,7 +300,7 @@ function resolveArchivoAbsoluto(row, options = {}) {
   };
 
   for (const candidate of candidates) {
-    if (fs.existsSync(candidate)) return candidate;
+    if (fs.existsSync(candidate) && archivoCompatibleConExpediente(candidate, options.expediente)) return candidate;
   }
 
   const relDir = joined ? path.dirname(joined).replace(/^soportes\//, '') : '';
@@ -280,12 +311,12 @@ function resolveArchivoAbsoluto(row, options = {}) {
     path.resolve(__dirname, '..', 'public', 'uploads', 'soportes')
   ];
   const historical = buscarRutaHistoricaArchivo(row);
-  if (historical) return historical;
+  if (historical && archivoCompatibleConExpediente(historical, options.expediente)) return historical;
   const byPattern = buscarRutaPorPatronExpediente(row, options.expediente);
   if (byPattern) return byPattern;
   for (const root of scanRoots) {
     const found = buscarPorPrefijo(root);
-    if (found) return found;
+    if (found && archivoCompatibleConExpediente(found, options.expediente)) return found;
   }
 
   if (base) {
@@ -296,7 +327,7 @@ function resolveArchivoAbsoluto(row, options = {}) {
     ];
     for (const dir of dirCandidates) {
       const full = path.join(dir, base);
-      if (fs.existsSync(full)) return full;
+      if (fs.existsSync(full) && archivoCompatibleConExpediente(full, options.expediente)) return full;
     }
   }
 
@@ -462,11 +493,11 @@ async function repararArchivoExpedienteRow(row, { contenedor = 'soportes', usedP
   return { ok: true, repaired: true, path: finalPath, nombre_archivo: finalName, ruta_relativa: finalRel };
 }
 
-async function repararArchivosExpediente(expedienteId) {
+async function repararArchivosExpediente(expedienteId, expedienteOverride = null) {
   const soportesRows = await db.query('SELECT * FROM sop_exp_archivos WHERE expediente_id = ?', [expedienteId]);
   const reparaciones = [];
   const usedPaths = new Set();
-  const expediente = await obtenerExpedienteContext(expedienteId);
+  const expediente = expedienteOverride || (await obtenerExpedienteContext(expedienteId));
   for (const row of soportesRows) {
     reparaciones.push(await repararArchivoExpedienteRow(row, { contenedor: 'soportes', usedPaths, expedienteId, expediente }));
   }

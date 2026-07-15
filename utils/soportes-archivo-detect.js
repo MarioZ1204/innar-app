@@ -107,7 +107,17 @@ function expedienteTieneFactura(exp) {
   return (parseInt(exp?.numero_factura, 10) || 0) > 0;
 }
 
-/** Nombre en disco según factura asignada o pendiente (se renombra al subir FEV). */
+/** Extrae la etiqueta (paciente o FE) del nombre canónico: OPF_{NIT}_{ETIQUETA}.pdf */
+function extractEtiquetaFromSoporteName(nombre) {
+  const base = path.basename(String(nombre || ''), path.extname(String(nombre || '')));
+  const nit = getNitObligado();
+  const mEnv = base.match(new RegExp(`^(OPF|CRC|FEV|PDX|HEV)[_-]${nit}[_-](.+)$`, 'i'));
+  if (mEnv) return String(mEnv[2] || '').trim().toUpperCase();
+  const mAny = base.match(/^(OPF|CRC|FEV|PDX|HEV)[_-](\d+)[_-](.+)$/i);
+  if (mAny) return String(mAny[3] || '').trim().toUpperCase();
+  return '';
+}
+
 function buildSoportesDiskName(tipo, exp, ext = '.pdf') {
   const nit = getNitObligado();
   const t = String(tipo || '').toUpperCase();
@@ -220,6 +230,7 @@ module.exports = {
   formatFeTag,
   fevFilenameHint,
   buildCanonicalName,
+  extractEtiquetaFromSoporteName,
   buildSoportesDiskName,
   etiquetaFacturaExpediente,
   expedienteTieneFactura,

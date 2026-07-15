@@ -217,4 +217,49 @@ describe('soportes-exp-archivo', () => {
 
     expect(resolved).toBe(filePath);
   });
+
+  test('no enlaza un OPF de otra factura FE cuando el expediente es FE16300', () => {
+    const wrongDir = path.join(tempRoot, 'soportes', 'armado', '2026', '03', 'A_FACTURAR', 'SOPORTES', 'FE15448');
+    const rightDir = path.join(tempRoot, 'soportes', 'armado', '2026', '03', 'A_FACTURAR', 'SOPORTES', 'FE16300');
+    fs.mkdirSync(wrongDir, { recursive: true });
+    fs.mkdirSync(rightDir, { recursive: true });
+    fs.writeFileSync(path.join(wrongDir, 'OPF_901164565_FE15448.pdf'), 'wrong');
+    const rightFile = path.join(rightDir, 'OPF_901164565_FE16300.pdf');
+    fs.writeFileSync(rightFile, 'right');
+
+    const resolved = resolveArchivoAbsoluto({
+      tipo: 'OPF',
+      nombre_archivo: 'OPF_901164565_FE15448.pdf',
+      ruta_relativa: 'soportes/armado/2026/03/A_FACTURAR/SOPORTES/FE15448/OPF_901164565_FE15448.pdf'
+    }, {
+      expediente: { codigo: 'FE16300', numero_factura: 16300, nombre_display: 'PEREZ_JUAN' }
+    });
+
+    expect(resolved).toBe(rightFile);
+  });
+
+  test('repararArchivosExpediente usa el contexto actualizado sin leer BD stale', async () => {
+    const fileDir = path.join(tempRoot, 'soportes', 'armado', '2026', '03', 'A_FACTURAR', 'SOPORTES', 'FE16300');
+    fs.mkdirSync(fileDir, { recursive: true });
+    const filePath = path.join(fileDir, 'OPF_901164565_FE16300.pdf');
+    fs.writeFileSync(filePath, 'pdf');
+
+    db.query.mockResolvedValueOnce([
+      {
+        id: 1,
+        expediente_id: 9,
+        tipo: 'OPF',
+        nombre_archivo: 'OPF_901164565_PEREZ_JUAN.pdf',
+        ruta_relativa: 'soportes/armado/2026/03/A_FACTURAR/SOPORTES/PEREZ_JUAN/OPF_901164565_PEREZ_JUAN.pdf'
+      }
+    ]);
+    db.execute.mockResolvedValue({ affectedRows: 1 });
+
+    const results = await repararArchivosExpediente(9, { id: 9, codigo: 'FE16300', numero_factura: 16300 });
+
+    expect(results[0].repaired).toBe(true);
+    expect(results[0].nombre_archivo).toBe('OPF_901164565_FE16300.pdf');
+    const expedienteQueries = db.query.mock.calls.filter((args) => String(args[0]).includes('FROM sop_expedientes'));
+    expect(expedienteQueries).toHaveLength(0);
+  });
 });
