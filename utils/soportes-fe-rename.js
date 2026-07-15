@@ -7,7 +7,7 @@ const db = require('./db-mysql');
 const { getArmadoFeDirFromContext } = require('./soportes-storage');
 const { buildCanonicalName, buildSoportesDiskName } = require('./soportes-archivo-detect');
 const { parseLineaPaciente, esExpedientePendienteFactura } = require('./soportes-pacientes-parse');
-const { loadArchivoExpedienteSlot, eliminarArchivoExpedienteSlot } = require('./soportes-exp-archivo');
+const { loadArchivoExpedienteSlot, eliminarArchivoExpedienteSlot, repararArchivosExpediente } = require('./soportes-exp-archivo');
 const { syncRipsCarpetasDia } = require('./soportes-rips-carpetas-sync');
 
 async function loadExpedienteContext(expedienteId) {
@@ -61,6 +61,49 @@ function renameDirectoryIfExists(oldAbs, newAbs) {
   }
 }
 
+function resolveExistingFileInDir(dir, preferredName, tipo) {
+  const candidates = [];
+  if (preferredName) candidates.push(preferredName);
+  if (dir && fs.existsSync(dir)) {
+    const files = fs.readdirSync(dir).filter((f) => !!f && f !== '.' && f !== '..');
+    const ext = path.extname(String(preferredName || '')).toLowerCase();
+    const prefix = String(tipo || '').toUpperCase();
+    files.forEach((f) => {
+      const lower = f.toLowerCase();
+      if (!candidates.includes(f) && (!preferredName || lower === String(preferredName).toLowerCase())) candidates.push(f);
+      if (prefix && lower.startsWith(`${prefix.toLowerCase()}_`)) candidates.push(f);
+      if (ext && path.extname(f).toLowerCase() === ext) candidates.push(f);
+    });
+  }
+
+  const seen = new Set();
+  for (const name of candidates) {
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    const full = path.join(dir, name);
+    if (fs.existsSync(full)) return { fullPath: full, fileName: name };
+  }
+  return null;
+}
+
+function moveFileSafely(sourcePath, targetPath) {
+  if (!sourcePath || !targetPath) return false;
+  if (!fs.existsSync(sourcePath)) return false;
+  if (path.resolve(sourcePath) === path.resolve(targetPath)) return true;
+
+  const parent = path.dirname(targetPath);
+  if (!fs.existsSync(parent)) fs.mkdirSync(parent, { recursive: true });
+
+  if (fs.existsSync(targetPath)) {
+    const backupPath = `${targetPath}.bak.${Date.now()}`;
+    fs.copyFileSync(targetPath, backupPath);
+    fs.unlinkSync(targetPath);
+  }
+
+  fs.renameSync(sourcePath, targetPath);
+  return true;
+}
+
 /**
  * Tras subir FEV_{NIT}_{num}.pdf: carpeta → FE{num} y archivos OPF/CRC/PDX/HEV al formato canónico.
  */
@@ -106,21 +149,20 @@ async function aplicarRenombradoPorFev(expedienteId, numeroFactura) {
       );
       for (const a of archivos) {
         const ext = path.extname(a.nombre_archivo || '.pdf').toLowerCase() || '.pdf';
-        const newName = a.tipo === 'FEV'
-          ? buildCanonicalName('FEV', num, ext)
-          : buildCanonicalName(a.tipo, num, ext);
-        const oldPath = path.join(newDir, a.nombre_archivo);
-        const newPath = path.join(newDir, newName);
-        if (fs.existsSync(oldPath) && oldPath !== newPath) {
-          if (fs.existsSync(newPath)) fs.unlinkSync(newPath);
-          fs.renameSync(oldPath, newPath);
+        const targetName = buildCanonicalName(a.tipo, num, ext);
+        const diskMatch = resolveExistingFileInDir(newDir, a.nombre_archivo, a.tipo);
+        const actualName = diskMatch?.fileName || targetName;
+        const currentPath = diskMatch?.fullPath || path.join(newDir, actualName);
+        const targetPath = path.join(newDir, targetName);
+        if (currentPath && currentPath !== targetPath && fs.existsSync(currentPath)) {
+          moveFileSafely(currentPath, targetPath);
         }
-        const rutaRelativa = path.join(newRel, newName).replace(/\\/g, '/');
+        const rutaRelativa = path.join(newRel, targetName).replace(/\\/g, '/');
         await db.execute(
           'UPDATE sop_exp_archivos SET nombre_archivo = ?, ruta_relativa = ? WHERE id = ?',
-          [newName, rutaRelativa, a.id]
+          [targetName, rutaRelativa, a.id]
         );
-        resumen.archivos.push({ tipo: a.tipo, nombre: newName });
+        resumen.archivos.push({ tipo: a.tipo, nombre: targetName, renombrado: targetName !== a.nombre_archivo });
       }
     } else {
       let ripsArchivos = [];
@@ -133,21 +175,24 @@ async function aplicarRenombradoPorFev(expedienteId, numeroFactura) {
       for (const a of ripsArchivos) {
         const slotKey = a.slot === 'json_1' ? 'RIPS_JSON_1' : a.slot === 'json_2' ? 'RIPS_JSON_2' : 'RIPS_XML';
         const ext = path.extname(a.nombre_archivo || '.json').toLowerCase();
-        const newName = buildCanonicalName(slotKey, num, ext);
-        const oldPath = path.join(newDir, a.nombre_archivo);
-        const newPath = path.join(newDir, newName);
-        if (fs.existsSync(oldPath) && oldPath !== newPath) {
-          if (fs.existsSync(newPath)) fs.unlinkSync(newPath);
-          fs.renameSync(oldPath, newPath);
+        const targetName = buildCanonicalName(slotKey, num, ext);
+        const diskMatch = resolveExistingFileInDir(newDir, a.nombre_archivo, slotKey);
+        const actualName = diskMatch?.fileName || targetName;
+        const currentPath = diskMatch?.fullPath || path.join(newDir, actualName);
+        const targetPath = path.join(newDir, targetName);
+        if (currentPath && currentPath !== targetPath && fs.existsSync(currentPath)) {
+          moveFileSafely(currentPath, targetPath);
         }
-        const rutaRelativa = path.join(newRel, newName).replace(/\\/g, '/');
+        const rutaRelativa = path.join(newRel, targetName).replace(/\\/g, '/');
         await db.execute(
           'UPDATE sop_rips_archivos SET nombre_archivo = ?, ruta_relativa = ? WHERE id = ?',
-          [newName, rutaRelativa, a.id]
+          [targetName, rutaRelativa, a.id]
         );
-        resumen.archivos.push({ tipo: slotKey, nombre: newName });
+        resumen.archivos.push({ tipo: slotKey, nombre: targetName, renombrado: targetName !== a.nombre_archivo });
       }
     }
+
+    await repararArchivosExpediente(her.id);
 
     await db.execute(
       'UPDATE sop_expedientes SET codigo = ?, numero_factura = ? WHERE id = ?',
@@ -223,19 +268,20 @@ async function revertirRenombradoPorFev(expedienteId, { paciente_linea, paciente
       );
       for (const a of archivos) {
         const ext = path.extname(a.nombre_archivo || '.pdf').toLowerCase() || '.pdf';
-        const newName = buildSoportesDiskName(a.tipo, pendingExp, ext);
-        const oldPath = path.join(newDir, a.nombre_archivo);
-        const newPath = path.join(newDir, newName);
-        if (fs.existsSync(oldPath) && oldPath !== newPath) {
-          if (fs.existsSync(newPath)) fs.unlinkSync(newPath);
-          fs.renameSync(oldPath, newPath);
+        const targetName = a.tipo === 'FEV' ? buildSoportesDiskName(a.tipo, pendingExp, ext) : buildSoportesDiskName(a.tipo, pendingExp, ext);
+        const diskMatch = resolveExistingFileInDir(newDir, a.nombre_archivo, a.tipo);
+        const actualName = diskMatch?.fileName || targetName;
+        const currentPath = diskMatch?.fullPath || path.join(newDir, actualName);
+        const targetPath = path.join(newDir, targetName);
+        if (currentPath && currentPath !== targetPath && fs.existsSync(currentPath)) {
+          moveFileSafely(currentPath, targetPath);
         }
-        const rutaRelativa = path.join(newRel, newName).replace(/\\/g, '/');
+        const rutaRelativa = path.join(newRel, targetName).replace(/\\/g, '/');
         await db.execute(
           'UPDATE sop_exp_archivos SET nombre_archivo = ?, ruta_relativa = ? WHERE id = ?',
-          [newName, rutaRelativa, a.id]
+          [targetName, rutaRelativa, a.id]
         );
-        resumen.archivos.push({ tipo: a.tipo, nombre: newName });
+        resumen.archivos.push({ tipo: a.tipo, nombre: targetName, renombrado: targetName !== a.nombre_archivo });
       }
     } else {
       let ripsArchivos = [];
@@ -248,19 +294,20 @@ async function revertirRenombradoPorFev(expedienteId, { paciente_linea, paciente
       for (const a of ripsArchivos) {
         const slotKey = a.slot === 'json_1' ? 'RIPS_JSON_1' : a.slot === 'json_2' ? 'RIPS_JSON_2' : 'RIPS_XML';
         const ext = path.extname(a.nombre_archivo || '.json').toLowerCase();
-        const newName = buildSoportesDiskName(slotKey, pendingExp, ext);
-        const oldPath = path.join(newDir, a.nombre_archivo);
-        const newPath = path.join(newDir, newName);
-        if (fs.existsSync(oldPath) && oldPath !== newPath) {
-          if (fs.existsSync(newPath)) fs.unlinkSync(newPath);
-          fs.renameSync(oldPath, newPath);
+        const targetName = buildSoportesDiskName(slotKey, pendingExp, ext);
+        const diskMatch = resolveExistingFileInDir(newDir, a.nombre_archivo, slotKey);
+        const actualName = diskMatch?.fileName || targetName;
+        const currentPath = diskMatch?.fullPath || path.join(newDir, actualName);
+        const targetPath = path.join(newDir, targetName);
+        if (currentPath && currentPath !== targetPath && fs.existsSync(currentPath)) {
+          moveFileSafely(currentPath, targetPath);
         }
-        const rutaRelativa = path.join(newRel, newName).replace(/\\/g, '/');
+        const rutaRelativa = path.join(newRel, targetName).replace(/\\/g, '/');
         await db.execute(
           'UPDATE sop_rips_archivos SET nombre_archivo = ?, ruta_relativa = ? WHERE id = ?',
-          [newName, rutaRelativa, a.id]
+          [targetName, rutaRelativa, a.id]
         );
-        resumen.archivos.push({ tipo: slotKey, nombre: newName });
+        resumen.archivos.push({ tipo: slotKey, nombre: targetName, renombrado: targetName !== a.nombre_archivo });
       }
     }
 

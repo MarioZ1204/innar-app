@@ -64,10 +64,10 @@
 
   function markBg(color) {
     const map = {
-      yellow: 'rgba(253,224,71,0.32)',
-      green: 'rgba(134,239,172,0.32)',
-      pink: 'rgba(249,168,212,0.32)',
-      blue: 'rgba(147,197,253,0.32)'
+      yellow: 'rgba(253,224,71,0.24)',
+      green: 'rgba(134,239,172,0.20)',
+      pink: 'rgba(249,168,212,0.20)',
+      blue: 'rgba(147,197,253,0.22)'
     };
     return map[color] || map.yellow;
   }

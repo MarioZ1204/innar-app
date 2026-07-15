@@ -85,6 +85,44 @@ function resolveStoragePath(rutaRelativa) {
     candidates.push(path.join(leg, rel));
   }
 
+  const relBase = path.basename(rel);
+  const relDir = path.dirname(rel);
+  const relDirPieces = relDir.split('/').filter(Boolean);
+  const relNameNoExt = path.basename(relBase, path.extname(relBase));
+
+  const scanRoots = [root, soportesRoot(), leg, path.resolve(root, 'soportes')];
+  for (const scanRoot of scanRoots) {
+    const scanDir = path.join(scanRoot, ...relDirPieces);
+    if (fs.existsSync(scanDir)) {
+      const entries = fs.readdirSync(scanDir);
+      const matches = entries.filter((entry) => entry.toLowerCase() === relBase.toLowerCase());
+      if (matches.length) {
+        candidates.push(path.join(scanDir, matches[0]));
+      }
+      const nameMatches = entries.filter((entry) => {
+        const lower = entry.toLowerCase();
+        return lower.includes(relNameNoExt.toLowerCase()) || lower.includes(relBase.toLowerCase());
+      });
+      nameMatches.forEach((entry) => candidates.push(path.join(scanDir, entry)));
+    }
+
+    const walk = (currentDir) => {
+      if (!fs.existsSync(currentDir)) return;
+      for (const entry of fs.readdirSync(currentDir)) {
+        const full = path.join(currentDir, entry);
+        if (fs.statSync(full).isDirectory()) {
+          walk(full);
+        } else {
+          const base = path.basename(full).toLowerCase();
+          if (base === relBase.toLowerCase() || base.includes(relNameNoExt.toLowerCase()) || base.includes(relBase.toLowerCase())) {
+            candidates.push(full);
+          }
+        }
+      }
+    };
+    walk(scanRoot);
+  }
+
   for (const full of candidates) {
     if (fs.existsSync(full)) return full;
   }
