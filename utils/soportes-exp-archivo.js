@@ -112,6 +112,41 @@ function construirNombreEsperado(row, expediente, ext = null) {
   return `${tipo}_${nit}_${tag}${resolvedExt.startsWith('.') ? resolvedExt : `.${resolvedExt}`}`;
 }
 
+function normalizarTokensBusqueda(value) {
+  const text = String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+  return text ? text.split(/\s+/).filter(Boolean) : [];
+}
+
+function obtenerTokensBusqueda(row, expediente) {
+  const tokens = new Set();
+  const push = (value) => {
+    for (const token of normalizarTokensBusqueda(value)) {
+      if (token && token.length > 2) tokens.add(token);
+    }
+  };
+
+  push(row?.tipo);
+  push(row?.nombre_archivo);
+  push(row?.ruta_relativa);
+
+  if (expediente) {
+    push(expediente?.codigo);
+    push(expediente?.numero_factura ? `FE${String(expediente.numero_factura).replace(/\D/g, '')}` : null);
+    push(expediente?.nombre_display);
+    push(expediente?.paciente_nombre);
+    push(expediente?.nombre);
+  }
+
+  const relParts = String(row?.ruta_relativa || '').replace(/\\/g, '/').split('/').filter(Boolean);
+  relParts.forEach(push);
+  return Array.from(tokens);
+}
+
 function buscarRutaPorPatronExpediente(row, expediente, baseRoot = getSoportesRoot()) {
   const tipo = String(row?.tipo || '').toUpperCase();
   const rel = String(row?.ruta_relativa || '').replace(/\\/g, '/').trim();
@@ -121,6 +156,7 @@ function buscarRutaPorPatronExpediente(row, expediente, baseRoot = getSoportesRo
   const expectedName = construirNombreEsperado(row, expediente);
   const expectedStem = expectedName ? path.basename(expectedName, path.extname(expectedName)) : '';
   const typePrefix = tipo ? `${tipo.toLowerCase()}_` : '';
+  const tokens = obtenerTokensBusqueda(row, expediente);
 
   const roots = [
     baseRoot,
@@ -133,6 +169,7 @@ function buscarRutaPorPatronExpediente(row, expediente, baseRoot = getSoportesRo
   const scorePath = (entryName, absPath) => {
     const lower = entryName.toLowerCase();
     const ext = path.extname(entryName).toLowerCase();
+    const dirName = path.basename(path.dirname(absPath)).toLowerCase();
     let score = 0;
     if (expectedName && lower === expectedName.toLowerCase()) return 1000;
     if (expectedStem && lower.includes(expectedStem.toLowerCase())) score += 300;
@@ -142,6 +179,12 @@ function buscarRutaPorPatronExpediente(row, expediente, baseRoot = getSoportesRo
     if (expediente && String(etiquetaFacturaExpediente(expediente)).toUpperCase()) {
       const tag = String(etiquetaFacturaExpediente(expediente)).toUpperCase();
       if (lower.includes(tag.toLowerCase())) score += 200;
+    }
+    for (const token of tokens) {
+      if (!token) continue;
+      const tokenLower = token.toLowerCase();
+      if (lower.includes(tokenLower)) score += 120;
+      if (dirName.includes(tokenLower)) score += 180;
     }
     if (ext === '.pdf') score += 20;
     if (absPath && relDir && absPath.includes(`/${relDir}/`)) score += 40;

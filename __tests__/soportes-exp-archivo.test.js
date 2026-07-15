@@ -98,6 +98,23 @@ describe('soportes-exp-archivo', () => {
     expect(result.ruta_relativa).toContain('/FE16300/OPF_901164565_FE16300.pdf');
   });
 
+  test('recupera el archivo cuando el nombre del PDF usa el nombre de la carpeta del expediente', () => {
+    const fileDir = path.join(tempRoot, 'soportes', 'armado', '2026', '03', 'A_FACTURAR', 'SOPORTES', 'PEREZ_JUAN');
+    fs.mkdirSync(fileDir, { recursive: true });
+    const filePath = path.join(fileDir, 'OPF_901164565_PEREZ_JUAN.pdf');
+    fs.writeFileSync(filePath, 'pdf');
+
+    const resolved = resolveArchivoAbsoluto({
+      tipo: 'OPF',
+      nombre_archivo: 'OPF_901164565_FE15448.pdf',
+      ruta_relativa: 'soportes/armado/2026/03/A_FACTURAR/SOPORTES/FE15448/OPF_901164565_FE15448.pdf'
+    }, {
+      expediente: { codigo: 'FE15448', numero_factura: 15448, nombre_display: 'PEREZ_JUAN' }
+    });
+
+    expect(resolved).toBe(filePath);
+  });
+
   test('repara expedientes legacy que comparten el mismo archivo físico entre dos soportes', async () => {
     const expId = 77;
     const targetDir = path.join(tempRoot, 'soportes', 'armado', '2026', '03', 'A_FACTURAR', 'SOPORTES', 'FE14726');
