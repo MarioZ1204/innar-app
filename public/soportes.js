@@ -5811,35 +5811,44 @@
     });
     $('sopArmNavBackdrop')?.addEventListener('click', () => sopArmNavOpen(false));
     $('btnSopArmNuevoPeriodo')?.addEventListener('click', modalNuevoPeriodoArmado);
-    $('btnSopArmRecuperarArchivos')?.addEventListener('click', async () => {
+    $('btnSopArmRecuperarArchivos')?.addEventListener('click', () => {
       const expedienteId = armState?.expedienteId;
-      if (!expedienteId) {
-        sopToast('Abra un expediente de SOPORTES antes de recuperar archivos.', 'info');
-        return;
-      }
-      const btn = $('btnSopArmRecuperarArchivos');
-      if (btn) {
-        btn.disabled = true;
-        btn.innerHTML = '<i data-lucide="loader"></i> Recuperando…';
-        sopIcons(btn);
-      }
-      try {
-        const res = await apiFetch('/api/soportes/armado/recuperar-archivos', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ expedienteId })
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.error || 'No se pudo recuperar');
-        sopToast(data.message || 'Recuperación completada', 'success');
-      } catch (error) {
-        sopToast(error.message || 'No se pudo completar la recuperación', 'error');
-      } finally {
+      const mensaje = expedienteId
+        ? '¿Desea recuperar los archivos asociados a este expediente? La acción intentará restaurar rutas y nombres de archivo y actualizar los registros afectados.'
+        : '¿Desea recuperar los archivos de SOPORTES? La acción intentará restaurar rutas y nombres de archivo y actualizar los registros afectados.';
+      const confirmFn = typeof showConfirm === 'function' ? showConfirm : (typeof window.showConfirm === 'function' ? window.showConfirm : null);
+      const ejecutar = async () => {
+        const btn = $('btnSopArmRecuperarArchivos');
         if (btn) {
-          btn.disabled = false;
-          btn.innerHTML = '<i data-lucide="refresh-cw"></i> Recuperar archivos';
+          btn.disabled = true;
+          btn.innerHTML = '<i data-lucide="loader"></i> Recuperando…';
           sopIcons(btn);
         }
+        try {
+          const body = expedienteId ? { expedienteId } : undefined;
+          const res = await apiFetch('/api/soportes/armado/recuperar-archivos', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: body ? JSON.stringify(body) : undefined
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.error || 'No se pudo recuperar');
+          sopToast(data.message || 'Recuperación completada', 'success');
+        } catch (error) {
+          sopToast(error.message || 'No se pudo completar la recuperación', 'error');
+        } finally {
+          if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i data-lucide="refresh-cw"></i> Recuperar archivos';
+            sopIcons(btn);
+          }
+        }
+      };
+
+      if (confirmFn) {
+        confirmFn(mensaje, ejecutar, { okText: 'Sí, recuperar', cancelText: 'Cancelar', danger: false, icon: '🔄' });
+      } else if (window.confirm(mensaje)) {
+        ejecutar();
       }
     });
     const canEstructura = sopPerm('soportes.armado.crear_estructura');

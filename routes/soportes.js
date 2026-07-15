@@ -1776,17 +1776,13 @@ router.post('/soportes/armado/periodos/:id/reparent-facturas', requireAuth, requ
   }
 });
 
-router.post('/soportes/armado/recuperar-archivos', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'soportes.armado.crear_estructura'), async (req, res) => {
+router.post('/soportes/armado/recuperar-archivos', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, ['modulo.armado_soportes', 'soportes.armado.crear_estructura', 'soportes.armado.subir']), async (req, res) => {
   try {
     const ids = Array.isArray(req.body?.expedienteIds)
       ? req.body.expedienteIds.filter((value) => Number.isFinite(Number(value)) && Number(value) > 0)
       : [];
     const expedienteId = req.body?.expedienteId != null ? Number(req.body.expedienteId) : null;
     const targetIds = ids.length ? ids : (expedienteId ? [expedienteId] : []);
-
-    if (!targetIds.length) {
-      return res.status(400).json({ error: 'Debe indicar al menos un expediente' });
-    }
 
     const result = await runSoportesRecoveryScript({
       cwd: path.resolve(__dirname, '..'),
