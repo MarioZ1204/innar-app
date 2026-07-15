@@ -12,6 +12,33 @@ function runSoportesRecoveryScript(options = {}) {
     expedienteIds.push(options.expedienteId);
   }
 
+  const background = options.background === true;
+
+  if (background) {
+    const child = spawn(process.execPath, [scriptPath, ...expedienteIds.map((value) => String(value))], {
+      cwd,
+      env: { ...process.env, ...(options.env || {}) },
+      detached: true,
+      stdio: ['ignore', 'ignore', 'ignore']
+    });
+
+    try {
+      child.unref?.();
+    } catch (_) {
+      // Ignore cleanup issues for detached child processes.
+    }
+
+    return Promise.resolve({
+      ok: true,
+      background: true,
+      pid: child?.pid || null,
+      exitCode: null,
+      signal: null,
+      stdout: '',
+      stderr: ''
+    });
+  }
+
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [scriptPath, ...expedienteIds.map((value) => String(value))], {
       cwd,

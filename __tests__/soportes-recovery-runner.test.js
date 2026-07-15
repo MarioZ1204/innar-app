@@ -37,4 +37,33 @@ describe('runSoportesRecoveryScript', () => {
     expect(result.ok).toBe(true);
     expect(result.stdout).toContain('ok');
   });
+
+  it('inicia la recuperación en segundo plano cuando se solicita', async () => {
+    const child = {
+      pid: 1234,
+      unref: jest.fn()
+    };
+
+    spawn.mockReturnValue(child);
+
+    const result = await runSoportesRecoveryScript({
+      cwd: '/tmp/app',
+      expedienteIds: [77],
+      background: true
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.background).toBe(true);
+    expect(result.pid).toBe(1234);
+    expect(child.unref).toHaveBeenCalled();
+    expect(spawn).toHaveBeenCalledWith(
+      process.execPath,
+      [path.join('/tmp/app', 'scripts', 'recuperar-rutas-soportes-historicas.js'), '77'],
+      expect.objectContaining({
+        cwd: '/tmp/app',
+        detached: true,
+        stdio: ['ignore', 'ignore', 'ignore']
+      })
+    );
+  });
 });

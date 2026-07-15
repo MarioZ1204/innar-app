@@ -1786,15 +1786,16 @@ router.post('/soportes/armado/recuperar-archivos', requireAuth, requireRoleOrPer
 
     const result = await runSoportesRecoveryScript({
       cwd: path.resolve(__dirname, '..'),
-      expedienteIds: targetIds
+      expedienteIds: targetIds,
+      background: true
     });
 
-    if (!result.ok) {
+    if (!result.ok && !result.background) {
       logger.error('[SOPORTES] recuperación manual fallida', { result, expedienteIds: targetIds });
       return res.status(500).json({ error: 'No se pudo ejecutar la recuperación', detail: result.stderr || result.stdout });
     }
 
-    res.json({ ok: true, message: 'Recuperación ejecutada', result });
+    res.status(202).json({ ok: true, message: 'Recuperación iniciada en segundo plano', result });
   } catch (e) {
     logger.error('[SOPORTES] recuperar archivos manual:', e);
     res.status(500).json({ error: safeError(e) });
