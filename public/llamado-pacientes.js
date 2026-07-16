@@ -19,6 +19,7 @@
   let medicos = [];
   let turnos = [];
   let doctoresActivos = new Set();
+  let llamadosActivos = {};
 
   function $(id) { return document.getElementById(id); }
 
@@ -115,6 +116,8 @@
     if (btn) {
       btn.classList.add('is-ready');
       btn.title = 'Audio activado';
+      const label = btn.querySelector('span');
+      if (label) label.textContent = 'Audio ✓';
     }
   }
 
@@ -179,16 +182,38 @@
   }
 
   function pacienteVisibleParaDoctor(doctorId) {
+    const ahora = Date.now();
+    const llamado = llamadosActivos[doctorId];
+    if (llamado && llamado.until > ahora && llamado.nombre) {
+      return { tipo: 'llamando', nombre: llamado.nombre };
+    }
+
     const delDoctor = turnosDelDoctor(doctorId);
     const enAtencion = delDoctor.find(t => t.estado === 'EN_ATENCION');
     if (enAtencion) {
       return { tipo: 'en_atencion', nombre: enAtencion.paciente_nombre || '' };
     }
+
     const siguiente = delDoctor.find(t => t.estado === 'EN_SALA' && t.numero_turno === 1);
     if (siguiente) {
       return { tipo: 'siguiente', nombre: siguiente.paciente_nombre || '' };
     }
+
+    const primerEnSala = delDoctor
+      .filter(t => t.estado === 'EN_SALA')
+      .sort((a, b) => (a.numero_turno ?? 999) - (b.numero_turno ?? 999))[0];
+    if (primerEnSala?.paciente_nombre) {
+      return { tipo: 'siguiente', nombre: primerEnSala.paciente_nombre };
+    }
+
     return { tipo: 'vacio', nombre: '' };
+  }
+
+  function htmlPaciente(nombre, etiqueta) {
+    return `<div class="ltv-card-paciente-wrap">
+      <span class="ltv-card-paciente-label">${escapeHtml(etiqueta)}</span>
+      <p class="ltv-card-paciente">${escapeHtml(nombre)}</p>
+    </div>`;
   }
 
   /* ── Render ── */
@@ -229,12 +254,12 @@
       let cardMod = '';
       let bodyHtml;
 
-      if (pac.tipo === 'siguiente') {
-        cardMod = ' ltv-card--siguiente';
-        bodyHtml = `<p class="ltv-card-paciente">${escapeHtml(pac.nombre)}</p>`;
-      } else if (pac.tipo === 'en_atencion') {
+      if ((pac.tipo === 'siguiente' || pac.tipo === 'llamando') && pac.nombre) {
+        cardMod = pac.tipo === 'llamando' ? ' ltv-card--siguiente ltv-card--llamando' : ' ltv-card--siguiente';
+        bodyHtml = htmlPaciente(pac.nombre, pac.tipo === 'llamando' ? 'Paciente llamado' : 'Siguiente paciente');
+      } else if (pac.tipo === 'en_atencion' && pac.nombre) {
         cardMod = ' ltv-card--atencion';
-        bodyHtml = `<p class="ltv-card-estado ltv-card-estado--atencion"><span class="ltv-card-estado-dot"></span>En consulta</p>`;
+        bodyHtml = htmlPaciente(pac.nombre, 'En consulta');
       } else {
         bodyHtml = `<p class="ltv-card-estado ltv-card-estado--espera"><span class="ltv-card-estado-dot"></span>En espera</p>`;
       }
@@ -258,15 +283,31 @@
     });
   }
 
-  function resaltarConsultorio(doctorId) {
-    const card = document.querySelector(`.ltv-card[data-doctor-id="${doctorId}"]`);
-    if (!card) return;
-    card.classList.add('ltv-card--llamando');
+  function registrarLlamado(data) {
+    let doctorId = data?.doctor_id;
+    if (!doctorId && data?.numero_consultorio != null) {
+      const med = medicos.find(m =>
+        Number(m.numero_consultorio) === Number(data.numero_consultorio)
+      );
+      doctorId = med?.id;
+    }
+    if (!doctorId || !data?.paciente_nombre) return;
+    doctorId = Number(doctorId);
+    llamadosActivos[doctorId] = {
+      nombre: data.paciente_nombre,
+      until: Date.now() + HIGHLIGHT_MS
+    };
     if (highlightTimers[doctorId]) clearTimeout(highlightTimers[doctorId]);
     highlightTimers[doctorId] = setTimeout(() => {
-      card.classList.remove('ltv-card--llamando');
+      delete llamadosActivos[doctorId];
       delete highlightTimers[doctorId];
+      renderGrid();
     }, HIGHLIGHT_MS);
+  }
+
+  function resaltarConsultorio(doctorId) {
+    const card = document.querySelector(`.ltv-card[data-doctor-id="${doctorId}"]`);
+    if (card) card.classList.add('ltv-card--llamando');
   }
 
   function resaltarPorEvento(data) {
@@ -399,6 +440,7 @@
   function onLlamadoEvent(data) {
     if (window.currentModule !== 'llamado-pacientes') return;
     unlockAudio();
+    registrarLlamado(data || {});
     hablarLlamado(data || {});
     resaltarPorEvento(data || {});
     refrescar();
@@ -423,6 +465,29 @@
     document.addEventListener('socketReady', attach);
   }
 
+  /* ── Pantalla completa ── */
+
+  function actualizarEstadoFullscreen() {
+    const view = $('view-llamado-pacientes');
+    const btn = $('btnLlamadoFullscreen');
+    const isFs = !!document.fullscreenElement;
+    view?.classList.toggle('ltv-is-fullscreen', isFs);
+    btn?.classList.toggle('is-active', isFs);
+    btn?.querySelector('.ltv-fs-icon-expand')?.classList.toggle('hidden', isFs);
+    btn?.querySelector('.ltv-fs-icon-compress')?.classList.toggle('hidden', !isFs);
+    const label = btn?.querySelector('.ltv-fs-label');
+    if (label) label.textContent = isFs ? 'Salir' : 'Pantalla completa';
+  }
+
+  function toggleFullscreen() {
+    const target = $('view-llamado-pacientes') || document.documentElement;
+    if (!document.fullscreenElement) {
+      target.requestFullscreen?.().catch(() => {});
+    } else {
+      document.exitFullscreen?.().catch(() => {});
+    }
+  }
+
   /* ── Init ── */
 
   window.initLlamadoPacientes = async function initLlamadoPacientes() {
@@ -434,10 +499,17 @@
       $('btnLlamadoActivarAudio')?.addEventListener('click', unlockAudio);
       $('btnLlamadoConfig')?.addEventListener('click', abrirConfig);
       $('btnLlamadoEmptyConfig')?.addEventListener('click', abrirConfig);
+      $('btnLlamadoFullscreen')?.addEventListener('click', toggleFullscreen);
       $('btnLlamadoConfigCerrar')?.addEventListener('click', cerrarConfig);
       $('llamadoConfigBackdrop')?.addEventListener('click', cerrarConfig);
       $('btnLlamadoConfigTodos')?.addEventListener('click', activarTodos);
       $('btnLlamadoConfigNinguno')?.addEventListener('click', desactivarTodos);
+      document.addEventListener('fullscreenchange', actualizarEstadoFullscreen);
+      document.addEventListener('mousemove', (e) => {
+        const view = $('view-llamado-pacientes');
+        if (!view?.classList.contains('ltv-is-fullscreen')) return;
+        view.classList.toggle('ltv-show-bar', e.clientY < 80);
+      });
       bindRealtime();
     }
 
