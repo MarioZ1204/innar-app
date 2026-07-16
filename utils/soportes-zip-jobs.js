@@ -10,15 +10,16 @@ const {
   zipArchiveSegment,
   queryDiasFacturacionZip,
   collectDiaZipEntries,
-  collectPeriodUnifiedEntries,
-  appendInnerZipToArchive,
-  safeSyncRipsPeriodo
+  appendEntriesToArchive
 } = require('./soportes-armado-zip');
 
-const ZIP_COMPRESSION = 6;
 const JOB_TTL_MS = 2 * 60 * 60 * 1000;
 const JOB_DIR = path.join(os.tmpdir(), 'innar-sop-zip-jobs');
 const jobs = new Map();
+
+function createArchiverInstance() {
+  return archiver('zip', { zlib: { level: 1 } });
+}
 
 if (!fs.existsSync(JOB_DIR)) fs.mkdirSync(JOB_DIR, { recursive: true });
 
@@ -36,49 +37,56 @@ function cleanupOldJobs() {
 
 async function runPeriodPaqueteJob(job, periodo) {
   const periodoId = periodo.id;
-  const zipLabel = zipArchiveSegment(periodo.etiqueta || periodo.periodo || `periodo-${periodoId}`);
   const outPath = path.join(JOB_DIR, `${job.id}.zip`);
   job.filePath = outPath;
 
   try {
-    void safeSyncRipsPeriodo(periodoId);
     const dias = await queryDiasFacturacionZip(periodoId);
     if (!dias.length) throw new Error('El mes no tiene carpetas de facturación');
 
-    const totalSteps = Math.max(dias.length + 1, 1);
+    const totalSteps = Math.max(dias.length, 1);
     let step = 0;
 
     await new Promise((resolve, reject) => {
       const output = fs.createWriteStream(outPath);
-      const archive = archiver('zip', { zlib: { level: ZIP_COMPRESSION } });
-      let partsAdded = 0;
+      const archive = createArchiverInstance();
+      let filesAdded = 0;
 
       archive.on('error', reject);
       output.on('error', reject);
       output.on('close', () => {
-        if (!partsAdded) reject(new Error('No hay archivos para descargar en este mes'));
+        if (!filesAdded) reject(new Error('No hay archivos para descargar en este mes'));
         else resolve();
       });
       archive.pipe(output);
 
       (async () => {
         try {
+          const entries = [];
+          const usedPaths = new Set();
           for (const dia of dias) {
             step += 1;
             job.message = `Empaquetando ${dia.nombre_display || 'carpeta'}…`;
-            job.progress = Math.min(90, Math.round((step / totalSteps) * 90));
-            const entries = await collectDiaZipEntries(dia.id);
+            job.progress = Math.min(95, Math.round((step / totalSteps) * 95));
             const diaSeg = zipArchiveSegment(dia.nombre_display || `dia-${dia.id}`);
-            const added = await appendInnerZipToArchive(archive, `${diaSeg}.zip`, entries);
-            if (added) partsAdded++;
+            const part = await collectDiaZipEntries(dia.id);
+            for (const e of part) {
+              let name = `${diaSeg}/${e.name}`;
+              if (usedPaths.has(name)) {
+                name = `${diaSeg}/${diaSeg}_${path.basename(e.name)}`;
+              }
+              usedPaths.add(name);
+              entries.push({ ...e, name });
+            }
           }
-          job.message = 'Generando ZIP unificado…';
-          job.progress = 95;
-          const unifiedEntries = await collectPeriodUnifiedEntries(periodoId);
-          if (unifiedEntries.length) {
-            const addedUni = await appendInnerZipToArchive(archive, `${zipLabel}-unificado.zip`, unifiedEntries);
-            if (addedUni) partsAdded++;
+          if (!entries.length) {
+            archive.finalize();
+            return;
           }
+          appendEntriesToArchive(archive, entries);
+          filesAdded = entries.length;
+          job.message = 'Finalizando ZIP…';
+          job.progress = 98;
           archive.finalize();
         } catch (e) {
           reject(e);

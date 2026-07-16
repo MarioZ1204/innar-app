@@ -161,11 +161,11 @@ async function setVisibleEnSoportes(registroId, visible) {
   return { visible: !!visible };
 }
 const { resolvePdxArchivoPath, soportesRoot } = require('./soportes-storage');
-const { zipArchiveSegment, createZipBuffer, buildPeriodPaqueteParts, safeSyncRipsPeriodo } = require('./soportes-armado-zip');
+const { zipArchiveSegment, createZipBuffer, collectPeriodPaqueteFlatEntries, appendEntriesToArchive, zipEntryOptions, safeSyncRipsPeriodo } = require('./soportes-armado-zip');
 const { buildAnexoFiduExcelBuffer } = require('./anexo-fidu-export');
 
 const ARCHIVO_SUBDIR = 'modulo-archivo';
-const ZIP_COMPRESSION = 6;
+const ZIP_COMPRESSION = 1;
 
 function archivoModuloDir() {
   const dir = path.join(BACKUP_DIR, ARCHIVO_SUBDIR);
@@ -195,7 +195,7 @@ function writeZipFromParts(parts, destPath) {
     output.on('error', reject);
     archive.pipe(output);
     for (const part of parts) {
-      archive.append(part.buffer, { name: part.name });
+      archive.append(part.buffer, { name: part.name, ...zipEntryOptions(part.name) });
     }
     archive.finalize();
   });
@@ -204,18 +204,12 @@ function writeZipFromParts(parts, destPath) {
 function writeZipFromEntries(entries, destPath) {
   return new Promise((resolve, reject) => {
     const output = fs.createWriteStream(destPath);
-    const archive = archiver('zip', { zlib: { level: ZIP_COMPRESSION } });
+    const archive = archiver('zip', { zlib: { level: 1 } });
     output.on('close', () => resolve(destPath));
     archive.on('error', reject);
     output.on('error', reject);
     archive.pipe(output);
-    for (const e of entries) {
-      if (e.placeholder) {
-        archive.append(e.content || Buffer.alloc(0), { name: e.name });
-      } else if (e.absPath && fs.existsSync(e.absPath)) {
-        archive.file(e.absPath, { name: e.name });
-      }
-    }
+    appendEntriesToArchive(archive, entries);
     archive.finalize();
   });
 }
@@ -365,20 +359,22 @@ async function crearBackupZipPdxPeriodo(periodo) {
 
 async function crearBackupZipArmadoPeriodo(periodoRow) {
   await safeSyncRipsPeriodo(periodoRow.id);
-  const zipLabel = zipArchiveSegment(periodoRow.etiqueta || periodoRow.periodo || `periodo-${periodoRow.id}`);
-  const parts = await buildPeriodPaqueteParts(periodoRow.id, zipLabel);
+  const entries = await collectPeriodPaqueteFlatEntries(periodoRow.id);
   const manifestBuf = Buffer.from(JSON.stringify({
     modulo: 'armado',
     periodo: periodoRow.periodo,
     periodo_id: periodoRow.id,
     etiqueta: periodoRow.etiqueta,
-    partes: parts.map((p) => p.name)
+    archivos: entries.length,
+    formato: 'carpetas-por-dia'
   }, null, 2), 'utf8');
-  parts.push({ name: 'manifest-armado.json', buffer: manifestBuf });
 
   const filename = safeArchivoBackupName(`archivo-armado-${periodoRow.periodo}-${Date.now()}.zip`);
   const destPath = path.join(archivoModuloDir(), filename);
-  await writeZipFromParts(parts, destPath);
+  await writeZipFromEntries([
+    ...entries,
+    { placeholder: true, name: 'manifest-armado.json', content: manifestBuf }
+  ], destPath);
   const st = fs.statSync(destPath);
   return { filename, filepath: destPath, size_bytes: st.size };
 }

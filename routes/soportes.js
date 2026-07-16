@@ -110,6 +110,7 @@ const { runSoportesRecoveryScript } = require('../utils/soportes-recovery-runner
 const { syncRipsCarpetasDia, syncRipsCarpetasContenedor } = require('../utils/soportes-rips-carpetas-sync');
 const {
   zipArchiveSegment,
+  zipEntryOptions,
   streamDiaZip,
   streamCarpetaZip,
   streamPeriodPaqueteZip,
@@ -3345,12 +3346,12 @@ router.get('/soportes/armado/periodos/:id/zip-facturados', requireAuth, requireR
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Disposition', `attachment; filename="${zipLabel}-facturados.zip"`);
     await new Promise((resolve, reject) => {
-      const archive = archiver('zip', { zlib: { level: 6 } });
+      const archive = archiver('zip', { zlib: { level: 1 } });
       archive.on('error', reject);
       res.on('finish', resolve);
       res.on('error', reject);
       archive.pipe(res);
-      for (const job of fileJobs) archive.file(job.fp, { name: job.name });
+      for (const job of fileJobs) archive.file(job.fp, { name: job.name, ...zipEntryOptions(job.fp) });
       archive.finalize();
     });
   } catch (e) {
@@ -3387,12 +3388,12 @@ router.get('/soportes/armado/expedientes/:id/zip', requireAuth, requireRoleOrPer
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Disposition', `attachment; filename="${exp.codigo}.zip"`);
     await new Promise((resolve, reject) => {
-      const archive = archiver('zip', { zlib: { level: 6 } });
+      const archive = archiver('zip', { zlib: { level: 1 } });
       archive.on('error', reject);
       res.on('finish', resolve);
       res.on('error', reject);
       archive.pipe(res);
-      for (const job of fileJobs) archive.file(job.fp, { name: job.name });
+      for (const job of fileJobs) archive.file(job.fp, { name: job.name, ...zipEntryOptions(job.fp) });
       archive.finalize();
     });
   } catch (e) {

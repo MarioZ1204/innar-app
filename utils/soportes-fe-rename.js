@@ -7,7 +7,7 @@ const db = require('./db-mysql');
 const { getArmadoFeDirFromContext } = require('./soportes-storage');
 const { buildCanonicalName, buildSoportesDiskName, extractEtiquetaFromSoporteName, archivoCoincideConTipoSlot } = require('./soportes-archivo-detect');
 const { parseLineaPaciente, esExpedientePendienteFactura } = require('./soportes-pacientes-parse');
-const { loadArchivoExpedienteSlot, eliminarArchivoExpedienteSlot } = require('./soportes-exp-archivo');
+const { loadArchivoExpedienteSlot, eliminarArchivoExpedienteSlot, repararArchivosExpediente } = require('./soportes-exp-archivo');
 const { syncRipsCarpetasDia } = require('./soportes-rips-carpetas-sync');
 
 async function loadExpedienteContext(expedienteId) {
@@ -313,6 +313,9 @@ async function aplicarRenombradoPorFev(expedienteId, numeroFactura) {
       'UPDATE sop_expedientes SET codigo = ?, numero_factura = ? WHERE id = ?',
       [newCodigo, num, her.id]
     );
+    try {
+      await repararArchivosExpediente(her.id, { ...her, codigo: newCodigo, numero_factura: num });
+    } catch (_) { /* ignore */ }
   }
 
   try {

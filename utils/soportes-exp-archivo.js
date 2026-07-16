@@ -644,6 +644,7 @@ module.exports = {
   resolverArchivoExpedienteRow,
   archivoResueltoValido,
   buscarRutaHistoricaArchivo,
+  construirNombreEsperado,
   repararArchivoExpedienteRow,
   repararArchivosExpediente,
   eliminarArchivoExpedienteSlot,
