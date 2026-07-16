@@ -235,5 +235,34 @@ describe('aplicarRenombradoPorFev', () => {
     expect(etiquetasCompatiblesParaRenombrado('OPF_901164565_PEREZ_JUAN.pdf', 'OPF_901164565_PEREZ_JUAN.pdf')).toBe(true);
     expect(etiquetasCompatiblesParaRenombrado('OPF_901164565_PEREZ_JUAN.pdf', 'OPF_901164565_FE16300.pdf')).toBe(false);
     expect(etiquetasCompatiblesParaRenombrado('OPF_901164565_FE16300.pdf', 'OPF_901164565_FE15448.pdf')).toBe(false);
+    expect(etiquetasCompatiblesParaRenombrado('OPF_901164565_FE16300.pdf', 'OPF_901164565_PEREZ_JUAN.pdf')).toBe(true);
+  });
+
+  test('renombra archivos cuando la BD ya tiene etiqueta FE pero el disco conserva el nombre del paciente', async () => {
+    const isolatedRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'soportes-fe-rename-fe-db-'));
+    getArmadoFeDirFromContext.mockImplementation((ctx, codigo) => {
+      const abs = path.join(isolatedRoot, codigo);
+      return { abs, rel: `soportes/armado/${codigo}` };
+    });
+
+    const oldDir = path.join(isolatedRoot, 'PEREZ_JUAN');
+    fs.mkdirSync(oldDir, { recursive: true });
+    fs.writeFileSync(path.join(oldDir, 'OPF_901164565_PEREZ_JUAN.pdf'), 'opf');
+    fs.writeFileSync(path.join(oldDir, 'FEV_901164565_FE14726.pdf'), 'fev');
+
+    jest.clearAllMocks();
+    db.query.mockResolvedValueOnce([{ id: 1, codigo: 'PEREZ_JUAN', numero_factura: 0, dia_id: 10, contenedor_tipo: 'soportes', paciente_nombre: 'Juan Pérez' }]);
+    db.query.mockResolvedValueOnce([{ id: 1, codigo: 'PEREZ_JUAN', numero_factura: 0, dia_id: 10, contenedor_tipo: 'soportes', paciente_nombre: 'Juan Pérez' }]);
+    db.query.mockResolvedValueOnce([]);
+    db.query.mockResolvedValueOnce([
+      { id: 11, tipo: 'OPF', nombre_archivo: 'OPF_901164565_FE14726.pdf', ruta_relativa: 'soportes/armado/PEREZ_JUAN/OPF_901164565_FE14726.pdf' },
+      { id: 12, tipo: 'FEV', nombre_archivo: 'FEV_901164565_FE14726.pdf', ruta_relativa: 'soportes/armado/PEREZ_JUAN/FEV_901164565_FE14726.pdf' }
+    ]);
+    db.execute.mockResolvedValue({});
+
+    await aplicarRenombradoPorFev(1, 14726);
+
+    expect(fs.existsSync(path.join(isolatedRoot, 'FE14726', 'OPF_901164565_FE14726.pdf'))).toBe(true);
+    fs.rmSync(isolatedRoot, { recursive: true, force: true });
   });
 });

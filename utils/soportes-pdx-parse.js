@@ -1122,7 +1122,7 @@ function buildMetaDesdeCamposManuales(originalName, body, carpeta) {
     body.paciente_documento
   );
 
-  if (tema === 'comprobantes_consulta_medica') {
+  if (esTemaConsultaMedica(tema)) {
     const nombreCompleto = String(body.paciente_nombre_completo || '').trim();
     if (nombreCompleto) {
       const split = separarNombreCompletoConsultaMedica(nombreCompleto);
@@ -1139,7 +1139,7 @@ function buildMetaDesdeCamposManuales(originalName, body, carpeta) {
   if (!apellidos || !nombres) {
     return {
       ok: false,
-      error: tema === 'comprobantes_consulta_medica'
+      error: esTemaConsultaMedica(tema)
         ? 'El nombre completo del paciente es obligatorio'
         : 'Apellidos y nombres son obligatorios'
     };

@@ -539,10 +539,7 @@
   function camposMinimosAyudaCliente(tema) {
     const oblig = ['Apellidos', 'Nombres', 'Fecha del estudio'];
     const opc = ['Varios PDF: ordénelos y se unifican en un solo archivo'];
-    if (tema === 'ordenes_consulta_medica') {
-      return { oblig: [...oblig, 'Especialidad'], opc };
-    }
-    if (tema === 'comprobantes_consulta_medica') {
+    if (tema === 'ordenes_consulta_medica' || tema === 'comprobantes_consulta_medica') {
       return { oblig: ['Nombre completo', 'Fecha del estudio', 'Especialidad'], opc };
     }
     if (esCarpetaEstructuradaPdx({ nombre_display: tema }) && !esCarpetaConsultaMedicaPdx({ nombre_display: tema })) {
@@ -558,7 +555,7 @@
   }
 
   function camposFallbackUnificarPdx(tema) {
-    if (tema === 'comprobantes_consulta_medica') {
+    if (tema === 'comprobantes_consulta_medica' || tema === 'ordenes_consulta_medica') {
       return [
         { key: 'paciente_nombre_completo', label: 'Nombre completo', requerido: true, input: 'nombre_completo', estado: 'falta' },
         { key: 'fecha_estudio', label: 'Fecha del estudio', requerido: true, input: 'date', estado: 'falta' },
@@ -570,9 +567,7 @@
       { key: 'nombres', label: 'Nombres', requerido: true, input: 'text', estado: 'falta' },
       { key: 'fecha_estudio', label: 'Fecha del estudio', requerido: true, input: 'date', estado: 'falta' }
     ];
-    if (tema === 'ordenes_consulta_medica') {
-      base.push({ key: 'estudio_texto', label: 'Especialidad', requerido: true, input: 'especialidad', estado: 'falta' });
-    } else if (esCarpetaEstructuradaPdx({ nombre_display: tema }) && !esCarpetaConsultaMedicaPdx({ nombre_display: tema })) {
+    if (esCarpetaEstructuradaPdx({ nombre_display: tema }) && !esCarpetaConsultaMedicaPdx({ nombre_display: tema })) {
       base.push(
         { key: 'tipo_documento', label: 'Tipo de documento', requerido: false, input: 'tipo_doc', estado: 'opc', defecto: 'CC' },
         { key: 'paciente_documento', label: 'Número de documento', requerido: true, input: 'doc_numero', estado: 'falta' },

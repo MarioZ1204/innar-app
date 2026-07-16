@@ -66,8 +66,12 @@ function etiquetasCompatiblesParaRenombrado(preferredName, candidateName) {
   const candidateTag = extractEtiquetaFromSoporteName(candidateName);
   if (!preferredTag || !candidateTag) return true;
   if (preferredTag === candidateTag) return true;
-  if (/^FE\d+$/.test(preferredTag) && /^FE\d+$/.test(candidateTag)) return false;
-  return false;
+  const preferredIsFe = /^FE\d+$/.test(preferredTag);
+  const candidateIsFe = /^FE\d+$/.test(candidateTag);
+  if (preferredIsFe && candidateIsFe) return false;
+  if (preferredIsFe && !candidateIsFe) return true;
+  if (!preferredIsFe && candidateIsFe) return false;
+  return preferredTag === candidateTag;
 }
 
 function sourceDirForRename(oldDir, newDir) {
@@ -136,6 +140,19 @@ function resolveSourceFileForRename(row, oldDir, newDir, options = {}) {
     });
     if (typeMatches.length === 1) {
       const match = { fullPath: path.join(searchDir, typeMatches[0]), fileName: typeMatches[0] };
+      if (isPathAvailable(match)) return match;
+    }
+
+    const soloTipo = files.filter((f) => {
+      if (!archivoCoincideConTipoSlot(f, row?.tipo)) return false;
+      if (!etiquetasCompatiblesParaRenombrado(preferredName || f, f)) return false;
+      const lower = f.toLowerCase();
+      if (prefix && !lower.startsWith(`${prefix.toLowerCase()}_`)) return false;
+      if (ext && path.extname(f).toLowerCase() !== ext) return false;
+      return true;
+    });
+    if (soloTipo.length === 1) {
+      const match = { fullPath: path.join(searchDir, soloTipo[0]), fileName: soloTipo[0] };
       if (isPathAvailable(match)) return match;
     }
   }

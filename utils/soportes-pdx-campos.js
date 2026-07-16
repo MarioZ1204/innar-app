@@ -18,7 +18,7 @@ function esTemaReporteClinico(tema) {
 }
 
 function definicionCamposPorTema(tema) {
-  if (tema === 'comprobantes_consulta_medica') {
+  if (tema === 'comprobantes_consulta_medica' || esTemaOrdenHcConsultaMedica(tema)) {
     return [
       { key: 'paciente_nombre_completo', label: 'Nombre completo', requerido: true, input: 'nombre_completo' },
       { key: 'fecha_estudio', label: 'Fecha del estudio', requerido: true, input: 'date' },
@@ -30,12 +30,6 @@ function definicionCamposPorTema(tema) {
     { key: 'nombres', label: 'Nombres', requerido: true, input: 'text' },
     { key: 'fecha_estudio', label: 'Fecha del estudio', requerido: true, input: 'date' }
   ];
-  if (esTemaOrdenHcConsultaMedica(tema)) {
-    return [
-      ...base,
-      { key: 'estudio_texto', label: 'Especialidad', requerido: true, input: 'especialidad' }
-    ];
-  }
   if (esTemaEstructuradoConDocumento(tema)) {
     return [
       ...base,

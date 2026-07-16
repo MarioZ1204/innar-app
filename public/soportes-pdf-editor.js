@@ -72,20 +72,6 @@
     return map[color] || map.yellow;
   }
 
-  async function renderPageTextLayer(lib, page, viewport, wrap) {
-    const layer = document.createElement('div');
-    layer.className = 'sop-pdf-text-layer textLayer';
-    layer.setAttribute('aria-hidden', 'true');
-    const textContent = await page.getTextContent();
-    const task = lib.renderTextLayer({
-      textContentSource: textContent,
-      container: layer,
-      viewport
-    });
-    await (task?.promise ?? task);
-    wrap.appendChild(layer);
-  }
-
   /**
    * Monta el visor en un contenedor (modal o página).
    * @returns {Promise<{ destroy: function }>}
@@ -112,8 +98,8 @@
     const canDeletePages = canEdit && isPage && !!deletePagesUrl;
     const canReorderPages = canEdit && isPage && !!reorderPagesUrl;
     const hintSelect = isPage
-      ? 'Seleccione texto (Ctrl+C). Use <strong>Resaltar</strong>, <strong>Añadir PDF</strong> o <strong>Eliminar páginas</strong> y guarde los cambios.'
-      : 'Seleccione el texto con el ratón y copie con <strong>Ctrl+C</strong> (o clic derecho → Copiar).';
+      ? 'Use <strong>Resaltar</strong>, <strong>Añadir PDF</strong> o <strong>Eliminar páginas</strong> y guarde los cambios.'
+      : 'Revise el documento. Use <strong>Resaltar</strong> para marcar zonas importantes.';
     const hintHighlight = isPage
       ? 'Arrastre para resaltar. Guarde antes de añadir otro PDF si ya tiene marcas pendientes.'
       : 'Modo resaltar: arrastre sobre el documento. Pulse <strong>Guardar en PDF</strong> para que las marcas queden al descargar.';
@@ -508,11 +494,6 @@
         highlightLayer.className = 'sop-pdf-highlight-layer';
         highlightLayer.setAttribute('aria-hidden', 'true');
         wrap.appendChild(highlightLayer);
-        try {
-          await renderPageTextLayer(lib, page, viewport, wrap);
-        } catch (textErr) {
-          console.warn('[SopPdfEditor] Capa de texto no disponible:', textErr);
-        }
         const overlay = document.createElement('div');
         overlay.className = 'sop-pdf-overlay';
         attachOverlay(overlay, highlightLayer, i - 1);

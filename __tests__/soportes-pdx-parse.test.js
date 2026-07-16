@@ -425,6 +425,23 @@ describe('soportes-pdx-parse — corrección manual', () => {
     expect(meta.formato).toBe('simple');
   });
 
+  test('buildMetaDesdeCamposManuales órdenes consulta médica con nombre completo', () => {
+    const meta = buildMetaDesdeCamposManuales(
+      'orden.pdf',
+      {
+        paciente_nombre_completo: 'Juan Carlos García López',
+        fecha_estudio: '2026-05-27',
+        estudio_texto: 'Neurología'
+      },
+      { nombre_display: 'ORDENES + HC CONSULTAS MÉDICAS', _estudiosLista: [{ nombre: 'Neurología' }] }
+    );
+    expect(meta.ok).toBe(true);
+    expect(meta.formato).toBe('ordenes_consulta_medica');
+    expect(meta.nombres).toMatch(/Juan Carlos/i);
+    expect(meta.apellidos).toMatch(/García López/i);
+    expect(meta.nombre_display).toContain('ORDEN + HC');
+  });
+
   test('buildMetaFromUpload con confirmacion_manual en órdenes', () => {
     const meta = buildMetaFromUpload(
       'mal-nombre.pdf',

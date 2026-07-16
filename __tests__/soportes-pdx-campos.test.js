@@ -62,6 +62,19 @@ describe('evaluarCamposMinimos — carga flexible', () => {
     expect(parcial.fecha_estudio).toBe('2026-05-19');
   });
 
+  test('órdenes consulta médica: nombre completo, fecha y especialidad', () => {
+    const carpeta = { nombre_display: 'ORDENES + HC CONSULTAS MÉDICAS' };
+    const evaluacion = evaluarCamposMinimos(
+      'ordenes_consulta_medica',
+      { paciente_nombre_completo: 'Juan Carlos García López', fecha_estudio: '2026-05-27', estudio_texto: 'Neurología' },
+      { ok: false },
+      carpeta
+    );
+    expect(evaluacion.completo).toBe(true);
+    expect(evaluacion.datos.nombres).toMatch(/Juan Carlos/i);
+    expect(evaluacion.datos.apellidos).toMatch(/García López/i);
+  });
+
   test('órdenes: prefijo cruzado y fecha DD-MM-YY', () => {
     const carpeta = { nombre_display: 'ORDENES MARZO' };
     const a = analizarNombreArchivo(
