@@ -13,6 +13,7 @@
   let voiceCache = null;
   let boundRealtime = false;
   let pollTimer = null;
+  let relojTimer = null;
   let highlightTimers = {};
 
   let medicos = [];
@@ -40,6 +41,39 @@
   function fetchApi(url) {
     if (typeof apiFetch === 'function') return apiFetch(url).then(r => r.json());
     return fetch(url, { credentials: 'include' }).then(r => r.json());
+  }
+
+  /* ── Reloj ── */
+
+  function actualizarReloj() {
+    const el = $('llamadoTvReloj');
+    if (!el) return;
+    const now = new Date();
+    const fecha = new Intl.DateTimeFormat('es-CO', {
+      timeZone: 'America/Bogota',
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric'
+    }).format(now);
+    const hora = new Intl.DateTimeFormat('es-CO', {
+      timeZone: 'America/Bogota',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    }).format(now);
+    const fechaCap = fecha.charAt(0).toUpperCase() + fecha.slice(1);
+    el.textContent = `${fechaCap} · ${hora}`;
+  }
+
+  function iniciarReloj() {
+    actualizarReloj();
+    if (relojTimer) clearInterval(relojTimer);
+    relojTimer = setInterval(actualizarReloj, 30000);
+  }
+
+  function detenerReloj() {
+    if (relojTimer) { clearInterval(relojTimer); relojTimer = null; }
   }
 
   /* ── Audio / TTS ── */
@@ -79,9 +113,8 @@
     window.speechSynthesis.speak(silent);
     const btn = $('btnLlamadoActivarAudio');
     if (btn) {
-      btn.textContent = 'Audio activado';
       btn.classList.add('is-ready');
-      btn.disabled = true;
+      btn.title = 'Audio activado';
     }
   }
 
@@ -145,11 +178,6 @@
     return turnos.filter(t => Number(t.doctor_id) === Number(doctorId));
   }
 
-  /**
-   * Muestra el paciente "Siguiente" solo si:
-   * - Está EN_SALA con numero_turno === 1
-   * - No hay paciente EN_ATENCION (el anterior ya fue atendido)
-   */
   function pacienteVisibleParaDoctor(doctorId) {
     const delDoctor = turnosDelDoctor(doctorId);
     const enAtencion = delDoctor.find(t => t.estado === 'EN_ATENCION');
@@ -194,37 +222,49 @@
 
     grid.innerHTML = activos.map(m => {
       const pac = pacienteVisibleParaDoctor(m.id);
-      let pacienteHtml;
-      if (pac.tipo === 'siguiente') {
-        pacienteHtml = `<div class="llamado-consultorio-card-paciente">${escapeHtml(pac.nombre)}</div>`;
-      } else if (pac.tipo === 'en_atencion') {
-        pacienteHtml = `<div class="llamado-consultorio-card-paciente is-en-atencion">En atención</div>`;
-      } else {
-        pacienteHtml = `<div class="llamado-consultorio-card-paciente is-vacio">—</div>`;
-      }
-
       const consNum = m.numero_consultorio != null && m.numero_consultorio !== ''
         ? String(m.numero_consultorio)
         : '—';
 
-      return `<div class="llamado-consultorio-card" data-doctor-id="${m.id}">
-        <div class="llamado-consultorio-card-num-wrap">
-          <span class="llamado-consultorio-card-label">Consultorio</span>
-          <span class="llamado-consultorio-card-num">${escapeHtml(consNum)}</span>
-        </div>
-        <div class="llamado-consultorio-card-doctor">${escapeHtml(m.nombre)}</div>
-        ${pacienteHtml}
-      </div>`;
+      let cardMod = '';
+      let bodyHtml;
+
+      if (pac.tipo === 'siguiente') {
+        cardMod = ' ltv-card--siguiente';
+        bodyHtml = `<p class="ltv-card-paciente">${escapeHtml(pac.nombre)}</p>`;
+      } else if (pac.tipo === 'en_atencion') {
+        cardMod = ' ltv-card--atencion';
+        bodyHtml = `<p class="ltv-card-estado ltv-card-estado--atencion"><span class="ltv-card-estado-dot"></span>En consulta</p>`;
+      } else {
+        bodyHtml = `<p class="ltv-card-estado ltv-card-estado--espera"><span class="ltv-card-estado-dot"></span>En espera</p>`;
+      }
+
+      return `<article class="ltv-card${cardMod}" data-doctor-id="${m.id}">
+        <span class="ltv-card-badge-llamando">Llamando</span>
+        <header class="ltv-card-head">
+          <div class="ltv-card-cons-badge">
+            <span class="ltv-card-cons-label">Cons.</span>
+            <span class="ltv-card-cons-num">${escapeHtml(consNum)}</span>
+          </div>
+          <p class="ltv-card-doctor">${escapeHtml(m.nombre)}</p>
+        </header>
+        <div class="ltv-card-body">${bodyHtml}</div>
+      </article>`;
     }).join('');
+
+    Object.keys(highlightTimers).forEach(id => {
+      const card = grid.querySelector(`.ltv-card[data-doctor-id="${id}"]`);
+      if (card) card.classList.add('ltv-card--llamando');
+    });
   }
 
   function resaltarConsultorio(doctorId) {
-    const card = document.querySelector(`.llamado-consultorio-card[data-doctor-id="${doctorId}"]`);
+    const card = document.querySelector(`.ltv-card[data-doctor-id="${doctorId}"]`);
     if (!card) return;
-    card.classList.add('is-llamando');
+    card.classList.add('ltv-card--llamando');
     if (highlightTimers[doctorId]) clearTimeout(highlightTimers[doctorId]);
     highlightTimers[doctorId] = setTimeout(() => {
-      card.classList.remove('is-llamando');
+      card.classList.remove('ltv-card--llamando');
       delete highlightTimers[doctorId];
     }, HIGHLIGHT_MS);
   }
@@ -290,25 +330,29 @@
     if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
   }
 
-  /* ── Config panel ── */
+  /* ── Drawer configuración ── */
 
   function renderConfigLista() {
     const lista = $('llamadoConfigLista');
     if (!lista) return;
 
     if (!medicos.length) {
-      lista.innerHTML = '<p style="color:#64748b;font-size:.875rem">No hay médicos disponibles.</p>';
+      lista.innerHTML = '<p style="color:#64748b;font-size:.875rem;padding:8px 0">No hay médicos disponibles.</p>';
       return;
     }
 
     lista.innerHTML = medicos.map(m => {
       const activo = doctoresActivos.has(m.id);
-      const cons = m.numero_consultorio != null ? `Consultorio ${m.numero_consultorio}` : 'Sin consultorio asignado';
-      return `<label class="llamado-config-item${activo ? ' is-active' : ''}" data-doctor-id="${m.id}">
-        <input type="checkbox" ${activo ? 'checked' : ''} data-doctor-id="${m.id}" />
-        <div class="llamado-config-item-info">
-          <div class="llamado-config-item-nombre">${escapeHtml(m.nombre)}</div>
-          <div class="llamado-config-item-cons">${escapeHtml(cons)}</div>
+      const consNum = m.numero_consultorio != null ? String(m.numero_consultorio) : null;
+      const consTxt = consNum ? 'Consultorio asignado' : 'Sin consultorio asignado';
+      return `<label class="ltv-toggle-item${activo ? ' is-on' : ''}" data-doctor-id="${m.id}">
+        <div class="ltv-toggle-item-info">
+          <div class="ltv-toggle-item-nombre">${escapeHtml(m.nombre)}</div>
+          <div class="ltv-toggle-item-cons">${consNum ? `<span class="ltv-toggle-item-cons-num">${escapeHtml(consNum)}</span>` : ''}${escapeHtml(consTxt)}</div>
+        </div>
+        <div class="ltv-switch">
+          <input type="checkbox" ${activo ? 'checked' : ''} data-doctor-id="${m.id}" aria-label="Mostrar consultorio de ${escapeHtml(m.nombre)}" />
+          <span class="ltv-switch-track"></span>
         </div>
       </label>`;
     }).join('');
@@ -319,7 +363,7 @@
         if (cb.checked) doctoresActivos.add(id);
         else doctoresActivos.delete(id);
         guardarDoctoresActivos();
-        cb.closest('.llamado-config-item')?.classList.toggle('is-active', cb.checked);
+        cb.closest('.ltv-toggle-item')?.classList.toggle('is-on', cb.checked);
         renderGrid();
       });
     });
@@ -327,10 +371,12 @@
 
   function abrirConfig() {
     renderConfigLista();
+    $('llamadoConfigBackdrop')?.classList.remove('hidden');
     $('llamadoConfigPanel')?.classList.remove('hidden');
   }
 
   function cerrarConfig() {
+    $('llamadoConfigBackdrop')?.classList.add('hidden');
     $('llamadoConfigPanel')?.classList.add('hidden');
   }
 
@@ -387,6 +433,7 @@
       });
       $('btnLlamadoActivarAudio')?.addEventListener('click', unlockAudio);
       $('btnLlamadoConfig')?.addEventListener('click', abrirConfig);
+      $('btnLlamadoEmptyConfig')?.addEventListener('click', abrirConfig);
       $('btnLlamadoConfigCerrar')?.addEventListener('click', cerrarConfig);
       $('llamadoConfigBackdrop')?.addEventListener('click', cerrarConfig);
       $('btnLlamadoConfigTodos')?.addEventListener('click', activarTodos);
@@ -395,7 +442,7 @@
     }
 
     cargarDoctoresActivos();
-    unlockAudio();
+    iniciarReloj();
     await refrescarCompleto();
     iniciarPolling();
   };
@@ -403,7 +450,10 @@
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
       detenerPolling();
+      detenerReloj();
     } else if (window.currentModule === 'llamado-pacientes') {
+      actualizarReloj();
+      iniciarReloj();
       refrescar();
       iniciarPolling();
     }

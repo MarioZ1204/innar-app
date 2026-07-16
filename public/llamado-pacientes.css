@@ -1,453 +1,733 @@
-/* Pantalla TV de llamado de pacientes — sala de espera multi-consultorio */
 #view-llamado-pacientes {
-  min-height: 100vh;
-  background: linear-gradient(145deg, #0f172a 0%, #1e3a5f 42%, #134e4a 100%);
+  --ltv-teal: #0d9488;
+  --ltv-teal-light: #ccfbf1;
+  --ltv-teal-dark: #0f766e;
+  --ltv-teal-glow: rgba(13, 148, 136, 0.18);
+  --ltv-amber: #d97706;
+  --ltv-amber-light: #fef3c7;
+  --ltv-slate-50: #f8fafc;
+  --ltv-slate-100: #f1f5f9;
+  --ltv-slate-200: #e2e8f0;
+  --ltv-slate-400: #94a3b8;
+  --ltv-slate-500: #64748b;
+  --ltv-slate-700: #334155;
+  --ltv-slate-800: #1e293b;
+  --ltv-slate-900: #0f172a;
+  --ltv-radius: 16px;
+  --ltv-radius-sm: 10px;
+  --ltv-shadow: 0 1px 3px rgba(15, 23, 42, 0.06), 0 8px 24px rgba(15, 23, 42, 0.06);
+  --ltv-shadow-lg: 0 4px 6px rgba(15, 23, 42, 0.04), 0 20px 48px rgba(15, 23, 42, 0.1);
 }
 
-.llamado-screen {
+#view-llamado-pacientes:not(.hidden) ~ .app-footer {
+  display: none;
+}
+
+/* ── Layout principal ─────────────────────────────────────────── */
+.ltv-page {
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
-  color: #f8fafc;
-  position: relative;
-  overflow: hidden;
+  background: var(--ltv-slate-50);
 }
 
-.llamado-screen::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background:
-    radial-gradient(circle at 15% 20%, rgba(45, 212, 191, 0.12) 0%, transparent 45%),
-    radial-gradient(circle at 85% 80%, rgba(56, 189, 248, 0.1) 0%, transparent 40%);
-  pointer-events: none;
-}
-
-.llamado-header {
-  position: relative;
-  z-index: 2;
+/* ── Topbar ───────────────────────────────────────────────────── */
+.ltv-topbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 24px;
-  gap: 16px;
+  height: 64px;
+  padding: 0 clamp(16px, 3vw, 32px);
+  background: #fff;
+  border-bottom: 1px solid var(--ltv-slate-200);
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.04);
+  position: sticky;
+  top: 0;
+  z-index: 20;
   flex-shrink: 0;
 }
 
-.llamado-header-actions {
+.ltv-topbar-left,
+.ltv-topbar-right {
   display: flex;
   align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
+  gap: 0;
+  flex: 1;
+  min-width: 0;
 }
 
-.llamado-logo {
-  height: 64px;
-  width: auto;
-  max-width: min(280px, 45vw);
-  object-fit: contain;
-  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.25));
-}
-
-.llamado-back-btn {
-  display: inline-flex;
-  align-items: center;
+.ltv-topbar-right {
+  justify-content: flex-end;
   gap: 8px;
-  padding: 10px 16px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  background: rgba(255, 255, 255, 0.08);
-  color: #e2e8f0;
-  font-size: 0.9rem;
+}
+
+.ltv-topbar-logo {
+  height: 38px;
+  width: auto;
+  object-fit: contain;
+}
+
+.ltv-topbar-divider {
+  width: 1px;
+  height: 28px;
+  background: var(--ltv-slate-200);
+  margin: 0 14px;
+}
+
+.ltv-back-btn {
+  margin: 0 !important;
+  height: auto !important;
+  min-height: 0 !important;
+  padding: 8px 14px !important;
+  font-size: 0.84rem !important;
+}
+
+.ltv-topbar-center {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+  pointer-events: none;
+}
+
+.ltv-topbar-title {
+  margin: 0;
+  font-size: clamp(0.9rem, 2vw, 1.05rem);
+  font-weight: 700;
+  color: var(--ltv-slate-800);
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+}
+
+.ltv-topbar-reloj {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--ltv-slate-400);
+  margin-top: 2px;
+  letter-spacing: 0.02em;
+}
+
+/* Botones icono topbar */
+.ltv-icon-btn {
+  display: inline-flex !important;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  width: 52px !important;
+  height: 52px !important;
+  min-width: 52px !important;
+  min-height: 52px !important;
+  padding: 6px !important;
+  border-radius: 12px !important;
+  border: 1.5px solid var(--ltv-slate-200) !important;
+  background: var(--ltv-slate-50) !important;
+  color: var(--ltv-slate-500) !important;
   cursor: pointer;
-  backdrop-filter: blur(8px);
-  transition: background 0.2s, border-color 0.2s;
+  transition: all 0.18s ease !important;
+  box-shadow: none !important;
 }
 
-.llamado-back-btn:hover {
-  background: rgba(255, 255, 255, 0.14);
-  border-color: rgba(255, 255, 255, 0.4);
+.ltv-icon-btn-label {
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  line-height: 1;
 }
 
-.llamado-main {
-  position: relative;
-  z-index: 1;
+.ltv-icon-btn:hover {
+  border-color: var(--ltv-slate-400) !important;
+  color: var(--ltv-slate-700) !important;
+  background: #fff !important;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08) !important;
+}
+
+.ltv-icon-btn--teal {
+  border-color: var(--ltv-teal) !important;
+  background: var(--ltv-teal-light) !important;
+  color: var(--ltv-teal-dark) !important;
+}
+
+.ltv-icon-btn--teal:hover {
+  background: var(--ltv-teal) !important;
+  color: #fff !important;
+  border-color: var(--ltv-teal-dark) !important;
+}
+
+.ltv-icon-btn.is-ready {
+  border-color: var(--ltv-teal) !important;
+  background: var(--ltv-teal) !important;
+  color: #fff !important;
+  pointer-events: none;
+}
+
+.ltv-icon-btn.is-ready .ltv-icon-btn-label::after {
+  content: ' ✓';
+}
+
+/* ── Cuerpo ───────────────────────────────────────────────────── */
+.ltv-body {
   flex: 1;
   display: flex;
-  align-items: stretch;
-  justify-content: center;
-  padding: 12px 20px 20px;
+  flex-direction: column;
+  padding: clamp(16px, 2.5vw, 28px);
   min-height: 0;
 }
 
-.llamado-main-tv {
-  align-items: stretch;
-}
-
-/* Grid TV adaptable */
-.llamado-tv-grid {
+/* ── Grid consultorios ────────────────────────────────────────── */
+.ltv-grid {
   display: grid;
-  gap: clamp(10px, 1.5vw, 20px);
+  gap: clamp(12px, 1.8vw, 20px);
   width: 100%;
-  height: 100%;
+  flex: 1;
   min-height: 0;
   grid-template-columns: repeat(var(--tv-cols, 2), 1fr);
   grid-template-rows: repeat(var(--tv-rows, 1), 1fr);
   align-content: stretch;
 }
 
-.llamado-tv-grid.hidden {
+.ltv-grid.hidden {
   display: none;
 }
 
-/* Tarjeta de consultorio */
-.llamado-consultorio-card {
+/* ── Tarjeta consultorio ──────────────────────────────────────── */
+.ltv-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border-radius: var(--ltv-radius);
+  border: 1px solid var(--ltv-slate-200);
+  box-shadow: var(--ltv-shadow);
+  overflow: hidden;
+  min-height: 0;
+  transition: box-shadow 0.3s, border-color 0.3s, transform 0.3s;
+}
+
+.ltv-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: var(--ltv-slate-200);
+  transition: background 0.3s;
+}
+
+.ltv-card--siguiente::before {
+  background: linear-gradient(90deg, var(--ltv-teal), #14b8a6);
+}
+
+.ltv-card--atencion::before {
+  background: linear-gradient(90deg, var(--ltv-amber), #f59e0b);
+}
+
+.ltv-card--llamando {
+  border-color: var(--ltv-teal);
+  box-shadow: 0 0 0 3px var(--ltv-teal-glow), var(--ltv-shadow-lg);
+  animation: ltvCardCall 1.4s ease-in-out 4;
+}
+
+.ltv-card--llamando::before {
+  background: linear-gradient(90deg, var(--ltv-teal), #2dd4bf);
+  height: 5px;
+}
+
+.ltv-card-head {
+  display: flex;
+  align-items: center;
+  gap: clamp(10px, 1.5vw, 16px);
+  padding: clamp(12px, 2vw, 20px) clamp(14px, 2vw, 22px) clamp(8px, 1.2vw, 12px);
+  border-bottom: 1px solid var(--ltv-slate-100);
+}
+
+.ltv-card-cons-badge {
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  text-align: center;
-  padding: clamp(12px, 2vw, 24px);
-  border-radius: clamp(12px, 1.5vw, 20px);
-  background: linear-gradient(160deg, rgba(255, 255, 255, 0.11) 0%, rgba(255, 255, 255, 0.04) 100%);
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.22);
-  min-height: 0;
-  overflow: hidden;
-  transition: border-color 0.3s, box-shadow 0.3s, transform 0.3s;
+  width: clamp(52px, 8vw, 72px);
+  height: clamp(52px, 8vw, 72px);
+  border-radius: 14px;
+  background: linear-gradient(145deg, var(--ltv-teal-light) 0%, #e0f2f1 100%);
+  border: 1.5px solid rgba(13, 148, 136, 0.2);
 }
 
-.llamado-consultorio-card.is-llamando {
-  border-color: rgba(45, 212, 191, 0.7);
-  box-shadow: 0 0 0 3px rgba(45, 212, 191, 0.25), 0 12px 40px rgba(0, 0, 0, 0.3);
-  animation: llamadoCardPulse 1.2s ease-in-out 3;
-}
-
-.llamado-consultorio-card-num-wrap {
-  margin-bottom: clamp(4px, 1vw, 10px);
-}
-
-.llamado-consultorio-card-label {
-  display: block;
-  font-size: clamp(0.65rem, 1.2vw, 0.85rem);
-  color: #94a3b8;
+.ltv-card-cons-label {
+  font-size: clamp(0.5rem, 0.9vw, 0.62rem);
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.14em;
-  font-weight: 500;
+  letter-spacing: 0.08em;
+  color: var(--ltv-teal-dark);
+  line-height: 1;
   margin-bottom: 2px;
 }
 
-.llamado-consultorio-card-num {
-  display: block;
-  font-size: clamp(2rem, 6vw, 4.5rem);
+.ltv-card-cons-num {
+  font-size: clamp(1.4rem, 3.5vw, 2.2rem);
   font-weight: 800;
   line-height: 1;
-  color: #fef08a;
-  text-shadow: 0 3px 16px rgba(250, 204, 21, 0.35);
+  color: var(--ltv-teal-dark);
+  letter-spacing: -0.03em;
 }
 
-.llamado-consultorio-card-doctor {
-  font-size: clamp(0.75rem, 1.4vw, 1rem);
-  color: #94a3b8;
-  font-weight: 500;
-  margin-bottom: clamp(8px, 1.5vw, 16px);
-  line-height: 1.3;
-  max-width: 100%;
+.ltv-card-doctor {
+  margin: 0;
+  font-size: clamp(0.78rem, 1.3vw, 0.92rem);
+  font-weight: 600;
+  color: var(--ltv-slate-500);
+  line-height: 1.35;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
-  padding: 0 4px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 
-.llamado-consultorio-card-paciente {
-  font-size: clamp(1.1rem, 3.5vw, 2.8rem);
-  font-weight: 700;
-  line-height: 1.15;
-  letter-spacing: -0.02em;
-  color: #f8fafc;
-  word-break: break-word;
-  max-width: 100%;
-  padding: 0 6px;
+.ltv-card-body {
   flex: 1;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-}
-
-.llamado-consultorio-card-paciente.is-vacio {
-  font-size: clamp(0.85rem, 1.8vw, 1.2rem);
-  font-weight: 500;
-  color: #64748b;
-  font-style: italic;
-}
-
-.llamado-consultorio-card-paciente.is-en-atencion {
-  font-size: clamp(0.85rem, 1.8vw, 1.15rem);
-  font-weight: 600;
-  color: #fcd34d;
-}
-
-/* Estado vacío (sin consultorios activos) */
-.llamado-tv-empty {
+  padding: clamp(10px, 2vw, 20px) clamp(14px, 2vw, 22px) clamp(16px, 2.5vw, 24px);
   text-align: center;
-  max-width: 520px;
-  align-self: center;
+  min-height: 0;
+}
+
+.ltv-card-paciente {
+  margin: 0;
+  font-size: clamp(1.15rem, 3.8vw, 2.6rem);
+  font-weight: 800;
+  line-height: 1.12;
+  letter-spacing: -0.025em;
+  color: var(--ltv-slate-900);
+  word-break: break-word;
+  max-width: 100%;
+}
+
+.ltv-card-estado {
+  margin: 0;
+  font-size: clamp(0.85rem, 1.6vw, 1.05rem);
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 999px;
+}
+
+.ltv-card-estado--espera {
+  color: var(--ltv-slate-400);
+  background: var(--ltv-slate-100);
+}
+
+.ltv-card-estado--atencion {
+  color: var(--ltv-amber);
+  background: var(--ltv-amber-light);
+}
+
+.ltv-card-estado-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.ltv-card-estado--espera .ltv-card-estado-dot {
+  background: var(--ltv-slate-300, #cbd5e1);
+}
+
+.ltv-card-estado--atencion .ltv-card-estado-dot {
+  background: var(--ltv-amber);
+  animation: ltvDotPulse 1.5s ease-in-out infinite;
+}
+
+.ltv-card-badge-llamando {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  background: var(--ltv-teal);
+  color: #fff;
+  animation: ltvBadgeBlink 1s ease-in-out infinite;
+  display: none;
+}
+
+.ltv-card--llamando .ltv-card-badge-llamando {
+  display: block;
+}
+
+/* ── Estado vacío ─────────────────────────────────────────────── */
+.ltv-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 40px 24px;
+  max-width: 440px;
   margin: auto;
 }
 
-.llamado-tv-empty.hidden {
+.ltv-empty.hidden {
   display: none;
 }
 
-.llamado-idle-icon {
-  width: 88px;
-  height: 88px;
-  margin: 0 auto 20px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.08);
-  display: flex;
+.ltv-empty-icon {
+  width: 100px;
+  height: 100px;
+  margin-bottom: 24px;
+  color: var(--ltv-teal);
+  opacity: 0.7;
+}
+
+.ltv-empty-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.ltv-empty h2 {
+  margin: 0 0 8px;
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--ltv-slate-800);
+}
+
+.ltv-empty p {
+  margin: 0 0 24px;
+  font-size: 0.95rem;
+  color: var(--ltv-slate-500);
+  line-height: 1.55;
+}
+
+.ltv-btn-primary {
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  animation: llamadoPulse 3s ease-in-out infinite;
-}
-
-.llamado-idle-icon svg {
-  width: 44px;
-  height: 44px;
-  color: #5eead4;
-}
-
-.llamado-tv-empty h2 {
-  margin: 0 0 10px;
-  font-size: clamp(1.4rem, 3vw, 2rem);
-  font-weight: 600;
-  letter-spacing: -0.02em;
-}
-
-.llamado-tv-empty p {
-  margin: 0;
-  color: #94a3b8;
-  font-size: 1.05rem;
-  line-height: 1.5;
-}
-
-/* Footer audio */
-.llamado-footer {
-  position: relative;
-  z-index: 2;
-  padding: 8px 24px 16px;
-  display: flex;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.llamado-audio-btn {
-  padding: 10px 20px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  background: rgba(15, 23, 42, 0.5);
-  color: #94a3b8;
-  font-size: 0.85rem;
+  gap: 8px;
+  padding: 12px 24px;
+  border-radius: var(--ltv-radius-sm);
+  border: none;
+  background: linear-gradient(180deg, var(--ltv-teal) 0%, var(--ltv-teal-dark) 100%);
+  color: #fff;
+  font-size: 0.9rem;
+  font-weight: 700;
   cursor: pointer;
-  transition: all 0.2s;
+  box-shadow: 0 4px 14px rgba(13, 148, 136, 0.35);
+  transition: transform 0.15s, box-shadow 0.15s;
 }
 
-.llamado-audio-btn.is-ready {
-  border-color: rgba(45, 212, 191, 0.5);
-  color: #5eead4;
-  background: rgba(45, 212, 191, 0.12);
+.ltv-btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(13, 148, 136, 0.4);
 }
 
-/* Panel de configuración */
-.llamado-config-panel {
+/* ── Drawer configuración ─────────────────────────────────────── */
+.ltv-drawer-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 10050;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
+  background: rgba(15, 23, 42, 0.4);
+  backdrop-filter: blur(4px);
+  z-index: 10040;
+  opacity: 1;
+  transition: opacity 0.25s;
 }
 
-.llamado-config-panel.hidden {
+.ltv-drawer-backdrop.hidden {
   display: none;
 }
 
-.llamado-config-backdrop {
-  position: absolute;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.55);
-}
-
-.llamado-config-sheet {
-  position: relative;
-  z-index: 1;
-  width: min(480px, 100%);
-  max-height: 80vh;
-  background: #1e293b;
-  border-radius: 20px 20px 0 0;
+.ltv-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(420px, 92vw);
+  background: #fff;
+  z-index: 10050;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 -8px 40px rgba(0, 0, 0, 0.4);
-  animation: llamadoSheetUp 0.3s ease-out;
+  box-shadow: -8px 0 40px rgba(15, 23, 42, 0.12);
+  transform: translateX(0);
+  transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.llamado-config-header {
+.ltv-drawer.hidden {
+  transform: translateX(100%);
+  pointer-events: none;
+  visibility: hidden;
+}
+
+.ltv-drawer-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  padding: 20px 24px 0;
+  gap: 16px;
+  padding: 24px 24px 0;
+  border-bottom: 1px solid var(--ltv-slate-100);
+  padding-bottom: 20px;
 }
 
-.llamado-config-header h3 {
+.ltv-drawer-header h2 {
   margin: 0;
   font-size: 1.15rem;
-  color: #f1f5f9;
+  font-weight: 700;
+  color: var(--ltv-slate-800);
 }
 
-.llamado-config-close {
+.ltv-drawer-subtitle {
+  margin: 4px 0 0;
+  font-size: 0.84rem;
+  color: var(--ltv-slate-500);
+}
+
+.ltv-drawer-close {
+  flex-shrink: 0;
   width: 36px;
   height: 36px;
   border: none;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.08);
-  color: #94a3b8;
-  font-size: 1.4rem;
-  line-height: 1;
+  border-radius: 10px;
+  background: var(--ltv-slate-100);
+  color: var(--ltv-slate-500);
   cursor: pointer;
-  transition: background 0.2s;
-}
-
-.llamado-config-close:hover {
-  background: rgba(255, 255, 255, 0.15);
-  color: #f1f5f9;
-}
-
-.llamado-config-desc {
-  margin: 12px 24px 0;
-  font-size: 0.875rem;
-  color: #94a3b8;
-  line-height: 1.5;
-}
-
-.llamado-config-lista {
-  flex: 1;
-  overflow-y: auto;
-  padding: 16px 24px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.llamado-config-item {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px 14px;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+
+.ltv-drawer-close:hover {
+  background: var(--ltv-slate-200);
+  color: var(--ltv-slate-800);
+}
+
+.ltv-drawer-actions {
+  display: flex;
+  gap: 8px;
+  padding: 16px 24px 0;
+}
+
+.ltv-drawer-action {
+  flex: 1;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--ltv-slate-200);
+  background: var(--ltv-slate-50);
+  color: var(--ltv-slate-600);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.ltv-drawer-action:hover {
+  border-color: var(--ltv-teal);
+  color: var(--ltv-teal-dark);
+  background: var(--ltv-teal-light);
+}
+
+.ltv-drawer-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 24px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ltv-toggle-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--ltv-slate-200);
+  background: #fff;
   cursor: pointer;
-  transition: background 0.2s, border-color 0.2s;
+  transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
+  user-select: none;
 }
 
-.llamado-config-item:hover {
-  background: rgba(255, 255, 255, 0.08);
+.ltv-toggle-item:hover {
+  border-color: var(--ltv-slate-300, #cbd5e1);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
 }
 
-.llamado-config-item.is-active {
-  border-color: rgba(45, 212, 191, 0.45);
-  background: rgba(45, 212, 191, 0.08);
+.ltv-toggle-item.is-on {
+  border-color: rgba(13, 148, 136, 0.35);
+  background: linear-gradient(135deg, #fff 0%, var(--ltv-teal-light) 120%);
 }
 
-.llamado-config-item input[type="checkbox"] {
-  width: 18px;
-  height: 18px;
-  accent-color: #2dd4bf;
-  flex-shrink: 0;
-  cursor: pointer;
-}
-
-.llamado-config-item-info {
+.ltv-toggle-item-info {
   flex: 1;
   min-width: 0;
 }
 
-.llamado-config-item-nombre {
-  font-size: 0.95rem;
-  font-weight: 600;
-  color: #f1f5f9;
+.ltv-toggle-item-nombre {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--ltv-slate-800);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.llamado-config-item-cons {
-  font-size: 0.8rem;
-  color: #64748b;
+.ltv-toggle-item-cons {
+  font-size: 0.78rem;
+  color: var(--ltv-slate-500);
   margin-top: 2px;
+  font-weight: 500;
 }
 
-.llamado-config-footer {
-  display: flex;
-  gap: 10px;
-  padding: 12px 24px 24px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+.ltv-toggle-item-cons-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: var(--ltv-teal-light);
+  color: var(--ltv-teal-dark);
+  font-weight: 800;
+  font-size: 0.75rem;
+  margin-right: 4px;
 }
 
-.llamado-config-btn {
-  flex: 1;
-  padding: 10px 16px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  background: rgba(255, 255, 255, 0.06);
-  color: #cbd5e1;
-  font-size: 0.875rem;
+/* Switch personalizado */
+.ltv-switch {
+  position: relative;
+  width: 44px;
+  height: 26px;
+  flex-shrink: 0;
+}
+
+.ltv-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+  position: absolute;
+}
+
+.ltv-switch-track {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: var(--ltv-slate-200);
+  transition: background 0.22s;
   cursor: pointer;
-  transition: background 0.2s;
 }
 
-.llamado-config-btn:hover {
-  background: rgba(255, 255, 255, 0.12);
+.ltv-switch-track::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.15);
+  transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-@keyframes llamadoPulse {
-  0%, 100% { transform: scale(1); opacity: 0.85; }
-  50% { transform: scale(1.04); opacity: 1; }
+.ltv-switch input:checked + .ltv-switch-track {
+  background: var(--ltv-teal);
 }
 
-@keyframes llamadoCardPulse {
+.ltv-switch input:checked + .ltv-switch-track::after {
+  transform: translateX(18px);
+}
+
+.ltv-switch input:focus-visible + .ltv-switch-track {
+  outline: 2px solid var(--ltv-teal);
+  outline-offset: 2px;
+}
+
+/* ── Animaciones ──────────────────────────────────────────────── */
+@keyframes ltvCardCall {
   0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.02); }
+  50% { transform: scale(1.015); }
 }
 
-@keyframes llamadoSheetUp {
-  from { transform: translateY(100%); }
-  to { transform: translateY(0); }
+@keyframes ltvDotPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.85); }
 }
 
-/* TV / pantallas grandes */
-@media (min-width: 1200px) {
-  .llamado-header {
-    padding: 20px 32px;
+@keyframes ltvBadgeBlink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.65; }
+}
+
+/* ── TV / pantallas grandes ───────────────────────────────────── */
+@media (min-width: 1400px) {
+  .ltv-topbar {
+    height: 68px;
   }
-  .llamado-logo {
-    height: 72px;
-  }
-  .llamado-main {
-    padding: 16px 28px 24px;
+  .ltv-topbar-logo {
+    height: 42px;
   }
 }
 
-@media (max-width: 640px) {
-  .llamado-header {
-    flex-direction: column-reverse;
-    align-items: stretch;
+@media (max-width: 768px) {
+  .ltv-topbar-center {
+    position: static;
+    transform: none;
+    flex: 1;
+    text-align: center;
+    order: -1;
+    width: 100%;
+    padding-bottom: 4px;
   }
-  .llamado-logo {
-    align-self: center;
-    height: 52px;
+
+  .ltv-topbar {
+    flex-wrap: wrap;
+    height: auto;
+    padding: 10px 14px;
+    gap: 6px;
   }
-  .llamado-header-actions {
-    justify-content: space-between;
+
+  .ltv-topbar-left {
+    flex: 0 0 auto;
+  }
+
+  .ltv-topbar-right {
+    flex: 0 0 auto;
+  }
+
+  .ltv-icon-btn-label {
+    display: none;
+  }
+
+  .ltv-icon-btn {
+    width: 44px !important;
+    height: 44px !important;
+    min-width: 44px !important;
+    min-height: 44px !important;
+  }
+
+  .ltv-topbar-divider {
+    display: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .ltv-card-head {
+    flex-direction: column;
+    text-align: center;
   }
 }
