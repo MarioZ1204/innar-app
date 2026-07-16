@@ -39,6 +39,9 @@ async function findExpedientesMismoCodigo(diaId, codigo) {
 }
 
 function renameDirectoryIfExists(oldAbs, newAbs) {
+  if (path.resolve(oldAbs) === path.resolve(newAbs)) {
+    return { ok: true };
+  }
   if (!fs.existsSync(oldAbs)) {
     const parent = path.dirname(newAbs);
     if (!fs.existsSync(parent)) fs.mkdirSync(parent, { recursive: true });
@@ -265,10 +268,7 @@ async function aplicarRenombradoPorFev(expedienteId, numeroFactura) {
 
   const oldCodigo = exp.codigo;
   const newCodigo = `FE${num}`;
-
-  if (oldCodigo === newCodigo && (parseInt(exp.numero_factura, 10) || 0) === num) {
-    return { ok: true, ya_renombrado: true, codigo: newCodigo, numero_factura: num };
-  }
+  const carpetaYaFacturada = oldCodigo === newCodigo && (parseInt(exp.numero_factura, 10) || 0) === num;
 
   const hermanos = await findExpedientesMismoCodigo(exp.dia_id, oldCodigo);
   const ids = hermanos.map((h) => h.id);
@@ -324,7 +324,8 @@ async function aplicarRenombradoPorFev(expedienteId, numeroFactura) {
     codigo: newCodigo,
     numero_factura: num,
     paciente_nombre: exp.paciente_nombre,
-    ...resumen
+    ...resumen,
+    ya_renombrado: carpetaYaFacturada
   };
 }
 

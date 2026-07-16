@@ -1,9 +1,7 @@
 /**
-
  * Guardado de archivos en carpeta FE (SOPORTES o RIPS).
-
- * OPF/CRC/PDX/HEV conservan el nombre original; FEV_{NIT}_{num} dispara renombrado de carpeta y archivos.
-
+ * OPF/CRC/PDX/HEV: etiqueta FE si hay factura vinculada; si no, código del paciente.
+ * FEV dispara renombrado/sincronización de carpeta y archivos con el número de factura.
  */
 
 const path = require('path');
@@ -31,8 +29,6 @@ const {
 } = require('./soportes-archivo-detect');
 
 const { aplicarRenombradoPorFev } = require('./soportes-fe-rename');
-
-const { esExpedientePendienteFactura } = require('./soportes-pacientes-parse');
 
 const { moveFileSafe: moveFileToDest } = require('./fs-move-safe');
 
@@ -182,8 +178,7 @@ async function saveSoportesArchivo(exp, ctx, slotKey, tempPath, originalName, us
 
   let renombrado = null;
 
-  if (slotKey === 'FEV' && fevParsed?.ok && esExpedientePendienteFactura(exp)) {
-
+  if (slotKey === 'FEV' && fevParsed?.ok) {
     renombrado = await aplicarRenombradoPorFev(exp.id, fevParsed.numero);
 
     if (!renombrado.ok) {
@@ -359,10 +354,10 @@ async function ingestFeArchivo(exp, ctx, tempPath, originalName, usuarioId, tipo
     const saved = await saveSoportesArchivo(exp, ctx, det.tipo, tempPath, originalName, usuarioId);
 
     const msg = saved.renombrado?.ok
-
-      ? `Factura vinculada: carpeta ${saved.renombrado.codigo} y archivos renombrados con FE ${saved.renombrado.numero_factura}`
-
-      : `Guardado como ${det.tipo} (nombre original conservado)`;
+      ? (saved.renombrado.ya_renombrado
+        ? `Factura vinculada: archivos sincronizados con FE ${saved.renombrado.numero_factura}`
+        : `Factura vinculada: carpeta ${saved.renombrado.codigo} y archivos renombrados con FE ${saved.renombrado.numero_factura}`)
+      : `Guardado como ${det.tipo}`;
 
     return {
 

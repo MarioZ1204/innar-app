@@ -4426,6 +4426,8 @@
   function htmlFeSlotCard(key, slot, opts = {}) {
     const ok = slot.completo;
     const dis = slot.habilitado === false;
+    const conFactura = !!opts.conFactura;
+    const numFe = opts.numeroFactura > 0 ? Number(opts.numeroFactura) : 0;
     const icons = {
       OPF: 'file-text', CRC: 'clipboard-list', FEV: 'receipt', PDX: 'file-output', HEV: 'stethoscope',
       RIPS_JSON_1: 'file-json', RIPS_JSON_2: 'file-json', RIPS_XML: 'file-code'
@@ -4437,11 +4439,17 @@
     const sub = slot.nombre_original
       ? `<div class="sop-slot-file" title="${escapeHtml(slot.nombre_original)}">${escapeHtml(slot.nombre_archivo || slot.nombre_original)}</div>`
       : `<div class="sop-slot-file">${ok ? escapeHtml(slot.nombre_archivo || 'Cargado') : 'Pendiente'}</div>`;
+    const feHint = conFactura && numFe && ['OPF', 'CRC', 'PDX', 'HEV'].includes(key)
+      ? `<p class="sop-pdx-format-nota" style="margin:8px 0 0;font-size:.78rem">Vinculado a <strong>FE${numFe}</strong>: el archivo se guardará con esa etiqueta.</p>`
+      : '';
     const opfHint = key === 'OPF' && !ok && !dis
-      ? '<p class="sop-pdx-format-nota" style="margin:8px 0 0;font-size:.78rem">Use <strong>Armar OPF</strong> para elegir <strong>2 o más PDF</strong> y definir el orden de unión. También puede subir el OPF ya listo en un solo archivo. Sin factura: se renombra al subir FEV.</p>'
+      ? `<p class="sop-pdx-format-nota" style="margin:8px 0 0;font-size:.78rem">Use <strong>Armar OPF</strong> para elegir <strong>2 o más PDF</strong> y definir el orden de unión. También puede subir el OPF ya listo en un solo archivo.${conFactura ? '' : ' Sin factura: se renombra al subir FEV o al indicar el número FE en <strong>Renombrar carpeta</strong>.'}</p>`
       : '';
     const crcHint = key === 'CRC' && !ok && !dis
-      ? '<p class="sop-pdx-format-nota" style="margin:8px 0 0;font-size:.78rem">En <strong>Unir PDFs</strong> seleccione <strong>2 a 4</strong> archivos y ordénelos antes de guardar el CRC.</p>'
+      ? `<p class="sop-pdx-format-nota" style="margin:8px 0 0;font-size:.78rem">En <strong>Unir PDFs</strong> seleccione <strong>2 a 4</strong> archivos y ordénelos antes de guardar el CRC.${conFactura ? '' : ' Sin factura vinculada, el nombre llevará el paciente hasta subir FEV.'}</p>`
+      : '';
+    const pdxHevHint = (key === 'PDX' || key === 'HEV') && !ok && !dis && !conFactura
+      ? '<p class="sop-pdx-format-nota" style="margin:8px 0 0;font-size:.78rem">Sin factura: el archivo se guarda con el nombre del paciente; pasa a FE al subir FEV.</p>'
       : '';
     const allowUpload = opts.upload && !dis && !(ok && slot.archivo_id) && key !== 'OPF';
     return `<div class="sop-slot-card ${ok ? 'ok' : ''} ${dis ? 'disabled' : ''}" data-slot="${key}">
@@ -4453,6 +4461,8 @@
       ${htmlSlotArchivoActions(opts.expId, key, slot, opts)}
       ${opfHint}
       ${crcHint}
+      ${pdxHevHint}
+      ${feHint}
       ${allowUpload ? `<label class="sop-btn sop-btn-ghost sop-btn-sm" style="margin-top:8px;cursor:pointer">
         <i data-lucide="upload"></i> Subir<input type="file" data-upload-slot="${key}" class="sop-file-input-hidden" accept="${opts.accept || ''}"></label>` : ''}
       ${key === 'OPF' && !dis && !ok && sopPerm('soportes.armado.subir') ? '<button type="button" class="sop-btn sop-btn-primary sop-btn-sm" id="btnSopGenerarOpf" style="margin-top:8px"><i data-lucide="layers"></i> Armar OPF</button>' : ''}
@@ -4924,18 +4934,20 @@
     let slotsHtml = '';
     const acceptRips = '.json,.xml,application/json,text/xml,application/xml';
     const acceptPdf = '.pdf,application/pdf';
+    const slotOpts = { upload: true, accept: acceptRips, expId: id, conFactura: Number(e.numero_factura) > 0, numeroFactura: e.numero_factura };
     if (esRips) {
-      slotsHtml = htmlFeSlotCard('RIPS_JSON_1', slots.RIPS_JSON_1 || {}, { upload: true, accept: acceptRips, expId: id })
-        + htmlFeSlotCard('RIPS_JSON_2', slots.RIPS_JSON_2 || {}, { upload: true, accept: acceptRips, expId: id })
-        + htmlFeSlotCard('RIPS_XML', slots.RIPS_XML || {}, { upload: true, accept: acceptRips, expId: id });
+      slotsHtml = htmlFeSlotCard('RIPS_JSON_1', slots.RIPS_JSON_1 || {}, slotOpts)
+        + htmlFeSlotCard('RIPS_JSON_2', slots.RIPS_JSON_2 || {}, slotOpts)
+        + htmlFeSlotCard('RIPS_XML', slots.RIPS_XML || {}, slotOpts);
     } else {
       const showPdx = slots.PDX?.habilitado !== false;
       const showHev = slots.HEV?.habilitado !== false;
-      slotsHtml = htmlFeSlotCard('OPF', slots.OPF || {}, { upload: false, accept: acceptPdf, expId: id })
-        + htmlFeSlotCard('CRC', slots.CRC || {}, { upload: true, accept: acceptPdf, expId: id })
-        + htmlFeSlotCard('FEV', slots.FEV || {}, { upload: true, accept: acceptPdf, expId: id })
-        + (showPdx ? htmlFeSlotCard('PDX', slots.PDX || {}, { upload: true, accept: acceptPdf, expId: id }) : '')
-        + (showHev ? htmlFeSlotCard('HEV', slots.HEV || {}, { upload: true, accept: acceptPdf, expId: id }) : '');
+      const pdfOpts = { upload: true, accept: acceptPdf, expId: id, conFactura: Number(e.numero_factura) > 0, numeroFactura: e.numero_factura };
+      slotsHtml = htmlFeSlotCard('OPF', slots.OPF || {}, { ...pdfOpts, upload: false })
+        + htmlFeSlotCard('CRC', slots.CRC || {}, pdfOpts)
+        + htmlFeSlotCard('FEV', slots.FEV || {}, pdfOpts)
+        + (showPdx ? htmlFeSlotCard('PDX', slots.PDX || {}, pdfOpts) : '')
+        + (showHev ? htmlFeSlotCard('HEV', slots.HEV || {}, pdfOpts) : '');
     }
     const vinculos = e.vinculos || [];
     const vinculosHtml = vinculos.length ? `<div class="sop-vinculos-block" style="margin-top:18px">
@@ -4969,6 +4981,10 @@
         </div>
       </div>
       <div class="sop-panel-body">
+        ${!esRips && !(e.numero_factura != null && Number(e.numero_factura) > 0) ? `<div class="sop-pdx-format-help" style="margin-bottom:14px;border-color:#93c5fd;background:#eff6ff">
+          <div class="sop-pdx-format-title"><i data-lucide="receipt"></i> Sin factura vinculada</div>
+          <p class="sop-pdx-format-nota" style="margin:0">Los soportes se guardan con el nombre del paciente. Use <strong>Renombrar</strong> e indique el número FE <em>antes</em> de subirlos si ya lo conoce, o vincúlelo al subir la FEV.</p>
+        </div>` : ''}
         ${!esRips ? htmlExpedienteProgress(e, slots) : ''}
         <div class="sop-pdx-format-help" style="margin-bottom:14px">
           <div class="sop-pdx-format-title"><i data-lucide="sparkles"></i> Subida inteligente</div>
@@ -5417,11 +5433,12 @@
         <p class="sop-dialog-lead">Carpeta actual: <strong>${escapeHtml(ex.codigo)}</strong>${ex.paciente_nombre ? ` · ${escapeHtml(ex.paciente_nombre)}` : ''}</p>
         <div class="sop-field"><label>Paciente (nombre y apellido)</label>
           <input type="text" id="sopExpEditPaciente" value="${escapeHtml(ex.paciente_nombre || ex.codigo || '')}" placeholder="Nombre Apellido" autocomplete="off"></div>
-        ${pendiente
-          ? '<p class="sop-pdx-format-nota">Sin factura aún: al guardar se renombra la carpeta en disco con el nombre del paciente.</p>'
-          : `<div class="sop-field"><label>Número de factura (FE)</label>
+        <div class="sop-field"><label>Número de factura (FE)${pendiente ? ' <span class="sop-label-opt">(opcional)</span>' : ''}</label>
           <input type="number" id="sopExpEditFe" min="1" step="1" value="${numFe}" placeholder="Ej. 14726"></div>
-          <p class="sop-pdx-format-nota">Si la FEV se subió con el número equivocado, corríjalo aquí. La carpeta y los archivos pasarán a <strong>FE{nuevo}</strong>.</p>
+        ${pendiente
+          ? `<p class="sop-pdx-format-nota">Si ya conoce el número de factura, indíquelo aquí <strong>antes de subir soportes</strong>: la carpeta y los archivos existentes pasarán a <strong>FE{número}</strong> y los nuevos se guardarán con esa etiqueta. También puede vincularla al subir la FEV.</p>
+          <p class="sop-pdx-format-nota">Si deja FE vacío, al guardar solo se actualiza el nombre del paciente en la carpeta.</p>`
+          : `<p class="sop-pdx-format-nota">Si la FEV se subió con el número equivocado, corríjalo aquí. La carpeta y los archivos pasarán a <strong>FE{nuevo}</strong>.</p>
           <label class="sop-toggle" style="display:flex;align-items:flex-start;gap:8px;margin:10px 0 4px">
             <input type="checkbox" id="sopExpEditRevert" style="margin-top:3px">
             <span><strong>Quitar factura y volver al nombre del paciente</strong><br>
@@ -5454,13 +5471,11 @@
           paciente_documento: modal.querySelector('#sopExpEditDoc')?.value?.trim() || null,
           notas: modal.querySelector('#sopExpEditNotas')?.value?.trim() || null
         };
-        if (!pendiente) {
-          if (revertChk?.checked) {
-            body.revertir_factura = true;
-          } else {
-            const feVal = modal.querySelector('#sopExpEditFe')?.value?.trim();
-            if (feVal) body.numero_factura = parseInt(feVal, 10);
-          }
+        if (revertChk?.checked) {
+          body.revertir_factura = true;
+        } else {
+          const feVal = modal.querySelector('#sopExpEditFe')?.value?.trim();
+          if (feVal) body.numero_factura = parseInt(feVal, 10);
         }
         const res = await apiFetch(`/api/soportes/armado/expedientes/${id}`, {
           method: 'PATCH',

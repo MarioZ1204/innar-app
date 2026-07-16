@@ -265,4 +265,36 @@ describe('aplicarRenombradoPorFev', () => {
     expect(fs.existsSync(path.join(isolatedRoot, 'FE14726', 'OPF_901164565_FE14726.pdf'))).toBe(true);
     fs.rmSync(isolatedRoot, { recursive: true, force: true });
   });
+
+  test('sincroniza archivos aunque la carpeta ya sea FE y tenga numero_factura', async () => {
+    const isolatedRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'soportes-fe-rename-ya-fe-'));
+    getArmadoFeDirFromContext.mockImplementation((ctx, codigo) => {
+      const abs = path.join(isolatedRoot, codigo);
+      return { abs, rel: `soportes/armado/${codigo}` };
+    });
+
+    const feDir = path.join(isolatedRoot, 'FE14726');
+    fs.mkdirSync(feDir, { recursive: true });
+    fs.writeFileSync(path.join(feDir, 'OPF_901164565_PEREZ_JUAN.pdf'), 'opf');
+    fs.writeFileSync(path.join(feDir, 'FEV_901164565_FE14726.pdf'), 'fev');
+
+    db.query.mockReset();
+    db.execute.mockReset();
+    db.query
+      .mockResolvedValueOnce([{ id: 1, codigo: 'FE14726', numero_factura: 14726, dia_id: 10, contenedor_tipo: 'soportes', paciente_nombre: 'Juan Pérez' }])
+      .mockResolvedValueOnce([{ id: 1, codigo: 'FE14726', numero_factura: 14726, dia_id: 10, contenedor_tipo: 'soportes', paciente_nombre: 'Juan Pérez' }])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        { id: 11, tipo: 'OPF', nombre_archivo: 'OPF_901164565_PEREZ_JUAN.pdf' },
+        { id: 12, tipo: 'FEV', nombre_archivo: 'FEV_901164565_FE14726.pdf' }
+      ]);
+    db.execute.mockResolvedValue({});
+
+    const result = await aplicarRenombradoPorFev(1, 14726);
+
+    expect(result.ok).toBe(true);
+    expect(result.ya_renombrado).toBe(true);
+    expect(fs.existsSync(path.join(feDir, 'OPF_901164565_FE14726.pdf'))).toBe(true);
+    fs.rmSync(isolatedRoot, { recursive: true, force: true });
+  });
 });

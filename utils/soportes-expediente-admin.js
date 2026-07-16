@@ -74,7 +74,6 @@ async function actualizarExpediente(expedienteId, body) {
   let exp = await loadExpedienteContext(expedienteId);
   if (!exp) return { error: 'Expediente no encontrado', status: 404 };
 
-  const pendiente = esExpedientePendienteFactura(exp);
   const lineaPaciente = body.paciente_linea || body.paciente_nombre;
   let renombrado = null;
 
@@ -97,7 +96,7 @@ async function actualizarExpediente(expedienteId, body) {
     return { ok: true, renombrado };
   }
 
-  if (!pendiente && body.numero_factura != null && body.numero_factura !== '') {
+  if (body.numero_factura != null && body.numero_factura !== '') {
     const numNuevo = parseInt(body.numero_factura, 10);
     const numActual = parseInt(exp.numero_factura, 10) || 0;
     if (numNuevo > 0 && numNuevo !== numActual) {
@@ -107,7 +106,7 @@ async function actualizarExpediente(expedienteId, body) {
     }
   }
 
-  if (lineaPaciente && pendiente) {
+  if (lineaPaciente && esExpedientePendienteFactura(exp)) {
     const parsed = parseLineaPaciente(lineaPaciente);
     if (!parsed) {
       return { error: 'Indique nombre y apellido válidos', status: 400 };
@@ -127,7 +126,7 @@ async function actualizarExpediente(expedienteId, body) {
       'UPDATE sop_expedientes SET paciente_nombre = ? WHERE dia_id = ? AND codigo = ?',
       [parsed.paciente_nombre, exp.dia_id, nuevoCodigo]
     );
-  } else if (lineaPaciente && !pendiente) {
+  } else if (lineaPaciente && !esExpedientePendienteFactura(exp)) {
     const parsed = parseLineaPaciente(lineaPaciente);
     if (!parsed) {
       return { error: 'Indique nombre y apellido válidos', status: 400 };
