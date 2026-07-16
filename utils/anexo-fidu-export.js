@@ -22,7 +22,7 @@ async function buildAnexoFiduExcelBuffer(rows, { nombreArchivo = 'anexo' } = {})
   headerRow.fill = {
     type: 'pattern',
     pattern: 'solid',
-    fgColor: { argb: 'FF627371' }
+    fgColor: { argb: 'FF627372' }
   };
   headerRow.eachCell((cell) => {
     cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
