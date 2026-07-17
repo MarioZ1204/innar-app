@@ -410,15 +410,15 @@
 
   /* ── Eventos tiempo real ── */
 
-  function onLlamadoEvent(data) {
+  async function onLlamadoEvent(data) {
     if (window.currentModule !== 'llamado-pacientes') return;
     unlockAudio();
-    const encolar = () => encolarLlamado(data || {});
-    if (!medicos.length) {
-      cargarMedicos().then(encolar);
-      return;
+    if (!medicos.length) await cargarMedicos();
+    if (!consultoriosActivos.size && medicos.length) {
+      medicos.forEach((m) => consultoriosActivos.add(m.id));
+      guardarConsultoriosActivos();
     }
-    encolar();
+    encolarLlamado(data || {});
   }
 
   function bindRealtime() {

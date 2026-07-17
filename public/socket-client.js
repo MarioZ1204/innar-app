@@ -143,7 +143,22 @@ function unsubscribe(event, cb) {
   else listeners.delete(event);
 }
 
+/** Evita procesar el mismo evento dos veces (poll + BroadcastChannel en la misma sesión). */
+const recentDispatched = new Map();
+const DISPATCH_DEDUPE_MS = 4000;
+
 function dispatchRealtime(event, payload) {
+  const dedupeKey = `${event}|${JSON.stringify(payload ?? null)}`;
+  const now = Date.now();
+  const last = recentDispatched.get(dedupeKey);
+  if (last != null && now - last < DISPATCH_DEDUPE_MS) return;
+  recentDispatched.set(dedupeKey, now);
+  if (recentDispatched.size > 200) {
+    for (const [k, t] of recentDispatched) {
+      if (now - t > DISPATCH_DEDUPE_MS) recentDispatched.delete(k);
+    }
+  }
+
   const cbs = listeners.get(event);
   if (!cbs) return;
   for (let i = 0; i < cbs.length; i++) {
@@ -153,6 +168,26 @@ function dispatchRealtime(event, payload) {
       console.error('[Realtime]', event, e);
     }
   }
+}
+
+const REALTIME_TAB_CHANNEL = 'innar-realtime-tab';
+/** @type {BroadcastChannel|null} */
+let realtimeTabChannel = null;
+
+function initRealtimeTabChannel() {
+  if (realtimeTabChannel || typeof BroadcastChannel === 'undefined') return;
+  realtimeTabChannel = new BroadcastChannel(REALTIME_TAB_CHANNEL);
+  realtimeTabChannel.onmessage = (ev) => {
+    const msg = ev.data;
+    if (msg && typeof msg.event === 'string') dispatchRealtime(msg.event, msg.data);
+  };
+}
+
+function fanOutRealtimeToTabs(event, data) {
+  initRealtimeTabChannel();
+  try {
+    realtimeTabChannel?.postMessage({ event, data, ts: Date.now() });
+  } catch (_) { /* noop */ }
 }
 
 function readCsrfToken() {
@@ -192,13 +227,14 @@ async function pushToServer(event, data) {
   const headers = { 'Content-Type': 'application/json' };
   if (csrf) headers['x-csrf-token'] = csrf;
   try {
-    await fetch('/api/eventos/push', {
+    const r = await fetch('/api/eventos/push', {
       method: 'POST',
       credentials: 'include',
       cache: 'no-store',
       headers,
       body: JSON.stringify({ event, data })
     });
+    if (r.ok) fanOutRealtimeToTabs(event, data);
   } catch (e) { /* noop */ }
 }
 
@@ -452,6 +488,7 @@ function initSocket() {
 
   window.socket = socket;
   registerDefaultRealtimeHandlers();
+  initRealtimeTabChannel();
 
   socket.connected = true;
   console.info('Tiempo real: HTTP polling', { intervalMs: POLL_MS });

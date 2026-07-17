@@ -20,7 +20,8 @@ function isAllowed(event) {
 function relay(usuarioId, event, data) {
   switch (event) {
     case 'agenda:anunciar-paciente':
-      q.broadcastExcept(usuarioId, 'agenda:anunciar-paciente', data);
+      // broadcast (no broadcastExcept): la pantalla TV suele usar la misma sesión que recepción.
+      q.broadcast('agenda:anunciar-paciente', data);
       break;
     case 'electro:cambios-guardados':
     case 'electro:estudio-finalizado':
