@@ -473,6 +473,11 @@
     overflow: visible !important;
   }
 
+  #view-agenda-medica .ccal-card-top-split .ccal-split-panel {
+    display: flex !important;
+    min-width: 0 !important;
+  }
+
   #view-agenda-medica .ccal-split-entidad {
     display: flex !important;
     flex-direction: column !important;

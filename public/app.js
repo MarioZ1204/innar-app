@@ -5064,7 +5064,11 @@ async function persistirCalDia(payload) {
   renderCalendar();
   renderCalResumen();
   void loadCalendarData();
-  if (typeof cargarCitasCalendario === 'function') void cargarCitasCalendario();
+  if (typeof actualizarCuposCitasCalPersistente === 'function') {
+    actualizarCuposCitasCalPersistente(savedDate, calCuposEntidad[savedDate] || []);
+  } else if (typeof cargarCitasCalendario === 'function') {
+    void cargarCitasCalendario();
+  }
 }
 
 async function confirmarCalDiaNoAsiste() {
@@ -5158,8 +5162,21 @@ async function loadCalendarData() {
     });
     const dataDisp = await resDisp.json();
     if (reqId !== calLoadReqId) return; // respuesta vieja
-    calDisponibilidad = {};
-    calCuposEntidad = {};
+    const mesPref = `${mes}-`;
+    const cuposPrevMes = {};
+    const dispPrevMes = {};
+    Object.entries(calCuposEntidad).forEach(([f, v]) => {
+      if (f.startsWith(mesPref)) cuposPrevMes[f] = v;
+    });
+    Object.entries(calDisponibilidad).forEach(([f, v]) => {
+      if (f.startsWith(mesPref)) dispPrevMes[f] = v;
+    });
+    Object.keys(calDisponibilidad).forEach((f) => {
+      if (f.startsWith(mesPref)) delete calDisponibilidad[f];
+    });
+    Object.keys(calCuposEntidad).forEach((f) => {
+      if (f.startsWith(mesPref)) delete calCuposEntidad[f];
+    });
     if (dataDisp.ok && Array.isArray(dataDisp.disponibilidad)) {
       dataDisp.disponibilidad.forEach((d) => {
         const row = normalizarFilaDisponibilidadCal(d);
@@ -5194,6 +5211,15 @@ async function loadCalendarData() {
       : [];
 
     aplicarCalSavedSnapshotEnCache();
+    Object.entries(cuposPrevMes).forEach(([f, items]) => {
+      if (!calCuposEntidad[f]?.length && items?.length) calCuposEntidad[f] = items;
+    });
+    Object.entries(dispPrevMes).forEach(([f, row]) => {
+      if (!calDisponibilidad[f]) calDisponibilidad[f] = row;
+    });
+    if (typeof sincronizarCuposCitasCalDesdeProgramar === 'function') {
+      sincronizarCuposCitasCalDesdeProgramar(true);
+    }
   } catch (e) {
     console.error('Error cargando datos del calendario:', e);
   }

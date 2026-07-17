@@ -9,6 +9,9 @@ let _citasCalDispCache = {};
 let _citasCalSlotsCache = {};
 /** @type {Record<string, { capacidad: number, ocupados: number, libres: number, resumen: object[] }>} */
 let _citasCalCuposCache = {};
+/** Cupos que no se borran al recargar API (evita parpadeo al diseño antiguo). */
+let _citasCalCuposPersistente = {};
+let _citasCalLoadReqId = 0;
 let _citasCalIniciado = false;
 
 const _MESES_ES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
@@ -83,6 +86,69 @@ function _parseResumenCupos(raw) {
   return [];
 }
 
+function _escribirCuposCache(fecha, data) {
+  if (!fecha || !data || !Array.isArray(data.resumen) || !data.resumen.length) return;
+  _citasCalCuposCache[fecha] = data;
+  _citasCalCuposPersistente[fecha] = data;
+}
+
+function _resumenDesdeCuposPlanos(items) {
+  if (!Array.isArray(items) || !items.length) return null;
+  const resumen = items
+    .filter((c) => c.entidad && (parseInt(c.cupo_max, 10) || 0) > 0)
+    .map((c) => {
+      const cupoMax = parseInt(c.cupo_max, 10) || 0;
+      const ocupados = parseInt(c.ocupados, 10) || 0;
+      return {
+        entidad: String(c.entidad || '').trim(),
+        cupo_max: cupoMax,
+        ocupados,
+        libres: Math.max(0, cupoMax - ocupados)
+      };
+    });
+  if (!resumen.length) return null;
+  const capacidad = resumen.reduce((s, r) => s + r.cupo_max, 0);
+  const ocupados = resumen.reduce((s, r) => s + r.ocupados, 0);
+  return { capacidad, ocupados, libres: Math.max(0, capacidad - ocupados), resumen };
+}
+
+function _rellenarCuposCacheFaltantes() {
+  _mergeCuposDesdeCalProgramar();
+  Object.entries(_citasCalCuposPersistente).forEach(([f, data]) => {
+    if (!_citasCalCuposCache[f]?.resumen?.length && data?.resumen?.length) {
+      _citasCalCuposCache[f] = data;
+    }
+  });
+}
+
+function _mergeCuposDesdeCalProgramar() {
+  if (typeof calCuposEntidad === 'undefined' || !calCuposEntidad) return;
+  Object.entries(calCuposEntidad).forEach(([fecha, items]) => {
+    const f = _fmtFechaCal(fecha);
+    if (!f || _citasCalCuposCache[f]?.resumen?.length) return;
+    const data = _resumenDesdeCuposPlanos(items);
+    if (data) _escribirCuposCache(f, data);
+  });
+}
+
+/** Actualiza cupos de un día sin recargar toda la API (Programar Agenda → Ver Citas). */
+function actualizarCuposCitasCalPersistente(fecha, cuposPlanos, silent) {
+  const f = _fmtFechaCal(fecha);
+  const data = _resumenDesdeCuposPlanos(cuposPlanos);
+  if (f && data) _escribirCuposCache(f, data);
+  else if (f) {
+    delete _citasCalCuposCache[f];
+    delete _citasCalCuposPersistente[f];
+  }
+  if (!silent) renderCitasCalGrid();
+}
+
+function sincronizarCuposCitasCalDesdeProgramar(silent) {
+  _mergeCuposDesdeCalProgramar();
+  _rellenarCuposCacheFaltantes();
+  if (!silent) renderCitasCalGrid();
+}
+
 function _mergeCuposEntidadFallback(cuposEntidad) {
   if (!Array.isArray(cuposEntidad) || !cuposEntidad.length) return;
   /** @type {Record<string, object[]>} */
@@ -107,12 +173,12 @@ function _mergeCuposEntidadFallback(cuposEntidad) {
     if (prev && Array.isArray(prev.resumen) && prev.resumen.length) return;
     const capacidad = items.reduce((s, r) => s + (r.cupo_max || 0), 0);
     const ocupados = items.reduce((s, r) => s + (r.ocupados || 0), 0);
-    _citasCalCuposCache[f] = {
+    _escribirCuposCache(f, {
       capacidad,
       ocupados,
       libres: Math.max(0, capacidad - ocupados),
       resumen: items
-    };
+    });
   });
 }
 
@@ -136,38 +202,23 @@ function _aplicarCuposResumenDia(cuposResumenDia, cuposEntidad) {
         .filter((c) => c.entidad && c.cupo_max > 0);
     }
     if (!resumen.length) return;
-    _citasCalCuposCache[f] = {
+    _escribirCuposCache(f, {
       capacidad: parseInt(row.capacidad, 10) || resumen.reduce((s, r) => s + (r.cupo_max || 0), 0),
       ocupados: parseInt(row.ocupados, 10) || resumen.reduce((s, r) => s + (r.ocupados || 0), 0),
       libres: parseInt(row.libres, 10) ?? Math.max(0, resumen.reduce((s, r) => s + (r.libres || 0), 0)),
       resumen
-    };
+    });
   });
 }
 
 function _cuposDiaDesdeCache(fecha) {
-  let cuposDia = _citasCalCuposCache[fecha] || null;
+  let cuposDia = _citasCalCuposCache[fecha] || _citasCalCuposPersistente[fecha] || null;
   if (cuposDia && Array.isArray(cuposDia.resumen) && cuposDia.resumen.length) return cuposDia;
 
-  if (typeof calCuposEntidad !== 'undefined' && calCuposEntidad && Array.isArray(calCuposEntidad[fecha]) && calCuposEntidad[fecha].length) {
-    const resumen = calCuposEntidad[fecha]
-      .filter((c) => c.entidad && (parseInt(c.cupo_max, 10) || 0) > 0)
-      .map((c) => {
-        const cupoMax = parseInt(c.cupo_max, 10) || 0;
-        const ocupados = parseInt(c.ocupados, 10) || 0;
-        return {
-          entidad: String(c.entidad || '').trim(),
-          cupo_max: cupoMax,
-          ocupados,
-          libres: Math.max(0, cupoMax - ocupados)
-        };
-      });
-    if (resumen.length) {
-      const capacidad = resumen.reduce((s, r) => s + r.cupo_max, 0);
-      const ocupados = resumen.reduce((s, r) => s + r.ocupados, 0);
-      return { capacidad, ocupados, libres: Math.max(0, capacidad - ocupados), resumen };
-    }
-  }
+  const dataProg = typeof calCuposEntidad !== 'undefined' && calCuposEntidad
+    ? _resumenDesdeCuposPlanos(calCuposEntidad[fecha])
+    : null;
+  if (dataProg) return dataProg;
   return cuposDia;
 }
 
@@ -227,6 +278,7 @@ function _htmlMetricasTop(citasGeneral, capHoraria, cuposDia) {
 }
 
 async function cargarCitasCalendario() {
+  const reqId = ++_citasCalLoadReqId;
   const doctorId = _getCitasCalDoctorId();
   const mes = `${_citasCalAno}-${String(_citasCalMes + 1).padStart(2, '0')}`;
   const titleEl = document.getElementById('citasCalMonthTitle');
@@ -236,6 +288,7 @@ async function cargarCitasCalendario() {
     const url = `/api/turnos/calendario?mes=${mes}${doctorId ? `&doctor_id=${encodeURIComponent(doctorId)}` : ''}`;
     const res = await apiFetch(url);
     const body = await res.json();
+    if (reqId !== _citasCalLoadReqId) return;
 
     _citasCalDatosCache = {};
     _citasCalDispCache = {};
@@ -272,15 +325,18 @@ async function cargarCitasCalendario() {
     _mergeCuposEntidadFallback(body.cupos_entidad);
     _aplicarCuposResumenDia(body.cupos_resumen_dia, body.cupos_entidad);
     _mergeCuposEntidadFallback(body.cupos_entidad);
+    _rellenarCuposCacheFaltantes();
 
     if (doctorId) {
       try {
         const rSlots = await apiFetch(`/api/doctor-agenda?doctor_id=${encodeURIComponent(doctorId)}&_t=${Date.now()}`);
         const slots = await rSlots.json();
+        if (reqId !== _citasCalLoadReqId) return;
         if (Array.isArray(slots)) {
           slots.forEach((s) => {
             if (!s || !s.disponible) return;
-            const f = (s.fecha || '').slice(0, 10);
+            const f = _fmtFechaCal(s.fecha);
+            if (!f) return;
             if (!_citasCalSlotsCache[f]) _citasCalSlotsCache[f] = [];
             _citasCalSlotsCache[f].push(s);
           });
@@ -290,6 +346,7 @@ async function cargarCitasCalendario() {
       }
     }
 
+    if (reqId !== _citasCalLoadReqId) return;
     renderCitasCalGrid();
   } catch (e) {
     console.error('Error cargando calendario de citas:', e);
