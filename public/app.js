@@ -6096,7 +6096,7 @@ async function llamarSiguientePaciente() {
       const nombre = data.turno.paciente_nombre || '';
       const consultorio = data.turno.numero_consultorio;
       showToast('Paciente llamado: ' + nombre, 'success'); 
-      // El anuncio de voz lo reproduce recepción vía socket (agenda:turno-llamar-siguiente)
+      // El anuncio (pop-up + voz) lo reproduce el módulo Llamado de pacientes
       cargarTurnosMedica(); 
     } else {
       showToast(data.error||'Error', 'error');
@@ -14743,7 +14743,7 @@ $('btnEstadoEnSala')?.addEventListener('click', async (e) => {
   } catch (err) { showToast('Error al actualizar estado', 'error'); console.error(err); }
 });
 
-// Botón: LLAMAR AL PACIENTE → Emitir anuncio por socket (solo recepción escucha)
+// Botón: LLAMAR AL PACIENTE → Emitir anuncio por socket (módulo Llamado de pacientes)
 $('btnModalLlamarPaciente')?.addEventListener('click', async (e) => {
   e.preventDefault(); e.stopPropagation();
   if (!currentTurnoMedicaData) return;
@@ -14755,7 +14755,7 @@ $('btnModalLlamarPaciente')?.addEventListener('click', async (e) => {
   const doctorNombre = obtenerNombreMedicoAgenda(doctorIdTurno)
     || (currentUser?.rol === 'doctor' ? currentUser?.nombre : null);
 
-  // 1) Emitir anuncio por socket (pantalla de llamado y recepción)
+  // Emitir anuncio por socket (módulo Llamado de pacientes)
   if (typeof socket !== 'undefined' && socket) {
     socket.emit('agenda:anunciar-paciente', {
       paciente_nombre: nombrePaciente,
