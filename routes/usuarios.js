@@ -29,6 +29,7 @@ const PERMISOS_VALIDOS = new Set([
   'agenda.ver', 'agenda.crear', 'agenda.editar', 'agenda.eliminar', 'agenda.cambiar_estado',
   'agenda.llamar_siguiente', 'agenda.marcar_atendido', 'agenda.aviso_doctor', 'agenda.disponibilidad',
   'agenda.editar_siempre',
+  'llamado.configurar',
   'electro.ver', 'electro.crear', 'electro.editar', 'electro.eliminar', 'electro.cambiar_estado',
   'electro.subir_archivo', 'electro.ver_archivo', 'electro.aviso_doctor',
   'ucqn.ver', 'ucqn.editar_estado',

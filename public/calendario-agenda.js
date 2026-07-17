@@ -72,9 +72,44 @@ function _textoCuposEntidadObs(resumen) {
     const nom = String(r.entidad || '').trim();
     const occ = parseInt(r.ocupados, 10) || 0;
     const max = parseInt(r.cupo_max, 10) || 0;
+    const lib = parseInt(r.libres, 10);
+    const libres = Number.isFinite(lib) ? lib : Math.max(0, max - occ);
     const abrev = nom.length > 12 ? `${nom.slice(0, 10)}…` : nom;
-    return `${abrev} ${occ}/${max}`;
+    return `${abrev} ${occ}/${max} (${libres} disp.)`;
   }).join(' · ');
+}
+
+function _abrevEntidadCal(nom, maxLen = 9) {
+  const s = String(nom || '').trim();
+  if (!s) return 'Ent.';
+  if (s.length <= maxLen) return s;
+  return `${s.slice(0, maxLen - 1)}…`;
+}
+
+function _htmlMetricasCuposEntidad(resumen) {
+  if (!Array.isArray(resumen) || !resumen.length) return '';
+  const items = resumen.length > 4 ? resumen.slice(0, 4) : resumen;
+  const chips = items.map((r) => {
+    const nom = String(r.entidad || '').trim() || 'Entidad';
+    const occ = parseInt(r.ocupados, 10) || 0;
+    const max = parseInt(r.cupo_max, 10) || 0;
+    const lib = parseInt(r.libres, 10);
+    const libres = Number.isFinite(lib) ? lib : Math.max(0, max - occ);
+    const abrev = _abrevEntidadCal(nom);
+    const estado = libres === 0 ? ' ccal-ent-chip-full' : (libres <= 2 ? ' ccal-ent-chip-low' : '');
+    return `<div class="ccal-ent-chip${estado}" title="${escapeHtml(nom)}: ${occ}/${max} ocupados · ${libres} disponibles">`
+      + '<div class="ccal-ent-row">'
+      + `<span class="ccal-ent-occ">${occ}</span>`
+      + '<span class="ccal-ent-sep">/</span>'
+      + `<span class="ccal-ent-lib">${libres}</span>`
+      + '<span class="ccal-ent-lbl">disp</span>'
+      + '</div>'
+      + `<span class="ccal-ent-name">${escapeHtml(abrev)}</span>`
+      + '</div>';
+  }).join('');
+  const extra = resumen.length > 4 ? `<span class="ccal-ent-more">+${resumen.length - 4}</span>` : '';
+  const gridClass = resumen.length > 4 ? 'ccal-ent-grid-many' : `ccal-ent-grid-${Math.min(resumen.length, 4)}`;
+  return `<div class="ccal-ent-grid ${gridClass}">${chips}${extra}</div>`;
 }
 
 async function cargarCitasCalendario() {
@@ -221,6 +256,8 @@ function renderCitasCalGrid() {
     let E = EGeneral;
     let T = Math.max(0, capHoraria - E);
     let obsCupos = '';
+    const tieneMetricasEntidad = !!(cuposDia && cuposDia.capacidad > 0
+      && Array.isArray(cuposDia.resumen) && cuposDia.resumen.length);
 
     if (cuposDia && cuposDia.capacidad > 0) {
       E = cuposDia.ocupados;
@@ -235,9 +272,13 @@ function renderCitasCalGrid() {
     if (datos && datos.reprogramadas) tooltip += ` | Reprog.: ${datos.reprogramadas}`;
     if (obsCupos) tooltip += ` | ${obsCupos}`;
 
-    let obsTexto = obsCupos || (tieneMotivo
-      ? (motivo.length > 26 ? `${motivo.slice(0, 24)}…` : motivo)
-      : (bloqueado ? 'NO DISPONIBLE' : 'Sin observación'));
+    let obsTexto = tieneMetricasEntidad
+      ? (tieneMotivo
+        ? (motivo.length > 26 ? `${motivo.slice(0, 24)}…` : motivo)
+        : (bloqueado ? 'NO DISPONIBLE' : ''))
+      : (obsCupos || (tieneMotivo
+        ? (motivo.length > 26 ? `${motivo.slice(0, 24)}…` : motivo)
+        : (bloqueado ? 'NO DISPONIBLE' : 'Sin observación')));
 
     let colorClass = 'ccal-neutro';
     const totalDia = datos ? datos.total : 0;
@@ -261,14 +302,20 @@ function renderCitasCalGrid() {
     }
 
     const clickable = !bloqueado || tieneMotivo;
-    html += `<div class="ccal-cell ${colorClass}${esHoy ? ' ccal-hoy' : ''}" data-fecha="${fecha}" title="${escapeHtml(tooltip)}"${clickable ? ` onclick="citasCalClickDia('${fecha}', this)"` : ''}>`;
+    const entCount = tieneMetricasEntidad ? Math.min(cuposDia.resumen.length, 4) : 0;
+    const entCellClass = entCount ? ` ccal-cell-ent ccal-cell-ent-${entCount}` : '';
+    html += `<div class="ccal-cell ${colorClass}${esHoy ? ' ccal-hoy' : ''}${entCellClass}" data-fecha="${fecha}" title="${escapeHtml(tooltip)}"${clickable ? ` onclick="citasCalClickDia('${fecha}', this)"` : ''}>`;
     html += `<div class="ccal-dia-num">${day}</div>`;
-    html += '<div class="ccal-dia-info ccal-dia-info-split">';
-    html += '<div class="ccal-card-top">';
-    html += `<div class="ccal-card-metric ccal-card-metric-citas"><span class="ccal-card-num">${E}</span><span class="ccal-card-label">CITAS</span></div>`;
-    html += `<div class="ccal-card-metric ccal-card-metric-libres"><span class="ccal-card-num">${T}</span><span class="ccal-card-label">LIBRES</span></div>`;
-    html += '</div>';
-    html += `<div class="ccal-card-bottom"><span class="ccal-card-observacion${obsCupos || tieneMotivo || bloqueado ? '' : ' ccal-card-observacion-empty'}"${tieneMotivo && !obsCupos ? ` title="${escapeHtml(motivo)}"` : ''}>${escapeHtml(obsTexto)}</span></div>`;
+    html += `<div class="ccal-dia-info ccal-dia-info-split${tieneMetricasEntidad ? ' ccal-dia-info-entidades' : ''}">`;
+    if (tieneMetricasEntidad) {
+      html += _htmlMetricasCuposEntidad(cuposDia.resumen);
+    } else {
+      html += '<div class="ccal-card-top">';
+      html += `<div class="ccal-card-metric ccal-card-metric-citas"><span class="ccal-card-num">${E}</span><span class="ccal-card-label">CITAS</span></div>`;
+      html += `<div class="ccal-card-metric ccal-card-metric-libres"><span class="ccal-card-num">${T}</span><span class="ccal-card-label">LIBRES</span></div>`;
+      html += '</div>';
+    }
+    html += `<div class="ccal-card-bottom"><span class="ccal-card-observacion${obsTexto || tieneMotivo || bloqueado ? '' : ' ccal-card-observacion-empty'}"${tieneMotivo && !obsCupos ? ` title="${escapeHtml(motivo)}"` : ''}>${escapeHtml(obsTexto)}</span></div>`;
     html += '</div>';
 
     if (!esUcqn && !bloqueado && datos && (datos.atendidas || datos.canceladas || datos.reprogramadas || datos.no_asistieron)) {

@@ -1045,6 +1045,11 @@ function goToModule(moduleId) {
     history.replaceState({ view: 'menu' }, '', '#menu');
     return;
   }
+  if (moduleId === 'llamado-pacientes' && typeof tienePermiso === 'function' && !tienePermiso('modulo.llamado_pacientes')) {
+    showView('view-menu');
+    history.replaceState({ view: 'menu' }, '', '#menu');
+    return;
+  }
   showView(`view-${moduleId}`);
   currentModule = moduleId;
   window.currentModule = moduleId;  // Exponer para sockets
@@ -9239,7 +9244,8 @@ const PERMISOS_DEFS = [
   { key: 'agenda.disponibilidad',       label: 'Programar disponibilidad',            grupo: 'Agenda Médica' },
   { key: 'agenda.editar_siempre',       label: 'Editar citas en cualquier estado',    grupo: 'Agenda Médica' },
   // ── Llamado de pacientes (pantalla) ───────────────────────────────────────
-  { key: 'modulo.llamado_pacientes',    label: 'Acceso a pantalla de llamado',        grupo: 'Llamado de pacientes' },
+  { key: 'modulo.llamado_pacientes',    label: 'Acceso a pantalla de llamado (TV)',   grupo: 'Llamado de pacientes' },
+  { key: 'llamado.configurar',          label: 'Configurar consultorios en pantalla', grupo: 'Llamado de pacientes' },
   // ── Electrodiagnóstico ────────────────────────────────────────────────────
   { key: 'modulo.electrodiag',          label: 'Acceso al módulo',                    grupo: 'Electrodiagnóstico' },
   { key: 'electro.ver',                 label: 'Ver citas',                           grupo: 'Electrodiagnóstico' },
@@ -9309,7 +9315,7 @@ const PERMISOS_ROL_DEFAULTS = {
   admin: null,
   admin_recepcion: [
     'modulo.recibos','modulo.agenda_medica','modulo.electrodiag','modulo.ucqn','modulo.dashboard','modulo.monitor_equipos',
-    'modulo.reportes_pdx','modulo.armado_soportes','modulo.llamado_pacientes',
+    'modulo.reportes_pdx','modulo.armado_soportes','modulo.llamado_pacientes','llamado.configurar',
     'soportes.pdx.ver','soportes.pdx.carpetas.todas','soportes.pdx.crear_carpeta','soportes.pdx.subir','soportes.pdx.editar',
     'soportes.armado.crear_estructura','soportes.armado.subir','soportes.armado.importar_pdx','soportes.descargar_zip',
     'soportes.ver_archivo','modulo.archivo_soportes',
@@ -9322,7 +9328,7 @@ const PERMISOS_ROL_DEFAULTS = {
   ],
   recepcion: [
     'modulo.recibos','modulo.agenda_medica','modulo.electrodiag','modulo.ucqn','modulo.dashboard','modulo.monitor_equipos',
-    'modulo.reportes_pdx','modulo.armado_soportes','modulo.llamado_pacientes',
+    'modulo.reportes_pdx','modulo.armado_soportes','modulo.llamado_pacientes','llamado.configurar',
     'soportes.pdx.ver','soportes.pdx.carpetas.todas','soportes.pdx.crear_carpeta','soportes.pdx.subir','soportes.pdx.editar',
     'soportes.armado.crear_estructura','soportes.armado.subir','soportes.armado.importar_pdx','soportes.descargar_zip',
     'soportes.ver_archivo','modulo.archivo_soportes',
@@ -9334,7 +9340,7 @@ const PERMISOS_ROL_DEFAULTS = {
     'sistema.dashboard',
   ],
   auxiliar_recepcion: [
-    'modulo.recibos','modulo.agenda_medica','modulo.electrodiag','modulo.reportes_pdx','modulo.llamado_pacientes',
+    'modulo.recibos','modulo.agenda_medica','modulo.electrodiag','modulo.reportes_pdx','modulo.llamado_pacientes','llamado.configurar',
     'soportes.pdx.ver','soportes.pdx.subir',
     'recibos.crear','recibos.ver','recibos.pagar','recibos.pendiente',
     'agenda.ver','agenda.crear','agenda.editar','agenda.cambiar_estado','agenda.aviso_doctor',
@@ -9348,7 +9354,7 @@ const PERMISOS_ROL_DEFAULTS = {
   ],
   admin_electro: [
     'modulo.electrodiag','modulo.ucqn','modulo.agenda_medica','modulo.dashboard','modulo.monitor_equipos',
-    'modulo.reportes_pdx','modulo.armado_soportes','modulo.llamado_pacientes',
+    'modulo.reportes_pdx','modulo.armado_soportes','modulo.llamado_pacientes','llamado.configurar',
     'soportes.pdx.ver','soportes.pdx.carpetas.todas','soportes.pdx.crear_carpeta','soportes.pdx.subir','soportes.pdx.editar',
     'soportes.armado.crear_estructura','soportes.armado.subir','soportes.armado.importar_pdx','soportes.descargar_zip',
     'soportes.ver_archivo','modulo.archivo_soportes',
@@ -9359,7 +9365,7 @@ const PERMISOS_ROL_DEFAULTS = {
   ],
   electro: [
     'modulo.electrodiag','modulo.ucqn','modulo.agenda_medica','modulo.dashboard','modulo.monitor_equipos',
-    'modulo.reportes_pdx','modulo.armado_soportes','modulo.llamado_pacientes',
+    'modulo.reportes_pdx','modulo.armado_soportes','modulo.llamado_pacientes','llamado.configurar',
     'soportes.pdx.ver','soportes.pdx.carpetas.todas','soportes.pdx.crear_carpeta','soportes.pdx.subir','soportes.pdx.editar',
     'soportes.armado.crear_estructura','soportes.armado.subir','soportes.armado.importar_pdx','soportes.descargar_zip',
     'soportes.ver_archivo','modulo.archivo_soportes',
@@ -9375,7 +9381,7 @@ const PERMISOS_ROL_DEFAULTS = {
   ],
   contabilidad: [
     'modulo.recibos','modulo.ucqn','modulo.dashboard',
-    'modulo.reportes_pdx','modulo.armado_soportes','modulo.llamado_pacientes',
+    'modulo.reportes_pdx','modulo.armado_soportes','modulo.llamado_pacientes','llamado.configurar',
     'soportes.pdx.ver','soportes.pdx.carpetas.todas','soportes.pdx.crear_carpeta','soportes.pdx.subir','soportes.pdx.editar',
     'soportes.armado.crear_estructura','soportes.armado.subir','soportes.armado.importar_pdx','soportes.descargar_zip',
     'soportes.ver_archivo','modulo.archivo_soportes',

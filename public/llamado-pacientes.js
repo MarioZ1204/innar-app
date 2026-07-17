@@ -185,7 +185,18 @@
     });
   }
 
+  function puedeConfigurarLlamado() {
+    return typeof window.tienePermiso === 'function'
+      && (window.tienePermiso('llamado.configurar') || window.tienePermiso('modulo.llamado_pacientes'));
+  }
+
+  function aplicarPermisosUiLlamado() {
+    const cfg = $('btnLlamadoConfig');
+    if (cfg) cfg.style.display = puedeConfigurarLlamado() ? '' : 'none';
+  }
+
   function abrirConfig() {
+    if (!puedeConfigurarLlamado()) return;
     cargarMedicos().then(() => {
       renderConfigLista();
       $('llamadoConfigBackdrop')?.classList.remove('hidden');
@@ -586,6 +597,7 @@
     cargarConsultoriosActivos();
     if (!procesando) ocultarPopup();
     await asegurarConsultoriosIniciales();
+    aplicarPermisosUiLlamado();
     renderConfigLista();
     iniciarReloj();
     iniciarRefreshMedicos();
