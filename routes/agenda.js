@@ -7,6 +7,7 @@ const fs = require('fs');
 const db = require('../utils/db-mysql');
 const logger = require('../utils/logger');
 const procesarAgendaExcel = require('../utils/procesar-agenda-excel');
+const cuposEntidadAgenda = require('../utils/cupos-entidad-agenda');
 const { upload, validateMagicBytes } = require('../middleware/upload');
 const {
   requireAuth, requireRoleOrPerm,
@@ -289,7 +290,11 @@ router.get('/doctor-disponibilidad/:doctorId', requireAuth, async (req, res) => 
       return res.status(400).json({ error: 'doctorId inválido' });
     }
     const disponibilidad = await procesarAgendaExcel.obtenerDisponibilidadMensual(doctorId, mes, db);
-    res.json({ ok: true, disponibilidad });
+    let cupos_entidad = [];
+    try {
+      cupos_entidad = await cuposEntidadAgenda.listarCuposMes(doctorId, mes, db);
+    } catch (_) { /* tabla puede no existir aún */ }
+    res.json({ ok: true, disponibilidad, cupos_entidad });
   } catch (e) {
     logger.error('[DISPONIBILIDAD] Error obteniendo disponibilidad:', e.message);
     res.status(500).json({ error: safeError(e) });
@@ -327,7 +332,8 @@ router.post('/doctor-disponibilidad/guardar-dia-completo', requireAuth, async (r
       disponible_manana,
       disponible_tarde,
       motivo_ausencia,
-      slots
+      slots,
+      cupos_entidad
     } = req.body || {};
     const doctorId = parseInt(doctor_id || req.session.usuarioId, 10);
     if (!doctorId || !fecha) return res.status(400).json({ error: 'doctor_id y fecha son requeridos' });
@@ -382,6 +388,11 @@ router.post('/doctor-disponibilidad/guardar-dia-completo', requireAuth, async (r
           [doctorId, fecha, s.hora_inicio, s.hora_fin, s.disponible]
         );
       }
+      if (disponible) {
+        await cuposEntidadAgenda.guardarCuposEntidadDia(conn, doctorId, fecha, cupos_entidad);
+      } else {
+        await cuposEntidadAgenda.eliminarCuposEntidadDia(conn, doctorId, fecha);
+      }
     });
 
     logger.info(`[DISPONIBILIDAD] Día completo guardado: doctor=${doctorId}, fecha=${fecha}, slots=${slotsValidos.length}`, { type: 'API' });
@@ -393,7 +404,8 @@ router.post('/doctor-disponibilidad/guardar-dia-completo', requireAuth, async (r
       disponible_manana: Boolean(disponible_manana),
       disponible_tarde: Boolean(disponible_tarde),
       motivo_ausencia: motivoLimpio,
-      slots: slotsValidos.map((s) => ({ fecha, ...s }))
+      slots: slotsValidos.map((s) => ({ fecha, ...s })),
+      cupos_entidad: disponible ? (Array.isArray(cupos_entidad) ? cupos_entidad : []) : []
     });
   } catch (e) {
     logger.error('[DISPONIBILIDAD] Error guardando día completo:', e.message);
@@ -448,6 +460,7 @@ router.post('/doctor-disponibilidad/eliminar-dia', requireAuth, async (req, res)
     await db.transaction(async (conn) => {
       await conn.execute('DELETE FROM doctor_disponibilidad_mensual WHERE doctor_id = ? AND fecha = ?', [doctorId, fecha]);
       await conn.execute('DELETE FROM doctor_agenda WHERE doctor_id = ? AND fecha = ?', [doctorId, fecha]);
+      await cuposEntidadAgenda.eliminarCuposEntidadDia(conn, doctorId, fecha);
     });
 
     emitSocket('agenda:disponibilidad-actualizada', { doctor_id: doctorId });
@@ -488,12 +501,17 @@ router.get('/doctor-disponibilidad', requireAuth, async (req, res) => {
     const { intervalos, existe_registro: tiene_intervalos } = await procesarAgendaExcel.consultarIntervalosNoDisponibles(doctor_id, fecha, db);
 
     if (tiene_intervalos) {
+      let cupos_entidad = [];
+      try {
+        cupos_entidad = await cuposEntidadAgenda.resumenCuposDia(doctor_id, fecha, db);
+      } catch (_) { /* noop */ }
       return res.json({
         ok: true,
         tiene_intervalos: true,
         intervalos: intervalos,
         disponible_manana: true,
-        disponible_tarde: true
+        disponible_tarde: true,
+        cupos_entidad
       });
     }
 
@@ -504,25 +522,35 @@ router.get('/doctor-disponibilidad', requireAuth, async (req, res) => {
     );
 
     if (result.length === 0) {
+      let cupos_entidad = [];
+      try {
+        cupos_entidad = await cuposEntidadAgenda.resumenCuposDia(doctor_id, fecha, db);
+      } catch (_) { /* noop */ }
       return res.json({
         ok: true,
         tiene_intervalos: false,
         intervalos: [],
         disponible_manana: true,
         disponible_tarde: true,
-        razon: 'sin_restricciones'
+        razon: 'sin_restricciones',
+        cupos_entidad
       });
     }
 
     const registro = result[0];
     const dm = registro.disponible_manana;
     const dt = registro.disponible_tarde;
+    let cupos_entidad = [];
+    try {
+      cupos_entidad = await cuposEntidadAgenda.resumenCuposDia(doctor_id, fecha, db);
+    } catch (_) { /* noop */ }
     return res.json({
       ok: true,
       tiene_intervalos: false,
       intervalos: [],
       disponible_manana: (dm === null || dm === undefined) ? true : Boolean(dm),
-      disponible_tarde: (dt === null || dt === undefined) ? true : Boolean(dt)
+      disponible_tarde: (dt === null || dt === undefined) ? true : Boolean(dt),
+      cupos_entidad
     });
   } catch (e) {
     logger.error(e.message, { error: e });

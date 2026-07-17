@@ -10,6 +10,8 @@
   const BATCH_MS = 900;
   const PAUSA_ENTRE_ANUNCIOS_MS = 500;
   const POPUP_EXTRA_MS = 800;
+  const MIN_ANUNCIO_VISIBLE_MS = 4500;
+  const ENCUELO_DEDUPE_MS = 5000;
   const MEDICOS_REFRESH_MS = 60000;
 
   let initDone = false;
@@ -26,6 +28,8 @@
 
   let medicos = [];
   let consultoriosActivos = new Set();
+  /** @type {Map<string, number>} */
+  const llamadosRecientes = new Map();
 
   function fetchApi(url) {
     if (typeof apiFetch === 'function') return apiFetch(url).then((r) => r.json());
@@ -287,23 +291,72 @@
     return `Paciente ${nombre}, pasar al consultorio ${consTxt}`;
   }
 
+  function estimarDuracionAnuncioMs(texto) {
+    const palabras = String(texto || '').trim().split(/\s+/).filter(Boolean).length;
+    return Math.max(MIN_ANUNCIO_VISIBLE_MS, palabras * 380 + 1200);
+  }
+
+  function esperarVocesListas(timeoutMs) {
+    if (!('speechSynthesis' in window)) return Promise.resolve();
+    if (window.speechSynthesis.getVoices().length) return Promise.resolve();
+    return new Promise((resolve) => {
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        resolve();
+      };
+      const timer = setTimeout(finish, timeoutMs);
+      const prev = window.speechSynthesis.onvoiceschanged;
+      window.speechSynthesis.onvoiceschanged = () => {
+        clearTimeout(timer);
+        if (typeof prev === 'function') prev();
+        finish();
+      };
+    });
+  }
+
   function hablarAsync(texto) {
     return new Promise((resolve) => {
       if (!audioUnlocked || !('speechSynthesis' in window)) {
         resolve();
         return;
       }
-      window.speechSynthesis.cancel();
-      const utter = new SpeechSynthesisUtterance(texto);
-      utter.rate = 0.88;
-      utter.pitch = 1.02;
-      utter.volume = 1;
-      const voice = pickSoftSpanishVoice();
-      if (voice) { utter.voice = voice; utter.lang = voice.lang; }
-      else { utter.lang = 'es-CO'; }
-      utter.onend = () => resolve();
-      utter.onerror = () => resolve();
-      window.speechSynthesis.speak(utter);
+
+      const synth = window.speechSynthesis;
+      const run = () => {
+        const utter = new SpeechSynthesisUtterance(texto);
+        utter.rate = 0.88;
+        utter.pitch = 1.02;
+        utter.volume = 1;
+        const voice = pickSoftSpanishVoice();
+        if (voice) { utter.voice = voice; utter.lang = voice.lang; }
+        else { utter.lang = 'es-CO'; }
+
+        let settled = false;
+        const finish = () => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(maxTimer);
+          resolve();
+        };
+
+        const maxTimer = setTimeout(finish, Math.max(12000, estimarDuracionAnuncioMs(texto) + 2000));
+        utter.onend = finish;
+        utter.onerror = finish;
+
+        try {
+          if (synth.speaking || synth.pending) synth.cancel();
+          if (synth.paused) synth.resume();
+          synth.speak(utter);
+          // Chrome a veces no arranca TTS hasta resume()
+          if (synth.paused) synth.resume();
+        } catch (_) {
+          finish();
+        }
+      };
+
+      void esperarVocesListas(600).then(run);
     });
   }
 
@@ -359,6 +412,7 @@
     const item = normalizarLlamado(data);
     if (!item.paciente_nombre) return;
     if (!consultorioPermitido(item)) return;
+    if (llamadoRecienteDuplicado(item)) return;
 
     batchPendiente.push(item);
     if (batchTimer) clearTimeout(batchTimer);
@@ -370,16 +424,49 @@
     if (!batchPendiente.length) return;
 
     const items = dedupeLlamados(batchPendiente.splice(0));
+    if (!items.length) return;
+
     const secuencia = construirSecuencia(items);
+    if (!secuencia.length) return;
+
     colaAnuncios.push(...secuencia);
 
     if (!procesando) procesarCola();
   }
 
+  function claveLlamado(item) {
+    return `${item.doctor_id ?? ''}|${item.numero_consultorio}|${item.paciente_nombre}`.toLowerCase();
+  }
+
+  function llamadoRecienteDuplicado(item) {
+    const key = claveLlamado(item);
+    const now = Date.now();
+    const last = llamadosRecientes.get(key);
+    if (last != null && now - last < ENCUELO_DEDUPE_MS) return true;
+    llamadosRecientes.set(key, now);
+    if (llamadosRecientes.size > 100) {
+      for (const [k, t] of llamadosRecientes) {
+        if (now - t > ENCUELO_DEDUPE_MS) llamadosRecientes.delete(k);
+      }
+    }
+    return false;
+  }
+
+  async function anunciarItem(item) {
+    const texto = textoAnuncio(item);
+    mostrarPopup(item);
+    const minVisibleMs = estimarDuracionAnuncioMs(texto);
+    await Promise.all([
+      hablarAsync(texto),
+      sleep(minVisibleMs)
+    ]);
+    await sleep(POPUP_EXTRA_MS);
+  }
+
   function dedupeLlamados(items) {
     const map = new Map();
     for (const item of items) {
-      const key = `${item.doctor_id ?? ''}|${item.numero_consultorio}|${item.paciente_nombre}`;
+      const key = claveLlamado(item);
       map.set(key, item);
     }
     return [...map.values()];
@@ -387,13 +474,12 @@
 
   async function procesarCola() {
     if (procesando) return;
+    if (!colaAnuncios.length) return;
     procesando = true;
 
     while (colaAnuncios.length) {
       const item = colaAnuncios.shift();
-      mostrarPopup(item);
-      await hablarAsync(textoAnuncio(item));
-      await sleep(POPUP_EXTRA_MS);
+      await anunciarItem(item);
 
       if (colaAnuncios.length) {
         await sleep(PAUSA_ENTRE_ANUNCIOS_MS);
@@ -498,7 +584,7 @@
     }
 
     cargarConsultoriosActivos();
-    ocultarPopup();
+    if (!procesando) ocultarPopup();
     await asegurarConsultoriosIniciales();
     renderConfigLista();
     iniciarReloj();

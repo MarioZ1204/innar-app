@@ -147,8 +147,26 @@ function unsubscribe(event, cb) {
 const recentDispatched = new Map();
 const DISPATCH_DEDUPE_MS = 4000;
 
+function stablePayloadKey(payload) {
+  if (payload == null || typeof payload !== 'object') return JSON.stringify(payload);
+  const keys = Object.keys(payload).sort();
+  const normalized = {};
+  for (let i = 0; i < keys.length; i++) {
+    const k = keys[i];
+    let v = payload[k];
+    if (k === 'doctor_id' || k === 'turno_id' || k === 'numero_turno') {
+      const n = parseInt(v, 10);
+      if (Number.isFinite(n)) v = n;
+    } else if (k === 'numero_consultorio' && v != null && v !== '') {
+      v = String(v);
+    }
+    normalized[k] = v;
+  }
+  return JSON.stringify(normalized);
+}
+
 function dispatchRealtime(event, payload) {
-  const dedupeKey = `${event}|${JSON.stringify(payload ?? null)}`;
+  const dedupeKey = `${event}|${stablePayloadKey(payload)}`;
   const now = Date.now();
   const last = recentDispatched.get(dedupeKey);
   if (last != null && now - last < DISPATCH_DEDUPE_MS) return;

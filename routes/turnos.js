@@ -12,6 +12,7 @@ const {
 const { validateSchema } = require('../modules/validation-schemas');
 const { buildReprogramacionTurnoPayload } = require('../utils/agenda-reprogramacion');
 const { sqlFantasmaReprogramadoReciente } = require('../utils/agenda-reprogramacion-visibilidad');
+const cuposEntidadAgenda = require('../utils/cupos-entidad-agenda');
 
 // Helper: obtener siguiente número de turno
 async function getNextTurnoNumber(fecha, doctor_id) {
@@ -78,6 +79,7 @@ router.get('/turnos/calendario', requireAuth, async (req, res) => {
     }));
 
     let disponibilidad = [];
+    let cupos_entidad = [];
     if (doctor_id) {
       try {
         disponibilidad = await db.query(
@@ -85,9 +87,28 @@ router.get('/turnos/calendario', requireAuth, async (req, res) => {
           [doctor_id, fechaInicio, fechaFin]
         );
       } catch (_) { /* tabla puede no existir aún */ }
+      try {
+        cupos_entidad = await cuposEntidadAgenda.listarCuposMes(doctor_id, mes, db);
+      } catch (_) { /* noop */ }
     }
 
-    res.json({ ok: true, dias: rows, disponibilidad });
+    /** Resumen por día con ocupados/libres por entidad */
+    let cupos_resumen_dia = [];
+    if (doctor_id && cupos_entidad.length) {
+      const fechasUnicas = [...new Set(cupos_entidad.map((c) => {
+        const f = c.fecha;
+        return typeof f === 'string' ? f.slice(0, 10) : new Date(f).toISOString().slice(0, 10);
+      }))];
+      for (const f of fechasUnicas) {
+        const resumen = await cuposEntidadAgenda.resumenCuposDia(doctor_id, f, db);
+        if (resumen.length) {
+          const tot = cuposEntidadAgenda.totalesDesdeResumen(resumen);
+          cupos_resumen_dia.push({ fecha: f, ...tot });
+        }
+      }
+    }
+
+    res.json({ ok: true, dias: rows, disponibilidad, cupos_entidad, cupos_resumen_dia });
   } catch (e) {
     logger.error(e.message, { error: e });
     res.status(500).json({ error: safeError(e) });
@@ -426,6 +447,12 @@ router.post('/turnos/lote', requireAuth, requireRoleOrPerm(['superadmin', 'admin
   } = req.body;
 
   const errores = [];
+  /** @type {Record<string, number>} */
+  const sesionesPorFecha = {};
+  for (const s of sesiones) {
+    sesionesPorFecha[s.fecha] = (sesionesPorFecha[s.fecha] || 0) + 1;
+  }
+
   for (let i = 0; i < sesiones.length; i += 1) {
     const { fecha, hora: horaSesion } = sesiones[i];
     const horaEff = horaSesion || hora;
@@ -433,6 +460,13 @@ router.post('/turnos/lote', requireAuth, requireRoleOrPerm(['superadmin', 'admin
     if (!validacion.valido) {
       errores.push({ fecha, indice: i + 1, error: validacion.razon || 'Horario no disponible' });
       continue;
+    }
+  }
+
+  for (const [fecha, cantidad] of Object.entries(sesionesPorFecha)) {
+    const validacionCupo = await cuposEntidadAgenda.validarCupoEntidad(doctor_id, fecha, entidad, db, cantidad);
+    if (!validacionCupo.valido) {
+      errores.push({ fecha, error: validacionCupo.razon || 'Sin cupo de entidad' });
     }
   }
   if (errores.length > 0) {
@@ -496,6 +530,11 @@ router.post('/turnos', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'a
       return res.status(400).json({ error: validacion.razon, valido: false });
     }
 
+    const validacionCupo = await cuposEntidadAgenda.validarCupoEntidad(doctor_id, fecha, entidad, db, 1);
+    if (!validacionCupo.valido) {
+      return res.status(400).json({ error: validacionCupo.razon, valido: false });
+    }
+
     const result = await db.execute(`
       INSERT INTO turnos (numero_turno, doctor_id, paciente_nombre, paciente_documento, paciente_telefono, paciente_telefono2, estado, fecha, hora, tipo_consulta, entidad, notas, oportunidad, programado_por)
       VALUES (NULL, ?, ?, ?, ?, ?, 'PENDIENTE', ?, ?, ?, ?, ?, ?, ?)
@@ -532,7 +571,7 @@ router.patch('/turnos/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin
   }
 
   try {
-    const turnos = await db.query('SELECT id, estado, doctor_id, fecha, hora, paciente_nombre FROM turnos WHERE id = ?', [id]);
+    const turnos = await db.query('SELECT id, estado, doctor_id, fecha, hora, paciente_nombre, entidad FROM turnos WHERE id = ?', [id]);
     const turno = turnos.length > 0 ? turnos[0] : null;
     if (!turno) {
       return res.status(404).json({ error: 'Turno no encontrado' });
@@ -611,6 +650,28 @@ router.patch('/turnos/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin
 
     if (updates.length === 0) {
       return res.status(400).json({ error: 'No hay campos para actualizar' });
+    }
+
+    const doctorIdFinal = doctor_id !== undefined ? parseInt(doctor_id, 10) : parseInt(turno.doctor_id, 10);
+    const fechaFinal = fecha !== undefined ? fecha : turno.fecha;
+    const entidadFinal = entidad !== undefined ? entidad : turno.entidad;
+    const estadoFinal = estado !== undefined ? estado : turno.estado;
+    const estadosSinCupo = ['CANCELADO', 'REPROGRAMADO', 'ATENDIDO', 'NO_ASISTIO'];
+    const cambiaUbicacion = (entidad !== undefined && cuposEntidadAgenda.claveEntidad(entidad) !== cuposEntidadAgenda.claveEntidad(turno.entidad))
+      || (fecha !== undefined && String(fecha).slice(0, 10) !== String(turno.fecha).slice(0, 10))
+      || cambioDoctor;
+
+    if (cambiaUbicacion && !estadosSinCupo.includes(estadoFinal)) {
+      const validacionCupo = await cuposEntidadAgenda.validarCupoEntidad(
+        doctorIdFinal,
+        String(fechaFinal).slice(0, 10),
+        entidadFinal,
+        db,
+        1
+      );
+      if (!validacionCupo.valido) {
+        return res.status(400).json({ error: validacionCupo.razon, valido: false });
+      }
     }
 
     values.push(id);

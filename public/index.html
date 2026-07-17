@@ -15,7 +15,7 @@
   <link rel="stylesheet" href="innar-motion.css?v=20260625-2">
   <link rel="stylesheet" href="innar-sidebar.css?v=20260625-2">
   <link rel="stylesheet" href="innar-mobile.css?v=20260625-2">
-  <link rel="stylesheet" href="innar-agenda-cal.css?v=20260625-2">
+  <link rel="stylesheet" href="innar-agenda-cal.css?v=20260717-1">
   <link rel="stylesheet" href="innar-sesiones-multi.css?v=20260625-2">
   <link rel="stylesheet" href="sede-recordatorio.css?v=20260625-2">
   <link rel="stylesheet" href="soportes.css?v=1.7.5">
@@ -31,7 +31,7 @@
   <link rel="stylesheet" href="innar-documentos-cita.css?v=20260703-3">
   <link rel="stylesheet" href="innar-persona-fidu.css?v=20260625-2">
   <link rel="stylesheet" href="innar-anexo-fidu.css?v=20260625-2">
-  <link rel="stylesheet" href="llamado-pacientes.css?v=20260717-5">
+  <link rel="stylesheet" href="llamado-pacientes.css?v=20260717-6">
   <link rel="stylesheet" href="innar-responsive-mobile-fix.css?v=20260625-2">
   <style>
     @keyframes moveUp {
@@ -1153,6 +1153,16 @@
             <button type="button" id="calModalAddHora" class="cal-add-hora-btn">
               <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
               Agregar horario
+            </button>
+          </div>
+
+          <div id="calModalCuposEntidadSection" class="cal-cupos-section">
+            <span class="cal-hora-section-label">Cupos por entidad</span>
+            <p class="cal-cupos-hint">Indique cuántos pacientes atenderá de cada entidad este día (ej. PROINSALUD: 10).</p>
+            <div id="calModalCuposEntidadList"></div>
+            <button type="button" id="calModalAddCupoEntidad" class="cal-add-hora-btn">
+              <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Agregar entidad
             </button>
           </div>
 
@@ -4270,10 +4280,10 @@
   <script src="innar-motion.js?v=20260625-2"></script>
   <script src="innar-sidebar.js?v=20260625-2"></script>
   <script src="multiselect.js?v=20260625-2"></script>
-  <script src="socket-client.js?v=1.7.6"></script>
+  <script src="socket-client.js?v=1.7.7"></script>
   <script src="socket-electro.js?v=20260625-2"></script>
   <script src="dashboard-citas.js?v=20260703-1"></script>
-  <script src="calendario-agenda.js?v=20260625-2"></script>
+  <script src="calendario-agenda.js?v=20260717-1"></script>
   <script src="calendario-electro.js?v=20260625-2"></script>
   <script src="backup-module.js?v=20260625-2"></script>
   <script src="/libs/lucide.min.js?v=20260625-2"></script>
@@ -4294,7 +4304,7 @@
   <script src="anexo-fidu.js?v=1.7.4"></script>
   <script src="soportes-pdf-editor.js?v=20260625-2"></script>
   <script src="archivo-modulo.js?v=1.7.7"></script>
-  <script src="llamado-pacientes.js?v=20260717-5"></script>
+  <script src="llamado-pacientes.js?v=20260717-6"></script>
   <script src="soportes.js?v=1.7.13"></script>
   <script src="calendario-bloqueado.js?v=20260625-2"></script>
   <script src="validation-client.js?v=20260625-2"></script>

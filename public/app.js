@@ -4603,6 +4603,9 @@ let calModoAsistencia = 'attend-partial';
 let calLoadReqId = 0;
 /** Evita que un refresh tardío (Hostinger) pise el color recién guardado */
 let calSavedSnapshot = null;
+/** @type {Record<string, { entidad: string, cupo_max: number }[]>} */
+let calCuposEntidad = {};
+let _calEntidadesOpciones = null;
 
 function normalizarFilaDisponibilidadCal(d) {
   const fecha = (d.fecha || '').slice(0, 10);
@@ -4694,6 +4697,7 @@ function setupAgendaCalendar() {
   $('calChipPartial')?.addEventListener('click', () => setCalJornada('attend-partial'));
   $('calChipFullDay')?.addEventListener('click', () => setCalJornada('attend-full'));
   $('calModalAddHora')?.addEventListener('click', () => addCalHoraRow('', ''));
+  $('calModalAddCupoEntidad')?.addEventListener('click', () => addCalCupoEntidadRow('', ''));
   $('calModalSave')?.addEventListener('click', saveCalDay);
   $('calModalClear')?.addEventListener('click', deleteCalDay);
 
@@ -4850,6 +4854,79 @@ function poblarCalFormularioConfig(dateStr) {
     }
     cargarMotivoEnCalModal(disp?.motivo_ausencia || '');
   }
+
+  renderCalCuposEntidadList(dateStr);
+}
+
+async function asegurarEntidadesCalModal() {
+  if (_calEntidadesOpciones && _calEntidadesOpciones.length) return _calEntidadesOpciones;
+  try {
+    if (typeof fetchEntidadesDesdeBd === 'function') {
+      _calEntidadesOpciones = await fetchEntidadesDesdeBd();
+    } else {
+      const r = await apiFetch('/api/entidades');
+      const data = await r.json();
+      _calEntidadesOpciones = Array.isArray(data) ? data.map((x) => x.nombre || x) : [];
+    }
+  } catch (_) {
+    _calEntidadesOpciones = [];
+  }
+  return _calEntidadesOpciones;
+}
+
+function addCalCupoEntidadRow(entidad, cupo) {
+  const list = $('calModalCuposEntidadList');
+  if (!list) return;
+  const row = document.createElement('div');
+  row.className = 'cal-cupo-row';
+  row.innerHTML = `
+    <select class="cal-cupo-entidad" aria-label="Entidad"><option value="">Cargando...</option></select>
+    <input type="number" class="cal-cupo-max" min="1" max="999" placeholder="Cupos" value="${cupo ? String(cupo) : ''}" aria-label="Número de pacientes" />
+    <button type="button" class="cal-cupo-remove" title="Quitar" aria-label="Quitar entidad">&times;</button>
+  `;
+  row.querySelector('.cal-cupo-remove')?.addEventListener('click', () => row.remove());
+  list.appendChild(row);
+  void asegurarEntidadesCalModal().then((entidades) => {
+    const sel = row.querySelector('.cal-cupo-entidad');
+    if (!sel) return;
+    const opts = ['<option value="">Seleccionar entidad</option>'];
+    (entidades || []).forEach((nombre) => {
+      const n = String(nombre || '').trim();
+      if (!n) return;
+      const selAttr = entidad && n.toUpperCase() === String(entidad).toUpperCase() ? ' selected' : '';
+      opts.push(`<option value="${escapeHtml(n)}"${selAttr}>${escapeHtml(n)}</option>`);
+    });
+    sel.innerHTML = opts.join('');
+  });
+}
+
+function renderCalCuposEntidadList(dateStr) {
+  const list = $('calModalCuposEntidadList');
+  if (!list) return;
+  list.innerHTML = '';
+  const cupos = calCuposEntidad[dateStr] || [];
+  if (cupos.length) {
+    cupos.forEach((c) => addCalCupoEntidadRow(c.entidad, c.cupo_max));
+  } else {
+    addCalCupoEntidadRow('', '');
+  }
+}
+
+function leerCalCuposEntidadForm() {
+  const rows = document.querySelectorAll('#calModalCuposEntidadList .cal-cupo-row');
+  /** @type {{ entidad: string, cupo_max: number }[]} */
+  const cupos = [];
+  const seen = new Set();
+  rows.forEach((row) => {
+    const entidad = row.querySelector('.cal-cupo-entidad')?.value?.trim() || '';
+    const cupoMax = parseInt(row.querySelector('.cal-cupo-max')?.value || '0', 10);
+    if (!entidad || !Number.isFinite(cupoMax) || cupoMax <= 0) return;
+    const key = entidad.toUpperCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    cupos.push({ entidad, cupo_max: cupoMax });
+  });
+  return cupos;
 }
 
 function abrirCalPasoConfigurar() {
@@ -4859,7 +4936,7 @@ function abrirCalPasoConfigurar() {
 }
 
 async function persistirCalDia(payload) {
-  const { disponible, slots, hasManana, hasTarde, motivoAusencia, savedDate } = payload;
+  const { disponible, slots, hasManana, hasTarde, motivoAusencia, savedDate, cupos_entidad } = payload;
   const res = await apiFetch('/api/doctor-disponibilidad/guardar-dia-completo', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -4870,7 +4947,8 @@ async function persistirCalDia(payload) {
       disponible_manana: disponible ? (hasManana || (!hasManana && !hasTarde)) : false,
       disponible_tarde: disponible ? (hasTarde || (!hasManana && !hasTarde)) : false,
       motivo_ausencia: motivoAusencia,
-      slots
+      slots,
+      cupos_entidad: disponible ? (cupos_entidad || []) : []
     })
   });
   const data = await res.json().catch(() => ({}));
@@ -4890,7 +4968,12 @@ async function persistirCalDia(payload) {
   calDisponibilidad[savedDate] = dispCache;
   calSlots = calSlots.filter((s) => (s.fecha || '').slice(0, 10) !== savedDate);
   slotsCache.forEach((s) => calSlots.push(s));
-  calSavedSnapshot = { at: Date.now(), date: savedDate, disp: dispCache, slots: slotsCache };
+  if (disponible && Array.isArray(cupos_entidad) && cupos_entidad.length) {
+    calCuposEntidad[savedDate] = cupos_entidad.map((c) => ({ entidad: c.entidad, cupo_max: c.cupo_max }));
+  } else {
+    delete calCuposEntidad[savedDate];
+  }
+  calSavedSnapshot = { at: Date.now(), date: savedDate, disp: dispCache, slots: slotsCache, cupos: calCuposEntidad[savedDate] || [] };
 
   renderCalendar();
   renderCalResumen();
@@ -4966,10 +5049,12 @@ function aplicarCalSavedSnapshotEnCache() {
     calSavedSnapshot = null;
     return;
   }
-  const { date, disp, slots } = calSavedSnapshot;
+  const { date, disp, slots, cupos } = calSavedSnapshot;
   calDisponibilidad[date] = disp;
   calSlots = calSlots.filter((s) => (s.fecha || '').slice(0, 10) !== date);
   slots.forEach((s) => calSlots.push(s));
+  if (cupos && cupos.length) calCuposEntidad[date] = cupos;
+  else delete calCuposEntidad[date];
 }
 
 async function loadCalendarData() {
@@ -4987,10 +5072,22 @@ async function loadCalendarData() {
     const dataDisp = await resDisp.json();
     if (reqId !== calLoadReqId) return; // respuesta vieja
     calDisponibilidad = {};
+    calCuposEntidad = {};
     if (dataDisp.ok && Array.isArray(dataDisp.disponibilidad)) {
       dataDisp.disponibilidad.forEach((d) => {
         const row = normalizarFilaDisponibilidadCal(d);
         if (row.fecha) calDisponibilidad[row.fecha] = row;
+      });
+    }
+    if (dataDisp.ok && Array.isArray(dataDisp.cupos_entidad)) {
+      dataDisp.cupos_entidad.forEach((c) => {
+        const fecha = (c.fecha || '').slice(0, 10);
+        if (!fecha) return;
+        if (!calCuposEntidad[fecha]) calCuposEntidad[fecha] = [];
+        calCuposEntidad[fecha].push({
+          entidad: String(c.entidad || '').trim(),
+          cupo_max: parseInt(c.cupo_max, 10) || 0
+        });
       });
     }
 
@@ -5129,7 +5226,8 @@ async function saveCalDay() {
       slots,
       hasManana,
       hasTarde,
-      motivoAusencia
+      motivoAusencia,
+      cupos_entidad: leerCalCuposEntidadForm()
     });
     showToast('Día guardado correctamente', 'success');
     closeCalModal();
@@ -5577,13 +5675,59 @@ function _ordenarTurnosMedica(turnos) {
   });
 }
 
+function _contarOcupadosEntidadDesdeTurnos(turnos) {
+  const estadosCuentan = ['PENDIENTE', 'EN_ESPERA', 'EN_SALA', 'EN_ATENCION', 'ATENDIDO', 'NO_ASISTIO'];
+  const map = new Map();
+  for (const t of turnos || []) {
+    if (!estadosCuentan.includes(t.estado)) continue;
+    const key = String(t.entidad || '').trim().toUpperCase();
+    if (!key) continue;
+    map.set(key, (map.get(key) || 0) + 1);
+  }
+  return map;
+}
+
+function _generarSlotsEntidadLibres(cuposResumen, turnos) {
+  const slots = [];
+  if (!Array.isArray(cuposResumen) || !cuposResumen.length) return slots;
+  const occMap = _contarOcupadosEntidadDesdeTurnos(turnos);
+  for (const c of cuposResumen) {
+    const entidad = String(c.entidad || '').trim();
+    if (!entidad) continue;
+    const max = parseInt(c.cupo_max, 10) || 0;
+    if (max <= 0) continue;
+    const key = entidad.toUpperCase();
+    const ocupados = c.ocupados != null ? parseInt(c.ocupados, 10) : (occMap.get(key) || 0);
+    const libres = Math.max(0, max - ocupados);
+    for (let i = 0; i < libres; i++) {
+      slots.push({
+        tipo: 'slot-entidad',
+        entidad,
+        numero: ocupados + i + 1,
+        max
+      });
+    }
+  }
+  return slots;
+}
+
 function _construirDisplayListMedica(turnosDiaOrdenCronologico, dispCtx) {
-  const { dispManana, dispTarde, intervalosBloqueados, INTERVALO_MIN } = dispCtx;
+  const { dispManana, dispTarde, intervalosBloqueados, INTERVALO_MIN, cuposEntidadResumen } = dispCtx;
+  const esTurnoEnTablaActivos = (t) => !MEDICA_ESTADOS_FINALES.includes(t.estado);
+  const lista = turnosDiaOrdenCronologico;
+
+  if (Array.isArray(cuposEntidadResumen) && cuposEntidadResumen.length) {
+    const displayList = [];
+    for (const t of lista) {
+      if (esTurnoEnTablaActivos(t)) displayList.push({ tipo: 'turno', data: t });
+    }
+    displayList.push(..._generarSlotsEntidadLibres(cuposEntidadResumen, lista));
+    return displayList;
+  }
+
   const rangosDisponibles = [];
   if (dispManana) rangosDisponibles.push({ inicio: 8 * 60, fin: 12 * 60 });
   if (dispTarde) rangosDisponibles.push({ inicio: 14 * 60, fin: 18 * 60 });
-
-  const esTurnoEnTablaActivos = (t) => !MEDICA_ESTADOS_FINALES.includes(t.estado);
 
   function minutoDentroDeDisponibilidad(m) {
     const enRango = rangosDisponibles.some((r) => m >= r.inicio && m < r.fin);
@@ -5606,7 +5750,6 @@ function _construirDisplayListMedica(turnosDiaOrdenCronologico, dispCtx) {
   }
 
   const displayList = [];
-  const lista = turnosDiaOrdenCronologico;
   const horasTurnos = lista.map((t) => horaAMinutos(t.hora)).filter((m) => m !== null);
 
   if (horasTurnos.length === 0) {
@@ -5660,6 +5803,8 @@ function _renderDisplayListMedica(tbody, displayList, opts) {
       const item = displayList[i];
       if (item.tipo === 'turno') {
         renderTurnoRowMedica(tbody, item.data, animateTargetId, hayEnAtencion);
+      } else if (item.tipo === 'slot-entidad') {
+        crearFilaSlotEntidad(tbody, colspan, item);
       } else if (item.tipo === 'slot-vacio') {
         crearFilaSlotVacio(tbody, colspan, item.hora);
       } else {
@@ -5742,13 +5887,16 @@ async function cargarTurnosMedica() {
     const es25min = espLower.includes('epileptolog') || espLower.includes('neurolog');
     const INTERVALO_MIN = es25min ? 25 : 40;
 
-    let dispManana = false, dispTarde = false, intervalosBloqueados = [];
+    let dispManana = false, dispTarde = false, intervalosBloqueados = [], cuposEntidadResumen = [];
     try {
       const dispRes = await apiFetch(`/api/doctor-disponibilidad?doctor_id=${doctorId}&fecha=${fecha}`);
       const dispData = await dispRes.json();
       if (dispData.ok) {
         dispManana = Boolean(dispData.disponible_manana);
         dispTarde = Boolean(dispData.disponible_tarde);
+        if (Array.isArray(dispData.cupos_entidad)) {
+          cuposEntidadResumen = dispData.cupos_entidad;
+        }
         if (dispData.tiene_intervalos && dispData.intervalos) {
           intervalosBloqueados = dispData.intervalos.map((i) => ({
             inicio: horaAMinutos(i.hora_inicio),
@@ -5759,7 +5907,7 @@ async function cargarTurnosMedica() {
     } catch (e) { console.warn('Error obteniendo disponibilidad:', e.message); }
 
     const displayList = _construirDisplayListMedica(turnosOrdenados, {
-      dispManana, dispTarde, intervalosBloqueados, INTERVALO_MIN
+      dispManana, dispTarde, intervalosBloqueados, INTERVALO_MIN, cuposEntidadResumen
     });
 
     if (tbodyActivos) {
@@ -5835,7 +5983,7 @@ function toggleSlotVacio() {
 }
 
 function _applySlotVacioVisibility() {
-  const rows = document.querySelectorAll('#turnosTableBodyMedica tr.turno-slot-vacio');
+  const rows = document.querySelectorAll('#turnosTableBodyMedica tr.turno-slot-vacio, #turnosTableBodyMedica tr.turno-slot-entidad');
   rows.forEach((r) => {
     r.style.display = _mostrarSlotVacio ? '' : 'none';
   });
@@ -5846,6 +5994,26 @@ function _applySlotVacioVisibility() {
   }
   const lbl = document.getElementById('lblToggleSlot');
   if (lbl) lbl.textContent = _mostrarSlotVacio ? 'Ocultar libres' : 'Mostrar libres';
+}
+
+function crearFilaSlotEntidad(tbody, colspan, slot) {
+  const tr = document.createElement('tr');
+  tr.className = 'turno-row turno-slot-vacio turno-slot-entidad';
+  const entidad = escapeHtml(slot.entidad || 'Entidad');
+  const etiqueta = `${entidad} — Disponible (${slot.numero}/${slot.max})`;
+  if (currentUser?.rol === 'doctor') {
+    tr.innerHTML = `
+      <td style="padding:7px 10px;color:#0d9488;font-size:0.82rem;font-style:italic">${entidad}</td>
+      <td colspan="${colspan - 1}" style="padding:7px 10px;color:#0d9488;font-size:0.8rem;font-style:italic">${etiqueta}</td>
+    `;
+  } else {
+    tr.innerHTML = `
+      <td style="padding:7px 10px;color:#b0b8b6;font-size:0.82rem"></td>
+      <td class="col-hora" style="padding:7px 10px;color:#0d9488;font-size:0.82rem;font-style:italic">${entidad}</td>
+      <td colspan="${colspan - 2}" style="padding:7px 10px;color:#0d9488;font-size:0.8rem;font-style:italic">${etiqueta}</td>
+    `;
+  }
+  tbody.appendChild(tr);
 }
 
 // Fila visual de slot vacío con hora tentativa (rojo claro suave)
@@ -6411,6 +6579,19 @@ async function crearTurnoMedica() {
       if (dispData?.ok && dispData.disponible_manana === false && dispData.disponible_tarde === false) {
         showToast(`No se puede agendar: el doctor no asiste el ${formatearFechaCorta(fSes)}`, 'error');
         return;
+      }
+      if (dispData?.ok && Array.isArray(dispData.cupos_entidad) && dispData.cupos_entidad.length) {
+        const fila = dispData.cupos_entidad.find(
+          (c) => String(c.entidad || '').trim().toUpperCase() === String(entidad).trim().toUpperCase()
+        );
+        if (!fila) {
+          showToast(`La entidad ${entidad} no tiene cupos programados el ${formatearFechaCorta(fSes)}`, 'error');
+          return;
+        }
+        if ((fila.libres ?? 0) < 1) {
+          showToast(`Sin cupos de ${entidad} el ${formatearFechaCorta(fSes)} (${fila.ocupados}/${fila.cupo_max} ocupados)`, 'error');
+          return;
+        }
       }
     }
 
