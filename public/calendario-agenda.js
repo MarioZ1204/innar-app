@@ -145,6 +145,32 @@ function _aplicarCuposResumenDia(cuposResumenDia, cuposEntidad) {
   });
 }
 
+function _cuposDiaDesdeCache(fecha) {
+  let cuposDia = _citasCalCuposCache[fecha] || null;
+  if (cuposDia && Array.isArray(cuposDia.resumen) && cuposDia.resumen.length) return cuposDia;
+
+  if (typeof calCuposEntidad !== 'undefined' && calCuposEntidad && Array.isArray(calCuposEntidad[fecha]) && calCuposEntidad[fecha].length) {
+    const resumen = calCuposEntidad[fecha]
+      .filter((c) => c.entidad && (parseInt(c.cupo_max, 10) || 0) > 0)
+      .map((c) => {
+        const cupoMax = parseInt(c.cupo_max, 10) || 0;
+        const ocupados = parseInt(c.ocupados, 10) || 0;
+        return {
+          entidad: String(c.entidad || '').trim(),
+          cupo_max: cupoMax,
+          ocupados,
+          libres: Math.max(0, cupoMax - ocupados)
+        };
+      });
+    if (resumen.length) {
+      const capacidad = resumen.reduce((s, r) => s + r.cupo_max, 0);
+      const ocupados = resumen.reduce((s, r) => s + r.ocupados, 0);
+      return { capacidad, ocupados, libres: Math.max(0, capacidad - ocupados), resumen };
+    }
+  }
+  return cuposDia;
+}
+
 function _abrevEntidadCal(nom, maxLen = 10) {
   const s = String(nom || '').trim();
   if (!s) return 'Ent.';
@@ -182,7 +208,7 @@ function _htmlMetricasTop(citasGeneral, capHoraria, cuposDia) {
   const libresGeneral = Math.max(0, capHoraria - citasGeneral);
   const split = _calcMetricasSplit(citasGeneral, capHoraria, cuposDia);
   if (!split) {
-    return `<div class="ccal-card-top">${_htmlPanelMetricas(citasGeneral, libresGeneral)}</div>`;
+    return `<div class="ccal-card-top ccal-card-top-single">${_htmlPanelMetricas(citasGeneral, libresGeneral)}</div>`;
   }
 
   const entHtml = split.entidades.map((e) => {
@@ -295,7 +321,7 @@ function renderCitasCalGrid() {
   for (let day = 1; day <= daysInMonth; day++) {
     const fecha = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
     const datos = _citasCalDatosCache[fecha] || null;
-    const cuposDia = _citasCalCuposCache[fecha] || null;
+    const cuposDia = _cuposDiaDesdeCache(fecha);
     const esHoy = fecha === todayStr;
     const esDomingo = new Date(year, month, day).getDay() === 0;
     const disp = _citasCalDispCache[fecha] || null;

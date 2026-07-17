@@ -488,10 +488,12 @@
   }
 
   #view-agenda-medica .ccal-card-top-split .ccal-card-label,
-  #view-agenda-medica .ccal-card-top > .ccal-split-metrics .ccal-card-label {
+  #view-agenda-medica .ccal-card-top > .ccal-split-metrics .ccal-card-label,
+  #view-agenda-medica .ccal-card-top-single .ccal-card-label {
     display: block !important;
-    font-size: 4.5px !important;
+    font-size: 5px !important;
     line-height: 1.05;
+    white-space: nowrap;
   }
 
   #view-agenda-medica .ccal-ent-title,

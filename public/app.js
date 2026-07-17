@@ -4614,8 +4614,19 @@ let _calEntidadesOpciones = null;
 /** @type {Set<Promise<void>>} */
 const _calCupoRowLoads = new Set();
 
+function _fmtFechaAgenda(d) {
+  if (d == null || d === '') return '';
+  if (typeof d === 'string') return d.slice(0, 10);
+  const dt = d instanceof Date ? d : new Date(d);
+  if (Number.isNaN(dt.getTime())) return String(d).slice(0, 10);
+  const y = dt.getFullYear();
+  const mo = String(dt.getMonth() + 1).padStart(2, '0');
+  const day = String(dt.getDate()).padStart(2, '0');
+  return `${y}-${mo}-${day}`;
+}
+
 function normalizarFilaDisponibilidadCal(d) {
-  const fecha = (d.fecha || '').slice(0, 10);
+  const fecha = _fmtFechaAgenda(d.fecha);
   let disponible = null;
   if (d.disponible === true || d.disponible === 1 || d.disponible === '1') disponible = true;
   else if (d.disponible === false || d.disponible === 0 || d.disponible === '0' || d.disponible === 'false') disponible = false;
@@ -4632,7 +4643,7 @@ function obtenerEstadoDiaAgenda(dateStr) {
   const disp = calDisponibilidad[dateStr];
   if (disp && disp.disponible === false) return 'unavailable';
 
-  const daySlots = calSlots.filter(s => (s.fecha || '').slice(0, 10) === dateStr && s.disponible);
+  const daySlots = calSlots.filter((s) => _fmtFechaAgenda(s.fecha) === dateStr && s.disponible);
   const normalizedSlots = daySlots
     .map(s => `${(s.hora_inicio || '').slice(0, 5)}-${(s.hora_fin || '').slice(0, 5)}`)
     .sort();
@@ -4843,7 +4854,7 @@ function cargarMotivoEnCalModal(motivo) {
 
 function poblarCalFormularioConfig(dateStr) {
   const disp = calDisponibilidad[dateStr];
-  const daySlots = calSlots.filter((s) => (s.fecha || '').slice(0, 10) === dateStr && s.disponible);
+  const daySlots = calSlots.filter((s) => _fmtFechaAgenda(s.fecha) === dateStr && s.disponible);
   const normalizedSlots = daySlots
     .map((s) => `${(s.hora_inicio || '').slice(0, 5)}-${(s.hora_fin || '').slice(0, 5)}`)
     .sort();
@@ -4981,13 +4992,14 @@ function validarCalCuposEntidadForm() {
   return null;
 }
 
-function abrirCalPasoConfigurar() {
+async function abrirCalPasoConfigurar() {
   if (!calSelectedDate) return;
-  _calEntidadesOpciones = null;
   showCalModalStep('config');
-  void asegurarEntidadesCalModal().then(() => {
-    if (calSelectedDate) poblarCalFormularioConfig(calSelectedDate);
-  });
+  try {
+    await loadCalendarData();
+  } catch (_) { /* noop */ }
+  await asegurarEntidadesCalModal();
+  if (calSelectedDate) poblarCalFormularioConfig(calSelectedDate);
 }
 
 async function persistirCalDia(payload) {
@@ -5022,7 +5034,7 @@ async function persistirCalDia(payload) {
   const cuposResp = Array.isArray(data.cupos_entidad) ? data.cupos_entidad : (cupos_entidad || []);
 
   const dispCache = {
-    disponible,
+    disponible: Boolean(disponible),
     disponible_manana: dispMananaResp,
     disponible_tarde: dispTardeResp,
     motivo_ausencia: motivoResp,
@@ -5037,8 +5049,8 @@ async function persistirCalDia(payload) {
   }));
 
   calDisponibilidad[savedDate] = dispCache;
-  calSlots = calSlots.filter((s) => (s.fecha || '').slice(0, 10) !== savedDate);
-  slotsCache.forEach((s) => calSlots.push(s));
+  calSlots = calSlots.filter((s) => _fmtFechaAgenda(s.fecha) !== savedDate);
+  slotsCache.forEach((s) => calSlots.push({ ...s, fecha: savedDate }));
   if (disponible && cuposResp.length) {
     calCuposEntidad[savedDate] = cuposResp.map((c) => ({
       entidad: c.entidad,
@@ -5051,7 +5063,8 @@ async function persistirCalDia(payload) {
 
   renderCalendar();
   renderCalResumen();
-  await loadCalendarData();
+  void loadCalendarData();
+  if (typeof cargarCitasCalendario === 'function') void cargarCitasCalendario();
 }
 
 async function confirmarCalDiaNoAsiste() {
@@ -5119,14 +5132,14 @@ function closeCalModal() {
 }
 
 function aplicarCalSavedSnapshotEnCache() {
-  if (!calSavedSnapshot || Date.now() - calSavedSnapshot.at > 15000) {
+  if (!calSavedSnapshot || Date.now() - calSavedSnapshot.at > 120000) {
     calSavedSnapshot = null;
     return;
   }
   const { date, disp, slots, cupos } = calSavedSnapshot;
   calDisponibilidad[date] = disp;
-  calSlots = calSlots.filter((s) => (s.fecha || '').slice(0, 10) !== date);
-  slots.forEach((s) => calSlots.push(s));
+  calSlots = calSlots.filter((s) => _fmtFechaAgenda(s.fecha) !== date);
+  slots.forEach((s) => calSlots.push({ ...s, fecha: date }));
   if (cupos && cupos.length) calCuposEntidad[date] = cupos;
   else delete calCuposEntidad[date];
 }
@@ -5155,7 +5168,7 @@ async function loadCalendarData() {
     }
     if (dataDisp.ok && Array.isArray(dataDisp.cupos_entidad)) {
       dataDisp.cupos_entidad.forEach((c) => {
-        const fecha = (c.fecha || '').slice(0, 10);
+        const fecha = _fmtFechaAgenda(c.fecha);
         if (!fecha) return;
         if (!calCuposEntidad[fecha]) calCuposEntidad[fecha] = [];
         calCuposEntidad[fecha].push({
@@ -5170,7 +5183,15 @@ async function loadCalendarData() {
     });
     const slotsData = await resSlots.json();
     if (reqId !== calLoadReqId) return;
-    calSlots = Array.isArray(slotsData) ? slotsData : [];
+    calSlots = Array.isArray(slotsData)
+      ? slotsData.map((s) => ({
+        ...s,
+        fecha: _fmtFechaAgenda(s.fecha),
+        hora_inicio: String(s.hora_inicio || '').slice(0, 5),
+        hora_fin: String(s.hora_fin || '').slice(0, 5),
+        disponible: s.disponible ? 1 : 0
+      }))
+      : [];
 
     aplicarCalSavedSnapshotEnCache();
   } catch (e) {
@@ -5358,7 +5379,7 @@ function renderCalResumen() {
     if (dateObj < today) continue;
 
     const disp = calDisponibilidad[dateStr];
-    const daySlots = calSlots.filter(s => (s.fecha || '').slice(0, 10) === dateStr && s.disponible);
+    const daySlots = calSlots.filter((s) => _fmtFechaAgenda(s.fecha) === dateStr && s.disponible);
     const estadoDia = obtenerEstadoDiaAgenda(dateStr);
 
     if (!disp && daySlots.length === 0) continue;

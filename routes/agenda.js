@@ -51,7 +51,10 @@ router.get('/doctor-agenda', requireAuth, async (req, res) => {
   if (!doctorId) return res.status(400).json({ error: 'doctor_id es obligatorio' });
   try {
     const rows = await db.query('SELECT id, doctor_id, fecha, hora_inicio, hora_fin, disponible FROM doctor_agenda WHERE doctor_id = ? ORDER BY fecha ASC, hora_inicio ASC', [doctorId]);
-    res.json(rows);
+    res.json((rows || []).map((r) => ({
+      ...r,
+      fecha: cuposEntidadAgenda.fmtFechaLocal(r.fecha)
+    })));
   } catch (e) {
     logger.error(e.message, { error: e });
     res.status(500).json({ error: safeError(e) });
@@ -297,7 +300,14 @@ router.get('/doctor-disponibilidad/:doctorId', requireAuth, async (req, res) => 
     } catch (err) {
       logger.warn('[DISPONIBILIDAD] cupos_entidad no disponibles:', err.message);
     }
-    res.json({ ok: true, disponibilidad, cupos_entidad });
+    res.json({
+      ok: true,
+      disponibilidad: (disponibilidad || []).map((d) => ({
+        ...d,
+        fecha: cuposEntidadAgenda.fmtFechaLocal(d.fecha)
+      })),
+      cupos_entidad
+    });
   } catch (e) {
     logger.error('[DISPONIBILIDAD] Error obteniendo disponibilidad:', e.message);
     res.status(500).json({ error: safeError(e) });

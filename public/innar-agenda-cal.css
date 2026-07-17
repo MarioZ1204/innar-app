@@ -317,6 +317,16 @@
   align-items: stretch;
 }
 
+.ccal-card-top-single {
+  display: block !important;
+  grid-template-columns: 1fr !important;
+}
+
+.ccal-card-top-single > .ccal-split-metrics {
+  width: 100%;
+  padding: 8px 4px 5px;
+}
+
 .ccal-split-panel {
   display: flex;
   flex-direction: column;
