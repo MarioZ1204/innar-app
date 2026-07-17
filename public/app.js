@@ -1573,13 +1573,23 @@ function formatearHora(valor) {
   return strValor || '-';
 }
 
-// Convierte una cadena de hora "HH:MM" o "HH:MM:SS" a minutos totales desde medianoche.
-// Retorna null si el valor no es válido.
+// Convierte hora a minutos desde medianoche (acepta string, TIME de MySQL, etc.).
 function horaAMinutos(h) {
-  if (!h || typeof h !== 'string') return null;
-  const parts = h.slice(0, 5).split(':').map(Number);
-  if (parts.length < 2 || isNaN(parts[0]) || isNaN(parts[1])) return null;
-  return parts[0] * 60 + parts[1];
+  if (h == null || h === '') return null;
+  const str = String(h).trim();
+  if (!str || str === 'null') return null;
+  const m24 = str.match(/^(\d{1,2}):(\d{2})/);
+  if (m24) {
+    const hh = parseInt(m24[1], 10);
+    const mm = parseInt(m24[2], 10);
+    if (hh >= 0 && hh <= 23 && mm >= 0 && mm <= 59) return hh * 60 + mm;
+  }
+  const parsed12 = parseHora12a24(str);
+  if (parsed12) {
+    const [hh, mm] = parsed12.split(':').map(Number);
+    if (!isNaN(hh) && !isNaN(mm)) return hh * 60 + mm;
+  }
+  return null;
 }
 
 // Parsea una hora en formato "H:MM AM/PM" o "HH:MM" (24h) a "HH:MM" (24h).
@@ -5814,6 +5824,12 @@ function _contarOcupadosEntidadDesdeTurnos(turnos) {
   return map;
 }
 
+function _minutoAHoraStr(m) {
+  const hh = String(Math.floor(m / 60)).padStart(2, '0');
+  const mm = String(m % 60).padStart(2, '0');
+  return `${hh}:${mm}`;
+}
+
 function _asignarMinutosEntidad(todosMinutos, cuposEntidadResumen) {
   /** @type {Map<number, { entidad: string, numero: number, max: number }>} */
   const map = new Map();
@@ -5832,12 +5848,6 @@ function _asignarMinutosEntidad(todosMinutos, cuposEntidadResumen) {
     }
   }
   return map;
-}
-
-function _minutoAHoraStr(m) {
-  const hh = String(Math.floor(m / 60)).padStart(2, '0');
-  const mm = String(m % 60).padStart(2, '0');
-  return `${hh}:${mm}`;
 }
 
 function _construirDisplayListMedica(turnosDiaOrdenCronologico, dispCtx) {
@@ -5863,10 +5873,13 @@ function _construirDisplayListMedica(turnosDiaOrdenCronologico, dispCtx) {
     }
   }
 
+  const minutosOcupados = new Set();
   const turnoPorMinuto = new Map();
   for (const t of turnosActivos) {
     const m = horaAMinutos(t.hora);
-    if (m != null && !turnoPorMinuto.has(m)) turnoPorMinuto.set(m, t);
+    if (m == null) continue;
+    minutosOcupados.add(m);
+    if (!turnoPorMinuto.has(m)) turnoPorMinuto.set(m, t);
   }
 
   const entityByMinute = _asignarMinutosEntidad(todosMinutos, cuposEntidadResumen);
@@ -5880,6 +5893,7 @@ function _construirDisplayListMedica(turnosDiaOrdenCronologico, dispCtx) {
       if (turno.id != null) turnosMostrados.add(turno.id);
       continue;
     }
+    if (minutosOcupados.has(m)) continue;
     const ent = entityByMinute.get(m);
     if (ent) {
       displayList.push({

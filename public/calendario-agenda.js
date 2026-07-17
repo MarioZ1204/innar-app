@@ -414,7 +414,9 @@ function renderCitasCalGrid() {
         + (disp.tarde !== 0 ? Math.floor(240 / intervalMin) : 0);
     }
 
-    const EGeneral = datos ? (datos.agendadas + datos.atendidas + datos.no_asistieron) : 0;
+    const EGeneral = datos
+      ? (datos.agendadas + datos.atendidas + datos.no_asistieron)
+      : 0;
 
     const citasCount = EGeneral;
     const libresCount = Math.max(0, capHoraria - citasCount);
