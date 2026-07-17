@@ -381,8 +381,17 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  margin-bottom: 2px;
   line-height: 1.1;
+}
+
+.ccal-ent-cupo {
+  display: block;
+  font-size: 6px;
+  font-weight: 700;
+  color: #64748b;
+  text-align: center;
+  line-height: 1;
+  margin-bottom: 2px;
 }
 
 .ccal-cell-split {

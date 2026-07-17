@@ -66,19 +66,6 @@ function _fmtFechaCal(d) {
   return new Date(d).toISOString().slice(0, 10);
 }
 
-function _textoCuposEntidadObs(resumen) {
-  if (!Array.isArray(resumen) || !resumen.length) return '';
-  return resumen.map((r) => {
-    const nom = String(r.entidad || '').trim();
-    const occ = parseInt(r.ocupados, 10) || 0;
-    const max = parseInt(r.cupo_max, 10) || 0;
-    const lib = parseInt(r.libres, 10);
-    const libres = Number.isFinite(lib) ? lib : Math.max(0, max - occ);
-    const abrev = nom.length > 12 ? `${nom.slice(0, 10)}…` : nom;
-    return `${abrev} ${occ}/${max} (${libres} disp.)`;
-  }).join(' · ');
-}
-
 function _abrevEntidadCal(nom, maxLen = 10) {
   const s = String(nom || '').trim();
   if (!s) return 'Ent.';
@@ -99,6 +86,7 @@ function _calcMetricasSplit(citasGeneral, capHoraria, cuposDia) {
     entidades: resumen.map((r) => ({
       entidad: String(r.entidad || '').trim() || 'Entidad',
       citas: parseInt(r.ocupados, 10) || 0,
+      cupo_max: parseInt(r.cupo_max, 10) || 0,
       libres: parseInt(r.libres, 10) ?? Math.max(0, (parseInt(r.cupo_max, 10) || 0) - (parseInt(r.ocupados, 10) || 0))
     }))
   };
@@ -120,8 +108,9 @@ function _htmlMetricasTop(citasGeneral, capHoraria, cuposDia) {
 
   const entHtml = split.entidades.map((e) => {
     const abrev = _abrevEntidadCal(e.entidad);
-    return `<div class="ccal-ent-block" title="${escapeHtml(e.entidad)}">`
+    return `<div class="ccal-ent-block" title="${escapeHtml(e.entidad)}: ${e.citas}/${e.cupo_max} · ${e.libres} libres">`
       + `<span class="ccal-ent-title">${escapeHtml(abrev)}</span>`
+      + `<span class="ccal-ent-cupo">${e.citas}/${e.cupo_max}</span>`
       + _htmlPanelMetricas(e.citas, e.libres, 'ccal-split-metrics-ent')
       + '</div>';
   }).join('');
@@ -275,13 +264,7 @@ function renderCitasCalGrid() {
 
     const citasCount = EGeneral;
     const libresCount = Math.max(0, capHoraria - citasCount);
-    let obsCupos = '';
-    const tieneCuposEntidad = !!(cuposDia && cuposDia.capacidad > 0
-      && Array.isArray(cuposDia.resumen) && cuposDia.resumen.length);
-
-    if (tieneCuposEntidad) {
-      obsCupos = _textoCuposEntidadObs(cuposDia.resumen);
-    }
+    const tieneCuposEntidad = !!(cuposDia && Array.isArray(cuposDia.resumen) && cuposDia.resumen.length);
 
     const E = citasCount;
     const T = libresCount;
@@ -291,18 +274,17 @@ function renderCitasCalGrid() {
     if (splitInfo) {
       tooltip += ` | Otras citas: ${splitInfo.izquierda.citas} | Otras libres: ${splitInfo.izquierda.libres}`;
       splitInfo.entidades.forEach((e) => {
-        tooltip += ` | ${e.entidad}: ${e.citas} citas, ${e.libres} libres`;
+        tooltip += ` | ${e.entidad}: ${e.citas}/${e.cupo_max} (${e.libres} disp.)`;
       });
     }
     if (datos && datos.atendidas) tooltip += ` | Atendidas: ${datos.atendidas}`;
     if (datos && datos.no_asistieron) tooltip += ` | No asist.: ${datos.no_asistieron}`;
     if (datos && datos.canceladas) tooltip += ` | Canceladas: ${datos.canceladas}`;
     if (datos && datos.reprogramadas) tooltip += ` | Reprog.: ${datos.reprogramadas}`;
-    if (obsCupos) tooltip += ` | ${obsCupos}`;
 
-    let obsTexto = (tieneCuposEntidad ? '' : obsCupos) || (tieneMotivo
+    let obsTexto = tieneMotivo
       ? (motivo.length > 26 ? `${motivo.slice(0, 24)}…` : motivo)
-      : (bloqueado ? 'NO DISPONIBLE' : (tieneCuposEntidad ? '' : 'Sin observación')));
+      : (bloqueado ? 'NO DISPONIBLE' : (tieneCuposEntidad ? '' : 'Sin observación'));
 
     let colorClass = 'ccal-neutro';
     const totalDia = datos ? datos.total : 0;
@@ -331,7 +313,7 @@ function renderCitasCalGrid() {
     html += `<div class="ccal-dia-num">${day}</div>`;
     html += '<div class="ccal-dia-info ccal-dia-info-split">';
     html += _htmlMetricasTop(citasCount, capHoraria, tieneCuposEntidad ? cuposDia : null);
-    html += `<div class="ccal-card-bottom"><span class="ccal-card-observacion${obsTexto || tieneMotivo || bloqueado ? '' : ' ccal-card-observacion-empty'}"${tieneMotivo && !obsCupos ? ` title="${escapeHtml(motivo)}"` : ''}>${escapeHtml(obsTexto)}</span></div>`;
+    html += `<div class="ccal-card-bottom"><span class="ccal-card-observacion${obsTexto || tieneMotivo || bloqueado ? '' : ' ccal-card-observacion-empty'}"${tieneMotivo ? ` title="${escapeHtml(motivo)}"` : ''}>${escapeHtml(obsTexto)}</span></div>`;
     html += '</div>';
 
     if (!esUcqn && !bloqueado && datos && (datos.atendidas || datos.canceladas || datos.reprogramadas || datos.no_asistieron)) {
