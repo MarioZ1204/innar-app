@@ -1356,6 +1356,26 @@ const runtimeMigrations = [
         await db.execute('ALTER TABLE citas_electro ADD COLUMN reprogramado_en DATETIME NULL DEFAULT NULL');
       }
     }
+  },
+  {
+    name: 'rt_doctor_cupos_entidad_dia',
+    description: 'Cupos de pacientes por entidad y día (programar agenda)',
+    run: async (db) => {
+      await db.execute(`
+        CREATE TABLE IF NOT EXISTS doctor_cupos_entidad_dia (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          doctor_id INT NOT NULL,
+          fecha DATE NOT NULL,
+          entidad VARCHAR(200) NOT NULL,
+          cupo_max INT NOT NULL DEFAULT 0,
+          creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          actualizado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          UNIQUE KEY unique_doctor_fecha_entidad (doctor_id, fecha, entidad),
+          INDEX idx_doctor_fecha (doctor_id, fecha),
+          FOREIGN KEY (doctor_id) REFERENCES usuarios(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+      `);
+    }
   }
 ];
 

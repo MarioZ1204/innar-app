@@ -13,21 +13,53 @@ function claveEntidad(raw) {
   return normalizarEntidadNombre(raw).toUpperCase();
 }
 
+const CREATE_CUPOS_TABLE_SQL = `
+  CREATE TABLE IF NOT EXISTS doctor_cupos_entidad_dia (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    doctor_id INT NOT NULL,
+    fecha DATE NOT NULL,
+    entidad VARCHAR(200) NOT NULL,
+    cupo_max INT NOT NULL DEFAULT 0,
+    creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    actualizado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY unique_doctor_fecha_entidad (doctor_id, fecha, entidad),
+    INDEX idx_doctor_fecha (doctor_id, fecha)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+`;
+
+let _tablaCuposVerificada = false;
+
+async function ensureCuposEntidadTable(db) {
+  if (_tablaCuposVerificada) return;
+  await db.execute(CREATE_CUPOS_TABLE_SQL);
+  _tablaCuposVerificada = true;
+}
+
 async function listarCuposDia(doctorId, fecha, db) {
-  const rows = await db.execute(
-    `SELECT entidad, cupo_max FROM doctor_cupos_entidad_dia
-     WHERE doctor_id = ? AND fecha = ?
-     ORDER BY entidad ASC`,
-    [doctorId, fecha]
-  );
-  return (rows || []).map((r) => ({
-    entidad: normalizarEntidadNombre(r.entidad),
-    cupo_max: Math.max(0, parseInt(r.cupo_max, 10) || 0)
-  })).filter((r) => r.entidad && r.cupo_max > 0);
+  try {
+    await ensureCuposEntidadTable(db);
+  } catch (_) {
+    return [];
+  }
+  try {
+    const rows = await db.execute(
+      `SELECT entidad, cupo_max FROM doctor_cupos_entidad_dia
+       WHERE doctor_id = ? AND fecha = ?
+       ORDER BY entidad ASC`,
+      [doctorId, fecha]
+    );
+    return (rows || []).map((r) => ({
+      entidad: normalizarEntidadNombre(r.entidad),
+      cupo_max: Math.max(0, parseInt(r.cupo_max, 10) || 0)
+    })).filter((r) => r.entidad && r.cupo_max > 0);
+  } catch (_) {
+    return [];
+  }
 }
 
 async function listarCuposMes(doctorId, mes, db) {
   if (!mes || !/^\d{4}-\d{2}$/.test(mes)) return [];
+  await ensureCuposEntidadTable(db);
   const rows = await db.execute(
     `SELECT fecha, entidad, cupo_max FROM doctor_cupos_entidad_dia
      WHERE doctor_id = ? AND DATE_FORMAT(fecha, '%Y-%m') = ?
@@ -101,11 +133,8 @@ async function validarCupoEntidad(doctorId, fecha, entidad, db, cantidad = 1) {
 
   const cupoEnt = cupos.find((c) => claveEntidad(c.entidad) === claveEntidad(entidadNorm));
   if (!cupoEnt) {
-    const lista = cupos.map((c) => c.entidad).join(', ');
-    return {
-      valido: false,
-      razon: `La entidad "${entidadNorm}" no tiene cupos programados este día. Entidades disponibles: ${lista}`
-    };
+    // Sin cupo programado para esta entidad: agendar con reglas normales (horario).
+    return { valido: true, sinCupoProgramadoParaEntidad: true };
   }
 
   const resumen = await resumenCuposDia(doctorId, fecha, db);
@@ -124,6 +153,7 @@ async function validarCupoEntidad(doctorId, fecha, entidad, db, cantidad = 1) {
 }
 
 async function guardarCuposEntidadDia(conn, doctorId, fecha, cuposEntidad) {
+  await ensureCuposEntidadTable(conn);
   await conn.execute(
     'DELETE FROM doctor_cupos_entidad_dia WHERE doctor_id = ? AND fecha = ?',
     [doctorId, fecha]
@@ -150,6 +180,7 @@ async function guardarCuposEntidadDia(conn, doctorId, fecha, cuposEntidad) {
 }
 
 async function eliminarCuposEntidadDia(conn, doctorId, fecha) {
+  await ensureCuposEntidadTable(conn);
   await conn.execute(
     'DELETE FROM doctor_cupos_entidad_dia WHERE doctor_id = ? AND fecha = ?',
     [doctorId, fecha]
@@ -172,6 +203,7 @@ module.exports = {
   ESTADOS_OCUPAN_CUPO,
   normalizarEntidadNombre,
   claveEntidad,
+  ensureCuposEntidadTable,
   listarCuposDia,
   listarCuposMes,
   contarOcupadosPorEntidad,
