@@ -62,8 +62,14 @@ function _getCitasCalDoctorId() {
 }
 
 function _fmtFechaCal(d) {
+  if (d == null || d === '') return '';
   if (typeof d === 'string') return d.slice(0, 10);
-  return new Date(d).toISOString().slice(0, 10);
+  const dt = d instanceof Date ? d : new Date(d);
+  if (Number.isNaN(dt.getTime())) return String(d).slice(0, 10);
+  const y = dt.getFullYear();
+  const mo = String(dt.getMonth() + 1).padStart(2, '0');
+  const day = String(dt.getDate()).padStart(2, '0');
+  return `${y}-${mo}-${day}`;
 }
 
 function _parseResumenCupos(raw) {
@@ -87,13 +93,55 @@ function _mergeCuposEntidadFallback(cuposEntidad) {
     const cupoMax = Math.max(0, parseInt(c.cupo_max, 10) || 0);
     if (!f || !entidad || cupoMax <= 0) return;
     if (!porFecha[f]) porFecha[f] = [];
-    porFecha[f].push({ entidad, cupo_max: cupoMax, ocupados: 0, libres: cupoMax });
+    porFecha[f].push({
+      entidad,
+      cupo_max: cupoMax,
+      ocupados: parseInt(c.ocupados, 10) || 0,
+      libres: c.libres != null
+        ? Math.max(0, parseInt(c.libres, 10) || 0)
+        : Math.max(0, cupoMax - (parseInt(c.ocupados, 10) || 0))
+    });
   });
   Object.entries(porFecha).forEach(([f, items]) => {
     const prev = _citasCalCuposCache[f];
     if (prev && Array.isArray(prev.resumen) && prev.resumen.length) return;
     const capacidad = items.reduce((s, r) => s + (r.cupo_max || 0), 0);
-    _citasCalCuposCache[f] = { capacidad, ocupados: 0, libres: capacidad, resumen: items };
+    const ocupados = items.reduce((s, r) => s + (r.ocupados || 0), 0);
+    _citasCalCuposCache[f] = {
+      capacidad,
+      ocupados,
+      libres: Math.max(0, capacidad - ocupados),
+      resumen: items
+    };
+  });
+}
+
+function _aplicarCuposResumenDia(cuposResumenDia, cuposEntidad) {
+  if (!Array.isArray(cuposResumenDia)) return;
+  cuposResumenDia.forEach((row) => {
+    const f = _fmtFechaCal(row.fecha);
+    if (!f) return;
+    let resumen = _parseResumenCupos(row.resumen);
+    if (!resumen.length && Array.isArray(cuposEntidad)) {
+      resumen = cuposEntidad
+        .filter((c) => _fmtFechaCal(c.fecha) === f)
+        .map((c) => ({
+          entidad: String(c.entidad || '').trim(),
+          cupo_max: Math.max(0, parseInt(c.cupo_max, 10) || 0),
+          ocupados: parseInt(c.ocupados, 10) || 0,
+          libres: c.libres != null
+            ? Math.max(0, parseInt(c.libres, 10) || 0)
+            : Math.max(0, (parseInt(c.cupo_max, 10) || 0) - (parseInt(c.ocupados, 10) || 0))
+        }))
+        .filter((c) => c.entidad && c.cupo_max > 0);
+    }
+    if (!resumen.length) return;
+    _citasCalCuposCache[f] = {
+      capacidad: parseInt(row.capacidad, 10) || resumen.reduce((s, r) => s + (r.cupo_max || 0), 0),
+      ocupados: parseInt(row.ocupados, 10) || resumen.reduce((s, r) => s + (r.ocupados || 0), 0),
+      libres: parseInt(row.libres, 10) ?? Math.max(0, resumen.reduce((s, r) => s + (r.libres || 0), 0)),
+      resumen
+    };
   });
 }
 
@@ -195,29 +243,8 @@ async function cargarCitasCalendario() {
       });
     }
 
-    if (body.cupos_resumen_dia && Array.isArray(body.cupos_resumen_dia)) {
-      body.cupos_resumen_dia.forEach((row) => {
-        const f = _fmtFechaCal(row.fecha);
-        let resumen = _parseResumenCupos(row.resumen);
-        if (!resumen.length && Array.isArray(body.cupos_entidad)) {
-          resumen = body.cupos_entidad
-            .filter((c) => _fmtFechaCal(c.fecha) === f)
-            .map((c) => ({
-              entidad: String(c.entidad || '').trim(),
-              cupo_max: Math.max(0, parseInt(c.cupo_max, 10) || 0),
-              ocupados: 0,
-              libres: Math.max(0, parseInt(c.cupo_max, 10) || 0)
-            }))
-            .filter((c) => c.entidad && c.cupo_max > 0);
-        }
-        _citasCalCuposCache[f] = {
-          capacidad: parseInt(row.capacidad, 10) || 0,
-          ocupados: parseInt(row.ocupados, 10) || 0,
-          libres: parseInt(row.libres, 10) || 0,
-          resumen
-        };
-      });
-    }
+    _mergeCuposEntidadFallback(body.cupos_entidad);
+    _aplicarCuposResumenDia(body.cupos_resumen_dia, body.cupos_entidad);
     _mergeCuposEntidadFallback(body.cupos_entidad);
 
     if (doctorId) {

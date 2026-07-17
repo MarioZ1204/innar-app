@@ -372,7 +372,7 @@
 
 .ccal-ent-title {
   display: block;
-  font-size: 5.5px;
+  font-size: 7px;
   font-weight: 800;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -386,7 +386,7 @@
 
 .ccal-ent-cupo {
   display: block;
-  font-size: 6px;
+  font-size: 8px;
   font-weight: 700;
   color: #64748b;
   text-align: center;

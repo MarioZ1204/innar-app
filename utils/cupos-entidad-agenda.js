@@ -13,6 +13,18 @@ function claveEntidad(raw) {
   return normalizarEntidadNombre(raw).toUpperCase();
 }
 
+/** Fecha YYYY-MM-DD en zona local (evita desfase UTC con DATE de MySQL). */
+function fmtFechaLocal(d) {
+  if (d == null || d === '') return '';
+  if (typeof d === 'string') return d.slice(0, 10);
+  const dt = d instanceof Date ? d : new Date(d);
+  if (Number.isNaN(dt.getTime())) return String(d).slice(0, 10);
+  const y = dt.getFullYear();
+  const mo = String(dt.getMonth() + 1).padStart(2, '0');
+  const day = String(dt.getDate()).padStart(2, '0');
+  return `${y}-${mo}-${day}`;
+}
+
 const CREATE_CUPOS_TABLE_SQL = `
   CREATE TABLE IF NOT EXISTS doctor_cupos_entidad_dia (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -83,7 +95,7 @@ async function listarCuposMes(doctorId, mes, db) {
       [doctorId, mes]
     );
     return (rows || []).map((r) => ({
-      fecha: typeof r.fecha === 'string' ? r.fecha.slice(0, 10) : new Date(r.fecha).toISOString().slice(0, 10),
+      fecha: fmtFechaLocal(r.fecha),
       entidad: normalizarEntidadNombre(r.entidad),
       cupo_max: Math.max(0, parseInt(r.cupo_max, 10) || 0)
     })).filter((r) => r.entidad && r.cupo_max > 0);
@@ -226,6 +238,7 @@ module.exports = {
   ESTADOS_OCUPAN_CUPO,
   normalizarEntidadNombre,
   claveEntidad,
+  fmtFechaLocal,
   ensureCuposEntidadTable,
   prepararTablaCuposEntidad,
   listarCuposDia,

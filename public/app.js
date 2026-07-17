@@ -5767,28 +5767,30 @@ function _contarOcupadosEntidadDesdeTurnos(turnos) {
   return map;
 }
 
-function _generarSlotsEntidadLibres(cuposResumen, turnos) {
-  const slots = [];
-  if (!Array.isArray(cuposResumen) || !cuposResumen.length) return slots;
-  const occMap = _contarOcupadosEntidadDesdeTurnos(turnos);
-  for (const c of cuposResumen) {
+function _asignarMinutosEntidad(todosMinutos, cuposEntidadResumen) {
+  /** @type {Map<number, { entidad: string, numero: number, max: number }>} */
+  const map = new Map();
+  if (!Array.isArray(cuposEntidadResumen) || !cuposEntidadResumen.length) return map;
+
+  let minIdx = 0;
+  for (const c of cuposEntidadResumen) {
     const entidad = String(c.entidad || '').trim();
-    if (!entidad) continue;
     const max = parseInt(c.cupo_max, 10) || 0;
-    if (max <= 0) continue;
-    const key = entidad.toUpperCase();
-    const ocupados = c.ocupados != null ? parseInt(c.ocupados, 10) : (occMap.get(key) || 0);
-    const libres = Math.max(0, max - ocupados);
-    for (let i = 0; i < libres; i++) {
-      slots.push({
-        tipo: 'slot-entidad',
-        entidad,
-        numero: ocupados + i + 1,
-        max
-      });
+    if (!entidad || max <= 0) continue;
+    let assigned = 0;
+    while (assigned < max && minIdx < todosMinutos.length) {
+      const m = todosMinutos[minIdx++];
+      map.set(m, { entidad, numero: assigned + 1, max });
+      assigned++;
     }
   }
-  return slots;
+  return map;
+}
+
+function _minutoAHoraStr(m) {
+  const hh = String(Math.floor(m / 60)).padStart(2, '0');
+  const mm = String(m % 60).padStart(2, '0');
+  return `${hh}:${mm}`;
 }
 
 function _construirDisplayListMedica(turnosDiaOrdenCronologico, dispCtx) {
@@ -5807,32 +5809,57 @@ function _construirDisplayListMedica(turnosDiaOrdenCronologico, dispCtx) {
     return !intervalosBloqueados.some((b) => m >= b.inicio && m < b.fin);
   }
 
-  const horasOcupadas = new Set(
-    turnosActivos.map((t) => horaAMinutos(t.hora)).filter((m) => m !== null)
-  );
-
-  const displayList = [];
-
-  // Espacios libres por horario primero: 8:00, 8:25, 8:50...
+  const todosMinutos = [];
   for (const rango of rangosDisponibles) {
     for (let m = rango.inicio; m < rango.fin; m += INTERVALO_MIN) {
-      if (minutoDentroDeDisponibilidad(m) && !horasOcupadas.has(m)) {
-        const hh = String(Math.floor(m / 60)).padStart(2, '0');
-        const mm = String(m % 60).padStart(2, '0');
-        displayList.push({ tipo: 'slot-vacio', hora: `${hh}:${mm}` });
-      }
+      if (minutoDentroDeDisponibilidad(m)) todosMinutos.push(m);
     }
   }
 
-  // Cupos libres por entidad programada
-  if (Array.isArray(cuposEntidadResumen) && cuposEntidadResumen.length) {
-    displayList.push(..._generarSlotsEntidadLibres(cuposEntidadResumen, lista));
+  const turnoPorMinuto = new Map();
+  for (const t of turnosActivos) {
+    const m = horaAMinutos(t.hora);
+    if (m != null && !turnoPorMinuto.has(m)) turnoPorMinuto.set(m, t);
   }
 
-  // Citas agendadas al final
+  const entityByMinute = _asignarMinutosEntidad(todosMinutos, cuposEntidadResumen);
+  const displayList = [];
+  const turnosMostrados = new Set();
+
+  for (const m of todosMinutos) {
+    const turno = turnoPorMinuto.get(m);
+    if (turno) {
+      displayList.push({ tipo: 'turno', data: turno });
+      if (turno.id != null) turnosMostrados.add(turno.id);
+      continue;
+    }
+    const ent = entityByMinute.get(m);
+    if (ent) {
+      displayList.push({
+        tipo: 'slot-entidad',
+        hora: _minutoAHoraStr(m),
+        entidad: ent.entidad,
+        numero: ent.numero,
+        max: ent.max
+      });
+      continue;
+    }
+    displayList.push({ tipo: 'slot-vacio', hora: _minutoAHoraStr(m) });
+  }
+
   for (const t of turnosActivos) {
+    if (t.id != null && turnosMostrados.has(t.id)) continue;
     displayList.push({ tipo: 'turno', data: t });
   }
+
+  displayList.sort((a, b) => {
+    const ma = a.tipo === 'turno' ? horaAMinutos(a.data.hora) : horaAMinutos(a.hora);
+    const mb = b.tipo === 'turno' ? horaAMinutos(b.data.hora) : horaAMinutos(b.hora);
+    if (ma == null && mb == null) return 0;
+    if (ma == null) return 1;
+    if (mb == null) return -1;
+    return ma - mb;
+  });
 
   return displayList;
 }
@@ -6043,16 +6070,17 @@ function crearFilaSlotEntidad(tbody, colspan, slot) {
   const tr = document.createElement('tr');
   tr.className = 'turno-row turno-slot-vacio turno-slot-entidad';
   const entidad = escapeHtml(slot.entidad || 'Entidad');
+  const horaDisplay = slot.hora ? formatearHora(slot.hora) : '';
   const etiqueta = `${entidad} — Disponible (${slot.numero}/${slot.max})`;
   if (currentUser?.rol === 'doctor') {
     tr.innerHTML = `
-      <td style="padding:7px 10px;color:#0d9488;font-size:0.82rem;font-style:italic">${entidad}</td>
+      <td style="padding:7px 10px;color:#0d9488;font-size:0.82rem;font-style:italic">${horaDisplay}</td>
       <td colspan="${colspan - 1}" style="padding:7px 10px;color:#0d9488;font-size:0.8rem;font-style:italic">${etiqueta}</td>
     `;
   } else {
     tr.innerHTML = `
       <td style="padding:7px 10px;color:#b0b8b6;font-size:0.82rem"></td>
-      <td class="col-hora" style="padding:7px 10px;color:#0d9488;font-size:0.82rem;font-style:italic">${entidad}</td>
+      <td class="col-hora" style="padding:7px 10px;color:#0d9488;font-size:0.82rem;font-style:italic">${horaDisplay}</td>
       <td colspan="${colspan - 2}" style="padding:7px 10px;color:#0d9488;font-size:0.8rem;font-style:italic">${etiqueta}</td>
     `;
   }
