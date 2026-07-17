@@ -292,8 +292,11 @@ router.get('/doctor-disponibilidad/:doctorId', requireAuth, async (req, res) => 
     const disponibilidad = await procesarAgendaExcel.obtenerDisponibilidadMensual(doctorId, mes, db);
     let cupos_entidad = [];
     try {
+      await cuposEntidadAgenda.prepararTablaCuposEntidad(db);
       cupos_entidad = await cuposEntidadAgenda.listarCuposMes(doctorId, mes, db);
-    } catch (_) { /* tabla puede no existir aún */ }
+    } catch (err) {
+      logger.warn('[DISPONIBILIDAD] cupos_entidad no disponibles:', err.message);
+    }
     res.json({ ok: true, disponibilidad, cupos_entidad });
   } catch (e) {
     logger.error('[DISPONIBILIDAD] Error obteniendo disponibilidad:', e.message);
@@ -366,6 +369,8 @@ router.post('/doctor-disponibilidad/guardar-dia-completo', requireAuth, async (r
       ? motivo_ausencia.trim().substring(0, 200)
       : null;
 
+    await cuposEntidadAgenda.prepararTablaCuposEntidad(db);
+
     await db.transaction(async (conn) => {
       await conn.execute(
         `INSERT INTO doctor_disponibilidad_mensual (doctor_id, fecha, disponible, disponible_manana, disponible_tarde, motivo_ausencia)
@@ -389,13 +394,21 @@ router.post('/doctor-disponibilidad/guardar-dia-completo', requireAuth, async (r
         );
       }
       if (disponible) {
-        await cuposEntidadAgenda.guardarCuposEntidadDia(conn, doctorId, fecha, cupos_entidad);
+        await cuposEntidadAgenda.guardarCuposEntidadDia(conn, doctorId, fecha, cupos_entidad, { ensureTable: false });
       } else {
-        await cuposEntidadAgenda.eliminarCuposEntidadDia(conn, doctorId, fecha);
+        await cuposEntidadAgenda.eliminarCuposEntidadDia(conn, doctorId, fecha, { ensureTable: false });
       }
     });
 
-    logger.info(`[DISPONIBILIDAD] Día completo guardado: doctor=${doctorId}, fecha=${fecha}, slots=${slotsValidos.length}`, { type: 'API' });
+    const slotsGuardados = await db.query(
+      'SELECT fecha, hora_inicio, hora_fin, disponible FROM doctor_agenda WHERE doctor_id = ? AND fecha = ? ORDER BY hora_inicio ASC',
+      [doctorId, fecha]
+    );
+    const cuposGuardados = disponible
+      ? await cuposEntidadAgenda.listarCuposDia(doctorId, fecha, db)
+      : [];
+
+    logger.info(`[DISPONIBILIDAD] Día completo guardado: doctor=${doctorId}, fecha=${fecha}, slots=${slotsGuardados.length}, cupos=${cuposGuardados.length}`, { type: 'API' });
     emitSocket('agenda:disponibilidad-actualizada', { doctor_id: doctorId, fecha, source: 'guardar-dia-completo' });
     res.json({
       ok: true,
@@ -404,8 +417,13 @@ router.post('/doctor-disponibilidad/guardar-dia-completo', requireAuth, async (r
       disponible_manana: Boolean(disponible_manana),
       disponible_tarde: Boolean(disponible_tarde),
       motivo_ausencia: motivoLimpio,
-      slots: slotsValidos.map((s) => ({ fecha, ...s })),
-      cupos_entidad: disponible ? (Array.isArray(cupos_entidad) ? cupos_entidad : []) : []
+      slots: (slotsGuardados || []).map((s) => ({
+        fecha: typeof s.fecha === 'string' ? s.fecha.slice(0, 10) : fecha,
+        hora_inicio: String(s.hora_inicio || '').slice(0, 5),
+        hora_fin: String(s.hora_fin || '').slice(0, 5),
+        disponible: s.disponible ? 1 : 0
+      })),
+      cupos_entidad: cuposGuardados.map((c) => ({ entidad: c.entidad, cupo_max: c.cupo_max }))
     });
   } catch (e) {
     logger.error('[DISPONIBILIDAD] Error guardando día completo:', e.message);
@@ -457,10 +475,12 @@ router.post('/doctor-disponibilidad/eliminar-dia', requireAuth, async (req, res)
 
     if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return res.status(400).json({ error: 'Formato de fecha inválido' });
 
+    await cuposEntidadAgenda.prepararTablaCuposEntidad(db);
+
     await db.transaction(async (conn) => {
       await conn.execute('DELETE FROM doctor_disponibilidad_mensual WHERE doctor_id = ? AND fecha = ?', [doctorId, fecha]);
       await conn.execute('DELETE FROM doctor_agenda WHERE doctor_id = ? AND fecha = ?', [doctorId, fecha]);
-      await cuposEntidadAgenda.eliminarCuposEntidadDia(conn, doctorId, fecha);
+      await cuposEntidadAgenda.eliminarCuposEntidadDia(conn, doctorId, fecha, { ensureTable: false });
     });
 
     emitSocket('agenda:disponibilidad-actualizada', { doctor_id: doctorId });

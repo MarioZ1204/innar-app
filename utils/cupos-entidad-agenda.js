@@ -35,6 +35,17 @@ async function ensureCuposEntidadTable(db) {
   _tablaCuposVerificada = true;
 }
 
+/** Asegura la tabla fuera de transacciones (evita COMMIT implícito por DDL en MySQL). */
+async function prepararTablaCuposEntidad(db) {
+  try {
+    await ensureCuposEntidadTable(db);
+    return true;
+  } catch (_) {
+    _tablaCuposVerificada = false;
+    return false;
+  }
+}
+
 async function listarCuposDia(doctorId, fecha, db) {
   try {
     await ensureCuposEntidadTable(db);
@@ -59,18 +70,26 @@ async function listarCuposDia(doctorId, fecha, db) {
 
 async function listarCuposMes(doctorId, mes, db) {
   if (!mes || !/^\d{4}-\d{2}$/.test(mes)) return [];
-  await ensureCuposEntidadTable(db);
-  const rows = await db.execute(
-    `SELECT fecha, entidad, cupo_max FROM doctor_cupos_entidad_dia
-     WHERE doctor_id = ? AND DATE_FORMAT(fecha, '%Y-%m') = ?
-     ORDER BY fecha ASC, entidad ASC`,
-    [doctorId, mes]
-  );
-  return (rows || []).map((r) => ({
-    fecha: typeof r.fecha === 'string' ? r.fecha.slice(0, 10) : new Date(r.fecha).toISOString().slice(0, 10),
-    entidad: normalizarEntidadNombre(r.entidad),
-    cupo_max: Math.max(0, parseInt(r.cupo_max, 10) || 0)
-  })).filter((r) => r.entidad && r.cupo_max > 0);
+  try {
+    await ensureCuposEntidadTable(db);
+  } catch (_) {
+    return [];
+  }
+  try {
+    const rows = await db.execute(
+      `SELECT fecha, entidad, cupo_max FROM doctor_cupos_entidad_dia
+       WHERE doctor_id = ? AND DATE_FORMAT(fecha, '%Y-%m') = ?
+       ORDER BY fecha ASC, entidad ASC`,
+      [doctorId, mes]
+    );
+    return (rows || []).map((r) => ({
+      fecha: typeof r.fecha === 'string' ? r.fecha.slice(0, 10) : new Date(r.fecha).toISOString().slice(0, 10),
+      entidad: normalizarEntidadNombre(r.entidad),
+      cupo_max: Math.max(0, parseInt(r.cupo_max, 10) || 0)
+    })).filter((r) => r.entidad && r.cupo_max > 0);
+  } catch (_) {
+    return [];
+  }
 }
 
 async function contarOcupadosPorEntidad(doctorId, fecha, db) {
@@ -152,8 +171,10 @@ async function validarCupoEntidad(doctorId, fecha, entidad, db, cantidad = 1) {
   return { valido: true, resumen };
 }
 
-async function guardarCuposEntidadDia(conn, doctorId, fecha, cuposEntidad) {
-  await ensureCuposEntidadTable(conn);
+async function guardarCuposEntidadDia(conn, doctorId, fecha, cuposEntidad, opts = {}) {
+  if (opts.ensureTable !== false) {
+    await ensureCuposEntidadTable(conn);
+  }
   await conn.execute(
     'DELETE FROM doctor_cupos_entidad_dia WHERE doctor_id = ? AND fecha = ?',
     [doctorId, fecha]
@@ -179,8 +200,10 @@ async function guardarCuposEntidadDia(conn, doctorId, fecha, cuposEntidad) {
   }
 }
 
-async function eliminarCuposEntidadDia(conn, doctorId, fecha) {
-  await ensureCuposEntidadTable(conn);
+async function eliminarCuposEntidadDia(conn, doctorId, fecha, opts = {}) {
+  if (opts.ensureTable !== false) {
+    await ensureCuposEntidadTable(conn);
+  }
   await conn.execute(
     'DELETE FROM doctor_cupos_entidad_dia WHERE doctor_id = ? AND fecha = ?',
     [doctorId, fecha]
@@ -204,6 +227,7 @@ module.exports = {
   normalizarEntidadNombre,
   claveEntidad,
   ensureCuposEntidadTable,
+  prepararTablaCuposEntidad,
   listarCuposDia,
   listarCuposMes,
   contarOcupadosPorEntidad,

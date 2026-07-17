@@ -4611,6 +4611,8 @@ let calSavedSnapshot = null;
 /** @type {Record<string, { entidad: string, cupo_max: number }[]>} */
 let calCuposEntidad = {};
 let _calEntidadesOpciones = null;
+/** @type {Set<Promise<void>>} */
+const _calCupoRowLoads = new Set();
 
 function normalizarFilaDisponibilidadCal(d) {
   const fecha = (d.fecha || '').slice(0, 10);
@@ -4906,7 +4908,7 @@ function addCalCupoEntidadRow(entidad, cupo) {
   `;
   row.querySelector('.cal-cupo-remove')?.addEventListener('click', () => row.remove());
   list.appendChild(row);
-  void asegurarEntidadesCalModal().then((entidades) => {
+  const loadPromise = asegurarEntidadesCalModal().then((entidades) => {
     const sel = row.querySelector('.cal-cupo-entidad');
     if (!sel) return;
     const opts = ['<option value="">Seleccionar entidad</option>'];
@@ -4922,6 +4924,15 @@ function addCalCupoEntidadRow(entidad, cupo) {
     }
     sel.innerHTML = opts.join('');
   });
+  _calCupoRowLoads.add(loadPromise);
+  loadPromise.finally(() => _calCupoRowLoads.delete(loadPromise));
+}
+
+async function esperarCalCuposEntidadListas() {
+  await asegurarEntidadesCalModal();
+  if (_calCupoRowLoads.size) {
+    await Promise.all([..._calCupoRowLoads]);
+  }
 }
 
 function renderCalCuposEntidadList(dateStr) {
@@ -4944,6 +4955,7 @@ function leerCalCuposEntidadForm() {
   rows.forEach((row) => {
     const entidad = row.querySelector('.cal-cupo-entidad')?.value?.trim() || '';
     const cupoMax = parseInt(row.querySelector('.cal-cupo-max')?.value || '0', 10);
+    if (!entidad && cupoMax > 0) return;
     if (!entidad || !Number.isFinite(cupoMax) || cupoMax <= 0) return;
     const key = entidad.toUpperCase();
     if (seen.has(key)) return;
@@ -4953,11 +4965,29 @@ function leerCalCuposEntidadForm() {
   return cupos;
 }
 
+function validarCalCuposEntidadForm() {
+  const rows = document.querySelectorAll('#calModalCuposEntidadList .cal-cupo-row');
+  for (const row of rows) {
+    const entidad = row.querySelector('.cal-cupo-entidad')?.value?.trim() || '';
+    const cupoMax = parseInt(row.querySelector('.cal-cupo-max')?.value || '0', 10);
+    const sel = row.querySelector('.cal-cupo-entidad');
+    if (sel && sel.options.length && sel.options[0]?.textContent === 'Cargando...') {
+      return 'Espere a que carguen las entidades antes de guardar';
+    }
+    if (!entidad && cupoMax > 0) {
+      return 'Seleccione la entidad para cada cupo programado';
+    }
+  }
+  return null;
+}
+
 function abrirCalPasoConfigurar() {
   if (!calSelectedDate) return;
   _calEntidadesOpciones = null;
-  poblarCalFormularioConfig(calSelectedDate);
   showCalModalStep('config');
+  void asegurarEntidadesCalModal().then(() => {
+    if (calSelectedDate) poblarCalFormularioConfig(calSelectedDate);
+  });
 }
 
 async function persistirCalDia(payload) {
@@ -4981,20 +5011,39 @@ async function persistirCalDia(payload) {
     throw new Error(data.error || `Error ${res.status} guardando el día`);
   }
 
+  const dispMananaResp = data.disponible_manana != null
+    ? Boolean(data.disponible_manana)
+    : (disponible ? (hasManana || (!hasManana && !hasTarde)) : false);
+  const dispTardeResp = data.disponible_tarde != null
+    ? Boolean(data.disponible_tarde)
+    : (disponible ? (hasTarde || (!hasManana && !hasTarde)) : false);
+  const motivoResp = data.motivo_ausencia != null ? data.motivo_ausencia : motivoAusencia;
+  const slotsResp = Array.isArray(data.slots) && data.slots.length ? data.slots : slots;
+  const cuposResp = Array.isArray(data.cupos_entidad) ? data.cupos_entidad : (cupos_entidad || []);
+
   const dispCache = {
     disponible,
-    disponible_manana: disponible ? (hasManana || (!hasManana && !hasTarde)) : false,
-    disponible_tarde: disponible ? (hasTarde || (!hasManana && !hasTarde)) : false,
-    motivo_ausencia: motivoAusencia,
+    disponible_manana: dispMananaResp,
+    disponible_tarde: dispTardeResp,
+    motivo_ausencia: motivoResp,
     fecha: savedDate
   };
-  const slotsCache = slots.map((s) => ({ ...s, fecha: savedDate }));
+  const slotsCache = slotsResp.map((s) => ({
+    ...s,
+    fecha: savedDate,
+    hora_inicio: String(s.hora_inicio || '').slice(0, 5),
+    hora_fin: String(s.hora_fin || '').slice(0, 5),
+    disponible: s.disponible ? 1 : 0
+  }));
 
   calDisponibilidad[savedDate] = dispCache;
   calSlots = calSlots.filter((s) => (s.fecha || '').slice(0, 10) !== savedDate);
   slotsCache.forEach((s) => calSlots.push(s));
-  if (disponible && Array.isArray(cupos_entidad) && cupos_entidad.length) {
-    calCuposEntidad[savedDate] = cupos_entidad.map((c) => ({ entidad: c.entidad, cupo_max: c.cupo_max }));
+  if (disponible && cuposResp.length) {
+    calCuposEntidad[savedDate] = cuposResp.map((c) => ({
+      entidad: c.entidad,
+      cupo_max: parseInt(c.cupo_max, 10) || 0
+    }));
   } else {
     delete calCuposEntidad[savedDate];
   }
@@ -5070,7 +5119,7 @@ function closeCalModal() {
 }
 
 function aplicarCalSavedSnapshotEnCache() {
-  if (!calSavedSnapshot || Date.now() - calSavedSnapshot.at > 5000) {
+  if (!calSavedSnapshot || Date.now() - calSavedSnapshot.at > 15000) {
     calSavedSnapshot = null;
     return;
   }
@@ -5245,6 +5294,12 @@ async function saveCalDay() {
   const savedDate = calSelectedDate;
 
   try {
+    await esperarCalCuposEntidadListas();
+    const errCupos = validarCalCuposEntidadForm();
+    if (errCupos) {
+      showToast(errCupos, 'error');
+      return;
+    }
     await persistirCalDia({
       savedDate,
       disponible: true,
