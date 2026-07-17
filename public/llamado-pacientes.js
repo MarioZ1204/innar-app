@@ -1,25 +1,25 @@
 /**
- * Módulo pantalla TV de llamado de pacientes (sala de espera multi-consultorio).
+ * Pantalla TV de llamado de pacientes.
+ * Reposo: logo Innar. Al llamar: pop-up + voz intercalada (2 rondas).
  */
 (function () {
   'use strict';
 
-  const STORAGE_KEY = 'innar_llamado_tv_doctores';
-  const POLL_MS = 8000;
-  const HIGHLIGHT_MS = 45000;
+  const VECES_POR_RONDA = 2;
+  const BATCH_MS = 900;
+  const PAUSA_ENTRE_ANUNCIOS_MS = 500;
+  const POPUP_EXTRA_MS = 800;
 
   let initDone = false;
   let audioUnlocked = false;
   let voiceCache = null;
   let boundRealtime = false;
-  let pollTimer = null;
   let relojTimer = null;
-  let highlightTimers = {};
 
-  let medicos = [];
-  let turnos = [];
-  let doctoresActivos = new Set();
-  let llamadosActivos = {};
+  let procesando = false;
+  let colaAnuncios = [];
+  let batchPendiente = [];
+  let batchTimer = null;
 
   function $(id) { return document.getElementById(id); }
 
@@ -27,21 +27,8 @@
     return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
 
-  function hoyISO() {
-    if (typeof hoyColombiaISO === 'function') return hoyColombiaISO();
-    const parts = new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'America/Bogota',
-      year: 'numeric', month: '2-digit', day: '2-digit'
-    }).formatToParts(new Date());
-    const y = parts.find(p => p.type === 'year')?.value;
-    const m = parts.find(p => p.type === 'month')?.value;
-    const d = parts.find(p => p.type === 'day')?.value;
-    return `${y}-${m}-${d}`;
-  }
-
-  function fetchApi(url) {
-    if (typeof apiFetch === 'function') return apiFetch(url).then(r => r.json());
-    return fetch(url, { credentials: 'include' }).then(r => r.json());
+  function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   /* ── Reloj ── */
@@ -52,19 +39,12 @@
     const now = new Date();
     const fecha = new Intl.DateTimeFormat('es-CO', {
       timeZone: 'America/Bogota',
-      weekday: 'long',
-      day: 'numeric',
-      month: 'long',
-      year: 'numeric'
+      weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
     }).format(now);
     const hora = new Intl.DateTimeFormat('es-CO', {
-      timeZone: 'America/Bogota',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: true
+      timeZone: 'America/Bogota', hour: '2-digit', minute: '2-digit', hour12: true
     }).format(now);
-    const fechaCap = fecha.charAt(0).toUpperCase() + fecha.slice(1);
-    el.textContent = `${fechaCap} · ${hora}`;
+    el.textContent = `${fecha.charAt(0).toUpperCase() + fecha.slice(1)} · ${hora}`;
   }
 
   function iniciarReloj() {
@@ -89,15 +69,15 @@
       'Luciana', 'Soledad', 'Esperanza', 'Paloma', 'Camila'
     ];
     for (const name of preferNames) {
-      const v = voices.find(x => x.name.includes(name));
+      const v = voices.find((x) => x.name.includes(name));
       if (v) { voiceCache = v; return v; }
     }
     const langs = ['es-CO', 'es-419', 'es-MX', 'es-US', 'es-ES'];
     for (const lang of langs) {
-      const v = voices.find(x => x.lang === lang || x.lang.startsWith(lang + '-'));
+      const v = voices.find((x) => x.lang === lang || x.lang.startsWith(lang + '-'));
       if (v) { voiceCache = v; return v; }
     }
-    voiceCache = voices.find(v => v.lang.startsWith('es')) || null;
+    voiceCache = voices.find((v) => v.lang.startsWith('es')) || null;
     return voiceCache;
   }
 
@@ -121,318 +101,137 @@
     }
   }
 
-  function textoAnuncio(data) {
-    const nombre = String(data?.paciente_nombre || 'paciente').trim();
-    const cons = data?.numero_consultorio;
-    const doc = String(data?.doctor_nombre || '').trim();
-    const consTxt = cons ? `consultorio número ${cons}` : 'consultorio';
-    const docTxt = doc ? ` con ${doc}` : '';
-    return `Atención. ${nombre}, por favor diríjase al ${consTxt}${docTxt}.`;
+  function textoAnuncio(item) {
+    const nombre = String(item?.paciente_nombre || 'paciente').trim();
+    const cons = item?.numero_consultorio;
+    const consTxt = cons != null && cons !== '' ? String(cons) : '—';
+    return `Paciente ${nombre}, pasar al consultorio ${consTxt}`;
   }
 
-  function hablarLlamado(data) {
-    if (!audioUnlocked || !('speechSynthesis' in window)) return;
-    window.speechSynthesis.cancel();
-    const utter = new SpeechSynthesisUtterance(textoAnuncio(data));
-    utter.rate = 0.86;
-    utter.pitch = 1.02;
-    utter.volume = 1;
-    const voice = pickSoftSpanishVoice();
-    if (voice) { utter.voice = voice; utter.lang = voice.lang; }
-    else { utter.lang = 'es-CO'; }
-    window.speechSynthesis.speak(utter);
-  }
-
-  /* ── Persistencia consultorios activos ── */
-
-  function cargarDoctoresActivos() {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const ids = JSON.parse(raw);
-        if (Array.isArray(ids)) {
-          doctoresActivos = new Set(ids.map(Number).filter(Boolean));
-          return;
-        }
+  function hablarAsync(texto) {
+    return new Promise((resolve) => {
+      if (!audioUnlocked || !('speechSynthesis' in window)) {
+        resolve();
+        return;
       }
-    } catch (_) { /* ignore */ }
-    doctoresActivos = new Set();
+      window.speechSynthesis.cancel();
+      const utter = new SpeechSynthesisUtterance(texto);
+      utter.rate = 0.88;
+      utter.pitch = 1.02;
+      utter.volume = 1;
+      const voice = pickSoftSpanishVoice();
+      if (voice) { utter.voice = voice; utter.lang = voice.lang; }
+      else { utter.lang = 'es-CO'; }
+      utter.onend = () => resolve();
+      utter.onerror = () => resolve();
+      window.speechSynthesis.speak(utter);
+    });
   }
 
-  function guardarDoctoresActivos() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify([...doctoresActivos]));
-  }
+  /* ── Pop-up ── */
 
-  /* ── Grid layout ── */
-
-  function calcularGrid(n) {
-    if (n <= 1) return { cols: 1, rows: 1 };
-    if (n === 2) return { cols: 2, rows: 1 };
-    if (n <= 4) return { cols: 2, rows: Math.ceil(n / 2) };
-    if (n <= 6) return { cols: 3, rows: Math.ceil(n / 3) };
-    if (n <= 9) return { cols: 3, rows: Math.ceil(n / 3) };
-    const cols = Math.ceil(Math.sqrt(n));
-    return { cols, rows: Math.ceil(n / cols) };
-  }
-
-  /* ── Lógica de paciente visible ── */
-
-  function turnosDelDoctor(doctorId) {
-    return turnos.filter(t => Number(t.doctor_id) === Number(doctorId));
-  }
-
-  function pacienteVisibleParaDoctor(doctorId) {
-    const ahora = Date.now();
-    const llamado = llamadosActivos[doctorId];
-    if (llamado && llamado.until > ahora && llamado.nombre) {
-      return { tipo: 'llamando', nombre: llamado.nombre };
-    }
-
-    const delDoctor = turnosDelDoctor(doctorId);
-    const enAtencion = delDoctor.find(t => t.estado === 'EN_ATENCION');
-    if (enAtencion) {
-      return { tipo: 'en_atencion', nombre: enAtencion.paciente_nombre || '' };
-    }
-
-    const siguiente = delDoctor.find(t => t.estado === 'EN_SALA' && t.numero_turno === 1);
-    if (siguiente) {
-      return { tipo: 'siguiente', nombre: siguiente.paciente_nombre || '' };
-    }
-
-    const primerEnSala = delDoctor
-      .filter(t => t.estado === 'EN_SALA')
-      .sort((a, b) => (a.numero_turno ?? 999) - (b.numero_turno ?? 999))[0];
-    if (primerEnSala?.paciente_nombre) {
-      return { tipo: 'siguiente', nombre: primerEnSala.paciente_nombre };
-    }
-
-    return { tipo: 'vacio', nombre: '' };
-  }
-
-  function htmlPaciente(nombre, etiqueta) {
-    return `<div class="ltv-card-paciente-wrap">
-      <span class="ltv-card-paciente-label">${escapeHtml(etiqueta)}</span>
-      <p class="ltv-card-paciente">${escapeHtml(nombre)}</p>
-    </div>`;
-  }
-
-  /* ── Render ── */
-
-  function renderGrid() {
-    const grid = $('llamadoTvGrid');
-    const empty = $('llamadoTvEmpty');
-    if (!grid) return;
-
-    const activos = medicos
-      .filter(m => doctoresActivos.has(m.id))
-      .sort((a, b) => {
-        const ca = a.numero_consultorio ?? 9999;
-        const cb = b.numero_consultorio ?? 9999;
-        return ca - cb || String(a.nombre).localeCompare(String(b.nombre));
-      });
-
-    if (!activos.length) {
-      grid.classList.add('hidden');
-      grid.innerHTML = '';
-      empty?.classList.remove('hidden');
-      return;
-    }
-
-    empty?.classList.add('hidden');
-    grid.classList.remove('hidden');
-
-    const { cols, rows } = calcularGrid(activos.length);
-    grid.style.setProperty('--tv-cols', cols);
-    grid.style.setProperty('--tv-rows', rows);
-
-    grid.innerHTML = activos.map(m => {
-      const pac = pacienteVisibleParaDoctor(m.id);
-      const consNum = m.numero_consultorio != null && m.numero_consultorio !== ''
-        ? String(m.numero_consultorio)
+  function mostrarPopup(item) {
+    const popup = $('llamadoPopup');
+    const nomEl = $('llamadoPopupNombre');
+    const consEl = $('llamadoPopupConsultorio');
+    if (nomEl) nomEl.textContent = item.paciente_nombre || 'Paciente';
+    if (consEl) {
+      consEl.textContent = item.numero_consultorio != null && item.numero_consultorio !== ''
+        ? String(item.numero_consultorio)
         : '—';
-
-      let cardMod = '';
-      let bodyHtml;
-
-      if ((pac.tipo === 'siguiente' || pac.tipo === 'llamando') && pac.nombre) {
-        cardMod = pac.tipo === 'llamando' ? ' ltv-card--siguiente ltv-card--llamando' : ' ltv-card--siguiente';
-        bodyHtml = htmlPaciente(pac.nombre, pac.tipo === 'llamando' ? 'Paciente llamado' : 'Siguiente paciente');
-      } else if (pac.tipo === 'en_atencion' && pac.nombre) {
-        cardMod = ' ltv-card--atencion';
-        bodyHtml = htmlPaciente(pac.nombre, 'En consulta');
-      } else {
-        bodyHtml = `<p class="ltv-card-estado ltv-card-estado--espera"><span class="ltv-card-estado-dot"></span>En espera</p>`;
-      }
-
-      return `<article class="ltv-card${cardMod}" data-doctor-id="${m.id}">
-        <span class="ltv-card-badge-llamando">Llamando</span>
-        <header class="ltv-card-head">
-          <div class="ltv-card-cons-badge">
-            <span class="ltv-card-cons-label">Cons.</span>
-            <span class="ltv-card-cons-num">${escapeHtml(consNum)}</span>
-          </div>
-          <p class="ltv-card-doctor">${escapeHtml(m.nombre)}</p>
-        </header>
-        <div class="ltv-card-body">${bodyHtml}</div>
-      </article>`;
-    }).join('');
-
-    Object.keys(highlightTimers).forEach(id => {
-      const card = grid.querySelector(`.ltv-card[data-doctor-id="${id}"]`);
-      if (card) card.classList.add('ltv-card--llamando');
-    });
+    }
+    $('llamadoIdleLogo')?.classList.add('is-dimmed');
+    popup?.classList.remove('hidden');
   }
 
-  function registrarLlamado(data) {
-    let doctorId = data?.doctor_id;
-    if (!doctorId && data?.numero_consultorio != null) {
-      const med = medicos.find(m =>
-        Number(m.numero_consultorio) === Number(data.numero_consultorio)
-      );
-      doctorId = med?.id;
-    }
-    if (!doctorId || !data?.paciente_nombre) return;
-    doctorId = Number(doctorId);
-    llamadosActivos[doctorId] = {
-      nombre: data.paciente_nombre,
-      until: Date.now() + HIGHLIGHT_MS
+  function ocultarPopup() {
+    $('llamadoPopup')?.classList.add('hidden');
+    $('llamadoIdleLogo')?.classList.remove('is-dimmed');
+  }
+
+  /* ── Cola intercalada ── */
+
+  function normalizarLlamado(data) {
+    return {
+      paciente_nombre: String(data?.paciente_nombre || '').trim(),
+      numero_consultorio: data?.numero_consultorio != null && data?.numero_consultorio !== ''
+        ? String(data.numero_consultorio)
+        : '',
+      doctor_id: data?.doctor_id ?? null
     };
-    if (highlightTimers[doctorId]) clearTimeout(highlightTimers[doctorId]);
-    highlightTimers[doctorId] = setTimeout(() => {
-      delete llamadosActivos[doctorId];
-      delete highlightTimers[doctorId];
-      renderGrid();
-    }, HIGHLIGHT_MS);
   }
 
-  function resaltarConsultorio(doctorId) {
-    const card = document.querySelector(`.ltv-card[data-doctor-id="${doctorId}"]`);
-    if (card) card.classList.add('ltv-card--llamando');
-  }
-
-  function resaltarPorEvento(data) {
-    const doctorId = data?.doctor_id;
-    if (doctorId) resaltarConsultorio(doctorId);
-    else if (data?.numero_consultorio != null) {
-      const med = medicos.find(m =>
-        Number(m.numero_consultorio) === Number(data.numero_consultorio)
-      );
-      if (med) resaltarConsultorio(med.id);
-    }
-  }
-
-  /* ── Datos ── */
-
-  async function cargarMedicos() {
-    try {
-      medicos = await fetchApi('/api/medicos');
-      if (!Array.isArray(medicos)) medicos = [];
-    } catch (_) {
-      medicos = [];
-    }
-  }
-
-  async function cargarTurnos() {
-    const fecha = hoyISO();
-    try {
-      const data = await fetchApi(
-        `/api/turnos?fecha=${fecha}&estado=EN_SALA,EN_ATENCION,ATENDIDO`
-      );
-      turnos = Array.isArray(data) ? data : [];
-    } catch (_) {
-      turnos = [];
-    }
-  }
-
-  async function refrescar() {
-    await cargarTurnos();
-    renderGrid();
-  }
-
-  async function refrescarCompleto() {
-    await cargarMedicos();
-    if (!doctoresActivos.size && medicos.length) {
-      medicos.forEach(m => doctoresActivos.add(m.id));
-      guardarDoctoresActivos();
-    }
-    await refrescar();
-    renderConfigLista();
-  }
-
-  function iniciarPolling() {
-    if (pollTimer) clearInterval(pollTimer);
-    pollTimer = setInterval(() => {
-      if (window.currentModule !== 'llamado-pacientes') return;
-      refrescar();
-    }, POLL_MS);
-  }
-
-  function detenerPolling() {
-    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
-  }
-
-  /* ── Drawer configuración ── */
-
-  function renderConfigLista() {
-    const lista = $('llamadoConfigLista');
-    if (!lista) return;
-
-    if (!medicos.length) {
-      lista.innerHTML = '<p style="color:#64748b;font-size:.875rem;padding:8px 0">No hay médicos disponibles.</p>';
-      return;
-    }
-
-    lista.innerHTML = medicos.map(m => {
-      const activo = doctoresActivos.has(m.id);
-      const consNum = m.numero_consultorio != null ? String(m.numero_consultorio) : null;
-      const consTxt = consNum ? 'Consultorio asignado' : 'Sin consultorio asignado';
-      return `<label class="ltv-toggle-item${activo ? ' is-on' : ''}" data-doctor-id="${m.id}">
-        <div class="ltv-toggle-item-info">
-          <div class="ltv-toggle-item-nombre">${escapeHtml(m.nombre)}</div>
-          <div class="ltv-toggle-item-cons">${consNum ? `<span class="ltv-toggle-item-cons-num">${escapeHtml(consNum)}</span>` : ''}${escapeHtml(consTxt)}</div>
-        </div>
-        <div class="ltv-switch">
-          <input type="checkbox" ${activo ? 'checked' : ''} data-doctor-id="${m.id}" aria-label="Mostrar consultorio de ${escapeHtml(m.nombre)}" />
-          <span class="ltv-switch-track"></span>
-        </div>
-      </label>`;
-    }).join('');
-
-    lista.querySelectorAll('input[type="checkbox"]').forEach(cb => {
-      cb.addEventListener('change', () => {
-        const id = Number(cb.dataset.doctorId);
-        if (cb.checked) doctoresActivos.add(id);
-        else doctoresActivos.delete(id);
-        guardarDoctoresActivos();
-        cb.closest('.ltv-toggle-item')?.classList.toggle('is-on', cb.checked);
-        renderGrid();
-      });
+  function ordenarPorConsultorio(items) {
+    return [...items].sort((a, b) => {
+      const na = parseInt(a.numero_consultorio, 10);
+      const nb = parseInt(b.numero_consultorio, 10);
+      if (Number.isFinite(na) && Number.isFinite(nb)) return na - nb;
+      return String(a.numero_consultorio).localeCompare(String(b.numero_consultorio));
     });
   }
 
-  function abrirConfig() {
-    renderConfigLista();
-    $('llamadoConfigBackdrop')?.classList.remove('hidden');
-    $('llamadoConfigPanel')?.classList.remove('hidden');
+  /** Genera secuencia intercalada: 302, 303, 304, 302, 303, 304 (2 rondas) */
+  function construirSecuencia(items) {
+    const unicos = ordenarPorConsultorio(items);
+    const secuencia = [];
+    for (let r = 0; r < VECES_POR_RONDA; r++) {
+      for (const item of unicos) {
+        secuencia.push(item);
+      }
+    }
+    return secuencia;
   }
 
-  function cerrarConfig() {
-    $('llamadoConfigBackdrop')?.classList.add('hidden');
-    $('llamadoConfigPanel')?.classList.add('hidden');
+  function encolarLlamado(data) {
+    const item = normalizarLlamado(data);
+    if (!item.paciente_nombre) return;
+
+    batchPendiente.push(item);
+    if (batchTimer) clearTimeout(batchTimer);
+    batchTimer = setTimeout(finalizarBatch, BATCH_MS);
   }
 
-  function activarTodos() {
-    medicos.forEach(m => doctoresActivos.add(m.id));
-    guardarDoctoresActivos();
-    renderConfigLista();
-    renderGrid();
+  function finalizarBatch() {
+    batchTimer = null;
+    if (!batchPendiente.length) return;
+
+    const items = dedupeLlamados(batchPendiente.splice(0));
+    const secuencia = construirSecuencia(items);
+    colaAnuncios.push(...secuencia);
+
+    if (!procesando) procesarCola();
   }
 
-  function desactivarTodos() {
-    doctoresActivos.clear();
-    guardarDoctoresActivos();
-    renderConfigLista();
-    renderGrid();
+  function dedupeLlamados(items) {
+    const map = new Map();
+    for (const item of items) {
+      const key = `${item.doctor_id ?? ''}|${item.numero_consultorio}|${item.paciente_nombre}`;
+      map.set(key, item);
+    }
+    return [...map.values()];
+  }
+
+  async function procesarCola() {
+    if (procesando) return;
+    procesando = true;
+
+    while (colaAnuncios.length) {
+      const item = colaAnuncios.shift();
+      mostrarPopup(item);
+      await hablarAsync(textoAnuncio(item));
+      await sleep(POPUP_EXTRA_MS);
+
+      if (colaAnuncios.length) {
+        await sleep(PAUSA_ENTRE_ANUNCIOS_MS);
+      }
+    }
+
+    ocultarPopup();
+    procesando = false;
+
+    if (batchPendiente.length) {
+      finalizarBatch();
+    }
   }
 
   /* ── Eventos tiempo real ── */
@@ -440,15 +239,7 @@
   function onLlamadoEvent(data) {
     if (window.currentModule !== 'llamado-pacientes') return;
     unlockAudio();
-    registrarLlamado(data || {});
-    hablarLlamado(data || {});
-    resaltarPorEvento(data || {});
-    refrescar();
-  }
-
-  function onEstadoCambio() {
-    if (window.currentModule !== 'llamado-pacientes') return;
-    refrescar();
+    encolarLlamado(data || {});
   }
 
   function bindRealtime() {
@@ -457,8 +248,6 @@
       if (!window.socket || boundRealtime) return;
       window.socket.on('agenda:anunciar-paciente', onLlamadoEvent);
       window.socket.on('agenda:turno-llamar-siguiente', onLlamadoEvent);
-      window.socket.on('agenda:turno-estado-cambio', onEstadoCambio);
-      window.socket.on('agenda:turno-marcar-atendido', onEstadoCambio);
       boundRealtime = true;
     };
     if (window.socketReady && window.socket) attach();
@@ -490,20 +279,14 @@
 
   /* ── Init ── */
 
-  window.initLlamadoPacientes = async function initLlamadoPacientes() {
+  window.initLlamadoPacientes = function initLlamadoPacientes() {
     if (!initDone) {
       initDone = true;
       $('btnVolverLlamadoPacientes')?.addEventListener('click', () => {
         if (typeof goToMenu === 'function') goToMenu();
       });
       $('btnLlamadoActivarAudio')?.addEventListener('click', unlockAudio);
-      $('btnLlamadoConfig')?.addEventListener('click', abrirConfig);
-      $('btnLlamadoEmptyConfig')?.addEventListener('click', abrirConfig);
       $('btnLlamadoFullscreen')?.addEventListener('click', toggleFullscreen);
-      $('btnLlamadoConfigCerrar')?.addEventListener('click', cerrarConfig);
-      $('llamadoConfigBackdrop')?.addEventListener('click', cerrarConfig);
-      $('btnLlamadoConfigTodos')?.addEventListener('click', activarTodos);
-      $('btnLlamadoConfigNinguno')?.addEventListener('click', desactivarTodos);
       document.addEventListener('fullscreenchange', actualizarEstadoFullscreen);
       document.addEventListener('mousemove', (e) => {
         const view = $('view-llamado-pacientes');
@@ -513,21 +296,16 @@
       bindRealtime();
     }
 
-    cargarDoctoresActivos();
+    ocultarPopup();
     iniciarReloj();
-    await refrescarCompleto();
-    iniciarPolling();
   };
 
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
-      detenerPolling();
       detenerReloj();
     } else if (window.currentModule === 'llamado-pacientes') {
       actualizarReloj();
       iniciarReloj();
-      refrescar();
-      iniciarPolling();
     }
   });
 })();
