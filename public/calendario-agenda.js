@@ -79,18 +79,57 @@ function _textoCuposEntidadObs(resumen) {
   }).join(' · ');
 }
 
-function _htmlMetricasTop(citas, libres, cuposDia) {
-  const tieneCupos = !!(cuposDia && cuposDia.capacidad > 0);
-  const topClass = tieneCupos ? ' ccal-card-top-quad' : '';
-  let html = `<div class="ccal-card-top${topClass}">`;
-  html += `<div class="ccal-card-metric ccal-card-metric-citas"><span class="ccal-card-num">${citas}</span><span class="ccal-card-label">CITAS</span></div>`;
-  html += `<div class="ccal-card-metric ccal-card-metric-libres"><span class="ccal-card-num">${libres}</span><span class="ccal-card-label">LIBRES</span></div>`;
-  if (tieneCupos) {
-    html += `<div class="ccal-card-metric ccal-card-metric-cupos"><span class="ccal-card-num">${cuposDia.capacidad}</span><span class="ccal-card-label">CUPOS</span></div>`;
-    html += `<div class="ccal-card-metric ccal-card-metric-vacios"><span class="ccal-card-num">${cuposDia.libres}</span><span class="ccal-card-label">VACIOS</span></div>`;
+function _abrevEntidadCal(nom, maxLen = 10) {
+  const s = String(nom || '').trim();
+  if (!s) return 'Ent.';
+  if (s.length <= maxLen) return s;
+  return `${s.slice(0, maxLen - 1)}…`;
+}
+
+function _calcMetricasSplit(citasGeneral, capHoraria, cuposDia) {
+  const resumen = (cuposDia && Array.isArray(cuposDia.resumen)) ? cuposDia.resumen : [];
+  if (!resumen.length) return null;
+
+  const occProgramados = resumen.reduce((s, r) => s + (parseInt(r.ocupados, 10) || 0), 0);
+  return {
+    izquierda: {
+      citas: Math.max(0, citasGeneral - occProgramados),
+      libres: Math.max(0, capHoraria - citasGeneral)
+    },
+    entidades: resumen.map((r) => ({
+      entidad: String(r.entidad || '').trim() || 'Entidad',
+      citas: parseInt(r.ocupados, 10) || 0,
+      libres: parseInt(r.libres, 10) ?? Math.max(0, (parseInt(r.cupo_max, 10) || 0) - (parseInt(r.ocupados, 10) || 0))
+    }))
+  };
+}
+
+function _htmlPanelMetricas(citas, libres, extraClass) {
+  return `<div class="ccal-split-metrics${extraClass ? ` ${extraClass}` : ''}">`
+    + `<div class="ccal-card-metric ccal-card-metric-citas"><span class="ccal-card-num">${citas}</span><span class="ccal-card-label">CITAS</span></div>`
+    + `<div class="ccal-card-metric ccal-card-metric-libres"><span class="ccal-card-num">${libres}</span><span class="ccal-card-label">LIBRES</span></div>`
+    + '</div>';
+}
+
+function _htmlMetricasTop(citasGeneral, capHoraria, cuposDia) {
+  const libresGeneral = Math.max(0, capHoraria - citasGeneral);
+  const split = _calcMetricasSplit(citasGeneral, capHoraria, cuposDia);
+  if (!split) {
+    return `<div class="ccal-card-top">${_htmlPanelMetricas(citasGeneral, libresGeneral)}</div>`;
   }
-  html += '</div>';
-  return html;
+
+  const entHtml = split.entidades.map((e) => {
+    const abrev = _abrevEntidadCal(e.entidad);
+    return `<div class="ccal-ent-block" title="${escapeHtml(e.entidad)}">`
+      + `<span class="ccal-ent-title">${escapeHtml(abrev)}</span>`
+      + _htmlPanelMetricas(e.citas, e.libres, 'ccal-split-metrics-ent')
+      + '</div>';
+  }).join('');
+
+  return '<div class="ccal-card-top ccal-card-top-split">'
+    + `<div class="ccal-split-panel ccal-split-general">${_htmlPanelMetricas(split.izquierda.citas, split.izquierda.libres)}</div>`
+    + `<div class="ccal-split-panel ccal-split-entidad">${entHtml}</div>`
+    + '</div>';
 }
 
 async function cargarCitasCalendario() {
@@ -246,10 +285,14 @@ function renderCitasCalGrid() {
 
     const E = citasCount;
     const T = libresCount;
+    const splitInfo = tieneCuposEntidad ? _calcMetricasSplit(citasCount, capHoraria, cuposDia) : null;
 
-    let tooltip = `Citas: ${citasCount} | Libres: ${libresCount}`;
-    if (tieneCuposEntidad) {
-      tooltip += ` | Cupos max: ${cuposDia.capacidad} | Vacios: ${cuposDia.libres}`;
+    let tooltip = `Citas: ${citasCount} | Libres horario: ${libresCount}`;
+    if (splitInfo) {
+      tooltip += ` | Otras citas: ${splitInfo.izquierda.citas} | Otras libres: ${splitInfo.izquierda.libres}`;
+      splitInfo.entidades.forEach((e) => {
+        tooltip += ` | ${e.entidad}: ${e.citas} citas, ${e.libres} libres`;
+      });
     }
     if (datos && datos.atendidas) tooltip += ` | Atendidas: ${datos.atendidas}`;
     if (datos && datos.no_asistieron) tooltip += ` | No asist.: ${datos.no_asistieron}`;
@@ -257,9 +300,9 @@ function renderCitasCalGrid() {
     if (datos && datos.reprogramadas) tooltip += ` | Reprog.: ${datos.reprogramadas}`;
     if (obsCupos) tooltip += ` | ${obsCupos}`;
 
-    let obsTexto = obsCupos || (tieneMotivo
+    let obsTexto = (tieneCuposEntidad ? '' : obsCupos) || (tieneMotivo
       ? (motivo.length > 26 ? `${motivo.slice(0, 24)}…` : motivo)
-      : (bloqueado ? 'NO DISPONIBLE' : 'Sin observación'));
+      : (bloqueado ? 'NO DISPONIBLE' : (tieneCuposEntidad ? '' : 'Sin observación')));
 
     let colorClass = 'ccal-neutro';
     const totalDia = datos ? datos.total : 0;
@@ -283,11 +326,11 @@ function renderCitasCalGrid() {
     }
 
     const clickable = !bloqueado || tieneMotivo;
-    const quadClass = tieneCuposEntidad ? ' ccal-cell-quad' : '';
-    html += `<div class="ccal-cell ${colorClass}${esHoy ? ' ccal-hoy' : ''}${quadClass}" data-fecha="${fecha}" title="${escapeHtml(tooltip)}"${clickable ? ` onclick="citasCalClickDia('${fecha}', this)"` : ''}>`;
+    const splitClass = tieneCuposEntidad ? ' ccal-cell-split' : '';
+    html += `<div class="ccal-cell ${colorClass}${esHoy ? ' ccal-hoy' : ''}${splitClass}" data-fecha="${fecha}" title="${escapeHtml(tooltip)}"${clickable ? ` onclick="citasCalClickDia('${fecha}', this)"` : ''}>`;
     html += `<div class="ccal-dia-num">${day}</div>`;
     html += '<div class="ccal-dia-info ccal-dia-info-split">';
-    html += _htmlMetricasTop(citasCount, libresCount, tieneCuposEntidad ? cuposDia : null);
+    html += _htmlMetricasTop(citasCount, capHoraria, tieneCuposEntidad ? cuposDia : null);
     html += `<div class="ccal-card-bottom"><span class="ccal-card-observacion${obsTexto || tieneMotivo || bloqueado ? '' : ' ccal-card-observacion-empty'}"${tieneMotivo && !obsCupos ? ` title="${escapeHtml(motivo)}"` : ''}>${escapeHtml(obsTexto)}</span></div>`;
     html += '</div>';
 

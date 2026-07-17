@@ -464,14 +464,15 @@
     border-bottom-width: 0;
   }
 
-  #view-agenda-medica .ccal-card-top-quad .ccal-card-label {
+  #view-agenda-medica .ccal-card-top-split .ccal-card-label,
+  #view-agenda-medica .ccal-card-top > .ccal-split-metrics .ccal-card-label {
     display: block !important;
     font-size: 4.5px !important;
     line-height: 1.05;
   }
 
-  #view-agenda-medica .ccal-cell.ccal-cell-quad {
-    min-height: 72px;
+  #view-agenda-medica .ccal-cell.ccal-cell-split {
+    min-height: 74px;
   }
 
   #view-agenda-medica .ccal-card-num {
@@ -487,13 +488,13 @@
     display: none !important;
   }
 
-  #view-agenda-medica .ccal-cell-quad .ccal-card-bottom {
+  #view-agenda-medica .ccal-cell-split .ccal-card-bottom {
     display: flex !important;
     min-height: 14px;
     padding-top: 2px;
   }
 
-  #view-agenda-medica .ccal-cell-quad .ccal-card-observacion {
+  #view-agenda-medica .ccal-cell-split .ccal-card-observacion {
     font-size: 5.5px !important;
     line-height: 1.1;
   }
