@@ -5740,51 +5740,7 @@ function _construirDisplayListMedica(turnosDiaOrdenCronologico, dispCtx) {
   const { dispManana, dispTarde, intervalosBloqueados, INTERVALO_MIN, cuposEntidadResumen } = dispCtx;
   const esTurnoEnTablaActivos = (t) => !MEDICA_ESTADOS_FINALES.includes(t.estado);
   const lista = turnosDiaOrdenCronologico;
-
-  if (Array.isArray(cuposEntidadResumen) && cuposEntidadResumen.length) {
-    const displayList = [];
-    for (const t of lista) {
-      if (esTurnoEnTablaActivos(t)) displayList.push({ tipo: 'turno', data: t });
-    }
-    displayList.push(..._generarSlotsEntidadLibres(cuposEntidadResumen, lista));
-    // Mantener también espacios por horario para entidades sin cupo programado.
-    const rangosDisponibles = [];
-    if (dispManana) rangosDisponibles.push({ inicio: 8 * 60, fin: 12 * 60 });
-    if (dispTarde) rangosDisponibles.push({ inicio: 14 * 60, fin: 18 * 60 });
-    const horasTurnos = lista.map((t) => horaAMinutos(t.hora)).filter((m) => m !== null);
-    function minutoDentroDeDisponibilidad(m) {
-      const enRango = rangosDisponibles.some((r) => m >= r.inicio && m < r.fin);
-      if (!enRango) return false;
-      return !intervalosBloqueados.some((b) => m >= b.inicio && m < b.fin);
-    }
-    function generarSlotsEnRango(desdeMin, hastaMin) {
-      const slots = [];
-      let m = desdeMin;
-      while (m < hastaMin) {
-        if (minutoDentroDeDisponibilidad(m)) {
-          const hh = String(Math.floor(m / 60)).padStart(2, '0');
-          const mm = String(m % 60).padStart(2, '0');
-          slots.push({ tipo: 'slot-vacio', hora: `${hh}:${mm}` });
-        }
-        m += INTERVALO_MIN;
-      }
-      return slots;
-    }
-    if (horasTurnos.length === 0) {
-      for (const rango of rangosDisponibles) {
-        displayList.push(...generarSlotsEnRango(rango.inicio, rango.fin));
-      }
-    } else {
-      const ultimoTurno = Math.max(...horasTurnos);
-      let inicio = ultimoTurno + INTERVALO_MIN;
-      for (const rango of rangosDisponibles) {
-        if (rango.fin <= inicio) continue;
-        const desde = Math.max(rango.inicio, inicio);
-        displayList.push(...generarSlotsEnRango(desde, rango.fin));
-      }
-    }
-    return displayList;
-  }
+  const turnosActivos = lista.filter(esTurnoEnTablaActivos);
 
   const rangosDisponibles = [];
   if (dispManana) rangosDisponibles.push({ inicio: 8 * 60, fin: 12 * 60 });
@@ -5796,62 +5752,33 @@ function _construirDisplayListMedica(turnosDiaOrdenCronologico, dispCtx) {
     return !intervalosBloqueados.some((b) => m >= b.inicio && m < b.fin);
   }
 
-  function generarSlotsEnRango(desdeMin, hastaMin) {
-    const slots = [];
-    let m = desdeMin;
-    while (m < hastaMin) {
-      if (minutoDentroDeDisponibilidad(m)) {
-        const hh = String(Math.floor(m / 60)).padStart(2, '0');
-        const mm = String(m % 60).padStart(2, '0');
-        slots.push({ tipo: 'slot-vacio', hora: `${hh}:${mm}` });
-      }
-      m += INTERVALO_MIN;
-    }
-    return slots;
-  }
+  const horasOcupadas = new Set(
+    turnosActivos.map((t) => horaAMinutos(t.hora)).filter((m) => m !== null)
+  );
 
   const displayList = [];
-  const horasTurnos = lista.map((t) => horaAMinutos(t.hora)).filter((m) => m !== null);
 
-  if (horasTurnos.length === 0) {
-    for (const t of lista) {
-      if (esTurnoEnTablaActivos(t)) {
-        displayList.push({ tipo: 'turno', data: t });
+  // Espacios libres por horario primero: 8:00, 8:25, 8:50...
+  for (const rango of rangosDisponibles) {
+    for (let m = rango.inicio; m < rango.fin; m += INTERVALO_MIN) {
+      if (minutoDentroDeDisponibilidad(m) && !horasOcupadas.has(m)) {
+        const hh = String(Math.floor(m / 60)).padStart(2, '0');
+        const mm = String(m % 60).padStart(2, '0');
+        displayList.push({ tipo: 'slot-vacio', hora: `${hh}:${mm}` });
       }
-    }
-    for (const rango of rangosDisponibles) {
-      displayList.push(...generarSlotsEnRango(rango.inicio, rango.fin));
-    }
-  } else {
-    const primerTurno = Math.min(...horasTurnos);
-    for (const rango of rangosDisponibles) {
-      if (rango.fin <= primerTurno) {
-        displayList.push(...generarSlotsEnRango(rango.inicio, rango.fin));
-      } else if (rango.inicio < primerTurno) {
-        displayList.push(...generarSlotsEnRango(rango.inicio, primerTurno));
-      }
-    }
-    for (let i = 0; i < lista.length; i++) {
-      const t = lista[i];
-      if (esTurnoEnTablaActivos(t)) {
-        displayList.push({ tipo: 'turno', data: t });
-      }
-      if (i < lista.length - 1) {
-        const mActual = horaAMinutos(lista[i].hora);
-        const mSiguiente = horaAMinutos(lista[i + 1].hora);
-        if (mActual !== null && mSiguiente !== null) {
-          displayList.push(...generarSlotsEnRango(mActual + INTERVALO_MIN, mSiguiente));
-        }
-      }
-    }
-    const ultimoTurno = Math.max(...horasTurnos);
-    let inicio = ultimoTurno + INTERVALO_MIN;
-    for (const rango of rangosDisponibles) {
-      if (rango.fin <= inicio) continue;
-      const desde = Math.max(rango.inicio, inicio);
-      displayList.push(...generarSlotsEnRango(desde, rango.fin));
     }
   }
+
+  // Cupos libres por entidad programada
+  if (Array.isArray(cuposEntidadResumen) && cuposEntidadResumen.length) {
+    displayList.push(..._generarSlotsEntidadLibres(cuposEntidadResumen, lista));
+  }
+
+  // Citas agendadas al final
+  for (const t of turnosActivos) {
+    displayList.push({ tipo: 'turno', data: t });
+  }
+
   return displayList;
 }
 

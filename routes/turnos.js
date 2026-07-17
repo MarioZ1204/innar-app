@@ -94,16 +94,21 @@ router.get('/turnos/calendario', requireAuth, async (req, res) => {
 
     /** Resumen por día con ocupados/libres por entidad */
     let cupos_resumen_dia = [];
-    if (doctor_id && cupos_entidad.length) {
-      const fechasUnicas = [...new Set(cupos_entidad.map((c) => {
-        const f = c.fecha;
-        return typeof f === 'string' ? f.slice(0, 10) : new Date(f).toISOString().slice(0, 10);
-      }))];
-      for (const f of fechasUnicas) {
-        const resumen = await cuposEntidadAgenda.resumenCuposDia(doctor_id, f, db);
-        if (resumen.length) {
-          const tot = cuposEntidadAgenda.totalesDesdeResumen(resumen);
-          cupos_resumen_dia.push({ fecha: f, ...tot });
+    if (doctor_id) {
+      try {
+        await cuposEntidadAgenda.ensureCuposEntidadTable(db);
+      } catch (_) { /* noop */ }
+      if (cupos_entidad.length) {
+        const fechasUnicas = [...new Set(cupos_entidad.map((c) => {
+          const f = c.fecha;
+          return typeof f === 'string' ? f.slice(0, 10) : new Date(f).toISOString().slice(0, 10);
+        }))];
+        for (const f of fechasUnicas) {
+          const resumen = await cuposEntidadAgenda.resumenCuposDia(doctor_id, f, db);
+          if (resumen.length) {
+            const tot = cuposEntidadAgenda.totalesDesdeResumen(resumen);
+            cupos_resumen_dia.push({ fecha: f, ...tot });
+          }
         }
       }
     }

@@ -66,6 +66,37 @@ function _fmtFechaCal(d) {
   return new Date(d).toISOString().slice(0, 10);
 }
 
+function _parseResumenCupos(raw) {
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === 'string' && raw.trim()) {
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (_) { return []; }
+  }
+  return [];
+}
+
+function _mergeCuposEntidadFallback(cuposEntidad) {
+  if (!Array.isArray(cuposEntidad) || !cuposEntidad.length) return;
+  /** @type {Record<string, object[]>} */
+  const porFecha = {};
+  cuposEntidad.forEach((c) => {
+    const f = _fmtFechaCal(c.fecha);
+    const entidad = String(c.entidad || '').trim();
+    const cupoMax = Math.max(0, parseInt(c.cupo_max, 10) || 0);
+    if (!f || !entidad || cupoMax <= 0) return;
+    if (!porFecha[f]) porFecha[f] = [];
+    porFecha[f].push({ entidad, cupo_max: cupoMax, ocupados: 0, libres: cupoMax });
+  });
+  Object.entries(porFecha).forEach(([f, items]) => {
+    const prev = _citasCalCuposCache[f];
+    if (prev && Array.isArray(prev.resumen) && prev.resumen.length) return;
+    const capacidad = items.reduce((s, r) => s + (r.cupo_max || 0), 0);
+    _citasCalCuposCache[f] = { capacidad, ocupados: 0, libres: capacidad, resumen: items };
+  });
+}
+
 function _abrevEntidadCal(nom, maxLen = 10) {
   const s = String(nom || '').trim();
   if (!s) return 'Ent.';
@@ -115,9 +146,9 @@ function _htmlMetricasTop(citasGeneral, capHoraria, cuposDia) {
       + '</div>';
   }).join('');
 
-  return '<div class="ccal-card-top ccal-card-top-split">'
-    + `<div class="ccal-split-panel ccal-split-general">${_htmlPanelMetricas(split.izquierda.citas, split.izquierda.libres)}</div>`
-    + `<div class="ccal-split-panel ccal-split-entidad">${entHtml}</div>`
+  return '<div class="ccal-card-top ccal-card-top-split" style="display:grid;grid-template-columns:1fr 1fr;gap:0;min-height:54px;padding:0;">'
+    + `<div class="ccal-split-panel ccal-split-general" style="border-right:1px solid rgba(15,23,42,.14);">${_htmlPanelMetricas(split.izquierda.citas, split.izquierda.libres)}</div>`
+    + `<div class="ccal-split-panel ccal-split-entidad" style="display:flex;flex-direction:column;min-width:0;">${entHtml}</div>`
     + '</div>';
 }
 
@@ -167,14 +198,27 @@ async function cargarCitasCalendario() {
     if (body.cupos_resumen_dia && Array.isArray(body.cupos_resumen_dia)) {
       body.cupos_resumen_dia.forEach((row) => {
         const f = _fmtFechaCal(row.fecha);
+        let resumen = _parseResumenCupos(row.resumen);
+        if (!resumen.length && Array.isArray(body.cupos_entidad)) {
+          resumen = body.cupos_entidad
+            .filter((c) => _fmtFechaCal(c.fecha) === f)
+            .map((c) => ({
+              entidad: String(c.entidad || '').trim(),
+              cupo_max: Math.max(0, parseInt(c.cupo_max, 10) || 0),
+              ocupados: 0,
+              libres: Math.max(0, parseInt(c.cupo_max, 10) || 0)
+            }))
+            .filter((c) => c.entidad && c.cupo_max > 0);
+        }
         _citasCalCuposCache[f] = {
           capacidad: parseInt(row.capacidad, 10) || 0,
           ocupados: parseInt(row.ocupados, 10) || 0,
           libres: parseInt(row.libres, 10) || 0,
-          resumen: Array.isArray(row.resumen) ? row.resumen : []
+          resumen
         };
       });
     }
+    _mergeCuposEntidadFallback(body.cupos_entidad);
 
     if (doctorId) {
       try {

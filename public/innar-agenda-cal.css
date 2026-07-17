@@ -396,6 +396,14 @@
 
 .ccal-cell-split {
   min-height: 86px;
+  overflow: visible !important;
+}
+
+.ccal-card-top-split .ccal-split-entidad {
+  display: flex !important;
+  flex-direction: column;
+  min-width: 0;
+  visibility: visible;
 }
 
 @media (max-width: 768px) {

@@ -457,11 +457,34 @@
     text-align: center;
   }
 
-  #view-agenda-medica .ccal-dia-info-split .ccal-card-top {
+  #view-agenda-medica .ccal-dia-info-split .ccal-card-top:not(.ccal-card-top-split) {
     min-height: 0 !important;
     padding: 2px 1px !important;
     gap: 2px !important;
     border-bottom-width: 0;
+  }
+
+  #view-agenda-medica .ccal-card-top-split {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    min-height: 46px !important;
+    padding: 0 !important;
+    gap: 0 !important;
+    overflow: visible !important;
+  }
+
+  #view-agenda-medica .ccal-split-entidad {
+    display: flex !important;
+    flex-direction: column !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    min-width: 0 !important;
+    width: auto !important;
+  }
+
+  #view-agenda-medica .ccal-cell.ccal-cell-split {
+    overflow: visible !important;
+    min-height: 74px;
   }
 
   #view-agenda-medica .ccal-card-top-split .ccal-card-label,
@@ -471,8 +494,10 @@
     line-height: 1.05;
   }
 
-  #view-agenda-medica .ccal-cell.ccal-cell-split {
-    min-height: 74px;
+  #view-agenda-medica .ccal-ent-title,
+  #view-agenda-medica .ccal-ent-cupo {
+    display: block !important;
+    visibility: visible !important;
   }
 
   #view-agenda-medica .ccal-card-num {
