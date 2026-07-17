@@ -464,22 +464,14 @@
     border-bottom-width: 0;
   }
 
-  #view-agenda-medica .ccal-dia-info-entidades .ccal-card-label {
+  #view-agenda-medica .ccal-card-top-quad .ccal-card-label {
     display: block !important;
+    font-size: 4.5px !important;
+    line-height: 1.05;
   }
 
-  #view-agenda-medica .ccal-cell.ccal-cell-ent {
-    overflow: visible !important;
-    min-height: 58px;
-  }
-
-  #view-agenda-medica .ccal-cell.ccal-cell-ent-2 {
-    min-height: 68px;
-  }
-
-  #view-agenda-medica .ccal-cell.ccal-cell-ent-3,
-  #view-agenda-medica .ccal-cell.ccal-cell-ent-4 {
-    min-height: 78px;
+  #view-agenda-medica .ccal-cell.ccal-cell-quad {
+    min-height: 72px;
   }
 
   #view-agenda-medica .ccal-card-num {
@@ -493,6 +485,17 @@
 
   #view-agenda-medica .ccal-card-bottom {
     display: none !important;
+  }
+
+  #view-agenda-medica .ccal-cell-quad .ccal-card-bottom {
+    display: flex !important;
+    min-height: 14px;
+    padding-top: 2px;
+  }
+
+  #view-agenda-medica .ccal-cell-quad .ccal-card-observacion {
+    font-size: 5.5px !important;
+    line-height: 1.1;
   }
 
   #view-agenda-medica .ccal-motivo-diagonal {

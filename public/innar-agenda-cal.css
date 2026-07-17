@@ -307,143 +307,49 @@
   }
 }
 
-/* Calendario Ver Citas — métricas por entidad (grid 2×2) */
-.ccal-dia-info-entidades {
-  padding: 2px 3px 4px;
-  justify-content: flex-start;
-}
-
-.ccal-dia-info-entidades .ccal-card-bottom {
-  display: none;
-}
-
-.ccal-ent-grid {
-  display: grid;
+/* Calendario Ver Citas — conteo 2 o 4 métricas arriba */
+.ccal-card-top-quad {
+  display: grid !important;
   grid-template-columns: 1fr 1fr;
-  gap: 3px;
-  width: 100%;
-  align-content: start;
+  grid-template-rows: auto auto;
+  gap: 3px 4px !important;
+  min-height: 52px;
+  padding: 6px 3px 5px !important;
 }
 
-.ccal-ent-grid-1 {
-  grid-template-columns: 1fr;
+.ccal-card-metric-cupos .ccal-card-num {
+  color: #7c3aed;
 }
 
-.ccal-ent-chip {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 2px;
-  padding: 3px 4px 4px;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.72);
-  border: 1px solid rgba(15, 23, 42, 0.1);
-  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.04);
-  min-width: 0;
-  line-height: 1;
-}
-
-.ccal-ent-row {
-  display: grid;
-  grid-template-columns: auto auto auto 1fr;
-  align-items: center;
-  gap: 0 2px;
-}
-
-.ccal-ent-chip-full {
-  background: rgba(254, 226, 226, 0.85);
-  border-color: rgba(220, 38, 38, 0.25);
-}
-
-.ccal-ent-chip-low {
-  background: rgba(254, 243, 199, 0.9);
-  border-color: rgba(217, 119, 6, 0.25);
-}
-
-.ccal-ent-occ {
-  font-size: 12px;
-  font-weight: 800;
-  color: #1d4ed8;
-}
-
-.ccal-ent-name {
-  font-size: 5.5px;
-  font-weight: 700;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-  color: #475569;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
-  text-align: center;
-}
-
-.ccal-ent-sep {
-  font-size: 10px;
-  font-weight: 600;
-  color: #94a3b8;
-  padding: 0 1px;
-}
-
-.ccal-ent-lib {
-  font-size: 12px;
-  font-weight: 800;
-  color: #047857;
-}
-
-.ccal-ent-lbl {
-  font-size: 5px;
-  font-weight: 700;
-  text-transform: uppercase;
+.ccal-card-metric-vacios .ccal-card-num {
   color: #059669;
-  align-self: flex-end;
-  padding-bottom: 1px;
 }
 
-.ccal-ent-more {
-  grid-column: 1 / -1;
-  font-size: 7px;
-  font-weight: 700;
-  color: #64748b;
-  text-align: center;
-  padding: 1px 0;
+.ccal-card-top-quad .ccal-card-label {
+  font-size: 6px;
+  letter-spacing: 0.04em;
 }
 
-.ccal-cell-ent {
-  overflow: visible;
+.ccal-cell-quad {
+  min-height: 88px;
 }
-
-.ccal-cell-ent-1 { min-height: 72px; }
-.ccal-cell-ent-2 { min-height: 88px; }
-.ccal-cell-ent-3,
-.ccal-cell-ent-4 { min-height: 102px; }
 
 @media (max-width: 768px) {
-  .ccal-ent-chip {
-    padding: 2px 3px 3px;
-    border-radius: 5px;
+  .ccal-card-top-quad {
+    min-height: 44px;
+    gap: 2px 2px !important;
+    padding: 4px 2px 3px !important;
   }
 
-  .ccal-ent-occ,
-  .ccal-ent-lib {
-    font-size: 10px;
+  .ccal-card-top-quad .ccal-card-num {
+    font-size: 11px !important;
   }
 
-  .ccal-ent-name {
-    font-size: 5px;
+  .ccal-card-top-quad .ccal-card-label {
+    font-size: 5px !important;
   }
 
-  .ccal-ent-sep {
-    font-size: 8px;
+  .ccal-cell-quad {
+    min-height: 72px;
   }
-
-  .ccal-ent-lbl {
-    font-size: 4.5px;
-  }
-
-  .ccal-cell-ent-1 { min-height: 58px; }
-  .ccal-cell-ent-2 { min-height: 68px; }
-  .ccal-cell-ent-3,
-  .ccal-cell-ent-4 { min-height: 78px; }
 }
