@@ -121,13 +121,26 @@ function _rellenarCuposCacheFaltantes() {
   });
 }
 
+function _hidratarCuposCalendarioDesdeStorage(doctorId, mes) {
+  if (!doctorId || !mes || typeof obtenerCuposEntidadMesLocal !== 'function') return;
+  const almacenados = obtenerCuposEntidadMesLocal(doctorId, mes);
+  Object.entries(almacenados).forEach(([fecha, items]) => {
+    if (_citasCalCuposCache[fecha]?.resumen?.length) return;
+    const data = _resumenDesdeCuposPlanos(items);
+    if (data) _escribirCuposCache(fecha, data);
+  });
+}
+
 function _mergeCuposDesdeCalProgramar() {
   if (typeof calCuposEntidad === 'undefined' || !calCuposEntidad) return;
   Object.entries(calCuposEntidad).forEach(([fecha, items]) => {
     const f = _fmtFechaCal(fecha);
-    if (!f || _citasCalCuposCache[f]?.resumen?.length) return;
+    if (!f) return;
     const data = _resumenDesdeCuposPlanos(items);
-    if (data) _escribirCuposCache(f, data);
+    if (!data) return;
+    const prev = _citasCalCuposCache[f];
+    if (prev?.resumen?.length && (parseInt(prev.ocupados, 10) || 0) > 0) return;
+    _escribirCuposCache(f, data);
   });
 }
 
@@ -135,8 +148,18 @@ function _mergeCuposDesdeCalProgramar() {
 function actualizarCuposCitasCalPersistente(fecha, cuposPlanos, silent) {
   const f = _fmtFechaCal(fecha);
   const data = _resumenDesdeCuposPlanos(cuposPlanos);
-  if (f && data) _escribirCuposCache(f, data);
-  else if (f) {
+  if (f && data) {
+    _escribirCuposCache(f, data);
+    if (typeof calDoctorIdForCal !== 'undefined' && calDoctorIdForCal && typeof guardarCuposEntidadMesLocal === 'function') {
+      const mes = f.slice(0, 7);
+      if (typeof calCuposEntidad !== 'undefined') {
+        if (!calCuposEntidad[f]) calCuposEntidad[f] = cuposPlanos;
+        guardarCuposEntidadMesLocal(calDoctorIdForCal, mes, calCuposEntidad);
+      } else {
+        guardarCuposEntidadMesLocal(calDoctorIdForCal, mes, { [f]: cuposPlanos });
+      }
+    }
+  } else if (f) {
     delete _citasCalCuposCache[f];
     delete _citasCalCuposPersistente[f];
   }
@@ -169,10 +192,12 @@ function _mergeCuposEntidadFallback(cuposEntidad) {
     });
   });
   Object.entries(porFecha).forEach(([f, items]) => {
-    const prev = _citasCalCuposCache[f];
-    if (prev && Array.isArray(prev.resumen) && prev.resumen.length) return;
     const capacidad = items.reduce((s, r) => s + (r.cupo_max || 0), 0);
     const ocupados = items.reduce((s, r) => s + (r.ocupados || 0), 0);
+    const prev = _citasCalCuposCache[f];
+    const prevTieneOcupados = prev?.resumen?.some((r) => (parseInt(r.ocupados, 10) || 0) > 0);
+    const itemsTieneOcupados = items.some((r) => (parseInt(r.ocupados, 10) || 0) > 0);
+    if (prev?.resumen?.length && prevTieneOcupados && !itemsTieneOcupados) return;
     _escribirCuposCache(f, {
       capacidad,
       ocupados,
@@ -324,7 +349,7 @@ async function cargarCitasCalendario() {
 
     _mergeCuposEntidadFallback(body.cupos_entidad);
     _aplicarCuposResumenDia(body.cupos_resumen_dia, body.cupos_entidad);
-    _mergeCuposEntidadFallback(body.cupos_entidad);
+    _hidratarCuposCalendarioDesdeStorage(doctorId, mes);
     _rellenarCuposCacheFaltantes();
 
     if (doctorId) {

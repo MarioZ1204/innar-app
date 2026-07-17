@@ -4624,6 +4624,49 @@ let _calEntidadesOpciones = null;
 /** @type {Set<Promise<void>>} */
 const _calCupoRowLoads = new Set();
 
+function _cuposEntidadStorageKey(doctorId, mes) {
+  return `innar_cupos_entidad_v1_${doctorId}_${mes}`;
+}
+
+function guardarCuposEntidadMesLocal(doctorId, mes, cuposPorFecha) {
+  if (!doctorId || !mes || typeof localStorage === 'undefined') return;
+  try {
+    const mesPref = `${mes}-`;
+    const payload = {};
+    Object.entries(cuposPorFecha || {}).forEach(([fecha, items]) => {
+      if (!fecha.startsWith(mesPref) || !Array.isArray(items) || !items.length) return;
+      payload[fecha] = items.map((c) => ({
+        entidad: String(c.entidad || '').trim(),
+        cupo_max: parseInt(c.cupo_max, 10) || 0
+      })).filter((c) => c.entidad && c.cupo_max > 0);
+    });
+    localStorage.setItem(_cuposEntidadStorageKey(doctorId, mes), JSON.stringify(payload));
+  } catch (_) { /* noop */ }
+}
+
+function obtenerCuposEntidadMesLocal(doctorId, mes) {
+  if (!doctorId || !mes || typeof localStorage === 'undefined') return {};
+  try {
+    const raw = localStorage.getItem(_cuposEntidadStorageKey(doctorId, mes));
+    if (!raw) return {};
+    const data = JSON.parse(raw);
+    return (data && typeof data === 'object') ? data : {};
+  } catch (_) {
+    return {};
+  }
+}
+
+function hidratarCuposEntidadMesLocal(doctorId, mes) {
+  const almacenados = obtenerCuposEntidadMesLocal(doctorId, mes);
+  Object.entries(almacenados).forEach(([fecha, items]) => {
+    if (!Array.isArray(items) || !items.length) return;
+    if (!calCuposEntidad[fecha]?.length) {
+      calCuposEntidad[fecha] = items;
+    }
+  });
+  return almacenados;
+}
+
 function _fmtFechaAgenda(d) {
   if (d == null || d === '') return '';
   if (typeof d === 'string') return d.slice(0, 10);
@@ -5071,6 +5114,9 @@ async function persistirCalDia(payload) {
   }
   calSavedSnapshot = { at: Date.now(), date: savedDate, disp: dispCache, slots: slotsCache, cupos: calCuposEntidad[savedDate] || [] };
 
+  const mesGuardado = savedDate.slice(0, 7);
+  guardarCuposEntidadMesLocal(calDoctorIdForCal, mesGuardado, calCuposEntidad);
+
   renderCalendar();
   renderCalResumen();
   void loadCalendarData();
@@ -5204,6 +5250,9 @@ async function loadCalendarData() {
         });
       });
     }
+
+    hidratarCuposEntidadMesLocal(calDoctorIdForCal, mes);
+    guardarCuposEntidadMesLocal(calDoctorIdForCal, mes, calCuposEntidad);
 
     const resSlots = await apiFetch(`/api/doctor-agenda?doctor_id=${calDoctorIdForCal}&_t=${Date.now()}`, {
       cache: 'no-store'
@@ -5803,6 +5852,8 @@ async function buscarPacientesMedica() {
 // Attach document input listener in init (added later)
 
 const MEDICA_ESTADOS_FINALES = ['ATENDIDO', 'NO_ASISTIO', 'CANCELADO', 'REPROGRAMADO'];
+/** Estados que consumieron un cupo horario (no mostrar libre aunque estén en completados). */
+const MEDICA_ESTADOS_OCUPAN_HORARIO = ['PENDIENTE', 'EN_ESPERA', 'EN_SALA', 'EN_ATENCION', 'ATENDIDO', 'NO_ASISTIO', 'COMPLETADO'];
 
 function _ordenarTurnosMedica(turnos) {
   return [...turnos].sort((a, b) => {
@@ -5875,10 +5926,17 @@ function _construirDisplayListMedica(turnosDiaOrdenCronologico, dispCtx) {
 
   const minutosOcupados = new Set();
   const turnoPorMinuto = new Map();
-  for (const t of turnosActivos) {
+
+  for (const t of lista) {
+    if (!MEDICA_ESTADOS_OCUPAN_HORARIO.includes(t.estado)) continue;
     const m = horaAMinutos(t.hora);
     if (m == null) continue;
     minutosOcupados.add(m);
+  }
+
+  for (const t of turnosActivos) {
+    const m = horaAMinutos(t.hora);
+    if (m == null) continue;
     if (!turnoPorMinuto.has(m)) turnoPorMinuto.set(m, t);
   }
 
@@ -6027,6 +6085,10 @@ async function cargarTurnosMedica() {
         dispTarde = Boolean(dispData.disponible_tarde);
         if (Array.isArray(dispData.cupos_entidad)) {
           cuposEntidadResumen = dispData.cupos_entidad;
+          calCuposEntidad[fecha] = dispData.cupos_entidad.map((c) => ({
+            entidad: String(c.entidad || '').trim(),
+            cupo_max: parseInt(c.cupo_max, 10) || 0
+          })).filter((c) => c.entidad && c.cupo_max > 0);
         }
         if (dispData.tiene_intervalos && dispData.intervalos) {
           intervalosBloqueados = dispData.intervalos.map((i) => ({
@@ -6036,6 +6098,26 @@ async function cargarTurnosMedica() {
         }
       }
     } catch (e) { console.warn('Error obteniendo disponibilidad:', e.message); }
+
+    if (!cuposEntidadResumen.length) {
+      hidratarCuposEntidadMesLocal(doctorId, fecha.slice(0, 7));
+      const localCupos = calCuposEntidad[fecha];
+      if (Array.isArray(localCupos) && localCupos.length) {
+        const occMap = _contarOcupadosEntidadDesdeTurnos(turnosOrdenados);
+        cuposEntidadResumen = localCupos.map((c) => {
+          const entidad = String(c.entidad || '').trim();
+          const cupoMax = parseInt(c.cupo_max, 10) || 0;
+          const key = entidad.toUpperCase();
+          const ocupados = occMap.get(key) || 0;
+          return {
+            entidad,
+            cupo_max: cupoMax,
+            ocupados,
+            libres: Math.max(0, cupoMax - ocupados)
+          };
+        }).filter((c) => c.entidad && c.cupo_max > 0);
+      }
+    }
 
     const displayList = _construirDisplayListMedica(turnosOrdenados, {
       dispManana, dispTarde, intervalosBloqueados, INTERVALO_MIN, cuposEntidadResumen
