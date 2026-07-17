@@ -5,6 +5,7 @@
 (function () {
   'use strict';
 
+  const STORAGE_KEY = 'innar_llamado_tv_doctores';
   const VECES_POR_RONDA = 2;
   const BATCH_MS = 900;
   const PAUSA_ENTRE_ANUNCIOS_MS = 500;
@@ -21,10 +22,142 @@
   let batchPendiente = [];
   let batchTimer = null;
 
-  function $(id) { return document.getElementById(id); }
+  let medicos = [];
+  let consultoriosActivos = new Set();
+
+  function fetchApi(url) {
+    if (typeof apiFetch === 'function') return apiFetch(url).then((r) => r.json());
+    return fetch(url, { credentials: 'include' }).then((r) => r.json());
+  }
 
   function escapeHtml(s) {
     return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  function $(id) { return document.getElementById(id); }
+
+  /* ── Consultorios activos / bloqueados ── */
+
+  function cargarConsultoriosActivos() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const ids = JSON.parse(raw);
+        if (Array.isArray(ids)) {
+          consultoriosActivos = new Set(ids.map(Number).filter(Boolean));
+          return;
+        }
+      }
+    } catch (_) { /* ignore */ }
+    consultoriosActivos = new Set();
+  }
+
+  function guardarConsultoriosActivos() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify([...consultoriosActivos]));
+  }
+
+  function resolverDoctorId(item) {
+    if (item.doctor_id != null && item.doctor_id !== '') {
+      return Number(item.doctor_id);
+    }
+    if (item.numero_consultorio !== '') {
+      const med = medicos.find(
+        (m) => String(m.numero_consultorio) === String(item.numero_consultorio)
+      );
+      if (med) return Number(med.id);
+    }
+    return null;
+  }
+
+  function consultorioPermitido(item) {
+    if (!consultoriosActivos.size) return false;
+    const doctorId = resolverDoctorId(item);
+    if (doctorId && consultoriosActivos.has(doctorId)) return true;
+    return false;
+  }
+
+  async function cargarMedicos() {
+    try {
+      medicos = await fetchApi('/api/medicos');
+      if (!Array.isArray(medicos)) medicos = [];
+    } catch (_) {
+      medicos = [];
+    }
+  }
+
+  async function asegurarConsultoriosIniciales() {
+    await cargarMedicos();
+    if (!consultoriosActivos.size && medicos.length) {
+      medicos.forEach((m) => consultoriosActivos.add(m.id));
+      guardarConsultoriosActivos();
+    }
+  }
+
+  function renderConfigLista() {
+    const lista = $('llamadoConfigLista');
+    if (!lista) return;
+
+    if (!medicos.length) {
+      lista.innerHTML = '<p style="color:#64748b;font-size:.875rem;padding:8px 0">No hay médicos disponibles.</p>';
+      return;
+    }
+
+    const ordenados = [...medicos].sort((a, b) => {
+      const ca = a.numero_consultorio ?? 9999;
+      const cb = b.numero_consultorio ?? 9999;
+      return ca - cb || String(a.nombre).localeCompare(String(b.nombre));
+    });
+
+    lista.innerHTML = ordenados.map((m) => {
+      const activo = consultoriosActivos.has(m.id);
+      const consNum = m.numero_consultorio != null ? String(m.numero_consultorio) : null;
+      const consTxt = consNum ? 'Recibe llamados en pantalla' : 'Sin consultorio asignado';
+      return `<label class="ltv-toggle-item${activo ? ' is-on' : ' is-off'}" data-doctor-id="${m.id}">
+        <div class="ltv-toggle-item-info">
+          <div class="ltv-toggle-item-nombre">${escapeHtml(m.nombre)}</div>
+          <div class="ltv-toggle-item-cons">${consNum ? `<span class="ltv-toggle-item-cons-num">${escapeHtml(consNum)}</span>` : ''}${escapeHtml(consTxt)}</div>
+        </div>
+        <div class="ltv-switch">
+          <input type="checkbox" ${activo ? 'checked' : ''} data-doctor-id="${m.id}" aria-label="Consultorio ${escapeHtml(m.nombre)}" />
+          <span class="ltv-switch-track"></span>
+        </div>
+      </label>`;
+    }).join('');
+
+    lista.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+      cb.addEventListener('change', () => {
+        const id = Number(cb.dataset.doctorId);
+        if (cb.checked) consultoriosActivos.add(id);
+        else consultoriosActivos.delete(id);
+        guardarConsultoriosActivos();
+        const row = cb.closest('.ltv-toggle-item');
+        row?.classList.toggle('is-on', cb.checked);
+        row?.classList.toggle('is-off', !cb.checked);
+      });
+    });
+  }
+
+  function abrirConfig() {
+    renderConfigLista();
+    $('llamadoConfigBackdrop')?.classList.remove('hidden');
+    $('llamadoConfigPanel')?.classList.remove('hidden');
+  }
+
+  function cerrarConfig() {
+    $('llamadoConfigBackdrop')?.classList.add('hidden');
+    $('llamadoConfigPanel')?.classList.add('hidden');
+  }
+
+  function activarTodosConsultorios() {
+    medicos.forEach((m) => consultoriosActivos.add(m.id));
+    guardarConsultoriosActivos();
+    renderConfigLista();
+  }
+
+  function bloquearTodosConsultorios() {
+    consultoriosActivos.clear();
+    guardarConsultoriosActivos();
+    renderConfigLista();
   }
 
   function sleep(ms) {
@@ -185,6 +318,7 @@
   function encolarLlamado(data) {
     const item = normalizarLlamado(data);
     if (!item.paciente_nombre) return;
+    if (!consultorioPermitido(item)) return;
 
     batchPendiente.push(item);
     if (batchTimer) clearTimeout(batchTimer);
@@ -279,13 +413,18 @@
 
   /* ── Init ── */
 
-  window.initLlamadoPacientes = function initLlamadoPacientes() {
+  window.initLlamadoPacientes = async function initLlamadoPacientes() {
     if (!initDone) {
       initDone = true;
       $('btnVolverLlamadoPacientes')?.addEventListener('click', () => {
         if (typeof goToMenu === 'function') goToMenu();
       });
       $('btnLlamadoActivarAudio')?.addEventListener('click', unlockAudio);
+      $('btnLlamadoConfig')?.addEventListener('click', abrirConfig);
+      $('btnLlamadoConfigCerrar')?.addEventListener('click', cerrarConfig);
+      $('llamadoConfigBackdrop')?.addEventListener('click', cerrarConfig);
+      $('btnLlamadoConfigTodos')?.addEventListener('click', activarTodosConsultorios);
+      $('btnLlamadoConfigNinguno')?.addEventListener('click', bloquearTodosConsultorios);
       $('btnLlamadoFullscreen')?.addEventListener('click', toggleFullscreen);
       document.addEventListener('fullscreenchange', actualizarEstadoFullscreen);
       document.addEventListener('mousemove', (e) => {
@@ -296,7 +435,10 @@
       bindRealtime();
     }
 
+    cargarConsultoriosActivos();
     ocultarPopup();
+    await asegurarConsultoriosIniciales();
+    renderConfigLista();
     iniciarReloj();
   };
 
