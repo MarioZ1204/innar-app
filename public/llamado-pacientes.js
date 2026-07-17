@@ -10,12 +10,14 @@
   const BATCH_MS = 900;
   const PAUSA_ENTRE_ANUNCIOS_MS = 500;
   const POPUP_EXTRA_MS = 800;
+  const MEDICOS_REFRESH_MS = 60000;
 
   let initDone = false;
   let audioUnlocked = false;
   let voiceCache = null;
   let boundRealtime = false;
   let relojTimer = null;
+  let medicosRefreshTimer = null;
 
   let procesando = false;
   let colaAnuncios = [];
@@ -61,19 +63,61 @@
       return Number(item.doctor_id);
     }
     if (item.numero_consultorio !== '') {
-      const med = medicos.find(
+      const matches = medicos.filter(
         (m) => String(m.numero_consultorio) === String(item.numero_consultorio)
       );
-      if (med) return Number(med.id);
+      if (matches.length === 1) return Number(matches[0].id);
+    }
+    if (item.doctor_nombre) {
+      const byName = medicos.find(
+        (m) => String(m.nombre || '').trim().toLowerCase() === String(item.doctor_nombre).trim().toLowerCase()
+      );
+      if (byName) return Number(byName.id);
     }
     return null;
+  }
+
+  function enriquecerLlamado(data) {
+    const item = {
+      paciente_nombre: String(data?.paciente_nombre || '').trim(),
+      numero_consultorio: data?.numero_consultorio != null && data?.numero_consultorio !== ''
+        ? String(data.numero_consultorio)
+        : '',
+      doctor_id: data?.doctor_id ?? null,
+      doctor_nombre: data?.doctor_nombre ? String(data.doctor_nombre).trim() : ''
+    };
+
+    let med = null;
+    if (item.doctor_id != null && item.doctor_id !== '') {
+      med = medicos.find((m) => Number(m.id) === Number(item.doctor_id));
+    }
+    if (!med && item.numero_consultorio !== '') {
+      const matches = medicos.filter(
+        (m) => String(m.numero_consultorio) === String(item.numero_consultorio)
+      );
+      if (matches.length === 1) med = matches[0];
+    }
+    if (!med && item.doctor_nombre) {
+      med = medicos.find(
+        (m) => String(m.nombre || '').trim().toLowerCase() === item.doctor_nombre.toLowerCase()
+      );
+    }
+
+    if (med) {
+      item.doctor_id = med.id;
+      if (!item.numero_consultorio && med.numero_consultorio != null && med.numero_consultorio !== '') {
+        item.numero_consultorio = String(med.numero_consultorio);
+      }
+      if (!item.doctor_nombre) item.doctor_nombre = med.nombre || '';
+    }
+
+    return item;
   }
 
   function consultorioPermitido(item) {
     if (!consultoriosActivos.size) return false;
     const doctorId = resolverDoctorId(item);
-    if (doctorId && consultoriosActivos.has(doctorId)) return true;
-    return false;
+    return !!(doctorId && consultoriosActivos.has(doctorId));
   }
 
   async function cargarMedicos() {
@@ -138,9 +182,11 @@
   }
 
   function abrirConfig() {
-    renderConfigLista();
-    $('llamadoConfigBackdrop')?.classList.remove('hidden');
-    $('llamadoConfigPanel')?.classList.remove('hidden');
+    cargarMedicos().then(() => {
+      renderConfigLista();
+      $('llamadoConfigBackdrop')?.classList.remove('hidden');
+      $('llamadoConfigPanel')?.classList.remove('hidden');
+    });
   }
 
   function cerrarConfig() {
@@ -285,13 +331,7 @@
   /* ── Cola intercalada ── */
 
   function normalizarLlamado(data) {
-    return {
-      paciente_nombre: String(data?.paciente_nombre || '').trim(),
-      numero_consultorio: data?.numero_consultorio != null && data?.numero_consultorio !== ''
-        ? String(data.numero_consultorio)
-        : '',
-      doctor_id: data?.doctor_id ?? null
-    };
+    return enriquecerLlamado(data || {});
   }
 
   function ordenarPorConsultorio(items) {
@@ -373,7 +413,12 @@
   function onLlamadoEvent(data) {
     if (window.currentModule !== 'llamado-pacientes') return;
     unlockAudio();
-    encolarLlamado(data || {});
+    const encolar = () => encolarLlamado(data || {});
+    if (!medicos.length) {
+      cargarMedicos().then(encolar);
+      return;
+    }
+    encolar();
   }
 
   function bindRealtime() {
@@ -386,6 +431,21 @@
     };
     if (window.socketReady && window.socket) attach();
     document.addEventListener('socketReady', attach);
+  }
+
+  function iniciarRefreshMedicos() {
+    if (medicosRefreshTimer) clearInterval(medicosRefreshTimer);
+    medicosRefreshTimer = setInterval(() => {
+      if (window.currentModule !== 'llamado-pacientes') return;
+      cargarMedicos();
+    }, MEDICOS_REFRESH_MS);
+  }
+
+  function detenerRefreshMedicos() {
+    if (medicosRefreshTimer) {
+      clearInterval(medicosRefreshTimer);
+      medicosRefreshTimer = null;
+    }
   }
 
   /* ── Pantalla completa ── */
@@ -427,10 +487,12 @@
       $('btnLlamadoConfigNinguno')?.addEventListener('click', bloquearTodosConsultorios);
       $('btnLlamadoFullscreen')?.addEventListener('click', toggleFullscreen);
       document.addEventListener('fullscreenchange', actualizarEstadoFullscreen);
-      document.addEventListener('mousemove', (e) => {
-        const view = $('view-llamado-pacientes');
-        if (!view?.classList.contains('ltv-is-fullscreen')) return;
-        view.classList.toggle('ltv-show-bar', e.clientY < 80);
+      document.addEventListener('keydown', (e) => {
+        if (e.key !== 'Escape') return;
+        if (window.currentModule !== 'llamado-pacientes') return;
+        if (document.fullscreenElement) {
+          document.exitFullscreen?.().catch(() => {});
+        }
       });
       bindRealtime();
     }
@@ -440,14 +502,18 @@
     await asegurarConsultoriosIniciales();
     renderConfigLista();
     iniciarReloj();
+    iniciarRefreshMedicos();
   };
 
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
       detenerReloj();
+      detenerRefreshMedicos();
     } else if (window.currentModule === 'llamado-pacientes') {
       actualizarReloj();
       iniciarReloj();
+      cargarMedicos();
+      iniciarRefreshMedicos();
     }
   });
 })();

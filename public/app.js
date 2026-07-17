@@ -14760,7 +14760,8 @@ $('btnModalLlamarPaciente')?.addEventListener('click', async (e) => {
     socket.emit('agenda:anunciar-paciente', {
       paciente_nombre: nombrePaciente,
       numero_consultorio: consultorio,
-      doctor_nombre: doctorNombre
+      doctor_nombre: doctorNombre,
+      doctor_id: doctorIdTurno
     });
   }
   showToast('Paciente llamado: ' + nombrePaciente, 'success');

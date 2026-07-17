@@ -154,21 +154,11 @@
 }
 
 #view-llamado-pacientes.ltv-is-fullscreen .ltv-topbar {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  opacity: 0;
-  pointer-events: none;
-  transform: translateY(-100%);
-  transition: opacity 0.25s, transform 0.25s;
+  display: none !important;
 }
 
-#view-llamado-pacientes.ltv-is-fullscreen:hover .ltv-topbar,
-#view-llamado-pacientes.ltv-is-fullscreen.ltv-show-bar .ltv-topbar {
-  opacity: 1;
-  pointer-events: auto;
-  transform: translateY(0);
+#view-llamado-pacientes.ltv-is-fullscreen .ltv-body {
+  padding: 0;
 }
 
 /* ── Pantalla reposo: logo ── */
