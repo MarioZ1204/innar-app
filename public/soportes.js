@@ -478,33 +478,64 @@
       }).join('');
   }
 
-  let _cacheTiposConsultaPdx = null;
+  let _cacheTiposConsultaPdx = {};
 
-  async function obtenerTiposConsultaPdx() {
-    if (_cacheTiposConsultaPdx) return _cacheTiposConsultaPdx;
+  async function obtenerTiposConsultaPdx(especialidad) {
+    const esp = String(especialidad || '').trim();
+    if (!esp) return [];
+    if (_cacheTiposConsultaPdx[esp]) return _cacheTiposConsultaPdx[esp];
     try {
-      const res = await apiFetch('/api/tipos-consulta');
+      const res = await apiFetch(`/api/tipos-consulta?especialidad_nombre=${encodeURIComponent(esp)}`);
       const data = res.ok ? await res.json() : [];
       const lista = (Array.isArray(data) ? data : [])
         .map((e) => (typeof e === 'string' ? { nombre: e } : e))
         .filter((e) => e?.nombre)
-        .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre), 'es', { sensitivity: 'base' }));
-      _cacheTiposConsultaPdx = lista.length ? lista : null;
+        .sort((a, b) => {
+          const oa = a.orden ?? 999;
+          const ob = b.orden ?? 999;
+          if (oa !== ob) return oa - ob;
+          return String(a.nombre).localeCompare(String(b.nombre), 'es', { sensitivity: 'base' });
+        });
+      _cacheTiposConsultaPdx[esp] = lista;
+      return lista;
     } catch (_) {
-      _cacheTiposConsultaPdx = null;
+      return [];
     }
-    return _cacheTiposConsultaPdx || [];
   }
 
-  async function poblarSelectTipoConsultaPdx(selectEl, selected) {
+  async function poblarSelectTipoConsultaPdx(selectEl, selected, especialidad) {
     if (!selectEl) return;
-    const tipos = await obtenerTiposConsultaPdx();
+    const esp = String(especialidad || '').trim();
     const sel = String(selected || '');
+    if (!esp) {
+      selectEl.innerHTML = '<option value="">Seleccione especialidad primero</option>';
+      selectEl.disabled = true;
+      return;
+    }
+    selectEl.disabled = false;
+    const tipos = await obtenerTiposConsultaPdx(esp);
+    if (!tipos.length) {
+      selectEl.innerHTML = '<option value="">Sin tipos para esta especialidad</option>';
+      return;
+    }
     selectEl.innerHTML = '<option value="">Seleccionar tipo de consulta</option>' +
       tipos.map((e) => {
         const nom = e.nombre || '';
         return `<option value="${escapeHtml(nom)}"${nom === sel ? ' selected' : ''}>${escapeHtml(nom)}</option>`;
       }).join('');
+  }
+
+  async function enlazarEspecialidadConTipoConsultaPdx(espSel, tipoSel, selectedTipo) {
+    if (!espSel || !tipoSel) return;
+    let tipoInicial = String(selectedTipo || '').trim();
+    const refrescar = async (resetTipo) => {
+      const esp = espSel.value?.trim();
+      const prev = resetTipo ? '' : tipoInicial;
+      tipoInicial = '';
+      await poblarSelectTipoConsultaPdx(tipoSel, prev, esp);
+    };
+    espSel.addEventListener('change', () => refrescar(true));
+    await refrescar(false);
   }
 
   let _cacheEspecialidadesPdx = null;
@@ -705,6 +736,9 @@
   }
 
   async function poblarSelectsCamposPdx(modal, campos, datos) {
+    let espSel = null;
+    let tipoSel = null;
+    let selectedTipo = '';
     for (const c of campos || []) {
       if (c.input === 'tipo_doc') {
         valorTipoDocEnInput(
@@ -716,9 +750,16 @@
       const sel = modal.querySelector(`[data-key="${c.key}"][data-tipo="estudio"], [data-key="${c.key}"][data-tipo="psg"], [data-key="${c.key}"][data-tipo="tipo_consulta"], [data-key="${c.key}"][data-tipo="especialidad"]`);
       if (!sel) continue;
       if (sel.dataset.tipo === 'psg') poblarSelectEstudioPsgCliente(sel, datos.estudio_texto || c.valor);
-      else if (sel.dataset.tipo === 'tipo_consulta') await poblarSelectTipoConsultaPdx(sel, datos.tipo_consulta || c.valor);
-      else if (sel.dataset.tipo === 'especialidad') await poblarSelectEspecialidadPdx(sel, datos.estudio_texto || c.valor);
-      else await poblarSelectEstudioPdx(sel, datos.estudio_texto || c.valor);
+      else if (sel.dataset.tipo === 'tipo_consulta') {
+        tipoSel = sel;
+        selectedTipo = datos.tipo_consulta || datos.marca_tiempo || c.valor || '';
+      } else if (sel.dataset.tipo === 'especialidad') {
+        await poblarSelectEspecialidadPdx(sel, datos.estudio_texto || c.valor);
+        espSel = sel;
+      } else await poblarSelectEstudioPdx(sel, datos.estudio_texto || c.valor);
+    }
+    if (espSel && tipoSel) {
+      await enlazarEspecialidadConTipoConsultaPdx(espSel, tipoSel, selectedTipo);
     }
   }
 
@@ -2940,6 +2981,7 @@
         for (let idx = 0; idx < analisisLista.length; idx++) {
           const parsed = analisisLista[idx].analisis.parsed || analisisLista[idx].analisis.parcial || {};
           const estSelect = modal.querySelector(`.sopMultiEst[data-idx="${idx}"]`);
+          const tipoSel = modal.querySelector(`.sopMultiTipoConsulta[data-idx="${idx}"]`);
           if (estSelect) {
             if (esConsultaMedica) {
               await poblarSelectEspecialidadPdx(estSelect, parsed.estudio_texto);
@@ -2947,11 +2989,12 @@
               await poblarSelectEstudioPdx(estSelect, parsed.estudio_texto);
             }
           }
-          if (esComprobanteConsultaMed) {
-            const tipoSel = modal.querySelector(`.sopMultiTipoConsulta[data-idx="${idx}"]`);
-            if (tipoSel) {
-              await poblarSelectTipoConsultaPdx(tipoSel, parsed.tipo_consulta || parsed.marca_tiempo);
-            }
+          if (esComprobanteConsultaMed && estSelect && tipoSel) {
+            await enlazarEspecialidadConTipoConsultaPdx(
+              estSelect,
+              tipoSel,
+              parsed.tipo_consulta || parsed.marca_tiempo
+            );
           }
         }
         sopIcons(modal);
@@ -3117,8 +3160,13 @@
     const estSel = modal.querySelector('#sopPdxCorrEst');
     if (esPsg) poblarSelectEstudioPsgCliente(estSel, p.estudio_texto);
     else if (esComprobanteConsultaMed) {
-      poblarSelectEspecialidadPdx(estSel, p.estudio_texto);
-      poblarSelectTipoConsultaPdx(modal.querySelector('#sopPdxCorrTipoConsulta'), p.tipo_consulta || p.marca_tiempo);
+      poblarSelectEspecialidadPdx(estSel, p.estudio_texto).then(() => {
+        enlazarEspecialidadConTipoConsultaPdx(
+          estSel,
+          modal.querySelector('#sopPdxCorrTipoConsulta'),
+          p.tipo_consulta || p.marca_tiempo
+        );
+      });
     } else if (esConsultaMedica) poblarSelectEspecialidadPdx(estSel, p.estudio_texto);
     else if (esEstruct) poblarSelectEstudioPdx(estSel, p.estudio_texto);
 
