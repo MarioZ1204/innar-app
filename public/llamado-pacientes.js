@@ -8,6 +8,7 @@
   const STORAGE_KEY = 'innar_llamado_tv_doctores';
   const HISTORIAL_KEY = 'innar_llamado_tv_historial';
   const TAB_ACTIVE_KEY = 'innar_llamado_tv_tab_activa';
+  const RELAY_KEY = 'innar_llamado_tv_relay';
   const DEDUPE_GLOBAL_KEY = 'innar_llamado_tv_dedupe';
   const HISTORIAL_MAX = 8;
   const BUFFER_PENDIENTE_MAX = 12;
@@ -23,6 +24,8 @@
 
   let initDone = false;
   let audioUnlocked = false;
+  let audioCtx = null;
+  let ttsKeepAliveTimer = null;
   let voiceCache = null;
   let boundRealtime = false;
   let relojTimer = null;
@@ -383,50 +386,27 @@
     }).join('');
   }
 
-  function renderConsultoriosGrid() {
-    const grid = $('llamadoConsultoriosGrid');
-    if (!grid) return;
-
-    const activos = medicos
-      .filter((m) => consultoriosActivos.has(m.id) && m.numero_consultorio != null && m.numero_consultorio !== '')
-      .sort((a, b) => (parseInt(a.numero_consultorio, 10) || 9999) - (parseInt(b.numero_consultorio, 10) || 9999));
-
-    if (!activos.length) {
-      grid.classList.add('hidden');
-      grid.innerHTML = '';
-      return;
-    }
-
-    grid.classList.remove('hidden');
-    grid.innerHTML = activos.map((m) => `
-      <div class="ltv-cons-chip" title="Consultorio ${escapeHtml(String(m.numero_consultorio))}">
-        <span class="ltv-cons-chip-num">${escapeHtml(String(m.numero_consultorio))}</span>
-      </div>
-    `).join('');
-  }
-
   function actualizarUiEstado() {
     const bar = $('llamadoStatusBar');
     const alerta = $('llamadoAlertaBloqueo');
     const activos = consultoriosActivos.size;
-    const total = medicos.length;
+    const enFullscreen = !!document.fullscreenElement;
 
     if (bar) {
-      const audioTxt = audioUnlocked ? 'Audio activo' : 'Pulse «Audio» para activar voz';
-      const consTxt = activos
-        ? `${activos} consultorio${activos !== 1 ? 's' : ''} activo${activos !== 1 ? 's' : ''}${total ? ` de ${total}` : ''}`
-        : 'Ningún consultorio activo';
-      bar.textContent = `${consTxt} · ${audioTxt}`;
-      bar.classList.remove('hidden');
-      bar.classList.toggle('ltv-status-bar--warn', !activos);
-      bar.classList.toggle('ltv-status-bar--audio-off', !audioUnlocked);
+      if (activos > 0 || enFullscreen) {
+        bar.classList.add('hidden');
+        bar.textContent = '';
+      } else {
+        bar.textContent = 'Ningún consultorio activo — active al menos uno en configuración';
+        bar.classList.remove('hidden', 'ltv-status-bar--audio-off');
+        bar.classList.add('ltv-status-bar--warn');
+      }
     }
 
     if (alerta) {
-      alerta.classList.toggle('hidden', activos > 0);
+      alerta.classList.toggle('hidden', activos > 0 || enFullscreen);
     }
 
-    renderConsultoriosGrid();
     renderHistorial();
   }
 
@@ -488,19 +468,57 @@
     window.speechSynthesis.onvoiceschanged = () => { voiceCache = null; };
   }
 
+  function unlockAudioContext() {
+    try {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      if (!audioCtx) audioCtx = new Ctx();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      const buf = audioCtx.createBuffer(1, 1, 22050);
+      const src = audioCtx.createBufferSource();
+      src.buffer = buf;
+      src.connect(audioCtx.destination);
+      src.start(0);
+    } catch (_) { /* noop */ }
+  }
+
+  function iniciarTtsKeepAlive() {
+    if (ttsKeepAliveTimer) return;
+    ttsKeepAliveTimer = setInterval(() => {
+      if (!audioUnlocked || !('speechSynthesis' in window)) return;
+      const synth = window.speechSynthesis;
+      if (synth.speaking || synth.pending) {
+        if (synth.paused) synth.resume();
+      }
+      if (audioCtx?.state === 'suspended') audioCtx.resume().catch(() => {});
+    }, 180);
+  }
+
+  function detenerTtsKeepAlive() {
+    if (ttsKeepAliveTimer) {
+      clearInterval(ttsKeepAliveTimer);
+      ttsKeepAliveTimer = null;
+    }
+  }
+
   function unlockAudio() {
-    if (audioUnlocked || !('speechSynthesis' in window)) return;
-    audioUnlocked = true;
-    const silent = new SpeechSynthesisUtterance(' ');
-    silent.volume = 0;
-    silent.lang = 'es-CO';
-    window.speechSynthesis.speak(silent);
+    if (!('speechSynthesis' in window)) return;
+    if (!audioUnlocked) {
+      audioUnlocked = true;
+      unlockAudioContext();
+      const silent = new SpeechSynthesisUtterance(' ');
+      silent.volume = 0;
+      silent.lang = 'es-CO';
+      try {
+        window.speechSynthesis.speak(silent);
+        if (window.speechSynthesis.paused) window.speechSynthesis.resume();
+      } catch (_) { /* noop */ }
+    }
     const btn = $('btnLlamadoActivarAudio');
     if (btn) {
       btn.classList.add('is-ready');
       btn.title = 'Audio activado';
-      const label = btn.querySelector('span');
-      if (label) label.textContent = 'Audio ✓';
+      btn.setAttribute('aria-hidden', 'true');
     }
     actualizarUiEstado();
   }
@@ -593,13 +611,22 @@
         ? String(item.numero_consultorio)
         : '—';
     }
+    popup?.classList.remove('hidden', 'is-animate');
     $('llamadoIdleLogo')?.classList.add('is-dimmed');
-    popup?.classList.remove('hidden');
+    requestAnimationFrame(() => popup?.classList.add('is-animate'));
   }
 
   function ocultarPopup() {
-    $('llamadoPopup')?.classList.add('hidden');
+    const popup = $('llamadoPopup');
+    popup?.classList.remove('is-animate');
+    popup?.classList.add('hidden');
     $('llamadoIdleLogo')?.classList.remove('is-dimmed');
+  }
+
+  function retransmitirLlamadoATabActiva(item) {
+    try {
+      localStorage.setItem(RELAY_KEY, JSON.stringify({ item, ts: Date.now(), fromTab: tabId }));
+    } catch (_) { /* noop */ }
   }
 
   /* ── Cola intercalada ── */
@@ -653,6 +680,7 @@
     }
 
     if (otraTabTieneLlamadoActivo()) {
+      retransmitirLlamadoATabActiva(item);
       bufferPendienteModulo.length = 0;
       return;
     }
@@ -729,6 +757,8 @@
     if (procesando) return;
     if (!colaAnuncios.length) return;
     procesando = true;
+    unlockAudio();
+    iniciarTtsKeepAlive();
 
     while (colaAnuncios.length) {
       const item = colaAnuncios.shift();
@@ -741,6 +771,7 @@
 
     ocultarPopup();
     procesando = false;
+    detenerTtsKeepAlive();
 
     if (batchPendiente.length) {
       finalizarBatch();
@@ -797,6 +828,7 @@
     btn?.querySelector('.ltv-fs-icon-compress')?.classList.toggle('hidden', !isFs);
     const label = btn?.querySelector('.ltv-fs-label');
     if (label) label.textContent = isFs ? 'Salir' : 'Pantalla completa';
+    actualizarUiEstado();
   }
 
   function toggleFullscreen() {
@@ -811,12 +843,15 @@
   /* ── Init ── */
 
   window.initLlamadoPacientes = async function initLlamadoPacientes() {
+    unlockAudio();
+
     if (!initDone) {
       initDone = true;
       $('btnVolverLlamadoPacientes')?.addEventListener('click', () => {
         if (typeof goToMenu === 'function') goToMenu();
       });
       $('btnLlamadoActivarAudio')?.addEventListener('click', unlockAudio);
+      $('view-llamado-pacientes')?.addEventListener('click', unlockAudio, { once: true });
       $('btnLlamadoConfig')?.addEventListener('click', abrirConfig);
       $('btnLlamadoConfigCerrar')?.addEventListener('click', cerrarConfig);
       $('llamadoConfigBackdrop')?.addEventListener('click', cerrarConfig);
@@ -851,16 +886,31 @@
     if (window.currentModule !== 'llamado-pacientes') return;
     if (document.hidden) {
       detenerReloj();
+      if (procesando || colaAnuncios.length) iniciarTtsKeepAlive();
     } else {
       actualizarReloj();
       iniciarReloj();
       cargarMedicos();
       iniciarRefreshMedicos();
       actualizarUiEstado();
+      unlockAudio();
+      if ('speechSynthesis' in window && window.speechSynthesis.paused) {
+        window.speechSynthesis.resume();
+      }
     }
   });
 
   window.addEventListener('storage', (e) => {
+    if (e.key === RELAY_KEY && e.newValue && estaTabEsLlamadoActiva()) {
+      try {
+        const payload = JSON.parse(e.newValue);
+        if (payload?.item) {
+          unlockAudio();
+          encolarLlamado(payload.item);
+        }
+      } catch (_) { /* noop */ }
+      return;
+    }
     if (e.key !== TAB_ACTIVE_KEY) return;
     if (!e.newValue) return;
     try {
