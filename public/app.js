@@ -2581,6 +2581,7 @@ function selectDoctor(doctorId, doctorName, especialidad) {
   // Resetear estado visual interno de Agenda para evitar arrastrar el doctor/página anterior
   if (typeof calSelectedDate !== 'undefined') calSelectedDate = null;
   if (typeof calLoadReqId !== 'undefined') calLoadReqId++;
+  if (typeof limpiarCalCuposEntidadMemoria === 'function') limpiarCalCuposEntidadMemoria(doctorId);
   if (typeof window !== 'undefined') window._agendaCalendarSetup = false;
   // Actualizar horas disponibles con el nuevo doctor
   actualizarHorasDisponibles();
@@ -4627,6 +4628,8 @@ let calLoadReqId = 0;
 let calSavedSnapshot = null;
 /** @type {Record<string, { entidad: string, cupo_max: number }[]>} */
 let calCuposEntidad = {};
+/** Doctor al que pertenece calCuposEntidad en memoria (evita mezclar médicos). */
+let calCuposEntidadDoctorId = null;
 let _calEntidadesOpciones = null;
 /** @type {Set<Promise<void>>} */
 const _calCupoRowLoads = new Set();
@@ -4671,7 +4674,14 @@ function hidratarCuposEntidadMesLocal(doctorId, mes) {
       calCuposEntidad[fecha] = items;
     }
   });
+  calCuposEntidadDoctorId = doctorId;
   return almacenados;
+}
+
+function limpiarCalCuposEntidadMemoria(doctorId) {
+  if (doctorId && String(calCuposEntidadDoctorId) === String(doctorId)) return;
+  calCuposEntidad = {};
+  calCuposEntidadDoctorId = doctorId || null;
 }
 
 function _fmtFechaAgenda(d) {
@@ -5122,6 +5132,7 @@ async function persistirCalDia(payload) {
   calSavedSnapshot = { at: Date.now(), date: savedDate, disp: dispCache, slots: slotsCache, cupos: calCuposEntidad[savedDate] || [] };
 
   const mesGuardado = savedDate.slice(0, 7);
+  calCuposEntidadDoctorId = calDoctorIdForCal;
   guardarCuposEntidadMesLocal(calDoctorIdForCal, mesGuardado, calCuposEntidad);
 
   renderCalendar();
@@ -5215,6 +5226,7 @@ async function loadCalendarData() {
   // Tomar siempre el doctor activo actual para evitar quedar pegado al anterior.
   calDoctorIdForCal = selectedDoctorId || currentUser?.id || calDoctorIdForCal;
   if (!calDoctorIdForCal) return;
+  limpiarCalCuposEntidadMemoria(calDoctorIdForCal);
   const reqId = ++calLoadReqId;
   const mes = `${calCurrentYear}-${String(calCurrentMonth + 1).padStart(2, '0')}`;
 
@@ -5226,14 +5238,6 @@ async function loadCalendarData() {
     const dataDisp = await resDisp.json();
     if (reqId !== calLoadReqId) return; // respuesta vieja
     const mesPref = `${mes}-`;
-    const cuposPrevMes = {};
-    const dispPrevMes = {};
-    Object.entries(calCuposEntidad).forEach(([f, v]) => {
-      if (f.startsWith(mesPref)) cuposPrevMes[f] = v;
-    });
-    Object.entries(calDisponibilidad).forEach(([f, v]) => {
-      if (f.startsWith(mesPref)) dispPrevMes[f] = v;
-    });
     Object.keys(calDisponibilidad).forEach((f) => {
       if (f.startsWith(mesPref)) delete calDisponibilidad[f];
     });
@@ -5259,6 +5263,7 @@ async function loadCalendarData() {
     }
 
     hidratarCuposEntidadMesLocal(calDoctorIdForCal, mes);
+    calCuposEntidadDoctorId = calDoctorIdForCal;
     guardarCuposEntidadMesLocal(calDoctorIdForCal, mes, calCuposEntidad);
 
     const resSlots = await apiFetch(`/api/doctor-agenda?doctor_id=${calDoctorIdForCal}&_t=${Date.now()}`, {
@@ -5277,12 +5282,6 @@ async function loadCalendarData() {
       : [];
 
     aplicarCalSavedSnapshotEnCache();
-    Object.entries(cuposPrevMes).forEach(([f, items]) => {
-      if (!calCuposEntidad[f]?.length && items?.length) calCuposEntidad[f] = items;
-    });
-    Object.entries(dispPrevMes).forEach(([f, row]) => {
-      if (!calDisponibilidad[f]) calDisponibilidad[f] = row;
-    });
     if (typeof sincronizarCuposCitasCalDesdeProgramar === 'function') {
       sincronizarCuposCitasCalDesdeProgramar(true);
     }
@@ -5871,7 +5870,7 @@ function _ordenarTurnosMedica(turnos) {
 }
 
 function _contarOcupadosEntidadDesdeTurnos(turnos) {
-  const estadosCuentan = ['PENDIENTE', 'EN_ESPERA', 'EN_SALA', 'EN_ATENCION', 'ATENDIDO', 'NO_ASISTIO'];
+  const estadosCuentan = ['PENDIENTE', 'EN_ESPERA', 'EN_SALA', 'EN_ATENCION', 'ATENDIDO', 'NO_ASISTIO', 'COMPLETADO'];
   const map = new Map();
   for (const t of turnos || []) {
     if (!estadosCuentan.includes(t.estado)) continue;

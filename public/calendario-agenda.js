@@ -11,6 +11,8 @@ let _citasCalSlotsCache = {};
 let _citasCalCuposCache = {};
 /** Cupos que no se borran al recargar API (evita parpadeo al diseño antiguo). */
 let _citasCalCuposPersistente = {};
+/** Doctor al que pertenece la caché persistente de cupos en Ver Citas. */
+let _citasCalCuposDoctorId = null;
 let _citasCalLoadReqId = 0;
 let _citasCalIniciado = false;
 
@@ -86,10 +88,41 @@ function _parseResumenCupos(raw) {
   return [];
 }
 
-function _escribirCuposCache(fecha, data) {
+function _escribirCuposCache(fecha, data, opts = {}) {
   if (!fecha || !data || !Array.isArray(data.resumen) || !data.resumen.length) return;
+  const { forzar = false } = opts;
+  const prev = _citasCalCuposCache[fecha] || _citasCalCuposPersistente[fecha];
+  if (!forzar && prev?.resumen?.length) {
+    const prevOcc = prev.resumen.reduce((s, r) => s + (parseInt(r.ocupados, 10) || 0), 0);
+    const newOcc = data.resumen.reduce((s, r) => s + (parseInt(r.ocupados, 10) || 0), 0);
+    if (prevOcc > 0 && newOcc === 0) {
+      data = {
+        ...data,
+        resumen: data.resumen.map((r) => {
+          const key = String(r.entidad || '').trim().toUpperCase();
+          const prevRow = prev.resumen.find((p) => String(p.entidad || '').trim().toUpperCase() === key);
+          const ocupados = prevRow ? (parseInt(prevRow.ocupados, 10) || 0) : 0;
+          const cupoMax = parseInt(r.cupo_max, 10) || 0;
+          return { ...r, ocupados, libres: Math.max(0, cupoMax - ocupados) };
+        })
+      };
+      data.ocupados = data.resumen.reduce((s, r) => s + (parseInt(r.ocupados, 10) || 0), 0);
+      data.libres = Math.max(0, (parseInt(data.capacidad, 10) || 0) - data.ocupados);
+    }
+  }
   _citasCalCuposCache[fecha] = data;
   _citasCalCuposPersistente[fecha] = data;
+}
+
+function _doctorCoincideCuposProgramar(doctorId) {
+  if (!doctorId) return false;
+  if (typeof calCuposEntidadDoctorId !== 'undefined' && calCuposEntidadDoctorId) {
+    return String(calCuposEntidadDoctorId) === String(doctorId);
+  }
+  if (typeof calDoctorIdForCal !== 'undefined' && calDoctorIdForCal) {
+    return String(calDoctorIdForCal) === String(doctorId);
+  }
+  return false;
 }
 
 function _resumenDesdeCuposPlanos(items) {
@@ -112,8 +145,8 @@ function _resumenDesdeCuposPlanos(items) {
   return { capacidad, ocupados, libres: Math.max(0, capacidad - ocupados), resumen };
 }
 
-function _rellenarCuposCacheFaltantes() {
-  _mergeCuposDesdeCalProgramar();
+function _rellenarCuposCacheFaltantes(doctorId) {
+  _mergeCuposDesdeCalProgramar(doctorId);
   Object.entries(_citasCalCuposPersistente).forEach(([f, data]) => {
     if (!_citasCalCuposCache[f]?.resumen?.length && data?.resumen?.length) {
       _citasCalCuposCache[f] = data;
@@ -131,7 +164,8 @@ function _hidratarCuposCalendarioDesdeStorage(doctorId, mes) {
   });
 }
 
-function _mergeCuposDesdeCalProgramar() {
+function _mergeCuposDesdeCalProgramar(doctorId) {
+  if (!_doctorCoincideCuposProgramar(doctorId)) return;
   if (typeof calCuposEntidad === 'undefined' || !calCuposEntidad) return;
   Object.entries(calCuposEntidad).forEach(([fecha, items]) => {
     const f = _fmtFechaCal(fecha);
@@ -139,7 +173,23 @@ function _mergeCuposDesdeCalProgramar() {
     const data = _resumenDesdeCuposPlanos(items);
     if (!data) return;
     const prev = _citasCalCuposCache[f];
-    if (prev?.resumen?.length && (parseInt(prev.ocupados, 10) || 0) > 0) return;
+    if (prev?.resumen?.length && (parseInt(prev.ocupados, 10) || 0) > 0) {
+      _escribirCuposCache(f, {
+        ...data,
+        resumen: data.resumen.map((r) => {
+          const key = String(r.entidad || '').trim().toUpperCase();
+          const prevRow = prev.resumen.find((p) => String(p.entidad || '').trim().toUpperCase() === key);
+          const ocupados = prevRow ? (parseInt(prevRow.ocupados, 10) || 0) : 0;
+          return { ...r, ocupados, libres: Math.max(0, r.cupo_max - ocupados) };
+        })
+      });
+      const merged = _citasCalCuposCache[f];
+      if (merged) {
+        merged.ocupados = merged.resumen.reduce((s, r) => s + (parseInt(r.ocupados, 10) || 0), 0);
+        merged.libres = Math.max(0, merged.capacidad - merged.ocupados);
+      }
+      return;
+    }
     _escribirCuposCache(f, data);
   });
 }
@@ -167,8 +217,9 @@ function actualizarCuposCitasCalPersistente(fecha, cuposPlanos, silent) {
 }
 
 function sincronizarCuposCitasCalDesdeProgramar(silent) {
-  _mergeCuposDesdeCalProgramar();
-  _rellenarCuposCacheFaltantes();
+  const doctorId = _getCitasCalDoctorId();
+  _mergeCuposDesdeCalProgramar(doctorId);
+  _rellenarCuposCacheFaltantes(doctorId);
   if (!silent) renderCitasCalGrid();
 }
 
@@ -232,7 +283,7 @@ function _aplicarCuposResumenDia(cuposResumenDia, cuposEntidad) {
       ocupados: parseInt(row.ocupados, 10) || resumen.reduce((s, r) => s + (r.ocupados || 0), 0),
       libres: parseInt(row.libres, 10) ?? Math.max(0, resumen.reduce((s, r) => s + (r.libres || 0), 0)),
       resumen
-    });
+    }, { forzar: true });
   });
 }
 
@@ -240,7 +291,8 @@ function _cuposDiaDesdeCache(fecha) {
   let cuposDia = _citasCalCuposCache[fecha] || _citasCalCuposPersistente[fecha] || null;
   if (cuposDia && Array.isArray(cuposDia.resumen) && cuposDia.resumen.length) return cuposDia;
 
-  const dataProg = typeof calCuposEntidad !== 'undefined' && calCuposEntidad
+  const doctorId = _getCitasCalDoctorId();
+  const dataProg = (_doctorCoincideCuposProgramar(doctorId) && typeof calCuposEntidad !== 'undefined' && calCuposEntidad)
     ? _resumenDesdeCuposPlanos(calCuposEntidad[fecha])
     : null;
   if (dataProg) return dataProg;
@@ -305,6 +357,10 @@ function _htmlMetricasTop(citasGeneral, capHoraria, cuposDia) {
 async function cargarCitasCalendario() {
   const reqId = ++_citasCalLoadReqId;
   const doctorId = _getCitasCalDoctorId();
+  if (String(_citasCalCuposDoctorId) !== String(doctorId || '')) {
+    _citasCalCuposPersistente = {};
+    _citasCalCuposDoctorId = doctorId || null;
+  }
   const mes = `${_citasCalAno}-${String(_citasCalMes + 1).padStart(2, '0')}`;
   const titleEl = document.getElementById('citasCalMonthTitle');
   if (titleEl) titleEl.textContent = `${_MESES_ES[_citasCalMes]} ${_citasCalAno}`;
@@ -350,7 +406,7 @@ async function cargarCitasCalendario() {
     _mergeCuposEntidadFallback(body.cupos_entidad);
     _aplicarCuposResumenDia(body.cupos_resumen_dia, body.cupos_entidad);
     _hidratarCuposCalendarioDesdeStorage(doctorId, mes);
-    _rellenarCuposCacheFaltantes();
+    _rellenarCuposCacheFaltantes(doctorId);
 
     if (doctorId) {
       try {
