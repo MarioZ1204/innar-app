@@ -1050,6 +1050,7 @@ function goToModule(moduleId) {
     history.replaceState({ view: 'menu' }, '', '#menu');
     return;
   }
+  const prevModule = currentModule;
   showView(`view-${moduleId}`);
   currentModule = moduleId;
   window.currentModule = moduleId;  // Exponer para sockets
@@ -1116,10 +1117,16 @@ function goToModule(moduleId) {
   if (moduleId === 'documentos-cita' && typeof initDocumentosCitaModule === 'function') initDocumentosCitaModule();
   if (moduleId === 'anexo-fidu' && typeof initAnexoFidu === 'function') initAnexoFidu();
   if (moduleId === 'llamado-pacientes' && typeof initLlamadoPacientes === 'function') initLlamadoPacientes();
+  else if (prevModule === 'llamado-pacientes' && typeof window.deactivateLlamadoPacientesTab === 'function') {
+    window.deactivateLlamadoPacientesTab();
+  }
   if (typeof window.innarSidebarRefresh === 'function') window.innarSidebarRefresh();
 }
 
 function goToMenu() {
+  if (currentModule === 'llamado-pacientes' && typeof window.deactivateLlamadoPacientesTab === 'function') {
+    window.deactivateLlamadoPacientesTab();
+  }
   showView('view-menu');
   currentModule = null;
   window.currentModule = null;  // Limpiar para sockets

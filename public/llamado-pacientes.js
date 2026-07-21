@@ -6,6 +6,13 @@
   'use strict';
 
   const STORAGE_KEY = 'innar_llamado_tv_doctores';
+  const HISTORIAL_KEY = 'innar_llamado_tv_historial';
+  const TAB_ACTIVE_KEY = 'innar_llamado_tv_tab_activa';
+  const DEDUPE_GLOBAL_KEY = 'innar_llamado_tv_dedupe';
+  const HISTORIAL_MAX = 8;
+  const BUFFER_PENDIENTE_MAX = 12;
+  const TAB_HEARTBEAT_MS = 3000;
+  const TAB_STALE_MS = 9000;
   const VECES_POR_RONDA = 2;
   const BATCH_MS = 900;
   const PAUSA_ENTRE_ANUNCIOS_MS = 500;
@@ -20,6 +27,15 @@
   let boundRealtime = false;
   let relojTimer = null;
   let medicosRefreshTimer = null;
+  let tabHeartbeatTimer = null;
+
+  let tabId = sessionStorage.getItem('innar_llamado_tab_id');
+  if (!tabId) {
+    tabId = (typeof crypto !== 'undefined' && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : `tab-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    sessionStorage.setItem('innar_llamado_tab_id', tabId);
+  }
 
   let procesando = false;
   let colaAnuncios = [];
@@ -30,6 +46,10 @@
   let consultoriosActivos = new Set();
   /** @type {Map<string, number>} */
   const llamadosRecientes = new Map();
+  /** @type {object[]} */
+  let historialLlamados = [];
+  /** @type {object[]} */
+  let bufferPendienteModulo = [];
 
   function fetchApi(url) {
     if (typeof apiFetch === 'function') return apiFetch(url).then((r) => r.json());
@@ -124,6 +144,70 @@
     return !!(doctorId && consultoriosActivos.has(doctorId));
   }
 
+  /* ── Coordinación multi-pestaña ── */
+
+  function estaTabEsLlamadoActiva() {
+    return window.currentModule === 'llamado-pacientes';
+  }
+
+  function leerTabLlamadoActiva() {
+    try {
+      const raw = localStorage.getItem(TAB_ACTIVE_KEY);
+      if (!raw) return null;
+      const data = JSON.parse(raw);
+      if (!data?.tabId || !data?.ts) return null;
+      if (Date.now() - data.ts > TAB_STALE_MS) return null;
+      return data;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function otraTabTieneLlamadoActivo() {
+    const data = leerTabLlamadoActiva();
+    return !!(data && data.tabId !== tabId);
+  }
+
+  function enviarHeartbeatTabLlamado() {
+    if (!estaTabEsLlamadoActiva()) return;
+    localStorage.setItem(TAB_ACTIVE_KEY, JSON.stringify({ tabId, ts: Date.now() }));
+  }
+
+  function activarTabLlamado() {
+    enviarHeartbeatTabLlamado();
+    if (tabHeartbeatTimer) clearInterval(tabHeartbeatTimer);
+    tabHeartbeatTimer = setInterval(enviarHeartbeatTabLlamado, TAB_HEARTBEAT_MS);
+  }
+
+  function desactivarTabLlamado() {
+    if (tabHeartbeatTimer) {
+      clearInterval(tabHeartbeatTimer);
+      tabHeartbeatTimer = null;
+    }
+    try {
+      const data = leerTabLlamadoActiva();
+      if (data?.tabId === tabId) localStorage.removeItem(TAB_ACTIVE_KEY);
+    } catch (_) { /* noop */ }
+  }
+
+  window.deactivateLlamadoPacientesTab = desactivarTabLlamado;
+
+  function llamadoRecienteDuplicadoGlobal(item) {
+    const key = claveLlamado(item);
+    const now = Date.now();
+    try {
+      const raw = localStorage.getItem(DEDUPE_GLOBAL_KEY);
+      const map = raw ? JSON.parse(raw) : {};
+      if (map[key] != null && now - map[key] < ENCUELO_DEDUPE_MS) return true;
+      map[key] = now;
+      for (const [k, t] of Object.entries(map)) {
+        if (now - t > ENCUELO_DEDUPE_MS) delete map[k];
+      }
+      localStorage.setItem(DEDUPE_GLOBAL_KEY, JSON.stringify(map));
+    } catch (_) { /* noop */ }
+    return false;
+  }
+
   async function cargarMedicos() {
     try {
       medicos = await fetchApi('/api/medicos');
@@ -181,6 +265,7 @@
         const row = cb.closest('.ltv-toggle-item');
         row?.classList.toggle('is-on', cb.checked);
         row?.classList.toggle('is-off', !cb.checked);
+        actualizarUiEstado();
       });
     });
   }
@@ -213,12 +298,136 @@
     medicos.forEach((m) => consultoriosActivos.add(m.id));
     guardarConsultoriosActivos();
     renderConfigLista();
+    actualizarUiEstado();
   }
 
   function bloquearTodosConsultorios() {
+    if (consultoriosActivos.size && typeof showConfirm === 'function') {
+      showConfirm('¿Bloquear todos los consultorios? No se mostrarán llamados hasta activar al menos uno.', () => {
+        consultoriosActivos.clear();
+        guardarConsultoriosActivos();
+        renderConfigLista();
+        actualizarUiEstado();
+      }, { okText: 'Bloquear todos', icon: '🔇' });
+      return;
+    }
     consultoriosActivos.clear();
     guardarConsultoriosActivos();
     renderConfigLista();
+    actualizarUiEstado();
+  }
+
+  function cargarHistorialLocal() {
+    try {
+      const raw = sessionStorage.getItem(HISTORIAL_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) historialLlamados = parsed.slice(0, HISTORIAL_MAX);
+    } catch (_) { historialLlamados = []; }
+  }
+
+  function guardarHistorialLocal() {
+    try {
+      sessionStorage.setItem(HISTORIAL_KEY, JSON.stringify(historialLlamados.slice(0, HISTORIAL_MAX)));
+    } catch (_) { /* noop */ }
+  }
+
+  function formatearHoraLlamado(ts) {
+    try {
+      return new Intl.DateTimeFormat('es-CO', {
+        timeZone: 'America/Bogota',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true
+      }).format(new Date(ts));
+    } catch (_) {
+      return '';
+    }
+  }
+
+  function registrarEnHistorial(item) {
+    if (!item?.paciente_nombre) return;
+    historialLlamados.unshift({
+      paciente_nombre: item.paciente_nombre,
+      numero_consultorio: item.numero_consultorio || '',
+      ts: Date.now()
+    });
+    if (historialLlamados.length > HISTORIAL_MAX) {
+      historialLlamados.length = HISTORIAL_MAX;
+    }
+    guardarHistorialLocal();
+    renderHistorial();
+  }
+
+  function renderHistorial() {
+    const panel = $('llamadoHistorial');
+    const lista = $('llamadoHistorialLista');
+    if (!panel || !lista) return;
+
+    if (!historialLlamados.length) {
+      panel.classList.add('hidden');
+      lista.innerHTML = '';
+      return;
+    }
+
+    panel.classList.remove('hidden');
+    lista.innerHTML = historialLlamados.map((h) => {
+      const cons = h.numero_consultorio ? `Consultorio ${escapeHtml(h.numero_consultorio)}` : 'Consultorio —';
+      return `<li class="ltv-historial-item">
+        <div class="ltv-historial-item-top">
+          <span class="ltv-historial-hora">${escapeHtml(formatearHoraLlamado(h.ts))}</span>
+          <span class="ltv-historial-cons">${cons}</span>
+        </div>
+        <div class="ltv-historial-nombre">${escapeHtml(h.paciente_nombre)}</div>
+      </li>`;
+    }).join('');
+  }
+
+  function renderConsultoriosGrid() {
+    const grid = $('llamadoConsultoriosGrid');
+    if (!grid) return;
+
+    const activos = medicos
+      .filter((m) => consultoriosActivos.has(m.id) && m.numero_consultorio != null && m.numero_consultorio !== '')
+      .sort((a, b) => (parseInt(a.numero_consultorio, 10) || 9999) - (parseInt(b.numero_consultorio, 10) || 9999));
+
+    if (!activos.length) {
+      grid.classList.add('hidden');
+      grid.innerHTML = '';
+      return;
+    }
+
+    grid.classList.remove('hidden');
+    grid.innerHTML = activos.map((m) => `
+      <div class="ltv-cons-chip" title="Consultorio ${escapeHtml(String(m.numero_consultorio))}">
+        <span class="ltv-cons-chip-num">${escapeHtml(String(m.numero_consultorio))}</span>
+      </div>
+    `).join('');
+  }
+
+  function actualizarUiEstado() {
+    const bar = $('llamadoStatusBar');
+    const alerta = $('llamadoAlertaBloqueo');
+    const activos = consultoriosActivos.size;
+    const total = medicos.length;
+
+    if (bar) {
+      const audioTxt = audioUnlocked ? 'Audio activo' : 'Pulse «Audio» para activar voz';
+      const consTxt = activos
+        ? `${activos} consultorio${activos !== 1 ? 's' : ''} activo${activos !== 1 ? 's' : ''}${total ? ` de ${total}` : ''}`
+        : 'Ningún consultorio activo';
+      bar.textContent = `${consTxt} · ${audioTxt}`;
+      bar.classList.remove('hidden');
+      bar.classList.toggle('ltv-status-bar--warn', !activos);
+      bar.classList.toggle('ltv-status-bar--audio-off', !audioUnlocked);
+    }
+
+    if (alerta) {
+      alerta.classList.toggle('hidden', activos > 0);
+    }
+
+    renderConsultoriosGrid();
+    renderHistorial();
   }
 
   function sleep(ms) {
@@ -293,6 +502,7 @@
       const label = btn.querySelector('span');
       if (label) label.textContent = 'Audio ✓';
     }
+    actualizarUiEstado();
   }
 
   function textoAnuncio(item) {
@@ -421,13 +631,43 @@
 
   function encolarLlamado(data) {
     const item = normalizarLlamado(data);
-    if (!item.paciente_nombre) return;
-    if (!consultorioPermitido(item)) return;
-    if (llamadoRecienteDuplicado(item)) return;
+    if (!item.paciente_nombre) return false;
+    if (!consultorioPermitido(item)) return false;
+    if (llamadoRecienteDuplicado(item)) return false;
+    if (llamadoRecienteDuplicadoGlobal(item)) return false;
 
     batchPendiente.push(item);
     if (batchTimer) clearTimeout(batchTimer);
     batchTimer = setTimeout(finalizarBatch, BATCH_MS);
+    return true;
+  }
+
+  function procesarLlamadoEntrante(data) {
+    const item = normalizarLlamado(data);
+    if (!item.paciente_nombre) return;
+
+    if (estaTabEsLlamadoActiva()) {
+      unlockAudio();
+      encolarLlamado(item);
+      return;
+    }
+
+    if (otraTabTieneLlamadoActivo()) {
+      bufferPendienteModulo.length = 0;
+      return;
+    }
+
+    bufferPendienteModulo.push(item);
+    if (bufferPendienteModulo.length > BUFFER_PENDIENTE_MAX) {
+      bufferPendienteModulo.shift();
+    }
+  }
+
+  function vaciarBufferPendiente() {
+    if (!bufferPendienteModulo.length) return;
+    const pendientes = bufferPendienteModulo.splice(0);
+    unlockAudio();
+    pendientes.forEach((item) => encolarLlamado(item));
   }
 
   function finalizarBatch() {
@@ -436,6 +676,8 @@
 
     const items = dedupeLlamados(batchPendiente.splice(0));
     if (!items.length) return;
+
+    items.forEach((item) => registrarEnHistorial(item));
 
     const secuencia = construirSecuencia(items);
     if (!secuencia.length) return;
@@ -508,14 +750,12 @@
   /* ── Eventos tiempo real ── */
 
   async function onLlamadoEvent(data) {
-    if (window.currentModule !== 'llamado-pacientes') return;
-    unlockAudio();
     if (!medicos.length) await cargarMedicos();
-    if (!consultoriosActivos.size && medicos.length) {
+    if (!consultoriosActivos.size && medicos.length && window.currentModule === 'llamado-pacientes') {
       medicos.forEach((m) => consultoriosActivos.add(m.id));
       guardarConsultoriosActivos();
     }
-    encolarLlamado(data || {});
+    procesarLlamadoEntrante(data || {});
   }
 
   function bindRealtime() {
@@ -595,23 +835,41 @@
     }
 
     cargarConsultoriosActivos();
+    cargarHistorialLocal();
     if (!procesando) ocultarPopup();
     await asegurarConsultoriosIniciales();
     aplicarPermisosUiLlamado();
     renderConfigLista();
+    actualizarUiEstado();
+    vaciarBufferPendiente();
+    activarTabLlamado();
     iniciarReloj();
     iniciarRefreshMedicos();
   };
 
   document.addEventListener('visibilitychange', () => {
+    if (window.currentModule !== 'llamado-pacientes') return;
     if (document.hidden) {
       detenerReloj();
-      detenerRefreshMedicos();
-    } else if (window.currentModule === 'llamado-pacientes') {
+    } else {
       actualizarReloj();
       iniciarReloj();
       cargarMedicos();
       iniciarRefreshMedicos();
+      actualizarUiEstado();
     }
   });
+
+  window.addEventListener('storage', (e) => {
+    if (e.key !== TAB_ACTIVE_KEY) return;
+    if (!e.newValue) return;
+    try {
+      const data = JSON.parse(e.newValue);
+      if (data?.tabId && data.tabId !== tabId) bufferPendienteModulo.length = 0;
+    } catch (_) { /* noop */ }
+  });
+
+  window.addEventListener('beforeunload', desactivarTabLlamado);
+
+  bindRealtime();
 })();

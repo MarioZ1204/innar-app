@@ -165,18 +165,60 @@
 .ltv-body {
   flex: 1;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: clamp(24px, 4vw, 48px);
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  padding: clamp(16px, 3vw, 32px);
   min-height: 0;
+  gap: clamp(12px, 2vw, 20px);
+}
+
+.ltv-status-bar {
+  flex-shrink: 0;
+  text-align: center;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--ltv-teal-dark);
+  background: var(--ltv-teal-light);
+  border: 1px solid rgba(13, 148, 136, 0.2);
+  border-radius: 12px;
+  padding: 10px 16px;
+}
+
+.ltv-status-bar--warn {
+  color: #b45309;
+  background: #fffbeb;
+  border-color: #fcd34d;
+}
+
+.ltv-status-bar--audio-off {
+  color: #4338ca;
+  background: #eef2ff;
+  border-color: #c7d2fe;
+}
+
+.ltv-alerta-bloqueo {
+  flex-shrink: 0;
+  text-align: center;
+  font-size: 0.88rem;
+  color: #991b1b;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 12px;
+  padding: 12px 16px;
+}
+
+.ltv-alerta-bloqueo.hidden,
+.ltv-status-bar.hidden {
+  display: none;
 }
 
 .ltv-idle {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 100%;
-  height: 100%;
+  flex: 1;
+  min-height: 200px;
   transition: opacity 0.35s ease, filter 0.35s ease;
 }
 
@@ -236,13 +278,24 @@
 }
 
 .ltv-popup-nombre {
-  margin: 0 0 clamp(24px, 4vw, 36px);
+  margin: 0 0 8px;
   font-size: clamp(2rem, 7vw, 4rem);
   font-weight: 800;
   line-height: 1.1;
   letter-spacing: -0.03em;
   color: var(--ltv-slate-900);
   word-break: break-word;
+}
+
+.ltv-popup-doctor {
+  margin: 0 0 clamp(20px, 3vw, 28px);
+  font-size: clamp(1rem, 2.5vw, 1.35rem);
+  font-weight: 600;
+  color: var(--ltv-slate-500);
+}
+
+.ltv-popup-doctor.hidden {
+  display: none;
 }
 
 .ltv-popup-consultorio {
@@ -502,6 +555,126 @@
   transform: translateX(18px);
 }
 
+/* ── Historial reciente ── */
+.ltv-historial {
+  flex-shrink: 0;
+  width: min(320px, 100%);
+  align-self: flex-end;
+  background: #fff;
+  border: 1px solid var(--ltv-slate-200);
+  border-radius: 16px;
+  padding: 16px 18px;
+  box-shadow: 0 4px 20px rgba(15, 23, 42, 0.06);
+}
+
+.ltv-historial.hidden {
+  display: none;
+}
+
+.ltv-historial-titulo {
+  margin: 0 0 12px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--ltv-slate-500);
+}
+
+.ltv-historial-lista {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: min(42vh, 360px);
+  overflow-y: auto;
+}
+
+.ltv-historial-item {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--ltv-slate-50);
+  border: 1px solid var(--ltv-slate-200);
+}
+
+.ltv-historial-item-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--ltv-teal-dark);
+}
+
+.ltv-historial-hora {
+  color: var(--ltv-slate-500);
+}
+
+.ltv-historial-nombre {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--ltv-slate-800);
+  line-height: 1.25;
+}
+
+.ltv-historial-doc {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.75rem;
+  color: var(--ltv-slate-500);
+}
+
+/* ── Grid consultorios activos ── */
+.ltv-cons-grid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.ltv-cons-grid.hidden {
+  display: none;
+}
+
+.ltv-cons-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 72px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: #fff;
+  border: 2px solid rgba(13, 148, 136, 0.25);
+  box-shadow: 0 2px 8px rgba(13, 148, 136, 0.08);
+}
+
+.ltv-cons-chip-num {
+  font-size: 1.5rem;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--ltv-teal-dark);
+}
+
+.ltv-cons-chip-nombre {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--ltv-slate-500);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+#view-llamado-pacientes.ltv-is-fullscreen .ltv-historial {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 10;
+  max-width: min(340px, 40vw);
+}
+
 @media (max-width: 768px) {
   .ltv-topbar-center {
     position: static;
@@ -532,5 +705,10 @@
     height: 40px !important;
     min-height: 40px !important;
     padding: 0 12px !important;
+  }
+
+  .ltv-historial {
+    width: 100%;
+    align-self: stretch;
   }
 }
