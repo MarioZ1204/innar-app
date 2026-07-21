@@ -13,7 +13,8 @@ const {
   resolverEstudioDesdeLista,
   mensajeErrorFormato,
   analizarNombreArchivo,
-  buildMetaDesdeCamposManuales
+  buildMetaDesdeCamposManuales,
+  normalizarNombreComprobanteConsultaMedica
 } = require('./soportes-pdx-parse');
 const { normalizarNumeroDocumentoPdx, normalizarTipoDocumentoPdx } = require('./soportes-pdx-documento');
 const {
@@ -112,7 +113,21 @@ function buildMetaFromUpload(originalName, body = {}, carpeta = null) {
     nombre_archivo_original: originalName
   };
 
-  meta.nombre_archivo_display = nombreArchivoDescarga(meta, carpeta);
+  if (tema === 'comprobantes_consulta_medica') {
+    const tipo = String(body.tipo_consulta || parsed.marca_tiempo || parsed.tipo_consulta || '').trim();
+    if (tipo) meta.marca_tiempo = tipo;
+    if (meta.nombres && meta.apellidos && meta.fecha_estudio && estudio) {
+      meta.nombre_archivo_display = normalizarNombreComprobanteConsultaMedica({
+        nombres: meta.nombres,
+        apellidos: meta.apellidos,
+        fecha: meta.fecha_estudio,
+        estudio,
+        tipo_consulta: tipo
+      });
+    }
+  } else {
+    meta.nombre_archivo_display = nombreArchivoDescarga(meta, carpeta);
+  }
   return meta;
 }
 

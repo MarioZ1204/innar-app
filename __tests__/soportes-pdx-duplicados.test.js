@@ -120,26 +120,46 @@ describe('soportes-pdx-duplicados', () => {
     expect(whereMatch[0]).not.toContain('estudio_texto');
   });
 
-  test('consentimientos: detecta duplicado por documento+fecha', async () => {
+  test('consultas médicas comprobantes: mismo paciente y fecha con distinto tipo de consulta no es duplicado', async () => {
     const db = {
       query: jest.fn(async (sql, params) => {
-        if (String(sql).includes('paciente_documento = ?') && String(sql).includes('fecha_estudio = ?')) {
-          return [{ id: 77, paciente_documento: params[1], fecha_estudio: params[2], paciente_nombre: 'Lopez, Ana' }];
+        if (String(sql).includes('comprobante_consulta') || (String(sql).includes('paciente_nombre_norm = ?') && String(sql).includes('marca_tiempo'))) {
+          return [];
         }
         return [];
       })
     };
-    const carpeta = { nombre_display: 'CONSENTIMIENTOS' };
+    const carpeta = { nombre_display: 'COMPROBANTES CONSULTAS MÉDICAS' };
     const meta = {
-      paciente_documento: '111222333',
-      fecha_estudio: '2026-04-02',
-      estudio_texto: 'Consentimiento',
-      nombre_archivo_display: 'CONSENTIMIENTO Ana Lopez CC 111222333 2026-04-02 Consentimiento.pdf'
+      paciente_nombre_norm: 'garcia ana',
+      fecha_estudio: '2026-04-01',
+      estudio_texto: 'Neurología',
+      marca_tiempo: 'Control',
+      tipo_consulta: 'Control'
     };
+    const dup = await buscarDuplicadoPdxEnCarpeta(db, 3, meta, carpeta);
+    expect(dup).toBeNull();
+  });
 
-    const dup = await buscarDuplicadoPdxEnCarpeta(db, 2, meta, carpeta);
+  test('consultas médicas comprobantes: detecta duplicado con mismo tipo de consulta', async () => {
+    const db = {
+      query: jest.fn(async (sql, params) => {
+        if (String(sql).includes('paciente_nombre_norm = ?') && String(sql).includes('marca_tiempo')) {
+          return [{ id: 55, paciente_nombre: 'Garcia, Ana', marca_tiempo: 'Control' }];
+        }
+        return [];
+      })
+    };
+    const carpeta = { nombre_display: 'COMPROBANTES CONSULTAS MÉDICAS' };
+    const meta = {
+      paciente_nombre_norm: 'garcia ana',
+      fecha_estudio: '2026-04-01',
+      estudio_texto: 'Neurología',
+      marca_tiempo: 'Control',
+      tipo_consulta: 'Control'
+    };
+    const dup = await buscarDuplicadoPdxEnCarpeta(db, 3, meta, carpeta);
     expect(dup).not.toBeNull();
-    expect(dup.row.id).toBe(77);
-    expect(dup.motivo).toBe('documento_fecha');
+    expect(dup.motivo).toBe('comprobante_consulta');
   });
 });

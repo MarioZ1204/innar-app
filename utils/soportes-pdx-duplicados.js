@@ -5,15 +5,21 @@ const { detectarTemaCarpeta, esTemaConsultaMedica } = require('./soportes-temas'
 
 const TEMAS_CON_DOCUMENTO = ['ordenes', 'comprobantes', 'consentimientos'];
 
-/** Consultas médicas: duplicado solo si coinciden paciente + fecha + especialidad (no por nombre de archivo). */
-function esDuplicadoConsultaMedica(meta, existente) {
+/** Consultas médicas: duplicado solo si coinciden paciente + fecha + especialidad (+ tipo consulta en comprobantes). */
+function esDuplicadoConsultaMedica(meta, existente, opts = {}) {
   const norm = String(meta?.paciente_nombre_norm || '').trim();
   const fecha = String(meta?.fecha_estudio || '').trim();
   const estudio = String(meta?.estudio_texto || '').trim();
   if (!norm || !fecha || !estudio) return false;
-  return norm === String(existente?.paciente_nombre_norm || '').trim()
-    && fecha === String(existente?.fecha_estudio || '').trim()
-    && estudio === String(existente?.estudio_texto || '').trim();
+  if (norm !== String(existente?.paciente_nombre_norm || '').trim()) return false;
+  if (fecha !== String(existente?.fecha_estudio || '').trim()) return false;
+  if (estudio !== String(existente?.estudio_texto || '').trim()) return false;
+  if (opts.incluirTipoConsulta) {
+    const tipo = String(meta?.marca_tiempo || meta?.tipo_consulta || '').trim();
+    const tipoEx = String(existente?.marca_tiempo || existente?.tipo_consulta || '').trim();
+    if (tipo !== tipoEx) return false;
+  }
+  return true;
 }
 
 function mensajeDuplicadoPdx(dup) {
@@ -62,7 +68,7 @@ async function buscarDuplicadoPdxEnCarpeta(db, carpetaId, meta, carpeta = null, 
       if (!doc || !fecha) return null;
 
       const params = [carpetaId, doc, fecha];
-      let sql = `SELECT id, paciente_nombre, nombre_archivo_display, ruta_relativa, paciente_nombre_norm, fecha_estudio, estudio_texto
+      let sql = `SELECT id, paciente_nombre, nombre_archivo_display, ruta_relativa, paciente_nombre_norm, fecha_estudio, estudio_texto, marca_tiempo
       FROM sop_pdx_archivos
       WHERE carpeta_id = ? AND paciente_documento = ? AND fecha_estudio = ?`;
 
@@ -74,6 +80,36 @@ async function buscarDuplicadoPdxEnCarpeta(db, carpetaId, meta, carpeta = null, 
       sql += ' LIMIT 1';
       const byDocFecha = await db.query(sql, params);
       if (byDocFecha.length) return { row: byDocFecha[0], motivo: 'documento_fecha' };
+      return null;
+    }
+
+    if (tema === 'comprobantes_consulta_medica') {
+      const norm = meta.paciente_nombre_norm;
+      const fecha = meta.fecha_estudio;
+      const estudio = meta.estudio_texto;
+      const tipo = String(meta.marca_tiempo || meta.tipo_consulta || '').trim();
+      if (!norm || !fecha || !estudio) return null;
+
+      const params = [carpetaId, norm, fecha, estudio];
+      let sql = `SELECT id, paciente_nombre, nombre_archivo_display, ruta_relativa, paciente_nombre_norm, fecha_estudio, estudio_texto, marca_tiempo
+      FROM sop_pdx_archivos
+      WHERE carpeta_id = ? AND paciente_nombre_norm = ? AND fecha_estudio = ? AND estudio_texto = ?`;
+
+      if (tipo) {
+        sql += ' AND COALESCE(marca_tiempo, \'\') = ?';
+        params.push(tipo);
+      } else {
+        sql += ' AND (marca_tiempo IS NULL OR marca_tiempo = \'\')';
+      }
+
+      if (excludeId) {
+        sql += ' AND id <> ?';
+        params.push(excludeId);
+      }
+
+      sql += ' LIMIT 1';
+      const byComprobante = await db.query(sql, params);
+      if (byComprobante.length) return { row: byComprobante[0], motivo: 'comprobante_consulta' };
       return null;
     }
 

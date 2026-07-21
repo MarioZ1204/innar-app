@@ -539,7 +539,10 @@
   function camposMinimosAyudaCliente(tema) {
     const oblig = ['Apellidos', 'Nombres', 'Fecha del estudio'];
     const opc = ['Varios PDF: ordénelos y se unifican en un solo archivo'];
-    if (tema === 'ordenes_consulta_medica' || tema === 'comprobantes_consulta_medica') {
+    if (tema === 'comprobantes_consulta_medica') {
+      return { oblig: ['Nombre completo', 'Fecha del estudio', 'Especialidad', 'Tipo de consulta'], opc };
+    }
+    if (tema === 'ordenes_consulta_medica') {
       return { oblig: ['Nombre completo', 'Fecha del estudio', 'Especialidad'], opc };
     }
     if (esCarpetaEstructuradaPdx({ nombre_display: tema }) && !esCarpetaConsultaMedicaPdx({ nombre_display: tema })) {
@@ -555,7 +558,15 @@
   }
 
   function camposFallbackUnificarPdx(tema) {
-    if (tema === 'comprobantes_consulta_medica' || tema === 'ordenes_consulta_medica') {
+    if (tema === 'comprobantes_consulta_medica') {
+      return [
+        { key: 'paciente_nombre_completo', label: 'Nombre completo', requerido: true, input: 'nombre_completo', estado: 'falta' },
+        { key: 'fecha_estudio', label: 'Fecha del estudio', requerido: true, input: 'date', estado: 'falta' },
+        { key: 'estudio_texto', label: 'Especialidad', requerido: true, input: 'especialidad', estado: 'falta' },
+        { key: 'tipo_consulta', label: 'Tipo de consulta', requerido: true, input: 'tipo_consulta', estado: 'falta' }
+      ];
+    }
+    if (tema === 'ordenes_consulta_medica') {
       return [
         { key: 'paciente_nombre_completo', label: 'Nombre completo', requerido: true, input: 'nombre_completo', estado: 'falta' },
         { key: 'fecha_estudio', label: 'Fecha del estudio', requerido: true, input: 'date', estado: 'falta' },
@@ -705,7 +716,7 @@
       const sel = modal.querySelector(`[data-key="${c.key}"][data-tipo="estudio"], [data-key="${c.key}"][data-tipo="psg"], [data-key="${c.key}"][data-tipo="tipo_consulta"], [data-key="${c.key}"][data-tipo="especialidad"]`);
       if (!sel) continue;
       if (sel.dataset.tipo === 'psg') poblarSelectEstudioPsgCliente(sel, datos.estudio_texto || c.valor);
-      else if (sel.dataset.tipo === 'tipo_consulta') await poblarSelectTipoConsultaPdx(sel, datos.estudio_texto || c.valor);
+      else if (sel.dataset.tipo === 'tipo_consulta') await poblarSelectTipoConsultaPdx(sel, datos.tipo_consulta || c.valor);
       else if (sel.dataset.tipo === 'especialidad') await poblarSelectEspecialidadPdx(sel, datos.estudio_texto || c.valor);
       else await poblarSelectEstudioPdx(sel, datos.estudio_texto || c.valor);
     }
@@ -2896,6 +2907,7 @@
             ${docFieldsHtml}
             <div class="sop-field"><label>Fecha *</label><input type="date" class="sopMultiFecha" data-idx="${idx}" value="${escapeHtml(parsed.fecha_estudio || '')}"></div>
             <div class="sop-field"><label>${esConsultaMedica ? 'Especialidad' : 'Especialidad/Tipo examen'} *</label><select class="sopMultiEst" data-idx="${idx}"><option value="">-- Seleccione --</option></select></div>
+            ${esComprobanteConsultaMed ? `<div class="sop-field"><label>Tipo de consulta *</label><select class="sopMultiTipoConsulta" data-idx="${idx}"><option value="">-- Seleccione --</option></select></div>` : ''}
           </div>
         `;
 
@@ -2935,6 +2947,12 @@
               await poblarSelectEstudioPdx(estSelect, parsed.estudio_texto);
             }
           }
+          if (esComprobanteConsultaMed) {
+            const tipoSel = modal.querySelector(`.sopMultiTipoConsulta[data-idx="${idx}"]`);
+            if (tipoSel) {
+              await poblarSelectTipoConsultaPdx(tipoSel, parsed.tipo_consulta || parsed.marca_tiempo);
+            }
+          }
         }
         sopIcons(modal);
       })();
@@ -2952,6 +2970,9 @@
           const doc = modal.querySelector(`.sopMultiDoc[data-idx="${idx}"]`)?.value?.trim();
           const fecha = modal.querySelector(`.sopMultiFecha[data-idx="${idx}"]`)?.value;
           const est = modal.querySelector(`.sopMultiEst[data-idx="${idx}"]`)?.value?.trim();
+          const tipoConsulta = esComprobanteConsultaMed
+            ? modal.querySelector(`.sopMultiTipoConsulta[data-idx="${idx}"]`)?.value?.trim()
+            : '';
 
           let nombres = nom || '';
           let apellidos = ape || '';
@@ -2983,7 +3004,7 @@
             hasError = true;
             break;
           }
-          if (esComprobanteConsultaMed && (!nombres || !apellidos || !fecha || !est)) {
+          if (esComprobanteConsultaMed && (!nombres || !apellidos || !fecha || !est || !tipoConsulta)) {
             sopToast(`Comprobante ${idx + 1} (${analisisLista[idx].file.name}): Complete todos los campos obligatorios`, 'warning');
             hasError = true;
             break;
@@ -3003,6 +3024,7 @@
           };
           if (esComprobanteConsultaMed) {
             body.paciente_nombre_completo = nombreCompleto || `${nombres} ${apellidos}`.trim();
+            body.tipo_consulta = tipoConsulta;
           }
           if (!esConsultaMedica) {
             body.paciente_documento = normalizarNumeroDocumentoCliente(doc);
@@ -3083,6 +3105,9 @@
       <div class="sop-field"><label>Número de documento *</label><input type="text" id="sopPdxCorrDoc" data-campo-tipo="doc_numero" value="${escapeHtml(p.paciente_documento || '')}" inputmode="numeric" pattern="[0-9]*"></div>` : `
       <div class="sop-field"><label>Documento (opcional)</label><input type="text" id="sopPdxCorrDoc" data-campo-tipo="doc_numero" value="${escapeHtml(p.paciente_documento || '')}" inputmode="numeric" pattern="[0-9]*"></div>`}
       <div class="sop-field"><label>Fecha del estudio *</label><input type="date" id="sopPdxCorrFecha" value="${escapeHtml(p.fecha_estudio || '')}"></div>
+      ${esComprobanteConsultaMed ? `
+      <div class="sop-field"><label>Especialidad *</label><select id="sopPdxCorrEst"></select></div>
+      <div class="sop-field"><label>Tipo de consulta *</label><select id="sopPdxCorrTipoConsulta"></select></div>` : ''}
       ${(esEstruct || esPsg) ? '<div class="sop-field"><label>Tipo de examen *</label><select id="sopPdxCorrEst"></select></div>' : ''}
       <div class="sop-dialog-actions">
         <button type="button" class="sop-btn sop-btn-ghost" id="sopPdxCorrCancel">Cancelar</button>
@@ -3091,7 +3116,10 @@
 
     const estSel = modal.querySelector('#sopPdxCorrEst');
     if (esPsg) poblarSelectEstudioPsgCliente(estSel, p.estudio_texto);
-    else if (esConsultaMedica) poblarSelectEspecialidadPdx(estSel, p.estudio_texto);
+    else if (esComprobanteConsultaMed) {
+      poblarSelectEspecialidadPdx(estSel, p.estudio_texto);
+      poblarSelectTipoConsultaPdx(modal.querySelector('#sopPdxCorrTipoConsulta'), p.tipo_consulta || p.marca_tiempo);
+    } else if (esConsultaMedica) poblarSelectEspecialidadPdx(estSel, p.estudio_texto);
     else if (esEstruct) poblarSelectEstudioPdx(estSel, p.estudio_texto);
 
     modal.querySelector('#sopPdxCorrCancel').onclick = () => { closeSopModal(modal); reject(new Error('cancelado')); };
@@ -3122,6 +3150,11 @@
       };
       if (esComprobanteConsultaMed) {
         body.paciente_nombre_completo = modal.querySelector('#sopPdxCorrNombreCompleto')?.value?.trim() || `${nombres} ${apellidos}`.trim();
+        body.estudio_texto = estSel?.value?.trim() || '';
+        body.tipo_consulta = modal.querySelector('#sopPdxCorrTipoConsulta')?.value?.trim() || '';
+        if (!body.estudio_texto || !body.tipo_consulta) {
+          return sopToast('Complete especialidad y tipo de consulta', 'warning');
+        }
       }
       if (!esComprobanteConsultaMed && (!body.apellidos || !body.nombres || !body.fecha_estudio)) {
         return sopToast('Complete apellidos, nombres y fecha', 'warning');

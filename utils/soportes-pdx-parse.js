@@ -76,9 +76,9 @@ const FORMATOS_AYUDA = {
     nota: 'Tipo: 2 letras; documento: solo números. El nombre guardado empieza por CONSENTIMIENTO. Separe los campos con espacios (no use guiones entre campos).'
   },
   comprobantes_consulta_medica: {
-    pattern: 'COMPROBANTE NOMBRES APELLIDOS YYYY-MM-DD ESPECIALIDAD.pdf',
-    ejemplo: 'COMPROBANTE Juan Carlos García López 2026-05-27 Neurología.pdf',
-    nota: 'Sin número de documento. La especialidad se toma de Gestión de datos (igual que órdenes consultas médicas).'
+    pattern: 'COMPROBANTE NOMBRES APELLIDOS YYYY-MM-DD ESPECIALIDAD TIPO DE CONSULTA.pdf',
+    ejemplo: 'COMPROBANTE Juan Carlos García López 2026-05-27 Neurología Control.pdf',
+    nota: 'Sin número de documento. Indique especialidad y tipo de consulta; puede subir varios comprobantes del mismo paciente en el mismo día si el tipo de consulta es distinto.'
   },
   ordenes_consulta_medica: {
     pattern: 'ORDEN + HC NOMBRES APELLIDOS YYYY-MM-DD ESPECIALIDAD.pdf',
@@ -127,6 +127,37 @@ function resolverEstudioDesdeLista(texto, estudios) {
     return en && (n.includes(en) || en.includes(n));
   });
   return partial ? partial.nombre : raw;
+}
+
+/** Tras la fecha: especialidad (lista) + resto como tipo de consulta. */
+function separarEspecialidadYTipoConsulta(after, especialidades = []) {
+  const raw = String(after || '').trim();
+  if (!raw) return { estudio: '', tipo_consulta: '' };
+
+  const norm = (s) => String(s || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+
+  const lista = (Array.isArray(especialidades) ? especialidades : [])
+    .map((e) => (typeof e === 'string' ? { nombre: e } : e))
+    .filter((e) => e?.nombre)
+    .sort((a, b) => String(b.nombre).length - String(a.nombre).length);
+
+  const nRaw = norm(raw);
+  for (const esp of lista) {
+    const nom = String(esp.nombre).trim();
+    const nEsp = norm(nom);
+    if (!nEsp) continue;
+    if (nRaw === nEsp) return { estudio: nom, tipo_consulta: '' };
+    if (nRaw.startsWith(`${nEsp} `) || nRaw.startsWith(`${nEsp}-`)) {
+      const rest = raw.slice(nom.length).replace(/^[\s\-–]+/, '').trim();
+      return { estudio: nom, tipo_consulta: rest };
+    }
+  }
+
+  return { estudio: raw, tipo_consulta: '' };
 }
 
 const PSG_TIPOS_ESTUDIO = ['PSG Básica', 'PSG CPAP', 'PSG BPAP', 'PSG Basal'];
@@ -448,12 +479,21 @@ function parseNombreEstructuradoDesdeFecha(tema, originalName, estudios = []) {
 
   before = quitarPrefijosEstructuradosInicio(before);
 
-  const estudio = resolverEstudioDesdeLista(after, estudios) || after.trim();
-  if (!estudio) return { ok: false, original: base };
-
   if (esTemaConsultaMedica(tema)) {
     const { nombres, apellidos } = extraerNombreApellidoConsultaMedica(before);
     if (!nombres || !apellidos) return { ok: false, original: base };
+
+    let estudio = '';
+    let tipo_consulta = '';
+    if (tema === 'comprobantes_consulta_medica') {
+      const split = separarEspecialidadYTipoConsulta(after, estudios);
+      estudio = split.estudio;
+      tipo_consulta = split.tipo_consulta;
+    } else {
+      estudio = resolverEstudioDesdeLista(after, estudios) || after.trim();
+    }
+    if (!estudio) return { ok: false, original: base };
+
     const partsNorm = {
       nombres,
       apellidos,
@@ -461,6 +501,7 @@ function parseNombreEstructuradoDesdeFecha(tema, originalName, estudios = []) {
       paciente_documento: '',
       fecha,
       estudio,
+      tipo_consulta,
       formato: tema
     };
     if (tema === 'comprobantes_consulta_medica') {
@@ -470,6 +511,9 @@ function parseNombreEstructuradoDesdeFecha(tema, originalName, estudios = []) {
     }
     return buildStructuredOk(base, partsNorm);
   }
+
+  const estudio = resolverEstudioDesdeLista(after, estudios) || after.trim();
+  if (!estudio) return { ok: false, original: base };
 
   const campos = extraerCamposEstructuradosAntesFecha(before);
   if (!campos.apellidos || !campos.nombres || !campos.paciente_documento) {
@@ -615,6 +659,7 @@ function parseNombreSimple(originalName) {
 function buildStructuredOk(original, parts) {
   const doc = normalizarParDocumentoPdx(parts.tipo_documento, parts.paciente_documento);
   const pacienteNombre = `${parts.apellidos}, ${parts.nombres}`;
+  const tipoConsulta = String(parts.tipo_consulta || '').trim();
   return {
     ok: true,
     original,
@@ -625,7 +670,8 @@ function buildStructuredOk(original, parts) {
     paciente_documento: doc.paciente_documento,
     tipo_documento: doc.tipo_documento,
     fecha_estudio: parts.fecha,
-    marca_tiempo: '',
+    marca_tiempo: tipoConsulta,
+    tipo_consulta: tipoConsulta,
     sufijo_numero: '',
     estudio_texto: parts.estudio,
     estudio_tema: detectarTemaCarpeta(parts.estudio),
@@ -745,8 +791,10 @@ function normalizarNombreConsentimiento(parts) {
 }
 
 function normalizarNombreComprobanteConsultaMedica(parts) {
-  const { nombres, apellidos, fecha, estudio } = parts;
-  return `COMPROBANTE ${nombres} ${apellidos} ${fecha} ${estudio}.pdf`;
+  const { nombres, apellidos, fecha, estudio, tipo_consulta } = parts;
+  const tipo = String(tipo_consulta || '').trim();
+  const tipoPart = tipo ? ` ${tipo}` : '';
+  return `COMPROBANTE ${nombres} ${apellidos} ${fecha} ${estudio}${tipoPart}.pdf`;
 }
 
 function normalizarNombreOrdenHcConsultaMedica(parts) {
@@ -980,7 +1028,8 @@ function extraerDatosParcialesNombre(originalName, carpeta, estudios = []) {
     tipo_documento: 'CC',
     paciente_documento: '',
     fecha_estudio: '',
-    estudio_texto: ''
+    estudio_texto: '',
+    tipo_consulta: ''
   };
 
   const fechaHit = buscarFechaEnTextoPdx(base);
@@ -1016,6 +1065,7 @@ function extraerDatosParcialesNombre(originalName, carpeta, estudios = []) {
       parcial.apellidos = parsedTry.apellidos;
       parcial.fecha_estudio = parsedTry.fecha_estudio;
       parcial.estudio_texto = parsedTry.estudio_texto;
+      parcial.tipo_consulta = parsedTry.tipo_consulta || parsedTry.marca_tiempo || '';
     } else if (fechaHit) {
       const sinPdf = base.replace(/\.pdf$/i, '');
       const rawFechaLen = String(fechaHit.raw || fechaHit.fecha).length;
@@ -1025,7 +1075,15 @@ function extraerDatosParcialesNombre(originalName, carpeta, estudios = []) {
       parcial.nombres = na.nombres;
       parcial.apellidos = na.apellidos;
       const after = sinPdf.slice(fechaHit.index + rawFechaLen).replace(/^[\s\-.]+/,'').trim();
-      if (after) parcial.estudio_texto = resolverEstudioDesdeLista(after, estudios) || after;
+      if (after) {
+        if (tema === 'comprobantes_consulta_medica') {
+          const split = separarEspecialidadYTipoConsulta(after, estudios);
+          parcial.estudio_texto = split.estudio;
+          parcial.tipo_consulta = split.tipo_consulta;
+        } else {
+          parcial.estudio_texto = resolverEstudioDesdeLista(after, estudios) || after;
+        }
+      }
     }
   } else if (esTemaEstructurado(tema)) {
     const tokens = base.replace(/\.pdf$/i, '').split(/\s+/).filter(Boolean);
@@ -1076,10 +1134,12 @@ function analizarNombreArchivo(originalName, carpeta, estudios = []) {
       confirmacion_manual: '1',
       apellidos: datos.apellidos,
       nombres: datos.nombres,
+      paciente_nombre_completo: datos.paciente_nombre_completo,
       tipo_documento: datos.tipo_documento,
       paciente_documento: datos.paciente_documento,
       fecha_estudio: datos.fecha_estudio,
-      estudio_texto: datos.estudio_texto
+      estudio_texto: datos.estudio_texto,
+      tipo_consulta: datos.tipo_consulta
     }, { ...carpeta, _estudiosLista: estudios });
     if (!meta.ok) {
       return {
@@ -1204,9 +1264,12 @@ function buildMetaDesdeCamposManuales(originalName, body, carpeta) {
       apellidos, nombres, tipo_documento, paciente_documento, fecha, estudio
     });
   } else if (tema === 'comprobantes_consulta_medica') {
+    const tipoConsulta = String(body.tipo_consulta || body.marca_tiempo || '').trim();
+    if (!tipoConsulta) return { ok: false, error: 'Indique el tipo de consulta' };
+    base.marca_tiempo = tipoConsulta;
     base.formato = 'comprobantes_consulta_medica';
     base.nombre_display = normalizarNombreComprobanteConsultaMedica({
-      nombres, apellidos, fecha, estudio
+      nombres, apellidos, fecha, estudio, tipo_consulta: tipoConsulta
     });
   } else if (tema === 'ordenes_consulta_medica') {
     base.formato = 'ordenes_consulta_medica';
@@ -1312,7 +1375,8 @@ function buildNombreDescargaPdxDesdeRow(row, carpeta) {
       nombres: partsEstruct.nombres,
       apellidos: partsEstruct.apellidos,
       fecha: partsEstruct.fecha,
-      estudio: partsEstruct.estudio
+      estudio: partsEstruct.estudio,
+      tipo_consulta: partsEstruct.tipo_consulta || partsEstruct.marca_tiempo || ''
     });
   }
   if (tema === 'ordenes_consulta_medica' && partsEstruct.nombres && partsEstruct.apellidos && partsEstruct.fecha && partsEstruct.estudio) {

@@ -257,6 +257,18 @@ describe('soportes-pdx-parse — formatos estructurados', () => {
     expect(p.estudio_texto).toBe('Neurología');
   });
 
+  test('comprobante consultas médicas extrae especialidad y tipo de consulta del nombre', () => {
+    const p = parseNombrePorCarpeta(
+      'COMPROBANTE Juan Carlos García López 2026-05-27 Neurología Control.pdf',
+      { nombre_display: 'COMPROBANTES CONSULTAS MÉDICAS' },
+      [{ nombre: 'Neurología' }]
+    );
+    expect(p.ok).toBe(true);
+    expect(p.estudio_texto).toBe('Neurología');
+    expect(p.marca_tiempo).toBe('Control');
+    expect(p.nombre_display).toBe('COMPROBANTE Juan Carlos García López 2026-05-27 Neurología Control.pdf');
+  });
+
   test('buildMetaFromUpload usa el nombre estructurado para carpetas de consultas médicas y evita sobrescribir archivos con distinta especialidad', () => {
     const meta = buildMetaFromUpload(
       'COMPROBANTE mismo.pdf',
@@ -265,23 +277,38 @@ describe('soportes-pdx-parse — formatos estructurados', () => {
         nombres: 'Juan Carlos',
         apellidos: 'García López',
         fecha_estudio: '2026-05-27',
-        estudio_texto: 'Neurología'
+        estudio_texto: 'Neurología',
+        tipo_consulta: 'Control'
       },
       { nombre_display: 'COMPROBANTES CONSULTAS MÉDICAS' }
     );
     expect(meta.ok).toBe(true);
-    expect(meta.nombre_archivo_display).toBe('COMPROBANTE Juan Carlos García López 2026-05-27 Neurología.pdf');
+    expect(meta.marca_tiempo).toBe('Control');
+    expect(meta.nombre_archivo_display).toBe('COMPROBANTE Juan Carlos García López 2026-05-27 Neurología Control.pdf');
   });
 
-  test('analizarNombreArchivo acepta comprobantes consultas médicas cuando la carpeta es genérica pero el nombre lo indica', () => {
+  test('analizarNombreArchivo requiere tipo de consulta si el nombre no lo incluye', () => {
     const a = analizarNombreArchivo(
       'COMPROBANTE Juan Carlos García López 2026-05-27 Neurología.pdf',
+      { nombre_display: 'CONSULTAS MÉDICAS' },
+      [{ nombre: 'Neurología' }]
+    );
+    expect(a.ok).toBe(false);
+    expect(a.requiere_correccion).toBe(true);
+    expect(a.parcial.estudio_texto).toBe('Neurología');
+    expect(a.parcial.tipo_consulta).toBe('');
+  });
+
+  test('analizarNombreArchivo acepta comprobantes consultas médicas con tipo en el nombre', () => {
+    const a = analizarNombreArchivo(
+      'COMPROBANTE Juan Carlos García López 2026-05-27 Neurología Control.pdf',
       { nombre_display: 'CONSULTAS MÉDICAS' },
       [{ nombre: 'Neurología' }]
     );
     expect(a.ok).toBe(true);
     expect(a.requiere_correccion).toBe(false);
     expect(a.parsed.estudio_texto).toBe('Neurología');
+    expect(a.parsed.marca_tiempo).toBe('Control');
   });
 
   test('consultas médicas ignora prefijos estructurales concatenados al inicio', () => {

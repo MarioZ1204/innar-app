@@ -18,7 +18,15 @@ function esTemaReporteClinico(tema) {
 }
 
 function definicionCamposPorTema(tema) {
-  if (tema === 'comprobantes_consulta_medica' || esTemaOrdenHcConsultaMedica(tema)) {
+  if (tema === 'comprobantes_consulta_medica') {
+    return [
+      { key: 'paciente_nombre_completo', label: 'Nombre completo', requerido: true, input: 'nombre_completo' },
+      { key: 'fecha_estudio', label: 'Fecha del estudio', requerido: true, input: 'date' },
+      { key: 'estudio_texto', label: 'Especialidad', requerido: true, input: 'especialidad' },
+      { key: 'tipo_consulta', label: 'Tipo de consulta', requerido: true, input: 'tipo_consulta' }
+    ];
+  }
+  if (esTemaOrdenHcConsultaMedica(tema)) {
     return [
       { key: 'paciente_nombre_completo', label: 'Nombre completo', requerido: true, input: 'nombre_completo' },
       { key: 'fecha_estudio', label: 'Fecha del estudio', requerido: true, input: 'date' },
@@ -80,7 +88,8 @@ function mergeDatosNombre(parcial, parsed) {
     tipo_documento: normalizarTipoDocumentoPdx(p.tipo_documento || parcial?.tipo_documento || 'CC'),
     paciente_documento: normalizarNumeroDocumentoPdx(p.paciente_documento || parcial?.paciente_documento || ''),
     fecha_estudio: String(p.fecha_estudio || parcial?.fecha_estudio || '').trim(),
-    estudio_texto: String(p.estudio_texto || parcial?.estudio_texto || '').trim()
+    estudio_texto: String(p.estudio_texto || parcial?.estudio_texto || '').trim(),
+    tipo_consulta: String(p.tipo_consulta || p.marca_tiempo || parcial?.tipo_consulta || '').trim()
   };
 }
 
