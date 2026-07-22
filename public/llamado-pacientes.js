@@ -444,31 +444,22 @@
 
   const TTS_SERVER_ENABLED = true;
 
-  function consultorioParaVozCliente(numero) {
-    const s = String(numero ?? '').trim();
-    if (!s) return 'sin número';
-    if (!/^\d+$/.test(s)) return s;
-    const digitos = ['cero', 'uno', 'dos', 'tres', 'cuatro', 'cinco', 'seis', 'siete', 'ocho', 'nueve'];
-    return s.split('').map((d) => digitos[parseInt(d, 10)]).join(' ');
-  }
-
   function puntuacionVoz(voice) {
     const name = String(voice?.name || '').toLowerCase();
     const lang = String(voice?.lang || '').toLowerCase();
     let score = 0;
+    if (name.includes('siri') || name.includes('enhanced')) score += 200;
     if (name.includes('neural')) score += 120;
-    if (name.includes('natural')) score += 80;
+    if (name.includes('natural') || name.includes('premium')) score += 80;
     if (name.includes('online')) score += 60;
-    if (name.includes('premium')) score += 40;
-    if (lang === 'es-co' || lang.startsWith('es-co-')) score += 50;
-    if (lang === 'es-419' || lang.startsWith('es-419')) score += 40;
-    if (lang.startsWith('es-mx')) score += 30;
+    if (lang.startsWith('es-mx')) score += 45;
+    if (lang.startsWith('es-co') || lang.startsWith('es-419')) score += 40;
     const preferNames = [
-      'salome', 'dalia', 'elvira', 'luciana', 'sabina', 'paulina', 'helena',
-      'monica', 'soledad', 'esperanza', 'paloma', 'camila', 'google español'
+      'dalia', 'paloma', 'monica', 'paulina', 'sabina', 'helena', 'luciana',
+      'soledad', 'esperanza', 'camila', 'google español', 'microsoft'
     ];
     for (let i = 0; i < preferNames.length; i++) {
-      if (name.includes(preferNames[i])) score += 35 - i;
+      if (name.includes(preferNames[i])) score += 40 - i;
     }
     if (voice?.localService === false) score += 15;
     return score;
@@ -547,8 +538,8 @@
 
   function textoAnuncio(item) {
     const nombre = String(item?.paciente_nombre || 'paciente').trim();
-    const cons = consultorioParaVozCliente(item?.numero_consultorio);
-    return `Atención. Paciente ${nombre}. Diríjase al consultorio ${cons}.`;
+    const cons = String(item?.numero_consultorio ?? '').trim() || 'indicado';
+    return `Atención. ${nombre}, pase al consultorio ${cons}.`;
   }
 
   function estimarDuracionAnuncioMs(texto) {
@@ -586,8 +577,8 @@
       const synth = window.speechSynthesis;
       const run = () => {
         const utter = new SpeechSynthesisUtterance(texto);
-        utter.rate = 0.92;
-        utter.pitch = 1;
+        utter.rate = 0.94;
+        utter.pitch = 0.98;
         utter.volume = 1;
         const voice = pickSoftSpanishVoice();
         if (voice) { utter.voice = voice; utter.lang = voice.lang; }

@@ -4,15 +4,15 @@ const {
 } = require('../utils/llamado-tts');
 
 describe('llamado-tts', () => {
-  test('consultorioParaVoz lee dígitos uno a uno', () => {
-    expect(consultorioParaVoz('302')).toBe('tres cero dos');
-    expect(consultorioParaVoz('9')).toBe('nueve');
+  test('consultorioParaVoz conserva el número para lectura natural', () => {
+    expect(consultorioParaVoz('302')).toBe('302');
+    expect(consultorioParaVoz('9')).toBe('9');
+    expect(consultorioParaVoz('')).toBe('indicado');
   });
 
-  test('textoAnuncioLlamado incluye pausas naturales', () => {
+  test('textoAnuncioLlamado es breve y conversacional', () => {
     const t = textoAnuncioLlamado('Ana García', '302');
-    expect(t).toContain('Atención');
-    expect(t).toContain('Ana García');
-    expect(t).toContain('tres cero dos');
+    expect(t).toBe('Atención. Ana García, pase al consultorio 302.');
+    expect(t).not.toContain('tres cero dos');
   });
 });

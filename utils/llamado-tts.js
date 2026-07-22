@@ -1,6 +1,6 @@
 /**
  * Síntesis de voz para llamado de pacientes (Microsoft Edge neural TTS).
- * Voz por defecto: es-CO-SalomeNeural — natural, clara, acento colombiano.
+ * Voz por defecto: es-MX-DaliaNeural — tono conversacional, similar a asistentes virtuales.
  */
 const crypto = require('crypto');
 const fs = require('fs').promises;
@@ -8,27 +8,23 @@ const path = require('path');
 const os = require('os');
 const { EdgeTTS } = require('node-edge-tts');
 
-const VOICE = process.env.LLAMADO_TTS_VOICE || 'es-CO-SalomeNeural';
-const RATE = process.env.LLAMADO_TTS_RATE || '+8%';
-const PITCH = process.env.LLAMADO_TTS_PITCH || '+0Hz';
-const VOLUME = process.env.LLAMADO_TTS_VOLUME || '+12%';
+const VOICE = process.env.LLAMADO_TTS_VOICE || 'es-MX-DaliaNeural';
+const RATE = process.env.LLAMADO_TTS_RATE || '-4%';
+const PITCH = process.env.LLAMADO_TTS_PITCH || '-2Hz';
+const VOLUME = process.env.LLAMADO_TTS_VOLUME || '+5%';
 const TIMEOUT_MS = Math.min(Math.max(parseInt(process.env.LLAMADO_TTS_TIMEOUT_MS || '15000', 10) || 15000, 5000), 30000);
 
-const DIGITOS_ES = ['cero', 'uno', 'dos', 'tres', 'cuatro', 'cinco', 'seis', 'siete', 'ocho', 'nueve'];
-
-/** Lee consultorio dígito a dígito (302 → "tres cero dos") para mayor claridad en TV. */
+/** Número de consultorio tal cual (302 → el TTS lo lee como "trescientos dos"). */
 function consultorioParaVoz(numero) {
   const s = String(numero ?? '').trim();
-  if (!s) return 'sin número';
-  if (!/^\d+$/.test(s)) return s;
-  return s.split('').map((d) => DIGITOS_ES[parseInt(d, 10)]).join(' ');
+  return s || 'indicado';
 }
 
-/** Texto optimizado para anuncio en pantalla de llamado. */
+/** Frase corta y natural para pantalla de llamado. */
 function textoAnuncioLlamado(pacienteNombre, numeroConsultorio) {
   const nombre = String(pacienteNombre || 'paciente').trim();
   const cons = consultorioParaVoz(numeroConsultorio);
-  return `Atención. Paciente ${nombre}. Diríjase al consultorio ${cons}.`;
+  return `Atención. ${nombre}, pase al consultorio ${cons}.`;
 }
 
 const cache = new Map();
