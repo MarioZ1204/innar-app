@@ -56,10 +56,10 @@ const SEDES_INNAR = {
   principal: {
     id: '1',
     titulo: 'Sede Principal',
-    corta: 'Calle 14A #34-13, Barrio San Ignacio',
-    completa: 'Calle 14A #34-13, Barrio San Ignacio, Pasto, Nariño',
+    corta: 'Carrera 34 #13-80 con Calle 14 #33-15, Barrio San Ignacio',
+    completa: 'Carrera 34 #13-80 con Calle 14 #33-15, Pasto, Barrio San Ignacio',
     mapsPath: '/ubicacion/principal',
-    mapsUrl: 'https://maps.app.goo.gl/nuT1XWpDEg6vXVmS7',
+    mapsUrl: 'https://www.google.com/maps/search/?api=1&query=Carrera+34+%2313-80+Calle+14+%2333-15+Pasto+Barrio+San+Ignacio',
     telefonos: '3053560651 - 6027238141'
   },
   complementaria: {
