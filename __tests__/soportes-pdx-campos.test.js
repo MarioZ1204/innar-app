@@ -87,4 +87,16 @@ describe('evaluarCamposMinimos — carga flexible', () => {
     expect(a.parcial.paciente_documento).toBe('1234567');
     expect(a.parcial.fecha_estudio).toBe('2026-06-01');
   });
+
+  test('latencia múltiple del sueño: mínimo apellidos, nombres y fecha', () => {
+    const carpeta = { nombre_display: 'PRUEBA DE LATENCIA MULTIPLE DEL SUEÑO' };
+    const evaluacion = evaluarCamposMinimos(
+      'latencia',
+      { apellidos: 'García López', nombres: 'Juan Carlos', fecha_estudio: '2026-05-27' },
+      { ok: false },
+      carpeta
+    );
+    expect(evaluacion.completo).toBe(true);
+    expect(evaluacion.datos.estudio_texto).toBe('Prueba de latencia múltiple del sueño');
+  });
 });

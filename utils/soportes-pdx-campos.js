@@ -1,8 +1,8 @@
 /**
  * Campos mínimos por tipo de carpeta PDX y evaluación flexible del nombre de archivo.
  */
-const { detectarTemaCarpeta, inferirEstudioDesdeCarpeta, esTemaOrdenHcConsultaMedica } = require('./soportes-temas');
-const { estudioPsgReconocido, separarNombreCompletoConsultaMedica } = require('./soportes-pdx-parse');
+const { detectarTemaCarpeta, esTemaOrdenHcConsultaMedica } = require('./soportes-temas');
+const { estudioPsgReconocido, separarNombreCompletoConsultaMedica, inferirEstudioDesdeCarpeta } = require('./soportes-pdx-parse');
 const {
   normalizarNumeroDocumentoPdx,
   normalizarTipoDocumentoPdx,
@@ -14,7 +14,7 @@ function esTemaEstructuradoConDocumento(tema) {
 }
 
 function esTemaReporteClinico(tema) {
-  return ['vtm', 'eeg', 'psg', 'actigrafia'].includes(tema);
+  return ['vtm', 'eeg', 'psg', 'actigrafia', 'latencia'].includes(tema);
 }
 
 function definicionCamposPorTema(tema) {
@@ -95,7 +95,7 @@ function mergeDatosNombre(parcial, parsed) {
 
 function enriquecerDatosInferidos(datos, tema, carpeta) {
   const out = { ...datos };
-  if (['vtm', 'eeg', 'actigrafia'].includes(tema) && !out.estudio_texto) {
+  if (['vtm', 'eeg', 'actigrafia', 'latencia'].includes(tema) && !out.estudio_texto) {
     out.estudio_texto = inferirEstudioDesdeCarpeta(carpeta);
   }
   if (tema === 'psg') {

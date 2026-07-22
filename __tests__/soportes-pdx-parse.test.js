@@ -110,6 +110,12 @@ describe('soportes-pdx-parse — reportes simples', () => {
   test('inferir estudio PSG CPAP desde carpeta', () => {
     expect(inferirEstudioDesdeCarpeta({ nombre_display: 'PSG CPAP MARZO' })).toBe('PSG CPAP');
   });
+
+  test('detectar tema latencia múltiple del sueño', () => {
+    expect(detectarTemaCarpeta('PRUEBA DE LATENCIA MULTIPLE DEL SUEÑO')).toBe('latencia');
+    expect(inferirEstudioDesdeCarpeta({ nombre_display: 'PRUEBA DE LATENCIA MULTIPLE DEL SUEÑO' }))
+      .toBe('Prueba de latencia múltiple del sueño');
+  });
 });
 
 describe('soportes-pdx-parse — formatos estructurados', () => {

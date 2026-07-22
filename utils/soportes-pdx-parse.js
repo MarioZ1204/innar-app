@@ -550,6 +550,7 @@ function inferirEstudioDesdeCarpeta(carpeta) {
   if (tema === 'eeg') return 'EEG';
   if (tema === 'vtm') return 'VTM';
   if (tema === 'actigrafia') return 'Actigrafía';
+  if (tema === 'latencia') return 'Prueba de latencia múltiple del sueño';
   if (tema === 'psg') return inferirEstudioPsgDesdeCarpeta(nombre);
   return '';
 }

@@ -71,6 +71,14 @@ function detectarTemaCarpeta(nombreCarpeta, nombreArchivo = '') {
   }
 
   if (
+    u.includes('mslt') ||
+    u.includes('test de latencia') ||
+    (u.includes('latencia') && (u.includes('sueno') || u.includes('multiple') || u.includes('tlm')))
+  ) {
+    return 'latencia';
+  }
+
+  if (
     u.includes('polisomnog') ||
     /\bpsg\b/.test(u) ||
     u.startsWith('psg ') ||
@@ -108,7 +116,12 @@ function esCarpetaConsentimientos(nombreCarpeta) {
 
 function esCarpetaFormatoSimple(nombreCarpeta) {
   const t = detectarTemaCarpeta(nombreCarpeta);
-  return ['vtm', 'eeg', 'psg', 'actigrafia', 'neutral'].includes(t);
+  return ['vtm', 'eeg', 'psg', 'actigrafia', 'latencia', 'neutral'].includes(t);
+}
+
+function esCarpetaSubidaMultipleReportesPdx(nombreCarpeta) {
+  const t = detectarTemaCarpeta(nombreCarpeta);
+  return ['vtm', 'psg', 'eeg', 'actigrafia', 'latencia'].includes(t);
 }
 
 const TEMA_LABELS = {
@@ -116,6 +129,7 @@ const TEMA_LABELS = {
   psg: 'PSG',
   eeg: 'EEG',
   actigrafia: 'Actigrafía',
+  latencia: 'Latencia múltiple del sueño',
   ordenes: 'Órdenes',
   comprobantes: 'Comprobantes',
   consentimientos: 'Consentimientos',
@@ -133,6 +147,7 @@ module.exports = {
   esCarpetaComprobantes,
   esCarpetaConsentimientos,
   esCarpetaFormatoSimple,
+  esCarpetaSubidaMultipleReportesPdx,
   TEMA_LABELS,
   normalizarTexto
 };

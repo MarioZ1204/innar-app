@@ -150,6 +150,11 @@
       ejemplo: 'García López, Juan Carlos   2026-05-27.pdf',
       nota: 'Al descargar se añade el tipo de estudio al nombre del archivo.'
     },
+    latencia: {
+      pattern: 'Apellidos, Nombres   YYYY-MM-DD.pdf',
+      ejemplo: 'García López, Juan Carlos   2026-05-27.pdf',
+      nota: 'Al descargar se añade el tipo de estudio (prueba de latencia múltiple del sueño) al nombre del archivo.'
+    },
     ordenes: {
       pattern: 'ORDEN + HC APELLIDOS NOMBRES TIPO DOC (CC, TI…) DOCUMENTO (solo números) FECHA TIPO DE ESTUDIO.pdf',
       ejemplo: 'ORDEN + HC García López Juan Carlos CC 1234567890 2026-05-27 PSG Basal.pdf',
@@ -193,6 +198,13 @@
     if (/\bordenes\b/.test(u) || /\borden\s*\+\s*hc\b/.test(u) || (/\borden\b/.test(u) && /\bhc\b/.test(u))) return 'ordenes';
     if (/\bvtm\b/.test(u) || u.includes('videotelemetria') || u.includes('telemetria')) return 'vtm';
     if (u.includes('actigraf')) return 'actigrafia';
+    if (
+      u.includes('mslt') ||
+      u.includes('test de latencia') ||
+      (u.includes('latencia') && (u.includes('sueno') || u.includes('multiple') || u.includes('tlm')))
+    ) {
+      return 'latencia';
+    }
     if (u.includes('polisomnog') || /\bpsg\b/.test(u) || u.startsWith('psg ') || u.includes('cpap') || u.includes('bpap')) return 'psg';
     if (u.includes('electroencefalog') || (/\beeg\b/.test(u) && !u.includes('monitoriz'))) return 'eeg';
     return 'neutral';
@@ -215,6 +227,17 @@
 
   function esCarpetaPsgReportePdx(carpetaOrNombre) {
     return detectarTemaCarpetaCliente(typeof carpetaOrNombre === 'string' ? carpetaOrNombre : carpetaOrNombre?.nombre_display) === 'psg';
+  }
+
+  function esCarpetaReporteClinicoPdx(carpetaOrNombre) {
+    const t = detectarTemaCarpetaCliente(typeof carpetaOrNombre === 'string' ? carpetaOrNombre : carpetaOrNombre?.nombre_display);
+    return ['vtm', 'psg', 'eeg', 'actigrafia', 'latencia'].includes(t);
+  }
+
+  function esCarpetaSubidaMultipleIndividualPdx(carpetaOrNombre) {
+    const t = detectarTemaCarpetaCliente(typeof carpetaOrNombre === 'string' ? carpetaOrNombre : carpetaOrNombre?.nombre_display);
+    if (['comprobantes', 'comprobantes_consulta_medica', 'consentimientos'].includes(t)) return true;
+    return esCarpetaReporteClinicoPdx(carpetaOrNombre);
   }
 
   function splitSegmentosGuionesEspaciadosCliente(texto) {
@@ -569,23 +592,24 @@
 
   function camposMinimosAyudaCliente(tema) {
     const oblig = ['Apellidos', 'Nombres', 'Fecha del estudio'];
-    const opc = ['Varios PDF: ordénelos y se unifican en un solo archivo'];
+    const opcUnificar = ['Varios PDF: ordénelos y se unifican en un solo archivo'];
+    const opcMulti = ['Varios PDF: cada uno con sus propios datos (no se unifican)'];
     if (tema === 'comprobantes_consulta_medica') {
-      return { oblig: ['Nombre completo', 'Fecha del estudio', 'Especialidad', 'Tipo de consulta'], opc };
+      return { oblig: ['Nombre completo', 'Fecha del estudio', 'Especialidad', 'Tipo de consulta'], opc: opcMulti };
     }
     if (tema === 'ordenes_consulta_medica') {
-      return { oblig: ['Nombre completo', 'Fecha del estudio', 'Especialidad'], opc };
+      return { oblig: ['Nombre completo', 'Fecha del estudio', 'Especialidad'], opc: opcUnificar };
     }
     if (esCarpetaEstructuradaPdx({ nombre_display: tema }) && !esCarpetaConsultaMedicaPdx({ nombre_display: tema })) {
-      return { oblig: [...oblig, 'Número de documento (solo dígitos)', 'Tipo de examen'], opc: [...opc, 'Tipo de documento (CC, TI, RC…)'] };
+      return { oblig: [...oblig, 'Número de documento (solo dígitos)', 'Tipo de examen'], opc: [...opcUnificar, 'Tipo de documento (CC, TI, RC…)'] };
     }
     if (tema === 'psg') {
-      return { oblig: [...oblig, 'Tipo PSG (Básica, CPAP, BPAP)'], opc: [...opc, 'Documento'] };
+      return { oblig: [...oblig, 'Tipo PSG (Básica, CPAP, BPAP)'], opc: [...opcMulti, 'Documento'] };
     }
-    if (['vtm', 'eeg', 'actigrafia'].includes(tema)) {
-      return { oblig, opc: [...opc, 'Estudio (se completa según la carpeta)'] };
+    if (['vtm', 'eeg', 'actigrafia', 'latencia'].includes(tema)) {
+      return { oblig, opc: [...opcMulti, 'Estudio (se completa según la carpeta)'] };
     }
-    return { oblig, opc };
+    return { oblig, opc: opcUnificar };
   }
 
   function camposFallbackUnificarPdx(tema) {
@@ -1577,6 +1601,7 @@
     psg: 'PSG',
     eeg: 'EEG',
     actigrafia: 'Actigrafía',
+    latencia: 'Latencia múltiple del sueño',
     ordenes: 'Órdenes',
     comprobantes: 'Comprobantes',
     comprobantes_consulta_medica: 'Comprobante. consultas médicas',
@@ -1588,7 +1613,7 @@
   function renderPdxTemaLegend() {
     const el = $('sopPdxTemaLegend');
     if (!el) return;
-    const temas = ['vtm', 'psg', 'eeg', 'actigrafia', 'ordenes', 'comprobantes', 'comprobantes_consulta_medica', 'ordenes_consulta_medica', 'consentimientos', 'neutral'];
+    const temas = ['vtm', 'psg', 'eeg', 'actigrafia', 'latencia', 'ordenes', 'comprobantes', 'comprobantes_consulta_medica', 'ordenes_consulta_medica', 'consentimientos', 'neutral'];
     el.innerHTML = `<span class="sop-tema-legend-title">Modalidades:</span>${temas.map((t) =>
       `<span class="sop-tema-legend-item" data-tema="${t}">${TEMA_LABEL[t]}</span>`
     ).join('')}`;
@@ -2920,26 +2945,38 @@
     return new Promise((resolve, reject) => {
       const carpeta = pdxState.carpetaActual || pdxState.carpetas.find((c) => c.id === carpetaId);
       const tema = detectarTemaCarpetaCliente(carpeta?.nombre_display || '');
+      const esReporteClinico = esCarpetaReporteClinicoPdx(carpeta);
+      const esPsg = tema === 'psg';
       const esComprobanteConsultaMed = esCarpetaComprobanteConsultaMedicaPdx(carpeta);
       const esConsultaMedica = esCarpetaConsultaMedicaPdx(carpeta);
       const esConsentimiento = tema === 'consentimientos';
-      const label = TEMA_LABEL[tema] || 'Documentos';
-      const tipoEntidad = esConsentimiento ? 'consentimiento(s)' : (esComprobanteConsultaMed ? 'comprobante(s) de consulta médica' : 'comprobante(s)');
+      const badgeTipo = esReporteClinico ? 'Reporte' : (esConsentimiento ? 'Consentimiento' : 'Comprobante');
+      const itemLabel = esReporteClinico ? 'reporte' : (esConsentimiento ? 'consentimiento' : (esComprobanteConsultaMed ? 'comprobante de consulta médica' : 'comprobante'));
+      const tipoEntidad = esReporteClinico ? 'reporte(s)' : (esConsentimiento ? 'consentimiento(s)' : (esComprobanteConsultaMed ? 'comprobante(s) de consulta médica' : 'comprobante(s)'));
       const titulo = tipoEntidad;
 
       // Crear lista de cards para cada archivo
       const cardsHtml = analisisLista.map((item, idx) => {
         const parsed = item.analisis.parsed || item.analisis.parcial || {};
-        const docFieldsHtml = (esConsultaMedica && !esComprobanteConsultaMed) ? '' : (!esConsultaMedica ? `
+        const docFieldsHtml = esReporteClinico
+          ? (esPsg ? `
+          <div class="sop-field"><label>Documento (opcional)</label><input type="text" class="sopMultiDoc" data-idx="${idx}" value="${escapeHtml(parsed.paciente_documento || '')}" inputmode="numeric" pattern="[0-9]*"></div>
+        ` : '')
+          : ((esConsultaMedica && !esComprobanteConsultaMed) ? '' : (!esConsultaMedica ? `
           <div class="sop-field"><label>Tipo de documento</label><input type="text" class="sopMultiTipoDoc" data-idx="${idx}" value="${escapeHtml(normalizarTipoDocumentoCliente(parsed.tipo_documento || 'CC'))}" maxlength="4" style="text-transform:uppercase" placeholder="CC"></div>
           <div class="sop-field"><label>Número de documento *</label><input type="text" class="sopMultiDoc" data-idx="${idx}" value="${escapeHtml(parsed.paciente_documento || '')}" inputmode="numeric" pattern="[0-9]*"></div>
-        ` : '');
-        
+        ` : ''));
+
         const nombreSingleFieldHtml = esComprobanteConsultaMed ? `
           <div class="sop-field" style="grid-column:1 / -1"><label>Nombre completo *</label><input type="text" class="sopMultiNombreCompleto" data-idx="${idx}" value="${escapeHtml((parsed.apellidos && parsed.nombres) ? `${parsed.nombres} ${parsed.apellidos}` : (parsed.paciente_nombre || parsed.paciente_nombre_completo || ''))}" placeholder="Nombres y apellidos"></div>
         ` : '';
 
-    const fieldsHtml = `
+        const estudioFieldsHtml = esReporteClinico
+          ? (esPsg ? `<div class="sop-field"><label>Tipo PSG *</label><select class="sopMultiPsgEst" data-idx="${idx}"><option value="">-- Seleccione --</option></select></div>` : '')
+          : `<div class="sop-field"><label>${esConsultaMedica ? 'Especialidad' : 'Especialidad/Tipo examen'} *</label><select class="sopMultiEst" data-idx="${idx}"><option value="">-- Seleccione --</option></select></div>
+            ${esComprobanteConsultaMed ? `<div class="sop-field"><label>Tipo de consulta *</label><select class="sopMultiTipoConsulta" data-idx="${idx}"><option value="">-- Seleccione --</option></select></div>` : ''}`;
+
+        const fieldsHtml = `
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
             ${esComprobanteConsultaMed ? nombreSingleFieldHtml : `
               <div class="sop-field"><label>Apellidos *</label><input type="text" class="sopMultiApe" data-idx="${idx}" value="${escapeHtml(parsed.apellidos || '')}"></div>
@@ -2947,8 +2984,7 @@
             `}
             ${docFieldsHtml}
             <div class="sop-field"><label>Fecha *</label><input type="date" class="sopMultiFecha" data-idx="${idx}" value="${escapeHtml(parsed.fecha_estudio || '')}"></div>
-            <div class="sop-field"><label>${esConsultaMedica ? 'Especialidad' : 'Especialidad/Tipo examen'} *</label><select class="sopMultiEst" data-idx="${idx}"><option value="">-- Seleccione --</option></select></div>
-            ${esComprobanteConsultaMed ? `<div class="sop-field"><label>Tipo de consulta *</label><select class="sopMultiTipoConsulta" data-idx="${idx}"><option value="">-- Seleccione --</option></select></div>` : ''}
+            ${estudioFieldsHtml}
           </div>
         `;
 
@@ -2957,7 +2993,7 @@
             <div style="display:flex;align-items:center;margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid #e5e7eb">
               <i data-lucide="file-pdf" style="width:20px;height:20px;color:#dc2626;margin-right:8px"></i>
               <strong style="flex:1;font-size:.95rem;color:#1f2937">${escapeHtml(item.file.name)}</strong>
-              <span style="background:#e5e7eb;padding:4px 8px;border-radius:4px;font-size:.8rem;color:#6b7280">Comprobante ${idx + 1}/${analisisLista.length}</span>
+              <span style="background:#e5e7eb;padding:4px 8px;border-radius:4px;font-size:.8rem;color:#6b7280">${badgeTipo} ${idx + 1}/${analisisLista.length}</span>
             </div>
             ${fieldsHtml}
           </div>
@@ -2966,7 +3002,7 @@
 
       const modal = openSopModal(`
         <h3><i data-lucide="files"></i> Subir ${analisisLista.length} ${titulo}</h3>
-        <p style="font-size:.85rem;color:#64748b;margin:-8px 0 14px">Verifique y/o edite los datos de cada ${esConsentimiento ? 'consentimiento' : (esConsultaMedica ? 'comprobante de consulta médica' : 'comprobante')}. Se subirán de forma individual.</p>
+        <p style="font-size:.85rem;color:#64748b;margin:-8px 0 14px">Verifique y/o edite los datos de cada ${itemLabel}. Se subirán de forma individual.</p>
         <div style="max-height:600px;overflow-y:auto;border:1px solid #e2e8f0;border-radius:8px;padding:12px;background:#fafbfc">
           ${cardsHtml}
         </div>
@@ -2976,10 +3012,17 @@
         </div>
       `, { closeOnBackdrop: false, closeOnEscape: false });
 
-      // Populate estudio selects
+      // Populate selects
       (async () => {
         for (let idx = 0; idx < analisisLista.length; idx++) {
           const parsed = analisisLista[idx].analisis.parsed || analisisLista[idx].analisis.parcial || {};
+          if (esReporteClinico) {
+            if (esPsg) {
+              const psgSel = modal.querySelector(`.sopMultiPsgEst[data-idx="${idx}"]`);
+              if (psgSel) poblarSelectEstudioPsgCliente(psgSel, parsed.estudio_texto);
+            }
+            continue;
+          }
           const estSelect = modal.querySelector(`.sopMultiEst[data-idx="${idx}"]`);
           const tipoSel = modal.querySelector(`.sopMultiTipoConsulta[data-idx="${idx}"]`);
           if (estSelect) {
@@ -3002,7 +3045,6 @@
 
       modal.querySelector('#sopMultiCancel').onclick = () => { closeSopModal(modal); reject(new Error('cancelado')); };
       modal.querySelector('#sopMultiOk').onclick = async () => {
-        // Recolectar datos de cada card
         const uploads = [];
         let hasError = false;
 
@@ -3013,16 +3055,45 @@
           const doc = modal.querySelector(`.sopMultiDoc[data-idx="${idx}"]`)?.value?.trim();
           const fecha = modal.querySelector(`.sopMultiFecha[data-idx="${idx}"]`)?.value;
           const est = modal.querySelector(`.sopMultiEst[data-idx="${idx}"]`)?.value?.trim();
+          const psgEst = esPsg ? modal.querySelector(`.sopMultiPsgEst[data-idx="${idx}"]`)?.value?.trim() : '';
           const tipoConsulta = esComprobanteConsultaMed
             ? modal.querySelector(`.sopMultiTipoConsulta[data-idx="${idx}"]`)?.value?.trim()
             : '';
 
           let nombres = nom || '';
           let apellidos = ape || '';
+          const itemRef = `${badgeTipo} ${idx + 1} (${analisisLista[idx].file.name})`;
+
+          if (esReporteClinico) {
+            if (!ape || !nom || !fecha) {
+              sopToast(`${itemRef}: Complete apellidos, nombres y fecha`, 'warning');
+              hasError = true;
+              break;
+            }
+            if (esPsg && !psgEst) {
+              sopToast(`${itemRef}: Seleccione el tipo PSG`, 'warning');
+              hasError = true;
+              break;
+            }
+            const body = {
+              apellidos,
+              nombres,
+              fecha_estudio: fecha,
+              confirmacion_manual: '1'
+            };
+            if (esPsg) {
+              body.estudio_texto = psgEst;
+              const docNorm = normalizarNumeroDocumentoCliente(doc);
+              if (docNorm) body.paciente_documento = docNorm;
+            }
+            uploads.push({ file: analisisLista[idx].file, body });
+            continue;
+          }
+
           if (esComprobanteConsultaMed) {
             const full = nombreCompleto || '';
             if (!full) {
-              sopToast(`Comprobante ${idx + 1} (${analisisLista[idx].file.name}): Complete el nombre completo`, 'warning');
+              sopToast(`${itemRef}: Complete el nombre completo`, 'warning');
               hasError = true;
               break;
             }
@@ -3043,17 +3114,17 @@
           }
 
           if (!esComprobanteConsultaMed && (!esConsultaMedica && (!ape || !nom || !fecha || !est || !doc))) {
-            sopToast(`Comprobante ${idx + 1} (${analisisLista[idx].file.name}): Complete todos los campos obligatorios`, 'warning');
+            sopToast(`${itemRef}: Complete todos los campos obligatorios`, 'warning');
             hasError = true;
             break;
           }
           if (esComprobanteConsultaMed && (!nombres || !apellidos || !fecha || !est || !tipoConsulta)) {
-            sopToast(`Comprobante ${idx + 1} (${analisisLista[idx].file.name}): Complete todos los campos obligatorios`, 'warning');
+            sopToast(`${itemRef}: Complete todos los campos obligatorios`, 'warning');
             hasError = true;
             break;
           }
           if (esConsultaMedica && !esComprobanteConsultaMed && (!ape || !nom || !fecha || !est)) {
-            sopToast(`Comprobante ${idx + 1} (${analisisLista[idx].file.name}): Complete todos los campos obligatorios`, 'warning');
+            sopToast(`${itemRef}: Complete todos los campos obligatorios`, 'warning');
             hasError = true;
             break;
           }
@@ -3079,7 +3150,6 @@
 
         if (hasError) return;
 
-        // Subir cada uno
         try {
           let contador = 0;
           let fallos = 0;
@@ -3480,12 +3550,9 @@
     try {
       if (pdfs.length >= 2) {
         const carpeta = pdxState.carpetaActual || pdxState.carpetas.find((c) => c.id === carpetaId);
-        const tema = detectarTemaCarpetaCliente(carpeta?.nombre_display || '');
-        // COMPROBANTES, COMPROB. CONSULTAS MÉDICAS y CONSENTIMIENTOS: subida múltiple SIN unificar
-        if (['comprobantes', 'comprobantes_consulta_medica', 'consentimientos'].includes(tema)) {
+        if (esCarpetaSubidaMultipleIndividualPdx(carpeta)) {
           await flujoSubidaMultiplePdx(pdfs, carpetaId);
         } else {
-          // ORDEN + HC: unificar (mantener actual)
           await flujoUnificarPdfsPdx(pdfs, carpetaId);
         }
       } else {
