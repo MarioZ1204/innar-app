@@ -442,25 +442,47 @@
 
   /* ── Audio / TTS ── */
 
+  const TTS_SERVER_ENABLED = true;
+
+  function consultorioParaVozCliente(numero) {
+    const s = String(numero ?? '').trim();
+    if (!s) return 'sin número';
+    if (!/^\d+$/.test(s)) return s;
+    const digitos = ['cero', 'uno', 'dos', 'tres', 'cuatro', 'cinco', 'seis', 'siete', 'ocho', 'nueve'];
+    return s.split('').map((d) => digitos[parseInt(d, 10)]).join(' ');
+  }
+
+  function puntuacionVoz(voice) {
+    const name = String(voice?.name || '').toLowerCase();
+    const lang = String(voice?.lang || '').toLowerCase();
+    let score = 0;
+    if (name.includes('neural')) score += 120;
+    if (name.includes('natural')) score += 80;
+    if (name.includes('online')) score += 60;
+    if (name.includes('premium')) score += 40;
+    if (lang === 'es-co' || lang.startsWith('es-co-')) score += 50;
+    if (lang === 'es-419' || lang.startsWith('es-419')) score += 40;
+    if (lang.startsWith('es-mx')) score += 30;
+    const preferNames = [
+      'salome', 'dalia', 'elvira', 'luciana', 'sabina', 'paulina', 'helena',
+      'monica', 'soledad', 'esperanza', 'paloma', 'camila', 'google español'
+    ];
+    for (let i = 0; i < preferNames.length; i++) {
+      if (name.includes(preferNames[i])) score += 35 - i;
+    }
+    if (voice?.localService === false) score += 15;
+    return score;
+  }
+
   function pickSoftSpanishVoice() {
     if (voiceCache) return voiceCache;
     if (!('speechSynthesis' in window)) return null;
     const voices = window.speechSynthesis.getVoices();
     if (!voices.length) return null;
-    const preferNames = [
-      'Google español', 'Microsoft Sabina', 'Paulina', 'Helena', 'Monica',
-      'Luciana', 'Soledad', 'Esperanza', 'Paloma', 'Camila'
-    ];
-    for (const name of preferNames) {
-      const v = voices.find((x) => x.name.includes(name));
-      if (v) { voiceCache = v; return v; }
-    }
-    const langs = ['es-CO', 'es-419', 'es-MX', 'es-US', 'es-ES'];
-    for (const lang of langs) {
-      const v = voices.find((x) => x.lang === lang || x.lang.startsWith(lang + '-'));
-      if (v) { voiceCache = v; return v; }
-    }
-    voiceCache = voices.find((v) => v.lang.startsWith('es')) || null;
+    const esVoices = voices.filter((v) => String(v.lang || '').toLowerCase().startsWith('es'));
+    const pool = esVoices.length ? esVoices : voices;
+    pool.sort((a, b) => puntuacionVoz(b) - puntuacionVoz(a));
+    voiceCache = pool[0] || null;
     return voiceCache;
   }
 
@@ -525,9 +547,8 @@
 
   function textoAnuncio(item) {
     const nombre = String(item?.paciente_nombre || 'paciente').trim();
-    const cons = item?.numero_consultorio;
-    const consTxt = cons != null && cons !== '' ? String(cons) : '—';
-    return `Paciente ${nombre}, pasar al consultorio ${consTxt}`;
+    const cons = consultorioParaVozCliente(item?.numero_consultorio);
+    return `Atención. Paciente ${nombre}. Diríjase al consultorio ${cons}.`;
   }
 
   function estimarDuracionAnuncioMs(texto) {
@@ -555,9 +576,9 @@
     });
   }
 
-  function hablarAsync(texto) {
+  function hablarConNavegadorAsync(texto) {
     return new Promise((resolve) => {
-      if (!audioUnlocked || !('speechSynthesis' in window)) {
+      if (!('speechSynthesis' in window)) {
         resolve();
         return;
       }
@@ -565,8 +586,8 @@
       const synth = window.speechSynthesis;
       const run = () => {
         const utter = new SpeechSynthesisUtterance(texto);
-        utter.rate = 0.88;
-        utter.pitch = 1.02;
+        utter.rate = 0.92;
+        utter.pitch = 1;
         utter.volume = 1;
         const voice = pickSoftSpanishVoice();
         if (voice) { utter.voice = voice; utter.lang = voice.lang; }
@@ -588,7 +609,6 @@
           if (synth.speaking || synth.pending) synth.cancel();
           if (synth.paused) synth.resume();
           synth.speak(utter);
-          // Chrome a veces no arranca TTS hasta resume()
           if (synth.paused) synth.resume();
         } catch (_) {
           finish();
@@ -597,6 +617,59 @@
 
       void esperarVocesListas(600).then(run);
     });
+  }
+
+  function hablarConServidorAsync(texto) {
+    return new Promise(async (resolve, reject) => {
+      try {
+        const url = `/api/llamado/tts?text=${encodeURIComponent(texto)}`;
+        const res = typeof apiFetch === 'function'
+          ? await apiFetch(url)
+          : await fetch(url, { credentials: 'include' });
+        if (!res.ok) {
+          reject(new Error('TTS servidor no disponible'));
+          return;
+        }
+        const blob = await res.blob();
+        if (!blob?.size) {
+          reject(new Error('Audio vacío'));
+          return;
+        }
+        const src = URL.createObjectURL(blob);
+        const audio = new Audio(src);
+        audio.volume = 1;
+        let settled = false;
+        const finish = () => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(maxTimer);
+          URL.revokeObjectURL(src);
+          resolve();
+        };
+        const maxTimer = setTimeout(finish, Math.max(15000, estimarDuracionAnuncioMs(texto) + 4000));
+        audio.addEventListener('ended', finish);
+        audio.addEventListener('error', finish);
+        if (audioCtx?.state === 'suspended') await audioCtx.resume().catch(() => {});
+        await audio.play();
+      } catch (e) {
+        reject(e);
+      }
+    });
+  }
+
+  async function hablarAsync(texto) {
+    if (!audioUnlocked) return;
+
+    if (TTS_SERVER_ENABLED) {
+      try {
+        await hablarConServidorAsync(texto);
+        return;
+      } catch (_) {
+        /* fallback navegador */
+      }
+    }
+
+    await hablarConNavegadorAsync(texto);
   }
 
   /* ── Pop-up ── */

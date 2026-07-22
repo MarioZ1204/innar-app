@@ -345,6 +345,7 @@ app.use('/api', require('./routes/integraciones-worldoffice'));
 app.use('/api', require('./routes/soportes'));
 app.use('/api', require('./routes/archivo-modulo'));
 app.use('/api', require('./routes/anexo-fidu'));
+app.use('/api', require('./routes/llamado'));
 app.use('/api', require('./routes/backup'));
 
 // Errores de sesión MySQL (cookie corrupta) u otros → no dejar la API sin respuesta JSON
