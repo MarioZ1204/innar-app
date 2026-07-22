@@ -25,6 +25,7 @@
   let initDone = false;
   let audioUnlocked = false;
   let audioCtx = null;
+  let ttsAudioEl = null;
   let ttsKeepAliveTimer = null;
   let voiceCache = null;
   let boundRealtime = false;
@@ -443,11 +444,48 @@
   /* ── Audio / TTS ── */
 
   const TTS_SERVER_ENABLED = true;
+  /** MP3 silencioso para desbloquear `<audio>` en iOS Safari. */
+  const SILENT_MP3 = 'data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA//tQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAABhgC7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7//////////////////////////////////////////////////////////////////8AAAAATGF2YzU4LjEzAAAAAAAAAAAAAAAAJAAAAAAAAAAAAYYoRwmHAAAAAAD/+1DEAAAAGkAAAAAAAA0gAAAAAA==';
+
+  function esDispositivoIos() {
+    return /iPad|iPhone|iPod/.test(navigator.userAgent)
+      || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  }
+
+  function obtenerAudioTts() {
+    if (!ttsAudioEl) {
+      ttsAudioEl = document.createElement('audio');
+      ttsAudioEl.preload = 'auto';
+      ttsAudioEl.playsInline = true;
+      ttsAudioEl.setAttribute('playsinline', 'true');
+      ttsAudioEl.setAttribute('webkit-playsinline', 'true');
+      ttsAudioEl.style.cssText = 'position:fixed;width:0;height:0;opacity:0;pointer-events:none';
+      document.body.appendChild(ttsAudioEl);
+    }
+    return ttsAudioEl;
+  }
+
+  async function warmUpAudioElement() {
+    const audio = obtenerAudioTts();
+    try {
+      if (!audio.src || audio.src === window.location.href) audio.src = SILENT_MP3;
+      audio.currentTime = 0;
+      await audio.play();
+      audio.pause();
+      audio.currentTime = 0;
+    } catch (_) { /* noop */ }
+  }
 
   function puntuacionVoz(voice) {
     const name = String(voice?.name || '').toLowerCase();
     const lang = String(voice?.lang || '').toLowerCase();
     let score = 0;
+    if (esDispositivoIos()) {
+      const iosPrefer = ['paulina', 'mónica', 'monica', 'jorge', 'enhanced', 'premium'];
+      for (let i = 0; i < iosPrefer.length; i++) {
+        if (name.includes(iosPrefer[i])) score += 150 - i * 10;
+      }
+    }
     if (name.includes('siri') || name.includes('enhanced')) score += 200;
     if (name.includes('neural')) score += 120;
     if (name.includes('natural') || name.includes('premium')) score += 80;
@@ -515,17 +553,20 @@
   }
 
   function unlockAudio() {
-    if (!('speechSynthesis' in window)) return;
+    if (!('speechSynthesis' in window) && !window.Audio) return;
     if (!audioUnlocked) {
       audioUnlocked = true;
       unlockAudioContext();
-      const silent = new SpeechSynthesisUtterance(' ');
-      silent.volume = 0;
-      silent.lang = 'es-CO';
-      try {
-        window.speechSynthesis.speak(silent);
-        if (window.speechSynthesis.paused) window.speechSynthesis.resume();
-      } catch (_) { /* noop */ }
+      void warmUpAudioElement();
+      if ('speechSynthesis' in window) {
+        const silent = new SpeechSynthesisUtterance(' ');
+        silent.volume = 0;
+        silent.lang = 'es-CO';
+        try {
+          window.speechSynthesis.speak(silent);
+          if (window.speechSynthesis.paused) window.speechSynthesis.resume();
+        } catch (_) { /* noop */ }
+      }
     }
     const btn = $('btnLlamadoActivarAudio');
     if (btn) {
@@ -539,7 +580,7 @@
   function textoAnuncio(item) {
     const nombre = String(item?.paciente_nombre || 'paciente').trim();
     const cons = String(item?.numero_consultorio ?? '').trim() || 'indicado';
-    return `Atención. ${nombre}, pase al consultorio ${cons}.`;
+    return `${nombre}, pase al consultorio ${cons}.`;
   }
 
   function estimarDuracionAnuncioMs(texto) {
@@ -606,7 +647,7 @@
         }
       };
 
-      void esperarVocesListas(600).then(run);
+      void esperarVocesListas(esDispositivoIos() ? 1800 : 600).then(run);
     });
   }
 
@@ -627,7 +668,7 @@
           return;
         }
         const src = URL.createObjectURL(blob);
-        const audio = new Audio(src);
+        const audio = obtenerAudioTts();
         audio.volume = 1;
         let settled = false;
         const finish = () => {
@@ -638,9 +679,10 @@
           resolve();
         };
         const maxTimer = setTimeout(finish, Math.max(15000, estimarDuracionAnuncioMs(texto) + 4000));
-        audio.addEventListener('ended', finish);
-        audio.addEventListener('error', finish);
+        audio.onended = finish;
+        audio.onerror = finish;
         if (audioCtx?.state === 'suspended') await audioCtx.resume().catch(() => {});
+        audio.src = src;
         await audio.play();
       } catch (e) {
         reject(e);
@@ -650,6 +692,12 @@
 
   async function hablarAsync(texto) {
     if (!audioUnlocked) return;
+
+    /* iOS: voz del sistema (Paulina/Mónica) — el audio remoto suele bloquearse tras fetch async. */
+    if (esDispositivoIos()) {
+      await hablarConNavegadorAsync(texto);
+      return;
+    }
 
     if (TTS_SERVER_ENABLED) {
       try {
@@ -914,8 +962,12 @@
       $('btnVolverLlamadoPacientes')?.addEventListener('click', () => {
         if (typeof goToMenu === 'function') goToMenu();
       });
+      const viewLlamado = $('view-llamado-pacientes');
+      ['touchstart', 'touchend', 'click'].forEach((ev) => {
+        viewLlamado?.addEventListener(ev, unlockAudio, { passive: true });
+      });
       $('btnLlamadoActivarAudio')?.addEventListener('click', unlockAudio);
-      $('view-llamado-pacientes')?.addEventListener('click', unlockAudio, { once: true });
+      viewLlamado?.addEventListener('click', unlockAudio, { once: true });
       $('btnLlamadoConfig')?.addEventListener('click', abrirConfig);
       $('btnLlamadoConfigCerrar')?.addEventListener('click', cerrarConfig);
       $('llamadoConfigBackdrop')?.addEventListener('click', cerrarConfig);

@@ -12,7 +12,7 @@ describe('llamado-tts', () => {
 
   test('textoAnuncioLlamado es breve y conversacional', () => {
     const t = textoAnuncioLlamado('Ana García', '302');
-    expect(t).toBe('Atención. Ana García, pase al consultorio 302.');
-    expect(t).not.toContain('tres cero dos');
+    expect(t).toBe('Ana García, pase al consultorio 302.');
+    expect(t).not.toContain('Atención');
   });
 });

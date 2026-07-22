@@ -24,7 +24,7 @@ function consultorioParaVoz(numero) {
 function textoAnuncioLlamado(pacienteNombre, numeroConsultorio) {
   const nombre = String(pacienteNombre || 'paciente').trim();
   const cons = consultorioParaVoz(numeroConsultorio);
-  return `Atención. ${nombre}, pase al consultorio ${cons}.`;
+  return `${nombre}, pase al consultorio ${cons}.`;
 }
 
 const cache = new Map();
