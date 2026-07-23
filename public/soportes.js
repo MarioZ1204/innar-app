@@ -1162,6 +1162,32 @@
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
+  function parseZipJobFromApiPath(apiPath, fallbackFilename) {
+    let m;
+    if ((m = apiPath.match(/\/periodos\/(\d+)\/zip-paquete/))) {
+      return { kind: 'periodo-paquete', periodo_id: parseInt(m[1], 10), fallback: fallbackFilename };
+    }
+    if ((m = apiPath.match(/\/periodos\/(\d+)\/zip-unificado/))) {
+      return { kind: 'periodo-unificado', periodo_id: parseInt(m[1], 10), fallback: fallbackFilename };
+    }
+    if ((m = apiPath.match(/\/periodos\/(\d+)\/zip-facturados/))) {
+      return { kind: 'periodo-facturados', periodo_id: parseInt(m[1], 10), fallback: fallbackFilename };
+    }
+    if ((m = apiPath.match(/\/dias\/(\d+)\/zip-carpeta/))) {
+      return { kind: 'dia-carpeta', dia_id: parseInt(m[1], 10), fallback: fallbackFilename };
+    }
+    if ((m = apiPath.match(/\/dias\/(\d+)\/zip/))) {
+      return { kind: 'dia', dia_id: parseInt(m[1], 10), fallback: fallbackFilename };
+    }
+    if ((m = apiPath.match(/\/contenedores\/(\d+)\/zip/))) {
+      return { kind: 'contenedor', contenedor_id: parseInt(m[1], 10), fallback: fallbackFilename };
+    }
+    if ((m = apiPath.match(/\/expedientes\/(\d+)\/zip/))) {
+      return { kind: 'expediente', expediente_id: parseInt(m[1], 10), fallback: fallbackFilename };
+    }
+    return null;
+  }
+
   function descargarZipDirecto(apiPath, fallbackFilename, triggerBtn = null) {
     if (triggerBtn) triggerBtn.disabled = true;
     const liberar = () => { if (triggerBtn) triggerBtn.disabled = false; };
@@ -1181,23 +1207,28 @@
     }
   }
 
-  async function descargarZipPaquetePorJob(apiPath, fallbackFilename, triggerBtn = null) {
-    const m = apiPath.match(/\/periodos\/(\d+)\/zip-paquete/);
-    const periodoId = m ? parseInt(m[1], 10) : null;
-    if (!periodoId) throw new Error('Periodo inválido');
+  async function descargarZipPorJob(apiPath, fallbackFilename, triggerBtn = null) {
+    const spec = parseZipJobFromApiPath(apiPath, fallbackFilename);
+    if (!spec) throw new Error('Ruta ZIP no reconocida');
 
     if (triggerBtn) triggerBtn.disabled = true;
     const liberar = () => { if (triggerBtn) triggerBtn.disabled = false; };
 
-    sopUploadBegin({ title: 'Generando ZIP del mes', total: 1 });
-    sopUploadSetFile(1, 1, fallbackFilename || 'paquete.zip');
+    sopUploadBegin({ title: 'Generando ZIP', total: 1 });
+    sopUploadSetFile(1, 1, spec.fallback || fallbackFilename || 'descarga.zip');
     sopUploadUpdateBar(1, 1, 2, 'Preparando en el servidor…');
 
     try {
-      const startRes = await apiFetch(`/api/soportes/armado/periodos/${periodoId}/zip-paquete/job`, {
+      const startRes = await apiFetch('/api/soportes/armado/zip/job', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: '{}'
+        body: JSON.stringify({
+          kind: spec.kind,
+          periodo_id: spec.periodo_id,
+          dia_id: spec.dia_id,
+          contenedor_id: spec.contenedor_id,
+          expediente_id: spec.expediente_id
+        })
       });
       const startData = await startRes.json().catch(() => ({}));
       if (!startRes.ok || !startData.job_id) {
@@ -1206,13 +1237,15 @@
 
       const jobId = startData.job_id;
       let ready = false;
+      let filename = startData.filename || spec.fallback || fallbackFilename;
       for (let i = 0; i < 900; i++) {
         await sleepMs(i < 3 ? 800 : 1500);
-        const stRes = await apiFetch(`/api/soportes/armado/periodos/${periodoId}/zip-paquete/job/${jobId}`);
+        const stRes = await apiFetch(`/api/soportes/armado/zip/job/${jobId}`);
         const st = await stRes.json().catch(() => ({}));
         if (!stRes.ok) throw new Error(st.error || 'Error consultando progreso');
         const pct = Math.max(0, Math.min(100, parseInt(st.progress, 10) || 0));
         sopUploadUpdateBar(1, 1, pct, st.message || 'Generando ZIP…');
+        if (st.filename) filename = st.filename;
         if (st.status === 'ready') {
           ready = true;
           break;
@@ -1222,8 +1255,8 @@
       if (!ready) throw new Error('La generación del ZIP tardó demasiado. Intente de nuevo.');
 
       await descargarZipDirecto(
-        `/api/soportes/armado/periodos/${periodoId}/zip-paquete/job/${jobId}/descargar`,
-        fallbackFilename,
+        `/api/soportes/armado/zip/job/${jobId}/descargar`,
+        filename,
         null
       );
       liberar();
@@ -1235,21 +1268,11 @@
   }
 
   async function descargarZipArmado(apiPath, fallbackFilename, triggerBtn = null) {
-    const esPaqueteMes = /\/zip-paquete(?:\?|$)/.test(apiPath) && !/\/zip-paquete\/job\//.test(apiPath);
     try {
-      if (esPaqueteMes) {
-        await descargarZipPaquetePorJob(apiPath, fallbackFilename, triggerBtn);
-      } else {
-        await descargarZipDirecto(apiPath, fallbackFilename, triggerBtn);
-      }
+      await descargarZipPorJob(apiPath, fallbackFilename, triggerBtn);
       sopToast('Descarga iniciada', 'success');
     } catch (e) {
-      try {
-        iniciarDescargaArchivoIframe(apiPath);
-        sopToast('Descarga iniciada en segundo plano…', 'info');
-      } catch (_) {
-        sopToast(e.message || 'No se pudo descargar el ZIP', 'error');
-      }
+      sopToast(e.message || 'No se pudo descargar el ZIP', 'error');
     }
   }
 
@@ -1274,7 +1297,7 @@
 
   async function migrarRipsDesdeContenedor(contenedorId, { btn = null } = {}) {
     if (btn) btn.disabled = true;
-    sopToast('Creando carpetas espejo en RIPS…', 'info');
+    sopToast('Creando carpetas FE vacías en RIPS…', 'info');
     try {
       const res = await apiFetch(`/api/soportes/armado/contenedores/${contenedorId}/sync-rips-carpetas`, { method: 'POST' });
       const data = await res.json().catch(() => ({}));
@@ -1283,7 +1306,7 @@
         return false;
       }
       const count = Number(data.count || 0);
-      sopToast(count ? `Migradas ${count} carpeta(s) a RIPS` : 'Carpetas espejo actualizadas en RIPS', 'success');
+      sopToast(count ? `${count} carpeta(s) FE vacía(s) creada(s) en RIPS` : 'Carpetas FE en RIPS actualizadas', 'success');
       try {
         if (armState.diaId) {
           await seleccionarDiaArmado(armState.diaId);
@@ -1326,10 +1349,24 @@
     });
   }
 
+  function htmlArmZipContenedorBtn(contenedorId, tipo, diaLabel) {
+    if (!contenedorId || !sopPerm('soportes.descargar_zip')) return '';
+    const label = tipo === 'rips' ? 'RIPS' : 'SOPORTES';
+    const nom = String(diaLabel || 'dia').replace(/[^\w\s-]/g, '').trim() || 'dia';
+    return htmlArmZipBtn({
+      apiPath: `/api/soportes/armado/contenedores/${contenedorId}/zip`,
+      fallbackName: `${nom}-${label}.zip`,
+      title: `Descargar ZIP de la carpeta ${label}`,
+      icon: 'archive',
+      label: ' ZIP',
+      variant: 'teal'
+    });
+  }
+
   function htmlArmMigrarRipsContenedorBtn(contenedorId, { labeled = false, variant = 'ghost' } = {}) {
     if (!contenedorId || !sopPerm('soportes.armado.crear_estructura')) return '';
     const cls = variant === 'teal' ? 'sop-btn sop-btn-teal sop-btn-sm' : 'sop-btn sop-btn-ghost sop-btn-sm';
-    return `<button type="button" class="${cls}" data-arm-migrar-rips="${contenedorId}" title="Crear/actualizar carpetas espejo en RIPS para las carpetas FE de esta carpeta SOPORTES"><i data-lucide="refresh-cw"></i>${labeled ? ' Migrar FE a RIPS' : ''}</button>`;
+    return `<button type="button" class="${cls}" data-arm-migrar-rips="${contenedorId}" title="Crear carpetas FE vacías en RIPS (mismo nombre que en SOPORTES)"><i data-lucide="refresh-cw"></i>${labeled ? ' Espejo RIPS' : ''}</button>`;
   }
 
   function htmlArmZipFacturadosBtn() {
@@ -4538,7 +4575,8 @@
         </div>
         <div class="sop-panel-head-tools">
           ${htmlSopFolderViewToggle('arm')}
-          ${armState.contenedorTipo === 'soportes' && sopPerm('soportes.armado.crear_estructura') ? htmlArmMigrarRipsContenedorBtn(armState.contenedorId, { labeled: true, variant: 'teal' }) : ''}
+          ${htmlArmZipContenedorBtn(armState.contenedorId, armState.contenedorTipo, armState.diaLabel)}
+          ${armState.contenedorTipo === 'soportes' && sopPerm('soportes.armado.crear_estructura') ? htmlArmMigrarRipsContenedorBtn(armState.contenedorId, { labeled: true, variant: 'ghost' }) : ''}
           <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="btnSopArmVolverDia"><i data-lucide="arrow-left"></i> ${escapeHtml(armState.diaLabel || 'Carpeta')}</button>
           ${sopPerm('soportes.armado.crear_estructura') ? `<button type="button" class="sop-btn sop-btn-teal sop-btn-sm" id="btnSopArmNuevoFe"><i data-lucide="folder-plus"></i> Nuevas carpetas</button>` : ''}
         </div>
@@ -4549,6 +4587,7 @@
       </div>`;
     bindSopFolderViewToggle(panel, 'arm');
     bindArmMigrarRipsButtons(panel);
+    bindArmZipButtons(panel);
     const gridSk = panel.querySelector('#sopArmExpedientesGrid');
     if (gridSk) gridSk.innerHTML = '<div class="sop-skeleton-block sop-skeleton-folder-card"></div><div class="sop-skeleton-block sop-skeleton-folder-card"></div>';
     const res = await apiFetch(`/api/soportes/armado/contenedores/${id}/expedientes`);

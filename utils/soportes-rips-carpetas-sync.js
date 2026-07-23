@@ -13,15 +13,10 @@ const {
 } = require('./soportes-armado-structure');
 const sopStorage = require('./soportes-storage');
 
-function vaciarDirectorioSiExiste(abs) {
+function ensureDirectorioVacio(abs) {
   if (!abs) return;
   if (!fs.existsSync(abs)) {
     fs.mkdirSync(abs, { recursive: true });
-    return;
-  }
-  for (const entry of fs.readdirSync(abs)) {
-    const entryPath = path.join(abs, entry);
-    fs.rmSync(entryPath, { recursive: true, force: true });
   }
 }
 
@@ -59,7 +54,7 @@ async function ensureRipsCarpetaFacturaEnDisco(db, diaId, codigoFactura) {
       'rips',
       codigoFactura
     );
-    vaciarDirectorioSiExiste(abs);
+    ensureDirectorioVacio(abs);
     return abs;
   } catch (e) {
     logger.warn('[SOPORTES] RIPS carpeta disco:', e.message);

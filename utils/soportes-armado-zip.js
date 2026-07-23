@@ -42,11 +42,6 @@ function createArchiverInstance() {
   return archiver('zip', { zlib: { level: ZIP_COMPRESSION } });
 }
 
-const RIPS_FOLDER_PLACEHOLDER = Buffer.from(
-  'Carpeta de factura para archivos RIPS (JSON/XML).\r\n',
-  'utf8'
-);
-
 function zipArchiveSegment(name) {
   return String(name || 'sin-nombre')
     .replace(/[<>:"/\\|?*\x00-\x1f]/g, '_')
@@ -199,10 +194,10 @@ async function listRipsArchivoEntries(expedienteId, zipPrefix, usedPaths, diaNom
 }
 
 function ensureRipsFacturaFolder(entries, usedPaths, codSeg) {
-  const marker = `RIPS/${codSeg}/_CARPETA_FACTURA.txt`;
-  if (usedPaths && usedPaths.has(marker)) return;
-  if (usedPaths) usedPaths.add(marker);
-  entries.push({ placeholder: true, name: marker, content: RIPS_FOLDER_PLACEHOLDER });
+  const dirName = `RIPS/${codSeg}/`;
+  if (usedPaths && usedPaths.has(dirName)) return;
+  if (usedPaths) usedPaths.add(dirName);
+  entries.push({ placeholder: true, name: dirName, content: Buffer.alloc(0) });
 }
 
 async function queryExpedientesDia(diaId) {
@@ -591,6 +586,141 @@ async function streamCarpetaZip(res, rootDia) {
   await pipeArchiveToResponse(res, entries);
 }
 
+async function collectContenedorZipEntries(contenedorId, usedPaths = null) {
+  const contRows = await db.query(
+    `SELECT c.*, d.nombre_display AS dia_nombre, d.estado_facturacion, p.periodo, p.etiqueta AS periodo_etiqueta
+     FROM sop_contenedores c
+     JOIN sop_dias d ON d.id = c.dia_id
+     JOIN sop_periodos p ON p.id = d.periodo_id
+     WHERE c.id = ?`,
+    [contenedorId]
+  );
+  const cont = contRows[0];
+  if (!cont) throw new Error('Contenedor no encontrado');
+
+  const expedientes = await db.query(
+    `SELECT e.id, e.codigo, e.numero_factura, e.paciente_nombre
+     FROM sop_expedientes e
+     WHERE e.contenedor_id = ?
+     ORDER BY e.codigo ASC`,
+    [contenedorId]
+  );
+
+  const entries = [];
+  const prefixRoot = cont.tipo === 'rips' ? 'RIPS' : 'SOPORTES';
+  const ctx = {
+    periodo: cont.periodo_etiqueta || cont.periodo,
+    nombre_display: cont.dia_nombre,
+    estado_facturacion: cont.estado_facturacion
+  };
+
+  for (const exp of expedientes) {
+    const codSeg = facturaFolderName(exp);
+    const zipPrefix = `${prefixRoot}/${codSeg}`;
+    const expedienteCtx = {
+      codigo: exp.codigo,
+      numero_factura: exp.numero_factura,
+      paciente_nombre: exp.paciente_nombre,
+      nombre_display: cont.dia_nombre
+    };
+    if (cont.tipo === 'rips') {
+      const part = await listRipsArchivoEntries(
+        exp.id, zipPrefix, usedPaths, cont.dia_nombre, ctx, exp.codigo, expedienteCtx
+      );
+      entries.push(...part);
+    } else {
+      const part = await listSoportesArchivoEntries(
+        exp.id, zipPrefix, usedPaths, cont.dia_nombre, expedienteCtx
+      );
+      entries.push(...part);
+    }
+  }
+
+  return filterValidZipEntries(entries);
+}
+
+async function collectExpedienteZipEntries(expedienteId) {
+  const rows = await db.query(
+    `SELECT e.*, c.tipo AS contenedor_tipo, d.nombre_display AS dia_nombre, d.estado_facturacion, p.periodo, p.etiqueta AS periodo_etiqueta
+     FROM sop_expedientes e
+     JOIN sop_contenedores c ON c.id = e.contenedor_id
+     JOIN sop_dias d ON d.id = c.dia_id
+     JOIN sop_periodos p ON p.id = d.periodo_id
+     WHERE e.id = ?`,
+    [expedienteId]
+  );
+  const exp = rows[0];
+  if (!exp) throw new Error('Expediente no encontrado');
+
+  const expedienteCtx = {
+    codigo: exp.codigo,
+    numero_factura: exp.numero_factura,
+    paciente_nombre: exp.paciente_nombre,
+    nombre_display: exp.dia_nombre
+  };
+  const entries = [];
+  const prefixRoot = exp.contenedor_tipo === 'rips' ? 'RIPS' : 'SOPORTES';
+  const codSeg = facturaFolderName(exp);
+  const zipPrefix = `${prefixRoot}/${codSeg}`;
+  const ctx = {
+    periodo: exp.periodo_etiqueta || exp.periodo,
+    nombre_display: exp.dia_nombre,
+    estado_facturacion: exp.estado_facturacion
+  };
+  if (exp.contenedor_tipo === 'rips') {
+    entries.push(...await listRipsArchivoEntries(
+      exp.id, zipPrefix, null, exp.dia_nombre, ctx, exp.codigo, expedienteCtx
+    ));
+  } else {
+    entries.push(...await listSoportesArchivoEntries(
+      exp.id, zipPrefix, null, exp.dia_nombre, expedienteCtx
+    ));
+  }
+  return filterValidZipEntries(entries);
+}
+
+async function collectPeriodFacturadosEntries(periodoId) {
+  const expedientes = await db.query(
+    `SELECT e.id, e.codigo, e.numero_factura, e.paciente_nombre, d.nombre_display AS dia_nombre, c.tipo AS contenedor_tipo
+     FROM sop_expedientes e
+     JOIN sop_contenedores c ON c.id = e.contenedor_id
+     JOIN sop_dias d ON d.id = c.dia_id
+     WHERE d.periodo_id = ? AND d.estado_facturacion = 'facturados'
+     ORDER BY d.nombre_display ASC, c.tipo ASC, e.codigo ASC`,
+    [periodoId]
+  );
+  const entries = [];
+  for (const exp of expedientes) {
+    const diaSeg = zipArchiveSegment(exp.dia_nombre);
+    const tipoSeg = exp.contenedor_tipo === 'rips' ? 'RIPS' : 'SOPORTES';
+    const codSeg = zipArchiveSegment(exp.codigo);
+    const prefix = `${diaSeg}/${tipoSeg}/${codSeg}`;
+    const expedienteCtx = {
+      codigo: exp.codigo,
+      numero_factura: exp.numero_factura,
+      paciente_nombre: exp.paciente_nombre,
+      nombre_display: exp.dia_nombre
+    };
+    const archivos = await db.query('SELECT * FROM sop_exp_archivos WHERE expediente_id = ?', [exp.id]);
+    for (const a of archivos) {
+      const fp = resolverArchivoExpedienteRow(a, expedienteCtx);
+      if (fp) entries.push({ absPath: fp, name: `${prefix}/${a.nombre_archivo}` });
+    }
+    try {
+      const ripsArchivos = await db.query('SELECT * FROM sop_rips_archivos WHERE expediente_id = ?', [exp.id]);
+      for (const a of ripsArchivos) {
+        const fp = resolverArchivoExpedienteRow(a, expedienteCtx);
+        if (fp) entries.push({ absPath: fp, name: `${prefix}/${a.nombre_archivo}` });
+      }
+    } catch (_) { /* ignore */ }
+  }
+  return filterValidZipEntries(entries);
+}
+
+async function yieldEventLoop() {
+  await new Promise((resolve) => setImmediate(resolve));
+}
+
 module.exports = {
   zipArchiveSegment,
   facturaFolderName,
@@ -599,6 +729,9 @@ module.exports = {
   bindArchiveStreamGuards,
   collectDiaZipEntries,
   collectCarpetaZipEntries,
+  collectContenedorZipEntries,
+  collectExpedienteZipEntries,
+  collectPeriodFacturadosEntries,
   collectPeriodUnifiedEntries,
   collectPeriodPaqueteFlatEntries,
   createZipBuffer,
@@ -609,6 +742,7 @@ module.exports = {
   pipeArchiveToResponse,
   pipeArchiveToFile,
   filterValidZipEntries,
+  yieldEventLoop,
   zipEntryOptions,
   safeSyncRipsPeriodo,
   streamDiaZip,

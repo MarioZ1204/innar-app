@@ -117,7 +117,7 @@ const {
   streamPeriodPaqueteZip,
   streamUnifiedPeriodZip
 } = require('../utils/soportes-armado-zip');
-const { createPeriodPaqueteJob, getJob: getSopZipJob } = require('../utils/soportes-zip-jobs');
+const { createZipJob, createPeriodPaqueteJob, getJob: getSopZipJob } = require('../utils/soportes-zip-jobs');
 const {
   getPdxDir,
   getArmadoExpedienteDir,
@@ -288,6 +288,68 @@ async function requirePeriodoArmadoAccesible(req, res, periodoId, visCtx = null)
   }
   if (await denyPeriodoArmadoInaccesible(req, res, row, visCtx)) return null;
   return row;
+}
+
+async function requireDiaArmadoAccesible(req, res, diaId, visCtx = null) {
+  const id = parseInt(diaId, 10);
+  if (!id) {
+    res.status(400).json({ error: 'Carpeta inválida' });
+    return null;
+  }
+  const rows = await db.query(
+    `SELECT d.*, p.id AS periodo_ref_id, p.periodo, p.etiqueta
+     FROM sop_dias d JOIN sop_periodos p ON p.id = d.periodo_id WHERE d.id = ?`,
+    [id]
+  );
+  if (!rows.length) {
+    res.status(404).json({ error: 'Carpeta no encontrada' });
+    return null;
+  }
+  const periodo = await requirePeriodoArmadoAccesible(req, res, rows[0].periodo_id, visCtx);
+  if (!periodo) return null;
+  return rows[0];
+}
+
+async function requireContenedorArmadoAccesible(req, res, contenedorId, visCtx = null) {
+  const id = parseInt(contenedorId, 10);
+  if (!id) {
+    res.status(400).json({ error: 'Contenedor inválido' });
+    return null;
+  }
+  const rows = await db.query(
+    `SELECT c.*, d.nombre_display AS dia_nombre, d.periodo_id
+     FROM sop_contenedores c JOIN sop_dias d ON d.id = c.dia_id WHERE c.id = ?`,
+    [id]
+  );
+  if (!rows.length) {
+    res.status(404).json({ error: 'Contenedor no encontrado' });
+    return null;
+  }
+  const periodo = await requirePeriodoArmadoAccesible(req, res, rows[0].periodo_id, visCtx);
+  if (!periodo) return null;
+  return rows[0];
+}
+
+function streamZipJobDownload(res, job) {
+  if (job.status === 'error') {
+    return res.status(500).json({ error: job.error || 'Error al generar ZIP' });
+  }
+  if (job.status !== 'ready' || !job.filePath || !fs.existsSync(job.filePath)) {
+    return res.status(409).json({
+      error: 'El ZIP aún se está generando',
+      status: job.status,
+      progress: job.progress
+    });
+  }
+  res.setHeader('Content-Type', 'application/zip');
+  res.setHeader('Content-Disposition', `attachment; filename="${job.filename}"`);
+  res.setHeader('Cache-Control', 'no-store');
+  const stream = fs.createReadStream(job.filePath);
+  stream.on('error', () => {
+    if (!res.headersSent) res.status(500).json({ error: 'Error al leer el ZIP generado' });
+  });
+  stream.pipe(res);
+  return null;
 }
 
 async function refrescarVisibilidadPdx(periodo, archivadoPor = null) {
@@ -3153,6 +3215,101 @@ router.post(
     }
   }
 );
+
+router.post('/soportes/armado/zip/job', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'soportes.descargar_zip'), async (req, res) => {
+  try {
+    const body = req.body || {};
+    const kind = String(body.kind || '').trim();
+    const visCtx = await loadVisibleEnSoportesCtx();
+    let job;
+
+    if (kind === 'periodo-paquete' || kind === 'periodo-unificado' || kind === 'periodo-facturados') {
+      const periodoId = parseInt(body.periodo_id, 10);
+      const periodoRow = await requirePeriodoArmadoAccesible(req, res, periodoId, visCtx);
+      if (!periodoRow) return;
+      const label = zipArchiveSegment(periodoRow.etiqueta || periodoRow.periodo || `periodo-${periodoId}`);
+      const suffix = kind === 'periodo-unificado' ? 'unificado' : (kind === 'periodo-facturados' ? 'facturados' : 'paquete');
+      job = createZipJob({
+        kind,
+        periodoId,
+        filename: `${label}-${suffix}.zip`,
+        emptyError: kind === 'periodo-facturados'
+          ? 'No hay carpetas FE facturadas con archivos'
+          : 'No hay archivos para descargar en este mes'
+      }, req.session?.usuarioId || null);
+    } else if (kind === 'dia' || kind === 'dia-carpeta') {
+      const diaId = parseInt(body.dia_id, 10);
+      const diaRow = await requireDiaArmadoAccesible(req, res, diaId, visCtx);
+      if (!diaRow) return;
+      const label = zipArchiveSegment(diaRow.nombre_display || `dia-${diaId}`);
+      job = createZipJob({ kind, diaId, filename: `${label}.zip` }, req.session?.usuarioId || null);
+    } else if (kind === 'contenedor') {
+      const contenedorId = parseInt(body.contenedor_id, 10);
+      const cont = await requireContenedorArmadoAccesible(req, res, contenedorId, visCtx);
+      if (!cont) return;
+      const tipoLabel = cont.tipo === 'rips' ? 'RIPS' : 'SOPORTES';
+      const label = zipArchiveSegment(cont.dia_nombre || 'dia');
+      job = createZipJob({
+        kind,
+        contenedorId,
+        filename: `${label}-${tipoLabel}.zip`
+      }, req.session?.usuarioId || null);
+    } else if (kind === 'expediente') {
+      const expedienteId = parseInt(body.expediente_id, 10);
+      const exp = await resolveExpedienteContext(expedienteId);
+      if (!exp) return res.status(404).json({ error: 'Expediente no encontrado' });
+      const diaRows = await db.query('SELECT periodo_id FROM sop_dias WHERE id = ?', [exp.dia_id]);
+      if (!diaRows.length) return res.status(404).json({ error: 'Carpeta no encontrada' });
+      const periodo = await requirePeriodoArmadoAccesible(req, res, diaRows[0].periodo_id, visCtx);
+      if (!periodo) return;
+      job = createZipJob({
+        kind,
+        expedienteId,
+        filename: `${zipArchiveSegment(exp.codigo || 'expediente')}.zip`
+      }, req.session?.usuarioId || null);
+    } else {
+      return res.status(400).json({ error: 'Tipo de ZIP inválido' });
+    }
+
+    res.json({
+      ok: true,
+      job_id: job.id,
+      status: job.status,
+      progress: job.progress,
+      message: job.message,
+      filename: job.filename
+    });
+  } catch (e) {
+    logger.error('[SOPORTES] zip job start:', e);
+    res.status(500).json({ error: safeError(e) });
+  }
+});
+
+router.get('/soportes/armado/zip/job/:jobId', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'soportes.descargar_zip'), (req, res) => {
+  const job = getSopZipJob(req.params.jobId);
+  if (!job) return res.status(404).json({ error: 'Trabajo no encontrado o expirado' });
+  res.json({
+    ok: true,
+    job_id: job.id,
+    kind: job.kind,
+    status: job.status,
+    progress: job.progress,
+    message: job.message,
+    error: job.error || null,
+    filename: job.filename
+  });
+});
+
+router.get('/soportes/armado/zip/job/:jobId/descargar', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'soportes.descargar_zip'), (req, res) => {
+  try {
+    const job = getSopZipJob(req.params.jobId);
+    if (!job) return res.status(404).json({ error: 'Trabajo no encontrado o expirado' });
+    streamZipJobDownload(res, job);
+  } catch (e) {
+    logger.error('[SOPORTES] zip job download:', e);
+    if (!res.headersSent) res.status(500).json({ error: safeError(e) });
+  }
+});
 
 router.get('/soportes/armado/dias/:id/zip', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'soportes.descargar_zip'), async (req, res) => {
   try {
