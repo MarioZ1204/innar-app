@@ -47,7 +47,7 @@ function cleanupOldJobs() {
   }
 }
 
-async function writeZipBatches(job, iterateBatches) {
+async function writeZipBatches(job, batchIterator) {
   ensureJobDir();
   const outPath = path.join(jobDir(), `${job.id}.zip`);
   job.filePath = outPath;
@@ -67,7 +67,7 @@ async function writeZipBatches(job, iterateBatches) {
 
     (async () => {
       try {
-        for await (const batch of iterateBatches(job)) {
+        for await (const batch of batchIterator) {
           if (batch.message != null) job.message = batch.message;
           if (batch.progress != null) job.progress = batch.progress;
           if (batch.entries?.length) {
