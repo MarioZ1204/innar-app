@@ -13,6 +13,7 @@ const {
   repararArchivosExpediente
 } = require('./soportes-exp-archivo');
 const sopStorage = require('./soportes-storage');
+const { getUploadsRoot } = require('../config/uploads-path');
 const { getArmadoFeDirAbs } = require('./soportes-armado-structure');
 const { compararTextoNatural } = require('./comparar-texto-natural');
 const { syncRipsCarpetasDia, syncRipsCarpetasPeriodo } = require('./soportes-rips-carpetas-sync');
@@ -25,6 +26,16 @@ function zipEntryOptions(filePath) {
   const ext = path.extname(String(filePath || '')).toLowerCase();
   if (PRECOMPRESSED_EXT.has(ext)) return { store: true };
   return {};
+}
+
+function getSopZipWorkDir() {
+  const dir = path.join(getUploadsRoot(), 'sop-zip-jobs');
+  try {
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  } catch (e) {
+    logger.warn('[SOPORTES] zip work dir:', e.message);
+  }
+  return dir;
 }
 
 function createArchiverInstance() {
@@ -79,11 +90,36 @@ function filterValidZipEntries(entries) {
 
 function appendEntriesToArchive(archive, entries) {
   for (const e of filterValidZipEntries(entries)) {
-    if (e.placeholder) {
-      archive.append(e.content || Buffer.alloc(0), { name: e.name });
-    } else {
-      archive.file(e.absPath, { name: e.name, ...zipEntryOptions(e.absPath) });
+    try {
+      if (e.placeholder) {
+        archive.append(e.content || Buffer.alloc(0), { name: e.name });
+      } else {
+        archive.file(e.absPath, { name: e.name, ...zipEntryOptions(e.absPath) });
+      }
+    } catch (err) {
+      logger.warn('[SOPORTES] zip omitir entrada:', e.name, err.message);
     }
+  }
+}
+
+function bindArchiveStreamGuards(archive, res) {
+  archive.on('warning', (err) => {
+    if (err.code === 'ENOENT') {
+      logger.warn('[SOPORTES] zip archivo no encontrado:', err.message);
+      return;
+    }
+    logger.warn('[SOPORTES] zip warning:', err.message);
+  });
+  archive.on('error', (err) => {
+    logger.error('[SOPORTES] zip archive error:', err.message);
+    try { archive.abort(); } catch (_) { /* ignore */ }
+  });
+  if (res && !res.destroyed) {
+    res.on('close', () => {
+      if (!res.writableFinished) {
+        try { archive.abort(); } catch (_) { /* ignore */ }
+      }
+    });
   }
 }
 
@@ -207,13 +243,16 @@ function groupExpedientesPorFactura(expedientes) {
   return grupos;
 }
 
-async function collectDiaZipEntries(diaId, usedPaths = null) {
+async function collectDiaZipEntries(diaId, usedPaths = null, opts = {}) {
+  const repair = opts.repair === true;
   const expedientes = await queryExpedientesDia(diaId);
-  for (const exp of expedientes) {
-    try {
-      await repararArchivosExpediente(exp.id, exp);
-    } catch (e) {
-      logger.warn('[SOPORTES] zip reparar expediente:', e.message);
+  if (repair) {
+    for (const exp of expedientes) {
+      try {
+        await repararArchivosExpediente(exp.id, exp);
+      } catch (e) {
+        logger.warn('[SOPORTES] zip reparar expediente:', e.message);
+      }
     }
   }
   const grupos = groupExpedientesPorFactura(expedientes);
@@ -273,6 +312,7 @@ function pipeArchiveToResponse(res, entries) {
   }
   return new Promise((resolve, reject) => {
     const archive = createArchiverInstance();
+    bindArchiveStreamGuards(archive, res);
     archive.on('error', reject);
     res.on('error', reject);
     archive.on('end', () => resolve(valid.length));
@@ -281,6 +321,26 @@ function pipeArchiveToResponse(res, entries) {
     }
     archive.pipe(res);
     appendEntriesToArchive(archive, valid);
+    archive.finalize();
+  });
+}
+
+function pipeArchiveToFile(outPath, entries, onEntry = null) {
+  const valid = filterValidZipEntries(entries);
+  return new Promise((resolve, reject) => {
+    if (!valid.length) {
+      reject(new Error('No hay archivos para el ZIP'));
+      return;
+    }
+    const output = fs.createWriteStream(outPath);
+    const archive = createArchiverInstance();
+    bindArchiveStreamGuards(archive, null);
+    archive.on('error', reject);
+    output.on('error', reject);
+    output.on('close', () => resolve(valid.length));
+    archive.pipe(output);
+    appendEntriesToArchive(archive, valid);
+    if (onEntry) onEntry(valid.length);
     archive.finalize();
   });
 }
@@ -343,7 +403,6 @@ function appendInnerZipToArchive(outerArchive, name, entries) {
 }
 
 async function streamDiaZip(res, dia) {
-  await safeSyncRipsDia(dia.id);
   const entries = await collectDiaZipEntries(dia.id);
   if (!entries.length) {
     throw new Error('La carpeta no tiene archivos para descargar');
@@ -355,7 +414,6 @@ async function streamDiaZip(res, dia) {
 }
 
 async function collectPeriodPaqueteFlatEntries(periodoId) {
-  await safeSyncRipsPeriodo(periodoId);
   const dias = await queryDiasFacturacionZip(periodoId);
   const usedPaths = new Set();
   const entries = [];
@@ -409,7 +467,6 @@ async function collectPeriodUnifiedEntries(periodoId) {
 }
 
 async function streamUnifiedPeriodZip(res, periodo) {
-  await safeSyncRipsPeriodo(periodo.id);
   const entries = await collectPeriodUnifiedEntries(periodo.id);
   if (!entries.length) {
     throw new Error('No hay archivos para el ZIP unificado');
@@ -475,7 +532,6 @@ async function collectLeafDiaZipEntries(dia, pathPrefix, usedPaths, out) {
     await collectAnexoDiaZipEntries(dia, pathPrefix, usedPaths, out);
     return;
   }
-  await safeSyncRipsDia(dia.id);
   const part = await collectDiaZipEntries(dia.id, null);
   for (const e of part) {
     let name = pathPrefix ? `${pathPrefix}/${e.name}` : e.name;
@@ -538,6 +594,9 @@ async function streamCarpetaZip(res, rootDia) {
 module.exports = {
   zipArchiveSegment,
   facturaFolderName,
+  getSopZipWorkDir,
+  createArchiverInstance,
+  bindArchiveStreamGuards,
   collectDiaZipEntries,
   collectCarpetaZipEntries,
   collectPeriodUnifiedEntries,
@@ -547,6 +606,9 @@ module.exports = {
   queryDiasFacturacionZip,
   appendInnerZipToArchive,
   appendEntriesToArchive,
+  pipeArchiveToResponse,
+  pipeArchiveToFile,
+  filterValidZipEntries,
   zipEntryOptions,
   safeSyncRipsPeriodo,
   streamDiaZip,

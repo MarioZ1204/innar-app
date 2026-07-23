@@ -5,7 +5,6 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
-const archiver = require('archiver');
 
 const router = express.Router();
 const db = require('../utils/db-mysql');
@@ -111,6 +110,8 @@ const { syncRipsCarpetasDia, syncRipsCarpetasContenedor } = require('../utils/so
 const {
   zipArchiveSegment,
   zipEntryOptions,
+  pipeArchiveToResponse,
+  filterValidZipEntries,
   streamDiaZip,
   streamCarpetaZip,
   streamPeriodPaqueteZip,
@@ -3342,19 +3343,18 @@ router.get('/soportes/armado/periodos/:id/zip-facturados', requireAuth, requireR
     if (!fileJobs.length) {
       return res.status(404).json({ error: 'Las carpetas facturadas no tienen archivos para descargar' });
     }
+    const validJobs = filterValidZipEntries(fileJobs.map((j) => ({ absPath: j.fp, name: j.name })));
+    if (!validJobs.length) {
+      return res.status(404).json({ error: 'Las carpetas facturadas no tienen archivos en disco para descargar' });
+    }
     const zipLabel = zipArchiveSegment(periodo.etiqueta || periodo.periodo || `periodo-${periodoId}`);
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Disposition', `attachment; filename="${zipLabel}-facturados.zip"`);
-    await new Promise((resolve, reject) => {
-      const archive = archiver('zip', { zlib: { level: 1 } });
-      archive.on('error', reject);
-      res.on('finish', resolve);
-      res.on('error', reject);
-      archive.pipe(res);
-      for (const job of fileJobs) archive.file(job.fp, { name: job.name, ...zipEntryOptions(job.fp) });
-      archive.finalize();
-    });
+    res.setHeader('Cache-Control', 'no-store');
+    if (typeof res.flushHeaders === 'function') res.flushHeaders();
+    await pipeArchiveToResponse(res, validJobs);
   } catch (e) {
+    logger.error('[SOPORTES] zip-facturados:', e);
     if (!res.headersSent) res.status(500).json({ error: safeError(e) });
   }
 });
@@ -3385,18 +3385,16 @@ router.get('/soportes/armado/expedientes/:id/zip', requireAuth, requireRoleOrPer
     if (!fileJobs.length) {
       return res.status(404).json({ error: 'El expediente no tiene archivos para descargar' });
     }
+    const validJobs = filterValidZipEntries(fileJobs.map((j) => ({ absPath: j.fp, name: j.name })));
+    if (!validJobs.length) {
+      return res.status(404).json({ error: 'El expediente no tiene archivos en disco para descargar' });
+    }
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Disposition', `attachment; filename="${exp.codigo}.zip"`);
-    await new Promise((resolve, reject) => {
-      const archive = archiver('zip', { zlib: { level: 1 } });
-      archive.on('error', reject);
-      res.on('finish', resolve);
-      res.on('error', reject);
-      archive.pipe(res);
-      for (const job of fileJobs) archive.file(job.fp, { name: job.name, ...zipEntryOptions(job.fp) });
-      archive.finalize();
-    });
+    res.setHeader('Cache-Control', 'no-store');
+    await pipeArchiveToResponse(res, validJobs);
   } catch (e) {
+    logger.error('[SOPORTES] zip expediente:', e);
     if (!res.headersSent) res.status(500).json({ error: safeError(e) });
   }
 });

@@ -76,6 +76,7 @@ const ANEXO_FIDU_CATALOGO_SERVICIOS = [
   { codigo: '940301', nombre: 'EVALUACION EN ALTERACIONES EMOCIONALES (AFECTIVAS) O DE CONDUCTA', valor_unitario: 53365, cantidad: '1', valor_total: 53365, codigo_servicio_referencia: '344' },
   { codigo: '940302', nombre: 'ADMINISTRACION [APLICACION] DE PRUEBA EN ALTERACIONES EMOCIONALES (AFECTIVAS) O DE CONDUCTA', valor_unitario: 53365, cantidad: '1', valor_total: 53365, codigo_servicio_referencia: '344' },
   { codigo: '999102', nombre: 'OTRAS PRESTACIONES EN SALUD', valor_unitario: 0, cantidad: '1', valor_total: 0, codigo_servicio_referencia: '327' }
+  
 ];
 
 const {

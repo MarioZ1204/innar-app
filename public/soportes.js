@@ -1162,6 +1162,25 @@
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
+  function descargarZipDirecto(apiPath, fallbackFilename, triggerBtn = null) {
+    if (triggerBtn) triggerBtn.disabled = true;
+    const liberar = () => { if (triggerBtn) triggerBtn.disabled = false; };
+    sopUploadBegin({ title: 'Descargando ZIP', total: 1 });
+    sopUploadSetFile(1, 1, fallbackFilename || 'descarga.zip');
+    sopUploadUpdateBar(1, 1, 15, 'Preparando descarga…');
+    try {
+      iniciarDescargaArchivoIframe(apiPath);
+      sopUploadUpdateBar(1, 1, 100, 'Descarga iniciada en el navegador');
+      sopUploadFinish({ state: 'success', message: 'Descarga iniciada' });
+      liberar();
+      return Promise.resolve({ ok: true, filename: fallbackFilename });
+    } catch (e) {
+      sopUploadFinish({ state: 'error', message: e.message || 'No se pudo iniciar la descarga' });
+      liberar();
+      return Promise.reject(e);
+    }
+  }
+
   async function descargarZipPaquetePorJob(apiPath, fallbackFilename, triggerBtn = null) {
     const m = apiPath.match(/\/periodos\/(\d+)\/zip-paquete/);
     const periodoId = m ? parseInt(m[1], 10) : null;
@@ -1202,10 +1221,10 @@
       }
       if (!ready) throw new Error('La generación del ZIP tardó demasiado. Intente de nuevo.');
 
-      await descargarArchivoConProgreso(
+      await descargarZipDirecto(
         `/api/soportes/armado/periodos/${periodoId}/zip-paquete/job/${jobId}/descargar`,
         fallbackFilename,
-        { title: 'Descargando ZIP', triggerBtn: null }
+        null
       );
       liberar();
     } catch (e) {
@@ -1221,21 +1240,16 @@
       if (esPaqueteMes) {
         await descargarZipPaquetePorJob(apiPath, fallbackFilename, triggerBtn);
       } else {
-        await descargarArchivoConProgreso(apiPath, fallbackFilename, {
-          title: 'Generando ZIP',
-          triggerBtn
-        });
+        await descargarZipDirecto(apiPath, fallbackFilename, triggerBtn);
       }
-      sopToast('ZIP descargado', 'success');
+      sopToast('Descarga iniciada', 'success');
     } catch (e) {
-      if (!esPaqueteMes) {
-        try {
-          iniciarDescargaArchivoIframe(apiPath);
-          sopToast('Descarga iniciada en segundo plano…', 'info');
-          return;
-        } catch (_) { /* ignore */ }
+      try {
+        iniciarDescargaArchivoIframe(apiPath);
+        sopToast('Descarga iniciada en segundo plano…', 'info');
+      } catch (_) {
+        sopToast(e.message || 'No se pudo descargar el ZIP', 'error');
       }
-      sopToast(e.message || 'No se pudo descargar el ZIP', 'error');
     }
   }
 

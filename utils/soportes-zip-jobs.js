@@ -3,25 +3,29 @@
  */
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
 const crypto = require('crypto');
-const archiver = require('archiver');
 const {
   zipArchiveSegment,
   queryDiasFacturacionZip,
   collectDiaZipEntries,
-  appendEntriesToArchive
+  appendEntriesToArchive,
+  getSopZipWorkDir,
+  createArchiverInstance,
+  bindArchiveStreamGuards
 } = require('./soportes-armado-zip');
 
 const JOB_TTL_MS = 2 * 60 * 60 * 1000;
-const JOB_DIR = path.join(os.tmpdir(), 'innar-sop-zip-jobs');
 const jobs = new Map();
 
-function createArchiverInstance() {
-  return archiver('zip', { zlib: { level: 1 } });
+function jobDir() {
+  return getSopZipWorkDir();
 }
 
-if (!fs.existsSync(JOB_DIR)) fs.mkdirSync(JOB_DIR, { recursive: true });
+function ensureJobDir() {
+  const dir = jobDir();
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
 
 function cleanupOldJobs() {
   const now = Date.now();
@@ -37,7 +41,8 @@ function cleanupOldJobs() {
 
 async function runPeriodPaqueteJob(job, periodo) {
   const periodoId = periodo.id;
-  const outPath = path.join(JOB_DIR, `${job.id}.zip`);
+  ensureJobDir();
+  const outPath = path.join(jobDir(), `${job.id}.zip`);
   job.filePath = outPath;
 
   try {
@@ -46,11 +51,12 @@ async function runPeriodPaqueteJob(job, periodo) {
 
     const totalSteps = Math.max(dias.length, 1);
     let step = 0;
+    let filesAdded = 0;
 
     await new Promise((resolve, reject) => {
       const output = fs.createWriteStream(outPath);
       const archive = createArchiverInstance();
-      let filesAdded = 0;
+      bindArchiveStreamGuards(archive, null);
 
       archive.on('error', reject);
       output.on('error', reject);
@@ -62,33 +68,32 @@ async function runPeriodPaqueteJob(job, periodo) {
 
       (async () => {
         try {
-          const entries = [];
           const usedPaths = new Set();
           for (const dia of dias) {
             step += 1;
             job.message = `Empaquetando ${dia.nombre_display || 'carpeta'}…`;
             job.progress = Math.min(95, Math.round((step / totalSteps) * 95));
             const diaSeg = zipArchiveSegment(dia.nombre_display || `dia-${dia.id}`);
-            const part = await collectDiaZipEntries(dia.id);
+            const part = await collectDiaZipEntries(dia.id, null, { repair: false });
+            const batch = [];
             for (const e of part) {
               let name = `${diaSeg}/${e.name}`;
               if (usedPaths.has(name)) {
                 name = `${diaSeg}/${diaSeg}_${path.basename(e.name)}`;
               }
               usedPaths.add(name);
-              entries.push({ ...e, name });
+              batch.push({ ...e, name });
+            }
+            if (batch.length) {
+              appendEntriesToArchive(archive, batch);
+              filesAdded += batch.length;
             }
           }
-          if (!entries.length) {
-            archive.finalize();
-            return;
-          }
-          appendEntriesToArchive(archive, entries);
-          filesAdded = entries.length;
           job.message = 'Finalizando ZIP…';
           job.progress = 98;
           archive.finalize();
         } catch (e) {
+          try { archive.abort(); } catch (_) { /* ignore */ }
           reject(e);
         }
       })();
