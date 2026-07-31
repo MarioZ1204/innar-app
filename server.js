@@ -258,9 +258,19 @@ app.post('/api/csp-report', express.json({ type: ['application/json', 'applicati
 });
 
 // Visor PDF Soportes (pantalla completa, requiere sesión)
-app.get('/soportes/visor-pdf', requireAuth, (req, res) => {
+app.get('/soportes/visor-pdf', requireAuth, (req, res, next) => {
+  const visorPath = path.join(__dirname, 'views', 'visor-pdf.html');
+  if (!fs.existsSync(visorPath)) {
+    logger.warn('[VISOR-PDF] Archivo no encontrado', { path: visorPath });
+    return res.status(404).json({ error: 'Visor PDF no disponible' });
+  }
   res.setHeader('Cache-Control', 'no-cache, must-revalidate');
-  res.sendFile(path.join(__dirname, 'views', 'visor-pdf.html'));
+  res.sendFile(visorPath, (err) => {
+    if (err && !res.headersSent) {
+      logger.error('[VISOR-PDF] Error al enviar archivo', { error: err.message });
+      res.status(500).json({ error: 'No se pudo cargar el visor PDF' });
+    }
+  });
 });
 
 const INNAR_FAVICON = '/images/icon.png';
@@ -365,7 +375,11 @@ app.use((err, req, res, _next) => {
     }
     return res.status(500).send('Error');
   };
-  if (req.session) {
+  // Solo destruir sesión si es un error de corrupción de sesión MySQL,
+  // NO en todos los errores (evita que un fallo accidental destruya la sesión)
+  const isCriticalSessionError = err?.code === 'ER_PARSE_ERROR' || 
+                                  String(err?.message || '').includes('session');
+  if (req.session && isCriticalSessionError) {
     return req.session.destroy(() => finish());
   }
   return finish();
