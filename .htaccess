@@ -64,6 +64,9 @@ RewriteRule ^(.*)$ http://127.0.0.1:7080%{REQUEST_URI} [P,L,QSA]
 RewriteCond %{REQUEST_URI} ^/api/ [NC]
 RewriteRule ^(.*)$ http://127.0.0.1:7080%{REQUEST_URI} [P,L,QSA]
 
+# Raíz del repo: es un directorio sin index.html → Apache responde 403 (-Indexes) si no se proxea
+RewriteRule ^$ http://127.0.0.1:7080/ [P,L]
+
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
 RewriteRule ^(.*)$ http://127.0.0.1:7080%{REQUEST_URI} [P,L,QSA]

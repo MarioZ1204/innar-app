@@ -115,9 +115,25 @@ Si tienes acceso al `server { }` (VPS), usa la plantilla **[NGINX-SOCKET.IO.md](
 
 ### Si ves 403 en `/`
 
-- El dominio no esta pasando por Node.js App.
-- O el servidor web esta sirviendo una carpeta sin `index` y con `Options -Indexes`.
-- Revisa que `Application URL` este enlazada correctamente en Node.js App.
+Respuesta típica de **Hostinger CDN** (`Server: hcdn` en las cabeceras, HTML genérico «Access to this resource on the server is denied!»):
+
+1. **La app Node no está corriendo** (deploy fallido, p. ej. `postinstall` roto, o falta `SESSION_SECRET` / `DB_*`).
+2. El dominio **no apunta a la Node.js App** (sigue en sitio estático / carpeta vacía).
+3. Bloqueo en hPanel (IP, país, «Access Manager»).
+
+Pasos en hPanel → **Advanced → Node.js**:
+
+1. Abre **Logs** y busca errores de arranque o de `npm install`.
+2. Pulsa **Restart** en la aplicación.
+3. Confirma que `Application URL` = `innarapp.neurocienciasnarino.com` y `startup file` = `server.js`.
+4. Tras un deploy, comprueba: `https://innarapp.neurocienciasnarino.com/api/health` debe devolver `{"ok":true,...}` (no 403).
+
+Si el 403 lo genera **Apache** (sin `hcdn`, cuerpo distinto):
+
+- El dominio no está pasando por Node.js App.
+- O el servidor web sirve la carpeta raíz del repo sin `index.html` y con `Options -Indexes` (el `.htaccess` incluye regla que proxea `/` a Node).
+
+Revisa que `Application URL` esté enlazada correctamente en Node.js App.
 
 ### Si ves 503
 
