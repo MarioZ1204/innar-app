@@ -22,6 +22,22 @@ function staticCacheHeaders(res, filePath) {
   }
 }
 
+/** HTML del visor PDF (no servir directamente; ruta autenticada /soportes/visor-pdf). */
+const VISOR_PDF_SHELL_PATH = '/visor-pdf-shell.html';
+
+function readVisorPdfHtml(appRoot) {
+  const candidates = [
+    path.join(appRoot, 'views', 'visor-pdf.html'),
+    path.join(appRoot, 'public', 'visor-pdf-shell.html'),
+  ];
+  for (const htmlPath of candidates) {
+    try {
+      if (fs.existsSync(htmlPath)) return fs.readFileSync(htmlPath, 'utf8');
+    } catch (_) { /* probar siguiente */ }
+  }
+  return null;
+}
+
 /** Añade ?v=APP_VERSION a CSS/JS locales (cache bust tras deploy). */
 function injectAssetVersion(html, appVersion) {
   const vTag = `?v=${appVersion}`;
@@ -83,9 +99,10 @@ function applyStaticFiles(app, { publicDir, appVersion }) {
     setHeaders: staticCacheHeaders
   });
 
-  // Bloquea acceso directo a /uploads/* del estático (delega a /uploads/:filename autenticado).
+  // Bloquea acceso directo a /uploads/* y al shell del visor PDF (requiere sesión vía Express).
   app.use((req, res, next) => {
     if (req.path.startsWith('/uploads/')) return next();
+    if (req.path === VISOR_PDF_SHELL_PATH) return next();
     return staticMw(req, res, next);
   });
 }
@@ -95,5 +112,7 @@ module.exports = {
   staticCacheHeaders,
   buildIndexHandler,
   injectAssetVersion,
+  readVisorPdfHtml,
+  VISOR_PDF_SHELL_PATH,
   UBICACION_MAPS_REDIRECT
 };

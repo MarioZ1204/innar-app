@@ -25,7 +25,7 @@ const { startBackupScheduler } = require('./utils/backup-scheduler');
 const { applyCors } = require('./config/cors');
 const { applySession } = require('./config/session');
 const { applySecurity } = require('./config/security');
-const { applyStaticFiles } = require('./config/static-files');
+const { applyStaticFiles, injectAssetVersion, readVisorPdfHtml } = require('./config/static-files');
 const { applyRateLimiters } = require('./config/rate-limit');
 const { runRuntimeMigrations } = require('./migrations/runtime-migrations');
 const { attachSockets } = require('./socket/handlers');
@@ -258,19 +258,20 @@ app.post('/api/csp-report', express.json({ type: ['application/json', 'applicati
 });
 
 // Visor PDF Soportes (pantalla completa, requiere sesión)
-app.get('/soportes/visor-pdf', requireAuth, (req, res, next) => {
-  const visorPath = path.join(__dirname, 'views', 'visor-pdf.html');
-  if (!fs.existsSync(visorPath)) {
-    logger.warn('[VISOR-PDF] Archivo no encontrado', { path: visorPath });
+app.get('/soportes/visor-pdf', requireAuth, (req, res) => {
+  const raw = readVisorPdfHtml(__dirname);
+  if (!raw) {
+    logger.warn('[VISOR-PDF] Archivo no encontrado (views/ ni public/visor-pdf-shell.html)');
     return res.status(404).json({ error: 'Visor PDF no disponible' });
   }
-  res.setHeader('Cache-Control', 'no-cache, must-revalidate');
-  res.sendFile(visorPath, (err) => {
-    if (err && !res.headersSent) {
-      logger.error('[VISOR-PDF] Error al enviar archivo', { error: err.message });
-      res.status(500).json({ error: 'No se pudo cargar el visor PDF' });
-    }
-  });
+  try {
+    const html = injectAssetVersion(raw, APP_VERSION);
+    res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+    return res.type('html').send(html);
+  } catch (e) {
+    logger.error('[VISOR-PDF] Error al enviar HTML', { error: e.message });
+    return res.status(500).json({ error: 'No se pudo cargar el visor PDF' });
+  }
 });
 
 const INNAR_FAVICON = '/images/icon.png';
