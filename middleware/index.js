@@ -19,6 +19,13 @@ function canViewAuditoriaCitas(rol) {
 // ── Middleware de autenticación ─────────────────────────────────────────────
 function requireAuth(req, res, next) {
   if (req.session && req.session.usuarioId) return next();
+  const wantsJson = (req.path || '').startsWith('/api/')
+    || req.get('X-Requested-With') === 'XMLHttpRequest'
+    || (req.get('Accept') || '').includes('application/json');
+  if (!wantsJson) {
+    const target = encodeURIComponent(req.originalUrl || req.url || req.path || '/');
+    return res.redirect(302, `/?login=1&redirect=${target}`);
+  }
   return res.status(401).json({ error: 'No autenticado' });
 }
 

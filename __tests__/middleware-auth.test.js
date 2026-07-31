@@ -3,13 +3,24 @@
 
 const mw = require('../middleware');
 
-function makeReqRes(session) {
-  const req = { session };
+function makeReqRes(session, extra = {}) {
+  const req = {
+    session,
+    path: extra.path || '/api/test',
+    originalUrl: extra.originalUrl,
+    url: extra.url,
+    get(name) {
+      const h = extra.headers || {};
+      return h[name] ?? h[name.toLowerCase()] ?? null;
+    }
+  };
   const res = {
     statusCode: 200,
     body: null,
+    redirectUrl: null,
     status(code) { this.statusCode = code; return this; },
-    json(obj) { this.body = obj; return this; }
+    json(obj) { this.body = obj; return this; },
+    redirect(code, url) { this.statusCode = code; this.redirectUrl = url; return this; }
   };
   return { req, res };
 }
@@ -22,12 +33,24 @@ describe('requireAuth', () => {
     expect(next).toHaveBeenCalled();
   });
 
-  test('responde 401 sin sesión', () => {
-    const { req, res } = makeReqRes({});
+  test('responde 401 sin sesión en API', () => {
+    const { req, res } = makeReqRes({}, { path: '/api/soportes/pdx/carpetas' });
     const next = jest.fn();
     mw.requireAuth(req, res, next);
     expect(next).not.toHaveBeenCalled();
     expect(res.statusCode).toBe(401);
+  });
+
+  test('redirige al login sin sesión en página HTML', () => {
+    const { req, res } = makeReqRes({}, {
+      path: '/soportes/visor-pdf',
+      originalUrl: '/soportes/visor-pdf?fuente=pdx&id=1'
+    });
+    const next = jest.fn();
+    mw.requireAuth(req, res, next);
+    expect(next).not.toHaveBeenCalled();
+    expect(res.statusCode).toBe(302);
+    expect(res.redirectUrl).toContain('login=1');
   });
 });
 

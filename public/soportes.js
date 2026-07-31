@@ -2296,6 +2296,7 @@
     showSkeletonFolderGrid($('sopPdxLista'), 6);
     const res = await apiFetch('/api/soportes/pdx/carpetas');
     const data = await res.json();
+    if (res.status === 401) return null;
     if (!res.ok) throw new Error(data.error || 'Error al cargar carpetas');
     pdxState.carpetas = data.carpetas || [];
     pdxState.periodoActual = data.periodo_actual || periodoActual();
@@ -3794,7 +3795,8 @@
   }
 
   async function refrescarVistaPdxActual() {
-    await cargarCarpetasPdx();
+    const data = await cargarCarpetasPdx();
+    if (!data) return;
     if (pdxState.carpetaId) await abrirCarpetaPdx(pdxState.carpetaId);
     else renderListaCarpetasPdx();
   }

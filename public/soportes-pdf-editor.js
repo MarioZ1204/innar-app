@@ -9,25 +9,46 @@
 
   const MARK_COLORS = ['yellow', 'green', 'pink', 'blue'];
 
-  function loadPdfJsScript() {
+  async function readPdfJsManifest() {
+    const fallback = { format: 'js', pdf: 'pdf.min.js', worker: 'pdf.worker.min.js' };
+    try {
+      const res = await fetch('/libs/pdfjs/manifest.json', { cache: 'no-store' });
+      if (res.ok) return { ...fallback, ...(await res.json()) };
+    } catch (_) { /* ignore */ }
+    return fallback;
+  }
+
+  function configurePdfJsWorker(lib, workerFile) {
+    lib.GlobalWorkerOptions.workerSrc = `/libs/pdfjs/${workerFile}`;
+    return lib;
+  }
+
+  async function loadPdfJsScript() {
+    const cached = global.pdfjsLib || global['pdfjs-dist/build/pdf'];
+    if (cached?.getDocument) return cached;
+
+    const manifest = await readPdfJsManifest();
+
+    if (manifest.format === 'mjs') {
+      const mod = await import(`/libs/pdfjs/${manifest.pdf}`);
+      const lib = mod.default || global.pdfjsLib || mod;
+      if (!lib?.getDocument) throw new Error('PDF.js no disponible tras cargar');
+      return configurePdfJsWorker(lib, manifest.worker);
+    }
+
     return new Promise((resolve, reject) => {
-      const lib = global.pdfjsLib || global['pdfjs-dist/build/pdf'];
-      if (lib?.getDocument) {
-        resolve(lib);
-        return;
-      }
       const existing = document.querySelector('script[data-innar-pdfjs]');
       if (existing) {
         existing.addEventListener('load', () => {
           const l = global.pdfjsLib || global['pdfjs-dist/build/pdf'];
-          if (l?.getDocument) resolve(l);
+          if (l?.getDocument) resolve(configurePdfJsWorker(l, manifest.worker));
           else reject(new Error('PDF.js no inicializó'));
         });
         existing.addEventListener('error', () => reject(new Error('No se pudo cargar PDF.js')));
         return;
       }
       const s = document.createElement('script');
-      s.src = '/libs/pdfjs/pdf.min.js';
+      s.src = `/libs/pdfjs/${manifest.pdf}`;
       s.dataset.innarPdfjs = '1';
       s.onload = () => {
         const l = global.pdfjsLib || global['pdfjs-dist/build/pdf'];
@@ -35,10 +56,9 @@
           reject(new Error('PDF.js no disponible tras cargar'));
           return;
         }
-        l.GlobalWorkerOptions.workerSrc = '/libs/pdfjs/pdf.worker.min.js';
-        resolve(l);
+        resolve(configurePdfJsWorker(l, manifest.worker));
       };
-      s.onerror = () => reject(new Error('No se pudo cargar el visor PDF (/libs/pdfjs/pdf.min.js)'));
+      s.onerror = () => reject(new Error(`No se pudo cargar el visor PDF (/libs/pdfjs/${manifest.pdf})`));
       document.head.appendChild(s);
     });
   }
