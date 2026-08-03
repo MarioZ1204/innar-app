@@ -107,16 +107,7 @@ const { actualizarDia, eliminarDia } = require('../utils/soportes-dia-admin');
 const { resolveArchivoAbsoluto, resolverArchivoExpedienteRow } = require('../utils/soportes-exp-archivo');
 const { runSoportesRecoveryScript } = require('../utils/soportes-recovery-runner');
 const { syncRipsCarpetasDia, syncRipsCarpetasContenedor } = require('../utils/soportes-rips-carpetas-sync');
-const {
-  zipArchiveSegment,
-  zipEntryOptions,
-  pipeArchiveToResponse,
-  filterValidZipEntries,
-  streamDiaZip,
-  streamCarpetaZip,
-  streamPeriodPaqueteZip,
-  streamUnifiedPeriodZip
-} = require('../utils/soportes-armado-zip');
+const { zipArchiveSegment } = require('../utils/soportes-armado-zip');
 const { createZipJob, createPeriodPaqueteJob, getJob: getSopZipJob } = require('../utils/soportes-zip-jobs');
 const {
   getPdxDir,
@@ -350,6 +341,14 @@ function streamZipJobDownload(res, job) {
   });
   stream.pipe(res);
   return null;
+}
+
+/** Las rutas GET síncronas bloqueaban Node en Hostinger; usar POST /soportes/armado/zip/job. */
+function respondLegacySyncZipDisabled(res) {
+  return res.status(410).json({
+    error: 'La descarga ZIP directa fue reemplazada por generación en segundo plano. Use el botón ZIP en Soportes.',
+    code: 'ZIP_USE_BACKGROUND_JOB'
+  });
 }
 
 async function refrescarVisibilidadPdx(periodo, archivadoPor = null) {
@@ -3311,40 +3310,12 @@ router.get('/soportes/armado/zip/job/:jobId/descargar', requireAuth, requireRole
   }
 });
 
-router.get('/soportes/armado/dias/:id/zip', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'soportes.descargar_zip'), async (req, res) => {
-  try {
-    const diaId = parseInt(req.params.id, 10);
-    if (!diaId) return res.status(400).json({ error: 'Carpeta de día inválida' });
-    const rows = await db.query('SELECT * FROM sop_dias WHERE id = ?', [diaId]);
-    if (!rows.length) return res.status(404).json({ error: 'Carpeta de día no encontrada' });
-    await streamDiaZip(res, rows[0]);
-  } catch (e) {
-    logger.error('[SOPORTES] zip dia:', e);
-    if (!res.headersSent) {
-      const notFound = /no tiene|no hay archivos|ZIP vacío/i.test(e.message || '');
-      res.status(notFound ? 404 : 500).json({
-        error: notFound ? e.message : 'No se pudo generar el ZIP. Intente de nuevo o contacte al administrador.'
-      });
-    }
-  }
+router.get('/soportes/armado/dias/:id/zip', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'soportes.descargar_zip'), (req, res) => {
+  respondLegacySyncZipDisabled(res);
 });
 
-router.get('/soportes/armado/dias/:id/zip-carpeta', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'soportes.descargar_zip'), async (req, res) => {
-  try {
-    const diaId = parseInt(req.params.id, 10);
-    if (!diaId) return res.status(400).json({ error: 'Carpeta inválida' });
-    const rows = await db.query('SELECT * FROM sop_dias WHERE id = ?', [diaId]);
-    if (!rows.length) return res.status(404).json({ error: 'Carpeta no encontrada' });
-    await streamCarpetaZip(res, rows[0]);
-  } catch (e) {
-    logger.error('[SOPORTES] zip carpeta:', e);
-    if (!res.headersSent) {
-      const notFound = /no tiene|no hay archivos|ZIP vacío/i.test(e.message || '');
-      res.status(notFound ? 404 : 500).json({
-        error: notFound ? e.message : 'No se pudo generar el ZIP. Intente de nuevo o contacte al administrador.'
-      });
-    }
-  }
+router.get('/soportes/armado/dias/:id/zip-carpeta', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'soportes.descargar_zip'), (req, res) => {
+  respondLegacySyncZipDisabled(res);
 });
 
 router.post('/soportes/armado/periodos/:id/zip-paquete/job', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'soportes.descargar_zip'), async (req, res) => {
@@ -3411,149 +3382,20 @@ router.get('/soportes/armado/periodos/:id/zip-paquete/job/:jobId/descargar', req
   }
 });
 
-router.get('/soportes/armado/periodos/:id/zip-paquete', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'soportes.descargar_zip'), async (req, res) => {
-  try {
-    const periodoId = parseInt(req.params.id, 10);
-    if (!periodoId) return res.status(400).json({ error: 'Periodo inválido' });
-    const visCtx = await loadVisibleEnSoportesCtx();
-    const periodoRow = await requirePeriodoArmadoAccesible(req, res, periodoId, visCtx);
-    if (!periodoRow) return;
-    await streamPeriodPaqueteZip(res, periodoRow);
-  } catch (e) {
-    logger.error('[SOPORTES] zip-paquete:', e);
-    if (!res.headersSent) {
-      const notFound = /no tiene|no hay archivos/i.test(e.message || '');
-      res.status(notFound ? 404 : 500).json({
-        error: notFound ? e.message : 'No se pudo generar el ZIP. Intente de nuevo o contacte al administrador.'
-      });
-    }
-  }
+router.get('/soportes/armado/periodos/:id/zip-paquete', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'soportes.descargar_zip'), (req, res) => {
+  respondLegacySyncZipDisabled(res);
 });
 
-router.get('/soportes/armado/periodos/:id/zip-unificado', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'soportes.descargar_zip'), async (req, res) => {
-  try {
-    const periodoId = parseInt(req.params.id, 10);
-    if (!periodoId) return res.status(400).json({ error: 'Periodo inválido' });
-    const visCtx = await loadVisibleEnSoportesCtx();
-    const periodoRow = await requirePeriodoArmadoAccesible(req, res, periodoId, visCtx);
-    if (!periodoRow) return;
-    await streamUnifiedPeriodZip(res, periodoRow);
-  } catch (e) {
-    logger.error('[SOPORTES] zip-unificado:', e);
-    if (!res.headersSent) {
-      const notFound = /no hay archivos/i.test(e.message || '');
-      res.status(notFound ? 404 : 500).json({
-        error: notFound ? e.message : 'No se pudo generar el ZIP. Intente de nuevo o contacte al administrador.'
-      });
-    }
-  }
+router.get('/soportes/armado/periodos/:id/zip-unificado', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'soportes.descargar_zip'), (req, res) => {
+  respondLegacySyncZipDisabled(res);
 });
 
-router.get('/soportes/armado/periodos/:id/zip-facturados', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'soportes.descargar_zip'), async (req, res) => {
-  try {
-    const periodoId = parseInt(req.params.id, 10);
-    if (!periodoId) return res.status(400).json({ error: 'Periodo inválido' });
-    const visCtx = await loadVisibleEnSoportesCtx();
-    const periodo = await requirePeriodoArmadoAccesible(req, res, periodoId, visCtx);
-    if (!periodo) return;
-    const expedientes = await db.query(
-      `SELECT e.id, e.codigo, d.nombre_display AS dia_nombre, c.tipo AS contenedor_tipo
-       FROM sop_expedientes e
-       JOIN sop_contenedores c ON c.id = e.contenedor_id
-       JOIN sop_dias d ON d.id = c.dia_id
-       WHERE d.periodo_id = ? AND d.estado_facturacion = 'facturados'
-       ORDER BY d.nombre_display ASC, c.tipo ASC, e.codigo ASC`,
-      [periodoId]
-    );
-    if (!expedientes.length) {
-      return res.status(404).json({ error: 'No hay carpetas FE en días marcados como Facturados en este mes' });
-    }
-    const fileJobs = [];
-    for (const exp of expedientes) {
-      const diaSeg = zipArchiveSegment(exp.dia_nombre);
-      const tipoSeg = exp.contenedor_tipo === 'rips' ? 'RIPS' : 'SOPORTES';
-      const codSeg = zipArchiveSegment(exp.codigo);
-      const prefix = `${diaSeg}/${tipoSeg}/${codSeg}`;
-      const archivos = await db.query('SELECT * FROM sop_exp_archivos WHERE expediente_id = ?', [exp.id]);
-      const expedienteCtx = {
-        codigo: exp.codigo,
-        numero_factura: exp.numero_factura,
-        paciente_nombre: exp.paciente_nombre,
-        nombre_display: exp.dia_nombre
-      };
-      for (const a of archivos) {
-        const fp = resolverArchivoExpedienteRow(a, expedienteCtx);
-        if (fp) {
-          fileJobs.push({ fp, name: `${prefix}/${a.nombre_archivo}` });
-        }
-      }
-      try {
-        const ripsArchivos = await db.query('SELECT * FROM sop_rips_archivos WHERE expediente_id = ?', [exp.id]);
-        for (const a of ripsArchivos) {
-          const fp = resolverArchivoExpedienteRow(a, expedienteCtx);
-          if (fp) {
-            fileJobs.push({ fp, name: `${prefix}/${a.nombre_archivo}` });
-          }
-        }
-      } catch (_) { /* ignore */ }
-    }
-    if (!fileJobs.length) {
-      return res.status(404).json({ error: 'Las carpetas facturadas no tienen archivos para descargar' });
-    }
-    const validJobs = filterValidZipEntries(fileJobs.map((j) => ({ absPath: j.fp, name: j.name })));
-    if (!validJobs.length) {
-      return res.status(404).json({ error: 'Las carpetas facturadas no tienen archivos en disco para descargar' });
-    }
-    const zipLabel = zipArchiveSegment(periodo.etiqueta || periodo.periodo || `periodo-${periodoId}`);
-    res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Disposition', `attachment; filename="${zipLabel}-facturados.zip"`);
-    res.setHeader('Cache-Control', 'no-store');
-    if (typeof res.flushHeaders === 'function') res.flushHeaders();
-    await pipeArchiveToResponse(res, validJobs);
-  } catch (e) {
-    logger.error('[SOPORTES] zip-facturados:', e);
-    if (!res.headersSent) res.status(500).json({ error: safeError(e) });
-  }
+router.get('/soportes/armado/periodos/:id/zip-facturados', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'soportes.descargar_zip'), (req, res) => {
+  respondLegacySyncZipDisabled(res);
 });
 
-router.get('/soportes/armado/expedientes/:id/zip', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'soportes.descargar_zip'), async (req, res) => {
-  try {
-    const exp = await resolveExpedienteContext(req.params.id);
-    if (!exp) return res.status(404).json({ error: 'No encontrado' });
-    const fileJobs = [];
-    const archivos = await db.query('SELECT * FROM sop_exp_archivos WHERE expediente_id = ?', [req.params.id]);
-    const expedienteCtx = {
-      codigo: exp.codigo,
-      numero_factura: exp.numero_factura,
-      paciente_nombre: exp.paciente_nombre,
-      nombre_display: exp.nombre_display
-    };
-    for (const a of archivos) {
-      const fp = resolverArchivoExpedienteRow(a, expedienteCtx);
-      if (fp) fileJobs.push({ fp, name: a.nombre_archivo });
-    }
-    try {
-      const ripsArchivos = await db.query('SELECT * FROM sop_rips_archivos WHERE expediente_id = ?', [req.params.id]);
-      for (const a of ripsArchivos) {
-        const fp = resolverArchivoExpedienteRow(a, expedienteCtx);
-        if (fp) fileJobs.push({ fp, name: a.nombre_archivo });
-      }
-    } catch (_) { /* ignore */ }
-    if (!fileJobs.length) {
-      return res.status(404).json({ error: 'El expediente no tiene archivos para descargar' });
-    }
-    const validJobs = filterValidZipEntries(fileJobs.map((j) => ({ absPath: j.fp, name: j.name })));
-    if (!validJobs.length) {
-      return res.status(404).json({ error: 'El expediente no tiene archivos en disco para descargar' });
-    }
-    res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Disposition', `attachment; filename="${exp.codigo}.zip"`);
-    res.setHeader('Cache-Control', 'no-store');
-    await pipeArchiveToResponse(res, validJobs);
-  } catch (e) {
-    logger.error('[SOPORTES] zip expediente:', e);
-    if (!res.headersSent) res.status(500).json({ error: safeError(e) });
-  }
+router.get('/soportes/armado/expedientes/:id/zip', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'soportes.descargar_zip'), (req, res) => {
+  respondLegacySyncZipDisabled(res);
 });
 
 router.get('/soportes/armado/buscar', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'modulo.armado_soportes'), async (req, res) => {

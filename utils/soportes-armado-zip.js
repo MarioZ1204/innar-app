@@ -97,6 +97,23 @@ function appendEntriesToArchive(archive, entries) {
   }
 }
 
+async function appendEntriesToArchiveAsync(archive, entries, yieldEvery = 12) {
+  const valid = filterValidZipEntries(entries);
+  for (let i = 0; i < valid.length; i++) {
+    const e = valid[i];
+    try {
+      if (e.placeholder) {
+        archive.append(e.content || Buffer.alloc(0), { name: e.name });
+      } else {
+        archive.file(e.absPath, { name: e.name, ...zipEntryOptions(e.absPath) });
+      }
+    } catch (err) {
+      logger.warn('[SOPORTES] zip omitir entrada:', e.name, err.message);
+    }
+    if ((i + 1) % yieldEvery === 0) await yieldEventLoop();
+  }
+}
+
 function bindArchiveStreamGuards(archive, res) {
   archive.on('warning', (err) => {
     if (err.code === 'ENOENT') {
@@ -739,6 +756,7 @@ module.exports = {
   queryDiasFacturacionZip,
   appendInnerZipToArchive,
   appendEntriesToArchive,
+  appendEntriesToArchiveAsync,
   pipeArchiveToResponse,
   pipeArchiveToFile,
   filterValidZipEntries,

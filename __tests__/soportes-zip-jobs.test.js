@@ -11,7 +11,7 @@ describe('soportes-zip-jobs', () => {
     expect(job.kind).toBe('dia');
     expect(job.diaId).toBe(99);
     expect(job.filename).toBe('test-dia.zip');
-    expect(['pending', 'running', 'ready', 'error']).toContain(job.status);
+    expect(['pending', 'running', 'ready', 'error', 'queued']).toContain(job.status);
     expect(getJob(job.id)).toBe(job);
   });
 });

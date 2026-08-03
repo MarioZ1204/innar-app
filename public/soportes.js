@@ -1188,92 +1188,169 @@
     return null;
   }
 
-  function descargarZipDirecto(apiPath, fallbackFilename, triggerBtn = null) {
-    if (triggerBtn) triggerBtn.disabled = true;
-    const liberar = () => { if (triggerBtn) triggerBtn.disabled = false; };
-    sopUploadBegin({ title: 'Descargando ZIP', total: 1 });
-    sopUploadSetFile(1, 1, fallbackFilename || 'descarga.zip');
-    sopUploadUpdateBar(1, 1, 15, 'Preparando descarga…');
-    try {
-      iniciarDescargaArchivoIframe(apiPath);
-      sopUploadUpdateBar(1, 1, 100, 'Descarga iniciada en el navegador');
-      sopUploadFinish({ state: 'success', message: 'Descarga iniciada' });
-      liberar();
-      return Promise.resolve({ ok: true, filename: fallbackFilename });
-    } catch (e) {
-      sopUploadFinish({ state: 'error', message: e.message || 'No se pudo iniciar la descarga' });
-      liberar();
-      return Promise.reject(e);
+  function descargarZipDirecto(apiPath, fallbackFilename) {
+    iniciarDescargaArchivoIframe(apiPath);
+    return Promise.resolve({ ok: true, filename: fallbackFilename });
+  }
+
+  const sopZipBg = { jobs: new Map(), panel: null };
+
+  function sopZipBgPanelEnsure() {
+    if (sopZipBg.panel?.isConnected) return sopZipBg.panel;
+    const panel = document.createElement('div');
+    panel.id = 'sopZipJobsPanel';
+    panel.className = 'sop-zip-jobs-panel';
+    panel.setAttribute('role', 'status');
+    panel.setAttribute('aria-live', 'polite');
+    panel.innerHTML = `
+      <div class="sop-zip-jobs-head">
+        <span class="sop-zip-jobs-title"><i data-lucide="archive"></i> ZIP en segundo plano</span>
+        <button type="button" class="sop-zip-jobs-min" title="Minimizar">−</button>
+      </div>
+      <ul class="sop-zip-jobs-list"></ul>`;
+    document.body.appendChild(panel);
+    panel.querySelector('.sop-zip-jobs-min')?.addEventListener('click', () => {
+      panel.classList.toggle('is-minimized');
+    });
+    sopZipBg.panel = panel;
+    if (typeof sopIcons === 'function') sopIcons(panel);
+    return panel;
+  }
+
+  function sopZipBgRender() {
+    const panel = sopZipBgPanelEnsure();
+    const list = panel.querySelector('.sop-zip-jobs-list');
+    if (!list) return;
+    if (sopZipBg.jobs.size === 0) {
+      panel.classList.remove('is-visible');
+      return;
+    }
+    panel.classList.add('is-visible');
+    list.innerHTML = [...sopZipBg.jobs.values()].map((j) => {
+      const pct = Math.max(0, Math.min(100, j.progress || 0));
+      const err = j.status === 'error';
+      const done = j.status === 'downloaded';
+      const queued = j.status === 'queued' || j.status === 'pending';
+      const running = j.status === 'running' || j.status === 'starting';
+      return `<li class="sop-zip-job-item${err ? ' is-error' : ''}${done ? ' is-done' : ''}${queued ? ' is-queued' : ''}${running ? ' is-running' : ''}">
+        <div class="sop-zip-job-row">
+          <span class="sop-zip-job-name">${escapeHtml(j.label || j.filename || 'ZIP')}</span>
+          <span class="sop-zip-job-pct">${pct}%</span>
+        </div>
+        <div class="sop-zip-job-bar-wrap" aria-hidden="true"><div class="sop-zip-job-bar" style="width:${pct}%"></div></div>
+        <div class="sop-zip-job-status">${escapeHtml(j.message || '')}</div>
+      </li>`;
+    }).join('');
+    if (typeof sopIcons === 'function') sopIcons(panel);
+  }
+
+  function sopZipBgStopPoll(localId) {
+    const j = sopZipBg.jobs.get(localId);
+    if (j?.pollTimer) {
+      clearInterval(j.pollTimer);
+      j.pollTimer = null;
     }
   }
 
-  async function descargarZipPorJob(apiPath, fallbackFilename, triggerBtn = null) {
+  function sopZipBgRemoveLater(localId, ms = 8000) {
+    setTimeout(() => {
+      sopZipBgStopPoll(localId);
+      sopZipBg.jobs.delete(localId);
+      sopZipBgRender();
+    }, ms);
+  }
+
+  async function sopZipBgPollOnce(localId) {
+    const j = sopZipBg.jobs.get(localId);
+    if (!j?.apiJobId) return;
+    try {
+      const stRes = await apiFetch(`/api/soportes/armado/zip/job/${j.apiJobId}`);
+      const st = await stRes.json().catch(() => ({}));
+      if (!stRes.ok) throw new Error(st.error || 'Error consultando progreso');
+      j.progress = parseInt(st.progress, 10) || 0;
+      j.message = st.message || j.message;
+      j.status = st.status;
+      if (st.filename) j.filename = st.filename;
+      sopZipBgRender();
+      if (st.status === 'ready') {
+        sopZipBgStopPoll(localId);
+        iniciarDescargaArchivoIframe(`/api/soportes/armado/zip/job/${j.apiJobId}/descargar`);
+        j.message = 'Descarga iniciada — puede seguir trabajando';
+        j.status = 'downloaded';
+        j.progress = 100;
+        sopZipBgRender();
+        sopToast(`ZIP listo: ${j.label || j.filename}`, 'success');
+        sopZipBgRemoveLater(localId, 7000);
+      } else if (st.status === 'error') {
+        sopZipBgStopPoll(localId);
+        j.message = st.error || 'Error al generar ZIP';
+        sopZipBgRender();
+        sopToast(j.message, 'error');
+        sopZipBgRemoveLater(localId, 12000);
+      }
+    } catch (e) {
+      sopZipBgStopPoll(localId);
+      j.status = 'error';
+      j.message = e.message || 'Error';
+      sopZipBgRender();
+      sopToast(j.message, 'error');
+      sopZipBgRemoveLater(localId, 12000);
+    }
+  }
+
+  async function iniciarZipEnSegundoPlano(apiPath, fallbackFilename) {
     const spec = parseZipJobFromApiPath(apiPath, fallbackFilename);
     if (!spec) throw new Error('Ruta ZIP no reconocida');
 
-    if (triggerBtn) triggerBtn.disabled = true;
-    const liberar = () => { if (triggerBtn) triggerBtn.disabled = false; };
+    const localId = `zip-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const label = spec.fallback || fallbackFilename || 'descarga.zip';
+    sopZipBg.jobs.set(localId, {
+      label,
+      filename: label,
+      progress: 0,
+      status: 'starting',
+      message: 'Iniciando…',
+      apiJobId: null,
+      pollTimer: null
+    });
+    sopZipBgRender();
+    sopToast(`ZIP en segundo plano: ${label}`, 'info');
 
-    sopUploadBegin({ title: 'Generando ZIP', total: 1 });
-    sopUploadSetFile(1, 1, spec.fallback || fallbackFilename || 'descarga.zip');
-    sopUploadUpdateBar(1, 1, 2, 'Preparando en el servidor…');
-
-    try {
-      const startRes = await apiFetch('/api/soportes/armado/zip/job', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          kind: spec.kind,
-          periodo_id: spec.periodo_id,
-          dia_id: spec.dia_id,
-          contenedor_id: spec.contenedor_id,
-          expediente_id: spec.expediente_id
-        })
-      });
-      const startData = await startRes.json().catch(() => ({}));
-      if (!startRes.ok || !startData.job_id) {
-        throw new Error(startData.error || 'No se pudo iniciar la generación del ZIP');
-      }
-
-      const jobId = startData.job_id;
-      let ready = false;
-      let filename = startData.filename || spec.fallback || fallbackFilename;
-      for (let i = 0; i < 900; i++) {
-        await sleepMs(i < 3 ? 800 : 1500);
-        const stRes = await apiFetch(`/api/soportes/armado/zip/job/${jobId}`);
-        const st = await stRes.json().catch(() => ({}));
-        if (!stRes.ok) throw new Error(st.error || 'Error consultando progreso');
-        const pct = Math.max(0, Math.min(100, parseInt(st.progress, 10) || 0));
-        sopUploadUpdateBar(1, 1, pct, st.message || 'Generando ZIP…');
-        if (st.filename) filename = st.filename;
-        if (st.status === 'ready') {
-          ready = true;
-          break;
-        }
-        if (st.status === 'error') throw new Error(st.error || 'No se pudo generar el ZIP');
-      }
-      if (!ready) throw new Error('La generación del ZIP tardó demasiado. Intente de nuevo.');
-
-      await descargarZipDirecto(
-        `/api/soportes/armado/zip/job/${jobId}/descargar`,
-        filename,
-        null
-      );
-      liberar();
-    } catch (e) {
-      sopUploadFinish({ state: 'error', message: e.message || 'Error al descargar' });
-      liberar();
-      throw e;
+    const startRes = await apiFetch('/api/soportes/armado/zip/job', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        kind: spec.kind,
+        periodo_id: spec.periodo_id,
+        dia_id: spec.dia_id,
+        contenedor_id: spec.contenedor_id,
+        expediente_id: spec.expediente_id
+      })
+    });
+    const startData = await startRes.json().catch(() => ({}));
+    if (!startRes.ok || !startData.job_id) {
+      sopZipBg.jobs.delete(localId);
+      sopZipBgRender();
+      throw new Error(startData.error || 'No se pudo iniciar la generación del ZIP');
     }
+
+    const j = sopZipBg.jobs.get(localId);
+    if (!j) return;
+    j.apiJobId = startData.job_id;
+    j.filename = startData.filename || label;
+    j.status = startData.status || 'pending';
+    j.message = startData.message || 'Generando en el servidor…';
+    j.progress = parseInt(startData.progress, 10) || 0;
+    sopZipBgRender();
+
+    j.pollTimer = setInterval(() => { void sopZipBgPollOnce(localId); }, 1500);
+    void sopZipBgPollOnce(localId);
   }
 
-  async function descargarZipArmado(apiPath, fallbackFilename, triggerBtn = null) {
-    try {
-      await descargarZipPorJob(apiPath, fallbackFilename, triggerBtn);
-      sopToast('Descarga iniciada', 'success');
-    } catch (e) {
-      sopToast(e.message || 'No se pudo descargar el ZIP', 'error');
-    }
+  function descargarZipArmado(apiPath, fallbackFilename) {
+    void iniciarZipEnSegundoPlano(apiPath, fallbackFilename).catch((e) => {
+      sopToast(e.message || 'No se pudo iniciar el ZIP', 'error');
+    });
   }
 
   function htmlArmZipBtn({ apiPath, fallbackName, title, icon = 'archive', label = '', variant = 'ghost' } = {}) {
@@ -1290,7 +1367,7 @@
       btn.addEventListener('click', (ev) => {
         ev.preventDefault();
         ev.stopPropagation();
-        void descargarZipArmado(btn.dataset.armZip, btn.dataset.armZipFallback, btn);
+        void descargarZipArmado(btn.dataset.armZip, btn.dataset.armZipFallback);
       });
     });
   }

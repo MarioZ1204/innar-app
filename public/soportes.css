@@ -1259,6 +1259,140 @@
   font-weight: 600;
 }
 
+/* Panel flotante — ZIP en segundo plano (no bloquea la app) */
+.sop-zip-jobs-panel {
+  position: fixed;
+  right: 20px;
+  bottom: 88px;
+  z-index: 10115;
+  width: min(380px, calc(100vw - 32px));
+  max-height: min(280px, 40vh);
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  box-shadow: 0 12px 40px rgba(15, 23, 42, 0.16);
+  opacity: 0;
+  transform: translateY(10px);
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  overflow: hidden;
+}
+.sop-zip-jobs-panel.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+.sop-zip-jobs-panel.is-minimized .sop-zip-jobs-list {
+  display: none;
+}
+.sop-zip-jobs-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.sop-zip-jobs-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #0f172a;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.sop-zip-jobs-min {
+  border: none;
+  background: #f1f5f9;
+  color: #475569;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+}
+.sop-zip-jobs-min:hover {
+  background: #e2e8f0;
+}
+.sop-zip-jobs-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: min(220px, 32vh);
+  overflow-y: auto;
+}
+.sop-zip-job-item {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+}
+.sop-zip-job-item.is-done {
+  border-color: #6ee7b7;
+  background: #ecfdf5;
+}
+.sop-zip-job-item.is-error {
+  border-color: #fca5a5;
+  background: #fef2f2;
+}
+.sop-zip-job-item.is-queued {
+  border-color: #fde68a;
+  background: #fffbeb;
+}
+.sop-zip-job-item.is-running {
+  border-color: #93c5fd;
+  background: #eff6ff;
+}
+.sop-zip-job-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: baseline;
+  margin-bottom: 6px;
+}
+.sop-zip-job-name {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #0f172a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sop-zip-job-pct {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #64748b;
+  flex-shrink: 0;
+}
+.sop-zip-job-bar-wrap {
+  height: 5px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  overflow: hidden;
+  margin-bottom: 4px;
+}
+.sop-zip-job-bar {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #0ea5e9, #0284c7);
+  transition: width 0.35s ease;
+}
+.sop-zip-job-item.is-done .sop-zip-job-bar {
+  background: linear-gradient(90deg, #10b981, #059669);
+}
+.sop-zip-job-item.is-error .sop-zip-job-bar {
+  background: #ef4444;
+}
+.sop-zip-job-status {
+  font-size: 0.72rem;
+  color: #64748b;
+  line-height: 1.35;
+}
+
 .sop-estudio-badge {
   display: inline-flex;
   align-items: center;
