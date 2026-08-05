@@ -5,7 +5,10 @@ const { fork } = require('child_process');
 const logger = require('./logger');
 
 const STREAM_WORKER_SCRIPT = path.join(__dirname, 'soportes-zip-stream-worker.js');
-const USE_CHILD_STREAM = process.env.ZIP_JOB_INLINE !== '1' && process.env.NODE_ENV !== 'test';
+/** El traspaso de socket HTTP al hijo falla en varios hosts (503). Activar solo con ZIP_STREAM_CHILD=1. */
+const USE_CHILD_STREAM = process.env.ZIP_STREAM_CHILD === '1'
+  && process.env.ZIP_JOB_INLINE !== '1'
+  && process.env.NODE_ENV !== 'test';
 
 function serializeJobForStream(job) {
   return {
