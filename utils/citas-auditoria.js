@@ -56,8 +56,17 @@ function pacienteReciboCoincideCita(rec, cita, estrictoNombre = true, opciones =
   const docCita = normDocumento(cita?.paciente_documento);
   if (docRec && docCita) return docRec === docCita;
   if (docRec && !docCita) return false;
-  if (!docRec && docCita) return enlaceDirecto;
+  if (!docRec && docCita) {
+    if (enlaceDirecto) return true;
+    return clienteCoincidePaciente(rec?.cliente, cita?.paciente_nombre, estrictoNombre);
+  }
   return clienteCoincidePaciente(rec?.cliente, cita?.paciente_nombre, estrictoNombre);
+}
+
+function documentosPacienteConflictivos(rec, cita) {
+  const docRec = extraerDocumentoRecibo(rec);
+  const docCita = normDocumento(cita?.paciente_documento);
+  return !!(docRec && docCita && docRec !== docCita);
 }
 
 function normNombrePaciente(s) {
@@ -201,13 +210,31 @@ async function cargarRecibosConsultaMedica(db, citasMedicas) {
        LEFT JOIN turnos t ON t.id = r.turno_id
        WHERE (r.cita_electro_id IS NULL OR r.cita_electro_id = 0)
          AND ${SQL_EXCLUIR_MEDICO_ELECTRO.replace(/medico_nombre/g, 'r.medico_nombre')}
-         AND (r.turno_id IS NULL OR r.turno_id = 0)
          AND DATE(r.fecha) IN (${phFechas})`,
       fechas
     );
   }
 
-  return dedupeRecibosPorId([...porTurno, ...porTipoFecha]);
+  let porDocumento = [];
+  const documentos = [...new Set(citasMedicas.map((c) => normDocumento(c.paciente_documento)).filter((d) => d.length >= 5))];
+  if (documentos.length && fechas.length) {
+    const phFechas = fechas.map(() => '?').join(',');
+    const docConds = documentos.slice(0, 80).map(() =>
+      `REPLACE(REPLACE(REPLACE(REPLACE(JSON_UNQUOTE(JSON_EXTRACT(r.data, '$.doc')), '.', ''), '-', ''), ' ', ''), '/', '') = ?`
+    ).join(' OR ');
+    porDocumento = await db.query(
+      `SELECT ${RECIBO_CAMPOS_AUDITORIA}, t.paciente_documento AS turno_documento
+       FROM recibos r
+       LEFT JOIN turnos t ON t.id = r.turno_id
+       WHERE (r.cita_electro_id IS NULL OR r.cita_electro_id = 0)
+         AND ${SQL_EXCLUIR_MEDICO_ELECTRO.replace(/medico_nombre/g, 'r.medico_nombre')}
+         AND DATE(r.fecha) IN (${phFechas})
+         AND (${docConds})`,
+      [...fechas, ...documentos.slice(0, 80)]
+    ).catch(() => []);
+  }
+
+  return dedupeRecibosPorId([...porTurno, ...porTipoFecha, ...porDocumento]);
 }
 
 async function cargarRecibosElectro(db, citasElectro) {
@@ -230,8 +257,10 @@ async function cargarRecibosElectro(db, citasElectro) {
   if (fechas.length) {
     const phFechas = fechas.map(() => '?').join(',');
     porTipoFecha = await db.query(
-      `SELECT ${RECIBO_CAMPOS_AUDITORIA}
+      `SELECT ${RECIBO_CAMPOS_AUDITORIA}, p.documento AS electro_documento
        FROM recibos r
+       LEFT JOIN citas_electro ce ON ce.id = r.cita_electro_id
+       LEFT JOIN pacientes p ON p.id = ce.paciente_id
        WHERE (r.cita_electro_id IS NULL OR r.cita_electro_id = 0)
          AND (r.turno_id IS NULL OR r.turno_id = 0)
          AND DATE(r.fecha) IN (${phFechas})`,
@@ -239,7 +268,25 @@ async function cargarRecibosElectro(db, citasElectro) {
     );
   }
 
-  return dedupeRecibosPorId([...porCitaElectro, ...porTipoFecha]);
+  let porDocumento = [];
+  const documentos = [...new Set(citasElectro.map((c) => normDocumento(c.paciente_documento)).filter((d) => d.length >= 5))];
+  if (documentos.length && fechas.length) {
+    const phFechas = fechas.map(() => '?').join(',');
+    const docConds = documentos.slice(0, 80).map(() =>
+      `REPLACE(REPLACE(REPLACE(REPLACE(JSON_UNQUOTE(JSON_EXTRACT(r.data, '$.doc')), '.', ''), '-', ''), ' ', ''), '/', '') = ?`
+    ).join(' OR ');
+    porDocumento = await db.query(
+      `SELECT ${RECIBO_CAMPOS_AUDITORIA}
+       FROM recibos r
+       WHERE (r.cita_electro_id IS NULL OR r.cita_electro_id = 0)
+         AND (r.turno_id IS NULL OR r.turno_id = 0)
+         AND DATE(r.fecha) IN (${phFechas})
+         AND (${docConds})`,
+      [...fechas, ...documentos.slice(0, 80)]
+    ).catch(() => []);
+  }
+
+  return dedupeRecibosPorId([...porCitaElectro, ...porTipoFecha, ...porDocumento]);
 }
 
 function dedupeRecibosPorId(rows) {
@@ -496,24 +543,15 @@ function reciboDirectoMedica(rec, cita, catalogos = {}) {
   if (rec.cita_electro_id != null && rec.cita_electro_id !== '' && Number(rec.cita_electro_id) !== 0) {
     return false;
   }
-  const fechaRec = extraerFechaYmd(rec.fecha);
-  const fechaCita = extraerFechaYmd(cita.fecha);
-  if (fechaRec && fechaCita && fechaRec !== fechaCita) return false;
-  if (!entidadCoincide(rec, cita)) return false;
-  return pacienteReciboCoincideCita(rec, cita, false, { enlaceDirecto: true });
+  return !documentosPacienteConflictivos(rec, cita);
 }
 
 function reciboDirectoElectro(rec, cita) {
   if (!reciboEnlazadoPorCitaElectro(rec, cita)) return false;
-  const fechaRec = extraerFechaYmd(rec.fecha);
-  const fechaCita = extraerFechaYmd(cita.fecha);
-  if (fechaRec && fechaCita && fechaRec !== fechaCita) return false;
-  if (!entidadCoincide(rec, cita)) return false;
-  return pacienteReciboCoincideCita(rec, cita, false, { enlaceDirecto: true });
+  return !documentosPacienteConflictivos(rec, cita);
 }
 
-/** Asigna recibos en dos pasos: enlaces directos primero, coincidencia por tipo/fecha después. */
-function asignarRecibosACitas(citas, recibos, catalogos, tipoCita) {
+function mapearRecibosPorCita(citas, recibos, catalogos, tipoCita) {
   const usados = new Set();
   const porCita = new Map(citas.map((c) => [c.id, []]));
   const directoFn = tipoCita === 'AGENDA_MEDICA'
@@ -540,7 +578,35 @@ function asignarRecibosACitas(citas, recibos, catalogos, tipoCita) {
     });
   });
 
+  return porCita;
+}
+
+/** Asigna recibos en dos pasos: enlaces directos primero, coincidencia por tipo/fecha después. */
+function asignarRecibosACitas(citas, recibos, catalogos, tipoCita) {
+  const porCita = mapearRecibosPorCita(citas, recibos, catalogos, tipoCita);
   return citas.flatMap((c) => expandirCitaConRecibos(c, porCita.get(c.id)));
+}
+
+function adjuntarReciboResumenACita(cita, recibos) {
+  const lista = ordenarRecibosParaReporte(recibos || []);
+  if (!lista.length) {
+    return {
+      ...cita,
+      ...mapReciboParaExport(null),
+      recibo_seq: '',
+      recibos_en_cita: 0
+    };
+  }
+  const activo = elegirReciboActivo(lista) || lista[0];
+  const total = lista.length;
+  const numeros = lista.map((r) => r.numero).filter(Boolean);
+  return {
+    ...cita,
+    ...mapReciboFilaReporte(activo),
+    recibo_seq: total > 1 ? `${total} recibos` : '',
+    recibos_en_cita: total,
+    recibo_numero: numeros.length > 1 ? numeros.join(', ') : (activo.numero || '')
+  };
 }
 
 /** Adjunta recibos según tipo de cita: médica (turno/tipo consulta) o electro (cita_electro/tipo estudio). */
@@ -585,9 +651,40 @@ async function enriquecerCitasConRecibos(db, citas) {
   });
 }
 
+/** Una fila por cita con resumen del recibo (tabla del dashboard). */
+async function adjuntarRecibosResumenACitas(db, citas) {
+  if (!citas.length) return [];
+
+  const citasMedicas = citas.filter((c) => c.tipo_cita === 'AGENDA_MEDICA');
+  const citasElectro = citas.filter((c) => c.tipo_cita === 'ELECTRODIAGNOSTICO');
+
+  const [catalogos, recibosMedicosRaw, recibosElectroRaw] = await Promise.all([
+    cargarCatalogosEnlaceRecibos(db),
+    cargarRecibosConsultaMedica(db, citasMedicas),
+    cargarRecibosElectro(db, citasElectro)
+  ]);
+
+  const recibosMedicos = recibosMedicosRaw.filter((r) => esReciboConsultaMedica(r, catalogos));
+  const recibosElectro = recibosElectroRaw.filter((r) => esReciboElectro(r, catalogos));
+
+  const medMap = mapearRecibosPorCita(citasMedicas, recibosMedicos, catalogos, 'AGENDA_MEDICA');
+  const elecMap = mapearRecibosPorCita(citasElectro, recibosElectro, catalogos, 'ELECTRODIAGNOSTICO');
+
+  return citas.map((c) => {
+    if (c.tipo_cita === 'AGENDA_MEDICA') {
+      return adjuntarReciboResumenACita(c, medMap.get(c.id) || []);
+    }
+    if (c.tipo_cita === 'ELECTRODIAGNOSTICO') {
+      return adjuntarReciboResumenACita(c, elecMap.get(c.id) || []);
+    }
+    return adjuntarReciboResumenACita(c, []);
+  });
+}
+
 module.exports = {
   queryCitasAuditoria,
   enriquecerCitasConRecibos,
+  adjuntarRecibosResumenACitas,
   mapReciboParaExport,
   mapReciboFilaReporte,
   expandirCitaConRecibos,
@@ -605,7 +702,10 @@ module.exports = {
   normDocumento,
   extraerDocumentoRecibo,
   pacienteReciboCoincideCita,
+  documentosPacienteConflictivos,
   entidadCoincide,
   asignarRecibosACitas,
+  mapearRecibosPorCita,
+  adjuntarReciboResumenACita,
   cargarCatalogosEnlaceRecibos
 };

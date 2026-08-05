@@ -439,7 +439,7 @@ async function buscarCitasAuditoria() {
     const tbody = document.getElementById('bodyTablaAuditoria');
     if (tbody) {
       const esc = typeof escapeHtml === 'function' ? escapeHtml : (s) => s;
-      tbody.innerHTML = `<tr><td colspan="10" style="padding:20px;text-align:center;color:#dc2626">Error: ${esc(e.message)}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="13" style="padding:20px;text-align:center;color:#dc2626">Error: ${esc(e.message)}</td></tr>`;
     }
   } finally {
     dashboardFetchInFlight = false;
@@ -479,7 +479,7 @@ function renderizarTablaCitasAuditoria(citas) {
     const tbody = document.getElementById('bodyTablaAuditoria');
     if (!tbody) return;
     if (citas.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="10" style="padding:20px;text-align:center;color:#999">No hay citas que coincidan con los filtros</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="13" style="padding:20px;text-align:center;color:#999">No hay citas que coincidan con los filtros</td></tr>';
       const controls = document.getElementById('tablaCitasAuditoriaControls');
       if (controls) controls.innerHTML = '';
       return;
@@ -494,7 +494,7 @@ function renderizarTablaCitasAuditoria(citas) {
     const tbody = document.getElementById('bodyTablaAuditoria');
     if (tbody) {
       const esc = typeof escapeHtml === 'function' ? escapeHtml : (s) => s;
-      tbody.innerHTML = `<tr><td colspan="10" style="padding:20px;text-align:center;color:#dc2626">Error al renderizar tabla: ${esc(e.message)}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="13" style="padding:20px;text-align:center;color:#dc2626">Error al renderizar tabla: ${esc(e.message)}</td></tr>`;
     }
   }
 }
@@ -514,6 +514,14 @@ function renderCitaAuditoriaRow(tbody, cita) {
     const agendado = cita.programado_por || '-';
     const estado = cita.estado || '-';
     const { color, bg } = getEstadoStyle(estado);
+    const reciboNum = cita.recibo_numero || '-';
+    const reciboValor = cita.recibo_valor === '' || cita.recibo_valor == null
+      ? '-'
+      : (typeof formatMoney === 'function' ? formatMoney(cita.recibo_valor) : String(cita.recibo_valor));
+    const reciboEst = cita.recibo_estado || '-';
+    const reciboEstStyle = reciboEst === 'ANULADO'
+      ? 'background:#fee2e2;color:#991b1b'
+      : (reciboEst === 'PENDIENTE' ? 'background:#fef3c7;color:#92400e' : (reciboEst === 'PAGADO' ? 'background:#d1fae5;color:#065f46' : 'background:#f3f4f6;color:#4b5563'));
 
     tr.innerHTML = `
       <td>${esc(fecha)}</td>
@@ -526,12 +534,15 @@ function renderCitaAuditoriaRow(tbody, cita) {
       <td><span style="font-size:11px;padding:2px 7px;border-radius:20px;background:#e0f2fe;color:#0369a1;font-weight:600">${esc(tipoCitaLabel)}</span></td>
       <td style="font-weight:600;color:#374151">${esc(agendado)}</td>
       <td><span style="font-size:11px;padding:2px 8px;border-radius:20px;background:${bg};color:${color};font-weight:600;white-space:nowrap">${esc(estado)}</span></td>
+      <td style="font-size:12px;white-space:nowrap">${esc(reciboNum)}${cita.recibo_seq ? ` <span style="color:#888;font-size:10px">(${esc(cita.recibo_seq)})</span>` : ''}</td>
+      <td style="font-size:12px;white-space:nowrap">${esc(reciboValor)}</td>
+      <td><span style="font-size:11px;padding:2px 8px;border-radius:20px;background:${reciboEstStyle};font-weight:600;white-space:nowrap">${esc(reciboEst)}</span></td>
     `;
     tbody.appendChild(tr);
   } catch (e) {
     console.error('[DASHBOARD CITAS] Error renderizando fila:', e.message);
     const tr = document.createElement('tr');
-    tr.innerHTML = '<td colspan="10" style="padding:8px;text-align:center;color:#dc2626">Error en fila</td>';
+    tr.innerHTML = '<td colspan="13" style="padding:8px;text-align:center;color:#dc2626">Error en fila</td>';
     tbody.appendChild(tr);
   }
 }

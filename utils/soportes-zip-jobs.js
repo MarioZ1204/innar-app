@@ -8,6 +8,7 @@ const crypto = require('crypto');
 const { fork } = require('child_process');
 const { zipArchiveSegment, getSopZipWorkDir } = require('./soportes-armado-zip');
 const { runZipJobToDisk } = require('./soportes-zip-job-runner');
+const { tryGetCachedZip, saveToCache, PERIOD_ZIP_KINDS } = require('./soportes-zip-cache');
 const logger = require('./logger');
 
 const JOB_TTL_MS = 2 * 60 * 60 * 1000;
@@ -69,11 +70,14 @@ function markJobFinished(job, patch) {
 function runZipJobInline(job) {
   job.status = 'running';
   return runZipJobToDisk(job, (patch) => applyProgress(job, patch))
-    .then((result) => {
+    .then(async (result) => {
       job.status = 'ready';
       job.progress = 100;
       job.message = 'Listo para descargar';
       job.filePath = result.filePath;
+      if (PERIOD_ZIP_KINDS.has(job.kind) && job.periodoId) {
+        await saveToCache(job.periodoId, job.kind, job.filePath, job.filename);
+      }
     })
     .catch((e) => {
       job.status = 'error';
@@ -114,12 +118,16 @@ function runZipJobInChildProcess(job) {
       return;
     }
     if (msg.type === 'done') {
+      const filePath = msg.filePath || path.join(getSopZipWorkDir(), `${job.id}.zip`);
       const ok = markJobFinished(job, {
         status: 'ready',
         progress: 100,
         message: 'Listo para descargar',
-        filePath: msg.filePath || path.join(getSopZipWorkDir(), `${job.id}.zip`)
+        filePath
       });
+      if (ok && PERIOD_ZIP_KINDS.has(job.kind) && job.periodoId) {
+        void saveToCache(job.periodoId, job.kind, filePath, job.filename);
+      }
       if (ok) try { child.disconnect(); } catch (_) { /* ignore */ }
       return;
     }
@@ -211,11 +219,44 @@ function createZipJob(spec, usuarioId = null) {
     filename: spec.filename || 'descarga.zip',
     emptyError: spec.emptyError || null,
     createdAt: Date.now(),
-    childProcess: null
+    childProcess: null,
+    fromCache: false
   };
   jobs.set(id, job);
   enqueueZipJob(job);
   return job;
+}
+
+async function createZipJobWithCache(spec, usuarioId = null) {
+  if (PERIOD_ZIP_KINDS.has(spec.kind) && spec.periodoId) {
+    const cached = await tryGetCachedZip(spec.periodoId, spec.kind);
+    if (cached?.filePath) {
+      cleanupOldJobs();
+      const id = crypto.randomBytes(12).toString('hex');
+      const job = {
+        id,
+        kind: spec.kind,
+        periodoId: spec.periodoId,
+        diaId: null,
+        contenedorId: null,
+        expedienteId: null,
+        usuarioId,
+        status: 'ready',
+        progress: 100,
+        message: 'Listo para descargar (caché)',
+        error: null,
+        filePath: cached.filePath,
+        filename: cached.filename || spec.filename || 'descarga.zip',
+        emptyError: spec.emptyError || null,
+        createdAt: Date.now(),
+        childProcess: null,
+        fromCache: true
+      };
+      jobs.set(id, job);
+      return job;
+    }
+  }
+  return createZipJob(spec, usuarioId);
 }
 
 function createPeriodPaqueteJob(periodo, usuarioId = null) {
@@ -234,6 +275,7 @@ function getJob(jobId) {
 
 module.exports = {
   createZipJob,
+  createZipJobWithCache,
   createPeriodPaqueteJob,
   getJob,
   JOB_TTL_MS,

@@ -197,6 +197,33 @@ describe('recibos consulta médica en auditoría', () => {
     expect(reciboCoincideCitaMedica(rec, citaMedica, CATALOGOS_AUDITORIA)).toBe(false);
   });
 
+  test('enlace directo por turno aunque la fecha del recibo sea distinta', () => {
+    const rec = {
+      id: 21,
+      turno_id: 42,
+      cita_electro_id: null,
+      tipo_servicio: 'Medicina General',
+      fecha: '2026-06-16',
+      cliente: 'María López',
+      data: JSON.stringify({ doc: '1234567890' })
+    };
+    expect(reciboDirectoMedica(rec, citaMedica, CATALOGOS_AUDITORIA)).toBe(true);
+    expect(reciboCoincideCitaMedica(rec, citaMedica, CATALOGOS_AUDITORIA)).toBe(true);
+  });
+
+  test('fallback vincula por nombre cuando el recibo no trae documento en data', () => {
+    const rec = {
+      id: 22,
+      turno_id: null,
+      cita_electro_id: null,
+      tipo_servicio: 'Medicina General',
+      fecha: '2026-06-15',
+      cliente: 'María López',
+      nombre_entidad: 'FIDUPREVISORA'
+    };
+    expect(reciboCoincideCitaMedica(rec, citaMedica, CATALOGOS_AUDITORIA)).toBe(true);
+  });
+
   test('enlace directo por turno aunque el médico del recibo diga electrodiagnóstico', () => {
     const rec = {
       id: 7,

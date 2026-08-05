@@ -1282,7 +1282,9 @@
       if (st.status === 'ready') {
         sopZipBgStopPoll(localId);
         iniciarDescargaArchivoIframe(`/api/soportes/armado/zip/job/${j.apiJobId}/descargar`);
-        j.message = 'Descarga iniciada — puede seguir trabajando';
+        j.message = (st.message || '').includes('caché')
+          ? 'Descarga desde caché — puede seguir trabajando'
+          : 'Descarga iniciada — puede seguir trabajando';
         j.status = 'downloaded';
         j.progress = 100;
         sopZipBgRender();
@@ -1354,10 +1356,25 @@
     void sopZipBgPollOnce(localId);
   }
 
+  function buildZipStreamUrl(spec) {
+    const p = new URLSearchParams();
+    p.set('kind', spec.kind);
+    if (spec.periodo_id) p.set('periodo_id', String(spec.periodo_id));
+    if (spec.dia_id) p.set('dia_id', String(spec.dia_id));
+    if (spec.contenedor_id) p.set('contenedor_id', String(spec.contenedor_id));
+    if (spec.expediente_id) p.set('expediente_id', String(spec.expediente_id));
+    return `/api/soportes/armado/zip/stream?${p.toString()}`;
+  }
+
   function descargarZipArmado(apiPath, fallbackFilename) {
-    void iniciarZipEnSegundoPlano(apiPath, fallbackFilename).catch((e) => {
-      sopToast(e.message || 'No se pudo iniciar el ZIP', 'error');
-    });
+    const spec = parseZipJobFromApiPath(apiPath, fallbackFilename);
+    if (!spec) {
+      sopToast('Ruta ZIP no reconocida', 'error');
+      return;
+    }
+    const label = spec.fallback || fallbackFilename || 'descarga.zip';
+    sopToast(`Descargando ${label}… La descarga empieza en segundos; puede seguir trabajando.`, 'info');
+    iniciarDescargaArchivoIframe(buildZipStreamUrl(spec));
   }
 
   function htmlArmZipBtn({ apiPath, fallbackName, title, icon = 'archive', label = '', variant = 'ghost' } = {}) {

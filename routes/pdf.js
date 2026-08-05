@@ -12,7 +12,7 @@ const {
   requireAuth, requireRoleOrPerm,
   safeError, isAdminRol, isRecepcionRol
 } = require('../middleware/index');
-const { queryCitasAuditoria, enriquecerCitasConRecibos } = require('../utils/citas-auditoria');
+const { queryCitasAuditoria, enriquecerCitasConRecibos, adjuntarRecibosResumenACitas } = require('../utils/citas-auditoria');
 
 const jsonLargeBody = require('express').json({ limit: '50mb' });
 
@@ -289,6 +289,7 @@ const DASHBOARD_CITAS_PERM = requireRoleOrPerm(
 router.get('/dashboard/citas-auditoria', requireAuth, DASHBOARD_CITAS_PERM, async (req, res) => {
   try {
     const { citas, resumen, citasMedicas, citasElectro } = await queryCitasAuditoria(db, req.query);
+    const data = await adjuntarRecibosResumenACitas(db, citas);
 
     logger.info('Dashboard auditoría citas', {
       usuario: req.session && req.session.usuario ? req.session.usuario : 'Unknown',
@@ -297,7 +298,7 @@ router.get('/dashboard/citas-auditoria', requireAuth, DASHBOARD_CITAS_PERM, asyn
       electro: citasElectro.length
     });
 
-    res.json({ success: true, data: citas, resumen });
+    res.json({ success: true, data, resumen });
   } catch (e) {
     logger.error('Error en dashboard auditoría', { error: e.message, stack: e.stack });
     res.status(500).json({ error: safeError(e, 'Error al cargar auditoría de citas: ') });

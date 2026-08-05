@@ -219,12 +219,6 @@ function iteratorForJob(job) {
     default: throw new Error(`Tipo de ZIP no soportado: ${job.kind}`);
   }
 }
-
-/**
- * @param {object} job spec con id, kind, periodoId, etc.
- * @param {(patch: {message?: string, progress?: number}) => void} onProgress
- */
-async function runZipJobToDisk(job, onProgress = () => {}) {
   const state = { ...job, progress: job.progress || 0, message: job.message || 'Generando…' };
   const report = (patch) => {
     onProgressSafe(state, patch);
@@ -236,4 +230,4 @@ async function runZipJobToDisk(job, onProgress = () => {}) {
   return result;
 }
 
-module.exports = { runZipJobToDisk };
+module.exports = { runZipJobToDisk, iteratorForJob };
