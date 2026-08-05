@@ -1564,6 +1564,101 @@ body.sop-arm-drag-active {
   color: #0f172a;
 }
 
+/* Navegación interna entre carpetas (distinta del «Menú principal» del sidebar) */
+.sop-btn-nav-subir {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: min(100%, 280px);
+  padding: 6px 10px !important;
+  border: 1px dashed #94a3b8 !important;
+  background: #f8fafc !important;
+  color: #334155 !important;
+  font-size: 0.78rem !important;
+  font-weight: 500 !important;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+.sop-btn-nav-subir:hover {
+  border-color: #64748b !important;
+  background: #f1f5f9 !important;
+  color: #0f172a !important;
+}
+
+.sop-btn-nav-subir svg,
+.sop-btn-nav-subir [data-lucide] {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  color: #64748b;
+}
+
+.sop-btn-nav-subir .sop-nav-subir-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sop-btn-nav-subir .sop-nav-subir-text strong {
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.sop-arm-theme .btn-volver-menu-principal,
+.sop-pdx-theme .btn-volver-menu-principal {
+  border-left: 3px solid rgba(255, 255, 255, 0.35);
+}
+
+.sop-header-more-wrap {
+  position: relative;
+}
+
+.sop-header-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 40;
+  min-width: 220px;
+  padding: 6px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.12);
+}
+
+.sop-header-dropdown.hidden {
+  display: none !important;
+}
+
+.sop-header-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #334155;
+  font-size: 0.86rem;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sop-header-dropdown-item:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.sop-header-dropdown-item svg,
+.sop-header-dropdown-item [data-lucide] {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: #64748b;
+}
+
 /* Progreso expediente FE */
 .sop-exp-progress {
   margin: 0 0 16px;
@@ -1675,9 +1770,26 @@ body.sop-arm-drag-active {
 }
 
 .sop-dropzone:hover,
-.sop-dropzone.sop-dropzone-active {
+.sop-dropzone.sop-dropzone-active,
+.sop-dropzone.is-dragover {
   border-color: var(--sop-focus);
   background: var(--innar-accent-soft);
+}
+
+.sop-dropzone:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--sop-focus) 30%, transparent);
+  outline-offset: 2px;
+}
+
+.sop-dropzone.is-uploading {
+  opacity: 0.7;
+  cursor: wait;
+  pointer-events: none;
+}
+
+.sop-dropzone.is-uploading .sop-dropzone-label::after {
+  content: ' · Subiendo…';
+  color: var(--sop-focus);
 }
 
 .sop-dropzone.sop-dropzone-disabled {
@@ -1936,6 +2048,15 @@ body.sop-arm-drag-active {
   background: linear-gradient(180deg, #f0fdf4, #fff);
 }
 
+.sop-slot-card:not(.ok):not(.disabled) {
+  border-color: #dbe4ee;
+}
+
+.sop-slot-card:not(.ok):not(.disabled):hover {
+  border-color: var(--sop-focus);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
+}
+
 .sop-slot-card.disabled {
   opacity: 0.45;
   pointer-events: none;
@@ -1993,6 +2114,17 @@ body.sop-arm-drag-active {
   background: #f8fafc;
   border-radius: 12px;
   border: 1px solid #e2e8f0;
+}
+
+.sop-flags .sop-field-help {
+  flex-basis: 100%;
+  margin-top: -10px;
+  color: #64748b;
+  font-size: 0.78rem;
+}
+
+.sop-smart-upload .sop-dropzone {
+  margin: 10px 0 0;
 }
 
 /* Modales en body: tokens propios (fuera de #view-armado-soportes) */

@@ -6,7 +6,7 @@ const {
   tipoServicioCoincideCatalogo
 } = require('./recibos-catalogo-filtros');
 
-const RECIBO_CAMPOS_AUDITORIA = 'id, numero, turno_id, cita_electro_id, total, anulado, anulado_razon, estado_pago, observaciones, tipo_servicio, fecha, cliente, medico_nombre';
+const RECIBO_CAMPOS_AUDITORIA = 'r.id, r.numero, r.turno_id, r.cita_electro_id, r.total, r.anulado, r.anulado_razon, r.estado_pago, r.observaciones, r.tipo_servicio, r.fecha, r.cliente, r.medico_nombre, r.nombre_entidad, r.data';
 
 const SQL_EXCLUIR_MEDICO_ELECTRO = `(medico_nombre IS NULL OR TRIM(medico_nombre) = '' OR UPPER(TRIM(medico_nombre)) NOT LIKE '%ELECTRODIAG%')`;
 
@@ -14,6 +14,50 @@ function extraerFechaYmd(val) {
   if (!val) return '';
   const m = String(val).match(/^(\d{4}-\d{2}-\d{2})/);
   return m ? m[1] : String(val).slice(0, 10);
+}
+
+function normDocumento(s) {
+  return String(s || '').replace(/\D/g, '').trim();
+}
+
+function normEntidad(s) {
+  return String(s || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function extraerDocumentoRecibo(rec) {
+  if (!rec) return '';
+  const fromJoin = normDocumento(rec.turno_documento || rec.electro_documento || '');
+  if (fromJoin) return fromJoin;
+  if (rec.data) {
+    try {
+      const parsed = typeof rec.data === 'string' ? JSON.parse(rec.data) : rec.data;
+      const doc = normDocumento(parsed?.doc);
+      if (doc) return doc;
+    } catch (_) { /* ignore */ }
+  }
+  return '';
+}
+
+function entidadCoincide(rec, cita) {
+  const a = normEntidad(rec?.nombre_entidad);
+  const b = normEntidad(cita?.entidad);
+  if (!a || !b) return true;
+  return a === b || a.includes(b) || b.includes(a);
+}
+
+function pacienteReciboCoincideCita(rec, cita, estrictoNombre = true, opciones = {}) {
+  const enlaceDirecto = opciones.enlaceDirecto === true;
+  const docRec = extraerDocumentoRecibo(rec);
+  const docCita = normDocumento(cita?.paciente_documento);
+  if (docRec && docCita) return docRec === docCita;
+  if (docRec && !docCita) return false;
+  if (!docRec && docCita) return enlaceDirecto;
+  return clienteCoincidePaciente(rec?.cliente, cita?.paciente_nombre, estrictoNombre);
 }
 
 function normNombrePaciente(s) {
@@ -98,7 +142,7 @@ function reciboEnlazadoPorCitaElectro(rec, cita) {
 /** Enlace directo por turno_id o, en su defecto, tipo_servicio ≈ tipo_consulta + fecha + paciente. */
 function reciboCoincideCitaMedica(rec, cita, catalogos = {}) {
   if (esReciboElectro(rec, catalogos)) return false;
-  if (reciboEnlazadoPorTurno(rec, cita)) return true;
+  if (reciboDirectoMedica(rec, cita, catalogos)) return true;
   if (rec.turno_id != null && rec.turno_id !== '' && Number(rec.turno_id) !== Number(cita.id)) {
     return false;
   }
@@ -110,12 +154,13 @@ function reciboCoincideCitaMedica(rec, cita, catalogos = {}) {
   const fechaRec = extraerFechaYmd(rec.fecha);
   const fechaCita = extraerFechaYmd(cita.fecha);
   if (fechaRec && fechaCita && fechaRec !== fechaCita) return false;
-  return clienteCoincidePaciente(rec.cliente, cita.paciente_nombre, true);
+  if (!entidadCoincide(rec, cita)) return false;
+  return pacienteReciboCoincideCita(rec, cita, true);
 }
 
 /** Enlace directo por cita_electro_id o, en su defecto, tipo_servicio ≈ estudio + fecha + paciente. */
 function reciboCoincideCitaElectro(rec, cita, catalogos = {}) {
-  if (reciboEnlazadoPorCitaElectro(rec, cita)) return true;
+  if (reciboDirectoElectro(rec, cita)) return true;
   if (!esReciboElectro(rec, catalogos)) return false;
   if (rec.cita_electro_id != null && rec.cita_electro_id !== '' && Number(rec.cita_electro_id) !== Number(cita.id)) {
     return false;
@@ -128,7 +173,8 @@ function reciboCoincideCitaElectro(rec, cita, catalogos = {}) {
   const fechaRec = extraerFechaYmd(rec.fecha);
   const fechaCita = extraerFechaYmd(cita.fecha);
   if (fechaRec && fechaCita && fechaRec !== fechaCita) return false;
-  return clienteCoincidePaciente(rec.cliente, cita.paciente_nombre, true);
+  if (!entidadCoincide(rec, cita)) return false;
+  return pacienteReciboCoincideCita(rec, cita, true);
 }
 
 async function cargarRecibosConsultaMedica(db, citasMedicas) {
@@ -139,8 +185,10 @@ async function cargarRecibosConsultaMedica(db, citasMedicas) {
   const phTurnos = turnoIds.map(() => '?').join(',');
 
   const porTurno = await db.query(
-    `SELECT ${RECIBO_CAMPOS_AUDITORIA} FROM recibos
-     WHERE turno_id IN (${phTurnos})`,
+    `SELECT ${RECIBO_CAMPOS_AUDITORIA}, t.paciente_documento AS turno_documento
+     FROM recibos r
+     LEFT JOIN turnos t ON t.id = r.turno_id
+     WHERE r.turno_id IN (${phTurnos})`,
     turnoIds
   );
 
@@ -148,11 +196,13 @@ async function cargarRecibosConsultaMedica(db, citasMedicas) {
   if (fechas.length) {
     const phFechas = fechas.map(() => '?').join(',');
     porTipoFecha = await db.query(
-      `SELECT ${RECIBO_CAMPOS_AUDITORIA} FROM recibos
-       WHERE (cita_electro_id IS NULL OR cita_electro_id = 0)
-         AND ${SQL_EXCLUIR_MEDICO_ELECTRO}
-         AND (turno_id IS NULL OR turno_id = 0)
-         AND DATE(fecha) IN (${phFechas})`,
+      `SELECT ${RECIBO_CAMPOS_AUDITORIA}, t.paciente_documento AS turno_documento
+       FROM recibos r
+       LEFT JOIN turnos t ON t.id = r.turno_id
+       WHERE (r.cita_electro_id IS NULL OR r.cita_electro_id = 0)
+         AND ${SQL_EXCLUIR_MEDICO_ELECTRO.replace(/medico_nombre/g, 'r.medico_nombre')}
+         AND (r.turno_id IS NULL OR r.turno_id = 0)
+         AND DATE(r.fecha) IN (${phFechas})`,
       fechas
     );
   }
@@ -168,8 +218,11 @@ async function cargarRecibosElectro(db, citasElectro) {
   const phElectro = electroIds.map(() => '?').join(',');
 
   const porCitaElectro = await db.query(
-    `SELECT ${RECIBO_CAMPOS_AUDITORIA} FROM recibos
-     WHERE cita_electro_id IN (${phElectro})`,
+    `SELECT ${RECIBO_CAMPOS_AUDITORIA}, p.documento AS electro_documento
+     FROM recibos r
+     LEFT JOIN citas_electro ce ON ce.id = r.cita_electro_id
+     LEFT JOIN pacientes p ON p.id = ce.paciente_id
+     WHERE r.cita_electro_id IN (${phElectro})`,
     electroIds
   );
 
@@ -177,10 +230,11 @@ async function cargarRecibosElectro(db, citasElectro) {
   if (fechas.length) {
     const phFechas = fechas.map(() => '?').join(',');
     porTipoFecha = await db.query(
-      `SELECT ${RECIBO_CAMPOS_AUDITORIA} FROM recibos
-       WHERE (cita_electro_id IS NULL OR cita_electro_id = 0)
-         AND (turno_id IS NULL OR turno_id = 0)
-         AND DATE(fecha) IN (${phFechas})`,
+      `SELECT ${RECIBO_CAMPOS_AUDITORIA}
+       FROM recibos r
+       WHERE (r.cita_electro_id IS NULL OR r.cita_electro_id = 0)
+         AND (r.turno_id IS NULL OR r.turno_id = 0)
+         AND DATE(r.fecha) IN (${phFechas})`,
       fechas
     );
   }
@@ -442,11 +496,20 @@ function reciboDirectoMedica(rec, cita, catalogos = {}) {
   if (rec.cita_electro_id != null && rec.cita_electro_id !== '' && Number(rec.cita_electro_id) !== 0) {
     return false;
   }
-  return true;
+  const fechaRec = extraerFechaYmd(rec.fecha);
+  const fechaCita = extraerFechaYmd(cita.fecha);
+  if (fechaRec && fechaCita && fechaRec !== fechaCita) return false;
+  if (!entidadCoincide(rec, cita)) return false;
+  return pacienteReciboCoincideCita(rec, cita, false, { enlaceDirecto: true });
 }
 
 function reciboDirectoElectro(rec, cita) {
-  return reciboEnlazadoPorCitaElectro(rec, cita);
+  if (!reciboEnlazadoPorCitaElectro(rec, cita)) return false;
+  const fechaRec = extraerFechaYmd(rec.fecha);
+  const fechaCita = extraerFechaYmd(cita.fecha);
+  if (fechaRec && fechaCita && fechaRec !== fechaCita) return false;
+  if (!entidadCoincide(rec, cita)) return false;
+  return pacienteReciboCoincideCita(rec, cita, false, { enlaceDirecto: true });
 }
 
 /** Asigna recibos en dos pasos: enlaces directos primero, coincidencia por tipo/fecha después. */
@@ -538,6 +601,11 @@ module.exports = {
   reciboEnlazadoPorTurno,
   reciboEnlazadoPorCitaElectro,
   reciboDirectoMedica,
+  reciboDirectoElectro,
+  normDocumento,
+  extraerDocumentoRecibo,
+  pacienteReciboCoincideCita,
+  entidadCoincide,
   asignarRecibosACitas,
   cargarCatalogosEnlaceRecibos
 };

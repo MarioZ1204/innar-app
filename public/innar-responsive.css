@@ -725,9 +725,8 @@ svg {
     gap: 6px;
   }
 
-  /* UCQN / gestión — grids genéricos en cards */
+  /* Gestión — grids genéricos en cards */
   .card .row + .table-wrapper,
-  #view-ucqn .card,
   #view-gestion-datos .card {
     overflow-x: visible;
   }

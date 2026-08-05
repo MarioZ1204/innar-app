@@ -11,6 +11,8 @@ const {
   reciboEnlazadoPorTurno,
   reciboEnlazadoPorCitaElectro,
   reciboDirectoMedica,
+  extraerDocumentoRecibo,
+  pacienteReciboCoincideCita,
   asignarRecibosACitas
 } = require('../utils/citas-auditoria');
 
@@ -117,7 +119,9 @@ describe('recibos consulta médica en auditoría', () => {
     id: 42,
     fecha: '2026-06-15',
     tipo_consulta: 'Medicina General',
-    paciente_nombre: 'María López'
+    paciente_nombre: 'María López',
+    paciente_documento: '1234567890',
+    entidad: 'FIDUPREVISORA'
   };
 
   test('excluye recibos de electrodiagnóstico', () => {
@@ -180,6 +184,19 @@ describe('recibos consulta médica en auditoría', () => {
     expect(reciboCoincideCitaMedica(rec, citaMedica, CATALOGOS_AUDITORIA)).toBe(false);
   });
 
+  test('enlace directo rechaza documento distinto al de la cita', () => {
+    const rec = {
+      id: 20,
+      turno_id: 42,
+      cita_electro_id: null,
+      tipo_servicio: 'Medicina General',
+      fecha: '2026-06-15',
+      data: JSON.stringify({ doc: '0000000000' })
+    };
+    expect(reciboDirectoMedica(rec, citaMedica, CATALOGOS_AUDITORIA)).toBe(false);
+    expect(reciboCoincideCitaMedica(rec, citaMedica, CATALOGOS_AUDITORIA)).toBe(false);
+  });
+
   test('enlace directo por turno aunque el médico del recibo diga electrodiagnóstico', () => {
     const rec = {
       id: 7,
@@ -207,9 +224,33 @@ describe('recibos consulta médica en auditoría', () => {
       cita_electro_id: null,
       tipo_servicio: 'Medicina General',
       fecha: '2026-06-15',
-      cliente: 'María López'
+      cliente: 'María López',
+      data: JSON.stringify({ doc: '1234567890' }),
+      nombre_entidad: 'FIDUPREVISORA'
     };
     expect(reciboCoincideCitaMedica(rec, citaMedica, CATALOGOS_AUDITORIA)).toBe(true);
+  });
+
+  test('no vincula recibo con mismo nombre pero distinto documento', () => {
+    const rec = {
+      id: 9,
+      turno_id: null,
+      cita_electro_id: null,
+      tipo_servicio: 'Medicina General',
+      fecha: '2026-06-15',
+      cliente: 'María López',
+      data: JSON.stringify({ doc: '9999999999' }),
+      nombre_entidad: 'FIDUPREVISORA'
+    };
+    expect(reciboCoincideCitaMedica(rec, citaMedica, CATALOGOS_AUDITORIA)).toBe(false);
+  });
+
+  test('extrae documento desde data.doc del recibo', () => {
+    expect(extraerDocumentoRecibo({ data: JSON.stringify({ doc: '12.345.678' }) })).toBe('12345678');
+    expect(pacienteReciboCoincideCita(
+      { data: JSON.stringify({ doc: '1234567890' }) },
+      { paciente_documento: '1234567890' }
+    )).toBe(true);
   });
 
   test('fallback no coincide si cambia fecha o tipo', () => {
@@ -231,7 +272,9 @@ describe('recibos electro en auditoría', () => {
     id: 88,
     fecha: '2026-06-20',
     tipo_consulta: 'EEG Convencional',
-    paciente_nombre: 'Pedro Ruiz'
+    paciente_nombre: 'Pedro Ruiz',
+    paciente_documento: '55667788',
+    entidad: 'PARTICULAR'
   };
 
   test('enlaza por cita_electro_id', () => {
@@ -258,7 +301,9 @@ describe('recibos electro en auditoría', () => {
       medico_nombre: 'ELECTRODIAGNÓSTICOS',
       tipo_servicio: 'EEG Convencional',
       fecha: '2026-06-20',
-      cliente: 'Pedro Ruiz'
+      cliente: 'Pedro Ruiz',
+      data: JSON.stringify({ doc: '55667788' }),
+      nombre_entidad: 'Particular'
     };
     expect(reciboCoincideCitaElectro(rec, citaElectro, CATALOGOS_AUDITORIA)).toBe(true);
   });

@@ -163,7 +163,10 @@
       <div class="menu-welcome">
         <h2>¿Qué deseas hacer?</h2>
       </div>
-      <div class="menu-cards" id="menuCardsContainer">
+      <div class="menu-groups" id="menuCardsContainer">
+        <section class="menu-group">
+          <h3 class="menu-group-title">Clínica y atención</h3>
+          <div class="menu-cards">
         <button class="menu-card" data-module="recibos" data-rol="superadmin admin admin_recepcion recepcion contabilidad auxiliar_recepcion">
           <span class="menu-card-icon"><img src="/images/iconrecibos.webp" alt="Recibos" class="icon-img" width="56" height="63" loading="lazy" /></span>
           <span class="menu-card-label">
@@ -188,52 +191,27 @@
             <span class="menu-card-title">Monitor de Equipos</span>
           </span>
         </button>
-        <button class="menu-card" data-module="ucqn" data-rol="superadmin admin admin_recepcion recepcion admin_electro electro contabilidad">
-          <span class="menu-card-icon"><span class="ucqn-icon-text">U C Q N</span></span>
+        <button class="menu-card" data-module="llamado-pacientes">
+          <span class="menu-card-icon"><svg width="56" height="55" viewBox="0 0 56 55" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="28" cy="28" r="22" fill="#ccfbf1" stroke="#0d9488" stroke-width="2"/><path d="M20 34c0-4.4 3.6-8 8-8s8 3.6 8 8" stroke="#0d9488" stroke-width="2" stroke-linecap="round"/><circle cx="28" cy="22" r="5" fill="#0d9488" opacity=".35"/><path d="M38 18l4-2v8l-4-2" fill="#0d9488" opacity=".5"/></svg></span>
           <span class="menu-card-label">
-            <span class="menu-card-title">UCQN</span>
+            <span class="menu-card-title">Llamado de pacientes</span>
           </span>
         </button>
-        <button class="menu-card" data-module="usuarios" data-rol="superadmin admin">
-          <span class="menu-card-icon"><img src="/images/iconuser.webp" alt="Usuarios" class="icon-img" width="56" height="44" loading="lazy" /></span>
-          <span class="menu-card-label">
-            <span class="menu-card-title">Usuarios</span>
-          </span>
-        </button>
-        <button class="menu-card" data-module="diagnosticos" data-rol="superadmin admin">
-          <span class="menu-card-icon"><img src="/images/icondiagnosticos.svg" alt="Diagnósticos" class="icon-img" width="56" height="56" loading="lazy" /></span>
-          <span class="menu-card-label">
-            <span class="menu-card-title">Diagnósticos</span>
-          </span>
-        </button>
-        <button class="menu-card" data-module="dashboard-citas" data-rol="superadmin admin admin_recepcion recepcion admin_electro electro contabilidad doctor">
-          <span class="menu-card-icon"><img src="/images/icondashboard.svg" alt="Auditoría de Citas" class="icon-img" width="56" height="56" loading="lazy" /></span>
-          <span class="menu-card-label">
-            <span class="menu-card-title">Auditoría de Citas</span>
-          </span>
-        </button>
-        <button class="menu-card" data-module="backup" data-rol="superadmin admin">
-          <span class="menu-card-icon"><svg width="56" height="55" viewBox="0 0 56 55" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="8" y="10" width="40" height="36" rx="4" fill="#e0f2fe" stroke="#0284c7" stroke-width="2"/><path d="M28 18v12M22 24h12" stroke="#0284c7" stroke-width="2.5" stroke-linecap="round"/><path d="M16 38h24" stroke="#64748b" stroke-width="2" stroke-linecap="round"/></svg></span>
-          <span class="menu-card-label">
-            <span class="menu-card-title">Backup</span>
-          </span>
-        </button>
-        <button class="menu-card" data-module="anexo-fidu">
-          <span class="menu-card-icon"><svg width="56" height="55" viewBox="0 0 56 55" fill="none"><rect x="6" y="6" width="44" height="40" rx="3" fill="#fef3c7" stroke="#d97706" stroke-width="2"/><path d="M10 14h36M10 22h36M10 30h24" stroke="#d97706" stroke-width="1.5"/><rect x="10" y="36" width="12" height="6" fill="#fde68a"/></svg></span>
-          <span class="menu-card-label">
-            <span class="menu-card-title">Anexo</span>
-          </span>
-        </button>
+          </div>
+        </section>
+        <section class="menu-group">
+          <h3 class="menu-group-title">Documentos y facturación FIDU</h3>
+          <div class="menu-cards">
         <button class="menu-card" data-module="documentos-cita">
           <span class="menu-card-icon"><svg width="56" height="55" viewBox="0 0 56 55" fill="none"><rect x="8" y="6" width="40" height="44" rx="4" fill="#e6f4f1" stroke="#2d4a47" stroke-width="2"/><path d="M16 18h24M16 26h20M16 34h16" stroke="#2d4a47" stroke-width="2" stroke-linecap="round"/><path d="M34 38l6 6" stroke="#0d9488" stroke-width="2.5" stroke-linecap="round"/></svg></span>
           <span class="menu-card-label">
             <span class="menu-card-title">Comprobantes y certificados</span>
           </span>
         </button>
-        <button class="menu-card" data-module="gestion-datos" data-rol="superadmin admin">
-          <span class="menu-card-icon"><img src="/images/icondiagnosticos.svg" alt="Gestión de Datos" class="icon-img" width="56" height="56" loading="lazy" /></span>
+        <button class="menu-card" data-module="anexo-fidu">
+          <span class="menu-card-icon"><svg width="56" height="55" viewBox="0 0 56 55" fill="none"><rect x="6" y="6" width="44" height="40" rx="3" fill="#fef3c7" stroke="#d97706" stroke-width="2"/><path d="M10 14h36M10 22h36M10 30h24" stroke="#d97706" stroke-width="1.5"/><rect x="10" y="36" width="12" height="6" fill="#fde68a"/></svg></span>
           <span class="menu-card-label">
-            <span class="menu-card-title">Gestión de Datos</span>
+            <span class="menu-card-title">Anexo FIDU</span>
           </span>
         </button>
         <button class="menu-card" data-module="reportes-pdx" data-rol="superadmin admin admin_recepcion recepcion contabilidad admin_electro electro tecnico_electro">
@@ -251,16 +229,46 @@
         <button class="menu-card" data-module="archivo-soportes" data-rol="superadmin admin admin_recepcion recepcion contabilidad admin_electro">
           <span class="menu-card-icon"><svg width="56" height="55" viewBox="0 0 56 55" fill="none"><rect x="10" y="8" width="36" height="38" rx="4" fill="#f1f5f9" stroke="#64748b" stroke-width="2"/><path d="M18 18h20M18 26h16M18 34h12" stroke="#64748b" stroke-width="2" stroke-linecap="round"/><rect x="32" y="30" width="10" height="10" rx="2" fill="#cbd5e1"/></svg></span>
           <span class="menu-card-label">
-            <span class="menu-card-title">Archivo</span>
+            <span class="menu-card-title">Archivo histórico</span>
           </span>
         </button>
-        <button class="menu-card" data-module="llamado-pacientes">
-          <span class="menu-card-icon"><svg width="56" height="55" viewBox="0 0 56 55" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="28" cy="28" r="22" fill="#ccfbf1" stroke="#0d9488" stroke-width="2"/><path d="M20 34c0-4.4 3.6-8 8-8s8 3.6 8 8" stroke="#0d9488" stroke-width="2" stroke-linecap="round"/><circle cx="28" cy="22" r="5" fill="#0d9488" opacity=".35"/><path d="M38 18l4-2v8l-4-2" fill="#0d9488" opacity=".5"/></svg></span>
+          </div>
+        </section>
+        <section class="menu-group">
+          <h3 class="menu-group-title">Administración y sistema</h3>
+          <div class="menu-cards">
+        <button class="menu-card" data-module="dashboard-citas" data-rol="superadmin admin admin_recepcion recepcion admin_electro electro contabilidad doctor">
+          <span class="menu-card-icon"><img src="/images/icondashboard.svg" alt="Auditoría de Citas" class="icon-img" width="56" height="56" loading="lazy" /></span>
           <span class="menu-card-label">
-            <span class="menu-card-title">Llamado de pacientes</span>
+            <span class="menu-card-title">Auditoría de Citas</span>
           </span>
         </button>
-
+        <button class="menu-card" data-module="usuarios" data-rol="superadmin admin">
+          <span class="menu-card-icon"><img src="/images/iconuser.webp" alt="Usuarios" class="icon-img" width="56" height="44" loading="lazy" /></span>
+          <span class="menu-card-label">
+            <span class="menu-card-title">Usuarios</span>
+          </span>
+        </button>
+        <button class="menu-card" data-module="diagnosticos" data-rol="superadmin admin">
+          <span class="menu-card-icon"><img src="/images/icondiagnosticos.svg" alt="Diagnósticos" class="icon-img" width="56" height="56" loading="lazy" /></span>
+          <span class="menu-card-label">
+            <span class="menu-card-title">Diagnósticos</span>
+          </span>
+        </button>
+        <button class="menu-card" data-module="gestion-datos" data-rol="superadmin admin">
+          <span class="menu-card-icon"><svg width="56" height="55" viewBox="0 0 56 55" fill="none" xmlns="http://www.w3.org/2000/svg"><ellipse cx="28" cy="14" rx="16" ry="6" fill="#e0f2fe" stroke="#0284c7" stroke-width="2"/><path d="M12 14v14c0 3.3 7.2 6 16 6s16-2.7 16-6V14" stroke="#0284c7" stroke-width="2"/><path d="M12 28v8c0 3.3 7.2 6 16 6s16-2.7 16-6v-8" stroke="#0284c7" stroke-width="2"/></svg></span>
+          <span class="menu-card-label">
+            <span class="menu-card-title">Gestión de Datos</span>
+          </span>
+        </button>
+        <button class="menu-card" data-module="backup" data-rol="superadmin admin">
+          <span class="menu-card-icon"><svg width="56" height="55" viewBox="0 0 56 55" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="8" y="10" width="40" height="36" rx="4" fill="#e0f2fe" stroke="#0284c7" stroke-width="2"/><path d="M28 18v12M22 24h12" stroke="#0284c7" stroke-width="2.5" stroke-linecap="round"/><path d="M16 38h24" stroke="#64748b" stroke-width="2" stroke-linecap="round"/></svg></span>
+          <span class="menu-card-label">
+            <span class="menu-card-title">Backup</span>
+          </span>
+        </button>
+          </div>
+        </section>
       </div>
     </div>
   </div>
@@ -1983,86 +1991,6 @@
     </div>
   </div>
 
-  <div id="view-ucqn" class="view-module hidden">
-    <div class="main-layout">
-      <div class="sidebar">
-        <div class="sidebar-inner">
-          <div class="sidebar-logo-mini"><img src="/images/logo.webp" alt="Logo" width="305" height="100" loading="lazy" /></div>
-          <button class="btn-volver" id="btnVolverUcqn">
-            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
-            Volver al menú
-          </button>
-          <div class="sidebar-logo">
-            <img src="/images/logo.webp" alt="Logo" width="305" height="100" style="height:58px;width:auto;object-fit:contain" loading="lazy" />
-          </div>
-          <hr class="sidebar-title-sep" />
-          <h2>UCQN</h2>
-        </div>
-        <div class="sidebar-footer">
-          <div class="sidebar-user">
-            <div class="sidebar-user-avatar">--</div>
-            <div>
-              <div class="sidebar-user-name">Cargando...</div>
-              <div class="sidebar-user-role">-</div>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div class="main-content">
-        <div class="container">
-          <header style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
-            <h2 style="margin:0">Módulo UCQN</h2>
-          </header>
-          <section class="card no-print">
-            <div class="row">
-              <div class="col">
-                <label>Fecha desde</label>
-                <input id="ucqnFechaDesde" type="date" />
-              </div>
-              <div class="col">
-                <label>Fecha hasta</label>
-                <input id="ucqnFechaHasta" type="date" />
-              </div>
-              <div class="col">
-                <label>Estado</label>
-                <select id="ucqnEstadoFiltro">
-                  <option value="">Todos</option>
-                  <option value="PENDIENTE">Pendiente</option>
-                  <option value="LEIDO">Leído</option>
-                  <option value="FACTURADO">Facturado</option>
-                </select>
-              </div>
-              <div class="col" style="display:flex;align-items:flex-end;gap:8px">
-                <button id="btnUcqnBuscar" class="btn-primary">Buscar</button>
-              </div>
-            </div>
-          </section>
-          <section class="card">
-            <div class="table-wrapper">
-              <table class="modern-table" id="ucqnTable">
-                <thead>
-                  <tr>
-                    <th>Fecha</th>
-                    <th>Hora</th>
-                    <th>Nombres</th>
-                    <th class="col-mobile-hide">Apellidos</th>
-                    <th>Documento</th>
-                    <th>Estudio</th>
-                    <th class="col-mobile-hide">Entidad</th>
-                    <th>Estado</th>
-                  </tr>
-                </thead>
-                <tbody id="ucqnTableBody">
-                  <tr><td colspan="8" style="padding:20px;text-align:center;color:#999">Sin datos</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </section>
-        </div>
-      </div>
-    </div>
-  </div>
-
   <!-- Modal para detalles de cita electrodiagnóstico -->
   <div id="modalDetallesCitaElectro" class="modal hidden" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.55);align-items:center;justify-content:center;z-index:1000;padding:16px">
     <div class="cita-modal-card">
@@ -2623,7 +2551,7 @@
       </div>
       <div class="main-content">
         <div class="container">
-          <header><h2>Auditoría Completa de Citas</h2></header>
+          <header><h2>Auditoría de Citas</h2></header>
 
           <!-- Filtros -->
           <section class="card no-print">
@@ -2888,7 +2816,7 @@
             <img src="/images/logo.webp" alt="Logo" width="305" height="100" style="height:58px;width:auto;object-fit:contain" loading="lazy" />
           </div>
           <hr class="sidebar-title-sep" />
-          <h2>Documentos</h2>
+          <h2>Comprobantes y certificados</h2>
         </div>
         <div class="sidebar-footer">
           <div class="sidebar-user">
@@ -3031,7 +2959,7 @@
             <img src="/images/logo.webp" alt="Logo" width="305" height="100" style="height:58px;width:auto;object-fit:contain" loading="lazy" />
           </div>
           <hr class="sidebar-title-sep" />
-          <h2>Anexo</h2>
+          <h2>Anexo FIDU</h2>
           <nav class="afidu-sidebar-nav" aria-label="Secciones del módulo">
             <button type="button" class="sidebar-btn afidu-section-btn active" data-afidu-section="anexos">
               <span class="sb-icon"><i data-lucide="folder-tree"></i></span>
@@ -3057,7 +2985,7 @@
         <div class="container afidu-module-content">
           <header class="sop-module-page-header no-print">
             <div>
-              <h2>Anexo</h2>
+              <h2>Anexo FIDU</h2>
             </div>
             <div class="sop-module-header-actions" id="afiduHeaderActionsAnexos">
               <button type="button" class="btn-primary" id="btnAfiduNuevaCarpeta" title="Ej. Junio">
@@ -3316,7 +3244,7 @@
         <div class="container">
           <header>
             <h2 id="gestionDatosTitulo">Citas Electrodiagnóstico</h2>
-            <p style="color:#dc2626;font-weight:600;font-size:13px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>Atención: Esta acción es permanente e irreversible. Los registros eliminados no se pueden recuperar.</p>
+            <p id="gestionDatosWarnBanner" class="gestion-datos-warn hidden" role="note"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>Atención: la eliminación en esta sección es permanente e irreversible.</p>
           </header>
 
           <!-- Filtros -->
@@ -3931,9 +3859,9 @@
       <div class="sidebar no-print">
         <div class="sidebar-inner">
           <div class="sidebar-logo-mini"><img src="/images/logo.webp" alt="Logo" width="305" height="100" loading="lazy" /></div>
-          <button class="btn-volver" id="btnVolverReportesPdx" type="button">
-            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
-            Volver al menú
+          <button class="btn-volver btn-volver-menu-principal" id="btnVolverReportesPdx" type="button" title="Salir del módulo y volver al menú principal">
+            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+            Menú principal
           </button>
           <div class="sidebar-logo">
             <img src="/images/logo.webp" alt="Logo" width="305" height="100" style="height:58px;width:auto;object-fit:contain" loading="lazy" />
@@ -4055,9 +3983,9 @@
       <div class="sidebar no-print">
         <div class="sidebar-inner">
           <div class="sidebar-logo-mini"><img src="/images/logo.webp" alt="Logo" width="305" height="100" loading="lazy" /></div>
-          <button class="btn-volver" id="btnVolverArmadoSoportes" type="button">
-            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
-            Volver al menú
+          <button class="btn-volver btn-volver-menu-principal" id="btnVolverArmadoSoportes" type="button" title="Salir del módulo y volver al menú principal">
+            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+            Menú principal
           </button>
           <div class="sidebar-logo">
             <img src="/images/logo.webp" alt="Logo" width="305" height="100" style="height:58px;width:auto;object-fit:contain" loading="lazy" />
@@ -4089,18 +4017,21 @@
                 <i data-lucide="search"></i>
                 <input type="search" id="sopArmBuscarPaciente" class="sop-search" placeholder="Buscar paciente (mín. 2 caracteres)…" autocomplete="off">
               </div>
-              <button type="button" id="btnSopArmNuevaContenedora" class="btn-secondary">
-                <i data-lucide="folder-tree"></i> Contenedora
-              </button>
               <button type="button" id="btnSopArmNuevoDia" class="btn-secondary">
                 <i data-lucide="folder-plus"></i> Carpeta de día
               </button>
               <button type="button" id="btnSopArmNuevoPeriodo" class="btn-primary">
                 <i data-lucide="calendar-range"></i> Nuevo mes
               </button>
-              <button type="button" id="btnSopArmRecuperarArchivos" class="btn-secondary" title="Recuperar rutas y nombres de archivos de SOPORTES">
-                <i data-lucide="refresh-cw"></i> Recuperar archivos
-              </button>
+              <div class="sop-header-more-wrap">
+                <button type="button" id="btnSopArmMasAcciones" class="btn-secondary" aria-haspopup="true" aria-expanded="false" aria-controls="sopArmMasMenu">
+                  <i data-lucide="more-horizontal"></i> Más acciones
+                </button>
+                <div id="sopArmMasMenu" class="sop-header-dropdown hidden" role="menu" aria-label="Más acciones de Soportes">
+                  <button type="button" role="menuitem" id="btnSopArmNuevaContenedora" class="sop-header-dropdown-item"><i data-lucide="folder-tree"></i> Nueva contenedora</button>
+                  <button type="button" role="menuitem" id="btnSopArmRecuperarArchivos" class="sop-header-dropdown-item"><i data-lucide="refresh-cw"></i> Recuperar archivos</button>
+                </div>
+              </div>
             </div>
           </header>
       <div class="sop-body sop-armado-layout" id="sopArmLayout">
@@ -4228,7 +4159,7 @@
             <img src="/images/logo.webp" alt="Logo" width="305" height="100" style="height:58px;width:auto;object-fit:contain" loading="lazy" />
           </div>
           <hr class="sidebar-title-sep" />
-          <h2>Archivo</h2>
+          <h2>Archivo histórico</h2>
         </div>
         <div class="sidebar-footer">
           <div class="sidebar-user">
@@ -4244,7 +4175,7 @@
         <div class="container sop-module-content">
           <header class="sop-module-page-header no-print">
             <div>
-              <h2>Archivo de módulos</h2>
+              <h2>Archivo histórico</h2>
               <p style="margin:6px 0 0;font-size:.875rem;color:#64748b">Carpetas de Cargar reportes, Soportes y Anexo que completaron su ciclo. Puede volver a mostrarlas u ocultarlas en el módulo Soportes; aquí permanecen con su copia ZIP de respaldo.</p>
             </div>
             <button type="button" id="btnArchivoModuloRefrescar" class="sop-btn sop-btn-ghost">

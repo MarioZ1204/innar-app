@@ -313,55 +313,6 @@ function normalizeFecha(str) {
   return s.slice(0, 10);
 }
 
-// Helper: sincronizar estudios UCQN desde citas_electro
-async function sincronizarUcqnDesdeElectro() {
-  const rows = await db.query(`
-    SELECT
-      ce.id AS cita_electro_id,
-      ce.fecha AS fecha_estudio,
-      ce.hora_agendamiento AS hora_estudio,
-      p.nombre AS paciente_nombre_completo,
-      p.documento AS paciente_documento,
-      ce.estudio AS tipo_estudio,
-      ce.entidad AS entidad
-    FROM citas_electro ce
-    JOIN pacientes p ON p.id = ce.paciente_id
-    WHERE ce.deleted_at IS NULL
-      AND UPPER(TRIM(COALESCE(ce.entidad, ''))) = 'UCQN'
-  `);
-
-  for (const r of rows) {
-    const fullName = String(r.paciente_nombre_completo || '').trim();
-    const parts = fullName.split(/\s+/).filter(Boolean);
-    const nombres = parts.length > 1 ? parts.slice(0, -1).join(' ') : fullName;
-    const apellidos = parts.length > 1 ? parts.slice(-1).join(' ') : '';
-    await db.execute(
-      `INSERT INTO ucqn_estudios (
-        cita_electro_id, fecha_estudio, hora_estudio, paciente_nombres, paciente_apellidos,
-        paciente_documento, tipo_estudio, entidad, estado
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDIENTE')
-      ON DUPLICATE KEY UPDATE
-        fecha_estudio = VALUES(fecha_estudio),
-        hora_estudio = VALUES(hora_estudio),
-        paciente_nombres = VALUES(paciente_nombres),
-        paciente_apellidos = VALUES(paciente_apellidos),
-        paciente_documento = VALUES(paciente_documento),
-        tipo_estudio = VALUES(tipo_estudio),
-        entidad = VALUES(entidad)`,
-      [
-        r.cita_electro_id,
-        r.fecha_estudio,
-        r.hora_estudio,
-        nombres || '',
-        apellidos || '',
-        r.paciente_documento || null,
-        r.tipo_estudio || null,
-        r.entidad || 'UCQN'
-      ]
-    );
-  }
-}
-
 // GET /api/equipos-electro
 router.get('/equipos-electro', requireAuth, async (req, res) => {
   try {
@@ -636,59 +587,6 @@ router.get('/equipos-electro/disponibilidad', requireAuth, async (req, res) => {
     });
   } catch (e) {
     logger.error('[electro/disponibilidad] Error:', e.message);
-    res.status(500).json({ error: safeError(e) });
-  }
-});
-
-// GET /api/ucqn/estudios
-router.get('/ucqn/estudios', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro', 'contabilidad'], ['ucqn.ver', 'electro.ver']), async (req, res) => {
-  try {
-    await sincronizarUcqnDesdeElectro();
-    const { fecha_desde, fecha_hasta, estado } = req.query;
-    const conditions = ['1=1'];
-    const params = [];
-    if (fecha_desde) { conditions.push('u.fecha_estudio >= ?'); params.push(fecha_desde); }
-    if (fecha_hasta) { conditions.push('u.fecha_estudio <= ?'); params.push(fecha_hasta); }
-    if (estado && ['PENDIENTE', 'LEIDO', 'FACTURADO'].includes(String(estado).toUpperCase())) {
-      conditions.push('u.estado = ?');
-      params.push(String(estado).toUpperCase());
-    }
-    const rows = await db.query(`
-      SELECT u.id, u.cita_electro_id, DATE_FORMAT(u.fecha_estudio, '%Y-%m-%d') AS fecha_estudio,
-             u.hora_estudio, u.paciente_nombres, u.paciente_apellidos, u.paciente_documento,
-             u.tipo_estudio, u.entidad, u.estado, u.estado_actualizado_en, u.estado_actualizado_por
-      FROM ucqn_estudios u
-      WHERE ${conditions.join(' AND ')}
-      ORDER BY u.fecha_estudio DESC, u.hora_estudio DESC, u.id DESC
-    `, params);
-    res.json({ ok: true, registros: rows });
-  } catch (e) {
-    res.status(500).json({ error: safeError(e) });
-  }
-});
-
-// PATCH /api/ucqn/estudios/:id/estado
-router.patch('/ucqn/estudios/:id/estado', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro', 'contabilidad'], ['ucqn.editar_estado', 'electro.editar']), async (req, res) => {
-  try {
-    const id = parseInt(req.params.id, 10);
-    const estado = String(req.body?.estado || '').trim().toUpperCase();
-    if (!id || !['PENDIENTE', 'LEIDO', 'FACTURADO'].includes(estado)) {
-      return res.status(400).json({ error: 'Parámetros inválidos' });
-    }
-    const current = await db.queryOne('SELECT estado FROM ucqn_estudios WHERE id = ?', [id]);
-    if (!current) return res.status(404).json({ error: 'Registro no encontrado' });
-    if (current.estado === 'FACTURADO' && estado !== 'FACTURADO') {
-      return res.status(409).json({ error: 'Un estudio FACTURADO no puede volver a estado anterior' });
-    }
-    if (current.estado === 'PENDIENTE' && estado === 'FACTURADO') {
-      return res.status(409).json({ error: 'Debe pasar por LEIDO antes de FACTURADO' });
-    }
-    await db.execute(
-      `UPDATE ucqn_estudios SET estado = ?, estado_actualizado_en = NOW(), estado_actualizado_por = ? WHERE id = ?`,
-      [estado, req.session?.usuario || 'Sistema', id]
-    );
-    res.json({ ok: true });
-  } catch (e) {
     res.status(500).json({ error: safeError(e) });
   }
 });

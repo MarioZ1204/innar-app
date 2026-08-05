@@ -18,7 +18,7 @@ const ROLES_VALIDOS = ['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'a
 const { esPermisoPdxValido } = require('../utils/soportes-pdx-carpetas-permisos');
 
 const PERMISOS_VALIDOS = new Set([
-  'modulo.recibos', 'modulo.agenda_medica', 'modulo.electrodiag', 'modulo.ucqn',
+  'modulo.recibos', 'modulo.agenda_medica', 'modulo.electrodiag',
   'modulo.dashboard', 'modulo.usuarios', 'modulo.diagnosticos', 'modulo.gestion_datos',
   'modulo.monitor_equipos', 'modulo.reportes_pdx', 'modulo.armado_soportes', 'modulo.anexo_fidu', 'modulo.backup', 'modulo.llamado_pacientes',
   'soportes.pdx.ver', 'soportes.pdx.carpetas.todas', 'soportes.pdx.crear_carpeta', 'soportes.pdx.subir', 'soportes.pdx.editar', 'soportes.pdx.eliminar',
@@ -32,7 +32,6 @@ const PERMISOS_VALIDOS = new Set([
   'llamado.configurar',
   'electro.ver', 'electro.crear', 'electro.editar', 'electro.eliminar', 'electro.cambiar_estado',
   'electro.subir_archivo', 'electro.ver_archivo', 'electro.aviso_doctor',
-  'ucqn.ver', 'ucqn.editar_estado',
   'usuarios.ver', 'usuarios.crear', 'usuarios.editar', 'usuarios.cambiar_clave',
   'usuarios.eliminar', 'usuarios.auditoria', 'usuarios.permisos',
   'diagnosticos.ver', 'diagnosticos.crear', 'diagnosticos.editar', 'diagnosticos.eliminar',

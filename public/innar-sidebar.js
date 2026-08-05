@@ -9,6 +9,9 @@
   const DESKTOP_MQ = window.matchMedia('(min-width: 769px)');
 
   const PIN_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1z"/></svg>';
+  const HOME_ICON = '<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>';
+  const MENU_PRINCIPAL_LABEL = 'Menú principal';
+  const MENU_PRINCIPAL_TITLE = 'Salir del módulo y volver al menú principal';
 
   function isPinned() {
     try {
@@ -33,6 +36,44 @@
     if (on) dismissHint();
   }
 
+  function normalizeMenuPrincipalBtn(btn) {
+    if (!btn || btn.dataset.menuPrincipalNormalized === '1') return;
+    btn.dataset.menuPrincipalNormalized = '1';
+    btn.classList.add('btn-volver-menu-principal');
+    if (!btn.getAttribute('title')) btn.setAttribute('title', MENU_PRINCIPAL_TITLE);
+    const svg = btn.querySelector('svg');
+    if (svg) svg.outerHTML = HOME_ICON;
+    let labelEl = btn.querySelector('.btn-volver-label');
+    if (!labelEl) {
+      labelEl = document.createElement('span');
+      labelEl.className = 'btn-volver-label';
+      const textNode = Array.from(btn.childNodes).find((n) => n.nodeType === 3 && n.textContent.trim());
+      if (textNode) {
+        labelEl.textContent = MENU_PRINCIPAL_LABEL;
+        btn.replaceChild(labelEl, textNode);
+      } else {
+        labelEl.textContent = MENU_PRINCIPAL_LABEL;
+        btn.appendChild(labelEl);
+      }
+    } else {
+      labelEl.textContent = MENU_PRINCIPAL_LABEL;
+    }
+    const spanOnly = btn.querySelector(':scope > span:not(.btn-volver-label)');
+    if (spanOnly && !spanOnly.classList.contains('btn-volver-label')) {
+      spanOnly.textContent = MENU_PRINCIPAL_LABEL;
+      spanOnly.classList.add('btn-volver-label');
+    }
+    btn.setAttribute('data-sidebar-tooltip', MENU_PRINCIPAL_LABEL);
+    btn.setAttribute('aria-label', MENU_PRINCIPAL_LABEL);
+  }
+
+  function normalizeAllMenuPrincipalButtons(root) {
+    const scope = root && root.querySelectorAll ? root : document;
+    scope.querySelectorAll('.btn-volver').forEach(normalizeMenuPrincipalBtn);
+    const llamado = document.getElementById('btnVolverLlamadoPacientes');
+    if (llamado) normalizeMenuPrincipalBtn(llamado);
+  }
+
   function getLabelFromBtn(btn) {
     const volverLbl = btn.querySelector('.btn-volver-label');
     if (volverLbl) return (volverLbl.textContent || '').trim();
@@ -55,7 +96,7 @@
       if (!btn.getAttribute('aria-label')) btn.setAttribute('aria-label', label);
     });
     scope.querySelectorAll('.btn-volver').forEach((btn) => {
-      const label = getLabelFromBtn(btn) || 'Volver al menú';
+      const label = getLabelFromBtn(btn) || MENU_PRINCIPAL_LABEL;
       btn.setAttribute('data-sidebar-tooltip', label);
       if (!btn.getAttribute('aria-label')) btn.setAttribute('aria-label', label);
       if (!btn.querySelector('.btn-volver-label')) {
@@ -252,6 +293,7 @@
     });
     cleanupSopArmNavChrome();
     enhanceTopbarBrands();
+    normalizeAllMenuPrincipalButtons();
     setPinned(isPinned());
     maybeShowHint();
   }

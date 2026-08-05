@@ -871,7 +871,6 @@ function updateMenuByRole() {
     'recibos':        'modulo.recibos',
     'agenda-medica':  'modulo.agenda_medica',
     'electro':        'modulo.electrodiag',
-    'ucqn':           'modulo.ucqn',
     'usuarios':       'modulo.usuarios',
     'diagnosticos':   'modulo.diagnosticos',
     'dashboard-citas':'modulo.dashboard',
@@ -894,6 +893,11 @@ function updateMenuByRole() {
     const permKey = MODULE_PERM_MAP[moduleKey];
     let allowed = permKey ? tienePermiso(permKey) : (card.dataset.rol || '').split(' ').includes(rol);
     card.style.display = allowed ? '' : 'none';
+  });
+  document.querySelectorAll('.menu-group').forEach((group) => {
+    const cards = group.querySelectorAll('.menu-card');
+    const visible = [...cards].some((c) => c.style.display !== 'none');
+    group.style.display = visible ? '' : 'none';
   });
   // Sidebar recibos: mostrar/ocultar según permisos
   document.querySelectorAll('[data-perm-recibos]').forEach(btn => {
@@ -1031,7 +1035,7 @@ async function doLogout() {
   if (p) { p.value = ''; p.setAttribute('value', ''); }
 }
 
-let initRecibosDone = false, initAgendaDone = false, initElectroDone = false, initUsuariosDone = false, initDiagnosticosDone = false, initDashboardCitasDone = false, initGestionDatosDone = false, initUcqnDone = false;
+let initRecibosDone = false, initAgendaDone = false, initElectroDone = false, initUsuariosDone = false, initDiagnosticosDone = false, initDashboardCitasDone = false, initGestionDatosDone = false;
 function goToModule(moduleId) {
   if (moduleId === 'documentos-cita') {
     const permDoc = (typeof tienePermiso === 'function')
@@ -1111,7 +1115,6 @@ function goToModule(moduleId) {
     initDashboardCitasDone = true;
   }
   if (moduleId === 'gestion-datos') { if (!initGestionDatosDone) initGestionDatos(); initGestionDatosDone = true; }
-  if (moduleId === 'ucqn') { if (!initUcqnDone) initUcqn(); initUcqnDone = true; }
   if (moduleId === 'monitor-equipos') { initMonitorEquipos(); }
   if (moduleId === 'reportes-pdx' && typeof initReportesPdx === 'function') initReportesPdx();
   if (moduleId === 'armado-soportes' && typeof initArmadoSoportes === 'function') initArmadoSoportes();
@@ -1144,7 +1147,6 @@ function goToMenu() {
   initUsuariosDone = false;
   initDiagnosticosDone = false;
   initGestionDatosDone = false;
-  initUcqnDone = false;
   // Resetear calendario de citas integrado
   if (typeof _citasCalIniciado !== 'undefined') _citasCalIniciado = false;
   // Resetear caché de catálogos para recargar al volver a entrar
@@ -1181,7 +1183,6 @@ function setupMenuHandlers() {
   if ($('btnVolverGestionDatos')) $('btnVolverGestionDatos').addEventListener('click', goToMenu);
   if ($('btnVolverBackup')) $('btnVolverBackup').addEventListener('click', goToMenu);
   if ($('btnVolverDocumentosCita')) $('btnVolverDocumentosCita').addEventListener('click', goToMenu);
-  if ($('btnVolverUcqn')) $('btnVolverUcqn').addEventListener('click', goToMenu);
 
   // Manejar botón atrás del navegador (solo una vez)
   if (!window._popstateSetup) {
@@ -7591,80 +7592,6 @@ async function confirmarCargarPacientesElectro() {
   }
 }
 
-async function cargarUcqn() {
-  const desde = $('ucqnFechaDesde')?.value || '';
-  const hasta = $('ucqnFechaHasta')?.value || '';
-  const estado = $('ucqnEstadoFiltro')?.value || '';
-  const params = new URLSearchParams();
-  if (desde) params.set('fecha_desde', desde);
-  if (hasta) params.set('fecha_hasta', hasta);
-  if (estado) params.set('estado', estado);
-  const res = await apiFetch(`/api/ucqn/estudios?${params.toString()}`);
-  const data = await res.json();
-  if (!res.ok || !data.ok) throw new Error(data.error || 'Error cargando UCQN');
-  const body = $('ucqnTableBody');
-  if (!body) return;
-  const canEdit = tienePermiso('ucqn.editar_estado') || tienePermiso('electro.editar');
-  const regs = Array.isArray(data.registros) ? data.registros : [];
-  if (!regs.length) {
-    body.innerHTML = '<tr><td colspan="8" style="padding:20px;text-align:center;color:#999">Sin estudios UCQN</td></tr>';
-    return;
-  }
-  body.innerHTML = regs.map(r => `
-    <tr>
-      <td>${escapeHtml(r.fecha_estudio || '-')}</td>
-      <td>${escapeHtml((r.hora_estudio || '').substring(0,5) || '-')}</td>
-      <td>${escapeHtml(r.paciente_nombres || '-')}</td>
-      <td class="col-mobile-hide">${escapeHtml(r.paciente_apellidos || '-')}</td>
-      <td>${escapeHtml(r.paciente_documento || '-')}</td>
-      <td>${escapeHtml(r.tipo_estudio || '-')}</td>
-      <td class="col-mobile-hide">${escapeHtml(r.entidad || '-')}</td>
-      <td>
-        <span class="estado-badge-ucqn estado-${String(r.estado || '').toLowerCase()}">${escapeHtml(r.estado || '-')}</span>
-        ${canEdit ? (
-          r.estado === 'PENDIENTE'
-            ? `<button class="btn-primary btn-ucqn-estado" data-ucqn-id="${r.id}" data-next-estado="LEIDO" style="margin-left:8px;padding:4px 10px;font-size:0.78rem">Marcar leído</button>`
-            : r.estado === 'LEIDO'
-              ? `<button class="btn-primary btn-ucqn-estado" data-ucqn-id="${r.id}" data-next-estado="FACTURADO" style="margin-left:8px;padding:4px 10px;font-size:0.78rem">Facturar</button>`
-              : ''
-        ) : ''}
-      </td>
-    </tr>
-  `).join('');
-}
-
-async function initUcqn() {
-  if ($('ucqnFechaDesde')) $('ucqnFechaDesde').value = '';
-  if ($('ucqnFechaHasta')) $('ucqnFechaHasta').value = '';
-  if ($('ucqnEstadoFiltro')) $('ucqnEstadoFiltro').value = '';
-  const btnBuscarUcqn = $('btnUcqnBuscar');
-  if (btnBuscarUcqn) btnBuscarUcqn.onclick = async () => {
-    try { await cargarUcqn(); } catch (e) { showToast('Error UCQN: ' + e.message, 'error'); }
-  };
-  const bodyUcqn = $('ucqnTableBody');
-  if (bodyUcqn) bodyUcqn.onclick = async (ev) => {
-    const sel = ev.target;
-    if (!sel || !sel.matches('.btn-ucqn-estado')) return;
-    const id = parseInt(sel.dataset.ucqnId, 10);
-    const estado = sel.dataset.nextEstado;
-    try {
-      const res = await apiFetch(`/api/ucqn/estudios/${id}/estado`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ estado })
-      });
-      const data = await res.json();
-      if (!res.ok || !data.ok) throw new Error(data.error || 'No se pudo actualizar estado');
-      showToast('Estado UCQN actualizado', 'success');
-      await cargarUcqn();
-    } catch (e) {
-      showToast(e.message, 'error');
-      await cargarUcqn();
-    }
-  };
-  try { await cargarUcqn(); } catch (e) { showToast('Error UCQN: ' + e.message, 'error'); }
-}
-
 // ========== DASHBOARD (Admin solo) ==========
 // ========== AGENDA ELECTRODIAGNÓSTICO =========
 async function cargarEquiposElectroSelect(valorPreferido) {
@@ -9420,10 +9347,6 @@ const PERMISOS_DEFS = [
   { key: 'electro.aviso_doctor',        label: 'Enviar aviso al doctor',              grupo: 'Electrodiagnóstico' },
   // ── Monitor de Equipos ────────────────────────────────────────────────────
   { key: 'modulo.monitor_equipos',      label: 'Acceso al módulo',                    grupo: 'Monitor de Equipos' },
-  // ── UCQN ───────────────────────────────────────────────────────────────────
-  { key: 'modulo.ucqn',                 label: 'Acceso al módulo',                    grupo: 'UCQN' },
-  { key: 'ucqn.ver',                    label: 'Ver estudios',                        grupo: 'UCQN' },
-  { key: 'ucqn.editar_estado',          label: 'Cambiar estado',                      grupo: 'UCQN' },
   // ── Dashboard de Citas ────────────────────────────────────────────────────
   { key: 'modulo.dashboard',            label: 'Acceso al módulo',                    grupo: 'Dashboard de Citas' },
   { key: 'sistema.dashboard',           label: 'Ver estadísticas de citas',           grupo: 'Dashboard de Citas' },
@@ -9476,7 +9399,7 @@ const PERMISOS_ROL_DEFAULTS = {
   superadmin: null,
   admin: null,
   admin_recepcion: [
-    'modulo.recibos','modulo.agenda_medica','modulo.electrodiag','modulo.ucqn','modulo.dashboard','modulo.monitor_equipos',
+    'modulo.recibos','modulo.agenda_medica','modulo.electrodiag','modulo.dashboard','modulo.monitor_equipos',
     'modulo.reportes_pdx','modulo.armado_soportes','modulo.llamado_pacientes','llamado.configurar',
     'soportes.pdx.ver','soportes.pdx.carpetas.todas','soportes.pdx.crear_carpeta','soportes.pdx.subir','soportes.pdx.editar',
     'soportes.armado.crear_estructura','soportes.armado.subir','soportes.armado.importar_pdx','soportes.descargar_zip',
@@ -9485,11 +9408,10 @@ const PERMISOS_ROL_DEFAULTS = {
     'agenda.ver','agenda.crear','agenda.editar','agenda.eliminar','agenda.cambiar_estado',
     'agenda.llamar_siguiente','agenda.marcar_atendido','agenda.aviso_doctor','agenda.disponibilidad',
     'electro.ver','electro.crear','electro.editar','electro.cambiar_estado','electro.subir_archivo','electro.ver_archivo','electro.aviso_doctor',
-    'ucqn.ver','ucqn.editar_estado',
     'sistema.dashboard',
   ],
   recepcion: [
-    'modulo.recibos','modulo.agenda_medica','modulo.electrodiag','modulo.ucqn','modulo.dashboard','modulo.monitor_equipos',
+    'modulo.recibos','modulo.agenda_medica','modulo.electrodiag','modulo.dashboard','modulo.monitor_equipos',
     'modulo.reportes_pdx','modulo.armado_soportes','modulo.llamado_pacientes','llamado.configurar',
     'soportes.pdx.ver','soportes.pdx.carpetas.todas','soportes.pdx.crear_carpeta','soportes.pdx.subir','soportes.pdx.editar',
     'soportes.armado.crear_estructura','soportes.armado.subir','soportes.armado.importar_pdx','soportes.descargar_zip',
@@ -9498,7 +9420,6 @@ const PERMISOS_ROL_DEFAULTS = {
     'agenda.ver','agenda.crear','agenda.editar','agenda.eliminar','agenda.cambiar_estado',
     'agenda.llamar_siguiente','agenda.marcar_atendido','agenda.aviso_doctor',
     'electro.ver','electro.crear','electro.editar','electro.cambiar_estado',
-    'ucqn.ver','ucqn.editar_estado',
     'sistema.dashboard',
   ],
   auxiliar_recepcion: [
@@ -9515,25 +9436,23 @@ const PERMISOS_ROL_DEFAULTS = {
     'sistema.dashboard',
   ],
   admin_electro: [
-    'modulo.electrodiag','modulo.ucqn','modulo.agenda_medica','modulo.dashboard','modulo.monitor_equipos',
+    'modulo.electrodiag','modulo.agenda_medica','modulo.dashboard','modulo.monitor_equipos',
     'modulo.reportes_pdx','modulo.armado_soportes','modulo.llamado_pacientes','llamado.configurar',
     'soportes.pdx.ver','soportes.pdx.carpetas.todas','soportes.pdx.crear_carpeta','soportes.pdx.subir','soportes.pdx.editar',
     'soportes.armado.crear_estructura','soportes.armado.subir','soportes.armado.importar_pdx','soportes.descargar_zip',
     'soportes.ver_archivo','modulo.archivo_soportes',
     'electro.ver','electro.crear','electro.editar','electro.eliminar','electro.cambiar_estado','electro.subir_archivo','electro.ver_archivo','electro.aviso_doctor',
     'agenda.ver','agenda.editar','agenda.aviso_doctor',
-    'ucqn.ver','ucqn.editar_estado',
     'sistema.dashboard',
   ],
   electro: [
-    'modulo.electrodiag','modulo.ucqn','modulo.agenda_medica','modulo.dashboard','modulo.monitor_equipos',
+    'modulo.electrodiag','modulo.agenda_medica','modulo.dashboard','modulo.monitor_equipos',
     'modulo.reportes_pdx','modulo.armado_soportes','modulo.llamado_pacientes','llamado.configurar',
     'soportes.pdx.ver','soportes.pdx.carpetas.todas','soportes.pdx.crear_carpeta','soportes.pdx.subir','soportes.pdx.editar',
     'soportes.armado.crear_estructura','soportes.armado.subir','soportes.armado.importar_pdx','soportes.descargar_zip',
     'soportes.ver_archivo','modulo.archivo_soportes',
     'electro.ver','electro.crear','electro.editar','electro.eliminar','electro.cambiar_estado','electro.subir_archivo','electro.ver_archivo','electro.aviso_doctor',
     'agenda.ver','agenda.editar','agenda.aviso_doctor',
-    'ucqn.ver','ucqn.editar_estado',
     'sistema.dashboard',
   ],
   tecnico_electro: [
@@ -9542,13 +9461,12 @@ const PERMISOS_ROL_DEFAULTS = {
     'agenda.ver','agenda.editar','agenda.aviso_doctor',
   ],
   contabilidad: [
-    'modulo.recibos','modulo.ucqn','modulo.dashboard',
+    'modulo.recibos','modulo.dashboard',
     'modulo.reportes_pdx','modulo.armado_soportes','modulo.llamado_pacientes','llamado.configurar',
     'soportes.pdx.ver','soportes.pdx.carpetas.todas','soportes.pdx.crear_carpeta','soportes.pdx.subir','soportes.pdx.editar',
     'soportes.armado.crear_estructura','soportes.armado.subir','soportes.armado.importar_pdx','soportes.descargar_zip',
     'soportes.ver_archivo','modulo.archivo_soportes',
     'recibos.ver','recibos.exportar','recibos.pagar','recibos.pendiente',
-    'ucqn.ver','ucqn.editar_estado',
     'sistema.dashboard','sistema.reportes',
   ],
 };
@@ -16452,6 +16370,13 @@ function eliminarTipoConsulta(id) {
 // ========== MÓDULO GESTIÓN DE DATOS ==========
 
 let _gestionTipoActual = 'citas_electro';
+const _GESTION_TABS_DESTRUCTIVOS = new Set(['citas_electro', 'turnos', 'recibos']);
+
+function _gestionActualizarBanner() {
+  const banner = $('gestionDatosWarnBanner');
+  if (!banner) return;
+  banner.classList.toggle('hidden', !_GESTION_TABS_DESTRUCTIVOS.has(_gestionTipoActual));
+}
 
 const _gestionTitulos = {
   citas_electro:     'Citas Electrodiagnóstico',
@@ -16575,6 +16500,7 @@ function initGestionDatos() {
       // Mostrar/ocultar botón Agregar según tipo
       const btnAgregar = $('btnAgregarGestion');
       if (btnAgregar) btnAgregar.style.display = _GESTION_TIPOS_AGREGAR.includes(_gestionTipoActual) ? '' : 'none';
+      _gestionActualizarBanner();
       buscarGestionDatos();
     });
   });
@@ -16605,6 +16531,7 @@ function initGestionDatos() {
   // Visibilidad inicial del botón Agregar
   const btnAgregar = $('btnAgregarGestion');
   if (btnAgregar) btnAgregar.style.display = _GESTION_TIPOS_AGREGAR.includes(_gestionTipoActual) ? '' : 'none';
+  _gestionActualizarBanner();
   buscarGestionDatos();
 }
 
@@ -16634,7 +16561,7 @@ function _gestionRenderRows(tipo, registros) {
   const tbody = $('bodyGestionDatos');
   if (!tbody) return;
   if (!registros.length) {
-    tbody.innerHTML = `<tr><td colspan="${cols.length + 2}" style="padding:20px;text-align:center;color:#999">No se encontraron registros</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="${cols.length + 2}" class="innar-empty-cell">No se encontraron registros</td></tr>`;
     return;
   }
   tbody.innerHTML = registros.map(r => {

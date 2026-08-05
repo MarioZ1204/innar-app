@@ -35,7 +35,6 @@ describe('permisos-sync', () => {
       'modulo.agenda_medica',
       'modulo.electrodiag',
       'modulo.monitor_equipos',
-      'modulo.ucqn',
       'modulo.dashboard',
       'modulo.usuarios',
       'modulo.diagnosticos',
