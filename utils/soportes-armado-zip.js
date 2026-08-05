@@ -97,7 +97,7 @@ function appendEntriesToArchive(archive, entries) {
   }
 }
 
-async function appendEntriesToArchiveAsync(archive, entries, yieldEvery = 12) {
+async function appendEntriesToArchiveAsync(archive, entries, yieldEvery = 4) {
   const valid = filterValidZipEntries(entries);
   for (let i = 0; i < valid.length; i++) {
     const e = valid[i];
@@ -285,6 +285,7 @@ async function collectDiaZipEntries(diaId, usedPaths = null, opts = {}) {
       };
       const part = await listSoportesArchivoEntries(exp.id, sopPrefix, usedPaths, g.diaNombre, expedienteCtx);
       entries.push(...part);
+      await yieldEventLoop();
     }
 
     if (g.soportes.length) {
@@ -311,7 +312,9 @@ async function collectDiaZipEntries(diaId, usedPaths = null, opts = {}) {
       if (part.length && !g.soportes.length) {
         ensureRipsFacturaFolder(entries, usedPaths, codSeg);
       }
+      await yieldEventLoop();
     }
+    await yieldEventLoop();
   }
 
   return filterValidZipEntries(entries);

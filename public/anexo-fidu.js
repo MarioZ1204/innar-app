@@ -496,7 +496,18 @@
   }
 
   async function abrirArchivoAfidu(id) {
-    const row = afiduState.archivos.find((a) => a.id === id);
+    let row = afiduState.archivos.find((a) => a.id === id);
+    if (!row) {
+      const metaData = await apiAnexo(`/api/anexo-fidu/archivos/${id}`);
+      row = metaData.archivo;
+      if (!row?.id) throw new Error('Anexo no encontrado');
+      afiduState.carpetaId = row.carpeta_id || null;
+      afiduState.carpetaNombre = row.carpeta_nombre || 'Carpeta';
+      if (afiduState.carpetaId) {
+        await refrescarArchivos(afiduState.carpetaId);
+        row = afiduState.archivos.find((a) => a.id === id) || row;
+      }
+    }
     afiduState.archivoId = id;
     afiduState.archivoNombre = row?.nombre || 'Anexo';
     afiduState.vista = 'archivo';
@@ -2021,6 +2032,12 @@
     try {
       await cargarResumenPersonas();
       await refrescarVistaAfiduActual();
+      const params = new URLSearchParams(window.location.search);
+      const deepArchivoId = parseInt(params.get('archivo_id'), 10);
+      if (deepArchivoId && !window._afiduDeepLinkConsumed) {
+        window._afiduDeepLinkConsumed = true;
+        await abrirArchivoAfidu(deepArchivoId);
+      }
     } catch (e) {
       if (typeof showToast === 'function') showToast('Error cargando anexo: ' + e.message, 'error');
     }

@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 
 const REQUIRED_ENV = ['DB_HOST', 'DB_USER', 'DB_NAME', 'SESSION_SECRET'];
-const RECOMMENDED_ENV = ['PORT', 'NODE_ENV', 'FRONTEND_URL', 'DB_PASSWORD', 'SOPORTES_RECOVERY_ON_DEPLOY'];
+const RECOMMENDED_ENV = ['PORT', 'NODE_ENV', 'FRONTEND_URL', 'DB_PASSWORD', 'SOPORTES_RECOVERY_ON_DEPLOY', 'UPLOADS_DIR'];
 
 const projectRoot = process.cwd();
 const envPath = path.join(projectRoot, '.env');
@@ -51,6 +51,18 @@ function main() {
 
   if (env.FRONTEND_URL && !/^https:\/\//.test(env.FRONTEND_URL)) {
     console.warn('[WARN] FRONTEND_URL no usa https://');
+  }
+
+  if (env.NODE_ENV === 'production') {
+    if (!env.UPLOADS_DIR) {
+      console.error('[ERROR] UPLOADS_DIR es obligatorio en producción para conservar archivos entre despliegues.');
+      process.exit(1);
+    }
+    const uploadsDir = path.resolve(env.UPLOADS_DIR);
+    if (uploadsDir.startsWith(projectRoot + path.sep) || uploadsDir === projectRoot) {
+      console.error('[ERROR] UPLOADS_DIR debe estar fuera de la carpeta del repositorio en producción.');
+      process.exit(1);
+    }
   }
 
   if (missingRecommended.length > 0) {

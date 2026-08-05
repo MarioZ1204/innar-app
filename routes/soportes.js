@@ -110,6 +110,7 @@ const { syncRipsCarpetasDia, syncRipsCarpetasContenedor } = require('../utils/so
 const { zipArchiveSegment } = require('../utils/soportes-armado-zip');
 const { createZipJob, createPeriodPaqueteJob, getJob: getSopZipJob } = require('../utils/soportes-zip-jobs');
 const {
+  SOPORTES_ROOT,
   getPdxDir,
   getArmadoExpedienteDir,
   getArmadoFeDirFromContext,
@@ -1730,6 +1731,10 @@ function mapDia(row) {
     es_contenedor: !!row.es_contenedor,
     modo: normalizarModoDia(row.modo),
     anexo_archivo_id: row.anexo_archivo_id || null,
+    anexo_carpeta_id: row.anexo_carpeta_id || null,
+    anexo_total_registros: Number(row.anexo_total_registros || 0),
+    anexo_ruta_export: row.anexo_ruta_export || null,
+    anexo_export_existe: !!row.anexo_export_existe,
     orden: row.orden || 0,
     dia: row.dia,
     fecha: row.fecha,
@@ -1881,15 +1886,24 @@ router.get('/soportes/armado/periodos/:id/dias', requireAuth, requireRoleOrPerm(
     const dias = await db.query(
       `SELECT d.*,
         COUNT(DISTINCT e.id) AS expedientes_count,
-        (SELECT COUNT(*) FROM sop_dias ch WHERE ch.parent_id = d.id) AS hijos_count
+        (SELECT COUNT(*) FROM sop_dias ch WHERE ch.parent_id = d.id) AS hijos_count,
+        a.carpeta_id AS anexo_carpeta_id,
+        a.ruta_export AS anexo_ruta_export,
+        (SELECT COUNT(*) FROM anexo_fidu_registros ar WHERE ar.archivo_id = a.id) AS anexo_total_registros
        FROM sop_dias d
        LEFT JOIN sop_contenedores c ON c.dia_id = d.id AND d.es_contenedor = 0
        LEFT JOIN sop_expedientes e ON e.contenedor_id = c.id
+       LEFT JOIN anexo_fidu_archivos a ON a.id = d.anexo_archivo_id
        WHERE d.periodo_id = ?
        GROUP BY d.id ORDER BY d.orden ASC, d.nombre_display ASC, d.id ASC`,
       [req.params.id]
     );
-    const diasRaw = dias.map(mapDia);
+    const diasRaw = dias.map((row) => mapDia({
+      ...row,
+      anexo_export_existe: row.anexo_ruta_export
+        ? fs.existsSync(path.join(SOPORTES_ROOT, String(row.anexo_ruta_export)))
+        : false
+    }));
     diasRaw.sort((a, b) => {
       const ord = (a.orden || 0) - (b.orden || 0);
       if (ord !== 0) return ord;

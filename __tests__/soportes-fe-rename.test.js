@@ -37,6 +37,8 @@ describe('aplicarRenombradoPorFev', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    db.query.mockReset();
+    db.execute.mockReset();
     tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'soportes-fe-rename-'));
 
     getArmadoFeDirFromContext.mockImplementation((ctx, codigo) => {
@@ -213,7 +215,8 @@ describe('aplicarRenombradoPorFev', () => {
     fs.writeFileSync(path.join(oldDir, 'OPF_901164565_PEREZ_JUAN.pdf'), 'contenido-opf');
     fs.writeFileSync(path.join(oldDir, 'FEV_901164565_FE14726.pdf'), 'contenido-fev');
 
-    jest.clearAllMocks();
+    db.query.mockReset();
+    db.execute.mockReset();
     db.query.mockResolvedValueOnce([{ id: 1, codigo: 'PEREZ_JUAN', numero_factura: 0, dia_id: 10, contenedor_tipo: 'soportes', paciente_nombre: 'Juan Pérez' }]);
     db.query.mockResolvedValueOnce([{ id: 1, codigo: 'PEREZ_JUAN', numero_factura: 0, dia_id: 10, contenedor_tipo: 'soportes', paciente_nombre: 'Juan Pérez' }]);
     db.query.mockResolvedValueOnce([]);
@@ -250,7 +253,8 @@ describe('aplicarRenombradoPorFev', () => {
     fs.writeFileSync(path.join(oldDir, 'OPF_901164565_PEREZ_JUAN.pdf'), 'opf');
     fs.writeFileSync(path.join(oldDir, 'FEV_901164565_FE14726.pdf'), 'fev');
 
-    jest.clearAllMocks();
+    db.query.mockReset();
+    db.execute.mockReset();
     db.query.mockResolvedValueOnce([{ id: 1, codigo: 'PEREZ_JUAN', numero_factura: 0, dia_id: 10, contenedor_tipo: 'soportes', paciente_nombre: 'Juan Pérez' }]);
     db.query.mockResolvedValueOnce([{ id: 1, codigo: 'PEREZ_JUAN', numero_factura: 0, dia_id: 10, contenedor_tipo: 'soportes', paciente_nombre: 'Juan Pérez' }]);
     db.query.mockResolvedValueOnce([]);
@@ -296,5 +300,22 @@ describe('aplicarRenombradoPorFev', () => {
     expect(result.ya_renombrado).toBe(true);
     expect(fs.existsSync(path.join(feDir, 'OPF_901164565_FE14726.pdf'))).toBe(true);
     fs.rmSync(isolatedRoot, { recursive: true, force: true });
+  });
+
+  test('revierte todos los movimientos si falla la actualización de BD', async () => {
+    const oldDir = path.join(tempRoot, 'PEREZ_JUAN');
+    const newDir = path.join(tempRoot, 'FE14726');
+    db.execute.mockImplementation(async (sql) => {
+      if (String(sql).includes('UPDATE sop_exp_archivos')) throw new Error('fallo BD simulado');
+      return {};
+    });
+
+    const result = await aplicarRenombradoPorFev(1, 14726);
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/revirtieron/);
+    expect(fs.existsSync(path.join(oldDir, 'OPF_901164565_PEREZ_JUAN.pdf'))).toBe(true);
+    expect(fs.existsSync(path.join(oldDir, 'FEV_901164565_PEREZ_JUAN.pdf'))).toBe(true);
+    expect(fs.existsSync(path.join(newDir, 'OPF_901164565_FE14726.pdf'))).toBe(false);
   });
 });

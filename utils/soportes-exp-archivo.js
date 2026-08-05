@@ -5,7 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const db = require('./db-mysql');
 const { getSoportesRoot } = require('../config/uploads-path');
-const { resolveStoragePath } = require('./soportes-storage');
+const { resolveStoragePath, relativeToSoportes } = require('./soportes-storage');
 const { buildSoportesDiskName, etiquetaFacturaExpediente, getNitObligado, extractEtiquetaFromSoporteName, archivoCoincideConTipoSlot } = require('./soportes-archivo-detect');
 const { codigoPacienteFromExpediente } = require('./soportes-pacientes-parse');
 
@@ -46,10 +46,7 @@ async function loadArchivoExpedienteSlot(expedienteId, tipoParam) {
 }
 
 function buildStoredRutaRelativa(absPath) {
-  if (!absPath) return null;
-  const rel = path.relative(getSoportesRoot(), absPath).replace(/\\/g, '/');
-  if (!rel || rel === '.' || rel.startsWith('..')) return null;
-  return rel;
+  return relativeToSoportes(absPath);
 }
 
 function listarCarpetasExpediente(expediente, baseRoot = getSoportesRoot()) {

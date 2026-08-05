@@ -9,6 +9,12 @@ const { buildCanonicalName, buildSoportesDiskName, extractEtiquetaFromSoporteNam
 const { parseLineaPaciente, esExpedientePendienteFactura } = require('./soportes-pacientes-parse');
 const { loadArchivoExpedienteSlot, eliminarArchivoExpedienteSlot, repararArchivosExpediente } = require('./soportes-exp-archivo');
 const { syncRipsCarpetasDia } = require('./soportes-rips-carpetas-sync');
+const logger = require('./logger');
+const {
+  nuevaOperacionId,
+  registrarMovimiento,
+  actualizarOperacion
+} = require('./soportes-fs-journal');
 
 async function loadExpedienteContext(expedienteId) {
   const rows = await db.query(
@@ -281,41 +287,161 @@ async function aplicarRenombradoPorFev(expedienteId, numeroFactura) {
   }
 
   const resumen = { carpetas: [], archivos: [] };
+  const operacionId = nuevaOperacionId();
+  const planes = [];
 
+  // Fase 1: comprobar todos los registros y destinos antes de tocar disco o BD.
   for (const her of hermanos) {
     const ctx = her;
     const { abs: oldDir } = getArmadoFeDirFromContext(ctx, oldCodigo);
     const { abs: newDir, rel: newRel } = getArmadoFeDirFromContext(ctx, newCodigo);
-    const dirRename = renameDirectoryIfExists(oldDir, newDir);
-    if (!dirRename.ok) {
-      return { ok: false, error: dirRename.error || `No se pudo renombrar la carpeta ${oldCodigo} → ${newCodigo}` };
-    }
-    resumen.carpetas.push({ contenedor: ctx.contenedor_tipo, de: oldCodigo, a: newCodigo });
-
-    if (ctx.contenedor_tipo === 'soportes') {
-      const archivos = await db.query(
-        'SELECT * FROM sop_exp_archivos WHERE expediente_id = ?',
-        [her.id]
-      );
-      resumen.archivos.push(...await renombrarArchivosExpedienteEnDisco(archivos, ctx, oldCodigo, newCodigo, newRel, num, her.id));
-    } else {
-      let ripsArchivos = [];
+    const isRips = ctx.contenedor_tipo !== 'soportes';
+    let archivos = [];
+    if (isRips) {
       try {
-        ripsArchivos = await db.query(
-          'SELECT * FROM sop_rips_archivos WHERE expediente_id = ?',
-          [her.id]
-        );
+        archivos = await db.query('SELECT * FROM sop_rips_archivos WHERE expediente_id = ?', [her.id]);
       } catch (_) { /* tabla opcional */ }
-      resumen.archivos.push(...await renombrarArchivosExpedienteEnDisco(ripsArchivos, ctx, oldCodigo, newCodigo, newRel, num, her.id));
+    } else {
+      archivos = await db.query('SELECT * FROM sop_exp_archivos WHERE expediente_id = ?', [her.id]);
     }
 
-    await db.execute(
-      'UPDATE sop_expedientes SET codigo = ?, numero_factura = ? WHERE id = ?',
-      [newCodigo, num, her.id]
-    );
+    const usedPaths = new Set();
+    const filePlans = [];
+    for (const a of ordenarArchivosParaRenombrado(archivos)) {
+      const slotKey = isRips
+        ? (a.slot === 'json_1' ? 'RIPS_JSON_1' : a.slot === 'json_2' ? 'RIPS_JSON_2' : 'RIPS_XML')
+        : a.tipo;
+      const ext = path.extname(a.nombre_archivo || (isRips ? '.json' : '.pdf')).toLowerCase() || (isRips ? '.json' : '.pdf');
+      const source = resolveSourceFileForRename(a, oldDir, newDir, { usedPaths });
+      if (!source?.fullPath || !fs.existsSync(source.fullPath)) {
+        logger.warn('[SOPORTES] Slot faltante al preparar renombrado FEV', {
+          expedienteId: her.id,
+          slot: slotKey,
+          nombre: a.nombre_archivo,
+          oldDir,
+          newDir
+        });
+        return {
+          ok: false,
+          error: `No se vinculó la factura porque falta en disco el slot ${slotKey} (${a.nombre_archivo || 'sin nombre'}). Ejecute recuperación antes de reintentar.`
+        };
+      }
+      usedPaths.add(path.resolve(source.fullPath));
+      filePlans.push({
+        row: a,
+        slotKey,
+        sourcePath: source.fullPath,
+        canonicalName: buildCanonicalName(slotKey, num, ext),
+        isRips
+      });
+    }
+    planes.push({ her, ctx, oldDir, newDir, newRel, filePlans });
+  }
+
+  const dirMoves = [];
+  const fileMoves = [];
+  try {
+    // Fase 2A: journal + movimientos físicos reversibles.
+    for (const plan of planes) {
+      await registrarMovimiento({
+        operacionId,
+        expedienteId: plan.her.id,
+        tipo: 'RENOMBRAR_CARPETA_FEV',
+        rutaAnterior: plan.oldDir,
+        rutaNueva: plan.newDir
+      });
+      const sameDir = path.resolve(plan.oldDir) === path.resolve(plan.newDir);
+      if (!sameDir) {
+        if (fs.existsSync(plan.newDir)) {
+          const existing = fs.readdirSync(plan.newDir).filter(Boolean);
+          if (existing.length) throw new Error(`La carpeta destino ${newCodigo} ya contiene archivos`);
+        } else {
+          fs.mkdirSync(plan.newDir, { recursive: true });
+        }
+      }
+      resumen.carpetas.push({ contenedor: plan.ctx.contenedor_tipo, de: oldCodigo, a: newCodigo });
+
+      for (const fp of plan.filePlans) {
+        const currentPath = fp.sourcePath;
+        const targetPath = buildUniqueTargetPathForRename(
+          plan.newDir,
+          fp.canonicalName,
+          currentPath,
+          plan.her.id
+        );
+        await registrarMovimiento({
+          operacionId,
+          expedienteId: plan.her.id,
+          tipo: `RENOMBRAR_${fp.slotKey}`,
+          rutaAnterior: currentPath,
+          rutaNueva: targetPath
+        });
+        if (path.resolve(currentPath) !== path.resolve(targetPath)) {
+          moveFileSafely(currentPath, targetPath);
+          fileMoves.push({ from: currentPath, to: targetPath });
+        }
+        fp.finalPath = targetPath;
+        fp.finalName = path.basename(targetPath);
+        fp.rutaRelativa = path.join(plan.newRel, fp.finalName).replace(/\\/g, '/');
+        resumen.archivos.push({
+          tipo: fp.slotKey,
+          nombre: fp.finalName,
+          renombrado: fp.finalName !== fp.row.nombre_archivo
+        });
+      }
+      if (!sameDir && fs.existsSync(plan.oldDir) && fs.readdirSync(plan.oldDir).length === 0) {
+        fs.rmdirSync(plan.oldDir);
+        dirMoves.push({ from: plan.oldDir, to: plan.newDir, removedOnly: true });
+      }
+    }
+
+    // Fase 2B: una sola transacción para rutas y expedientes.
+    const runTransaction = typeof db.transaction === 'function'
+      ? db.transaction.bind(db)
+      : async (callback) => callback(db);
+    await runTransaction(async (conn) => {
+      for (const plan of planes) {
+        for (const fp of plan.filePlans) {
+          if (fp.isRips) {
+            await conn.execute(
+              'UPDATE sop_rips_archivos SET nombre_archivo = ?, ruta_relativa = ? WHERE id = ?',
+              [fp.finalName, fp.rutaRelativa, fp.row.id]
+            );
+          } else {
+            await conn.execute(
+              'UPDATE sop_exp_archivos SET nombre_archivo = ?, ruta_relativa = ? WHERE id = ?',
+              [fp.finalName, fp.rutaRelativa, fp.row.id]
+            );
+          }
+        }
+        await conn.execute(
+          'UPDATE sop_expedientes SET codigo = ?, numero_factura = ? WHERE id = ?',
+          [newCodigo, num, plan.her.id]
+        );
+      }
+    });
+    await actualizarOperacion(operacionId, 'completado');
+  } catch (e) {
+    logger.error('[SOPORTES] Falló renombrado FEV atómico', { expedienteId, operacionId, error: e.message });
+    // Rollback físico en orden inverso; la transacción BD ya se revierte sola.
+    for (const move of [...dirMoves].reverse()) {
+      try {
+        if (move.removedOnly && !fs.existsSync(move.from)) fs.mkdirSync(move.from, { recursive: true });
+      } catch (_) { /* se registra abajo */ }
+    }
+    for (const move of [...fileMoves].reverse()) {
+      try {
+        if (fs.existsSync(move.to) && !fs.existsSync(move.from)) fs.renameSync(move.to, move.from);
+      } catch (_) { /* se registra abajo */ }
+    }
+    await actualizarOperacion(operacionId, 'revertido', e.message);
+    return { ok: false, error: `No se vinculó la factura; se revirtieron los cambios: ${e.message}` };
+  }
+
+  for (const her of hermanos) {
     try {
       await repararArchivosExpediente(her.id, { ...her, codigo: newCodigo, numero_factura: num });
-    } catch (_) { /* ignore */ }
+    } catch (_) { /* las rutas canónicas ya quedaron persistidas */ }
   }
 
   try {

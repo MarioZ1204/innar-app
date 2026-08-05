@@ -920,12 +920,15 @@ async function checkSession() {
       _initAudioStatusBtn(); // Mostrar botón de audio (requiere clic manual al recargar)
       // Restaurar módulo anterior si existe (sessionStorage = solo esta pestaña)
       const savedModule = sessionStorage.getItem(lsKeyCurrentModule);
+      const deepLinkModule = new URLSearchParams(window.location.search).get('module');
       // Restaurar doctor seleccionado si existe (para RECEPCIONISTA)
       const savedDoctor = sessionStorage.getItem(lsKeySelectedDoctor);
       if (savedDoctor) {
         selectedDoctorId = parseInt(savedDoctor);
       }
-      if (savedModule) {
+      if (deepLinkModule) {
+        goToModule(deepLinkModule);
+      } else if (savedModule) {
         goToModule(savedModule);
       } else {
         showView('view-menu');

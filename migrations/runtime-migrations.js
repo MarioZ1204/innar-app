@@ -1376,6 +1376,29 @@ const runtimeMigrations = [
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
       `);
     }
+  },
+  {
+    name: 'rt_sop_fs_journal',
+    description: 'Journal de operaciones disco/BD para archivos de Soportes',
+    run: async (db) => {
+      await db.execute(`
+        CREATE TABLE IF NOT EXISTS sop_fs_journal (
+          id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+          operacion_id CHAR(36) NOT NULL,
+          expediente_id INT NULL,
+          tipo VARCHAR(30) NOT NULL,
+          ruta_anterior TEXT NULL,
+          ruta_nueva TEXT NULL,
+          estado ENUM('preparado','completado','revertido','error') NOT NULL DEFAULT 'preparado',
+          detalle TEXT NULL,
+          creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          actualizado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          INDEX idx_sop_fs_operacion (operacion_id),
+          INDEX idx_sop_fs_expediente (expediente_id),
+          INDEX idx_sop_fs_estado (estado)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+      `);
+    }
   }
 ];
 

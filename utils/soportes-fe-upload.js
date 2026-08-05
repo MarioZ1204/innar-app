@@ -151,42 +151,65 @@ async function saveSoportesArchivo(exp, ctx, slotKey, tempPath, originalName, us
   const { abs: feDir, rel: feRel } = getArmadoFeDirFromContext(ctx, exp.codigo);
 
   const destPath = path.join(feDir, diskName);
-
-  moveFileToDest(tempPath, destPath);
-
   const rutaRelativa = path.join(feRel, diskName).replace(/\\/g, '/');
-
-  const tamano = fs.statSync(destPath).size;
-
-  await db.execute('DELETE FROM sop_exp_archivos WHERE expediente_id = ? AND tipo = ?', [exp.id, slotKey]);
-
-  await db.execute(
-
-    `INSERT INTO sop_exp_archivos (expediente_id, tipo, nombre_archivo, nombre_original, ruta_relativa, tamano_bytes, origen, subido_por)
-
-     VALUES (?,?,?,?,?,?,?,?)`,
-
-    [exp.id, slotKey, diskName, originalName, rutaRelativa, tamano, origen, usuarioId]
-
+  const anteriores = await db.query(
+    'SELECT * FROM sop_exp_archivos WHERE expediente_id = ? AND tipo = ?',
+    [exp.id, slotKey]
   );
-
-  if (slotKey === 'PDX') {
-    await db.execute("UPDATE sop_expedientes SET tipo_servicio = 'electro' WHERE id = ?", [exp.id]);
-  } else if (slotKey === 'HEV') {
-    await db.execute("UPDATE sop_expedientes SET tipo_servicio = 'consulta' WHERE id = ?", [exp.id]);
-  }
-
+  const backupPath = fs.existsSync(destPath) ? `${destPath}.replace-backup.${Date.now()}` : null;
   let renombrado = null;
+  try {
+    if (backupPath) fs.renameSync(destPath, backupPath);
+    moveFileToDest(tempPath, destPath);
+    const tamano = fs.statSync(destPath).size;
 
-  if (slotKey === 'FEV' && fevParsed?.ok) {
-    renombrado = await aplicarRenombradoPorFev(exp.id, fevParsed.numero);
+    await db.execute('DELETE FROM sop_exp_archivos WHERE expediente_id = ? AND tipo = ?', [exp.id, slotKey]);
+    await db.execute(
+      `INSERT INTO sop_exp_archivos (expediente_id, tipo, nombre_archivo, nombre_original, ruta_relativa, tamano_bytes, origen, subido_por)
+       VALUES (?,?,?,?,?,?,?,?)`,
+      [exp.id, slotKey, diskName, originalName, rutaRelativa, tamano, origen, usuarioId]
+    );
 
-    if (!renombrado.ok) {
-
-      throw new Error(renombrado.error || 'No se pudo renombrar la carpeta con el número de factura');
-
+    if (slotKey === 'PDX') {
+      await db.execute("UPDATE sop_expedientes SET tipo_servicio = 'electro' WHERE id = ?", [exp.id]);
+    } else if (slotKey === 'HEV') {
+      await db.execute("UPDATE sop_expedientes SET tipo_servicio = 'consulta' WHERE id = ?", [exp.id]);
     }
 
+    if (slotKey === 'FEV' && fevParsed?.ok) {
+      renombrado = await aplicarRenombradoPorFev(exp.id, fevParsed.numero);
+      if (!renombrado.ok) {
+        throw new Error(renombrado.error || 'No se pudo renombrar la carpeta con el número de factura');
+      }
+    }
+    if (backupPath && fs.existsSync(backupPath)) fs.unlinkSync(backupPath);
+  } catch (e) {
+    try {
+      await db.execute('DELETE FROM sop_exp_archivos WHERE expediente_id = ? AND tipo = ?', [exp.id, slotKey]);
+      for (const anterior of anteriores) {
+        await db.execute(
+          `INSERT INTO sop_exp_archivos
+           (expediente_id, tipo, nombre_archivo, nombre_original, ruta_relativa, tamano_bytes, origen, pdx_archivo_id, subido_por)
+           VALUES (?,?,?,?,?,?,?,?,?)`,
+          [
+            anterior.expediente_id,
+            anterior.tipo,
+            anterior.nombre_archivo,
+            anterior.nombre_original,
+            anterior.ruta_relativa,
+            anterior.tamano_bytes,
+            anterior.origen,
+            anterior.pdx_archivo_id,
+            anterior.subido_por
+          ]
+        );
+      }
+    } catch (_) { /* conservar error original */ }
+    try {
+      if (fs.existsSync(destPath)) fs.unlinkSync(destPath);
+      if (backupPath && fs.existsSync(backupPath)) fs.renameSync(backupPath, destPath);
+    } catch (_) { /* recuperación informada por el error original */ }
+    throw e;
   }
 
 

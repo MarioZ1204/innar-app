@@ -46,13 +46,14 @@ async function asegurarVinculoAnexoDia(archivoId, dia) {
 }
 
 async function periodoIdsPorCarpetaAnexo(carpetaId) {
-  const carp = await db.query('SELECT nombre FROM anexo_fidu_carpetas WHERE id = ?', [carpetaId]);
+  const carp = await db.query('SELECT nombre, periodo FROM anexo_fidu_carpetas WHERE id = ?', [carpetaId]);
   if (!carp.length) return [];
   const nom = String(carp[0].nombre || '').trim();
-  if (!nom) return [];
+  const periodo = String(carp[0].periodo || '').trim();
+  if (!nom && !periodo) return [];
   const rows = await db.query(
-    'SELECT id FROM sop_periodos WHERE etiqueta = ? OR periodo = ?',
-    [nom, nom]
+    'SELECT id FROM sop_periodos WHERE periodo = ? OR etiqueta = ? OR periodo = ?',
+    [periodo, nom, nom]
   );
   return rows.map((r) => r.id);
 }
@@ -164,13 +165,9 @@ async function syncAnexoModuloASoportesPeriodo(periodoId, options = {}) {
     else if (link.accion === 'vinculada') vinculadas += 1;
 
     if (exportarExcel) {
-      const tieneFilas = await db.query(
-        'SELECT 1 FROM anexo_fidu_registros WHERE archivo_id = ? LIMIT 1',
-        [arch.id]
-      );
       const meta = await fetchAnexoArchivoMeta(arch.id);
       const necesitaExport = forzarExport || !meta?.ruta_export;
-      if (tieneFilas.length && necesitaExport) {
+      if (necesitaExport) {
         const exp = await guardarExportAnexoEnSoportes(arch.id, { diaId: link.dia_id });
         if (exp.ok) exportadas += 1;
         else detalle.push({ archivo_id: arch.id, nombre: arch.nombre, export_error: exp.error || exp.reason });

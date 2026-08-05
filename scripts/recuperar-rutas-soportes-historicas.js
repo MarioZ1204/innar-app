@@ -11,6 +11,7 @@
 
 const db = require('../utils/db-mysql');
 const { repararArchivosExpediente } = require('../utils/soportes-exp-archivo');
+const { auditarIntegridadSoportes } = require('../utils/soportes-integrity-audit');
 
 async function main() {
   const idsArg = process.argv.slice(2)
@@ -33,6 +34,8 @@ async function main() {
   }
 
   console.log(`Recuperando rutas históricas para ${expedienteIds.length} expediente(s)...`);
+  const auditoriaInicial = await auditarIntegridadSoportes({ expedienteIds });
+  console.log('Auditoría inicial:', JSON.stringify(auditoriaInicial.resumen));
 
   let procesados = 0;
   let cambios = 0;
@@ -49,7 +52,15 @@ async function main() {
     }
   }
 
+  const auditoriaFinal = await auditarIntegridadSoportes({ expedienteIds });
   console.log(`Proceso finalizado. Expedientes procesados: ${procesados}; cambios aplicados: ${cambios}`);
+  console.log('Auditoría final:', JSON.stringify(auditoriaFinal.resumen));
+  if (auditoriaFinal.registros_sin_archivo.length) {
+    console.log('Registros aún sin archivo:', JSON.stringify(auditoriaFinal.registros_sin_archivo));
+  }
+  if (auditoriaFinal.journals_incompletos.length) {
+    console.log('Journals incompletos:', JSON.stringify(auditoriaFinal.journals_incompletos));
+  }
 }
 
 main().catch((error) => {

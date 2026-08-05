@@ -11,6 +11,16 @@ function soportesRoot() {
   return getSoportesRoot();
 }
 
+/** Ruta canónica persistida en BD: siempre relativa a UPLOADS_DIR/soportes. */
+function relativeToSoportes(absPath) {
+  if (!absPath) return null;
+  const root = path.resolve(soportesRoot());
+  const full = path.resolve(absPath);
+  const rel = path.relative(root, full).replace(/\\/g, '/');
+  if (!rel || rel === '.' || rel.startsWith('../') || path.isAbsolute(rel)) return null;
+  return rel;
+}
+
 function ensureDir(dir) {
   try {
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
@@ -219,6 +229,7 @@ module.exports = {
   resolveStoragePath,
   resolvePdxArchivoPath,
   relativePdxRuta,
+  relativeToSoportes,
   listPdxPdfsInCarpeta,
   ensureDir
 };

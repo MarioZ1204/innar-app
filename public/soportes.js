@@ -4076,10 +4076,15 @@
       const n = d.hijos_count || 0;
       return `${n} carpeta${n === 1 ? '' : 's'} dentro`;
     }
+    if (d.modo === 'anexo_fidu') {
+      const exportLabel = d.anexo_export_existe ? 'Excel disponible' : 'Excel pendiente';
+      return `<strong>${d.anexo_total_registros || 0}</strong> fila(s) · ${exportLabel}`;
+    }
     return `${badgeFacturacionArmado(d.estado_facturacion)} · <strong>${d.expedientes_count || 0}</strong> expediente(s) FE`;
   }
 
   function htmlArmDiaIcon(d) {
+    if (!d.es_contenedor && d.modo === 'anexo_fidu') return 'file-spreadsheet';
     return d.es_contenedor ? 'folder-tree' : 'folder';
   }
 
@@ -4380,14 +4385,14 @@
         : '<div class="sop-empty" style="grid-column:1/-1;padding:32px"><i data-lucide="folder-tree" class="sop-empty-icon"></i>Debe ver aquí <strong>Anexo FIDU</strong>, <strong>Facturas FIDU</strong> y <strong>U C Q N</strong>.<br><span style="font-size:.85rem">Use <strong>Reparar ahora</strong> si no aparecen.</span></div>';
     } else if (viewMode === 'list') {
       grid.innerHTML = `<div class="sop-table-wrap"><table class="sop-table sop-folder-list-table">
-        <thead><tr><th style="width:40px"></th><th>Carpeta</th><th>Facturación</th><th>Contenido</th><th class="sop-folder-list-actions">Acciones</th></tr></thead>
+        <thead><tr><th style="width:40px"></th><th>Carpeta / archivo</th><th>Estado</th><th>Contenido</th><th class="sop-folder-list-actions">Acciones</th></tr></thead>
         <tbody>${lista.map((d) => {
           const icon = htmlArmDiaIcon(d);
           return `<tr class="${armState.diaId === d.id ? 'is-active' : ''}${d.es_contenedor ? ' sop-folder-row-contenedor' : ''}" data-dia-id="${d.id}" data-arm-contenedor="${d.es_contenedor ? '1' : '0'}" tabindex="0" title="${dragHint}">
             <td><span class="sop-folder-icon" style="width:32px;height:32px;margin:0"><i data-lucide="${icon}"></i></span></td>
             <td><strong>${escapeHtml(d.nombre_display)}</strong>${d.es_contenedor ? ' <span class="sop-badge sop-badge-muted">Contenedor</span>' : ''}</td>
-            <td>${d.es_contenedor ? '—' : badgeFacturacionArmado(d.estado_facturacion)}</td>
-            <td>${d.es_contenedor ? (d.hijos_count || 0) : `<strong>${d.expedientes_count || 0}</strong> expediente(s)`}</td>
+            <td>${d.es_contenedor ? '—' : (d.modo === 'anexo_fidu' ? (d.anexo_export_existe ? 'Excel disponible' : 'Excel pendiente') : badgeFacturacionArmado(d.estado_facturacion))}</td>
+            <td>${d.es_contenedor ? (d.hijos_count || 0) : (d.modo === 'anexo_fidu' ? `<strong>${d.anexo_total_registros || 0}</strong> fila(s)` : `<strong>${d.expedientes_count || 0}</strong> expediente(s)`)}</td>
             <td class="sop-folder-list-actions">
               ${htmlArmZipDiaBtn(d)}
               ${puedeGestionarDia ? `
@@ -4479,11 +4484,11 @@
     panel.querySelector('#btnSopArmVolverAnexoCont')?.addEventListener('click', armVolverDesdeDia);
     panel.querySelector('#btnSopAnexoAbrirModulo')?.addEventListener('click', () => {
       if (!anexo?.archivo_id) return sopToast('Sin anexo vinculado', 'warning');
-      if (typeof window.abrirAnexoFiduArchivo === 'function') {
-        window.abrirAnexoFiduArchivo(anexo.archivo_id);
-      } else {
-        sopToast('Módulo Anexo no disponible', 'error');
-      }
+      const url = new URL('/', window.location.origin);
+      url.searchParams.set('module', 'anexo-fidu');
+      url.searchParams.set('archivo_id', String(anexo.archivo_id));
+      const nueva = window.open(url.toString(), '_blank', 'noopener');
+      if (!nueva) sopToast('El navegador bloqueó la nueva pestaña', 'warning');
     });
     panel.querySelector('#btnSopAnexoDescargar')?.addEventListener('click', () => {
       if (!diaRow?.id) return;
