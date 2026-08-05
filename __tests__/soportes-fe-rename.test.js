@@ -5,20 +5,28 @@ jest.mock('../utils/db-mysql', () => ({
   execute: jest.fn()
 }));
 
-jest.mock('../utils/soportes-storage', () => ({
-  getArmadoFeDirFromContext: jest.fn()
-}));
+jest.mock('../utils/soportes-storage', () => {
+  const actual = jest.requireActual('../utils/soportes-storage');
+  return {
+    ...actual,
+    getArmadoFeDirFromContext: jest.fn()
+  };
+});
 
 jest.mock('../utils/soportes-pacientes-parse', () => ({
   parseLineaPaciente: jest.fn(),
   esExpedientePendienteFactura: jest.fn(() => true)
 }));
 
-jest.mock('../utils/soportes-exp-archivo', () => ({
-  loadArchivoExpedienteSlot: jest.fn(),
-  eliminarArchivoExpedienteSlot: jest.fn(),
-  repararArchivosExpediente: jest.fn()
-}));
+jest.mock('../utils/soportes-exp-archivo', () => {
+  const actual = jest.requireActual('../utils/soportes-exp-archivo');
+  return {
+    ...actual,
+    loadArchivoExpedienteSlot: jest.fn(),
+    eliminarArchivoExpedienteSlot: jest.fn(),
+    repararArchivosExpediente: jest.fn()
+  };
+});
 
 jest.mock('../utils/soportes-rips-carpetas-sync', () => ({
   syncRipsCarpetasDia: jest.fn()
@@ -299,6 +307,68 @@ describe('aplicarRenombradoPorFev', () => {
     expect(result.ok).toBe(true);
     expect(result.ya_renombrado).toBe(true);
     expect(fs.existsSync(path.join(feDir, 'OPF_901164565_FE14726.pdf'))).toBe(true);
+    fs.rmSync(isolatedRoot, { recursive: true, force: true });
+  });
+
+  test('encuentra OPF por ruta_relativa aunque la carpeta canónica calculada sea distinta', async () => {
+    const isolatedRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'soportes-fe-rename-legacy-'));
+    process.env.UPLOADS_DIR = isolatedRoot;
+    const legacyDir = path.join(isolatedRoot, 'soportes', 'armado', '2026-08', 'Dia 5', 'A_FACTURAR', 'SOPORTES', 'ZAMBRANO_MARIO');
+    fs.mkdirSync(legacyDir, { recursive: true });
+    fs.writeFileSync(path.join(legacyDir, 'OPF_901164565_ZAMBRANO_MARIO.pdf'), 'opf-legacy');
+    fs.writeFileSync(path.join(legacyDir, 'FEV_901164565_FE14726.pdf'), 'fev');
+
+    getArmadoFeDirFromContext.mockImplementation((ctx, codigo) => {
+      const abs = path.join(isolatedRoot, 'soportes', 'armado', 'WRONG', 'SOPORTES', codigo);
+      return { abs, rel: `armado/WRONG/SOPORTES/${codigo}` };
+    });
+
+    db.query.mockReset();
+    db.execute.mockReset();
+    db.query
+      .mockResolvedValueOnce([{
+        id: 1,
+        codigo: 'ZAMBRANO_MARIO',
+        numero_factura: 0,
+        dia_id: 10,
+        contenedor_tipo: 'soportes',
+        paciente_nombre: 'Mario Zambrano',
+        periodo: '2026-08',
+        periodo_etiqueta: '2026-08'
+      }])
+      .mockResolvedValueOnce([{
+        id: 1,
+        codigo: 'ZAMBRANO_MARIO',
+        numero_factura: 0,
+        dia_id: 10,
+        contenedor_tipo: 'soportes',
+        paciente_nombre: 'Mario Zambrano',
+        periodo: '2026-08',
+        periodo_etiqueta: '2026-08'
+      }])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          id: 11,
+          tipo: 'OPF',
+          nombre_archivo: 'OPF_901164565_ZAMBRANO_MARIO.pdf',
+          ruta_relativa: 'armado/2026-08/Dia 5/A_FACTURAR/SOPORTES/ZAMBRANO_MARIO/OPF_901164565_ZAMBRANO_MARIO.pdf'
+        },
+        {
+          id: 12,
+          tipo: 'FEV',
+          nombre_archivo: 'FEV_901164565_FE14726.pdf',
+          ruta_relativa: 'armado/2026-08/Dia 5/A_FACTURAR/SOPORTES/ZAMBRANO_MARIO/FEV_901164565_FE14726.pdf'
+        }
+      ]);
+    db.execute.mockResolvedValue({});
+    if (typeof db.transaction !== 'function') db.transaction = async (cb) => cb(db);
+
+    const result = await aplicarRenombradoPorFev(1, 14726);
+
+    expect(result.ok).toBe(true);
+    expect(fs.existsSync(path.join(isolatedRoot, 'soportes', 'armado', 'WRONG', 'SOPORTES', 'FE14726', 'OPF_901164565_FE14726.pdf'))).toBe(true);
+    delete process.env.UPLOADS_DIR;
     fs.rmSync(isolatedRoot, { recursive: true, force: true });
   });
 

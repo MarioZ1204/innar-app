@@ -4,10 +4,15 @@
 const path = require('path');
 const fs = require('fs');
 const db = require('./db-mysql');
-const { getArmadoFeDirFromContext } = require('./soportes-storage');
+const { getArmadoFeDirFromContext, resolveStoragePath } = require('./soportes-storage');
 const { buildCanonicalName, buildSoportesDiskName, extractEtiquetaFromSoporteName, archivoCoincideConTipoSlot } = require('./soportes-archivo-detect');
 const { parseLineaPaciente, esExpedientePendienteFactura } = require('./soportes-pacientes-parse');
-const { loadArchivoExpedienteSlot, eliminarArchivoExpedienteSlot, repararArchivosExpediente } = require('./soportes-exp-archivo');
+const {
+  loadArchivoExpedienteSlot,
+  eliminarArchivoExpedienteSlot,
+  repararArchivosExpediente,
+  resolveArchivoAbsoluto
+} = require('./soportes-exp-archivo');
 const { syncRipsCarpetasDia } = require('./soportes-rips-carpetas-sync');
 const logger = require('./logger');
 const {
@@ -19,8 +24,8 @@ const {
 async function loadExpedienteContext(expedienteId) {
   const rows = await db.query(
     `SELECT e.*, c.tipo AS contenedor_tipo, c.id AS contenedor_id,
-            d.id AS dia_id, d.nombre_display, d.estado_facturacion,
-            p.periodo
+            d.id AS dia_id, d.dia, d.nombre_display, d.estado_facturacion,
+            p.periodo, p.etiqueta AS periodo_etiqueta
      FROM sop_expedientes e
      LEFT JOIN sop_contenedores c ON c.id = e.contenedor_id
      LEFT JOIN sop_dias d ON d.id = COALESCE(c.dia_id, e.dia_id)
@@ -34,7 +39,8 @@ async function loadExpedienteContext(expedienteId) {
 async function findExpedientesMismoCodigo(diaId, codigo) {
   return db.query(
     `SELECT e.*, c.tipo AS contenedor_tipo, c.id AS contenedor_id,
-            d.nombre_display, d.estado_facturacion, p.periodo
+            d.dia, d.nombre_display, d.estado_facturacion,
+            p.periodo, p.etiqueta AS periodo_etiqueta
      FROM sop_expedientes e
      JOIN sop_contenedores c ON c.id = e.contenedor_id
      JOIN sop_dias d ON d.id = c.dia_id
@@ -125,6 +131,22 @@ function resolveSourceFileForRename(row, oldDir, newDir, options = {}) {
     if (fromDir && isPathAvailable(fromDir)) return fromDir;
   }
 
+  if (preferredRel) {
+    const relNorm = preferredRel.replace(/^uploads\//, '').replace(/\\/g, '/');
+    const joined = relNorm.startsWith('soportes/')
+      ? relNorm
+      : path.join('soportes', relNorm).replace(/\\/g, '/');
+    const fromRel = resolveStoragePath(joined);
+    if (fromRel && fs.existsSync(fromRel)) {
+      const name = path.basename(fromRel);
+      if (archivoCoincideConTipoSlot(name, row?.tipo)
+        && etiquetasCompatiblesParaRenombrado(preferredName || name, name)) {
+        const match = { fullPath: fromRel, fileName: name };
+        if (isPathAvailable(match)) return match;
+      }
+    }
+  }
+
   if (searchDir && fs.existsSync(searchDir)) {
     const files = fs.readdirSync(searchDir).filter((f) => !!f && f !== '.' && f !== '..');
     const ext = preferredName ? path.extname(preferredName).toLowerCase() : '';
@@ -163,6 +185,19 @@ function resolveSourceFileForRename(row, oldDir, newDir, options = {}) {
     if (soloTipo.length === 1) {
       const match = { fullPath: path.join(searchDir, soloTipo[0]), fileName: soloTipo[0] };
       if (isPathAvailable(match)) return match;
+    }
+  }
+
+  const expediente = options?.expediente;
+  if (expediente) {
+    const abs = resolveArchivoAbsoluto(row, { expediente });
+    if (abs && fs.existsSync(abs)) {
+      const name = path.basename(abs);
+      if (archivoCoincideConTipoSlot(name, row?.tipo)
+        && etiquetasCompatiblesParaRenombrado(preferredName || name, name)) {
+        const match = { fullPath: abs, fileName: name };
+        if (isPathAvailable(match)) return match;
+      }
     }
   }
 
@@ -312,12 +347,14 @@ async function aplicarRenombradoPorFev(expedienteId, numeroFactura) {
         ? (a.slot === 'json_1' ? 'RIPS_JSON_1' : a.slot === 'json_2' ? 'RIPS_JSON_2' : 'RIPS_XML')
         : a.tipo;
       const ext = path.extname(a.nombre_archivo || (isRips ? '.json' : '.pdf')).toLowerCase() || (isRips ? '.json' : '.pdf');
-      const source = resolveSourceFileForRename(a, oldDir, newDir, { usedPaths });
+      const expedienteCtx = { ...her, codigo: oldCodigo };
+      const source = resolveSourceFileForRename(a, oldDir, newDir, { usedPaths, expediente: expedienteCtx });
       if (!source?.fullPath || !fs.existsSync(source.fullPath)) {
         logger.warn('[SOPORTES] Slot faltante al preparar renombrado FEV', {
           expedienteId: her.id,
           slot: slotKey,
           nombre: a.nombre_archivo,
+          ruta_relativa: a.ruta_relativa,
           oldDir,
           newDir
         });
