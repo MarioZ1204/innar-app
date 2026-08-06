@@ -3,8 +3,10 @@
 const {
   normTipoServicio,
   tipoServicioCoincideNombre,
-  tipoServicioCoincideCatalogo
+  tipoServicioCoincideCatalogo,
+  estudioServicioCoincide
 } = require('./recibos-catalogo-filtros');
+const { tipoEstudioElectro } = require('./electro-estudio-tipo');
 
 const RECIBO_CAMPOS_AUDITORIA = 'r.id, r.numero, r.turno_id, r.cita_electro_id, r.total, r.anulado, r.anulado_razon, r.estado_pago, r.observaciones, r.tipo_servicio, r.fecha, r.cliente, r.medico_nombre, r.nombre_entidad, r.data';
 
@@ -78,11 +80,68 @@ function normNombrePaciente(s) {
     .trim();
 }
 
+function distanciaLevenshtein(a, b) {
+  const s = String(a || '');
+  const t = String(b || '');
+  if (s === t) return 0;
+  if (!s.length) return t.length;
+  if (!t.length) return s.length;
+  const row = Array.from({ length: t.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= s.length; i++) {
+    let prev = i - 1;
+    row[0] = i;
+    for (let j = 1; j <= t.length; j++) {
+      const tmp = row[j];
+      const cost = s[i - 1] === t[j - 1] ? 0 : 1;
+      row[j] = Math.min(
+        row[j] + 1,
+        row[j - 1] + 1,
+        prev + cost
+      );
+      prev = tmp;
+    }
+  }
+  return row[t.length];
+}
+
+function tokensNombrePaciente(s) {
+  return normNombrePaciente(s).split(/\s+/).filter(Boolean);
+}
+
+/** Tolera typos por token (p. ej. ANGIE vs ANGUI) si el resto del nombre coincide. */
+function nombresPacienteCoincidenFuzzy(cliente, pacienteNombre) {
+  const a = normNombrePaciente(cliente);
+  const b = normNombrePaciente(pacienteNombre);
+  if (!a || !b) return false;
+  if (a === b) return true;
+
+  const ta = tokensNombrePaciente(cliente);
+  const tb = tokensNombrePaciente(pacienteNombre);
+  if (ta.length && ta.length === tb.length) {
+    let tokensOk = true;
+    for (let i = 0; i < ta.length; i++) {
+      if (ta[i] === tb[i]) continue;
+      const dist = distanciaLevenshtein(ta[i], tb[i]);
+      const minLen = Math.min(ta[i].length, tb[i].length);
+      if (dist === 1 && minLen >= 4) continue;
+      if (dist === 2 && minLen >= 5) continue;
+      tokensOk = false;
+      break;
+    }
+    if (tokensOk) return true;
+  }
+
+  const maxLen = Math.max(a.length, b.length);
+  return maxLen >= 10 && distanciaLevenshtein(a, b) <= 2;
+}
+
 function clienteCoincidePaciente(cliente, pacienteNombre, estricto = false) {
   const a = normNombrePaciente(cliente);
   const b = normNombrePaciente(pacienteNombre);
   if (!a || !b) return estricto ? false : true;
-  return a === b || a.includes(b) || b.includes(a);
+  if (a === b || a.includes(b) || b.includes(a)) return true;
+  if (estricto) return nombresPacienteCoincidenFuzzy(cliente, pacienteNombre);
+  return false;
 }
 
 function esMedicoElectroDiagnostico(medicoNombre) {
@@ -104,6 +163,7 @@ function esReciboElectro(rec, catalogos = {}) {
     return true;
   }
   if (esTipoServicioElectroDiagnostico(rec.tipo_servicio)) return true;
+  if (tipoEstudioElectro(rec.tipo_servicio) !== 'otro') return true;
   const enEstudios = catalogos.estudios?.length
     && tipoServicioCoincideCatalogo(rec.tipo_servicio, catalogos.estudios);
   const enConsulta = catalogos.tiposConsulta?.length
@@ -178,7 +238,7 @@ function reciboCoincideCitaElectro(rec, cita, catalogos = {}) {
     return false;
   }
   if (!cita.tipo_consulta) return false;
-  if (!tipoServicioCoincideNombre(rec.tipo_servicio, cita.tipo_consulta)) return false;
+  if (!estudioServicioCoincide(rec.tipo_servicio, cita.tipo_consulta)) return false;
   const fechaRec = extraerFechaYmd(rec.fecha);
   const fechaCita = extraerFechaYmd(cita.fecha);
   if (fechaRec && fechaCita && fechaRec !== fechaCita) return false;

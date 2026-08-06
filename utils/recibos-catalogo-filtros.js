@@ -2,6 +2,8 @@
  * Catálogo y coincidencias para filtros de tipo_servicio en recibos/reportes.
  */
 
+const { tipoEstudioElectro } = require('./electro-estudio-tipo');
+
 const RECIBO_FILTRO_OTROS_CONSULTA = '__OTROS_CONSULTA__';
 const RECIBO_FILTRO_OTROS_ESTUDIO = '__OTROS_ESTUDIO__';
 
@@ -20,10 +22,37 @@ function tipoServicioCoincideNombre(valor, nombreCatalogo) {
   return v === c || v.includes(c) || c.includes(v);
 }
 
+function subtipoEstudioPsg(norm) {
+  if (!norm) return 'general';
+  if (norm.includes('cpap')) return 'cpap';
+  if (norm.includes('bpap')) return 'bpap';
+  if (norm.includes('noche dividida') || norm.includes('split night') || norm.includes('splitnight')) {
+    return 'noche_dividida';
+  }
+  if (norm.includes('basica') || norm.includes('basal')) return 'basica';
+  return 'general';
+}
+
+/**
+ * Coincidencia flexible entre nombre de estudio en recibo y en agenda electro.
+ * Ej.: «Polisomnografía Básica» ≈ «PSG Básica»; «Electroencefalograma convencional» ≈ «EEG Convencional».
+ */
+function estudioServicioCoincide(valorRecibo, valorCita) {
+  if (tipoServicioCoincideNombre(valorRecibo, valorCita)) return true;
+  const famA = tipoEstudioElectro(valorRecibo);
+  const famB = tipoEstudioElectro(valorCita);
+  if (famA === 'otro' || famB === 'otro' || famA !== famB) return false;
+  if (famA === 'psg') {
+    return subtipoEstudioPsg(normTipoServicio(valorRecibo))
+      === subtipoEstudioPsg(normTipoServicio(valorCita));
+  }
+  return true;
+}
+
 function tipoServicioCoincideCatalogo(valor, nombresCatalogo) {
   const lista = Array.isArray(nombresCatalogo) ? nombresCatalogo : [];
   if (!normTipoServicio(valor)) return false;
-  return lista.some((n) => tipoServicioCoincideNombre(valor, n));
+  return lista.some((n) => estudioServicioCoincide(valor, n));
 }
 
 function separarValoresUsadosEnOtros(valoresUsados, nombresCatalogo) {
@@ -65,6 +94,7 @@ module.exports = {
   RECIBO_FILTRO_OTROS_ESTUDIO,
   normTipoServicio,
   tipoServicioCoincideNombre,
+  estudioServicioCoincide,
   tipoServicioCoincideCatalogo,
   separarValoresUsadosEnOtros,
   expandirSeleccionFiltroServicio

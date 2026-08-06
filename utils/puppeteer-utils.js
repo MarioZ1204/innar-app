@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const puppeteer = require('puppeteer-core');
 const logger = require('./logger');
+const { readFileBuffer, pathExists } = require('./fs-async');
 
 const PUPPETEER_CACHE_DIR = process.env.PUPPETEER_CACHE_DIR
   || path.join(__dirname, '..', '.cache', 'puppeteer');
@@ -294,8 +295,17 @@ function getComprobanteServiciosFondo() {
   return { base64: '', mime: 'image/png' };
 }
 
-// Precarga no crítica
-try { getLogoBase64(); } catch (_) {}
+// Precarga no bloqueante en segundo plano
+setImmediate(() => {
+  (async () => {
+    try {
+      const logoPath = getLogoPath();
+      if (logoPath && await pathExists(logoPath)) {
+        logoBase64 = (await readFileBuffer(logoPath)).toString('base64');
+      }
+    } catch (_) { /* ignore */ }
+  })();
+});
 
 module.exports = {
   getPuppeteerLaunchOptions,

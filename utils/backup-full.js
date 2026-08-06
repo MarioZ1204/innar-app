@@ -228,7 +228,7 @@ async function createFullBackup(meta = {}) {
       output.on('error', reject);
 
       archive.pipe(output);
-      archive.append(fs.readFileSync(tmpSql), { name: 'database.sql' });
+      archive.file(tmpSql, { name: 'database.sql' });
       archive.append(JSON.stringify(manifest, null, 2), { name: 'MANIFEST.json' });
       archive.append(
         [

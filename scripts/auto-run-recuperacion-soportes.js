@@ -68,22 +68,21 @@ async function runFileRestoreBootstrap() {
   console.log(`[soportes-restore] Revisando backups disponibles para restaurar archivos faltantes (versión ${result.version})...`);
 
   try {
-    const { restoreMissingUploadsFromAllBackups, latestAnyBackupFilename } = require('../utils/soportes-backup-restore');
+    const { latestAnyBackupFilename } = require('../utils/soportes-backup-restore');
     if (!latestAnyBackupFilename()) {
       console.log('[soportes-restore] No hay backups disponibles; se omite la restauración.');
       writeMarker(result.markerPath, result.version);
       return;
     }
 
-    const restoreResult = await restoreMissingUploadsFromAllBackups();
-    console.log(`[soportes-restore] Backups revisados (más reciente primero): ${restoreResult.backupsRevisados.join(', ')}`);
-    console.log(`[soportes-restore] Restaurados: ${restoreResult.restaurados.length}; ya existían: ${restoreResult.omitidos}; errores: ${restoreResult.errores.length}`);
-    if (restoreResult.errores.length) {
-      restoreResult.errores.forEach((e) => console.error(`[soportes-restore]   - ${e.ruta}: ${e.error}`));
-    }
-    writeMarker(result.markerPath, result.version);
+    const { startBackgroundJob } = require('../utils/background-jobs');
+    const started = startBackgroundJob('restore-deploy-uploads', {
+      markerPath: result.markerPath,
+      version: result.version
+    });
+    console.log(`[soportes-restore] Restauración iniciada en proceso hijo (pid ${started.pid}).`);
   } catch (error) {
-    console.error('[soportes-restore] Falló la restauración automática de archivos:', error);
+    console.error('[soportes-restore] Falló al iniciar la restauración automática de archivos:', error);
   }
 }
 

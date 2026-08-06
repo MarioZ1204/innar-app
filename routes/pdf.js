@@ -8,6 +8,7 @@ const puppeteer = require('puppeteer-core');
 const db = require('../utils/db-mysql');
 const logger = require('../utils/logger');
 const { getPuppeteerLaunchOptions, getLogoBase64 } = require('../utils/puppeteer-utils');
+const { readFileBuffer, pathExists } = require('../utils/fs-async');
 const {
   requireAuth, requireRoleOrPerm,
   safeError, isAdminRol, isRecepcionRol
@@ -384,8 +385,8 @@ router.post('/agenda/pdf', requireAuth, jsonLargeBody, async (req, res) => {
 
     const logoPath = path.join(__dirname, '..', 'public', 'images', 'logo1.png');
     let logoBase64Data = '';
-    if (fs.existsSync(logoPath)) {
-      const logoBuffer = fs.readFileSync(logoPath);
+    if (await pathExists(logoPath)) {
+      const logoBuffer = await readFileBuffer(logoPath);
       logoBase64Data = logoBuffer.toString('base64');
     }
 

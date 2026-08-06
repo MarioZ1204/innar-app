@@ -10,8 +10,7 @@
 // sin valor adicional. Ahora un único backup diario por defecto; intra-día opt-in.
 
 const schedule = require('node-schedule');
-const { createBackup } = require('./backup');
-const { createFullBackup, createFilesOnlyBackup } = require('./backup-full');
+const { startBackgroundJob } = require('./background-jobs');
 const log = require('./logger.js');
 
 function startBackupScheduler() {
@@ -20,64 +19,35 @@ function startBackupScheduler() {
 
   log.info('[BACKUP] Programador de backups iniciado', { type: 'BACKUP' });
 
-  const job = schedule.scheduleJob(dailyCron, async () => {
-    log.info('[BACKUP] Ejecutando backup automatico diario', { type: 'BACKUP' });
-    try {
-      await createBackup();
-      log.info('[OK] Backup automático completado exitosamente', { type: 'BACKUP' });
-    } catch (error) {
-      log.error('[BACKUP] Error en backup automatico diario', { error: error.message, type: 'BACKUP' });
-    }
+  const job = schedule.scheduleJob(dailyCron, () => {
+    log.info('[BACKUP] Ejecutando backup automatico diario (proceso hijo)', { type: 'BACKUP' });
+    startBackgroundJob('backup-sql', { triggeredBy: 'programador', label: 'Backup SQL diario' });
   });
 
   let intraJob = null;
   if (intraCron) {
-    intraJob = schedule.scheduleJob(intraCron, async () => {
-      log.info('[BACKUP] Ejecutando backup intra-día', { type: 'BACKUP', cron: intraCron });
-      try {
-        await createBackup();
-      } catch (error) {
-        log.error('[BACKUP] Error en backup intra-día', { error: error.message, type: 'BACKUP' });
-      }
+    intraJob = schedule.scheduleJob(intraCron, () => {
+      log.info('[BACKUP] Ejecutando backup intra-día (proceso hijo)', { type: 'BACKUP', cron: intraCron });
+      startBackgroundJob('backup-sql', { triggeredBy: 'programador', label: 'Backup intra-día' });
     });
   }
 
   const monthlyCron = process.env.BACKUP_MONTHLY_CRON || '0 3 1 * *';
-  const monthlyJob = schedule.scheduleJob(monthlyCron, async () => {
-    log.info('[BACKUP] Ejecutando backup completo mensual (BD + archivos)', { type: 'BACKUP' });
-    try {
-      const result = await createFullBackup({
-        triggeredBy: 'programador',
-        label: 'Backup mensual automático'
-      });
-      log.info('[OK] Backup completo mensual', {
-        type: 'BACKUP',
-        filename: result.filename,
-        size: result.size_bytes
-      });
-    } catch (error) {
-      log.error('[BACKUP] Error backup completo mensual', { error: error.message, type: 'BACKUP' });
-    }
+  const monthlyJob = schedule.scheduleJob(monthlyCron, () => {
+    log.info('[BACKUP] Ejecutando backup completo mensual en proceso hijo', { type: 'BACKUP' });
+    startBackgroundJob('backup-full', {
+      triggeredBy: 'programador',
+      label: 'Backup mensual automático'
+    });
   });
 
-  // Backup liviano solo de uploads/ (sin BD), mucho más frecuente que el mensual.
-  // Evita que se pierdan PDFs subidos entre dos backups completos.
   const filesCron = process.env.BACKUP_FILES_CRON || '0 4 * * *';
-  const filesJob = schedule.scheduleJob(filesCron, async () => {
-    log.info('[BACKUP] Ejecutando backup diario de archivos (uploads/)', { type: 'BACKUP' });
-    try {
-      const result = await createFilesOnlyBackup({
-        triggeredBy: 'programador',
-        label: 'Backup diario de archivos'
-      });
-      log.info('[OK] Backup diario de archivos', {
-        type: 'BACKUP',
-        filename: result.filename,
-        size: result.size_bytes
-      });
-    } catch (error) {
-      log.error('[BACKUP] Error backup diario de archivos', { error: error.message, type: 'BACKUP' });
-    }
+  const filesJob = schedule.scheduleJob(filesCron, () => {
+    log.info('[BACKUP] Ejecutando backup diario de archivos en proceso hijo', { type: 'BACKUP' });
+    startBackgroundJob('backup-files', {
+      triggeredBy: 'programador',
+      label: 'Backup diario de archivos'
+    });
   });
 
   log.info(

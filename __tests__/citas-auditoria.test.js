@@ -334,4 +334,57 @@ describe('recibos electro en auditoría', () => {
     };
     expect(reciboCoincideCitaElectro(rec, citaElectro, CATALOGOS_AUDITORIA)).toBe(true);
   });
+
+  test('vincula PSG Básica en agenda con Polisomnografía Básica en recibo (recibo 0686)', () => {
+    const citaPsg = {
+      id: 501,
+      fecha: '2026-06-20',
+      tipo_consulta: 'PSG Básica',
+      paciente_nombre: 'ANGUI SOFIA PAZ LARA',
+      paciente_documento: '',
+      entidad: 'PARTICULAR'
+    };
+    const rec = {
+      id: 686,
+      numero: '0686',
+      cita_electro_id: null,
+      turno_id: null,
+      medico_nombre: 'ELECTRODIAGNÓSTICOS',
+      tipo_servicio: 'Polisomnografía Básica',
+      fecha: '2026-06-20',
+      cliente: 'ANGIE SOFIA PAZ LARA',
+      nombre_entidad: 'Particular'
+    };
+    const catalogos = {
+      tiposConsulta: [],
+      estudios: ['Polisomnografía Básica', 'PSG Básica']
+    };
+    expect(reciboCoincideCitaElectro(rec, citaPsg, catalogos)).toBe(true);
+    const filas = asignarRecibosACitas([citaPsg], [rec], catalogos, 'ELECTRODIAGNOSTICO');
+    expect(filas).toHaveLength(1);
+    expect(filas[0].recibo_numero).toBe('0686');
+  });
+
+  test('no vincula PSG Básica con PSG CPAP aunque el paciente coincida', () => {
+    const citaPsg = {
+      id: 502,
+      fecha: '2026-06-20',
+      tipo_consulta: 'PSG Básica',
+      paciente_nombre: 'ANGUI SOFIA PAZ LARA',
+      paciente_documento: '',
+      entidad: 'PARTICULAR'
+    };
+    const rec = {
+      id: 687,
+      cita_electro_id: null,
+      turno_id: null,
+      medico_nombre: 'ELECTRODIAGNÓSTICOS',
+      tipo_servicio: 'PSG CPAP',
+      fecha: '2026-06-20',
+      cliente: 'ANGUI SOFIA PAZ LARA',
+      nombre_entidad: 'Particular'
+    };
+    const catalogos = { tiposConsulta: [], estudios: ['PSG Básica', 'PSG CPAP'] };
+    expect(reciboCoincideCitaElectro(rec, citaPsg, catalogos)).toBe(false);
+  });
 });

@@ -8,19 +8,15 @@ const { requireAuth, requireRoleOrPerm, safeError } = require('../middleware/ind
 const logger = require('../utils/logger');
 const {
   listFullBackups,
-  createFullBackup,
   resolveFullBackupPath,
   isSafeFullBackupName,
   listFilesOnlyBackups,
-  createFilesOnlyBackup,
   isSafeFilesOnlyBackupName,
   resolveFilesOnlyBackupPath
 } = require('../utils/backup-full');
 const { BACKUP_DIR } = require('../utils/backup');
-const {
-  restoreMissingUploadsFromBackup,
-  restoreMissingUploadsFromAllBackups
-} = require('../utils/soportes-backup-restore');
+const { startBackgroundJob } = require('../utils/background-jobs');
+const { readDirNames, pathExists } = require('../utils/fs-async');
 
 const ROLES_BACKUP = ['superadmin', 'admin'];
 
@@ -30,8 +26,9 @@ router.get('/backups', requireAuth, requireRoleOrPerm(ROLES_BACKUP, 'sistema.bac
     const completos = listFullBackups();
     const archivosDiarios = listFilesOnlyBackups();
     let sqlDiarios = [];
-    if (fs.existsSync(BACKUP_DIR)) {
-      sqlDiarios = fs.readdirSync(BACKUP_DIR)
+    if (await pathExists(BACKUP_DIR)) {
+      const names = await readDirNames(BACKUP_DIR);
+      sqlDiarios = names
         .filter((f) => f.startsWith('backup-') && f.endsWith('.sql'))
         .map((filename) => {
           const fp = require('path').join(BACKUP_DIR, filename);
@@ -62,30 +59,20 @@ router.get('/backups', requireAuth, requireRoleOrPerm(ROLES_BACKUP, 'sistema.bac
   }
 });
 
-/** POST /api/backups/completo — generar ZIP (BD + uploads) */
+/** POST /api/backups/completo — generar ZIP (BD + uploads) en proceso hijo */
 router.post('/backups/completo', requireAuth, requireRoleOrPerm(ROLES_BACKUP, 'sistema.backups'), async (req, res) => {
   try {
     const usuario = req.session?.nombre || req.session?.usuario || `id:${req.session?.usuarioId}`;
-    const result = await createFullBackup({
+    const started = startBackgroundJob('backup-full', {
       triggeredBy: usuario,
       label: req.body?.label || 'Manual desde módulo Backup'
     });
-    logger.info('[BACKUP] Completo creado', {
-      type: 'BACKUP',
-      filename: result.filename,
-      size: result.size_bytes,
-      user: usuario
-    });
-    res.json({
+    logger.info('[BACKUP] Completo iniciado en segundo plano', { type: 'BACKUP', user: usuario, pid: started.pid });
+    res.status(202).json({
       ok: true,
-      message: 'Backup completo generado correctamente',
-      backup: {
-        filename: result.filename,
-        size_bytes: result.size_bytes,
-        size_mb: (result.size_bytes / (1024 * 1024)).toFixed(2),
-        created_at: result.manifest.created_at,
-        tipo: 'completo'
-      }
+      background: true,
+      message: 'Backup completo iniciado en segundo plano. Actualice la lista en unos minutos.',
+      pid: started.pid
     });
   } catch (e) {
     logger.error('[BACKUP] crear completo:', e);
@@ -93,30 +80,20 @@ router.post('/backups/completo', requireAuth, requireRoleOrPerm(ROLES_BACKUP, 's
   }
 });
 
-/** POST /api/backups/archivos — generar ZIP liviano solo de uploads/ (sin BD) */
+/** POST /api/backups/archivos — generar ZIP liviano solo de uploads/ (sin BD) en proceso hijo */
 router.post('/backups/archivos', requireAuth, requireRoleOrPerm(ROLES_BACKUP, 'sistema.backups'), async (req, res) => {
   try {
     const usuario = req.session?.nombre || req.session?.usuario || `id:${req.session?.usuarioId}`;
-    const result = await createFilesOnlyBackup({
+    const started = startBackgroundJob('backup-files', {
       triggeredBy: usuario,
       label: req.body?.label || 'Manual desde módulo Backup'
     });
-    logger.info('[BACKUP] Archivos creado', {
-      type: 'BACKUP',
-      filename: result.filename,
-      size: result.size_bytes,
-      user: usuario
-    });
-    res.json({
+    logger.info('[BACKUP] Archivos iniciado en segundo plano', { type: 'BACKUP', user: usuario, pid: started.pid });
+    res.status(202).json({
       ok: true,
-      message: 'Backup de archivos generado correctamente',
-      backup: {
-        filename: result.filename,
-        size_bytes: result.size_bytes,
-        size_mb: (result.size_bytes / (1024 * 1024)).toFixed(2),
-        created_at: result.manifest.created_at,
-        tipo: 'archivos'
-      }
+      background: true,
+      message: 'Backup de archivos iniciado en segundo plano. Actualice la lista en unos minutos.',
+      pid: started.pid
     });
   } catch (e) {
     logger.error('[BACKUP] crear archivos:', e);
@@ -141,24 +118,19 @@ router.post(
         ? req.body.onlyPrefixes.filter((v) => typeof v === 'string' && v.trim())
         : [];
 
-      const result = await restoreMissingUploadsFromAllBackups({ onlyPrefixes });
-
       const usuario = req.session?.nombre || req.session?.usuario || `id:${req.session?.usuarioId}`;
-      logger.info('[BACKUP] Restauración de archivos faltantes (todos los backups)', {
+      const started = startBackgroundJob('restore-all-uploads', { onlyPrefixes });
+      logger.info('[BACKUP] Restauración masiva iniciada en segundo plano', {
         type: 'BACKUP_RESTORE',
-        backupsRevisados: result.backupsRevisados,
-        restaurados: result.restaurados.length,
-        omitidos: result.omitidos,
-        errores: result.errores.length,
-        user: usuario
+        user: usuario,
+        pid: started.pid
       });
 
-      res.json({
+      res.status(202).json({
         ok: true,
-        message: result.backupsRevisados.length
-          ? `Restauración completada: ${result.restaurados.length} archivo(s) recuperado(s), ${result.omitidos} ya existían.`
-          : 'No hay backups disponibles para restaurar.',
-        ...result
+        background: true,
+        message: 'Restauración iniciada en segundo plano. Revise los logs del servidor para el resultado.',
+        pid: started.pid
       });
     } catch (e) {
       logger.error('[BACKUP] restaurar archivos (todos):', e);
@@ -222,22 +194,24 @@ router.post(
         ? req.body.onlyPrefixes.filter((v) => typeof v === 'string' && v.trim())
         : [];
 
-      const result = await restoreMissingUploadsFromBackup({ backupFilename: name, overwrite, onlyPrefixes });
-
       const usuario = req.session?.nombre || req.session?.usuario || `id:${req.session?.usuarioId}`;
-      logger.info('[BACKUP] Restauración de archivos faltantes', {
+      const started = startBackgroundJob('restore-one-uploads', {
+        backupFilename: name,
+        overwrite,
+        onlyPrefixes
+      });
+      logger.info('[BACKUP] Restauración desde backup iniciada en segundo plano', {
         type: 'BACKUP_RESTORE',
         filename: name,
-        restaurados: result.restaurados.length,
-        omitidos: result.omitidos,
-        errores: result.errores.length,
-        user: usuario
+        user: usuario,
+        pid: started.pid
       });
 
-      res.json({
+      res.status(202).json({
         ok: true,
-        message: `Restauración completada: ${result.restaurados.length} archivo(s) recuperado(s), ${result.omitidos} ya existían.`,
-        ...result
+        background: true,
+        message: `Restauración desde ${name} iniciada en segundo plano.`,
+        pid: started.pid
       });
     } catch (e) {
       logger.error('[BACKUP] restaurar archivos:', e);

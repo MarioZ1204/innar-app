@@ -76,9 +76,28 @@ function posiblesCodigosCarpeta(expediente) {
 
 function listarCarpetasExpediente(expediente, baseRoot = getSoportesRoot()) {
   if (!expediente) return [];
-  const carpetas = posiblesCodigosCarpeta(expediente);
-
   const dirs = [];
+
+  // Ruta directa cuando el expediente trae contexto de día/periodo (evita escanear
+  // todo uploads/soportes/armado — operación que bloqueaba el servidor al abrir PDFs).
+  const periodoRuta = expediente.periodo_etiqueta || expediente.periodo;
+  if (periodoRuta && expediente.nombre_display) {
+    try {
+      const { getArmadoFeDirForExpediente } = require('./soportes-storage');
+      for (const tipo of ['soportes', 'rips']) {
+        const ctx = {
+          periodo_etiqueta: periodoRuta,
+          nombre_display: expediente.nombre_display,
+          estado_facturacion: expediente.estado_facturacion || 'a_facturar',
+          contenedor_tipo: expediente.contenedor_tipo || tipo
+        };
+        const { abs } = getArmadoFeDirForExpediente(ctx, expediente);
+        if (abs) dirs.push(abs);
+      }
+    } catch (_) { /* fallback al escaneo legacy */ }
+  }
+
+  const carpetas = posiblesCodigosCarpeta(expediente);
   const armadoRoot = path.join(baseRoot, 'armado');
   for (const folder of carpetas) {
     dirs.push(path.join(baseRoot, folder));
@@ -350,6 +369,7 @@ function resolveArchivoAbsoluto(row, options = {}) {
   const base = path.basename(nombre);
   const candidates = [];
   let joined = null;
+  const deepScan = options.deepScan !== false;
 
   if (rel) {
     joined = rel.startsWith('soportes/') ? rel : path.join('soportes', rel).replace(/\\/g, '/');
@@ -407,6 +427,8 @@ function resolveArchivoAbsoluto(row, options = {}) {
     return byExpedienteFolder;
   }
 
+  if (!deepScan) return null;
+
   const relDir = joined ? path.dirname(joined).replace(/^soportes\//, '') : '';
   const scanRoots = [
     getSoportesRoot(),
@@ -451,7 +473,9 @@ function registroArchivoDesincronizado(row, fp) {
   return rowName !== base || (rel && rowRel !== rel);
 }
 
-async function resolverArchivoExpedienteSlot(expedienteId, tipoParam) {
+async function resolverArchivoExpedienteSlot(expedienteId, tipoParam, options = {}) {
+  const repair = options.repair !== false;
+  const deepScan = options.deepScan !== false;
   const loaded = await loadArchivoExpedienteSlot(expedienteId, tipoParam);
   if (!loaded.ok) {
     return { ok: false, error: loaded.error, status: loaded.status || 404, fp: null };
@@ -459,14 +483,14 @@ async function resolverArchivoExpedienteSlot(expedienteId, tipoParam) {
 
   const expediente = await obtenerExpedienteContext(expedienteId);
   let row = loaded.row;
-  let fp = resolveArchivoAbsoluto(row, { expediente });
+  let fp = resolveArchivoAbsoluto(row, { expediente, deepScan });
 
-  if (!archivoResueltoValido(fp, row, expediente) || registroArchivoDesincronizado(row, fp)) {
+  if (repair && (!archivoResueltoValido(fp, row, expediente) || registroArchivoDesincronizado(row, fp))) {
     await repararArchivosExpediente(expedienteId, expediente);
     const reloaded = await loadArchivoExpedienteSlot(expedienteId, tipoParam);
     if (reloaded.ok) {
       row = reloaded.row;
-      fp = resolveArchivoAbsoluto(row, { expediente });
+      fp = resolveArchivoAbsoluto(row, { expediente, deepScan: true });
     }
   }
 
@@ -497,12 +521,28 @@ function resolverArchivoExpedienteRow(row, expediente) {
   return archivoResueltoValido(fp, row, expediente) ? fp : null;
 }
 
+let sopExpedientesColumnsCache = null;
+
+function resetSopExpedientesColumnsCacheForTests() {
+  sopExpedientesColumnsCache = null;
+}
+
+async function getSopExpedientesColumnSet() {
+  if (sopExpedientesColumnsCache) return sopExpedientesColumnsCache;
+  try {
+    const columnas = await db.query('SHOW COLUMNS FROM sop_expedientes');
+    sopExpedientesColumnsCache = new Set((columnas || []).map((col) => String(col?.Field || '').toLowerCase()));
+  } catch (_) {
+    sopExpedientesColumnsCache = new Set();
+  }
+  return sopExpedientesColumnsCache;
+}
+
 async function obtenerExpedienteContext(expedienteId) {
   if (!expedienteId) return null;
 
   try {
-    const columnas = await db.query('SHOW COLUMNS FROM sop_expedientes');
-    const columnasSet = new Set((columnas || []).map((col) => String(col?.Field || '').toLowerCase()));
+    const columnasSet = await getSopExpedientesColumnSet();
     const selectParts = [
       'e.id',
       'e.codigo',
@@ -516,23 +556,24 @@ async function obtenerExpedienteContext(expedienteId) {
       'e.listo_radicacion',
       'e.notas',
       'e.creado_por',
-      'e.creado_en'
+      'e.creado_en',
+      'c.tipo AS contenedor_tipo',
+      'd.nombre_display',
+      'd.estado_facturacion',
+      'p.periodo',
+      'p.etiqueta AS periodo_etiqueta'
     ];
 
     if (columnasSet.has('carpeta_fisica')) {
-      selectParts.push('e.carpeta_fisica');
-    }
-    if (columnasSet.has('nombre_display')) {
-      selectParts.push('e.nombre_display');
-    }
-    if (columnasSet.has('periodo')) {
-      selectParts.push('e.periodo');
-    }
-    if (columnasSet.has('estado_facturacion')) {
-      selectParts.push('e.estado_facturacion');
+      selectParts.splice(3, 0, 'e.carpeta_fisica');
     }
 
-    const sql = `SELECT ${selectParts.join(', ')} FROM sop_expedientes e WHERE e.id = ? LIMIT 1`;
+    const sql = `SELECT ${selectParts.join(', ')}
+     FROM sop_expedientes e
+     LEFT JOIN sop_contenedores c ON c.id = e.contenedor_id
+     LEFT JOIN sop_dias d ON d.id = COALESCE(c.dia_id, e.dia_id)
+     LEFT JOIN sop_periodos p ON p.id = d.periodo_id
+     WHERE e.id = ? LIMIT 1`;
     const rows = await db.query(sql, [expedienteId]);
     return rows?.[0] || null;
   } catch (error) {
@@ -677,5 +718,6 @@ module.exports = {
   repararArchivoExpedienteRow,
   repararArchivosExpediente,
   eliminarArchivoExpedienteSlot,
-  obtenerExpedienteContext
+  obtenerExpedienteContext,
+  resetSopExpedientesColumnsCacheForTests
 };

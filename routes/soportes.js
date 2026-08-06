@@ -596,17 +596,16 @@ const PERMS_ARMADO_VER_SUBIR = ['modulo.armado_soportes', 'soportes.armado.subir
 const { applyHighlightsToPdfBytes, sanitizeHighlightsList } = require('../utils/soportes-pdf-highlights');
 const { appendPdfFilesToExisting } = require('../utils/soportes-pdf-anexar');
 const { sanitizePageIndexes, removePdfPagesFromBytes, reorderPdfPagesFromBytes } = require('../utils/soportes-pdf-pages');
+const { readFileBuffer, writeFileAtomic } = require('../utils/fs-async');
 
-function writePdfBytesAtomic(filePath, buffer) {
-  const tmp = `${filePath}.hl-${process.pid}-${Date.now()}.tmp`;
-  fs.writeFileSync(tmp, buffer);
-  fs.renameSync(tmp, filePath);
+async function writePdfBytesAtomic(filePath, buffer) {
+  await writeFileAtomic(filePath, buffer);
 }
 
 async function persistHighlightsOnPdfFile(filePath, highlights) {
-  const bytes = fs.readFileSync(filePath);
+  const bytes = await readFileBuffer(filePath);
   const next = await applyHighlightsToPdfBytes(bytes, highlights);
-  writePdfBytesAtomic(filePath, next);
+  await writePdfBytesAtomic(filePath, next);
   return next.length;
 }
 
@@ -1428,7 +1427,7 @@ router.post(
       const fp = await resolvePdxArchivoPathForApi(row, true);
       if (!fp || !fs.existsSync(fp)) return res.status(404).json({ error: 'Archivo no en disco' });
 
-      const bytes = fs.readFileSync(fp);
+      const bytes = await readFileBuffer(fp);
       const { PDFDocument } = require('pdf-lib');
       const probe = await PDFDocument.load(bytes, { ignoreEncryption: true });
       const sanitized = sanitizeHighlightsList(highlights, probe.getPageCount());
@@ -1533,11 +1532,11 @@ router.post(
       if (vis === 'archivo') return res.status(403).json({ error: 'Carpeta cerrada' });
       const fp = await resolvePdxArchivoPathForApi(row, true);
       if (!fp || !fs.existsSync(fp)) return res.status(404).json({ error: 'Archivo no en disco' });
-      const bytes = fs.readFileSync(fp);
+      const bytes = await readFileBuffer(fp);
       const { PDFDocument } = require('pdf-lib');
       const pageCount = (await PDFDocument.load(bytes, { ignoreEncryption: true })).getPageCount();
       const outBytes = await reorderPdfPagesFromBytes(bytes, order);
-      writePdfBytesAtomic(fp, outBytes);
+      await writePdfBytesAtomic(fp, outBytes);
       const tamanoFinal = outBytes.length;
       await db.execute(
         'UPDATE sop_pdx_archivos SET tamano_bytes = ?, editado_por = ?, editado_en = NOW() WHERE id = ?',
@@ -1575,12 +1574,12 @@ router.post(
       const fp = await resolvePdxArchivoPathForApi(row, true);
       if (!fp || !fs.existsSync(fp)) return res.status(404).json({ error: 'Archivo no en disco' });
 
-      const bytes = fs.readFileSync(fp);
+      const bytes = await readFileBuffer(fp);
       const { PDFDocument } = require('pdf-lib');
       const pageCount = (await PDFDocument.load(bytes, { ignoreEncryption: true })).getPageCount();
       const indexes = sanitizePageIndexes(pages, pageCount);
       const outBytes = await removePdfPagesFromBytes(bytes, indexes);
-      writePdfBytesAtomic(fp, outBytes);
+      await writePdfBytesAtomic(fp, outBytes);
       const tamanoFinal = outBytes.length;
 
       await db.execute(
@@ -2109,7 +2108,9 @@ router.get('/soportes/armado/expedientes/:id/pdfs/:archivoId/ver', requireAuth, 
       [req.params.archivoId, req.params.id]
     );
     if (!rows.length) return res.status(404).json({ error: 'PDF no encontrado' });
-    const fp = resolveArchivoAbsoluto(rows[0]);
+    const { obtenerExpedienteContext } = require('../utils/soportes-exp-archivo');
+    const expediente = await obtenerExpedienteContext(req.params.id);
+    const fp = resolveArchivoAbsoluto(rows[0], { expediente, deepScan: false });
     if (!fp || !fs.existsSync(fp)) return res.status(404).json({ error: 'Archivo no en disco' });
     const name = rows[0].nombre_original || rows[0].nombre_archivo || 'documento.pdf';
     res.setHeader('Content-Type', 'application/pdf');
@@ -2127,7 +2128,9 @@ router.get('/soportes/armado/expedientes/:id/pdfs/:archivoId/descargar', require
       [req.params.archivoId, req.params.id]
     );
     if (!rows.length) return res.status(404).json({ error: 'PDF no encontrado' });
-    const fp = resolveArchivoAbsoluto(rows[0]);
+    const { obtenerExpedienteContext } = require('../utils/soportes-exp-archivo');
+    const expediente = await obtenerExpedienteContext(req.params.id);
+    const fp = resolveArchivoAbsoluto(rows[0], { expediente, deepScan: false });
     if (!fp || !fs.existsSync(fp)) return res.status(404).json({ error: 'Archivo no en disco' });
     const name = rows[0].nombre_original || rows[0].nombre_archivo || 'documento.pdf';
     res.setHeader('Content-Type', 'application/pdf');
@@ -2840,7 +2843,10 @@ router.get(
   async (req, res) => {
     try {
       const { resolverArchivoExpedienteSlot } = require('../utils/soportes-exp-archivo');
-      const resolved = await resolverArchivoExpedienteSlot(req.params.id, req.params.tipo);
+      const resolved = await resolverArchivoExpedienteSlot(req.params.id, req.params.tipo, {
+        repair: false,
+        deepScan: false
+      });
       if (!resolved.ok) return res.status(resolved.status || 404).json({ error: resolved.error });
       const fp = resolved.fp;
       const name = resolved.row.nombre_archivo || 'archivo';
@@ -2886,7 +2892,7 @@ router.post(
         return res.status(400).json({ error: 'El archivo no es PDF' });
       }
 
-      const bytes = fs.readFileSync(fp);
+      const bytes = await readFileBuffer(fp);
       const { PDFDocument } = require('pdf-lib');
       const probe = await PDFDocument.load(bytes, { ignoreEncryption: true });
       const sanitized = sanitizeHighlightsList(highlights, probe.getPageCount());
@@ -2990,11 +2996,11 @@ router.post(
       if (!/\.pdf$/i.test(fp) && loaded.row.mime_type !== 'application/pdf') {
         return res.status(400).json({ error: 'El archivo no es PDF' });
       }
-      const bytes = fs.readFileSync(fp);
+      const bytes = await readFileBuffer(fp);
       const { PDFDocument } = require('pdf-lib');
       const pageCount = (await PDFDocument.load(bytes, { ignoreEncryption: true })).getPageCount();
       const outBytes = await reorderPdfPagesFromBytes(bytes, order);
-      writePdfBytesAtomic(fp, outBytes);
+      await writePdfBytesAtomic(fp, outBytes);
       await db.execute(
         'UPDATE sop_exp_archivos SET tamano_bytes = ?, subido_por = ? WHERE id = ?',
         [outBytes.length, req.session.usuarioId, loaded.row.id]
@@ -3031,12 +3037,12 @@ router.post(
         return res.status(400).json({ error: 'El archivo no es PDF' });
       }
 
-      const bytes = fs.readFileSync(fp);
+      const bytes = await readFileBuffer(fp);
       const { PDFDocument } = require('pdf-lib');
       const pageCount = (await PDFDocument.load(bytes, { ignoreEncryption: true })).getPageCount();
       const indexes = sanitizePageIndexes(pages, pageCount);
       const outBytes = await removePdfPagesFromBytes(bytes, indexes);
-      writePdfBytesAtomic(fp, outBytes);
+      await writePdfBytesAtomic(fp, outBytes);
 
       await db.execute(
         'UPDATE sop_exp_archivos SET tamano_bytes = ?, subido_por = ? WHERE id = ?',

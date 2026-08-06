@@ -101,7 +101,7 @@
     const btn = document.getElementById('btnCrearBackupCompleto');
     if (btn) {
       btn.disabled = true;
-      btn.textContent = 'Generando backup… (puede tardar varios minutos)';
+      btn.textContent = 'Generando backup… (en segundo plano)';
     }
     try {
       const res = await apiFetch('/api/backups/completo', {
@@ -111,7 +111,11 @@
       });
       const data = await res.json();
       if (!res.ok || !data.ok) throw new Error(data.error || 'No se pudo generar el backup');
-      toast(data.message || 'Backup generado', 'success');
+      if (res.status === 202 || data.background) {
+        toast(data.message || 'Backup iniciado en segundo plano. Actualice la lista en unos minutos.', 'success');
+      } else {
+        toast(data.message || 'Backup generado', 'success');
+      }
       await cargarListaBackups();
     } catch (e) {
       toast(e.message || 'Error al generar backup', 'error');

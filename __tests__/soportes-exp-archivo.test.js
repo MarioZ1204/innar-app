@@ -16,7 +16,8 @@ const {
   resolverArchivoExpedienteSlot,
   resolverArchivoExpedienteRow,
   buscarRutaHistoricaArchivo,
-  obtenerExpedienteContext
+  obtenerExpedienteContext,
+  resetSopExpedientesColumnsCacheForTests
 } = require('../utils/soportes-exp-archivo');
 
 describe('soportes-exp-archivo', () => {
@@ -24,6 +25,7 @@ describe('soportes-exp-archivo', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    resetSopExpedientesColumnsCacheForTests();
     tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'soportes-exp-archivo-'));
     process.env.UPLOADS_DIR = tempRoot;
   });
@@ -118,21 +120,17 @@ describe('soportes-exp-archivo', () => {
     expect(resolved).toBe(filePath);
   });
 
-  test('carga el contexto del expediente sin depender de contenedor_tipo si la columna no existe', async () => {
-    db.query.mockResolvedValueOnce([{ id: 1, codigo: 'FE15448', numero_factura: 15448, periodo: '2026-03', nombre_display: 'PEREZ JUAN', estado_facturacion: 'a_facturar' }]);
+  test('carga el contexto del expediente con JOIN a día/periodo/contenedor', async () => {
+    db.query
+      .mockResolvedValueOnce([{ Field: 'id' }, { Field: 'codigo' }])
+      .mockResolvedValueOnce([{ id: 1, codigo: 'FE15448', numero_factura: 15448, contenedor_tipo: 'soportes', periodo: '2026-03', periodo_etiqueta: 'MARZO 2026', nombre_display: 'PEREZ JUAN', estado_facturacion: 'a_facturar' }]);
 
-    const context = await require('../utils/soportes-exp-archivo').repararArchivoExpedienteRow({
-      id: 99,
-      expediente_id: 1,
-      tipo: 'OPF',
-      nombre_archivo: 'OPF_901164565_FE15448.pdf',
-      ruta_relativa: 'soportes/armado/2026/03/A_FACTURAR/SOPORTES/FE15448/OPF_901164565_FE15448.pdf'
-    });
+    const context = await obtenerExpedienteContext(1);
 
-    expect(context.ok).toBe(false);
-    const querySql = db.query.mock.calls[0][0];
-    expect(querySql).toContain('FROM sop_expedientes');
-    expect(querySql).not.toContain('contenedor_tipo');
+    expect(context).toMatchObject({ id: 1, codigo: 'FE15448', contenedor_tipo: 'soportes' });
+    const querySql = db.query.mock.calls.find((call) => String(call[0]).includes('FROM sop_expedientes e'))?.[0] || '';
+    expect(querySql).toContain('contenedor_tipo');
+    expect(querySql).toContain('periodo_etiqueta');
   });
 
   test('obtiene el contexto del expediente sin depender de columnas opcionales como periodo', async () => {
@@ -151,12 +149,12 @@ describe('soportes-exp-archivo', () => {
       { Field: 'creado_por' },
       { Field: 'creado_en' }
     ]);
-    db.query.mockResolvedValueOnce([{ id: 5, codigo: 'FE15925', numero_factura: 15925, paciente_nombre: 'Juan' }]);
+    db.query.mockResolvedValueOnce([{ id: 5, codigo: 'FE15925', numero_factura: 15925, paciente_nombre: 'Juan', periodo: null, periodo_etiqueta: null }]);
 
     const context = await obtenerExpedienteContext(5);
 
     expect(context).toMatchObject({ id: 5, codigo: 'FE15925', numero_factura: 15925 });
-    expect(context.periodo).toBeUndefined();
+    expect(context.periodo).toBeFalsy();
   });
 
   test('repara expedientes legacy que comparten el mismo archivo físico entre dos soportes', async () => {

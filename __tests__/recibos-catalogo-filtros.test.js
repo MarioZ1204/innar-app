@@ -27,4 +27,10 @@ describe('recibos-catalogo-filtros', () => {
     expect(tipoServicioCoincideCatalogo('control de seguimiento', ['Control'])).toBe(true);
     expect(tipoServicioCoincideCatalogo('Otro concepto', ['Control'])).toBe(false);
   });
+
+  test('estudioServicioCoincide une PSG y Polisomnografía del mismo subtipo', () => {
+    const { estudioServicioCoincide } = require('../utils/recibos-catalogo-filtros');
+    expect(estudioServicioCoincide('Polisomnografía Básica', 'PSG Básica')).toBe(true);
+    expect(estudioServicioCoincide('PSG Básica', 'PSG CPAP')).toBe(false);
+  });
 });
