@@ -16,6 +16,8 @@ const {
 
 const MAX_FULL_BACKUPS = parseInt(process.env.MAX_FULL_BACKUPS || '12', 10);
 const FULL_PREFIX = 'innar-completo-';
+const MAX_FILES_ONLY_BACKUPS = parseInt(process.env.MAX_FILES_ONLY_BACKUPS || '14', 10);
+const FILES_ONLY_PREFIX = 'innar-archivos-';
 
 function fullBackupFilename(now = new Date()) {
   const ts = now.toISOString().replace(/[:.]/g, '-').slice(0, 19);
@@ -33,6 +35,112 @@ function resolveFullBackupPath(name) {
   const root = path.resolve(BACKUP_DIR);
   if (!resolved.startsWith(root + path.sep) && resolved !== root) return null;
   return resolved;
+}
+
+function filesOnlyBackupFilename(now = new Date()) {
+  const ts = now.toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  return `${FILES_ONLY_PREFIX}${ts}.zip`;
+}
+
+function isSafeFilesOnlyBackupName(name) {
+  return typeof name === 'string' && /^innar-archivos-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.zip$/.test(name);
+}
+
+function resolveFilesOnlyBackupPath(name) {
+  if (!isSafeFilesOnlyBackupName(name)) return null;
+  const fp = path.join(BACKUP_DIR, name);
+  const resolved = path.resolve(fp);
+  const root = path.resolve(BACKUP_DIR);
+  if (!resolved.startsWith(root + path.sep) && resolved !== root) return null;
+  return resolved;
+}
+
+function listFilesOnlyBackups() {
+  if (!fs.existsSync(BACKUP_DIR)) return [];
+  return fs.readdirSync(BACKUP_DIR)
+    .filter((f) => f.startsWith(FILES_ONLY_PREFIX) && f.endsWith('.zip'))
+    .map((filename) => {
+      const fp = path.join(BACKUP_DIR, filename);
+      const st = fs.statSync(fp);
+      return {
+        filename,
+        size_bytes: st.size,
+        size_mb: (st.size / (1024 * 1024)).toFixed(2),
+        created_at: st.mtime.toISOString(),
+        tipo: 'archivos'
+      };
+    })
+    .sort((a, b) => b.created_at.localeCompare(a.created_at));
+}
+
+function cleanOldFilesOnlyBackups() {
+  const files = listFilesOnlyBackups();
+  if (files.length <= MAX_FILES_ONLY_BACKUPS) return;
+  const toDelete = files.slice(MAX_FILES_ONLY_BACKUPS);
+  for (const item of toDelete) {
+    try {
+      fs.unlinkSync(path.join(BACKUP_DIR, item.filename));
+    } catch (_) { /* ignore */ }
+  }
+}
+
+/**
+ * Backup liviano SOLO de la carpeta uploads/ (sin volcado de base de datos).
+ * Pensado para correr con mucha más frecuencia que el backup completo mensual,
+ * de forma que nunca pase mucho tiempo sin respaldo de los PDF físicos.
+ *
+ * @param {{ triggeredBy?: string, label?: string }} [meta]
+ * @returns {Promise<{ filename: string, filepath: string, size_bytes: number, manifest: object }>}
+ */
+async function createFilesOnlyBackup(meta = {}) {
+  ensureBackupDir();
+
+  const lockPath = path.join(BACKUP_DIR, '.files-only-backup.lock');
+  if (fs.existsSync(lockPath)) {
+    throw new Error('Ya hay un backup de archivos en curso. Espere a que termine.');
+  }
+  fs.writeFileSync(lockPath, String(Date.now()));
+
+  const filename = filesOnlyBackupFilename();
+  const filepath = path.join(BACKUP_DIR, filename);
+
+  try {
+    const uploadsRoot = getUploadsRoot();
+    const manifest = {
+      app: 'innar-app',
+      tipo: 'archivos',
+      created_at: new Date().toISOString(),
+      triggered_by: meta.triggeredBy || 'sistema',
+      label: meta.label || 'Backup de archivos',
+      uploads_root: uploadsRoot,
+      contents: ['uploads/', 'MANIFEST.json']
+    };
+
+    await new Promise((resolve, reject) => {
+      const output = fs.createWriteStream(filepath);
+      const archive = archiver('zip', { zlib: { level: 6 } });
+
+      output.on('close', resolve);
+      archive.on('error', reject);
+      output.on('error', reject);
+
+      archive.pipe(output);
+      archive.append(JSON.stringify(manifest, null, 2), { name: 'MANIFEST.json' });
+      zipDirectory(archive, uploadsRoot, 'uploads');
+      archive.finalize();
+    });
+
+    const size_bytes = fs.statSync(filepath).size;
+    if (size_bytes < 512) {
+      fs.unlinkSync(filepath);
+      throw new Error('El archivo ZIP resultó demasiado pequeño; posible error al comprimir.');
+    }
+
+    cleanOldFilesOnlyBackups();
+    return { filename, filepath, size_bytes, manifest };
+  } finally {
+    try { fs.unlinkSync(lockPath); } catch (_) { /* ignore */ }
+  }
 }
 
 function listFullBackups() {
@@ -162,5 +270,12 @@ module.exports = {
   resolveFullBackupPath,
   listFullBackups,
   createFullBackup,
-  cleanOldFullBackups
+  cleanOldFullBackups,
+  MAX_FILES_ONLY_BACKUPS,
+  FILES_ONLY_PREFIX,
+  isSafeFilesOnlyBackupName,
+  resolveFilesOnlyBackupPath,
+  listFilesOnlyBackups,
+  createFilesOnlyBackup,
+  cleanOldFilesOnlyBackups
 };

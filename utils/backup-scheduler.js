@@ -11,7 +11,7 @@
 
 const schedule = require('node-schedule');
 const { createBackup } = require('./backup');
-const { createFullBackup } = require('./backup-full');
+const { createFullBackup, createFilesOnlyBackup } = require('./backup-full');
 const log = require('./logger.js');
 
 function startBackupScheduler() {
@@ -60,12 +60,32 @@ function startBackupScheduler() {
     }
   });
 
+  // Backup liviano solo de uploads/ (sin BD), mucho más frecuente que el mensual.
+  // Evita que se pierdan PDFs subidos entre dos backups completos.
+  const filesCron = process.env.BACKUP_FILES_CRON || '0 4 * * *';
+  const filesJob = schedule.scheduleJob(filesCron, async () => {
+    log.info('[BACKUP] Ejecutando backup diario de archivos (uploads/)', { type: 'BACKUP' });
+    try {
+      const result = await createFilesOnlyBackup({
+        triggeredBy: 'programador',
+        label: 'Backup diario de archivos'
+      });
+      log.info('[OK] Backup diario de archivos', {
+        type: 'BACKUP',
+        filename: result.filename,
+        size: result.size_bytes
+      });
+    } catch (error) {
+      log.error('[BACKUP] Error backup diario de archivos', { error: error.message, type: 'BACKUP' });
+    }
+  });
+
   log.info(
-    `[BACKUP] Activo: diario SQL "${dailyCron}"${intraCron ? `, intra-día "${intraCron}"` : ''}, completo mensual "${monthlyCron}"`,
+    `[BACKUP] Activo: diario SQL "${dailyCron}"${intraCron ? `, intra-día "${intraCron}"` : ''}, diario archivos "${filesCron}", completo mensual "${monthlyCron}"`,
     { type: 'BACKUP' }
   );
 
-  return { job, intraJob, monthlyJob };
+  return { job, intraJob, monthlyJob, filesJob };
 }
 
 function stopBackupScheduler(jobs) {
@@ -73,6 +93,7 @@ function stopBackupScheduler(jobs) {
     if (jobs.job) jobs.job.cancel();
     if (jobs.intraJob) jobs.intraJob.cancel();
     if (jobs.monthlyJob) jobs.monthlyJob.cancel();
+    if (jobs.filesJob) jobs.filesJob.cancel();
     log.info('[BACKUP] Programador de backups detenido', { type: 'BACKUP' });
   }
 }

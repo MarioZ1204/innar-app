@@ -357,4 +357,43 @@ describe('soportes-exp-archivo', () => {
     expect(resolved.fp).toBe(filePath);
     expect(resolved.row.nombre_archivo).toBe('OPF_901164565_FE16300.pdf');
   });
+
+  test('encuentra el archivo en su carpeta FE{numero_factura} aunque el código actual del expediente ya no sea FE-numérico', () => {
+    // La carpeta física se creó con FE{numero_factura} (fallback usado al subir el
+    // primer archivo, ver expedienteZipSegment). Luego alguien editó el código del
+    // expediente a un valor no-FE (ej. el código real de la factura); la carpeta en
+    // disco no se renombra sola, pero el archivo debe seguir siendo encontrable.
+    const fileDir = path.join(tempRoot, 'soportes', 'armado', '2026', '03', 'A_FACTURAR', 'SOPORTES', 'FE777');
+    fs.mkdirSync(fileDir, { recursive: true });
+    const filePath = path.join(fileDir, 'CRC_901164565_FE777.pdf');
+    fs.writeFileSync(filePath, 'pdf');
+
+    const resolved = resolveArchivoAbsoluto({
+      tipo: 'CRC',
+      nombre_archivo: 'CRC_901164565_FE777.pdf',
+      ruta_relativa: ''
+    }, {
+      expediente: { id: 42, codigo: 'FACT-2026-0777', numero_factura: 777 }
+    });
+
+    expect(resolved).toBe(filePath);
+  });
+
+  test('encuentra el único archivo del tipo en la carpeta aunque su nombre no incluya el código vigente', () => {
+    const fileDir = path.join(tempRoot, 'soportes', 'armado', '2026', '03', 'A_FACTURAR', 'SOPORTES', 'FE900');
+    fs.mkdirSync(fileDir, { recursive: true });
+    // El nombre del archivo quedó con un tag viejo que ya no coincide con nada del expediente actual.
+    const filePath = path.join(fileDir, 'PDX_901164565_ALGO_VIEJO.pdf');
+    fs.writeFileSync(filePath, 'pdf');
+
+    const resolved = resolveArchivoAbsoluto({
+      tipo: 'PDX',
+      nombre_archivo: 'PDX_901164565_FE900.pdf',
+      ruta_relativa: ''
+    }, {
+      expediente: { id: 900, codigo: '', numero_factura: 900 }
+    });
+
+    expect(resolved).toBe(filePath);
+  });
 });

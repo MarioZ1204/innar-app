@@ -49,13 +49,30 @@ function buildStoredRutaRelativa(absPath) {
   return relativeToSoportes(absPath);
 }
 
+/**
+ * Nombres de carpeta física que pudo haber tenido este expediente en algún momento.
+ * La carpeta se crea con el código vigente al momento de subir el primer archivo
+ * (ver expedienteZipSegment en soportes-armado-zip.js: codigo -> FE{numero_factura} -> FE{id}).
+ * Si el código del expediente cambia después (se corrige la factura, etc.), la carpeta
+ * física NO se renombra sola, así que hay que seguir buscando por todos los nombres
+ * que pudo haber tenido para no "perder" los archivos que sí están en disco.
+ */
+function posiblesCodigosCarpeta(expediente) {
+  const codigos = new Set();
+  if (!expediente) return codigos;
+  const codigo = String(expediente.codigo || '').trim().toUpperCase();
+  if (codigo) codigos.add(codigo);
+  const numero = parseInt(expediente.numero_factura, 10);
+  if (Number.isFinite(numero) && numero > 0) codigos.add(`FE${numero}`);
+  if (expediente.id) codigos.add(`FE${expediente.id}`);
+  const pacienteCodigo = String(codigoPacienteFromExpediente(expediente) || '').trim().toUpperCase();
+  if (pacienteCodigo) codigos.add(pacienteCodigo);
+  return codigos;
+}
+
 function listarCarpetasExpediente(expediente, baseRoot = getSoportesRoot()) {
   if (!expediente) return [];
-  const codigo = String(expediente.codigo || '').trim().toUpperCase();
-  const pacienteCodigo = String(codigoPacienteFromExpediente(expediente) || '').trim().toUpperCase();
-  const carpetas = new Set();
-  if (codigo) carpetas.add(codigo);
-  if (pacienteCodigo) carpetas.add(pacienteCodigo);
+  const carpetas = posiblesCodigosCarpeta(expediente);
 
   const dirs = [];
   const armadoRoot = path.join(baseRoot, 'armado');
@@ -106,6 +123,10 @@ function buscarArchivoPorTipoEnCarpetasExpediente(row, expediente, baseRoot = ge
       return (pacienteCodigo && tag === pacienteCodigo) || (expedienteTag && tag === expedienteTag);
     });
     if (tagged.length === 1) return path.join(dir, tagged[0]);
+    // La carpeta ya es una de las que le corresponde a este expediente (ver
+    // listarCarpetasExpediente); si solo hay un archivo de este tipo ahí, es el correcto
+    // aunque su nombre no incluya el código vigente (ej. quedó con un código anterior).
+    if (tagged.length === 0 && files.length === 1) return path.join(dir, files[0]);
   }
 
   return null;
@@ -299,16 +320,20 @@ function archivoCompatibleConExpediente(absPath, row, expediente) {
   if (tipo && !archivoCoincideConTipoSlot(entryName, tipo)) return false;
 
   const dirName = path.basename(path.dirname(absPath)).toUpperCase();
-  const expedienteCodigo = String(expediente?.codigo || '').trim().toUpperCase();
   const expedienteTag = String(etiquetaFacturaExpediente(expediente)).toUpperCase();
   const pacienteCodigo = String(codigoPacienteFromExpediente(expediente) || '').trim().toUpperCase();
   const fileTag = extractEtiquetaFromSoporteName(entryName);
+  const codigosValidos = posiblesCodigosCarpeta(expediente);
 
   if (pacienteCodigo && fileTag === pacienteCodigo) return true;
+  // Si el nombre de carpeta coincide con CUALQUIER código que este expediente pudo
+  // haber tenido (código actual, FE{numero_factura} o FE{id}), se acepta: la carpeta
+  // física no se renombra cuando el código del expediente cambia después.
+  if (dirName && codigosValidos.has(dirName)) return true;
   if (expedienteTag && fileTag && /^FE\d+$/.test(fileTag) && /^FE\d+$/.test(expedienteTag) && fileTag !== expedienteTag) {
     return false;
   }
-  if (expedienteCodigo && /^FE\d+$/.test(expedienteCodigo) && /^FE\d+$/.test(dirName) && dirName !== expedienteCodigo) {
+  if (dirName && /^FE\d+$/.test(dirName) && codigosValidos.size && !codigosValidos.has(dirName)) {
     return false;
   }
   return true;

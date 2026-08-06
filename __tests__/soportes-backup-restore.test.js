@@ -81,4 +81,35 @@ describe('soportes-backup-restore', () => {
       expect(fs.existsSync(path.join(uploadsDir, 'otro-modulo', 'archivo.pdf'))).toBe(false);
     });
   });
+
+  test('restoreMissingUploadsFromAllBackups recupera de un backup más viejo si falta en el más nuevo', () => {
+    // Backup de archivos más reciente, pero SIN "solo-en-viejo.pdf".
+    const filesOnlyName = 'innar-archivos-2026-02-01T00-00-00.zip';
+    const filesOnlyZipPath = path.join(backupDir, filesOnlyName);
+    const builderScript = `
+      const fs = require('fs');
+      const archiver = require('archiver');
+      const output = fs.createWriteStream(${JSON.stringify(filesOnlyZipPath)});
+      const archive = archiver('zip', { zlib: { level: 6 } });
+      output.on('close', () => process.exit(0));
+      archive.on('error', (e) => { console.error(e); process.exit(1); });
+      archive.pipe(output);
+      archive.append('contenido-en-backup-nuevo', { name: 'uploads/soportes/carpeta1/faltante.pdf' });
+      archive.finalize();
+    `;
+    execFileSync(process.execPath, ['-e', builderScript], { cwd: path.resolve(__dirname, '..') });
+
+    // Simula que "solo-en-viejo.pdf" existía en el backup completo viejo pero no en el nuevo, y falta en disco.
+    fs.rmSync(path.join(uploadsDir, 'soportes', 'carpeta1', 'faltante.pdf'), { force: true });
+
+    jest.resetModules();
+    const { restoreMissingUploadsFromAllBackups } = require('../utils/soportes-backup-restore');
+    return restoreMissingUploadsFromAllBackups().then((result) => {
+      expect(result.backupsRevisados).toEqual(expect.arrayContaining([filesOnlyName, zipName]));
+      // El más reciente (archivos) se procesa primero y ya trae faltante.pdf.
+      const faltantePath = path.join(uploadsDir, 'soportes', 'carpeta1', 'faltante.pdf');
+      expect(fs.existsSync(faltantePath)).toBe(true);
+      expect(fs.readFileSync(faltantePath, 'utf8')).toBe('contenido-en-backup-nuevo');
+    });
+  });
 });

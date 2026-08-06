@@ -10,10 +10,17 @@ const {
   listFullBackups,
   createFullBackup,
   resolveFullBackupPath,
-  isSafeFullBackupName
+  isSafeFullBackupName,
+  listFilesOnlyBackups,
+  createFilesOnlyBackup,
+  isSafeFilesOnlyBackupName,
+  resolveFilesOnlyBackupPath
 } = require('../utils/backup-full');
 const { BACKUP_DIR } = require('../utils/backup');
-const { restoreMissingUploadsFromBackup } = require('../utils/soportes-backup-restore');
+const {
+  restoreMissingUploadsFromBackup,
+  restoreMissingUploadsFromAllBackups
+} = require('../utils/soportes-backup-restore');
 
 const ROLES_BACKUP = ['superadmin', 'admin'];
 
@@ -21,6 +28,7 @@ const ROLES_BACKUP = ['superadmin', 'admin'];
 router.get('/backups', requireAuth, requireRoleOrPerm(ROLES_BACKUP, 'sistema.backups'), async (req, res) => {
   try {
     const completos = listFullBackups();
+    const archivosDiarios = listFilesOnlyBackups();
     let sqlDiarios = [];
     if (fs.existsSync(BACKUP_DIR)) {
       sqlDiarios = fs.readdirSync(BACKUP_DIR)
@@ -43,8 +51,10 @@ router.get('/backups', requireAuth, requireRoleOrPerm(ROLES_BACKUP, 'sistema.bac
       ok: true,
       backup_dir: BACKUP_DIR,
       completos,
+      archivos_diarios: archivosDiarios,
       sql_diarios: sqlDiarios,
-      max_completos: parseInt(process.env.MAX_FULL_BACKUPS || '12', 10)
+      max_completos: parseInt(process.env.MAX_FULL_BACKUPS || '12', 10),
+      max_archivos_diarios: parseInt(process.env.MAX_FILES_ONLY_BACKUPS || '14', 10)
     });
   } catch (e) {
     logger.error('[BACKUP] list:', e);
@@ -82,6 +92,80 @@ router.post('/backups/completo', requireAuth, requireRoleOrPerm(ROLES_BACKUP, 's
     res.status(500).json({ error: safeError(e) });
   }
 });
+
+/** POST /api/backups/archivos — generar ZIP liviano solo de uploads/ (sin BD) */
+router.post('/backups/archivos', requireAuth, requireRoleOrPerm(ROLES_BACKUP, 'sistema.backups'), async (req, res) => {
+  try {
+    const usuario = req.session?.nombre || req.session?.usuario || `id:${req.session?.usuarioId}`;
+    const result = await createFilesOnlyBackup({
+      triggeredBy: usuario,
+      label: req.body?.label || 'Manual desde módulo Backup'
+    });
+    logger.info('[BACKUP] Archivos creado', {
+      type: 'BACKUP',
+      filename: result.filename,
+      size: result.size_bytes,
+      user: usuario
+    });
+    res.json({
+      ok: true,
+      message: 'Backup de archivos generado correctamente',
+      backup: {
+        filename: result.filename,
+        size_bytes: result.size_bytes,
+        size_mb: (result.size_bytes / (1024 * 1024)).toFixed(2),
+        created_at: result.manifest.created_at,
+        tipo: 'archivos'
+      }
+    });
+  } catch (e) {
+    logger.error('[BACKUP] crear archivos:', e);
+    res.status(500).json({ error: safeError(e) });
+  }
+});
+
+/**
+ * POST /api/backups/restaurar-archivos
+ * Revisa TODOS los backups disponibles (completos + solo archivos), del más
+ * reciente al más antiguo, y restaura cualquier archivo de uploads/ que no
+ * exista actualmente en disco. No toca la base de datos ni sobreescribe
+ * archivos existentes.
+ */
+router.post(
+  '/backups/restaurar-archivos',
+  requireAuth,
+  requireRoleOrPerm(['superadmin'], 'sistema.backups'),
+  async (req, res) => {
+    try {
+      const onlyPrefixes = Array.isArray(req.body?.onlyPrefixes)
+        ? req.body.onlyPrefixes.filter((v) => typeof v === 'string' && v.trim())
+        : [];
+
+      const result = await restoreMissingUploadsFromAllBackups({ onlyPrefixes });
+
+      const usuario = req.session?.nombre || req.session?.usuario || `id:${req.session?.usuarioId}`;
+      logger.info('[BACKUP] Restauración de archivos faltantes (todos los backups)', {
+        type: 'BACKUP_RESTORE',
+        backupsRevisados: result.backupsRevisados,
+        restaurados: result.restaurados.length,
+        omitidos: result.omitidos,
+        errores: result.errores.length,
+        user: usuario
+      });
+
+      res.json({
+        ok: true,
+        message: result.backupsRevisados.length
+          ? `Restauración completada: ${result.restaurados.length} archivo(s) recuperado(s), ${result.omitidos} ya existían.`
+          : 'No hay backups disponibles para restaurar.',
+        ...result
+      });
+    } catch (e) {
+      logger.error('[BACKUP] restaurar archivos (todos):', e);
+      res.status(500).json({ error: safeError(e) });
+    }
+  }
+);
 
 /** GET /api/backups/completo/:filename/descargar */
 router.get(
@@ -126,10 +210,10 @@ router.post(
   async (req, res) => {
     try {
       const name = req.params.filename;
-      if (!isSafeFullBackupName(name)) {
+      if (!isSafeFullBackupName(name) && !isSafeFilesOnlyBackupName(name)) {
         return res.status(400).json({ error: 'Nombre de archivo no válido' });
       }
-      const fp = resolveFullBackupPath(name);
+      const fp = resolveFullBackupPath(name) || resolveFilesOnlyBackupPath(name);
       if (!fp || !fs.existsSync(fp)) {
         return res.status(404).json({ error: 'Backup no encontrado' });
       }

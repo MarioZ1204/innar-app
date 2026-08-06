@@ -65,19 +65,18 @@ async function runFileRestoreBootstrap() {
     return;
   }
 
-  console.log(`[soportes-restore] Buscando backup más reciente para restaurar archivos faltantes (versión ${result.version})...`);
+  console.log(`[soportes-restore] Revisando backups disponibles para restaurar archivos faltantes (versión ${result.version})...`);
 
   try {
-    const { restoreMissingUploadsFromBackup, latestFullBackupFilename } = require('../utils/soportes-backup-restore');
-    const backupFilename = latestFullBackupFilename();
-    if (!backupFilename) {
-      console.log('[soportes-restore] No hay backups completos disponibles; se omite la restauración.');
+    const { restoreMissingUploadsFromAllBackups, latestAnyBackupFilename } = require('../utils/soportes-backup-restore');
+    if (!latestAnyBackupFilename()) {
+      console.log('[soportes-restore] No hay backups disponibles; se omite la restauración.');
       writeMarker(result.markerPath, result.version);
       return;
     }
 
-    console.log(`[soportes-restore] Restaurando archivos faltantes desde ${backupFilename}...`);
-    const restoreResult = await restoreMissingUploadsFromBackup({ backupFilename });
+    const restoreResult = await restoreMissingUploadsFromAllBackups();
+    console.log(`[soportes-restore] Backups revisados (más reciente primero): ${restoreResult.backupsRevisados.join(', ')}`);
     console.log(`[soportes-restore] Restaurados: ${restoreResult.restaurados.length}; ya existían: ${restoreResult.omitidos}; errores: ${restoreResult.errores.length}`);
     if (restoreResult.errores.length) {
       restoreResult.errores.forEach((e) => console.error(`[soportes-restore]   - ${e.ruta}: ${e.error}`));
