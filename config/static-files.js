@@ -38,17 +38,20 @@ function readVisorPdfHtml(appRoot) {
   return null;
 }
 
-/** Añade ?v=APP_VERSION a CSS/JS locales (cache bust tras deploy). */
+/** Añade o reemplaza ?v=APP_VERSION en CSS/JS locales (cache bust tras deploy). */
 function injectAssetVersion(html, appVersion) {
   const vTag = `?v=${appVersion}`;
-  const withTag = (url) => (url.includes('?v=') ? url : `${url}${vTag}`);
+  const withTag = (url) => {
+    const base = String(url).replace(/\?v=[^"'&]*/, '');
+    return `${base}${vTag}`;
+  };
 
   html = html.replace(
-    /href="(?!https?:\/\/)([^"?]+\.css)"/g,
+    /href="(?!https?:\/\/)([^"?]+\.css)(\?v=[^"]*)?"/g,
     (match, asset) => `href="${withTag(asset)}"`
   );
   html = html.replace(
-    /src="(?!https?:\/\/)([^"?]+\.js)"/g,
+    /src="(?!https?:\/\/)([^"?]+\.js)(\?v=[^"]*)?"/g,
     (match, asset) => `src="${withTag(asset)}"`
   );
   return html;

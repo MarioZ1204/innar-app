@@ -109,9 +109,6 @@ const { runSoportesRecoveryScript } = require('../utils/soportes-recovery-runner
 const { syncRipsCarpetasDia, syncRipsCarpetasContenedor } = require('../utils/soportes-rips-carpetas-sync');
 const { zipArchiveSegment } = require('../utils/soportes-armado-zip');
 const { createZipJob, createZipJobWithCache, createPeriodPaqueteJob, getJob: getSopZipJob } = require('../utils/soportes-zip-jobs');
-const { tryGetCachedZip, PERIOD_ZIP_KINDS, getCacheZipPath, writeCacheManifest } = require('../utils/soportes-zip-cache');
-const { streamZipJobToResponse } = require('../utils/soportes-zip-stream');
-const { forkStreamZipToSocket, USE_CHILD_STREAM } = require('../utils/soportes-zip-stream-parent');
 const {
   SOPORTES_ROOT,
   getPdxDir,
@@ -353,71 +350,6 @@ function respondLegacySyncZipDisabled(res) {
     error: 'La descarga ZIP directa fue reemplazada por generación en segundo plano. Use el botón ZIP en Soportes.',
     code: 'ZIP_USE_BACKGROUND_JOB'
   });
-}
-
-async function resolveZipJobRequest(req, res, input, visCtx) {
-  const kind = String(input.kind || '').trim();
-
-  if (kind === 'periodo-paquete' || kind === 'periodo-unificado' || kind === 'periodo-facturados') {
-    const periodoId = parseInt(input.periodo_id, 10);
-    const periodoRow = await requirePeriodoArmadoAccesible(req, res, periodoId, visCtx);
-    if (!periodoRow) return null;
-    const label = zipArchiveSegment(periodoRow.etiqueta || periodoRow.periodo || `periodo-${periodoId}`);
-    const suffix = kind === 'periodo-unificado' ? 'unificado' : (kind === 'periodo-facturados' ? 'facturados' : 'paquete');
-    return {
-      job: {
-        kind,
-        periodoId,
-        emptyError: kind === 'periodo-facturados'
-          ? 'No hay carpetas FE facturadas con archivos'
-          : 'No hay archivos para descargar en este mes'
-      },
-      filename: `${label}-${suffix}.zip`
-    };
-  }
-
-  if (kind === 'dia' || kind === 'dia-carpeta') {
-    const diaId = parseInt(input.dia_id, 10);
-    const diaRow = await requireDiaArmadoAccesible(req, res, diaId, visCtx);
-    if (!diaRow) return null;
-    const label = zipArchiveSegment(diaRow.nombre_display || `dia-${diaId}`);
-    return { job: { kind, diaId }, filename: `${label}.zip` };
-  }
-
-  if (kind === 'contenedor') {
-    const contenedorId = parseInt(input.contenedor_id, 10);
-    const cont = await requireContenedorArmadoAccesible(req, res, contenedorId, visCtx);
-    if (!cont) return null;
-    const tipoLabel = cont.tipo === 'rips' ? 'RIPS' : 'SOPORTES';
-    const label = zipArchiveSegment(cont.dia_nombre || 'dia');
-    return {
-      job: { kind, contenedorId },
-      filename: `${label}-${tipoLabel}.zip`
-    };
-  }
-
-  if (kind === 'expediente') {
-    const expedienteId = parseInt(input.expediente_id, 10);
-    const exp = await resolveExpedienteContext(expedienteId);
-    if (!exp) {
-      res.status(404).json({ error: 'Expediente no encontrado' });
-      return null;
-    }
-    const diaRows = await db.query('SELECT periodo_id FROM sop_dias WHERE id = ?', [exp.dia_id]);
-    if (!diaRows.length) {
-      res.status(404).json({ error: 'Carpeta no encontrada' });
-      return null;
-    }
-    const periodo = await requirePeriodoArmadoAccesible(req, res, diaRows[0].periodo_id, visCtx);
-    if (!periodo) return null;
-    return {
-      job: { kind, expedienteId },
-      filename: `${zipArchiveSegment(exp.codigo || 'expediente')}.zip`
-    };
-  }
-
-  res.status(400).json({ error: 'Tipo de ZIP inválido' });
-  return null;
 }
 
 async function refrescarVisibilidadPdx(periodo, archivadoPor = null) {
@@ -3296,55 +3228,6 @@ router.post(
     }
   }
 );
-
-router.get('/soportes/armado/zip/stream', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'soportes.descargar_zip'), async (req, res) => {
-  try {
-    const visCtx = await loadVisibleEnSoportesCtx();
-    const resolved = await resolveZipJobRequest(req, res, req.query, visCtx);
-    if (!resolved) return;
-
-    const { job, filename } = resolved;
-    job.filename = filename;
-
-    if (PERIOD_ZIP_KINDS.has(job.kind) && job.periodoId) {
-      const cached = await tryGetCachedZip(job.periodoId, job.kind);
-      if (cached?.filePath) {
-        return streamZipJobDownload(res, {
-          status: 'ready',
-          filePath: cached.filePath,
-          filename: cached.filename || filename
-        });
-      }
-    }
-
-    if (USE_CHILD_STREAM) {
-      forkStreamZipToSocket(req, res, job, filename);
-      return;
-    }
-
-    res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    res.setHeader('Cache-Control', 'no-store');
-    if (typeof res.flushHeaders === 'function') res.flushHeaders();
-
-    if (PERIOD_ZIP_KINDS.has(job.kind) && job.periodoId) {
-      job._cachePath = getCacheZipPath(job.periodoId, job.kind);
-      try {
-        if (fs.existsSync(job._cachePath)) fs.unlinkSync(job._cachePath);
-      } catch (_) { /* ignore */ }
-    }
-
-    await streamZipJobToResponse(res, job);
-    if (!res.writableEnded) res.end();
-
-    if (job._cachePath && fs.existsSync(job._cachePath)) {
-      await writeCacheManifest(job.periodoId, job.kind, filename);
-    }
-  } catch (e) {
-    logger.error('[SOPORTES] zip stream:', e);
-    if (!res.headersSent) res.status(500).json({ error: safeError(e) });
-  }
-});
 
 router.post('/soportes/armado/zip/job', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'soportes.descargar_zip'), async (req, res) => {
   try {
