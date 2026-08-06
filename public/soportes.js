@@ -1006,11 +1006,81 @@
     }
   }
 
+  const SOP_ARM_SCROLL_LS = 'innar.sop.arm.scroll';
+
+  function sopArmScrollKey() {
+    if (armState.vista === 'contenedor' && armState.contenedorId) {
+      return `c:${armState.periodoId}:${armState.diaId}:${armState.contenedorId}`;
+    }
+    if (armState.vista === 'day' && armState.diaId) {
+      return `d:${armState.periodoId}:${armState.diaId}`;
+    }
+    if (armState.vista === 'period') {
+      return `p:${armState.periodoId}:${armState.diasParentId || 0}`;
+    }
+    return `v:${armState.vista || 'x'}`;
+  }
+
+  function sopPersistScrollSnapshot(snap) {
+    if (!snap?.container) return;
+    try {
+      sessionStorage.setItem(SOP_ARM_SCROLL_LS, JSON.stringify({
+        key: sopArmScrollKey(),
+        top: snap.top,
+        left: snap.left || 0
+      }));
+    } catch (_) { /* ignore */ }
+  }
+
+  function sopRestoreScrollLater(snapshot) {
+    const run = () => {
+      if (typeof window.innarRestoreScrollSnapshot === 'function') {
+        window.innarRestoreScrollSnapshot(snapshot);
+      }
+    };
+    requestAnimationFrame(() => {
+      run();
+      requestAnimationFrame(() => {
+        run();
+        setTimeout(run, 0);
+        setTimeout(run, 80);
+        setTimeout(run, 200);
+      });
+    });
+    try {
+      const raw = sessionStorage.getItem(SOP_ARM_SCROLL_LS);
+      if (!raw) return;
+      const saved = JSON.parse(raw);
+      if (saved.key !== sopArmScrollKey()) return;
+      const anchor = sopScrollAnchor();
+      const snap2 = typeof window.innarGetScrollSnapshot === 'function'
+        ? window.innarGetScrollSnapshot(anchor)
+        : null;
+      const container = snap2?.container || snapshot?.container;
+      if (!container) return;
+      const applySaved = () => {
+        container.scrollTop = saved.top;
+        container.scrollLeft = saved.left || 0;
+      };
+      applySaved();
+      setTimeout(applySaved, 0);
+      setTimeout(applySaved, 120);
+    } catch (_) { /* ignore */ }
+  }
+
   function sopScrollAnchor() {
     if (window.currentModule === 'armado-soportes') {
+      const panel = document.getElementById('sopArmExpedientePanel');
+      const view = document.getElementById('view-armado-soportes');
+      if (panel && typeof window.innarGetScrollSnapshot === 'function') {
+        const snap = window.innarGetScrollSnapshot(panel);
+        if (snap?.container) return snap.container;
+      }
       return document.querySelector('#view-armado-soportes [data-innar-scroll-root]')
         || document.querySelector('#view-armado-soportes .sop-arm-main')
-        || document.getElementById('view-armado-soportes');
+        || view
+        || panel
+        || document.body;
     }
     if (window.currentModule === 'reportes-pdx') {
       return document.querySelector('#view-reportes-pdx [data-innar-scroll-root]')
@@ -1022,8 +1092,21 @@
   }
 
   function sopWithScroll(fn) {
+    const anchor = sopScrollAnchor();
     if (typeof window.innarPreserveScroll === 'function') {
-      return window.innarPreserveScroll(sopScrollAnchor(), fn);
+      const snap = typeof window.innarGetScrollSnapshot === 'function'
+        ? window.innarGetScrollSnapshot(anchor)
+        : null;
+      sopPersistScrollSnapshot(snap);
+      return (async () => {
+        try {
+          const result = fn();
+          if (result && typeof result.then === 'function') await result;
+          return result;
+        } finally {
+          sopRestoreScrollLater(snap);
+        }
+      })();
     }
     return fn();
   }
@@ -1598,12 +1681,11 @@
     if (!dia?.id || !sopPerm('soportes.descargar_zip')) return '';
     if (dia.es_contenedor) return htmlArmZipCarpetaBtn(dia, { labeled, variant });
     const nom = dia.nombre_display || 'Carpeta';
-    const fe = dia.expedientes_count || 0;
     const modo = dia.modo || 'facturacion';
     if (modo === 'ucqn' || modo === 'anexo_fidu') {
       return htmlArmZipCarpetaBtn(dia, { labeled, variant });
     }
-    const title = `Descargar ZIP de ${nom} (RIPS y SOPORTES por factura FE, ${fe} expediente(s))`;
+    const title = `Descargar ZIP de ${nom} (RIPS y SOPORTES, una carpeta por código FE)`;
     return htmlArmZipBtn({
       apiPath: `/api/soportes/armado/dias/${dia.id}/zip`,
       fallbackName: `${nom}.zip`,
@@ -4123,16 +4205,18 @@
   }
 
   function navegarArmDiasExplorer(parentId) {
-    armState.diasParentId = parentId || 0;
-    armState.diaId = null;
-    armState.diaLabel = null;
-    armState.contenedorId = null;
-    armState.contenedorTipo = null;
-    armState.expedienteId = null;
-    armState.expedienteCodigo = null;
-    armState.vista = 'period';
-    renderArmadoDiasExplorer();
-    renderArmadoContextBar();
+    return sopWithScroll(() => {
+      armState.diasParentId = parentId || 0;
+      armState.diaId = null;
+      armState.diaLabel = null;
+      armState.contenedorId = null;
+      armState.contenedorTipo = null;
+      armState.expedienteId = null;
+      armState.expedienteCodigo = null;
+      armState.vista = 'period';
+      renderArmadoDiasExplorerBody();
+      renderArmadoContextBar();
+    });
   }
 
   function armVolverExplorerUnNivel() {
@@ -4697,8 +4781,35 @@
     });
   }
 
-  function renderArmadoExpedientesGrid(list) {
+  function renderArmadoExpedientesGrid(list, opts = {}) {
+    if (opts.skipScrollWrap) return renderArmadoExpedientesGridBody(list);
     return sopWithScroll(() => renderArmadoExpedientesGridBody(list));
+  }
+
+  async function refrescarExpedientesContenedorArmado(contenedorId) {
+    const panel = $('sopArmExpedientePanel');
+    const grid = panel?.querySelector('#sopArmExpedientesGrid');
+    if (!grid || armState.vista !== 'contenedor' || armState.contenedorId !== contenedorId) {
+      if (armState.diaId) await seleccionarDiaArmado(armState.diaId);
+      await seleccionarContenedorArmado(contenedorId);
+      return;
+    }
+    return sopWithScroll(async () => {
+      const res = await apiFetch(`/api/soportes/armado/contenedores/${contenedorId}/expedientes`);
+      const data = await res.json();
+      if (!res.ok) {
+        sopToast(data.error || 'Error al actualizar carpetas', 'error');
+        return;
+      }
+      const list = ordenarExpedientesFeArmado(data.expedientes || []);
+      armState.expedientesLista = list;
+      const summary = panel.querySelector('#sopArmContenedorSummary');
+      if (summary) {
+        summary.innerHTML = htmlArmadoSummaryChips(resumenExpedientesLista(list));
+        sopIcons(summary);
+      }
+      renderArmadoExpedientesGridBody(list);
+    });
   }
 
   function renderArmadoExpedientesGridBody(list) {
@@ -4792,7 +4903,7 @@
       summary.innerHTML = htmlArmadoSummaryChips(resumenExpedientesLista(list));
       sopIcons(summary);
     }
-    renderArmadoExpedientesGrid(list);
+    renderArmadoExpedientesGrid(list, { skipScrollWrap: true });
     panel.querySelector('#btnSopArmVolverDia')?.addEventListener('click', () => seleccionarDiaArmado(armState.diaId));
     panel.querySelector('#btnSopArmNuevoFe')?.addEventListener('click', modalNuevoExpediente);
     sopIcons(panel);
@@ -6281,8 +6392,19 @@
       armState.contenedorId = snap.contenedorId;
       await abrirExpedienteArmado(snap.expedienteId);
     } else if (snap.vista === 'contenedor' && snap.contenedorId && snap.diaId) {
-      await seleccionarDiaArmado(snap.diaId);
-      await seleccionarContenedorArmado(snap.contenedorId);
+      armState.diaId = snap.diaId;
+      const diaRow = armDiaById(snap.diaId);
+      if (diaRow) {
+        armState.diaLabel = diaRow.nombre_display;
+        armState.diaModo = diaRow.modo || 'facturacion';
+        armState.diaFacturacion = diaRow.estado_facturacion || 'a_facturar';
+      }
+      try {
+        const resCont = await apiFetch(`/api/soportes/armado/dias/${snap.diaId}/contenedores`);
+        const dataCont = await resCont.json();
+        if (resCont.ok) armState.contenedores = dataCont.contenedores || [];
+      } catch (_) { /* ignore */ }
+      await refrescarExpedientesContenedorArmado(snap.contenedorId);
     } else if (snap.vista === 'day' && snap.diaId) {
       await seleccionarDiaArmado(snap.diaId);
     } else {

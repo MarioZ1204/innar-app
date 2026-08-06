@@ -6,6 +6,12 @@ describe('soportes-armado-zip', () => {
     expect(zipEntryOptions('/tmp/datos.json')).toEqual({});
   });
 
+  test('expedienteZipSegment usa codigo de carpeta FE (no agrupa por numero_factura)', () => {
+    const { expedienteZipSegment } = require('../utils/soportes-armado-zip');
+    expect(expedienteZipSegment({ codigo: 'FE14726', numero_factura: 99999 })).toBe('FE14726');
+    expect(expedienteZipSegment({ codigo: 'PEREZ_JUAN', numero_factura: 14726 })).toBe('PEREZ_JUAN');
+  });
+
   test('carpeta ZIP agrupa por FE cuando hay factura vinculada', () => {
     expect(facturaFolderName({ numero_factura: 14726, codigo: 'FE14726' })).toBe('FE14726');
     expect(facturaFolderName({ numero_factura: 0, codigo: 'PEREZ_JUAN' })).toBe('PEREZ_JUAN');

@@ -11,6 +11,8 @@ const { getUploadsRoot } = require('../config/uploads-path');
 const logger = require('./logger');
 
 const PERIOD_ZIP_KINDS = new Set(['periodo-paquete', 'periodo-unificado', 'periodo-facturados']);
+/** Incrementar al cambiar la estructura del ZIP (invalida caché antigua). */
+const ZIP_CACHE_LAYOUT_VERSION = 2;
 
 function getCacheDir() {
   const dir = path.join(getUploadsRoot(), 'sop-zip-cache');
@@ -47,7 +49,7 @@ function cachePaths(cacheId) {
 }
 
 function fingerprintKey(fp) {
-  return `${fp.file_count || 0}:${fp.exp_count || 0}:${fp.max_ts || 0}`;
+  return `${ZIP_CACHE_LAYOUT_VERSION}:${fp.file_count || 0}:${fp.exp_count || 0}:${fp.max_ts || 0}`;
 }
 
 async function computePeriodoFingerprint(periodoId, kind) {

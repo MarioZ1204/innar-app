@@ -58,6 +58,24 @@ function facturaFolderName(exp) {
   return zipArchiveSegment(`FE${exp.id}`);
 }
 
+/** Carpeta en ZIP = código del expediente (una carpeta FE por fila en la UI). */
+function expedienteZipSegment(exp) {
+  const cod = String(exp.codigo || '').trim();
+  if (cod) return zipArchiveSegment(cod);
+  const num = parseInt(exp.numero_factura, 10);
+  if (num > 0) return zipArchiveSegment(`FE${num}`);
+  return zipArchiveSegment(`FE${exp.id}`);
+}
+
+function ensureZipFolderPlaceholder(entries, usedPaths, folderPath) {
+  let dir = String(folderPath || '');
+  if (!dir.endsWith('/')) dir += '/';
+  if (usedPaths?.has(dir)) return;
+  if (entries.some((e) => e.name === dir || (e.name && e.name.startsWith(dir)))) return;
+  if (usedPaths) usedPaths.add(dir);
+  entries.push({ placeholder: true, name: dir, content: Buffer.alloc(0) });
+}
+
 function uniqueEntryName(usedPaths, zipPrefix, fileName, diaNombre) {
   let entryName = zipPrefix ? `${zipPrefix}/${fileName}` : fileName;
   if (!usedPaths) return entryName;
@@ -341,57 +359,50 @@ async function collectDiaZipEntries(diaId, usedPaths = null, opts = {}) {
   const expIds = expedientes.map((e) => e.id);
   const archivosByExp = await loadArchivosByExpedienteIds(expIds);
   const ripsByExp = await loadRipsArchivosByExpedienteIds(expIds);
-  const grupos = groupExpedientesPorFactura(expedientes);
   const entries = [];
 
-  for (const [, g] of grupos) {
-    const codSeg = g.cod;
-    const sopPrefix = `SOPORTES/${codSeg}`;
-    const ripsPrefix = `RIPS/${codSeg}`;
-    const ripsCodigo = g.soportes[0]?.codigo || g.rips[0]?.codigo || codSeg;
+  for (const exp of expedientes) {
+    const codSeg = expedienteZipSegment(exp);
+    const prefixRoot = exp.contenedor_tipo === 'rips' ? 'RIPS' : 'SOPORTES';
+    const zipPrefix = `${prefixRoot}/${codSeg}`;
+    const ctx = {
+      periodo: exp.periodo,
+      nombre_display: exp.dia_nombre,
+      estado_facturacion: exp.estado_facturacion
+    };
+    const expedienteCtx = {
+      codigo: exp.codigo,
+      numero_factura: exp.numero_factura,
+      paciente_nombre: exp.paciente_nombre,
+      nombre_display: exp.dia_nombre
+    };
 
-    for (const exp of g.soportes) {
-      const expedienteCtx = {
-        codigo: exp.codigo,
-        numero_factura: exp.numero_factura,
-        paciente_nombre: exp.paciente_nombre,
-        nombre_display: exp.nombre_display
-      };
-      const part = listSoportesArchivoEntriesFromRows(
-        archivosByExp.get(exp.id),
-        sopPrefix,
-        usedPaths,
-        g.diaNombre,
-        expedienteCtx
-      );
-      entries.push(...part);
-    }
-
-    if (g.soportes.length) {
-      ensureRipsFacturaFolder(entries, usedPaths, codSeg);
-    }
-
-    for (const exp of g.rips) {
-      const expedienteCtx = {
-        codigo: exp.codigo,
-        numero_factura: exp.numero_factura,
-        paciente_nombre: exp.paciente_nombre,
-        nombre_display: exp.nombre_display
-      };
-      const part = listRipsArchivoEntriesFromRows(
+    let part = [];
+    if (exp.contenedor_tipo === 'rips') {
+      part = listRipsArchivoEntriesFromRows(
         ripsByExp.get(exp.id),
         exp.id,
-        ripsPrefix,
+        zipPrefix,
         usedPaths,
-        g.diaNombre,
-        g.ctx,
-        ripsCodigo,
+        exp.dia_nombre,
+        ctx,
+        exp.codigo,
         expedienteCtx
       );
+    } else {
+      part = listSoportesArchivoEntriesFromRows(
+        archivosByExp.get(exp.id),
+        zipPrefix,
+        usedPaths,
+        exp.dia_nombre,
+        expedienteCtx
+      );
+    }
+
+    if (!part.length) {
+      ensureZipFolderPlaceholder(entries, usedPaths, zipPrefix);
+    } else {
       entries.push(...part);
-      if (part.length && !g.soportes.length) {
-        ensureRipsFacturaFolder(entries, usedPaths, codSeg);
-      }
     }
   }
 
@@ -713,7 +724,7 @@ async function collectContenedorZipEntries(contenedorId, usedPaths = null) {
   };
 
   for (const exp of expedientes) {
-    const codSeg = facturaFolderName(exp);
+    const codSeg = expedienteZipSegment(exp);
     const zipPrefix = `${prefixRoot}/${codSeg}`;
     const expedienteCtx = {
       codigo: exp.codigo,
@@ -721,15 +732,19 @@ async function collectContenedorZipEntries(contenedorId, usedPaths = null) {
       paciente_nombre: exp.paciente_nombre,
       nombre_display: cont.dia_nombre
     };
+    let part = [];
     if (cont.tipo === 'rips') {
-      const part = await listRipsArchivoEntries(
+      part = await listRipsArchivoEntries(
         exp.id, zipPrefix, usedPaths, cont.dia_nombre, ctx, exp.codigo, expedienteCtx
       );
-      entries.push(...part);
     } else {
-      const part = await listSoportesArchivoEntries(
+      part = await listSoportesArchivoEntries(
         exp.id, zipPrefix, usedPaths, cont.dia_nombre, expedienteCtx
       );
+    }
+    if (!part.length) {
+      ensureZipFolderPlaceholder(entries, usedPaths, zipPrefix);
+    } else {
       entries.push(...part);
     }
   }
@@ -758,7 +773,7 @@ async function collectExpedienteZipEntries(expedienteId) {
   };
   const entries = [];
   const prefixRoot = exp.contenedor_tipo === 'rips' ? 'RIPS' : 'SOPORTES';
-  const codSeg = facturaFolderName(exp);
+  const codSeg = expedienteZipSegment(exp);
   const zipPrefix = `${prefixRoot}/${codSeg}`;
   const ctx = {
     periodo: exp.periodo_etiqueta || exp.periodo,
@@ -822,6 +837,7 @@ async function yieldEventLoop() {
 module.exports = {
   zipArchiveSegment,
   facturaFolderName,
+  expedienteZipSegment,
   getSopZipWorkDir,
   createArchiverInstance,
   bindArchiveStreamGuards,

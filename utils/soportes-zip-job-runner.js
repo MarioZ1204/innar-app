@@ -20,6 +20,7 @@ const {
   createArchiverInstance,
   bindArchiveStreamGuards,
   facturaFolderName,
+  expedienteZipSegment,
   yieldEventLoop
 } = require('./soportes-armado-zip');
 
@@ -186,11 +187,11 @@ async function* batchesContenedor(job) {
   if (!cont) throw new Error('Contenedor no encontrado');
   const label = cont.tipo === 'rips' ? 'RIPS' : 'SOPORTES';
   let entries = await collectContenedorZipEntries(job.contenedorId);
-  if (!entries.length && cont.tipo === 'rips') {
+  if (!entries.length) {
     const exps = await db.query('SELECT codigo, numero_factura, id FROM sop_expedientes WHERE contenedor_id = ?', [job.contenedorId]);
     entries = exps.map((exp) => ({
       placeholder: true,
-      name: `RIPS/${facturaFolderName(exp)}/`,
+      name: `${label}/${expedienteZipSegment(exp)}/`,
       content: Buffer.alloc(0)
     }));
   }
