@@ -1408,6 +1408,26 @@ const runtimeMigrations = [
         await db.execute('ALTER TABLE sop_expedientes ADD COLUMN carpeta_fisica VARCHAR(80) NULL DEFAULT NULL AFTER codigo');
       }
     }
+  },
+  {
+    name: 'rt_recibos_idx_vinculo_citas',
+    description: 'Índices en recibos para vinculación rápida con citas (turno_id, cita_electro_id, fecha)',
+    run: async (db) => {
+      if (!(await tableExists(db, 'recibos'))) return;
+      const indexes = [
+        'CREATE INDEX IF NOT EXISTS idx_recibos_turno_id ON recibos(turno_id)',
+        'CREATE INDEX IF NOT EXISTS idx_recibos_cita_electro_id ON recibos(cita_electro_id)',
+        'CREATE INDEX IF NOT EXISTS idx_recibos_fecha_turno ON recibos(fecha, turno_id)',
+        'CREATE INDEX IF NOT EXISTS idx_recibos_fecha_cita_electro ON recibos(fecha, cita_electro_id)'
+      ];
+      for (const sql of indexes) {
+        try {
+          await db.execute(sql);
+        } catch (err) {
+          if (!/Duplicate key name/i.test(err.message)) throw err;
+        }
+      }
+    }
   }
 ];
 

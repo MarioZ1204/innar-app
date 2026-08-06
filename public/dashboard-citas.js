@@ -4,7 +4,6 @@ let dashboardFetchInFlight = false;
 let dashboardFetchPending = false;
 let dashboardFetchTimer = null;
 let dashboardTipoCitaChangeHandler = null;
-let dashboardRecibosFetchSeq = 0;
 
 function scheduleBuscarCitasAuditoria(delayMs = 120) {
   if (dashboardFetchTimer) clearTimeout(dashboardFetchTimer);
@@ -412,17 +411,14 @@ async function buscarCitasAuditoria() {
   dashboardFetchInFlight = true;
   const btn = document.getElementById('btnBuscarCitas');
   const anchor = document.getElementById('bodyTablaAuditoria') || document.getElementById('view-dashboard-citas');
-  const recibosSeq = ++dashboardRecibosFetchSeq;
   const run = async () => {
   if (btn) {
     btn.disabled = true;
-    btn.textContent = 'Buscando citas…';
+    btn.textContent = 'Buscando…';
   }
 
   try {
-    const paramsRapido = buildDashboardAuditoriaParams();
-    paramsRapido.append('sin_recibos', '1');
-    const res = await apiFetch(`/api/dashboard/citas-auditoria?${paramsRapido.toString()}`);
+    const res = await apiFetch(`/api/dashboard/citas-auditoria?${buildDashboardAuditoriaParams().toString()}`);
     if (!res.ok) {
       if (res.status === 401 || res.status === 403) {
         goToMenu();
@@ -434,18 +430,11 @@ async function buscarCitasAuditoria() {
     const json = await res.json();
     dashboardCitasActuales = json.data || [];
     if (json.resumen) actualizarResumenDashboard(json.resumen);
-    renderizarTablaCitasAuditoria(dashboardCitasActuales, { recibosCargando: json.recibos_pendientes === true });
+    renderizarTablaCitasAuditoria(dashboardCitasActuales);
 
     if (dashboardCitasActuales.length === 0 && typeof showToast === 'function') {
       showToast('No se encontraron citas con los filtros especificados', 'warning');
     }
-
-    if (btn) {
-      btn.disabled = false;
-      btn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>Buscar';
-    }
-
-    cargarRecibosAuditoriaEnSegundoPlano(recibosSeq);
   } catch (e) {
     console.error('[DASHBOARD CITAS] Error cargando auditoría:', e.message);
     if (typeof showToast === 'function') showToast('Error al cargar citas: ' + e.message, 'error');
@@ -454,11 +443,11 @@ async function buscarCitasAuditoria() {
       const esc = typeof escapeHtml === 'function' ? escapeHtml : (s) => s;
       tbody.innerHTML = `<tr><td colspan="13" style="padding:20px;text-align:center;color:#dc2626">Error: ${esc(e.message)}</td></tr>`;
     }
+  } finally {
     if (btn) {
       btn.disabled = false;
       btn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>Buscar';
     }
-  } finally {
     if (dashboardFetchPending) {
       dashboardFetchPending = false;
       scheduleBuscarCitasAuditoria(200);
@@ -473,29 +462,6 @@ async function buscarCitasAuditoria() {
     }
   } finally {
     dashboardFetchInFlight = false;
-  }
-}
-
-async function cargarRecibosAuditoriaEnSegundoPlano(seq) {
-  const badge = document.getElementById('dashboardRecibosEstado');
-  if (badge) {
-    badge.style.display = 'inline';
-    badge.textContent = 'Cargando recibos…';
-  }
-  try {
-    const res = await apiFetch(`/api/dashboard/citas-auditoria?${buildDashboardAuditoriaParams().toString()}`);
-    if (!res.ok) return;
-    const json = await res.json();
-    if (seq !== dashboardRecibosFetchSeq) return;
-    dashboardCitasActuales = json.data || [];
-    renderizarTablaCitasAuditoria(dashboardCitasActuales);
-    if (badge) badge.style.display = 'none';
-  } catch (e) {
-    console.error('[DASHBOARD CITAS] Error cargando recibos:', e.message);
-    if (badge) {
-      badge.style.display = 'inline';
-      badge.textContent = 'Recibos no disponibles';
-    }
   }
 }
 
@@ -519,7 +485,7 @@ function actualizarResumenDashboard(resumen) {
   }
 }
 
-function renderizarTablaCitasAuditoria(citas, opciones = {}) {
+function renderizarTablaCitasAuditoria(citas) {
   try {
     const tbody = document.getElementById('bodyTablaAuditoria');
     if (!tbody) return;
@@ -529,8 +495,7 @@ function renderizarTablaCitasAuditoria(citas, opciones = {}) {
       if (controls) controls.innerHTML = '';
       return;
     }
-    const recibosCargando = opciones.recibosCargando === true;
-    setupPagination('citasAuditoria', citas, (tb, cita) => renderCitaAuditoriaRow(tb, cita, opciones), {
+    setupPagination('citasAuditoria', citas, renderCitaAuditoriaRow, {
       itemsPerPageDefault: 25,
       tbodyId: 'bodyTablaAuditoria',
       containerSelector: '#tablaCitasAuditoriaControls'
@@ -545,7 +510,7 @@ function renderizarTablaCitasAuditoria(citas, opciones = {}) {
   }
 }
 
-function renderCitaAuditoriaRow(tbody, cita, opciones = {}) {
+function renderCitaAuditoriaRow(tbody, cita) {
   try {
     const esc = typeof escapeHtml === 'function' ? escapeHtml : (s) => String(s || '');
     const tr = document.createElement('tr');
@@ -560,14 +525,11 @@ function renderCitaAuditoriaRow(tbody, cita, opciones = {}) {
     const agendado = cita.programado_por || '-';
     const estado = cita.estado || '-';
     const { color, bg } = getEstadoStyle(estado);
-    const recibosCargando = opciones.recibosCargando === true;
-    const reciboNum = recibosCargando ? '…' : (cita.recibo_numero || '-');
-    const reciboValor = recibosCargando
-      ? '…'
-      : (cita.recibo_valor === '' || cita.recibo_valor == null
-        ? '-'
-        : (typeof formatMoney === 'function' ? formatMoney(cita.recibo_valor) : String(cita.recibo_valor)));
-    const reciboEst = recibosCargando ? '…' : (cita.recibo_estado || '-');
+    const reciboNum = cita.recibo_numero || '-';
+    const reciboValor = cita.recibo_valor === '' || cita.recibo_valor == null
+      ? '-'
+      : (typeof formatMoney === 'function' ? formatMoney(cita.recibo_valor) : String(cita.recibo_valor));
+    const reciboEst = cita.recibo_estado || '-';
     const reciboEstStyle = reciboEst === 'ANULADO'
       ? 'background:#fee2e2;color:#991b1b'
       : (reciboEst === 'PENDIENTE' ? 'background:#fef3c7;color:#92400e' : (reciboEst === 'PAGADO' ? 'background:#d1fae5;color:#065f46' : 'background:#f3f4f6;color:#4b5563'));

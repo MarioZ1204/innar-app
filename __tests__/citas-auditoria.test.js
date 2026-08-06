@@ -280,7 +280,7 @@ describe('recibos consulta médica en auditoría', () => {
     )).toBe(true);
   });
 
-  test('fallback no coincide si cambia fecha o tipo', () => {
+  test('fallback tolera fecha cercana pero no cambio de tipo', () => {
     const base = {
       id: 4,
       turno_id: null,
@@ -289,7 +289,8 @@ describe('recibos consulta médica en auditoría', () => {
       fecha: '2026-06-15',
       cliente: 'María López'
     };
-    expect(reciboCoincideCitaMedica({ ...base, fecha: '2026-06-16' }, citaMedica, CATALOGOS_AUDITORIA)).toBe(false);
+    expect(reciboCoincideCitaMedica({ ...base, fecha: '2026-06-16' }, citaMedica, CATALOGOS_AUDITORIA)).toBe(true);
+    expect(reciboCoincideCitaMedica({ ...base, fecha: '2026-06-23' }, citaMedica, CATALOGOS_AUDITORIA)).toBe(false);
     expect(reciboCoincideCitaMedica({ ...base, tipo_servicio: 'Cardiología' }, citaMedica, CATALOGOS_AUDITORIA)).toBe(false);
   });
 });

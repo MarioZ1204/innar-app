@@ -13,7 +13,7 @@ const {
   requireAuth, requireRoleOrPerm,
   safeError, isAdminRol, isRecepcionRol
 } = require('../middleware/index');
-const { queryCitasAuditoria, enriquecerCitasConRecibos, adjuntarRecibosResumenACitas, citasSinRecibosResumen, opcionesCargaRecibosDesdeQuery } = require('../utils/citas-auditoria');
+const { queryCitasAuditoria, enriquecerCitasConRecibos, adjuntarRecibosResumenACitas } = require('../utils/citas-auditoria');
 
 const jsonLargeBody = require('express').json({ limit: '50mb' });
 
@@ -290,21 +290,16 @@ const DASHBOARD_CITAS_PERM = requireRoleOrPerm(
 router.get('/dashboard/citas-auditoria', requireAuth, DASHBOARD_CITAS_PERM, async (req, res) => {
   try {
     const { citas, resumen, citasMedicas, citasElectro } = await queryCitasAuditoria(db, req.query);
-    const sinRecibos = req.query.sin_recibos === '1' || req.query.sin_recibos === 'true';
-    const opcionesRecibos = opcionesCargaRecibosDesdeQuery(req.query);
-    const data = sinRecibos
-      ? citasSinRecibosResumen(citas)
-      : await adjuntarRecibosResumenACitas(db, citas, opcionesRecibos);
+    const data = await adjuntarRecibosResumenACitas(db, citas);
 
     logger.info('Dashboard auditoría citas', {
       usuario: req.session && req.session.usuario ? req.session.usuario : 'Unknown',
       total_citas: citas.length,
       medicas: citasMedicas.length,
-      electro: citasElectro.length,
-      sin_recibos: sinRecibos
+      electro: citasElectro.length
     });
 
-    res.json({ success: true, data, resumen, recibos_pendientes: sinRecibos });
+    res.json({ success: true, data, resumen });
   } catch (e) {
     logger.error('Error en dashboard auditoría', { error: e.message, stack: e.stack });
     res.status(500).json({ error: safeError(e, 'Error al cargar auditoría de citas: ') });
@@ -315,8 +310,7 @@ router.get('/dashboard/citas-auditoria', requireAuth, DASHBOARD_CITAS_PERM, asyn
 router.get('/dashboard/citas-auditoria/export', requireAuth, DASHBOARD_CITAS_PERM, async (req, res) => {
   try {
     const { citas } = await queryCitasAuditoria(db, req.query);
-    const opcionesRecibos = opcionesCargaRecibosDesdeQuery(req.query);
-    const data = await enriquecerCitasConRecibos(db, citas, opcionesRecibos);
+    const data = await enriquecerCitasConRecibos(db, citas);
 
     logger.info('Dashboard auditoría citas export', {
       usuario: req.session?.usuario || 'Unknown',
