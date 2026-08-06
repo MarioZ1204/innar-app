@@ -68,6 +68,13 @@ function expedienteZipSegment(exp) {
   return zipArchiveSegment(`FE${exp.id}`);
 }
 
+/** Carpeta FÍSICA real en disco (carpeta_fisica inmutable si existe, o el código legacy). */
+function expedienteCarpetaFisicaSegment(exp) {
+  const explicit = String(exp?.carpeta_fisica || '').trim();
+  if (explicit) return explicit;
+  return expedienteZipSegment(exp);
+}
+
 function ensureZipFolderPlaceholder(entries, usedPaths, folderPath) {
   let dir = String(folderPath || '');
   if (!dir.endsWith('/')) dir += '/';
@@ -357,7 +364,7 @@ function ensureRipsFacturaFolder(entries, usedPaths, codSeg) {
 
 async function queryExpedientesDia(diaId) {
   return db.query(
-    `SELECT e.id, e.codigo, e.numero_factura, e.paciente_nombre, c.tipo AS contenedor_tipo, d.nombre_display AS dia_nombre,
+    `SELECT e.id, e.codigo, e.carpeta_fisica, e.numero_factura, e.paciente_nombre, c.tipo AS contenedor_tipo, d.nombre_display AS dia_nombre,
             d.estado_facturacion, p.periodo, p.etiqueta AS periodo_etiqueta
      FROM sop_expedientes e
      JOIN sop_contenedores c ON c.id = e.contenedor_id
@@ -450,7 +457,7 @@ async function collectDiaZipEntries(diaId, usedPaths = null, opts = {}) {
       );
     }
 
-    const extras = listExpedienteFolderExtras(ctx, exp.codigo, zipPrefix, usedPaths, absPathsFromEntries(part));
+    const extras = listExpedienteFolderExtras(ctx, expedienteCarpetaFisicaSegment(exp), zipPrefix, usedPaths, absPathsFromEntries(part));
     if (extras.length) part = part.concat(extras);
 
     if (!part.length) {
@@ -762,7 +769,7 @@ async function collectContenedorZipEntries(contenedorId, usedPaths = null) {
   if (!cont) throw new Error('Contenedor no encontrado');
 
   const expedientes = await db.query(
-    `SELECT e.id, e.codigo, e.numero_factura, e.paciente_nombre
+    `SELECT e.id, e.codigo, e.carpeta_fisica, e.numero_factura, e.paciente_nombre
      FROM sop_expedientes e
      WHERE e.contenedor_id = ?
      ORDER BY e.codigo ASC`,
@@ -799,7 +806,7 @@ async function collectContenedorZipEntries(contenedorId, usedPaths = null) {
       );
     }
 
-    const extras = listExpedienteFolderExtras(ctx, exp.codigo, zipPrefix, usedPaths, absPathsFromEntries(part));
+    const extras = listExpedienteFolderExtras(ctx, expedienteCarpetaFisicaSegment(exp), zipPrefix, usedPaths, absPathsFromEntries(part));
     if (extras.length) part = part.concat(extras);
 
     if (!part.length) {
@@ -852,14 +859,14 @@ async function collectExpedienteZipEntries(expedienteId) {
       exp.id, zipPrefix, null, exp.dia_nombre, expedienteCtx
     );
   }
-  const extras = listExpedienteFolderExtras(ctx, exp.codigo, zipPrefix, null, absPathsFromEntries(part));
+  const extras = listExpedienteFolderExtras(ctx, expedienteCarpetaFisicaSegment(exp), zipPrefix, null, absPathsFromEntries(part));
   entries.push(...part, ...extras);
   return filterValidZipEntries(entries);
 }
 
 async function collectPeriodFacturadosEntries(periodoId) {
   const expedientes = await db.query(
-    `SELECT e.id, e.codigo, e.numero_factura, e.paciente_nombre, d.nombre_display AS dia_nombre, c.tipo AS contenedor_tipo
+    `SELECT e.id, e.codigo, e.carpeta_fisica, e.numero_factura, e.paciente_nombre, d.nombre_display AS dia_nombre, c.tipo AS contenedor_tipo
      FROM sop_expedientes e
      JOIN sop_contenedores c ON c.id = e.contenedor_id
      JOIN sop_dias d ON d.id = c.dia_id

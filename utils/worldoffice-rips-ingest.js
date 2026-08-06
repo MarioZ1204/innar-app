@@ -7,8 +7,8 @@ const fs = require('fs');
 const crypto = require('crypto');
 const db = require('./db-mysql');
 const { periodoFromDate, calcularVisibilidadPeriodo } = require('./soportes-visibilidad');
-const { ensureContenedoresForDia, parseFeCodigo } = require('./soportes-armado-structure');
-const { getArmadoFeDirFromContext, SOPORTES_ROOT } = require('./soportes-storage');
+const { ensureContenedoresForDia, parseFeCodigo, calcularCarpetaFisica } = require('./soportes-armado-structure');
+const { getArmadoFeDirFromContext, getArmadoFeDirForExpediente, SOPORTES_ROOT } = require('./soportes-storage');
 
 const MAX_JSON_BYTES = 5 * 1024 * 1024;
 
@@ -81,14 +81,19 @@ async function findOrCreateExpedienteFe(contenedorId, diaId, codigo, numero, aut
     [contenedorId]
   );
   if (!ctx.length) return { expediente: null, created: false };
-  getArmadoFeDirFromContext(ctx[0], codigo);
 
   const r = await db.execute(
     `INSERT INTO sop_expedientes (dia_id, contenedor_id, codigo, numero_factura, paciente_nombre, paciente_documento, tipo_servicio, creado_por)
      VALUES (?,?,?,?,?,?,?,NULL)`,
     [contenedorId, diaId, codigo, numero, null, null, 'electro']
   );
-  const exp = await db.query('SELECT * FROM sop_expedientes WHERE id = ?', [r.insertId]);
+  const expId = r.insertId;
+  // Carpeta física INMUTABLE: nunca se renombra aunque el código cambie después.
+  const carpetaFisica = calcularCarpetaFisica(codigo, expId);
+  await db.execute('UPDATE sop_expedientes SET carpeta_fisica = ? WHERE id = ?', [carpetaFisica, expId]);
+  getArmadoFeDirFromContext(ctx[0], carpetaFisica);
+
+  const exp = await db.query('SELECT * FROM sop_expedientes WHERE id = ?', [expId]);
   return { expediente: exp[0], created: true };
 }
 
@@ -180,7 +185,7 @@ async function ingestRipsJson(payload, options = {}) {
     contenedor_tipo: 'rips',
     dia: dia.dia
   };
-  const { abs: feDir, rel: feRel } = getArmadoFeDirFromContext(ctx, codigo);
+  const { abs: feDir, rel: feRel } = getArmadoFeDirForExpediente(ctx, expediente);
   const fileNameOrig = safeJsonFilename(codigo, payload.nombre_archivo);
   const { buildCanonicalName } = require('./soportes-archivo-detect');
   const diskName = buildCanonicalName('RIPS_JSON_1', numero, '.json');

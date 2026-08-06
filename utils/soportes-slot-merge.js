@@ -5,7 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const db = require('./db-mysql');
 const { fileLooksLikePdf } = require('../middleware/upload');
-const { getArmadoFeDirFromContext } = require('./soportes-storage');
+const { getArmadoFeDirForExpediente } = require('./soportes-storage');
 const { buildSoportesDiskName } = require('./soportes-archivo-detect');
 const { moveFileSafe } = require('./fs-move-safe');
 const { mergePdfFilesToTemp } = require('./soportes-opf-merge');
@@ -37,7 +37,7 @@ function assertPdfPaths(paths, min = 1) {
 async function persistirSlotPdf(exp, ctx, slotKey, mergedTmp, meta, usuarioId) {
   const tipo = String(slotKey).toUpperCase();
   const diskName = buildSoportesDiskName(tipo, exp, '.pdf');
-  const { abs: feDir, rel: feRel } = getArmadoFeDirFromContext(ctx, exp.codigo);
+  const { abs: feDir, rel: feRel } = getArmadoFeDirForExpediente(ctx, exp);
   const destPath = path.join(feDir, diskName);
   moveFileSafe(mergedTmp, destPath);
   const rutaRelativa = path.join(feRel, diskName).replace(/\\/g, '/');

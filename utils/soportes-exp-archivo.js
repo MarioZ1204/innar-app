@@ -60,6 +60,10 @@ function buildStoredRutaRelativa(absPath) {
 function posiblesCodigosCarpeta(expediente) {
   const codigos = new Set();
   if (!expediente) return codigos;
+  // Carpeta física inmutable (código+ID asignada al crear): candidato prioritario,
+  // se prueba con su casing exacto porque es el nombre literal en disco.
+  const carpetaFisica = String(expediente.carpeta_fisica || '').trim();
+  if (carpetaFisica) codigos.add(carpetaFisica);
   const codigo = String(expediente.codigo || '').trim().toUpperCase();
   if (codigo) codigos.add(codigo);
   const numero = parseInt(expediente.numero_factura, 10);
@@ -515,6 +519,9 @@ async function obtenerExpedienteContext(expedienteId) {
       'e.creado_en'
     ];
 
+    if (columnasSet.has('carpeta_fisica')) {
+      selectParts.push('e.carpeta_fisica');
+    }
     if (columnasSet.has('nombre_display')) {
       selectParts.push('e.nombre_display');
     }

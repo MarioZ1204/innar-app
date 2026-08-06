@@ -112,9 +112,9 @@ async function importarArchivoDesdeDeposito(exp, pdxRow, usuarioId) {
   const tmpCopy = await copiarDepositoATemporal(pdxRow);
   try {
     if (dest.modo === 'vinculo') {
-      const { getArmadoFeDirFromContext } = require('./soportes-storage');
+      const { getArmadoFeDirForExpediente } = require('./soportes-storage');
       const { safeOriginalFilename } = require('./soportes-archivo-detect');
-      const { abs: feDir, rel: feRel } = getArmadoFeDirFromContext(exp, exp.codigo);
+      const { abs: feDir, rel: feRel } = getArmadoFeDirForExpediente(exp, exp);
       const enlacesDir = path.join(feDir, 'Enlaces');
       if (!fs.existsSync(enlacesDir)) fs.mkdirSync(enlacesDir, { recursive: true });
       const diskName = safeOriginalFilename(pdxRow.nombre_archivo_original || `vinculo-${pdxRow.id}.pdf`);

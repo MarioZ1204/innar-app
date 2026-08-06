@@ -321,6 +321,36 @@ async function aplicarRenombradoPorFev(expedienteId, numeroFactura) {
     return { ok: false, error: `Ya existe la carpeta ${newCodigo} en este día` };
   }
 
+  // Camino rápido: si ya tienen carpeta física inmutable, NUNCA se toca disco.
+  // Solo se actualiza el código/factura de negocio en BD; los archivos existentes
+  // se resuelven igual (por tipo dentro de la carpeta correcta, ver soportes-exp-archivo.js).
+  if (exp.carpeta_fisica && hermanos.every((h) => h.carpeta_fisica)) {
+    for (const her of hermanos) {
+      await db.execute(
+        'UPDATE sop_expedientes SET codigo = ?, numero_factura = ? WHERE id = ?',
+        [newCodigo, num, her.id]
+      );
+    }
+    for (const her of hermanos) {
+      try {
+        await repararArchivosExpediente(her.id, { ...her, codigo: newCodigo, numero_factura: num });
+      } catch (_) { /* no crítico */ }
+    }
+    try {
+      await syncRipsCarpetasDia(db, exp.dia_id);
+    } catch (_) { /* ignore */ }
+    return {
+      ok: true,
+      codigo: newCodigo,
+      numero_factura: num,
+      paciente_nombre: exp.paciente_nombre,
+      carpetas: [],
+      archivos: [],
+      ya_renombrado: carpetaYaFacturada,
+      carpeta_fisica_estable: true
+    };
+  }
+
   const resumen = { carpetas: [], archivos: [] };
   const operacionId = nuevaOperacionId();
   const planes = [];
@@ -527,6 +557,29 @@ async function revertirRenombradoPorFev(expedienteId, { paciente_linea, paciente
   }
 
   const resumen = { carpetas: [], archivos: [], fev_eliminado: false };
+
+  // Camino rápido: carpeta física inmutable → no se toca disco, solo BD.
+  if (exp.carpeta_fisica && hermanos.every((h) => h.carpeta_fisica)) {
+    for (const her of hermanos) {
+      const fev = await loadArchivoExpedienteSlot(her.id, 'FEV');
+      if (fev.ok) {
+        await eliminarArchivoExpedienteSlot(her.id, 'FEV');
+        resumen.fev_eliminado = true;
+      }
+      await db.execute(
+        'UPDATE sop_expedientes SET codigo = ?, numero_factura = 0, paciente_nombre = ?, fev_externa_verificada = 0 WHERE id = ?',
+        [newCodigo, parsed.paciente_nombre, her.id]
+      );
+    }
+    return {
+      ok: true,
+      codigo: newCodigo,
+      numero_factura: 0,
+      paciente_nombre: parsed.paciente_nombre,
+      carpeta_fisica_estable: true,
+      ...resumen
+    };
+  }
 
   for (const her of hermanos) {
     const fev = await loadArchivoExpedienteSlot(her.id, 'FEV');

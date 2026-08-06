@@ -58,6 +58,16 @@ function getArmadoFeDirFromContext(ctx, codigo) {
   );
 }
 
+/**
+ * Igual que getArmadoFeDirFromContext, pero resolviendo el nombre de carpeta a
+ * partir del expediente completo: usa `carpeta_fisica` (inmutable) si ya existe,
+ * y solo cae a `codigo` para expedientes legacy que no la tengan.
+ */
+function getArmadoFeDirForExpediente(ctx, exp) {
+  const { carpetaFisicaExpediente } = require('./soportes-armado-structure');
+  return getArmadoFeDirFromContext(ctx, carpetaFisicaExpediente(exp));
+}
+
 function safeFilename(original) {
   const base = path.basename(String(original || 'archivo.pdf'));
   return `${Date.now()}-${base.replace(/[^a-zA-Z0-9.\-_,() ]/g, '_')}`;
@@ -224,6 +234,7 @@ module.exports = {
   getPdxDir,
   getArmadoExpedienteDir,
   getArmadoFeDirFromContext,
+  getArmadoFeDirForExpediente,
   safeFilename,
   stripMulterTimestamp,
   resolveStoragePath,

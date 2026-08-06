@@ -63,7 +63,8 @@ const {
   ensureContenedoresForDia,
   ensureFeParEnContenedorHermano,
   parseFeCodigo,
-  ordenarExpedientesFeLista
+  ordenarExpedientesFeLista,
+  calcularCarpetaFisica
 } = require('../utils/soportes-armado-structure');
 const { compararTextoNatural, ordenarPorTextoNatural } = require('../utils/comparar-texto-natural');
 const {
@@ -2444,13 +2445,22 @@ async function crearExpedienteEnContenedor(contenedorId, body, usuarioId) {
     return { error: 'En UCQN cree una carpeta por persona desde el explorador del mes', status: 400 };
   }
   await ensureContenedoresForDia(db, ctx.dia_id);
-  getArmadoFeDirFromContext(ctx, codigo);
   const ts = 'electro';
   const r = await db.execute(
     `INSERT INTO sop_expedientes (dia_id, contenedor_id, codigo, numero_factura, paciente_nombre, paciente_documento, tipo_servicio, creado_por)
      VALUES (?,?,?,?,?,?,?,?)`,
     [ctx.dia_id, contenedorId, codigo, numero, pacienteNombre, null, ts, usuarioId]
   );
+  const expId = pdxInsertId(r);
+  if (!expId) return { error: 'No se pudo crear la carpeta FE', status: 500 };
+
+  // Carpeta física INMUTABLE: código vigente + ID de BD (nunca cambia). Se crea
+  // aquí (ya con el ID asignado) en vez de con el código "en crudo", para que
+  // futuros cambios de código/factura NUNCA requieran renombrar disco.
+  const carpetaFisica = calcularCarpetaFisica(codigo, expId);
+  await db.execute('UPDATE sop_expedientes SET carpeta_fisica = ? WHERE id = ?', [carpetaFisica, expId]);
+  getArmadoFeDirFromContext(ctx, carpetaFisica);
+
   try {
     if (esModoFacturacion(diaModo)) {
       await ensureFeParEnContenedorHermano(db, ctx.dia_id, contenedorId, codigo, numero, ts, usuarioId, pacienteNombre);
@@ -2459,8 +2469,6 @@ async function crearExpedienteEnContenedor(contenedorId, body, usuarioId) {
   } catch (e) {
     logger.warn('[SOPORTES] carpeta par RIPS/SOPORTES:', e.message);
   }
-  const expId = pdxInsertId(r);
-  if (!expId) return { error: 'No se pudo crear la carpeta FE', status: 500 };
   const detail = await buildExpedienteDetail(expId);
   return { ok: true, expediente: detail, codigo, par_creado: true };
 }

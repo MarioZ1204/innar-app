@@ -12,7 +12,7 @@ const db = require('./db-mysql');
 
 const { fileLooksLikePdf } = require('../middleware/upload');
 
-const { getArmadoFeDirFromContext } = require('./soportes-storage');
+const { getArmadoFeDirForExpediente } = require('./soportes-storage');
 
 const {
 
@@ -76,7 +76,7 @@ async function saveRipsArchivo(exp, ctx, slotKey, tempPath, originalName, usuari
 
     : safeOriginalFilename(originalName);
 
-  const { abs: feDir, rel: feRel } = getArmadoFeDirFromContext(ctx, exp.codigo);
+  const { abs: feDir, rel: feRel } = getArmadoFeDirForExpediente(ctx, exp);
 
   const destPath = path.join(feDir, diskName);
 
@@ -148,7 +148,7 @@ async function saveSoportesArchivo(exp, ctx, slotKey, tempPath, originalName, us
 
 
 
-  const { abs: feDir, rel: feRel } = getArmadoFeDirFromContext(ctx, exp.codigo);
+  const { abs: feDir, rel: feRel } = getArmadoFeDirForExpediente(ctx, exp);
 
   const destPath = path.join(feDir, diskName);
   const rutaRelativa = path.join(feRel, diskName).replace(/\\/g, '/');

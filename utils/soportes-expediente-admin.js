@@ -4,7 +4,7 @@
 const path = require('path');
 const fs = require('fs');
 const db = require('./db-mysql');
-const { getArmadoFeDirFromContext } = require('./soportes-storage');
+const { getArmadoFeDirFromContext, getArmadoFeDirForExpediente } = require('./soportes-storage');
 const { parseLineaPaciente, esExpedientePendienteFactura } = require('./soportes-pacientes-parse');
 const { findExpedientesMismoCodigo, aplicarRenombradoPorFev, revertirRenombradoPorFev } = require('./soportes-fe-rename');
 
@@ -47,6 +47,14 @@ function renameDirectoryIfExists(oldAbs, newAbs) {
 async function renombrarCodigoCarpetas(diaId, codigoViejo, codigoNuevo) {
   const hermanos = await findExpedientesMismoCodigo(diaId, codigoViejo);
   for (const her of hermanos) {
+    // Si ya tiene carpeta física inmutable (ID incluido en el nombre), NUNCA se
+    // renombra en disco: solo se actualiza el código de negocio en BD. Así se
+    // evita el riesgo de perder/mover archivos al cambiar paciente/factura.
+    if (her.carpeta_fisica) {
+      await db.execute('UPDATE sop_expedientes SET codigo = ? WHERE id = ?', [codigoNuevo, her.id]);
+      continue;
+    }
+
     const { abs: oldDir } = getArmadoFeDirFromContext(her, codigoViejo);
     const { abs: newDir, rel: newRel } = getArmadoFeDirFromContext(her, codigoNuevo);
     renameDirectoryIfExists(oldDir, newDir);
@@ -169,7 +177,7 @@ async function eliminarExpediente(expedienteId) {
   let archivosBorrados = 0;
 
   for (const her of hermanos) {
-    const { abs: feDir } = getArmadoFeDirFromContext(her, her.codigo);
+    const { abs: feDir } = getArmadoFeDirForExpediente(her, her);
     if (fs.existsSync(feDir)) {
       try {
         fs.rmSync(feDir, { recursive: true, force: true });

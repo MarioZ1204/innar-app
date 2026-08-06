@@ -1399,6 +1399,15 @@ const runtimeMigrations = [
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
       `);
     }
+  },
+  {
+    name: 'rt_sop_exp_carpeta_fisica',
+    description: 'Columna carpeta_fisica: identificador inmutable de la carpeta en disco de cada expediente (evita renombrados que pierden archivos)',
+    run: async (db) => {
+      if (await tableExists(db, 'sop_expedientes') && !(await columnExists(db, 'sop_expedientes', 'carpeta_fisica'))) {
+        await db.execute('ALTER TABLE sop_expedientes ADD COLUMN carpeta_fisica VARCHAR(80) NULL DEFAULT NULL AFTER codigo');
+      }
+    }
   }
 ];
 

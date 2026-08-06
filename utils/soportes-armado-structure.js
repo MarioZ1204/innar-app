@@ -44,6 +44,25 @@ function getArmadoFeDirAbs(root, periodo, diaNombre, estadoFacturacion, tipoCont
   return { abs, rel: rel.replace(/\\/g, '/') };
 }
 
+/**
+ * Nombre de carpeta FÍSICA inmutable para un expediente nuevo: código vigente al
+ * crearlo + su ID de BD (ej. "FE45_482"). El ID nunca cambia, así que aunque el
+ * código/factura del expediente se edite después, la carpeta física ya no necesita
+ * renombrarse (ver soportes-fe-rename.js / soportes-expediente-admin.js: si el
+ * expediente ya tiene carpeta_fisica, esas funciones solo actualizan la BD).
+ */
+function calcularCarpetaFisica(codigo, id) {
+  const base = sanitizePathSegment(String(codigo || 'FE0'));
+  return id ? `${base}_${id}` : base;
+}
+
+/** Nombre de carpeta a usar en disco: el inmutable si ya existe, o el código legacy. */
+function carpetaFisicaExpediente(exp) {
+  const explicit = String(exp?.carpeta_fisica || '').trim();
+  if (explicit) return explicit;
+  return String(exp?.codigo || '').trim();
+}
+
 function parseFeCodigo(input) {
   const raw = String(input || '').trim().toUpperCase();
   const m = raw.match(/^FE(\d+)$/);
@@ -82,25 +101,15 @@ async function ensureFeParEnContenedorHermano(db, diaId, contenedorId, codigo, n
      WHERE c.id = ?`,
     [hermano[0].id]
   );
-  if (ctx.length) {
-    const row = ctx[0];
-    const sopStorage = require('./soportes-storage');
-    getArmadoFeDirAbs(
-      sopStorage.soportesRoot,
-      row.periodo_etiqueta || row.periodo || '',
-      row.nombre_display,
-      row.estado_facturacion,
-      row.contenedor_tipo,
-      codigo
-    );
-  }
+
+  let hermanoId;
   try {
     const r = await db.execute(
       `INSERT INTO sop_expedientes (dia_id, contenedor_id, codigo, numero_factura, paciente_nombre, paciente_documento, tipo_servicio, creado_por)
        VALUES (?,?,?,?,?,?,?,?)`,
       [diaId, hermano[0].id, codigo, numero, pacienteNombre, null, tipoServicio, usuarioId]
     );
-    return insertRowId(r);
+    hermanoId = insertRowId(r);
   } catch (e) {
     if (e.code === 'ER_DUP_ENTRY' || String(e.message || '').includes('Duplicate')) {
       const again = await db.query(
@@ -111,6 +120,24 @@ async function ensureFeParEnContenedorHermano(db, diaId, contenedorId, codigo, n
     }
     throw e;
   }
+
+  if (ctx.length && hermanoId) {
+    // Carpeta física INMUTABLE (código + ID propio del hermano, nunca cambia).
+    const carpetaFisica = calcularCarpetaFisica(codigo, hermanoId);
+    await db.execute('UPDATE sop_expedientes SET carpeta_fisica = ? WHERE id = ?', [carpetaFisica, hermanoId]);
+    const row = ctx[0];
+    const sopStorage = require('./soportes-storage');
+    getArmadoFeDirAbs(
+      sopStorage.soportesRoot,
+      row.periodo_etiqueta || row.periodo || '',
+      row.nombre_display,
+      row.estado_facturacion,
+      row.contenedor_tipo,
+      carpetaFisica
+    );
+  }
+
+  return hermanoId;
 }
 
 /** Número secuencial de día dentro del mes (evita uk_sop_dia periodo_id+dia con dia=0 fijo). */
@@ -167,6 +194,8 @@ module.exports = {
   contenedorDir,
   getArmadoContenedorBaseDir,
   getArmadoFeDirAbs,
+  calcularCarpetaFisica,
+  carpetaFisicaExpediente,
   parseFeCodigo,
   badgeFacturacion,
   nextSopDiaNumero,
