@@ -21,6 +21,7 @@ const {
   bindArchiveStreamGuards,
   facturaFolderName,
   expedienteZipSegment,
+  listExpedienteFolderExtras,
   yieldEventLoop
 } = require('./soportes-armado-zip');
 
@@ -116,10 +117,12 @@ async function* batchesPeriodoUnificado(job) {
 
 async function* batchesPeriodoFacturados(job) {
   const expedientes = await db.query(
-    `SELECT e.id, e.codigo, e.numero_factura, e.paciente_nombre, d.nombre_display AS dia_nombre, c.tipo AS contenedor_tipo
+    `SELECT e.id, e.codigo, e.numero_factura, e.paciente_nombre, d.nombre_display AS dia_nombre,
+            d.estado_facturacion, c.tipo AS contenedor_tipo, p.periodo, p.etiqueta AS periodo_etiqueta
      FROM sop_expedientes e
      JOIN sop_contenedores c ON c.id = e.contenedor_id
      JOIN sop_dias d ON d.id = c.dia_id
+     JOIN sop_periodos p ON p.id = d.periodo_id
      WHERE d.periodo_id = ? AND d.estado_facturacion = 'facturados'
      ORDER BY d.nombre_display ASC, c.tipo ASC, e.codigo ASC`,
     [job.periodoId]
@@ -145,13 +148,31 @@ async function* batchesPeriodoFacturados(job) {
       nombre_display: exp.dia_nombre
     };
     const entries = [];
+    const usedAbs = new Set();
     for (const a of archivosByExp.get(exp.id) || []) {
       const fp = resolverArchivoExpedienteRow(a, expedienteCtx);
-      if (fp) entries.push({ absPath: fp, name: `${prefix}/${a.nombre_archivo}` });
+      if (fp) {
+        entries.push({ absPath: fp, name: `${prefix}/${a.nombre_archivo}` });
+        usedAbs.add(path.resolve(fp));
+      }
     }
     for (const a of ripsByExp.get(exp.id) || []) {
       const fp = resolverArchivoExpedienteRow(a, expedienteCtx);
-      if (fp) entries.push({ absPath: fp, name: `${prefix}/${a.nombre_archivo}` });
+      if (fp) {
+        entries.push({ absPath: fp, name: `${prefix}/${a.nombre_archivo}` });
+        usedAbs.add(path.resolve(fp));
+      }
+    }
+
+    const ctx = {
+      periodo: exp.periodo_etiqueta || exp.periodo,
+      periodo_etiqueta: exp.periodo_etiqueta,
+      nombre_display: exp.dia_nombre,
+      estado_facturacion: exp.estado_facturacion,
+      contenedor_tipo: exp.contenedor_tipo
+    };
+    for (const extra of listExpedienteFolderExtras(ctx, exp.codigo, prefix, null, usedAbs)) {
+      entries.push(extra);
     }
 
     if (entries.length) {

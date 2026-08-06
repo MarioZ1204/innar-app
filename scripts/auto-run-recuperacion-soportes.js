@@ -3,18 +3,18 @@ const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 
-function shouldRunRecovery(options = {}) {
+function shouldRunOnce(options = {}) {
   const env = options.env || process.env;
   const cwd = options.cwd || process.cwd();
   const version = options.version || env.APP_BUILD_VERSION || env.SOURCE_VERSION || 'unknown';
-  const enabled = env.SOPORTES_RECOVERY_ON_DEPLOY === '1' || env.SOPORTES_RECOVERY_ON_DEPLOY === 'true';
+  const enabled = env[options.enableVar] === '1' || env[options.enableVar] === 'true';
 
   if (!enabled) {
     return { shouldRun: false, reason: 'disabled' };
   }
 
   const markerDir = path.join(cwd, '.deploy-state');
-  const markerPath = path.join(markerDir, 'soportes-recovery.json');
+  const markerPath = path.join(markerDir, options.markerFile);
   const previous = readMarker(markerPath);
   const currentVersion = String(version || 'unknown');
 
@@ -23,6 +23,14 @@ function shouldRunRecovery(options = {}) {
   }
 
   return { shouldRun: true, reason: previous ? 'new-version' : 'first-run', markerPath, version: currentVersion };
+}
+
+function shouldRunRecovery(options = {}) {
+  return shouldRunOnce({ ...options, enableVar: 'SOPORTES_RECOVERY_ON_DEPLOY', markerFile: 'soportes-recovery.json' });
+}
+
+function shouldRunFileRestore(options = {}) {
+  return shouldRunOnce({ ...options, enableVar: 'SOPORTES_RESTORE_FILES_ON_DEPLOY', markerFile: 'soportes-restore-files.json' });
 }
 
 function readMarker(markerPath) {
@@ -39,7 +47,50 @@ function writeMarker(markerPath, version) {
   fs.writeFileSync(markerPath, JSON.stringify({ version, updatedAt: new Date().toISOString() }, null, 2));
 }
 
+/**
+ * Restaura desde el último backup completo (ZIP con BD + uploads) los archivos
+ * de uploads/ que no existan en disco. Se ejecuta automáticamente al arrancar
+ * el servidor si SOPORTES_RESTORE_FILES_ON_DEPLOY=1, una sola vez por versión
+ * de despliegue (marcador en .deploy-state/soportes-restore-files.json).
+ * Nunca sobreescribe archivos existentes.
+ */
+async function runFileRestoreBootstrap() {
+  const result = shouldRunFileRestore();
+  if (!result.shouldRun) {
+    if (result.reason === 'disabled') {
+      console.log('[soportes-restore] Bootstrap desactivado: SOPORTES_RESTORE_FILES_ON_DEPLOY no está habilitado.');
+    } else {
+      console.log(`[soportes-restore] Bootstrap omitido (${result.reason}).`);
+    }
+    return;
+  }
+
+  console.log(`[soportes-restore] Buscando backup más reciente para restaurar archivos faltantes (versión ${result.version})...`);
+
+  try {
+    const { restoreMissingUploadsFromBackup, latestFullBackupFilename } = require('../utils/soportes-backup-restore');
+    const backupFilename = latestFullBackupFilename();
+    if (!backupFilename) {
+      console.log('[soportes-restore] No hay backups completos disponibles; se omite la restauración.');
+      writeMarker(result.markerPath, result.version);
+      return;
+    }
+
+    console.log(`[soportes-restore] Restaurando archivos faltantes desde ${backupFilename}...`);
+    const restoreResult = await restoreMissingUploadsFromBackup({ backupFilename });
+    console.log(`[soportes-restore] Restaurados: ${restoreResult.restaurados.length}; ya existían: ${restoreResult.omitidos}; errores: ${restoreResult.errores.length}`);
+    if (restoreResult.errores.length) {
+      restoreResult.errores.forEach((e) => console.error(`[soportes-restore]   - ${e.ruta}: ${e.error}`));
+    }
+    writeMarker(result.markerPath, result.version);
+  } catch (error) {
+    console.error('[soportes-restore] Falló la restauración automática de archivos:', error);
+  }
+}
+
 async function runRecoveryBootstrap() {
+  await runFileRestoreBootstrap();
+
   const result = shouldRunRecovery();
   if (!result.shouldRun) {
     if (result.reason === 'disabled') {
@@ -78,5 +129,7 @@ if (require.main === module) {
 
 module.exports = {
   shouldRunRecovery,
+  shouldRunFileRestore,
+  runFileRestoreBootstrap,
   runRecoveryBootstrap
 };

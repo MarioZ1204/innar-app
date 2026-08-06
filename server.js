@@ -45,7 +45,8 @@ const PUBLIC_DIR = path.join(__dirname, 'public');
 const app = express();
 app.locals.appVersion = APP_VERSION;
 
-if (process.env.SOPORTES_RECOVERY_ON_DEPLOY === '1' || process.env.SOPORTES_RECOVERY_ON_DEPLOY === 'true') {
+const RECOVERY_FLAGS = ['SOPORTES_RECOVERY_ON_DEPLOY', 'SOPORTES_RESTORE_FILES_ON_DEPLOY'];
+if (RECOVERY_FLAGS.some((flag) => process.env[flag] === '1' || process.env[flag] === 'true')) {
   runRecoveryBootstrap().catch((error) => {
     console.error('[server] Falló el bootstrap de recuperación de SOPORTES:', error);
   });

@@ -13,6 +13,7 @@ const {
   isSafeFullBackupName
 } = require('../utils/backup-full');
 const { BACKUP_DIR } = require('../utils/backup');
+const { restoreMissingUploadsFromBackup } = require('../utils/soportes-backup-restore');
 
 const ROLES_BACKUP = ['superadmin', 'admin'];
 
@@ -106,6 +107,56 @@ router.get(
       stream.pipe(res);
     } catch (e) {
       logger.error('[BACKUP] descargar:', e);
+      res.status(500).json({ error: safeError(e) });
+    }
+  }
+);
+
+/**
+ * POST /api/backups/completo/:filename/restaurar-archivos
+ * Restaura desde el ZIP de backup los archivos de uploads/ que no existan
+ * actualmente en disco (útil tras un redespliegue en Hostinger que haya
+ * perdido archivos). No toca la base de datos ni sobreescribe archivos
+ * existentes salvo que se envíe { overwrite: true }.
+ */
+router.post(
+  '/backups/completo/:filename/restaurar-archivos',
+  requireAuth,
+  requireRoleOrPerm(['superadmin'], 'sistema.backups'),
+  async (req, res) => {
+    try {
+      const name = req.params.filename;
+      if (!isSafeFullBackupName(name)) {
+        return res.status(400).json({ error: 'Nombre de archivo no válido' });
+      }
+      const fp = resolveFullBackupPath(name);
+      if (!fp || !fs.existsSync(fp)) {
+        return res.status(404).json({ error: 'Backup no encontrado' });
+      }
+      const overwrite = req.body?.overwrite === true;
+      const onlyPrefixes = Array.isArray(req.body?.onlyPrefixes)
+        ? req.body.onlyPrefixes.filter((v) => typeof v === 'string' && v.trim())
+        : [];
+
+      const result = await restoreMissingUploadsFromBackup({ backupFilename: name, overwrite, onlyPrefixes });
+
+      const usuario = req.session?.nombre || req.session?.usuario || `id:${req.session?.usuarioId}`;
+      logger.info('[BACKUP] Restauración de archivos faltantes', {
+        type: 'BACKUP_RESTORE',
+        filename: name,
+        restaurados: result.restaurados.length,
+        omitidos: result.omitidos,
+        errores: result.errores.length,
+        user: usuario
+      });
+
+      res.json({
+        ok: true,
+        message: `Restauración completada: ${result.restaurados.length} archivo(s) recuperado(s), ${result.omitidos} ya existían.`,
+        ...result
+      });
+    } catch (e) {
+      logger.error('[BACKUP] restaurar archivos:', e);
       res.status(500).json({ error: safeError(e) });
     }
   }

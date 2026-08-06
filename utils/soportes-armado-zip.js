@@ -13,6 +13,7 @@ const {
   repararArchivosExpediente
 } = require('./soportes-exp-archivo');
 const sopStorage = require('./soportes-storage');
+const { getArmadoFeDirFromContext } = require('./soportes-storage');
 const { getUploadsRoot } = require('../config/uploads-path');
 const { getArmadoFeDirAbs } = require('./soportes-armado-structure');
 const { compararTextoNatural } = require('./comparar-texto-natural');
@@ -74,6 +75,54 @@ function ensureZipFolderPlaceholder(entries, usedPaths, folderPath) {
   if (entries.some((e) => e.name === dir || (e.name && e.name.startsWith(dir)))) return;
   if (usedPaths) usedPaths.add(dir);
   entries.push({ placeholder: true, name: dir, content: Buffer.alloc(0) });
+}
+
+/**
+ * Recupera del disco los archivos de la carpeta física del expediente/contenedor
+ * que no quedaron incluidos por el registro en BD (registro faltante, desincronizado
+ * o apuntando a otra ubicación). Evita ZIPs incompletos aunque la BD esté desajustada.
+ */
+function listExpedienteFolderExtras(ctx, codigo, zipPrefix, usedPaths, alreadyAbsPaths) {
+  const entries = [];
+  if (!ctx || !codigo) return entries;
+  let abs = null;
+  try {
+    ({ abs } = getArmadoFeDirFromContext(ctx, codigo));
+  } catch (e) {
+    logger.warn('[SOPORTES] zip recuperar disco resolver dir:', e.message);
+    return entries;
+  }
+  if (!abs || !fs.existsSync(abs)) return entries;
+
+  let files = [];
+  try {
+    files = fs.readdirSync(abs, { withFileTypes: true })
+      .filter((e) => e.isFile())
+      .map((e) => e.name);
+  } catch (e) {
+    logger.warn('[SOPORTES] zip recuperar disco:', e.message);
+    return entries;
+  }
+
+  for (const fname of files) {
+    const full = path.join(abs, fname);
+    if (alreadyAbsPaths?.has(path.resolve(full))) continue;
+    if (fname.startsWith('.') || fname.endsWith('.bak') || /\.bak\.\d+$/.test(fname)) continue;
+    entries.push({
+      absPath: full,
+      name: uniqueEntryName(usedPaths, zipPrefix, fname, ctx.nombre_display)
+    });
+    if (alreadyAbsPaths) alreadyAbsPaths.add(path.resolve(full));
+  }
+  return entries;
+}
+
+function absPathsFromEntries(entries) {
+  const set = new Set();
+  for (const e of entries || []) {
+    if (e?.absPath) set.add(path.resolve(e.absPath));
+  }
+  return set;
 }
 
 function uniqueEntryName(usedPaths, zipPrefix, fileName, diaNombre) {
@@ -309,7 +358,7 @@ function ensureRipsFacturaFolder(entries, usedPaths, codSeg) {
 async function queryExpedientesDia(diaId) {
   return db.query(
     `SELECT e.id, e.codigo, e.numero_factura, e.paciente_nombre, c.tipo AS contenedor_tipo, d.nombre_display AS dia_nombre,
-            d.estado_facturacion, p.periodo
+            d.estado_facturacion, p.periodo, p.etiqueta AS periodo_etiqueta
      FROM sop_expedientes e
      JOIN sop_contenedores c ON c.id = e.contenedor_id
      JOIN sop_dias d ON d.id = c.dia_id
@@ -367,8 +416,10 @@ async function collectDiaZipEntries(diaId, usedPaths = null, opts = {}) {
     const zipPrefix = `${prefixRoot}/${codSeg}`;
     const ctx = {
       periodo: exp.periodo,
+      periodo_etiqueta: exp.periodo_etiqueta,
       nombre_display: exp.dia_nombre,
-      estado_facturacion: exp.estado_facturacion
+      estado_facturacion: exp.estado_facturacion,
+      contenedor_tipo: exp.contenedor_tipo
     };
     const expedienteCtx = {
       codigo: exp.codigo,
@@ -398,6 +449,9 @@ async function collectDiaZipEntries(diaId, usedPaths = null, opts = {}) {
         expedienteCtx
       );
     }
+
+    const extras = listExpedienteFolderExtras(ctx, exp.codigo, zipPrefix, usedPaths, absPathsFromEntries(part));
+    if (extras.length) part = part.concat(extras);
 
     if (!part.length) {
       ensureZipFolderPlaceholder(entries, usedPaths, zipPrefix);
@@ -719,8 +773,10 @@ async function collectContenedorZipEntries(contenedorId, usedPaths = null) {
   const prefixRoot = cont.tipo === 'rips' ? 'RIPS' : 'SOPORTES';
   const ctx = {
     periodo: cont.periodo_etiqueta || cont.periodo,
+    periodo_etiqueta: cont.periodo_etiqueta,
     nombre_display: cont.dia_nombre,
-    estado_facturacion: cont.estado_facturacion
+    estado_facturacion: cont.estado_facturacion,
+    contenedor_tipo: cont.tipo
   };
 
   for (const exp of expedientes) {
@@ -742,6 +798,10 @@ async function collectContenedorZipEntries(contenedorId, usedPaths = null) {
         exp.id, zipPrefix, usedPaths, cont.dia_nombre, expedienteCtx
       );
     }
+
+    const extras = listExpedienteFolderExtras(ctx, exp.codigo, zipPrefix, usedPaths, absPathsFromEntries(part));
+    if (extras.length) part = part.concat(extras);
+
     if (!part.length) {
       ensureZipFolderPlaceholder(entries, usedPaths, zipPrefix);
     } else {
@@ -777,18 +837,23 @@ async function collectExpedienteZipEntries(expedienteId) {
   const zipPrefix = `${prefixRoot}/${codSeg}`;
   const ctx = {
     periodo: exp.periodo_etiqueta || exp.periodo,
+    periodo_etiqueta: exp.periodo_etiqueta,
     nombre_display: exp.dia_nombre,
-    estado_facturacion: exp.estado_facturacion
+    estado_facturacion: exp.estado_facturacion,
+    contenedor_tipo: exp.contenedor_tipo
   };
+  let part = [];
   if (exp.contenedor_tipo === 'rips') {
-    entries.push(...await listRipsArchivoEntries(
+    part = await listRipsArchivoEntries(
       exp.id, zipPrefix, null, exp.dia_nombre, ctx, exp.codigo, expedienteCtx
-    ));
+    );
   } else {
-    entries.push(...await listSoportesArchivoEntries(
+    part = await listSoportesArchivoEntries(
       exp.id, zipPrefix, null, exp.dia_nombre, expedienteCtx
-    ));
+    );
   }
+  const extras = listExpedienteFolderExtras(ctx, exp.codigo, zipPrefix, null, absPathsFromEntries(part));
+  entries.push(...part, ...extras);
   return filterValidZipEntries(entries);
 }
 
@@ -838,6 +903,7 @@ module.exports = {
   zipArchiveSegment,
   facturaFolderName,
   expedienteZipSegment,
+  listExpedienteFolderExtras,
   getSopZipWorkDir,
   createArchiverInstance,
   bindArchiveStreamGuards,

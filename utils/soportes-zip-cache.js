@@ -12,7 +12,7 @@ const logger = require('./logger');
 
 const PERIOD_ZIP_KINDS = new Set(['periodo-paquete', 'periodo-unificado', 'periodo-facturados']);
 /** Incrementar al cambiar la estructura del ZIP (invalida caché antigua). */
-const ZIP_CACHE_LAYOUT_VERSION = 2;
+const ZIP_CACHE_LAYOUT_VERSION = 3;
 
 function getCacheDir() {
   const dir = path.join(getUploadsRoot(), 'sop-zip-cache');

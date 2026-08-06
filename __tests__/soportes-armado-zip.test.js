@@ -1,4 +1,13 @@
-const { zipEntryOptions, facturaFolderName, getSopZipWorkDir, filterValidZipEntries } = require('../utils/soportes-armado-zip');
+const fs = require('fs');
+const path = require('path');
+const {
+  zipEntryOptions,
+  facturaFolderName,
+  getSopZipWorkDir,
+  filterValidZipEntries,
+  listExpedienteFolderExtras
+} = require('../utils/soportes-armado-zip');
+const { getArmadoFeDirFromContext } = require('../utils/soportes-storage');
 
 describe('soportes-armado-zip', () => {
   test('usa store para PDF (ya comprimidos)', () => {
@@ -29,5 +38,31 @@ describe('soportes-armado-zip', () => {
     ]);
     expect(out).toHaveLength(1);
     expect(out[0].name).toBe('ok.txt');
+  });
+
+  test('listExpedienteFolderExtras recupera del disco archivos sin registro válido en BD', () => {
+    const ctx = {
+      periodo: 'TEST-ZIP-2026',
+      nombre_display: 'DIA_TEST_ZIP',
+      estado_facturacion: 'a_facturar',
+      contenedor_tipo: 'soportes'
+    };
+    const codigo = 'FE_TEST_ZIP_99';
+    const { abs } = getArmadoFeDirFromContext(ctx, codigo);
+    const huerfano = path.join(abs, 'OPF_900000000_FE_TEST_ZIP_99.pdf');
+    const yaIncluido = path.join(abs, 'CRC_900000000_FE_TEST_ZIP_99.pdf');
+    fs.writeFileSync(huerfano, 'contenido');
+    fs.writeFileSync(yaIncluido, 'contenido');
+
+    try {
+      const usedPaths = new Set();
+      const already = new Set([path.resolve(yaIncluido)]);
+      const extras = listExpedienteFolderExtras(ctx, codigo, 'SOPORTES/FE_TEST_ZIP_99', usedPaths, already);
+      expect(extras).toHaveLength(1);
+      expect(extras[0].absPath).toBe(huerfano);
+      expect(extras[0].name).toBe('SOPORTES/FE_TEST_ZIP_99/OPF_900000000_FE_TEST_ZIP_99.pdf');
+    } finally {
+      fs.rmSync(abs, { recursive: true, force: true });
+    }
   });
 });
