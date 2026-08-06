@@ -12,8 +12,10 @@ const {
   collectCarpetaZipEntries,
   collectContenedorZipEntries,
   collectExpedienteZipEntries,
-  appendEntriesToArchiveAsync,
+  appendEntriesToArchive,
   filterValidZipEntries,
+  loadArchivosByExpedienteIds,
+  loadRipsArchivosByExpedienteIds,
   getSopZipWorkDir,
   createArchiverInstance,
   bindArchiveStreamGuards,
@@ -50,7 +52,7 @@ async function writeZipBatches(job, batchIterator, onProgress) {
           if (batch.message != null) onProgress({ message: batch.message });
           if (batch.progress != null) onProgress({ progress: batch.progress });
           if (batch.entries?.length) {
-            await appendEntriesToArchiveAsync(archive, batch.entries, 4);
+            appendEntriesToArchive(archive, batch.entries);
             filesAdded += batch.entries.length;
           }
           await yieldEventLoop();
@@ -123,6 +125,10 @@ async function* batchesPeriodoFacturados(job) {
   );
   if (!expedientes.length) throw new Error('No hay carpetas FE facturadas con archivos');
 
+  const expIds = expedientes.map((e) => e.id);
+  const archivosByExp = await loadArchivosByExpedienteIds(expIds);
+  const ripsByExp = await loadRipsArchivosByExpedienteIds(expIds);
+
   const total = expedientes.length;
   let step = 0;
   for (const exp of expedientes) {
@@ -138,18 +144,14 @@ async function* batchesPeriodoFacturados(job) {
       nombre_display: exp.dia_nombre
     };
     const entries = [];
-    const archivos = await db.query('SELECT * FROM sop_exp_archivos WHERE expediente_id = ?', [exp.id]);
-    for (const a of archivos) {
+    for (const a of archivosByExp.get(exp.id) || []) {
       const fp = resolverArchivoExpedienteRow(a, expedienteCtx);
       if (fp) entries.push({ absPath: fp, name: `${prefix}/${a.nombre_archivo}` });
     }
-    try {
-      const ripsArchivos = await db.query('SELECT * FROM sop_rips_archivos WHERE expediente_id = ?', [exp.id]);
-      for (const a of ripsArchivos) {
-        const fp = resolverArchivoExpedienteRow(a, expedienteCtx);
-        if (fp) entries.push({ absPath: fp, name: `${prefix}/${a.nombre_archivo}` });
-      }
-    } catch (_) { /* ignore */ }
+    for (const a of ripsByExp.get(exp.id) || []) {
+      const fp = resolverArchivoExpedienteRow(a, expedienteCtx);
+      if (fp) entries.push({ absPath: fp, name: `${prefix}/${a.nombre_archivo}` });
+    }
 
     if (entries.length) {
       yield {
@@ -158,7 +160,7 @@ async function* batchesPeriodoFacturados(job) {
         entries: filterValidZipEntries(entries)
       };
     }
-    await yieldEventLoop();
+    if (step % 20 === 0) await yieldEventLoop();
   }
 }
 

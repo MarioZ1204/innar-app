@@ -135,6 +135,77 @@ function bindArchiveStreamGuards(archive, res) {
   }
 }
 
+async function loadArchivosByExpedienteIds(expIds) {
+  const map = new Map();
+  if (!expIds.length) return map;
+  const placeholders = expIds.map(() => '?').join(',');
+  const archivos = await db.query(
+    `SELECT * FROM sop_exp_archivos WHERE expediente_id IN (${placeholders})`,
+    expIds
+  );
+  for (const a of archivos) {
+    if (!map.has(a.expediente_id)) map.set(a.expediente_id, []);
+    map.get(a.expediente_id).push(a);
+  }
+  return map;
+}
+
+async function loadRipsArchivosByExpedienteIds(expIds) {
+  const map = new Map();
+  if (!expIds.length) return map;
+  try {
+    const placeholders = expIds.map(() => '?').join(',');
+    const rows = await db.query(
+      `SELECT * FROM sop_rips_archivos WHERE expediente_id IN (${placeholders})`,
+      expIds
+    );
+    for (const a of rows) {
+      if (!map.has(a.expediente_id)) map.set(a.expediente_id, []);
+      map.get(a.expediente_id).push(a);
+    }
+  } catch (_) { /* tabla opcional */ }
+  return map;
+}
+
+function listSoportesArchivoEntriesFromRows(archivos, zipPrefix, usedPaths, diaNombre, expediente = null) {
+  const entries = [];
+  for (const a of archivos || []) {
+    const fp = expediente
+      ? resolverArchivoExpedienteRow(a, expediente)
+      : resolveArchivoAbsoluto(a);
+    if (!fp || !fs.existsSync(fp)) continue;
+    const zipName = construirNombreEsperado(a, expediente) || a.nombre_archivo;
+    entries.push({
+      absPath: fp,
+      name: uniqueEntryName(usedPaths, zipPrefix, zipName, diaNombre)
+    });
+  }
+  return entries;
+}
+
+function listRipsArchivoEntriesFromRows(ripsArchivos, expedienteId, zipPrefix, usedPaths, diaNombre, ctx, codigo, expediente = null) {
+  const entries = [];
+  for (const a of ripsArchivos || []) {
+    const fp = expediente
+      ? resolverArchivoExpedienteRow(a, expediente)
+      : resolveArchivoAbsoluto(a);
+    if (!fp || !fs.existsSync(fp)) continue;
+    const slotKey = a.slot === 'json_1' ? 'RIPS_JSON_1' : a.slot === 'json_2' ? 'RIPS_JSON_2' : 'RIPS_XML';
+    const zipName = construirNombreEsperado({ ...a, tipo: slotKey }, expediente) || a.nombre_archivo;
+    entries.push({
+      absPath: fp,
+      name: uniqueEntryName(usedPaths, zipPrefix, zipName, diaNombre)
+    });
+  }
+  if (ctx && codigo) {
+    const fromDisk = listRipsDirEntriesFromDisk(ctx, codigo, zipPrefix, usedPaths, diaNombre);
+    for (const de of fromDisk) {
+      if (!entries.some((x) => x.name === de.name)) entries.push(de);
+    }
+  }
+  return entries;
+}
+
 async function listSoportesArchivoEntries(expedienteId, zipPrefix, usedPaths, diaNombre, expediente = null) {
   const entries = [];
   try {
@@ -267,6 +338,9 @@ async function collectDiaZipEntries(diaId, usedPaths = null, opts = {}) {
       }
     }
   }
+  const expIds = expedientes.map((e) => e.id);
+  const archivosByExp = await loadArchivosByExpedienteIds(expIds);
+  const ripsByExp = await loadRipsArchivosByExpedienteIds(expIds);
   const grupos = groupExpedientesPorFactura(expedientes);
   const entries = [];
 
@@ -283,9 +357,14 @@ async function collectDiaZipEntries(diaId, usedPaths = null, opts = {}) {
         paciente_nombre: exp.paciente_nombre,
         nombre_display: exp.nombre_display
       };
-      const part = await listSoportesArchivoEntries(exp.id, sopPrefix, usedPaths, g.diaNombre, expedienteCtx);
+      const part = listSoportesArchivoEntriesFromRows(
+        archivosByExp.get(exp.id),
+        sopPrefix,
+        usedPaths,
+        g.diaNombre,
+        expedienteCtx
+      );
       entries.push(...part);
-      await yieldEventLoop();
     }
 
     if (g.soportes.length) {
@@ -299,7 +378,8 @@ async function collectDiaZipEntries(diaId, usedPaths = null, opts = {}) {
         paciente_nombre: exp.paciente_nombre,
         nombre_display: exp.nombre_display
       };
-      const part = await listRipsArchivoEntries(
+      const part = listRipsArchivoEntriesFromRows(
+        ripsByExp.get(exp.id),
         exp.id,
         ripsPrefix,
         usedPaths,
@@ -312,9 +392,7 @@ async function collectDiaZipEntries(diaId, usedPaths = null, opts = {}) {
       if (part.length && !g.soportes.length) {
         ensureRipsFacturaFolder(entries, usedPaths, codSeg);
       }
-      await yieldEventLoop();
     }
-    await yieldEventLoop();
   }
 
   return filterValidZipEntries(entries);
@@ -760,6 +838,8 @@ module.exports = {
   appendInnerZipToArchive,
   appendEntriesToArchive,
   appendEntriesToArchiveAsync,
+  loadArchivosByExpedienteIds,
+  loadRipsArchivosByExpedienteIds,
   pipeArchiveToResponse,
   pipeArchiveToFile,
   filterValidZipEntries,

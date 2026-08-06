@@ -1006,6 +1006,28 @@
     }
   }
 
+  function sopScrollAnchor() {
+    if (window.currentModule === 'armado-soportes') {
+      return document.querySelector('#view-armado-soportes [data-innar-scroll-root]')
+        || document.querySelector('#view-armado-soportes .sop-arm-main')
+        || document.getElementById('view-armado-soportes');
+    }
+    if (window.currentModule === 'reportes-pdx') {
+      return document.querySelector('#view-reportes-pdx [data-innar-scroll-root]')
+        || document.getElementById('view-reportes-pdx');
+    }
+    return document.querySelector('.sop-arm-main')
+      || document.querySelector('#view-reportes-pdx .main-content')
+      || document.getElementById('sopPdxLista');
+  }
+
+  function sopWithScroll(fn) {
+    if (typeof window.innarPreserveScroll === 'function') {
+      return window.innarPreserveScroll(sopScrollAnchor(), fn);
+    }
+    return fn();
+  }
+
   function htmlSopFolderViewToggle(mod) {
     const mode = sopFolderViewMode(mod);
     return `<div class="sop-view-toggle" role="group" aria-label="Vista de carpetas">
@@ -1221,6 +1243,7 @@
     });
     sopZipBg.panel = panel;
     if (typeof sopIcons === 'function') sopIcons(panel);
+    sopZipBgBindActions();
     return panel;
   }
 
@@ -1233,22 +1256,62 @@
       return;
     }
     panel.classList.add('is-visible');
-    list.innerHTML = [...sopZipBg.jobs.values()].map((j) => {
+    list.innerHTML = [...sopZipBg.jobs.entries()].map(([localId, j]) => {
       const pct = Math.max(0, Math.min(100, j.progress || 0));
       const err = j.status === 'error';
       const done = j.status === 'downloaded';
       const queued = j.status === 'queued' || j.status === 'pending';
       const running = j.status === 'running' || j.status === 'starting';
-      return `<li class="sop-zip-job-item${err ? ' is-error' : ''}${done ? ' is-done' : ''}${queued ? ' is-queued' : ''}${running ? ' is-running' : ''}">
+      const canDl = Boolean(j.apiJobId) && (j.canDownload || j.status === 'ready' || done);
+      const dlBtn = canDl
+        ? `<button type="button" class="sop-btn sop-btn-teal sop-btn-sm sop-zip-job-dl" data-zip-local="${escapeHtml(localId)}">Descargar</button>`
+        : '';
+      return `<li class="sop-zip-job-item${err ? ' is-error' : ''}${done ? ' is-done' : ''}${queued ? ' is-queued' : ''}${running ? ' is-running' : ''}" data-zip-local="${escapeHtml(localId)}">
         <div class="sop-zip-job-row">
           <span class="sop-zip-job-name">${escapeHtml(j.label || j.filename || 'ZIP')}</span>
           <span class="sop-zip-job-pct">${pct}%</span>
         </div>
         <div class="sop-zip-job-bar-wrap" aria-hidden="true"><div class="sop-zip-job-bar" style="width:${pct}%"></div></div>
         <div class="sop-zip-job-status">${escapeHtml(j.message || '')}</div>
+        ${dlBtn ? `<div class="sop-zip-job-actions">${dlBtn}</div>` : ''}
       </li>`;
     }).join('');
     if (typeof sopIcons === 'function') sopIcons(panel);
+  }
+
+  async function descargarZipJobAlServidor(j) {
+    if (!j?.apiJobId) throw new Error('ZIP no disponible');
+    const url = `/api/soportes/armado/zip/job/${j.apiJobId}/descargar`;
+    await descargarArchivoConProgreso(url, j.filename || j.label, { title: 'Descargando ZIP' });
+  }
+
+  function sopZipBgBindActions() {
+    const panel = sopZipBg.panel;
+    if (!panel || panel._zipActionsBound) return;
+    panel._zipActionsBound = true;
+    panel.addEventListener('click', (ev) => {
+      const btn = ev.target.closest('.sop-zip-job-dl');
+      if (!btn) return;
+      const localId = btn.dataset.zipLocal;
+      const j = sopZipBg.jobs.get(localId);
+      if (!j) return;
+      btn.disabled = true;
+      descargarZipJobAlServidor(j)
+        .then(() => {
+          j.status = 'downloaded';
+          j.progress = 100;
+          j.message = 'Descarga completada';
+          sopZipBgRender();
+          sopZipBgRemoveLater(localId, 7000);
+        })
+        .catch((e) => {
+          j.canDownload = true;
+          j.message = e.message || 'Error al descargar — intente de nuevo';
+          sopToast(j.message, 'error');
+          sopZipBgRender();
+        })
+        .finally(() => { btn.disabled = false; });
+    });
   }
 
   function sopZipBgStopPoll(localId) {
@@ -1281,15 +1344,24 @@
       sopZipBgRender();
       if (st.status === 'ready') {
         sopZipBgStopPoll(localId);
-        iniciarDescargaArchivoIframe(`/api/soportes/armado/zip/job/${j.apiJobId}/descargar`);
-        j.message = (st.message || '').includes('caché')
-          ? 'Descarga desde caché — puede seguir trabajando'
-          : 'Descarga iniciada — puede seguir trabajando';
-        j.status = 'downloaded';
+        j.canDownload = true;
+        j.filename = st.filename || j.filename;
+        j.message = (st.message || '').includes('caché') ? 'ZIP listo (caché). Descargando…' : 'ZIP listo. Descargando…';
         j.progress = 100;
         sopZipBgRender();
-        sopToast(`ZIP listo: ${j.label || j.filename}`, 'success');
-        sopZipBgRemoveLater(localId, 7000);
+        try {
+          await descargarZipJobAlServidor(j);
+          j.message = 'Descarga completada — puede seguir trabajando';
+          j.status = 'downloaded';
+          sopZipBgRender();
+          sopToast(`ZIP descargado: ${j.label || j.filename}`, 'success');
+          sopZipBgRemoveLater(localId, 7000);
+        } catch (e) {
+          j.status = 'ready';
+          j.message = `Listo. Use «Descargar» si no inició (${e.message || 'error'})`;
+          sopToast(e.message || 'No se pudo descargar el ZIP', 'error');
+          sopZipBgRender();
+        }
       } else if (st.status === 'error') {
         sopZipBgStopPoll(localId);
         j.message = st.error || 'Error al generar ZIP';
@@ -1350,7 +1422,15 @@
     j.status = startData.status || 'pending';
     j.message = startData.message || 'Generando en el servidor…';
     j.progress = parseInt(startData.progress, 10) || 0;
+    if (startData.status === 'ready') {
+      j.canDownload = true;
+    }
     sopZipBgRender();
+
+    if (startData.status === 'ready') {
+      void sopZipBgPollOnce(localId);
+      return;
+    }
 
     j.pollTimer = setInterval(() => { void sopZipBgPollOnce(localId); }, 1500);
     void sopZipBgPollOnce(localId);
@@ -2437,6 +2517,10 @@
   }
 
   function renderListaCarpetasPdx() {
+    return sopWithScroll(renderListaCarpetasPdxBody);
+  }
+
+  function renderListaCarpetasPdxBody() {
     renderPdxBreadcrumbLista();
     renderPdxTemaLegend();
     ensurePdxViewToggleInBar();
@@ -2513,6 +2597,7 @@
   }
 
   async function abrirCarpetaPdx(id) {
+    return sopWithScroll(async () => {
     pdxState.carpetaId = id;
     $('sopPdxVistaLista')?.classList.add('hidden');
     $('sopPdxVistaDetalle')?.classList.remove('hidden');
@@ -2635,6 +2720,7 @@
     requestAnimationFrame(() => {
       sopIcons(tbody);
       sopIcons($('sopPdxVistaDetalle'));
+    });
     });
   }
 
@@ -3881,17 +3967,13 @@
   }
 
   async function refrescarVistaPdxActual() {
-    const anchor = document.getElementById('view-reportes-pdx');
     const run = async () => {
       const data = await cargarCarpetasPdx();
       if (!data) return;
       if (pdxState.carpetaId) await abrirCarpetaPdx(pdxState.carpetaId);
       else renderListaCarpetasPdx();
     };
-    if (typeof window.innarPreserveScroll === 'function') {
-      return window.innarPreserveScroll(anchor, run);
-    }
-    return run();
+    return sopWithScroll(run);
   }
 
   window.initReportesPdx = function initReportesPdx() {
@@ -4347,6 +4429,10 @@
   }
 
   function renderArmadoDiasExplorer() {
+    return sopWithScroll(renderArmadoDiasExplorerBody);
+  }
+
+  function renderArmadoDiasExplorerBody() {
     const panel = $('sopArmExpedientePanel');
     if (!panel || !armState.periodoId) return;
     armState.vista = 'period';
@@ -4522,6 +4608,7 @@
   }
 
   async function seleccionarDiaArmado(id) {
+    return sopWithScroll(async () => {
     armState.diaId = id;
     armState.contenedorId = null;
     armState.contenedorTipo = null;
@@ -4586,6 +4673,7 @@
     }
     sopIcons(panel);
     renderArmadoContextBar();
+    });
   }
 
   function bindArmadoFeCardEvents(root) {
@@ -4610,6 +4698,10 @@
   }
 
   function renderArmadoExpedientesGrid(list) {
+    return sopWithScroll(() => renderArmadoExpedientesGridBody(list));
+  }
+
+  function renderArmadoExpedientesGridBody(list) {
     const panel = $('sopArmExpedientePanel');
     const grid = panel?.querySelector('#sopArmExpedientesGrid');
     if (!grid) return;
@@ -4659,6 +4751,7 @@
   }
 
   async function seleccionarContenedorArmado(id) {
+    return sopWithScroll(async () => {
     armState.contenedorId = id;
     armState.expedienteId = null;
     armState.expedienteCodigo = null;
@@ -4704,6 +4797,7 @@
     panel.querySelector('#btnSopArmNuevoFe')?.addEventListener('click', modalNuevoExpediente);
     sopIcons(panel);
     renderArmadoContextBar();
+    });
   }
 
   function htmlSlotArchivoActions(expId, key, slot, opts = {}) {
@@ -5251,6 +5345,7 @@
   }
 
   async function abrirExpedienteArmado(id) {
+    return sopWithScroll(async () => {
     armState.expedienteId = id;
     armState.vista = 'expediente';
     armState.expedienteDetalle = null;
@@ -5426,6 +5521,7 @@
     sopIcons(panel);
     bindArmZipButtons(panel);
     renderArmadoContextBar();
+    });
   }
 
   function modalGenerarOpf(expId, expInfo) {
@@ -6156,7 +6252,6 @@
   }
 
   async function refrescarVistaArmadoActual() {
-    const anchor = document.getElementById('view-armado-soportes');
     const run = async () => {
     const snap = {
       periodoId: armState.periodoId,
@@ -6196,10 +6291,7 @@
       renderArmadoContextBar();
     }
     };
-    if (typeof window.innarPreserveScroll === 'function') {
-      return window.innarPreserveScroll(anchor, run);
-    }
-    return run();
+    return sopWithScroll(run);
   }
 
   window.initArmadoSoportes = function initArmadoSoportes() {

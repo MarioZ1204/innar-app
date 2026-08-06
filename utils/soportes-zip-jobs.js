@@ -8,7 +8,7 @@ const crypto = require('crypto');
 const { fork } = require('child_process');
 const { zipArchiveSegment, getSopZipWorkDir } = require('./soportes-armado-zip');
 const { runZipJobToDisk } = require('./soportes-zip-job-runner');
-const { tryGetCachedZip, saveToCache, PERIOD_ZIP_KINDS } = require('./soportes-zip-cache');
+const { tryGetCachedZipForSpec, saveToCacheForSpec, PERIOD_ZIP_KINDS } = require('./soportes-zip-cache');
 const logger = require('./logger');
 
 const JOB_TTL_MS = 2 * 60 * 60 * 1000;
@@ -28,12 +28,42 @@ function cleanupOldJobs() {
       if (job.childProcess) {
         try { job.childProcess.kill('SIGTERM'); } catch (_) { /* ignore */ }
       }
-      if (job.filePath && fs.existsSync(job.filePath)) {
+      if (job.filePath && fs.existsSync(job.filePath) && !job.fromCache) {
         try { fs.unlinkSync(job.filePath); } catch (_) { /* ignore */ }
       }
       jobs.delete(id);
     }
   }
+}
+
+function jobSpecKey(job) {
+  return JSON.stringify({
+    kind: job.kind,
+    periodoId: job.periodoId || null,
+    diaId: job.diaId || null,
+    contenedorId: job.contenedorId || null,
+    expedienteId: job.expedienteId || null
+  });
+}
+
+function cacheSpecFromJob(job) {
+  return {
+    kind: job.kind,
+    periodoId: job.periodoId,
+    diaId: job.diaId,
+    contenedorId: job.contenedorId,
+    expedienteId: job.expedienteId
+  };
+}
+
+function findReusableJob(spec) {
+  const key = jobSpecKey(spec);
+  for (const job of jobs.values()) {
+    if (jobSpecKey(job) !== key) continue;
+    if (job.status === 'ready' && job.filePath && fs.existsSync(job.filePath)) return job;
+    if (['pending', 'queued', 'running'].includes(job.status)) return job;
+  }
+  return null;
 }
 
 function serializeJobForWorker(job) {
@@ -75,8 +105,8 @@ function runZipJobInline(job) {
       job.progress = 100;
       job.message = 'Listo para descargar';
       job.filePath = result.filePath;
-      if (PERIOD_ZIP_KINDS.has(job.kind) && job.periodoId) {
-        await saveToCache(job.periodoId, job.kind, job.filePath, job.filename);
+      if (PERIOD_ZIP_KINDS.has(job.kind) || job.periodoId || job.diaId || job.contenedorId || job.expedienteId) {
+        await saveToCacheForSpec(cacheSpecFromJob(job), job.filePath, job.filename);
       }
     })
     .catch((e) => {
@@ -99,7 +129,11 @@ function runZipJobInChildProcess(job) {
   try {
     child = fork(WORKER_SCRIPT, [], {
       env: process.env,
-      stdio: ['ignore', 'ignore', 'ignore', 'ipc']
+      stdio: ['ignore', 'pipe', 'pipe', 'ipc']
+    });
+    child.stderr?.on('data', (chunk) => {
+      const msg = String(chunk || '').trim();
+      if (msg) logger.warn('[SOPORTES] zip worker:', msg.slice(0, 500));
     });
   } catch (e) {
     logger.error('[SOPORTES] zip fork:', e.message);
@@ -125,8 +159,8 @@ function runZipJobInChildProcess(job) {
         message: 'Listo para descargar',
         filePath
       });
-      if (ok && PERIOD_ZIP_KINDS.has(job.kind) && job.periodoId) {
-        void saveToCache(job.periodoId, job.kind, filePath, job.filename);
+      if (ok) {
+        void saveToCacheForSpec(cacheSpecFromJob(job), filePath, job.filename);
       }
       if (ok) try { child.disconnect(); } catch (_) { /* ignore */ }
       return;
@@ -228,39 +262,47 @@ function createZipJob(spec, usuarioId = null) {
 }
 
 async function createZipJobWithCache(spec, usuarioId = null) {
-  if (PERIOD_ZIP_KINDS.has(spec.kind) && spec.periodoId) {
-    const cached = await tryGetCachedZip(spec.periodoId, spec.kind);
-    if (cached?.filePath) {
-      cleanupOldJobs();
-      const id = crypto.randomBytes(12).toString('hex');
-      const job = {
-        id,
-        kind: spec.kind,
-        periodoId: spec.periodoId,
-        diaId: null,
-        contenedorId: null,
-        expedienteId: null,
-        usuarioId,
-        status: 'ready',
-        progress: 100,
-        message: 'Listo para descargar (caché)',
-        error: null,
-        filePath: cached.filePath,
-        filename: cached.filename || spec.filename || 'descarga.zip',
-        emptyError: spec.emptyError || null,
-        createdAt: Date.now(),
-        childProcess: null,
-        fromCache: true
-      };
-      jobs.set(id, job);
-      return job;
-    }
+  const reusable = findReusableJob(spec);
+  if (reusable) {
+    return {
+      ...reusable,
+      message: reusable.status === 'ready'
+        ? (reusable.fromCache ? 'Listo para descargar (caché)' : 'Listo para descargar')
+        : reusable.message
+    };
+  }
+
+  const cached = await tryGetCachedZipForSpec(spec);
+  if (cached?.filePath) {
+    cleanupOldJobs();
+    const id = crypto.randomBytes(12).toString('hex');
+    const job = {
+      id,
+      kind: spec.kind,
+      periodoId: spec.periodoId || null,
+      diaId: spec.diaId || null,
+      contenedorId: spec.contenedorId || null,
+      expedienteId: spec.expedienteId || null,
+      usuarioId,
+      status: 'ready',
+      progress: 100,
+      message: 'Listo para descargar (caché)',
+      error: null,
+      filePath: cached.filePath,
+      filename: cached.filename || spec.filename || 'descarga.zip',
+      emptyError: spec.emptyError || null,
+      createdAt: Date.now(),
+      childProcess: null,
+      fromCache: true
+    };
+    jobs.set(id, job);
+    return job;
   }
   return createZipJob(spec, usuarioId);
 }
 
 function createPeriodPaqueteJob(periodo, usuarioId = null) {
-  return createZipJob({
+  return createZipJobWithCache({
     kind: 'periodo-paquete',
     periodoId: periodo.id,
     filename: `${zipArchiveSegment(periodo.etiqueta || periodo.periodo || `periodo-${periodo.id}`)}-paquete.zip`,

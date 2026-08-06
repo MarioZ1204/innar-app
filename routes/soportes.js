@@ -333,9 +333,14 @@ function streamZipJobDownload(res, job) {
       progress: job.progress
     });
   }
+  let size = 0;
+  try {
+    size = fs.statSync(job.filePath).size;
+  } catch (_) { /* ignore */ }
   res.setHeader('Content-Type', 'application/zip');
   res.setHeader('Content-Disposition', `attachment; filename="${job.filename}"`);
   res.setHeader('Cache-Control', 'no-store');
+  if (size > 0) res.setHeader('Content-Length', String(size));
   const stream = fs.createReadStream(job.filePath);
   stream.on('error', () => {
     if (!res.headersSent) res.status(500).json({ error: 'Error al leer el ZIP generado' });
@@ -3255,17 +3260,23 @@ router.post('/soportes/armado/zip/job', requireAuth, requireRoleOrPerm(ROLES_SOP
       const diaRow = await requireDiaArmadoAccesible(req, res, diaId, visCtx);
       if (!diaRow) return;
       const label = zipArchiveSegment(diaRow.nombre_display || `dia-${diaId}`);
-      job = createZipJob({ kind, diaId, filename: `${label}.zip` }, req.session?.usuarioId || null);
+      job = await createZipJobWithCache({
+        kind,
+        diaId,
+        filename: `${label}.zip`,
+        emptyError: 'La carpeta no tiene archivos para descargar'
+      }, req.session?.usuarioId || null);
     } else if (kind === 'contenedor') {
       const contenedorId = parseInt(body.contenedor_id, 10);
       const cont = await requireContenedorArmadoAccesible(req, res, contenedorId, visCtx);
       if (!cont) return;
       const tipoLabel = cont.tipo === 'rips' ? 'RIPS' : 'SOPORTES';
       const label = zipArchiveSegment(cont.dia_nombre || 'dia');
-      job = createZipJob({
+      job = await createZipJobWithCache({
         kind,
         contenedorId,
-        filename: `${label}-${tipoLabel}.zip`
+        filename: `${label}-${tipoLabel}.zip`,
+        emptyError: `La carpeta ${tipoLabel} no tiene archivos para descargar`
       }, req.session?.usuarioId || null);
     } else if (kind === 'expediente') {
       const expedienteId = parseInt(body.expediente_id, 10);
@@ -3275,10 +3286,11 @@ router.post('/soportes/armado/zip/job', requireAuth, requireRoleOrPerm(ROLES_SOP
       if (!diaRows.length) return res.status(404).json({ error: 'Carpeta no encontrada' });
       const periodo = await requirePeriodoArmadoAccesible(req, res, diaRows[0].periodo_id, visCtx);
       if (!periodo) return;
-      job = createZipJob({
+      job = await createZipJobWithCache({
         kind,
         expedienteId,
-        filename: `${zipArchiveSegment(exp.codigo || 'expediente')}.zip`
+        filename: `${zipArchiveSegment(exp.codigo || 'expediente')}.zip`,
+        emptyError: 'El expediente no tiene archivos para descargar'
       }, req.session?.usuarioId || null);
     } else {
       return res.status(400).json({ error: 'Tipo de ZIP inválido' });
