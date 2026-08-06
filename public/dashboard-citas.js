@@ -410,6 +410,8 @@ async function buscarCitasAuditoria() {
   }
   dashboardFetchInFlight = true;
   const btn = document.getElementById('btnBuscarCitas');
+  const anchor = document.getElementById('bodyTablaAuditoria') || document.getElementById('view-dashboard-citas');
+  const run = async () => {
   if (btn) {
     btn.disabled = true;
     btn.textContent = 'Buscando…';
@@ -442,7 +444,6 @@ async function buscarCitasAuditoria() {
       tbody.innerHTML = `<tr><td colspan="13" style="padding:20px;text-align:center;color:#dc2626">Error: ${esc(e.message)}</td></tr>`;
     }
   } finally {
-    dashboardFetchInFlight = false;
     if (btn) {
       btn.disabled = false;
       btn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>Buscar';
@@ -451,6 +452,16 @@ async function buscarCitasAuditoria() {
       dashboardFetchPending = false;
       scheduleBuscarCitasAuditoria(200);
     }
+  }
+  };
+  try {
+    if (typeof window.innarPreserveScroll === 'function') {
+      await window.innarPreserveScroll(anchor, run);
+    } else {
+      await run();
+    }
+  } finally {
+    dashboardFetchInFlight = false;
   }
 }
 

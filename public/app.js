@@ -824,6 +824,10 @@ function showView(id) {
     if (el && typeof window.innarAnimateViewIn === 'function') window.innarAnimateViewIn(el);
     else if (el) el.classList.add('innar-view-enter');
   }
+  const viewEl = document.getElementById(id);
+  if (viewEl && typeof window.innarScrollNav?.observeView === 'function') {
+    requestAnimationFrame(() => window.innarScrollNav.observeView(viewEl));
+  }
 }
 
 function updateSidebarUser(user) {
@@ -1839,6 +1843,9 @@ function setupPagination(tableId, data, renderFunction, options = {}) {
  * Renderiza una página de la tabla paginada
  */
 function _getScrollSnapshot(el) {
+  if (typeof window.innarGetScrollSnapshot === 'function') {
+    return window.innarGetScrollSnapshot(el);
+  }
   if (!el) return { winX: window.scrollX, winY: window.scrollY, parent: null, top: 0, left: 0 };
   let p = el.parentElement;
   while (p) {
@@ -1854,12 +1861,23 @@ function _getScrollSnapshot(el) {
 }
 
 function _restoreScrollSnapshot(snapshot) {
+  if (typeof window.innarRestoreScrollSnapshot === 'function') {
+    window.innarRestoreScrollSnapshot(snapshot);
+    return;
+  }
   if (!snapshot) return;
   if (snapshot.parent) {
     snapshot.parent.scrollTop = snapshot.top;
     snapshot.parent.scrollLeft = snapshot.left;
   }
   window.scrollTo(snapshot.winX, snapshot.winY);
+}
+
+function _withScrollPreserve(anchor, fn, opts) {
+  if (typeof window.innarPreserveScroll === 'function') {
+    return window.innarPreserveScroll(anchor, fn, opts);
+  }
+  return fn();
 }
 
 function renderPaginatedTable(tableId, renderFunction, tbodyId) {
@@ -6032,6 +6050,7 @@ async function cargarTurnosMedica() {
     return;
   }
   _cargandoTurnosMedica = true;
+  let scrollSnapMedica = null;
   const fecha = $('agendaMedicaFecha').value;
   const doctorId = selectedDoctorId || ((currentUser?.rol === 'doctor' ? currentUser?.id : null));
   if (!fecha || !doctorId) {
@@ -6133,6 +6152,10 @@ async function cargarTurnosMedica() {
       dispManana, dispTarde, intervalosBloqueados, INTERVALO_MIN, cuposEntidadResumen
     });
 
+    if (mismoContextoUltimaVista) {
+      scrollSnapMedica = _getScrollSnapshot(tbodyActivos || document.getElementById('view-agenda-medica'));
+    }
+
     if (tbodyActivos) {
       _renderDisplayListMedica(tbodyActivos, displayList, {
         colspan, animateTargetId, hayEnAtencion, filasRequeridas, padEmptyRows: true
@@ -6164,6 +6187,9 @@ async function cargarTurnosMedica() {
   } catch (e) {
     showToast('Error cargando citas', 'error');
   } finally {
+    if (scrollSnapMedica) {
+      requestAnimationFrame(() => _restoreScrollSnapshot(scrollSnapMedica));
+    }
     _cargandoTurnosMedica = false;
     if (_pendienteTurnosMedica) {
       _pendienteTurnosMedica = false;
@@ -8781,6 +8807,7 @@ async function cargarCitasElectro() {
   }
   const reqId = ++_citasElectroReqId;
   _cargandoCitasElectro = true;
+  let scrollSnapElectro = null;
   const fecha = $('electroFecha').value;
   if (!fecha) {
     _cargandoCitasElectro = false;
@@ -8836,6 +8863,7 @@ async function cargarCitasElectro() {
       contador.textContent = partes.join(' \u00B7 ');
     }
 
+    scrollSnapElectro = _getScrollSnapshot(document.getElementById('view-electro'));
     renderCitasElectroKanban(citasFiltradas);
     
     // Actualizar información de usuario (del primer registro filtrado)
@@ -8850,6 +8878,9 @@ async function cargarCitasElectro() {
     console.error('Error cargando citas:', e);
     showToast('Error cargando citas', 'error'); 
   } finally {
+    if (scrollSnapElectro) {
+      requestAnimationFrame(() => _restoreScrollSnapshot(scrollSnapElectro));
+    }
     _cargandoCitasElectro = false;
     if (_pendienteCitasElectro) {
       _pendienteCitasElectro = false;
@@ -10044,6 +10075,8 @@ async function initUsuarios() {
 
 async function cargarUsuarios() {
   const tbody = $('usuariosTableBody');
+  const anchor = tbody || document.getElementById('view-usuarios');
+  return _withScrollPreserve(anchor, async () => {
   showSkeletonRows(tbody, 6, 5);
   try {
     const res = await apiFetch('/api/usuarios');
@@ -10074,6 +10107,7 @@ async function cargarUsuarios() {
     showToast('Error cargando usuarios', 'error'); 
     console.error('[USUARIOS ERROR]', e);
   }
+  });
 }
 
 /**
@@ -11460,6 +11494,8 @@ async function cargarLista(queryString) {
     if (tbody) tbody.innerHTML = '<tr><td colspan="11"><div class="empty-state"><p class="empty-state-title">Sin acceso</p><p class="empty-state-subtitle">Tu usuario no tiene permiso para ver recibos.</p></div></td></tr>';
     return;
   }
+  const anchor = document.getElementById('savedItems') || document.getElementById('view-recibos');
+  return _withScrollPreserve(anchor, async () => {
   try {
     const url = '/api/recibos' + (queryString ? '?' + queryString : '');
     const res = await apiFetch(url);
@@ -11701,6 +11737,7 @@ async function cargarLista(queryString) {
     console.error(e);
     showToast('Error cargando lista', 'error');
   }
+  });
 }
 
 function showEditTipoPagoReciboModal(reciboId, numero, tipoPagoActual) {
@@ -12453,6 +12490,8 @@ async function importarDiagnosticosExcel() {
 
 async function cargarListaDiagnosticos() {
   const tbody = $('diagnosticosTableBody');
+  const anchor = tbody || document.getElementById('view-diagnosticos');
+  return _withScrollPreserve(anchor, async () => {
   showSkeletonRows(tbody, 5, 5);
   try {
     const res = await apiFetch('/api/diagnosticos');
@@ -12473,6 +12512,7 @@ async function cargarListaDiagnosticos() {
     console.error('Error cargando diagnósticos:', e);
     if (tbody) tbody.innerHTML = '<tr><td colspan="5"><div class="empty-state"><div class="empty-state-icon">⚠️</div><p class="empty-state-title" style="color:#dc2626">Error cargando diagnósticos</p></div></td></tr>';
   }
+  });
 }
 
 /**
@@ -15937,6 +15977,8 @@ function cerrarModalEliminarEspera() {
 }
 
 async function cargarEsperaElectro() {
+  const anchor = document.getElementById('esperaTableBody') || document.getElementById('view-electro');
+  return _withScrollPreserve(anchor, async () => {
   try {
     const res = await apiFetch('/api/pacientes-espera');
     esperaData = await res.json();
@@ -15944,6 +15986,7 @@ async function cargarEsperaElectro() {
   } catch (e) {
     console.error('Error cargando lista de espera:', e);
   }
+  });
 }
 
 function renderEsperaTable() {

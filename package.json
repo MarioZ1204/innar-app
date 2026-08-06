@@ -1,6 +1,6 @@
 {
   "name": "innar-app",
-  "version": "1.7.5",
+  "version": "1.7.6",
   "description": "Innar - Sistema de gestión de agenda médica y recibos",
   "main": "server.js",
   "scripts": {

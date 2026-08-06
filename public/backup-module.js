@@ -36,6 +36,8 @@
     const empty = document.getElementById('backupTablaEmpty');
     const dirEl = document.getElementById('backupDirLabel');
     if (!tbody) return;
+    const anchor = tbody || document.getElementById('view-backup');
+    const load = async () => {
     tbody.innerHTML = '<tr><td colspan="5" style="padding:16px;text-align:center;color:#64748b">Cargando…</td></tr>';
     try {
       const res = await apiFetch('/api/backups');
@@ -88,6 +90,11 @@
       }
       toast(e.message || 'Error al cargar backups', 'error');
     }
+    };
+    if (typeof window.innarPreserveScroll === 'function') {
+      return window.innarPreserveScroll(anchor, load);
+    }
+    return load();
   }
 
   async function crearBackupCompleto() {

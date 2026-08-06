@@ -25,9 +25,16 @@ function scheduleSocketRefresh(key, callback, delayMs = 120) {
   if (_socketRefreshTimers[key]) clearTimeout(_socketRefreshTimers[key]);
   _socketRefreshTimers[key] = setTimeout(() => {
     _socketRefreshTimers[key] = null;
-    try {
-      callback();
-    } catch (e) { /* noop */ }
+    const run = () => {
+      try {
+        callback();
+      } catch (e) { /* noop */ }
+    };
+    if (typeof window.innarPreserveModuleScroll === 'function' && window.currentModule) {
+      void window.innarPreserveModuleScroll(window.currentModule, run);
+    } else {
+      run();
+    }
   }, delayMs);
 }
 

@@ -3881,10 +3881,17 @@
   }
 
   async function refrescarVistaPdxActual() {
-    const data = await cargarCarpetasPdx();
-    if (!data) return;
-    if (pdxState.carpetaId) await abrirCarpetaPdx(pdxState.carpetaId);
-    else renderListaCarpetasPdx();
+    const anchor = document.getElementById('view-reportes-pdx');
+    const run = async () => {
+      const data = await cargarCarpetasPdx();
+      if (!data) return;
+      if (pdxState.carpetaId) await abrirCarpetaPdx(pdxState.carpetaId);
+      else renderListaCarpetasPdx();
+    };
+    if (typeof window.innarPreserveScroll === 'function') {
+      return window.innarPreserveScroll(anchor, run);
+    }
+    return run();
   }
 
   window.initReportesPdx = function initReportesPdx() {
@@ -6149,6 +6156,8 @@
   }
 
   async function refrescarVistaArmadoActual() {
+    const anchor = document.getElementById('view-armado-soportes');
+    const run = async () => {
     const snap = {
       periodoId: armState.periodoId,
       diasParentId: armState.diasParentId,
@@ -6186,6 +6195,11 @@
       renderArmadoDiasExplorer();
       renderArmadoContextBar();
     }
+    };
+    if (typeof window.innarPreserveScroll === 'function') {
+      return window.innarPreserveScroll(anchor, run);
+    }
+    return run();
   }
 
   window.initArmadoSoportes = function initArmadoSoportes() {

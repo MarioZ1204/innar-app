@@ -207,6 +207,8 @@
   }
 
   async function cargarListaPersonas() {
+    const anchor = $('afiduPersonasBody') || document.getElementById('view-anexo-fidu');
+    const load = async () => {
     const q = ($('afiduPersonasBuscar')?.value || '').trim();
     const qs = new URLSearchParams({
       page: String(_personasPage),
@@ -235,6 +237,11 @@
       renderPersonasBody([]);
       if (typeof showToast === 'function') showToast(e.message, 'error');
     }
+    };
+    if (typeof window.innarPreserveScroll === 'function') {
+      return window.innarPreserveScroll(anchor, load);
+    }
+    return load();
   }
 
   function confirmEliminarAfidu(msg, onOk) {

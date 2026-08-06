@@ -54,6 +54,8 @@
   async function cargarArchivoModulo() {
     const tbody = $('archivoModuloBody');
     if (!tbody) return;
+    const anchor = tbody || document.getElementById('view-archivo-soportes');
+    const load = async () => {
     tbody.innerHTML = '<tr><td colspan="7" class="sop-empty" style="padding:24px">Cargando…</td></tr>';
     try {
       const data = await apiArchivo('/archivo-modulo');
@@ -121,6 +123,11 @@
     } catch (e) {
       tbody.innerHTML = `<tr><td colspan="7" class="sop-empty" style="padding:24px;color:#b91c1c">${escapeHtml(e.message || 'Error cargando archivo')}</td></tr>`;
     }
+    };
+    if (typeof window.innarPreserveScroll === 'function') {
+      return window.innarPreserveScroll(anchor, load);
+    }
+    return load();
   }
 
   function initArchivoModulo() {
