@@ -11,6 +11,42 @@ const { tipoEstudioElectro } = require('./electro-estudio-tipo');
 const RECIBO_CAMPOS_AUDITORIA = 'r.id, r.numero, r.turno_id, r.cita_electro_id, r.total, r.anulado, r.anulado_razon, r.estado_pago, r.observaciones, r.tipo_servicio, r.fecha, r.cliente, r.medico_nombre, r.nombre_entidad, r.data';
 
 const SQL_EXCLUIR_MEDICO_ELECTRO = `(medico_nombre IS NULL OR TRIM(medico_nombre) = '' OR UPPER(TRIM(medico_nombre)) NOT LIKE '%ELECTRODIAG%')`;
+const MARGEN_DIAS_FECHA_RECIBO = 7;
+
+function sumarDiasYmd(ymd, dias) {
+  if (!ymd) return '';
+  const d = new Date(`${ymd}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return ymd;
+  d.setDate(d.getDate() + dias);
+  return d.toISOString().slice(0, 10);
+}
+
+function calcularRangoFechasRecibos(citas, opciones = {}) {
+  const margen = opciones.margenDias ?? MARGEN_DIAS_FECHA_RECIBO;
+  let desde = extraerFechaYmd(opciones.fecha_desde);
+  let hasta = extraerFechaYmd(opciones.fecha_hasta);
+  const fechasCitas = (citas || []).map((c) => extraerFechaYmd(c.fecha)).filter(Boolean);
+  if (fechasCitas.length) {
+    const minC = fechasCitas.reduce((a, b) => (a < b ? a : b));
+    const maxC = fechasCitas.reduce((a, b) => (a > b ? a : b));
+    if (!desde || minC < desde) desde = minC;
+    if (!hasta || maxC > hasta) hasta = maxC;
+  }
+  if (!desde || !hasta) return null;
+  return {
+    desde: sumarDiasYmd(desde, -margen),
+    hasta: sumarDiasYmd(hasta, margen)
+  };
+}
+
+function fechasCitaReciboCercanas(fechaRec, fechaCita, margenDias = MARGEN_DIAS_FECHA_RECIBO) {
+  if (!fechaRec || !fechaCita) return true;
+  if (fechaRec === fechaCita) return true;
+  const a = new Date(`${fechaRec}T12:00:00`);
+  const b = new Date(`${fechaCita}T12:00:00`);
+  if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime())) return fechaRec === fechaCita;
+  return Math.abs(a - b) / 86400000 <= margenDias;
+}
 
 function extraerFechaYmd(val) {
   if (!val) return '';
@@ -108,15 +144,24 @@ function tokensNombrePaciente(s) {
   return normNombrePaciente(s).split(/\s+/).filter(Boolean);
 }
 
-/** Tolera typos por token (p. ej. ANGIE vs ANGUI) si el resto del nombre coincide. */
+/** Tolera typos por token y orden distinto (p. ej. ANGIE vs ANGUI). */
 function nombresPacienteCoincidenFuzzy(cliente, pacienteNombre) {
   const a = normNombrePaciente(cliente);
   const b = normNombrePaciente(pacienteNombre);
   if (!a || !b) return false;
   if (a === b) return true;
+  if (a.includes(b) || b.includes(a)) return true;
 
   const ta = tokensNombrePaciente(cliente);
   const tb = tokensNombrePaciente(pacienteNombre);
+  if (ta.length && tb.length) {
+    const sa = [...ta].sort().join(' ');
+    const sb = [...tb].sort().join(' ');
+    if (sa === sb) return true;
+    const maxSorted = Math.max(sa.length, sb.length);
+    if (maxSorted >= 12 && distanciaLevenshtein(sa, sb) <= 4) return true;
+  }
+
   if (ta.length && ta.length === tb.length) {
     let tokensOk = true;
     for (let i = 0; i < ta.length; i++) {
@@ -125,14 +170,40 @@ function nombresPacienteCoincidenFuzzy(cliente, pacienteNombre) {
       const minLen = Math.min(ta[i].length, tb[i].length);
       if (dist === 1 && minLen >= 4) continue;
       if (dist === 2 && minLen >= 5) continue;
+      if (dist <= 3 && minLen >= 7) continue;
       tokensOk = false;
       break;
     }
     if (tokensOk) return true;
   }
 
+  if (ta.length >= 2 && tb.length >= 2) {
+    const minTokens = Math.min(ta.length, tb.length);
+    let coincidencias = 0;
+    const usados = new Set();
+    for (const tokA of ta) {
+      for (let j = 0; j < tb.length; j++) {
+        if (usados.has(j)) continue;
+        const tokB = tb[j];
+        if (tokA === tokB) {
+          coincidencias++;
+          usados.add(j);
+          break;
+        }
+        const dist = distanciaLevenshtein(tokA, tokB);
+        const minLen = Math.min(tokA.length, tokB.length);
+        if ((dist === 1 && minLen >= 4) || (dist === 2 && minLen >= 5) || (dist <= 3 && minLen >= 7)) {
+          coincidencias++;
+          usados.add(j);
+          break;
+        }
+      }
+    }
+    if (coincidencias >= Math.max(2, minTokens - 1)) return true;
+  }
+
   const maxLen = Math.max(a.length, b.length);
-  return maxLen >= 10 && distanciaLevenshtein(a, b) <= 2;
+  return maxLen >= 10 && distanciaLevenshtein(a, b) <= 4;
 }
 
 function clienteCoincidePaciente(cliente, pacienteNombre, estricto = false) {
@@ -234,23 +305,21 @@ function reciboCoincideCitaElectro(rec, cita, catalogos = {}) {
   if (rec.cita_electro_id != null && rec.cita_electro_id !== '' && Number(rec.cita_electro_id) !== Number(cita.id)) {
     return false;
   }
-  if (rec.turno_id != null && rec.turno_id !== '' && Number(rec.turno_id) !== 0) {
-    return false;
-  }
   if (!cita.tipo_consulta) return false;
   if (!estudioServicioCoincide(rec.tipo_servicio, cita.tipo_consulta)) return false;
   const fechaRec = extraerFechaYmd(rec.fecha);
   const fechaCita = extraerFechaYmd(cita.fecha);
-  if (fechaRec && fechaCita && fechaRec !== fechaCita) return false;
+  if (!fechasCitaReciboCercanas(fechaRec, fechaCita)) return false;
   if (!entidadCoincide(rec, cita)) return false;
+  if (documentosPacienteConflictivos(rec, cita)) return false;
   return pacienteReciboCoincideCita(rec, cita, true);
 }
 
-async function cargarRecibosConsultaMedica(db, citasMedicas) {
+async function cargarRecibosConsultaMedica(db, citasMedicas, opciones = {}) {
   if (!citasMedicas.length) return [];
 
   const turnoIds = citasMedicas.map((c) => c.id);
-  const fechas = [...new Set(citasMedicas.map((c) => extraerFechaYmd(c.fecha)).filter(Boolean))];
+  const rango = calcularRangoFechasRecibos(citasMedicas, opciones);
   const phTurnos = turnoIds.map(() => '?').join(',');
 
   const porTurno = await db.query(
@@ -262,23 +331,21 @@ async function cargarRecibosConsultaMedica(db, citasMedicas) {
   );
 
   let porTipoFecha = [];
-  if (fechas.length) {
-    const phFechas = fechas.map(() => '?').join(',');
+  if (rango) {
     porTipoFecha = await db.query(
       `SELECT ${RECIBO_CAMPOS_AUDITORIA}, t.paciente_documento AS turno_documento
        FROM recibos r
        LEFT JOIN turnos t ON t.id = r.turno_id
        WHERE (r.cita_electro_id IS NULL OR r.cita_electro_id = 0)
          AND ${SQL_EXCLUIR_MEDICO_ELECTRO.replace(/medico_nombre/g, 'r.medico_nombre')}
-         AND DATE(r.fecha) IN (${phFechas})`,
-      fechas
+         AND DATE(r.fecha) BETWEEN ? AND ?`,
+      [rango.desde, rango.hasta]
     );
   }
 
   let porDocumento = [];
   const documentos = [...new Set(citasMedicas.map((c) => normDocumento(c.paciente_documento)).filter((d) => d.length >= 5))];
-  if (documentos.length && fechas.length) {
-    const phFechas = fechas.map(() => '?').join(',');
+  if (documentos.length && rango) {
     const docConds = documentos.slice(0, 80).map(() =>
       `REPLACE(REPLACE(REPLACE(REPLACE(JSON_UNQUOTE(JSON_EXTRACT(r.data, '$.doc')), '.', ''), '-', ''), ' ', ''), '/', '') = ?`
     ).join(' OR ');
@@ -288,20 +355,39 @@ async function cargarRecibosConsultaMedica(db, citasMedicas) {
        LEFT JOIN turnos t ON t.id = r.turno_id
        WHERE (r.cita_electro_id IS NULL OR r.cita_electro_id = 0)
          AND ${SQL_EXCLUIR_MEDICO_ELECTRO.replace(/medico_nombre/g, 'r.medico_nombre')}
-         AND DATE(r.fecha) IN (${phFechas})
+         AND DATE(r.fecha) BETWEEN ? AND ?
          AND (${docConds})`,
-      [...fechas, ...documentos.slice(0, 80)]
+      [rango.desde, rango.hasta, ...documentos.slice(0, 80)]
     ).catch(() => []);
   }
 
   return dedupeRecibosPorId([...porTurno, ...porTipoFecha, ...porDocumento]);
 }
 
-async function cargarRecibosElectro(db, citasElectro) {
+function condicionesSqlClienteCitas(citas, limite = 60) {
+  const conds = [];
+  const params = [];
+  const vistos = new Set();
+  for (const c of citas || []) {
+    const tokens = tokensNombrePaciente(c.paciente_nombre).filter((t) => t.length >= 3);
+    if (tokens.length < 2) continue;
+    const key = [...tokens].sort().join('|');
+    if (vistos.has(key)) continue;
+    vistos.add(key);
+    if (vistos.size > limite) break;
+    const pick = tokens.slice(0, Math.min(3, tokens.length));
+    const parts = pick.map(() => 'LOWER(r.cliente) LIKE ?');
+    conds.push(`(${parts.join(' AND ')})`);
+    params.push(...pick.map((t) => `%${t}%`));
+  }
+  return { conds, params };
+}
+
+async function cargarRecibosElectro(db, citasElectro, opciones = {}) {
   if (!citasElectro.length) return [];
 
   const electroIds = citasElectro.map((c) => c.id);
-  const fechas = [...new Set(citasElectro.map((c) => extraerFechaYmd(c.fecha)).filter(Boolean))];
+  const rango = calcularRangoFechasRecibos(citasElectro, opciones);
   const phElectro = electroIds.map(() => '?').join(',');
 
   const porCitaElectro = await db.query(
@@ -314,24 +400,21 @@ async function cargarRecibosElectro(db, citasElectro) {
   );
 
   let porTipoFecha = [];
-  if (fechas.length) {
-    const phFechas = fechas.map(() => '?').join(',');
+  if (rango) {
     porTipoFecha = await db.query(
       `SELECT ${RECIBO_CAMPOS_AUDITORIA}, p.documento AS electro_documento
        FROM recibos r
        LEFT JOIN citas_electro ce ON ce.id = r.cita_electro_id
        LEFT JOIN pacientes p ON p.id = ce.paciente_id
        WHERE (r.cita_electro_id IS NULL OR r.cita_electro_id = 0)
-         AND (r.turno_id IS NULL OR r.turno_id = 0)
-         AND DATE(r.fecha) IN (${phFechas})`,
-      fechas
+         AND DATE(r.fecha) BETWEEN ? AND ?`,
+      [rango.desde, rango.hasta]
     );
   }
 
   let porDocumento = [];
   const documentos = [...new Set(citasElectro.map((c) => normDocumento(c.paciente_documento)).filter((d) => d.length >= 5))];
-  if (documentos.length && fechas.length) {
-    const phFechas = fechas.map(() => '?').join(',');
+  if (documentos.length && rango) {
     const docConds = documentos.slice(0, 80).map(() =>
       `REPLACE(REPLACE(REPLACE(REPLACE(JSON_UNQUOTE(JSON_EXTRACT(r.data, '$.doc')), '.', ''), '-', ''), ' ', ''), '/', '') = ?`
     ).join(' OR ');
@@ -339,14 +422,28 @@ async function cargarRecibosElectro(db, citasElectro) {
       `SELECT ${RECIBO_CAMPOS_AUDITORIA}
        FROM recibos r
        WHERE (r.cita_electro_id IS NULL OR r.cita_electro_id = 0)
-         AND (r.turno_id IS NULL OR r.turno_id = 0)
-         AND DATE(r.fecha) IN (${phFechas})
+         AND DATE(r.fecha) BETWEEN ? AND ?
          AND (${docConds})`,
-      [...fechas, ...documentos.slice(0, 80)]
+      [rango.desde, rango.hasta, ...documentos.slice(0, 80)]
     ).catch(() => []);
   }
 
-  return dedupeRecibosPorId([...porCitaElectro, ...porTipoFecha, ...porDocumento]);
+  let porCliente = [];
+  if (rango) {
+    const { conds, params } = condicionesSqlClienteCitas(citasElectro);
+    if (conds.length) {
+      porCliente = await db.query(
+        `SELECT ${RECIBO_CAMPOS_AUDITORIA}
+         FROM recibos r
+         WHERE (r.cita_electro_id IS NULL OR r.cita_electro_id = 0)
+           AND DATE(r.fecha) BETWEEN ? AND ?
+           AND (${conds.join(' OR ')})`,
+        [rango.desde, rango.hasta, ...params]
+      ).catch(() => []);
+    }
+  }
+
+  return dedupeRecibosPorId([...porCitaElectro, ...porTipoFecha, ...porDocumento, ...porCliente]);
 }
 
 function dedupeRecibosPorId(rows) {
@@ -670,7 +767,7 @@ function adjuntarReciboResumenACita(cita, recibos) {
 }
 
 /** Adjunta recibos según tipo de cita: médica (turno/tipo consulta) o electro (cita_electro/tipo estudio). */
-async function enriquecerCitasConRecibos(db, citas) {
+async function enriquecerCitasConRecibos(db, citas, opciones = {}) {
   if (!citas.length) return [];
 
   const citasMedicas = citas.filter((c) => c.tipo_cita === 'AGENDA_MEDICA');
@@ -678,8 +775,8 @@ async function enriquecerCitasConRecibos(db, citas) {
 
   const [catalogos, recibosMedicosRaw, recibosElectroRaw] = await Promise.all([
     cargarCatalogosEnlaceRecibos(db),
-    cargarRecibosConsultaMedica(db, citasMedicas),
-    cargarRecibosElectro(db, citasElectro)
+    cargarRecibosConsultaMedica(db, citasMedicas, opciones),
+    cargarRecibosElectro(db, citasElectro, opciones)
   ]);
 
   const recibosMedicos = recibosMedicosRaw.filter((r) => esReciboConsultaMedica(r, catalogos));
@@ -712,7 +809,7 @@ async function enriquecerCitasConRecibos(db, citas) {
 }
 
 /** Una fila por cita con resumen del recibo (tabla del dashboard). */
-async function adjuntarRecibosResumenACitas(db, citas) {
+async function adjuntarRecibosResumenACitas(db, citas, opciones = {}) {
   if (!citas.length) return [];
 
   const citasMedicas = citas.filter((c) => c.tipo_cita === 'AGENDA_MEDICA');
@@ -720,8 +817,8 @@ async function adjuntarRecibosResumenACitas(db, citas) {
 
   const [catalogos, recibosMedicosRaw, recibosElectroRaw] = await Promise.all([
     cargarCatalogosEnlaceRecibos(db),
-    cargarRecibosConsultaMedica(db, citasMedicas),
-    cargarRecibosElectro(db, citasElectro)
+    cargarRecibosConsultaMedica(db, citasMedicas, opciones),
+    cargarRecibosElectro(db, citasElectro, opciones)
   ]);
 
   const recibosMedicos = recibosMedicosRaw.filter((r) => esReciboConsultaMedica(r, catalogos));
@@ -741,10 +838,24 @@ async function adjuntarRecibosResumenACitas(db, citas) {
   });
 }
 
+function citasSinRecibosResumen(citas) {
+  return (citas || []).map((c) => adjuntarReciboResumenACita(c, []));
+}
+
+function opcionesCargaRecibosDesdeQuery(query = {}) {
+  return {
+    fecha_desde: query.fecha_desde,
+    fecha_hasta: query.fecha_hasta,
+    margenDias: MARGEN_DIAS_FECHA_RECIBO
+  };
+}
+
 module.exports = {
   queryCitasAuditoria,
   enriquecerCitasConRecibos,
   adjuntarRecibosResumenACitas,
+  citasSinRecibosResumen,
+  opcionesCargaRecibosDesdeQuery,
   mapReciboParaExport,
   mapReciboFilaReporte,
   expandirCitaConRecibos,
