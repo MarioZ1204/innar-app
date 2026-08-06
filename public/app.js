@@ -1118,7 +1118,11 @@ function goToModule(moduleId) {
     }
     initDashboardCitasDone = true;
   }
-  if (moduleId === 'gestion-datos') { if (!initGestionDatosDone) initGestionDatos(); initGestionDatosDone = true; }
+  if (moduleId === 'gestion-datos') {
+    if (!initGestionDatosDone) initGestionDatos();
+    else if (typeof scheduleBuscarGestionDatos === 'function') scheduleBuscarGestionDatos(0);
+    initGestionDatosDone = true;
+  }
   if (moduleId === 'monitor-equipos') { initMonitorEquipos(); }
   if (moduleId === 'reportes-pdx' && typeof initReportesPdx === 'function') initReportesPdx();
   if (moduleId === 'armado-soportes' && typeof initArmadoSoportes === 'function') initArmadoSoportes();
@@ -1150,7 +1154,8 @@ function goToMenu() {
   // el módulo recibos maneja refresh via el branch `else cargarLista()` en goToModule
   initUsuariosDone = false;
   initDiagnosticosDone = false;
-  initGestionDatosDone = false;
+  // initGestionDatosDone: NO resetear — initGestionDatos usa addEventListener (acumularía duplicados)
+  // el módulo gestión-datos refresca vía scheduleBuscarGestionDatos en goToModule
   // Resetear calendario de citas integrado
   if (typeof _citasCalIniciado !== 'undefined') _citasCalIniciado = false;
   // Resetear caché de catálogos para recargar al volver a entrar
@@ -16504,6 +16509,20 @@ let _gestionPaginaActual  = 1;
 const _GESTION_POR_PAGINA = 20;
 const _GESTION_TIPOS_AGREGAR = ['estudio_duraciones', 'especialidades', 'tipos_consulta', 'diagnosticos', 'entidades', 'anexo_fidu_servicios'];
 let _gestionCupsEditId = null;
+let _gestionTheadTipo = null;
+let _gestionHandlersSetup = false;
+let gestionFetchInFlight = false;
+let gestionFetchPending = false;
+let gestionFetchTimer = null;
+let gestionFetchSeq = 0;
+
+function scheduleBuscarGestionDatos(delayMs = 120) {
+  if (gestionFetchTimer) clearTimeout(gestionFetchTimer);
+  gestionFetchTimer = setTimeout(() => {
+    gestionFetchTimer = null;
+    buscarGestionDatos();
+  }, delayMs);
+}
 
 function _actualizarConteoGestion() {
   const n = _gestionSeleccionados.size;
@@ -16526,12 +16545,19 @@ function _gestionActualizarFiltros() {
 }
 
 function initGestionDatos() {
+  if (_gestionHandlersSetup) {
+    scheduleBuscarGestionDatos(0);
+    return;
+  }
+  _gestionHandlersSetup = true;
+
   // Sidebar: cambio de tab
   document.querySelectorAll('#view-gestion-datos [data-gestion-tab]').forEach(btn => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('#view-gestion-datos [data-gestion-tab]').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       _gestionTipoActual = btn.dataset.gestionTab;
+      _gestionTheadTipo = null;
       const titulo = $('gestionDatosTitulo');
       if (titulo) titulo.textContent = _gestionTitulos[_gestionTipoActual] || _gestionTipoActual;
       if ($('gestionBusqueda')) $('gestionBusqueda').value = '';
@@ -16540,45 +16566,33 @@ function initGestionDatos() {
       _gestionSeleccionados = new Set();
       _actualizarConteoGestion();
       _gestionActualizarFiltros();
-      // Mostrar/ocultar botón Agregar según tipo
       const btnAgregar = $('btnAgregarGestion');
       if (btnAgregar) btnAgregar.style.display = _GESTION_TIPOS_AGREGAR.includes(_gestionTipoActual) ? '' : 'none';
       _gestionActualizarBanner();
-      buscarGestionDatos();
+      scheduleBuscarGestionDatos(0);
     });
   });
 
-  $('btnBuscarGestion')?.addEventListener('click', buscarGestionDatos);
+  $('btnBuscarGestion')?.addEventListener('click', () => scheduleBuscarGestionDatos(0));
   $('btnLimpiarGestion')?.addEventListener('click', () => {
     if ($('gestionBusqueda'))   $('gestionBusqueda').value   = '';
     if ($('gestionFechaDesde')) $('gestionFechaDesde').value = '';
     if ($('gestionFechaHasta')) $('gestionFechaHasta').value = '';
-    buscarGestionDatos();
+    scheduleBuscarGestionDatos(0);
   });
-  $('gestionBusqueda')?.addEventListener('keydown', e => { if (e.key === 'Enter') buscarGestionDatos(); });
+  $('gestionBusqueda')?.addEventListener('keydown', e => { if (e.key === 'Enter') scheduleBuscarGestionDatos(0); });
   $('btnAgregarGestion')?.addEventListener('click', abrirModalAgregarGestion);
 
-  // Socket: recargar cuando se crea un estudio, especialidad, etc.
-  if (window.socket) {
-    window.socket.off('estudio:creado');
-    window.socket.off('tipos-consulta:actualizado');
-    window.socket.on('estudio:creado',           () => { if (_gestionTipoActual === 'estudio_duraciones') buscarGestionDatos(); });
-    window.socket.on('tipos-consulta:actualizado',() => { if (_gestionTipoActual === 'tipos_consulta')    buscarGestionDatos(); });
-    window.socket.off('anexo-fidu:servicios-actualizado');
-    window.socket.on('anexo-fidu:servicios-actualizado', () => {
-      if (_gestionTipoActual === 'anexo_fidu_servicios') buscarGestionDatos();
-    });
-  }
-
   _gestionActualizarFiltros();
-  // Visibilidad inicial del botón Agregar
   const btnAgregar = $('btnAgregarGestion');
   if (btnAgregar) btnAgregar.style.display = _GESTION_TIPOS_AGREGAR.includes(_gestionTipoActual) ? '' : 'none';
   _gestionActualizarBanner();
-  buscarGestionDatos();
+  scheduleBuscarGestionDatos(0);
 }
 
 function _gestionRenderThead(tipo) {
+  if (_gestionTheadTipo === tipo) return;
+  _gestionTheadTipo = tipo;
   const cols  = _gestionColumnas[tipo] || [];
   const thead = $('gestionThead');
   if (!thead) return;
@@ -16638,6 +16652,13 @@ function _gestionRenderRows(tipo, registros) {
 }
 
 async function buscarGestionDatos() {
+  if (gestionFetchInFlight) {
+    gestionFetchPending = true;
+    return;
+  }
+  gestionFetchInFlight = true;
+  const seq = ++gestionFetchSeq;
+
   const tipo  = _gestionTipoActual;
   const q     = $('gestionBusqueda')?.value.trim() || '';
   const desde = $('gestionFechaDesde')?.value || '';
@@ -16648,7 +16669,9 @@ async function buscarGestionDatos() {
   if (hasta) params.set('fecha_hasta', hasta);
 
   const tbody = $('bodyGestionDatos');
+  const btnBuscar = $('btnBuscarGestion');
   if (tbody) tbody.innerHTML = `<tr><td colspan="10" style="padding:20px;text-align:center;color:#999">Cargando...</td></tr>`;
+  if (btnBuscar) btnBuscar.disabled = true;
   _gestionSeleccionados = new Set();
   _actualizarConteoGestion();
   const chkAll = $('chkSelectAll');
@@ -16656,11 +16679,13 @@ async function buscarGestionDatos() {
 
   try {
     const res = await apiFetch(`/api/admin/datos/${tipo}?${params}`);
+    if (seq !== gestionFetchSeq) return;
     if (res.status === 403) {
       if (tbody) tbody.innerHTML = `<tr><td colspan="10" style="padding:20px;text-align:center;color:#dc2626">Sin permisos para realizar esta acción</td></tr>`;
       return;
     }
     const data = await res.json();
+    if (seq !== gestionFetchSeq) return;
     if (!data.ok) {
       if (tbody) tbody.innerHTML = `<tr><td colspan="10" style="padding:20px;text-align:center;color:#dc2626">${escapeHtml(data.error || 'Error')}</td></tr>`;
       return;
@@ -16671,7 +16696,16 @@ async function buscarGestionDatos() {
     _gestionRenderPagina();
     _gestionRenderPaginacion();
   } catch (e) {
-    if (tbody) tbody.innerHTML = `<tr><td colspan="10" style="padding:20px;text-align:center;color:#dc2626">Error: ${escapeHtml(e.message)}</td></tr>`;
+    if (seq === gestionFetchSeq && tbody) {
+      tbody.innerHTML = `<tr><td colspan="10" style="padding:20px;text-align:center;color:#dc2626">Error: ${escapeHtml(e.message)}</td></tr>`;
+    }
+  } finally {
+    if (btnBuscar) btnBuscar.disabled = false;
+    gestionFetchInFlight = false;
+    if (gestionFetchPending) {
+      gestionFetchPending = false;
+      scheduleBuscarGestionDatos(200);
+    }
   }
 }
 
@@ -16919,7 +16953,7 @@ async function guardarAgregarGestion(e) {
     if (tipo === 'anexo_fidu_servicios' && typeof window._invalidarServiciosAnexoFidu === 'function') {
       window._invalidarServiciosAnexoFidu();
     }
-    buscarGestionDatos();
+    scheduleBuscarGestionDatos(0);
   } catch (err) { showToast('Error: ' + err.message, 'error'); }
 }
 
@@ -16940,7 +16974,7 @@ function confirmarEliminarGestion(tipo, id) {
     if (tipo === 'anexo_fidu_servicios' && typeof window._invalidarServiciosAnexoFidu === 'function') {
       window._invalidarServiciosAnexoFidu();
     }
-    buscarGestionDatos();
+    scheduleBuscarGestionDatos(0);
   } catch (e) { showToast('Error: ' + e.message, 'error'); }
   });
 }
@@ -16968,7 +17002,7 @@ function eliminarSeleccionadosGestion() {
     if (tipo === 'anexo_fidu_servicios' && typeof window._invalidarServiciosAnexoFidu === 'function') {
       window._invalidarServiciosAnexoFidu();
     }
-    buscarGestionDatos();
+    scheduleBuscarGestionDatos(0);
   } catch (e) { showToast('Error: ' + e.message, 'error'); }
   });
 }

@@ -26,7 +26,7 @@ router.get('/admin/datos/:tipo', requireAuth, requireRoleOrPerm(['superadmin', '
     let rows = [];
 
     if (tipo === 'citas_electro') {
-      let where = 'WHERE (ce.deleted_at IS NULL OR ce.deleted_at IS NOT NULL)';
+      let where = 'WHERE ce.deleted_at IS NULL';
       const params = [];
       if (q) { where += ' AND (p.nombre LIKE ? OR p.documento LIKE ?)'; params.push(`%${q}%`, `%${q}%`); }
       if (fecha_desde) { where += ' AND ce.fecha >= ?'; params.push(fecha_desde); }
@@ -56,15 +56,15 @@ router.get('/admin/datos/:tipo', requireAuth, requireRoleOrPerm(['superadmin', '
         SELECT id, numero, cliente, fecha, total, tipo_pago, generado_por_nombre AS creado_por, creado_en
         FROM recibos ${where} ORDER BY id DESC LIMIT ${limit}`, params);
     } else if (tipo === 'estudio_duraciones') {
-      rows = await db.query('SELECT id, nombre, duracion_minutos FROM estudio_duraciones ORDER BY nombre ASC');
+      rows = await db.query(`SELECT id, nombre, duracion_minutos FROM estudio_duraciones ORDER BY nombre ASC LIMIT ${limit}`);
     } else if (tipo === 'especialidades') {
-      rows = await db.query('SELECT id, nombre, activo FROM especialidades ORDER BY nombre ASC');
+      rows = await db.query(`SELECT id, nombre, activo FROM especialidades ORDER BY nombre ASC LIMIT ${limit}`);
     } else if (tipo === 'tipos_consulta') {
       rows = await db.query(`
         SELECT tc.id, tc.nombre, e.nombre AS especialidad, tc.activo,
                COALESCE(tc.permite_sesiones_multiples, 0) AS permite_sesiones_multiples
         FROM tipos_consulta tc LEFT JOIN especialidades e ON e.id=tc.especialidad_id
-        ORDER BY e.nombre ASC, tc.nombre ASC`);
+        ORDER BY e.nombre ASC, tc.nombre ASC LIMIT ${limit}`);
     } else if (tipo === 'diagnosticos') {
       let where = 'WHERE 1=1';
       const params = [];
@@ -191,8 +191,10 @@ router.post('/admin/datos/:tipo', requireAuth, requireRoleOrPerm(['superadmin', 
 async function refrescarCatalogoCupsAnexo() {
   const { invalidarCatalogoAnexoFidu, recargarCatalogoAnexoFidu } = require('../utils/anexo-fidu-servicios');
   invalidarCatalogoAnexoFidu();
-  await recargarCatalogoAnexoFidu();
   emitSocket('anexo-fidu:servicios-actualizado', {});
+  recargarCatalogoAnexoFidu().catch((err) => {
+    logger.warn('[ADMIN CUPS] recarga catálogo en background:', err.message);
+  });
 }
 
 // PATCH /api/admin/datos/:tipo/:id — editar catálogos

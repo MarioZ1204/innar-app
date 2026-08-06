@@ -304,13 +304,18 @@ function registerDefaultRealtimeHandlers() {
     if (medicoId && typeof cargarTiposConsultaEnRecibo === 'function') {
       cargarTiposConsultaEnRecibo(medicoId);
     }
-    if (typeof buscarGestionDatos === 'function' && typeof _gestionTipoActual !== 'undefined' && _gestionTipoActual === 'tipos_consulta') {
-      buscarGestionDatos();
+    if (typeof scheduleBuscarGestionDatos === 'function' && typeof _gestionTipoActual !== 'undefined' && _gestionTipoActual === 'tipos_consulta') {
+      scheduleBuscarGestionDatos(200);
     }
   });
   subscribe('estudio:creado', () => {
-    if (typeof buscarGestionDatos === 'function' && typeof _gestionTipoActual !== 'undefined' && _gestionTipoActual === 'estudio_duraciones') {
-      buscarGestionDatos();
+    if (typeof scheduleBuscarGestionDatos === 'function' && typeof _gestionTipoActual !== 'undefined' && _gestionTipoActual === 'estudio_duraciones') {
+      scheduleBuscarGestionDatos(200);
+    }
+  });
+  subscribe('anexo-fidu:servicios-actualizado', () => {
+    if (typeof scheduleBuscarGestionDatos === 'function' && typeof _gestionTipoActual !== 'undefined' && _gestionTipoActual === 'anexo_fidu_servicios') {
+      scheduleBuscarGestionDatos(200);
     }
   });
 
