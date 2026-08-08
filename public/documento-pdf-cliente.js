@@ -280,72 +280,120 @@
     return bar + out;
   }
 
-  function abrirImpresionDocumento(html) {
+  function limpiarBarrasImpresionHtml(html) {
+    const raw = String(html || '');
+    try {
+      const parsed = new DOMParser().parseFromString(raw, 'text/html');
+      parsed.querySelectorAll('.doc-print-bar').forEach((el) => el.remove());
+      parsed.querySelectorAll('.no-print').forEach((el) => {
+        if (el.querySelector('button')) el.remove();
+      });
+      const doc = parsed.documentElement;
+      if (doc) return '<!DOCTYPE html>\n' + doc.outerHTML;
+    } catch (_) { /* fallback regex */ }
+    return raw
+      .replace(/<div[^>]*class="[^"]*doc-print-bar[^"]*"[^>]*>[\s\S]*?<\/div>/gi, '')
+      .replace(/<div[^>]*class="[^"]*no-print[^"]*"[^>]*>[\s\S]*?<\/div>/gi, '');
+  }
+
+  function iconoSvg(tipo) {
+    const icons = {
+      doc: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>',
+      download: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>',
+      print: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>',
+      close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',
+      tip: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>'
+    };
+    return icons[tipo] || '';
+  }
+
+  function crearBotonOverlay(clase, label, icono, titulo) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = `innar-print-btn ${clase}`;
+    btn.title = titulo || label;
+    btn.innerHTML = `${iconoSvg(icono)}<span>${label}</span>`;
+    return btn;
+  }
+
+  function abrirImpresionDocumento(html, opts = {}) {
     document.getElementById('innarPrintOverlay')?.remove();
+
+    const titulo = opts.titulo || 'Documento listo';
+    const subtitulo = opts.subtitulo || 'Revise la vista previa antes de guardar o imprimir';
 
     const overlay = document.createElement('div');
     overlay.id = 'innarPrintOverlay';
-    overlay.style.cssText = [
-      'position:fixed', 'inset:0', 'z-index:2147483647',
-      'background:#eef3f2', 'display:flex', 'flex-direction:column'
-    ].join(';');
+    overlay.className = 'innar-print-overlay';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.setAttribute('aria-label', titulo);
 
-    const bar = document.createElement('div');
-    bar.className = 'no-print';
-    bar.style.cssText = [
-      'flex:0 0 auto', 'padding:12px 16px', 'background:#eef3f2',
-      'border-bottom:1px solid #c5d4d1', 'text-align:center', 'font-family:Arial,sans-serif'
-    ].join(';');
+    const toolbar = document.createElement('header');
+    toolbar.className = 'innar-print-toolbar';
 
-    const btnPrint = document.createElement('button');
-    btnPrint.type = 'button';
-    btnPrint.textContent = 'Imprimir / Guardar como PDF';
-    btnPrint.style.cssText = [
-      'padding:10px 22px', 'margin-right:8px', 'background:#2d4a47', 'color:#fff',
-      'border:none', 'border-radius:6px', 'cursor:pointer', 'font-weight:600'
-    ].join(';');
+    const info = document.createElement('div');
+    info.className = 'innar-print-toolbar__info';
+    info.innerHTML = `
+      <div class="innar-print-toolbar__icon">${iconoSvg('doc')}</div>
+      <div class="innar-print-toolbar__text">
+        <h2 class="innar-print-toolbar__title">${titulo}</h2>
+        <p class="innar-print-toolbar__subtitle">${subtitulo}</p>
+      </div>`;
 
-    const btnClose = document.createElement('button');
-    btnClose.type = 'button';
-    btnClose.textContent = 'Cerrar';
-    btnClose.style.cssText = [
-      'padding:10px 22px', 'background:#fff', 'color:#2d4a47',
-      'border:1px solid #c5d4d1', 'border-radius:6px', 'cursor:pointer', 'font-weight:600'
-    ].join(';');
+    const actions = document.createElement('div');
+    actions.className = 'innar-print-toolbar__actions';
+    const btnPdf = crearBotonOverlay('innar-print-btn--primary', 'Guardar PDF', 'download', 'Guardar como PDF');
+    const btnPrint = crearBotonOverlay('innar-print-btn--secondary', 'Imprimir', 'print', 'Imprimir documento');
+    const btnClose = crearBotonOverlay('innar-print-btn--ghost', 'Cerrar', 'close', 'Cerrar vista previa');
+    actions.append(btnPdf, btnPrint, btnClose);
 
-    const hint = document.createElement('p');
-    hint.textContent = 'Use «Guardar como PDF» en el diálogo. Active «Gráficos de fondo» si el diseño no sale completo.';
-    hint.style.cssText = 'font-size:12px;color:#555;margin:8px 0 0';
+    toolbar.append(info, actions);
 
-    bar.append(btnPrint, btnClose, hint);
+    const tip = document.createElement('p');
+    tip.className = 'innar-print-tip';
+    tip.innerHTML = `${iconoSvg('tip')}<span>En el diálogo de impresión elija <strong>Guardar como PDF</strong>. En Chrome active <strong>Más opciones → Gráficos de fondo</strong> para incluir el diseño y las firmas.</span>`;
+
+    const preview = document.createElement('main');
+    preview.className = 'innar-print-preview';
+
+    const paper = document.createElement('div');
+    paper.className = 'innar-print-paper';
 
     const frame = document.createElement('iframe');
     frame.title = 'Vista previa del documento';
-    frame.style.cssText = 'flex:1 1 auto;width:100%;border:0;background:#fff';
+    paper.appendChild(frame);
+    preview.appendChild(paper);
 
-    overlay.append(bar, frame);
+    overlay.append(toolbar, tip, preview);
     document.body.appendChild(overlay);
+    document.body.style.overflow = 'hidden';
 
-    const htmlImp = htmlParaImpresionManual(html);
-    frame.srcdoc = htmlImp;
+    frame.srcdoc = limpiarBarrasImpresionHtml(html);
 
-    const cerrar = () => overlay.remove();
-    btnClose.addEventListener('click', cerrar);
-    btnPrint.addEventListener('click', () => {
+    const imprimir = () => {
       try {
         frame.contentWindow?.focus();
         frame.contentWindow?.print();
       } catch (_) { /* ignore */ }
-    });
+    };
 
-    frame.addEventListener('load', () => {
-      setTimeout(() => {
-        try {
-          frame.contentWindow?.focus();
-          frame.contentWindow?.print();
-        } catch (_) { /* ignore */ }
-      }, 500);
-    }, { once: true });
+    const cerrar = () => {
+      overlay.remove();
+      document.body.style.overflow = '';
+    };
+
+    btnClose.addEventListener('click', cerrar);
+    btnPdf.addEventListener('click', imprimir);
+    btnPrint.addEventListener('click', imprimir);
+
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        cerrar();
+        document.removeEventListener('keydown', onKey);
+      }
+    };
+    document.addEventListener('keydown', onKey);
   }
 
   function limpiarMontaje(montado) {
@@ -438,6 +486,23 @@
     return data.error || `Error del servidor (${res.status})`;
   }
 
+  function tituloImpresionDesdeFilename(filename) {
+    const n = String(filename || '').toLowerCase();
+    if (n.includes('comprobante')) {
+      return {
+        titulo: 'Comprobante de servicios',
+        subtitulo: 'Revise los datos FOMAG antes de guardar el PDF'
+      };
+    }
+    if (n.includes('certificado')) {
+      return {
+        titulo: 'Certificado de asistencia',
+        subtitulo: 'Revise el documento antes de guardar el PDF'
+      };
+    }
+    return { titulo: 'Documento listo', subtitulo: 'Vista previa antes de guardar o imprimir' };
+  }
+
   async function generarDocumentoConBlob({ postUrl, previewUrl, payload, filename }) {
     const name = String(filename || 'documento.pdf').endsWith('.pdf')
       ? String(filename || 'documento.pdf')
@@ -470,13 +535,14 @@
 
     if (modoHdr === 'html' || ct.includes('text/html')) {
       const html = await res.text().catch(() => '');
+      const meta = tituloImpresionDesdeFilename(name);
       if (previewUrl && html.trim()) {
-        abrirImpresionDocumento(html);
+        abrirImpresionDocumento(html, meta);
         return { blob: null, modo: 'impresion', filename: name };
       }
       if (previewUrl) {
         const preview = await fetchPreviewHtml(previewUrl, payload);
-        abrirImpresionDocumento(preview.html);
+        abrirImpresionDocumento(preview.html, tituloImpresionDesdeFilename(preview.filename || name));
         return { blob: null, modo: 'impresion', filename: preview.filename || name };
       }
     }
@@ -504,7 +570,7 @@
       const data = await res.json();
       if (data.error) throw new Error(data.error);
       if (data.html) {
-        abrirImpresionDocumento(data.html);
+        abrirImpresionDocumento(data.html, tituloImpresionDesdeFilename(data.filename || filename));
         return 'impresion';
       }
       throw new Error('Respuesta inválida del servidor');
@@ -515,11 +581,11 @@
 
     if (options.previewUrl && options.payload) {
       const preview = await fetchPreviewHtml(options.previewUrl, options.payload);
-      abrirImpresionDocumento(preview.html);
+      abrirImpresionDocumento(preview.html, tituloImpresionDesdeFilename(preview.filename || filename));
       return 'impresion';
     }
 
-    abrirImpresionDocumento(html);
+    abrirImpresionDocumento(html, tituloImpresionDesdeFilename(filename));
     return 'impresion';
   }
 

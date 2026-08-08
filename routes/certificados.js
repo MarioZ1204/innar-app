@@ -12,7 +12,6 @@ const {
   getCertificadoAsistenciaFondo,
   getComprobanteServiciosFondo
 } = require('../utils/puppeteer-utils');
-const { wrapHtmlDocumentoImprimible } = require('../utils/documento-imprimible');
 const {
   validarPayloadCertificado,
   buildCertificadoAsistenciaHtml
@@ -86,10 +85,9 @@ function requireCertificadoComprobante(req, res, next) {
 async function responderDocumentoPdfOHtml(res, { html, titulo, filename, logLabel }) {
   const modo = String(process.env.CERTIFICADOS_PDF_MODE || '').trim().toLowerCase();
   if (modo === 'html') {
-    const imprimible = wrapHtmlDocumentoImprimible(html, titulo);
     res.contentType('text/html; charset=utf-8');
     res.setHeader('X-Documento-Modo', 'html');
-    return res.send(imprimible);
+    return res.send(html);
   }
 
   const t0 = Date.now();

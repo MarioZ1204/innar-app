@@ -503,3 +503,221 @@ table tbody tr:hover td {
     min-width: 140px !important;
   }
 }
+
+/* ── Overlay imprimir / guardar PDF (certificados, comprobantes) ───────────── */
+.innar-print-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483647;
+  display: flex;
+  flex-direction: column;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  animation: innarPrintFadeIn 0.22s ease-out;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif;
+}
+
+@keyframes innarPrintFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.innar-print-toolbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 20px;
+  background: var(--innar-surface);
+  border-bottom: 1px solid var(--innar-border);
+  box-shadow: var(--innar-shadow-sm);
+}
+
+.innar-print-toolbar__info {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.innar-print-toolbar__icon {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background: var(--innar-accent-soft);
+  color: var(--c-dark, #2d4a47);
+}
+
+.innar-print-toolbar__icon svg {
+  width: 22px;
+  height: 22px;
+}
+
+.innar-print-toolbar__text {
+  min-width: 0;
+}
+
+.innar-print-toolbar__title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--innar-text);
+  letter-spacing: -0.02em;
+}
+
+.innar-print-toolbar__subtitle {
+  margin: 2px 0 0;
+  font-size: 0.8rem;
+  color: var(--innar-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.innar-print-toolbar__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.innar-print-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 0 16px;
+  border-radius: 10px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background 0.15s, border-color 0.15s, transform 0.1s, box-shadow 0.15s;
+  white-space: nowrap;
+}
+
+.innar-print-btn svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.innar-print-btn:active {
+  transform: scale(0.98);
+}
+
+.innar-print-btn--primary {
+  background: var(--c-dark, #2d4a47);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(45, 74, 71, 0.25);
+}
+
+.innar-print-btn--primary:hover {
+  background: var(--c-darker, #1e3330);
+}
+
+.innar-print-btn--secondary {
+  background: var(--innar-surface);
+  color: var(--innar-text);
+  border-color: var(--innar-border-strong);
+}
+
+.innar-print-btn--secondary:hover {
+  background: var(--innar-surface-muted);
+}
+
+.innar-print-btn--ghost {
+  background: transparent;
+  color: var(--innar-text-muted);
+}
+
+.innar-print-btn--ghost:hover {
+  background: var(--innar-surface-muted);
+  color: var(--innar-text);
+}
+
+.innar-print-tip {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0;
+  padding: 10px 20px;
+  background: #f0f7f5;
+  border-bottom: 1px solid #d4e5e1;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: #3d5c57;
+}
+
+.innar-print-tip svg {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  color: #4a7a72;
+}
+
+.innar-print-tip strong {
+  font-weight: 600;
+}
+
+.innar-print-preview {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 24px 20px 32px;
+  background: linear-gradient(180deg, #e8eeec 0%, #dfe8e5 100%);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+.innar-print-paper {
+  width: min(210mm, calc(100vw - 40px));
+  min-height: 297mm;
+  background: #fff;
+  border-radius: 4px;
+  box-shadow:
+    0 0 0 1px rgba(15, 23, 42, 0.06),
+    0 8px 32px rgba(15, 23, 42, 0.12),
+    0 24px 48px rgba(15, 23, 42, 0.08);
+  overflow: hidden;
+}
+
+.innar-print-paper iframe {
+  display: block;
+  width: 100%;
+  min-height: 297mm;
+  border: 0;
+  background: #fff;
+}
+
+@media (max-width: 720px) {
+  .innar-print-toolbar {
+    flex-wrap: wrap;
+    padding: 12px 14px;
+  }
+  .innar-print-toolbar__actions {
+    width: 100%;
+    justify-content: stretch;
+  }
+  .innar-print-btn {
+    flex: 1 1 auto;
+    padding: 0 10px;
+    font-size: 0.8rem;
+  }
+  .innar-print-btn span {
+    display: none;
+  }
+  .innar-print-preview {
+    padding: 12px 10px 20px;
+  }
+}
