@@ -74,15 +74,19 @@ function requireCertificadoComprobante(req, res, next) {
 async function responderDocumentoPdfOHtml(res, { html, titulo, filename, logLabel }) {
   const modo = String(process.env.CERTIFICADOS_PDF_MODE || '').trim().toLowerCase();
   if (modo !== 'html') {
+    const t0 = Date.now();
     const chrome = await warmupChromiumOnce();
     if (!chrome.ok) {
       logger.warn(`[CERT] ${logLabel} Chrome no listo (${chrome.error || 'desconocido'}), intentando PDF igualmente`);
     }
     const resultado = await tryRenderHtmlToPdf(html);
     if (resultado.ok) {
+      const ms = Date.now() - t0;
       res.contentType('application/pdf');
       res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
       res.setHeader('X-Documento-Modo', 'pdf');
+      res.setHeader('X-Documento-Generacion-Ms', String(ms));
+      logger.info(`[CERT] ${logLabel} PDF servidor en ${ms}ms`, { type: 'CERT_PDF', ms });
       return res.send(resultado.pdf);
     }
     logger.warn(`[CERT] ${logLabel} PDF en servidor no disponible, usando HTML imprimible:`, resultado.error);

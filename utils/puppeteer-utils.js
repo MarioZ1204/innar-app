@@ -193,22 +193,76 @@ async function launchBrowserWithFallback() {
   throw lastError || new Error('No se pudo lanzar Chrome');
 }
 
+const BROWSER_IDLE_MS = parseInt(process.env.PUPPETEER_BROWSER_IDLE_MS || '300000', 10) || 300000;
+let sharedBrowser = null;
+let sharedBrowserLaunch = null;
+let browserIdleTimer = null;
+
+function scheduleSharedBrowserIdleClose() {
+  if (browserIdleTimer) clearTimeout(browserIdleTimer);
+  browserIdleTimer = setTimeout(() => {
+    void closeSharedBrowser('idle');
+  }, BROWSER_IDLE_MS);
+}
+
+async function getSharedBrowser() {
+  if (sharedBrowser && sharedBrowser.connected) {
+    scheduleSharedBrowserIdleClose();
+    return sharedBrowser;
+  }
+  if (!sharedBrowserLaunch) {
+    sharedBrowserLaunch = launchBrowserWithFallback()
+      .then((browser) => {
+        sharedBrowser = browser;
+        sharedBrowserLaunch = null;
+        browser.on('disconnected', () => {
+          sharedBrowser = null;
+        });
+        scheduleSharedBrowserIdleClose();
+        return browser;
+      })
+      .catch((e) => {
+        sharedBrowserLaunch = null;
+        throw e;
+      });
+  }
+  return sharedBrowserLaunch;
+}
+
+async function closeSharedBrowser(reason = 'manual') {
+  if (browserIdleTimer) {
+    clearTimeout(browserIdleTimer);
+    browserIdleTimer = null;
+  }
+  const browser = sharedBrowser;
+  sharedBrowser = null;
+  sharedBrowserLaunch = null;
+  if (browser) {
+    try {
+      await browser.close();
+    } catch (_) { /* noop */ }
+    logger.info('[PUPPETEER] Navegador compartido cerrado', { reason });
+  }
+}
+
 async function renderHtmlToPdf(html, options = {}) {
   const {
     format = 'A4',
     printBackground = true,
     margin = { top: '0', bottom: '0', left: '0', right: '0' },
     waitFonts = true,
-    contentTimeout = 60000,
-    fontsTimeoutMs = 3000,
+    contentTimeout = 90000,
+    fontsTimeoutMs = 1500,
     preferCSSPageSize = true
   } = options;
 
-  const browser = await launchBrowserWithFallback();
+  const browser = await getSharedBrowser();
+  const page = await browser.newPage();
   try {
-    const page = await browser.newPage();
+    page.setDefaultNavigationTimeout(contentTimeout);
+    page.setDefaultTimeout(contentTimeout);
     await page.emulateMediaType('print');
-    await page.setContent(html, { waitUntil: 'load', timeout: contentTimeout });
+    await page.setContent(html, { waitUntil: 'domcontentloaded', timeout: contentTimeout });
     if (waitFonts) {
       await page.evaluate((ms) => Promise.race([
         document.fonts.ready,
@@ -217,7 +271,8 @@ async function renderHtmlToPdf(html, options = {}) {
     }
     return await page.pdf({ format, printBackground, margin, preferCSSPageSize });
   } finally {
-    await browser.close().catch(() => {});
+    await page.close().catch(() => {});
+    scheduleSharedBrowserIdleClose();
   }
 }
 
@@ -349,6 +404,8 @@ module.exports = {
   probeChromiumLaunch,
   tryRenderHtmlToPdf,
   renderHtmlToPdf,
+  getSharedBrowser,
+  closeSharedBrowser,
   getLogoBase64,
   getLogoReciboBase64,
   getCertificadoAsistenciaFondo,

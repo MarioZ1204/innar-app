@@ -63,6 +63,13 @@ setImmediate(() => {
           cacheDir: r.cacheDir,
           installed: !!r.installed
         });
+        try {
+          const { getSharedBrowser } = require('./utils/puppeteer-utils');
+          await getSharedBrowser();
+          logger.info('[STARTUP] Navegador PDF precalentado (reutilizable)', { type: 'STARTUP' });
+        } catch (e) {
+          logger.warn('[STARTUP] No se pudo precalentar navegador PDF: ' + e.message, { type: 'STARTUP' });
+        }
       } else {
         logger.warn('[STARTUP] Chrome/Puppeteer no disponible; certificados usarán fallback HTML/cliente', {
           type: 'STARTUP',

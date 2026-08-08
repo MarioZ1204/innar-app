@@ -208,33 +208,31 @@
     if (!html2canvas) throw new Error('Generador PDF no disponible (html2canvas)');
 
     const base = {
-      scale: 2,
+      scale: opts.scale ?? 1.35,
       useCORS: true,
       allowTaint: true,
       logging: false,
       backgroundColor: '#ffffff',
       scrollX: 0,
       scrollY: 0,
+      imageTimeout: 8000,
       onclone: (_doc, clonedEl) => prepararClonCaptura(clonedEl)
     };
 
     return html2canvas(target, { ...base, ...opts });
   }
 
-  async function intentarCaptura(montado) {
+  async function intentarCaptura(montado, opts = {}) {
+    const fast = opts.fast === true;
     const intentos = [];
 
     if (montado.tipo === 'dom') {
-      intentos.push(
-        () => capturarConHtml2Canvas(montado.stage),
-        () => capturarConHtml2Canvas(montado.page),
-        () => capturarConHtml2Canvas(montado.page, { scale: 1.5 })
-      );
+      intentos.push(() => capturarConHtml2Canvas(montado.page, { scale: fast ? 1.15 : 1.35 }));
+      if (!fast) {
+        intentos.push(() => capturarConHtml2Canvas(montado.stage, { scale: 1.25 }));
+      }
     } else {
-      intentos.push(
-        () => capturarConHtml2Canvas(montado.page, { window: montado.win }),
-        () => capturarConHtml2Canvas(montado.page, { window: montado.win, scale: 1.5 })
-      );
+      intentos.push(() => capturarConHtml2Canvas(montado.page, { window: montado.win, scale: fast ? 1.15 : 1.35 }));
     }
 
     let ultimo = null;
@@ -248,11 +246,11 @@
     return ultimo;
   }
 
-  async function rasterizarAPdf(montado, filename) {
+  async function rasterizarAPdf(montado, filename, opts = {}) {
     const JsPDF = obtenerJsPdf();
     if (!JsPDF) throw new Error('Generador PDF no disponible (jsPDF)');
 
-    const canvas = await intentarCaptura(montado);
+    const canvas = await intentarCaptura(montado, opts);
     if (!canvas) throw new Error('No se pudo capturar el documento');
 
     const imgData = canvas.toDataURL('image/jpeg', 0.92);
@@ -354,20 +352,21 @@
     montado?.stage?.remove();
   }
 
-  async function generarPdfDesdeHtml(html, filename) {
+  async function generarPdfDesdeHtml(html, filename, opts = {}) {
     const name = filename || 'documento.pdf';
     let montado = null;
 
     try {
       montado = await prepararDocumento(html);
       try {
-        await rasterizarAPdf(montado, name);
-        return 'pdf-cliente';
+        await rasterizarAPdf(montado, name, opts);
+        return opts.fast ? 'pdf-cliente-rapido' : 'pdf-cliente';
       } catch (e1) {
+        if (opts.fast) throw e1;
         limpiarMontaje(montado);
         montado = await prepararDocumentoIframe(html);
         try {
-          await rasterizarAPdf(montado, name);
+          await rasterizarAPdf(montado, name, opts);
           return 'pdf-cliente';
         } catch (_e2) {
           abrirImpresionDocumento(montado.limpio || normalizarHtmlString(html));
@@ -404,18 +403,19 @@
     return data;
   }
 
-  async function generarPdfBlobDesdeHtml(html) {
+  async function generarPdfBlobDesdeHtml(html, opts = {}) {
     const JsPDF = obtenerJsPdf();
     if (!JsPDF) throw new Error('Generador PDF no disponible (jsPDF)');
 
     let montado = null;
     try {
       montado = await prepararDocumento(html);
-      let canvas = await intentarCaptura(montado);
+      let canvas = await intentarCaptura(montado, opts);
       if (!canvas || !canvasTieneContenido(canvas)) {
+        if (opts.fast) throw new Error('BLANK_CANVAS');
         limpiarMontaje(montado);
         montado = await prepararDocumentoIframe(html);
-        canvas = await intentarCaptura(montado);
+        canvas = await intentarCaptura(montado, opts);
       }
       if (!canvas) throw new Error('No se pudo capturar el documento');
 
@@ -457,7 +457,7 @@
     if (previewUrl) {
       const preview = await fetchPreviewHtml(previewUrl, payload);
       try {
-        const blob = await generarPdfBlobDesdeHtml(preview.html);
+        const blob = await generarPdfBlobDesdeHtml(preview.html, { fast: true });
         return { blob, modo: 'pdf-cliente', filename: preview.filename || name };
       } catch (e) {
         abrirImpresionDocumento(preview.html);
