@@ -181,11 +181,44 @@ function readUlimits() {
     return {
       maxUserProcesses: out[0] || null,
       openFiles: out[1] || null,
-      virtualMemoryKb: out[2] || null
+      virtualMemoryKb: out[2] || null,
+      cgroup: readCgroupLimits()
     };
   } catch (e) {
     return { error: e.message };
   }
+}
+
+/**
+ * En hosting compartido con contenedores, los límites reales suelen venir de
+ * cgroups (memoria y número de procesos), no de ulimit. Un ulimit alto pero
+ * un cgroup pequeño explica un OOM-kill silencioso de Chrome ("socket hang up").
+ */
+function readCgroupLimits() {
+  const readNum = (p) => {
+    try {
+      const v = fs.readFileSync(p, 'utf8').trim();
+      return v === 'max' ? 'max' : Number(v);
+    } catch (_) {
+      return null;
+    }
+  };
+  const toMb = (v) => (typeof v === 'number' ? Math.round(v / 1024 / 1024) : v);
+  const v2 = {
+    memMaxMb: toMb(readNum('/sys/fs/cgroup/memory.max')),
+    memCurrentMb: toMb(readNum('/sys/fs/cgroup/memory.current')),
+    pidsMax: readNum('/sys/fs/cgroup/pids.max'),
+    pidsCurrent: readNum('/sys/fs/cgroup/pids.current')
+  };
+  if (Object.values(v2).some((v) => v !== null)) return { version: 'v2', ...v2 };
+  const v1 = {
+    memLimitMb: toMb(readNum('/sys/fs/cgroup/memory/memory.limit_in_bytes')),
+    memUsageMb: toMb(readNum('/sys/fs/cgroup/memory/memory.usage_in_bytes')),
+    pidsMax: readNum('/sys/fs/cgroup/pids/pids.max'),
+    pidsCurrent: readNum('/sys/fs/cgroup/pids/pids.current')
+  };
+  if (Object.values(v1).some((v) => v !== null)) return { version: 'v1', ...v1 };
+  return { version: 'none-detected' };
 }
 
 // Healthcheck profundo: BD, disco de backups, logs. Requiere auth.

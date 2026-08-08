@@ -144,6 +144,12 @@ function buildPuppeteerLaunchArgs(extra = []) {
     '--mute-audio',
     '--renderer-process-limit=1',
     '--no-zygote',
+    '--disk-cache-size=0',
+    '--media-cache-size=0',
+    '--disable-accelerated-2d-canvas',
+    '--disable-canvas-aa',
+    '--disable-2d-canvas-clip-aa',
+    '--js-flags=--max-old-space-size=128',
     ...extra
   ];
   return args;
