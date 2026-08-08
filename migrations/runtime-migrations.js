@@ -1428,6 +1428,65 @@ const runtimeMigrations = [
         }
       }
     }
+  },
+  {
+    name: 'rt_perm_reportes_historico',
+    description: 'Migrar permiso modulo.archivo_soportes → modulo.reportes_historico en usuarios personalizados',
+    run: async (db) => {
+      if (!(await tableExists(db, 'usuarios'))) return;
+      if (!(await columnExists(db, 'usuarios', 'permisos'))) return;
+      const rows = await db.query(
+        "SELECT id, permisos FROM usuarios WHERE permisos IS NOT NULL AND permisos != '' AND permisos LIKE '%modulo.archivo_soportes%'"
+      );
+      for (const row of rows) {
+        let list;
+        try {
+          list = typeof row.permisos === 'string' ? JSON.parse(row.permisos) : row.permisos;
+        } catch (_) {
+          continue;
+        }
+        if (!Array.isArray(list)) continue;
+        let changed = false;
+        const next = list.map((p) => {
+          if (p === 'modulo.archivo_soportes') {
+            changed = true;
+            return 'modulo.reportes_historico';
+          }
+          return p;
+        });
+        if (changed && !next.includes('modulo.reportes_historico')) {
+          next.push('modulo.reportes_historico');
+        }
+        if (changed) {
+          await db.execute('UPDATE usuarios SET permisos = ? WHERE id = ?', [JSON.stringify(next), row.id]);
+        }
+      }
+    }
+  },
+  {
+    name: 'rt_perm_soportes_ver_archivo',
+    description: 'Migrar permiso soportes.ver_archivo → modulo.reportes_historico en usuarios personalizados',
+    run: async (db) => {
+      if (!(await tableExists(db, 'usuarios'))) return;
+      if (!(await columnExists(db, 'usuarios', 'permisos'))) return;
+      const rows = await db.query(
+        "SELECT id, permisos FROM usuarios WHERE permisos IS NOT NULL AND permisos != '' AND permisos LIKE '%soportes.ver_archivo%'"
+      );
+      for (const row of rows) {
+        let list;
+        try {
+          list = typeof row.permisos === 'string' ? JSON.parse(row.permisos) : row.permisos;
+        } catch (_) {
+          continue;
+        }
+        if (!Array.isArray(list)) continue;
+        if (!list.includes('soportes.ver_archivo')) continue;
+        const next = list
+          .filter((p) => p !== 'soportes.ver_archivo')
+          .concat(list.includes('modulo.reportes_historico') ? [] : ['modulo.reportes_historico']);
+        await db.execute('UPDATE usuarios SET permisos = ? WHERE id = ?', [JSON.stringify(next), row.id]);
+      }
+    }
   }
 ];
 

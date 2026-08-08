@@ -43,7 +43,7 @@
 
     if (fuente === 'pdx') {
       const id = parseInt(p.get('id'), 10);
-      if (!id) return { error: 'Falta el parámetro id (depósito PDX)' };
+      if (!id) return { error: 'Falta el parámetro id del archivo cargado' };
       return {
         title: titulo,
         pdfUrl: `/api/soportes/pdx/archivos/${id}/ver`,

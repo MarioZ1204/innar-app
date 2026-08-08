@@ -2085,7 +2085,7 @@
     const labels = {
       activa: 'Activo',
       gracia: dias ? `Pasa a Archivo en ${dias}d` : 'Próximo a archivar',
-      archivo: 'En módulo Archivo'
+      archivo: 'Archivado'
     };
     const icon = estado === 'activa' ? 'circle-check' : estado === 'gracia' ? 'clock' : 'archive';
     return `<span class="sop-badge sop-badge-${estado}"><i data-lucide="${icon}" style="width:12px;height:12px"></i> ${escapeHtml(labels[estado] || estado)}</span>`;
@@ -4911,22 +4911,63 @@
     });
   }
 
+  function htmlSlotActionBtn({ icon, title, attrs = '', variant = 'ghost', tag = 'button', extraClass = '', accept = '' }) {
+    const cls = `sop-btn sop-btn-${variant} sop-btn-sm sop-slot-action-btn ${extraClass}`.trim();
+    const inner = `<i data-lucide="${icon}"></i>`;
+    if (tag === 'label') {
+      return `<label class="${cls}" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}" style="cursor:pointer">
+        ${inner}
+        <input type="file" ${attrs} class="sop-file-input-hidden" accept="${accept}"></label>`;
+    }
+    return `<button type="button" class="${cls}" ${attrs} title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}">${inner}</button>`;
+  }
+
   function htmlSlotArchivoActions(expId, key, slot, opts = {}) {
     if (!expId || !slot.completo || !slot.archivo_id) return '';
     if (!sopPerm('modulo.armado_soportes')) return '';
     const canEdit = sopPerm('soportes.armado.subir');
     const accept = escapeHtml(opts.accept || '.pdf,application/pdf');
-    const anexarBtn = (key === 'CRC' || key === 'OPF') && canEdit
-      ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm sop-slot-anexar" data-slot-anexar="${key}" title="Añadir un PDF al ${key} cargado"><i data-lucide="layers"></i></button>`
-      : '';
-    return `<div class="sop-slot-actions">
-      <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-slot-ver="${key}" title="Ver en el navegador"><i data-lucide="eye"></i></button>
-      ${canEdit ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-slot-pagina="${key}" title="Editar PDF (resaltar o añadir páginas)"><i data-lucide="pen-line"></i></button>
-      <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm sop-slot-del" data-slot-del="${key}" title="Eliminar"><i data-lucide="trash-2"></i></button>
-      <label class="sop-btn sop-btn-ghost sop-btn-sm" style="cursor:pointer" title="Reemplazar"><i data-lucide="refresh-cw"></i>
-        <input type="file" data-replace-slot="${key}" class="sop-file-input-hidden" accept="${accept}"></label>
-      ${anexarBtn}` : ''}
-    </div>`;
+    const esPdf = ['OPF', 'CRC', 'FEV', 'PDX', 'HEV'].includes(key);
+    const items = [
+      htmlSlotActionBtn({
+        icon: 'eye',
+        title: 'Ver PDF',
+        attrs: `data-slot-ver="${key}"`
+      })
+    ];
+    if (canEdit && esPdf) {
+      items.push(htmlSlotActionBtn({
+        icon: 'pen-line',
+        title: 'Editor PDF',
+        attrs: `data-slot-pagina="${key}"`,
+        variant: key === 'OPF' || key === 'CRC' ? 'primary' : 'ghost'
+      }));
+    }
+    if (canEdit && (key === 'CRC' || key === 'OPF')) {
+      items.push(htmlSlotActionBtn({
+        icon: 'paperclip',
+        title: 'Añadir PDF',
+        attrs: `data-slot-anexar="${key}"`,
+        extraClass: 'sop-slot-anexar'
+      }));
+    }
+    if (canEdit) {
+      items.push(htmlSlotActionBtn({
+        icon: 'file-up',
+        title: 'Reemplazar archivo',
+        tag: 'label',
+        attrs: `data-replace-slot="${key}"`,
+        extraClass: 'sop-slot-replace',
+        accept
+      }));
+      items.push(htmlSlotActionBtn({
+        icon: 'trash-2',
+        title: 'Eliminar archivo',
+        attrs: `data-slot-del="${key}"`,
+        extraClass: 'sop-slot-del'
+      }));
+    }
+    return `<div class="sop-slot-actions">${items.join('')}</div>`;
   }
 
   function htmlFeSlotCard(key, slot, opts = {}) {
@@ -4949,7 +4990,7 @@
       ? `<p class="sop-pdx-format-nota" style="margin:8px 0 0;font-size:.78rem">Vinculado a <strong>FE${numFe}</strong>: el archivo se guardará con esa etiqueta.</p>`
       : '';
     const opfHint = key === 'OPF' && !ok && !dis
-      ? `<p class="sop-pdx-format-nota" style="margin:8px 0 0;font-size:.78rem">Use <strong>Armar OPF</strong> para elegir <strong>2 o más PDF</strong> y definir el orden de unión. También puede subir el OPF ya listo en un solo archivo.${conFactura ? '' : ' Sin factura: se renombra al subir FEV o al indicar el número FE en <strong>Renombrar carpeta</strong>.'}</p>`
+      ? `<p class="sop-pdx-format-nota" style="margin:8px 0 0;font-size:.78rem">Use <strong>Unir PDFs</strong> para elegir <strong>2 o más archivos</strong> y definir el orden de unión. También puede subir el OPF ya listo en un solo archivo.${conFactura ? '' : ' Sin factura: se renombra al subir FEV o al indicar el número FE en <strong>Renombrar carpeta</strong>.'}</p>`
       : '';
     const crcHint = key === 'CRC' && !ok && !dis
       ? `<p class="sop-pdx-format-nota" style="margin:8px 0 0;font-size:.78rem">En <strong>Unir PDFs</strong> seleccione <strong>2 a 4</strong> archivos y ordénelos antes de guardar el CRC.${conFactura ? '' : ' Sin factura vinculada, el nombre llevará el paciente hasta subir FEV.'}</p>`
@@ -4957,7 +4998,17 @@
     const pdxHevHint = (key === 'PDX' || key === 'HEV') && !ok && !dis && !conFactura
       ? '<p class="sop-pdx-format-nota" style="margin:8px 0 0;font-size:.78rem">Sin factura: el archivo se guarda con el nombre del paciente; pasa a FE al subir FEV.</p>'
       : '';
-    const allowUpload = opts.upload && !dis && !(ok && slot.archivo_id) && key !== 'OPF';
+    const allowUpload = opts.upload && !dis && !(ok && slot.archivo_id);
+    const slotUploadBtns = (targetKey) => !dis && !ok && sopPerm('soportes.armado.subir')
+      ? `<label class="sop-btn sop-btn-ghost sop-btn-sm" style="margin-top:8px;cursor:pointer">
+        <i data-lucide="upload"></i> Subir<input type="file" data-upload-slot="${targetKey}" class="sop-file-input-hidden" accept="${opts.accept || ''}"></label>`
+      : '';
+    const slotImportBtn = (targetKey, btnId) => !dis && !ok && sopPerm('soportes.armado.importar_pdx')
+      ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="${btnId}" style="margin-top:8px"><i data-lucide="database"></i> Elegir de archivos</button>`
+      : '';
+    const slotUnirBtn = (targetKey, btnId) => !dis && !ok && sopPerm('soportes.armado.subir')
+      ? `<button type="button" class="sop-btn sop-btn-primary sop-btn-sm" id="${btnId}" style="margin-top:8px"><i data-lucide="layers"></i> Unir PDFs</button>`
+      : '';
     return `<div class="sop-slot-card ${ok ? 'ok' : ''} ${dis ? 'disabled' : ''}" data-slot="${key}">
       <div class="sop-slot-head">
         <span class="sop-slot-label"><i data-lucide="${icons[key] || 'file'}"></i> ${labels[key] || key}</span>
@@ -4969,12 +5020,10 @@
       ${crcHint}
       ${pdxHevHint}
       ${feHint}
-      ${allowUpload ? `<label class="sop-btn sop-btn-ghost sop-btn-sm" style="margin-top:8px;cursor:pointer">
-        <i data-lucide="upload"></i> Subir<input type="file" data-upload-slot="${key}" class="sop-file-input-hidden" accept="${opts.accept || ''}"></label>` : ''}
-      ${key === 'OPF' && !dis && !ok && sopPerm('soportes.armado.subir') ? '<button type="button" class="sop-btn sop-btn-primary sop-btn-sm" id="btnSopGenerarOpf" style="margin-top:8px"><i data-lucide="layers"></i> Armar OPF</button>' : ''}
-      ${key === 'PDX' && !dis && !ok && sopPerm('soportes.armado.importar_pdx') ? '<button type="button" class="sop-btn sop-btn-primary sop-btn-sm" id="btnSopImportPdx"><i data-lucide="database"></i> Elegir del depósito</button>' : ''}
-      ${key === 'CRC' && !dis && !ok && sopPerm('soportes.armado.importar_pdx') ? '<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="btnSopImportCrc" style="margin-top:8px"><i data-lucide="database"></i> Elegir del depósito</button>' : ''}
-      ${key === 'CRC' && !dis && !ok && sopPerm('soportes.armado.subir') ? '<button type="button" class="sop-btn sop-btn-primary sop-btn-sm" id="btnSopUnirCrc" style="margin-top:8px"><i data-lucide="layers"></i> Unir PDFs</button>' : ''}
+      ${allowUpload ? slotUploadBtns(key) : ''}
+      ${key === 'PDX' && !dis && !ok && sopPerm('soportes.armado.importar_pdx') ? '<button type="button" class="sop-btn sop-btn-primary sop-btn-sm" id="btnSopImportPdx"><i data-lucide="database"></i> Elegir de archivos</button>' : ''}
+      ${key === 'CRC' ? slotImportBtn('CRC', 'btnSopImportCrc') + slotUnirBtn('CRC', 'btnSopUnirCrc') : ''}
+      ${key === 'OPF' ? slotImportBtn('OPF', 'btnSopImportOpf') + slotUnirBtn('OPF', 'btnSopUnirOpf') : ''}
     </div>`;
   }
 
@@ -5167,9 +5216,13 @@
   function modalUnirPdfSlot(expId, tipo, expInfo, { reemplazar = false } = {}) {
     const ejemplo = expInfo?.ejemplos_nombre?.[tipo] || `${tipo}_{NIT}.pdf`;
     const titulo = reemplazar ? `Reemplazar ${tipo} (unir PDFs)` : `Unir PDFs — ${tipo}`;
+    const esOpf = tipo === 'OPF';
+    const rangoTxt = esOpf
+      ? 'Seleccione <strong>2 o más</strong> PDF y ordénelos con las flechas antes de guardar.'
+      : 'Seleccione <strong>2, 3 o 4</strong> PDF y ordénelos con las flechas antes de guardar.';
     const modal = openSopModal(`
       <h3><i data-lucide="layers" style="vertical-align:-3px;width:22px"></i> ${escapeHtml(titulo)}</h3>
-      <p style="font-size:.85rem;color:#64748b;margin:-8px 0 12px">Seleccione <strong>2, 3 o 4</strong> PDF y ordénelos con las flechas antes de guardar.</p>
+      <p style="font-size:.85rem;color:#64748b;margin:-8px 0 12px">${rangoTxt}</p>
       <p class="sop-pdx-format-nota" style="margin-bottom:12px">Nombre: <code>${escapeHtml(ejemplo)}</code></p>
       <div class="sop-field">
         <label>Archivos PDF</label>
@@ -5196,8 +5249,13 @@
         btnOk.disabled = true;
         return;
       }
-      if (files.length < 2 || files.length > 4) {
-        listEl.innerHTML = `<li class="sop-empty" style="padding:10px;font-size:.82rem;border:none;color:#b45309">Seleccione entre 2 y 4 PDF.</li>`;
+      const minOk = files.length >= 2;
+      const maxOk = esOpf ? true : files.length <= 4;
+      if (!minOk || !maxOk) {
+        const msg = esOpf
+          ? 'Seleccione al menos 2 PDF.'
+          : 'Seleccione entre 2 y 4 PDF.';
+        listEl.innerHTML = `<li class="sop-empty" style="padding:10px;font-size:.82rem;border:none;color:#b45309">${msg}</li>`;
         btnOk.disabled = true;
         return;
       }
@@ -5214,7 +5272,7 @@
 
     modal.querySelector('#sopUnirPdfCancel').onclick = () => closeSopModal(modal);
     btnOk.onclick = async () => {
-      if (files.length < 2 || files.length > 4) return;
+      if (files.length < 2 || (!esOpf && files.length > 4)) return;
       btnOk.disabled = true;
       btnOk.textContent = 'Uniendo…';
       const fd = new FormData();
@@ -5488,7 +5546,7 @@
       const showPdx = slots.PDX?.habilitado !== false;
       const showHev = slots.HEV?.habilitado !== false;
       const pdfOpts = { upload: true, accept: acceptPdf, expId: id, conFactura: Number(e.numero_factura) > 0, numeroFactura: e.numero_factura };
-      slotsHtml = htmlFeSlotCard('OPF', slots.OPF || {}, { ...pdfOpts, upload: false })
+      slotsHtml = htmlFeSlotCard('OPF', slots.OPF || {}, pdfOpts)
         + htmlFeSlotCard('CRC', slots.CRC || {}, pdfOpts)
         + htmlFeSlotCard('FEV', slots.FEV || {}, pdfOpts)
         + (showPdx ? htmlFeSlotCard('PDX', slots.PDX || {}, pdfOpts) : '')
@@ -5502,7 +5560,7 @@
           ${escapeHtml(v.paciente_nombre || v.nombre_archivo_original || '')}
           <span style="font-size:.78rem;color:#64748b">${escapeHtml(v.fecha_estudio || '')}</span></li>`
       ).join('')}</ul>
-      ${vinculos.some((v) => v.rol === 'orden_hc') && !slots.OPF?.completo ? '<p class="sop-pdx-format-nota">Tiene ORDEN+HC vinculado: en «Armar OPF» añada la autorización (u otro PDF) hasta completar 2 archivos.</p>' : ''}
+      ${vinculos.some((v) => v.rol === 'orden_hc') && !slots.OPF?.completo ? '<p class="sop-pdx-format-nota">Tiene ORDEN+HC vinculado: en «Unir PDFs» del OPF añada la autorización (u otro PDF) hasta completar 2 archivos.</p>' : ''}
     </div>` : '';
 
     panel.innerHTML = `
@@ -5626,8 +5684,9 @@
     const openImportDep = (filtro) => modalImportDepositoEnExpediente(id, filtro);
     panel.querySelector('#btnSopImportPdx')?.addEventListener('click', () => openImportDep('PDX'));
     panel.querySelector('#btnSopImportCrc')?.addEventListener('click', () => openImportDep('CRC'));
+    panel.querySelector('#btnSopImportOpf')?.addEventListener('click', () => openImportDep('OPF'));
     panel.querySelector('#btnSopUnirCrc')?.addEventListener('click', () => modalUnirPdfSlot(id, 'CRC', e, { reemplazar: false }));
-    panel.querySelector('#btnSopGenerarOpf')?.addEventListener('click', () => modalGenerarOpf(id, e));
+    panel.querySelector('#btnSopUnirOpf')?.addEventListener('click', () => modalUnirPdfSlot(id, 'OPF', e, { reemplazar: false }));
     bindSlotArchivoActions(panel, id, { esRips, tipoServicio: e.tipo_servicio });
     sopIcons(panel);
     bindArmZipButtons(panel);
@@ -5653,13 +5712,13 @@
         tipo: 'pdx',
         pdxId: v.pdx_archivo_id,
         titulo: v.paciente_nombre || v.nombre_archivo_original || 'ORDEN+HC',
-        meta: `Depósito · ${v.fecha_estudio || ''} · vinculado`
+        meta: `Archivos · ${v.fecha_estudio || ''} · vinculado`
       });
     });
 
     const modal = openSopModal(`
       <h3><i data-lucide="layers" style="vertical-align:-3px;width:22px"></i> Armar OPF</h3>
-      <p style="font-size:.85rem;color:#64748b;margin:-8px 0 12px">Seleccione <strong>2 o más PDF</strong>, ordénelos con las flechas y guárdelos unidos. También puede usar el depósito o subir el <strong>OPF ya listo</strong> en un solo archivo.</p>
+      <p style="font-size:.85rem;color:#64748b;margin:-8px 0 12px">Seleccione <strong>2 o más PDF</strong>, ordénelos con las flechas y guárdelos unidos. También puede elegirlos entre los <strong>archivos cargados</strong> o subir el <strong>OPF ya listo</strong> en un solo archivo.</p>
       <p class="sop-pdx-format-nota" style="margin-bottom:12px">Nombre provisional: <code>${escapeHtml(opfEjemplo)}</code>${sinFactura ? ' <span style="color:#b45309">(sin factura aún)</span>' : ''}.</p>
       <details class="sop-opf-unido-details" style="margin-bottom:14px">
         <summary style="cursor:pointer;font-weight:600;font-size:.85rem;color:#475569">OPF ya unido (un solo PDF)</summary>
@@ -5681,7 +5740,7 @@
           <input type="file" id="sopOpfManualFile" accept=".pdf,application/pdf" multiple class="sop-file-input-visible">
         </div>
         <div class="sop-opf-add-row">
-          <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="sopOpfBtnBuscar"><i data-lucide="search"></i> Desde depósito</button>
+          <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="sopOpfBtnBuscar"><i data-lucide="search"></i> Desde archivos</button>
         </div>
         <div class="sop-opf-search-panel" id="sopOpfSearchPanel" style="display:none">
           <div class="sop-field" style="margin:0">
@@ -5728,7 +5787,7 @@
             i,
             partes.length,
             p.titulo,
-            p.meta || (p.tipo === 'pdx' ? 'Depósito' : 'Desde equipo'),
+            p.meta || (p.tipo === 'pdx' ? 'Archivos cargados' : 'Desde equipo'),
             { quitarIdx: i }
           )).join('');
           bindReordenLista(listEl, partes, refreshUi);
@@ -5757,7 +5816,7 @@
         tipo: 'pdx',
         pdxId: id,
         titulo: r.paciente_nombre || r.nombre_archivo_original || 'PDF',
-        meta: `${r.carpeta_nombre || 'Depósito'} · ${r.periodo || ''}`
+        meta: `${r.carpeta_nombre || 'Archivos'} · ${r.periodo || ''}`
       });
       refreshUi();
       sopToast('Añadido a la lista', 'success');
@@ -5797,7 +5856,7 @@
       resultsEl.innerHTML = '<div class="sop-empty" style="padding:12px"><i data-lucide="loader"></i> Buscando…</div>';
       sopIcons(resultsEl);
       try {
-        const res = await apiFetch(`/api/soportes/pdx/buscar?q=${encodeURIComponent(q)}`);
+        const res = await apiFetch(`/api/soportes/pdx/buscar?q=${encodeURIComponent(q)}&slot=OPF`);
         const data = await res.json();
         renderDepResults(data.resultados || []);
       } catch (err) {
@@ -5905,11 +5964,20 @@
   function modalImportDepositoEnExpediente(expId, filtroSlot = null) {
     let selectedId = null;
     let searchTimer = null;
-    const titulos = { PDX: 'reporte (PDX)', CRC: 'comprobante (CRC)' };
-    const titulo = filtroSlot ? titulos[filtroSlot] || filtroSlot : 'archivo del depósito';
+    const titulos = { PDX: 'reporte (PDX)', CRC: 'comprobante (CRC)', OPF: 'orden / HC (OPF)' };
+    const filtrosHint = {
+      OPF: 'Solo carpetas <strong>ORDEN + HC</strong> y similares.',
+      CRC: 'Solo carpetas <strong>COMPROBANTES</strong>.',
+      PDX: 'Solo carpetas <strong>PSG</strong>, <strong>VTM</strong>, <strong>EEG</strong> y <strong>TEST DE LATENCIA</strong>.'
+    };
+    const titulo = filtroSlot ? titulos[filtroSlot] || filtroSlot : 'archivo cargado';
+    const hintFiltro = filtroSlot && filtrosHint[filtroSlot]
+      ? `<p class="sop-pdx-format-nota" style="margin:-4px 0 12px">${filtrosHint[filtroSlot]}</p>`
+      : '';
     const modal = openSopModal(`
-      <h3><i data-lucide="database" style="vertical-align:-3px;width:22px"></i> Elegir ${escapeHtml(titulo)} del depósito</h3>
-      <p style="font-size:.85rem;color:#64748b;margin:-8px 0 12px">Busque por paciente y seleccione el archivo correcto. Se copiará a esta carpeta sin modificar el original.</p>
+      <h3><i data-lucide="database" style="vertical-align:-3px;width:22px"></i> Buscar ${escapeHtml(titulo)} en archivos cargados</h3>
+      <p style="font-size:.85rem;color:#64748b;margin:-8px 0 12px">Busque por paciente y seleccione el archivo. Se copiará al expediente sin modificar el original.</p>
+      ${hintFiltro}
       <div class="sop-field">
         <label>Paciente</label>
         <div class="sop-search-wrap" style="max-width:none">
@@ -5918,7 +5986,7 @@
         </div>
       </div>
       <div id="sopImpPdxResults" class="sop-import-results">
-        <div class="sop-empty" style="padding:20px;font-size:.85rem">Escriba para buscar en el depósito PDX</div>
+        <div class="sop-empty" style="padding:20px;font-size:.85rem">Escriba para buscar entre los archivos cargados</div>
       </div>
       <div class="sop-dialog-actions">
         <button type="button" class="sop-btn sop-btn-ghost" id="sopImpCancel">Cancelar</button>
@@ -5930,15 +5998,8 @@
 
     function renderImportResults(list) {
       let items = (list || []).filter((r) => r.puede_vincular_fe !== false && r.destino_modo !== 'no_soportes');
-      if (filtroSlot) {
-        items = items.filter((r) => {
-          const d = String(r.destino_importacion || '').toUpperCase();
-          if (filtroSlot === 'PDX') return d === 'PDX' || d.includes('REPORTE');
-          return d === filtroSlot || d.includes(filtroSlot);
-        });
-      }
       if (!items.length) {
-        resultsEl.innerHTML = '<div class="sop-empty" style="padding:20px;font-size:.85rem">Sin resultados para este tipo</div>';
+        resultsEl.innerHTML = '<div class="sop-empty" style="padding:20px;font-size:.85rem">Sin resultados para este tipo de carpeta</div>';
         selectedId = null;
         btnOk.disabled = true;
         return;
@@ -5974,7 +6035,8 @@
       resultsEl.innerHTML = '<div class="sop-empty" style="padding:20px"><i data-lucide="loader" class="sop-empty-icon"></i> Buscando…</div>';
       sopIcons(resultsEl);
       try {
-        const res = await apiFetch(`/api/soportes/pdx/buscar?q=${encodeURIComponent(q)}`);
+        const slotParam = filtroSlot ? `&slot=${encodeURIComponent(filtroSlot)}` : '';
+        const res = await apiFetch(`/api/soportes/pdx/buscar?q=${encodeURIComponent(q)}${slotParam}`);
         const data = await res.json();
         renderImportResults(data.resultados || []);
       } catch (e) {
@@ -5999,7 +6061,12 @@
         const r = await apiFetch(`/api/soportes/armado/expedientes/${expId}/importar-deposito`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ pdx_archivo_id: selectedId })
+          body: JSON.stringify({
+            pdx_archivo_id: selectedId,
+            ...(filtroSlot === 'OPF' || filtroSlot === 'CRC' || filtroSlot === 'PDX'
+              ? { slot_destino: filtroSlot }
+              : {})
+          })
         });
         const d = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(d.error || 'No se pudo vincular');

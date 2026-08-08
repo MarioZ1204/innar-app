@@ -4,11 +4,14 @@ const path = require('path');
 const puppeteer = require('puppeteer-core');
 const logger = require('./logger');
 const { readFileBuffer, pathExists } = require('./fs-async');
+const { applyPuppeteerCacheEnv, getPuppeteerCacheDir } = require('../config/puppeteer-cache-path');
 
-const PUPPETEER_CACHE_DIR = process.env.PUPPETEER_CACHE_DIR
-  || path.join(__dirname, '..', '.cache', 'puppeteer');
+function puppeteerCacheDir() {
+  return getPuppeteerCacheDir();
+}
 
 function resolveBundledChromeExecutable() {
+  applyPuppeteerCacheEnv();
   try {
     const puppeteerFull = require('puppeteer');
     if (typeof puppeteerFull.executablePath === 'function') {
@@ -20,7 +23,7 @@ function resolveBundledChromeExecutable() {
   }
 
   const cacheRoots = [
-    PUPPETEER_CACHE_DIR,
+    puppeteerCacheDir(),
     path.join(process.env.HOME || '', '.cache', 'puppeteer'),
     path.join(__dirname, '..', 'node_modules', 'puppeteer', '.cache')
   ].filter(Boolean);
@@ -105,32 +108,40 @@ function getChromiumDiagnostic() {
     platform: process.platform,
     executablePath: executablePath || null,
     executableExists: !!(executablePath && fs.existsSync(executablePath)),
-    cacheDir: PUPPETEER_CACHE_DIR,
+    cacheDir: puppeteerCacheDir(),
     envPath: process.env.PUPPETEER_EXECUTABLE_PATH || null
   };
 }
 
-function getPuppeteerLaunchOptions() {
+function buildPuppeteerLaunchArgs(extra = []) {
+  const args = [
+    '--no-sandbox',
+    '--disable-setuid-sandbox',
+    '--disable-dev-shm-usage',
+    '--disable-gpu',
+    '--disable-software-rasterizer',
+    '--disable-extensions',
+    '--no-first-run',
+    '--font-render-hinting=none',
+    ...extra
+  ];
+  if (process.platform === 'linux') {
+    args.push('--no-zygote');
+  }
+  return args;
+}
+
+function getPuppeteerLaunchOptions(extraArgs = []) {
   const executablePath = resolveChromeExecutable();
   if (!executablePath) {
     throw new Error(
       'No se encontró Chrome/Chromium. Ejecute npm install (descarga Chrome con puppeteer) o defina PUPPETEER_EXECUTABLE_PATH.'
     );
   }
-  const args = [
-    '--no-sandbox',
-    '--disable-setuid-sandbox',
-    '--disable-dev-shm-usage',
-    '--disable-gpu',
-    '--font-render-hinting=none'
-  ];
-  if (process.platform === 'linux') {
-    args.push('--no-zygote');
-  }
   return {
     executablePath,
     headless: true,
-    args,
+    args: buildPuppeteerLaunchArgs(extraArgs),
     dumpio: false
   };
 }
@@ -148,14 +159,38 @@ async function tryRenderHtmlToPdf(html, options = {}) {
 }
 
 async function probeChromiumLaunch() {
-  try {
-    const launchOptions = getPuppeteerLaunchOptions();
-    const browser = await puppeteer.launch(launchOptions);
-    await browser.close().catch(() => {});
-    return { ok: true, executablePath: launchOptions.executablePath };
-  } catch (e) {
-    return { ok: false, error: e.message, ...getChromiumDiagnostic() };
+  const attempts = [
+    () => getPuppeteerLaunchOptions(),
+    () => getPuppeteerLaunchOptions(['--single-process']),
+  ];
+  let lastError = null;
+  for (const build of attempts) {
+    try {
+      const launchOptions = build();
+      const browser = await puppeteer.launch(launchOptions);
+      await browser.close().catch(() => {});
+      return { ok: true, executablePath: launchOptions.executablePath };
+    } catch (e) {
+      lastError = e;
+    }
   }
+  return { ok: false, error: lastError?.message || 'No se pudo lanzar Chrome', ...getChromiumDiagnostic() };
+}
+
+async function launchBrowserWithFallback() {
+  const attempts = [
+    () => puppeteer.launch(getPuppeteerLaunchOptions()),
+    () => puppeteer.launch(getPuppeteerLaunchOptions(['--single-process'])),
+  ];
+  let lastError = null;
+  for (const launch of attempts) {
+    try {
+      return await launch();
+    } catch (e) {
+      lastError = e;
+    }
+  }
+  throw lastError || new Error('No se pudo lanzar Chrome');
 }
 
 async function renderHtmlToPdf(html, options = {}) {
@@ -165,13 +200,14 @@ async function renderHtmlToPdf(html, options = {}) {
     margin = { top: '0', bottom: '0', left: '0', right: '0' },
     waitFonts = true,
     contentTimeout = 60000,
-    fontsTimeoutMs = 3000
+    fontsTimeoutMs = 3000,
+    preferCSSPageSize = true
   } = options;
 
-  const launchOptions = getPuppeteerLaunchOptions();
-  const browser = await puppeteer.launch(launchOptions);
+  const browser = await launchBrowserWithFallback();
   try {
     const page = await browser.newPage();
+    await page.emulateMediaType('print');
     await page.setContent(html, { waitUntil: 'load', timeout: contentTimeout });
     if (waitFonts) {
       await page.evaluate((ms) => Promise.race([
@@ -179,7 +215,7 @@ async function renderHtmlToPdf(html, options = {}) {
         new Promise((resolve) => setTimeout(resolve, ms))
       ]), fontsTimeoutMs);
     }
-    return await page.pdf({ format, printBackground, margin });
+    return await page.pdf({ format, printBackground, margin, preferCSSPageSize });
   } finally {
     await browser.close().catch(() => {});
   }

@@ -89,8 +89,11 @@ function refreshActiveModuleData() {
   if (module === 'reportes-pdx' && typeof window.refreshReportesPdx === 'function') {
     scheduleSocketRefresh('reportes-pdx', () => window.refreshReportesPdx());
   }
-  if (module === 'archivo-soportes' && typeof window.cargarArchivoModulo === 'function') {
-    scheduleSocketRefresh('archivo-modulo', () => window.cargarArchivoModulo());
+  if (module === 'reportes-historico' && typeof window.refreshReportesHistorico === 'function') {
+    scheduleSocketRefresh('reportes-historico', () => window.refreshReportesHistorico());
+  }
+  if (module === 'armado-soportes' && typeof window.refreshArmadoSoportes === 'function') {
+    scheduleSocketRefresh('armado-soportes', () => window.refreshArmadoSoportes());
   }
 }
 
@@ -325,6 +328,20 @@ function registerDefaultRealtimeHandlers() {
     }
   });
 
+  subscribe('soportes:pdx-actualizado', () => {
+    if (window.currentModule === 'reportes-pdx' && typeof window.refreshReportesPdx === 'function') {
+      scheduleSocketRefresh('reportes-pdx', () => window.refreshReportesPdx());
+    }
+    if (window.currentModule === 'reportes-historico' && typeof window.refreshReportesHistorico === 'function') {
+      scheduleSocketRefresh('reportes-historico', () => window.refreshReportesHistorico());
+    }
+  });
+  subscribe('soportes:armado-actualizado', () => {
+    if (window.currentModule === 'armado-soportes' && typeof window.refreshArmadoSoportes === 'function') {
+      scheduleSocketRefresh('armado-soportes', () => window.refreshArmadoSoportes());
+    }
+  });
+
   subscribe('agenda:turno-creado', () => refreshActiveModuleData());
   subscribe('agenda:turno-eliminado', () => refreshActiveModuleData());
   subscribe('agenda:turno-estado-cambio', (e) => {
@@ -499,6 +516,7 @@ function initSocket() {
       if (module === 'anexo-fidu' && typeof window.refreshAnexoFidu === 'function') window.refreshAnexoFidu();
       if (module === 'backup' && typeof window.refreshBackupModule === 'function') window.refreshBackupModule();
       if (module === 'reportes-pdx' && typeof window.refreshReportesPdx === 'function') window.refreshReportesPdx();
+      if (module === 'reportes-historico' && typeof window.refreshReportesHistorico === 'function') window.refreshReportesHistorico();
       if (module === 'armado-soportes' && typeof window.refreshArmadoSoportes === 'function') window.refreshArmadoSoportes();
       if (typeof updateStats === 'function') updateStats();
       checkServerVersion();

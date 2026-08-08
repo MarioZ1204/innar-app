@@ -201,7 +201,7 @@
           </div>
         </section>
         <section class="menu-group">
-          <h3 class="menu-group-title">Documentos y facturación FIDU</h3>
+          <h3 class="menu-group-title">Documentos de cita</h3>
           <div class="menu-cards">
         <button class="menu-card" data-module="documentos-cita">
           <span class="menu-card-icon"><svg width="56" height="55" viewBox="0 0 56 55" fill="none"><rect x="8" y="6" width="40" height="44" rx="4" fill="#e6f4f1" stroke="#2d4a47" stroke-width="2"/><path d="M16 18h24M16 26h20M16 34h16" stroke="#2d4a47" stroke-width="2" stroke-linecap="round"/><path d="M34 38l6 6" stroke="#0d9488" stroke-width="2.5" stroke-linecap="round"/></svg></span>
@@ -209,12 +209,11 @@
             <span class="menu-card-title">Comprobantes y certificados</span>
           </span>
         </button>
-        <button class="menu-card" data-module="anexo-fidu">
-          <span class="menu-card-icon"><svg width="56" height="55" viewBox="0 0 56 55" fill="none"><rect x="6" y="6" width="44" height="40" rx="3" fill="#fef3c7" stroke="#d97706" stroke-width="2"/><path d="M10 14h36M10 22h36M10 30h24" stroke="#d97706" stroke-width="1.5"/><rect x="10" y="36" width="12" height="6" fill="#fde68a"/></svg></span>
-          <span class="menu-card-label">
-            <span class="menu-card-title">Anexo FIDU</span>
-          </span>
-        </button>
+          </div>
+        </section>
+        <section class="menu-group menu-group--facturacion">
+          <h3 class="menu-group-title">Facturación</h3>
+          <div class="menu-cards">
         <button class="menu-card" data-module="reportes-pdx" data-rol="superadmin admin admin_recepcion recepcion contabilidad admin_electro electro tecnico_electro">
           <span class="menu-card-icon"><svg width="56" height="55" viewBox="0 0 56 55" fill="none"><rect x="6" y="8" width="44" height="36" rx="4" fill="#dbeafe" stroke="#2563eb" stroke-width="2"/><path d="M14 20h28M14 28h20M14 36h24" stroke="#2563eb" stroke-width="2" stroke-linecap="round"/></svg></span>
           <span class="menu-card-label">
@@ -227,10 +226,16 @@
             <span class="menu-card-title">Soportes</span>
           </span>
         </button>
-        <button class="menu-card" data-module="archivo-soportes" data-rol="superadmin admin admin_recepcion recepcion contabilidad admin_electro">
-          <span class="menu-card-icon"><svg width="56" height="55" viewBox="0 0 56 55" fill="none"><rect x="10" y="8" width="36" height="38" rx="4" fill="#f1f5f9" stroke="#64748b" stroke-width="2"/><path d="M18 18h20M18 26h16M18 34h12" stroke="#64748b" stroke-width="2" stroke-linecap="round"/><rect x="32" y="30" width="10" height="10" rx="2" fill="#cbd5e1"/></svg></span>
+        <button class="menu-card" data-module="anexo-fidu">
+          <span class="menu-card-icon"><svg width="56" height="55" viewBox="0 0 56 55" fill="none"><rect x="6" y="6" width="44" height="40" rx="3" fill="#fef3c7" stroke="#d97706" stroke-width="2"/><path d="M10 14h36M10 22h36M10 30h24" stroke="#d97706" stroke-width="1.5"/><rect x="10" y="36" width="12" height="6" fill="#fde68a"/></svg></span>
           <span class="menu-card-label">
-            <span class="menu-card-title">Archivo histórico</span>
+            <span class="menu-card-title">Anexo FIDU</span>
+          </span>
+        </button>
+        <button class="menu-card" data-module="reportes-historico" data-rol="superadmin admin admin_recepcion recepcion contabilidad admin_electro electro tecnico_electro">
+          <span class="menu-card-icon"><svg width="56" height="55" viewBox="0 0 56 55" fill="none"><rect x="8" y="10" width="40" height="34" rx="4" fill="#e0e7ff" stroke="#4f46e5" stroke-width="2"/><path d="M16 20h24M16 28h18M16 36h22" stroke="#4f46e5" stroke-width="2" stroke-linecap="round"/><circle cx="40" cy="36" r="6" fill="#c7d2fe" stroke="#4f46e5" stroke-width="1.5"/><path d="M38 36h4M40 34v4" stroke="#4f46e5" stroke-width="1.2" stroke-linecap="round"/></svg></span>
+          <span class="menu-card-label">
+            <span class="menu-card-title">Reportes anteriores</span>
           </span>
         </button>
           </div>
@@ -2965,6 +2970,10 @@
           </div>
           <hr class="sidebar-title-sep" />
           <h2>Anexo FIDU</h2>
+          <div class="facturacion-sidebar-block" data-facturacion-nav-wrap hidden>
+            <span class="sidebar-section-label">Facturación</span>
+            <nav class="facturacion-flow-nav" data-facturacion-nav aria-label="Facturación"></nav>
+          </div>
           <nav class="afidu-sidebar-nav" aria-label="Secciones del módulo">
             <button type="button" class="sidebar-btn afidu-section-btn active" data-afidu-section="anexos">
               <span class="sb-icon"><i data-lucide="folder-tree"></i></span>
@@ -3873,6 +3882,10 @@
           </div>
           <hr class="sidebar-title-sep" />
           <h2>Cargar reportes</h2>
+          <div class="facturacion-sidebar-block" data-facturacion-nav-wrap hidden>
+            <span class="sidebar-section-label">Facturación</span>
+            <nav class="facturacion-flow-nav" data-facturacion-nav aria-label="Facturación"></nav>
+          </div>
         </div>
         <div class="sidebar-footer">
           <div class="sidebar-user">
@@ -3997,6 +4010,10 @@
           </div>
           <hr class="sidebar-title-sep" />
           <h2>Soportes</h2>
+          <div class="facturacion-sidebar-block" data-facturacion-nav-wrap hidden>
+            <span class="sidebar-section-label">Facturación</span>
+            <nav class="facturacion-flow-nav" data-facturacion-nav aria-label="Facturación"></nav>
+          </div>
         </div>
         <div class="sidebar-footer">
           <div class="sidebar-user">
@@ -4150,21 +4167,25 @@
     </div>
   </div>
 
-  <!-- ========== MÓDULO ARCHIVO (reportes / soportes / anexo) ========== -->
-  <div id="view-archivo-soportes" class="view-module hidden">
+  <!-- ========== MÓDULO REPORTES ANTERIORES (PDX archivados) ========== -->
+  <div id="view-reportes-historico" class="view-module hidden">
     <div class="main-layout">
       <div class="sidebar no-print">
         <div class="sidebar-inner">
           <div class="sidebar-logo-mini"><img src="/images/logo.webp" alt="Logo" width="305" height="100" loading="lazy" /></div>
-          <button class="btn-volver" id="btnVolverArchivoModulo" type="button">
-            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
-            Volver al menú
+          <button class="btn-volver btn-volver-menu-principal" id="btnVolverReportesHistorico" type="button" title="Volver al menú principal">
+            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+            Menú principal
           </button>
           <div class="sidebar-logo">
             <img src="/images/logo.webp" alt="Logo" width="305" height="100" style="height:58px;width:auto;object-fit:contain" loading="lazy" />
           </div>
           <hr class="sidebar-title-sep" />
-          <h2>Archivo histórico</h2>
+          <h2>Reportes anteriores</h2>
+          <div class="facturacion-sidebar-block" data-facturacion-nav-wrap hidden>
+            <span class="sidebar-section-label">Facturación</span>
+            <nav class="facturacion-flow-nav" data-facturacion-nav aria-label="Facturación"></nav>
+          </div>
         </div>
         <div class="sidebar-footer">
           <div class="sidebar-user">
@@ -4176,35 +4197,86 @@
           </div>
         </div>
       </div>
-      <div class="main-content">
-        <div class="container sop-module-content">
+      <div class="main-content" data-innar-scroll-root>
+        <div class="container sop-module-content sop-pdx-theme">
           <header class="sop-module-page-header no-print">
             <div>
-              <h2>Archivo histórico</h2>
-              <p style="margin:6px 0 0;font-size:.875rem;color:#64748b">Carpetas de Cargar reportes, Soportes y Anexo que completaron su ciclo. Puede volver a mostrarlas u ocultarlas en el módulo Soportes; aquí permanecen con su copia ZIP de respaldo.</p>
+              <h2>Reportes anteriores</h2>
+              <p class="sop-module-lead">Carpetas de PSG, VTM, EEG y demás reportes que salieron de Cargar reportes al cerrar el mes (cinco días de gracia). Solo consulta: ver y descargar PDFs.</p>
             </div>
-            <button type="button" id="btnArchivoModuloRefrescar" class="sop-btn sop-btn-ghost">
+            <button type="button" id="btnRhRefrescar" class="sop-btn sop-btn-ghost">
               <i data-lucide="refresh-cw"></i> Actualizar
             </button>
           </header>
-          <div class="sop-panel">
-            <div class="sop-panel-body" style="overflow-x:auto">
-              <table class="sop-table">
-                <thead>
-                  <tr>
-                    <th>Módulo</th>
-                    <th>Carpeta / mes</th>
-                    <th>Periodo</th>
-                    <th>Archivado</th>
-                    <th>Respaldo</th>
-                    <th>En Soportes</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody id="archivoModuloBody">
-                  <tr><td colspan="7" class="sop-empty" style="padding:24px">Cargando…</td></tr>
-                </tbody>
-              </table>
+          <div id="rhVistaLista">
+            <nav id="rhBreadcrumbLista" class="sop-breadcrumbs" aria-label="Ubicación"></nav>
+            <div class="sop-panel">
+              <div class="sop-panel-head">
+                <div class="sop-search-wrap">
+                  <i data-lucide="search"></i>
+                  <input type="search" id="rhBuscar" class="sop-search" placeholder="Buscar paciente en reportes archivados (mín. 2 caracteres)…" autocomplete="off">
+                </div>
+                <button type="button" id="btnRhBuscar" class="sop-btn sop-btn-ghost" title="Buscar ahora">
+                  <i data-lucide="search"></i> Buscar
+                </button>
+              </div>
+              <div class="sop-panel-body">
+                <div id="rhChipResumen" class="sop-chip-row"></div>
+                <div id="rhFiltrosBar" class="sop-pdx-filtros" aria-label="Filtros">
+                  <div class="sop-search-wrap sop-pdx-filtro-texto">
+                    <i data-lucide="filter"></i>
+                    <input type="search" id="rhFiltroTexto" class="sop-search" placeholder="Filtrar por nombre de carpeta…" autocomplete="off">
+                  </div>
+                  <select id="rhFiltroPeriodo" class="sop-select sop-pdx-filtro-sel" aria-label="Periodo">
+                    <option value="">Todos los periodos</option>
+                  </select>
+                  <select id="rhFiltroTema" class="sop-select sop-pdx-filtro-sel" aria-label="Modalidad">
+                    <option value="">Todas las modalidades</option>
+                    <option value="vtm">VTM</option>
+                    <option value="psg">PSG</option>
+                    <option value="eeg">EEG</option>
+                    <option value="actigrafia">Actigrafía</option>
+                    <option value="latencia">Test de latencia</option>
+                    <option value="ordenes">Órdenes</option>
+                    <option value="comprobantes">Comprobantes</option>
+                    <option value="neutral">Otro / neutro</option>
+                  </select>
+                  <select id="rhFiltroOrden" class="sop-select sop-pdx-filtro-sel" aria-label="Orden">
+                    <option value="periodo_desc" selected>Periodo (más reciente)</option>
+                    <option value="periodo_asc">Periodo (más antiguo)</option>
+                    <option value="nombre_asc">Nombre (0-9, A-Z)</option>
+                    <option value="nombre_desc">Nombre (Z-A, 9-0)</option>
+                    <option value="archivos_desc">Más archivos</option>
+                  </select>
+                </div>
+                <div id="rhTemaLegend" class="sop-tema-legend" aria-label="Leyenda de modalidades"></div>
+                <div id="rhResultados" class="sop-search-results hidden"></div>
+                <div id="rhLista"><div class="sop-empty"><i data-lucide="loader" class="sop-empty-icon"></i>Cargando carpetas…</div></div>
+              </div>
+            </div>
+          </div>
+          <div id="rhVistaDetalle" class="hidden">
+            <nav id="rhBreadcrumbDetalle" class="sop-breadcrumbs" aria-label="Ubicación"></nav>
+            <div class="sop-panel">
+              <div class="sop-panel-head">
+                <div style="flex:1;min-width:0">
+                  <h3 id="rhDetalleTitulo" style="margin:0 0 4px"></h3>
+                  <div id="rhDetalleMeta"></div>
+                </div>
+                <button type="button" id="btnRhVolverLista" class="sop-btn sop-btn-ghost">
+                  <i data-lucide="arrow-left"></i> Volver a carpetas
+                </button>
+              </div>
+              <div class="sop-panel-body">
+                <div class="sop-table-wrap">
+                  <table class="sop-table sop-table-pdx-archivos">
+                    <thead><tr>
+                      <th>Paciente</th><th>Fecha</th><th>Estudio</th><th>Archivo / acciones</th>
+                    </tr></thead>
+                    <tbody id="rhArchivosBody"></tbody>
+                  </table>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -4249,7 +4321,7 @@
   <script src="app.js?v=20260722-1"></script>
   <script src="anexo-fidu.js?v=1.7.4"></script>
   <script src="soportes-pdf-editor.js?v=20260625-2"></script>
-  <script src="archivo-modulo.js?v=1.7.7"></script>
+  <script src="reportes-historico.js?v=1.7.30"></script>
   <script src="llamado-pacientes.js?v=20260722-3"></script>
   <script src="soportes.js?v=1.7.19"></script>
   <script src="calendario-bloqueado.js?v=20260625-2"></script>

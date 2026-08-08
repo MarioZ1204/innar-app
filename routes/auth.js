@@ -6,6 +6,16 @@ const rateLimiter = require('../modules/rate-limiter');
 const logger = require('../utils/logger');
 const { requireAuth, safeError, emitSocket } = require('../middleware');
 const { isValidClientHash, hashForStorage, compareClientHash } = require('../utils/password');
+const { normalizePermisosLista } = require('../config/permisos-legacy');
+
+function parsePermisosUsuario(raw) {
+  let v = raw;
+  if (typeof v === 'string') {
+    try { v = JSON.parse(v); } catch (_) { v = null; }
+  }
+  if (!Array.isArray(v)) return null;
+  return normalizePermisosLista(v).list;
+}
 
 // Estas funciones viven en server.js y se inyectan al montar el router
 // Se acceden vía req.app.locals para evitar imports circulares
@@ -63,11 +73,7 @@ router.post('/login', async (req, res) => {
     req.session.usuarioId = user.id;
     req.session.usuario = user.usuario;
     req.session.rol = user.rol;
-    const parsedPermisos = (() => {
-      let p = user.permisos;
-      if (typeof p === 'string') { try { p = JSON.parse(p); } catch (_) { p = null; } }
-      return Array.isArray(p) ? p : null;
-    })();
+    const parsedPermisos = parsePermisosUsuario(user.permisos);
     req.session.permisos = parsedPermisos;
 
     req.session.save((saveErr) => {
@@ -110,8 +116,7 @@ router.get('/sesion', async (req, res) => {
       );
       const user = users.length > 0 ? users[0] : null;
       if (user) {
-        const p = user.permisos;
-        user.permisos = (() => { let v = p; if (typeof v === 'string') { try { v = JSON.parse(v); } catch (_) { v = null; } } return Array.isArray(v) ? v : null; })();
+        user.permisos = parsePermisosUsuario(user.permisos);
         req.session.permisos = user.permisos;
       }
       const ensureCsrf = getEnsureCsrf(req);

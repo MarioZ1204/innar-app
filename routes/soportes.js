@@ -9,7 +9,7 @@ const multer = require('multer');
 const router = express.Router();
 const db = require('../utils/db-mysql');
 const logger = require('../utils/logger');
-const { requireAuth, requireRoleOrPerm, requireSuperAdmin, safeError } = require('../middleware/index');
+const { requireAuth, requireRoleOrPerm, requireSuperAdmin, safeError, emitSocket } = require('../middleware/index');
 const { upload, uploadArmadoSoportes, validateMagicBytes, resolveUploadedFilePath } = require('../middleware/upload');
 const {
   periodoFromDate,
@@ -134,6 +134,8 @@ async function resolvePdxArchivoPathForApi(row, repair = false) {
 const { jsonSafeRow } = require('../utils/json-safe');
 
 const ROLES_SOPORTES = ['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion', 'contabilidad', 'admin_electro', 'electro', 'tecnico_electro'];
+const PERM_REPORTES_HISTORICO = ['modulo.reportes_historico'];
+const { sesionIncluyeAlgunPermiso } = require('../config/permisos-legacy');
 const { permisoKeyCarpetaPdx } = require('../utils/soportes-pdx-carpetas-permisos');
 const { usuarioVeCarpetaPdx: usuarioVeCarpetaPdxPermiso } = require('../utils/soportes-pdx-carpetas-permisos');
 
@@ -240,11 +242,33 @@ function safeNombreDescargaPdx(row, carpetaCtx) {
   }
 }
 
-function puedeVerArchivo(req) {
-  const perms = req.session?.permisos;
+function puedeVerReportesHistorico(req) {
   if (req.session?.rol === 'superadmin') return true;
-  if (Array.isArray(perms) && perms.includes('soportes.ver_archivo')) return true;
-  return false;
+  const perms = req.session?.permisos;
+  if (!Array.isArray(perms)) return false;
+  return sesionIncluyeAlgunPermiso(perms, PERM_REPORTES_HISTORICO);
+}
+
+function puedeVerArchivo(req) {
+  return puedeVerReportesHistorico(req);
+}
+
+function tieneAccesoPdxActivos(req) {
+  if (req.session?.rol === 'superadmin') return true;
+  const perms = req.session?.permisos;
+  if (!Array.isArray(perms)) return false;
+  return perms.includes('modulo.reportes_pdx')
+    || perms.includes('soportes.pdx.ver')
+    || perms.includes('soportes.pdx.subir');
+}
+
+function denyPdxSoloHistoricoEnCarpetaActiva(req, visibilidad) {
+  if (visibilidad === 'archivo') return null;
+  if (tieneAccesoPdxActivos(req)) return null;
+  if (puedeVerReportesHistorico(req)) {
+    return { status: 403, error: 'Solo puede consultar carpetas archivadas (Reportes anteriores)' };
+  }
+  return null;
 }
 
 async function visPdxPeriodo(periodo, visiblesSet = null) {
@@ -266,7 +290,7 @@ async function denyPeriodoArmadoInaccesible(req, res, periodoRow, visCtx = null)
   const vis = await visArmadoPeriodo(periodoRow, visCtx);
   if (vis === 'archivo') {
     res.status(403).json({
-      error: 'Este mes está en archivo. Actívelo en Archivo → «Mostrar en Soportes» para verlo aquí.'
+      error: 'Este mes está archivado y ya no está disponible en Soportes.'
     });
     return true;
   }
@@ -590,8 +614,25 @@ async function logPdxArchivo(archivoId, tipo, usuarioId, detalle) {
   } catch (_) { /* log opcional si migración pendiente */ }
 }
 
-const PERMS_PDX_VER_SUBIR = ['modulo.reportes_pdx', 'soportes.pdx.ver', 'soportes.pdx.subir'];
+const PERMS_PDX_VER_SUBIR = [
+  'modulo.reportes_pdx',
+  'modulo.reportes_historico',
+  'soportes.pdx.ver',
+  'soportes.pdx.subir'
+];
 const PERMS_ARMADO_VER_SUBIR = ['modulo.armado_soportes', 'soportes.armado.subir'];
+
+function notifySoportesPdx(cambio = {}) {
+  try {
+    emitSocket('soportes:pdx-actualizado', cambio);
+  } catch (_) { /* noop */ }
+}
+
+function notifySoportesArmado(cambio = {}) {
+  try {
+    emitSocket('soportes:armado-actualizado', cambio);
+  } catch (_) { /* noop */ }
+}
 
 const { applyHighlightsToPdfBytes, sanitizeHighlightsList } = require('../utils/soportes-pdf-highlights');
 const { appendPdfFilesToExisting } = require('../utils/soportes-pdf-anexar');
@@ -648,7 +689,7 @@ router.get('/soportes/pdx/carpetas/catalogo-permisos', requireAuth, requireSuper
   }
 });
 
-router.get('/soportes/pdx/carpetas', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, ['modulo.reportes_pdx', 'soportes.pdx.ver', 'soportes.pdx.subir']), async (req, res) => {
+router.get('/soportes/pdx/carpetas', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, PERMS_PDX_VER_SUBIR), async (req, res) => {
   try {
     const rows = await queryPdxCarpetasConCount();
     const hoyPeriodo = periodoFromDate();
@@ -663,6 +704,85 @@ router.get('/soportes/pdx/carpetas', requireAuth, requireRoleOrPerm(ROLES_SOPORT
   } catch (e) {
     logger.error('[SOPORTES] pdx carpetas:', e);
     res.status(500).json({ error: sopErrorCliente(e) });
+  }
+});
+
+router.get('/soportes/pdx/carpetas-archivadas', requireAuth, requireRoleOrPerm(
+  ROLES_SOPORTES,
+  [...PERM_REPORTES_HISTORICO, 'soportes.pdx.ver']
+), async (req, res) => {
+  try {
+    if (!puedeVerReportesHistorico(req)) {
+      return res.status(403).json({ error: 'Sin permiso para consultar reportes archivados' });
+    }
+    const rows = await queryPdxCarpetasConCount();
+    for (const r of rows) await refrescarVisibilidadPdx(r.periodo, req.session?.usuarioId || null);
+    const visiblesSet = await loadVisibleEnSoportesSet();
+    let lista = rows
+      .filter((r) => usuarioVeCarpetaPdx(req, r))
+      .map((r) => mapCarpetaPdx(r, visiblesSet))
+      .filter((c) => c.estado_visibilidad === 'archivo');
+    const periodo = String(req.query.periodo || '').trim();
+    const tema = String(req.query.tema || '').trim().toLowerCase();
+    if (periodo && /^\d{4}-\d{2}$/.test(periodo)) {
+      lista = lista.filter((c) => c.periodo === periodo);
+    }
+    if (tema) {
+      lista = lista.filter((c) => (c.color_tema || 'neutral') === tema);
+    }
+    ordenarPorTextoNatural(lista, 'nombre_display');
+    res.json({ carpetas: lista, total: lista.length });
+  } catch (e) {
+    logger.error('[SOPORTES] pdx carpetas archivadas:', e);
+    res.status(500).json({ error: sopErrorCliente(e) });
+  }
+});
+
+router.get('/soportes/pdx/buscar-archivadas', requireAuth, requireRoleOrPerm(
+  ROLES_SOPORTES,
+  [...PERM_REPORTES_HISTORICO, 'soportes.pdx.ver']
+), async (req, res) => {
+  try {
+    if (!puedeVerReportesHistorico(req)) {
+      return res.status(403).json({ error: 'Sin permiso para buscar reportes archivados' });
+    }
+    const q = String(req.query.q || '').trim();
+    if (q.length < 2) return res.json({ resultados: [] });
+    const visiblesSet = await loadVisibleEnSoportesSet();
+    const norm = q.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const like = `%${norm.replace(/[^a-z0-9\s]/g, '%')}%`;
+    const archivos = await db.query(
+      `SELECT a.*, c.nombre_display AS carpeta_nombre, c.periodo, c.color_tema, c.roles_visibles
+       FROM sop_pdx_archivos a
+       JOIN sop_pdx_carpetas c ON c.id = a.carpeta_id
+       WHERE a.paciente_nombre_norm LIKE ? OR a.estudio_texto LIKE ? OR a.apellidos LIKE ? OR a.nombres LIKE ?
+       ORDER BY a.fecha_estudio DESC LIMIT 120`,
+      [like, like, like, like]
+    );
+    const resultados = archivos.filter((a) => {
+      if (!usuarioVeCarpetaPdx(req, a)) return false;
+      const vis = resolveVisibilidadPeriodo(a.periodo, 'pdx', periodoToRefId(a.periodo), visiblesSet);
+      return vis === 'archivo';
+    }).map((a) => {
+      const enriched = enrichArchivoPdxConNombreDescarga(a, { nombre_display: a.carpeta_nombre });
+      return {
+        archivo_id: a.id,
+        paciente_nombre: a.paciente_nombre,
+        nombre_archivo_original: a.nombre_archivo_original,
+        nombre_archivo_display: a.nombre_archivo_display,
+        nombre_descarga: enriched.nombre_descarga,
+        fecha_estudio: a.fecha_estudio,
+        estudio_texto: a.estudio_texto,
+        carpeta_id: a.carpeta_id,
+        carpeta_nombre: a.carpeta_nombre,
+        periodo: a.periodo,
+        color_tema: a.color_tema
+      };
+    });
+    res.json({ resultados });
+  } catch (e) {
+    logger.error('[SOPORTES] buscar archivadas:', e);
+    res.status(500).json({ error: safeError(e) });
   }
 });
 
@@ -697,6 +817,7 @@ router.post('/soportes/pdx/carpetas', requireAuth, requireRoleOrPerm(ROLES_SOPOR
       return res.status(500).json({ error: 'Carpeta creada pero no encontrada al leer' });
     }
     res.status(201).json({ ok: true, carpeta: mapCarpetaPdx({ ...rows[0], archivos_count: 0 }) });
+    notifySoportesPdx({ accion: 'carpeta_creada', carpetaId: id, periodo });
   } catch (e) {
     if (String(e.message || '').includes('uk_sop_pdx')) {
       return res.status(409).json({ error: 'Ya existe una carpeta con ese nombre en el periodo' });
@@ -733,6 +854,7 @@ router.patch('/soportes/pdx/carpetas/:id', requireAuth, requireRoleOrPerm(ROLES_
       ok: true,
       carpeta: mapCarpetaPdx({ ...updated[0], archivos_count: countRows[0]?.n || 0 })
     });
+    notifySoportesPdx({ accion: 'carpeta_editada', carpetaId: parseInt(req.params.id, 10), periodo });
   } catch (e) {
     if (String(e.message || '').includes('uk_sop_pdx')) {
       return res.status(409).json({ error: 'Ya existe una carpeta con ese nombre en el periodo' });
@@ -784,19 +906,22 @@ router.delete('/soportes/pdx/carpetas/:id', requireAuth, requireRoleOrPerm(ROLES
       if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
     } catch (_) { /* ignore */ }
     res.json({ ok: true, eliminados: archivos.length });
+    notifySoportesPdx({ accion: 'carpeta_eliminada', carpetaId });
   } catch (e) {
     logger.error('[SOPORTES] eliminar carpeta pdx:', e);
     res.status(500).json({ error: sopErrorCliente(e), detail: String(e?.message || '').slice(0, 200) });
   }
 });
 
-router.get('/soportes/pdx/carpetas/:id/archivos', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, ['modulo.reportes_pdx', 'soportes.pdx.ver', 'soportes.pdx.subir']), async (req, res) => {
+router.get('/soportes/pdx/carpetas/:id/archivos', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, PERMS_PDX_VER_SUBIR), async (req, res) => {
   try {
     const carpeta = await db.query('SELECT * FROM sop_pdx_carpetas WHERE id = ?', [req.params.id]);
     if (!carpeta.length) return res.status(404).json({ error: 'Carpeta no encontrada' });
     const deniedArch = denySinAccesoCarpetaPdx(req, carpeta[0]);
     if (deniedArch) return res.status(deniedArch.status).json({ error: deniedArch.error });
     const vis = await visPdxPeriodo(carpeta[0].periodo);
+    const deniedHist = denyPdxSoloHistoricoEnCarpetaActiva(req, vis);
+    if (deniedHist) return res.status(deniedHist.status).json({ error: deniedHist.error });
     if (vis === 'archivo' && !puedeVerArchivo(req)) {
       return res.status(403).json({ error: 'Carpeta en archivo' });
     }
@@ -946,6 +1071,7 @@ router.post(
         archivo: safeEnrichArchivoPdxConNombreDescarga(jsonSafeRow(row[0]), carpeta),
         warnings
       });
+      notifySoportesPdx({ accion: 'archivo_subido', carpetaId: carpeta.id, archivoId: newId, periodo: carpeta.periodo });
     } catch (e) {
       if (uploadedPath && fs.existsSync(uploadedPath)) {
         try { fs.unlinkSync(uploadedPath); } catch (_) { /* ignore */ }
@@ -1059,6 +1185,7 @@ router.post(
         archivo: safeEnrichArchivoPdxConNombreDescarga(jsonSafeRow(row[0]), carpeta),
         warnings
       });
+      notifySoportesPdx({ accion: 'archivos_unificados', carpetaId: carpeta.id, archivoId: newId, periodo: carpeta.periodo });
     } catch (e) {
       if (mergedTmp && fs.existsSync(mergedTmp)) {
         try { fs.unlinkSync(mergedTmp); } catch (_) { /* ignore */ }
@@ -1073,9 +1200,10 @@ router.post(
   }
 );
 
-router.get('/soportes/pdx/buscar', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, ['modulo.reportes_pdx', 'soportes.pdx.ver', 'soportes.pdx.subir']), async (req, res) => {
+router.get('/soportes/pdx/buscar', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, PERMS_PDX_VER_SUBIR), async (req, res) => {
   try {
     const q = String(req.query.q || '').trim();
+    const slotFiltro = String(req.query.slot || '').toUpperCase();
     if (q.length < 2) return res.json({ resultados: [] });
     const incluirArchivo = puedeVerArchivo(req);
     const visiblesSet = await loadVisibleEnSoportesSet();
@@ -1090,10 +1218,13 @@ router.get('/soportes/pdx/buscar', requireAuth, requireRoleOrPerm(ROLES_SOPORTES
       [like, like, like, like]
     );
     const { resolverDestinoImportacion } = require('../utils/soportes-deposito-import');
+    const { carpetaCoincideSlotDeposito } = require('../utils/soportes-deposito-filtro');
     const resultados = archivos.filter((a) => {
       if (!usuarioVeCarpetaPdx(req, a)) return false;
       const vis = resolveVisibilidadPeriodo(a.periodo, 'pdx', periodoToRefId(a.periodo), visiblesSet);
-      return vis !== 'archivo' || incluirArchivo;
+      if (vis === 'archivo' && !incluirArchivo) return false;
+      if (slotFiltro && !carpetaCoincideSlotDeposito(slotFiltro, a)) return false;
+      return true;
     }).map((a) => {
       const enriched = enrichArchivoPdxConNombreDescarga(a, { nombre_display: a.carpeta_nombre });
       const dest = resolverDestinoImportacion(a);
@@ -1315,6 +1446,7 @@ router.patch('/soportes/pdx/archivos/:id', requireAuth, requireRoleOrPerm(ROLES_
     await logPdxArchivo(req.params.id, logTipo, req.session.usuarioId, logDetalle);
     const updated = await db.query('SELECT * FROM sop_pdx_archivos WHERE id = ?', [req.params.id]);
     res.json({ ok: true, archivo: updated[0], warnings, movido: logTipo === 'movimiento' });
+    notifySoportesPdx({ accion: logTipo === 'movimiento' ? 'archivo_movido' : 'archivo_editado', archivoId: parseInt(req.params.id, 10) });
   } catch (e) {
     logger.error('[SOPORTES] editar archivo pdx:', e);
     res.status(500).json({ error: safeError(e) });
@@ -1343,12 +1475,13 @@ router.delete('/soportes/pdx/archivos/:id', requireAuth, requireRoleOrPerm(ROLES
     }
     await db.execute('DELETE FROM sop_pdx_archivos WHERE id = ?', [req.params.id]);
     res.json({ ok: true, archivo_fisico_eliminado: refs === 0 });
+    notifySoportesPdx({ accion: 'archivo_eliminado', archivoId: parseInt(req.params.id, 10) });
   } catch (e) {
     res.status(500).json({ error: safeError(e) });
   }
 });
 
-router.get('/soportes/pdx/archivos/:id/descargar', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, ['modulo.reportes_pdx', 'soportes.pdx.ver', 'soportes.pdx.subir']), async (req, res) => {
+router.get('/soportes/pdx/archivos/:id/descargar', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, PERMS_PDX_VER_SUBIR), async (req, res) => {
   try {
     const rows = await db.query(
       `SELECT a.*, c.periodo, c.nombre_display AS carpeta_nombre, c.roles_visibles FROM sop_pdx_archivos a
@@ -1360,6 +1493,8 @@ router.get('/soportes/pdx/archivos/:id/descargar', requireAuth, requireRoleOrPer
     const deniedDl = denySinAccesoCarpetaPdx(req, row);
     if (deniedDl) return res.status(deniedDl.status).json({ error: deniedDl.error });
     const vis = await visPdxPeriodo(row.periodo);
+    const deniedHistDl = denyPdxSoloHistoricoEnCarpetaActiva(req, vis);
+    if (deniedHistDl) return res.status(deniedHistDl.status).json({ error: deniedHistDl.error });
     if (vis === 'archivo' && !puedeVerArchivo(req)) return res.status(403).json({ error: 'Archivo en carpeta cerrada' });
     const fp = await resolvePdxArchivoPathForApi(row, true);
     if (!fp) return res.status(404).json({ error: 'Archivo no en disco' });
@@ -1382,7 +1517,7 @@ router.get('/soportes/pdx/archivos/:id/descargar', requireAuth, requireRoleOrPer
   }
 });
 
-router.get('/soportes/pdx/archivos/:id/ver', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, ['modulo.reportes_pdx', 'soportes.pdx.ver', 'soportes.pdx.subir']), async (req, res) => {
+router.get('/soportes/pdx/archivos/:id/ver', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, PERMS_PDX_VER_SUBIR), async (req, res) => {
   try {
     const rows = await db.query(
       `SELECT a.*, c.periodo, c.roles_visibles FROM sop_pdx_archivos a JOIN sop_pdx_carpetas c ON c.id = a.carpeta_id WHERE a.id = ?`,
@@ -1392,6 +1527,8 @@ router.get('/soportes/pdx/archivos/:id/ver', requireAuth, requireRoleOrPerm(ROLE
     const deniedVer = denySinAccesoCarpetaPdx(req, rows[0]);
     if (deniedVer) return res.status(deniedVer.status).json({ error: deniedVer.error });
     const vis = await visPdxPeriodo(rows[0].periodo);
+    const deniedHistVer = denyPdxSoloHistoricoEnCarpetaActiva(req, vis);
+    if (deniedHistVer) return res.status(deniedHistVer.status).json({ error: deniedHistVer.error });
     if (vis === 'archivo' && !puedeVerArchivo(req)) return res.status(403).json({ error: 'Archivo en carpeta cerrada' });
     const fp = await resolvePdxArchivoPathForApi(rows[0], true);
     if (!fp) return res.status(404).json({ error: 'Archivo no en disco' });
@@ -1600,7 +1737,7 @@ router.post(
   }
 );
 
-router.get('/soportes/pdx/archivos/:id/historial', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, ['modulo.reportes_pdx', 'soportes.pdx.ver', 'soportes.pdx.subir']), async (req, res) => {
+router.get('/soportes/pdx/archivos/:id/historial', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, PERMS_PDX_VER_SUBIR), async (req, res) => {
   try {
     const accRows = await db.query(
       `SELECT c.roles_visibles FROM sop_pdx_archivos a
@@ -1814,6 +1951,7 @@ router.post('/soportes/armado/periodos', requireAuth, requireRoleOrPerm(ROLES_SO
     if (!rows.length) return res.status(500).json({ error: 'Periodo creado pero no encontrado' });
     await ensureContenedorasRaizPeriodo(db, periodoId, req.session.usuarioId);
     res.status(201).json({ ok: true, periodo: mapPeriodo({ ...rows[0], expedientes_count: 0 }) });
+    notifySoportesArmado({ accion: 'periodo_creado', periodoId, periodo });
   } catch (e) {
     if (String(e.message).includes('Duplicate')) return res.status(409).json({ error: 'El periodo ya existe' });
     logger.error('[SOPORTES] crear periodo armado:', e);
@@ -1993,6 +2131,7 @@ router.post('/soportes/armado/periodos/:id/dias', requireAuth, requireRoleOrPerm
       dia: mapDia({ ...row[0], expedientes_count: 0, hijos_count: 0 }),
       contenedores: contenedores.map(mapContenedor)
     });
+    notifySoportesArmado({ accion: 'dia_creado', periodoId, diaId });
   } catch (e) {
     if (e.code === 'ER_DUP_ENTRY' || /uk_sop_dia|Duplicate entry/i.test(String(e.message || ''))) {
       return res.status(409).json({ error: 'Ya existe una carpeta con ese nombre en el mes (o conflicto de índice en BD)' });
@@ -2512,6 +2651,7 @@ router.post('/soportes/armado/contenedores/:id/expedientes', requireAuth, requir
     const result = await crearExpedienteEnContenedor(req.params.id, req.body || {}, req.session.usuarioId);
     if (result.error) return res.status(result.status || 400).json({ error: result.error });
     res.status(201).json(result);
+    notifySoportesArmado({ accion: 'expediente_creado', contenedorId: parseInt(req.params.id, 10) });
   } catch (e) {
     if (String(e.message).includes('uk_sop_exp_cont')) return res.status(409).json({ error: 'Ese código FE ya existe en esta carpeta' });
     res.status(500).json({ error: safeError(e) });
@@ -2523,6 +2663,7 @@ router.post('/soportes/armado/contenedores/:id/expedientes/lote', requireAuth, r
     const result = await crearExpedientesLote(req.params.id, req.body || {}, req.session.usuarioId);
     if (result.error) return res.status(result.status || 400).json({ error: result.error });
     res.status(201).json(result);
+    notifySoportesArmado({ accion: 'expedientes_lote', contenedorId: parseInt(req.params.id, 10) });
   } catch (e) {
     res.status(500).json({ error: safeError(e) });
   }
@@ -2544,6 +2685,7 @@ router.post('/soportes/armado/contenedores/:id/expedientes/siguiente', requireAu
     );
     if (result.error) return res.status(result.status || 400).json({ error: result.error });
     res.status(201).json({ ...result, numero_sugerido: siguiente });
+    notifySoportesArmado({ accion: 'expediente_creado', contenedorId: parseInt(req.params.id, 10) });
   } catch (e) {
     if (String(e.message).includes('uk_sop_exp_cont')) return res.status(409).json({ error: 'Ese código FE ya existe en esta carpeta' });
     res.status(500).json({ error: safeError(e) });
@@ -2558,6 +2700,7 @@ router.post('/soportes/armado/dias/:id/expedientes', requireAuth, requireRoleOrP
     const result = await crearExpedienteEnContenedor(c[0].id, req.body || {}, req.session.usuarioId);
     if (result.error) return res.status(result.status || 400).json({ error: result.error });
     res.status(201).json(result);
+    notifySoportesArmado({ accion: 'expediente_creado', diaId: parseInt(req.params.id, 10) });
   } catch (e) {
     if (String(e.message).includes('uk_sop_exp_cont')) return res.status(409).json({ error: 'Ese código FE ya existe en esta carpeta' });
     res.status(500).json({ error: safeError(e) });
@@ -2581,6 +2724,7 @@ router.post('/soportes/armado/dias/:id/expedientes/siguiente', requireAuth, requ
     );
     if (result.error) return res.status(result.status || 400).json({ error: result.error });
     res.status(201).json({ ...result, numero_sugerido: siguiente });
+    notifySoportesArmado({ accion: 'expediente_creado', diaId: parseInt(req.params.id, 10) });
   } catch (e) {
     if (String(e.message).includes('uk_sop_exp_cont')) return res.status(409).json({ error: 'Ese código FE ya existe en esta carpeta' });
     res.status(500).json({ error: safeError(e) });
@@ -2608,6 +2752,7 @@ router.patch('/soportes/armado/expedientes/:id', requireAuth, requireRoleOrPerm(
       logger.error('[SOPORTES] buildExpedienteDetail tras PATCH expediente:', detailErr);
     }
     res.json({ ok: true, expediente, renombrado: result.renombrado || null });
+    notifySoportesArmado({ accion: 'expediente_actualizado', expedienteId: parseInt(req.params.id, 10) });
   } catch (e) {
     logger.error('[SOPORTES] PATCH expediente:', e);
     res.status(500).json({ error: safeError(e) });
@@ -2628,7 +2773,7 @@ router.delete('/soportes/armado/expedientes/:id', requireAuth, requireRoleOrPerm
 async function handleImportarDesdeDeposito(req, res) {
   try {
     const pdxId = parseInt(req.body.pdx_archivo_id, 10);
-    if (!pdxId) return res.status(400).json({ error: 'Seleccione un archivo del depósito de reportes' });
+    if (!pdxId) return res.status(400).json({ error: 'Seleccione un archivo de los cargados en reportes' });
     const exp = await resolveExpedienteContext(req.params.id);
     if (!exp) return res.status(404).json({ error: 'Expediente no encontrado' });
 
@@ -2642,8 +2787,17 @@ async function handleImportarDesdeDeposito(req, res) {
     if (deniedImp) return res.status(deniedImp.status).json({ error: deniedImp.error });
 
     const { importarArchivoDesdeDeposito, resolverDestinoImportacion } = require('../utils/soportes-deposito-import');
+    const { carpetaCoincideSlotDeposito } = require('../utils/soportes-deposito-filtro');
     const destPreview = resolverDestinoImportacion(pdx[0]);
-    const result = await importarArchivoDesdeDeposito(exp, pdx[0], req.session.usuarioId);
+    const slotDestino = String(req.body.slot_destino || '').toUpperCase();
+    if (slotDestino && !carpetaCoincideSlotDeposito(slotDestino, pdx[0])) {
+      return res.status(400).json({
+        error: `El archivo no pertenece a una carpeta válida para ${slotDestino}. Revise los archivos cargados.`
+      });
+    }
+    const result = await importarArchivoDesdeDeposito(exp, pdx[0], req.session.usuarioId, {
+      slotForzado: slotDestino || undefined
+    });
 
     const warnings = [];
     if (pdx[0].periodo !== exp.periodo) {
@@ -2656,6 +2810,7 @@ async function handleImportarDesdeDeposito(req, res) {
       ? `Vinculado (${destPreview.etiqueta})`
       : `Importado en ${result.slot || destPreview.slot}`;
     res.json({ ok: true, message: msg, ...result, expediente: detail, warnings });
+    notifySoportesArmado({ accion: 'importar_pdx', expedienteId: parseInt(req.params.id, 10) });
   } catch (e) {
     logger.error('[SOPORTES] importar deposito:', e);
     const msg = e.message || safeError(e);
@@ -2749,7 +2904,7 @@ router.post(
         for (const item of spec) {
           if (item?.t === 'pdx' || item?.tipo === 'pdx') {
             const pdxId = parseInt(item.id ?? item.pdx_archivo_id, 10);
-            if (!pdxId) return res.status(400).json({ error: 'ID de depósito inválido en la lista' });
+            if (!pdxId) return res.status(400).json({ error: 'ID de archivo cargado inválido en la lista' });
             const pdxRows = await db.query(
               `SELECT a.*, c.nombre_display AS carpeta_nombre, c.periodo, c.color_tema
                FROM sop_pdx_archivos a JOIN sop_pdx_carpetas c ON c.id = a.carpeta_id WHERE a.id = ?`,
@@ -2799,7 +2954,7 @@ router.post(
 
         if (!pdxRow && !ordenPath) {
           return res.status(400).json({
-            error: 'Agregue al menos 2 PDF (depósito o manual), o suba el OPF ya unido'
+            error: 'Agregue al menos 2 PDF (desde archivos cargados o manual), o suba el OPF ya unido'
           });
         }
 
@@ -3107,10 +3262,15 @@ router.post(
         path: f.path,
         originalname: f.originalname
       })).filter((p) => p.path);
-      if (partes.length < 2 || partes.length > 4) {
+      if (partes.length < 2) {
+        cleanupMulterTempFiles(req);
+        return res.status(400).json({ error: 'Seleccione al menos 2 PDF para unir.' });
+      }
+      const tipoSlot = String(req.params.tipo || '').toUpperCase();
+      if (tipoSlot === 'CRC' && partes.length > 4) {
         cleanupMulterTempFiles(req);
         return res.status(400).json({
-          error: 'Seleccione 2, 3 o 4 PDF: 2=Comprobante+Certificado; 3=+Consentimiento; 4=+Cotización.'
+          error: 'Para CRC seleccione 2, 3 o 4 PDF: 2=Comprobante+Certificado; 3=+Consentimiento; 4=+Cotización.'
         });
       }
       const { unirPdfsEnSlot } = require('../utils/soportes-slot-merge');
@@ -3242,6 +3402,7 @@ router.post(
       if (!result.ok) return res.status(result.status || 400).json(result);
       const detail = await buildExpedienteDetail(req.params.id);
       res.json({ ok: true, expediente: detail, ...result });
+      notifySoportesArmado({ accion: 'archivo_subido', expedienteId: parseInt(req.params.id, 10), slot: tipo });
     } catch (e) {
       res.status(500).json({ error: safeError(e) });
     }

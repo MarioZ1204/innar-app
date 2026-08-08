@@ -31,6 +31,7 @@ const { runRuntimeMigrations } = require('./migrations/runtime-migrations');
 const { attachSockets } = require('./socket/handlers');
 const { requireAuth } = require('./middleware/index');
 const { runRecoveryBootstrap } = require('./scripts/auto-run-recuperacion-soportes');
+const { ensureChromiumReady } = require('./scripts/ensure-chromium');
 
 const PACKAGE_VERSION = require('./package.json').version;
 // IMPORTANTE: la versión debe ser ESTABLE entre reinicios.
@@ -51,6 +52,29 @@ if (RECOVERY_FLAGS.some((flag) => process.env[flag] === '1' || process.env[flag]
     console.error('[server] Falló el bootstrap de recuperación de SOPORTES:', error);
   });
 }
+
+// Chrome para certificados/comprobantes: caché persistente (private_puppeteer junto a UPLOADS_DIR).
+setImmediate(() => {
+  ensureChromiumReady({ install: true })
+    .then((r) => {
+      if (r.ok) {
+        logger.info('[STARTUP] Chrome/Puppeteer listo para PDF de documentos', {
+          type: 'STARTUP',
+          cacheDir: r.cacheDir,
+          installed: !!r.installed
+        });
+      } else {
+        logger.warn('[STARTUP] Chrome/Puppeteer no disponible; certificados usarán fallback HTML/cliente', {
+          type: 'STARTUP',
+          error: r.error,
+          cacheDir: r.cacheDir
+        });
+      }
+    })
+    .catch((e) => {
+      logger.warn('[STARTUP] ensureChromiumReady falló:', { type: 'STARTUP', error: e.message });
+    });
+});
 
 app.use(compression({
   filter(req, res) {
@@ -355,7 +379,6 @@ app.use('/api', require('./routes/certificados'));
 app.use('/api', require('./routes/admin'));
 app.use('/api', require('./routes/integraciones-worldoffice'));
 app.use('/api', require('./routes/soportes'));
-app.use('/api', require('./routes/archivo-modulo'));
 app.use('/api', require('./routes/anexo-fidu'));
 app.use('/api', require('./routes/llamado'));
 app.use('/api', require('./routes/backup'));

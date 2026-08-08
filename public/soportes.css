@@ -1,5 +1,6 @@
 /* Soportes — UI moderna (tokens Innar, motion, móvil) */
 #view-reportes-pdx,
+#view-reportes-historico,
 #view-armado-soportes {
   --sop-text: var(--innar-text, #0f172a);
   --sop-text-muted: var(--innar-text-muted, #64748b);
@@ -10,11 +11,13 @@
 }
 
 #view-reportes-pdx,
+#view-reportes-historico,
 #view-armado-soportes {
   color: var(--sop-text);
 }
 
 #view-reportes-pdx .main-layout,
+#view-reportes-historico .main-layout,
 #view-armado-soportes .main-layout {
   min-height: 100vh;
   min-height: 100dvh;
@@ -60,6 +63,7 @@
 }
 
 #view-reportes-pdx .main-content,
+#view-reportes-historico .main-content,
 #view-armado-soportes .main-content {
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
@@ -2112,13 +2116,40 @@ body.sop-arm-drag-active {
 .sop-slot-actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
   gap: 6px;
-  margin-top: 4px;
+  margin-top: 8px;
 }
 
-.sop-slot-actions .sop-btn-sm {
-  padding: 4px 8px;
-  min-height: 28px;
+.sop-slot-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  min-height: 40px;
+  padding: 0 !important;
+  flex-shrink: 0;
+}
+
+.sop-slot-actions .sop-slot-action-btn > svg,
+.sop-slot-actions .sop-slot-action-btn > [data-lucide] {
+  width: 20px !important;
+  height: 20px !important;
+  flex-shrink: 0;
+}
+
+label.sop-slot-action-btn.sop-slot-replace {
+  position: relative;
+  margin: 0;
+}
+
+.sop-slot-actions .sop-slot-del:hover {
+  color: #dc2626;
+  border-color: #fecaca;
+  background: #fef2f2;
 }
 
 .sop-flags {
@@ -2378,16 +2409,20 @@ body.sop-arm-drag-active {
 /* ── Móvil: topbar, paneles y tablas (PDX + Armado) ───────────────────────── */
 /* Cargar reportes + Soportes: carpetas compactas (−8px vs base) */
 #view-reportes-pdx .sop-grid,
-#view-reportes-pdx .sop-skeleton-grid {
+#view-reportes-historico .sop-grid,
+#view-reportes-pdx .sop-skeleton-grid,
+#view-reportes-historico .sop-skeleton-grid {
   grid-template-columns: repeat(auto-fill, minmax(272px, 1fr));
   gap: 12px;
 }
 
-#view-reportes-pdx .sop-skeleton-folder-card {
+#view-reportes-pdx .sop-skeleton-folder-card,
+#view-reportes-historico .sop-skeleton-folder-card {
   height: 140px;
 }
 
 #view-reportes-pdx .sop-folder-card,
+#view-reportes-historico .sop-folder-card,
 #view-armado-soportes .sop-folder-card,
 #view-anexo-fidu .sop-folder-card {
   padding: 8px;
@@ -2395,7 +2430,8 @@ body.sop-arm-drag-active {
   gap: 4px;
 }
 
-#view-reportes-pdx .sop-folder-icon {
+#view-reportes-pdx .sop-folder-icon,
+#view-reportes-historico .sop-folder-icon {
   width: 36px;
   height: 36px;
   margin-bottom: 4px;
@@ -2403,6 +2439,7 @@ body.sop-arm-drag-active {
 }
 
 #view-reportes-pdx .sop-folder-title,
+#view-reportes-historico .sop-folder-title,
 #view-armado-soportes .sop-folder-card-title,
 #view-anexo-fidu .sop-folder-card-title {
   font-size: 0.88rem;
@@ -2410,6 +2447,7 @@ body.sop-arm-drag-active {
 }
 
 #view-reportes-pdx .sop-folder-meta,
+#view-reportes-historico .sop-folder-meta,
 #view-armado-soportes .sop-folder-card-meta,
 #view-armado-soportes .sop-folder-card-count,
 #view-anexo-fidu .sop-folder-card-meta,
@@ -2417,7 +2455,8 @@ body.sop-arm-drag-active {
   font-size: 0.74rem;
 }
 
-#view-reportes-pdx .sop-folder-actions {
+#view-reportes-pdx .sop-folder-actions,
+#view-reportes-historico .sop-folder-actions {
   margin-top: 4px;
   padding-top: 4px;
 }

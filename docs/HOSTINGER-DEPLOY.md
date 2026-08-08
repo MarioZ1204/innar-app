@@ -62,7 +62,23 @@ Compruebe con `/api/health/deep` (usuario autenticado): el bloque `uploadsDir` d
 
 No ejecute `git clean -fd` en el servidor sobre la carpeta de uploads persistente.
 
-## 5) Flujo recomendado de despliegue
+## 5) Chrome / Puppeteer (certificados y comprobantes PDF)
+
+Si `UPLOADS_DIR` ya apunta a `private_uploads`, la app usa por defecto **`../private_puppeteer`** para guardar Chrome (misma carpeta padre que los uploads). Así el binario **no se borra** en cada redeploy.
+
+Tras el primer deploy con esta versión:
+
+1. Reinicie la Node.js App (el arranque intenta instalar Chrome si falta).
+2. O ejecute `npm install` en el servidor (el `postinstall` también descarga Chrome).
+3. Compruebe en `/api/health/deep` que `checks.chromium.ok` sea `true`.
+
+Opcional en variables de entorno:
+
+`PUPPETEER_CACHE_DIR=/home/USUARIO/domains/tudominio.com/private_puppeteer`
+
+No use `CERTIFICADOS_PDF_MODE=html` en producción salvo emergencia: genera una página de impresión en lugar de PDF nativo.
+
+## 6) Flujo recomendado de despliegue
 
 1. Haz commit y push en Git.
 2. En Hostinger, sincroniza/actualiza el repo.

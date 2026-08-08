@@ -4,6 +4,60 @@ const lsKey = 'recibos_sencillo_v1';
 const lsKeyServicios = 'servicios_list_v1';
 const lsKeyCurrentModule = 'current_module_v1';
 
+/** Orden narrativo del flujo de facturación (menú + sidebars). */
+const FACTURACION_FLOW_MODULES = [
+  { id: 'reportes-pdx', perm: 'modulo.reportes_pdx', step: 1, label: 'Cargar reportes' },
+  { id: 'armado-soportes', perm: 'modulo.armado_soportes', step: 2, label: 'Soportes' },
+  { id: 'anexo-fidu', perm: 'modulo.anexo_fidu', step: 3, label: 'Anexo FIDU' },
+  { id: 'reportes-historico', perm: 'modulo.reportes_historico', step: 4, label: 'Reportes anteriores' },
+];
+
+function facturacionModuleAllowed(moduleId) {
+  const item = FACTURACION_FLOW_MODULES.find((m) => m.id === moduleId);
+  if (!item) return false;
+  if (typeof tienePermiso === 'function') return tienePermiso(item.perm);
+  const rol = currentUser?.rol || '';
+  return rol === 'superadmin' || rol === 'admin';
+}
+
+function initFacturacionFlowNav() {
+  if (window._facturacionNavInited) return;
+  window._facturacionNavInited = true;
+  document.querySelectorAll('[data-facturacion-nav]').forEach((nav) => {
+    if (nav.dataset.filled) return;
+    nav.dataset.filled = '1';
+    FACTURACION_FLOW_MODULES.forEach((item) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'sidebar-btn facturacion-flow-btn';
+      btn.dataset.facturacionModule = item.id;
+      btn.innerHTML = `<span class="sb-icon sb-icon-step" aria-hidden="true">${item.step}</span><span>${item.label}</span>`;
+      btn.addEventListener('click', () => {
+        if (item.id !== currentModule) goToModule(item.id);
+      });
+      nav.appendChild(btn);
+    });
+  });
+}
+
+function updateFacturacionFlowNav(activeModuleId) {
+  initFacturacionFlowNav();
+  let visibleCount = 0;
+  FACTURACION_FLOW_MODULES.forEach((item) => {
+    const allowed = facturacionModuleAllowed(item.id);
+    if (allowed) visibleCount += 1;
+    document.querySelectorAll(`[data-facturacion-module="${item.id}"]`).forEach((btn) => {
+      btn.style.display = allowed ? '' : 'none';
+      btn.classList.toggle('active', allowed && item.id === activeModuleId);
+    });
+  });
+  const inFlow = FACTURACION_FLOW_MODULES.some((m) => m.id === activeModuleId);
+  const showBlock = visibleCount >= 2 && inFlow;
+  document.querySelectorAll('[data-facturacion-nav-wrap]').forEach((wrap) => {
+    wrap.hidden = !showBlock;
+  });
+}
+
 // ========== GLOBAL ERROR HANDLER ==========
 window.addEventListener('unhandledrejection', (e) => {
   const r = e.reason;
@@ -863,7 +917,7 @@ function updateMenuByRole() {
     }
     if (r === 'admin' && !Array.isArray(perms)) return true;
     const p = perms;
-    if (Array.isArray(p)) return p.includes(permKey);
+    if (Array.isArray(p)) return p.includes(permKey) || _permisoIncluyeLegacy(p, permKey);
     // Sin permisos personalizados → verificar defaults del rol
     const defaults = typeof PERMISOS_ROL_DEFAULTS !== 'undefined' ? PERMISOS_ROL_DEFAULTS[r] : null;
     if (defaults === null || defaults === undefined) return true; // rol sin restricciones
@@ -881,9 +935,9 @@ function updateMenuByRole() {
     'gestion-datos':  'modulo.gestion_datos',
     'monitor-equipos':'modulo.monitor_equipos',
     'reportes-pdx':     'modulo.reportes_pdx',
+    'reportes-historico': 'modulo.reportes_historico',
     'armado-soportes':  'modulo.armado_soportes',
     'anexo-fidu':       'modulo.anexo_fidu',
-    'archivo-soportes': 'modulo.archivo_soportes',
     'llamado-pacientes': 'modulo.llamado_pacientes',
     'backup':           'modulo.backup',
   };
@@ -908,6 +962,7 @@ function updateMenuByRole() {
     const permKey = btn.dataset.permRecibos || '';
     btn.style.display = tienePermiso(permKey) ? '' : 'none';
   });
+  updateFacturacionFlowNav(currentModule);
 }
 
 async function checkSession() {
@@ -1125,8 +1180,8 @@ function goToModule(moduleId) {
   }
   if (moduleId === 'monitor-equipos') { initMonitorEquipos(); }
   if (moduleId === 'reportes-pdx' && typeof initReportesPdx === 'function') initReportesPdx();
+  if (moduleId === 'reportes-historico' && typeof initReportesHistorico === 'function') initReportesHistorico();
   if (moduleId === 'armado-soportes' && typeof initArmadoSoportes === 'function') initArmadoSoportes();
-  if (moduleId === 'archivo-soportes' && typeof initArchivoModulo === 'function') initArchivoModulo();
   if (moduleId === 'backup' && typeof initBackupModule === 'function') initBackupModule();
   if (moduleId === 'documentos-cita' && typeof initDocumentosCitaModule === 'function') initDocumentosCitaModule();
   if (moduleId === 'anexo-fidu' && typeof initAnexoFidu === 'function') initAnexoFidu();
@@ -1135,6 +1190,7 @@ function goToModule(moduleId) {
     window.deactivateLlamadoPacientesTab();
   }
   if (typeof window.innarSidebarRefresh === 'function') window.innarSidebarRefresh();
+  updateFacturacionFlowNav(moduleId);
 }
 
 function goToMenu() {
@@ -1167,6 +1223,7 @@ function goToMenu() {
   selectedDoctorId = null;
   sessionStorage.removeItem(lsKeySelectedDoctor);
   history.pushState({view: 'menu'}, '', '#menu');
+  updateFacturacionFlowNav(null);
 }
 
 function setupMenuHandlers() {
@@ -9341,6 +9398,21 @@ async function crearCitaElectro() {
 /** No se conceden por defecto a admin u otros roles con lista abierta; solo superadmin o asignación explícita. */
 const PERMISOS_OPT_IN = new Set(['modulo.anexo_fidu']);
 
+/** Legado → canónico. Mantener alineado con config/permisos-legacy.js */
+const PERMISOS_LEGACY_REEMPLAZOS = {
+  'modulo.archivo_soportes': ['modulo.reportes_historico'],
+  'soportes.ver_archivo': ['modulo.reportes_historico'],
+};
+
+function _permisoIncluyeLegacy(permisos, permKey) {
+  if (!Array.isArray(permisos)) return false;
+  if (permisos.includes(permKey)) return true;
+  for (const [legacy, canonList] of Object.entries(PERMISOS_LEGACY_REEMPLAZOS)) {
+    if (permisos.includes(legacy) && canonList.includes(permKey)) return true;
+  }
+  return false;
+}
+
 // Definición completa de todos los permisos del sistema (agrupados por módulo)
 const PERMISOS_DEFS = [
   // ── Recibos ───────────────────────────────────────────────────────────────
@@ -9412,14 +9484,14 @@ const PERMISOS_DEFS = [
   { key: 'soportes.pdx.subir',          label: 'Subir archivos PDF',                  grupo: 'Cargar reportes' },
   { key: 'soportes.pdx.editar',         label: 'Editar, reemplazar y mover',          grupo: 'Cargar reportes' },
   { key: 'soportes.pdx.eliminar',       label: 'Eliminar archivos y carpetas',        grupo: 'Cargar reportes' },
-  // ── Soportes Radicación ───────────────────────────────────────────────────
-  { key: 'modulo.armado_soportes',      label: 'Acceso al módulo',                    grupo: 'Soportes Radicación' },
-  { key: 'soportes.armado.crear_estructura', label: 'Crear mes / día / FE',           grupo: 'Soportes Radicación' },
-  { key: 'soportes.armado.subir',       label: 'Subir OPF / CRC / HEV',               grupo: 'Soportes Radicación' },
-  { key: 'soportes.armado.importar_pdx', label: 'Importar PDX a expediente',          grupo: 'Soportes Radicación' },
-  { key: 'soportes.descargar_zip',      label: 'Descargar ZIP del expediente',        grupo: 'Soportes Radicación' },
-  { key: 'soportes.ver_archivo',        label: 'Ver y descargar módulo Archivo',      grupo: 'Soportes Radicación' },
-  { key: 'modulo.archivo_soportes',     label: 'Acceso al módulo Archivo',            grupo: 'Archivo' },
+  // ── Reportes anteriores (archivados) ───────────────────────────────────────
+  { key: 'modulo.reportes_historico',   label: 'Acceso al módulo (consulta de carpetas archivadas)', grupo: 'Reportes anteriores' },
+  // ── Soportes ──────────────────────────────────────────────────────────────
+  { key: 'modulo.armado_soportes',      label: 'Acceso al módulo',                    grupo: 'Soportes' },
+  { key: 'soportes.armado.crear_estructura', label: 'Crear mes / día / FE',           grupo: 'Soportes' },
+  { key: 'soportes.armado.subir',       label: 'Subir OPF / CRC / HEV',               grupo: 'Soportes' },
+  { key: 'soportes.armado.importar_pdx', label: 'Importar PDX a expediente',          grupo: 'Soportes' },
+  { key: 'soportes.descargar_zip',      label: 'Descargar ZIP del expediente',        grupo: 'Soportes' },
   // ── Anexo FIDU ────────────────────────────────────────────────────────────
   { key: 'modulo.anexo_fidu',           label: 'Acceso al módulo (importar, editar, exportar)', grupo: 'Anexo FIDU' },
   // ── Backup ────────────────────────────────────────────────────────────────
@@ -9439,7 +9511,7 @@ const PERMISOS_ROL_DEFAULTS = {
     'modulo.reportes_pdx','modulo.armado_soportes','modulo.llamado_pacientes','llamado.configurar',
     'soportes.pdx.ver','soportes.pdx.carpetas.todas','soportes.pdx.crear_carpeta','soportes.pdx.subir','soportes.pdx.editar',
     'soportes.armado.crear_estructura','soportes.armado.subir','soportes.armado.importar_pdx','soportes.descargar_zip',
-    'soportes.ver_archivo','modulo.archivo_soportes',
+    'modulo.reportes_historico',
     'recibos.crear','recibos.ver','recibos.exportar','recibos.pagar','recibos.pendiente',
     'agenda.ver','agenda.crear','agenda.editar','agenda.eliminar','agenda.cambiar_estado',
     'agenda.llamar_siguiente','agenda.marcar_atendido','agenda.aviso_doctor','agenda.disponibilidad',
@@ -9451,7 +9523,7 @@ const PERMISOS_ROL_DEFAULTS = {
     'modulo.reportes_pdx','modulo.armado_soportes','modulo.llamado_pacientes','llamado.configurar',
     'soportes.pdx.ver','soportes.pdx.carpetas.todas','soportes.pdx.crear_carpeta','soportes.pdx.subir','soportes.pdx.editar',
     'soportes.armado.crear_estructura','soportes.armado.subir','soportes.armado.importar_pdx','soportes.descargar_zip',
-    'soportes.ver_archivo','modulo.archivo_soportes',
+    'modulo.reportes_historico',
     'recibos.crear','recibos.ver','recibos.pagar','recibos.pendiente',
     'agenda.ver','agenda.crear','agenda.editar','agenda.eliminar','agenda.cambiar_estado',
     'agenda.llamar_siguiente','agenda.marcar_atendido','agenda.aviso_doctor',
@@ -9476,7 +9548,7 @@ const PERMISOS_ROL_DEFAULTS = {
     'modulo.reportes_pdx','modulo.armado_soportes','modulo.llamado_pacientes','llamado.configurar',
     'soportes.pdx.ver','soportes.pdx.carpetas.todas','soportes.pdx.crear_carpeta','soportes.pdx.subir','soportes.pdx.editar',
     'soportes.armado.crear_estructura','soportes.armado.subir','soportes.armado.importar_pdx','soportes.descargar_zip',
-    'soportes.ver_archivo','modulo.archivo_soportes',
+    'modulo.reportes_historico',
     'electro.ver','electro.crear','electro.editar','electro.eliminar','electro.cambiar_estado','electro.subir_archivo','electro.ver_archivo','electro.aviso_doctor',
     'agenda.ver','agenda.editar','agenda.aviso_doctor',
     'sistema.dashboard',
@@ -9486,7 +9558,7 @@ const PERMISOS_ROL_DEFAULTS = {
     'modulo.reportes_pdx','modulo.armado_soportes','modulo.llamado_pacientes','llamado.configurar',
     'soportes.pdx.ver','soportes.pdx.carpetas.todas','soportes.pdx.crear_carpeta','soportes.pdx.subir','soportes.pdx.editar',
     'soportes.armado.crear_estructura','soportes.armado.subir','soportes.armado.importar_pdx','soportes.descargar_zip',
-    'soportes.ver_archivo','modulo.archivo_soportes',
+    'modulo.reportes_historico',
     'electro.ver','electro.crear','electro.editar','electro.eliminar','electro.cambiar_estado','electro.subir_archivo','electro.ver_archivo','electro.aviso_doctor',
     'agenda.ver','agenda.editar','agenda.aviso_doctor',
     'sistema.dashboard',
@@ -9501,7 +9573,7 @@ const PERMISOS_ROL_DEFAULTS = {
     'modulo.reportes_pdx','modulo.armado_soportes','modulo.llamado_pacientes','llamado.configurar',
     'soportes.pdx.ver','soportes.pdx.carpetas.todas','soportes.pdx.crear_carpeta','soportes.pdx.subir','soportes.pdx.editar',
     'soportes.armado.crear_estructura','soportes.armado.subir','soportes.armado.importar_pdx','soportes.descargar_zip',
-    'soportes.ver_archivo','modulo.archivo_soportes',
+    'modulo.reportes_historico',
     'recibos.ver','recibos.exportar','recibos.pagar','recibos.pendiente',
     'sistema.dashboard','sistema.reportes',
   ],
@@ -9945,6 +10017,7 @@ async function _restablecerPermisos() {
         _permisosUsuarioSeleccionado.permisos = null;
         const rolDefaults = PERMISOS_ROL_DEFAULTS[_permisosUsuarioSeleccionado.rol] || null;
         _renderPermisosChecklist(null, rolDefaults);
+        await _renderPermisosPdxCarpetas(null, rolDefaults);
         await _cargarPermisosUserList();
       } else {
         showToast(data.error || 'Error al restablecer', 'error');

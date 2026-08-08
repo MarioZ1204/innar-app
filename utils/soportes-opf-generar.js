@@ -105,7 +105,7 @@ async function generarOpfEnExpediente(exp, ctx, {
 
   if (ordenPdxRow?.id) {
     if (!esArchivoOrdenHcPdx(ordenPdxRow)) {
-      throw new Error('El archivo del depósito no es un ORDEN + HC válido');
+      throw new Error('El archivo cargado no es un ORDEN + HC válido');
     }
     const { resolveStoragePath } = require('./soportes-storage');
     ordenFilePath = resolveStoragePath(ordenPdxRow.ruta_relativa);
@@ -114,7 +114,7 @@ async function generarOpfEnExpediente(exp, ctx, {
   }
 
   if (!ordenFilePath) {
-    throw new Error('Indique ORDEN+HC (del depósito o PDF manual) y la autorización');
+    throw new Error('Indique ORDEN+HC (desde archivos cargados o PDF manual) y la autorización');
   }
   assertPdfEnDisco(ordenFilePath, 'ORDEN+HC');
 
@@ -162,11 +162,11 @@ async function generarOpfDesdePartes(exp, ctx, partes, usuarioId) {
   for (const p of partes) {
     if (p.kind === 'pdx') {
       const row = p.pdxRow;
-      if (!row?.ruta_relativa) throw new Error('Archivo del depósito sin ruta');
+      if (!row?.ruta_relativa) throw new Error('Archivo cargado sin ruta');
       const fp = resolveStoragePath(row.ruta_relativa);
-      assertPdfEnDisco(fp, 'depósito');
+      assertPdfEnDisco(fp, 'archivo cargado');
       paths.push(fp);
-      labels.push(row.nombre_archivo_original || row.paciente_nombre || 'Depósito');
+      labels.push(row.nombre_archivo_original || row.paciente_nombre || 'Archivo');
       if (!firstPdxId) firstPdxId = row.id;
     } else if (p.kind === 'file') {
       assertPdfEnDisco(p.path, p.label || 'archivo');

@@ -16,6 +16,7 @@ const { validateSchema } = require('../modules/validation-schemas');
 
 const ROLES_VALIDOS = ['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro', 'tecnico_electro', 'auxiliar_recepcion', 'doctor', 'contabilidad'];
 const { esPermisoPdxValido } = require('../utils/soportes-pdx-carpetas-permisos');
+const { normalizePermisosLista, PERMISOS_LEGACY_SET } = require('../config/permisos-legacy');
 
 const PERMISOS_VALIDOS = new Set([
   'modulo.recibos', 'modulo.agenda_medica', 'modulo.electrodiag',
@@ -23,7 +24,7 @@ const PERMISOS_VALIDOS = new Set([
   'modulo.monitor_equipos', 'modulo.reportes_pdx', 'modulo.armado_soportes', 'modulo.anexo_fidu', 'modulo.backup', 'modulo.llamado_pacientes',
   'soportes.pdx.ver', 'soportes.pdx.carpetas.todas', 'soportes.pdx.crear_carpeta', 'soportes.pdx.subir', 'soportes.pdx.editar', 'soportes.pdx.eliminar',
   'soportes.armado.crear_estructura', 'soportes.armado.subir', 'soportes.armado.importar_pdx',
-  'soportes.descargar_zip', 'soportes.ver_archivo', 'modulo.archivo_soportes',
+  'soportes.descargar_zip', 'soportes.ver_archivo', 'modulo.archivo_soportes', 'modulo.reportes_historico',
   'recibos.crear', 'recibos.ver', 'recibos.editar', 'recibos.pagar', 'recibos.pendiente',
   'recibos.anular', 'recibos.eliminar', 'recibos.exportar', 'recibos.gestionar_servicios', 'recibos.resetear',
   'agenda.ver', 'agenda.crear', 'agenda.editar', 'agenda.eliminar', 'agenda.cambiar_estado',
@@ -265,6 +266,7 @@ router.get('/:id/permisos', requireAuth, requireSuperAdmin, async (req, res) => 
     if (u.permisos) {
       try { permisos = typeof u.permisos === 'string' ? JSON.parse(u.permisos) : u.permisos; } catch (_) {}
     }
+    if (Array.isArray(permisos)) permisos = normalizePermisosLista(permisos).list;
     res.json({ id: u.id, usuario: u.usuario, nombre: u.nombre, rol: u.rol, permisos });
   } catch (e) { res.status(500).json({ error: safeError(e) }); }
 });
@@ -280,16 +282,17 @@ router.put('/:id/permisos', requireAuth, requireSuperAdmin, async (req, res) => 
       if (p.length < 2 || p.length > 80 || !/^[a-z0-9._]+$/i.test(p)) {
         return res.status(400).json({ error: 'Formato de clave de permiso no válido' });
       }
-      if (!PERMISOS_VALIDOS.has(p) && !esPermisoPdxValido(p)) {
+      if (!PERMISOS_VALIDOS.has(p) && !PERMISOS_LEGACY_SET.has(p) && !esPermisoPdxValido(p)) {
         return res.status(400).json({ error: `Permiso desconocido: "${p}"` });
       }
     }
   }
+  const permisosNormalizados = permisos === null ? null : normalizePermisosLista(permisos).list;
   try {
     const rows = await db.query('SELECT rol FROM usuarios WHERE id = ?', [id]);
     if (!rows.length) return res.status(404).json({ error: 'Usuario no encontrado' });
     if (rows[0].rol === 'superadmin') return res.status(403).json({ error: 'No se pueden modificar permisos del superadmin' });
-    const value = permisos === null ? null : JSON.stringify(permisos);
+    const value = permisosNormalizados === null ? null : JSON.stringify(permisosNormalizados);
     await db.execute('UPDATE usuarios SET permisos = ? WHERE id = ?', [value, id]);
     emitSocket('usuario:permisos-cambiados', { userId: id });
     res.json({ ok: true });

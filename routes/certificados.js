@@ -22,6 +22,18 @@ const {
 } = require('../utils/comprobante-servicios');
 const { procesarImagenesFirma } = require('../utils/comprobante-servicios-firma');
 const { listarServiciosComprobante } = require('../utils/cups-comprobante-activos');
+const { ensureChromiumReady } = require('../scripts/ensure-chromium');
+
+let chromiumWarmupPromise = null;
+function warmupChromiumOnce() {
+  if (!chromiumWarmupPromise) {
+    chromiumWarmupPromise = ensureChromiumReady({ install: true }).catch((e) => ({
+      ok: false,
+      error: e.message
+    }));
+  }
+  return chromiumWarmupPromise;
+}
 const db = require('../utils/db-mysql');
 const {
   buscarPersonaFiduPorDocumento,
@@ -62,6 +74,10 @@ function requireCertificadoComprobante(req, res, next) {
 async function responderDocumentoPdfOHtml(res, { html, titulo, filename, logLabel }) {
   const modo = String(process.env.CERTIFICADOS_PDF_MODE || '').trim().toLowerCase();
   if (modo !== 'html') {
+    const chrome = await warmupChromiumOnce();
+    if (!chrome.ok) {
+      logger.warn(`[CERT] ${logLabel} Chrome no listo (${chrome.error || 'desconocido'}), intentando PDF igualmente`);
+    }
     const resultado = await tryRenderHtmlToPdf(html);
     if (resultado.ok) {
       res.contentType('application/pdf');

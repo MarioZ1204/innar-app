@@ -10,7 +10,7 @@ const PERMISOS_ROL_DEFAULTS = {
     'modulo.reportes_pdx', 'modulo.armado_soportes', 'modulo.llamado_pacientes', 'llamado.configurar',
     'soportes.pdx.ver', 'soportes.pdx.carpetas.todas', 'soportes.pdx.crear_carpeta', 'soportes.pdx.subir', 'soportes.pdx.editar',
     'soportes.armado.crear_estructura', 'soportes.armado.subir', 'soportes.armado.importar_pdx', 'soportes.descargar_zip',
-    'soportes.ver_archivo', 'modulo.archivo_soportes',
+    'modulo.reportes_historico',
     'recibos.crear', 'recibos.ver', 'recibos.exportar', 'recibos.pagar', 'recibos.pendiente',
     'agenda.ver', 'agenda.crear', 'agenda.editar', 'agenda.eliminar', 'agenda.cambiar_estado',
     'agenda.llamar_siguiente', 'agenda.marcar_atendido', 'agenda.aviso_doctor', 'agenda.disponibilidad',
@@ -22,7 +22,7 @@ const PERMISOS_ROL_DEFAULTS = {
     'modulo.reportes_pdx', 'modulo.armado_soportes', 'modulo.llamado_pacientes', 'llamado.configurar',
     'soportes.pdx.ver', 'soportes.pdx.carpetas.todas', 'soportes.pdx.crear_carpeta', 'soportes.pdx.subir', 'soportes.pdx.editar',
     'soportes.armado.crear_estructura', 'soportes.armado.subir', 'soportes.armado.importar_pdx', 'soportes.descargar_zip',
-    'soportes.ver_archivo', 'modulo.archivo_soportes',
+    'modulo.reportes_historico',
     'recibos.crear', 'recibos.ver', 'recibos.pagar', 'recibos.pendiente',
     'agenda.ver', 'agenda.crear', 'agenda.editar', 'agenda.eliminar', 'agenda.cambiar_estado',
     'agenda.llamar_siguiente', 'agenda.marcar_atendido', 'agenda.aviso_doctor',
@@ -41,7 +41,7 @@ const PERMISOS_ROL_DEFAULTS = {
     'modulo.reportes_pdx', 'modulo.armado_soportes', 'modulo.llamado_pacientes', 'llamado.configurar',
     'soportes.pdx.ver', 'soportes.pdx.carpetas.todas', 'soportes.pdx.crear_carpeta', 'soportes.pdx.subir', 'soportes.pdx.editar',
     'soportes.armado.crear_estructura', 'soportes.armado.subir', 'soportes.armado.importar_pdx', 'soportes.descargar_zip',
-    'soportes.ver_archivo', 'modulo.archivo_soportes',
+    'modulo.reportes_historico',
     'electro.ver', 'electro.crear', 'electro.editar', 'electro.eliminar', 'electro.cambiar_estado', 'electro.subir_archivo', 'electro.ver_archivo', 'electro.aviso_doctor',
     'agenda.ver', 'agenda.editar', 'agenda.aviso_doctor',
     'sistema.dashboard'
@@ -51,7 +51,7 @@ const PERMISOS_ROL_DEFAULTS = {
     'modulo.reportes_pdx', 'modulo.armado_soportes', 'modulo.llamado_pacientes', 'llamado.configurar',
     'soportes.pdx.ver', 'soportes.pdx.carpetas.todas', 'soportes.pdx.crear_carpeta', 'soportes.pdx.subir', 'soportes.pdx.editar',
     'soportes.armado.crear_estructura', 'soportes.armado.subir', 'soportes.armado.importar_pdx', 'soportes.descargar_zip',
-    'soportes.ver_archivo', 'modulo.archivo_soportes',
+    'modulo.reportes_historico',
     'electro.ver', 'electro.crear', 'electro.editar', 'electro.eliminar', 'electro.cambiar_estado', 'electro.subir_archivo', 'electro.ver_archivo', 'electro.aviso_doctor',
     'agenda.ver', 'agenda.editar', 'agenda.aviso_doctor',
     'sistema.dashboard'
@@ -72,7 +72,7 @@ const PERMISOS_ROL_DEFAULTS = {
     'modulo.reportes_pdx', 'modulo.armado_soportes', 'modulo.llamado_pacientes', 'llamado.configurar',
     'soportes.pdx.ver', 'soportes.pdx.carpetas.todas', 'soportes.pdx.crear_carpeta', 'soportes.pdx.subir', 'soportes.pdx.editar',
     'soportes.armado.crear_estructura', 'soportes.armado.subir', 'soportes.armado.importar_pdx', 'soportes.descargar_zip',
-    'soportes.ver_archivo', 'modulo.archivo_soportes',
+    'modulo.reportes_historico',
     'recibos.ver', 'recibos.exportar', 'recibos.pagar', 'recibos.pendiente',
     'sistema.dashboard', 'sistema.reportes'
   ]

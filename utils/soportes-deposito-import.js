@@ -45,7 +45,7 @@ function resolverDestinoImportacion(pdxRow) {
         modo: 'vinculo',
         rol: 'orden_hc',
         etiqueta: 'ORDEN + HC',
-        aviso: 'Quedó vinculado al expediente. Use «Generar OPF» para unirlo con la autorización.'
+        aviso: 'Quedó vinculado al expediente. Use «Unir PDFs» para combinarlo con la autorización.'
       };
     }
     return {
@@ -68,7 +68,7 @@ async function assertExpedienteSoportes(exp) {
 async function copiarDepositoATemporal(pdxRow) {
   const src = resolveStoragePath(pdxRow.ruta_relativa);
   if (!src || !fs.existsSync(src)) {
-    throw new Error('El archivo no está en disco en el depósito de reportes');
+    throw new Error('El archivo no está en disco entre los reportes cargados');
   }
   const tmpCopy = path.join(os.tmpdir(), `innar-dep-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.pdf`);
   fs.copyFileSync(src, tmpCopy);
@@ -92,9 +92,19 @@ async function registrarVinculo(expedienteId, pdxArchivoId, rol, rutaRelativa, n
 
 const { moveFileSafe: moveFileToDest } = require('./fs-move-safe');
 
-async function importarArchivoDesdeDeposito(exp, pdxRow, usuarioId) {
+async function importarArchivoDesdeDeposito(exp, pdxRow, usuarioId, opts = {}) {
   await assertExpedienteSoportes(exp);
-  const dest = resolverDestinoImportacion(pdxRow);
+  const slotForzado = opts.slotForzado ? String(opts.slotForzado).toUpperCase() : '';
+  let dest = resolverDestinoImportacion(pdxRow);
+  if (slotForzado && dest.modo === 'slot') {
+    if (slotForzado === 'OPF') {
+      dest = { modo: 'slot', slot: 'OPF', etiqueta: 'OPF' };
+    } else if (slotForzado === 'CRC') {
+      dest = { modo: 'slot', slot: 'CRC', etiqueta: 'CRC (comprobante)' };
+    } else if (slotForzado === 'PDX') {
+      dest = { modo: 'slot', slot: 'PDX', etiqueta: 'PDX (reporte)' };
+    }
+  }
   if (dest.modo === 'no_soportes') {
     throw new Error(dest.error || 'Este tipo de archivo no se vincula a Soportes');
   }

@@ -12,7 +12,7 @@ const { mergePdfFilesToTemp } = require('./soportes-opf-merge');
 const { loadArchivoExpedienteSlot, eliminarArchivoExpedienteSlot } = require('./soportes-exp-archivo');
 const { resolverTiposPartes } = require('./soportes-crc-orden');
 
-const UNIR_PDF_SLOTS = ['CRC'];
+const UNIR_PDF_SLOTS = ['CRC', 'OPF'];
 
 function assertSlotUnirPermitido(slotKey) {
   const t = String(slotKey || '').toUpperCase();
@@ -98,6 +98,12 @@ async function unirPdfsEnSlot(exp, ctx, slotKey, sourcePaths, {
       paths = assertPdfPaths(resuelto.paths, 2);
       ordenEtiquetas = resuelto.orden;
     }
+  } else if (tipo === 'OPF') {
+    if (items.length < 2) {
+      throw new Error('Para OPF seleccione al menos 2 PDF.');
+    }
+    paths = assertPdfPaths(items.map((i) => i.path), 2);
+    ordenEtiquetas = items.map((i) => i.originalname || path.basename(i.path));
   } else {
     paths = assertPdfPaths(items.map((i) => i.path), minArchivos);
   }
@@ -117,7 +123,7 @@ async function unirPdfsEnSlot(exp, ctx, slotKey, sourcePaths, {
       : paths.map((p) => path.basename(p)).join(' + ');
     return await persistirSlotPdf(exp, ctx, tipo, mergedTmp, {
       nombre_original: nombreOriginal || `${tipo} ← ${labels}`,
-      origen: origen || 'merge_pdf'
+      origen: origen || (tipo === 'OPF' ? 'merge_opf' : 'merge_pdf')
     }, usuarioId);
   } catch (e) {
     try { if (fs.existsSync(mergedTmp)) fs.unlinkSync(mergedTmp); } catch (_) { /* ignore */ }

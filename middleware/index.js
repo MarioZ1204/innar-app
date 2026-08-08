@@ -1,6 +1,7 @@
 // Middleware compartido: autenticación, roles, permisos y helpers
 const socketEmitter = require('../utils/socket-emitter');
 const logger = require('../utils/logger');
+const { sesionIncluyePermiso } = require('../config/permisos-legacy');
 
 // ── Helpers de rol ──────────────────────────────────────────────────────────
 function isAdminRol(rol) {
@@ -60,7 +61,7 @@ function requirePermiso(permiso) {
     }
     if (rol === 'admin' && (perms === null || perms === undefined)) return next();
     if (perms === null || perms === undefined) return next();
-    if (Array.isArray(perms) && perms.includes(permiso)) return next();
+    if (Array.isArray(perms) && (perms.includes(permiso) || sesionIncluyePermiso(perms, permiso))) return next();
     return res.status(403).json({ error: 'No tienes permiso para esta acción' });
   };
 }
@@ -75,16 +76,16 @@ function requireRoleOrPerm(roles, permiso) {
     if (rol === 'superadmin') return next();
     const soloOptIn = permisos.length > 0 && permisos.every((p) => esPermisoOptIn(p));
     if (soloOptIn) {
-      if (Array.isArray(perms) && permisos.some((p) => perms.includes(p))) return next();
+      if (Array.isArray(perms) && permisos.some((p) => perms.includes(p) || sesionIncluyePermiso(perms, p))) return next();
       return res.status(403).json({ error: 'Acceso denegado' });
     }
     if (rol === 'admin' && (perms === null || perms === undefined)) return next();
     if (roles.includes(rol)) {
       if (perms === null || perms === undefined) return next();
-      if (Array.isArray(perms) && permisos.some(p => perms.includes(p))) return next();
+      if (Array.isArray(perms) && permisos.some((p) => perms.includes(p) || sesionIncluyePermiso(perms, p))) return next();
       return res.status(403).json({ error: 'No tienes permiso para esta acción' });
     }
-    if (Array.isArray(perms) && permisos.some(p => perms.includes(p))) return next();
+    if (Array.isArray(perms) && permisos.some((p) => perms.includes(p) || sesionIncluyePermiso(perms, p))) return next();
     return res.status(403).json({ error: 'Acceso denegado' });
   };
 }

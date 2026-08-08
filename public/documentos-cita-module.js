@@ -509,8 +509,12 @@
           filename
         });
       } else {
-        const blob = await PDF.generarPdfBlobDesdeHtml(preview.html);
-        out = { blob, modo: 'pdf-cliente', filename: preview.filename || filename };
+        out = await PDF.generarDocumentoConBlob({
+          postUrl: '/api/certificados/asistencia',
+          previewUrl: '/api/certificados/asistencia/preview',
+          payload,
+          filename: preview.filename || filename
+        });
       }
       if (out.blob) PDF.descargarBlob(out.blob, out.filename || filename);
 

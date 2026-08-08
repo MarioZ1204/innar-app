@@ -139,6 +139,35 @@ select {
   color: #64748b;
 }
 
+.facturacion-sidebar-block {
+  margin-top: 4px;
+}
+
+.facturacion-flow-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.facturacion-flow-btn .sb-icon-step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1;
+  background: rgba(13, 148, 136, 0.12);
+  color: #0d9488;
+}
+
+.facturacion-flow-btn.active .sb-icon-step {
+  background: #0d9488;
+  color: #fff;
+}
+
 .menu-group .menu-cards {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
