@@ -104,6 +104,25 @@ describe('anexo-fidu-personas-docs', () => {
     expect(pre.firma_paciente).toBe(firma);
   });
 
+  test('merge no duplica nombres_2/apellidos_2 viejos al recalcular el nombre completo', () => {
+    const existente = {
+      numero_documento: '1',
+      nombres_1: 'JUAN',
+      nombres_2: 'CARLOS',
+      apellidos_1: 'PEREZ',
+      apellidos_2: 'GOMEZ'
+    };
+    const incoming = {
+      numero_documento: '1',
+      ...sugerirNombresDesdeTexto('JUAN CARLOS PEREZ GOMEZ')
+    };
+    const merged = mergePersonaBodies(existente, incoming);
+    expect(merged.nombres_1).toBe('JUAN CARLOS');
+    expect(merged.nombres_2).toBe('');
+    expect(merged.apellidos_1).toBe('PEREZ');
+    expect(merged.apellidos_2).toBe('GOMEZ');
+  });
+
   test('merge conserva firma existente si no llega una nueva', () => {
     const firma = 'data:image/png;base64,xyz';
     const merged = mergePersonaBodies(

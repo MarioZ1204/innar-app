@@ -110,9 +110,22 @@ function detectarCamposFaltantes(persona = {}, contexto = 'anexo') {
   return faltantes;
 }
 
+/**
+ * Estos 4 campos siempre se recalculan juntos a partir del nombre completo
+ * (ver sugerirNombresDesdeTexto). Si se sobrescriben solo los no vacíos,
+ * un "nombres_2"/"apellidos_2" viejo en BD queda huérfano y el nombre
+ * completo termina duplicando esa palabra (p. ej. "JUAN CARLOS CARLOS PEREZ").
+ */
+const GRUPO_NOMBRE = ['nombres_1', 'nombres_2', 'apellidos_1', 'apellidos_2'];
+
 function mergePersonaBodies(existing = {}, incoming = {}) {
   const out = { ...existing };
+  const incomingTraeNombre = incoming.nombres_1 != null;
   PERSONAS_CSV_COLUMNS.forEach((k) => {
+    if (GRUPO_NOMBRE.includes(k) && incomingTraeNombre) {
+      out[k] = normEspacios(incoming[k]);
+      return;
+    }
     const v = incoming[k];
     if (v != null && String(v).trim() !== '') out[k] = normEspacios(v);
   });
