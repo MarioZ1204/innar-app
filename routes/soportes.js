@@ -928,12 +928,10 @@ router.post('/soportes/pdx/carpetas/archivar', requireAuth, requireRoleOrPerm(RO
         'UPDATE sop_pdx_carpetas SET archivada_manual = 1, estado_visibilidad = ? WHERE id = ?',
         ['archivo', id]
       );
-      try {
-        await archivarPdxCarpeta(carpeta, archivadoPor);
-      } catch (e) {
-        logger.warn('[SOPORTES] registro archivo PDX carpeta:', id, e.message);
-      }
       archivadas.push({ id, nombre_display: carpeta.nombre_display, periodo: carpeta.periodo });
+      archivarPdxCarpeta(carpeta, archivadoPor).catch((e) => {
+        logger.warn('[SOPORTES] registro archivo PDX carpeta:', id, e.message);
+      });
     }
 
     if (!archivadas.length && !omitidas.length) {

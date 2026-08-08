@@ -453,15 +453,36 @@ async function crearBackupZipPdxCarpeta(carpetaRow) {
   return { filename, filepath: destPath, size_bytes: st.size };
 }
 
+async function ejecutarBackupPdxCarpetaEnBackground(carpetaRow, registroId, archivadoPor = null) {
+  try {
+    const backup = await crearBackupZipPdxCarpeta(carpetaRow);
+    if (backup && registroId) {
+      await db.execute(
+        'UPDATE sop_modulo_archivo SET backup_filename = ?, backup_bytes = ?, archivado_por = COALESCE(?, archivado_por) WHERE id = ?',
+        [backup.filename, backup.size_bytes, archivadoPor, registroId]
+      );
+    }
+    return backup;
+  } catch (e) {
+    logger.warn('[ARCHIVO-MODULO] backup PDX carpeta (background) falló:', carpetaRow?.nombre_display, e.message);
+    return null;
+  }
+}
+
 async function archivarPdxCarpeta(carpetaRow, archivadoPor = null) {
   if (!carpetaRow?.id) return null;
   if (await yaRegistradoEnArchivo('pdx_carpeta', carpetaRow.id)) return null;
+
+  const syncBackup = process.env.PDX_ARCHIVO_SYNC_BACKUP === '1';
   let backup = null;
-  try {
-    backup = await crearBackupZipPdxCarpeta(carpetaRow);
-  } catch (e) {
-    logger.warn('[ARCHIVO-MODULO] backup PDX carpeta falló:', carpetaRow.nombre_display, e.message);
+  if (syncBackup) {
+    try {
+      backup = await crearBackupZipPdxCarpeta(carpetaRow);
+    } catch (e) {
+      logger.warn('[ARCHIVO-MODULO] backup PDX carpeta falló:', carpetaRow.nombre_display, e.message);
+    }
   }
+
   const id = await insertRegistroArchivo({
     modulo: 'pdx_carpeta',
     periodo: carpetaRow.periodo || null,
@@ -471,6 +492,13 @@ async function archivarPdxCarpeta(carpetaRow, archivadoPor = null) {
     backup_bytes: backup?.size_bytes || null,
     archivado_por: archivadoPor
   });
+
+  if (!syncBackup) {
+    setImmediate(() => {
+      ejecutarBackupPdxCarpetaEnBackground(carpetaRow, id, archivadoPor);
+    });
+  }
+
   return { id, backup };
 }
 
