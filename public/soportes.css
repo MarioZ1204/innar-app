@@ -2876,3 +2876,63 @@ label.sop-slot-action-btn.sop-slot-replace {
     justify-content: center;
   }
 }
+
+.sop-pdx-bulk-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.sop-pdx-bulk-bar.hidden {
+  display: none;
+}
+
+.sop-pdx-bulk-select-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.88rem;
+  color: #334155;
+  cursor: pointer;
+  user-select: none;
+}
+
+.sop-pdx-bulk-count {
+  flex: 1;
+  min-width: 120px;
+  font-size: 0.85rem;
+  color: #64748b;
+}
+
+.sop-pdx-sel-wrap input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.sop-pdx-sel-card {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 2;
+  margin: 0;
+  padding: 2px;
+  background: rgba(255, 255, 255, 0.92);
+  border-radius: 6px;
+}
+
+.sop-folder-card {
+  position: relative;
+}
+
+.sop-folder-card.is-selected {
+  border-color: #0d9488;
+  box-shadow: 0 0 0 2px rgba(13, 148, 136, 0.2);
+  background: #f0fdfa;
+}

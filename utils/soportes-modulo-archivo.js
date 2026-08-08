@@ -419,6 +419,61 @@ function periodoToRefId(periodo) {
   return parseInt(periodo.replace('-', ''), 10);
 }
 
+async function crearBackupZipPdxCarpeta(carpetaRow) {
+  const archivos = await db.query('SELECT * FROM sop_pdx_archivos WHERE carpeta_id = ?', [carpetaRow.id]);
+  const seg = zipArchiveSegment(carpetaRow.nombre_display || `carpeta-${carpetaRow.id}`);
+  const manifest = {
+    modulo: 'pdx_carpeta',
+    carpeta_id: carpetaRow.id,
+    nombre_display: carpetaRow.nombre_display,
+    periodo: carpetaRow.periodo || null,
+    archivos: []
+  };
+  const parts = [];
+  const innerEntries = [];
+  for (const a of archivos) {
+    const fp = resolvePdxArchivoPath(a);
+    if (!fp || !fs.existsSync(fp)) continue;
+    const fname = a.nombre_archivo_display || a.nombre_archivo_original || path.basename(fp);
+    innerEntries.push({ absPath: fp, name: fname });
+    manifest.archivos.push({ id: a.id, paciente: a.paciente_nombre, archivo: fname });
+  }
+  if (innerEntries.length) {
+    const buf = await createZipBuffer(innerEntries);
+    parts.push({ name: `${seg}-reportes.zip`, buffer: buf });
+  }
+  manifest.archivos_count = manifest.archivos.length;
+  const manifestBuf = Buffer.from(JSON.stringify(manifest, null, 2), 'utf8');
+  parts.push({ name: 'manifest-pdx-carpeta.json', buffer: manifestBuf });
+  const label = zipArchiveSegment(carpetaRow.nombre_display || `carpeta-${carpetaRow.id}`);
+  const filename = safeArchivoBackupName(`archivo-pdx-carpeta-${label}-${Date.now()}.zip`);
+  const destPath = path.join(archivoModuloDir(), filename);
+  await writeZipFromParts(parts, destPath);
+  const st = fs.statSync(destPath);
+  return { filename, filepath: destPath, size_bytes: st.size };
+}
+
+async function archivarPdxCarpeta(carpetaRow, archivadoPor = null) {
+  if (!carpetaRow?.id) return null;
+  if (await yaRegistradoEnArchivo('pdx_carpeta', carpetaRow.id)) return null;
+  let backup = null;
+  try {
+    backup = await crearBackupZipPdxCarpeta(carpetaRow);
+  } catch (e) {
+    logger.warn('[ARCHIVO-MODULO] backup PDX carpeta falló:', carpetaRow.nombre_display, e.message);
+  }
+  const id = await insertRegistroArchivo({
+    modulo: 'pdx_carpeta',
+    periodo: carpetaRow.periodo || null,
+    ref_id: carpetaRow.id,
+    etiqueta: `${carpetaRow.nombre_display || 'Carpeta'} (${carpetaRow.periodo || 'sin periodo'})`,
+    backup_filename: backup?.filename || null,
+    backup_bytes: backup?.size_bytes || null,
+    archivado_por: archivadoPor
+  });
+  return { id, backup };
+}
+
 async function archivarPdxPeriodo(periodo, archivadoPor = null) {
   const refId = periodoToRefId(periodo);
   if (!refId) return null;
@@ -537,6 +592,10 @@ async function regenerarBackup(registroId, archivadoPor = null) {
   if (reg.modulo === 'pdx') {
     if (!reg.periodo) throw new Error('Periodo PDX no definido');
     backup = await crearBackupZipPdxPeriodo(reg.periodo);
+  } else if (reg.modulo === 'pdx_carpeta') {
+    const cr = await db.query('SELECT * FROM sop_pdx_carpetas WHERE id = ? LIMIT 1', [reg.ref_id]);
+    if (!cr.length) throw new Error('Carpeta PDX no encontrada');
+    backup = await crearBackupZipPdxCarpeta(cr[0]);
   } else if (reg.modulo === 'armado') {
     const pr = await db.query('SELECT * FROM sop_periodos WHERE id = ? LIMIT 1', [reg.ref_id]);
     if (!pr.length) throw new Error('Periodo de armado no encontrado');
@@ -558,8 +617,10 @@ async function regenerarBackup(registroId, archivadoPor = null) {
 module.exports = {
   archivoModuloDir,
   archivarPdxPeriodo,
+  archivarPdxCarpeta,
   archivarArmadoPeriodo,
   archivarAnexoCarpeta,
+  crearBackupZipPdxCarpeta,
   procesarTransicionArchivoPdx,
   procesarTransicionArchivoArmado,
   procesarTransicionArchivoAnexo,

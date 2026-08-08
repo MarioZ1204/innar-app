@@ -29,7 +29,7 @@
   <link rel="stylesheet" href="innar-electro-estudio-ui.css?v=20260625-2">
   <link rel="stylesheet" href="innar-electro-calendario.css?v=20260625-2">
   <link rel="stylesheet" href="innar-backup.css?v=20260625-2">
-  <link rel="stylesheet" href="innar-documentos-cita.css?v=20260703-3">
+  <link rel="stylesheet" href="innar-documentos-cita.css?v=20260808-2">
   <link rel="stylesheet" href="innar-persona-fidu.css?v=20260625-2">
   <link rel="stylesheet" href="innar-anexo-fidu.css?v=20260625-2">
   <link rel="stylesheet" href="llamado-pacientes.css?v=20260722-3">
@@ -3953,6 +3953,17 @@
                 </select>
               </div>
               <div id="sopPdxTemaLegend" class="sop-tema-legend" aria-label="Leyenda de modalidades"></div>
+              <div id="sopPdxBulkBar" class="sop-pdx-bulk-bar hidden" aria-live="polite">
+                <label class="sop-pdx-bulk-select-all">
+                  <input type="checkbox" id="sopPdxSelectAll" aria-label="Seleccionar todas las carpetas visibles">
+                  <span>Seleccionar todas</span>
+                </label>
+                <span id="sopPdxBulkCount" class="sop-pdx-bulk-count"></span>
+                <button type="button" id="btnSopPdxArchivarSel" class="sop-btn sop-btn-ghost">
+                  <i data-lucide="archive"></i> Enviar al archivo
+                </button>
+                <button type="button" id="btnSopPdxClearSel" class="sop-btn sop-btn-ghost sop-btn-sm">Limpiar</button>
+              </div>
               <div id="sopPdxResultados" class="sop-search-results hidden"></div>
               <div id="sopPdxLista"><div class="sop-empty"><i data-lucide="loader" class="sop-empty-icon"></i>Cargando carpetas…</div></div>
             </div>
@@ -4317,13 +4328,13 @@
   <script src="/libs/html2canvas.min.js?v=20260625-2"></script>
   <script src="firma-quitar-fondo.js?v=20260625-2"></script>
   <script src="documento-pdf-cliente.js?v=1.7.43"></script>
-  <script src="documentos-cita-module.js?v=20260703-3"></script>
+  <script src="documentos-cita-module.js?v=20260808-2"></script>
   <script src="app.js?v=20260722-1"></script>
   <script src="anexo-fidu.js?v=1.7.4"></script>
   <script src="soportes-pdf-editor.js?v=20260625-2"></script>
   <script src="reportes-historico.js?v=1.7.30"></script>
   <script src="llamado-pacientes.js?v=20260722-3"></script>
-  <script src="soportes.js?v=1.7.19"></script>
+  <script src="soportes.js?v=1.7.45"></script>
   <script src="calendario-bloqueado.js?v=20260625-2"></script>
   <script src="validation-client.js?v=20260625-2"></script>
   <script src="splash.js?v=20260625-2" defer></script>
@@ -4349,8 +4360,8 @@
   </div>
 
   <!-- ========== MODAL GENERAR DOCUMENTO (módulo documentos-cita) ========== -->
-  <div id="modalDocumentosCita" class="modal hidden" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(15,23,42,0.55);align-items:center;justify-content:center;z-index:10055;padding:16px">
-    <div class="cita-modal-card docmod-modal-card" style="max-width:620px;width:100%;max-height:92vh;overflow-y:auto">
+  <div id="modalDocumentosCita" class="modal docmod-modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="docmodModalTitulo">
+    <div class="cita-modal-card docmod-modal-card">
       <div class="cita-modal-header">
         <div class="cita-modal-header-left">
           <h2 class="cita-modal-title" id="docmodModalTitulo">Generar documento</h2>
@@ -4418,7 +4429,9 @@
         </div>
 
         <div id="docmodModalComp" class="hidden">
-          <div class="docmod-modal-grid">
+          <div class="docmod-modal-section">
+            <h4 class="docmod-modal-section-title">Datos del paciente</h4>
+            <div class="docmod-modal-grid">
             <div class="docmod-field">
               <label for="docmodModalCompFecha">Fecha *</label>
               <input type="text" class="innar-fecha-input" id="docmodModalCompFecha" placeholder="AAAA-MM-DD" autocomplete="off" />
@@ -4463,6 +4476,11 @@
               <label for="docmodModalCompServicio">Motivo / servicio *</label>
               <input type="text" id="docmodModalCompServicio" maxlength="200" placeholder="Escriba o elija de la lista…" autocomplete="off" />
             </div>
+            </div>
+          </div>
+          <div class="docmod-modal-section">
+            <h4 class="docmod-modal-section-title">Firma y envío</h4>
+            <div class="docmod-modal-grid">
             <div class="docmod-field docmod-span-2 comp-firma-block">
               <label for="docmodModalCompFirmaPaciente">Firma del paciente (imagen) *</label>
               <input type="file" id="docmodModalCompFirmaPaciente" accept="image/png,image/jpeg,image/webp" />
@@ -4502,6 +4520,7 @@
                 <option value="">— Seleccione carpeta —</option>
               </select>
             </div>
+            </div>
           </div>
         </div>
 
@@ -4509,7 +4528,10 @@
       </div>
       <div class="cita-modal-footer">
         <button type="button" id="btnCancelarModalDocumentosCita" class="btn-secondary">Cancelar</button>
-        <button type="button" id="btnConfirmarModalDocumentosCita" class="docmod-btn-confirmar">Confirmar</button>
+        <button type="button" id="btnConfirmarModalDocumentosCita" class="docmod-btn-confirmar">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Generar documento
+        </button>
       </div>
     </div>
   </div>

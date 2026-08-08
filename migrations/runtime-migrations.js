@@ -1487,6 +1487,27 @@ const runtimeMigrations = [
         await db.execute('UPDATE usuarios SET permisos = ? WHERE id = ?', [JSON.stringify(next), row.id]);
       }
     }
+  },
+  {
+    name: 'rt_sop_pdx_carpetas_archivada_manual',
+    description: 'Archivo manual por carpeta PDX (Cargar reportes)',
+    run: async (db) => {
+      if (!(await tableExists(db, 'sop_pdx_carpetas'))) return;
+      if (!(await columnExists(db, 'sop_pdx_carpetas', 'archivada_manual'))) {
+        await db.execute(
+          'ALTER TABLE sop_pdx_carpetas ADD COLUMN archivada_manual TINYINT(1) NOT NULL DEFAULT 0 AFTER estado_visibilidad'
+        );
+      }
+      if (await tableExists(db, 'sop_modulo_archivo')) {
+        const col = await db.query("SHOW COLUMNS FROM sop_modulo_archivo LIKE 'modulo'");
+        const type = String(col[0]?.Type || '');
+        if (type && !type.includes('pdx_carpeta')) {
+          await db.execute(
+            "ALTER TABLE sop_modulo_archivo MODIFY COLUMN modulo ENUM('pdx','pdx_carpeta','armado','anexo') NOT NULL"
+          );
+        }
+      }
+    }
   }
 ];
 

@@ -12,6 +12,7 @@
     carpetaActual: null,
     archivos: [],
     periodoActual: null,
+    seleccionadas: new Set(),
     filtros: { texto: '', periodo: '', tema: '', orden: 'periodo_desc' }
   };
 
@@ -2547,6 +2548,9 @@
     if (res.status === 401) return null;
     if (!res.ok) throw new Error(data.error || 'Error al cargar carpetas');
     pdxState.carpetas = data.carpetas || [];
+    pdxState.seleccionadas = new Set(
+      [...pdxState.seleccionadas].filter((id) => pdxState.carpetas.some((c) => c.id === id))
+    );
     pdxState.periodoActual = data.periodo_actual || periodoActual();
     const chip = $('sopPdxChipPeriodo');
     if (chip) {
@@ -2572,15 +2576,106 @@
     sopIcons(wrap);
   }
 
+  function pdxPuedeArchivar() {
+    return sopPerm('soportes.pdx.editar');
+  }
+
+  function pdxIdsSeleccionables(lista) {
+    return lista.filter((c) => c.estado_visibilidad !== 'archivo').map((c) => c.id);
+  }
+
+  function actualizarBarraSeleccionPdx(lista) {
+    const bar = $('sopPdxBulkBar');
+    if (!bar) return;
+    const canArchivar = pdxPuedeArchivar();
+    const n = pdxState.seleccionadas.size;
+    if (!canArchivar) {
+      bar.classList.add('hidden');
+      return;
+    }
+    bar.classList.toggle('hidden', !lista.length);
+    const countEl = $('sopPdxBulkCount');
+    if (countEl) {
+      countEl.textContent = n
+        ? `${n} carpeta${n === 1 ? '' : 's'} seleccionada${n === 1 ? '' : 's'}`
+        : 'Seleccione carpetas para enviarlas al archivo';
+    }
+    const selAll = $('sopPdxSelectAll');
+    if (selAll) {
+      const ids = pdxIdsSeleccionables(lista);
+      selAll.checked = ids.length > 0 && ids.every((id) => pdxState.seleccionadas.has(id));
+      selAll.indeterminate = ids.some((id) => pdxState.seleccionadas.has(id)) && !selAll.checked;
+    }
+    const btnArch = $('btnSopPdxArchivarSel');
+    if (btnArch) btnArch.disabled = n === 0;
+    sopIcons(bar);
+  }
+
+  function toggleSeleccionCarpetaPdx(id, checked) {
+    if (checked) pdxState.seleccionadas.add(id);
+    else pdxState.seleccionadas.delete(id);
+    actualizarBarraSeleccionPdx(pdxCarpetasFiltradas());
+  }
+
+  async function archivarCarpetasPdxSeleccionadas() {
+    if (!pdxPuedeArchivar()) return;
+    const ids = [...pdxState.seleccionadas];
+    if (!ids.length) {
+      sopToast('Seleccione al menos una carpeta', 'warning');
+      return;
+    }
+    const nombres = ids
+      .map((id) => pdxState.carpetas.find((c) => c.id === id)?.nombre_display)
+      .filter(Boolean);
+    const resumen = nombres.length <= 3
+      ? nombres.map((n) => `«${n}»`).join(', ')
+      : `${nombres.length} carpetas`;
+    const run = async () => {
+      const res = await apiFetch('/api/soportes/pdx/carpetas/archivar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        sopToast(data.error || 'No se pudo archivar', 'error');
+        return;
+      }
+      const n = (data.archivadas || []).length;
+      const omit = (data.omitidas || []).length;
+      if (n) sopToast(`${n} carpeta${n === 1 ? '' : 's'} enviada${n === 1 ? '' : 's'} al archivo`, 'success');
+      else if (omit) sopToast('Las carpetas seleccionadas ya estaban archivadas', 'info');
+      else sopToast('No se archivó ninguna carpeta', 'warning');
+      pdxState.seleccionadas.clear();
+      await cargarCarpetasPdx();
+      renderListaCarpetasPdx();
+    };
+    if (typeof window.confirmEliminar === 'function') {
+      window.confirmEliminar(
+        `${ids.length} carpeta${ids.length === 1 ? '' : 's'} al archivo: ${resumen}`,
+        run,
+        { okText: 'Enviar al archivo', cancelText: 'Cancelar' }
+      );
+    } else if (!window.confirm(`¿Enviar ${ids.length} carpeta(s) al archivo?\n${resumen}`)) return;
+    else await run();
+  }
+
   function bindPdxCarpetaCardEvents(root) {
     if (!root) return;
     root.querySelectorAll('[data-pdx-carpeta]').forEach((card) => {
       const open = () => abrirCarpetaPdx(parseInt(card.dataset.pdxCarpeta, 10));
       card.addEventListener('click', (ev) => {
-        if (ev.target.closest('.sop-folder-actions, .sop-folder-list-actions')) return;
+        if (ev.target.closest('.sop-folder-actions, .sop-folder-list-actions, .sop-pdx-sel-wrap, label')) return;
         open();
       });
-      card.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') open(); });
+      card.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' && !ev.target.closest('.sop-pdx-sel-wrap')) open(); });
+    });
+    root.querySelectorAll('[data-pdx-sel]').forEach((cb) => {
+      cb.addEventListener('click', (ev) => ev.stopPropagation());
+      cb.addEventListener('change', (ev) => {
+        ev.stopPropagation();
+        toggleSeleccionCarpetaPdx(parseInt(cb.dataset.pdxSel, 10), cb.checked);
+      });
     });
     root.querySelectorAll('[data-pdx-edit]').forEach((b) => {
       b.addEventListener('click', (ev) => {
@@ -2612,24 +2707,33 @@
     const viewMode = sopFolderViewMode('pdx');
     if (!pdxState.carpetas.length) {
       el.innerHTML = `<div class="sop-empty"><i data-lucide="folder-open" class="sop-empty-icon"></i>No hay carpetas.<br><span style="font-size:.85rem">Use «Nueva carpeta» para comenzar.</span></div>`;
+      actualizarBarraSeleccionPdx([]);
       sopIcons(el);
       return;
     }
     if (!lista.length) {
       el.innerHTML = `<div class="sop-empty"><i data-lucide="filter-x" class="sop-empty-icon"></i>Ninguna carpeta coincide con los filtros.</div>`;
+      actualizarBarraSeleccionPdx([]);
       sopIcons(el);
       return;
     }
     const canEdit = sopPerm('soportes.pdx.editar');
     const canDel = sopPerm('soportes.pdx.eliminar');
+    const canArchivar = pdxPuedeArchivar();
+    const selCell = (c) => {
+      if (!canArchivar || c.estado_visibilidad === 'archivo') return '<td></td>';
+      const checked = pdxState.seleccionadas.has(c.id) ? ' checked' : '';
+      return `<td class="sop-pdx-sel-wrap"><input type="checkbox" data-pdx-sel="${c.id}" aria-label="Seleccionar ${escapeHtml(c.nombre_display)}"${checked}></td>`;
+    };
     if (viewMode === 'list') {
       el.innerHTML = `<div class="sop-table-wrap sop-folder-list-mode"><table class="sop-table sop-folder-list-table">
-        <thead><tr><th style="width:40px"></th><th>Carpeta</th><th>Periodo</th><th>Archivos</th><th>Estado</th><th class="sop-folder-list-actions">Acciones</th></tr></thead>
+        <thead><tr>${canArchivar ? '<th style="width:36px"></th>' : ''}<th style="width:40px"></th><th>Carpeta</th><th>Periodo</th><th>Archivos</th><th>Estado</th><th class="sop-folder-list-actions">Acciones</th></tr></thead>
         <tbody>${lista.map((c) => {
           const tema = c.color_tema || 'neutral';
           const icon = TEMA_ICON[tema] || 'folder';
           const enArchivo = c.estado_visibilidad === 'archivo';
           return `<tr data-pdx-carpeta="${c.id}" tabindex="0">
+            ${canArchivar ? selCell(c) : ''}
             <td><span class="sop-folder-icon" style="width:32px;height:32px;margin:0" data-tema="${escapeHtml(tema)}"><i data-lucide="${icon}"></i></span></td>
             <td><strong>${escapeHtml(c.nombre_display)}</strong></td>
             <td>${escapeHtml(c.periodo)}</td>
@@ -2646,7 +2750,13 @@
         const tema = c.color_tema || 'neutral';
         const icon = TEMA_ICON[tema] || 'folder';
         const enArchivo = c.estado_visibilidad === 'archivo';
-        return `<article class="sop-folder-card" data-tema="${escapeHtml(tema)}" data-pdx-carpeta="${c.id}" tabindex="0">
+        const selHtml = canArchivar && !enArchivo
+          ? `<label class="sop-pdx-sel-wrap sop-pdx-sel-card" title="Seleccionar carpeta">
+              <input type="checkbox" data-pdx-sel="${c.id}" aria-label="Seleccionar ${escapeHtml(c.nombre_display)}"${pdxState.seleccionadas.has(c.id) ? ' checked' : ''}>
+            </label>`
+          : '';
+        return `<article class="sop-folder-card${pdxState.seleccionadas.has(c.id) ? ' is-selected' : ''}" data-tema="${escapeHtml(tema)}" data-pdx-carpeta="${c.id}" tabindex="0">
+          ${selHtml}
           <div class="sop-folder-icon"><i data-lucide="${icon}"></i></div>
           <div class="sop-folder-title">${escapeHtml(c.nombre_display)}</div>
           <div class="sop-folder-meta">${escapeHtml(c.periodo)} · ${c.archivos_count || 0} archivo(s)</div>
@@ -2659,6 +2769,7 @@
       }).join('')}</div>`;
     }
     bindPdxCarpetaCardEvents(el);
+    actualizarBarraSeleccionPdx(lista);
     sopIcons(el);
   }
 
@@ -4074,6 +4185,19 @@
     if (btnNueva) btnNueva.style.display = sopPerm('soportes.pdx.crear_carpeta') ? '' : 'none';
     $('btnVolverReportesPdx')?.addEventListener('click', goToMenu);
     $('btnSopPdxNuevaCarpeta')?.addEventListener('click', modalNuevaCarpetaPdx);
+    $('btnSopPdxArchivarSel')?.addEventListener('click', () => {
+      archivarCarpetasPdxSeleccionadas().catch((e) => sopToast(e.message, 'error'));
+    });
+    $('btnSopPdxClearSel')?.addEventListener('click', () => {
+      pdxState.seleccionadas.clear();
+      renderListaCarpetasPdx();
+    });
+    $('sopPdxSelectAll')?.addEventListener('change', (e) => {
+      const ids = pdxIdsSeleccionables(pdxCarpetasFiltradas());
+      if (e.target.checked) ids.forEach((id) => pdxState.seleccionadas.add(id));
+      else ids.forEach((id) => pdxState.seleccionadas.delete(id));
+      renderListaCarpetasPdx();
+    });
     $('btnSopPdxBuscar')?.addEventListener('click', buscarPdx);
     $('sopPdxBuscar')?.addEventListener('input', buscarPdxPredictivo);
     $('sopPdxBuscar')?.addEventListener('keydown', (e) => {

@@ -384,12 +384,15 @@ function respondLegacySyncZipDisabled(res) {
 
 async function refrescarVisibilidadPdx(periodo, archivadoPor = null) {
   const prevRows = await db.query(
-    'SELECT estado_visibilidad FROM sop_pdx_carpetas WHERE periodo = ? LIMIT 1',
+    'SELECT estado_visibilidad FROM sop_pdx_carpetas WHERE periodo = ? AND COALESCE(archivada_manual, 0) = 0 LIMIT 1',
     [periodo]
   );
   const estadoAnterior = prevRows[0]?.estado_visibilidad || calcularVisibilidadPeriodo(periodo);
   const estado = calcularVisibilidadPeriodo(periodo);
-  await db.execute('UPDATE sop_pdx_carpetas SET estado_visibilidad = ? WHERE periodo = ?', [estado, periodo]);
+  await db.execute(
+    'UPDATE sop_pdx_carpetas SET estado_visibilidad = ? WHERE periodo = ? AND COALESCE(archivada_manual, 0) = 0',
+    [estado, periodo]
+  );
   try {
     const { procesarTransicionArchivoPdx } = require('../utils/soportes-modulo-archivo');
     await procesarTransicionArchivoPdx(periodo, estadoAnterior, archivadoPor);
@@ -426,19 +429,40 @@ async function refrescarVisibilidadArmado(periodo, archivadoPor = null) {
 
 function mapCarpetaPdx(row, visiblesSet) {
   const periodo = row.periodo;
-  const vis = visiblesSet
-    ? resolveVisibilidadPeriodo(periodo, 'pdx', periodoToRefId(periodo), visiblesSet)
-    : calcularVisibilidadPeriodo(periodo);
+  const vis = row.archivada_manual
+    ? 'archivo'
+    : (visiblesSet
+      ? resolveVisibilidadPeriodo(periodo, 'pdx', periodoToRefId(periodo), visiblesSet)
+      : calcularVisibilidadPeriodo(periodo));
   return {
     id: row.id,
     periodo,
     nombre_display: row.nombre_display,
     color_tema: row.color_tema || detectarTemaCarpeta(row.nombre_display),
     estado_visibilidad: vis,
+    archivada_manual: Boolean(row.archivada_manual),
     dias_restantes_gracia: diasRestantesGracia(periodo),
     archivos_count: row.archivos_count || 0,
     creado_en: row.creado_en
   };
+}
+
+function carpetaPdxYaArchivada(carpetaRow) {
+  return Boolean(carpetaRow?.archivada_manual);
+}
+
+async function visibilidadCarpetaPdx(carpetaRow, visiblesSet = null) {
+  if (carpetaPdxYaArchivada(carpetaRow)) return 'archivo';
+  return visPdxPeriodo(carpetaRow.periodo, visiblesSet);
+}
+
+async function denyCarpetaPdxNoEditable(req, carpetaRow, visiblesSet = null) {
+  if (!carpetaRow) return { status: 404, error: 'Carpeta no encontrada' };
+  const denied = denySinAccesoCarpetaPdx(req, carpetaRow);
+  if (denied) return denied;
+  const vis = await visibilidadCarpetaPdx(carpetaRow, visiblesSet);
+  if (vis === 'archivo') return { status: 403, error: 'Carpeta en archivo: no editable' };
+  return null;
 }
 
 const pdxStorage = multer.diskStorage({
@@ -834,8 +858,8 @@ router.patch('/soportes/pdx/carpetas/:id', requireAuth, requireRoleOrPerm(ROLES_
     const prev = rows[0];
     const denied = denySinAccesoCarpetaPdx(req, prev);
     if (denied) return res.status(denied.status).json({ error: denied.error });
-    const vis = await visPdxPeriodo(prev.periodo);
-    if (vis === 'archivo') return res.status(403).json({ error: 'Carpeta en archivo: no editable' });
+    const deniedEdit = await denyCarpetaPdxNoEditable(req, prev);
+    if (deniedEdit) return res.status(deniedEdit.status).json({ error: deniedEdit.error });
 
     const periodo = req.body?.periodo != null ? String(req.body.periodo).trim() : prev.periodo;
     const nombre = req.body?.nombre_display != null ? String(req.body.nombre_display).trim() : prev.nombre_display;
@@ -861,6 +885,74 @@ router.patch('/soportes/pdx/carpetas/:id', requireAuth, requireRoleOrPerm(ROLES_
     }
     logger.error('[SOPORTES] editar carpeta pdx:', e);
     res.status(500).json({ error: safeError(e) });
+  }
+});
+
+router.post('/soportes/pdx/carpetas/archivar', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, ['modulo.reportes_pdx', 'soportes.pdx.editar']), async (req, res) => {
+  try {
+    const rawIds = req.body?.ids;
+    if (!Array.isArray(rawIds) || !rawIds.length) {
+      return res.status(400).json({ error: 'Seleccione al menos una carpeta' });
+    }
+    const ids = [...new Set(rawIds.map((id) => parseInt(id, 10)).filter((id) => id > 0))];
+    if (!ids.length) return res.status(400).json({ error: 'IDs de carpeta inválidos' });
+
+    const visiblesSet = await loadVisibleEnSoportesSet();
+    const { archivarPdxCarpeta } = require('../utils/soportes-modulo-archivo');
+    const archivadoPor = req.session?.usuarioId || null;
+    const archivadas = [];
+    const omitidas = [];
+    const errores = [];
+
+    for (const id of ids) {
+      const rows = await db.query('SELECT * FROM sop_pdx_carpetas WHERE id = ?', [id]);
+      if (!rows.length) {
+        errores.push({ id, error: 'Carpeta no encontrada' });
+        continue;
+      }
+      const carpeta = rows[0];
+      const denied = denySinAccesoCarpetaPdx(req, carpeta);
+      if (denied) {
+        errores.push({ id, error: denied.error });
+        continue;
+      }
+      const vis = mapCarpetaPdx(
+        { ...carpeta, archivos_count: 0 },
+        visiblesSet
+      ).estado_visibilidad;
+      if (vis === 'archivo') {
+        omitidas.push({ id, nombre_display: carpeta.nombre_display, motivo: 'ya_archivada' });
+        continue;
+      }
+      await db.execute(
+        'UPDATE sop_pdx_carpetas SET archivada_manual = 1, estado_visibilidad = ? WHERE id = ?',
+        ['archivo', id]
+      );
+      try {
+        await archivarPdxCarpeta(carpeta, archivadoPor);
+      } catch (e) {
+        logger.warn('[SOPORTES] registro archivo PDX carpeta:', id, e.message);
+      }
+      archivadas.push({ id, nombre_display: carpeta.nombre_display, periodo: carpeta.periodo });
+    }
+
+    if (!archivadas.length && !omitidas.length) {
+      return res.status(400).json({
+        error: 'No se pudo archivar ninguna carpeta',
+        errores
+      });
+    }
+
+    res.json({
+      ok: true,
+      archivadas,
+      omitidas,
+      errores
+    });
+    notifySoportesPdx({ accion: 'carpetas_archivadas', carpetaIds: archivadas.map((c) => c.id) });
+  } catch (e) {
+    logger.error('[SOPORTES] archivar carpetas pdx:', e);
+    res.status(500).json({ error: sopErrorCliente(e) });
   }
 });
 
@@ -919,7 +1011,7 @@ router.get('/soportes/pdx/carpetas/:id/archivos', requireAuth, requireRoleOrPerm
     if (!carpeta.length) return res.status(404).json({ error: 'Carpeta no encontrada' });
     const deniedArch = denySinAccesoCarpetaPdx(req, carpeta[0]);
     if (deniedArch) return res.status(deniedArch.status).json({ error: deniedArch.error });
-    const vis = await visPdxPeriodo(carpeta[0].periodo);
+    const vis = await visibilidadCarpetaPdx(carpeta[0]);
     const deniedHist = denyPdxSoloHistoricoEnCarpetaActiva(req, vis);
     if (deniedHist) return res.status(deniedHist.status).json({ error: deniedHist.error });
     if (vis === 'archivo' && !puedeVerArchivo(req)) {
@@ -1004,8 +1096,14 @@ router.post(
       const carpeta = carpetaRows[0];
       const deniedUp = denySinAccesoCarpetaPdx(req, carpeta);
       if (deniedUp) return res.status(deniedUp.status).json({ error: deniedUp.error });
-      const vis = await visPdxPeriodo(carpeta.periodo);
-      if (vis === 'archivo') return res.status(403).json({ error: 'Carpeta cerrada para carga' });
+      const deniedUpEdit = await denyCarpetaPdxNoEditable(req, carpeta);
+      if (deniedUpEdit) {
+        return res.status(deniedUpEdit.status).json({
+          error: deniedUpEdit.error === 'Carpeta en archivo: no editable'
+            ? 'Carpeta cerrada para carga'
+            : deniedUpEdit.error
+        });
+      }
 
       step = 'meta';
       if (necesitaListaEstudios(carpeta)) {
@@ -1113,10 +1211,14 @@ router.post(
         cleanupMulterTempFiles(req);
         return res.status(deniedUni.status).json({ error: deniedUni.error });
       }
-      const vis = await visPdxPeriodo(carpeta.periodo);
-      if (vis === 'archivo') {
+      const deniedUniEdit = await denyCarpetaPdxNoEditable(req, carpeta);
+      if (deniedUniEdit) {
         cleanupMulterTempFiles(req);
-        return res.status(403).json({ error: 'Carpeta cerrada para carga' });
+        return res.status(deniedUniEdit.status).json({
+          error: deniedUniEdit.error === 'Carpeta en archivo: no editable'
+            ? 'Carpeta cerrada para carga'
+            : deniedUniEdit.error
+        });
       }
 
       carpeta._estudiosLista = await cargarListaParaCarpetaPdx(db, carpeta);

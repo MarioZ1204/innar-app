@@ -28,10 +28,11 @@
     el.classList.toggle('is-error', !!isError);
   }
 
-  function setModalError(msg) {
+  function setModalError(msg, isInfo) {
     const el = $('docmodModalError');
     if (!el) return;
     el.textContent = msg || '';
+    el.classList.toggle('is-info', !!isInfo && !!msg);
   }
 
   function hoyYmd() {
@@ -252,14 +253,14 @@
     const modal = $('modalDocumentosCita');
     if (!modal) return;
     modal.classList.remove('hidden');
-    modal.style.display = 'flex';
+    document.body.style.overflow = 'hidden';
   }
 
   function cerrarModal() {
     const modal = $('modalDocumentosCita');
     if (!modal) return;
     modal.classList.add('hidden');
-    modal.style.display = 'none';
+    document.body.style.overflow = '';
     setModalError('');
     _docmodFirmaUi?.reset?.();
   }
@@ -483,7 +484,7 @@
 
     const btn = $('btnConfirmarModalDocumentosCita');
     if (btn) btn.disabled = true;
-    setModalError('Generando PDF…');
+    setModalError('Generando documento…', true);
 
     try {
       let payload = state.tipo === 'comprobante'
