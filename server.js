@@ -173,6 +173,21 @@ app.get('/api/socket-status', (req, res) => {
 });
 
 
+/** Lee límites de procesos/hilos/archivos del sistema operativo (diagnóstico Chromium en hosting compartido). */
+function readUlimits() {
+  try {
+    const { execSync } = require('child_process');
+    const out = execSync('bash -c "ulimit -u -n -v"', { timeout: 3000 }).toString().trim().split('\n');
+    return {
+      maxUserProcesses: out[0] || null,
+      openFiles: out[1] || null,
+      virtualMemoryKb: out[2] || null
+    };
+  } catch (e) {
+    return { error: e.message };
+  }
+}
+
 // Healthcheck profundo: BD, disco de backups, logs. Requiere auth.
 app.get('/api/health/deep', requireAuth, async (req, res) => {
   const start = Date.now();
@@ -261,6 +276,7 @@ app.get('/api/health/deep', requireAuth, async (req, res) => {
   try {
     const { getChromiumDiagnostic, probeChromiumLaunch } = require('./utils/puppeteer-utils');
     checks.chromium.diagnostic = getChromiumDiagnostic();
+    checks.chromium.diagnostic.ulimits = readUlimits();
     const launch = await probeChromiumLaunch();
     checks.chromium.launch = launch;
     checks.chromium.ok = !!launch.ok;
