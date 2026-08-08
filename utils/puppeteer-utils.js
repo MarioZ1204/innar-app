@@ -147,8 +147,13 @@ function getPuppeteerLaunchOptions(extraArgs = []) {
 }
 
 function pdfRenderTimeoutMs() {
-  const n = parseInt(process.env.CERT_PDF_TIMEOUT_MS || '45000', 10);
-  return Number.isFinite(n) && n >= 10000 ? n : 45000;
+  const n = parseInt(process.env.CERT_PDF_TIMEOUT_MS || '60000', 10);
+  return Number.isFinite(n) && n >= 15000 ? n : 60000;
+}
+
+function pdfPageTimeoutMs() {
+  const n = parseInt(process.env.CERT_PDF_PAGE_TIMEOUT_MS || '20000', 10);
+  return Number.isFinite(n) && n >= 5000 ? n : 20000;
 }
 
 /**
@@ -156,7 +161,7 @@ function pdfRenderTimeoutMs() {
  */
 async function tryRenderHtmlToPdf(html, options = {}) {
   const timeoutMs = options.timeoutMs ?? pdfRenderTimeoutMs();
-  const contentTimeout = Math.min(options.contentTimeout ?? timeoutMs, timeoutMs);
+  const contentTimeout = Math.min(options.contentTimeout ?? pdfPageTimeoutMs(), timeoutMs);
   try {
     const pdf = await Promise.race([
       renderHtmlToPdf(html, { ...options, contentTimeout }),
@@ -168,6 +173,15 @@ async function tryRenderHtmlToPdf(html, options = {}) {
   } catch (e) {
     return { ok: false, error: e.message };
   }
+}
+
+async function warmupPdfPipeline() {
+  const sample = [
+    '<!DOCTYPE html><html><head><meta charset="utf-8">',
+    '<style>body{margin:0;font-family:Arial,sans-serif}</style></head>',
+    '<body><div class="page" style="padding:24px">Innar PDF</div></body></html>'
+  ].join('');
+  return tryRenderHtmlToPdf(sample, { timeoutMs: 120000, waitFonts: false });
 }
 
 async function probeChromiumLaunch() {
@@ -189,15 +203,21 @@ async function probeChromiumLaunch() {
   return { ok: false, error: lastError?.message || 'No se pudo lanzar Chrome', ...getChromiumDiagnostic() };
 }
 
+function buildLaunchAttempts() {
+  const single = ['--single-process'];
+  const launch = (extra) => () => puppeteer.launch(getPuppeteerLaunchOptions(extra));
+  if (process.platform === 'linux') {
+    return [launch(single), launch()];
+  }
+  return [launch(), launch(single)];
+}
+
 async function launchBrowserWithFallback() {
-  const attempts = [
-    () => puppeteer.launch(getPuppeteerLaunchOptions()),
-    () => puppeteer.launch(getPuppeteerLaunchOptions(['--single-process'])),
-  ];
+  const attempts = buildLaunchAttempts();
   let lastError = null;
-  for (const launch of attempts) {
+  for (const attempt of attempts) {
     try {
-      return await launch();
+      return await attempt();
     } catch (e) {
       lastError = e;
     }
@@ -205,12 +225,13 @@ async function launchBrowserWithFallback() {
   throw lastError || new Error('No se pudo lanzar Chrome');
 }
 
-const BROWSER_IDLE_MS = parseInt(process.env.PUPPETEER_BROWSER_IDLE_MS || '300000', 10) || 300000;
+const BROWSER_IDLE_MS = parseInt(process.env.PUPPETEER_BROWSER_IDLE_MS || '0', 10);
 let sharedBrowser = null;
 let sharedBrowserLaunch = null;
 let browserIdleTimer = null;
 
 function scheduleSharedBrowserIdleClose() {
+  if (!BROWSER_IDLE_MS || BROWSER_IDLE_MS < 10000) return;
   if (browserIdleTimer) clearTimeout(browserIdleTimer);
   browserIdleTimer = setTimeout(() => {
     void closeSharedBrowser('idle');
@@ -262,15 +283,16 @@ async function renderHtmlToPdf(html, options = {}) {
     format = 'A4',
     printBackground = true,
     margin = { top: '0', bottom: '0', left: '0', right: '0' },
-    waitFonts = true,
-    contentTimeout = pdfRenderTimeoutMs(),
-    fontsTimeoutMs = 800,
+    waitFonts = false,
+    contentTimeout = pdfPageTimeoutMs(),
+    fontsTimeoutMs = 400,
     preferCSSPageSize = true
   } = options;
 
   const browser = await getSharedBrowser();
   const page = await browser.newPage();
   try {
+    await page.setViewport({ width: 794, height: 1123, deviceScaleFactor: 1 });
     page.setDefaultNavigationTimeout(contentTimeout);
     page.setDefaultTimeout(contentTimeout);
     await page.emulateMediaType('print');
@@ -415,6 +437,7 @@ module.exports = {
   getChromiumDiagnostic,
   probeChromiumLaunch,
   tryRenderHtmlToPdf,
+  warmupPdfPipeline,
   renderHtmlToPdf,
   getSharedBrowser,
   closeSharedBrowser,

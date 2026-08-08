@@ -8,6 +8,7 @@ const {
 } = require('../middleware/index');
 const {
   tryRenderHtmlToPdf,
+  closeSharedBrowser,
   getCertificadoAsistenciaFondo,
   getComprobanteServiciosFondo
 } = require('../utils/puppeteer-utils');
@@ -84,29 +85,41 @@ function requireCertificadoComprobante(req, res, next) {
 
 async function responderDocumentoPdfOHtml(res, { html, titulo, filename, logLabel }) {
   const modo = String(process.env.CERTIFICADOS_PDF_MODE || '').trim().toLowerCase();
-  if (modo !== 'html') {
-    const t0 = Date.now();
-    const chrome = await warmupChromiumOnce();
-    if (!chrome.ok) {
-      logger.warn(`[CERT] ${logLabel} Chrome no listo (${chrome.error || 'desconocido'}), intentando PDF igualmente`);
-    }
-    const resultado = await tryRenderHtmlToPdf(html);
-    if (resultado.ok) {
-      const ms = Date.now() - t0;
-      res.contentType('application/pdf');
-      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-      res.setHeader('X-Documento-Modo', 'pdf');
-      res.setHeader('X-Documento-Generacion-Ms', String(ms));
-      logger.info(`[CERT] ${logLabel} PDF servidor en ${ms}ms`, { type: 'CERT_PDF', ms });
-      return res.send(resultado.pdf);
-    }
-    logger.warn(`[CERT] ${logLabel} PDF en servidor no disponible, usando HTML imprimible:`, resultado.error);
+  if (modo === 'html') {
+    const imprimible = wrapHtmlDocumentoImprimible(html, titulo);
+    res.contentType('text/html; charset=utf-8');
+    res.setHeader('X-Documento-Modo', 'html');
+    return res.send(imprimible);
   }
 
-  const imprimible = wrapHtmlDocumentoImprimible(html, titulo);
-  res.contentType('text/html; charset=utf-8');
-  res.setHeader('X-Documento-Modo', 'html');
-  return res.send(imprimible);
+  const t0 = Date.now();
+  const chrome = await warmupChromiumOnce();
+  if (!chrome.ok) {
+    logger.warn(`[CERT] ${logLabel} Chrome no listo (${chrome.error || 'desconocido'}), intentando PDF igualmente`);
+  }
+
+  let resultado = await tryRenderHtmlToPdf(html);
+  if (!resultado.ok) {
+    logger.warn(`[CERT] ${logLabel} reintento PDF tras fallo: ${resultado.error}`);
+    await closeSharedBrowser('retry');
+    resultado = await tryRenderHtmlToPdf(html);
+  }
+
+  if (resultado.ok) {
+    const ms = Date.now() - t0;
+    res.contentType('application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('X-Documento-Modo', 'pdf');
+    res.setHeader('X-Documento-Generacion-Ms', String(ms));
+    logger.info(`[CERT] ${logLabel} PDF servidor en ${ms}ms`, { type: 'CERT_PDF', ms });
+    return res.send(resultado.pdf);
+  }
+
+  logger.error(`[CERT] ${logLabel} PDF en servidor no disponible: ${resultado.error}`);
+  return res.status(503).json({
+    error: 'No se pudo generar el PDF en el servidor. Espere unos segundos e intente de nuevo.',
+    detail: resultado.error
+  });
 }
 
 function buildAsistenciaPreview(reqBody) {

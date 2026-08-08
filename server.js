@@ -64,8 +64,14 @@ setImmediate(() => {
           installed: !!r.installed
         });
         try {
-          const { getSharedBrowser } = require('./utils/puppeteer-utils');
+          const { getSharedBrowser, warmupPdfPipeline } = require('./utils/puppeteer-utils');
           await getSharedBrowser();
+          const warm = await warmupPdfPipeline();
+          if (warm.ok) {
+            logger.info('[STARTUP] Pipeline PDF precalentado (muestra renderizada)', { type: 'STARTUP' });
+          } else {
+            logger.warn('[STARTUP] Pipeline PDF no precalentado: ' + warm.error, { type: 'STARTUP' });
+          }
           logger.info('[STARTUP] Navegador PDF precalentado (reutilizable)', { type: 'STARTUP' });
         } catch (e) {
           logger.warn('[STARTUP] No se pudo precalentar navegador PDF: ' + e.message, { type: 'STARTUP' });

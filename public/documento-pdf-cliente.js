@@ -469,16 +469,15 @@
     }
 
     if (modoHdr === 'html' || ct.includes('text/html')) {
-      await res.text().catch(() => '');
+      const html = await res.text().catch(() => '');
+      if (previewUrl && html.trim()) {
+        abrirImpresionDocumento(html);
+        return { blob: null, modo: 'impresion', filename: name };
+      }
       if (previewUrl) {
         const preview = await fetchPreviewHtml(previewUrl, payload);
-        try {
-          const blob = await generarPdfBlobDesdeHtml(preview.html, { fast: true });
-          return { blob, modo: 'pdf-cliente', filename: preview.filename || name };
-        } catch (e) {
-          abrirImpresionDocumento(preview.html);
-          return { blob: null, modo: 'impresion', filename: preview.filename || name };
-        }
+        abrirImpresionDocumento(preview.html);
+        return { blob: null, modo: 'impresion', filename: preview.filename || name };
       }
     }
 
@@ -505,7 +504,8 @@
       const data = await res.json();
       if (data.error) throw new Error(data.error);
       if (data.html) {
-        return generarPdfDesdeHtml(data.html, data.filename || filename);
+        abrirImpresionDocumento(data.html);
+        return 'impresion';
       }
       throw new Error('Respuesta inválida del servidor');
     }
@@ -515,10 +515,12 @@
 
     if (options.previewUrl && options.payload) {
       const preview = await fetchPreviewHtml(options.previewUrl, options.payload);
-      return generarPdfDesdeHtml(preview.html, preview.filename || filename);
+      abrirImpresionDocumento(preview.html);
+      return 'impresion';
     }
 
-    return generarPdfDesdeHtml(html, filename);
+    abrirImpresionDocumento(html);
+    return 'impresion';
   }
 
   async function generarDesdePreview(url, payload) {
