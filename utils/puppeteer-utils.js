@@ -113,6 +113,12 @@ function getChromiumDiagnostic() {
   };
 }
 
+/**
+ * Hostings compartidos (p. ej. Hostinger) limitan el número de hilos/procesos
+ * por cuenta (ulimit -u). Chrome por defecto crea muchos hilos (GPU, red,
+ * compositor, zygote, crashpad...) y falla con "pthread_create: Resource
+ * temporarily unavailable". Estas banderas minimizan hilos y procesos hijos.
+ */
 function buildPuppeteerLaunchArgs(extra = []) {
   const args = [
     '--no-sandbox',
@@ -123,11 +129,23 @@ function buildPuppeteerLaunchArgs(extra = []) {
     '--disable-extensions',
     '--no-first-run',
     '--font-render-hinting=none',
+    '--disable-background-networking',
+    '--disable-background-timer-throttling',
+    '--disable-backgrounding-occluded-windows',
+    '--disable-breakpad',
+    '--disable-crash-reporter',
+    '--disable-client-side-phishing-detection',
+    '--disable-component-update',
+    '--disable-default-apps',
+    '--disable-sync',
+    '--disable-translate',
+    '--disable-features=Translate,BackForwardCache,IsolateOrigins,site-per-process',
+    '--metrics-recording-only',
+    '--mute-audio',
+    '--renderer-process-limit=1',
+    '--no-zygote',
     ...extra
   ];
-  if (process.platform === 'linux') {
-    args.push('--no-zygote');
-  }
   return args;
 }
 
@@ -186,8 +204,8 @@ async function warmupPdfPipeline() {
 
 async function probeChromiumLaunch() {
   const attempts = [
-    () => getPuppeteerLaunchOptions(),
     () => getPuppeteerLaunchOptions(['--single-process']),
+    () => getPuppeteerLaunchOptions(),
   ];
   let lastError = null;
   for (const build of attempts) {
@@ -206,10 +224,10 @@ async function probeChromiumLaunch() {
 function buildLaunchAttempts() {
   const single = ['--single-process'];
   const launch = (extra) => () => puppeteer.launch(getPuppeteerLaunchOptions(extra));
-  if (process.platform === 'linux') {
-    return [launch(single), launch()];
-  }
-  return [launch(), launch(single)];
+  // --single-process reduce drásticamente los hilos creados; en hostings
+  // compartidos con límite de procesos/hilos es la opción que más chances
+  // tiene de funcionar, así que se intenta primero en todas las plataformas.
+  return [launch(single), launch()];
 }
 
 async function launchBrowserWithFallback() {
