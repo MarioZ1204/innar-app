@@ -56,7 +56,7 @@ if (RECOVERY_FLAGS.some((flag) => process.env[flag] === '1' || process.env[flag]
 // Chrome para certificados/comprobantes: caché persistente (private_puppeteer junto a UPLOADS_DIR).
 setImmediate(() => {
   ensureChromiumReady({ install: true })
-    .then((r) => {
+    .then(async (r) => {
       if (r.ok) {
         logger.info('[STARTUP] Chrome/Puppeteer listo para PDF de documentos', {
           type: 'STARTUP',
