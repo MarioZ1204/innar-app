@@ -433,6 +433,11 @@
     }
   }
 
+  async function leerErrorServidor(res) {
+    const data = await res.json().catch(() => ({}));
+    return data.error || `Error del servidor (${res.status})`;
+  }
+
   async function generarDocumentoConBlob({ postUrl, previewUrl, payload, filename }) {
     const name = String(filename || 'documento.pdf').endsWith('.pdf')
       ? String(filename || 'documento.pdf')
@@ -452,16 +457,28 @@
       return { blob, modo: 'pdf-servidor', filename: name };
     }
 
-    await res.text().catch(() => '');
+    if (res.status === 408 || res.status >= 500) {
+      throw new Error(
+        await leerErrorServidor(res).catch(() => '')
+        || `El servidor tardó demasiado (${res.status}). Espere unos segundos e intente de nuevo.`
+      );
+    }
 
-    if (previewUrl) {
-      const preview = await fetchPreviewHtml(previewUrl, payload);
-      try {
-        const blob = await generarPdfBlobDesdeHtml(preview.html, { fast: true });
-        return { blob, modo: 'pdf-cliente', filename: preview.filename || name };
-      } catch (e) {
-        abrirImpresionDocumento(preview.html);
-        return { blob: null, modo: 'impresion', filename: preview.filename || name };
+    if (!res.ok) {
+      throw new Error(await leerErrorServidor(res));
+    }
+
+    if (modoHdr === 'html' || ct.includes('text/html')) {
+      await res.text().catch(() => '');
+      if (previewUrl) {
+        const preview = await fetchPreviewHtml(previewUrl, payload);
+        try {
+          const blob = await generarPdfBlobDesdeHtml(preview.html, { fast: true });
+          return { blob, modo: 'pdf-cliente', filename: preview.filename || name };
+        } catch (e) {
+          abrirImpresionDocumento(preview.html);
+          return { blob: null, modo: 'impresion', filename: preview.filename || name };
+        }
       }
     }
 

@@ -27,10 +27,21 @@ const { ensureChromiumReady } = require('../scripts/ensure-chromium');
 let chromiumWarmupPromise = null;
 function warmupChromiumOnce() {
   if (!chromiumWarmupPromise) {
-    chromiumWarmupPromise = ensureChromiumReady({ install: true }).catch((e) => ({
-      ok: false,
-      error: e.message
-    }));
+    chromiumWarmupPromise = ensureChromiumReady({ install: true })
+      .then(async (r) => {
+        if (!r.ok) return { ok: false, error: r.error || 'Chrome no disponible' };
+        try {
+          const { getSharedBrowser } = require('../utils/puppeteer-utils');
+          await getSharedBrowser();
+        } catch (e) {
+          logger.warn('[CERT] No se pudo precalentar navegador PDF:', e.message);
+        }
+        return { ok: true, cacheDir: r.cacheDir };
+      })
+      .catch((e) => ({
+        ok: false,
+        error: e.message
+      }));
   }
   return chromiumWarmupPromise;
 }

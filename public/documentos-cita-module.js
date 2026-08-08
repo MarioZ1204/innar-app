@@ -492,13 +492,12 @@
       if (state.tipo === 'comprobante' && window.innarFirmaFondo?.procesarPayloadComprobante) {
         payload = await window.innarFirmaFondo.procesarPayloadComprobante(payload);
       }
-      const preview = await fetchPreview(payload);
       const PDF = window.innarDocumentoPdf;
       if (!PDF) throw new Error('Generador PDF no disponible');
       const doc = payload.paciente_documento?.replace(/\D/g, '') || 'sin_doc';
       const filename = state.tipo === 'comprobante'
         ? `comprobante_servicios_${doc}.pdf`
-        : (preview.filename || `certificado_${doc}.pdf`);
+        : `certificado_asistencia_${doc}.pdf`;
 
       let out = { blob: null, modo: 'impresion', filename };
       if (state.tipo === 'comprobante') {
@@ -513,7 +512,7 @@
           postUrl: '/api/certificados/asistencia',
           previewUrl: '/api/certificados/asistencia/preview',
           payload,
-          filename: preview.filename || filename
+          filename
         });
       }
       if (out.blob) PDF.descargarBlob(out.blob, out.filename || filename);

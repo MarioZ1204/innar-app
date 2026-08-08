@@ -424,33 +424,35 @@
     }
   }
 
+  function postUrlPdf() {
+    return state.tipo === 'comprobante'
+      ? '/api/certificados/comprobante-servicios'
+      : '/api/certificados/asistencia';
+  }
+
   async function descargarPdf() {
-    if (!state.currentPreview?.html) await cargarVistaPrevia(false);
-    if (!state.currentPreview?.html) return;
-    const frame = $('docPreviewFrame');
-    const page = frame?.contentDocument?.querySelector('.page');
-    if (!page || !window.html2pdf) throw new Error('Generador PDF no disponible');
     setStatus('Generando PDF…');
     $('btnDocDownload').disabled = true;
     try {
-      await window.html2pdf().set({
-        margin: 0,
-        filename: state.currentPreview.filename || 'documento.pdf',
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: {
-          scale: 2,
-          useCORS: true,
-          allowTaint: true,
-          logging: false,
-          backgroundColor: '#ffffff',
-          width: page.offsetWidth,
-          height: page.offsetHeight,
-          scrollX: 0,
-          scrollY: 0
-        },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-      }).from(page).save();
-      setStatus('PDF descargado.');
+      const payload = state.tipo === 'comprobante'
+        ? await buildComprobantePayload()
+        : buildCertificadoPayload();
+      if (state.tipo === 'comprobante' && !payload.firma_paciente) {
+        throw new Error('Debe cargar la firma del paciente');
+      }
+      const PDF = window.innarDocumentoPdf;
+      if (!PDF) throw new Error('Generador PDF no disponible');
+      const doc = payload.paciente_documento?.replace(/\D/g, '') || 'sin_doc';
+      const filename = state.tipo === 'comprobante'
+        ? `comprobante_servicios_${doc}.pdf`
+        : `certificado_asistencia_${doc}.pdf`;
+      const modo = await PDF.generarDocumento({
+        postUrl: postUrlPdf(),
+        previewUrl: previewUrl(),
+        payload,
+        filename
+      });
+      setStatus(modo === 'pdf-servidor' ? 'PDF descargado.' : 'Documento generado.');
       if (state.tipo === 'certificado') {
         try {
           localStorage.setItem('innar.certAsistencia.defaults', JSON.stringify({

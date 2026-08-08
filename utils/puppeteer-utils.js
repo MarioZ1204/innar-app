@@ -146,12 +146,24 @@ function getPuppeteerLaunchOptions(extraArgs = []) {
   };
 }
 
+function pdfRenderTimeoutMs() {
+  const n = parseInt(process.env.CERT_PDF_TIMEOUT_MS || '45000', 10);
+  return Number.isFinite(n) && n >= 10000 ? n : 45000;
+}
+
 /**
  * Renderiza HTML a PDF sin depender de red externa (p. ej. Google Fonts).
  */
 async function tryRenderHtmlToPdf(html, options = {}) {
+  const timeoutMs = options.timeoutMs ?? pdfRenderTimeoutMs();
+  const contentTimeout = Math.min(options.contentTimeout ?? timeoutMs, timeoutMs);
   try {
-    const pdf = await renderHtmlToPdf(html, options);
+    const pdf = await Promise.race([
+      renderHtmlToPdf(html, { ...options, contentTimeout }),
+      new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Tiempo de espera agotado generando PDF')), timeoutMs);
+      })
+    ]);
     return { ok: true, pdf };
   } catch (e) {
     return { ok: false, error: e.message };
@@ -251,8 +263,8 @@ async function renderHtmlToPdf(html, options = {}) {
     printBackground = true,
     margin = { top: '0', bottom: '0', left: '0', right: '0' },
     waitFonts = true,
-    contentTimeout = 90000,
-    fontsTimeoutMs = 1500,
+    contentTimeout = pdfRenderTimeoutMs(),
+    fontsTimeoutMs = 800,
     preferCSSPageSize = true
   } = options;
 
