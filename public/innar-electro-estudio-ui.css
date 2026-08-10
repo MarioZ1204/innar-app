@@ -417,37 +417,23 @@
   border-style: dashed;
 }
 
-/* Continuación: color original del estudio + rayas diagonales */
+/* Continuación: color del estudio + rayas en el fondo (sin ::before que tape el texto) */
 .electro-cita-card--continuacion-dia {
   position: relative;
   overflow: hidden;
-  background: var(--electro-estudio-bg, #fff) !important;
   border-left: 4px dashed var(--electro-estudio-accent, #64748b) !important;
   border-color: var(--electro-estudio-border, #e5e7eb) !important;
-  box-shadow:
-    inset 0 0 0 1px color-mix(in srgb, var(--electro-estudio-accent, #64748b) 22%, transparent),
-    0 1px 3px rgba(15, 23, 42, 0.06);
-}
-
-.electro-cita-card--continuacion-dia::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  border-radius: inherit;
-  background: repeating-linear-gradient(
+  background-color: var(--electro-estudio-bg, #fff) !important;
+  background-image: repeating-linear-gradient(
     -45deg,
     transparent,
     transparent 7px,
-    color-mix(in srgb, var(--electro-estudio-accent, #64748b) 14%, transparent) 7px,
-    color-mix(in srgb, var(--electro-estudio-accent, #64748b) 14%, transparent) 14px
-  );
-  z-index: 0;
-}
-
-.electro-cita-card--continuacion-dia > * {
-  position: relative;
-  z-index: 1;
+    color-mix(in srgb, var(--electro-estudio-accent, #64748b) 12%, transparent) 7px,
+    color-mix(in srgb, var(--electro-estudio-accent, #64748b) 12%, transparent) 14px
+  ) !important;
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--electro-estudio-accent, #64748b) 22%, transparent),
+    0 1px 3px rgba(15, 23, 42, 0.06);
 }
 
 .electro-cita-card--continuacion-dia:hover {
@@ -455,6 +441,16 @@
   box-shadow:
     inset 0 0 0 1px color-mix(in srgb, var(--electro-estudio-accent, #64748b) 35%, transparent),
     0 4px 12px rgba(15, 23, 42, 0.1);
+}
+
+/* Refuerzo de contraste del contenido sobre el rayado */
+.electro-cita-card--continuacion-dia .electro-cita-card-paciente,
+.electro-cita-card--continuacion-dia .electro-cita-card-meta,
+.electro-cita-card--continuacion-dia .electro-cita-card-estudio,
+.electro-cita-card--continuacion-dia .electro-cita-card-hora {
+  color: #0f172a;
+  position: relative;
+  z-index: 1;
 }
 
 .electro-cita-card-continuacion--en-curso {

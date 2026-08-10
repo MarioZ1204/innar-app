@@ -10163,6 +10163,7 @@ async function _cargarPermisosUserList() {
       const badge = u.permisos ? ' (personalizado)' : '';
       const label = `${u.nombre || u.usuario} — ${_rolLabel(u.rol)}${badge}`;
       opt.textContent = label;
+      opt.title = label;
       opt.setAttribute('data-user-text', `${(u.nombre || '').toLowerCase()} ${(u.usuario || '').toLowerCase()} ${_rolLabel(u.rol).toLowerCase()}`);
       if (_permisosUsuarioSeleccionado && _permisosUsuarioSeleccionado.id === u.id) opt.selected = true;
       container.appendChild(opt);

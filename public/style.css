@@ -459,3 +459,18 @@
   background:linear-gradient(90deg,#f3d4fe 0%,#eff6ff 100%);
   box-shadow:inset 3px 0 0 #a21caf;
 }
+
+/* Control de permisos: columna de usuarios más ancha (evita truncar nombres/roles) */
+.permisos-page-layout{
+  grid-template-columns:minmax(320px,min(48vw,520px)) 1fr;
+}
+.permisos-panel-usuario{
+  min-width:0;
+  max-width:100%;
+}
+.permisos-user-select{
+  width:100%;
+  max-width:100%;
+  box-sizing:border-box;
+  font-size:.8125rem;
+}

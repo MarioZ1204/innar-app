@@ -37,13 +37,12 @@ describe('agenda-motivo-dia', () => {
       .toBe('cal-motivo-ucqn');
   });
 
-  test('programar: festivo con día bloqueado (no asiste) → rojo festivo, no blanco', () => {
+  test('programar: no asiste + cualquier motivo → rojo unavailable', () => {
     expect(claseCalProgramarPorDia({ estadoDia: 'unavailable', motivo: 'Festivo' }))
-      .toBe('cal-motivo-festivo');
-  });
-
-  test('programar: motivo libre con día bloqueado → clase otro, no blanco', () => {
+      .toBe('cal-unavailable');
+    expect(claseCalProgramarPorDia({ estadoDia: 'unavailable', motivo: 'UCQN' }))
+      .toBe('cal-unavailable');
     expect(claseCalProgramarPorDia({ estadoDia: 'unavailable', motivo: 'Cita especial' }))
-      .toBe('cal-motivo-otro');
+      .toBe('cal-unavailable');
   });
 });

@@ -83,10 +83,11 @@
   }
 
   function claseCalProgramarPorDia({ motivo, estadoDia }) {
+    // No asiste (día bloqueado): siempre rojo, sin importar el motivo elegido
+    if (estadoDia === 'unavailable') return 'cal-unavailable';
     const meta = metaMotivoAgenda(motivo);
     if (meta) return meta.cal;
     if (motivo) return 'cal-motivo-otro';
-    if (estadoDia === 'unavailable') return 'cal-unavailable';
     if (estadoDia === 'full') return 'cal-available';
     if (estadoDia === 'partial') return 'cal-partial';
     return 'cal-none';

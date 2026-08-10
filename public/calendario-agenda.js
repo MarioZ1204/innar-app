@@ -555,17 +555,19 @@ function renderCitasCalGrid() {
     const E = citasCount;
     const splitInfo = tieneCuposEntidad ? _calcMetricasSplit(citasCount, capHoraria, cuposDia) : null;
 
-    let tooltip = `Citas: ${citasCount} | Libres horario: ${libresCount}`;
-    if (splitInfo) {
+    let tooltip = bloqueado
+      ? (tieneMotivo ? `No asiste — ${motivo} (día bloqueado)` : 'No asiste — día bloqueado')
+      : `Citas: ${citasCount} | Libres horario: ${libresCount}`;
+    if (!bloqueado && splitInfo) {
       tooltip += ` | Otras citas: ${splitInfo.izquierda.citas} | Otras libres: ${splitInfo.izquierda.libres}`;
       splitInfo.entidades.forEach((e) => {
         tooltip += ` | ${e.entidad}: ${e.citas}/${e.cupo_max} (${e.libres} disp.)`;
       });
     }
-    if (datos && datos.atendidas) tooltip += ` | Atendidas: ${datos.atendidas}`;
-    if (datos && datos.no_asistieron) tooltip += ` | No asist.: ${datos.no_asistieron}`;
-    if (datos && datos.canceladas) tooltip += ` | Canceladas: ${datos.canceladas}`;
-    if (datos && datos.reprogramadas) tooltip += ` | Reprog.: ${datos.reprogramadas}`;
+    if (!bloqueado && datos && datos.atendidas) tooltip += ` | Atendidas: ${datos.atendidas}`;
+    if (!bloqueado && datos && datos.no_asistieron) tooltip += ` | No asist.: ${datos.no_asistieron}`;
+    if (!bloqueado && datos && datos.canceladas) tooltip += ` | Canceladas: ${datos.canceladas}`;
+    if (!bloqueado && datos && datos.reprogramadas) tooltip += ` | Reprog.: ${datos.reprogramadas}`;
 
     let obsTexto = tieneMotivo
       ? (motivo.length > 26 ? `${motivo.slice(0, 24)}…` : motivo)
@@ -593,7 +595,8 @@ function renderCitasCalGrid() {
 
     const esAusente = colorClass === 'ccal-ausente' || colorClass === 'ccal-motivo-festivo';
 
-    const clickable = !bloqueado || tieneMotivo;
+    // Día "No asiste" / domingo bloqueado: se pinta pero no se puede abrir
+    const clickable = !bloqueado;
     const splitClass = tieneCuposEntidad ? ' ccal-cell-split' : '';
     const esSel = fecha === fechaSel;
     const cellTag = clickable ? 'button' : 'div';

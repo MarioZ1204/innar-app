@@ -783,14 +783,24 @@
 #view-agenda-medica .ccal-cell.ccal-motivo-festivo,
 #view-agenda-medica .ccal-cell.ccal-ausente,
 #view-agenda-medica button.ccal-cell.ccal-motivo-festivo,
-#view-agenda-medica button.ccal-cell.ccal-ausente {
-  background: linear-gradient(165deg, #fef2f2 0%, #fff7f7 100%) !important;
-  border-color: #fecaca !important;
+#view-agenda-medica button.ccal-cell.ccal-ausente,
+#view-agenda-medica div.ccal-cell.ccal-ausente {
+  background: linear-gradient(165deg, #fef2f2 0%, #fee2e2 100%) !important;
+  border-color: #fca5a5 !important;
 }
 #view-agenda-medica .ccal-motivo-festivo::before,
 #view-agenda-medica .ccal-ausente::before { background: #f87171; }
 #view-agenda-medica .ccal-motivo-festivo .ccal-card-observacion,
 #view-agenda-medica .ccal-ausente .ccal-card-observacion { color: #b91c1c; font-weight: 600; }
+
+/* No asiste: bloqueado (no es botón) */
+#view-agenda-medica div.ccal-cell.ccal-ausente,
+#view-agenda-medica div.ccal-cell.ccal-bloqueado {
+  cursor: not-allowed;
+  pointer-events: none;
+  opacity: 0.92;
+  user-select: none;
+}
 
 #view-agenda-medica .ccal-cell.ccal-motivo-otro,
 #view-agenda-medica button.ccal-cell.ccal-motivo-otro {
