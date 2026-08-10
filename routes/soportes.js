@@ -394,12 +394,21 @@ async function refrescarVisibilidadPdx(periodo, archivadoPor = null) {
     [estado, periodo]
   );
   try {
+    // Solo registro BD + encola ZIP en background (no await del ZIP)
     const { procesarTransicionArchivoPdx } = require('../utils/soportes-modulo-archivo');
     await procesarTransicionArchivoPdx(periodo, estadoAnterior, archivadoPor);
   } catch (e) {
     logger.warn('[SOPORTES] archivo automático PDX:', e.message);
   }
   return estado;
+}
+
+/** Un refresh por periodo (evita N awaits al listar muchas carpetas). */
+async function refrescarVisibilidadPdxPeriodos(periodos, archivadoPor = null) {
+  const uniq = [...new Set((periodos || []).filter((p) => p && /^\d{4}-\d{2}$/.test(p)))];
+  for (const periodo of uniq) {
+    await refrescarVisibilidadPdx(periodo, archivadoPor);
+  }
 }
 
 async function refrescarVisibilidadArmado(periodo, archivadoPor = null) {
@@ -717,7 +726,7 @@ router.get('/soportes/pdx/carpetas', requireAuth, requireRoleOrPerm(ROLES_SOPORT
   try {
     const rows = await queryPdxCarpetasConCount();
     const hoyPeriodo = periodoFromDate();
-    for (const r of rows) await refrescarVisibilidadPdx(r.periodo, req.session?.usuarioId || null);
+    await refrescarVisibilidadPdxPeriodos(rows.map((r) => r.periodo), req.session?.usuarioId || null);
     const visiblesSet = await loadVisibleEnSoportesSet();
     const lista = rows
       .filter((r) => usuarioVeCarpetaPdx(req, r))
@@ -740,7 +749,7 @@ router.get('/soportes/pdx/carpetas-archivadas', requireAuth, requireRoleOrPerm(
       return res.status(403).json({ error: 'Sin permiso para consultar reportes archivados' });
     }
     const rows = await queryPdxCarpetasConCount();
-    for (const r of rows) await refrescarVisibilidadPdx(r.periodo, req.session?.usuarioId || null);
+    await refrescarVisibilidadPdxPeriodos(rows.map((r) => r.periodo), req.session?.usuarioId || null);
     const visiblesSet = await loadVisibleEnSoportesSet();
     let lista = rows
       .filter((r) => usuarioVeCarpetaPdx(req, r))
@@ -776,7 +785,8 @@ router.get('/soportes/pdx/buscar-archivadas', requireAuth, requireRoleOrPerm(
     const norm = q.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     const like = `%${norm.replace(/[^a-z0-9\s]/g, '%')}%`;
     const archivos = await db.query(
-      `SELECT a.*, c.nombre_display AS carpeta_nombre, c.periodo, c.color_tema, c.roles_visibles
+      `SELECT a.*, c.nombre_display AS carpeta_nombre, c.periodo, c.color_tema, c.roles_visibles,
+              COALESCE(c.archivada_manual, 0) AS archivada_manual
        FROM sop_pdx_archivos a
        JOIN sop_pdx_carpetas c ON c.id = a.carpeta_id
        WHERE a.paciente_nombre_norm LIKE ? OR a.estudio_texto LIKE ? OR a.apellidos LIKE ? OR a.nombres LIKE ?
@@ -785,6 +795,7 @@ router.get('/soportes/pdx/buscar-archivadas', requireAuth, requireRoleOrPerm(
     );
     const resultados = archivos.filter((a) => {
       if (!usuarioVeCarpetaPdx(req, a)) return false;
+      if (Number(a.archivada_manual) === 1) return true;
       const vis = resolveVisibilidadPeriodo(a.periodo, 'pdx', periodoToRefId(a.periodo), visiblesSet);
       return vis === 'archivo';
     }).map((a) => {

@@ -161,11 +161,39 @@ async function setVisibleEnSoportes(registroId, visible) {
   return { visible: !!visible };
 }
 const { resolvePdxArchivoPath, soportesRoot } = require('./soportes-storage');
-const { zipArchiveSegment, createZipBuffer, collectPeriodPaqueteFlatEntries, appendEntriesToArchive, zipEntryOptions, safeSyncRipsPeriodo } = require('./soportes-armado-zip');
+const { zipArchiveSegment, createZipBuffer, collectPeriodPaqueteFlatEntries, appendEntriesToArchive, zipEntryOptions, safeSyncRipsPeriodo, yieldEventLoop } = require('./soportes-armado-zip');
 const { buildAnexoFiduExcelBuffer } = require('./anexo-fidu-export');
 
 const ARCHIVO_SUBDIR = 'modulo-archivo';
 const ZIP_COMPRESSION = 1;
+
+/** Cola serial de backups ZIP — evita saturar Hostinger (1 worker) con varios ZIP a la vez. */
+const _backupJobs = [];
+let _backupBusy = false;
+
+function enqueueArchivoBackup(label, fn) {
+  return new Promise((resolve) => {
+    _backupJobs.push({ label, fn, resolve });
+    void pumpArchivoBackupQueue();
+  });
+}
+
+async function pumpArchivoBackupQueue() {
+  if (_backupBusy) return;
+  _backupBusy = true;
+  while (_backupJobs.length) {
+    const job = _backupJobs.shift();
+    try {
+      await job.fn();
+      job.resolve(true);
+    } catch (e) {
+      logger.warn('[ARCHIVO-MODULO] job backup falló:', job.label, e.message);
+      job.resolve(false);
+    }
+    await new Promise((r) => setImmediate(r));
+  }
+  _backupBusy = false;
+}
 
 function archivoModuloDir() {
   const dir = path.join(BACKUP_DIR, ARCHIVO_SUBDIR);
@@ -321,39 +349,36 @@ async function crearBackupZipPdxPeriodo(periodo) {
     [periodo]
   );
   const manifest = { modulo: 'pdx', periodo, carpetas: [], archivos: [] };
-  const parts = [];
+  const entries = [];
+  const usedNames = new Set();
 
-  for (const c of carpetas) {
+  for (let i = 0; i < carpetas.length; i += 1) {
+    const c = carpetas[i];
     const archivos = await db.query('SELECT * FROM sop_pdx_archivos WHERE carpeta_id = ?', [c.id]);
     const seg = zipArchiveSegment(c.nombre_display || `carpeta-${c.id}`);
     manifest.carpetas.push({ id: c.id, nombre_display: c.nombre_display, total: archivos.length });
-    const innerEntries = [];
     for (const a of archivos) {
       const fp = resolvePdxArchivoPath(a);
       if (!fp || !fs.existsSync(fp)) continue;
       const fname = a.nombre_archivo_display || a.nombre_archivo_original || path.basename(fp);
-      innerEntries.push({ absPath: fp, name: `${seg}/${fname}` });
+      let name = `${seg}/${fname}`;
+      if (usedNames.has(name)) name = `${seg}/${a.id}_${fname}`;
+      usedNames.add(name);
+      entries.push({ absPath: fp, name });
       manifest.archivos.push({ id: a.id, carpeta_id: c.id, paciente: a.paciente_nombre, archivo: fname });
     }
-    if (innerEntries.length) {
-      const buf = await createZipBuffer(innerEntries);
-      parts.push({ name: `${seg}-reportes.zip`, buffer: buf });
-    }
+    if ((i + 1) % 2 === 0) await yieldEventLoop();
   }
 
   manifest.carpetas_count = manifest.carpetas.length;
   manifest.archivos_count = manifest.archivos.length;
   const manifestBuf = Buffer.from(JSON.stringify(manifest, null, 2), 'utf8');
-  parts.push({ name: 'manifest-pdx.json', buffer: manifestBuf });
-
-  if (!parts.length) {
-    parts.push({ name: 'manifest-pdx.json', buffer: manifestBuf });
-  }
+  entries.push({ placeholder: true, name: 'manifest-pdx.json', content: manifestBuf });
 
   const filename = safeArchivoBackupName(`archivo-pdx-${periodo}-${Date.now()}.zip`);
   const destPath = path.join(archivoModuloDir(), filename);
-  await writeZipFromParts(parts, destPath);
-  const st = fs.statSync(destPath);
+  await writeZipFromEntries(entries, destPath);
+  const st = await fs.promises.stat(destPath);
   return { filename, filepath: destPath, size_bytes: st.size };
 }
 
@@ -421,7 +446,6 @@ function periodoToRefId(periodo) {
 
 async function crearBackupZipPdxCarpeta(carpetaRow) {
   const archivos = await db.query('SELECT * FROM sop_pdx_archivos WHERE carpeta_id = ?', [carpetaRow.id]);
-  const seg = zipArchiveSegment(carpetaRow.nombre_display || `carpeta-${carpetaRow.id}`);
   const manifest = {
     modulo: 'pdx_carpeta',
     carpeta_id: carpetaRow.id,
@@ -429,120 +453,112 @@ async function crearBackupZipPdxCarpeta(carpetaRow) {
     periodo: carpetaRow.periodo || null,
     archivos: []
   };
-  const parts = [];
-  const innerEntries = [];
-  for (const a of archivos) {
+  const entries = [];
+  for (let i = 0; i < archivos.length; i += 1) {
+    const a = archivos[i];
     const fp = resolvePdxArchivoPath(a);
     if (!fp || !fs.existsSync(fp)) continue;
     const fname = a.nombre_archivo_display || a.nombre_archivo_original || path.basename(fp);
-    innerEntries.push({ absPath: fp, name: fname });
+    entries.push({ absPath: fp, name: fname });
     manifest.archivos.push({ id: a.id, paciente: a.paciente_nombre, archivo: fname });
-  }
-  if (innerEntries.length) {
-    const buf = await createZipBuffer(innerEntries);
-    parts.push({ name: `${seg}-reportes.zip`, buffer: buf });
+    if ((i + 1) % 8 === 0) await yieldEventLoop();
   }
   manifest.archivos_count = manifest.archivos.length;
   const manifestBuf = Buffer.from(JSON.stringify(manifest, null, 2), 'utf8');
-  parts.push({ name: 'manifest-pdx-carpeta.json', buffer: manifestBuf });
+  entries.push({ placeholder: true, name: 'manifest-pdx-carpeta.json', content: manifestBuf });
   const label = zipArchiveSegment(carpetaRow.nombre_display || `carpeta-${carpetaRow.id}`);
   const filename = safeArchivoBackupName(`archivo-pdx-carpeta-${label}-${Date.now()}.zip`);
   const destPath = path.join(archivoModuloDir(), filename);
-  await writeZipFromParts(parts, destPath);
-  const st = fs.statSync(destPath);
+  await writeZipFromEntries(entries, destPath);
+  const st = await fs.promises.stat(destPath);
   return { filename, filepath: destPath, size_bytes: st.size };
 }
 
-async function ejecutarBackupPdxCarpetaEnBackground(carpetaRow, registroId, archivadoPor = null) {
-  try {
-    const backup = await crearBackupZipPdxCarpeta(carpetaRow);
+function scheduleBackupUpdateRegistro(label, registroId, archivadoPor, backupFn) {
+  void enqueueArchivoBackup(label, async () => {
+    const backup = await backupFn();
     if (backup && registroId) {
       await db.execute(
         'UPDATE sop_modulo_archivo SET backup_filename = ?, backup_bytes = ?, archivado_por = COALESCE(?, archivado_por) WHERE id = ?',
         [backup.filename, backup.size_bytes, archivadoPor, registroId]
       );
     }
-    return backup;
-  } catch (e) {
-    logger.warn('[ARCHIVO-MODULO] backup PDX carpeta (background) falló:', carpetaRow?.nombre_display, e.message);
-    return null;
-  }
+  });
 }
 
 async function archivarPdxCarpeta(carpetaRow, archivadoPor = null) {
   if (!carpetaRow?.id) return null;
   if (await yaRegistradoEnArchivo('pdx_carpeta', carpetaRow.id)) return null;
 
-  const syncBackup = process.env.PDX_ARCHIVO_SYNC_BACKUP === '1';
-  let backup = null;
-  if (syncBackup) {
-    try {
-      backup = await crearBackupZipPdxCarpeta(carpetaRow);
-    } catch (e) {
-      logger.warn('[ARCHIVO-MODULO] backup PDX carpeta falló:', carpetaRow.nombre_display, e.message);
-    }
-  }
-
+  // Nunca ZIP síncrono en el request: Hostinger se congela. PDX_ARCHIVO_SYNC_BACKUP se ignora.
   const id = await insertRegistroArchivo({
     modulo: 'pdx_carpeta',
     periodo: carpetaRow.periodo || null,
     ref_id: carpetaRow.id,
     etiqueta: `${carpetaRow.nombre_display || 'Carpeta'} (${carpetaRow.periodo || 'sin periodo'})`,
-    backup_filename: backup?.filename || null,
-    backup_bytes: backup?.size_bytes || null,
+    backup_filename: null,
+    backup_bytes: null,
     archivado_por: archivadoPor
   });
 
-  if (!syncBackup) {
-    setImmediate(() => {
-      ejecutarBackupPdxCarpetaEnBackground(carpetaRow, id, archivadoPor);
-    });
-  }
+  scheduleBackupUpdateRegistro(
+    `pdx_carpeta:${carpetaRow.id}`,
+    id,
+    archivadoPor,
+    () => crearBackupZipPdxCarpeta(carpetaRow)
+  );
 
-  return { id, backup };
+  return { id, backup: null };
 }
 
 async function archivarPdxPeriodo(periodo, archivadoPor = null) {
   const refId = periodoToRefId(periodo);
   if (!refId) return null;
   if (await yaRegistradoEnArchivo('pdx', refId)) return null;
-  let backup = null;
-  try {
-    backup = await crearBackupZipPdxPeriodo(periodo);
-  } catch (e) {
-    logger.warn('[ARCHIVO-MODULO] backup PDX falló:', periodo, e.message);
-  }
+
+  // Registrar ya (visibilidad/histórico) y comprimir en background
   const id = await insertRegistroArchivo({
     modulo: 'pdx',
     periodo,
     ref_id: refId,
     etiqueta: `Reportes ${periodo}`,
-    backup_filename: backup?.filename || null,
-    backup_bytes: backup?.size_bytes || null,
+    backup_filename: null,
+    backup_bytes: null,
     archivado_por: archivadoPor
   });
-  return { id, backup };
+
+  scheduleBackupUpdateRegistro(
+    `pdx:${periodo}`,
+    id,
+    archivadoPor,
+    () => crearBackupZipPdxPeriodo(periodo)
+  );
+
+  return { id, backup: null };
 }
 
 async function archivarArmadoPeriodo(periodoRow, archivadoPor = null) {
   if (!periodoRow?.id) return null;
   if (await yaRegistradoEnArchivo('armado', periodoRow.id)) return null;
-  let backup = null;
-  try {
-    backup = await crearBackupZipArmadoPeriodo(periodoRow);
-  } catch (e) {
-    logger.warn('[ARCHIVO-MODULO] backup Armado falló:', periodoRow.periodo, e.message);
-  }
+
   const id = await insertRegistroArchivo({
     modulo: 'armado',
     periodo: periodoRow.periodo,
     ref_id: periodoRow.id,
     etiqueta: periodoRow.etiqueta || periodoRow.periodo,
-    backup_filename: backup?.filename || null,
-    backup_bytes: backup?.size_bytes || null,
+    backup_filename: null,
+    backup_bytes: null,
     archivado_por: archivadoPor
   });
-  return { id, backup };
+
+  scheduleBackupUpdateRegistro(
+    `armado:${periodoRow.id}`,
+    id,
+    archivadoPor,
+    () => crearBackupZipArmadoPeriodo(periodoRow)
+  );
+
+  return { id, backup: null };
 }
 
 async function archivarAnexoCarpeta(carpetaRow, archivadoPor = null) {

@@ -2643,8 +2643,12 @@
       }
       const n = (data.archivadas || []).length;
       const omit = (data.omitidas || []).length;
-      if (n) sopToast(`${n} carpeta${n === 1 ? '' : 's'} enviada${n === 1 ? '' : 's'} al archivo`, 'success');
-      else if (omit) sopToast('Las carpetas seleccionadas ya estaban archivadas', 'info');
+      if (n) {
+        sopToast(
+          `${n} carpeta${n === 1 ? '' : 's'} enviada${n === 1 ? '' : 's'} a Reportes anteriores. El respaldo ZIP sigue en segundo plano.`,
+          'success'
+        );
+      } else if (omit) sopToast('Las carpetas seleccionadas ya estaban archivadas', 'info');
       else sopToast('No se archivó ninguna carpeta', 'warning');
       pdxState.seleccionadas.clear();
       await cargarCarpetasPdx();
