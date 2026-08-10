@@ -342,6 +342,14 @@ function registerDefaultRealtimeHandlers() {
     }
   });
 
+  subscribe('chat:mensaje', (e) => {
+    if (window.innarChatMessenger && typeof window.innarChatMessenger.refresh === 'function') {
+      /* El handler fino está en chat-messenger.js; aquí solo badge de respaldo */
+    }
+  });
+  subscribe('chat:mensaje_echo', () => { /* chat-messenger.js */ });
+  subscribe('chat:leido', () => { /* chat-messenger.js */ });
+
   subscribe('agenda:turno-creado', () => refreshActiveModuleData());
   subscribe('agenda:turno-eliminado', () => refreshActiveModuleData());
   subscribe('agenda:turno-estado-cambio', (e) => {

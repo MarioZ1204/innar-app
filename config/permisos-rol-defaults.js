@@ -66,6 +66,7 @@ const PERMISOS_ROL_DEFAULTS = {
     'agenda.ver', 'agenda.cambiar_estado', 'agenda.llamar_siguiente', 'agenda.marcar_atendido', 'agenda.disponibilidad',
     'electro.ver', 'electro.cambiar_estado', 'electro.subir_archivo', 'electro.ver_archivo',
     'sistema.dashboard',
+    'chat.usar',
   ],
   contabilidad: [
     'modulo.recibos', 'modulo.dashboard',

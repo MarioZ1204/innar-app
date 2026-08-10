@@ -143,12 +143,13 @@
   width: 14px;
   height: 5px;
   border-radius: 2px;
+  /* Indicador genérico de rayado (el color real lo lleva cada segmento del día) */
   background: repeating-linear-gradient(
     -45deg,
-    #d97706,
-    #d97706 2px,
-    #fde68a 2px,
-    #fde68a 4px
+    #64748b,
+    #64748b 2px,
+    #e2e8f0 2px,
+    #e2e8f0 4px
   );
 }
 
@@ -277,13 +278,15 @@
 }
 
 .ecal-seg--cont {
-  opacity: 0.85;
+  opacity: 0.95;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c, #94a3b8) 40%, transparent);
+  /* Mismo color del tipo de estudio, con rayas (continuación) */
   background: repeating-linear-gradient(
     -45deg,
     var(--c, #94a3b8),
     var(--c, #94a3b8) 2px,
-    rgba(255, 255, 255, 0.35) 2px,
-    rgba(255, 255, 255, 0.35) 4px
+    color-mix(in srgb, var(--c, #94a3b8) 55%, #fff) 2px,
+    color-mix(in srgb, var(--c, #94a3b8) 55%, #fff) 4px
   ) !important;
 }
 
@@ -318,15 +321,17 @@
 }
 
 .ecal-cell--solo-cont {
-  background: #fffbeb;
+  background: linear-gradient(180deg, #fff7ed 0%, #ffedd5 100%);
+  box-shadow: inset 0 0 0 1px rgba(251, 146, 60, 0.25);
 }
 
 .ecal-cell--solo-cont:hover {
-  background: #fef3c7;
+  background: linear-gradient(180deg, #ffedd5 0%, #fed7aa 100%);
 }
 
 .ecal-cell--mix {
-  background: linear-gradient(180deg, #fff 70%, #fffbeb 100%);
+  background: linear-gradient(180deg, #fff 55%, #fff7ed 100%);
+  box-shadow: inset 0 -2px 0 rgba(251, 146, 60, 0.2);
 }
 
 @media (max-width: 900px) {

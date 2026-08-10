@@ -52,7 +52,7 @@
       TIPOS.map((t) =>
         `<span class="ecal-tipo-pill"><span class="ecal-tipo-dot" style="background:${t.color}"></span>${escapeHtml(t.label)}</span>`
       ).join('') +
-      '<span class="ecal-tipo-pill ecal-tipo-pill--cont"><span class="ecal-tipo-dot ecal-tipo-dot--cont"></span>Continúa de otro día</span>';
+      '<span class="ecal-tipo-pill ecal-tipo-pill--cont"><span class="ecal-tipo-dot ecal-tipo-dot--cont"></span>Continúa (rayado)</span>';
     const grid = document.getElementById('electroCalGrid');
     if (grid) wrap.insertBefore(el, grid);
   }

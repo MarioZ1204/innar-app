@@ -1554,6 +1554,44 @@ const runtimeMigrations = [
         console.log(`[RT-MIGRATION] Historial reprog electro: ${result.insertados} parejas reconstruidas`);
       }
     }
+  },
+  {
+    name: 'rt_chat_messenger',
+    description: 'Tablas chat_conversaciones y chat_mensajes (Messenger recepción ↔ doctores)',
+    run: async (db) => {
+      await db.execute(`
+        CREATE TABLE IF NOT EXISTS chat_conversaciones (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          usuario_a_id INT NOT NULL,
+          usuario_b_id INT NOT NULL,
+          ultimo_mensaje_at DATETIME NULL DEFAULT NULL,
+          creado_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE KEY uk_chat_pair (usuario_a_id, usuario_b_id),
+          INDEX idx_chat_conv_ultimo (ultimo_mensaje_at),
+          CONSTRAINT fk_chat_conv_a FOREIGN KEY (usuario_a_id) REFERENCES usuarios(id) ON DELETE CASCADE,
+          CONSTRAINT fk_chat_conv_b FOREIGN KEY (usuario_b_id) REFERENCES usuarios(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+      `);
+      await db.execute(`
+        CREATE TABLE IF NOT EXISTS chat_mensajes (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          conversacion_id INT NOT NULL,
+          autor_id INT NOT NULL,
+          cuerpo VARCHAR(2000) NOT NULL,
+          paciente_id INT NULL DEFAULT NULL,
+          turno_id INT NULL DEFAULT NULL,
+          cita_electro_id INT NULL DEFAULT NULL,
+          paciente_nombre VARCHAR(200) NULL DEFAULT NULL,
+          contexto_label VARCHAR(240) NULL DEFAULT NULL,
+          leido_at DATETIME NULL DEFAULT NULL,
+          creado_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          INDEX idx_chat_msg_conv (conversacion_id, id),
+          INDEX idx_chat_msg_autor (autor_id),
+          CONSTRAINT fk_chat_msg_conv FOREIGN KEY (conversacion_id) REFERENCES chat_conversaciones(id) ON DELETE CASCADE,
+          CONSTRAINT fk_chat_msg_autor FOREIGN KEY (autor_id) REFERENCES usuarios(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+      `);
+    }
   }
 ];
 

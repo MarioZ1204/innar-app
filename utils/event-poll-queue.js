@@ -59,6 +59,22 @@ function enqueue(usuarioKey, event, data) {
   while (q.length > MAX_EVENTS_PER_USER) q.shift();
 }
 
+/** Entrega un evento solo a un usuario (DM / notificaciones dirigidas). */
+function enqueueToUser(usuarioId, event, data) {
+  const key = canonicalUsuarioId(usuarioId);
+  if (!key) return false;
+  enqueue(key, event, data);
+  return true;
+}
+
+/** Online aproximado: último GET /api/eventos/poll reciente. */
+function isUserOnline(usuarioId, ttlMs = 90000) {
+  const key = canonicalUsuarioId(usuarioId);
+  if (!key) return false;
+  const t = lastPollAt.get(key);
+  return t != null && (Date.now() - t) <= ttlMs;
+}
+
 /**
  * Broadcast a todos los usuarios con poll reciente.
  */
@@ -103,6 +119,8 @@ module.exports = {
   canonicalUsuarioId,
   touchSubscriber,
   flushUser,
+  enqueueToUser,
+  isUserOnline,
   broadcast,
   broadcastExcept,
   resetQueuesForTests

@@ -444,6 +444,7 @@ app.use('/api', require('./routes/soportes'));
 app.use('/api', require('./routes/anexo-fidu'));
 app.use('/api', require('./routes/llamado'));
 app.use('/api', require('./routes/backup'));
+app.use('/api', require('./routes/chat'));
 
 // Errores de sesión MySQL (cookie corrupta) u otros → no dejar la API sin respuesta JSON
 app.use((err, req, res, _next) => {

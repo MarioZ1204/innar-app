@@ -314,6 +314,19 @@ const schemas = {
     estado: Joi.string().valid(...ESTADOS_ELECTRO).required()
   }),
 
+  apiChatAbrir: Joi.object({
+    destinatario_id: Joi.number().integer().positive().required()
+  }),
+
+  apiChatMensaje: Joi.object({
+    cuerpo: Joi.string().trim().min(1).max(2000).required(),
+    paciente_id: Joi.number().integer().positive().optional().allow(null),
+    turno_id: Joi.number().integer().positive().optional().allow(null),
+    cita_electro_id: Joi.number().integer().positive().optional().allow(null),
+    paciente_nombre: Joi.string().max(200).optional().allow(null, ''),
+    contexto_label: Joi.string().max(240).optional().allow(null, '')
+  }),
+
   apiCrearDiagnostico: Joi.object({
     nombre: Joi.string().min(3).max(255).required(),
     descripcion: Joi.string().max(1000).optional().allow(null, ''),

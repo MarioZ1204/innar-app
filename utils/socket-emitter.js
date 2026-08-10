@@ -13,4 +13,12 @@ function emit(eventName, data) {
   }
 }
 
-module.exports = { init, emit };
+function emitToUser(usuarioId, eventName, data) {
+  try {
+    eventPollQueue.enqueueToUser(usuarioId, eventName, data);
+  } catch (error) {
+    logger.warn(`Realtime emitToUser error: ${eventName}`, { error: error.message, usuarioId });
+  }
+}
+
+module.exports = { init, emit, emitToUser };

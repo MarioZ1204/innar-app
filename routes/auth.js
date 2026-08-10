@@ -72,6 +72,7 @@ router.post('/login', async (req, res) => {
 
     req.session.usuarioId = user.id;
     req.session.usuario = user.usuario;
+    req.session.nombre = user.nombre;
     req.session.rol = user.rol;
     const parsedPermisos = parsePermisosUsuario(user.permisos);
     req.session.permisos = parsedPermisos;
@@ -118,6 +119,8 @@ router.get('/sesion', async (req, res) => {
       if (user) {
         user.permisos = parsePermisosUsuario(user.permisos);
         req.session.permisos = user.permisos;
+        req.session.nombre = user.nombre;
+        req.session.rol = user.rol;
       }
       const ensureCsrf = getEnsureCsrf(req);
       if (ensureCsrf) ensureCsrf(req, res);

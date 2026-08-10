@@ -981,6 +981,9 @@ function updateMenuByRole() {
     btn.style.display = tienePermiso(permKey) ? '' : 'none';
   });
   updateFacturacionFlowNav(currentModule);
+  if (typeof window.innarChatMessenger?.show === 'function') {
+    window.innarChatMessenger.show();
+  }
 }
 
 async function checkSession() {
@@ -1481,6 +1484,18 @@ function colorTarjetaEstudioElectro(estudio) {
   return c;
 }
 
+/** Continuación multi-día: mismo color del examen + patrón rayado (día 2 de 4, etc.). */
+function colorTarjetaEstudioElectroContinuacion(estudio) {
+  const base = colorTarjetaEstudioElectro(estudio);
+  return {
+    accent: base.accent,
+    bg: base.bg,
+    border: base.border,
+    contBg: base.bg,
+    contAccent: base.accent
+  };
+}
+
 function precargarColoresEstudiosElectro(estudios) {
   (estudios || []).forEach((nombre) => colorTarjetaEstudioElectro(nombre));
 }
@@ -1500,16 +1515,23 @@ function renderLeyendaColoresEstudiosElectro(estudios) {
     const c = colorTarjetaEstudioElectro(nombre);
     const corto = abreviarEstudio(nombre) || nombre;
     return `<span class="electro-leyenda-chip" style="--chip-accent:${c.accent};--chip-bg:${c.bg}" title="${escapeHtml(nombre)}"><i aria-hidden="true"></i>${escapeHtml(corto)}</span>`;
-  }).join('');
+  }).join('')
+    + '<span class="electro-leyenda-chip electro-leyenda-chip--continuacion" title="Estudios multi-día en día 2, 3…: mismo color del examen con rayas diagonales"><i aria-hidden="true"></i>Continúa (rayado)</span>';
 }
 
-function aplicarColorEstudioElectroCard(card, estudio) {
-  const c = colorTarjetaEstudioElectro(estudio);
+function aplicarColorEstudioElectroCard(card, estudio, opts = {}) {
+  const esContinuacion = Boolean(opts.esContinuacion);
+  const c = esContinuacion ? colorTarjetaEstudioElectroContinuacion(estudio) : colorTarjetaEstudioElectro(estudio);
   card.style.setProperty('--electro-estudio-accent', c.accent);
   card.style.setProperty('--electro-estudio-bg', c.bg);
   card.style.setProperty('--electro-estudio-border', c.border);
+  if (esContinuacion) {
+    card.style.setProperty('--electro-cont-bg', c.contBg || c.bg);
+    card.style.setProperty('--electro-cont-accent', c.contAccent || c.accent);
+  }
   card.dataset.estudioColor = c.accent;
   card.classList.add('electro-cita-card--tipo');
+  if (esContinuacion) card.classList.add('electro-cita-card--continuacion-dia');
 }
 
 // Genera un badge de color según el estado de la cita electro
@@ -9409,12 +9431,15 @@ function renderCitaElectroCard(container, c) {
     'Reprogramado': 'estado-reprogramado'
   };
   if (estadoClasses[estado]) card.classList.add(estadoClasses[estado]);
-  aplicarColorEstudioElectroCard(card, c.estudio);
+  aplicarColorEstudioElectroCard(card, c.estudio, { esContinuacion });
   if (estado === 'En Estudio') card.classList.add('innar-pulse-estudio');
   if (esContinuacion) {
     card.classList.add('electro-cita-card-continuacion');
     if (estado === 'Programado' || estado === 'Confirmado' || estado === 'En Sala') {
       card.classList.add('electro-cita-card-continuacion--agendado');
+    }
+    if (estado === 'En Estudio' || estado === 'Pausado') {
+      card.classList.add('electro-cita-card-continuacion--en-curso');
     }
   }
   const equipoDisplay = c.equipo_nombre ? escapeHtml(c.equipo_nombre) : (c.equipo_id ? 'Equipo ' + c.equipo_id : '\u2014');
@@ -9442,7 +9467,7 @@ function renderCitaElectroCard(container, c) {
       ? '<' + t + ' class="electro-cita-card-rango">Inicio: ' + escapeHtml(formatearFechaISO(fechaInicioCita)) + '</' + t + '>'
       : '');
   const diaBadgeHtml = diaBadge
-    ? '<' + t + ' class="electro-cita-card-dia-badge">' + escapeHtml(diaBadge) + '</' + t + '>'
+    ? '<' + t + ' class="electro-cita-card-dia-badge' + (esContinuacion ? ' electro-cita-card-dia-badge--continuacion' : '') + '">' + escapeHtml(diaBadge) + '</' + t + '>'
     : '';
   const notaReprogHtml = citaElectroEsReprogramada(c)
     ? '<' + t + ' class="electro-cita-card-nota-reprog" style="font-size:0.72rem;color:#0369a1;font-weight:600;margin-top:2px">[Reprogramado]</' + t + '>'
@@ -9489,6 +9514,15 @@ function renderCitaElectroRow(tbody, c) {
   tr.className = 'turno-row';
   tr.style.cursor = 'pointer';
   tr.dataset.citaId = String(c.id || '');
+  const fechaVista = $('electroFecha')?.value || '';
+  const esContinuacion = esContinuacionCitaElectroEnDia(c, fechaVista);
+  const diaBadge = obtenerEtiquetaDiaEstudioMultidia(c, fechaVista);
+  if (esContinuacion) {
+    tr.classList.add('electro-row-continuacion');
+    const col = colorTarjetaEstudioElectro(c.estudio);
+    tr.style.setProperty('--electro-estudio-accent', col.accent);
+    tr.style.setProperty('--electro-estudio-bg', col.bg);
+  }
   
   const equipoDisplay = c.equipo_nombre ? escapeHtml(c.equipo_nombre) : (c.equipo_id ? `Equipo ${c.equipo_id}` : '<span style="color:#9ca3af">—</span>');
   
@@ -9530,9 +9564,12 @@ function renderCitaElectroRow(tbody, c) {
   
   // Abreviar nombre del estudio para la tabla
   const estudioCorto = abreviarEstudio(c.estudio);
+  const diaBadgeHtml = diaBadge
+    ? `<span class="electro-cita-card-dia-badge${esContinuacion ? ' electro-cita-card-dia-badge--continuacion' : ''}" style="display:inline-block;margin-right:6px">${escapeHtml(diaBadge)}</span>`
+    : '';
 
   tr.innerHTML = `
-    <td><strong>${formatearHora(c.hora_agendamiento)}</strong></td>
+    <td><strong>${formatearHora(c.hora_agendamiento)}</strong>${diaBadgeHtml ? `<div style="margin-top:4px">${diaBadgeHtml}</div>` : ''}</td>
     <td class="col-mobile-hide">${formatearHora(c.hora_inicio)}</td>
     <td class="col-mobile-hide">${equipoDisplay}</td>
     <td><span class="electro-paciente-cell">${escapeHtml(c.paciente_nombre || '-')}</span></td>
@@ -9853,6 +9890,8 @@ const PERMISOS_DEFS = [
   { key: 'agenda.aviso_doctor',         label: 'Enviar aviso al doctor',              grupo: 'Agenda Médica' },
   { key: 'agenda.disponibilidad',       label: 'Programar disponibilidad',            grupo: 'Agenda Médica' },
   { key: 'agenda.editar_siempre',       label: 'Editar citas en cualquier estado',    grupo: 'Agenda Médica' },
+  // ── Chat interno ───────────────────────────────────────────────────────────
+  { key: 'chat.usar',                   label: 'Usar chat (Messenger interno)',       grupo: 'Chat' },
   // ── Llamado de pacientes (pantalla) ───────────────────────────────────────
   { key: 'modulo.llamado_pacientes',    label: 'Acceso a pantalla de llamado (TV)',   grupo: 'Llamado de pacientes' },
   { key: 'llamado.configurar',          label: 'Configurar consultorios en pantalla', grupo: 'Llamado de pacientes' },
@@ -9955,6 +9994,7 @@ const PERMISOS_ROL_DEFAULTS = {
     'agenda.ver','agenda.cambiar_estado','agenda.llamar_siguiente','agenda.marcar_atendido','agenda.disponibilidad',
     'electro.ver','electro.cambiar_estado','electro.subir_archivo','electro.ver_archivo',
     'sistema.dashboard',
+    'chat.usar',
   ],
   admin_electro: [
     'modulo.electrodiag','modulo.agenda_medica','modulo.dashboard','modulo.monitor_equipos',
@@ -15254,6 +15294,11 @@ function actualizarBotonesDocumentosCitaElectro() {
   const btnComp = $('btnComprobanteServiciosElectro');
   if (btnCert) btnCert.hidden = !puede;
   if (btnComp) btnComp.hidden = !puede;
+  const btnChat = $('btnChatAvisarElectro');
+  if (btnChat) {
+    const canChat = typeof tienePermiso === 'function' && tienePermiso('chat.usar');
+    btnChat.hidden = !canChat;
+  }
 }
 
 function initCertificadoAsistenciaUi() {
@@ -15464,6 +15509,20 @@ function initComprobanteServiciosUi() {
     const prefill = prefillComprobanteServiciosElectro(citaElectroSeleccionada);
     abrirDocumentoConPersonaFidu('comprobante', prefill, abrirModalComprobanteServicios);
   });
+  $('btnChatAvisarElectro')?.addEventListener('click', () => {
+    if (!citaElectroSeleccionada || !window.innarChatMessenger?.prepararAviso) return;
+    const c = citaElectroSeleccionada;
+    const hora = c.hora_agendamiento ? String(c.hora_agendamiento).slice(0, 5) : '';
+    const nombre = c.paciente_nombre || 'paciente';
+    const estudio = c.estudio ? abreviarEstudio(c.estudio) : '';
+    window.innarChatMessenger.prepararAviso({
+      cuerpo: `Aviso electro: ${nombre}${hora ? ` · ${hora}` : ''}${estudio ? ` · ${estudio}` : ''}`,
+      paciente_nombre: nombre,
+      cita_electro_id: c.id,
+      paciente_id: c.paciente_id || null,
+      contexto_label: `${nombre}${hora ? ` · ${hora}` : ''}${estudio ? ` · ${estudio}` : ''}`
+    });
+  });
 }
 
 function abrirModalEstadoCitaMedica(turno) {
@@ -15506,6 +15565,29 @@ function abrirModalEstadoCitaMedica(turno) {
     btnRecordatorio.hidden = !visible;
     btnRecordatorio.disabled = !visible;
     btnRecordatorio.onclick = () => enviarRecordatorioWhatsAppMedica(currentTurnoMedicaData);
+  }
+
+  const btnChatMed = el('btnChatAvisarMedica');
+  if (btnChatMed) {
+    const canChat = typeof tienePermiso === 'function' && tienePermiso('chat.usar');
+    const doctorIdChat = parseInt(turno.doctor_id || selectedDoctorId, 10);
+    const yoSoyDoctor = currentUser?.rol === 'doctor' && Number(currentUser?.id) === doctorIdChat;
+    const showChat = canChat && doctorIdChat && !yoSoyDoctor;
+    btnChatMed.hidden = !showChat;
+    btnChatMed.onclick = () => {
+      if (!window.innarChatMessenger?.avisarPorChat) return;
+      const hora = turno.hora ? String(turno.hora).slice(0, 5) : '';
+      const nombre = turno.paciente_nombre || 'paciente';
+      void window.innarChatMessenger.avisarPorChat({
+        doctorId: doctorIdChat,
+        doctorNombre: el('detMedicaMedico')?.textContent || '',
+        cuerpo: `Llegó / aviso: ${nombre}${hora ? ` · ${hora}` : ''}`,
+        paciente_nombre: nombre,
+        turno_id: turno.id,
+        paciente_id: turno.paciente_id || null,
+        contexto_label: `${nombre}${hora ? ` · ${hora}` : ''}${turno.tipo_consulta ? ` · ${turno.tipo_consulta}` : ''}`
+      });
+    };
   }
 
   // Bloquear edición en modal según política
