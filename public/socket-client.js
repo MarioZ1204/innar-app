@@ -342,9 +342,12 @@ function registerDefaultRealtimeHandlers() {
     }
   });
 
-  subscribe('chat:mensaje', (e) => {
-    if (window.innarChatMessenger && typeof window.innarChatMessenger.refresh === 'function') {
-      /* El handler fino está en chat-messenger.js; aquí solo badge de respaldo */
+  subscribe('chat:mensaje', () => {
+    // Respaldo de badge si chat-messenger aún no reenganchó listeners
+    if (window.innarChatMessenger && typeof window.innarChatMessenger.refreshUnread === 'function') {
+      window.innarChatMessenger.refreshUnread();
+    } else if (window.innarChatMessenger && typeof window.innarChatMessenger.refresh === 'function') {
+      window.innarChatMessenger.refresh();
     }
   });
   subscribe('chat:mensaje_echo', () => { /* chat-messenger.js */ });

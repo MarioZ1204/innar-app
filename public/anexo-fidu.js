@@ -1490,19 +1490,27 @@
     const hintCola = pendientes > 1
       ? ` Quedan <strong>${pendientes}</strong> paciente(s) por registrar en esta carga; los que ya existían ya están en la tabla.`
       : '';
-    const parcial = !!opts.parcial && (opts.campos_faltantes || []).length > 0;
+    const faltantes = opts.campos_faltantes || [];
+    const parcial = !!opts.parcial && faltantes.length > 0;
+    const labels = (typeof window.innarPersonaFidu?.labelsFaltantes === 'function')
+      ? window.innarPersonaFidu.labelsFaltantes(faltantes)
+      : faltantes.map((c) => c.label || c.key).filter(Boolean);
+    const listaHint = labels.length
+      ? ` Faltan: <strong>${labels.map((l) => escapeHtml(l)).join(', ')}</strong>.`
+      : '';
     const banner = parcial
-      ? `<div class="afidu-step-banner afidu-step-banner-warn">Paciente <strong>${escapeHtml(doc)}</strong> (CUPS ${escapeHtml(codigo)}) tiene datos incompletos. Complete los campos faltantes y guarde para continuar.${hintCola}</div>`
-      : `<div class="afidu-step-banner afidu-step-banner-warn">Paciente <strong>${escapeHtml(doc)}</strong> (CUPS ${escapeHtml(codigo)}) no está en la base. Complete los datos y guarde para agregar su fila.${hintCola}</div>`;
+      ? `<div class="afidu-step-banner afidu-step-banner-warn">Paciente <strong>${escapeHtml(doc)}</strong> (CUPS ${escapeHtml(codigo)}) tiene datos incompletos.${listaHint} Complete el formulario y guarde para continuar.${hintCola}</div>`
+      : `<div class="afidu-step-banner afidu-step-banner-warn">Paciente <strong>${escapeHtml(doc)}</strong> (CUPS ${escapeHtml(codigo)}) no está en la base. Complete <strong>todos</strong> los datos obligatorios del formulario y guarde para agregar su fila.${hintCola}</div>`;
     panel.innerHTML = `${banner}<div id="afiduPersonaFormMount" class="afidu-panel-form"></div><div class="afidu-panel-actions"><button type="button" class="btn-primary" id="btnAfiduGuardarPersona">Guardar paciente y agregar fila</button><button type="button" class="btn-secondary" id="btnAfiduCancelarPersona">Cancelar</button></div>`;
     const mount = $('afiduPersonaFormMount');
     const persona = { numero_documento: doc, ...(opts.persona || {}) };
     if (window.innarPersonaFidu && mount) {
       mount.classList.remove('afidu-panel-form--legacy');
+      // Siempre formulario completo (sin fases): resalta faltantes
       window.innarPersonaFidu.renderFormulario(mount, {
         persona,
-        camposFaltantes: opts.campos_faltantes,
-        modoCompleto: opts.modoCompleto ?? !parcial
+        camposFaltantes: faltantes,
+        modoCompleto: true
       });
     } else if (mount) {
       mount.classList.add('afidu-panel-form--legacy');
@@ -1584,11 +1592,19 @@
         saved = await window.innarPersonaFidu.guardarPersona(persona, 'anexo');
         if (saved.campos_faltantes?.length) {
           mostrarPanelNuevaPersona(persona.numero_documento, codigo, {
-            persona: saved.persona,
+            persona: saved.persona || persona,
             campos_faltantes: saved.campos_faltantes,
-            parcial: true
+            parcial: true,
+            modoCompleto: true
           });
-          if (typeof showToast === 'function') showToast('Complete los campos faltantes', 'error');
+          const labs = (typeof window.innarPersonaFidu?.labelsFaltantes === 'function')
+            ? window.innarPersonaFidu.labelsFaltantes(saved.campos_faltantes)
+            : [];
+          if (typeof showToast === 'function') {
+            showToast(labs.length
+              ? `Aún faltan: ${labs.join(', ')}`
+              : 'Complete todos los campos obligatorios', 'error');
+          }
           return;
         }
       } else {

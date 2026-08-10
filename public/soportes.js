@@ -4270,6 +4270,16 @@
     sopArmNavOpen(false);
   }
 
+  /** Recarga la lista de días/carpetas del mes sin volver a la raíz. */
+  async function recargarDiasArmadoSinResetearNav() {
+    if (!armState.periodoId) return false;
+    const res = await apiFetch(`/api/soportes/armado/periodos/${armState.periodoId}/dias`);
+    const data = await res.json();
+    if (!res.ok) return false;
+    armState.dias = data.dias || [];
+    return true;
+  }
+
   function armDiaParentId(dia) {
     const n = parseInt(dia?.parent_id, 10);
     return Number.isFinite(n) && n > 0 ? n : 0;
@@ -6353,14 +6363,11 @@
       } else {
         sopToast(`${n} carpeta(s) creada(s)`, 'success');
       }
-      const pid = armState.periodoId;
-      const did = armState.diaId;
+      // Mantener la ubicación (Carpetas FE); no volver a la raíz del mes
       const cid = armState.contenedorId;
-      await seleccionarPeriodoArmado(pid);
-      await seleccionarDiaArmado(did);
-      await seleccionarContenedorArmado(cid);
       const first = data.expediente?.id || data.creados?.[0]?.id;
-      if (first && n === 1) abrirExpedienteArmado(first);
+      if (cid) await seleccionarContenedorArmado(cid);
+      if (first && n === 1) await abrirExpedienteArmado(first);
     };
   }
 
@@ -6496,8 +6503,14 @@
       if (!res.ok) { sopToast(data.error, 'error'); return; }
       closeSopModal(modal);
       sopToast('Carpeta contenedora creada', 'success');
-      await seleccionarPeriodoArmado(armState.periodoId);
+      const savedParent = armState.diasParentId;
+      await recargarDiasArmadoSinResetearNav();
+      armState.diasParentId = savedParent;
       if (data.dia?.id) navegarArmDiasExplorer(data.dia.id);
+      else {
+        renderArmadoDiasExplorer();
+        renderArmadoContextBar();
+      }
     };
   }
 
@@ -6543,10 +6556,11 @@
       closeSopModal(modal);
       sopToast(modo === 'ucqn' ? 'Persona creada' : modo === 'anexo_fidu' ? 'Anexo creado y vinculado' : 'Carpeta creada con RIPS y SOPORTES', 'success');
       const savedParent = armState.diasParentId;
-      await seleccionarPeriodoArmado(armState.periodoId);
+      await recargarDiasArmadoSinResetearNav();
       armState.diasParentId = savedParent;
-      if (data.dia?.id) seleccionarDiaArmado(data.dia.id);
-      else {
+      if (data.dia?.id) {
+        await seleccionarDiaArmado(data.dia.id);
+      } else {
         renderArmadoDiasExplorer();
         renderArmadoContextBar();
       }

@@ -1099,6 +1099,9 @@ async function doLogout() {
   // Resetear flag de listeners de socket-electro
   window.listenersConfigured = false;
   window.socketElectroListenerAdded = false;
+  if (typeof window.innarChatMessenger?.reset === 'function') {
+    window.innarChatMessenger.reset();
+  }
   closeSocket();
   sessionStorage.removeItem(lsKeyCurrentModule);
   sessionStorage.removeItem(lsKeySelectedDoctor);
@@ -15201,16 +15204,19 @@ function abrirModalCompletarPersonaFidu(opts = {}) {
     return;
   }
   const doc = opts.persona?.numero_documento || '';
-  const parcial = !opts.modoCompleto && (opts.camposFaltantes || []).length > 0;
+  const faltantes = opts.camposFaltantes || [];
+  const labels = (typeof PF.labelsFaltantes === 'function') ? PF.labelsFaltantes(faltantes) : [];
+  const lista = labels.length ? ` Faltan: <strong>${labels.map((l) => escapeHtml(l)).join(', ')}</strong>.` : '';
   if (msgEl) {
-    msgEl.innerHTML = parcial
-      ? `El paciente <strong>${escapeHtml(doc)}</strong> está en la base pero faltan algunos datos. Complételos para continuar.`
+    msgEl.innerHTML = faltantes.length
+      ? `El paciente <strong>${escapeHtml(doc)}</strong> necesita datos en la base FOMAG.${lista} Complete el formulario (todos los obligatorios) y guarde.`
       : `El paciente <strong>${escapeHtml(doc)}</strong> no está completo en la base FOMAG. Registre los datos para continuar.`;
   }
+  // Siempre formulario completo; resalta faltantes (sin pedir datos por fases)
   PF.renderFormulario(formEl, {
     persona: opts.persona || {},
-    camposFaltantes: opts.camposFaltantes,
-    modoCompleto: !!opts.modoCompleto
+    camposFaltantes: faltantes,
+    modoCompleto: true
   });
   modal.classList.remove('hidden');
   modal.style.display = 'flex';
@@ -15245,7 +15251,7 @@ async function abrirDocumentoConPersonaFidu(contexto, citaPrefill, abrirFn) {
       abrirModalCompletarPersonaFidu({
         persona,
         camposFaltantes: faltantes,
-        modoCompleto: !data.encontrada
+        modoCompleto: true
       });
       return;
     }
@@ -15266,11 +15272,14 @@ async function guardarCompletarPersonaFiduYContinuar() {
     const persona = PF.leerFormulario(formRoot);
     const data = await PF.guardarPersona(persona, pending.contexto);
     if (data.campos_faltantes?.length) {
-      showToast('Aún faltan datos obligatorios', 'error');
+      const labs = (typeof PF.labelsFaltantes === 'function')
+        ? PF.labelsFaltantes(data.campos_faltantes)
+        : [];
+      showToast(labs.length ? `Aún faltan: ${labs.join(', ')}` : 'Aún faltan datos obligatorios', 'error');
       abrirModalCompletarPersonaFidu({
-        persona: data.persona,
+        persona: data.persona || persona,
         camposFaltantes: data.campos_faltantes,
-        modoCompleto: false
+        modoCompleto: true
       });
       _personaFiduPending = pending;
       return;

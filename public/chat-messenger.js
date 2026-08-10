@@ -1,24 +1,35 @@
 /**
  * Chat Messenger — dock + ventanas flotantes (recepción ↔ doctores).
+ * Avisos (toast/sonido/título/Notification), móvil y leídos.
  */
 (function () {
   'use strict';
 
-  const MAX_WINDOWS = 3;
+  const MAX_WINDOWS_DESKTOP = 3;
+  const LS_NOTIF = 'innar_chat_notif';
   const ICON_CHAT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 11.5a8.5 8.5 0 01-12.4 7.5L3 21l2.1-5.1A8.5 8.5 0 1121 11.5z"/></svg>';
   const ICON_SEND = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>';
+  const ICON_BELL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 8A6 6 0 106 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>';
 
-  /** @type {{ contactos: any[], windows: Map<number, any>, dockOpen: boolean, totalUnread: number, draftCtx: any }} */
   const state = {
     contactos: [],
     windows: new Map(),
     dockOpen: false,
     totalUnread: 0,
-    draftCtx: null,
     pendingPrefill: null,
     loaded: false,
-    search: ''
+    search: '',
+    titleBase: null,
+    audioUnlocked: false,
+    audioCtx: null,
+    viewportBound: false
   };
+
+  function maxWindows() {
+    return (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(max-width: 720px)').matches)
+      ? 1
+      : MAX_WINDOWS_DESKTOP;
+  }
 
   function escapeHtml(s) {
     return String(s || '')
@@ -63,6 +74,156 @@
     return d.toLocaleDateString('es-CO', { day: 'numeric', month: 'short' });
   }
 
+  function ensureTitleBase() {
+    if (state.titleBase == null) {
+      state.titleBase = document.title.replace(/^\(\d+\)\s*/, '') || 'INNAR';
+    }
+    return state.titleBase;
+  }
+
+  function updateDocumentTitle(unread) {
+    const base = ensureTitleBase();
+    const n = Math.max(0, unread | 0);
+    document.title = n > 0 ? `(${n > 99 ? '99+' : n}) ${base}` : base;
+  }
+
+  function unlockChatAudio() {
+    if (state.audioUnlocked) return;
+    try {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      if (!state.audioCtx) state.audioCtx = new Ctx();
+      if (state.audioCtx.state === 'suspended') void state.audioCtx.resume();
+      state.audioUnlocked = true;
+    } catch (_) { /* noop */ }
+  }
+
+  function playChatSound() {
+    try {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      if (!state.audioCtx) state.audioCtx = new Ctx();
+      const ctx = state.audioCtx;
+      if (ctx.state === 'suspended') {
+        void ctx.resume().then(() => playChatSound());
+        return;
+      }
+      const now = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(880, now);
+      osc.frequency.setValueAtTime(1175, now + 0.08);
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.exponentialRampToValueAtTime(0.12, now + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.22);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.24);
+      state.audioUnlocked = true;
+    } catch (_) { /* noop */ }
+  }
+
+  function notifPrefEnabled() {
+    try {
+      return localStorage.getItem(LS_NOTIF) === '1';
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function setNotifPref(on) {
+    try {
+      localStorage.setItem(LS_NOTIF, on ? '1' : '0');
+    } catch (_) { /* noop */ }
+    syncNotifButton();
+  }
+
+  function syncNotifButton() {
+    const btn = document.getElementById('chatMsgrNotifBtn');
+    if (!btn) return;
+    const supported = typeof Notification !== 'undefined';
+    if (!supported) {
+      btn.style.display = 'none';
+      return;
+    }
+    btn.style.display = '';
+    const perm = Notification.permission;
+    if (perm === 'granted' && notifPrefEnabled()) {
+      btn.classList.add('is-on');
+      btn.title = 'Notificaciones activadas';
+      btn.setAttribute('aria-label', 'Notificaciones activadas');
+    } else if (perm === 'denied') {
+      btn.classList.remove('is-on');
+      btn.title = 'Notificaciones bloqueadas en el navegador';
+      btn.setAttribute('aria-label', 'Notificaciones bloqueadas');
+    } else {
+      btn.classList.remove('is-on');
+      btn.title = 'Activar notificaciones';
+      btn.setAttribute('aria-label', 'Activar notificaciones');
+    }
+  }
+
+  async function requestChatNotifications() {
+    if (typeof Notification === 'undefined') {
+      if (typeof showToast === 'function') showToast('Este navegador no soporta notificaciones', 'info');
+      return;
+    }
+    unlockChatAudio();
+    if (Notification.permission === 'granted') {
+      setNotifPref(true);
+      if (typeof showToast === 'function') showToast('Notificaciones de chat activadas', 'success');
+      return;
+    }
+    if (Notification.permission === 'denied') {
+      if (typeof showToast === 'function') showToast('Activa las notificaciones en la configuración del navegador', 'info');
+      return;
+    }
+    try {
+      const perm = await Notification.requestPermission();
+      if (perm === 'granted') {
+        setNotifPref(true);
+        if (typeof showToast === 'function') showToast('Notificaciones de chat activadas', 'success');
+      } else {
+        setNotifPref(false);
+        if (typeof showToast === 'function') showToast('No se activaron las notificaciones', 'info');
+      }
+    } catch (_) {
+      setNotifPref(false);
+    }
+    syncNotifButton();
+  }
+
+  function notifyBrowser(peerName, body, peerId) {
+    if (typeof Notification === 'undefined') return;
+    if (Notification.permission !== 'granted') return;
+    if (!notifPrefEnabled()) return;
+    const win = peerId != null ? state.windows.get(Number(peerId)) : null;
+    const shouldOs = document.hidden || document.visibilityState !== 'visible' || !!(win && win.minimized);
+    if (!shouldOs) return;
+    try {
+      const n = new Notification(peerName || 'Chat INNAR', {
+        body: String(body || '').slice(0, 120),
+        tag: `innar-chat-${peerId || 'x'}`,
+        renotify: true
+      });
+      n.onclick = () => {
+        try { window.focus(); } catch (_) { /* noop */ }
+        if (peerId) {
+          const c = state.contactos.find((x) => Number(x.id) === Number(peerId));
+          if (c) void openChatWithPeer(c);
+          else void openChatWithPeer({ id: peerId, nombre: peerName || 'Chat' });
+        }
+        n.close();
+      };
+    } catch (_) { /* noop */ }
+  }
+
+  function ventanaActivaParaLeer(win) {
+    return !!(win && !win.minimized && document.visibilityState === 'visible' && !document.hidden);
+  }
+
   function ensureRoot() {
     let root = document.getElementById('chatMessengerRoot');
     if (root) return root;
@@ -77,7 +238,10 @@
         <div class="chat-msgr-dock" id="chatMsgrDock" role="dialog" aria-label="Contactos del chat">
           <div class="chat-msgr-dock-head">
             <h3>Chat</h3>
-            <button type="button" class="chat-msgr-dock-close" id="chatMsgrDockClose" aria-label="Cerrar">×</button>
+            <div class="chat-msgr-dock-head-actions">
+              <button type="button" class="chat-msgr-notif-btn" id="chatMsgrNotifBtn" title="Activar notificaciones" aria-label="Activar notificaciones">${ICON_BELL}</button>
+              <button type="button" class="chat-msgr-dock-close" id="chatMsgrDockClose" aria-label="Cerrar">×</button>
+            </div>
           </div>
           <input type="search" class="chat-msgr-search" id="chatMsgrSearch" placeholder="Buscar contacto…" autocomplete="off" />
           <div class="chat-msgr-list" id="chatMsgrList"></div>
@@ -85,7 +249,9 @@
         <div class="chat-msgr-windows" id="chatMsgrWindows"></div>
       </div>`;
     document.body.appendChild(root);
+
     document.getElementById('chatMsgrToggle')?.addEventListener('click', () => {
+      unlockChatAudio();
       state.dockOpen = !state.dockOpen;
       syncDockVisibility();
       if (state.dockOpen) void refreshContactos();
@@ -94,11 +260,43 @@
       state.dockOpen = false;
       syncDockVisibility();
     });
+    document.getElementById('chatMsgrNotifBtn')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      void requestChatNotifications();
+    });
     document.getElementById('chatMsgrSearch')?.addEventListener('input', (e) => {
       state.search = String(e.target.value || '').trim().toLowerCase();
       renderContactList();
     });
+    document.getElementById('chatMsgrWindows')?.addEventListener('click', (e) => {
+      if (e.target === e.currentTarget) {
+        // Overlay móvil: cerrar ventana activa
+        if (maxWindows() === 1 && state.windows.size) {
+          const lastKey = [...state.windows.keys()].pop();
+          closeWindow(lastKey);
+        }
+      }
+    });
+
+    syncNotifButton();
+    bindVisualViewport();
     return root;
+  }
+
+  function bindVisualViewport() {
+    if (state.viewportBound || !window.visualViewport) return;
+    state.viewportBound = true;
+    const apply = () => {
+      const root = document.getElementById('chatMessengerRoot');
+      if (!root) return;
+      const vv = window.visualViewport;
+      const keyboardPad = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      root.style.setProperty('--chat-vv-offset', `${Math.round(keyboardPad)}px`);
+      root.style.setProperty('--chat-vv-height', `${Math.round(vv.height)}px`);
+    };
+    window.visualViewport.addEventListener('resize', apply);
+    window.visualViewport.addEventListener('scroll', apply);
+    apply();
   }
 
   function syncDockVisibility() {
@@ -110,13 +308,15 @@
   function setBadge(n) {
     state.totalUnread = Math.max(0, n | 0);
     const badge = document.getElementById('chatMsgrBadge');
-    if (!badge) return;
-    if (state.totalUnread > 0) {
-      badge.textContent = state.totalUnread > 99 ? '99+' : String(state.totalUnread);
-      badge.classList.add('is-visible');
-    } else {
-      badge.classList.remove('is-visible');
+    if (badge) {
+      if (state.totalUnread > 0) {
+        badge.textContent = state.totalUnread > 99 ? '99+' : String(state.totalUnread);
+        badge.classList.add('is-visible');
+      } else {
+        badge.classList.remove('is-visible');
+      }
     }
+    updateDocumentTitle(state.totalUnread);
   }
 
   async function refreshUnread() {
@@ -169,6 +369,7 @@
     }).join('');
     list.querySelectorAll('.chat-msgr-contact').forEach((btn) => {
       btn.addEventListener('click', () => {
+        unlockChatAudio();
         const id = parseInt(btn.getAttribute('data-peer-id'), 10);
         const c = state.contactos.find((x) => Number(x.id) === id);
         if (c) {
@@ -208,9 +409,10 @@
       w.el.classList.remove('is-minimized');
       if (opts.prefill) applyPrefill(w, opts.prefill);
       w.el.querySelector('textarea')?.focus();
+      if (ventanaActivaParaLeer(w)) void markRead(w);
       return;
     }
-    while (state.windows.size >= MAX_WINDOWS) {
+    while (state.windows.size >= maxWindows()) {
       const firstKey = state.windows.keys().next().value;
       closeWindow(firstKey);
     }
@@ -228,15 +430,16 @@
           <div class="chat-msgr-win-name">${escapeHtml(peer.nombre)}</div>
           <div class="chat-msgr-win-status">${escapeHtml(peer.online ? 'En línea' : (peer.rol_label || peer.rol || ''))}</div>
         </div>
+        <span class="chat-msgr-win-unread" hidden aria-label="Mensajes sin leer">0</span>
         <div class="chat-msgr-win-actions">
-          <button type="button" data-act="min" title="Minimizar">–</button>
-          <button type="button" data-act="close" title="Cerrar">×</button>
+          <button type="button" data-act="min" title="Minimizar" aria-label="Minimizar">–</button>
+          <button type="button" data-act="close" title="Cerrar" aria-label="Cerrar">×</button>
         </div>
       </div>
       <div class="chat-msgr-body"></div>
       <div class="chat-msgr-compose">
-        <textarea rows="1" placeholder="Escribe un mensaje…" maxlength="2000"></textarea>
-        <button type="button" class="chat-msgr-send" title="Enviar" disabled>${ICON_SEND}</button>
+        <textarea rows="1" placeholder="Escribe un mensaje…" maxlength="2000" enterkeyhint="send"></textarea>
+        <button type="button" class="chat-msgr-send" title="Enviar" aria-label="Enviar" disabled>${ICON_SEND}</button>
       </div>`;
     wrap.appendChild(el);
 
@@ -245,6 +448,7 @@
       conversacionId,
       el,
       minimized: false,
+      unreadWhileMin: 0,
       messages: [],
       loading: false,
       prefill: opts.prefill || null
@@ -259,12 +463,18 @@
       e.stopPropagation();
       win.minimized = !win.minimized;
       el.classList.toggle('is-minimized', win.minimized);
+      if (!win.minimized) {
+        clearWindowUnread(win);
+        if (ventanaActivaParaLeer(win)) void markRead(win);
+      }
     });
     el.querySelector('.chat-msgr-win-head')?.addEventListener('click', (e) => {
       if (e.target.closest('[data-act]')) return;
       if (win.minimized) {
         win.minimized = false;
         el.classList.remove('is-minimized');
+        clearWindowUnread(win);
+        if (ventanaActivaParaLeer(win)) void markRead(win);
       }
     });
 
@@ -278,6 +488,7 @@
       ta.style.height = Math.min(90, ta.scrollHeight) + 'px';
       syncSend();
     });
+    ta.addEventListener('focus', () => bindVisualViewport());
     ta.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
@@ -308,6 +519,10 @@
     state.windows.delete(Number(peerId));
   }
 
+  function closeAllWindows() {
+    [...state.windows.keys()].forEach((id) => closeWindow(id));
+  }
+
   async function loadMessages(win) {
     if (win.loading) return;
     win.loading = true;
@@ -317,19 +532,39 @@
       if (!data.ok) return;
       win.messages = data.mensajes || [];
       renderMessages(win);
-      await markRead(win);
+      if (ventanaActivaParaLeer(win)) await markRead(win);
     } catch (_) { /* noop */ }
     finally {
       win.loading = false;
     }
   }
 
+  function lastMineSeenStatus(messages, me) {
+    if (me == null) return null;
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      if (Number(messages[i].autor_id) === me) {
+        return messages[i].leido_at ? 'seen' : 'sent';
+      }
+    }
+    return null;
+  }
+
   function renderMessages(win) {
     const body = win.el.querySelector('.chat-msgr-body');
     if (!body) return;
     const me = (typeof currentUser !== 'undefined' && currentUser?.id) ? Number(currentUser.id) : null;
+    const lastStatus = lastMineSeenStatus(win.messages, me);
     let html = '';
     let lastDay = '';
+    let lastMineId = null;
+    if (me != null) {
+      for (let i = win.messages.length - 1; i >= 0; i -= 1) {
+        if (Number(win.messages[i].autor_id) === me) {
+          lastMineId = Number(win.messages[i].id);
+          break;
+        }
+      }
+    }
     win.messages.forEach((m) => {
       const day = formatDia(m.creado_en);
       if (day && day !== lastDay) {
@@ -342,17 +577,43 @@
         const label = m.contexto_label || m.paciente_nombre;
         chip = `<span class="chat-msgr-chip" title="Contexto de cita">📎 ${escapeHtml(label)}</span>`;
       }
-      html += `<div class="chat-msgr-bubble ${mine ? 'mine' : 'theirs'}">
+      let status = '';
+      if (mine && Number(m.id) === lastMineId) {
+        if (lastStatus === 'seen' || m.leido_at) {
+          status = '<span class="chat-msgr-read">Visto</span>';
+        } else {
+          status = '<span class="chat-msgr-read chat-msgr-read--sent">Enviado</span>';
+        }
+      }
+      html += `<div class="chat-msgr-bubble ${mine ? 'mine' : 'theirs'}" data-msg-id="${m.id || ''}">
         ${chip}
         <div>${escapeHtml(m.cuerpo)}</div>
-        <span class="chat-msgr-bubble-time">${escapeHtml(formatHora(m.creado_en))}</span>
+        <span class="chat-msgr-bubble-time">${escapeHtml(formatHora(m.creado_en))}${status}</span>
       </div>`;
     });
     body.innerHTML = html || '<div class="chat-msgr-empty" style="padding:16px">Sin mensajes aún. ¡Saluda!</div>';
     body.scrollTop = body.scrollHeight;
   }
 
+  function handleLeido(payload) {
+    if (!payload || !payload.conversacion_id) return;
+    const convId = Number(payload.conversacion_id);
+    for (const win of state.windows.values()) {
+      if (Number(win.conversacionId) !== convId) continue;
+      const me = (typeof currentUser !== 'undefined' && currentUser?.id) ? Number(currentUser.id) : null;
+      let changed = false;
+      win.messages.forEach((m) => {
+        if (me != null && Number(m.autor_id) === me && !m.leido_at) {
+          m.leido_at = new Date().toISOString();
+          changed = true;
+        }
+      });
+      if (changed) renderMessages(win);
+    }
+  }
+
   async function markRead(win) {
+    if (!ventanaActivaParaLeer(win)) return;
     try {
       await apiFetchLocal(`/api/chat/conversaciones/${win.conversacionId}/leer`, { method: 'POST' });
       const c = state.contactos.find((x) => Number(x.id) === Number(win.peer.id));
@@ -412,6 +673,65 @@
     renderMessages(win);
   }
 
+  function syncWindowUnreadBadge(win) {
+    if (!win?.el) return;
+    const badge = win.el.querySelector('.chat-msgr-win-unread');
+    if (!badge) return;
+    const n = Math.max(0, win.unreadWhileMin | 0);
+    if (n > 0 && win.minimized) {
+      badge.hidden = false;
+      badge.textContent = n > 99 ? '99+' : String(n);
+      win.el.classList.add('has-unread');
+    } else {
+      badge.hidden = true;
+      badge.textContent = '0';
+      win.el.classList.remove('has-unread');
+    }
+  }
+
+  function bumpWindowUnread(win) {
+    if (!win) return;
+    win.unreadWhileMin = (win.unreadWhileMin | 0) + 1;
+    syncWindowUnreadBadge(win);
+  }
+
+  function clearWindowUnread(win) {
+    if (!win) return;
+    win.unreadWhileMin = 0;
+    syncWindowUnreadBadge(win);
+  }
+
+  function alertIncoming(payload) {
+    const name = payload.from?.nombre || 'Chat';
+    const body = String(payload.mensaje?.cuerpo || '');
+    if (typeof showToast === 'function') {
+      showToast(`${name}: ${body.slice(0, 60)}`, 'info');
+    }
+    playChatSound();
+    notifyBrowser(name, body, payload.from?.id);
+
+    if (payload.from?.id != null) {
+      const c = state.contactos.find((x) => Number(x.id) === Number(payload.from.id));
+      if (c) {
+        c.no_leidos = (parseInt(c.no_leidos, 10) || 0) + 1;
+        c.preview = body;
+        c.conversacion_id = payload.conversacion_id;
+      }
+    }
+    if (state.dockOpen) {
+      void refreshContactos();
+    } else {
+      void refreshUnread().then(() => {
+        // si el GET falló, al menos reflejar +1 local
+        if (state.totalUnread === 0 && payload.from?.id != null) {
+          const c = state.contactos.find((x) => Number(x.id) === Number(payload.from.id));
+          if (c) setBadge(parseInt(c.no_leidos, 10) || 1);
+        }
+      });
+      renderContactList();
+    }
+  }
+
   function handleIncoming(payload, isEcho) {
     if (!payload || !payload.mensaje) return;
 
@@ -430,28 +750,20 @@
     if (peerKey != null && state.windows.has(peerKey)) {
       const win = state.windows.get(peerKey);
       appendMessageLocal(win, payload.mensaje);
-      if (!isEcho) void markRead(win);
+      if (!isEcho) {
+        if (ventanaActivaParaLeer(win)) {
+          clearWindowUnread(win);
+          void markRead(win);
+        } else {
+          if (win.minimized) bumpWindowUnread(win);
+          alertIncoming(payload);
+        }
+      }
       return;
     }
 
     if (isEcho) return;
-
-    if (typeof showToast === 'function') {
-      const name = payload.from?.nombre || 'Chat';
-      showToast(`${name}: ${String(payload.mensaje.cuerpo || '').slice(0, 60)}`, 'info');
-    }
-    void refreshUnread();
-    if (state.dockOpen) {
-      void refreshContactos();
-    } else if (payload.from?.id != null) {
-      const c = state.contactos.find((x) => Number(x.id) === Number(payload.from.id));
-      if (c) {
-        c.no_leidos = (parseInt(c.no_leidos, 10) || 0) + 1;
-        c.preview = payload.mensaje.cuerpo;
-        c.conversacion_id = payload.conversacion_id;
-      }
-      setBadge(state.totalUnread + 1);
-    }
+    alertIncoming(payload);
   }
 
   function bindRealtime() {
@@ -461,7 +773,29 @@
     window._chatMsgrRealtimeBound = true;
     sock.on('chat:mensaje', (data) => handleIncoming(data, false));
     sock.on('chat:mensaje_echo', (data) => handleIncoming(data, true));
-    sock.on('chat:leido', () => { /* UI de leídos fase 2 */ });
+    sock.on('chat:leido', (data) => handleLeido(data));
+  }
+
+  function resetChatMessenger() {
+    window._chatMsgrRealtimeBound = false;
+    closeAllWindows();
+    state.contactos = [];
+    state.dockOpen = false;
+    state.totalUnread = 0;
+    state.pendingPrefill = null;
+    state.loaded = false;
+    state.search = '';
+    syncDockVisibility();
+    setBadge(0);
+    const search = document.getElementById('chatMsgrSearch');
+    if (search) search.value = '';
+    const list = document.getElementById('chatMsgrList');
+    if (list) list.innerHTML = '';
+    const root = document.getElementById('chatMessengerRoot');
+    if (root) root.classList.add('chat-msgr-hidden');
+    if (state.titleBase != null) {
+      document.title = state.titleBase;
+    }
   }
 
   function showUiIfAllowed() {
@@ -472,16 +806,13 @@
     }
     root.classList.remove('chat-msgr-hidden');
     bindRealtime();
+    syncNotifButton();
     if (!state.loaded) {
       state.loaded = true;
       void refreshUnread();
     }
   }
 
-  /**
-   * Abre chat con un doctor y precarga aviso de paciente/cita.
-   * @param {{ doctorId: number, doctorNombre?: string, cuerpo?: string, paciente_nombre?: string, turno_id?: number, cita_electro_id?: number, paciente_id?: number, contexto_label?: string }} opts
-   */
   async function avisarPorChat(opts) {
     if (!puedeUsarChat()) {
       if (typeof showToast === 'function') showToast('No tienes permiso de chat', 'error');
@@ -519,7 +850,6 @@
     });
   }
 
-  /** Abre el dock con un mensaje precargado; el usuario elige el contacto (útil en Electro). */
   function prepararAviso(prefill) {
     if (!puedeUsarChat()) {
       if (typeof showToast === 'function') showToast('No tienes permiso de chat', 'error');
@@ -537,11 +867,14 @@
 
   function boot() {
     if (!document.body) return;
+    ensureTitleBase();
     showUiIfAllowed();
   }
 
   window.innarChatMessenger = {
     refresh: () => { showUiIfAllowed(); void refreshContactos(); void refreshUnread(); },
+    refreshUnread: () => void refreshUnread(),
+    reset: resetChatMessenger,
     avisarPorChat,
     prepararAviso,
     openWithUser: (peer) => openChatWithPeer(peer),
@@ -555,27 +888,25 @@
   }
 
   window.addEventListener('socketReady', () => {
+    window._chatMsgrRealtimeBound = false;
     bindRealtime();
     showUiIfAllowed();
   });
 
-  // Tras login / cambio de usuario
-  const _origUpdateMenu = window.updateMenuByRole;
-  // Re-check when permisos se aplican: observer liviano
+  window.addEventListener('socketClosed', () => {
+    resetChatMessenger();
+  });
+
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && puedeUsarChat()) {
+    if (!puedeUsarChat()) return;
+    if (document.visibilityState === 'visible') {
       void refreshUnread();
+      for (const win of state.windows.values()) {
+        if (ventanaActivaParaLeer(win)) void markRead(win);
+      }
     }
   });
 
-  // Exponer re-init tras login (app.js llama updateMenuByRole)
-  const prev = window.tienePermiso;
-  Object.defineProperty(window, '_chatMsgrWatchPerm', {
-    configurable: true,
-    set() { /* noop */ }
-  });
-
-  // Polling suave de visibilidad del dock tras autenticación
   let tries = 0;
   const bootTimer = setInterval(() => {
     tries += 1;

@@ -13,6 +13,11 @@
   margin-bottom: 4px;
 }
 
+.pfidu-req {
+  color: #dc2626;
+  font-weight: 800;
+}
+
 .pfidu-form-field input,
 .pfidu-form-field textarea,
 .pfidu-form-field select {
@@ -33,6 +38,39 @@
 .pfidu-form-field:has(textarea),
 .pfidu-form-field:has(#pfidu-numero_documento) {
   grid-column: 1 / -1;
+}
+
+/* Campos faltantes: visibles todos, resaltados */
+.pfidu-form-field.is-missing label {
+  color: #b45309;
+}
+
+.pfidu-form-field.is-missing input,
+.pfidu-form-field.is-missing textarea,
+.pfidu-form-field.is-missing select {
+  border-color: #f59e0b;
+  background: #fffbeb;
+  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.18);
+}
+
+.pfidu-faltantes-list {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid #fcd34d;
+  background: #fffbeb;
+  color: #92400e;
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.pfidu-faltantes-list ul {
+  margin: 6px 0 0;
+  padding-left: 1.15rem;
+}
+
+.pfidu-faltantes-list li {
+  margin: 2px 0;
 }
 
 /* Fecha escribible (AAAA-MM-DD o DD/MM/AAAA) */

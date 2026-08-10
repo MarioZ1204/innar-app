@@ -1,24 +1,50 @@
 /**
  * Formulario compartido: base de pacientes FOMAG (anexo_fidu_personas).
  * Usado por certificado, comprobante y anexo.
+ * Siempre muestra el formulario completo; resalta los campos faltantes.
  */
 (function () {
   const PERSONA_FORM = [
-    { key: 'numero_documento', label: 'Número de documento' },
-    { key: 'nombres_1', label: 'Nombres (1)' },
-    { key: 'nombres_2', label: 'Nombres (2)' },
-    { key: 'apellidos_1', label: 'Apellidos (1)' },
-    { key: 'apellidos_2', label: 'Apellidos (2)' },
-    { key: 'fecha_nacimiento', label: 'Fecha de nacimiento (AAAA-MM-DD)' },
-    { key: 'tipo_documento', label: 'Tipo de documento' },
-    { key: 'ciudad_nacimiento', label: 'Ciudad de nacimiento' },
-    { key: 'genero', label: 'Género' },
-    { key: 'direccion', label: 'Dirección', long: true },
+    { key: 'numero_documento', label: 'Número de documento', required: true },
+    { key: 'nombres_1', label: 'Primer nombre', required: true },
+    { key: 'nombres_2', label: 'Segundo nombre' },
+    { key: 'apellidos_1', label: 'Primer apellido', required: true },
+    { key: 'apellidos_2', label: 'Segundo apellido' },
+    { key: 'fecha_nacimiento', label: 'Fecha de nacimiento', required: true },
+    { key: 'tipo_documento', label: 'Tipo de documento', required: true },
+    { key: 'ciudad_nacimiento', label: 'Ciudad de nacimiento', required: true },
+    { key: 'genero', label: 'Género', required: true },
+    { key: 'direccion', label: 'Dirección', long: true, required: true },
     { key: 'barrio', label: 'Barrio' },
-    { key: 'ciudad_residencia', label: 'Ciudad de residencia', long: true },
-    { key: 'telefono', label: 'Teléfono' },
-    { key: 'correo', label: 'Correo' },
-    { key: 'afiliacion', label: 'Afiliación', long: true }
+    { key: 'ciudad_residencia', label: 'Ciudad de residencia', long: true, required: true },
+    { key: 'telefono', label: 'Teléfono', required: true },
+    { key: 'correo', label: 'Correo', required: true },
+    { key: 'afiliacion', label: 'Afiliación', required: true }
+  ];
+
+  const OPCIONES_GENERO = [
+    { value: '', label: '— Seleccionar —' },
+    { value: 'Masculino', label: 'Masculino' },
+    { value: 'Femenino', label: 'Femenino' },
+    { value: 'Otro', label: 'Otro' }
+  ];
+
+  const OPCIONES_AFILIACION = [
+    { value: '', label: '— Seleccionar —' },
+    { value: 'Cotizante', label: 'Cotizante' },
+    { value: 'Beneficiario', label: 'Beneficiario' },
+    { value: 'Adicional', label: 'Adicional' },
+    { value: 'Estudiante', label: 'Estudiante' },
+    { value: 'Pensionado', label: 'Pensionado' }
+  ];
+
+  const OPCIONES_TIPO_DOC = [
+    { value: '', label: '— Auto / seleccionar —' },
+    { value: 'CC', label: 'CC — Cédula de ciudadanía' },
+    { value: 'TI', label: 'TI — Tarjeta de identidad' },
+    { value: 'RC', label: 'RC — Registro civil' },
+    { value: 'CE', label: 'CE — Cédula de extranjería' },
+    { value: 'PA', label: 'PA — Pasaporte' }
   ];
 
   function escapeHtml(str) {
@@ -53,42 +79,102 @@
     return 'CC';
   }
 
-  function htmlCampo(f, val, readonly) {
-    const ro = readonly ? ' readonly style="opacity:.75"' : '';
-    if (f.key === 'fecha_nacimiento') {
-      return `<input type="text" class="innar-fecha-input" id="pfidu-${f.key}" data-key="${f.key}" value="${escapeHtml(val)}" placeholder="AAAA-MM-DD" autocomplete="off"${ro} />`;
-    }
-    if (f.long) {
-      return `<textarea id="pfidu-${f.key}" data-key="${f.key}"${ro}>${escapeHtml(val)}</textarea>`;
-    }
-    return `<input type="text" id="pfidu-${f.key}" data-key="${f.key}" value="${escapeHtml(val)}"${ro} />`;
+  function keysFaltantesSet(camposFaltantes) {
+    return new Set((camposFaltantes || []).map((c) => c.key || c).filter(Boolean));
   }
 
-  function camposParaFormulario(camposFaltantes, persona, modoCompleto) {
-    if (modoCompleto) return PERSONA_FORM;
-    const keys = new Set((camposFaltantes || []).map((c) => c.key || c));
-    if (!keys.size) return PERSONA_FORM;
-    const list = PERSONA_FORM.filter((f) => keys.has(f.key));
-    if (!list.some((f) => f.key === 'numero_documento')) {
-      list.unshift(PERSONA_FORM[0]);
+  function labelsFaltantes(camposFaltantes) {
+    return (camposFaltantes || [])
+      .map((c) => c.label || labelDeCampo(c.key || c))
+      .filter(Boolean);
+  }
+
+  function labelDeCampo(key) {
+    return PERSONA_FORM.find((f) => f.key === key)?.label || key;
+  }
+
+  function htmlSelect(id, key, val, options, readonly) {
+    const ro = readonly ? ' disabled' : '';
+    const opts = options.map((o) => {
+      const selected = String(o.value) === String(val || '') ? ' selected' : '';
+      return `<option value="${escapeHtml(o.value)}"${selected}>${escapeHtml(o.label)}</option>`;
+    }).join('');
+    // Si el valor actual no está en la lista, lo añadimos para no perderlo
+    const known = options.some((o) => String(o.value) === String(val || ''));
+    const extra = (!known && val)
+      ? `<option value="${escapeHtml(val)}" selected>${escapeHtml(val)}</option>`
+      : '';
+    return `<select id="${id}" data-key="${key}"${ro}>${extra}${opts}</select>`;
+  }
+
+  function htmlCampo(f, val, readonly) {
+    const ro = readonly ? ' readonly style="opacity:.75"' : '';
+    const id = `pfidu-${f.key}`;
+    if (f.key === 'fecha_nacimiento') {
+      return `<input type="text" class="innar-fecha-input" id="${id}" data-key="${f.key}" value="${escapeHtml(val)}" placeholder="AAAA-MM-DD o DD/MM/AAAA" autocomplete="off"${ro} />`;
     }
-    return list;
+    if (f.key === 'genero') {
+      return htmlSelect(id, f.key, val, OPCIONES_GENERO, readonly);
+    }
+    if (f.key === 'afiliacion') {
+      return htmlSelect(id, f.key, val, OPCIONES_AFILIACION, readonly);
+    }
+    if (f.key === 'tipo_documento') {
+      return htmlSelect(id, f.key, val, OPCIONES_TIPO_DOC, readonly);
+    }
+    if (f.long) {
+      return `<textarea id="${id}" data-key="${f.key}"${ro}>${escapeHtml(val)}</textarea>`;
+    }
+    return `<input type="text" id="${id}" data-key="${f.key}" value="${escapeHtml(val)}"${ro} />`;
+  }
+
+  /**
+   * Siempre devuelve el formulario completo.
+   * (Antes filtraba por fases; eso provocaba “pide un dato y luego aparecen más”.)
+   */
+  function camposParaFormulario(_camposFaltantes, _persona, _modoCompleto) {
+    return PERSONA_FORM;
+  }
+
+  function htmlListaFaltantes(camposFaltantes) {
+    const labels = labelsFaltantes(camposFaltantes);
+    if (!labels.length) return '';
+    return `<div class="pfidu-faltantes-list" role="status">
+      <strong>Complete estos datos obligatorios:</strong>
+      <ul>${labels.map((l) => `<li>${escapeHtml(l)}</li>`).join('')}</ul>
+    </div>`;
   }
 
   function renderFormulario(container, opts = {}) {
     const persona = opts.persona || {};
-    const campos = camposParaFormulario(opts.camposFaltantes, persona, opts.modoCompleto);
+    const faltantesKeys = keysFaltantesSet(opts.camposFaltantes);
+    const campos = PERSONA_FORM;
     const docReadonly = opts.documentoReadonly !== false;
-    let html = '<div class="pfidu-form-grid">';
+    let html = htmlListaFaltantes(opts.camposFaltantes);
+    html += '<div class="pfidu-form-grid">';
     campos.forEach((f) => {
       const v = persona[f.key] != null ? String(persona[f.key]) : '';
       const ro = f.key === 'numero_documento' && docReadonly;
-      html += `<div class="pfidu-form-field"><label>${escapeHtml(f.label)}</label>${htmlCampo(f, v, ro)}</div>`;
+      const missClass = faltantesKeys.has(f.key) ? ' is-missing' : '';
+      const reqMark = f.required ? ' <span class="pfidu-req" title="Obligatorio">*</span>' : '';
+      html += `<div class="pfidu-form-field${missClass}" data-field="${f.key}">
+        <label for="pfidu-${f.key}">${escapeHtml(f.label)}${reqMark}</label>
+        ${htmlCampo(f, v, ro)}
+      </div>`;
     });
     html += '</div>';
     container.innerHTML = html;
     bindFechaTipoDocumento(container);
     bindFechaInputs(container);
+    // Scroll al primer faltante
+    const firstMiss = container.querySelector('.pfidu-form-field.is-missing');
+    if (firstMiss) {
+      try { firstMiss.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch (_) { /* noop */ }
+      const input = firstMiss.querySelector('input, select, textarea');
+      if (input && !input.readOnly && !input.disabled) {
+        setTimeout(() => { try { input.focus(); } catch (_) { /* noop */ } }, 80);
+      }
+    }
   }
 
   function bindFechaInputs(root = document) {
@@ -111,7 +197,7 @@
     const sync = () => {
       if (!tipo) return;
       const t = calcularTipoDocumento(fn?.value || '');
-      if (t && !tipo.value.trim()) tipo.value = t;
+      if (t && !String(tipo.value || '').trim()) tipo.value = t;
     };
     const syncFecha = () => {
       if (!fn) return;
@@ -229,6 +315,7 @@
     personaDesdeCertificadoModal,
     guardarDesdeComprobanteModal,
     guardarDesdeCertificadoModal,
-    camposParaFormulario
+    camposParaFormulario,
+    labelsFaltantes
   };
 })();
