@@ -1,6 +1,7 @@
 /**
- * Archivo de módulos Soportes / Reportes PDX / Anexo FIDU:
- * respaldo ZIP al pasar a estado «archivo» y registro en sop_modulo_archivo.
+ * Archivo de módulos Soportes / Reportes PDX / Anexo FIDU.
+ * PDX → «Reportes anteriores»: solo visibilidad/registro en BD (mismos PDF en disco).
+ * Armado/Anexo pueden seguir generando ZIP de respaldo aparte.
  */
 const fs = require('fs');
 const path = require('path');
@@ -486,11 +487,14 @@ function scheduleBackupUpdateRegistro(label, registroId, archivadoPor, backupFn)
   });
 }
 
+/**
+ * Enviar carpeta a Reportes anteriores = solo registro liviano en BD.
+ * Los PDF siguen en disco (soportes/pdx/{id}/); NO se genera ZIP ni copia.
+ */
 async function archivarPdxCarpeta(carpetaRow, archivadoPor = null) {
   if (!carpetaRow?.id) return null;
   if (await yaRegistradoEnArchivo('pdx_carpeta', carpetaRow.id)) return null;
 
-  // Nunca ZIP síncrono en el request: Hostinger se congela. PDX_ARCHIVO_SYNC_BACKUP se ignora.
   const id = await insertRegistroArchivo({
     modulo: 'pdx_carpeta',
     periodo: carpetaRow.periodo || null,
@@ -501,40 +505,12 @@ async function archivarPdxCarpeta(carpetaRow, archivadoPor = null) {
     archivado_por: archivadoPor
   });
 
-  scheduleBackupUpdateRegistro(
-    `pdx_carpeta:${carpetaRow.id}`,
-    id,
-    archivadoPor,
-    () => crearBackupZipPdxCarpeta(carpetaRow)
-  );
-
   return { id, backup: null };
 }
 
+/** Periodo completo a «archivo»: solo marca/registro BD (sin ZIP). */
 async function archivarPdxPeriodo(periodo, archivadoPor = null) {
-  const refId = periodoToRefId(periodo);
-  if (!refId) return null;
-  if (await yaRegistradoEnArchivo('pdx', refId)) return null;
-
-  // Registrar ya (visibilidad/histórico) y comprimir en background
-  const id = await insertRegistroArchivo({
-    modulo: 'pdx',
-    periodo,
-    ref_id: refId,
-    etiqueta: `Reportes ${periodo}`,
-    backup_filename: null,
-    backup_bytes: null,
-    archivado_por: archivadoPor
-  });
-
-  scheduleBackupUpdateRegistro(
-    `pdx:${periodo}`,
-    id,
-    archivadoPor,
-    () => crearBackupZipPdxPeriodo(periodo)
-  );
-
-  return { id, backup: null };
+  return ensureRegistroArchivoPdx(periodo, archivadoPor);
 }
 
 async function archivarArmadoPeriodo(periodoRow, archivadoPor = null) {
@@ -633,13 +609,8 @@ async function regenerarBackup(registroId, archivadoPor = null) {
   if (!rows.length) throw new Error('Registro de archivo no encontrado');
   const reg = rows[0];
   let backup = null;
-  if (reg.modulo === 'pdx') {
-    if (!reg.periodo) throw new Error('Periodo PDX no definido');
-    backup = await crearBackupZipPdxPeriodo(reg.periodo);
-  } else if (reg.modulo === 'pdx_carpeta') {
-    const cr = await db.query('SELECT * FROM sop_pdx_carpetas WHERE id = ? LIMIT 1', [reg.ref_id]);
-    if (!cr.length) throw new Error('Carpeta PDX no encontrada');
-    backup = await crearBackupZipPdxCarpeta(cr[0]);
+  if (reg.modulo === 'pdx' || reg.modulo === 'pdx_carpeta') {
+    throw new Error('Reportes anteriores no usan ZIP: los PDF siguen en la carpeta original de Cargar reportes.');
   } else if (reg.modulo === 'armado') {
     const pr = await db.query('SELECT * FROM sop_periodos WHERE id = ? LIMIT 1', [reg.ref_id]);
     if (!pr.length) throw new Error('Periodo de armado no encontrado');

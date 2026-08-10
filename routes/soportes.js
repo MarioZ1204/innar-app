@@ -394,7 +394,7 @@ async function refrescarVisibilidadPdx(periodo, archivadoPor = null) {
     [estado, periodo]
   );
   try {
-    // Solo registro BD + encola ZIP en background (no await del ZIP)
+    // Solo registro liviano en BD (sin ZIP ni copia de carpetas)
     const { procesarTransicionArchivoPdx } = require('../utils/soportes-modulo-archivo');
     await procesarTransicionArchivoPdx(periodo, estadoAnterior, archivadoPor);
   } catch (e) {
@@ -909,8 +909,6 @@ router.post('/soportes/pdx/carpetas/archivar', requireAuth, requireRoleOrPerm(RO
     if (!ids.length) return res.status(400).json({ error: 'IDs de carpeta inválidos' });
 
     const visiblesSet = await loadVisibleEnSoportesSet();
-    const { archivarPdxCarpeta } = require('../utils/soportes-modulo-archivo');
-    const archivadoPor = req.session?.usuarioId || null;
     const archivadas = [];
     const omitidas = [];
     const errores = [];
@@ -935,14 +933,13 @@ router.post('/soportes/pdx/carpetas/archivar', requireAuth, requireRoleOrPerm(RO
         omitidas.push({ id, nombre_display: carpeta.nombre_display, motivo: 'ya_archivada' });
         continue;
       }
+      // Solo cambio de visibilidad: la carpeta y sus PDF quedan iguales en disco
+      // y pasan a verse en Reportes anteriores (sin ZIP ni copia).
       await db.execute(
         'UPDATE sop_pdx_carpetas SET archivada_manual = 1, estado_visibilidad = ? WHERE id = ?',
         ['archivo', id]
       );
       archivadas.push({ id, nombre_display: carpeta.nombre_display, periodo: carpeta.periodo });
-      archivarPdxCarpeta(carpeta, archivadoPor).catch((e) => {
-        logger.warn('[SOPORTES] registro archivo PDX carpeta:', id, e.message);
-      });
     }
 
     if (!archivadas.length && !omitidas.length) {

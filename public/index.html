@@ -3973,6 +3973,7 @@
           <header class="sop-module-page-header no-print">
             <div>
               <h2>Cargar reportes</h2>
+              <p class="sop-module-lead">Carpetas del mes actual (y periodo en gracia). Al cerrar el mes, o al moverlas, pasan a <strong>Reportes anteriores</strong> tal cual — mismos archivos, sin copiar ni comprimir.</p>
             </div>
             <div class="sop-module-header-actions" style="display:flex;gap:8px;flex-wrap:wrap">
               <button type="button" id="btnSopPdxNuevaCarpeta" class="btn-primary">
@@ -4031,7 +4032,7 @@
                 </label>
                 <span id="sopPdxBulkCount" class="sop-pdx-bulk-count"></span>
                 <button type="button" id="btnSopPdxArchivarSel" class="sop-btn sop-btn-ghost">
-                  <i data-lucide="archive"></i> Enviar al archivo
+                  <i data-lucide="folder-input"></i> Mover a Reportes anteriores
                 </button>
                 <button type="button" id="btnSopPdxClearSel" class="sop-btn sop-btn-ghost sop-btn-sm">Limpiar</button>
               </div>
@@ -4284,7 +4285,7 @@
           <header class="sop-module-page-header no-print">
             <div>
               <h2>Reportes anteriores</h2>
-              <p class="sop-module-lead">Carpetas de PSG, VTM, EEG y demás reportes que salieron de Cargar reportes al cerrar el mes (cinco días de gracia). Solo consulta: ver y descargar PDFs.</p>
+              <p class="sop-module-lead">Mismas carpetas y PDFs que en Cargar reportes, de meses anteriores (tras la gracia o al moverlas). Aquí se consultan; no se generan ZIP ni copias.</p>
             </div>
             <button type="button" id="btnRhRefrescar" class="sop-btn sop-btn-ghost">
               <i data-lucide="refresh-cw"></i> Actualizar
@@ -4296,7 +4297,7 @@
               <div class="sop-panel-head">
                 <div class="sop-search-wrap">
                   <i data-lucide="search"></i>
-                  <input type="search" id="rhBuscar" class="sop-search" placeholder="Buscar paciente en reportes archivados (mín. 2 caracteres)…" autocomplete="off">
+                  <input type="search" id="rhBuscar" class="sop-search" placeholder="Buscar paciente (mín. 2 caracteres)…" autocomplete="off">
                 </div>
                 <button type="button" id="btnRhBuscar" class="sop-btn sop-btn-ghost" title="Buscar ahora">
                   <i data-lucide="search"></i> Buscar
@@ -4318,9 +4319,11 @@
                     <option value="psg">PSG</option>
                     <option value="eeg">EEG</option>
                     <option value="actigrafia">Actigrafía</option>
-                    <option value="latencia">Test de latencia</option>
                     <option value="ordenes">Órdenes</option>
+                    <option value="ordenes_consulta_medica">Órdenes + HC consultas médicas</option>
                     <option value="comprobantes">Comprobantes</option>
+                    <option value="comprobantes_consulta_medica">Comprobante. consultas médicas</option>
+                    <option value="consentimientos">Consentimientos</option>
                     <option value="neutral">Otro / neutro</option>
                   </select>
                   <select id="rhFiltroOrden" class="sop-select sop-pdx-filtro-sel" aria-label="Orden">

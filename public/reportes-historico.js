@@ -1,5 +1,5 @@
 /**
- * Módulo Reportes anteriores — carpetas PDX archivadas (PSG, VTM, EEG, etc.)
+ * Módulo Reportes anteriores — mismas carpetas PDX de Cargar reportes (meses previos).
  */
 (function () {
   'use strict';
@@ -163,11 +163,11 @@
     const lista = carpetasFiltradas();
     const chip = $('rhChipResumen');
     if (chip) {
-      chip.innerHTML = `<span class="sop-stat-chip"><i data-lucide="archive"></i> <strong>${state.carpetas.length}</strong> carpetas archivadas</span>`;
+      chip.innerHTML = `<span class="sop-stat-chip"><i data-lucide="folder-clock"></i> <strong>${state.carpetas.length}</strong> carpetas de meses anteriores</span>`;
       sopIcons(chip);
     }
     if (!state.carpetas.length) {
-      el.innerHTML = `<div class="sop-empty"><i data-lucide="archive" class="sop-empty-icon"></i>No hay carpetas archivadas todavía.<br><span style="font-size:.85rem">Las carpetas de Cargar reportes pasan aquí cinco días después de cerrar el mes.</span></div>`;
+      el.innerHTML = `<div class="sop-empty"><i data-lucide="folder-clock" class="sop-empty-icon"></i>Aún no hay carpetas de meses anteriores.<br><span style="font-size:.85rem">Aparecen aquí al cerrar el mes (5 días de gracia) o al moverlas desde Cargar reportes — mismos archivos, sin copiar.</span></div>`;
       sopIcons(el);
       return;
     }
@@ -183,7 +183,7 @@
         <div class="sop-folder-icon"><i data-lucide="${icon}"></i></div>
         <div class="sop-folder-title">${escapeHtml(c.nombre_display)}</div>
         <div class="sop-folder-meta">${escapeHtml(c.periodo)} · ${c.archivos_count || 0} archivo(s)</div>
-        <span class="sop-badge sop-badge-archivo"><i data-lucide="archive" style="width:12px;height:12px"></i> Archivado</span>
+        <span class="sop-badge sop-badge-archivo"><i data-lucide="folder-clock" style="width:12px;height:12px"></i> Mes anterior</span>
       </article>`;
     }).join('')}</div>`;
     bindCarpetaEvents(el);
@@ -231,7 +231,7 @@
     const c = data.carpeta;
     state.carpetaActual = c;
     $('rhDetalleTitulo').textContent = c.nombre_display;
-    $('rhDetalleMeta').innerHTML = `${escapeHtml(c.periodo)} · <span class="sop-badge sop-badge-archivo">Archivado</span>`;
+    $('rhDetalleMeta').innerHTML = `${escapeHtml(c.periodo)} · <span class="sop-badge sop-badge-archivo">Mes anterior</span>`;
     sopIcons($('rhDetalleMeta'));
     renderBreadcrumbDetalle(c);
     if (!state.archivos.length) {

@@ -2645,22 +2645,22 @@
       const omit = (data.omitidas || []).length;
       if (n) {
         sopToast(
-          `${n} carpeta${n === 1 ? '' : 's'} enviada${n === 1 ? '' : 's'} a Reportes anteriores. El respaldo ZIP sigue en segundo plano.`,
+          `${n} carpeta${n === 1 ? '' : 's'} movida${n === 1 ? '' : 's'} a Reportes anteriores`,
           'success'
         );
-      } else if (omit) sopToast('Las carpetas seleccionadas ya estaban archivadas', 'info');
-      else sopToast('No se archivó ninguna carpeta', 'warning');
+      } else if (omit) sopToast('Las carpetas seleccionadas ya estaban en Reportes anteriores', 'info');
+      else sopToast('No se movió ninguna carpeta', 'warning');
       pdxState.seleccionadas.clear();
       await cargarCarpetasPdx();
       renderListaCarpetasPdx();
     };
     if (typeof window.confirmEliminar === 'function') {
       window.confirmEliminar(
-        `${ids.length} carpeta${ids.length === 1 ? '' : 's'} al archivo: ${resumen}`,
+        `${ids.length} carpeta${ids.length === 1 ? '' : 's'} a Reportes anteriores: ${resumen}`,
         run,
-        { okText: 'Enviar al archivo', cancelText: 'Cancelar' }
+        { okText: 'Mover a Reportes anteriores', cancelText: 'Cancelar' }
       );
-    } else if (!window.confirm(`¿Enviar ${ids.length} carpeta(s) al archivo?\n${resumen}`)) return;
+    } else if (!window.confirm(`¿Mover ${ids.length} carpeta(s) a Reportes anteriores?\n${resumen}`)) return;
     else await run();
   }
 
