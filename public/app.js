@@ -1519,6 +1519,18 @@ function renderLeyendaColoresEstudiosElectro(estudios) {
     + '<span class="electro-leyenda-chip electro-leyenda-chip--continuacion" title="Estudios multi-día en día 2, 3…: mismo color del examen con rayas diagonales"><i aria-hidden="true"></i>Continúa (rayado)</span>';
 }
 
+function _hexToRgbaElectro(hex, alpha) {
+  const h = String(hex || '').replace('#', '').trim();
+  if (h.length !== 3 && h.length !== 6) return `rgba(100,116,139,${alpha})`;
+  const full = h.length === 3 ? h.split('').map((ch) => ch + ch).join('') : h;
+  const n = parseInt(full, 16);
+  if (Number.isNaN(n)) return `rgba(100,116,139,${alpha})`;
+  const r = (n >> 16) & 255;
+  const g = (n >> 8) & 255;
+  const b = n & 255;
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
 function aplicarColorEstudioElectroCard(card, estudio, opts = {}) {
   const esContinuacion = Boolean(opts.esContinuacion);
   const c = esContinuacion ? colorTarjetaEstudioElectroContinuacion(estudio) : colorTarjetaEstudioElectro(estudio);
@@ -1528,6 +1540,8 @@ function aplicarColorEstudioElectroCard(card, estudio, opts = {}) {
   if (esContinuacion) {
     card.style.setProperty('--electro-cont-bg', c.contBg || c.bg);
     card.style.setProperty('--electro-cont-accent', c.contAccent || c.accent);
+    card.style.setProperty('--electro-stripe', _hexToRgbaElectro(c.accent, 0.12));
+    card.style.setProperty('--electro-stripe-strong', _hexToRgbaElectro(c.accent, 0.22));
   }
   card.dataset.estudioColor = c.accent;
   card.classList.add('electro-cita-card--tipo');

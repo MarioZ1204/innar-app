@@ -417,40 +417,74 @@
   border-style: dashed;
 }
 
-/* Continuación: color del estudio + rayas en el fondo (sin ::before que tape el texto) */
+/* Continuación: color del estudio + rayas en el fondo (sin overlay que tape el texto) */
 .electro-cita-card--continuacion-dia {
   position: relative;
-  overflow: hidden;
+  overflow: visible;
+  isolation: isolate;
   border-left: 4px dashed var(--electro-estudio-accent, #64748b) !important;
   border-color: var(--electro-estudio-border, #e5e7eb) !important;
   background-color: var(--electro-estudio-bg, #fff) !important;
+  /* --electro-stripe lo setea JS (accent del estudio con alpha); fallback genérico */
   background-image: repeating-linear-gradient(
     -45deg,
-    transparent,
-    transparent 7px,
-    color-mix(in srgb, var(--electro-estudio-accent, #64748b) 12%, transparent) 7px,
-    color-mix(in srgb, var(--electro-estudio-accent, #64748b) 12%, transparent) 14px
+    var(--electro-stripe, rgba(100, 116, 139, 0.12)),
+    var(--electro-stripe, rgba(100, 116, 139, 0.12)) 6px,
+    transparent 6px,
+    transparent 12px
   ) !important;
   box-shadow:
-    inset 0 0 0 1px color-mix(in srgb, var(--electro-estudio-accent, #64748b) 22%, transparent),
+    inset 0 0 0 1px var(--electro-stripe-strong, rgba(100, 116, 139, 0.22)),
     0 1px 3px rgba(15, 23, 42, 0.06);
+}
+
+/* Anula overlays viejos en caché que tapaban paciente/estudio */
+.electro-cita-card--continuacion-dia::before,
+.electro-cita-card--continuacion-dia::after {
+  content: none !important;
+  display: none !important;
+  background: none !important;
 }
 
 .electro-cita-card--continuacion-dia:hover {
   border-color: var(--electro-estudio-accent, #64748b) !important;
   box-shadow:
-    inset 0 0 0 1px color-mix(in srgb, var(--electro-estudio-accent, #64748b) 35%, transparent),
+    inset 0 0 0 1px var(--electro-stripe-strong, rgba(100, 116, 139, 0.3)),
     0 4px 12px rgba(15, 23, 42, 0.1);
 }
 
-/* Refuerzo de contraste del contenido sobre el rayado */
+/* Contraste forzado del contenido (prioridad sobre CSS viejo) */
+.electro-cita-card--continuacion-dia .electro-cita-card-top,
 .electro-cita-card--continuacion-dia .electro-cita-card-paciente,
 .electro-cita-card--continuacion-dia .electro-cita-card-meta,
 .electro-cita-card--continuacion-dia .electro-cita-card-estudio,
+.electro-cita-card--continuacion-dia .electro-cita-card-hora,
+.electro-cita-card--continuacion-dia .electro-cita-card-rango,
+.electro-cita-card--continuacion-dia .electro-cita-card-dia-badge,
+.electro-cita-card--continuacion-dia .electro-cita-card-fin,
+.electro-cita-card--continuacion-dia .electro-cita-card-notas {
+  position: relative !important;
+  z-index: 2 !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+}
+
+.electro-cita-card--continuacion-dia .electro-cita-card-paciente {
+  color: #0f172a !important;
+  font-weight: 700 !important;
+}
+
 .electro-cita-card--continuacion-dia .electro-cita-card-hora {
-  color: #0f172a;
-  position: relative;
-  z-index: 1;
+  color: #0f172a !important;
+}
+
+.electro-cita-card--continuacion-dia .electro-cita-card-meta {
+  color: #334155 !important;
+}
+
+.electro-cita-card--continuacion-dia .electro-cita-card-estudio {
+  color: var(--electro-estudio-accent, #5b21b6) !important;
+  font-weight: 700 !important;
 }
 
 .electro-cita-card-continuacion--en-curso {
