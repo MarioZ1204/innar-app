@@ -264,7 +264,8 @@ const schemas = {
     entidad: Joi.string().max(100).optional().allow(null, ''),
     notas: Joi.string().max(2000).optional().allow(null, ''),
     oportunidad: Joi.alternatives().try(Joi.number().integer(), Joi.string()).optional().allow(null, ''),
-    programado_por: Joi.string().max(150).optional().allow(null, '')
+    programado_por: Joi.string().max(150).optional().allow(null, ''),
+    forzar_cupo: Joi.boolean().optional()
   }),
 
   apiCrearTurnosLote: Joi.object({
@@ -279,6 +280,7 @@ const schemas = {
     notas: Joi.string().max(2000).optional().allow(null, ''),
     oportunidad: Joi.alternatives().try(Joi.number().integer(), Joi.string()).optional().allow(null, ''),
     programado_por: Joi.string().max(150).optional().allow(null, ''),
+    forzar_cupo: Joi.boolean().optional(),
     sesiones: Joi.array().items(
       Joi.object({
         fecha: fechaApi.required(),
@@ -300,7 +302,8 @@ const schemas = {
     fecha: fechaApi.optional(),
     hora: horaApi.optional(),
     estado: Joi.string().valid(...ESTADOS_TURNOS).optional(),
-    observaciones: Joi.string().max(2000).optional().allow(null, '')
+    observaciones: Joi.string().max(2000).optional().allow(null, ''),
+    forzar_cupo: Joi.boolean().optional()
   }).min(1),
 
   apiPatchEstadoTurno: Joi.object({

@@ -9,7 +9,8 @@ const {
   inferirDuracionMinutosCitaElectro,
   inferirDuracionMinutosCitaElectroParaPersistir,
   sqlEstudioElectroFinProgramadoVencido,
-  sqlEstudioElectroFinProgramadoVencidoConDuracion
+  sqlEstudioElectroFinProgramadoVencidoConDuracion,
+  sqlEstudioElectroFinInicioRealVencido
 } = require('../utils/electro-fechas');
 
 describe('electro-fechas', () => {
@@ -33,6 +34,24 @@ describe('electro-fechas', () => {
     };
     expect(citaVisibleEnAgendaDiaYmd(cita, '2026-05-04')).toBe(true);
     expect(citaVisibleEnAgendaDiaYmd(cita, '2026-05-03')).toBe(true);
+  });
+
+  test('agenda y calendario: cita reprogramada no visible en fecha original', () => {
+    const fantasma = {
+      fecha: '2026-08-01',
+      hora_fin_date: '2026-08-01',
+      estado: 'Programado',
+      observaciones: '[Reprogramado] nota'
+    };
+    expect(citaVisibleEnAgendaDiaYmd(fantasma, '2026-08-01')).toBe(false);
+    expect(citaVisibleEnFechaYmd(fantasma, '2026-08-01')).toBe(true);
+
+    const nueva = {
+      fecha: '2026-08-05',
+      estado: 'Programado',
+      observaciones: null
+    };
+    expect(citaVisibleEnAgendaDiaYmd(nueva, '2026-08-05')).toBe(true);
   });
 
   test('PSG 8h a las 10:00 termina 18:00 mismo día (ignora hora_fin errónea)', () => {
@@ -130,8 +149,15 @@ describe('electro-fechas', () => {
   test('sql vencido con duracion exige duracion_minutos > 0', () => {
     const sql = sqlEstudioElectroFinProgramadoVencidoConDuracion('c');
     expect(sql).toContain('duracion_minutos > 0');
-    expect(sql).toContain('hora_fin_date');
     expect(sql).toContain('GREATEST');
+  });
+
+  test('sql fin inicio real usa hora_inicio + duracion sin GREATEST de agenda', () => {
+    const sql = sqlEstudioElectroFinInicioRealVencido('c');
+    expect(sql).toContain('duracion_minutos > 0');
+    expect(sql).toContain('hora_inicio');
+    expect(sql).toContain('DATE_ADD');
+    expect(sql).not.toContain('GREATEST');
   });
 
   test('inicio tardío agendado ancla fin a hora efectiva + duración', () => {

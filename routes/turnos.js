@@ -50,6 +50,7 @@ router.get('/turnos/calendario', requireAuth, async (req, res) => {
     const fechaInicio = `${mes}-01`;
     const fechaFin = month === 12 ? `${year + 1}-01-01` : `${year}-${String(month + 1).padStart(2, '0')}-01`;
 
+    const visibilidadSql = sqlFantasmaReprogramadoReciente('turnos');
     const baseSql = `
         SELECT fecha, COUNT(*) as total,
           SUM(CASE WHEN estado IN ('PENDIENTE','EN_ESPERA','EN_SALA','EN_ATENCION') THEN 1 ELSE 0 END) as agendadas,
@@ -58,7 +59,7 @@ router.get('/turnos/calendario', requireAuth, async (req, res) => {
           SUM(CASE WHEN estado = 'CANCELADO' THEN 1 ELSE 0 END) as canceladas,
           SUM(CASE WHEN estado = 'REPROGRAMADO' THEN 1 ELSE 0 END) as reprogramadas
         FROM turnos
-        WHERE fecha >= ? AND fecha < ?`;
+        WHERE fecha >= ? AND fecha < ? AND ${visibilidadSql}`;
     let sql, params;
     if (doctor_id) {
       sql = baseSql + ` AND doctor_id = ? GROUP BY fecha ORDER BY fecha ASC`;
@@ -446,7 +447,7 @@ router.post('/turnos/verificar-sesiones', requireAuth, requireRoleOrPerm(['super
 router.post('/turnos/lote', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion'], 'agenda.crear'), validateSchema('apiCrearTurnosLote'), async (req, res) => {
   const {
     doctor_id, paciente_nombre, paciente_documento, paciente_telefono, paciente_telefono2,
-    hora, tipo_consulta, entidad, notas, oportunidad, programado_por, sesiones
+    hora, tipo_consulta, entidad, notas, oportunidad, programado_por, sesiones, forzar_cupo
   } = req.body;
 
   const errores = [];
@@ -466,16 +467,19 @@ router.post('/turnos/lote', requireAuth, requireRoleOrPerm(['superadmin', 'admin
     }
   }
 
+  let requiereConfirmacionLote = false;
   for (const [fecha, cantidad] of Object.entries(sesionesPorFecha)) {
-    const validacionCupo = await cuposEntidadAgenda.validarCupoEntidad(doctor_id, fecha, entidad, db, cantidad);
+    const validacionCupo = await cuposEntidadAgenda.validarCupoEntidad(doctor_id, fecha, entidad, db, cantidad, { forzar: !!forzar_cupo });
     if (!validacionCupo.valido) {
+      if (validacionCupo.requiereConfirmacion) requiereConfirmacionLote = true;
       errores.push({ fecha, error: validacionCupo.razon || 'Sin cupo de entidad' });
     }
   }
   if (errores.length > 0) {
-    return res.status(400).json({
+    return res.status(requiereConfirmacionLote && errores.every((e) => e.error) ? 409 : 400).json({
       error: 'No se pudieron agendar todas las sesiones. Revise las fechas marcadas.',
-      errores
+      errores,
+      requiere_confirmacion: requiereConfirmacionLote
     });
   }
 
@@ -525,7 +529,7 @@ router.post('/turnos/lote', requireAuth, requireRoleOrPerm(['superadmin', 'admin
 });
 
 router.post('/turnos', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion'], 'agenda.crear'), validateSchema('apiCrearTurno'), async (req, res) => {
-  const { doctor_id, paciente_nombre, paciente_documento, paciente_telefono, paciente_telefono2, fecha, hora, tipo_consulta, entidad, notas, oportunidad, programado_por } = req.body;
+  const { doctor_id, paciente_nombre, paciente_documento, paciente_telefono, paciente_telefono2, fecha, hora, tipo_consulta, entidad, notas, oportunidad, programado_por, forzar_cupo } = req.body;
 
   try {
     const validacion = await procesarAgendaExcel.validarDisponibilidadPorHora(doctor_id, fecha, hora, db);
@@ -533,9 +537,13 @@ router.post('/turnos', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'a
       return res.status(400).json({ error: validacion.razon, valido: false });
     }
 
-    const validacionCupo = await cuposEntidadAgenda.validarCupoEntidad(doctor_id, fecha, entidad, db, 1);
+    const validacionCupo = await cuposEntidadAgenda.validarCupoEntidad(doctor_id, fecha, entidad, db, 1, { forzar: !!forzar_cupo });
     if (!validacionCupo.valido) {
-      return res.status(400).json({ error: validacionCupo.razon, valido: false });
+      return res.status(validacionCupo.requiereConfirmacion ? 409 : 400).json({
+        error: validacionCupo.razon,
+        valido: false,
+        requiere_confirmacion: !!validacionCupo.requiereConfirmacion
+      });
     }
 
     const result = await db.execute(`
@@ -670,10 +678,15 @@ router.patch('/turnos/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin
         String(fechaFinal).slice(0, 10),
         entidadFinal,
         db,
-        1
+        1,
+        { forzar: !!req.body.forzar_cupo }
       );
       if (!validacionCupo.valido) {
-        return res.status(400).json({ error: validacionCupo.razon, valido: false });
+        return res.status(validacionCupo.requiereConfirmacion ? 409 : 400).json({
+          error: validacionCupo.razon,
+          valido: false,
+          requiere_confirmacion: !!validacionCupo.requiereConfirmacion
+        });
       }
     }
 

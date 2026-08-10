@@ -673,7 +673,7 @@ html:not(.innar-shell-light) .electro-page-btn.active {
 }
 
 /* Tag `button` genérico sin clase de icono — alinear a primario si queda suelto */
-button:not(.menu-card):not(.btn-close-x):not(.btn-close-modal):not(.btn-editar):not(.btn-eliminar):not(.btn-prioridad-up):not(.btn-prioridad-down):not(.btn-recibo-anular):not(.btn-recibo-pdf):not(.btn-recibo-pagar):not(.btn-recibo-pendiente):not(.btn-recibo-tipo-pago):not(.btn-recibo-valor):not(.btn-recibo-obs):not(.btn-usr-del):not(.btn-usr-edit):not(.btn-usr-hist):not(.btn-usr-reset):not(.btn-usr-speak):not(.btn-usr-toggle):not(.btn-estado):not(.btn-estado-small):not(.sidebar-btn):not(.agenda-page-btn):not(.electro-page-btn):not(.card-collapse-btn):not(.toggle-password-btn):not(.meq-back-btn):not(.meq-date-nav):not(.meq-refresh-btn):not(.meq-date-hoy):not(.ltv-toolbar-btn):not(.ltv-drawer-close):not(.ltv-drawer-action):not(.ccal-nav-btn):not(.cal-nav-btn):not(.ecal-nav-btn):not(.ecal-cell):not(.recibo-export-btn):not(.flujo-btn-sm):not(.electro-study-btn):not(.btn-dropdown-item):not(.btn-estado-opcion):not(.cita-modal-icon-btn):not(.cita-modal-footer-btn):not(.medico-select-btn):not([class*="cita-modal-btn-"]):not(.ms-trigger):not(.sop-pdf-editor-color):not(.innar-scroll-nav-btn):not(.sop-zip-jobs-min):not([class*="btn-"]):not([id^="monitorDate"]):not(#btnRefreshMonitor) {
+button:not(.menu-card):not(.btn-close-x):not(.btn-close-modal):not(.btn-editar):not(.btn-eliminar):not(.btn-prioridad-up):not(.btn-prioridad-down):not(.btn-recibo-anular):not(.btn-recibo-pdf):not(.btn-recibo-pagar):not(.btn-recibo-pendiente):not(.btn-recibo-tipo-pago):not(.btn-recibo-valor):not(.btn-recibo-obs):not(.btn-usr-del):not(.btn-usr-edit):not(.btn-usr-hist):not(.btn-usr-reset):not(.btn-usr-speak):not(.btn-usr-toggle):not(.btn-estado):not(.btn-estado-small):not(.sidebar-btn):not(.agenda-page-btn):not(.electro-page-btn):not(.card-collapse-btn):not(.toggle-password-btn):not(.meq-back-btn):not(.meq-date-nav):not(.meq-refresh-btn):not(.meq-date-hoy):not(.ltv-toolbar-btn):not(.ltv-drawer-close):not(.ltv-drawer-action):not(.ccal-nav-btn):not(.ccal-cell):not(.cal-day):not(.cal-nav-btn):not(.ecal-nav-btn):not(.ecal-cell):not(.recibo-export-btn):not(.flujo-btn-sm):not(.electro-study-btn):not(.btn-dropdown-item):not(.btn-estado-opcion):not(.cita-modal-icon-btn):not(.cita-modal-footer-btn):not(.medico-select-btn):not([class*="cita-modal-btn-"]):not(.ms-trigger):not(.sop-pdf-editor-color):not(.innar-scroll-nav-btn):not(.sop-zip-jobs-min):not([class*="btn-"]):not([id^="monitorDate"]):not(#btnRefreshMonitor):not(.cal-choice-btn):not(.cal-attend-chip):not(.cal-add-row-btn):not(.cal-back-btn):not(.cal-modal-close):not(.cal-cupo-remove):not(.cal-motivo-chip) {
   background: linear-gradient(135deg, var(--c-primary) 0%, var(--c-primary-hover) 100%) !important;
   color: #fff !important;
   border: 0 !important;
@@ -683,8 +683,50 @@ button:not(.menu-card):not(.btn-close-x):not(.btn-close-modal):not(.btn-editar):
   box-shadow: 0 4px 12px rgba(138, 166, 161, 0.35) !important;
 }
 
-button:not(.menu-card):not(.btn-close-x):not(.meq-date-nav):not(.meq-refresh-btn):not(.meq-date-hoy):not(.ltv-toolbar-btn):not(.ltv-drawer-close):not(.ltv-drawer-action):not(.ecal-nav-btn):not(.ecal-cell):not(.cita-modal-icon-btn):not(.cita-modal-footer-btn):not(.medico-select-btn):not([class*="cita-modal-btn-"]):not(.ms-trigger):not(.sop-pdf-editor-color):not(.innar-scroll-nav-btn):not(.sop-zip-jobs-min):not([class*="btn-"]):not([id^="monitorDate"]):not(#btnRefreshMonitor):hover {
+button:not(.menu-card):not(.btn-close-x):not(.meq-date-nav):not(.meq-refresh-btn):not(.meq-date-hoy):not(.ltv-toolbar-btn):not(.ltv-drawer-close):not(.ltv-drawer-action):not(.ccal-cell):not(.cal-day):not(.ecal-nav-btn):not(.ecal-cell):not(.cita-modal-icon-btn):not(.cita-modal-footer-btn):not(.medico-select-btn):not([class*="cita-modal-btn-"]):not(.ms-trigger):not(.sop-pdf-editor-color):not(.innar-scroll-nav-btn):not(.sop-zip-jobs-min):not([class*="btn-"]):not([id^="monitorDate"]):not(#btnRefreshMonitor):not(.cal-choice-btn):not(.cal-attend-chip):not(.cal-add-row-btn):not(.cal-back-btn):not(.cal-modal-close):not(.cal-cupo-remove):not(.cal-motivo-chip):hover {
   box-shadow: 0 6px 16px rgba(138, 166, 161, 0.45) !important;
+}
+
+/* Celdas del calendario Ver Citas — no usar estilo de botón primario */
+button.ccal-cell {
+  background: #fff !important;
+  color: inherit !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 12px !important;
+  padding: 8px 8px 10px !important;
+  font-weight: inherit !important;
+  box-shadow: none !important;
+}
+
+button.ccal-cell:hover {
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08) !important;
+}
+
+button.cal-day {
+  background: #f8fafc !important;
+  color: #334155 !important;
+  border: 2px solid transparent !important;
+  border-radius: 12px !important;
+  padding: 5px 4px 4px !important;
+  font-weight: 600 !important;
+  box-shadow: none !important;
+  min-height: 52px;
+}
+
+button.cal-day:hover {
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08) !important;
+}
+
+button.ccal-cell.ccal-ucqn {
+  background: linear-gradient(165deg, #eff6ff 0%, #f5f9ff 55%, #fafcff 100%) !important;
+  border-color: #bfdbfe !important;
+  color: inherit !important;
+}
+
+button.ccal-cell.ccal-ucqn:hover {
+  background: linear-gradient(165deg, #dbeafe 0%, #eff6ff 100%) !important;
+  border-color: #93c5fd !important;
+  box-shadow: 0 4px 14px rgba(59, 130, 246, 0.12) !important;
 }
 
 /* ── Modal cita médica (después del botón genérico para no ser pisado) ───── */

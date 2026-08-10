@@ -321,30 +321,8 @@
   }
 }
 
-#calDayModal .cal-modal {
-  width: min(100%, 520px);
-  max-height: calc(100dvh - 24px);
-  margin: 12px auto;
-}
-
-#calDayModal .cal-choice-btns {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
 #calDayModal .cal-choice-btn {
   min-height: var(--innar-touch-min, 44px);
-}
-
-@media (min-width: 480px) {
-  #calDayModal .cal-choice-btns {
-    flex-direction: row;
-  }
-
-  #calDayModal .cal-choice-btn {
-    flex: 1;
-  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -821,4 +799,63 @@
     font-size: 0.62rem;
     gap: 4px 8px;
   }
+}
+
+/* Anula fondos verdes/amarillos legacy de style.css en celdas del calendario */
+#view-agenda-medica .ccal-container {
+  background: #fff !important;
+  background-image: none !important;
+}
+
+#view-agenda-medica .ccal-cell.ccal-verde,
+#view-agenda-medica .ccal-cell.ccal-amarillo,
+#view-agenda-medica .ccal-cell.ccal-azul,
+#view-agenda-medica .ccal-cell.ccal-rojo,
+#view-agenda-medica .ccal-cell.ccal-neutro,
+#view-agenda-medica .ccal-cell.ccal-noasiste,
+#view-agenda-medica .ccal-cell.ccal-verde:hover,
+#view-agenda-medica .ccal-cell.ccal-amarillo:hover,
+#view-agenda-medica .ccal-cell.ccal-azul:hover,
+#view-agenda-medica .ccal-cell.ccal-rojo:hover,
+#view-agenda-medica .ccal-cell.ccal-neutro:hover,
+#view-agenda-medica .ccal-cell.ccal-noasiste:hover {
+  background: #fff !important;
+  background-image: none !important;
+}
+
+#view-agenda-medica .ccal-cell.ccal-motivo-ucqn,
+#view-agenda-medica .ccal-cell.ccal-motivo-hospital,
+#view-agenda-medica .ccal-cell.ccal-motivo-personal,
+#view-agenda-medica .ccal-cell.ccal-motivo-vacaciones,
+#view-agenda-medica .ccal-cell.ccal-motivo-capacitacion,
+#view-agenda-medica .ccal-cell.ccal-motivo-festivo,
+#view-agenda-medica .ccal-cell.ccal-motivo-otro,
+#view-agenda-medica .ccal-cell.ccal-ausente,
+#view-agenda-medica button.ccal-cell.ccal-motivo-ucqn,
+#view-agenda-medica button.ccal-cell.ccal-motivo-hospital,
+#view-agenda-medica button.ccal-cell.ccal-motivo-personal,
+#view-agenda-medica button.ccal-cell.ccal-motivo-vacaciones,
+#view-agenda-medica button.ccal-cell.ccal-motivo-capacitacion,
+#view-agenda-medica button.ccal-cell.ccal-motivo-festivo,
+#view-agenda-medica button.ccal-cell.ccal-motivo-otro,
+#view-agenda-medica button.ccal-cell.ccal-ausente {
+  /* conservar fondos de motivo — no forzar blanco */
+  background-image: none;
+}
+
+#view-agenda-medica .ccal-card-top,
+#view-agenda-medica .ccal-split-general,
+#view-agenda-medica .ccal-split-entidad,
+#view-agenda-medica .ccal-card-top-single {
+  background: transparent !important;
+  background-image: none !important;
+}
+
+#view-agenda-medica .ccal-card-metric-citas .ccal-card-num,
+#view-agenda-medica .ccal-card-metric-libres .ccal-card-num {
+  color: #0f172a !important;
+}
+
+#view-agenda-medica .ccal-card-metric-libres .ccal-card-label {
+  color: #64748b !important;
 }

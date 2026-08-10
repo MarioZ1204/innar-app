@@ -447,6 +447,23 @@ async function estudioElectroDuracionEditable(nombre) {
   return !!(info && info.esVariable);
 }
 
+function formatearDuracionMinutosElectroTexto(minutos) {
+  const m = parseInt(minutos, 10);
+  if (!(m > 0)) return '-';
+  const dHrs = Math.floor(m / 60);
+  const dMin = m % 60;
+  if (dHrs >= 24) {
+    const dias = Math.floor(dHrs / 24);
+    const hResto = dHrs % 24;
+    const parteDias = dias === 1 ? '1 día' : `${dias} días`;
+    if (hResto > 0) return `${parteDias} ${hResto}h`;
+    return parteDias;
+  }
+  if (dHrs > 0 && dMin > 0) return `${dHrs}h ${dMin}min`;
+  if (dHrs > 0) return dHrs === 1 ? '1 hora' : `${dHrs} horas`;
+  return dMin === 1 ? '1 minuto' : `${dMin} minutos`;
+}
+
 function formatearDuracionMinutosElectro(minutos) {
   const m = parseInt(minutos, 10);
   if (!(m > 0)) return { html: false, text: '-' };
@@ -455,7 +472,8 @@ function formatearDuracionMinutosElectro(minutos) {
   if (dHrs >= 24) {
     const dias = Math.floor(dHrs / 24);
     const hResto = dHrs % 24;
-    return { html: true, text: `<span class="electro-dur-badge multi-day">${dias}d ${hResto}h</span>` };
+    const label = hResto > 0 ? `${dias}d ${hResto}h` : (dias === 1 ? '1 día' : `${dias} días`);
+    return { html: true, text: `<span class="electro-dur-badge multi-day" title="${escapeHtml(formatearDuracionMinutosElectroTexto(m))}">${label}</span>` };
   }
   if (dHrs > 0 && dMin > 0) return { html: false, text: `${dHrs}h ${dMin}min` };
   if (dHrs > 0) return { html: false, text: `${dHrs} horas` };
@@ -1369,6 +1387,10 @@ function familiaKanbanElectro(estudio) {
 const ELECTRO_ESTUDIO_COLOR_MAP = {
   'psg básica': { accent: '#7c3aed', bg: '#f5f3ff', border: '#c4b5fd' },
   'psg basica': { accent: '#7c3aed', bg: '#f5f3ff', border: '#c4b5fd' },
+  'psg con titulacion de dispositivo medico cpap': { accent: '#6d28d9', bg: '#ede9fe', border: '#a78bfa' },
+  'psg con titulación de dispositivo médico cpap': { accent: '#6d28d9', bg: '#ede9fe', border: '#a78bfa' },
+  'psg con titulacion de dispositivo medico bpap': { accent: '#5b21b6', bg: '#f3e8ff', border: '#c4b5fd' },
+  'psg con titulación de dispositivo médico bpap': { accent: '#5b21b6', bg: '#f3e8ff', border: '#c4b5fd' },
   'psg cpap/bpap': { accent: '#6d28d9', bg: '#ede9fe', border: '#a78bfa' },
   'polisomnografía básica': { accent: '#7c3aed', bg: '#f5f3ff', border: '#c4b5fd' },
   'polisomnografia basica': { accent: '#7c3aed', bg: '#f5f3ff', border: '#c4b5fd' },
@@ -1376,10 +1398,26 @@ const ELECTRO_ESTUDIO_COLOR_MAP = {
   'electroencefalograma': { accent: '#ca8a04', bg: '#fefce8', border: '#fde047' },
   'eeg': { accent: '#ca8a04', bg: '#fefce8', border: '#fde047' },
   'monitorización electroencefalográfica por video y radio': { accent: '#2563eb', bg: '#eff6ff', border: '#93c5fd' },
+  'monitorizacion electroencefalografica por video y radio': { accent: '#2563eb', bg: '#eff6ff', border: '#93c5fd' },
   'vtm': { accent: '#2563eb', bg: '#eff6ff', border: '#93c5fd' },
   'test de latencia de sueño múltiple': { accent: '#0d9488', bg: '#f0fdfa', border: '#5eead4' },
-  'actigrafía': { accent: '#db2777', bg: '#fdf2f8', border: '#f9a8d4' }
+  'test de latencia de sueño multiple': { accent: '#0d9488', bg: '#f0fdfa', border: '#5eead4' },
+  'actigrafía': { accent: '#db2777', bg: '#fdf2f8', border: '#f9a8d4' },
+  'actigrafia': { accent: '#db2777', bg: '#fdf2f8', border: '#f9a8d4' }
 };
+
+const _electroColoresRegistro = {};
+
+function normalizarNombreEstudioElectro(nombre) {
+  return String(nombre || '').trim().toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
+function registrarColorEstudioElectro(nombre, color) {
+  const n = String(nombre || '').trim();
+  if (n && color) _electroColoresRegistro[n] = color;
+}
 
 const ELECTRO_ESTUDIO_COLOR_PALETTE = [
   { accent: '#7c3aed', bg: '#f5f3ff', border: '#c4b5fd' },
@@ -1403,29 +1441,75 @@ function hashEstudioElectroColor(nombre) {
 
 const ELECTRO_TIPO_COLOR_MAP = {
   psg: { accent: '#7c3aed', bg: '#f5f3ff', border: '#c4b5fd' },
+  psg_titulacion: { accent: '#6d28d9', bg: '#ede9fe', border: '#a78bfa' },
   eeg: { accent: '#ca8a04', bg: '#fefce8', border: '#fde047' },
   vtm: { accent: '#2563eb', bg: '#eff6ff', border: '#93c5fd' },
-  actigrafia: { accent: '#db2777', bg: '#fdf2f8', border: '#f9a8d4' }
+  actigrafia: { accent: '#db2777', bg: '#fdf2f8', border: '#f9a8d4' },
+  mslt: { accent: '#0d9488', bg: '#f0fdfa', border: '#5eead4' }
 };
 
 function colorTarjetaEstudioElectro(estudio) {
-  const key = String(estudio || '').trim().toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '');
-  if (ELECTRO_ESTUDIO_COLOR_MAP[key]) return ELECTRO_ESTUDIO_COLOR_MAP[key];
+  const exact = String(estudio || '').trim();
+  if (exact && _electroColoresRegistro[exact]) return _electroColoresRegistro[exact];
+
+  const key = normalizarNombreEstudioElectro(exact);
+  if (ELECTRO_ESTUDIO_COLOR_MAP[key]) {
+    const c = ELECTRO_ESTUDIO_COLOR_MAP[key];
+    registrarColorEstudioElectro(exact, c);
+    return c;
+  }
+
   const tipo = tipoEstudioElectroApp(estudio);
-  if (ELECTRO_TIPO_COLOR_MAP[tipo]) return ELECTRO_TIPO_COLOR_MAP[tipo];
-  return ELECTRO_ESTUDIO_COLOR_PALETTE[hashEstudioElectroColor(estudio)];
+  if (tipo === 'psg' && (key.includes('cpap') || key.includes('bpap') || key.includes('titul'))) {
+    const c = ELECTRO_TIPO_COLOR_MAP.psg_titulacion;
+    registrarColorEstudioElectro(exact, c);
+    return c;
+  }
+  if (ELECTRO_TIPO_COLOR_MAP[tipo]) {
+    const c = ELECTRO_TIPO_COLOR_MAP[tipo];
+    registrarColorEstudioElectro(exact, c);
+    return c;
+  }
+  if (key.includes('latencia') && key.includes('sueno')) {
+    const c = ELECTRO_TIPO_COLOR_MAP.mslt;
+    registrarColorEstudioElectro(exact, c);
+    return c;
+  }
+
+  const c = ELECTRO_ESTUDIO_COLOR_PALETTE[hashEstudioElectroColor(estudio)];
+  registrarColorEstudioElectro(exact, c);
+  return c;
+}
+
+function precargarColoresEstudiosElectro(estudios) {
+  (estudios || []).forEach((nombre) => colorTarjetaEstudioElectro(nombre));
+}
+
+function renderLeyendaColoresEstudiosElectro(estudios) {
+  const el = $('electroLeyendaEstudios');
+  if (!el) return;
+  const lista = estudios || [];
+  if (!lista.length) {
+    el.innerHTML = '';
+    el.style.display = 'none';
+    return;
+  }
+  precargarColoresEstudiosElectro(lista);
+  el.style.display = 'flex';
+  el.innerHTML = lista.map((nombre) => {
+    const c = colorTarjetaEstudioElectro(nombre);
+    const corto = abreviarEstudio(nombre) || nombre;
+    return `<span class="electro-leyenda-chip" style="--chip-accent:${c.accent};--chip-bg:${c.bg}" title="${escapeHtml(nombre)}"><i aria-hidden="true"></i>${escapeHtml(corto)}</span>`;
+  }).join('');
 }
 
 function aplicarColorEstudioElectroCard(card, estudio) {
   const c = colorTarjetaEstudioElectro(estudio);
-  card.style.borderLeftWidth = '4px';
-  card.style.borderLeftStyle = 'solid';
-  card.style.borderLeftColor = c.accent;
-  card.style.background = c.bg;
-  card.style.borderColor = c.border;
+  card.style.setProperty('--electro-estudio-accent', c.accent);
+  card.style.setProperty('--electro-estudio-bg', c.bg);
+  card.style.setProperty('--electro-estudio-border', c.border);
   card.dataset.estudioColor = c.accent;
+  card.classList.add('electro-cita-card--tipo');
 }
 
 // Genera un badge de color según el estado de la cita electro
@@ -1478,6 +1562,23 @@ function citaElectroEsReprogramada(cita) {
   return /\[Reprogramado\]/i.test(String(cita.observaciones || ''));
 }
 
+function notasElectroUsuario(obs) {
+  return String(obs || '').replace(/\[Reprogramado\]\s*/gi, '').trim();
+}
+
+function citaElectroOcultarEnKanban(c) {
+  if (!c) return true;
+  if (normalizarEstadoElectro(c.estado) === 'Reprogramado') return true;
+  return citaElectroEsReprogramada(c);
+}
+
+function puedeAbrirCitaElectroCompletada() {
+  return tienePermiso('electro.ver')
+    || tienePermiso('electro.editar')
+    || tienePermiso('electro.cambiar_estado')
+    || tienePermiso('electro.eliminar');
+}
+
 function estadoBadgeCitaElectro(citaOrEstado, observacionesArg) {
   const esObj = typeof citaOrEstado === 'object' && citaOrEstado !== null;
   const cita = esObj ? citaOrEstado : { estado: citaOrEstado, observaciones: observacionesArg };
@@ -1522,7 +1623,9 @@ function buildReprogramacionElectroPayload(cita, { fecha, hora, actor = 'Sistema
       hora_agendamiento: hora,
       estudio: overrides.estudio !== undefined ? overrides.estudio : (cita?.estudio || null),
       entidad: overrides.entidad !== undefined ? overrides.entidad : (cita?.entidad || null),
-      observaciones: overrides.observaciones !== undefined ? overrides.observaciones : (cita?.observaciones || null),
+      observaciones: overrides.observaciones !== undefined
+        ? overrides.observaciones
+        : (notasElectroUsuario(cita?.observaciones) || null),
       diagnostico_id: cita?.diagnostico_id || null,
       equipo_id: overrides.equipo_id !== undefined ? overrides.equipo_id : (cita?.equipo_id || null),
       duracion_minutos: overrides.duracion_minutos !== undefined ? overrides.duracion_minutos : (cita?.duracion_minutos || null),
@@ -1530,46 +1633,125 @@ function buildReprogramacionElectroPayload(cita, { fecha, hora, actor = 'Sistema
       programado_por_nombre: actor || 'Sistema'
     },
     actualizacionOriginal: {
-      estado: 'Reprogramado',
+      estado: 'Programado',
       observaciones
     }
   };
 }
 
+function formatearFechaHoraReprogElectro(val) {
+  if (!val) return '-';
+  const s = String(val).trim();
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}))?/);
+  if (m) {
+    const fecha = `${m[3]}/${m[2]}/${m[1]}`;
+    if (m[4]) return `${fecha} ${formatearHora(`${m[4]}:${m[5]}`)}`;
+    return fecha;
+  }
+  return s;
+}
+
+function formatearAgendaReprogElectro(fechaYmd, horaHm) {
+  const f = fechaYmd ? formatearFechaISO(fechaYmd) : '-';
+  const h = horaHm ? formatearHora(horaHm) : '';
+  return h ? `${f} ${h}` : f;
+}
+
+async function pintarAuditoriaReprogramacionElectro(cita) {
+  const el = $('modalReprogramacionAudit');
+  if (!el) return;
+  const partes = [];
+  if (cita?.reprogramada_desde_id) {
+    partes.push(`Creada por reprogramación (cita original #${cita.reprogramada_desde_id})`);
+  }
+  try {
+    const res = await apiFetch(`/api/citas-electro/${cita.id}/reprogramaciones`);
+    const items = res.ok ? await res.json() : [];
+    if (Array.isArray(items) && items.length > 0) {
+      const ultima = items[0];
+      const quien = ultima.reprogramado_por_nombre || cita.editado_por_nombre || 'Sistema';
+      const cuando = formatearFechaHoraReprogElectro(ultima.reprogramado_en);
+      const legacy = ultima.legacy ? ' <span class="electro-reprog-legacy">histórico</span>' : '';
+      partes.push(`Última reprogramación: <strong>${escapeHtml(quien)}</strong> · ${escapeHtml(cuando)}${legacy}`);
+    } else if (cita?.reprogramado_en) {
+      const quien = cita.reprogramado_por_nombre || cita.editado_por_nombre || 'Sistema';
+      partes.push(`Marcada reprogramada por <strong>${escapeHtml(quien)}</strong> el ${escapeHtml(formatearFechaHoraReprogElectro(cita.reprogramado_en))}`);
+    } else if (citaElectroEsReprogramada(cita)) {
+      const quien = cita.editado_por_nombre || 'Sistema';
+      partes.push(`Reprogramada · última edición por <strong>${escapeHtml(quien)}</strong>`);
+    }
+  } catch (_) {
+    if (citaElectroEsReprogramada(cita)) {
+      const quien = cita.editado_por_nombre || 'Sistema';
+      partes.push(`Reprogramada · última edición por <strong>${escapeHtml(quien)}</strong>`);
+    }
+  }
+  if (!partes.length) {
+    el.style.display = 'none';
+    el.innerHTML = '';
+    return;
+  }
+  el.style.display = 'block';
+  el.innerHTML = partes.join('<br>');
+}
+
+async function cargarHistorialReprogramacionesElectro(citaId) {
+  const wrap = $('modalHistorialReprogElectro');
+  const list = $('modalHistorialReprogLista');
+  if (!wrap || !list || !citaId) return;
+  try {
+    const res = await apiFetch(`/api/citas-electro/${citaId}/reprogramaciones`);
+    const items = res.ok ? await res.json() : [];
+    if (!Array.isArray(items) || items.length === 0) {
+      wrap.style.display = 'none';
+      list.innerHTML = '';
+      return;
+    }
+    wrap.style.display = 'block';
+    list.innerHTML = items.map((item) => {
+      const quien = escapeHtml(item.reprogramado_por_nombre || 'Sistema');
+      const cuando = escapeHtml(formatearFechaHoraReprogElectro(item.reprogramado_en));
+      const desde = escapeHtml(formatearAgendaReprogElectro(item.fecha_anterior, item.hora_anterior));
+      const hacia = item.fecha_nueva
+        ? escapeHtml(formatearAgendaReprogElectro(item.fecha_nueva, item.hora_nueva))
+        : '—';
+      const enlace = item.cita_nueva_id
+        ? ` <span class="electro-reprog-ref">→ cita #${item.cita_nueva_id}</span>`
+        : '';
+      const legacyTag = item.legacy
+        ? ' <span class="electro-reprog-legacy" title="Reconstruido desde datos anteriores">histórico</span>'
+        : '';
+      return `<li class="electro-historial-reprog-item${item.legacy ? ' electro-historial-reprog-item--legacy' : ''}"><span class="electro-historial-reprog-fecha">${cuando}</span> <strong>${quien}</strong> movió de ${desde} a ${hacia}${enlace}${legacyTag}</li>`;
+    }).join('');
+  } catch (e) {
+    wrap.style.display = 'none';
+    list.innerHTML = '';
+    console.warn('[historial reprog electro]', e.message);
+  }
+}
+
 async function ejecutarReprogramacionElectro(cita, fechaNueva, horaNueva, { overrides = {}, onSuccess } = {}) {
   if (!cita?.id) throw new Error('Cita no válida');
-  const actor = (currentUser && (currentUser.nombre || currentUser.usuario)) || 'Sistema';
-  const { nuevaCita, actualizacionOriginal } = buildReprogramacionElectroPayload(cita, {
-    fecha: fechaNueva,
-    hora: horaNueva,
-    actor,
-    overrides
-  });
 
-  const resNueva = await apiFetch('/api/citas-electro', {
+  const res = await apiFetch(`/api/citas-electro/${cita.id}/reprogramar`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(nuevaCita)
+    body: JSON.stringify({
+      fecha: fechaNueva,
+      hora_agendamiento: horaNueva,
+      ...overrides
+    })
   });
-  const dataNueva = await resNueva.json();
-  if (!dataNueva?.ok) {
-    throw new Error(dataNueva?.error || 'Error creando la cita reprogramada');
-  }
-
-  const resOrig = await apiFetch(`/api/citas-electro/${cita.id}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(actualizacionOriginal)
-  });
-  const dataOrig = await resOrig.json();
-  if (!dataOrig?.ok) {
-    throw new Error(dataOrig?.error || 'Cita nueva creada, pero no se pudo marcar la original como reprogramada');
+  const data = await res.json();
+  if (!data?.ok) {
+    throw new Error(data?.error || 'Error reprogramando la cita');
   }
 
   if (window.socket && window.socket.connected) {
     window.socket.emit('electro:cambios-guardados', {
       id: cita.id,
-      cambios: actualizacionOriginal
+      nueva_id: data.id_nueva,
+      reprogramado_por: data.reprogramado_por
     });
   }
 
@@ -1586,8 +1768,8 @@ async function ejecutarReprogramacionElectro(cita, fechaNueva, horaNueva, { over
     cargarCitasElectro();
   }
 
-  if (typeof onSuccess === 'function') onSuccess({ nuevaCitaId: dataNueva.id });
-  return { nuevaCitaId: dataNueva.id };
+  if (typeof onSuccess === 'function') onSuccess({ nuevaCitaId: data.id_nueva });
+  return { nuevaCitaId: data.id_nueva };
 }
 
 /**
@@ -4171,6 +4353,8 @@ function initFiltroEstudiosElectro(estudios) {
     opt.textContent = nombre;
     sel.appendChild(opt);
   });
+  precargarColoresEstudiosElectro(estudios);
+  renderLeyendaColoresEstudiosElectro(estudios);
   if (typeof initMultiSelect === 'function') {
     if (!sel._ms) {
       initMultiSelect(sel, {
@@ -4276,8 +4460,7 @@ function invalidarCacheEntidades() {
 
 // ========== AGENDA MÉDICA (Citas) ==========
 async function initAgendaMedica() {
-  const hoy = new Date().toISOString().slice(0,10);
-  $('agendaMedicaFecha').value = hoy;
+  $('agendaMedicaFecha').value = typeof hoyColombiaISO === 'function' ? hoyColombiaISO() : new Date().toISOString().slice(0, 10);
   updateAgendaFechaDisplay();
   
   await recargarSelectsEntidadModulo('agenda-medica', { force: true });
@@ -4321,15 +4504,21 @@ async function initAgendaMedica() {
     crearDatepickerConDisponibilidad($('agendaMedicaFecha'), selectedDoctorId);
   }
   
-  $('agendaMedicaFecha').addEventListener('change', () => {
-    updateAgendaFechaDisplay();
-    actualizarHorasDisponibles();
-    if (!$('modalNuevaCitaMedica')?.classList.contains('hidden')) {
-      syncModalNuevaCitaFechaDesdeAgenda();
-      if (_modoSesionesMultiplesActivo) programarActualizarPreviewSesionesMultiples();
-    }
-    cargarTurnosMedica();
-  });
+  if (!window._agendaMedicaFechaListenerAdded) {
+    $('agendaMedicaFecha').addEventListener('change', () => {
+      updateAgendaFechaDisplay();
+      actualizarHorasDisponibles();
+      if (!$('modalNuevaCitaMedica')?.classList.contains('hidden')) {
+        syncModalNuevaCitaFechaDesdeAgenda();
+        if (_modoSesionesMultiplesActivo) programarActualizarPreviewSesionesMultiples();
+      }
+      cargarTurnosMedica();
+      if (typeof citasCalSincronizarConFecha === 'function') {
+        citasCalSincronizarConFecha($('agendaMedicaFecha').value);
+      }
+    });
+    window._agendaMedicaFechaListenerAdded = true;
+  }
   if (tienePermiso('agenda.crear')) {
     $('nuevoPacienteNombresMedica')?.addEventListener('input', debounceBuscarPacientesMedica);
   }
@@ -4934,11 +5123,114 @@ function leerMotivoCalAbsent() {
   return select.value || null;
 }
 
+function _opcionesMotivoAgenda() {
+  return (typeof OPCIONES_MOTIVO_AGENDA !== 'undefined' && Array.isArray(OPCIONES_MOTIVO_AGENDA))
+    ? OPCIONES_MOTIVO_AGENDA
+    : ['', 'UCQN', 'Hospital departamental', 'Cita médica personal', 'Vacaciones', 'Capacitación', 'Festivo', 'Otro'];
+}
+
+function _renderCalMotivoChips(containerId, selectId, otroInputId, valorActual) {
+  const wrap = $(containerId);
+  const select = $(selectId);
+  const inpOtro = otroInputId ? $(otroInputId) : null;
+  if (!wrap || !select) return;
+
+  const chips = ['', ..._opcionesMotivoAgenda().filter((o) => o !== '')];
+  wrap.innerHTML = chips.map((opt) => {
+    const id = opt ? ((typeof idMotivoAgenda === 'function') ? idMotivoAgenda(opt) : null) : 'none';
+    const chipClass = !opt
+      ? 'cal-motivo-chip cal-motivo-chip--none'
+      : (id && id !== 'otro' ? `cal-motivo-chip cal-motivo-chip--${id}` : 'cal-motivo-chip cal-motivo-chip--otro');
+    const label = !opt ? 'Sin observación' : (opt === 'Otro' ? 'Otro' : opt);
+    return `<button type="button" class="${chipClass}" data-motivo-value="${escapeHtml(opt)}" title="${escapeHtml(label)}">${escapeHtml(label)}</button>`;
+  }).join('');
+
+  const aplicarValor = (motivo) => {
+    const t = String(motivo || '').trim();
+    if (esMotivoListaPredefinida && esMotivoListaPredefinida(t)) {
+      select.value = t;
+      if (inpOtro) {
+        inpOtro.classList.add('cal-motivo-input--hidden');
+        inpOtro.value = '';
+      }
+    } else if (t) {
+      select.value = 'Otro';
+      if (inpOtro) {
+        inpOtro.classList.remove('cal-motivo-input--hidden');
+        inpOtro.value = t;
+      }
+    } else {
+      select.value = '';
+      if (inpOtro) {
+        inpOtro.classList.add('cal-motivo-input--hidden');
+        inpOtro.value = '';
+      }
+    }
+    wrap.querySelectorAll('.cal-motivo-chip').forEach((btn) => {
+      const v = btn.dataset.motivoValue || '';
+      const activo = (v === '' && !select.value)
+        || (v === 'Otro' && select.value === 'Otro')
+        || (v && v === select.value);
+      btn.classList.toggle('is-selected', activo);
+    });
+  };
+
+  wrap.querySelectorAll('.cal-motivo-chip').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const v = btn.dataset.motivoValue || '';
+      select.value = v;
+      select.dispatchEvent(new Event('change'));
+      aplicarValor(v === 'Otro' ? (inpOtro?.value || 'Otro') : v);
+    });
+  });
+
+  if (!wrap.dataset.boundMotivoChips) {
+    select.addEventListener('change', () => {
+      if (select.value === 'Otro') {
+        if (inpOtro) inpOtro.classList.remove('cal-motivo-input--hidden');
+      } else if (inpOtro) {
+        inpOtro.classList.add('cal-motivo-input--hidden');
+        inpOtro.value = '';
+      }
+      aplicarValor(select.value === 'Otro' ? (inpOtro?.value || '') : select.value);
+    });
+    inpOtro?.addEventListener('input', () => aplicarValor(inpOtro.value || 'Otro'));
+    wrap.dataset.boundMotivoChips = '1';
+  }
+
+  aplicarValor(valorActual);
+}
+
+function _actualizarCalModalEstadoDia(dateStr) {
+  const banner = $('calModalEstadoDia');
+  if (!banner) return;
+  const disp = calDisponibilidad[dateStr];
+  const estado = obtenerEstadoDiaAgenda(dateStr);
+  const motivo = disp?.motivo_ausencia || '';
+  let texto = 'Sin configurar';
+  let clase = 'cal-estado-banner--none';
+  if (disp && disp.disponible === false) {
+    texto = motivo ? `No asiste — ${motivo}` : 'No asiste';
+    clase = 'cal-estado-banner--ausente';
+  } else if (estado === 'full') {
+    texto = motivo ? `Jornada completa — ${motivo}` : 'Jornada completa';
+    clase = 'cal-estado-banner--full';
+  } else if (estado === 'partial') {
+    texto = motivo ? `Jornada parcial — ${motivo}` : 'Jornada parcial';
+    clase = 'cal-estado-banner--partial';
+  } else if (motivo) {
+    texto = `Observación: ${motivo}`;
+    clase = 'cal-estado-banner--obs';
+  }
+  banner.className = `cal-estado-banner ${clase}`;
+  banner.textContent = texto;
+}
+
 function cargarMotivoCalAbsent(motivo) {
   const select = $('calModalMotivoSelectAbsent');
   const inputOtro = $('calModalMotivoOtroAbsent');
   if (!select) return;
-  const opciones = ['', 'UCQN', 'Hospital departamental', 'Cita médica personal', 'Vacaciones', 'Capacitación'];
+  const opciones = _opcionesMotivoAgenda();
   if (opciones.includes(motivo)) {
     select.value = motivo;
     if (inputOtro) inputOtro.classList.add('cal-motivo-input--hidden');
@@ -4952,6 +5244,7 @@ function cargarMotivoCalAbsent(motivo) {
     select.value = '';
     if (inputOtro) inputOtro.classList.add('cal-motivo-input--hidden');
   }
+  _renderCalMotivoChips('calMotivoChipsAbsent', 'calModalMotivoSelectAbsent', 'calModalMotivoOtroAbsent', motivo);
 }
 
 function abrirCalPasoNoAsiste() {
@@ -4990,7 +5283,7 @@ function cargarMotivoEnCalModal(motivo) {
   const select = $('calModalMotivoSelectAttend');
   const inputOtro = $('calModalMotivoOtroAttend');
   if (!select) return;
-  const opciones = ['', 'UCQN', 'Hospital departamental', 'Cita médica personal', 'Vacaciones', 'Capacitación'];
+  const opciones = _opcionesMotivoAgenda();
   if (opciones.includes(motivo)) {
     select.value = motivo;
     if (inputOtro) inputOtro.classList.add('cal-motivo-input--hidden');
@@ -5004,6 +5297,7 @@ function cargarMotivoEnCalModal(motivo) {
     select.value = '';
     if (inputOtro) inputOtro.classList.add('cal-motivo-input--hidden');
   }
+  _renderCalMotivoChips('calMotivoChipsAttend', 'calModalMotivoSelectAttend', 'calModalMotivoOtroAttend', motivo);
 }
 
 function poblarCalFormularioConfig(dateStr) {
@@ -5037,6 +5331,7 @@ function poblarCalFormularioConfig(dateStr) {
   }
 
   renderCalCuposEntidadList(dateStr);
+  _renderCalMotivoChips('calMotivoChipsAttend', 'calModalMotivoSelectAttend', 'calModalMotivoOtroAttend', disp?.motivo_ausencia || '');
 }
 
 async function asegurarEntidadesCalModal() {
@@ -5267,8 +5562,21 @@ function openCalModal(dateStr) {
   if (titulo) titulo.textContent = `${diasSemana[d.getDay()]} ${d.getDate()} de ${meses[d.getMonth()]}`;
   if (sub) sub.textContent = `${calCurrentYear}`;
 
-  cargarMotivoCalAbsent('');
-  showCalModalStep('choice');
+  _actualizarCalModalEstadoDia(dateStr);
+  const disp = calDisponibilidad[dateStr];
+  const estado = obtenerEstadoDiaAgenda(dateStr);
+
+  if (disp && disp.disponible === false) {
+    cargarMotivoCalAbsent(disp.motivo_ausencia || '');
+    showCalModalStep('absent');
+  } else if (estado === 'full' || estado === 'partial') {
+    showCalModalStep('config');
+    void asegurarEntidadesCalModal().then(() => poblarCalFormularioConfig(dateStr));
+  } else {
+    cargarMotivoCalAbsent('');
+    _renderCalMotivoChips('calMotivoChipsAbsent', 'calModalMotivoSelectAbsent', 'calModalMotivoOtroAbsent', '');
+    showCalModalStep('choice');
+  }
   const btnNo = $('calBtnNoAsiste');
   const btnCfg = $('calBtnConfigurar');
   const btnConf = $('calBtnConfirmarNoAsiste');
@@ -5321,51 +5629,63 @@ async function loadCalendarData() {
     });
     const dataDisp = await resDisp.json();
     if (reqId !== calLoadReqId) return; // respuesta vieja
-    const mesPref = `${mes}-`;
-    Object.keys(calDisponibilidad).forEach((f) => {
-      if (f.startsWith(mesPref)) delete calDisponibilidad[f];
-    });
-    Object.keys(calCuposEntidad).forEach((f) => {
-      if (f.startsWith(mesPref)) delete calCuposEntidad[f];
-    });
-    if (dataDisp.ok && Array.isArray(dataDisp.disponibilidad)) {
-      dataDisp.disponibilidad.forEach((d) => {
-        const row = normalizarFilaDisponibilidadCal(d);
-        if (row.fecha) calDisponibilidad[row.fecha] = row;
-      });
-    }
-    if (dataDisp.ok && Array.isArray(dataDisp.cupos_entidad)) {
-      dataDisp.cupos_entidad.forEach((c) => {
-        const fecha = _fmtFechaAgenda(c.fecha);
-        if (!fecha) return;
-        if (!calCuposEntidad[fecha]) calCuposEntidad[fecha] = [];
-        calCuposEntidad[fecha].push({
-          entidad: String(c.entidad || '').trim(),
-          cupo_max: parseInt(c.cupo_max, 10) || 0
-        });
-      });
-    }
 
-    hidratarCuposEntidadMesLocal(calDoctorIdForCal, mes);
-    calCuposEntidadDoctorId = calDoctorIdForCal;
-    guardarCuposEntidadMesLocal(calDoctorIdForCal, mes, calCuposEntidad);
+    // Si la respuesta del servidor no es válida (error, timeout parcial, hosting lento, etc.)
+    // NO se toca la caché en memoria/localStorage: es preferible mantener lo último conocido
+    // (incluida la configuración recién guardada) a borrar el diseño del calendario.
+    if (dataDisp && dataDisp.ok) {
+      const mesPref = `${mes}-`;
+      Object.keys(calDisponibilidad).forEach((f) => {
+        if (f.startsWith(mesPref)) delete calDisponibilidad[f];
+      });
+      Object.keys(calCuposEntidad).forEach((f) => {
+        if (f.startsWith(mesPref)) delete calCuposEntidad[f];
+      });
+      if (Array.isArray(dataDisp.disponibilidad)) {
+        dataDisp.disponibilidad.forEach((d) => {
+          const row = normalizarFilaDisponibilidadCal(d);
+          if (row.fecha) calDisponibilidad[row.fecha] = row;
+        });
+      }
+      if (Array.isArray(dataDisp.cupos_entidad)) {
+        dataDisp.cupos_entidad.forEach((c) => {
+          const fecha = _fmtFechaAgenda(c.fecha);
+          if (!fecha) return;
+          if (!calCuposEntidad[fecha]) calCuposEntidad[fecha] = [];
+          calCuposEntidad[fecha].push({
+            entidad: String(c.entidad || '').trim(),
+            cupo_max: parseInt(c.cupo_max, 10) || 0
+          });
+        });
+      }
+      hidratarCuposEntidadMesLocal(calDoctorIdForCal, mes);
+      calCuposEntidadDoctorId = calDoctorIdForCal;
+    } else {
+      console.warn('[AGENDA] Respuesta no válida de doctor-disponibilidad; se mantiene la caché anterior');
+    }
 
     const resSlots = await apiFetch(`/api/doctor-agenda?doctor_id=${calDoctorIdForCal}&_t=${Date.now()}`, {
       cache: 'no-store'
     });
     const slotsData = await resSlots.json();
     if (reqId !== calLoadReqId) return;
-    calSlots = Array.isArray(slotsData)
-      ? slotsData.map((s) => ({
+    if (Array.isArray(slotsData)) {
+      calSlots = slotsData.map((s) => ({
         ...s,
         fecha: _fmtFechaAgenda(s.fecha),
         hora_inicio: String(s.hora_inicio || '').slice(0, 5),
         hora_fin: String(s.hora_fin || '').slice(0, 5),
         disponible: s.disponible ? 1 : 0
-      }))
-      : [];
+      }));
+    }
 
+    // Reaplica la última configuración guardada por el usuario (si es reciente) ANTES de
+    // persistir a localStorage, así nunca se sobrescribe el caché local con una respuesta
+    // del servidor que aún no refleja el guardado (posible en hostings más lentos).
     aplicarCalSavedSnapshotEnCache();
+    if (dataDisp && dataDisp.ok) {
+      guardarCuposEntidadMesLocal(calDoctorIdForCal, mes, calCuposEntidad);
+    }
     if (typeof sincronizarCuposCitasCalDesdeProgramar === 'function') {
       sincronizarCuposCitasCalDesdeProgramar(true);
     }
@@ -5404,21 +5724,34 @@ function renderCalendar() {
   for (let d = 1; d <= daysInMonth; d++) {
     const dateObj = new Date(calCurrentYear, calCurrentMonth, d);
     const dateStr = `${calCurrentYear}-${String(calCurrentMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-    const cell = document.createElement('div');
+    const cell = document.createElement('button');
+    cell.type = 'button';
     cell.className = 'cal-day';
-    cell.textContent = d;
+    const num = document.createElement('span');
+    num.className = 'cal-day-num';
+    num.textContent = String(d);
+    cell.appendChild(num);
 
     const isPast = dateObj < today;
     if (isPast) cell.classList.add('cal-past');
     if (dateObj.getTime() === today.getTime()) cell.classList.add('cal-today');
     if (dateStr === calSelectedDate) cell.classList.add('cal-selected');
 
-    // Color por estado de jornada:
-    // full (08:00-12:00 + 14:00-18:00)=verde, partial (media jornada)=azul, unavailable=no asiste=rojo.
     const estadoDia = obtenerEstadoDiaAgenda(dateStr);
-    if (estadoDia === 'full') cell.classList.add('cal-available');
-    if (estadoDia === 'partial') cell.classList.add('cal-partial');
-    if (estadoDia === 'unavailable') cell.classList.add('cal-unavailable');
+    const disp = calDisponibilidad[dateStr];
+    const motivo = disp?.motivo_ausencia || '';
+    const claseMotivo = (typeof claseCalProgramarPorDia === 'function')
+      ? claseCalProgramarPorDia({ motivo, estadoDia })
+      : (estadoDia === 'unavailable' ? 'cal-unavailable' : estadoDia === 'full' ? 'cal-available' : estadoDia === 'partial' ? 'cal-partial' : 'cal-none');
+    cell.classList.add(claseMotivo);
+
+    if (motivo) {
+      const tag = document.createElement('span');
+      tag.className = 'cal-day-motivo-tag';
+      tag.title = motivo;
+      tag.textContent = motivo.length > 14 ? `${motivo.slice(0, 12)}…` : motivo;
+      cell.appendChild(tag);
+    }
 
     if (!isPast) {
       cell.addEventListener('click', () => {
@@ -6014,6 +6347,19 @@ function _construirDisplayListMedica(turnosDiaOrdenCronologico, dispCtx) {
     }
   }
 
+  // Ubica el slot de la grilla al que pertenece un minuto real de cita (redondeo hacia abajo
+  // dentro del rango de la jornada). Así una cita a las 8:20 con grilla de 25 min ocupa el
+  // slot de 8:00 y hace desaparecer ese hueco, en vez de dejarlo "libre" junto a la cita real.
+  function slotDeMinuto(m) {
+    for (const rango of rangosDisponibles) {
+      if (m >= rango.inicio && m < rango.fin) {
+        const offset = Math.floor((m - rango.inicio) / INTERVALO_MIN) * INTERVALO_MIN;
+        return rango.inicio + offset;
+      }
+    }
+    return m;
+  }
+
   const minutosOcupados = new Set();
   const turnoPorMinuto = new Map();
 
@@ -6021,13 +6367,14 @@ function _construirDisplayListMedica(turnosDiaOrdenCronologico, dispCtx) {
     if (!MEDICA_ESTADOS_OCUPAN_HORARIO.includes(t.estado)) continue;
     const m = horaAMinutos(t.hora);
     if (m == null) continue;
-    minutosOcupados.add(m);
+    minutosOcupados.add(slotDeMinuto(m));
   }
 
   for (const t of turnosActivos) {
     const m = horaAMinutos(t.hora);
     if (m == null) continue;
-    if (!turnoPorMinuto.has(m)) turnoPorMinuto.set(m, t);
+    const slot = slotDeMinuto(m);
+    if (!turnoPorMinuto.has(slot)) turnoPorMinuto.set(slot, t);
   }
 
   const entityByMinute = _asignarMinutosEntidad(todosMinutos, cuposEntidadResumen);
@@ -6917,30 +7264,43 @@ async function crearTurnoMedica() {
       programado_por: (currentUser && (currentUser.nombre || currentUser.usuario)) || null
     };
 
-    let res;
-    if (modoMulti && fechasSesiones.length > 1) {
-      res = await apiFetch('/api/turnos/lote', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...bodyBase,
-          sesiones: planSesiones.map(({ fecha: f, hora: h, sesion_numero }) => ({
-            fecha: f,
-            hora: h,
-            sesion_numero
-          }))
-        })
-      });
-    } else {
+    async function _enviarCreacionTurno(forzarCupo) {
+      if (modoMulti && fechasSesiones.length > 1) {
+        return apiFetch('/api/turnos/lote', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...bodyBase,
+            forzar_cupo: !!forzarCupo,
+            sesiones: planSesiones.map(({ fecha: f, hora: h, sesion_numero }) => ({
+              fecha: f,
+              hora: h,
+              sesion_numero
+            }))
+          })
+        });
+      }
       const fUna = modoMulti ? (planSesiones[0]?.fecha || fecha) : fecha;
       const hUna = modoMulti ? (planSesiones[0]?.hora || hora) : hora;
-      res = await apiFetch('/api/turnos', {
+      return apiFetch('/api/turnos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...bodyBase, fecha: fUna, hora: hUna })
+        body: JSON.stringify({ ...bodyBase, fecha: fUna, hora: hUna, forzar_cupo: !!forzarCupo })
       });
     }
-    const data = await res.json();
+
+    let res = await _enviarCreacionTurno(false);
+    let data = await res.json();
+
+    if (!res.ok && data.requiere_confirmacion) {
+      const confirmado = window.confirm(
+        `${data.error || 'Ese horario ya está asignado a otra entidad.'}\n\n¿Desea agendar de todos modos?`
+      );
+      if (confirmado) {
+        res = await _enviarCreacionTurno(true);
+        data = await res.json();
+      }
+    }
 
     if (!res.ok) {
       if (data.errores?.length) {
@@ -7223,7 +7583,8 @@ async function confirmarCargarPacientesMedica() {
         tipo_consulta: p.tipo || null,
         entidad: p.entidad || null,
         notas: p.notas || null,
-        programado_por: (currentUser && (currentUser.nombre || currentUser.usuario)) || 'Excel'
+        programado_por: (currentUser && (currentUser.nombre || currentUser.usuario)) || 'Excel',
+        forzar_cupo: true
       };
       const res = await apiFetch('/api/turnos', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       const result = await res.json();
@@ -7440,6 +7801,7 @@ async function procesarExcelPacientesElectro(file) {
       const colDiag   = encontrarColumnaExcel(headers, ['diagnostico', 'dx', 'diag']);
       const colTel1   = encontrarColumnaExcel(headers, ['telefono1', 'telefono 1', 'tel1', 'tel 1', 'telefono', 'celular']);
       const colTel2   = encontrarColumnaExcel(headers, ['telefono2', 'telefono 2', 'tel2', 'tel 2']);
+      const colNotas  = encontrarColumnaExcel(headers, ['notas', 'nota', 'observaciones', 'observacion']);
 
       if (!colFecha || !colHora || !colDoc || !colNombre) {
         errorDiv.innerHTML = 'Columnas requeridas no encontradas. Se necesitan: <strong>FECHA, HORA, DOCUMENTO, NOMBRES Y APELLIDOS</strong><br>Encontradas: ' + headers.map(h => escapeHtml(h)).join(', ');
@@ -7462,9 +7824,10 @@ async function procesarExcelPacientesElectro(file) {
         const diagnostico = colDiag   ? String(row[colDiag]   || '').trim() : '';
         const tel1       = colTel1   ? String(row[colTel1]    || '').replace(/\D/g, '') : '';
         const tel2       = colTel2   ? String(row[colTel2]    || '').replace(/\D/g, '') : '';
+        const notas      = colNotas  ? String(row[colNotas]   || '').trim() : '';
         if (!fecha || !hora || !documento || !nombres) continue;
 
-        parsed.push({ fecha, hora, documento, nombres, apellidos, estudio, entidad, diagnostico, diagnostico_id: null, tel1, tel2, _equipoOk: null, duracion_horas: null });
+        parsed.push({ fecha, hora, documento, nombres, apellidos, estudio, entidad, diagnostico, diagnostico_id: null, tel1, tel2, notas, _equipoOk: null, duracion_horas: null });
         const idx = parsed.length - 1;
         const tr  = document.createElement('tr');
         tr.dataset.rowIdx = idx;
@@ -7656,6 +8019,7 @@ async function confirmarCargarPacientesElectro() {
         programado_por_nombre: (currentUser ? (currentUser.nombre || currentUser.usuario) : 'Excel')
       };
       if (duracionMinutos) body.duracion = duracionMinutos;
+      if (p.notas) body.observaciones = p.notas;
 
       const res = await apiFetch('/api/citas-electro', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       const result = await res.json();
@@ -7876,6 +8240,8 @@ async function initElectro() {
       if (fechaInput) fechaInput.value = fecha || hoyColombiaISO();
       const progEl = $('electroProgramadoPor');
       if (progEl) progEl.textContent = currentUser ? (currentUser.nombre || currentUser.usuario || '-') : '-';
+      const obsEl = $('electroObservaciones');
+      if (obsEl) obsEl.value = '';
       checkEquiposDisponibilidad();
       $('modalNuevoEstudioElectro')?.classList.remove('hidden');
     });
@@ -8892,26 +9258,28 @@ async function cargarCitasElectro() {
     const citasNormalizadas = await sincronizarEstadosPorTiempo(citasNormalizadasEstado);
     if (reqId !== _citasElectroReqId) return; // respuesta vieja
     
+    const citasActivas = citasNormalizadas.filter((c) => !citaElectroOcultarEnKanban(c));
+    
     const estudiosFiltro = getFiltroEstudiosElectroActivos();
-    let citasFiltradas = citasNormalizadas;
+    let citasFiltradas = citasActivas;
     if (estudiosFiltro.length > 0) {
-      citasFiltradas = citasNormalizadas.filter((c) => estudiosFiltro.includes(c.estudio));
+      citasFiltradas = citasActivas.filter((c) => estudiosFiltro.includes(c.estudio));
     }
-    window._citasElectroAllData = citasNormalizadas;
+    window._citasElectroAllData = citasActivas;
     window._citasElectroKanbanData = citasFiltradas;
     
     if (citasFiltradas.length === 0) {
       renderCitasElectroKanban([]);
       const contador = $('citasElectroContador');
       if (contador) contador.textContent = 'Sin citas';
-      $('electroUsuarioProgramo').textContent = '-';
-      $('electroUsuarioEdito').textContent = '-';
-      actualizarStatsElectro(citasNormalizadas);
+      const resumenEl = $('electroResumenDia');
+      if (resumenEl) resumenEl.textContent = 'Sin citas activas para esta fecha';
+      actualizarStatsElectro(citasActivas);
       return;
     }
 
-    // Actualizar stats cards (siempre con TODAS las citas, no filtradas)
-    actualizarStatsElectro(citasNormalizadas);
+    // Actualizar stats cards (siempre con TODAS las citas activas, no filtradas)
+    actualizarStatsElectro(citasActivas);
 
     // Actualizar contador de citas
     const contador = $('citasElectroContador');
@@ -8928,10 +9296,12 @@ async function cargarCitasElectro() {
     scrollSnapElectro = _getScrollSnapshot(document.getElementById('view-electro'));
     renderCitasElectroKanban(citasFiltradas);
     
-    // Actualizar información de usuario (del primer registro filtrado)
-    if (citasFiltradas.length > 0) {
-      $('electroUsuarioProgramo').textContent = citasFiltradas[0].programado_por_nombre || citasFiltradas[0].usuario_programo || '-';
-      $('electroUsuarioEdito').textContent = citasFiltradas[0].editado_por_nombre || citasFiltradas[0].usuario_edito || citasFiltradas[0].programado_por_nombre || citasFiltradas[0].usuario_programo || 'Quien programó';
+    const resumenEl = $('electroResumenDia');
+    if (resumenEl) {
+      const archivadas = citasNormalizadas.length - citasActivas.length;
+      const partes = [`${citasActivas.length} cita${citasActivas.length !== 1 ? 's' : ''} activa${citasActivas.length !== 1 ? 's' : ''}`];
+      if (archivadas > 0) partes.push(`${archivadas} reprogramada${archivadas !== 1 ? 's' : ''} (oculta${archivadas !== 1 ? 's' : ''})`);
+      resumenEl.textContent = partes.join(' · ');
     }
     
     // Refrescar panel de disponibilidad de equipos
@@ -8984,11 +9354,40 @@ function esContinuacionCitaElectroEnDia(c, fechaVista) {
   return fechaVista >= fechaInicio && fechaVista <= fechaFin;
 }
 
-function obtenerEtiquetaRangoEstudioElectro(c) {
+function obtenerEtiquetaDiaEstudioMultidia(c, fechaVista) {
   const fechaInicio = extraerFechaYmdCalendario(c?.fecha);
   const fechaFin = fechaFinYmdCitaElectroAgenda(c);
   if (!fechaInicio || !fechaFin || fechaInicio === fechaFin) return '';
-  return `Del ${formatearFechaISO(fechaInicio)} al ${formatearFechaISO(fechaFin)}`;
+  if (!fechaVista || fechaVista < fechaInicio || fechaVista > fechaFin) return '';
+  const totalDias = diasCalendarioEntreYmdElectro(fechaInicio, fechaFin) + 1;
+  if (totalDias < 2) return '';
+  const diaActual = diasCalendarioEntreYmdElectro(fechaInicio, fechaVista) + 1;
+  return `Día ${diaActual} de ${totalDias}`;
+}
+
+function obtenerEtiquetaRangoEstudioElectro(c) {
+  const fechaInicio = extraerFechaYmdCalendario(c?.fecha);
+  const fechaFin = fechaFinYmdCitaElectroAgenda(c);
+  const fechaVista = $('electroFecha')?.value || '';
+  const diaLabel = fechaVista ? obtenerEtiquetaDiaEstudioMultidia(c, fechaVista) : '';
+  if (!fechaInicio || !fechaFin || fechaInicio === fechaFin) {
+    const dur = formatearDuracionMinutosElectroTexto(c?.duracion_minutos);
+    return dur !== '-' ? dur : '';
+  }
+  const rango = `Del ${formatearFechaISO(fechaInicio)} al ${formatearFechaISO(fechaFin)}`;
+  const dur = formatearDuracionMinutosElectroTexto(c?.duracion_minutos);
+  if (diaLabel) return `${diaLabel} · ${rango}`;
+  if (dur !== '-') return `${dur} · ${rango}`;
+  return rango;
+}
+
+function obtenerResumenFinEstudioElectro(c) {
+  const finDate = obtenerFechaHoraFinCitaElectro(c);
+  if (!finDate || isNaN(finDate.getTime())) return '';
+  const finLabel = formatearFinEstudioElectroLabel(finDate);
+  const dur = formatearDuracionMinutosElectroTexto(c?.duracion_minutos);
+  if (dur !== '-') return `Fin previsto: ${finLabel} (${dur})`;
+  return `Fin previsto: ${finLabel}`;
 }
 
 function renderCitaElectroCard(container, c) {
@@ -9021,55 +9420,66 @@ function renderCitaElectroCard(container, c) {
   const equipoDisplay = c.equipo_nombre ? escapeHtml(c.equipo_nombre) : (c.equipo_id ? 'Equipo ' + c.equipo_id : '\u2014');
   const rangoEstudio = obtenerEtiquetaRangoEstudioElectro(c);
   const estudioCorto = abreviarEstudio(c.estudio);
+  const durFmt = formatearDuracionMinutosElectro(c.duracion_minutos);
   let duracionTxt = '';
-  if (c.duracion_minutos) {
-    const dHrs = Math.floor(c.duracion_minutos / 60);
-    const dMin = c.duracion_minutos % 60;
-    duracionTxt = dHrs > 0 ? (dMin > 0 ? dHrs + 'h ' + dMin + 'm' : dHrs + 'h') : dMin + 'm';
-  }
+  if (durFmt.html) duracionTxt = durFmt.text;
+  else if (durFmt.text !== '-') duracionTxt = escapeHtml(durFmt.text);
   const t = 'di' + 'v';
   const finDate = obtenerFechaHoraFinCitaElectro(c);
+  const esMultidia = (parseInt(c.duracion_minutos, 10) || 0) >= 24 * 60
+    || esContinuacion
+    || (fechaInicioCita && fechaFinYmdCitaElectroAgenda(c) !== fechaInicioCita);
   let finEstudioHtml = '';
-  if (finDate && debeMostrarFinEstudioEnCard(c, finDate)) {
+  if (finDate && (esMultidia || debeMostrarFinEstudioEnCard(c, finDate))) {
     const finLabel = formatearFinEstudioElectroLabel(finDate);
     finEstudioHtml =
-      '<' + t + ' class="electro-cita-card-fin">Fin del estudio: ' + escapeHtml(finLabel) + '</' + t + '>';
+      '<' + t + ' class="electro-cita-card-fin">Fin: ' + escapeHtml(finLabel) + '</' + t + '>';
   }
+  const diaBadge = obtenerEtiquetaDiaEstudioMultidia(c, fechaVista);
   const rangoHtml = rangoEstudio
     ? '<' + t + ' class="electro-cita-card-rango" title="Estudio prolongado">' + escapeHtml(rangoEstudio) + '</' + t + '>'
     : (esContinuacion
       ? '<' + t + ' class="electro-cita-card-rango">Inicio: ' + escapeHtml(formatearFechaISO(fechaInicioCita)) + '</' + t + '>'
       : '');
+  const diaBadgeHtml = diaBadge
+    ? '<' + t + ' class="electro-cita-card-dia-badge">' + escapeHtml(diaBadge) + '</' + t + '>'
+    : '';
   const notaReprogHtml = citaElectroEsReprogramada(c)
     ? '<' + t + ' class="electro-cita-card-nota-reprog" style="font-size:0.72rem;color:#0369a1;font-weight:600;margin-top:2px">[Reprogramado]</' + t + '>'
+    : '';
+  const notasUsuario = notasElectroUsuario(c.observaciones);
+  const notasHtml = notasUsuario
+    ? '<' + t + ' class="electro-cita-card-notas" title="' + escapeHtml(notasUsuario) + '">📝 ' + escapeHtml(notasUsuario) + '</' + t + '>'
     : '';
   card.innerHTML =
     '<' + t + ' class="electro-cita-card-top">' +
       '<span class="electro-cita-card-hora">' + formatearHora(c.hora_agendamiento) + '</span>' +
       estadoBadgeCitaElectro(c) +
     '</' + t + '>' +
+    diaBadgeHtml +
     rangoHtml +
     notaReprogHtml +
+    notasHtml +
     '<' + t + ' class="electro-cita-card-paciente">' + escapeHtml(c.paciente_nombre || '-') + '</' + t + '>' +
     '<' + t + ' class="electro-cita-card-meta">' +
       '<span>' + escapeHtml(c.paciente_documento || '-') + '</span>' +
       (obtenerEntidadCitaElectro(c) ? '<span title="Entidad">' + escapeHtml(obtenerEntidadCitaElectro(c)) + '</span>' : '') +
       (equipoDisplay !== '\u2014' ? '<span>' + equipoDisplay + '</span>' : '') +
-      (duracionTxt ? '<span>' + duracionTxt + '</span>' : '') +
+      (duracionTxt ? '<span class="electro-cita-card-dur">' + duracionTxt + '</span>' : '') +
     '</' + t + '>' +
     '<' + t + ' class="electro-cita-card-estudio" title="' + escapeHtml(c.estudio || '') + '">' + escapeHtml(estudioCorto) + '</' + t + '>' +
     finEstudioHtml;
   card.addEventListener('click', () => {
-    if (!tienePermiso('electro.editar') && !tienePermiso('electro.cambiar_estado')) return;
-    if (estado === 'Completado' && !tienePermiso('electro.eliminar')) {
-      showToast('Esta cita ya est\u00e1 completada - No se puede modificar', 'info');
+    if (!tienePermiso('electro.editar') && !tienePermiso('electro.cambiar_estado') && !tienePermiso('electro.ver')) return;
+    if (estado === 'Completado' && !puedeAbrirCitaElectroCompletada()) {
+      showToast('No tiene permiso para consultar citas completadas', 'info');
       return;
     }
     abrirModalDetallesCita(c);
   });
   if (estado === 'Completado') {
     card.classList.add('electro-cita-card-done');
-    if (!tienePermiso('electro.eliminar')) card.style.cursor = 'not-allowed';
+    if (!puedeAbrirCitaElectroCompletada()) card.style.cursor = 'not-allowed';
   }
   container.appendChild(card);
 }
@@ -9209,7 +9619,7 @@ async function crearCitaElectro() {
   if (!electroNombres) { showToast('Escribe los nombres del paciente', 'error'); $('electroPacienteNombres').focus(); $('electroPacienteNombres').style.borderColor='#dc2626'; return; }
   if (!electroApellidos) { showToast('Escribe los apellidos del paciente', 'error'); $('electroPacienteApellidos').focus(); $('electroPacienteApellidos').style.borderColor='#dc2626'; return; }
   if (!hora) { showToast('Selecciona una hora', 'error'); $('electroHora').focus(); return; }
-  if (!doc || !telefono || !telefono2 || !fecha || !entidad) { 
+  if (!doc || !telefono || !fecha || !entidad) { 
     showToast('Completa todos los campos obligatorios', 'error'); 
     return; 
   }
@@ -9248,8 +9658,8 @@ async function crearCitaElectro() {
   }
   $('electroTelefono').style.borderColor = '';
   
-  // Validar teléfono 2 (exactamente 10 dígitos)
-  if (!validarTelefono(telefono2)) {
+  // Validar teléfono 2 (opcional; si se ingresa, 10 dígitos)
+  if (telefono2 && !validarTelefono(telefono2)) {
     showToast('El teléfono 2 debe tener exactamente 10 dígitos', 'error');
     $('electroTelefono2').focus();
     $('electroTelefono2').style.borderColor = '#dc2626';
@@ -9258,7 +9668,7 @@ async function crearCitaElectro() {
   $('electroTelefono2').style.borderColor = '';
 
   // Teléfono 2 no puede ser igual al 1
-  if (telefono === telefono2) {
+  if (telefono2 && telefono === telefono2) {
     showToast('El Teléfono 2 no puede ser igual al Teléfono 1', 'error');
     $('electroTelefono2').focus();
     $('electroTelefono2').style.borderColor = '#dc2626';
@@ -9352,6 +9762,9 @@ async function crearCitaElectro() {
     if (diagnosticoId) {
       body.diagnostico_id = diagnosticoId;
     }
+
+    const observacionesNueva = ($('electroObservaciones')?.value || '').trim();
+    if (observacionesNueva) body.observaciones = observacionesNueva;
     
     // Agregar equipo si fue seleccionado
     if (equipoId) {
@@ -12933,7 +13346,28 @@ async function iniciarEstudioSinDuracion() {
     return;
   }
 
-  const duracionMinutos = citaElectroSeleccionada.duracion_minutos || 480;
+  let duracionMinutos = parseInt(citaElectroSeleccionada.duracion_minutos, 10) || 0;
+  const infoCat = await fetchDuracionEstudioElectro(citaElectroSeleccionada.estudio);
+  const durCat = parseInt(infoCat?.duracion_minutos, 10) || 0;
+  if (durCat > 0) {
+    const slotInferido = citaElectroSeleccionada.hora_agendamiento && citaElectroSeleccionada.hora_fin
+      ? (() => {
+        const fecha = extraerFechaYmdCalendario(citaElectroSeleccionada.fecha);
+        const hAg = String(citaElectroSeleccionada.hora_agendamiento).slice(0, 5);
+        const hFin = String(citaElectroSeleccionada.hora_fin).slice(0, 5);
+        if (!fecha || !/^\d{2}:\d{2}$/.test(hAg) || !/^\d{2}:\d{2}$/.test(hFin)) return 0;
+        const ini = construirDateHoraElectro(fecha, hAg);
+        const fin = construirDateHoraElectro(extraerFechaYmdCalendario(citaElectroSeleccionada.hora_fin_date) || fecha, hFin);
+        if (!ini || !fin || fin <= ini) return 0;
+        return Math.round((fin - ini) / 60000);
+      })()
+      : 0;
+    if (!(duracionMinutos > 0) || (slotInferido > 0 && duracionMinutos <= slotInferido && durCat > duracionMinutos)) {
+      duracionMinutos = durCat;
+    }
+  }
+  if (!(duracionMinutos > 0)) duracionMinutos = 480;
+
   const horaInicioAgendada = obtenerHoraInicioAgendadaElectro(citaElectroSeleccionada);
   if (!horaInicioAgendada) {
     showToast('La cita no tiene hora de agendamiento válida', 'error');
@@ -13026,6 +13460,21 @@ function actualizarProgresoEstudio() {
   }
   const horaInicioEl = $('estudioHoraInicio');
   if (horaInicioEl) horaInicioEl.textContent = formatearHora(horaInicio);
+  const resumenDurEl = $('estudioResumenDuracion');
+  if (resumenDurEl) {
+    const resumenFin = obtenerResumenFinEstudioElectro(citaElectroSeleccionada);
+    const diaLabel = obtenerEtiquetaDiaEstudioMultidia(
+      citaElectroSeleccionada,
+      obtenerFechaElectroBase10(citaElectroSeleccionada.fecha)
+    );
+    const partes = [];
+    const durTxt = formatearDuracionMinutosElectroTexto(citaElectroSeleccionada.duracion_minutos);
+    if (durTxt !== '-') partes.push(`Duración total: ${durTxt}`);
+    if (diaLabel) partes.push(diaLabel);
+    if (resumenFin) partes.push(resumenFin);
+    resumenDurEl.textContent = partes.join(' · ') || '';
+    resumenDurEl.style.display = partes.length ? 'block' : 'none';
+  }
   const restanteEl = $('estudioTiempoRestante');
   if (restanteEl) restanteEl.textContent = durLabel ? `Duración ${durLabel}` : '--';
   
@@ -13362,6 +13811,23 @@ async function abrirModalDetallesCita(cita) {
   // Rellenar usuario que programó y editó
   $('modalUsuarioProgramo').textContent = escapeHtml(cita.programado_por_nombre || '-');
   $('modalUsuarioEdito').textContent = escapeHtml(cita.editado_por_nombre || cita.programado_por_nombre || '-');
+  await pintarAuditoriaReprogramacionElectro(cita);
+  await cargarHistorialReprogramacionesElectro(cita.id);
+
+  const notasEl = $('modalObservacionesElectro');
+  if (notasEl) {
+    notasEl.value = notasElectroUsuario(cita.observaciones || '');
+    const estNotas = citaElectroSeleccionada.estado || '';
+    const puedeNotas = puedeEditarElectro
+      && !['En Estudio', 'Pausado', 'Completado', 'Cancelado', 'No Asistió'].includes(estNotas);
+    notasEl.disabled = !puedeNotas;
+    if (!notasEl.dataset.boundBlur) {
+      notasEl.dataset.boundBlur = '1';
+      notasEl.addEventListener('blur', () => {
+        guardarNotasElectroModal().catch((e) => console.warn('[electro notas]', e.message));
+      });
+    }
+  }
 
   const modalEstudioEl = $('modalEstudio');
   if (modalEstudioEl) {
@@ -13419,6 +13885,12 @@ async function abrirModalDetallesCita(cita) {
   }
   
   pintarDuracionMinutosEnElemento(document.getElementById('modalDuracionDisplay'), cita.duracion_minutos);
+  const modalDurSub = document.getElementById('modalDuracionSubtext');
+  if (modalDurSub) {
+    const resumen = obtenerResumenFinEstudioElectro(cita);
+    modalDurSub.textContent = resumen || '';
+    modalDurSub.style.display = resumen ? 'block' : 'none';
+  }
   await configurarEdicionDuracionModalElectro(cita);
   pintarHoraFinModalElectro(cita);
 
@@ -13434,7 +13906,14 @@ async function abrirModalDetallesCita(cita) {
       const $hi = document.getElementById('modalHoraInicioDisplay');
       const $hf = document.getElementById('modalHoraFinDisplay');
       if ($hi) $hi.textContent = formatearHora(cita.hora_inicio);
-      if ($hf) $hf.textContent = cita.hora_fin ? formatearHora(cita.hora_fin) : '-';
+      if ($hf) {
+        const finDateModal = obtenerFechaHoraFinEstudioActivo(cita) || obtenerFechaHoraFinCitaElectro(cita);
+        if (finDateModal && !isNaN(finDateModal.getTime())) {
+          $hf.textContent = formatearFinEstudioElectroLabel(finDateModal);
+        } else {
+          $hf.textContent = cita.hora_fin ? formatearHora(cita.hora_fin) : '-';
+        }
+      }
     } else {
       $horarios.style.display = 'none';
     }
@@ -13469,18 +13948,20 @@ async function abrirModalDetallesCita(cita) {
     if (btnEliminarMenu) btnEliminarMenu.style.display = 'none';
   }
   
-  // Agregar listeners para los botones de reprogramación y adelanto
+  // Botones reprogramar / adelantar (onclick evita listeners duplicados)
   const btnRep = $('btnReprogramarCita');
   const btnAde = $('btnAdelantarCita');
 
   if (btnRep && puedeEditarElectro) {
-    btnRep.addEventListener('click', abrirModalReprogramar);
+    btnRep.onclick = abrirModalReprogramar;
+    btnRep.style.display = '';
   } else if (btnRep) {
     btnRep.style.display = 'none';
   }
 
   if (btnAde && puedeEditarElectro) {
-    btnAde.addEventListener('click', abrirModalAdelantarCita);
+    btnAde.onclick = abrirModalAdelantarCita;
+    btnAde.style.display = '';
   } else if (btnAde) {
     btnAde.style.display = 'none';
   }
@@ -13991,6 +14472,28 @@ async function eliminarCitaElectro() {
   }
 }
 
+async function guardarNotasElectroModal() {
+  if (!citaElectroSeleccionada?.id || !tienePermiso('electro.editar')) return;
+  const el = $('modalObservacionesElectro');
+  if (!el || el.disabled) return;
+  const notas = (el.value || '').trim();
+  const prev = notasElectroUsuario(citaElectroSeleccionada.observaciones || '');
+  if (notas === prev) return;
+  const res = await apiFetch(`/api/citas-electro/${citaElectroSeleccionada.id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ observaciones: notas || null })
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.ok) {
+    showToast(data.error || 'No se pudieron guardar las notas', 'error');
+    return;
+  }
+  citaElectroSeleccionada.observaciones = notas || null;
+  showToast('Notas guardadas', 'success');
+  cargarCitasElectro();
+}
+
 async function guardarCambiosCitaElectro() {
   if (!citaElectroSeleccionada) return;
   if (!tienePermiso('electro.editar')) {
@@ -14027,6 +14530,12 @@ async function guardarCambiosCitaElectro() {
       cambios.entidad = entidadNueva;
     }
 
+    const notasNuevas = ($('modalObservacionesElectro')?.value || '').trim();
+    const notasActuales = notasElectroUsuario(citaElectroSeleccionada.observaciones || '');
+    if (notasNuevas !== notasActuales) {
+      cambios.observaciones = notasNuevas || null;
+    }
+
     const fechaNueva = ($('modalFechaAgenda')?.value || '').trim();
     const horaNueva = ($('modalHoraAgenda')?.value || '').trim().slice(0, 5);
     const fechaActual = formatearFechaISO(citaElectroSeleccionada.fecha);
@@ -14053,6 +14562,7 @@ async function guardarCambiosCitaElectro() {
       if (cambios.equipo_id !== undefined) overrides.equipo_id = cambios.equipo_id;
       if (cambios.estudio !== undefined) overrides.estudio = cambios.estudio;
       if (cambios.entidad !== undefined) overrides.entidad = cambios.entidad;
+      if (cambios.observaciones !== undefined) overrides.observaciones = cambios.observaciones;
       await ejecutarReprogramacionElectro(citaElectroSeleccionada, fechaNueva, horaNueva, { overrides });
       cerrarModalDetallesCita();
       return;
@@ -14165,18 +14675,9 @@ async function confirmarReprogramar() {
 }
 
 function abrirModalAdelantarCita() {
-  console.log('[ADELANTAR] Llamando abrirModalAdelantarCita');
-  if (!citaElectroSeleccionada) {
-    console.log('[ADELANTAR] Sin cita seleccionada');
-    return;
-  }
-  
-  console.log('[ADELANTAR] Cita seleccionada:', citaElectroSeleccionada);
-  
-  // GUARDAR CITA ANTES DE CERRAR MODAL
+  if (!citaElectroSeleccionada) return;
+
   citaReprogramarAdelantarActual = citaElectroSeleccionada;
-  console.log('[ADELANTAR] Guardada en variable temporal');
-  
   // Rellenar datos actuales
   $('modalAdelantarHoraActual').textContent = citaElectroSeleccionada.hora_agendamiento || '-';
   
@@ -15475,13 +15976,26 @@ $('btnConfirmarReprogramarMedica')?.addEventListener('click', async (e) => {
       actor: (currentUser && (currentUser.nombre || currentUser.usuario)) || 'Sistema'
     });
 
-    const res = await apiFetch('/api/turnos', {
+    let res = await apiFetch('/api/turnos', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(nuevoTurno)
     });
 
-    const data = await res.json();
+    let data = await res.json();
+    if (!data.ok && data.requiere_confirmacion) {
+      const confirmado = window.confirm(
+        `${data.error || 'Ese horario ya está asignado a otra entidad.'}\n\n¿Desea reprogramar de todos modos?`
+      );
+      if (confirmado) {
+        res = await apiFetch('/api/turnos', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...nuevoTurno, forzar_cupo: true })
+        });
+        data = await res.json();
+      }
+    }
     if (!data.ok) {
       showToast(data.error || 'Error al reprogramar', 'error');
       return;

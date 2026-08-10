@@ -1508,6 +1508,52 @@ const runtimeMigrations = [
         }
       }
     }
+  },
+  {
+    name: 'rt_citas_electro_reprogramaciones',
+    description: 'Historial de reprogramaciones electro (quién y cuándo)',
+    run: async (db) => {
+      if (!(await tableExists(db, 'citas_electro'))) return;
+      if (!(await columnExists(db, 'citas_electro', 'reprogramado_por_nombre'))) {
+        await db.execute(
+          'ALTER TABLE citas_electro ADD COLUMN reprogramado_por_nombre VARCHAR(150) NULL DEFAULT NULL AFTER reprogramado_en'
+        );
+      }
+      if (!(await columnExists(db, 'citas_electro', 'reprogramada_desde_id'))) {
+        await db.execute(
+          'ALTER TABLE citas_electro ADD COLUMN reprogramada_desde_id INT NULL DEFAULT NULL AFTER reprogramado_por_nombre'
+        );
+      }
+      await db.execute(`
+        CREATE TABLE IF NOT EXISTS citas_electro_reprogramaciones (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          cita_original_id INT NOT NULL,
+          cita_nueva_id INT NOT NULL,
+          reprogramado_por_nombre VARCHAR(150) NOT NULL,
+          reprogramado_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          fecha_anterior DATE NOT NULL,
+          hora_anterior TIME NOT NULL,
+          fecha_nueva DATE NOT NULL,
+          hora_nueva TIME NOT NULL,
+          INDEX idx_reprog_original (cita_original_id),
+          INDEX idx_reprog_nueva (cita_nueva_id),
+          INDEX idx_reprog_en (reprogramado_en),
+          FOREIGN KEY (cita_original_id) REFERENCES citas_electro(id) ON DELETE CASCADE,
+          FOREIGN KEY (cita_nueva_id) REFERENCES citas_electro(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+      `);
+    }
+  },
+  {
+    name: 'rt_backfill_historial_reprog_electro',
+    description: 'Reconstruye historial de reprogramaciones electro anteriores al registro formal',
+    run: async (db) => {
+      if (!(await tableExists(db, 'citas_electro_reprogramaciones'))) return;
+      const result = await backfillHistorialReprogramacionesElectro(db);
+      if (result.insertados > 0) {
+        console.log(`[RT-MIGRATION] Historial reprog electro: ${result.insertados} parejas reconstruidas`);
+      }
+    }
   }
 ];
 

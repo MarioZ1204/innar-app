@@ -25,7 +25,8 @@ function buildReprogramacionTurnoPayload(turno, { fecha, hora, estadoOriginal = 
 
 function buildReprogramacionElectroPayload(cita, { fecha, hora, actor = 'Sistema', overrides = {} } = {}) {
   const obs = String(cita?.observaciones || '').trim();
-  const observaciones = /\[Reprogramado\]/i.test(obs) ? obs : (obs ? `[Reprogramado] ${obs}` : '[Reprogramado]');
+  const notasUsuario = obs.replace(/\[Reprogramado\]\s*/gi, '').trim();
+  const observaciones = /\[Reprogramado\]/i.test(obs) ? obs : (notasUsuario ? `[Reprogramado] ${notasUsuario}` : '[Reprogramado]');
 
   return {
     nuevaCita: {
@@ -34,7 +35,9 @@ function buildReprogramacionElectroPayload(cita, { fecha, hora, actor = 'Sistema
       hora_agendamiento: hora,
       estudio: overrides.estudio !== undefined ? overrides.estudio : (cita?.estudio || null),
       entidad: overrides.entidad !== undefined ? overrides.entidad : (cita?.entidad || null),
-      observaciones: overrides.observaciones !== undefined ? overrides.observaciones : (cita?.observaciones || null),
+      observaciones: overrides.observaciones !== undefined
+        ? overrides.observaciones
+        : (notasUsuario || null),
       diagnostico_id: cita?.diagnostico_id || null,
       equipo_id: overrides.equipo_id !== undefined ? overrides.equipo_id : (cita?.equipo_id || null),
       duracion_minutos: overrides.duracion_minutos !== undefined ? overrides.duracion_minutos : (cita?.duracion_minutos || null),
@@ -42,7 +45,7 @@ function buildReprogramacionElectroPayload(cita, { fecha, hora, actor = 'Sistema
       programado_por_nombre: actor || 'Sistema'
     },
     actualizacionOriginal: {
-      estado: 'Reprogramado',
+      estado: 'Programado',
       observaciones
     }
   };

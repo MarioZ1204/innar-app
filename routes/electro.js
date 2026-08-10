@@ -4,7 +4,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../utils/db-mysql');
 const logger = require('../utils/logger');
-const transactions = require('../utils/transactions');
+const { withTransaction } = require('../utils/transactions');
 const { upload, validateMagicBytes } = require('../middleware/upload');
 const {
   requireAuth, requireRoleOrPerm,
@@ -12,6 +12,10 @@ const {
 } = require('../middleware/index');
 const { validateSchema } = require('../modules/validation-schemas');
 const { buildReprogramacionElectroPayload } = require('../utils/agenda-reprogramacion');
+const {
+  obtenerHistorialCompletoReprogramacionesElectro,
+  backfillHistorialReprogramacionesElectro
+} = require('../utils/electro-reprogramacion-historial');
 const { hayCupoElectroParaAgendar, hayCupoElectroParaIniciar } = require('./electro-capacity');
 const { buildMonitorEquiposView, citaOverlapsMonitorWindow } = require('../utils/electro-monitor');
 const {
@@ -33,7 +37,8 @@ const {
   inferirDuracionMinutosCitaElectroParaPersistir,
   calcularFinInicioEstudioElectro,
   sqlEstudioElectroFinProgramadoTs,
-  sqlEstudioElectroFinProgramadoVencido
+  sqlEstudioElectroFinProgramadoVencido,
+  sqlEstudioElectroFinInicioRealVencido
 } = require('../utils/electro-fechas');
 
 /** Rellena duracion_minutos desde catálogo o ventana agendada→hora_fin si falta. */
@@ -225,7 +230,7 @@ async function autoCompletarEstudiosElectroVencidos(excludeId = null, fechaYmd =
   const vis = sqlCitaElectroVisibleEnFecha('citas_electro');
   const params = [...paramsCitaElectroVisibleEnFecha(fechaYmd)];
   if (excludeId) params.push(excludeId);
-  const sqlVencido = sqlEstudioElectroFinProgramadoVencido('citas_electro');
+  const sqlVencido = sqlEstudioElectroFinInicioRealVencido('citas_electro');
   try {
     const result = await db.execute(`
       UPDATE citas_electro
@@ -234,6 +239,7 @@ async function autoCompletarEstudiosElectroVencidos(excludeId = null, fechaYmd =
         AND deleted_at IS NULL
         AND ${vis}
         AND ${sqlVencido}
+        AND (citas_electro.editado_en IS NULL OR citas_electro.editado_en < DATE_SUB(NOW(), INTERVAL 2 MINUTE))
         ${condId}
     `, params);
     return result[0]?.affectedRows ?? result.affectedRows ?? 0;
@@ -280,6 +286,8 @@ const CITAS_ELECTRO_SELECT = `
   DATE_FORMAT(c.hora_fin_date, '%Y-%m-%d') AS hora_fin_date,
   c.estudio, c.observaciones, c.diagnostico_id, c.estado,
   c.programado_por_nombre, c.editado_por_nombre, c.editado_en, c.creado_en, c.actualizado_en,
+  DATE_FORMAT(c.reprogramado_en, '%Y-%m-%d %H:%i:%s') AS reprogramado_en,
+  c.reprogramado_por_nombre, c.reprogramada_desde_id,
   c.duracion_minutos, ${SQL_ENTIDAD_CITA_ELECTRO}`;
 
 function normalizeHora(str) {
@@ -783,7 +791,7 @@ router.get('/citas-electro/calendario', requireAuth, async (req, res) => {
 
     const rows = await db.query(
       `SELECT c.fecha, c.hora_fin_date, c.hora_agendamiento, c.hora_inicio, c.hora_fin,
-              c.duracion_minutos, c.estudio, c.estado
+              c.duracion_minutos, c.estudio, c.estado, c.observaciones
        FROM citas_electro c
        WHERE c.deleted_at IS NULL
          AND c.estado <> 'Cancelado'
@@ -1067,6 +1075,181 @@ router.post('/citas-electro', requireAuth, requireRoleOrPerm(['superadmin', 'adm
   }
 });
 
+function mapReprogramacionElectroRow(row) {
+  if (!row) return row;
+  return {
+    id: row.id,
+    cita_original_id: row.cita_original_id,
+    cita_nueva_id: row.cita_nueva_id,
+    reprogramado_por_nombre: row.reprogramado_por_nombre,
+    reprogramado_en: row.reprogramado_en,
+    fecha_anterior: row.fecha_anterior,
+    hora_anterior: row.hora_anterior,
+    fecha_nueva: row.fecha_nueva,
+    hora_nueva: row.hora_nueva,
+    legacy: !!row.legacy
+  };
+}
+
+// GET /api/citas-electro/:id/reprogramaciones
+router.get('/citas-electro/:id/reprogramaciones', requireAuth, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!id) return res.status(400).json({ error: 'ID inválido' });
+  try {
+    const existe = await db.query('SELECT id FROM citas_electro WHERE id = ? AND deleted_at IS NULL LIMIT 1', [id]);
+    if (!existe.length) return res.status(404).json({ error: 'Cita no encontrada' });
+
+    const rows = await obtenerHistorialCompletoReprogramacionesElectro(db, id);
+    res.json(rows.map(mapReprogramacionElectroRow));
+  } catch (e) {
+    res.status(500).json({ error: safeError(e) });
+  }
+});
+
+// POST /api/citas-electro/:id/reprogramar
+router.post('/citas-electro/:id/reprogramar', requireAuth, requireRoleOrPerm(
+  ['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro', 'tecnico_electro'],
+  ['electro.editar', 'electro.cambiar_estado']
+), async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const { fecha: rawFecha, hora_agendamiento, hora, equipo_id, estudio, entidad, observaciones, duracion_minutos } = req.body || {};
+  const fechaNueva = normalizeFecha(rawFecha);
+  const horaNueva = normalizeHora(String(hora_agendamiento || hora || '').trim());
+  if (!id) return res.status(400).json({ error: 'ID inválido' });
+  if (!fechaNueva || !/^\d{4}-\d{2}-\d{2}$/.test(fechaNueva)) {
+    return res.status(400).json({ error: 'Fecha nueva inválida (YYYY-MM-DD)' });
+  }
+  if (!horaNueva || !/^\d{2}:\d{2}$/.test(horaNueva)) {
+    return res.status(400).json({ error: 'Hora nueva inválida (HH:MM)' });
+  }
+
+  try {
+    const origRows = await db.query(
+      `SELECT id, equipo_id, paciente_id, fecha, hora_agendamiento, hora_fin, hora_fin_date,
+              estudio, observaciones, diagnostico_id, estado, duracion_minutos, entidad
+       FROM citas_electro WHERE id = ? AND deleted_at IS NULL`,
+      [id]
+    );
+    if (!origRows.length) return res.status(404).json({ error: 'Cita no encontrada' });
+    const citaOrig = origRows[0];
+    const estadoOrig = citaOrig.estado;
+    if (['En Estudio', 'Pausado', 'Completado', 'Cancelado', 'No Asistió'].includes(estadoOrig)) {
+      return res.status(400).json({ error: `No se puede reprogramar una cita en estado "${estadoOrig}"` });
+    }
+
+    const fechaAnterior = extraerFechaYmd(citaOrig.fecha) || normalizeFecha(citaOrig.fecha);
+    const horaAnterior = normalizarHoraHmElectro(citaOrig.hora_agendamiento) || '';
+    if (fechaNueva === fechaAnterior && horaNueva === horaAnterior) {
+      return res.status(400).json({ error: 'La fecha u hora nueva debe ser distinta a la actual' });
+    }
+
+    const actor = req.session.usuarioNombre || req.session.usuario || 'Sistema';
+    const payload = buildReprogramacionElectroPayload(citaOrig, {
+      fecha: fechaNueva,
+      hora: horaNueva,
+      actor,
+      overrides: {
+        equipo_id: equipo_id !== undefined ? equipo_id : citaOrig.equipo_id,
+        estudio: estudio !== undefined ? estudio : citaOrig.estudio,
+        entidad: entidad !== undefined ? entidad : citaOrig.entidad,
+        observaciones: observaciones !== undefined ? observaciones : undefined,
+        duracion_minutos: duracion_minutos !== undefined ? duracion_minutos : citaOrig.duracion_minutos
+      }
+    });
+
+    const nueva = payload.nuevaCita;
+    let duracionMinutosDB = parseInt(nueva.duracion_minutos, 10) || null;
+    let finalHoraFin = citaOrig.hora_fin;
+    let finalFechaFin = fechaNueva;
+    if (duracionMinutosDB > 0) {
+      const finCalc = sumarMinutosAHoraYFecha(fechaNueva, horaNueva, duracionMinutosDB);
+      if (finCalc) {
+        finalHoraFin = finCalc.horaFin;
+        finalFechaFin = finCalc.fechaFin;
+      }
+    } else if (citaOrig.hora_fin) {
+      finalFechaFin = fechaFinSiCruzaMedianoche(fechaNueva, horaNueva, normalizarHoraHmElectro(citaOrig.hora_fin)) || fechaNueva;
+      finalHoraFin = normalizarHoraHmElectro(citaOrig.hora_fin);
+    }
+
+    const dupCheck = await db.query(
+      `SELECT COUNT(*) as cnt FROM citas_electro
+       WHERE paciente_id = ? AND id != ? AND estado IN ('Programado', 'Confirmado', 'En Sala', 'En Estudio', 'Pausado') AND deleted_at IS NULL
+       AND TIMESTAMP(fecha, COALESCE(hora_agendamiento, '00:00:00')) < TIMESTAMP(?, ?)
+       AND TIMESTAMP(COALESCE(hora_fin_date, fecha), COALESCE(hora_fin, '23:59:59')) > TIMESTAMP(?, ?)`,
+      [citaOrig.paciente_id, id, finalFechaFin, finalHoraFin, fechaNueva, horaNueva]
+    );
+    if ((dupCheck[0]?.cnt || 0) > 0) {
+      return res.status(409).json({ error: 'Este paciente ya tiene una cita que se superpone con este horario en Electrodiagnóstico.' });
+    }
+
+    const result = await withTransaction(async (conn) => {
+      const insertRes = await conn.execute(`
+        INSERT INTO citas_electro (
+          equipo_id, paciente_id, fecha, hora_agendamiento, hora_inicio, hora_fin, hora_fin_date,
+          estudio, observaciones, diagnostico_id, estado, programado_por_nombre, duracion_minutos, entidad, reprogramada_desde_id
+        ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        nueva.equipo_id || null,
+        nueva.paciente_id,
+        fechaNueva,
+        horaNueva,
+        finalHoraFin,
+        finalFechaFin,
+        nueva.estudio || null,
+        nueva.observaciones || null,
+        nueva.diagnostico_id || null,
+        nueva.estado || 'Programado',
+        actor,
+        duracionMinutosDB,
+        nueva.entidad ? String(nueva.entidad).trim() : null,
+        id
+      ]);
+      const nuevaId = insertRes[0]?.insertId ?? insertRes.insertId;
+
+      await conn.execute(`
+        UPDATE citas_electro
+        SET estado = ?, observaciones = ?, reprogramado_en = NOW(), reprogramado_por_nombre = ?,
+            editado_por_nombre = ?, editado_en = NOW()
+        WHERE id = ?
+      `, [
+        payload.actualizacionOriginal.estado,
+        payload.actualizacionOriginal.observaciones,
+        actor,
+        actor,
+        id
+      ]);
+
+      await conn.execute(`
+        INSERT INTO citas_electro_reprogramaciones (
+          cita_original_id, cita_nueva_id, reprogramado_por_nombre,
+          fecha_anterior, hora_anterior, fecha_nueva, hora_nueva
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      `, [id, nuevaId, actor, fechaAnterior, horaAnterior, fechaNueva, horaNueva]);
+
+      return { nuevaId };
+    }, `Reprogramar cita electro ${id}`);
+
+    emitSocket('electro:cita-creada', { id: result.nuevaId, paciente_id: citaOrig.paciente_id, fecha: fechaNueva, hora_agendamiento: horaNueva, estudio: nueva.estudio, estado: 'Programado' });
+    emitSocket('electro:cita-actualizada', { id, estado: payload.actualizacionOriginal.estado, editado_por: actor });
+    emitSocket('electro:actualizar-lista', { type: 'reprogramada', id, nueva_id: result.nuevaId });
+
+    res.json({
+      ok: true,
+      id_original: id,
+      id_nueva: result.nuevaId,
+      reprogramado_por: actor,
+      fecha_anterior: fechaAnterior,
+      hora_anterior: horaAnterior,
+      fecha_nueva: fechaNueva,
+      hora_nueva: horaNueva
+    });
+  } catch (e) {
+    logger.error('Error reprogramando cita electro', { error: e.message, id });
+    res.status(500).json({ error: safeError(e) });
+  }
+});
+
 // GET /api/citas-electro/:id
 router.get('/citas-electro/:id', requireAuth, async (req, res) => {
   const id = parseInt(req.params.id, 10);
@@ -1292,6 +1475,13 @@ router.patch('/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin',
             return res.status(400).json({ error: 'No se pudo determinar la hora de inicio del estudio' });
           }
           let durIni = parseInt(duracion_minutos ?? citaActual.duracion_minutos, 10);
+          const durCat = await duracionCatalogoEstudioElectro(citaActual.estudio);
+          if (durCat > 0 && modoInicio !== 'solicitud') {
+            const slotInferido = inferirDuracionMinutosCitaElectro(citaActual);
+            if (!(durIni > 0) || (slotInferido > 0 && durIni <= slotInferido && durCat > durIni)) {
+              durIni = durCat;
+            }
+          }
           if (!(durIni > 0)) {
             await asegurarDuracionMinutosCitaElectro(citaActual);
             durIni = parseInt(citaActual.duracion_minutos, 10) || inferirDuracionMinutosCitaElectro(citaActual) || 0;
@@ -1328,7 +1518,12 @@ router.patch('/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin',
       observacionesPatch = anexarNotaReprogramadoObs(
         observacionesPatch !== undefined ? observacionesPatch : citaActual.observaciones
       );
+      estadoPatch = 'Programado';
       marcarReprogramadoEn = true;
+    } else if (!cambioAgenda && observacionesPatch !== undefined) {
+      const marcaNueva = /\[Reprogramado\]/i.test(String(observacionesPatch));
+      const marcaPrev = /\[Reprogramado\]/i.test(String(citaActual.observaciones || ''));
+      if (marcaNueva && !marcaPrev) marcarReprogramadoEn = true;
     } else if (esReprogramacion && estadoPatch !== 'Adelantado') {
       return res.status(400).json({
         error: 'Para cambiar fecha u hora use la opción Reprogramar (se crea una cita nueva en la fecha elegida).'
@@ -1441,12 +1636,13 @@ router.patch('/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin',
 
     if (updates.length === 0) return res.json({ ok: true });
 
-    if (marcarReprogramadoEn) {
-      updates.push('reprogramado_en = NOW()');
-    }
-
     updates.push('editado_en = NOW()');
     const editorNombre = req.session.usuarioNombre || req.session.usuario || 'Sistema';
+    if (marcarReprogramadoEn) {
+      updates.push('reprogramado_en = NOW()');
+      updates.push('reprogramado_por_nombre = ?');
+      values.push(editorNombre);
+    }
     updates.push('editado_por_nombre = ?'); values.push(editorNombre);
     values.push(id);
 

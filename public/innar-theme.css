@@ -469,9 +469,18 @@ table tbody tr:hover td {
   box-shadow: var(--innar-shadow-md) !important;
 }
 
-/* Electro estado pausado — marca en lugar de morado */
-.electro-cita-card.estado-pausado {
-  border-left-color: var(--c-mid) !important;
+/* Electro estado pausado — indicador sin cambiar color del tipo de estudio */
+.electro-cita-card.estado-pausado::before {
+  content: '';
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--c-mid, #d97706);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.9);
+  z-index: 1;
 }
 
 /* ── Soportes PDX / Armado — coherencia marca ─────────────────────────────── */

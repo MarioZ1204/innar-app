@@ -1,9 +1,13 @@
-/* Modal configurar día — Programar Agenda */
+/* ═══════════════════════════════════════════════════════════════════════
+   Modal configurar día — Programar Agenda (rediseño completo)
+   ═══════════════════════════════════════════════════════════════════════ */
 .cal-modal-overlay {
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
   transition: opacity 0.2s ease, visibility 0.2s ease;
+  background: rgba(15, 23, 42, 0.5) !important;
+  backdrop-filter: blur(3px);
 }
 .cal-modal-overlay.active {
   opacity: 1;
@@ -14,11 +18,18 @@
   display: flex;
 }
 
-/* Cabecera y botón cerrar siempre visibles */
-.cal-modal {
-  position: relative;
-  overflow: visible;
+#calDayModal .cal-modal {
+  width: min(94vw, 560px) !important;
+  max-width: 560px !important;
+  max-height: min(88dvh, 780px);
+  display: flex;
+  flex-direction: column;
+  border-radius: 20px;
+  padding: 0;
+  overflow: hidden;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.28), 0 0 0 1px rgba(15, 23, 42, 0.04);
 }
+
 .cal-modal-head {
   position: relative;
   z-index: 5;
@@ -26,36 +37,59 @@
   justify-content: space-between;
   align-items: flex-start;
   gap: 12px;
-  padding: 20px 22px 0;
+  padding: 22px 24px 16px;
   flex-shrink: 0;
+  background: linear-gradient(180deg, #fbfdff 0%, #ffffff 100%);
+  border-bottom: 1px solid #eef2f7;
+}
+.cal-modal-head-text h3 {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: #0f172a;
+  letter-spacing: -0.01em;
+}
+.cal-modal-date-sub {
+  font-size: 0.85rem;
+  color: #64748b;
+  margin-top: 3px;
+  font-weight: 500;
+  text-transform: capitalize;
 }
 .cal-modal-close {
   flex-shrink: 0;
-  width: 36px;
-  height: 36px;
-  min-width: 36px;
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
   border: 1px solid #e2e8f0;
   border-radius: 10px;
   background: #fff;
-  color: #475569;
-  font-size: 1.5rem;
-  line-height: 1;
-  font-weight: 400;
+  color: #64748b;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   padding: 0;
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+  transition: background 0.15s, color 0.15s, border-color 0.15s, transform 0.1s;
 }
 .cal-modal-close:hover {
-  background: #f1f5f9;
+  background: #f8fafc;
   color: #0f172a;
   border-color: #cbd5e1;
 }
+.cal-modal-close:active {
+  transform: scale(0.94);
+}
 .cal-modal-close svg {
-  display: none;
+  display: block;
+}
+
+.cal-modal-body {
+  padding: 20px 24px 22px !important;
+  overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .cal-step.hidden {
@@ -63,35 +97,43 @@
 }
 
 .cal-step-intro {
-  margin: 0 0 20px;
-  font-size: 0.95rem;
+  margin: 0 0 18px;
+  font-size: 0.93rem;
   font-weight: 500;
   color: #64748b;
   text-align: center;
 }
 .cal-step-intro--left {
   text-align: left;
-  margin-bottom: 14px;
+  margin-bottom: 16px;
 }
 
-.cal-obs-absent-form {
-  margin-bottom: 16px;
-  padding: 14px;
-  border-radius: 12px;
-  background: #fef2f2;
-  border: 1px solid #fecaca;
+/* Bloques de sección reutilizables (motivo, jornada, horarios, cupos, obs) */
+.cal-field-section {
+  margin-bottom: 18px;
+  padding: 16px;
+  border-radius: 14px;
+  background: #f8fafc;
+  border: 1px solid #eef2f7;
 }
-.cal-obs-absent-form .cal-motivo-label {
-  color: #991b1b;
-  font-weight: 600;
+.cal-field-section:last-of-type {
+  margin-bottom: 0;
+}
+.cal-field-section-label {
   display: block;
-  margin-bottom: 8px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: #64748b;
+  margin-bottom: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
 }
 
 .cal-btn-confirm-absent {
   margin-top: 4px;
 }
 
+/* Botones de elección inicial */
 .cal-choice-btns {
   display: flex;
   flex-direction: column;
@@ -100,87 +142,98 @@
 
 .cal-choice-btn {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 14px;
   width: 100%;
-  padding: 18px 20px;
-  border-radius: 14px;
-  border: 2px solid transparent;
+  padding: 16px 18px;
+  border-radius: 16px;
+  border: 1.5px solid transparent;
   cursor: pointer;
-  transition: transform 0.12s ease, box-shadow 0.15s ease, background 0.15s;
+  text-align: left;
+  transition: transform 0.12s ease, box-shadow 0.15s ease, background 0.15s, border-color 0.15s;
 }
 .cal-choice-btn:active {
-  transform: scale(0.98);
+  transform: scale(0.985);
+}
+.cal-choice-btn-icon {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.cal-choice-btn-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
 }
 .cal-choice-btn-title {
-  font-size: 1.1rem;
+  font-size: 1rem;
   font-weight: 700;
   letter-spacing: 0.01em;
 }
 .cal-choice-btn-desc {
-  font-size: 0.8rem;
+  font-size: 0.79rem;
   font-weight: 500;
   opacity: 0.85;
 }
 
 .cal-choice-btn--no {
-  background: linear-gradient(180deg, #fef2f2 0%, #fff5f5 100%);
-  border-color: #fca5a5;
+  background: #fef2f2;
+  border-color: #fecaca;
   color: #991b1b;
+}
+.cal-choice-btn--no .cal-choice-btn-icon {
+  background: #fee2e2;
+  color: #dc2626;
 }
 .cal-choice-btn--no:hover {
   background: #fee2e2;
-  box-shadow: 0 4px 14px rgba(220, 38, 38, 0.15);
+  border-color: #fca5a5;
+  box-shadow: 0 6px 16px rgba(220, 38, 38, 0.12);
 }
 
 .cal-choice-btn--config {
-  background: linear-gradient(180deg, #eff6ff 0%, #f8fafc 100%);
-  border-color: #93c5fd;
+  background: #eff6ff;
+  border-color: #bfdbfe;
   color: #1e40af;
+}
+.cal-choice-btn--config .cal-choice-btn-icon {
+  background: #dbeafe;
+  color: #2563eb;
 }
 .cal-choice-btn--config:hover {
   background: #dbeafe;
-  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.12);
+  border-color: #93c5fd;
+  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.12);
 }
 
 .cal-back-btn {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  margin-bottom: 14px;
-  padding: 6px 0;
-  border: none;
-  background: none;
-  font-size: 0.88rem;
+  gap: 6px;
+  margin-bottom: 16px;
+  padding: 7px 12px 7px 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  background: #fff;
+  font-size: 0.82rem;
   font-weight: 600;
   color: #64748b;
   cursor: pointer;
+  transition: all 0.15s;
 }
 .cal-back-btn:hover {
-  color: #334155;
+  color: #0f172a;
+  border-color: #cbd5e1;
+  background: #f8fafc;
 }
 
-.cal-attend-options {
-  margin-bottom: 14px;
-  padding: 12px 14px;
-  border-radius: 12px;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-}
 .cal-hora-section.hidden {
   display: none !important;
-}
-
-.cal-attend-options-label,
-.cal-hora-section-label {
-  display: block;
-  font-size: 0.75rem;
-  font-weight: 700;
-  color: #64748b;
-  margin-bottom: 8px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
 }
 
 .cal-attend-chips {
@@ -190,24 +243,28 @@
 }
 
 .cal-attend-chip {
-  padding: 8px 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 15px;
   border-radius: 999px;
-  border: 1px solid #cbd5e1;
+  border: 1.5px solid #dbe2ea;
   background: #fff;
-  font-size: 0.85rem;
+  font-size: 0.84rem;
   font-weight: 600;
   color: #475569;
   cursor: pointer;
   transition: all 0.15s;
 }
+.cal-attend-chip:hover {
+  border-color: #cbd5e1;
+  background: #f8fafc;
+}
 .cal-attend-chip.is-selected {
   border-color: #2563eb;
   background: #eff6ff;
   color: #1d4ed8;
-}
-
-.cal-obs-attend {
-  margin-bottom: 16px;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.08);
 }
 
 .cal-motivo-input--hidden {
@@ -220,59 +277,124 @@
   box-sizing: border-box;
 }
 
-.cal-modal-actions {
+/* Pie del modal — sticky, siempre visible */
+.cal-modal-footer {
   display: flex;
-  flex-direction: column;
   gap: 10px;
-  margin-top: 8px;
+  padding: 16px 24px;
+  border-top: 1px solid #eef2f7;
+  background: #fff;
+  flex-shrink: 0;
+  position: sticky;
+  bottom: 0;
+}
+.cal-modal-footer--inline {
+  position: static;
+  border-top: none;
+  padding: 4px 0 0;
 }
 
-.cal-btn-save {
+#calDayModal .cal-btn-save {
+  flex: 1;
   font-weight: 700;
+  background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%) !important;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.28) !important;
+}
+#calDayModal .cal-btn-save:hover {
+  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.35) !important;
 }
 
-.cal-cupos-section {
-  margin: 16px 0 20px;
-  padding: 14px;
-  border-radius: 12px;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
+#calDayModal .cal-btn-clear {
+  flex-shrink: 0;
+  background: #fff !important;
+  color: #dc2626 !important;
+  border: 1px solid #fecaca !important;
+  box-shadow: none !important;
+}
+#calDayModal .cal-btn-clear:hover {
+  background: #fef2f2 !important;
+  border-color: #f87171 !important;
+}
+
+.cal-btn-confirm-ausente {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
 }
 
 .cal-cupos-hint {
-  margin: 0 0 10px;
-  font-size: 0.82rem;
+  margin: 0 0 12px;
+  font-size: 0.8rem;
   color: #64748b;
-  line-height: 1.4;
+  line-height: 1.45;
 }
 
 .cal-cupo-row {
   display: grid;
-  grid-template-columns: 1fr 88px 32px;
+  grid-template-columns: 1fr 88px 34px;
   gap: 8px;
   align-items: center;
   margin-bottom: 8px;
+}
+.cal-cupo-row:last-child {
+  margin-bottom: 0;
 }
 
 .cal-cupo-row select,
 .cal-cupo-row input {
   width: 100%;
-  padding: 8px 10px;
-  border: 1px solid #cbd5e1;
-  border-radius: 8px;
-  font-size: 0.875rem;
+  padding: 9px 10px;
+  border: 1.5px solid #dbe2ea;
+  border-radius: 9px;
+  font-size: 0.85rem;
+  background: #fff;
+  box-sizing: border-box;
+}
+.cal-cupo-row select:focus,
+.cal-cupo-row input:focus {
+  outline: none;
+  border-color: #93c5fd;
 }
 
 .cal-cupo-remove {
-  width: 32px;
-  height: 32px;
+  width: 34px;
+  height: 34px;
   border: none;
-  border-radius: 8px;
+  border-radius: 9px;
   background: #fee2e2;
   color: #b91c1c;
   cursor: pointer;
   font-size: 1.1rem;
   line-height: 1;
+  transition: background 0.15s;
+}
+.cal-cupo-remove:hover {
+  background: #fecaca;
+}
+
+.cal-add-row-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 10px;
+  margin-top: 4px;
+  border-radius: 10px;
+  border: 1.5px dashed #cbd5e1;
+  background: #fff;
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.cal-add-row-btn:hover {
+  border-color: #94a3b8;
+  color: #334155;
+  background: #f8fafc;
 }
 
 .turno-slot-entidad td {
@@ -286,24 +408,29 @@
 
 @media (max-width: 768px) {
   .cal-modal-overlay {
-    padding: 12px;
-    align-items: center;
+    padding: 0;
+    align-items: flex-end;
     justify-content: center;
   }
 
-  .cal-modal {
-    width: calc(100vw - 24px) !important;
+  #calDayModal .cal-modal {
+    width: 100vw !important;
     max-width: 100% !important;
-    max-height: calc(100dvh - 24px);
-    overflow-y: auto;
+    max-height: calc(100dvh - 16px);
+    border-radius: 20px 20px 0 0;
+    margin: 0;
   }
 
   .cal-modal-head {
-    padding: 16px 16px 0;
+    padding: 18px 18px 14px;
   }
 
   .cal-modal-body {
-    padding: 14px 16px 20px;
+    padding: 16px 18px 18px !important;
+  }
+
+  .cal-modal-footer {
+    padding: 14px 18px calc(14px + env(safe-area-inset-bottom, 0px));
   }
 }
 
@@ -330,20 +457,22 @@
 .ccal-split-panel {
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  /* Ambos paneles alinean sus números al fondo, así "CITAS/LIBRES" queda a la misma
+     altura sin importar que el panel de entidad tenga una línea extra (nombre + cupo) arriba. */
+  justify-content: flex-end;
   min-width: 0;
   padding: 5px 3px;
 }
 
 .ccal-split-general {
   border-right: 1px solid rgba(15, 23, 42, 0.14);
-  background: rgba(255, 255, 255, 0.35);
+  background: transparent;
 }
 
 .ccal-split-entidad {
-  background: rgba(240, 253, 250, 0.55);
+  background: #f8fafc;
   gap: 2px;
-  justify-content: flex-start;
+  justify-content: flex-end;
   padding-top: 4px;
   padding-bottom: 4px;
 }
@@ -438,3 +567,626 @@
     min-height: 74px;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Calendario Ver Citas — tema moderno (sobrescribe style.css)
+   ═══════════════════════════════════════════════════════════════════════════ */
+#view-agenda-medica {
+  --ccal-accent: #4f46e5;
+  --ccal-accent-soft: #eef2ff;
+  --ccal-surface: #ffffff;
+  --ccal-border: #e2e8f0;
+  --ccal-text: #0f172a;
+  --ccal-muted: #64748b;
+  --ccal-radius: 12px;
+}
+
+#view-agenda-medica .ccal-container {
+  background: var(--ccal-surface);
+  border: 1px solid var(--ccal-border);
+  border-radius: 16px;
+  padding: 20px 18px 16px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 24px rgba(15, 23, 42, 0.06);
+}
+
+#view-agenda-medica .ccal-header {
+  margin-bottom: 16px;
+}
+
+#view-agenda-medica .ccal-month-title {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--ccal-text);
+  letter-spacing: -0.02em;
+}
+
+#view-agenda-medica .ccal-subtitle {
+  font-size: 0.72rem;
+  color: var(--ccal-muted);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+#view-agenda-medica .ccal-nav-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  border: 1px solid var(--ccal-border);
+  background: #fafbfc;
+  color: var(--ccal-muted);
+  transform: none;
+}
+
+#view-agenda-medica .ccal-nav-btn:hover {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+  color: var(--ccal-text);
+  transform: none;
+}
+
+#view-agenda-medica .ccal-legend {
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 8px 10px;
+  background: #f8fafc;
+  border-radius: 10px;
+  border: 1px solid #f1f5f9;
+}
+
+#view-agenda-medica .ccal-legend-item {
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: var(--ccal-muted);
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+}
+
+#view-agenda-medica .ccal-legend-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  box-shadow: none !important;
+}
+
+#view-agenda-medica .ccal-legend-green .ccal-legend-dot { background: #4f46e5; }
+#view-agenda-medica .ccal-legend-yellow .ccal-legend-dot { background: #f59e0b; }
+#view-agenda-medica .ccal-legend-red .ccal-legend-dot { background: #f43f5e; }
+#view-agenda-medica .ccal-legend-blue .ccal-legend-dot { background: #6366f1; }
+#view-agenda-medica .ccal-legend-noasiste .ccal-legend-dot { background: #e11d48; }
+#view-agenda-medica .ccal-legend-ucqn .ccal-legend-dot { background: #60a5fa; }
+#view-agenda-medica .ccal-legend-blocked .ccal-legend-dot {
+  background: #cbd5e1;
+  border-radius: 2px;
+}
+
+#view-agenda-medica .citas-cal-grid {
+  gap: 4px;
+  padding: 4px;
+  background: #f8fafc;
+  border-radius: 12px;
+  border: 1px solid #f1f5f9;
+}
+
+#view-agenda-medica .ccal-weekday {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 6px 0;
+}
+
+/* Celdas base */
+#view-agenda-medica .ccal-cell {
+  min-height: 92px;
+  padding: 8px 8px 10px;
+  border-radius: var(--ccal-radius);
+  background: var(--ccal-surface) !important;
+  border: 1px solid var(--ccal-border) !important;
+  box-shadow: none;
+  transition: box-shadow 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+  overflow: hidden;
+}
+
+#view-agenda-medica .ccal-cell::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: transparent;
+  transition: background 0.15s ease;
+}
+
+#view-agenda-medica .ccal-cell:hover:not(.ccal-empty) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08) !important;
+  border-color: #cbd5e1 !important;
+  z-index: 2;
+}
+
+/* Estados por barra lateral (sin fondos chillones) */
+#view-agenda-medica .ccal-neutro::before { background: #e2e8f0; }
+#view-agenda-medica .ccal-verde::before { background: #4f46e5; }
+#view-agenda-medica .ccal-amarillo::before { background: #f59e0b; }
+#view-agenda-medica .ccal-azul::before { background: #6366f1; }
+#view-agenda-medica .ccal-rojo::before { background: #f43f5e; }
+#view-agenda-medica .ccal-noasiste::before { background: #e11d48; }
+#view-agenda-medica .ccal-ucqn::before { background: #3b82f6; }
+
+#view-agenda-medica .ccal-verde,
+#view-agenda-medica .ccal-amarillo,
+#view-agenda-medica .ccal-azul,
+#view-agenda-medica .ccal-rojo,
+#view-agenda-medica .ccal-neutro,
+#view-agenda-medica .ccal-noasiste,
+#view-agenda-medica .ccal-cell.ccal-verde:hover,
+#view-agenda-medica .ccal-cell.ccal-amarillo:hover,
+#view-agenda-medica .ccal-cell.ccal-azul:hover,
+#view-agenda-medica .ccal-cell.ccal-rojo:hover,
+#view-agenda-medica .ccal-cell.ccal-neutro:hover,
+#view-agenda-medica .ccal-cell.ccal-noasiste:hover {
+  background: #ffffff !important;
+  background-image: none !important;
+}
+
+/* Motivos de día — fondos suaves por tipo */
+#view-agenda-medica .ccal-cell[class*="ccal-motivo-"]::before,
+#view-agenda-medica .ccal-cell.ccal-ausente::before {
+  width: 4px;
+}
+
+#view-agenda-medica .ccal-cell.ccal-motivo-ucqn,
+#view-agenda-medica button.ccal-cell.ccal-motivo-ucqn {
+  background: linear-gradient(165deg, #eff6ff 0%, #f8fbff 100%) !important;
+  border-color: #bfdbfe !important;
+}
+#view-agenda-medica .ccal-motivo-ucqn::before { background: #60a5fa; }
+#view-agenda-medica .ccal-motivo-ucqn .ccal-card-observacion { color: #2563eb; font-weight: 600; }
+
+#view-agenda-medica .ccal-cell.ccal-motivo-hospital,
+#view-agenda-medica button.ccal-cell.ccal-motivo-hospital {
+  background: linear-gradient(165deg, #f5f3ff 0%, #faf8ff 100%) !important;
+  border-color: #ddd6fe !important;
+}
+#view-agenda-medica .ccal-motivo-hospital::before { background: #8b5cf6; }
+#view-agenda-medica .ccal-motivo-hospital .ccal-card-observacion { color: #6d28d9; font-weight: 600; }
+
+#view-agenda-medica .ccal-cell.ccal-motivo-personal,
+#view-agenda-medica button.ccal-cell.ccal-motivo-personal {
+  background: linear-gradient(165deg, #fffbeb 0%, #fffdf5 100%) !important;
+  border-color: #fde68a !important;
+}
+#view-agenda-medica .ccal-motivo-personal::before { background: #f59e0b; }
+#view-agenda-medica .ccal-motivo-personal .ccal-card-observacion { color: #b45309; font-weight: 600; }
+
+#view-agenda-medica .ccal-cell.ccal-motivo-vacaciones,
+#view-agenda-medica button.ccal-cell.ccal-motivo-vacaciones {
+  background: linear-gradient(165deg, #ecfeff 0%, #f6feff 100%) !important;
+  border-color: #a5f3fc !important;
+}
+#view-agenda-medica .ccal-motivo-vacaciones::before { background: #06b6d4; }
+#view-agenda-medica .ccal-motivo-vacaciones .ccal-card-observacion { color: #0e7490; font-weight: 600; }
+
+#view-agenda-medica .ccal-cell.ccal-motivo-capacitacion,
+#view-agenda-medica button.ccal-cell.ccal-motivo-capacitacion {
+  background: linear-gradient(165deg, #eef2ff 0%, #f8f9ff 100%) !important;
+  border-color: #c7d2fe !important;
+}
+#view-agenda-medica .ccal-motivo-capacitacion::before { background: #6366f1; }
+#view-agenda-medica .ccal-motivo-capacitacion .ccal-card-observacion { color: #4338ca; font-weight: 600; }
+
+#view-agenda-medica .ccal-cell.ccal-motivo-festivo,
+#view-agenda-medica .ccal-cell.ccal-ausente,
+#view-agenda-medica button.ccal-cell.ccal-motivo-festivo,
+#view-agenda-medica button.ccal-cell.ccal-ausente {
+  background: linear-gradient(165deg, #fef2f2 0%, #fff7f7 100%) !important;
+  border-color: #fecaca !important;
+}
+#view-agenda-medica .ccal-motivo-festivo::before,
+#view-agenda-medica .ccal-ausente::before { background: #f87171; }
+#view-agenda-medica .ccal-motivo-festivo .ccal-card-observacion,
+#view-agenda-medica .ccal-ausente .ccal-card-observacion { color: #b91c1c; font-weight: 600; }
+
+#view-agenda-medica .ccal-cell.ccal-motivo-otro,
+#view-agenda-medica button.ccal-cell.ccal-motivo-otro {
+  background: linear-gradient(165deg, #f8fafc 0%, #fff 100%) !important;
+  border-color: #cbd5e1 !important;
+}
+#view-agenda-medica .ccal-motivo-otro::before { background: #94a3b8; }
+
+#view-agenda-medica .ccal-legend-hospital .ccal-legend-dot { background: #8b5cf6; }
+#view-agenda-medica .ccal-legend-personal .ccal-legend-dot { background: #f59e0b; }
+#view-agenda-medica .ccal-legend-vacaciones .ccal-legend-dot { background: #06b6d4; }
+#view-agenda-medica .ccal-legend-capacitacion .ccal-legend-dot { background: #6366f1; }
+#view-agenda-medica .ccal-legend-festivo .ccal-legend-dot,
+#view-agenda-medica .ccal-legend-ausente .ccal-legend-dot { background: #f87171; }
+
+#view-agenda-medica .ccal-bloqueado {
+  background: #f8fafc !important;
+  border-color: #e2e8f0 !important;
+  opacity: 0.72;
+}
+
+#view-agenda-medica .ccal-bloqueado::before {
+  display: none;
+}
+
+#view-agenda-medica .ccal-dia-num {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ccal-muted);
+  margin-bottom: 2px;
+}
+
+#view-agenda-medica .ccal-hoy {
+  border-color: #6366f1 !important;
+  box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.28) !important;
+}
+
+#view-agenda-medica .ccal-hoy .ccal-dia-num {
+  background: #6366f1;
+  color: #fff;
+  border-radius: 8px;
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+  box-shadow: 0 2px 6px rgba(99, 102, 241, 0.35);
+}
+
+#view-agenda-medica .ccal-noasiste .ccal-dia-num {
+  color: var(--ccal-text);
+  font-weight: 600;
+}
+
+/* Métricas internas */
+#view-agenda-medica .ccal-card-top {
+  min-height: 38px;
+  padding: 4px 2px 6px;
+  border-bottom: 1px solid #f1f5f9;
+  gap: 2px;
+}
+
+#view-agenda-medica .ccal-card-num {
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+
+#view-agenda-medica .ccal-card-label {
+  font-size: 0.55rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  opacity: 0.65;
+  margin-top: 2px;
+}
+
+#view-agenda-medica .ccal-card-metric-citas .ccal-card-num {
+  color: var(--ccal-text);
+}
+
+#view-agenda-medica .ccal-card-metric-libres .ccal-card-num {
+  color: #64748b;
+}
+
+#view-agenda-medica .ccal-bloqueado .ccal-card-num,
+#view-agenda-medica .ccal-noasiste .ccal-card-num {
+  color: #94a3b8;
+}
+
+#view-agenda-medica .ccal-card-bottom {
+  min-height: 22px;
+  padding-top: 4px;
+}
+
+#view-agenda-medica .ccal-card-observacion {
+  font-size: 0.62rem;
+  font-weight: 600;
+  font-style: normal;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--ccal-muted);
+  opacity: 1;
+}
+
+#view-agenda-medica .ccal-card-observacion-empty {
+  opacity: 0.35;
+  font-weight: 500;
+}
+
+#view-agenda-medica .ccal-ucqn .ccal-card-observacion {
+  color: #2563eb;
+}
+
+#view-agenda-medica .ccal-split-general {
+  border-right: 1px solid #f1f5f9;
+  background: transparent;
+}
+
+#view-agenda-medica .ccal-split-entidad {
+  background: #fafbfc;
+}
+
+#view-agenda-medica .ccal-ent-title {
+  font-size: 0.55rem;
+  font-weight: 700;
+  color: #64748b;
+  letter-spacing: 0.04em;
+}
+
+#view-agenda-medica .ccal-ent-cupo {
+  font-size: 0.6rem;
+  color: var(--ccal-muted);
+}
+
+/* Indicadores de estado (atendidas/canceladas/reprogramadas/no asistió): pequeños,
+   en la esquina superior derecha, para no chocar con la observación del día abajo. */
+#view-agenda-medica .ccal-status-badges {
+  top: 4px;
+  bottom: auto;
+  right: 4px;
+  left: auto;
+  gap: 2px;
+  max-width: 55%;
+  z-index: 2;
+}
+
+#view-agenda-medica .ccal-badge {
+  font-size: 0.5rem;
+  font-weight: 700;
+  line-height: 1;
+  padding: 2px 4px;
+  min-width: 12px;
+  border-radius: 999px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.15);
+}
+
+#view-agenda-medica .ccal-badge-atendida { background: #10b981; }
+#view-agenda-medica .ccal-badge-cancelada { background: #f43f5e; }
+#view-agenda-medica .ccal-badge-reprog { background: #6366f1; }
+#view-agenda-medica .ccal-badge-noasistio { background: #94a3b8; }
+
+/* Calendario Ver Citas — celdas como botón, día seleccionado y leyenda */
+#view-agenda-medica button.ccal-cell {
+  appearance: none;
+  -webkit-appearance: none;
+  font-family: inherit;
+  text-align: inherit;
+  width: 100%;
+  cursor: pointer;
+}
+
+#view-agenda-medica button.ccal-cell:focus-visible {
+  outline: 2px solid var(--ccal-accent);
+  outline-offset: 2px;
+  z-index: 3;
+}
+
+#view-agenda-medica .ccal-cell.ccal-selected {
+  box-shadow: 0 0 0 2px var(--ccal-accent) !important;
+  border-color: var(--ccal-accent) !important;
+  z-index: 2;
+}
+
+#view-agenda-medica .ccal-hoy.ccal-selected .ccal-dia-num {
+  background: var(--ccal-accent);
+  color: #fff;
+}
+
+#view-agenda-medica .ccal-day-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 12px;
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #f8fafc 0%, #fff 100%);
+  border: 1px solid var(--ccal-border);
+  font-size: 0.8rem;
+  color: var(--ccal-muted);
+  min-height: 2.5rem;
+}
+
+#view-agenda-medica .ccal-day-legend-title {
+  font-weight: 700;
+  color: var(--ccal-text);
+}
+
+#view-agenda-medica .ccal-day-legend-detail {
+  flex: 1 1 auto;
+  min-width: 0;
+  line-height: 1.4;
+}
+
+#view-agenda-medica .citas-cal-grid.ccal-grid-loading {
+  opacity: 0.5;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
+@media (max-width: 768px) {
+  #view-agenda-medica .ccal-container {
+    padding: 12px 8px 10px;
+    border-radius: 12px;
+  }
+
+  #view-agenda-medica .ccal-legend {
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    padding: 6px;
+  }
+
+  #view-agenda-medica .ccal-legend-item {
+    font-size: 0.62rem;
+    padding: 2px 6px;
+  }
+
+  #view-agenda-medica .ccal-cell {
+    min-height: 58px;
+    padding: 5px 4px 8px;
+    border-radius: 8px;
+  }
+
+  #view-agenda-medica .ccal-card-num {
+    font-size: 0.85rem !important;
+  }
+
+  #view-agenda-medica .ccal-hoy .ccal-dia-num {
+    width: 22px;
+    height: 22px;
+    font-size: 0.65rem;
+  }
+}
+
+/* ── Modal configurar día + calendario programar ─────────────────────────── */
+.cal-estado-banner {
+  margin-bottom: 14px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.35;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #475569;
+}
+
+.cal-estado-banner--ausente {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #b91c1c;
+}
+
+.cal-estado-banner--full {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+  color: #15803d;
+}
+
+.cal-estado-banner--partial {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1d4ed8;
+}
+
+.cal-estado-banner--obs {
+  background: #f8fafc;
+  border-color: #e2e8f0;
+  color: #334155;
+}
+
+.cal-motivo-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+#calDayModal .cal-motivo-chip {
+  appearance: none;
+  border: 1px solid #e2e8f0 !important;
+  background: #fff !important;
+  color: #475569 !important;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 6px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  box-shadow: none !important;
+  transition: background 0.12s, border-color 0.12s, color 0.12s, box-shadow 0.12s;
+  font-family: inherit;
+}
+
+#calDayModal .cal-motivo-chip:hover {
+  border-color: #cbd5e1 !important;
+  background: #f8fafc !important;
+}
+
+#calDayModal .cal-motivo-chip.is-selected {
+  box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.08) !important;
+}
+
+#calDayModal .cal-motivo-chip--none.is-selected { background: #f8fafc !important; border-color: #94a3b8 !important; color: #334155 !important; }
+#calDayModal .cal-motivo-chip--ucqn.is-selected { background: #eff6ff !important; border-color: #60a5fa !important; color: #1d4ed8 !important; }
+#calDayModal .cal-motivo-chip--hospital.is-selected { background: #f5f3ff !important; border-color: #a78bfa !important; color: #6d28d9 !important; }
+#calDayModal .cal-motivo-chip--personal.is-selected { background: #fffbeb !important; border-color: #fbbf24 !important; color: #b45309 !important; }
+#calDayModal .cal-motivo-chip--vacaciones.is-selected { background: #ecfeff !important; border-color: #22d3ee !important; color: #0e7490 !important; }
+#calDayModal .cal-motivo-chip--capacitacion.is-selected { background: #eef2ff !important; border-color: #818cf8 !important; color: #4338ca !important; }
+#calDayModal .cal-motivo-chip--festivo.is-selected { background: #fef2f2 !important; border-color: #f87171 !important; color: #b91c1c !important; }
+#calDayModal .cal-motivo-chip--otro.is-selected { background: #f1f5f9 !important; border-color: #94a3b8 !important; color: #334155 !important; }
+
+.cal-motivo-select--hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.cal-motivo-label--sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+}
+
+.cal-btn-confirm-ausente {
+  width: 100%;
+  margin-top: 8px;
+  padding: 12px 16px;
+  border: none;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: pointer;
+  font-family: inherit;
+  box-shadow: 0 4px 14px rgba(239, 68, 68, 0.25);
+}
+
+.cal-btn-confirm-ausente:hover {
+  filter: brightness(1.03);
+}
+
+.cal-day-motivo-tag {
+  display: block;
+  width: 100%;
+  margin-top: 2px;
+  font-size: 0.52rem;
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.9;
+}
+
+button.cal-day {
+  appearance: none;
+  font-family: inherit;
+  text-align: center;
+}
+
+.cal-day.cal-motivo-ucqn { background: linear-gradient(135deg, #eff6ff, #dbeafe) !important; border-color: #93c5fd !important; color: #1e40af !important; }
+.cal-day.cal-motivo-hospital { background: linear-gradient(135deg, #f5f3ff, #ede9fe) !important; border-color: #c4b5fd !important; color: #5b21b6 !important; }
+.cal-day.cal-motivo-personal { background: linear-gradient(135deg, #fffbeb, #fef3c7) !important; border-color: #fcd34d !important; color: #b45309 !important; }
+.cal-day.cal-motivo-vacaciones { background: linear-gradient(135deg, #ecfeff, #cffafe) !important; border-color: #67e8f9 !important; color: #0e7490 !important; }
+.cal-day.cal-motivo-capacitacion { background: linear-gradient(135deg, #eef2ff, #e0e7ff) !important; border-color: #a5b4fc !important; color: #4338ca !important; }
+.cal-day.cal-motivo-festivo { background: linear-gradient(135deg, #fef2f2, #fee2e2) !important; border-color: #fca5a5 !important; color: #b91c1c !important; }
+.cal-day.cal-motivo-otro { background: #f8fafc !important; border-color: #cbd5e1 !important; color: #475569 !important; }
+
+.cal-dot.cal-motivo-ucqn { background: #60a5fa; }
+.cal-dot.cal-motivo-festivo { background: #f87171; }

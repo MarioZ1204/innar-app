@@ -348,3 +348,207 @@
   background: #f0fdf4;
   border-color: #34d399;
 }
+
+.electro-notas-section {
+  padding: 0 22px 16px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.electro-notas-textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  resize: vertical;
+  min-height: 72px;
+  font-family: inherit;
+  line-height: 1.45;
+}
+
+.electro-notas-textarea:focus {
+  outline: none;
+  border-color: #0d9488;
+  box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.15);
+}
+
+.electro-notas-textarea:disabled {
+  background: #f9fafb;
+  opacity: 0.75;
+  cursor: not-allowed;
+}
+
+.electro-notas-hint {
+  margin: 6px 0 0;
+  font-size: 0.78rem;
+  color: #9ca3af;
+}
+
+.electro-cita-card-notas {
+  font-size: 0.72rem;
+  color: #4b5563;
+  margin-top: 4px;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.electro-cita-card-dia-badge {
+  display: inline-block;
+  margin: 4px 0 2px;
+  padding: 2px 8px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: #0c4a6e;
+  background: linear-gradient(135deg, #e0f2fe 0%, #bae6fd 100%);
+  border: 1px solid rgba(3, 105, 161, 0.2);
+  border-radius: 999px;
+}
+
+.electro-cita-card-dur .electro-dur-badge.multi-day {
+  font-weight: 700;
+  color: #0369a1;
+}
+
+.electro-duracion-subtext {
+  margin-top: 4px;
+  font-size: 0.75rem;
+  color: #6b7280;
+  line-height: 1.35;
+}
+
+.estudio-progreso-resumen-duracion {
+  margin: 8px 0 4px;
+  font-size: 0.78rem;
+  color: #475569;
+  line-height: 1.4;
+  text-align: center;
+}
+
+.estudio-progreso-card--v2 .estudio-progreso-chip {
+  max-width: 200px;
+  white-space: normal;
+  line-height: 1.25;
+}
+
+/* ── Color fijo por tipo de estudio (kanban) ─────────────────────────────── */
+.electro-cita-card--tipo {
+  border-left: 4px solid var(--electro-estudio-accent, #94a3b8);
+  background: var(--electro-estudio-bg, #fff);
+  border-color: var(--electro-estudio-border, #e5e7eb);
+}
+
+.electro-cita-card--tipo:hover {
+  border-color: var(--electro-estudio-accent, #cbd5e1);
+}
+
+.electro-cita-card--tipo .electro-cita-card-estudio {
+  color: var(--electro-estudio-accent, #475569);
+  font-weight: 600;
+}
+
+.electro-leyenda-estudios {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin: 0 0 10px 2px;
+}
+
+.electro-leyenda-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px 3px 6px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #334155;
+  background: var(--chip-bg, #f8fafc);
+  border: 1px solid color-mix(in srgb, var(--chip-accent, #94a3b8) 35%, #e2e8f0);
+  border-radius: 999px;
+  line-height: 1.2;
+}
+
+.electro-leyenda-chip i {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--chip-accent, #94a3b8);
+  flex-shrink: 0;
+}
+
+.electro-reprog-audit {
+  margin: 0 24px 12px;
+  padding: 10px 12px;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: #0369a1;
+  background: #f0f9ff;
+  border: 1px solid #bae6fd;
+  border-radius: 8px;
+}
+
+.electro-historial-reprog {
+  margin: 0 24px 14px;
+  padding: 12px 14px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+}
+
+.electro-historial-reprog .cita-modal-field-label {
+  margin-bottom: 8px;
+}
+
+.electro-historial-reprog-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.electro-historial-reprog-item {
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: #334155;
+  padding: 8px 10px;
+  background: #fff;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+}
+
+.electro-historial-reprog-fecha {
+  display: inline-block;
+  min-width: 9.5rem;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.electro-reprog-ref {
+  color: #0d9488;
+  font-weight: 600;
+}
+
+.electro-reprog-legacy {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #92400e;
+  background: #fef3c7;
+  border-radius: 999px;
+  vertical-align: middle;
+}
+
+.electro-historial-reprog-item--legacy {
+  border-style: dashed;
+}

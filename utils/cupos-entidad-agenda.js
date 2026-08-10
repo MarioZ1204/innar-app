@@ -147,11 +147,122 @@ async function diaTieneCuposEntidad(doctorId, fecha, db) {
   return cupos.length > 0;
 }
 
+function _horaAMinutos(hora) {
+  const [h, m] = String(hora || '').slice(0, 5).split(':').map((x) => parseInt(x, 10));
+  if (Number.isNaN(h) || Number.isNaN(m)) return null;
+  return h * 60 + m;
+}
+
+/** 25 min para epileptología/neurología, 40 min para el resto (misma regla que el front). */
+async function _intervaloMinDoctor(doctorId, db) {
+  try {
+    const rows = await db.execute('SELECT especialidad FROM usuarios WHERE id = ?', [doctorId]);
+    const espNorm = String(rows?.[0]?.especialidad || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+    if (espNorm.includes('epileptolog') || espNorm.includes('neurolog')) return 25;
+    return 40;
+  } catch (_) {
+    return 40;
+  }
+}
+
+/**
+ * Calcula el total de cupos (slots) físicos disponibles en el día, según jornada
+ * configurada (mañana/tarde o personalizada), intervalo de la especialidad y bloqueos.
+ * @returns {number|null} null si no se pudo calcular (se permite agendar sin tope general).
+ */
+async function capacidadTotalSlotsDia(doctorId, fecha, db) {
+  try {
+    const dispRows = await db.execute(
+      'SELECT disponible, disponible_manana, disponible_tarde FROM doctor_disponibilidad_mensual WHERE doctor_id = ? AND fecha = ?',
+      [doctorId, fecha]
+    );
+    const reg = dispRows?.[0];
+    const parseFlag = (v) => {
+      if (v === true || v === 1 || v === '1') return true;
+      if (v === false || v === 0 || v === '0') return false;
+      return null;
+    };
+    if (reg && parseFlag(reg.disponible) === false) return 0;
+    const mananaOk = reg ? parseFlag(reg.disponible_manana) !== false : true;
+    const tardeOk = reg ? parseFlag(reg.disponible_tarde) !== false : true;
+
+    let rangos = [];
+    const slotsCustom = await db.execute(
+      'SELECT hora_inicio, hora_fin FROM doctor_agenda WHERE doctor_id = ? AND fecha = ? AND disponible = 1 ORDER BY hora_inicio ASC',
+      [doctorId, fecha]
+    );
+    if (slotsCustom && slotsCustom.length) {
+      rangos = slotsCustom
+        .map((s) => ({ inicio: _horaAMinutos(s.hora_inicio), fin: _horaAMinutos(s.hora_fin) }))
+        .filter((r) => r.inicio != null && r.fin != null && r.fin > r.inicio);
+    } else {
+      if (mananaOk) rangos.push({ inicio: 8 * 60, fin: 12 * 60 });
+      if (tardeOk) rangos.push({ inicio: 14 * 60, fin: 18 * 60 });
+    }
+    if (!rangos.length) return 0;
+
+    const bloqueadosRows = await db.execute(
+      'SELECT hora_inicio, hora_fin FROM doctor_disponibilidad_intervalos WHERE doctor_id = ? AND fecha = ?',
+      [doctorId, fecha]
+    );
+    const bloqueados = (bloqueadosRows || [])
+      .map((b) => ({ inicio: _horaAMinutos(b.hora_inicio), fin: _horaAMinutos(b.hora_fin) }))
+      .filter((r) => r.inicio != null && r.fin != null);
+
+    const intervaloMin = await _intervaloMinDoctor(doctorId, db);
+    let total = 0;
+    for (const r of rangos) {
+      for (let m = r.inicio; m < r.fin; m += intervaloMin) {
+        if (!bloqueados.some((b) => m >= b.inicio && m < b.fin)) total++;
+      }
+    }
+    return total;
+  } catch (_) {
+    return null;
+  }
+}
+
+/**
+ * Valida el cupo "general" (sin entidad reservada específica): solo puede usar los
+ * cupos que NO están reservados para las entidades configuradas ese día.
+ */
+async function validarCupoGeneral(doctorId, fecha, cupos, db, cantidad) {
+  const capacidadTotal = await capacidadTotalSlotsDia(doctorId, fecha, db);
+  if (capacidadTotal == null) {
+    return { valido: true, sinCupoProgramadoParaEntidad: true };
+  }
+  const reservadoTotal = cupos.reduce((s, c) => s + c.cupo_max, 0);
+  const libresGenerales = Math.max(0, capacidadTotal - reservadoTotal);
+
+  const ocupadosMap = await contarOcupadosPorEntidad(doctorId, fecha, db);
+  const entidadesConfiguradas = new Set(cupos.map((c) => claveEntidad(c.entidad)));
+  let ocupadosGenerales = 0;
+  for (const [key, val] of ocupadosMap) {
+    if (!entidadesConfiguradas.has(key)) ocupadosGenerales += val.ocupados;
+  }
+
+  if (ocupadosGenerales + cantidad > libresGenerales) {
+    const nombres = cupos.map((c) => c.entidad).join(', ');
+    return {
+      valido: false,
+      requiereConfirmacion: true,
+      razon: `Ya no quedan cupos generales libres este día: los cupos restantes están reservados para ${nombres}. ¿Desea agendar de todos modos en un horario ya asignado a esa entidad?`
+    };
+  }
+  return { valido: true, cupoGeneral: { libres: libresGenerales, ocupados: ocupadosGenerales } };
+}
+
 /**
  * Valida si se puede agendar `cantidad` citas para entidad en fecha.
- * @returns {{ valido: boolean, razon?: string, resumen?: object[] }}
+ * @param {{ forzar?: boolean }} [opts] Si `forzar` es true, se omite el aviso de "cupo
+ * general agotado" (el usuario ya confirmó que quiere agendar en un horario reservado
+ * a otra entidad). El cupo propio de la entidad (si tiene uno configurado) SIEMPRE se valida.
+ * @returns {{ valido: boolean, razon?: string, resumen?: object[], requiereConfirmacion?: boolean }}
  */
-async function validarCupoEntidad(doctorId, fecha, entidad, db, cantidad = 1) {
+async function validarCupoEntidad(doctorId, fecha, entidad, db, cantidad = 1, opts = {}) {
   const entidadNorm = normalizarEntidadNombre(entidad);
   if (!entidadNorm) {
     return { valido: false, razon: 'Debe seleccionar una entidad' };
@@ -164,8 +275,13 @@ async function validarCupoEntidad(doctorId, fecha, entidad, db, cantidad = 1) {
 
   const cupoEnt = cupos.find((c) => claveEntidad(c.entidad) === claveEntidad(entidadNorm));
   if (!cupoEnt) {
-    // Sin cupo programado para esta entidad: agendar con reglas normales (horario).
-    return { valido: true, sinCupoProgramadoParaEntidad: true };
+    if (opts.forzar) {
+      return { valido: true, sinCupoProgramadoParaEntidad: true, forzado: true };
+    }
+    // Sin cupo programado para esta entidad: solo puede usar los cupos generales
+    // (los que sobran fuera de lo reservado para las entidades configuradas), salvo
+    // que el usuario confirme agendar de todos modos en un horario reservado.
+    return validarCupoGeneral(doctorId, fecha, cupos, db, cantidad);
   }
 
   const resumen = await resumenCuposDia(doctorId, fecha, db);
@@ -246,6 +362,8 @@ module.exports = {
   contarOcupadosPorEntidad,
   resumenCuposDia,
   diaTieneCuposEntidad,
+  capacidadTotalSlotsDia,
+  validarCupoGeneral,
   validarCupoEntidad,
   guardarCuposEntidadDia,
   eliminarCuposEntidadDia,

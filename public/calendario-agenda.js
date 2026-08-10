@@ -19,6 +19,66 @@ let _citasCalIniciado = false;
 const _MESES_ES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 const _DIAS_SEMANA_CORTO = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 
+function _hoyISO() {
+  if (typeof hoyColombiaISO === 'function') return hoyColombiaISO();
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function _getFechaSeleccionadaCitasCal() {
+  const inp = document.getElementById('agendaMedicaFecha');
+  return (inp && inp.value) ? inp.value : _hoyISO();
+}
+
+function _syncMesConFechaYmd(fechaYmd) {
+  if (!fechaYmd || !/^\d{4}-\d{2}-\d{2}$/.test(fechaYmd)) return;
+  const [y, m] = fechaYmd.split('-').map(Number);
+  if (!y || !m) return;
+  _citasCalAno = y;
+  _citasCalMes = m - 1;
+}
+
+function _marcarDiaSeleccionadoCitasCal(fecha) {
+  document.querySelectorAll('#citasCalGrid .ccal-cell[data-fecha]').forEach((cell) => {
+    cell.classList.toggle('ccal-selected', cell.dataset.fecha === fecha);
+  });
+  _renderLeyendaDiaCitasCal(fecha);
+}
+
+function _renderLeyendaDiaCitasCal(fecha) {
+  const el = document.getElementById('citasCalLegend');
+  if (!el) return;
+  const datos = _citasCalDatosCache[fecha] || null;
+  const cuposDia = _cuposDiaDesdeCache(fecha);
+  const agendadas = datos ? (datos.agendadas + datos.atendidas + datos.no_asistieron) : 0;
+  const partes = [];
+  if (agendadas > 0) partes.push(`<strong>${agendadas}</strong> cita(s) activa(s)`);
+  if (datos?.atendidas) partes.push(`${datos.atendidas} atendida(s)`);
+  if (datos?.canceladas) partes.push(`${datos.canceladas} cancelada(s)`);
+  if (datos?.reprogramadas) partes.push(`${datos.reprogramadas} reprogramada(s)`);
+  if (datos?.no_asistieron) partes.push(`${datos.no_asistieron} no asistió`);
+  if (cuposDia?.resumen?.length) {
+    cuposDia.resumen.forEach((r) => {
+      partes.push(`${escapeHtml(r.entidad)}: ${r.ocupados}/${r.cupo_max}`);
+    });
+  }
+  const detalle = partes.length ? partes.join(' · ') : 'Sin citas programadas';
+  el.innerHTML = `<span class="ccal-day-legend-title">${escapeHtml(fecha)}</span><span class="ccal-day-legend-detail">${detalle}</span>`;
+}
+
+/** Sincroniza mes visible y día seleccionado al cambiar la fecha en vista día. */
+function citasCalSincronizarConFecha(fechaYmd) {
+  if (!fechaYmd) return;
+  const mesVisible = `${_citasCalAno}-${String(_citasCalMes + 1).padStart(2, '0')}`;
+  const mesFecha = fechaYmd.slice(0, 7);
+  if (mesVisible !== mesFecha) {
+    _syncMesConFechaYmd(fechaYmd);
+    cargarCitasCalendario();
+    return;
+  }
+  _marcarDiaSeleccionadoCitasCal(fechaYmd);
+}
+
 function initCitasCalendario() {
   const calView = document.getElementById('agendaCalView');
   const dayView = document.getElementById('agendaDayView');
@@ -56,6 +116,7 @@ function initCitasCalendario() {
   if (btnVolver && !_citasCalIniciado) {
     btnVolver.addEventListener('click', citasCalVolverAlMes);
   }
+  _syncMesConFechaYmd(_getFechaSeleccionadaCitasCal());
   _citasCalIniciado = true;
   cargarCitasCalendario();
 }
@@ -90,26 +151,6 @@ function _parseResumenCupos(raw) {
 
 function _escribirCuposCache(fecha, data, opts = {}) {
   if (!fecha || !data || !Array.isArray(data.resumen) || !data.resumen.length) return;
-  const { forzar = false } = opts;
-  const prev = _citasCalCuposCache[fecha] || _citasCalCuposPersistente[fecha];
-  if (!forzar && prev?.resumen?.length) {
-    const prevOcc = prev.resumen.reduce((s, r) => s + (parseInt(r.ocupados, 10) || 0), 0);
-    const newOcc = data.resumen.reduce((s, r) => s + (parseInt(r.ocupados, 10) || 0), 0);
-    if (prevOcc > 0 && newOcc === 0) {
-      data = {
-        ...data,
-        resumen: data.resumen.map((r) => {
-          const key = String(r.entidad || '').trim().toUpperCase();
-          const prevRow = prev.resumen.find((p) => String(p.entidad || '').trim().toUpperCase() === key);
-          const ocupados = prevRow ? (parseInt(prevRow.ocupados, 10) || 0) : 0;
-          const cupoMax = parseInt(r.cupo_max, 10) || 0;
-          return { ...r, ocupados, libres: Math.max(0, cupoMax - ocupados) };
-        })
-      };
-      data.ocupados = data.resumen.reduce((s, r) => s + (parseInt(r.ocupados, 10) || 0), 0);
-      data.libres = Math.max(0, (parseInt(data.capacidad, 10) || 0) - data.ocupados);
-    }
-  }
   _citasCalCuposCache[fecha] = data;
   _citasCalCuposPersistente[fecha] = data;
 }
@@ -245,10 +286,6 @@ function _mergeCuposEntidadFallback(cuposEntidad) {
   Object.entries(porFecha).forEach(([f, items]) => {
     const capacidad = items.reduce((s, r) => s + (r.cupo_max || 0), 0);
     const ocupados = items.reduce((s, r) => s + (r.ocupados || 0), 0);
-    const prev = _citasCalCuposCache[f];
-    const prevTieneOcupados = prev?.resumen?.some((r) => (parseInt(r.ocupados, 10) || 0) > 0);
-    const itemsTieneOcupados = items.some((r) => (parseInt(r.ocupados, 10) || 0) > 0);
-    if (prev?.resumen?.length && prevTieneOcupados && !itemsTieneOcupados) return;
     _escribirCuposCache(f, {
       capacidad,
       ocupados,
@@ -348,15 +385,17 @@ function _htmlMetricasTop(citasGeneral, capHoraria, cuposDia) {
       + '</div>';
   }).join('');
 
-  return '<div class="ccal-card-top ccal-card-top-split" style="display:grid;grid-template-columns:1fr 1fr;gap:0;min-height:54px;padding:0;">'
-    + `<div class="ccal-split-panel ccal-split-general" style="border-right:1px solid rgba(15,23,42,.14);">${_htmlPanelMetricas(split.izquierda.citas, split.izquierda.libres)}</div>`
-    + `<div class="ccal-split-panel ccal-split-entidad" style="display:flex;flex-direction:column;min-width:0;">${entHtml}</div>`
+  return '<div class="ccal-card-top ccal-card-top-split">'
+    + `<div class="ccal-split-panel ccal-split-general">${_htmlPanelMetricas(split.izquierda.citas, split.izquierda.libres)}</div>`
+    + `<div class="ccal-split-panel ccal-split-entidad">${entHtml}</div>`
     + '</div>';
 }
 
 async function cargarCitasCalendario() {
   const reqId = ++_citasCalLoadReqId;
   const doctorId = _getCitasCalDoctorId();
+  const grid = document.getElementById('citasCalGrid');
+  if (grid) grid.classList.add('ccal-grid-loading');
   if (String(_citasCalCuposDoctorId) !== String(doctorId || '')) {
     _citasCalCuposPersistente = {};
     _citasCalCuposDoctorId = doctorId || null;
@@ -371,12 +410,21 @@ async function cargarCitasCalendario() {
     const body = await res.json();
     if (reqId !== _citasCalLoadReqId) return;
 
+    // Si la respuesta no es válida (error del servidor, timeout, hosting lento, etc.) se
+    // conserva todo lo que ya estaba en caché en vez de borrar el diseño del calendario.
+    if (!body || !body.ok) {
+      console.warn('Respuesta no válida de /api/turnos/calendario; se mantiene el calendario anterior');
+      if (grid) grid.classList.remove('ccal-grid-loading');
+      renderCitasCalGrid();
+      return;
+    }
+
     _citasCalDatosCache = {};
     _citasCalDispCache = {};
     _citasCalSlotsCache = {};
     _citasCalCuposCache = {};
 
-    if (body.ok && Array.isArray(body.dias)) {
+    if (Array.isArray(body.dias)) {
       body.dias.forEach((d) => {
         const f = _fmtFechaCal(d.fecha);
         _citasCalDatosCache[f] = {
@@ -390,7 +438,7 @@ async function cargarCitasCalendario() {
       });
     }
 
-    if (body.disponibilidad && Array.isArray(body.disponibilidad)) {
+    if (Array.isArray(body.disponibilidad)) {
       body.disponibilidad.forEach((d) => {
         const f = _fmtFechaCal(d.fecha);
         _citasCalDispCache[f] = {
@@ -431,17 +479,19 @@ async function cargarCitasCalendario() {
     renderCitasCalGrid();
   } catch (e) {
     console.error('Error cargando calendario de citas:', e);
+    if (grid) grid.classList.remove('ccal-grid-loading');
   }
 }
 
 function renderCitasCalGrid() {
   const grid = document.getElementById('citasCalGrid');
   if (!grid) return;
+  grid.classList.remove('ccal-grid-loading');
 
   const year = _citasCalAno;
   const month = _citasCalMes;
-  const today = new Date();
-  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  const todayStr = _hoyISO();
+  const fechaSel = _getFechaSeleccionadaCitasCal();
 
   let startWeekday = new Date(year, month, 1).getDay() - 1;
   if (startWeekday < 0) startWeekday = 6;
@@ -469,7 +519,6 @@ function renderCitasCalGrid() {
     if (esDomingo || (hayDispConfig && disp && disp.disponible === 0)) bloqueado = true;
     if (disp) motivo = disp.motivo || null;
 
-    const esUcqn = motivo === 'UCQN';
     const tieneMotivo = motivo && motivo !== '';
 
     const intervalMin = (typeof selectedDoctorEspecialidad !== 'undefined' && selectedDoctorEspecialidad
@@ -504,7 +553,6 @@ function renderCitasCalGrid() {
     const tieneCuposEntidad = !!(cuposDia && Array.isArray(cuposDia.resumen) && cuposDia.resumen.length);
 
     const E = citasCount;
-    const T = libresCount;
     const splitInfo = tieneCuposEntidad ? _calcMetricasSplit(citasCount, capHoraria, cuposDia) : null;
 
     let tooltip = `Citas: ${citasCount} | Libres horario: ${libresCount}`;
@@ -525,35 +573,39 @@ function renderCitasCalGrid() {
 
     let colorClass = 'ccal-neutro';
     const totalDia = datos ? datos.total : 0;
-
-    if (!bloqueado && esUcqn) {
-      colorClass = E > 10 ? 'ccal-verde' : 'ccal-ucqn';
-    } else if (bloqueado && esUcqn) {
-      colorClass = 'ccal-ucqn';
+    if (typeof claseCcalPorDiaAgenda === 'function') {
+      colorClass = claseCcalPorDiaAgenda({
+        motivo,
+        bloqueado,
+        esDomingo,
+        hayDispConfig,
+        datos,
+        citasActivas: EGeneral,
+        totalDia
+      });
+    } else if (esUcqn) {
+      colorClass = 'ccal-motivo-ucqn';
     } else if (bloqueado && tieneMotivo) {
-      colorClass = 'ccal-noasiste';
+      colorClass = 'ccal-ausente';
     } else if (bloqueado) {
       colorClass = 'ccal-bloqueado';
-    } else if (datos && ((datos.no_asistieron > 0) || (datos.canceladas > 0))) {
-      colorClass = 'ccal-rojo';
-    } else if (datos && datos.reprogramadas > 0) {
-      colorClass = 'ccal-azul';
-    } else if (E > 10 || totalDia > 10) {
-      colorClass = 'ccal-verde';
-    } else if (E >= 1 || totalDia >= 1) {
-      colorClass = 'ccal-amarillo';
     }
+
+    const esAusente = colorClass === 'ccal-ausente' || colorClass === 'ccal-motivo-festivo';
 
     const clickable = !bloqueado || tieneMotivo;
     const splitClass = tieneCuposEntidad ? ' ccal-cell-split' : '';
-    html += `<div class="ccal-cell ${colorClass}${esHoy ? ' ccal-hoy' : ''}${splitClass}" data-fecha="${fecha}" title="${escapeHtml(tooltip)}"${clickable ? ` onclick="citasCalClickDia('${fecha}', this)"` : ''}>`;
+    const esSel = fecha === fechaSel;
+    const cellTag = clickable ? 'button' : 'div';
+    const cellAttrs = clickable ? ' type="button"' : '';
+    html += `<${cellTag} class="ccal-cell ${colorClass}${esHoy ? ' ccal-hoy' : ''}${esSel ? ' ccal-selected' : ''}${splitClass}"${cellAttrs} data-fecha="${fecha}" title="${escapeHtml(tooltip)}" aria-label="${escapeHtml(`Día ${day}: ${citasCount} citas, ${libresCount} libres`)}">`;
     html += `<div class="ccal-dia-num">${day}</div>`;
     html += '<div class="ccal-dia-info ccal-dia-info-split">';
     html += _htmlMetricasTop(citasCount, capHoraria, tieneCuposEntidad ? cuposDia : null);
     html += `<div class="ccal-card-bottom"><span class="ccal-card-observacion${obsTexto || tieneMotivo || bloqueado ? '' : ' ccal-card-observacion-empty'}"${tieneMotivo ? ` title="${escapeHtml(motivo)}"` : ''}>${escapeHtml(obsTexto)}</span></div>`;
     html += '</div>';
 
-    if (!esUcqn && !bloqueado && datos && (datos.atendidas || datos.canceladas || datos.reprogramadas || datos.no_asistieron)) {
+    if (!esAusente && !bloqueado && datos && (datos.atendidas || datos.canceladas || datos.reprogramadas || datos.no_asistieron)) {
       html += '<div class="ccal-status-badges">';
       if (datos.atendidas > 0) html += `<span class="ccal-badge ccal-badge-atendida" title="Atendidas">${datos.atendidas}</span>`;
       if (datos.canceladas > 0) html += `<span class="ccal-badge ccal-badge-cancelada" title="Canceladas">${datos.canceladas}</span>`;
@@ -561,7 +613,7 @@ function renderCitasCalGrid() {
       if (datos.no_asistieron > 0) html += `<span class="ccal-badge ccal-badge-noasistio" title="No asistió">${datos.no_asistieron}</span>`;
       html += '</div>';
     }
-    html += '</div>';
+    html += `</${cellTag}>`;
   }
 
   const totalCells = startWeekday + daysInMonth;
@@ -571,12 +623,19 @@ function renderCitasCalGrid() {
   }
 
   grid.innerHTML = html;
+
+  grid.querySelectorAll('button.ccal-cell[data-fecha]').forEach((btn) => {
+    btn.addEventListener('click', () => citasCalClickDia(btn.dataset.fecha, btn));
+  });
+  _marcarDiaSeleccionadoCitasCal(fechaSel);
 }
 
 function citasCalClickDia(fecha, el) {
   const calView = document.getElementById('agendaCalView');
   const dayView = document.getElementById('agendaDayView');
   if (!calView || !dayView) return;
+
+  _marcarDiaSeleccionadoCitasCal(fecha);
 
   const fechaInput = document.getElementById('agendaMedicaFecha');
   if (fechaInput) {
@@ -600,6 +659,7 @@ function citasCalVolverAlMes() {
   const calView = document.getElementById('agendaCalView');
   const dayView = document.getElementById('agendaDayView');
   if (!calView || !dayView) return;
+  _syncMesConFechaYmd(_getFechaSeleccionadaCitasCal());
   calView.style.display = '';
   calView.classList.add('agenda-cal-view-enter');
   dayView.classList.add('agenda-day-view-exit');

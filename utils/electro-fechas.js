@@ -63,6 +63,14 @@ function citaFechaFinYmd(cita) {
   return extraerFechaYmd(cita?.hora_fin_date) || extraerFechaYmd(cita?.fecha);
 }
 
+/** Cita original archivada tras reprogramar (fantasma en fecha antigua). */
+function citaElectroEsReprogramadaArchivo(cita) {
+  if (!cita) return false;
+  const est = String(cita.estado || '').trim();
+  if (est === 'Reprogramado') return true;
+  return /\[Reprogramado\]/i.test(String(cita.observaciones || ''));
+}
+
 /** Cita visible en día D si D está en [fecha inicio, fecha fin] y no está cancelada. */
 function citaVisibleEnFechaYmd(cita, fechaYmd) {
   if (!cita || cita.estado === 'Cancelado') return false;
@@ -78,6 +86,7 @@ function citaVisibleEnFechaYmd(cita, fechaYmd) {
  */
 function citaVisibleEnAgendaDiaYmd(cita, fechaYmd) {
   if (!cita || cita.estado === 'Cancelado') return false;
+  if (citaElectroEsReprogramadaArchivo(cita)) return false;
   const inicio = extraerFechaYmd(cita.fecha);
   if (!inicio || !fechaYmd) return false;
   if (cita.estado === 'Completado') return fechaYmd === inicio;
@@ -108,7 +117,15 @@ function paramsCitaElectroVisibleEnFecha(fechaYmd) {
   return [fechaYmd, fechaYmd];
 }
 
-const { DIAS_FANTASMA_REPROGRAMADO } = require('./agenda-reprogramacion-visibilidad');
+
+/** SQL: excluir citas originales marcadas como reprogramadas (fantasma). */
+function sqlCitaElectroOcultarReprogramada(alias = 'c') {
+  const a = alias;
+  return `(
+    ${a}.estado <> 'Reprogramado'
+    AND (${a}.observaciones IS NULL OR ${a}.observaciones NOT LIKE '%[Reprogramado]%')
+  )`;
+}
 
 /** SQL agenda: Completado solo si fecha = día consultado; resto por rango mult día. */
 function sqlCitaElectroVisibleEnAgendaDia(alias = 'c') {
@@ -119,22 +136,13 @@ function sqlCitaElectroVisibleEnAgendaDia(alias = 'c') {
       ${a}.estado NOT IN ('Completado', 'Cancelado')
       AND ${a}.fecha <= ?
       AND COALESCE(${a}.hora_fin_date, ${a}.fecha) >= ?
-      AND (
-        ${a}.estado <> 'Reprogramado'
-        OR (
-          ${a}.fecha = ?
-          AND (
-            ${a}.reprogramado_en IS NULL
-            OR DATEDIFF(CURDATE(), DATE(${a}.reprogramado_en)) < ${DIAS_FANTASMA_REPROGRAMADO}
-          )
-        )
-      )
+      AND ${sqlCitaElectroOcultarReprogramada(a)}
     )
   )`;
 }
 
 function paramsCitaElectroVisibleEnAgendaDia(fechaYmd) {
-  return [fechaYmd, fechaYmd, fechaYmd, fechaYmd];
+  return [fechaYmd, fechaYmd, fechaYmd];
 }
 
 /** Hora HH:MM desde hora_inicio, hora_agendamiento o columna TIME. */
@@ -361,6 +369,20 @@ function sqlEstudioElectroFinProgramadoVencidoConDuracion(alias) {
   )`;
 }
 
+/**
+ * Auto-cierre de estudios activos: solo hora de inicio real + duracion_minutos.
+ * No usa GREATEST con hora_fin de agenda (evita cierre a los 30 min del slot).
+ */
+function sqlEstudioElectroFinInicioRealVencido(alias) {
+  const p = alias ? `${alias}.` : '';
+  const inicioReal = `TIMESTAMP(${p}fecha, TIME(COALESCE(${p}hora_inicio, ${p}hora_agendamiento)))`;
+  return `(
+    ${p}duracion_minutos > 0
+    AND COALESCE(${p}hora_inicio, ${p}hora_agendamiento) IS NOT NULL
+    AND DATE_ADD(${inicioReal}, INTERVAL ${p}duracion_minutos MINUTE) < NOW()
+  )`;
+}
+
 module.exports = {
   normalizarHoraHmElectro,
   extraerFechaYmd,
@@ -369,6 +391,8 @@ module.exports = {
   citaFechaFinYmd,
   citaVisibleEnFechaYmd,
   citaVisibleEnAgendaDiaYmd,
+  citaElectroEsReprogramadaArchivo,
+  sqlCitaElectroOcultarReprogramada,
   citaEsInicioEnFechaYmd,
   citaEsContinuacionEnFechaYmd,
   sqlCitaElectroVisibleEnFecha,
@@ -388,5 +412,6 @@ module.exports = {
   calcularFinInicioEstudioElectro,
   sqlEstudioElectroFinProgramadoTs,
   sqlEstudioElectroFinProgramadoVencido,
-  sqlEstudioElectroFinProgramadoVencidoConDuracion
+  sqlEstudioElectroFinProgramadoVencidoConDuracion,
+  sqlEstudioElectroFinInicioRealVencido
 };

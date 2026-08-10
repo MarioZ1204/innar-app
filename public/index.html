@@ -10,13 +10,13 @@
   <link rel="preload" as="image" href="/images/logo3.webp" fetchpriority="high">
   <link rel="preload" as="style" href="style.css?v=20260625-2">
   <link rel="stylesheet" href="style.css?v=20260625-2">
-  <link rel="stylesheet" href="innar-buttons.css?v=20260625-2">
+  <link rel="stylesheet" href="innar-buttons.css?v=20260810-modal3">
   <link rel="stylesheet" href="innar-theme.css?v=20260808-1">
   <link rel="stylesheet" href="innar-motion.css?v=20260625-2">
   <link rel="stylesheet" href="innar-scroll.css?v=1.7.5">
   <link rel="stylesheet" href="innar-sidebar.css?v=20260625-2">
   <link rel="stylesheet" href="innar-mobile.css?v=20260625-2">
-  <link rel="stylesheet" href="innar-agenda-cal.css?v=20260717-9">
+  <link rel="stylesheet" href="innar-agenda-cal.css?v=20260810-badges1">
   <link rel="stylesheet" href="innar-sesiones-multi.css?v=20260625-2">
   <link rel="stylesheet" href="sede-recordatorio.css?v=20260625-2">
   <link rel="stylesheet" href="soportes.css?v=1.7.5">
@@ -24,9 +24,9 @@
   <link rel="stylesheet" href="innar-responsive.css?v=20260625-2">
   <link rel="stylesheet" href="innar-responsive-shell.css?v=20260625-2">
   <link rel="stylesheet" href="innar-responsive-recibos.css?v=20260625-2">
-  <link rel="stylesheet" href="innar-responsive-agenda-medica.css?v=20260717-1">
+  <link rel="stylesheet" href="innar-responsive-agenda-medica.css?v=20260810-modal2">
   <link rel="stylesheet" href="innar-responsive-electro.css?v=20260625-2">
-  <link rel="stylesheet" href="innar-electro-estudio-ui.css?v=20260625-2">
+  <link rel="stylesheet" href="innar-electro-estudio-ui.css?v=20260810-reprog">
   <link rel="stylesheet" href="innar-electro-calendario.css?v=20260625-2">
   <link rel="stylesheet" href="innar-backup.css?v=20260625-2">
   <link rel="stylesheet" href="innar-documentos-cita.css?v=20260808-2">
@@ -782,13 +782,17 @@
                   </button>
                 </div>
                 <div class="ccal-legend">
-                  <span class="ccal-legend-item ccal-legend-green"><span class="ccal-legend-dot"></span> &gt;10 citas</span>
-                  <span class="ccal-legend-item ccal-legend-yellow"><span class="ccal-legend-dot"></span> 1-10 citas</span>
-                  <span class="ccal-legend-item ccal-legend-red"><span class="ccal-legend-dot"></span> Sin citas</span>
-                  <span class="ccal-legend-item ccal-legend-noasiste"><span class="ccal-legend-dot"></span> No asistiré</span>
-                  <span class="ccal-legend-item ccal-legend-ucqn"><span class="ccal-legend-dot"></span> UCQN</span>
+                  <span class="ccal-legend-item ccal-legend-motivo ccal-legend-ucqn"><span class="ccal-legend-dot"></span> UCQN</span>
+                  <span class="ccal-legend-item ccal-legend-motivo ccal-legend-hospital"><span class="ccal-legend-dot"></span> Hospital</span>
+                  <span class="ccal-legend-item ccal-legend-motivo ccal-legend-personal"><span class="ccal-legend-dot"></span> Cita personal</span>
+                  <span class="ccal-legend-item ccal-legend-motivo ccal-legend-vacaciones"><span class="ccal-legend-dot"></span> Vacaciones</span>
+                  <span class="ccal-legend-item ccal-legend-motivo ccal-legend-capacitacion"><span class="ccal-legend-dot"></span> Capacitación</span>
+                  <span class="ccal-legend-item ccal-legend-motivo ccal-legend-festivo"><span class="ccal-legend-dot"></span> Festivo</span>
+                  <span class="ccal-legend-item ccal-legend-motivo ccal-legend-ausente"><span class="ccal-legend-dot"></span> No asiste</span>
+                  <span class="ccal-legend-item ccal-legend-yellow"><span class="ccal-legend-dot"></span> Con citas</span>
                   <span class="ccal-legend-item ccal-legend-blocked"><span class="ccal-legend-dot"></span> No disponible</span>
                 </div>
+                <div id="citasCalLegend" class="ccal-day-legend" aria-live="polite"></div>
                 <div id="citasCalGrid" class="citas-cal-grid"></div>
               </section>
             </div>
@@ -974,9 +978,11 @@
                 </button>
               </div>
               <div class="cal-legend">
-                <span class="cal-legend-item"><span class="cal-dot cal-dot-available"></span> Disponible</span>
-                <span class="cal-legend-item"><span class="cal-dot cal-dot-partial"></span> Parcial</span>
-                <span class="cal-legend-item"><span class="cal-dot cal-dot-unavailable"></span> No disponible</span>
+                <span class="cal-legend-item"><span class="cal-dot cal-dot-available"></span> Jornada completa</span>
+                <span class="cal-legend-item"><span class="cal-dot cal-dot-partial"></span> Jornada parcial</span>
+                <span class="cal-legend-item"><span class="cal-dot cal-dot-unavailable"></span> No asiste</span>
+                <span class="cal-legend-item"><span class="cal-dot cal-motivo-ucqn"></span> UCQN</span>
+                <span class="cal-legend-item"><span class="cal-dot cal-motivo-festivo"></span> Festivo</span>
                 <span class="cal-legend-item"><span class="cal-dot cal-dot-none"></span> Sin configurar</span>
               </div>
               <div class="cal-grid" style="margin-bottom:4px">
@@ -1105,36 +1111,56 @@
   <div id="calDayModal" class="cal-modal-overlay hidden" aria-hidden="true">
     <div class="cal-modal" role="dialog" aria-labelledby="calModalTitle">
       <div class="cal-modal-head">
-        <div>
+        <div class="cal-modal-head-text">
           <h3 id="calModalTitle">Configurar día</h3>
           <div id="calModalDateSub" class="cal-modal-date-sub"></div>
         </div>
-        <button type="button" id="calModalClose" class="cal-modal-close" title="Cerrar" aria-label="Cerrar">&times;</button>
+        <button type="button" id="calModalClose" class="cal-modal-close" title="Cerrar" aria-label="Cerrar">
+          <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
       </div>
+      <div id="calModalEstadoDia" class="cal-estado-banner cal-estado-banner--none">Sin configurar</div>
+
       <div class="cal-modal-body">
         <!-- Paso 1: elección inicial -->
         <div id="calStepChoice" class="cal-step">
           <p class="cal-step-intro">¿Qué desea hacer con este día?</p>
           <div class="cal-choice-btns">
             <button type="button" id="calBtnNoAsiste" class="cal-choice-btn cal-choice-btn--no">
-              <span class="cal-choice-btn-title">No Asiste</span>
-              <span class="cal-choice-btn-desc">Bloquea el día (sin citas)</span>
+              <span class="cal-choice-btn-icon" aria-hidden="true">
+                <svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+              </span>
+              <span class="cal-choice-btn-text">
+                <span class="cal-choice-btn-title">No asiste</span>
+                <span class="cal-choice-btn-desc">Bloquea el día — se verá en rojo</span>
+              </span>
             </button>
             <button type="button" id="calBtnConfigurar" class="cal-choice-btn cal-choice-btn--config">
-              <span class="cal-choice-btn-title">Configurar Día</span>
-              <span class="cal-choice-btn-desc">Horarios y observación</span>
+              <span class="cal-choice-btn-icon" aria-hidden="true">
+                <svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+              </span>
+              <span class="cal-choice-btn-text">
+                <span class="cal-choice-btn-title">Configurar día</span>
+                <span class="cal-choice-btn-desc">Horarios, cupos y observación</span>
+              </span>
             </button>
           </div>
         </div>
 
         <!-- Paso: no asiste + observación opcional -->
         <div id="calStepAbsent" class="cal-step hidden">
-          <button type="button" id="calBtnVolverAbsent" class="cal-back-btn">← Volver</button>
-          <p class="cal-step-intro cal-step-intro--left">Indique el motivo por el cual no asiste (opcional)</p>
-          <div class="cal-obs-absent-form">
-            <label class="cal-motivo-label" for="calModalMotivoSelectAbsent">Motivo / observación</label>
-            <select id="calModalMotivoSelectAbsent" class="cal-motivo-select">
+          <button type="button" id="calBtnVolverAbsent" class="cal-back-btn">
+            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+            Volver
+          </button>
+          <p class="cal-step-intro cal-step-intro--left">Marque el día como no disponible. Puede indicar el motivo (opcional).</p>
+          <div class="cal-field-section">
+            <span class="cal-field-section-label">Motivo</span>
+            <div id="calMotivoChipsAbsent" class="cal-motivo-chips" role="group" aria-label="Motivo de ausencia"></div>
+            <label class="cal-motivo-label cal-motivo-label--sr" for="calModalMotivoSelectAbsent">Motivo / observación</label>
+            <select id="calModalMotivoSelectAbsent" class="cal-motivo-select cal-motivo-select--hidden" tabindex="-1" aria-hidden="true">
               <option value="">Sin observación</option>
+              <option value="Festivo">Festivo</option>
               <option value="UCQN">UCQN</option>
               <option value="Hospital departamental">Hospital departamental</option>
               <option value="Cita médica personal">Cita médica personal</option>
@@ -1144,46 +1170,61 @@
             </select>
             <input type="text" id="calModalMotivoOtroAbsent" class="cal-motivo-input cal-motivo-input--hidden" placeholder="Escribe el motivo..." maxlength="200" />
           </div>
-          <button type="button" id="calBtnConfirmarNoAsiste" class="cal-choice-btn cal-choice-btn--no cal-btn-confirm-absent">
-            Confirmar — No asiste
-          </button>
+          <div class="cal-modal-footer cal-modal-footer--inline">
+            <button type="button" id="calBtnConfirmarNoAsiste" class="cal-btn-confirm-ausente">
+              <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+              Confirmar — No asiste
+            </button>
+          </div>
         </div>
 
         <!-- Paso 2: configurar horarios -->
         <div id="calStepConfig" class="cal-step hidden">
-          <button type="button" id="calBtnVolver" class="cal-back-btn">← Volver</button>
+          <button type="button" id="calBtnVolver" class="cal-back-btn">
+            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+            Volver
+          </button>
 
-          <div id="calAttendOptions" class="cal-attend-options">
-            <span class="cal-attend-options-label">Tipo de jornada</span>
+          <div id="calAttendOptions" class="cal-field-section">
+            <span class="cal-field-section-label">Tipo de jornada</span>
             <div class="cal-attend-chips">
-              <button type="button" class="cal-attend-chip" id="calChipPartial" data-cal-submode="partial">Horario personalizado</button>
-              <button type="button" class="cal-attend-chip" id="calChipFullDay" data-cal-submode="full">Todo el día (8–12 y 14–18)</button>
+              <button type="button" class="cal-attend-chip" id="calChipPartial" data-cal-submode="partial">
+                <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+                Horario personalizado
+              </button>
+              <button type="button" class="cal-attend-chip" id="calChipFullDay" data-cal-submode="full">
+                <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/></svg>
+                Todo el día (8–12 y 14–18)
+              </button>
             </div>
           </div>
 
-          <div id="calModalHorasContainer" class="cal-hora-section">
-            <span class="cal-hora-section-label">Horarios de atención</span>
+          <div id="calModalHorasContainer" class="cal-field-section cal-hora-section">
+            <span class="cal-field-section-label">Horarios de atención</span>
             <div id="calModalHorasList"></div>
-            <button type="button" id="calModalAddHora" class="cal-add-hora-btn">
+            <button type="button" id="calModalAddHora" class="cal-add-row-btn">
               <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
               Agregar horario
             </button>
           </div>
 
-          <div id="calModalCuposEntidadSection" class="cal-cupos-section">
-            <span class="cal-hora-section-label">Cupos por entidad</span>
+          <div id="calModalCuposEntidadSection" class="cal-field-section cal-cupos-section">
+            <span class="cal-field-section-label">Cupos por entidad</span>
             <p class="cal-cupos-hint">Indique cuántos pacientes atenderá de cada entidad este día (ej. PROINSALUD: 10).</p>
             <div id="calModalCuposEntidadList"></div>
-            <button type="button" id="calModalAddCupoEntidad" class="cal-add-hora-btn">
+            <button type="button" id="calModalAddCupoEntidad" class="cal-add-row-btn">
               <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
               Agregar entidad
             </button>
           </div>
 
-          <div id="calModalObsAttend" class="cal-obs-attend">
-            <label class="cal-motivo-label" for="calModalMotivoSelectAttend">Observación (opcional)</label>
-            <select id="calModalMotivoSelectAttend" class="cal-motivo-select">
+          <div id="calModalObsAttend" class="cal-field-section cal-obs-attend">
+            <span class="cal-field-section-label">Observación del día (opcional)</span>
+            <div id="calMotivoChipsAttend" class="cal-motivo-chips" role="group" aria-label="Observación del día"></div>
+            <label class="cal-motivo-label cal-motivo-label--sr" for="calModalMotivoSelectAttend">Observación</label>
+            <select id="calModalMotivoSelectAttend" class="cal-motivo-select cal-motivo-select--hidden" tabindex="-1" aria-hidden="true">
               <option value="">Sin observación</option>
+              <option value="Festivo">Festivo</option>
               <option value="UCQN">UCQN</option>
               <option value="Hospital departamental">Hospital departamental</option>
               <option value="Cita médica personal">Cita médica personal</option>
@@ -1194,9 +1235,9 @@
             <input type="text" id="calModalMotivoOtroAttend" class="cal-motivo-input cal-motivo-input--hidden" placeholder="Escribe la observación..." maxlength="200" />
           </div>
 
-          <div class="cal-modal-actions">
-            <button type="button" id="calModalSave" class="cal-btn-save">Guardar configuración</button>
+          <div class="cal-modal-footer">
             <button type="button" id="calModalClear" class="cal-btn-clear">Limpiar día</button>
+            <button type="button" id="calModalSave" class="cal-btn-save">Guardar configuración</button>
           </div>
         </div>
       </div>
@@ -1663,6 +1704,7 @@
               <label for="filtroEstudiosElectro" class="electro-filtro-label">Tipo de estudio</label>
               <select id="filtroEstudiosElectro" multiple style="display:none" aria-label="Filtrar por tipo de estudio"></select>
             </div>
+            <div id="electroLeyendaEstudios" class="electro-leyenda-estudios" aria-label="Colores por tipo de estudio" style="display:none"></div>
 
             <!-- Contador de citas -->
             <div id="citasElectroContador" style="padding:6px 0 10px 2px;font-size:.875rem;color:#6b7280;font-weight:500;min-height:22px"></div>
@@ -1734,15 +1776,11 @@
               </section>
             </div>
 
-            <!-- Información de Usuario Programó / Editó (abajo de la tabla) -->
+            <!-- Resumen del día -->
             <div class="electro-meta-footer">
               <div>
-                <div style="font-size:.875rem;color:#6b7280;font-weight:600;margin-bottom:4px">USUARIO QUE PROGRAMÓ</div>
-                <div style="font-size:.95rem;color:#1f2937;font-weight:500" id="electroUsuarioProgramo">-</div>
-              </div>
-              <div>
-                <div style="font-size:.875rem;color:#6b7280;font-weight:600;margin-bottom:4px">USUARIO QUE EDITÓ</div>
-                <div style="font-size:.95rem;color:#1f2937;font-weight:500" id="electroUsuarioEdito">-</div>
+                <div style="font-size:.875rem;color:#6b7280;font-weight:600;margin-bottom:4px">RESUMEN DEL DÍA</div>
+                <div style="font-size:.95rem;color:#1f2937;font-weight:500" id="electroResumenDia">—</div>
               </div>
             </div>
           </section>
@@ -1983,11 +2021,15 @@
         <div class="col"><label>Nombres del Paciente <span style="color:#dc2626">*</span></label><input id="electroPacienteNombres" type="text" placeholder="Nombres" /></div>
         <div class="col"><label>Apellidos del Paciente <span style="color:#dc2626">*</span></label><input id="electroPacienteApellidos" type="text" placeholder="Apellidos" /></div>
         <div class="col"><label>Número de Teléfono <span style="color:#dc2626">*</span></label><input id="electroTelefono" type="tel" inputmode="numeric" maxlength="10" placeholder="10 dígitos" /></div>
-        <div class="col"><label>Teléfono 2 <span style="color:#dc2626">*</span></label><input id="electroTelefono2" type="tel" inputmode="numeric" maxlength="10" placeholder="10 dígitos" /></div>
+        <div class="col"><label>Teléfono 2</label><input id="electroTelefono2" type="tel" inputmode="numeric" maxlength="10" placeholder="Opcional — 10 dígitos" /></div>
         <div class="col" id="electroDuracionCol" style="display:none">
           <label>Duración del Estudio (horas)</label>
           <input id="electroDuracion" type="number" placeholder="Ej: 8" min="1" max="168" step="0.5" />
         </div>
+      </div>
+      <div class="electro-notas-field" style="margin-bottom:14px">
+        <label for="electroObservaciones" style="display:block;font-size:.875rem;font-weight:600;color:#374151;margin-bottom:6px">Notas / observaciones</label>
+        <textarea id="electroObservaciones" rows="2" maxlength="1000" placeholder="Indicaciones para recepción, logística, preparación del paciente…" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:.9rem;resize:vertical;min-height:56px"></textarea>
       </div>
       <div style="margin-bottom:16px;font-size:.875rem;color:#6b7280">Programado por: <strong id="electroProgramadoPor">-</strong></div>
       <div style="display:flex;gap:10px;justify-content:flex-end">
@@ -2113,6 +2155,7 @@
         <div class="cita-modal-info-item">
           <div class="cita-modal-info-label">Duración</div>
           <div id="modalDuracionDisplay" class="cita-modal-info-value">-</div>
+          <div id="modalDuracionSubtext" class="electro-duracion-subtext" style="display:none"></div>
           <div id="modalDuracionEdit" class="hidden" style="display:none;margin-top:8px;">
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
               <label style="font-size:0.75rem;color:#6b7280;">H</label>
@@ -2145,6 +2188,18 @@
       <div class="cita-modal-audit">
         <span>Programado por <strong id="modalUsuarioProgramo">-</strong></span>
         <span>Editado por <strong id="modalUsuarioEdito">-</strong></span>
+      </div>
+      <div id="modalReprogramacionAudit" class="electro-reprog-audit" style="display:none"></div>
+      <div id="modalHistorialReprogElectro" class="electro-historial-reprog" style="display:none">
+        <div class="cita-modal-field-label">Historial de reprogramaciones</div>
+        <ul id="modalHistorialReprogLista" class="electro-historial-reprog-list"></ul>
+      </div>
+
+      <!-- NOTAS -->
+      <div class="cita-modal-section electro-notas-section">
+        <label class="cita-modal-field-label" for="modalObservacionesElectro">Notas / observaciones</label>
+        <textarea id="modalObservacionesElectro" class="electro-notas-textarea" rows="3" maxlength="1000" placeholder="Indicaciones, recordatorios, logística del estudio…"></textarea>
+        <p class="electro-notas-hint">Se guardan al pulsar «Guardar cambios» o al salir del campo.</p>
       </div>
 
       <!-- EDICIÓN: EQUIPO + FLUJO DE ESTADO -->
@@ -2190,6 +2245,7 @@
           <div class="estudio-progreso-barra-wrap" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="estudioBarraProgress">
             <div id="estudioBarraLlena" class="estudio-progreso-barra" style="width:0%"></div>
           </div>
+          <div id="estudioResumenDuracion" class="estudio-progreso-resumen-duracion" style="display:none"></div>
           <div class="estudio-progreso-meta">
             <span class="estudio-progreso-meta-label">Transcurrido</span>
             <span id="estudioTiempoTranscurrido" class="estudio-progreso-timer">00:00:00</span>
@@ -2294,6 +2350,9 @@
       </div>
 
       <div style="display:grid;gap:16px;margin-bottom:24px">
+        <div style="padding:12px;background:#fffbeb;border-left:4px solid #d97706;border-radius:6px;font-size:.85rem;color:#78350f;line-height:1.45">
+          Se creará una <strong>nueva cita</strong> en la fecha elegida. La cita actual quedará archivada en este día (ya no aparecerá en la agenda).
+        </div>
         <div>
           <label style="display:block;font-size:.875rem;color:#6b7280;font-weight:600;margin-bottom:6px">Nueva Fecha</label>
           <input id="modalReprogramarFecha" type="date">
@@ -2324,6 +2383,9 @@
       </div>
 
       <div style="display:grid;gap:16px;margin-bottom:24px">
+        <div style="padding:12px;background:#ecfdf5;border-left:4px solid #059669;border-radius:6px;font-size:.85rem;color:#065f46;line-height:1.45">
+          Cambia solo la <strong>hora del mismo día</strong>. Para mover la cita a otro día use <strong>Reprogramar</strong>.
+        </div>
         <div>
           <label style="display:block;font-size:.875rem;color:#6b7280;font-weight:600;margin-bottom:6px">Nueva Hora de Agendamiento</label>
           <input id="modalAdelantarHora" type="time" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:.95rem">
@@ -4312,7 +4374,8 @@
   <script src="socket-client.js?v=1.7.7"></script>
   <script src="socket-electro.js?v=20260625-2"></script>
   <script src="dashboard-citas.js?v=20260703-1"></script>
-  <script src="calendario-agenda.js?v=20260721-3"></script>
+  <script src="agenda-motivo-dia.js?v=20260810-fix1"></script>
+  <script src="calendario-agenda.js?v=20260810-fixcache1"></script>
   <script src="calendario-electro.js?v=20260625-2"></script>
   <script src="backup-module.js?v=20260625-2"></script>
   <script src="/libs/lucide.min.js?v=20260625-2"></script>
@@ -4329,7 +4392,7 @@
   <script src="firma-quitar-fondo.js?v=20260625-2"></script>
   <script src="documento-pdf-cliente.js?v=1.7.43"></script>
   <script src="documentos-cita-module.js?v=20260808-2"></script>
-  <script src="app.js?v=20260722-1"></script>
+  <script src="app.js?v=20260810-fixcache1"></script>
   <script src="anexo-fidu.js?v=1.7.4"></script>
   <script src="soportes-pdf-editor.js?v=20260625-2"></script>
   <script src="reportes-historico.js?v=1.7.30"></script>
