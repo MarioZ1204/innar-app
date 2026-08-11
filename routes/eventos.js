@@ -9,8 +9,8 @@ const router = express.Router();
 router.get('/eventos/poll', requireAuth, async (req, res) => {
   const uid = req.session.usuarioId;
   const waitRaw = parseInt(String(req.query.wait || '0'), 10);
-  // Hostinger/proxies suelen cortar ~30s; dejamos margen.
-  const waitMs = Number.isFinite(waitRaw) ? Math.min(25000, Math.max(0, waitRaw)) : 0;
+  // Hostinger/proxies suelen cortar ~30s; en compartido conviene waits cortos.
+  const waitMs = Number.isFinite(waitRaw) ? Math.min(10000, Math.max(0, waitRaw)) : 0;
   if (waitMs > 0) {
     await queue.waitForEvents(uid, waitMs);
   }

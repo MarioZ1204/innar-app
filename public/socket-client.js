@@ -11,12 +11,16 @@ const UPDATE_CHECK_INTERVAL_MS = 60000;
 
 const POLL_MS = typeof window.INNAR_REALTIME_POLL_MS === 'number'
   ? window.INNAR_REALTIME_POLL_MS
-  : 4000;
+  : 2000;
 
-/** Long-poll: el servidor retiene hasta ~22s o hasta que haya eventos (casi socket). */
+/**
+ * Long-poll corto. En Hostinger compartido, waits largos (≥15–20s) saturan
+ * conexiones de Node/Passenger y la app se siente caída o muy lenta.
+ * Override: window.INNAR_REALTIME_LONG_POLL_MS
+ */
 const LONG_POLL_WAIT_MS = typeof window.INNAR_REALTIME_LONG_POLL_MS === 'number'
   ? window.INNAR_REALTIME_LONG_POLL_MS
-  : 22000;
+  : 6000;
 
 /** @type {ReturnType<typeof setTimeout>|null} */
 let socketPollTimer = null;
@@ -508,7 +512,7 @@ async function pollLoopTick() {
   const waitMs = hidden ? 0 : LONG_POLL_WAIT_MS;
   await runPollIteration(waitMs);
   if (!pollLoopActive) return;
-  scheduleNextPoll(hidden ? Math.max(POLL_MS, 8000) : 40);
+  scheduleNextPoll(hidden ? Math.max(POLL_MS, 10000) : 80);
 }
 
 function initSocket() {
