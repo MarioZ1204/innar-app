@@ -33,8 +33,8 @@ const COMPROBANTE_LAYOUT = {
   espacioTrasSolido1: 6,
   espacioTrasSolido2: 6,
   /** Tamaño único de la firma en el PDF (cualquier imagen se ajusta a este recuadro). */
-  firmaImgAlturaSlot: 32,
-  firmaImgAncho: 82,
+  firmaImgAlturaSlot: 36,
+  firmaImgAncho: 90,
   margenImagenSobrePunteada: 0.6,
   /** 0 = anclada justo encima de la punteada (antes 10 la bajaba por debajo). */
   firmaImgDesplazamientoAbajo: 0,
