@@ -36,8 +36,8 @@ const COMPROBANTE_LAYOUT = {
   firmaImgAlturaSlot: 36,
   firmaImgAncho: 90,
   margenImagenSobrePunteada: 0.6,
-  /** 0 = anclada justo encima de la punteada (antes 10 la bajaba por debajo). */
-  firmaImgDesplazamientoAbajo: 0,
+  /** Baja el recuadro hacia la punteada (10 quedaba por debajo; 0 quedaba alto). */
+  firmaImgDesplazamientoAbajo: 6,
   zonaInferiorTop: 182,
   tablaTop: 223,
   pieRowFromTop: 277,
@@ -371,12 +371,13 @@ function buildComprobanteServiciosHtml(data, fondo = {}) {
       overflow: hidden;
     }
     .cmp-firma-paciente img {
-      width: ${F.firmaImgWidth}mm;
-      height: ${F.firmaImgHeight}mm;
-      max-width: ${F.firmaImgWidth}mm;
-      max-height: ${F.firmaImgHeight}mm;
-      object-fit: contain;
-      object-position: center bottom;
+      /* Sin width/height fijos ni object-fit: html2canvas los ignora y la firma “flota” arriba. */
+      display: block;
+      max-width: 100%;
+      max-height: 100%;
+      width: auto;
+      height: auto;
+      margin: 0 auto;
       mix-blend-mode: multiply;
     }
     .cmp-acudiente {

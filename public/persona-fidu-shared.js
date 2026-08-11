@@ -1,26 +1,54 @@
 /**
  * Formulario compartido: base de pacientes FOMAG (anexo_fidu_personas).
  * Usado por certificado, comprobante y anexo.
- * Siempre muestra el formulario completo; resalta los campos faltantes.
+ * Según el contexto solo muestra los campos de ese módulo;
+ * el Anexo pide ciudad/género/residencia, el comprobante no.
  */
 (function () {
   const PERSONA_FORM = [
-    { key: 'numero_documento', label: 'Número de documento', required: true },
-    { key: 'nombres_1', label: 'Primer nombre', required: true },
+    { key: 'numero_documento', label: 'Número de documento' },
+    { key: 'nombres_1', label: 'Primer nombre' },
     { key: 'nombres_2', label: 'Segundo nombre' },
-    { key: 'apellidos_1', label: 'Primer apellido', required: true },
+    { key: 'apellidos_1', label: 'Primer apellido' },
     { key: 'apellidos_2', label: 'Segundo apellido' },
-    { key: 'fecha_nacimiento', label: 'Fecha de nacimiento', required: true },
-    { key: 'tipo_documento', label: 'Tipo de documento', required: true },
-    { key: 'ciudad_nacimiento', label: 'Ciudad de nacimiento', required: true },
-    { key: 'genero', label: 'Género', required: true },
-    { key: 'direccion', label: 'Dirección', long: true, required: true },
+    { key: 'fecha_nacimiento', label: 'Fecha de nacimiento' },
+    { key: 'tipo_documento', label: 'Tipo de documento' },
+    { key: 'ciudad_nacimiento', label: 'Ciudad de nacimiento' },
+    { key: 'genero', label: 'Género' },
+    { key: 'direccion', label: 'Dirección', long: true },
     { key: 'barrio', label: 'Barrio' },
-    { key: 'ciudad_residencia', label: 'Ciudad de residencia', long: true, required: true },
-    { key: 'telefono', label: 'Teléfono', required: true },
-    { key: 'correo', label: 'Correo', required: true },
-    { key: 'afiliacion', label: 'Afiliación', required: true }
+    { key: 'ciudad_residencia', label: 'Ciudad de residencia', long: true },
+    { key: 'telefono', label: 'Teléfono' },
+    { key: 'correo', label: 'Correo' },
+    { key: 'afiliacion', label: 'Afiliación' }
   ];
+
+  /** Claves visibles por contexto (alineado con backend CAMPOS_REQUERIDOS + extras útiles). */
+  const CAMPOS_VISIBLES = {
+    certificado: [
+      'numero_documento', 'nombres_1', 'nombres_2', 'apellidos_1', 'apellidos_2',
+      'fecha_nacimiento', 'tipo_documento'
+    ],
+    comprobante: [
+      'numero_documento', 'nombres_1', 'nombres_2', 'apellidos_1', 'apellidos_2',
+      'fecha_nacimiento', 'tipo_documento', 'direccion', 'telefono', 'correo', 'afiliacion'
+    ],
+    anexo: null
+  };
+
+  /** Obligatorios por contexto (mismo criterio que utils/anexo-fidu-personas-docs.js). */
+  const CAMPOS_REQUERIDOS = {
+    certificado: new Set(['numero_documento', 'nombres_1', 'apellidos_1', 'tipo_documento']),
+    comprobante: new Set([
+      'numero_documento', 'nombres_1', 'apellidos_1', 'tipo_documento',
+      'fecha_nacimiento', 'direccion', 'telefono', 'correo', 'afiliacion'
+    ]),
+    anexo: new Set([
+      'numero_documento', 'nombres_1', 'apellidos_1', 'fecha_nacimiento',
+      'tipo_documento', 'ciudad_nacimiento', 'genero', 'direccion',
+      'ciudad_residencia', 'telefono', 'correo', 'afiliacion'
+    ])
+  };
 
   const OPCIONES_GENERO = [
     { value: '', label: '— Seleccionar —' },
@@ -129,34 +157,62 @@
   }
 
   /**
-   * Siempre devuelve el formulario completo.
-   * (Antes filtraba por fases; eso provocaba “pide un dato y luego aparecen más”.)
+   * Campos visibles según el módulo que pide los datos.
+   * Comprobante / certificado no muestran campos exclusivos del Anexo.
    */
-  function camposParaFormulario(_camposFaltantes, _persona, _modoCompleto) {
-    return PERSONA_FORM;
+  function camposParaFormulario(camposFaltantes, _persona, _modoCompleto, contexto) {
+    const ctx = normalizarContexto(contexto);
+    const keys = CAMPOS_VISIBLES[ctx];
+    if (!keys) return PERSONA_FORM.slice();
+    // Si hay faltantes, asegurar que esos keys estén (por si el backend añade alguno).
+    const set = new Set(keys);
+    (camposFaltantes || []).forEach((c) => {
+      const k = c.key || c;
+      if (k) set.add(k);
+    });
+    return PERSONA_FORM.filter((f) => set.has(f.key));
   }
 
-  function htmlListaFaltantes(camposFaltantes) {
+  function normalizarContexto(contexto) {
+    const c = String(contexto || 'anexo').trim().toLowerCase();
+    if (c === 'comprobante' || c === 'certificado') return c;
+    return 'anexo';
+  }
+
+  function esRequeridoEnContexto(key, contexto) {
+    const req = CAMPOS_REQUERIDOS[normalizarContexto(contexto)] || CAMPOS_REQUERIDOS.anexo;
+    return req.has(key);
+  }
+
+  function htmlListaFaltantes(camposFaltantes, contexto) {
     const labels = labelsFaltantes(camposFaltantes);
     if (!labels.length) return '';
+    const titulo = normalizarContexto(contexto) === 'comprobante'
+      ? 'Complete estos datos del comprobante:'
+      : normalizarContexto(contexto) === 'certificado'
+        ? 'Complete estos datos del certificado:'
+        : 'Complete estos datos obligatorios del Anexo:';
     return `<div class="pfidu-faltantes-list" role="status">
-      <strong>Complete estos datos obligatorios:</strong>
+      <strong>${titulo}</strong>
       <ul>${labels.map((l) => `<li>${escapeHtml(l)}</li>`).join('')}</ul>
     </div>`;
   }
 
   function renderFormulario(container, opts = {}) {
     const persona = opts.persona || {};
+    const contexto = normalizarContexto(opts.contexto);
     const faltantesKeys = keysFaltantesSet(opts.camposFaltantes);
-    const campos = PERSONA_FORM;
+    const campos = camposParaFormulario(opts.camposFaltantes, persona, opts.modoCompleto, contexto);
     const docReadonly = opts.documentoReadonly !== false;
-    let html = htmlListaFaltantes(opts.camposFaltantes);
+    let html = htmlListaFaltantes(opts.camposFaltantes, contexto);
     html += '<div class="pfidu-form-grid">';
     campos.forEach((f) => {
       const v = persona[f.key] != null ? String(persona[f.key]) : '';
       const ro = f.key === 'numero_documento' && docReadonly;
       const missClass = faltantesKeys.has(f.key) ? ' is-missing' : '';
-      const reqMark = f.required ? ' <span class="pfidu-req" title="Obligatorio">*</span>' : '';
+      const reqMark = esRequeridoEnContexto(f.key, contexto)
+        ? ' <span class="pfidu-req" title="Obligatorio">*</span>'
+        : '';
       html += `<div class="pfidu-form-field${missClass}" data-field="${f.key}">
         <label for="pfidu-${f.key}">${escapeHtml(f.label)}${reqMark}</label>
         ${htmlCampo(f, v, ro)}
@@ -164,6 +220,7 @@
     });
     html += '</div>';
     container.innerHTML = html;
+    container.dataset.pfiduContexto = contexto;
     bindFechaTipoDocumento(container);
     bindFechaInputs(container);
     // Scroll al primer faltante
@@ -213,8 +270,9 @@
   function leerFormulario(root) {
     const persona = {};
     PERSONA_FORM.forEach((f) => {
-      const el = root.querySelector(`#pfidu-${f.key}`);
-      let val = el ? el.value.trim() : '';
+      const el = root?.querySelector?.(`#pfidu-${f.key}`);
+      if (!el) return;
+      let val = el.value.trim();
       if (f.key === 'fecha_nacimiento') val = normalizarFecha(val);
       persona[f.key] = val;
     });
@@ -311,6 +369,8 @@
 
   window.innarPersonaFidu = {
     PERSONA_FORM,
+    CAMPOS_VISIBLES,
+    CAMPOS_REQUERIDOS,
     normalizarFecha,
     bindFechaInputs,
     calcularTipoDocumento,
@@ -324,6 +384,8 @@
     guardarDesdeComprobanteModal,
     guardarDesdeCertificadoModal,
     camposParaFormulario,
-    labelsFaltantes
+    labelsFaltantes,
+    esRequeridoEnContexto,
+    normalizarContexto
   };
 })();

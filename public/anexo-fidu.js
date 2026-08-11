@@ -1511,6 +1511,7 @@
       window.innarPersonaFidu.renderFormulario(mount, {
         persona,
         camposFaltantes: faltantes,
+        contexto: 'anexo',
         modoCompleto: true
       });
     } else if (mount) {

@@ -15221,18 +15221,27 @@ function abrirModalCompletarPersonaFidu(opts = {}) {
     return;
   }
   const doc = opts.persona?.numero_documento || '';
+  const contexto = (typeof PF.normalizarContexto === 'function')
+    ? PF.normalizarContexto(opts.contexto || _personaFiduPending?.contexto || 'anexo')
+    : (opts.contexto || 'anexo');
   const faltantes = opts.camposFaltantes || [];
   const labels = (typeof PF.labelsFaltantes === 'function') ? PF.labelsFaltantes(faltantes) : [];
   const lista = labels.length ? ` Faltan: <strong>${labels.map((l) => escapeHtml(l)).join(', ')}</strong>.` : '';
   if (msgEl) {
-    msgEl.innerHTML = faltantes.length
-      ? `El paciente <strong>${escapeHtml(doc)}</strong> necesita datos en la base FOMAG.${lista} Complete el formulario (todos los obligatorios) y guarde.`
-      : `El paciente <strong>${escapeHtml(doc)}</strong> no está completo en la base FOMAG. Registre los datos para continuar.`;
+    if (contexto === 'comprobante') {
+      msgEl.innerHTML = `Para generar el comprobante del paciente <strong>${escapeHtml(doc)}</strong> hacen falta datos del documento.${lista} Complete solo estos campos; los del Anexo se piden en el módulo Anexo FIDU.`;
+    } else if (contexto === 'certificado') {
+      msgEl.innerHTML = `Para el certificado del paciente <strong>${escapeHtml(doc)}</strong> faltan datos mínimos.${lista}`;
+    } else {
+      msgEl.innerHTML = faltantes.length
+        ? `El paciente <strong>${escapeHtml(doc)}</strong> necesita datos en la base FOMAG.${lista} Complete el formulario y guarde.`
+        : `El paciente <strong>${escapeHtml(doc)}</strong> no está completo en la base FOMAG. Registre los datos para continuar.`;
+    }
   }
-  // Siempre formulario completo; resalta faltantes (sin pedir datos por fases)
   PF.renderFormulario(formEl, {
     persona: opts.persona || {},
     camposFaltantes: faltantes,
+    contexto,
     modoCompleto: true
   });
   modal.classList.remove('hidden');
@@ -15268,6 +15277,7 @@ async function abrirDocumentoConPersonaFidu(contexto, citaPrefill, abrirFn) {
       abrirModalCompletarPersonaFidu({
         persona,
         camposFaltantes: faltantes,
+        contexto,
         modoCompleto: true
       });
       return;
@@ -15296,6 +15306,7 @@ async function guardarCompletarPersonaFiduYContinuar() {
       abrirModalCompletarPersonaFidu({
         persona: data.persona || persona,
         camposFaltantes: data.campos_faltantes,
+        contexto: pending.contexto,
         modoCompleto: true
       });
       _personaFiduPending = pending;
