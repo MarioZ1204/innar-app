@@ -320,18 +320,32 @@ function parseExcelDate(dateValue) {
  */
 async function obtenerDisponibilidadMensual(doctorId, mes = null, db) {
   try {
-    let query = 'SELECT * FROM doctor_disponibilidad_mensual WHERE doctor_id = ?';
-    let params = [doctorId];
+    const run = typeof db.query === 'function'
+      ? (sql, params) => db.query(sql, params)
+      : (sql, params) => db.execute(sql, params);
 
-    if (mes) {
-      query += ' AND DATE_FORMAT(fecha, "%Y-%m") = ?';
-      params.push(mes);
+    if (mes && /^\d{4}-\d{2}$/.test(mes)) {
+      const y = parseInt(mes.slice(0, 4), 10);
+      const m = parseInt(mes.slice(5, 7), 10);
+      const fechaIni = `${mes}-01`;
+      const endY = m === 12 ? y + 1 : y;
+      const endM = m === 12 ? 1 : m + 1;
+      const fechaFinExcl = `${endY}-${String(endM).padStart(2, '0')}-01`;
+      // Rango de fechas (evita DATE_FORMAT con "%Y-%m" que rompe si ANSI_QUOTES está activo en Hostinger).
+      const rows = await run(
+        `SELECT * FROM doctor_disponibilidad_mensual
+         WHERE doctor_id = ? AND fecha >= ? AND fecha < ?
+         ORDER BY fecha ASC`,
+        [doctorId, fechaIni, fechaFinExcl]
+      );
+      return Array.isArray(rows) ? rows : [];
     }
 
-    query += ' ORDER BY fecha ASC';
-
-    const result = await db.execute(query, params);
-    return result;
+    const rows = await run(
+      'SELECT * FROM doctor_disponibilidad_mensual WHERE doctor_id = ? ORDER BY fecha ASC',
+      [doctorId]
+    );
+    return Array.isArray(rows) ? rows : [];
   } catch (error) {
     console.error('[AGENDA] Error obteniendo disponibilidad:', error.message);
     return [];

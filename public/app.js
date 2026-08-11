@@ -5563,6 +5563,9 @@ async function persistirCalDia(payload) {
   renderCalendar();
   renderCalResumen();
   void loadCalendarData();
+  if (typeof actualizarDisponibilidadCitasCalPersistente === 'function') {
+    actualizarDisponibilidadCitasCalPersistente(savedDate, dispCache, true);
+  }
   if (typeof actualizarCuposCitasCalPersistente === 'function') {
     actualizarCuposCitasCalPersistente(savedDate, calCuposEntidad[savedDate] || []);
   } else if (typeof cargarCitasCalendario === 'function') {

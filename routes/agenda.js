@@ -300,11 +300,18 @@ router.get('/doctor-disponibilidad/:doctorId', requireAuth, async (req, res) => 
     } catch (err) {
       logger.warn('[DISPONIBILIDAD] cupos_entidad/schema no disponibles:', err.message);
     }
+    const rowsDisp = Array.isArray(disponibilidad) ? disponibilidad : [];
     res.json({
       ok: true,
-      disponibilidad: (disponibilidad || []).map((d) => ({
-        ...d,
-        fecha: cuposEntidadAgenda.fmtFechaLocal(d.fecha)
+      disponibilidad: rowsDisp.map((d) => ({
+        fecha: cuposEntidadAgenda.fmtFechaLocal(d.fecha),
+        disponible: d.disponible,
+        disponible_manana: d.disponible_manana,
+        disponible_tarde: d.disponible_tarde,
+        motivo_ausencia: d.motivo_ausencia != null && String(d.motivo_ausencia).trim()
+          ? String(d.motivo_ausencia).trim()
+          : null,
+        total_pacientes: d.total_pacientes != null ? d.total_pacientes : undefined
       })),
       cupos_entidad
     });

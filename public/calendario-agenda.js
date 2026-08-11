@@ -257,9 +257,64 @@ function actualizarCuposCitasCalPersistente(fecha, cuposPlanos, silent) {
   if (!silent) renderCitasCalGrid();
 }
 
+/**
+ * Refleja disponibilidad/motivo recién guardados en Ver Citas (evita flash → desaparecer
+ * cuando el poll recarga antes de que el GET traiga motivo_ausencia).
+ */
+function actualizarDisponibilidadCitasCalPersistente(fecha, disp, silent) {
+  const f = _fmtFechaCal(fecha);
+  if (!f || !disp) return;
+  const disponibleRaw = disp.disponible;
+  let disponible = 1;
+  if (disponibleRaw === false || disponibleRaw === 0 || disponibleRaw === '0') disponible = 0;
+  else if (disponibleRaw === true || disponibleRaw === 1 || disponibleRaw === '1') disponible = 1;
+  _citasCalDispCache[f] = {
+    disponible,
+    motivo: (disp.motivo_ausencia != null && String(disp.motivo_ausencia).trim())
+      ? String(disp.motivo_ausencia).trim()
+      : (disp.motivo != null && String(disp.motivo).trim() ? String(disp.motivo).trim() : null),
+    manana: disp.disponible_manana === false || disp.disponible_manana === 0 || disp.disponible_manana === '0' ? 0 : 1,
+    tarde: disp.disponible_tarde === false || disp.disponible_tarde === 0 || disp.disponible_tarde === '0' ? 0 : 1,
+    total: parseInt(disp.total_pacientes, 10) || 0
+  };
+  if (!silent) renderCitasCalGrid();
+}
+
+/** Si Programar Agenda ya tiene motivo en memoria, no dejar que Ver Citas lo pierda. */
+function _mergeMotivoDesdeCalProgramar(doctorId) {
+  if (!_doctorCoincideCuposProgramar(doctorId)) return;
+  if (typeof calDisponibilidad === 'undefined' || !calDisponibilidad) return;
+  Object.entries(calDisponibilidad).forEach(([fecha, disp]) => {
+    const f = _fmtFechaCal(fecha);
+    if (!f || !disp) return;
+    const motivo = disp.motivo_ausencia != null && String(disp.motivo_ausencia).trim()
+      ? String(disp.motivo_ausencia).trim()
+      : null;
+    if (!motivo) return;
+    const prev = _citasCalDispCache[f];
+    if (prev && prev.motivo) return;
+    const disponibleRaw = disp.disponible;
+    let disponible = prev ? prev.disponible : 1;
+    if (disponibleRaw === false || disponibleRaw === 0 || disponibleRaw === '0') disponible = 0;
+    else if (disponibleRaw === true || disponibleRaw === 1 || disponibleRaw === '1') disponible = 1;
+    _citasCalDispCache[f] = {
+      disponible,
+      motivo,
+      manana: prev?.manana != null
+        ? prev.manana
+        : (disp.disponible_manana === false || disp.disponible_manana === 0 || disp.disponible_manana === '0' ? 0 : 1),
+      tarde: prev?.tarde != null
+        ? prev.tarde
+        : (disp.disponible_tarde === false || disp.disponible_tarde === 0 || disp.disponible_tarde === '0' ? 0 : 1),
+      total: prev?.total || 0
+    };
+  });
+}
+
 function sincronizarCuposCitasCalDesdeProgramar(silent) {
   const doctorId = _getCitasCalDoctorId();
   _mergeCuposDesdeCalProgramar(doctorId);
+  _mergeMotivoDesdeCalProgramar(doctorId);
   _rellenarCuposCacheFaltantes(doctorId);
   if (!silent) renderCitasCalGrid();
 }
@@ -441,11 +496,20 @@ async function cargarCitasCalendario() {
     if (Array.isArray(body.disponibilidad)) {
       body.disponibilidad.forEach((d) => {
         const f = _fmtFechaCal(d.fecha);
+        const dispNum = (d.disponible === false || d.disponible === 0 || d.disponible === '0')
+          ? 0
+          : (d.disponible === true || d.disponible === 1 || d.disponible === '1' ? 1 : parseInt(d.disponible, 10));
         _citasCalDispCache[f] = {
-          disponible: parseInt(d.disponible, 10),
-          motivo: d.motivo_ausencia || null,
-          manana: d.disponible_manana != null ? parseInt(d.disponible_manana, 10) : 1,
-          tarde: d.disponible_tarde != null ? parseInt(d.disponible_tarde, 10) : 1,
+          disponible: Number.isFinite(dispNum) ? dispNum : 1,
+          motivo: (d.motivo_ausencia != null && String(d.motivo_ausencia).trim())
+            ? String(d.motivo_ausencia).trim()
+            : null,
+          manana: d.disponible_manana != null
+            ? ((d.disponible_manana === false || d.disponible_manana === 0 || d.disponible_manana === '0') ? 0 : 1)
+            : 1,
+          tarde: d.disponible_tarde != null
+            ? ((d.disponible_tarde === false || d.disponible_tarde === 0 || d.disponible_tarde === '0') ? 0 : 1)
+            : 1,
           total: parseInt(d.total_pacientes, 10) || 0
         };
       });
@@ -454,6 +518,7 @@ async function cargarCitasCalendario() {
     _mergeCuposEntidadFallback(body.cupos_entidad);
     _aplicarCuposResumenDia(body.cupos_resumen_dia, body.cupos_entidad);
     _hidratarCuposCalendarioDesdeStorage(doctorId, mes);
+    _mergeMotivoDesdeCalProgramar(doctorId);
     _rellenarCuposCacheFaltantes(doctorId);
 
     if (doctorId) {

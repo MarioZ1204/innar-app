@@ -132,7 +132,22 @@ router.get('/turnos/calendario', requireAuth, async (req, res) => {
       }
     }
 
-    res.json({ ok: true, dias: rows, disponibilidad, cupos_entidad, cupos_resumen_dia });
+    res.json({
+      ok: true,
+      dias: rows,
+      disponibilidad: (disponibilidad || []).map((d) => ({
+        fecha: cuposEntidadAgenda.fmtFechaLocal(d.fecha),
+        disponible: d.disponible,
+        disponible_manana: d.disponible_manana,
+        disponible_tarde: d.disponible_tarde,
+        motivo_ausencia: d.motivo_ausencia != null && String(d.motivo_ausencia).trim()
+          ? String(d.motivo_ausencia).trim()
+          : null,
+        total_pacientes: d.total_pacientes
+      })),
+      cupos_entidad,
+      cupos_resumen_dia
+    });
   } catch (e) {
     logger.error(e.message, { error: e });
     res.status(500).json({ error: safeError(e) });
