@@ -40,11 +40,57 @@ const CREATE_CUPOS_TABLE_SQL = `
 `;
 
 let _tablaCuposVerificada = false;
+let _motivoColVerificada = false;
+
+async function _dbRows(db, sql, params = []) {
+  if (typeof db.query === 'function') {
+    const rows = await db.query(sql, params);
+    return Array.isArray(rows) ? rows : [];
+  }
+  const result = await db.execute(sql, params);
+  return Array.isArray(result) ? result : [];
+}
+
+async function ensureMotivoAusenciaColumn(db) {
+  if (_motivoColVerificada) return true;
+  try {
+    const cols = await _dbRows(
+      db,
+      `SELECT COUNT(*) AS c FROM information_schema.COLUMNS
+       WHERE TABLE_SCHEMA = DATABASE()
+         AND TABLE_NAME = 'doctor_disponibilidad_mensual'
+         AND COLUMN_NAME = 'motivo_ausencia'`
+    );
+    const exists = Number(cols?.[0]?.c || 0) > 0;
+    if (!exists) {
+      await db.execute(
+        'ALTER TABLE doctor_disponibilidad_mensual ADD COLUMN motivo_ausencia VARCHAR(200) DEFAULT NULL'
+      );
+    }
+    _motivoColVerificada = true;
+    return true;
+  } catch (err) {
+    _motivoColVerificada = false;
+    const e = new Error(`No se pudo asegurar motivo_ausencia: ${err.message}`);
+    e.cause = err;
+    throw e;
+  }
+}
 
 async function ensureCuposEntidadTable(db) {
   if (_tablaCuposVerificada) return;
   await db.execute(CREATE_CUPOS_TABLE_SQL);
   _tablaCuposVerificada = true;
+}
+
+/**
+ * Asegura columna motivo + tabla de cupos (sin FK: Hostinger a menudo falla con FK).
+ * Debe llamarse FUERA de transacciones (DDL hace COMMIT implícito).
+ */
+async function ensureAgendaDiaSchema(db) {
+  await ensureMotivoAusenciaColumn(db);
+  await ensureCuposEntidadTable(db);
+  return true;
 }
 
 /** Asegura la tabla fuera de transacciones (evita COMMIT implícito por DDL en MySQL). */
@@ -65,7 +111,8 @@ async function listarCuposDia(doctorId, fecha, db) {
     return [];
   }
   try {
-    const rows = await db.execute(
+    const rows = await _dbRows(
+      db,
       `SELECT entidad, cupo_max FROM doctor_cupos_entidad_dia
        WHERE doctor_id = ? AND fecha = ?
        ORDER BY entidad ASC`,
@@ -87,20 +134,41 @@ async function listarCuposMes(doctorId, mes, db) {
   } catch (_) {
     return [];
   }
+  const mapRows = (rows) => (rows || []).map((r) => ({
+    fecha: fmtFechaLocal(r.fecha),
+    entidad: normalizarEntidadNombre(r.entidad),
+    cupo_max: Math.max(0, parseInt(r.cupo_max, 10) || 0)
+  })).filter((r) => r.entidad && r.cupo_max > 0);
+
+  const y = parseInt(mes.slice(0, 4), 10);
+  const m = parseInt(mes.slice(5, 7), 10);
+  const fechaIni = `${mes}-01`;
+  const endY = m === 12 ? y + 1 : y;
+  const endM = m === 12 ? 1 : m + 1;
+  const fechaFinExcl = `${endY}-${String(endM).padStart(2, '0')}-01`;
+
   try {
-    const rows = await db.execute(
+    const rows = await _dbRows(
+      db,
       `SELECT fecha, entidad, cupo_max FROM doctor_cupos_entidad_dia
-       WHERE doctor_id = ? AND DATE_FORMAT(fecha, '%Y-%m') = ?
+       WHERE doctor_id = ? AND fecha >= ? AND fecha < ?
        ORDER BY fecha ASC, entidad ASC`,
-      [doctorId, mes]
+      [doctorId, fechaIni, fechaFinExcl]
     );
-    return (rows || []).map((r) => ({
-      fecha: fmtFechaLocal(r.fecha),
-      entidad: normalizarEntidadNombre(r.entidad),
-      cupo_max: Math.max(0, parseInt(r.cupo_max, 10) || 0)
-    })).filter((r) => r.entidad && r.cupo_max > 0);
+    return mapRows(rows);
   } catch (_) {
-    return [];
+    try {
+      const rowsFmt = await _dbRows(
+        db,
+        `SELECT fecha, entidad, cupo_max FROM doctor_cupos_entidad_dia
+         WHERE doctor_id = ? AND DATE_FORMAT(fecha, '%Y-%m') = ?
+         ORDER BY fecha ASC, entidad ASC`,
+        [doctorId, mes]
+      );
+      return mapRows(rowsFmt);
+    } catch (__) {
+      return [];
+    }
   }
 }
 
@@ -356,6 +424,8 @@ module.exports = {
   claveEntidad,
   fmtFechaLocal,
   ensureCuposEntidadTable,
+  ensureMotivoAusenciaColumn,
+  ensureAgendaDiaSchema,
   prepararTablaCuposEntidad,
   listarCuposDia,
   listarCuposMes,

@@ -88,6 +88,179 @@
 
 .chat-msgr-badge.is-visible {
   display: inline-flex;
+  animation: chatMsgrBadgePop 0.35s ease;
+}
+
+@keyframes chatMsgrBadgePop {
+  0% { transform: scale(0.6); }
+  60% { transform: scale(1.15); }
+  100% { transform: scale(1); }
+}
+
+#chatMessengerRoot button.chat-msgr-toggle.is-ping {
+  animation: chatMsgrTogglePing 0.85s ease;
+}
+
+@keyframes chatMsgrTogglePing {
+  0% { box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12), 0 0 0 0 rgba(37, 99, 235, 0.45); }
+  70% { box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12), 0 0 0 14px rgba(37, 99, 235, 0); }
+  100% { box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12), 0 0 0 0 rgba(37, 99, 235, 0); }
+}
+
+.chat-msgr-toast-host {
+  pointer-events: none;
+  position: absolute;
+  right: 0;
+  bottom: 70px;
+  width: min(360px, calc(100vw - 24px));
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 10px;
+  z-index: 2;
+}
+
+#chatMessengerRoot button.chat-msgr-toast-card {
+  pointer-events: auto;
+  position: relative !important;
+  width: 100% !important;
+  border: 1px solid rgba(226, 232, 240, 0.95) !important;
+  border-radius: 18px !important;
+  background: rgba(255, 255, 255, 0.94) !important;
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.18) !important;
+  padding: 12px 12px 14px 10px !important;
+  display: flex !important;
+  align-items: flex-start !important;
+  gap: 10px !important;
+  text-align: left !important;
+  cursor: pointer;
+  color: #0f172a !important;
+  font: inherit !important;
+  font-weight: 500 !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+  opacity: 0;
+  transform: translateY(14px) scale(0.96);
+  transition: opacity 0.24s ease, transform 0.24s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.15s ease, background 0.15s ease;
+}
+
+#chatMessengerRoot button.chat-msgr-toast-card.is-in {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+#chatMessengerRoot button.chat-msgr-toast-card.is-leaving {
+  opacity: 0;
+  transform: translateY(10px) scale(0.97);
+}
+
+#chatMessengerRoot button.chat-msgr-toast-card:hover {
+  border-color: #bfdbfe !important;
+  background: #fff !important;
+}
+
+.chat-msgr-toast-accent {
+  position: absolute;
+  left: 0;
+  top: 10px;
+  bottom: 10px;
+  width: 3px;
+  border-radius: 0 4px 4px 0;
+  background: linear-gradient(180deg, #2563eb, #1e3a8a);
+}
+
+.chat-msgr-toast-avatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  background: linear-gradient(145deg, #1e3a8a, #2563eb);
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  letter-spacing: 0.02em;
+  margin-left: 4px;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.28);
+}
+
+.chat-msgr-toast-copy {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding-top: 1px;
+}
+
+.chat-msgr-toast-eyebrow {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #2563eb;
+  line-height: 1.2;
+}
+
+.chat-msgr-toast-name {
+  font-size: 0.86rem;
+  font-weight: 800;
+  color: #0f172a;
+  line-height: 1.25;
+}
+
+.chat-msgr-toast-body {
+  font-size: 0.78rem;
+  color: #64748b;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin-top: 2px;
+}
+
+.chat-msgr-toast-close {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #94a3b8;
+  font-size: 1.05rem;
+  line-height: 1;
+  flex-shrink: 0;
+  margin-top: -2px;
+}
+
+.chat-msgr-toast-close:hover {
+  background: #f1f5f9;
+  color: #334155;
+}
+
+.chat-msgr-toast-progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #2563eb, #60a5fa);
+  transform-origin: left center;
+  transform: scaleX(1);
+  opacity: 0.85;
+}
+
+#chatMessengerRoot button.chat-msgr-toast-card.is-timing .chat-msgr-toast-progress {
+  animation: chatMsgrToastProgress 5.2s linear forwards;
+}
+
+@keyframes chatMsgrToastProgress {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
 }
 
 /* Panel de contactos */
@@ -882,6 +1055,15 @@
     right: max(10px, env(safe-area-inset-right, 0px));
     bottom: calc(max(10px, env(safe-area-inset-bottom, 0px)) + var(--chat-vv-offset, 0px));
     left: max(10px, env(safe-area-inset-left, 0px));
+  }
+
+  .chat-msgr-toast-host {
+    position: fixed;
+    left: max(10px, env(safe-area-inset-left, 0px));
+    right: max(10px, env(safe-area-inset-right, 0px));
+    bottom: calc(max(10px, env(safe-area-inset-bottom, 0px)) + 72px + var(--chat-vv-offset, 0px));
+    width: auto;
+    max-width: none;
   }
 
   .chat-msgr-layer {

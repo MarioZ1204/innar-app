@@ -13,9 +13,17 @@ const POLL_MS = typeof window.INNAR_REALTIME_POLL_MS === 'number'
   ? window.INNAR_REALTIME_POLL_MS
   : 4000;
 
-/** @type {ReturnType<typeof setInterval>|null} */
+/** Long-poll: el servidor retiene hasta ~22s o hasta que haya eventos (casi socket). */
+const LONG_POLL_WAIT_MS = typeof window.INNAR_REALTIME_LONG_POLL_MS === 'number'
+  ? window.INNAR_REALTIME_LONG_POLL_MS
+  : 22000;
+
+/** @type {ReturnType<typeof setTimeout>|null} */
 let socketPollTimer = null;
 let pollInFlight = false;
+let pollLoopActive = false;
+/** AbortController del long-poll en curso (para reabrir al volver a la pestaña). */
+let pollAbort = null;
 
 /** @type {Record<string, ReturnType<typeof setTimeout>|null>} */
 const _socketRefreshTimers = {};
@@ -451,11 +459,20 @@ function registerDefaultRealtimeHandlers() {
   });
 }
 
-async function runPollIteration() {
+async function runPollIteration(waitMs = 0) {
   if (pollInFlight) return;
   pollInFlight = true;
+  if (pollAbort) {
+    try { pollAbort.abort(); } catch (_) { /* noop */ }
+  }
+  pollAbort = typeof AbortController !== 'undefined' ? new AbortController() : null;
   try {
-    const r = await fetch('/api/eventos/poll', { credentials: 'include', cache: 'no-store' });
+    const q = waitMs > 0 ? `?wait=${encodeURIComponent(String(waitMs))}` : '';
+    const r = await fetch(`/api/eventos/poll${q}`, {
+      credentials: 'include',
+      cache: 'no-store',
+      signal: pollAbort ? pollAbort.signal : undefined
+    });
     if (r.status === 401) {
       document.dispatchEvent(new CustomEvent('app:no-autenticado'));
       closeSocket();
@@ -468,14 +485,34 @@ async function runPollIteration() {
       const row = events[i];
       if (row?.event) dispatchRealtime(row.event, row.data);
     }
-  } catch (e) { /* noop */
+  } catch (e) {
+    if (e && e.name === 'AbortError') return;
   } finally {
     pollInFlight = false;
   }
 }
 
+function scheduleNextPoll(delayMs) {
+  if (!pollLoopActive) return;
+  if (socketPollTimer) clearTimeout(socketPollTimer);
+  socketPollTimer = setTimeout(() => {
+    socketPollTimer = null;
+    void pollLoopTick();
+  }, Math.max(0, delayMs | 0));
+}
+
+async function pollLoopTick() {
+  if (!pollLoopActive) return;
+  const hidden = typeof document !== 'undefined' && document.visibilityState === 'hidden';
+  // Pestaña oculta: poll corto sin wait (ahorra conexiones colgadas). Visible: long-poll.
+  const waitMs = hidden ? 0 : LONG_POLL_WAIT_MS;
+  await runPollIteration(waitMs);
+  if (!pollLoopActive) return;
+  scheduleNextPoll(hidden ? Math.max(POLL_MS, 8000) : 40);
+}
+
 function initSocket() {
-  if (socketPollTimer !== null) return;
+  if (pollLoopActive) return;
 
   listeners.clear();
 
@@ -501,10 +538,10 @@ function initSocket() {
   initRealtimeTabChannel();
 
   socket.connected = true;
-  console.info('Tiempo real: HTTP polling', { intervalMs: POLL_MS });
+  pollLoopActive = true;
+  console.info('Tiempo real: HTTP long-poll', { waitMs: LONG_POLL_WAIT_MS });
 
-  socketPollTimer = setInterval(runPollIteration, POLL_MS);
-  void runPollIteration();
+  void pollLoopTick();
 
   window.socketReady = true;
   window.dispatchEvent(new CustomEvent('socketReady', { detail: socket }));
@@ -517,7 +554,16 @@ function initSocket() {
       if (document.visibilityState !== 'visible') return;
       if (socket) {
         socket.connected = true;
-        void runPollIteration();
+        // Cortar long-poll colgado y pedir eventos al instante.
+        if (pollAbort) {
+          try { pollAbort.abort(); } catch (_) { /* noop */ }
+        }
+        if (socketPollTimer) {
+          clearTimeout(socketPollTimer);
+          socketPollTimer = null;
+        }
+        pollInFlight = false;
+        void pollLoopTick();
       }
       const module = window.currentModule;
       if (module === 'recibos') refreshRecibosListaPreservandoFiltros();
@@ -538,10 +584,16 @@ function initSocket() {
 function closeSocket() {
   window.dispatchEvent(new CustomEvent('socketClosed'));
 
+  pollLoopActive = false;
+  if (pollAbort) {
+    try { pollAbort.abort(); } catch (_) { /* noop */ }
+    pollAbort = null;
+  }
   if (socketPollTimer) {
-    clearInterval(socketPollTimer);
+    clearTimeout(socketPollTimer);
     socketPollTimer = null;
   }
+  pollInFlight = false;
   if (socket) {
     socket.disconnect();
   }

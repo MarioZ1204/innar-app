@@ -251,9 +251,9 @@
       ${list.map((s) => {
         const isImg = s.kind === 'image' && s.src;
         return `<div class="chat-msgr-sticker-cell">
-          <button type="button" class="chat-msgr-sticker-btn${isImg ? ' chat-msgr-sticker-btn--img' : ''}" data-sticker-id="${escapeHtml(s.id)}" title="${escapeHtml(s.label || s.id)}">
+          <button type="button" class="chat-msgr-sticker-btn${isImg ? ' chat-msgr-sticker-btn--img' : ''}" data-sticker-id="${escapeHtml(s.id)}" title="${escapeHtml(isImg ? 'Sticker' : (s.label || s.id))}">
             ${isImg
-              ? `<img src="${escapeHtml(s.src)}" alt="${escapeHtml(s.label || '')}" loading="lazy" />`
+              ? `<img src="${escapeHtml(s.src)}" alt="Sticker" loading="lazy" />`
               : `<span>${s.emoji || '🎨'}</span>`}
           </button>
           ${allowDelete ? `<button type="button" class="chat-msgr-sticker-del" data-del-sticker="${escapeHtml(s.id)}" title="Quitar de mi pack">×</button>` : ''}
@@ -329,7 +329,7 @@
       const src = m.sticker_src || fromPack?.src;
       const emoji = m.sticker_emoji || fromPack?.emoji || m.cuerpo || '🎨';
       if (kind === 'image' && stickerImgSrcOk(src)) {
-        return `<div class="chat-msgr-sticker chat-msgr-sticker--img" aria-label="${escapeHtml(m.sticker_label || 'Sticker')}">
+        return `<div class="chat-msgr-sticker chat-msgr-sticker--img" aria-label="Sticker">
           <img src="${escapeHtml(src)}" alt="" loading="lazy" />
         </div>`;
       }
@@ -373,20 +373,130 @@
         return;
       }
       const now = ctx.currentTime;
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(880, now);
-      osc.frequency.setValueAtTime(1175, now + 0.08);
-      gain.gain.setValueAtTime(0.0001, now);
-      gain.gain.exponentialRampToValueAtTime(0.12, now + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.22);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start(now);
-      osc.stop(now + 0.24);
+      const master = ctx.createGain();
+      master.gain.setValueAtTime(0.0001, now);
+      master.gain.exponentialRampToValueAtTime(0.09, now + 0.02);
+      master.gain.exponentialRampToValueAtTime(0.0001, now + 0.42);
+      master.connect(ctx.destination);
+
+      const tone = (freq, start, dur) => {
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(freq, now + start);
+        g.gain.setValueAtTime(0.0001, now + start);
+        g.gain.exponentialRampToValueAtTime(0.7, now + start + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, now + start + dur);
+        osc.connect(g);
+        g.connect(master);
+        osc.start(now + start);
+        osc.stop(now + start + dur + 0.02);
+      };
+      tone(660, 0, 0.16);
+      tone(880, 0.12, 0.2);
       state.audioUnlocked = true;
     } catch (_) { /* noop */ }
+  }
+
+  function ensureToastHost() {
+    let host = document.getElementById('chatMsgrToastHost');
+    if (host) return host;
+    const root = ensureRoot();
+    host = document.createElement('div');
+    host.id = 'chatMsgrToastHost';
+    host.className = 'chat-msgr-toast-host';
+    host.setAttribute('aria-live', 'polite');
+    root.appendChild(host);
+    return host;
+  }
+
+  function previewNotifBody(mensaje) {
+    if (!mensaje) return 'Nuevo mensaje';
+    if (String(mensaje.tipo || '') === 'sticker') {
+      if (mensaje.sticker_kind === 'emoji' || mensaje.sticker_emoji) {
+        return mensaje.sticker_emoji || mensaje.cuerpo || '🎨 Sticker';
+      }
+      const cuerpo = String(mensaje.cuerpo || '');
+      if (cuerpo && !cuerpo.startsWith('🎨')) return cuerpo;
+      return '🎨 Sticker';
+    }
+    return String(mensaje.cuerpo || 'Nuevo mensaje');
+  }
+
+  function openDockFromToast() {
+    showUiIfAllowed();
+    state.dockOpen = true;
+    syncDockVisibility();
+    void refreshContactos();
+  }
+
+  function showChatToastCard({ peerName, body, peerId, avatarText }) {
+    const host = ensureToastHost();
+    while (host.children.length >= 3) {
+      host.firstElementChild?.remove();
+    }
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'chat-msgr-toast-card';
+    const initialsTxt = avatarText || initials(peerName);
+    card.innerHTML = `
+      <span class="chat-msgr-toast-accent" aria-hidden="true"></span>
+      <span class="chat-msgr-toast-avatar" aria-hidden="true">${escapeHtml(initialsTxt)}</span>
+      <span class="chat-msgr-toast-copy">
+        <span class="chat-msgr-toast-eyebrow">Nuevo mensaje</span>
+        <span class="chat-msgr-toast-name">${escapeHtml(peerName || 'Chat')}</span>
+        <span class="chat-msgr-toast-body">${escapeHtml(String(body || '').slice(0, 90))}</span>
+      </span>
+      <span class="chat-msgr-toast-close" data-close title="Cerrar" aria-label="Cerrar">×</span>
+      <span class="chat-msgr-toast-progress" aria-hidden="true"></span>`;
+
+    let closed = false;
+    let timer = null;
+    const close = () => {
+      if (closed) return;
+      closed = true;
+      if (timer) clearTimeout(timer);
+      card.classList.add('is-leaving');
+      setTimeout(() => card.remove(), 220);
+    };
+
+    card.addEventListener('click', (e) => {
+      if (e.target.closest('[data-close]')) {
+        e.stopPropagation();
+        close();
+        return;
+      }
+      unlockChatAudio();
+      if (peerId) {
+        const c = state.contactos.find((x) => Number(x.id) === Number(peerId));
+        if (c) void openChatWithPeer(c);
+        else void openChatWithPeer({ id: peerId, nombre: peerName || 'Chat' });
+      } else {
+        openDockFromToast();
+      }
+      close();
+    });
+
+    host.appendChild(card);
+    requestAnimationFrame(() => {
+      card.classList.add('is-in');
+      card.classList.add('is-timing');
+    });
+    timer = setTimeout(close, 5200);
+    card.addEventListener('mouseenter', () => {
+      if (timer) clearTimeout(timer);
+      card.classList.remove('is-timing');
+    }, { once: true });
+  }
+
+  function pulseChatToggle() {
+    const btn = document.getElementById('chatMsgrToggle');
+    if (!btn) return;
+    btn.classList.remove('is-ping');
+    // reflow
+    void btn.offsetWidth;
+    btn.classList.add('is-ping');
+    setTimeout(() => btn.classList.remove('is-ping'), 900);
   }
 
   function notifPrefEnabled() {
@@ -470,7 +580,9 @@
       const n = new Notification(peerName || 'Chat INNAR', {
         body: String(body || '').slice(0, 120),
         tag: `innar-chat-${peerId || 'x'}`,
-        renotify: true
+        renotify: true,
+        silent: false,
+        icon: '/images/logo.webp'
       });
       n.onclick = () => {
         try { window.focus(); } catch (_) { /* noop */ }
@@ -481,6 +593,7 @@
         }
         n.close();
       };
+      setTimeout(() => { try { n.close(); } catch (_) { /* noop */ } }, 8000);
     } catch (_) { /* noop */ }
   }
 
@@ -1024,12 +1137,22 @@
 
   function alertIncoming(payload) {
     const name = payload.from?.nombre || 'Chat';
-    const body = String(payload.mensaje?.cuerpo || '');
-    if (typeof showToast === 'function') {
-      showToast(`${name}: ${body.slice(0, 60)}`, 'info');
+    const body = previewNotifBody(payload.mensaje);
+    const peerId = payload.from?.id;
+    const win = peerId != null ? state.windows.get(Number(peerId)) : null;
+    const chatFocused = !!(win && ventanaActivaParaLeer(win));
+
+    if (!chatFocused) {
+      showChatToastCard({
+        peerName: name,
+        body,
+        peerId,
+        avatarText: initials(name)
+      });
+      pulseChatToggle();
+      playChatSound();
+      notifyBrowser(name, body, peerId);
     }
-    playChatSound();
-    notifyBrowser(name, body, payload.from?.id);
 
     if (payload.from?.id != null) {
       const c = state.contactos.find((x) => Number(x.id) === Number(payload.from.id));
@@ -1043,7 +1166,6 @@
       void refreshContactos();
     } else {
       void refreshUnread().then(() => {
-        // si el GET falló, al menos reflejar +1 local
         if (state.totalUnread === 0 && payload.from?.id != null) {
           const c = state.contactos.find((x) => Number(x.id) === Number(payload.from.id));
           if (c) setBadge(parseInt(c.no_leidos, 10) || 1);

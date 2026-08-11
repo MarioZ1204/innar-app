@@ -1361,6 +1361,8 @@ const runtimeMigrations = [
     name: 'rt_doctor_cupos_entidad_dia',
     description: 'Cupos de pacientes por entidad y día (programar agenda)',
     run: async (db) => {
+      // Sin FOREIGN KEY: en Hostinger/shared MySQL el FK a usuarios suele fallar
+      // y la migración se tragaba el error → cupos nunca se persistían.
       await db.execute(`
         CREATE TABLE IF NOT EXISTS doctor_cupos_entidad_dia (
           id INT AUTO_INCREMENT PRIMARY KEY,
@@ -1371,10 +1373,30 @@ const runtimeMigrations = [
           creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           actualizado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
           UNIQUE KEY unique_doctor_fecha_entidad (doctor_id, fecha, entidad),
-          INDEX idx_doctor_fecha (doctor_id, fecha),
-          FOREIGN KEY (doctor_id) REFERENCES usuarios(id) ON DELETE CASCADE
+          INDEX idx_doctor_fecha (doctor_id, fecha)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
       `);
+    }
+  },
+  {
+    name: 'rt_doctor_cupos_entidad_dia_ensure_nofk',
+    description: 'Asegura doctor_cupos_entidad_dia sin FK (recuperación Hostinger)',
+    run: async (db) => {
+      if (!(await tableExists(db, 'doctor_cupos_entidad_dia'))) {
+        await db.execute(`
+          CREATE TABLE IF NOT EXISTS doctor_cupos_entidad_dia (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            doctor_id INT NOT NULL,
+            fecha DATE NOT NULL,
+            entidad VARCHAR(200) NOT NULL,
+            cupo_max INT NOT NULL DEFAULT 0,
+            creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            actualizado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY unique_doctor_fecha_entidad (doctor_id, fecha, entidad),
+            INDEX idx_doctor_fecha (doctor_id, fecha)
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+        `);
+      }
     }
   },
   {

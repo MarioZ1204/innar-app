@@ -21,6 +21,11 @@ function canonicalUsuarioId(raw) {
 const queues = new Map();
 /** @type {Map<string, number>} usuarioId canónico → timestamp último poll */
 const lastPollAt = new Map();
+/**
+ * Esperas de long-poll: se resuelven al encolar eventos o al timeout.
+ * @type {Map<string, { resolve: () => void, timer: ReturnType<typeof setTimeout> }[]>}
+ */
+const waiters = new Map();
 
 function prune() {
   const now = Date.now();
@@ -28,7 +33,25 @@ function prune() {
     if (now - t > SUBSCRIBER_TTL_MS) {
       lastPollAt.delete(usuarioKey);
       queues.delete(usuarioKey);
+      const pending = waiters.get(usuarioKey);
+      if (pending) {
+        waiters.delete(usuarioKey);
+        for (const w of pending) {
+          clearTimeout(w.timer);
+          try { w.resolve(); } catch (_) { /* noop */ }
+        }
+      }
     }
+  }
+}
+
+function notifyWaiters(usuarioKey) {
+  const list = waiters.get(usuarioKey);
+  if (!list || !list.length) return;
+  waiters.delete(usuarioKey);
+  for (const w of list) {
+    clearTimeout(w.timer);
+    try { w.resolve(); } catch (_) { /* noop */ }
   }
 }
 
@@ -57,6 +80,41 @@ function enqueue(usuarioKey, event, data) {
   }
   q.push(data === undefined ? { event } : { event, data });
   while (q.length > MAX_EVENTS_PER_USER) q.shift();
+  notifyWaiters(usuarioKey);
+}
+
+/**
+ * Espera hasta que haya eventos en cola o expire `timeoutMs` (long-poll).
+ * Si ya hay eventos, resuelve de inmediato.
+ */
+function waitForEvents(usuarioId, timeoutMs = 0) {
+  const key = canonicalUsuarioId(usuarioId);
+  const wait = Math.max(0, Math.min(30000, Number(timeoutMs) || 0));
+  if (!key || wait <= 0) return Promise.resolve();
+  touchSubscriber(usuarioId);
+  const existing = queues.get(key);
+  if (existing && existing.length) return Promise.resolve();
+
+  return new Promise((resolve) => {
+    const entry = {
+      resolve: () => resolve(),
+      timer: setTimeout(() => {
+        const list = waiters.get(key);
+        if (list) {
+          const next = list.filter((w) => w !== entry);
+          if (next.length) waiters.set(key, next);
+          else waiters.delete(key);
+        }
+        resolve();
+      }, wait)
+    };
+    let list = waiters.get(key);
+    if (!list) {
+      list = [];
+      waiters.set(key, list);
+    }
+    list.push(entry);
+  });
 }
 
 /** Entrega un evento solo a un usuario (DM / notificaciones dirigidas). */
@@ -111,6 +169,13 @@ function flushUser(usuarioId) {
 
 /** Solo para pruebas: limpia el singleton en memoria. */
 function resetQueuesForTests() {
+  for (const list of waiters.values()) {
+    for (const w of list) {
+      clearTimeout(w.timer);
+      try { w.resolve(); } catch (_) { /* noop */ }
+    }
+  }
+  waiters.clear();
   queues.clear();
   lastPollAt.clear();
 }
@@ -119,6 +184,7 @@ module.exports = {
   canonicalUsuarioId,
   touchSubscriber,
   flushUser,
+  waitForEvents,
   enqueueToUser,
   isUserOnline,
   broadcast,

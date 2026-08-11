@@ -437,8 +437,7 @@ const migrations = [
         creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         actualizado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         UNIQUE KEY unique_doctor_fecha_entidad (doctor_id, fecha, entidad),
-        INDEX idx_doctor_fecha (doctor_id, fecha),
-        FOREIGN KEY (doctor_id) REFERENCES usuarios(id) ON DELETE CASCADE
+        INDEX idx_doctor_fecha (doctor_id, fecha)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
     `
   }

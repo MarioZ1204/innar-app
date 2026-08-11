@@ -47,4 +47,16 @@ describe('event-poll-queue', () => {
     q.flushUser(uid);
     expect(q.isUserOnline(uid, 90000)).toBe(true);
   });
+
+  test('waitForEvents resuelve al encolar', async () => {
+    const uid = 88007;
+    q.flushUser(uid);
+    const waiting = q.waitForEvents(uid, 2000);
+    setTimeout(() => {
+      q.enqueueToUser(uid, 'chat:mensaje', { id: 9 });
+    }, 30);
+    await waiting;
+    const ev = q.flushUser(uid);
+    expect(ev.some((e) => e.event === 'chat:mensaje' && e.data.id === 9)).toBe(true);
+  });
 });

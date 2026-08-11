@@ -6,8 +6,14 @@ const relay = require('../utils/realtime-client-relay');
 
 const router = express.Router();
 
-router.get('/eventos/poll', requireAuth, (req, res) => {
+router.get('/eventos/poll', requireAuth, async (req, res) => {
   const uid = req.session.usuarioId;
+  const waitRaw = parseInt(String(req.query.wait || '0'), 10);
+  // Hostinger/proxies suelen cortar ~30s; dejamos margen.
+  const waitMs = Number.isFinite(waitRaw) ? Math.min(25000, Math.max(0, waitRaw)) : 0;
+  if (waitMs > 0) {
+    await queue.waitForEvents(uid, waitMs);
+  }
   const events = queue.flushUser(uid);
   res.json({ events });
 });

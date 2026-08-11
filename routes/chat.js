@@ -332,7 +332,11 @@ router.get('/chat/contactos', requireAuth, requireChatUsar, async (req, res) => 
          CASE WHEN c.usuario_a_id = ? THEN c.usuario_b_id ELSE c.usuario_a_id END AS peer_id,
          c.ultimo_mensaje_at,
          (SELECT CASE
-            WHEN tipo = 'sticker' THEN COALESCE(cuerpo, '🎨 Sticker')
+            WHEN tipo = 'sticker' THEN
+              CASE
+                WHEN cuerpo LIKE '🎨%' THEN '🎨 Sticker'
+                ELSE COALESCE(NULLIF(TRIM(cuerpo), ''), '🎨 Sticker')
+              END
             ELSE cuerpo
           END FROM chat_mensajes WHERE conversacion_id = c.id ORDER BY id DESC LIMIT 1) AS preview
        FROM chat_conversaciones c
@@ -379,7 +383,11 @@ router.get('/chat/conversaciones', requireAuth, requireChatUsar, async (req, res
       `SELECT c.*,
          CASE WHEN c.usuario_a_id = ? THEN c.usuario_b_id ELSE c.usuario_a_id END AS peer_id,
          (SELECT CASE
-            WHEN tipo = 'sticker' THEN COALESCE(cuerpo, '🎨 Sticker')
+            WHEN tipo = 'sticker' THEN
+              CASE
+                WHEN cuerpo LIKE '🎨%' THEN '🎨 Sticker'
+                ELSE COALESCE(NULLIF(TRIM(cuerpo), ''), '🎨 Sticker')
+              END
             ELSE cuerpo
           END FROM chat_mensajes WHERE conversacion_id = c.id ORDER BY id DESC LIMIT 1) AS preview,
          (SELECT COUNT(*) FROM chat_mensajes m

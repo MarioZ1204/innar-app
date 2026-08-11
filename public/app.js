@@ -5519,7 +5519,14 @@ async function persistirCalDia(payload) {
     : (disponible ? (hasTarde || (!hasManana && !hasTarde)) : false);
   const motivoResp = data.motivo_ausencia != null ? data.motivo_ausencia : motivoAusencia;
   const slotsResp = Array.isArray(data.slots) && data.slots.length ? data.slots : slots;
-  const cuposResp = Array.isArray(data.cupos_entidad) ? data.cupos_entidad : (cupos_entidad || []);
+  const cuposResp = Array.isArray(data.cupos_entidad) ? data.cupos_entidad : [];
+  const cuposEnviados = Array.isArray(cupos_entidad) ? cupos_entidad : [];
+  if (disponible && cuposEnviados.length && !cuposResp.length) {
+    throw new Error('Los cupos (p. ej. Proinsalud) no quedaron guardados en el servidor. Revisa la base o vuelve a intentar.');
+  }
+  if (motivoAusencia && data.motivo_ausencia == null) {
+    throw new Error('El motivo/observación no quedó guardado en el servidor. Revisa la columna motivo_ausencia.');
+  }
 
   const dispCache = {
     disponible: Boolean(disponible),

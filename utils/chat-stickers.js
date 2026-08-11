@@ -197,7 +197,7 @@ async function chatMediaPackForUser(userId, { canManage = false } = {}) {
 function stickerCuerpoPreview(st) {
   if (!st) return '🎨 Sticker';
   if (st.kind === 'emoji' && st.emoji) return st.emoji;
-  return `🎨 ${st.label || st.id}`;
+  return '🎨 Sticker';
 }
 
 function previewTextoMensaje(row) {

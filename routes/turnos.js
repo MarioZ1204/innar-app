@@ -83,14 +83,34 @@ router.get('/turnos/calendario', requireAuth, async (req, res) => {
     let cupos_entidad = [];
     if (doctor_id) {
       try {
+        await cuposEntidadAgenda.ensureAgendaDiaSchema(db);
+      } catch (schemaErr) {
+        logger.warn('[TURNOS/calendario] schema motivo/cupos:', schemaErr.message);
+      }
+      try {
+        // Sin total_pacientes: en Hostinger esa columna a veces no existe y el catch
+        // dejaba disponibilidad=[] → Agenda sin colores de motivo.
         disponibilidad = await db.query(
-          'SELECT fecha, disponible, disponible_manana, disponible_tarde, motivo_ausencia, total_pacientes FROM doctor_disponibilidad_mensual WHERE doctor_id = ? AND fecha >= ? AND fecha < ?',
+          'SELECT fecha, disponible, disponible_manana, disponible_tarde, motivo_ausencia FROM doctor_disponibilidad_mensual WHERE doctor_id = ? AND fecha >= ? AND fecha < ?',
           [doctor_id, fechaInicio, fechaFin]
         );
-      } catch (_) { /* tabla puede no existir aún */ }
+      } catch (dispErr) {
+        logger.warn('[TURNOS/calendario] disponibilidad:', dispErr.message);
+        try {
+          disponibilidad = await db.query(
+            'SELECT fecha, disponible, motivo_ausencia FROM doctor_disponibilidad_mensual WHERE doctor_id = ? AND fecha >= ? AND fecha < ?',
+            [doctor_id, fechaInicio, fechaFin]
+          );
+        } catch (dispErr2) {
+          logger.warn('[TURNOS/calendario] disponibilidad fallback:', dispErr2.message);
+          disponibilidad = [];
+        }
+      }
       try {
         cupos_entidad = await cuposEntidadAgenda.listarCuposMes(doctor_id, mes, db);
-      } catch (_) { /* noop */ }
+      } catch (cuposErr) {
+        logger.warn('[TURNOS/calendario] cupos_entidad:', cuposErr.message);
+      }
     }
 
     /** Resumen por día con ocupados/libres por entidad */

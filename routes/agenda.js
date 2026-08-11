@@ -295,10 +295,10 @@ router.get('/doctor-disponibilidad/:doctorId', requireAuth, async (req, res) => 
     const disponibilidad = await procesarAgendaExcel.obtenerDisponibilidadMensual(doctorId, mes, db);
     let cupos_entidad = [];
     try {
-      await cuposEntidadAgenda.prepararTablaCuposEntidad(db);
+      await cuposEntidadAgenda.ensureAgendaDiaSchema(db);
       cupos_entidad = await cuposEntidadAgenda.listarCuposMes(doctorId, mes, db);
     } catch (err) {
-      logger.warn('[DISPONIBILIDAD] cupos_entidad no disponibles:', err.message);
+      logger.warn('[DISPONIBILIDAD] cupos_entidad/schema no disponibles:', err.message);
     }
     res.json({
       ok: true,
@@ -379,7 +379,23 @@ router.post('/doctor-disponibilidad/guardar-dia-completo', requireAuth, async (r
       ? motivo_ausencia.trim().substring(0, 200)
       : null;
 
-    await cuposEntidadAgenda.prepararTablaCuposEntidad(db);
+    const cuposSolicitados = Array.isArray(cupos_entidad)
+      ? cupos_entidad.filter((c) => {
+        const entidad = String(c?.entidad || '').trim();
+        const cupoMax = Math.max(0, parseInt(c?.cupo_max ?? c?.cupo, 10) || 0);
+        return entidad && cupoMax > 0;
+      })
+      : [];
+
+    try {
+      await cuposEntidadAgenda.ensureAgendaDiaSchema(db);
+    } catch (schemaErr) {
+      logger.error('[DISPONIBILIDAD] Schema día (motivo/cupos):', schemaErr.message);
+      return res.status(500).json({
+        error: 'No se pudo preparar la base para guardar motivo/cupos. Verifique migraciones en Hostinger.',
+        detalle: schemaErr.message
+      });
+    }
 
     await db.transaction(async (conn) => {
       await conn.execute(
@@ -404,7 +420,7 @@ router.post('/doctor-disponibilidad/guardar-dia-completo', requireAuth, async (r
         );
       }
       if (disponible) {
-        await cuposEntidadAgenda.guardarCuposEntidadDia(conn, doctorId, fecha, cupos_entidad, { ensureTable: false });
+        await cuposEntidadAgenda.guardarCuposEntidadDia(conn, doctorId, fecha, cuposSolicitados, { ensureTable: false });
       } else {
         await cuposEntidadAgenda.eliminarCuposEntidadDia(conn, doctorId, fecha, { ensureTable: false });
       }
@@ -418,7 +434,34 @@ router.post('/doctor-disponibilidad/guardar-dia-completo', requireAuth, async (r
       ? await cuposEntidadAgenda.listarCuposDia(doctorId, fecha, db)
       : [];
 
-    logger.info(`[DISPONIBILIDAD] Día completo guardado: doctor=${doctorId}, fecha=${fecha}, slots=${slotsGuardados.length}, cupos=${cuposGuardados.length}`, { type: 'API' });
+    if (disponible && cuposSolicitados.length && !cuposGuardados.length) {
+      logger.error(`[DISPONIBILIDAD] Cupos no persistieron tras commit: doctor=${doctorId}, fecha=${fecha}`, { type: 'API' });
+      return res.status(500).json({
+        error: 'Los horarios se intentaron guardar pero los cupos por entidad no quedaron en la base. Revise la tabla doctor_cupos_entidad_dia.'
+      });
+    }
+
+    // Verificar motivo en BD (no confiar solo en el body)
+    let motivoPersistido = motivoLimpio;
+    try {
+      const dispRow = await db.queryOne(
+        'SELECT motivo_ausencia FROM doctor_disponibilidad_mensual WHERE doctor_id = ? AND fecha = ? LIMIT 1',
+        [doctorId, fecha]
+      );
+      motivoPersistido = dispRow?.motivo_ausencia != null && String(dispRow.motivo_ausencia).trim()
+        ? String(dispRow.motivo_ausencia).trim()
+        : null;
+      if (motivoLimpio && !motivoPersistido) {
+        logger.error(`[DISPONIBILIDAD] motivo_ausencia no quedó en BD: doctor=${doctorId}, fecha=${fecha}`, { type: 'API' });
+        return res.status(500).json({
+          error: 'El motivo/observación no quedó guardado. Verifique la columna motivo_ausencia en doctor_disponibilidad_mensual.'
+        });
+      }
+    } catch (readErr) {
+      logger.warn('[DISPONIBILIDAD] No se pudo releer motivo_ausencia:', readErr.message);
+    }
+
+    logger.info(`[DISPONIBILIDAD] Día completo guardado: doctor=${doctorId}, fecha=${fecha}, slots=${slotsGuardados.length}, cupos=${cuposGuardados.length}, motivo=${motivoPersistido || 'ninguno'}`, { type: 'API' });
     emitSocket('agenda:disponibilidad-actualizada', { doctor_id: doctorId, fecha, source: 'guardar-dia-completo' });
     res.json({
       ok: true,
@@ -426,7 +469,7 @@ router.post('/doctor-disponibilidad/guardar-dia-completo', requireAuth, async (r
       disponible: Boolean(disponible),
       disponible_manana: Boolean(disponible_manana),
       disponible_tarde: Boolean(disponible_tarde),
-      motivo_ausencia: motivoLimpio,
+      motivo_ausencia: motivoPersistido,
       slots: (slotsGuardados || []).map((s) => ({
         fecha: typeof s.fecha === 'string' ? s.fecha.slice(0, 10) : fecha,
         hora_inicio: String(s.hora_inicio || '').slice(0, 5),
@@ -456,6 +499,13 @@ router.post('/doctor-disponibilidad/guardar-dia', requireAuth, async (req, res) 
     const motivoLimpio = (typeof motivo_ausencia === 'string' && motivo_ausencia.trim())
       ? motivo_ausencia.trim().substring(0, 200)
       : null;
+
+    try {
+      await cuposEntidadAgenda.ensureMotivoAusenciaColumn(db);
+    } catch (schemaErr) {
+      logger.error('[DISPONIBILIDAD] motivo_ausencia schema:', schemaErr.message);
+      return res.status(500).json({ error: 'No se pudo preparar motivo_ausencia en la base', detalle: schemaErr.message });
+    }
 
     await db.execute(
       `INSERT INTO doctor_disponibilidad_mensual (doctor_id, fecha, disponible, disponible_manana, disponible_tarde, motivo_ausencia)
