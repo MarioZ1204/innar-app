@@ -319,12 +319,26 @@ const schemas = {
   }),
 
   apiChatMensaje: Joi.object({
-    cuerpo: Joi.string().trim().min(1).max(2000).required(),
+    tipo: Joi.string().valid('text', 'sticker').default('text'),
+    cuerpo: Joi.string().trim().max(2000).allow('').optional(),
+    sticker_id: Joi.string().trim().max(80).optional().allow(null, ''),
     paciente_id: Joi.number().integer().positive().optional().allow(null),
     turno_id: Joi.number().integer().positive().optional().allow(null),
     cita_electro_id: Joi.number().integer().positive().optional().allow(null),
     paciente_nombre: Joi.string().max(200).optional().allow(null, ''),
     contexto_label: Joi.string().max(240).optional().allow(null, '')
+  }).custom((value, helpers) => {
+    const tipo = value.tipo || 'text';
+    if (tipo === 'sticker') {
+      if (!String(value.sticker_id || '').trim()) {
+        return helpers.message('sticker_id es obligatorio para stickers');
+      }
+      return value;
+    }
+    if (!String(value.cuerpo || '').trim()) {
+      return helpers.message('El mensaje no puede estar vacío');
+    }
+    return value;
   }),
 
   apiCrearDiagnostico: Joi.object({

@@ -20,6 +20,12 @@ const {
   separarValoresUsadosEnOtros,
   expandirSeleccionFiltroServicio
 } = require('../utils/recibos-catalogo-filtros');
+const {
+  buildTokenAndWhere,
+  sqlFoldExpr,
+  sqlDigitsExpr,
+  tokenizeSearchQuery
+} = require('../utils/soportes-busqueda');
 
 // Helper local
 function escapeHtml(str) {
@@ -483,16 +489,28 @@ router.get('/recibos/next-number', requireAuth, async (req, res) => {
 // GET /api/recibos/buscar-cita — BEFORE /:id
 router.get('/recibos/buscar-cita', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion'], 'recibos.ver'), async (req, res) => {
   const q = (req.query.q || '').trim();
-  if (!q || q.length < 2) return res.json([]);
+  if (!q || q.length < 2 || !tokenizeSearchQuery(q).length) return res.json([]);
   try {
-    const like = `%${q}%`;
+    const turnosWhere = buildTokenAndWhere([
+      sqlFoldExpr('t.paciente_nombre'),
+      sqlDigitsExpr('t.paciente_documento'),
+      sqlFoldExpr('t.paciente_documento'),
+      sqlFoldExpr('t.tipo_consulta'),
+      sqlFoldExpr('u.nombre')
+    ], tokenizeSearchQuery(q));
+    const electroWhere = buildTokenAndWhere([
+      sqlFoldExpr('p.nombre'),
+      sqlDigitsExpr('p.documento'),
+      sqlFoldExpr('p.documento'),
+      sqlFoldExpr('ce.estudio')
+    ], tokenizeSearchQuery(q));
     const turnos = await db.query(
       `SELECT t.id, t.paciente_nombre, t.paciente_documento, t.fecha, t.hora,
               t.tipo_consulta, t.entidad, u.nombre AS medico_nombre, u.id AS medico_id, 'turno' AS origen
        FROM turnos t LEFT JOIN usuarios u ON u.id = t.doctor_id
-       WHERE (t.paciente_nombre LIKE ? OR t.paciente_documento LIKE ?) AND t.estado IN ('COMPLETADO','ATENDIDO') AND t.fecha >= CURDATE() - INTERVAL 7 DAY
-       ORDER BY t.fecha DESC, t.hora DESC LIMIT 20`,
-      [like, like]
+       WHERE (${turnosWhere.sql}) AND t.estado IN ('COMPLETADO','ATENDIDO') AND t.fecha >= CURDATE() - INTERVAL 7 DAY
+       ORDER BY t.fecha DESC, t.hora DESC LIMIT 30`,
+      turnosWhere.params
     );
     const citasE = await db.query(
       `SELECT ce.id, p.nombre AS paciente_nombre, p.documento AS paciente_documento,
@@ -505,9 +523,9 @@ router.get('/recibos/buscar-cita', requireAuth, requireRoleOrPerm(['superadmin',
               )) AS entidad,
               NULL AS medico_nombre, NULL AS medico_id, 'electro' AS origen
        FROM citas_electro ce JOIN pacientes p ON p.id = ce.paciente_id
-       WHERE (p.nombre LIKE ? OR p.documento LIKE ?) AND ce.estado = 'Completado' AND ce.deleted_at IS NULL AND ce.fecha >= CURDATE() - INTERVAL 7 DAY
-       ORDER BY ce.fecha DESC, ce.hora_agendamiento DESC LIMIT 20`,
-      [like, like]
+       WHERE (${electroWhere.sql}) AND ce.estado = 'Completado' AND ce.deleted_at IS NULL AND ce.fecha >= CURDATE() - INTERVAL 7 DAY
+       ORDER BY ce.fecha DESC, ce.hora_agendamiento DESC LIMIT 30`,
+      electroWhere.params
     );
     res.json([...turnos, ...citasE]);
   } catch (err) {

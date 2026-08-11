@@ -3093,7 +3093,7 @@
                 <div class="afidu-personas-toolbar">
                   <div class="afidu-personas-search">
                     <label for="afiduPersonasBuscar">Buscar</label>
-                    <input type="search" id="afiduPersonasBuscar" placeholder="Documento, nombre o apellido…" autocomplete="off" />
+                    <input type="search" id="afiduPersonasBuscar" placeholder="Documento, nombres o apellidos (cualquier orden)…" autocomplete="off" />
                   </div>
                   <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="btnAfiduPersonasBuscar"><i data-lucide="search"></i> Buscar</button>
                 </div>
@@ -3241,7 +3241,8 @@
                     </tbody>
                   </table>
                 </div>
-                <div class="afidu-pager">
+                <div class="afidu-pager" style="flex-wrap:wrap;gap:8px;align-items:center">
+                  <input type="search" id="afiduRegistrosBuscar" class="sop-search" style="max-width:280px;flex:1" placeholder="Buscar en anexo: documento, nombre, orden…" autocomplete="off" />
                   <button type="button" class="btn-secondary" id="afiduPagerPrev">Anterior</button>
                   <span id="afiduPagerInfo">—</span>
                   <button type="button" class="btn-secondary" id="afiduPagerNext">Siguiente</button>
@@ -3987,7 +3988,7 @@
             <div class="sop-panel-head">
               <div class="sop-search-wrap">
                 <i data-lucide="search"></i>
-                <input type="search" id="sopPdxBuscar" class="sop-search" placeholder="Buscar paciente (mín. 2 caracteres)…" autocomplete="off">
+                <input type="search" id="sopPdxBuscar" class="sop-search" placeholder="Paciente, documento, estudio o archivo…" autocomplete="off">
               </div>
               <button type="button" id="btnSopPdxBuscar" class="sop-btn sop-btn-ghost" title="Buscar ahora">
                 <i data-lucide="search"></i> Buscar
@@ -4062,6 +4063,10 @@
                 <div class="sop-dropzone-hint">Solo PDF. El sistema lee el nombre y solo pide los datos que falten. Varios archivos: revisión en lote.</div>
                 <input type="file" id="sopPdxUploadInput" class="sop-file-input-hidden" accept=".pdf" multiple>
               </div>
+              <div class="sop-search-wrap" style="margin:12px 0 8px;max-width:420px">
+                <i data-lucide="search"></i>
+                <input type="search" id="sopPdxFiltroArchivos" class="sop-search" placeholder="Filtrar en esta carpeta: nombre, documento, estudio…" autocomplete="off">
+              </div>
               <div class="sop-table-wrap">
                 <table class="sop-table sop-table-pdx-archivos">
                   <thead><tr>
@@ -4120,7 +4125,7 @@
               </button>
               <div class="sop-search-wrap sop-arm-topbar-search">
                 <i data-lucide="search"></i>
-                <input type="search" id="sopArmBuscarPaciente" class="sop-search" placeholder="Buscar paciente (mín. 2 caracteres)…" autocomplete="off">
+                <input type="search" id="sopArmBuscarPaciente" class="sop-search" placeholder="Paciente, documento, FE o código de carpeta…" autocomplete="off">
               </div>
               <button type="button" id="btnSopArmNuevoDia" class="btn-secondary">
                 <i data-lucide="folder-plus"></i> Carpeta de día
@@ -4297,7 +4302,7 @@
               <div class="sop-panel-head">
                 <div class="sop-search-wrap">
                   <i data-lucide="search"></i>
-                  <input type="search" id="rhBuscar" class="sop-search" placeholder="Buscar paciente (mín. 2 caracteres)…" autocomplete="off">
+                  <input type="search" id="rhBuscar" class="sop-search" placeholder="Paciente, documento, estudio o archivo…" autocomplete="off">
                 </div>
                 <button type="button" id="btnRhBuscar" class="sop-btn sop-btn-ghost" title="Buscar ahora">
                   <i data-lucide="search"></i> Buscar
@@ -4353,6 +4358,10 @@
                 </button>
               </div>
               <div class="sop-panel-body">
+                <div class="sop-search-wrap" style="margin:0 0 10px;max-width:420px">
+                  <i data-lucide="search"></i>
+                  <input type="search" id="rhFiltroArchivos" class="sop-search" placeholder="Filtrar en esta carpeta: nombre, documento, estudio…" autocomplete="off">
+                </div>
                 <div class="sop-table-wrap">
                   <table class="sop-table sop-table-pdx-archivos">
                     <thead><tr>
@@ -4406,6 +4415,7 @@
   <script src="documentos-cita-module.js?v=1.7.66"></script>
   <script src="app.js?v=1.7.66"></script>
   <script src="chat-messenger.js?v=1.7.66"></script>
+  <script src="soportes-busqueda-shared.js?v=1.7.68"></script>
   <script src="anexo-fidu.js?v=1.7.66"></script>
   <script src="soportes-pdf-editor.js?v=1.7.66"></script>
   <script src="reportes-historico.js?v=1.7.66"></script>

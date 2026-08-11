@@ -2,6 +2,7 @@
  * API Chat Messenger — DMs recepción ↔ doctores / recepción ↔ recepción.
  */
 const express = require('express');
+const multer = require('multer');
 const db = require('../utils/db-mysql');
 const { insertRowId } = require('../utils/db-insert-id');
 const { requireAuth, safeError } = require('../middleware');
@@ -10,13 +11,40 @@ const {
   requireChatUsar,
   puedeHablarCon,
   pairOrdenado,
-  parsePermisosCampo
+  parsePermisosCampo,
+  esRolAdmin
 } = require('../utils/chat-acceso');
 const eventPollQueue = require('../utils/event-poll-queue');
 const socketEmitter = require('../utils/socket-emitter');
 const logger = require('../utils/logger');
+const {
+  chatMediaPackForUser,
+  stickerCuerpoPreview,
+  saveUploadedSticker,
+  deleteUserSticker,
+  listUserStickers,
+  getStickerMediaPath,
+  canSendSticker,
+  listUsersStickerCounts,
+  resolveChatSticker
+} = require('../utils/chat-stickers');
 
 const router = express.Router();
+
+const uploadChatSticker = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 3 * 1024 * 1024, files: 1 },
+  fileFilter: (req, file, cb) => {
+    const ok = /^(image\/(png|webp|gif|jpeg|jpg|svg\+xml))$/i.test(file.mimetype || '');
+    if (ok) cb(null, true);
+    else cb(new Error('Solo imágenes PNG, WebP, GIF, JPG o SVG'));
+  }
+});
+
+function puedeGestionarStickers(req) {
+  const rol = String(req.session?.rol || '').toLowerCase();
+  return esRolAdmin(rol) || rol === 'admin_recepcion';
+}
 
 const ROL_LABEL = {
   superadmin: 'Super Admin',
@@ -108,13 +136,21 @@ function otroId(conv, yo) {
   return Number(conv.usuario_a_id) === Number(yo) ? Number(conv.usuario_b_id) : Number(conv.usuario_a_id);
 }
 
-function serializeMensaje(row) {
+async function serializeMensaje(row) {
+  const tipo = String(row.tipo || 'text') === 'sticker' ? 'sticker' : 'text';
+  const st = tipo === 'sticker' ? await resolveChatSticker(row.sticker_id) : null;
   return {
     id: row.id,
     conversacion_id: row.conversacion_id,
     autor_id: row.autor_id,
     autor_nombre: row.autor_nombre || null,
+    tipo,
     cuerpo: row.cuerpo,
+    sticker_id: row.sticker_id || null,
+    sticker_kind: st?.kind || null,
+    sticker_src: st?.src || null,
+    sticker_emoji: st?.emoji || null,
+    sticker_label: st?.label || null,
     paciente_id: row.paciente_id || null,
     turno_id: row.turno_id || null,
     cita_electro_id: row.cita_electro_id || null,
@@ -124,6 +160,118 @@ function serializeMensaje(row) {
     creado_en: row.creado_en
   };
 }
+
+router.get('/chat/pack', requireAuth, requireChatUsar, async (req, res) => {
+  try {
+    const yo = sessionUser(req);
+    const pack = await chatMediaPackForUser(yo.id, { canManage: puedeGestionarStickers(req) });
+    res.json({ ok: true, ...pack });
+  } catch (e) {
+    res.status(500).json({ error: safeError(e) });
+  }
+});
+
+router.get('/chat/stickers/media/:key', requireAuth, requireChatUsar, async (req, res) => {
+  try {
+    const fp = await getStickerMediaPath(req.params.key);
+    if (!fp) return res.status(404).json({ error: 'Sticker no encontrado' });
+    res.sendFile(fp);
+  } catch (e) {
+    res.status(500).json({ error: safeError(e) });
+  }
+});
+
+router.post(
+  '/chat/stickers',
+  requireAuth,
+  requireChatUsar,
+  (req, res, next) => {
+    uploadChatSticker.single('sticker')(req, res, (err) => {
+      if (err) {
+        const msg = err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE'
+          ? 'Máximo 3 MB por sticker'
+          : (err.message || 'No se pudo subir el sticker');
+        return res.status(400).json({ error: msg });
+      }
+      next();
+    });
+  },
+  async (req, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ error: 'Selecciona una imagen' });
+      const yo = sessionUser(req);
+      let ownerId = yo.id;
+      const requestedOwner = parseInt(req.body?.usuario_id, 10);
+      if (requestedOwner && requestedOwner !== yo.id) {
+        if (!puedeGestionarStickers(req)) {
+          return res.status(403).json({ error: 'Solo un administrador puede subir stickers a otro usuario' });
+        }
+        ownerId = requestedOwner;
+      }
+      const label = req.body?.label ? String(req.body.label).trim().slice(0, 80) : '';
+      const saved = await saveUploadedSticker({
+        buffer: req.file.buffer,
+        originalName: req.file.originalname,
+        mimeType: req.file.mimetype,
+        label,
+        ownerUserId: ownerId,
+        creadoPor: yo.id
+      });
+      logger.info('[CHAT] sticker personal', { id: saved.id, owner: ownerId, by: yo.id });
+      const pack = await chatMediaPackForUser(
+        requestedOwner && puedeGestionarStickers(req) ? ownerId : yo.id,
+        { canManage: puedeGestionarStickers(req) }
+      );
+      res.json({ ok: true, sticker: saved, pack, owner_user_id: ownerId });
+    } catch (e) {
+      logger.warn('[CHAT] sticker upload:', e.message);
+      res.status(400).json({ error: e.message || safeError(e) });
+    }
+  }
+);
+
+router.delete('/chat/stickers/:key', requireAuth, requireChatUsar, async (req, res) => {
+  try {
+    const yo = sessionUser(req);
+    const asAdmin = puedeGestionarStickers(req);
+    await deleteUserSticker(req.params.key, { asUserId: yo.id, asAdmin });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(400).json({ error: e.message || safeError(e) });
+  }
+});
+
+router.get('/chat/stickers/admin/usuarios', requireAuth, requireChatUsar, async (req, res) => {
+  try {
+    if (!puedeGestionarStickers(req)) {
+      return res.status(403).json({ error: 'Sin permiso para gestionar packs' });
+    }
+    const usuarios = await listUsersStickerCounts();
+    res.json({ ok: true, usuarios });
+  } catch (e) {
+    res.status(500).json({ error: safeError(e) });
+  }
+});
+
+router.get('/chat/stickers/admin/usuarios/:id', requireAuth, requireChatUsar, async (req, res) => {
+  try {
+    if (!puedeGestionarStickers(req)) {
+      return res.status(403).json({ error: 'Sin permiso para gestionar packs' });
+    }
+    const userId = parseInt(req.params.id, 10);
+    if (!userId) return res.status(400).json({ error: 'Usuario inválido' });
+    const user = await cargarUsuario(userId);
+    if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+    const stickers = await listUserStickers(userId);
+    res.json({
+      ok: true,
+      usuario: { id: user.id, nombre: user.nombre || user.usuario, usuario: user.usuario, rol: user.rol },
+      stickers
+    });
+  } catch (e) {
+    res.status(500).json({ error: safeError(e) });
+  }
+});
 
 // ── Contactos ───────────────────────────────────────────────────────────────
 router.get('/chat/contactos', requireAuth, requireChatUsar, async (req, res) => {
@@ -168,7 +316,10 @@ router.get('/chat/contactos', requireAuth, requireChatUsar, async (req, res) => 
       `SELECT c.id AS conversacion_id,
          CASE WHEN c.usuario_a_id = ? THEN c.usuario_b_id ELSE c.usuario_a_id END AS peer_id,
          c.ultimo_mensaje_at,
-         (SELECT cuerpo FROM chat_mensajes WHERE conversacion_id = c.id ORDER BY id DESC LIMIT 1) AS preview
+         (SELECT CASE
+            WHEN tipo = 'sticker' THEN COALESCE(cuerpo, '🎨 Sticker')
+            ELSE cuerpo
+          END FROM chat_mensajes WHERE conversacion_id = c.id ORDER BY id DESC LIMIT 1) AS preview
        FROM chat_conversaciones c
        WHERE c.usuario_a_id = ? OR c.usuario_b_id = ?`,
       [yo.id, yo.id, yo.id]
@@ -212,7 +363,10 @@ router.get('/chat/conversaciones', requireAuth, requireChatUsar, async (req, res
     const rows = await db.query(
       `SELECT c.*,
          CASE WHEN c.usuario_a_id = ? THEN c.usuario_b_id ELSE c.usuario_a_id END AS peer_id,
-         (SELECT cuerpo FROM chat_mensajes WHERE conversacion_id = c.id ORDER BY id DESC LIMIT 1) AS preview,
+         (SELECT CASE
+            WHEN tipo = 'sticker' THEN COALESCE(cuerpo, '🎨 Sticker')
+            ELSE cuerpo
+          END FROM chat_mensajes WHERE conversacion_id = c.id ORDER BY id DESC LIMIT 1) AS preview,
          (SELECT COUNT(*) FROM chat_mensajes m
             WHERE m.conversacion_id = c.id AND m.autor_id <> ? AND m.leido_at IS NULL) AS no_leidos
        FROM chat_conversaciones c
@@ -311,7 +465,10 @@ router.get('/chat/conversaciones/:id/mensajes', requireAuth, requireChatUsar, as
     params.push(limit);
 
     const rows = await db.query(sql, params);
-    const mensajes = rows.reverse().map(serializeMensaje);
+    const mensajes = [];
+    for (const row of rows.reverse()) {
+      mensajes.push(await serializeMensaje(row));
+    }
     res.json({
       ok: true,
       mensajes,
@@ -338,7 +495,19 @@ router.post('/chat/conversaciones/:id/mensajes', requireAuth, requireChatUsar, v
       return res.status(403).json({ error: 'No puedes enviar mensajes a este usuario' });
     }
 
-    const cuerpo = String(req.body.cuerpo || '').trim();
+    const tipo = String(req.body.tipo || 'text') === 'sticker' ? 'sticker' : 'text';
+    let cuerpo = String(req.body.cuerpo || '').trim();
+    let stickerId = null;
+    if (tipo === 'sticker') {
+      const checkSt = await canSendSticker(req.body.sticker_id, yo.id);
+      if (!checkSt.ok) return res.status(400).json({ error: checkSt.error });
+      const st = checkSt.sticker;
+      stickerId = st.id;
+      cuerpo = stickerCuerpoPreview(st);
+    } else if (!cuerpo) {
+      return res.status(400).json({ error: 'El mensaje no puede estar vacío' });
+    }
+
     const pacienteId = req.body.paciente_id != null ? parseInt(req.body.paciente_id, 10) || null : null;
     const turnoId = req.body.turno_id != null ? parseInt(req.body.turno_id, 10) || null : null;
     const citaElectroId = req.body.cita_electro_id != null ? parseInt(req.body.cita_electro_id, 10) || null : null;
@@ -347,9 +516,9 @@ router.post('/chat/conversaciones/:id/mensajes', requireAuth, requireChatUsar, v
 
     const result = await db.execute(
       `INSERT INTO chat_mensajes
-        (conversacion_id, autor_id, cuerpo, paciente_id, turno_id, cita_electro_id, paciente_nombre, contexto_label)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [convId, yo.id, cuerpo, pacienteId, turnoId, citaElectroId, pacienteNombre, contextoLabel]
+        (conversacion_id, autor_id, tipo, cuerpo, sticker_id, paciente_id, turno_id, cita_electro_id, paciente_nombre, contexto_label)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [convId, yo.id, tipo, cuerpo, stickerId, pacienteId, turnoId, citaElectroId, pacienteNombre, contextoLabel]
     );
     const msgId = insertRowId(result);
     await db.execute(
@@ -364,12 +533,14 @@ router.post('/chat/conversaciones/:id/mensajes', requireAuth, requireChatUsar, v
        WHERE m.id = ? LIMIT 1`,
       [msgId]
     );
-    const mensaje = serializeMensaje(msgRows[0] || {
+    const mensaje = await serializeMensaje(msgRows[0] || {
       id: msgId,
       conversacion_id: convId,
       autor_id: yo.id,
       autor_nombre: yo.nombre,
+      tipo,
       cuerpo,
+      sticker_id: stickerId,
       paciente_id: pacienteId,
       turno_id: turnoId,
       cita_electro_id: citaElectroId,

@@ -10,6 +10,7 @@
     carpetaId: null,
     carpetaActual: null,
     archivos: [],
+    filtroArchivos: '',
     filtros: { texto: '', periodo: '', tema: '', orden: 'periodo_desc' }
   };
 
@@ -86,8 +87,13 @@
     if (periodo) lista = lista.filter((c) => c.periodo === periodo);
     if (tema) lista = lista.filter((c) => (c.color_tema || 'neutral') === tema);
     if (texto) {
-      const t = texto.toLowerCase();
-      lista = lista.filter((c) => String(c.nombre_display || '').toLowerCase().includes(t));
+      const match = window.InnarBusqueda?.objectMatchesQuery;
+      if (match) {
+        lista = lista.filter((c) => match(c, ['nombre_display', 'periodo', 'color_tema'], texto));
+      } else {
+        const t = texto.toLowerCase();
+        lista = lista.filter((c) => String(c.nombre_display || '').toLowerCase().includes(t));
+      }
     }
     const cmpNombre = (a, b) => compararTextoNatural(a.nombre_display, b.nombre_display);
     if (orden === 'periodo_asc') {
@@ -210,38 +216,41 @@
     renderLista();
   }
 
-  async function abrirCarpeta(id) {
-    state.carpetaId = id;
-    $('rhVistaLista')?.classList.add('hidden');
-    $('rhVistaDetalle')?.classList.remove('hidden');
-    const tbody = $('rhArchivosBody');
-    if (tbody) tbody.innerHTML = '<tr><td colspan="4" class="sop-empty" style="padding:24px">Cargando…</td></tr>';
-    const res = await apiFetch(`/api/soportes/pdx/carpetas/${id}/archivos`);
-    const data = await res.json();
-    if (!res.ok) {
-      sopToast(data.error || 'No se pudo abrir la carpeta', 'error');
-      volverLista();
-      return;
+  function archivosRhFiltrados() {
+    const q = (state.filtroArchivos || '').trim();
+    if (!q) return state.archivos;
+    const match = window.InnarBusqueda?.objectMatchesQuery;
+    if (!match) {
+      const t = q.toLowerCase();
+      return state.archivos.filter((a) =>
+        String(a.paciente_nombre || '').toLowerCase().includes(t) ||
+        String(a.paciente_documento || '').includes(t) ||
+        String(a.estudio_texto || '').toLowerCase().includes(t)
+      );
     }
-    state.archivos = (data.archivos || []).slice().sort((a, b) => {
-      const fa = a.fecha_estudio || '';
-      const fb = b.fecha_estudio || '';
-      return fb.localeCompare(fa);
-    });
-    const c = data.carpeta;
-    state.carpetaActual = c;
-    $('rhDetalleTitulo').textContent = c.nombre_display;
-    $('rhDetalleMeta').innerHTML = `${escapeHtml(c.periodo)} · <span class="sop-badge sop-badge-archivo">Mes anterior</span>`;
-    sopIcons($('rhDetalleMeta'));
-    renderBreadcrumbDetalle(c);
+    return state.archivos.filter((a) => match(a, [
+      'paciente_nombre', 'paciente_documento', 'estudio_texto',
+      'nombre_archivo_original', 'nombre_archivo_display', 'nombre_descarga', 'fecha_estudio'
+    ], q));
+  }
+
+  function renderArchivosRh() {
+    const tbody = $('rhArchivosBody');
+    if (!tbody) return;
     if (!state.archivos.length) {
       tbody.innerHTML = '<tr><td colspan="4" class="sop-empty" style="padding:24px">Sin archivos en esta carpeta</td></tr>';
       return;
     }
-    tbody.innerHTML = state.archivos.map((a) => {
+    const lista = archivosRhFiltrados();
+    if (!lista.length) {
+      tbody.innerHTML = '<tr><td colspan="4" class="sop-empty" style="padding:24px">Ningún archivo coincide con el filtro</td></tr>';
+      return;
+    }
+    tbody.innerHTML = lista.map((a) => {
       const nomArch = a.nombre_descarga || a.nombre_archivo_display || a.nombre_archivo_original || '';
+      const doc = a.paciente_documento ? `<div class="sop-search-results-meta">Doc. ${escapeHtml(a.paciente_documento)}</div>` : '';
       return `<tr>
-        <td><strong>${escapeHtml(a.paciente_nombre)}</strong></td>
+        <td><strong>${escapeHtml(a.paciente_nombre)}</strong>${doc}</td>
         <td>${escapeHtml(a.fecha_estudio || '—')}</td>
         <td>${escapeHtml(a.estudio_texto || '—')}</td>
         <td>
@@ -266,6 +275,36 @@
       });
     });
     sopIcons(tbody);
+  }
+
+  async function abrirCarpeta(id) {
+    state.carpetaId = id;
+    state.filtroArchivos = '';
+    const filtroInp = $('rhFiltroArchivos');
+    if (filtroInp) filtroInp.value = '';
+    $('rhVistaLista')?.classList.add('hidden');
+    $('rhVistaDetalle')?.classList.remove('hidden');
+    const tbody = $('rhArchivosBody');
+    if (tbody) tbody.innerHTML = '<tr><td colspan="4" class="sop-empty" style="padding:24px">Cargando…</td></tr>';
+    const res = await apiFetch(`/api/soportes/pdx/carpetas/${id}/archivos`);
+    const data = await res.json();
+    if (!res.ok) {
+      sopToast(data.error || 'No se pudo abrir la carpeta', 'error');
+      volverLista();
+      return;
+    }
+    state.archivos = (data.archivos || []).slice().sort((a, b) => {
+      const fa = a.fecha_estudio || '';
+      const fb = b.fecha_estudio || '';
+      return fb.localeCompare(fa);
+    });
+    const c = data.carpeta;
+    state.carpetaActual = c;
+    $('rhDetalleTitulo').textContent = c.nombre_display;
+    $('rhDetalleMeta').innerHTML = `${escapeHtml(c.periodo)} · <span class="sop-badge sop-badge-archivo">Mes anterior</span>`;
+    sopIcons($('rhDetalleMeta'));
+    renderBreadcrumbDetalle(c);
+    renderArchivosRh();
   }
 
   function cerrarBusqueda() {
@@ -301,7 +340,7 @@
           <span class="sop-search-results-meta">Sin coincidencias</span>
           <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-rh-close-search><i data-lucide="x"></i> Cerrar</button>
         </div>
-        <div class="sop-search-results-body"><div class="sop-empty" style="padding:20px">No se encontraron reportes archivados para «${escapeHtml(q)}»</div></div>`;
+        <div class="sop-search-results-body">        <div class="sop-empty" style="padding:20px">No se encontraron reportes para «${escapeHtml(q)}»</div></div>`;
       el.querySelector('[data-rh-close-search]')?.addEventListener('click', cerrarBusqueda);
       sopIcons(el);
       return;
@@ -313,9 +352,12 @@
       </div>
       <div class="sop-search-results-body">
         <div class="sop-table-wrap"><table class="sop-table"><thead><tr>
-          <th>Paciente</th><th>Fecha</th><th>Carpeta</th><th></th></tr></thead><tbody>
+          <th>Paciente</th><th>Doc.</th><th>Estudio</th><th>Fecha</th><th>Carpeta</th><th></th></tr></thead><tbody>
           ${list.map((r) => `<tr>
-            <td>${escapeHtml(r.paciente_nombre)}</td>
+            <td><strong>${escapeHtml(r.paciente_nombre)}</strong>
+              ${r.nombre_descarga || r.nombre_archivo_display ? `<div class="sop-search-results-meta">${escapeHtml(r.nombre_descarga || r.nombre_archivo_display)}</div>` : ''}</td>
+            <td>${escapeHtml(r.paciente_documento || '—')}</td>
+            <td>${escapeHtml(r.estudio_texto || '—')}</td>
             <td>${escapeHtml(r.fecha_estudio || '—')}</td>
             <td>${escapeHtml(r.carpeta_nombre)} <span class="sop-search-results-meta">(${escapeHtml(r.periodo)})</span></td>
             <td style="white-space:nowrap">
@@ -387,6 +429,14 @@
       if (e.key === 'Escape') cerrarBusqueda();
     });
     $('btnRhVolverLista')?.addEventListener('click', volverLista);
+    let filtroArchTimer;
+    $('rhFiltroArchivos')?.addEventListener('input', () => {
+      clearTimeout(filtroArchTimer);
+      filtroArchTimer = setTimeout(() => {
+        state.filtroArchivos = ($('rhFiltroArchivos')?.value || '').trim();
+        renderArchivosRh();
+      }, 180);
+    });
     setupFiltros();
     renderTemaLegend();
     cargarCarpetas().then(renderLista).catch((e) => sopToast(e.message, 'error'));

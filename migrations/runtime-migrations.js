@@ -1592,6 +1592,49 @@ const runtimeMigrations = [
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
       `);
     }
+  },
+  {
+    name: 'rt_chat_stickers',
+    description: 'Chat: columnas tipo y sticker_id en chat_mensajes',
+    run: async (db) => {
+      if (!(await columnExists(db, 'chat_mensajes', 'tipo'))) {
+        await db.execute(
+          `ALTER TABLE chat_mensajes
+           ADD COLUMN tipo VARCHAR(16) NOT NULL DEFAULT 'text' AFTER autor_id`
+        );
+      }
+      if (!(await columnExists(db, 'chat_mensajes', 'sticker_id'))) {
+        await db.execute(
+          `ALTER TABLE chat_mensajes
+           ADD COLUMN sticker_id VARCHAR(64) NULL DEFAULT NULL AFTER cuerpo`
+        );
+      }
+    }
+  },
+  {
+    name: 'rt_chat_user_stickers',
+    description: 'Packs de stickers personales por usuario',
+    run: async (db) => {
+      await db.execute(`
+        CREATE TABLE IF NOT EXISTS chat_user_stickers (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          usuario_id INT NOT NULL,
+          sticker_key VARCHAR(80) NOT NULL,
+          filename VARCHAR(160) NOT NULL,
+          label VARCHAR(80) NOT NULL,
+          mime_type VARCHAR(80) NULL DEFAULT NULL,
+          size_bytes INT NULL DEFAULT NULL,
+          creado_por INT NULL DEFAULT NULL,
+          creado_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE KEY uk_chat_sticker_key (sticker_key),
+          INDEX idx_chat_sticker_user (usuario_id),
+          CONSTRAINT fk_chat_sticker_user FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+      `);
+      try {
+        await db.execute('ALTER TABLE chat_mensajes MODIFY sticker_id VARCHAR(80) NULL DEFAULT NULL');
+      } catch (_) { /* ya amplio o sin tabla */ }
+    }
   }
 ];
 

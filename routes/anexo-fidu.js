@@ -29,6 +29,11 @@ const {
 } = require('../utils/anexo-fidu-personas');
 const { buildAnexoFiduExcelBuffer } = require('../utils/anexo-fidu-export');
 const {
+  buildAnexoPersonasWhere,
+  buildAnexoRegistrosWhere,
+  tokenizeSearchQuery
+} = require('../utils/soportes-busqueda');
+const {
   normalizarNombreAnexo,
   parseAnexoFiduWorksheet
 } = require('../utils/anexo-fidu-archivos');
@@ -575,13 +580,10 @@ router.get('/anexo-fidu/registros', requireAuth, requirePermiso(PERM_ANEXO_FIDU)
 
     let where = ' WHERE archivo_id = ?';
     const params = [archivoId];
-    if (q) {
-      where += ` AND (
-        numero_documento LIKE ? OR nombres_1 LIKE ? OR nombres_2 LIKE ?
-        OR apellidos_1 LIKE ? OR apellidos_2 LIKE ? OR numero_orden_fomag LIKE ?
-      )`;
-      const like = `%${q}%`;
-      params.push(like, like, like, like, like, like);
+    if (q && tokenizeSearchQuery(q).length) {
+      const { sql: qSql, params: qParams } = buildAnexoRegistrosWhere(q);
+      where += ` AND (${qSql})`;
+      params.push(...qParams);
     }
 
     const [countRow] = await db.query(
@@ -806,13 +808,10 @@ router.get('/anexo-fidu/personas', requireAuth, requirePermiso(PERM_ANEXO_FIDU),
 
     let where = '';
     const params = [];
-    if (q) {
-      where = ` WHERE (
-        numero_documento LIKE ? OR nombres_1 LIKE ? OR nombres_2 LIKE ?
-        OR apellidos_1 LIKE ? OR apellidos_2 LIKE ?
-      )`;
-      const like = `%${q}%`;
-      params.push(like, like, like, like, like);
+    if (q && tokenizeSearchQuery(q).length) {
+      const { sql: qSql, params: qParams } = buildAnexoPersonasWhere(q);
+      where = ` WHERE (${qSql})`;
+      params.push(...qParams);
     }
 
     const [countRow] = await db.query(`SELECT COUNT(*) AS total FROM anexo_fidu_personas${where}`, params);

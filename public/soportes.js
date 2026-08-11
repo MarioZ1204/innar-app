@@ -11,6 +11,7 @@
     carpetaId: null,
     carpetaActual: null,
     archivos: [],
+    filtroArchivos: '',
     periodoActual: null,
     seleccionadas: new Set(),
     filtros: { texto: '', periodo: '', tema: '', orden: 'periodo_desc' }
@@ -2485,12 +2486,14 @@
   function pdxCarpetasFiltradas() {
     let list = [...pdxState.carpetas];
     const { texto, periodo, tema, orden } = pdxState.filtros;
-    const t = (texto || '').trim().toLowerCase();
+    const t = (texto || '').trim();
     if (t) {
-      list = list.filter((c) =>
-        (c.nombre_display || '').toLowerCase().includes(t) ||
-        (c.periodo || '').includes(t)
-      );
+      const match = window.InnarBusqueda?.objectMatchesQuery
+        || ((obj, keys, q) => {
+          const h = keys.map((k) => String(obj[k] || '')).join(' ').toLowerCase();
+          return q.toLowerCase().split(/\s+/).every((tok) => h.includes(tok));
+        });
+      list = list.filter((c) => match(c, ['nombre_display', 'periodo', 'color_tema'], t));
     }
     if (periodo) list = list.filter((c) => c.periodo === periodo);
     if (tema) list = list.filter((c) => (c.color_tema || 'neutral') === tema);
@@ -2793,43 +2796,54 @@
     else await run();
   }
 
-  async function abrirCarpetaPdx(id) {
-    return sopWithScroll(async () => {
-    pdxState.carpetaId = id;
-    $('sopPdxVistaLista')?.classList.add('hidden');
-    $('sopPdxVistaDetalle')?.classList.remove('hidden');
-    showSkeletonTableRows($('sopPdxArchivosBody'), 4, 4);
-    const res = await apiFetch(`/api/soportes/pdx/carpetas/${id}/archivos`);
-    const data = await res.json();
-    if (!res.ok) { sopToast(data.error || 'Error', 'error'); return; }
-    pdxState.archivos = ordenarArchivosPdxPorFecha(data.archivos || []);
-    const c = data.carpeta;
-    pdxState.carpetaActual = c;
-    renderPdxBreadcrumbDetalle(c);
-    renderPdxDetalleAcciones(c);
-    $('sopPdxDetalleTitulo').textContent = c.nombre_display;
-    $('sopPdxDetalleMeta').innerHTML = `${escapeHtml(c.periodo)} ${badgeVis(c.estado_visibilidad, c.dias_restantes_gracia)}`;
-    sopIcons($('sopPdxDetalleMeta'));
-    actualizarAyudaFormatoPdx();
+  function archivosPdxFiltrados() {
+    const q = (pdxState.filtroArchivos || '').trim();
+    if (!q) return pdxState.archivos;
+    const match = window.InnarBusqueda?.objectMatchesQuery;
+    if (!match) {
+      const t = q.toLowerCase();
+      return pdxState.archivos.filter((a) =>
+        String(a.paciente_nombre || '').toLowerCase().includes(t) ||
+        String(a.paciente_documento || '').includes(t) ||
+        String(a.estudio_texto || '').toLowerCase().includes(t) ||
+        String(a.nombre_archivo_original || '').toLowerCase().includes(t)
+      );
+    }
+    return pdxState.archivos.filter((a) => match(a, [
+      'paciente_nombre', 'paciente_documento', 'estudio_texto',
+      'nombre_archivo_original', 'nombre_archivo_display', 'nombre_descarga',
+      'apellidos', 'nombres', 'fecha_estudio'
+    ], q));
+  }
+
+  function renderPdxArchivosTabla() {
+    const c = pdxState.carpetaActual;
     const tbody = $('sopPdxArchivosBody');
+    if (!tbody || !c) return;
+    const lista = archivosPdxFiltrados();
     if (!pdxState.archivos.length) {
       tbody.innerHTML = '<tr><td colspan="5" class="sop-empty" style="padding:24px">Sin archivos en esta carpeta</td></tr>';
+      return;
+    }
+    if (!lista.length) {
+      tbody.innerHTML = '<tr><td colspan="5" class="sop-empty" style="padding:24px">Ningún archivo coincide con el filtro</td></tr>';
       return;
     }
     const canDelete = sopPerm('soportes.pdx.eliminar');
     const canEdit = sopPerm('soportes.pdx.editar');
     const canVer = sopPerm('soportes.pdx.ver');
-    const canSubir = sopPerm('soportes.pdx.subir');
     const enArchivo = c.estado_visibilidad === 'archivo';
     const temaCarpeta = c.color_tema || 'neutral';
-    tbody.innerHTML = pdxState.archivos.map((a) => {
+    tbody.innerHTML = lista.map((a) => {
       const metaUser = a.editado_por_nombre
         ? `Editado por ${escapeHtml(a.editado_por_nombre)}`
         : (a.subido_por_nombre ? `Subido por ${escapeHtml(a.subido_por_nombre)}` : '');
       const nomArch = a.nombre_descarga || a.nombre_archivo_display || a.nombre_archivo_original || '';
+      const doc = a.paciente_documento ? `<div class="sop-pdx-meta-user">Doc. ${escapeHtml(a.paciente_documento)}</div>` : '';
       return `<tr>
       <td>
         <strong>${escapeHtml(a.paciente_nombre)}</strong>
+        ${doc}
         ${metaUser ? `<div class="sop-pdx-meta-user">${metaUser}</div>` : ''}
       </td>
       <td>${escapeHtml(a.fecha_estudio || '—')}</td>
@@ -2901,6 +2915,33 @@
         eliminarArchivoPdx(aid, row?.paciente_nombre);
       });
     });
+    sopIcons(tbody);
+  }
+
+  async function abrirCarpetaPdx(id) {
+    return sopWithScroll(async () => {
+    pdxState.carpetaId = id;
+    pdxState.filtroArchivos = '';
+    const filtroInp = $('sopPdxFiltroArchivos');
+    if (filtroInp) filtroInp.value = '';
+    $('sopPdxVistaLista')?.classList.add('hidden');
+    $('sopPdxVistaDetalle')?.classList.remove('hidden');
+    showSkeletonTableRows($('sopPdxArchivosBody'), 4, 4);
+    const res = await apiFetch(`/api/soportes/pdx/carpetas/${id}/archivos`);
+    const data = await res.json();
+    if (!res.ok) { sopToast(data.error || 'Error', 'error'); return; }
+    pdxState.archivos = ordenarArchivosPdxPorFecha(data.archivos || []);
+    const c = data.carpeta;
+    pdxState.carpetaActual = c;
+    renderPdxBreadcrumbDetalle(c);
+    renderPdxDetalleAcciones(c);
+    $('sopPdxDetalleTitulo').textContent = c.nombre_display;
+    $('sopPdxDetalleMeta').innerHTML = `${escapeHtml(c.periodo)} ${badgeVis(c.estado_visibilidad, c.dias_restantes_gracia)}`;
+    sopIcons($('sopPdxDetalleMeta'));
+    actualizarAyudaFormatoPdx();
+    renderPdxArchivosTabla();
+    const canSubir = sopPerm('soportes.pdx.subir');
+    const enArchivo = c.estado_visibilidad === 'archivo';
     const zone = $('sopPdxDropzone');
     const inputUp = $('sopPdxUploadInput');
     const dropDisabled = enArchivo || !canSubir;
@@ -2915,7 +2956,7 @@
     }
     sopIcons($('sopPdxVistaDetalle'));
     requestAnimationFrame(() => {
-      sopIcons(tbody);
+      sopIcons($('sopPdxArchivosBody'));
       sopIcons($('sopPdxVistaDetalle'));
     });
     });
@@ -4018,9 +4059,12 @@
       </div>
       <div class="sop-search-results-body">
         <div class="sop-table-wrap"><table class="sop-table"><thead><tr>
-          <th>Paciente</th><th>Fecha</th><th>Carpeta</th><th></th></tr></thead><tbody>
+          <th>Paciente</th><th>Doc.</th><th>Estudio</th><th>Fecha</th><th>Carpeta</th><th></th></tr></thead><tbody>
           ${list.map((r) => `<tr>
-            <td>${escapeHtml(r.paciente_nombre)}</td>
+            <td><strong>${escapeHtml(r.paciente_nombre)}</strong>
+              ${r.nombre_descarga || r.nombre_archivo_display ? `<div class="sop-search-results-meta">${escapeHtml(r.nombre_descarga || r.nombre_archivo_display)}</div>` : ''}</td>
+            <td>${escapeHtml(r.paciente_documento || '—')}</td>
+            <td>${escapeHtml(r.estudio_texto || '—')}</td>
             <td>${escapeHtml(r.fecha_estudio || '—')}</td>
             <td>${escapeHtml(r.carpeta_nombre)} <span class="sop-search-results-meta">(${escapeHtml(r.periodo)})</span></td>
             <td><button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-open-archivo="${r.archivo_id}" title="Ver PDF en nueva pestaña"><i data-lucide="external-link"></i> Abrir</button></td>
@@ -4204,6 +4248,11 @@
     });
     $('btnSopPdxBuscar')?.addEventListener('click', buscarPdx);
     $('sopPdxBuscar')?.addEventListener('input', buscarPdxPredictivo);
+    const filtrarArchivosPdx = sopDebounce(() => {
+      pdxState.filtroArchivos = ($('sopPdxFiltroArchivos')?.value || '').trim();
+      renderPdxArchivosTabla();
+    }, 180);
+    $('sopPdxFiltroArchivos')?.addEventListener('input', filtrarArchivosPdx);
     $('sopPdxBuscar')?.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') { e.preventDefault(); buscarPdx(); }
       if (e.key === 'Escape') cerrarResultadosPdx();
@@ -6120,7 +6169,7 @@
         <label>Paciente</label>
         <div class="sop-search-wrap" style="max-width:none">
           <i data-lucide="search"></i>
-          <input type="search" id="sopImpPdxBuscar" class="sop-search" placeholder="Mínimo 2 caracteres…" autocomplete="off">
+          <input type="search" id="sopImpPdxBuscar" class="sop-search" placeholder="Paciente, documento, estudio o archivo…" autocomplete="off">
         </div>
       </div>
       <div id="sopImpPdxResults" class="sop-import-results">

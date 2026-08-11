@@ -48,6 +48,11 @@ const {
   numeroDocumentoValidoPdx
 } = require('../utils/soportes-pdx-documento');
 const {
+  buildPdxBusquedaWhere,
+  buildArmadoBusquedaWhere,
+  tokenizeSearchQuery
+} = require('../utils/soportes-busqueda');
+const {
   buildMetaFromUpload,
   buildMetaDesdeCamposManuales,
   cargarListaParaCarpetaPdx,
@@ -780,18 +785,17 @@ router.get('/soportes/pdx/buscar-archivadas', requireAuth, requireRoleOrPerm(
       return res.status(403).json({ error: 'Sin permiso para buscar reportes archivados' });
     }
     const q = String(req.query.q || '').trim();
-    if (q.length < 2) return res.json({ resultados: [] });
+    if (q.length < 2 || !tokenizeSearchQuery(q).length) return res.json({ resultados: [] });
     const visiblesSet = await loadVisibleEnSoportesSet();
-    const norm = q.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    const like = `%${norm.replace(/[^a-z0-9\s]/g, '%')}%`;
+    const { sql: whereSql, params: whereParams } = buildPdxBusquedaWhere(q);
     const archivos = await db.query(
       `SELECT a.*, c.nombre_display AS carpeta_nombre, c.periodo, c.color_tema, c.roles_visibles,
               COALESCE(c.archivada_manual, 0) AS archivada_manual
        FROM sop_pdx_archivos a
        JOIN sop_pdx_carpetas c ON c.id = a.carpeta_id
-       WHERE a.paciente_nombre_norm LIKE ? OR a.estudio_texto LIKE ? OR a.apellidos LIKE ? OR a.nombres LIKE ?
-       ORDER BY a.fecha_estudio DESC LIMIT 120`,
-      [like, like, like, like]
+       WHERE ${whereSql}
+       ORDER BY a.fecha_estudio DESC LIMIT 150`,
+      whereParams
     );
     const resultados = archivos.filter((a) => {
       if (!usuarioVeCarpetaPdx(req, a)) return false;
@@ -803,6 +807,7 @@ router.get('/soportes/pdx/buscar-archivadas', requireAuth, requireRoleOrPerm(
       return {
         archivo_id: a.id,
         paciente_nombre: a.paciente_nombre,
+        paciente_documento: a.paciente_documento || null,
         nombre_archivo_original: a.nombre_archivo_original,
         nombre_archivo_display: a.nombre_archivo_display,
         nombre_descarga: enriched.nombre_descarga,
@@ -1312,18 +1317,17 @@ router.get('/soportes/pdx/buscar', requireAuth, requireRoleOrPerm(ROLES_SOPORTES
   try {
     const q = String(req.query.q || '').trim();
     const slotFiltro = String(req.query.slot || '').toUpperCase();
-    if (q.length < 2) return res.json({ resultados: [] });
+    if (q.length < 2 || !tokenizeSearchQuery(q).length) return res.json({ resultados: [] });
     const incluirArchivo = puedeVerArchivo(req);
     const visiblesSet = await loadVisibleEnSoportesSet();
-    const norm = q.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    const like = `%${norm.replace(/[^a-z0-9\s]/g, '%')}%`;
+    const { sql: whereSql, params: whereParams } = buildPdxBusquedaWhere(q);
     const archivos = await db.query(
       `SELECT a.*, c.nombre_display AS carpeta_nombre, c.periodo, c.color_tema, c.roles_visibles
        FROM sop_pdx_archivos a
        JOIN sop_pdx_carpetas c ON c.id = a.carpeta_id
-       WHERE a.paciente_nombre_norm LIKE ? OR a.estudio_texto LIKE ? OR a.apellidos LIKE ? OR a.nombres LIKE ?
-       ORDER BY a.fecha_estudio DESC LIMIT 80`,
-      [like, like, like, like]
+       WHERE ${whereSql}
+       ORDER BY a.fecha_estudio DESC LIMIT 120`,
+      whereParams
     );
     const { resolverDestinoImportacion } = require('../utils/soportes-deposito-import');
     const { carpetaCoincideSlotDeposito } = require('../utils/soportes-deposito-filtro');
@@ -1339,6 +1343,7 @@ router.get('/soportes/pdx/buscar', requireAuth, requireRoleOrPerm(ROLES_SOPORTES
       return {
         archivo_id: a.id,
         paciente_nombre: a.paciente_nombre,
+        paciente_documento: a.paciente_documento || null,
         nombre_archivo_original: a.nombre_archivo_original,
         nombre_archivo_display: a.nombre_archivo_display,
         nombre_descarga: enriched.nombre_descarga,
@@ -1362,19 +1367,17 @@ router.get('/soportes/pdx/buscar', requireAuth, requireRoleOrPerm(ROLES_SOPORTES
 router.get('/soportes/pdx/buscar-ordenes', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, ['modulo.armado_soportes', 'soportes.armado.subir']), async (req, res) => {
   try {
     const q = String(req.query.q || '').trim();
-    if (q.length < 2) return res.json({ resultados: [] });
+    if (q.length < 2 || !tokenizeSearchQuery(q).length) return res.json({ resultados: [] });
     const incluirArchivo = puedeVerArchivo(req);
     const visiblesSet = await loadVisibleEnSoportesSet();
-    const norm = q.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    const like = `%${norm.replace(/[^a-z0-9\s]/g, '%')}%`;
+    const { sql: whereSql, params: whereParams } = buildPdxBusquedaWhere(q);
     const archivos = await db.query(
       `SELECT a.*, c.nombre_display AS carpeta_nombre, c.periodo, c.color_tema, c.roles_visibles
        FROM sop_pdx_archivos a
        JOIN sop_pdx_carpetas c ON c.id = a.carpeta_id
-       WHERE (a.paciente_nombre_norm LIKE ? OR a.estudio_texto LIKE ? OR a.apellidos LIKE ? OR a.nombres LIKE ?
-              OR a.paciente_documento LIKE ? OR a.nombre_archivo_original LIKE ?)
-       ORDER BY a.fecha_estudio DESC LIMIT 120`,
-      [like, like, like, like, like, like]
+       WHERE ${whereSql}
+       ORDER BY a.fecha_estudio DESC LIMIT 150`,
+      whereParams
     );
     const { esArchivoOrdenHcPdx } = require('../utils/soportes-opf-merge');
     const resultados = archivos.filter((a) => {
@@ -3710,10 +3713,8 @@ router.get('/soportes/armado/expedientes/:id/zip', requireAuth, requireRoleOrPer
 router.get('/soportes/armado/buscar', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'modulo.armado_soportes'), async (req, res) => {
   try {
     const q = String(req.query.q || '').trim();
-    if (q.length < 2) return res.json({ resultados: [] });
-    const norm = q.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    const like = `%${norm.replace(/[^a-z0-9\s]/g, '%')}%`;
-    const docLike = `%${q.replace(/\s/g, '')}%`;
+    if (q.length < 2 || !tokenizeSearchQuery(q).length) return res.json({ resultados: [] });
+    const { sql: whereSql, params: whereParams } = buildArmadoBusquedaWhere(q);
     const rows = await db.query(
       `SELECT e.id AS expediente_id, e.codigo, e.paciente_nombre, e.paciente_documento, e.numero_factura,
               c.id AS contenedor_id, c.tipo AS contenedor_tipo,
@@ -3723,11 +3724,10 @@ router.get('/soportes/armado/buscar', requireAuth, requireRoleOrPerm(ROLES_SOPOR
        JOIN sop_contenedores c ON c.id = e.contenedor_id
        JOIN sop_dias d ON d.id = c.dia_id
        JOIN sop_periodos p ON p.id = d.periodo_id
-       WHERE LOWER(e.paciente_nombre) LIKE ? OR LOWER(e.codigo) LIKE ?
-          OR REPLACE(COALESCE(e.paciente_documento, ''), ' ', '') LIKE ?
+       WHERE ${whereSql}
        ORDER BY p.periodo DESC, e.paciente_nombre ASC
-       LIMIT 60`,
-      [like, like, docLike]
+       LIMIT 80`,
+      whereParams
     );
     const visCtx = await loadVisibleEnSoportesCtx();
     const visibles = rows.filter((r) =>

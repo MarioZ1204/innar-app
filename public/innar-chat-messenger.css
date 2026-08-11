@@ -520,12 +520,48 @@
 }
 
 .chat-msgr-compose {
+  position: relative;
   border-top: 1px solid var(--chat-border);
   padding: 8px;
   display: flex;
   gap: 6px;
   background: #fff;
   align-items: flex-end;
+}
+
+.chat-msgr-compose-tools {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+  align-items: center;
+  padding-bottom: 2px;
+}
+
+#chatMessengerRoot button.chat-msgr-tool {
+  width: 34px !important;
+  height: 34px !important;
+  min-width: 34px !important;
+  border-radius: 50% !important;
+  border: 1px solid transparent !important;
+  background: transparent !important;
+  color: #64748b !important;
+  padding: 0 !important;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: none !important;
+}
+
+#chatMessengerRoot button.chat-msgr-tool:hover {
+  background: #f1f5f9 !important;
+  color: #1d4ed8 !important;
+  border-color: #e2e8f0 !important;
+}
+
+#chatMessengerRoot button.chat-msgr-tool svg {
+  width: 18px;
+  height: 18px;
 }
 
 .chat-msgr-compose textarea {
@@ -540,6 +576,261 @@
   min-height: 38px;
   background: var(--chat-surface-2);
   color: var(--chat-text);
+}
+
+.chat-msgr-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.chat-msgr-bubble.is-sticker {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 2px 4px 4px !important;
+}
+
+.chat-msgr-bubble.is-sticker.mine {
+  background: transparent !important;
+}
+
+.chat-msgr-picker-section {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #94a3b8;
+  margin: 8px 4px 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.chat-msgr-sticker-upload-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 4px 10px;
+}
+
+#chatMessengerRoot button.chat-msgr-sticker-upload-btn {
+  border: 1px dashed #93c5fd !important;
+  background: #eff6ff !important;
+  color: #1d4ed8 !important;
+  border-radius: 10px !important;
+  padding: 8px 12px !important;
+  font-size: 0.8rem !important;
+  font-weight: 700 !important;
+  cursor: pointer;
+  box-shadow: none !important;
+  min-height: 0 !important;
+}
+
+#chatMessengerRoot button.chat-msgr-sticker-upload-btn:hover {
+  background: #dbeafe !important;
+  border-color: #60a5fa !important;
+}
+
+.chat-msgr-sticker-upload-hint {
+  font-size: 0.68rem;
+  color: #94a3b8;
+}
+
+.chat-msgr-sticker-cell {
+  position: relative;
+}
+
+#chatMessengerRoot button.chat-msgr-sticker-del {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 20px !important;
+  height: 20px !important;
+  min-width: 20px !important;
+  border-radius: 50% !important;
+  border: none !important;
+  background: rgba(15, 23, 42, 0.72) !important;
+  color: #fff !important;
+  font-size: 14px !important;
+  line-height: 1 !important;
+  padding: 0 !important;
+  cursor: pointer;
+  z-index: 2;
+  box-shadow: none !important;
+}
+
+#chatMessengerRoot button.chat-msgr-sticker-manage-btn {
+  background: #f8fafc !important;
+  border-style: solid !important;
+  border-color: #cbd5e1 !important;
+  color: #334155 !important;
+}
+
+.chat-msgr-admin-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  z-index: 12000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.chat-msgr-admin-modal {
+  width: min(520px, 100%);
+  max-height: min(80vh, 640px);
+  overflow: auto;
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.25);
+}
+
+.chat-msgr-admin-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.chat-msgr-admin-head button {
+  border: none;
+  background: transparent;
+  font-size: 22px;
+  cursor: pointer;
+  color: #64748b;
+}
+
+.chat-msgr-admin-body {
+  padding: 14px 16px 18px;
+}
+
+.chat-msgr-admin-label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #475569;
+}
+
+.chat-msgr-admin-label select {
+  font: inherit;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid #cbd5e1;
+}
+
+.chat-msgr-admin-list {
+  margin-top: 12px;
+}
+
+.chat-msgr-admin-sticker-label {
+  font-size: 0.65rem;
+  color: #64748b;
+  text-align: center;
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-msgr-sticker {
+  font-size: 3.2rem;
+  line-height: 1;
+  padding: 4px 2px;
+  user-select: none;
+  filter: drop-shadow(0 2px 6px rgba(15, 23, 42, 0.12));
+}
+
+.chat-msgr-sticker--img {
+  font-size: inherit;
+  filter: none;
+  padding: 0;
+}
+
+.chat-msgr-sticker--img img {
+  width: 148px;
+  height: 148px;
+  object-fit: contain;
+  display: block;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+#chatMessengerRoot button.chat-msgr-sticker-btn--img {
+  background: #fff !important;
+  min-height: 72px !important;
+}
+
+#chatMessengerRoot button.chat-msgr-sticker-btn--img img {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+  display: block;
+  margin: 0 auto;
+}
+
+.chat-msgr-picker {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: calc(100% + 4px);
+  max-height: 220px;
+  overflow: auto;
+  background: #fff;
+  border: 1px solid var(--chat-border);
+  border-radius: 14px;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.16);
+  z-index: 5;
+  padding: 8px;
+}
+
+.chat-msgr-picker-head {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0 4px 8px;
+}
+
+.chat-msgr-picker-grid {
+  display: grid;
+  gap: 4px;
+}
+
+.chat-msgr-picker-grid--emoji {
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+}
+
+.chat-msgr-picker-grid--sticker {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+#chatMessengerRoot button.chat-msgr-emoji-btn,
+#chatMessengerRoot button.chat-msgr-sticker-btn {
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  border-radius: 10px !important;
+  cursor: pointer;
+  padding: 4px !important;
+  min-height: 0 !important;
+  font-size: 1.35rem;
+  line-height: 1;
+}
+
+#chatMessengerRoot button.chat-msgr-sticker-btn {
+  font-size: 2rem;
+  padding: 8px 4px !important;
+  background: #f8fafc !important;
+  border: 1px solid #e2e8f0 !important;
+}
+
+#chatMessengerRoot button.chat-msgr-emoji-btn:hover,
+#chatMessengerRoot button.chat-msgr-sticker-btn:hover {
+  background: #eff6ff !important;
+  border-color: #bfdbfe !important;
 }
 
 .chat-msgr-compose textarea:focus {

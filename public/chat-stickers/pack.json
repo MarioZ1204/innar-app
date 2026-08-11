@@ -1,0 +1,40 @@
+{
+  "hide_emoji_stickers": false,
+  "stickers": [
+    {
+      "id": "listo",
+      "file": "listo.svg",
+      "label": "¡Listo!"
+    },
+    {
+      "id": "ya-voy",
+      "file": "ya-voy.svg",
+      "label": "Ya voy"
+    },
+    {
+      "id": "ok-pro",
+      "file": "ok-pro.svg",
+      "label": "Ok pro"
+    },
+    {
+      "id": "gracias-meme",
+      "file": "gracias-meme.svg",
+      "label": "Gracias"
+    },
+    {
+      "id": "espera",
+      "file": "espera.svg",
+      "label": "Espera un toque"
+    },
+    {
+      "id": "jajaja",
+      "file": "jajaja.svg",
+      "label": "Jajaja"
+    },
+    {
+      "id": "celebrar-diomedes-diaz-sticker-by-sony-music-col",
+      "file": "celebrar-diomedes-diaz-sticker-by-sony-music-col.gif",
+      "label": "celebrar diomedes diaz Sticker by Sony Music Colombia"
+    }
+  ]
+}

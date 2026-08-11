@@ -10,6 +10,24 @@
   const ICON_CHAT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 11.5a8.5 8.5 0 01-12.4 7.5L3 21l2.1-5.1A8.5 8.5 0 1121 11.5z"/></svg>';
   const ICON_SEND = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>';
   const ICON_BELL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 8A6 6 0 106 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>';
+  const ICON_EMOJI = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>';
+  const ICON_STICKER = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15.5 3H5a2 2 0 00-2 2v14c0 1.1.9 2 2 2h14a2 2 0 002-2V8.5L15.5 3z"/><polyline points="14 3 14 9 20 9"/><path d="M8 13s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="10" x2="9.01" y2="10"/><line x1="15" y1="10" x2="15.01" y2="10"/></svg>';
+
+  const FALLBACK_STICKERS = [
+    { id: 'ok', emoji: '👍', label: 'Ok' },
+    { id: 'clap', emoji: '👏', label: 'Aplausos' },
+    { id: 'thanks', emoji: '🙏', label: 'Gracias' },
+    { id: 'heart', emoji: '❤️', label: 'Corazón' },
+    { id: 'smile', emoji: '😊', label: 'Sonrisa' },
+    { id: 'laugh', emoji: '😂', label: 'Risa' },
+    { id: 'check', emoji: '✅', label: 'Listo' },
+    { id: 'wave', emoji: '👋', label: 'Hola' },
+    { id: 'fire', emoji: '🔥', label: 'Fuego' },
+    { id: 'party', emoji: '🎉', label: 'Festejo' },
+    { id: 'doc', emoji: '🩺', label: 'Clínica' },
+    { id: 'wait', emoji: '⏳', label: 'Espera' }
+  ];
+  const FALLBACK_EMOJIS = ['😀', '😂', '😊', '😍', '🤔', '😎', '😢', '😮', '👍', '👎', '👏', '🙏', '❤️', '🔥', '✅', '❌', '🎉', '👋', '💪', '🩺', '💊', '📞', '☕', '⭐'];
 
   const state = {
     contactos: [],
@@ -22,7 +40,9 @@
     titleBase: null,
     audioUnlocked: false,
     audioCtx: null,
-    viewportBound: false
+    viewportBound: false,
+    pack: { stickers: FALLBACK_STICKERS, emojis: FALLBACK_EMOJIS },
+    packLoaded: false
   };
 
   function maxWindows() {
@@ -72,6 +92,214 @@
     if (ymd(d) === ymd(hoy)) return 'Hoy';
     if (ymd(d) === ymd(ayer)) return 'Ayer';
     return d.toLocaleDateString('es-CO', { day: 'numeric', month: 'short' });
+  }
+
+  async function ensureMediaPack() {
+    if (state.packLoaded) return state.pack;
+    try {
+      const res = await apiFetchLocal('/api/chat/pack');
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        state.pack = {
+          stickers: Array.isArray(data.stickers) ? data.stickers : FALLBACK_STICKERS,
+          personal: Array.isArray(data.personal) ? data.personal : [],
+          global: Array.isArray(data.global) ? data.global : [],
+          emojis: Array.isArray(data.emojis) && data.emojis.length ? data.emojis : FALLBACK_EMOJIS,
+          can_upload: data.can_upload !== false
+        };
+      }
+    } catch (_) { /* fallback */ }
+    state.packLoaded = true;
+    return state.pack;
+  }
+
+  async function refreshMediaPack() {
+    state.packLoaded = false;
+    return ensureMediaPack();
+  }
+
+  async function uploadStickerFromFile(file, win, { usuarioId = null } = {}) {
+    if (!file) return;
+    const fd = new FormData();
+    fd.append('sticker', file, file.name || 'sticker.webp');
+    const base = String(file.name || '').replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim();
+    if (base) fd.append('label', base.slice(0, 80));
+    if (usuarioId) fd.append('usuario_id', String(usuarioId));
+    try {
+      const res = await apiFetchLocal('/api/chat/stickers', { method: 'POST', body: fd });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) {
+        if (typeof showToast === 'function') showToast(data.error || 'No se pudo subir el sticker', 'error');
+        return null;
+      }
+      await refreshMediaPack();
+      if (typeof showToast === 'function') {
+        showToast(usuarioId && Number(usuarioId) !== Number(currentUser?.id)
+          ? 'Sticker añadido al pack del usuario'
+          : 'Sticker añadido a tu pack', 'success');
+      }
+      if (win) buildStickerPicker(win);
+      return data.sticker || null;
+    } catch (_) {
+      if (typeof showToast === 'function') showToast('Error de red al subir sticker', 'error');
+      return null;
+    }
+  }
+
+  async function deleteStickerKey(key, win) {
+    try {
+      const res = await apiFetchLocal(`/api/chat/stickers/${encodeURIComponent(key)}`, { method: 'DELETE' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) {
+        if (typeof showToast === 'function') showToast(data.error || 'No se pudo eliminar', 'error');
+        return;
+      }
+      await refreshMediaPack();
+      if (win) buildStickerPicker(win);
+    } catch (_) {
+      if (typeof showToast === 'function') showToast('Error al eliminar sticker', 'error');
+    }
+  }
+
+  function insertAtCaret(textarea, text) {
+    if (!textarea) return;
+    const start = textarea.selectionStart ?? textarea.value.length;
+    const end = textarea.selectionEnd ?? start;
+    const before = textarea.value.slice(0, start);
+    const after = textarea.value.slice(end);
+    const next = before + text + after;
+    if (next.length > 2000) return;
+    textarea.value = next;
+    const pos = start + text.length;
+    textarea.focus();
+    try {
+      textarea.setSelectionRange(pos, pos);
+    } catch (_) { /* noop */ }
+    textarea.dispatchEvent(new Event('input'));
+  }
+
+  function closePickers(win) {
+    win?.el?.querySelectorAll('.chat-msgr-picker').forEach((p) => p.remove());
+  }
+
+  function buildEmojiPicker(win) {
+    closePickers(win);
+    const compose = win.el.querySelector('.chat-msgr-compose');
+    if (!compose) return;
+    const panel = document.createElement('div');
+    panel.className = 'chat-msgr-picker chat-msgr-picker-emoji';
+    panel.innerHTML = `<div class="chat-msgr-picker-head">Emojis</div>
+      <div class="chat-msgr-picker-grid chat-msgr-picker-grid--emoji">
+        ${(state.pack.emojis || []).map((e) =>
+          `<button type="button" class="chat-msgr-emoji-btn" data-emoji="${escapeHtml(e)}" title="${escapeHtml(e)}">${e}</button>`
+        ).join('')}
+      </div>`;
+    compose.prepend(panel);
+    const ta = win.el.querySelector('textarea');
+    panel.querySelectorAll('[data-emoji]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        insertAtCaret(ta, btn.dataset.emoji || btn.textContent || '');
+      });
+    });
+  }
+
+  function stickerImgSrcOk(src) {
+    const s = String(src || '');
+    return /^\/chat-stickers\/[a-z0-9._-]+$/i.test(s)
+      || /^\/api\/chat\/stickers\/media\/[a-z0-9._%-]+$/i.test(s);
+  }
+
+  function renderStickerGrid(list, { allowDelete = false } = {}) {
+    if (!list.length) return '';
+    return `<div class="chat-msgr-picker-grid chat-msgr-picker-grid--sticker">
+      ${list.map((s) => {
+        const isImg = s.kind === 'image' && s.src;
+        return `<div class="chat-msgr-sticker-cell">
+          <button type="button" class="chat-msgr-sticker-btn${isImg ? ' chat-msgr-sticker-btn--img' : ''}" data-sticker-id="${escapeHtml(s.id)}" title="${escapeHtml(s.label || s.id)}">
+            ${isImg
+              ? `<img src="${escapeHtml(s.src)}" alt="${escapeHtml(s.label || '')}" loading="lazy" />`
+              : `<span>${s.emoji || '🎨'}</span>`}
+          </button>
+          ${allowDelete ? `<button type="button" class="chat-msgr-sticker-del" data-del-sticker="${escapeHtml(s.id)}" title="Quitar de mi pack">×</button>` : ''}
+        </div>`;
+      }).join('')}
+    </div>`;
+  }
+
+  function buildStickerPicker(win) {
+    closePickers(win);
+    const compose = win.el.querySelector('.chat-msgr-compose');
+    if (!compose) return;
+    const panel = document.createElement('div');
+    panel.className = 'chat-msgr-picker chat-msgr-picker-sticker';
+    const personal = (state.pack.personal && state.pack.personal.length)
+      ? state.pack.personal
+      : (state.pack.stickers || []).filter((s) => s.scope === 'personal' || (s.kind === 'image' && s.owner_user_id));
+    const global = (state.pack.global && state.pack.global.length)
+      ? state.pack.global
+      : (state.pack.stickers || []).filter((s) => s.scope === 'global' || (s.kind === 'image' && !s.owner_user_id && s.src && String(s.src).startsWith('/chat-stickers/')));
+    const emojis = (state.pack.stickers || []).filter((s) => s.kind === 'emoji' || s.scope === 'emoji');
+    const canUpload = state.pack.can_upload !== false;
+
+    let body = '';
+    if (canUpload) {
+      body += `<div class="chat-msgr-sticker-upload-row">
+        <button type="button" class="chat-msgr-sticker-upload-btn" data-act="upload-sticker">+ Añadir a mi pack</button>
+        <input type="file" class="chat-msgr-sticker-file" accept="image/png,image/webp,image/gif,image/jpeg,.png,.webp,.gif,.jpg,.jpeg,.svg" hidden />
+        <span class="chat-msgr-sticker-upload-hint">Solo tuyos · máx. 3 MB</span>
+      </div>`;
+    }
+    body += `<div class="chat-msgr-picker-section">Mis stickers</div>`;
+    body += personal.length
+      ? renderStickerGrid(personal, { allowDelete: true })
+      : `<div class="chat-msgr-empty" style="padding:8px 12px;font-size:.78rem">Aún no tienes stickers propios.</div>`;
+    if (global.length) {
+      body += `<div class="chat-msgr-picker-section">Stickers Añadidos</div>${renderStickerGrid(global)}`;
+    }
+    if (emojis.length) {
+      body += `<div class="chat-msgr-picker-section">Rápidos</div>${renderStickerGrid(emojis)}`;
+    }
+
+    panel.innerHTML = `<div class="chat-msgr-picker-head">Stickers</div>${body}`;
+    compose.prepend(panel);
+
+    panel.querySelectorAll('[data-sticker-id]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        closePickers(win);
+        void sendSticker(win, btn.dataset.stickerId);
+      });
+    });
+    panel.querySelectorAll('[data-del-sticker]').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        void deleteStickerKey(btn.dataset.delSticker, win);
+      });
+    });
+    const fileInput = panel.querySelector('.chat-msgr-sticker-file');
+    panel.querySelector('[data-act="upload-sticker"]')?.addEventListener('click', () => fileInput?.click());
+    fileInput?.addEventListener('change', () => {
+      const file = fileInput.files && fileInput.files[0];
+      fileInput.value = '';
+      if (file) void uploadStickerFromFile(file, win);
+    });
+  }
+
+  function renderMensajeCuerpo(m) {
+    if (String(m.tipo || 'text') === 'sticker') {
+      const fromPack = (state.pack.stickers || []).find((s) => s.id === m.sticker_id)
+        || (state.pack.personal || []).find((s) => s.id === m.sticker_id)
+        || (state.pack.global || []).find((s) => s.id === m.sticker_id);
+      const kind = m.sticker_kind || fromPack?.kind || 'emoji';
+      const src = m.sticker_src || fromPack?.src;
+      const emoji = m.sticker_emoji || fromPack?.emoji || m.cuerpo || '🎨';
+      if (kind === 'image' && stickerImgSrcOk(src)) {
+        return `<div class="chat-msgr-sticker chat-msgr-sticker--img" aria-label="${escapeHtml(m.sticker_label || 'Sticker')}">
+          <img src="${escapeHtml(src)}" alt="" loading="lazy" />
+        </div>`;
+      }
+      return `<div class="chat-msgr-sticker" aria-label="Sticker">${escapeHtml(emoji)}</div>`;
+    }
+    return `<div class="chat-msgr-text">${escapeHtml(m.cuerpo)}</div>`;
   }
 
   function ensureTitleBase() {
@@ -438,6 +666,10 @@
       </div>
       <div class="chat-msgr-body"></div>
       <div class="chat-msgr-compose">
+        <div class="chat-msgr-compose-tools">
+          <button type="button" class="chat-msgr-tool" data-act="emoji" title="Emojis" aria-label="Emojis">${ICON_EMOJI}</button>
+          <button type="button" class="chat-msgr-tool" data-act="sticker" title="Stickers" aria-label="Stickers">${ICON_STICKER}</button>
+        </div>
         <textarea rows="1" placeholder="Escribe un mensaje…" maxlength="2000" enterkeyhint="send"></textarea>
         <button type="button" class="chat-msgr-send" title="Enviar" aria-label="Enviar" disabled>${ICON_SEND}</button>
       </div>`;
@@ -488,17 +720,42 @@
       ta.style.height = Math.min(90, ta.scrollHeight) + 'px';
       syncSend();
     });
-    ta.addEventListener('focus', () => bindVisualViewport());
+    ta.addEventListener('focus', () => {
+      bindVisualViewport();
+      closePickers(win);
+    });
     ta.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         void sendMessage(win);
       }
+      if (e.key === 'Escape') closePickers(win);
     });
     sendBtn.addEventListener('click', () => void sendMessage(win));
+    el.querySelector('[data-act="emoji"]')?.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      await ensureMediaPack();
+      const open = win.el.querySelector('.chat-msgr-picker-emoji');
+      if (open) {
+        closePickers(win);
+        return;
+      }
+      buildEmojiPicker(win);
+    });
+    el.querySelector('[data-act="sticker"]')?.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      await ensureMediaPack();
+      const open = win.el.querySelector('.chat-msgr-picker-sticker');
+      if (open) {
+        closePickers(win);
+        return;
+      }
+      buildStickerPicker(win);
+    });
 
     if (opts.prefill) applyPrefill(win, opts.prefill);
     void loadMessages(win);
+    void ensureMediaPack();
     ta.focus();
   }
 
@@ -585,9 +842,9 @@
           status = '<span class="chat-msgr-read chat-msgr-read--sent">Enviado</span>';
         }
       }
-      html += `<div class="chat-msgr-bubble ${mine ? 'mine' : 'theirs'}" data-msg-id="${m.id || ''}">
+      html += `<div class="chat-msgr-bubble ${mine ? 'mine' : 'theirs'}${String(m.tipo) === 'sticker' ? ' is-sticker' : ''}" data-msg-id="${m.id || ''}">
         ${chip}
-        <div>${escapeHtml(m.cuerpo)}</div>
+        ${renderMensajeCuerpo(m)}
         <span class="chat-msgr-bubble-time">${escapeHtml(formatHora(m.creado_en))}${status}</span>
       </div>`;
     });
@@ -624,10 +881,11 @@
   }
 
   async function sendMessage(win) {
+    closePickers(win);
     const ta = win.el.querySelector('textarea');
     const cuerpo = String(ta?.value || '').trim();
     if (!cuerpo) return;
-    const payload = { cuerpo };
+    const payload = { tipo: 'text', cuerpo };
     if (win.prefill) {
       if (win.prefill.paciente_id) payload.paciente_id = win.prefill.paciente_id;
       if (win.prefill.turno_id) payload.turno_id = win.prefill.turno_id;
@@ -663,6 +921,33 @@
       if (typeof showToast === 'function') showToast('Error de red al enviar', 'error');
       ta.value = cuerpo;
       ta.dispatchEvent(new Event('input'));
+    }
+  }
+
+  async function sendSticker(win, stickerId) {
+    if (!stickerId) return;
+    const payload = { tipo: 'sticker', sticker_id: stickerId, cuerpo: '' };
+    try {
+      const res = await apiFetchLocal(`/api/chat/conversaciones/${win.conversacionId}/mensajes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        if (typeof showToast === 'function') showToast(data.error || 'No se pudo enviar el sticker', 'error');
+        return;
+      }
+      appendMessageLocal(win, data.mensaje);
+      const c = state.contactos.find((x) => Number(x.id) === Number(win.peer.id));
+      if (c) {
+        c.preview = data.mensaje.cuerpo || '🎨 Sticker';
+        c.ultimo_mensaje_at = data.mensaje.creado_en;
+        c.conversacion_id = win.conversacionId;
+      }
+      renderContactList();
+    } catch (_) {
+      if (typeof showToast === 'function') showToast('Error de red al enviar sticker', 'error');
     }
   }
 

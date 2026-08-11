@@ -32,6 +32,7 @@
   let _personasPage = 1;
   let _personasTotal = 0;
   let _personasLimit = 50;
+  let _registrosQ = '';
 
   function syncAfiduIds() {
     _carpetaId = afiduState.carpetaId;
@@ -1825,6 +1826,7 @@
       return;
     }
     const qs = new URLSearchParams({ page: String(_page), limit: String(_limit), archivo_id: String(_archivoId) });
+    if (_registrosQ) qs.set('q', _registrosQ);
     const data = await apiAnexo(`/api/anexo-fidu/registros?${qs}`);
     _total = data.total || 0;
     renderBody(data.registros || []);
@@ -1960,6 +1962,14 @@
       _personasPage = 1;
       cargarListaPersonas();
     });
+    let personasBuscarTimer;
+    $('afiduPersonasBuscar')?.addEventListener('input', () => {
+      clearTimeout(personasBuscarTimer);
+      personasBuscarTimer = setTimeout(() => {
+        _personasPage = 1;
+        cargarListaPersonas();
+      }, 320);
+    });
     $('afiduPersonasBuscar')?.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') { e.preventDefault(); _personasPage = 1; cargarListaPersonas(); }
     });
@@ -1990,6 +2000,17 @@
     $('afiduPagerPrev')?.addEventListener('click', () => { if (_page > 1) { _page -= 1; cargarRegistros(); } });
     $('afiduPagerNext')?.addEventListener('click', () => {
       if (_page * _limit < _total) { _page += 1; cargarRegistros(); }
+    });
+    let registrosBuscarTimer;
+    $('afiduRegistrosBuscar')?.addEventListener('input', () => {
+      clearTimeout(registrosBuscarTimer);
+      registrosBuscarTimer = setTimeout(() => {
+        _registrosQ = ($('afiduRegistrosBuscar')?.value || '').trim();
+        _page = 1;
+        cargarRegistros().catch((e) => {
+          if (typeof showToast === 'function') showToast(e.message, 'error');
+        });
+      }, 320);
     });
     bindGridEvents();
   }
