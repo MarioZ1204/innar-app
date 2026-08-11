@@ -556,13 +556,23 @@
 
       if (carpetaId && out.blob) {
         const opt = $('docmodModalCompPdxCarpeta')?.selectedOptions?.[0];
-        await window.innarComprobantePdx.enviarPdf(carpetaId, out.blob, {
-          ...payload,
-          filename: out.filename || filename,
-          tema: opt?.dataset?.tema || '',
-          tipo_consulta: payload.servicio
-        });
-        enviadoPdx = true;
+        try {
+          await window.innarComprobantePdx.enviarPdf(carpetaId, out.blob, {
+            ...payload,
+            filename: out.filename || filename,
+            tema: opt?.dataset?.tema || ''
+          });
+          enviadoPdx = true;
+        } catch (ePdx) {
+          if (ePdx?.code === 'PDX_CANCELADO') {
+            toast('Documento generado (envío a Cargar Reportes cancelado)', 'info');
+            await guardarPersonaDesdeModal(state.tipo, payload);
+            cerrarModal();
+            setStatus('');
+            return;
+          }
+          throw ePdx;
+        }
       } else if (enviarPdx) {
         throw new Error('No se generó un PDF para enviar a Cargar Reportes');
       }

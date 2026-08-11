@@ -43,7 +43,7 @@ function definicionCamposPorTema(tema) {
       ...base,
       { key: 'tipo_documento', label: 'Tipo de documento', requerido: false, input: 'tipo_doc', defecto: 'CC' },
       { key: 'paciente_documento', label: 'Número de documento', requerido: true, input: 'doc_numero' },
-      { key: 'estudio_texto', label: 'Tipo de examen', requerido: true, input: 'estudio' }
+      { key: 'estudio_texto', label: 'Tipo de estudio', requerido: true, input: 'estudio' }
     ];
   }
   if (tema === 'psg') {

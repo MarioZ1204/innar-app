@@ -15535,16 +15535,25 @@ async function generarComprobanteServiciosPdf() {
 
     if (carpetaId && out.blob) {
       const opt = $('compServPdxCarpeta')?.selectedOptions?.[0];
-      await window.innarComprobantePdx.enviarPdf(carpetaId, out.blob, {
-        ...payloadFirma,
-        filename: out.filename || filename,
-        tema: opt?.dataset?.tema || '',
-        especialidad: payloadFirma.especialidad
-          || (typeof selectedDoctorEspecialidad !== 'undefined' ? selectedDoctorEspecialidad : '')
-          || '',
-        tipo_consulta: payloadFirma.servicio
-      });
-      enviadoPdx = true;
+      try {
+        await window.innarComprobantePdx.enviarPdf(carpetaId, out.blob, {
+          ...payloadFirma,
+          filename: out.filename || filename,
+          tema: opt?.dataset?.tema || '',
+          especialidad: payloadFirma.especialidad
+            || (typeof selectedDoctorEspecialidad !== 'undefined' ? selectedDoctorEspecialidad : '')
+            || ''
+        });
+        enviadoPdx = true;
+      } catch (ePdx) {
+        if (ePdx?.code === 'PDX_CANCELADO') {
+          showToast('Comprobante descargado (envío a Cargar Reportes cancelado)', 'info');
+          await guardarPersonaFiduDesdeDocumento('comprobante', payloadFirma);
+          cerrarModalComprobanteServicios();
+          return;
+        }
+        throw ePdx;
+      }
     } else if (enviarPdx) {
       throw new Error('No se generó un PDF para enviar a Cargar Reportes');
     }

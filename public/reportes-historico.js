@@ -249,10 +249,15 @@
     tbody.innerHTML = lista.map((a) => {
       const nomArch = a.nombre_descarga || a.nombre_archivo_display || a.nombre_archivo_original || '';
       const doc = a.paciente_documento ? `<div class="sop-search-results-meta">Doc. ${escapeHtml(a.paciente_documento)}</div>` : '';
+      const tema = String(state.carpetaActual?.color_tema || '').toLowerCase();
+      const esCons = tema.includes('consulta_medica');
+      const estLabel = esCons && (a.marca_tiempo || a.tipo_consulta)
+        ? `${a.estudio_texto || '—'} · ${a.marca_tiempo || a.tipo_consulta}`
+        : (a.estudio_texto || '—');
       return `<tr>
         <td><strong>${escapeHtml(a.paciente_nombre)}</strong>${doc}</td>
         <td>${escapeHtml(a.fecha_estudio || '—')}</td>
-        <td>${escapeHtml(a.estudio_texto || '—')}</td>
+        <td>${escapeHtml(estLabel)}</td>
         <td>
           <div class="sop-actions-row">
             <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-rh-ver="${a.id}" title="Ver PDF"><i data-lucide="eye"></i></button>
@@ -303,6 +308,14 @@
     $('rhDetalleTitulo').textContent = c.nombre_display;
     $('rhDetalleMeta').innerHTML = `${escapeHtml(c.periodo)} · <span class="sop-badge sop-badge-archivo">Mes anterior</span>`;
     sopIcons($('rhDetalleMeta'));
+    const colEst = $('rhColEstudio');
+    if (colEst) {
+      const tema = String(c.color_tema || '').toLowerCase();
+      const nom = String(c.nombre_display || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const esCons = tema.includes('consulta_medica')
+        || (nom.includes('consulta') && nom.includes('medica'));
+      colEst.textContent = esCons ? 'Especialidad / Tipo de consulta' : 'Tipo de estudio';
+    }
     renderBreadcrumbDetalle(c);
     renderArchivosRh();
   }

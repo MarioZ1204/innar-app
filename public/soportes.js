@@ -603,7 +603,7 @@
       return { oblig: ['Nombre completo', 'Fecha del estudio', 'Especialidad'], opc: opcUnificar };
     }
     if (esCarpetaEstructuradaPdx({ nombre_display: tema }) && !esCarpetaConsultaMedicaPdx({ nombre_display: tema })) {
-      return { oblig: [...oblig, 'Número de documento (solo dígitos)', 'Tipo de examen'], opc: [...opcUnificar, 'Tipo de documento (CC, TI, RC…)'] };
+      return { oblig: [...oblig, 'Número de documento (solo dígitos)', 'Tipo de estudio'], opc: [...opcUnificar, 'Tipo de documento (CC, TI, RC…)'] };
     }
     if (tema === 'psg') {
       return { oblig: [...oblig, 'Tipo PSG (Básica, CPAP, BPAP)'], opc: [...opcMulti, 'Documento'] };
@@ -639,7 +639,7 @@
       base.push(
         { key: 'tipo_documento', label: 'Tipo de documento', requerido: false, input: 'tipo_doc', estado: 'opc', defecto: 'CC' },
         { key: 'paciente_documento', label: 'Número de documento', requerido: true, input: 'doc_numero', estado: 'falta' },
-        { key: 'estudio_texto', label: 'Tipo de examen', requerido: true, input: 'estudio', estado: 'falta' }
+        { key: 'estudio_texto', label: 'Tipo de estudio', requerido: true, input: 'estudio', estado: 'falta' }
       );
     } else if (tema === 'psg') {
       base.push(
@@ -983,6 +983,12 @@
     diasParentId: 0,
     diaModo: 'facturacion'
   };
+  /** Evita que un refresh por socket pise una navegación reciente (p. ej. abrir FE recién creada). */
+  let armNavEpoch = 0;
+  function bumpArmNavEpoch() {
+    armNavEpoch += 1;
+    return armNavEpoch;
+  }
 
   const SOP_VIEW_LS = { pdx: 'innar.sop.pdx.folderView', arm: 'innar.sop.arm.folderView' };
 
@@ -2847,7 +2853,15 @@
         ${metaUser ? `<div class="sop-pdx-meta-user">${metaUser}</div>` : ''}
       </td>
       <td>${escapeHtml(a.fecha_estudio || '—')}</td>
-      <td>${htmlEstudioBadge(a.estudio_texto, temaCarpeta)}</td>
+      <td>${(() => {
+        const esCons = temaCarpeta === 'comprobantes_consulta_medica' || temaCarpeta === 'ordenes_consulta_medica';
+        if (esCons) {
+          const esp = a.estudio_texto || '—';
+          const tipo = a.marca_tiempo || a.tipo_consulta || '';
+          return htmlEstudioBadge(tipo ? `${esp} · ${tipo}` : esp, temaCarpeta);
+        }
+        return htmlEstudioBadge(a.estudio_texto, temaCarpeta);
+      })()}</td>
       <td><span class="sop-pdx-archivo-nombre" title="${escapeHtml(nomArch)}">${escapeHtml(nomArch)}</span></td>
       <td><div class="sop-actions-row">
         ${canVer ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-pdx-ver="${a.id}" title="Ver en el navegador"><i data-lucide="eye"></i></button>
@@ -2938,6 +2952,11 @@
     $('sopPdxDetalleTitulo').textContent = c.nombre_display;
     $('sopPdxDetalleMeta').innerHTML = `${escapeHtml(c.periodo)} ${badgeVis(c.estado_visibilidad, c.dias_restantes_gracia)}`;
     sopIcons($('sopPdxDetalleMeta'));
+    const colEst = $('sopPdxColEstudio');
+    if (colEst) {
+      const esCons = esCarpetaConsultaMedicaPdx(c);
+      colEst.textContent = esCons ? 'Especialidad / Tipo de consulta' : 'Tipo de estudio';
+    }
     actualizarAyudaFormatoPdx();
     renderPdxArchivosTabla();
     const canSubir = sopPerm('soportes.pdx.subir');
@@ -3188,8 +3207,11 @@
       ${esConsultaMed
         ? '<div class="sop-field"><label>Especialidad *</label><select id="sopPdxEdEst" data-tipo="especialidad"></select></div>'
         : (esEstructConDoc || esPsg
-          ? '<div class="sop-field"><label>Tipo de examen *</label><select id="sopPdxEdEst"></select></div>'
+          ? `<div class="sop-field"><label>${esPsg ? 'Tipo PSG' : 'Tipo de estudio'} *</label><select id="sopPdxEdEst"></select></div>`
           : `<div class="sop-field"><label>Nombre del estudio</label><input type="text" id="sopPdxEdEst" value="${escapeHtml(archivo.estudio_texto || '')}" placeholder="PSG BASAL, EEG, VTM…"></div>`)}
+      ${esConsultaMed
+        ? `<div class="sop-field"><label>Tipo de consulta</label><input type="text" id="sopPdxEdTipoConsulta" value="${escapeHtml(archivo.marca_tiempo || archivo.tipo_consulta || '')}" placeholder="Control, Primera vez…"></div>`
+        : ''}
       ${esEstructConDoc ? `<div class="sop-field"><label>Tipo de documento</label><input type="text" id="sopPdxEdTipoDoc" data-campo-tipo="tipo_doc" value="${escapeHtml(normalizarTipoDocumentoCliente(archivo.tipo_documento || 'CC'))}" maxlength="4" autocomplete="off" spellcheck="false" style="text-transform:uppercase" placeholder="CC"></div>` : ''}
       <div class="sop-field"><label>Número de documento${(esEstructConDoc || esPsg) ? ' *' : ' (opcional)'}</label><input type="text" id="sopPdxEdDoc" data-campo-tipo="doc_numero" value="${escapeHtml(archivo.paciente_documento || '')}" inputmode="numeric" pattern="[0-9]*"></div>
       <p style="margin:8px 0 0"><button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="sopPdxEdHist"><i data-lucide="history"></i> Ver historial</button></p>
@@ -3215,10 +3237,14 @@
         fecha_estudio: $('sopPdxEdFecha').value,
         estudio_texto: (estEl?.tagName === 'SELECT' ? estEl.value : estEl?.value)?.trim(),
         tipo_documento: esEstructConDoc ? normalizarTipoDocumentoCliente($('sopPdxEdTipoDoc')?.value) : undefined,
-        paciente_documento: normalizarNumeroDocumentoCliente($('sopPdxEdDoc').value) || null
+        paciente_documento: normalizarNumeroDocumentoCliente($('sopPdxEdDoc').value) || null,
+        marca_tiempo: esConsultaMed ? ($('sopPdxEdTipoConsulta')?.value?.trim() || null) : undefined
       };
       if (!body.apellidos || !body.nombres || !body.fecha_estudio || !body.estudio_texto) {
         return sopToast('Complete todos los campos obligatorios', 'warning');
+      }
+      if (esConsultaMed && !body.marca_tiempo) {
+        return sopToast('Indique el tipo de consulta', 'warning');
       }
       if (esEstructConDoc && (!body.paciente_documento || body.paciente_documento.length < 4)) {
         return sopToast('El número de documento es obligatorio (solo dígitos, 4 a 20)', 'warning');
@@ -3435,7 +3461,7 @@
 
         const estudioFieldsHtml = esReporteClinico
           ? (esPsg ? `<div class="sop-field"><label>Tipo PSG *</label><select class="sopMultiPsgEst" data-idx="${idx}"><option value="">-- Seleccione --</option></select></div>` : '')
-          : `<div class="sop-field"><label>${esConsultaMedica ? 'Especialidad' : 'Especialidad/Tipo examen'} *</label><select class="sopMultiEst" data-idx="${idx}"><option value="">-- Seleccione --</option></select></div>
+          : `<div class="sop-field"><label>${esConsultaMedica ? 'Especialidad' : 'Tipo de estudio'} *</label><select class="sopMultiEst" data-idx="${idx}"><option value="">-- Seleccione --</option></select></div>
             ${esComprobanteConsultaMed ? `<div class="sop-field"><label>Tipo de consulta *</label><select class="sopMultiTipoConsulta" data-idx="${idx}"><option value="">-- Seleccione --</option></select></div>` : ''}`;
 
         const fieldsHtml = `
@@ -3683,7 +3709,7 @@
       ${esComprobanteConsultaMed ? `
       <div class="sop-field"><label>Especialidad *</label><select id="sopPdxCorrEst"></select></div>
       <div class="sop-field"><label>Tipo de consulta *</label><select id="sopPdxCorrTipoConsulta"></select></div>` : ''}
-      ${(esEstruct || esPsg) ? '<div class="sop-field"><label>Tipo de examen *</label><select id="sopPdxCorrEst"></select></div>' : ''}
+      ${(esEstruct || esPsg) ? `<div class="sop-field"><label>${esPsg ? 'Tipo PSG' : 'Tipo de estudio'} *</label><select id="sopPdxCorrEst"></select></div>` : ''}
       <div class="sop-dialog-actions">
         <button type="button" class="sop-btn sop-btn-ghost" id="sopPdxCorrCancel">Cancelar</button>
         <button type="button" class="sop-btn sop-btn-primary" id="sopPdxCorrOk">Subir PDF</button>
@@ -3806,7 +3832,7 @@
       <div class="sop-field"><label>Tipo de documento</label><input type="text" id="sopPdxOrdTipoDoc" data-campo-tipo="tipo_doc" value="${escapeHtml(normalizarTipoDocumentoCliente(parsed.tipo_documento || 'CC'))}" maxlength="4" autocomplete="off" spellcheck="false" style="text-transform:uppercase" placeholder="CC"></div>
       <div class="sop-field"><label>Número de documento *</label><input type="text" id="sopPdxOrdDoc" data-campo-tipo="doc_numero" value="${escapeHtml(parsed.paciente_documento || '')}" inputmode="numeric" pattern="[0-9]*"></div>
       <div class="sop-field"><label>Fecha *</label><input type="date" id="sopPdxOrdFecha" value="${escapeHtml(parsed.fecha_estudio || '')}"></div>
-      <div class="sop-field"><label>Tipo de examen *</label><select id="sopPdxOrdEst"></select></div>
+      <div class="sop-field"><label>Tipo de estudio *</label><select id="sopPdxOrdEst"></select></div>
       <div class="sop-dialog-actions">
         <button type="button" class="sop-btn sop-btn-ghost" id="sopPdxOrdUpCancel">Cancelar</button>
         <button type="button" class="sop-btn sop-btn-primary" id="sopPdxOrdUpOk">Subir PDF</button>
@@ -5702,6 +5728,7 @@
 
   async function abrirExpedienteArmado(id) {
     return sopWithScroll(async () => {
+    bumpArmNavEpoch();
     armState.expedienteId = id;
     armState.vista = 'expediente';
     armState.expedienteDetalle = null;
@@ -6416,11 +6443,18 @@
       } else {
         sopToast(`${n} carpeta(s) creada(s)`, 'success');
       }
-      // Mantener la ubicación (Carpetas FE); no volver a la raíz del mes
+      const firstId = Number(data.expediente?.id || data.creados?.[0]?.id || 0) || 0;
       const cid = armState.contenedorId;
-      const first = data.expediente?.id || data.creados?.[0]?.id;
-      if (cid) await seleccionarContenedorArmado(cid);
-      if (first && n === 1) await abrirExpedienteArmado(first);
+      // Fijar destino ANTES de awaits: el notify de socket dispara refreshArmadoSoportes
+      // y, si aún no hay expedienteId, el refresh vuelve al listado / raíz del mes.
+      bumpArmNavEpoch();
+      if (firstId) {
+        armState.vista = 'expediente';
+        armState.expedienteId = firstId;
+        await abrirExpedienteArmado(firstId);
+      } else if (cid) {
+        await seleccionarContenedorArmado(cid);
+      }
     };
   }
 
@@ -6609,10 +6643,14 @@
       closeSopModal(modal);
       sopToast(modo === 'ucqn' ? 'Persona creada' : modo === 'anexo_fidu' ? 'Anexo creado y vinculado' : 'Carpeta creada con RIPS y SOPORTES', 'success');
       const savedParent = armState.diasParentId;
+      const newDiaId = Number(data.dia?.id || 0) || 0;
+      bumpArmNavEpoch();
       await recargarDiasArmadoSinResetearNav();
       armState.diasParentId = savedParent;
-      if (data.dia?.id) {
-        await seleccionarDiaArmado(data.dia.id);
+      if (newDiaId) {
+        armState.vista = 'day';
+        armState.diaId = newDiaId;
+        await seleccionarDiaArmado(newDiaId);
       } else {
         renderArmadoDiasExplorer();
         renderArmadoContextBar();
@@ -6622,6 +6660,7 @@
 
   async function refrescarVistaArmadoActual() {
     const run = async () => {
+    const epoch = armNavEpoch;
     const snap = {
       periodoId: armState.periodoId,
       diasParentId: armState.diasParentId,
@@ -6631,6 +6670,7 @@
       vista: armState.vista
     };
     await cargarPeriodosArmado();
+    if (epoch !== armNavEpoch) return;
     renderPeriodosArmado();
     if (!snap.periodoId) return;
     const per = armState.periodos.find((p) => p.id === snap.periodoId);
@@ -6639,32 +6679,58 @@
     armState.periodoLabel = per.etiqueta || per.periodo || 'Mes';
     const res = await apiFetch(`/api/soportes/armado/periodos/${snap.periodoId}/dias`);
     const data = await res.json();
+    if (epoch !== armNavEpoch) return;
     if (!res.ok) return;
     armState.dias = data.dias || [];
     armState.diasParentId = snap.diasParentId || 0;
     if (armState.diasParentId && !armDiaById(armState.diasParentId)) {
       armState.diasParentId = 0;
     }
-    if (snap.vista === 'expediente' && snap.expedienteId) {
-      armState.diaId = snap.diaId;
-      armState.contenedorId = snap.contenedorId;
-      await abrirExpedienteArmado(snap.expedienteId);
-    } else if (snap.vista === 'contenedor' && snap.contenedorId && snap.diaId) {
-      armState.diaId = snap.diaId;
-      const diaRow = armDiaById(snap.diaId);
+    // Preferir el destino actual si el usuario ya navegó (p. ej. abrió FE recién creada)
+    const vista = armState.vista || snap.vista;
+    const expedienteId = armState.expedienteId || snap.expedienteId;
+    const contenedorId = armState.contenedorId || snap.contenedorId;
+    const diaId = armState.diaId || snap.diaId;
+    if (vista === 'expediente' && expedienteId) {
+      armState.diaId = diaId;
+      armState.contenedorId = contenedorId;
+      if (diaId) {
+        const diaRow = armDiaById(diaId);
+        if (diaRow) {
+          armState.diaLabel = diaRow.nombre_display;
+          armState.diaModo = diaRow.modo || 'facturacion';
+          armState.diaFacturacion = diaRow.estado_facturacion || 'a_facturar';
+        }
+        try {
+          const resCont = await apiFetch(`/api/soportes/armado/dias/${diaId}/contenedores`);
+          const dataCont = await resCont.json();
+          if (epoch !== armNavEpoch) return;
+          if (resCont.ok) {
+            armState.contenedores = dataCont.contenedores || [];
+            const cont = armState.contenedores.find((c) => c.id === contenedorId);
+            if (cont) armState.contenedorTipo = cont.tipo || armState.contenedorTipo;
+          }
+        } catch (_) { /* ignore */ }
+      }
+      if (epoch !== armNavEpoch) return;
+      await abrirExpedienteArmado(expedienteId);
+    } else if (vista === 'contenedor' && contenedorId && diaId) {
+      armState.diaId = diaId;
+      const diaRow = armDiaById(diaId);
       if (diaRow) {
         armState.diaLabel = diaRow.nombre_display;
         armState.diaModo = diaRow.modo || 'facturacion';
         armState.diaFacturacion = diaRow.estado_facturacion || 'a_facturar';
       }
       try {
-        const resCont = await apiFetch(`/api/soportes/armado/dias/${snap.diaId}/contenedores`);
+        const resCont = await apiFetch(`/api/soportes/armado/dias/${diaId}/contenedores`);
         const dataCont = await resCont.json();
+        if (epoch !== armNavEpoch) return;
         if (resCont.ok) armState.contenedores = dataCont.contenedores || [];
       } catch (_) { /* ignore */ }
-      await refrescarExpedientesContenedorArmado(snap.contenedorId);
-    } else if (snap.vista === 'day' && snap.diaId) {
-      await seleccionarDiaArmado(snap.diaId);
+      await refrescarExpedientesContenedorArmado(contenedorId);
+    } else if (vista === 'day' && diaId) {
+      await seleccionarDiaArmado(diaId);
     } else {
       renderArmadoPeriodoSummary();
       renderArmadoDiasExplorer();

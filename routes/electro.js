@@ -982,10 +982,14 @@ router.post('/citas-electro', requireAuth, requireRoleOrPerm(['superadmin', 'adm
 
     // No auto-completar al agendar: cerraba estudios En Estudio por hora_fin corta sin duracion_minutos.
 
-    // Verificaciones de capacidad SIN FOR UPDATE para evitar deadlocks
+    // Verificaciones de capacidad SIN FOR UPDATE para evitar deadlocks.
+    // Excluir citas ya reprogramadas: quedan en estado Programado + [Reprogramado] / reprogramado_en
+    // (ocultas en kanban) pero bloqueaban falsamente el solapamiento.
     const dupCheck = await db.query(
       `SELECT COUNT(*) as cnt FROM citas_electro
        WHERE paciente_id = ? AND estado IN ('Programado', 'Confirmado', 'En Sala', 'En Estudio', 'Pausado') AND deleted_at IS NULL
+       AND reprogramado_en IS NULL
+       AND (observaciones IS NULL OR observaciones NOT LIKE '%[Reprogramado]%')
        AND TIMESTAMP(fecha, COALESCE(hora_agendamiento, '00:00:00')) < TIMESTAMP(?, ?)
        AND TIMESTAMP(COALESCE(hora_fin_date, fecha), COALESCE(hora_fin, '23:59:59')) > TIMESTAMP(?, ?)`,
       [paciente_id, finalFechaFin, finalHoraFin, fecha, horaAgendamiento]
@@ -1172,9 +1176,12 @@ router.post('/citas-electro/:id/reprogramar', requireAuth, requireRoleOrPerm(
       finalHoraFin = normalizarHoraHmElectro(citaOrig.hora_fin);
     }
 
+    // Igual que al crear: no contar citas archivadas por reprogramación (siguen Programado).
     const dupCheck = await db.query(
       `SELECT COUNT(*) as cnt FROM citas_electro
        WHERE paciente_id = ? AND id != ? AND estado IN ('Programado', 'Confirmado', 'En Sala', 'En Estudio', 'Pausado') AND deleted_at IS NULL
+       AND reprogramado_en IS NULL
+       AND (observaciones IS NULL OR observaciones NOT LIKE '%[Reprogramado]%')
        AND TIMESTAMP(fecha, COALESCE(hora_agendamiento, '00:00:00')) < TIMESTAMP(?, ?)
        AND TIMESTAMP(COALESCE(hora_fin_date, fecha), COALESCE(hora_fin, '23:59:59')) > TIMESTAMP(?, ?)`,
       [citaOrig.paciente_id, id, finalFechaFin, finalHoraFin, fechaNueva, horaNueva]

@@ -1424,6 +1424,9 @@ router.patch('/soportes/pdx/archivos/:id', requireAuth, requireRoleOrPerm(ROLES_
     const vis = await visPdxPeriodo(prev.periodo);
     if (vis === 'archivo') return res.status(403).json({ error: 'Carpeta en archivo: no editable' });
 
+    const marcaTiempo = req.body?.marca_tiempo != null
+      ? String(req.body.marca_tiempo).trim()
+      : (req.body?.tipo_consulta != null ? String(req.body.tipo_consulta).trim() : prev.marca_tiempo);
     const apellidos = req.body?.apellidos != null ? String(req.body.apellidos).trim() : prev.apellidos;
     const nombres = req.body?.nombres != null ? String(req.body.nombres).trim() : prev.nombres;
     const fecha = req.body?.fecha_estudio != null ? req.body.fecha_estudio : prev.fecha_estudio;
@@ -1534,7 +1537,7 @@ router.patch('/soportes/pdx/archivos/:id', requireAuth, requireRoleOrPerm(ROLES_
     await db.execute(
       `UPDATE sop_pdx_archivos SET
         carpeta_id = ?, apellidos = ?, nombres = ?, paciente_nombre = ?, paciente_nombre_norm = ?,
-        paciente_documento = ?, fecha_estudio = ?, estudio_texto = ?,
+        paciente_documento = ?, fecha_estudio = ?, marca_tiempo = ?, estudio_texto = ?,
         ruta_relativa = ?, nombre_archivo_display = ?, editado_por = ?, editado_en = NOW()
        WHERE id = ?`,
       [
@@ -1545,6 +1548,7 @@ router.patch('/soportes/pdx/archivos/:id', requireAuth, requireRoleOrPerm(ROLES_
         normalizarNombreBusqueda(pacienteNombre),
         documento || null,
         fecha,
+        marcaTiempo || null,
         estudioFinal,
         rutaRelativa,
         nombreDisplay,
