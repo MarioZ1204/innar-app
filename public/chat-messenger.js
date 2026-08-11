@@ -74,24 +74,60 @@
     return String(nombre || '?').slice(0, 2).toUpperCase();
   }
 
+  function parseChatDate(value) {
+    if (!value) return null;
+    if (value instanceof Date) {
+      return Number.isNaN(value.getTime()) ? null : value;
+    }
+    const s = String(value).trim();
+    if (!s) return null;
+    // ISO con Z/offset → instante real
+    if (/[zZ]$/.test(s) || /[+-]\d{2}:?\d{2}$/.test(s)) {
+      const d = new Date(s);
+      return Number.isNaN(d.getTime()) ? null : d;
+    }
+    // MySQL dateStrings "YYYY-MM-DD HH:MM:SS" → hora de pared en Colombia
+    const m = s.match(/^(\d{4}-\d{2}-\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/);
+    if (m) {
+      const sec = m[4] || '00';
+      const d = new Date(`${m[1]}T${m[2]}:${m[3]}:${sec}-05:00`);
+      return Number.isNaN(d.getTime()) ? null : d;
+    }
+    const d = new Date(s);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+
   function formatHora(iso) {
-    if (!iso) return '';
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return '';
-    return d.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
+    const d = parseChatDate(iso);
+    if (!d) return '';
+    return d.toLocaleTimeString('es-CO', {
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZone: 'America/Bogota'
+    });
   }
 
   function formatDia(iso) {
-    if (!iso) return '';
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return '';
-    const hoy = new Date();
-    const ayer = new Date();
-    ayer.setDate(hoy.getDate() - 1);
-    const ymd = (x) => `${x.getFullYear()}-${x.getMonth()}-${x.getDate()}`;
-    if (ymd(d) === ymd(hoy)) return 'Hoy';
-    if (ymd(d) === ymd(ayer)) return 'Ayer';
-    return d.toLocaleDateString('es-CO', { day: 'numeric', month: 'short' });
+    const d = parseChatDate(iso);
+    if (!d) return '';
+    const ymdBogota = (x) => new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Bogota',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).format(x);
+    const hoy = ymdBogota(new Date());
+    const ayerDate = new Date();
+    ayerDate.setDate(ayerDate.getDate() - 1);
+    const ayer = ymdBogota(ayerDate);
+    const day = ymdBogota(d);
+    if (day === hoy) return 'Hoy';
+    if (day === ayer) return 'Ayer';
+    return d.toLocaleDateString('es-CO', {
+      day: 'numeric',
+      month: 'short',
+      timeZone: 'America/Bogota'
+    });
   }
 
   async function ensureMediaPack() {

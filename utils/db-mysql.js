@@ -20,7 +20,13 @@ async function initPool() {
     enableKeepAlive: true,
     keepAliveInitialDelay: 10000,
     charset: 'utf8mb4',
-    dateStrings: true
+    dateStrings: true,
+    // Colombia: evita que CURRENT_TIMESTAMP / NOW() queden en UTC del hosting
+    timezone: process.env.DB_TIMEZONE || '-05:00'
+  });
+
+  pool.on('connection', (connection) => {
+    connection.query("SET time_zone = ?", [process.env.DB_TIMEZONE || '-05:00'], () => {});
   });
 
   console.log(`✓ Pool MySQL conectado: ${process.env.DB_HOST}:${process.env.DB_PORT}`);

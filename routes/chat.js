@@ -132,6 +132,21 @@ async function assertParticipante(conversacionId, usuarioId) {
   return { conv };
 }
 
+function ahoraBogotaMysql() {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Bogota',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  }).formatToParts(new Date());
+  const g = (t) => parts.find((p) => p.type === t)?.value || '00';
+  return `${g('year')}-${g('month')}-${g('day')} ${g('hour')}:${g('minute')}:${g('second')}`;
+}
+
 function otroId(conv, yo) {
   return Number(conv.usuario_a_id) === Number(yo) ? Number(conv.usuario_b_id) : Number(conv.usuario_a_id);
 }
@@ -547,7 +562,7 @@ router.post('/chat/conversaciones/:id/mensajes', requireAuth, requireChatUsar, v
       paciente_nombre: pacienteNombre,
       contexto_label: contextoLabel,
       leido_at: null,
-      creado_en: new Date()
+      creado_en: ahoraBogotaMysql()
     });
 
     const payload = {
