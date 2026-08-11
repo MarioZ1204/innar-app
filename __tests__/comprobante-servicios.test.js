@@ -26,7 +26,8 @@ describe('comprobante-servicios', () => {
       F.firmaImgTop + F.firmaImgHeight + L.margenImagenSobrePunteada
         - (L.firmaImgDesplazamientoAbajo || 0)
     ).toBeCloseTo(L.lineaFirma, 1);
-    expect(F.firmaImgEscala).toBeGreaterThan(2);
+    expect(F.firmaImgWidth).toBe(L.firmaImgAncho);
+    expect(F.firmaImgHeight).toBe(L.firmaImgAlturaSlot);
   });
 
   test('formatea fecha larga en español', () => {

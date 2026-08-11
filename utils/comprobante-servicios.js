@@ -32,8 +32,9 @@ const COMPROBANTE_LAYOUT = {
   /** Orden: sólida → espacio → espacio → etiqueta (izq) → imagen → punteada (fondo). */
   espacioTrasSolido1: 6,
   espacioTrasSolido2: 6,
-  firmaImgAlturaSlot: 14,
-  firmaImgEscala: 2.8,
+  /** Tamaño único de la firma en el PDF (cualquier imagen se ajusta a este recuadro). */
+  firmaImgAlturaSlot: 22,
+  firmaImgAncho: 72,
   margenImagenSobrePunteada: 0.6,
   firmaImgDesplazamientoAbajo: 10,
   zonaInferiorTop: 182,
@@ -181,6 +182,7 @@ function calcularPosicionesFirma(layout = COMPROBANTE_LAYOUT) {
     + layout.espacioTrasSolido1
     + layout.espacioTrasSolido2;
   const firmaImgHeight = layout.firmaImgAlturaSlot;
+  const firmaImgWidth = layout.firmaImgAncho;
   const firmaImgTop = layout.lineaFirma
     - layout.margenImagenSobrePunteada
     - firmaImgHeight
@@ -189,7 +191,7 @@ function calcularPosicionesFirma(layout = COMPROBANTE_LAYOUT) {
     firmaLabelTop,
     firmaImgTop,
     firmaImgHeight,
-    firmaImgEscala: layout.firmaImgEscala
+    firmaImgWidth
   };
 }
 
@@ -356,23 +358,24 @@ function buildComprobanteServiciosHtml(data, fondo = {}) {
     }
     .cmp-firma-paciente {
       position: absolute;
-      left: ${L.lineaFirmaLeft}mm;
-      right: ${L.lineaFirmaRight}mm;
+      left: 50%;
+      margin-left: -${F.firmaImgWidth / 2}mm;
+      width: ${F.firmaImgWidth}mm;
       top: ${F.firmaImgTop}mm;
       height: ${F.firmaImgHeight}mm;
       z-index: 2;
       display: flex;
       align-items: flex-end;
       justify-content: center;
-      overflow: visible;
+      overflow: hidden;
     }
     .cmp-firma-paciente img {
+      width: ${F.firmaImgWidth}mm;
+      height: ${F.firmaImgHeight}mm;
+      max-width: ${F.firmaImgWidth}mm;
       max-height: ${F.firmaImgHeight}mm;
-      max-width: 88%;
       object-fit: contain;
       object-position: center bottom;
-      transform: scale(${F.firmaImgEscala});
-      transform-origin: center bottom;
       mix-blend-mode: multiply;
     }
     .cmp-acudiente {
