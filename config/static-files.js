@@ -63,7 +63,7 @@ function buildIndexHandler(publicDir, appVersion) {
     let html = fs.readFileSync(htmlPath, 'utf8');
     html = injectAssetVersion(html, appVersion);
     html = html
-      .replace('</head>', `<script>window.APP_VERSION="${appVersion}";window.INNAR_REALTIME_MODE="http-poll";</script>\n</head>`);
+      .replace('</head>', `<script>window.APP_VERSION="${appVersion}";window.INNAR_REALTIME_MODE="http-poll";window.INNAR_REALTIME_POLL_MS=2800;window.INNAR_REALTIME_POLL_FAST_MS=1200;window.INNAR_REALTIME_LONG_POLL_MS=0;window.INNAR_REALTIME_HIDDEN_POLL_MS=0;</script>\n</head>`);
     res.setHeader('Content-Type', 'text/html');
     res.setHeader('Cache-Control', 'no-cache, must-revalidate');
     res.send(html);

@@ -1,26 +1,59 @@
 /**
  * Tiempo real vía GET /api/eventos/poll (sin Socket.IO / sin WebSocket).
  * Expone window.socket compatible: .on(...), .emit(...) → POST /api/eventos/push
+ *
+ * Optimización Hostinger:
+ * - Sin long-poll (no retiene conexiones)
+ * - Solo 1 pestaña por navegador hace poll (líder); el resto recibe por BroadcastChannel
+ * - Pestaña oculta: casi no pollea
+ * - /api/version va embebido en la respuesta del poll
  */
 
 let socket = null;
 window.socketReady = false;
 let updateCheckTimer = null;
 let updateBannerShown = false;
-const UPDATE_CHECK_INTERVAL_MS = 60000;
+const UPDATE_CHECK_INTERVAL_MS = 5 * 60 * 1000; // fallback raro si el poll no trae version
 
 const POLL_MS = typeof window.INNAR_REALTIME_POLL_MS === 'number'
   ? window.INNAR_REALTIME_POLL_MS
-  : 2000;
+  : 2800;
 
 /**
- * Long-poll corto. En Hostinger compartido, waits largos (≥15–20s) saturan
- * conexiones de Node/Passenger y la app se siente caída o muy lenta.
- * Override: window.INNAR_REALTIME_LONG_POLL_MS
+ * Long-poll DESACTIVADO por defecto (0).
+ * En Hostinger compartido, wait>0 mantiene 1 conexión abierta por pestaña.
  */
 const LONG_POLL_WAIT_MS = typeof window.INNAR_REALTIME_LONG_POLL_MS === 'number'
   ? window.INNAR_REALTIME_LONG_POLL_MS
-  : 6000;
+  : 0;
+
+/** Pestaña oculta: casi sin tráfico (0 = pausa total hasta volver). */
+const HIDDEN_POLL_MS = typeof window.INNAR_REALTIME_HIDDEN_POLL_MS === 'number'
+  ? window.INNAR_REALTIME_HIDDEN_POLL_MS
+  : 0;
+
+/** Tras un evento, pollear más rápido un rato (sin long-poll). */
+const POLL_FAST_MS = typeof window.INNAR_REALTIME_POLL_FAST_MS === 'number'
+  ? window.INNAR_REALTIME_POLL_FAST_MS
+  : 1200;
+const POLL_BURST_MS = typeof window.INNAR_REALTIME_POLL_BURST_MS === 'number'
+  ? window.INNAR_REALTIME_POLL_BURST_MS
+  : 10000;
+
+const TAB_ID = `t_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+const LEADER_LS_KEY = 'innar_rt_leader_v1';
+const LEADER_TTL_MS = 8000;
+let isRealtimeLeader = true;
+/** @type {number} */
+let pollBurstUntil = 0;
+
+function noteRealtimeActivity() {
+  pollBurstUntil = Date.now() + POLL_BURST_MS;
+}
+
+function currentPollGapMs() {
+  return Date.now() < pollBurstUntil ? POLL_FAST_MS : POLL_MS;
+}
 
 /** @type {ReturnType<typeof setTimeout>|null} */
 let socketPollTimer = null;
@@ -124,8 +157,14 @@ function showUpdateBanner(remoteVersion) {
   }
 }
 
+function applyRemoteVersion(remoteVersion) {
+  if (!window.APP_VERSION || !remoteVersion) return;
+  if (remoteVersion !== window.APP_VERSION) showUpdateBanner(remoteVersion);
+}
+
 async function checkServerVersion() {
   if (!window.APP_VERSION) return;
+  if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
   try {
     const r = await fetch(`/api/version?t=${Date.now()}`, {
       method: 'GET',
@@ -134,15 +173,13 @@ async function checkServerVersion() {
     });
     if (!r.ok) return;
     const body = await r.json();
-    if (body?.version && body.version !== window.APP_VERSION) {
-      showUpdateBanner(body.version);
-    }
+    if (body?.version) applyRemoteVersion(body.version);
   } catch (e) { /* noop */ }
 }
 
 function startVersionWatcher() {
   if (updateCheckTimer) return;
-  checkServerVersion();
+  // No pegar /api/version al arrancar: el poll ya trae version.
   updateCheckTimer = setInterval(checkServerVersion, UPDATE_CHECK_INTERVAL_MS);
 }
 
@@ -187,7 +224,7 @@ function stablePayloadKey(payload) {
   return JSON.stringify(normalized);
 }
 
-function dispatchRealtime(event, payload) {
+function dispatchRealtime(event, payload, opts = {}) {
   const dedupeKey = `${event}|${stablePayloadKey(payload)}`;
   const now = Date.now();
   const last = recentDispatched.get(dedupeKey);
@@ -200,14 +237,18 @@ function dispatchRealtime(event, payload) {
   }
 
   const cbs = listeners.get(event);
-  if (!cbs) return;
-  for (let i = 0; i < cbs.length; i++) {
-    try {
-      cbs[i](payload);
-    } catch (e) {
-      console.error('[Realtime]', event, e);
+  if (cbs) {
+    for (let i = 0; i < cbs.length; i++) {
+      try {
+        cbs[i](payload);
+      } catch (e) {
+        console.error('[Realtime]', event, e);
+      }
     }
   }
+
+  // Solo el origen (poll/push local) replica a otras pestañas.
+  if (!opts.fromPeerTab) fanOutRealtimeToTabs(event, payload);
 }
 
 const REALTIME_TAB_CHANNEL = 'innar-realtime-tab';
@@ -219,14 +260,43 @@ function initRealtimeTabChannel() {
   realtimeTabChannel = new BroadcastChannel(REALTIME_TAB_CHANNEL);
   realtimeTabChannel.onmessage = (ev) => {
     const msg = ev.data;
-    if (msg && typeof msg.event === 'string') dispatchRealtime(msg.event, msg.data);
+    if (msg && typeof msg.event === 'string') {
+      dispatchRealtime(msg.event, msg.data, { fromPeerTab: true });
+    }
   };
 }
 
 function fanOutRealtimeToTabs(event, data) {
   initRealtimeTabChannel();
   try {
-    realtimeTabChannel?.postMessage({ event, data, ts: Date.now() });
+    realtimeTabChannel?.postMessage({ event, data, ts: Date.now(), from: TAB_ID });
+  } catch (_) { /* noop */ }
+}
+
+/** Solo 1 pestaña del mismo navegador hace GET /eventos/poll. */
+function refreshRealtimeLeadership() {
+  const now = Date.now();
+  try {
+    const raw = localStorage.getItem(LEADER_LS_KEY);
+    const cur = raw ? JSON.parse(raw) : null;
+    const stale = !cur || !cur.id || !cur.at || (now - Number(cur.at) > LEADER_TTL_MS);
+    if (stale || cur.id === TAB_ID) {
+      localStorage.setItem(LEADER_LS_KEY, JSON.stringify({ id: TAB_ID, at: now }));
+      isRealtimeLeader = true;
+    } else {
+      isRealtimeLeader = false;
+    }
+  } catch (_) {
+    isRealtimeLeader = true;
+  }
+  return isRealtimeLeader;
+}
+
+function releaseRealtimeLeadership() {
+  try {
+    const raw = localStorage.getItem(LEADER_LS_KEY);
+    const cur = raw ? JSON.parse(raw) : null;
+    if (cur && cur.id === TAB_ID) localStorage.removeItem(LEADER_LS_KEY);
   } catch (_) { /* noop */ }
 }
 
@@ -257,7 +327,10 @@ async function pushToServer(event, data) {
       headers,
       body: JSON.stringify({ event, data })
     });
-    if (r.ok) fanOutRealtimeToTabs(event, data);
+    if (r.ok) {
+      noteRealtimeActivity();
+      fanOutRealtimeToTabs(event, data);
+    }
   } catch (e) { /* noop */ }
 }
 
@@ -464,7 +537,7 @@ function registerDefaultRealtimeHandlers() {
 }
 
 async function runPollIteration(waitMs = 0) {
-  if (pollInFlight) return;
+  if (pollInFlight) return 0;
   pollInFlight = true;
   if (pollAbort) {
     try { pollAbort.abort(); } catch (_) { /* noop */ }
@@ -480,17 +553,21 @@ async function runPollIteration(waitMs = 0) {
     if (r.status === 401) {
       document.dispatchEvent(new CustomEvent('app:no-autenticado'));
       closeSocket();
-      return;
+      return 0;
     }
-    if (!r.ok) return;
+    if (!r.ok) return 0;
     const body = await r.json();
+    if (body?.version) applyRemoteVersion(body.version);
     const events = Array.isArray(body.events) ? body.events : [];
+    if (events.length) noteRealtimeActivity();
     for (let i = 0; i < events.length; i++) {
       const row = events[i];
       if (row?.event) dispatchRealtime(row.event, row.data);
     }
+    return events.length;
   } catch (e) {
-    if (e && e.name === 'AbortError') return;
+    if (e && e.name === 'AbortError') return 0;
+    return 0;
   } finally {
     pollInFlight = false;
   }
@@ -508,11 +585,27 @@ function scheduleNextPoll(delayMs) {
 async function pollLoopTick() {
   if (!pollLoopActive) return;
   const hidden = typeof document !== 'undefined' && document.visibilityState === 'hidden';
-  // Pestaña oculta: poll corto sin wait (ahorra conexiones colgadas). Visible: long-poll.
+
+  // Pestaña oculta: pausa total (ahorra Hostinger). Al volver, visibilitychange reactiva.
+  if (hidden && HIDDEN_POLL_MS <= 0) {
+    scheduleNextPoll(15000);
+    return;
+  }
+
+  refreshRealtimeLeadership();
+  if (!isRealtimeLeader) {
+    // Seguidor: no llama al servidor; espera eventos de la pestaña líder.
+    scheduleNextPoll(Math.max(1200, Math.min(currentPollGapMs(), 2500)));
+    return;
+  }
+
   const waitMs = hidden ? 0 : LONG_POLL_WAIT_MS;
   await runPollIteration(waitMs);
   if (!pollLoopActive) return;
-  scheduleNextPoll(hidden ? Math.max(POLL_MS, 10000) : 80);
+  const gap = hidden
+    ? Math.max(HIDDEN_POLL_MS, 15000)
+    : (waitMs > 0 ? 120 : currentPollGapMs());
+  scheduleNextPoll(gap);
 }
 
 function initSocket() {
@@ -540,10 +633,19 @@ function initSocket() {
   window.socket = socket;
   registerDefaultRealtimeHandlers();
   initRealtimeTabChannel();
+  refreshRealtimeLeadership();
 
   socket.connected = true;
   pollLoopActive = true;
-  console.info('Tiempo real: HTTP long-poll', { waitMs: LONG_POLL_WAIT_MS });
+  console.info('Tiempo real: HTTP poll adaptativo', {
+    intervalMs: POLL_MS,
+    fastMs: POLL_FAST_MS,
+    burstMs: POLL_BURST_MS,
+    longPollWaitMs: LONG_POLL_WAIT_MS,
+    hiddenIntervalMs: HIDDEN_POLL_MS,
+    leader: isRealtimeLeader,
+    tabId: TAB_ID
+  });
 
   void pollLoopTick();
 
@@ -558,7 +660,6 @@ function initSocket() {
       if (document.visibilityState !== 'visible') return;
       if (socket) {
         socket.connected = true;
-        // Cortar long-poll colgado y pedir eventos al instante.
         if (pollAbort) {
           try { pollAbort.abort(); } catch (_) { /* noop */ }
         }
@@ -567,6 +668,7 @@ function initSocket() {
           socketPollTimer = null;
         }
         pollInFlight = false;
+        refreshRealtimeLeadership();
         void pollLoopTick();
       }
       const module = window.currentModule;
@@ -580,8 +682,10 @@ function initSocket() {
       if (module === 'reportes-historico' && typeof window.refreshReportesHistorico === 'function') window.refreshReportesHistorico();
       if (module === 'armado-soportes' && typeof window.refreshArmadoSoportes === 'function') window.refreshArmadoSoportes();
       if (typeof updateStats === 'function') updateStats();
-      checkServerVersion();
+      // version ya viene en el poll; no hace falta checkServerVersion aquí
     });
+    window.addEventListener('beforeunload', releaseRealtimeLeadership);
+    window.addEventListener('pagehide', releaseRealtimeLeadership);
   }
 }
 
@@ -589,6 +693,7 @@ function closeSocket() {
   window.dispatchEvent(new CustomEvent('socketClosed'));
 
   pollLoopActive = false;
+  releaseRealtimeLeadership();
   if (pollAbort) {
     try { pollAbort.abort(); } catch (_) { /* noop */ }
     pollAbort = null;

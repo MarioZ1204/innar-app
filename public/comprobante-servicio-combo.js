@@ -1,5 +1,5 @@
 /**
- * Campo servicio/motivo: texto libre + sugerencias según origen (estudios o consultas).
+ * Campo servicio/motivo: escriba y filtra (catálogo según origen).
  */
 (function (root) {
   'use strict';
@@ -23,17 +23,32 @@
       .replace(/"/g, '&quot;');
   }
 
+  function highlight(texto, q) {
+    const raw = String(texto || '');
+    if (!q) return escHtml(raw);
+    const nRaw = normBusqueda(raw);
+    const nQ = normBusqueda(q);
+    const idx = nRaw.indexOf(nQ);
+    if (idx < 0) return escHtml(raw);
+    // Aprox. sobre string original (sin acentos puede desfasar; fallback seguro)
+    try {
+      const re = new RegExp(`(${q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'ig');
+      return escHtml(raw).replace(re, '<mark>$1</mark>');
+    } catch (_) {
+      return escHtml(raw);
+    }
+  }
+
   function tituloLista(origen) {
     if (origen === 'electro') return 'Estudios de electrodiagnóstico';
     if (origen === 'medica') return 'Tipos de consulta';
-    return 'Sugerencias';
+    return 'Servicios';
   }
 
   async function cargarSugerencias(origen) {
     const key = origen || 'todos';
     const cacheKey = `_cache_${key}`;
     if (root.innarServicioCombo?.[cacheKey]) return root.innarServicioCombo[cacheKey];
-
     if (typeof apiFetch !== 'function') return [];
 
     const url = origen
@@ -49,7 +64,7 @@
           return {
             codigo: String(s.codigo || '').trim(),
             nombre,
-            buscar: normBusqueda(nombre)
+            buscar: normBusqueda(`${s.codigo || ''} ${nombre}`)
           };
         }).filter((s) => s.nombre);
         root.innarServicioCombo[cacheKey] = items;
@@ -62,8 +77,8 @@
   function filtrarLista(catalogo, texto) {
     if (!catalogo?.length) return [];
     const q = normBusqueda(texto);
-    if (!q) return catalogo.slice(0, 25);
-    return catalogo.filter((s) => s.buscar.includes(q)).slice(0, 25);
+    if (!q) return catalogo.slice(0, 40);
+    return catalogo.filter((s) => s.buscar.includes(q)).slice(0, 40);
   }
 
   function insertarSugerencia(input, nombre) {
@@ -71,10 +86,11 @@
     if (!texto) return;
     input.value = texto;
     input.focus();
-    const len = input.value.length;
     try {
+      const len = input.value.length;
       input.setSelectionRange(len, len);
     } catch (_) { /* ignore */ }
+    input.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
   function init(inputId, options = {}) {
@@ -90,14 +106,25 @@
     const state = {
       origen: options.origen || null,
       getOrigen: typeof options.getOrigen === 'function' ? options.getOrigen : null,
-      catalogo: []
+      catalogo: [],
+      activeIdx: -1
     };
     instancias.set(inputId, state);
 
     const wrap = document.createElement('div');
     wrap.className = 'innar-servicio-combo';
     input.parentNode.insertBefore(wrap, input);
-    wrap.appendChild(input);
+
+    const field = document.createElement('div');
+    field.className = 'innar-servicio-combo-field';
+    wrap.appendChild(field);
+    field.appendChild(input);
+
+    const icon = document.createElement('span');
+    icon.className = 'innar-servicio-combo-icon';
+    icon.setAttribute('aria-hidden', 'true');
+    icon.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3-3"/></svg>';
+    field.appendChild(icon);
 
     const list = document.createElement('ul');
     list.className = 'innar-servicio-combo-list hidden';
@@ -106,12 +133,16 @@
 
     const hint = document.createElement('p');
     hint.className = 'innar-servicio-combo-hint';
-    hint.textContent = 'Escriba libremente o elija una sugerencia de la lista (puede completar el texto después).';
+    hint.textContent = 'Escriba para filtrar el catálogo o deje un texto libre.';
     wrap.appendChild(hint);
 
+    input.classList.add('innar-servicio-combo-input');
     input.setAttribute('autocomplete', 'off');
+    input.setAttribute('role', 'combobox');
+    input.setAttribute('aria-autocomplete', 'list');
+    input.setAttribute('aria-expanded', 'false');
     if (!input.getAttribute('placeholder')) {
-      input.setAttribute('placeholder', 'Escriba o elija de la lista…');
+      input.setAttribute('placeholder', 'Buscar servicio…');
     }
 
     function origenActual() {
@@ -119,22 +150,30 @@
       return state.origen;
     }
 
+    function setExpanded(open) {
+      input.setAttribute('aria-expanded', open ? 'true' : 'false');
+      list.classList.toggle('hidden', !open);
+    }
+
     function pintarLista(items) {
       const origen = origenActual();
+      const q = input.value;
       if (!items.length) {
-        list.classList.add('hidden');
-        list.innerHTML = '';
+        list.innerHTML = `<li class="innar-servicio-combo-empty">Sin coincidencias — puede dejar el texto escrito</li>`;
+        setExpanded(true);
+        state.activeIdx = -1;
         return;
       }
       const titulo = tituloLista(origen);
-      list.innerHTML = `<li class="innar-servicio-combo-head" aria-hidden="true">${escHtml(titulo)}</li>`
-        + items.map((s) => (
-          `<li role="option" tabindex="-1" data-nombre="${escHtml(s.nombre)}">`
+      list.innerHTML = `<li class="innar-servicio-combo-head" aria-hidden="true">${escHtml(titulo)} · ${items.length}</li>`
+        + items.map((s, i) => (
+          `<li role="option" tabindex="-1" data-idx="${i}" data-nombre="${escHtml(s.nombre)}" class="innar-servicio-combo-opt">`
           + (s.codigo ? `<span class="innar-servicio-combo-cod">${escHtml(s.codigo)}</span>` : '')
-          + `<span class="innar-servicio-combo-nom">${escHtml(s.nombre)}</span>`
+          + `<span class="innar-servicio-combo-nom">${highlight(s.nombre, q)}</span>`
           + '</li>'
         )).join('');
-      list.classList.remove('hidden');
+      setExpanded(true);
+      state.activeIdx = -1;
     }
 
     async function mostrarSugerencias() {
@@ -142,23 +181,50 @@
         state.catalogo = await cargarSugerencias(origenActual());
         pintarLista(filtrarLista(state.catalogo, input.value));
       } catch (_) {
-        list.classList.add('hidden');
+        setExpanded(false);
       }
     }
 
-    input.addEventListener('focus', () => { mostrarSugerencias(); });
-    input.addEventListener('input', () => { mostrarSugerencias(); });
+    function optsVisibles() {
+      return [...list.querySelectorAll('li[role="option"]')];
+    }
+
+    function highlightActive() {
+      optsVisibles().forEach((li, i) => {
+        li.classList.toggle('is-active', i === state.activeIdx);
+      });
+    }
+
+    input.addEventListener('focus', () => { void mostrarSugerencias(); });
+    input.addEventListener('input', () => { void mostrarSugerencias(); });
     input.addEventListener('blur', () => {
-      setTimeout(() => list.classList.add('hidden'), 180);
+      setTimeout(() => setExpanded(false), 160);
     });
     input.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') list.classList.add('hidden');
+      const opts = optsVisibles();
+      if (e.key === 'Escape') {
+        setExpanded(false);
+        return;
+      }
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        if (list.classList.contains('hidden')) void mostrarSugerencias();
+        state.activeIdx = Math.min(opts.length - 1, state.activeIdx + 1);
+        highlightActive();
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        state.activeIdx = Math.max(0, state.activeIdx - 1);
+        highlightActive();
+        return;
+      }
       if (e.key === 'Enter') {
-        const first = list.querySelector('li[role="option"]');
-        if (first && !list.classList.contains('hidden')) {
+        const pick = state.activeIdx >= 0 ? opts[state.activeIdx] : opts[0];
+        if (pick && !list.classList.contains('hidden')) {
           e.preventDefault();
-          insertarSugerencia(input, first.dataset.nombre || '');
-          list.classList.add('hidden');
+          insertarSugerencia(input, pick.dataset.nombre || '');
+          setExpanded(false);
         }
       }
     });
@@ -168,7 +234,7 @@
       const li = e.target.closest('li[role="option"]');
       if (!li) return;
       insertarSugerencia(input, li.dataset.nombre || '');
-      list.classList.add('hidden');
+      setExpanded(false);
     });
   }
 
@@ -182,8 +248,7 @@
 
   function leerValor(inputId) {
     const input = document.getElementById(inputId);
-    if (!input) return '';
-    return String(input.value || '').trim();
+    return String(input?.value || '').trim();
   }
 
   function invalidarCache() {

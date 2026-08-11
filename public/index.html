@@ -4403,6 +4403,7 @@
   <script src="innar-lucide.js?v=1.7.66"></script>
   <script src="electro-estudio-tipo.js?v=1.7.66"></script>
   <script src="persona-fidu-shared.js?v=1.7.66"></script>
+  <script src="comprobante-afiliacion.js?v=1.7.66"></script>
   <script src="comprobante-servicio-cups.js?v=1.7.66"></script>
   <script src="comprobante-servicio-combo.js?v=1.7.66"></script>
   <script src="comprobante-firma-ui.js?v=1.7.66"></script>
@@ -4544,7 +4545,7 @@
             </div>
             <div class="docmod-field">
               <label for="docmodModalCompAfiliacion">Tipo de afiliación *</label>
-              <input type="text" id="docmodModalCompAfiliacion" value="Cotizante" />
+              <input type="text" id="docmodModalCompAfiliacion" value="COTIZANTE" maxlength="80" autocomplete="off" placeholder="Elija o escriba…" />
             </div>
             <div class="docmod-field docmod-span-2">
               <label for="docmodModalCompDireccion">Dirección *</label>
@@ -4736,7 +4737,7 @@
           </div>
           <div>
             <label style="display:block;font-size:.8rem;font-weight:600;color:#6b7280;margin-bottom:4px">Tipo de afiliación *</label>
-            <input id="compServTipoAfiliacion" type="text" maxlength="60" placeholder="Ej: Cotizante" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:.9rem" />
+            <input id="compServTipoAfiliacion" type="text" maxlength="80" placeholder="Elija o escriba…" autocomplete="off" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:.9rem" />
           </div>
         </div>
         <div style="margin-bottom:12px">

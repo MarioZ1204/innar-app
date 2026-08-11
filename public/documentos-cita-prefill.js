@@ -100,7 +100,8 @@
       direccion: '',
       telefono: (cita?.telefono || '').trim(),
       correo: '',
-      tipo_afiliacion: 'Cotizante',
+      tipo_afiliacion: 'COTIZANTE',
+      afiliacion_anexo: '',
       servicio: ''
     };
   }
@@ -116,7 +117,9 @@
       direccion: '',
       telefono: (turno?.paciente_telefono || '').trim(),
       correo: '',
-      tipo_afiliacion: (turno?.entidad || '').trim() || 'Cotizante',
+      // Entidad del turno ≠ afiliación FOMAG
+      tipo_afiliacion: 'COTIZANTE',
+      afiliacion_anexo: '',
       servicio: ''
     };
   }

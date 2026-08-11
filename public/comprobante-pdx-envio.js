@@ -5,6 +5,10 @@
   'use strict';
 
   const TEMAS_COMPROBANTE = new Set(['comprobantes', 'comprobantes_consulta_medica']);
+  const LABEL_TEMA = {
+    comprobantes: 'Comprobantes Electrodiagnóstico',
+    comprobantes_consulta_medica: 'Comprobantes Consultas Médicas'
+  };
 
   function splitNombrePdx(nombreCompleto) {
     const parts = String(nombreCompleto || '').trim().split(/\s+/).filter(Boolean);
@@ -22,7 +26,14 @@
     const res = await apiFetch('/api/soportes/pdx/carpetas');
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || 'No se pudieron cargar carpetas');
-    return (data.carpetas || []).filter((c) => TEMAS_COMPROBANTE.has(c.color_tema));
+    return (data.carpetas || [])
+      .filter((c) => TEMAS_COMPROBANTE.has(c.color_tema))
+      .sort((a, b) => {
+        const oa = a.color_tema === 'comprobantes' ? 0 : 1;
+        const ob = b.color_tema === 'comprobantes' ? 0 : 1;
+        if (oa !== ob) return oa - ob;
+        return String(a.periodo || '').localeCompare(String(b.periodo || ''));
+      });
   }
 
   async function poblarSelect(selectEl, selectedId) {
@@ -33,7 +44,8 @@
       carpetas.forEach((c) => {
         const opt = document.createElement('option');
         opt.value = String(c.id);
-        opt.textContent = `${c.nombre_display} (${c.periodo})`;
+        const temaLabel = LABEL_TEMA[c.color_tema] || c.nombre_display || c.color_tema;
+        opt.textContent = `${temaLabel} · ${c.periodo}`;
         opt.dataset.tema = c.color_tema || '';
         selectEl.appendChild(opt);
       });

@@ -230,7 +230,12 @@
         direccion: p.direccion || payload.direccion,
         telefono: p.telefono || payload.telefono,
         correo: p.correo || payload.correo,
-        tipo_afiliacion: p.afiliacion || payload.tipo_afiliacion
+        tipo_afiliacion: (() => {
+          const afilAnexo = String(p.afiliacion || '').trim();
+          const mapAfil = window.innarAfiliacionComprobante?.mapearAfiliacionParaComprobante;
+          return mapAfil ? mapAfil(afilAnexo || payload.tipo_afiliacion) : (afilAnexo || payload.tipo_afiliacion);
+        })(),
+        afiliacion_anexo: String(p.afiliacion || '').trim()
       };
     } catch (_) {
       return payload;
@@ -284,7 +289,15 @@
     $('compDireccion').value = p.direccion || '';
     $('compTelefono').value = p.telefono || '';
     $('compCorreo').value = p.correo || '';
-    $('compAfiliacion').value = p.tipo_afiliacion || 'Cotizante';
+    if (window.innarAfiliacionComprobante?.setValor) {
+      window.innarAfiliacionComprobante.setValor(
+        'compAfiliacion',
+        p.tipo_afiliacion,
+        p.afiliacion_anexo || ''
+      );
+    } else {
+      $('compAfiliacion').value = p.tipo_afiliacion || 'COTIZANTE';
+    }
     $('compServicio').value = p.servicio || '';
     $('compFirmaPaciente').value = '';
     $('compMostrarAcudiente').checked = false;
@@ -340,7 +353,9 @@
       direccion: $('compDireccion')?.value?.trim(),
       telefono: $('compTelefono')?.value?.trim(),
       correo: $('compCorreo')?.value?.trim(),
-      tipo_afiliacion: $('compAfiliacion')?.value?.trim(),
+      tipo_afiliacion: window.innarAfiliacionComprobante?.leerValor?.('compAfiliacion')
+        || $('compAfiliacion')?.value?.trim(),
+      afiliacion_anexo: window.innarAfiliacionComprobante?.leerAnexoOriginal?.('compAfiliacion') || '',
       servicio: $('compServicio')?.value?.trim(),
       firma_paciente: firmaPacienteDataUrl
     };

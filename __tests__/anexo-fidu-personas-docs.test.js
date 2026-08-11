@@ -147,8 +147,47 @@ describe('anexo-fidu-personas-docs', () => {
     });
     expect(body.numero_documento).toBe('123');
     expect(body.nombres_1).toBe('MARIO FERNANDO');
-    expect(body.afiliacion).toBe('Cotizante');
+    expect(body.afiliacion).toBe('COTIZANTE');
     expect(body.firma_paciente).toBe('data:image/png;base64,abc');
+  });
+
+  test('personaBodyDesdeComprobanteModal no pisa afiliación especial del Anexo', () => {
+    const body = personaBodyDesdeComprobanteModal({
+      paciente_nombre: 'Ana Ruiz',
+      paciente_documento: '99',
+      tipo_documento: 'CC',
+      fecha_nacimiento: '1990-01-01',
+      direccion: 'Calle 1',
+      telefono: '300',
+      correo: 'a@b.com',
+      tipo_afiliacion: 'COTIZANTE',
+      afiliacion_anexo: 'Especiales o de Excepcion cotizante'
+    });
+    expect(body.afiliacion).toBeUndefined();
+  });
+
+  test('personaBodyDesdeComprobanteModal no escribe texto libre de afiliación al Anexo', () => {
+    const body = personaBodyDesdeComprobanteModal({
+      paciente_nombre: 'Ana Ruiz',
+      paciente_documento: '99',
+      tipo_documento: 'CC',
+      fecha_nacimiento: '1990-01-01',
+      direccion: 'Calle 1',
+      telefono: '300',
+      correo: 'a@b.com',
+      tipo_afiliacion: 'Afiliado particular',
+      afiliacion_anexo: 'COTIZANTE'
+    });
+    expect(body.afiliacion).toBeUndefined();
+  });
+
+  test('personaAPrefillComprobante mapea especiales a COTIZANTE/BENEFICIARIO', () => {
+    const pre = personaAPrefillComprobante(
+      { afiliacion: 'Especiales o de Excepcion beneficiario', numero_documento: '1' },
+      { paciente_nombre: 'X' }
+    );
+    expect(pre.tipo_afiliacion).toBe('BENEFICIARIO');
+    expect(pre.afiliacion_anexo).toBe('Especiales o de Excepcion beneficiario');
   });
 
   test('personaBodyDesdeCertificadoModal mapea nombre y documento', () => {

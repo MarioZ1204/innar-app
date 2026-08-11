@@ -262,7 +262,13 @@
 
   function personaDesdeComprobanteModal(modal) {
     const doc = String(modal?.paciente_documento || '').trim();
-    return {
+    const AF = window.innarAfiliacionComprobante;
+    const valorUi = String(modal?.tipo_afiliacion || '').trim();
+    const original = String(modal?.afiliacion_anexo || modal?.afiliacionAnexo || '').trim();
+    const afiliacion = AF?.afiliacionSeguraParaAnexo
+      ? AF.afiliacionSeguraParaAnexo(valorUi, original)
+      : valorUi;
+    const body = {
       numero_documento: doc,
       ...sugerirNombresDesdeTexto(modal?.paciente_nombre),
       tipo_documento: String(modal?.tipo_documento || '').trim(),
@@ -270,9 +276,11 @@
       direccion: String(modal?.direccion || '').trim(),
       telefono: String(modal?.telefono || '').trim(),
       correo: String(modal?.correo || '').trim(),
-      afiliacion: String(modal?.tipo_afiliacion || '').trim(),
       firma_paciente: String(modal?.firma_paciente || '').trim()
     };
+    // Solo escribe afiliación si es seguro (no pisa Especiales… ni texto libre del PDF)
+    if (afiliacion) body.afiliacion = afiliacion;
+    return body;
   }
 
   function personaDesdeCertificadoModal(modal) {

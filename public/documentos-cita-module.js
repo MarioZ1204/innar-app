@@ -96,6 +96,8 @@
   function datosDesdePersona(persona, documento) {
     const doc = String(persona?.numero_documento || documento || '').trim();
     const nombre = nombreDesdePersona(persona);
+    const afilAnexo = String(persona?.afiliacion || '').trim();
+    const mapAfil = window.innarAfiliacionComprobante?.mapearAfiliacionParaComprobante;
     return {
       paciente_nombre: nombre,
       tipo_documento: String(persona?.tipo_documento || 'CC').trim() || 'CC',
@@ -104,7 +106,10 @@
       direccion: String(persona?.direccion || '').trim(),
       telefono: String(persona?.telefono || '').trim(),
       correo: String(persona?.correo || '').trim(),
-      tipo_afiliacion: String(persona?.afiliacion || 'Cotizante').trim() || 'Cotizante',
+      tipo_afiliacion: mapAfil
+        ? mapAfil(afilAnexo || 'COTIZANTE')
+        : (afilAnexo || 'COTIZANTE'),
+      afiliacion_anexo: afilAnexo,
       firma_paciente: String(persona?.firma_paciente || '').trim()
     };
   }
@@ -302,7 +307,15 @@
     $('docmodModalCompDireccion').value = datos.direccion || extras?.direccion || '';
     $('docmodModalCompTelefono').value = datos.telefono || extras?.telefono || '';
     $('docmodModalCompCorreo').value = datos.correo || extras?.correo || '';
-    $('docmodModalCompAfiliacion').value = datos.tipo_afiliacion || extras?.tipo_afiliacion || 'Cotizante';
+    if (window.innarAfiliacionComprobante?.setValor) {
+      window.innarAfiliacionComprobante.setValor(
+        'docmodModalCompAfiliacion',
+        datos.tipo_afiliacion || extras?.tipo_afiliacion,
+        datos.afiliacion_anexo || extras?.afiliacion_anexo || ''
+      );
+    } else {
+      $('docmodModalCompAfiliacion').value = datos.tipo_afiliacion || extras?.tipo_afiliacion || 'COTIZANTE';
+    }
     $('docmodModalCompServicio').value = extras?.servicio || '';
     _docmodFirmaUi?.reset?.();
     _docmodFirmaUi?.setFirmaPaciente?.(String(datos.firma_paciente || extras?.firma_paciente || '').trim());
@@ -443,7 +456,9 @@
       direccion: $('docmodModalCompDireccion')?.value?.trim(),
       telefono: $('docmodModalCompTelefono')?.value?.trim(),
       correo: $('docmodModalCompCorreo')?.value?.trim(),
-      tipo_afiliacion: $('docmodModalCompAfiliacion')?.value?.trim(),
+      tipo_afiliacion: window.innarAfiliacionComprobante?.leerValor?.('docmodModalCompAfiliacion')
+        || $('docmodModalCompAfiliacion')?.value?.trim(),
+      afiliacion_anexo: window.innarAfiliacionComprobante?.leerAnexoOriginal?.('docmodModalCompAfiliacion') || '',
       servicio: window.innarServicioCombo?.leerValor?.('docmodModalCompServicio')
         || $('docmodModalCompServicio')?.value?.trim(),
       ...extras
@@ -588,6 +603,7 @@
 
   async function initDocumentosCitaModule() {
     bindUi();
+    window.innarAfiliacionComprobante?.init?.('docmodModalCompAfiliacion');
     window.innarServicioCombo?.init?.('docmodModalCompServicio', {
       getOrigen: () => state.origen
     });

@@ -6294,12 +6294,15 @@ function setupAgendaVerMedicos() {
 
 function startAgendaMedicaAutoRefresh() {
   if (agendaMedicaInterval) return;
+  // El tiempo real (poll/socket) ya refresca en eventos. Este intervalo es solo
+  // red de seguridad y debe ser lento para no saturar Hostinger.
+  const intervalMs = (window.socketReady || window.socket) ? 30000 : 15000;
   agendaMedicaInterval = setInterval(() => {
     const view = document.getElementById('view-agenda-medica');
     if (view && !view.classList.contains('hidden')) {
       cargarTurnosMedica();
     }
-  }, 2000);
+  }, intervalMs);
 }
 
 function stopAgendaMedicaAutoRefresh() {
@@ -15156,9 +15159,8 @@ function personaFiduEnriquecerDesdeCita(persona, citaPrefill, contexto) {
     if (!String(p[k] || '').trim()) p[k] = sugeridos[k];
   });
   if (!String(p.telefono || '').trim() && citaPrefill?.telefono) p.telefono = citaPrefill.telefono;
-  if (!String(p.afiliacion || '').trim() && citaPrefill?.tipo_afiliacion) {
-    p.afiliacion = citaPrefill.tipo_afiliacion;
-  }
+  // No sugerir afiliación desde entidad del turno ni texto libre de cita:
+  // solo lo que ya esté en Anexo FOMAG.
   if (contexto === 'comprobante' && !String(p.correo || '').trim()) p.correo = '';
   return p;
 }
@@ -15174,6 +15176,8 @@ function personaFiduAplicarAPrefill(contexto, persona, citaPrefill) {
     };
   }
   if (contexto === 'comprobante') {
+    const afilAnexo = String(persona?.afiliacion || '').trim();
+    const mapAfil = window.innarAfiliacionComprobante?.mapearAfiliacionParaComprobante;
     return {
       ...citaPrefill,
       paciente_nombre: nombre,
@@ -15183,7 +15187,10 @@ function personaFiduAplicarAPrefill(contexto, persona, citaPrefill) {
       direccion: persona?.direccion || citaPrefill?.direccion || '',
       telefono: persona?.telefono || citaPrefill?.telefono || '',
       correo: persona?.correo || citaPrefill?.correo || '',
-      tipo_afiliacion: persona?.afiliacion || citaPrefill?.tipo_afiliacion || 'Cotizante',
+      tipo_afiliacion: mapAfil
+        ? mapAfil(afilAnexo || citaPrefill?.tipo_afiliacion || 'COTIZANTE')
+        : (afilAnexo || citaPrefill?.tipo_afiliacion || 'COTIZANTE'),
+      afiliacion_anexo: afilAnexo,
       firma_paciente: persona?.firma_paciente || citaPrefill?.firma_paciente || ''
     };
   }
@@ -15368,7 +15375,8 @@ function prefillComprobanteServiciosElectro(cita) {
     direccion: '',
     telefono: '',
     correo: '',
-    tipo_afiliacion: 'Cotizante',
+    tipo_afiliacion: 'COTIZANTE',
+    afiliacion_anexo: '',
     servicio: ''
   };
 }
@@ -15385,7 +15393,9 @@ function prefillComprobanteServiciosMedica(turno) {
     direccion: '',
     telefono: (turno?.paciente_telefono || '').trim(),
     correo: '',
-    tipo_afiliacion: (turno?.entidad || '').trim() || 'Cotizante',
+    // Entidad del turno ≠ afiliación FOMAG
+    tipo_afiliacion: 'COTIZANTE',
+    afiliacion_anexo: '',
     servicio: ''
   };
 }
@@ -15408,7 +15418,15 @@ function abrirModalComprobanteServicios(prefill) {
   set('compServDireccion', prefill.direccion);
   set('compServTelefono', prefill.telefono);
   set('compServCorreo', prefill.correo);
-  set('compServTipoAfiliacion', prefill.tipo_afiliacion);
+  if (window.innarAfiliacionComprobante?.setValor) {
+    window.innarAfiliacionComprobante.setValor(
+      'compServTipoAfiliacion',
+      prefill.tipo_afiliacion,
+      prefill.afiliacion_anexo || ''
+    );
+  } else {
+    set('compServTipoAfiliacion', prefill.tipo_afiliacion || 'COTIZANTE');
+  }
   set('compServServicio', prefill.servicio);
   set('compServAcudienteNombre', '');
   set('compServParentesco', '');
@@ -15460,7 +15478,9 @@ async function generarComprobanteServiciosPdf() {
     direccion: $('compServDireccion')?.value?.trim(),
     telefono: $('compServTelefono')?.value?.trim(),
     correo: $('compServCorreo')?.value?.trim(),
-    tipo_afiliacion: $('compServTipoAfiliacion')?.value?.trim(),
+    tipo_afiliacion: window.innarAfiliacionComprobante?.leerValor?.('compServTipoAfiliacion')
+      || $('compServTipoAfiliacion')?.value?.trim(),
+    afiliacion_anexo: window.innarAfiliacionComprobante?.leerAnexoOriginal?.('compServTipoAfiliacion') || '',
     servicio: window.innarServicioCombo?.leerValor?.('compServServicio')
       || $('compServServicio')?.value?.trim(),
     ...(await (_compServFirmaUi?.buildPayloadExtras?.() || {}))
@@ -15517,6 +15537,7 @@ async function generarComprobanteServiciosPdf() {
 }
 
 function initComprobanteServiciosUi() {
+  window.innarAfiliacionComprobante?.init?.('compServTipoAfiliacion');
   window.innarServicioCombo?.init?.('compServServicio', {
     getOrigen: () => $('compServOrigen')?.value?.trim() || null
   });

@@ -43,6 +43,55 @@ function normEspacios(s) {
   return String(s || '').trim().replace(/\s+/g, ' ');
 }
 
+function normAfil(s) {
+  return String(s || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+const AFILIACION_COMPROBANTE_OPTS = [
+  'COTIZANTE',
+  'COTIZANTE PENSIONADO',
+  'BENEFICIARIO',
+  'SUSTITUTO PENSIONAL'
+];
+
+function afiliacionCanonicaComprobante(val) {
+  const n = normAfil(val);
+  for (const opt of AFILIACION_COMPROBANTE_OPTS) {
+    if (normAfil(opt) === n) return opt;
+  }
+  return null;
+}
+
+function mapearAfiliacionParaComprobante(rawAnexo) {
+  const n = normAfil(rawAnexo);
+  if (!n) return 'COTIZANTE';
+  const ya = afiliacionCanonicaComprobante(rawAnexo);
+  if (ya) return ya;
+  if (n.includes('beneficiario') && (n.includes('especial') || n.includes('excepcion'))) return 'BENEFICIARIO';
+  if (n.includes('cotizante') && (n.includes('especial') || n.includes('excepcion'))) return 'COTIZANTE';
+  if (n.includes('sustituto')) return 'SUSTITUTO PENSIONAL';
+  if (n.includes('pensionado') && n.includes('cotizante')) return 'COTIZANTE PENSIONADO';
+  if (n.includes('beneficiario')) return 'BENEFICIARIO';
+  if (n.includes('cotizante')) return 'COTIZANTE';
+  return normEspacios(rawAnexo) || 'COTIZANTE';
+}
+
+function esAfiliacionProtegidaAnexo(raw) {
+  const n = normAfil(raw);
+  return !!(n && (n.includes('especial') || n.includes('excepcion')));
+}
+
+/** '' = no actualizar afiliación en merge (conserva Anexo). */
+function afiliacionSeguraParaAnexo(valorUi, afiliacionAnexoOriginal) {
+  if (esAfiliacionProtegidaAnexo(afiliacionAnexoOriginal)) return '';
+  return afiliacionCanonicaComprobante(valorUi) || '';
+}
+
 function valorCampoVacio(key, val) {
   const s = String(val ?? '').trim();
   if (!s) return true;
@@ -175,7 +224,10 @@ function personaAPrefillComprobante(persona, citaPrefill = {}) {
     direccion: persona.direccion || citaPrefill.direccion || '',
     telefono: persona.telefono || citaPrefill.telefono || '',
     correo: persona.correo || citaPrefill.correo || '',
-    tipo_afiliacion: persona.afiliacion || citaPrefill.tipo_afiliacion || 'Cotizante',
+    tipo_afiliacion: mapearAfiliacionParaComprobante(
+      persona.afiliacion || citaPrefill.tipo_afiliacion || 'COTIZANTE'
+    ),
+    afiliacion_anexo: persona.afiliacion || '',
     firma_paciente: persona.firma_paciente || citaPrefill.firma_paciente || ''
   };
 }
@@ -183,7 +235,11 @@ function personaAPrefillComprobante(persona, citaPrefill = {}) {
 /** Convierte campos del modal de comprobante al cuerpo de persona FOMAG. */
 function personaBodyDesdeComprobanteModal(modal = {}) {
   const doc = normEspacios(modal.paciente_documento);
-  return {
+  const afil = afiliacionSeguraParaAnexo(
+    modal.tipo_afiliacion,
+    modal.afiliacion_anexo || modal.afiliacionAnexo || ''
+  );
+  const body = {
     numero_documento: doc,
     ...sugerirNombresDesdeTexto(modal.paciente_nombre),
     tipo_documento: normEspacios(modal.tipo_documento),
@@ -191,9 +247,10 @@ function personaBodyDesdeComprobanteModal(modal = {}) {
     direccion: normEspacios(modal.direccion),
     telefono: normEspacios(modal.telefono),
     correo: normEspacios(modal.correo),
-    afiliacion: normEspacios(modal.tipo_afiliacion),
     firma_paciente: sanitizeFirmaPaciente(modal.firma_paciente)
   };
+  if (afil) body.afiliacion = afil;
+  return body;
 }
 
 /** Convierte campos del modal de certificado al cuerpo de persona FOMAG. */
@@ -263,6 +320,9 @@ async function guardarPersonaFiduMerge(db, body = {}, contexto = 'anexo') {
 module.exports = {
   PERSONA_FORM_META,
   CAMPOS_REQUERIDOS,
+  mapearAfiliacionParaComprobante,
+  afiliacionSeguraParaAnexo,
+  esAfiliacionProtegidaAnexo,
   personaRowToPlain,
   nombreCompletoDesdePersona,
   sugerirNombresDesdeTexto,
