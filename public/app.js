@@ -15433,7 +15433,10 @@ function abrirModalComprobanteServicios(prefill) {
   const chkPdx = $('compServEnviarPdx');
   if (chkPdx) chkPdx.checked = false;
   const selPdx = $('compServPdxCarpeta');
-  if (selPdx) { selPdx.disabled = true; selPdx.value = ''; }
+  if (selPdx) {
+    selPdx.disabled = true;
+    window.innarComprobantePdx?.poblarSelect?.(selPdx, null, { origen: prefill.origen });
+  }
   _compServFirmaUi?.reset?.();
   _compServFirmaUi?.setFirmaPaciente?.(String(prefill.firma_paciente || '').trim());
   const modal = $('modalComprobanteServicios');
@@ -15493,7 +15496,15 @@ async function generarComprobanteServiciosPdf() {
   }
   const btn = $('btnGenerarComprobanteServicios');
   if (btn) btn.disabled = true;
+  let enviadoPdx = false;
   try {
+    const enviarPdx = !!$('compServEnviarPdx')?.checked;
+    const carpetaId = enviarPdx ? $('compServPdxCarpeta')?.value : '';
+    if (enviarPdx && !carpetaId) {
+      showToast('Seleccione la carpeta de Cargar Reportes', 'warning');
+      return;
+    }
+
     const PDF = window.innarDocumentoPdf;
     if (!PDF) throw new Error('Generador PDF no disponible');
     const Firma = window.innarFirmaFondo;
@@ -15502,26 +15513,44 @@ async function generarComprobanteServiciosPdf() {
       : payload;
     const doc = payload.paciente_documento.replace(/\D/g, '') || 'sin_doc';
     const filename = `comprobante_servicios_${doc}.pdf`;
-    const out = await PDF.generarDocumentoConBlob({
+    let out = await PDF.generarDocumentoConBlob({
       postUrl: '/api/certificados/comprobante-servicios',
       previewUrl: '/api/certificados/comprobante-servicios/preview',
       payload: payloadFirma,
       filename
     });
+
+    // Si el servidor devolvió solo impresión HTML y hay que subir a PDX, generar PDF en cliente
+    if (enviarPdx && (!out.blob || !out.blob.size) && PDF.generarPdfBlobDesdeHtml) {
+      const preview = await PDF.fetchPreviewHtml?.(
+        '/api/certificados/comprobante-servicios/preview',
+        payloadFirma
+      );
+      if (!preview?.html) throw new Error('No se pudo obtener el HTML del comprobante para enviarlo');
+      const blobCliente = await PDF.generarPdfBlobDesdeHtml(preview.html, { fast: true });
+      out = { blob: blobCliente, modo: 'pdf-cliente', filename: preview.filename || filename };
+    }
+
     if (out.blob) PDF.descargarBlob(out.blob, out.filename || filename);
 
-    const carpetaId = $('compServEnviarPdx')?.checked ? $('compServPdxCarpeta')?.value : '';
     if (carpetaId && out.blob) {
       const opt = $('compServPdxCarpeta')?.selectedOptions?.[0];
-      await window.innarComprobantePdx?.enviarPdf?.(carpetaId, out.blob, {
+      await window.innarComprobantePdx.enviarPdf(carpetaId, out.blob, {
         ...payloadFirma,
         filename: out.filename || filename,
-        tema: opt?.dataset?.tema || ''
+        tema: opt?.dataset?.tema || '',
+        especialidad: payloadFirma.especialidad
+          || (typeof selectedDoctorEspecialidad !== 'undefined' ? selectedDoctorEspecialidad : '')
+          || '',
+        tipo_consulta: payloadFirma.servicio
       });
+      enviadoPdx = true;
+    } else if (enviarPdx) {
+      throw new Error('No se generó un PDF para enviar a Cargar Reportes');
     }
 
     await guardarPersonaFiduDesdeDocumento('comprobante', payloadFirma);
-    const msgPdx = carpetaId && out.blob ? ' y enviado a Cargar Reportes' : '';
+    const msgPdx = enviadoPdx ? ' y enviado a Cargar Reportes' : '';
     showToast(
       out.modo === 'impresion'
         ? 'Se abrió la vista de impresión. Use «Guardar como PDF».'
@@ -15546,8 +15575,14 @@ function initComprobanteServiciosUi() {
     btnQuitarPaciente: 'btnCompServQuitarFirmaPaciente',
     btnQuitarAcudiente: 'btnCompServQuitarFirmaAcudiente'
   });
-  window.innarComprobantePdx?.poblarSelect?.($('compServPdxCarpeta'));
-  window.innarComprobantePdx?.bindEnviarPdx?.('compServEnviarPdx', 'compServPdxCarpeta');
+  window.innarComprobantePdx?.poblarSelect?.($('compServPdxCarpeta'), null, {
+    origen: $('compServOrigen')?.value?.trim() || null
+  });
+  window.innarComprobantePdx?.bindEnviarPdx?.(
+    'compServEnviarPdx',
+    'compServPdxCarpeta',
+    () => $('compServOrigen')?.value?.trim() || null
+  );
   $('btnCerrarComprobanteServicios')?.addEventListener('click', cerrarModalComprobanteServicios);
   $('btnCancelarComprobanteServicios')?.addEventListener('click', cerrarModalComprobanteServicios);
   $('btnGenerarComprobanteServicios')?.addEventListener('click', generarComprobanteServiciosPdf);

@@ -597,6 +597,7 @@
   window.innarDocumentoPdf = {
     generarPdfDesdeHtml,
     generarPdfBlobDesdeHtml,
+    fetchPreviewHtml,
     descargarBlob,
     procesarRespuestaDocumento,
     generarDesdePreview,

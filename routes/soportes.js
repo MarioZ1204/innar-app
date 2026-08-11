@@ -448,11 +448,13 @@ function mapCarpetaPdx(row, visiblesSet) {
     : (visiblesSet
       ? resolveVisibilidadPeriodo(periodo, 'pdx', periodoToRefId(periodo), visiblesSet)
       : calcularVisibilidadPeriodo(periodo));
+  // Siempre derivar del nombre visible: color_tema en BD puede quedar obsoleto tras renombres.
+  const colorTema = detectarTemaCarpeta(row.nombre_display) || row.color_tema || 'neutral';
   return {
     id: row.id,
     periodo,
     nombre_display: row.nombre_display,
-    color_tema: row.color_tema || detectarTemaCarpeta(row.nombre_display),
+    color_tema: colorTema,
     estado_visibilidad: vis,
     archivada_manual: Boolean(row.archivada_manual),
     dias_restantes_gracia: diasRestantesGracia(periodo),
