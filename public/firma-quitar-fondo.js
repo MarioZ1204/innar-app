@@ -1,16 +1,44 @@
 /**
- * Quita fondo blanco o crema de imágenes de firma en el navegador (PNG transparente).
+ * Quita fondo blanco o crema de imágenes de firma en el navegador (PNG transparente)
+ * y recorta márgenes vacíos para anclar el trazo al recuadro del comprobante.
  */
 (function () {
   'use strict';
 
   const UMBRAL_LUMINANCIA = 238;
   const MAX_SATURACION_FONDO = 30;
+  const ALPHA_MIN = 8;
 
   function esPixelFondoBlanco(r, g, b) {
     const lum = 0.299 * r + 0.587 * g + 0.114 * b;
     const sat = Math.max(r, g, b) - Math.min(r, g, b);
     return lum >= UMBRAL_LUMINANCIA && sat < MAX_SATURACION_FONDO;
+  }
+
+  function bboxTinta(d, width, height) {
+    let minX = width;
+    let minY = height;
+    let maxX = -1;
+    let maxY = -1;
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const a = d[(y * width + x) * 4 + 3];
+        if (a > ALPHA_MIN) {
+          if (x < minX) minX = x;
+          if (y < minY) minY = y;
+          if (x > maxX) maxX = x;
+          if (y > maxY) maxY = y;
+        }
+      }
+    }
+    if (maxX < 0) return null;
+    const span = Math.max(maxX - minX + 1, maxY - minY + 1);
+    const pad = Math.max(2, Math.round(span * 0.04));
+    const left = Math.max(0, minX - pad);
+    const top = Math.max(0, minY - pad);
+    const right = Math.min(width, maxX + pad + 1);
+    const bottom = Math.min(height, maxY + pad + 1);
+    return { left, top, width: right - left, height: bottom - top };
   }
 
   function cargarImagen(src) {
@@ -41,7 +69,18 @@
       if (esPixelFondoBlanco(d[i], d[i + 1], d[i + 2])) d[i + 3] = 0;
     }
     ctx.putImageData(imageData, 0, 0);
-    return canvas.toDataURL('image/png');
+
+    const box = bboxTinta(d, w, h);
+    if (!box || (box.width >= w && box.height >= h)) {
+      return canvas.toDataURL('image/png');
+    }
+
+    const cropped = document.createElement('canvas');
+    cropped.width = box.width;
+    cropped.height = box.height;
+    const cctx = cropped.getContext('2d');
+    cctx.drawImage(canvas, box.left, box.top, box.width, box.height, 0, 0, box.width, box.height);
+    return cropped.toDataURL('image/png');
   }
 
   async function procesarFirmasEnRoot(root) {
