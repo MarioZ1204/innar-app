@@ -54,11 +54,9 @@
 
     function actualizarFirmaUsarRow() {
       const row = $(ids.rowFirmaUsar);
-      const chk = $(ids.chkAcud);
       if (!row) return;
-      const mostrar = !!(chk?.checked && (state.firmaPaciente || state.firmaAcudiente));
-      row.classList.toggle('hidden', !mostrar);
-      row.style.display = mostrar ? '' : 'none';
+      row.classList.add('hidden');
+      row.style.display = 'none';
     }
 
     function quitarFirmaPaciente() {
@@ -131,11 +129,7 @@
     };
 
     state.validar = () => {
-      const usar = state.leerFirmaUsar();
-      const chk = $(ids.chkAcud);
-      if (usar === 'acudiente' && chk?.checked) {
-        if (!state.firmaAcudiente) return 'Debe cargar la firma del acudiente (seleccionada para el PDF)';
-      } else if (!state.firmaPaciente) {
+      if (!state.firmaPaciente) {
         return 'Debe cargar la firma del paciente (imagen)';
       }
       return null;
@@ -151,8 +145,7 @@
         state.firmaAcudiente = await leerArchivo(inpAcud.files[0]);
       }
       const payload = {
-        firma_paciente: state.firmaPaciente,
-        firma_usar: state.leerFirmaUsar()
+        firma_paciente: state.firmaPaciente
       };
       if ($(ids.chkAcud)?.checked) {
         payload.acudiente_nombre = $(ids.acudNombre)?.value?.trim() || '';
