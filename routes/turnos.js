@@ -266,6 +266,43 @@ router.get('/turnos/get-next-number', requireAuth, async (req, res) => {
 });
 
 // GET /api/turnos/plantilla-excel
+router.get('/turnos/citas-mismo-tipo', requireAuth, async (req, res) => {
+  const documento = String(req.query.documento || '').replace(/\D/g, '');
+  const tipoConsulta = String(req.query.tipo_consulta || '').trim();
+  const nombre = String(req.query.nombre || '').trim();
+  const telefono = String(req.query.telefono || '').replace(/\D/g, '');
+  if (!documento || documento.length < 6 || !tipoConsulta) {
+    return res.status(400).json({ error: 'documento y tipo_consulta son obligatorios' });
+  }
+  try {
+    const { ESTADOS_CITA_AGENDADA, filtrarCitasMismoTipo } = require('../utils/turnos-duplicados-consulta');
+    const placeholders = ESTADOS_CITA_AGENDADA.map(() => '?').join(',');
+    const rows = await db.query(
+      `SELECT t.id, t.fecha, t.hora, t.tipo_consulta, t.estado, t.paciente_nombre,
+              t.paciente_documento, t.paciente_telefono, t.entidad, t.programado_por,
+              u.nombre AS doctor_nombre
+       FROM turnos t
+       LEFT JOIN usuarios u ON u.id = t.doctor_id
+       WHERE REPLACE(REPLACE(REPLACE(IFNULL(t.paciente_documento,''), '.', ''), '-', ''), ' ', '') = ?
+         AND t.estado IN (${placeholders})
+       ORDER BY t.fecha ASC, t.hora ASC
+       LIMIT 80`,
+      [documento, ...ESTADOS_CITA_AGENDADA]
+    );
+    const citas = filtrarCitasMismoTipo(rows, {
+      paciente_documento: documento,
+      paciente_nombre: nombre,
+      paciente_telefono: telefono,
+      tipo_consulta: tipoConsulta
+    });
+    res.json({ ok: true, citas });
+  } catch (e) {
+    logger.error(e.message, { error: e });
+    res.status(500).json({ error: safeError(e) });
+  }
+});
+
+// GET /api/turnos/plantilla-excel
 router.get('/turnos/plantilla-excel', requireAuth, async (req, res) => {
   const { doctor_id } = req.query;
   try {

@@ -7192,6 +7192,48 @@ async function guardarNumeroTurnoMedica() {
   }
 }
 
+async function confirmarSiHayCitasMismoTipo({ documento, nombre, telefono, tipoConsulta }) {
+  const doc = String(documento || '').replace(/\D/g, '');
+  const tipo = String(tipoConsulta || '').trim();
+  if (!doc || !tipo) return true;
+  try {
+    const qs = new URLSearchParams({
+      documento: doc,
+      tipo_consulta: tipo,
+      nombre: String(nombre || '').trim(),
+      telefono: String(telefono || '').replace(/\D/g, '')
+    });
+    const res = await apiFetch(`/api/turnos/citas-mismo-tipo?${qs.toString()}`);
+    const data = await res.json().catch(() => ({}));
+    const citas = Array.isArray(data.citas) ? data.citas : [];
+    if (!citas.length) return true;
+
+    const filas = citas.slice(0, 8).map((c) => {
+      const fecha = formatearFechaCorta(c.fecha);
+      const hora = c.hora ? formatearHora(c.hora) : '';
+      const docNombre = escapeHtml(c.doctor_nombre || '');
+      const est = escapeHtml(String(c.estado || '').replace(/_/g, ' '));
+      const extra = docNombre ? ` · ${docNombre}` : '';
+      return `<li>${escapeHtml(fecha)}${hora ? ` ${escapeHtml(hora)}` : ''} — ${est}${extra}</li>`;
+    }).join('');
+    const mas = citas.length > 8 ? `<li>… y ${citas.length - 8} más</li>` : '';
+    const msg = `Este paciente ya tiene <strong>${citas.length}</strong> cita(s) agendada(s) de <strong>${escapeHtml(tipo)}</strong>:<ul style="text-align:left;margin:10px 0 0;padding-left:18px;line-height:1.45">${filas}${mas}</ul><p style="margin:12px 0 0">¿Desea agendar otra cita del mismo tipo?</p>`;
+
+    return await new Promise((resolve) => {
+      showConfirm(msg, () => resolve(true), {
+        okText: 'Sí, agendar',
+        cancelText: 'No agendar',
+        danger: false,
+        icon: '⚠️',
+        onCancel: () => resolve(false)
+      });
+    });
+  } catch (e) {
+    console.warn('[citas-mismo-tipo]', e.message);
+    return true;
+  }
+}
+
 async function crearTurnoMedica() {
   const nombresMedica = $('nuevoPacienteNombresMedica')?.value.trim() || '';
   const apellidosMedica = $('nuevoPacienteApellidosMedica')?.value.trim() || '';
@@ -7258,6 +7300,14 @@ async function crearTurnoMedica() {
       : 1;
     const planSesiones = modoMulti ? obtenerPlanSesionesMultiplesParaGuardar() : [{ fecha, hora, sesion_numero: 1 }];
     const fechasSesiones = planSesiones.map((s) => s.fecha);
+
+    const seguir = await confirmarSiHayCitasMismoTipo({
+      documento: doc,
+      nombre,
+      telefono: telefono1,
+      tipoConsulta
+    });
+    if (!seguir) return;
 
     if (modoMulti) {
       for (const s of planSesiones) {
@@ -13748,7 +13798,7 @@ function mostrarModalEnviarWhatsApp(cita) {
     modal = document.createElement('div');
     modal.id = 'modalEnviarWhatsApp';
     modal.className = 'modal hidden';
-    modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);align-items:center;justify-content:center;z-index:1000;padding:20px;display:none';
+    modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);align-items:center;justify-content:center;z-index:10150;padding:20px;display:none';
     modal.innerHTML = `
       <div class="modal-content" style="background:white;border-radius:12px;padding:28px;max-width:560px;width:100%;max-height:90vh;overflow:auto;box-shadow:0 20px 25px -5px rgba(0,0,0,0.1)">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
@@ -13802,6 +13852,7 @@ function mostrarModalEnviarWhatsApp(cita) {
 
   modal.classList.remove('hidden');
   modal.style.display = 'flex';
+  modal.style.zIndex = '10150';
   actualizarVistaModalWhatsAppElectro();
 }
 
@@ -14943,6 +14994,10 @@ function mostrarModalSedeRecordatorio(turno) {
     if (dialog) dialog.addEventListener('click', (e) => e.stopPropagation());
   }
 
+  if (modal.parentElement !== document.body) {
+    document.body.appendChild(modal);
+  }
+  modal.style.zIndex = '10160';
   modal.classList.remove('hidden');
 }
 

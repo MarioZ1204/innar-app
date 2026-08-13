@@ -1,13 +1,18 @@
 .sede-recordatorio-overlay {
   position: fixed;
   inset: 0;
-  z-index: 100000;
+  z-index: 10160;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 20px;
   background: rgba(0, 0, 0, 0.65);
   isolation: isolate;
+}
+
+/* Gana a .modal:not(.hidden) { z-index: 1000 } y al detalle de cita (9999). */
+.modal.sede-recordatorio-overlay:not(.hidden) {
+  z-index: 10160 !important;
 }
 
 .sede-recordatorio-overlay.hidden {
