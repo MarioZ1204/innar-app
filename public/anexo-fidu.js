@@ -79,6 +79,22 @@
     });
   }
 
+  function htmlAfiduNavAtrasBtn(id, destLabel) {
+    const dest = String(destLabel || 'nivel anterior').trim() || 'nivel anterior';
+    return `<button type="button" class="sop-btn sop-btn-nav-atras" id="${id}" title="Volver a ${dest}" aria-label="Volver a ${dest}"><i data-lucide="arrow-left" aria-hidden="true"></i><span class="sop-nav-atras-label">Atrás</span><span class="sop-nav-atras-dest">${escapeHtml(dest)}</span></button>`;
+  }
+
+  function afiduAtrasDestino() {
+    if (afiduState.seccion === 'personas') return null;
+    if (afiduState.vista === 'archivo') {
+      return { label: afiduState.carpetaNombre || 'Carpeta', onClick: volverAfiduCarpeta };
+    }
+    if (afiduState.vista === 'carpeta') {
+      return { label: 'Anexo', onClick: volverAfiduRoot };
+    }
+    return null;
+  }
+
   function renderAfiduBreadcrumbs(containerEl, crumbs) {
     if (!containerEl || !crumbs?.length) return;
     containerEl.innerHTML = crumbs.map((c, i) => {
@@ -122,13 +138,23 @@
     } else if (afiduState.vista === 'root') {
       crumbs.push({ label: 'Seleccione una carpeta', current: true });
     }
-    el.innerHTML = '<span class="sop-context-label">Ubicación</span>';
+    el.innerHTML = '';
+    const atras = afiduAtrasDestino();
+    if (atras) {
+      el.insertAdjacentHTML('beforeend', htmlAfiduNavAtrasBtn('afiduBtnAtras', atras.label));
+      el.querySelector('#afiduBtnAtras')?.addEventListener('click', atras.onClick);
+    }
+    const loc = document.createElement('span');
+    loc.className = 'sop-context-label';
+    loc.textContent = 'Ubicación';
+    el.appendChild(loc);
     const trail = document.createElement('span');
     trail.className = 'sop-breadcrumbs';
     trail.style.margin = '0';
     trail.style.flex = '1';
     renderAfiduBreadcrumbs(trail, crumbs);
     el.appendChild(trail);
+    afiduIcons(el);
   }
 
   function actualizarSidebarAfiduActivo() {
@@ -418,7 +444,6 @@
           <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="btnAfiduEditarCarpeta"><i data-lucide="pencil"></i> Editar carpeta</button>
           <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="btnAfiduEliminarCarpeta" style="color:#dc2626"><i data-lucide="trash-2"></i> Eliminar carpeta</button>
           <button type="button" class="sop-btn sop-btn-teal" id="btnAfiduNuevoArchivo"><i data-lucide="file-plus"></i> Nuevo anexo</button>
-          <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="btnAfiduVolverRoot"><i data-lucide="arrow-left"></i> Carpetas</button>
         </div>
       </div>
       <div class="sop-panel-body">
@@ -438,7 +463,6 @@
       });
     });
     panel.querySelector('#btnAfiduNuevoArchivo')?.addEventListener('click', crearArchivo);
-    panel.querySelector('#btnAfiduVolverRoot')?.addEventListener('click', volverAfiduRoot);
     const grid = panel.querySelector('#afiduArchivosGrid');
     if (!afiduState.archivos.length) {
       grid.innerHTML = '<div class="sop-empty" style="grid-column:1/-1;padding:32px"><i data-lucide="file-plus" class="sop-empty-icon"></i>Sin anexos — cree el primero para empezar a cargar filas</div>';

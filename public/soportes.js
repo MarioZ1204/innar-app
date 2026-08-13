@@ -1138,10 +1138,49 @@
   }
 
   /** Navegación interna entre carpetas (no confundir con «Menú principal» del sidebar). */
+  function htmlSopNavAtrasBtn(id, destLabel, opts = {}) {
+    const dest = String(destLabel || 'nivel anterior').trim() || 'nivel anterior';
+    const title = opts.title || `Volver a ${dest}`;
+    return `<button type="button" class="sop-btn sop-btn-nav-atras" id="${escapeHtml(id)}" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}"><i data-lucide="arrow-left" aria-hidden="true"></i><span class="sop-nav-atras-label">Atrás</span><span class="sop-nav-atras-dest">${escapeHtml(dest)}</span></button>`;
+  }
+
   function htmlSopNavSubirBtn(id, targetLabel, opts = {}) {
-    const dest = String(targetLabel || 'carpeta anterior').trim() || 'carpeta anterior';
-    const title = opts.title || `Subir un nivel dentro de Soportes: ${dest}`;
-    return `<button type="button" class="sop-btn sop-btn-nav-subir sop-btn-sm" id="${escapeHtml(id)}" title="${escapeHtml(title)}" aria-label="${escapeHtml(`Subir a ${dest}`)}"><i data-lucide="corner-left-up" aria-hidden="true"></i><span class="sop-nav-subir-text">Subir a <strong>${escapeHtml(dest)}</strong></span></button>`;
+    return htmlSopNavAtrasBtn(id, targetLabel, opts);
+  }
+
+  function armAtrasDestino() {
+    if (!armState.periodoId) return null;
+    const vista = armState.vista;
+    if (vista === 'expediente') {
+      if (armState.diaModo === 'ucqn') {
+        const diaPersona = armDiaById(armState.diaId);
+        const parent = diaPersona?.parent_id ? armDiaById(diaPersona.parent_id) : null;
+        return { label: parent?.nombre_display || 'UCQN', onClick: armVolverDesdeDia };
+      }
+      return {
+        label: labelContenedorArmado(armState.contenedorTipo),
+        onClick: () => { if (armState.contenedorId) seleccionarContenedorArmado(armState.contenedorId); }
+      };
+    }
+    if (vista === 'contenedor') {
+      return {
+        label: armState.diaLabel || 'Carpeta de día',
+        onClick: () => seleccionarDiaArmado(armState.diaId)
+      };
+    }
+    if (vista === 'day') {
+      return { label: armLabelVolverDesdeDia(), onClick: armVolverDesdeDia };
+    }
+    if (vista === 'period' && armState.diasParentId) {
+      const cur = armDiaById(armState.diasParentId);
+      const parentId = cur ? armDiaParentId(cur) : 0;
+      const dest = parentId ? armDiaById(parentId) : null;
+      return {
+        label: dest?.nombre_display || armState.periodoLabel || 'Mes',
+        onClick: armVolverExplorerUnNivel
+      };
+    }
+    return null;
   }
 
   function parseZipFilenameFromResponse(res, fallback) {
@@ -1784,6 +1823,12 @@
       el.innerHTML = '<span class="sop-context-label">Navegación</span><span>Seleccione un mes en el panel izquierdo</span>';
       return;
     }
+    const atras = armAtrasDestino();
+    el.innerHTML = '';
+    if (atras) {
+      el.insertAdjacentHTML('beforeend', htmlSopNavAtrasBtn('sopArmBtnAtras', atras.label));
+      el.querySelector('#sopArmBtnAtras')?.addEventListener('click', atras.onClick);
+    }
     const enExplorer = armState.vista === 'period';
     const crumbs = [{
       label: armState.periodoLabel || 'Mes',
@@ -1835,7 +1880,10 @@
     } else if (!enExplorer || !armState.diasParentId) {
       crumbs.push({ label: 'Seleccione carpeta de día', current: true });
     }
-    el.innerHTML = '<span class="sop-context-label">Ubicación</span>';
+    const loc = document.createElement('span');
+    loc.className = 'sop-context-label';
+    loc.textContent = 'Ubicación';
+    el.appendChild(loc);
     const trail = document.createElement('span');
     trail.className = 'sop-breadcrumbs';
     trail.style.margin = '0';
@@ -1850,6 +1898,7 @@
       });
     }
     el.appendChild(trail);
+    if (typeof sopIcons === 'function') sopIcons(el);
   }
 
   function renderPdxBreadcrumbLista() {
@@ -1859,11 +1908,21 @@
   }
 
   function renderPdxBreadcrumbDetalle(carpeta) {
-    if (!carpeta) return;
-    renderSopBreadcrumbs($('sopPdxBreadcrumbDetalle'), [
+    const el = $('sopPdxBreadcrumbDetalle');
+    if (!el || !carpeta) return;
+    el.classList.add('sop-context-bar');
+    el.innerHTML = htmlSopNavAtrasBtn('btnSopPdxAtras', 'Cargar reportes');
+    const trail = document.createElement('span');
+    trail.className = 'sop-breadcrumbs';
+    trail.style.margin = '0';
+    trail.style.flex = '1';
+    renderSopBreadcrumbs(trail, [
       { label: 'Cargar reportes', onClick: volverListaPdx },
       { label: carpeta.nombre_display || 'Carpeta', current: true }
     ]);
+    el.appendChild(trail);
+    el.querySelector('#btnSopPdxAtras')?.addEventListener('click', volverListaPdx);
+    if (typeof sopIcons === 'function') sopIcons(el);
   }
 
   function renderPdxDetalleAcciones(carpeta) {
@@ -4739,16 +4798,11 @@
     const huerfanasRaiz = !armState.diasParentId ? lista.filter((d) => !d.es_contenedor) : [];
     const faltanContenedorasRaiz = !armState.diasParentId && armContenedorasRaiz().length < 3;
     const dragHint = armPuedeArrastrarDia() ? 'Mantenga pulsado para mover' : '';
-    const parentExplorer = armState.diasParentId ? armDiaById(armState.diasParentId) : null;
-    const volverExplorerLabel = parentExplorer
-      ? (armDiaParentId(parentExplorer) ? parentExplorer.nombre_display : (armState.periodoLabel || 'Mes'))
-      : '';
     panel.innerHTML = `<div class="sop-panel-head">
         <div>
           <h3 style="margin:0"><i data-lucide="calendar"></i> ${escapeHtml(armState.periodoLabel || 'Mes')}</h3>
         </div>
         <div class="sop-panel-head-tools">
-          ${armState.diasParentId ? htmlSopNavSubirBtn('btnSopArmVolverExplorer', volverExplorerLabel) : ''}
           ${htmlSopFolderViewToggle('arm')}
           ${armState.diasParentId ? htmlArmZipCarpetaActualBtn() : `${htmlArmZipPaqueteBtn()}${htmlArmZipUnificadoBtn()}${htmlArmZipFacturadosBtn()}`}
           ${puedeGestionarDia && armState.diasParentId && armModoContenedoraActual() === 'anexo_fidu' ? `<button type="button" class="sop-btn sop-btn-ghost" id="btnSopArmSyncAnexoModulo"><i data-lucide="refresh-cw"></i> Sincronizar desde Anexo</button>` : ''}
@@ -4770,7 +4824,6 @@
         <div id="sopArmDiasGrid" class="sop-folder-explorer-grid${viewMode === 'list' ? ' sop-folder-list-mode' : ''}"></div>
       </div>`;
     bindSopFolderViewToggle(panel, 'arm');
-    panel.querySelector('#btnSopArmVolverExplorer')?.addEventListener('click', armVolverExplorerUnNivel);
     const grid = panel.querySelector('#sopArmDiasGrid');
     panel.querySelector('#btnSopArmRepararContenedoras')?.addEventListener('click', () => {
       seleccionarPeriodoArmado(armState.periodoId).catch((e) => sopToast(e.message, 'error'));
@@ -4859,8 +4912,6 @@
 
   function renderAnexoDiaPanel(diaRow, anexo) {
     const panel = $('sopArmExpedientePanel');
-    const parent = diaRow?.parent_id ? armDiaById(diaRow.parent_id) : null;
-    const volverLabel = parent?.nombre_display || armState.periodoLabel || 'Mes';
     const tieneExport = !!(anexo?.ruta_export);
     panel.innerHTML = `<div class="sop-panel-head">
         <div>
@@ -4871,7 +4922,6 @@
           <button type="button" class="sop-btn sop-btn-teal sop-btn-sm" id="btnSopAnexoAbrirModulo"><i data-lucide="external-link"></i> Abrir en Anexo</button>
           <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="btnSopAnexoDescargar"${tieneExport ? '' : ' disabled'}><i data-lucide="download"></i> Descargar Excel</button>
           <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="btnSopAnexoSync"><i data-lucide="refresh-cw"></i> Actualizar Excel</button>
-          ${htmlSopNavSubirBtn('btnSopArmVolverAnexoCont', volverLabel)}
         </div>
       </div>
       <div class="sop-panel-body">
@@ -4880,7 +4930,6 @@
           ${tieneExport ? `<p style="margin:0;font-size:.85rem;color:#64748b">Último export: <code>${escapeHtml(anexo.ruta_export.split('/').pop())}</code></p>` : '<p style="margin:0;font-size:.85rem;color:#64748b">Aún no hay Excel exportado — use «Actualizar Excel» o exporte desde Anexo.</p>'}
         </div>
       </div>`;
-    panel.querySelector('#btnSopArmVolverAnexoCont')?.addEventListener('click', armVolverDesdeDia);
     panel.querySelector('#btnSopAnexoAbrirModulo')?.addEventListener('click', () => {
       if (!anexo?.archivo_id) return sopToast('Sin anexo vinculado', 'warning');
       const url = new URL('/', window.location.origin);
@@ -4939,13 +4988,11 @@
         </div>
         <div class="sop-panel-head-tools" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           ${htmlArmZipDiaBtn(diaRow, { labeled: true, variant: 'teal' })}
-          ${htmlSopNavSubirBtn('btnSopArmVolverMes', armLabelVolverDesdeDia())}
         </div>
       </div>
       <div class="sop-panel-body">
         <div id="sopArmContenedoresGrid" class="sop-folder-explorer-grid sop-folder-explorer-grid--2"></div>
       </div>`;
-    panel.querySelector('#btnSopArmVolverMes')?.addEventListener('click', armVolverDesdeDia);
     bindArmMigrarRipsButtons(panel);
     bindArmZipButtons(panel);
     armState.contenedores = data.contenedores || [];
@@ -5094,7 +5141,6 @@
           ${htmlSopFolderViewToggle('arm')}
           ${htmlArmZipContenedorBtn(armState.contenedorId, armState.contenedorTipo, armState.diaLabel)}
           ${armState.contenedorTipo === 'soportes' && sopPerm('soportes.armado.crear_estructura') ? htmlArmMigrarRipsContenedorBtn(armState.contenedorId, { labeled: true, variant: 'ghost' }) : ''}
-          ${htmlSopNavSubirBtn('btnSopArmVolverDia', armState.diaLabel || 'Carpeta de día')}
           ${sopPerm('soportes.armado.crear_estructura') ? `<button type="button" class="sop-btn sop-btn-teal sop-btn-sm" id="btnSopArmNuevoFe"><i data-lucide="folder-plus"></i> Nuevas carpetas</button>` : ''}
         </div>
       </div>
@@ -5117,7 +5163,6 @@
       sopIcons(summary);
     }
     renderArmadoExpedientesGrid(list, { skipScrollWrap: true });
-    panel.querySelector('#btnSopArmVolverDia')?.addEventListener('click', () => seleccionarDiaArmado(armState.diaId));
     panel.querySelector('#btnSopArmNuevoFe')?.addEventListener('click', modalNuevoExpediente);
     sopIcons(panel);
     renderArmadoContextBar();
@@ -5637,16 +5682,10 @@
   function renderUcqnExpedientePanel(expId, e) {
     const panel = $('sopArmExpedientePanel');
     const pdfs = e.pdfs || [];
-    const diaPersona = armDiaById(armState.diaId);
-    const parent = diaPersona?.parent_id ? armDiaById(diaPersona.parent_id) : null;
-    const volverCont = parent?.nombre_display || 'UCQN';
     panel.innerHTML = `<div class="sop-panel-head">
         <div>
           <h3 style="margin:0"><i data-lucide="user"></i> ${escapeHtml(e.paciente_nombre || e.codigo || 'Persona')}</h3>
           <div style="font-size:.85rem;color:#64748b;margin-top:4px">UCQN · ${pdfs.length} PDF</div>
-        </div>
-        <div class="sop-panel-head-tools" style="display:flex;gap:8px;flex-wrap:wrap">
-          ${htmlSopNavSubirBtn('btnSopUcqnVolver', volverCont)}
         </div>
       </div>
       <div class="sop-panel-body">
@@ -5667,7 +5706,6 @@
           </tr>`).join('')}</tbody></table>` : '<div class="sop-empty">Sin PDF — suba el primero</div>'}
         </div>
       </div>`;
-    panel.querySelector('#btnSopUcqnVolver')?.addEventListener('click', armVolverDesdeDia);
     const dz = panel.querySelector('#sopUcqnDropzone');
     const inp = panel.querySelector('#sopUcqnUploadInput');
     if (dz && inp) {
@@ -5784,7 +5822,6 @@
           <div style="font-size:.85rem;color:#64748b;margin-top:4px">${escapeHtml(tipoLabel)} · NIT ${escapeHtml(nit)}${e.paciente_nombre ? ` · ${escapeHtml(e.paciente_nombre)}` : ''}${e.numero_factura != null && Number(e.numero_factura) > 0 ? ` · FE${e.numero_factura}` : ' · sin factura'}</div>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
-        ${htmlSopNavSubirBtn('btnSopArmVolverCont', tipoLabel)}
         ${sopPerm('soportes.armado.subir') ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="btnSopExpEditar"><i data-lucide="pencil"></i> Renombrar</button>` : ''}
         ${sopPerm('soportes.armado.crear_estructura') ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="btnSopExpEliminar" style="color:#dc2626"><i data-lucide="trash-2"></i> Eliminar</button>` : ''}
         ${htmlArmZipBtn({
@@ -5820,9 +5857,6 @@
         ${vinculosHtml}
       </div>`;
 
-    panel.querySelector('#btnSopArmVolverCont')?.addEventListener('click', () => {
-      if (armState.contenedorId) seleccionarContenedorArmado(armState.contenedorId);
-    });
     panel.querySelector('#btnSopExpEditar')?.addEventListener('click', () => modalEditarExpediente(id, e));
     panel.querySelector('#btnSopExpEliminar')?.addEventListener('click', () => modalEliminarExpediente(id, e.codigo));
     const dz = panel.querySelector('#sopFeDropzone');

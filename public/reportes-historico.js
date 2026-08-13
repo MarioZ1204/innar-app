@@ -138,11 +138,21 @@
   function renderBreadcrumbDetalle(carpeta) {
     const el = $('rhBreadcrumbDetalle');
     if (!el || !carpeta) return;
+    const dest = 'Reportes anteriores';
     el.innerHTML = `
-      <button type="button" class="sop-crumb" data-rh-volver-lista>Reportes anteriores</button>
-      <span class="sop-crumb-sep" aria-hidden="true">/</span>
-      <span class="sop-crumb sop-crumb-current">${escapeHtml(carpeta.nombre_display)}</span>`;
+      <button type="button" class="sop-btn sop-btn-nav-atras" id="btnRhVolverLista" title="Volver a ${dest}" aria-label="Volver a ${dest}">
+        <i data-lucide="arrow-left" aria-hidden="true"></i>
+        <span class="sop-nav-atras-label">Atrás</span>
+        <span class="sop-nav-atras-dest">${dest}</span>
+      </button>
+      <span class="sop-breadcrumbs" style="margin:0;flex:1">
+        <button type="button" class="sop-crumb is-link" data-rh-volver-lista>Reportes anteriores</button>
+        <span class="sop-crumb-sep" aria-hidden="true">›</span>
+        <span class="sop-crumb is-current">${escapeHtml(carpeta.nombre_display)}</span>
+      </span>`;
+    el.querySelector('#btnRhVolverLista')?.addEventListener('click', volverLista);
     el.querySelector('[data-rh-volver-lista]')?.addEventListener('click', volverLista);
+    sopIcons(el);
   }
 
   function showSkeletonGrid(container, count) {
@@ -441,7 +451,6 @@
       if (e.key === 'Enter') { e.preventDefault(); buscarPaciente(); }
       if (e.key === 'Escape') cerrarBusqueda();
     });
-    $('btnRhVolverLista')?.addEventListener('click', volverLista);
     let filtroArchTimer;
     $('rhFiltroArchivos')?.addEventListener('input', () => {
       clearTimeout(filtroArchTimer);
