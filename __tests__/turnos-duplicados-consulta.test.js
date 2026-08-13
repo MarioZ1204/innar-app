@@ -1,6 +1,8 @@
 const {
   turnoEsCitaDuplicadaTipo,
-  filtrarCitasMismoTipo
+  filtrarCitasMismoTipo,
+  citaElectroEsDuplicadaEstudio,
+  filtrarCitasElectroMismoEstudio
 } = require('../utils/turnos-duplicados-consulta');
 
 const base = {
@@ -52,5 +54,44 @@ describe('turnos-duplicados-consulta', () => {
       { ...base, id: 4, tipo_consulta: 'Otra' }
     ];
     expect(filtrarCitasMismoTipo(rows, filtro).map((t) => t.id)).toEqual([1, 2]);
+  });
+});
+
+describe('citas-electro mismo estudio', () => {
+  const baseEl = {
+    id: 10,
+    paciente_documento: '1234567890',
+    estudio: 'PSG Básica',
+    estado: 'Programado',
+    fecha: '2026-08-20',
+    hora_agendamiento: '08:00',
+    observaciones: null,
+    reprogramado_en: null
+  };
+  const filtroEl = { paciente_documento: '1234567890', estudio: 'psg basica' };
+
+  test('detecta mismo documento y mismo estudio', () => {
+    expect(citaElectroEsDuplicadaEstudio(baseEl, filtroEl)).toBe(true);
+  });
+
+  test('no alerta si el estudio es distinto', () => {
+    expect(citaElectroEsDuplicadaEstudio({ ...baseEl, estudio: 'EEG convencional' }, filtroEl)).toBe(false);
+  });
+
+  test('no alerta citas completadas, canceladas o reprogramadas', () => {
+    expect(citaElectroEsDuplicadaEstudio({ ...baseEl, estado: 'Completado' }, filtroEl)).toBe(false);
+    expect(citaElectroEsDuplicadaEstudio({ ...baseEl, estado: 'Cancelado' }, filtroEl)).toBe(false);
+    expect(citaElectroEsDuplicadaEstudio({ ...baseEl, observaciones: '[Reprogramado]' }, filtroEl)).toBe(false);
+    expect(citaElectroEsDuplicadaEstudio({ ...baseEl, reprogramado_en: '2026-08-01 10:00:00' }, filtroEl)).toBe(false);
+  });
+
+  test('filtra solo vigentes del mismo estudio', () => {
+    const rows = [
+      baseEl,
+      { ...baseEl, id: 11, fecha: '2026-08-22', estado: 'En Sala' },
+      { ...baseEl, id: 12, estado: 'Completado' },
+      { ...baseEl, id: 13, estudio: 'EEG' }
+    ];
+    expect(filtrarCitasElectroMismoEstudio(rows, filtroEl).map((c) => c.id)).toEqual([10, 11]);
   });
 });

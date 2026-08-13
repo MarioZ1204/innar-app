@@ -7234,6 +7234,42 @@ async function confirmarSiHayCitasMismoTipo({ documento, nombre, telefono, tipoC
   }
 }
 
+async function confirmarSiHayCitasMismoEstudioElectro({ documento, estudio }) {
+  const doc = String(documento || '').replace(/\D/g, '');
+  const tipo = String(estudio || '').trim();
+  if (!doc || !tipo) return true;
+  try {
+    const qs = new URLSearchParams({ documento: doc, estudio: tipo });
+    const res = await apiFetch(`/api/citas-electro/citas-mismo-estudio?${qs.toString()}`);
+    const data = await res.json().catch(() => ({}));
+    const citas = Array.isArray(data.citas) ? data.citas : [];
+    if (!citas.length) return true;
+
+    const filas = citas.slice(0, 8).map((c) => {
+      const fecha = formatearFechaCorta(c.fecha);
+      const horaRaw = c.hora_agendamiento || c.hora || '';
+      const hora = horaRaw ? formatearHora(horaRaw) : '';
+      const est = escapeHtml(String(c.estado || ''));
+      return `<li>${escapeHtml(fecha)}${hora ? ` ${escapeHtml(hora)}` : ''} — ${est}</li>`;
+    }).join('');
+    const mas = citas.length > 8 ? `<li>… y ${citas.length - 8} más</li>` : '';
+    const msg = `Este paciente ya tiene <strong>${citas.length}</strong> cita(s) agendada(s) de <strong>${escapeHtml(tipo)}</strong>:<ul style="text-align:left;margin:10px 0 0;padding-left:18px;line-height:1.45">${filas}${mas}</ul><p style="margin:12px 0 0">¿Desea agendar otra cita del mismo estudio?</p>`;
+
+    return await new Promise((resolve) => {
+      showConfirm(msg, () => resolve(true), {
+        okText: 'Sí, agendar',
+        cancelText: 'No agendar',
+        danger: false,
+        icon: '⚠️',
+        onCancel: () => resolve(false)
+      });
+    });
+  } catch (e) {
+    console.warn('[citas-mismo-estudio]', e.message);
+    return true;
+  }
+}
+
 async function crearTurnoMedica() {
   const nombresMedica = $('nuevoPacienteNombresMedica')?.value.trim() || '';
   const apellidosMedica = $('nuevoPacienteApellidosMedica')?.value.trim() || '';
@@ -9813,6 +9849,9 @@ async function crearCitaElectro() {
   
   // Restablecer color del border del estudio
   $('electroEstudio').style.borderColor = '';
+
+  const seguirElectro = await confirmarSiHayCitasMismoEstudioElectro({ documento: doc, estudio });
+  if (!seguirElectro) return;
   
   // Obtener pacienteId del buscador o crear nuevo
   let pacienteId = parseInt($('electroDocumento').dataset.pacienteId, 10) || null;

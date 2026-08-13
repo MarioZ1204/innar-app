@@ -722,6 +722,44 @@ router.post('/diagnosticos/import-excel', requireAuth, requireRoleOrPerm(['super
   }
 });
 
+// GET /api/citas-electro/citas-mismo-estudio
+router.get('/citas-electro/citas-mismo-estudio', requireAuth, async (req, res) => {
+  const documento = String(req.query.documento || '').replace(/\D/g, '');
+  const estudio = String(req.query.estudio || '').trim();
+  if (!documento || documento.length < 6 || !estudio) {
+    return res.status(400).json({ error: 'documento y estudio son obligatorios' });
+  }
+  try {
+    const {
+      ESTADOS_ELECTRO_AGENDADA,
+      filtrarCitasElectroMismoEstudio
+    } = require('../utils/turnos-duplicados-consulta');
+    const placeholders = ESTADOS_ELECTRO_AGENDADA.map(() => '?').join(',');
+    const rows = await db.query(
+      `SELECT c.id, c.fecha, c.hora_agendamiento, c.estudio, c.estado, c.observaciones, c.reprogramado_en,
+              p.nombre AS paciente_nombre, p.documento AS paciente_documento
+       FROM citas_electro c
+       JOIN pacientes p ON p.id = c.paciente_id
+       WHERE c.deleted_at IS NULL
+         AND REPLACE(REPLACE(REPLACE(IFNULL(p.documento,''), '.', ''), '-', ''), ' ', '') = ?
+         AND c.estado IN (${placeholders})
+         AND c.reprogramado_en IS NULL
+         AND (c.observaciones IS NULL OR c.observaciones NOT LIKE '%[Reprogramado]%')
+       ORDER BY c.fecha ASC, c.hora_agendamiento ASC
+       LIMIT 80`,
+      [documento, ...ESTADOS_ELECTRO_AGENDADA]
+    );
+    const citas = filtrarCitasElectroMismoEstudio(rows, {
+      paciente_documento: documento,
+      estudio
+    });
+    res.json({ ok: true, citas });
+  } catch (e) {
+    logger.error(e.message, { error: e });
+    res.status(500).json({ error: safeError(e) });
+  }
+});
+
 // GET /api/citas-electro/plantilla-excel
 router.get('/citas-electro/plantilla-excel', requireAuth, async (req, res) => {
   try {
