@@ -11,7 +11,6 @@ const {
 } = require('../middleware/index');
 const { validateSchema } = require('../modules/validation-schemas');
 const { buildReprogramacionTurnoPayload } = require('../utils/agenda-reprogramacion');
-const { sqlFantasmaReprogramadoReciente } = require('../utils/agenda-reprogramacion-visibilidad');
 const cuposEntidadAgenda = require('../utils/cupos-entidad-agenda');
 
 // Helper: obtener siguiente número de turno
@@ -50,7 +49,6 @@ router.get('/turnos/calendario', requireAuth, async (req, res) => {
     const fechaInicio = `${mes}-01`;
     const fechaFin = month === 12 ? `${year + 1}-01-01` : `${year}-${String(month + 1).padStart(2, '0')}-01`;
 
-    const visibilidadSql = sqlFantasmaReprogramadoReciente('turnos');
     const baseSql = `
         SELECT fecha, COUNT(*) as total,
           SUM(CASE WHEN estado IN ('PENDIENTE','EN_ESPERA','EN_SALA','EN_ATENCION') THEN 1 ELSE 0 END) as agendadas,
@@ -59,7 +57,7 @@ router.get('/turnos/calendario', requireAuth, async (req, res) => {
           SUM(CASE WHEN estado = 'CANCELADO' THEN 1 ELSE 0 END) as canceladas,
           SUM(CASE WHEN estado = 'REPROGRAMADO' THEN 1 ELSE 0 END) as reprogramadas
         FROM turnos
-        WHERE fecha >= ? AND fecha < ? AND ${visibilidadSql}`;
+        WHERE fecha >= ? AND fecha < ?`;
     let sql, params;
     if (doctor_id) {
       sql = baseSql + ` AND doctor_id = ? GROUP BY fecha ORDER BY fecha ASC`;
@@ -182,7 +180,7 @@ router.get('/turnos', requireAuth, async (req, res) => {
   }
 
   try {
-    let sql = `SELECT ${COLS} FROM turnos WHERE fecha = ? AND ${sqlFantasmaReprogramadoReciente('turnos')}`;
+    let sql = `SELECT ${COLS} FROM turnos WHERE fecha = ?`;
     let params = [fecha];
     if (doctor_id) { sql += ' AND doctor_id = ?'; params.push(doctor_id); }
     if (estado) {

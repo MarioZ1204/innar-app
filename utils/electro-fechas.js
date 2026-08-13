@@ -63,7 +63,7 @@ function citaFechaFinYmd(cita) {
   return extraerFechaYmd(cita?.hora_fin_date) || extraerFechaYmd(cita?.fecha);
 }
 
-/** Cita original archivada tras reprogramar (fantasma en fecha antigua). */
+/** Cita original archivada tras reprogramar (sigue en su fecha con estado Reprogramado). */
 function citaElectroEsReprogramadaArchivo(cita) {
   if (!cita) return false;
   const est = String(cita.estado || '').trim();
@@ -82,13 +82,13 @@ function citaVisibleEnFechaYmd(cita, fechaYmd) {
 
 /**
  * Agenda del día: mult día en curso sigue visible en días intermedios;
- * Completado solo en la tabla del día de inicio (no en el día en que terminó).
+ * Completado y Reprogramado solo en el día de inicio (la nueva cita vive en su fecha).
  */
 function citaVisibleEnAgendaDiaYmd(cita, fechaYmd) {
   if (!cita || cita.estado === 'Cancelado') return false;
-  if (citaElectroEsReprogramadaArchivo(cita)) return false;
   const inicio = extraerFechaYmd(cita.fecha);
   if (!inicio || !fechaYmd) return false;
+  if (citaElectroEsReprogramadaArchivo(cita)) return fechaYmd === inicio;
   if (cita.estado === 'Completado') return fechaYmd === inicio;
   return citaVisibleEnFechaYmd(cita, fechaYmd);
 }
@@ -118,25 +118,37 @@ function paramsCitaElectroVisibleEnFecha(fechaYmd) {
 }
 
 
-/** SQL: excluir citas originales marcadas como reprogramadas (fantasma). */
-function sqlCitaElectroOcultarReprogramada(alias = 'c') {
+/** SQL: citas originales reprogramadas (no ocupan cupo; sí se listan en su fecha). */
+function sqlCitaElectroEsReprogramada(alias = 'c') {
   const a = alias;
   return `(
-    ${a}.estado <> 'Reprogramado'
-    AND (${a}.observaciones IS NULL OR ${a}.observaciones NOT LIKE '%[Reprogramado]%')
+    ${a}.estado = 'Reprogramado'
+    OR (${a}.observaciones IS NOT NULL AND ${a}.observaciones LIKE '%[Reprogramado]%')
   )`;
 }
 
-/** SQL agenda: Completado solo si fecha = día consultado; resto por rango mult día. */
+/** SQL: excluir citas originales marcadas como reprogramadas (solapes / cupos). */
+function sqlCitaElectroOcultarReprogramada(alias = 'c') {
+  const a = alias;
+  return `NOT ${sqlCitaElectroEsReprogramada(a)}`;
+}
+
+/** SQL agenda: Completado y Reprogramado solo si fecha = día consultado; resto por rango mult día. */
 function sqlCitaElectroVisibleEnAgendaDia(alias = 'c') {
   const a = alias;
   return `(
-    (${a}.estado = 'Completado' AND ${a}.fecha = ?)
-    OR (
-      ${a}.estado NOT IN ('Completado', 'Cancelado')
-      AND ${a}.fecha <= ?
-      AND COALESCE(${a}.hora_fin_date, ${a}.fecha) >= ?
-      AND ${sqlCitaElectroOcultarReprogramada(a)}
+    ${a}.estado <> 'Cancelado'
+    AND (
+      (
+        (${a}.estado = 'Completado' OR ${sqlCitaElectroEsReprogramada(a)})
+        AND ${a}.fecha = ?
+      )
+      OR (
+        ${a}.estado NOT IN ('Completado', 'Cancelado', 'Reprogramado')
+        AND (${a}.observaciones IS NULL OR ${a}.observaciones NOT LIKE '%[Reprogramado]%')
+        AND ${a}.fecha <= ?
+        AND COALESCE(${a}.hora_fin_date, ${a}.fecha) >= ?
+      )
     )
   )`;
 }
@@ -392,6 +404,7 @@ module.exports = {
   citaVisibleEnFechaYmd,
   citaVisibleEnAgendaDiaYmd,
   citaElectroEsReprogramadaArchivo,
+  sqlCitaElectroEsReprogramada,
   sqlCitaElectroOcultarReprogramada,
   citaEsInicioEnFechaYmd,
   citaEsContinuacionEnFechaYmd,

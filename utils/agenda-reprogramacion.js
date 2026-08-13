@@ -45,7 +45,7 @@ function buildReprogramacionElectroPayload(cita, { fecha, hora, actor = 'Sistema
       programado_por_nombre: actor || 'Sistema'
     },
     actualizacionOriginal: {
-      estado: 'Programado',
+      estado: 'Reprogramado',
       observaciones
     }
   };

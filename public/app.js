@@ -1607,8 +1607,7 @@ function notasElectroUsuario(obs) {
 
 function citaElectroOcultarEnKanban(c) {
   if (!c) return true;
-  if (normalizarEstadoElectro(c.estado) === 'Reprogramado') return true;
-  return citaElectroEsReprogramada(c);
+  return false;
 }
 
 function puedeAbrirCitaElectroCompletada() {
@@ -1622,9 +1621,9 @@ function estadoBadgeCitaElectro(citaOrEstado, observacionesArg) {
   const esObj = typeof citaOrEstado === 'object' && citaOrEstado !== null;
   const cita = esObj ? citaOrEstado : { estado: citaOrEstado, observaciones: observacionesArg };
   const estNorm = normalizarEstadoElectro(cita?.estado || '');
-  const estado = estNorm === 'Reprogramado'
+  const estado = estNorm === 'Reprogramado' || citaElectroEsReprogramada(cita)
     ? 'Reprogramado'
-    : (citaElectroEsReprogramada(cita) ? 'Programado' : (cita.estado || 'Programado'));
+    : (cita.estado || 'Programado');
   return estadoBadge(estado);
 }
 
@@ -1672,7 +1671,7 @@ function buildReprogramacionElectroPayload(cita, { fecha, hora, actor = 'Sistema
       programado_por_nombre: actor || 'Sistema'
     },
     actualizacionOriginal: {
-      estado: 'Programado',
+      estado: 'Reprogramado',
       observaciones
     }
   };
@@ -4409,9 +4408,13 @@ function initFiltroEstudiosElectro(estudios) {
 const ELECTRO_COL_ACTIVOS = new Set(['En Estudio', 'Pausado']);
 const ELECTRO_COL_COMPLETADOS = new Set(['Completado']);
 
-function columnaElectroCita(estado) {
-  if (ELECTRO_COL_ACTIVOS.has(estado)) return 'activos';
-  if (ELECTRO_COL_COMPLETADOS.has(estado)) return 'completados';
+function columnaElectroCita(estado, cita) {
+  if (cita && citaElectroEsReprogramada(cita)) return 'completados';
+  const est = normalizarEstadoElectro(estado);
+  if (ELECTRO_COL_ACTIVOS.has(est)) return 'activos';
+  if (ELECTRO_COL_COMPLETADOS.has(est) || est === 'Cancelado' || est === 'No Asistió' || est === 'Reprogramado') {
+    return 'completados';
+  }
   return 'pendientes';
 }
 
@@ -4458,7 +4461,7 @@ function renderCitasElectroKanban(citas) {
   const sorted = [...(citas || [])].sort(sortCitasElectro);
   sorted.forEach((c) => {
     const familia = familiaKanbanElectro(c.estudio);
-    const col = columnaElectroCita(c.estado || 'Programado');
+    const col = columnaElectroCita(c.estado || 'Programado', c);
     const body = boards[familia]?.[col];
     if (body) {
       renderCitaElectroCard(body, c);
@@ -9436,9 +9439,9 @@ async function cargarCitasElectro() {
     
     const resumenEl = $('electroResumenDia');
     if (resumenEl) {
-      const archivadas = citasNormalizadas.length - citasActivas.length;
-      const partes = [`${citasActivas.length} cita${citasActivas.length !== 1 ? 's' : ''} activa${citasActivas.length !== 1 ? 's' : ''}`];
-      if (archivadas > 0) partes.push(`${archivadas} reprogramada${archivadas !== 1 ? 's' : ''} (oculta${archivadas !== 1 ? 's' : ''})`);
+      const reprogramadas = citasNormalizadas.filter((c) => citaElectroEsReprogramada(c)).length;
+      const partes = [`${citasActivas.length} cita${citasActivas.length !== 1 ? 's' : ''}`];
+      if (reprogramadas > 0) partes.push(`${reprogramadas} reprogramada${reprogramadas !== 1 ? 's' : ''}`);
       resumenEl.textContent = partes.join(' · ');
     }
     
@@ -9463,7 +9466,10 @@ function actualizarStatsElectro(citas) {
   const total = citas.length;
   const enEstudio = citas.filter(c => c.estado === 'En Estudio' || c.estado === 'Pausado').length;
   const completados = citas.filter(c => c.estado === 'Completado').length;
-  const pendientes = citas.filter(c => c.estado === 'Programado' || c.estado === 'Confirmado' || c.estado === 'En Sala' || c.estado === 'Reprogramado' || c.estado === 'Adelantado').length;
+  const pendientes = citas.filter(c =>
+    (c.estado === 'Programado' || c.estado === 'Confirmado' || c.estado === 'En Sala' || c.estado === 'Adelantado')
+    && !citaElectroEsReprogramada(c)
+  ).length;
   
   const elTotal = $('statTotalCitas');
   const elEstudio = $('statEnEstudio');
@@ -14112,15 +14118,16 @@ async function abrirModalDetallesCita(cita) {
   // Botones reprogramar / adelantar (onclick evita listeners duplicados)
   const btnRep = $('btnReprogramarCita');
   const btnAde = $('btnAdelantarCita');
+  const puedeMoverAgenda = puedeEditarElectro && puedeReprogramarCitaElectro(citaElectroSeleccionada);
 
-  if (btnRep && puedeEditarElectro) {
+  if (btnRep && puedeMoverAgenda) {
     btnRep.onclick = abrirModalReprogramar;
     btnRep.style.display = '';
   } else if (btnRep) {
     btnRep.style.display = 'none';
   }
 
-  if (btnAde && puedeEditarElectro) {
+  if (btnAde && puedeMoverAgenda) {
     btnAde.onclick = abrirModalAdelantarCita;
     btnAde.style.display = '';
   } else if (btnAde) {
@@ -14159,7 +14166,8 @@ async function abrirModalDetallesCita(cita) {
   }
   
   // Agregar listeners a los items del menú (onclick para evitar acumulación)
-  if (btnRepProgramarMenu && puedeEditarElectro) {
+  if (btnRepProgramarMenu && puedeMoverAgenda) {
+    btnRepProgramarMenu.style.display = '';
     btnRepProgramarMenu.onclick = () => {
       menuMasOpciones.style.display = 'none';
       abrirModalReprogramar();
@@ -14168,7 +14176,8 @@ async function abrirModalDetallesCita(cita) {
     btnRepProgramarMenu.style.display = 'none';
   }
   
-  if (btnAdelantarMenu && puedeEditarElectro) {
+  if (btnAdelantarMenu && puedeMoverAgenda) {
+    btnAdelantarMenu.style.display = '';
     btnAdelantarMenu.onclick = () => {
       menuMasOpciones.style.display = 'none';
       abrirModalAdelantarCita();
@@ -14286,15 +14295,26 @@ function renderFlujoEstado(cita) {
   const svgStop  = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>`;
   const svgPause = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>`;
 
-  // Reprogramado y Adelantado se tratan como Programado (con nota informativa)
-  const esReprogramadoAdelantado = estado === 'Reprogramado' || estado === 'Adelantado' || citaElectroEsReprogramada(cita);
-  const estadoEfectivo = (estado === 'Reprogramado' || estado === 'Adelantado') ? 'Programado' : estado;
+  if (citaElectroEsReprogramada(cita) || estado === 'Reprogramado') {
+    if (equipoSelect) { equipoSelect.disabled = true; equipoSelect.style.opacity = '0.45'; equipoSelect.style.cursor = 'not-allowed'; }
+    if (btnGuardar) btnGuardar.style.display = 'none';
+    flujoEl.innerHTML = `
+      <div class="flujo-estado-panel">
+        <div style="font-size:0.85rem;color:#0369a1;padding:8px 12px;background:#f0f9ff;border-radius:8px;border-left:3px solid #0284c7">
+          Esta cita quedó <strong>Reprogramada</strong> en este día. La cita vigente está en la nueva fecha como Programado.
+        </div>
+      </div>`;
+    return;
+  }
+
+  const esAdelantado = estado === 'Adelantado';
+  const estadoEfectivo = esAdelantado ? 'Programado' : estado;
 
   if (estadoEfectivo === 'Programado') {
     if (equipoSelect) { equipoSelect.disabled = true; equipoSelect.style.opacity = '0.45'; equipoSelect.style.cursor = 'not-allowed'; }
-    const notaReprog = esReprogramadoAdelantado
+    const notaReprog = esAdelantado
       ? `<div style="font-size:0.8rem;color:#6b7280;margin-bottom:8px;padding:6px 10px;background:#f0f9ff;border-radius:6px;border-left:3px solid #3b82f6">
-           \u2139\ufe0f Cita ${estado === 'Adelantado' ? 'adelantada' : 'reprogramada'}
+           \u2139\ufe0f Cita adelantada
          </div>`
       : '';
     flujoEl.innerHTML = `
@@ -14774,8 +14794,9 @@ async function guardarCambiosCitaElectro() {
 // ========== FUNCIONES PARA REPROGRAMAR Y ADELANTAR CITAS ==========
 
 function puedeReprogramarCitaElectro(cita) {
+  if (citaElectroEsReprogramada(cita)) return false;
   const est = normalizarEstadoElectro(cita?.estado || '');
-  return !['En Estudio', 'Pausado', 'Completado', 'Cancelado', 'No Asistió'].includes(est);
+  return !['En Estudio', 'Pausado', 'Completado', 'Cancelado', 'No Asistió', 'Reprogramado'].includes(est);
 }
 
 function bindReprogramarElectroDesdeModalAgenda() {

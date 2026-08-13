@@ -4,8 +4,7 @@
 const {
   citaVisibleEnAgendaDiaYmd,
   citaEsInicioEnFechaYmd,
-  citaEsContinuacionEnFechaYmd,
-  citaElectroEsReprogramadaArchivo
+  citaEsContinuacionEnFechaYmd
 } = require('./electro-fechas');
 const { monitorEstudioColorKey } = require('./electro-monitor');
 
@@ -68,7 +67,6 @@ function buildCalendarioElectroMes(citas, mes) {
   const lista = Array.isArray(citas) ? citas : [];
   for (const cita of lista) {
     if (ESTADOS_EXCLUIDOS_CAL.has(cita.estado)) continue;
-    if (citaElectroEsReprogramadaArchivo(cita)) continue;
     const familia = familiaEstudioCalendario(cita.estudio);
     for (const fecha of Object.keys(diasMap)) {
       if (!citaVisibleEnDiaAgenda(cita, fecha)) continue;

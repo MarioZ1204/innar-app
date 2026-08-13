@@ -36,15 +36,22 @@ describe('electro-fechas', () => {
     expect(citaVisibleEnAgendaDiaYmd(cita, '2026-05-03')).toBe(true);
   });
 
-  test('agenda y calendario: cita reprogramada no visible en fecha original', () => {
+  test('agenda: cita reprogramada visible en fecha original, no en otros días', () => {
     const fantasma = {
       fecha: '2026-08-01',
-      hora_fin_date: '2026-08-01',
+      hora_fin_date: '2026-08-02',
       estado: 'Programado',
       observaciones: '[Reprogramado] nota'
     };
-    expect(citaVisibleEnAgendaDiaYmd(fantasma, '2026-08-01')).toBe(false);
+    expect(citaVisibleEnAgendaDiaYmd(fantasma, '2026-08-01')).toBe(true);
+    expect(citaVisibleEnAgendaDiaYmd(fantasma, '2026-08-02')).toBe(false);
     expect(citaVisibleEnFechaYmd(fantasma, '2026-08-01')).toBe(true);
+
+    const porEstado = {
+      fecha: '2026-08-01',
+      estado: 'Reprogramado'
+    };
+    expect(citaVisibleEnAgendaDiaYmd(porEstado, '2026-08-01')).toBe(true);
 
     const nueva = {
       fecha: '2026-08-05',

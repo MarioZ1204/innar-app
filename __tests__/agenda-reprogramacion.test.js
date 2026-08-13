@@ -75,7 +75,7 @@ describe('agenda reprogramacion', () => {
       programado_por_nombre: 'Admin'
     });
     expect(payload.actualizacionOriginal).toMatchObject({
-      estado: 'Programado',
+      estado: 'Reprogramado',
       observaciones: '[Reprogramado] Revision'
     });
     expect(payload.actualizacionOriginal).not.toHaveProperty('id');

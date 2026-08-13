@@ -82,13 +82,13 @@ describe('electro-calendario', () => {
     expect(d11.porTipoCont.psg).toBe(1);
   });
 
-  test('buildCalendarioElectroMes no cuenta citas reprogramadas en fecha original', () => {
+  test('buildCalendarioElectroMes cuenta citas reprogramadas en fecha original', () => {
     const citas = [
       {
         fecha: '2026-08-01',
         hora_fin_date: '2026-08-01',
         estudio: 'PSG Básica',
-        estado: 'Programado',
+        estado: 'Reprogramado',
         observaciones: '[Reprogramado] movida'
       },
       {
@@ -101,7 +101,7 @@ describe('electro-calendario', () => {
     const cal = buildCalendarioElectroMes(citas, '2026-08');
     const d1 = cal.dias.find((d) => d.fecha === '2026-08-01');
     const d5 = cal.dias.find((d) => d.fecha === '2026-08-05');
-    expect(d1.total).toBe(0);
+    expect(d1.total).toBe(1);
     expect(d5.total).toBe(1);
   });
 });
