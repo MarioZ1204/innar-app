@@ -214,13 +214,15 @@ function _mergeCuposDesdeCalProgramar(doctorId) {
     const data = _resumenDesdeCuposPlanos(items);
     if (!data) return;
     const prev = _citasCalCuposCache[f];
-    if (prev?.resumen?.length && (parseInt(prev.ocupados, 10) || 0) > 0) {
+    if (prev?.resumen?.length) {
       _escribirCuposCache(f, {
         ...data,
         resumen: data.resumen.map((r) => {
           const key = String(r.entidad || '').trim().toUpperCase();
           const prevRow = prev.resumen.find((p) => String(p.entidad || '').trim().toUpperCase() === key);
-          const ocupados = prevRow ? (parseInt(prevRow.ocupados, 10) || 0) : 0;
+          const ocupadosPrev = prevRow ? (parseInt(prevRow.ocupados, 10) || 0) : 0;
+          const ocupadosNew = parseInt(r.ocupados, 10) || 0;
+          const ocupados = Math.max(ocupadosPrev, ocupadosNew);
           return { ...r, ocupados, libres: Math.max(0, r.cupo_max - ocupados) };
         })
       });
@@ -371,9 +373,15 @@ function _aplicarCuposResumenDia(cuposResumenDia, cuposEntidad) {
     }
     if (!resumen.length) return;
     _escribirCuposCache(f, {
-      capacidad: parseInt(row.capacidad, 10) || resumen.reduce((s, r) => s + (r.cupo_max || 0), 0),
-      ocupados: parseInt(row.ocupados, 10) || resumen.reduce((s, r) => s + (r.ocupados || 0), 0),
-      libres: parseInt(row.libres, 10) ?? Math.max(0, resumen.reduce((s, r) => s + (r.libres || 0), 0)),
+      capacidad: Number.isFinite(parseInt(row.capacidad, 10))
+        ? parseInt(row.capacidad, 10)
+        : resumen.reduce((s, r) => s + (r.cupo_max || 0), 0),
+      ocupados: Number.isFinite(parseInt(row.ocupados, 10))
+        ? parseInt(row.ocupados, 10)
+        : resumen.reduce((s, r) => s + (r.ocupados || 0), 0),
+      libres: row.libres != null && Number.isFinite(parseInt(row.libres, 10))
+        ? parseInt(row.libres, 10)
+        : Math.max(0, resumen.reduce((s, r) => s + (r.libres || 0), 0)),
       resumen
     }, { forzar: true });
   });
@@ -403,16 +411,24 @@ function _calcMetricasSplit(citasGeneral, capHoraria, cuposDia) {
   if (!resumen.length) return null;
 
   const occProgramados = resumen.reduce((s, r) => s + (parseInt(r.ocupados, 10) || 0), 0);
+  const reservadoTotal = resumen.reduce((s, r) => s + (parseInt(r.cupo_max, 10) || 0), 0);
+  const totalCitas = Math.max(0, parseInt(citasGeneral, 10) || 0);
+  const cap = Math.max(0, parseInt(capHoraria, 10) || 0);
+  const ocupadosOtros = Math.max(0, totalCitas - occProgramados);
+  const capGeneral = Math.max(0, cap - reservadoTotal);
+
   return {
     izquierda: {
-      citas: Math.max(0, citasGeneral - occProgramados),
-      libres: Math.max(0, capHoraria - citasGeneral)
+      citas: ocupadosOtros,
+      libres: Math.max(0, capGeneral - ocupadosOtros)
     },
     entidades: resumen.map((r) => ({
       entidad: String(r.entidad || '').trim() || 'Entidad',
       citas: parseInt(r.ocupados, 10) || 0,
       cupo_max: parseInt(r.cupo_max, 10) || 0,
-      libres: parseInt(r.libres, 10) ?? Math.max(0, (parseInt(r.cupo_max, 10) || 0) - (parseInt(r.ocupados, 10) || 0))
+      libres: r.libres != null
+        ? Math.max(0, parseInt(r.libres, 10) || 0)
+        : Math.max(0, (parseInt(r.cupo_max, 10) || 0) - (parseInt(r.ocupados, 10) || 0))
     }))
   };
 }
@@ -614,11 +630,11 @@ function renderCitasCalGrid() {
       : 0;
 
     const citasCount = EGeneral;
-    const libresCount = Math.max(0, capHoraria - citasCount);
     const tieneCuposEntidad = !!(cuposDia && Array.isArray(cuposDia.resumen) && cuposDia.resumen.length);
-
-    const E = citasCount;
     const splitInfo = tieneCuposEntidad ? _calcMetricasSplit(citasCount, capHoraria, cuposDia) : null;
+    const libresCount = splitInfo
+      ? splitInfo.izquierda.libres + splitInfo.entidades.reduce((s, e) => s + e.libres, 0)
+      : Math.max(0, capHoraria - citasCount);
 
     let tooltip = bloqueado
       ? (tieneMotivo ? `No asiste — ${motivo} (día bloqueado)` : 'No asiste — día bloqueado')

@@ -174,22 +174,107 @@ async function listarCuposMes(doctorId, mes, db) {
 
 async function contarOcupadosPorEntidad(doctorId, fecha, db) {
   const placeholders = ESTADOS_OCUPAN_CUPO.map(() => '?').join(',');
-  const rows = await db.execute(
+  const rows = await _dbRows(
+    db,
     `SELECT entidad, COUNT(*) AS cnt FROM turnos
      WHERE doctor_id = ? AND fecha = ?
        AND estado IN (${placeholders})
      GROUP BY entidad`,
     [doctorId, fecha, ...ESTADOS_OCUPAN_CUPO]
   );
+  return ocupadosMapDesdeFilas(rows);
+}
+
+/** Mapa claveEntidad → { entidad, ocupados }. Ignora entidad vacía. */
+function ocupadosMapDesdeFilas(rows) {
   /** @type {Map<string, { entidad: string, ocupados: number }>} */
   const map = new Map();
-  for (const r of rows || []) {
+  for (const r of Array.isArray(rows) ? rows : []) {
     const key = claveEntidad(r.entidad);
     if (!key) continue;
     const prev = map.get(key);
     const cnt = parseInt(r.cnt, 10) || 0;
     if (prev) prev.ocupados += cnt;
     else map.set(key, { entidad: normalizarEntidadNombre(r.entidad), ocupados: cnt });
+  }
+  return map;
+}
+
+/**
+ * Cuenta ocupados por entidad a partir de turnos ya cargados (misma regla que SQL).
+ * Solo suma si la entidad del turno coincide (normalizada) con una clave.
+ */
+function ocupadosPorEntidadDesdeTurnos(turnos, estados = ESTADOS_OCUPAN_CUPO) {
+  const setEst = new Set(estados);
+  /** @type {Map<string, number>} */
+  const map = new Map();
+  for (const t of Array.isArray(turnos) ? turnos : []) {
+    if (!setEst.has(t.estado)) continue;
+    const key = claveEntidad(t.entidad);
+    if (!key) continue;
+    map.set(key, (map.get(key) || 0) + 1);
+  }
+  return map;
+}
+
+/**
+ * CITAS/LIBRES del calendario cuando hay cupos reservados:
+ * cada entidad solo cuenta citas de ESA entidad; el panel general solo cuenta el resto.
+ */
+function metricasCuposCalendarioDia(citasGeneral, capHoraria, resumen) {
+  const items = Array.isArray(resumen) ? resumen : [];
+  if (!items.length) return null;
+
+  const occProgramados = items.reduce((s, r) => s + (parseInt(r.ocupados, 10) || 0), 0);
+  const reservadoTotal = items.reduce((s, r) => s + (parseInt(r.cupo_max, 10) || 0), 0);
+  const totalCitas = Math.max(0, parseInt(citasGeneral, 10) || 0);
+  const cap = Math.max(0, parseInt(capHoraria, 10) || 0);
+  const ocupadosOtros = Math.max(0, totalCitas - occProgramados);
+  const capGeneral = Math.max(0, cap - reservadoTotal);
+
+  return {
+    izquierda: {
+      citas: ocupadosOtros,
+      libres: Math.max(0, capGeneral - ocupadosOtros)
+    },
+    entidades: items.map((r) => {
+      const cupoMax = parseInt(r.cupo_max, 10) || 0;
+      const ocupados = parseInt(r.ocupados, 10) || 0;
+      return {
+        entidad: String(r.entidad || '').trim() || 'Entidad',
+        citas: ocupados,
+        cupo_max: cupoMax,
+        libres: r.libres != null
+          ? Math.max(0, parseInt(r.libres, 10) || 0)
+          : Math.max(0, cupoMax - ocupados)
+      };
+    })
+  };
+}
+
+/**
+ * Etiquetas de cupo entidad solo en minutos LIBRES, y solo por los cupos que
+ * aún faltan de ESA entidad (cupo_max - ocupados de la misma entidad).
+ */
+function asignarMinutosEntidadASlotsLibres(minutosLibres, cuposResumen) {
+  /** @type {Map<number, { entidad: string, numero: number, max: number }>} */
+  const map = new Map();
+  const libres = Array.isArray(minutosLibres) ? minutosLibres : [];
+  const cupos = Array.isArray(cuposResumen) ? cuposResumen : [];
+  if (!libres.length || !cupos.length) return map;
+
+  let minIdx = 0;
+  for (const c of cupos) {
+    const entidad = normalizarEntidadNombre(c.entidad);
+    const max = parseInt(c.cupo_max, 10) || 0;
+    const ocupados = Math.max(0, parseInt(c.ocupados, 10) || 0);
+    const quedan = Math.max(0, c.libres != null ? (parseInt(c.libres, 10) || 0) : (max - ocupados));
+    if (!entidad || max <= 0 || quedan <= 0) continue;
+    let assigned = 0;
+    while (assigned < quedan && minIdx < libres.length) {
+      map.set(libres[minIdx++], { entidad, numero: ocupados + assigned + 1, max });
+      assigned++;
+    }
   }
   return map;
 }
@@ -430,6 +515,9 @@ module.exports = {
   listarCuposDia,
   listarCuposMes,
   contarOcupadosPorEntidad,
+  ocupadosPorEntidadDesdeTurnos,
+  metricasCuposCalendarioDia,
+  asignarMinutosEntidadASlotsLibres,
   resumenCuposDia,
   diaTieneCuposEntidad,
   capacidadTotalSlotsDia,

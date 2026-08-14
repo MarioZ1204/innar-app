@@ -3,7 +3,11 @@ const {
   totalesDesdeResumen,
   normalizarEntidadNombre,
   capacidadTotalSlotsDia,
-  validarCupoEntidad
+  validarCupoEntidad,
+  resumenCuposDia,
+  ocupadosPorEntidadDesdeTurnos,
+  metricasCuposCalendarioDia,
+  asignarMinutosEntidadASlotsLibres
 } = require('../utils/cupos-entidad-agenda');
 
 /** DB falsa: responde según el SQL para simular un día con 1 jornada (mañana) de 25 min. */
@@ -118,5 +122,60 @@ describe('cupos-entidad-agenda — capacidad y reserva por entidad', () => {
     });
     const res = await validarCupoEntidad(1, '2026-08-20', 'PROINSALUD', db, 1);
     expect(res.valido).toBe(false);
+  });
+});
+
+describe('cupos-entidad-agenda — conteo solo de la misma entidad', () => {
+  test('ocupadosPorEntidadDesdeTurnos ignora otra entidad y entidad vacía', () => {
+    const map = ocupadosPorEntidadDesdeTurnos([
+      { estado: 'PENDIENTE', entidad: 'PROINSALUD' },
+      { estado: 'PENDIENTE', entidad: 'PROINSALUD' },
+      { estado: 'PENDIENTE', entidad: 'SURA' },
+      { estado: 'PENDIENTE', entidad: '' },
+      { estado: 'PENDIENTE', entidad: null },
+      { estado: 'REPROGRAMADO', entidad: 'PROINSALUD' },
+      { estado: 'CANCELADO', entidad: 'PROINSALUD' }
+    ]);
+    expect(map.get('PROINSALUD')).toBe(2);
+    expect(map.get('SURA')).toBe(1);
+    expect(map.has('')).toBe(false);
+  });
+
+  test('resumenCuposDia: citas de SURA no ocupan el cupo de PROINSALUD', async () => {
+    const db = mockDb({
+      especialidad: 'Neurología',
+      cuposEntidad: [{ entidad: 'PROINSALUD', cupo_max: 10 }],
+      turnosOcupados: [
+        { entidad: 'SURA', cnt: 4 },
+        { entidad: 'PROINSALUD', cnt: 2 },
+        { entidad: '', cnt: 3 }
+      ]
+    });
+    const resumen = await resumenCuposDia(1, '2026-08-20', db);
+    expect(resumen).toHaveLength(1);
+    expect(resumen[0].entidad).toBe('PROINSALUD');
+    expect(resumen[0].ocupados).toBe(2);
+    expect(resumen[0].libres).toBe(8);
+  });
+
+  test('metricasCuposCalendarioDia: CITAS/LIBRES de entidad no incluyen otras citas', () => {
+    const m = metricasCuposCalendarioDia(6, 16, [
+      { entidad: 'PROINSALUD', cupo_max: 10, ocupados: 2, libres: 8 }
+    ]);
+    expect(m.entidades[0].citas).toBe(2);
+    expect(m.entidades[0].libres).toBe(8);
+    expect(m.izquierda.citas).toBe(4);
+    expect(m.izquierda.libres).toBe(2);
+  });
+
+  test('asignarMinutosEntidadASlotsLibres no etiqueta minutos ocupados y no gasta cupo de otra entidad', () => {
+    const libres = [8 * 60 + 25, 8 * 60 + 50, 9 * 60 + 15];
+    const map = asignarMinutosEntidadASlotsLibres(libres, [
+      { entidad: 'PROINSALUD', cupo_max: 10, ocupados: 2, libres: 8 }
+    ]);
+    expect(map.size).toBe(3);
+    expect(map.get(8 * 60 + 25)).toEqual({ entidad: 'PROINSALUD', numero: 3, max: 10 });
+    expect(map.get(8 * 60 + 50).numero).toBe(4);
+    expect(map.get(9 * 60 + 15).numero).toBe(5);
   });
 });

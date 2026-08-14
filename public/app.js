@@ -6359,20 +6359,24 @@ function _minutoAHoraStr(m) {
   return `${hh}:${mm}`;
 }
 
-function _asignarMinutosEntidad(todosMinutos, cuposEntidadResumen) {
+function _asignarMinutosEntidad(minutosLibres, cuposEntidadResumen) {
   /** @type {Map<number, { entidad: string, numero: number, max: number }>} */
   const map = new Map();
   if (!Array.isArray(cuposEntidadResumen) || !cuposEntidadResumen.length) return map;
+  const libres = Array.isArray(minutosLibres) ? minutosLibres : [];
+  if (!libres.length) return map;
 
   let minIdx = 0;
   for (const c of cuposEntidadResumen) {
     const entidad = String(c.entidad || '').trim();
     const max = parseInt(c.cupo_max, 10) || 0;
-    if (!entidad || max <= 0) continue;
+    const ocupados = Math.max(0, parseInt(c.ocupados, 10) || 0);
+    const quedan = Math.max(0, c.libres != null ? (parseInt(c.libres, 10) || 0) : (max - ocupados));
+    if (!entidad || max <= 0 || quedan <= 0) continue;
     let assigned = 0;
-    while (assigned < max && minIdx < todosMinutos.length) {
-      const m = todosMinutos[minIdx++];
-      map.set(m, { entidad, numero: assigned + 1, max });
+    while (assigned < quedan && minIdx < libres.length) {
+      const m = libres[minIdx++];
+      map.set(m, { entidad, numero: ocupados + assigned + 1, max });
       assigned++;
     }
   }
@@ -6432,7 +6436,8 @@ function _construirDisplayListMedica(turnosDiaOrdenCronologico, dispCtx) {
     if (!turnoPorMinuto.has(slot)) turnoPorMinuto.set(slot, t);
   }
 
-  const entityByMinute = _asignarMinutosEntidad(todosMinutos, cuposEntidadResumen);
+  const minutosLibresEntidad = todosMinutos.filter((m) => !minutosOcupados.has(m));
+  const entityByMinute = _asignarMinutosEntidad(minutosLibresEntidad, cuposEntidadResumen);
   const displayList = [];
   const turnosMostrados = new Set();
 
@@ -6596,20 +6601,26 @@ async function cargarTurnosMedica() {
       hidratarCuposEntidadMesLocal(doctorId, fecha.slice(0, 7));
       const localCupos = calCuposEntidad[fecha];
       if (Array.isArray(localCupos) && localCupos.length) {
-        const occMap = _contarOcupadosEntidadDesdeTurnos(turnosOrdenados);
-        cuposEntidadResumen = localCupos.map((c) => {
-          const entidad = String(c.entidad || '').trim();
-          const cupoMax = parseInt(c.cupo_max, 10) || 0;
-          const key = entidad.toUpperCase();
-          const ocupados = occMap.get(key) || 0;
-          return {
-            entidad,
-            cupo_max: cupoMax,
-            ocupados,
-            libres: Math.max(0, cupoMax - ocupados)
-          };
-        }).filter((c) => c.entidad && c.cupo_max > 0);
+        cuposEntidadResumen = localCupos.map((c) => ({
+          entidad: String(c.entidad || '').trim(),
+          cupo_max: parseInt(c.cupo_max, 10) || 0
+        })).filter((c) => c.entidad && c.cupo_max > 0);
       }
+    }
+
+    if (cuposEntidadResumen.length) {
+      const occMap = _contarOcupadosEntidadDesdeTurnos(turnosOrdenados);
+      cuposEntidadResumen = cuposEntidadResumen.map((c) => {
+        const entidad = String(c.entidad || '').trim();
+        const cupoMax = parseInt(c.cupo_max, 10) || 0;
+        const ocupados = occMap.get(entidad.toUpperCase()) || 0;
+        return {
+          entidad,
+          cupo_max: cupoMax,
+          ocupados,
+          libres: Math.max(0, cupoMax - ocupados)
+        };
+      }).filter((c) => c.entidad && c.cupo_max > 0);
     }
 
     const displayList = _construirDisplayListMedica(turnosOrdenados, {
