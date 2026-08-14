@@ -637,7 +637,8 @@
     bindUi();
     window.innarAfiliacionComprobante?.init?.('docmodModalCompAfiliacion');
     window.innarServicioCombo?.init?.('docmodModalCompServicio', {
-      getOrigen: () => state.origen
+      getOrigen: () => state.origen,
+      uso: 'comprobante'
     });
     window.innarServicioCombo?.init?.('docmodModalCertMotivo', {
       getOrigen: () => state.origen

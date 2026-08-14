@@ -6,6 +6,7 @@ const {
   ANEXO_FIDU_CATALOGO_SERVICIOS,
   usarCatalogoEstatico
 } = require('./anexo-fidu-servicios');
+const { nombreExtraComprobanteMedica } = require('./comprobante-catalogo-medica');
 
 usarCatalogoEstatico(ANEXO_FIDU_CATALOGO_SERVICIOS);
 
@@ -145,6 +146,9 @@ function textoServicioComprobante(servicioInterno) {
 function nombreServicioComprobanteCups(servicioInterno) {
   const raw = String(servicioInterno || '').trim();
   if (!raw) return raw;
+
+  const extraCatalogo = nombreExtraComprobanteMedica(raw);
+  if (extraCatalogo) return extraCatalogo;
 
   for (const regla of REGLAS_CONSULTA) {
     if (!regla.re.test(raw)) continue;

@@ -92,6 +92,19 @@
     const raw = String(servicioInterno || '').trim();
     if (!raw) return raw;
 
+    const n = String(raw)
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (n === 'consulta de primera vez por otras especialidades medicas (epileptologia)') {
+      return 'Consulta de Primera Vez por Otras Especialidades Médicas (Epileptología)';
+    }
+    if (n === 'consulta de control por otras especialidades medicas (epileptologia)') {
+      return 'Consulta de Control por Otras Especialidades Médicas (Epileptología)';
+    }
+
     for (const regla of REGLAS_CONSULTA) {
       if (!regla.re.test(raw)) continue;
       const nombre = nombreDesdeCodigo(regla.cups, regla.sufijo ? extraerEspecialidadPor(raw) : '');

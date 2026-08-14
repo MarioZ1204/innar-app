@@ -22,6 +22,7 @@ const {
 } = require('../utils/comprobante-servicios');
 const { procesarImagenesFirma } = require('../utils/comprobante-servicios-firma');
 const { listarServiciosComprobante } = require('../utils/cups-comprobante-activos');
+const { catalogoComprobanteConsultaMedica } = require('../utils/comprobante-catalogo-medica');
 const { ensureChromiumReady } = require('../scripts/ensure-chromium');
 
 let chromiumWarmupPromise = null;
@@ -263,10 +264,12 @@ router.get('/certificados/catalogo-servicios', requireAuth, requireCertificadoCo
       });
     }
     if (origen === 'medica') {
-      const [tipos, cups] = await Promise.all([
-        db.query('SELECT nombre FROM tipos_consulta WHERE activo = 1 ORDER BY nombre ASC'),
-        listarServiciosComprobante(db)
-      ]);
+      const uso = String(req.query?.uso || '').trim().toLowerCase();
+      const tipos = await db.query('SELECT nombre FROM tipos_consulta WHERE activo = 1 ORDER BY nombre ASC');
+      if (uso === 'comprobante') {
+        return res.json({ ok: true, servicios: catalogoComprobanteConsultaMedica(tipos) });
+      }
+      const cups = await listarServiciosComprobante(db);
       const vistos = new Set();
       const servicios = [];
       tipos.forEach((r) => {

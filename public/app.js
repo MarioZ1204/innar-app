@@ -15714,7 +15714,8 @@ async function generarComprobanteServiciosPdf() {
 function initComprobanteServiciosUi() {
   window.innarAfiliacionComprobante?.init?.('compServTipoAfiliacion');
   window.innarServicioCombo?.init?.('compServServicio', {
-    getOrigen: () => $('compServOrigen')?.value?.trim() || null
+    getOrigen: () => $('compServOrigen')?.value?.trim() || null,
+    uso: 'comprobante'
   });
   _compServFirmaUi = window.innarComprobanteFirma?.init?.({
     prefix: 'compServ',

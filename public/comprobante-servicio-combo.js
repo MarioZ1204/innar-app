@@ -45,14 +45,21 @@
     return 'Servicios';
   }
 
-  async function cargarSugerencias(origen) {
-    const key = origen || 'todos';
-    const cacheKey = `_cache_${key}`;
-    if (root.innarServicioCombo?.[cacheKey]) return root.innarServicioCombo[cacheKey];
+  function cacheKey(origen, uso) {
+    return `_cache_${origen || 'todos'}__${uso || 'default'}`;
+  }
+
+  async function cargarSugerencias(origen, uso) {
+    const key = cacheKey(origen, uso);
+    if (root.innarServicioCombo?.[key]) return root.innarServicioCombo[key];
     if (typeof apiFetch !== 'function') return [];
 
-    const url = origen
-      ? `/api/certificados/catalogo-servicios?origen=${encodeURIComponent(origen)}`
+    const params = new URLSearchParams();
+    if (origen) params.set('origen', origen);
+    if (uso) params.set('uso', uso);
+    const qs = params.toString();
+    const url = qs
+      ? `/api/certificados/catalogo-servicios?${qs}`
       : '/api/certificados/catalogo-servicios';
 
     const prom = apiFetch(url)
@@ -67,7 +74,7 @@
             buscar: normBusqueda(`${s.codigo || ''} ${nombre}`)
           };
         }).filter((s) => s.nombre);
-        root.innarServicioCombo[cacheKey] = items;
+        root.innarServicioCombo[key] = items;
         return items;
       });
 
@@ -98,13 +105,17 @@
     if (!input) return;
     if (input.dataset.innarServicioComboInit === '1') {
       const prev = instancias.get(inputId);
-      if (prev && options.origen != null) prev.origen = options.origen;
+      if (prev) {
+        if (options.origen != null) prev.origen = options.origen;
+        if (options.uso != null) prev.uso = options.uso;
+      }
       return;
     }
     input.dataset.innarServicioComboInit = '1';
 
     const state = {
       origen: options.origen || null,
+      uso: options.uso || null,
       getOrigen: typeof options.getOrigen === 'function' ? options.getOrigen : null,
       catalogo: [],
       activeIdx: -1
@@ -178,7 +189,7 @@
 
     async function mostrarSugerencias() {
       try {
-        state.catalogo = await cargarSugerencias(origenActual());
+        state.catalogo = await cargarSugerencias(origenActual(), state.uso);
         pintarLista(filtrarLista(state.catalogo, input.value));
       } catch (_) {
         setExpanded(false);
@@ -242,7 +253,7 @@
     const state = instancias.get(inputId);
     if (state) {
       state.origen = origen;
-      delete root.innarServicioCombo?.[`_cache_${origen || 'todos'}`];
+      delete root.innarServicioCombo?.[cacheKey(origen, state.uso)];
     }
   }
 
