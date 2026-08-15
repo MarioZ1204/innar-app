@@ -198,6 +198,24 @@ select {
   display: none !important;
 }
 
+.gestion-datos-ayuda {
+  margin: 6px 0 0;
+  color: #64748b;
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+.gestion-datos-ayuda.hidden {
+  display: none !important;
+}
+
+.gestion-vis-chk {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
 .innar-empty-cell {
   padding: 24px 16px !important;
   text-align: center;

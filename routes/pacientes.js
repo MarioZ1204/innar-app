@@ -9,6 +9,12 @@ const {
   safeError, emitSocket
 } = require('../middleware/index');
 const { validateSchema } = require('../modules/validation-schemas');
+const {
+  SQL_SELECT_TIPOS_CONSULTA,
+  colVisibleTiposConsulta,
+  sqlAndVisible,
+  parseFlag
+} = require('../utils/catalogo-visibilidad');
 
 // --- Pacientes ---
 
@@ -268,6 +274,7 @@ router.delete('/especialidades/:id', requireAuth, requireRoleOrPerm(['superadmin
 
 router.get('/tipos-consulta', requireAuth, async (req, res) => {
   const { especialidad_id, especialidad_nombre, medico_id } = req.query;
+  const vis = sqlAndVisible(colVisibleTiposConsulta(req.query?.uso));
   try {
     if (medico_id) {
       const medicoIds = String(medico_id).split(',').map((v) => parseInt(v, 10)).filter((n) => n > 0);
@@ -291,8 +298,8 @@ router.get('/tipos-consulta', requireAuth, async (req, res) => {
         const espIds = [...espIdSet];
         const placeholders = espIds.map(() => '?').join(',');
         const rows = await db.query(
-          `SELECT id, nombre, orden, COALESCE(permite_sesiones_multiples, 0) AS permite_sesiones_multiples
-           FROM tipos_consulta WHERE especialidad_id IN (${placeholders}) AND activo=1
+          `SELECT ${SQL_SELECT_TIPOS_CONSULTA}
+           FROM tipos_consulta WHERE especialidad_id IN (${placeholders}) AND activo=1${vis}
            ORDER BY orden ASC, id ASC, nombre ASC`,
           espIds
         );
@@ -308,7 +315,7 @@ router.get('/tipos-consulta', requireAuth, async (req, res) => {
 
       if (medicoIds.length > 0) {
         const allRows = await db.query(
-          'SELECT id, nombre, orden, COALESCE(permite_sesiones_multiples, 0) AS permite_sesiones_multiples FROM tipos_consulta WHERE activo=1 ORDER BY orden ASC, id ASC'
+          `SELECT ${SQL_SELECT_TIPOS_CONSULTA} FROM tipos_consulta WHERE activo=1${vis} ORDER BY orden ASC, id ASC`
         );
         return res.json(allRows);
       }
@@ -322,11 +329,13 @@ router.get('/tipos-consulta', requireAuth, async (req, res) => {
       espId = rows.length > 0 ? rows[0].id : null;
     }
     if (!espId) {
-      const rows = await db.query('SELECT id, nombre, orden, COALESCE(permite_sesiones_multiples, 0) AS permite_sesiones_multiples FROM tipos_consulta WHERE activo=1 ORDER BY orden ASC, id ASC');
+      const rows = await db.query(
+        `SELECT ${SQL_SELECT_TIPOS_CONSULTA} FROM tipos_consulta WHERE activo=1${vis} ORDER BY orden ASC, id ASC`
+      );
       return res.json(rows);
     }
     const rows = await db.query(
-      'SELECT id, nombre, orden, COALESCE(permite_sesiones_multiples, 0) AS permite_sesiones_multiples FROM tipos_consulta WHERE especialidad_id=? AND activo=1 ORDER BY orden ASC, id ASC',
+      `SELECT ${SQL_SELECT_TIPOS_CONSULTA} FROM tipos_consulta WHERE especialidad_id=? AND activo=1${vis} ORDER BY orden ASC, id ASC`,
       [espId]
     );
     res.json(rows);
@@ -343,10 +352,20 @@ router.post('/tipos-consulta', requireAuth, requireRoleOrPerm(['superadmin', 'ad
       [especialidad_id]
     );
     const orden = ordenRows[0]?.sig ?? 0;
-    const flagSesiones = permite_sesiones_multiples ? 1 : 0;
     const result = await db.execute(
-      'INSERT INTO tipos_consulta (especialidad_id, nombre, orden, permite_sesiones_multiples) VALUES (?,?,?,?)',
-      [especialidad_id, nombre.trim(), orden, flagSesiones]
+      `INSERT INTO tipos_consulta
+        (especialidad_id, nombre, orden, permite_sesiones_multiples,
+         visible_agenda, visible_comprobante, visible_recibo)
+       VALUES (?,?,?,?,?,?,?)`,
+      [
+        especialidad_id,
+        nombre.trim(),
+        orden,
+        parseFlag(permite_sesiones_multiples, 0),
+        parseFlag(req.body.visible_agenda, 1),
+        parseFlag(req.body.visible_comprobante, 1),
+        parseFlag(req.body.visible_recibo, 1)
+      ]
     );
     emitSocket('tipos-consulta:actualizado', { especialidad_id });
     res.json({ ok: true, id: result.insertId });
@@ -355,7 +374,8 @@ router.post('/tipos-consulta', requireAuth, requireRoleOrPerm(['superadmin', 'ad
 
 router.patch('/tipos-consulta/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'modulo.gestion_datos'), async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  const { nombre, permite_sesiones_multiples } = req.body || {};
+  const body = req.body || {};
+  const { nombre, permite_sesiones_multiples } = body;
   if (!id) return res.status(400).json({ error: 'ID inválido' });
   const updates = [];
   const values = [];
@@ -366,7 +386,13 @@ router.patch('/tipos-consulta/:id', requireAuth, requireRoleOrPerm(['superadmin'
   }
   if (permite_sesiones_multiples !== undefined) {
     updates.push('permite_sesiones_multiples=?');
-    values.push(permite_sesiones_multiples ? 1 : 0);
+    values.push(parseFlag(permite_sesiones_multiples, 0));
+  }
+  for (const f of ['visible_agenda', 'visible_comprobante', 'visible_recibo']) {
+    if (body[f] !== undefined) {
+      updates.push(`${f}=?`);
+      values.push(parseFlag(body[f], 1));
+    }
   }
   if (updates.length === 0) return res.status(400).json({ error: 'No hay campos para actualizar' });
   try {

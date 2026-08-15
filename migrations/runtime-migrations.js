@@ -1657,6 +1657,86 @@ const runtimeMigrations = [
         await db.execute('ALTER TABLE chat_mensajes MODIFY sticker_id VARCHAR(80) NULL DEFAULT NULL');
       } catch (_) { /* ya amplio o sin tabla */ }
     }
+  },
+  {
+    name: 'rt_catalogo_visibilidad_modulos',
+    description: 'Visibilidad por módulo en tipos_consulta y entidades + seed comprobante epileptología',
+    run: async (db) => {
+      if (await tableExists(db, 'tipos_consulta')) {
+        for (const col of ['visible_agenda', 'visible_comprobante', 'visible_recibo']) {
+          if (!(await columnExists(db, 'tipos_consulta', col))) {
+            await db.execute(
+              `ALTER TABLE tipos_consulta ADD COLUMN ${col} TINYINT(1) NOT NULL DEFAULT 1`
+            );
+          }
+        }
+        for (const nombre of [
+          'Consulta de Primera Vez por Epileptología',
+          'Consulta de Control por Epileptología'
+        ]) {
+          await db.execute(
+            'UPDATE tipos_consulta SET visible_comprobante=0 WHERE LOWER(TRIM(nombre))=LOWER(TRIM(?))',
+            [nombre]
+          );
+        }
+        const extras = [
+          'Consulta de Primera Vez por Otras Especialidades Médicas (Epileptología)',
+          'Consulta de Control por Otras Especialidades Médicas (Epileptología)'
+        ];
+        const espRows = await db.query(
+          'SELECT id FROM especialidades WHERE LOWER(TRIM(nombre))=LOWER(TRIM(?)) LIMIT 1',
+          ['Epileptología']
+        );
+        const espId = espRows[0]?.id || null;
+        if (espId) {
+          for (const nombre of extras) {
+            const ya = await db.query(
+              'SELECT id FROM tipos_consulta WHERE especialidad_id=? AND LOWER(TRIM(nombre))=LOWER(TRIM(?)) LIMIT 1',
+              [espId, nombre]
+            );
+            if (ya.length) {
+              await db.execute(
+                'UPDATE tipos_consulta SET visible_agenda=0, visible_recibo=0, visible_comprobante=1, activo=1 WHERE id=?',
+                [ya[0].id]
+              );
+            } else {
+              const ordenRows = await db.query(
+                'SELECT COALESCE(MAX(orden)+1, 0) AS sig FROM tipos_consulta WHERE especialidad_id=?',
+                [espId]
+              );
+              await db.execute(
+                `INSERT INTO tipos_consulta
+                  (especialidad_id, nombre, orden, activo, visible_agenda, visible_comprobante, visible_recibo)
+                 VALUES (?,?,?,1,0,1,0)`,
+                [espId, nombre, ordenRows[0]?.sig ?? 0]
+              );
+            }
+          }
+        }
+      }
+      if (await tableExists(db, 'entidades')) {
+        for (const col of ['visible_agenda', 'visible_electro', 'visible_recibo']) {
+          if (!(await columnExists(db, 'entidades', col))) {
+            await db.execute(
+              `ALTER TABLE entidades ADD COLUMN ${col} TINYINT(1) NOT NULL DEFAULT 1`
+            );
+          }
+        }
+      }
+    }
+  },
+  {
+    name: 'rt_turnos_reprogramado_destino',
+    description: 'Fecha y hora destino en citas médicas reprogramadas',
+    run: async (db) => {
+      if (!(await tableExists(db, 'turnos'))) return;
+      if (!(await columnExists(db, 'turnos', 'reprogramado_fecha'))) {
+        await db.execute('ALTER TABLE turnos ADD COLUMN reprogramado_fecha DATE NULL DEFAULT NULL');
+      }
+      if (!(await columnExists(db, 'turnos', 'reprogramado_hora'))) {
+        await db.execute('ALTER TABLE turnos ADD COLUMN reprogramado_hora TIME NULL DEFAULT NULL');
+      }
+    }
   }
 ];
 

@@ -306,6 +306,13 @@ const schemas = {
     forzar_cupo: Joi.boolean().optional()
   }).min(1),
 
+  apiReprogramarTurno: Joi.object({
+    fecha: fechaApi.required(),
+    hora: horaApi.required(),
+    forzar_cupo: Joi.boolean().optional(),
+    estado_original: Joi.string().valid('REPROGRAMADO', 'CANCELADO').optional()
+  }),
+
   apiPatchEstadoTurno: Joi.object({
     estado: Joi.string().valid(...ESTADOS_TURNOS).required()
   }),

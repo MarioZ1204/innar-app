@@ -97,6 +97,23 @@ describe('Api Crear Turno', () => {
   });
 });
 
+describe('Api Reprogramar Turno', () => {
+  test('exige fecha y hora nuevas', () => {
+    const r = validate('apiReprogramarTurno', { fecha: '2026-08-20', hora: '10:30:00' });
+    expect(r.valid).toBe(true);
+    expect(r.data.hora).toBe('10:30');
+  });
+
+  test('rechaza estado_original inválido', () => {
+    const r = validate('apiReprogramarTurno', {
+      fecha: '2026-08-20',
+      hora: '10:30',
+      estado_original: 'PENDIENTE'
+    });
+    expect(r.valid).toBe(false);
+  });
+});
+
 describe('Api Patch Estado Electro', () => {
   test('acepta estados válidos de electrodiagnóstico', () => {
     for (const estado of ESTADOS_ELECTRO) {
@@ -155,7 +172,7 @@ describe('Constantes exportadas', () => {
   test('schemas api* están definidos', () => {
     const expected = [
       'apiLogin', 'apiCrearUsuario', 'apiActualizarUsuario',
-      'apiCrearTurno', 'apiActualizarTurno', 'apiPatchEstadoTurno',
+      'apiCrearTurno', 'apiActualizarTurno', 'apiReprogramarTurno', 'apiPatchEstadoTurno',
       'apiPatchEstadoElectro', 'apiCrearDiagnostico', 'apiPacienteEspera'
     ];
     for (const name of expected) {

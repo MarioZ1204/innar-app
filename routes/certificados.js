@@ -265,10 +265,15 @@ router.get('/certificados/catalogo-servicios', requireAuth, requireCertificadoCo
     }
     if (origen === 'medica') {
       const uso = String(req.query?.uso || '').trim().toLowerCase();
-      const tipos = await db.query('SELECT nombre FROM tipos_consulta WHERE activo = 1 ORDER BY nombre ASC');
       if (uso === 'comprobante') {
+        const tipos = await db.query(
+          `SELECT nombre FROM tipos_consulta
+           WHERE activo = 1 AND COALESCE(visible_comprobante, 1) = 1
+           ORDER BY nombre ASC`
+        );
         return res.json({ ok: true, servicios: catalogoComprobanteConsultaMedica(tipos) });
       }
+      const tipos = await db.query('SELECT nombre FROM tipos_consulta WHERE activo = 1 ORDER BY nombre ASC');
       const cups = await listarServiciosComprobante(db);
       const vistos = new Set();
       const servicios = [];

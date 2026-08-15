@@ -158,7 +158,9 @@ router.get('/turnos', requireAuth, async (req, res) => {
 
   const COLS = `id, numero_turno, doctor_id, paciente_nombre, paciente_documento,
                 paciente_telefono, paciente_telefono2, estado, fecha, hora, tipo_consulta,
-                entidad, notas, oportunidad, programado_por, creado_en`;
+                entidad, notas, oportunidad, programado_por, creado_en,
+                DATE_FORMAT(reprogramado_fecha, '%Y-%m-%d') AS reprogramado_fecha,
+                TIME_FORMAT(reprogramado_hora, '%H:%i:%s') AS reprogramado_hora`;
 
   if (buscar && !fecha) {
     try {
@@ -642,6 +644,147 @@ router.post('/turnos', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'a
   }
 });
 
+function ymdTurno(v) {
+  if (v == null || v === '') return '';
+  if (typeof v === 'string') return v.slice(0, 10);
+  if (v instanceof Date && !Number.isNaN(v.getTime())) {
+    const y = v.getFullYear();
+    const mo = String(v.getMonth() + 1).padStart(2, '0');
+    const d = String(v.getDate()).padStart(2, '0');
+    return `${y}-${mo}-${d}`;
+  }
+  return String(v).slice(0, 10);
+}
+
+function hmTurno(v) {
+  const s = String(v || '');
+  return s.length >= 5 ? s.slice(0, 5) : s;
+}
+
+// POST /api/turnos/:id/reprogramar — crea la nueva y cierra la original en la misma transacción.
+// No rechaza si ya hay otra cita a esa hora (se permite más de un paciente en el mismo slot).
+router.post('/turnos/:id/reprogramar', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion'], 'agenda.crear'), validateSchema('apiReprogramarTurno'), async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const { fecha, hora, forzar_cupo, estado_original: estadoOriginalRaw } = req.body || {};
+  if (!id) return res.status(400).json({ error: 'ID inválido' });
+
+  const estadoOriginal = estadoOriginalRaw === 'CANCELADO' ? 'CANCELADO' : 'REPROGRAMADO';
+
+  try {
+    const turnos = await db.query(
+      `SELECT id, estado, doctor_id, fecha, hora, paciente_nombre, paciente_documento,
+              paciente_telefono, paciente_telefono2, tipo_consulta, entidad, notas, oportunidad
+       FROM turnos WHERE id = ?`,
+      [id]
+    );
+    const turno = turnos.length > 0 ? turnos[0] : null;
+    if (!turno) return res.status(404).json({ error: 'Turno no encontrado' });
+
+    const idorErr = denyIfDoctorMismatch(req, turno.doctor_id);
+    if (idorErr) return res.status(403).json({ error: idorErr });
+
+    const userRole = req.session?.rol;
+    const permisos = Array.isArray(req.session?.permisos) ? req.session.permisos : [];
+    const puedeEditarSiempre = userRole === 'superadmin' || permisos.includes('agenda.editar_siempre');
+    const ESTADOS_FINALES = ['ATENDIDO', 'NO_ASISTIO', 'CANCELADO', 'REPROGRAMADO'];
+    if (ESTADOS_FINALES.includes(turno.estado) && !puedeEditarSiempre) {
+      return res.status(400).json({ error: 'No se puede reprogramar una cita en estado final. Se requiere permiso especial.' });
+    }
+
+    const fechaOrig = ymdTurno(turno.fecha);
+    const horaOrig = hmTurno(turno.hora);
+    if (fecha === fechaOrig && hora === horaOrig) {
+      return res.status(400).json({ error: 'La fecha u hora nueva debe ser distinta a la actual' });
+    }
+
+    const validacion = await procesarAgendaExcel.validarDisponibilidadPorHora(turno.doctor_id, fecha, hora, db);
+    if (!validacion.valido) {
+      return res.status(400).json({ error: validacion.razon, valido: false });
+    }
+
+    // Mismo día: la original se libera (REPROGRAMADO/CANCELADO no ocupan cupo) → neto 0.
+    const mismaFecha = fecha === fechaOrig;
+    const cantidadCupo = mismaFecha ? 0 : 1;
+    if (cantidadCupo > 0) {
+      const validacionCupo = await cuposEntidadAgenda.validarCupoEntidad(
+        turno.doctor_id, fecha, turno.entidad, db, cantidadCupo, { forzar: !!forzar_cupo }
+      );
+      if (!validacionCupo.valido) {
+        return res.status(validacionCupo.requiereConfirmacion ? 409 : 400).json({
+          error: validacionCupo.razon,
+          valido: false,
+          requiere_confirmacion: !!validacionCupo.requiereConfirmacion
+        });
+      }
+    }
+
+    const actor = req.session.nombre || req.session.usuarioNombre || req.session.usuario || 'Sistema';
+    const payload = buildReprogramacionTurnoPayload(turno, {
+      fecha,
+      hora,
+      estadoOriginal,
+      actor
+    });
+    const nuevo = payload.nuevoTurno;
+    const origUpd = payload.actualizacionOriginal;
+
+    const nuevaId = await db.transaction(async (conn) => {
+      const insertRes = await conn.execute(`
+        INSERT INTO turnos (numero_turno, doctor_id, paciente_nombre, paciente_documento, paciente_telefono, paciente_telefono2, estado, fecha, hora, tipo_consulta, entidad, notas, oportunidad, programado_por)
+        VALUES (NULL, ?, ?, ?, ?, ?, 'PENDIENTE', ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        turno.doctor_id,
+        nuevo.paciente_nombre,
+        nuevo.paciente_documento || null,
+        nuevo.paciente_telefono || null,
+        nuevo.paciente_telefono2 || null,
+        fecha,
+        hora,
+        nuevo.tipo_consulta || null,
+        nuevo.entidad || null,
+        nuevo.notas || null,
+        turno.oportunidad != null ? parseInt(turno.oportunidad, 10) : null,
+        actor
+      ]);
+      const insertId = insertRes.insertId;
+      if (!insertId) throw new Error('No se pudo crear la cita reprogramada');
+
+      await conn.execute(
+        `UPDATE turnos
+         SET estado = ?, numero_turno = NULL, reprogramado_en = NOW(),
+             reprogramado_fecha = ?, reprogramado_hora = ?, notas = ?
+         WHERE id = ?`,
+        [estadoOriginal, origUpd.reprogramado_fecha, origUpd.reprogramado_hora, origUpd.notas, id]
+      );
+      return insertId;
+    });
+
+    emitSocket('agenda:turno-creado', {
+      id: nuevaId,
+      doctor_id: turno.doctor_id,
+      paciente_nombre: turno.paciente_nombre,
+      fecha
+    });
+    emitSocket('agenda:turno-estado-cambio', {
+      id,
+      estado: estadoOriginal,
+      doctor_id: turno.doctor_id,
+      fecha: fechaOrig
+    });
+    emitSocket('turno-medico:reprogramado', {
+      turnoId: id,
+      fechaNueva: fecha,
+      horaNueva: hora,
+      idNueva: nuevaId
+    });
+
+    res.json({ ok: true, id: nuevaId, original_id: id });
+  } catch (e) {
+    logger.error(e.message, { error: e });
+    res.status(500).json({ error: safeError(e) });
+  }
+});
+
 // PATCH /api/turnos/:id
 router.patch('/turnos/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion', 'doctor'], 'agenda.editar'), validateSchema('apiActualizarTurno'), async (req, res) => {
   const id = parseInt(req.params.id, 10);
@@ -725,6 +868,9 @@ router.patch('/turnos/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin
     if (hora !== undefined) { updates.push('hora = ?'); values.push(hora); }
     if (estado !== undefined) { updates.push('estado = ?'); values.push(estado); }
     if (observaciones !== undefined && notas === undefined) { updates.push('notas = ?'); values.push(observaciones); }
+    if (estado === 'REPROGRAMADO' || estado === 'CANCELADO' || estado === 'ATENDIDO' || estado === 'NO_ASISTIO') {
+      updates.push('numero_turno = NULL');
+    }
     if (estado === 'REPROGRAMADO') {
       updates.push('reprogramado_en = NOW()');
     }

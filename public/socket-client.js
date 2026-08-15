@@ -388,11 +388,18 @@ function registerDefaultRealtimeHandlers() {
   subscribe('tipos-consulta:actualizado', () => {
     if (typeof _tiposConsultaCache !== 'undefined') _tiposConsultaCache = {};
     if (typeof window._reciboCurrentTipos !== 'undefined') window._reciboCurrentTipos = [];
+    if (window.innarServicioCombo?.invalidarCache) window.innarServicioCombo.invalidarCache();
     const medicoId = document.getElementById('reciboMedico')?.value;
     if (medicoId && typeof cargarTiposConsultaEnRecibo === 'function') {
       cargarTiposConsultaEnRecibo(medicoId);
     }
     if (typeof scheduleBuscarGestionDatos === 'function' && typeof _gestionTipoActual !== 'undefined' && _gestionTipoActual === 'tipos_consulta') {
+      scheduleBuscarGestionDatos(200);
+    }
+  });
+  subscribe('entidades:actualizado', () => {
+    if (typeof invalidarCacheEntidades === 'function') invalidarCacheEntidades();
+    if (typeof scheduleBuscarGestionDatos === 'function' && typeof _gestionTipoActual !== 'undefined' && _gestionTipoActual === 'entidades') {
       scheduleBuscarGestionDatos(200);
     }
   });

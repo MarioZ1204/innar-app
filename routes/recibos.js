@@ -15,6 +15,12 @@ const {
   normalizarNombreEntidad
 } = require('../utils/catalogo-entidades');
 const {
+  colVisibleEntidades,
+  colVisibleTiposConsulta,
+  sqlAndVisible,
+  parseFlag
+} = require('../utils/catalogo-visibilidad');
+const {
   RECIBO_FILTRO_OTROS_CONSULTA,
   RECIBO_FILTRO_OTROS_ESTUDIO,
   separarValoresUsadosEnOtros,
@@ -26,6 +32,7 @@ const {
   sqlDigitsExpr,
   tokenizeSearchQuery
 } = require('../utils/soportes-busqueda');
+const { fechaYmdOHoyColombia, hoyColombiaISO } = require('../utils/fecha-colombia');
 
 // Helper local
 function escapeHtml(str) {
@@ -113,16 +120,18 @@ async function loadTiposConsultaNombres(dbConn, { medico_id, especialidad_id } =
   if (espIdSet.size > 0) {
     const espIds = [...espIdSet];
     const placeholders = espIds.map(() => '?').join(',');
+    const vis = sqlAndVisible(colVisibleTiposConsulta('recibo'));
     const rows = await dbConn.query(
       `SELECT DISTINCT nombre FROM tipos_consulta
-       WHERE especialidad_id IN (${placeholders}) AND activo=1 ORDER BY nombre ASC`,
+       WHERE especialidad_id IN (${placeholders}) AND activo=1${vis} ORDER BY nombre ASC`,
       espIds
     );
     return rows.map((r) => r.nombre).filter(Boolean);
   }
 
+  const visAll = sqlAndVisible(colVisibleTiposConsulta('recibo'));
   const rows = await dbConn.query(
-    'SELECT DISTINCT nombre FROM tipos_consulta WHERE activo=1 ORDER BY nombre ASC'
+    `SELECT DISTINCT nombre FROM tipos_consulta WHERE activo=1${visAll} ORDER BY nombre ASC`
   );
   return rows.map((r) => r.nombre).filter(Boolean);
 }
@@ -288,7 +297,10 @@ router.delete('/servicios/:id', requireAuth, requireRoleOrPerm(['superadmin', 'a
 
 router.get('/entidades', requireAuth, async (req, res) => {
   try {
-    const rows = await db.query('SELECT id, nombre FROM entidades WHERE activo=1 ORDER BY nombre ASC');
+    const vis = sqlAndVisible(colVisibleEntidades(req.query?.uso));
+    const rows = await db.query(
+      `SELECT id, nombre FROM entidades WHERE activo=1${vis} ORDER BY nombre ASC`
+    );
     const entidades = listarEntidadesActivasDesdeBd(rows.map((r) => r.nombre));
     res.json({ ok: true, entidades, registros: rows });
   } catch (err) { res.status(500).json({ error: safeError(err) }); }
@@ -298,7 +310,17 @@ router.post('/entidades', requireAuth, requireRoleOrPerm(['superadmin', 'admin']
   const nombre = nombreEntidadParaSelect(req.body?.nombre);
   if (!nombre) return res.status(400).json({ error: 'Nombre requerido' });
   try {
-    const result = await db.execute('INSERT INTO entidades (nombre, activo) VALUES (?, 1)', [nombre]);
+    const result = await db.execute(
+      `INSERT INTO entidades (nombre, activo, visible_agenda, visible_electro, visible_recibo)
+       VALUES (?, 1, ?, ?, ?)`,
+      [
+        nombre,
+        parseFlag(req.body.visible_agenda, 1),
+        parseFlag(req.body.visible_electro, 1),
+        parseFlag(req.body.visible_recibo, 1)
+      ]
+    );
+    emitSocket('entidades:actualizado', { id: result.insertId });
     res.json({ ok: true, id: result.insertId });
   } catch (err) {
     if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'La entidad ya existe' });
@@ -312,7 +334,39 @@ router.put('/entidades/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admi
   if (!nombre || isNaN(id)) return res.status(400).json({ error: 'Datos inválidos' });
   try {
     await db.execute('UPDATE entidades SET nombre=? WHERE id=?', [nombre, id]);
+    emitSocket('entidades:actualizado', { id });
     res.json({ ok: true });
+  } catch (err) {
+    if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'La entidad ya existe' });
+    res.status(500).json({ error: safeError(err) });
+  }
+});
+
+router.patch('/entidades/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'modulo.gestion_datos'), async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) return res.status(400).json({ error: 'ID inválido' });
+  const body = req.body || {};
+  const campos = [];
+  const values = [];
+  if (body.nombre !== undefined) {
+    const nombre = nombreEntidadParaSelect(body.nombre);
+    if (!nombre) return res.status(400).json({ error: 'Nombre requerido' });
+    campos.push('nombre=?');
+    values.push(nombre);
+  }
+  for (const f of ['visible_agenda', 'visible_electro', 'visible_recibo', 'activo']) {
+    if (body[f] !== undefined) {
+      campos.push(`${f}=?`);
+      values.push(parseFlag(body[f], 1));
+    }
+  }
+  if (!campos.length) return res.status(400).json({ error: 'No hay campos para actualizar' });
+  try {
+    values.push(id);
+    const result = await db.execute(`UPDATE entidades SET ${campos.join(', ')} WHERE id=?`, values);
+    if (!result.affectedRows) return res.status(404).json({ error: 'Entidad no encontrada' });
+    emitSocket('entidades:actualizado', { id });
+    res.json({ ok: true, id });
   } catch (err) {
     if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'La entidad ya existe' });
     res.status(500).json({ error: safeError(err) });
@@ -324,6 +378,7 @@ router.delete('/entidades/:id', requireAuth, requireRoleOrPerm(['superadmin', 'a
   if (isNaN(id)) return res.status(400).json({ error: 'ID inválido' });
   try {
     await db.execute('DELETE FROM entidades WHERE id=?', [id]);
+    emitSocket('entidades:actualizado', { id });
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: safeError(err) }); }
 });
@@ -429,8 +484,7 @@ router.get('/recibos/usuarios-generador', requireAuth, async (req, res) => {
 
 // GET /api/recibos/stats-hoy — contador diario (fecha local del cliente)
 router.get('/recibos/stats-hoy', requireAuth, async (req, res) => {
-  const raw = String(req.query.fecha || '').trim();
-  const fecha = /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : new Date().toISOString().slice(0, 10);
+  const fecha = fechaYmdOHoyColombia(req.query.fecha);
   try {
     const [row] = await db.query(
       `SELECT
@@ -591,7 +645,7 @@ router.get('/recibos/export/xlsx', requireAuth, requireRoleOrPerm(['superadmin',
       data.forEach(row => ws.addRow(row));
     }
     const buffer = await wb.xlsx.writeBuffer();
-    const today = new Date().toISOString().slice(0, 10);
+    const today = hoyColombiaISO();
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="recibos-${today}.xlsx"`);
     res.send(buffer);

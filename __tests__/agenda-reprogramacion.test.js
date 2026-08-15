@@ -1,4 +1,4 @@
-const { buildReprogramacionTurnoPayload, buildReprogramacionElectroPayload } = require('../utils/agenda-reprogramacion');
+const { buildReprogramacionTurnoPayload, buildReprogramacionElectroPayload, etiquetaNotasReprogramado } = require('../utils/agenda-reprogramacion');
 
 describe('agenda reprogramacion', () => {
   test('separa el turno nuevo del original sin perder datos del paciente', () => {
@@ -37,7 +37,9 @@ describe('agenda reprogramacion', () => {
     expect(payload.actualizacionOriginal).toMatchObject({
       estado: 'REPROGRAMADO',
       numero_turno: null,
-      notas: '[Reprogramado] Pendiente'
+      reprogramado_fecha: '2026-01-12',
+      reprogramado_hora: '10:30',
+      notas: '[Reprogramado a 12/01/2026 10:30] Pendiente'
     });
     expect(payload.actualizacionOriginal).not.toHaveProperty('id');
     expect(payload.nuevoTurno).not.toHaveProperty('id');
@@ -80,5 +82,11 @@ describe('agenda reprogramacion', () => {
     });
     expect(payload.actualizacionOriginal).not.toHaveProperty('id');
     expect(payload.nuevaCita).not.toHaveProperty('id');
+  });
+
+  test('etiqueta de notas incluye fecha y hora destino', () => {
+    expect(etiquetaNotasReprogramado('2026-08-20', '14:00', '')).toBe('[Reprogramado a 20/08/2026 14:00]');
+    expect(etiquetaNotasReprogramado('2026-08-20', '14:00:00', '[Reprogramado] previa'))
+      .toBe('[Reprogramado a 20/08/2026 14:00] previa');
   });
 });

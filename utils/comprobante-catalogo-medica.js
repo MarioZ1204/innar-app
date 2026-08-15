@@ -9,37 +9,27 @@ function normNombreCatalogo(val) {
     .trim();
 }
 
-/** Nombres internos de epileptología: se quedan en agenda/recibos, no en el combo del comprobante. */
-const EXCLUIDOS_COMPROBANTE_MEDICA = new Set([
-  'consulta de control por epileptologia',
-  'consulta de primera vez por epileptologia'
-]);
-
 const EXTRAS_COMPROBANTE_MEDICA = [
   'Consulta de Primera Vez por Otras Especialidades Médicas (Epileptología)',
   'Consulta de Control por Otras Especialidades Médicas (Epileptología)'
 ];
 
 /**
- * Catálogo del campo motivo/servicio del comprobante de consultas médicas:
- * tipos de consulta (sin códigos CUPS), sin las dos de epileptología internas,
- * más las dos de otras especialidades médicas (epileptología).
+ * Catálogo del campo motivo/servicio del comprobante de consultas médicas.
+ * Recibe filas ya filtradas (visible_comprobante=1) o con el flag en cada fila.
  */
 function catalogoComprobanteConsultaMedica(tiposConsulta) {
   const vistos = new Set();
   const servicios = [];
 
   for (const r of tiposConsulta || []) {
+    if (r && typeof r === 'object' && r.visible_comprobante !== undefined
+      && Number(r.visible_comprobante) === 0) {
+      continue;
+    }
     const nombre = String(r && r.nombre != null ? r.nombre : r || '').trim();
     const key = normNombreCatalogo(nombre);
-    if (!nombre || !key || EXCLUIDOS_COMPROBANTE_MEDICA.has(key) || vistos.has(key)) continue;
-    vistos.add(key);
-    servicios.push({ codigo: '', nombre });
-  }
-
-  for (const nombre of EXTRAS_COMPROBANTE_MEDICA) {
-    const key = normNombreCatalogo(nombre);
-    if (vistos.has(key)) continue;
+    if (!nombre || !key || vistos.has(key)) continue;
     vistos.add(key);
     servicios.push({ codigo: '', nombre });
   }
@@ -58,6 +48,5 @@ module.exports = {
   catalogoComprobanteConsultaMedica,
   nombreExtraComprobanteMedica,
   EXTRAS_COMPROBANTE_MEDICA,
-  EXCLUIDOS_COMPROBANTE_MEDICA,
   normNombreCatalogo
 };

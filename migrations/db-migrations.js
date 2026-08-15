@@ -440,6 +440,14 @@ const migrations = [
         INDEX idx_doctor_fecha (doctor_id, fecha)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
     `
+  },
+  {
+    name: 'turnos_reprogramado_destino_20260815',
+    description: 'Fecha y hora destino en citas médicas reprogramadas',
+    sql: [
+      `ALTER TABLE turnos ADD COLUMN reprogramado_fecha DATE NULL DEFAULT NULL`,
+      `ALTER TABLE turnos ADD COLUMN reprogramado_hora TIME NULL DEFAULT NULL`
+    ]
   }
 ];
 

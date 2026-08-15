@@ -1628,6 +1628,14 @@ function estadoBadgeCitaElectro(citaOrEstado, observacionesArg) {
 }
 
 function buildReprogramacionTurnoPayload(turno, { fecha, hora, estadoOriginal = 'REPROGRAMADO', actor = 'Sistema' } = {}) {
+  const ymd = String(fecha || '').slice(0, 10);
+  const parts = ymd.split('-');
+  const hm = String(hora || '').slice(0, 5);
+  let tag = '[Reprogramado]';
+  if (parts.length === 3 && parts[0] && parts[1] && parts[2]) {
+    tag = `[Reprogramado a ${parts[2]}/${parts[1]}/${parts[0]}${hm ? ` ${hm}` : ''}]`;
+  }
+  const prev = String(turno?.notas || '').replace(/\[Reprogramado(?:\s+a\s+[^\]]+)?\]\s*/gi, '').trim();
   return {
     nuevoTurno: {
       doctor_id: turno?.doctor_id,
@@ -1646,7 +1654,9 @@ function buildReprogramacionTurnoPayload(turno, { fecha, hora, estadoOriginal = 
     actualizacionOriginal: {
       estado: estadoOriginal,
       numero_turno: null,
-      notas: turno?.notas ? `[Reprogramado] ${turno.notas}` : '[Reprogramado]'
+      reprogramado_fecha: fecha || null,
+      reprogramado_hora: hora || null,
+      notas: prev ? `${tag} ${prev}` : tag
     }
   };
 }
@@ -2907,7 +2917,7 @@ async function cargarTiposConsultaSegunEspecialidad(especialidad) {
     if (_tiposConsultaCache[especialidad]) {
       tipos = _tiposConsultaCache[especialidad];
     } else {
-      const res = await apiFetch(`/api/tipos-consulta?especialidad_nombre=${encodeURIComponent(especialidad)}`);
+      const res = await apiFetch(`/api/tipos-consulta?especialidad_nombre=${encodeURIComponent(especialidad)}&uso=agenda`);
       const data = await res.json();
       if (Array.isArray(data) && data.length > 0) {
         tipos = data;
@@ -3807,7 +3817,7 @@ async function cargarTiposConsultaEnRecibo(medicoId) {
   if (!medicoId) return;
   try {
     // El servidor resuelve la especialidad del médico y devuelve tipos de la BD
-    const res = await apiFetch(`/api/tipos-consulta?medico_id=${encodeURIComponent(medicoId)}`);
+    const res = await apiFetch(`/api/tipos-consulta?medico_id=${encodeURIComponent(medicoId)}&uso=recibo`);
     const tipos = await res.json().catch(() => []);
 
     // Confiar 100% en la BD — si está vacío es porque no hay tipos configurados
@@ -3936,7 +3946,14 @@ async function cargarFiltrosUsuarios() {
 
 // ---- Catálogo de entidades (tabla entidades en BD) ----
 let _catalogoEntidadesOpcionesCache = null;
-let _entidadesBdCache = null;
+let _entidadesBdCache = {};
+
+function usoEntidadDesdeModulo(moduleId) {
+  if (moduleId === 'agenda-medica') return 'agenda';
+  if (moduleId === 'electro') return 'electro';
+  if (moduleId === 'recibos') return 'recibo';
+  return null;
+}
 
 /** Selects de entidad por módulo (id del elemento en index.html). */
 const ENTIDAD_SELECTS_POR_MODULO = {
@@ -3959,9 +3976,13 @@ const ENTIDAD_SELECTS_POR_MODULO = {
 };
 
 /** Entidades activas desde tabla `entidades` (fuente principal para selects). */
-async function fetchEntidadesDesdeBd({ force = false } = {}) {
-  if (!force && _entidadesBdCache) return _entidadesBdCache;
-  const res = await apiFetch('/api/entidades');
+async function fetchEntidadesDesdeBd({ force = false, uso = null } = {}) {
+  const key = uso || 'all';
+  if (!force && _entidadesBdCache[key]) return _entidadesBdCache[key];
+  const url = uso
+    ? `/api/entidades?uso=${encodeURIComponent(uso)}`
+    : '/api/entidades';
+  const res = await apiFetch(url);
   if (!res.ok) throw new Error('No se pudieron cargar las entidades');
   const data = await res.json();
   let lista = [];
@@ -3972,7 +3993,7 @@ async function fetchEntidadesDesdeBd({ force = false } = {}) {
   } else if (Array.isArray(data.registros)) {
     lista = data.registros.map((e) => e?.nombre).filter(Boolean);
   }
-  _entidadesBdCache = lista;
+  _entidadesBdCache[key] = lista;
   return lista;
 }
 
@@ -4174,7 +4195,7 @@ async function cargarEntidadesEnSelect(selectId, opts = {}) {
   const sel = $(selectId);
   if (!sel) return;
   try {
-    const entidades = await fetchEntidadesDesdeBd({ force: !!opts.force });
+    const entidades = await fetchEntidadesDesdeBd({ force: !!opts.force, uso: opts.uso || null });
     _poblarSelectEntidades(sel, entidades, {
       placeholder: opts.placeholder || 'Seleccionar',
       incluirParticular: opts.incluirParticular !== false,
@@ -4192,20 +4213,22 @@ async function cargarEntidadesEnSelect(selectId, opts = {}) {
 
 async function recargarSelectsEntidadModulo(moduleId, { force = true } = {}) {
   const configs = ENTIDAD_SELECTS_POR_MODULO[moduleId] || [];
+  const uso = usoEntidadDesdeModulo(moduleId);
   await Promise.all(configs.map((cfg) => {
     if (!$(cfg.id)) return Promise.resolve();
-    return cargarEntidadesEnSelect(cfg.id, { ...cfg, force });
+    return cargarEntidadesEnSelect(cfg.id, { ...cfg, force, uso });
   }));
 }
 
 async function recargarTodosSelectsEntidad({ force = true } = {}) {
   const vistos = new Set();
   const tareas = [];
-  Object.values(ENTIDAD_SELECTS_POR_MODULO).forEach((configs) => {
+  Object.entries(ENTIDAD_SELECTS_POR_MODULO).forEach(([moduleId, configs]) => {
+    const uso = usoEntidadDesdeModulo(moduleId);
     configs.forEach((cfg) => {
       if (vistos.has(cfg.id) || !$(cfg.id)) return;
       vistos.add(cfg.id);
-      tareas.push(cargarEntidadesEnSelect(cfg.id, { ...cfg, force }));
+      tareas.push(cargarEntidadesEnSelect(cfg.id, { ...cfg, force, uso }));
     });
   });
   await Promise.all(tareas);
@@ -4215,7 +4238,8 @@ async function cargarEntidadesEnRecibo(opts = {}) {
   await cargarEntidadesEnSelect('reciboEntidad', {
     placeholder: 'Seleccionar entidad',
     incluirParticular: true,
-    force: opts.force !== false
+    force: opts.force !== false,
+    uso: 'recibo'
   });
 }
 
@@ -4492,7 +4516,7 @@ function renderCitasElectroKanban(citas) {
 
 function invalidarCacheEntidades() {
   _catalogoEntidadesOpcionesCache = null;
-  _entidadesBdCache = null;
+  _entidadesBdCache = {};
   recargarTodosSelectsEntidad({ force: true });
   if ($('filtroEntidad')) cargarFiltrosOpciones({ force: true });
   if (typeof cargarEntidadesFiltroAuditoria === 'function') {
@@ -5380,7 +5404,7 @@ async function asegurarEntidadesCalModal() {
   if (_calEntidadesOpciones && _calEntidadesOpciones.length) return _calEntidadesOpciones;
   try {
     if (typeof fetchEntidadesDesdeBd === 'function') {
-      _calEntidadesOpciones = await fetchEntidadesDesdeBd({ force: true });
+      _calEntidadesOpciones = await fetchEntidadesDesdeBd({ force: true, uso: 'agenda' });
     } else {
       const r = await apiFetch('/api/entidades');
       const data = await r.json();
@@ -6801,6 +6825,27 @@ function estadoBadgeMedica(estado) {
   return `<span style="display:inline-block;padding:3px 10px;border-radius:12px;font-size:0.78rem;font-weight:600;background:${s.bg};color:${s.color};border:1px solid ${s.border};white-space:nowrap">${escapeHtml(s.label)}</span>`;
 }
 
+function textoDestinoReprogramacionMedica(turno) {
+  if (!turno) return '';
+  const ymd = extraerFechaYmdCalendario(turno.reprogramado_fecha);
+  if (!ymd) return '';
+  const fechaTxt = formatearFecha(ymd);
+  const horaRaw = turno.reprogramado_hora;
+  if (horaRaw === null || horaRaw === undefined || horaRaw === '' || horaRaw === 'null') {
+    return fechaTxt;
+  }
+  const horaTxt = formatearHora(horaRaw);
+  return horaTxt && horaTxt !== '-' ? `${fechaTxt} · ${horaTxt}` : fechaTxt;
+}
+
+function estadoCellTurnoMedica(t) {
+  const badge = estadoBadgeMedica(t?.estado);
+  if (String(t?.estado || '').toUpperCase() !== 'REPROGRAMADO') return badge;
+  const dest = textoDestinoReprogramacionMedica(t);
+  if (!dest) return badge;
+  return `<div style="display:flex;flex-direction:column;align-items:flex-start;gap:3px">${badge}<span style="font-size:0.72rem;color:#0369a1;font-weight:600;line-height:1.2">→ ${escapeHtml(dest)}</span></div>`;
+}
+
 function renderTurnoRowMedica(tbody, t, animateTargetId, hayEnAtencion) {
   // DEBUG: registra objeto turno para detectar desalineamientos en la tabla (remover cuando se confirme)
   if (window && window.location && window.location.search && window.location.search.indexOf('debugTurnos') !== -1) {
@@ -6853,7 +6898,7 @@ function renderTurnoRowMedica(tbody, t, animateTargetId, hayEnAtencion) {
         <td class="col-mobile-hide col-wrap-cell col-doc-cell"><span class="turno-cell-2lines">${escapeHtml(t.paciente_documento||'')}</span></td>
         <td class="col-mobile-hide col-wrap-cell col-entidad-cell"><span class="turno-cell-2lines">${escapeHtml(t.entidad||'')}</span></td>
         <td class="col-mobile-hide col-notas-cell"><span class="turno-notas-cell" title="${escapeHtml(t.notas || '')}">${escapeHtml(t.notas || '')}</span></td>
-        <td class="col-estado-cell">${estadoBadgeMedica(t.estado)}</td>
+        <td class="col-estado-cell">${estadoCellTurnoMedica(t)}</td>
         <td>${escapeHtml(t.programado_por || '-')}</td>
       `;
       if (animateTargetId && t.id === animateTargetId) {
@@ -6869,7 +6914,7 @@ function renderTurnoRowMedica(tbody, t, animateTargetId, hayEnAtencion) {
         <td class="col-mobile-hide col-wrap-cell col-doc-cell"><span class="turno-cell-2lines">${escapeHtml(t.paciente_documento||'')}</span></td>
         <td class="col-mobile-hide col-wrap-cell col-entidad-cell"><span class="turno-cell-2lines">${escapeHtml(t.entidad||'')}</span></td>
         <td class="col-mobile-hide col-notas-cell"><span class="turno-notas-cell" title="${escapeHtml(t.notas || '')}">${escapeHtml(t.notas || '')}</span></td>
-        <td class="col-estado-cell">${estadoBadgeMedica(t.estado)}</td>
+        <td class="col-estado-cell">${estadoCellTurnoMedica(t)}</td>
         <td class="td-acciones col-acciones-cell">${accionesCell}</td>
       `;
     }
@@ -7630,12 +7675,12 @@ function procesarExcelPacientesMedica(file) {
       // Cargar opciones de entidad y tipo de consulta para dropdowns en preview
       let opcionesEntidad = [], opcionesTipo = [];
       try {
-        opcionesEntidad = await fetchEntidadesDesdeBd({ force: true });
+        opcionesEntidad = await fetchEntidadesDesdeBd({ force: true, uso: 'agenda' });
       } catch (_) { console.warn('[cargarPacientesExcelData] Failed to load entity options'); }
       const doctorIdPlantilla = selectedDoctorId || ((currentUser?.rol === 'doctor' ? currentUser?.id : null));
       if (doctorIdPlantilla) {
         try {
-          opcionesTipo = await apiFetch(`/api/tipos-consulta?medico_id=${encodeURIComponent(doctorIdPlantilla)}`).then(r => r.json()).catch(() => []);
+          opcionesTipo = await apiFetch(`/api/tipos-consulta?medico_id=${encodeURIComponent(doctorIdPlantilla)}&uso=agenda`).then(r => r.json()).catch(() => []);
         } catch (_) { console.warn('[cargarPacientesExcelData] Failed to load consultation types'); }
       }
 
@@ -7721,29 +7766,59 @@ async function confirmarCargarPacientesMedica() {
   errorDiv.style.display = 'none';
 
   let ok = 0, errores = [];
+  const pendientesCupo = [];
+
+  async function _postTurnoExcel(p, forzarCupo) {
+    const body = {
+      doctor_id: parseInt(doctorId, 10),
+      paciente_nombre: [p.nombres, p.apellidos].filter(Boolean).join(' '),
+      paciente_documento: p.documento || null,
+      paciente_telefono: p.tel1 || null,
+      paciente_telefono2: p.tel2 || null,
+      fecha: p.fecha,
+      hora: parseHora12a24(p.hora),
+      tipo_consulta: p.tipo || null,
+      entidad: p.entidad || null,
+      notas: p.notas || null,
+      programado_por: (currentUser && (currentUser.nombre || currentUser.usuario)) || 'Excel',
+      forzar_cupo: !!forzarCupo
+    };
+    const res = await apiFetch('/api/turnos', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    return res.json();
+  }
+
   for (let i = 0; i < data.length; i++) {
     const p = data[i];
     try {
-      const body = {
-        doctor_id: parseInt(doctorId, 10),
-        paciente_nombre: [p.nombres, p.apellidos].filter(Boolean).join(' '),
-        paciente_documento: p.documento || null,
-        paciente_telefono: p.tel1 || null,
-        paciente_telefono2: p.tel2 || null,
-        fecha: p.fecha,
-        hora: parseHora12a24(p.hora),
-        tipo_consulta: p.tipo || null,
-        entidad: p.entidad || null,
-        notas: p.notas || null,
-        programado_por: (currentUser && (currentUser.nombre || currentUser.usuario)) || 'Excel',
-        forzar_cupo: true
-      };
-      const res = await apiFetch('/api/turnos', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-      const result = await res.json();
+      const result = await _postTurnoExcel(p, false);
       if (result.ok) ok++;
-      else errores.push(`Fila ${i+1}: ${result.error || 'Error desconocido'}`);
+      else if (result.requiere_confirmacion) pendientesCupo.push({ i, p, error: result.error });
+      else errores.push(`Fila ${i + 1}: ${result.error || 'Error desconocido'}`);
     } catch (e) {
-      errores.push(`Fila ${i+1}: ${e.message}`);
+      errores.push(`Fila ${i + 1}: ${e.message}`);
+    }
+  }
+
+  if (pendientesCupo.length) {
+    setLoading(btn, false);
+    const confirmado = window.confirm(
+      `${pendientesCupo.length} cita(s) superan el cupo de entidad o caen en un horario reservado a otra entidad.\n\n${pendientesCupo.slice(0, 8).map((x) => `Fila ${x.i + 1}: ${x.error || 'Sin cupo'}`).join('\n')}${pendientesCupo.length > 8 ? '\n…' : ''}\n\n¿Desea agendarlas de todos modos?`
+    );
+    if (confirmado) {
+      setLoading(btn, true, 'Cargando...');
+      for (const item of pendientesCupo) {
+        try {
+          const result = await _postTurnoExcel(item.p, true);
+          if (result.ok) ok++;
+          else errores.push(`Fila ${item.i + 1}: ${result.error || 'Error desconocido'}`);
+        } catch (e) {
+          errores.push(`Fila ${item.i + 1}: ${e.message}`);
+        }
+      }
+    } else {
+      for (const item of pendientesCupo) {
+        errores.push(`Fila ${item.i + 1}: ${item.error || 'Sin cupo de entidad (no se forzó)'}`);
+      }
     }
   }
 
@@ -7754,7 +7829,7 @@ async function confirmarCargarPacientesMedica() {
     cargarTurnosMedica();
   }
   if (errores.length) {
-    errorDiv.innerHTML = `<strong>${errores.length} error(es):</strong><br>` + errores.slice(0, 10).join('<br>');
+    errorDiv.innerHTML = `<strong>${errores.length} error(es):</strong><br>` + errores.slice(0, 10).map((m) => escapeHtml(m)).join('<br>');
     errorDiv.style.display = 'block';
   } else {
     $('modalCargarPacientesMedica')?.classList.add('hidden');
@@ -12615,7 +12690,7 @@ async function showEditReciboModal({ id, medico, servicio, entidad, cliente, tip
   const [medicosRes, serviciosArr, entidadesCatalogo] = await Promise.all([
     apiFetch('/api/medicos').then(r => r.json()).catch(() => []),
     getServicios().catch(() => []),
-    fetchEntidadesDesdeBd({ force: true }).catch(() => [])
+    fetchEntidadesDesdeBd({ force: true, uso: 'recibo' }).catch(() => [])
   ]);
   const medicos = Array.isArray(medicosRes) ? medicosRes : [];
   const servicios = Array.isArray(serviciosArr) ? serviciosArr : [];
@@ -13393,7 +13468,7 @@ async function confirmarDuracionEstudio() {
     
     // Calcular hora_fin a partir de inicio + duración usando Date (soporta multi-día)
     const [hhI, mmI] = horaInicio.split(':').map(Number);
-    const fechaCitaRaw = citaElectroSeleccionada.fecha || new Date().toISOString().slice(0, 10);
+    const fechaCitaRaw = citaElectroSeleccionada.fecha || hoyColombiaISO();
     const fechaCita = typeof fechaCitaRaw === 'string' && fechaCitaRaw.length > 10 ? fechaCitaRaw.slice(0, 10) : fechaCitaRaw;
     const startDate = new Date(`${fechaCita}T${String(hhI).padStart(2,'0')}:${String(mmI).padStart(2,'0')}:00`);
     startDate.setMinutes(startDate.getMinutes() + duracionMinutos);
@@ -13551,7 +13626,7 @@ async function iniciarEstudioSinDuracion() {
     return;
   }
 
-  const fechaCitaRaw = citaElectroSeleccionada.fecha || new Date().toISOString().slice(0, 10);
+  const fechaCitaRaw = citaElectroSeleccionada.fecha || hoyColombiaISO();
   const fechaCita = typeof fechaCitaRaw === 'string' && fechaCitaRaw.length > 10 ? fechaCitaRaw.slice(0, 10) : String(fechaCitaRaw);
   const horaInicioRegistro = horaInicioAgendada;
   let horaBaseFin = horaInicioRegistro;
@@ -13604,7 +13679,7 @@ function actualizarProgresoEstudio() {
   const horaInicio = citaElectroSeleccionada.hora_inicio;
   if (!horaInicio) return;
 
-  const fechaBase = obtenerFechaElectroBase10(citaElectroSeleccionada.fecha) || new Date().toISOString().slice(0, 10);
+  const fechaBase = obtenerFechaElectroBase10(citaElectroSeleccionada.fecha) || hoyColombiaISO();
   const dateInicio = construirDateHoraElectro(fechaBase, horaInicio);
   const dateFin = obtenerFechaHoraFinEstudioActivo(citaElectroSeleccionada);
   if (!dateInicio || !dateFin) return;
@@ -15774,7 +15849,15 @@ function abrirModalEstadoCitaMedica(turno) {
   // Llenar datos de la tarjeta
   const el = (id) => document.getElementById(id);
   const badge = el('detMedicaBadge');
-  if (badge) badge.innerHTML = estadoBadgeMedica(turno.estado || 'EN_ESPERA');
+  if (badge) badge.innerHTML = estadoCellTurnoMedica(turno);
+  const destReprog = textoDestinoReprogramacionMedica(turno);
+  const bannerReprog = el('detMedicaReprogramadaBanner');
+  const destEl = el('detMedicaReprogramadaDestino');
+  if (bannerReprog) {
+    const mostrarDest = String(turno.estado || '').toUpperCase() === 'REPROGRAMADO' && !!destReprog;
+    bannerReprog.style.display = mostrarDest ? '' : 'none';
+  }
+  if (destEl) destEl.textContent = destReprog || '';
   if (el('detMedicaPaciente')) el('detMedicaPaciente').textContent = escapeHtml(turno.paciente_nombre || '-');
   if (el('detMedicaDocumento')) el('detMedicaDocumento').textContent = escapeHtml(turno.paciente_documento || '-');
   if (el('detMedicaTelefono')) el('detMedicaTelefono').textContent = turno.paciente_telefono || '-';
@@ -16288,17 +16371,16 @@ $('btnConfirmarReprogramarMedica')?.addEventListener('click', async (e) => {
     let estadoOriginal = 'REPROGRAMADO';
     if (currentEstadoAction === 'cancelado-paciente') estadoOriginal = 'CANCELADO';
 
-    const { nuevoTurno, actualizacionOriginal } = buildReprogramacionTurnoPayload(currentTurnoMedicaData, {
+    const bodyReprog = {
       fecha: fechaNew,
       hora: horaNew,
-      estadoOriginal,
-      actor: (currentUser && (currentUser.nombre || currentUser.usuario)) || 'Sistema'
-    });
+      estado_original: estadoOriginal
+    };
 
-    let res = await apiFetch('/api/turnos', {
+    let res = await apiFetch(`/api/turnos/${currentTurnoMedicaData.id}/reprogramar`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(nuevoTurno)
+      body: JSON.stringify(bodyReprog)
     });
 
     let data = await res.json();
@@ -16307,10 +16389,10 @@ $('btnConfirmarReprogramarMedica')?.addEventListener('click', async (e) => {
         `${data.error || 'Ese horario ya está asignado a otra entidad.'}\n\n¿Desea reprogramar de todos modos?`
       );
       if (confirmado) {
-        res = await apiFetch('/api/turnos', {
+        res = await apiFetch(`/api/turnos/${currentTurnoMedicaData.id}/reprogramar`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...nuevoTurno, forzar_cupo: true })
+          body: JSON.stringify({ ...bodyReprog, forzar_cupo: true })
         });
         data = await res.json();
       }
@@ -16320,17 +16402,7 @@ $('btnConfirmarReprogramarMedica')?.addEventListener('click', async (e) => {
       return;
     }
 
-    const resEstado = await apiFetch(`/api/turnos/${currentTurnoMedicaData.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(actualizacionOriginal)
-    });
-    const dataEstado = await resEstado.json();
-    if (!dataEstado.ok) {
-      showToast(dataEstado.error || 'Cita nueva creada, pero no se pudo cerrar la cita anterior', 'warning');
-    } else {
-      showToast('Cita reprogramada correctamente', 'success');
-    }
+    showToast('Cita reprogramada correctamente', 'success');
 
     if (window.socket && window.socket.connected) {
       window.socket.emit('turno-medico:reprogramado', {
@@ -16448,7 +16520,7 @@ async function _poblarEditMedicaTipoConsulta(turno) {
   const doctorId = turno?.doctor_id;
   let tipos = [];
   if (doctorId) {
-    tipos = await apiFetch(`/api/tipos-consulta?medico_id=${encodeURIComponent(doctorId)}`)
+    tipos = await apiFetch(`/api/tipos-consulta?medico_id=${encodeURIComponent(doctorId)}&uso=agenda`)
       .then((r) => r.json()).catch(() => []);
   }
   if (!Array.isArray(tipos) || tipos.length === 0) {
@@ -16584,7 +16656,7 @@ document.getElementById('btnEditTipoConsultaAtendida')?.addEventListener('click'
     // Cargar tipos de consulta del doctor de la cita
     const doctorId = currentTurnoMedicaData.doctor_id;
     if (doctorId) {
-      const tipos = await apiFetch(`/api/tipos-consulta?medico_id=${encodeURIComponent(doctorId)}`).then(r => r.json()).catch(() => []);
+      const tipos = await apiFetch(`/api/tipos-consulta?medico_id=${encodeURIComponent(doctorId)}&uso=agenda`).then(r => r.json()).catch(() => []);
       tipos.forEach(t => { sel.add(new Option(t.nombre, t.nombre)); });
     }
     // Fallback: cargar del select de nueva cita
@@ -16730,7 +16802,7 @@ async function buscarCitasPorDocumento() {
       const docPaciente = escapeHtml(cita.paciente_documento || '-');
       const nombre = escapeHtml(cita.paciente_nombre || '-');
       const tipoConsulta = escapeHtml(cita.tipo_consulta || '-');
-      const estadoHtml = estadoBadgeMedica(cita.estado || 'EN_ESPERA');
+      const estadoHtml = estadoCellTurnoMedica(cita);
 
       const tr = document.createElement('tr');
       tr.style.borderBottom = '1px solid #e5e7eb';
@@ -17204,7 +17276,7 @@ function cerrarTiposConsultaPanel() {
 async function cargarTiposConsultaPanel() {
   if (!_especialidadSelId) return;
   const tbody = $('tiposConsultaTableBody');
-  if (tbody) tbody.innerHTML = '<tr><td colspan="3" style="padding:16px;text-align:center;color:#999">Cargando...</td></tr>';
+  if (tbody) tbody.innerHTML = '<tr><td colspan="6" style="padding:16px;text-align:center;color:#999">Cargando...</td></tr>';
   try {
     const res = await apiFetch(`/api/tipos-consulta?especialidad_id=${_especialidadSelId}`);
     const data = await res.json();
@@ -17221,12 +17293,18 @@ function renderTiposConsultaPanel(lista) {
   const tbody = $('tiposConsultaTableBody');
   if (!tbody) return;
   if (!lista || lista.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="3" style="padding:16px;text-align:center;color:#999">Sin tipos de consulta. Agrega el primero.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" style="padding:16px;text-align:center;color:#999">Sin tipos de consulta. Agrega el primero.</td></tr>';
     return;
   }
   tbody.innerHTML = lista.map(t => {
     const n = escapeHtml(t.nombre).replace(/'/g, "\\'");
     const multi = t.permite_sesiones_multiples ? 1 : 0;
+    const chk = (campo, val) => {
+      const on = Number(val) !== 0;
+      return `<label class="gestion-vis-chk" title="Mostrar en este módulo">
+        <input type="checkbox" ${on ? 'checked' : ''} onchange="toggleCatalogoVisible('tipos_consulta',${t.id},'${campo}',this.checked)" />
+      </label>`;
+    };
     return `<tr>
       <td>${escapeHtml(t.nombre)}</td>
       <td style="text-align:center">
@@ -17235,6 +17313,9 @@ function renderTiposConsultaPanel(lista) {
           Sesiones múlt.
         </label>
       </td>
+      <td style="text-align:center">${chk('visible_agenda', t.visible_agenda)}</td>
+      <td style="text-align:center">${chk('visible_comprobante', t.visible_comprobante)}</td>
+      <td style="text-align:center">${chk('visible_recibo', t.visible_recibo)}</td>
       <td>
         <div class="table-actions">
           <button class="btn-editar" title="Editar" onclick="editarTipoConsulta(${t.id},'${n}')">
@@ -17270,6 +17351,39 @@ async function toggleSesionesMultiplesTipo(id, activo) {
   }
 }
 
+async function toggleCatalogoVisible(tipo, id, campo, activo) {
+  const permitidos = {
+    tipos_consulta: ['visible_agenda', 'visible_comprobante', 'visible_recibo'],
+    entidades: ['visible_agenda', 'visible_electro', 'visible_recibo']
+  };
+  if (!(permitidos[tipo] || []).includes(campo)) return;
+  const url = tipo === 'tipos_consulta' ? `/api/tipos-consulta/${id}` : `/api/entidades/${id}`;
+  try {
+    const res = await apiFetch(url, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ [campo]: !!activo })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.ok === false) {
+      showToast(data.error || 'No se pudo actualizar la visibilidad', 'error');
+      if (tipo === 'tipos_consulta') await cargarTiposConsultaPanel();
+      else if (typeof scheduleBuscarGestionDatos === 'function') scheduleBuscarGestionDatos(0);
+      return;
+    }
+    if (tipo === 'tipos_consulta') {
+      _tiposConsultaCache = {};
+      window.innarServicioCombo?.invalidarCache?.();
+    } else {
+      invalidarCacheEntidades();
+    }
+    showToast(activo ? 'Visible en ese módulo' : 'Oculto en ese módulo', 'success');
+  } catch (e) {
+    showToast('Error: ' + e.message, 'error');
+    if (tipo === 'tipos_consulta') await cargarTiposConsultaPanel();
+  }
+}
+
 async function crearTipoConsulta() {
   const nombre = $('tipoConsultaNuevoNombre').value.trim();
   if (!nombre) { showToast('Escribe el nombre del tipo de consulta', 'error'); return; }
@@ -17282,7 +17396,10 @@ async function crearTipoConsulta() {
       body: JSON.stringify({
         especialidad_id: _especialidadSelId,
         nombre,
-        permite_sesiones_multiples: !!$('tipoConsultaNuevoSesionesMultiples')?.checked
+        permite_sesiones_multiples: !!$('tipoConsultaNuevoSesionesMultiples')?.checked,
+        visible_agenda: $('tipoConsultaNuevoVisibleAgenda') ? !!$('tipoConsultaNuevoVisibleAgenda').checked : true,
+        visible_comprobante: $('tipoConsultaNuevoVisibleComprobante') ? !!$('tipoConsultaNuevoVisibleComprobante').checked : true,
+        visible_recibo: $('tipoConsultaNuevoVisibleRecibo') ? !!$('tipoConsultaNuevoVisibleRecibo').checked : true
       })
     });
     const data = await res.json();
@@ -17325,6 +17442,23 @@ function eliminarTipoConsulta(id) {
 
 let _gestionTipoActual = 'citas_electro';
 const _GESTION_TABS_DESTRUCTIVOS = new Set(['citas_electro', 'turnos', 'recibos']);
+const _gestionAyudas = {
+  tipos_consulta: 'Marca Agenda, Comprobante o Recibos para decidir en qué módulo aparece cada tipo. El cambio se guarda en la base de datos.',
+  entidades: 'Marca Agenda, Electro o Recibos para decidir en qué módulo aparece cada entidad. El cambio se guarda en la base de datos.'
+};
+
+function _chkVisibleGestion(tipo, id, campo, val) {
+  const on = Number(val) !== 0;
+  return `<label class="gestion-vis-chk"><input type="checkbox" ${on ? 'checked' : ''} onchange="toggleCatalogoVisible('${tipo}',${id},'${campo}',this.checked)" /></label>`;
+}
+
+function _gestionActualizarAyuda() {
+  const el = $('gestionDatosAyuda');
+  if (!el) return;
+  const texto = _gestionAyudas[_gestionTipoActual] || '';
+  el.textContent = texto;
+  el.classList.toggle('hidden', !texto);
+}
 
 function _gestionActualizarBanner() {
   const banner = $('gestionDatosWarnBanner');
@@ -17387,7 +17521,9 @@ const _gestionColumnas = {
     { key: 'nombre',      label: 'Nombre' },
     { key: 'especialidad',label: 'Especialidad' },
     { key: 'permite_sesiones_multiples', label: 'Sesiones múlt.', format: v => v ? 'Sí' : 'No' },
-    { key: 'activo',      label: 'Activo', format: v => v ? 'Sí' : 'No' }
+    { key: 'visible_agenda', label: 'Agenda', format: (v, r) => _chkVisibleGestion('tipos_consulta', r.id, 'visible_agenda', v) },
+    { key: 'visible_comprobante', label: 'Comprobante', format: (v, r) => _chkVisibleGestion('tipos_consulta', r.id, 'visible_comprobante', v) },
+    { key: 'visible_recibo', label: 'Recibos', format: (v, r) => _chkVisibleGestion('tipos_consulta', r.id, 'visible_recibo', v) }
   ],
   diagnosticos: [
     { key: 'id',     label: 'ID' },
@@ -17398,7 +17534,9 @@ const _gestionColumnas = {
   entidades: [
     { key: 'id',     label: 'ID' },
     { key: 'nombre', label: 'Nombre' },
-    { key: 'activo', label: 'Activo', format: v => v ? 'Sí' : 'No' }
+    { key: 'visible_agenda', label: 'Agenda', format: (v, r) => _chkVisibleGestion('entidades', r.id, 'visible_agenda', v) },
+    { key: 'visible_electro', label: 'Electro', format: (v, r) => _chkVisibleGestion('entidades', r.id, 'visible_electro', v) },
+    { key: 'visible_recibo', label: 'Recibos', format: (v, r) => _chkVisibleGestion('entidades', r.id, 'visible_recibo', v) }
   ],
   anexo_fidu_servicios: [
     { key: 'codigo', label: 'CUPS' },
@@ -17475,6 +17613,7 @@ function initGestionDatos() {
       const btnAgregar = $('btnAgregarGestion');
       if (btnAgregar) btnAgregar.style.display = _GESTION_TIPOS_AGREGAR.includes(_gestionTipoActual) ? '' : 'none';
       _gestionActualizarBanner();
+      _gestionActualizarAyuda();
       scheduleBuscarGestionDatos(0);
     });
   });
@@ -17493,6 +17632,7 @@ function initGestionDatos() {
   const btnAgregar = $('btnAgregarGestion');
   if (btnAgregar) btnAgregar.style.display = _GESTION_TIPOS_AGREGAR.includes(_gestionTipoActual) ? '' : 'none';
   _gestionActualizarBanner();
+  _gestionActualizarAyuda();
   scheduleBuscarGestionDatos(0);
 }
 
@@ -17530,7 +17670,9 @@ function _gestionRenderRows(tipo, registros) {
   tbody.innerHTML = registros.map(r => {
     const cells = cols.map(c => {
       const val = r[c.key];
-      const display = (val === null || val === undefined) ? '-' : (c.format ? c.format(val) : escapeHtml(String(val)));
+      const display = c.format
+        ? c.format(val, r)
+        : ((val === null || val === undefined) ? '-' : escapeHtml(String(val)));
       return `<td>${display}</td>`;
     }).join('');
     const btnEditar = tipo === 'anexo_fidu_servicios'
@@ -17779,6 +17921,18 @@ async function abrirModalAgregarGestion() {
           <input type="checkbox" id="agrGestionSesionesMultiples" />
           Permitir agendar varias sesiones (por días de la semana)
         </label>
+      </div>
+      <div style="margin-bottom:14px">
+        <span style="display:block;margin-bottom:6px;font-weight:500;font-size:14px">Visible en</span>
+        <label style="display:inline-flex;align-items:center;gap:6px;margin-right:12px;font-size:14px;cursor:pointer">
+          <input type="checkbox" id="agrGestionVisibleAgenda" checked /> Agenda
+        </label>
+        <label style="display:inline-flex;align-items:center;gap:6px;margin-right:12px;font-size:14px;cursor:pointer">
+          <input type="checkbox" id="agrGestionVisibleComprobante" checked /> Comprobante
+        </label>
+        <label style="display:inline-flex;align-items:center;gap:6px;font-size:14px;cursor:pointer">
+          <input type="checkbox" id="agrGestionVisibleRecibo" checked /> Recibos
+        </label>
       </div>`;
   } else if (tipo === 'diagnosticos') {
     camposHtml = `
@@ -17800,6 +17954,18 @@ async function abrirModalAgregarGestion() {
         <label style="display:block;margin-bottom:6px;font-weight:500;font-size:14px">Nombre de la entidad *</label>
         <input id="agrGestionNombre" type="text" required maxlength="200" placeholder="Ej: NUEVA EPS" style="width:100%;padding:9px 12px;border:1px solid #d1d5db;border-radius:6px;box-sizing:border-box;font-size:14px" />
         <span style="font-size:0.78rem;color:#6b7280;margin-top:4px;display:block">Se guardará en mayúsculas automáticamente</span>
+      </div>
+      <div style="margin-bottom:14px">
+        <span style="display:block;margin-bottom:6px;font-weight:500;font-size:14px">Visible en</span>
+        <label style="display:inline-flex;align-items:center;gap:6px;margin-right:12px;font-size:14px;cursor:pointer">
+          <input type="checkbox" id="agrGestionVisibleAgenda" checked /> Agenda
+        </label>
+        <label style="display:inline-flex;align-items:center;gap:6px;margin-right:12px;font-size:14px;cursor:pointer">
+          <input type="checkbox" id="agrGestionVisibleElectro" checked /> Electro
+        </label>
+        <label style="display:inline-flex;align-items:center;gap:6px;font-size:14px;cursor:pointer">
+          <input type="checkbox" id="agrGestionVisibleRecibo" checked /> Recibos
+        </label>
       </div>`;
   } else if (tipo === 'anexo_fidu_servicios') {
     camposHtml = _htmlFormularioCupsGestion();
@@ -17823,6 +17989,14 @@ async function guardarAgregarGestion(e) {
   if (tipo === 'tipos_consulta') {
     body.especialidad_id = $('agrGestionEspecialidad')?.value;
     body.permite_sesiones_multiples = !!$('agrGestionSesionesMultiples')?.checked;
+    body.visible_agenda = $('agrGestionVisibleAgenda') ? !!$('agrGestionVisibleAgenda').checked : true;
+    body.visible_comprobante = $('agrGestionVisibleComprobante') ? !!$('agrGestionVisibleComprobante').checked : true;
+    body.visible_recibo = $('agrGestionVisibleRecibo') ? !!$('agrGestionVisibleRecibo').checked : true;
+  }
+  if (tipo === 'entidades') {
+    body.visible_agenda = $('agrGestionVisibleAgenda') ? !!$('agrGestionVisibleAgenda').checked : true;
+    body.visible_electro = $('agrGestionVisibleElectro') ? !!$('agrGestionVisibleElectro').checked : true;
+    body.visible_recibo = $('agrGestionVisibleRecibo') ? !!$('agrGestionVisibleRecibo').checked : true;
   }
   if (tipo === 'diagnosticos') {
     body.codigo      = $('agrGestionCodigo')?.value.trim() || undefined;
@@ -17855,6 +18029,10 @@ async function guardarAgregarGestion(e) {
     cerrarModalGestionCups();
     // Invalidar caché para que otros módulos recarguen datos actualizados
     if (tipo === 'entidades') invalidarCacheEntidades();
+    if (tipo === 'tipos_consulta') {
+      _tiposConsultaCache = {};
+      window.innarServicioCombo?.invalidarCache?.();
+    }
     if (tipo === 'estudio_duraciones') invalidarCacheEstudios();
     if (tipo === 'anexo_fidu_servicios' && typeof window._invalidarServiciosAnexoFidu === 'function') {
       window._invalidarServiciosAnexoFidu();
@@ -17876,6 +18054,10 @@ function confirmarEliminarGestion(tipo, id) {
     showToast('Registro eliminado', 'success');
     // Invalidar caché para que otros módulos recarguen datos actualizados
     if (tipo === 'entidades') invalidarCacheEntidades();
+    if (tipo === 'tipos_consulta') {
+      _tiposConsultaCache = {};
+      window.innarServicioCombo?.invalidarCache?.();
+    }
     if (tipo === 'estudio_duraciones') invalidarCacheEstudios();
     if (tipo === 'anexo_fidu_servicios' && typeof window._invalidarServiciosAnexoFidu === 'function') {
       window._invalidarServiciosAnexoFidu();
@@ -17904,6 +18086,10 @@ function eliminarSeleccionadosGestion() {
     showToast(`${eliminados} registro${eliminados !== 1 ? 's' : ''} eliminado${eliminados !== 1 ? 's' : ''}`, 'success');
     // Invalidar caché para que otros módulos recarguen datos actualizados
     if (tipo === 'entidades') invalidarCacheEntidades();
+    if (tipo === 'tipos_consulta') {
+      _tiposConsultaCache = {};
+      window.innarServicioCombo?.invalidarCache?.();
+    }
     if (tipo === 'estudio_duraciones') invalidarCacheEstudios();
     if (tipo === 'anexo_fidu_servicios' && typeof window._invalidarServiciosAnexoFidu === 'function') {
       window._invalidarServiciosAnexoFidu();
