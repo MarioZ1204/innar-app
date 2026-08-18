@@ -17,6 +17,10 @@ const {
   backfillHistorialReprogramacionesElectro
 } = require('../utils/electro-reprogramacion-historial');
 const { hayCupoElectroParaAgendar, hayCupoElectroParaIniciar } = require('./electro-capacity');
+const {
+  evaluarTransicionElectro,
+  requiereFichaElectroParaTransicion
+} = require('../utils/agenda-estado-transiciones');
 const { buildMonitorEquiposView, citaOverlapsMonitorWindow } = require('../utils/electro-monitor');
 const {
   extraerFechaYmd,
@@ -36,9 +40,8 @@ const {
   inferirDuracionMinutosCitaElectro,
   inferirDuracionMinutosCitaElectroParaPersistir,
   calcularFinInicioEstudioElectro,
-  sqlEstudioElectroFinProgramadoTs,
-  sqlEstudioElectroFinProgramadoVencido,
-  sqlEstudioElectroFinInicioRealVencido
+  sqlEstudioElectroFinInicioRealVencido,
+  sqlEstudioElectroAunEnCursoPorDuracion
 } = require('../utils/electro-fechas');
 
 /** Rellena duracion_minutos desde catálogo o ventana agendada→hora_fin si falta. */
@@ -150,10 +153,13 @@ async function sincronizarDuracionesElectroEnFecha(fechaYmd) {
   return n;
 }
 
-/** Devuelve a En Estudio citas Completado cuyo tiempo programado aún no terminó. */
+/** Devuelve a En Estudio citas Completado cuyo tiempo (inicio + duración) aún no terminó.
+ *  No usa hora_fin de agenda: ese slot corto/largo deshacía cierres reales y dejaba el equipo ocupado.
+ *  No toca finalizaciones manuales (técnico pulsó Completado).
+ */
 async function revertirElectroCompletadosAntesDeTiempo(diasVentana = 14, fechaCentro = null) {
   const dias = Math.min(Math.max(parseInt(diasVentana, 10) || 14, 1), 90);
-  const finTs = sqlEstudioElectroFinProgramadoTs();
+  const aunEnCurso = sqlEstudioElectroAunEnCursoPorDuracion('citas_electro');
   let filtroFecha = `fecha >= DATE_SUB(CURDATE(), INTERVAL ${dias} DAY)`;
   const params = [];
   if (fechaCentro && /^\d{4}-\d{2}-\d{2}$/.test(fechaCentro)) {
@@ -170,7 +176,9 @@ async function revertirElectroCompletadosAntesDeTiempo(diasVentana = 14, fechaCe
       WHERE deleted_at IS NULL
         AND estado = 'Completado'
         AND ${filtroFecha}
-        AND ${finTs} > NOW()
+        AND ${aunEnCurso}
+        AND (editado_por_nombre IS NULL
+             OR editado_por_nombre IN ('Sistema (Auto)', 'Sistema (Corrección)'))
     `, params);
     return result[0]?.affectedRows ?? result.affectedRows ?? 0;
   } catch (err) {
@@ -179,15 +187,13 @@ async function revertirElectroCompletadosAntesDeTiempo(diasVentana = 14, fechaCe
   }
 }
 
-/** Al abrir el kanban/monitor: reparar duraciones, revertir completados prematuros y cerrar vencidos. */
+/** Al abrir el kanban/monitor o listar equipos: revertir cierres prematuros y cerrar vencidos. */
 async function repararEstadosElectroAlConsultar(fechaYmd, excludeId = null) {
-  if (!fechaYmd || !/^\d{4}-\d{2}-\d{2}$/.test(fechaYmd)) {
-    return { duraciones: 0, revertidas: 0, completadas: 0 };
-  }
+  const fechaOk = fechaYmd && /^\d{4}-\d{2}-\d{2}$/.test(fechaYmd) ? fechaYmd : null;
   try {
-    const duraciones = await sincronizarDuracionesElectroEnFecha(fechaYmd);
-    const revertidas = await revertirElectroCompletadosAntesDeTiempo(14, fechaYmd);
-    const completadas = await autoCompletarEstudiosElectroVencidos(excludeId, fechaYmd);
+    const duraciones = fechaOk ? await sincronizarDuracionesElectroEnFecha(fechaOk) : 0;
+    const revertidas = await revertirElectroCompletadosAntesDeTiempo(14, fechaOk);
+    const completadas = await autoCompletarEstudiosElectroVencidos(excludeId, fechaOk);
     if (completadas > 0) {
       emitSocket('electro:actualizar-lista', { type: 'auto-completados', completadas });
       emitSocket('electro:cambios-guardados', { type: 'auto-completados', completadas });
@@ -199,10 +205,15 @@ async function repararEstadosElectroAlConsultar(fechaYmd, excludeId = null) {
   }
 }
 
-/** Rellena duracion_minutos en estudios activos visibles en el día consultado. */
+/** Rellena duracion_minutos en estudios activos (todos, no solo el día consultado). */
 async function sincronizarDuracionesElectroActivas(fechaYmd = null) {
-  if (!fechaYmd || !/^\d{4}-\d{2}-\d{2}$/.test(fechaYmd)) return 0;
-  const vis = sqlCitaElectroVisibleEnFecha('c');
+  let filtroFecha = '';
+  const params = [];
+  if (fechaYmd && /^\d{4}-\d{2}-\d{2}$/.test(fechaYmd)) {
+    const vis = sqlCitaElectroVisibleEnFecha('c');
+    filtroFecha = ` AND ${vis}`;
+    params.push(...paramsCitaElectroVisibleEnFecha(fechaYmd));
+  }
   const rows = await db.query(`
     SELECT c.id, c.fecha, c.hora_agendamiento, c.hora_inicio, c.hora_fin, c.hora_fin_date,
            c.duracion_minutos, c.estudio, c.estado
@@ -210,9 +221,8 @@ async function sincronizarDuracionesElectroActivas(fechaYmd = null) {
     WHERE c.deleted_at IS NULL
       AND c.estado IN ('En Estudio', 'Pausado')
       AND (c.duracion_minutos IS NULL OR c.duracion_minutos = 0)
-      AND c.hora_fin IS NOT NULL
-      AND ${vis}
-  `, paramsCitaElectroVisibleEnFecha(fechaYmd));
+      ${filtroFecha}
+  `, params);
   for (const row of rows) {
     await asegurarDuracionMinutosCitaElectro(row);
   }
@@ -220,15 +230,16 @@ async function sincronizarDuracionesElectroActivas(fechaYmd = null) {
 }
 
 /**
- * Cierra estudios vencidos visibles en el día consultado (no toda la base).
- * Hoy: inicio real + duracion_minutos. Días anteriores al inicio: limpieza por hora_fin.
+ * Cierra estudios En Estudio/Pausado cuyo inicio real + duración ya pasó.
+ * No se limita al día visible: un EEG de ayer vencido seguiría ocupando el equipo.
  */
 async function autoCompletarEstudiosElectroVencidos(excludeId = null, fechaYmd = null) {
-  if (!fechaYmd || !/^\d{4}-\d{2}-\d{2}$/.test(fechaYmd)) return 0;
-  await sincronizarDuracionesElectroActivas(fechaYmd);
+  await sincronizarDuracionesElectroActivas();
+  if (fechaYmd && /^\d{4}-\d{2}-\d{2}$/.test(fechaYmd)) {
+    await sincronizarDuracionesElectroActivas(fechaYmd);
+  }
   const condId = excludeId ? ' AND citas_electro.id != ?' : '';
-  const vis = sqlCitaElectroVisibleEnFecha('citas_electro');
-  const params = [...paramsCitaElectroVisibleEnFecha(fechaYmd)];
+  const params = [];
   if (excludeId) params.push(excludeId);
   const sqlVencido = sqlEstudioElectroFinInicioRealVencido('citas_electro');
   try {
@@ -237,9 +248,7 @@ async function autoCompletarEstudiosElectroVencidos(excludeId = null, fechaYmd =
       SET estado = 'Completado', editado_por_nombre = 'Sistema (Auto)', editado_en = NOW()
       WHERE estado IN ('En Estudio', 'Pausado')
         AND deleted_at IS NULL
-        AND ${vis}
         AND ${sqlVencido}
-        AND (citas_electro.editado_en IS NULL OR citas_electro.editado_en < DATE_SUB(NOW(), INTERVAL 2 MINUTE))
         ${condId}
     `, params);
     return result[0]?.affectedRows ?? result.affectedRows ?? 0;
@@ -321,9 +330,86 @@ function normalizeFecha(str) {
   return s.slice(0, 10);
 }
 
+/** Misma regla de cupo/equipo que el alta: reprogramar no puede saltársela. */
+async function validarCapacidadElectroAgendar({ fecha, horaAgendamiento, fechaFin, horaFin, equipoId, excludeId }) {
+  await autoCompletarEstudiosElectroVencidos(excludeId || null);
+  const fechaIni = extraerFechaYmd(fecha) || normalizeFecha(fecha);
+  const horaIni = normalizeHora(horaAgendamiento) || String(horaAgendamiento || '').trim().slice(0, 5);
+  let finalHoraFin = normalizeHora(horaFin) || (horaFin ? String(horaFin).trim().slice(0, 5) : '');
+  let finalFechaFin = extraerFechaYmd(fechaFin) || normalizeFecha(fechaFin) || fechaIni;
+  if (!finalHoraFin) {
+    const finCalc = sumarMinutosAHoraYFecha(fechaIni, horaIni, 30);
+    if (finCalc) {
+      finalHoraFin = finCalc.horaFin;
+      finalFechaFin = finCalc.fechaFin;
+    } else {
+      return { ok: false, status: 400, error: 'No se pudo calcular el horario para validar cupo de equipos' };
+    }
+  }
+
+  const overlapParams = [];
+  let excludeSql = '';
+  if (excludeId) {
+    excludeSql = ' AND id != ?';
+    overlapParams.push(excludeId);
+  }
+  overlapParams.push(finalFechaFin, finalHoraFin, fechaIni, horaIni);
+
+  const overlapRows = await db.query(
+    `SELECT fecha, hora_agendamiento, hora_inicio, hora_fin, hora_fin_date, duracion_minutos, estado
+     FROM citas_electro
+     WHERE estado IN ('En Estudio', 'Pausado')
+       AND deleted_at IS NULL${excludeSql}
+       AND TIMESTAMP(fecha, COALESCE(hora_inicio, hora_agendamiento, '00:00:00')) < TIMESTAMP(?, ?)
+       AND TIMESTAMP(COALESCE(hora_fin_date, fecha), COALESCE(hora_fin, '23:59:59')) > TIMESTAMP(?, ?)`,
+    overlapParams
+  );
+
+  const maxCuposRows = await db.query('SELECT COUNT(*) as total FROM equipos_electro WHERE activo = 1');
+  const maxCupos = parseInt(maxCuposRows[0]?.total, 10) || 0;
+  const [hhS, mmS] = String(horaIni).split(':').map((x) => parseInt(x, 10));
+  const rangeStart = new Date(`${fechaIni}T${String(hhS).padStart(2, '0')}:${String(mmS).padStart(2, '0')}:00`);
+  const [hhE, mmE] = String(finalHoraFin).split(':').map((x) => parseInt(x, 10));
+  const rangeEnd = new Date(`${finalFechaFin}T${String(hhE).padStart(2, '0')}:${String(mmE).padStart(2, '0')}:00`);
+  const cupoCheck = hayCupoElectroParaAgendar(overlapRows, rangeStart, rangeEnd, maxCupos);
+
+  if (!cupoCheck.ok) {
+    return {
+      ok: false,
+      status: 409,
+      error: `Sin capacidad disponible en este horario. Pico simultáneo: ${cupoCheck.peak}/${maxCupos} equipos.`,
+      details: `peak: ${cupoCheck.peak}, max: ${maxCupos}`,
+      capacity: { max: maxCupos, peak: cupoCheck.peak }
+    };
+  }
+
+  const eqId = equipoId ? parseInt(equipoId, 10) : null;
+  if (eqId) {
+    const ocupadoParams = excludeId ? [eqId, excludeId] : [eqId];
+    const ocupadoSql = excludeId
+      ? `SELECT id, estudio FROM citas_electro
+         WHERE equipo_id = ? AND id != ? AND estado = 'En Estudio' AND deleted_at IS NULL LIMIT 1`
+      : `SELECT id, estudio FROM citas_electro
+         WHERE equipo_id = ? AND estado = 'En Estudio' AND deleted_at IS NULL LIMIT 1`;
+    const ocupado = await db.query(ocupadoSql, ocupadoParams);
+    if (ocupado.length > 0) {
+      const eqRows = await db.query('SELECT nombre FROM equipos_electro WHERE id = ?', [eqId]);
+      const eqNombre = eqRows[0]?.nombre || `Equipo ${eqId}`;
+      return {
+        ok: false,
+        status: 409,
+        error: `${eqNombre} está ocupado con "${ocupado[0].estudio || 'Sin tipo'}". Espere a que finalice.`
+      };
+    }
+  }
+
+  return { ok: true, peak: cupoCheck.peak, maxCupos };
+}
+
 // GET /api/equipos-electro
 router.get('/equipos-electro', requireAuth, async (req, res) => {
   try {
+    await repararEstadosElectroAlConsultar(null);
     const equipos = await db.query('SELECT * FROM equipos_electro WHERE activo = 1 ORDER BY nombre ASC');
     // En uso = estudio activo en el equipo (sin ventana horaria agendada).
     const equiposEnUso = await db.query(
@@ -498,6 +584,8 @@ router.get('/equipos-electro/disponibilidad', requireAuth, async (req, res) => {
     if (!fecha || !hora) return res.status(400).json({ error: 'fecha y hora son obligatorios' });
     if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return res.status(400).json({ error: 'Fecha inválida (YYYY-MM-DD)' });
     if (!/^\d{2}:\d{2}(:\d{2})?$/.test(hora)) return res.status(400).json({ error: 'Hora inválida (HH:MM)' });
+
+    await repararEstadosElectroAlConsultar(fecha);
 
     let duracionMinutos = 30;
     if (estudio) {
@@ -1034,44 +1122,22 @@ router.post('/citas-electro', requireAuth, requireRoleOrPerm(['superadmin', 'adm
       return res.status(409).json({ error: 'Este paciente ya tiene una cita que se superpone con este horario en Electrodiagnóstico.' });
     }
 
-    const overlapRows = await db.query(
-      `SELECT fecha, hora_agendamiento, hora_inicio, hora_fin, hora_fin_date, duracion_minutos, estado FROM citas_electro
-       WHERE estado IN ('En Estudio', 'Pausado')
-       AND deleted_at IS NULL
-       AND TIMESTAMP(fecha, COALESCE(hora_inicio, hora_agendamiento, '00:00:00')) < TIMESTAMP(?, ?)
-       AND TIMESTAMP(COALESCE(hora_fin_date, fecha), COALESCE(hora_fin, '23:59:59')) > TIMESTAMP(?, ?)`,
-      [finalFechaFin, finalHoraFin, fecha, horaAgendamiento]
-    );
-
-    const maxCuposRows = await db.query(`SELECT COUNT(*) as total FROM equipos_electro WHERE activo = 1`);
-    const maxCupos = parseInt(maxCuposRows[0]?.total, 10) || 0;
-    const [hhS, mmS] = horaAgendamiento.split(':').map((x) => parseInt(x, 10));
-    const rangeStart = new Date(`${fecha}T${String(hhS).padStart(2, '0')}:${String(mmS).padStart(2, '0')}:00`);
-    const [hhE, mmE] = finalHoraFin.split(':').map((x) => parseInt(x, 10));
-    const rangeEnd = new Date(`${finalFechaFin}T${String(hhE).padStart(2, '0')}:${String(mmE).padStart(2, '0')}:00`);
-    const cupoCheck = hayCupoElectroParaAgendar(overlapRows, rangeStart, rangeEnd, maxCupos);
-
+    const cupoCheck = await validarCapacidadElectroAgendar({
+      fecha,
+      horaAgendamiento,
+      fechaFin: finalFechaFin,
+      horaFin: finalHoraFin,
+      equipoId: equipo_id
+    });
     if (!cupoCheck.ok) {
-      return res.status(409).json({
-        error: `Sin capacidad disponible en este horario. Pico simultáneo: ${cupoCheck.peak}/${maxCupos} equipos.`,
-        details: `peak: ${cupoCheck.peak}, max: ${maxCupos}`,
-        capacity: { max: maxCupos, peak: cupoCheck.peak }
+      return res.status(cupoCheck.status).json({
+        error: cupoCheck.error,
+        details: cupoCheck.details,
+        capacity: cupoCheck.capacity
       });
     }
     const overlapCount = cupoCheck.peak;
-
-    if (equipo_id) {
-      const ocupado = await db.query(
-        `SELECT id, estudio FROM citas_electro
-         WHERE equipo_id = ? AND estado = 'En Estudio' AND deleted_at IS NULL LIMIT 1`,
-        [parseInt(equipo_id, 10)]
-      );
-      if (ocupado.length > 0) {
-        const eqRows = await db.query('SELECT nombre FROM equipos_electro WHERE id = ?', [parseInt(equipo_id, 10)]);
-        const eqNombre = eqRows[0]?.nombre || `Equipo ${equipo_id}`;
-        return res.status(409).json({ error: `${eqNombre} está ocupado con "${ocupado[0].estudio}". Espere a que finalice.` });
-      }
-    }
+    const maxCupos = cupoCheck.maxCupos;
 
     let duracionMinutosDB = duracion ? parseInt(duracion, 10) : null;
     if (!(duracionMinutosDB > 0) && finalHoraFin) {
@@ -1226,6 +1292,22 @@ router.post('/citas-electro/:id/reprogramar', requireAuth, requireRoleOrPerm(
       return res.status(409).json({ error: 'Este paciente ya tiene una cita que se superpone con este horario en Electrodiagnóstico.' });
     }
 
+    const cupoCheck = await validarCapacidadElectroAgendar({
+      fecha: fechaNueva,
+      horaAgendamiento: horaNueva,
+      fechaFin: finalFechaFin,
+      horaFin: finalHoraFin,
+      equipoId: nueva.equipo_id,
+      excludeId: id
+    });
+    if (!cupoCheck.ok) {
+      return res.status(cupoCheck.status).json({
+        error: cupoCheck.error,
+        details: cupoCheck.details,
+        capacity: cupoCheck.capacity
+      });
+    }
+
     const result = await withTransaction(async (conn) => {
       const insertRes = await conn.execute(`
         INSERT INTO citas_electro (
@@ -1312,7 +1394,7 @@ router.get('/citas-electro/:id', requireAuth, async (req, res) => {
     if (!rows.length) return res.status(404).json({ error: 'Cita no encontrada' });
     const row = rows[0];
     const fechaRow = extraerFechaYmd(row.fecha) || normalizeFecha(row.fecha);
-    if (fechaRow) await repararEstadosElectroAlConsultar(fechaRow, id);
+    if (fechaRow) await repararEstadosElectroAlConsultar(fechaRow);
     const rows2 = await db.query(`
       SELECT ${CITAS_ELECTRO_SELECT},
              p.nombre AS paciente_nombre, p.documento AS paciente_documento,
@@ -1339,9 +1421,18 @@ router.patch('/citas-electro/:id/estado', requireAuth, requireRoleOrPerm(['super
   const { estado } = req.body;
   if (!id) return res.status(400).json({ error: 'ID inválido' });
   try {
-    const citas = await db.query('SELECT id FROM citas_electro WHERE id = ? AND deleted_at IS NULL', [id]);
+    const citas = await db.query('SELECT id, estado FROM citas_electro WHERE id = ? AND deleted_at IS NULL', [id]);
     const cita = citas.length > 0 ? citas[0] : null;
     if (!cita) return res.status(404).json({ error: 'Cita no encontrada' });
+
+    const rolSesion = (req.session?.rol && String(req.session.rol).toLowerCase()) || '';
+    const trans = evaluarTransicionElectro(cita.estado, estado, { rol: rolSesion });
+    if (!trans.ok) return res.status(trans.status).json({ error: trans.error });
+    if (requiereFichaElectroParaTransicion(trans.tipo)) {
+      return res.status(400).json({
+        error: 'Para iniciar, finalizar o reabrir un estudio use los botones de la cita.'
+      });
+    }
 
     const userName = req.session.usuario || 'Usuario';
     const users = await db.query('SELECT nombre FROM usuarios WHERE id = ?', [req.session.usuarioId]);
@@ -1375,6 +1466,7 @@ router.patch('/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin',
     );
     if (citasResult.length === 0) return res.status(404).json({ error: 'Cita no encontrada' });
     const citaActual = await asegurarDuracionMinutosCitaElectro(citasResult[0]);
+    await autoCompletarEstudiosElectroVencidos(id);
     const estadoActual = citaActual.estado;
     const estudioActivo = estadoActual === 'En Estudio' || estadoActual === 'Pausado';
     let forzarCamposInicioEstudio = null;
@@ -1407,25 +1499,15 @@ router.patch('/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin',
     }
 
     if (estado && estado !== estadoActual) {
-      const estadosManuales = ['Confirmado', 'En Sala', 'No Asistió', 'Reprogramado', 'Cancelado', 'Adelantado', 'Pausado'];
-      const esManual = estadosManuales.includes(estado);
-      const esReanudarEstudio = estadoActual === 'Pausado' && estado === 'En Estudio';
-      const esRevertirCompletadoAEnEstudio = estadoActual === 'Completado' && estado === 'En Estudio';
-      const esInicioEstudioNuevo = ['Programado', 'Confirmado', 'En Sala', 'Reprogramado', 'Adelantado'].includes(estadoActual) && estado === 'En Estudio';
-      const esInicioEstudio = (esInicioEstudioNuevo || esReanudarEstudio) && !esRevertirCompletadoAEnEstudio;
-      const esFinEstudio = (estadoActual === 'En Estudio' || estadoActual === 'Pausado') && estado === 'Completado';
       const rolSesion = (req.session?.rol && String(req.session.rol).toLowerCase()) || '';
-
-      if (!esManual && !esInicioEstudio && !esFinEstudio && !esRevertirCompletadoAEnEstudio) {
-        return res.status(400).json({ error: `Transición de estado inválida: ${estadoActual} → ${estado}` });
-      }
+      const trans = evaluarTransicionElectro(estadoActual, estado, { rol: rolSesion });
+      if (!trans.ok) return res.status(trans.status).json({ error: trans.error });
+      const esRevertirCompletadoAEnEstudio = trans.tipo === 'reabrir';
+      const esInicioEstudio = trans.tipo === 'inicio';
+      const esInicioEstudioNuevo = esInicioEstudio && estadoActual !== 'Pausado';
+      const esFinEstudio = trans.tipo === 'fin';
 
       if (esRevertirCompletadoAEnEstudio) {
-        if (rolSesion !== 'superadmin') {
-          return res.status(403).json({
-            error: 'Solo el superadmin puede devolver un estudio completado a En Estudio.'
-          });
-        }
         const horaIniRev = horaInicioCitaElectro(citaActual);
         if (!horaIniRev) {
           return res.status(400).json({

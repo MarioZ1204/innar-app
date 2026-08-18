@@ -11,6 +11,7 @@ const {
 } = require('../middleware/index');
 const { validateSchema } = require('../modules/validation-schemas');
 const { buildReprogramacionTurnoPayload } = require('../utils/agenda-reprogramacion');
+const { validarTransicionEstadoTurno } = require('../utils/agenda-estado-transiciones');
 const cuposEntidadAgenda = require('../utils/cupos-entidad-agenda');
 
 // Helper: obtener siguiente número de turno
@@ -822,6 +823,11 @@ router.patch('/turnos/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin
     if (estado !== undefined && ESTADOS_FINALES_EDICION.includes(turno.estado) && userRole !== 'superadmin') {
       return res.status(400).json({ error: 'No se puede cambiar el estado de una cita finalizada' });
     }
+    if (estado !== undefined && estado !== turno.estado) {
+      return res.status(400).json({
+        error: 'Para cambiar el estado de la cita use los botones de En sala / En atención / Atendido.'
+      });
+    }
 
     const updates = [];
     const values = [];
@@ -866,14 +872,7 @@ router.patch('/turnos/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin
     if (tipo_consulta !== undefined) { updates.push('tipo_consulta = ?'); values.push(tipo_consulta); }
     if (fecha !== undefined) { updates.push('fecha = ?'); values.push(fecha); }
     if (hora !== undefined) { updates.push('hora = ?'); values.push(hora); }
-    if (estado !== undefined) { updates.push('estado = ?'); values.push(estado); }
     if (observaciones !== undefined && notas === undefined) { updates.push('notas = ?'); values.push(observaciones); }
-    if (estado === 'REPROGRAMADO' || estado === 'CANCELADO' || estado === 'ATENDIDO' || estado === 'NO_ASISTIO') {
-      updates.push('numero_turno = NULL');
-    }
-    if (estado === 'REPROGRAMADO') {
-      updates.push('reprogramado_en = NOW()');
-    }
 
     if (updates.length === 0) {
       return res.status(400).json({ error: 'No hay campos para actualizar' });
@@ -882,7 +881,7 @@ router.patch('/turnos/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin
     const doctorIdFinal = doctor_id !== undefined ? parseInt(doctor_id, 10) : parseInt(turno.doctor_id, 10);
     const fechaFinal = fecha !== undefined ? fecha : turno.fecha;
     const entidadFinal = entidad !== undefined ? entidad : turno.entidad;
-    const estadoFinal = estado !== undefined ? estado : turno.estado;
+    const estadoFinal = turno.estado;
     const estadosSinCupo = ['CANCELADO', 'REPROGRAMADO', 'ATENDIDO', 'NO_ASISTIO'];
     const cambiaUbicacion = (entidad !== undefined && cuposEntidadAgenda.claveEntidad(entidad) !== cuposEntidadAgenda.claveEntidad(turno.entidad))
       || (fecha !== undefined && String(fecha).slice(0, 10) !== String(turno.fecha).slice(0, 10))
@@ -928,10 +927,10 @@ router.patch('/turnos/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin
         fecha: fechaEmit
       });
     }
-    if (fecha !== undefined || hora !== undefined || estado !== undefined) {
+    if (fecha !== undefined || hora !== undefined) {
       emitSocket('agenda:turno-estado-cambio', {
         id,
-        estado: estado || turno.estado,
+        estado: turno.estado,
         doctor_id: doctorIdEmit,
         fecha: fechaEmit
       });
@@ -962,17 +961,8 @@ router.patch('/turnos/:id/estado', requireAuth, requireRoleOrPerm(['superadmin',
     const idorErr = denyIfDoctorMismatch(req, turno.doctor_id);
     if (idorErr) return res.status(403).json({ error: idorErr });
 
-    if (turno.estado === 'ATENDIDO' && estado !== 'ATENDIDO') {
-      return res.status(400).json({ error: 'No se puede modificar un turno ya atendido' });
-    }
-
-    if (turno.estado === 'REPROGRAMADO' && estado === 'NO_ASISTIO') {
-      return res.status(400).json({ error: 'Una cita reprogramada no puede marcarse como no asistió' });
-    }
-
-    if (estado === 'EN_ATENCION' && turno.estado !== 'EN_SALA') {
-      return res.status(400).json({ error: 'Solo se puede pasar a EN_ATENCION desde EN_SALA' });
-    }
+    const trans = validarTransicionEstadoTurno(turno.estado, estado);
+    if (!trans.ok) return res.status(trans.status).json({ error: trans.error });
 
     if (estado === 'EN_ATENCION') {
       const enAtencionExistente = await db.query(

@@ -348,8 +348,23 @@ router.delete('/admin/datos/:tipo/bulk', requireAuth, requireRoleOrPerm(['supera
     };
     if (!tablaMap[tipo]) return res.status(400).json({ error: 'Tipo no válido' });
     const tabla = tablaMap[tipo];
-    const placeholders = ids.map(() => '?').join(',');
-    const result = await db.execute(`DELETE FROM ${tabla} WHERE id IN (${placeholders})`, ids);
+    const idsNorm = ids.map((n) => parseInt(n, 10)).filter((n) => n > 0);
+    if (!idsNorm.length) return res.status(400).json({ error: 'ids inválidos' });
+    const placeholders = idsNorm.map(() => '?').join(',');
+    let result;
+    if (tipo === 'citas_electro') {
+      const actor = req.session.usuarioNombre || req.session.usuario || 'Admin';
+      result = await db.execute(
+        `UPDATE citas_electro SET deleted_at = NOW(), editado_por_nombre = ?
+         WHERE deleted_at IS NULL AND id IN (${placeholders})`,
+        [actor, ...idsNorm]
+      );
+      if (result.affectedRows > 0) {
+        emitSocket('electro:actualizar-lista', { type: 'eliminadas', ids: idsNorm });
+      }
+    } else {
+      result = await db.execute(`DELETE FROM ${tabla} WHERE id IN (${placeholders})`, idsNorm);
+    }
     if (tipo === 'anexo_fidu_servicios' && result.affectedRows > 0) {
       await refrescarCatalogoCupsAnexo();
     }
@@ -375,9 +390,17 @@ router.delete('/admin/datos/:tipo/:id', requireAuth, requireRoleOrPerm(['superad
 
     let affected = 0;
     if (tipo === 'citas_electro') {
-      const result = await db.execute('DELETE FROM citas_electro WHERE id=?', [id]);
+      const actor = req.session.usuarioNombre || req.session.usuario || 'Admin';
+      const result = await db.execute(
+        `UPDATE citas_electro SET deleted_at = NOW(), editado_por_nombre = ?
+         WHERE id = ? AND deleted_at IS NULL`,
+        [actor, id]
+      );
       affected = result.affectedRows;
-      if (affected > 0) emitSocket('electro:cita-eliminada', { id });
+      if (affected > 0) {
+        emitSocket('electro:cita-eliminada', { id });
+        emitSocket('electro:actualizar-lista', { type: 'eliminada', id });
+      }
     } else if (tipo === 'turnos') {
       const result = await db.execute('DELETE FROM turnos WHERE id=?', [id]);
       affected = result.affectedRows;

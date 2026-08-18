@@ -395,6 +395,17 @@ function sqlEstudioElectroFinInicioRealVencido(alias) {
   )`;
 }
 
+/** Estudio Completado cuyo inicio+duración aún no termina (cierre prematuro a revertir). */
+function sqlEstudioElectroAunEnCursoPorDuracion(alias) {
+  const p = alias ? `${alias}.` : '';
+  const inicioReal = `TIMESTAMP(${p}fecha, TIME(COALESCE(${p}hora_inicio, ${p}hora_agendamiento)))`;
+  return `(
+    ${p}duracion_minutos > 0
+    AND COALESCE(${p}hora_inicio, ${p}hora_agendamiento) IS NOT NULL
+    AND DATE_ADD(${inicioReal}, INTERVAL ${p}duracion_minutos MINUTE) > NOW()
+  )`;
+}
+
 module.exports = {
   normalizarHoraHmElectro,
   extraerFechaYmd,
@@ -426,5 +437,6 @@ module.exports = {
   sqlEstudioElectroFinProgramadoTs,
   sqlEstudioElectroFinProgramadoVencido,
   sqlEstudioElectroFinProgramadoVencidoConDuracion,
-  sqlEstudioElectroFinInicioRealVencido
+  sqlEstudioElectroFinInicioRealVencido,
+  sqlEstudioElectroAunEnCursoPorDuracion
 };

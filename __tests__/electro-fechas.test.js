@@ -10,7 +10,8 @@ const {
   inferirDuracionMinutosCitaElectroParaPersistir,
   sqlEstudioElectroFinProgramadoVencido,
   sqlEstudioElectroFinProgramadoVencidoConDuracion,
-  sqlEstudioElectroFinInicioRealVencido
+  sqlEstudioElectroFinInicioRealVencido,
+  sqlEstudioElectroAunEnCursoPorDuracion
 } = require('../utils/electro-fechas');
 
 describe('electro-fechas', () => {
@@ -165,6 +166,14 @@ describe('electro-fechas', () => {
     expect(sql).toContain('hora_inicio');
     expect(sql).toContain('DATE_ADD');
     expect(sql).not.toContain('GREATEST');
+  });
+
+  test('sql revertir prematuros usa inicio+duracion, no hora_fin de agenda', () => {
+    const sql = sqlEstudioElectroAunEnCursoPorDuracion('citas_electro');
+    expect(sql).toContain('duracion_minutos > 0');
+    expect(sql).toContain('DATE_ADD');
+    expect(sql).not.toContain('GREATEST');
+    expect(sql).not.toContain('hora_fin_date');
   });
 
   test('inicio tardío agendado ancla fin a hora efectiva + duración', () => {
