@@ -25,6 +25,26 @@
   max-width: 100%;
 }
 
+#view-recibos .recibo-filtros-title {
+  margin: 0 0 14px;
+  color: var(--c-dark, #2d4a47);
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+#view-recibos .recibo-export-btn svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+  flex-shrink: 0;
+}
+
+#view-recibos #generate svg,
+#view-recibos #print svg {
+  width: 16px;
+  height: 16px;
+}
+
 /* ── Crear recibo: cabecera y stats ───────────────────────────────────────── */
 #view-recibos .recibo-crear-header {
   display: flex;
@@ -273,8 +293,16 @@
 
 #view-recibos #tablaSavedItems .table-actions button,
 #view-recibos #tablaSavedItems .table-actions a {
-  min-width: 36px;
-  min-height: 36px;
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  min-height: 32px;
+}
+
+#view-recibos #tablaSavedItems .table-actions svg,
+#view-recibos #tablaSavedItems .table-actions .innar-icon {
+  width: 16px;
+  height: 16px;
 }
 
 /* Tablet: ocultar columnas secundarias */

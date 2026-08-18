@@ -36,7 +36,8 @@
 }
 
 .pfidu-form-field:has(textarea),
-.pfidu-form-field:has(#pfidu-numero_documento) {
+.pfidu-form-field:has(#pfidu-numero_documento),
+.pfidu-form-field:has(.innar-afil-combo) {
   grid-column: 1 / -1;
 }
 

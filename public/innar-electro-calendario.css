@@ -61,6 +61,16 @@
   font-size: 0.75rem;
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.ecal-nav-btn svg {
+  width: 20px;
+  height: 20px;
+  display: block;
 }
 
 #electroCalPrevMonth { grid-column: 1; }

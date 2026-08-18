@@ -57,7 +57,8 @@
     { value: 'Otro', label: 'Otro' }
   ];
 
-  const OPCIONES_AFILIACION = [
+  /** Anexo / alta general (no mezclar con el comprobante FOMAG). */
+  const OPCIONES_AFILIACION_ANEXO = [
     { value: '', label: '— Seleccionar —' },
     { value: 'Cotizante', label: 'Cotizante' },
     { value: 'Beneficiario', label: 'Beneficiario' },
@@ -65,6 +66,36 @@
     { value: 'Estudiante', label: 'Estudiante' },
     { value: 'Pensionado', label: 'Pensionado' }
   ];
+
+  const OPCIONES_AFILIACION_COMPROBANTE = [
+    'COTIZANTE',
+    'COTIZANTE PENSIONADO',
+    'BENEFICIARIO',
+    'SUSTITUTO PENSIONAL'
+  ];
+
+  function afiliacionComprobanteApi() {
+    return (typeof window !== 'undefined') ? window.innarAfiliacionComprobante : null;
+  }
+
+  function opcionesAfiliacionComprobante() {
+    const api = afiliacionComprobanteApi();
+    const raw = (api && Array.isArray(api.OPCIONES) && api.OPCIONES.length)
+      ? api.OPCIONES
+      : OPCIONES_AFILIACION_COMPROBANTE;
+    return raw.map((v) => ({ value: v, label: v }));
+  }
+
+  function mapearAfiliacionComprobante(val) {
+    const api = afiliacionComprobanteApi();
+    if (api && typeof api.mapearAfiliacionParaComprobante === 'function') {
+      return api.mapearAfiliacionParaComprobante(val);
+    }
+    const n = String(val || '').trim();
+    if (!n) return 'COTIZANTE';
+    const hit = OPCIONES_AFILIACION_COMPROBANTE.find((o) => o.toLowerCase() === n.toLowerCase());
+    return hit || n;
+  }
 
   const OPCIONES_TIPO_DOC = [
     { value: '', label: '— Auto / seleccionar —' },
@@ -135,7 +166,7 @@
     return `<select id="${id}" data-key="${key}"${ro}>${extra}${opts}</select>`;
   }
 
-  function htmlCampo(f, val, readonly) {
+  function htmlCampo(f, val, readonly, contexto) {
     const ro = readonly ? ' readonly style="opacity:.75"' : '';
     const id = `pfidu-${f.key}`;
     if (f.key === 'fecha_nacimiento') {
@@ -145,7 +176,14 @@
       return htmlSelect(id, f.key, val, OPCIONES_GENERO, readonly);
     }
     if (f.key === 'afiliacion') {
-      return htmlSelect(id, f.key, val, OPCIONES_AFILIACION, readonly);
+      if (normalizarContexto(contexto) === 'comprobante') {
+        const mapped = mapearAfiliacionComprobante(val);
+        const opts = opcionesAfiliacionComprobante();
+        const listId = `${id}__list`;
+        const datalist = `<datalist id="${listId}">${opts.map((o) => `<option value="${escapeHtml(o.value)}"></option>`).join('')}</datalist>`;
+        return `<input type="text" id="${id}" data-key="${f.key}" list="${listId}" value="${escapeHtml(mapped)}" maxlength="80" autocomplete="off" placeholder="Elija o escriba…"${ro} />${datalist}`;
+      }
+      return htmlSelect(id, f.key, val, OPCIONES_AFILIACION_ANEXO, readonly);
     }
     if (f.key === 'tipo_documento') {
       return htmlSelect(id, f.key, val, OPCIONES_TIPO_DOC, readonly);
@@ -215,7 +253,7 @@
         : '';
       html += `<div class="pfidu-form-field${missClass}" data-field="${f.key}">
         <label for="pfidu-${f.key}">${escapeHtml(f.label)}${reqMark}</label>
-        ${htmlCampo(f, v, ro)}
+        ${htmlCampo(f, v, ro, contexto)}
       </div>`;
     });
     html += '</div>';
@@ -223,6 +261,15 @@
     container.dataset.pfiduContexto = contexto;
     bindFechaTipoDocumento(container);
     bindFechaInputs(container);
+    if (contexto === 'comprobante') {
+      const AF = afiliacionComprobanteApi();
+      if (AF && typeof AF.init === 'function') {
+        AF.init('pfidu-afiliacion');
+        if (typeof AF.setValor === 'function') {
+          AF.setValor('pfidu-afiliacion', persona.afiliacion || '', persona.afiliacion || '');
+        }
+      }
+    }
     // Scroll al primer faltante
     const firstMiss = container.querySelector('.pfidu-form-field.is-missing');
     if (firstMiss) {

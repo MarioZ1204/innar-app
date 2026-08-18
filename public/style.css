@@ -324,8 +324,8 @@
 .medica-turnos-table .col-estado-cell,#turnosTableMedica .col-estado-cell{white-space:nowrap}
 .medica-turnos-table .col-acciones-cell,.medica-turnos-table .td-acciones,#turnosTableMedica .col-acciones-cell,#turnosTableMedica .td-acciones{white-space:normal;overflow:hidden;max-width:100%}
 .medica-turnos-table .table-actions,#turnosTableMedica .table-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;align-content:center;gap:3px 4px;max-width:100%;box-sizing:border-box;margin:0;padding:0}
-.medica-turnos-table .table-actions button,.medica-turnos-table .table-actions .btn-prioridad-up,.medica-turnos-table .table-actions .btn-prioridad-down,#turnosTableMedica .table-actions button{flex:0 0 auto;min-width:0;width:26px;height:26px;padding:0;display:inline-flex;align-items:center;justify-content:center;border-radius:8px;box-sizing:border-box}
-.medica-turnos-table .table-actions button img,#turnosTableMedica .table-actions button img{width:14px;height:14px;object-fit:contain;vertical-align:middle}
+.medica-turnos-table .table-actions button,.medica-turnos-table .table-actions .btn-prioridad-up,.medica-turnos-table .table-actions .btn-prioridad-down,#turnosTableMedica .table-actions button{flex:0 0 auto;min-width:0;width:32px;height:32px;padding:0;display:inline-flex;align-items:center;justify-content:center;border-radius:8px;box-sizing:border-box}
+.medica-turnos-table .table-actions button img,#turnosTableMedica .table-actions button img,.medica-turnos-table .table-actions button svg,#turnosTableMedica .table-actions button svg,.medica-turnos-table .table-actions .innar-icon{width:16px;height:16px;object-fit:contain;display:block;flex-shrink:0}
 
 /* Recibos / reportes — scroll horizontal y columna Acciones fija a la derecha */
 #savedList .table-wrapper{
@@ -407,25 +407,20 @@
   #tablaSavedItems .table-actions button.btn-recibo-tipo-pago,
   #tablaSavedItems .table-actions button.btn-recibo-valor,
   #tablaSavedItems .table-actions button.btn-recibo-obs{
-    width:28px!important;
-    height:28px!important;
-    min-width:28px!important;
-    min-height:28px!important;
+    width:32px!important;
+    height:32px!important;
+    min-width:32px!important;
+    min-height:32px!important;
   }
   #tablaSavedItems .table-actions .btn-recibo-pdf img,
   #tablaSavedItems .table-actions .btn-editar img,
   #tablaSavedItems .table-actions .btn-eliminar img,
   #tablaSavedItems .table-actions .btn-recibo-anular img,
-  #tablaSavedItems .table-actions button.btn-recibo-obs img{
-    width:14px!important;
-    height:14px!important;
-  }
-  #tablaSavedItems .table-actions button.btn-recibo-tipo-pago svg,
-  #tablaSavedItems .table-actions button.btn-recibo-valor svg,
-  #tablaSavedItems .table-actions .btn-recibo-pagar svg,
-  #tablaSavedItems .table-actions .btn-recibo-pendiente svg{
-    width:14px!important;
-    height:14px!important;
+  #tablaSavedItems .table-actions button.btn-recibo-obs img,
+  #tablaSavedItems .table-actions svg,
+  #tablaSavedItems .table-actions .innar-icon{
+    width:16px!important;
+    height:16px!important;
   }
   #savedList .table-wrapper::before{
     content:"← Desliza para ver más →";

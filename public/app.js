@@ -4366,8 +4366,7 @@ const ELECTRO_KANBAN_BODY_IDS = [
 ];
 
 function showElectroKanbanLoading() {
-  const t = 'di' + 'v';
-  const loadingHtml = '<' + t + ' class="electro-kanban-empty">Cargando\u2026</' + t + '>';
+  const loadingHtml = htmlListaVacia('Cargando\u2026');
   ELECTRO_KANBAN_BODY_IDS.forEach((id) => {
     const el = typeof $ === 'function' ? $(id) : document.getElementById(id);
     if (el) el.innerHTML = loadingHtml;
@@ -4408,7 +4407,7 @@ function renderCitasElectroKanban(citas) {
   Object.entries(boards).forEach(([familia, bodies]) => {
     Object.entries(bodies).forEach(([col, body]) => {
       if (!body || counts[familia][col] > 0) return;
-      body.innerHTML = `<div class="electro-kanban-empty">${emptyMsg}</div>`;
+      body.innerHTML = htmlListaVacia(emptyMsg);
     });
   });
   const setCount = (id, n) => { const el = $(id); if (el) el.textContent = String(n); };
@@ -4789,7 +4788,7 @@ function formatDateSpanish(dateStr){
     const dia = d.getDate();
     const mes = meses[d.getMonth()];
     const anio = d.getFullYear();
-    return `${diaSemana} ${dia} DE ${mes.toUpperCase()} DE ${anio}`.toUpperCase();
+    return `${diaSemana.charAt(0).toUpperCase() + diaSemana.slice(1)} ${dia} de ${mes} de ${anio}`;
   }catch(e){ return dateStr; }
 }
 
@@ -6436,7 +6435,8 @@ function _renderTurnosFinalizadosMedica(tbody, turnos, hayEnAtencion, colspan) {
   tbody.innerHTML = '';
   if (!turnos.length) {
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td colspan="${colspan}" style="padding:16px;text-align:center;color:#9ca3af;font-style:italic">Sin citas completadas</td>`;
+    tr.className = 'turno-row medica-empty-row';
+    tr.innerHTML = `<td colspan="${colspan}">${htmlListaVacia('Sin citas completadas')}</td>`;
     tbody.appendChild(tr);
     return;
   }
@@ -6721,19 +6721,40 @@ function esConsultaBotox(tipo) {
   return s.includes('botox') || s.includes('botulínica') || s.includes('botulinica');
 }
 
+function innarIconSvg(name) {
+  const common = 'class="innar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"';
+  const paths = {
+    up: '<path d="m18 15-6-6-6 6"/>',
+    down: '<path d="m6 9 6 6 6-6"/>',
+    edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
+    trash: '<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
+    pdf: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>',
+    cancel: '<circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/>'
+  };
+  return `<svg ${common}>${paths[name] || ''}</svg>`;
+}
+
+function htmlListaVacia(titulo, detalle) {
+  const t = escapeHtml(String(titulo || ''));
+  const d = detalle ? `<p class="innar-empty-detail">${escapeHtml(String(detalle))}</p>` : '';
+  return `<div class="innar-empty innar-empty--compact"><svg class="innar-empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg><p class="innar-empty-title">${t}</p>${d}</div>`;
+}
+
 function estadoBadgeMedica(estado) {
   const map = {
-    'PENDIENTE':    { bg: '#f1f5f9', color: '#334155', border: '#cbd5e1',  label: 'Pendiente' },
-    'EN_ESPERA':    { bg: '#dbeafe', color: '#1d4ed8', border: '#93c5fd',  label: 'En Espera' },
-    'EN_SALA':      { bg: '#fef9c3', color: '#92400e', border: '#fde047',  label: 'En Sala' },
-    'EN_ATENCION':  { bg: '#ffedd5', color: '#c2410c', border: '#fdba74',  label: 'En Atención' },
-    'ATENDIDO':     { bg: '#dcfce7', color: '#15803d', border: '#86efac',  label: 'Atendido' },
-    'CANCELADO':    { bg: '#fee2e2', color: '#991b1b', border: '#fca5a5',  label: 'Cancelado' },
-    'REPROGRAMADO': { bg: '#e0f2fe', color: '#0369a1', border: '#7dd3fc',  label: 'Reprogramado' },
-    'NO_ASISTIO':   { bg: '#f3e8ff', color: '#6b21a8', border: '#d8b4fe',  label: 'No Asistió' },
+    'PENDIENTE':    { label: 'Pendiente' },
+    'EN_ESPERA':    { label: 'En Espera' },
+    'EN_SALA':      { label: 'En Sala' },
+    'EN_ATENCION':  { label: 'En Atención' },
+    'ATENDIDO':     { label: 'Atendido' },
+    'CANCELADO':    { label: 'Cancelado' },
+    'REPROGRAMADO': { label: 'Reprogramado' },
+    'NO_ASISTIO':   { label: 'No Asistió' },
   };
-  const s = map[estado] || { bg: '#f3f4f6', color: '#374151', border: '#d1d5db', label: estado || '-' };
-  return `<span style="display:inline-block;padding:3px 10px;border-radius:12px;font-size:0.78rem;font-weight:600;background:${s.bg};color:${s.color};border:1px solid ${s.border};white-space:nowrap">${escapeHtml(s.label)}</span>`;
+  const key = String(estado || '').toUpperCase();
+  const s = map[key] || { label: estado || '-' };
+  const cls = map[key] ? key : 'OTRO';
+  return `<span class="medica-estado-badge medica-estado-${cls}">${escapeHtml(s.label)}</span>`;
 }
 
 function textoDestinoReprogramacionMedica(turno) {
@@ -6754,7 +6775,7 @@ function estadoCellTurnoMedica(t) {
   if (String(t?.estado || '').toUpperCase() !== 'REPROGRAMADO') return badge;
   const dest = textoDestinoReprogramacionMedica(t);
   if (!dest) return badge;
-  return `<div style="display:flex;flex-direction:column;align-items:flex-start;gap:3px">${badge}<span style="font-size:0.72rem;color:#0369a1;font-weight:600;line-height:1.2">→ ${escapeHtml(dest)}</span></div>`;
+  return `<div class="medica-estado-cell">${badge}<span class="medica-reprog-dest">→ ${escapeHtml(dest)}</span></div>`;
 }
 
 function renderTurnoRowMedica(tbody, t, animateTargetId, hayEnAtencion) {
@@ -6781,9 +6802,9 @@ function renderTurnoRowMedica(tbody, t, animateTargetId, hayEnAtencion) {
   // Guardar estado de deshabilitación en data attributes para que los event listeners puedan acceder
   const dataDeshabilitado = (!pol.row.puedeEditar && !pol.row.puedeEliminar && !pol.row.puedePrioridad) ? 'data-deshabilitado="true"' : 'data-deshabilitado="false"';
   
-  const prioridadBtns = pol.perms.cambiarEstado ? `<button class="btn-prioridad-up" data-up="${t.id}" title="Subir prioridad" ${btnUpDisabled} ${dataDeshabilitado}><img src="images/up.svg" alt="↑"/></button><button class="btn-prioridad-down" data-down="${t.id}" title="Bajar prioridad" ${btnDownDisabled} ${dataDeshabilitado}><img src="images/down.svg" alt="↓"/></button>` : '';
+  const prioridadBtns = pol.perms.cambiarEstado ? `<button class="btn-prioridad-up" data-up="${t.id}" title="Subir prioridad" ${btnUpDisabled} ${dataDeshabilitado}>${innarIconSvg('up')}</button><button class="btn-prioridad-down" data-down="${t.id}" title="Bajar prioridad" ${btnDownDisabled} ${dataDeshabilitado}>${innarIconSvg('down')}</button>` : '';
   const accionesCell = (pol.perms.editar || pol.perms.eliminar)
-    ? `<div class="table-actions">${prioridadBtns}${pol.perms.editar ? `<button class="btn-editar" data-edit="${t.id}" title="Editar" ${btnEditDisabled} ${dataDeshabilitado}><img src="images/edit.svg" alt="Editar"/></button>` : ''}${pol.perms.eliminar ? `<button class="btn-eliminar" data-delete="${t.id}" title="Eliminar" ${btnDeleteDisabled} ${dataDeshabilitado}><img src="images/delete.svg" alt="Eliminar"/></button>` : ''}</div>`
+    ? `<div class="table-actions">${prioridadBtns}${pol.perms.editar ? `<button class="btn-editar" data-edit="${t.id}" title="Editar" ${btnEditDisabled} ${dataDeshabilitado}>${innarIconSvg('edit')}</button>` : ''}${pol.perms.eliminar ? `<button class="btn-eliminar" data-delete="${t.id}" title="Eliminar" ${btnDeleteDisabled} ${dataDeshabilitado}>${innarIconSvg('trash')}</button>` : ''}</div>`
     : '-';
     const esEnSala = t.estado === 'EN_SALA';
     const tieneTurno = t.numero_turno != null;
@@ -12163,7 +12184,7 @@ function exportarReciboPDF() {
 async function cargarLista(queryString) {
   if (!tienePermiso('recibos.ver')) {
     const tbody = document.getElementById('savedItems');
-    if (tbody) tbody.innerHTML = '<tr><td colspan="11"><div class="empty-state"><p class="empty-state-title">Sin acceso</p><p class="empty-state-subtitle">Tu usuario no tiene permiso para ver recibos.</p></div></td></tr>';
+    if (tbody) tbody.innerHTML = `<tr><td colspan="11">${htmlListaVacia('Sin acceso', 'Tu usuario no tiene permiso para ver recibos.')}</td></tr>`;
     return;
   }
   const anchor = document.getElementById('savedItems') || document.getElementById('view-recibos');
@@ -12191,7 +12212,7 @@ async function cargarLista(queryString) {
     const resumenCard = document.getElementById('reciboResumenCard');
 
     if (!recibos || !recibos.length) {
-      tbody.innerHTML = '<tr><td colspan="11"><div class="empty-state"><div class="empty-state-icon">\uD83D\uDCCB</div><p class="empty-state-title">Sin resultados</p><p class="empty-state-subtitle">No hay recibos con los filtros aplicados</p></div></td></tr>';
+      tbody.innerHTML = `<tr><td colspan="11">${htmlListaVacia('Sin resultados', 'No hay recibos con los filtros aplicados')}</td></tr>`;
       if (resumenCard) resumenCard.classList.add('hidden');
       return;
     }
@@ -12229,10 +12250,10 @@ async function cargarLista(queryString) {
       // --- Botones de acción (estilo agenda médica) ---
       let acciones = `<div class="table-actions">`;
       acciones += `<a href="/api/recibos/${r.id}/pdf" target="_blank" class="btn-recibo-pdf" title="Ver PDF">
-        <img src="images/pdf.svg" alt="PDF"/></a>`;
+        ${innarIconSvg('pdf')}</a>`;
       if (tienePermiso('recibos.editar') && !esAnulado) {
         acciones += `<button class="btn-editar" data-id="${r.id}" data-medico="${escapeHtml(r.medico_nombre||'')}" data-servicio="${escapeHtml(r.tipo_servicio||'')}" data-entidad="${escapeHtml(r.nombre_entidad||'')}" data-cliente="${escapeHtml(r.cliente||'')}" data-tipo-pago="${escapeHtml(r.tipo_pago||'')}" title="Editar">
-          <img src="images/edit.svg" alt="Editar"/></button>`;
+          ${innarIconSvg('edit')}</button>`;
         acciones += `<button class="btn-recibo-tipo-pago" data-id="${r.id}" data-numero="${escapeHtml(r.numero || '')}" data-tipo-pago="${escapeHtml(r.tipo_pago||'')}" title="Cambiar forma de pago" aria-label="Cambiar forma de pago">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <rect x="2" y="5" width="20" height="14" rx="2"/>
@@ -12260,11 +12281,11 @@ async function cargarLista(queryString) {
       }
       if (tienePermiso('recibos.anular') && !esAnulado) {
         acciones += `<button class="btn-recibo-anular anular-recibo" data-id="${r.id}" title="Anular">
-          <img src="images/cancel.svg" alt="Anular"/></button>`;
+          ${innarIconSvg('cancel')}</button>`;
       }
       if (canDeleteRecibos() && !esAnulado) {
         acciones += `<button class="btn-eliminar delete" data-id="${r.id}" title="Eliminar">
-          <img src="images/delete.svg" alt="Eliminar"/></button>`;
+          ${innarIconSvg('trash')}</button>`;
       }
       if (isSuperadmin() && !esAnulado) {
         acciones += `<button class="btn-recibo-fecha" data-id="${r.id}" data-numero="${escapeHtml(r.numero || '')}" data-fecha="${escapeHtml(fecha !== '-' ? fecha : '')}" title="Cambiar fecha del recibo" aria-label="Cambiar fecha">
@@ -12283,7 +12304,7 @@ async function cargarLista(queryString) {
           </svg>
         </button>`;
         acciones += `<button class="btn-recibo-obs" data-id="${r.id}" data-numero="${escapeHtml(r.numero || '')}" title="Editar observaciones">
-          <img src="images/edit.svg" alt="Observaciones"/></button>`;
+          ${innarIconSvg('edit')}</button>`;
       }
       acciones += `</div>`;
 
@@ -17023,7 +17044,7 @@ function renderEsperaTable() {
       <td>
         <div class="table-actions">
           <button class="btn-eliminar" title="Eliminar" onclick="eliminarPacienteEspera(${p.id})">
-            <img src="images/delete.svg" alt="Eliminar" />
+            ${innarIconSvg('trash')}
           </button>
         </div>
       </td>

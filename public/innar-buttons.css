@@ -461,11 +461,10 @@ button.btn-recibo-obs {
   background: #ecfdf5 !important;
 }
 
-button.btn-recibo-obs img {
-  width: 15px !important;
-  height: 15px !important;
+button.btn-recibo-obs svg {
+  width: 16px !important;
+  height: 16px !important;
   display: block !important;
-  filter: invert(40%) sepia(80%) saturate(400%) hue-rotate(120deg) brightness(90%);
 }
 
 button.btn-recibo-obs:hover:not(:disabled) {
@@ -506,14 +505,16 @@ html:not(.innar-shell-light) .electro-page-btn.active {
 /* Calendario nav */
 .ccal-nav-btn,
 .cal-nav-btn,
-.ecal-nav-btn {
+.ecal-nav-btn,
+.electro-date-nav-btn {
   border-radius: var(--btn-radius-sm) !important;
   transition: background 0.15s, box-shadow 0.15s !important;
 }
 
 .ccal-nav-btn:hover,
 .cal-nav-btn:hover,
-.ecal-nav-btn:hover {
+.ecal-nav-btn:hover,
+.electro-date-nav-btn:hover {
   box-shadow: var(--btn-shadow) !important;
 }
 
@@ -569,6 +570,11 @@ html:not(.innar-shell-light) .electro-page-btn.active {
 .ecal-nav-btn:hover {
   background: #f8fafc !important;
   color: #334155 !important;
+}
+
+.electro-date-nav-btn {
+  padding: 0 !important;
+  box-shadow: none !important;
 }
 
 /* Monitor equipos */
@@ -689,7 +695,7 @@ html:not(.innar-shell-light) .electro-page-btn.active {
 }
 
 /* Tag `button` genérico — blanco moderno (ya no verde sage de marca) */
-button:not(.menu-card):not(.btn-close-x):not(.btn-close-modal):not(.btn-editar):not(.btn-eliminar):not(.btn-prioridad-up):not(.btn-prioridad-down):not(.btn-recibo-anular):not(.btn-recibo-pdf):not(.btn-recibo-pagar):not(.btn-recibo-pendiente):not(.btn-recibo-tipo-pago):not(.btn-recibo-valor):not(.btn-recibo-obs):not(.btn-usr-del):not(.btn-usr-edit):not(.btn-usr-hist):not(.btn-usr-reset):not(.btn-usr-speak):not(.btn-usr-toggle):not(.btn-estado):not(.btn-estado-small):not(.sidebar-btn):not(.agenda-page-btn):not(.electro-page-btn):not(.card-collapse-btn):not(.toggle-password-btn):not(.meq-back-btn):not(.meq-date-nav):not(.meq-refresh-btn):not(.meq-date-hoy):not(.ltv-toolbar-btn):not(.ltv-drawer-close):not(.ltv-drawer-action):not(.ccal-nav-btn):not(.ccal-cell):not(.cal-day):not(.cal-nav-btn):not(.ecal-nav-btn):not(.ecal-cell):not(.recibo-export-btn):not(.flujo-btn-sm):not(.electro-study-btn):not(.btn-dropdown-item):not(.btn-estado-opcion):not(.cita-modal-icon-btn):not(.cita-modal-footer-btn):not(.medico-select-btn):not([class*="cita-modal-btn-"]):not(.ms-trigger):not(.sop-pdf-editor-color):not(.innar-scroll-nav-btn):not(.sop-zip-jobs-min):not([class*="btn-"]):not([id^="monitorDate"]):not(#btnRefreshMonitor):not(.cal-choice-btn):not(.cal-attend-chip):not(.cal-add-row-btn):not(.cal-back-btn):not(.cal-modal-close):not(.cal-cupo-remove):not(.cal-motivo-chip):not(.chat-msgr-toggle):not(.chat-msgr-dock-close):not(.chat-msgr-contact):not(.chat-msgr-send):not([class*="chat-msgr-"]):not(.sop-btn) {
+button:not(.menu-card):not(.btn-close-x):not(.btn-close-modal):not(.btn-editar):not(.btn-eliminar):not(.btn-prioridad-up):not(.btn-prioridad-down):not(.btn-recibo-anular):not(.btn-recibo-pdf):not(.btn-recibo-pagar):not(.btn-recibo-pendiente):not(.btn-recibo-tipo-pago):not(.btn-recibo-valor):not(.btn-recibo-obs):not(.btn-usr-del):not(.btn-usr-edit):not(.btn-usr-hist):not(.btn-usr-reset):not(.btn-usr-speak):not(.btn-usr-toggle):not(.btn-estado):not(.btn-estado-small):not(.sidebar-btn):not(.agenda-page-btn):not(.electro-page-btn):not(.card-collapse-btn):not(.toggle-password-btn):not(.meq-back-btn):not(.meq-date-nav):not(.meq-refresh-btn):not(.meq-date-hoy):not(.ltv-toolbar-btn):not(.ltv-drawer-close):not(.ltv-drawer-action):not(.ccal-nav-btn):not(.ccal-cell):not(.cal-day):not(.cal-nav-btn):not(.ecal-nav-btn):not(.electro-date-nav-btn):not(.ecal-cell):not(.recibo-export-btn):not(.flujo-btn-sm):not(.electro-study-btn):not(.btn-dropdown-item):not(.btn-estado-opcion):not(.cita-modal-icon-btn):not(.cita-modal-footer-btn):not(.medico-select-btn):not([class*="cita-modal-btn-"]):not(.ms-trigger):not(.sop-pdf-editor-color):not(.innar-scroll-nav-btn):not(.sop-zip-jobs-min):not([class*="btn-"]):not([id^="monitorDate"]):not(#btnRefreshMonitor):not(.cal-choice-btn):not(.cal-attend-chip):not(.cal-add-row-btn):not(.cal-back-btn):not(.cal-modal-close):not(.cal-cupo-remove):not(.cal-motivo-chip):not(.chat-msgr-toggle):not(.chat-msgr-dock-close):not(.chat-msgr-contact):not(.chat-msgr-send):not([class*="chat-msgr-"]):not(.sop-btn) {
   background: #fff !important;
   color: #334155 !important;
   border: 1.5px solid #e2e8f0 !important;
@@ -699,7 +705,7 @@ button:not(.menu-card):not(.btn-close-x):not(.btn-close-modal):not(.btn-editar):
   box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08) !important;
 }
 
-button:not(.menu-card):not(.btn-close-x):not(.meq-date-nav):not(.meq-refresh-btn):not(.meq-date-hoy):not(.ltv-toolbar-btn):not(.ltv-drawer-close):not(.ltv-drawer-action):not(.ccal-cell):not(.cal-day):not(.ecal-nav-btn):not(.ecal-cell):not(.cita-modal-icon-btn):not(.cita-modal-footer-btn):not(.medico-select-btn):not([class*="cita-modal-btn-"]):not(.ms-trigger):not(.sop-pdf-editor-color):not(.innar-scroll-nav-btn):not(.sop-zip-jobs-min):not([class*="btn-"]):not([id^="monitorDate"]):not(#btnRefreshMonitor):not(.cal-choice-btn):not(.cal-attend-chip):not(.cal-add-row-btn):not(.cal-back-btn):not(.cal-modal-close):not(.cal-cupo-remove):not(.cal-motivo-chip):not(.chat-msgr-toggle):not(.chat-msgr-dock-close):not(.chat-msgr-contact):not(.chat-msgr-send):not([class*="chat-msgr-"]):not(.sop-btn):hover {
+button:not(.menu-card):not(.btn-close-x):not(.meq-date-nav):not(.meq-refresh-btn):not(.meq-date-hoy):not(.ltv-toolbar-btn):not(.ltv-drawer-close):not(.ltv-drawer-action):not(.ccal-cell):not(.cal-day):not(.ecal-nav-btn):not(.electro-date-nav-btn):not(.ecal-cell):not(.cita-modal-icon-btn):not(.cita-modal-footer-btn):not(.medico-select-btn):not([class*="cita-modal-btn-"]):not(.ms-trigger):not(.sop-pdf-editor-color):not(.innar-scroll-nav-btn):not(.sop-zip-jobs-min):not([class*="btn-"]):not([id^="monitorDate"]):not(#btnRefreshMonitor):not(.cal-choice-btn):not(.cal-attend-chip):not(.cal-add-row-btn):not(.cal-back-btn):not(.cal-modal-close):not(.cal-cupo-remove):not(.cal-motivo-chip):not(.chat-msgr-toggle):not(.chat-msgr-dock-close):not(.chat-msgr-contact):not(.chat-msgr-send):not([class*="chat-msgr-"]):not(.sop-btn):hover {
   background: #f8fafc !important;
   border-color: #cbd5e1 !important;
   color: #0f172a !important;
@@ -785,6 +791,8 @@ button.cita-modal-icon-btn svg {
   display: block !important;
   flex-shrink: 0 !important;
   pointer-events: none;
+  width: 16px !important;
+  height: 16px !important;
 }
 
 button.cita-modal-icon-btn svg,

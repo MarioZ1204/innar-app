@@ -85,6 +85,107 @@ select {
   border-radius: var(--innar-radius) !important;
 }
 
+.cita-modal-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  background: #fff;
+  border: 1px solid var(--innar-border);
+  border-radius: 10px;
+  box-shadow: var(--innar-shadow-md);
+  min-width: 200px;
+  z-index: 10001;
+  overflow: hidden;
+}
+
+.cita-modal-reprog-banner {
+  padding: 10px 22px;
+  background: #e0f2fe;
+  border-bottom: 1px solid #7dd3fc;
+  color: #0369a1;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.cita-modal-edit-panel {
+  padding: 14px 22px;
+  background: var(--innar-surface-muted);
+  border-bottom: 1px solid var(--innar-border);
+}
+
+.cita-modal-edit-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.cita-modal-edit-panel label,
+.cita-modal-inline-edit label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--innar-text-muted);
+  display: block;
+  margin-bottom: 4px;
+}
+
+.cita-modal-edit-notes {
+  margin-bottom: 10px;
+}
+
+.cita-modal-edit-notes textarea {
+  width: 100%;
+  resize: vertical;
+}
+
+.cita-modal-edit-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.cita-modal-info-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cita-modal-info-row .cita-modal-info-value {
+  flex: 1;
+  min-width: 0;
+}
+
+.cita-modal-edit-inline-btn {
+  flex-shrink: 0;
+}
+
+.cita-modal-inline-edit {
+  margin-top: 6px;
+}
+
+.cita-modal-inline-edit select {
+  margin-bottom: 6px;
+}
+
+.cita-modal-audit-notas {
+  font-style: italic;
+  color: #6b7280;
+  max-width: 55%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .cita-modal-edit-grid-2 {
+    grid-template-columns: 1fr;
+  }
+
+  .cita-modal-audit-notas {
+    max-width: 100%;
+  }
+}
+
 .recibo-filtros-grid .ms-wrap {
   width: 100%;
 }
@@ -768,4 +869,102 @@ table tbody tr:hover td {
   .innar-print-preview {
     padding: 12px 10px 20px;
   }
+}
+
+/* ── Iconos de acción unificados (glifo 16px en recuadro 32px) ─────────────── */
+.innar-icon {
+  width: 16px;
+  height: 16px;
+  display: block;
+  flex-shrink: 0;
+  pointer-events: none;
+}
+
+.btn-editar,
+.btn-recibo-pdf,
+.btn-recibo-obs {
+  color: #059669;
+}
+
+.btn-eliminar {
+  color: #dc2626;
+}
+
+.btn-prioridad-up {
+  color: #2563eb;
+}
+
+.btn-prioridad-down,
+.btn-recibo-anular {
+  color: #d97706;
+}
+
+.table-actions button svg,
+.table-actions a svg,
+.table-actions .innar-icon,
+.btn-editar svg,
+.btn-eliminar svg,
+.btn-prioridad-up svg,
+.btn-prioridad-down svg,
+.btn-recibo-pdf svg,
+.btn-recibo-anular svg,
+.btn-recibo-obs svg {
+  width: 16px !important;
+  height: 16px !important;
+  display: block !important;
+  flex-shrink: 0 !important;
+}
+
+.cita-modal-footer-actions .cita-modal-footer-btn svg,
+.cita-modal-icon-btn svg,
+.btn-dropdown-item svg,
+#btnToggleSlotVacio svg,
+.cita-modal-action-btn svg {
+  width: 16px !important;
+  height: 16px !important;
+  flex-shrink: 0;
+}
+
+/* ── Estados vacíos ───────────────────────────────────────────────────────── */
+.innar-empty,
+.medica-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 36px 16px;
+  color: var(--innar-text-muted, #64748b);
+}
+
+.innar-empty--compact,
+.medica-empty--compact {
+  padding: 22px 12px;
+}
+
+.innar-empty--quiet {
+  padding: 16px 8px;
+}
+
+.innar-empty-icon,
+.medica-empty-icon {
+  width: 40px;
+  height: 40px;
+  margin-bottom: 10px;
+  color: #94a3b8;
+}
+
+.innar-empty-title,
+.medica-empty-title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 650;
+  color: #475569;
+}
+
+.innar-empty-detail,
+.medica-empty-detail {
+  margin: 4px 0 0;
+  font-size: 0.82rem;
+  color: #94a3b8;
 }

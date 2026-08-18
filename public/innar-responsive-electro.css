@@ -53,36 +53,74 @@
 
 /* ── Selector de fecha ──────────────────────────────────────────────────────── */
 #view-electro .electro-date-toolbar {
-  padding: 14px 16px;
+  padding: 16px 18px 14px;
+  border-radius: var(--innar-radius-lg, 16px);
+  border: 1px solid var(--innar-border, #e2e8e7);
+  box-shadow: var(--innar-shadow-sm, 0 1px 3px rgba(15, 23, 42, 0.06));
 }
 
 #view-electro .electro-date-toolbar-inner {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: 16px;
   flex-wrap: wrap;
+}
+
+#view-electro .electro-date-field {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+
+#view-electro .electro-date-field label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--innar-text-muted, #64748b);
 }
 
 #view-electro .electro-date-nav {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
 }
 
-#view-electro .electro-date-nav .btn-secondary {
-  min-width: var(--innar-touch-min, 44px);
-  min-height: var(--innar-touch-min, 44px);
-  padding: 0 12px;
+#view-electro .electro-date-nav-btn {
+  width: var(--innar-control-h, 44px);
+  height: var(--innar-control-h, 44px);
+  min-width: var(--innar-control-h, 44px);
+  padding: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  border-radius: 12px;
+  border: 1px solid var(--innar-border, #e2e8e7);
+  background: #fff;
+  color: #475569;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+#view-electro .electro-date-nav-btn:hover {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  color: var(--c-dark, #2d4a47);
+}
+
+#view-electro .electro-date-nav-btn svg {
+  width: 18px;
+  height: 18px;
+  display: block;
 }
 
 #view-electro .electro-fecha-input {
   min-width: 0;
-  flex: 1 1 140px;
+  flex: 1 1 160px;
   max-width: 100%;
+  min-height: var(--innar-control-h, 44px);
+  box-sizing: border-box;
 }
 
 /* ── Stats del día ──────────────────────────────────────────────────────────── */
@@ -99,6 +137,42 @@
   gap: 12px;
   padding: 14px 16px;
   min-width: 0;
+}
+
+#view-electro .electro-stat-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+#view-electro .electro-stat-icon svg {
+  width: 20px;
+  height: 20px;
+  display: block;
+}
+
+#view-electro .electro-stat-icon--total {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+#view-electro .electro-stat-icon--estudio {
+  background: #ffedd5;
+  color: #c2410c;
+}
+
+#view-electro .electro-stat-icon--done {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+#view-electro .electro-stat-icon--wait {
+  background: #fef9c3;
+  color: #92400e;
 }
 
 #view-electro .electro-stat-value {
@@ -167,6 +241,42 @@
   -webkit-overflow-scrolling: touch;
 }
 
+#view-electro .electro-kanban-body .innar-empty,
+#view-electro .electro-kanban-empty {
+  min-height: 140px;
+}
+
+#view-electro .electro-citas-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+#view-electro .electro-citas-header h3 {
+  margin: 0;
+}
+
+#view-electro .electro-citas-header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+#view-electro .electro-citas-header .citas-table-icon {
+  display: inline-flex;
+  color: var(--c-dark, #2d4a47);
+}
+
+#view-electro #citasElectroContador {
+  font-size: 0.875rem;
+  color: #6b7280;
+  font-weight: 500;
+  min-height: 22px;
+}
+
 #view-electro .electro-cita-card {
   min-width: 0;
   word-break: break-word;
@@ -209,6 +319,21 @@
 
 #view-electro .electro-meta-footer > div:last-child {
   text-align: left;
+}
+
+#view-electro .electro-meta-label {
+  font-size: 0.78rem;
+  color: #64748b;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+#view-electro .electro-meta-value {
+  font-size: 0.95rem;
+  color: #1f2937;
+  font-weight: 500;
 }
 
 @media (min-width: 640px) {
