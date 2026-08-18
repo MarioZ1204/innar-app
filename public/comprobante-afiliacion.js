@@ -1,6 +1,6 @@
 /**
  * Afiliación en Comprobante de Servicios:
- * - Select + texto libre
+ * - Select fijo (mismas 4 opciones si el paciente existe o no)
  * - Mapeo visual desde Anexo (Especiales… → COTIZANTE/BENEFICIARIO)
  * - Al guardar en Anexo no se pisan valores protegidos ni texto libre
  */
@@ -57,8 +57,16 @@
     if (n.includes('pensionado') && n.includes('cotizante')) return 'COTIZANTE PENSIONADO';
     if (n.includes('beneficiario')) return 'BENEFICIARIO';
     if (n.includes('cotizante')) return 'COTIZANTE';
-    // Texto libre del Anexo: se muestra tal cual en el campo (editable)
     return String(rawAnexo || '').trim() || 'COTIZANTE';
+  }
+
+  function valorParaSelect(valorUi, afiliacionAnexoOriginal) {
+    const ui = valorUi != null ? String(valorUi).trim() : '';
+    const anexo = String(afiliacionAnexoOriginal || '').trim();
+    if (ui && canonica(ui)) return canonica(ui);
+    if (anexo) return mapearAfiliacionParaComprobante(anexo);
+    if (ui) return mapearAfiliacionParaComprobante(ui);
+    return 'COTIZANTE';
   }
 
   /**
@@ -69,7 +77,7 @@
     const original = String(afiliacionAnexoOriginal || '').trim();
     if (esAfiliacionProtegidaAnexo(original)) return '';
     const can = canonica(valorUi);
-    if (!can) return ''; // texto libre del PDF: no dañar Anexo
+    if (!can) return '';
     return can;
   }
 
@@ -81,22 +89,44 @@
       .replace(/"/g, '&quot;');
   }
 
+  function asegurarSelect(el) {
+    if (!el) return null;
+    if (el.tagName === 'SELECT') return el;
+    const sel = document.createElement('select');
+    sel.id = el.id;
+    if (el.className) sel.className = el.className;
+    const style = el.getAttribute('style');
+    if (style) sel.setAttribute('style', style);
+    if (el.name) sel.name = el.name;
+    if (el.disabled || el.readOnly) sel.disabled = true;
+    if (el.dataset.afiliacionAnexo) sel.dataset.afiliacionAnexo = el.dataset.afiliacionAnexo;
+    sel.required = true;
+    el.replaceWith(sel);
+    return sel;
+  }
+
+  function poblarOpciones(select, current) {
+    const chosen = canonica(current) || String(current || '').trim() || 'COTIZANTE';
+    const opts = OPCIONES.slice();
+    if (chosen && !opts.includes(chosen)) opts.push(chosen);
+    const anexo = select.dataset.afiliacionAnexo || '';
+    select.innerHTML = opts.map((opt) => {
+      const sel = opt === chosen ? ' selected' : '';
+      return `<option value="${escHtml(opt)}"${sel}>${escHtml(opt)}</option>`;
+    }).join('');
+    if (anexo) select.dataset.afiliacionAnexo = anexo;
+    select.value = chosen;
+  }
+
   function setValor(inputId, valorUi, afiliacionAnexoOriginal) {
-    const input = document.getElementById(inputId);
-    if (!input) return;
+    let el = document.getElementById(inputId);
+    if (!el) return;
+    el = asegurarSelect(el);
     const anexo = String(afiliacionAnexoOriginal || '').trim();
-    const ui = valorUi != null ? String(valorUi).trim() : '';
-    if (ui && canonica(ui)) {
-      input.value = canonica(ui);
-    } else if (anexo) {
-      input.value = mapearAfiliacionParaComprobante(anexo);
-    } else if (ui) {
-      input.value = mapearAfiliacionParaComprobante(ui);
-    } else {
-      input.value = 'COTIZANTE';
-    }
-    input.dataset.afiliacionAnexo = anexo;
-    input.dispatchEvent(new Event('input', { bubbles: true }));
+    const val = valorParaSelect(valorUi, anexo);
+    poblarOpciones(el, val);
+    el.dataset.afiliacionAnexo = anexo;
+    el.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
   function leerValor(inputId) {
@@ -110,54 +140,14 @@
   }
 
   function init(inputId) {
-    const input = document.getElementById(inputId);
-    if (!input || input.dataset.innarAfilCombo === '1') return;
-    input.dataset.innarAfilCombo = '1';
-    input.setAttribute('autocomplete', 'off');
-    input.setAttribute('list', `${inputId}__list`);
-    input.setAttribute('placeholder', 'Elija o escriba…');
-    if (!input.value) input.value = 'COTIZANTE';
-
-    let list = document.getElementById(`${inputId}__list`);
-    if (!list) {
-      list = document.createElement('datalist');
-      list.id = `${inputId}__list`;
-      OPCIONES.forEach((opt) => {
-        const o = document.createElement('option');
-        o.value = opt;
-        list.appendChild(o);
-      });
-      input.insertAdjacentElement('afterend', list);
-    }
-
-    const wrap = document.createElement('div');
-    wrap.className = 'innar-afil-combo';
-    input.parentNode.insertBefore(wrap, input);
-    wrap.appendChild(input);
-
-    const chips = document.createElement('div');
-    chips.className = 'innar-afil-chips';
-    chips.innerHTML = OPCIONES.map((opt) => (
-      `<button type="button" class="innar-afil-chip" data-val="${escHtml(opt)}">${escHtml(opt)}</button>`
-    )).join('');
-    wrap.appendChild(chips);
-
-    const syncChips = () => {
-      const cur = canonica(input.value) || '';
-      chips.querySelectorAll('.innar-afil-chip').forEach((btn) => {
-        btn.classList.toggle('is-on', btn.dataset.val === cur);
-      });
-    };
-    input.addEventListener('input', syncChips);
-    input.addEventListener('change', syncChips);
-    chips.addEventListener('click', (e) => {
-      const btn = e.target.closest('.innar-afil-chip');
-      if (!btn) return;
-      input.value = btn.dataset.val || '';
-      syncChips();
-      input.dispatchEvent(new Event('change', { bubbles: true }));
-    });
-    syncChips();
+    let el = document.getElementById(inputId);
+    if (!el) return;
+    el = asegurarSelect(el);
+    if (!el) return;
+    if (el.dataset.innarAfilSelect === '1') return;
+    el.dataset.innarAfilSelect = '1';
+    el.classList.add('innar-afil-select');
+    poblarOpciones(el, el.value || 'COTIZANTE');
   }
 
   root.innarAfiliacionComprobante = {

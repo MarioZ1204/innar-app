@@ -6,6 +6,10 @@
 
   const instancias = new Map();
 
+  function aMayusculas(val) {
+    return String(val || '').toLocaleUpperCase('es-CO');
+  }
+
   function normBusqueda(val) {
     return String(val || '')
       .toLowerCase()
@@ -67,7 +71,7 @@
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || 'No se pudo cargar sugerencias');
         const items = (data.servicios || []).map((s) => {
-          const nombre = String(s.nombre || '').trim();
+          const nombre = aMayusculas(String(s.nombre || '').trim());
           return {
             codigo: String(s.codigo || '').trim(),
             nombre,
@@ -88,8 +92,22 @@
     return catalogo.filter((s) => s.buscar.includes(q)).slice(0, 40);
   }
 
+  function forzarMayusculasInput(input) {
+    if (!input) return;
+    const next = aMayusculas(input.value);
+    if (next === input.value) return;
+    const start = input.selectionStart;
+    const end = input.selectionEnd;
+    input.value = next;
+    try {
+      if (typeof start === 'number' && typeof end === 'number') {
+        input.setSelectionRange(start, end);
+      }
+    } catch (_) { /* ignore */ }
+  }
+
   function insertarSugerencia(input, nombre) {
-    const texto = String(nombre || '').trim();
+    const texto = aMayusculas(String(nombre || '').trim());
     if (!texto) return;
     input.value = texto;
     input.focus();
@@ -152,9 +170,11 @@
     input.setAttribute('role', 'combobox');
     input.setAttribute('aria-autocomplete', 'list');
     input.setAttribute('aria-expanded', 'false');
+    input.style.textTransform = 'uppercase';
     if (!input.getAttribute('placeholder')) {
       input.setAttribute('placeholder', 'Buscar servicio…');
     }
+    forzarMayusculasInput(input);
 
     function origenActual() {
       if (state.getOrigen) return state.getOrigen() || state.origen;
@@ -207,8 +227,12 @@
     }
 
     input.addEventListener('focus', () => { void mostrarSugerencias(); });
-    input.addEventListener('input', () => { void mostrarSugerencias(); });
+    input.addEventListener('input', () => {
+      forzarMayusculasInput(input);
+      void mostrarSugerencias();
+    });
     input.addEventListener('blur', () => {
+      forzarMayusculasInput(input);
       setTimeout(() => setExpanded(false), 160);
     });
     input.addEventListener('keydown', (e) => {
@@ -257,9 +281,15 @@
     }
   }
 
+  function setValor(inputId, val) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+    input.value = aMayusculas(val).trim();
+  }
+
   function leerValor(inputId) {
     const input = document.getElementById(inputId);
-    return String(input?.value || '').trim();
+    return aMayusculas(input?.value || '').trim();
   }
 
   function invalidarCache() {
@@ -271,6 +301,7 @@
   root.innarServicioCombo = {
     init,
     setOrigen,
+    setValor,
     leerValor,
     invalidarCache,
     cargarSugerencias

@@ -163,7 +163,8 @@
     const extra = (!known && val)
       ? `<option value="${escapeHtml(val)}" selected>${escapeHtml(val)}</option>`
       : '';
-    return `<select id="${id}" data-key="${key}"${ro}>${extra}${opts}</select>`;
+    const cls = key === 'afiliacion' ? ' class="innar-afil-select"' : '';
+    return `<select id="${id}" data-key="${key}"${cls}${ro}>${extra}${opts}</select>`;
   }
 
   function htmlCampo(f, val, readonly, contexto) {
@@ -178,10 +179,7 @@
     if (f.key === 'afiliacion') {
       if (normalizarContexto(contexto) === 'comprobante') {
         const mapped = mapearAfiliacionComprobante(val);
-        const opts = opcionesAfiliacionComprobante();
-        const listId = `${id}__list`;
-        const datalist = `<datalist id="${listId}">${opts.map((o) => `<option value="${escapeHtml(o.value)}"></option>`).join('')}</datalist>`;
-        return `<input type="text" id="${id}" data-key="${f.key}" list="${listId}" value="${escapeHtml(mapped)}" maxlength="80" autocomplete="off" placeholder="Elija o escriba…"${ro} />${datalist}`;
+        return htmlSelect(id, f.key, mapped, opcionesAfiliacionComprobante(), readonly);
       }
       return htmlSelect(id, f.key, val, OPCIONES_AFILIACION_ANEXO, readonly);
     }

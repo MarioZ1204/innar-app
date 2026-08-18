@@ -15196,7 +15196,12 @@ function abrirModalCertificadoAsistencia(prefill) {
   if (resumen) resumen.textContent = prefill.paciente_nombre;
   set('certAsistTipoDoc', prefill.tipo_documento || 'CC');
   set('certAsistDocumento', prefill.paciente_documento);
-  set('certAsistMotivo', prefill.motivo);
+  window.innarServicioCombo?.setOrigen?.('certAsistMotivo', prefill.origen);
+  if (window.innarServicioCombo?.setValor) {
+    window.innarServicioCombo.setValor('certAsistMotivo', prefill.motivo);
+  } else {
+    set('certAsistMotivo', String(prefill.motivo || '').toLocaleUpperCase('es-CO'));
+  }
   set('certAsistFechaIngreso', prefill.fecha_ingreso);
   set('certAsistHoraIngreso', prefill.hora_ingreso);
   set('certAsistFechaEgreso', prefill.fecha_egreso);
@@ -15235,7 +15240,8 @@ async function generarCertificadoAsistenciaPdf() {
     paciente_nombre: _certAsistPacienteNombre,
     paciente_documento: $('certAsistDocumento')?.value?.trim(),
     tipo_documento: $('certAsistTipoDoc')?.value || 'CC',
-    motivo: $('certAsistMotivo')?.value?.trim(),
+    motivo: window.innarServicioCombo?.leerValor?.('certAsistMotivo')
+      || String($('certAsistMotivo')?.value || '').trim().toLocaleUpperCase('es-CO'),
     fecha_ingreso: window.innarPersonaFidu?.normalizarFecha?.($('certAsistFechaIngreso')?.value) || $('certAsistFechaIngreso')?.value,
     hora_ingreso: $('certAsistHoraIngreso')?.value,
     fecha_egreso: window.innarPersonaFidu?.normalizarFecha?.($('certAsistFechaEgreso')?.value) || $('certAsistFechaEgreso')?.value,
@@ -15502,6 +15508,9 @@ function actualizarBotonesDocumentosCitaElectro() {
 }
 
 function initCertificadoAsistenciaUi() {
+  window.innarServicioCombo?.init?.('certAsistMotivo', {
+    getOrigen: () => $('certAsistOrigen')?.value?.trim() || null
+  });
   $('btnCerrarCertificadoAsistencia')?.addEventListener('click', cerrarModalCertificadoAsistencia);
   $('btnCancelarCertificadoAsistencia')?.addEventListener('click', cerrarModalCertificadoAsistencia);
   $('btnGenerarCertificadoAsistencia')?.addEventListener('click', generarCertificadoAsistenciaPdf);
@@ -15586,7 +15595,11 @@ function abrirModalComprobanteServicios(prefill) {
   } else {
     set('compServTipoAfiliacion', prefill.tipo_afiliacion || 'COTIZANTE');
   }
-  set('compServServicio', prefill.servicio);
+  if (window.innarServicioCombo?.setValor) {
+    window.innarServicioCombo.setValor('compServServicio', prefill.servicio);
+  } else {
+    set('compServServicio', String(prefill.servicio || '').toLocaleUpperCase('es-CO'));
+  }
   set('compServAcudienteNombre', '');
   set('compServParentesco', '');
   const chkPdx = $('compServEnviarPdx');
@@ -15644,7 +15657,7 @@ async function generarComprobanteServiciosPdf() {
       || $('compServTipoAfiliacion')?.value?.trim(),
     afiliacion_anexo: window.innarAfiliacionComprobante?.leerAnexoOriginal?.('compServTipoAfiliacion') || '',
     servicio: window.innarServicioCombo?.leerValor?.('compServServicio')
-      || $('compServServicio')?.value?.trim(),
+      || String($('compServServicio')?.value || '').trim().toLocaleUpperCase('es-CO'),
     ...(await (_compServFirmaUi?.buildPayloadExtras?.() || {}))
   };
   if (!payload.fecha || !payload.paciente_documento || !payload.fecha_nacimiento

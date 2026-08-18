@@ -282,7 +282,11 @@
     $('docmodModalCertNombre').value = datos.paciente_nombre || extras?.paciente_nombre || '';
     setTipoIdRadio('docmodModalCertTipoId', datos.tipo_documento || extras?.tipo_documento);
     $('docmodModalCertDocumento').value = datos.paciente_documento || state.documento;
-    $('docmodModalCertMotivo').value = extras?.motivo || defs.motivo;
+    if (window.innarServicioCombo?.setValor) {
+      window.innarServicioCombo.setValor('docmodModalCertMotivo', extras?.motivo || defs.motivo);
+    } else {
+      $('docmodModalCertMotivo').value = String(extras?.motivo || defs.motivo || '').toLocaleUpperCase('es-CO');
+    }
     $('docmodModalCertFechaIngreso').value = extras?.fecha_ingreso || defs.fecha_ingreso;
     $('docmodModalCertHoraIngreso').value = extras?.hora_ingreso || defs.hora_ingreso;
     $('docmodModalCertFechaEgreso').value = extras?.fecha_egreso || defs.fecha_egreso;
@@ -316,7 +320,11 @@
     } else {
       $('docmodModalCompAfiliacion').value = datos.tipo_afiliacion || extras?.tipo_afiliacion || 'COTIZANTE';
     }
-    $('docmodModalCompServicio').value = extras?.servicio || '';
+    if (window.innarServicioCombo?.setValor) {
+      window.innarServicioCombo.setValor('docmodModalCompServicio', extras?.servicio || '');
+    } else {
+      $('docmodModalCompServicio').value = String(extras?.servicio || '').toLocaleUpperCase('es-CO');
+    }
     _docmodFirmaUi?.reset?.();
     _docmodFirmaUi?.setFirmaPaciente?.(String(datos.firma_paciente || extras?.firma_paciente || '').trim());
     const chkPdx = $('docmodModalCompEnviarPdx');
@@ -378,7 +386,8 @@
   function validarModalCertificado() {
     const nombre = $('docmodModalCertNombre')?.value?.trim();
     const doc = $('docmodModalCertDocumento')?.value?.trim();
-    const motivo = $('docmodModalCertMotivo')?.value?.trim();
+    const motivo = window.innarServicioCombo?.leerValor?.('docmodModalCertMotivo')
+      || String($('docmodModalCertMotivo')?.value || '').trim().toLocaleUpperCase('es-CO');
     const fi = $('docmodModalCertFechaIngreso')?.value;
     const hi = $('docmodModalCertHoraIngreso')?.value;
     const fe = $('docmodModalCertFechaEgreso')?.value;
@@ -427,7 +436,8 @@
       paciente_nombre: $('docmodModalCertNombre')?.value?.trim(),
       paciente_documento: $('docmodModalCertDocumento')?.value?.trim(),
       tipo_documento: leerTipoIdRadio('docmodModalCertTipoId'),
-      motivo: $('docmodModalCertMotivo')?.value?.trim(),
+      motivo: window.innarServicioCombo?.leerValor?.('docmodModalCertMotivo')
+        || String($('docmodModalCertMotivo')?.value || '').trim().toLocaleUpperCase('es-CO'),
       fecha_ingreso: normFecha($('docmodModalCertFechaIngreso')?.value),
       hora_ingreso: $('docmodModalCertHoraIngreso')?.value,
       fecha_egreso: normFecha($('docmodModalCertFechaEgreso')?.value),
@@ -463,7 +473,7 @@
         || $('docmodModalCompAfiliacion')?.value?.trim(),
       afiliacion_anexo: window.innarAfiliacionComprobante?.leerAnexoOriginal?.('docmodModalCompAfiliacion') || '',
       servicio: window.innarServicioCombo?.leerValor?.('docmodModalCompServicio')
-        || $('docmodModalCompServicio')?.value?.trim(),
+        || String($('docmodModalCompServicio')?.value || '').trim().toLocaleUpperCase('es-CO'),
       ...extras
     };
   }
