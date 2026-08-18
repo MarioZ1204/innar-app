@@ -40,6 +40,25 @@ describe('server bootstrap (smoke)', () => {
     expect(Array.isArray(rm.runtimeMigrations)).toBe(true);
   });
 
+  test('rt_backfill_historial_reprog_electro resuelve el util (no ReferenceError)', async () => {
+    const { runtimeMigrations } = require('../migrations/runtime-migrations');
+    const mig = runtimeMigrations.find((m) => m.name === 'rt_backfill_historial_reprog_electro');
+    expect(mig).toBeTruthy();
+    const db = {
+      async query(sql) {
+        const s = String(sql);
+        if (s.includes('information_schema.TABLES')) return [{ cnt: 1 }];
+        if (s.includes('SHOW TABLES')) return [{}];
+        if (s.includes('FROM citas_electro')) return [];
+        return [];
+      },
+      async execute() {
+        return { affectedRows: 0 };
+      }
+    };
+    await expect(mig.run(db)).resolves.toBeUndefined();
+  });
+
   test('socket/handlers exporta attachSockets (stub sin Socket.IO)', () => {
     const s = require('../socket/handlers');
     expect(typeof s.attachSockets).toBe('function');

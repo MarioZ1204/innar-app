@@ -1,14 +1,15 @@
 {
   "name": "innar-app",
-  "version": "1.7.112",
+  "version": "1.7.119",
   "description": "Innar - Sistema de gestión de agenda médica y recibos",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon -r dotenv/config server.js dotenv_config_path=.env.dev",
     "check:syntax": "node --check server.js",
+    "check:public-js": "node scripts/check-public-js.js",
     "check:hostinger-env": "node scripts/verify-hostinger-env.js",
-    "deploy:check": "npm run check:syntax && npm run check:hostinger-env",
+    "deploy:check": "npm run check:syntax && npm run check:public-js && npm run check:hostinger-env",
     "deploy:recover-soportes": "node scripts/auto-run-recuperacion-soportes.js",
     "restore:archivos-backup": "node scripts/restaurar-archivos-desde-backup.js",
     "test": "jest --forceExit --detectOpenHandles",

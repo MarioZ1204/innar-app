@@ -6877,4 +6877,14 @@
 
   window.refreshReportesPdx = refrescarVistaPdxActual;
   window.refreshArmadoSoportes = refrescarVistaArmadoActual;
+  window.innarSoportesCatalogo = {
+    invalidarEstudios() { _cacheEstudiosPdx = null; },
+    invalidarEspecialidades() { _cacheEspecialidadesPdx = null; },
+    invalidarTipos() { _cacheTiposConsultaPdx = {}; },
+    invalidar() {
+      _cacheEstudiosPdx = null;
+      _cacheEspecialidadesPdx = null;
+      _cacheTiposConsultaPdx = {};
+    }
+  };
 })();

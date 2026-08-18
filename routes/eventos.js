@@ -1,6 +1,6 @@
 // GET /api/eventos/poll  |  POST /api/eventos/push
 const express = require('express');
-const { requireAuth } = require('../middleware');
+const { requireAuth, sesionTieneAlgunPermiso } = require('../middleware');
 const queue = require('../utils/event-poll-queue');
 const relay = require('../utils/realtime-client-relay');
 
@@ -24,6 +24,10 @@ router.post('/eventos/push', requireAuth, (req, res) => {
   const { event, data } = req.body || {};
   if (!relay.isAllowed(event)) {
     return res.status(400).json({ error: 'Evento no permitido' });
+  }
+  const perms = relay.permisosDeEvento(event);
+  if (!perms || !sesionTieneAlgunPermiso(req.session, perms)) {
+    return res.status(403).json({ error: 'No tienes permiso para emitir este evento' });
   }
   relay.relay(req.session.usuarioId, event, data);
   res.json({ ok: true });

@@ -204,7 +204,7 @@
 .meq-pct-done{color:#059669!important;font-weight:700}
 .meq-sin-equipo-card .meq-study-title{color:#92400e;font-size:.85rem}
 .meq-sin-equipo-card .meq-study-meta{color:#a16207}
-.menu-card[data-module=monitor-equipos]{--mc:#7c3aed}
+.menu-card[data-module=monitor-equipos]{--mc:#0f766e}
 /* Pulse animation for active studies */
 @keyframes meqPulse{0%,100%{opacity:1}50%{opacity:.6}}
 .meq-pulse-dot{width:8px;height:8px;border-radius:50%;background:#ea580c;display:inline-block;animation:meqPulse 2s ease-in-out infinite;margin-right:4px;flex-shrink:0}

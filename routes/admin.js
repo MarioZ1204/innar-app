@@ -7,6 +7,10 @@ const logger = require('../utils/logger');
 const auditLog = require('../modules/audit-log');
 const { requireAuth, requireRoleOrPerm, safeError, emitSocket } = require('../middleware/index');
 const { parseFlag } = require('../utils/catalogo-visibilidad');
+const { desvincularRecibosDeTurnos } = require('../utils/recibos-vinculo');
+const { emitCatalogoActualizado } = require('../utils/catalogo-socket');
+const { responderSiHttpError } = require('../utils/locks-concurrencia');
+const catalogoRefs = require('../utils/catalogo-referencias');
 
 // GET /api/estudios/lista - lista pública a todos los roles autenticados
 router.get('/estudios/lista', requireAuth, async (req, res) => {
@@ -23,7 +27,7 @@ router.get('/admin/datos/:tipo', requireAuth, requireRoleOrPerm(['superadmin', '
   try {
     const tipo = req.params.tipo;
     const { q, fecha_desde, fecha_hasta, limit: reqLimit } = req.query;
-    const limit = Math.min(parseInt(reqLimit) || 100, 500);
+    const limit = catalogoRefs.limiteListadoGestion(tipo, reqLimit);
     let rows = [];
 
     if (tipo === 'citas_electro') {
@@ -123,11 +127,13 @@ router.post('/admin/datos/:tipo', requireAuth, requireRoleOrPerm(['superadmin', 
         [nombre.trim(), dur]
       );
       emitSocket('estudio:creado', { id: result.insertId });
+      emitCatalogoActualizado('estudio_duraciones', { id: result.insertId });
       res.json({ ok: true, id: result.insertId });
     } else if (tipo === 'especialidades') {
       const { nombre } = body;
       if (!nombre || !nombre.trim()) return res.status(400).json({ error: 'El nombre es obligatorio' });
       const result = await db.execute('INSERT INTO especialidades (nombre) VALUES (?)', [nombre.trim()]);
+      emitCatalogoActualizado('especialidades', { id: result.insertId });
       res.json({ ok: true, id: result.insertId });
     } else if (tipo === 'tipos_consulta') {
       const { especialidad_id, nombre, permite_sesiones_multiples } = body;
@@ -163,6 +169,7 @@ router.post('/admin/datos/:tipo', requireAuth, requireRoleOrPerm(['superadmin', 
         'INSERT INTO diagnosticos (nombre, descripcion, codigo, activo) VALUES (?,?,?,1)',
         [nombre.trim(), descripcion || null, codigo || null]
       );
+      emitCatalogoActualizado('diagnosticos', { id: result.insertId });
       res.json({ ok: true, id: result.insertId });
     } else if (tipo === 'entidades') {
       const { nombre } = body;
@@ -227,6 +234,21 @@ async function refrescarCatalogoCupsAnexo() {
   });
 }
 
+function responderErrorCatalogo(res, e, dupMsg) {
+  if (responderSiHttpError(res, e)) return true;
+  if (e.code === 'ER_DUP_ENTRY') {
+    res.status(409).json({ error: dupMsg || 'Ya existe un registro con ese nombre' });
+    return true;
+  }
+  if (e.code === 'ER_ROW_IS_REFERENCED_2' || e.code === 'ER_ROW_IS_REFERENCED') {
+    res.status(409).json({
+      error: 'No se puede eliminar: hay registros que lo usan. Renómbrelo en su lugar.'
+    });
+    return true;
+  }
+  return false;
+}
+
 // PATCH /api/admin/datos/:tipo/:id — editar catálogos
 router.patch('/admin/datos/:tipo/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'modulo.gestion_datos'), async (req, res) => {
   try {
@@ -238,11 +260,12 @@ router.patch('/admin/datos/:tipo/:id', requireAuth, requireRoleOrPerm(['superadm
     if (tipo === 'tipos_consulta') {
       const campos = [];
       const values = [];
+      let nombreNuevo;
       if (body.nombre !== undefined) {
-        const nombre = String(body.nombre || '').trim();
-        if (!nombre) return res.status(400).json({ error: 'El nombre es obligatorio' });
+        nombreNuevo = String(body.nombre || '').trim();
+        if (!nombreNuevo) return res.status(400).json({ error: 'El nombre es obligatorio' });
         campos.push('nombre=?');
-        values.push(nombre);
+        values.push(nombreNuevo);
       }
       if (body.permite_sesiones_multiples !== undefined) {
         campos.push('permite_sesiones_multiples=?');
@@ -256,11 +279,12 @@ router.patch('/admin/datos/:tipo/:id', requireAuth, requireRoleOrPerm(['superadm
       }
       if (!campos.length) return res.status(400).json({ error: 'No hay campos para actualizar' });
       values.push(id);
-      const result = await db.execute(
-        `UPDATE tipos_consulta SET ${campos.join(', ')} WHERE id=?`,
+      await catalogoRefs.persistirTipoConsultaConReferencias(db, {
+        id,
+        nombreNuevo,
+        camposSql: campos.join(', '),
         values
-      );
-      if (!result.affectedRows) return res.status(404).json({ error: 'Tipo de consulta no encontrado' });
+      });
       emitSocket('tipos-consulta:actualizado', { id });
       return res.json({ ok: true, id });
     }
@@ -268,11 +292,12 @@ router.patch('/admin/datos/:tipo/:id', requireAuth, requireRoleOrPerm(['superadm
     if (tipo === 'entidades') {
       const campos = [];
       const values = [];
+      let nombreNuevo;
       if (body.nombre !== undefined) {
-        const nombre = String(body.nombre || '').trim().toUpperCase();
-        if (!nombre) return res.status(400).json({ error: 'El nombre es obligatorio' });
+        nombreNuevo = String(body.nombre || '').trim().toUpperCase();
+        if (!nombreNuevo) return res.status(400).json({ error: 'El nombre es obligatorio' });
         campos.push('nombre=?');
-        values.push(nombre);
+        values.push(nombreNuevo);
       }
       for (const f of ['visible_agenda', 'visible_electro', 'visible_recibo', 'activo']) {
         if (body[f] !== undefined) {
@@ -282,12 +307,74 @@ router.patch('/admin/datos/:tipo/:id', requireAuth, requireRoleOrPerm(['superadm
       }
       if (!campos.length) return res.status(400).json({ error: 'No hay campos para actualizar' });
       values.push(id);
-      const result = await db.execute(
-        `UPDATE entidades SET ${campos.join(', ')} WHERE id=?`,
+      await catalogoRefs.persistirEntidadConReferencias(db, {
+        id,
+        nombreNuevo,
+        camposSql: campos.join(', '),
         values
-      );
-      if (!result.affectedRows) return res.status(404).json({ error: 'Entidad no encontrada' });
+      });
       emitSocket('entidades:actualizado', { id });
+      return res.json({ ok: true, id });
+    }
+
+    if (tipo === 'especialidades') {
+      const nombre = String(body.nombre || '').trim();
+      if (!nombre) return res.status(400).json({ error: 'El nombre es obligatorio' });
+      await catalogoRefs.persistirEspecialidadConReferencias(db, { id, nombreNuevo: nombre });
+      emitCatalogoActualizado('especialidades', { id });
+      return res.json({ ok: true, id });
+    }
+
+    if (tipo === 'estudio_duraciones') {
+      const campos = [];
+      const values = [];
+      let nombreNuevo;
+      if (body.nombre !== undefined) {
+        nombreNuevo = String(body.nombre || '').trim();
+        if (!nombreNuevo) return res.status(400).json({ error: 'El nombre es obligatorio' });
+        campos.push('nombre=?');
+        values.push(nombreNuevo);
+      }
+      if (body.duracion_minutos !== undefined) {
+        const dur = parseInt(body.duracion_minutos, 10);
+        if (isNaN(dur) || dur <= 0) return res.status(400).json({ error: 'La duracion debe ser un numero positivo' });
+        campos.push('duracion_minutos=?');
+        values.push(dur);
+      }
+      if (!campos.length) return res.status(400).json({ error: 'No hay campos para actualizar' });
+      values.push(id);
+      await catalogoRefs.persistirEstudioConReferencias(db, {
+        id,
+        nombreNuevo,
+        camposSql: campos.join(', '),
+        values
+      });
+      emitCatalogoActualizado('estudio_duraciones', { id });
+      return res.json({ ok: true, id });
+    }
+
+    if (tipo === 'diagnosticos') {
+      const campos = [];
+      const values = [];
+      if (body.nombre !== undefined) {
+        const nombre = String(body.nombre || '').trim();
+        if (!nombre) return res.status(400).json({ error: 'El nombre es obligatorio' });
+        campos.push('nombre=?');
+        values.push(nombre);
+      }
+      if (body.codigo !== undefined) {
+        campos.push('codigo=?');
+        values.push(String(body.codigo || '').trim() || null);
+      }
+      if (body.descripcion !== undefined) {
+        campos.push('descripcion=?');
+        values.push(String(body.descripcion || '').trim() || null);
+      }
+      if (!campos.length) return res.status(400).json({ error: 'No hay campos para actualizar' });
+      values.push(id);
+      const result = await db.execute(`UPDATE diagnosticos SET ${campos.join(', ')} WHERE id=?`, values);
+      if (!result.affectedRows) return res.status(404).json({ error: 'Diagnóstico no encontrado' });
+      emitCatalogoActualizado('diagnosticos', { id });
       return res.json({ ok: true, id });
     }
 
@@ -325,9 +412,7 @@ router.patch('/admin/datos/:tipo/:id', requireAuth, requireRoleOrPerm(['superadm
 
     return res.status(400).json({ error: 'Tipo no soportado para editar' });
   } catch (e) {
-    if (e.code === 'ER_DUP_ENTRY') {
-      return res.status(409).json({ error: 'Ya existe otro servicio con ese código CUPS' });
-    }
+    if (responderErrorCatalogo(res, e, 'Ya existe un registro con ese código o nombre')) return;
     res.status(500).json({ error: safeError(e) });
   }
 });
@@ -351,6 +436,7 @@ router.delete('/admin/datos/:tipo/bulk', requireAuth, requireRoleOrPerm(['supera
     const idsNorm = ids.map((n) => parseInt(n, 10)).filter((n) => n > 0);
     if (!idsNorm.length) return res.status(400).json({ error: 'ids inválidos' });
     const placeholders = idsNorm.map(() => '?').join(',');
+    await catalogoRefs.assertCatalogoEliminableBulk(db, tipo, idsNorm);
     let result;
     if (tipo === 'citas_electro') {
       const actor = req.session.usuarioNombre || req.session.usuario || 'Admin';
@@ -362,20 +448,20 @@ router.delete('/admin/datos/:tipo/bulk', requireAuth, requireRoleOrPerm(['supera
       if (result.affectedRows > 0) {
         emitSocket('electro:actualizar-lista', { type: 'eliminadas', ids: idsNorm });
       }
+    } else if (tipo === 'turnos') {
+      await desvincularRecibosDeTurnos(db, idsNorm);
+      result = await db.execute(`DELETE FROM turnos WHERE id IN (${placeholders})`, idsNorm);
     } else {
       result = await db.execute(`DELETE FROM ${tabla} WHERE id IN (${placeholders})`, idsNorm);
     }
     if (tipo === 'anexo_fidu_servicios' && result.affectedRows > 0) {
       await refrescarCatalogoCupsAnexo();
-    }
-    if (tipo === 'tipos_consulta' && result.affectedRows > 0) {
-      emitSocket('tipos-consulta:actualizado', { ids });
-    }
-    if (tipo === 'entidades' && result.affectedRows > 0) {
-      emitSocket('entidades:actualizado', { ids });
+    } else if (result.affectedRows > 0) {
+      emitCatalogoActualizado(tipo, { ids: idsNorm });
     }
     res.json({ ok: true, eliminados: result.affectedRows });
   } catch (e) {
+    if (responderErrorCatalogo(res, e)) return;
     logger.error('[ADMIN BULK DELETE]', e.message);
     res.status(500).json({ error: safeError(e) });
   }
@@ -387,6 +473,8 @@ router.delete('/admin/datos/:tipo/:id', requireAuth, requireRoleOrPerm(['superad
     const tipo = req.params.tipo;
     const id = parseInt(req.params.id, 10);
     if (isNaN(id)) return res.status(400).json({ error: 'ID inválido' });
+
+    await catalogoRefs.assertCatalogoEliminable(db, tipo, id);
 
     let affected = 0;
     if (tipo === 'citas_electro') {
@@ -402,6 +490,7 @@ router.delete('/admin/datos/:tipo/:id', requireAuth, requireRoleOrPerm(['superad
         emitSocket('electro:actualizar-lista', { type: 'eliminada', id });
       }
     } else if (tipo === 'turnos') {
+      await desvincularRecibosDeTurnos(db, id);
       const result = await db.execute('DELETE FROM turnos WHERE id=?', [id]);
       affected = result.affectedRows;
     } else if (tipo === 'recibos') {
@@ -417,14 +506,12 @@ router.delete('/admin/datos/:tipo/:id', requireAuth, requireRoleOrPerm(['superad
     } else if (tipo === 'tipos_consulta') {
       const result = await db.execute('DELETE FROM tipos_consulta WHERE id=?', [id]);
       affected = result.affectedRows;
-      if (affected > 0) emitSocket('tipos-consulta:actualizado', { id });
     } else if (tipo === 'diagnosticos') {
       const result = await db.execute('DELETE FROM diagnosticos WHERE id=?', [id]);
       affected = result.affectedRows;
     } else if (tipo === 'entidades') {
       const result = await db.execute('DELETE FROM entidades WHERE id=?', [id]);
       affected = result.affectedRows;
-      if (affected > 0) emitSocket('entidades:actualizado', { id });
     } else if (tipo === 'anexo_fidu_servicios') {
       const result = await db.execute('DELETE FROM anexo_fidu_servicios WHERE id=?', [id]);
       affected = result.affectedRows;
@@ -435,6 +522,10 @@ router.delete('/admin/datos/:tipo/:id', requireAuth, requireRoleOrPerm(['superad
 
     if (affected === 0) return res.status(404).json({ error: 'Registro no encontrado' });
 
+    if (tipo !== 'anexo_fidu_servicios') {
+      emitCatalogoActualizado(tipo, { id });
+    }
+
     await auditLog.registrarAuditoria({
       usuarioId: req.session.usuarioId, adminId: req.session.usuarioId,
       adminUsuario: req.session.usuario, accion: 'ELIMINAR',
@@ -443,6 +534,7 @@ router.delete('/admin/datos/:tipo/:id', requireAuth, requireRoleOrPerm(['superad
 
     res.json({ ok: true });
   } catch (e) {
+    if (responderErrorCatalogo(res, e)) return;
     logger.error('[ADMIN DELETE]', e.message);
     res.status(500).json({ error: safeError(e) });
   }

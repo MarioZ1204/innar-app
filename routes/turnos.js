@@ -6,13 +6,22 @@ const db = require('../utils/db-mysql');
 const logger = require('../utils/logger');
 const procesarAgendaExcel = require('../utils/procesar-agenda-excel');
 const {
-  requireAuth, requireRoleOrPerm,
+  requireAuth, requireRoleOrPerm, requirePermiso,
   safeError, emitSocket
 } = require('../middleware/index');
 const { validateSchema } = require('../modules/validation-schemas');
 const { buildReprogramacionTurnoPayload } = require('../utils/agenda-reprogramacion');
 const { validarTransicionEstadoTurno } = require('../utils/agenda-estado-transiciones');
 const cuposEntidadAgenda = require('../utils/cupos-entidad-agenda');
+const { desvincularRecibosDeTurnos } = require('../utils/recibos-vinculo');
+const {
+  httpError,
+  responderSiHttpError,
+  throwIfCupoInvalido,
+  bloquearAgendaDiaParaCupo,
+  bloquearAgendaDiasParaCupo,
+  bloquearTurnosDoctorDia
+} = require('../utils/locks-concurrencia');
 
 // Helper: obtener siguiente número de turno
 async function getNextTurnoNumber(fecha, doctor_id) {
@@ -39,9 +48,28 @@ function denyIfDoctorMismatch(req, doctorId) {
   return null;
 }
 
+/** En GET, el médico solo ve su propia agenda (aunque omita doctor_id). */
+function resolverDoctorIdConsulta(req) {
+  if (req.session?.rol !== 'doctor') {
+    return { ok: true, doctorId: req.query.doctor_id };
+  }
+  const sid = parseInt(req.session.usuarioId, 10);
+  if (!sid) return { ok: false, status: 403, error: 'Sesión de médico inválida' };
+  const q = req.query.doctor_id;
+  if (q != null && String(q).trim() !== '') {
+    if (parseInt(q, 10) !== sid) {
+      return { ok: false, status: 403, error: 'No tienes permiso para ver la agenda de otro médico' };
+    }
+  }
+  return { ok: true, doctorId: sid };
+}
+
 // GET /api/turnos/calendario
-router.get('/turnos/calendario', requireAuth, async (req, res) => {
-  const { mes, doctor_id } = req.query;
+router.get('/turnos/calendario', requireAuth, requirePermiso('agenda.ver'), async (req, res) => {
+  const alcance = resolverDoctorIdConsulta(req);
+  if (!alcance.ok) return res.status(alcance.status).json({ error: alcance.error });
+  const { mes } = req.query;
+  const doctor_id = alcance.doctorId;
   if (!mes || !/^\d{4}-\d{2}$/.test(mes)) {
     return res.status(400).json({ error: 'mes es obligatorio (formato YYYY-MM)' });
   }
@@ -154,8 +182,11 @@ router.get('/turnos/calendario', requireAuth, async (req, res) => {
 });
 
 // GET /api/turnos
-router.get('/turnos', requireAuth, async (req, res) => {
-  const { fecha, doctor_id, buscar, estado, entidad, tipo_consulta } = req.query;
+router.get('/turnos', requireAuth, requirePermiso('agenda.ver'), async (req, res) => {
+  const alcance = resolverDoctorIdConsulta(req);
+  if (!alcance.ok) return res.status(alcance.status).json({ error: alcance.error });
+  const { fecha, buscar, estado, entidad, tipo_consulta } = req.query;
+  const doctor_id = alcance.doctorId;
 
   const COLS = `id, numero_turno, doctor_id, paciente_nombre, paciente_documento,
                 paciente_telefono, paciente_telefono2, estado, fecha, hora, tipo_consulta,
@@ -165,12 +196,15 @@ router.get('/turnos', requireAuth, async (req, res) => {
 
   if (buscar && !fecha) {
     try {
-      const turnos = await db.query(`
-        SELECT ${COLS} FROM turnos
-        WHERE paciente_documento LIKE ? OR paciente_nombre LIKE ?
-        ORDER BY fecha ASC, hora ASC
-        LIMIT 50
-      `, [`%${buscar}%`, `%${buscar}%`]);
+      let sql = `SELECT ${COLS} FROM turnos
+        WHERE (paciente_documento LIKE ? OR paciente_nombre LIKE ?)`;
+      const params = [`%${buscar}%`, `%${buscar}%`];
+      if (doctor_id) {
+        sql += ' AND doctor_id = ?';
+        params.push(doctor_id);
+      }
+      sql += ' ORDER BY fecha ASC, hora ASC LIMIT 50';
+      const turnos = await db.query(sql, params);
       return res.json(turnos);
     } catch (e) {
       logger.error(e.message, { error: e });
@@ -211,8 +245,11 @@ router.get('/turnos', requireAuth, async (req, res) => {
 });
 
 // GET /api/turnos/export
-router.get('/turnos/export', requireAuth, async (req, res) => {
-  const { fecha, doctor_id, estado, entidad, tipo_consulta } = req.query;
+router.get('/turnos/export', requireAuth, requirePermiso('agenda.ver'), async (req, res) => {
+  const alcance = resolverDoctorIdConsulta(req);
+  if (!alcance.ok) return res.status(alcance.status).json({ error: alcance.error });
+  const { fecha, estado, entidad, tipo_consulta } = req.query;
+  const doctor_id = alcance.doctorId;
   if (!fecha) return res.status(400).json({ error: 'fecha es obligatoria' });
   try {
     let sql = `SELECT numero_turno, paciente_nombre, paciente_documento, paciente_telefono,
@@ -248,11 +285,13 @@ router.get('/turnos/export', requireAuth, async (req, res) => {
 });
 
 // GET /api/turnos/get-next-number
-router.get('/turnos/get-next-number', requireAuth, async (req, res) => {
+router.get('/turnos/get-next-number', requireAuth, requirePermiso('agenda.ver'), async (req, res) => {
   const { fecha, doctor_id } = req.query;
   if (!fecha || !doctor_id) {
     return res.status(400).json({ error: 'fecha y doctor_id son obligatorios' });
   }
+  const idorErr = denyIfDoctorMismatch(req, doctor_id);
+  if (idorErr) return res.status(403).json({ error: idorErr });
   try {
     const result = await db.query(`
       SELECT MAX(CAST(numero_turno AS UNSIGNED)) as max_num FROM turnos 
@@ -267,7 +306,7 @@ router.get('/turnos/get-next-number', requireAuth, async (req, res) => {
 });
 
 // GET /api/turnos/plantilla-excel
-router.get('/turnos/citas-mismo-tipo', requireAuth, async (req, res) => {
+router.get('/turnos/citas-mismo-tipo', requireAuth, requirePermiso('agenda.ver'), async (req, res) => {
   const documento = String(req.query.documento || '').replace(/\D/g, '');
   const tipoConsulta = String(req.query.tipo_consulta || '').trim();
   const nombre = String(req.query.nombre || '').trim();
@@ -278,6 +317,12 @@ router.get('/turnos/citas-mismo-tipo', requireAuth, async (req, res) => {
   try {
     const { ESTADOS_CITA_AGENDADA, filtrarCitasMismoTipo } = require('../utils/turnos-duplicados-consulta');
     const placeholders = ESTADOS_CITA_AGENDADA.map(() => '?').join(',');
+    const params = [documento, ...ESTADOS_CITA_AGENDADA];
+    let doctorFilter = '';
+    if (req.session?.rol === 'doctor') {
+      doctorFilter = ' AND t.doctor_id = ?';
+      params.push(req.session.usuarioId);
+    }
     const rows = await db.query(
       `SELECT t.id, t.fecha, t.hora, t.tipo_consulta, t.estado, t.paciente_nombre,
               t.paciente_documento, t.paciente_telefono, t.entidad, t.programado_por,
@@ -285,10 +330,10 @@ router.get('/turnos/citas-mismo-tipo', requireAuth, async (req, res) => {
        FROM turnos t
        LEFT JOIN usuarios u ON u.id = t.doctor_id
        WHERE REPLACE(REPLACE(REPLACE(IFNULL(t.paciente_documento,''), '.', ''), '-', ''), ' ', '') = ?
-         AND t.estado IN (${placeholders})
+         AND t.estado IN (${placeholders})${doctorFilter}
        ORDER BY t.fecha ASC, t.hora ASC
        LIMIT 80`,
-      [documento, ...ESTADOS_CITA_AGENDADA]
+      params
     );
     const citas = filtrarCitasMismoTipo(rows, {
       paciente_documento: documento,
@@ -304,7 +349,7 @@ router.get('/turnos/citas-mismo-tipo', requireAuth, async (req, res) => {
 });
 
 // GET /api/turnos/plantilla-excel
-router.get('/turnos/plantilla-excel', requireAuth, async (req, res) => {
+router.get('/turnos/plantilla-excel', requireAuth, requirePermiso('agenda.crear'), async (req, res) => {
   const { doctor_id } = req.query;
   try {
     const ExcelJS = require('exceljs');
@@ -401,6 +446,10 @@ router.post('/turnos/llamar-siguiente', requireAuth, requireRoleOrPerm(['superad
 
     const turnoConConsultorio = { ...turno, numero_consultorio: numeroConsultorio };
 
+    const callId = (typeof crypto !== 'undefined' && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : `c${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+
     emitSocket('agenda:turno-llamar-siguiente', {
       turno_id: turno.id,
       doctor_id,
@@ -408,9 +457,10 @@ router.post('/turnos/llamar-siguiente', requireAuth, requireRoleOrPerm(['superad
       paciente_nombre: turnoConConsultorio.paciente_nombre,
       numero_turno: turnoConConsultorio.numero_turno,
       numero_consultorio: numeroConsultorio,
-      doctor_nombre: doctorNombre
+      doctor_nombre: doctorNombre,
+      call_id: callId
     });
-    res.json({ ok: true, turno: turnoConConsultorio });
+    res.json({ ok: true, turno: turnoConConsultorio, call_id: callId });
   } catch (e) {
     logger.error(e.message, { error: e });
     res.status(500).json({ error: safeError(e) });
@@ -541,6 +591,7 @@ router.post('/turnos/lote', requireAuth, requireRoleOrPerm(['superadmin', 'admin
   }
 
   let requiereConfirmacionLote = false;
+  await cuposEntidadAgenda.prepararTablaCuposEntidad(db);
   for (const [fecha, cantidad] of Object.entries(sesionesPorFecha)) {
     const validacionCupo = await cuposEntidadAgenda.validarCupoEntidad(doctor_id, fecha, entidad, db, cantidad, { forzar: !!forzar_cupo });
     if (!validacionCupo.valido) {
@@ -562,6 +613,16 @@ router.post('/turnos/lote', requireAuth, requireRoleOrPerm(['superadmin', 'admin
 
   try {
     const ids = await db.transaction(async (conn) => {
+      await bloquearAgendaDiasParaCupo(
+        conn,
+        Object.keys(sesionesPorFecha).map((fecha) => ({ doctorId: doctor_id, fecha }))
+      );
+      for (const [fecha, cantidad] of Object.entries(sesionesPorFecha)) {
+        const validacionCupo = await cuposEntidadAgenda.validarCupoEntidad(
+          doctor_id, fecha, entidad, conn, cantidad, { forzar: !!forzar_cupo }
+        );
+        throwIfCupoInvalido(validacionCupo);
+      }
       const insertados = [];
       for (let i = 0; i < sesiones.length; i += 1) {
         const { fecha, sesion_numero, hora: horaSesion } = sesiones[i];
@@ -596,6 +657,7 @@ router.post('/turnos/lote', requireAuth, requireRoleOrPerm(['superadmin', 'admin
     }
     res.json({ ok: true, creados: ids.length, ids });
   } catch (e) {
+    if (responderSiHttpError(res, e)) return;
     logger.error(e.message, { error: e });
     res.status(500).json({ error: safeError(e) });
   }
@@ -610,6 +672,7 @@ router.post('/turnos', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'a
       return res.status(400).json({ error: validacion.razon, valido: false });
     }
 
+    await cuposEntidadAgenda.prepararTablaCuposEntidad(db);
     const validacionCupo = await cuposEntidadAgenda.validarCupoEntidad(doctor_id, fecha, entidad, db, 1, { forzar: !!forzar_cupo });
     if (!validacionCupo.valido) {
       return res.status(validacionCupo.requiereConfirmacion ? 409 : 400).json({
@@ -619,27 +682,35 @@ router.post('/turnos', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'a
       });
     }
 
-    const result = await db.execute(`
+    const result = await db.transaction(async (conn) => {
+      await bloquearAgendaDiaParaCupo(conn, doctor_id, fecha);
+      const cupoLocked = await cuposEntidadAgenda.validarCupoEntidad(
+        doctor_id, fecha, entidad, conn, 1, { forzar: !!forzar_cupo }
+      );
+      throwIfCupoInvalido(cupoLocked);
+      return conn.execute(`
       INSERT INTO turnos (numero_turno, doctor_id, paciente_nombre, paciente_documento, paciente_telefono, paciente_telefono2, estado, fecha, hora, tipo_consulta, entidad, notas, oportunidad, programado_por)
       VALUES (NULL, ?, ?, ?, ?, ?, 'PENDIENTE', ?, ?, ?, ?, ?, ?, ?)
     `, [
-      doctor_id,
-      paciente_nombre,
-      paciente_documento || null,
-      paciente_telefono || null,
-      paciente_telefono2 || null,
-      fecha,
-      hora,
-      tipo_consulta || null,
-      entidad || null,
-      notas || null,
-      oportunidad ? parseInt(oportunidad, 10) : null,
-      programado_por || null
-    ]);
+        doctor_id,
+        paciente_nombre,
+        paciente_documento || null,
+        paciente_telefono || null,
+        paciente_telefono2 || null,
+        fecha,
+        hora,
+        tipo_consulta || null,
+        entidad || null,
+        notas || null,
+        oportunidad ? parseInt(oportunidad, 10) : null,
+        programado_por || null
+      ]);
+    });
 
     emitSocket('agenda:turno-creado', { id: result.insertId, doctor_id, paciente_nombre, fecha });
     res.json({ ok: true, id: result.insertId });
   } catch (e) {
+    if (responderSiHttpError(res, e)) return;
     logger.error(e.message, { error: e });
     res.status(500).json({ error: safeError(e) });
   }
@@ -706,6 +777,7 @@ router.post('/turnos/:id/reprogramar', requireAuth, requireRoleOrPerm(['superadm
     // Mismo día: la original se libera (REPROGRAMADO/CANCELADO no ocupan cupo) → neto 0.
     const mismaFecha = fecha === fechaOrig;
     const cantidadCupo = mismaFecha ? 0 : 1;
+    await cuposEntidadAgenda.prepararTablaCuposEntidad(db);
     if (cantidadCupo > 0) {
       const validacionCupo = await cuposEntidadAgenda.validarCupoEntidad(
         turno.doctor_id, fecha, turno.entidad, db, cantidadCupo, { forzar: !!forzar_cupo }
@@ -730,6 +802,16 @@ router.post('/turnos/:id/reprogramar', requireAuth, requireRoleOrPerm(['superadm
     const origUpd = payload.actualizacionOriginal;
 
     const nuevaId = await db.transaction(async (conn) => {
+      await bloquearAgendaDiasParaCupo(conn, [
+        { doctorId: turno.doctor_id, fecha },
+        { doctorId: turno.doctor_id, fecha: fechaOrig }
+      ]);
+      if (cantidadCupo > 0) {
+        const cupoLocked = await cuposEntidadAgenda.validarCupoEntidad(
+          turno.doctor_id, fecha, turno.entidad, conn, cantidadCupo, { forzar: !!forzar_cupo }
+        );
+        throwIfCupoInvalido(cupoLocked);
+      }
       const insertRes = await conn.execute(`
         INSERT INTO turnos (numero_turno, doctor_id, paciente_nombre, paciente_documento, paciente_telefono, paciente_telefono2, estado, fecha, hora, tipo_consulta, entidad, notas, oportunidad, programado_por)
         VALUES (NULL, ?, ?, ?, ?, ?, 'PENDIENTE', ?, ?, ?, ?, ?, ?, ?)
@@ -781,6 +863,7 @@ router.post('/turnos/:id/reprogramar', requireAuth, requireRoleOrPerm(['superadm
 
     res.json({ ok: true, id: nuevaId, original_id: id });
   } catch (e) {
+    if (responderSiHttpError(res, e)) return;
     logger.error(e.message, { error: e });
     res.status(500).json({ error: safeError(e) });
   }
@@ -887,10 +970,15 @@ router.patch('/turnos/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin
       || (fecha !== undefined && String(fecha).slice(0, 10) !== String(turno.fecha).slice(0, 10))
       || cambioDoctor;
 
+    values.push(id);
+    const query = `UPDATE turnos SET ${updates.join(', ')} WHERE id = ?`;
+
     if (cambiaUbicacion && !estadosSinCupo.includes(estadoFinal)) {
+      await cuposEntidadAgenda.prepararTablaCuposEntidad(db);
+      const fechaDestino = ymdTurno(fechaFinal);
       const validacionCupo = await cuposEntidadAgenda.validarCupoEntidad(
         doctorIdFinal,
-        String(fechaFinal).slice(0, 10),
+        fechaDestino,
         entidadFinal,
         db,
         1,
@@ -903,11 +991,25 @@ router.patch('/turnos/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin
           requiere_confirmacion: !!validacionCupo.requiereConfirmacion
         });
       }
+      await db.transaction(async (conn) => {
+        await bloquearAgendaDiasParaCupo(conn, [
+          { doctorId: turno.doctor_id, fecha: ymdTurno(turno.fecha) },
+          { doctorId: doctorIdFinal, fecha: fechaDestino }
+        ]);
+        const cupoLocked = await cuposEntidadAgenda.validarCupoEntidad(
+          doctorIdFinal,
+          fechaDestino,
+          entidadFinal,
+          conn,
+          1,
+          { forzar: !!req.body.forzar_cupo }
+        );
+        throwIfCupoInvalido(cupoLocked);
+        await conn.execute(query, values);
+      });
+    } else {
+      await db.execute(query, values);
     }
-
-    values.push(id);
-    const query = `UPDATE turnos SET ${updates.join(', ')} WHERE id = ?`;
-    await db.execute(query, values);
 
     const fechaEmit = fecha !== undefined ? fecha : turno.fecha;
 
@@ -938,6 +1040,7 @@ router.patch('/turnos/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin
 
     res.json({ ok: true, doctor_id: doctorIdEmit });
   } catch (e) {
+    if (responderSiHttpError(res, e)) return;
     logger.error(e.message, { error: e });
     res.status(500).json({ error: safeError(e) });
   }
@@ -964,34 +1067,47 @@ router.patch('/turnos/:id/estado', requireAuth, requireRoleOrPerm(['superadmin',
     const trans = validarTransicionEstadoTurno(turno.estado, estado);
     if (!trans.ok) return res.status(trans.status).json({ error: trans.error });
 
-    if (estado === 'EN_ATENCION') {
-      const enAtencionExistente = await db.query(
-        `SELECT id FROM turnos
-         WHERE fecha = ? AND doctor_id = ? AND estado = 'EN_ATENCION' AND id != ?
-         LIMIT 1`,
-        [turno.fecha, turno.doctor_id, id]
-      );
-      if (enAtencionExistente.length > 0) {
-        return res.status(409).json({ error: 'Ya existe un paciente EN_ATENCION para este doctor' });
-      }
-    }
-
     const ESTADOS_FINALES = ['ATENDIDO', 'NO_ASISTIO', 'CANCELADO', 'REPROGRAMADO'];
     const esFinal = ESTADOS_FINALES.includes(estado);
+    const fechaDia = ymdTurno(turno.fecha);
 
     let numeroAsignado = null;
-    if (estado === 'EN_SALA' && !turno.numero_turno) {
-      await db.transaction(async (conn) => {
+    await db.transaction(async (conn) => {
+      await bloquearTurnosDoctorDia(conn, turno.doctor_id, fechaDia);
+      const freshRows = await conn.query(
+        'SELECT id, estado, numero_turno FROM turnos WHERE id = ?',
+        [id]
+      );
+      const fresh = freshRows.length > 0 ? freshRows[0] : null;
+      if (!fresh) {
+        throw httpError(404, 'Turno no encontrado');
+      }
+      const transLocked = validarTransicionEstadoTurno(fresh.estado, estado);
+      if (!transLocked.ok) {
+        throw httpError(transLocked.status, transLocked.error);
+      }
+
+      if (estado === 'EN_ATENCION') {
+        const enAtencionExistente = await conn.query(
+          `SELECT id FROM turnos
+           WHERE fecha = ? AND doctor_id = ? AND estado = 'EN_ATENCION' AND id != ?
+           LIMIT 1`,
+          [fechaDia, turno.doctor_id, id]
+        );
+        if (enAtencionExistente.length > 0) {
+          throw httpError(409, 'Ya existe un paciente EN_ATENCION para este doctor');
+        }
+      }
+
+      if (estado === 'EN_SALA' && !fresh.numero_turno) {
         const result = await conn.query(`
-          SELECT MAX(CAST(numero_turno AS UNSIGNED)) as max_num FROM turnos 
+          SELECT MAX(CAST(numero_turno AS UNSIGNED)) as max_num FROM turnos
           WHERE fecha = ? AND doctor_id = ? AND numero_turno IS NOT NULL
-        `, [turno.fecha, turno.doctor_id]);
+        `, [fechaDia, turno.doctor_id]);
         const maxNum = result[0]?.max_num || 0;
         numeroAsignado = maxNum + 1;
         await conn.execute('UPDATE turnos SET estado = ?, numero_turno = ? WHERE id = ?', [estado, numeroAsignado, id]);
-      });
-    } else if (esFinal) {
-      await db.transaction(async (conn) => {
+      } else if (esFinal) {
         if (estado === 'REPROGRAMADO') {
           await conn.execute(
             'UPDATE turnos SET estado = ?, numero_turno = NULL, reprogramado_en = NOW() WHERE id = ?',
@@ -1002,15 +1118,15 @@ router.patch('/turnos/:id/estado', requireAuth, requireRoleOrPerm(['superadmin',
         }
         const enSalaList = await conn.query(
           `SELECT id FROM turnos WHERE fecha = ? AND doctor_id = ? AND estado = 'EN_SALA' ORDER BY numero_turno ASC, id ASC`,
-          [turno.fecha, turno.doctor_id]
+          [fechaDia, turno.doctor_id]
         );
         for (let i = 0; i < enSalaList.length; i++) {
           await conn.execute('UPDATE turnos SET numero_turno = ? WHERE id = ?', [i + 1, enSalaList[i].id]);
         }
-      });
-    } else {
-      await db.execute('UPDATE turnos SET estado = ? WHERE id = ?', [estado, id]);
-    }
+      } else {
+        await conn.execute('UPDATE turnos SET estado = ? WHERE id = ?', [estado, id]);
+      }
+    });
 
     const emitData = {
       id,
@@ -1035,6 +1151,7 @@ router.patch('/turnos/:id/estado', requireAuth, requireRoleOrPerm(['superadmin',
 
     res.json({ ok: true });
   } catch (e) {
+    if (responderSiHttpError(res, e)) return;
     logger.error(e.message, { error: e });
     res.status(500).json({ error: safeError(e) });
   }
@@ -1082,6 +1199,7 @@ router.delete('/turnos/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admi
       }
     }
 
+    await desvincularRecibosDeTurnos(db, id);
     await db.execute('DELETE FROM turnos WHERE id = ?', [id]);
 
     emitSocket('agenda:turno-eliminado', { id, doctor_id: turno.doctor_id, fecha: turno.fecha });
@@ -1137,6 +1255,7 @@ router.patch('/turnos/:id/numero', requireAuth, requireRoleOrPerm(['superadmin',
 
       let intercambioOk = false;
       await db.transaction(async (conn) => {
+        await bloquearTurnosDoctorDia(conn, turno.doctor_id, turno.fecha);
         const turnoIntercambio = await conn.query(
           `SELECT id FROM turnos WHERE numero_turno = ? AND fecha = ? AND doctor_id = ? AND estado IN ('EN_SALA', 'PENDIENTE')`,
           [nuevoNumero, turno.fecha, turno.doctor_id]

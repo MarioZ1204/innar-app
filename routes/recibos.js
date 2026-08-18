@@ -33,6 +33,8 @@ const {
   tokenizeSearchQuery
 } = require('../utils/soportes-busqueda');
 const { fechaYmdOHoyColombia, hoyColombiaISO } = require('../utils/fecha-colombia');
+const { responderSiHttpError } = require('../utils/locks-concurrencia');
+const catalogoRefs = require('../utils/catalogo-referencias');
 
 // Helper local
 function escapeHtml(str) {
@@ -333,10 +335,16 @@ router.put('/entidades/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admi
   const nombre = nombreEntidadParaSelect(req.body?.nombre);
   if (!nombre || isNaN(id)) return res.status(400).json({ error: 'Datos inválidos' });
   try {
-    await db.execute('UPDATE entidades SET nombre=? WHERE id=?', [nombre, id]);
+    await catalogoRefs.persistirEntidadConReferencias(db, {
+      id,
+      nombreNuevo: nombre,
+      camposSql: 'nombre=?',
+      values: [nombre, id]
+    });
     emitSocket('entidades:actualizado', { id });
     res.json({ ok: true });
   } catch (err) {
+    if (responderSiHttpError(res, err)) return;
     if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'La entidad ya existe' });
     res.status(500).json({ error: safeError(err) });
   }
@@ -348,11 +356,12 @@ router.patch('/entidades/:id', requireAuth, requireRoleOrPerm(['superadmin', 'ad
   const body = req.body || {};
   const campos = [];
   const values = [];
+  let nombreNuevo;
   if (body.nombre !== undefined) {
-    const nombre = nombreEntidadParaSelect(body.nombre);
-    if (!nombre) return res.status(400).json({ error: 'Nombre requerido' });
+    nombreNuevo = nombreEntidadParaSelect(body.nombre);
+    if (!nombreNuevo) return res.status(400).json({ error: 'Nombre requerido' });
     campos.push('nombre=?');
-    values.push(nombre);
+    values.push(nombreNuevo);
   }
   for (const f of ['visible_agenda', 'visible_electro', 'visible_recibo', 'activo']) {
     if (body[f] !== undefined) {
@@ -363,11 +372,16 @@ router.patch('/entidades/:id', requireAuth, requireRoleOrPerm(['superadmin', 'ad
   if (!campos.length) return res.status(400).json({ error: 'No hay campos para actualizar' });
   try {
     values.push(id);
-    const result = await db.execute(`UPDATE entidades SET ${campos.join(', ')} WHERE id=?`, values);
-    if (!result.affectedRows) return res.status(404).json({ error: 'Entidad no encontrada' });
+    await catalogoRefs.persistirEntidadConReferencias(db, {
+      id,
+      nombreNuevo,
+      camposSql: campos.join(', '),
+      values
+    });
     emitSocket('entidades:actualizado', { id });
     res.json({ ok: true, id });
   } catch (err) {
+    if (responderSiHttpError(res, err)) return;
     if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'La entidad ya existe' });
     res.status(500).json({ error: safeError(err) });
   }
@@ -377,10 +391,17 @@ router.delete('/entidades/:id', requireAuth, requireRoleOrPerm(['superadmin', 'a
   const id = parseInt(req.params.id, 10);
   if (isNaN(id)) return res.status(400).json({ error: 'ID inválido' });
   try {
+    await catalogoRefs.assertCatalogoEliminable(db, 'entidades', id);
     await db.execute('DELETE FROM entidades WHERE id=?', [id]);
     emitSocket('entidades:actualizado', { id });
     res.json({ ok: true });
-  } catch (err) { res.status(500).json({ error: safeError(err) }); }
+  } catch (err) {
+    if (responderSiHttpError(res, err)) return;
+    if (err.code === 'ER_ROW_IS_REFERENCED_2' || err.code === 'ER_ROW_IS_REFERENCED') {
+      return res.status(409).json({ error: 'No se puede eliminar: hay registros que usan esta entidad. Renómbrela en su lugar.' });
+    }
+    res.status(500).json({ error: safeError(err) });
+  }
 });
 
 // --- Recibos ---
@@ -450,8 +471,13 @@ router.post('/recibos', requireAuth, requireRoleOrPerm(['superadmin', 'admin', '
   }
 });
 
+const permRecibosVer = requireRoleOrPerm(
+  ['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion', 'contabilidad'],
+  'recibos.ver'
+);
+
 // GET /api/recibos/generadores — BEFORE /:id
-router.get('/recibos/generadores', requireAuth, async (req, res) => {
+router.get('/recibos/generadores', requireAuth, permRecibosVer, async (req, res) => {
   try {
     const rows = await db.query(
       `SELECT DISTINCT generado_por_id AS id, generado_por_nombre AS nombre FROM recibos WHERE generado_por_id IS NOT NULL ORDER BY generado_por_nombre ASC`
@@ -483,7 +509,7 @@ router.get('/recibos/usuarios-generador', requireAuth, async (req, res) => {
 });
 
 // GET /api/recibos/stats-hoy — contador diario (fecha local del cliente)
-router.get('/recibos/stats-hoy', requireAuth, async (req, res) => {
+router.get('/recibos/stats-hoy', requireAuth, permRecibosVer, async (req, res) => {
   const fecha = fechaYmdOHoyColombia(req.query.fecha);
   try {
     const [row] = await db.query(
@@ -509,7 +535,7 @@ router.get('/recibos/stats-hoy', requireAuth, async (req, res) => {
 });
 
 // GET /api/recibos/opciones — BEFORE /:id
-router.get('/recibos/opciones', requireAuth, async (req, res) => {
+router.get('/recibos/opciones', requireAuth, permRecibosVer, async (req, res) => {
   try {
     const { medico_id, especialidad_id } = req.query;
     const catalogoRows = await db.query('SELECT nombre AS valor FROM entidades WHERE activo=1 ORDER BY nombre ASC');
@@ -532,7 +558,7 @@ router.get('/recibos/opciones', requireAuth, async (req, res) => {
 });
 
 // GET /api/recibos/next-number — BEFORE /:id
-router.get('/recibos/next-number', requireAuth, async (req, res) => {
+router.get('/recibos/next-number', requireAuth, permRecibosVer, async (req, res) => {
   try {
     const rows = await db.query('SELECT MAX(CAST(numero AS UNSIGNED)) AS maxNum FROM recibos');
     const maxNum = parseInt(rows[0]?.maxNum || '0', 10) || 0;

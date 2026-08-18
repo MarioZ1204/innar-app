@@ -93,6 +93,16 @@ function refreshRecibosListaPreservandoFiltros() {
   });
 }
 
+function invalidarCachesEstudiosCliente() {
+  if (typeof invalidarCacheEstudios === 'function') invalidarCacheEstudios();
+  if (typeof invalidarCacheServicios === 'function') invalidarCacheServicios();
+  if (window.innarSoportesCatalogo?.invalidarEstudios) window.innarSoportesCatalogo.invalidarEstudios();
+  if (window.innarComprobantePdx?.invalidarEstudios) window.innarComprobantePdx.invalidarEstudios();
+  if (typeof scheduleBuscarGestionDatos === 'function' && typeof _gestionTipoActual !== 'undefined' && _gestionTipoActual === 'estudio_duraciones') {
+    scheduleBuscarGestionDatos(200);
+  }
+}
+
 function refreshActiveModuleData() {
   const module = window.currentModule;
   // No recargar recibos aquí: eventos de agenda/electro no deben vaciar filtros del reporte.
@@ -358,16 +368,19 @@ function registerDefaultRealtimeHandlers() {
   });
 
   subscribe('usuario:creado', () => {
+    if (typeof invalidarCacheMedicosAgenda === 'function') invalidarCacheMedicosAgenda();
     if (typeof cargarUsuarios === 'function') {
       scheduleSocketRefresh('usuarios:lista', () => cargarUsuarios());
     }
   });
   subscribe('usuario:actualizado', () => {
+    if (typeof invalidarCacheMedicosAgenda === 'function') invalidarCacheMedicosAgenda();
     if (typeof cargarUsuarios === 'function') {
       scheduleSocketRefresh('usuarios:lista', () => cargarUsuarios());
     }
   });
   subscribe('usuario:eliminado', () => {
+    if (typeof invalidarCacheMedicosAgenda === 'function') invalidarCacheMedicosAgenda();
     if (typeof cargarUsuarios === 'function') {
       scheduleSocketRefresh('usuarios:lista', () => cargarUsuarios());
     }
@@ -386,14 +399,28 @@ function registerDefaultRealtimeHandlers() {
     if (typeof checkSession === 'function') checkSession();
   });
   subscribe('tipos-consulta:actualizado', () => {
-    if (typeof _tiposConsultaCache !== 'undefined') _tiposConsultaCache = {};
+    if (typeof invalidarCacheEspecialidades === 'function') invalidarCacheEspecialidades();
+    else if (typeof _tiposConsultaCache !== 'undefined') _tiposConsultaCache = {};
     if (typeof window._reciboCurrentTipos !== 'undefined') window._reciboCurrentTipos = [];
     if (window.innarServicioCombo?.invalidarCache) window.innarServicioCombo.invalidarCache();
+    if (window.innarSoportesCatalogo?.invalidarTipos) window.innarSoportesCatalogo.invalidarTipos();
+    if (window.innarComprobantePdx?.invalidarTipos) window.innarComprobantePdx.invalidarTipos();
     const medicoId = document.getElementById('reciboMedico')?.value;
     if (medicoId && typeof cargarTiposConsultaEnRecibo === 'function') {
       cargarTiposConsultaEnRecibo(medicoId);
     }
     if (typeof scheduleBuscarGestionDatos === 'function' && typeof _gestionTipoActual !== 'undefined' && _gestionTipoActual === 'tipos_consulta') {
+      scheduleBuscarGestionDatos(200);
+    }
+  });
+  subscribe('especialidades:actualizado', () => {
+    if (typeof invalidarCacheEspecialidades === 'function') invalidarCacheEspecialidades();
+    if (window.innarSoportesCatalogo?.invalidarEspecialidades) window.innarSoportesCatalogo.invalidarEspecialidades();
+    if (window.innarComprobantePdx?.invalidarEspecialidades) window.innarComprobantePdx.invalidarEspecialidades();
+    if (typeof cargarEspecialidadesFiltro === 'function') {
+      scheduleSocketRefresh('dashboard:especialidades', () => cargarEspecialidadesFiltro());
+    }
+    if (typeof scheduleBuscarGestionDatos === 'function' && typeof _gestionTipoActual !== 'undefined' && _gestionTipoActual === 'especialidades') {
       scheduleBuscarGestionDatos(200);
     }
   });
@@ -403,12 +430,15 @@ function registerDefaultRealtimeHandlers() {
       scheduleBuscarGestionDatos(200);
     }
   });
-  subscribe('estudio:creado', () => {
-    if (typeof scheduleBuscarGestionDatos === 'function' && typeof _gestionTipoActual !== 'undefined' && _gestionTipoActual === 'estudio_duraciones') {
+  subscribe('estudio:creado', () => invalidarCachesEstudiosCliente());
+  subscribe('estudio:actualizado', () => invalidarCachesEstudiosCliente());
+  subscribe('diagnosticos:actualizado', () => {
+    if (typeof scheduleBuscarGestionDatos === 'function' && typeof _gestionTipoActual !== 'undefined' && _gestionTipoActual === 'diagnosticos') {
       scheduleBuscarGestionDatos(200);
     }
   });
   subscribe('anexo-fidu:servicios-actualizado', () => {
+    if (typeof window._invalidarServiciosAnexoFidu === 'function') window._invalidarServiciosAnexoFidu();
     if (typeof scheduleBuscarGestionDatos === 'function' && typeof _gestionTipoActual !== 'undefined' && _gestionTipoActual === 'anexo_fidu_servicios') {
       scheduleBuscarGestionDatos(200);
     }

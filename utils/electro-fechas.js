@@ -3,7 +3,8 @@
  * Usar componentes de calendario (YYYY-MM-DD) en lugar de Date local/ISO.
  */
 
-/** HH:MM desde TIME MySQL, ISO u otros formatos (sin desfase TZ). */
+const { ymdCalendarioColombia } = require('./fecha-colombia');
+
 function normalizarHoraHmElectro(val) {
   if (val == null || val === '') return null;
   const s = String(val).trim();
@@ -18,14 +19,8 @@ function normalizarHoraHmElectro(val) {
 }
 
 function extraerFechaYmd(val) {
-  if (val == null || val === '') return null;
-  const s = String(val).trim();
-  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
-  if (val instanceof Date && !Number.isNaN(val.getTime())) {
-    return `${val.getFullYear()}-${String(val.getMonth() + 1).padStart(2, '0')}-${String(val.getDate()).padStart(2, '0')}`;
-  }
-  return null;
+  const ymd = ymdCalendarioColombia(val);
+  return ymd || null;
 }
 
 /** Suma minutos a fecha+hora en calendario local (coherente con UI y TIMESTAMP MySQL). */

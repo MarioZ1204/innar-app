@@ -99,18 +99,22 @@ select {
   background: var(--innar-page-bg) !important;
 }
 
-/* ── Menú principal — tarjetas coherentes con marca ───────────────────────── */
-.menu-card[data-module="monitor-equipos"] {
-  --mc: var(--c-mid) !important;
-}
-
-.menu-card[data-module="reportes-pdx"] {
-  --mc: #4a6fa5 !important;
-}
-
-.menu-card[data-module="armado-soportes"] {
-  --mc: var(--c-dark) !important;
-}
+/* ── Menú principal — mismo recorte, color por módulo ─────────────────────── */
+.menu-card[data-module="recibos"] { --mc: #059669 !important; }
+.menu-card[data-module="agenda-medica"] { --mc: #2563eb !important; }
+.menu-card[data-module="electro"] { --mc: #0891b2 !important; }
+.menu-card[data-module="monitor-equipos"] { --mc: #0f766e !important; }
+.menu-card[data-module="llamado-pacientes"] { --mc: #14b8a6 !important; }
+.menu-card[data-module="documentos-cita"] { --mc: #3d6b66 !important; }
+.menu-card[data-module="reportes-pdx"] { --mc: #4a6fa5 !important; }
+.menu-card[data-module="armado-soportes"] { --mc: #0d9488 !important; }
+.menu-card[data-module="anexo-fidu"] { --mc: #ca8a04 !important; }
+.menu-card[data-module="reportes-historico"] { --mc: #4f46e5 !important; }
+.menu-card[data-module="dashboard-citas"] { --mc: #2d4a47 !important; }
+.menu-card[data-module="usuarios"] { --mc: #d97706 !important; }
+.menu-card[data-module="diagnosticos"] { --mc: #dc2626 !important; }
+.menu-card[data-module="gestion-datos"] { --mc: #0284c7 !important; }
+.menu-card[data-module="backup"] { --mc: #0e7490 !important; }
 
 .menu-card {
   border-radius: var(--innar-radius-lg) !important;
@@ -119,6 +123,27 @@ select {
 
 .menu-card:hover {
   box-shadow: 0 10px 32px rgba(45, 74, 71, 0.18) !important;
+}
+
+.menu-card-icon {
+  width: 88px !important;
+  height: 88px !important;
+  color: var(--mc, #8aa6a1);
+}
+
+.menu-card-icon svg {
+  width: 40px;
+  height: 40px;
+  display: block;
+  flex-shrink: 0;
+  fill: none;
+  stroke: currentColor;
+}
+
+.menu-card-icon .icon-img {
+  width: 40px !important;
+  height: 40px !important;
+  object-fit: contain;
 }
 
 .menu-groups {
@@ -236,10 +261,6 @@ select {
 }
 
 /* ── Monitor de equipos (paleta marca, barra fecha simétrica) ─────────────── */
-.menu-card[data-module="monitor-equipos"] {
-  --mc: var(--c-dark);
-}
-
 .meq-topbar-title {
   color: var(--innar-text) !important;
 }

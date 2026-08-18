@@ -4,7 +4,7 @@ const express = require('express');
 const router = express.Router();
 const logger = require('../utils/logger');
 const {
-  requireAuth, requirePermiso, safeError
+  requireAuth, requirePermiso, sesionTieneAlgunPermiso, safeError
 } = require('../middleware/index');
 const {
   tryRenderHtmlToPdf,
@@ -55,14 +55,7 @@ const {
 const CONTEXTOS_PERSONA_FIDU = new Set(['certificado', 'comprobante', 'anexo']);
 
 function requirePersonaFiduLectura(req, res, next) {
-  if (req.session?.rol === 'superadmin') return next();
-  const perms = req.session?.permisos;
-  const permisosOk = ['agenda.ver', 'electro.ver', 'modulo.anexo_fidu'];
-  if (perms === null || perms === undefined) {
-    if (req.session?.rol === 'admin' || req.session?.rol === 'administrador') return next();
-    return next();
-  }
-  if (Array.isArray(perms) && permisosOk.some((p) => perms.includes(p))) return next();
+  if (sesionTieneAlgunPermiso(req.session, ['agenda.ver', 'electro.ver', 'modulo.anexo_fidu'])) return next();
   return res.status(403).json({ error: 'No tienes permiso para consultar la base de pacientes' });
 }
 
@@ -72,14 +65,7 @@ function parseContextoPersonaFidu(val) {
 }
 
 function requireCertificadoComprobante(req, res, next) {
-  if (req.session?.rol === 'superadmin') return next();
-  const perms = req.session?.permisos;
-  const permisosOk = ['agenda.ver', 'electro.ver', 'modulo.anexo_fidu'];
-  if (perms === null || perms === undefined) {
-    if (req.session?.rol === 'admin' || req.session?.rol === 'administrador') return next();
-    return next();
-  }
-  if (Array.isArray(perms) && permisosOk.some((p) => perms.includes(p))) return next();
+  if (sesionTieneAlgunPermiso(req.session, ['agenda.ver', 'electro.ver', 'modulo.anexo_fidu'])) return next();
   return res.status(403).json({ error: 'No tienes permiso para consultar el catálogo de servicios' });
 }
 

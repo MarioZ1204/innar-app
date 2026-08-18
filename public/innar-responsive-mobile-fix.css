@@ -189,9 +189,9 @@
 
   #view-menu .menu-card-icon .icon-img,
   #view-menu .menu-card-icon svg {
-    width: 40px !important;
-    height: auto !important;
-    max-height: 44px !important;
+    width: 28px !important;
+    height: 28px !important;
+    max-height: none !important;
   }
 
   #view-menu .menu-card-label {

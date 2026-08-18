@@ -458,6 +458,16 @@
     pedirEspecialidadYTipoConsulta,
     pedirTipoEstudio,
     splitNombrePdx,
-    bindEnviarPdx
+    bindEnviarPdx,
+    invalidarEspecialidades() { _cacheEsp = null; },
+    invalidarEstudios() { _cacheEstudios = null; },
+    invalidarTipos() {
+      Object.keys(_cacheTipos).forEach((k) => { delete _cacheTipos[k]; });
+    },
+    invalidarCache() {
+      _cacheEsp = null;
+      _cacheEstudios = null;
+      Object.keys(_cacheTipos).forEach((k) => { delete _cacheTipos[k]; });
+    }
   };
 })(typeof window !== 'undefined' ? window : globalThis);

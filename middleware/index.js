@@ -2,6 +2,7 @@
 const socketEmitter = require('../utils/socket-emitter');
 const logger = require('../utils/logger');
 const { sesionIncluyePermiso } = require('../config/permisos-legacy');
+const { PERMISOS_ROL_DEFAULTS } = require('../config/permisos-rol-defaults');
 
 // ── Helpers de rol ──────────────────────────────────────────────────────────
 function isAdminRol(rol) {
@@ -49,44 +50,69 @@ function requireRole(roles) {
   };
 }
 
-function requirePermiso(permiso) {
-  const { esPermisoOptIn } = require('../config/permisos-opt-in');
-  return (req, res, next) => {
-    const rol = req.session?.rol;
-    if (rol === 'superadmin') return next();
-    const perms = req.session?.permisos;
-    if (esPermisoOptIn(permiso)) {
-      if (Array.isArray(perms) && perms.includes(permiso)) return next();
-      return res.status(403).json({ error: 'No tienes permiso para esta acción' });
+function parsePermisosSesion(raw) {
+  if (raw == null) return null;
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : null;
+    } catch (_) {
+      return null;
     }
-    if (rol === 'admin' && (perms === null || perms === undefined)) return next();
-    if (perms === null || perms === undefined) return next();
-    if (Array.isArray(perms) && (perms.includes(permiso) || sesionIncluyePermiso(perms, permiso))) return next();
+  }
+  return null;
+}
+
+/**
+ * Misma lógica que window.tienePermiso en public/app.js:
+ * superadmin siempre; opt-in solo con lista explícita; admin sin lista = todo
+ * (salvo opt-in); si permisos es null, se usan PERMISOS_ROL_DEFAULTS del rol.
+ */
+function sesionTienePermiso(session, permiso) {
+  if (!session?.usuarioId || !permiso) return false;
+  const rol = session.rol;
+  if (rol === 'superadmin') return true;
+  const { esPermisoOptIn } = require('../config/permisos-opt-in');
+  const perms = parsePermisosSesion(session.permisos);
+  if (esPermisoOptIn(permiso)) {
+    return Array.isArray(perms) && (perms.includes(permiso) || sesionIncluyePermiso(perms, permiso));
+  }
+  if (rol === 'admin' && !Array.isArray(perms)) return true;
+  if (Array.isArray(perms)) return sesionIncluyePermiso(perms, permiso);
+  const defaults = PERMISOS_ROL_DEFAULTS[rol];
+  if (defaults === null || defaults === undefined) return true;
+  return Array.isArray(defaults) && sesionIncluyePermiso(defaults, permiso);
+}
+
+function sesionTieneAlgunPermiso(session, permisos) {
+  const keys = Array.isArray(permisos) ? permisos.filter(Boolean) : [permisos];
+  return keys.some((p) => sesionTienePermiso(session, p));
+}
+
+function requirePermiso(permiso) {
+  return (req, res, next) => {
+    if (!req.session?.usuarioId) return res.status(401).json({ error: 'No autenticado' });
+    if (sesionTienePermiso(req.session, permiso)) return next();
     return res.status(403).json({ error: 'No tienes permiso para esta acción' });
   };
 }
 
 function requireRoleOrPerm(roles, permiso) {
-  const permisos = Array.isArray(permiso) ? permiso : [permiso];
-  const { esPermisoOptIn } = require('../config/permisos-opt-in');
+  const rolesList = Array.isArray(roles) ? roles : [];
+  const permisos = permiso === undefined || permiso === null
+    ? []
+    : (Array.isArray(permiso) ? permiso.filter(Boolean) : [permiso]);
   return (req, res, next) => {
     if (!req.session?.usuarioId) return res.status(401).json({ error: 'No autenticado' });
     const rol = req.session.rol;
-    const perms = req.session?.permisos;
     if (rol === 'superadmin') return next();
-    const soloOptIn = permisos.length > 0 && permisos.every((p) => esPermisoOptIn(p));
-    if (soloOptIn) {
-      if (Array.isArray(perms) && permisos.some((p) => perms.includes(p) || sesionIncluyePermiso(perms, p))) return next();
+    if (!permisos.length) {
+      if (rolesList.includes(rol)) return next();
       return res.status(403).json({ error: 'Acceso denegado' });
     }
-    if (rol === 'admin' && (perms === null || perms === undefined)) return next();
-    if (roles.includes(rol)) {
-      if (perms === null || perms === undefined) return next();
-      if (Array.isArray(perms) && permisos.some((p) => perms.includes(p) || sesionIncluyePermiso(perms, p))) return next();
-      return res.status(403).json({ error: 'No tienes permiso para esta acción' });
-    }
-    if (Array.isArray(perms) && permisos.some((p) => perms.includes(p) || sesionIncluyePermiso(perms, p))) return next();
-    return res.status(403).json({ error: 'Acceso denegado' });
+    if (sesionTieneAlgunPermiso(req.session, permisos)) return next();
+    return res.status(403).json({ error: 'No tienes permiso para esta acción' });
   };
 }
 
@@ -113,6 +139,7 @@ function emitSocket(eventName, data) {
 
 module.exports = {
   isAdminRol, isRecepcionRol, isElectroRol, canViewAuditoriaCitas,
+  parsePermisosSesion, sesionTienePermiso, sesionTieneAlgunPermiso,
   requireAuth, requireAdmin, requireSuperAdmin, requireRole, requirePermiso, requireRoleOrPerm,
   safeError, parseReciboId, emitSocket
 };

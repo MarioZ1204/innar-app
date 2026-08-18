@@ -1,6 +1,6 @@
 'use strict';
 
-const { hoyColombiaISO, fechaYmdOHoyColombia } = require('../utils/fecha-colombia');
+const { hoyColombiaISO, fechaYmdOHoyColombia, ymdCalendarioColombia, horaColombiaHm } = require('../utils/fecha-colombia');
 
 describe('fecha-colombia', () => {
   test('hoyColombiaISO es YYYY-MM-DD', () => {
@@ -17,6 +17,18 @@ describe('fecha-colombia', () => {
     const despuesDeLasSiete = new Date('2026-08-15T00:30:00.000Z');
     expect(despuesDeLasSiete.toISOString().slice(0, 10)).toBe('2026-08-15');
     expect(hoyColombiaISO(despuesDeLasSiete)).toBe('2026-08-14');
+  });
+
+  test('ymdCalendarioColombia no toma el día UTC de un ISO con Z', () => {
+    expect(ymdCalendarioColombia('2026-08-15T00:30:00.000Z')).toBe('2026-08-14');
+    expect(ymdCalendarioColombia('2026-08-18T05:00:00.000Z')).toBe('2026-08-18');
+    expect(ymdCalendarioColombia('2026-08-18')).toBe('2026-08-18');
+    expect(ymdCalendarioColombia('2026-08-18 20:00:00')).toBe('2026-08-18');
+    expect(ymdCalendarioColombia(new Date('2026-08-18T00:00:00.000Z'))).toBe('2026-08-18');
+  });
+
+  test('horaColombiaHm usa Bogotá, no UTC', () => {
+    expect(horaColombiaHm(new Date('2026-08-15T00:30:00.000Z'))).toBe('19:30');
   });
 
   test('fechaYmdOHoyColombia respeta un YYYY-MM-DD válido', () => {

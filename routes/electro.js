@@ -7,16 +7,20 @@ const logger = require('../utils/logger');
 const { withTransaction } = require('../utils/transactions');
 const { upload, validateMagicBytes } = require('../middleware/upload');
 const {
-  requireAuth, requireRoleOrPerm,
+  requireAuth, requireRoleOrPerm, requirePermiso,
   safeError, emitSocket
 } = require('../middleware/index');
 const { validateSchema } = require('../modules/validation-schemas');
 const { buildReprogramacionElectroPayload } = require('../utils/agenda-reprogramacion');
 const {
-  obtenerHistorialCompletoReprogramacionesElectro,
-  backfillHistorialReprogramacionesElectro
+  obtenerHistorialCompletoReprogramacionesElectro
 } = require('../utils/electro-reprogramacion-historial');
 const { hayCupoElectroParaAgendar, hayCupoElectroParaIniciar } = require('./electro-capacity');
+const {
+  httpError,
+  responderSiHttpError,
+  bloquearEquiposElectro
+} = require('../utils/locks-concurrencia');
 const {
   evaluarTransicionElectro,
   requiereFichaElectroParaTransicion
@@ -406,8 +410,51 @@ async function validarCapacidadElectroAgendar({ fecha, horaAgendamiento, fechaFi
   return { ok: true, peak: cupoCheck.peak, maxCupos };
 }
 
+async function assertEquipoLibreTx(conn, { equipoId, excludeId }) {
+  const eqId = equipoId ? parseInt(equipoId, 10) : null;
+  if (!eqId || Number.isNaN(eqId)) return;
+  const ocupado = excludeId
+    ? await conn.query(
+      `SELECT id, estudio FROM citas_electro
+       WHERE equipo_id = ? AND id != ? AND estado = 'En Estudio' AND deleted_at IS NULL
+       LIMIT 1`,
+      [eqId, excludeId]
+    )
+    : await conn.query(
+      `SELECT id, estudio FROM citas_electro
+       WHERE equipo_id = ? AND estado = 'En Estudio' AND deleted_at IS NULL
+       LIMIT 1`,
+      [eqId]
+    );
+  if (ocupado.length > 0) {
+    const eqRows = await conn.query('SELECT nombre FROM equipos_electro WHERE id = ?', [eqId]);
+    const eqNombre = eqRows[0]?.nombre || `Equipo ${eqId}`;
+    throw httpError(
+      409,
+      `${eqNombre} está ocupado con el estudio "${ocupado[0].estudio || 'Sin tipo'}". Espere a que finalice.`
+    );
+  }
+}
+
+async function assertCupoInicioSinEquipoTx(conn, excludeId) {
+  const activasRows = await conn.query(`
+    SELECT fecha, hora_agendamiento, hora_inicio, hora_fin, hora_fin_date, duracion_minutos, estado
+    FROM citas_electro
+    WHERE id != ? AND estado IN ('En Estudio', 'Pausado') AND deleted_at IS NULL
+  `, [excludeId]);
+  const maxCuposRows = await conn.query('SELECT COUNT(*) as total FROM equipos_electro WHERE activo = 1');
+  const maxCupos = parseInt(maxCuposRows[0]?.total, 10) || 0;
+  const cupoCheck = hayCupoElectroParaIniciar(activasRows, new Date(), maxCupos);
+  if (!cupoCheck.ok) {
+    throw httpError(409, 'Sin capacidad disponible: todos los equipos están en uso', {
+      details: `Estudios activos: ${cupoCheck.peak}/${maxCupos}`,
+      capacity: { active: cupoCheck.peak, max: maxCupos }
+    });
+  }
+}
+
 // GET /api/equipos-electro
-router.get('/equipos-electro', requireAuth, async (req, res) => {
+router.get('/equipos-electro', requireAuth, requirePermiso('electro.ver'), async (req, res) => {
   try {
     await repararEstadosElectroAlConsultar(null);
     const equipos = await db.query('SELECT * FROM equipos_electro WHERE activo = 1 ORDER BY nombre ASC');
@@ -546,7 +593,7 @@ router.get('/equipos-electro/monitor', requireAuth, requireRoleOrPerm(
 });
 
 // GET /api/estudios/duracion
-router.get('/estudios/duracion', requireAuth, async (req, res) => {
+router.get('/estudios/duracion', requireAuth, requirePermiso('electro.ver'), async (req, res) => {
   try {
     const { nombre } = req.query;
     if (!nombre) return res.status(400).json({ error: 'nombre del estudio es obligatorio' });
@@ -578,7 +625,7 @@ router.get('/estudios/duracion', requireAuth, async (req, res) => {
 });
 
 // GET /api/equipos-electro/disponibilidad
-router.get('/equipos-electro/disponibilidad', requireAuth, async (req, res) => {
+router.get('/equipos-electro/disponibilidad', requireAuth, requirePermiso('electro.ver'), async (req, res) => {
   try {
     const { fecha, hora, estudio, duracion_manual } = req.query;
     if (!fecha || !hora) return res.status(400).json({ error: 'fecha y hora son obligatorios' });
@@ -811,7 +858,7 @@ router.post('/diagnosticos/import-excel', requireAuth, requireRoleOrPerm(['super
 });
 
 // GET /api/citas-electro/citas-mismo-estudio
-router.get('/citas-electro/citas-mismo-estudio', requireAuth, async (req, res) => {
+router.get('/citas-electro/citas-mismo-estudio', requireAuth, requirePermiso('electro.ver'), async (req, res) => {
   const documento = String(req.query.documento || '').replace(/\D/g, '');
   const estudio = String(req.query.estudio || '').trim();
   if (!documento || documento.length < 6 || !estudio) {
@@ -849,7 +896,7 @@ router.get('/citas-electro/citas-mismo-estudio', requireAuth, async (req, res) =
 });
 
 // GET /api/citas-electro/plantilla-excel
-router.get('/citas-electro/plantilla-excel', requireAuth, async (req, res) => {
+router.get('/citas-electro/plantilla-excel', requireAuth, requirePermiso('electro.crear'), async (req, res) => {
   try {
     const ExcelJS = require('exceljs');
     const estudiosRows = await db.query('SELECT nombre FROM estudio_duraciones ORDER BY nombre ASC');
@@ -903,7 +950,7 @@ router.get('/citas-electro/plantilla-excel', requireAuth, async (req, res) => {
 });
 
 // GET /api/citas-electro/calendario?mes=YYYY-MM — BEFORE /:id
-router.get('/citas-electro/calendario', requireAuth, async (req, res) => {
+router.get('/citas-electro/calendario', requireAuth, requirePermiso('electro.ver'), async (req, res) => {
   const { mes } = req.query;
   if (!mes || !/^\d{4}-\d{2}$/.test(mes)) {
     return res.status(400).json({ error: 'mes es obligatorio (formato YYYY-MM)' });
@@ -936,7 +983,7 @@ router.get('/citas-electro/calendario', requireAuth, async (req, res) => {
 });
 
 // GET /api/citas-electro/stats — BEFORE /:id
-router.get('/citas-electro/stats', requireAuth, async (req, res) => {
+router.get('/citas-electro/stats', requireAuth, requirePermiso('electro.ver'), async (req, res) => {
   const { fecha } = req.query;
   if (!fecha) return res.status(400).json({ error: 'fecha es obligatoria' });
   try {
@@ -964,7 +1011,7 @@ router.get('/citas-electro/stats', requireAuth, async (req, res) => {
 });
 
 // GET /api/citas-electro/export — BEFORE /:id
-router.get('/citas-electro/export', requireAuth, async (req, res) => {
+router.get('/citas-electro/export', requireAuth, requirePermiso('electro.ver'), async (req, res) => {
   const { fecha } = req.query;
   if (!fecha) return res.status(400).json({ error: 'fecha es obligatoria' });
   try {
@@ -1016,7 +1063,7 @@ router.post('/citas-electro/corregir-completados-prematuros', requireAuth, requi
 });
 
 // GET /api/citas-electro
-router.get('/citas-electro', requireAuth, async (req, res) => {
+router.get('/citas-electro', requireAuth, requirePermiso('electro.ver'), async (req, res) => {
   res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
   res.set('Pragma', 'no-cache');
   res.set('Expires', '0');
@@ -1198,7 +1245,7 @@ function mapReprogramacionElectroRow(row) {
 }
 
 // GET /api/citas-electro/:id/reprogramaciones
-router.get('/citas-electro/:id/reprogramaciones', requireAuth, async (req, res) => {
+router.get('/citas-electro/:id/reprogramaciones', requireAuth, requirePermiso('electro.ver'), async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (!id) return res.status(400).json({ error: 'ID inválido' });
   try {
@@ -1376,7 +1423,7 @@ router.post('/citas-electro/:id/reprogramar', requireAuth, requireRoleOrPerm(
 });
 
 // GET /api/citas-electro/:id
-router.get('/citas-electro/:id', requireAuth, async (req, res) => {
+router.get('/citas-electro/:id', requireAuth, requirePermiso('electro.ver'), async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (!id) return res.status(400).json({ error: 'ID inválido' });
   try {
@@ -1771,7 +1818,24 @@ router.patch('/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin',
     updates.push('editado_por_nombre = ?'); values.push(editorNombre);
     values.push(id);
 
-    await db.execute(`UPDATE citas_electro SET ${updates.join(', ')} WHERE id = ?`, values);
+    const eqIdUpdate = (equipo_id !== undefined && equipo_id !== null && equipo_id !== '')
+      ? parseInt(equipo_id, 10)
+      : (citaActual.equipo_id ? parseInt(citaActual.equipo_id, 10) : null);
+    const eqIdOk = !!(eqIdUpdate && !Number.isNaN(eqIdUpdate));
+    const vaAEnEstudio = estadoPatch === 'En Estudio';
+    const asignaEquipo = equipo_id !== undefined && equipo_id !== null && equipo_id !== '';
+    const updateSql = `UPDATE citas_electro SET ${updates.join(', ')} WHERE id = ?`;
+
+    if (vaAEnEstudio || asignaEquipo) {
+      await db.transaction(async (conn) => {
+        await bloquearEquiposElectro(conn, eqIdOk ? eqIdUpdate : null);
+        if (eqIdOk) await assertEquipoLibreTx(conn, { equipoId: eqIdUpdate, excludeId: id });
+        if (vaAEnEstudio && !eqIdOk) await assertCupoInicioSinEquipoTx(conn, id);
+        await conn.execute(updateSql, values);
+      });
+    } else {
+      await db.execute(updateSql, values);
+    }
 
     // Nota: la migración del ENUM `estado` debe aplicarse desde migrations/db-migrations.js
     // (idx: estado_enum_electro). NO se ejecuta ALTER TABLE en caliente desde una petición.
@@ -1788,6 +1852,7 @@ router.patch('/citas-electro/:id', requireAuth, requireRoleOrPerm(['superadmin',
 
     res.json({ ok: true, transicion: `${estadoActual} → ${estadoPatch || estadoActual}` });
   } catch (e) {
+    if (responderSiHttpError(res, e)) return;
     res.status(500).json({ error: safeError(e) });
   }
 });

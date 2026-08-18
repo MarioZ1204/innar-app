@@ -167,7 +167,8 @@
 
 #view-llamado-pacientes.ltv-is-fullscreen .ltv-status-bar,
 #view-llamado-pacientes.ltv-is-fullscreen .ltv-alerta-bloqueo {
-  display: none !important;
+  position: relative;
+  z-index: 5;
 }
 
 .ltv-cons-grid {

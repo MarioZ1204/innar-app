@@ -1,4 +1,5 @@
 const {
+  extraerFechaYmd,
   citaVisibleEnFechaYmd,
   citaVisibleEnAgendaDiaYmd,
   finProgramadoCitaElectro,
@@ -220,5 +221,11 @@ describe('electro-fechas', () => {
       hora_fin_date: '2026-05-27',
       duracion_minutos: 60
     });
+  });
+
+  test('extraerFechaYmd no usa el día UTC de un ISO con Z', () => {
+    expect(extraerFechaYmd('2026-08-15T00:30:00.000Z')).toBe('2026-08-14');
+    expect(extraerFechaYmd('2026-08-18')).toBe('2026-08-18');
+    expect(extraerFechaYmd(new Date('2026-08-18T00:00:00.000Z'))).toBe('2026-08-18');
   });
 });

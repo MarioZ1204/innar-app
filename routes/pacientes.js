@@ -15,10 +15,18 @@ const {
   sqlAndVisible,
   parseFlag
 } = require('../utils/catalogo-visibilidad');
+const { emitCatalogoActualizado } = require('../utils/catalogo-socket');
+const { responderSiHttpError } = require('../utils/locks-concurrencia');
+const catalogoRefs = require('../utils/catalogo-referencias');
 
 // --- Pacientes ---
 
-router.get('/pacientes', requireAuth, async (req, res) => {
+const permPacienteVer = requireRoleOrPerm(
+  ['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion', 'doctor', 'admin_electro', 'electro', 'tecnico_electro'],
+  ['agenda.ver', 'electro.ver']
+);
+
+router.get('/pacientes', requireAuth, permPacienteVer, async (req, res) => {
   const { buscar, limit, offset } = req.query;
   const rawLimit = parseInt(limit, 10);
   const safeLimit = Math.max(1, Math.min(Number.isFinite(rawLimit) ? rawLimit : 100, 200));
@@ -76,7 +84,7 @@ function mapPacienteRespuesta(row, fuente, extras = {}) {
   };
 }
 
-router.get('/pacientes/por-documento/:documento', requireAuth, async (req, res) => {
+router.get('/pacientes/por-documento/:documento', requireAuth, permPacienteVer, async (req, res) => {
   const documento = String(req.params.documento || '').trim().replace(/\s/g, '');
   if (!documento || documento.length < 5) {
     return res.status(400).json({ error: 'Ingrese un documento válido (mínimo 5 dígitos)' });
@@ -140,7 +148,7 @@ router.get('/pacientes/por-documento/:documento', requireAuth, async (req, res) 
   }
 });
 
-router.get('/pacientes/:id', requireAuth, async (req, res) => {
+router.get('/pacientes/:id', requireAuth, permPacienteVer, async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (!id) return res.status(400).json({ error: 'ID inválido' });
   try {
@@ -240,6 +248,7 @@ router.post('/especialidades', requireAuth, requireRoleOrPerm(['superadmin', 'ad
   if (!nombre || !nombre.trim()) return res.status(400).json({ error: 'El nombre es obligatorio' });
   try {
     const result = await db.execute('INSERT INTO especialidades (nombre) VALUES (?)', [nombre.trim()]);
+    emitCatalogoActualizado('especialidades', { id: result.insertId });
     res.json({ ok: true, id: result.insertId });
   } catch (e) {
     if (e.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'Ya existe una especialidad con ese nombre' });
@@ -253,9 +262,11 @@ router.patch('/especialidades/:id', requireAuth, requireRoleOrPerm(['superadmin'
   if (!id) return res.status(400).json({ error: 'ID inválido' });
   if (!nombre || !nombre.trim()) return res.status(400).json({ error: 'El nombre es obligatorio' });
   try {
-    await db.execute('UPDATE especialidades SET nombre=? WHERE id=?', [nombre.trim(), id]);
+    await catalogoRefs.persistirEspecialidadConReferencias(db, { id, nombreNuevo: nombre.trim() });
+    emitCatalogoActualizado('especialidades', { id });
     res.json({ ok: true });
   } catch (e) {
+    if (responderSiHttpError(res, e)) return;
     if (e.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'Ya existe una especialidad con ese nombre' });
     res.status(500).json({ error: safeError(e) });
   }
@@ -265,9 +276,17 @@ router.delete('/especialidades/:id', requireAuth, requireRoleOrPerm(['superadmin
   const id = parseInt(req.params.id, 10);
   if (!id) return res.status(400).json({ error: 'ID inválido' });
   try {
+    await catalogoRefs.assertCatalogoEliminable(db, 'especialidades', id);
     await db.execute('DELETE FROM especialidades WHERE id=?', [id]);
+    emitCatalogoActualizado('especialidades', { id });
     res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: safeError(e) }); }
+  } catch (e) {
+    if (responderSiHttpError(res, e)) return;
+    if (e.code === 'ER_ROW_IS_REFERENCED_2' || e.code === 'ER_ROW_IS_REFERENCED') {
+      return res.status(409).json({ error: 'No se puede eliminar: hay registros que lo usan. Renómbrela en su lugar.' });
+    }
+    res.status(500).json({ error: safeError(e) });
+  }
 });
 
 // --- Tipos de consulta ---
@@ -397,25 +416,44 @@ router.patch('/tipos-consulta/:id', requireAuth, requireRoleOrPerm(['superadmin'
   if (updates.length === 0) return res.status(400).json({ error: 'No hay campos para actualizar' });
   try {
     values.push(id);
-    await db.execute(`UPDATE tipos_consulta SET ${updates.join(', ')} WHERE id=?`, values);
+    await catalogoRefs.persistirTipoConsultaConReferencias(db, {
+      id,
+      nombreNuevo: nombre !== undefined ? String(nombre).trim() : undefined,
+      camposSql: updates.join(', '),
+      values
+    });
     emitSocket('tipos-consulta:actualizado', { id });
     res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: safeError(e) }); }
+  } catch (e) {
+    if (responderSiHttpError(res, e)) return;
+    if (e.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'Ya existe un tipo de consulta con ese nombre' });
+    res.status(500).json({ error: safeError(e) });
+  }
 });
 
 router.delete('/tipos-consulta/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'modulo.gestion_datos'), async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (!id) return res.status(400).json({ error: 'ID inválido' });
   try {
+    await catalogoRefs.assertCatalogoEliminable(db, 'tipos_consulta', id);
     await db.execute('DELETE FROM tipos_consulta WHERE id=?', [id]);
     emitSocket('tipos-consulta:actualizado', { id });
     res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: safeError(e) }); }
+  } catch (e) {
+    if (responderSiHttpError(res, e)) return;
+    if (e.code === 'ER_ROW_IS_REFERENCED_2' || e.code === 'ER_ROW_IS_REFERENCED') {
+      return res.status(409).json({ error: 'No se puede eliminar: hay citas que usan este tipo. Renómbrelo en su lugar.' });
+    }
+    res.status(500).json({ error: safeError(e) });
+  }
 });
 
 // --- Pacientes en espera ---
 
-router.get('/pacientes-espera', requireAuth, async (req, res) => {
+router.get('/pacientes-espera', requireAuth, requireRoleOrPerm(
+  ['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion', 'admin_electro', 'electro', 'tecnico_electro'],
+  'electro.ver'
+), async (req, res) => {
   try {
     const rows = await db.query(
       `SELECT * FROM pacientes_espera
@@ -427,7 +465,10 @@ router.get('/pacientes-espera', requireAuth, async (req, res) => {
   }
 });
 
-router.post('/pacientes-espera', requireAuth, validateSchema('apiPacienteEspera'), async (req, res) => {
+router.post('/pacientes-espera', requireAuth, requireRoleOrPerm(
+  ['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'auxiliar_recepcion', 'admin_electro', 'electro', 'tecnico_electro'],
+  'electro.crear'
+), validateSchema('apiPacienteEspera'), async (req, res) => {
   const { documento, nombres, apellidos, entidad, prioridad, ingresado_por, telefono1, telefono2, tipo_estudio } = req.body;
   try {
     const entidadesDB = await db.query('SELECT nombre FROM entidades WHERE activo=1');
@@ -451,7 +492,7 @@ router.delete(
   requireAuth,
   requireRoleOrPerm(
     ['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'admin_electro', 'electro', 'tecnico_electro'],
-    'pacientes.eliminar_espera'
+    'electro.editar'
   ),
   async (req, res) => {
     const id = parseInt(req.params.id, 10);

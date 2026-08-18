@@ -68,17 +68,21 @@
 
   /* ── Consultorios activos / bloqueados ── */
 
+  let consultoriosPrefGuardada = false;
+
   function cargarConsultoriosActivos() {
+    consultoriosPrefGuardada = false;
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
+      if (raw !== null) {
+        consultoriosPrefGuardada = true;
         const ids = JSON.parse(raw);
         if (Array.isArray(ids)) {
           consultoriosActivos = new Set(ids.map(Number).filter(Boolean));
           return;
         }
       }
-    } catch (_) { /* ignore */ }
+    } catch (_) { consultoriosPrefGuardada = false; }
     consultoriosActivos = new Set();
   }
 
@@ -112,7 +116,8 @@
         ? String(data.numero_consultorio)
         : '',
       doctor_id: data?.doctor_id ?? null,
-      doctor_nombre: data?.doctor_nombre ? String(data.doctor_nombre).trim() : ''
+      doctor_nombre: data?.doctor_nombre ? String(data.doctor_nombre).trim() : '',
+      call_id: data?.call_id ? String(data.call_id).trim() : ''
     };
 
     let med = null;
@@ -223,7 +228,7 @@
 
   async function asegurarConsultoriosIniciales() {
     await cargarMedicos();
-    if (!consultoriosActivos.size && medicos.length) {
+    if (!consultoriosPrefGuardada && !consultoriosActivos.size && medicos.length) {
       medicos.forEach((m) => consultoriosActivos.add(m.id));
       guardarConsultoriosActivos();
     }
@@ -391,21 +396,25 @@
     const bar = $('llamadoStatusBar');
     const alerta = $('llamadoAlertaBloqueo');
     const activos = consultoriosActivos.size;
-    const enFullscreen = !!document.fullscreenElement;
+    const audioOff = estaTabEsLlamadoActiva() && !audioUnlocked;
 
     if (bar) {
-      if (activos > 0 || enFullscreen) {
-        bar.classList.add('hidden');
-        bar.textContent = '';
-      } else {
+      if (activos === 0) {
         bar.textContent = 'Ningún consultorio activo — active al menos uno en configuración';
         bar.classList.remove('hidden', 'ltv-status-bar--audio-off');
         bar.classList.add('ltv-status-bar--warn');
+      } else if (audioOff) {
+        bar.textContent = 'Toque la pantalla para activar el audio de llamados';
+        bar.classList.remove('hidden', 'ltv-status-bar--warn');
+        bar.classList.add('ltv-status-bar--audio-off');
+      } else {
+        bar.classList.add('hidden');
+        bar.textContent = '';
       }
     }
 
     if (alerta) {
-      alerta.classList.toggle('hidden', activos > 0 || enFullscreen);
+      alerta.classList.toggle('hidden', activos > 0);
     }
 
     renderHistorial();
@@ -768,12 +777,22 @@
     return secuencia;
   }
 
+  function emitirAnuncioAck(item, estado) {
+    const callId = String(item?.call_id || '').trim();
+    if (!callId || !window.socket) return;
+    window.socket.emit('agenda:anuncio-ack', {
+      call_id: callId,
+      estado,
+      paciente_nombre: item?.paciente_nombre || ''
+    });
+  }
+
   function encolarLlamado(data) {
     const item = normalizarLlamado(data);
     if (!item.paciente_nombre) return false;
     if (!consultorioPermitido(item)) return false;
-    if (llamadoRecienteDuplicado(item)) return false;
-    if (llamadoRecienteDuplicadoGlobal(item)) return false;
+    if (llamadoRecienteDuplicado(item)) return 'duplicado';
+    if (llamadoRecienteDuplicadoGlobal(item)) return 'duplicado';
 
     batchPendiente.push(item);
     if (batchTimer) clearTimeout(batchTimer);
@@ -787,7 +806,13 @@
 
     if (estaTabEsLlamadoActiva()) {
       unlockAudio();
-      encolarLlamado(item);
+      if (!consultorioPermitido(item)) {
+        emitirAnuncioAck(item, 'filtrado');
+        return;
+      }
+      const ok = encolarLlamado(item);
+      if (ok === true) emitirAnuncioAck(item, audioUnlocked ? 'reproducido' : 'sin_audio');
+      else if (ok === 'duplicado') emitirAnuncioAck(item, audioUnlocked ? 'reproducido' : 'sin_audio');
       return;
     }
 
@@ -801,6 +826,7 @@
     if (bufferPendienteModulo.length > BUFFER_PENDIENTE_MAX) {
       bufferPendienteModulo.shift();
     }
+    emitirAnuncioAck(item, 'modulo_oculto');
   }
 
   function vaciarBufferPendiente() {
@@ -894,10 +920,6 @@
 
   async function onLlamadoEvent(data) {
     if (!medicos.length) await cargarMedicos();
-    if (!consultoriosActivos.size && medicos.length && window.currentModule === 'llamado-pacientes') {
-      medicos.forEach((m) => consultoriosActivos.add(m.id));
-      guardarConsultoriosActivos();
-    }
     procesarLlamadoEntrante(data || {});
   }
 
@@ -1022,7 +1044,12 @@
         const payload = JSON.parse(e.newValue);
         if (payload?.item) {
           unlockAudio();
-          encolarLlamado(payload.item);
+          if (!consultorioPermitido(payload.item)) {
+            emitirAnuncioAck(payload.item, 'filtrado');
+          } else {
+            const ok = encolarLlamado(payload.item);
+            if (ok) emitirAnuncioAck(payload.item, audioUnlocked ? 'reproducido' : 'sin_audio');
+          }
         }
       } catch (_) { /* noop */ }
       return;

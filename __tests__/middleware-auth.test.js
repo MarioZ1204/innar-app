@@ -79,11 +79,19 @@ describe('requireRoleOrPerm', () => {
     expect(next).toHaveBeenCalled();
   });
 
-  test('rol en lista sin permisos personalizados pasa', () => {
+  test('rol en lista con permisos null usa defaults: pasa si el permiso está en el rol', () => {
     const { req, res } = makeReqRes({ usuarioId: 1, rol: 'doctor', permisos: null });
     const next = jest.fn();
-    mw.requireRoleOrPerm(['doctor'], 'turnos.editar')(req, res, next);
+    mw.requireRoleOrPerm(['doctor'], 'agenda.ver')(req, res, next);
     expect(next).toHaveBeenCalled();
+  });
+
+  test('rol en lista con permisos null usa defaults: 403 si el permiso no está en el rol', () => {
+    const { req, res } = makeReqRes({ usuarioId: 1, rol: 'doctor', permisos: null });
+    const next = jest.fn();
+    mw.requireRoleOrPerm(['doctor'], 'agenda.editar')(req, res, next);
+    expect(next).not.toHaveBeenCalled();
+    expect(res.statusCode).toBe(403);
   });
 
   test('rol fuera de lista sin permiso explícito: 403', () => {
@@ -115,6 +123,59 @@ describe('requireRoleOrPerm', () => {
     mw.requireRoleOrPerm(['doctor'], 'turnos.editar')(req, res, next);
     expect(next).not.toHaveBeenCalled();
     expect(res.statusCode).toBe(401);
+  });
+
+  test('sin permiso pedido: solo el rol de la lista pasa', () => {
+    const { req, res } = makeReqRes({ usuarioId: 1, rol: 'superadmin' });
+    const next = jest.fn();
+    mw.requireRoleOrPerm(['superadmin'])(req, res, next);
+    expect(next).toHaveBeenCalled();
+
+    const denied = makeReqRes({ usuarioId: 2, rol: 'doctor', permisos: null });
+    const next2 = jest.fn();
+    mw.requireRoleOrPerm(['superadmin'])(denied.req, denied.res, next2);
+    expect(next2).not.toHaveBeenCalled();
+    expect(denied.res.statusCode).toBe(403);
+  });
+});
+
+describe('requirePermiso / sesionTienePermiso', () => {
+  test('doctor con permisos null tiene agenda.ver por defaults', () => {
+    expect(mw.sesionTienePermiso({ usuarioId: 1, rol: 'doctor', permisos: null }, 'agenda.ver')).toBe(true);
+    expect(mw.sesionTienePermiso({ usuarioId: 1, rol: 'doctor', permisos: null }, 'recibos.ver')).toBe(false);
+  });
+
+  test('contabilidad con permisos null tiene recibos.ver y no agenda.ver', () => {
+    const session = { usuarioId: 1, rol: 'contabilidad', permisos: null };
+    expect(mw.sesionTienePermiso(session, 'recibos.ver')).toBe(true);
+    expect(mw.sesionTienePermiso(session, 'agenda.ver')).toBe(false);
+  });
+
+  test('admin con permisos null pasa permisos normales y no opt-in', () => {
+    const session = { usuarioId: 1, rol: 'admin', permisos: null };
+    expect(mw.sesionTienePermiso(session, 'agenda.ver')).toBe(true);
+    expect(mw.sesionTienePermiso(session, 'modulo.anexo_fidu')).toBe(false);
+  });
+
+  test('requirePermiso deniega a doctor la caja y permite la agenda', () => {
+    const agenda = makeReqRes({ usuarioId: 1, rol: 'doctor', permisos: null });
+    const nextA = jest.fn();
+    mw.requirePermiso('agenda.ver')(agenda.req, agenda.res, nextA);
+    expect(nextA).toHaveBeenCalled();
+
+    const caja = makeReqRes({ usuarioId: 1, rol: 'doctor', permisos: null });
+    const nextC = jest.fn();
+    mw.requirePermiso('recibos.ver')(caja.req, caja.res, nextC);
+    expect(nextC).not.toHaveBeenCalled();
+    expect(caja.res.statusCode).toBe(403);
+  });
+
+  test('array personalizado sin el permiso: 403 aunque el default del rol lo tenga', () => {
+    const { req, res } = makeReqRes({ usuarioId: 1, rol: 'doctor', permisos: ['chat.usar'] });
+    const next = jest.fn();
+    mw.requirePermiso('agenda.ver')(req, res, next);
+    expect(next).not.toHaveBeenCalled();
+    expect(res.statusCode).toBe(403);
   });
 });
 

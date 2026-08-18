@@ -366,6 +366,16 @@ function horaCaeEnSlotAgenda(hora, slot) {
   return t >= ini && t < fin;
 }
 
+/** Jornada por defecto (sin doctor_agenda): mismo criterio exclusivo que 08:00-12:00 / 14:00-18:00. */
+const SLOT_MANANA_DEFAULT = { hora_inicio: '07:00', hora_fin: '12:00' };
+const SLOT_TARDE_DEFAULT = { hora_inicio: '14:00', hora_fin: '18:00' };
+
+function jornadaDefaultDeHora(hora) {
+  if (horaCaeEnSlotAgenda(hora, SLOT_MANANA_DEFAULT)) return 'manana';
+  if (horaCaeEnSlotAgenda(hora, SLOT_TARDE_DEFAULT)) return 'tarde';
+  return null;
+}
+
 async function consultarSlotsAgendaDia(doctorId, fecha, db) {
   const fechaFormato = typeof fecha === 'string' ? fecha : fecha.toISOString().split('T')[0];
   const rows = await db.execute(
@@ -433,15 +443,12 @@ async function validarDisponibilidadPorHora(doctorId, fecha, hora, db) {
         };
       }
     } else {
-      const [horaStr, minStr] = (hora || '').split(':');
-      const horaNum = parseInt(horaStr, 10);
-      const minNum = parseInt(minStr || '0', 10);
-
-      if ((horaNum >= 7 && horaNum <= 11) || (horaNum === 12 && minNum <= 59)) {
+      const jornada = jornadaDefaultDeHora(hora);
+      if (jornada === 'manana') {
         if (!mananaOk) {
           return { valido: false, razon: 'El doctor no está disponible en la mañana (7:00-12:00) en esta fecha' };
         }
-      } else if ((horaNum >= 14 && horaNum <= 17) || (horaNum === 18 && minNum <= 59)) {
+      } else if (jornada === 'tarde') {
         if (!tardeOk) {
           return { valido: false, razon: 'El doctor no está disponible en la tarde (14:00-18:00) en esta fecha' };
         }
@@ -698,6 +705,7 @@ module.exports = {
   validarDisponibilidadPorHora,
   consultarSlotsAgendaDia,
   horaCaeEnSlotAgenda,
+  jornadaDefaultDeHora,
   consultarIntervalosNoDisponibles,
   esHoraBloqueada,
   limpiarDisponibilidad,

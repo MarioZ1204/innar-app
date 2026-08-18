@@ -1,4 +1,10 @@
-const { buildReprogramacionTurnoPayload, buildReprogramacionElectroPayload, etiquetaNotasReprogramado } = require('../utils/agenda-reprogramacion');
+const {
+  buildReprogramacionTurnoPayload,
+  buildReprogramacionElectroPayload,
+  etiquetaNotasReprogramado,
+  limpiarEtiquetaReprogramado
+} = require('../utils/agenda-reprogramacion');
+const publicApi = require('../public/agenda-reprogramacion.js');
 
 describe('agenda reprogramacion', () => {
   test('separa el turno nuevo del original sin perder datos del paciente', () => {
@@ -78,7 +84,7 @@ describe('agenda reprogramacion', () => {
     });
     expect(payload.actualizacionOriginal).toMatchObject({
       estado: 'Reprogramado',
-      observaciones: '[Reprogramado] Revision'
+      observaciones: '[Reprogramado a 12/01/2026 10:30] Revision'
     });
     expect(payload.actualizacionOriginal).not.toHaveProperty('id');
     expect(payload.nuevaCita).not.toHaveProperty('id');
@@ -88,5 +94,10 @@ describe('agenda reprogramacion', () => {
     expect(etiquetaNotasReprogramado('2026-08-20', '14:00', '')).toBe('[Reprogramado a 20/08/2026 14:00]');
     expect(etiquetaNotasReprogramado('2026-08-20', '14:00:00', '[Reprogramado] previa'))
       .toBe('[Reprogramado a 20/08/2026 14:00] previa');
+    expect(limpiarEtiquetaReprogramado('[Reprogramado a 12/01/2026 10:30] nota')).toBe('nota');
+  });
+
+  test('el util de servidor y el JS público son el mismo módulo', () => {
+    expect(require('../utils/agenda-reprogramacion')).toBe(publicApi);
   });
 });

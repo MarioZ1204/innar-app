@@ -345,55 +345,6 @@ let intervaloProgreso = null; // Intervalo para actualizar barra de progreso del
 let intervaloProgresoPanel = null; // Intervalo para mini-barras en panel de equipos
 let intervaloAutoSyncElectro = null; // Intervalo para refresco/sincronización automática
 
-// Mapeo de especialidades a tipos de consulta
-const ESPECIALIDAD_TIPOS_CONSULTA = {
-  'Neurología': [
-    'Consulta de Primera Vez por Neurología',
-    'Consulta de Control por Neurología',
-    'Consulta Virtual de Primera Vez por Neurología',
-    'Consulta Virtual de Control por Neurología',
-    'Aplicación de Toxina Botulínica (Botox)',
-    'Control de Toxina Botulínica (Botox)',
-    'Actigrafía',
-    'Rev. Neuroestimulador',
-    'Agente Anestésico',
-    'Particular',
-    'Otra'
-  ],
-  'Epileptología': [
-    'Consulta de Primera Vez por Epileptología',
-    'Consulta de Control por Epileptología',
-    'Consulta Virtual de Primera Vez por Epileptología',
-    'Consulta Virtual de Control por Epileptología',
-    'Consulta de Primera Vez por Neurología',
-    'Consulta de Control por Neurología',
-    'Consulta Virtual de Primera Vez por Neurología',
-    'Consulta Virtual de Control por Neurología',
-    'Aplicación de Toxina Botulínica (Botox)',
-    'Control de Toxina Botulínica (Botox)',
-    'Actigrafía',
-    'Rev. Neuroestimulador',
-    'Bloqueo Mioneural',
-    'Particular',
-    'Otra'
-  ],
-  'Psicología': [
-    'Consulta de Primera Vez por Psicología',
-    'Consulta de Control por Psicología',
-    'Otra'
-  ],
-  'Neuropsicología': [
-    'Consulta de Primera Vez por Neuropsicología',
-    'Consulta de Control por Neuropsicología',
-    'Otra'
-  ],
-  'Psiquiatría': [
-    'Consulta de Primera Vez por Psiquiatría',
-    'Consulta de Control por Psiquiatría',
-    'Otra'
-  ]
-};
-
 // Intervalo de auto-refresh para Agenda Médica
 let agendaMedicaInterval = null;
 let originalHoraTHHtml = null;
@@ -1602,7 +1553,11 @@ function citaElectroEsReprogramada(cita) {
 }
 
 function notasElectroUsuario(obs) {
-  return String(obs || '').replace(/\[Reprogramado\]\s*/gi, '').trim();
+  const api = window.innarAgendaReprogramacion;
+  if (api && typeof api.limpiarEtiquetaReprogramado === 'function') {
+    return api.limpiarEtiquetaReprogramado(obs);
+  }
+  return String(obs || '').replace(/\[Reprogramado(?:\s+a\s+[^\]]+)?\]\s*/gi, '').trim();
 }
 
 function citaElectroOcultarEnKanban(c) {
@@ -1625,66 +1580,6 @@ function estadoBadgeCitaElectro(citaOrEstado, observacionesArg) {
     ? 'Reprogramado'
     : (cita.estado || 'Programado');
   return estadoBadge(estado);
-}
-
-function buildReprogramacionTurnoPayload(turno, { fecha, hora, estadoOriginal = 'REPROGRAMADO', actor = 'Sistema' } = {}) {
-  const ymd = String(fecha || '').slice(0, 10);
-  const parts = ymd.split('-');
-  const hm = String(hora || '').slice(0, 5);
-  let tag = '[Reprogramado]';
-  if (parts.length === 3 && parts[0] && parts[1] && parts[2]) {
-    tag = `[Reprogramado a ${parts[2]}/${parts[1]}/${parts[0]}${hm ? ` ${hm}` : ''}]`;
-  }
-  const prev = String(turno?.notas || '').replace(/\[Reprogramado(?:\s+a\s+[^\]]+)?\]\s*/gi, '').trim();
-  return {
-    nuevoTurno: {
-      doctor_id: turno?.doctor_id,
-      paciente_nombre: turno?.paciente_nombre || null,
-      paciente_documento: turno?.paciente_documento || null,
-      paciente_telefono: turno?.paciente_telefono || null,
-      paciente_telefono2: turno?.paciente_telefono2 || null,
-      tipo_consulta: turno?.tipo_consulta || null,
-      entidad: turno?.entidad || null,
-      notas: turno?.notas || null,
-      fecha,
-      hora,
-      estado: 'PENDIENTE',
-      programado_por: actor || 'Sistema'
-    },
-    actualizacionOriginal: {
-      estado: estadoOriginal,
-      numero_turno: null,
-      reprogramado_fecha: fecha || null,
-      reprogramado_hora: hora || null,
-      notas: prev ? `${tag} ${prev}` : tag
-    }
-  };
-}
-
-function buildReprogramacionElectroPayload(cita, { fecha, hora, actor = 'Sistema', overrides = {} } = {}) {
-  const obs = String(cita?.observaciones || '').trim();
-  const observaciones = /\[Reprogramado\]/i.test(obs) ? obs : (obs ? `[Reprogramado] ${obs}` : '[Reprogramado]');
-  return {
-    nuevaCita: {
-      paciente_id: cita?.paciente_id,
-      fecha,
-      hora_agendamiento: hora,
-      estudio: overrides.estudio !== undefined ? overrides.estudio : (cita?.estudio || null),
-      entidad: overrides.entidad !== undefined ? overrides.entidad : (cita?.entidad || null),
-      observaciones: overrides.observaciones !== undefined
-        ? overrides.observaciones
-        : (notasElectroUsuario(cita?.observaciones) || null),
-      diagnostico_id: cita?.diagnostico_id || null,
-      equipo_id: overrides.equipo_id !== undefined ? overrides.equipo_id : (cita?.equipo_id || null),
-      duracion_minutos: overrides.duracion_minutos !== undefined ? overrides.duracion_minutos : (cita?.duracion_minutos || null),
-      estado: 'Programado',
-      programado_por_nombre: actor || 'Sistema'
-    },
-    actualizacionOriginal: {
-      estado: 'Reprogramado',
-      observaciones
-    }
-  };
 }
 
 function formatearFechaHoraReprogElectro(val) {
@@ -1834,17 +1729,31 @@ async function ejecutarReprogramacionElectro(cita, fechaNueva, horaNueva, { over
 /** Fecha calendario YYYY-MM-DD sin desfase UTC (Colombia). */
 function extraerFechaYmdCalendario(valor) {
   if (!valor) return '';
+  if (valor instanceof Date) {
+    if (Number.isNaN(valor.getTime())) return '';
+    const utcMidnight = valor.getUTCHours() === 0 && valor.getUTCMinutes() === 0
+      && valor.getUTCSeconds() === 0 && valor.getUTCMilliseconds() === 0;
+    if (utcMidnight) return valor.toISOString().slice(0, 10);
+    return hoyColombiaISO(valor);
+  }
   const s = String(valor).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const mysqlLocal = s.match(/^(\d{4}-\d{2}-\d{2})[ T]\d{2}:\d{2}/);
+  const tieneZona = /[zZ]|[+-]\d{2}:?\d{2}$/.test(s) || /GMT/i.test(s);
+  if (mysqlLocal && !tieneZona) return mysqlLocal[1];
+  const instant = new Date(s);
+  if (!Number.isNaN(instant.getTime()) && (tieneZona || /T\d{2}:/.test(s))) {
+    const utcMidnight = instant.getUTCHours() === 0 && instant.getUTCMinutes() === 0
+      && instant.getUTCSeconds() === 0 && instant.getUTCMilliseconds() === 0;
+    if (utcMidnight) return instant.toISOString().slice(0, 10);
+    return hoyColombiaISO(instant);
+  }
   const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
-  const d = new Date(s);
-  if (Number.isNaN(d.getTime())) return '';
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'America/Bogota',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit'
-  }).format(d);
+  return m ? `${m[1]}-${m[2]}-${m[3]}` : '';
+}
+
+function resolverFechaElectroYmd(valor) {
+  return extraerFechaYmdCalendario(valor) || hoyColombiaISO();
 }
 
 function formatearFecha(fecha) {
@@ -1958,17 +1867,30 @@ function formatearFechaISO(fecha) {
   return extraerFechaYmdCalendario(fecha) || '';
 }
 
-function hoyColombiaISO() {
+function hoyColombiaISO(date) {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'America/Bogota',
     year: 'numeric',
     month: '2-digit',
     day: '2-digit'
-  }).formatToParts(new Date());
+  }).formatToParts(date instanceof Date ? date : new Date());
   const y = parts.find(p => p.type === 'year')?.value;
   const m = parts.find(p => p.type === 'month')?.value;
   const d = parts.find(p => p.type === 'day')?.value;
   return `${y}-${m}-${d}`;
+}
+
+function horaColombiaHm(date) {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'America/Bogota',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23'
+  }).formatToParts(date instanceof Date ? date : new Date());
+  const h = parts.find(p => p.type === 'hour')?.value;
+  const m = parts.find(p => p.type === 'minute')?.value;
+  if (h == null || m == null) return '';
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
 // Servicios por defecto
@@ -2918,8 +2840,9 @@ async function cargarTiposConsultaSegunEspecialidad(especialidad) {
       tipos = _tiposConsultaCache[especialidad];
     } else {
       const res = await apiFetch(`/api/tipos-consulta?especialidad_nombre=${encodeURIComponent(especialidad)}&uso=agenda`);
+      if (!res.ok) throw new Error('tipos-consulta');
       const data = await res.json();
-      if (Array.isArray(data) && data.length > 0) {
+      if (Array.isArray(data)) {
         tipos = data;
         _tiposConsultaCache[especialidad] = tipos;
       }
@@ -2936,22 +2859,10 @@ async function cargarTiposConsultaSegunEspecialidad(especialidad) {
         selectTipo.appendChild(opt);
       });
     } else {
-      // Fallback a datos hardcodeados si la API no devuelve nada
-      (ESPECIALIDAD_TIPOS_CONSULTA[especialidad] || []).forEach(tipo => {
-        const opt = document.createElement('option');
-        opt.value = tipo;
-        opt.textContent = tipo;
-        selectTipo.appendChild(opt);
-      });
+      showToast('No hay tipos de consulta configurados para esta especialidad', 'error');
     }
   } catch {
-    // Fallback completo si la API falla
-    (ESPECIALIDAD_TIPOS_CONSULTA[especialidad] || []).forEach(tipo => {
-      const opt = document.createElement('option');
-      opt.value = tipo;
-      opt.textContent = tipo;
-      selectTipo.appendChild(opt);
-    });
+    showToast('No se pudieron cargar los tipos de consulta', 'error');
   }
 
   selectTipo.removeEventListener('change', manejarCambioTipoConsulta);
@@ -4388,6 +4299,7 @@ async function cargarEstudiosEnSelect(selectId, opts = {}) {
 
 function invalidarCacheEstudios() {
   _estudiosElectroCache = null;
+  if (window._duracionCacheElectro) window._duracionCacheElectro = {};
   const recargar = [
     ['electroEstudio', () => cargarEstudiosEnSelect('electroEstudio', { force: true })],
     ['filtroEstudiosElectro', () => fetchEstudiosElectroOpciones({ force: true }).then((lista) => initFiltroEstudiosElectro(lista))]
@@ -5025,13 +4937,7 @@ function limpiarCalCuposEntidadMemoria(doctorId) {
 
 function _fmtFechaAgenda(d) {
   if (d == null || d === '') return '';
-  if (typeof d === 'string') return d.slice(0, 10);
-  const dt = d instanceof Date ? d : new Date(d);
-  if (Number.isNaN(dt.getTime())) return String(d).slice(0, 10);
-  const y = dt.getFullYear();
-  const mo = String(dt.getMonth() + 1).padStart(2, '0');
-  const day = String(dt.getDate()).padStart(2, '0');
-  return `${y}-${mo}-${day}`;
+  return extraerFechaYmdCalendario(d);
 }
 
 function normalizarFilaDisponibilidadCal(d) {
@@ -6791,6 +6697,11 @@ let selectedTurnoMedica = null;
 
 let _cacheMedicosAgenda = null;
 
+function invalidarCacheMedicosAgenda() {
+  _cacheMedicosAgenda = null;
+  window._medicosAgendaList = null;
+}
+
 async function obtenerMedicosAgenda() {
   if (_cacheMedicosAgenda) return _cacheMedicosAgenda;
   const list = await apiFetch('/api/medicos').then((r) => r.json()).catch(() => []);
@@ -7032,9 +6943,13 @@ async function llamarSiguientePaciente() {
     const data = await res.json();
     if (data.ok) { 
       const nombre = data.turno.paciente_nombre || '';
-      const consultorio = data.turno.numero_consultorio;
-      showToast('Paciente llamado: ' + nombre, 'success'); 
-      // El anuncio (pop-up + voz) lo reproduce el módulo Llamado de pacientes
+      bindAnuncioTvAckListener();
+      if (data.call_id) {
+        const ack = await esperarAnuncioTvAck(data.call_id);
+        toastResultadoAnuncioTv(nombre, ack);
+      } else {
+        showToast('Paciente llamado: ' + nombre, 'success');
+      }
       cargarTurnosMedica(); 
     } else {
       showToast(data.error||'Error', 'error');
@@ -9184,11 +9099,13 @@ function obtenerFechaElectroBase10(fechaRaw) {
 }
 
 function construirDateHoraElectro(fechaBase, horaStr) {
-  if (!fechaBase || !horaStr) return null;
+  const ymd = extraerFechaYmdCalendario(fechaBase);
+  if (!ymd || !horaStr) return null;
   const [hh, mm] = String(horaStr).slice(0, 5).split(':').map(Number);
   if (Number.isNaN(hh) || Number.isNaN(mm)) return null;
-  const d = new Date(`${fechaBase}T${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:00`);
-  return Number.isNaN(d.getTime()) ? null : d;
+  const [y, mo, d] = ymd.split('-').map(Number);
+  const dt = new Date(y, mo - 1, d, hh, mm, 0);
+  return Number.isNaN(dt.getTime()) ? null : dt;
 }
 
 /** Hora de inicio al pulsar «No»: solo hora_agendamiento (programada), nunca la hora actual. */
@@ -9225,8 +9142,7 @@ function obtenerHoraInicioCalculoFinElectro(cita) {
 }
 
 function fechaYmdDesdeDate(d) {
-  if (!d || Number.isNaN(d.getTime())) return '';
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return extraerFechaYmdCalendario(d);
 }
 
 function diasCalendarioEntreYmdElectro(ymdA, ymdB) {
@@ -9241,17 +9157,18 @@ function diasCalendarioEntreYmdElectro(ymdA, ymdB) {
 
 /** Hora de inicio al pulsar «Sí» en el modal: hora actual al solicitar el inicio. */
 function obtenerHoraInicioSolicitudElectro() {
-  const ahora = new Date();
-  return `${String(ahora.getHours()).padStart(2, '0')}:${String(ahora.getMinutes()).padStart(2, '0')}`;
+  return horaColombiaHm();
 }
 
 /**
  * Fin calculado desde hora_inicio real (+ duración). Ignora ventana agendada si hay duración.
  */
 function calcularHoraFinElectroDesdeInicio(fechaBase, horaInicio, duracionMinutos) {
+  const ymd = extraerFechaYmdCalendario(fechaBase);
   const [hhInicio, mmInicio] = String(horaInicio || '').slice(0, 5).split(':').map(Number);
-  if (Number.isNaN(hhInicio) || Number.isNaN(mmInicio)) return null;
-  const startDate = new Date(`${fechaBase}T${String(hhInicio).padStart(2, '0')}:${String(mmInicio).padStart(2, '0')}:00`);
+  if (!ymd || Number.isNaN(hhInicio) || Number.isNaN(mmInicio)) return null;
+  const [y, mo, d] = ymd.split('-').map(Number);
+  const startDate = new Date(y, mo - 1, d, hhInicio, mmInicio, 0);
   if (Number.isNaN(startDate.getTime())) return null;
   startDate.setMinutes(startDate.getMinutes() + (parseInt(duracionMinutos, 10) || 0));
   return {
@@ -9365,11 +9282,9 @@ function debeMostrarFinEstudioEnCard(cita, dateFin) {
   if (cita.duracion_minutos && cita.duracion_minutos >= 60) return true;
   const fechaRaw = cita.fecha;
   if (!fechaRaw) return false;
-  const fechaBase = typeof fechaRaw === 'string' && fechaRaw.length > 10 ? fechaRaw.slice(0, 10) : String(fechaRaw).slice(0, 10);
-  const y = dateFin.getFullYear();
-  const mo = String(dateFin.getMonth() + 1).padStart(2, '0');
-  const d = String(dateFin.getDate()).padStart(2, '0');
-  const fechaFinStr = `${y}-${mo}-${d}`;
+  const fechaBase = extraerFechaYmdCalendario(fechaRaw);
+  if (!fechaBase) return false;
+  const fechaFinStr = extraerFechaYmdCalendario(dateFin);
   return fechaFinStr !== fechaBase;
 }
 
@@ -9380,7 +9295,7 @@ async function sincronizarEstadosPorTiempo(citas = []) {
 
 function resolverHoraFinFinalizacionEstudio(cita) {
   const ahora = new Date();
-  const horaActual = `${String(ahora.getHours()).padStart(2, '0')}:${String(ahora.getMinutes()).padStart(2, '0')}`;
+  const horaActual = horaColombiaHm(ahora);
   const horaFinExistente = cita?.hora_fin;
   let horaFinFinal = horaActual;
   if (horaFinExistente && /^\d{2}:\d{2}$/.test(horaFinExistente)) {
@@ -9389,7 +9304,8 @@ function resolverHoraFinFinalizacionEstudio(cita) {
       horaFinFinal = horaFinExistente;
     } else {
       const [efH, efM] = horaFinExistente.split(':').map(Number);
-      if (ahora.getHours() * 60 + ahora.getMinutes() > efH * 60 + efM) {
+      const [ah, am] = horaActual.split(':').map(Number);
+      if (ah * 60 + am > efH * 60 + efM) {
         horaFinFinal = horaFinExistente;
       }
     }
@@ -11042,9 +10958,19 @@ async function verHistorialAuditoria(usuarioId, usuarioNombre) {
           'DESACTIVAR': '🔴'
         };
         const icon = iconos[h.accion] || '•';
-        const cambios = h.cambios ? JSON.parse(h.cambios) : {};
+        let cambios = {};
+        if (h.cambios && typeof h.cambios === 'object' && !Array.isArray(h.cambios)) {
+          cambios = h.cambios;
+        } else if (typeof h.cambios === 'string' && h.cambios.trim()) {
+          try {
+            const parsed = JSON.parse(h.cambios);
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) cambios = parsed;
+          } catch (_) {
+            cambios = {};
+          }
+        }
         let cambiosHtml = '';
-        
+
         Object.entries(cambios).forEach(([campo, valores]) => {
           const label = {
             'usuario': 'Usuario',
@@ -11055,15 +10981,18 @@ async function verHistorialAuditoria(usuarioId, usuarioNombre) {
             'activo': 'Estado',
             'password': 'Contraseña'
           }[campo] || campo;
-          
-          cambiosHtml += `<div style="font-size:12px;margin:4px 0"><strong>${label}:</strong> ${valores.antes || '-'} → ${valores.despues || '-'}</div>`;
+          const par = valores && typeof valores === 'object' ? valores : {};
+          const antes = par.antes != null && par.antes !== '' ? String(par.antes) : '-';
+          const despues = par.despues != null && par.despues !== '' ? String(par.despues) : '-';
+
+          cambiosHtml += `<div style="font-size:12px;margin:4px 0"><strong>${escapeHtml(label)}:</strong> ${escapeHtml(antes)} → ${escapeHtml(despues)}</div>`;
         });
-        
+
         if (!cambiosHtml) cambiosHtml = '<div style="font-size:12px;color:#999">Sin detalles</div>';
-        
+
         html += `<tr style="border-bottom:1px solid #e5e7eb;background:${h.id % 2 === 0 ? 'white' : '#f9fafb'}">
-          <td style="padding:12px;border:1px solid #e5e7eb;font-size:12px">${h.fecha}</td>
-          <td style="padding:12px;border:1px solid #e5e7eb;font-size:13px;font-weight:500">${icon} ${h.accion}</td>
+          <td style="padding:12px;border:1px solid #e5e7eb;font-size:12px">${escapeHtml(h.fecha)}</td>
+          <td style="padding:12px;border:1px solid #e5e7eb;font-size:13px;font-weight:500">${icon} ${escapeHtml(h.accion)}</td>
           <td style="padding:12px;border:1px solid #e5e7eb;font-size:12px">${escapeHtml(h.usuario_admin || 'sistema')}</td>
           <td style="padding:12px;border:1px solid #e5e7eb;font-size:11px">${cambiosHtml}</td>
         </tr>`;
@@ -13414,11 +13343,10 @@ function validarInicioElectroSegunFechaHora(cita) {
     return { ok: true, horaAgendada: horaAgendadaRaw };
   }
 
-  const [hh, mm] = horaAgendadaRaw.split(':').map(Number);
-  const agendada = new Date(`${fechaRaw}T${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:00`);
+  const agendada = construirDateHoraElectro(fechaRaw, horaAgendadaRaw);
   const ahora = new Date();
 
-  if (Number.isNaN(agendada.getTime())) {
+  if (!agendada || Number.isNaN(agendada.getTime())) {
     return { ok: true, horaAgendada: horaAgendadaRaw };
   }
 
@@ -13466,14 +13394,13 @@ async function confirmarDuracionEstudio() {
       return;
     }
     
-    // Calcular hora_fin a partir de inicio + duración usando Date (soporta multi-día)
-    const [hhI, mmI] = horaInicio.split(':').map(Number);
-    const fechaCitaRaw = citaElectroSeleccionada.fecha || hoyColombiaISO();
-    const fechaCita = typeof fechaCitaRaw === 'string' && fechaCitaRaw.length > 10 ? fechaCitaRaw.slice(0, 10) : fechaCitaRaw;
-    const startDate = new Date(`${fechaCita}T${String(hhI).padStart(2,'0')}:${String(mmI).padStart(2,'0')}:00`);
-    startDate.setMinutes(startDate.getMinutes() + duracionMinutos);
-    const horaFin = `${String(startDate.getHours()).padStart(2,'0')}:${String(startDate.getMinutes()).padStart(2,'0')}`;
-    const horaFinDate = `${startDate.getFullYear()}-${String(startDate.getMonth()+1).padStart(2,'0')}-${String(startDate.getDate()).padStart(2,'0')}`;
+    const fechaCita = resolverFechaElectroYmd(citaElectroSeleccionada.fecha);
+    const finCalc = calcularHoraFinElectroDesdeInicio(fechaCita, horaInicio, duracionMinutos);
+    if (!finCalc) {
+      showToast('No se pudo calcular la hora de fin del estudio', 'error');
+      return;
+    }
+    const { horaFin, horaFinDate } = finCalc;
     const cruceMedianoche = horaFinDate !== fechaCita;
     
     console.log(`[DURACION] Iniciando estudio: ${horaInicio} → ${horaFin} (${duracionMinutos} min${cruceMedianoche ? `, fin: ${horaFinDate}` : ''})`);
@@ -13626,8 +13553,7 @@ async function iniciarEstudioSinDuracion() {
     return;
   }
 
-  const fechaCitaRaw = citaElectroSeleccionada.fecha || hoyColombiaISO();
-  const fechaCita = typeof fechaCitaRaw === 'string' && fechaCitaRaw.length > 10 ? fechaCitaRaw.slice(0, 10) : String(fechaCitaRaw);
+  const fechaCita = resolverFechaElectroYmd(citaElectroSeleccionada.fecha);
   const horaInicioRegistro = horaInicioAgendada;
   let horaBaseFin = horaInicioRegistro;
   if (electroFinProgramadoYaPaso(fechaCita, horaInicioRegistro, duracionMinutos)) {
@@ -13679,7 +13605,7 @@ function actualizarProgresoEstudio() {
   const horaInicio = citaElectroSeleccionada.hora_inicio;
   if (!horaInicio) return;
 
-  const fechaBase = obtenerFechaElectroBase10(citaElectroSeleccionada.fecha) || hoyColombiaISO();
+  const fechaBase = resolverFechaElectroYmd(citaElectroSeleccionada.fecha);
   const dateInicio = construirDateHoraElectro(fechaBase, horaInicio);
   const dateFin = obtenerFechaHoraFinEstudioActivo(citaElectroSeleccionada);
   if (!dateInicio || !dateFin) return;
@@ -16083,6 +16009,69 @@ $('btnEstadoEnSala')?.addEventListener('click', async (e) => {
   } catch (err) { showToast('Error al actualizar estado', 'error'); console.error(err); }
 });
 
+function innarNuevoCallIdAnuncio() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+  return `c${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+const _anuncioAckPendientes = new Map();
+
+function resolverAnuncioTvAck(data) {
+  const id = String(data?.call_id || '').trim();
+  const pending = _anuncioAckPendientes.get(id);
+  if (!pending) return;
+  clearTimeout(pending.timer);
+  _anuncioAckPendientes.delete(id);
+  pending.resolve(data || { estado: 'sin_pantalla' });
+}
+
+function esperarAnuncioTvAck(callId, timeoutMs = 6500) {
+  return new Promise((resolve) => {
+    const id = String(callId || '').trim();
+    if (!id) {
+      resolve({ estado: 'sin_pantalla' });
+      return;
+    }
+    const timer = setTimeout(() => {
+      _anuncioAckPendientes.delete(id);
+      resolve({ estado: 'sin_pantalla' });
+    }, timeoutMs);
+    _anuncioAckPendientes.set(id, { resolve, timer });
+  });
+}
+
+function toastResultadoAnuncioTv(nombrePaciente, ack) {
+  const nombre = nombrePaciente || 'el paciente';
+  const estado = ack?.estado || 'sin_pantalla';
+  if (estado === 'reproducido') {
+    showToast('Paciente llamado en TV: ' + nombre, 'success');
+    return;
+  }
+  if (estado === 'sin_audio') {
+    showToast('En pantalla TV, pero el audio no está activado. Toquen la pantalla de llamado.', 'warning');
+    return;
+  }
+  if (estado === 'filtrado') {
+    showToast('La TV no anunció: ese consultorio está bloqueado en la pantalla de llamado.', 'error');
+    return;
+  }
+  if (estado === 'modulo_oculto') {
+    showToast('La TV no está en pantalla; el llamado quedó en cola.', 'warning');
+    return;
+  }
+  showToast('No hay pantalla de llamado activa. Abra el módulo Llamado de pacientes.', 'error');
+}
+
+function bindAnuncioTvAckListener() {
+  if (!window.socket) return;
+  if (window._anuncioAckBoundSocket === window.socket) return;
+  window._anuncioAckBoundSocket = window.socket;
+  window.socket.on('agenda:anuncio-ack', resolverAnuncioTvAck);
+}
+
+document.addEventListener('socketReady', bindAnuncioTvAckListener);
+if (window.socket) bindAnuncioTvAckListener();
+
 // Botón: LLAMAR AL PACIENTE → Emitir anuncio por socket (módulo Llamado de pacientes)
 $('btnModalLlamarPaciente')?.addEventListener('click', async (e) => {
   e.preventDefault(); e.stopPropagation();
@@ -16095,16 +16084,20 @@ $('btnModalLlamarPaciente')?.addEventListener('click', async (e) => {
   const doctorNombre = obtenerNombreMedicoAgenda(doctorIdTurno)
     || (currentUser?.rol === 'doctor' ? currentUser?.nombre : null);
 
-  // Emitir anuncio por socket (módulo Llamado de pacientes)
+  bindAnuncioTvAckListener();
+  const callId = innarNuevoCallIdAnuncio();
+  const ackPromise = esperarAnuncioTvAck(callId);
   if (typeof socket !== 'undefined' && socket) {
     socket.emit('agenda:anunciar-paciente', {
+      call_id: callId,
       paciente_nombre: nombrePaciente,
       numero_consultorio: consultorio,
       doctor_nombre: doctorNombre,
       doctor_id: doctorIdTurno
     });
   }
-  showToast('Paciente llamado: ' + nombrePaciente, 'success');
+  const ack = await ackPromise;
+  toastResultadoAnuncioTv(nombrePaciente, ack);
 });
 
 // Botón: EN ATENCIÓN — equivalente a "Sí, llegó"
@@ -17117,6 +17110,11 @@ let _tiposConsultaCache  = {};   // clave: nombre de especialidad
 let _especialidadSelId   = null; // id de especialidad abierta en el panel de tipos
 let _especialidadesInitialized = false;
 
+function invalidarCacheEspecialidades() {
+  _especialidadesCache = null;
+  _tiposConsultaCache = {};
+}
+
 // Popula un <select> con las especialidades cargadas de la API
 async function cargarOpcionesEspecialidad(selectId) {
   const sel = $(selectId);
@@ -17239,7 +17237,7 @@ async function editarEspecialidad(id, nombreActual) {
 }
 
 function eliminarEspecialidad(id, nombre) {
-  showConfirm(`¿Eliminar la especialidad "${nombre}" y todos sus tipos de consulta?\nEsta acción no se puede deshacer.`, async () => {
+  showConfirm(`¿Eliminar la especialidad "${nombre}"?\nSolo se permite si no tiene tipos de consulta ni usuarios asignados.`, async () => {
   try {
     const res = await apiFetch(`/api/especialidades/${id}`, { method: 'DELETE' });
     const data = await res.json();
@@ -17440,11 +17438,15 @@ function eliminarTipoConsulta(id) {
 
 // ========== MÓDULO GESTIÓN DE DATOS ==========
 
-let _gestionTipoActual = 'citas_electro';
+let _gestionTipoActual = 'especialidades';
 const _GESTION_TABS_DESTRUCTIVOS = new Set(['citas_electro', 'turnos', 'recibos']);
 const _gestionAyudas = {
-  tipos_consulta: 'Marca Agenda, Comprobante o Recibos para decidir en qué módulo aparece cada tipo. El cambio se guarda en la base de datos.',
-  entidades: 'Marca Agenda, Electro o Recibos para decidir en qué módulo aparece cada entidad. El cambio se guarda en la base de datos.'
+  tipos_consulta: 'Marca Agenda, Comprobante o Recibos para decidir en qué módulo aparece cada tipo. El cambio se guarda en la base de datos. Si hay citas con este tipo, no se puede borrar: renómbrelo.',
+  entidades: 'Marca Agenda, Electro o Recibos para decidir en qué módulo aparece cada entidad. Renombrar actualiza citas y recibos; borrar se bloquea si está en uso.',
+  especialidades: 'Renombrar actualiza la especialidad de los usuarios. No se puede borrar si tiene tipos de consulta o médicos asignados.',
+  estudio_duraciones: 'Renombrar actualiza las citas de electro con ese estudio. No se puede borrar si hay citas o recibos que lo usan.',
+  diagnosticos: 'No se puede borrar un diagnóstico si hay citas de electro que lo referencian.',
+  anexo_fidu_servicios: 'Catálogo CUPS del anexo FIDU. Edite códigos y valores aquí; no borre citas desde esta pestaña.'
 };
 
 function _chkVisibleGestion(tipo, id, campo, val) {
@@ -17464,6 +17466,8 @@ function _gestionActualizarBanner() {
   const banner = $('gestionDatosWarnBanner');
   if (!banner) return;
   banner.classList.toggle('hidden', !_GESTION_TABS_DESTRUCTIVOS.has(_gestionTipoActual));
+  const masivas = $('gestionAccionesMasivas');
+  if (masivas) masivas.style.display = _GESTION_TABS_DESTRUCTIVOS.has(_gestionTipoActual) ? '' : 'none';
 }
 
 const _gestionTitulos = {
@@ -17552,7 +17556,7 @@ let _gestionRegistrosAll  = [];
 let _gestionPaginaActual  = 1;
 const _GESTION_POR_PAGINA = 20;
 const _GESTION_TIPOS_AGREGAR = ['estudio_duraciones', 'especialidades', 'tipos_consulta', 'diagnosticos', 'entidades', 'anexo_fidu_servicios'];
-let _gestionCupsEditId = null;
+let _gestionEditId = null;
 let _gestionTheadTipo = null;
 let _gestionHandlersSetup = false;
 let gestionFetchInFlight = false;
@@ -17675,8 +17679,8 @@ function _gestionRenderRows(tipo, registros) {
         : ((val === null || val === undefined) ? '-' : escapeHtml(String(val)));
       return `<td>${display}</td>`;
     }).join('');
-    const btnEditar = tipo === 'anexo_fidu_servicios'
-      ? `<button type="button" class="btn-secondary btn-sm" style="margin-right:6px" title="Editar" onclick="abrirModalEditarGestionCups(${r.id})">Editar</button>`
+    const btnEditar = _GESTION_TIPOS_AGREGAR.includes(tipo)
+      ? `<button type="button" class="btn-secondary btn-sm" style="margin-right:6px" title="Editar" onclick="abrirModalEditarGestionCatalogo(${r.id})">Editar</button>`
       : '';
     return `<tr>
       <td><input type="checkbox" class="chk-row" data-id="${r.id}" /></td>
@@ -17711,7 +17715,9 @@ async function buscarGestionDatos() {
   const q     = $('gestionBusqueda')?.value.trim() || '';
   const desde = $('gestionFechaDesde')?.value || '';
   const hasta = $('gestionFechaHasta')?.value || '';
-  const params = new URLSearchParams({ limit: 500 });
+  const params = new URLSearchParams({
+    limit: _GESTION_TABS_DESTRUCTIVOS.has(tipo) ? '200' : '2000'
+  });
   if (q)     params.set('q',           q);
   if (desde) params.set('fecha_desde', desde);
   if (hasta) params.set('fecha_hasta', hasta);
@@ -17775,7 +17781,7 @@ function _gestionRenderPaginacion() {
   if (total === 0) { ctrl.textContent = '0 registros'; return; }
 
   let html = `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 0">
-    <span style="font-size:13px;color:#627371">${total} registro${total !== 1 ? 's' : ''} — mostrando ${inicio}–${fin}</span>`;
+    <span style="font-size:13px;color:#627371">${total} registro${total !== 1 ? 's' : ''} — mostrando ${inicio}–${fin}${_GESTION_TABS_DESTRUCTIVOS.has(_gestionTipoActual) && total >= 200 ? ' (refine la búsqueda si no aparece)' : ''}</span>`;
   if (pages > 1) {
     html += `<div style="display:flex;gap:4px;align-items:center">`;
     html += `<button onclick="_gestionIrPagina(${pag - 1})" ${pag <= 1 ? 'disabled' : ''} style="padding:4px 10px;border:1px solid #d1d5db;border-radius:4px;background:#fff;cursor:pointer;font-size:13px">‹</button>`;
@@ -17846,7 +17852,7 @@ function _htmlFormularioCupsGestion(prefill = {}) {
 function abrirModalEditarGestionCups(id) {
   const reg = _gestionRegistrosAll.find((r) => r.id === id);
   if (!reg) { showToast('Registro no encontrado', 'error'); return; }
-  _gestionCupsEditId = id;
+  _gestionEditId = id;
   const modal = $('modalAgregarGestion');
   if (!modal) return;
   const titulo = $('modalAgregarGestionTitulo');
@@ -17862,15 +17868,46 @@ function abrirModalEditarGestionCups(id) {
   modal.classList.remove('hidden');
 }
 
+async function abrirModalEditarGestionCatalogo(id) {
+  const tipo = _gestionTipoActual;
+  if (tipo === 'anexo_fidu_servicios') {
+    abrirModalEditarGestionCups(id);
+    return;
+  }
+  const reg = _gestionRegistrosAll.find((r) => r.id === id);
+  if (!reg) { showToast('Registro no encontrado', 'error'); return; }
+  await abrirModalAgregarGestion();
+  _gestionEditId = id;
+  const titulo = $('modalAgregarGestionTitulo');
+  if (titulo) titulo.textContent = `Editar — ${_gestionTitulos[tipo] || tipo}`;
+  if ($('agrGestionNombre')) $('agrGestionNombre').value = reg.nombre || '';
+  if ($('agrGestionDuracion') && reg.duracion_minutos != null) $('agrGestionDuracion').value = reg.duracion_minutos;
+  if ($('agrGestionCodigo') && reg.codigo != null) $('agrGestionCodigo').value = reg.codigo;
+  if ($('agrGestionDescripcion') && reg.descripcion != null) $('agrGestionDescripcion').value = reg.descripcion;
+  if ($('agrGestionSesionesMultiples')) $('agrGestionSesionesMultiples').checked = !!Number(reg.permite_sesiones_multiples);
+  const setVis = (idChk, key) => {
+    const el = $(idChk);
+    if (el && reg[key] != null) el.checked = Number(reg[key]) !== 0;
+  };
+  setVis('agrGestionVisibleAgenda', 'visible_agenda');
+  setVis('agrGestionVisibleElectro', 'visible_electro');
+  setVis('agrGestionVisibleComprobante', 'visible_comprobante');
+  setVis('agrGestionVisibleRecibo', 'visible_recibo');
+}
+
+window.abrirModalEditarGestionCatalogo = abrirModalEditarGestionCatalogo;
+window.abrirModalEditarGestionCups = abrirModalEditarGestionCups;
+window.cerrarModalGestionCups = cerrarModalGestionCups;
+
 function cerrarModalGestionCups() {
-  _gestionCupsEditId = null;
+  _gestionEditId = null;
   $('modalAgregarGestion')?.classList.add('hidden');
 }
 
 async function abrirModalAgregarGestion() {
   const tipo = _gestionTipoActual;
   if (!_GESTION_TIPOS_AGREGAR.includes(tipo)) return;
-  _gestionCupsEditId = null;
+  _gestionEditId = null;
   const modal = $('modalAgregarGestion');
   if (!modal) return;
 
@@ -18014,18 +18051,18 @@ async function guardarAgregarGestion(e) {
     if (!body.codigo_servicio_referencia) { showToast('Código RIPS de referencia es obligatorio', 'error'); return; }
   }
   try {
-    const esEdicionCups = tipo === 'anexo_fidu_servicios' && _gestionCupsEditId;
-    const url = esEdicionCups
-      ? `/api/admin/datos/${tipo}/${_gestionCupsEditId}`
+    const esEdicion = !!_gestionEditId;
+    const url = esEdicion
+      ? `/api/admin/datos/${tipo}/${_gestionEditId}`
       : `/api/admin/datos/${tipo}`;
     const res  = await apiFetch(url, {
-      method: esEdicionCups ? 'PATCH' : 'POST',
+      method: esEdicion ? 'PATCH' : 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
     });
     const data = await res.json();
     if (!data.ok) { showToast(data.error || 'Error al guardar', 'error'); return; }
-    showToast(esEdicionCups ? 'Servicio CUPS actualizado' : 'Registro agregado exitosamente', 'success');
+    showToast(esEdicion ? 'Registro actualizado' : 'Registro agregado exitosamente', 'success');
     cerrarModalGestionCups();
     // Invalidar caché para que otros módulos recarguen datos actualizados
     if (tipo === 'entidades') invalidarCacheEntidades();

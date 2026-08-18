@@ -190,7 +190,9 @@
       calDatos = {};
       if (data.ok && Array.isArray(data.dias)) {
         data.dias.forEach((row) => {
-          const f = String(row.fecha || '').slice(0, 10);
+          const f = typeof extraerFechaYmdCalendario === 'function'
+            ? extraerFechaYmdCalendario(row.fecha)
+            : String(row.fecha || '').slice(0, 10);
           calDatos[f] = {
             total: parseInt(row.total, 10) || 0,
             inicio: parseInt(row.inicio, 10) || 0,

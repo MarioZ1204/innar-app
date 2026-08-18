@@ -20,6 +20,8 @@ const TABLE_EXISTS_SQL = `
   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?
 `;
 
+const { backfillHistorialReprogramacionesElectro } = require('../utils/electro-reprogramacion-historial');
+
 async function columnExists(db, table, column) {
   const rows = await db.query(COLUMN_EXISTS_SQL, [table, column]);
   return !!(rows && rows[0] && rows[0].cnt > 0);
