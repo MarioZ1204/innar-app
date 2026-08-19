@@ -529,6 +529,9 @@ function renderCitaAuditoriaRow(tbody, cita) {
     const tipo = cita.tipo_consulta || '-';
     const entidad = cita.entidad || '-';
     const tipoCitaCls = cita.tipo_cita === 'AGENDA_MEDICA' ? 'dash-tipo--medica' : 'dash-tipo--electro';
+    const tipoCitaLabel = cita.tipo_cita === 'AGENDA_MEDICA'
+      ? 'Médica'
+      : (cita.tipo_cita === 'ELECTRODIAGNOSTICO' ? 'Electro' : (cita.tipo_cita || '-'));
     const agendado = cita.programado_por || '-';
     const estado = cita.estado || '-';
     const estadoCls = getEstadoBadgeClass(estado);
@@ -632,9 +635,11 @@ function limpiarFiltrosDashboard() {
       if (selMed._ms) selMed._ms.refresh();
     }
 
-    window.clearMultiSelect(document.getElementById('dashboardEntidad'));
-    window.clearMultiSelect(document.getElementById('dashboardTipoConsulta'));
-    window.clearMultiSelect(document.getElementById('dashboardTipoEstudio'));
+    if (typeof window.clearMultiSelect === 'function') {
+      window.clearMultiSelect(document.getElementById('dashboardEntidad'));
+      window.clearMultiSelect(document.getElementById('dashboardTipoConsulta'));
+      window.clearMultiSelect(document.getElementById('dashboardTipoEstudio'));
+    }
 
     const selTipo = document.getElementById('dashboardTipoCita');
     if (selTipo) {
