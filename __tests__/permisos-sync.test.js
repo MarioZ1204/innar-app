@@ -67,7 +67,9 @@ describe('permisos-sync', () => {
       'modulo.armado_soportes',
       'modulo.anexo_fidu',
       'modulo.backup',
-      'modulo.llamado_pacientes'
+      'modulo.llamado_pacientes',
+      'modulo.documentos_cita',
+      'modulo.papelera_pdx'
     ]));
   });
 

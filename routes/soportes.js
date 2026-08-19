@@ -108,6 +108,14 @@ const {
   mensajeDuplicadoPdx,
   cuentaReferenciasRutaPdx
 } = require('../utils/soportes-pdx-duplicados');
+const {
+  enviarArchivoAPapelera,
+  listarPapelera,
+  obtenerPapelera,
+  recuperarItemPapelera,
+  escanearBackupsPdx,
+  absPapelera
+} = require('../utils/soportes-pdx-papelera');
 const { enrichExpedientesLista } = require('../utils/soportes-expediente-progreso');
 const { actualizarDia, eliminarDia } = require('../utils/soportes-dia-admin');
 const { resolveArchivoAbsoluto, resolverArchivoExpedienteRow } = require('../utils/soportes-exp-archivo');
@@ -660,6 +668,7 @@ const PERMS_PDX_VER_SUBIR = [
   'soportes.pdx.ver',
   'soportes.pdx.subir'
 ];
+const PERMS_PAPELERA_PDX = ['modulo.papelera_pdx'];
 const PERMS_ARMADO_VER_SUBIR = ['modulo.armado_soportes', 'soportes.armado.subir'];
 
 function notifySoportesPdx(cambio = {}) {
@@ -977,7 +986,7 @@ router.delete('/soportes/pdx/carpetas/:id', requireAuth, requireRoleOrPerm(ROLES
     if (!rows.length) return res.status(404).json({ error: 'Carpeta no encontrada' });
     const deniedDel = denySinAccesoCarpetaPdx(req, rows[0]);
     if (deniedDel) return res.status(deniedDel.status).json({ error: deniedDel.error });
-    const archivos = await db.query('SELECT id, ruta_relativa FROM sop_pdx_archivos WHERE carpeta_id = ?', [carpetaId]);
+    const archivos = await db.query('SELECT * FROM sop_pdx_archivos WHERE carpeta_id = ?', [carpetaId]);
     const usados = await db.query(
       `SELECT COUNT(*) AS n FROM sop_exp_archivos e
        INNER JOIN sop_pdx_archivos a ON a.id = e.pdx_archivo_id
@@ -998,19 +1007,30 @@ router.delete('/soportes/pdx/carpetas/:id', requireAuth, requireRoleOrPerm(ROLES
         ids
       );
     }
+    const carpeta = rows[0];
+    let enviadosPapelera = 0;
     for (const a of archivos) {
-      const fp = resolvePdxArchivoPath({ ...a, carpeta_id: carpetaId });
-      if (fp) {
-        try { fs.unlinkSync(fp); } catch (_) { /* ignore */ }
+      try {
+        await enviarArchivoAPapelera({
+          archivo: a,
+          carpeta,
+          usuarioId: req.session.usuarioId
+        });
+        enviadosPapelera += 1;
+      } catch (papErr) {
+        logger.warn('[SOPORTES] papelera al eliminar carpeta pdx', { id: a.id, message: papErr.message });
       }
     }
     await db.execute('DELETE FROM sop_pdx_archivos WHERE carpeta_id = ?', [carpetaId]);
     await db.execute('DELETE FROM sop_pdx_carpetas WHERE id = ?', [carpetaId]);
     try {
-      const dir = getPdxDir(carpetaId);
-      if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
+      const dir = path.join(require('../utils/soportes-storage').soportesRoot, 'pdx', String(carpetaId));
+      if (fs.existsSync(dir)) {
+        const leftover = fs.readdirSync(dir);
+        if (!leftover.length) fs.rmSync(dir, { recursive: true, force: true });
+      }
     } catch (_) { /* ignore */ }
-    res.json({ ok: true, eliminados: archivos.length });
+    res.json({ ok: true, eliminados: archivos.length, papelera: enviadosPapelera });
     notifySoportesPdx({ accion: 'carpeta_eliminada', carpetaId });
   } catch (e) {
     logger.error('[SOPORTES] eliminar carpeta pdx:', e);
@@ -1573,7 +1593,9 @@ router.patch('/soportes/pdx/archivos/:id', requireAuth, requireRoleOrPerm(ROLES_
 router.delete('/soportes/pdx/archivos/:id', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, ['modulo.reportes_pdx', 'soportes.pdx.eliminar']), async (req, res) => {
   try {
     const rows = await db.query(
-      `SELECT a.*, c.roles_visibles FROM sop_pdx_archivos a
+      `SELECT a.*, c.roles_visibles, c.periodo AS carpeta_periodo, c.nombre_display AS carpeta_nombre,
+              c.color_tema AS carpeta_color_tema
+       FROM sop_pdx_archivos a
        JOIN sop_pdx_carpetas c ON c.id = a.carpeta_id WHERE a.id = ?`,
       [req.params.id]
     );
@@ -1581,20 +1603,90 @@ router.delete('/soportes/pdx/archivos/:id', requireAuth, requireRoleOrPerm(ROLES
     const deniedDelArch = denySinAccesoCarpetaPdx(req, rows[0]);
     if (deniedDelArch) return res.status(deniedDelArch.status).json({ error: deniedDelArch.error });
     const row = rows[0];
-    const refs = await cuentaReferenciasRutaPdx(db, row.carpeta_id, row.ruta_relativa, req.params.id);
-    if (refs === 0) {
-      const fp = resolvePdxArchivoPath(row);
-      if (fp && fs.existsSync(fp)) {
-        try { fs.unlinkSync(fp); } catch (e) {
-          logger.warn('[SOPORTES] unlink pdx al eliminar', { id: req.params.id, message: e.message });
-        }
-      }
+    let papeleraId = null;
+    try {
+      const pap = await enviarArchivoAPapelera({
+        archivo: row,
+        carpeta: {
+          id: row.carpeta_id,
+          periodo: row.carpeta_periodo,
+          nombre_display: row.carpeta_nombre,
+          color_tema: row.carpeta_color_tema,
+          roles_visibles: row.roles_visibles
+        },
+        usuarioId: req.session.usuarioId
+      });
+      papeleraId = pap?.id || null;
+    } catch (papErr) {
+      logger.warn('[SOPORTES] papelera al eliminar pdx', { id: req.params.id, message: papErr.message });
+      return res.status(500).json({ error: 'No se pudo enviar el archivo a la papelera. No se eliminó.' });
     }
     await db.execute('DELETE FROM sop_pdx_archivos WHERE id = ?', [req.params.id]);
-    res.json({ ok: true, archivo_fisico_eliminado: refs === 0 });
+    res.json({ ok: true, papelera: true, papelera_id: papeleraId });
     notifySoportesPdx({ accion: 'archivo_eliminado', archivoId: parseInt(req.params.id, 10) });
   } catch (e) {
     res.status(500).json({ error: safeError(e) });
+  }
+});
+
+router.get('/soportes/pdx/papelera', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, PERMS_PAPELERA_PDX), async (req, res) => {
+  try {
+    let items = await listarPapelera();
+    items = items.filter((item) => {
+      if (!item.carpeta_id) return true;
+      return usuarioVeCarpetaPdx(req, {
+        carpeta_id: item.carpeta_id,
+        roles_visibles: item.carpeta_roles_visibles
+      });
+    });
+    res.json({ ok: true, items, total: items.length });
+  } catch (e) {
+    logger.error('[SOPORTES] listar papelera pdx:', e);
+    res.status(500).json({ error: sopErrorCliente(e, 'No se pudo cargar la papelera') });
+  }
+});
+
+router.post('/soportes/pdx/papelera/escanear-backups', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, PERMS_PAPELERA_PDX), async (req, res) => {
+  try {
+    const result = await escanearBackupsPdx();
+    res.json({ ok: true, ...result });
+  } catch (e) {
+    logger.error('[SOPORTES] escanear backups papelera pdx:', e);
+    res.status(500).json({ error: sopErrorCliente(e, 'No se pudo buscar en copias de seguridad') });
+  }
+});
+
+router.get('/soportes/pdx/papelera/:id/ver', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, PERMS_PAPELERA_PDX), async (req, res) => {
+  try {
+    const item = await obtenerPapelera(req.params.id);
+    if (!item || item.recuperado_en) return res.status(404).json({ error: 'No encontrado' });
+    if (!usuarioVeCarpetaPdx(req, { carpeta_id: item.carpeta_id, id: item.carpeta_id, roles_visibles: item.carpeta_roles_visibles })) {
+      return res.status(403).json({ error: 'No tiene acceso a esta carpeta' });
+    }
+    const fp = absPapelera(item);
+    if (!fp) return res.status(404).json({ error: 'Archivo no disponible en disco' });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(item.nombre_archivo_original || 'archivo.pdf')}"`);
+    fs.createReadStream(fp).pipe(res);
+  } catch (e) {
+    res.status(500).json({ error: safeError(e) });
+  }
+});
+
+router.post('/soportes/pdx/papelera/:id/recuperar', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, PERMS_PAPELERA_PDX), async (req, res) => {
+  try {
+    const item = await obtenerPapelera(req.params.id);
+    if (!item) return res.status(404).json({ error: 'No encontrado' });
+    if (!usuarioVeCarpetaPdx(req, { carpeta_id: item.carpeta_id, id: item.carpeta_id, roles_visibles: item.carpeta_roles_visibles })) {
+      return res.status(403).json({ error: 'No tiene acceso a esta carpeta' });
+    }
+    const result = await recuperarItemPapelera(item.id, req.session.usuarioId);
+    res.json({ ok: true, ...result });
+    notifySoportesPdx({ accion: 'archivo_recuperado', archivoId: result.archivo_id, carpetaId: result.carpeta_id });
+  } catch (e) {
+    const status = e.status || 500;
+    logger.error('[SOPORTES] recuperar papelera pdx:', e);
+    res.status(status).json({ error: e.status ? e.message : sopErrorCliente(e, 'No se pudo recuperar el archivo') });
   }
 });
 

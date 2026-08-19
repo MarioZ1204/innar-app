@@ -2852,7 +2852,7 @@
     const res = await apiFetch(`/api/soportes/pdx/archivos/${archivoId}`, { method: 'DELETE' });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) { sopToast(data.error || 'No se pudo eliminar', 'error'); return; }
-    sopToast('Archivo eliminado', 'success');
+    sopToast('Archivo enviado a la papelera', 'success');
     if (pdxState.carpetaId) abrirCarpetaPdx(pdxState.carpetaId);
     };
     if (typeof window.confirmEliminar === 'function') {
@@ -4307,6 +4307,8 @@
     sopAnimateModuleIn('view-reportes-pdx');
     if (initPdxDone) {
       setupEntradaDocumentoPdx();
+      const btnPap = $('btnSopPdxPapelera');
+      if (btnPap) btnPap.style.display = sopPerm('modulo.papelera_pdx') ? '' : 'none';
       refrescarVistaPdxActual().catch(console.error);
       return;
     }
@@ -4316,6 +4318,11 @@
     sopIcons($('sopPdxFiltrosBar'));
     const btnNueva = $('btnSopPdxNuevaCarpeta');
     if (btnNueva) btnNueva.style.display = sopPerm('soportes.pdx.crear_carpeta') ? '' : 'none';
+    const btnPapelera = $('btnSopPdxPapelera');
+    if (btnPapelera) {
+      btnPapelera.style.display = sopPerm('modulo.papelera_pdx') ? '' : 'none';
+      btnPapelera.addEventListener('click', () => goToModule('papelera-pdx'));
+    }
     $('btnVolverReportesPdx')?.addEventListener('click', goToMenu);
     $('btnSopPdxNuevaCarpeta')?.addEventListener('click', modalNuevaCarpetaPdx);
     $('btnSopPdxArchivarSel')?.addEventListener('click', () => {

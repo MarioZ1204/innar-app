@@ -192,5 +192,7 @@ module.exports = {
   restoreMissingUploadsFromBackup,
   restoreMissingUploadsFromAllBackups,
   latestFullBackupFilename,
-  latestAnyBackupFilename
+  latestAnyBackupFilename,
+  listAllBackupsNewestFirst,
+  resolveAnyBackupPath
 };

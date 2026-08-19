@@ -1739,6 +1739,48 @@ const runtimeMigrations = [
         await db.execute('ALTER TABLE turnos ADD COLUMN reprogramado_hora TIME NULL DEFAULT NULL');
       }
     }
+  },
+  {
+    name: 'rt_sop_pdx_papelera',
+    description: 'Papelera de archivos eliminados de Cargar Reportes (PDX)',
+    run: async (db) => {
+      if (await tableExists(db, 'sop_pdx_papelera')) return;
+      await db.execute(`CREATE TABLE sop_pdx_papelera (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        archivo_id_origen INT NULL,
+        carpeta_id INT NULL,
+        carpeta_periodo CHAR(7) NULL,
+        carpeta_nombre VARCHAR(160) NULL,
+        carpeta_color_tema VARCHAR(40) NULL,
+        carpeta_roles_visibles VARCHAR(255) NULL,
+        apellidos VARCHAR(120) NULL,
+        nombres VARCHAR(120) NULL,
+        paciente_nombre VARCHAR(200) NOT NULL,
+        paciente_nombre_norm VARCHAR(220) NOT NULL,
+        paciente_documento VARCHAR(30) NULL,
+        fecha_estudio DATE NULL,
+        marca_tiempo VARCHAR(40) NULL,
+        sufijo_numero VARCHAR(10) NULL,
+        estudio_texto VARCHAR(120) NULL,
+        nombre_archivo_original VARCHAR(255) NOT NULL,
+        nombre_archivo_display VARCHAR(255) NULL,
+        ruta_relativa_origen VARCHAR(500) NULL,
+        ruta_papelera VARCHAR(500) NOT NULL DEFAULT '',
+        mime_type VARCHAR(80) DEFAULT 'application/pdf',
+        tamano_bytes INT UNSIGNED NOT NULL DEFAULT 0,
+        subido_por INT NULL,
+        eliminado_por INT NULL,
+        eliminado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        origen ENUM('eliminacion','huerfano_disco','backup') NOT NULL DEFAULT 'eliminacion',
+        snapshot_json MEDIUMTEXT NULL,
+        recuperado_en TIMESTAMP NULL,
+        recuperado_por INT NULL,
+        INDEX idx_sop_pdx_pap_rec (recuperado_en),
+        INDEX idx_sop_pdx_pap_carp (carpeta_id),
+        INDEX idx_sop_pdx_pap_nom (paciente_nombre_norm),
+        INDEX idx_sop_pdx_pap_elim (eliminado_en)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+    }
   }
 ];
 

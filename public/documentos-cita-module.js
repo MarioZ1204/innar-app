@@ -510,6 +510,11 @@
       return;
     }
 
+    if (typeof tienePermiso === 'function' && !tienePermiso('modulo.documentos_cita')) {
+      toast('No tienes permiso para generar este documento', 'error');
+      return;
+    }
+
     const btn = $('btnConfirmarModalDocumentosCita');
     if (btn) btn.disabled = true;
     setModalError('Generando documento…', true);
@@ -658,14 +663,17 @@
       btnQuitarPaciente: 'btnDocmodQuitarFirmaPaciente',
       btnQuitarAcudiente: 'btnDocmodQuitarFirmaAcudiente'
     });
-    window.innarComprobantePdx?.poblarSelect?.($('docmodModalCompPdxCarpeta'), null, {
-      origen: state.origen
-    });
-    window.innarComprobantePdx?.bindEnviarPdx?.(
-      'docmodModalCompEnviarPdx',
-      'docmodModalCompPdxCarpeta',
-      () => state.origen
-    );
+    const puedePdx = typeof tienePermiso !== 'function' || tienePermiso('soportes.pdx.ver');
+    if (puedePdx) {
+      window.innarComprobantePdx?.poblarSelect?.($('docmodModalCompPdxCarpeta'), null, {
+        origen: state.origen
+      });
+      window.innarComprobantePdx?.bindEnviarPdx?.(
+        'docmodModalCompEnviarPdx',
+        'docmodModalCompPdxCarpeta',
+        () => state.origen
+      );
+    }
     sincronizarUiSeleccion();
   }
 

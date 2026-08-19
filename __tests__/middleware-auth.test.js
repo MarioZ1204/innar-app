@@ -145,6 +145,11 @@ describe('requirePermiso / sesionTienePermiso', () => {
     expect(mw.sesionTienePermiso({ usuarioId: 1, rol: 'doctor', permisos: null }, 'recibos.ver')).toBe(false);
   });
 
+  test('doctor tiene certificados por default; contabilidad no', () => {
+    expect(mw.sesionTienePermiso({ usuarioId: 1, rol: 'doctor', permisos: null }, 'modulo.documentos_cita')).toBe(true);
+    expect(mw.sesionTienePermiso({ usuarioId: 1, rol: 'contabilidad', permisos: null }, 'modulo.documentos_cita')).toBe(false);
+  });
+
   test('contabilidad con permisos null tiene recibos.ver y no agenda.ver', () => {
     const session = { usuarioId: 1, rol: 'contabilidad', permisos: null };
     expect(mw.sesionTienePermiso(session, 'recibos.ver')).toBe(true);

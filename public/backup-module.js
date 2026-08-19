@@ -26,19 +26,23 @@
     }
   }
 
-  function toast(msg, type) {
-    if (typeof showToast === 'function') showToast(msg, type || 'success');
-    else alert(msg);
+  function setBackupEmpty(visible, title, detail) {
+    const empty = document.getElementById('backupTablaEmpty');
+    if (!empty) return;
+    const t = document.getElementById('backupTablaEmptyTitle');
+    const d = document.getElementById('backupTablaEmptyDetail');
+    if (t && title != null) t.textContent = title;
+    if (d && detail != null) d.textContent = detail;
+    empty.style.display = visible ? 'flex' : 'none';
   }
 
   async function cargarListaBackups() {
     const tbody = document.getElementById('backupTablaBody');
-    const empty = document.getElementById('backupTablaEmpty');
     const dirEl = document.getElementById('backupDirLabel');
     if (!tbody) return;
     const anchor = tbody || document.getElementById('view-backup');
     const load = async () => {
-    tbody.innerHTML = '<tr><td colspan="5" style="padding:16px;text-align:center;color:#64748b">Cargando…</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5"><div class="innar-empty innar-empty--compact"><p class="innar-empty-title">Cargando…</p></div></td></tr>';
     try {
       const res = await apiFetch('/api/backups');
       const ct = (res.headers.get('Content-Type') || '').toLowerCase();
@@ -52,22 +56,25 @@
 
       if (!backupListCache.length) {
         tbody.innerHTML = '';
-        if (empty) empty.style.display = 'block';
+        setBackupEmpty(true, 'Sin copias de seguridad', 'Pulse «Generar backup completo ahora».');
         return;
       }
-      if (empty) empty.style.display = 'none';
+      setBackupEmpty(false);
       tbody.innerHTML = backupListCache.map((b) => {
+        const icon = (typeof innarIconSvg === 'function') ? innarIconSvg : function () { return ''; };
         const delBtn = (typeof currentUser !== 'undefined' && currentUser?.rol === 'superadmin')
-          ? `<button type="button" class="btn-secondary btn-sm backup-btn-del" data-file="${escapeHtml(b.filename)}">Eliminar</button>`
+          ? `<button type="button" class="btn-eliminar backup-btn-del" data-file="${escapeHtml(b.filename)}" title="Eliminar">${icon('trash')}</button>`
           : '';
         return `<tr>
           <td><strong>${escapeHtml(b.filename)}</strong></td>
           <td>${formatFecha(b.created_at)}</td>
           <td>${escapeHtml(b.size_mb)} MB</td>
           <td><span class="backup-badge-completo">Completo</span></td>
-          <td class="backup-actions">
-            <button type="button" class="btn-primary btn-sm backup-btn-dl" data-file="${escapeHtml(b.filename)}">Descargar</button>
-            ${delBtn}
+          <td>
+            <div class="table-actions backup-actions">
+              <button type="button" class="btn-editar backup-btn-dl" data-file="${escapeHtml(b.filename)}" title="Descargar">${icon('download')}</button>
+              ${delBtn}
+            </div>
           </td>
         </tr>`;
       }).join('');
@@ -84,10 +91,7 @@
       });
     } catch (e) {
       tbody.innerHTML = '';
-      if (empty) {
-        empty.style.display = 'block';
-        empty.textContent = e.message || 'Error al cargar backups';
-      }
+      setBackupEmpty(true, e.message || 'Error al cargar backups', '');
       toast(e.message || 'Error al cargar backups', 'error');
     }
     };

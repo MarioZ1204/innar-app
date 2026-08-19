@@ -24,8 +24,55 @@
   line-height: 1.5;
 }
 
-#view-backup .backup-dir-label {
+.backup-dir-label {
   font-size: 0.8rem;
   color: #64748b;
   word-break: break-all;
+}
+
+#view-papelera-pdx .papelera-meta {
+  font-size: 0.75rem;
+  color: #64748b;
+  margin-top: 2px;
+}
+
+.papelera-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.papelera-badge--elim {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.papelera-badge--disco {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.papelera-badge--backup {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+#view-papelera-pdx .papelera-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+#view-papelera-pdx .papelera-toolbar .sop-search {
+  min-width: min(100%, 280px);
+  flex: 1;
+}
+
+#papeleraPdxStatus {
+  font-size: 0.8rem;
+  color: #64748b;
 }

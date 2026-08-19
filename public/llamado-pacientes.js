@@ -239,7 +239,9 @@
     if (!lista) return;
 
     if (!medicos.length) {
-      lista.innerHTML = '<p style="color:#64748b;font-size:.875rem;padding:8px 0">No hay médicos disponibles.</p>';
+      lista.innerHTML = typeof htmlListaVacia === 'function'
+        ? htmlListaVacia('Sin médicos', 'No hay médicos disponibles.')
+        : '<p class="ltv-empty-text">No hay médicos disponibles.</p>';
       return;
     }
 

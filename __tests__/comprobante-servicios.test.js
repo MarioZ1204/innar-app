@@ -152,5 +152,7 @@ describe('comprobante-servicios', () => {
     expect(html).toContain(COMPROBANTE_SERVICIOS_PIE.version);
     expect(html).toContain(COMPROBANTE_SERVICIOS_PIE.fecha_actualizacion);
     expect(html).toContain('Arial');
+    expect(html).not.toMatch(/mix-blend-mode\s*:/i);
+    expect(html).not.toMatch(/transform:\s*translateX/i);
   });
 });

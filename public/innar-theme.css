@@ -384,8 +384,39 @@ select {
   box-shadow: var(--innar-shadow-sm) !important;
 }
 
-#monitorLastUpdate {
+#monitorLastUpdate,
+.meq-last-update {
+  font-size: 0.78rem;
   color: var(--innar-text-muted) !important;
+}
+
+.meq-section-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 1rem;
+  color: #64748b;
+  margin: 0 0 12px;
+  font-weight: 600;
+}
+
+.meq-section-title svg {
+  width: 16px;
+  height: 16px;
+  color: #d97706;
+  flex-shrink: 0;
+}
+
+.meq-sin-equipo-wrap {
+  margin-top: 24px;
+}
+
+.meq-study-meta--warn {
+  color: #a16207;
+}
+
+.meq-study-meta--alert {
+  color: #b45309;
 }
 
 .meq-date-bar {
@@ -455,8 +486,8 @@ select {
 
 .meq-date-nav svg,
 .meq-refresh-btn svg {
-  width: 22px !important;
-  height: 22px !important;
+  width: 16px !important;
+  height: 16px !important;
   stroke: currentColor !important;
   display: block !important;
 }
@@ -882,16 +913,33 @@ table tbody tr:hover td {
 
 .btn-editar,
 .btn-recibo-pdf,
-.btn-recibo-obs {
+.btn-recibo-obs,
+.btn-usr-edit,
+.btn-usr-speak {
   color: #059669;
 }
 
-.btn-eliminar {
+.btn-eliminar,
+.btn-usr-del {
   color: #dc2626;
 }
 
-.btn-prioridad-up {
+.btn-prioridad-up,
+.btn-usr-reset,
+.backup-btn-dl {
   color: #2563eb;
+}
+
+.btn-usr-hist {
+  color: #4f46e5;
+}
+
+.btn-usr-toggle[data-activo="true"] {
+  color: #d97706;
+}
+
+.btn-usr-toggle[data-activo="false"] {
+  color: #16a34a;
 }
 
 .btn-prioridad-down,
@@ -908,11 +956,19 @@ table tbody tr:hover td {
 .btn-prioridad-down svg,
 .btn-recibo-pdf svg,
 .btn-recibo-anular svg,
-.btn-recibo-obs svg {
+.btn-recibo-obs svg,
+.btn-usr-edit svg,
+.btn-usr-del svg,
+.btn-usr-hist svg,
+.btn-usr-reset svg,
+.btn-usr-speak svg,
+.btn-usr-toggle svg,
+.backup-btn-dl svg {
   width: 16px !important;
   height: 16px !important;
   display: block !important;
   flex-shrink: 0 !important;
+  filter: none !important;
 }
 
 .cita-modal-footer-actions .cita-modal-footer-btn svg,

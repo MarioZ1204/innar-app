@@ -22,6 +22,7 @@ const PERMISOS_VALIDOS = new Set([
   'modulo.recibos', 'modulo.agenda_medica', 'modulo.electrodiag',
   'modulo.dashboard', 'modulo.usuarios', 'modulo.diagnosticos', 'modulo.gestion_datos',
   'modulo.monitor_equipos', 'modulo.reportes_pdx', 'modulo.armado_soportes', 'modulo.anexo_fidu', 'modulo.backup', 'modulo.llamado_pacientes',
+  'modulo.documentos_cita', 'modulo.papelera_pdx',
   'soportes.pdx.ver', 'soportes.pdx.carpetas.todas', 'soportes.pdx.crear_carpeta', 'soportes.pdx.subir', 'soportes.pdx.editar', 'soportes.pdx.eliminar',
   'soportes.armado.crear_estructura', 'soportes.armado.subir', 'soportes.armado.importar_pdx',
   'soportes.descargar_zip', 'soportes.ver_archivo', 'modulo.archivo_soportes', 'modulo.reportes_historico',

@@ -50,6 +50,7 @@ function permisosEfectivosSesion(session) {
 function tieneAccesoModuloPdx(permisos) {
   if (!Array.isArray(permisos)) return true;
   return permisos.includes('modulo.reportes_pdx')
+    || permisos.includes('modulo.papelera_pdx')
     || permisos.includes('soportes.pdx.ver')
     || permisos.includes('soportes.pdx.subir')
     || permisos.includes('soportes.pdx.editar')

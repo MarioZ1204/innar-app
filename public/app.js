@@ -738,9 +738,13 @@ function apiFetch(url, opts = {}) {
           showToast('Sesión de seguridad desactualizada. Intenta de nuevo.', 'warning');
         } else if (data && data.code === 'CSRF_INVALID' && didCsrfRefresh) {
           showToast('No se pudo validar la solicitud (CSRF). Recarga la página.', 'error');
-        } else {
-          showToast('Acceso denegado o bloqueado por seguridad del servidor.', 'error');
+        } else if (opts.silent403) {
+          /* el llamador maneja el 403 */
+        } else if (mutating) {
+          const msg = (data && data.error) ? String(data.error) : 'No tienes permiso para esta acción';
+          showToast(msg, 'error');
         }
+        // GET 403: silencioso. Evita el toast en consultas de módulos que el rol no tiene.
       }
       if (res.status === 429) {
         showToast('Demasiadas solicitudes. Espera un momento.', 'warning');
@@ -868,6 +872,26 @@ function updateSidebarUser(user) {
   if (typeof window.innarSidebarRefresh === 'function') window.innarSidebarRefresh();
 }
 
+// Maps data-module HTML attribute → modulo.* permission key
+const MODULE_PERM_MAP = {
+  'recibos':        'modulo.recibos',
+  'agenda-medica':  'modulo.agenda_medica',
+  'electro':        'modulo.electrodiag',
+  'usuarios':       'modulo.usuarios',
+  'diagnosticos':   'modulo.diagnosticos',
+  'dashboard-citas':'modulo.dashboard',
+  'gestion-datos':  'modulo.gestion_datos',
+  'monitor-equipos':'modulo.monitor_equipos',
+  'reportes-pdx':     'modulo.reportes_pdx',
+  'reportes-historico': 'modulo.reportes_historico',
+  'armado-soportes':  'modulo.armado_soportes',
+  'anexo-fidu':       'modulo.anexo_fidu',
+  'llamado-pacientes': 'modulo.llamado_pacientes',
+  'backup':           'modulo.backup',
+  'papelera-pdx':     'modulo.papelera_pdx',
+  'documentos-cita':  'modulo.documentos_cita',
+};
+
 function updateMenuByRole() {
   const rol = currentUser?.rol || '';
   // Resolve custom permisos (may come as JSON string from mysql2)
@@ -893,30 +917,8 @@ function updateMenuByRole() {
     return Array.isArray(defaults) && defaults.includes(permKey);
   };
 
-  // Maps data-module HTML attribute → modulo.* permission key
-  const MODULE_PERM_MAP = {
-    'recibos':        'modulo.recibos',
-    'agenda-medica':  'modulo.agenda_medica',
-    'electro':        'modulo.electrodiag',
-    'usuarios':       'modulo.usuarios',
-    'diagnosticos':   'modulo.diagnosticos',
-    'dashboard-citas':'modulo.dashboard',
-    'gestion-datos':  'modulo.gestion_datos',
-    'monitor-equipos':'modulo.monitor_equipos',
-    'reportes-pdx':     'modulo.reportes_pdx',
-    'reportes-historico': 'modulo.reportes_historico',
-    'armado-soportes':  'modulo.armado_soportes',
-    'anexo-fidu':       'modulo.anexo_fidu',
-    'llamado-pacientes': 'modulo.llamado_pacientes',
-    'backup':           'modulo.backup',
-  };
-
   document.querySelectorAll('.menu-card').forEach(card => {
     const moduleKey = card.dataset.module || '';
-    if (moduleKey === 'documentos-cita') {
-      card.style.display = (tienePermiso('agenda.ver') || tienePermiso('electro.ver')) ? '' : 'none';
-      return;
-    }
     const permKey = MODULE_PERM_MAP[moduleKey];
     let allowed = permKey ? tienePermiso(permKey) : (card.dataset.rol || '').split(' ').includes(rol);
     card.style.display = allowed ? '' : 'none';
@@ -1071,24 +1073,11 @@ async function doLogout() {
 
 let initRecibosDone = false, initAgendaDone = false, initElectroDone = false, initUsuariosDone = false, initDiagnosticosDone = false, initDashboardCitasDone = false, initGestionDatosDone = false;
 function goToModule(moduleId) {
-  if (moduleId === 'documentos-cita') {
-    const permDoc = (typeof tienePermiso === 'function')
-      && (tienePermiso('agenda.ver') || tienePermiso('electro.ver'));
-    if (!permDoc) {
-      showView('view-menu');
-      history.replaceState({ view: 'menu' }, '', '#menu');
-      return;
-    }
-  }
-  const permAnexo = 'modulo.anexo_fidu';
-  if (moduleId === 'anexo-fidu' && typeof tienePermiso === 'function' && !tienePermiso(permAnexo)) {
+  const permModulo = MODULE_PERM_MAP[moduleId];
+  if (permModulo && typeof tienePermiso === 'function' && !tienePermiso(permModulo)) {
     showView('view-menu');
     history.replaceState({ view: 'menu' }, '', '#menu');
-    return;
-  }
-  if (moduleId === 'llamado-pacientes' && typeof tienePermiso === 'function' && !tienePermiso('modulo.llamado_pacientes')) {
-    showView('view-menu');
-    history.replaceState({ view: 'menu' }, '', '#menu');
+    sessionStorage.removeItem(lsKeyCurrentModule);
     return;
   }
   const prevModule = currentModule;
@@ -1158,6 +1147,7 @@ function goToModule(moduleId) {
   if (moduleId === 'reportes-historico' && typeof initReportesHistorico === 'function') initReportesHistorico();
   if (moduleId === 'armado-soportes' && typeof initArmadoSoportes === 'function') initArmadoSoportes();
   if (moduleId === 'backup' && typeof initBackupModule === 'function') initBackupModule();
+  if (moduleId === 'papelera-pdx' && typeof initPapeleraPdxModule === 'function') initPapeleraPdxModule();
   if (moduleId === 'documentos-cita' && typeof initDocumentosCitaModule === 'function') initDocumentosCitaModule();
   if (moduleId === 'anexo-fidu' && typeof initAnexoFidu === 'function') initAnexoFidu();
   if (moduleId === 'llamado-pacientes' && typeof initLlamadoPacientes === 'function') initLlamadoPacientes();
@@ -1223,6 +1213,7 @@ function setupMenuHandlers() {
   if ($('btnVolverDashboardCitas')) $('btnVolverDashboardCitas').addEventListener('click', goToMenu);
   if ($('btnVolverGestionDatos')) $('btnVolverGestionDatos').addEventListener('click', goToMenu);
   if ($('btnVolverBackup')) $('btnVolverBackup').addEventListener('click', goToMenu);
+  if ($('btnVolverPapeleraPdx')) $('btnVolverPapeleraPdx').addEventListener('click', goToMenu);
   if ($('btnVolverDocumentosCita')) $('btnVolverDocumentosCita').addEventListener('click', goToMenu);
 
   // Manejar botón atrás del navegador (solo una vez)
@@ -6729,7 +6720,13 @@ function innarIconSvg(name) {
     edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
     trash: '<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
     pdf: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>',
-    cancel: '<circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/>'
+    cancel: '<circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/>',
+    power: '<path d="M12 2v10"/><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/>',
+    lock: '<rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+    history: '<path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/>',
+    speaker: '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>',
+    list: '<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>',
+    download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>'
   };
   return `<svg ${common}>${paths[name] || ''}</svg>`;
 }
@@ -10043,6 +10040,8 @@ const PERMISOS_DEFS = [
   // ── Llamado de pacientes (pantalla) ───────────────────────────────────────
   { key: 'modulo.llamado_pacientes',    label: 'Acceso a pantalla de llamado (TV)',   grupo: 'Llamado de pacientes' },
   { key: 'llamado.configurar',          label: 'Configurar consultorios en pantalla', grupo: 'Llamado de pacientes' },
+  // ── Comprobantes y certificados ───────────────────────────────────────────
+  { key: 'modulo.documentos_cita',      label: 'Acceso al módulo',                    grupo: 'Comprobantes y certificados' },
   // ── Electrodiagnóstico ────────────────────────────────────────────────────
   { key: 'modulo.electrodiag',          label: 'Acceso al módulo',                    grupo: 'Electrodiagnóstico' },
   { key: 'electro.ver',                 label: 'Ver citas',                           grupo: 'Electrodiagnóstico' },
@@ -10084,6 +10083,7 @@ const PERMISOS_DEFS = [
   { key: 'soportes.pdx.subir',          label: 'Subir archivos PDF',                  grupo: 'Cargar reportes' },
   { key: 'soportes.pdx.editar',         label: 'Editar, reemplazar y mover',          grupo: 'Cargar reportes' },
   { key: 'soportes.pdx.eliminar',       label: 'Eliminar archivos y carpetas',        grupo: 'Cargar reportes' },
+  { key: 'modulo.papelera_pdx',         label: 'Papelera de archivos eliminados',     grupo: 'Cargar reportes' },
   // ── Reportes anteriores (archivados) ───────────────────────────────────────
   { key: 'modulo.reportes_historico',   label: 'Acceso al módulo (consulta de carpetas archivadas)', grupo: 'Reportes anteriores' },
   // ── Soportes ──────────────────────────────────────────────────────────────
@@ -10108,7 +10108,8 @@ const PERMISOS_ROL_DEFAULTS = {
   admin: null,
   admin_recepcion: [
     'modulo.recibos','modulo.agenda_medica','modulo.electrodiag','modulo.dashboard','modulo.monitor_equipos',
-    'modulo.reportes_pdx','modulo.armado_soportes','modulo.llamado_pacientes','llamado.configurar',
+    'modulo.documentos_cita',
+    'modulo.reportes_pdx','modulo.papelera_pdx','modulo.armado_soportes','modulo.llamado_pacientes','llamado.configurar',
     'soportes.pdx.ver','soportes.pdx.carpetas.todas','soportes.pdx.crear_carpeta','soportes.pdx.subir','soportes.pdx.editar',
     'soportes.armado.crear_estructura','soportes.armado.subir','soportes.armado.importar_pdx','soportes.descargar_zip',
     'modulo.reportes_historico',
@@ -10120,7 +10121,8 @@ const PERMISOS_ROL_DEFAULTS = {
   ],
   recepcion: [
     'modulo.recibos','modulo.agenda_medica','modulo.electrodiag','modulo.dashboard','modulo.monitor_equipos',
-    'modulo.reportes_pdx','modulo.armado_soportes','modulo.llamado_pacientes','llamado.configurar',
+    'modulo.documentos_cita',
+    'modulo.reportes_pdx','modulo.papelera_pdx','modulo.armado_soportes','modulo.llamado_pacientes','llamado.configurar',
     'soportes.pdx.ver','soportes.pdx.carpetas.todas','soportes.pdx.crear_carpeta','soportes.pdx.subir','soportes.pdx.editar',
     'soportes.armado.crear_estructura','soportes.armado.subir','soportes.armado.importar_pdx','soportes.descargar_zip',
     'modulo.reportes_historico',
@@ -10131,7 +10133,8 @@ const PERMISOS_ROL_DEFAULTS = {
     'sistema.dashboard',
   ],
   auxiliar_recepcion: [
-    'modulo.recibos','modulo.agenda_medica','modulo.electrodiag','modulo.reportes_pdx','modulo.llamado_pacientes','llamado.configurar',
+    'modulo.recibos','modulo.agenda_medica','modulo.electrodiag','modulo.reportes_pdx','modulo.papelera_pdx','modulo.llamado_pacientes','llamado.configurar',
+    'modulo.documentos_cita',
     'soportes.pdx.ver','soportes.pdx.subir',
     'recibos.crear','recibos.ver','recibos.pagar','recibos.pendiente',
     'agenda.ver','agenda.crear','agenda.editar','agenda.cambiar_estado','agenda.aviso_doctor',
@@ -10139,6 +10142,7 @@ const PERMISOS_ROL_DEFAULTS = {
   ],
   doctor: [
     'modulo.agenda_medica','modulo.electrodiag','modulo.dashboard',
+    'modulo.documentos_cita',
     'agenda.ver','agenda.cambiar_estado','agenda.llamar_siguiente','agenda.marcar_atendido','agenda.disponibilidad',
     'electro.ver','electro.cambiar_estado','electro.subir_archivo','electro.ver_archivo',
     'sistema.dashboard',
@@ -10146,7 +10150,8 @@ const PERMISOS_ROL_DEFAULTS = {
   ],
   admin_electro: [
     'modulo.electrodiag','modulo.agenda_medica','modulo.dashboard','modulo.monitor_equipos',
-    'modulo.reportes_pdx','modulo.armado_soportes','modulo.llamado_pacientes','llamado.configurar',
+    'modulo.documentos_cita',
+    'modulo.reportes_pdx','modulo.papelera_pdx','modulo.armado_soportes','modulo.llamado_pacientes','llamado.configurar',
     'soportes.pdx.ver','soportes.pdx.carpetas.todas','soportes.pdx.crear_carpeta','soportes.pdx.subir','soportes.pdx.editar',
     'soportes.armado.crear_estructura','soportes.armado.subir','soportes.armado.importar_pdx','soportes.descargar_zip',
     'modulo.reportes_historico',
@@ -10156,7 +10161,8 @@ const PERMISOS_ROL_DEFAULTS = {
   ],
   electro: [
     'modulo.electrodiag','modulo.agenda_medica','modulo.dashboard','modulo.monitor_equipos',
-    'modulo.reportes_pdx','modulo.armado_soportes','modulo.llamado_pacientes','llamado.configurar',
+    'modulo.documentos_cita',
+    'modulo.reportes_pdx','modulo.papelera_pdx','modulo.armado_soportes','modulo.llamado_pacientes','llamado.configurar',
     'soportes.pdx.ver','soportes.pdx.carpetas.todas','soportes.pdx.crear_carpeta','soportes.pdx.subir','soportes.pdx.editar',
     'soportes.armado.crear_estructura','soportes.armado.subir','soportes.armado.importar_pdx','soportes.descargar_zip',
     'modulo.reportes_historico',
@@ -10166,12 +10172,13 @@ const PERMISOS_ROL_DEFAULTS = {
   ],
   tecnico_electro: [
     'modulo.electrodiag','modulo.agenda_medica','modulo.monitor_equipos',
+    'modulo.documentos_cita',
     'electro.ver','electro.crear','electro.editar','electro.cambiar_estado','electro.subir_archivo','electro.ver_archivo',
     'agenda.ver','agenda.editar','agenda.aviso_doctor',
   ],
   contabilidad: [
     'modulo.recibos','modulo.dashboard',
-    'modulo.reportes_pdx','modulo.armado_soportes','modulo.llamado_pacientes','llamado.configurar',
+    'modulo.reportes_pdx','modulo.papelera_pdx','modulo.armado_soportes','modulo.llamado_pacientes','llamado.configurar',
     'soportes.pdx.ver','soportes.pdx.carpetas.todas','soportes.pdx.crear_carpeta','soportes.pdx.subir','soportes.pdx.editar',
     'soportes.armado.crear_estructura','soportes.armado.subir','soportes.armado.importar_pdx','soportes.descargar_zip',
     'modulo.reportes_historico',
@@ -10325,7 +10332,18 @@ async function _cargarPermisosUserList() {
 }
 
 function _rolLabel(rol) {
-  const map = { admin:'Administrador', admin_recepcion:'Admin Recepción', recepcion:'Recepción', auxiliar_recepcion:'Auxiliar Recepción', admin_electro:'Admin Electro', electro:'Electrodiagnóstico', tecnico_electro:'Técnico Electro', doctor:'Doctor', contabilidad:'Contabilidad' };
+  const map = {
+    superadmin: 'Super Administrador',
+    admin: 'Administrador',
+    admin_recepcion: 'Admin Recepción',
+    recepcion: 'Recepción',
+    auxiliar_recepcion: 'Auxiliar Recepción',
+    admin_electro: 'Admin Electro',
+    electro: 'Electrodiagnóstico',
+    tecnico_electro: 'Técnico Electro',
+    doctor: 'Doctor',
+    contabilidad: 'Contabilidad'
+  };
   return map[rol] || rol;
 }
 
@@ -10773,7 +10791,7 @@ async function cargarUsuarios() {
     }
     
     if (!usuarios.length) {
-      tbody.innerHTML = '<tr><td colspan="6"><div class="empty-state"><div class="empty-state-icon">👤</div><p class="empty-state-title">Sin usuarios</p><p class="empty-state-subtitle">No hay usuarios registrados en el sistema</p></div></td></tr>';
+      tbody.innerHTML = `<tr><td colspan="6">${htmlListaVacia('Sin usuarios', 'No hay usuarios registrados en el sistema')}</td></tr>`;
       return;
     }
 
@@ -10795,35 +10813,29 @@ async function cargarUsuarios() {
  */
 function renderUsuarioRow(tbody, u) {
   const tr = document.createElement('tr');
-  const rolMap = {
-    admin:     { label: 'Administrador',     bg: '#fef3c7', color: '#92400e', border: '#fde047' },
-    recepcion: { label: 'Recepci\u00f3n',       bg: '#dbeafe', color: '#1d4ed8', border: '#93c5fd' },
-    electro:   { label: 'Electrodiagn\u00f3stico', bg: '#ede9fe', color: '#5b21b6', border: '#c4b5fd' },
-    doctor:    { label: 'Doctor',             bg: '#dcfce7', color: '#15803d', border: '#86efac' },
-  };
-  const rol = rolMap[u.rol] || { label: escapeHtml(u.rol), bg: '#f3f4f6', color: '#374151', border: '#d1d5db' };
-  const rolBadge = `<span style="display:inline-block;padding:3px 10px;border-radius:12px;font-size:0.78rem;font-weight:600;background:${rol.bg};color:${rol.color};border:1px solid ${rol.border};white-space:nowrap">${rol.label}</span>`;
+  const rolSlug = String(u.rol || 'otro').replace(/[^a-z0-9_]/gi, '').replace(/_/g, '-');
+  const rolBadge = `<span class="usr-rol-badge usr-rol--${rolSlug}">${escapeHtml(_rolLabel(u.rol))}</span>`;
   const estadoBadgeHtml = u.activo
-    ? `<span style="display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:12px;font-size:0.78rem;font-weight:600;background:#dcfce7;color:#15803d;border:1px solid #86efac"><span style="width:7px;height:7px;border-radius:50%;background:#16a34a;display:inline-block"></span>Activo</span>`
-    : `<span style="display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:12px;font-size:0.78rem;font-weight:600;background:#fee2e2;color:#991b1b;border:1px solid #fca5a5"><span style="width:7px;height:7px;border-radius:50%;background:#dc2626;display:inline-block"></span>Inactivo</span>`;
+    ? `<span class="usr-estado-badge usr-estado--activo"><span class="usr-estado-dot" aria-hidden="true"></span>Activo</span>`
+    : `<span class="usr-estado-badge usr-estado--inactivo"><span class="usr-estado-dot" aria-hidden="true"></span>Inactivo</span>`;
 
   const toggleBtn = currentUser?.id !== u.id
-    ? `<button class="btn-usr-toggle" data-toggle="${u.id}" data-activo="${u.activo ? 'true' : 'false'}" title="${u.activo ? 'Desactivar' : 'Activar'}"><img src="images/power.svg" alt="${u.activo ? 'Desactivar' : 'Activar'}"/></button>` : '';
+    ? `<button class="btn-usr-toggle" data-toggle="${u.id}" data-activo="${u.activo ? 'true' : 'false'}" title="${u.activo ? 'Desactivar' : 'Activar'}">${innarIconSvg('power')}</button>` : '';
   const delBtn = currentUser?.id !== u.id
-    ? `<button class="btn-usr-del" data-del="${u.id}" title="Eliminar"><img src="images/delete.svg" alt="Eliminar"/></button>` : '';
+    ? `<button class="btn-usr-del" data-del="${u.id}" title="Eliminar">${innarIconSvg('trash')}</button>` : '';
 
   tr.innerHTML = `
-    <td><span style="font-weight:500;color:#111827">${escapeHtml(u.usuario)}</span></td>
+    <td><span class="usr-login">${escapeHtml(u.usuario)}</span></td>
     <td>${escapeHtml(u.nombre || '-')}</td>
     <td>${rolBadge}</td>
     <td>${escapeHtml(String(u.numero_consultorio || '-'))}</td>
     <td>${estadoBadgeHtml}</td>
     <td>
       <div class="table-actions">
-        <button class="btn-usr-edit" data-edit="${u.id}" title="Editar"><img src="images/edit.svg" alt="Editar"/></button>
-        <button class="btn-usr-reset" data-reset="${u.id}" title="Resetear contrase\u00f1a"><img src="images/lock.svg" alt="Resetear"/></button>
-        <button class="btn-usr-hist" data-historial="${u.id}" title="Ver historial"><img src="images/history.svg" alt="Historial"/></button>
-        ${u.numero_consultorio ? `<button class="btn-usr-speak" data-speak="${u.numero_consultorio}" title="Reproducir consultorio ${u.numero_consultorio}"><img src="images/speaker.svg" alt="Hablar"/></button>` : ''}
+        <button class="btn-usr-edit" data-edit="${u.id}" title="Editar">${innarIconSvg('edit')}</button>
+        <button class="btn-usr-reset" data-reset="${u.id}" title="Resetear contrase\u00f1a">${innarIconSvg('lock')}</button>
+        <button class="btn-usr-hist" data-historial="${u.id}" title="Ver historial">${innarIconSvg('history')}</button>
+        ${u.numero_consultorio ? `<button class="btn-usr-speak" data-speak="${u.numero_consultorio}" title="Reproducir consultorio ${u.numero_consultorio}">${innarIconSvg('speaker')}</button>` : ''}
         ${toggleBtn}
         ${delBtn}
       </div>
@@ -13191,7 +13203,7 @@ async function cargarListaDiagnosticos() {
     const diagnosticos = await res.json();
 
     if (diagnosticos.length === 0) {
-      if (tbody) tbody.innerHTML = '<tr><td colspan="5"><div class="empty-state"><div class="empty-state-icon">💬</div><p class="empty-state-title">Sin diagnósticos</p><p class="empty-state-subtitle">No hay diagnósticos cargados en el sistema</p></div></td></tr>';
+      if (tbody) tbody.innerHTML = `<tr><td colspan="5">${htmlListaVacia('Sin diagnósticos', 'No hay diagnósticos cargados en el sistema')}</td></tr>`;
       return;
     }
 
@@ -13203,7 +13215,7 @@ async function cargarListaDiagnosticos() {
     });
   } catch (e) {
     console.error('Error cargando diagnósticos:', e);
-    if (tbody) tbody.innerHTML = '<tr><td colspan="5"><div class="empty-state"><div class="empty-state-icon">⚠️</div><p class="empty-state-title" style="color:#dc2626">Error cargando diagnósticos</p></div></td></tr>';
+    if (tbody) tbody.innerHTML = `<tr><td colspan="5">${htmlListaVacia('Error cargando diagnósticos', 'Intente de nuevo en unos segundos')}</td></tr>`;
   }
   });
 }
@@ -13214,18 +13226,23 @@ async function cargarListaDiagnosticos() {
 function renderDiagnosticoRow(tbody, d) {
   const tr = document.createElement('tr');
   tr.className = 'turno-row';
+  const estadoHtml = d.activo === 1
+    ? '<span class="usr-estado-badge usr-estado--activo"><span class="usr-estado-dot" aria-hidden="true"></span>Activo</span>'
+    : '<span class="usr-estado-badge usr-estado--inactivo"><span class="usr-estado-dot" aria-hidden="true"></span>Inactivo</span>';
   tr.innerHTML = `
-    <td style="padding:12px">${escapeHtml(d.codigo || '-')}</td>
-    <td style="padding:12px">${escapeHtml(d.nombre)}</td>
-    <td style="padding:12px">${escapeHtml(d.descripcion || '-')}</td>
-    <td style="padding:12px">${d.activo === 1 ? '<span style="background:#dcfce7;color:#15803d;padding:4px 8px;border-radius:4px;font-size:0.85rem">Activo</span>' : '<span style="background:#fee2e2;color:#991b1b;padding:4px 8px;border-radius:4px;font-size:0.85rem">Inactivo</span>'}</td>
-    <td style="padding:12px">
-      <button class="btn-eliminar-diag btn-danger btn-sm" data-id="${d.id}">Eliminar</button>
+    <td>${escapeHtml(d.codigo || '-')}</td>
+    <td>${escapeHtml(d.nombre)}</td>
+    <td>${escapeHtml(d.descripcion || '-')}</td>
+    <td>${estadoHtml}</td>
+    <td>
+      <div class="table-actions">
+        <button class="btn-eliminar btn-eliminar-diag" data-id="${d.id}" title="Eliminar">${innarIconSvg('trash')}</button>
+      </div>
     </td>
   `;
   
   tr.querySelector('.btn-eliminar-diag')?.addEventListener('click', (e) => {
-    const id = e.target.dataset.id;
+    const id = e.currentTarget.dataset.id;
     showConfirm('¿Eliminar este diagnóstico?', async () => {
       try {
         await apiFetch(`/api/diagnosticos/${id}`, { method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({activo: 0}) });
@@ -15226,11 +15243,8 @@ function cerrarModalCertificadoAsistencia() {
 
 async function generarCertificadoAsistenciaPdf() {
   const origen = $('certAsistOrigen')?.value?.trim();
-  const permOk = origen === 'electro'
-    ? tienePermiso('electro.ver')
-    : origen === 'medica'
-      ? tienePermiso('agenda.ver')
-      : false;
+  const permOk = (typeof tienePermiso === 'function' && tienePermiso('modulo.documentos_cita'))
+    || (origen === 'electro' ? tienePermiso('electro.ver') : origen === 'medica' && tienePermiso('agenda.ver'));
   if (!permOk) {
     showToast('No tiene permiso para generar este certificado', 'error');
     return;
@@ -15629,11 +15643,8 @@ function cerrarModalComprobanteServicios() {
 
 async function generarComprobanteServiciosPdf() {
   const origen = $('compServOrigen')?.value?.trim();
-  const permOk = origen === 'electro'
-    ? tienePermiso('electro.ver')
-    : origen === 'medica'
-      ? tienePermiso('agenda.ver')
-      : false;
+  const permOk = (typeof tienePermiso === 'function' && tienePermiso('modulo.documentos_cita'))
+    || (origen === 'electro' ? tienePermiso('electro.ver') : origen === 'medica' && tienePermiso('agenda.ver'));
   if (!permOk) {
     showToast('No tiene permiso para generar este comprobante', 'error');
     return;
@@ -17205,23 +17216,23 @@ function renderEspecialidadesTable(lista) {
   const tbody = $('especialidadesTableBody');
   if (!tbody) return;
   if (!lista || lista.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="2" style="padding:20px;text-align:center;color:#999">No hay especialidades. Agrega la primera.</td></tr>';
+    tbody.innerHTML = `<tr><td colspan="2">${htmlListaVacia('Sin especialidades', 'Agrega la primera desde el formulario de arriba')}</td></tr>`;
     return;
   }
   tbody.innerHTML = lista.map(e => {
     const n = escapeHtml(e.nombre).replace(/'/g, "\\'");
     return `<tr>
-      <td style="font-weight:500">${escapeHtml(e.nombre)}</td>
+      <td class="usr-login">${escapeHtml(e.nombre)}</td>
       <td>
         <div class="table-actions">
-          <button class="btn-secondary btn-sm" title="Gestionar tipos de consulta" onclick="abrirTiposConsulta(${e.id},'${n}')">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:3px"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>Tipos
+          <button class="btn-secondary btn-sm esp-tipos-btn" title="Gestionar tipos de consulta" onclick="abrirTiposConsulta(${e.id},'${n}')">
+            ${innarIconSvg('list')} Tipos
           </button>
           <button class="btn-editar" title="Renombrar" onclick="editarEspecialidad(${e.id},'${n}')">
-            <img src="images/edit.svg" alt="Editar" />
+            ${innarIconSvg('edit')}
           </button>
           <button class="btn-eliminar" title="Eliminar" onclick="eliminarEspecialidad(${e.id},'${n}')">
-            <img src="images/delete.svg" alt="Eliminar" />
+            ${innarIconSvg('trash')}
           </button>
         </div>
       </td>
@@ -17325,7 +17336,7 @@ function renderTiposConsultaPanel(lista) {
   const tbody = $('tiposConsultaTableBody');
   if (!tbody) return;
   if (!lista || lista.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="6" style="padding:16px;text-align:center;color:#999">Sin tipos de consulta. Agrega el primero.</td></tr>';
+    tbody.innerHTML = `<tr><td colspan="6">${htmlListaVacia('Sin tipos de consulta', 'Agrega el primero para esta especialidad')}</td></tr>`;
     return;
   }
   tbody.innerHTML = lista.map(t => {
@@ -17339,22 +17350,22 @@ function renderTiposConsultaPanel(lista) {
     };
     return `<tr>
       <td>${escapeHtml(t.nombre)}</td>
-      <td style="text-align:center">
-        <label style="cursor:pointer;font-size:.85rem" title="Permite agendar varias sesiones por días de la semana">
+      <td class="td-center">
+        <label class="usr-chk-label" title="Permite agendar varias sesiones por días de la semana">
           <input type="checkbox" ${multi ? 'checked' : ''} onchange="toggleSesionesMultiplesTipo(${t.id}, this.checked)" />
           Sesiones múlt.
         </label>
       </td>
-      <td style="text-align:center">${chk('visible_agenda', t.visible_agenda)}</td>
-      <td style="text-align:center">${chk('visible_comprobante', t.visible_comprobante)}</td>
-      <td style="text-align:center">${chk('visible_recibo', t.visible_recibo)}</td>
+      <td class="td-center">${chk('visible_agenda', t.visible_agenda)}</td>
+      <td class="td-center">${chk('visible_comprobante', t.visible_comprobante)}</td>
+      <td class="td-center">${chk('visible_recibo', t.visible_recibo)}</td>
       <td>
         <div class="table-actions">
           <button class="btn-editar" title="Editar" onclick="editarTipoConsulta(${t.id},'${n}')">
-            <img src="images/edit.svg" alt="Editar" />
+            ${innarIconSvg('edit')}
           </button>
           <button class="btn-eliminar" title="Eliminar" onclick="eliminarTipoConsulta(${t.id})">
-            <img src="images/delete.svg" alt="Eliminar" />
+            ${innarIconSvg('trash')}
           </button>
         </div>
       </td>
@@ -17702,7 +17713,7 @@ function _gestionRenderRows(tipo, registros) {
   const tbody = $('bodyGestionDatos');
   if (!tbody) return;
   if (!registros.length) {
-    tbody.innerHTML = `<tr><td colspan="${cols.length + 2}" class="innar-empty-cell">No se encontraron registros</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="${cols.length + 2}">${htmlListaVacia('Sin registros', 'No se encontraron datos con los filtros actuales')}</td></tr>`;
     return;
   }
   tbody.innerHTML = registros.map(r => {
@@ -17714,16 +17725,18 @@ function _gestionRenderRows(tipo, registros) {
       return `<td>${display}</td>`;
     }).join('');
     const btnEditar = _GESTION_TIPOS_AGREGAR.includes(tipo)
-      ? `<button type="button" class="btn-secondary btn-sm" style="margin-right:6px" title="Editar" onclick="abrirModalEditarGestionCatalogo(${r.id})">Editar</button>`
+      ? `<button type="button" class="btn-editar" title="Editar" onclick="abrirModalEditarGestionCatalogo(${r.id})">${innarIconSvg('edit')}</button>`
       : '';
     return `<tr>
       <td><input type="checkbox" class="chk-row" data-id="${r.id}" /></td>
       ${cells}
       <td>
-        ${btnEditar}
-        <button class="btn-eliminar" title="Eliminar" onclick="confirmarEliminarGestion('${tipo}',${r.id})">
-          <img src="images/delete.svg" alt="Eliminar" />
-        </button>
+        <div class="table-actions">
+          ${btnEditar}
+          <button class="btn-eliminar" title="Eliminar" onclick="confirmarEliminarGestion('${tipo}',${r.id})">
+            ${innarIconSvg('trash')}
+          </button>
+        </div>
       </td>
     </tr>`;
   }).join('');
@@ -17758,7 +17771,7 @@ async function buscarGestionDatos() {
 
   const tbody = $('bodyGestionDatos');
   const btnBuscar = $('btnBuscarGestion');
-  if (tbody) tbody.innerHTML = `<tr><td colspan="10" style="padding:20px;text-align:center;color:#999">Cargando...</td></tr>`;
+  if (tbody) tbody.innerHTML = `<tr><td colspan="10">${htmlListaVacia('Cargando…')}</td></tr>`;
   if (btnBuscar) btnBuscar.disabled = true;
   _gestionSeleccionados = new Set();
   _actualizarConteoGestion();
@@ -18309,7 +18322,7 @@ async function cargarMonitorEquipos() {
   } catch (e) {
     console.error('[MONITOR] Error:', e);
     const grid = $('monitorEquiposGrid');
-    if (grid) grid.innerHTML = '<div class="meq-empty-cell" style="text-align:center;padding:60px 20px">Error cargando equipos</div>';
+    if (grid) grid.innerHTML = htmlListaVacia('Error cargando equipos', 'Intente refrescar en unos segundos');
   }
 }
 
@@ -18323,12 +18336,12 @@ function renderMonitorEquipos(data) {
   if (!grid) return;
 
   let activos = 0, ocupados = 0, libres = 0, inactivos = 0;
-  const svgMonitor = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>';
-  const svgBrain = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9.5 2A5.5 5.5 0 005 7.5c0 .68.12 1.33.34 1.93a4.5 4.5 0 00.16 7.07A4.5 4.5 0 009.5 22h1V2h-1z"/><path d="M14.5 2A5.5 5.5 0 0120 7.5c0 .68-.12 1.33-.34 1.93a4.5 4.5 0 00-.16 7.07A4.5 4.5 0 0114.5 22h-1V2h1z"/></svg>';
-  const svgSleep = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>';
-  const svgActivity = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>';
-  const svgUser = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>';
-  const svgClock = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>';
+  const svgMonitor = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>';
+  const svgBrain = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9.5 2A5.5 5.5 0 005 7.5c0 .68.12 1.33.34 1.93a4.5 4.5 0 00.16 7.07A4.5 4.5 0 009.5 22h1V2h-1z"/><path d="M14.5 2A5.5 5.5 0 0120 7.5c0 .68-.12 1.33-.34 1.93a4.5 4.5 0 00-.16 7.07A4.5 4.5 0 0114.5 22h-1V2h1z"/></svg>';
+  const svgSleep = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>';
+  const svgActivity = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>';
+  const svgUser = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>';
+  const svgClock = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>';
   const svgDoc = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>';
 
   function getEquipIcon(nombre) {
@@ -18451,7 +18464,9 @@ function renderMonitorEquipos(data) {
     html += '</div></div>';
   });
   html += '</div></div>';
-  grid.innerHTML = html;
+  grid.innerHTML = equipos.length
+    ? html
+    : htmlListaVacia('Sin equipos', 'No hay equipos para mostrar en esta fecha');
 
 
   // Update stats
@@ -18473,7 +18488,7 @@ function renderMonitorEquipos(data) {
       return '<div class="meq-sin-equipo-card" data-cita-id="' + escapeHtml(sid) + '" title="Clic para ver detalle">' +
         '<div class="meq-study-block"><div class="meq-study-title">' + escapeHtml(c.estudio || 'Sin tipo') + '</div>' +
         '<div class="meq-study-meta">' + svgUser + ' ' + escapeHtml(c.paciente_nombre || '-') + '</div></div>' +
-        '<div class="meq-study-meta" style="color:#a16207">' + svgClock + ' ' + (c.fecha || '') + ' ' + formatearHora(c.hora_agendamiento || '') + ' &middot; ' + escapeHtml(c.estado || '') + '</div>' +
+        '<div class="meq-study-meta meq-study-meta--warn">' + svgClock + ' ' + (c.fecha || '') + ' ' + formatearHora(c.hora_agendamiento || '') + ' &middot; ' + escapeHtml(c.estado || '') + '</div>' +
       '</div>';
     }).join('');
   } else if (sinEqC) { sinEqC.style.display = 'none'; }
@@ -18482,9 +18497,9 @@ function renderMonitorEquipos(data) {
   if (!sinCupoC && grid && grid.parentNode) {
     sinCupoC = document.createElement('div');
     sinCupoC.id = 'monitorSinCupoProvision';
+    sinCupoC.className = 'meq-sin-equipo-wrap';
     sinCupoC.style.display = 'none';
-    sinCupoC.style.marginTop = '24px';
-    sinCupoC.innerHTML = '<h3 style="font-size:1rem;color:#64748b;margin:0 0 12px;font-weight:600">Programados sin cupo en equipos</h3><div id="monitorSinCupoList"></div>';
+    sinCupoC.innerHTML = '<h3 class="meq-section-title">Programados sin cupo en equipos</h3><div id="monitorSinCupoList" class="meq-sin-equipo-list"></div>';
     grid.parentNode.insertBefore(sinCupoC, $('monitorSinEquipo') || null);
   }
   var sinCupoL = $('monitorSinCupoList');
@@ -18495,7 +18510,7 @@ function renderMonitorEquipos(data) {
       return '<div class="meq-sin-equipo-card" data-cita-id="' + escapeHtml(sid) + '" title="Clic para ver detalle">' +
         '<div class="meq-study-block"><div class="meq-study-title">' + escapeHtml(c.estudio || 'Sin tipo') + '</div>' +
         '<div class="meq-study-meta">' + svgUser + ' ' + escapeHtml(c.paciente_nombre || '-') + '</div></div>' +
-        '<div class="meq-study-meta" style="color:#b45309">' + svgClock + ' ' + formatearHora(c.hora_agendamiento || c.hora_inicio || '') + ' &middot; Sin cupo para provisi\u00f3n</div>' +
+        '<div class="meq-study-meta meq-study-meta--alert">' + svgClock + ' ' + formatearHora(c.hora_agendamiento || c.hora_inicio || '') + ' &middot; Sin cupo para provisi\u00f3n</div>' +
       '</div>';
     }).join('');
   } else if (sinCupoC) { sinCupoC.style.display = 'none'; }

@@ -13,6 +13,15 @@ function scheduleBuscarCitasAuditoria(delayMs = 120) {
   }, delayMs);
 }
 
+const DASH_BUSCAR_HTML = '<svg class="innar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg> Buscar';
+
+function dashEmptyHtml(titulo, detalle) {
+  if (typeof htmlListaVacia === 'function') return htmlListaVacia(titulo, detalle);
+  const t = String(titulo || '');
+  const d = detalle ? `<p class="innar-empty-detail">${String(detalle)}</p>` : '';
+  return `<div class="innar-empty innar-empty--compact"><p class="innar-empty-title">${t}</p>${d}</div>`;
+}
+
 function getDashboardMedicoIds() {
   const medicoSel = document.getElementById('dashboardMedico');
   if (!medicoSel) return [];
@@ -440,13 +449,12 @@ async function buscarCitasAuditoria() {
     if (typeof showToast === 'function') showToast('Error al cargar citas: ' + e.message, 'error');
     const tbody = document.getElementById('bodyTablaAuditoria');
     if (tbody) {
-      const esc = typeof escapeHtml === 'function' ? escapeHtml : (s) => s;
-      tbody.innerHTML = `<tr><td colspan="13" style="padding:20px;text-align:center;color:#dc2626">Error: ${esc(e.message)}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="13">${dashEmptyHtml('Error al cargar citas', e.message)}</td></tr>`;
     }
   } finally {
     if (btn) {
       btn.disabled = false;
-      btn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>Buscar';
+      btn.innerHTML = DASH_BUSCAR_HTML;
     }
     if (dashboardFetchPending) {
       dashboardFetchPending = false;
@@ -490,7 +498,7 @@ function renderizarTablaCitasAuditoria(citas) {
     const tbody = document.getElementById('bodyTablaAuditoria');
     if (!tbody) return;
     if (citas.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="13" style="padding:20px;text-align:center;color:#999">No hay citas que coincidan con los filtros</td></tr>';
+      tbody.innerHTML = `<tr><td colspan="13">${dashEmptyHtml('Sin resultados', 'No hay citas que coincidan con los filtros')}</td></tr>`;
       const controls = document.getElementById('tablaCitasAuditoriaControls');
       if (controls) controls.innerHTML = '';
       return;
@@ -504,8 +512,7 @@ function renderizarTablaCitasAuditoria(citas) {
     console.error('[DASHBOARD CITAS] Error renderizando tabla:', e.message);
     const tbody = document.getElementById('bodyTablaAuditoria');
     if (tbody) {
-      const esc = typeof escapeHtml === 'function' ? escapeHtml : (s) => s;
-      tbody.innerHTML = `<tr><td colspan="13" style="padding:20px;text-align:center;color:#dc2626">Error al renderizar tabla: ${esc(e.message)}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="13">${dashEmptyHtml('Error al renderizar tabla', e.message)}</td></tr>`;
     }
   }
 }
@@ -517,58 +524,72 @@ function renderCitaAuditoriaRow(tbody, cita) {
     const fecha = formatearFechaAuditoria(cita.fecha);
     const hora = (cita.hora || '').substring(0, 5) || '-';
     const medico = cita.medico_nombre || (cita.tipo_cita === 'ELECTRODIAGNOSTICO' ? '—' : '-');
-    const paciente = esc(cita.paciente_nombre || '-') + ` <span style="color:#888;font-size:11px">(${esc(cita.paciente_documento || '-')})</span>`;
+    const paciente = esc(cita.paciente_nombre || '-') + ` <span class="dash-doc">(${esc(cita.paciente_documento || '-')})</span>`;
     const especialidad = cita.especialidad_nombre || '-';
     const tipo = cita.tipo_consulta || '-';
     const entidad = cita.entidad || '-';
-    const tipoCitaLabel = cita.tipo_cita === 'AGENDA_MEDICA' ? 'Médica' : 'Electro';
+    const tipoCitaCls = cita.tipo_cita === 'AGENDA_MEDICA' ? 'dash-tipo--medica' : 'dash-tipo--electro';
     const agendado = cita.programado_por || '-';
     const estado = cita.estado || '-';
-    const { color, bg } = getEstadoStyle(estado);
+    const estadoCls = getEstadoBadgeClass(estado);
     const reciboNum = cita.recibo_numero || '-';
     const reciboValor = cita.recibo_valor === '' || cita.recibo_valor == null
       ? '-'
       : (typeof formatMoney === 'function' ? formatMoney(cita.recibo_valor) : String(cita.recibo_valor));
     const reciboEst = cita.recibo_estado || '-';
-    const reciboEstStyle = reciboEst === 'ANULADO'
-      ? 'background:#fee2e2;color:#991b1b'
-      : (reciboEst === 'PENDIENTE' ? 'background:#fef3c7;color:#92400e' : (reciboEst === 'PAGADO' ? 'background:#d1fae5;color:#065f46' : 'background:#f3f4f6;color:#4b5563'));
+    const reciboCls = reciboEst === 'ANULADO'
+      ? 'dash-recibo--anulado'
+      : (reciboEst === 'PENDIENTE' ? 'dash-recibo--pendiente' : (reciboEst === 'PAGADO' ? 'dash-recibo--pagado' : 'dash-recibo--otro'));
 
     tr.innerHTML = `
       <td>${esc(fecha)}</td>
-      <td style="white-space:nowrap">${esc(hora)}</td>
-      <td style="font-weight:600;color:#374151">${esc(medico)}</td>
+      <td class="dash-hora">${esc(hora)}</td>
+      <td class="dash-strong">${esc(medico)}</td>
       <td>${paciente}</td>
-      <td style="font-size:12px;color:#6b7280">${esc(especialidad)}</td>
+      <td class="dash-muted">${esc(especialidad)}</td>
       <td>${esc(tipo)}</td>
       <td>${esc(entidad)}</td>
-      <td><span style="font-size:11px;padding:2px 7px;border-radius:20px;background:#e0f2fe;color:#0369a1;font-weight:600">${esc(tipoCitaLabel)}</span></td>
-      <td style="font-weight:600;color:#374151">${esc(agendado)}</td>
-      <td><span style="font-size:11px;padding:2px 8px;border-radius:20px;background:${bg};color:${color};font-weight:600;white-space:nowrap">${esc(estado)}</span></td>
-      <td style="font-size:12px;white-space:nowrap">${esc(reciboNum)}${cita.recibo_seq ? ` <span style="color:#888;font-size:10px">(${esc(cita.recibo_seq)})</span>` : ''}</td>
-      <td style="font-size:12px;white-space:nowrap">${esc(reciboValor)}</td>
-      <td><span style="font-size:11px;padding:2px 8px;border-radius:20px;background:${reciboEstStyle};font-weight:600;white-space:nowrap">${esc(reciboEst)}</span></td>
+      <td><span class="dash-tipo-badge ${tipoCitaCls}">${esc(tipoCitaLabel)}</span></td>
+      <td class="dash-strong">${esc(agendado)}</td>
+      <td><span class="dash-estado-badge ${estadoCls}">${esc(estado)}</span></td>
+      <td class="dash-muted dash-hora">${esc(reciboNum)}${cita.recibo_seq ? ` <span class="dash-doc">(${esc(cita.recibo_seq)})</span>` : ''}</td>
+      <td class="dash-muted dash-hora">${esc(reciboValor)}</td>
+      <td><span class="dash-recibo-badge ${reciboCls}">${esc(reciboEst)}</span></td>
     `;
     tbody.appendChild(tr);
   } catch (e) {
     console.error('[DASHBOARD CITAS] Error renderizando fila:', e.message);
     const tr = document.createElement('tr');
-    tr.innerHTML = '<td colspan="13" style="padding:8px;text-align:center;color:#dc2626">Error en fila</td>';
+    tr.innerHTML = '<td colspan="13">Error en fila</td>';
     tbody.appendChild(tr);
   }
 }
 
-function getEstadoStyle(estado) {
+function getEstadoBadgeClass(estado) {
   const e = (estado || '').toLowerCase().trim();
-  if (e === 'atendido' || e === 'completado') return { color: '#065f46', bg: '#d1fae5' };
-  if (e === 'no_asistio' || e === 'no asistió') return { color: '#7f1d1d', bg: '#fee2e2' };
-  if (e === 'cancelado' || e === 'cancelada') return { color: '#4b5563', bg: '#f3f4f6' };
-  if (e === 'reprogramado' || e === 'reprogramada') return { color: '#78350f', bg: '#fef3c7' };
-  if (e === 'pendiente' || e === 'programado') return { color: '#1e40af', bg: '#dbeafe' };
-  if (e === 'en_sala' || e === 'en sala') return { color: '#4c1d95', bg: '#ede9fe' };
-  if (e === 'en_atencion' || e === 'en atención' || e === 'en estudio') return { color: '#0c4a6e', bg: '#e0f2fe' };
-  if (e === 'confirmado') return { color: '#14532d', bg: '#dcfce7' };
-  return { color: '#374151', bg: '#f9fafb' };
+  if (e === 'atendido' || e === 'completado') return 'dash-est--ok';
+  if (e === 'no_asistio' || e === 'no asistió') return 'dash-est--no';
+  if (e === 'cancelado' || e === 'cancelada') return 'dash-est--cancel';
+  if (e === 'reprogramado' || e === 'reprogramada') return 'dash-est--reprog';
+  if (e === 'pendiente' || e === 'programado') return 'dash-est--wait';
+  if (e === 'en_sala' || e === 'en sala') return 'dash-est--sala';
+  if (e === 'en_atencion' || e === 'en atención' || e === 'en estudio') return 'dash-est--atencion';
+  if (e === 'confirmado') return 'dash-est--confirm';
+  return 'dash-est--otro';
+}
+
+function getEstadoStyle(estado) {
+  const map = {
+    'dash-est--ok': { color: '#065f46', bg: '#d1fae5' },
+    'dash-est--no': { color: '#7f1d1d', bg: '#fee2e2' },
+    'dash-est--cancel': { color: '#4b5563', bg: '#f3f4f6' },
+    'dash-est--reprog': { color: '#78350f', bg: '#fef3c7' },
+    'dash-est--wait': { color: '#1e40af', bg: '#dbeafe' },
+    'dash-est--sala': { color: '#4c1d95', bg: '#ede9fe' },
+    'dash-est--atencion': { color: '#0c4a6e', bg: '#e0f2fe' },
+    'dash-est--confirm': { color: '#14532d', bg: '#dcfce7' }
+  };
+  return map[getEstadoBadgeClass(estado)] || { color: '#374151', bg: '#f9fafb' };
 }
 
 function formatearFechaAuditoria(fecha) {

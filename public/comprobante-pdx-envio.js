@@ -302,7 +302,7 @@
 
   async function cargarCarpetasComprobante() {
     if (typeof apiFetch !== 'function') return [];
-    const res = await apiFetch('/api/soportes/pdx/carpetas');
+    const res = await apiFetch('/api/soportes/pdx/carpetas', { silent403: true });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || 'No se pudieron cargar carpetas');
     return (data.carpetas || [])

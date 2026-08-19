@@ -109,7 +109,7 @@ function requireRoleOrPerm(roles, permiso) {
     if (rol === 'superadmin') return next();
     if (!permisos.length) {
       if (rolesList.includes(rol)) return next();
-      return res.status(403).json({ error: 'Acceso denegado' });
+      return res.status(403).json({ error: 'No tienes permiso para esta acción' });
     }
     if (sesionTieneAlgunPermiso(req.session, permisos)) return next();
     return res.status(403).json({ error: 'No tienes permiso para esta acción' });

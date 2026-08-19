@@ -1,0 +1,281 @@
+/**
+ * Innar — Auditoría de Citas (#view-dashboard-citas)
+ * Recetario: labels uppercase, stats tipo Electro, vacíos y badges sin inline.
+ */
+
+#view-dashboard-citas .card h3 {
+  margin: 0 0 14px;
+  color: var(--c-dark, #2d4a47);
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+#view-dashboard-citas .dash-filtros-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 180px), 1fr));
+  gap: 12px 14px;
+  align-items: end;
+  margin-bottom: 12px;
+}
+
+#view-dashboard-citas .dash-filtros-grid > .col {
+  min-width: 0;
+}
+
+#view-dashboard-citas .dash-filtros-grid label,
+#view-dashboard-citas .card.no-print label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+#view-dashboard-citas .dash-toolbar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+#view-dashboard-citas .dash-toolbar .btn-primary,
+#view-dashboard-citas .dash-toolbar .btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--innar-touch-min, 44px);
+}
+
+#view-dashboard-citas .dash-toolbar .innar-icon,
+#view-dashboard-citas .dash-toolbar svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+  flex-shrink: 0;
+}
+
+#view-dashboard-citas .dash-toolbar-export {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+#view-dashboard-citas .dash-export-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+#view-dashboard-citas .dash-recibos-estado {
+  display: none;
+  font-size: 12px;
+  color: #64748b;
+}
+
+#view-dashboard-citas .dash-stats-card {
+  background: #f0f9ff;
+  border-left: 4px solid var(--c-primary, #8aa6a1);
+}
+
+#view-dashboard-citas .dash-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+#view-dashboard-citas .dash-stat-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #fff;
+  border-radius: 8px;
+  padding: 10px 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.07);
+  min-width: 0;
+}
+
+#view-dashboard-citas .dash-stat-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+#view-dashboard-citas .dash-stat-icon svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+#view-dashboard-citas .dash-stat-icon--total { background: #dbeafe; color: #1d4ed8; }
+#view-dashboard-citas .dash-stat-icon--medica { background: #dcfce7; color: #15803d; }
+#view-dashboard-citas .dash-stat-icon--electro { background: #ede9fe; color: #6d28d9; }
+#view-dashboard-citas .dash-stat-icon--ok { background: #d1fae5; color: #059669; }
+#view-dashboard-citas .dash-stat-icon--no { background: #fee2e2; color: #dc2626; }
+#view-dashboard-citas .dash-stat-icon--cancel { background: #f3f4f6; color: #6b7280; }
+#view-dashboard-citas .dash-stat-icon--reprog { background: #fef3c7; color: #d97706; }
+#view-dashboard-citas .dash-stat-icon--wait { background: #e0f2fe; color: #0369a1; }
+#view-dashboard-citas .dash-stat-icon--users { background: #ffedd5; color: #c2410c; }
+
+#view-dashboard-citas .dash-stat-value {
+  font-size: 1.35rem;
+  font-weight: 700;
+  line-height: 1.1;
+  color: #1e293b;
+}
+
+#view-dashboard-citas .dash-stat-label {
+  font-size: 0.72rem;
+  color: #64748b;
+  margin-top: 2px;
+}
+
+#view-dashboard-citas .table-wrapper {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  max-width: 100%;
+}
+
+#view-dashboard-citas #tablaCitasAuditoria {
+  min-width: 980px;
+}
+
+#view-dashboard-citas .dash-hora {
+  white-space: nowrap;
+}
+
+#view-dashboard-citas .dash-strong {
+  font-weight: 600;
+  color: #374151;
+}
+
+#view-dashboard-citas .dash-muted {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+#view-dashboard-citas .dash-doc {
+  color: #888;
+  font-size: 11px;
+}
+
+#view-dashboard-citas .dash-tipo-badge,
+#view-dashboard-citas .dash-estado-badge,
+#view-dashboard-citas .dash-recibo-badge {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+
+#view-dashboard-citas .dash-tipo--medica {
+  background: #e0f2fe;
+  color: #0369a1;
+  border-color: #7dd3fc;
+}
+
+#view-dashboard-citas .dash-tipo--electro {
+  background: #ede9fe;
+  color: #5b21b6;
+  border-color: #c4b5fd;
+}
+
+#view-dashboard-citas .dash-est--ok {
+  background: #d1fae5;
+  color: #065f46;
+  border-color: #6ee7b7;
+}
+
+#view-dashboard-citas .dash-est--no {
+  background: #fee2e2;
+  color: #7f1d1d;
+  border-color: #fca5a5;
+}
+
+#view-dashboard-citas .dash-est--cancel {
+  background: #f3f4f6;
+  color: #4b5563;
+  border-color: #d1d5db;
+}
+
+#view-dashboard-citas .dash-est--reprog {
+  background: #fef3c7;
+  color: #78350f;
+  border-color: #fde047;
+}
+
+#view-dashboard-citas .dash-est--wait {
+  background: #dbeafe;
+  color: #1e40af;
+  border-color: #93c5fd;
+}
+
+#view-dashboard-citas .dash-est--sala {
+  background: #ede9fe;
+  color: #4c1d95;
+  border-color: #c4b5fd;
+}
+
+#view-dashboard-citas .dash-est--atencion {
+  background: #e0f2fe;
+  color: #0c4a6e;
+  border-color: #7dd3fc;
+}
+
+#view-dashboard-citas .dash-est--confirm {
+  background: #dcfce7;
+  color: #14532d;
+  border-color: #86efac;
+}
+
+#view-dashboard-citas .dash-est--otro {
+  background: #f9fafb;
+  color: #374151;
+  border-color: #e5e7eb;
+}
+
+#view-dashboard-citas .dash-recibo--pagado {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+#view-dashboard-citas .dash-recibo--pendiente {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+#view-dashboard-citas .dash-recibo--anulado {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+#view-dashboard-citas .dash-recibo--otro {
+  background: #f3f4f6;
+  color: #4b5563;
+}
+
+@media (max-width: 720px) {
+  #view-dashboard-citas .dash-toolbar-export {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  #view-dashboard-citas .dash-toolbar .btn-primary,
+  #view-dashboard-citas .dash-toolbar .btn-secondary,
+  #view-dashboard-citas .dash-toolbar .recibo-export-btn {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+}

@@ -95,6 +95,8 @@
 }
 
 #view-llamado-pacientes .ltv-toolbar-btn svg {
+  width: 16px;
+  height: 16px;
   flex-shrink: 0;
   stroke: currentColor !important;
 }
@@ -438,16 +440,25 @@
 
 .ltv-drawer-close {
   flex-shrink: 0;
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  padding: 0;
   border: none;
-  border-radius: 10px;
+  border-radius: 8px;
   background: #f1f5f9;
   color: var(--ltv-slate-500);
   cursor: pointer;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
+}
+
+.ltv-drawer-close svg {
+  width: 16px;
+  height: 16px;
+  display: block;
 }
 
 .ltv-drawer-close:hover {
@@ -463,6 +474,7 @@
 
 .ltv-drawer-action {
   flex: 1;
+  min-height: var(--innar-touch-min, 44px);
   padding: 8px 12px;
   border-radius: 8px;
   border: 1px solid var(--ltv-slate-200);
@@ -749,4 +761,15 @@
     width: 100%;
     align-self: stretch;
   }
+}
+
+.ltv-empty-text {
+  color: #64748b;
+  font-size: 0.875rem;
+  padding: 8px 0;
+  margin: 0;
+}
+
+#view-llamado-pacientes .ltv-drawer-list .innar-empty {
+  padding: 24px 12px;
 }

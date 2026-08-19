@@ -197,9 +197,6 @@
       img.style.display = 'block';
       img.style.visibility = 'visible';
       img.style.opacity = '1';
-      if (img.closest('.cmp-firma-paciente, .cmp-campo-firma-acud')) {
-        img.style.mixBlendMode = 'multiply';
-      }
     });
   }
 

@@ -1,0 +1,366 @@
+/**
+ * Innar — Usuarios, Diagnósticos, Gestión de Datos y Backup
+ * Recetario visual: glifo 16px en recuadro 32px, vacíos y badges sin inline.
+ */
+
+/* ── Cabeceras de tarjeta ─────────────────────────────────────────────────── */
+.card-head-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.card-head-title,
+#view-usuarios .card h3,
+#view-diagnosticos .card h3,
+#view-backup .card h3,
+#view-gestion-datos .card h3 {
+  margin: 0 0 14px;
+  color: var(--c-dark, #2d4a47);
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.card-head-row .card-head-title,
+#view-usuarios .card-head-row .card-head-title {
+  margin: 0;
+}
+
+.innar-help-text {
+  color: #64748b;
+  font-size: 0.9rem;
+  margin: 0 0 12px;
+}
+
+.innar-req {
+  color: #dc2626;
+}
+
+.col-align-end {
+  display: flex;
+  align-items: flex-end;
+}
+
+.td-center {
+  text-align: center;
+}
+
+.usr-chk-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+.usr-login {
+  font-weight: 500;
+  color: #111827;
+}
+
+/* ── Contraseña (nuevo usuario) ───────────────────────────────────────────── */
+.usr-pw-bar {
+  margin-top: 6px;
+  height: 6px;
+  background: #e5e7eb;
+  border-radius: 3px;
+  overflow: hidden;
+  display: none;
+}
+
+.usr-pw-fill {
+  height: 100%;
+  width: 0;
+  background: #dc2626;
+  transition: width 0.3s, background-color 0.3s;
+}
+
+.usr-pw-text {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #666;
+  display: none;
+}
+
+.usr-pw-reqs {
+  margin-top: 12px;
+  padding: 12px;
+  background: #f9fafb;
+  border-radius: 6px;
+  border: 1px solid #e5e7eb;
+  display: none;
+}
+
+.usr-pw-reqs-title {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.usr-pw-reqs ul {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 12px;
+  color: #666;
+}
+
+.usr-pw-reqs li {
+  list-style: none;
+  padding: 4px 0;
+}
+
+/* ── Badges de rol / estado ───────────────────────────────────────────────── */
+.usr-rol-badge,
+.usr-estado-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+
+.usr-estado-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.usr-estado--activo {
+  background: #dcfce7;
+  color: #15803d;
+  border-color: #86efac;
+}
+
+.usr-estado--activo .usr-estado-dot {
+  background: #16a34a;
+}
+
+.usr-estado--inactivo {
+  background: #fee2e2;
+  color: #991b1b;
+  border-color: #fca5a5;
+}
+
+.usr-estado--inactivo .usr-estado-dot {
+  background: #dc2626;
+}
+
+.usr-rol-badge {
+  background: #f3f4f6;
+  color: #374151;
+  border-color: #d1d5db;
+}
+
+.usr-rol--superadmin {
+  background: #fce7f3;
+  color: #9d174d;
+  border-color: #f9a8d4;
+}
+
+.usr-rol--admin {
+  background: #fef3c7;
+  color: #92400e;
+  border-color: #fde047;
+}
+
+.usr-rol--admin-recepcion,
+.usr-rol--recepcion,
+.usr-rol--auxiliar-recepcion {
+  background: #dbeafe;
+  color: #1d4ed8;
+  border-color: #93c5fd;
+}
+
+.usr-rol--admin-electro,
+.usr-rol--electro,
+.usr-rol--tecnico-electro {
+  background: #ede9fe;
+  color: #5b21b6;
+  border-color: #c4b5fd;
+}
+
+.usr-rol--doctor {
+  background: #dcfce7;
+  color: #15803d;
+  border-color: #86efac;
+}
+
+.usr-rol--contabilidad {
+  background: #ccfbf1;
+  color: #0f766e;
+  border-color: #5eead4;
+}
+
+/* ── Acciones de tabla (32 / 16) ──────────────────────────────────────────── */
+#view-usuarios .table-actions,
+#view-diagnosticos .table-actions,
+#view-gestion-datos .table-actions,
+#view-backup .table-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+
+#view-usuarios .table-actions button,
+#view-diagnosticos .table-actions button,
+#view-gestion-datos .table-actions button,
+#view-backup .table-actions button {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#view-usuarios .table-actions .esp-tipos-btn {
+  width: auto;
+  min-width: 0;
+  height: 32px;
+  padding: 0 10px;
+  gap: 6px;
+}
+
+#view-usuarios .table-actions .innar-icon,
+#view-diagnosticos .table-actions .innar-icon,
+#view-gestion-datos .table-actions .innar-icon,
+#view-backup .table-actions .innar-icon,
+#view-usuarios .esp-tipos-btn .innar-icon {
+  width: 16px;
+  height: 16px;
+}
+
+#view-usuarios .table-wrapper,
+#view-diagnosticos .table-wrapper,
+#view-gestion-datos .table-wrapper,
+#view-backup .table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  max-width: 100%;
+}
+
+#view-usuarios #usuariosTable {
+  min-width: 680px;
+}
+
+#view-diagnosticos #diagnosticosTable {
+  min-width: 640px;
+}
+
+#view-usuarios .innar-form-row,
+#view-diagnosticos .innar-form-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+#view-diagnosticos .innar-form-row > div {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+#view-diagnosticos .diag-progress {
+  margin-top: 12px;
+  display: none;
+}
+
+#view-diagnosticos .diag-progress-track {
+  background: #e5e7eb;
+  border-radius: 6px;
+  height: 8px;
+  overflow: hidden;
+}
+
+#view-diagnosticos .diag-progress-bar {
+  background: var(--c-primary, #8aa6a1);
+  height: 100%;
+  width: 0;
+  transition: width 0.3s;
+}
+
+#view-diagnosticos .diag-progress-status {
+  margin-top: 8px;
+  font-size: 0.9rem;
+  color: #666;
+}
+
+#view-usuarios .tipos-panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+#view-usuarios .tipos-panel-head h3 {
+  margin: 0;
+}
+
+#view-usuarios .tipos-panel-name {
+  color: var(--c-primary, #8aa6a1);
+}
+
+#view-usuarios .tipos-hint {
+  font-size: 0.82rem;
+  color: #64748b;
+  margin: 0 0 10px;
+}
+
+#view-usuarios .tipos-vis-row {
+  margin-bottom: 12px;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+#view-backup .backup-actions-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+#view-backup .backup-zip-note {
+  font-size: 0.85rem;
+  color: #64748b;
+  margin-top: 0;
+}
+
+button.backup-btn-dl {
+  background: #eff6ff !important;
+  border: 1px solid #dbeafe !important;
+  color: #2563eb !important;
+}
+
+button.backup-btn-dl:hover {
+  background: #dbeafe !important;
+  border-color: #93c5fd !important;
+}
+
+@media (max-width: 640px) {
+  #view-usuarios .card-head-row,
+  #view-usuarios .tipos-panel-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  #view-usuarios .col-align-end button,
+  #view-diagnosticos .innar-form-row .btn-primary {
+    width: 100%;
+  }
+}

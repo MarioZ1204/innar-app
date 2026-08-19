@@ -360,14 +360,14 @@ function buildComprobanteServiciosHtml(data, fondo = {}) {
       overflow: hidden;
     }
     .cmp-firma-paciente img {
-      /* Sin width/height fijos ni object-fit: html2canvas los ignora y la firma “flota” arriba. */
+      /* Sin width/height fijos ni object-fit: html2canvas los ignora y la firma “flota” arriba.
+         Evitar modos de fusión CSS: Chromium rasteriza toda la página al PDF y Nitro no puede editar texto. */
       display: block;
       max-width: 100%;
       max-height: 100%;
       width: auto;
       height: auto;
       margin: 0 auto;
-      mix-blend-mode: multiply;
     }
     .cmp-acudiente {
       position: absolute;
@@ -395,7 +395,6 @@ function buildComprobanteServiciosHtml(data, fondo = {}) {
       max-height: 9mm;
       max-width: 65mm;
       object-fit: contain;
-      mix-blend-mode: multiply;
     }
     .cmp-pie-bloque {
       position: absolute;
@@ -463,7 +462,8 @@ function buildComprobanteServiciosHtml(data, fondo = {}) {
     .cmp-pie-col {
       position: absolute;
       top: 0;
-      transform: translateX(-50%);
+      width: 40mm;
+      margin-left: -20mm;
       text-align: center;
       color: #2a2a2a;
       line-height: 1.08;
@@ -472,7 +472,9 @@ function buildComprobanteServiciosHtml(data, fondo = {}) {
     .cmp-pie-pagina {
       position: absolute;
       top: 1.2mm;
-      transform: translateX(-50%);
+      width: 30mm;
+      margin-left: -15mm;
+      text-align: center;
       font-size: 6.5pt;
       color: #2a2a2a;
       white-space: nowrap;

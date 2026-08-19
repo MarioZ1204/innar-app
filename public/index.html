@@ -8,33 +8,35 @@
   <link rel="icon" type="image/png" href="images/icon.png">
   <!-- Preload LCP image (splash logo) -->
   <link rel="preload" as="image" href="/images/logo3.webp" fetchpriority="high">
-  <link rel="preload" as="style" href="style.css?v=1.7.123">
-  <link rel="stylesheet" href="style.css?v=1.7.123">
-  <link rel="stylesheet" href="innar-buttons.css?v=1.7.123">
-  <link rel="stylesheet" href="innar-theme.css?v=1.7.123">
-  <link rel="stylesheet" href="innar-motion.css?v=1.7.123">
-  <link rel="stylesheet" href="innar-scroll.css?v=1.7.123">
-  <link rel="stylesheet" href="innar-sidebar.css?v=1.7.123">
-  <link rel="stylesheet" href="innar-mobile.css?v=1.7.123">
-  <link rel="stylesheet" href="innar-agenda-cal.css?v=1.7.123">
-  <link rel="stylesheet" href="innar-sesiones-multi.css?v=1.7.123">
-  <link rel="stylesheet" href="sede-recordatorio.css?v=1.7.123">
-  <link rel="stylesheet" href="soportes.css?v=1.7.123">
-  <link rel="stylesheet" href="soportes-pdf-editor.css?v=1.7.123">
-  <link rel="stylesheet" href="innar-responsive.css?v=1.7.123">
-  <link rel="stylesheet" href="innar-responsive-shell.css?v=1.7.123">
-  <link rel="stylesheet" href="innar-responsive-recibos.css?v=1.7.123">
-  <link rel="stylesheet" href="innar-responsive-agenda-medica.css?v=1.7.123">
-  <link rel="stylesheet" href="innar-responsive-electro.css?v=1.7.123">
-  <link rel="stylesheet" href="innar-electro-estudio-ui.css?v=1.7.123">
-  <link rel="stylesheet" href="innar-electro-calendario.css?v=1.7.123">
-  <link rel="stylesheet" href="innar-chat-messenger.css?v=1.7.123">
-  <link rel="stylesheet" href="innar-backup.css?v=1.7.123">
-  <link rel="stylesheet" href="innar-documentos-cita.css?v=1.7.123">
-  <link rel="stylesheet" href="innar-persona-fidu.css?v=1.7.123">
-  <link rel="stylesheet" href="innar-anexo-fidu.css?v=1.7.123">
-  <link rel="stylesheet" href="llamado-pacientes.css?v=1.7.123">
-  <link rel="stylesheet" href="innar-responsive-mobile-fix.css?v=1.7.123">
+  <link rel="preload" as="style" href="style.css?v=1.7.128">
+  <link rel="stylesheet" href="style.css?v=1.7.128">
+  <link rel="stylesheet" href="innar-buttons.css?v=1.7.128">
+  <link rel="stylesheet" href="innar-theme.css?v=1.7.128">
+  <link rel="stylesheet" href="innar-motion.css?v=1.7.128">
+  <link rel="stylesheet" href="innar-scroll.css?v=1.7.128">
+  <link rel="stylesheet" href="innar-sidebar.css?v=1.7.128">
+  <link rel="stylesheet" href="innar-mobile.css?v=1.7.128">
+  <link rel="stylesheet" href="innar-agenda-cal.css?v=1.7.128">
+  <link rel="stylesheet" href="innar-sesiones-multi.css?v=1.7.128">
+  <link rel="stylesheet" href="sede-recordatorio.css?v=1.7.128">
+  <link rel="stylesheet" href="soportes.css?v=1.7.128">
+  <link rel="stylesheet" href="soportes-pdf-editor.css?v=1.7.128">
+  <link rel="stylesheet" href="innar-responsive.css?v=1.7.128">
+  <link rel="stylesheet" href="innar-responsive-shell.css?v=1.7.128">
+  <link rel="stylesheet" href="innar-responsive-recibos.css?v=1.7.128">
+  <link rel="stylesheet" href="innar-responsive-agenda-medica.css?v=1.7.128">
+  <link rel="stylesheet" href="innar-responsive-electro.css?v=1.7.128">
+  <link rel="stylesheet" href="innar-responsive-usuarios.css?v=1.7.128">
+  <link rel="stylesheet" href="innar-responsive-dashboard-citas.css?v=1.7.128">
+  <link rel="stylesheet" href="innar-electro-estudio-ui.css?v=1.7.128">
+  <link rel="stylesheet" href="innar-electro-calendario.css?v=1.7.128">
+  <link rel="stylesheet" href="innar-chat-messenger.css?v=1.7.128">
+  <link rel="stylesheet" href="innar-backup.css?v=1.7.128">
+  <link rel="stylesheet" href="innar-documentos-cita.css?v=1.7.128">
+  <link rel="stylesheet" href="innar-persona-fidu.css?v=1.7.128">
+  <link rel="stylesheet" href="innar-anexo-fidu.css?v=1.7.128">
+  <link rel="stylesheet" href="llamado-pacientes.css?v=1.7.128">
+  <link rel="stylesheet" href="innar-responsive-mobile-fix.css?v=1.7.128">
   <style>
     @keyframes moveUp {
       0% { transform: translateY(8px); opacity: 0.0; }
@@ -219,6 +221,12 @@
           <span class="menu-card-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg></span>
           <span class="menu-card-label">
             <span class="menu-card-title">Cargar reportes</span>
+          </span>
+        </button>
+        <button class="menu-card" data-module="papelera-pdx">
+          <span class="menu-card-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M21 21v-5h-5"/></svg></span>
+          <span class="menu-card-label">
+            <span class="menu-card-title">Papelera de reportes</span>
           </span>
         </button>
         <button class="menu-card" data-module="armado-soportes" data-rol="superadmin admin admin_recepcion recepcion contabilidad admin_electro electro tecnico_electro">
@@ -1372,33 +1380,32 @@
               <div class="col">
                 <label>Contraseña</label>
                 <input id="newUserPassword" type="password" placeholder="Contraseña" />
-                <div id="passwordStrengthBar" style="margin-top:6px;height:6px;background:#e5e7eb;border-radius:3px;overflow:hidden;display:none">
-                  <div id="passwordStrengthFill" style="height:100%;width:0%;background:#dc2626;transition:width 0.3s,background-color 0.3s"></div>
+                <div id="passwordStrengthBar" class="usr-pw-bar">
+                  <div id="passwordStrengthFill" class="usr-pw-fill"></div>
                 </div>
-                <div id="passwordStrengthText" style="margin-top:4px;font-size:12px;color:#666;display:none"></div>
+                <div id="passwordStrengthText" class="usr-pw-text"></div>
               </div>
               <div class="col"><label>Nombre</label><input id="newUserName" type="text" placeholder="Nombre completo" /></div>
               <div class="col"><label>Rol</label><select id="newUserRol"><option value="auxiliar_recepcion">Auxiliar Recepción</option><option value="admin_recepcion">Admin. Recepción</option><option value="tecnico_electro">Técnico Electrodiagnóstico</option><option value="admin_electro">Admin. Electrodiagnóstico</option><option value="doctor">Doctor</option><option value="contabilidad">Contabilidad</option><option value="recepcion">Recepción (legacy)</option><option value="electro">Electrodiagnóstico (legacy)</option><option value="admin">Administrador (legacy)</option><option value="superadmin">Super Administrador</option></select></div>
               <div class="col" id="especialidadCol" style="display:none"><label>Especialidad</label><select id="newUserEspecialidad"><option value="">Seleccionar</option><option value="Otra">Otra</option></select></div>
               <div class="col" id="especialidadOtraCol" style="display:none"><input id="newUserEspecialidadOtra" type="text" placeholder="Especificar especialidad" /></div>
               <div class="col" id="consultorioCol" style="display:none"><label>Consultorio #</label><input id="newUserConsultorio" type="number" placeholder="Número de consultorio" min="1" /></div>
-              <div class="col" style="display:flex;align-items:flex-end"><button id="crearUsuario" class="btn-primary" style="width:100%">Crear Usuario</button></div>
+              <div class="col col-align-end"><button id="crearUsuario" class="btn-primary" style="width:100%">Crear Usuario</button></div>
             </div>
-            <div id="passwordRequirements" style="margin-top:12px;padding:12px;background:#f9fafb;border-radius:6px;border:1px solid #e5e7eb;display:none">
-              <p style="margin:0 0 8px 0;font-size:13px;font-weight:600;color:#374151">Requisitos de contraseña:</p>
-              <ul style="margin:0;padding-left:20px;font-size:12px;color:#666">
-                <li id="req-length" style="list-style:none;padding:4px 0">Mínimo 8 caracteres</li>
-                <li id="req-upper" style="list-style:none;padding:4px 0">Al menos una mayúscula (A-Z)</li>
-                <li id="req-lower" style="list-style:none;padding:4px 0">Al menos una minúscula (a-z)</li>
-                <li id="req-number" style="list-style:none;padding:4px 0">Al menos un número (0-9)</li>
-                <li id="req-special" style="list-style:none;padding:4px 0">Al menos un símbolo (!@#$%^&* etc)</li>
-
+            <div id="passwordRequirements" class="usr-pw-reqs">
+              <p class="usr-pw-reqs-title">Requisitos de contraseña:</p>
+              <ul>
+                <li id="req-length">Mínimo 8 caracteres</li>
+                <li id="req-upper">Al menos una mayúscula (A-Z)</li>
+                <li id="req-lower">Al menos una minúscula (a-z)</li>
+                <li id="req-number">Al menos un número (0-9)</li>
+                <li id="req-special">Al menos un símbolo (!@#$%^&* etc)</li>
               </ul>
             </div>
           </section>
           <section class="card">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-              <h3 style="margin:0">Usuarios Existentes</h3>
+            <div class="card-head-row">
+              <h3 class="card-head-title">Usuarios Existentes</h3>
               <button type="button" onclick="abrirBusquedaAuditoria()" class="btn-info btn-sm">Auditoría</button>
             </div>
             <div class="table-wrapper">
@@ -1417,50 +1424,50 @@
             <section class="card no-print">
               <h3>Nueva Especialidad</h3>
               <div class="row">
-                <div class="col"><label>Nombre <span style="color:#dc2626">*</span></label><input id="espNombreNuevo" type="text" placeholder="Ej: Cardiología" /></div>
-                <div class="col" style="display:flex;align-items:flex-end;max-width:210px"><button id="btnCrearEspecialidad" class="btn-primary" style="width:100%">Agregar Especialidad</button></div>
+                <div class="col"><label>Nombre <span class="innar-req">*</span></label><input id="espNombreNuevo" type="text" placeholder="Ej: Cardiología" /></div>
+                <div class="col col-align-end" style="max-width:210px"><button id="btnCrearEspecialidad" class="btn-primary" style="width:100%">Agregar Especialidad</button></div>
               </div>
             </section>
             <section class="card">
-              <h3 style="margin:0 0 16px 0">Especialidades registradas</h3>
+              <h3>Especialidades registradas</h3>
               <div class="table-wrapper">
                 <table class="modern-table" id="especialidadesTable">
                   <thead><tr><th>Especialidad</th><th>Acciones</th></tr></thead>
-                  <tbody id="especialidadesTableBody"><tr><td colspan="2" style="padding:20px;text-align:center;color:#999">Cargando...</td></tr></tbody>
+                  <tbody id="especialidadesTableBody"><tr><td colspan="2">Cargando...</td></tr></tbody>
                 </table>
               </div>
             </section>
             <section class="card" id="tiposConsultaPanel" style="display:none">
-              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px">
-                <h3 style="margin:0">Tipos de consulta &mdash; <span id="tiposConsultaEspNombre" style="color:var(--c-primary)"></span></h3>
+              <div class="tipos-panel-head">
+                <h3>Tipos de consulta &mdash; <span id="tiposConsultaEspNombre" class="tipos-panel-name"></span></h3>
                 <button onclick="cerrarTiposConsultaPanel()" class="btn-secondary btn-sm">&times; Cerrar panel</button>
               </div>
               <div class="row no-print" style="margin-bottom:12px">
-                <div class="col"><label>Nuevo tipo de consulta <span style="color:#dc2626">*</span></label><input id="tipoConsultaNuevoNombre" type="text" placeholder="Ej: Terapia de Rehabilitación Cognitiva" /></div>
-                <div class="col" style="display:flex;align-items:flex-end;max-width:220px">
-                  <label style="display:flex;align-items:center;gap:6px;font-size:.85rem;cursor:pointer;margin-bottom:8px">
+                <div class="col"><label>Nuevo tipo de consulta <span class="innar-req">*</span></label><input id="tipoConsultaNuevoNombre" type="text" placeholder="Ej: Terapia de Rehabilitación Cognitiva" /></div>
+                <div class="col col-align-end" style="max-width:220px">
+                  <label class="usr-chk-label" style="margin-bottom:8px">
                     <input type="checkbox" id="tipoConsultaNuevoSesionesMultiples" />
                     Sesiones múltiples
                   </label>
                 </div>
-                <div class="col" style="display:flex;align-items:flex-end;max-width:160px"><button id="btnCrearTipoConsulta" class="btn-primary" style="width:100%">Agregar</button></div>
+                <div class="col col-align-end" style="max-width:160px"><button id="btnCrearTipoConsulta" class="btn-primary" style="width:100%">Agregar</button></div>
               </div>
-              <p style="font-size:.82rem;color:#64748b;margin:0 0 10px">Marca en qué módulos aparece cada tipo. El cambio se guarda en la base de datos al instante.</p>
-              <div class="row no-print" style="margin-bottom:12px;gap:16px;flex-wrap:wrap">
-                <label style="display:flex;align-items:center;gap:6px;font-size:.85rem;cursor:pointer">
+              <p class="tipos-hint">Marca en qué módulos aparece cada tipo. El cambio se guarda en la base de datos al instante.</p>
+              <div class="row no-print tipos-vis-row">
+                <label class="usr-chk-label">
                   <input type="checkbox" id="tipoConsultaNuevoVisibleAgenda" checked /> Agenda
                 </label>
-                <label style="display:flex;align-items:center;gap:6px;font-size:.85rem;cursor:pointer">
+                <label class="usr-chk-label">
                   <input type="checkbox" id="tipoConsultaNuevoVisibleComprobante" checked /> Comprobante
                 </label>
-                <label style="display:flex;align-items:center;gap:6px;font-size:.85rem;cursor:pointer">
+                <label class="usr-chk-label">
                   <input type="checkbox" id="tipoConsultaNuevoVisibleRecibo" checked /> Recibos
                 </label>
               </div>
               <div class="table-wrapper">
                 <table class="modern-table table-compact" id="tiposConsultaTable">
                   <thead><tr><th>Tipo de Consulta</th><th>Sesiones múlt.</th><th>Agenda</th><th>Comprobante</th><th>Recibos</th><th>Acciones</th></tr></thead>
-                  <tbody id="tiposConsultaTableBody"><tr><td colspan="6" style="padding:16px;text-align:center;color:#999">Selecciona una especialidad para ver sus tipos</td></tr></tbody>
+                  <tbody id="tiposConsultaTableBody"><tr><td colspan="6">Selecciona una especialidad para ver sus tipos</td></tr></tbody>
                 </table>
               </div>
             </section>
@@ -1552,19 +1559,19 @@
           <header><h2>Gestión de Diagnósticos</h2></header>
           <section class="card no-print">
             <h3>Importar desde Excel</h3>
-            <p style="color:#666;font-size:.9rem;margin-bottom:12px">Sube un archivo Excel con columnas: CÓDIGO | DIAGNÓSTICO</p>
-            <div style="display:flex;gap:12px;align-items:flex-end">
-              <div style="flex:1">
+            <p class="innar-help-text">Sube un archivo Excel con columnas: CÓDIGO | DIAGNÓSTICO</p>
+            <div class="innar-form-row">
+              <div>
                 <label>Archivo Excel</label>
                 <input id="diagnosticosFileInput" type="file" accept=".xlsx,.xls" />
               </div>
-              <button id="importarDiagnosticosBtn" class="btn-primary btn-sm" style="width:150px">Importar</button>
+              <button id="importarDiagnosticosBtn" class="btn-primary btn-sm">Importar</button>
             </div>
-            <div id="importProgress" style="margin-top:12px;display:none">
-              <div style="background:#e5e7eb;border-radius:6px;height:8px;overflow:hidden">
-                <div id="importProgressBar" style="background:#8AA6A1;height:100%;width:0%;transition:width 0.3s"></div>
+            <div id="importProgress" class="diag-progress">
+              <div class="diag-progress-track">
+                <div id="importProgressBar" class="diag-progress-bar"></div>
               </div>
-              <p id="importStatus" style="margin-top:8px;font-size:.9rem;color:#666">Procesando...</p>
+              <p id="importStatus" class="diag-progress-status">Procesando...</p>
             </div>
           </section>
           <section class="card">
@@ -1581,7 +1588,7 @@
                   </tr>
                 </thead>
                 <tbody id="diagnosticosTableBody">
-                  <tr><td colspan="5" style="padding:20px;text-align:center;color:#999">Cargando diagnósticos...</td></tr>
+                  <tr><td colspan="5">Cargando diagnósticos...</td></tr>
                 </tbody>
               </table>
             </div>
@@ -2660,7 +2667,7 @@
           <!-- Filtros -->
           <section class="card no-print">
             <h3>Filtros de búsqueda</h3>
-            <div class="row" style="margin-bottom:10px">
+            <div class="dash-filtros-grid">
               <div class="col">
                 <label>Tipo de Cita</label>
                 <select id="dashboardTipoCita">
@@ -2693,8 +2700,6 @@
                   <option value="">Todos</option>
                 </select>
               </div>
-            </div>
-            <div class="row" style="margin-bottom:10px">
               <div class="col">
                 <label>Desde</label>
                 <input id="dashboardFechaDesde" type="date" />
@@ -2739,61 +2744,111 @@
                 <input id="dashboardAgendadoPor" type="text" placeholder="Nombre del usuario" />
               </div>
             </div>
-            <div class="dashboard-toolbar-row" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-              <button id="btnBuscarCitas" class="btn-primary btn-sm">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>Buscar
+            <div class="dash-toolbar">
+              <button id="btnBuscarCitas" class="btn-primary btn-sm" type="button">
+                <svg class="innar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                Buscar
               </button>
-              <span id="dashboardRecibosEstado" style="display:none;font-size:12px;color:#64748b">Cargando recibos…</span>
-              <button id="btnLimpiarFiltrosDashboard" class="btn-secondary btn-sm">Limpiar filtros</button>
-              <span style="margin-left:auto;font-weight:600;color:#627371;font-size:13px">Exportar:</span>
-              <button id="btnExportarExcel" class="btn-secondary btn-sm" onclick="exportarAuditoriaCitasExcel()">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>Excel (.xlsx)
-              </button>
-              <button id="btnExportarPDF" class="btn-secondary btn-sm" onclick="exportarAuditoriaCitasPDF()">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>PDF
-              </button>
+              <span id="dashboardRecibosEstado" class="dash-recibos-estado">Cargando recibos…</span>
+              <button id="btnLimpiarFiltrosDashboard" class="btn-secondary btn-sm" type="button">Limpiar filtros</button>
+              <div class="dash-toolbar-export">
+                <span class="dash-export-label">Exportar</span>
+                <button id="btnExportarExcel" class="recibo-export-btn recibo-export-excel" type="button" onclick="exportarAuditoriaCitasExcel()">
+                  <svg class="innar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+                  Excel (.xlsx)
+                </button>
+                <button id="btnExportarPDF" class="recibo-export-btn recibo-export-pdf" type="button" onclick="exportarAuditoriaCitasPDF()">
+                  <svg class="innar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                  PDF
+                </button>
+              </div>
             </div>
           </section>
 
           <!-- Resumen estadístico -->
-          <section class="card no-print" style="background-color:#f0f9ff;border-left:4px solid #8AA6A1">
-            <h3 style="margin-bottom:12px;font-size:14px;color:#627371">Resumen del período</h3>
-            <div class="dashboard-stats-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px">
-              <div style="text-align:center;background:#fff;border-radius:8px;padding:10px;box-shadow:0 1px 3px rgba(0,0,0,.07)">
-                <div style="font-size:26px;font-weight:bold;color:#0369a1" id="dashboardTotalCitas">0</div>
-                <div style="font-size:11px;color:#666;margin-top:2px">Total citas</div>
+          <section class="card no-print dash-stats-card">
+            <h3>Resumen del período</h3>
+            <div class="dash-stats-grid">
+              <div class="dash-stat-card">
+                <div class="dash-stat-icon dash-stat-icon--total" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                </div>
+                <div>
+                  <div class="dash-stat-value" id="dashboardTotalCitas">0</div>
+                  <div class="dash-stat-label">Total citas</div>
+                </div>
               </div>
-              <div style="text-align:center;background:#fff;border-radius:8px;padding:10px;box-shadow:0 1px 3px rgba(0,0,0,.07)">
-                <div style="font-size:26px;font-weight:bold;color:#10b981" id="dashboardCitasMedicas">0</div>
-                <div style="font-size:11px;color:#666;margin-top:2px">Médicas</div>
+              <div class="dash-stat-card">
+                <div class="dash-stat-icon dash-stat-icon--medica" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+                </div>
+                <div>
+                  <div class="dash-stat-value" id="dashboardCitasMedicas">0</div>
+                  <div class="dash-stat-label">Médicas</div>
+                </div>
               </div>
-              <div style="text-align:center;background:#fff;border-radius:8px;padding:10px;box-shadow:0 1px 3px rgba(0,0,0,.07)">
-                <div style="font-size:26px;font-weight:bold;color:#8b5cf6" id="dashboardCitasElectro">0</div>
-                <div style="font-size:11px;color:#666;margin-top:2px">Electrodiagnóstico</div>
+              <div class="dash-stat-card">
+                <div class="dash-stat-icon dash-stat-icon--electro" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                </div>
+                <div>
+                  <div class="dash-stat-value" id="dashboardCitasElectro">0</div>
+                  <div class="dash-stat-label">Electrodiagnóstico</div>
+                </div>
               </div>
-              <div style="text-align:center;background:#fff;border-radius:8px;padding:10px;box-shadow:0 1px 3px rgba(0,0,0,.07)">
-                <div style="font-size:26px;font-weight:bold;color:#059669" id="dashboardAtendidos">0</div>
-                <div style="font-size:11px;color:#666;margin-top:2px">Atendidos</div>
+              <div class="dash-stat-card">
+                <div class="dash-stat-icon dash-stat-icon--ok" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                </div>
+                <div>
+                  <div class="dash-stat-value" id="dashboardAtendidos">0</div>
+                  <div class="dash-stat-label">Atendidos</div>
+                </div>
               </div>
-              <div style="text-align:center;background:#fff;border-radius:8px;padding:10px;box-shadow:0 1px 3px rgba(0,0,0,.07)">
-                <div style="font-size:26px;font-weight:bold;color:#dc2626" id="dashboardNoAsistieron">0</div>
-                <div style="font-size:11px;color:#666;margin-top:2px">No asistieron</div>
+              <div class="dash-stat-card">
+                <div class="dash-stat-icon dash-stat-icon--no" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+                </div>
+                <div>
+                  <div class="dash-stat-value" id="dashboardNoAsistieron">0</div>
+                  <div class="dash-stat-label">No asistieron</div>
+                </div>
               </div>
-              <div style="text-align:center;background:#fff;border-radius:8px;padding:10px;box-shadow:0 1px 3px rgba(0,0,0,.07)">
-                <div style="font-size:26px;font-weight:bold;color:#9ca3af" id="dashboardCancelados">0</div>
-                <div style="font-size:11px;color:#666;margin-top:2px">Cancelados</div>
+              <div class="dash-stat-card">
+                <div class="dash-stat-icon dash-stat-icon--cancel" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
+                </div>
+                <div>
+                  <div class="dash-stat-value" id="dashboardCancelados">0</div>
+                  <div class="dash-stat-label">Cancelados</div>
+                </div>
               </div>
-              <div style="text-align:center;background:#fff;border-radius:8px;padding:10px;box-shadow:0 1px 3px rgba(0,0,0,.07)">
-                <div style="font-size:26px;font-weight:bold;color:#f59e0b" id="dashboardReprogramados">0</div>
-                <div style="font-size:11px;color:#666;margin-top:2px">Reprogramados</div>
+              <div class="dash-stat-card">
+                <div class="dash-stat-icon dash-stat-icon--reprog" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                </div>
+                <div>
+                  <div class="dash-stat-value" id="dashboardReprogramados">0</div>
+                  <div class="dash-stat-label">Reprogramados</div>
+                </div>
               </div>
-              <div style="text-align:center;background:#fff;border-radius:8px;padding:10px;box-shadow:0 1px 3px rgba(0,0,0,.07)">
-                <div style="font-size:26px;font-weight:bold;color:#3b82f6" id="dashboardPendientes">0</div>
-                <div style="font-size:11px;color:#666;margin-top:2px">Pendientes</div>
+              <div class="dash-stat-card">
+                <div class="dash-stat-icon dash-stat-icon--wait" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                </div>
+                <div>
+                  <div class="dash-stat-value" id="dashboardPendientes">0</div>
+                  <div class="dash-stat-label">Pendientes</div>
+                </div>
               </div>
-              <div style="text-align:center;background:#fff;border-radius:8px;padding:10px;box-shadow:0 1px 3px rgba(0,0,0,.07)">
-                <div style="font-size:26px;font-weight:bold;color:#f97316" id="dashboardAgendadores">0</div>
-                <div style="font-size:11px;color:#666;margin-top:2px">Usuarios agendaron</div>
+              <div class="dash-stat-card">
+                <div class="dash-stat-icon dash-stat-icon--users" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                </div>
+                <div>
+                  <div class="dash-stat-value" id="dashboardAgendadores">0</div>
+                  <div class="dash-stat-label">Usuarios agendaron</div>
+                </div>
               </div>
             </div>
           </section>
@@ -2821,7 +2876,7 @@
                   </tr>
                 </thead>
                 <tbody id="bodyTablaAuditoria">
-                  <tr><td colspan="13" style="padding:20px;text-align:center;color:#999">Selecciona los filtros y haz clic en Buscar</td></tr>
+                  <tr><td colspan="13">Selecciona los filtros y haz clic en Buscar</td></tr>
                 </tbody>
               </table>
             </div>
@@ -2866,10 +2921,10 @@
 
           <section class="card no-print">
             <h3>Generar backup</h3>
-            <p style="font-size:.85rem;color:#64748b;margin-top:0">
+            <p class="backup-zip-note">
               También se programa uno <strong>mensual</strong> automático (día 1 de cada mes, según servidor).
             </p>
-            <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:12px">
+            <div class="backup-actions-row">
               <button type="button" class="btn-primary" id="btnCrearBackupCompleto">Generar backup completo ahora</button>
               <button type="button" class="btn-secondary" id="btnRefreshBackups">Actualizar lista</button>
             </div>
@@ -2887,23 +2942,90 @@
 
           <section class="card">
             <h3>Backups completos disponibles</h3>
-            <div class="table-wrap" style="overflow-x:auto">
-              <table class="data-table" style="width:100%">
+            <div class="table-wrap">
+              <table class="data-table modern-table">
                 <thead>
                   <tr>
                     <th>Archivo</th>
                     <th>Fecha</th>
                     <th>Tamaño</th>
                     <th>Tipo</th>
-                    <th style="text-align:right">Acciones</th>
+                    <th>Acciones</th>
                   </tr>
                 </thead>
                 <tbody id="backupTablaBody"></tbody>
               </table>
             </div>
-            <p id="backupTablaEmpty" style="display:none;padding:20px;text-align:center;color:#64748b">
-              No hay backups completos todavía. Pulse «Generar backup completo ahora».
-            </p>
+            <div id="backupTablaEmpty" class="innar-empty innar-empty--compact" style="display:none">
+              <svg class="innar-empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+              <p class="innar-empty-title" id="backupTablaEmptyTitle">Sin copias de seguridad</p>
+              <p class="innar-empty-detail" id="backupTablaEmptyDetail">Pulse «Generar backup completo ahora».</p>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== MÓDULO PAPELERA CARGAR REPORTES ========== -->
+  <div id="view-papelera-pdx" class="view-module hidden">
+    <div class="main-layout">
+      <div class="sidebar no-print">
+        <div class="sidebar-inner">
+          <div class="sidebar-logo-mini"><img src="/images/logo.webp" alt="Logo" width="305" height="100" loading="lazy" /></div>
+          <button class="btn-volver" id="btnVolverPapeleraPdx" type="button">
+            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+            Volver al menú
+          </button>
+          <div class="sidebar-logo">
+            <img src="/images/logo.webp" alt="Logo" width="305" height="100" style="height:58px;width:auto;object-fit:contain" loading="lazy" />
+          </div>
+          <hr class="sidebar-title-sep" />
+          <h2>Papelera de reportes</h2>
+        </div>
+        <div class="sidebar-footer">
+          <div class="sidebar-user">
+            <div class="sidebar-user-avatar">--</div>
+            <div>
+              <div class="sidebar-user-name">Cargando...</div>
+              <div class="sidebar-user-role">-</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="main-content">
+        <div class="container">
+          <header>
+            <h2>Papelera de Cargar reportes</h2>
+          </header>
+          <section class="card no-print">
+            <p class="sop-module-lead" style="margin:0 0 12px">Archivos eliminados de <strong>Cargar reportes</strong>. Cada fila muestra la carpeta original. Pulse <strong>Recuperar</strong> para devolverlo a esa carpeta (si ya no existe, se recrea).</p>
+            <div class="papelera-toolbar">
+              <input type="search" id="papeleraPdxBuscar" class="sop-search" placeholder="Paciente, documento o carpeta…" autocomplete="off">
+              <button type="button" class="btn-secondary" id="btnPapeleraPdxRefresh">Actualizar</button>
+              <button type="button" class="btn-primary" id="btnPapeleraPdxEscanear">Buscar en copias de seguridad</button>
+            </div>
+            <p id="papeleraPdxStatus"></p>
+          </section>
+          <section class="card">
+            <div class="table-wrap">
+              <table class="data-table modern-table">
+                <thead>
+                  <tr>
+                    <th>Paciente</th>
+                    <th>Carpeta</th>
+                    <th>Fecha estudio</th>
+                    <th>Archivo / estudio</th>
+                    <th>Eliminado</th>
+                    <th>Origen</th>
+                    <th>Acciones</th>
+                  </tr>
+                </thead>
+                <tbody id="papeleraPdxBody">
+                  <tr><td colspan="7">Cargando…</td></tr>
+                </tbody>
+              </table>
+            </div>
           </section>
         </div>
       </div>
@@ -3410,7 +3532,7 @@
                   </tr>
                 </thead>
                 <tbody id="bodyGestionDatos">
-                  <tr><td colspan="5" style="padding:20px;text-align:center;color:#999">Selecciona un tipo de registro del menú lateral</td></tr>
+                  <tr><td colspan="5">Selecciona un tipo de registro del menú lateral</td></tr>
                 </tbody>
               </table>
             </div>
@@ -3908,9 +4030,9 @@
           <span class="meq-topbar-title">Monitor de Equipos</span>
         </div>
         <div class="meq-topbar-right">
-          <span id="monitorLastUpdate" style="font-size:.78rem;color:#94a3b8"></span>
+          <span id="monitorLastUpdate" class="meq-last-update"></span>
           <button type="button" id="btnRefreshMonitor" class="meq-refresh-btn" title="Refrescar">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
           </button>
         </div>
       </nav>
@@ -3918,7 +4040,7 @@
         <!-- Date navigation bar -->
         <div class="meq-date-bar">
           <button type="button" id="monitorDatePrev" class="meq-date-nav" title="Día anterior" aria-label="Día anterior">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M15 18l-6-6 6-6"/></svg>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M15 18l-6-6 6-6"/></svg>
           </button>
           <div class="meq-date-center">
             <input type="date" id="monitorDatePicker" class="meq-date-input" aria-label="Fecha" />
@@ -3926,7 +4048,7 @@
           </div>
           <button type="button" id="monitorDateHoy" class="meq-date-hoy" title="Ir a hoy">Hoy</button>
           <button type="button" id="monitorDateNext" class="meq-date-nav" title="Día siguiente" aria-label="Día siguiente">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>
           </button>
         </div>
         <!-- Stats bar -->
@@ -3958,16 +4080,16 @@
         </div>
         <!-- Historical badge -->
         <div id="monitorHistBadge" class="meq-hist-badge" style="display:none">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
           <span>Vista histórica &mdash; los datos corresponden a la fecha seleccionada</span>
         </div>
         <!-- Equipment grid -->
         <div id="monitorEquiposGrid" class="meq-grid">
-          <div style="text-align:center;padding:60px 20px;color:#94a3b8">Cargando equipos...</div>
+          <div class="innar-empty innar-empty--compact"><p class="innar-empty-title">Cargando equipos…</p></div>
         </div>
-        <div id="monitorSinEquipo" style="display:none;margin-top:24px">
-          <h3 style="font-size:1rem;color:#64748b;margin:0 0 12px;font-weight:600">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="2" style="vertical-align:text-bottom;margin-right:4px"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        <div id="monitorSinEquipo" class="meq-sin-equipo-wrap" style="display:none">
+          <h3 class="meq-section-title">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
             Estudios sin equipo asignado
           </h3>
           <div id="monitorSinEquipoList" class="meq-sin-equipo-list"></div>
@@ -4014,6 +4136,9 @@
               <p class="sop-module-lead">Carpetas del mes actual (y periodo en gracia). Al cerrar el mes, o al moverlas, pasan a <strong>Reportes anteriores</strong> tal cual — mismos archivos, sin copiar ni comprimir.</p>
             </div>
             <div class="sop-module-header-actions" style="display:flex;gap:8px;flex-wrap:wrap">
+              <button type="button" id="btnSopPdxPapelera" class="btn-secondary">
+                <i data-lucide="trash-2"></i> Papelera
+              </button>
               <button type="button" id="btnSopPdxNuevaCarpeta" class="btn-primary">
                 <i data-lucide="folder-plus"></i> Nueva carpeta
               </button>
@@ -4221,7 +4346,7 @@
       <nav class="ltv-topbar">
         <div class="ltv-topbar-left">
           <button type="button" id="btnVolverLlamadoPacientes" class="ltv-toolbar-btn ltv-toolbar-btn--back" title="Volver al menú">
-            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
             <span>Volver</span>
           </button>
         </div>
@@ -4231,16 +4356,16 @@
         </div>
         <div class="ltv-topbar-right">
           <button type="button" id="btnLlamadoActivarAudio" class="ltv-toolbar-btn ltv-toolbar-btn--audio" title="Activar audio" aria-hidden="true" tabindex="-1" hidden>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
             <span>Audio</span>
           </button>
           <button type="button" id="btnLlamadoConfig" class="ltv-toolbar-btn ltv-toolbar-btn--config" title="Consultorios activos">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
             <span>Consultorios</span>
           </button>
           <button type="button" id="btnLlamadoFullscreen" class="ltv-toolbar-btn ltv-toolbar-btn--fullscreen" title="Pantalla completa">
-            <svg class="ltv-fs-icon-expand" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
-            <svg class="ltv-fs-icon-compress hidden" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/></svg>
+            <svg class="ltv-fs-icon-expand" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
+            <svg class="ltv-fs-icon-compress hidden" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/></svg>
             <span class="ltv-fs-label">Pantalla completa</span>
           </button>
         </div>
@@ -4270,7 +4395,7 @@
           <p class="ltv-drawer-subtitle">Lista sincronizada con la agenda médica. Solo los consultorios activos recibirán pop-up y voz.</p>
         </div>
         <button type="button" id="btnLlamadoConfigCerrar" class="ltv-drawer-close" aria-label="Cerrar">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
         </button>
       </header>
       <div class="ltv-drawer-actions">
@@ -4420,46 +4545,47 @@
     </div>
   </footer>
 
-  <script src="/libs/xlsx.full.min.js?v=1.7.123"></script>
-  <script src="/libs/crypto-js.min.js?v=1.7.123"></script>
-  <script src="innar-motion.js?v=1.7.123"></script>
-  <script src="innar-scroll.js?v=1.7.123"></script>
-  <script src="innar-sidebar.js?v=1.7.123"></script>
-  <script src="multiselect.js?v=1.7.123"></script>
-  <script src="socket-client.js?v=1.7.123"></script>
-  <script src="socket-electro.js?v=1.7.123"></script>
-  <script src="dashboard-citas.js?v=1.7.123"></script>
-  <script src="agenda-motivo-dia.js?v=1.7.123"></script>
-  <script src="calendario-agenda.js?v=1.7.123"></script>
-  <script src="calendario-electro.js?v=1.7.123"></script>
-  <script src="backup-module.js?v=1.7.123"></script>
-  <script src="/libs/lucide.min.js?v=1.7.123"></script>
-  <script src="innar-lucide.js?v=1.7.123"></script>
-  <script src="electro-estudio-tipo.js?v=1.7.123"></script>
-  <script src="persona-fidu-shared.js?v=1.7.123"></script>
-  <script src="comprobante-afiliacion.js?v=1.7.123"></script>
-  <script src="comprobante-servicio-cups.js?v=1.7.123"></script>
-  <script src="comprobante-servicio-combo.js?v=1.7.123"></script>
-  <script src="comprobante-firma-ui.js?v=1.7.123"></script>
-  <script src="comprobante-pdx-envio.js?v=1.7.123"></script>
-  <script src="documentos-cita-prefill.js?v=1.7.123"></script>
-  <script src="/libs/jspdf.umd.min.js?v=1.7.123"></script>
-  <script src="/libs/html2canvas.min.js?v=1.7.123"></script>
-  <script src="firma-quitar-fondo.js?v=1.7.123"></script>
-  <script src="documento-pdf-cliente.js?v=1.7.123"></script>
-  <script src="documentos-cita-module.js?v=1.7.123"></script>
-  <script src="agenda-reprogramacion.js?v=1.7.123"></script>
-  <script src="app.js?v=1.7.123"></script>
-  <script src="chat-messenger.js?v=1.7.123"></script>
-  <script src="soportes-busqueda-shared.js?v=1.7.123"></script>
-  <script src="anexo-fidu.js?v=1.7.123"></script>
-  <script src="soportes-pdf-editor.js?v=1.7.123"></script>
-  <script src="reportes-historico.js?v=1.7.123"></script>
-  <script src="llamado-pacientes.js?v=1.7.123"></script>
-  <script src="soportes.js?v=1.7.123"></script>
-  <script src="calendario-bloqueado.js?v=1.7.123"></script>
-  <script src="validation-client.js?v=1.7.123"></script>
-  <script src="splash.js?v=1.7.123" defer></script>
+  <script src="/libs/xlsx.full.min.js?v=1.7.128"></script>
+  <script src="/libs/crypto-js.min.js?v=1.7.128"></script>
+  <script src="innar-motion.js?v=1.7.128"></script>
+  <script src="innar-scroll.js?v=1.7.128"></script>
+  <script src="innar-sidebar.js?v=1.7.128"></script>
+  <script src="multiselect.js?v=1.7.128"></script>
+  <script src="socket-client.js?v=1.7.128"></script>
+  <script src="socket-electro.js?v=1.7.128"></script>
+  <script src="dashboard-citas.js?v=1.7.128"></script>
+  <script src="agenda-motivo-dia.js?v=1.7.128"></script>
+  <script src="calendario-agenda.js?v=1.7.128"></script>
+  <script src="calendario-electro.js?v=1.7.128"></script>
+  <script src="backup-module.js?v=1.7.128"></script>
+  <script src="papelera-pdx-module.js?v=1.7.128"></script>
+  <script src="/libs/lucide.min.js?v=1.7.128"></script>
+  <script src="innar-lucide.js?v=1.7.128"></script>
+  <script src="electro-estudio-tipo.js?v=1.7.128"></script>
+  <script src="persona-fidu-shared.js?v=1.7.128"></script>
+  <script src="comprobante-afiliacion.js?v=1.7.128"></script>
+  <script src="comprobante-servicio-cups.js?v=1.7.128"></script>
+  <script src="comprobante-servicio-combo.js?v=1.7.128"></script>
+  <script src="comprobante-firma-ui.js?v=1.7.128"></script>
+  <script src="comprobante-pdx-envio.js?v=1.7.128"></script>
+  <script src="documentos-cita-prefill.js?v=1.7.128"></script>
+  <script src="/libs/jspdf.umd.min.js?v=1.7.128"></script>
+  <script src="/libs/html2canvas.min.js?v=1.7.128"></script>
+  <script src="firma-quitar-fondo.js?v=1.7.128"></script>
+  <script src="documento-pdf-cliente.js?v=1.7.128"></script>
+  <script src="documentos-cita-module.js?v=1.7.128"></script>
+  <script src="agenda-reprogramacion.js?v=1.7.128"></script>
+  <script src="app.js?v=1.7.128"></script>
+  <script src="chat-messenger.js?v=1.7.128"></script>
+  <script src="soportes-busqueda-shared.js?v=1.7.128"></script>
+  <script src="anexo-fidu.js?v=1.7.128"></script>
+  <script src="soportes-pdf-editor.js?v=1.7.128"></script>
+  <script src="reportes-historico.js?v=1.7.128"></script>
+  <script src="llamado-pacientes.js?v=1.7.128"></script>
+  <script src="soportes.js?v=1.7.128"></script>
+  <script src="calendario-bloqueado.js?v=1.7.128"></script>
+  <script src="validation-client.js?v=1.7.128"></script>
+  <script src="splash.js?v=1.7.128" defer></script>
 
   <!-- ========== MODAL COMPLETAR PACIENTE FOMAG (base anexo) ========== -->
   <div id="modalCompletarPersonaFidu" class="modal hidden" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.55);align-items:center;justify-content:center;z-index:10060;padding:16px">

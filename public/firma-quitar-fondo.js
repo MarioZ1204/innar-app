@@ -90,7 +90,6 @@
       if (!img.src) return;
       try {
         img.src = await quitarFondoDataUrl(img.src);
-        img.style.mixBlendMode = 'multiply';
         await new Promise((res) => {
           if (img.complete && img.naturalWidth > 0) res();
           else img.addEventListener('load', res, { once: true });

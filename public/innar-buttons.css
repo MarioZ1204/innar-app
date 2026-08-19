@@ -351,7 +351,9 @@ button:disabled {
 .btn-usr-edit:hover,
 .btn-usr-del:hover,
 .btn-usr-hist:hover,
-.btn-usr-reset:hover {
+.btn-usr-reset:hover,
+.btn-usr-speak:hover,
+.btn-usr-toggle:hover {
   transform: translateY(-1px);
 }
 

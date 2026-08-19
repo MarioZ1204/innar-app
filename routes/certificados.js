@@ -4,7 +4,7 @@ const express = require('express');
 const router = express.Router();
 const logger = require('../utils/logger');
 const {
-  requireAuth, requirePermiso, sesionTieneAlgunPermiso, safeError
+  requireAuth, requirePermiso, sesionTienePermiso, sesionTieneAlgunPermiso, safeError
 } = require('../middleware/index');
 const {
   tryRenderHtmlToPdf,
@@ -54,8 +54,10 @@ const {
 
 const CONTEXTOS_PERSONA_FIDU = new Set(['certificado', 'comprobante', 'anexo']);
 
+const PERMS_DOCUMENTOS_CITA = ['modulo.documentos_cita', 'agenda.ver', 'electro.ver'];
+
 function requirePersonaFiduLectura(req, res, next) {
-  if (sesionTieneAlgunPermiso(req.session, ['agenda.ver', 'electro.ver', 'modulo.anexo_fidu'])) return next();
+  if (sesionTieneAlgunPermiso(req.session, [...PERMS_DOCUMENTOS_CITA, 'modulo.anexo_fidu'])) return next();
   return res.status(403).json({ error: 'No tienes permiso para consultar la base de pacientes' });
 }
 
@@ -65,8 +67,16 @@ function parseContextoPersonaFidu(val) {
 }
 
 function requireCertificadoComprobante(req, res, next) {
-  if (sesionTieneAlgunPermiso(req.session, ['agenda.ver', 'electro.ver', 'modulo.anexo_fidu'])) return next();
+  if (sesionTieneAlgunPermiso(req.session, [...PERMS_DOCUMENTOS_CITA, 'modulo.anexo_fidu'])) return next();
   return res.status(403).json({ error: 'No tienes permiso para consultar el catálogo de servicios' });
+}
+
+function requireDocumentoSegunOrigen(req, res, next) {
+  if (sesionTienePermiso(req.session, 'modulo.documentos_cita')) return next();
+  const origen = String(req.body?.origen || '').trim().toLowerCase();
+  if (origen === 'electro') return requirePermiso('electro.ver')(req, res, next);
+  if (origen === 'medica') return requirePermiso('agenda.ver')(req, res, next);
+  return res.status(400).json({ error: 'Origen inválido (medica o electro)' });
 }
 
 async function responderDocumentoPdfOHtml(res, { html, titulo, filename, logLabel }) {
@@ -137,12 +147,7 @@ async function buildComprobantePreview(reqBody) {
 }
 
 /** POST /api/certificados/asistencia/preview — HTML para generador (sin Puppeteer) */
-router.post('/certificados/asistencia/preview', requireAuth, (req, res, next) => {
-  const origen = String(req.body?.origen || '').trim().toLowerCase();
-  if (origen === 'electro') return requirePermiso('electro.ver')(req, res, next);
-  if (origen === 'medica') return requirePermiso('agenda.ver')(req, res, next);
-  return res.status(400).json({ error: 'Origen inválido (medica o electro)' });
-}, async (req, res) => {
+router.post('/certificados/asistencia/preview', requireAuth, requireDocumentoSegunOrigen, async (req, res) => {
   try {
     const built = buildAsistenciaPreview(req.body);
     if (built.error) return res.status(400).json({ error: built.error });
@@ -154,12 +159,7 @@ router.post('/certificados/asistencia/preview', requireAuth, (req, res, next) =>
 });
 
 /** POST /api/certificados/comprobante-servicios/preview */
-router.post('/certificados/comprobante-servicios/preview', requireAuth, (req, res, next) => {
-  const origen = String(req.body?.origen || '').trim().toLowerCase();
-  if (origen === 'electro') return requirePermiso('electro.ver')(req, res, next);
-  if (origen === 'medica') return requirePermiso('agenda.ver')(req, res, next);
-  return res.status(400).json({ error: 'Origen inválido (medica o electro)' });
-}, async (req, res) => {
+router.post('/certificados/comprobante-servicios/preview', requireAuth, requireDocumentoSegunOrigen, async (req, res) => {
   try {
     const built = await buildComprobantePreview(req.body);
     if (built.error) return res.status(400).json({ error: built.error });
@@ -171,16 +171,7 @@ router.post('/certificados/comprobante-servicios/preview', requireAuth, (req, re
 });
 
 /** POST /api/certificados/asistencia — genera PDF de certificación de asistencia */
-router.post('/certificados/asistencia', requireAuth, (req, res, next) => {
-  const origen = String(req.body?.origen || '').trim().toLowerCase();
-  if (origen === 'electro') {
-    return requirePermiso('electro.ver')(req, res, next);
-  }
-  if (origen === 'medica') {
-    return requirePermiso('agenda.ver')(req, res, next);
-  }
-  return res.status(400).json({ error: 'Origen inválido (medica o electro)' });
-}, async (req, res) => {
+router.post('/certificados/asistencia', requireAuth, requireDocumentoSegunOrigen, async (req, res) => {
   try {
     const built = buildAsistenciaPreview(req.body);
     if (built.error) return res.status(400).json({ error: built.error });
@@ -204,16 +195,7 @@ router.post('/certificados/asistencia', requireAuth, (req, res, next) => {
 });
 
 /** POST /api/certificados/comprobante-servicios — genera PDF comprobante FOMAG */
-router.post('/certificados/comprobante-servicios', requireAuth, (req, res, next) => {
-  const origen = String(req.body?.origen || '').trim().toLowerCase();
-  if (origen === 'electro') {
-    return requirePermiso('electro.ver')(req, res, next);
-  }
-  if (origen === 'medica') {
-    return requirePermiso('agenda.ver')(req, res, next);
-  }
-  return res.status(400).json({ error: 'Origen inválido (medica o electro)' });
-}, async (req, res) => {
+router.post('/certificados/comprobante-servicios', requireAuth, requireDocumentoSegunOrigen, async (req, res) => {
   try {
     const built = await buildComprobantePreview(req.body);
     if (built.error) return res.status(400).json({ error: built.error });
