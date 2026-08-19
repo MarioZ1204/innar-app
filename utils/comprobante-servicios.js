@@ -185,11 +185,12 @@ function calcularPosicionesFirma(layout = COMPROBANTE_LAYOUT) {
   };
 }
 
-function buildComprobanteServiciosHtml(data, fondo = {}) {
+function buildComprobanteServiciosHtml(data, fondo = {}, opciones = {}) {
+  const capaFondoSeparada = opciones.capaFondoSeparada === true;
   const fondoBase64 = fondo.base64 || '';
-  const fondoMime = fondo.mime || 'image/png';
-  const conFondo = !!fondoBase64;
-  const fondoImgHtml = buildPageFondoImg(fondo);
+  const pintarFondoEnHtml = !!fondoBase64 && !capaFondoSeparada;
+  const fondoImgHtml = pintarFondoEnHtml ? buildPageFondoImg(fondo) : '';
+  const taparLineaFondo = pintarFondoEnHtml || (capaFondoSeparada && !!fondoBase64);
 
   const L = COMPROBANTE_LAYOUT;
   const F = calcularPosicionesFirma(L);
@@ -205,6 +206,7 @@ function buildComprobanteServiciosHtml(data, fondo = {}) {
   const mostrarAcudienteDatos = tieneBloqueAcudiente(data);
 
   const fontFamily = "Arial, 'Helvetica Neue', Helvetica, sans-serif";
+  const fondoPagina = capaFondoSeparada ? 'transparent' : '#fff';
 
   const firmaAcudHtml = firmaAcud
     ? `<img class="cmp-firma-acud-img" src="data:${firmaAcud.mime};base64,${firmaAcud.base64}" alt="Firma acudiente"/>`
@@ -212,9 +214,8 @@ function buildComprobanteServiciosHtml(data, fondo = {}) {
 
   const acudienteOcultoClass = mostrarAcudienteDatos ? '' : ' cmp-acudiente--vacio';
 
-  /** Parche de textura del fondo (zona limpia ~5 mm arriba) para tapar la punteada original del PNG. */
-  const lineaFirmaParcheMuestra = L.lineaFirmaFondo - 5;
-  const lineaFirmaCoverCss = conFondo
+  /** Tapa la punteada del PNG con blanco (no usar el PNG entero como background-image: Chromium aplana el PDF). */
+  const lineaFirmaCoverCss = taparLineaFondo
     ? `
     .cmp-linea-firma-cover {
       position: absolute;
@@ -222,14 +223,11 @@ function buildComprobanteServiciosHtml(data, fondo = {}) {
       right: ${L.lineaFirmaRight}mm;
       top: ${L.lineaFirmaFondo - 1.2}mm;
       height: 3.8mm;
-      background-image: url('data:${fondoMime};base64,${fondoBase64}');
-      background-size: 210mm 297mm;
-      background-repeat: no-repeat;
-      background-position: -${L.lineaFirmaLeft}mm -${lineaFirmaParcheMuestra}mm;
+      background: #fff;
       z-index: 2;
     }`
     : '';
-  const lineaFirmaCoverHtml = conFondo
+  const lineaFirmaCoverHtml = taparLineaFondo
     ? '<div class="cmp-linea-firma-cover" aria-hidden="true"></div>'
     : '';
 
@@ -241,22 +239,22 @@ function buildComprobanteServiciosHtml(data, fondo = {}) {
   <style>
     @page { size: A4; margin: 0; }
     * { box-sizing: border-box; }
-    body {
+    html, body {
       margin: 0;
       padding: 0;
       font-family: ${fontFamily};
       color: #1a1a1a;
-      background: #fff;
+      background: ${fondoPagina};
     }
     .page {
       width: 210mm;
       min-height: 297mm;
       height: 297mm;
       position: relative;
-      overflow: hidden;
-      background: #fff;
+      overflow: ${capaFondoSeparada ? 'visible' : 'hidden'};
+      background: ${fondoPagina};
     }
-    ${FONDO_PRINT_CSS}
+    ${capaFondoSeparada ? '' : FONDO_PRINT_CSS}
     .cmp-titulo {
       position: absolute;
       z-index: 1;

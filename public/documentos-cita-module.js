@@ -557,14 +557,10 @@
         });
       }
 
-      if (enviarPdx && (!out.blob || !out.blob.size) && PDF.generarPdfBlobDesdeHtml) {
-        const preview = await PDF.fetchPreviewHtml?.(
-          '/api/certificados/comprobante-servicios/preview',
-          payload
+      if (enviarPdx && (!out.blob || !out.blob.size)) {
+        throw new Error(
+          'No se pudo generar el PDF en el servidor para enviarlo a Cargar Reportes. Intente de nuevo.'
         );
-        if (!preview?.html) throw new Error('No se pudo obtener el HTML del comprobante para enviarlo');
-        const blobCliente = await PDF.generarPdfBlobDesdeHtml(preview.html, { fast: true });
-        out = { blob: blobCliente, modo: 'pdf-cliente', filename: preview.filename || filename };
       }
 
       if (out.blob) PDF.descargarBlob(out.blob, out.filename || filename);

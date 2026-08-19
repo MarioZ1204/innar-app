@@ -127,6 +127,11 @@ function extractTipoFromSoporteName(nombre) {
 function archivoCoincideConTipoSlot(fileName, tipo) {
   const expected = String(tipo || '').toUpperCase();
   if (!expected) return true;
+  // UCQN guarda tipo 'PDF' con el nombre original (no OPF_/CRC_/…).
+  if (expected === 'PDF') {
+    const ext = path.extname(String(fileName || '')).toLowerCase();
+    return !ext || ext === '.pdf';
+  }
   return extractTipoFromSoporteName(fileName) === expected;
 }
 

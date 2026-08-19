@@ -94,6 +94,12 @@ function listarCarpetasExpediente(expediente, baseRoot = getSoportesRoot()) {
         const { abs } = getArmadoFeDirForExpediente(ctx, expediente);
         if (abs) dirs.push(abs);
       }
+      try {
+        const { getArmadoUcqnPersonaDir } = require('./soportes-armado-modos');
+        const contenedor = String(expediente.contenedora_nombre || expediente.contenedor_nombre || 'U C Q N');
+        const relUcqn = getArmadoUcqnPersonaDir(periodoRuta, contenedor, expediente.nombre_display);
+        if (relUcqn) dirs.push(path.join(baseRoot, relUcqn));
+      } catch (_) { /* ignore */ }
     } catch (_) { /* fallback al escaneo legacy */ }
   }
 
@@ -340,6 +346,7 @@ function archivoCompatibleConExpediente(absPath, row, expediente) {
 
   const entryName = path.basename(absPath);
   const tipo = String(row?.tipo || '').toUpperCase();
+  if (tipo === 'PDF') return true;
   if (tipo && !archivoCoincideConTipoSlot(entryName, tipo)) return false;
 
   const dirName = path.basename(path.dirname(absPath)).toUpperCase();

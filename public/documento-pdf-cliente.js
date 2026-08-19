@@ -397,31 +397,10 @@
     montado?.stage?.remove();
   }
 
-  async function generarPdfDesdeHtml(html, filename, opts = {}) {
+  async function generarPdfDesdeHtml(html, filename) {
     const name = filename || 'documento.pdf';
-    let montado = null;
-
-    try {
-      montado = await prepararDocumento(html);
-      try {
-        await rasterizarAPdf(montado, name, opts);
-        return opts.fast ? 'pdf-cliente-rapido' : 'pdf-cliente';
-      } catch (e1) {
-        if (opts.fast) throw e1;
-        limpiarMontaje(montado);
-        montado = await prepararDocumentoIframe(html);
-        try {
-          await rasterizarAPdf(montado, name, opts);
-          return 'pdf-cliente';
-        } catch (_e2) {
-          abrirImpresionDocumento(montado.limpio || normalizarHtmlString(html));
-          return 'impresion';
-        }
-      }
-    } finally {
-      limpiarMontaje(montado);
-      document.getElementById('innarPdfFrame')?.remove();
-    }
+    abrirImpresionDocumento(normalizarHtmlString(html), tituloImpresionDesdeFilename(name));
+    return 'impresion';
   }
 
   function descargarBlob(blob, filename) {

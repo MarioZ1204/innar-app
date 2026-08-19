@@ -310,7 +310,8 @@ async function renderHtmlToPdf(html, options = {}) {
     waitFonts = false,
     contentTimeout = pdfPageTimeoutMs(),
     fontsTimeoutMs = 400,
-    preferCSSPageSize = true
+    preferCSSPageSize = true,
+    omitBackground = false
   } = options;
 
   const browser = await getSharedBrowser();
@@ -327,7 +328,13 @@ async function renderHtmlToPdf(html, options = {}) {
         new Promise((resolve) => setTimeout(resolve, ms))
       ]), fontsTimeoutMs);
     }
-    return await page.pdf({ format, printBackground, margin, preferCSSPageSize });
+    return await page.pdf({
+      format,
+      printBackground,
+      margin,
+      preferCSSPageSize,
+      omitBackground
+    });
   } finally {
     await page.close().catch(() => {});
     scheduleSharedBrowserIdleClose();

@@ -21,6 +21,7 @@ const {
   buildComprobanteServiciosHtml
 } = require('../utils/comprobante-servicios');
 const { procesarImagenesFirma } = require('../utils/comprobante-servicios-firma');
+const { stampFondoDetras } = require('../utils/pdf-stamp-fondo');
 const { listarServiciosComprobante } = require('../utils/cups-comprobante-activos');
 const { catalogoComprobanteConsultaMedica } = require('../utils/comprobante-catalogo-medica');
 const { ensureChromiumReady } = require('../scripts/ensure-chromium');
@@ -79,7 +80,9 @@ function requireDocumentoSegunOrigen(req, res, next) {
   return res.status(400).json({ error: 'Origen inválido (medica o electro)' });
 }
 
-async function responderDocumentoPdfOHtml(res, { html, titulo, filename, logLabel }) {
+async function responderDocumentoPdfOHtml(res, {
+  html, titulo, filename, logLabel, stampFondo, omitBackground
+}) {
   const modo = String(process.env.CERTIFICADOS_PDF_MODE || '').trim().toLowerCase();
   if (modo === 'html') {
     res.contentType('text/html; charset=utf-8');
@@ -93,21 +96,34 @@ async function responderDocumentoPdfOHtml(res, { html, titulo, filename, logLabe
     logger.warn(`[CERT] ${logLabel} Chrome no listo (${chrome.error || 'desconocido'}), intentando PDF igualmente`);
   }
 
-  let resultado = await tryRenderHtmlToPdf(html);
+  const pdfOpts = { omitBackground: !!omitBackground };
+  let resultado = await tryRenderHtmlToPdf(html, pdfOpts);
   if (!resultado.ok) {
     logger.warn(`[CERT] ${logLabel} reintento PDF tras fallo: ${resultado.error}`);
     await closeSharedBrowser('retry');
-    resultado = await tryRenderHtmlToPdf(html);
+    resultado = await tryRenderHtmlToPdf(html, pdfOpts);
   }
 
   if (resultado.ok) {
+    let pdf = resultado.pdf;
+    if (stampFondo?.base64) {
+      try {
+        pdf = await stampFondoDetras(pdf, stampFondo);
+      } catch (e) {
+        logger.error(`[CERT] ${logLabel} no se pudo colocar el membrete detrás del texto: ${e.message}`);
+        return res.status(503).json({
+          error: 'No se pudo generar el PDF con texto editable. Espere unos segundos e intente de nuevo.',
+          detail: e.message
+        });
+      }
+    }
     const ms = Date.now() - t0;
     res.contentType('application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.setHeader('X-Documento-Modo', 'pdf');
     res.setHeader('X-Documento-Generacion-Ms', String(ms));
     logger.info(`[CERT] ${logLabel} PDF servidor en ${ms}ms`, { type: 'CERT_PDF', ms });
-    return res.send(resultado.pdf);
+    return res.send(pdf);
   }
 
   logger.error(`[CERT] ${logLabel} PDF en servidor no disponible: ${resultado.error}`);
@@ -131,16 +147,17 @@ function buildAsistenciaPreview(reqBody) {
   };
 }
 
-async function buildComprobantePreview(reqBody) {
+async function buildComprobantePreview(reqBody, opciones = {}) {
   const validacion = validarPayloadComprobanteServicios(reqBody);
   if (validacion.error) return { error: validacion.error };
   const datos = await procesarImagenesFirma(validacion.data);
   const fondo = getComprobanteServiciosFondo();
-  const html = buildComprobanteServiciosHtml(datos, fondo);
+  const html = buildComprobanteServiciosHtml(datos, fondo, opciones);
   const doc = validacion.data.paciente_documento.replace(/\D/g, '') || 'sin_doc';
   return {
     data: validacion.data,
     html,
+    fondo,
     filename: `comprobante_servicios_${doc}.pdf`,
     titulo: 'Comprobante de servicios FOMAG'
   };
@@ -197,7 +214,11 @@ router.post('/certificados/asistencia', requireAuth, requireDocumentoSegunOrigen
 /** POST /api/certificados/comprobante-servicios — genera PDF comprobante FOMAG */
 router.post('/certificados/comprobante-servicios', requireAuth, requireDocumentoSegunOrigen, async (req, res) => {
   try {
-    const built = await buildComprobantePreview(req.body);
+    const modoHtml = String(process.env.CERTIFICADOS_PDF_MODE || '').trim().toLowerCase() === 'html';
+    const usarCapaFondo = !modoHtml && !!getComprobanteServiciosFondo().base64;
+    const built = await buildComprobantePreview(req.body, {
+      capaFondoSeparada: usarCapaFondo
+    });
     if (built.error) return res.status(400).json({ error: built.error });
 
     logger.info('[CERT] Comprobante servicios generado', {
@@ -210,7 +231,9 @@ router.post('/certificados/comprobante-servicios', requireAuth, requireDocumento
       html: built.html,
       titulo: built.titulo,
       filename: built.filename,
-      logLabel: 'Comprobante servicios'
+      logLabel: 'Comprobante servicios',
+      stampFondo: usarCapaFondo ? built.fondo : null,
+      omitBackground: usarCapaFondo
     });
   } catch (e) {
     logger.error('[CERT] Error generando comprobante servicios:', e.message, e.stack);

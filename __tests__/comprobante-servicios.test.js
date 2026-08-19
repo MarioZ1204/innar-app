@@ -155,4 +155,28 @@ describe('comprobante-servicios', () => {
     expect(html).not.toMatch(/mix-blend-mode\s*:/i);
     expect(html).not.toMatch(/transform:\s*translateX/i);
   });
+
+  test('HTML para PDF nativo no incrusta el membrete ni background-image del PNG', () => {
+    const { data } = validarPayloadComprobanteServicios({
+      fecha: '2026-05-27',
+      paciente_nombre: 'MARIO FERNANDO ZAMBRANO MEJIA',
+      paciente_documento: '1010101893',
+      fecha_nacimiento: '2002-04-12',
+      direccion: 'CRA 15B JAVERIANO',
+      telefono: '3164518932',
+      correo: 'mariozamb1204@gmail.com',
+      tipo_afiliacion: 'Cotizante',
+      servicio: 'Consulta de Control por Neurología',
+      firma_paciente: FIRMA_MINI
+    });
+    const html = buildComprobanteServiciosHtml(data, {
+      base64: 'aG9sYQ==',
+      mime: 'image/png'
+    }, { capaFondoSeparada: true });
+    expect(html).not.toMatch(/<img[^>]*class="page-fondo"/);
+    expect(html).toContain('background: transparent');
+    expect(html).toContain('cmp-linea-firma-cover');
+    expect(html).not.toMatch(/background-image\s*:/);
+    expect(html).toContain('MARIO FERNANDO ZAMBRANO MEJIA');
+  });
 });

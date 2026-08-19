@@ -9,7 +9,8 @@ const { moveFileSafe } = require('./fs-move-safe');
 const { safeOriginalFilename } = require('./soportes-archivo-detect');
 const {
   getArmadoUcqnPersonaDir,
-  fetchDiaRow
+  fetchDiaRow,
+  esModoUcqn
 } = require('./soportes-armado-modos');
 const { sanitizePathSegment } = require('./soportes-armado-structure');
 
@@ -23,7 +24,7 @@ function ucqnDiskName(originalName) {
 
 async function resolveUcqnUploadContext(exp) {
   const dia = await fetchDiaRow(db, exp.dia_id);
-  if (!dia || dia.modo !== 'ucqn') return null;
+  if (!dia || !esModoUcqn(dia.modo)) return null;
   let contenedorNombre = 'U C Q N';
   if (dia.parent_id) {
     const parent = await fetchDiaRow(db, dia.parent_id);

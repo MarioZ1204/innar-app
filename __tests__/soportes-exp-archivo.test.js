@@ -394,4 +394,28 @@ describe('soportes-exp-archivo', () => {
 
     expect(resolved).toBe(filePath);
   });
+
+  test('UCQN: abre un PDF con nombre libre en carpeta U C Q N (no OPF_/CRC_)', () => {
+    const fileDir = path.join(tempRoot, 'soportes', 'armado', '2026-08', 'U C Q N', 'Juan Perez');
+    fs.mkdirSync(fileDir, { recursive: true });
+    const filePath = path.join(fileDir, 'informe-control.pdf');
+    fs.writeFileSync(filePath, 'pdf');
+
+    const resolved = resolveArchivoAbsoluto({
+      tipo: 'PDF',
+      nombre_archivo: 'informe-control.pdf',
+      ruta_relativa: 'armado/2026-08/U C Q N/Juan Perez/informe-control.pdf'
+    }, {
+      expediente: {
+        id: 12,
+        codigo: 'Juan Perez',
+        nombre_display: 'Juan Perez',
+        periodo: '2026-08',
+        paciente_nombre: 'Juan Perez'
+      },
+      deepScan: false
+    });
+
+    expect(resolved).toBe(filePath);
+  });
 });
