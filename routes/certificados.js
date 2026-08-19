@@ -22,6 +22,7 @@ const {
 } = require('../utils/comprobante-servicios');
 const { procesarImagenesFirma } = require('../utils/comprobante-servicios-firma');
 const { stampFondoDetras } = require('../utils/pdf-stamp-fondo');
+const { buildComprobanteServiciosPdf } = require('../utils/comprobante-servicios-pdf');
 const { listarServiciosComprobante } = require('../utils/cups-comprobante-activos');
 const { catalogoComprobanteConsultaMedica } = require('../utils/comprobante-catalogo-medica');
 const { ensureChromiumReady } = require('../scripts/ensure-chromium');
@@ -156,6 +157,7 @@ async function buildComprobantePreview(reqBody, opciones = {}) {
   const doc = validacion.data.paciente_documento.replace(/\D/g, '') || 'sin_doc';
   return {
     data: validacion.data,
+    datos,
     html,
     fondo,
     filename: `comprobante_servicios_${doc}.pdf`,
@@ -214,11 +216,7 @@ router.post('/certificados/asistencia', requireAuth, requireDocumentoSegunOrigen
 /** POST /api/certificados/comprobante-servicios — genera PDF comprobante FOMAG */
 router.post('/certificados/comprobante-servicios', requireAuth, requireDocumentoSegunOrigen, async (req, res) => {
   try {
-    const modoHtml = String(process.env.CERTIFICADOS_PDF_MODE || '').trim().toLowerCase() === 'html';
-    const usarCapaFondo = !modoHtml && !!getComprobanteServiciosFondo().base64;
-    const built = await buildComprobantePreview(req.body, {
-      capaFondoSeparada: usarCapaFondo
-    });
+    const built = await buildComprobantePreview(req.body);
     if (built.error) return res.status(400).json({ error: built.error });
 
     logger.info('[CERT] Comprobante servicios generado', {
@@ -227,8 +225,30 @@ router.post('/certificados/comprobante-servicios', requireAuth, requireDocumento
       usuario: req.session?.usuario
     });
 
+    const t0 = Date.now();
+    try {
+      const pdf = await buildComprobanteServiciosPdf(built.datos || built.data, built.fondo);
+      if (pdf && pdf.length) {
+        const ms = Date.now() - t0;
+        res.contentType('application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="${built.filename}"`);
+        res.setHeader('X-Documento-Modo', 'pdf');
+        res.setHeader('X-Documento-Generacion-Ms', String(ms));
+        logger.info(`[CERT] Comprobante servicios PDF nativo en ${ms}ms`, { type: 'CERT_PDF', ms, motor: 'pdf-lib' });
+        return res.send(pdf);
+      }
+    } catch (ePdf) {
+      logger.warn(`[CERT] PDF nativo comprobante falló, se intenta Chrome: ${ePdf.message}`);
+    }
+
+    const modoHtml = String(process.env.CERTIFICADOS_PDF_MODE || '').trim().toLowerCase() === 'html';
+    const usarCapaFondo = !modoHtml && !!built.fondo?.base64;
+    const htmlPdf = usarCapaFondo
+      ? buildComprobanteServiciosHtml(built.datos || built.data, built.fondo, { capaFondoSeparada: true })
+      : built.html;
+
     await responderDocumentoPdfOHtml(res, {
-      html: built.html,
+      html: htmlPdf,
       titulo: built.titulo,
       filename: built.filename,
       logLabel: 'Comprobante servicios',
