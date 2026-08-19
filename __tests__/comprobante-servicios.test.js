@@ -7,6 +7,7 @@ const {
   COMPROBANTE_SERVICIOS_TITULO,
   COMPROBANTE_SERVICIOS_FOMAG_TEXTO,
   COMPROBANTE_SERVICIOS_PIE,
+  COMPROBANTE_TABLA_FIRMAS,
   COMPROBANTE_LAYOUT,
   calcularPosicionesFirma
 } = require('../utils/comprobante-servicios');
@@ -143,7 +144,9 @@ describe('comprobante-servicios', () => {
     expect(html).toContain('FIRMA DEL PACIENTE:');
     expect(html).toContain('cmp-acudiente');
     expect(html).toContain('cmp-pie-bloque');
-    expect(html).toContain('Auditor Médico');
+    expect(html).toContain(COMPROBANTE_TABLA_FIRMAS[0].cargo);
+    expect(html).toContain(COMPROBANTE_SERVICIOS_PIE.label_version);
+    expect(html).toContain(COMPROBANTE_SERVICIOS_PIE.label_elaboracion);
     expect(html).toContain('Arial');
     expect(html).toMatch(/neurolog/i);
     expect(html).toContain(COMPROBANTE_SERVICIOS_PIE.codigo);

@@ -35,4 +35,12 @@ describe('comprobante-servicios-pdf', () => {
     const doc = await PDFDocument.load(pdf);
     expect(doc.getPageCount()).toBe(1);
   });
+
+  test('usa las mismas etiquetas de pie y tabla que el formato de referencia', () => {
+    const src = require('fs').readFileSync(require.resolve('../utils/comprobante-servicios-pdf.js'), 'utf8');
+    expect(src).toContain('COMPROBANTE_SERVICIOS_PIE.label_version');
+    expect(src).toContain('COMPROBANTE_TABLA_FIRMAS');
+    expect(src).not.toMatch(/l: 'VERSION:/);
+    expect(src).not.toMatch(/Elaborado por:/);
+  });
 });

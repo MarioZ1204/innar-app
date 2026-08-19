@@ -13,8 +13,18 @@ const COMPROBANTE_SERVICIOS_PIE = {
   codigo: 'FORM-24',
   fecha_elaboracion: 'Julio 1 de 2024',
   fecha_actualizacion: 'Junio 11 de 2026',
-  pagina: '1 de 1'
+  pagina: '1 de 1',
+  label_version: 'VERSIÓN:',
+  label_codigo: 'CÓDIGO:',
+  label_elaboracion: 'Fecha de elaboración:',
+  label_actualizacion: 'Fecha de Actualización:'
 };
+
+const COMPROBANTE_TABLA_FIRMAS = [
+  { header: 'ELABORADO POR:', cargo: 'AUDITOR MÉDICO' },
+  { header: 'REVISADO POR:', cargo: 'GERENTE' },
+  { header: 'APROBADO POR:', cargo: 'REPRESENTANTE LEGAL' }
+];
 
 /** Posiciones medidas sobre comprobante-servicios-fondo.png (2777×3624 px, A4). */
 const COMPROBANTE_LAYOUT = {
@@ -566,16 +576,16 @@ function buildComprobanteServiciosHtml(data, fondo = {}, opciones = {}) {
         <table class="cmp-firmas">
           <thead>
             <tr>
-              <th>Elaborado por:</th>
-              <th>Revisado por:</th>
-              <th>Aprobado por:</th>
+              <th>${escapeHtml(COMPROBANTE_TABLA_FIRMAS[0].header)}</th>
+              <th>${escapeHtml(COMPROBANTE_TABLA_FIRMAS[1].header)}</th>
+              <th>${escapeHtml(COMPROBANTE_TABLA_FIRMAS[2].header)}</th>
             </tr>
           </thead>
           <tbody>
             <tr>
-              <td>Auditor Médico</td>
-              <td>Gerente</td>
-              <td>Representante Legal</td>
+              <td>${escapeHtml(COMPROBANTE_TABLA_FIRMAS[0].cargo)}</td>
+              <td>${escapeHtml(COMPROBANTE_TABLA_FIRMAS[1].cargo)}</td>
+              <td>${escapeHtml(COMPROBANTE_TABLA_FIRMAS[2].cargo)}</td>
             </tr>
           </tbody>
         </table>
@@ -594,19 +604,19 @@ function buildComprobanteServiciosHtml(data, fondo = {}, opciones = {}) {
 
     <footer class="cmp-pie-doc">
       <div class="cmp-pie-col" style="left:${L.pieColCenters[0]}mm">
-        <span class="cmp-pie-label cmp-pie-label--caps">Versión:</span>
+        <span class="cmp-pie-label cmp-pie-label--caps">${escapeHtml(COMPROBANTE_SERVICIOS_PIE.label_version)}</span>
         <span class="cmp-pie-valor">${escapeHtml(COMPROBANTE_SERVICIOS_PIE.version)}</span>
       </div>
       <div class="cmp-pie-col" style="left:${L.pieColCenters[1]}mm">
-        <span class="cmp-pie-label cmp-pie-label--caps">Código:</span>
+        <span class="cmp-pie-label cmp-pie-label--caps">${escapeHtml(COMPROBANTE_SERVICIOS_PIE.label_codigo)}</span>
         <span class="cmp-pie-valor">${escapeHtml(COMPROBANTE_SERVICIOS_PIE.codigo)}</span>
       </div>
       <div class="cmp-pie-col" style="left:${L.pieColCenters[2]}mm">
-        <span class="cmp-pie-label">Fecha de elaboración:</span>
+        <span class="cmp-pie-label">${escapeHtml(COMPROBANTE_SERVICIOS_PIE.label_elaboracion)}</span>
         <span class="cmp-pie-valor">${escapeHtml(COMPROBANTE_SERVICIOS_PIE.fecha_elaboracion)}</span>
       </div>
       <div class="cmp-pie-col" style="left:${L.pieColCenters[3]}mm">
-        <span class="cmp-pie-label">Fecha de Actualización:</span>
+        <span class="cmp-pie-label">${escapeHtml(COMPROBANTE_SERVICIOS_PIE.label_actualizacion)}</span>
         <span class="cmp-pie-valor">${escapeHtml(COMPROBANTE_SERVICIOS_PIE.fecha_actualizacion)}</span>
       </div>
       <span class="cmp-pie-pagina" style="left:${L.piePaginaCenter}mm">${escapeHtml(COMPROBANTE_SERVICIOS_PIE.pagina)}</span>
@@ -620,6 +630,7 @@ module.exports = {
   COMPROBANTE_SERVICIOS_TITULO,
   COMPROBANTE_SERVICIOS_FOMAG_TEXTO,
   COMPROBANTE_SERVICIOS_PIE,
+  COMPROBANTE_TABLA_FIRMAS,
   COMPROBANTE_LAYOUT,
   calcularPosicionesFirma,
   formatFechaComprobante,

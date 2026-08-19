@@ -5,6 +5,7 @@ const {
   COMPROBANTE_SERVICIOS_TITULO,
   COMPROBANTE_SERVICIOS_FOMAG_TEXTO,
   COMPROBANTE_SERVICIOS_PIE,
+  COMPROBANTE_TABLA_FIRMAS,
   COMPROBANTE_LAYOUT,
   calcularPosicionesFirma,
   formatFechaComprobante,
@@ -30,7 +31,7 @@ function toWinAnsi(value) {
   return String(value || '')
     .replace(/☒/g, 'X')
     .replace(/☐/g, '')
-    .replace(/[–—]/g, '-')
+    .replace(/[—]/g, '-')
     .replace(/[“”«»]/g, '"')
     .replace(/[‘’]/g, "'")
     .replace(/\u00a0/g, ' ');
@@ -53,6 +54,10 @@ function wrapText(text, font, size, maxWidth) {
   }
   if (current) lines.push(current);
   return lines.length ? lines : [''];
+}
+
+function campoStep(size) {
+  return size * 1.32 + mm(2.8);
 }
 
 async function embedDataImage(doc, img) {
@@ -90,8 +95,8 @@ function drawCampo(page, { x, y, width, label, value, font, fontBold, size }) {
   const labelTxt = toWinAnsi(label);
   const labelW = fontBold.widthOfTextAtSize(labelTxt, size);
   page.drawText(labelTxt, { x, y, size, font: fontBold, color: TEXT });
-  const vx = x + labelW + mm(2);
-  const maxW = Math.max(20, width - labelW - mm(2));
+  const vx = x + labelW + mm(3);
+  const maxW = Math.max(20, width - labelW - mm(3));
   const lines = wrapText(value, font, size, maxW);
   let cy = y;
   lines.forEach((line, idx) => {
@@ -104,9 +109,50 @@ function drawCampo(page, { x, y, width, label, value, font, fontBold, size }) {
         color: LINE
       });
     }
-    cy -= size * 1.25;
+    cy -= size * 1.32;
   });
-  return cy - mm(1.2);
+  return y - campoStep(size) - Math.max(0, lines.length - 1) * (size * 1.32);
+}
+
+function drawBallot(page, x, baseline, checked) {
+  const s = 8;
+  const y = baseline - 0.35;
+  page.drawRectangle({
+    x,
+    y,
+    width: s,
+    height: s,
+    borderColor: TEXT,
+    borderWidth: 0.75
+  });
+  if (checked) {
+    const i = 1.5;
+    page.drawLine({
+      start: { x: x + i, y: y + i },
+      end: { x: x + s - i, y: y + s - i },
+      thickness: 0.9,
+      color: TEXT
+    });
+    page.drawLine({
+      start: { x: x + s - i, y: y + i },
+      end: { x: x + i, y: y + s - i },
+      thickness: 0.9,
+      color: TEXT
+    });
+  }
+  return s;
+}
+
+function drawCentered(page, text, { x, width, y, size, font, color }) {
+  const t = toWinAnsi(text);
+  const w = font.widthOfTextAtSize(t, size);
+  page.drawText(t, {
+    x: x + Math.max(0, (width - w) / 2),
+    y,
+    size,
+    font,
+    color: color || TEXT
+  });
 }
 
 async function buildComprobanteServiciosPdf(data, fondo = {}) {
@@ -124,19 +170,24 @@ async function buildComprobanteServiciosPdf(data, fondo = {}) {
   }
 
   const titleSize = 8.5;
-  const titleMax = mm(210 - L.tituloLeft - L.tituloRight);
+  const titleMax = mm(210 - L.tituloLeft - L.tituloRight) - mm(4);
   const titleLines = wrapText(COMPROBANTE_SERVICIOS_TITULO, fontBold, titleSize, titleMax);
-  let titleY = yTop(L.tituloTop) - mm(6);
+  if (titleLines.length >= 2 && /-\s*$/.test(titleLines[0])) {
+    titleLines[0] = titleLines[0].replace(/\s*-\s*$/, '');
+    titleLines[1] = `- ${titleLines[1]}`;
+  }
+  const titleLeading = titleSize * 1.15;
+  let titleY = yTop(L.tituloTop + 10.3);
   titleLines.forEach((line) => {
-    const w = fontBold.widthOfTextAtSize(line, titleSize);
-    page.drawText(line, {
-      x: mm(L.tituloLeft) + (titleMax - w) / 2,
+    drawCentered(page, line, {
+      x: mm(L.tituloLeft) + mm(2),
+      width: titleMax,
       y: titleY,
       size: titleSize,
       font: fontBold,
       color: rgb(0.17, 0.17, 0.17)
     });
-    titleY -= titleSize * 1.15;
+    titleY -= titleLeading;
   });
 
   const x = mm(L.bodySide);
@@ -161,25 +212,19 @@ async function buildComprobanteServiciosPdf(data, fondo = {}) {
     { on: tipo === 'TI', label: 'TI:' },
     { on: tipo === 'RC', label: 'RC:' }
   ];
-  let mx = x + fontBold.widthOfTextAtSize(toWinAnsi('TIPO DE IDENTIFICACIÓN:'), 10) + mm(4);
+  let mx = x + fontBold.widthOfTextAtSize(toWinAnsi('TIPO DE IDENTIFICACIÓN:'), 10) + mm(3);
   marks.forEach((m) => {
-    const box = mm(3.2);
-    page.drawRectangle({
-      x: mx,
-      y: y - 0.4,
-      width: box,
-      height: box,
-      borderColor: TEXT,
-      borderWidth: 0.6,
-      color: rgb(1, 1, 1)
+    const box = drawBallot(page, mx, y, m.on);
+    page.drawText(m.label, {
+      x: mx + box + mm(1.4),
+      y,
+      size: 10,
+      font: fontBold,
+      color: TEXT
     });
-    if (m.on) {
-      page.drawText('X', { x: mx + 0.7, y: y + 0.2, size: 8, font: fontBold, color: TEXT });
-    }
-    page.drawText(m.label, { x: mx + box + mm(1.2), y, size: 10, font: fontBold, color: TEXT });
-    mx += box + mm(14);
+    mx += box + mm(1.4) + fontBold.widthOfTextAtSize(m.label, 10) + mm(4.2);
   });
-  y -= mm(6.4);
+  y -= campoStep(size);
 
   y = drawCampo(page, {
     x, y, width: colW, label: 'NÚMERO DE IDENTIFICACIÓN:', value: data.paciente_documento,
@@ -206,25 +251,38 @@ async function buildComprobanteServiciosPdf(data, fondo = {}) {
     font, fontBold, size
   });
 
-  y -= mm(2);
+  y -= mm(5.5);
   const fomagSize = 10;
-  wrapText(COMPROBANTE_SERVICIOS_FOMAG_TEXTO, font, fomagSize, colW).forEach((line) => {
-    const w = font.widthOfTextAtSize(line, fomagSize);
-    page.drawText(line, { x: x + (colW - w) / 2, y, size: fomagSize, font, color: TEXT });
-    y -= fomagSize * 1.32;
+  const fomagW = colW - mm(4);
+  wrapText(COMPROBANTE_SERVICIOS_FOMAG_TEXTO, font, fomagSize, fomagW).forEach((line) => {
+    drawCentered(page, line, {
+      x: x + mm(2),
+      width: fomagW,
+      y,
+      size: fomagSize,
+      font,
+      color: TEXT
+    });
+    y -= fomagSize * 1.35;
   });
 
-  y = Math.min(y - mm(2), yTop(L.servicioTop) - 11);
+  y = Math.min(y - mm(6), yTop(L.servicioTop) - 11);
   const servSize = 11;
-  wrapText(String(data.servicio || '').toUpperCase(), fontBold, servSize, colW - mm(4)).forEach((line) => {
-    const w = fontBold.widthOfTextAtSize(line, servSize);
-    page.drawText(line, { x: x + (colW - w) / 2, y, size: servSize, font: fontBold, color: TEXT });
+  wrapText(String(data.servicio || '').toUpperCase(), fontBold, servSize, colW - mm(8)).forEach((line) => {
+    drawCentered(page, line, {
+      x: x + mm(4),
+      width: colW - mm(8),
+      y,
+      size: servSize,
+      font: fontBold,
+      color: TEXT
+    });
     y -= servSize * 1.25;
   });
 
   page.drawText('FIRMA DEL PACIENTE:', {
     x,
-    y: yTop(F.firmaLabelTop) - 10,
+    y: yTop(F.firmaLabelTop) - 10 * 0.82,
     size: 10,
     font: fontBold,
     color: TEXT
@@ -272,26 +330,27 @@ async function buildComprobanteServiciosPdf(data, fondo = {}) {
     value: data.parentesco || '',
     font, fontBold, size: 10
   });
-  page.drawText('FIRMA:', { x, y: ay, size: 10, font: fontBold, color: TEXT });
+  const firmaAcudY = ay - mm(5.8);
+  page.drawText('FIRMA:', { x, y: firmaAcudY, size: 10, font: fontBold, color: TEXT });
   const firmaAcud = await embedDataImage(doc, data.firma_acudiente);
   if (firmaAcud) {
     drawImageContain(page, firmaAcud, {
       x: x + mm(22),
-      y: ay - mm(2),
+      y: firmaAcudY - mm(2),
       width: mm(65),
       height: mm(9)
     });
   } else {
     page.drawLine({
-      start: { x: x + mm(18), y: ay - 1.2 },
-      end: { x: x + colW, y: ay - 1.2 },
+      start: { x: x + mm(18), y: firmaAcudY - 1.2 },
+      end: { x: x + colW, y: firmaAcudY - 1.2 },
       thickness: 0.45,
       color: LINE
     });
   }
 
   const tableTop = yTop(L.tablaTop);
-  const tableH = mm(16);
+  const tableH = mm(13);
   const col = colW / 3;
   page.drawRectangle({
     x, y: tableTop - tableH, width: colW, height: tableH,
@@ -299,55 +358,81 @@ async function buildComprobanteServiciosPdf(data, fondo = {}) {
   });
   page.drawLine({ start: { x: x + col, y: tableTop }, end: { x: x + col, y: tableTop - tableH }, thickness: 0.6, color: LINE });
   page.drawLine({ start: { x: x + col * 2, y: tableTop }, end: { x: x + col * 2, y: tableTop - tableH }, thickness: 0.6, color: LINE });
-  page.drawLine({ start: { x, y: tableTop - mm(7) }, end: { x: x + colW, y: tableTop - mm(7) }, thickness: 0.6, color: LINE });
-  const headers = ['Elaborado por:', 'Revisado por:', 'Aprobado por:'];
-  const values = [toWinAnsi('Auditor Médico'), 'Gerente', 'Representante Legal'];
-  headers.forEach((h, i) => {
-    const hx = x + col * i + mm(2);
-    page.drawText(h, { x: hx, y: tableTop - mm(5), size: 8, font: fontBold, color: TEXT });
-    page.drawText(values[i], { x: hx, y: tableTop - mm(12.5), size: 8, font: fontBold, color: MUTED });
+  page.drawLine({ start: { x, y: tableTop - mm(6.2) }, end: { x: x + colW, y: tableTop - mm(6.2) }, thickness: 0.6, color: LINE });
+  COMPROBANTE_TABLA_FIRMAS.forEach((row, i) => {
+    drawCentered(page, row.header, {
+      x: x + col * i,
+      width: col,
+      y: tableTop - mm(3.7),
+      size: 8,
+      font: fontBold,
+      color: TEXT
+    });
+    drawCentered(page, row.cargo, {
+      x: x + col * i,
+      width: col,
+      y: tableTop - mm(8.7),
+      size: 8,
+      font: fontBold,
+      color: MUTED
+    });
   });
 
-  const instY = tableTop - tableH - mm(5);
+  const instY = tableTop - tableH - mm(2.5);
   const inst = [
-    { t: toWinAnsi('INSTITUTO NEUROCIENCIAS DE NARIÑO'), bold: true },
+    { t: 'INSTITUTO NEUROCIENCIAS DE NARIÑO', bold: true },
     { t: 'NIT 901164565-1', bold: false },
-    { t: toWinAnsi('CÓDIGO HABILITACIÓN 5200102735-01'), bold: false }
+    { t: 'CÓDIGO HABILITACIÓN 5200102735-01', bold: false }
   ];
   inst.forEach((row, i) => {
-    const f = row.bold ? fontBold : font;
-    const w = f.widthOfTextAtSize(row.t, 8);
-    page.drawText(row.t, { x: x + (colW - w) / 2, y: instY - i * 10, size: 8, font: f, color: TEXT });
+    drawCentered(page, row.t, {
+      x,
+      width: colW,
+      y: instY - i * (8 * 1.38),
+      size: 8,
+      font: row.bold ? fontBold : font,
+      color: TEXT
+    });
   });
 
-  const contacto = [
-    toWinAnsi('San Juan de Pasto, Carrera 34# 13-80 Barrio San Ignacio'),
-    toWinAnsi('Teléfono: 602 7238141 - Celular: 3053560651')
-  ];
-  let cy = mm(L.contactoBottom) + mm(10);
-  contacto.reverse().forEach((line) => {
-    const w = font.widthOfTextAtSize(line, 7.5);
-    page.drawText(line, { x: (PAGE_W - w) / 2, y: cy, size: 7.5, font, color: TEXT });
-    cy += 10;
+  const contactSize = 7.5;
+  const contactLeading = contactSize * 1.3;
+  const phoneY = mm(L.contactoBottom) + 2.3;
+  const addrY = phoneY + contactLeading;
+  drawCentered(page, 'San Juan de Pasto, Carrera 34# 13-80 Barrio San Ignacio', {
+    x: 0, width: PAGE_W, y: addrY, size: contactSize, font, color: TEXT
+  });
+  drawCentered(page, 'Teléfono: 602 7238141 – Celular: 3053560651', {
+    x: 0, width: PAGE_W, y: phoneY, size: contactSize, font, color: TEXT
   });
 
-  const pieY = yTop(L.pieRowFromTop - 2.5);
+  const pieBoxTop = yTop(L.pieRowFromTop - 2.5);
+  const pieLabelY = pieBoxTop - 5.5 * 0.8;
+  const pieValueY = pieLabelY - 6.8;
   const pies = [
-    { c: L.pieColCenters[0], l: 'VERSION:', v: COMPROBANTE_SERVICIOS_PIE.version },
-    { c: L.pieColCenters[1], l: 'CODIGO:', v: COMPROBANTE_SERVICIOS_PIE.codigo },
-    { c: L.pieColCenters[2], l: 'Fecha de elaboracion:', v: COMPROBANTE_SERVICIOS_PIE.fecha_elaboracion },
-    { c: L.pieColCenters[3], l: 'Fecha de Actualizacion:', v: COMPROBANTE_SERVICIOS_PIE.fecha_actualizacion }
+    { c: L.pieColCenters[0], l: COMPROBANTE_SERVICIOS_PIE.label_version, v: COMPROBANTE_SERVICIOS_PIE.version },
+    { c: L.pieColCenters[1], l: COMPROBANTE_SERVICIOS_PIE.label_codigo, v: COMPROBANTE_SERVICIOS_PIE.codigo },
+    { c: L.pieColCenters[2], l: COMPROBANTE_SERVICIOS_PIE.label_elaboracion, v: COMPROBANTE_SERVICIOS_PIE.fecha_elaboracion },
+    { c: L.pieColCenters[3], l: COMPROBANTE_SERVICIOS_PIE.label_actualizacion, v: COMPROBANTE_SERVICIOS_PIE.fecha_actualizacion }
   ];
   pies.forEach((p) => {
-    const lw = fontBold.widthOfTextAtSize(p.l, 5.5);
-    const vw = font.widthOfTextAtSize(toWinAnsi(p.v), 6);
+    const label = toWinAnsi(p.l);
+    const value = toWinAnsi(p.v);
+    const lw = fontBold.widthOfTextAtSize(label, 5.5);
+    const vw = font.widthOfTextAtSize(value, 6);
     const cx = mm(p.c);
-    page.drawText(p.l, { x: cx - lw / 2, y: pieY, size: 5.5, font: fontBold, color: TEXT });
-    page.drawText(toWinAnsi(p.v), { x: cx - vw / 2, y: pieY - 8, size: 6, font, color: TEXT });
+    page.drawText(label, { x: cx - lw / 2, y: pieLabelY, size: 5.5, font: fontBold, color: TEXT });
+    page.drawText(value, { x: cx - vw / 2, y: pieValueY, size: 6, font, color: TEXT });
   });
   const pag = toWinAnsi(COMPROBANTE_SERVICIOS_PIE.pagina);
   const pw = font.widthOfTextAtSize(pag, 6.5);
-  page.drawText(pag, { x: mm(L.piePaginaCenter) - pw / 2, y: pieY, size: 6.5, font, color: TEXT });
+  page.drawText(pag, {
+    x: mm(L.piePaginaCenter) - pw / 2,
+    y: pieBoxTop - mm(1.2) - 6.5 * 0.8,
+    size: 6.5,
+    font,
+    color: TEXT
+  });
 
   return Buffer.from(await doc.save({ useObjectStreams: false }));
 }
