@@ -110,7 +110,10 @@
         ? mapAfil(afilAnexo || 'COTIZANTE')
         : (afilAnexo || 'COTIZANTE'),
       afiliacion_anexo: afilAnexo,
-      firma_paciente: String(persona?.firma_paciente || '').trim()
+      firma_paciente: String(persona?.firma_paciente || '').trim(),
+      firma_acudiente: String(persona?.firma_acudiente || '').trim(),
+      acudiente_nombre: String(persona?.acudiente_nombre || '').trim(),
+      parentesco: String(persona?.parentesco || '').trim()
     };
   }
 
@@ -327,6 +330,11 @@
     }
     _docmodFirmaUi?.reset?.();
     _docmodFirmaUi?.setFirmaPaciente?.(String(datos.firma_paciente || extras?.firma_paciente || '').trim());
+    _docmodFirmaUi?.setAcudienteDatos?.({
+      nombre: datos.acudiente_nombre || extras?.acudiente_nombre,
+      parentesco: datos.parentesco || extras?.parentesco,
+      firma: datos.firma_acudiente || extras?.firma_acudiente
+    });
     const chkPdx = $('docmodModalCompEnviarPdx');
     if (chkPdx) chkPdx.checked = false;
     const selPdx = $('docmodModalCompPdxCarpeta');

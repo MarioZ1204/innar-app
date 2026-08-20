@@ -2,6 +2,7 @@
 
 const {
   PERSONAS_CSV_COLUMNS,
+  PERSONA_DB_EXTRA_COLUMNS,
   sanitizePersonaBody,
   sanitizeFirmaPaciente,
   upsertPersonaEnDb
@@ -103,13 +104,33 @@ function labelCampo(key) {
   return PERSONA_FORM_META.find((f) => f.key === key)?.label || key;
 }
 
+function valorExtraPersona(row, key) {
+  return row[key] != null ? String(row[key]) : '';
+}
+
+function mergeCamposExtraPersona(existing = {}, incoming = {}) {
+  const out = {};
+  PERSONA_DB_EXTRA_COLUMNS.forEach((k) => {
+    const isFirma = k.startsWith('firma_');
+    const incomingVal = isFirma
+      ? sanitizeFirmaPaciente(incoming[k])
+      : normEspacios(incoming[k]);
+    if (incomingVal) out[k] = incomingVal;
+    else if (existing[k]) out[k] = existing[k];
+    else out[k] = '';
+  });
+  return out;
+}
+
 function personaRowToPlain(row) {
   if (!row) return null;
   const o = {};
   PERSONAS_CSV_COLUMNS.forEach((k) => {
     o[k] = row[k] != null ? String(row[k]) : '';
   });
-  o.firma_paciente = row.firma_paciente != null ? String(row.firma_paciente) : '';
+  PERSONA_DB_EXTRA_COLUMNS.forEach((k) => {
+    o[k] = valorExtraPersona(row, k);
+  });
   return o;
 }
 
@@ -178,9 +199,7 @@ function mergePersonaBodies(existing = {}, incoming = {}) {
     const v = incoming[k];
     if (v != null && String(v).trim() !== '') out[k] = normEspacios(v);
   });
-  const firma = sanitizeFirmaPaciente(incoming.firma_paciente);
-  if (firma) out.firma_paciente = firma;
-  else if (existing.firma_paciente) out.firma_paciente = existing.firma_paciente;
+  Object.assign(out, mergeCamposExtraPersona(existing, incoming));
   return out;
 }
 
@@ -228,7 +247,10 @@ function personaAPrefillComprobante(persona, citaPrefill = {}) {
       persona.afiliacion || citaPrefill.tipo_afiliacion || 'COTIZANTE'
     ),
     afiliacion_anexo: persona.afiliacion || '',
-    firma_paciente: persona.firma_paciente || citaPrefill.firma_paciente || ''
+    firma_paciente: persona.firma_paciente || citaPrefill.firma_paciente || '',
+    firma_acudiente: persona.firma_acudiente || citaPrefill.firma_acudiente || '',
+    acudiente_nombre: persona.acudiente_nombre || citaPrefill.acudiente_nombre || '',
+    parentesco: persona.parentesco || citaPrefill.parentesco || ''
   };
 }
 
@@ -247,7 +269,10 @@ function personaBodyDesdeComprobanteModal(modal = {}) {
     direccion: normEspacios(modal.direccion),
     telefono: normEspacios(modal.telefono),
     correo: normEspacios(modal.correo),
-    firma_paciente: sanitizeFirmaPaciente(modal.firma_paciente)
+    firma_paciente: sanitizeFirmaPaciente(modal.firma_paciente),
+    firma_acudiente: sanitizeFirmaPaciente(modal.firma_acudiente),
+    acudiente_nombre: normEspacios(modal.acudiente_nombre),
+    parentesco: normEspacios(modal.parentesco)
   };
   if (afil) body.afiliacion = afil;
   return body;
@@ -302,10 +327,9 @@ async function guardarPersonaFiduMerge(db, body = {}, contexto = 'anexo') {
   const existente = rows.length ? personaRowToPlain(rows[0]) : { numero_documento: doc };
   const merged = mergePersonaBodies(existente, body);
   const persona = sanitizePersonaBody(merged);
-  const firma = sanitizeFirmaPaciente(merged.firma_paciente);
-  if (firma) persona.firma_paciente = firma;
-  else if (existente.firma_paciente) persona.firma_paciente = existente.firma_paciente;
-  else persona.firma_paciente = '';
+  PERSONA_DB_EXTRA_COLUMNS.forEach((k) => {
+    persona[k] = merged[k] || '';
+  });
   const accion = await upsertPersonaEnDb(db, persona);
   const campos_faltantes = detectarCamposFaltantes(persona, contexto);
   return {

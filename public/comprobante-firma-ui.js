@@ -108,6 +108,10 @@
       state.firmaAcudiente = '';
       quitarFirmaPaciente();
       quitarFirmaAcudiente();
+      const elNom = $(ids.acudNombre);
+      if (elNom) elNom.value = '';
+      const elPar = $(ids.acudParentesco);
+      if (elPar) elPar.value = '';
       const chk = $(ids.chkAcud);
       if (chk) chk.checked = false;
       const panel = $(ids.panelAcud);
@@ -120,6 +124,29 @@
     state.setFirmaPaciente = (dataUrl) => {
       state.firmaPaciente = String(dataUrl || '').trim();
       mostrarPreview(ids.firmaPacPreview, state.firmaPaciente);
+      actualizarFirmaUsarRow();
+    };
+
+    state.setFirmaAcudiente = (dataUrl) => {
+      state.firmaAcudiente = String(dataUrl || '').trim();
+      mostrarPreview(ids.firmaAcudPreview, state.firmaAcudiente);
+      actualizarFirmaUsarRow();
+    };
+
+    state.setAcudienteDatos = ({ nombre, parentesco, firma } = {}) => {
+      const nom = String(nombre || '').trim();
+      const par = String(parentesco || '').trim();
+      const sig = String(firma || '').trim();
+      const elNom = $(ids.acudNombre);
+      if (elNom) elNom.value = nom;
+      const elPar = $(ids.acudParentesco);
+      if (elPar) elPar.value = par;
+      state.setFirmaAcudiente(sig);
+      const has = !!(nom || par || sig);
+      const chk = $(ids.chkAcud);
+      if (chk) chk.checked = has;
+      const panel = $(ids.panelAcud);
+      if (panel) panel.style.display = has ? 'block' : 'none';
       actualizarFirmaUsarRow();
     };
 

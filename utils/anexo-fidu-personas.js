@@ -22,7 +22,7 @@ const PERSONAS_CSV_COLUMNS = [
 ];
 
 /** Columnas adicionales en BD (no vienen del CSV Lista_Personas). */
-const PERSONA_DB_EXTRA_COLUMNS = ['firma_paciente'];
+const PERSONA_DB_EXTRA_COLUMNS = ['firma_paciente', 'firma_acudiente', 'acudiente_nombre', 'parentesco'];
 
 function parseCsvLine(line) {
   const row = [];
@@ -307,7 +307,8 @@ function armarRegistroAnexo(documento, codigoServicio, personaRow = null) {
 
 /** INSERT o UPDATE por numero_documento (no borra el resto de la base). */
 async function upsertPersonaEnDb(db, persona) {
-  const cols = [...PERSONAS_CSV_COLUMNS, ...PERSONA_DB_EXTRA_COLUMNS];
+  const extraPresent = PERSONA_DB_EXTRA_COLUMNS.filter((c) => Object.prototype.hasOwnProperty.call(persona, c));
+  const cols = [...PERSONAS_CSV_COLUMNS, ...extraPresent];
   const sets = cols.map((c) => `\`${c}\` = ?`).join(', ');
   const vals = cols.map((c) => persona[c] || '');
   const existing = await db.query(
@@ -348,6 +349,9 @@ function buildAnexoFiduPersonasCreateTableSql() {
       correo VARCHAR(200) NULL,
       afiliacion VARCHAR(200) NULL,
       firma_paciente LONGTEXT NULL,
+      firma_acudiente LONGTEXT NULL,
+      acudiente_nombre VARCHAR(200) NULL,
+      parentesco VARCHAR(120) NULL,
       creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       actualizado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       UNIQUE KEY uq_anexo_persona_documento (numero_documento),

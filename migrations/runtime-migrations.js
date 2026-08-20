@@ -1281,6 +1281,28 @@ const runtimeMigrations = [
     }
   },
   {
+    name: 'rt_anexo_fidu_personas_firma_acudiente',
+    description: 'Firma, nombre y parentesco del acudiente en anexo_fidu_personas',
+    run: async (db) => {
+      if (!(await tableExists(db, 'anexo_fidu_personas'))) return;
+      if (!(await columnExists(db, 'anexo_fidu_personas', 'firma_acudiente'))) {
+        await db.execute(
+          'ALTER TABLE anexo_fidu_personas ADD COLUMN firma_acudiente LONGTEXT NULL AFTER firma_paciente'
+        );
+      }
+      if (!(await columnExists(db, 'anexo_fidu_personas', 'acudiente_nombre'))) {
+        await db.execute(
+          'ALTER TABLE anexo_fidu_personas ADD COLUMN acudiente_nombre VARCHAR(200) NULL AFTER firma_acudiente'
+        );
+      }
+      if (!(await columnExists(db, 'anexo_fidu_personas', 'parentesco'))) {
+        await db.execute(
+          'ALTER TABLE anexo_fidu_personas ADD COLUMN parentesco VARCHAR(120) NULL AFTER acudiente_nombre'
+        );
+      }
+    }
+  },
+  {
     name: 'rt_modulo_archivo_soportes',
     description: 'Tabla sop_modulo_archivo y visibilidad Anexo FIDU por periodo',
     run: async (db) => {

@@ -15359,7 +15359,10 @@ function personaFiduAplicarAPrefill(contexto, persona, citaPrefill) {
         ? mapAfil(afilAnexo || citaPrefill?.tipo_afiliacion || 'COTIZANTE')
         : (afilAnexo || citaPrefill?.tipo_afiliacion || 'COTIZANTE'),
       afiliacion_anexo: afilAnexo,
-      firma_paciente: persona?.firma_paciente || citaPrefill?.firma_paciente || ''
+      firma_paciente: persona?.firma_paciente || citaPrefill?.firma_paciente || '',
+      firma_acudiente: persona?.firma_acudiente || citaPrefill?.firma_acudiente || '',
+      acudiente_nombre: persona?.acudiente_nombre || citaPrefill?.acudiente_nombre || '',
+      parentesco: persona?.parentesco || citaPrefill?.parentesco || ''
     };
   }
   return citaPrefill;
@@ -15614,8 +15617,6 @@ function abrirModalComprobanteServicios(prefill) {
   } else {
     set('compServServicio', String(prefill.servicio || '').toLocaleUpperCase('es-CO'));
   }
-  set('compServAcudienteNombre', '');
-  set('compServParentesco', '');
   const chkPdx = $('compServEnviarPdx');
   if (chkPdx) chkPdx.checked = false;
   const selPdx = $('compServPdxCarpeta');
@@ -15625,6 +15626,11 @@ function abrirModalComprobanteServicios(prefill) {
   }
   _compServFirmaUi?.reset?.();
   _compServFirmaUi?.setFirmaPaciente?.(String(prefill.firma_paciente || '').trim());
+  _compServFirmaUi?.setAcudienteDatos?.({
+    nombre: prefill.acudiente_nombre,
+    parentesco: prefill.parentesco,
+    firma: prefill.firma_acudiente
+  });
   const modal = $('modalComprobanteServicios');
   window.innarPersonaFidu?.bindFechaInputs?.(modal);
   if (modal) {

@@ -106,4 +106,13 @@ describe('anexo-fidu-personas', () => {
     expect(anexo.correo).toBe('test@mail.com');
     expect(anexo.especiales_excepcion_cotizante).toBe('Especiales o de Excepcion cotizante');
   });
+
+  test('CREATE TABLE incluye columnas de firma de paciente y acudiente', () => {
+    const { buildAnexoFiduPersonasCreateTableSql } = require('../utils/anexo-fidu-personas');
+    const sql = buildAnexoFiduPersonasCreateTableSql();
+    expect(sql).toContain('firma_paciente LONGTEXT');
+    expect(sql).toContain('firma_acudiente LONGTEXT');
+    expect(sql).toContain('acudiente_nombre VARCHAR(200)');
+    expect(sql).toContain('parentesco VARCHAR(120)');
+  });
 });

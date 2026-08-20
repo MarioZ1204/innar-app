@@ -104,6 +104,24 @@ describe('anexo-fidu-personas-docs', () => {
     expect(pre.firma_paciente).toBe(firma);
   });
 
+  test('prefill comprobante incluye firma y datos del acudiente', () => {
+    const firma = 'data:image/png;base64,acud';
+    const pre = personaAPrefillComprobante(
+      {
+        numero_documento: '1',
+        nombres_1: 'Ana',
+        apellidos_1: 'Ruiz',
+        firma_acudiente: firma,
+        acudiente_nombre: 'María Ruiz',
+        parentesco: 'Madre'
+      },
+      {}
+    );
+    expect(pre.firma_acudiente).toBe(firma);
+    expect(pre.acudiente_nombre).toBe('María Ruiz');
+    expect(pre.parentesco).toBe('Madre');
+  });
+
   test('merge no duplica nombres_2/apellidos_2 viejos al recalcular el nombre completo', () => {
     const existente = {
       numero_documento: '1',
@@ -133,6 +151,42 @@ describe('anexo-fidu-personas-docs', () => {
     expect(merged.telefono).toBe('300');
   });
 
+  test('merge conserva firma y datos del acudiente si no llegan nuevos', () => {
+    const firma = 'data:image/png;base64,acud';
+    const merged = mergePersonaBodies(
+      {
+        numero_documento: '1',
+        firma_acudiente: firma,
+        acudiente_nombre: 'María Ruiz',
+        parentesco: 'Madre'
+      },
+      { telefono: '300' }
+    );
+    expect(merged.firma_acudiente).toBe(firma);
+    expect(merged.acudiente_nombre).toBe('María Ruiz');
+    expect(merged.parentesco).toBe('Madre');
+    expect(merged.telefono).toBe('300');
+  });
+
+  test('merge reemplaza firma del acudiente cuando llega una nueva', () => {
+    const merged = mergePersonaBodies(
+      {
+        numero_documento: '1',
+        firma_acudiente: 'data:image/png;base64,vieja',
+        acudiente_nombre: 'María',
+        parentesco: 'Madre'
+      },
+      {
+        firma_acudiente: 'data:image/png;base64,nueva',
+        acudiente_nombre: 'Pedro Ruiz',
+        parentesco: 'Padre'
+      }
+    );
+    expect(merged.firma_acudiente).toBe('data:image/png;base64,nueva');
+    expect(merged.acudiente_nombre).toBe('Pedro Ruiz');
+    expect(merged.parentesco).toBe('Padre');
+  });
+
   test('personaBodyDesdeComprobanteModal mapea campos del modal', () => {
     const body = personaBodyDesdeComprobanteModal({
       paciente_nombre: 'MARIO FERNANDO ZAMBRANO MEJIA',
@@ -143,12 +197,18 @@ describe('anexo-fidu-personas-docs', () => {
       telefono: '300',
       correo: 'a@b.com',
       tipo_afiliacion: 'Cotizante',
-      firma_paciente: 'data:image/png;base64,abc'
+      firma_paciente: 'data:image/png;base64,abc',
+      firma_acudiente: 'data:image/png;base64,acud',
+      acudiente_nombre: 'María Ruiz',
+      parentesco: 'Madre'
     });
     expect(body.numero_documento).toBe('123');
     expect(body.nombres_1).toBe('MARIO FERNANDO');
     expect(body.afiliacion).toBe('COTIZANTE');
     expect(body.firma_paciente).toBe('data:image/png;base64,abc');
+    expect(body.firma_acudiente).toBe('data:image/png;base64,acud');
+    expect(body.acudiente_nombre).toBe('María Ruiz');
+    expect(body.parentesco).toBe('Madre');
   });
 
   test('personaBodyDesdeComprobanteModal no pisa afiliación especial del Anexo', () => {

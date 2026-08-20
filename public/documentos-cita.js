@@ -302,10 +302,12 @@
     $('compFirmaPaciente').value = '';
     $('compMostrarAcudiente').checked = false;
     $('compAcudientePanel').hidden = true;
-    if (p.acudiente_nombre) {
+    $('compAcudienteNombre').value = '';
+    $('compParentesco').value = '';
+    if (p.acudiente_nombre || p.parentesco || p.firma_acudiente) {
       $('compMostrarAcudiente').checked = true;
       $('compAcudientePanel').hidden = false;
-      $('compAcudienteNombre').value = p.acudiente_nombre;
+      $('compAcudienteNombre').value = p.acudiente_nombre || '';
       $('compParentesco').value = p.parentesco || '';
     }
   }

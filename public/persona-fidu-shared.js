@@ -379,7 +379,10 @@
       direccion: String(modal?.direccion || '').trim(),
       telefono: String(modal?.telefono || '').trim(),
       correo: String(modal?.correo || '').trim(),
-      firma_paciente: String(modal?.firma_paciente || '').trim()
+      firma_paciente: String(modal?.firma_paciente || '').trim(),
+      firma_acudiente: String(modal?.firma_acudiente || '').trim(),
+      acudiente_nombre: String(modal?.acudiente_nombre || '').trim(),
+      parentesco: String(modal?.parentesco || '').trim()
     };
     // Solo escribe afiliación si es seguro (no pisa Especiales… ni texto libre del PDF)
     if (afiliacion) body.afiliacion = afiliacion;
