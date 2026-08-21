@@ -229,6 +229,53 @@ async function queryPdxArchivosConUsuarios(carpetaId) {
   throw lastErr;
 }
 
+async function queryPdxBuscarArchivadasConUsuarios(whereSql, whereParams) {
+  const extra = `c.nombre_display AS carpeta_nombre, c.periodo, c.color_tema, c.roles_visibles,
+              COALESCE(c.archivada_manual, 0) AS archivada_manual`;
+  const fromSql = `FROM sop_pdx_archivos a
+       JOIN sop_pdx_carpetas c ON c.id = a.carpeta_id`;
+  const orderSql = `WHERE ${whereSql} ORDER BY a.fecha_estudio DESC LIMIT 150`;
+  const queries = [
+    {
+      sql: `SELECT a.*, ${extra}, us.nombre AS subido_por_nombre, ue.nombre AS editado_por_nombre
+       ${fromSql}
+       LEFT JOIN usuarios us ON us.id = a.subido_por
+       LEFT JOIN usuarios ue ON ue.id = a.editado_por
+       ${orderSql}`,
+      map: (rows) => rows
+    },
+    {
+      sql: `SELECT a.*, ${extra}, us.nombre AS subido_por_nombre
+       ${fromSql}
+       LEFT JOIN usuarios us ON us.id = a.subido_por
+       ${orderSql}`,
+      map: (rows) => rows.map((r) => ({ ...r, editado_por_nombre: null }))
+    },
+    {
+      sql: `SELECT a.*, ${extra}
+       ${fromSql}
+       ${orderSql}`,
+      map: (rows) => rows.map((r) => ({ ...r, subido_por_nombre: null, editado_por_nombre: null }))
+    }
+  ];
+
+  let lastErr;
+  for (const { sql, map } of queries) {
+    try {
+      const rows = await db.query(sql, whereParams);
+      return map(rows);
+    } catch (e) {
+      lastErr = e;
+      if (e.code === 'ER_NO_SUCH_TABLE') {
+        logger.error('[SOPORTES] Falta tabla para búsqueda archivada; reinicie la app para aplicar migraciones');
+        return [];
+      }
+      if (e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+    }
+  }
+  throw lastErr;
+}
+
 function pdxListErrorPayload(req, e, step) {
   const msg = String(e?.message || e);
   const payload = {
@@ -799,15 +846,7 @@ router.get('/soportes/pdx/buscar-archivadas', requireAuth, requireRoleOrPerm(
     if (q.length < 2 || !tokenizeSearchQuery(q).length) return res.json({ resultados: [] });
     const visiblesSet = await loadVisibleEnSoportesSet();
     const { sql: whereSql, params: whereParams } = buildPdxBusquedaWhere(q);
-    const archivos = await db.query(
-      `SELECT a.*, c.nombre_display AS carpeta_nombre, c.periodo, c.color_tema, c.roles_visibles,
-              COALESCE(c.archivada_manual, 0) AS archivada_manual
-       FROM sop_pdx_archivos a
-       JOIN sop_pdx_carpetas c ON c.id = a.carpeta_id
-       WHERE ${whereSql}
-       ORDER BY a.fecha_estudio DESC LIMIT 150`,
-      whereParams
-    );
+    const archivos = await queryPdxBuscarArchivadasConUsuarios(whereSql, whereParams);
     const resultados = archivos.filter((a) => {
       if (!usuarioVeCarpetaPdx(req, a)) return false;
       if (Number(a.archivada_manual) === 1) return true;
@@ -827,7 +866,11 @@ router.get('/soportes/pdx/buscar-archivadas', requireAuth, requireRoleOrPerm(
         carpeta_id: a.carpeta_id,
         carpeta_nombre: a.carpeta_nombre,
         periodo: a.periodo,
-        color_tema: a.color_tema
+        color_tema: a.color_tema,
+        subido_por_nombre: a.subido_por_nombre || null,
+        editado_por_nombre: a.editado_por_nombre || null,
+        creado_en: a.creado_en || null,
+        editado_en: a.editado_en || null
       };
     });
     res.json({ resultados });

@@ -48,6 +48,108 @@
     return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 
+  const PDX_LOG_LABEL = {
+    subida: 'Subida',
+    edicion: 'Edición de metadatos',
+    reemplazo: 'Reemplazo de PDF',
+    resaltado: 'Resaltado en PDF',
+    movimiento: 'Movido de carpeta',
+    anexo_pdf: 'Páginas añadidas',
+    reordenar_paginas: 'Páginas reordenadas',
+    eliminar_paginas: 'Páginas eliminadas'
+  };
+
+  function fmtFechaAuditoria(v) {
+    if (!v) return '';
+    const d = v instanceof Date ? v : new Date(v);
+    if (Number.isNaN(d.getTime())) return '';
+    return d.toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' });
+  }
+
+  function htmlMetaAuditoria(a) {
+    const parts = [];
+    if (a.subido_por_nombre) {
+      const cuando = fmtFechaAuditoria(a.creado_en);
+      parts.push(`Subido por ${escapeHtml(a.subido_por_nombre)}${cuando ? ` · ${escapeHtml(cuando)}` : ''}`);
+    }
+    if (a.editado_por_nombre) {
+      const cuando = fmtFechaAuditoria(a.editado_en);
+      parts.push(`Editado por ${escapeHtml(a.editado_por_nombre)}${cuando ? ` · ${escapeHtml(cuando)}` : ''}`);
+    }
+    return parts.map((p) => `<div class="sop-pdx-meta-user">${p}</div>`).join('');
+  }
+
+  function closeRhModal(wrap) {
+    if (!wrap || !wrap.isConnected) return;
+    if (wrap._rhKeyHandler) {
+      document.removeEventListener('keydown', wrap._rhKeyHandler);
+      wrap._rhKeyHandler = null;
+    }
+    wrap.remove();
+    const prev = wrap._rhPrevFocus;
+    if (prev && typeof prev.focus === 'function') prev.focus();
+  }
+
+  function openRhModal(html) {
+    const wrap = document.createElement('div');
+    wrap.className = 'sop-dialog-backdrop';
+    wrap.setAttribute('role', 'presentation');
+    const dialog = document.createElement('div');
+    dialog.className = 'sop-dialog';
+    dialog.setAttribute('role', 'dialog');
+    dialog.setAttribute('aria-modal', 'true');
+    dialog.tabIndex = -1;
+    dialog.innerHTML = html;
+    wrap.appendChild(dialog);
+    wrap._rhPrevFocus = document.activeElement;
+    wrap.addEventListener('click', (e) => { if (e.target === wrap) closeRhModal(wrap); });
+    const onKey = (e) => { if (e.key === 'Escape') closeRhModal(wrap); };
+    wrap._rhKeyHandler = onKey;
+    document.addEventListener('keydown', onKey);
+    document.body.appendChild(wrap);
+    sopIcons(wrap);
+    const firstBtn = dialog.querySelector('button');
+    requestAnimationFrame(() => { if (firstBtn) firstBtn.focus(); else dialog.focus(); });
+    return wrap;
+  }
+
+  async function modalHistorialRh(archivoId, titulo) {
+    const modal = openRhModal(`
+      <h3><i data-lucide="history"></i> Historial</h3>
+      <p style="font-size:.85rem;color:#64748b;margin:-6px 0 12px">${escapeHtml(titulo || 'Reporte')}</p>
+      <div id="rhHistBody"><div class="sop-empty" style="padding:16px"><i data-lucide="loader"></i></div></div>
+      <div class="sop-dialog-actions">
+        <button type="button" class="sop-btn sop-btn-primary" id="rhHistClose">Cerrar</button>
+      </div>`);
+    modal.querySelector('#rhHistClose').onclick = () => closeRhModal(modal);
+    const body = modal.querySelector('#rhHistBody');
+    try {
+      const res = await apiFetch(`/api/soportes/pdx/archivos/${archivoId}/historial`);
+      const data = await res.json();
+      if (!res.ok) {
+        body.innerHTML = `<p class="sop-empty" style="color:#dc2626">${escapeHtml(data.error || 'No se pudo cargar el historial')}</p>`;
+        return;
+      }
+      const evs = data.eventos || [];
+      if (!evs.length) {
+        body.innerHTML = '<p class="sop-empty" style="padding:12px">Sin eventos registrados.</p>';
+      } else {
+        body.innerHTML = `<ul class="sop-hist-list">${evs.map((e) => {
+          const tipo = PDX_LOG_LABEL[e.tipo] || e.tipo;
+          const cuando = e.creado_en ? fmtFechaAuditoria(e.creado_en) : '';
+          const quien = e.usuario_nombre ? escapeHtml(e.usuario_nombre) : 'Sistema';
+          return `<li>
+            <div class="sop-hist-tipo">${escapeHtml(tipo)}</div>
+            <div class="sop-hist-meta">${quien} · ${escapeHtml(cuando)}${e.detalle ? ` · ${escapeHtml(e.detalle)}` : ''}</div>
+          </li>`;
+        }).join('')}</ul>`;
+      }
+      sopIcons(body);
+    } catch (err) {
+      body.innerHTML = `<p class="sop-empty" style="color:#dc2626">${escapeHtml(err.message)}</p>`;
+    }
+  }
+
   function sopIcons(root) {
     if (window.lucide && typeof window.lucide.createIcons === 'function') {
       window.lucide.createIcons({ nodes: root ? [root] : undefined });
@@ -235,12 +337,15 @@
       return state.archivos.filter((a) =>
         String(a.paciente_nombre || '').toLowerCase().includes(t) ||
         String(a.paciente_documento || '').includes(t) ||
-        String(a.estudio_texto || '').toLowerCase().includes(t)
+        String(a.estudio_texto || '').toLowerCase().includes(t) ||
+        String(a.subido_por_nombre || '').toLowerCase().includes(t) ||
+        String(a.editado_por_nombre || '').toLowerCase().includes(t)
       );
     }
     return state.archivos.filter((a) => match(a, [
       'paciente_nombre', 'paciente_documento', 'estudio_texto',
-      'nombre_archivo_original', 'nombre_archivo_display', 'nombre_descarga', 'fecha_estudio'
+      'nombre_archivo_original', 'nombre_archivo_display', 'nombre_descarga', 'fecha_estudio',
+      'subido_por_nombre', 'editado_por_nombre'
     ], q));
   }
 
@@ -258,20 +363,25 @@
     }
     tbody.innerHTML = lista.map((a) => {
       const nomArch = a.nombre_descarga || a.nombre_archivo_display || a.nombre_archivo_original || '';
-      const doc = a.paciente_documento ? `<div class="sop-search-results-meta">Doc. ${escapeHtml(a.paciente_documento)}</div>` : '';
+      const doc = a.paciente_documento ? `<div class="sop-pdx-meta-user">Doc. ${escapeHtml(a.paciente_documento)}</div>` : '';
       const tema = String(state.carpetaActual?.color_tema || '').toLowerCase();
       const esCons = tema.includes('consulta_medica');
       const estLabel = esCons && (a.marca_tiempo || a.tipo_consulta)
         ? `${a.estudio_texto || '—'} · ${a.marca_tiempo || a.tipo_consulta}`
         : (a.estudio_texto || '—');
       return `<tr>
-        <td><strong>${escapeHtml(a.paciente_nombre)}</strong>${doc}</td>
+        <td>
+          <strong>${escapeHtml(a.paciente_nombre)}</strong>
+          ${doc}
+          ${htmlMetaAuditoria(a)}
+        </td>
         <td>${escapeHtml(a.fecha_estudio || '—')}</td>
         <td>${escapeHtml(estLabel)}</td>
         <td>
           <div class="sop-actions-row">
             <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-rh-ver="${a.id}" title="Ver PDF"><i data-lucide="eye"></i></button>
             <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-rh-dl="${a.id}" title="Descargar"><i data-lucide="download"></i></button>
+            <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-rh-hist="${a.id}" title="Historial"><i data-lucide="history"></i></button>
           </div>
           <div class="sop-pdx-archivo-nombre" title="${escapeHtml(nomArch)}">${escapeHtml(nomArch)}</div>
         </td>
@@ -287,6 +397,12 @@
     tbody.querySelectorAll('[data-rh-dl]').forEach((b) => {
       b.addEventListener('click', () => {
         window.location.href = `/api/soportes/pdx/archivos/${parseInt(b.dataset.rhDl, 10)}/descargar`;
+      });
+    });
+    tbody.querySelectorAll('[data-rh-hist]').forEach((b) => {
+      b.addEventListener('click', () => {
+        const row = state.archivos.find((x) => x.id === parseInt(b.dataset.rhHist, 10));
+        modalHistorialRh(parseInt(b.dataset.rhHist, 10), row?.paciente_nombre || 'Reporte');
       });
     });
     sopIcons(tbody);
@@ -378,13 +494,15 @@
           <th>Paciente</th><th>Doc.</th><th>Estudio</th><th>Fecha</th><th>Carpeta</th><th></th></tr></thead><tbody>
           ${list.map((r) => `<tr>
             <td><strong>${escapeHtml(r.paciente_nombre)}</strong>
-              ${r.nombre_descarga || r.nombre_archivo_display ? `<div class="sop-search-results-meta">${escapeHtml(r.nombre_descarga || r.nombre_archivo_display)}</div>` : ''}</td>
+              ${r.nombre_descarga || r.nombre_archivo_display ? `<div class="sop-search-results-meta">${escapeHtml(r.nombre_descarga || r.nombre_archivo_display)}</div>` : ''}
+              ${htmlMetaAuditoria(r)}</td>
             <td>${escapeHtml(r.paciente_documento || '—')}</td>
             <td>${escapeHtml(r.estudio_texto || '—')}</td>
             <td>${escapeHtml(r.fecha_estudio || '—')}</td>
             <td>${escapeHtml(r.carpeta_nombre)} <span class="sop-search-results-meta">(${escapeHtml(r.periodo)})</span></td>
             <td style="white-space:nowrap">
               <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-rh-open-archivo="${r.archivo_id}" title="Ver PDF"><i data-lucide="external-link"></i></button>
+              <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-rh-hist="${r.archivo_id}" title="Historial"><i data-lucide="history"></i></button>
               <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-rh-open-carpeta="${r.carpeta_id}" title="Abrir carpeta"><i data-lucide="folder-open"></i></button>
             </td>
           </tr>`).join('')}
@@ -397,6 +515,13 @@
         const row = list.find((x) => x.archivo_id === id);
         const titulo = row?.nombre_descarga || row?.paciente_nombre || 'Reporte';
         abrirPdf(`/api/soportes/pdx/archivos/${id}/ver`, titulo);
+      });
+    });
+    el.querySelectorAll('[data-rh-hist]').forEach((b) => {
+      b.addEventListener('click', () => {
+        const id = parseInt(b.dataset.rhHist, 10);
+        const row = list.find((x) => x.archivo_id === id);
+        modalHistorialRh(id, row?.paciente_nombre || 'Reporte');
       });
     });
     el.querySelectorAll('[data-rh-open-carpeta]').forEach((b) => {
