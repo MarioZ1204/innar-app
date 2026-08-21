@@ -182,4 +182,5 @@
   }
 
   window.initPapeleraPdxModule = initPapeleraPdxModule;
+  window.refreshPapeleraPdx = cargarLista;
 })();

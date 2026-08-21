@@ -179,6 +179,7 @@ function initDashboardCitas() {
         'turno:creado', 'turno:eliminado',
         'cita_electro:creada', 'cita_electro:eliminada',
         'agenda:turno-creado', 'agenda:turno-eliminado',
+        'agenda:turno-estado-cambio', 'agenda:turno-marcar-atendido',
         'electro:cita-creada', 'electro:cita-eliminada'
       ];
       eventos.forEach((ev) => {

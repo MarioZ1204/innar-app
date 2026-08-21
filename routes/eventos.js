@@ -12,6 +12,8 @@ router.get('/eventos/poll', requireAuth, async (req, res) => {
   const waitRaw = parseInt(String(req.query.wait || '0'), 10);
   // Hostinger compartido: evitar waits largos (conexiones retenidas).
   const waitMs = Number.isFinite(waitRaw) ? Math.min(8000, Math.max(0, waitRaw)) : 0;
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+  res.setHeader('X-Accel-Buffering', 'no');
   if (waitMs > 0) {
     await queue.waitForEvents(uid, waitMs);
   }

@@ -29,7 +29,8 @@ const { applyStaticFiles, injectAssetVersion, readVisorPdfHtml } = require('./co
 const { applyRateLimiters } = require('./config/rate-limit');
 const { runRuntimeMigrations } = require('./migrations/runtime-migrations');
 const { attachSockets } = require('./socket/handlers');
-const { requireAuth } = require('./middleware/index');
+const { requireAuth, emitSocket } = require('./middleware/index');
+const { attachMutationBroadcast } = require('./utils/realtime-mutation-broadcast');
 const { runRecoveryBootstrap } = require('./scripts/auto-run-recuperacion-soportes');
 const { ensureChromiumReady } = require('./scripts/ensure-chromium');
 
@@ -92,7 +93,7 @@ setImmediate(() => {
 app.use(compression({
   filter(req, res) {
     const p = String(req.path || '');
-    if (p.includes('/zip') || p.includes('/descargar')) return false;
+    if (p.includes('/zip') || p.includes('/descargar') || p.includes('/eventos/poll')) return false;
     if (String(res.getHeader('Content-Type') || '').includes('application/zip')) return false;
     return compression.filter(req, res);
   }
@@ -106,6 +107,7 @@ applyRateLimiters(app);
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
+attachMutationBroadcast(app, emitSocket);
 
 const EXTENSIONES_ESTATICAS = /\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|map)$/i;
 app.use((req, res, next) => {

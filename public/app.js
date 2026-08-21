@@ -708,7 +708,7 @@ function apiFetch(url, opts = {}) {
         const csrf = getCsrfForRequest();
         if (csrf) headers.set('x-csrf-token', csrf);
       }
-      return fetch(url, { ...opts, headers, credentials: 'include' });
+      return fetch(url, { cache: 'no-store', ...opts, headers, credentials: 'include' });
     }
 
     try {
@@ -1120,7 +1120,7 @@ function goToModule(moduleId) {
       if (typeof actualizarHorasDisponibles === 'function') actualizarHorasDisponibles();
       recargarSelectsEntidadModulo('agenda-medica', { force: true });
     }
-    // Socket.IO maneja los cambios en tiempo real, no necesitamos auto-refresh
+    startAgendaMedicaAutoRefresh();
   } else {
     stopAgendaMedicaAutoRefresh();
   }
@@ -1169,6 +1169,7 @@ function goToMenu() {
   stopAgendaMedicaAutoRefresh();
   // Resetear flags de inicialización para permitir reinicialización
   initAgendaDone = false;
+  window.socketAgendaMedicaListenerAdded = false;
   initElectroDone = false;
   initDashboardCitasDone = false;
   // initRecibosDone: NO resetear — initRecibos usa addEventListener (acumularía duplicados)
@@ -4511,30 +4512,31 @@ async function initAgendaMedica() {
   const prog = $('nuevoTurnoProgramadoPor');
   if (prog) prog.textContent = (currentUser && (currentUser.nombre || currentUser.usuario)) || '-';
   
-  // Configurar listeners de socket para ver cambios en tiempo real
-  if (window.socket && !window.socketAgendaMedicaListenerAdded) {
-    window.socket.on('agenda:actualizar-lista', () => {
+  // Configurar listeners de tiempo real para ver cambios al instante
+  function bindAgendaMedicaRealtimeListeners() {
+    if (!window.socket || window.socketAgendaMedicaListenerAdded) return;
+    const recargar = (data) => {
+      if (!innarAgendaMedicaAceptaEvento(data || {})) return;
+      aplicarCambioTurnoMedicaRealtime(data);
       cargarTurnosMedica();
-    });
-    window.socket.on('agenda:actualizar-consultorio', (consultorio) => {
-      cargarTurnosMedica();
-    });
-    
-    // ========= Listeners para Turnos Médicos (Agenda Médica) =========
-    window.socket.on('turno-medico:estado-actualizado', (data) => {
-      cargarTurnosMedica();
-    });
-    
-    window.socket.on('turno-medico:reprogramado', (data) => {
-      cargarTurnosMedica();
-    });
-    
-    window.socket.on('turno-medico:creado', (data) => {
-      cargarTurnosMedica();
-    });
-    
+    };
+    window.socket.on('agenda:actualizar-lista', () => recargar());
+    window.socket.on('agenda:actualizar-consultorio', () => recargar());
+    window.socket.on('turno-medico:estado-actualizado', recargar);
+    window.socket.on('turno-medico:reprogramado', recargar);
+    window.socket.on('turno-medico:creado', recargar);
+    window.socket.on('agenda:turno-estado-cambio', recargar);
+    window.socket.on('agenda:turno-creado', recargar);
+    window.socket.on('agenda:turno-eliminado', recargar);
+    window.socket.on('agenda:turno-marcar-atendido', recargar);
     window.socketAgendaMedicaListenerAdded = true;
   }
+  bindAgendaMedicaRealtimeListeners();
+  if (!window._agendaMedicaSocketReadyBound) {
+    window._agendaMedicaSocketReadyBound = true;
+    window.addEventListener('socketReady', bindAgendaMedicaRealtimeListeners);
+  }
+  startAgendaMedicaAutoRefresh();
   // ajustar columnas según rol
   // guardar HTML original del TH de Hora para poder reinsertarlo si el rol cambia
   try {
@@ -6217,9 +6219,8 @@ function setupAgendaVerMedicos() {
 
 function startAgendaMedicaAutoRefresh() {
   if (agendaMedicaInterval) return;
-  // El tiempo real (poll/socket) ya refresca en eventos. Este intervalo es solo
-  // red de seguridad y debe ser lento para no saturar Hostinger.
-  const intervalMs = (window.socketReady || window.socket) ? 30000 : 15000;
+  // Red de seguridad si el poll falla; el long-poll cubre el tiempo real.
+  const intervalMs = (window.socketReady || window.socket) ? 20000 : 8000;
   agendaMedicaInterval = setInterval(() => {
     const view = document.getElementById('view-agenda-medica');
     if (view && !view.classList.contains('hidden')) {
@@ -6433,6 +6434,41 @@ function _renderTurnosFinalizadosMedica(tbody, turnos, hayEnAtencion, colspan) {
   }
   turnos.forEach((t) => renderTurnoRowMedica(tbody, t, null, hayEnAtencion));
 }
+
+function innarAgendaMedicaAceptaEvento(data) {
+  if (window.currentModule !== 'agenda-medica') return false;
+  if (!data || typeof data !== 'object') return true;
+  const doctorSel = selectedDoctorId
+    || (currentUser?.rol === 'doctor' ? currentUser?.id : null);
+  if (data.doctor_id != null && doctorSel != null && Number(data.doctor_id) !== Number(doctorSel)) {
+    return false;
+  }
+  return true;
+}
+
+function aplicarCambioTurnoMedicaRealtime(data) {
+  if (!data || typeof data !== 'object') return;
+  if (!innarAgendaMedicaAceptaEvento(data)) return;
+  const id = data.id || data.turno_id || data.turnoId;
+  const estado = data.estado || data.estadoNuevo;
+  if (!id || !estado) return;
+  const idAttr = String(id).replace(/"/g, '');
+  const row = document.querySelector(`[data-turno-id="${idAttr}"]`);
+  if (!row) return;
+  const estadoNorm = String(estado).toUpperCase();
+  const cell = row.querySelector('.col-estado-cell');
+  if (cell && typeof estadoCellTurnoMedica === 'function') {
+    cell.innerHTML = estadoCellTurnoMedica({ ...data, estado: estadoNorm });
+  }
+  const numCell = row.querySelector('.col-turno-cell');
+  if (estadoNorm === 'EN_ATENCION') {
+    row.classList.add('turno-es-primero');
+    if (numCell) numCell.innerHTML = '<span class="badge-en-atencion">En atenci\u00f3n</span>';
+  }
+}
+
+window.innarAgendaMedicaAceptaEvento = innarAgendaMedicaAceptaEvento;
+window.innarAplicarCambioTurnoMedicaRealtime = aplicarCambioTurnoMedicaRealtime;
 
 async function cargarTurnosMedica() {
   if (_cargandoTurnosMedica) {

@@ -2,11 +2,9 @@
  * Tiempo real vía GET /api/eventos/poll (sin Socket.IO / sin WebSocket).
  * Expone window.socket compatible: .on(...), .emit(...) → POST /api/eventos/push
  *
- * Optimización Hostinger:
- * - Sin long-poll (no retiene conexiones)
- * - Solo 1 pestaña por navegador hace poll (líder); el resto recibe por BroadcastChannel
- * - Pestaña oculta: casi no pollea
- * - /api/version va embebido en la respuesta del poll
+ * Long-poll (~6.5 s): el servidor responde apenas hay un evento (En atención, En sala…).
+ * Solo 1 pestaña por navegador hace poll (líder); el resto recibe por BroadcastChannel.
+ * Pestaña oculta: pausa. /api/version va embebido en la respuesta del poll.
  */
 
 let socket = null;
@@ -17,15 +15,15 @@ const UPDATE_CHECK_INTERVAL_MS = 5 * 60 * 1000; // fallback raro si el poll no t
 
 const POLL_MS = typeof window.INNAR_REALTIME_POLL_MS === 'number'
   ? window.INNAR_REALTIME_POLL_MS
-  : 2800;
+  : 1500;
 
 /**
- * Long-poll DESACTIVADO por defecto (0).
- * En Hostinger compartido, wait>0 mantiene 1 conexión abierta por pestaña.
+ * Long-poll: el servidor responde en cuanto hay un evento (En atención, En sala, etc.).
+ * Solo 1 pestaña por navegador mantiene la conexión (líder). El servidor limita wait a 8s.
  */
 const LONG_POLL_WAIT_MS = typeof window.INNAR_REALTIME_LONG_POLL_MS === 'number'
   ? window.INNAR_REALTIME_LONG_POLL_MS
-  : 0;
+  : 6500;
 
 /** Pestaña oculta: casi sin tráfico (0 = pausa total hasta volver). */
 const HIDDEN_POLL_MS = typeof window.INNAR_REALTIME_HIDDEN_POLL_MS === 'number'
@@ -103,22 +101,33 @@ function invalidarCachesEstudiosCliente() {
   }
 }
 
-function refreshActiveModuleData() {
+function refreshActiveModuleData(payload) {
   const module = window.currentModule;
   // No recargar recibos aquí: eventos de agenda/electro no deben vaciar filtros del reporte.
   // Solo los eventos recibo:* llaman refreshRecibosListaPreservandoFiltros().
   if (module === 'agenda-medica') {
-    if (typeof cargarTurnosMedica === 'function') {
-      scheduleSocketRefresh('agenda:turnos', () => cargarTurnosMedica());
-    }
-    if (typeof loadCalendarData === 'function') {
-      scheduleSocketRefresh('agenda:programar', () => loadCalendarData());
-    }
-    if (typeof cargarCitasCalendario === 'function') {
-      scheduleSocketRefresh('agenda:citas', () => cargarCitasCalendario());
-    }
-    if (typeof actualizarHorasDisponibles === 'function') {
-      scheduleSocketRefresh('agenda:horas', () => actualizarHorasDisponibles());
+    if (
+      payload
+      && typeof window.innarAgendaMedicaAceptaEvento === 'function'
+      && !window.innarAgendaMedicaAceptaEvento(payload)
+    ) {
+      /* Evento de otro médico: esta agenda no cambia. */
+    } else {
+      if (typeof window.innarAplicarCambioTurnoMedicaRealtime === 'function') {
+        window.innarAplicarCambioTurnoMedicaRealtime(payload);
+      }
+      if (typeof cargarTurnosMedica === 'function') {
+        scheduleSocketRefresh('agenda:turnos', () => cargarTurnosMedica());
+      }
+      if (typeof loadCalendarData === 'function') {
+        scheduleSocketRefresh('agenda:programar', () => loadCalendarData());
+      }
+      if (typeof cargarCitasCalendario === 'function') {
+        scheduleSocketRefresh('agenda:citas', () => cargarCitasCalendario());
+      }
+      if (typeof actualizarHorasDisponibles === 'function') {
+        scheduleSocketRefresh('agenda:horas', () => actualizarHorasDisponibles());
+      }
     }
   }
   if (module === 'electro') {
@@ -149,6 +158,25 @@ function refreshActiveModuleData() {
   }
   if (module === 'armado-soportes' && typeof window.refreshArmadoSoportes === 'function') {
     scheduleSocketRefresh('armado-soportes', () => window.refreshArmadoSoportes());
+  }
+  if (module === 'recibos') {
+    refreshRecibosListaPreservandoFiltros();
+    if (typeof updateSavedCount === 'function') updateSavedCount();
+  }
+  if (module === 'gestion-datos' && typeof scheduleBuscarGestionDatos === 'function') {
+    scheduleSocketRefresh('gestion:datos', () => scheduleBuscarGestionDatos(120));
+  }
+  if (module === 'diagnosticos' && typeof cargarListaDiagnosticos === 'function') {
+    scheduleSocketRefresh('diagnosticos', () => cargarListaDiagnosticos());
+  }
+  if (module === 'monitor-equipos' && typeof cargarMonitorEquipos === 'function') {
+    scheduleSocketRefresh('monitor-equipos', () => cargarMonitorEquipos());
+  }
+  if (module === 'papelera-pdx' && typeof window.refreshPapeleraPdx === 'function') {
+    scheduleSocketRefresh('papelera-pdx', () => window.refreshPapeleraPdx());
+  }
+  if (module === 'documentos-cita' && typeof window.refreshDocumentosCita === 'function') {
+    scheduleSocketRefresh('documentos-cita', () => window.refreshDocumentosCita());
   }
 }
 
@@ -344,6 +372,33 @@ async function pushToServer(event, data) {
   } catch (e) { /* noop */ }
 }
 
+function mutationTouchesCurrentModule(modulo) {
+  const cur = window.currentModule;
+  if (!cur) return false;
+  if (!modulo || modulo === 'app') return true;
+  if (modulo === 'chat') return false;
+  const related = {
+    'agenda-medica': ['agenda-medica', 'dashboard-citas', 'llamado-pacientes', 'documentos-cita'],
+    'electro': ['electro', 'dashboard-citas', 'monitor-equipos', 'documentos-cita'],
+    'recibos': ['recibos', 'dashboard-citas'],
+    'usuarios': ['usuarios'],
+    'reportes-pdx': ['reportes-pdx', 'reportes-historico', 'papelera-pdx', 'armado-soportes'],
+    'reportes-historico': ['reportes-historico', 'reportes-pdx'],
+    'armado-soportes': ['armado-soportes'],
+    'anexo-fidu': ['anexo-fidu', 'armado-soportes'],
+    'backup': ['backup'],
+    'gestion-datos': ['gestion-datos', 'recibos', 'agenda-medica', 'electro'],
+    'diagnosticos': ['diagnosticos', 'electro'],
+    'papelera-pdx': ['papelera-pdx', 'reportes-pdx'],
+    'documentos-cita': ['documentos-cita'],
+    'llamado-pacientes': ['llamado-pacientes'],
+    'monitor-equipos': ['monitor-equipos']
+  };
+  const list = related[modulo];
+  if (!list) return true;
+  return list.includes(cur);
+}
+
 function registerDefaultRealtimeHandlers() {
   subscribe('recibo:actualizar-lista', () => {
     refreshRecibosListaPreservandoFiltros();
@@ -475,10 +530,10 @@ function registerDefaultRealtimeHandlers() {
   subscribe('chat:mensaje_echo', () => { /* chat-messenger.js */ });
   subscribe('chat:leido', () => { /* chat-messenger.js */ });
 
-  subscribe('agenda:turno-creado', () => refreshActiveModuleData());
-  subscribe('agenda:turno-eliminado', () => refreshActiveModuleData());
+  subscribe('agenda:turno-creado', (e) => refreshActiveModuleData(e));
+  subscribe('agenda:turno-eliminado', (e) => refreshActiveModuleData(e));
   subscribe('agenda:turno-estado-cambio', (e) => {
-    refreshActiveModuleData();
+    refreshActiveModuleData(e);
     if (e && e.estado === 'EN_SALA' && debeEscucharAvisoPacienteEnSala(e)) {
       const suffix = e.paciente_nombre ? ` - ${e.paciente_nombre}` : '';
       if (typeof showToast === 'function') showToast(`Paciente en sala${suffix}`, 'info');
@@ -494,29 +549,29 @@ function registerDefaultRealtimeHandlers() {
       }
     }
   });
-  subscribe('agenda:turno-numero-cambio', () => refreshActiveModuleData());
+  subscribe('agenda:turno-numero-cambio', (e) => refreshActiveModuleData(e));
   subscribe('agenda:disponibilidad-actualizada', (e) => {
     if (typeof actualizarDisponibilidad === 'function') {
       actualizarDisponibilidad(e.doctor_id);
     }
     if (window.currentModule === 'agenda-medica') {
-      refreshActiveModuleData();
+      refreshActiveModuleData(e);
       const feAg = document.getElementById('agendaMedicaFecha');
       if (feAg?.value) feAg.dispatchEvent(new Event('change'));
       const feModal = document.getElementById('modalNuevaCitaFecha');
       if (feModal?.value) feModal.dispatchEvent(new Event('change'));
     }
   });
-  subscribe('agenda:turno-llamar-siguiente', () => refreshActiveModuleData());
-  subscribe('agenda:turno-marcar-atendido', () => refreshActiveModuleData());
-  subscribe('agenda:turno-cambio-paciente', () => refreshActiveModuleData());
-  subscribe('agenda:turno-doctor-cambio', () => refreshActiveModuleData());
-  subscribe('agenda:actualizar-lista', () => refreshActiveModuleData());
-  subscribe('agenda:actualizar-consultorio', () => refreshActiveModuleData());
+  subscribe('agenda:turno-llamar-siguiente', (e) => refreshActiveModuleData(e));
+  subscribe('agenda:turno-marcar-atendido', (e) => refreshActiveModuleData(e));
+  subscribe('agenda:turno-cambio-paciente', (e) => refreshActiveModuleData(e));
+  subscribe('agenda:turno-doctor-cambio', (e) => refreshActiveModuleData(e));
+  subscribe('agenda:actualizar-lista', (e) => refreshActiveModuleData(e));
+  subscribe('agenda:actualizar-consultorio', (e) => refreshActiveModuleData(e));
 
-  subscribe('turno-medico:estado-actualizado', () => refreshActiveModuleData());
-  subscribe('turno-medico:reprogramado', () => refreshActiveModuleData());
-  subscribe('turno-medico:creado', () => refreshActiveModuleData());
+  subscribe('turno-medico:estado-actualizado', (e) => refreshActiveModuleData(e));
+  subscribe('turno-medico:reprogramado', (e) => refreshActiveModuleData(e));
+  subscribe('turno-medico:creado', (e) => refreshActiveModuleData(e));
 
   subscribe('agenda:aviso-concluir-consulta', (e) => {
     if (!(typeof currentUser !== 'undefined' && currentUser && currentUser.rol === 'doctor')) return;
@@ -570,6 +625,11 @@ function registerDefaultRealtimeHandlers() {
 
   subscribe('stats:actualizar', () => {
     if (typeof updateSavedCount === 'function') updateSavedCount();
+  });
+
+  subscribe('app:datos-actualizados', (e) => {
+    if (!mutationTouchesCurrentModule(e?.modulo)) return;
+    refreshActiveModuleData(e);
   });
 }
 
