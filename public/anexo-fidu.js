@@ -528,6 +528,7 @@
   }
 
   async function abrirArchivoAfidu(id) {
+    const keepPage = afiduState.archivoId === id && afiduState.vista === 'archivo';
     let row = afiduState.archivos.find((a) => a.id === id);
     if (!row) {
       const metaData = await apiAnexo(`/api/anexo-fidu/archivos/${id}`);
@@ -553,7 +554,13 @@
       const data = await apiAnexo(`/api/anexo-fidu/archivos/${_archivoId}`);
       const a = data.archivo || {};
       actualizarInfoArchivo(`${a.total_registros || 0} fila(s)`);
-      _page = 1;
+      if (keepPage) {
+        const totalHint = Number(a.total_registros) || _total || 0;
+        const maxPage = Math.max(1, Math.ceil(totalHint / _limit) || 1);
+        if (_page > maxPage) _page = maxPage;
+      } else {
+        _page = 1;
+      }
       await cargarRegistros();
     } catch (e) {
       actualizarInfoArchivo(e.message);
@@ -962,12 +969,47 @@
   function renderThead() {
     const thead = $('afiduGridHead');
     if (!thead) return;
-    let html = '<tr><th class="afidu-col-acciones" title="Borrar fila">✕</th>';
+    let html = '<tr><th class="afidu-col-pos" title="Arrastre el número para mover la fila">#</th><th class="afidu-col-acciones" title="Borrar fila">✕</th>';
     _columnas.forEach((c) => {
       html += `<th title="${escapeHtml(c.label)}" style="min-width:${c.width || 90}px">${escapeHtml(c.label)}</th>`;
     });
     html += '</tr>';
     thead.innerHTML = html;
+  }
+
+  function puedeReordenarFilas() {
+    return !(_registrosQ || '').trim();
+  }
+
+  function numeroFilaVisible(indexInPage) {
+    return (_page - 1) * _limit + indexInPage + 1;
+  }
+
+  function filasAnexoGuardadas(tbody) {
+    return [...(tbody?.querySelectorAll('tr.afidu-row') || [])].filter((tr) => tr.dataset.id && tr.dataset.new !== '1');
+  }
+
+  function renumerarFilasVisibles() {
+    const tbody = $('afiduGridBody');
+    if (!tbody) return;
+    [...tbody.querySelectorAll('tr.afidu-row')].forEach((tr, i) => {
+      const num = tr.querySelector('.afidu-row-num');
+      if (num) num.textContent = String(numeroFilaVisible(i));
+    });
+  }
+
+  function htmlHandleFila(id, isNew, canDrag) {
+    const saved = !!id && !isNew;
+    const dragOk = saved && canDrag;
+    const title = !saved
+      ? 'Guarde la fila para poder moverla'
+      : !canDrag
+        ? 'Quite el filtro de búsqueda para reordenar'
+        : 'Arrastre para mover la fila';
+    return `<button type="button" class="afidu-row-handle${!dragOk ? ' is-disabled' : ''}" ${dragOk ? 'draggable="true"' : 'draggable="false"'} data-afidu-handle="1" title="${title}" aria-label="${title}">
+      <i data-lucide="grip-vertical" aria-hidden="true"></i>
+      <span class="afidu-row-num"></span>
+    </button>`;
   }
 
   function crearFilaHtml(registro, opts = {}) {
@@ -976,7 +1018,9 @@
     const rowColor = colorFilaCss(registro.codigo_servicio);
     const trClass = isNew ? 'afidu-row afidu-row-new' : 'afidu-row';
     const trStyle = rowColor ? ` style="--afidu-row-bg:${rowColor}" data-row-color="1"` : '';
-    let cells = `<td class="afidu-col-acciones">
+    const canDrag = opts.canDrag !== false && puedeReordenarFilas();
+    let cells = `<td class="afidu-col-pos">${htmlHandleFila(id, isNew, canDrag)}</td>
+    <td class="afidu-col-acciones">
       <button type="button" class="afidu-btn-del" data-id="${escapeHtml(id)}" title="Eliminar fila">✕</button>
     </td>`;
     _columnas.forEach((c) => {
@@ -993,10 +1037,12 @@
     const tbody = $('afiduGridBody');
     if (!tbody) return;
     if (!registros.length) {
-      tbody.innerHTML = `<tr><td colspan="${_columnas.length + 1}" class="afidu-empty-msg">Sin filas. Agregue pacientes con documento y CUPS arriba (una o varias filas). Doble clic en una celda para editar.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="${_columnas.length + 2}" class="afidu-empty-msg">Sin filas. Agregue pacientes con documento y CUPS arriba (una o varias filas). Doble clic en una celda para editar. Arrastre el número de fila (#) para cambiar el orden.</td></tr>`;
       return;
     }
-    tbody.innerHTML = registros.map((r) => crearFilaHtml(r)).join('');
+    tbody.innerHTML = registros.map((r) => crearFilaHtml(r, { canDrag: puedeReordenarFilas() })).join('');
+    renumerarFilasVisibles();
+    afiduIcons(tbody);
   }
 
   function leerRegistroDesdeFila(tr) {
@@ -1056,6 +1102,18 @@
   function aplicarRegistroAFila(tr, registro) {
     _columnas.forEach((c) => setValorCelda(tr, c.key, registro[c.key]));
     aplicarColorFila(tr, registro.codigo_servicio);
+    habilitarHandleFila(tr);
+  }
+
+  function habilitarHandleFila(tr) {
+    const handle = tr.querySelector('.afidu-row-handle');
+    if (!handle) return;
+    if (tr.dataset.id && tr.dataset.new !== '1' && puedeReordenarFilas()) {
+      handle.draggable = true;
+      handle.classList.remove('is-disabled');
+      handle.title = 'Arrastre para mover la fila';
+      handle.setAttribute('aria-label', 'Arrastre para mover la fila');
+    }
   }
 
   function cancelarEdicionCelda() {
@@ -1067,7 +1125,7 @@
   }
 
   function iniciarEdicionCelda(td) {
-    if (td.closest('.afidu-col-acciones')) return;
+    if (td.closest('.afidu-col-acciones, .afidu-col-pos')) return;
     if (_celdaEditando?.td === td) return;
     if (_celdaEditando) finalizarEdicionCelda(true);
 
@@ -1466,6 +1524,7 @@
         tr.dataset.id = reg.id;
         tr.dataset.new = '0';
         tr.classList.remove('afidu-row-new');
+        habilitarHandleFila(tr);
         _total += 1;
       } else {
         data = await apiAnexo(`/api/anexo-fidu/registros/${tr.dataset.id}`, {
@@ -1488,9 +1547,11 @@
     const empty = tbody.querySelector('.afidu-empty-msg');
     if (empty) tbody.innerHTML = '';
     const wrap = document.createElement('tbody');
-    wrap.innerHTML = crearFilaHtml(registro, { isNew: true });
+    wrap.innerHTML = crearFilaHtml(registro, { isNew: true, canDrag: false });
     const tr = wrap.firstElementChild;
     tbody.appendChild(tr);
+    renumerarFilasVisibles();
+    afiduIcons(tr);
     return tr;
   }
 
@@ -1963,6 +2024,7 @@
     if (!tbody || tbody.dataset.afiduGridBound) return;
     tbody.dataset.afiduGridBound = '1';
     tbody.addEventListener('dblclick', (e) => {
+      if (e.target.closest('.afidu-row-handle, .afidu-col-pos, .afidu-btn-del')) return;
       const td = e.target.closest('.afidu-cell');
       if (td) iniciarEdicionCelda(td);
     });
@@ -1971,6 +2033,126 @@
       if (!btn) return;
       const tr = btn.closest('tr');
       eliminarRegistro(btn.dataset.id || tr?.dataset.id, tr);
+    });
+    bindReordenFilas(tbody);
+  }
+
+  let _filaArrastrada = null;
+  let _reordenando = false;
+
+  function limpiarHintsDrop(tbody) {
+    tbody.querySelectorAll('.afidu-row-drop-before, .afidu-row-drop-after').forEach((tr) => {
+      tr.classList.remove('afidu-row-drop-before', 'afidu-row-drop-after');
+    });
+  }
+
+  function destinoDropFila(ev, targetTr) {
+    const rect = targetTr.getBoundingClientRect();
+    const after = ev.clientY > rect.top + rect.height / 2;
+    if (after) {
+      let next = targetTr.nextElementSibling;
+      while (next && !next.classList.contains('afidu-row')) next = next.nextElementSibling;
+      return { afterId: targetTr.dataset.id, insertBefore: next || null };
+    }
+    return { beforeId: targetTr.dataset.id, insertBefore: targetTr };
+  }
+
+  async function persistirReordenFila(id, dest) {
+    const archivoId = requireArchivoActivo();
+    const payload = { archivo_id: archivoId, id: Number(id) };
+    if (dest.afterId) payload.after_id = Number(dest.afterId);
+    else if (dest.beforeId) payload.before_id = Number(dest.beforeId);
+    await apiAnexo('/api/anexo-fidu/registros/reordenar', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+  }
+
+  async function aplicarReordenDom(tbody, dragged, dest) {
+    if (_reordenando) return;
+    const insertBefore = dest.insertBefore || null;
+    if (insertBefore === dragged) return;
+    if (dragged.nextElementSibling === insertBefore) return;
+    if (!insertBefore && dragged === tbody.lastElementChild) return;
+    cancelarEdicionCelda();
+    tbody.insertBefore(dragged, insertBefore);
+    renumerarFilasVisibles();
+    _reordenando = true;
+    try {
+      await persistirReordenFila(dragged.dataset.id, dest);
+    } catch (e) {
+      if (typeof showToast === 'function') showToast(e.message || 'No se pudo mover la fila', 'error');
+      await cargarRegistros();
+    } finally {
+      _reordenando = false;
+    }
+  }
+
+  function bindReordenFilas(tbody) {
+    tbody.addEventListener('dragstart', (e) => {
+      const handle = e.target.closest('.afidu-row-handle');
+      if (!handle || handle.draggable === false || handle.classList.contains('is-disabled')) return;
+      const tr = handle.closest('tr.afidu-row');
+      if (!tr?.dataset.id || tr.dataset.new === '1' || !puedeReordenarFilas()) {
+        e.preventDefault();
+        return;
+      }
+      cancelarEdicionCelda();
+      _filaArrastrada = tr;
+      tr.classList.add('afidu-row-dragging');
+      if (e.dataTransfer) {
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', tr.dataset.id);
+      }
+    });
+    tbody.addEventListener('dragend', () => {
+      _filaArrastrada?.classList.remove('afidu-row-dragging');
+      _filaArrastrada = null;
+      limpiarHintsDrop(tbody);
+    });
+    tbody.addEventListener('dragover', (e) => {
+      if (!_filaArrastrada) return;
+      const tr = e.target.closest('tr.afidu-row');
+      if (!tr || tr === _filaArrastrada || tr.dataset.new === '1') return;
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+      limpiarHintsDrop(tbody);
+      const rect = tr.getBoundingClientRect();
+      const after = e.clientY > rect.top + rect.height / 2;
+      tr.classList.add(after ? 'afidu-row-drop-after' : 'afidu-row-drop-before');
+    });
+    tbody.addEventListener('drop', (e) => {
+      const tr = e.target.closest('tr.afidu-row');
+      if (!_filaArrastrada || !tr || tr === _filaArrastrada) return;
+      e.preventDefault();
+      const dest = destinoDropFila(e, tr);
+      const dragged = _filaArrastrada;
+      limpiarHintsDrop(tbody);
+      dragged.classList.remove('afidu-row-dragging');
+      _filaArrastrada = null;
+      aplicarReordenDom(tbody, dragged, dest);
+    });
+    tbody.addEventListener('keydown', (e) => {
+      if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+      if (!e.altKey) return;
+      const handle = e.target.closest('.afidu-row-handle');
+      if (!handle || handle.classList.contains('is-disabled')) return;
+      const tr = handle.closest('tr.afidu-row');
+      if (!tr?.dataset.id || tr.dataset.new === '1' || !puedeReordenarFilas()) return;
+      e.preventDefault();
+      const saved = filasAnexoGuardadas(tbody);
+      const idx = saved.indexOf(tr);
+      if (idx < 0) return;
+      const destTr = e.key === 'ArrowUp' ? saved[idx - 1] : saved[idx + 1];
+      if (!destTr) return;
+      if (e.key === 'ArrowUp') {
+        aplicarReordenDom(tbody, tr, { beforeId: destTr.dataset.id, insertBefore: destTr });
+      } else {
+        let next = destTr.nextElementSibling;
+        while (next && !next.classList.contains('afidu-row')) next = next.nextElementSibling;
+        aplicarReordenDom(tbody, tr, { afterId: destTr.dataset.id, insertBefore: next || null });
+      }
     });
   }
 

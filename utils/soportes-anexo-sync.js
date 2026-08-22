@@ -13,6 +13,7 @@ const {
 } = require('./soportes-armado-modos');
 const { nextSopDiaNumero } = require('./soportes-armado-structure');
 const { compararTextoNatural } = require('./comparar-texto-natural');
+const { ANEXO_FIDU_REGISTROS_ORDER_SQL } = require('./anexo-fidu-columns');
 
 async function fetchAnexoArchivoMeta(archivoId) {
   const rows = await db.query(
@@ -221,7 +222,7 @@ async function guardarExportAnexoEnSoportes(archivoId, options = {}) {
     let registros = [];
     try {
       registros = await db.query(
-        'SELECT * FROM anexo_fidu_registros WHERE archivo_id = ? ORDER BY id ASC',
+        `SELECT * FROM anexo_fidu_registros WHERE archivo_id = ? ORDER BY ${ANEXO_FIDU_REGISTROS_ORDER_SQL}`,
         [archivoId]
       );
     } catch (dbErr) {

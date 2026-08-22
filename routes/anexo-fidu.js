@@ -9,6 +9,7 @@ const { requireAuth, requirePermiso, safeError } = require('../middleware/index'
 const PERM_ANEXO_FIDU = 'modulo.anexo_fidu';
 const { upload, validateMagicBytes } = require('../middleware/upload');
 const { ANEXO_FIDU_COLUMNAS, ANEXO_FIDU_COLUMN_KEYS, ANEXO_FIDU_REGISTROS_ORDER_SQL } = require('../utils/anexo-fidu-columns');
+const { mismoOrdenIds, reordenarFilaAnexo } = require('../utils/anexo-fidu-orden');
 const {
   calcularEdadDesdeFecha,
   formatFechaParaCelda
@@ -48,6 +49,65 @@ const {
 function parseArchivoId(val) {
   const n = parseInt(val, 10);
   return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+async function siguienteOrdenRegistro(archivoId) {
+  try {
+    const [row] = await db.query(
+      'SELECT COALESCE(MAX(orden), 0) + 1 AS next FROM anexo_fidu_registros WHERE archivo_id = ?',
+      [archivoId]
+    );
+    const n = Number(row?.next);
+    return Number.isFinite(n) && n > 0 ? n : 1;
+  } catch (e) {
+    if (e.code === 'ER_BAD_FIELD_ERROR') return 1;
+    throw e;
+  }
+}
+
+async function idsRegistrosArchivo(archivoId) {
+  const rows = await db.query(
+    `SELECT id FROM anexo_fidu_registros WHERE archivo_id = ? ORDER BY ${ANEXO_FIDU_REGISTROS_ORDER_SQL}`,
+    [archivoId]
+  );
+  return (rows || []).map((r) => Number(r.id));
+}
+
+async function persistirOrdenFilas(archivoId, ids) {
+  if (!ids.length) return;
+  const CHUNK = 150;
+  for (let i = 0; i < ids.length; i += CHUNK) {
+    const slice = ids.slice(i, i + CHUNK);
+    const cases = slice.map(() => 'WHEN ? THEN ?').join(' ');
+    const params = [];
+    slice.forEach((id, j) => {
+      params.push(id, i + j + 1);
+    });
+    params.push(archivoId, ...slice);
+    await db.execute(
+      `UPDATE anexo_fidu_registros SET orden = CASE id ${cases} ELSE orden END
+       WHERE archivo_id = ? AND id IN (${slice.map(() => '?').join(',')})`,
+      params
+    );
+  }
+}
+
+async function insertarRegistroAnexo(archivoId, data, orden) {
+  const cols = ['archivo_id', 'orden', ...ANEXO_FIDU_COLUMN_KEYS];
+  const placeholders = cols.map(() => '?').join(',');
+  try {
+    return await db.execute(
+      `INSERT INTO anexo_fidu_registros (${cols.map((c) => `\`${c}\``).join(',')}) VALUES (${placeholders})`,
+      [archivoId, orden, ...ANEXO_FIDU_COLUMN_KEYS.map((c) => data[c])]
+    );
+  } catch (e) {
+    if (e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+    const fallbackCols = ['archivo_id', ...ANEXO_FIDU_COLUMN_KEYS];
+    return db.execute(
+      `INSERT INTO anexo_fidu_registros (${fallbackCols.map((c) => `\`${c}\``).join(',')}) VALUES (${fallbackCols.map(() => '?').join(',')})`,
+      [archivoId, ...ANEXO_FIDU_COLUMN_KEYS.map((c) => data[c])]
+    );
+  }
 }
 
 async function refrescarVisibilidadAnexoCarpeta(carpetaRow, archivadoPor = null) {
@@ -540,15 +600,25 @@ router.post(
         await db.execute('DELETE FROM anexo_fidu_registros WHERE archivo_id = ?', [archivoId]);
       }
 
-      const cols = ['archivo_id', ...ANEXO_FIDU_COLUMN_KEYS];
+      const cols = ['archivo_id', 'orden', ...ANEXO_FIDU_COLUMN_KEYS];
       const placeholders = cols.map(() => '?').join(',');
       const sql = `INSERT INTO anexo_fidu_registros (${cols.map((c) => `\`${c}\``).join(',')}) VALUES (${placeholders})`;
       let insertados = 0;
+      let orden = reemplazar ? 1 : await siguienteOrdenRegistro(archivoId);
       for (const raw of registros) {
         const data = sanitizeRegistroBody(raw);
-        await db.execute(sql, [archivoId, ...ANEXO_FIDU_COLUMN_KEYS.map((c) => data[c])]);
+        try {
+          await db.execute(sql, [archivoId, orden, ...ANEXO_FIDU_COLUMN_KEYS.map((c) => data[c])]);
+        } catch (e) {
+          if (e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+          await db.execute(
+            `INSERT INTO anexo_fidu_registros (\`archivo_id\`, ${ANEXO_FIDU_COLUMN_KEYS.map((c) => `\`${c}\``).join(',')}) VALUES (${['?', ...ANEXO_FIDU_COLUMN_KEYS.map(() => '?')].join(',')})`,
+            [archivoId, ...ANEXO_FIDU_COLUMN_KEYS.map((c) => data[c])]
+          );
+        }
         if (req.body?.actualizar_personas !== '0') await upsertPersonaDesdeRegistro(data);
         insertados += 1;
+        orden += 1;
       }
 
       await pushAnexoASoportes(archivoId);
@@ -723,12 +793,8 @@ router.post('/anexo-fidu/registros', requireAuth, requirePermiso(PERM_ANEXO_FIDU
     const meta = await fetchArchivoMeta(archivoId);
     if (!meta) return res.status(404).json({ error: 'Anexo no encontrado' });
     const data = sanitizeRegistroBody(req.body || {});
-    const cols = ['archivo_id', ...ANEXO_FIDU_COLUMN_KEYS];
-    const placeholders = cols.map(() => '?').join(',');
-    const result = await db.execute(
-      `INSERT INTO anexo_fidu_registros (${cols.map((c) => `\`${c}\``).join(',')}) VALUES (${placeholders})`,
-      [archivoId, ...ANEXO_FIDU_COLUMN_KEYS.map((c) => data[c])]
-    );
+    const orden = await siguienteOrdenRegistro(archivoId);
+    const result = await insertarRegistroAnexo(archivoId, data, orden);
     const syncPersona = req.body?.actualizar_persona !== false;
     if (syncPersona) await upsertPersonaDesdeRegistro(data);
     const id = result.insertId;
@@ -741,6 +807,48 @@ router.post('/anexo-fidu/registros', requireAuth, requirePermiso(PERM_ANEXO_FIDU
     });
   } catch (e) {
     logger.error('[ANEXO-FIDU] create:', e);
+    res.status(500).json({ error: safeError(e) });
+  }
+});
+
+/** PUT /api/anexo-fidu/registros/reordenar — mover una fila (antes de otra, o al final) */
+router.put('/anexo-fidu/registros/reordenar', requireAuth, requirePermiso(PERM_ANEXO_FIDU), async (req, res) => {
+  try {
+    const archivoId = parseArchivoId(req.body?.archivo_id);
+    const id = parseInt(req.body?.id, 10);
+    const beforeRaw = req.body?.before_id;
+    const afterRaw = req.body?.after_id;
+    const beforeId = beforeRaw == null || beforeRaw === '' ? null : parseInt(beforeRaw, 10);
+    const afterId = afterRaw == null || afterRaw === '' ? null : parseInt(afterRaw, 10);
+    if (!archivoId) return res.status(400).json({ error: 'archivo_id requerido' });
+    if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: 'id de fila requerido' });
+    if (beforeId != null && (!Number.isFinite(beforeId) || beforeId <= 0)) {
+      return res.status(400).json({ error: 'before_id inválido' });
+    }
+    if (afterId != null && (!Number.isFinite(afterId) || afterId <= 0)) {
+      return res.status(400).json({ error: 'after_id inválido' });
+    }
+    const meta = await fetchArchivoMeta(archivoId);
+    if (!meta) return res.status(404).json({ error: 'Anexo no encontrado' });
+    const actuales = await idsRegistrosArchivo(archivoId);
+    if (!actuales.includes(id)) {
+      return res.status(404).json({ error: 'La fila no pertenece a este anexo' });
+    }
+    if (beforeId != null && !actuales.includes(beforeId)) {
+      return res.status(400).json({ error: 'La fila de destino no pertenece a este anexo' });
+    }
+    if (afterId != null && !actuales.includes(afterId)) {
+      return res.status(400).json({ error: 'La fila de destino no pertenece a este anexo' });
+    }
+    const siguientes = reordenarFilaAnexo(actuales, id, { beforeId, afterId });
+    if (mismoOrdenIds(actuales, siguientes)) {
+      return res.json({ ok: true, sin_cambios: true });
+    }
+    await persistirOrdenFilas(archivoId, siguientes);
+    await pushAnexoASoportes(archivoId);
+    res.json({ ok: true, total: siguientes.length });
+  } catch (e) {
+    logger.error('[ANEXO-FIDU] reordenar:', e);
     res.status(500).json({ error: safeError(e) });
   }
 });

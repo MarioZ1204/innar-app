@@ -10,6 +10,7 @@ const db = require('./db-mysql');
 const logger = require('./logger');
 const { BACKUP_DIR, ensureBackupDir } = require('./backup');
 const { calcularVisibilidadPeriodo } = require('./soportes-visibilidad');
+const { ANEXO_FIDU_REGISTROS_ORDER_SQL } = require('./anexo-fidu-columns');
 
 function visKey(modulo, refId) {
   return `${modulo}:${refId}`;
@@ -413,7 +414,7 @@ async function crearBackupZipAnexoCarpeta(carpetaRow) {
   const parts = [];
   for (const arch of archivos) {
     const registros = await db.query(
-      'SELECT * FROM anexo_fidu_registros WHERE archivo_id = ? ORDER BY id ASC',
+      `SELECT * FROM anexo_fidu_registros WHERE archivo_id = ? ORDER BY ${ANEXO_FIDU_REGISTROS_ORDER_SQL}`,
       [arch.id]
     );
     if (!registros.length) continue;

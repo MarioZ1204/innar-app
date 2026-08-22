@@ -1303,6 +1303,62 @@ const runtimeMigrations = [
     }
   },
   {
+    name: 'rt_anexo_fidu_registros_orden',
+    description: 'Columna orden para reordenar filas del anexo FIDU',
+    run: async (db) => {
+      if (!(await tableExists(db, 'anexo_fidu_registros'))) return;
+      if (!(await columnExists(db, 'anexo_fidu_registros', 'orden'))) {
+        const after = (await columnExists(db, 'anexo_fidu_registros', 'archivo_id'))
+          ? 'AFTER archivo_id'
+          : 'AFTER id';
+        await db.execute(
+          `ALTER TABLE anexo_fidu_registros ADD COLUMN orden INT NOT NULL DEFAULT 0 ${after}`
+        );
+      }
+      const rows = await db.query(
+        'SELECT id, archivo_id FROM anexo_fidu_registros ORDER BY archivo_id IS NULL, archivo_id ASC, id ASC'
+      );
+      let last = null;
+      let n = 0;
+      const pairs = [];
+      for (const row of rows || []) {
+        const key = row.archivo_id == null ? '__null__' : String(row.archivo_id);
+        if (key !== last) {
+          last = key;
+          n = 0;
+        }
+        n += 1;
+        pairs.push([n, row.id]);
+      }
+      const CHUNK = 150;
+      for (let i = 0; i < pairs.length; i += CHUNK) {
+        const slice = pairs.slice(i, i + CHUNK);
+        const cases = slice.map(() => 'WHEN ? THEN ?').join(' ');
+        const params = [];
+        slice.forEach(([orden, id]) => {
+          params.push(id, orden);
+        });
+        params.push(...slice.map((p) => p[1]));
+        await db.execute(
+          `UPDATE anexo_fidu_registros SET orden = CASE id ${cases} ELSE orden END WHERE id IN (${slice.map(() => '?').join(',')})`,
+          params
+        );
+      }
+      if (await columnExists(db, 'anexo_fidu_registros', 'archivo_id')) {
+        const idx = await db.query(
+          `SELECT INDEX_NAME FROM information_schema.STATISTICS
+           WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'anexo_fidu_registros'
+             AND INDEX_NAME = 'idx_anexo_fidu_archivo_pos' LIMIT 1`
+        );
+        if (!idx.length) {
+          await db.execute(
+            'ALTER TABLE anexo_fidu_registros ADD INDEX idx_anexo_fidu_archivo_pos (archivo_id, orden)'
+          );
+        }
+      }
+    }
+  },
+  {
     name: 'rt_modulo_archivo_soportes',
     description: 'Tabla sop_modulo_archivo y visibilidad Anexo FIDU por periodo',
     run: async (db) => {

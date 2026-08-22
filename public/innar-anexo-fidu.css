@@ -244,7 +244,7 @@
   text-align: center;
 }
 
-#view-anexo-fidu .afidu-grid tbody tr[data-row-color] > td:not(.afidu-col-acciones) {
+#view-anexo-fidu .afidu-grid tbody tr[data-row-color] > td:not(.afidu-col-acciones):not(.afidu-col-pos) {
   background-color: var(--afidu-row-bg);
 }
 
@@ -281,7 +281,7 @@
   background: #fffbeb;
 }
 
-#view-anexo-fidu .afidu-row-new[data-row-color] td:not(.afidu-col-acciones) {
+#view-anexo-fidu .afidu-row-new[data-row-color] td:not(.afidu-col-acciones):not(.afidu-col-pos) {
   background-color: color-mix(in srgb, var(--afidu-row-bg) 88%, #fef3c7);
 }
 
@@ -377,23 +377,90 @@
   flex-wrap: wrap;
 }
 
-#view-anexo-fidu .afidu-grid tbody tr:hover td:not(.afidu-col-acciones) {
+#view-anexo-fidu .afidu-grid tbody tr:hover td:not(.afidu-col-acciones):not(.afidu-col-pos) {
   filter: brightness(0.97);
+}
+
+#view-anexo-fidu .afidu-col-pos {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  width: 52px;
+  min-width: 52px;
+  max-width: 52px;
+  background: #f8fafc;
+  box-shadow: none;
+  text-align: center;
+  user-select: none;
 }
 
 #view-anexo-fidu .afidu-col-acciones {
   position: sticky;
-  left: 0;
+  left: 52px;
   z-index: 1;
   background: #fff;
   box-shadow: 2px 0 4px rgba(15, 23, 42, 0.06);
-  min-width: 88px;
+  min-width: 44px;
+  width: 44px;
   text-align: center;
 }
 
+#view-anexo-fidu .afidu-grid thead .afidu-col-pos,
 #view-anexo-fidu .afidu-grid thead .afidu-col-acciones {
-  z-index: 3;
+  z-index: 4;
   background: #e2e8f0;
+}
+
+#view-anexo-fidu .afidu-row-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  width: 100%;
+  min-height: 28px;
+  border: none;
+  background: transparent;
+  color: #64748b;
+  cursor: grab;
+  padding: 4px 2px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+#view-anexo-fidu .afidu-row-handle i,
+#view-anexo-fidu .afidu-row-handle svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+#view-anexo-fidu .afidu-row-handle:active {
+  cursor: grabbing;
+}
+
+#view-anexo-fidu .afidu-row-handle.is-disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+#view-anexo-fidu .afidu-row-dragging {
+  opacity: 0.45;
+}
+
+#view-anexo-fidu .afidu-row-drop-before td {
+  box-shadow: inset 0 2px 0 #2563eb;
+}
+
+#view-anexo-fidu .afidu-row-drop-after td {
+  box-shadow: inset 0 -2px 0 #2563eb;
+}
+
+#view-anexo-fidu .afidu-reorder-hint {
+  font-size: 0.75rem;
+  color: #94a3b8;
+  margin-left: 4px;
 }
 
 #view-anexo-fidu .afidu-modal-form {

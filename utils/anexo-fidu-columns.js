@@ -75,6 +75,7 @@ function buildAnexoFiduCreateTableSql() {
   return `CREATE TABLE IF NOT EXISTS anexo_fidu_registros (
       id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
       ${cols},
+      orden INT NOT NULL DEFAULT 0,
       creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       actualizado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       INDEX idx_anexo_fidu_documento (numero_documento),
@@ -82,8 +83,8 @@ function buildAnexoFiduCreateTableSql() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`;
 }
 
-/** Orden por defecto de filas del anexo: orden de inserción (primero añadido arriba). */
-const ANEXO_FIDU_REGISTROS_ORDER_SQL = 'id ASC';
+/** Orden manual de filas (arrastre); desempate por id. */
+const ANEXO_FIDU_REGISTROS_ORDER_SQL = 'orden ASC, id ASC';
 
 module.exports = {
   ANEXO_FIDU_COLUMNAS,
