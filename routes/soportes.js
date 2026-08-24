@@ -741,6 +741,11 @@ async function writePdfBytesAtomic(filePath, buffer) {
   await writeFileAtomic(filePath, buffer);
 }
 
+function contentDispositionUtf8(kind, name) {
+  const n = String(name || 'documento.pdf').replace(/"/g, '');
+  return `${kind}; filename="${n}"; filename*=UTF-8''${encodeURIComponent(n)}`;
+}
+
 async function persistHighlightsOnPdfFile(filePath, highlights) {
   const bytes = await readFileBuffer(filePath);
   const next = await applyHighlightsToPdfBytes(bytes, highlights);
@@ -2495,19 +2500,14 @@ router.get('/soportes/armado/dias/:id/descargar-anexo', requireAuth, requireRole
 
 router.get('/soportes/armado/expedientes/:id/pdfs/:archivoId/ver', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'modulo.armado_soportes'), async (req, res) => {
   try {
-    const rows = await db.query(
-      "SELECT a.* FROM sop_exp_archivos a WHERE a.id = ? AND a.expediente_id = ? AND a.tipo = 'PDF'",
-      [req.params.archivoId, req.params.id]
-    );
-    if (!rows.length) return res.status(404).json({ error: 'PDF no encontrado' });
-    const { obtenerExpedienteContext } = require('../utils/soportes-exp-archivo');
-    const expediente = await obtenerExpedienteContext(req.params.id);
-    const fp = resolveArchivoAbsoluto(rows[0], { expediente, deepScan: false });
-    if (!fp || !fs.existsSync(fp)) return res.status(404).json({ error: 'Archivo no en disco' });
-    const name = rows[0].nombre_original || rows[0].nombre_archivo || 'documento.pdf';
+    const { resolverArchivoUcqnPdf } = require('../utils/soportes-ucqn-upload');
+    const { decodeUploadFilename } = require('../utils/soportes-archivo-detect');
+    const resolved = await resolverArchivoUcqnPdf(req.params.id, req.params.archivoId);
+    if (!resolved.ok) return res.status(resolved.status || 404).json({ error: resolved.error });
+    const name = decodeUploadFilename(resolved.row.nombre_original || resolved.row.nombre_archivo || 'documento.pdf');
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename="${String(name).replace(/"/g, '')}"`);
-    fs.createReadStream(fp).pipe(res);
+    res.setHeader('Content-Disposition', contentDispositionUtf8('inline', name));
+    fs.createReadStream(resolved.fp).pipe(res);
   } catch (e) {
     if (!res.headersSent) res.status(500).json({ error: safeError(e) });
   }
@@ -2515,23 +2515,167 @@ router.get('/soportes/armado/expedientes/:id/pdfs/:archivoId/ver', requireAuth, 
 
 router.get('/soportes/armado/expedientes/:id/pdfs/:archivoId/descargar', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'modulo.armado_soportes'), async (req, res) => {
   try {
-    const rows = await db.query(
-      "SELECT a.* FROM sop_exp_archivos a WHERE a.id = ? AND a.expediente_id = ? AND a.tipo = 'PDF'",
-      [req.params.archivoId, req.params.id]
-    );
-    if (!rows.length) return res.status(404).json({ error: 'PDF no encontrado' });
-    const { obtenerExpedienteContext } = require('../utils/soportes-exp-archivo');
-    const expediente = await obtenerExpedienteContext(req.params.id);
-    const fp = resolveArchivoAbsoluto(rows[0], { expediente, deepScan: false });
-    if (!fp || !fs.existsSync(fp)) return res.status(404).json({ error: 'Archivo no en disco' });
-    const name = rows[0].nombre_original || rows[0].nombre_archivo || 'documento.pdf';
+    const { resolverArchivoUcqnPdf } = require('../utils/soportes-ucqn-upload');
+    const { decodeUploadFilename } = require('../utils/soportes-archivo-detect');
+    const resolved = await resolverArchivoUcqnPdf(req.params.id, req.params.archivoId);
+    if (!resolved.ok) return res.status(resolved.status || 404).json({ error: resolved.error });
+    const name = decodeUploadFilename(resolved.row.nombre_original || resolved.row.nombre_archivo || 'documento.pdf');
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="${String(name).replace(/"/g, '')}"`);
-    fs.createReadStream(fp).pipe(res);
+    res.setHeader('Content-Disposition', contentDispositionUtf8('attachment', name));
+    fs.createReadStream(resolved.fp).pipe(res);
   } catch (e) {
     if (!res.headersSent) res.status(500).json({ error: safeError(e) });
   }
 });
+
+router.post(
+  '/soportes/armado/expedientes/:id/pdfs/:archivoId/resaltar',
+  requireAuth,
+  requireRoleOrPerm(ROLES_SOPORTES, PERMS_ARMADO_VER_SUBIR),
+  async (req, res) => {
+    try {
+      const highlights = req.body?.highlights;
+      if (!Array.isArray(highlights) || highlights.length === 0) {
+        return res.status(400).json({ error: 'Indique al menos un resaltado' });
+      }
+      const { resolverArchivoUcqnPdf } = require('../utils/soportes-ucqn-upload');
+      const resolved = await resolverArchivoUcqnPdf(req.params.id, req.params.archivoId);
+      if (!resolved.ok) return res.status(resolved.status || 404).json({ error: resolved.error });
+      const bytes = await readFileBuffer(resolved.fp);
+      const { PDFDocument } = require('pdf-lib');
+      const probe = await PDFDocument.load(bytes, { ignoreEncryption: true });
+      const sanitized = sanitizeHighlightsList(highlights, probe.getPageCount());
+      if (!sanitized.length) return res.status(400).json({ error: 'Resaltados no válidos' });
+      const tamano = await persistHighlightsOnPdfFile(resolved.fp, sanitized);
+      await db.execute(
+        'UPDATE sop_exp_archivos SET tamano_bytes = ?, subido_por = ? WHERE id = ?',
+        [tamano, req.session.usuarioId, resolved.row.id]
+      );
+      notifySoportesArmado({ accion: 'pdf_editado', expedienteId: parseInt(req.params.id, 10) });
+      const detail = await buildExpedienteDetail(req.params.id);
+      res.json({ ok: true, aplicados: sanitized.length, tamano_bytes: tamano, expediente: detail });
+    } catch (e) {
+      logger.error('[SOPORTES] resaltar ucqn:', e);
+      res.status(500).json({ error: safeError(e) });
+    }
+  }
+);
+
+router.post(
+  '/soportes/armado/expedientes/:id/pdfs/:archivoId/anexar-pdf',
+  requireAuth,
+  requireRoleOrPerm(ROLES_SOPORTES, PERMS_ARMADO_VER_SUBIR),
+  (req, res, next) => {
+    uploadArmadoSoportes.array('partes', 12)(req, res, (err) => {
+      if (err) return res.status(400).json({ error: err.message || 'Error al subir PDF' });
+      next();
+    });
+  },
+  validateMagicBytes,
+  async (req, res) => {
+    try {
+      const partes = (req.files || []).map((f) => f.path).filter(Boolean);
+      if (!partes.length) {
+        cleanupMulterTempFiles(req);
+        return res.status(400).json({ error: 'Seleccione al menos un PDF para añadir' });
+      }
+      const { resolverArchivoUcqnPdf } = require('../utils/soportes-ucqn-upload');
+      const resolved = await resolverArchivoUcqnPdf(req.params.id, req.params.archivoId);
+      if (!resolved.ok) {
+        cleanupMulterTempFiles(req);
+        return res.status(resolved.status || 404).json({ error: resolved.error });
+      }
+      const tamano = await appendPdfFilesToExisting(resolved.fp, partes);
+      cleanupMulterTempFiles(req);
+      await db.execute(
+        'UPDATE sop_exp_archivos SET tamano_bytes = ?, subido_por = ? WHERE id = ?',
+        [tamano, req.session.usuarioId, resolved.row.id]
+      );
+      notifySoportesArmado({ accion: 'pdf_anexado', expedienteId: parseInt(req.params.id, 10) });
+      const detail = await buildExpedienteDetail(req.params.id);
+      res.json({
+        ok: true,
+        message: `Se añadió ${partes.length} PDF al final`,
+        anexados: partes.length,
+        tamano_bytes: tamano,
+        expediente: detail
+      });
+    } catch (e) {
+      cleanupMulterTempFiles(req);
+      logger.error('[SOPORTES] anexar ucqn:', e);
+      res.status(500).json({ error: safeError(e) });
+    }
+  }
+);
+
+router.post(
+  '/soportes/armado/expedientes/:id/pdfs/:archivoId/reordenar-paginas',
+  requireAuth,
+  requireRoleOrPerm(ROLES_SOPORTES, PERMS_ARMADO_VER_SUBIR),
+  async (req, res) => {
+    try {
+      const order = req.body?.order;
+      if (!Array.isArray(order) || !order.length) {
+        return res.status(400).json({ error: 'Indique el nuevo orden de páginas' });
+      }
+      const { resolverArchivoUcqnPdf } = require('../utils/soportes-ucqn-upload');
+      const resolved = await resolverArchivoUcqnPdf(req.params.id, req.params.archivoId);
+      if (!resolved.ok) return res.status(resolved.status || 404).json({ error: resolved.error });
+      const bytes = await readFileBuffer(resolved.fp);
+      const outBytes = await reorderPdfPagesFromBytes(bytes, order);
+      await writePdfBytesAtomic(resolved.fp, outBytes);
+      await db.execute(
+        'UPDATE sop_exp_archivos SET tamano_bytes = ?, subido_por = ? WHERE id = ?',
+        [outBytes.length, req.session.usuarioId, resolved.row.id]
+      );
+      notifySoportesArmado({ accion: 'pdf_reordenado', expedienteId: parseInt(req.params.id, 10) });
+      const detail = await buildExpedienteDetail(req.params.id);
+      res.json({ ok: true, message: 'Se reordenaron las páginas del PDF', tamano_bytes: outBytes.length, expediente: detail });
+    } catch (e) {
+      logger.error('[SOPORTES] reordenar ucqn:', e);
+      res.status(500).json({ error: safeError(e) });
+    }
+  }
+);
+
+router.post(
+  '/soportes/armado/expedientes/:id/pdfs/:archivoId/eliminar-paginas',
+  requireAuth,
+  requireRoleOrPerm(ROLES_SOPORTES, PERMS_ARMADO_VER_SUBIR),
+  async (req, res) => {
+    try {
+      const pages = req.body?.pages;
+      if (!Array.isArray(pages) || !pages.length) {
+        return res.status(400).json({ error: 'Indique las páginas a eliminar (número 1, 2, …)' });
+      }
+      const { resolverArchivoUcqnPdf } = require('../utils/soportes-ucqn-upload');
+      const resolved = await resolverArchivoUcqnPdf(req.params.id, req.params.archivoId);
+      if (!resolved.ok) return res.status(resolved.status || 404).json({ error: resolved.error });
+      const bytes = await readFileBuffer(resolved.fp);
+      const { PDFDocument } = require('pdf-lib');
+      const pageCount = (await PDFDocument.load(bytes, { ignoreEncryption: true })).getPageCount();
+      const indexes = sanitizePageIndexes(pages, pageCount);
+      const outBytes = await removePdfPagesFromBytes(bytes, indexes);
+      await writePdfBytesAtomic(resolved.fp, outBytes);
+      await db.execute(
+        'UPDATE sop_exp_archivos SET tamano_bytes = ?, subido_por = ? WHERE id = ?',
+        [outBytes.length, req.session.usuarioId, resolved.row.id]
+      );
+      notifySoportesArmado({ accion: 'pdf_paginas', expedienteId: parseInt(req.params.id, 10) });
+      const detail = await buildExpedienteDetail(req.params.id);
+      res.json({
+        ok: true,
+        message: `Se eliminaron ${indexes.length} página(s) del PDF`,
+        eliminadas: indexes.length,
+        tamano_bytes: outBytes.length,
+        expediente: detail
+      });
+    } catch (e) {
+      logger.error('[SOPORTES] eliminar paginas ucqn:', e);
+      res.status(500).json({ error: safeError(e) });
+    }
+  }
+);
 
 router.delete('/soportes/armado/expedientes/:id/pdfs/:archivoId', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'soportes.armado.crear_estructura'), async (req, res) => {
   try {

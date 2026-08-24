@@ -1,6 +1,6 @@
 /**
  * Página /soportes/visor-pdf — visor PDF a pantalla completa (PDX o Armado).
- * Parámetros: fuente=pdx&id=… | fuente=armado&exp=…&tipo=OPF&edit=1&titulo=…
+ * Parámetros: fuente=pdx&id=… | fuente=armado&exp=…&tipo=OPF | fuente=ucqn&exp=…&archivo=…&edit=1&titulo=…
  */
 (function () {
   'use strict';
@@ -79,7 +79,23 @@
         canEdit: edit
       };
     }
-    return { error: 'Parámetro fuente inválido (use pdx o armado)' };
+    if (fuente === 'ucqn') {
+      const exp = parseInt(p.get('exp'), 10);
+      const archivo = parseInt(p.get('archivo'), 10);
+      if (!exp || !archivo) return { error: 'Faltan parámetros exp y archivo (UCQN)' };
+      const base = `/api/soportes/armado/expedientes/${exp}/pdfs/${archivo}`;
+      return {
+        title: titulo,
+        pdfUrl: `${base}/ver`,
+        saveUrl: edit ? `${base}/resaltar` : '',
+        appendUrl: edit ? `${base}/anexar-pdf` : '',
+        deletePagesUrl: edit ? `${base}/eliminar-paginas` : '',
+        reorderPagesUrl: edit ? `${base}/reordenar-paginas` : '',
+        downloadUrl: `${base}/descargar`,
+        canEdit: edit
+      };
+    }
+    return { error: 'Parámetro fuente inválido (use pdx, armado o ucqn)' };
   }
 
   async function init() {

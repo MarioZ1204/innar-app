@@ -24,7 +24,9 @@ const {
 
   parseFevFilename,
 
-  safeOriginalFilename
+  safeOriginalFilename,
+
+  decodeUploadFilename
 
 } = require('./soportes-archivo-detect');
 
@@ -253,6 +255,8 @@ function validarPdfSoportes(tempPath, originalName) {
 
 
 async function ingestFeArchivo(exp, ctx, tempPath, originalName, usuarioId, tipoManual = null) {
+
+  originalName = decodeUploadFilename(originalName);
 
   const contenedorTipo = ctx.contenedor_tipo || 'soportes';
   const diaModo = ctx.dia_modo || 'facturacion';

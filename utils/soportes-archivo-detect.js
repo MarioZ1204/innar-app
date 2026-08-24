@@ -77,8 +77,32 @@ function parseFevFilename(originalName) {
   };
 }
 
+/**
+ * Multer a veces trata el nombre UTF-8 como latin1 (García → GarcÃ­a).
+ * Solo reconstruye si hay mojibake típico; un nombre ya correcto no se toca.
+ */
+function decodeUploadFilename(name) {
+  const raw = String(name || '').trim() || 'documento.pdf';
+  let s = raw;
+  try {
+    const converted = Buffer.from(raw, 'latin1').toString('utf8');
+    if (
+      converted &&
+      converted !== raw &&
+      !converted.includes('\uFFFD') &&
+      /Ã.|Â./.test(raw)
+    ) {
+      s = converted;
+    }
+  } catch (_) { /* conservar el original */ }
+  try {
+    s = s.normalize('NFC');
+  } catch (_) { /* noop */ }
+  return s;
+}
+
 function safeOriginalFilename(originalName) {
-  const base = path.basename(String(originalName || 'documento.pdf'));
+  const base = path.basename(decodeUploadFilename(originalName) || 'documento.pdf');
   return base.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').slice(0, 200) || 'documento.pdf';
 }
 
@@ -246,6 +270,7 @@ module.exports = {
   getNitObligado,
   formatFeTag,
   fevFilenameHint,
+  decodeUploadFilename,
   buildCanonicalName,
   extractEtiquetaFromSoporteName,
   extractTipoFromSoporteName,

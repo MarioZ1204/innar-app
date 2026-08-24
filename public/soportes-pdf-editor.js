@@ -629,6 +629,10 @@
       q.set('exp', String(cfg.expId));
       q.set('tipo', String(cfg.tipo || '').toUpperCase());
       if (cfg.edit) q.set('edit', '1');
+    } else if (cfg.fuente === 'ucqn') {
+      q.set('exp', String(cfg.expId));
+      q.set('archivo', String(cfg.archivoId));
+      if (cfg.edit) q.set('edit', '1');
     }
     if (cfg.titulo) q.set('titulo', String(cfg.titulo).slice(0, 240));
     const url = `/soportes/visor-pdf?${q.toString()}`;

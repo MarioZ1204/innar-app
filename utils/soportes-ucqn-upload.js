@@ -6,7 +6,7 @@ const db = require('./db-mysql');
 const { fileLooksLikePdf } = require('../middleware/upload');
 const { SOPORTES_ROOT, ensureDir } = require('./soportes-storage');
 const { moveFileSafe } = require('./fs-move-safe');
-const { safeOriginalFilename } = require('./soportes-archivo-detect');
+const { decodeUploadFilename, safeOriginalFilename } = require('./soportes-archivo-detect');
 const {
   getArmadoUcqnPersonaDir,
   fetchDiaRow,
@@ -18,7 +18,7 @@ function ucqnDiskName(originalName) {
   const safe = safeOriginalFilename(originalName) || 'documento.pdf';
   const base = path.basename(safe);
   const ext = path.extname(base).toLowerCase() || '.pdf';
-  const stem = base.slice(0, -ext.length).replace(/[^\w\sáéíóúñÁÉÍÓÚÑ.\-()]/gi, '_').trim() || 'documento';
+  const stem = base.slice(0, -ext.length).replace(/\s+/g, ' ').trim() || 'documento';
   return `${stem}${ext}`;
 }
 
@@ -45,8 +45,9 @@ async function saveUcqnPdf(exp, tempPath, originalName, usuarioId, opts = {}) {
   const ctx = await resolveUcqnUploadContext(exp);
   if (!ctx) throw new Error('Expediente UCQN no válido');
   const origen = opts.origen === 'copia_pdx' ? 'copia_pdx' : 'upload';
+  const displayName = decodeUploadFilename(originalName);
 
-  let diskName = ucqnDiskName(originalName);
+  let diskName = ucqnDiskName(displayName);
   let destPath = path.join(ctx.absDir, diskName);
   let n = 1;
   while (fs.existsSync(destPath)) {
@@ -69,15 +70,15 @@ async function saveUcqnPdf(exp, tempPath, originalName, usuarioId, opts = {}) {
     await db.execute(
       `UPDATE sop_exp_archivos SET nombre_archivo = ?, nombre_original = ?, tamano_bytes = ?, subido_por = ?
        WHERE id = ?`,
-      [diskName, originalName, tamano, usuarioId, dup[0].id]
+      [diskName, displayName, tamano, usuarioId, dup[0].id]
     );
-    return { slot: 'PDF', nombre_archivo: diskName, nombre_original: originalName, archivo_id: dup[0].id };
+    return { slot: 'PDF', nombre_archivo: diskName, nombre_original: displayName, archivo_id: dup[0].id };
   }
 
   const r = await db.execute(
     `INSERT INTO sop_exp_archivos (expediente_id, tipo, nombre_archivo, nombre_original, ruta_relativa, tamano_bytes, origen, subido_por)
      VALUES (?,?,?,?,?,?,?,?)`,
-    [exp.id, 'PDF', diskName, originalName, rutaRelativa, tamano, origen, usuarioId]
+    [exp.id, 'PDF', diskName, displayName, rutaRelativa, tamano, origen, usuarioId]
   );
   const archivoId = r.insertId;
   if (opts.pdxArchivoId && archivoId) {
@@ -89,7 +90,7 @@ async function saveUcqnPdf(exp, tempPath, originalName, usuarioId, opts = {}) {
   return {
     slot: 'PDF',
     nombre_archivo: diskName,
-    nombre_original: originalName,
+    nombre_original: displayName,
     archivo_id: archivoId
   };
 }
@@ -102,7 +103,7 @@ async function buildUcqnExpedienteDetail(expId, exp) {
   const pdfs = archivos.map((a) => ({
     id: a.id,
     nombre_archivo: a.nombre_archivo,
-    nombre_original: a.nombre_original,
+    nombre_original: decodeUploadFilename(a.nombre_original || a.nombre_archivo),
     tamano_bytes: a.tamano_bytes,
     creado_en: a.creado_en
   }));
@@ -114,8 +115,28 @@ async function buildUcqnExpedienteDetail(expId, exp) {
   };
 }
 
+async function resolverArchivoUcqnPdf(expedienteId, archivoId) {
+  const rows = await db.query(
+    `SELECT a.* FROM sop_exp_archivos a
+     JOIN sop_expedientes e ON e.id = a.expediente_id
+     JOIN sop_dias d ON d.id = e.dia_id
+     WHERE a.id = ? AND a.expediente_id = ? AND a.tipo = 'PDF' AND d.modo = 'ucqn'`,
+    [archivoId, expedienteId]
+  );
+  if (!rows.length) return { ok: false, error: 'PDF no encontrado', status: 404 };
+  const { obtenerExpedienteContext, resolveArchivoAbsoluto } = require('./soportes-exp-archivo');
+  const expediente = await obtenerExpedienteContext(expedienteId);
+  const fp = resolveArchivoAbsoluto(rows[0], { expediente, deepScan: false });
+  if (!fp || !fs.existsSync(fp)) {
+    return { ok: false, error: 'El archivo no está en disco', status: 404, row: rows[0] };
+  }
+  return { ok: true, fp, row: rows[0] };
+}
+
 module.exports = {
+  ucqnDiskName,
   saveUcqnPdf,
   buildUcqnExpedienteDetail,
-  resolveUcqnUploadContext
+  resolveUcqnUploadContext,
+  resolverArchivoUcqnPdf
 };

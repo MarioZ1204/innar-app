@@ -22,6 +22,7 @@ const {
   esTemaConsultaMedica
 } = require('./soportes-temas');
 const { getPdxDir, relativePdxRuta, stripMulterTimestamp } = require('./soportes-storage');
+const { decodeUploadFilename } = require('./soportes-archivo-detect');
 
 async function cargarEstudiosParaOrdenes(db) {
   try {
@@ -74,6 +75,7 @@ function esConfirmacionManual(body) {
 }
 
 function buildMetaFromUpload(originalName, body = {}, carpeta = null) {
+  originalName = decodeUploadFilename(originalName);
   if (esConfirmacionManual(body)) {
     return buildMetaDesdeCamposManuales(originalName, body, carpeta);
   }

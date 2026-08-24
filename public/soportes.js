@@ -5730,9 +5730,15 @@
             <td>${escapeHtml(p.nombre_original || p.nombre_archivo)}</td>
             <td>${Math.round((p.tamano_bytes || 0) / 1024)} KB</td>
             <td class="sop-folder-list-actions">
-              <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-ucqn-ver="${p.id}"><i data-lucide="eye"></i></button>
-              <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-ucqn-dl="${p.id}"><i data-lucide="download"></i></button>
-              ${sopPerm('soportes.armado.crear_estructura') ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-ucqn-del="${p.id}" style="color:#dc2626"><i data-lucide="trash-2"></i></button>` : ''}
+              <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-ucqn-ver="${p.id}" title="Ver PDF" aria-label="Ver PDF"><i data-lucide="eye"></i></button>
+              ${puedeResaltarArmado() ? htmlSlotActionBtn({
+                icon: 'pen-line',
+                title: 'Editor PDF',
+                attrs: `data-ucqn-editar="${p.id}"`,
+                variant: 'primary'
+              }) : ''}
+              <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-ucqn-dl="${p.id}" title="Descargar" aria-label="Descargar"><i data-lucide="download"></i></button>
+              ${sopPerm('soportes.armado.crear_estructura') ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-ucqn-del="${p.id}" title="Eliminar" aria-label="Eliminar" style="color:#dc2626"><i data-lucide="trash-2"></i></button>` : ''}
             </td>
           </tr>`).join('')}</tbody></table>` : '<div class="sop-empty">Sin PDF — suba el primero</div>'}
         </div>
@@ -5779,6 +5785,19 @@
     }
     panel.querySelectorAll('[data-ucqn-ver]').forEach((b) => {
       b.addEventListener('click', () => abrirPdfEnNavegador(`/api/soportes/armado/expedientes/${expId}/pdfs/${parseInt(b.dataset.ucqnVer, 10)}/ver`));
+    });
+    panel.querySelectorAll('[data-ucqn-editar]').forEach((b) => {
+      b.addEventListener('click', () => {
+        const archivoId = parseInt(b.dataset.ucqnEditar, 10);
+        const row = pdfs.find((x) => Number(x.id) === archivoId);
+        abrirVisorPdfEnPagina({
+          fuente: 'ucqn',
+          expId,
+          archivoId,
+          titulo: row?.nombre_original || row?.nombre_archivo || 'PDF UCQN',
+          edit: true
+        });
+      });
     });
     panel.querySelectorAll('[data-ucqn-dl]').forEach((b) => {
       b.addEventListener('click', () => iniciarDescargaArchivoEnlace(`/api/soportes/armado/expedientes/${expId}/pdfs/${parseInt(b.dataset.ucqnDl, 10)}/descargar`));
